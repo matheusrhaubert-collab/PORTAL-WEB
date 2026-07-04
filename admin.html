@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Legno — Painel Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Legno — Painel Admin</h1>
+  <a href="index.html">Ver calculadora do cliente →</a>
+</header>
+
+<main>
+
+  <!-- IMPORTANTE: esta tela não tem autenticação ainda. Antes de publicar,
+       proteja este arquivo (ex: Supabase Auth + checagem de sessão, ou
+       deixe fora do domínio público / atrás de senha do host). -->
+  <p class="hint" style="margin-bottom:20px;">
+    ⚠️ Esta tela ainda não exige login. As tabelas modules/module_pieces/colors
+    só aceitam escrita depois que você criar as policies de admin autenticado
+    descritas em <code>database/schema.sql</code>. Até lá, os formulários abaixo
+    vão dar erro de permissão ao salvar — isso é esperado e proposital.
+  </p>
+
+  <!-- CORES -->
+  <section class="panel">
+    <h2>Cores / Materiais</h2>
+    <div id="colors-error" class="error" style="display:none;"></div>
+    <table>
+      <thead><tr><th>Nome</th><th>Chapa (m²)</th><th>Fita (m)</th><th>Status</th><th></th></tr></thead>
+      <tbody id="colors-tbody"></tbody>
+    </table>
+
+    <form id="color-form">
+      <input type="hidden" id="color-id" />
+      <div class="row">
+        <div><label>Nome da cor/material</label><input id="color-name" required /></div>
+        <div><label>Preço chapa (R$/m²)</label><input id="color-sheet-price" type="number" step="0.01" required /></div>
+        <div><label>Preço fita (R$/m linear)</label><input id="color-edge-price" type="number" step="0.01" required /></div>
+      </div>
+      <label><input type="checkbox" id="color-active" style="width:auto;display:inline-block;" /> Ativa</label>
+      <button type="submit">Salvar cor</button>
+    </form>
+  </section>
+
+  <!-- MÓDULOS -->
+  <section class="panel">
+    <h2>Módulos (pai)</h2>
+    <div id="modules-error" class="error" style="display:none;"></div>
+    <table>
+      <thead><tr><th>Nome</th><th>Largura</th><th>Altura</th><th>Profundidade</th><th>Status</th><th></th></tr></thead>
+      <tbody id="modules-tbody"></tbody>
+    </table>
+
+    <form id="module-form">
+      <input type="hidden" id="module-id" />
+      <div class="row">
+        <div><label>Nome do módulo</label><input id="module-name" required /></div>
+        <div><label>Slug (opcional)</label><input id="module-slug" /></div>
+      </div>
+      <label>Descrição</label>
+      <textarea id="module-description" style="min-height:40px;font-family:inherit;"></textarea>
+
+      <div class="row">
+        <div><label>Largura mín. (mm)</label><input id="module-width-min" type="number" required /></div>
+        <div><label>Largura padrão (mm)</label><input id="module-width-default" type="number" required /></div>
+        <div><label>Largura máx. (mm)</label><input id="module-width-max" type="number" required /></div>
+      </div>
+      <div class="row">
+        <div><label>Altura mín. (mm)</label><input id="module-height-min" type="number" required /></div>
+        <div><label>Altura padrão (mm)</label><input id="module-height-default" type="number" required /></div>
+        <div><label>Altura máx. (mm)</label><input id="module-height-max" type="number" required /></div>
+      </div>
+      <div class="row">
+        <div><label>Profundidade mín. (mm)</label><input id="module-depth-min" type="number" required /></div>
+        <div><label>Profundidade padrão (mm)</label><input id="module-depth-default" type="number" required /></div>
+        <div><label>Profundidade máx. (mm)</label><input id="module-depth-max" type="number" required /></div>
+      </div>
+
+      <label><input type="checkbox" id="module-active" style="width:auto;display:inline-block;" /> Ativo</label>
+      <button type="submit">Salvar módulo</button>
+    </form>
+
+    <label style="margin-top:20px;">Selecionar módulo para configurar peças e cores</label>
+    <select id="module-select"></select>
+  </section>
+
+  <!-- CORES DO MÓDULO -->
+  <section class="panel" id="module-colors-section" style="display:none;">
+    <h2>Cores disponíveis para este módulo</h2>
+    <div id="module-colors-list"></div>
+  </section>
+
+  <!-- PEÇAS DO MÓDULO -->
+  <section class="panel" id="pieces-section" style="display:none;">
+    <h2>Peças (componentes) do módulo</h2>
+    <p class="hint">
+      Fórmulas usam W, H, D (largura/altura/profundidade do módulo pai escolhidas pelo cliente).
+      A fórmula de área também pode usar w, h, d (dimensões já calculadas da própria peça).
+      Ex: largura <code>W-36</code>, área <code>w*h/1000000</code>, fita <code>2*(w/1000)</code>.
+    </p>
+    <div id="pieces-error" class="error" style="display:none;"></div>
+    <table>
+      <thead><tr><th>Ref.</th><th>Qtd</th><th>Larg.</th><th>Alt.</th><th>Prof.</th><th>Área m²</th><th>Fita m</th><th>M.Obra/un</th><th></th></tr></thead>
+      <tbody id="pieces-tbody"></tbody>
+    </table>
+
+    <form id="piece-form">
+      <input type="hidden" id="piece-id" />
+      <div class="row">
+        <div><label>Referência da peça</label><input id="piece-reference" required /></div>
+        <div><label>Quantidade</label><input id="piece-quantity" type="number" min="1" required /></div>
+        <div><label>Mão de obra (R$/un)</label><input id="piece-labor" type="number" step="0.01" required /></div>
+      </div>
+      <div class="row">
+        <div><label>Fórmula largura</label><input id="piece-width-formula" required /></div>
+        <div><label>Fórmula altura</label><input id="piece-height-formula" required /></div>
+        <div><label>Fórmula profundidade</label><input id="piece-depth-formula" required /></div>
+      </div>
+      <div class="row">
+        <div><label>Fórmula área (m²)</label><input id="piece-area-formula" required /></div>
+        <div><label>Fórmula fita (m linear)</label><input id="piece-edge-formula" required /></div>
+      </div>
+      <label>Observações</label>
+      <input id="piece-notes" />
+      <button type="submit">Salvar peça</button>
+    </form>
+
+    <h2 style="margin-top:28px;">Teste de cálculo (conferência interna)</h2>
+    <form id="test-calc-form">
+      <div class="row">
+        <div><label>Cor</label><select id="test-calc-color"></select></div>
+        <div><label>Largura (mm)</label><input id="test-calc-width" type="number" /></div>
+        <div><label>Altura (mm)</label><input id="test-calc-height" type="number" /></div>
+        <div><label>Profundidade (mm)</label><input id="test-calc-depth" type="number" /></div>
+      </div>
+      <button type="submit">Calcular</button>
+    </form>
+    <div id="test-calc-error" class="error" style="display:none;"></div>
+    <div id="test-calc-result"></div>
+  </section>
+
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/pricing.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

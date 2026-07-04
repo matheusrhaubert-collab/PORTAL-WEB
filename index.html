@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Legno — Monte seu módulo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Legno — Monte seu módulo</h1>
+</header>
+
+<main>
+
+  <section class="panel">
+    <h2>1. Escolha o módulo</h2>
+    <div id="calc-error" class="error" style="display:none;"></div>
+    <label>Módulo</label>
+    <select id="module-select"></select>
+    <p id="module-description" class="hint"></p>
+  </section>
+
+  <section class="panel" id="config-section" style="display:none;">
+    <h2>2. Configure as medidas e a cor</h2>
+
+    <label>Cor / material</label>
+    <select id="color-select"></select>
+
+    <div class="row">
+      <div>
+        <label>Largura (mm) <span id="width-range" class="hint"></span></label>
+        <input id="width-input" type="number" />
+      </div>
+      <div>
+        <label>Altura (mm) <span id="height-range" class="hint"></span></label>
+        <input id="height-input" type="number" />
+      </div>
+      <div>
+        <label>Profundidade (mm) <span id="depth-range" class="hint"></span></label>
+        <input id="depth-input" type="number" />
+      </div>
+    </div>
+
+    <section id="price-section" style="display:none; margin-top:20px;">
+      <h2>Preço estimado</h2>
+      <p class="total-price" id="total-price">R$ 0,00</p>
+      <p class="hint">Valor calculado conforme as medidas e a cor escolhidas.</p>
+    </section>
+
+    <div id="quote-form-wrap" style="margin-top:20px;">
+      <h2>3. Solicitar orçamento</h2>
+      <form id="quote-form">
+        <div class="row">
+          <div><label>Seu nome</label><input id="client-name" required /></div>
+          <div><label>E-mail</label><input id="client-email" type="email" required /></div>
+          <div><label>Telefone</label><input id="client-phone" /></div>
+        </div>
+        <button type="submit">Enviar orçamento</button>
+      </form>
+    </div>
+
+    <div id="quote-success" class="panel" style="display:none; background:#eef7ee;">
+      <h2>Orçamento enviado!</h2>
+      <p>Recebemos sua solicitação. Em breve entraremos em contato.</p>
+    </div>
+  </section>
+
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/pricing.js"></script>
+<script src="js/client.js"></script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+:root {
+  --bg: #f7f6f3;
+  --panel: #ffffff;
+  --border: #e0ddd6;
+  --text: #2b2621;
+  --muted: #766f64;
+  --accent: #8a5a34;
+  --accent-dark: #6e4527;
+  --danger: #b3432f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header.topbar {
+  background: var(--accent-dark);
+  color: #fff;
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header.topbar a { color: #fff; opacity: .85; text-decoration: none; }
+header.topbar a:hover { opacity: 1; }
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+section.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 16px; margin-top: 0; color: var(--accent-dark); }
+
+label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+}
+
+textarea { min-height: 50px; font-family: monospace; }
+
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row > div { flex: 1; min-width: 140px; }
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 14px;
+}
+button:hover { background: var(--accent-dark); }
+button.secondary { background: transparent; color: var(--accent-dark); border: 1px solid var(--border); }
+button.danger { background: var(--danger); }
+
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; }
+
+.hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.error { color: var(--danger); font-size: 13px; margin-top: 8px; }
+
+.total-price {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent-dark);
+  margin: 8px 0;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
