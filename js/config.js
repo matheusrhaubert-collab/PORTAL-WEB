@@ -4,7 +4,7 @@
 // front-end, pois o acesso de escrita é controlado pelas RLS policies
 // (veja database/schema.sql).
 
-const SUPABASE_URL = 'https://bibtcgcabjngisqwywrs.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_SgMJ7OhK6CDCFbZJaRIvTQ_0WJoWQP8';
+const SUPABASE_URL = 'https://xkgffjxihauzzoccnaoe.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_IXISqOY8SeFIXDebmz2DHg_fNsBUDjC';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

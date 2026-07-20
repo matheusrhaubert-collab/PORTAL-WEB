@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Teste: render atual vs. path tracer</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f4f4f4;
+    color: #222;
+  }
+  header {
+    padding: 18px 24px 10px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+  }
+  header h1 { font-size: 18px; margin: 0 0 6px; }
+  header p { font-size: 13px; line-height: 1.5; color: #555; margin: 4px 0; max-width: 900px; }
+  header p b { color: #222; }
+  .warn {
+    display: none;
+    margin: 10px 24px 0;
+    padding: 10px 14px;
+    background: #fff3cd;
+    border: 1px solid #ffe08a;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #7a5c00;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 10px 24px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: #ccc;
+  }
+  .pane { background: #ffffff; display: flex; flex-direction: column; }
+  .pane-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid #eee;
+  }
+  .pane-head h2 { font-size: 14px; margin: 0; }
+  .pane-head .sub { font-size: 11px; color: #888; margin-top: 2px; }
+  .pane-head button {
+    font-size: 12px;
+    padding: 5px 10px;
+    border: 1px solid #ccc;
+    background: #fafafa;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .pane-head button:hover { background: #eee; }
+  .canvas-wrap { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #e9e9e9; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .badge {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  footer {
+    padding: 14px 24px 30px;
+    font-size: 12px;
+    color: #888;
+    max-width: 900px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Teste: render atual (Three.js) vs. path tracer (three-gpu-pathtracer)</h1>
+  <p>Mesma peça, mesmos materiais e mesmas luzes dos dois lados — a única diferença é o motor de render. Isso isola exatamente o que a troca compraria (sombra suave, luz indireta, reflexo físico) sem misturar com outras mudanças. Arraste pra girar. Nada aqui toca no app real — é um teste solto, só HTML.</p>
+</header>
+
+<div class="warn" id="warn"></div>
+
+<div class="controls">
+  <label><input type="checkbox" id="envToggle" /> Ambiente de estúdio (PMREM) só no path tracer — mostra o teto do que dá pra melhorar além da troca de motor</label>
+  <label>Bounces: <input type="range" id="bouncesRange" min="1" max="15" value="6" style="width:100px" /> <span id="bouncesVal">6</span></label>
+  <span id="statusMsg" style="color:#888;"></span>
+</div>
+
+<div class="grid">
+  <div class="pane">
+    <div class="pane-head">
+      <div>
+        <h2>Render atual do app</h2>
+        <div class="sub">THREE.WebGLRenderer.render() — igual ao viewer3d.js hoje</div>
+      </div>
+      <button id="dlRaster">Baixar imagem</button>
+    </div>
+    <div class="canvas-wrap" id="rasterWrap">
+      <div class="badge" id="rasterBadge">rasterizado</div>
+    </div>
+  </div>
+  <div class="pane">
+    <div class="pane-head">
+      <div>
+        <h2>Path tracer</h2>
+        <div class="sub">three-gpu-pathtracer (WebGLPathTracer) — acumulando amostras</div>
+      </div>
+      <button id="dlPath">Baixar imagem</button>
+    </div>
+    <div class="canvas-wrap" id="pathWrap">
+      <div class="badge" id="pathBadge">amostras: 0</div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Peça de teste: um móvel genérico (caixa + 2 prateleiras + 1 porta + puxador) com os mesmos parâmetros de material do projeto
+  (madeira roughness 0.85/metalness 0.05, metal roughness 0.25/metalness 0.85) e a mesma luz atual (Hemisphere + 2 direcionais).
+  Não é a geometria exata de nenhum módulo real — serve pra comparar o MOTOR de render, não a modelagem.
+  Requer WebGL2 (Chrome/Edge/Firefox recentes). Em notebook sem GPU dedicada o path tracer pode ficar lento.
+</footer>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.13/build/index.module.js",
+    "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.24/build/index.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { WebGLPathTracer } from 'three-gpu-pathtracer';
+
+const statusMsg = document.getElementById('statusMsg');
+const warnEl = document.getElementById('warn');
+
+function showWarn(msg) {
+  warnEl.textContent = msg;
+  warnEl.style.display = 'block';
+}
+
+// Checagem básica de WebGL2 (o path tracer exige, o render "atual" não).
+const testCanvas = document.createElement('canvas');
+const hasWebGL2 = !!testCanvas.getContext('webgl2');
+if (!hasWebGL2) {
+  showWarn('Este navegador/GPU não expôs WebGL2 — o painel do path tracer pode não funcionar. O painel da esquerda (render atual) deve funcionar normalmente.');
+}
+
+// ---------- Peça de teste (mesmos parâmetros de material/luz do projeto) ----------
+// Espelha js/viewer3d.js: MeshStandardMaterial madeira roughness .85/metalness .05,
+// metal roughness .25/metalness .85; HemisphereLight(1.15) + 2 DirectionalLight (.55/.25).
+function buildCabinetScene() {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#e9e9e9');
+
+  const woodMat = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.85, metalness: 0.05 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: '#d7dbe0', roughness: 0.25, metalness: 0.85 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: '#f2f2f2', roughness: 1, metalness: 0 });
+
+  const W = 0.9, H = 1.8, D = 0.45, t = 0.018;
+  function box(w, h, d, mat) { return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); }
+
+  const group = new THREE.Group();
+  const top = box(W, t, D, woodMat); top.position.y = H / 2 - t / 2; group.add(top);
+  const bottom = box(W, t, D, woodMat); bottom.position.y = -H / 2 + t / 2; group.add(bottom);
+  const left = box(t, H, D, woodMat); left.position.x = -W / 2 + t / 2; group.add(left);
+  const right = box(t, H, D, woodMat); right.position.x = W / 2 - t / 2; group.add(right);
+  const back = box(W - 2 * t, H - 2 * t, 0.01, woodMat); back.position.z = -D / 2 + 0.005; group.add(back);
+  [-H / 2 + H * 0.33, -H / 2 + H * 0.66].forEach((y) => {
+    const shelf = box(W - 2 * t - 0.004, t, D - 0.03, woodMat);
+    shelf.position.y = y;
+    group.add(shelf);
+  });
+  const doorW = W - 0.02, doorH = H - 0.02;
+  const door = box(doorW, doorH, 0.016, woodMat);
+  door.position.set(0, 0, D / 2 + 0.01);
+  group.add(door);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 16), metalMat);
+  handle.rotation.z = Math.PI / 2;
+  handle.position.set(doorW / 2 - 0.06, 0, D / 2 + 0.02);
+  group.add(handle);
+  group.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(group);
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -H / 2 - t / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  return { scene, H };
+}
+
+function addProjectLights(scene) {
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1.15));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
+  dirLight.position.set(2, 3, 2);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.25);
+  fillLight.position.set(-2, 1, -2);
+  scene.add(fillLight);
+}
+
+function makeCamera(H) {
+  // Ângulo quase frontal, igual ao modo {frontal:true} do snapshot da Composição.
+  const camera = new THREE.PerspectiveCamera(35, 4 / 3, 0.05, 50);
+  camera.position.set(0.12, H * 0.12, 2.7);
+  camera.lookAt(0, 0, 0);
+  return camera;
+}
+
+// ---------- Painel A: render atual (rasterizado, igual ao app) ----------
+const rasterWrap = document.getElementById('rasterWrap');
+const rasterBadge = document.getElementById('rasterBadge');
+const rasterBuild = buildCabinetScene();
+addProjectLights(rasterBuild.scene);
+const rasterCamera = makeCamera(rasterBuild.H);
+
+const rasterRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+rasterRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+if ('outputColorSpace' in rasterRenderer) rasterRenderer.outputColorSpace = THREE.SRGBColorSpace;
+rasterWrap.insertBefore(rasterRenderer.domElement, rasterBadge);
+
+const rasterControls = new OrbitControls(rasterCamera, rasterRenderer.domElement);
+rasterControls.target.set(0, 0, 0);
+rasterControls.enableDamping = true;
+
+function resizeRenderer(renderer, camera, wrap) {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+
+function rasterLoop() {
+  requestAnimationFrame(rasterLoop);
+  resizeRenderer(rasterRenderer, rasterCamera, rasterWrap);
+  rasterControls.update();
+  rasterRenderer.render(rasterBuild.scene, rasterCamera);
+}
+rasterLoop();
+
+document.getElementById('dlRaster').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = 'render-atual.png';
+  a.href = rasterRenderer.domElement.toDataURL('image/png');
+  a.click();
+});
+
+// ---------- Painel B: path tracer ----------
+if (hasWebGL2) {
+  try {
+    const pathWrap = document.getElementById('pathWrap');
+    const pathBadge = document.getElementById('pathBadge');
+    const pathBuild = buildCabinetScene();
+    addProjectLights(pathBuild.scene);
+    const pathCamera = makeCamera(pathBuild.H);
+
+    const pathRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    pathRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    if ('outputColorSpace' in pathRenderer) pathRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    pathRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    pathWrap.insertBefore(pathRenderer.domElement, pathBadge);
+
+    const pathControls = new OrbitControls(pathCamera, pathRenderer.domElement);
+    pathControls.target.set(0, 0, 0);
+    pathControls.enableDamping = true;
+
+    const pathTracer = new WebGLPathTracer(pathRenderer);
+    pathTracer.filterGlossyFactor = 0.5;
+    pathTracer.minSamples = 1;
+    pathTracer.bounces = 6;
+
+    let envRT = null;
+    function applyEnv(enabled) {
+      if (enabled) {
+        if (!envRT) {
+          const pmrem = new THREE.PMREMGenerator(pathRenderer);
+          envRT = pmrem.fromScene(new RoomEnvironment(), 0.02);
+          pmrem.dispose();
+        }
+        pathBuild.scene.environment = envRT.texture;
+      } else {
+        pathBuild.scene.environment = null;
+      }
+      pathTracer.setScene(pathBuild.scene, pathCamera);
+    }
+
+    function resizeAndSetScene() {
+      resizeRenderer(pathRenderer, pathCamera, pathWrap);
+      pathTracer.setScene(pathBuild.scene, pathCamera);
+    }
+    resizeAndSetScene();
+    window.addEventListener('resize', resizeAndSetScene);
+
+    let needsReset = false;
+    pathControls.addEventListener('change', () => { needsReset = true; });
+
+    function pathLoop() {
+      requestAnimationFrame(pathLoop);
+      pathControls.update();
+      if (needsReset) {
+        pathTracer.updateCamera();
+        needsReset = false;
+      }
+      pathTracer.renderSample();
+      pathBadge.textContent = 'amostras: ' + pathTracer.samples.toFixed(0);
+    }
+    pathLoop();
+
+    document.getElementById('envToggle').addEventListener('change', (e) => applyEnv(e.target.checked));
+    document.getElementById('bouncesRange').addEventListener('input', (e) => {
+      pathTracer.bounces = parseInt(e.target.value, 10);
+      document.getElementById('bouncesVal').textContent = e.target.value;
+      pathTracer.reset();
+    });
+
+    document.getElementById('dlPath').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.download = 'path-tracer.png';
+      a.href = pathRenderer.domElement.toDataURL('image/png');
+      a.click();
+    });
+
+    statusMsg.textContent = 'Path tracer carregado.';
+  } catch (err) {
+    console.error(err);
+    showWarn('Não deu pra iniciar o path tracer neste navegador: ' + (err && err.message ? err.message : err) + '. Tenta em outro navegador/computador com GPU.');
+  }
+} else {
+  document.getElementById('pathBadge').textContent = 'WebGL2 indisponível';
+}
+</script>
+</body>
+</html>

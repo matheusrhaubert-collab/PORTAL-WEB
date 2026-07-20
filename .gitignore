@@ -1,0 +1,10 @@
+# Dependências locais — não precisam ir pro GitHub
+node_modules/
+
+# SQL do banco (schema/migrations) — não deve ficar exposto num repo público;
+# o site publicado não precisa desses arquivos pra funcionar (o banco é o
+# Supabase remoto)
+database/
+
+# Teste local de desenvolvimento
+debug_texture_rotation_test.html

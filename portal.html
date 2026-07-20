@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Legno — Portal do cliente</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- SheetJS — leitura de planilha (.xlsx/.csv/.txt) importada na aba "Plano
+     de Corte" (migration 051, exclusivo do perfil Contractor). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body class="portal-page">
+
+<header class="po-topnav">
+  <div class="po-topnav-left">
+    <div class="po-logo">
+      <span class="po-logo-main">LEGNO</span>
+      <span class="po-logo-sub">CABINETS</span>
+    </div>
+    <div class="po-topnav-title" data-i18n="nav.portal_title">Portal do Cliente</div>
+    <nav class="po-topnav-tabs" id="po-sidebar">
+      <button type="button" class="portal-tab-btn active" data-tab="po-tab-new-order" data-i18n="nav.tab_new_order">Novo Orçamento</button>
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-my-orders" data-i18n="nav.tab_my_orders">Meus Pedidos</button>
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-composition" data-i18n="nav.tab_composition">Composição</button>
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-favorites" data-i18n="nav.tab_favorites">Favoritos</button>
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-gallery" data-i18n="nav.tab_gallery">Galeria</button>
+      <!-- Só aparece pro perfil Contractor (migration 051) — ver
+           applyCuttingListTabVisibility em portal.js, chamado depois que o
+           user_profile do cliente logado é carregado. -->
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-cutting-list" id="po-nav-tab-cutting-list" data-i18n="nav.tab_cutting_list" style="display:none;">Plano de Corte</button>
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-room-view" data-i18n="nav.tab_room_view">Visualizar no meu ambiente</button>
+    </nav>
+  </div>
+  <div class="po-topnav-right">
+    <!-- Configurações (pé direito/rodapé/unidade/idioma) — pedido do
+         usuário: "a barra de ferramentas esta baguncada, precisa deixar
+         algumas coisas ocultas, pra dar espaco e deixar bem clean". Esses 4
+         controles eram mostrados soltos, sempre visíveis, e junto com a
+         Galeria nova (mais uma aba) a barra ficou espremida/sobrepondo
+         texto. Agora ficam escondidos atrás de um ícone de engrenagem —
+         mesmos ids/comportamento de sempre (setupRoomSettingsInputs,
+         po-unit-select, po-lang-switcher em portal.js/i18n.js não mudaram,
+         só a apresentação: um painel que abre por cima em vez de sempre
+         visível). -->
+    <div class="po-topnav-settings">
+      <button type="button" id="po-topnav-settings-toggle" class="po-topnav-settings-toggle" title="Configurações" data-i18n-title="nav.settings_title">⚙</button>
+      <div id="po-topnav-settings-menu" class="po-topnav-settings-menu" style="display:none;">
+        <!-- Pé direito (ceiling height) + rodapé (baseboard) da casa do
+             cliente — o 3D da composição desenha a parede com a linha do
+             teto e o baseboard, e a altura dos móveis fica travada em (pé
+             direito − 5"). Valores digitados na unidade global escolhida
+             (po-unit-select), parseados por parseDimensionInput e guardados
+             em mm no localStorage (ver roomSettings em portal.js). -->
+        <label class="po-topnav-room-field" title="Altura do teto da sua casa (pé direito)" data-i18n-title="nav.ceiling_title">
+          <span data-i18n="nav.ceiling_label">Pé direito</span>
+          <input id="po-ceiling-input" type="text" inputmode="decimal" />
+        </label>
+        <label class="po-topnav-room-field" title="Altura do rodapé da sua casa" data-i18n-title="nav.baseboard_title">
+          <span data-i18n="nav.baseboard_label">Rodapé</span>
+          <input id="po-baseboard-input" type="text" inputmode="decimal" />
+        </label>
+        <label class="po-topnav-settings-row">
+          <span data-i18n="step2.unit_label">Unidade de medida</span>
+          <select id="po-unit-select" class="po-topnav-unit-select">
+            <option value="mm" data-i18n="step2.unit_mm">Milímetro (mm)</option>
+            <option value="cm" data-i18n="step2.unit_cm">Centímetro (cm)</option>
+            <option value="m" data-i18n="step2.unit_m">Metro (m)</option>
+            <option value="in" selected data-i18n="step2.unit_in">Polegada fracionada (1/32")</option>
+            <option value="ft" data-i18n="step2.unit_ft">Pés (ft)</option>
+          </select>
+        </label>
+        <div class="po-topnav-settings-row">
+          <span data-i18n="nav.language_label">Idioma</span>
+          <span id="po-lang-switcher" class="po-lang-switcher"></span>
+        </div>
+        <!-- Trocar senha (migration 053, pedido do usuário 2026-07-19) — pra
+             quem recebeu uma senha simples do admin (criada em admin.html,
+             aba Perfis) poder trocar sozinho. Só supabase.auth.updateUser
+             com a PRÓPRIA sessão — não precisa de admin nem Edge Function. -->
+        <div class="po-topnav-settings-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+          <span data-i18n="nav.change_password_label">Trocar senha</span>
+          <input id="po-change-password-input" type="password" minlength="6" data-i18n-placeholder="nav.change_password_placeholder" placeholder="Nova senha (mín. 6 caracteres)" />
+          <button type="button" id="po-change-password-btn" class="secondary" style="margin-top:0;" data-i18n="nav.change_password_btn">Salvar nova senha</button>
+          <span id="po-change-password-status" class="hint"></span>
+        </div>
+      </div>
+    </div>
+    <span class="po-help-link" data-i18n="nav.help">Ajuda</span>
+    <div class="po-user-chip">
+      <div class="po-user-avatar" id="po-user-avatar">?</div>
+      <div class="po-user-meta">
+        <div class="po-user-name" id="po-user-name" data-i18n="nav.my_account">Minha conta</div>
+        <button type="button" id="po-logout-btn" class="po-logout-link" style="display:none;" data-i18n="nav.logout">Sair</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- LOGIN / CRIAR CONTA -->
+  <section class="panel" id="po-auth-section">
+    <div id="po-login-block">
+      <h2 data-i18n="auth.login_title">Entrar</h2>
+      <div id="po-login-error" class="error" style="display:none;"></div>
+      <form id="po-login-form">
+        <label data-i18n="auth.email_label">E-mail</label>
+        <input id="po-login-email" type="email" required />
+        <label data-i18n="auth.password_label">Senha</label>
+        <input id="po-login-password" type="password" required />
+        <button type="submit" data-i18n="auth.login_btn">Entrar</button>
+      </form>
+      <p class="hint"><span data-i18n="auth.no_account_yet">Ainda não tem conta? </span><a href="#" id="po-show-signup" data-i18n="auth.create_account_link">Criar conta</a></p>
+    </div>
+
+    <div id="po-signup-block" style="display:none;">
+      <h2 data-i18n="auth.signup_title">Criar conta</h2>
+      <div id="po-signup-error" class="error" style="display:none;"></div>
+      <div id="po-signup-success" class="hint" style="display:none;"></div>
+      <form id="po-signup-form">
+        <label data-i18n="auth.your_name_label">Seu nome</label>
+        <input id="po-signup-name" required />
+        <label data-i18n="auth.email_label">E-mail</label>
+        <input id="po-signup-email" type="email" required />
+        <label data-i18n="auth.phone_label">Telefone</label>
+        <input id="po-signup-phone" />
+        <label data-i18n="auth.password_label">Senha</label>
+        <input id="po-signup-password" type="password" minlength="6" required />
+        <button type="submit" data-i18n="auth.signup_btn">Criar conta</button>
+      </form>
+      <p class="hint"><span data-i18n="auth.already_have_account">Já tem conta? </span><a href="#" id="po-show-login" data-i18n="auth.login_link">Entrar</a></p>
+    </div>
+  </section>
+
+  <div id="po-content" style="display:none;">
+    <div class="portal-tab-content">
+
+    <!-- NOVO PEDIDO (carrinho módulo a módulo) -->
+    <div class="portal-tab-page" id="po-tab-new-order">
+      <div class="po-shell">
+
+        <div class="po-main-col">
+
+          <section class="panel" id="po-catalog-panel">
+            <div class="po-section-heading-row">
+              <h2 data-i18n="step1.title">1. Escolha os módulos</h2>
+              <div class="po-view-toggle">
+                <button type="button" class="po-view-toggle-btn active" id="po-view-grid-btn" data-i18n="step1.view_grid">Grade</button>
+                <button type="button" class="po-view-toggle-btn" id="po-view-list-btn" data-i18n="step1.view_list">Lista</button>
+              </div>
+            </div>
+            <div id="po-calc-error" class="error" style="display:none;"></div>
+
+            <div class="po-family-tabbar" id="po-filter-family"></div>
+
+            <div class="po-filter-group po-filter-group-secondary">
+              <div>
+                <label data-i18n="step1.category_label">Categoria</label>
+                <div class="po-tabbar" id="po-filter-category"></div>
+              </div>
+              <div>
+                <label data-i18n="step1.subcategory_label">Subcategoria</label>
+                <div class="po-tabbar" id="po-filter-subcategory"></div>
+              </div>
+            </div>
+
+            <div class="po-search-filter-row">
+              <input type="text" id="po-module-search" class="po-module-search" placeholder="Buscar módulo por nome..." data-i18n-placeholder="step1.search_placeholder" />
+              <select id="po-filter-width-range" class="po-dim-filter-select">
+                <option value="" data-i18n="step1.filter_width">Largura</option>
+                <option value="0-300" data-i18n="step1.up_to" data-i18n-vars='{"n":300}'>Até 300 mm</option>
+                <option value="300-600">300–600 mm</option>
+                <option value="600-900">600–900 mm</option>
+                <option value="900-1200">900–1200 mm</option>
+                <option value="1200-999999" data-i18n="step1.above" data-i18n-vars='{"n":1200}'>Acima de 1200 mm</option>
+              </select>
+              <select id="po-filter-height-range" class="po-dim-filter-select">
+                <option value="" data-i18n="step1.filter_height">Altura</option>
+                <option value="0-300" data-i18n="step1.up_to" data-i18n-vars='{"n":300}'>Até 300 mm</option>
+                <option value="300-600">300–600 mm</option>
+                <option value="600-900">600–900 mm</option>
+                <option value="900-1200">900–1200 mm</option>
+                <option value="1200-999999" data-i18n="step1.above" data-i18n-vars='{"n":1200}'>Acima de 1200 mm</option>
+              </select>
+              <select id="po-filter-depth-range" class="po-dim-filter-select">
+                <option value="" data-i18n="step1.filter_depth">Profundidade</option>
+                <option value="0-300" data-i18n="step1.up_to" data-i18n-vars='{"n":300}'>Até 300 mm</option>
+                <option value="300-600">300–600 mm</option>
+                <option value="600-900">600–900 mm</option>
+                <option value="900-1200">900–1200 mm</option>
+                <option value="1200-999999" data-i18n="step1.above" data-i18n-vars='{"n":1200}'>Acima de 1200 mm</option>
+              </select>
+            </div>
+
+            <div class="po-module-gallery" id="po-module-gallery"></div>
+            <p id="po-module-description" class="hint"></p>
+          </section>
+
+          <section class="panel" id="po-config-section" style="display:none;">
+            <!-- Banner só visível quando este configurador foi aberto a partir de um
+                 slot vazio da aba "Composição" (ver po-comp-*) — reaproveita 100% desta
+                 mesma tela de configuração em vez de duplicar toda a UI; só muda o texto
+                 do botão final e o que acontece ao confirmar (ver addTargetSlotIndex). -->
+            <div id="po-comp-mode-banner" class="po-comp-mode-banner" style="display:none;">
+              <span><span data-i18n="step2.configuring_module_slot_prefix">Configurando módulo </span><strong id="po-comp-mode-slot-label"></strong><span data-i18n="step2.configuring_module_slot_suffix"> da composição</span></span>
+              <button type="button" id="po-comp-mode-cancel-btn" class="secondary" data-i18n="step2.cancel_btn">Cancelar</button>
+            </div>
+
+            <!-- Banner igual ao de cima, só que pra editar um módulo de um
+                 PEDIDO JÁ SALVO (ver editOrderItem/tela do pedido, migration
+                 047) — reaproveita a mesma tela de configuração; "Cancelar"
+                 volta pra tela do pedido sem salvar nada. -->
+            <div id="po-order-edit-mode-banner" class="po-comp-mode-banner" style="display:none;">
+              <span><span data-i18n="order_detail.editing_module_prefix">Editando </span><strong id="po-order-edit-mode-label"></strong><span data-i18n="order_detail.editing_module_suffix"> do pedido</span></span>
+              <button type="button" id="po-order-edit-mode-cancel-btn" class="secondary" data-i18n="step2.cancel_btn">Cancelar</button>
+            </div>
+            <div class="section-header-row">
+              <h2 data-i18n="step2.title">2. Configure as medidas e os opcionais</h2>
+              <section id="po-price-section" style="display:none;">
+                <span class="total-price-label" data-i18n="step2.price_label">Preço deste módulo</span>
+                <p class="total-price-mini" id="po-item-price">$0.00</p>
+              </section>
+            </div>
+
+            <div id="viewer-config-row">
+              <div id="viewer3d-wrap">
+                <div id="po-viewer3d-canvas"></div>
+                <p class="hint" data-i18n="step2.viewer_hint">Arraste para girar, use o scroll pra dar zoom. Dê 2 cliques numa peça pra ver as informações dela. Ilustrativo — não representa todos os detalhes reais do módulo.</p>
+                <div class="viewer-toggle-btns">
+                  <button type="button" id="po-toggle-doors-btn" style="display:none;" data-i18n="step2.open_doors">Abrir portas</button>
+                  <button type="button" id="po-toggle-drawers-btn" style="display:none;" data-i18n="step2.open_drawers">Abrir gavetas</button>
+                </div>
+                <div id="po-piece-info-tooltip" class="piece-info-tooltip" style="display:none;"></div>
+              </div>
+
+              <div id="dims-col">
+                <!-- Seletor de unidade (mm/cm/m/pol/ft) foi pra cima, no topo do
+                     portal ao lado do idioma (po-topnav-unit-wrap) — pedido do
+                     usuário: é uma preferência GLOBAL (afeta a régua daqui, os
+                     totais da Composição, o tooltip do 3D etc.), não só deste
+                     módulo, então faz mais sentido ficar sempre visível/acessível
+                     no topo em vez de escondida dentro da tela de configuração.
+                     O <select id="po-unit-select"> fisicamente mudou de lugar,
+                     mas o id é o mesmo — todo o resto do código continua
+                     funcionando igual (getElementById não liga pra onde o
+                     elemento está no DOM). -->
+
+                <div id="po-dimensions-wrap">
+                  <div class="dim-field">
+                    <label data-i18n="step1.filter_width">Largura</label>
+                    <select id="po-width-locked-select" class="dim-locked-select" style="display:none;"></select>
+                    <div class="dim-slider-row">
+                      <span class="dim-bound" id="po-width-min-label"></span>
+                      <input id="po-width-input" type="range" class="dim-slider" />
+                      <span class="dim-bound dim-bound-max" id="po-width-max-label"></span>
+                    </div>
+                    <div class="dim-value-row">
+                      <span class="dim-value" id="po-width-value"></span>
+                      <span class="dim-exact-wrap">
+                        <input type="text" class="dim-exact-input" id="po-width-exact" placeholder="exato" data-i18n-placeholder="step2.exact_placeholder" />
+                        <span class="dim-exact-unit" id="po-width-exact-unit"></span>
+                      </span>
+                    </div>
+                    <div class="dim-preset-chips" id="po-width-preset-chips"></div>
+                  </div>
+                  <div class="dim-field">
+                    <label data-i18n="step1.filter_height">Altura</label>
+                    <select id="po-height-locked-select" class="dim-locked-select" style="display:none;"></select>
+                    <div class="dim-slider-row">
+                      <span class="dim-bound" id="po-height-min-label"></span>
+                      <input id="po-height-input" type="range" class="dim-slider" />
+                      <span class="dim-bound dim-bound-max" id="po-height-max-label"></span>
+                    </div>
+                    <div class="dim-value-row">
+                      <span class="dim-value" id="po-height-value"></span>
+                      <span class="dim-exact-wrap">
+                        <input type="text" class="dim-exact-input" id="po-height-exact" placeholder="exato" data-i18n-placeholder="step2.exact_placeholder" />
+                        <span class="dim-exact-unit" id="po-height-exact-unit"></span>
+                      </span>
+                    </div>
+                    <div class="dim-preset-chips" id="po-height-preset-chips"></div>
+                  </div>
+                  <div class="dim-field">
+                    <label data-i18n="step1.filter_depth">Profundidade</label>
+                    <select id="po-depth-locked-select" class="dim-locked-select" style="display:none;"></select>
+                    <div class="dim-slider-row">
+                      <span class="dim-bound" id="po-depth-min-label"></span>
+                      <input id="po-depth-input" type="range" class="dim-slider" />
+                      <span class="dim-bound dim-bound-max" id="po-depth-max-label"></span>
+                    </div>
+                    <div class="dim-value-row">
+                      <span class="dim-value" id="po-depth-value"></span>
+                      <span class="dim-exact-wrap">
+                        <input type="text" class="dim-exact-input" id="po-depth-exact" placeholder="exato" data-i18n-placeholder="step2.exact_placeholder" />
+                        <span class="dim-exact-unit" id="po-depth-exact-unit"></span>
+                      </span>
+                    </div>
+                    <div class="dim-preset-chips" id="po-depth-preset-chips"></div>
+                  </div>
+
+                  <!-- Altura do chão (pedido do usuário, 2026-07-15: empilhar 2
+                       módulos na mesma coluna da Composição; 2026-07-16: movido
+                       pra junto de largura/altura/profundidade, "quero poder
+                       escolher a altura de cada item... colocar ao lado junto
+                       com as outras configurações"; depois "colocar a medida do
+                       chao na mesma unidade escolhida pelo cliente nas
+                       configuracoes") — só existe em modo Composição (mesma
+                       visibilidade do banner do topo); fora dela o módulo
+                       sempre fica no chão de verdade (Y=0), não faz sentido
+                       perguntar. Segue a unidade global (po-unit-select) igual
+                       largura/altura/profundidade — texto livre (fração de
+                       polegada inclusive), parseado/formatado em portal.js
+                       (parseDimensionInput/formatDimensionNumber, mesmo par de
+                       funções usado em po-ceiling-input/po-baseboard-input) e
+                       guardado internamente em mm (currentFloorHeightMm) pro
+                       resto do código (Viewer3D.update, slot.floor_height_mm
+                       etc.) continuar em mm sempre. -->
+                  <div class="dim-field" id="po-comp-floor-height-wrap" style="display:none;">
+                    <label for="po-comp-floor-height-input" data-i18n="step2.floor_height_label">Altura do chão deste módulo</label>
+                    <span class="dim-exact-wrap">
+                      <input type="text" inputmode="decimal" id="po-comp-floor-height-input" />
+                      <span class="dim-exact-unit" id="po-comp-floor-height-unit"></span>
+                    </span>
+                    <!-- Atalhos rápidos (pedido do usuário, 2026-07-16: "deve ter a
+                         opcao proxima do rodape, ou 0 ou rodape... e livre como ja
+                         esta") — igual aos chips de medida padrão de largura/altura/
+                         profundidade (ver dim-preset-chip), só que com 2 valores fixos
+                         em vez de vir do catálogo: 0 (chão de verdade) e a altura do
+                         rodapé configurada pelo cliente (roomSettings.baseboard_mm,
+                         mesmo valor de po-baseboard-input) — preenchidos em JS por
+                         renderFloorHeightPresetChips() pra mostrar o mm de verdade do
+                         rodapé no rótulo. O campo continua 100% livre pra digitar
+                         qualquer outro valor, os chips são só um atalho. -->
+                    <div class="dim-preset-chips" id="po-comp-floor-height-preset-chips"></div>
+                    <p class="hint" data-i18n="step2.floor_height_hint">Distância do chão de verdade até a base deste módulo — 0 = no chão. Ao empilhar em cima de outro, já vem sugerido com a altura do módulo de baixo (editável).</p>
+                  </div>
+                </div>
+
+                <div id="po-shelf-quantities-wrap"></div>
+                <div id="po-piece-subconfigs-wrap"></div>
+              </div>
+            </div>
+
+            <!-- Um grupo de swatches por papel de cor que o módulo atual
+                 realmente usa (migration 035) — montado dinamicamente em
+                 portal.js (renderColorRoleSwatchGroups). -->
+            <div id="po-color-role-swatch-groups"></div>
+
+            <div class="row" id="po-options-row" style="margin-top:14px;">
+              <div id="po-hinge-model-wrap" style="display:none;">
+                <label data-i18n="step2.hinge_model_label">Modelo de dobradiça</label>
+                <select id="po-hinge-model-select"></select>
+              </div>
+              <div id="po-slide-model-wrap" style="display:none;">
+                <label data-i18n="step2.slide_model_label">Modelo de corrediça</label>
+                <select id="po-slide-model-select"></select>
+              </div>
+            </div>
+
+            <div id="po-optional-components-wrap" style="display:none;margin-top:14px;">
+              <label data-i18n="step2.optionals_label">Opcionais</label>
+              <p class="hint" data-i18n="step2.optionals_hint">Marque os que quiser incluir — pode marcar mais de um.</p>
+              <div id="po-optional-components-list"></div>
+            </div>
+
+            <button type="button" id="po-add-item-btn" style="margin-top:20px;" data-i18n="step2.add_to_order_btn">Adicionar este módulo ao pedido</button>
+          </section>
+
+        </div>
+
+        <aside class="po-cart-col">
+          <div class="po-project-card" id="po-cart-section">
+            <div class="po-project-card-header">
+              <span class="po-project-title" data-i18n="cart.title">Seu Pedido</span>
+            </div>
+
+            <div class="po-project-fields">
+              <input id="po-order-client-name" class="po-project-input" placeholder="Nome do cliente" data-i18n-placeholder="cart.client_name_placeholder" />
+              <input id="po-order-po-name" class="po-project-input po-project-input-sub" placeholder="Nome da PO / Referência" data-i18n-placeholder="cart.po_name_placeholder" />
+            </div>
+
+            <div class="po-project-divider"></div>
+
+            <div class="po-selected-modules-header">
+              <span data-i18n="cart.selected_modules">Módulos selecionados</span>
+              <span class="badge" id="po-cart-count-badge">0</span>
+            </div>
+            <div id="po-cart-error" class="error" style="display:none;"></div>
+            <div id="po-cart-list" class="po-cart-list"></div>
+
+            <div class="po-project-divider"></div>
+
+            <div class="po-project-summary">
+              <div class="po-summary-row po-summary-total">
+                <span data-i18n="cart.total_estimated">Total estimado</span>
+                <strong id="po-cart-total">$0.00</strong>
+              </div>
+            </div>
+
+            <div class="po-project-phone-row">
+              <label data-i18n="cart.phone_optional_label">Telefone (opcional)</label>
+              <input id="po-order-phone" class="po-project-input" />
+            </div>
+
+            <button type="button" id="po-submit-order-btn" class="po-btn-primary-block" data-i18n="cart.save_order_btn">Salvar pedido</button>
+            <span id="po-submit-order-status" class="hint"></span>
+          </div>
+        </aside>
+
+      </div>
+    </div>
+
+    <!-- MEUS PEDIDOS -->
+    <div class="portal-tab-page" id="po-tab-my-orders" style="display:none;">
+      <section class="panel" id="po-orders-list-panel">
+        <h2 data-i18n="my_orders.title">Meus pedidos</h2>
+        <div id="po-orders-error" class="error" style="display:none;"></div>
+        <div id="po-orders-list"><p class="hint" data-i18n="my_orders.loading">Carregando...</p></div>
+      </section>
+
+      <!-- Tela do pedido (migration 047, pedido do usuário 2026-07-19) — abre
+           ao clicar num pedido da lista acima (ver openOrderDetail em
+           portal.js), no lugar do antigo expand-inline. Mostra cada módulo
+           configurado (imagem grande, medidas, cores, descrição, preço) só
+           pra VISUALIZAR — produto não se edita direto aqui, só pelo botão
+           "Editar" de cada módulo (reabre o configurador de sempre, ver
+           editOrderItem). Enquanto o pedido está "Aberta" (status submitted),
+           os campos de contato/entrega ficam editáveis e o botão "Aprovar
+           Pedido" some se algum estiver vazio; depois de aprovado
+           (status='approved') a tela TRAVA (campos read-only, sem
+           Editar/Aprovar — ver renderOrderDetail). -->
+      <section class="panel" id="po-order-detail-section" style="display:none;">
+        <div class="po-order-detail-header">
+          <button type="button" class="secondary" id="po-order-detail-back-btn" data-i18n="order_detail.back_btn">← Voltar</button>
+          <div class="po-order-detail-title-wrap">
+            <h2 id="po-order-detail-title"></h2>
+            <span class="badge" id="po-order-detail-status-badge"></span>
+          </div>
+        </div>
+
+        <div id="po-order-detail-error" class="error" style="display:none;"></div>
+
+        <div class="po-order-detail-fields" id="po-order-detail-fields">
+          <div class="dim-field">
+            <label data-i18n="order_detail.client_name_label">Nome do cliente</label>
+            <input id="po-order-detail-client-name" class="po-project-input" />
+          </div>
+          <div class="dim-field">
+            <label data-i18n="order_detail.po_name_label">Nome do OP / Referência</label>
+            <input id="po-order-detail-po-name" class="po-project-input" />
+          </div>
+          <div class="dim-field">
+            <label data-i18n="order_detail.phone_label">Telefone</label>
+            <input id="po-order-detail-phone" class="po-project-input" />
+          </div>
+          <div class="dim-field">
+            <label data-i18n="order_detail.email_label">E-mail</label>
+            <input id="po-order-detail-email" class="po-project-input" type="email" />
+          </div>
+          <div class="dim-field po-order-detail-field-wide">
+            <label data-i18n="order_detail.address_label">Endereço de entrega</label>
+            <input id="po-order-detail-address" class="po-project-input" />
+          </div>
+        </div>
+
+        <div id="po-order-detail-items"></div>
+
+        <div class="po-order-detail-footer">
+          <div class="po-order-detail-total-row">
+            <span data-i18n="order_detail.total_label">Total do pedido</span>
+            <strong id="po-order-detail-total">$0.00</strong>
+          </div>
+          <p id="po-order-detail-approve-hint" class="hint" style="display:none;" data-i18n="order_detail.approve_hint">Preencha nome do cliente, OP, telefone, e-mail e endereço de entrega pra poder aprovar.</p>
+          <button type="button" id="po-order-detail-approve-btn" class="po-btn-primary-block" data-i18n="order_detail.approve_btn">Aprovar Pedido</button>
+
+        </div>
+      </section>
+
+      <!-- Tela de VISUALIZAÇÃO (read-only) de um pedido de Plano de Corte
+           (migration 051) — diferente de po-order-detail-section (que é
+           pra pedidos de módulo/order_items): aqui as linhas vêm de
+           cutting_list_items, sem preço por peça (só o total final, mesma
+           regra de "cálculo oculto" da aba Plano de Corte). Já nasce
+           status='approved' (aprovado no momento de salvar), então não tem
+           botão de aprovar/editar aqui. -->
+      <section class="panel" id="po-cutlist-order-detail-section" style="display:none;">
+        <div class="po-order-detail-header">
+          <button type="button" class="secondary" id="po-cutlist-order-detail-back-btn" data-i18n="order_detail.back_btn">← Voltar</button>
+          <div class="po-order-detail-title-wrap">
+            <h2 id="po-cutlist-order-detail-title"></h2>
+            <span class="badge" id="po-cutlist-order-detail-status-badge"></span>
+          </div>
+        </div>
+        <div class="po-cutlist-table-wrap" style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="cutlist.col_op">OP</th>
+                <th data-i18n="cutlist.col_part_name">Peça</th>
+                <th data-i18n="cutlist.col_quantity">Qtd</th>
+                <th data-i18n="cutlist.col_length">Comprimento (mm)</th>
+                <th data-i18n="cutlist.col_width">Largura (mm)</th>
+                <th data-i18n="cutlist.col_thickness">Espessura</th>
+                <th data-i18n="cutlist.col_color">Cor</th>
+                <th data-i18n="cutlist.col_edge">Fita de Borda</th>
+                <th data-i18n="cutlist.col_obs">Obs</th>
+              </tr>
+            </thead>
+            <tbody id="po-cutlist-order-detail-tbody"></tbody>
+          </table>
+        </div>
+        <div class="po-order-detail-total-row">
+          <span data-i18n="order_detail.total_label">Total do pedido</span>
+          <strong id="po-cutlist-order-detail-total">$0.00</strong>
+        </div>
+      </section>
+    </div>
+
+    <!-- COMPOSIÇÃO — conectar 2+ módulos, cada um configurado (medida/cor)
+         de forma INDEPENDENTE, sempre da esquerda pra direita: clica no
+         retângulo vazio, escolhe e configura o módulo (reaproveita a MESMA
+         tela de "Novo Orçamento", ver po-comp-mode-banner), confirma, e um
+         novo retângulo vazio aparece à direita. "Gerar 3D" (etapa seguinte,
+         ainda não implementada nesta versão) vai desenhar os módulos juntos,
+         em escala real, numa cena separada do visualizador de configuração
+         — sem tocar na lógica de posicionamento 3D já existente. -->
+    <div class="portal-tab-page" id="po-tab-composition" style="display:none;">
+      <section class="panel">
+        <!-- Botão "Nova composição" lá em cima (pedido do usuário, 2026-07-19:
+             "colcoar botao la em cima noa composition. ai zera pra iniciar um
+             novo") — zera compositionSlots e todo o estado dependente (ver
+             resetComposition em portal.js), pra não precisar remover módulo
+             por módulo pra recomeçar do zero. -->
+        <div class="po-comp-title-row">
+          <h2 data-i18n="composition.title">Composição</h2>
+          <button type="button" id="po-comp-reset-btn" class="secondary" data-i18n="composition.reset_btn">↺ Nova composição</button>
+        </div>
+        <p class="hint" data-i18n="composition.hint">
+          Monte um conjunto com 2 ou mais módulos — escolha e configure cada um (medida, cor) separadamente,
+          sempre da esquerda pra direita. Ex: um painel ripado + um módulo com banco, lado a lado.
+        </p>
+
+        <!-- Editando um post da Galeria como ADMIN (pedido do usuário,
+             2026-07-19: "eu como administrador, quero fazer alteracao na
+             composicao dos projetos da galeria ... e poder salvar essa
+             composicao, pra ela ficar mais fiel as imagens geradas") — só
+             aparece quando a URL vem com ?editGalleryPost=<id> (link "Editar"
+             na lista de moderação do admin.html) E o usuário logado passa em
+             is_admin() (ver maybeLoadGalleryPostForAdminEdit em portal.js).
+             "Salvar" atualiza DIRETO o post existente (slots/preço/medidas),
+             não cria um post novo. -->
+        <div id="po-comp-admin-edit-banner" class="po-comp-mode-banner po-comp-admin-edit-banner" style="display:none;">
+          <span data-i18n="gallery.admin_editing_banner">✏️ Editando composição da Galeria — "Salvar" atualiza direto o post existente.</span>
+          <button type="button" id="po-comp-admin-save-gallery-btn" data-i18n="gallery.admin_save_btn">Salvar alterações na Galeria</button>
+        </div>
+        <p id="po-comp-admin-edit-status" class="hint" style="display:none;"></p>
+
+        <!-- GIF passo a passo de como usar a ferramenta (gerado em
+             assets/composition-howto.gif) — fica recolhível pra não ocupar a
+             tela de quem já sabe usar. Aberto por padrão na primeira visita. -->
+        <details id="po-comp-howto" open style="margin:10px 0 16px;">
+          <summary class="hint" style="cursor:pointer;" data-i18n="composition.howto_toggle">▶ Como usar (passo a passo)</summary>
+          <img src="assets/composition-howto.gif" alt="How to use the Composition tool"
+               style="display:block;max-width:640px;width:100%;margin-top:8px;border:1px solid var(--border);border-radius:10px;" />
+        </details>
+        <div id="po-comp-error" class="error" style="display:none;"></div>
+
+        <!-- Medidas totais da composição — mostradas sempre (pedido do usuário:
+             "não precisa selecionar ou não", depois de comentar que dava pra
+             colocar direto no desenho 3D também, ver buildDimensionAnnotations
+             em viewer3d_composition.js, chamado por generateComposition3D). -->
+        <div id="po-comp-totals-wrap" class="po-comp-totals-wrap">
+          <div id="po-comp-totals-line" class="po-comp-totals-line"></div>
+        </div>
+
+        <div id="po-comp-slots" class="po-comp-slots"></div>
+
+        <!-- FAVORITOS (migration 042) — salva a composição atual com nome pra
+             reusar/alterar depois (aba Favoritos). "Salvar alterações" só
+             aparece quando a composição em edição veio de um favorito. -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+          <button type="button" id="po-comp-save-fav-btn" class="secondary" data-i18n="fav.save_btn">★ Salvar como favorita</button>
+          <button type="button" id="po-comp-update-fav-btn" class="secondary" style="display:none;"></button>
+          <span id="po-comp-fav-status" class="hint"></span>
+        </div>
+
+        <button type="button" id="po-comp-generate-btn" class="po-btn-primary-block" disabled data-i18n="composition.generate_3d_btn">Gerar 3D da composição</button>
+        <p id="po-comp-generate-hint" class="hint" data-i18n="composition.generate_hint">Adicione pelo menos 2 módulos pra gerar a composição.</p>
+        <div id="po-comp-3d-wrap" style="display:none;margin-top:16px;">
+          <!-- Troca rápida de cor das laterais (pedido do usuário, 2026-07-16:
+               "quero colocar um troca rapida de cores nas laterias... deve
+               ficar em quadros do lado do 3d, sem espremer o visualizador") —
+               UM controle só que troca a cor de TODOS os módulos da
+               composição de uma vez (opção escolhida pelo usuário quando
+               perguntado, em vez de um quadro por módulo). Fica ao lado do
+               canvas numa fileira flex (po-comp-3d-row) com largura própria
+               limitada (ver CSS) — o canvas continua flex:1 e ocupa o resto
+               do espaço, não é espremido pelo painel. Só aparece quando a
+               composição tem pelo menos um módulo com peça de posição
+               'left'/'right' (papel de cor detectado automaticamente, ver
+               renderCompositionSideColorPanel em portal.js) — escondido por
+               padrão (display:none) senão. -->
+          <div id="po-comp-3d-row">
+            <div id="po-comp-3d-canvas-wrap">
+              <div id="po-comp-3d-canvas"></div>
+              <!-- Abrir portas/gavetas da composição (pedido do usuário,
+                   2026-07-16: "quero opcao abrir portas e gavetas no modulo
+                   composicao gerado") — mesmo padrão dos botões do
+                   configurador de módulo único (viewer-toggle-btns), só que
+                   ligados ao estado PRÓPRIO da cena de composição (ver
+                   ViewerComposition.toggleDoors/toggleDrawers). Escondidos
+                   por padrão; refreshCompositionOpenButtons (portal.js) só
+                   mostra cada um se algum módulo da composição tiver peça do
+                   tipo correspondente. -->
+              <div class="viewer-toggle-btns">
+                <button type="button" id="po-comp-toggle-doors-btn" style="display:none;" data-i18n="step2.open_doors">Abrir portas</button>
+                <button type="button" id="po-comp-toggle-drawers-btn" style="display:none;" data-i18n="step2.open_drawers">Abrir gavetas</button>
+              </div>
+            </div>
+            <div id="po-comp-side-color-panel" style="display:none;">
+              <label data-i18n="composition.side_color_label">Troca rápida de cor</label>
+              <p class="hint" data-i18n="composition.side_color_hint">Troca a cor de todos os módulos da composição de uma vez.</p>
+              <!-- Abas — uma por papel de cor encontrado na composição (Caixa/
+                   Porta/Painel/etc., ver loadCompositionColorRoleGroups em
+                   portal.js) — pedido do usuário, 2026-07-16: "pode fazer por
+                   abas pra nao ocupar muito espaco na tela". -->
+              <div id="po-comp-side-color-tabs" class="po-comp-color-tabs"></div>
+              <div id="po-comp-side-color-swatches" class="color-role-swatches"></div>
+              <p id="po-comp-side-color-error" class="error" style="display:none;"></p>
+            </div>
+          </div>
+          <div id="po-comp-3d-total" class="po-comp-3d-total"></div>
+          <div id="po-comp-cart-error" class="error" style="display:none;"></div>
+          <!-- Botão de IA chamativo à esquerda, carrinho jogado pra direita
+               (pedido do usuário, 2026-07-19: "joga esse botao de carrinho
+               pra direita e deixa um botao chamativo de gerar ia") — o botão
+               de IA continua sendo o mesmo toggle de sempre (abre o
+               formulário com Ambiente + "Gerar imagem realista" + Publicar),
+               só reposicionado/restilizado, nenhuma lógica nova. -->
+          <div class="po-comp-actions-row">
+            <button type="button" id="po-gallery-publish-toggle-btn" class="po-comp-ai-cta-btn" data-i18n="gallery.publish_toggle_btn">✨ Gerar imagem com IA</button>
+            <button type="button" id="po-comp-add-cart-btn" class="po-btn-primary-block" data-i18n="composition.add_to_order_btn">Adicionar composição ao pedido</button>
+          </div>
+
+          <!-- Galeria pública (migration 048) — publica a composição já
+               gerada como um post (imagem + preço estimado + medidas + cores),
+               pra virar exemplo/portfólio pra outros clientes. Fica pendente
+               até o admin aprovar (ver comentário da migration). -->
+          <div id="po-gallery-publish-wrap" class="po-gallery-publish-wrap">
+            <div id="po-gallery-publish-form" style="display:none;">
+              <!-- Ambiente vem ANTES do botão de gerar imagem (pedido do
+                   usuário, 2026-07-19: "conforme o ambiente escolhido ja
+                   devemos colocar um prompt de decoracao e ambientacao") —
+                   generateAiPreviewForGallery() (portal.js) lê o valor
+                   selecionado aqui e manda como roomLabel pra Edge Function,
+                   que monta um prompt de decoração específico do ambiente
+                   (mesa/cadeiras se for sala de jantar, cama se for quarto,
+                   etc.). Por isso a ordem importa: gerar sem ambiente
+                   escolhido cairia no primeiro item da lista por padrão. -->
+              <label data-i18n="gallery.room_type_label">Ambiente</label>
+              <select id="po-gallery-room-type"></select>
+              <!-- Gerar/pré-visualizar a imagem de IA ANTES de publicar —
+                   pedido do usuário: "quero gerar a imagem de ia antes de
+                   publicar". Separado do envio final: o cliente pode gerar,
+                   olhar o resultado, e só então decidir publicar (ou gerar de
+                   novo se não gostou). Se pular esta etapa, o envio final
+                   ainda funciona (cai pro screenshot 3D puro, ver
+                   publishCompositionToGallery em portal.js). -->
+              <button type="button" id="po-gallery-generate-ai-btn" class="secondary" data-i18n="gallery.generate_ai_btn">✨ Gerar imagem realista</button>
+              <div id="po-gallery-ai-preview-wrap" style="display:none;">
+                <img id="po-gallery-ai-preview-img" alt="" />
+                <p id="po-gallery-ai-preview-hint" class="hint"></p>
+                <!-- Imagem BASE (o print 3D que vira o imageDataUrl mandado pra
+                     Edge Function, ver generateAiPreviewForGallery em portal.js)
+                     — pedido do usuário (2026-07-19): "me manda a imagem que
+                     esta usando de base pra gerar a ia", pra comparar lado a
+                     lado com o resultado da IA. -->
+                <div id="po-gallery-base-preview-wrap" style="display:none;">
+                  <p class="hint" data-i18n="gallery.base_image_label">Imagem base (3D) enviada pra IA:</p>
+                  <img id="po-gallery-base-preview-img" alt="" />
+                </div>
+              </div>
+              <label class="po-gallery-anon-label">
+                <input type="checkbox" id="po-gallery-anonymous-chk" />
+                <span data-i18n="gallery.anonymous_chk_label">Publicar de forma anônima (sem meu nome)</span>
+              </label>
+              <div id="po-gallery-publish-error" class="error" style="display:none;"></div>
+              <div id="po-gallery-publish-status" class="hint"></div>
+              <button type="button" id="po-gallery-publish-submit-btn" class="po-btn-primary-block" data-i18n="gallery.publish_submit_btn">Enviar pra Galeria</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- FAVORITOS (migration 042) — composições salvas do cliente logado:
+         carregar de volta na aba Composição, renomear ou excluir. -->
+    <div class="portal-tab-page" id="po-tab-favorites" style="display:none;">
+      <section class="panel">
+        <h2 data-i18n="fav.title">Composições favoritas</h2>
+        <p class="hint" data-i18n="fav.hint">
+          Suas composições salvas — carregue uma pra usar de novo ou alterar (e salve por cima), sem
+          precisar montar tudo do zero.
+        </p>
+        <div id="po-fav-error" class="error" style="display:none;"></div>
+        <div id="po-fav-list"></div>
+      </section>
+    </div>
+
+    <!-- GALERIA PÚBLICA (migration 048) — portfólio de composições que
+         clientes montaram e publicaram, com filtros e "usar esta composição"
+         (abre o ambiente já montado na aba Composição pra continuar
+         editando, em vez de começar do zero). -->
+    <div class="portal-tab-page" id="po-tab-gallery" style="display:none;">
+      <section class="panel">
+        <h2 data-i18n="gallery.title">Galeria de composições</h2>
+        <p class="hint" data-i18n="gallery.hint">
+          Ambientes montados por outros clientes — filtre por ambiente, preço, tamanho e cor, e abra
+          qualquer um pra usar como ponto de partida da sua própria composição.
+        </p>
+        <!-- Aviso de que a foto é gerada por IA (pedido do usuário,
+             2026-07-19: "coloca um aviso na galeria que as imagens sao
+             geradas por IA e sofrem alteracoes do produto real") — o 3D
+             (que abre ao clicar "usar esta composição") é a referência
+             fiel, a foto é só ambientação/inspiração. -->
+        <p class="po-gallery-ai-disclaimer" data-i18n="gallery.ai_disclaimer">
+          ⚠️ As imagens desta galeria são geradas por Inteligência Artificial e podem apresentar
+          diferenças em relação ao produto real. O desenho 3D (aberto ao usar uma composição) é
+          sempre a referência fiel ao projeto.
+        </p>
+        <div id="po-gallery-error" class="error" style="display:none;"></div>
+
+        <div id="po-gallery-filters" class="po-gallery-filters">
+          <div class="po-gallery-filter-field">
+            <label data-i18n="gallery.filter_room_label">Ambiente</label>
+            <select id="po-gallery-filter-room"></select>
+          </div>
+          <div class="po-gallery-filter-field">
+            <label data-i18n="gallery.filter_price_label">Preço</label>
+            <div class="po-gallery-filter-range">
+              <input type="number" id="po-gallery-filter-price-min" min="0" placeholder="min" />
+              <span>—</span>
+              <input type="number" id="po-gallery-filter-price-max" min="0" placeholder="max" />
+            </div>
+          </div>
+          <div class="po-gallery-filter-field">
+            <label data-i18n="gallery.filter_width_label">Largura (mm)</label>
+            <div class="po-gallery-filter-range">
+              <input type="number" id="po-gallery-filter-width-min" min="0" placeholder="min" />
+              <span>—</span>
+              <input type="number" id="po-gallery-filter-width-max" min="0" placeholder="max" />
+            </div>
+          </div>
+          <div class="po-gallery-filter-field">
+            <label data-i18n="gallery.filter_color_label">Cor</label>
+            <select id="po-gallery-filter-color"></select>
+          </div>
+          <button type="button" id="po-gallery-filter-clear-btn" class="secondary" data-i18n="gallery.filter_clear_btn">Limpar filtros</button>
+        </div>
+
+        <div id="po-gallery-grid" class="po-gallery-grid"></div>
+        <p id="po-gallery-empty-hint" class="hint" style="display:none;" data-i18n="gallery.empty_hint">Nenhuma composição encontrada com esses filtros.</p>
+        <!-- Paginação (pedido implícito, 2026-07-19: "canceling statement due
+             to statement timeout" na galeria) — a consulta sem LIMIT lia
+             ai_image_data_url/slots (colunas grandes) de TODAS as
+             composições aprovadas de uma vez só, e passou a estourar o
+             statement_timeout do Postgres conforme a galeria cresceu. Agora
+             carrega em páginas (ver GALLERY_PAGE_SIZE em portal.js) e este
+             botão busca a próxima leva. -->
+        <button type="button" id="po-gallery-load-more-btn" class="secondary" style="display:none;" data-i18n="gallery.load_more_btn">Carregar mais</button>
+      </section>
+    </div>
+
+    <!-- PLANO DE CORTE (migration 051) — aba exclusiva do perfil Contractor
+         (ver applyCuttingListTabVisibility em portal.js). Tabela tipo
+         planilha, digitada à mão ou importada (.xlsx/.csv/.txt via SheetJS),
+         com regras (espessura 19/38mm, fita 4 lados bloqueada abaixo de
+         100mm) e cálculo de preço oculto (só o total final aparece) — ver
+         renderCutlistTable/generateCutlistPrice/saveCutlistOrder. -->
+    <div class="portal-tab-page" id="po-tab-cutting-list" style="display:none;">
+      <section class="panel">
+        <h2 data-i18n="cutlist.title">Plano de Corte</h2>
+        <p class="hint" data-i18n="cutlist.hint">
+          Digite ou importe a lista de peças (planilha .xlsx, .csv ou .txt). Todas as medidas em milímetros.
+        </p>
+        <div id="po-cutlist-error" class="error" style="display:none;"></div>
+
+        <div class="dim-field" style="max-width:420px;">
+          <label data-i18n="cutlist.order_name_label">Nome do pedido / OP geral</label>
+          <input id="po-cutlist-order-name" class="po-project-input" />
+        </div>
+
+        <div class="po-cutlist-toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; align-items:center;">
+          <button type="button" class="secondary" id="po-cutlist-import-btn" data-i18n="cutlist.import_btn">Importar planilha</button>
+          <input type="file" id="po-cutlist-import-input" accept=".xlsx,.xls,.csv,.txt" style="display:none;" />
+          <button type="button" class="secondary" id="po-cutlist-add-row-btn" data-i18n="cutlist.add_row_btn">+ Adicionar linha</button>
+          <button type="button" class="secondary" id="po-cutlist-clear-btn" data-i18n="cutlist.clear_btn">Limpar tudo</button>
+        </div>
+        <p class="hint" data-i18n="cutlist.import_format_hint">
+          Colunas esperadas, nesta ordem: OP, Peça, Qtd, Comprimento (mm), Largura (mm), Espessura (19 ou 38), Cor, Fita (0, 2 ou 4), Obs.
+        </p>
+        <p class="hint" data-i18n="cutlist.size_limits_hint">
+          Comprimento: 76mm a 2700mm. Largura: 76mm a 1500mm.
+        </p>
+
+        <div class="po-cutlist-table-wrap" style="overflow-x:auto;">
+          <table class="po-cutlist-table">
+            <thead>
+              <tr>
+                <th data-i18n="cutlist.col_op">OP</th>
+                <th data-i18n="cutlist.col_part_name">Peça</th>
+                <th data-i18n="cutlist.col_quantity">Qtd</th>
+                <th data-i18n="cutlist.col_length">Comprimento (mm)</th>
+                <th data-i18n="cutlist.col_width">Largura (mm)</th>
+                <th data-i18n="cutlist.col_thickness">Espessura</th>
+                <th data-i18n="cutlist.col_color">Cor</th>
+                <th data-i18n="cutlist.col_edge">Fita de Borda</th>
+                <th data-i18n="cutlist.col_obs">Obs</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="po-cutlist-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="po-cutlist-footer" style="margin-top:16px;">
+          <button type="button" id="po-cutlist-generate-price-btn" class="po-btn-primary-block" data-i18n="cutlist.generate_price_btn">Gerar Preço</button>
+          <div id="po-cutlist-final-price-row" class="po-order-detail-total-row" style="display:none;">
+            <span data-i18n="cutlist.final_price_label">Preço final</span>
+            <strong id="po-cutlist-final-price">$0.00</strong>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" id="po-cutlist-save-btn" class="secondary" style="display:none; margin-top:0;" data-i18n="cutlist.save_btn">Salvar</button>
+            <button type="button" id="po-cutlist-approve-save-btn" class="po-btn-primary-block" style="display:none;" data-i18n="cutlist.approve_save_btn">Aprovar</button>
+          </div>
+          <span id="po-cutlist-status" class="hint"></span>
+        </div>
+      </section>
+    </div>
+
+    <!-- VISUALIZAR NO MEU AMBIENTE — overlay manual (sem IA) de módulos do
+         carrinho sobre uma foto do próprio espaço do cliente. Reaproveita o
+         thumbnail_data_url que cada item do carrinho já ganha (PNG com fundo
+         transparente, via Viewer3D.snapshot(), na medida/cor que o cliente
+         escolheu) — nenhuma peça nova de dado, nada é enviado ao servidor;
+         o resultado só existe pra visualizar/baixar na hora. -->
+    <div class="portal-tab-page" id="po-tab-room-view" style="display:none;">
+      <section class="panel">
+        <h2 data-i18n="room_view.title">Visualizar no meu ambiente</h2>
+        <p class="hint" data-i18n="room_view.hint">
+          Suba uma foto do seu espaço e arraste os módulos do seu carrinho por cima pra ter uma ideia de como
+          ficam no ambiente. É só uma prévia visual pra te ajudar a imaginar — as medidas e cores de verdade
+          continuam sendo as que você configurou em "Novo Orçamento".
+        </p>
+
+        <div id="po-room-upload-wrap">
+          <label data-i18n="room_view.photo_label">Foto do ambiente</label>
+          <input type="file" accept="image/*" capture="environment" id="po-room-photo-input" />
+        </div>
+
+        <p id="po-room-empty-hint" class="hint" data-i18n="room_view.empty_hint">Envie uma foto do seu espaço pra começar.</p>
+
+        <div id="po-room-editor" style="display:none;">
+          <div id="po-room-stage-wrap">
+            <div id="po-room-stage">
+              <img id="po-room-photo" alt="Foto do ambiente" />
+            </div>
+          </div>
+
+          <div id="po-room-toolbar">
+            <button type="button" id="po-room-clear-btn" class="secondary" data-i18n="room_view.change_photo">Trocar foto</button>
+            <button type="button" id="po-room-download-btn" data-i18n="room_view.download_image">Baixar imagem montada</button>
+          </div>
+
+          <div id="po-room-picker">
+            <label data-i18n="room_view.add_module_label">Adicionar módulo do seu carrinho</label>
+            <p class="hint" data-i18n="room_view.add_module_hint">Toque num módulo pra colocá-lo na foto — depois arraste pra posicionar e use o cantinho pra redimensionar.</p>
+            <div id="po-room-cart-picker-list" class="po-room-cart-picker-list"></div>
+            <p id="po-room-cart-empty-hint" class="hint" style="display:none;" data-i18n="room_view.cart_empty_hint">
+              Seu carrinho está vazio — adicione módulos na aba "Novo Orçamento" primeiro.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    </div>
+  </div> <!-- /po-content -->
+
+</main>
+
+<footer class="po-support-footer">
+  <div class="po-support-item">
+    <strong data-i18n="footer.custom_module_question">Precisa de um módulo customizado?</strong>
+    <a href="#" data-i18n="footer.request_link">Solicitar</a>
+  </div>
+  <div class="po-support-item">
+    <strong data-i18n="footer.order_support">Suporte a pedidos</strong>
+    <span data-i18n="footer.support_hours">Seg–Sex: 8h às 17h</span>
+  </div>
+  <div class="po-support-item">
+    <strong data-i18n="footer.delivery_time">Prazo de entrega</strong>
+    <span data-i18n="footer.delivery_days">10–15 dias úteis</span>
+  </div>
+  <div class="po-support-item">
+    <strong data-i18n="footer.free_shipping">Frete grátis</strong>
+    <span data-i18n="footer.free_shipping_condition">Em pedidos acima de $15,000</span>
+  </div>
+</footer>
+
+<script src="js/config.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/pricing.js"></script>
+<script src="js/viewer3d.js?v=20260711c"></script>
+<script src="js/viewer3d_composition.js?v=20260719c"></script>
+<script src="js/portal.js?v=20260719t"></script>
+</body>
+</html>
