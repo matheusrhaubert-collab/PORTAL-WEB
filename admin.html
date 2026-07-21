@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>Legno — Painel Admin</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/style.css?v=20260721a" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -365,13 +365,17 @@
           (ex: 8 repetições, passo Y <code>32</code>). <strong>Contra-furo</strong>: num furo de
           BORDA, preencha Ø/prof. do contra-furo pra peça que essa borda ENCOSTA (ex: a lateral)
           receber automaticamente o furo de face no ponto exato do contato — deixe em branco pra não
-          propagar (exceções). A furação de DOBRADIÇA continua automática (aba Furação), incluindo a
-          base na lateral.
+          propagar (exceções). Num furo de <strong>FACE</strong> é o contrário: a peça EM PÉ apoiada
+          nessa face (a borda dela encostando no furo) recebe um furo entrando pela borda com o
+          Contra Ø/prof. (ex: cavilha Ø8 / canal do bolt minifix) — e, se preencher também
+          <strong>Copo</strong> Ø/prof./dist., ganha o tambor minifix na face dela (ex: Ø12 × 13,
+          a 34mm da borda), entrando pela face voltada pro interior do módulo. A furação de
+          DOBRADIÇA continua automática (aba Furação), incluindo a base na lateral.
         </p>
         <div id="component-drilling-error" class="error" style="display:none;"></div>
         <table>
           <thead>
-            <tr><th>Sentido (face de entrada)</th><th>X</th><th>Y</th><th>Ø (mm)</th><th>Prof.</th><th>Rep.</th><th>Passo X</th><th>Passo Y</th><th>Contra Ø</th><th>Contra prof.</th><th>Obs.</th><th></th></tr>
+            <tr><th>Sentido (face de entrada)</th><th>X</th><th>Y</th><th>Ø (mm)</th><th>Prof.</th><th>Rep.</th><th>Passo X</th><th>Passo Y</th><th>Contra Ø</th><th>Contra prof.</th><th>Copo Ø</th><th>Copo prof.</th><th>Copo dist.</th><th>Obs.</th><th></th></tr>
           </thead>
           <tbody id="component-drilling-tbody"></tbody>
         </table>
@@ -1061,6 +1065,20 @@
         <div id="gallery-admin-error" class="error" style="display:none;"></div>
         <p class="hint">Aprovar libera o post pra galeria pública do portal (aba "Galeria"). Preço de custo e autor real
           nunca aparecem pro cliente — só aqui, pra referência/apresentações.</p>
+
+        <!-- Migration 055 (pedido do usuário: "gallery muito lenta pra abrir")
+             — posts publicados a partir de agora já sobem a imagem pro
+             Storage sozinhos (ver uploadGalleryImageToStorage em portal.js).
+             Este botão só converte os posts ANTIGOS que ainda têm a imagem
+             inteira em base64 na coluna ai_image_data_url — roda na própria
+             sessão logada do admin, não precisa de service_role key. Seguro
+             clicar de novo (idempotente: só pega quem ainda começa com
+             "data:"). -->
+        <div style="margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <button type="button" id="gallery-migrate-storage-btn" class="secondary" style="margin-top:0;">Migrar imagens antigas pro Storage</button>
+          <span id="gallery-migrate-storage-status" class="hint"></span>
+        </div>
+
         <div style="margin-bottom:10px;">
           <label>Filtrar por status: </label>
           <select id="gallery-admin-status-filter">
@@ -1088,6 +1106,14 @@
           </thead>
           <tbody id="gallery-admin-tbody"></tbody>
         </table>
+        <!-- Paginação (pedido do usuário 2026-07-20: tela travava em
+             "Carregando..." — esta consulta buscava TODOS os posts de uma
+             vez, incluindo a imagem base64 dos que ainda não foram
+             migrados pro Storage — mesmo bug que já tinha estourado
+             statement_timeout na galeria pública, ver GALLERY_PAGE_SIZE em
+             portal.js). Some sozinha a ficar desnecessária assim que todos
+             os posts estiverem migrados (linhas ficam leves de novo). -->
+        <button type="button" id="gallery-admin-load-more-btn" class="secondary" style="display:none;">Carregar mais</button>
       </section>
     </div>
 
@@ -1144,8 +1170,8 @@
 <script src="js/config.js"></script>
 <script src="js/pricing.js"></script>
 <script src="js/viewer3d.js?v=20260711c"></script>
-<script src="js/drilling.js"></script>
-<script src="js/admin.js?v=20260719g"></script>
+<script src="js/drilling.js?v=20260720a"></script>
+<script src="js/admin.js?v=20260720c"></script>
 <script>
 // Troca de aba do painel admin — puramente visual (mostra/esconde
 // .admin-tab-page), não interfere em nenhuma lógica de carregar/salvar

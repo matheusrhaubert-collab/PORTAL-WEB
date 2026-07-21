@@ -1003,7 +1003,7 @@ function renderComponentDrillingRows() {
   const tbody = document.getElementById('component-drilling-tbody');
   tbody.innerHTML = '';
   if (componentDrillingsDraft.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" class="hint">Nenhum furo padrão cadastrado nesta peça.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" class="hint">Nenhum furo padrão cadastrado nesta peça.</td></tr>';
     updateComponentDrillingPreview();
     return;
   }
@@ -1011,12 +1011,19 @@ function renderComponentDrillingRows() {
     const tr = document.createElement('tr');
     const faceOptions = DRILLING_FACE_OPTIONS
       .map(([v, label]) => `<option value="${v}" ${row.face === v ? 'selected' : ''}>${label}</option>`).join('');
-    // Contra-furo (migration 043) só faz sentido em furo de BORDA — os
-    // inputs ficam sempre EDITÁVEIS (antes eram disabled e confundiam:
-    // pareciam quebrados), mas em linha de face/verso ganham aviso visual
-    // e o save recusa contra-furo preenchido fora de borda.
+    // Contra-furo (migrations 043 + 054): vale em QUALQUER sentido, mas o
+    // significado muda — em furo de BORDA propaga um furo de FACE na peça
+    // que a borda encosta (043); em furo de FACE/VERSO propaga um furo de
+    // BORDA na peça em pé apoiada naquela face (054, ex: lateral sobre o
+    // topcover). Os campos "Copo" (counter_face_*) só existem no caso de
+    // FACE: tambor minifix na face da peça apoiada, a "dist." da borda.
     const isEdgeRow = /^borda_/.test(row.face || '');
-    const counterHint = isEdgeRow ? '' : ' style="width:60px;background:#fdf3e6;" title="Contra-furo só tem efeito em furo de BORDA — troque o Sentido pra Borda esquerda/direita"';
+    const counterTitle = isEdgeRow
+      ? 'Furo de FACE gerado na peça que esta borda encosta (ex: lateral)'
+      : 'Furo de BORDA gerado na peça em pé apoiada nesta face (ex: cavilha Ø8 / canal do bolt minifix)';
+    const camHint = isEdgeRow
+      ? ' style="width:55px;background:#fdf3e6;" title="Copo só tem efeito em furo de FACE — é o tambor minifix gerado na peça em pé apoiada"'
+      : ' style="width:55px;" title="Tambor minifix gerado na FACE da peça apoiada, a Dist. mm da borda que encostou (ex: Ø12 × 13, dist. 34) — deixe em branco pra propagar só o furo de borda (cavilha)"';
     tr.innerHTML = `
       <td><select data-field="face">${faceOptions}</select></td>
       <td><input data-field="x_formula" value="${row.x_formula || ''}" style="width:70px;" /></td>
@@ -1026,8 +1033,11 @@ function renderComponentDrillingRows() {
       <td><input data-field="repeat_count_formula" value="${row.repeat_count_formula || '1'}" style="width:50px;" /></td>
       <td><input data-field="repeat_dx_mm" type="number" step="0.1" value="${row.repeat_dx_mm ?? 0}" style="width:60px;" /></td>
       <td><input data-field="repeat_dy_mm" type="number" step="0.1" value="${row.repeat_dy_mm ?? 0}" style="width:60px;" /></td>
-      <td><input data-field="counter_diameter_mm" type="number" step="0.1" min="0.5" value="${row.counter_diameter_mm ?? ''}"${isEdgeRow ? ' style="width:60px;"' : counterHint} /></td>
-      <td><input data-field="counter_depth_mm" type="number" step="0.1" min="0.5" value="${row.counter_depth_mm ?? ''}"${isEdgeRow ? ' style="width:60px;"' : counterHint} /></td>
+      <td><input data-field="counter_diameter_mm" type="number" step="0.1" min="0.5" value="${row.counter_diameter_mm ?? ''}" style="width:55px;" title="${counterTitle}" /></td>
+      <td><input data-field="counter_depth_mm" type="number" step="0.1" min="0.5" value="${row.counter_depth_mm ?? ''}" style="width:55px;" title="${counterTitle}" /></td>
+      <td><input data-field="counter_face_diameter_mm" type="number" step="0.1" min="0.5" value="${row.counter_face_diameter_mm ?? ''}"${camHint} /></td>
+      <td><input data-field="counter_face_depth_mm" type="number" step="0.1" min="0.5" value="${row.counter_face_depth_mm ?? ''}"${camHint} /></td>
+      <td><input data-field="counter_face_offset_mm" type="number" step="0.1" min="0.5" value="${row.counter_face_offset_mm ?? ''}"${camHint} /></td>
       <td><input data-field="notes" value="${(row.notes || '').replace(/"/g, '&quot;')}" style="width:110px;" /></td>
       <td><button type="button" class="secondary drilling-row-remove" style="margin-top:0;">✕</button></td>
     `;
@@ -1188,7 +1198,9 @@ document.getElementById('component-drilling-add-btn').addEventListener('click', 
   componentDrillingsDraft.push({
     face: 'face', x_formula: '', y_formula: '', diameter_mm: 5,
     depth_formula: '10', repeat_count_formula: '1', repeat_dx_mm: 0, repeat_dy_mm: 0,
-    counter_diameter_mm: null, counter_depth_mm: null, notes: ''
+    counter_diameter_mm: null, counter_depth_mm: null,
+    counter_face_diameter_mm: null, counter_face_depth_mm: null, counter_face_offset_mm: null,
+    notes: ''
   });
   renderComponentDrillingRows();
 });
@@ -1235,6 +1247,8 @@ document.getElementById('component-drilling-copy-btn').addEventListener('click',
       repeat_count_formula: r.repeat_count_formula,
       repeat_dx_mm: r.repeat_dx_mm, repeat_dy_mm: r.repeat_dy_mm,
       counter_diameter_mm: r.counter_diameter_mm, counter_depth_mm: r.counter_depth_mm,
+      counter_face_diameter_mm: r.counter_face_diameter_mm, counter_face_depth_mm: r.counter_face_depth_mm,
+      counter_face_offset_mm: r.counter_face_offset_mm,
       notes: r.notes || ''
     });
   });
@@ -1257,6 +1271,8 @@ async function loadComponentDrillingsIntoForm(componentId) {
       repeat_count_formula: r.repeat_count_formula,
       repeat_dx_mm: r.repeat_dx_mm, repeat_dy_mm: r.repeat_dy_mm,
       counter_diameter_mm: r.counter_diameter_mm, counter_depth_mm: r.counter_depth_mm,
+      counter_face_diameter_mm: r.counter_face_diameter_mm, counter_face_depth_mm: r.counter_face_depth_mm,
+      counter_face_offset_mm: r.counter_face_offset_mm,
       notes: r.notes || ''
     }));
   }
@@ -1279,22 +1295,40 @@ async function saveComponentDrillings(componentId) {
       return new Error('Fórmula inválida na furação padrão: ' + err.message);
     }
     if (!(parseFloat(row.diameter_mm) > 0)) return new Error('Furação padrão: diâmetro precisa ser maior que zero.');
-    // contra-furo digitado em linha que não é de borda seria descartado em
-    // silêncio no insert abaixo — melhor recusar e explicar
-    if (!/^borda_/.test(row.face || '') && (parseFloat(row.counter_diameter_mm) > 0 || parseFloat(row.counter_depth_mm) > 0)) {
-      return new Error('Furação padrão: contra-furo só tem efeito em furo de BORDA — troque o Sentido da linha pra "Borda esquerda/direita" (ou apague o Contra Ø/prof.).');
+    // Contra-furo agora vale em qualquer sentido (migrations 043 + 054), mas
+    // meio preenchido seria descartado em silêncio no insert — recusar e explicar.
+    const rowIsEdge = /^borda_/.test(row.face || '');
+    const hasCDia = parseFloat(row.counter_diameter_mm) > 0;
+    const hasCDep = parseFloat(row.counter_depth_mm) > 0;
+    if (hasCDia !== hasCDep) {
+      return new Error('Furação padrão: preencha Contra Ø E Contra prof. juntos (ou apague os dois).');
+    }
+    const camVals = [row.counter_face_diameter_mm, row.counter_face_depth_mm, row.counter_face_offset_mm];
+    const camFilled = camVals.filter((v) => parseFloat(v) > 0).length;
+    if (camFilled > 0 && rowIsEdge) {
+      return new Error('Furação padrão: Copo Ø/prof./dist. só tem efeito em furo de FACE (tambor minifix na peça em pé apoiada) — em furo de borda, apague esses campos.');
+    }
+    if (camFilled > 0 && camFilled < 3) {
+      return new Error('Furação padrão: preencha Copo Ø, prof. E dist. da borda juntos (ou apague os três).');
+    }
+    if (camFilled === 3 && !(hasCDia && hasCDep)) {
+      return new Error('Furação padrão: o Copo acompanha o furo de borda propagado — preencha também Contra Ø/prof. (ex: Ø8 do canal do bolt).');
     }
   }
   const { error: delError } = await supabaseClient.from('component_drillings').delete().eq('component_id', componentId);
   if (delError) return delError;
   if (componentDrillingsDraft.length === 0) return null;
   const rows = componentDrillingsDraft.map((r, i) => {
-    // contra-furo (migration 043): só persiste em furo de BORDA e com os
-    // DOIS campos válidos — meio preenchido não propaga nada
+    // contra-furo (043 borda→face + 054 face→borda): persiste com os DOIS
+    // campos válidos; copo (counter_face_*) só em linha de face, com os TRÊS
     const isEdge = /^borda_/.test(r.face || '');
     const cDia = parseFloat(r.counter_diameter_mm);
     const cDep = parseFloat(r.counter_depth_mm);
-    const hasCounter = isEdge && cDia > 0 && cDep > 0;
+    const hasCounter = cDia > 0 && cDep > 0;
+    const camDia = parseFloat(r.counter_face_diameter_mm);
+    const camDep = parseFloat(r.counter_face_depth_mm);
+    const camOff = parseFloat(r.counter_face_offset_mm);
+    const hasCam = !isEdge && hasCounter && camDia > 0 && camDep > 0 && camOff > 0;
     return {
       component_id: componentId,
       face: r.face || 'face',
@@ -1307,6 +1341,9 @@ async function saveComponentDrillings(componentId) {
       repeat_dy_mm: parseFloat(r.repeat_dy_mm) || 0,
       counter_diameter_mm: hasCounter ? cDia : null,
       counter_depth_mm: hasCounter ? cDep : null,
+      counter_face_diameter_mm: hasCam ? camDia : null,
+      counter_face_depth_mm: hasCam ? camDep : null,
+      counter_face_offset_mm: hasCam ? camOff : null,
       notes: (r.notes || '').trim() || null,
       sort_order: i
     };
@@ -5460,6 +5497,93 @@ document.getElementById('order-cutting-list-back-btn').addEventListener('click',
   document.getElementById('orders-list-section').style.display = 'block';
 });
 
+// Duplicado de portal.js de propósito (não há bundle compartilhado entre
+// portal.js/admin.js neste projeto — mesmo padrão já usado pra outros
+// helpers pequenos). Ver comentário completo em uploadGalleryImageToStorage
+// no portal.js / migration 055.
+async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl);
+  return res.blob();
+}
+async function uploadGalleryImageToStorage(imageDataUrl) {
+  if (!imageDataUrl || !imageDataUrl.startsWith('data:')) return imageDataUrl;
+  const blob = await dataUrlToBlob(imageDataUrl);
+  const ext = (blob.type.split('/')[1] || 'png').split('+')[0];
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabaseClient.storage.from('gallery-images').upload(path, blob, {
+    contentType: blob.type || 'image/png',
+    upsert: false
+  });
+  if (error) throw error;
+  const { data } = supabaseClient.storage.from('gallery-images').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Botão "Migrar imagens antigas pro Storage" (pedido do usuário 2026-07-20)
+// — converte posts publicados ANTES da migration 055, que ainda têm a
+// imagem inteira em base64 na coluna ai_image_data_url.
+//
+// CORREÇÃO (mesmo dia): a 1ª versão buscava `id, ai_image_data_url` de
+// TODOS os posts antigos numa única query — exatamente o problema que essa
+// migração inteira existe pra resolver (muitos MB de base64 numa consulta
+// só, pode travar/estourar statement_timeout igual já tinha acontecido na
+// galeria pública, ver GALLERY_PAGE_SIZE em portal.js). Agora busca só os
+// IDS primeiro (leve, mesmo com centenas de posts) e depois busca/sobe/
+// atualiza a imagem de UM post por vez dentro do loop — nunca mais de uma
+// imagem inteira na memória ao mesmo tempo.
+async function migrateGalleryImagesToStorage() {
+  const btn = document.getElementById('gallery-migrate-storage-btn');
+  const statusEl = document.getElementById('gallery-migrate-storage-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Buscando posts antigos...';
+  try {
+    const { data: idsData, error: idsError } = await supabaseClient
+      .from('gallery_posts')
+      .select('id')
+      .like('ai_image_data_url', 'data:%');
+    if (idsError) throw idsError;
+    const ids = (idsData || []).map((p) => p.id);
+    if (ids.length === 0) {
+      statusEl.textContent = 'Nenhum post antigo pra migrar — tudo já está no Storage.';
+      return;
+    }
+    let done = 0;
+    let failed = 0;
+    for (const id of ids) {
+      statusEl.textContent = `Migrando ${done + failed + 1}/${ids.length}...`;
+      try {
+        // Busca a imagem DESTE post agora (1 por vez, nunca em lote).
+        const { data: row, error: rowError } = await supabaseClient
+          .from('gallery_posts')
+          .select('ai_image_data_url')
+          .eq('id', id)
+          .single();
+        if (rowError) throw rowError;
+        const publicUrl = await uploadGalleryImageToStorage(row.ai_image_data_url);
+        const { error: updateError } = await supabaseClient
+          .from('gallery_posts')
+          .update({ ai_image_data_url: publicUrl })
+          .eq('id', id);
+        if (updateError) throw updateError;
+        done++;
+      } catch (postErr) {
+        console.error(`Falha ao migrar post ${id}:`, postErr);
+        failed++;
+      }
+    }
+    statusEl.textContent = failed
+      ? `${done} migrado(s), ${failed} falharam (veja o console). Pode clicar de novo pra tentar os que faltam.`
+      : `${done} post(s) migrado(s) com sucesso.`;
+    renderGalleryAdminList();
+  } catch (err) {
+    statusEl.textContent = `Erro: ${err.message || err} — confirme que rodou a migration 055 (bucket "gallery-images") no SQL editor do Supabase.`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+const galleryMigrateStorageBtn = document.getElementById('gallery-migrate-storage-btn');
+if (galleryMigrateStorageBtn) galleryMigrateStorageBtn.addEventListener('click', () => migrateGalleryImagesToStorage());
+
 // ---------- GALERIA — moderação (migration 048) ----------
 // Post público criado pelo cliente na aba Composição do portal (imagem +
 // preço + medidas + cores), fica 'pending' até o admin aprovar aqui — só
@@ -5469,11 +5593,33 @@ document.getElementById('order-cutting-list-back-btn').addEventListener('click',
 // price_cost e author_display_name/author_user_id mesmo quando o post é
 // anônimo — pedido explícito do usuário: essas colunas nunca aparecem pro
 // cliente, mas ficam disponíveis aqui pra uso em apresentações depois.
+// Paginação (pedido do usuário 2026-07-20: a tela ficava travada em
+// "Carregando..." — esta consulta buscava TODOS os posts de uma vez,
+// incluindo o base64 de quem ainda não tinha sido migrado pro Storage —
+// mesmo bug que já tinha estourado statement_timeout na galeria pública,
+// ver GALLERY_PAGE_SIZE em portal.js). Some sozinha a virar necessária
+// assim que todos os posts estiverem migrados (linha vira só uma URL
+// curta, uma consulta sem LIMIT nenhum volta a ser rápida) — mas mantida
+// por segurança, a galeria só tende a crescer.
+const GALLERY_ADMIN_PAGE_SIZE = 10;
+let galleryAdminPostsCache = [];
+let galleryAdminHasMore = false;
+// Cache de nome de família entre páginas — evita rebuscar family que já
+// apareceu numa página anterior.
+let galleryAdminFamilyNameById = new Map();
+
+function updateGalleryAdminLoadMoreBtn() {
+  const btn = document.getElementById('gallery-admin-load-more-btn');
+  if (btn) btn.style.display = galleryAdminHasMore ? 'inline-block' : 'none';
+}
+
 async function renderGalleryAdminList() {
   clearError('gallery-admin-error');
   const tbody = document.getElementById('gallery-admin-tbody');
-  const statusFilter = document.getElementById('gallery-admin-status-filter').value;
   tbody.innerHTML = '<tr><td colspan="11" class="hint">Carregando...</td></tr>';
+  galleryAdminPostsCache = [];
+  galleryAdminFamilyNameById = new Map();
+  const statusFilter = document.getElementById('gallery-admin-status-filter').value;
   let query = supabaseClient
     .from('gallery_posts')
     // family_id trocou room_type (migration 049) — mesma taxonomia de
@@ -5486,20 +5632,64 @@ async function renderGalleryAdminList() {
     // separada (mesmo padrão já usado no resto do app pra resolver ids
     // salvos, ver restoreFavoriteComposition em portal.js) e junta no client.
     .select('id, ai_image_data_url, composition_name, family_id, price_sale, price_cost, author_display_name, is_anonymous, likes_count, status, created_at')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(0, GALLERY_ADMIN_PAGE_SIZE - 1);
   if (statusFilter) query = query.eq('status', statusFilter);
   const { data, error } = await query;
   if (error) { showError('gallery-admin-error', error); tbody.innerHTML = ''; return; }
-  tbody.innerHTML = '';
+  galleryAdminPostsCache = data || [];
+  galleryAdminHasMore = galleryAdminPostsCache.length === GALLERY_ADMIN_PAGE_SIZE;
+  updateGalleryAdminLoadMoreBtn();
+  await renderGalleryAdminRows();
+}
+
+// "Carregar mais" — busca a PRÓXIMA página (a partir do que já está em
+// galleryAdminPostsCache) e concatena, mesmo padrão de loadMoreGalleryPosts
+// em portal.js.
+async function loadMoreGalleryAdminPosts() {
+  const btn = document.getElementById('gallery-admin-load-more-btn');
+  if (!galleryAdminHasMore || (btn && btn.disabled)) return;
+  if (btn) btn.disabled = true;
+  clearError('gallery-admin-error');
+  try {
+    const statusFilter = document.getElementById('gallery-admin-status-filter').value;
+    const from = galleryAdminPostsCache.length;
+    let query = supabaseClient
+      .from('gallery_posts')
+      .select('id, ai_image_data_url, composition_name, family_id, price_sale, price_cost, author_display_name, is_anonymous, likes_count, status, created_at')
+      .order('created_at', { ascending: false })
+      .range(from, from + GALLERY_ADMIN_PAGE_SIZE - 1);
+    if (statusFilter) query = query.eq('status', statusFilter);
+    const { data, error } = await query;
+    if (error) { showError('gallery-admin-error', error); return; }
+    const newPosts = data || [];
+    galleryAdminPostsCache = galleryAdminPostsCache.concat(newPosts);
+    galleryAdminHasMore = newPosts.length === GALLERY_ADMIN_PAGE_SIZE;
+    updateGalleryAdminLoadMoreBtn();
+    await renderGalleryAdminRows();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+document.getElementById('gallery-admin-load-more-btn').addEventListener('click', loadMoreGalleryAdminPosts);
+
+// Monta as linhas da tabela a partir de galleryAdminPostsCache (extraído de
+// renderGalleryAdminList pra poder ser reaproveitado por "Carregar mais"
+// sem refazer a consulta inteira).
+async function renderGalleryAdminRows() {
+  const tbody = document.getElementById('gallery-admin-tbody');
+  const data = galleryAdminPostsCache;
   if (!data || data.length === 0) {
     tbody.innerHTML = '<tr><td colspan="11" class="hint">Nenhum post encontrado.</td></tr>';
     return;
   }
-  const familyIds = [...new Set(data.map((p) => p.family_id).filter(Boolean))];
-  const { data: familiesData } = familyIds.length
-    ? await supabaseClient.from('families').select('id, name').in('id', familyIds)
-    : { data: [] };
-  const familyNameById = new Map((familiesData || []).map((f) => [f.id, f.name]));
+  const missingFamilyIds = [...new Set(data.map((p) => p.family_id).filter((id) => id && !galleryAdminFamilyNameById.has(id)))];
+  if (missingFamilyIds.length) {
+    const { data: familiesData } = await supabaseClient.from('families').select('id, name').in('id', missingFamilyIds);
+    (familiesData || []).forEach((f) => galleryAdminFamilyNameById.set(f.id, f.name));
+  }
+  const familyNameById = galleryAdminFamilyNameById;
+  tbody.innerHTML = '';
   data.forEach((post) => {
     const tr = document.createElement('tr');
     const dateStr = post.created_at ? new Date(post.created_at).toLocaleString('pt-BR') : '—';

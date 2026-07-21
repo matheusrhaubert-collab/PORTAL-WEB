@@ -44,6 +44,39 @@ section.panel, details.panel {
   margin-bottom: 24px;
 }
 
+/* Modal de login/cadastro (pedido do usuário 2026-07-20: Galeria pública,
+   login só quando precisa) — #po-auth-section deixou de ser um <section
+   class="panel"> sempre visível bloqueando a tela e virou um overlay
+   fixo, escondido por padrão, aberto via openAuthModal()/fechado via
+   closeAuthModal() em portal.js. */
+#po-auth-section {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+#po-auth-section.open { display: flex; }
+.po-auth-modal-card {
+  background: var(--panel); border-radius: 12px; padding: 28px;
+  max-width: 420px; width: 100%; max-height: 90vh; overflow-y: auto;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.po-auth-modal-close {
+  position: absolute; top: 10px; right: 12px; background: none; border: none;
+  font-size: 24px; line-height: 1; cursor: pointer; color: var(--muted); padding: 4px;
+}
+.po-auth-modal-close:hover { color: var(--text); }
+/* Botão "Continuar com Google" — largura total, ícone + texto centralizados,
+   visual neutro (branco/borda) igual o padrão real desse botão em outros
+   sites, não a cor de destaque do app. */
+.po-google-btn {
+  width: 100%; margin-top: 10px; display: flex; align-items: center;
+  justify-content: center; gap: 10px; font-weight: 600;
+}
+/* Modo visitante (sem login) — só a aba Galeria fica visível na navegação;
+   o resto do app exige conta (pedido do usuário: Gallery pública, mas
+   Customizar/Curtir pedem login). Ver showLoggedOut/showLoggedIn. */
+#po-sidebar.guest-mode .portal-tab-btn:not([data-tab="po-tab-gallery"]) { display: none; }
+
 /* Seções de "Configurar módulo" viraram <details> (fechadas por padrão —
    pedido do usuário: "colocar tudo sempre minimizado e abro só o que
    preciso"). Mesmo id/lógica de mostrar-esconder o bloco inteiro que já
@@ -1825,28 +1858,55 @@ header.po-topnav {
    carrinho/pedidos, que continua com centavos). */
 .po-gallery-card-price-label { font-size: 11px; color: var(--muted); margin-top: 8px; }
 .po-gallery-card-price { font-weight: 700; color: var(--ink, #1a1a1a); font-size: 19px; margin-top: 2px; }
-.po-gallery-card-actions { margin-top: 12px; }
+.po-gallery-card-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 /* Curtir (♥) vira um botão circular flutuante sobre a FOTO (canto superior
    esquerdo), igual à referência — antes ficava ao lado do botão principal,
    embaixo do card. */
 .po-gallery-like-btn {
   position: absolute; top: 8px; left: 8px; z-index: 2;
-  width: 30px; height: 30px; padding: 0; margin-top: 0;
+  width: 26px; height: 26px; padding: 0; margin-top: 0;
   border-radius: 50%; border: 1px solid var(--border); background: #fff;
-  display: flex; align-items: center; justify-content: center; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; gap: 1px; font-size: 11px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.18);
 }
+/* Pedido do usuário 2026-07-20: menor e SEMPRE círculo perfeito, mesmo com
+   número (nada de virar pill/oval — ver galleryLikeButtonContent). */
+.po-gallery-like-heart { color: #e0245e; line-height: 1; font-size: 12px; }
+.po-gallery-like-count { font-size: 9px; font-weight: 700; color: var(--ink, #1a1a1a); line-height: 1; }
 /* Botão principal ("Customize →" na referência) — pill de borda fina,
    largura total do card, texto + seta, preenche na cor de destaque no
    hover. Mesmo tamanho/proporção da referência (padding generoso, bem
    arredondado). */
 .po-gallery-use-btn {
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: 100%; padding: 11px 16px; border-radius: 999px;
+  flex: 1; height: 40px; padding: 0 16px; border-radius: 999px;
   border: 1.5px solid var(--accent-dark); background: #fff; color: var(--accent-dark);
   font-weight: 600; font-size: 14px; transition: background 0.15s, color 0.15s;
 }
 .po-gallery-use-btn:hover { background: var(--accent-dark); color: #fff; }
+/* Botão "Compartilhar" (pedido do usuário 2026-07-20) — MESMA altura exata
+   do botão principal (height:40px nos dois, em vez de depender de padding
+   pra chegar num tamanho parecido — era o que desalinhava), só que
+   circular. Reduzido de 44px pra 40px (pedido: "deixa o botão... menor"). */
+.po-gallery-share-btn {
+  flex: none; width: 40px; height: 40px; padding: 0; margin-top: 0;
+  border-radius: 50%; border: 1.5px solid var(--border); background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  color: #1a1a1a; /* ícone SVG usa stroke="currentColor" */
+  transition: border-color 0.15s, background 0.15s;
+}
+.po-gallery-share-btn:hover { border-color: var(--accent-dark); background: var(--accent-light, #f2f0ea); }
+.po-gallery-share-menu {
+  display: none; position: absolute; z-index: 2100; min-width: 180px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 6px; flex-direction: column; gap: 2px;
+}
+.po-gallery-share-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px;
+  font-size: 13px; text-align: left; color: var(--ink, #1a1a1a); background: none; border: none;
+  cursor: pointer; text-decoration: none; width: 100%; font-family: inherit;
+}
+.po-gallery-share-item:hover { background: var(--accent-light, #f2f0ea); }
 
 .po-gallery-lightbox-overlay {
   display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.86);

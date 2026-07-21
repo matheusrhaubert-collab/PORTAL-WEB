@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/style.css?v=20260721a" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -93,7 +93,13 @@
       </div>
     </div>
     <span class="po-help-link" data-i18n="nav.help">Ajuda</span>
-    <div class="po-user-chip">
+    <!-- Botão "Entrar" pro visitante (pedido do usuário 2026-07-20: "deixa a
+         pagina GALLERY publica... ao clicar customizar pedir login") — só
+         aparece em modo visitante (guest mode, ver showLoggedOut), abre o
+         MESMO #po-auth-section só que como modal (ver openAuthModal) em vez
+         de bloquear a tela inteira igual antes. -->
+    <button type="button" id="po-guest-login-btn" class="po-btn-primary-block" style="display:none; width:auto; margin-top:0; padding:8px 18px;" data-i18n="nav.guest_login_btn">Entrar</button>
+    <div class="po-user-chip" id="po-user-chip">
       <div class="po-user-avatar" id="po-user-avatar">?</div>
       <div class="po-user-meta">
         <div class="po-user-name" id="po-user-name" data-i18n="nav.my_account">Minha conta</div>
@@ -105,37 +111,64 @@
 
 <main>
 
-  <!-- LOGIN / CRIAR CONTA -->
-  <section class="panel" id="po-auth-section">
-    <div id="po-login-block">
-      <h2 data-i18n="auth.login_title">Entrar</h2>
-      <div id="po-login-error" class="error" style="display:none;"></div>
-      <form id="po-login-form">
-        <label data-i18n="auth.email_label">E-mail</label>
-        <input id="po-login-email" type="email" required />
-        <label data-i18n="auth.password_label">Senha</label>
-        <input id="po-login-password" type="password" required />
-        <button type="submit" data-i18n="auth.login_btn">Entrar</button>
-      </form>
-      <p class="hint"><span data-i18n="auth.no_account_yet">Ainda não tem conta? </span><a href="#" id="po-show-signup" data-i18n="auth.create_account_link">Criar conta</a></p>
-    </div>
+  <!-- LOGIN / CRIAR CONTA — virou MODAL (pedido do usuário 2026-07-20:
+       "deixa a pagina GALLERY publica... ao clicar customizar pedir
+       login") — antes bloqueava a tela inteira sempre que não tinha
+       sessão; agora só abre por cima (openAuthModal/closeAuthModal em
+       portal.js) quando o visitante tenta uma ação que precisa de conta
+       (Customizar, Curtir) ou clica em "Entrar" no topo. Markup interno
+       (ids dos forms/inputs) intocado — só ganhou o card+botão fechar por
+       fora, e o botão do Google dentro do bloco de login. -->
+  <section id="po-auth-section">
+    <div class="po-auth-modal-card">
+      <button type="button" class="po-auth-modal-close" id="po-auth-modal-close" aria-label="Fechar">&times;</button>
+      <div id="po-login-block">
+        <h2 data-i18n="auth.login_title">Entrar</h2>
+        <div id="po-login-error" class="error" style="display:none;"></div>
+        <form id="po-login-form">
+          <label data-i18n="auth.email_label">E-mail</label>
+          <input id="po-login-email" type="email" required />
+          <label data-i18n="auth.password_label">Senha</label>
+          <input id="po-login-password" type="password" required />
+          <button type="submit" data-i18n="auth.login_btn">Entrar</button>
+        </form>
+        <!-- Login com Google (pedido do usuário: "faz ligar com google da
+             pessoa pra ser rapido") — supabaseClient.auth.signInWithOAuth,
+             ver wireGoogleLoginButtons em portal.js. Só funciona depois do
+             Matt configurar o provider Google no painel do Supabase
+             (Authentication > Providers) + um OAuth client no Google Cloud
+             Console — passo que só ele consegue fazer (precisa da conta
+             dele). Botão continua aparecendo mesmo antes disso configurado;
+             só dá erro claro se clicado sem estar configurado. -->
+        <button type="button" id="po-google-login-btn" class="secondary po-google-btn">
+          <svg width="18" height="18" viewBox="0 0 48 48" style="flex:none;">
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6 29.6 4 24 4c-7.5 0-14 4.2-17.7 10.7z"/>
+            <path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.4c-2 1.5-4.6 2.5-7.6 2.5-5.3 0-9.7-3.4-11.3-8.1l-6.6 5.1C9.9 39.6 16.4 44 24 44z"/>
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.6 5.4C41.6 35.6 44 30.2 44 24c0-1.3-.1-2.7-.4-3.5z"/>
+          </svg>
+          <span data-i18n="auth.google_btn">Continuar com Google</span>
+        </button>
+        <p class="hint"><span data-i18n="auth.no_account_yet">Ainda não tem conta? </span><a href="#" id="po-show-signup" data-i18n="auth.create_account_link">Criar conta</a></p>
+      </div>
 
-    <div id="po-signup-block" style="display:none;">
-      <h2 data-i18n="auth.signup_title">Criar conta</h2>
-      <div id="po-signup-error" class="error" style="display:none;"></div>
-      <div id="po-signup-success" class="hint" style="display:none;"></div>
-      <form id="po-signup-form">
-        <label data-i18n="auth.your_name_label">Seu nome</label>
-        <input id="po-signup-name" required />
-        <label data-i18n="auth.email_label">E-mail</label>
-        <input id="po-signup-email" type="email" required />
-        <label data-i18n="auth.phone_label">Telefone</label>
-        <input id="po-signup-phone" />
-        <label data-i18n="auth.password_label">Senha</label>
-        <input id="po-signup-password" type="password" minlength="6" required />
-        <button type="submit" data-i18n="auth.signup_btn">Criar conta</button>
-      </form>
-      <p class="hint"><span data-i18n="auth.already_have_account">Já tem conta? </span><a href="#" id="po-show-login" data-i18n="auth.login_link">Entrar</a></p>
+      <div id="po-signup-block" style="display:none;">
+        <h2 data-i18n="auth.signup_title">Criar conta</h2>
+        <div id="po-signup-error" class="error" style="display:none;"></div>
+        <div id="po-signup-success" class="hint" style="display:none;"></div>
+        <form id="po-signup-form">
+          <label data-i18n="auth.your_name_label">Seu nome</label>
+          <input id="po-signup-name" required />
+          <label data-i18n="auth.email_label">E-mail</label>
+          <input id="po-signup-email" type="email" required />
+          <label data-i18n="auth.phone_label">Telefone</label>
+          <input id="po-signup-phone" />
+          <label data-i18n="auth.password_label">Senha</label>
+          <input id="po-signup-password" type="password" minlength="6" required />
+          <button type="submit" data-i18n="auth.signup_btn">Criar conta</button>
+        </form>
+        <p class="hint"><span data-i18n="auth.already_have_account">Já tem conta? </span><a href="#" id="po-show-login" data-i18n="auth.login_link">Entrar</a></p>
+      </div>
     </div>
   </section>
 
@@ -562,14 +595,6 @@
         </div>
         <p id="po-comp-admin-edit-status" class="hint" style="display:none;"></p>
 
-        <!-- GIF passo a passo de como usar a ferramenta (gerado em
-             assets/composition-howto.gif) — fica recolhível pra não ocupar a
-             tela de quem já sabe usar. Aberto por padrão na primeira visita. -->
-        <details id="po-comp-howto" open style="margin:10px 0 16px;">
-          <summary class="hint" style="cursor:pointer;" data-i18n="composition.howto_toggle">▶ Como usar (passo a passo)</summary>
-          <img src="assets/composition-howto.gif" alt="How to use the Composition tool"
-               style="display:block;max-width:640px;width:100%;margin-top:8px;border:1px solid var(--border);border-radius:10px;" />
-        </details>
         <div id="po-comp-error" class="error" style="display:none;"></div>
 
         <!-- Medidas totais da composição — mostradas sempre (pedido do usuário:
@@ -800,6 +825,7 @@
         <div class="po-cutlist-toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; align-items:center;">
           <button type="button" class="secondary" id="po-cutlist-import-btn" data-i18n="cutlist.import_btn">Importar planilha</button>
           <input type="file" id="po-cutlist-import-input" accept=".xlsx,.xls,.csv,.txt" style="display:none;" />
+          <button type="button" class="secondary" id="po-cutlist-download-template-btn" data-i18n="cutlist.download_template_btn">Baixar modelo</button>
           <button type="button" class="secondary" id="po-cutlist-add-row-btn" data-i18n="cutlist.add_row_btn">+ Adicionar linha</button>
           <button type="button" class="secondary" id="po-cutlist-clear-btn" data-i18n="cutlist.clear_btn">Limpar tudo</button>
         </div>
@@ -920,6 +946,6 @@
 <script src="js/pricing.js"></script>
 <script src="js/viewer3d.js?v=20260711c"></script>
 <script src="js/viewer3d_composition.js?v=20260719c"></script>
-<script src="js/portal.js?v=20260719t"></script>
+<script src="js/portal.js?v=20260721a"></script>
 </body>
 </html>

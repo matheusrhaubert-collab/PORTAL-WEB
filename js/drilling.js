@@ -18,6 +18,15 @@
 //     de face naquele exato ponto. Campos nulos = não propaga (exceções).
 //     Substitui o antigo padrão global de toque (drilling_touch_holes,
 //     DEPRECIADO — config.touchHoles é aceito e ignorado).
+//  2b. CONTRA-FURO REVERSO (migration 054) — furo de FACE cadastrado com
+//     counter_diameter/counter_depth: quando a BORDA de outra peça encosta
+//     NAQUELA face (peça em pé apoiada, ex: lateral sobre o topcover), a
+//     peça apoiada recebe um furo entrando pela borda que encostou, no ponto
+//     exato do contato (ex: cavilha Ø8 / canal do bolt minifix). Se a linha
+//     também tiver counter_face_* (Ø/prof/offset), a peça apoiada ganha AINDA
+//     o copo na FACE dela (tambor minifix Ø12), na mesma linha do furo de
+//     borda, a offset mm da borda que encostou, entrando pela face voltada
+//     pro interior do módulo. É o sistema base→lateral ao contrário.
 //  3. DOBRADIÇA AUTOMÁTICA — peça com hinge_side != 'none' ganha copo 35mm +
 //     2 marcações por dobradiça na PORTA (mesmas posições do 3D/preço), e a
 //     LATERAL do lado da dobradiça ganha os furos da BASE (2 por dobradiça,
@@ -459,23 +468,37 @@
   // coincide com aquela borda (tolerância) e fura o contra-furo no ponto
   // exato do contato. O cadastro é lido como coordenadas de MÓDULO (ponto
   // físico igual nas gêmeas esq/dir); o espelho é só do desenho/arquivo.
-  function collectCounterHoles(store, boxes, drillingsByComponent, settings) {
+  //
+  // 2b. CONTRA-FURO REVERSO (migration 054) — pra cada furo de FACE
+  // cadastrado com counter_diameter/counter_depth, acha a peça cuja BORDA
+  // encosta NAQUELA face (peça em pé apoiada, ex: lateral sobre o topcover)
+  // e fura na peça apoiada: (a) o furo entrando pela borda do contato
+  // (counter_*, ex: cavilha Ø8 / canal do bolt minifix) e (b) opcionalmente
+  // o copo na FACE dela (counter_face_*, tambor minifix), a
+  // counter_face_offset_mm da borda que encostou, entrando pela face voltada
+  // pro INTERIOR do módulo. W/H/D = container, pra achar o interior.
+  function collectCounterHoles(store, boxes, drillingsByComponent, settings, W, H, D) {
     if (!drillingsByComponent) return;
     const tol = (settings && Number(settings.touch_tolerance_mm)) || 5;
     const ORIG = { x: 'x0', y: 'y0', z: 'z0' };
     const SIZE = { x: 'sx', y: 'sy', z: 'sz' };
+    const MODULE_CENTER = { x: (W || 0) / 2, y: (H || 0) / 2, z: (D || 0) / 2 };
 
     boxes.forEach(function (src) {
       const rows = (src.part.component_id && drillingsByComponent[src.part.component_id]) || null;
       if (!rows || !rows.length) return;
       const counterRows = rows.filter(function (r) {
-        return /^borda_/.test(r.face || '') && Number(r.counter_diameter_mm) > 0 && Number(r.counter_depth_mm) > 0;
+        return Number(r.counter_diameter_mm) > 0 && Number(r.counter_depth_mm) > 0;
       });
       if (!counterRows.length) return;
       const t = src.t;
       const vars = { C: t.faceA, L: t.faceB, E: t.thickness, W: src.part.width_mm || 0, H: src.part.height_mm || 0 };
 
       eachDrillingInstance(counterRows, vars, function (row, x, y) {
+        if (!/^borda_/.test(row.face || '')) {
+          collectFaceCounterHole(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER);
+          return;
+        }
         const r = edgeRealUV(t, row, x, y);
         if (!r) return;
         const u = r.u, v = r.v;
@@ -510,6 +533,71 @@
             depth: Number(row.counter_depth_mm)
           });
         });
+      });
+    });
+  }
+
+  // Um furo de FACE do src (linha face/verso com counter_*) propagado pra
+  // peça cuja borda encosta na face — ver comentário 2b acima. x/y da linha
+  // já avaliados (coordenadas LOCAIS do plano de cadastro faceA×faceB).
+  function collectFaceCounterHole(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER) {
+    const t = src.t;
+    // lado FÍSICO da face furada no eixo da espessura do src: 'face' = lado
+    // positivo do desenho canônico; na gêmea espelhada ('right') inverte —
+    // mesma convenção de emitLocalHole.
+    const physPositive = ((row.face || 'face') === 'face') !== (src.role === 'right');
+    const facePlane = src[ORIG[src.tAxis]] + (physPositive ? src[SIZE[src.tAxis]] : 0);
+
+    // ponto do furo em coordenadas do módulo (sobre o plano da face furada)
+    const p = {};
+    p[src.uAxis] = src[ORIG[src.uAxis]] + x;
+    p[src.vAxis] = src[ORIG[src.vAxis]] + y;
+    p[src.tAxis] = facePlane;
+
+    boxes.forEach(function (tgt) {
+      if (tgt === src) return;
+      // peça apoiada = peça cuja EXTENSÃO DE FACE corre no eixo da espessura
+      // do src (a espessura dela é PERPENDICULAR — senão o contato seria
+      // face-com-face, que não é este caso)
+      if (tgt.tAxis === src.tAxis) return;
+      const extAxis = src.tAxis;                       // eixo em que a borda do tgt encosta
+      const edgeIsU = tgt.uAxis === extAxis;           // extAxis é o u ou o v local do tgt?
+      const lo = tgt[ORIG[extAxis]];
+      const size = tgt[SIZE[extAxis]];
+      // do lado positivo da face, encosta a ponta DE BAIXO do tgt (lo);
+      // do lado negativo, a ponta de cima (lo+size)
+      const touchEnd = physPositive ? lo : lo + size;
+      if (Math.abs(touchEnd - facePlane) > tol) return;
+      // o ponto precisa cair DENTRO do retângulo da borda do tgt: dentro da
+      // espessura dele e dentro do comprimento da borda
+      const pt = p[tgt.tAxis] - tgt[ORIG[tgt.tAxis]];
+      if (pt < -0.5 || pt > tgt[SIZE[tgt.tAxis]] + 0.5) return;
+      const alongAxis = edgeIsU ? tgt.vAxis : tgt.uAxis;
+      const pa = p[alongAxis] - tgt[ORIG[alongAxis]];
+      if (pa < -0.5 || pa > tgt[SIZE[alongAxis]] + 0.5) return;
+
+      // (a) furo entrando pela borda do contato (cavilha / canal do bolt)
+      const edge = physPositive ? (edgeIsU ? 'u0' : 'v0') : (edgeIsU ? 'u1' : 'v1');
+      emitLocalHole(store, tgt, {
+        u: edgeIsU ? 0 : pa, v: edgeIsU ? pa : 0, edge: edge,
+        diameter: Number(row.counter_diameter_mm),
+        depth: Number(row.counter_depth_mm)
+      });
+
+      // (b) copo na FACE da peça apoiada (tambor minifix), na mesma linha,
+      // a offset mm da borda que encostou
+      const camDia = Number(row.counter_face_diameter_mm);
+      const camDepth = Number(row.counter_face_depth_mm);
+      const camOff = Number(row.counter_face_offset_mm);
+      if (!(camDia > 0) || !(camDepth > 0) || !(camOff > 0)) return;
+      const camExt = physPositive ? camOff : size - camOff; // coord. local no eixo da extensão
+      // entra pela face voltada pro interior do módulo (tambor acessível)
+      const tgtMid = tgt[ORIG[tgt.tAxis]] + tgt[SIZE[tgt.tAxis]] / 2;
+      const entersPositive = tgtMid <= MODULE_CENTER[tgt.tAxis];
+      emitLocalHole(store, tgt, {
+        u: edgeIsU ? camExt : pa, v: edgeIsU ? pa : camExt, edge: null,
+        entersPositive: entersPositive,
+        diameter: camDia, depth: camDepth
       });
     });
   }
@@ -721,7 +809,7 @@
   // com o volume local da peça-módulo, igual buildModuleAssembly no 3D).
   function collectAssembly(store, parts, W, H, D, config) {
     const built = buildBoxes(parts, W, H, D);
-    collectCounterHoles(store, built.boxes, config.drillingsByComponent, config.settings);
+    collectCounterHoles(store, built.boxes, config.drillingsByComponent, config.settings, W, H, D);
     collectHingePlates(store, parts, built.boxes, config.settings);
     collectSlideHoles(store, parts, built.boxes, W, H, D, config.settings);
     collectShelfSupportHoles(store, built.boxes, config.settings);
@@ -885,3 +973,4 @@
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 // migration 043 — propagação por componente + espelhamento esq/dir
+// migration 054 — contra-furo reverso: furo de FACE propaga borda+copo na peça apoiada

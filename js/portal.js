@@ -5482,6 +5482,16 @@ async function publishCompositionToGallery() {
       }
     }
 
+    // Sobe a imagem pro Storage antes de gravar o post (ver
+    // uploadGalleryImageToStorage acima) — se falhar por qualquer motivo
+    // (bucket/migration 055 ainda não rodou, rede fora), cai pro base64
+    // como antes em vez de travar a publicação.
+    try {
+      imageDataUrl = await uploadGalleryImageToStorage(imageDataUrl);
+    } catch (uploadErr) {
+      console.error('Falha ao subir imagem da Galeria pro Storage, mantendo base64:', uploadErr);
+    }
+
     const totalsMm = computeCompositionTotalsMm();
     const priceSale = compositionSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.total) || 0), 0);
     const priceCost = compositionSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.cost_total) || 0), 0);
@@ -5536,6 +5546,40 @@ async function publishCompositionToGallery() {
 
 const galleryPublishSubmitBtn = document.getElementById('po-gallery-publish-submit-btn');
 if (galleryPublishSubmitBtn) galleryPublishSubmitBtn.addEventListener('click', publishCompositionToGallery);
+
+// Converte um data: URL (base64) num Blob pra poder subir pro Storage —
+// fetch() aceita data: URL como entrada (funciona em todo browser moderno),
+// mais simples que decodificar base64 na mão com atob()/Uint8Array.
+async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl);
+  return res.blob();
+}
+
+// Migration 055 + pedido do usuário 2026-07-20 ("gallery muito lenta pra
+// abrir"): a causa era a imagem inteira em base64 dentro da linha de
+// gallery_posts — cada select trazia vários MB de texto do Postgres antes
+// de mostrar qualquer coisa. Agora sobe o arquivo pro bucket
+// "gallery-images" e devolve só a URL pública (poucos bytes) pra gravar em
+// ai_image_data_url — MESMA coluna, só troca o conteúdo (data: URL -> URL
+// https), então nada mais no app precisa mudar (os <img src="..."> value
+// continuam funcionando iguais nos dois formatos).
+// Se já vier uma URL http(s) (post já migrado, ou nada mudou nesta edição),
+// devolve sem subir de novo. Duplicada em admin.js (não há bundle
+// compartilhado entre portal.js/admin.js neste projeto, mesmo padrão já
+// usado pra outros helpers pequenos como formatMoney).
+async function uploadGalleryImageToStorage(imageDataUrl) {
+  if (!imageDataUrl || !imageDataUrl.startsWith('data:')) return imageDataUrl;
+  const blob = await dataUrlToBlob(imageDataUrl);
+  const ext = (blob.type.split('/')[1] || 'png').split('+')[0]; // "image/svg+xml" -> "svg"
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabaseClient.storage.from('gallery-images').upload(path, blob, {
+    contentType: blob.type || 'image/png',
+    upsert: false
+  });
+  if (error) throw error;
+  const { data } = supabaseClient.storage.from('gallery-images').getPublicUrl(path);
+  return data.publicUrl;
+}
 
 // ---------- GALERIA — grade pública, filtros, curtidas, "usar esta composição" ----------
 
@@ -5673,6 +5717,29 @@ function applyGalleryFilters() {
   renderGalleryGrid(filtered);
 }
 
+// Ícone de compartilhar em SVG (em vez de emoji "⤴") — pedido do usuário
+// 2026-07-20: o emoji não renderizava de forma confiável (aparecia como
+// círculo vazio em algumas fontes/SO). SVG com stroke="currentColor" segue
+// a cor definida em .po-gallery-share-btn (preto), sem depender de fonte.
+const GALLERY_SHARE_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="18" cy="5" r="3" stroke="currentColor" stroke-width="2"/>
+  <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+  <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="2"/>
+  <line x1="8.6" y1="10.6" x2="15.4" y2="6.4" stroke="currentColor" stroke-width="2"/>
+  <line x1="8.6" y1="13.4" x2="15.4" y2="17.6" stroke="currentColor" stroke-width="2"/>
+</svg>`;
+
+// Ícones de marca (pedido do usuário 2026-07-20: "usa icones de acordo com
+// cada app, mais profissional" — trocou os emojis 📌📘💬✉️🔗 por SVG com a
+// cor/forma reconhecível de cada rede, igual qualquer app de verdade faz.
+const GALLERY_SHARE_ICONS = {
+  pinterest: `<svg width="20" height="20" viewBox="0 0 24 24" style="vertical-align:middle;flex:none;"><circle cx="12" cy="12" r="12" fill="#E60023"/><path d="M12.02 5.5c-3.6 0-5.42 2.58-5.42 4.73 0 1.3.5 2.46 1.55 2.89.17.07.33 0 .38-.19l.16-.62c.05-.2.03-.27-.11-.44-.32-.38-.52-.87-.52-1.57 0-2.02 1.51-3.83 3.94-3.83 2.15 0 3.33 1.31 3.33 3.07 0 2.31-1.02 4.26-2.54 4.26-.84 0-1.46-.69-1.26-1.54.24-1.01.7-2.1.7-2.83 0-.65-.35-1.2-1.08-1.2-.86 0-1.54.89-1.54 2.08 0 .76.26 1.27.26 1.27s-.87 3.68-1.02 4.33c-.3 1.27-.05 2.83-.02 2.98.01.09.13.11.18.04.08-.1 1.05-1.3 1.38-2.5.09-.34.53-2.06.53-2.06.26.5 1.03.94 1.85.94 2.44 0 4.09-2.22 4.09-5.19 0-2.24-1.9-4.6-5-4.6z" fill="#fff"/></svg>`,
+  facebook: `<svg width="20" height="20" viewBox="0 0 24 24" style="vertical-align:middle;flex:none;"><circle cx="12" cy="12" r="12" fill="#1877F2"/><path d="M13.5 12.5h2l.3-2.3h-2.3V8.7c0-.67.19-1.12 1.14-1.12h1.22V5.53C15.63 5.5 14.9 5.44 14.05 5.44c-1.79 0-3.02 1.09-3.02 3.1v1.66H9v2.3h2.03v6.06h2.47V12.5z" fill="#fff"/></svg>`,
+  whatsapp: `<svg width="20" height="20" viewBox="0 0 24 24" style="vertical-align:middle;flex:none;"><circle cx="12" cy="12" r="12" fill="#25D366"/><path d="M12 5.5a6.5 6.5 0 00-5.6 9.79L5.5 18.5l3.32-.87A6.5 6.5 0 1012 5.5zm0 1.3a5.2 5.2 0 11-2.66 9.66l-.19-.11-1.98.52.53-1.93-.12-.2A5.2 5.2 0 0112 6.8zm-2.62 2.1c-.14 0-.36.05-.55.27-.19.21-.72.7-.72 1.72s.74 1.99.84 2.13c.1.14 1.45 2.28 3.6 3.1 1.79.68 2.15.55 2.54.51.39-.04 1.25-.51 1.43-1 .18-.49.18-.91.13-1-.05-.09-.19-.14-.4-.25-.21-.11-1.25-.62-1.44-.69-.19-.07-.34-.11-.48.11-.14.21-.55.69-.68.83-.13.14-.25.16-.46.05-.21-.11-.9-.33-1.71-1.06-.63-.56-1.06-1.26-1.18-1.47-.12-.21-.01-.32.09-.43.1-.1.21-.25.32-.37.11-.13.14-.21.21-.36.07-.14.04-.27-.02-.38-.05-.11-.48-1.19-.67-1.62-.17-.42-.35-.36-.48-.37h-.4z" fill="#fff"/></svg>`,
+  email: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;flex:none;"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#5f6368" stroke-width="1.6"/><path d="M3 6.5l9 6.5 9-6.5" stroke="#5f6368" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  link: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;flex:none;"><path d="M9.5 14.5l5-5M8 14a3 3 0 010-4.24l2-2A3 3 0 0114.24 8m-1.24 8a3 3 0 004.24 0l2-2a3 3 0 00-4.24-4.24" stroke="#5f6368" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+};
+
 function renderGalleryGrid(posts) {
   const grid = document.getElementById('po-gallery-grid');
   const emptyHint = document.getElementById('po-gallery-empty-hint');
@@ -5687,10 +5754,10 @@ function renderGalleryGrid(posts) {
     const dims = (post.total_width_mm && post.total_height_mm && post.total_depth_mm)
       ? `${Math.round(post.total_width_mm)} × ${Math.round(post.total_height_mm)} × ${Math.round(post.total_depth_mm)} mm`
       : '';
-    const liked = galleryLikedPostIds.has(post.id);
+    const likeContent = galleryLikeButtonContent(post);
     card.innerHTML = `
       <div class="po-gallery-card-image-wrap">
-        <button type="button" class="po-gallery-like-btn">${liked ? '♥' : '♡'} ${Number(post.likes_count || 0)}</button>
+        <button type="button" class="po-gallery-like-btn${likeContent.hasCount ? ' has-count' : ''}">${likeContent.html}</button>
         ${post.ai_image_data_url
           ? `<img src="${post.ai_image_data_url}" alt="" class="po-gallery-card-image" /><div class="po-gallery-card-image-zoom-hint">🔍</div>`
           : `<div class="po-gallery-card-image-empty"></div>`}
@@ -5703,13 +5770,23 @@ function renderGalleryGrid(posts) {
         <div class="po-gallery-card-price">${formatGalleryPrice(post.price_sale)}</div>
         <div class="po-gallery-card-actions">
           <button type="button" class="po-gallery-use-btn">${I18n.t('gallery.use_composition_btn')} →</button>
+          <button type="button" class="po-gallery-share-btn" title="${I18n.t('gallery.share_btn_label')}" aria-label="${I18n.t('gallery.share_btn_label')}">${GALLERY_SHARE_ICON_SVG}</button>
         </div>
       </div>
     `;
     card.querySelector('.po-gallery-card-name').textContent = post.composition_name || I18n.t('gallery.untitled');
     card.querySelector('.po-gallery-card-author').textContent = I18n.t('gallery.posted_by', { name: authorLabel });
     card.querySelector('.po-gallery-like-btn').addEventListener('click', (ev) => toggleGalleryLike(post, ev.currentTarget));
-    card.querySelector('.po-gallery-use-btn').addEventListener('click', () => restoreGalleryPostAsComposition(post));
+    // Pedido do usuário 2026-07-20: Galeria pública pra visitante, mas
+    // "Customizar" pede login na hora — abre o modal (guardando a
+    // composição em pendingGalleryPostForAuth) em vez de tentar carregar
+    // uma aba que nem existe pra quem não tem conta (Composição fica
+    // escondida em modo visitante, ver guest-mode no CSS).
+    card.querySelector('.po-gallery-use-btn').addEventListener('click', () => {
+      if (!currentUser) { openAuthModal(post); return; }
+      restoreGalleryPostAsComposition(post);
+    });
+    card.querySelector('.po-gallery-share-btn').addEventListener('click', (ev) => { ev.stopPropagation(); openGalleryShareMenu(post, ev.currentTarget); });
     const cardImg = card.querySelector('.po-gallery-card-image');
     if (cardImg) cardImg.addEventListener('click', () => openGalleryLightbox(post.ai_image_data_url));
     grid.appendChild(card);
@@ -5745,9 +5822,24 @@ function openGalleryLightbox(imageUrl) {
   overlay.style.display = 'flex';
 }
 
+// Pedido do usuário 2026-07-20: coração vermelho "bonito" em vez do texto
+// cru — só CONTORNO (♡) quando o post ainda não tem nenhuma curtida, e
+// PREENCHIDO (♥) + número quando likes_count > 0 (sem número nenhum no
+// estado de zero curtidas). Cor vem do CSS (.po-gallery-like-heart), o
+// glifo em si (♡ vazado vs ♥ sólido) já dá a diferença de contorno/cheio.
+// Usado tanto no render inicial (renderGalleryGrid) quanto depois de
+// curtir/descurtir (toggleGalleryLike), pra nunca duas lógicas divergirem.
+function galleryLikeButtonContent(post) {
+  const count = Number(post.likes_count || 0);
+  if (count > 0) {
+    return { html: `<span class="po-gallery-like-heart">♥</span><span class="po-gallery-like-count">${count}</span>`, hasCount: true };
+  }
+  return { html: `<span class="po-gallery-like-heart">♡</span>`, hasCount: false };
+}
+
 async function toggleGalleryLike(post, btnEl) {
   if (!currentUser) {
-    alert(I18n.t('fav.need_login'));
+    openAuthModal(post);
     return;
   }
   const alreadyLiked = galleryLikedPostIds.has(post.id);
@@ -5767,7 +5859,9 @@ async function toggleGalleryLike(post, btnEl) {
       galleryLikedPostIds.add(post.id);
       post.likes_count = Number(post.likes_count || 0) + 1;
     }
-    btnEl.textContent = `${galleryLikedPostIds.has(post.id) ? '♥' : '♡'} ${post.likes_count}`;
+    const content = galleryLikeButtonContent(post);
+    btnEl.innerHTML = content.html;
+    btnEl.classList.toggle('has-count', content.hasCount);
   } catch (err) {
     alert(err.message || String(err));
   } finally {
@@ -5783,6 +5877,116 @@ async function toggleGalleryLike(post, btnEl) {
 // user_compositions correspondente a um post de outra pessoa.
 function restoreGalleryPostAsComposition(post) {
   restoreFavoriteComposition({ id: null, name: post.composition_name || I18n.t('gallery.untitled'), slots: post.slots }, false);
+}
+
+// Botão "Compartilhar" no card (pedido do usuário 2026-07-20, na sequência
+// perguntou sobre Pinterest — puxado pra dentro do mesmo menu). Link aponta
+// pra portal.html?galleryPost=<id>, que reabre essa composição específica
+// direto na aba Composição pra quem clicar (ver maybeOpenSharedGalleryPost
+// mais abaixo). Pinterest/Facebook usam a URL real da imagem
+// (post.ai_image_data_url) — só existe uma URL de verdade (em vez de
+// base64) depois da migration 055; post antigo ainda não migrado continua
+// compartilhando o link, só sem preview de imagem no cartão do Pinterest.
+function buildGalleryShareUrl(post) {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('galleryPost', post.id);
+  return url.toString();
+}
+
+let galleryShareMenuEl = null;
+let galleryShareMenuPost = null;
+
+function closeGalleryShareMenu() {
+  if (galleryShareMenuEl) galleryShareMenuEl.style.display = 'none';
+}
+
+function openGalleryShareMenu(post, anchorEl) {
+  if (galleryShareMenuEl && galleryShareMenuPost === post && galleryShareMenuEl.style.display === 'flex') {
+    closeGalleryShareMenu();
+    return;
+  }
+  galleryShareMenuPost = post;
+  if (!galleryShareMenuEl) {
+    galleryShareMenuEl = document.createElement('div');
+    galleryShareMenuEl.className = 'po-gallery-share-menu';
+    document.body.appendChild(galleryShareMenuEl);
+    document.addEventListener('click', (ev) => {
+      if (galleryShareMenuEl.style.display === 'flex' && !galleryShareMenuEl.contains(ev.target) && !ev.target.closest('.po-gallery-share-btn')) {
+        closeGalleryShareMenu();
+      }
+    });
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeGalleryShareMenu(); });
+    window.addEventListener('resize', closeGalleryShareMenu);
+  }
+
+  const pageUrl = buildGalleryShareUrl(post);
+  const imageUrl = (post.ai_image_data_url && post.ai_image_data_url.startsWith('http')) ? post.ai_image_data_url : '';
+  const title = post.composition_name || I18n.t('gallery.untitled');
+  const shareText = `${title} — ${I18n.t('gallery.price_label')} ${formatGalleryPrice(post.price_sale)}`;
+  const pinterestUrl = `https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(pageUrl)}${imageUrl ? `&media=${encodeURIComponent(imageUrl)}` : ''}&description=${encodeURIComponent(shareText)}`;
+  const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}`;
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText + ' ' + pageUrl)}`;
+  const emailUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(shareText + '\n' + pageUrl)}`;
+
+  galleryShareMenuEl.innerHTML = `
+    <a href="${pinterestUrl}" target="_blank" rel="noopener noreferrer" class="po-gallery-share-item">${GALLERY_SHARE_ICONS.pinterest} ${I18n.t('gallery.share_pinterest')}</a>
+    <a href="${facebookUrl}" target="_blank" rel="noopener noreferrer" class="po-gallery-share-item">${GALLERY_SHARE_ICONS.facebook} ${I18n.t('gallery.share_facebook')}</a>
+    <a href="${whatsappUrl}" target="_blank" rel="noopener noreferrer" class="po-gallery-share-item">${GALLERY_SHARE_ICONS.whatsapp} ${I18n.t('gallery.share_whatsapp')}</a>
+    <a href="${emailUrl}" class="po-gallery-share-item">${GALLERY_SHARE_ICONS.email} ${I18n.t('gallery.share_email')}</a>
+    <button type="button" class="po-gallery-share-item po-gallery-share-copy-btn">${GALLERY_SHARE_ICONS.link} ${I18n.t('gallery.share_copy_link')}</button>
+  `;
+  const copyBtn = galleryShareMenuEl.querySelector('.po-gallery-share-copy-btn');
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(pageUrl);
+      copyBtn.textContent = I18n.t('gallery.share_copied');
+      setTimeout(() => { if (galleryShareMenuPost === post) copyBtn.innerHTML = `${GALLERY_SHARE_ICONS.link} ${I18n.t('gallery.share_copy_link')}`; }, 2000);
+    } catch (err) {
+      copyBtn.textContent = pageUrl;
+    }
+  });
+
+  galleryShareMenuEl.style.display = 'flex';
+  const rect = anchorEl.getBoundingClientRect();
+  const menuRect = galleryShareMenuEl.getBoundingClientRect();
+  let left = rect.left + window.scrollX;
+  if (left + menuRect.width > window.scrollX + document.documentElement.clientWidth - 8) {
+    left = rect.right + window.scrollX - menuRect.width;
+  }
+  galleryShareMenuEl.style.top = `${rect.bottom + window.scrollY + 6}px`;
+  galleryShareMenuEl.style.left = `${left}px`;
+}
+
+// Link compartilhado (?galleryPost=<id>) — abre direto na aba Composição já
+// carregada com a composição daquele post, pra quem recebeu o link (via
+// Pinterest/Facebook/WhatsApp/e-mail) ver e poder customizar na hora, sem
+// precisar procurar na Galeria. Chamada depois de showLoggedIn (precisa de
+// currentUser) tanto no init() quanto no submit do login — mesmo padrão de
+// maybeLoadGalleryPostForAdminEdit. Só posts aprovados (RLS já bloquearia
+// os outros de qualquer forma, mas o filtro aqui deixa explícito).
+async function maybeOpenSharedGalleryPost() {
+  const postId = new URLSearchParams(window.location.search).get('galleryPost');
+  if (!postId || !currentUser) return;
+  try {
+    const { data: post, error } = await supabaseClient
+      .from('gallery_posts')
+      .select('id, composition_name, slots')
+      .eq('id', postId)
+      .eq('status', 'approved')
+      .single();
+    if (error || !post) return;
+    const compTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-composition"]');
+    if (compTabBtn) compTabBtn.click();
+    restoreGalleryPostAsComposition(post);
+    // Tira o parâmetro da URL depois de abrir — um F5 acidental não deve
+    // reabrir por cima de alterações que o cliente já tenha feito.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('galleryPost');
+    window.history.replaceState({}, '', url);
+  } catch (err) {
+    console.error('Erro ao abrir composição compartilhada:', err);
+  }
 }
 
 function updateGalleryAdminEditBanner() {
@@ -5860,7 +6064,12 @@ async function saveGalleryPostAdminEdit() {
       price_cost: priceCost
     };
     if (galleryAiPreviewImage) {
-      payload.ai_image_data_url = galleryAiPreviewImage;
+      try {
+        payload.ai_image_data_url = await uploadGalleryImageToStorage(galleryAiPreviewImage);
+      } catch (uploadErr) {
+        console.error('Falha ao subir imagem da Galeria pro Storage, mantendo base64:', uploadErr);
+        payload.ai_image_data_url = galleryAiPreviewImage;
+      }
       payload.render_status = galleryAiPreviewStatus;
     }
     const { error } = await supabaseClient.from('gallery_posts').update(payload).eq('id', editingGalleryPostId);
@@ -6071,6 +6280,31 @@ function validateCutlistRows() {
   });
 }
 
+// Mini ícone ao lado do seletor de Fita de Borda (pedido do usuário
+// 2026-07-20: tirou o diagrama grande do lado e pediu pra mostrar a fita
+// "conforme a pessoa escolhe do lado do seletor", sem aumentar a altura da
+// barra — por isso é pequeno e cabe dentro da altura do <select>). Lados em
+// laranja = onde entra a fita, conforme o valor escolhido (0/2/4). "2" segue
+// a mesma peça landscape do resto da tela: os 2 lados do comprimento = topo
+// e base do retângulo.
+function cutlistEdgeIconSvg(edgeValue) {
+  const e = Number(edgeValue);
+  const top = e === 2 || e === 4;
+  const bottom = e === 2 || e === 4;
+  const left = e === 4;
+  const right = e === 4;
+  const active = '#ff7a3d';
+  const base = '#c9ab84';
+  const sw = (on) => on ? 3 : 1.5;
+  return `<svg width="30" height="20" viewBox="0 0 30 20" style="vertical-align:middle; flex:none;">
+    <rect x="3" y="3" width="24" height="14" fill="#e6c69c"/>
+    <line x1="3" y1="3" x2="27" y2="3" stroke="${top ? active : base}" stroke-width="${sw(top)}"/>
+    <line x1="3" y1="17" x2="27" y2="17" stroke="${bottom ? active : base}" stroke-width="${sw(bottom)}"/>
+    <line x1="3" y1="3" x2="3" y2="17" stroke="${left ? active : base}" stroke-width="${sw(left)}"/>
+    <line x1="27" y1="3" x2="27" y2="17" stroke="${right ? active : base}" stroke-width="${sw(right)}"/>
+  </svg>`;
+}
+
 function renderCutlistTable() {
   const tbody = document.getElementById('po-cutlist-tbody');
   if (!tbody) return;
@@ -6096,12 +6330,13 @@ function renderCutlistTable() {
       <td>
         <select class="po-project-input cl-color" style="min-width:130px;">${colorOptions}</select>
       </td>
-      <td>
-        <select class="po-project-input cl-edge" style="width:170px;">
+      <td style="display:flex; align-items:center; gap:6px;">
+        <select class="po-project-input cl-edge" style="width:170px; margin-top:0;">
           <option value="0" ${Number(row.edge_banding) === 0 ? 'selected' : ''}>${I18n.t('cutlist.edge_0')}</option>
           <option value="2" ${Number(row.edge_banding) === 2 ? 'selected' : ''}>${I18n.t('cutlist.edge_2')}</option>
           <option value="4" ${Number(row.edge_banding) === 4 ? 'selected' : ''} ${edge4Blocked ? `disabled title="${I18n.t('cutlist.edge_4_blocked_title')}"` : ''}>${I18n.t('cutlist.edge_4')}</option>
         </select>
+        <span class="cl-edge-icon">${cutlistEdgeIconSvg(row.edge_banding)}</span>
       </td>
       <td><input type="text" class="po-project-input cl-obs" style="width:120px;" value="${row.obs || ''}" /></td>
       <td><button type="button" class="secondary cl-remove-btn" style="margin-top:0; padding:4px 8px;">✕</button></td>
@@ -6114,7 +6349,12 @@ function renderCutlistTable() {
     tr.querySelector('.cl-obs').addEventListener('input', (e) => { row.obs = e.target.value; hideCutlistFinalPrice(); });
     tr.querySelector('.cl-color').addEventListener('change', (e) => { row.color_id = e.target.value; hideCutlistFinalPrice(); });
     tr.querySelector('.cl-espessura').addEventListener('change', (e) => { row.espessura_mm = Number(e.target.value); hideCutlistFinalPrice(); });
-    tr.querySelector('.cl-edge').addEventListener('change', (e) => { row.edge_banding = Number(e.target.value); hideCutlistFinalPrice(); });
+    tr.querySelector('.cl-edge').addEventListener('change', (e) => {
+      row.edge_banding = Number(e.target.value);
+      hideCutlistFinalPrice();
+      const iconEl = tr.querySelector('.cl-edge-icon');
+      if (iconEl) iconEl.innerHTML = cutlistEdgeIconSvg(row.edge_banding);
+    });
     // Comprimento/largura re-renderizam a linha (no blur) pra recalcular se
     // a opção "4 lados" deve ficar bloqueada (regra dos 100mm).
     tr.querySelector('.cl-comprimento').addEventListener('input', (e) => { row.comprimento_mm = e.target.value; hideCutlistFinalPrice(); });
@@ -6122,6 +6362,22 @@ function renderCutlistTable() {
     tr.querySelector('.cl-largura').addEventListener('input', (e) => { row.largura_mm = e.target.value; hideCutlistFinalPrice(); });
     tr.querySelector('.cl-largura').addEventListener('change', () => renderCutlistTable());
     tr.querySelector('.cl-remove-btn').addEventListener('click', () => removeCutlistRow(row._id));
+
+    // Pedido do usuário 2026-07-20: dar Tab no último campo (Obs) da ÚLTIMA
+    // linha abre uma linha nova automaticamente, sem precisar clicar em
+    // "+ Adicionar linha". Só intercepta Tab pra frente (sem shift) e só
+    // quando é mesmo a última linha — nas demais o Tab segue o fluxo normal
+    // (cai no botão ✕ e depois no OP da próxima linha).
+    tr.querySelector('.cl-obs').addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab' || e.shiftKey) return;
+      const isLastRow = cutlistRows[cutlistRows.length - 1] === row;
+      if (!isLastRow) return;
+      e.preventDefault();
+      addCutlistRow();
+      const newTr = tbody.querySelector('tr:last-child');
+      const newOpInput = newTr && newTr.querySelector('.cl-op');
+      if (newOpInput) newOpInput.focus();
+    });
   });
 }
 
@@ -6221,6 +6477,33 @@ async function importCutlistFile(file) {
   }
 }
 
+// Modelo pra download (pedido do usuário 2026-07-20): mesma ordem de colunas
+// do hint acima (cutlist.import_format_hint), cabeçalho traduzido no idioma
+// atual + 1 linha de exemplo já preenchida. mapImportedRowsToCutlist
+// reconhece o cabeçalho (looksLikeHeader) então funciona no reimport normal.
+async function downloadCutlistTemplate() {
+  if (typeof XLSX === 'undefined') return;
+  await loadCutlistColors(); // garante que a linha de exemplo use uma cor real do catálogo
+  const header = [
+    I18n.t('cutlist.col_op'),
+    I18n.t('cutlist.col_part_name'),
+    I18n.t('cutlist.col_quantity'),
+    I18n.t('cutlist.col_length'),
+    I18n.t('cutlist.col_width'),
+    I18n.t('cutlist.col_thickness'),
+    I18n.t('cutlist.col_color'),
+    I18n.t('cutlist.col_edge'),
+    I18n.t('cutlist.col_obs')
+  ];
+  const exampleColorName = cutlistColorsCache[0] ? cutlistColorsCache[0].name : '';
+  const exampleRow = ['OP-001', 'Lateral', 2, 600, 400, 19, exampleColorName, 2, ''];
+  const ws = XLSX.utils.aoa_to_sheet([header, exampleRow]);
+  ws['!cols'] = [8, 16, 6, 14, 12, 10, 16, 8, 20].map((w) => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Plano de Corte');
+  XLSX.writeFile(wb, 'modelo-plano-de-corte.xlsx');
+}
+
 // ---------- Botões da aba ----------
 
 const cutlistImportBtn = document.getElementById('po-cutlist-import-btn');
@@ -6233,6 +6516,9 @@ if (cutlistImportBtn && cutlistImportInput) {
     if (file) await importCutlistFile(file);
   });
 }
+
+const cutlistDownloadTemplateBtn = document.getElementById('po-cutlist-download-template-btn');
+if (cutlistDownloadTemplateBtn) cutlistDownloadTemplateBtn.addEventListener('click', () => downloadCutlistTemplate());
 
 const cutlistAddRowBtn = document.getElementById('po-cutlist-add-row-btn');
 if (cutlistAddRowBtn) cutlistAddRowBtn.addEventListener('click', () => addCutlistRow());
@@ -6416,17 +6702,80 @@ document.getElementById('po-sidebar').querySelectorAll('.portal-tab-btn').forEac
 
 // ---------- Autenticação ----------
 
+// Guarda a composição que o VISITANTE tentou abrir/curtir sem estar logado
+// — usada pra retomar a ação assim que o login (email/senha OU Google)
+// terminar, em vez de simplesmente cair na tela normal sem contexto. Ver
+// openAuthModal/resumePendingGalleryAction.
+let pendingGalleryPostForAuth = null;
+
+// Modal de login (pedido do usuário 2026-07-20: "deixa a pagina GALLERY
+// publica... ao clicar customizar pedir login") — reaproveita o MESMO
+// #po-auth-section de sempre (forms/ids intocados), só que agora abre por
+// cima em vez de ser a única coisa na tela. `post` é opcional — quando
+// existe, é a composição que o visitante estava tentando abrir (guardada
+// em pendingGalleryPostForAuth pra retomar depois do login).
+function openAuthModal(post) {
+  pendingGalleryPostForAuth = post || null;
+  document.getElementById('po-auth-section').classList.add('open');
+  document.getElementById('po-login-error').style.display = 'none';
+  document.getElementById('po-login-email').focus();
+}
+
+function closeAuthModal() {
+  document.getElementById('po-auth-section').classList.remove('open');
+}
+
+// Chamada depois de login/cadastro bem-sucedido (email+senha OU Google via
+// redirect, ver maybeOpenSharedGalleryPost/init) — se o visitante tinha
+// clicado em "Customizar" numa composição específica antes de ser
+// interrompido pelo login, abre ela agora em vez de só cair na tela normal.
+function resumePendingGalleryAction() {
+  if (!pendingGalleryPostForAuth) return;
+  const post = pendingGalleryPostForAuth;
+  pendingGalleryPostForAuth = null;
+  const compTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-composition"]');
+  if (compTabBtn) compTabBtn.click();
+  restoreGalleryPostAsComposition(post);
+}
+
 function showLoggedOut() {
-  document.getElementById('po-auth-section').style.display = 'block';
-  document.getElementById('po-content').style.display = 'none';
+  currentUser = null;
+  closeAuthModal();
+  document.getElementById('po-content').style.display = 'block';
   document.getElementById('po-logout-btn').style.display = 'none';
+  // Modo visitante (pedido do usuário: Galeria pública) — só a aba Galeria
+  // fica acessível na navegação (ver CSS #po-sidebar.guest-mode); o resto
+  // do app continua exigindo conta de verdade.
+  const sidebar = document.getElementById('po-sidebar');
+  if (sidebar) sidebar.classList.add('guest-mode');
+  const guestLoginBtn = document.getElementById('po-guest-login-btn');
+  if (guestLoginBtn) guestLoginBtn.style.display = 'inline-block';
+  const userChip = document.getElementById('po-user-chip');
+  if (userChip) userChip.style.display = 'none';
+  // Nomes de família (usados em galleryFamilyName, pro filtro/legenda de
+  // cada card) normalmente só carregavam em showLoggedIn — visitante
+  // também precisa, senão o "Ambiente" do card fica em branco. Tabela
+  // pública (sem dado sensível), então seguro tentar mesmo sem sessão; se
+  // a RLS um dia mudar pra exigir login, isso só volta a ficar vazio (sem
+  // travar nada, ver loadTaxonomyFilters).
+  if (typeof loadTaxonomyFilters === 'function') loadTaxonomyFilters().catch(() => {});
+  const galleryTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-gallery"]');
+  if (galleryTabBtn) galleryTabBtn.click();
 }
 
 async function showLoggedIn(user) {
   currentUser = user;
-  document.getElementById('po-auth-section').style.display = 'none';
+  closeAuthModal();
   document.getElementById('po-content').style.display = 'block';
   document.getElementById('po-logout-btn').style.display = 'inline-block';
+  // Sai do modo visitante — nav completa de volta, chip de usuário no lugar
+  // do botão "Entrar".
+  const sidebar = document.getElementById('po-sidebar');
+  if (sidebar) sidebar.classList.remove('guest-mode');
+  const guestLoginBtn = document.getElementById('po-guest-login-btn');
+  if (guestLoginBtn) guestLoginBtn.style.display = 'none';
+  const userChip = document.getElementById('po-user-chip');
+  if (userChip) userChip.style.display = 'flex';
   // Chip de usuário no nav superior (reskin 2026-07-09) — só exibe o e-mail
   // da sessão logada, não há tabela de perfil/nome cadastrado pra puxar daqui.
   const userNameEl = document.getElementById('po-user-name');
@@ -6474,6 +6823,52 @@ document.getElementById('po-login-form').addEventListener('submit', async (e) =>
     return;
   }
   await showLoggedIn(data.user);
+  await maybeOpenSharedGalleryPost();
+  resumePendingGalleryAction();
+});
+
+// Fechar o modal de login: botão X, clicar no fundo escuro, ou Esc — igual
+// ao padrão já usado no lightbox da galeria (openGalleryLightbox). Guest
+// pode desistir e continuar navegando a Galeria sem logar.
+document.getElementById('po-auth-modal-close').addEventListener('click', () => { pendingGalleryPostForAuth = null; closeAuthModal(); });
+document.getElementById('po-auth-section').addEventListener('click', (ev) => {
+  if (ev.target.id === 'po-auth-section') { pendingGalleryPostForAuth = null; closeAuthModal(); }
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && document.getElementById('po-auth-section').classList.contains('open')) {
+    pendingGalleryPostForAuth = null;
+    closeAuthModal();
+  }
+});
+
+// Botão "Entrar" do topo (visitante, modo guest) — abre o modal sem
+// composição pendente nenhuma (é só o cliente pedindo pra entrar direto,
+// não uma ação interrompida).
+const guestLoginBtnEl = document.getElementById('po-guest-login-btn');
+if (guestLoginBtnEl) guestLoginBtnEl.addEventListener('click', () => openAuthModal(null));
+
+// Login com Google (pedido do usuário 2026-07-20: "faz ligar com google da
+// pessoa pra ser rapido") — supabaseClient.auth.signInWithOAuth manda a
+// pessoa pro Google e VOLTA pra esta mesma URL (redirectTo). Se tinha uma
+// composição pendente (pendingGalleryPostForAuth), embute ?galleryPost=<id>
+// no redirect — maybeOpenSharedGalleryPost() já roda no init() assim que a
+// sessão voltar, então reabre a composição certa sozinho, sem precisar de
+// nenhum código extra pra esse caminho (diferente do login por senha, que
+// não recarrega a página e por isso chama resumePendingGalleryAction()
+// direto). Só funciona depois do Matt configurar o provider Google no
+// painel do Supabase (Authentication > Providers) + OAuth client no Google
+// Cloud Console — sem isso, o Supabase devolve um erro claro (mostrado
+// em po-login-error), não trava nada.
+document.getElementById('po-google-login-btn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('po-login-error');
+  errorEl.style.display = 'none';
+  const basePath = `${window.location.origin}${window.location.pathname}`;
+  const redirectTo = pendingGalleryPostForAuth ? `${basePath}?galleryPost=${pendingGalleryPostForAuth.id}` : basePath;
+  const { error } = await supabaseClient.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+  if (error) {
+    errorEl.textContent = error.message;
+    errorEl.style.display = 'block';
+  }
 });
 
 document.getElementById('po-signup-form').addEventListener('submit', async (e) => {
@@ -6499,6 +6894,7 @@ document.getElementById('po-signup-form').addEventListener('submit', async (e) =
   // — pede pra checar o e-mail e ir pra tela de login depois de confirmar.
   if (data.session) {
     await showLoggedIn(data.user);
+    resumePendingGalleryAction();
   } else {
     successEl.textContent = I18n.t('auth.signup_success');
     successEl.style.display = 'block';
@@ -6579,6 +6975,7 @@ if (typeof I18n !== 'undefined' && I18n.onLanguageChange) {
     // Precisa vir DEPOIS de showLoggedIn (usa currentUser) — ver
     // maybeLoadGalleryPostForAdminEdit.
     await maybeLoadGalleryPostForAdminEdit();
+    await maybeOpenSharedGalleryPost();
   } else {
     showLoggedOut();
   }
