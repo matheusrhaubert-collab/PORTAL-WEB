@@ -245,6 +245,11 @@ document.getElementById('po-unit-select').addEventListener('change', () => {
   if (typeof refreshFloorHeightInputUI === 'function') refreshFloorHeightInputUI();
   // Rótulo "Ceiling: X" das linhas do ambiente segue a unidade global.
   if (typeof applyViewerRoomEnvironment === 'function') applyViewerRoomEnvironment();
+  // Canvas 2D de Projetos (largura do ambiente + medidas de cada módulo no
+  // ambiente) também é texto formatado na unidade global — mesmo motivo dos
+  // outros re-renders acima.
+  if (typeof refreshProjectWallWidthInput === 'function') refreshProjectWallWidthInput();
+  if (typeof renderProjectCanvas === 'function') renderProjectCanvas();
 });
 
 // ---- Pé direito (ceiling) e rodapé (baseboard) da casa do cliente ----
@@ -770,6 +775,18 @@ async function loadModules() {
   // módulo nenhum pra escopar as categorias ainda.
   renderTaxonomyTabBars();
   renderModuleGallery();
+  // Mesma corrida no login já achada em restoreFavoriteProject (ver
+  // comentário lá): se o cliente já estiver na aba Projetos quando
+  // loadModules() termina (ex.: entrou direto nela logo depois de logar,
+  // antes do catálogo carregar), a biblioteca à esquerda tinha renderizado
+  // "Nenhum módulo encontrado" com allModules ainda vazio e nunca mais se
+  // atualizava sozinha. Reforça aqui, igual já faz pra renderModuleGallery()
+  // acima.
+  const projectsTab = document.getElementById('po-tab-projects');
+  if (projectsTab && projectsTab.style.display !== 'none') {
+    renderProjectLibraryFilterBars();
+    renderProjectLibrary();
+  }
 }
 
 // Chamado ao clicar num cartão da biblioteca de módulos (antes era o
@@ -2576,6 +2593,64 @@ document.getElementById('po-add-item-btn').addEventListener('click', async () =>
   // os dois nunca ficam setados ao mesmo tempo.
   if (editingOrderItemId) {
     await saveOrderItemEdit();
+    return;
+  }
+
+  // Modo "Projetos" (ver startProjectSlotConfig, canvas 2D — pedido do
+  // usuário 2026-07-21) — grava a configuração completa deste módulo em
+  // projectSlots (posição livre x/y + profundidade), não em
+  // compositionSlots nem em order_items. Checado ANTES do modo Composição
+  // (os dois nunca ficam setados ao mesmo tempo, mesma convenção de
+  // editingOrderItemId acima). Posição em si (x_mm/floor_height_mm/z_order)
+  // só é ATRIBUÍDA aqui quando o slot é NOVO — editando um já existente
+  // (editProjectSlot) preserva onde o cliente já tinha arrastado ele.
+  if (addTargetProjectSlotId !== null) {
+    let thumbnail_data_url = null;
+    try { thumbnail_data_url = await trimTransparentPng(Viewer3D.snapshot()); } catch (e) { /* sem 3D, sem miniatura */ }
+    const effectivePieces = pieces.filter((p) => !p.client_optional || selectedOptionalComponentIds.has(p.id));
+    if (typeof applyFloorHeightInput === 'function') applyFloorHeightInput();
+    const existingSlot = projectSlots.find((s) => s.id === addTargetProjectSlotId);
+    const newSlot = {
+      id: addTargetProjectSlotId,
+      x_mm: existingSlot ? Number(existingSlot.x_mm || 0) : 0, // recalculado abaixo se for slot novo
+      floor_height_mm: currentFloorHeightMm,
+      z_order: existingSlot ? Number(existingSlot.z_order || 0) : 0,
+      module: currentModule,
+      pieces: effectivePieces,
+      // Cores DISPONÍVEIS pro módulo (não só a escolhida) — precisa
+      // continuar aqui depois de editar via "Editar configuração completa",
+      // senão o painel inline (ver renderProjectConfigPanel) perderia as
+      // opções de swatch pra trocar cor sem reabrir o modal de novo.
+      // moduleColorsByRole é o global que loadModuleColors (chamado por
+      // selectModule) acabou de preencher pra este MESMO currentModule.
+      colorOptionsByRole: moduleColorsByRole,
+      colorsByRole: lastItemResult.colorsByRole,
+      selectedColors: lastItemResult.selectedColors,
+      pieceColorOverrides: lastItemResult.pieceColorOverrides,
+      hingeModel: lastItemResult.hingeModel,
+      slideModel: lastItemResult.slideModel,
+      width_mm: lastItemResult.width_mm,
+      height_mm: lastItemResult.height_mm,
+      depth_mm: lastItemResult.depth_mm,
+      shelfQuantities: lastItemResult.shelfQuantities,
+      dimOverrides: lastItemResult.dimOverrides,
+      selectedOptionalIds: lastItemResult.selectedOptionalIds,
+      result: lastItemResult.result,
+      thumbnail_data_url
+    };
+    if (!existingSlot) newSlot.x_mm = computeDefaultProjectSlotX(newSlot.width_mm);
+
+    const idx = projectSlots.findIndex((s) => s.id === addTargetProjectSlotId);
+    if (idx >= 0) projectSlots[idx] = newSlot; else projectSlots.push(newSlot);
+
+    exitProjectSlotConfig();
+    highlightSelectedModuleCard('');
+    document.getElementById('po-config-section').style.display = 'none';
+    document.getElementById('po-module-description').textContent = '';
+    currentModule = null;
+    lastItemResult = null;
+    selectedProjectSlotId = newSlot.id;
+    renderProjectCanvas();
     return;
   }
 
@@ -4745,6 +4820,13 @@ async function restoreFavoriteComposition(fav, bindAsFavorite = true) {
   const errorEl = document.getElementById('po-fav-error');
   errorEl.style.display = 'none';
   try {
+    // Corrida no login (2026-07-21, mesmo bug achado em restoreFavoriteProject
+    // — ver comentário lá): allModules só é preenchido depois de um showLoggedIn()
+    // assíncrono (loadModules, no fim da cadeia). Se o cliente clicar
+    // "Carregar" rápido demais (ex.: acabou de logar), allModules ainda está
+    // [] e TODO módulo salvo seria pulado por engano ("módulo não existe mais
+    // no catálogo"), mesmo existindo de verdade. Recarrega antes de resolver.
+    if (!allModules.length) await loadModules();
     const slotConfigs = Array.isArray(fav.slots) ? fav.slots : [];
 
     // busca cores/dobradiças/corrediças referenciadas, numa ida só por tabela
@@ -5555,6 +5637,62 @@ async function dataUrlToBlob(dataUrl) {
   return res.blob();
 }
 
+// "⬇️ Baixar" / "↗️ Compartilhar" a imagem gerada (pedido do usuário,
+// 2026-07-21) — direto na prévia, ANTES de publicar na Galeria (que exige
+// login + moderação). imageDataUrl aqui é sempre a mesma base64 que já está
+// em galleryAiPreviewImage/projectGalleryAiPreviewImage (nunca a URL do
+// Storage — o upload só acontece na hora de publicar, ver
+// uploadGalleryImageToStorage), então funciona mesmo sem ter publicado nada
+// ainda.
+function dataUrlFileExtension(dataUrl) {
+  const match = /^data:image\/(\w+);/.exec(dataUrl || '');
+  return match ? match[1].replace('jpeg', 'jpg') : 'png';
+}
+
+function downloadGeneratedImage(dataUrl, filenameBase) {
+  if (!dataUrl) return;
+  const ext = dataUrlFileExtension(dataUrl);
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `${filenameBase || 'imagem'}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// Web Share API (nível 2, com arquivo) — funciona nativamente em
+// celular (abre o menu de compartilhar do sistema: WhatsApp, Instagram,
+// etc.) e em boa parte dos desktops modernos. Sem suporte (ou usuário
+// cancelou o share nativo, que dispara AbortError), cai pro download —
+// nunca deixa o botão "sem fazer nada visível", mesma filosofia de
+// generateAiPreviewForGallery (sempre mostra alguma imagem no preview).
+async function shareGeneratedImage(dataUrl, filenameBase, statusEl) {
+  if (!dataUrl) return;
+  if (statusEl) statusEl.textContent = '';
+  try {
+    const blob = await dataUrlToBlob(dataUrl);
+    const ext = dataUrlFileExtension(dataUrl);
+    const file = new File([blob], `${filenameBase || 'imagem'}.${ext}`, { type: blob.type || 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // usuário cancelou o share nativo — não faz nada
+  }
+  downloadGeneratedImage(dataUrl, filenameBase);
+  if (statusEl) statusEl.textContent = I18n.t('gallery.share_unsupported_hint');
+}
+
+const galleryAiDownloadBtn = document.getElementById('po-gallery-ai-download-btn');
+if (galleryAiDownloadBtn) {
+  galleryAiDownloadBtn.addEventListener('click', () => downloadGeneratedImage(galleryAiPreviewImage, 'composicao'));
+}
+const galleryAiShareBtn = document.getElementById('po-gallery-ai-share-btn');
+if (galleryAiShareBtn) {
+  galleryAiShareBtn.addEventListener('click', () => shareGeneratedImage(galleryAiPreviewImage, 'composicao', document.getElementById('po-gallery-ai-preview-hint')));
+}
+
 // Migration 055 + pedido do usuário 2026-07-20 ("gallery muito lenta pra
 // abrir"): a causa era a imagem inteira em base64 dentro da linha de
 // gallery_posts — cada select trazia vários MB de texto do Postgres antes
@@ -5627,7 +5765,7 @@ async function loadGalleryList() {
   // aceito no projeto pra margem/custo de order_items).
   const { data, error } = await supabaseClient
     .from('gallery_posts')
-    .select('id, ai_image_data_url, render_status, composition_name, family_id, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at')
+    .select('id, ai_image_data_url, render_status, composition_name, family_id, source_type, wall_width_mm, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at')
     .eq('status', 'approved')
     .order('created_at', { ascending: false })
     .range(0, GALLERY_PAGE_SIZE - 1);
@@ -5655,7 +5793,7 @@ async function loadMoreGalleryPosts() {
     const from = galleryPostsCache.length;
     const { data, error } = await supabaseClient
       .from('gallery_posts')
-      .select('id, ai_image_data_url, render_status, composition_name, family_id, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at')
+      .select('id, ai_image_data_url, render_status, composition_name, family_id, source_type, wall_width_mm, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .range(from, from + GALLERY_PAGE_SIZE - 1);
@@ -5784,7 +5922,7 @@ function renderGalleryGrid(posts) {
     // escondida em modo visitante, ver guest-mode no CSS).
     card.querySelector('.po-gallery-use-btn').addEventListener('click', () => {
       if (!currentUser) { openAuthModal(post); return; }
-      restoreGalleryPostAsComposition(post);
+      restoreGalleryPostBySourceType(post);
     });
     card.querySelector('.po-gallery-share-btn').addEventListener('click', (ev) => { ev.stopPropagation(); openGalleryShareMenu(post, ev.currentTarget); });
     const cardImg = card.querySelector('.po-gallery-card-image');
@@ -5971,14 +6109,15 @@ async function maybeOpenSharedGalleryPost() {
   try {
     const { data: post, error } = await supabaseClient
       .from('gallery_posts')
-      .select('id, composition_name, slots')
+      .select('id, composition_name, slots, source_type, wall_width_mm')
       .eq('id', postId)
       .eq('status', 'approved')
       .single();
     if (error || !post) return;
-    const compTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-composition"]');
-    if (compTabBtn) compTabBtn.click();
-    restoreGalleryPostAsComposition(post);
+    // Troca de aba fica a cargo do restore certo (restoreFavoriteComposition
+    // vai pra Composição, restoreFavoriteProject vai pra Projetos) — ver
+    // restoreGalleryPostBySourceType.
+    restoreGalleryPostBySourceType(post);
     // Tira o parâmetro da URL depois de abrir — um F5 acidental não deve
     // reabrir por cima de alterações que o cliente já tenha feito.
     const url = new URL(window.location.href);
@@ -6654,6 +6793,2184 @@ if (cutlistOrderDetailBackBtn) {
   });
 }
 
+// ---------- Projetos (canvas 2D — pedido do usuário, 2026-07-21) ----------
+// "quero fazer uma tela de projetos mesmo... busca o modulo na biblioteca ao
+// lado esquerdo. joga no ambiente visao frontal 2D paralela (nao
+// perspectiva) e ao clicar no modulo abre configuracoes da direita... deve
+// dar pra arrastar esse modulo no ambiente, e ele deve ter um tipo iman que
+// puxe os cantos dele pra eles se conectarem melhor... ao colocar um modulo
+// na frente do outro, ele deve levar o modulo novo pra frente".
+//
+// FASE 1 (entrega faseada combinada com o usuário — risco menor que tudo de
+// uma vez): canvas 2D com arrastar/imã/profundidade, painel de config à
+// direita (resumo + botão pra reabrir a configuração completa) e preço
+// total. Fases seguintes (NÃO estão aqui ainda): vista 3D com portas/
+// gavetas, vista superior, lista de módulos, salvar projeto, gerar IA,
+// comprar, ajuda.
+//
+// Arquitetura: projectSlots tem o MESMO formato de compositionSlots (mesmos
+// campos width_mm/height_mm/depth_mm/colorsByRole/pieces/result/etc. — ver
+// po-add-item-btn) + x_mm (posição horizontal, novo) — floor_height_mm já
+// existia (era só um campo manual de altura na Composição) e vira aqui a
+// posição VERTICAL de verdade, arrastável. z_order = profundidade (0 =
+// encostado na parede; sobrepor outro módulo no arraste soma 1 acima do
+// maior z_order que ele estiver tocando). Reaproveita 100% do configurador
+// de módulo único que a Composição já usa (startProjectSlotConfig imita
+// startCompositionSlotConfig; restoreSlotStateIntoConfigurator é chamada
+// direto, sem duplicar) — só muda o destino do "Adicionar".
+
+let projectSlots = [];
+let addTargetProjectSlotId = null; // null = não está configurando módulo de projeto agora
+let selectedProjectSlotId = null;  // slot mostrado no painel de config à direita
+let projectSlotIdSeq = 0;
+function newProjectSlotId() {
+  projectSlotIdSeq += 1;
+  return `pslot_${Date.now()}_${projectSlotIdSeq}`;
+}
+
+// Largura do ambiente — único dado de "sala" que a Composição não tinha
+// (ela nunca desenhou parede, só empilhava em coluna sem largura total
+// travada). Altura útil/rodapé continuam vindo de roomSettings (⚙ no topo,
+// ver CEILING_CLEARANCE_MM/roomSettings acima) — mesma regra de sempre.
+const PROJECT_WALL_WIDTH_DEFAULT_MM = 3000; // 3m, chute razoável de parede
+const PROJECT_WALL_WIDTH_MIN_MM = 300;
+const PROJECT_WALL_WIDTH_MAX_MM = 15000;
+let projectWallWidthMm = PROJECT_WALL_WIDTH_DEFAULT_MM;
+try {
+  const savedWallWidth = Number(localStorage.getItem('legno_project_wall_width_mm'));
+  if (savedWallWidth > 0) projectWallWidthMm = clamp(savedWallWidth, PROJECT_WALL_WIDTH_MIN_MM, PROJECT_WALL_WIDTH_MAX_MM);
+} catch (e) { /* ok sem persistir */ }
+function getProjectWallWidthMm() { return projectWallWidthMm; }
+
+function refreshProjectWallWidthInput() {
+  const input = document.getElementById('po-proj-wall-width-input');
+  const unitLabel = document.getElementById('po-proj-wall-width-unit');
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  if (input && document.activeElement !== input) input.value = formatDimensionNumber(projectWallWidthMm, unit);
+  if (unitLabel) unitLabel.textContent = unitAbbrev(unit);
+}
+refreshProjectWallWidthInput();
+
+// Muda a largura do ambiente programaticamente (usado tanto pelo campo
+// numérico quanto pelas setinhas de arrastar na própria parede, ver
+// attachProjectWallResizeHandle abaixo). shiftModulesFromLeft=true (handle
+// ESQUERDO) desloca todo módulo já colocado pelo mesmo delta, pra manterem
+// a distância da parede DIREITA — "esticar pela esquerda" deve abrir espaço
+// à esquerda dos módulos existentes, não empurrar tudo pra dentro da parede
+// nova. O handle DIREITO não precisa disso: x_mm já é medido a partir da
+// parede esquerda, que não se move.
+function setProjectWallWidthMm(newWidthMm, shiftModulesFromLeft) {
+  const clamped = clamp(newWidthMm, PROJECT_WALL_WIDTH_MIN_MM, PROJECT_WALL_WIDTH_MAX_MM);
+  const delta = clamped - projectWallWidthMm;
+  if (shiftModulesFromLeft && delta !== 0) {
+    projectSlots.forEach((s) => { s.x_mm = Math.max(0, Number(s.x_mm || 0) + delta); });
+  }
+  projectWallWidthMm = clamped;
+  try { localStorage.setItem('legno_project_wall_width_mm', String(projectWallWidthMm)); } catch (e) { /* ok sem persistir */ }
+  refreshProjectWallWidthInput();
+  renderProjectCanvas();
+}
+
+// Setinhas na própria parede (pedido do usuário, 2026-07-21: "uma setinha na
+// parede pra esticar ela pro lado direito e esquerdo... assim como nos
+// móveis") — recriadas a cada renderProjectCanvas() (mesmo padrão do
+// baseboard/linha do teto), então recebe o elemento já criado em vez de
+// buscar por id.
+// BUG CORRIGIDO (mesmo dia): o handle recebia setPointerCapture, mas
+// setProjectWallWidthMm chama renderProjectCanvas() a cada pointermove, que
+// faz canvas.innerHTML='' e recria os handles do zero — o elemento que
+// tinha capturado o ponteiro é destruído no meio do arraste, então só o
+// 1º pointermove funcionava e depois o arraste "morria" (sem eventos de
+// move/up chegando mais). Correção: estado de arraste vira uma variável
+// MÓDULO (projectWallDragState), e pointermove/pointerup/pointercancel
+// ficam no `document` (registrados uma única vez, nunca destruídos) — só o
+// pointerdown continua no próprio handle (refeito a cada render, mas só
+// precisa disparar uma vez pra ligar o estado). Mesmo padrão usado abaixo
+// pras novas setinhas de esticar módulo (projectResizeDragState).
+let projectWallDragState = null; // { isRightHandle, startX, startWidthMm }
+let projectResizeDragState = null; // { slotId, axis, startX, startY, startWidthMm, startHeightMm }
+
+function attachProjectWallResizeHandle(handleEl, isRightHandle) {
+  handleEl.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation(); // não deixa isso ser interpretado como clique/drag de módulo
+    projectWallDragState = { isRightHandle, startX: ev.clientX, startWidthMm: projectWallWidthMm };
+    handleEl.classList.add('dragging');
+  });
+}
+
+// Setinhas de esticar CADA MÓDULO (pedido do usuário, 2026-07-21: "os
+// modulos estao sem a setinha... quero que eles estiquem da mesma forma") —
+// esquerda/direita mexem na largura (esquerda também desloca x_mm, pra
+// crescer mantendo a borda DIREITA no lugar — mesma lógica de
+// setProjectWallWidthMm com shiftModulesFromLeft), topo mexe na altura
+// (cresce pra CIMA, base/floor_height_mm não muda — mesmo raciocínio: o
+// lado que NÃO tem handle fica ancorado).
+function attachProjectSlotResizeHandle(handleEl, slot, axis) {
+  handleEl.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation(); // não deixa virar um drag de MOVER o módulo (attachProjectSlotDrag no div pai)
+    projectResizeDragState = {
+      slotId: slot.id,
+      axis,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      startXMm: Number(slot.x_mm || 0),
+      startWidthMm: Number(slot.width_mm || 0),
+      startHeightMm: Number(slot.height_mm || 0)
+    };
+    handleEl.classList.add('dragging');
+  });
+}
+
+// Largura crescendo a partir da borda ESQUERDA — a borda DIREITA fica
+// ancorada (x_mm recuando pra compensar), o oposto do
+// updateProjectSlotDimension normal (que só mexe em width_mm, ancorado na
+// esquerda — usado pela borda direita e pelo painel de config).
+function updateProjectSlotWidthFromLeft(slot, newWidthMm) {
+  const m = slot.module;
+  const minMm = Number(m.width_min_mm || 0);
+  let maxMm = Number(m.width_max_mm);
+  if (!(maxMm > 0)) maxMm = Infinity;
+  const clamped = clamp(newWidthMm, minMm, maxMm);
+  const rightEdgeMm = Number(slot.x_mm || 0) + Number(slot.width_mm || 0);
+  slot.width_mm = clamped;
+  slot.x_mm = Math.max(0, rightEdgeMm - clamped);
+  recomputeProjectSlotPricing(slot);
+  clampProjectSlotPosition(slot);
+  resolveProjectSlotDepth(slot, projectSlots.filter((s) => s.id !== slot.id));
+  renderProjectCanvas();
+}
+
+document.addEventListener('pointermove', (ev) => {
+  if (projectWallDragState) {
+    const dxPx = ev.clientX - projectWallDragState.startX;
+    const dxMm = dxPx / (projectPxPerMm || 1);
+    // Handle direito: arrastar pra DIREITA aumenta a largura. Handle
+    // esquerdo: arrastar pra ESQUERDA (dxMm negativo) aumenta a largura —
+    // por isso o sinal invertido.
+    const newWidthMm = projectWallDragState.isRightHandle
+      ? projectWallDragState.startWidthMm + dxMm
+      : projectWallDragState.startWidthMm - dxMm;
+    setProjectWallWidthMm(newWidthMm, !projectWallDragState.isRightHandle);
+    return;
+  }
+  if (projectResizeDragState) {
+    const state = projectResizeDragState;
+    const slot = projectSlots.find((s) => s.id === state.slotId);
+    if (!slot) { projectResizeDragState = null; return; }
+    // Ímã ao esticar (pedido do usuário: "quero que ao esticar ele puxe
+    // alinhamento com o que está na tela... tipo largura do painel de
+    // trás") — snapProjectEdge puxa a borda que está se movendo pra
+    // encostar na borda de outro módulo (ou parede/chão) dentro do raio de
+    // imã, exatamente como já acontece ao MOVER um módulo.
+    const others = projectSlots.filter((s) => s.id !== slot.id);
+    if (state.axis === 'width-right') {
+      const dxMm = (ev.clientX - state.startX) / (projectPxPerMm || 1);
+      const rawRightEdge = state.startXMm + state.startWidthMm + dxMm;
+      const snappedRightEdge = snapProjectEdge(rawRightEdge, true, others);
+      updateProjectSlotDimension(slot, 'width', snappedRightEdge - Number(slot.x_mm || 0));
+    } else if (state.axis === 'width-left') {
+      const dxMm = (ev.clientX - state.startX) / (projectPxPerMm || 1);
+      const rawLeftEdge = state.startXMm + dxMm;
+      const snappedLeftEdge = snapProjectEdge(rawLeftEdge, true, others);
+      updateProjectSlotWidthFromLeft(slot, (state.startXMm + state.startWidthMm) - snappedLeftEdge);
+    } else if (state.axis === 'height-top') {
+      // Tela: clientY cresce pra BAIXO; arrastar pra CIMA (dyPx negativo)
+      // precisa AUMENTAR a altura — sinal invertido.
+      const dyMm = -(ev.clientY - state.startY) / (projectPxPerMm || 1);
+      const rawTopEdge = Number(slot.floor_height_mm || 0) + state.startHeightMm + dyMm;
+      const snappedTopEdge = snapProjectEdge(rawTopEdge, false, others);
+      updateProjectSlotDimension(slot, 'height', snappedTopEdge - Number(slot.floor_height_mm || 0));
+    }
+  }
+});
+document.addEventListener('pointerup', () => {
+  if (projectWallDragState) {
+    projectWallDragState = null;
+    document.querySelectorAll('.po-proj-wall-resize-handle.dragging').forEach((el) => el.classList.remove('dragging'));
+  }
+  if (projectResizeDragState) {
+    projectResizeDragState = null;
+    document.querySelectorAll('.po-proj-slot-resize.dragging').forEach((el) => el.classList.remove('dragging'));
+  }
+});
+document.addEventListener('pointercancel', () => {
+  projectWallDragState = null;
+  projectResizeDragState = null;
+  document.querySelectorAll('.po-proj-wall-resize-handle.dragging, .po-proj-slot-resize.dragging').forEach((el) => el.classList.remove('dragging'));
+});
+
+const projWallWidthInput = document.getElementById('po-proj-wall-width-input');
+if (projWallWidthInput) {
+  projWallWidthInput.addEventListener('change', () => {
+    const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+    const mm = parseDimensionInput(projWallWidthInput.value, unit);
+    const errorEl = document.getElementById('po-proj-error');
+    if (mm === null || isNaN(mm)) {
+      if (errorEl) { errorEl.textContent = I18n.t('project.wall_width_invalid_error'); errorEl.style.display = 'block'; }
+      refreshProjectWallWidthInput();
+      return;
+    }
+    if (errorEl) errorEl.style.display = 'none';
+    setProjectWallWidthMm(mm, false);
+  });
+  projWallWidthInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); projWallWidthInput.blur(); }
+  });
+}
+
+// ---------- Colunas ajustáveis (pedido do usuário, 2026-07-21) ----------
+// "pode deixar as colunas laterais ajustaveis na largura?" — arrasta os
+// dois handles finos entre biblioteca|canvas|painel de config pra dar mais
+// espaço a qualquer um dos três. Largura em variáveis CSS no próprio
+// .po-proj-layout (ver grid-template-columns no CSS), persistida no
+// localStorage. Redimensionar chama renderProjectCanvas() de novo — a
+// escala (px/mm) depende da largura disponível do wrap, que muda junto.
+
+const PROJECT_COLUMN_MIN_PX = 150;
+const PROJECT_COLUMN_MAX_PX = 460;
+let projectLibraryWidthPx = 200;
+let projectConfigWidthPx = 240;
+try {
+  const savedLib = Number(localStorage.getItem('legno_project_library_width_px'));
+  if (savedLib > 0) projectLibraryWidthPx = clamp(savedLib, PROJECT_COLUMN_MIN_PX, PROJECT_COLUMN_MAX_PX);
+  const savedCfg = Number(localStorage.getItem('legno_project_config_width_px'));
+  if (savedCfg > 0) projectConfigWidthPx = clamp(savedCfg, PROJECT_COLUMN_MIN_PX, PROJECT_COLUMN_MAX_PX);
+} catch (e) { /* ok sem persistir */ }
+
+function applyProjectColumnWidths() {
+  const layout = document.querySelector('#po-tab-projects .po-proj-layout');
+  if (!layout) return;
+  layout.style.setProperty('--proj-lib-w', projectLibraryWidthPx + 'px');
+  layout.style.setProperty('--proj-cfg-w', projectConfigWidthPx + 'px');
+}
+applyProjectColumnWidths();
+
+function attachProjectColumnResize(handleId, isLeftColumn) {
+  const handle = document.getElementById(handleId);
+  if (!handle) return;
+  let dragState = null;
+  handle.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    try { handle.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    dragState = {
+      pointerId: ev.pointerId,
+      startX: ev.clientX,
+      startWidth: isLeftColumn ? projectLibraryWidthPx : projectConfigWidthPx
+    };
+    handle.classList.add('resizing');
+  });
+  handle.addEventListener('pointermove', (ev) => {
+    if (!dragState || dragState.pointerId !== ev.pointerId) return;
+    const dx = ev.clientX - dragState.startX;
+    // Handle da esquerda: arrastar pra DIREITA cresce a biblioteca. Handle
+    // da direita: arrastar pra ESQUERDA cresce o painel de config (sinal
+    // invertido — a coluna fica à DIREITA do handle, não à esquerda).
+    const rawWidth = isLeftColumn ? dragState.startWidth + dx : dragState.startWidth - dx;
+    const width = clamp(rawWidth, PROJECT_COLUMN_MIN_PX, PROJECT_COLUMN_MAX_PX);
+    if (isLeftColumn) projectLibraryWidthPx = width; else projectConfigWidthPx = width;
+    applyProjectColumnWidths();
+    renderProjectCanvas();
+  });
+  const endDrag = (ev) => {
+    if (!dragState || dragState.pointerId !== ev.pointerId) return;
+    handle.classList.remove('resizing');
+    try { handle.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    dragState = null;
+    try {
+      localStorage.setItem('legno_project_library_width_px', String(projectLibraryWidthPx));
+      localStorage.setItem('legno_project_config_width_px', String(projectConfigWidthPx));
+    } catch (e) { /* ok sem persistir */ }
+  };
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+}
+attachProjectColumnResize('po-proj-resize-handle-left', true);
+attachProjectColumnResize('po-proj-resize-handle-right', false);
+
+// ---------- Biblioteca (painel esquerdo) ----------
+// Pedido do usuário 2026-07-21 (2ª rodada de feedback): "quero já ver os
+// modulos na esquerda, com os filtros de categoria e sub categoria" — pills
+// pequenas, com ESTADO PRÓPRIO (não usa selectedCategoryId/SubcategoryId da
+// aba "Novo Orçamento" — trocar filtro aqui não deve bagunçar aquela aba).
+
+let projectLibrarySearchText = '';
+let projectSelectedFamilyId = '';
+let projectSelectedCategoryId = '';
+let projectSelectedSubcategoryId = '';
+
+// Família (pedido do usuário, 2026-07-21: "preciso selecionar kitchens,
+// hall... essas categorias e não to conseguindo") — a Projetos só tinha
+// categoria/subcategoria, faltava o 1º nível que "Novo Orçamento" já tem
+// (ver renderTaxonomyTabBars/po-filter-family) — sem ele não tinha pill
+// nenhuma pra escolher família, só dava pra filtrar dentro da mesma família
+// de sempre. Mesma cascata: família reescopa categoria, categoria reescopa
+// subcategoria, cada nível reseta pra "Todas" se sair do recorte do nível
+// acima (mesmo padrão de renderTaxonomyTabBars).
+function renderProjectLibraryFilterBars() {
+  const familiesInScope = familiesCacheList.filter((f) => allModules.some((m) => m.family_id === f.id));
+  if (projectSelectedFamilyId && !familiesInScope.some((f) => f.id === projectSelectedFamilyId)) {
+    projectSelectedFamilyId = '';
+  }
+  const categoriesInScope = categoriesCacheList.filter((c) => allModules.some((m) =>
+    m.category_id === c.id && (!projectSelectedFamilyId || m.family_id === projectSelectedFamilyId)
+  ));
+  if (projectSelectedCategoryId && !categoriesInScope.some((c) => c.id === projectSelectedCategoryId)) {
+    projectSelectedCategoryId = '';
+  }
+  const subcategoriesInScope = subcategoriesCacheList.filter((s) => allModules.some((m) =>
+    m.subcategory_id === s.id
+    && (!projectSelectedFamilyId || m.family_id === projectSelectedFamilyId)
+    && (!projectSelectedCategoryId || m.category_id === projectSelectedCategoryId)
+  ));
+  if (projectSelectedSubcategoryId && !subcategoriesInScope.some((s) => s.id === projectSelectedSubcategoryId)) {
+    projectSelectedSubcategoryId = '';
+  }
+  renderTabBar('po-proj-filter-family', familiesInScope, projectSelectedFamilyId, (id) => {
+    projectSelectedFamilyId = id;
+    renderProjectLibraryFilterBars();
+    renderProjectLibrary();
+  });
+  renderTabBar('po-proj-filter-category', categoriesInScope, projectSelectedCategoryId, (id) => {
+    projectSelectedCategoryId = id;
+    projectSelectedSubcategoryId = '';
+    renderProjectLibraryFilterBars();
+    renderProjectLibrary();
+  });
+  renderTabBar('po-proj-filter-subcategory', subcategoriesInScope, projectSelectedSubcategoryId, (id) => {
+    projectSelectedSubcategoryId = id;
+    renderProjectLibraryFilterBars();
+    renderProjectLibrary();
+  });
+}
+
+function renderProjectLibrary() {
+  const grid = document.getElementById('po-proj-library-grid');
+  if (!grid) return;
+  const search = projectLibrarySearchText.trim().toLowerCase();
+  const list = (allModules || []).filter((m) =>
+    (!search || m.name.toLowerCase().includes(search)) &&
+    (!projectSelectedFamilyId || m.family_id === projectSelectedFamilyId) &&
+    (!projectSelectedCategoryId || m.category_id === projectSelectedCategoryId) &&
+    (!projectSelectedSubcategoryId || m.subcategory_id === projectSelectedSubcategoryId)
+  );
+  grid.innerHTML = '';
+  if (!list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'po-proj-library-empty';
+    empty.textContent = I18n.t('step1.no_modules_found');
+    grid.appendChild(empty);
+    return;
+  }
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  list.forEach((m) => {
+    const card = document.createElement('div');
+    card.className = 'po-proj-library-card';
+    card.title = m.name;
+    const dimsLine = `${formatDimension(m.width_default_mm, unit)} x ${formatDimension(m.height_default_mm, unit)} x ${formatDimension(m.depth_default_mm, unit)}`;
+    card.innerHTML = `
+      ${moduleCardImage(m)}
+      <div class="po-proj-library-card-name">${m.name}</div>
+      <div class="po-proj-library-card-dims">${dimsLine}</div>
+    `;
+    // Pedido do usuário (2ª rodada, 2026-07-21): "quero que clique no modulo
+    // e ele seja inserido na tela do projeto... dando um clique no modulo
+    // abre as configuracoes na direita e eu resolva tudo na mesma tela" —
+    // insere JÁ com config padrão (1ª cor de cada papel, medida padrão do
+    // catálogo, opcionais padrão) via insertProjectModuleDefault, sem abrir
+    // o configurador de tela cheia. Medida/cor viram editáveis DIRETO no
+    // painel da direita (ver renderProjectConfigPanel/updateProjectSlot*).
+    // Isso é DIFERENTE da regra "sem atalho de adicionar rápido" do
+    // carrinho normal (ver memória) — decisão explícita do usuário só pra
+    // esta tela de Projetos, que é uma ferramenta de rascunho/layout, não o
+    // pedido final.
+    card.addEventListener('click', () => insertProjectModuleDefault(m.id));
+    grid.appendChild(card);
+  });
+}
+const projLibrarySearchInput = document.getElementById('po-proj-library-search-input');
+if (projLibrarySearchInput) {
+  projLibrarySearchInput.addEventListener('input', (e) => {
+    projectLibrarySearchText = e.target.value;
+    renderProjectLibrary();
+  });
+}
+
+// ---------- Abrir/fechar o configurador em modo "Projeto" ----------
+// Espelha startCompositionSlotConfig/exitCompositionSlotConfig quase ao pé
+// da letra — mesmo overlay (#po-tab-new-order em modo modal), só que grava
+// o destino em addTargetProjectSlotId em vez de addTargetSlotIndex.
+
+function startProjectSlotConfig(slotId) {
+  addTargetProjectSlotId = slotId;
+  highlightSelectedModuleCard('');
+  document.getElementById('po-config-section').style.display = 'none';
+  document.getElementById('po-module-description').textContent = '';
+  currentModule = null;
+  lastItemResult = null;
+
+  document.getElementById('po-proj-mode-banner').style.display = 'flex';
+  document.getElementById('po-add-item-btn').textContent = I18n.t('step2.add_to_project_btn');
+
+  // Altura do chão (mm) — mesmo campo que a Composição usa
+  // (po-comp-floor-height-wrap), reaproveitado aqui como a posição VERTICAL
+  // de verdade do módulo no ambiente (ver floor_height_mm em projectSlots).
+  // Editando um slot já existente, restoreSlotStateIntoConfigurator
+  // (chamada por editProjectSlot logo depois) sobrescreve com o valor de
+  // verdade salvo; aqui só um palpite inicial (posição atual se já existe,
+  // 0 se é módulo novo).
+  const floorHeightWrap = document.getElementById('po-comp-floor-height-wrap');
+  if (floorHeightWrap) floorHeightWrap.style.display = 'block';
+  const existing = projectSlots.find((s) => s.id === slotId);
+  currentFloorHeightMm = existing ? Number(existing.floor_height_mm || 0) : 0;
+  refreshFloorHeightInputUI();
+  renderFloorHeightPresetChips();
+
+  const newOrderTab = document.getElementById('po-tab-new-order');
+  newOrderTab.classList.add('po-modal-mode');
+  newOrderTab.style.display = 'block';
+  newOrderTab.scrollTop = 0;
+  window.scrollTo(0, 0);
+}
+
+function exitProjectSlotConfig() {
+  addTargetProjectSlotId = null;
+  document.getElementById('po-proj-mode-banner').style.display = 'none';
+  document.getElementById('po-add-item-btn').textContent = I18n.t('step2.add_to_order_btn');
+  const floorHeightWrap = document.getElementById('po-comp-floor-height-wrap');
+  if (floorHeightWrap) floorHeightWrap.style.display = 'none';
+  const newOrderTab = document.getElementById('po-tab-new-order');
+  newOrderTab.classList.remove('po-modal-mode');
+  newOrderTab.style.display = 'none';
+}
+
+// ---------- Inserção direta com config PADRÃO (pedido do usuário, 2ª rodada) ----------
+// Busca só o que precisa pra montar um slot padrão (peças/cores/dobradiça/
+// corrediça) SEM tocar nos globais do configurador de tela cheia (pieces/
+// currentModule/moduleColorsByRole etc. — esses continuam servindo só a
+// aba "Novo Orçamento"/"Editar configuração completa", ver
+// startProjectSlotConfig). Cada projectSlot carrega sua PRÓPRIA cópia
+// (slot.pieces/slot.colorOptionsByRole/...), então vários módulos no
+// projeto nunca disputam o mesmo estado global.
+
+async function fetchModuleColorsByRoleRaw(moduleId) {
+  const { data, error } = await supabaseClient
+    .from('module_colors')
+    .select('color_id, color_role_id, colors(*)')
+    .eq('module_id', moduleId);
+  if (error) { console.error(error); return {}; }
+  const byRole = {};
+  (data || []).forEach((row) => {
+    if (!row.colors || !row.colors.active) return;
+    if (!byRole[row.color_role_id]) byRole[row.color_role_id] = [];
+    byRole[row.color_role_id].push(row.colors);
+  });
+  Object.keys(byRole).forEach((roleId) => byRole[roleId].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+  return byRole;
+}
+
+async function fetchModuleHingeModelsRaw(moduleId) {
+  const { data, error } = await supabaseClient
+    .from('module_hinge_models')
+    .select('hinge_model_id, hinge_models(*)')
+    .eq('module_id', moduleId);
+  if (error) { console.error(error); return []; }
+  return (data || []).map((row) => row.hinge_models).filter((h) => h && h.active);
+}
+
+async function fetchModuleSlideModelsRaw(moduleId) {
+  const { data, error } = await supabaseClient
+    .from('module_slide_models')
+    .select('slide_model_id, slide_models(*)')
+    .eq('module_id', moduleId);
+  if (error) { console.error(error); return []; }
+  return (data || []).map((row) => row.slide_models).filter((s) => s && s.active);
+}
+
+// Quantidade padrão de cada peça configurável (prateleira/gaveta com
+// quantity_configurable) — recursivo, mesmo cuidado da memória "shallow
+// piece checks" (não parar só no 1º nível, uma peça-módulo aninhada pode
+// ter peças configuráveis escondidas dentro dela).
+function collectDefaultShelfQuantities(piecesList, acc) {
+  acc = acc || {};
+  (piecesList || []).forEach((p) => {
+    if (p.quantity_configurable) {
+      acc[p.id] = (p.quantity_default !== null && p.quantity_default !== undefined) ? p.quantity_default : p.quantity;
+    }
+    if (p.child_pieces && p.child_pieces.length) collectDefaultShelfQuantities(p.child_pieces, acc);
+  });
+  return acc;
+}
+
+async function insertProjectModuleDefault(moduleId) {
+  const m = allModules.find((mm) => mm.id === moduleId);
+  if (!m) return;
+  const errorEl = document.getElementById('po-proj-error');
+  if (errorEl) errorEl.style.display = 'none';
+  try {
+    const [modulePieces, colorOptionsByRole, hingeModelOptions, slideModelOptions] = await Promise.all([
+      loadRecursivePiecesForModule(m.id),
+      fetchModuleColorsByRoleRaw(m.id),
+      fetchModuleHingeModelsRaw(m.id),
+      fetchModuleSlideModelsRaw(m.id)
+    ]);
+
+    const usedRoleIds = collectUsedColorRoleIds(modulePieces);
+    const colorsByRole = {};
+    usedRoleIds.forEach((roleId) => {
+      const opts = colorOptionsByRole[roleId];
+      if (opts && opts.length) colorsByRole[roleId] = opts[0];
+    });
+    // BUG achado 2026-07-21 (usuário: "puxei o projeto e não apareceu
+    // nada" — na real todo módulo era pulado com "Nenhuma cor selecionada
+    // para a peça X" no console): este caminho de inserção rápida (clicar
+    // na biblioteca insere direto, ver projects_screen_2d_canvas na
+    // memória) preenchia colorsByRole normalmente (renderiza/precifica bem
+    // na hora), mas `selectedColors` — o snapshot que serializeProjectSlots
+    // grava de verdade no banco — ficava um array VAZIO fixo, nunca
+    // preenchido a partir de colorsByRole. Ao salvar e recarregar, o
+    // restore reconstrói colorsByRole SÓ a partir de selectedColors — que
+    // vinha vazio — e a peça correspondente não tinha cor nenhuma. Mesmo
+    // formato de selectedColors usado pelo configurador completo (ver
+    // "selected_colors (migration 035)" perto de po-add-item-btn).
+    const selectedOptionalIds = modulePieces.filter((p) => p.client_optional && p.client_optional_default_on).map((p) => p.id);
+    const effectivePieces = modulePieces.filter((p) => !p.client_optional || selectedOptionalIds.includes(p.id));
+    const shelfQuantities = collectDefaultShelfQuantities(modulePieces);
+    const hingeModel = hingeModelOptions[0] || null;
+    const slideModel = slideModelOptions[0] || null;
+
+    const maxHeightMm = Math.max(roomSettings.ceiling_mm - CEILING_CLEARANCE_MM - roomSettings.baseboard_mm, 0);
+    const width_mm = clamp(Number(m.width_default_mm || 0), Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
+    const height_mm = clamp(Number(m.height_default_mm || 0), Number(m.height_min_mm || 0), Math.min(Number(m.height_max_mm || Infinity), maxHeightMm));
+    const depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
+
+    const result = m.is_decoration
+      ? { total: 0, breakdown: [] }
+      : Pricing.calculateModulePrice({
+        module: m, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+        shelfQuantities, dimOverrides: {}, pieceColorOverrides: {},
+        width_mm, height_mm, depth_mm, markupMultiplier: pricingMarkupMultiplier
+      });
+
+    const slot = {
+      id: newProjectSlotId(),
+      x_mm: 0,
+      floor_height_mm: 0,
+      z_order: 0,
+      module: m,
+      pieces: modulePieces,
+      colorOptionsByRole,
+      colorsByRole,
+      selectedColors: Object.keys(colorsByRole).map((roleId) => ({
+        role_id: roleId,
+        role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null,
+        color_id: colorsByRole[roleId] ? colorsByRole[roleId].id : null,
+        color_name: colorsByRole[roleId] ? colorsByRole[roleId].name : null
+      })),
+      pieceColorOverrides: {},
+      hingeModel, slideModel,
+      width_mm, height_mm, depth_mm,
+      shelfQuantities,
+      dimOverrides: {},
+      selectedOptionalIds,
+      result,
+      thumbnail_data_url: null
+    };
+    slot.x_mm = computeDefaultProjectSlotX(slot.width_mm);
+    resolveProjectSlotDepth(slot, projectSlots);
+    projectSlots.push(slot);
+    selectedProjectSlotId = slot.id;
+    renderProjectCanvas();
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+  }
+}
+
+// Reabre o configurador já preenchido com a configuração salva de um slot do
+// projeto (clicou "Editar configuração completa" no painel da direita) —
+// mesmo padrão de editCompositionSlot, reaproveitando
+// restoreSlotStateIntoConfigurator (genérica, não é específica de
+// Composição) sem duplicar nada.
+async function editProjectSlot(slotId) {
+  const slot = projectSlots.find((s) => s.id === slotId);
+  if (!slot) return;
+  startProjectSlotConfig(slotId);
+  try {
+    await selectModule(slot.module.id);
+    if (!currentModule) throw new Error(I18n.t('composition.edit_module_unavailable_error'));
+    restoreSlotStateIntoConfigurator(slot);
+  } catch (err) {
+    exitProjectSlotConfig();
+    const errorEl = document.getElementById('po-proj-error');
+    if (errorEl) {
+      errorEl.textContent = I18n.t('composition.edit_module_unavailable_error');
+      errorEl.style.display = 'block';
+    }
+  }
+}
+
+const projModeCancelBtn = document.getElementById('po-proj-mode-cancel-btn');
+if (projModeCancelBtn) {
+  projModeCancelBtn.addEventListener('click', () => {
+    exitProjectSlotConfig();
+    highlightSelectedModuleCard('');
+    document.getElementById('po-config-section').style.display = 'none';
+    document.getElementById('po-module-description').textContent = '';
+    currentModule = null;
+    lastItemResult = null;
+  });
+}
+
+// Posição horizontal padrão de um módulo NOVO — encosta à direita do último
+// módulo já colocado (se couber na largura do ambiente), senão volta pra x=0.
+// Só um ponto de partida: o cliente arrasta pra reposicionar depois (o imã
+// cuida do alinhamento fino).
+function computeDefaultProjectSlotX(widthMm) {
+  const wallWidthMm = getProjectWallWidthMm();
+  if (!projectSlots.length) return 0;
+  const rightmost = projectSlots.reduce((max, s) => Math.max(max, Number(s.x_mm || 0) + Number(s.width_mm || 0)), 0);
+  if (rightmost + widthMm <= wallWidthMm) return rightmost;
+  return Math.max(0, wallWidthMm - widthMm);
+}
+
+// ---------- Canvas 2D: medidas, imã (snap) e profundidade ----------
+
+let projectPxPerMm = 1; // escala atual do canvas, recalculada a cada renderProjectCanvas()
+let projectDragState = null;
+const PROJECT_SNAP_PX = 10;                    // raio do "imã" em px de TELA — igual em qualquer zoom
+const PROJECT_CLICK_MOVE_THRESHOLD_PX = 4;      // abaixo disso, pointerup vira clique (seleciona) em vez de arraste
+
+// Altura máxima que a BASE (floor_height_mm) de um módulo de `heightMm` pode
+// ter sem estourar o teto útil — mesma regra de sempre (pé direito − 5" de
+// afastamento − rodapé), só isolada aqui pra também travar o eixo Y do
+// arraste, não só a régua de altura do configurador (ver ceilingMaxHeightMm
+// acima, que calcula o inverso: altura máxima dada uma base já fixa).
+function projectSlotMaxFloorHeightMm(heightMm) {
+  return Math.max(roomSettings.ceiling_mm - CEILING_CLEARANCE_MM - roomSettings.baseboard_mm - Number(heightMm || 0), 0);
+}
+
+function clampProjectSlotPosition(slot) {
+  const maxX = Math.max(0, getProjectWallWidthMm() - Number(slot.width_mm || 0));
+  const maxY = projectSlotMaxFloorHeightMm(slot.height_mm);
+  slot.x_mm = clamp(Number(slot.x_mm || 0), 0, maxX);
+  slot.floor_height_mm = clamp(Number(slot.floor_height_mm || 0), 0, maxY);
+}
+
+// Ímã: dado um valor bruto (posição que o ponteiro pediria) e o tamanho do
+// módulo nesse eixo, procura entre os cantos "interessantes" (paredes +
+// bordas de todo outro módulo já no ambiente) o mais próximo dentro do raio
+// de snap — pedido do usuário: "tipo iman que puxe os cantos dele pra eles
+// se conectarem melhor e deixar eles bem alinhados". Mesma função pros dois
+// eixos (isXAxis diferencia só qual campo/parede usar).
+function snapProjectSlotAxis(rawValue, sizeMm, isXAxis, otherSlots) {
+  const snapMm = PROJECT_SNAP_PX / (projectPxPerMm || 1);
+  const candidates = [0];
+  if (isXAxis) candidates.push(getProjectWallWidthMm() - sizeMm);
+  otherSlots.forEach((s) => {
+    const pos = isXAxis ? Number(s.x_mm || 0) : Number(s.floor_height_mm || 0);
+    const size = isXAxis ? Number(s.width_mm || 0) : Number(s.height_mm || 0);
+    candidates.push(pos, pos + size, pos - sizeMm, pos + size - sizeMm);
+  });
+  let best = rawValue;
+  let bestDiff = snapMm;
+  candidates.forEach((c) => {
+    const diff = Math.abs(c - rawValue);
+    if (diff <= bestDiff) { bestDiff = diff; best = c; }
+  });
+  return best;
+}
+
+// Ímã pra ESTICAR (pedido do usuário, 2026-07-21: "eu quero que ao esticar
+// ele puxe alinhamento com o que esta na tela.. tipo largura do painel de
+// tras") — diferente de snapProjectSlotAxis (que snapa a posição de uma
+// caixa de tamanho FIXO sendo movida): aqui só uma BORDA se move (a outra
+// fica ancorada), então o candidato de imã é a própria borda de outro
+// módulo (início OU fim), não as 4 combinações de início/fim de uma caixa
+// inteira. Usado pelas 3 setinhas de esticar módulo (largura esq/dir,
+// altura topo) em attachProjectSlotResizeHandle/pointermove abaixo.
+function snapProjectEdge(rawEdgeMm, isXAxis, otherSlots) {
+  const snapMm = PROJECT_SNAP_PX / (projectPxPerMm || 1);
+  const candidates = [0];
+  if (isXAxis) candidates.push(getProjectWallWidthMm());
+  otherSlots.forEach((s) => {
+    const pos = isXAxis ? Number(s.x_mm || 0) : Number(s.floor_height_mm || 0);
+    const size = isXAxis ? Number(s.width_mm || 0) : Number(s.height_mm || 0);
+    candidates.push(pos, pos + size);
+  });
+  let best = rawEdgeMm;
+  let bestDiff = snapMm;
+  candidates.forEach((c) => {
+    const diff = Math.abs(c - rawEdgeMm);
+    if (diff <= bestDiff) { bestDiff = diff; best = c; }
+  });
+  return best;
+}
+
+function projectRectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// Profundidade: ao soltar o módulo, se a posição final SOBREPÕE (de
+// verdade, não só encostada — ver projectRectsOverlap) outro módulo já no
+// ambiente, ele vira a camada mais à frente entre os que ele toca. Sem
+// sobreposição nenhuma, volta a ficar encostado na parede (z_order 0) —
+// pedido do usuário: "ao colocar um modulo na frente do outro, ele deve
+// levar o modulo novo pra frente".
+function resolveProjectSlotDepth(slot, otherSlots) {
+  const rectA = { x: slot.x_mm, w: slot.width_mm, y: slot.floor_height_mm, h: slot.height_mm };
+  let maxOverlapZ = -1;
+  otherSlots.forEach((s) => {
+    const rectB = { x: s.x_mm, w: s.width_mm, y: s.floor_height_mm, h: s.height_mm };
+    if (projectRectsOverlap(rectA, rectB)) maxOverlapZ = Math.max(maxOverlapZ, Number(s.z_order || 0));
+  });
+  slot.z_order = maxOverlapZ >= 0 ? maxOverlapZ + 1 : 0;
+}
+
+// Cor de fundo do retângulo do módulo no canvas — usa a primeira cor
+// escolhida que tiver um swatch_hex (ver renderSwatches acima), senão um
+// tom neutro só pra não ficar cinza genérico.
+function projectSlotColorSwatch(slot) {
+  const colors = Object.values(slot.colorsByRole || {});
+  const withHex = colors.find((c) => c && c.swatch_hex);
+  return withHex ? withHex.swatch_hex : '#e4d9c8';
+}
+
+// ---------- Vista frontal 2D REAL do módulo (pedido do usuário, 2026-07-21) ----------
+// "quero ver o modulo 2d na tela. nao me serve esse bloco cinza. quero ver
+// com as cores escolhidas e os componentes. versão 2D paralela da vista
+// frontal" — desenha as peças de verdade (portas, gavetas, prateleiras,
+// laterais) dentro da caixa do módulo, com a cor resolvida de cada uma, em
+// vez de um retângulo cinza sólido. NÃO usa Three.js (mais simples/leve pra
+// caber dentro de uma caixinha do canvas) — projeta em 2D só o subconjunto
+// de placePieceInBox (viewer3d.js) que faz sentido numa vista SEM
+// profundidade: cada posição automática (left/right/top/bottom/back/
+// baseboard/countertop) vira uma tira fina na borda correspondente (mesma
+// convenção "zero absoluto" documentada lá — offset_x/y_mm JÁ é a posição
+// do canto chão-esquerda, não precisa de nenhuma âncora por papel); 'free'
+// (a maioria das portas — ver hinge_side/resolveHingeSide em viewer3d.js) e
+// 'drawer' têm posição própria; 'shelf' é uma aproximação (distribui no vão
+// 0..H inteiro, sem descontar espessura de base/topo cadastrados — barato
+// de calcular aqui, próximo o bastante pra uma prévia); 'leg'/'handle'/
+// 'other' não desenham (mesma regra do 3D — ferragem sem relevância na
+// chapa). Isso é DESENHO, não um novo motor de posicionamento — qualquer
+// peça que caia fora dessas regras simplesmente não aparece, sem quebrar
+// nada do 3D/preço de verdade (só usa resolvePiecesForViewer, já existente,
+// pra pegar medida/offset/cor resolvidos).
+
+// Réplica de splitThickness (viewer3d.js) — decide qual das 3 medidas de
+// uma peça de posição automática é a "espessura" (chapa fina), conforme o
+// positioning cadastrado (mesma lógica, mesmos 4 casos + fallback pela
+// menor medida).
+function projectSplitThickness(w, h, d, positioning) {
+  if (positioning === 'horizontal') return { thickness: h, faceA: w, faceB: d };
+  if (positioning === 'vertical') return { thickness: w, faceA: h, faceB: d };
+  if (positioning === 'vertical_no_plano' || positioning === 'horizontal_no_plano') {
+    return { thickness: d, faceA: w, faceB: h };
+  }
+  const dims = [w, h, d];
+  const minIdx = dims.indexOf(Math.min(w, h, d));
+  const thickness = dims[minIdx];
+  const rest = dims.filter((_, i) => i !== minIdx);
+  return { thickness, faceA: rest[0], faceB: rest[1] };
+}
+
+// Achata a árvore de peças JÁ RESOLVIDAS (resolvePiecesForViewer) numa
+// lista de retângulos { x, y, w, h, color, zPriority, depth }, em mm,
+// relativos ao canto chão-esquerda do módulo RAIZ (offsetXmm/offsetYmm
+// acumulam a posição de peças-módulo aninhadas — ver recursão em
+// 'free'/'drawer' abaixo, os únicos papéis que fazem sentido conter peças
+// filhas de verdade).
+function computeProjectSlotElevationRects(piecesResolved, offsetXmm, offsetYmm) {
+  const rects = [];
+  (piecesResolved || []).forEach((part) => {
+    const w = Number(part.width_mm || 0);
+    const h = Number(part.height_mm || 0);
+    const d = Number(part.depth_mm || 0);
+    const role = part.position_role || 'other';
+    const offX = Number(part.offset_x_mm || 0);
+    const offY = Number(part.offset_y_mm || 0);
+    // offset_z_mm (profundidade) não entra na posição 2D — só decide a
+    // ORDEM de desenho (peça mais pra frente cobre a de trás), ver `depth`.
+    const depth = Number(part.offset_z_mm || 0);
+    const color = part.color;
+    const push = (x, y, rw, rh, zPriority) => {
+      rects.push({ x: offsetXmm + x, y: offsetYmm + y, w: Math.max(rw, 1), h: Math.max(rh, 1), color, zPriority, depth });
+    };
+    if (role === 'left' || role === 'right') {
+      const { thickness, faceA } = projectSplitThickness(w, h, d, part.positioning);
+      push(offX, offY, thickness, faceA, 1);
+    } else if (role === 'top' || role === 'bottom' || role === 'countertop') {
+      const { thickness, faceA } = projectSplitThickness(w, h, d, part.positioning);
+      push(offX, offY, faceA, thickness, 1);
+    } else if (role === 'back' || role === 'baseboard') {
+      const { thickness, faceA } = projectSplitThickness(w, h, d, part.positioning);
+      push(offX, offY, faceA, thickness, 0);
+    } else if (role === 'shelf') {
+      push(offX, offY, w, h, 2);
+    } else if (role === 'drawer' || role === 'free') {
+      push(offX, offY, w, h, role === 'drawer' ? 3 : 4);
+      // Peça-módulo aninhada com composição própria (gaveta com fundo/
+      // laterais de verdade, ou um módulo usado como "peça") — desenha as
+      // peças filhas por cima, deslocadas pro canto chão-esquerda DESTA peça.
+      if (part.child_pieces && part.child_pieces.length) {
+        computeProjectSlotElevationRects(part.child_pieces, offsetXmm + offX, offsetYmm + offY)
+          .forEach((r) => rects.push(r));
+      }
+    }
+    // 'leg'/'handle'/'other' — sem desenho (mesma regra do 3D).
+  });
+  return rects;
+}
+
+// HTML (divs absolutos, em % do próprio módulo — acompanha o resize sem
+// precisar recalcular px) pra colocar dentro do .po-proj-slot no lugar do
+// preenchimento cinza sólido. widthMm/heightMm são as medidas ATUAIS do
+// módulo (pra converter mm->%); erro em qualquer etapa (módulo sem peças
+// carregadas ainda, fórmula inválida etc.) devolve string vazia — cai pro
+// fallback de cor sólida (div.style.background, ver renderProjectCanvas),
+// nunca quebra o card inteiro.
+function projectSlotElevationHtml(slot, widthMm, heightMm) {
+  if (!slot.pieces || !slot.pieces.length || !widthMm || !heightMm) return '';
+  let resolved;
+  try {
+    resolved = resolvePiecesForViewer(
+      projectSlotEffectivePieces(slot),
+      { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm },
+      slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+    );
+  } catch (e) { return ''; }
+  let rects;
+  try {
+    rects = computeProjectSlotElevationRects(resolved, 0, 0);
+  } catch (e) { return ''; }
+  if (!rects.length) return '';
+  rects.sort((a, b) => (a.zPriority - b.zPriority) || (a.depth - b.depth));
+  return rects.map((r) => {
+    const leftPct = (r.x / widthMm) * 100;
+    const bottomPct = (r.y / heightMm) * 100;
+    const wPct = Math.max((r.w / widthMm) * 100, 0.4);
+    const hPct = Math.max((r.h / heightMm) * 100, 0.4);
+    const style = r.color && r.color.texture_url
+      ? `background-image:url('${r.color.texture_url}');background-size:cover;`
+      : `background:${(r.color && r.color.swatch_hex) || '#cfc6b4'};`;
+    return `<div class="po-proj-slot-piece" style="left:${leftPct}%;bottom:${bottomPct}%;width:${wPct}%;height:${hPct}%;${style}"></div>`;
+  }).join('');
+}
+
+// Arraste por ponteiro (mouse/touch/caneta, unificado) — pointer capture no
+// próprio elemento, então move/up continuam chegando nele mesmo se o
+// ponteiro sair por cima de outro módulo. Distingue clique de arraste pelo
+// deslocamento total (PROJECT_CLICK_MOVE_THRESHOLD_PX): abaixo disso,
+// pointerup seleciona o módulo (abre o painel da direita) em vez de mover.
+function attachProjectSlotDrag(div, slot) {
+  div.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    try { div.setPointerCapture(ev.pointerId); } catch (e) { /* ok, alguns navegadores não precisam */ }
+    projectDragState = {
+      slotId: slot.id,
+      pointerId: ev.pointerId,
+      startClientX: ev.clientX,
+      startClientY: ev.clientY,
+      startXMm: Number(slot.x_mm || 0),
+      startYMm: Number(slot.floor_height_mm || 0),
+      moved: false,
+      liveX: Number(slot.x_mm || 0),
+      liveY: Number(slot.floor_height_mm || 0)
+    };
+    div.classList.add('dragging');
+  });
+
+  div.addEventListener('pointermove', (ev) => {
+    if (!projectDragState || projectDragState.slotId !== slot.id || projectDragState.pointerId !== ev.pointerId) return;
+    const dxPx = ev.clientX - projectDragState.startClientX;
+    const dyPx = ev.clientY - projectDragState.startClientY;
+    if (!projectDragState.moved && Math.hypot(dxPx, dyPx) > PROJECT_CLICK_MOVE_THRESHOLD_PX) {
+      projectDragState.moved = true;
+    }
+    if (!projectDragState.moved) return;
+
+    const dxMm = dxPx / (projectPxPerMm || 1);
+    // Canvas posiciona por 'bottom' (sobe = mais mm), tela usa clientY (desce
+    // = mais px) — precisa inverter o sinal do eixo vertical.
+    const dyMm = -dyPx / (projectPxPerMm || 1);
+
+    const others = projectSlots.filter((s) => s.id !== slot.id);
+    const maxX = Math.max(0, getProjectWallWidthMm() - Number(slot.width_mm || 0));
+    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm);
+
+    let x = clamp(projectDragState.startXMm + dxMm, 0, maxX);
+    let y = clamp(projectDragState.startYMm + dyMm, 0, maxY);
+    x = clamp(snapProjectSlotAxis(x, Number(slot.width_mm || 0), true, others), 0, maxX);
+    y = clamp(snapProjectSlotAxis(y, Number(slot.height_mm || 0), false, others), 0, maxY);
+
+    div.style.left = Math.round(x * projectPxPerMm) + 'px';
+    div.style.bottom = Math.round(y * projectPxPerMm) + 'px';
+    projectDragState.liveX = x;
+    projectDragState.liveY = y;
+  });
+
+  const endDrag = (ev) => {
+    if (!projectDragState || projectDragState.slotId !== slot.id) return;
+    div.classList.remove('dragging');
+    try { div.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    const state = projectDragState;
+    projectDragState = null;
+    if (state.moved) {
+      slot.x_mm = state.liveX;
+      slot.floor_height_mm = state.liveY;
+      resolveProjectSlotDepth(slot, projectSlots.filter((s) => s.id !== slot.id));
+      renderProjectCanvas();
+    } else {
+      selectProjectSlot(slot.id);
+    }
+  };
+  div.addEventListener('pointerup', endDrag);
+  div.addEventListener('pointercancel', endDrag);
+}
+
+function selectProjectSlot(slotId) {
+  selectedProjectSlotId = slotId;
+  document.querySelectorAll('#po-proj-canvas .po-proj-slot').forEach((el) => {
+    el.classList.toggle('selected', el.dataset.slotId === slotId);
+  });
+  renderProjectConfigPanel();
+}
+
+function removeProjectSlot(slotId) {
+  projectSlots = projectSlots.filter((s) => s.id !== slotId);
+  if (selectedProjectSlotId === slotId) selectedProjectSlotId = null;
+  renderProjectCanvas();
+}
+
+// Recalcula slot.result (preço) do zero a partir do estado atual do slot —
+// chamado depois de QUALQUER alteração inline (medida ou cor, ver
+// updateProjectSlotDimension/updateProjectSlotColor abaixo). Mesma chamada
+// de Pricing.calculateModulePrice usada em todo canto do arquivo (ver
+// po-add-item-btn/applyColorRoleToComposition) — só os dados vêm do slot
+// (slot.pieces/slot.colorsByRole/...) em vez dos globais do configurador de
+// tela cheia, já que o slot tem cópia própria (ver insertProjectModuleDefault).
+// slot.pieces guarda a árvore INTEIRA (opcionais não marcados incluídos) só
+// pra quem veio de insertProjectModuleDefault — quem veio de "Editar
+// configuração completa" já grava a lista PRÉ-filtrada (mesmo padrão da
+// Composição). Filtrar de novo aqui é idempotente nos dois casos (peça já
+// filtrada sempre passa no teste de novo), então funciona pros dois sem
+// precisar saber qual caminho o slot veio.
+function projectSlotEffectivePieces(slot) {
+  return slot.pieces.filter((p) => !p.client_optional || slot.selectedOptionalIds.includes(p.id));
+}
+
+function recomputeProjectSlotPricing(slot) {
+  const effectivePieces = projectSlotEffectivePieces(slot);
+  slot.result = slot.module.is_decoration
+    ? { total: 0, breakdown: [] }
+    : Pricing.calculateModulePrice({
+      module: slot.module, pieces: effectivePieces, colorsByRole: slot.colorsByRole,
+      hingeModel: slot.hingeModel, slideModel: slot.slideModel,
+      shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides,
+      pieceColorOverrides: slot.pieceColorOverrides,
+      width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+      markupMultiplier: pricingMarkupMultiplier
+    });
+}
+
+// Editor inline de medida (steppers +/- e campo exato do painel da direita)
+// — pedido do usuário: "clicando abre as configuracoes na direita e eu
+// resolva tudo na mesma tela". Trava no min/max do módulo (mesmas colunas
+// width_min_mm/max_mm etc. do catálogo) e, no eixo da altura, também no teto
+// útil (mesma regra de sempre — pé direito − 5" − rodapé, considerando a
+// posição vertical atual do módulo).
+function updateProjectSlotDimension(slot, axis, mm) {
+  const m = slot.module;
+  const minMm = Number(m[`${axis}_min_mm`] || 0);
+  let maxMm = Number(m[`${axis}_max_mm`]);
+  if (!(maxMm > 0)) maxMm = Infinity;
+  if (axis === 'height') {
+    maxMm = Math.min(maxMm, Math.max(roomSettings.ceiling_mm - CEILING_CLEARANCE_MM - roomSettings.baseboard_mm - Number(slot.floor_height_mm || 0), 0));
+  }
+  slot[`${axis}_mm`] = clamp(Number(mm) || 0, minMm, maxMm);
+  recomputeProjectSlotPricing(slot);
+  clampProjectSlotPosition(slot);
+  resolveProjectSlotDepth(slot, projectSlots.filter((s) => s.id !== slot.id));
+  renderProjectCanvas();
+}
+
+function updateProjectSlotColor(slot, roleId, color) {
+  slot.colorsByRole = { ...slot.colorsByRole, [roleId]: color };
+  // selectedColors (não só colorsByRole) precisa refletir a troca — é o
+  // array que serializeProjectSlots() grava de verdade no banco (ver bug
+  // 2026-07-21 em insertProjectModuleDefault, mesmo raciocínio: colorsByRole
+  // sozinho renderiza bem na hora, mas quem "sobrevive" ao salvar/recarregar
+  // é só selectedColors). Upsert por role_id — substitui a entrada antiga
+  // dessa role se já existir, adiciona nova senão.
+  const roleName = (colorRolesCache.find((r) => r.id === roleId) || {}).name || null;
+  const entry = { role_id: roleId, role_name: roleName, color_id: color ? color.id : null, color_name: color ? color.name : null };
+  const existingIdx = (slot.selectedColors || []).findIndex((sc) => sc.role_id === roleId);
+  if (existingIdx >= 0) slot.selectedColors[existingIdx] = entry;
+  else {
+    if (!slot.selectedColors) slot.selectedColors = [];
+    slot.selectedColors.push(entry);
+  }
+  recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+}
+
+// Painel à direita (pedido do usuário: "ao clicar no modulo abre
+// configuracoes da direita com as opcoes que ele carrega... eu resolva tudo
+// na mesma tela") — editor de verdade: medida (steppers) e cor (swatches)
+// direto aqui, recalculando preço a cada mudança. "Editar configuração
+// completa" continua existindo pra opcionais/dobradiça-corrediça/peça
+// aninhada — casos avançados que duplicar aqui traria mais risco de
+// regressão (ver memória sobre fragilidade do 3D) do que valor pra Fase 1;
+// reabre o MESMO configurador único de sempre (editProjectSlot).
+function renderProjectConfigPanel() {
+  const panel = document.getElementById('po-proj-config-panel');
+  if (!panel) return;
+  const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+  if (!slot) {
+    panel.innerHTML = `<p class="hint" id="po-proj-config-empty-hint">${I18n.t('project.select_module_hint')}</p>`;
+    return;
+  }
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const m = slot.module;
+
+  // Pedido do usuário (3ª rodada, 2026-07-21): "não precisa botão menos e
+  // mais. pode deixar mais próximo visualmente de cada variável" — tirou os
+  // steppers (só o campo exato, editável por texto/Enter, como os outros
+  // campos de medida do site) e label+input ficam colados, sem o
+  // space-between que os separava (ver CSS .po-proj-config-dim-row).
+  const dimRow = (axis, label) => `
+    <div class="po-proj-config-dim-row">
+      <label>${label}</label>
+      <span class="po-proj-dim-value-wrap">
+        <input type="text" inputmode="decimal" class="po-proj-dim-input" data-axis="${axis}" value="${formatDimensionNumber(slot[`${axis}_mm`], unit)}" />
+        <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+      </span>
+    </div>
+  `;
+
+  const usedRoleIds = Array.from(collectUsedColorRoleIds(projectSlotEffectivePieces(slot)));
+  const colorSections = usedRoleIds.map((roleId) => {
+    const opts = (slot.colorOptionsByRole && slot.colorOptionsByRole[roleId]) || [];
+    if (!opts.length) return '';
+    const roleName = (colorRolesCache.find((r) => r.id === roleId) || {}).name || '';
+    const selected = slot.colorsByRole ? slot.colorsByRole[roleId] : null;
+    const swatches = opts.map((c) => `
+      <div class="po-proj-color-swatch${selected && selected.id === c.id ? ' selected' : ''}" data-role-id="${roleId}" data-color-id="${c.id}" title="${c.name}">
+        ${c.texture_url ? `<img src="${c.texture_url}" alt="${c.name}" />` : `<span style="background:${c.swatch_hex || '#ccc'};"></span>`}
+      </div>
+    `).join('');
+    return `<div class="po-proj-color-role-group"><label>${roleName}</label><div class="po-proj-color-swatches">${swatches}</div></div>`;
+  }).join('');
+
+  const depthLabel = Number(slot.z_order || 0) > 0
+    ? I18n.t('project.config_depth_value_front', { n: slot.z_order })
+    : I18n.t('project.config_depth_value_back');
+
+  panel.innerHTML = `
+    <h3>${slot.module.name}</h3>
+    <div class="po-proj-config-dims">
+      ${dimRow('width', I18n.t('step1.filter_width'))}
+      ${dimRow('height', I18n.t('step1.filter_height'))}
+      ${dimRow('depth', I18n.t('step1.filter_depth'))}
+    </div>
+    ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
+    <div class="po-proj-config-row"><span>${I18n.t('project.config_depth_label')}</span><span>${depthLabel}</span></div>
+    <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney((slot.result && slot.result.total) || 0)}</span></div>
+    <button type="button" class="secondary" id="po-proj-config-edit-btn">${I18n.t('project.config_edit_btn')}</button>
+    <button type="button" class="secondary po-proj-config-remove-btn" id="po-proj-config-remove-btn">${I18n.t('project.config_remove_btn')}</button>
+  `;
+
+  panel.querySelectorAll('.po-proj-dim-input').forEach((input) => {
+    input.addEventListener('change', () => {
+      const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const mm = parseDimensionInput(input.value, unit2);
+      if (mm !== null && !isNaN(mm)) updateProjectSlotDimension(slot, input.dataset.axis, mm);
+      else renderProjectConfigPanel();
+    });
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  panel.querySelectorAll('.po-proj-color-swatch').forEach((el) => {
+    el.addEventListener('click', () => {
+      const roleId = el.dataset.roleId;
+      const opts = (slot.colorOptionsByRole && slot.colorOptionsByRole[roleId]) || [];
+      const color = opts.find((c) => String(c.id) === el.dataset.colorId);
+      if (color) updateProjectSlotColor(slot, roleId, color);
+    });
+  });
+
+  const editBtn = panel.querySelector('#po-proj-config-edit-btn');
+  if (editBtn) editBtn.addEventListener('click', () => editProjectSlot(slot.id));
+  const removeBtn = panel.querySelector('#po-proj-config-remove-btn');
+  if (removeBtn) removeBtn.addEventListener('click', () => removeProjectSlot(slot.id));
+}
+
+function renderProjectTotal() {
+  const totalEl = document.getElementById('po-proj-total');
+  if (!totalEl) return;
+  const total = projectSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.total) || 0), 0);
+  totalEl.textContent = I18n.t('project.total_estimated', { total: formatMoney(total) });
+}
+
+// Desenha o canvas inteiro do zero a cada chamada (mesma filosofia de
+// renderCompositionSlots — mais simples e seguro que reconciliar DOM
+// incremental pra uma Fase 1). Só o arraste em si atualiza style.left/bottom
+// direto no elemento SEM re-render completo (ver attachProjectSlotDrag),
+// por performance — o re-render completo só acontece quando o arraste
+// TERMINA (pointerup) ou quando algo fora do canvas muda (unidade, largura
+// do ambiente, adicionar/editar/remover módulo).
+function renderProjectCanvas() {
+  const canvas = document.getElementById('po-proj-canvas');
+  const wrap = document.querySelector('#po-tab-projects .po-proj-canvas-wrap');
+  const dimsLabel = document.getElementById('po-proj-canvas-dims-label');
+  const emptyHint = document.getElementById('po-proj-empty-hint');
+  if (!canvas || !wrap) return;
+
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const wallWidthMm = getProjectWallWidthMm();
+  const ceilingMm = roomSettings.ceiling_mm;
+
+  // Escala: pedido do usuário (2ª rodada) — "não estou conseguindo deixar a
+  // parede na minha tela... pode diminuir os espaços em cima e encurtar na
+  // altura essa parede". Antes só considerava a LARGURA disponível do wrap
+  // — um pé direito alto (ex. 108") não cabia na tela e forçava rolagem.
+  // Agora usa o MENOR entre a escala que cabe na largura E a que cabe na
+  // ALTURA sobrando da viewport (do topo do wrap até o fim da janela, com
+  // uma margem pra não colar no rodapé do navegador) — a parede inteira
+  // (chão até o teto) sempre cabe sem rolar, e a largura respeita o espaço
+  // lateral disponível também.
+  // Pedido do usuário (3ª rodada): "isso ficou pequeno demais... deixa a
+  // parede mais larga do que a altura. e aumenta todo visualizador" — o
+  // orçamento de altura da 1ª correção (só 90px de margem) estava dominando
+  // a conta e encolhendo tudo pra caber um pé-direito alto. Agora a margem é
+  // bem menor (rótulo do topo também encolheu, ver .po-proj-canvas-scale-label)
+  // e o piso de altura disponível é bem mais generoso — na prática a LARGURA
+  // volta a ser quase sempre quem manda na escala (canvas fica mais largo
+  // que alto, maior), e só em pé-direito MUITO alto a altura ainda limita
+  // (com scroll vertical no wrap como saída, ver overflow:auto no CSS).
+  const availableWidthPx = Math.max(wrap.clientWidth - 4, 320);
+  const wrapTop = wrap.getBoundingClientRect().top;
+  const availableHeightPx = Math.max(window.innerHeight - wrapTop - 40, 480);
+  const widthScale = availableWidthPx / wallWidthMm;
+  const heightScale = availableHeightPx / ceilingMm;
+  projectPxPerMm = clamp(Math.min(widthScale, heightScale), 0.015, 0.8);
+
+  canvas.style.width = Math.round(wallWidthMm * projectPxPerMm) + 'px';
+  canvas.style.height = Math.round(ceilingMm * projectPxPerMm) + 'px';
+  canvas.innerHTML = '';
+
+  const baseboard = document.createElement('div');
+  baseboard.className = 'po-proj-canvas-baseboard';
+  baseboard.style.height = Math.round(roomSettings.baseboard_mm * projectPxPerMm) + 'px';
+  canvas.appendChild(baseboard);
+  const ceilingLine = document.createElement('div');
+  ceilingLine.className = 'po-proj-canvas-ceiling-line';
+  canvas.appendChild(ceilingLine);
+
+  const resizeTitle = I18n.t('project.wall_resize_title');
+  const resizeLeft = document.createElement('div');
+  resizeLeft.className = 'po-proj-wall-resize-handle po-proj-wall-resize-left';
+  resizeLeft.title = resizeTitle;
+  canvas.appendChild(resizeLeft);
+  attachProjectWallResizeHandle(resizeLeft, false);
+
+  const resizeRight = document.createElement('div');
+  resizeRight.className = 'po-proj-wall-resize-handle po-proj-wall-resize-right';
+  resizeRight.title = resizeTitle;
+  canvas.appendChild(resizeRight);
+  attachProjectWallResizeHandle(resizeRight, true);
+
+  if (dimsLabel) dimsLabel.textContent = `${formatDimension(wallWidthMm, unit)} x ${formatDimension(ceilingMm, unit)}`;
+
+  projectSlots.forEach((slot) => clampProjectSlotPosition(slot));
+
+  // Desenha da camada mais no fundo (z_order menor) pra mais na frente —
+  // garante que o z-index visual (setado abaixo) e a ordem de pintura no
+  // DOM concordem.
+  projectSlots
+    .slice()
+    .sort((a, b) => Number(a.z_order || 0) - Number(b.z_order || 0))
+    .forEach((slot) => {
+      const div = document.createElement('div');
+      div.className = 'po-proj-slot' + (slot.id === selectedProjectSlotId ? ' selected' : '');
+      div.dataset.slotId = slot.id;
+      div.dataset.zOrder = String(Math.min(Number(slot.z_order || 0), 3));
+      div.style.left = Math.round(Number(slot.x_mm || 0) * projectPxPerMm) + 'px';
+      div.style.bottom = Math.round(Number(slot.floor_height_mm || 0) * projectPxPerMm) + 'px';
+      div.style.width = Math.round(Number(slot.width_mm || 0) * projectPxPerMm) + 'px';
+      div.style.height = Math.round(Number(slot.height_mm || 0) * projectPxPerMm) + 'px';
+      div.style.zIndex = String(10 + Number(slot.z_order || 0));
+      // Cor sólida continua de FUNDO (cobre qualquer vão que a vista
+      // frontal 2D não desenhe — ver projectSlotElevationHtml) — só deixou
+      // de ser a ÚNICA coisa visível: as peças de verdade (portas/gavetas/
+      // prateleiras/laterais) desenham por cima, com a cor de cada uma.
+      div.style.background = projectSlotColorSwatch(slot);
+      div.title = slot.module.name;
+      div.innerHTML = `
+        <div class="po-proj-slot-elevation">${projectSlotElevationHtml(slot, Number(slot.width_mm || 0), Number(slot.height_mm || 0))}</div>
+        <div class="po-proj-slot-label">
+          <div class="po-proj-slot-name">${slot.module.name}</div>
+          <div class="po-proj-slot-dims">${formatDimension(slot.width_mm, unit)} x ${formatDimension(slot.height_mm, unit)}</div>
+        </div>
+      `;
+      attachProjectSlotDrag(div, slot);
+
+      // Setinhas de esticar (pedido do usuário: "os módulos estão sem a
+      // setinha... quero que eles estiquem da mesma forma" que a parede) —
+      // tiras finas nas bordas esquerda/direita (largura) e topo (altura),
+      // sem círculo (pedido explícito). stopPropagation no pointerdown (ver
+      // attachProjectSlotResizeHandle) evita disparar o drag de MOVER junto.
+      const resizeW1 = document.createElement('div');
+      resizeW1.className = 'po-proj-slot-resize po-proj-slot-resize-left';
+      resizeW1.title = I18n.t('project.module_resize_width_title');
+      div.appendChild(resizeW1);
+      attachProjectSlotResizeHandle(resizeW1, slot, 'width-left');
+
+      const resizeW2 = document.createElement('div');
+      resizeW2.className = 'po-proj-slot-resize po-proj-slot-resize-right';
+      resizeW2.title = I18n.t('project.module_resize_width_title');
+      div.appendChild(resizeW2);
+      attachProjectSlotResizeHandle(resizeW2, slot, 'width-right');
+
+      const resizeH = document.createElement('div');
+      resizeH.className = 'po-proj-slot-resize po-proj-slot-resize-top';
+      resizeH.title = I18n.t('project.module_resize_height_title');
+      div.appendChild(resizeH);
+      attachProjectSlotResizeHandle(resizeH, slot, 'height-top');
+
+      canvas.appendChild(div);
+    });
+
+  if (emptyHint) emptyHint.style.display = projectSlots.length ? 'none' : 'block';
+
+  const genBtn = document.getElementById('po-proj-generate-btn');
+  const genHint = document.getElementById('po-proj-generate-hint');
+  if (genBtn) genBtn.disabled = projectSlots.length < 1;
+  if (genHint) genHint.style.display = projectSlots.length < 1 ? 'block' : 'none';
+
+  // Mesmo comportamento de auto-regeneração da Composição (ver comp3dWrap em
+  // renderCompositionSlots): se o 3D já estava aberto e o cliente mexeu no
+  // canvas 2D (moveu/redimensionou/adicionou/removeu/trocou cor), regera
+  // sozinho em vez de deixar a cena velha na tela.
+  const proj3dWrap = document.getElementById('po-proj-3d-wrap');
+  if (proj3dWrap && proj3dWrap.style.display !== 'none') {
+    if (projectSlots.length >= 1) {
+      generateProject3D();
+    } else {
+      proj3dWrap.style.display = 'none';
+    }
+  }
+
+  renderProjectTotal();
+  renderProjectConfigPanel();
+}
+
+// Instância 3D PRÓPRIA da aba Projetos (createInstance, ver
+// viewer3d_composition.js) — renderer/scene/câmera/estado de porta-gaveta
+// totalmente separados de ViewerComposition (aba Composição), pra não colidir
+// se o cliente tiver as duas cenas montadas na mesma sessão (abas diferentes
+// do portal, mas o DOM/JS de ambas convive na mesma página).
+const ViewerProject = (typeof ViewerComposition !== 'undefined' && ViewerComposition.createInstance)
+  ? ViewerComposition.createInstance()
+  : null;
+
+// Monta os assemblies 3D dos módulos soltos no ambiente (mesma lógica de
+// buildCompositionAssemblies, ver comentário lá) + x_m/z_order (posição
+// livre no chão e profundidade da pilha, exclusivos do canvas 2D da
+// Projetos — a Composição não tem, sempre empilha em coluna única).
+function buildProjectAssemblies(slotsList) {
+  return slotsList.map((slot) => {
+    const moduleDims = { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm };
+    const parts = resolvePiecesForViewer(slot.pieces, moduleDims, slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides);
+    const openState = {
+      doors: (ViewerProject && ViewerProject.areDoorsOpen) ? ViewerProject.areDoorsOpen() : false,
+      drawers: (ViewerProject && ViewerProject.areDrawersOpen) ? ViewerProject.areDrawersOpen() : false
+    };
+    const assembly = Viewer3D.buildStandaloneAssembly(parts, slot.width_mm, slot.height_mm, slot.depth_mm, openState);
+    if (assembly) {
+      assembly.id = slot.id;
+      assembly.floor_height_m = Number(slot.floor_height_mm || 0) / 1000;
+      assembly.x_m = Number(slot.x_mm || 0) / 1000;
+      assembly.z_order = Number(slot.z_order || 0);
+    }
+    return assembly;
+  });
+}
+
+function generateProject3D() {
+  const wrap = document.getElementById('po-proj-3d-wrap');
+  const canvas = document.getElementById('po-proj-3d-canvas');
+  if (!wrap || !canvas) return;
+  wrap.style.display = 'block';
+
+  if (!ViewerProject || !ViewerProject.available()
+    || typeof Viewer3D === 'undefined' || !Viewer3D.buildStandaloneAssembly) {
+    canvas.innerHTML = `<p class="hint">${I18n.t('composition.not_available_3d')}</p>`;
+    return;
+  }
+
+  const assemblies = buildProjectAssemblies(projectSlots);
+
+  ViewerProject.init('po-proj-3d-canvas');
+  ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, viewerRoomEnvConfig());
+
+  refreshProjectOpenButtons();
+}
+
+// Botões "Abrir portas"/"Abrir gavetas" da Projetos — mesmo padrão de
+// refreshCompositionOpenButtons (ver comentário lá), só que apontando pro
+// estado PRÓPRIO de ViewerProject.
+function refreshProjectOpenButtons() {
+  const doorsBtn = document.getElementById('po-proj-toggle-doors-btn');
+  const drawersBtn = document.getElementById('po-proj-toggle-drawers-btn');
+  if (!doorsBtn && !drawersBtn) return;
+
+  const hasHinge = projectSlots.some((slot) => treeHasHinge(slot.pieces, false, false));
+  const hasSlide = projectSlots.some((slot) => treeHasSlide(slot.pieces, false, false));
+
+  if (doorsBtn) {
+    doorsBtn.style.display = hasHinge ? 'inline-block' : 'none';
+    doorsBtn.dataset.openLabel = I18n.t('step2.open_doors');
+    doorsBtn.dataset.closeLabel = I18n.t('step2.close_doors');
+    const isOpen = ViewerProject && ViewerProject.areDoorsOpen && ViewerProject.areDoorsOpen();
+    doorsBtn.textContent = isOpen ? doorsBtn.dataset.closeLabel : doorsBtn.dataset.openLabel;
+  }
+  if (drawersBtn) {
+    drawersBtn.style.display = hasSlide ? 'inline-block' : 'none';
+    drawersBtn.dataset.openLabel = I18n.t('step2.open_drawers');
+    drawersBtn.dataset.closeLabel = I18n.t('step2.close_drawers');
+    const isOpen = ViewerProject && ViewerProject.areDrawersOpen && ViewerProject.areDrawersOpen();
+    drawersBtn.textContent = isOpen ? drawersBtn.dataset.closeLabel : drawersBtn.dataset.openLabel;
+  }
+}
+
+const projToggleDoorsBtn = document.getElementById('po-proj-toggle-doors-btn');
+if (projToggleDoorsBtn) {
+  projToggleDoorsBtn.addEventListener('click', () => {
+    try {
+      const isOpen = ViewerProject.toggleDoors();
+      projToggleDoorsBtn.textContent = isOpen
+        ? (projToggleDoorsBtn.dataset.closeLabel || I18n.t('step2.close_doors'))
+        : (projToggleDoorsBtn.dataset.openLabel || I18n.t('step2.open_doors'));
+    } catch (err) {
+      // Sem 3D o botão não faz nada.
+    }
+  });
+}
+
+const projToggleDrawersBtn = document.getElementById('po-proj-toggle-drawers-btn');
+if (projToggleDrawersBtn) {
+  projToggleDrawersBtn.addEventListener('click', () => {
+    try {
+      const isOpen = ViewerProject.toggleDrawers();
+      projToggleDrawersBtn.textContent = isOpen
+        ? (projToggleDrawersBtn.dataset.closeLabel || I18n.t('step2.close_drawers'))
+        : (projToggleDrawersBtn.dataset.openLabel || I18n.t('step2.open_drawers'));
+    } catch (err) {
+      // Sem 3D o botão não faz nada.
+    }
+  });
+}
+
+// Botão "Visualizar 3D" — só dispara generateProject3D() + rola até o
+// resultado (mesmo padrão de compGenerateBtn).
+const projGenerateBtn = document.getElementById('po-proj-generate-btn');
+if (projGenerateBtn) {
+  projGenerateBtn.addEventListener('click', () => {
+    generateProject3D();
+    const wrap = document.getElementById('po-proj-3d-wrap');
+    if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+// "← Voltar ao ambiente 2D" — fecha o 3D e rola de volta pro canvas, SEM
+// trocar de aba (ver comentário no botão em portal.html). Diferente de
+// po-proj-back-btn, que sai da aba Projetos de vez.
+const projClose3dBtn = document.getElementById('po-proj-close-3d-btn');
+if (projClose3dBtn) {
+  projClose3dBtn.addEventListener('click', () => {
+    const wrap = document.getElementById('po-proj-3d-wrap');
+    if (wrap) wrap.style.display = 'none';
+    const canvasWrap = document.querySelector('#po-tab-projects .po-proj-canvas-outer');
+    if (canvasWrap) canvasWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+function resetProject() {
+  if (projectSlots.length && !confirm(I18n.t('project.reset_confirm'))) return;
+  projectSlots = [];
+  selectedProjectSlotId = null;
+  renderProjectCanvas();
+}
+const projResetBtn = document.getElementById('po-proj-reset-btn');
+if (projResetBtn) projResetBtn.addEventListener('click', resetProject);
+
+// ---------- PROJETOS SALVOS (migration 056) ----------
+// Mesmo espírito de "Composições favoritas" (ver bloco perto de
+// saveCompositionFavorite acima), mas numa tabela própria (user_projects) —
+// projectSlots tem formato diferente (x_mm/z_order livres, sem stack_on_id)
+// + existe um dado a mais que a Composição não tem (wall_width_mm, a
+// largura do ambiente).
+
+let loadedProjectFavorite = null; // { id, name } quando o projeto em edição veio de um projeto salvo
+
+function serializeProjectSlots() {
+  return projectSlots.map((slot) => ({
+    id: slot.id,
+    x_mm: Number(slot.x_mm || 0),
+    floor_height_mm: Number(slot.floor_height_mm || 0),
+    z_order: Number(slot.z_order || 0),
+    module_id: slot.module.id,
+    width_mm: slot.width_mm,
+    height_mm: slot.height_mm,
+    depth_mm: slot.depth_mm,
+    selected_colors: slot.selectedColors || [],
+    piece_color_overrides: buildPieceColorOverridesSnapshot(slot.pieceColorOverrides),
+    hinge_model_id: slot.hingeModel ? slot.hingeModel.id : null,
+    slide_model_id: slot.slideModel ? slot.slideModel.id : null,
+    shelf_quantities: slot.shelfQuantities || {},
+    dim_overrides: slot.dimOverrides || {},
+    selected_optional_ids: slot.selectedOptionalIds || [],
+    thumbnail_data_url: slot.thumbnail_data_url || null
+  }));
+}
+
+function refreshProjectFavoriteButtons() {
+  const updateBtn = document.getElementById('po-proj-update-fav-btn');
+  if (!updateBtn) return;
+  if (loadedProjectFavorite) {
+    updateBtn.textContent = I18n.t('fav.update_btn', { name: loadedProjectFavorite.name });
+    updateBtn.style.display = 'inline-block';
+  } else {
+    updateBtn.style.display = 'none';
+  }
+}
+
+async function saveProjectFavorite(overwriteId) {
+  const statusEl = document.getElementById('po-proj-fav-status');
+  const errorEl = document.getElementById('po-proj-error');
+  errorEl.style.display = 'none';
+  statusEl.textContent = '';
+  if (!currentUser) {
+    errorEl.textContent = I18n.t('fav.need_login');
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (projectSlots.length === 0) {
+    errorEl.textContent = I18n.t('project.need_slots');
+    errorEl.style.display = 'block';
+    return;
+  }
+  try {
+    if (overwriteId) {
+      const { error } = await supabaseClient
+        .from('user_projects')
+        .update({ slots: serializeProjectSlots(), wall_width_mm: getProjectWallWidthMm(), updated_at: new Date().toISOString() })
+        .eq('id', overwriteId);
+      if (error) throw error;
+      statusEl.textContent = I18n.t('project.updated_status', { name: loadedProjectFavorite ? loadedProjectFavorite.name : '' });
+    } else {
+      const name = (prompt(I18n.t('project.name_prompt'), I18n.t('project.default_name')) || '').trim();
+      if (!name) return;
+      const { data, error } = await supabaseClient
+        .from('user_projects')
+        .insert({ client_user_id: currentUser.id, name, slots: serializeProjectSlots(), wall_width_mm: getProjectWallWidthMm() })
+        .select('id, name')
+        .single();
+      if (error) throw error;
+      loadedProjectFavorite = { id: data.id, name: data.name };
+      statusEl.textContent = I18n.t('project.saved_status');
+    }
+    refreshProjectFavoriteButtons();
+    setTimeout(() => { statusEl.textContent = ''; }, 4000);
+  } catch (err) {
+    errorEl.textContent = err.message || String(err);
+    errorEl.style.display = 'block';
+  }
+}
+
+const projSaveFavBtn = document.getElementById('po-proj-save-fav-btn');
+if (projSaveFavBtn) projSaveFavBtn.addEventListener('click', () => saveProjectFavorite(null));
+const projUpdateFavBtn = document.getElementById('po-proj-update-fav-btn');
+if (projUpdateFavBtn) {
+  projUpdateFavBtn.addEventListener('click', () => {
+    if (loadedProjectFavorite) saveProjectFavorite(loadedProjectFavorite.id);
+  });
+}
+
+async function loadProjectFavoritesList() {
+  const listEl = document.getElementById('po-proj-fav-list');
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (!listEl) return;
+  errorEl.style.display = 'none';
+  listEl.innerHTML = '';
+  const { data, error } = await supabaseClient
+    .from('user_projects')
+    .select('id, name, slots, wall_width_mm, updated_at')
+    .order('updated_at', { ascending: false });
+  if (error) { errorEl.textContent = error.message; errorEl.style.display = 'block'; return; }
+  if (!data || data.length === 0) {
+    listEl.innerHTML = `<p class="hint">${I18n.t('project.saved_list_empty')}</p>`;
+    return;
+  }
+  data.forEach((proj) => {
+    const card = document.createElement('div');
+    card.className = 'panel';
+    card.style.marginTop = '10px';
+    const slots = Array.isArray(proj.slots) ? proj.slots : [];
+    const thumbs = slots
+      .filter((s) => s.thumbnail_data_url)
+      .map((s) => `<img src="${s.thumbnail_data_url}" alt="" style="height:64px;margin-right:4px;" />`)
+      .join('');
+    const dateStr = proj.updated_at ? new Date(proj.updated_at).toLocaleString() : '—';
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div>
+          <strong class="po-proj-fav-name"></strong>
+          <div class="hint">${I18n.t('fav.modules_label', { n: slots.length })} · ${I18n.t('project.updated_label', { date: dateStr })}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="po-proj-fav-load">${I18n.t('project.load_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-rename" style="margin-top:0;">${I18n.t('fav.rename_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-delete" style="margin-top:0;">${I18n.t('fav.delete_btn')}</button>
+        </div>
+      </div>
+      ${thumbs ? `<div style="margin-top:8px;">${thumbs}</div>` : ''}
+    `;
+    card.querySelector('.po-proj-fav-name').textContent = proj.name; // textContent: nome é texto livre do cliente
+    card.querySelector('.po-proj-fav-load').addEventListener('click', () => restoreFavoriteProject(proj));
+    card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
+      const newName = (prompt(I18n.t('project.name_prompt'), proj.name) || '').trim();
+      if (!newName || newName === proj.name) return;
+      const { error: renameErr } = await supabaseClient
+        .from('user_projects')
+        .update({ name: newName, updated_at: new Date().toISOString() })
+        .eq('id', proj.id);
+      if (renameErr) { errorEl.textContent = renameErr.message; errorEl.style.display = 'block'; return; }
+      if (loadedProjectFavorite && loadedProjectFavorite.id === proj.id) { loadedProjectFavorite.name = newName; refreshProjectFavoriteButtons(); }
+      loadProjectFavoritesList();
+    });
+    card.querySelector('.po-proj-fav-delete').addEventListener('click', async () => {
+      if (!confirm(I18n.t('project.delete_confirm', { name: proj.name }))) return;
+      const { error: delErr } = await supabaseClient.from('user_projects').delete().eq('id', proj.id);
+      if (delErr) { errorEl.textContent = delErr.message; errorEl.style.display = 'block'; return; }
+      if (loadedProjectFavorite && loadedProjectFavorite.id === proj.id) { loadedProjectFavorite = null; refreshProjectFavoriteButtons(); }
+      loadProjectFavoritesList();
+    });
+    listEl.appendChild(card);
+  });
+}
+
+const projFavListToggleBtn = document.getElementById('po-proj-fav-list-toggle-btn');
+if (projFavListToggleBtn) {
+  projFavListToggleBtn.addEventListener('click', () => {
+    const wrap = document.getElementById('po-proj-fav-list-wrap');
+    if (!wrap) return;
+    const isHidden = wrap.style.display === 'none';
+    wrap.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) loadProjectFavoritesList();
+  });
+}
+
+// Reconstrói projectSlots a partir da configuração salva (ver
+// restoreFavoriteComposition acima pro mesmo raciocínio linha a linha, não
+// repetido aqui) — as diferenças: x_mm/z_order em vez de stack_on_id,
+// wall_width_mm próprio (ver setProjectWallWidthMm), e cada slot precisa de
+// colorOptionsByRole recarregado (loadModuleColors) pra alimentar o painel
+// de swatch inline (renderProjectConfigPanel) — a Composição não tem esse
+// painel inline, só o configurador completo, então não precisa disso.
+async function restoreFavoriteProject(fav, bindAsFavorite = true) {
+  const errorEl = document.getElementById('po-proj-fav-error') || document.getElementById('po-proj-error');
+  if (errorEl) errorEl.style.display = 'none';
+  try {
+    // Corrida no login: allModules só fica pronto depois de um showLoggedIn()
+    // assíncrono (loadColorRoles → ... → loadModules, no fim da cadeia — ver
+    // showLoggedIn). Clicar "Carregar no Projeto" rápido demais (ex.: acabou
+    // de logar/recarregar a página) pega allModules ainda vazio ([]) — e
+    // TODO módulo salvo é pulado por engano (.find nunca acha nada num
+    // array vazio), mesmo o módulo existindo de verdade no catálogo. Isso
+    // bate exatamente com o relato do usuário: "6 de 6" pulados, 100% —
+    // sinal de allModules vazio, não de módulo realmente apagado.
+    if (!allModules.length) await loadModules();
+    const slotConfigs = Array.isArray(fav.slots) ? fav.slots : [];
+
+    const pieceColorOverrideColorIds = slotConfigs.flatMap((s) =>
+      Object.values(s.piece_color_overrides || {}).flatMap((perRole) => Object.values(perRole).map((e) => e.color_id))
+    );
+    const colorIds = [...new Set(
+      slotConfigs.flatMap((s) => (s.selected_colors || []).map((c) => c.color_id))
+        .concat(pieceColorOverrideColorIds)
+        .filter(Boolean)
+    )];
+    const hingeIds = [...new Set(slotConfigs.map((s) => s.hinge_model_id).filter(Boolean))];
+    const slideIds = [...new Set(slotConfigs.map((s) => s.slide_model_id).filter(Boolean))];
+    const [colorsRes, hingeRes, slideRes] = await Promise.all([
+      colorIds.length ? supabaseClient.from('colors').select('*').in('id', colorIds) : { data: [] },
+      hingeIds.length ? supabaseClient.from('hinge_models').select('*').in('id', hingeIds) : { data: [] },
+      slideIds.length ? supabaseClient.from('slide_models').select('*').in('id', slideIds) : { data: [] }
+    ]);
+    const colorById = new Map((colorsRes.data || []).map((c) => [c.id, c]));
+    const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
+    const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
+
+    const restored = [];
+    let skipped = 0;
+    // Sequencial (não Promise.all) de propósito: loadModuleColors mexe no
+    // global moduleColorsByRole — chamadas concorrentes se sobrescreveriam.
+    for (const cfg of slotConfigs) {
+      const module = allModules.find((m) => m.id === cfg.module_id);
+      if (!module) { skipped += 1; continue; }
+      const piecesList = await loadRecursivePiecesForModule(module.id);
+      if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
+      const optionalIds = cfg.selected_optional_ids || [];
+      const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
+      await loadModuleColors(module.id); // preenche o global moduleColorsByRole pra ESTE módulo — precisa vir ANTES do fallback abaixo
+      const selectedColorsResolved = [...(cfg.selected_colors || [])];
+      const colorsByRole = {};
+      selectedColorsResolved.forEach((sc) => {
+        const color = colorById.get(sc.color_id);
+        if (color) colorsByRole[sc.role_id] = color;
+      });
+      // Autocura (2026-07-21) — projetos salvos ANTES do fix de
+      // insertProjectModuleDefault (clicar na biblioteca insere direto)
+      // gravaram selected_colors VAZIO mesmo com peça exigindo cor, e o
+      // slot inteiro era pulado no restore ("Nenhuma cor selecionada para a
+      // peça X", relatado pelo usuário — projeto "bed3"). Em vez de só
+      // corrigir daqui pra frente, preenche aqui também qualquer papel de
+      // cor que as peças REALMENTE usam (recursivo, ver
+      // collectUsedColorRoleIds) mas que ficou faltando — com a 1ª opção
+      // disponível do catálogo, mesmo critério de "cor padrão" que
+      // insertProjectModuleDefault já usa pra módulo novo. Atualiza
+      // selectedColorsResolved junto, pra "Salvar alterações" gravar o
+      // preenchimento de volta e o projeto parar de precisar disso a cada load.
+      collectUsedColorRoleIds(effectivePieces).forEach((roleId) => {
+        if (colorsByRole[roleId]) return;
+        const fallback = (moduleColorsByRole[roleId] || [])[0];
+        if (!fallback) return;
+        colorsByRole[roleId] = fallback;
+        const idx = selectedColorsResolved.findIndex((sc) => sc.role_id === roleId);
+        const entry = { role_id: roleId, role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null, color_id: fallback.id, color_name: fallback.name };
+        if (idx >= 0) selectedColorsResolved[idx] = entry; else selectedColorsResolved.push(entry);
+      });
+      const hingeModel = cfg.hinge_model_id ? (hingeById.get(cfg.hinge_model_id) || null) : null;
+      const slideModel = cfg.slide_model_id ? (slideById.get(cfg.slide_model_id) || null) : null;
+      const pieceColorOverrides = {};
+      Object.keys(cfg.piece_color_overrides || {}).forEach((pieceId) => {
+        const perRole = cfg.piece_color_overrides[pieceId];
+        const resolved = {};
+        Object.keys(perRole).forEach((roleId) => {
+          const color = colorById.get(perRole[roleId].color_id);
+          if (color) resolved[roleId] = color;
+        });
+        if (Object.keys(resolved).length) pieceColorOverrides[pieceId] = resolved;
+      });
+      let result;
+      try {
+        result = module.is_decoration
+          ? { total: 0, breakdown: [] }
+          : Pricing.calculateModulePrice({
+            module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+            shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
+            pieceColorOverrides,
+            width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+            markupMultiplier: pricingMarkupMultiplier
+          });
+      } catch (calcErr) { skipped += 1; continue; } // catálogo mudou e a config não fecha mais
+      restored.push({
+        id: cfg.id || newProjectSlotId(),
+        x_mm: Number(cfg.x_mm || 0),
+        floor_height_mm: Number(cfg.floor_height_mm || 0),
+        z_order: Number(cfg.z_order || 0),
+        module,
+        pieces: effectivePieces,
+        colorOptionsByRole: moduleColorsByRole,
+        colorsByRole,
+        selectedColors: selectedColorsResolved,
+        pieceColorOverrides,
+        hingeModel, slideModel,
+        width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+        shelfQuantities: cfg.shelf_quantities || {},
+        dimOverrides: cfg.dim_overrides || {},
+        selectedOptionalIds: optionalIds,
+        result,
+        thumbnail_data_url: cfg.thumbnail_data_url || null
+      });
+    }
+
+    // Vai pra aba Projetos ANTES de atribuir os dados novos — o canvas
+    // (renderProjectCanvas) mede o clientWidth do wrap pra calcular a escala
+    // px/mm, e isso só funciona com display:block (mesmo motivo do
+    // comentário em "if (btn.dataset.tab === 'po-tab-projects')" no listener
+    // de troca de aba, mais abaixo neste arquivo).
+    const projTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-projects"]');
+    if (projTabBtn) projTabBtn.click();
+
+    projectSlots = restored;
+    selectedProjectSlotId = null;
+    setProjectWallWidthMm(Number(fav.wall_width_mm) || PROJECT_WALL_WIDTH_DEFAULT_MM, false); // já re-renderiza o canvas
+    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name } : null;
+    refreshProjectFavoriteButtons();
+    renderProjectCanvas();
+
+    const statusEl = document.getElementById('po-proj-fav-status');
+    if (statusEl) {
+      statusEl.textContent = I18n.t('project.loaded_status', { name: fav.name })
+        + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
+      setTimeout(() => { statusEl.textContent = ''; }, 6000);
+    }
+  } catch (err) {
+    if (errorEl) {
+      errorEl.textContent = I18n.t('project.load_error', { msg: err.message || String(err) });
+      errorEl.style.display = 'block';
+    }
+  }
+}
+
+// ---------- GERAR IMAGEM COM IA + GALERIA PARA PROJETOS (migration 056) ----------
+// Cópia adaptada do bloco da Composição (generateAiPreviewForGallery/
+// publishCompositionToGallery e os helpers que eles chamam — ver comentários
+// perto de cada um lá pro raciocínio completo, não repetido aqui) operando
+// em cima de projectSlots/ViewerProject em vez de compositionSlots/
+// ViewerComposition. gallery_posts ganha source_type='project' +
+// wall_width_mm (migration 056) pra "Personalizar" saber reconstruir de
+// volta na aba Projetos (ver restoreGalleryPostAsProject mais abaixo).
+
+// Largura = a da PAREDE (getProjectWallWidthMm), não a soma dos módulos
+// (teria vãos vazios contados errado) — equivalente a
+// computeCompositionTotalsMm(), que soma colunas em vez disso.
+function computeProjectTotalsMm() {
+  if (projectSlots.length === 0) return null;
+  let totalHeight = 0;
+  let totalDepth = 0;
+  projectSlots.forEach((s) => {
+    totalHeight = Math.max(totalHeight, Number(s.floor_height_mm || 0) + Number(s.height_mm || 0));
+    totalDepth = Math.max(totalDepth, Number(s.depth_mm || 0));
+  });
+  return { totalWidth: getProjectWallWidthMm(), totalHeight, totalDepth };
+}
+
+function aggregateColorsUsedForProject() {
+  const byColorId = new Map();
+  projectSlots.forEach((slot) => {
+    (slot.selectedColors || []).forEach((c) => { if (c.color_id) byColorId.set(c.color_id, c); });
+    Object.values(slot.pieceColorOverrides || {}).forEach((perRole) => {
+      Object.keys(perRole).forEach((roleId) => {
+        const color = perRole[roleId];
+        if (color && color.id && !byColorId.has(color.id)) {
+          byColorId.set(color.id, { role_id: roleId, role_name: null, color_id: color.id, color_name: color.name });
+        }
+      });
+    });
+  });
+  return [...byColorId.values()];
+}
+
+function aggregateColorsUsedPerModuleForProject() {
+  const byModule = new Map(); // moduleName -> Map(colorId -> colorEntry)
+  projectSlots.forEach((slot) => {
+    const moduleName = (slot.module && slot.module.name) || '?';
+    if (!byModule.has(moduleName)) byModule.set(moduleName, new Map());
+    const colorMap = byModule.get(moduleName);
+    (slot.selectedColors || []).forEach((c) => { if (c.color_id) colorMap.set(c.color_id, c); });
+    Object.values(slot.pieceColorOverrides || {}).forEach((perRole) => {
+      Object.keys(perRole).forEach((roleId) => {
+        const color = perRole[roleId];
+        if (color && color.id && !colorMap.has(color.id)) {
+          colorMap.set(color.id, { role_id: roleId, role_name: null, color_id: color.id, color_name: color.name });
+        }
+      });
+    });
+  });
+  return [...byModule.entries()].map(([moduleName, colorMap]) => ({ moduleName, colors: [...colorMap.values()] }));
+}
+
+async function buildColorDescriptionForProject() {
+  const perModule = aggregateColorsUsedPerModuleForProject();
+  if (!perModule.length) return null;
+  const allColorIds = [...new Set(perModule.flatMap((m) => m.colors.map((c) => c.color_id)).filter(Boolean))];
+  const hexByColorId = new Map();
+  if (allColorIds.length) {
+    try {
+      const { data } = await supabaseClient.from('colors').select('id, swatch_hex').in('id', allColorIds);
+      (data || []).forEach((c) => { if (c.swatch_hex) hexByColorId.set(c.id, c.swatch_hex); });
+    } catch (err) { /* segue só com o nome, sem hex */ }
+  }
+  const moduleLabels = perModule
+    .map(({ moduleName, colors }) => {
+      const names = [...new Set(colors
+        .map((c) => {
+          if (!c.color_name) return null;
+          const hex = hexByColorId.get(c.color_id);
+          return hex ? `${c.color_name} (hex aproximado ${hex})` : c.color_name;
+        })
+        .filter(Boolean))];
+      return names.length ? `${moduleName}: ${names.join(', ')}` : null;
+    })
+    .filter(Boolean);
+  return moduleLabels.length ? moduleLabels.join('; ') : null;
+}
+
+const MAX_COLOR_REF_PHOTOS_PROJECT = 4;
+async function buildColorReferencesForProject() {
+  const perModule = aggregateColorsUsedPerModuleForProject();
+  if (!perModule.length) return [];
+  const colorIds = [...new Set(perModule.flatMap((m) => m.colors.map((c) => c.color_id)).filter(Boolean))];
+  if (!colorIds.length) return [];
+  const modulesByColorId = new Map();
+  perModule.forEach(({ moduleName, colors }) => {
+    colors.forEach((c) => {
+      if (!c.color_id) return;
+      if (!modulesByColorId.has(c.color_id)) modulesByColorId.set(c.color_id, new Set());
+      modulesByColorId.get(c.color_id).add(moduleName);
+    });
+  });
+  try {
+    const { data } = await supabaseClient.from('colors').select('id, name, texture_url').in('id', colorIds);
+    const withPhoto = (data || []).filter((c) => c.texture_url).slice(0, MAX_COLOR_REF_PHOTOS_PROJECT);
+    const images = (await Promise.all(withPhoto.map(async (c) => {
+      const rawDataUrl = await fetchUrlAsDataUrl(c.texture_url);
+      if (!rawDataUrl) return null;
+      const dataUrl = await toJpegDataUrl(rawDataUrl);
+      const moduleNames = [...(modulesByColorId.get(c.id) || [])].join(', ');
+      const label = moduleNames ? `${moduleNames}: ${c.name}` : c.name;
+      return { label, dataUrl };
+    }))).filter(Boolean);
+    return images;
+  } catch (err) {
+    return [];
+  }
+}
+
+const MAX_MODULE_REF_PHOTOS_PROJECT = 3;
+async function fetchReferencePhotosForProject() {
+  const moduleNameById = new Map();
+  projectSlots.forEach((s) => { if (s.module && s.module.id) moduleNameById.set(s.module.id, s.module.name); });
+  const moduleIds = [...moduleNameById.keys()];
+  if (!moduleIds.length) return { moduleRefImages: [] };
+  try {
+    const { data } = await supabaseClient.from('reference_photos').select('id, module_id, photo_url').in('module_id', moduleIds);
+    const firstPhotoByModule = new Map();
+    (data || []).forEach((p) => { if (!firstPhotoByModule.has(p.module_id)) firstPhotoByModule.set(p.module_id, p.photo_url); });
+    const chosen = [...firstPhotoByModule.entries()].slice(0, MAX_MODULE_REF_PHOTOS_PROJECT);
+    const moduleRefImages = (await Promise.all(chosen.map(async ([moduleId, photoUrl]) => {
+      const dataUrl = await fetchUrlAsDataUrl(photoUrl);
+      return dataUrl ? { moduleName: moduleNameById.get(moduleId) || null, dataUrl } : null;
+    }))).filter(Boolean);
+    return { moduleRefImages };
+  } catch (err) {
+    return { moduleRefImages: [] };
+  }
+}
+
+async function captureProjectAngleReferences() {
+  if (!ViewerProject || !ViewerProject.snapshot) return [];
+  const angles = [
+    { angle: 'three_quarter', label: 'vista 3/4 (referência de geometria)' },
+    { angle: 'side', label: 'vista lateral (referência de geometria)' }
+  ];
+  const images = [];
+  for (const { angle, label } of angles) {
+    const raw = ViewerProject.snapshot({ angle });
+    if (!raw) continue;
+    const trimmed = await trimTransparentPng(raw);
+    if (trimmed) images.push({ label, dataUrl: trimmed });
+  }
+  return images;
+}
+
+// Versão "limpa" da cena do Projeto só pra tirar o(s) print(s) que viram
+// base pra IA — mesmo princípio de renderCompositionForAiSnapshot (ver
+// comentário lá). SEMPRE temporária: quem chamar isto tem que chamar
+// generateProject3D() de novo depois, pra devolver a cena normal.
+function renderProjectForAiSnapshot() {
+  if (!ViewerProject || !ViewerProject.available()
+    || typeof Viewer3D === 'undefined' || !Viewer3D.buildStandaloneAssembly) {
+    return false;
+  }
+  const cleanSlots = projectSlots.filter((slot) => !(slot.module && slot.module.is_decoration));
+  if (!cleanSlots.length) return false;
+  const assemblies = buildProjectAssemblies(cleanSlots);
+  const room = { ...viewerRoomEnvConfig(), minimal: true };
+  ViewerProject.init('po-proj-3d-canvas');
+  ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, room);
+  return true;
+}
+
+let projectGalleryAiPreviewImage = null;
+let projectGalleryAiPreviewStatus = null;
+
+const projGalleryPublishToggleBtn = document.getElementById('po-proj-gallery-publish-toggle-btn');
+if (projGalleryPublishToggleBtn) {
+  projGalleryPublishToggleBtn.addEventListener('click', () => {
+    const form = document.getElementById('po-proj-gallery-publish-form');
+    if (!form) return;
+    const isHidden = form.style.display === 'none';
+    if (isHidden) {
+      populateGalleryFamilySelect(document.getElementById('po-proj-gallery-room-type'), false);
+      projectGalleryAiPreviewImage = null;
+      projectGalleryAiPreviewStatus = null;
+      document.getElementById('po-proj-gallery-ai-preview-wrap').style.display = 'none';
+      const baseWrap = document.getElementById('po-proj-gallery-base-preview-wrap');
+      if (baseWrap) baseWrap.style.display = 'none';
+    }
+    form.style.display = isHidden ? 'block' : 'none';
+  });
+}
+
+async function generateAiPreviewForProjectGallery() {
+  const btn = document.getElementById('po-proj-gallery-generate-ai-btn');
+  const previewWrap = document.getElementById('po-proj-gallery-ai-preview-wrap');
+  const previewImg = document.getElementById('po-proj-gallery-ai-preview-img');
+  const previewHint = document.getElementById('po-proj-gallery-ai-preview-hint');
+  const basePreviewWrap = document.getElementById('po-proj-gallery-base-preview-wrap');
+  const basePreviewImg = document.getElementById('po-proj-gallery-base-preview-img');
+  const errorEl = document.getElementById('po-proj-gallery-publish-error');
+  errorEl.style.display = 'none';
+  if (!projectSlots.length) {
+    errorEl.textContent = I18n.t('fav.need_slots');
+    errorEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = I18n.t('gallery.generating_ai_status');
+  const usedCleanScene = renderProjectForAiSnapshot();
+  try {
+    const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot({ frontal: true }) : null;
+    const trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+    if (!trimmedSnapshot) {
+      errorEl.textContent = I18n.t('gallery.generate_ai_no_3d_error');
+      errorEl.style.display = 'block';
+      return;
+    }
+    if (basePreviewImg && basePreviewWrap) {
+      basePreviewImg.src = trimmedSnapshot;
+      basePreviewWrap.style.display = 'block';
+    }
+
+    const roomFamilyId = document.getElementById('po-proj-gallery-room-type').value || null;
+    const roomLabel = roomFamilyId ? galleryFamilyName(roomFamilyId) : null;
+    const aspectRatio = currentGalleryAspectRatio(await getImageAspectRatio(trimmedSnapshot));
+
+    let imageDataUrl = trimmedSnapshot;
+    let renderStatus = 'failed';
+    try {
+      const angleRefImages = await captureProjectAngleReferences();
+      const [{ moduleRefImages }, colorLabel, colorRefImages] = await Promise.all([
+        fetchReferencePhotosForProject(),
+        buildColorDescriptionForProject(),
+        buildColorReferencesForProject()
+      ]);
+      const { data: renderData, error: renderError } = await supabaseClient.functions.invoke('generate-gallery-render', {
+        body: { imageDataUrl: trimmedSnapshot, moduleRefImages, colorLabel, colorRefImages, angleRefImages, roomLabel, aspectRatio }
+      });
+      if (!renderError && renderData && renderData.imageDataUrl) {
+        imageDataUrl = renderData.imageDataUrl;
+        renderStatus = 'ready';
+      } else {
+        console.error('generate-gallery-render falhou (projeto):', renderError, renderData);
+        if (renderError && typeof renderError.context?.json === 'function') {
+          renderError.context.json().then((body) => console.error('Corpo do erro:', body)).catch(() => {});
+        }
+      }
+    } catch (aiErr) {
+      console.error('generate-gallery-render: erro ao chamar a function (projeto):', aiErr);
+    }
+
+    projectGalleryAiPreviewImage = imageDataUrl;
+    projectGalleryAiPreviewStatus = renderStatus;
+    previewImg.src = imageDataUrl;
+    previewHint.textContent = renderStatus === 'ready'
+      ? I18n.t('gallery.generate_ai_ready_hint')
+      : I18n.t('gallery.generate_ai_fallback_hint');
+    previewWrap.style.display = 'block';
+  } finally {
+    if (usedCleanScene) generateProject3D();
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+const projGalleryGenerateAiBtn = document.getElementById('po-proj-gallery-generate-ai-btn');
+if (projGalleryGenerateAiBtn) projGalleryGenerateAiBtn.addEventListener('click', generateAiPreviewForProjectGallery);
+
+const projGalleryAiPreviewImgEl = document.getElementById('po-proj-gallery-ai-preview-img');
+if (projGalleryAiPreviewImgEl) {
+  projGalleryAiPreviewImgEl.addEventListener('click', () => {
+    if (projGalleryAiPreviewImgEl.src) openGalleryLightbox(projGalleryAiPreviewImgEl.src);
+  });
+}
+const projGalleryBasePreviewImgEl = document.getElementById('po-proj-gallery-base-preview-img');
+if (projGalleryBasePreviewImgEl) {
+  projGalleryBasePreviewImgEl.addEventListener('click', () => {
+    if (projGalleryBasePreviewImgEl.src) openGalleryLightbox(projGalleryBasePreviewImgEl.src);
+  });
+}
+
+// "⬇️ Baixar" / "↗️ Compartilhar" — mesma coisa da Composição (ver
+// downloadGeneratedImage/shareGeneratedImage acima), só lendo
+// projectGalleryAiPreviewImage em vez de galleryAiPreviewImage.
+const projGalleryAiDownloadBtn = document.getElementById('po-proj-gallery-ai-download-btn');
+if (projGalleryAiDownloadBtn) {
+  projGalleryAiDownloadBtn.addEventListener('click', () => downloadGeneratedImage(projectGalleryAiPreviewImage, 'projeto'));
+}
+const projGalleryAiShareBtn = document.getElementById('po-proj-gallery-ai-share-btn');
+if (projGalleryAiShareBtn) {
+  projGalleryAiShareBtn.addEventListener('click', () => shareGeneratedImage(projectGalleryAiPreviewImage, 'projeto', document.getElementById('po-proj-gallery-ai-preview-hint')));
+}
+
+async function publishProjectToGallery() {
+  const errorEl = document.getElementById('po-proj-gallery-publish-error');
+  const statusEl = document.getElementById('po-proj-gallery-publish-status');
+  errorEl.style.display = 'none';
+  statusEl.textContent = '';
+  if (!currentUser) {
+    errorEl.textContent = I18n.t('fav.need_login');
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (!projectSlots.length) {
+    errorEl.textContent = I18n.t('fav.need_slots');
+    errorEl.style.display = 'block';
+    return;
+  }
+  const submitBtn = document.getElementById('po-proj-gallery-publish-submit-btn');
+  submitBtn.disabled = true;
+  try {
+    let imageDataUrl;
+    let renderStatus;
+    if (projectGalleryAiPreviewImage) {
+      imageDataUrl = projectGalleryAiPreviewImage;
+      renderStatus = projectGalleryAiPreviewStatus;
+    } else {
+      const usedCleanSceneFallback = renderProjectForAiSnapshot();
+      const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot({ frontal: true }) : null;
+      const trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+      imageDataUrl = trimmedSnapshot;
+      renderStatus = trimmedSnapshot ? 'pending' : 'failed';
+      if (trimmedSnapshot) {
+        try {
+          const fallbackFamilyId = document.getElementById('po-proj-gallery-room-type').value || null;
+          const fallbackRoomLabel = fallbackFamilyId ? galleryFamilyName(fallbackFamilyId) : null;
+          const fallbackAspectRatio = currentGalleryAspectRatio(await getImageAspectRatio(trimmedSnapshot));
+          const fallbackAngleRefImages = await captureProjectAngleReferences();
+          const [{ moduleRefImages }, fallbackColorLabel, fallbackColorRefImages] = await Promise.all([
+            fetchReferencePhotosForProject(),
+            buildColorDescriptionForProject(),
+            buildColorReferencesForProject()
+          ]);
+          const { data: renderData, error: renderError } = await supabaseClient.functions.invoke('generate-gallery-render', {
+            body: { imageDataUrl: trimmedSnapshot, moduleRefImages, colorLabel: fallbackColorLabel, colorRefImages: fallbackColorRefImages, angleRefImages: fallbackAngleRefImages, roomLabel: fallbackRoomLabel, aspectRatio: fallbackAspectRatio }
+          });
+          if (!renderError && renderData && renderData.imageDataUrl) {
+            imageDataUrl = renderData.imageDataUrl;
+            renderStatus = 'ready';
+          }
+        } catch (aiErr) {
+          // segue com o screenshot 3D mesmo (renderStatus continua 'pending')
+        } finally {
+          if (usedCleanSceneFallback) generateProject3D();
+        }
+      } else if (usedCleanSceneFallback) {
+        generateProject3D();
+      }
+    }
+
+    try {
+      imageDataUrl = await uploadGalleryImageToStorage(imageDataUrl);
+    } catch (uploadErr) {
+      console.error('Falha ao subir imagem da Galeria pro Storage (projeto), mantendo base64:', uploadErr);
+    }
+
+    const totalsMm = computeProjectTotalsMm();
+    const priceSale = projectSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.total) || 0), 0);
+    const priceCost = projectSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.cost_total) || 0), 0);
+    const isAnonymous = !!document.getElementById('po-proj-gallery-anonymous-chk').checked;
+    const familyId = document.getElementById('po-proj-gallery-room-type').value || null;
+
+    const payload = {
+      author_user_id: currentUser.id,
+      author_display_name: currentUser.email || null,
+      is_anonymous: isAnonymous,
+      status: 'pending',
+      render_status: renderStatus,
+      ai_image_data_url: imageDataUrl,
+      composition_name: loadedProjectFavorite ? loadedProjectFavorite.name : null,
+      family_id: familyId,
+      source_type: 'project',
+      wall_width_mm: getProjectWallWidthMm(),
+      total_width_mm: totalsMm ? totalsMm.totalWidth : null,
+      total_height_mm: totalsMm ? totalsMm.totalHeight : null,
+      total_depth_mm: totalsMm ? totalsMm.totalDepth : null,
+      price_sale: priceSale,
+      price_cost: priceCost,
+      colors_used: aggregateColorsUsedForProject(),
+      slots: serializeProjectSlots()
+    };
+    const { error } = await supabaseClient.from('gallery_posts').insert(payload);
+    if (error) throw error;
+    statusEl.textContent = I18n.t('gallery.publish_success');
+    document.getElementById('po-proj-gallery-anonymous-chk').checked = false;
+    projectGalleryAiPreviewImage = null;
+    projectGalleryAiPreviewStatus = null;
+    document.getElementById('po-proj-gallery-ai-preview-wrap').style.display = 'none';
+    const baseWrapAfterPublish = document.getElementById('po-proj-gallery-base-preview-wrap');
+    if (baseWrapAfterPublish) baseWrapAfterPublish.style.display = 'none';
+    setTimeout(() => {
+      statusEl.textContent = '';
+      document.getElementById('po-proj-gallery-publish-form').style.display = 'none';
+    }, 4000);
+  } catch (err) {
+    errorEl.textContent = err.message || String(err);
+    errorEl.style.display = 'block';
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+const projGalleryPublishSubmitBtn = document.getElementById('po-proj-gallery-publish-submit-btn');
+if (projGalleryPublishSubmitBtn) projGalleryPublishSubmitBtn.addEventListener('click', publishProjectToGallery);
+
+// "Personalizar" num post de PROJETO (source_type='project') — mesma ideia
+// de restoreGalleryPostAsComposition (ver acima), só que carrega em
+// projectSlots (ver restoreFavoriteProject) + a largura do ambiente salva
+// junto (post.wall_width_mm). id null: não existe (nem poderia, RLS
+// owner-only) nenhuma user_projects correspondente a um post de outra
+// pessoa.
+function restoreGalleryPostAsProject(post) {
+  restoreFavoriteProject({ id: null, name: post.composition_name || I18n.t('gallery.untitled'), slots: post.slots, wall_width_mm: post.wall_width_mm }, false);
+}
+
+// Despacha "Personalizar" pro restore certo conforme source_type do post
+// (migration 056) — composição (coluna empilhada, sem largura de ambiente)
+// ou projeto (módulos soltos, com wall_width_mm). Usada nos 3 pontos que
+// abrem um post da Galeria fora da própria tela (card "Personalizar", link
+// compartilhado ?galleryPost=, retomada de login pendente) — cada restore já
+// troca de aba sozinho (Composição ou Projetos), então quem chama isto não
+// precisa mais decidir a aba na mão.
+function restoreGalleryPostBySourceType(post) {
+  if (post && post.source_type === 'project') restoreGalleryPostAsProject(post);
+  else restoreGalleryPostAsComposition(post);
+}
+
+// Delete/Backspace remove o módulo SELECIONADO do projeto (pedido do
+// usuário, 2026-07-21: "clicando no modulo e delete ele deve ser deletado
+// do projeto") — só age quando: a aba Projetos está visível, tem um módulo
+// selecionado (ver selectProjectSlot) e o foco NÃO está num campo de texto
+// (senão apagaria o módulo enquanto o cliente só queria apagar uma letra
+// digitando a largura/nome de busca, etc.).
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+  if (!selectedProjectSlotId) return;
+  const projectsTab = document.getElementById('po-tab-projects');
+  if (!projectsTab || projectsTab.style.display === 'none') return;
+  const active = document.activeElement;
+  const tag = active && active.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (active && active.isContentEditable)) return;
+  ev.preventDefault();
+  removeProjectSlot(selectedProjectSlotId);
+});
+
 // ---------- Abas ----------
 
 document.getElementById('po-sidebar').querySelectorAll('.portal-tab-btn').forEach((btn) => {
@@ -6666,11 +8983,27 @@ document.getElementById('po-sidebar').querySelectorAll('.portal-tab-btn').forEac
     if (addTargetSlotIndex !== null) {
       exitCompositionSlotConfig();
     }
+    // Mesma segurança acima, pro modal de "configurar módulo do Projeto"
+    // (ver startProjectSlotConfig) — nunca fica setado ao mesmo tempo que
+    // addTargetSlotIndex.
+    if (addTargetProjectSlotId !== null) {
+      exitProjectSlotConfig();
+    }
     document.getElementById('po-sidebar').querySelectorAll('.portal-tab-btn').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     document.querySelectorAll('.portal-tab-page').forEach((page) => { page.style.display = 'none'; });
     const target = document.getElementById(btn.dataset.tab);
     if (target) target.style.display = 'block';
+    if (btn.dataset.tab === 'po-tab-projects') {
+      // display:block já aplicado logo acima — canvas consegue medir
+      // clientWidth do wrap agora pra calcular a escala px/mm (ver
+      // renderProjectCanvas). Biblioteca reconstruída toda vez (barata,
+      // allModules já está em memória) pra pegar módulo novo/alterado.
+      renderProjectLibraryFilterBars();
+      renderProjectLibrary();
+      refreshProjectWallWidthInput();
+      renderProjectCanvas();
+    }
     if (btn.dataset.tab === 'po-tab-my-orders' && !myOrdersLoaded) {
       loadMyOrders();
     }
@@ -6733,9 +9066,7 @@ function resumePendingGalleryAction() {
   if (!pendingGalleryPostForAuth) return;
   const post = pendingGalleryPostForAuth;
   pendingGalleryPostForAuth = null;
-  const compTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-composition"]');
-  if (compTabBtn) compTabBtn.click();
-  restoreGalleryPostAsComposition(post);
+  restoreGalleryPostBySourceType(post);
 }
 
 function showLoggedOut() {

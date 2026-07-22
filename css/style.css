@@ -1661,6 +1661,21 @@ header.po-topnav {
   touch-action: none;
 }
 #po-comp-3d-canvas canvas { display: block; width: 100%; height: 100%; }
+/* Visualizar 3D da aba Projetos (ViewerProject, própria instância — ver
+   viewer3d_composition.js/createInstance) — mesmo visual do canvas 3D da
+   Composição acima, só sem o painel de troca rápida de cor ao lado (não
+   pedido pra esta fase). */
+#po-proj-close-3d-btn { display: block; margin-bottom: 10px; }
+#po-proj-3d-canvas-wrap { width: 100%; }
+#po-proj-3d-canvas {
+  width: 100%;
+  height: 420px;
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+#po-proj-3d-canvas canvas { display: block; width: 100%; height: 100%; }
 #po-comp-side-color-panel {
   flex: 0 1 220px;
   max-width: 240px;
@@ -1792,6 +1807,8 @@ header.po-topnav {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+.po-gallery-ai-preview-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; max-width: 320px; }
+.po-gallery-ai-preview-actions button { margin-top: 0; }
 #po-gallery-base-preview-wrap { margin-top: 8px; }
 #po-gallery-base-preview-img {
   display: block;
@@ -1917,3 +1934,218 @@ header.po-topnav {
   position: absolute; top: 16px; right: 20px; background: none; border: none;
   color: #fff; font-size: 34px; line-height: 1; cursor: pointer;
 }
+
+/* ---------- Projetos (canvas 2D, Fase 1 — pedido do usuário 2026-07-21) ----------
+   "tela de projetos... vista frontal 2D paralela (não perspectiva)... deve
+   dar pra arrastar... tipo ímã que puxe os cantos... ao colocar um módulo na
+   frente do outro, ele deve levar o módulo novo pra frente". Canvas é um DOM
+   simples (divs posicionados em px, escala = po-proj-canvas.dataset.pxPerMm),
+   não Three.js — mais simples de arrastar/snapar e mais fiel ao mockup
+   (retângulos com cota, não uma cena 3D vista de frente). */
+.po-proj-wall-settings {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin: 10px 0 4px;
+}
+.po-proj-wall-width-field { max-width: 220px; }
+.po-proj-layout {
+  display: grid;
+  /* Colunas ajustáveis (pedido do usuário, 2026-07-21) — largura em
+     variáveis CSS setadas por applyProjectColumnWidths() (portal.js),
+     arrastando .po-proj-resize-handle-left/right. Padrão só entra em uso se
+     o JS ainda não rodou (var() sem fallback nunca acontece na prática). */
+  grid-template-columns: var(--proj-lib-w, 200px) 8px 1fr 8px var(--proj-cfg-w, 240px);
+  gap: 10px;
+  margin-top: 8px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .po-proj-layout { grid-template-columns: 1fr; }
+  .po-proj-resize-handle { display: none; }
+}
+.po-proj-resize-handle {
+  align-self: stretch;
+  width: 8px;
+  min-height: 200px;
+  cursor: col-resize;
+  position: relative;
+}
+.po-proj-resize-handle::after {
+  content: '';
+  position: absolute; left: 50%; top: 8%; bottom: 8%; width: 3px;
+  transform: translateX(-50%); background: var(--border); border-radius: 2px;
+  transition: background 0.15s;
+}
+.po-proj-resize-handle:hover::after, .po-proj-resize-handle.resizing::after { background: var(--accent); }
+.po-proj-library {
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+  background: var(--panel); max-height: 640px; overflow-y: auto;
+}
+.po-proj-library-search input {
+  width: 100%; margin-bottom: 8px;
+}
+.po-proj-library-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.po-proj-library-card {
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px;
+  text-align: center; cursor: grab; background: #fff;
+  transition: border-color 0.15s, background 0.15s;
+  font-size: 11px;
+}
+.po-proj-library-card:hover { border-color: var(--accent); background: #fbf3ec; }
+.po-proj-library-card:active { cursor: grabbing; }
+.po-proj-library-card svg, .po-proj-library-card .po-module-card-image { width: 100%; height: 44px; display: block; pointer-events: none; }
+.po-proj-library-card-name { font-weight: 600; margin-top: 4px; line-height: 1.2; }
+.po-proj-library-card-dims { color: var(--muted); margin-top: 2px; }
+.po-proj-library-empty { grid-column: 1 / -1; color: var(--muted); font-size: 12px; text-align: center; padding: 12px 0; }
+
+.po-proj-canvas-outer { min-width: 0; }
+/* Pedido do usuário (3ª rodada): "tem muita borda lá em cima só com umas
+   coisas escritas que ninguém vai ler" — bem discreto, quase um detalhe. */
+.po-proj-canvas-scale-label {
+  font-size: 9px; color: var(--muted); opacity: 0.6; margin-bottom: 1px; text-align: center;
+}
+.po-proj-canvas-wrap {
+  border: 1px solid var(--border); border-radius: 10px; background: #f4f1ea;
+  overflow: auto; display: flex; justify-content: center;
+}
+.po-proj-canvas {
+  position: relative; background: #f8f6f1;
+  background-image: linear-gradient(#e9e4d8 1px, transparent 1px), linear-gradient(90deg, #e9e4d8 1px, transparent 1px);
+  background-size: 40px 40px;
+  flex: none; /* largura/altura setadas via JS em px, escala real da parede */
+}
+.po-proj-canvas-baseboard {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(135deg, #c9c2b2, #c9c2b2 6px, #bdb5a2 6px, #bdb5a2 12px);
+  border-top: 1px solid #a89f8a;
+  pointer-events: none;
+}
+.po-proj-canvas-ceiling-line {
+  position: absolute; left: 0; right: 0; top: 0;
+  border-top: 2px dashed var(--muted);
+  pointer-events: none;
+}
+.po-proj-empty-hint { margin-top: 6px; text-align: center; }
+
+/* Setas de esticar a parede (pedido do usuário, 2026-07-21: "uma setinha na
+   parede pra esticar ela pro lado direito e esquerdo") — mesma ideia dos
+   handles de redimensionar as colunas, só que arrastando muda
+   projectWallWidthMm em vez da largura de uma coluna. Fica colado na borda
+   interna do canvas (não negativo — ia poder ser cortado pelo overflow:auto
+   do wrap) e sempre no meio da altura, acima de tudo (z-index alto). */
+/* Pedido do usuário (4ª rodada): "quando coloco o mouse aparecem 2 setas e
+   confunde, pode deletar o círculo e deixar só a seta que aparece quando
+   chego perto... assim como no módulo" — mesmo padrão discreto das setinhas
+   de módulo (.po-proj-slot-resize): tira fina, invisível até passar perto,
+   sem círculo nem glifo de seta permanente. */
+.po-proj-wall-resize-handle {
+  position: absolute; top: 0; bottom: 0; width: 10px;
+  cursor: ew-resize; z-index: 500; user-select: none;
+}
+.po-proj-wall-resize-handle:hover, .po-proj-wall-resize-handle.dragging {
+  background: rgba(0,0,0,0.16);
+}
+.po-proj-wall-resize-left { left: 0; }
+.po-proj-wall-resize-right { right: 0; }
+
+.po-proj-slot {
+  position: absolute; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: #e4d9c8; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  overflow: hidden; cursor: grab; user-select: none;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  font-size: 11px; line-height: 1.2; padding: 2px;
+}
+.po-proj-slot:active { cursor: grabbing; }
+.po-proj-slot.dragging { box-shadow: 0 6px 18px rgba(0,0,0,0.28); z-index: 999 !important; opacity: 0.92; }
+.po-proj-slot.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+/* Vista frontal 2D real (pedido do usuário: "não me serve esse bloco
+   cinza... quero ver com as cores escolhidas e os componentes") — peças de
+   verdade (ver projectSlotElevationHtml/portal.js) desenhadas por cima do
+   preenchimento sólido de fundo, com o nome/medidas flutuando por cima de
+   tudo num "selo" legível. */
+.po-proj-slot-elevation { position: absolute; inset: 0; z-index: 1; }
+.po-proj-slot-piece { position: absolute; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.16); }
+.po-proj-slot-label {
+  position: relative; z-index: 2; background: rgba(255,255,255,0.82);
+  border-radius: 4px; padding: 2px 5px; pointer-events: none;
+}
+.po-proj-slot-name { font-weight: 600; }
+.po-proj-slot-dims { color: var(--muted); }
+
+/* Setinhas de esticar cada módulo (pedido do usuário: "sem círculo", mesma
+   ideia das setas da parede mas discretas — tiras finas nas bordas,
+   escurecem no hover/arraste em vez de um botão chamativo). */
+.po-proj-slot-resize { position: absolute; z-index: 30; }
+.po-proj-slot-resize-left, .po-proj-slot-resize-right {
+  top: 0; bottom: 0; width: 7px; cursor: ew-resize;
+}
+.po-proj-slot-resize-left { left: 0; }
+.po-proj-slot-resize-right { right: 0; }
+.po-proj-slot-resize-top { left: 0; right: 0; top: 0; height: 7px; cursor: ns-resize; }
+.po-proj-slot-resize:hover, .po-proj-slot-resize.dragging { background: rgba(0,0,0,0.16); }
+/* Profundidade (z_order) — cada "camada" mais pra frente (mais longe da
+   parede) ganha uma sombra levemente mais forte, pra dar noção visual de
+   frente/fundo mesmo numa vista frontal 2D sem eixo Z desenhado de verdade. */
+.po-proj-slot[data-z-order="1"] { box-shadow: 2px 2px 5px rgba(0,0,0,0.18); }
+.po-proj-slot[data-z-order="2"] { box-shadow: 3px 3px 7px rgba(0,0,0,0.24); }
+.po-proj-slot[data-z-order="3"] { box-shadow: 4px 4px 9px rgba(0,0,0,0.3); }
+
+/* Guias de imã (snap) — linha fina que aparece só durante o arraste, quando
+   a borda do módulo alinha com a de outro módulo/parede (ver snapProjectSlotPosition
+   em portal.js). */
+.po-proj-snap-guide-v, .po-proj-snap-guide-h {
+  position: absolute; background: var(--accent); pointer-events: none; z-index: 1000;
+}
+.po-proj-snap-guide-v { width: 1px; top: 0; bottom: 0; }
+.po-proj-snap-guide-h { height: 1px; left: 0; right: 0; }
+
+.po-proj-config-panel {
+  border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+  background: var(--panel); min-height: 160px;
+}
+.po-proj-config-panel h3 { margin: 0 0 8px; font-size: 15px; }
+.po-proj-config-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+.po-proj-config-row span:first-child { color: var(--muted); }
+.po-proj-config-panel .secondary, .po-proj-config-panel .po-btn-primary-block { margin-top: 10px; width: 100%; }
+.po-proj-config-remove-btn { color: #b3261e; border-color: #e3b3ae; }
+.po-proj-config-remove-btn:hover { background: #fdeceb; }
+
+/* ---------- Ajustes Fase 1.1 (feedback do usuário, 2026-07-21) ----------
+   1) Filtros de categoria/subcategoria pequenos na biblioteca.
+   2) Espaço vertical acima do canvas reduzido + escala do canvas agora leva
+      a ALTURA disponível da tela em conta também (não só a largura), pra
+      parede inteira caber sem rolar (ver renderProjectCanvas em portal.js).
+   3) Clique no módulo da biblioteca insere direto (config padrão) — painel
+      da direita virou editor de verdade (steppers de medida + cor), não só
+      um resumo. */
+.po-proj-library-filters { margin: 6px 0 4px; }
+.po-proj-library-filters .po-tabbar { gap: 3px; margin-top: 3px; }
+.po-proj-library-filters .po-tab-pill { font-size: 10px; padding: 2px 7px; }
+
+#po-tab-projects .po-comp-title-row { margin-bottom: 2px; }
+#po-tab-projects .po-proj-wall-settings { margin: 4px 0 2px; gap: 10px; }
+#po-tab-projects .po-comp-mode-banner { margin-bottom: 8px; padding: 6px 12px; }
+
+/* Pedido do usuário (3ª rodada, 2026-07-21): sem botão +/-, e label colado
+   no valor (nada de space-between empurrando o campo pra longe do rótulo). */
+.po-proj-config-dims { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.po-proj-config-dim-row { display: flex; align-items: center; gap: 6px; }
+.po-proj-config-dim-row label { font-size: 12px; color: var(--muted); min-width: 58px; }
+.po-proj-dim-value-wrap { display: flex; align-items: center; gap: 3px; }
+.po-proj-dim-input { width: 56px; padding: 3px 4px; font-size: 12px; text-align: right; }
+.po-proj-dim-unit { font-size: 11px; color: var(--muted); min-width: 16px; }
+
+.po-proj-config-section-label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+.po-proj-color-role-group { margin-bottom: 8px; }
+.po-proj-color-role-group label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.po-proj-color-swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+.po-proj-color-swatch {
+  width: 24px; height: 24px; border-radius: 5px; border: 2px solid transparent;
+  overflow: hidden; cursor: pointer; box-shadow: 0 0 0 1px var(--border) inset;
+}
+.po-proj-color-swatch img, .po-proj-color-swatch span { display: block; width: 100%; height: 100%; object-fit: cover; }
+.po-proj-color-swatch:hover { box-shadow: 0 0 0 1px var(--accent) inset; }
+.po-proj-color-swatch.selected { border-color: var(--accent); }

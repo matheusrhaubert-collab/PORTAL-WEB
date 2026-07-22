@@ -21,7 +21,18 @@
 // independente do configurador de módulo único. Limitação que CONTINUA
 // aceita: sem balão de duplo-clique nesta cena (essa parte só existe no
 // configurador individual, biblioteca de módulos de cada slot).
-const ViewerComposition = (function () {
+// FÁBRICA (2026-07-21, pedido do usuário: "visualizar 3d" na aba Projetos) —
+// o corpo desta IIFE virou uma função nomeada, chamada uma vez pra criar
+// ViewerComposition (exatamente como antes, zero mudança de comportamento
+// pra Composição) E exposta como ViewerComposition.createInstance pra
+// portal.js criar uma SEGUNDA instância independente (ViewerProject) — cada
+// uma com seu PRÓPRIO renderer/scene/camera/currentGroups/doorsOpen (tudo
+// dentro deste closure), sem disputar o canvas nem o estado de portas/
+// gavetas uma da outra. Precisou virar fábrica porque init() já tinha um
+// "só inicializa uma vez" (if (renderer) return) pensado pra UM canvas só —
+// chamar init('po-proj-3d-canvas') na MESMA instância só ia reaproveitar o
+// renderer já preso ao canvas da Composição.
+function createViewerComposition3D() {
   let renderer = null;
   let scene = null;
   let camera = null;
@@ -514,6 +525,84 @@ const ViewerComposition = (function () {
     lastFitMaxDepth = maxDepth;
   }
 
+  // Espaço entre "camadas" de profundidade (pedido do usuário, 2026-07-21:
+  // vista 3D da tela de Projetos) — cada z_order a mais (ver
+  // renderProjectSlotDepth/resolveProjectSlotDepth em portal.js) empurra o
+  // módulo esse tanto mais pra FRENTE da parede, só pra dar uma noção visual
+  // de profundidade quando dois módulos se sobrepõem no canvas 2D; não é
+  // uma medida real cadastrada em lugar nenhum, só um valor razoável de
+  // separação.
+  const FREEFORM_DEPTH_STEP_M = 0.06;
+
+  // Posicionamento de POSIÇÃO LIVRE (pedido do usuário, 2026-07-21: "próxima
+  // etapa, visualizar 3d" na aba Projetos) — mesma ideia de render() acima
+  // (cada assembly já vem pronto de Viewer3D.buildStandaloneAssembly, só
+  // posiciona), mas SEM a fileira esquerda->direita automática: usa a
+  // posição x_m REAL de cada módulo no canvas 2D (ver x_mm em projectSlots/
+  // portal.js) — wallWidthM é a largura do AMBIENTE inteiro (não a soma dos
+  // módulos), então o enquadramento mostra a parede toda, com os vãos vazios
+  // aparecendo de verdade. z_order (profundidade/camada, ver
+  // resolveProjectSlotDepth em portal.js) empurra o módulo pra frente em
+  // degraus de FREEFORM_DEPTH_STEP_M — mesma regra do baseboard (móvel no
+  // chão recua a espessura do rodapé) que render() já usa, replicada aqui.
+  function renderFreeform(assemblies, wallWidthM, room) {
+    if (!scene || !available()) return;
+    onResize();
+    clearGroups();
+    currentOpenables = [];
+
+    const list = (assemblies || []).filter((a) => a && a.group);
+    const totalWidth = Math.max(Number(wallWidthM) || 0, 0.3);
+    let maxHeight = 0;
+    let maxDepth = 0;
+
+    list.forEach((a) => {
+      a.group.position.x = -totalWidth / 2 + Number(a.x_m || 0) + a.width_m / 2;
+      a.group.position.y = a.floor_height_m || 0;
+      let zOffset = 0;
+      if (room && room.baseboard_h_m > 0) {
+        const bbox = new THREE.Box3().setFromObject(a.group);
+        const wallHung = bbox.min.y > room.baseboard_h_m + 0.001;
+        zOffset = wallHung ? 0 : BASEBOARD_DEPTH_M;
+      }
+      const layerZ = Number(a.z_order || 0) * FREEFORM_DEPTH_STEP_M;
+      a.group.position.z = a.depth_m / 2 + zOffset + layerZ;
+      scene.add(a.group);
+      currentGroups.push(a.group);
+      if (Array.isArray(a.openables) && a.openables.length) {
+        currentOpenables.push(...a.openables);
+      }
+      maxHeight = Math.max(maxHeight, (a.floor_height_m || 0) + a.height_m);
+      maxDepth = Math.max(maxDepth, a.depth_m + layerZ);
+    });
+
+    if (room && room.ceiling_m > 0) {
+      const envGroup = buildRoomEnvironment(totalWidth, maxDepth, room);
+      scene.add(envGroup);
+      currentGroups.push(envGroup);
+    }
+
+    const frameH = room && room.ceiling_m > 0 ? Math.max(maxHeight, room.ceiling_m + 0.25) : Math.max(maxHeight, 0.3);
+    const effDepth = Math.max(maxDepth, 0.3);
+    const target = new THREE.Vector3(0, frameH / 2, effDepth / 2);
+
+    const R = 0.5 * Math.sqrt(totalWidth * totalWidth + frameH * frameH + effDepth * effDepth);
+    const margin = 1.15;
+    const dir = new THREE.Vector3(0.8, 0.55, 0.95).normalize();
+    const fovYRad = (camera.fov || 35) * Math.PI / 180;
+    const aspect = camera.aspect || 1;
+    const fovXRad = 2 * Math.atan(Math.tan(fovYRad / 2) * aspect);
+    const dist = Math.max(R / Math.sin(fovYRad / 2), R / Math.sin(fovXRad / 2)) * margin;
+    camera.position.copy(target).addScaledVector(dir, dist);
+    camera.lookAt(target.x, target.y, target.z);
+    if (controls) { controls.target.copy(target); controls.update(); }
+
+    lastFitTarget = target.clone();
+    lastFitTotalWidth = totalWidth;
+    lastFitFrameH = frameH;
+    lastFitMaxDepth = effDepth;
+  }
+
   // Chamados pelo botão "Abrir portas"/"Abrir gavetas" da Composição (ver
   // portal.js) — SEPARADOS (mesma convenção de viewer3d.js): cada um só mexe
   // no seu kind ('hinge' pra porta, 'slide' pra gaveta/módulo de corrediça)
@@ -628,7 +717,7 @@ const ViewerComposition = (function () {
   }
 
   return {
-    init, available, render, snapshot, canvasAspectRatio,
+    init, available, render, renderFreeform, snapshot, canvasAspectRatio,
     // Estado próprio de porta/gaveta da composição — ver comentário de
     // currentOpenables/doorsOpen acima. portal.js relê areDoorsOpen()/
     // areDrawersOpen() antes de reconstruir cada assembly (generateComposition3D),
@@ -636,5 +725,13 @@ const ViewerComposition = (function () {
     // sempre fechado.
     toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen
   };
-})();
+}
+
+// ViewerComposition continua sendo a MESMA instância global de sempre
+// (Composição) — createInstance (novo, aditivo) deixa portal.js criar uma
+// instância TOTALMENTE separada (renderer/scene/estado de portas próprios)
+// pra qualquer outro canvas 3D independente, ex. ViewerProject na aba
+// Projetos (ver renderFreeform acima).
+const ViewerComposition = createViewerComposition3D();
+ViewerComposition.createInstance = createViewerComposition3D;
 // fim de viewer3d_composition.js

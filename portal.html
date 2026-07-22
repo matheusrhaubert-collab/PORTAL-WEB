@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260721a" />
+<link rel="stylesheet" href="css/style.css?v=20260721m" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -29,6 +29,14 @@
       <button type="button" class="portal-tab-btn active" data-tab="po-tab-new-order" data-i18n="nav.tab_new_order">Novo Orçamento</button>
       <button type="button" class="portal-tab-btn" data-tab="po-tab-my-orders" data-i18n="nav.tab_my_orders">Meus Pedidos</button>
       <button type="button" class="portal-tab-btn" data-tab="po-tab-composition" data-i18n="nav.tab_composition">Composição</button>
+      <!-- Tela de Projetos (pedido do usuário, 2026-07-21: "quero fazer uma
+           tela de projetos mesmo") — Fase 1 de uma entrega faseada (canvas 2D
+           com arrastar/imã/profundidade + painel de config + preço). Fases
+           seguintes (vista 3D/superior, lista de módulos, salvar, gerar IA,
+           comprar, ajuda) ainda NÃO estão aqui — ver po-proj-* em
+           portal.js/style.css. Não mexe em nada da Composição (aba acima),
+           que continua existindo separada (empilhamento em coluna). -->
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-projects" data-i18n="nav.tab_projects">Projetos</button>
       <button type="button" class="portal-tab-btn" data-tab="po-tab-favorites" data-i18n="nav.tab_favorites">Favoritos</button>
       <button type="button" class="portal-tab-btn" data-tab="po-tab-gallery" data-i18n="nav.tab_gallery">Galeria</button>
       <!-- Só aparece pro perfil Contractor (migration 051) — ver
@@ -702,6 +710,14 @@
               <div id="po-gallery-ai-preview-wrap" style="display:none;">
                 <img id="po-gallery-ai-preview-img" alt="" />
                 <p id="po-gallery-ai-preview-hint" class="hint"></p>
+                <!-- Baixar/Compartilhar a imagem gerada (pedido do usuário,
+                     2026-07-21) — direto da prévia, sem precisar publicar na
+                     Galeria antes. Ver downloadGeneratedImage/shareGeneratedImage
+                     em portal.js. -->
+                <div class="po-gallery-ai-preview-actions">
+                  <button type="button" id="po-gallery-ai-download-btn" class="secondary" data-i18n="gallery.download_btn">⬇️ Baixar</button>
+                  <button type="button" id="po-gallery-ai-share-btn" class="secondary" data-i18n="gallery.share_btn_label">Compartilhar</button>
+                </div>
                 <!-- Imagem BASE (o print 3D que vira o imageDataUrl mandado pra
                      Edge Function, ver generateAiPreviewForGallery em portal.js)
                      — pedido do usuário (2026-07-19): "me manda a imagem que
@@ -722,6 +738,213 @@
             </div>
           </div>
         </div>
+      </section>
+    </div>
+
+    <!-- PROJETOS (pedido do usuário, 2026-07-21) — Fase 1: canvas 2D em
+         vista frontal (vista paralela, não perspectiva) onde o cliente
+         arrasta módulos da biblioteca (esquerda) pro ambiente, com imã
+         (snap) nas bordas de outros módulos/paredes e empurra o módulo pra
+         FRENTE (mais z-index / distância da parede) quando solta um em cima
+         do outro. Clicar num módulo já no ambiente abre um resumo à direita
+         (po-proj-config-panel) com a opção de reabrir a configuração
+         completa (reaproveita 100% o mesmo configurador de módulo único que
+         a Composição já usa — ver startProjectSlotConfig/editProjectSlot em
+         portal.js — só muda o destino do "Adicionar": em vez de
+         compositionSlots, escreve em projectSlots por id, já que aqui a
+         posição de cada slot é livre (x/y/profundidade), não uma coluna
+         esquerda->direita). Altura do teto/rodapé reaproveitam roomSettings
+         (mesmo ⚙ do topo da tela) — só a largura do ambiente é nova (não
+         existia antes, precisa pra desenhar/travar a parede no canvas).
+         Fases seguintes (ainda não implementadas aqui): vista 3D com
+         abertura de portas/gavetas, vista superior, lista de módulos,
+         salvar projeto, gerar imagem com IA, comprar, ajuda. -->
+    <div class="portal-tab-page" id="po-tab-projects" style="display:none;">
+      <section class="panel">
+        <div class="po-comp-title-row">
+          <h2 data-i18n="project.title">Projetos</h2>
+          <button type="button" id="po-proj-reset-btn" class="secondary" data-i18n="project.reset_btn">↺ Novo projeto</button>
+        </div>
+
+        <!-- Modo "configurando módulo do projeto" — mesmo padrão visual/
+             comportamental do po-comp-mode-banner da Composição (overlay por
+             cima da aba "Novo Orçamento" reaproveitando o configurador
+             único), só que o texto/estado apontam pra projectSlots em vez de
+             compositionSlots (ver startProjectSlotConfig em portal.js). -->
+        <div id="po-proj-mode-banner" class="po-comp-mode-banner" style="display:none;">
+          <span data-i18n="project.configuring_module_banner">Configurando módulo do projeto…</span>
+          <button type="button" id="po-proj-mode-cancel-btn" class="secondary" data-i18n="step2.cancel_btn">Cancelar</button>
+        </div>
+
+        <div id="po-proj-error" class="error" style="display:none;"></div>
+
+        <!-- Largura do ambiente — único dado novo de "sala" que a Composição
+             não tinha (ela não desenha parede/largura, só empilha em
+             coluna). Altura útil (pé direito) e rodapé continuam vindo de
+             roomSettings (⚙ no topo da tela, mesma regra de sempre) — texto
+             aqui só avisa onde mexer nisso, não duplica o campo. -->
+        <div class="po-proj-wall-settings">
+          <div class="dim-field po-proj-wall-width-field">
+            <label for="po-proj-wall-width-input" data-i18n="project.wall_width_label">Largura do ambiente</label>
+            <span class="dim-exact-wrap">
+              <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-wall-width-input" />
+              <span class="dim-exact-unit" id="po-proj-wall-width-unit"></span>
+            </span>
+          </div>
+          <span class="hint" data-i18n="project.wall_height_reuse_hint">Altura útil e rodapé usam a mesma configuração do ⚙ no topo da tela.</span>
+        </div>
+
+        <div class="po-proj-layout">
+          <aside class="po-proj-library">
+            <div class="po-proj-library-search">
+              <input type="text" id="po-proj-library-search-input" data-i18n-placeholder="project.library_search_placeholder" placeholder="Buscar módulo…" />
+            </div>
+            <!-- Filtros de categoria/subcategoria (pedido do usuário,
+                 2026-07-21: "com os filtros de categoria e sub categoria,
+                 pode deixar bem pequenos") — pills pequenas, ESTADO PRÓPRIO
+                 (projectSelectedCategoryId/SubcategoryId em portal.js), não
+                 compartilhado com os pills da aba "Novo Orçamento"
+                 (selectedCategoryId/SubcategoryId) pra trocar filtro aqui
+                 não bagunçar a outra aba. Reaproveita renderTabBar (mesma
+                 função/CSS .po-tab-pill de sempre, só com contêineres
+                 próprios e fonte reduzida via .po-proj-library-filters). -->
+            <!-- Família (pedido do usuário, 2026-07-21: "preciso selecionar
+                 kitchens, hall... essas categorias") — a Novo Orçamento já
+                 tinha esse 1º nível (po-filter-family) ANTES de categoria/
+                 subcategoria (ver renderTaxonomyTabBars), a Projetos só tinha
+                 os 2 níveis de baixo. Mesma cascata: trocar família reescopa
+                 categoria/subcategoria pro que existe ali dentro. -->
+            <div class="po-proj-library-filters">
+              <div class="po-tabbar" id="po-proj-filter-family"></div>
+              <div class="po-tabbar" id="po-proj-filter-category"></div>
+              <div class="po-tabbar" id="po-proj-filter-subcategory"></div>
+            </div>
+            <div class="po-proj-library-grid" id="po-proj-library-grid"></div>
+          </aside>
+
+          <!-- Colunas ajustáveis (pedido do usuário, 2026-07-21: "pode deixar
+               as colunas laterais ajustaveis na largura?") — arrasta pra
+               dar mais espaço horizontal ao canvas quando quiser (ver
+               attachProjectColumnResize em portal.js). Largura fica em
+               variáveis CSS no próprio .po-proj-layout (--proj-lib-w/
+               --proj-cfg-w), persistidas no localStorage. -->
+          <div class="po-proj-resize-handle" id="po-proj-resize-handle-left" title="Arrastar pra redimensionar"></div>
+
+          <div class="po-proj-canvas-outer">
+            <div class="po-proj-canvas-scale-label" id="po-proj-canvas-dims-label"></div>
+            <div class="po-proj-canvas-wrap">
+              <div class="po-proj-canvas" id="po-proj-canvas">
+                <div class="po-proj-canvas-ceiling-line" id="po-proj-ceiling-line"></div>
+                <div class="po-proj-canvas-baseboard" id="po-proj-baseboard"></div>
+              </div>
+            </div>
+            <p class="hint" id="po-proj-empty-hint" data-i18n="project.empty_canvas_hint">Nenhum módulo no ambiente ainda — clique num módulo à esquerda pra configurar e adicionar.</p>
+          </div>
+
+          <div class="po-proj-resize-handle" id="po-proj-resize-handle-right" title="Arrastar pra redimensionar"></div>
+
+          <aside class="po-proj-config-panel" id="po-proj-config-panel">
+            <p class="hint" id="po-proj-config-empty-hint" data-i18n="project.select_module_hint">Clique num módulo no ambiente pra ver os detalhes aqui.</p>
+          </aside>
+        </div>
+
+        <div id="po-proj-total" class="po-comp-3d-total"></div>
+
+        <!-- SALVAR PROJETO (migration 056, pedido do usuário 2026-07-21) —
+             mesmo padrão de "★ Salvar como favorita" da Composição
+             (saveCompositionFavorite/user_compositions), só que numa tabela
+             própria (user_projects) por causa do formato diferente de slot
+             (x_mm/z_order livres, sem stack_on_id) + largura do ambiente.
+             "Salvar alterações" só aparece quando o projeto em edição veio
+             de um projeto salvo (ver refreshProjectFavoriteButtons). -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+          <button type="button" id="po-proj-save-fav-btn" class="secondary" data-i18n="project.save_btn">💾 Salvar projeto</button>
+          <button type="button" id="po-proj-update-fav-btn" class="secondary" style="display:none;"></button>
+          <span id="po-proj-fav-status" class="hint"></span>
+        </div>
+
+        <!-- Lista de projetos salvos — escondida atrás de um toggle (pedido
+             do usuário: "nova lista", separada de Favoritos porque o
+             formato de slot é outro) pra não poluir a tela por padrão.
+             Recarregada a cada abertura (ver loadProjectFavoritesList,
+             chamada no toggle e na troca de aba). -->
+        <div style="margin-top:4px;">
+          <button type="button" id="po-proj-fav-list-toggle-btn" class="secondary" data-i18n="project.saved_list_toggle_btn">📂 Meus projetos salvos</button>
+        </div>
+        <div id="po-proj-fav-list-wrap" style="display:none;margin-top:8px;">
+          <div id="po-proj-fav-error" class="error" style="display:none;"></div>
+          <div id="po-proj-fav-list"></div>
+        </div>
+
+        <!-- Visualizar 3D (Fase 2, pedido do usuário 2026-07-21: "ok proxima
+             etapa. visualizar 3d") — mesma capacidade de abrir portas/gavetas
+             que a Composição já tinha, mas com uma cena/instância PRÓPRIA
+             (ViewerProject, ver createInstance em viewer3d_composition.js)
+             pra não colidir com o canvas da aba Composição, e com os módulos
+             soltos em posição livre (x_mm/floor_height_mm/z_order do canvas
+             2D) em vez de empilhados em coluna única (ver
+             ViewerProject.renderFreeform). -->
+        <button type="button" id="po-proj-generate-btn" class="po-btn-primary-block" disabled data-i18n="project.generate_3d_btn">Visualizar 3D</button>
+        <p id="po-proj-generate-hint" class="hint" data-i18n="project.generate_3d_hint">Adicione pelo menos 1 módulo pra visualizar em 3D.</p>
+        <div id="po-proj-3d-wrap" style="display:none;margin-top:16px;">
+          <!-- Botão pra FECHAR o 3D e voltar pro canvas 2D (mesma aba) —
+               pedido do usuário, 2026-07-21: "quando eu coloco voltar ele vai
+               pra new quote e nao volta pro projects". O "← Voltar" lá
+               embaixo (po-proj-back-btn) sempre foi pra SAIR da aba Projetos
+               de vez (volta pra "Novo Orçamento", pedido explícito na Fase
+               1) — mas depois de rolar a tela até o 3D, ele fica logo abaixo
+               do resultado e o cliente clica achando que volta só pro 2D.
+               Este botão aqui resolve isso: some com o 3D e rola de volta pro
+               topo do canvas, SEM trocar de aba. -->
+          <button type="button" id="po-proj-close-3d-btn" class="secondary" data-i18n="project.close_3d_btn">← Voltar ao ambiente 2D</button>
+          <div id="po-proj-3d-canvas-wrap">
+            <div id="po-proj-3d-canvas"></div>
+            <div class="viewer-toggle-btns">
+              <button type="button" id="po-proj-toggle-doors-btn" style="display:none;" data-i18n="step2.open_doors">Abrir portas</button>
+              <button type="button" id="po-proj-toggle-drawers-btn" style="display:none;" data-i18n="step2.open_drawers">Abrir gavetas</button>
+            </div>
+          </div>
+
+          <!-- Gerar imagem com IA + publicar na Galeria pública (migration
+               056) — CÓPIA do mesmo painel da Composição (po-gallery-publish-wrap,
+               generateAiPreviewForGallery/publishCompositionToGallery em
+               portal.js), só que operando em cima de projectSlots/ViewerProject
+               em vez de compositionSlots/ViewerComposition (ver
+               generateAiPreviewForProjectGallery/publishProjectToGallery).
+               Reaproveita as MESMAS chaves i18n gallery.* de propósito — o
+               texto é genérico o bastante (não fala "composição" em nenhum
+               rótulo), evitar duplicar em 3 idiomas por uma cópia idêntica. -->
+          <div class="po-comp-actions-row">
+            <button type="button" id="po-proj-gallery-publish-toggle-btn" class="po-comp-ai-cta-btn" data-i18n="gallery.publish_toggle_btn">✨ Gerar imagem com IA</button>
+          </div>
+          <div id="po-proj-gallery-publish-wrap" class="po-gallery-publish-wrap">
+            <div id="po-proj-gallery-publish-form" style="display:none;">
+              <label data-i18n="gallery.room_type_label">Ambiente</label>
+              <select id="po-proj-gallery-room-type"></select>
+              <button type="button" id="po-proj-gallery-generate-ai-btn" class="secondary" data-i18n="gallery.generate_ai_btn">✨ Gerar imagem realista</button>
+              <div id="po-proj-gallery-ai-preview-wrap" style="display:none;">
+                <img id="po-proj-gallery-ai-preview-img" alt="" />
+                <p id="po-proj-gallery-ai-preview-hint" class="hint"></p>
+                <div class="po-gallery-ai-preview-actions">
+                  <button type="button" id="po-proj-gallery-ai-download-btn" class="secondary" data-i18n="gallery.download_btn">⬇️ Baixar</button>
+                  <button type="button" id="po-proj-gallery-ai-share-btn" class="secondary" data-i18n="gallery.share_btn_label">Compartilhar</button>
+                </div>
+                <div id="po-proj-gallery-base-preview-wrap" style="display:none;">
+                  <p class="hint" data-i18n="gallery.base_image_label">Imagem base (3D) enviada pra IA:</p>
+                  <img id="po-proj-gallery-base-preview-img" alt="" />
+                </div>
+              </div>
+              <label class="po-gallery-anon-label">
+                <input type="checkbox" id="po-proj-gallery-anonymous-chk" />
+                <span data-i18n="gallery.anonymous_chk_label">Publicar de forma anônima (sem meu nome)</span>
+              </label>
+              <div id="po-proj-gallery-publish-error" class="error" style="display:none;"></div>
+              <div id="po-proj-gallery-publish-status" class="hint"></div>
+              <button type="button" id="po-proj-gallery-publish-submit-btn" class="po-btn-primary-block" data-i18n="gallery.publish_submit_btn">Enviar pra Galeria</button>
+            </div>
+          </div>
+        </div>
+
       </section>
     </div>
 
@@ -944,8 +1167,8 @@
 <script src="js/config.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/pricing.js"></script>
-<script src="js/viewer3d.js?v=20260711c"></script>
-<script src="js/viewer3d_composition.js?v=20260719c"></script>
-<script src="js/portal.js?v=20260721a"></script>
+<script src="js/viewer3d.js?v=20260721a"></script>
+<script src="js/viewer3d_composition.js?v=20260721a"></script>
+<script src="js/portal.js?v=20260721u"></script>
 </body>
 </html>

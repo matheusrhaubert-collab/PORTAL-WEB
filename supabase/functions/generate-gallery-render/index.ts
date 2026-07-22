@@ -132,6 +132,20 @@ function buildRoomStagingFragment(roomLabel: string | null): string {
 // Se uma comparação futura mostrar que essa versão saiu pior que a anterior
 // (a "campeã" de 3 rodadas atrás), a regra de não empilhar CRITICAL sem
 // testar continua valendo — comparar lado a lado antes de decidir.
+//
+// 2026-07-21 — BUG real reportado pelo usuário: uma cor "Cashemere" (acabamento
+// LISO, sem veio de madeira) saiu com textura de madeira no render. Causa:
+// os parágrafos de material/cor abaixo mandavam incondicionalmente
+// "substitua o material CG plano por um veio de madeira fotorrealista" e
+// "renderize como uma superfície de madeira/MDF fotografada, não um
+// preenchimento de cor plana" — ou seja, assumiam madeira SEMPRE, mesmo
+// quando o acabamento real é liso/sólido (laca, pintura, laminado sem veio).
+// Reescrito pra condicionar ao acabamento REAL (texto colorLabel + foto de
+// referência colorRefImages, quando existe): madeira ganha veio, liso
+// continua liso, nunca inventa veio numa cor que devia ser plana. Não é um
+// palpite especulativo de estilo (a regra de não empilhar CRITICAL sem
+// testar continua valendo pra isso) — é a correção de uma instrução que
+// estava OBJETIVAMENTE errada pra qualquer cor sólida do catálogo.
 function buildGalleryPrompt(roomLabel: string | null, colorLabel: string | null, moduleRefCount: number, colorRefCount: number, angleRefCount: number): string {
   return `Generate a photorealistic render that is geometrically IDENTICAL to the structure of the attached source image — treat the source image as a wireframe/blueprint that must be followed with zero deviation. Do not change the camera angle. Do not change the position of any element.
 
@@ -147,9 +161,9 @@ If the source image shows any dimension lines, measurement labels, axes, or a wi
 
 Keep the camera framing and angle the SAME as the source image — it was deliberately set to a frontal, straight-on, eye-level product-photo angle. Do not reinterpret it as a 3/4 or angled perspective shot, even if that would look more "dynamic".
 
-Render this as if photographed in a real home interior with natural room lighting coming from windows/lamps in the room — NOT from the furniture itself. Replace the flat, uniform CG-looking wood texture of the furniture with a photorealistic wood grain finish over the exact same shape — do not just "enhance" or add realism on top of it, actually substitute the flat material for a real, textured, photographed-looking one (natural grain variation, authentic matte or satin sheen, believable surface imperfections).
-${colorLabel ? `\nCRITICAL — color accuracy (this is equally important): substitute the furniture's flat color with a real, textured "${colorLabel}" finish — same hue, same tone family as described, but rendered as an authentic photographed wood/MDF surface, not a flat color fill. Do NOT invent a different-looking wood tone, and do NOT let the room's ambient lighting shift the perceived color into a warmer or cooler family than described. If in doubt, prioritize matching this described color over making the lighting look natural.` : ''}
-${colorRefCount > 0 ? `\nBelow there ${colorRefCount === 1 ? 'is 1 real swatch/finish photo' : `are ${colorRefCount} real swatch/finish photos`} of the actual MDF finish(es) used — treat each as the definitive color/texture reference (more reliable than the text description above).` : ''}
+Render this as if photographed in a real home interior with natural room lighting coming from windows/lamps in the room — NOT from the furniture itself. Replace the flat, uniform CG-looking material of the furniture with a photorealistic version of its ACTUAL real-world finish — do not just "enhance" or add realism on top of it, actually substitute the flat CG material for a real, photographed-looking one. Follow what the real finish actually is: if it is a wood/wood-look material, give it authentic natural grain variation and a real matte or satin sheen; if it is a smooth solid color (lacquer, paint, or a solid-color laminate with no visible wood grain), keep it perfectly smooth and uniform — do NOT invent wood grain, streaks, knots, or any wood-like pattern on a surface that is actually a flat, uniform color. Never assume wood grain by default; only add it if the real finish described/shown below actually has it.
+${colorLabel ? `\nCRITICAL — color accuracy (this is equally important): reproduce the furniture's real "${colorLabel}" finish exactly as it actually looks — same hue and tone family as described, AND the same real surface pattern (smooth/solid stays smooth and solid with NO invented wood grain; a genuine wood-grain finish gets authentic photographed grain). Do NOT invent a different-looking material or tone than described, and do NOT let the room's ambient lighting shift the perceived color into a warmer or cooler family than described. If in doubt, prioritize matching this described color and its real surface pattern over making the lighting look natural.` : ''}
+${colorRefCount > 0 ? `\nBelow there ${colorRefCount === 1 ? 'is 1 real swatch/finish photo' : `are ${colorRefCount} real swatch/finish photos`} of the actual finish(es) used — treat each as the definitive color AND surface-pattern reference (more reliable than the text description above): if a swatch photo shows a smooth solid color with no grain, the corresponding part of the furniture must come out smooth and solid too, never wood-grained.` : ''}
 ${angleRefCount > 0 ? `\nBelow there ${angleRefCount === 1 ? 'is also 1 extra image' : `are also ${angleRefCount} extra images`} showing this exact same furniture from other angles (3D) — these are only to help you understand the geometry/proportions better, they do NOT change the camera angle of the final output, which must stay exactly like the main source image described above.` : ''}
 ${buildRoomStagingFragment(roomLabel)}
 

@@ -452,11 +452,22 @@ const Viewer3D = (function () {
   // próprio Group intacto no caso de já vir pronto (uma peça-módulo aninhada
   // já é, ela mesma, um Group com suas próprias peças internas — não faz
   // sentido nem é possível "envolver" ela numa aresta única).
+  // Aresta preto puro + opaco (0x000000, sem transparência) fazia a linha
+  // ficar muito forte/grossa no print 3D — pedido do usuário (2026-07-21):
+  // "o desenho vem com contornos pretos muito grandes, e a IA entende que
+  // sao negativos, ou confunde ela" — a IA (Gemini) interpretava a aresta
+  // preta pesada como se fosse um vão/corte de verdade na peça, em vez de
+  // só uma linha de contorno. Cinza escuro + opacidade reduzida continua
+  // marcando a borda de cada peça (útil pro cliente ver os limites no
+  // configurador on-screen), mas sem o contraste extremo que confundia o
+  // material na hora de gerar a imagem realista.
+  const EDGE_COLOR = 0x3a3a3a;
+  const EDGE_OPACITY = 0.45;
   function buildContentGroup(contentOrGeometry, color, rotateTexture) {
     if (contentOrGeometry && contentOrGeometry.isGroup) return contentOrGeometry;
     const mesh = new THREE.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture));
     const edgesGeometry = new THREE.EdgesGeometry(contentOrGeometry);
-    const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: 0x000000 }));
+    const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY }));
     const group = new THREE.Group();
     group.add(mesh);
     group.add(edges);
