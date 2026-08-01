@@ -234,11 +234,20 @@ function fillSelect(selectId, items, placeholder) {
 // ---------- Taxonomia (filtros) ----------
 
 async function loadTaxonomyFilters() {
-  const [families, categories, subcategories] = await Promise.all([
-    supabaseClient.from('families').select('*').eq('active', true).order('name'),
-    supabaseClient.from('categories').select('*').eq('active', true).order('name'),
-    supabaseClient.from('subcategories').select('*').eq('active', true).order('name')
+  let [families, categories, subcategories] = await Promise.all([
+    supabaseClient.from('families').select('*').eq('active', true).order('sort_order').order('name'),
+    supabaseClient.from('categories').select('*').eq('active', true).order('sort_order').order('name'),
+    supabaseClient.from('subcategories').select('*').eq('active', true).order('sort_order').order('name')
   ]);
+  // Fallback pra quem ainda não rodou migration_057 (sort_order pode não
+  // existir ainda) — ver mesmo comentário em portal.js loadTaxonomyFilters.
+  if (families.error || categories.error || subcategories.error) {
+    [families, categories, subcategories] = await Promise.all([
+      supabaseClient.from('families').select('*').eq('active', true).order('name'),
+      supabaseClient.from('categories').select('*').eq('active', true).order('name'),
+      supabaseClient.from('subcategories').select('*').eq('active', true).order('name')
+    ]);
+  }
   if (families.data) fillSelect('filter-family', families.data, 'Todas');
   if (categories.data) fillSelect('filter-category', categories.data, 'Todas');
   if (subcategories.data) fillSelect('filter-subcategory', subcategories.data, 'Todas');
@@ -444,7 +453,7 @@ function renderSwatches(container, items, selectedId, onSelect) {
 async function loadRecursivePiecesForModule(moduleId) {
   const { data, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, tilt_angle_deg, rotation_y_deg, components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId)
     .order('sort_order');
   if (error) { showError('Erro ao carregar configuração do módulo: ' + error.message); return []; }
@@ -540,6 +549,8 @@ async function loadRecursivePiecesForModule(moduleId) {
         color_role_id: row.color_role_id || null,
         opening_type: row.opening_type || 'none',
         slides_per_unit: row.slides_per_unit || 0,
+        tilt_angle_deg: row.tilt_angle_deg || 0, // migration 066 — inclinação do conjunto (só 'shelf')
+        rotation_y_deg: row.rotation_y_deg || 0, // migration 067 — giro de canto do conjunto (só 'free')
         width_formula: row.width_formula_override,
         height_formula: row.height_formula_override,
         depth_formula: row.depth_formula_override,
@@ -1105,6 +1116,9 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // ver fetchModuleLockedDimensionPresets). Nunca inclui preço.
         reference: piece.reference || piece.module_name || null,
         position_role: piece.position_role,
+        shape_type: piece.shape_type, // migration 062 — desenho 3D (caixa/cabide tubular oval)
+        tilt_angle_deg: piece.tilt_angle_deg || 0, // migration 065 — inclinação (só 'shelf')
+        rotation_y_deg: piece.rotation_y_deg || 0, // migration 067 — giro de canto (só 'free')
         width_mm: resolvedWidthMm,
         height_mm: resolvedHeightMm,
         depth_mm: resolvedDepthMm,

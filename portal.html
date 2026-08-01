@@ -7,10 +7,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260721m" />
+<link rel="stylesheet" href="css/style.css?v=20260731a" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<!-- GLTFExporter — TESTE de AR (2026-08-01, ver generateArGlbForProject em
+     portal.js): exporta a cena 3D já montada da aba Projetos pra .glb, pra
+     abrir no Scene Viewer do Android (câmera ao vivo, escala real). Só isso,
+     não afeta nenhum viewer existente. -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <!-- SheetJS — leitura de planilha (.xlsx/.csv/.txt) importada na aba "Plano
      de Corte" (migration 051, exclusivo do perfil Contractor). -->
@@ -28,7 +33,14 @@
     <nav class="po-topnav-tabs" id="po-sidebar">
       <button type="button" class="portal-tab-btn active" data-tab="po-tab-new-order" data-i18n="nav.tab_new_order">Novo Orçamento</button>
       <button type="button" class="portal-tab-btn" data-tab="po-tab-my-orders" data-i18n="nav.tab_my_orders">Meus Pedidos</button>
-      <button type="button" class="portal-tab-btn" data-tab="po-tab-composition" data-i18n="nav.tab_composition">Composição</button>
+      <!-- Composição e Favoritos ESCONDIDOS a pedido do usuário (2026-07-24:
+           "oculta composicoes e favoritos do site. vou usar so projetos") —
+           só o botão de nav some (display:none), o resto da aba/código
+           continua intacto no HTML/JS/CSS, então é reversível: se o usuário
+           quiser de volta um dia, é só tirar o style aqui embaixo. Não
+           apagar as seções po-tab-composition/po-tab-favorites nem o código
+           relacionado. -->
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-composition" data-i18n="nav.tab_composition" style="display:none;">Composição</button>
       <!-- Tela de Projetos (pedido do usuário, 2026-07-21: "quero fazer uma
            tela de projetos mesmo") — Fase 1 de uma entrega faseada (canvas 2D
            com arrastar/imã/profundidade + painel de config + preço). Fases
@@ -37,13 +49,27 @@
            portal.js/style.css. Não mexe em nada da Composição (aba acima),
            que continua existindo separada (empilhamento em coluna). -->
       <button type="button" class="portal-tab-btn" data-tab="po-tab-projects" data-i18n="nav.tab_projects">Projetos</button>
-      <button type="button" class="portal-tab-btn" data-tab="po-tab-favorites" data-i18n="nav.tab_favorites">Favoritos</button>
+      <!-- "Meus Projetos" (pedido do usuário, 2026-07-24, mesma mensagem
+           acima) — aba NOVA e dedicada só pra listar/carregar/renomear/
+           excluir projetos salvos (user_projects), reaproveitando 100% da
+           lógica que já existia ESCONDIDA atrás de um toggle dentro da aba
+           Projetos (loadProjectFavoritesList/restoreFavoriteProject em
+           portal.js, sem duplicar). Antes disso essa lista vivia lá embaixo
+           da aba Projetos atrás de "📂 Meus projetos salvos" — virou
+           1ª classe agora que Composição/Favoritos abriram espaço. -->
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-my-projects" data-i18n="nav.tab_my_projects">Meus Projetos</button>
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-favorites" data-i18n="nav.tab_favorites" style="display:none;">Favoritos</button>
       <button type="button" class="portal-tab-btn" data-tab="po-tab-gallery" data-i18n="nav.tab_gallery">Galeria</button>
       <!-- Só aparece pro perfil Contractor (migration 051) — ver
            applyCuttingListTabVisibility em portal.js, chamado depois que o
            user_profile do cliente logado é carregado. -->
       <button type="button" class="portal-tab-btn" data-tab="po-tab-cutting-list" id="po-nav-tab-cutting-list" data-i18n="nav.tab_cutting_list" style="display:none;">Plano de Corte</button>
-      <button type="button" class="portal-tab-btn" data-tab="po-tab-room-view" data-i18n="nav.tab_room_view">Visualizar no meu ambiente</button>
+      <!-- Escondida a pedido do usuário (2026-07-25) — função "Visualizar no
+           meu ambiente" desativada por enquanto no portal. Reversível: só
+           tirar o style="display:none;". Lógica em portal.js (upload de
+           foto, drag/resize dos módulos) permanece intacta, só a aba some
+           da nav. -->
+      <button type="button" class="portal-tab-btn" data-tab="po-tab-room-view" data-i18n="nav.tab_room_view" style="display:none;">Visualizar no meu ambiente</button>
     </nav>
   </div>
   <div class="po-topnav-right">
@@ -65,12 +91,20 @@
              teto e o baseboard, e a altura dos móveis fica travada em (pé
              direito − 5"). Valores digitados na unidade global escolhida
              (po-unit-select), parseados por parseDimensionInput e guardados
-             em mm no localStorage (ver roomSettings em portal.js). -->
-        <label class="po-topnav-room-field" title="Altura do teto da sua casa (pé direito)" data-i18n-title="nav.ceiling_title">
+             em mm no localStorage (ver roomSettings em portal.js).
+             Escondidos daqui a pedido do usuário (2026-07-29: "celing e
+             basebprd aqui nao precisa mais aparecer no topo") — a aba
+             Projetos já tem os mesmos campos ao lado da largura do ambiente
+             (po-proj-ceiling-input/po-proj-baseboard-input), e os dois
+             pares já escrevem no MESMO roomSettings (ver ROOM_SETTINGS_FIELDS
+             em portal.js, que já ignora id ausente no DOM sozinho — nenhuma
+             mudança de JS foi necessária). display:none, reversível: só
+             tirar o style pra voltar. -->
+        <label class="po-topnav-room-field" title="Altura do teto da sua casa (pé direito)" data-i18n-title="nav.ceiling_title" style="display:none;">
           <span data-i18n="nav.ceiling_label">Pé direito</span>
           <input id="po-ceiling-input" type="text" inputmode="decimal" />
         </label>
-        <label class="po-topnav-room-field" title="Altura do rodapé da sua casa" data-i18n-title="nav.baseboard_title">
+        <label class="po-topnav-room-field" title="Altura do rodapé da sua casa" data-i18n-title="nav.baseboard_title" style="display:none;">
           <span data-i18n="nav.baseboard_label">Rodapé</span>
           <input id="po-baseboard-input" type="text" inputmode="decimal" />
         </label>
@@ -84,10 +118,29 @@
             <option value="ft" data-i18n="step2.unit_ft">Pés (ft)</option>
           </select>
         </label>
+        <!-- Unidade de PESO (migration 061, pedido do usuário) — mostrado
+             junto do preço e da metragem cúbica (m³) de cada módulo/
+             projeto/pedido (ver formatVolumeWeight em portal.js). Persistido
+             em localStorage (legno_weight_unit) — diferente do po-unit-select
+             acima (que não persiste). -->
+        <label class="po-topnav-settings-row">
+          <span data-i18n="nav.weight_unit_label">Unidade de peso</span>
+          <select id="po-weight-unit-select" class="po-topnav-unit-select">
+            <option value="kg" data-i18n="nav.weight_unit_kg">Quilograma (kg)</option>
+            <option value="lb" data-i18n="nav.weight_unit_lb">Libra (lb)</option>
+          </select>
+        </label>
         <div class="po-topnav-settings-row">
           <span data-i18n="nav.language_label">Idioma</span>
           <span id="po-lang-switcher" class="po-lang-switcher"></span>
         </div>
+        <!-- Botão "Salvar" (pedido do usuário, 2026-07-23) — pé direito/
+             rodapé/unidade já aplicam sozinhos ao sair do campo (roomSettings
+             etc.), mas o canvas 2D da aba Projetos (renderProjectCanvas) não
+             se atualizava sozinho nesse momento, só quando algo DENTRO da
+             aba mudava. Este botão força esse refresh explicitamente (ver
+             listener em portal.js). -->
+        <button type="button" id="po-room-settings-save-btn" class="secondary" style="margin-top:0;" data-i18n="nav.save_settings_btn">Salvar</button>
         <!-- Trocar senha (migration 053, pedido do usuário 2026-07-19) — pra
              quem recebeu uma senha simples do admin (criada em admin.html,
              aba Perfis) poder trocar sozinho. Só supabase.auth.updateUser
@@ -180,6 +233,27 @@
     </div>
   </section>
 
+  <!-- Modal de busca de módulos da aba Projetos (pedido do usuário,
+       2026-07-23: botão "Buscar" no lugar de digitar) — abre por cima com as
+       3 camadas de taxonomia (família/categoria/subcategoria, estado
+       PRÓPRIO, ver projSearchModalFamilyId/... em portal.js) e a grade de
+       módulos filtrada por elas. Clicar num módulo insere ele no projeto
+       (mesmo insertProjectModuleDefault da biblioteca lateral) e fecha o
+       modal sozinho — mesmo padrão de abrir/fechar do po-auth-section
+       (overlay fixo, classe .open, fecha no X/clique fora/Esc). -->
+  <div id="po-proj-search-modal">
+    <div class="po-proj-search-modal-card">
+      <button type="button" class="po-auth-modal-close" id="po-proj-search-modal-close" aria-label="Fechar">&times;</button>
+      <h2 data-i18n="project.search_modal_title">Buscar módulo</h2>
+      <div class="po-proj-search-modal-filters">
+        <div class="po-tabbar" id="po-proj-search-filter-family"></div>
+        <div class="po-tabbar" id="po-proj-search-filter-category"></div>
+        <div class="po-tabbar" id="po-proj-search-filter-subcategory"></div>
+      </div>
+      <div class="po-proj-search-modal-grid" id="po-proj-search-modal-grid"></div>
+    </div>
+  </div>
+
   <div id="po-content" style="display:none;">
     <div class="portal-tab-content">
 
@@ -267,6 +341,10 @@
               <section id="po-price-section" style="display:none;">
                 <span class="total-price-label" data-i18n="step2.price_label">Preço deste módulo</span>
                 <p class="total-price-mini" id="po-item-price">$0.00</p>
+                <!-- Volume (m³) + peso (kg/lb) — migration 061, pedido do
+                     usuário: junto do preço, mesma origem (peças-componente
+                     do breakdown, ver formatVolumeWeight em portal.js). -->
+                <p class="hint" id="po-item-volume-weight"></p>
               </section>
             </div>
 
@@ -417,17 +495,22 @@
         </div>
 
         <aside class="po-cart-col">
+          <!-- Reskin (pedido do usuário 2026-07-29): "aqui eu quero
+               visualizar minha ordem, e salvo so na outra tela" — este
+               painel virou SÓ VISUALIZAÇÃO (lista + total, sem nome/PO/
+               telefone/botão de salvar, que saíram todos daqui). O nome do
+               cliente, PO, telefone, e-mail e endereço agora só existem na
+               "tela do pedido" (#po-order-detail-section), que também é
+               onde o pedido de fato é confirmado (ver botão "Aprovar
+               Pedido" lá — reaproveitado como o "salvar" final, sem um
+               status 'submitted' intermediário novo). Botão "Revisar
+               pedido" abaixo leva pra lá mesmo enquanto o pedido ainda é um
+               rascunho (ver reviewDraftOrder em portal.js — antes só dava
+               pra abrir a tela do pedido depois de já salvo). -->
           <div class="po-project-card" id="po-cart-section">
             <div class="po-project-card-header">
               <span class="po-project-title" data-i18n="cart.title">Seu Pedido</span>
             </div>
-
-            <div class="po-project-fields">
-              <input id="po-order-client-name" class="po-project-input" placeholder="Nome do cliente" data-i18n-placeholder="cart.client_name_placeholder" />
-              <input id="po-order-po-name" class="po-project-input po-project-input-sub" placeholder="Nome da PO / Referência" data-i18n-placeholder="cart.po_name_placeholder" />
-            </div>
-
-            <div class="po-project-divider"></div>
 
             <div class="po-selected-modules-header">
               <span data-i18n="cart.selected_modules">Módulos selecionados</span>
@@ -443,19 +526,39 @@
                 <span data-i18n="cart.total_estimated">Total estimado</span>
                 <strong id="po-cart-total">$0.00</strong>
               </div>
+              <!-- Volume/peso somados de todos os itens do carrinho — migration 061. -->
+              <div class="po-summary-row hint" id="po-cart-volume-weight"></div>
             </div>
 
-            <div class="po-project-phone-row">
-              <label data-i18n="cart.phone_optional_label">Telefone (opcional)</label>
-              <input id="po-order-phone" class="po-project-input" />
-            </div>
-
-            <button type="button" id="po-submit-order-btn" class="po-btn-primary-block" data-i18n="cart.save_order_btn">Salvar pedido</button>
-            <span id="po-submit-order-status" class="hint"></span>
+            <button type="button" id="po-cart-review-btn" class="po-btn-primary-block" style="display:none;" data-i18n="cart.review_order_btn">Revisar pedido</button>
+            <!-- "Novo Pedido" (pedido do usuário 2026-07-29: "preciso um
+                 botao novo pedido. zera o pedido anteriro (pede se quer
+                 salvar) e comeca do zero") — ver startNewOrder em portal.js;
+                 mesma condição de visibilidade do "Revisar pedido" (só faz
+                 sentido com algo no carrinho pra zerar). -->
+            <button type="button" id="po-cart-new-order-btn" class="secondary" style="display:none;" data-i18n="cart.new_order_btn">Novo Pedido</button>
           </div>
         </aside>
 
       </div>
+
+      <!-- Viewer 3D ESCONDIDO só pra gerar a miniatura do módulo adicionado
+           direto pelo dropdown de referência (SKU) do card da vitrine (ver
+           addModuleToCartWithSku em portal.js) — pedido do usuário
+           (2026-07-29): "quando insiro um novo direto do portal ele vem sem
+           imagem". Esse fluxo pula o configurador (Passo 2) de propósito
+           (ver memória do SKU dropdown), então nunca existia um Viewer3D
+           "de verdade" na tela pra tirar o snapshot — mesma solução da tela
+           do pedido (po-order-detail-hidden-viewer/getOrderDetailHiddenViewer),
+           mas essa vive dentro da aba "Meus Pedidos" (display:none quando
+           não é a aba ativa — um filho de elemento display:none tem
+           clientWidth/clientHeight=0, cairia no fallback fixo de 300x420 do
+           ViewerComposition.createInstance). Esta fica DENTRO de
+           po-tab-new-order (a aba onde o dropdown de SKU realmente vive, e
+           que por definição já está ativa/visível nesse momento), com o
+           mesmo truque de position:absolute fora da tela (não display:none,
+           mesmo motivo do comentário lá). -->
+      <div id="po-sku-add-hidden-viewer" style="position:absolute; left:-9999px; top:0; width:400px; height:400px;"></div>
     </div>
 
     <!-- MEUS PEDIDOS -->
@@ -511,6 +614,43 @@
           </div>
         </div>
 
+        <!-- "Salvar informações" (pedido do usuário 2026-07-29: "quero um
+             botao salvar informacoes, para poder voltar e manter as
+             informacoes salvas, pra fechar posteriormente") — diferente de
+             "Aprovar Pedido": grava os campos acima SEM exigir os 5
+             preenchidos e SEM travar a tela. Só aparece enquanto os campos
+             ainda estão editáveis (ver renderOrderDetail). -->
+        <div class="po-order-detail-save-info-row">
+          <button type="button" id="po-order-detail-save-info-btn" class="secondary" style="display:none;" data-i18n="order_detail.save_info_btn">Salvar informações</button>
+          <span id="po-order-detail-save-info-status" class="hint"></span>
+        </div>
+
+        <!-- Troca rápida de cor (pedido do usuário 2026-07-29: "quero o
+             check list que ja esxite onde eu possa trocar rapidamente as
+             cores") — mesmo padrão de abas por papel de cor já usado na
+             Composição/Projetos (ver loadColorRoleGroupsForSlots em
+             portal.js), aqui aplicado aos order_items JÁ SALVOS: escolher
+             uma cor recalcula o preço e grava direto no banco, sem reabrir
+             a configuração completa (ver applyColorRoleToOrderItems).
+             Escondido quando não há papel de cor em comum, ou quando o
+             pedido já está aprovado (renderOrderDetailColorPanel). -->
+        <div id="po-order-detail-color-panel" class="po-order-detail-color-panel" style="display:none;">
+          <label data-i18n="order_detail.color_swap_label">Troca rápida de cor</label>
+          <p class="hint" data-i18n="order_detail.color_swap_hint">Troca a cor de um módulo do pedido na hora, sem reabrir a configuração completa.</p>
+          <div id="po-order-detail-color-tabs" class="po-comp-color-tabs"></div>
+          <div id="po-order-detail-color-swatches" class="color-role-swatches"></div>
+          <!-- "Alterar cores" (pedido do usuário 2026-07-29: "quero um botao
+               alterar cores, pra fazer os calculos depois de alterar as
+               cores") — só aparece com pelo menos 1 troca pendente (ver
+               stageColorRoleChange/renderOrderDetailColorPendingState);
+               clicar roda o cálculo de preço + regeneração de miniatura +
+               gravação de TODAS as trocas pendentes de uma vez (ver
+               applyPendingColorChangesToOrderItems), em vez de 1 vez por
+               clique de swatch como antes (era isso que ficava pesado). -->
+          <button type="button" id="po-order-detail-color-apply-btn" class="secondary" style="display:none; margin-top:10px;"></button>
+          <p id="po-order-detail-color-error" class="error" style="display:none;"></p>
+        </div>
+
         <div id="po-order-detail-items"></div>
 
         <div class="po-order-detail-footer">
@@ -518,11 +658,48 @@
             <span data-i18n="order_detail.total_label">Total do pedido</span>
             <strong id="po-order-detail-total">$0.00</strong>
           </div>
+          <!-- Volume/peso somados de todos os itens do pedido — migration 061. -->
+          <div class="po-order-detail-total-row hint" id="po-order-detail-volume-weight"></div>
+          <!-- "Salvar Pedido" (pedido do usuário 2026-07-29: "nao opcao de
+               salvar ordem pra comecar uma nova, so de approvar a ordem.
+               esse aprove deve ser ultima coisa. preciso um salvar pra
+               liberar o carrinho novo") — finaliza o pedido como um
+               registro de verdade (status 'draft' -> 'submitted', SEM
+               exigir os 5 campos nem travar a tela, diferente de "Aprovar
+               Pedido") e desanexa do carrinho ativo (currentDraftOrderId),
+               liberando pra começar um pedido NOVO no catálogo sem perder
+               este. Ver saveOrderAndFreeCart em portal.js. -->
+          <button type="button" id="po-order-detail-save-order-btn" class="po-btn-primary-block" style="display:none;" data-i18n="order_detail.save_order_btn">Salvar Pedido</button>
+          <p id="po-order-detail-save-order-status" class="hint" style="display:none;"></p>
+          <!-- "Continuar comprando" (pedido do usuário 2026-07-29: "abre o
+               carrinho e vai pra tela de new quote pra selecionar poder
+               acrescentar outros itens") — leva de volta pro catálogo
+               (Novo Orçamento) com ESTE pedido como o rascunho ativo, pra
+               dar pra acrescentar mais módulos nele; some quando já
+               aprovado (ver renderOrderDetail/continueShoppingOnOrder). -->
+          <button type="button" id="po-order-detail-continue-shopping-btn" class="secondary" style="display:none;" data-i18n="order_detail.continue_shopping_btn">Continuar comprando</button>
           <p id="po-order-detail-approve-hint" class="hint" style="display:none;" data-i18n="order_detail.approve_hint">Preencha nome do cliente, OP, telefone, e-mail e endereço de entrega pra poder aprovar.</p>
           <button type="button" id="po-order-detail-approve-btn" class="po-btn-primary-block" data-i18n="order_detail.approve_btn">Aprovar Pedido</button>
 
+          <!-- Pago/Entregue (migration 059) — sequência Pendente → Aprovada
+               → Paga → Entregue, sempre nessa ordem (ver renderOrderDetail):
+               só 1 destes 2 fica visível por vez, dependendo do status
+               atual. Cliente E admin podem marcar (confirmado via
+               AskUserQuestion) — os mesmos 2 botões existem em admin.js. -->
+          <button type="button" id="po-order-detail-mark-paid-btn" class="po-btn-primary-block" style="display:none;" data-i18n="order_detail.mark_paid_btn">Marcar como pago</button>
+          <button type="button" id="po-order-detail-mark-delivered-btn" class="po-btn-primary-block" style="display:none;" data-i18n="order_detail.mark_delivered_btn">Marcar como entregue</button>
+          <p id="po-order-detail-delivered-hint" class="hint" style="display:none;" data-i18n="order_detail.delivered_hint">Pedido entregue.</p>
         </div>
       </section>
+
+      <!-- Viewer 3D ESCONDIDO, só pra regenerar a miniatura de um order_item
+           depois da troca rápida de cor (ver getOrderDetailHiddenViewer em
+           portal.js) — esta tela não tem nenhum canvas 3D visível como a
+           Composição/Projetos tem, então sem isto a imagem do card ficava
+           com a cor ANTIGA depois de trocar. position:absolute fora da tela
+           (não display:none — teria clientWidth/clientHeight=0 e cairia no
+           fallback fixo de 300x420 do ViewerComposition.createInstance). -->
+      <div id="po-order-detail-hidden-viewer" style="position:absolute; left:-9999px; top:0; width:400px; height:400px;"></div>
 
       <!-- Tela de VISUALIZAÇÃO (read-only) de um pedido de Plano de Corte
            (migration 051) — diferente de po-order-detail-section (que é
@@ -781,43 +958,77 @@
         <!-- Largura do ambiente — único dado novo de "sala" que a Composição
              não tinha (ela não desenha parede/largura, só empilha em
              coluna). Altura útil (pé direito) e rodapé continuam vindo de
-             roomSettings (⚙ no topo da tela, mesma regra de sempre) — texto
-             aqui só avisa onde mexer nisso, não duplica o campo. -->
+             roomSettings (mesmo estado do ⚙ no topo da tela), mas agora
+             (pedido do usuário 2026-07-29: "quero as informacoes da parede,
+             largura, altura e rodape, inseridas juntas na pagina do
+             projetos") os 3 campos ficam juntos aqui embaixo também —
+             po-proj-ceiling-input/po-proj-baseboard-input são espelhos dos
+             po-ceiling-input/po-baseboard-input do menu ⚙ (mesmo
+             roomSettings, sincronizados nos dois sentidos — ver
+             ROOM_SETTINGS_FIELDS em portal.js), não um estado separado. -->
+        <!-- Forma da parede (pedido do usuário, 2026-07-25: "quero criar uma
+             opcao no projects, para fazer parede simples, parede dupla, e
+             parede em C ou U. porem a visao sempre sera frontal da parede em
+             que se esta editando os moveis") — a EDIÇÃO nunca deixa de ser 1
+             parede por vez (mesmo canvas/arrastar/esticar de sempre); as abas
+             abaixo só trocam QUAL parede está ativa (ver
+             setProjectActiveWallIndex/refreshProjectWallTabs em portal.js).
+             Vista Superior e Visualizar 3D é que desenham as 2-3 paredes
+             juntas, em ângulo reto. -->
+        <div class="po-proj-wall-shape-row">
+          <span class="po-proj-wall-shape-label" data-i18n="project.wall_shape_label">Formato da parede</span>
+          <div class="po-proj-wall-shape-toggle po-view-toggle">
+            <button type="button" class="po-view-toggle-btn active" id="po-proj-wall-shape-single-btn" data-i18n="project.wall_shape_single">Simples</button>
+            <button type="button" class="po-view-toggle-btn" id="po-proj-wall-shape-double-btn" data-i18n="project.wall_shape_double">Dupla</button>
+            <button type="button" class="po-view-toggle-btn" id="po-proj-wall-shape-u-btn" data-i18n="project.wall_shape_u">C / U</button>
+          </div>
+        </div>
+        <div class="po-proj-wall-tabs" id="po-proj-wall-tabs" style="display:none;"></div>
+
         <div class="po-proj-wall-settings">
           <div class="dim-field po-proj-wall-width-field">
-            <label for="po-proj-wall-width-input" data-i18n="project.wall_width_label">Largura do ambiente</label>
+            <label for="po-proj-wall-width-input" id="po-proj-wall-width-label" data-i18n="project.wall_width_label">Largura do ambiente</label>
             <span class="dim-exact-wrap">
               <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-wall-width-input" />
               <span class="dim-exact-unit" id="po-proj-wall-width-unit"></span>
             </span>
           </div>
-          <span class="hint" data-i18n="project.wall_height_reuse_hint">Altura útil e rodapé usam a mesma configuração do ⚙ no topo da tela.</span>
+          <div class="dim-field po-proj-wall-width-field">
+            <label for="po-proj-ceiling-input" data-i18n="nav.ceiling_label">Pé direito</label>
+            <span class="dim-exact-wrap">
+              <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-ceiling-input" />
+              <span class="dim-exact-unit" id="po-proj-ceiling-unit"></span>
+            </span>
+          </div>
+          <div class="dim-field po-proj-wall-width-field">
+            <label for="po-proj-baseboard-input" data-i18n="nav.baseboard_label">Rodapé</label>
+            <span class="dim-exact-wrap">
+              <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-baseboard-input" />
+              <span class="dim-exact-unit" id="po-proj-baseboard-unit"></span>
+            </span>
+          </div>
         </div>
 
         <div class="po-proj-layout">
           <aside class="po-proj-library">
+            <!-- Botão "Buscar" (pedido do usuário, 2026-07-23: "quero um
+                 botao buscar no lugar de digitar") — no lugar do campo de
+                 texto, abre um modal com as 3 camadas (família/categoria/
+                 subcategoria, ver po-proj-search-modal) e a grade de módulos
+                 filtrada por elas. O dropdown de família logo abaixo
+                 continua igual, é um filtro rápido separado. -->
             <div class="po-proj-library-search">
-              <input type="text" id="po-proj-library-search-input" data-i18n-placeholder="project.library_search_placeholder" placeholder="Buscar módulo…" />
+              <button type="button" id="po-proj-library-search-btn" class="secondary" data-i18n="project.library_search_btn">Buscar</button>
             </div>
-            <!-- Filtros de categoria/subcategoria (pedido do usuário,
-                 2026-07-21: "com os filtros de categoria e sub categoria,
-                 pode deixar bem pequenos") — pills pequenas, ESTADO PRÓPRIO
-                 (projectSelectedCategoryId/SubcategoryId em portal.js), não
-                 compartilhado com os pills da aba "Novo Orçamento"
-                 (selectedCategoryId/SubcategoryId) pra trocar filtro aqui
-                 não bagunçar a outra aba. Reaproveita renderTabBar (mesma
-                 função/CSS .po-tab-pill de sempre, só com contêineres
-                 próprios e fonte reduzida via .po-proj-library-filters). -->
-            <!-- Família (pedido do usuário, 2026-07-21: "preciso selecionar
-                 kitchens, hall... essas categorias") — a Novo Orçamento já
-                 tinha esse 1º nível (po-filter-family) ANTES de categoria/
-                 subcategoria (ver renderTaxonomyTabBars), a Projetos só tinha
-                 os 2 níveis de baixo. Mesma cascata: trocar família reescopa
-                 categoria/subcategoria pro que existe ali dentro. -->
+            <!-- Filtro de categoria (pedido do usuário, 2026-07-23: as 3
+                 linhas de pills família/categoria/subcategoria atrapalhavam
+                 a visão dos módulos — trocado por 1 única caixa de seleção,
+                 só nível família. Estado próprio (projectSelectedFamilyId em
+                 portal.js), não compartilhado com os pills da aba "Novo
+                 Orçamento". -->
             <div class="po-proj-library-filters">
-              <div class="po-tabbar" id="po-proj-filter-family"></div>
-              <div class="po-tabbar" id="po-proj-filter-category"></div>
-              <div class="po-tabbar" id="po-proj-filter-subcategory"></div>
+              <select id="po-proj-filter-family-select" class="po-proj-library-filter-select"></select>
+              <select id="po-proj-filter-category-select" class="po-proj-library-filter-select"></select>
             </div>
             <div class="po-proj-library-grid" id="po-proj-library-grid"></div>
           </aside>
@@ -831,13 +1042,56 @@
           <div class="po-proj-resize-handle" id="po-proj-resize-handle-left" title="Arrastar pra redimensionar"></div>
 
           <div class="po-proj-canvas-outer">
+            <!-- Alternância Frontal/Superior (pedido do usuário, 2026-07-24:
+                 "temos visao frontal. quero uma visao de cima, paralela, com
+                 um botao em cima pra trocar de superior pra frontal") — vista
+                 de cima é SÓ leitura (sem arrastar/esticar): profundidade não
+                 é uma coordenada guardada de verdade, é derivada de z_order +
+                 depth_mm de cada módulo (ver computeProjectSlotsTopViewLayout
+                 em portal.js), só pra dar uma ideia aproximada de como os
+                 módulos ficam empilhados da parede pra fora. -->
+            <div class="po-proj-view-toggle po-view-toggle">
+              <button type="button" class="po-view-toggle-btn active" id="po-proj-view-front-btn" data-i18n="project.view_front_btn">Frontal</button>
+              <button type="button" class="po-view-toggle-btn" id="po-proj-view-top-btn" data-i18n="project.view_top_btn">Superior</button>
+            </div>
             <div class="po-proj-canvas-scale-label" id="po-proj-canvas-dims-label"></div>
-            <div class="po-proj-canvas-wrap">
-              <div class="po-proj-canvas" id="po-proj-canvas">
-                <div class="po-proj-canvas-ceiling-line" id="po-proj-ceiling-line"></div>
-                <div class="po-proj-canvas-baseboard" id="po-proj-baseboard"></div>
+            <!-- Mini Vista Superior fixa ao lado (pedido do usuário, 2026-07-26:
+                 "quando seleciono so uma [parede] nao consigo ver o que tem nas
+                 outras... gostaria de uma tela pequena ao lado") — em vez de
+                 miniaturas de elevação, escolheu manter a Vista Superior (já
+                 existente) sempre visível numa faixa menor ao lado da Frontal,
+                 pra não precisar alternar de aba pra ter noção do ambiente
+                 inteiro. Só aparece com 2-3 paredes e só no modo 'front' (ver
+                 renderProjectMiniTopView em portal.js). -->
+            <div class="po-proj-canvas-row">
+              <div class="po-proj-canvas-wrap">
+                <div class="po-proj-canvas" id="po-proj-canvas">
+                  <div class="po-proj-canvas-ceiling-line" id="po-proj-ceiling-line"></div>
+                  <div class="po-proj-canvas-baseboard" id="po-proj-baseboard"></div>
+                </div>
+                <!-- Vista de Canto 3D interativa (pedido do usuário 2026-07-26,
+                     depois de uma 1ª tentativa em CSS 3D ter saído quebrada:
+                     "quero ver os modulos em 3d tambem... preciso passar o
+                     modulo de uma parede pra outra arrastando") — SUBSTITUI
+                     #po-proj-canvas (o DOM 2D plano) sempre que o projeto tem
+                     mais de 1 parede (double/L, u/C-U); câmera FIXA (sem
+                     orbitar/zoom), arrastar módulo é via raycasting (ver
+                     renderProjectCanvasFrontCorner/ViewerProjectEdit em
+                     portal.js). Mostrado/escondido via display, nunca os 2 ao
+                     mesmo tempo. -->
+                <div id="po-proj-canvas-3d-edit-wrap" style="display:none;">
+                  <div id="po-proj-canvas-3d-edit"></div>
+                </div>
+              </div>
+              <div class="po-proj-mini-top-wrap" id="po-proj-mini-top-wrap" style="display:none;">
+                <div class="po-proj-mini-top-title" data-i18n="project.mini_top_title">Ambiente (vista de cima)</div>
+                <div class="po-proj-mini-top-canvas-wrap">
+                  <div class="po-proj-mini-top-canvas" id="po-proj-mini-top-canvas"></div>
+                </div>
+                <p class="po-proj-mini-top-hint" data-i18n="project.mini_top_hint">Clique numa parede ou módulo pra editar.</p>
               </div>
             </div>
+            <p class="hint" id="po-proj-top-view-hint" data-i18n="project.top_view_hint" style="display:none;">Vista de cima aproximada, gerada a partir da ordem de profundidade dos módulos — pra mover ou reorganizar, use a vista Frontal.</p>
             <p class="hint" id="po-proj-empty-hint" data-i18n="project.empty_canvas_hint">Nenhum módulo no ambiente ainda — clique num módulo à esquerda pra configurar e adicionar.</p>
           </div>
 
@@ -849,6 +1103,8 @@
         </div>
 
         <div id="po-proj-total" class="po-comp-3d-total"></div>
+        <!-- Volume/peso somado do projeto — migration 061. -->
+        <div id="po-proj-volume-weight" class="hint"></div>
 
         <!-- SALVAR PROJETO (migration 056, pedido do usuário 2026-07-21) —
              mesmo padrão de "★ Salvar como favorita" da Composição
@@ -863,18 +1119,13 @@
           <span id="po-proj-fav-status" class="hint"></span>
         </div>
 
-        <!-- Lista de projetos salvos — escondida atrás de um toggle (pedido
-             do usuário: "nova lista", separada de Favoritos porque o
-             formato de slot é outro) pra não poluir a tela por padrão.
-             Recarregada a cada abertura (ver loadProjectFavoritesList,
-             chamada no toggle e na troca de aba). -->
-        <div style="margin-top:4px;">
-          <button type="button" id="po-proj-fav-list-toggle-btn" class="secondary" data-i18n="project.saved_list_toggle_btn">📂 Meus projetos salvos</button>
-        </div>
-        <div id="po-proj-fav-list-wrap" style="display:none;margin-top:8px;">
-          <div id="po-proj-fav-error" class="error" style="display:none;"></div>
-          <div id="po-proj-fav-list"></div>
-        </div>
+        <!-- Lista de projetos salvos: MUDOU de lugar (pedido do usuário,
+             2026-07-24) — antes vivia aqui atrás de um toggle "📂 Meus
+             projetos salvos", agora tem aba própria de 1ª classe (ver
+             po-tab-my-projects, nav.tab_my_projects) já que Composição/
+             Favoritos saíram do nav. loadProjectFavoritesList/
+             restoreFavoriteProject (portal.js) não mudaram de lógica, só de
+             onde são chamados/renderizados. -->
 
         <!-- Visualizar 3D (Fase 2, pedido do usuário 2026-07-21: "ok proxima
              etapa. visualizar 3d") — mesma capacidade de abrir portas/gavetas
@@ -902,6 +1153,15 @@
             <div class="viewer-toggle-btns">
               <button type="button" id="po-proj-toggle-doors-btn" style="display:none;" data-i18n="step2.open_doors">Abrir portas</button>
               <button type="button" id="po-proj-toggle-drawers-btn" style="display:none;" data-i18n="step2.open_drawers">Abrir gavetas</button>
+            </div>
+            <!-- TESTE de AR (2026-08-01, pedido do usuário) — só aparece em
+                 Android (Scene Viewer do Google só funciona lá; iOS precisaria
+                 de um .usdz separado, fora deste teste). Sem i18n de propósito
+                 (protótipo, não é feature final ainda). Ver
+                 generateArGlbForProject em portal.js. -->
+            <div class="viewer-toggle-btns" id="po-proj-ar-test-wrap" style="display:none;">
+              <button type="button" id="po-proj-test-ar-btn" class="secondary">🕶️ Testar em AR (Android)</button>
+              <span id="po-proj-ar-test-status" class="hint"></span>
             </div>
           </div>
 
@@ -945,6 +1205,24 @@
           </div>
         </div>
 
+      </section>
+    </div>
+
+    <!-- MEUS PROJETOS (pedido do usuário, 2026-07-24: "oculta composicoes e
+         favoritos do site. vou usar so projetos... quero um botao novo,
+         meus projetos, com projetos salvos") — aba dedicada só pra listar/
+         carregar/renomear/excluir projetos salvos (user_projects, migration
+         056). Reaproveita 100% de loadProjectFavoritesList/
+         restoreFavoriteProject (portal.js) — só mudou de onde a lista é
+         renderizada (antes era um toggle escondido dentro da aba Projetos,
+         ver po-proj-fav-list-toggle-btn removido). Carregada a cada troca
+         pra esta aba (ver listener 'po-tab-my-projects' em portal.js). -->
+    <div class="portal-tab-page" id="po-tab-my-projects" style="display:none;">
+      <section class="panel">
+        <h2 data-i18n="project.my_projects_title">Meus Projetos</h2>
+        <p class="hint" data-i18n="project.my_projects_hint">Seus projetos salvos — carregue um pra continuar editando, renomeie ou exclua.</p>
+        <div id="po-proj-fav-error" class="error" style="display:none;"></div>
+        <div id="po-proj-fav-list"></div>
       </section>
     </div>
 
@@ -1059,10 +1337,18 @@
           Comprimento: 76mm a 2700mm. Largura: 76mm a 1500mm.
         </p>
 
+        <!-- Barra de aplicar-em-massa (pedido do usuário 2026-07-31: "quero um
+             quadrado pra selecionar e fazer uma troca de todos selecionados,
+             pode ser tickness, pode ser a cor, pode ser a edgband") — montada
+             via JS (renderCutlistBulkToolbar) pra poder usar I18n.t() nos
+             textos das opções, mesmo padrão do popup de cor. -->
+        <div id="po-cutlist-bulk-toolbar" class="po-cutlist-bulk-toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; padding:8px 10px; background:var(--panel-alt, #f6f2ec); border-radius:8px;"></div>
+
         <div class="po-cutlist-table-wrap" style="overflow-x:auto;">
           <table class="po-cutlist-table">
             <thead>
               <tr>
+                <th><input type="checkbox" id="po-cutlist-select-all" /></th>
                 <th data-i18n="cutlist.col_op">OP</th>
                 <th data-i18n="cutlist.col_part_name">Peça</th>
                 <th data-i18n="cutlist.col_quantity">Qtd</th>
@@ -1080,7 +1366,13 @@
         </div>
 
         <div class="po-cutlist-footer" style="margin-top:16px;">
-          <button type="button" id="po-cutlist-generate-price-btn" class="po-btn-primary-block" data-i18n="cutlist.generate_price_btn">Gerar Preço</button>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button type="button" id="po-cutlist-generate-price-btn" class="po-btn-primary-block" data-i18n="cutlist.generate_price_btn">Gerar Preço</button>
+            <!-- "Gerar Plano de Corte" (migration 063) — nesting chapa a
+                 chapa, mostra quantas chapas e quantos metros de fita são
+                 necessários. Independente do fluxo de preço/aprovar. -->
+            <button type="button" id="po-cutlist-generate-plan-btn" class="secondary" data-i18n="cutlist.generate_plan_btn">Gerar Plano de Corte</button>
+          </div>
           <div id="po-cutlist-final-price-row" class="po-order-detail-total-row" style="display:none;">
             <span data-i18n="cutlist.final_price_label">Preço final</span>
             <strong id="po-cutlist-final-price">$0.00</strong>
@@ -1091,6 +1383,16 @@
           </div>
           <span id="po-cutlist-status" class="hint"></span>
         </div>
+
+        <!-- Painel de escolha manual de tamanho de chapa (cor sem
+             default_sheet_size_id, migration 063) — só aparece quando
+             algum grupo cor+espessura não tem tamanho vinculado. -->
+        <div id="po-cutlist-plan-picker-panel" class="po-cutlist-bulk-toolbar" style="display:none; margin-top:16px; padding:12px; background:var(--panel-alt, #f6f2ec); border-radius:8px;"></div>
+
+        <!-- Resultado do "Gerar Plano de Corte": resumo (chapas por
+             material + total, metros de fita por material + total) e os
+             diagramas chapa a chapa. -->
+        <div id="po-cutlist-plan-results" style="display:none; margin-top:16px;"></div>
       </section>
     </div>
 
@@ -1165,10 +1467,10 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js"></script>
-<script src="js/pricing.js"></script>
-<script src="js/viewer3d.js?v=20260721a"></script>
-<script src="js/viewer3d_composition.js?v=20260721a"></script>
-<script src="js/portal.js?v=20260721u"></script>
+<script src="js/i18n.js?v=20260731b"></script>
+<script src="js/pricing.js?v=20260731a"></script>
+<script src="js/viewer3d.js?v=20260801a"></script>
+<script src="js/viewer3d_composition.js?v=20260801a"></script>
+<script src="js/portal.js?v=20260801c"></script>
 </body>
 </html>

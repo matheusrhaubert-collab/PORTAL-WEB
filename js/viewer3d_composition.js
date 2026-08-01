@@ -39,6 +39,14 @@ function createViewerComposition3D() {
   let controls = null;
   let containerEl = null;
   let currentGroups = [];
+  // Contorno de destaque (hover/seleção) — pedido do usuário 2026-07-26:
+  // "quero que quando o mouse passe em cima do modulo ele fique contorno
+  // vermelho, pra saber qual modulo sera editado ou movimentado". Só usado
+  // por ViewerProjectEdit (Vista de Canto interativa, ver setHoverHighlight/
+  // updateHoverHighlight/findGroupBySlotId abaixo) — THREE.BoxHelper é um
+  // objeto de cena PRÓPRIO (linhas ao redor da bounding box de outro
+  // Object3D), não mexe em nenhum material dos módulos de verdade.
+  let hoverBoxHelper = null;
 
   // Abrir portas/gavetas (pedido do usuário, 2026-07-16: "quero opcao abrir
   // portas e gavetas no modulo composicao gerado") — ESTADO PRÓPRIO desta
@@ -68,6 +76,17 @@ function createViewerComposition3D() {
   let lastFitTotalWidth = 0;
   let lastFitFrameH = 0;
   let lastFitMaxDepth = 0;
+  // Direção de câmera do último enquadramento de CANTO (renderFreeformWalls,
+  // 2-3 paredes) — pedido do usuário (2026-07-26: "Imagem de IA 2 paredes ou
+  // 3 paredes, camera pegando as duas paredes"). snapshot({angle:'corner'})
+  // usa isto em vez de uma direção fixa (SNAPSHOT_ANGLE_DIRS foi pensada só
+  // pra 1 parede — 'frontal' é quase Z puro, then corta as paredes laterais
+  // de um L/C-U fora do enquadramento). Guardar a MESMA bissetriz que
+  // renderFreeformWalls acabou de calcular (sem viés de parede ativa — só
+  // ViewerProjectEdit passa activeWallIndex; o snapshot pra IA usa
+  // ViewerProject, que nunca passa) garante as paredes todas visíveis, igual
+  // à Vista de Canto.
+  let lastFitDir = null;
   const DOOR_OPEN_ANGLE = Math.PI * 0.55;
   function openAngleFor(hingeSide) {
     return hingeSide === 'left' ? -DOOR_OPEN_ANGLE : DOOR_OPEN_ANGLE;
@@ -114,6 +133,27 @@ function createViewerComposition3D() {
     controls.minDistance = 0.3;
     controls.maxDistance = 30;
     controls.maxPolarAngle = Math.PI * 0.49;
+    // Zoom PRA ONDE O CURSOR/DEDOS APONTAM (pedido do usuário 2026-07-29: "o
+    // zoom aproxima exatamente no meio da parede... quero mais liberdade pra
+    // ver detalhes nas partes que ficam abaixo ou acima do meio da parede",
+    // + "vou usar em tablets no futuro próximo, já deixo acertado os
+    // detalhes pra isso") — o dolly padrão do OrbitControls sempre converge
+    // pro controls.target (o "meio" de sempre), tanto no scroll do mouse
+    // quanto no pinça de 2 dedos no touch. enableZoom=false desliga SÓ a
+    // parte de zoom nativa (mouse E touch — handleTouchStartDollyPan/
+    // handleTouchMoveDollyPan da biblioteca checam scope.enableZoom antes de
+    // fazer dolly); o PAN de 2 dedos continua 100% nativo (gated só por
+    // enablePan, que não mexemos) — sem esse pan nativo rodando junto, a
+    // combinação arrastar+pinçar ficaria travada. handleZoomWheel (mouse,
+    // ver função abaixo) e handleTouchMoveZoom (pinça, mesma função, ancora
+    // no PONTO MÉDIO dos 2 dedos em vez do centro da tela) reimplementam só
+    // o dolly, os dois chamando a mesma zoomTowardClient.
+    controls.enableZoom = false;
+    renderer.domElement.addEventListener('wheel', handleZoomWheel, { passive: false });
+    renderer.domElement.addEventListener('touchstart', handleTouchStartZoom, { passive: true });
+    renderer.domElement.addEventListener('touchmove', handleTouchMoveZoom, { passive: true });
+    renderer.domElement.addEventListener('touchend', handleTouchEndZoom, { passive: true });
+    renderer.domElement.addEventListener('touchcancel', handleTouchEndZoom, { passive: true });
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1.15));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
@@ -300,9 +340,21 @@ function createViewerComposition3D() {
   // de referência é DESENHADA). Mesma constante/comentário do viewer3d.js.
   const MAX_HEIGHT_LINE_RAISE_M = 0.127; // 5"
 
-  function buildRoomEnvironment(totalWidth, maxDepth, room) {
+  // exactWidth (pedido do usuário, 2026-07-26: "gostaria de ver o final das
+  // paredes, conforme medidas delas", depois "nao estou vendo as ultimas
+  // alteracoes de piso e final da parede no 3D" — a versão original desse
+  // pedido só tinha sido aplicada em viewer3d.js/rebuildRoomEnv, o
+  // configurador de UM módulo só, não neste arquivo, que é quem desenha o
+  // "Visualizar 3D" da aba Projetos) — true quando `totalWidth` é a largura
+  // REAL da parede (renderFreeform, aba Projetos, forma 'single'), não uma
+  // soma arbitrária de módulos (render/Composição, que não tem conceito de
+  // parede — continua com a margem antiga, sem end-caps). Com exactWidth: a
+  // linha termina exatamente no canto de verdade (sem a margem de 35%) e
+  // ganha um traço vertical (chão até teto) em cada ponta marcando "aqui a
+  // parede acaba" — mesmo tratamento de viewer3d.js/rebuildRoomEnv.
+  function buildRoomEnvironment(totalWidth, maxDepth, room, exactWidth) {
     const group = new THREE.Group();
-    const margin = Math.max(totalWidth * 0.35, 0.9); // sobra de parede/baseboard pra cada lado
+    const margin = exactWidth ? 0 : Math.max(totalWidth * 0.35, 0.9); // sobra de parede/baseboard pra cada lado
     const wallW = totalWidth + margin * 2;
     const ceilingH = room.ceiling_m;
     const baseH = room.baseboard_h_m || 0;
@@ -377,6 +429,73 @@ function createViewerComposition3D() {
         group.add(baseLine);
       }
     }
+
+    // Traço vertical (chão até teto) em cada ponta — só quando a largura é
+    // REAL (exactWidth), marcando o canto de verdade da parede (ver
+    // comentário grande em cima da assinatura da função).
+    if (exactWidth) {
+      group.add(makeLine(new THREE.Vector3(-wallW / 2, 0, 0.003), new THREE.Vector3(-wallW / 2, ceilingH, 0.003)));
+      group.add(makeLine(new THREE.Vector3(wallW / 2, 0, 0.003), new THREE.Vector3(wallW / 2, ceilingH, 0.003)));
+    }
+
+    return group;
+  }
+
+  // Versão multi-parede de buildRoomEnvironment (pedido do usuário,
+  // 2026-07-25: forma dupla/C-U na aba Projetos) — em vez de UMA parede
+  // centrada em X=0, desenha uma linha de chão/teto/rodapé/altura-máxima por
+  // SEGMENTO de parede, cada um na posição/direção de verdade (ver
+  // getProjectWallGeometry em portal.js). segments = [{ originX, originZ,
+  // alongDir:{x,z}, widthM, margin, label }].
+  // CORRIGIDO (2026-07-26, usuário: "nao estou vendo as ultimas alteracoes de
+  // piso e final da parede no 3D" — o pedido anterior de "ver o final das
+  // paredes" só tinha sido aplicado em viewer3d.js/rebuildRoomEnv, não aqui,
+  // que é quem desenha o "Visualizar 3D" da aba Projetos de verdade): margin
+  // agora é sempre 0 (renderFreeformWalls não manda mais margem nenhuma pra
+  // 'main' — CADA segmento aqui já é uma parede REAL, sem "ponta solta" que
+  // precise de sobra) e cada segmento ganha um traço vertical (chão até
+  // teto) nas DUAS pontas (p0/p1) marcando o canto de verdade — mesmo
+  // tratamento de buildRoomEnvironment(exactWidth=true)/viewer3d.js. label=true
+  // desenha o texto do pé-direito só uma vez (evita repetir o mesmo rótulo em
+  // 2-3 paredes).
+  function buildRoomEnvironmentMultiWall(segments, room) {
+    const group = new THREE.Group();
+    const ceilingH = room.ceiling_m;
+    const baseH = room.baseboard_h_m || 0;
+
+    (segments || []).forEach((seg) => {
+      const ax = seg.alongDir.x, az = seg.alongDir.z;
+      const margin = seg.margin || 0;
+      const p0 = new THREE.Vector3(seg.originX - ax * margin, 0, seg.originZ - az * margin);
+      const p1 = new THREE.Vector3(seg.originX + ax * (seg.widthM + margin), 0, seg.originZ + az * (seg.widthM + margin));
+
+      group.add(makeLine(p0.clone(), p1.clone()));
+      group.add(makeLine(p0.clone().setY(ceilingH), p1.clone().setY(ceilingH)));
+      group.add(makeLine(p0.clone(), p0.clone().setY(ceilingH)));
+      group.add(makeLine(p1.clone(), p1.clone().setY(ceilingH)));
+
+      if (room.ceilingLabel && seg.label && !room.minimal) {
+        const mid = p0.clone().lerp(p1, 0.5);
+        const textLabel = makeTextSprite(room.ceilingLabel);
+        textLabel.position.set(mid.x, ceilingH + 0.11, mid.z + 0.05);
+        group.add(textLabel);
+      }
+
+      if (!room.minimal) {
+        const maxY = ceilingH - CEILING_CLEARANCE_M - baseH + MAX_HEIGHT_LINE_RAISE_M;
+        const dashGeom = new THREE.BufferGeometry().setFromPoints([p0.clone().setY(maxY), p1.clone().setY(maxY)]);
+        const dashLine = new THREE.Line(dashGeom, new THREE.LineDashedMaterial({ color: 0xb0503c, dashSize: 0.07, gapSize: 0.05 }));
+        dashLine.computeLineDistances();
+        group.add(dashLine);
+
+        if (baseH > 0) {
+          const baseGeom = new THREE.BufferGeometry().setFromPoints([p0.clone().setY(baseH), p1.clone().setY(baseH)]);
+          const baseLine = new THREE.Line(baseGeom, new THREE.LineDashedMaterial({ color: 0x8a8378, dashSize: 0.07, gapSize: 0.05 }));
+          baseLine.computeLineDistances();
+          group.add(baseLine);
+        }
+      }
+    });
 
     return group;
   }
@@ -577,7 +696,11 @@ function createViewerComposition3D() {
     });
 
     if (room && room.ceiling_m > 0) {
-      const envGroup = buildRoomEnvironment(totalWidth, maxDepth, room);
+      // exactWidth=true: totalWidth AQUI é wallWidthM, a largura REAL da
+      // parede (não uma soma de módulos, ver comentário de renderFreeform
+      // acima) — termina no canto de verdade + end-caps verticais, mesmo
+      // pedido de "ver o final da parede" (2026-07-26).
+      const envGroup = buildRoomEnvironment(totalWidth, maxDepth, room, true);
       scene.add(envGroup);
       currentGroups.push(envGroup);
     }
@@ -601,6 +724,263 @@ function createViewerComposition3D() {
     lastFitTotalWidth = totalWidth;
     lastFitFrameH = frameH;
     lastFitMaxDepth = effDepth;
+  }
+
+  // Posicionamento MULTI-PAREDE (pedido do usuário, 2026-07-25: "parede
+  // simples, parede dupla, e parede em C ou U" na aba Projetos) — mesma
+  // ideia de renderFreeform (cada assembly já vem pronto de
+  // Viewer3D.buildStandaloneAssembly, só posiciona pela x_m/z_order real),
+  // mas agora cada PAREDE pode estar numa posição/direção diferente no
+  // mundo 3D (canto reto/90°, ver getProjectWallGeometry em portal.js) em
+  // vez de todo mundo estar sempre na mesma parede de fundo.
+  //
+  // wallsData = [{ assemblies, widthM, originX, originZ, alongDirX,
+  // alongDirZ, intoDirX, intoDirZ, rotationY, role }, ...] — origin é o
+  // canto onde a posição-ao-longo-da-parede (x_m de cada módulo) começa
+  // (localX=0); alongDir é o vetor unitário (mundo) da direção em que
+  // localX cresce; intoDir é o vetor unitário (mundo) "pra dentro do
+  // ambiente" (onde a profundidade dos módulos avança); rotationY é o
+  // ângulo (radianos) que faz a FRENTE de cada módulo (que nasce olhando
+  // pra local +Z) apontar pra intoDir — para a parede de fundo ('main',
+  // intoDir=+Z) é 0; para 'left' (intoDir=+X) é +90°; para 'right'
+  // (intoDir=-X) é -90°. A posição de cada módulo é calculada por VETOR
+  // (origin + alongDir*alongOffset + intoDir*depthOffset) — não depende da
+  // rotação do próprio group pra nada, então não tem risco de "espelhar" a
+  // ordem dos módulos ao longo da parede lateral.
+  function renderFreeformWalls(wallsData, room, activeWallIndex, options) {
+    const keepCamera = !!(options && options.keepCamera);
+    if (!scene || !available()) return;
+    onResize();
+    clearGroups();
+    currentOpenables = [];
+
+    const walls = (wallsData || []).filter((w) => w && Array.isArray(w.assemblies));
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    let maxHeight = 0;
+
+    walls.forEach((wall) => {
+      const list = wall.assemblies.filter((a) => a && a.group);
+      const ax = Number(wall.alongDirX) || 0;
+      const az = Number(wall.alongDirZ) || 0;
+      const ix = Number(wall.intoDirX) || 0;
+      const iz = Number(wall.intoDirZ) || 0;
+      const ox = Number(wall.originX) || 0;
+      const oz = Number(wall.originZ) || 0;
+      const rotY = Number(wall.rotationY) || 0;
+      const cosR = Math.cos(rotY), sinR = Math.sin(rotY);
+
+      list.forEach((a) => {
+        const alongOffset = Number(a.x_m || 0) + a.width_m / 2;
+        let zOffset = 0;
+        if (room && room.baseboard_h_m > 0) {
+          const bbox = new THREE.Box3().setFromObject(a.group);
+          const wallHung = bbox.min.y > room.baseboard_h_m + 0.001;
+          zOffset = wallHung ? 0 : BASEBOARD_DEPTH_M;
+        }
+        const layerDepth = Number(a.z_order || 0) * FREEFORM_DEPTH_STEP_M;
+        const depthOffset = a.depth_m / 2 + zOffset + layerDepth;
+
+        a.group.rotation.y = rotY;
+        a.group.position.x = ox + ax * alongOffset + ix * depthOffset;
+        a.group.position.z = oz + az * alongOffset + iz * depthOffset;
+        a.group.position.y = a.floor_height_m || 0;
+
+        // Marca de onde este assembly veio (pedido do usuário 2026-07-26:
+        // "quero ver os modulos em 3d... preciso passar o modulo de uma
+        // parede pra outra arrastando" — a Vista de Canto de Projetos virou
+        // uma cena 3D INTERATIVA em vez de só um preview). userData é o jeito
+        // padrão do Three.js de anexar dado arbitrário num Object3D sem
+        // interferir em nada da renderização — usado por pickAssemblyAt (ver
+        // abaixo) pra, ao clicar/arrastar um objeto da cena, achar de volta
+        // qual slot/parede ele representa (o raycaster só devolve meshes/
+        // Object3D, não sabe nada de "slot" ou "parede").
+        a.group.userData.slotId = a.id;
+        a.group.userData.wallIndex = wall.wallIndex;
+
+        scene.add(a.group);
+        currentGroups.push(a.group);
+        if (Array.isArray(a.openables) && a.openables.length) currentOpenables.push(...a.openables);
+
+        maxHeight = Math.max(maxHeight, (a.floor_height_m || 0) + a.height_m);
+
+        // Bounding box em X/Z pra enquadrar a cena inteira (L/U não fica mais
+        // simétrico em X=0 como o render()/renderFreeform() de parede única)
+        // — os 4 cantos do módulo (já rotacionado igual ao group, mesma
+        // matriz de rotY) dão o retângulo real ocupado no mundo.
+        const halfW = a.width_m / 2, halfD = a.depth_m / 2;
+        [[-halfW, -halfD], [halfW, -halfD], [-halfW, halfD], [halfW, halfD]].forEach(([lx, lz]) => {
+          const wx = a.group.position.x + lx * cosR + lz * sinR;
+          const wz = a.group.position.z - lx * sinR + lz * cosR;
+          minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
+          minZ = Math.min(minZ, wz); maxZ = Math.max(maxZ, wz);
+        });
+      });
+
+      // Inclui a PAREDE em si (não só os módulos) na caixa delimitadora —
+      // pedido do usuário (2026-07-26, Vista de Canto 3D): "a cena esta
+      // deslocada pra direita, precisa centralizar". Antes só os 4 cantos
+      // de cada MÓDULO entravam no enquadramento — se uma parede não tinha
+      // nenhum módulo ainda (ou só 1 dos lados do L tinha móveis), a caixa
+      // ficava pequena e deslocada pro lado que tinha módulos, e o
+      // ambiente inteiro (com a outra parede, maior/vazia) saía cortado/
+      // fora do centro. Os 2 cantos de CADA parede (início e fim, ao longo
+      // de alongDir) garantem que a largura toda de toda parede sempre
+      // conta pro enquadramento, com módulo ou sem.
+      const wallWidthM = Number(wall.widthM) || 0;
+      [0, wallWidthM].forEach((alongOffset) => {
+        const wx = ox + ax * alongOffset;
+        const wz = oz + az * alongOffset;
+        minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
+        minZ = Math.min(minZ, wz); maxZ = Math.max(maxZ, wz);
+      });
+    });
+
+    if (!isFinite(minX)) { minX = -0.15; maxX = 0.15; minZ = 0; maxZ = 0.3; }
+
+    if (room && room.ceiling_m > 0) {
+      // margin sempre 0 (2026-07-26: "ver o final das paredes de verdade")
+      // — 'main' também termina exatamente no canto real agora (antes tinha
+      // uma sobra de 15% só nela), coincidindo com onde 'left'/'right'
+      // começam (ver buildRoomEnvironmentMultiWall, end-caps verticais).
+      const segments = walls.map((wall) => ({
+        originX: wall.originX, originZ: wall.originZ,
+        alongDir: { x: wall.alongDirX, z: wall.alongDirZ },
+        widthM: wall.widthM,
+        margin: 0,
+        label: wall.role === 'main'
+      }));
+      const envGroup = buildRoomEnvironmentMultiWall(segments, room);
+      scene.add(envGroup);
+      currentGroups.push(envGroup);
+    }
+
+    const totalWidth = Math.max(maxX - minX, 0.3);
+    const totalDepth = Math.max(maxZ - minZ, 0.3);
+    const centerX = (minX + maxX) / 2;
+    const centerZ = (minZ + maxZ) / 2;
+
+    const frameH = room && room.ceiling_m > 0 ? Math.max(maxHeight, room.ceiling_m + 0.25) : Math.max(maxHeight, 0.3);
+    const target = new THREE.Vector3(centerX, frameH / 2, centerZ);
+
+    // margin bem enxuta (pedido do usuário 2026-07-26: "aumentar a tela de
+    // projeto... dar zoom nas duas paredes pra visualizar melhor") — 1.0 =
+    // exatamente o enquadramento mínimo calculado (sem folga nenhuma extra),
+    // já que o cálculo de dist logo abaixo já é PRECISO (projeção nos eixos
+    // reais de tela, não mais uma esfera generosa — ver comentário grande
+    // logo abaixo), então não sobra praticamente nada cortado mesmo sem
+    // margem.
+    const margin = 1.0;
+    // Direção da câmera: bissetriz das paredes presentes (pedido do
+    // usuário, 2026-07-26, na Vista de Canto de Projetos — câmera FIXA lá,
+    // ver ViewerProjectEdit em portal.js: "a camera ta posicionada atras de
+    // uma parede, precisa reposicionar a 45 graus de cada parede"). Antes
+    // usava a MESMA direção fixa de renderFreeform (pensada pra câmera de 1
+    // parede só, com OrbitControls livre pra corrigir manualmente) — em L/
+    // C-U isso podia deixar a câmera quase de perfil/atrás de uma das
+    // paredes dependendo da caixa delimitadora, e a Vista de Canto não tem
+    // orbit pra corrigir (câmera fixa, ver setControlsEnabled(false)).
+    // Somar o `intoDir` (a direção que CADA parede aponta pra dentro do
+    // ambiente) de todas as paredes presentes dá exatamente a bissetriz do
+    // canto: 2 paredes (dupla/L) → resultante a 45° de cada uma; 3 paredes
+    // (C/U) → left/right se cancelam em X e sobra a direção da 'main'
+    // (câmera centrada, olhando de frente pro fundo do U, com as duas
+    // laterais simétricas nas bordas). Mesma fórmula beneficia o botão
+    // "Visualizar 3D" (ViewerProject) também — só afeta forma com >1 parede,
+    // renderFreeform (parede única) não usa este código.
+    //
+    // activeWallIndex (novo, pedido do usuário 2026-07-26: "nao consigo
+    // selecionar os modulos de tras, precisao pra poder projetar melhor") —
+    // só passado pela Vista de Canto de Projetos (ViewerProjectEdit, câmera
+    // fixa sem orbit). Com a câmera exatamente na bissetriz, uma parede
+    // lateral fica quase de perfil (ver comentário grande em pickAssemblyAt
+    // /hitbox em portal.js) e os módulos dela ficam espremidos numa faixa
+    // fina de tela — várias caixas de clique se sobrepõem na projeção 2D e o
+    // raycaster sempre acerta a mais perto da câmera, nunca a que o usuário
+    // está de fato apontando. Em vez de mudar o próprio raycasting (não tem
+    // como adivinhar por geometria só qual módulo o usuário "quis" clicar
+    // quando duas caixas ocupam o mesmo pixel), a solução é girar a câmera
+    // pra ENCARAR de frente a parede em edição — mesmo gatilho que já troca
+    // projectActiveWallIndex (abas de parede + Vista Superior, ver
+    // setProjectActiveWallIndex/renderProjectMiniTopView em portal.js), sem
+    // precisar de nenhum clique novo na cena 3D (que teria a MESMA
+    // ambiguidade pra descobrir em qual parede o usuário quis clicar).
+    // Dar um peso extra ao intoDir da parede ativa antes de somar inclina a
+    // bissetriz pra ela (weight=1 em todas = comportamento antigo, idêntico
+    // pra quem não passa activeWallIndex, ex. "Visualizar 3D"); ainda soma
+    // as outras paredes com peso normal, então não perde o contexto de canto
+    // (não vira uma vista 100% de frente, só bem menos de perfil).
+    //
+    // BIAS=3.5 (~16° de ângulo residual em relação a olhar reto pra parede)
+    // NÃO foi suficiente — medido de verdade (script varrendo pickAssemblyAt
+    // num grid fino de pixels, pedido do usuário 2026-07-26 "vamos tentar
+    // virar a parede" depois de eu confirmar com dados que módulos mais
+    // longe do canto ficavam quase sem território próprio na tela): com 3
+    // módulos numa fileira, o profundidade real de cada um (ex. 41cm) nesse
+    // ângulo residual faz um módulo "tampar" visualmente o de trás — não é
+    // bug de raycasting, é oclusão geométrica de verdade, que piora
+    // proporcionalmente à distância do módulo até o canto. BIAS=14 (~4° de
+    // ângulo residual) reduz isso pra uma faixa bem mais estreita — testado
+    // com o mesmo script, ver conversa. Ainda soma as outras paredes (não
+    // vira 100% ortogonal), só um resquício bem pequeno de contexto de
+    // canto.
+    const ACTIVE_WALL_BIAS = 14;
+    let intoSumX = 0, intoSumZ = 0;
+    walls.forEach((wall) => {
+      const w = (activeWallIndex != null && wall.wallIndex === activeWallIndex) ? ACTIVE_WALL_BIAS : 1;
+      intoSumX += (Number(wall.intoDirX) || 0) * w;
+      intoSumZ += (Number(wall.intoDirZ) || 0) * w;
+    });
+    if (Math.hypot(intoSumX, intoSumZ) < 0.001) { intoSumX = 0; intoSumZ = 1; } // fallback, não deveria ocorrer com paredes de verdade
+    const dir = new THREE.Vector3(intoSumX, 0.55, intoSumZ).normalize();
+    const fovYRad = (camera.fov || 35) * Math.PI / 180;
+    const aspect = camera.aspect || 1;
+    const fovXRad = 2 * Math.atan(Math.tan(fovYRad / 2) * aspect);
+
+    // Distância da câmera: enquadramento PRECISO (pedido do usuário,
+    // 2026-07-26: "as paredes estao muito longe, dificil de ver"). Antes
+    // usava uma esfera envolvendo a caixa inteira (raio = metade da
+    // diagonal 3D) — método simples, mas exagerado pra uma sala larga/rasa
+    // como um L/C-U: a diagonal 3D de uma caixa larga e baixa é bem maior
+    // que a distância mínima real necessária, empurrando a câmera bem mais
+    // longe do que precisava (módulos ficavam pequenos/distantes). Agora
+    // projeta os 8 cantos da caixa nos eixos de TELA de verdade da câmera
+    // (direita/cima, derivados da direção `dir` já calculada acima) e usa a
+    // maior projeção em cada eixo — é o enquadramento MÍNIMO que garante
+    // nada cortado, sem a folga desnecessária da esfera.
+    const forward = dir.clone().negate();
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const rightAxis = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+    const upAxis = new THREE.Vector3().crossVectors(rightAxis, forward).normalize();
+    const hw = totalWidth / 2, hh = frameH / 2, hd = totalDepth / 2;
+    let maxU = 0.15, maxV = 0.15; // piso mínimo — evita divisão por ~0 numa caixa quase de um ponto só
+    [-1, 1].forEach((sx) => [-1, 1].forEach((sy) => [-1, 1].forEach((sz) => {
+      const corner = new THREE.Vector3(sx * hw, sy * hh, sz * hd);
+      maxU = Math.max(maxU, Math.abs(corner.dot(rightAxis)));
+      maxV = Math.max(maxV, Math.abs(corner.dot(upAxis)));
+    })));
+    const dist = Math.max(maxU / Math.tan(fovXRad / 2), maxV / Math.tan(fovYRad / 2)) * margin;
+    // keepCamera (pedido do usuário 2026-07-26: "pode testar uma camera que
+    // mexe? zoom e rotacao" — Vista de Canto de Projetos ganhou OrbitControls
+    // de verdade, ver setControlsEnabled/renderProjectCanvasFrontCorner) —
+    // sem isso, TODA chamada de renderFreeformWalls (que roda de novo a cada
+    // arrastar/adicionar/redimensionar módulo, não só ao trocar de parede)
+    // resetava a câmera pro enquadramento automático, jogando fora qualquer
+    // ajuste manual (orbit/zoom) que o usuário acabou de fazer. Só quando
+    // muda de parede/forma de verdade (ver fitKey em portal.js) que faz
+    // sentido reenquadrar do zero — o resto do bounding box (totalWidth/
+    // frameH/target etc.) continua recalculado sempre, é só a câmera em si
+    // que não é tocada.
+    if (!keepCamera) {
+      camera.position.copy(target).addScaledVector(dir, dist);
+      camera.lookAt(target.x, target.y, target.z);
+      if (controls) { controls.target.copy(target); controls.update(); }
+    }
+
+    lastFitTarget = target.clone();
+    lastFitTotalWidth = totalWidth;
+    lastFitFrameH = frameH;
+    lastFitMaxDepth = totalDepth;
+    lastFitDir = { x: dir.x, y: dir.y, z: dir.z };
   }
 
   // Chamados pelo botão "Abrir portas"/"Abrir gavetas" da Composição (ver
@@ -652,6 +1032,15 @@ function createViewerComposition3D() {
   //   - three_quarter: ângulo clássico de foto de catálogo/produto.
   //   - side: quase de perfil, bom pra profundidade/lateral que a frontal
   //     não mostra.
+  //   - corner: pedido do usuário (2026-07-26, projetos com 2-3 paredes,
+  //     "camera pegando as duas paredes") — 'frontal' é quase Z puro
+  //     (pensado pra 1 parede só), então numa forma L/C-U as paredes
+  //     laterais saem cortadas/quase de perfil do print PRINCIPAL (o único
+  //     que define o enquadramento final, ver comentário grande logo acima).
+  //     Sem direção fixa própria: usa lastFitDir, a MESMA bissetriz que
+  //     renderFreeformWalls acabou de calcular pra quantas paredes o projeto
+  //     realmente tiver (2 → 45° de cada uma; 3 → centrada no fundo do U) —
+  //     ver comentário grande onde lastFitDir é declarado.
   const SNAPSHOT_ANGLE_DIRS = {
     frontal: [0.02, 0.12, 1],
     three_quarter: [0.75, 0.32, 0.9],
@@ -663,7 +1052,9 @@ function createViewerComposition3D() {
     // options.angle (novo) tem prioridade; options.frontal (legado) vira
     // angle:'frontal' — nenhum caller antigo quebra.
     const angleKey = (options && options.angle) || (options && options.frontal ? 'frontal' : null);
-    const dirArr = angleKey && SNAPSHOT_ANGLE_DIRS[angleKey];
+    const dirArr = angleKey === 'corner'
+      ? (lastFitDir ? [lastFitDir.x, lastFitDir.y, lastFitDir.z] : SNAPSHOT_ANGLE_DIRS.frontal)
+      : (angleKey && SNAPSHOT_ANGLE_DIRS[angleKey]);
     // Reposiciona a câmera de VERDADE pro ângulo pedido (em vez de pedir pro
     // Gemini "reinventar" o ângulo via prompt — arriscado, pode distorcer a
     // geometria), tira o print dali, e devolve a câmera pra posição/órbita
@@ -716,14 +1107,363 @@ function createViewerComposition3D() {
     return containerEl.clientWidth / containerEl.clientHeight;
   }
 
+  // ---------- Interatividade (arrastar módulo dentro da cena 3D) ----------
+  // Pedido do usuário (2026-07-26), depois da 1ª tentativa (dobra CSS) ter
+  // saído quebrada: "a visao ta ruim, preciso ver conforme imagem
+  // referencia. quero ver os modulos em 3d tambem... preciso passar o
+  // modulo de uma parede pra outra arrastando". A Vista de Canto de
+  // Projetos (renderProjectCanvasFrontCorner, portal.js) passou a ser uma
+  // instância PRÓPRIA desta fábrica (ViewerProjectEdit, câmera FIXA — ver
+  // setControlsEnabled) com arrastar de verdade via raycasting. Em vez de
+  // expor renderer/scene/camera crus (frágil — qualquer código de fora
+  // poderia mexer neles de um jeito que desincroniza do resto do closure),
+  // só 4 métodos MÍNIMOS ficam públicos:
+  //   - setControlsEnabled: liga/desliga o OrbitControls (a Composição e o
+  //     "Visualizar 3D" da Projetos continuam com órbita livre; só a Vista
+  //     de Canto pede câmera fixa).
+  //   - getDomElement: o <canvas> de verdade, pra portal.js anexar seus
+  //     próprios listeners de pointerdown/move/up (não duplica nenhuma
+  //     lógica de evento aqui dentro).
+  //   - pickAssemblyAt: "o que tem embaixo do ponteiro" (slotId/wallIndex/
+  //     group), subindo a árvore de pais do hit até achar o Group marcado em
+  //     renderFreeformWalls (userData.slotId).
+  //   - intersectPlaneAtClient: interseção do raio do ponteiro com um plano
+  //     arbitrário (usado pra saber "onde no MUNDO 3D o ponteiro está
+  //     apontando dentro do plano da parede ativa" — portal.js decompõe esse
+  //     ponto em along-parede/altura usando a mesma geometria de parede que
+  //     já usa pra POSICIONAR os módulos, ver getProjectWallGeometry).
+  // enabled=true agora é usado pela Vista de Canto de Projetos também
+  // (pedido do usuário 2026-07-26: "pode testar uma camera que mexe? zoom e
+  // rotacao" — depois de melhorar bastante a seleção mas ainda achar difícil
+  // de projetar sem poder ajustar o ângulo na hora). BOTÃO ESQUERDO fica de
+  // fora do OrbitControls (LEFT: null) — é o mesmo botão que
+  // attachProject3DEditDrag (portal.js) usa pra arrastar/esticar módulo via
+  // raycasting; se o OrbitControls também reagisse a ele, os dois ficariam
+  // brigando pelo mesmo gesto (arrastar um módulo giraria a câmera ao mesmo
+  // tempo). BOTÃO DO MEIO (apertar a rodinha e arrastar) gira (ROTATE) —
+  // pedido do usuário 2026-07-26: "pode fazer a rotacao apertando o scroll
+  // ao inves do botao direito". DIREITO vira pan. Zoom por GIRAR o scroll
+  // (sem apertar) já vem de graça do OrbitControls (enableZoom) e não
+  // depende de mouseButtons — continua funcionando igual, independente de
+  // qual botão está mapeado pra ROTATE/PAN.
+  function setControlsEnabled(enabled) {
+    if (!controls) return;
+    controls.enabled = !!enabled;
+    if (enabled && typeof THREE !== 'undefined' && THREE.MOUSE) {
+      controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
+    }
+  }
+
+  function getDomElement() {
+    return renderer ? renderer.domElement : null;
+  }
+
+  const _raycaster = (typeof THREE !== 'undefined') ? new THREE.Raycaster() : null;
+
+  function ndcFromClient(clientX, clientY) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+  }
+
+  // preferredWallIndex (novo, pedido do usuário 2026-07-26: "meu indicador
+  // esta em cima do movel da parede selecionada, mas ele esta pegando o
+  // modulo da esquerda da outra parede... como se tivesse mal calibrado") —
+  // não é miscalibração de coordenada nenhuma: perto do canto, a caixa de
+  // clique (hitbox) de um módulo da parede ATIVA e a de um módulo da OUTRA
+  // parede podem se sobrepor na projeção 2D da tela (ainda mais depois do
+  // viés de câmera — ver ACTIVE_WALL_BIAS em renderFreeformWalls — que deixa
+  // a parede ativa de frente e a outra de perfil, sobrepondo as caixas dela
+  // com as da ativa perto do canto). intersectObjects sempre devolve a mais
+  // PRÓXIMA da câmera ao longo do raio, que não é necessariamente a que o
+  // usuário está vendo "por cima" — pega TODOS os hits (já vêm ordenados por
+  // distância) e prefere o mais próximo que pertença à parede em edição
+  // (projectActiveWallIndex, ver portal.js); só cai pra qualquer parede se
+  // nenhum hit bateu na ativa (clique claramente fora dela, sem ambiguidade
+  // nenhuma pra resolver).
+  // Diagnóstico TEMPORÁRIO (pedido do usuário 2026-07-26: "ainda to com
+  // problema de selecao... ao passar mouse nao encontra o modulo" — 2ª
+  // rodada de ajuste de raycasting não resolveu, então investigar antes de
+  // mexer de novo às cegas). Ligar no console do navegador (F12):
+  // `window.__legnoDebugPick = true`, passar o mouse por cima do módulo que
+  // falha, e copiar as últimas linhas "[legno pickAssemblyAt]" logadas — só
+  // loga quando o RESULTADO muda (não a cada pointermove) pra não lotar o
+  // console. Não afeta nada em produção (fica mudo por padrão).
+  let _lastDebugPickKey = null;
+  function _debugPickLog(clientX, clientY, result, extra) {
+    if (typeof window === 'undefined' || !window.__legnoDebugPick) return;
+    // Chave só pelo RESULTADO (slotId/wallIndex) + reason — não pelas
+    // distâncias/coordenadas em `extra` (essas mudam a cada pixel de
+    // pointermove, então incluí-las no throttle antes fazia logar quase
+    // toda hora mesmo sem o resultado mudar, poluindo o console).
+    const key = JSON.stringify({ r: result ? [result.slotId, result.wallIndex] : null, reason: extra && extra.reason });
+    if (key === _lastDebugPickKey) return;
+    _lastDebugPickKey = key;
+    // Loga como STRING já formatada (JSON.stringify), não como objeto
+    // clicável — pedido do usuário mandou 2 screenshots seguidos do objeto
+    // ainda FECHADO (precisa clicar na setinha ▸ pra abrir, aí abrir de novo
+    // "result"/"hitsWithSlot" por dentro — fácil de esquecer numa captura de
+    // tela rápida). Texto puro aparece tudo de uma vez, sem precisar clicar
+    // em nada, só printar a área e mandar o print de novo.
+    console.log('[legno pickAssemblyAt] ' + JSON.stringify({
+      clientX, clientY, result: result ? { slotId: result.slotId, wallIndex: result.wallIndex } : null, ...extra
+    }, null, 2));
+  }
+
+  function pickAssemblyAt(clientX, clientY, preferredWallIndex) {
+    if (!renderer || !camera || !_raycaster || !currentGroups.length) {
+      _debugPickLog(clientX, clientY, null, {
+        reason: 'early-return', hasRenderer: !!renderer, hasCamera: !!camera,
+        hasRaycaster: !!_raycaster, currentGroupsCount: currentGroups.length
+      });
+      return null;
+    }
+    const rect = renderer.domElement.getBoundingClientRect();
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const rawHits = _raycaster.intersectObjects(currentGroups, true);
+    // Só a caixa invisível de clique (isHitboxProxy, ver buildProjectAssemblies
+    // em portal.js) — pedido do usuário 2026-07-26 depois de eu reproduzir o
+    // bug de verdade (script varrendo pickAssemblyAt num grid, "vamos tentar
+    // virar a parede" não resolveu porque a causa NÃO era ângulo de câmera).
+    // Um módulo com muitas peças finas vistas quase de perfil (prateleiras
+    // abertas, por ex.) gera DEZENAS de hits na geometria REAL a distâncias
+    // quase idênticas às da caixa invisível do módulo VIZINHO ao lado (zero
+    // vão entre eles) — "mais próximo" virava ruído sub-milimétrico entre
+    // módulos diferentes. A caixa invisível de cada módulo é um bloco único
+    // (6 faces só) que cobre o módulo INTEIRO, então nunca sofre desse
+    // "graze" de várias peças finas quase paralelas ao raio — ignorar a
+    // geometria real pro raycasting de clique (ela nunca precisou entrar
+    // nessa conta, só a caixa) resolve na raiz. Fallback pra rawHits inteiro
+    // se por algum motivo NENHUM hit for de caixa (não deveria ocorrer,
+    // buildProjectAssemblies sempre adiciona uma — ver lá).
+    const hitboxHits = rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
+    const hits = hitboxHits.length ? hitboxHits : rawHits;
+    let firstAny = null;
+    let firstAnyDist = Infinity;
+    let matchedPreferred = null;
+    let matchedPreferredDist = Infinity;
+    for (let i = 0; i < hits.length; i++) {
+      let obj = hits[i].object;
+      while (obj) {
+        if (obj.userData && obj.userData.slotId != null) {
+          const found = { slotId: obj.userData.slotId, wallIndex: obj.userData.wallIndex, group: obj, point: hits[i].point.clone() };
+          if (!firstAny) { firstAny = found; firstAnyDist = hits[i].distance; }
+          if (preferredWallIndex != null && obj.userData.wallIndex === preferredWallIndex && !matchedPreferred) {
+            matchedPreferred = found;
+            matchedPreferredDist = hits[i].distance;
+          }
+          break;
+        }
+        obj = obj.parent;
+      }
+    }
+    // AMBIGUITY_TOLERANCE_M (pedido do usuário 2026-07-26: "nao consigo
+    // selecionar ele de forma nenhuma, ou pega da esquerda ou da direita") —
+    // bug na versão anterior: preferir a parede ativa "vencia" mesmo quando o
+    // hit dela estava BEM mais longe ao longo do raio que o hit mais próximo
+    // de verdade (podia "alcançar" um módulo de outra fileira/parede lá atrás
+    // e ignorar o módulo certo, mais perto, só porque pertencia à parede não-
+    // ativa). Preferência só decide EMPATE de verdade (hits a uma distância
+    // parecida = mesma região da tela, ambiguidade real de sobreposição perto
+    // do canto); se o hit mais próximo está MUITO mais perto que qualquer hit
+    // da parede preferida, o mais próximo vence sempre — é o módulo que o
+    // usuário está genuinamente apontando.
+    //
+    // 0.5 ERA GENEROSO DEMAIS — confirmado com o mesmo script de varredura
+    // (pedido do usuário, "vamos tentar virar a parede"): numa cena de canto
+    // normal, módulos de paredes DIFERENTES facilmente ficam a menos de 0.5m
+    // de distância um do outro ao longo do raio (a cena inteira não é muito
+    // maior que isso), então a "preferência" quase sempre achava algum hit
+    // da parede ativa dentro da folga e vencia mesmo longe do que o usuário
+    // apontava — reproduzia exatamente esse ziguezague reportado. 0.03
+    // (3cm) só cobre o caso de EMPATE de verdade (raio quase tangente à
+    // linha onde duas caixas se tocam), sem alcançar módulos genuinamente
+    // mais longe.
+    const AMBIGUITY_TOLERANCE_M = 0.03;
+    const result = (matchedPreferred && (matchedPreferredDist - firstAnyDist) <= AMBIGUITY_TOLERANCE_M)
+      ? matchedPreferred
+      : firstAny;
+    _debugPickLog(clientX, clientY, result, {
+      reason: 'checked', preferredWallIndex, rectInside: (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom),
+      firstAnyDist: isFinite(firstAnyDist) ? Number(firstAnyDist.toFixed(3)) : null,
+      matchedPreferredDist: isFinite(matchedPreferredDist) ? Number(matchedPreferredDist.toFixed(3)) : null,
+      currentGroupsCount: currentGroups.length, hitsTotal: hits.length,
+      hitsWithSlot: hits.map((h) => {
+        let o = h.object;
+        while (o && !(o.userData && o.userData.slotId != null)) o = o.parent;
+        return o ? { slotId: o.userData.slotId, wallIndex: o.userData.wallIndex, dist: Number(h.distance.toFixed(3)) } : null;
+      }).filter(Boolean).slice(0, 8)
+    });
+    return result;
+  }
+
+  function intersectPlaneAtClient(clientX, clientY, planeOrigin, planeNormal) {
+    if (!renderer || !camera || !_raycaster) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+      new THREE.Vector3(planeNormal.x, planeNormal.y, planeNormal.z),
+      new THREE.Vector3(planeOrigin.x, planeOrigin.y, planeOrigin.z)
+    );
+    const target = new THREE.Vector3();
+    const hit = _raycaster.ray.intersectPlane(plane, target);
+    return hit ? { x: target.x, y: target.y, z: target.z } : null;
+  }
+
+  // Zoom to cursor (pedido do usuário 2026-07-29) — acha o ponto do MUNDO 3D
+  // embaixo do cursor (acerta a geometria de verdade quando dá, senão cai
+  // pro plano que passa pelo alvo da órbita de frente pra câmera — sempre
+  // bem definido, cobre o caso do usuário apontando pro vazio acima/abaixo
+  // do móvel, ex. perto da linha do teto) e escala TANTO a câmera quanto o
+  // alvo da órbita em direção a esse ponto pelo mesmo fator. Matemática
+  // clássica de "zoom to cursor": como a direção câmera→alvo não muda (só o
+  // comprimento), o ângulo de qualquer ponto em relação a essa direção
+  // também não muda — o ponto sob o cursor fica visualmente PARADO na tela
+  // enquanto a distância de órbita encolhe/cresce. controls.update() (fim da
+  // função) já recalcula a esfera a partir de (camera.position - target) e
+  // reaplica o clamp de minDistance/maxDistance sozinho, então não precisa
+  // repetir esse clamp aqui.
+  function zoomTowardClient(clientX, clientY, factor) {
+    if (!_raycaster || !camera || !controls) return;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    let point = null;
+    if (currentGroups.length) {
+      const hits = _raycaster.intersectObjects(currentGroups, true);
+      if (hits.length) point = hits[0].point;
+    }
+    if (!point) {
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(forward, controls.target);
+      const hitPoint = new THREE.Vector3();
+      point = _raycaster.ray.intersectPlane(plane, hitPoint) ? hitPoint : controls.target.clone();
+    }
+    const camOffset = new THREE.Vector3().subVectors(camera.position, point);
+    const targetOffset = new THREE.Vector3().subVectors(controls.target, point);
+    camera.position.copy(point).add(camOffset.multiplyScalar(factor));
+    controls.target.copy(point).add(targetOffset.multiplyScalar(factor));
+    controls.update();
+  }
+
+  function handleZoomWheel(event) {
+    event.preventDefault();
+    if (!controls || !controls.enabled || !camera || !renderer) return;
+    // Mesma escala por "notch" que o OrbitControls nativo usava (getZoomScale
+    // interna dele, ver OrbitControls.js) — só o PONTO de convergência muda.
+    const zoomScale = Math.pow(0.95, controls.zoomSpeed || 1);
+    if (event.deltaY < 0) zoomTowardClient(event.clientX, event.clientY, zoomScale);
+    else if (event.deltaY > 0) zoomTowardClient(event.clientX, event.clientY, 1 / zoomScale);
+  }
+
+  // Pinça de 2 dedos (touch) — mesma ideia do wheel acima, só que ancorada
+  // no PONTO MÉDIO entre os 2 dedos em vez da posição do mouse, e a "escala"
+  // vem da razão entre a distância ATUAL entre os dedos e a do frame
+  // anterior (não um "notch" fixo — cada touchmove já traz o quanto os
+  // dedos se moveram desde o último). _pinchLastDist null = não tem pinça em
+  // andamento (0 ou 1 dedo, ou acabou de começar). PAN de 2 dedos continua
+  // rodando via OrbitControls nativo em paralelo (ver comentário em init()),
+  // então arrastar+pinçar ao mesmo tempo funciona igual um app de mapa.
+  let _pinchLastDist = null;
+  function touchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  function handleTouchStartZoom(event) {
+    _pinchLastDist = (event.touches.length === 2) ? touchDistance(event.touches) : null;
+  }
+  function handleTouchMoveZoom(event) {
+    if (!controls || !controls.enabled || !camera || !renderer) return;
+    if (event.touches.length !== 2) return;
+    const dist = touchDistance(event.touches);
+    if (_pinchLastDist === null || !_pinchLastDist) { _pinchLastDist = dist; return; }
+    const ratio = dist / _pinchLastDist;
+    _pinchLastDist = dist;
+    if (!isFinite(ratio) || Math.abs(ratio - 1) < 0.0005) return;
+    const midX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
+    const midY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
+    // Dedos se afastando (ratio > 1) = zoom IN = factor < 1 (mesma convenção
+    // de zoomTowardClient) — por isso 1/ratio, não ratio.
+    zoomTowardClient(midX, midY, 1 / ratio);
+  }
+  function handleTouchEndZoom(event) {
+    if (event.touches.length < 2) _pinchLastDist = null;
+  }
+
+  // Contorno vermelho de destaque (pedido do usuário, 2026-07-26: "quero que
+  // quando o mouse passe em cima do modulo ele fique contorno vermelho...
+  // nao sei qual modulo estou selecionando"). THREE.BoxHelper desenha um
+  // wireframe ao redor da bounding box de QUALQUER Object3D — reaproveitado
+  // (não recriado) entre chamadas via setFromObject, que reatribui o objeto
+  // rastreado E recalcula a caixa de uma vez só. depthTest:false garante que
+  // o contorno sempre aparece por CIMA das peças (não "afunda" atrás de uma
+  // porta/prateleira mais perto da câmera), já que é só um indicador de UI,
+  // não geometria real da cena.
+  function setHoverHighlight(group) {
+    if (!scene) return;
+    if (!group) {
+      if (hoverBoxHelper) hoverBoxHelper.visible = false;
+      return;
+    }
+    if (!hoverBoxHelper) {
+      hoverBoxHelper = new THREE.BoxHelper(group, 0xff0000);
+      hoverBoxHelper.material.depthTest = false;
+      hoverBoxHelper.material.linewidth = 2;
+      hoverBoxHelper.renderOrder = 999;
+      scene.add(hoverBoxHelper);
+    }
+    hoverBoxHelper.setFromObject(group);
+    hoverBoxHelper.visible = true;
+  }
+
+  // Atualiza o contorno SEM trocar de objeto rastreado (mais barato que
+  // setFromObject) — chamado a cada pointermove de um arraste de MOVER (ver
+  // portal.js), que já reposiciona o Group ao vivo sem reconstruir a cena;
+  // sem isso o contorno ficaria "preso" na posição de quando o hover
+  // começou, em vez de acompanhar o módulo sendo arrastado.
+  function updateHoverHighlight() {
+    if (hoverBoxHelper && hoverBoxHelper.visible) hoverBoxHelper.update();
+  }
+
+  // Acha de volta o Group de um slotId específico dentro da cena ATUAL —
+  // usado pra "readotar" o contorno de destaque depois de qualquer
+  // reconstrução completa (renderFreeformWalls troca TODOS os Groups por
+  // instâncias novas — o Group antigo que o contorno rastreava não existe
+  // mais na cena, ver renderProjectCanvasFrontCorner em portal.js, que
+  // rechama isto depois de cada render pra manter o destaque em sincronia).
+  function findGroupBySlotId(slotId) {
+    for (let i = 0; i < currentGroups.length; i++) {
+      const g = currentGroups[i];
+      if (g && g.userData && g.userData.slotId === slotId) return g;
+    }
+    return null;
+  }
+
+  // Devolve a THREE.Scene bruta desta instância — teste de exportação AR
+  // (2026-08-01, "colocar o móvel no ambiente real"): generateArGlbForProject
+  // (portal.js) usa isto pra rodar o THREE.GLTFExporter em cima da MESMA
+  // cena já montada (nenhuma peça/posição/cor duplicada), igual snapshot()
+  // já faz pra imagem PNG. Só leitura — quem chamar não deve mutar a cena.
+  function getScene() {
+    return scene;
+  }
+
   return {
-    init, available, render, renderFreeform, snapshot, canvasAspectRatio,
+    init, available, render, renderFreeform, renderFreeformWalls, snapshot, canvasAspectRatio,
     // Estado próprio de porta/gaveta da composição — ver comentário de
     // currentOpenables/doorsOpen acima. portal.js relê areDoorsOpen()/
     // areDrawersOpen() antes de reconstruir cada assembly (generateComposition3D),
     // pra um módulo novo/recolorido nascer já no estado atual em vez de
     // sempre fechado.
-    toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen
+    toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen,
+    // Interatividade (ver bloco de comentário grande acima) — só usado pela
+    // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
+    // (preview) nunca chamam nenhum destes.
+    setControlsEnabled, getDomElement, pickAssemblyAt, intersectPlaneAtClient,
+    setHoverHighlight, updateHoverHighlight, findGroupBySlotId,
+    // Teste AR (2026-08-01) — ver comentário de getScene acima.
+    getScene
   };
 }
 

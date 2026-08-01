@@ -146,8 +146,26 @@ function buildRoomStagingFragment(roomLabel: string | null): string {
 // palpite especulativo de estilo (a regra de não empilhar CRITICAL sem
 // testar continua valendo pra isso) — é a correção de uma instrução que
 // estava OBJETIVAMENTE errada pra qualquer cor sólida do catálogo.
+// 2026-07-31 — dois bugs novos relatados pelo usuário DEPOIS do fix de
+// proporção/padding (ver padImageToAspectRatio em portal.js): (1) a IA
+// "jogou fundo" (painel sólido) num compartimento que no 3D original é
+// aberto atrás — adicionado o parágrafo "do not add a back panel", com uma
+// heurística visual concreta (cor do fundo do compartimento == cor de fora
+// do móvel = aberto) porque a primeira tentativa (só dizer "não feche o que
+// tá aberto") não bastou, a IA continuou fechando; (2) a IA trocou módulos
+// de lugar (ordem esquerda-pra-direita diferente do 3D de origem) — a
+// instrução genérica "não mude a posição de nenhum elemento" já existia na
+// primeira frase do prompt mas não foi suficiente pra composições com
+// vários módulos lado a lado, então ganhou um parágrafo CRITICAL dedicado,
+// pedindo explicitamente pra contar as seções da esquerda pra direita e
+// reproduzir a mesma sequência. Ambos ainda não testados de novo depois
+// desta reescrita — se continuar falhando, o próximo passo provavelmente
+// não é mais prompt (pode ser um limite real do modelo pra composições
+// complexas/muitos módulos), avisar o usuário disso se acontecer de novo.
 function buildGalleryPrompt(roomLabel: string | null, colorLabel: string | null, moduleRefCount: number, colorRefCount: number, angleRefCount: number): string {
   return `Generate a photorealistic render that is geometrically IDENTICAL to the structure of the attached source image — treat the source image as a wireframe/blueprint that must be followed with zero deviation. Do not change the camera angle. Do not change the position of any element.
+
+CRITICAL — never reorder, swap, or mirror the sections/modules: if the source image shows several distinct vertical sections side by side (each with its own combination of doors, open shelves, drawers, or a hanging rod), the output must show that EXACT SAME sequence of sections in the EXACT SAME left-to-right order. Count the sections in the source image left to right and reproduce each one, in that same position, with its own original internal layout unchanged — never swap which section has doors vs open shelves vs drawers, never move a section to a different spot in the row, never mirror the whole piece left-to-right.
 
 Do not add any extra furniture piece that isn't already in the source image.
 Do not change the shape of any panel, box, or compartment.
@@ -156,6 +174,10 @@ Do not change the number of shelves, doors, drawers, or compartments.
 Do not add legs, feet, or external supports that are not already visible in the source image.
 Do not change the visible gap between the furniture and the ceiling/side walls — keep it exactly as shown in the source image.
 The baseboard (rodapé) must stay ON TOP of / visible in front of the furniture, never hidden behind it, never resized.
+
+CRITICAL — do not add a back panel that is not in the source image: some shelves, hanging/wardrobe compartments, or cubbies in the source image have NO back panel — they are open all the way through to whatever is behind the furniture. Use this rule to tell which compartments are open: in the source image, an OPEN compartment shows the SAME plain, flat background color/tone at the back of its interior as the background visible outside the furniture's own silhouette (the empty area around the piece) — NOT the furniture's own wood/color material. A CLOSED compartment (real back panel) instead shows the furniture's own material/color at the back of its interior, same as its sides. Look at each compartment individually and match this exactly: if its back area in the source is the plain outside-background tone, render it fully open in the final photo (a real view through to the room behind — the wall, floor, or blurred depth of the room — never a flat colored panel); if its back area in the source is the furniture's own material, keep it as a solid back panel with that same real-world finish. Do not default to giving every compartment a solid back "because it looks more finished" — some are deliberately open by design, and closing them off is exactly as wrong as resizing the piece.
+
+CRITICAL — do not resize or rescale the furniture to fill the frame: the source image may already include plain solid-white margin/padding on some sides so its canvas matches the required output aspect ratio — this white margin is empty background, NOT part of the scene, and must NOT be treated as "empty space that needs to be filled by the furniture". Keep the furniture at its exact same size, scale and position within the frame as shown in the source image; only replace the white margin areas with a continuation of the room's floor/wall/ceiling (per the lighting/material instructions below), never by enlarging, stretching, zooming into, or repositioning the furniture itself to occupy more of the frame.
 
 If the source image shows any dimension lines, measurement labels, axes, or a wireframe/grid overlay, hide all of that in the final photo — but keep the exact scale and proportions those lines represent.
 
@@ -293,6 +315,13 @@ async function generateGalleryImage(params: {
     // e sai com faixa branca/corte estranho no preview (ver
     // nearestSupportedAspectRatio em portal.js, que calcula este valor a
     // partir do canvas real do 3D).
+    // 2026-07-31: mainImage (parts[1] acima) já vem PRÉ-PREENCHIDA em
+    // branco pelo cliente (padImageToAspectRatio em portal.js) pra bater
+    // EXATAMENTE esta mesma proporção — sem esse pré-preenchimento, a
+    // imagem mandada e a proporção pedida aqui divergiam, e o Gemini
+    // resolvia o descompasso redimensionando o móvel pra caber (bug
+    // relatado pelo usuário: "muda o projeto pra caber"). Ver também o
+    // parágrafo "CRITICAL — do not resize or rescale" em buildGalleryPrompt.
     requestBody.generationConfig = { imageConfig: { aspectRatio } };
   }
 

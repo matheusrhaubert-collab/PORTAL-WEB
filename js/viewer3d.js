@@ -608,15 +608,37 @@ const Viewer3D = (function () {
   // extra, deslocando-a -altura/2 por dentro, pra ela virar centrada igual
   // uma caixa comum — dali em diante nenhum chamador precisa saber se o
   // conteúdo é uma peça simples ou uma composição aninhada.
+  // Inclinação de uma peça (migration 065 componente-folha / 066
+  // peça-módulo — pedido do usuário: sapateira). Único ponto que aplica o
+  // giro, cobrindo os dois formatos de conteúdo que passam por aqui: uma
+  // BufferGeometry solta (peça-folha comum) OU um Group de composição
+  // aninhada (módulo com 2+ peças, ex: prateleira + fence pro sapato não
+  // cair — gira como um corpo rígido só). Sempre em torno do PRÓPRIO CENTRO
+  // (Object3D.rotation.x pro Group; BufferGeometry.rotateX bakeia nos
+  // vértices pra caixa comum) — SIMPLIFICAÇÃO CONSCIENTE (mesmo espírito do
+  // cabide oval, migration 062): o pino de verdade fica na borda de trás,
+  // não no centro, então é uma aproximação visual; pilha muito apertada pode
+  // fazer a frente de uma encostar visualmente no fundo da de baixo — nesse
+  // caso aumente o espaçamento (menos prateleiras/módulo mais alto), não é
+  // bug de posicionamento. Sinal: positivo = frente (Z positivo, ver
+  // 'handle') mais BAIXA que o fundo (Z negativo, ver 'back') — pedido do
+  // usuário. SEM gate de position_role (2026-07-31, correção: o caso real do
+  // usuário usa position_role='free', não 'shelf' — a peça-módulo
+  // prateleira+fence é posicionada manualmente via Deslocar X/Y/Z, não pelo
+  // empilhamento automático do pino) — tilt_angle_deg é 0 por padrão em
+  // qualquer papel, então só tem efeito onde o admin realmente preencheu.
   function resolveContent(part, geometry) {
+    const tiltDeg = (part && part.tilt_angle_deg) || 0;
     if (part && part.is_module && part.child_pieces && part.child_pieces.length) {
       const p = geometry.parameters;
       const assembly = buildModuleAssembly(part.child_pieces, p.width, p.height, p.depth);
       const centered = new THREE.Group();
       assembly.position.y = -p.height / 2;
       centered.add(assembly);
+      if (tiltDeg) centered.rotation.x = tiltDeg * Math.PI / 180;
       return centered;
     }
+    if (tiltDeg) geometry.rotateX(tiltDeg * Math.PI / 180);
     return geometry;
   }
 
@@ -714,6 +736,78 @@ const Viewer3D = (function () {
     return assembly;
   }
 
+  // ---- Cabide tubular oval (shape_type='oval_rod', migration 062) ----
+  // Pedido do usuário: um componente pode pedir um desenho de TUBO OVAL em
+  // vez da caixa padrão — hoje toda peça (exceto o cilindro vertical
+  // hardcoded do 'leg', ver placeLegsGroup) é uma THREE.BoxGeometry. Só tem
+  // efeito em position_role='free' (ver dispatch dentro de placePieceInBox
+  // abaixo) — shape_type é ortogonal a position_role, decide só a
+  // GEOMETRIA, nunca o posicionamento (ver comentário da migration 062).
+  //
+  // Técnica: um CylinderGeometry "deitado" (eixo Y, o padrão) vira um tubo
+  // OVAL deitado no eixo X em 2 passos — escala não-uniforme (X vira o
+  // semieixo maior/menor da elipse, Z o outro) enquanto o eixo ainda é Y,
+  // depois rotaciona 90° em Z (isso troca Y<->X, deitando o comprimento no
+  // eixo X sem mexer na elipse já escalada em X/Z). Mesma primitiva
+  // (CylinderGeometry) já usada no 'leg' — só a escala+rotação é nova.
+  function buildEllipticalTubeGeometry(length, height, depth, segments) {
+    const geometry = new THREE.CylinderGeometry(1, 1, Math.max(length, 0.001), segments, 1, false);
+    geometry.scale(Math.max(height, 0.001) / 2, 1, Math.max(depth, 0.001) / 2);
+    geometry.rotateZ(Math.PI / 2);
+    return geometry;
+  }
+
+  // Disco/anel coaxial ao tubo (mesma rotação acima, sem a escala elíptica —
+  // usado pro colar e pro suporte/"ponteira" nas pontas, que são redondos).
+  function buildAxialDiscGeometry(thickness, radius, segments) {
+    const geometry = new THREE.CylinderGeometry(Math.max(radius, 0.001), Math.max(radius, 0.001), Math.max(thickness, 0.001), segments);
+    geometry.rotateZ(Math.PI / 2);
+    return geometry;
+  }
+
+  // Grupo completo do cabide: tubo oval + 2 suportes nas pontas (colar +
+  // disco de fixação). SIMPLIFICAÇÃO CONSCIENTE: os suportes são desenhados
+  // COAXIAIS ao tubo (não em ângulo saindo de uma parede/lateral) — uma peça
+  // 'free' não sabe onde fica a parede/lateral que a segura (é só uma
+  // posição X/Y/Z manual), então uma mão-francesa "de verdade" (em ângulo)
+  // exigiria adivinhar uma direção que não existe nos dados. O resultado
+  // ainda lê como "cabide com suporte nas pontas", só não reproduz o ângulo
+  // exato da mão-francesa da foto de referência.
+  // Centrado na PRÓPRIA origem (largura/altura/profundidade -w/2..w/2 etc.),
+  // igual a uma BoxGeometry comum — quem chama (placePieceInBox) posiciona
+  // esse centro exatamente como posicionaria o centro de uma caixa do mesmo
+  // w/h/d, então o cabide "ocupa o mesmo volume" que a caixa ocuparia.
+  function buildOvalRodContent(w, h, d, color) {
+    const group = new THREE.Group();
+    const material = makeMaterial(color, false);
+    const segments = 24;
+
+    const tubeGeometry = buildEllipticalTubeGeometry(w, h, d, segments);
+    group.add(new THREE.Mesh(tubeGeometry, material));
+
+    // Colar (anel um pouco mais largo que o tubo, encostado bem na ponta) +
+    // disco de fixação (representa a base da mão-francesa/"ponteira"), um
+    // par em cada extremidade.
+    const collarLength = Math.min(w * 0.06, 0.02);
+    const collarScale = 1.18;
+    const plateRadius = Math.max(h, d) * 0.6;
+    const plateThickness = Math.min(h, d) * 0.22;
+
+    [-1, 1].forEach((side) => {
+      const collarGeometry = buildEllipticalTubeGeometry(collarLength, h * collarScale, d * collarScale, segments);
+      const collar = new THREE.Mesh(collarGeometry, material);
+      collar.position.x = side * (w / 2 - collarLength / 2);
+      group.add(collar);
+
+      const plateGeometry = buildAxialDiscGeometry(plateThickness, plateRadius, segments);
+      const plate = new THREE.Mesh(plateGeometry, material);
+      plate.position.x = side * (w / 2 + plateThickness / 2);
+      group.add(plate);
+    });
+
+    return group;
+  }
+
   // Monta uma peça dentro de um volume-caixa (W,H,D em metros) conforme seu
   // position_role, delegando a criação/posicionamento efetivos pra `emit`
   // (content, color, x, y, z, rotateTexture, opening) — quem chama decide se
@@ -746,6 +840,20 @@ const Viewer3D = (function () {
     const offX = (part.offset_x_mm || 0) / 1000;
     const offY = (part.offset_y_mm || 0) / 1000;
     const offZ = (part.offset_z_mm || 0) / 1000;
+
+    // Giro de canto (migration 067, pedido do usuário: módulo em L/canto —
+    // ex: closet com um módulo normal atrás + o MESMO módulo girado 90° na
+    // frente, encostado sem lateral entre os dois). Só múltiplos de 90°: é o
+    // único caso em que dá pra trocar largura<->profundidade de forma EXATA
+    // (sem virar aproximação geométrica). Usado só dentro do branch 'free'
+    // logo abaixo (ver comentário lá) — nas demais posições (esquerda/
+    // direita/topo/base/fundo/prateleira/rodapé/tampo) o campo é ignorado de
+    // propósito, porque splitThickness já decide sozinho qual eixo é a
+    // espessura; girar essas peças exigiria redesenhar essa lógica inteira
+    // pra um caso de uso que, na prática, é sempre um módulo/peça 'free'
+    // posicionado à mão.
+    const rotYDeg = (((part.rotation_y_deg || 0) % 360) + 360) % 360;
+    const swapFootprint = rotYDeg === 90 || rotYDeg === 270;
 
     // Se o módulo tem pés (position_role='leg'), o corpo inteiro (todas as
     // peças normais) sobe na altura resolvida do pé — os pés preenchem o
@@ -794,6 +902,10 @@ const Viewer3D = (function () {
     } else if (role === 'shelf') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const geometry = new THREE.BoxGeometry(faceA, thickness, faceB);
+      // Inclinação (migration 065/066, pedido do usuário: sapateira) — ver
+      // resolveContent, que aplica o giro (peça-folha OU módulo aninhado
+      // inteiro) em torno do PRÓPRIO CENTRO, sem mexer em nada do
+      // empilhamento automático por pino aqui embaixo.
       // Quantidade escolhida pelo CLIENTE (componente com quantity_configurable
       // — client.js manda 1 peça repetida "count" vezes aqui). Distribui
       // igualmente dentro do VÃO INTERNO real do volume — do topo da base
@@ -880,6 +992,27 @@ const Viewer3D = (function () {
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
       emit(resolveContent(part, geometry), part.color, x, y, z, resolveRotateTexture(part.positioning, true), null);
+    } else if (role === 'free' && part.shape_type === 'oval_rod') {
+      // Cabide tubular oval (migration 062) — MESMO cálculo de posição do
+      // 'free' comum logo abaixo (zero absoluto, canto chão-fundo-esquerda),
+      // só que o conteúdo emitido é o tubo oval + suportes (buildOvalRodContent)
+      // em vez de uma BoxGeometry. Ramo próprio (em vez de um `if` dentro do
+      // 'free' de baixo) pra não arriscar mexer em nada do caminho de caixa
+      // já validado — giro de textura/dobradiça/corrediça (específicos de
+      // painel de madeira) não se aplicam aqui, por isso ficam de fora.
+      // Giro de canto (migration 067) — troca w<->d só na conta de POSIÇÃO
+      // (onde o centro do tubo encosta no canto do módulo pai); o tubo em si
+      // continua construído com w/h/d de verdade, só GIRA como corpo rígido
+      // em torno do próprio centro (buildOvalRodContent já devolve um Group
+      // centrado na origem).
+      const fw = swapFootprint ? d : w;
+      const fd = swapFootprint ? w : d;
+      const x = -W / 2 + fw / 2 + offX;
+      const y = h / 2 + offY + legH;
+      const z = -D / 2 + fd / 2 + offZ;
+      const rodContent = buildOvalRodContent(w, h, d, part.color);
+      if (rotYDeg) rodContent.rotation.y = rotYDeg * Math.PI / 180;
+      emit(rodContent, null, x, y, z, false, null);
     } else if (role === 'free') {
       // Peça livre — SEM nenhum papel/comportamento automático. Desenha a
       // caixa com as PRÓPRIAS medidas mapeadas DIRETO pros eixos da cena
@@ -906,9 +1039,16 @@ const Viewer3D = (function () {
       if (resolveRotateTexture(part.positioning, false)) {
         rotateGeometryUV90(geometry);
       }
-      const x = -W / 2 + w / 2 + offX;
+      // Giro de canto (migration 067) — troca w<->d só na conta de POSIÇÃO
+      // (onde o canto chão-fundo-esquerda da peça encosta no canto do módulo
+      // pai); a caixa/sub-montagem em si continua construída com w/h/d de
+      // verdade (ver resolveContent/emit abaixo), só GIRA como corpo rígido
+      // em torno do próprio centro.
+      const fw = swapFootprint ? d : w;
+      const fd = swapFootprint ? w : d;
+      const x = -W / 2 + fw / 2 + offX;
       const y = h / 2 + offY + legH;
-      const z = -D / 2 + d / 2 + offZ;
+      const z = -D / 2 + fd / 2 + offZ;
       // Abertura (dobradiça OU corrediça) — CORREÇÃO: 'free' emitia sempre
       // com opening=null, então uma peça-módulo aninhada com opening_type
       // configurado (ex: "Drawer Soft Closet" com opening_type='slide_out',
@@ -930,7 +1070,21 @@ const Viewer3D = (function () {
       // aplicado na PRÓPRIA geometria acima (rotateGeometryUV90); passar
       // true/'right' pro material giraria a textura DE NOVO em cima disso,
       // dobrando o giro (90+90=180°, errado).
-      const freeGroup = emit(resolveContent(part, geometry), part.color, x, y, z, false, opening);
+      const freeContent = resolveContent(part, geometry);
+      // Giro de canto (migration 067) — aplicado DEPOIS de resolveContent
+      // (que já pode ter aplicado tilt_angle_deg em X) pra girar o conteúdo
+      // inteiro em torno do próprio centro no eixo Y: 'centered' (Group, caso
+      // is_module) já nasce centrado nos 3 eixos, então só girar; geometria
+      // solta (BufferGeometry, caso peça-folha comum) baqueia a rotação nos
+      // próprios vértices, igual ao tilt_angle_deg em X logo acima.
+      if (rotYDeg) {
+        if (freeContent.isGroup) {
+          freeContent.rotation.y = rotYDeg * Math.PI / 180;
+        } else {
+          freeContent.rotateY(rotYDeg * Math.PI / 180);
+        }
+      }
+      const freeGroup = emit(freeContent, part.color, x, y, z, false, opening);
       // Dobradiças visuais — mesma regra de 'front' (linha ~944): peça 'free'
       // com hingeSide resolvido é uma porta de verdade, só que posicionada
       // manualmente em vez de automaticamente. Sem isso, a porta abria/fechava
@@ -1211,7 +1365,16 @@ const Viewer3D = (function () {
   // durante snapshot() pra miniatura do carrinho continuar só com o móvel.
   let roomEnvGroup = null;
   let roomEnvConfig = null;
-  const ENV_CEILING_CLEARANCE_M = 0.127; // 5"
+  // Afastamento do teto — migration_060 (pedido do usuário 2026-07-29): agora
+  // é OPT-IN por módulo (module.ceiling_clearance_enabled/ceiling_clearance_mm
+  // no admin), não mais um valor fixo pra todo mundo. Este viewer (singleton
+  // do configurador de 1 módulo só) sempre tem exatamente UM módulo por vez,
+  // então dá pra desenhar a linha refletindo a regra REAL — portal.js passa
+  // o valor certo em cfg.ceilingClearanceM (ver viewerRoomEnvConfig). Sem
+  // esse campo (chamador antigo, ou nenhum roomEnvConfig setado ainda), cai
+  // no default de 5" de sempre — mantém compatibilidade com qualquer uso que
+  // não tenha sido atualizado.
+  const ENV_CEILING_CLEARANCE_DEFAULT_M = 0.127; // 5"
   // Pedido do usuário, 2026-07-16 ("subir a linha trasejada em 5inches"):
   // depois de alinhar a linha tracejada com a régua de altura MÁXIMA
   // (ceilingMaxHeightMm() em portal.js, que desconta o rodapé), o usuário
@@ -1270,13 +1433,41 @@ const Viewer3D = (function () {
   // Redesenhada a cada update(), dimensionada pro módulo atual: as linhas
   // correm bem além do móvel pros dois lados (mesma regra de margem da
   // Composição), mostrando que não tem nada encostado.
+  //
+  // Pedido do usuário (2026-07-26, editando um módulo de Projeto: "gostaria
+  // de ver o final das paredes, conforme medidas delas") — antes a linha
+  // sempre usava uma margem GENÉRICA (proporcional à largura do módulo, sem
+  // nenhuma relação com a parede de verdade — ficava parecendo que o chão/
+  // teto continuavam pra sempre). Quando o chamador conhece a largura REAL
+  // da parede (cfg.wallWidthM, só a aba Projetos tem esse dado — ver
+  // viewerRoomEnvConfig em portal.js), a linha termina exatamente nos
+  // cantos verdadeiros e ganha um traço vertical em cada ponta (chão até o
+  // teto) marcando visualmente "aqui a parede acaba", não um corte
+  // arbitrário de tela. cfg.moduleOffsetFromLeftM (distância do canto
+  // esquerdo até a borda esquerda DESTE módulo, se o slot já existir)
+  // posiciona o módulo no ponto certo dentro da parede; sem isso (módulo
+  // novo, ainda sem posição salva), cai pra centralizado. Sem wallWidthM
+  // nenhum (Composição/"Novo Orçamento" — não tem conceito de parede),
+  // comportamento 100% igual a antes (margem genérica).
   function rebuildRoomEnv(W, D) {
     disposeRoomEnv();
     if (!roomEnvConfig || !scene) return;
     const cfg = roomEnvConfig;
     const group = new THREE.Group();
-    const margin = Math.max(W * 0.35, 0.9);
-    const wallW = W + margin * 2;
+    const hasRealWall = cfg.wallWidthM > 0;
+    let wallLeftX, wallRightX;
+    if (hasRealWall) {
+      const offsetFromLeftM = (typeof cfg.moduleOffsetFromLeftM === 'number')
+        ? cfg.moduleOffsetFromLeftM
+        : Math.max((cfg.wallWidthM - W) / 2, 0);
+      wallLeftX = -W / 2 - offsetFromLeftM;
+      wallRightX = wallLeftX + cfg.wallWidthM;
+    } else {
+      const margin = Math.max(W * 0.35, 0.9);
+      wallLeftX = -W / 2 - margin;
+      wallRightX = W / 2 + margin;
+    }
+    const wallWFull = wallRightX - wallLeftX;
     const ceilingH = cfg.ceiling_m;
     const baseH = cfg.baseboard_h_m || 0;
     // Plano da "parede" — CORREÇÃO (2026-07-15, pedido do usuário: módulos
@@ -1291,14 +1482,14 @@ const Viewer3D = (function () {
     const z = -((D || 0) / 2);
 
     // Linha do chão (sólida) + baseboard (tracejada cinza).
-    group.add(makeEnvLine(new THREE.Vector3(-wallW / 2, 0, z), new THREE.Vector3(wallW / 2, 0, z), false, 0x8a8378));
+    group.add(makeEnvLine(new THREE.Vector3(wallLeftX, 0, z), new THREE.Vector3(wallRightX, 0, z), false, 0x8a8378));
     if (baseH > 0) {
-      group.add(makeEnvLine(new THREE.Vector3(-wallW / 2, baseH, z), new THREE.Vector3(wallW / 2, baseH, z), true, 0x8a8378));
+      group.add(makeEnvLine(new THREE.Vector3(wallLeftX, baseH, z), new THREE.Vector3(wallRightX, baseH, z), true, 0x8a8378));
     }
 
     // Linha do teto (sólida) + rótulo, e tracejada vermelha da altura máx.
     if (ceilingH > 0) {
-      group.add(makeEnvLine(new THREE.Vector3(-wallW / 2, ceilingH, z), new THREE.Vector3(wallW / 2, ceilingH, z), false, 0x8a8378));
+      group.add(makeEnvLine(new THREE.Vector3(wallLeftX, ceilingH, z), new THREE.Vector3(wallRightX, ceilingH, z), false, 0x8a8378));
       if (cfg.ceilingLabel) {
         const label = makeEnvTextSprite(cfg.ceilingLabel);
         label.position.set(0, ceilingH + 0.11, z + 0.05);
@@ -1316,12 +1507,21 @@ const Viewer3D = (function () {
       // + MAX_HEIGHT_LINE_RAISE_M: pedido do usuário logo depois ("subir a
       // linha trasejada em 5inches") — só a linha sobe, a régua de altura
       // continua com o mesmo máximo de antes.
-      const maxY = ceilingH - ENV_CEILING_CLEARANCE_M - baseH + MAX_HEIGHT_LINE_RAISE_M;
-      group.add(makeEnvLine(new THREE.Vector3(-wallW / 2, maxY, z), new THREE.Vector3(wallW / 2, maxY, z), true, 0xb0503c));
+      const clearanceM = (typeof cfg.ceilingClearanceM === 'number') ? cfg.ceilingClearanceM : ENV_CEILING_CLEARANCE_DEFAULT_M;
+      const maxY = ceilingH - clearanceM - baseH + MAX_HEIGHT_LINE_RAISE_M;
+      group.add(makeEnvLine(new THREE.Vector3(wallLeftX, maxY, z), new THREE.Vector3(wallRightX, maxY, z), true, 0xb0503c));
       if (cfg.maxHeightLabel) {
         const label = makeEnvTextSprite(cfg.maxHeightLabel);
-        label.position.set(wallW * 0.25, maxY - 0.11, z + 0.06);
+        label.position.set(wallWFull * 0.25, maxY - 0.11, z + 0.06);
         group.add(label);
+      }
+      // Traço vertical (chão até o teto) em cada ponta — só quando a largura
+      // é REAL (hasRealWall), marcando o canto de verdade da parede. Sem
+      // isso a linha simplesmente "acaba no ar" e não fica claro que ali é
+      // o fim da parede, não um corte arbitrário.
+      if (hasRealWall) {
+        group.add(makeEnvLine(new THREE.Vector3(wallLeftX, 0, z), new THREE.Vector3(wallLeftX, ceilingH, z), false, 0x8a8378));
+        group.add(makeEnvLine(new THREE.Vector3(wallRightX, 0, z), new THREE.Vector3(wallRightX, ceilingH, z), false, 0x8a8378));
       }
     }
 

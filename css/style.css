@@ -237,6 +237,108 @@ th { color: var(--muted); font-weight: 600; }
    portal.js), ao lado do rótulo do papel de cor ("Cor — Caixa: Preto"). */
 .color-role-selected-name { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
 
+/* Botão de cor do Plano de Corte (substitui o <select> nativo — pedido do
+   usuário 2026-07-29: "quadrado pequeno do lado mostrando a cor", <option>
+   não aceita HTML/imagem dentro, então virou botão+popup como o de
+   order-detail). Popup é position:absolute pra não empurrar o resto da
+   linha da tabela (linhas de outras colunas ficariam com altura extra). */
+.cl-color-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-top: 0;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 130px;
+  max-width: 150px;
+  text-align: left;
+  color: var(--text);
+}
+.cl-color-btn:hover { border-color: var(--accent); }
+/* Alinhamento da barra de aplicar-em-massa do Plano de Corte (pedido do
+   usuário 2026-07-31: "alinha melhor") — o <button> global tem
+   margin-top:14px, então os botões "Aplicar..." ficavam mais baixos que os
+   <select>/<input> ao lado mesmo com align-items:center no wrap. Zera
+   margem e unifica padding/altura de todo filho direto marcado. */
+.po-cutlist-bulk-toolbar .cl-bulk-field {
+  margin-top: 0;
+  box-sizing: border-box;
+  height: 34px;
+}
+.po-cutlist-bulk-toolbar button.cl-bulk-field { padding: 0 12px; font-size: 13px; }
+.po-cutlist-bulk-toolbar select.cl-bulk-field,
+.po-cutlist-bulk-toolbar input.cl-bulk-field { padding: 0 10px; }
+.cl-color-dot {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.cl-color-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Popup singleton, position:fixed, anexado no <body> (não filho da célula/
+   tabela) — pedido do usuário 2026-07-29: o popup antigo (filho da célula)
+   ficava cortado pelo overflow-x:auto de #po-cutlist-table-wrap. */
+.cl-color-popup-fixed {
+  position: fixed;
+  z-index: 500;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+  width: 220px;
+}
+/* Campo de busca (pedido do usuário 2026-07-31: "quero poder digitar as
+   primeiras letras e puxar as cores conforme escrevo") — FORA do wrap que
+   rola (.cl-color-list-wrap abaixo), fica sempre visível/fixo no topo do
+   popup mesmo rolando a lista. */
+.cl-color-search-input {
+  display: block;
+  margin: 2px 2px 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  width: calc(100% - 12px);
+}
+/* Só o WRAP da lista rola (antes era o popup inteiro, ver bug corrigido em
+   getCutlistColorPopupEl — scroll dentro do popup fechava ele por engano) —
+   max-height um pouco menor que os 320px de antes pra sobrar espaço pro
+   campo de busca acima sem estourar a tela. */
+.cl-color-list-wrap {
+  max-height: 280px;
+  overflow-y: auto;
+}
+/* Lista vertical (não grade) com nome sempre visível em texto — pedido do
+   usuário 2026-07-29 ("quero em lista como antes mas com o icone na frente"),
+   diferente do padrão .color-swatch (grade de ícones, nome só em tooltip)
+   usado no resto do app. */
+.cl-color-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.cl-color-list-item:hover { background: var(--border); }
+.cl-color-list-item.selected { background: #fbf3ec; font-weight: 600; }
+
+/* Destaque de vermelho de verdade nos campos inválidos do Plano de Corte —
+   pedido do usuário 2026-07-29 ("a mensagem nao esta clara do que esta
+   faltando"): o aviso já dizia "corrija as linhas em vermelho" há tempos,
+   mas nada realmente ficava vermelho. Ver getCutlistRowIssues/
+   refreshCutlistRowHighlight em portal.js. */
+.cl-field-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 1px var(--danger); }
+
 .dim-field { margin-top: 16px; }
 .dim-field:first-child { margin-top: 0; }
 .dim-field label { display: block; margin-bottom: 4px; }
@@ -775,21 +877,74 @@ body.admin-page {
   background: #fff;
 }
 .po-order-item-image-empty { background: var(--bg); }
+/* Código de referência (SKU) grande ao lado do ícone do módulo — pedido do
+   usuário (2026-07-29): "quando tiver referencia cadastrada quero ela bem
+   grande no lado do icone do modulo". Só aparece quando
+   findMatchingSkuReference (portal.js) acha um código cadastrado batendo com
+   a largura/altura do item — sem código, este bloco nem entra no HTML. */
+.po-order-item-sku-code {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: .01em;
+}
 .po-order-item-info { flex: 1; min-width: 0; }
-.po-order-item-dims { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.po-order-item-reference { font-size: 17px; font-weight: 700; color: var(--text); margin-top: 6px; }
-.po-order-item-description { color: var(--muted); font-size: 13px; margin-top: 2px; }
-.po-order-item-colors { margin-top: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
-.po-order-item-colors span { display: flex; align-items: center; gap: 8px; }
-/* "Bolinha" de cor (pedido do usuário 2026-07-19) — círculo pequeno com a
-   cor/textura de verdade da chapa escolhida, ao lado do nome do papel. */
+/* Pedido do usuário 2026-07-29: "deixa as informacoes do produto maiores,
+   tem espaco" — o card tinha bastante largura livre à direita da imagem
+   (.po-order-item-info é flex:1), texto pequeno demais pra ela. Aumentado
+   em toda a coluna de informações (medidas/nome/descrição/cores). */
+.po-order-item-dims { color: var(--muted); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.po-order-item-reference { font-size: 22px; font-weight: 700; color: var(--text); margin-top: 8px; }
+.po-order-item-description { color: var(--muted); font-size: 15px; margin-top: 4px; }
+.po-order-item-colors { margin-top: 12px; font-size: 15px; display: flex; flex-direction: column; gap: 8px; }
+/* Cada linha de cor virou um BOTÃO clicável (pedido do usuário 2026-07-29:
+   "quero uma opcao de trocar a cor por modulo tambem") — reset de aparência
+   de botão nativo, mantendo o mesmo layout de antes (bolinha + texto), só
+   que agora abre um seletor de cor SÓ deste item (ver
+   toggleOrderItemColorPicker/applyColorToSingleOrderItem em portal.js;
+   diferente do painel de abas no topo, que troca em todos os itens de uma
+   vez). */
+.po-order-item-color-line { display: flex; flex-direction: column; align-items: flex-start; }
+.po-order-item-color-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  margin-top: 0;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.po-order-item-color-btn:hover:not(:disabled) { color: var(--accent-dark); text-decoration: underline; }
+.po-order-item-color-btn:disabled { cursor: default; color: var(--text); }
+.po-order-item-color-picker {
+  margin: 4px 0 2px 24px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+/* Preview da cor/textura escolhida, ao lado do nome do papel — pedido do
+   usuário 2026-07-19 (era só uma "bolinha") e 2026-07-29 (era um círculo
+   pequeno de 20px): "quero a imagem escolhida em cada modulo bem maior, hoje
+   ela ta pequena circular e cinza" — trocado de círculo pra quadrado
+   arredondado bem maior (44px), mesma linguagem visual dos swatches do
+   seletor de cor (.color-swatch img/.swatch-fallback, 36px), só um pouco
+   maior ainda pra ficar em destaque na tela do pedido. */
 .po-order-item-color-dot {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   display: inline-block;
+  object-fit: cover;
 }
 .po-order-item-actions {
   flex-shrink: 0;
@@ -799,8 +954,14 @@ body.admin-page {
   gap: 10px;
   min-width: 110px;
 }
-.po-order-item-unit-price { font-size: 18px; font-weight: 700; color: var(--accent-dark); }
-.po-order-item-edit-btn { margin-top: 0; font-size: 12px; padding: 6px 14px; }
+.po-order-item-unit-price { font-size: 22px; font-weight: 700; color: var(--accent-dark); }
+.po-order-item-edit-btn { margin-top: 0; font-size: 13px; padding: 7px 16px; }
+/* Quantidade editável (pedido do usuário 2026-07-29: "quero opcao de
+   quantidade, pode ser alterada e salvar alteracao. muda preco."; campo
+   aumentado no mesmo dia, feedback seguinte: "quero quantidade maior") — ver
+   updateOrderItemQuantity em portal.js. */
+.po-order-item-qty-row { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); }
+.po-order-item-qty-input { width: 72px; padding: 8px 6px; margin-top: 0; text-align: center; font-size: 18px; font-weight: 700; }
 
 .po-order-detail-footer { margin-top: 8px; }
 .po-order-detail-total-row {
@@ -884,12 +1045,15 @@ body.admin-page {
   cursor: pointer;
 }
 /* Linha de medidas padrão — mesmo clique do nome/desenho, abre a
-   configuração completa. */
+   configuração completa. Escondida a pedido do usuário (2026-07-25): nos
+   cards do catálogo, mostrar só ícone + nome, sem as medidas. Reversível:
+   só tirar o display:none. */
 .po-module-card .po-module-card-dims {
   margin-top: 2px;
   font-size: 11px;
   color: var(--muted);
   cursor: pointer;
+  display: none;
 }
 .po-module-gallery-empty {
   color: var(--muted);
@@ -1251,7 +1415,7 @@ header.po-topnav {
 .po-module-card .po-module-card-image-wrap svg,
 .po-module-card .po-module-card-image-wrap .po-module-card-image { height: 130px; }
 .po-module-card .po-module-card-name { color: var(--text); font-size: 13px; }
-.po-module-card .po-module-card-dims { color: var(--muted); }
+.po-module-card .po-module-card-dims { color: var(--muted); display: none; }
 .po-module-card-quickadd { margin-top: 10px; }
 .po-quickadd-qty { border-radius: 6px; }
 .po-quickadd-btn {
@@ -1263,6 +1427,23 @@ header.po-topnav {
 }
 .po-quickadd-btn:hover { background: #000; }
 .po-quickadd-btn.secondary { background: var(--text); color: #fff; border: none; }
+
+/* Dropdown de referência (SKU) abaixo do card do catálogo — pedido do
+   usuário 2026-07-29, ver renderModuleGallery/addModuleToCartWithSku em
+   portal.js. Só existe quando o módulo tem referência cadastrada (largura +
+   altura com o mesmo código); selecionar uma opção já insere no carrinho,
+   sem botão. */
+.po-module-card-sku { margin-top: 8px; }
+.po-module-card-sku-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
 
 /* Modo lista — mesma galeria, card vira linha horizontal. */
 .po-module-gallery.po-view-list { grid-template-columns: 1fr; }
@@ -1279,6 +1460,7 @@ header.po-topnav {
 }
 .po-module-gallery.po-view-list .po-module-card-body { flex: 1; min-width: 0; }
 .po-module-gallery.po-view-list .po-module-card-quickadd { margin-top: 0; flex-shrink: 0; width: 220px; }
+.po-module-gallery.po-view-list .po-module-card-sku { margin-top: 0; flex-shrink: 0; width: 200px; }
 .po-module-gallery.po-view-list .po-quickadd-error { flex-basis: 100%; order: 99; }
 
 /* ---------- Carrinho lateral fixo ("Seu Pedido") ---------- */
@@ -1686,6 +1868,29 @@ header.po-topnav {
   background: #fff;
 }
 #po-comp-side-color-panel label { display: block; font-weight: 600; margin-bottom: 2px; }
+/* Mesmo painel de troca rápida de cor (abas por papel de cor), só que na
+   tela do pedido (#po-order-detail-color-panel) não tem canvas 3D ao lado
+   pra dividir espaço com — ocupa a largura toda, acima da lista de itens. */
+.po-order-detail-save-info-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+.po-order-detail-save-info-row button { margin-top: 0; }
+.po-order-detail-color-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  margin: 12px 0;
+}
+.po-order-detail-color-panel label { display: block; font-weight: 600; margin-bottom: 2px; }
+/* "Processando" (pedido do usuário 2026-07-29: "talvez uma janela de
+   carregamento mostrando que esta processando ate finalizar") — desabilita
+   visualmente as abas/swatches enquanto applyPendingColorChangesToOrderItems
+   roda, pra não deixar clicar de novo no meio do processamento. */
+.po-order-detail-color-panel-busy #po-order-detail-color-tabs,
+.po-order-detail-color-panel-busy #po-order-detail-color-swatches {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.po-order-detail-color-panel-busy { cursor: progress; }
 /* Abas do painel de troca rápida de cor (pedido do usuário, 2026-07-16:
    "pode fazer por abas pra nao ocupar muito espaco na tela") — mesmo visual
    de chip de .dim-preset-chip, só com estado .active (mesma cor sólida de
@@ -1947,6 +2152,28 @@ header.po-topnav {
   margin: 10px 0 4px;
 }
 .po-proj-wall-width-field { max-width: 220px; }
+
+/* Forma da parede (simples/dupla/C-U, pedido do usuário 2026-07-25) — mesmo
+   estilo visual do toggle Frontal/Superior (.po-view-toggle), só que com um
+   rótulo antes. Abas de parede (só aparecem com 2-3 paredes, ver
+   refreshProjectWallTabs em portal.js) usam um estilo mais discreto de
+   pill, pra não competir visualmente com o toggle de forma logo acima. */
+.po-proj-wall-shape-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 10px 0 0;
+}
+.po-proj-wall-shape-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.po-proj-wall-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 6px 0 0;
+}
+.po-proj-wall-tab-btn {
+  background: var(--panel); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px;
+  margin: 0; padding: 4px 12px; font-size: 12px; font-weight: 600;
+}
+.po-proj-wall-tab-btn:hover { background: var(--accent-light); }
+.po-proj-wall-tab-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
 .po-proj-layout {
   display: grid;
   /* Colunas ajustáveis (pedido do usuário, 2026-07-21) — largura em
@@ -1980,8 +2207,11 @@ header.po-topnav {
   border: 1px solid var(--border); border-radius: 10px; padding: 10px;
   background: var(--panel); max-height: 640px; overflow-y: auto;
 }
-.po-proj-library-search input {
-  width: 100%; margin-bottom: 8px;
+.po-proj-library-search {
+  margin-bottom: 8px;
+}
+.po-proj-library-search button {
+  width: 100%; margin-top: 0;
 }
 .po-proj-library-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
@@ -1994,12 +2224,46 @@ header.po-topnav {
 }
 .po-proj-library-card:hover { border-color: var(--accent); background: #fbf3ec; }
 .po-proj-library-card:active { cursor: grabbing; }
-.po-proj-library-card svg, .po-proj-library-card .po-module-card-image { width: 100%; height: 44px; display: block; pointer-events: none; }
+.po-proj-library-card svg, .po-proj-library-card .po-module-card-image { width: 100%; height: 56px; display: block; pointer-events: none; object-fit: contain; }
 .po-proj-library-card-name { font-weight: 600; margin-top: 4px; line-height: 1.2; }
-.po-proj-library-card-dims { color: var(--muted); margin-top: 2px; }
+.po-proj-library-card-dims { color: var(--muted); margin-top: 2px; display: none; }
 .po-proj-library-empty { grid-column: 1 / -1; color: var(--muted); font-size: 12px; text-align: center; padding: 12px 0; }
 
+/* Modal de busca de módulos (botão "Buscar" da aba Projetos, pedido do
+   usuário 2026-07-23) — mesmo padrão de overlay do #po-auth-section
+   (fixed/inset:0/z-index alto, escondido por padrão, classe .open abre),
+   só com um card bem mais largo pra caber as 3 camadas + grade de módulos. */
+#po-proj-search-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+#po-proj-search-modal.open { display: flex; }
+/* Pedido do usuário (2026-07-23): "a tela muda de tamanho conforme os
+   modulos que tem disponivel. quero deixar ela fixa sempre. maior possivel.
+   arrastando pra baixo se tiver mais do que a tela" — card com ALTURA FIXA
+   (não mais max-height que encolhia com poucos resultados), maior possível
+   dentro da viewport; só a GRADE de módulos rola por dentro quando não cabe
+   (título/filtros ficam sempre visíveis, fixos no topo). */
+.po-proj-search-modal-card {
+  background: var(--panel); border-radius: 12px; padding: 24px;
+  width: 960px; max-width: 100%; height: 85vh; max-height: 85vh;
+  display: flex; flex-direction: column;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.po-proj-search-modal-card > h2 { flex: none; }
+.po-proj-search-modal-filters {
+  display: flex; flex-direction: column; gap: 6px; margin: 10px 0 16px;
+  flex: none;
+}
+.po-proj-search-modal-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px; align-content: start;
+  flex: 1 1 auto; overflow-y: auto; min-height: 0;
+}
+
 .po-proj-canvas-outer { min-width: 0; }
+.po-proj-view-toggle { margin: 0 auto 4px; width: fit-content; }
 /* Pedido do usuário (3ª rodada): "tem muita borda lá em cima só com umas
    coisas escritas que ninguém vai ler" — bem discreto, quase um detalhe. */
 .po-proj-canvas-scale-label {
@@ -2014,10 +2278,11 @@ header.po-topnav {
   background-image: linear-gradient(#e9e4d8 1px, transparent 1px), linear-gradient(90deg, #e9e4d8 1px, transparent 1px);
   background-size: 40px 40px;
   flex: none; /* largura/altura setadas via JS em px, escala real da parede */
+  overflow: hidden; /* trava o traçado fantasma (.po-proj-ghost-slot) dentro do canvas */
 }
 .po-proj-canvas-baseboard {
   position: absolute; left: 0; right: 0; bottom: 0;
-  background: repeating-linear-gradient(135deg, #c9c2b2, #c9c2b2 6px, #bdb5a2 6px, #bdb5a2 12px);
+  background: #fff;
   border-top: 1px solid #a89f8a;
   pointer-events: none;
 }
@@ -2027,6 +2292,110 @@ header.po-topnav {
   pointer-events: none;
 }
 .po-proj-empty-hint { margin-top: 6px; text-align: center; }
+
+/* Vista de cima (pedido do usuário 2026-07-24) — parede desenhada como uma
+   linha grossa no TOPO do canvas (y=0), profundidade cresce pra baixo. Só
+   leitura: sem cursor de arraste, borda tracejada pra deixar claro que é uma
+   aproximação (a profundidade real vem de z_order + depth_mm, ver
+   computeProjectSlotsTopViewLayout em portal.js), não uma posição travada. */
+.po-proj-canvas-top-wall-line {
+  position: absolute; left: 0; right: 0; top: 0; height: 4px;
+  background: #a89f8a; pointer-events: none; z-index: 5;
+}
+/* Paredes de retorno (forma dupla/C-U, pedido do usuário 2026-07-25) — linha
+   vertical em cada ponta da parede principal, mesmo estilo/espessura da
+   horizontal acima, só girada 90°. Altura setada via JS (renderProjectCanvasTop,
+   proporcional à largura de verdade daquela parede lateral). */
+.po-proj-canvas-top-wall-line-side {
+  position: absolute; top: 0; width: 4px;
+  background: #a89f8a; pointer-events: none; z-index: 5;
+}
+.po-proj-canvas-top-wall-line-left { left: 0; }
+.po-proj-canvas-top-wall-line-right { right: 0; }
+.po-proj-slot-top {
+  cursor: pointer; border-style: dashed;
+}
+.po-proj-slot-top:active { cursor: pointer; }
+#po-proj-top-view-hint { margin-top: 6px; text-align: center; }
+
+/* Mini Vista Superior fixa ao lado da Frontal (pedido do usuário,
+   2026-07-26) — reaproveita a mesma geometria de computeProjectWallTopViewPlacements,
+   só desenhada bem menor e com escala LOCAL própria (renderProjectMiniTopView
+   em portal.js não mexe na variável global projectPxPerMm, que a Frontal
+   grande usa pro cálculo de arrastar/esticar — ver comentário lá). */
+.po-proj-canvas-row { display: flex; gap: 14px; align-items: flex-start; }
+.po-proj-canvas-row .po-proj-canvas-wrap { flex: 1 1 auto; min-width: 0; }
+.po-proj-mini-top-wrap {
+  flex: none; width: 190px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); padding: 8px;
+}
+.po-proj-mini-top-title {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-align: center; margin-bottom: 6px;
+}
+.po-proj-mini-top-canvas-wrap {
+  display: flex; justify-content: center; overflow: auto; max-height: 280px;
+}
+.po-proj-mini-top-canvas {
+  position: relative; background: #f8f6f1; flex: none;
+}
+.po-proj-mini-top-hint {
+  font-size: 9px; color: var(--muted); opacity: 0.7;
+  text-align: center; margin: 6px 0 0;
+}
+/* Faixa clicável por parede (atrás dos módulos) — destaca qual trecho da
+   planta corresponde à parede ATIVA na Frontal ao lado, e clicar em
+   qualquer parede troca a ativa (mesma função das abas em cima do canvas,
+   setProjectActiveWallIndex). */
+.po-proj-mini-wall-zone {
+  position: absolute; cursor: pointer; z-index: 2; transition: background 0.15s;
+}
+.po-proj-mini-wall-zone:hover { background: rgba(0,0,0,0.06); }
+.po-proj-mini-wall-zone.active { background: var(--accent-light); }
+.po-proj-mini-slot {
+  position: absolute; box-sizing: border-box; z-index: 6; cursor: pointer;
+  border: 1px solid rgba(0,0,0,0.28); border-radius: 2px;
+}
+.po-proj-mini-slot.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+/* Traçado fantasma dos módulos da parede VIZINHA perto da esquina, dentro do
+   canvas da Frontal (pedido do usuário 2026-07-26, ver renderProjectCanvasFront
+   em portal.js) — hachurado tracejado pra ficar claramente diferente dos
+   módulos de VERDADE desta parede (.po-proj-slot), z-index baixo pra ficar
+   atrás de qualquer módulo real que esteja no mesmo lugar. Clicável (troca
+   de parede + seleciona), mas não arrastável/redimensionável — pertence a
+   outro plano/parede. */
+.po-proj-ghost-slot {
+  position: absolute; box-sizing: border-box; z-index: 2;
+  border: 1px dashed var(--muted);
+  background: repeating-linear-gradient(45deg, rgba(0,0,0,0.05), rgba(0,0,0,0.05) 4px, rgba(0,0,0,0.1) 4px, rgba(0,0,0,0.1) 8px);
+  cursor: pointer;
+}
+.po-proj-ghost-slot:hover { border-color: var(--accent); }
+
+/* Vista de Canto 3D interativa (paredes L/C-U — pedido do usuário
+   2026-07-26). 1ª versão usava uma "dobra" de CSS 3D (perspective+rotateY)
+   que saiu QUEBRADA (parede vizinha virava uma fatia torta) — descartada
+   por completo, substituída por uma cena Three.js de verdade (ver
+   renderProjectCanvasFrontCorner/ViewerProjectEdit em portal.js,
+   #po-proj-canvas-3d-edit-wrap em portal.html). Módulo de parede vizinha
+   dobrada (buildProjectWallPaneDom, interactive=false) continua clicável
+   sem cursor de arraste — usado só pela vista Frontal de 1 parede agora
+   (nunca mais numa parede "dobrada" de verdade). */
+.po-proj-slot-readonly { cursor: pointer; }
+.po-proj-slot-readonly:active { cursor: pointer; }
+
+#po-proj-canvas-3d-edit-wrap { width: 100%; }
+#po-proj-canvas-3d-edit {
+  width: 100%;
+  height: 520px;
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+#po-proj-canvas-3d-edit canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 
 /* Setas de esticar a parede (pedido do usuário, 2026-07-21: "uma setinha na
    parede pra esticar ela pro lado direito e esquerdo") — mesma ideia dos
@@ -2122,8 +2491,16 @@ header.po-topnav {
       da direita virou editor de verdade (steppers de medida + cor), não só
       um resumo. */
 .po-proj-library-filters { margin: 6px 0 4px; }
-.po-proj-library-filters .po-tabbar { gap: 3px; margin-top: 3px; }
-.po-proj-library-filters .po-tab-pill { font-size: 10px; padding: 2px 7px; }
+.po-proj-library-filter-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+}
+.po-proj-library-filter-select + .po-proj-library-filter-select { margin-top: 6px; }
 
 #po-tab-projects .po-comp-title-row { margin-bottom: 2px; }
 #po-tab-projects .po-proj-wall-settings { margin: 4px 0 2px; gap: 10px; }

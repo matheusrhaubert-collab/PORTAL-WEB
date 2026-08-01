@@ -38,6 +38,10 @@ create table if not exists families (
   id uuid primary key default uuid_generate_v4(),
   name text not null unique,
   active boolean not null default true,
+  -- Ordem de exibição escolhida pelo admin (setas ▲▼ na tela de Taxonomia,
+  -- ver migration_057) — menor valor aparece primeiro nas abas do portal.
+  -- A aba "Todas" fica sempre fixa no fim, independente disso.
+  sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
 
@@ -45,6 +49,7 @@ create table if not exists categories (
   id uuid primary key default uuid_generate_v4(),
   name text not null unique,
   active boolean not null default true,
+  sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
 
@@ -52,6 +57,7 @@ create table if not exists subcategories (
   id uuid primary key default uuid_generate_v4(),
   name text not null unique,
   active boolean not null default true,
+  sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
 

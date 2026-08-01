@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>Legno — Painel Admin</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="css/style.css?v=20260721a" />
+<link rel="stylesheet" href="css/style.css?v=20260731a" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -65,7 +65,7 @@
     <h2>Cores / Materiais</h2>
     <div id="colors-error" class="error" style="display:none;"></div>
     <table>
-      <thead><tr><th>Textura</th><th>Nome</th><th>Chapa (m²)</th><th>Fita (m)</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Textura</th><th>Nome</th><th>Chapa (m²)</th><th>Fita (m)</th><th>Tamanho de chapa</th><th>Status</th><th></th></tr></thead>
       <tbody id="colors-tbody"></tbody>
     </table>
 
@@ -84,8 +84,49 @@
       <label>Cor sólida de referência</label>
       <p class="hint">Usada no visualizador 3D e no swatch quando esta cor não tem textura cadastrada.</p>
       <input id="color-swatch-hex" type="color" style="width:60px;padding:2px;" />
+      <!-- Tamanho de chapa padrão (migration 063) — usado pelo "Gerar Plano de
+           Corte" do Contractor pra saber automaticamente em qual chapa
+           encaixar as peças desta cor/material. Cor sem tamanho vinculado
+           ("— nenhum —") obriga o Contractor a escolher na hora. -->
+      <!-- STOCK IN HOUSE (migration 064, renomeado de "usa retalhos") — cor
+           que não vem de chapa nova comprada, já fica em estoque/sobra.
+           "Quantas chapas comprar" e "quantos metros de fita" não fazem
+           sentido pra ela — só o preço importa (ver renderCutlistPlanResults
+           em js/portal.js). Marcado, esconde o select de tamanho de chapa
+           (não tem por quê escolher um tamanho que nunca vai ser usado). -->
+      <label><input type="checkbox" id="color-stock-in-house" style="width:auto;display:inline-block;" /> STOCK IN HOUSE</label>
+      <p class="hint">Material que já fica em estoque (sobra/retalho) — o Plano de Corte não mostra chapas nem fita pra ela, só o preço.</p>
+      <div id="color-sheet-size-field">
+        <label>Tamanho de chapa padrão (Plano de Corte)</label>
+        <p class="hint">Cadastre os tamanhos disponíveis logo abaixo. Sem um tamanho vinculado, o Contractor escolhe manualmente ao gerar o plano de corte.</p>
+        <select id="color-default-sheet-size"><option value="">— nenhum (cliente escolhe) —</option></select>
+      </div>
       <label><input type="checkbox" id="color-active" style="width:auto;display:inline-block;" /> Ativa</label>
       <button type="submit">Salvar cor</button>
+    </form>
+  </section>
+
+  <!-- TAMANHOS DE CHAPA (migration 063) — padrões reutilizáveis (ex: "EGGER
+       5X9", "GUARARAPES 6X9", "STANDARD 8X4") vinculados por cor acima e
+       usados pelo nesting do "Gerar Plano de Corte" no portal. -->
+  <section class="panel">
+    <h2>Tamanhos de Chapa</h2>
+    <p class="hint">Padrões de chapa (largura x altura + kerf da serra) usados pra encaixar as peças do Plano de Corte. Vincule cada cor/material a um tamanho acima.</p>
+    <div id="sheet-sizes-error" class="error" style="display:none;"></div>
+    <table>
+      <thead><tr><th>Nome</th><th>Largura (mm)</th><th>Altura (mm)</th><th>Kerf (mm)</th><th>Status</th><th></th></tr></thead>
+      <tbody id="sheet-sizes-tbody"></tbody>
+    </table>
+    <form id="sheet-size-form">
+      <input type="hidden" id="sheet-size-id" />
+      <div class="row">
+        <div><label>Nome (ex: EGGER 5X9)</label><input id="sheet-size-name" required /></div>
+        <div><label>Largura (mm)</label><input id="sheet-size-width" type="number" step="1" min="1" required /></div>
+        <div><label>Altura (mm)</label><input id="sheet-size-height" type="number" step="1" min="1" required /></div>
+        <div><label>Kerf (mm)</label><input id="sheet-size-kerf" type="number" step="0.5" min="0" value="4" required /></div>
+      </div>
+      <label><input type="checkbox" id="sheet-size-active" checked style="width:auto;display:inline-block;" /> Ativo</label>
+      <button type="submit">Salvar tamanho</button>
     </form>
   </section>
 
@@ -331,6 +372,63 @@
         o módulo (ex: <code>W+40</code>, <code>D+40</code>) pra simular o "beiral" por cima.
       </p>
 
+      <!-- Formato (migration 062, pedido do usuário: "cabide tubular oval")
+           — SÓ decide a GEOMETRIA desenhada no 3D (caixa ou tubo oval),
+           independente da Posição acima (que continua decidindo onde/como a
+           peça é posicionada). Hoje só tem efeito de verdade quando a
+           Posição é "Peça livre" — as outras posições continuam desenhando
+           caixa normalmente mesmo se "Cabide tubular oval" for escolhido por
+           engano (ver js/viewer3d.js placePieceInBox). -->
+      <label>Formato</label>
+      <p class="hint">
+        Só muda o DESENHO 3D, não o preço. "Cabide tubular oval" só funciona de verdade com Posição =
+        "Peça livre" (tubo com suportes nas pontas, comprimento = Fórmula largura, altura/profundidade
+        do tubo = Fórmula altura/profundidade). Preço do cabide: use Fórmula área M² = <code>0</code>
+        (não é chapa) e Fórmula fita = <code>w/1000</code> (comprimento do tubo em metros — cobra por
+        metro linear, mesmo mecanismo de preço/m da fita de borda; cadastre uma cor/acabamento
+        dedicada ao cabide, não uma cor de fita de borda de verdade); as "ponteiras"/suportes das
+        pontas entram no campo Mão de obra abaixo (cadastre um item tipo "Ponteiras cabide oval (par)"
+        com o preço das duas juntas).
+      </p>
+      <select id="component-shape-type">
+        <option value="box" selected>Caixa (padrão)</option>
+        <option value="oval_rod">Cabide tubular oval (tubo com suportes nas pontas)</option>
+      </select>
+
+      <!-- migration 065 — inclinação da peça (sapateira). Funciona em
+           qualquer Posição (ver js/viewer3d.js resolveContent) — em
+           "Prateleira" o pino/empilhamento automático continua igual, só a
+           caixa desenhada gira; em "Peça livre" a posição continua 100% pelo
+           Deslocar X/Y/Z, só o desenho gira. -->
+      <label>Inclinação (graus)</label>
+      <p class="hint">
+        Só muda o DESENHO 3D, não o preço nem a furação — a peça gira em torno do próprio centro,
+        sem afetar como ela é posicionada (funciona com Posição = "Prateleira", mantendo o pino/
+        empilhamento automático, ou "Peça livre", mantendo o Deslocar X/Y/Z manual). Positivo =
+        frente mais baixa que o fundo (sapateira, sapato com o bico pra frente/baixo). 0 = reta
+        (padrão).
+      </p>
+      <input type="number" id="component-tilt-angle" value="0" step="1" min="-60" max="60">
+
+      <!-- migration 067 — giro de canto (módulo em L, ex: closet virando a
+           esquina). SÓ tem efeito de verdade com Posição = "Peça livre"
+           (mesma ressalva do Formato acima) — troca largura<->profundidade
+           na hora de posicionar, sem mudar o desenho da peça em si, só
+           girando ela como corpo rígido. -->
+      <label>Giro (canto, graus)</label>
+      <p class="hint">
+        Só muda o DESENHO 3D e a POSIÇÃO (troca largura por profundidade), não o preço nem a
+        furação — só funciona de verdade com Posição = "Peça livre" (ex: 2 módulos iguais formando
+        um canto em L, um deles girado 90° encostado no outro, sem lateral entre eles). Nas outras
+        posições fica gravado mas sem efeito.
+      </p>
+      <select id="component-rotation-y">
+        <option value="0" selected>0° (reto)</option>
+        <option value="90">90°</option>
+        <option value="180">180°</option>
+        <option value="270">270°</option>
+      </select>
+
       <label>Lado da dobradiça</label>
       <p class="hint">Só relevante se a Posição for "Frente / porta". Define de que lado a porta gira no botão "Abrir portas" do 3D. Não afeta preço.</p>
       <select id="component-hinge-side">
@@ -530,6 +628,20 @@
         cliente e não vai pra produção — fora da lista de corte, de compra e da furação. O cliente vê
         o aviso "item decorativo" no portal. Ex: cama box, TV, eletrodomésticos)
       </label>
+      <!-- Afastamento do teto (migration 060, pedido do usuário 2026-07-29) —
+           antes era uma regra FIXA de 5" aplicada a TODO módulo no portal do
+           cliente (aba Projetos/configurador); agora é opt-in POR módulo:
+           sem marcar, o módulo pode ir até o teto (só o rodapé continua
+           descontado, sempre); marcando, trava a altura máxima do módulo a
+           esta distância mínima do teto. -->
+      <label>
+        <input type="checkbox" id="module-ceiling-clearance-enabled" style="width:auto;display:inline-block;" />
+        Exigir afastamento do teto (trava a altura máxima deste módulo pra não bater no teto — sem
+        marcar, o módulo pode ir até o teto, descontando só o rodapé como sempre)
+      </label>
+      <div class="row">
+        <div><label>Afastamento mínimo até o teto (mm)</label><input id="module-ceiling-clearance-mm" type="number" min="0" value="0" /></div>
+      </div>
       <button type="submit" id="module-submit-btn">Salvar novo módulo</button>
     </form>
   </section>
@@ -756,11 +868,24 @@
         <label>Margem (%)</label>
         <input id="pricing-margin-percent" type="number" step="0.01" min="0" required />
       </div>
+      <!-- Densidade (migration 061, pedido do usuário) — usada só pra
+           calcular o PESO estimado exibido pro cliente (volume x
+           densidade), junto do preço, no portal. Padrão 700 kg/m³
+           (aproximação de MDP/MDF cru). Mesmo formulário/linha da margem
+           (mesma tabela singleton pricing_settings), salvos juntos. -->
+      <div>
+        <label>Densidade do material (kg/m³)</label>
+        <input id="pricing-density-kg-m3" type="number" step="1" min="0" required />
+      </div>
       <div style="flex:0;">
         <button type="submit" style="margin-top:0;">Salvar margem</button>
       </div>
       <span id="pricing-settings-status" class="hint" style="margin-left:10px;"></span>
     </form>
+    <p class="hint">
+      Densidade: usada pra estimar o PESO (kg/lb) mostrado ao cliente junto com o preço e a metragem
+      cúbica (m³) de cada módulo/projeto/pedido — não afeta o preço.
+    </p>
     <p class="hint">
       Ex: 35 = o cliente paga custo + 35% (multiplicador 1.35). 0 = cliente paga o custo puro, sem margem.
     </p>
@@ -1169,9 +1294,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/pricing.js"></script>
-<script src="js/viewer3d.js?v=20260721a"></script>
+<script src="js/viewer3d.js?v=20260801a"></script>
 <script src="js/drilling.js?v=20260720a"></script>
-<script src="js/admin.js?v=20260720c"></script>
+<script src="js/admin.js?v=20260801a"></script>
 <script>
 // Troca de aba do painel admin — puramente visual (mostra/esconde
 // .admin-tab-page), não interfere em nenhuma lógica de carregar/salvar

@@ -5,6 +5,7 @@
 // tela).
 
 let colorsCache = [];
+let sheetSizesCache = []; // tamanhos de chapa (migration 063) — usados pelo select "Tamanho de chapa padrão" no form de cor
 let modulesCache = [];
 let selectedModuleId = null;
 let componentsCache = [];       // biblioteca global de componentes
@@ -46,21 +47,53 @@ function setupLookupCRUD(opts) {
   const errorElId = opts.errorElId || 'taxonomy-error';
 
   async function load() {
-    const { data, error } = await supabaseClient.from(table).select('*').order('name');
+    let { data, error } = await supabaseClient.from(table).select('*').order('sort_order').order('name');
+    // Fallback pra quem ainda não rodou migration_057 (sort_order pode não
+    // existir ainda nessa tabela) — sem isso o order('sort_order') falha e
+    // a lista inteira vem vazia, não só desordenada. Ver mesmo comentário em
+    // portal.js loadTaxonomyFilters.
+    if (error) {
+      ({ data, error } = await supabaseClient.from(table).select('*').order('name'));
+    }
     if (error) { showError(errorElId, error); return; }
     cacheSetter(data);
     render(data);
     if (onLoaded) onLoaded(data);
   }
 
+  // Setas ▲▼ pra reordenar — mesma ideia de moveColor (ver admin.js "CORES"):
+  // troca o sort_order dos dois vizinhos e regrava os dois. items já chega
+  // ordenado por sort_order (load() acima), então o índice na lista É a
+  // posição visual. Essa ordem é o que o portal usa nas abas de
+  // família/categoria/subcategoria (a aba "Todas" continua fixa no fim,
+  // isso é decidido no portal.js, não aqui).
+  window[formId + '_move'] = async function (id, dir) {
+    const items = window[formId + '_items'] || [];
+    const index = items.findIndex((x) => x.id === id);
+    const otherIndex = index + dir;
+    if (index === -1 || otherIndex < 0 || otherIndex >= items.length) return;
+    const a = items[index];
+    const b = items[otherIndex];
+    const { error } = await supabaseClient.from(table).upsert([
+      { ...a, sort_order: b.sort_order },
+      { ...b, sort_order: a.sort_order }
+    ]);
+    if (error) { showError(errorElId, error); return; }
+    load();
+  };
+
   function render(items) {
     const tbody = document.getElementById(tbodyId);
     tbody.innerHTML = '';
-    items.forEach((item) => {
+    items.forEach((item, index) => {
       const tr = document.createElement('tr');
+      const upDisabled = index === 0 ? 'disabled' : '';
+      const downDisabled = index === items.length - 1 ? 'disabled' : '';
       tr.innerHTML = `
         <td>${item.name}</td>
         <td>
+          <button type="button" class="secondary" style="margin-top:0;padding:4px 8px;" ${upDisabled} onclick="window['${formId}_move']('${item.id}', -1)" title="Mover pra cima">▲</button>
+          <button type="button" class="secondary" style="margin-top:0;padding:4px 8px;" ${downDisabled} onclick="window['${formId}_move']('${item.id}', 1)" title="Mover pra baixo">▼</button>
           <button type="button" class="secondary" style="margin-top:0;padding:4px 8px;" onclick="window['${formId}_edit']('${item.id}')">Editar</button>
           <button type="button" class="danger" style="margin-top:0;padding:4px 8px;" onclick="window['${formId}_delete']('${item.id}')">X</button>
         </td>
@@ -89,7 +122,17 @@ function setupLookupCRUD(opts) {
     clearError(errorElId);
     const id = document.getElementById(idFieldId).value || undefined;
     const payload = { name: document.getElementById(nameFieldId).value.trim(), active: true };
-    if (id) payload.id = id;
+    if (id) {
+      payload.id = id;
+    } else {
+      // Item novo entra no FIM da lista (maior sort_order + 1) — sem isso
+      // nasceria com sort_order=0 e pularia pro topo, bagunçando a ordem que
+      // o admin já organizou com as setas ▲▼ (mesma lógica de cor nova, ver
+      // "CORES" acima).
+      const items = window[formId + '_items'] || [];
+      const maxSortOrder = items.reduce((max, it) => Math.max(max, it.sort_order || 0), 0);
+      payload.sort_order = maxSortOrder + 1;
+    }
     const { error } = await supabaseClient.from(table).upsert(payload);
     if (error) { showError(errorElId, error); return; }
     e.target.reset();
@@ -260,6 +303,11 @@ async function loadPricingSettings() {
   if (error) { showError('pricing-settings-error', error); return; }
   pricingSettingsCache = data;
   document.getElementById('pricing-margin-percent').value = markupMultiplierToPercent(data.markup_multiplier).toFixed(2);
+  // Densidade do material (migration 061) — só pra estimar o peso mostrado
+  // ao cliente (ver comentário no admin.html); default 700 se a coluna
+  // ainda não existir num banco antigo (migration não rodada).
+  const densityEl = document.getElementById('pricing-density-kg-m3');
+  if (densityEl) densityEl.value = Number(data.weight_density_kg_per_m3 ?? 700);
   // Plano de Corte (migration 051) — mesmos campos, formulário separado.
   const cutlistMarginEl = document.getElementById('pricing-cutlist-margin-percent');
   const cutlistThicknessEl = document.getElementById('pricing-cutlist-thickness-percent');
@@ -405,14 +453,19 @@ document.getElementById('pricing-settings-form').addEventListener('submit', asyn
   const statusEl = document.getElementById('pricing-settings-status');
   statusEl.textContent = '';
   const percent = parseFloat(document.getElementById('pricing-margin-percent').value);
+  const density = parseFloat(document.getElementById('pricing-density-kg-m3').value);
   if (!isFinite(percent) || percent < 0) {
     showError('pricing-settings-error', new Error('Informe uma margem válida (0 ou mais).'));
+    return;
+  }
+  if (!isFinite(density) || density < 0) {
+    showError('pricing-settings-error', new Error('Informe uma densidade válida (0 ou mais).'));
     return;
   }
   const multiplier = 1 + percent / 100;
   const { data, error } = await supabaseClient
     .from('pricing_settings')
-    .update({ markup_multiplier: multiplier, updated_at: new Date().toISOString() })
+    .update({ markup_multiplier: multiplier, weight_density_kg_per_m3: density, updated_at: new Date().toISOString() })
     .eq('id', true)
     .select()
     .single();
@@ -646,6 +699,112 @@ async function loadColors() {
   updateComponentPreview();
 }
 
+// ---------- TAMANHOS DE CHAPA (migration 063) ----------
+// Padrões reutilizáveis (ex: "EGGER 5X9") vinculados por cor no form acima
+// (color-default-sheet-size) — usados pelo nesting do "Gerar Plano de
+// Corte" no portal do Contractor. Mesmo padrão de CRUD+setas ▲▼ das Cores.
+
+async function loadSheetSizes() {
+  const { data, error } = await supabaseClient.from('cutting_list_sheet_sizes').select('*').order('sort_order').order('name');
+  if (error) { showError('sheet-sizes-error', error); return; }
+  sheetSizesCache = data || [];
+  renderSheetSizes();
+  populateColorDefaultSheetSizeSelect();
+}
+
+// Popula o select do form de cor com os tamanhos cadastrados (inclusive
+// inativos, pra não sumir a seleção de uma cor já vinculada a um tamanho
+// que foi desativado depois) — mantém o valor selecionado atual se houver.
+function populateColorDefaultSheetSizeSelect() {
+  const select = document.getElementById('color-default-sheet-size');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">— nenhum (cliente escolhe) —</option>' +
+    sheetSizesCache.map((s) => `<option value="${s.id}">${s.name} (${s.width_mm} x ${s.height_mm}mm)${s.active ? '' : ' — inativo'}</option>`).join('');
+  select.value = current;
+}
+
+function renderSheetSizes() {
+  const tbody = document.getElementById('sheet-sizes-tbody');
+  tbody.innerHTML = '';
+  sheetSizesCache.forEach((s, index) => {
+    const tr = document.createElement('tr');
+    const upDisabled = index === 0 ? 'disabled' : '';
+    const downDisabled = index === sheetSizesCache.length - 1 ? 'disabled' : '';
+    tr.innerHTML = `
+      <td>${s.name}</td>
+      <td>${s.width_mm}</td>
+      <td>${s.height_mm}</td>
+      <td>${s.kerf_mm}</td>
+      <td>${s.active ? '<span class="badge">ativo</span>' : '<span class="badge">inativo</span>'}</td>
+      <td>
+          <button class="secondary" ${upDisabled} onclick="moveSheetSize('${s.id}', -1)" title="Mover pra cima">▲</button>
+          <button class="secondary" ${downDisabled} onclick="moveSheetSize('${s.id}', 1)" title="Mover pra baixo">▼</button>
+          <button class="secondary" onclick="editSheetSize('${s.id}')">Editar</button>
+          <button class="danger" onclick="deleteSheetSize('${s.id}')">Excluir</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.moveSheetSize = async function (id, dir) {
+  const index = sheetSizesCache.findIndex((s) => s.id === id);
+  const otherIndex = index + dir;
+  if (index === -1 || otherIndex < 0 || otherIndex >= sheetSizesCache.length) return;
+  const a = sheetSizesCache[index];
+  const b = sheetSizesCache[otherIndex];
+  const { error } = await supabaseClient.from('cutting_list_sheet_sizes').upsert([
+    { ...a, sort_order: b.sort_order },
+    { ...b, sort_order: a.sort_order }
+  ]);
+  if (error) { showError('sheet-sizes-error', error); return; }
+  loadSheetSizes();
+};
+
+window.editSheetSize = function (id) {
+  const s = sheetSizesCache.find((x) => x.id === id);
+  if (!s) return;
+  document.getElementById('sheet-size-id').value = s.id;
+  document.getElementById('sheet-size-name').value = s.name;
+  document.getElementById('sheet-size-width').value = s.width_mm;
+  document.getElementById('sheet-size-height').value = s.height_mm;
+  document.getElementById('sheet-size-kerf').value = s.kerf_mm;
+  document.getElementById('sheet-size-active').checked = s.active;
+};
+
+window.deleteSheetSize = async function (id) {
+  if (!confirm('Excluir este tamanho de chapa? Cores vinculadas a ele voltam a "nenhum".')) return;
+  const { error } = await supabaseClient.from('cutting_list_sheet_sizes').delete().eq('id', id);
+  if (error) { showError('sheet-sizes-error', error); return; }
+  loadSheetSizes();
+};
+
+document.getElementById('sheet-size-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError('sheet-sizes-error');
+  const id = document.getElementById('sheet-size-id').value || undefined;
+  const payload = {
+    name: document.getElementById('sheet-size-name').value.trim(),
+    width_mm: parseFloat(document.getElementById('sheet-size-width').value),
+    height_mm: parseFloat(document.getElementById('sheet-size-height').value),
+    kerf_mm: parseFloat(document.getElementById('sheet-size-kerf').value),
+    active: document.getElementById('sheet-size-active').checked
+  };
+  if (id) {
+    payload.id = id;
+  } else {
+    const maxSortOrder = sheetSizesCache.reduce((max, s) => Math.max(max, s.sort_order || 0), 0);
+    payload.sort_order = maxSortOrder + 1;
+  }
+  const { error } = await supabaseClient.from('cutting_list_sheet_sizes').upsert(payload);
+  if (error) { showError('sheet-sizes-error', error); return; }
+  e.target.reset();
+  document.getElementById('sheet-size-id').value = '';
+  document.getElementById('sheet-size-kerf').value = '4';
+  document.getElementById('sheet-size-active').checked = true;
+  loadSheetSizes();
+});
+
 function renderColors() {
   const tbody = document.getElementById('colors-tbody');
   tbody.innerHTML = '';
@@ -659,11 +818,13 @@ function renderColors() {
     // pontas (primeira não sobe, última não desce).
     const upDisabled = index === 0 ? 'disabled' : '';
     const downDisabled = index === colorsCache.length - 1 ? 'disabled' : '';
+    const sheetSize = sheetSizesCache.find((s) => s.id === c.default_sheet_size_id);
     tr.innerHTML = `
       <td>${thumb}</td>
       <td>${c.name}</td>
       <td>$${Number(c.sheet_price_per_m2).toFixed(2)} / m²</td>
       <td>$${Number(c.edge_price_per_linear_m).toFixed(2)} / m</td>
+      <td>${c.stock_in_house ? '<span class="badge">stock in house</span>' : (sheetSize ? sheetSize.name : '<span class="hint">— nenhum —</span>')}</td>
       <td>${c.active ? '<span class="badge">ativa</span>' : '<span class="badge">inativa</span>'}</td>
       <td>
           <button class="secondary" ${upDisabled} onclick="moveColor('${c.id}', -1)" title="Mover pra cima">▲</button>
@@ -743,10 +904,23 @@ window.editColor = function (id) {
   document.getElementById('color-swatch-hex').value = c.swatch_hex || '#cccccc';
   document.getElementById('color-texture-url').value = c.texture_url || '';
   document.getElementById('color-texture-file').value = '';
+  document.getElementById('color-default-sheet-size').value = c.default_sheet_size_id || '';
+  document.getElementById('color-stock-in-house').checked = !!c.stock_in_house;
+  toggleColorSheetSizeFieldVisibility();
   const preview = document.getElementById('color-texture-preview');
   preview.innerHTML = c.texture_url ? `<img class="texture-thumb" src="${c.texture_url}" alt="preview" />` : '';
   document.getElementById('color-texture-upload-status').textContent = '';
 };
+
+// Esconde o select de tamanho de chapa quando "STOCK IN HOUSE" está marcado
+// — não tem por quê escolher um tamanho que nunca vai ser usado pra nesting
+// (migration 064, renomeado de "usa retalhos").
+function toggleColorSheetSizeFieldVisibility() {
+  const field = document.getElementById('color-sheet-size-field');
+  const checkbox = document.getElementById('color-stock-in-house');
+  if (field && checkbox) field.style.display = checkbox.checked ? 'none' : '';
+}
+document.getElementById('color-stock-in-house').addEventListener('change', toggleColorSheetSizeFieldVisibility);
 
 window.deleteColor = async function (id) {
   if (!confirm('Excluir esta cor?')) return;
@@ -775,6 +949,8 @@ document.getElementById('color-form').addEventListener('submit', async (e) => {
     edge_price_per_linear_m: parseFloat(document.getElementById('color-edge-price').value),
     texture_url: texture_url,
     swatch_hex: document.getElementById('color-swatch-hex').value || '#cccccc',
+    default_sheet_size_id: document.getElementById('color-default-sheet-size').value || null,
+    stock_in_house: document.getElementById('color-stock-in-house').checked,
     active: document.getElementById('color-active').checked
   };
   if (id) {
@@ -794,6 +970,9 @@ document.getElementById('color-form').addEventListener('submit', async (e) => {
   document.getElementById('color-texture-url').value = '';
   document.getElementById('color-texture-preview').innerHTML = '';
   document.getElementById('color-texture-upload-status').textContent = '';
+  document.getElementById('color-default-sheet-size').value = '';
+  document.getElementById('color-stock-in-house').checked = false;
+  toggleColorSheetSizeFieldVisibility();
   document.getElementById('color-active').checked = true;
   loadColors();
 });
@@ -886,6 +1065,8 @@ function resetComponentForm() {
   // (não "Lateral esquerda", que era só a 1ª opção da lista e acabava
   // "escolhida" por padrão sem ninguém ter escolhido de verdade).
   document.getElementById('component-position-role').value = 'free';
+  document.getElementById('component-shape-type').value = 'box'; // migration 062
+  document.getElementById('component-tilt-angle').value = 0; // migration 065
   // Furação padrão (migration 038) — formulário novo nasce sem furos.
   componentDrillingsDraft = [];
   renderComponentDrillingRows();
@@ -916,6 +1097,9 @@ window.editComponent = function (id) {
   document.getElementById('component-edge-formula').value = c.edge_band_linear_m_formula;
   document.getElementById('component-labor-type').value = c.labor_type_id || '';
   document.getElementById('component-position-role').value = c.position_role || 'other';
+  document.getElementById('component-shape-type').value = c.shape_type || 'box'; // migration 062
+  document.getElementById('component-tilt-angle').value = c.tilt_angle_deg || 0; // migration 065
+  document.getElementById('component-rotation-y').value = c.rotation_y_deg || 0; // migration 067
   document.getElementById('component-hinge-side').value = c.hinge_side || 'none';
   document.getElementById('component-shelf-support').checked = !!c.drill_shelf_support;
   document.getElementById('component-notes').value = c.notes || '';
@@ -954,6 +1138,9 @@ document.getElementById('component-form').addEventListener('submit', async (e) =
     edge_band_linear_m_formula: document.getElementById('component-edge-formula').value.trim(),
     labor_type_id: document.getElementById('component-labor-type').value || null,
     position_role: document.getElementById('component-position-role').value || 'other',
+    shape_type: document.getElementById('component-shape-type').value || 'box', // migration 062
+    tilt_angle_deg: parseFloat(document.getElementById('component-tilt-angle').value) || 0, // migration 065
+    rotation_y_deg: parseInt(document.getElementById('component-rotation-y').value, 10) || 0, // migration 067
     hinge_side: document.getElementById('component-hinge-side').value || 'none',
     drill_shelf_support: document.getElementById('component-shelf-support').checked,
     notes: document.getElementById('component-notes').value.trim() || null,
@@ -1418,7 +1605,14 @@ function updateComponentPreview() {
 // ---------- MÓDULOS (PAI) ----------
 
 async function loadModules() {
-  const { data, error } = await supabaseClient.from('modules').select('*').order('name');
+  // sort_order (migration 068) — mesmo desempate por nome do
+  // setupLookupCRUD/loadTaxonomyFilters; fallback pra quem ainda não rodou
+  // a migration (order('sort_order') quebraria a query inteira, não só a
+  // ordenação).
+  let { data, error } = await supabaseClient.from('modules').select('*').order('sort_order').order('name');
+  if (error) {
+    ({ data, error } = await supabaseClient.from('modules').select('*').order('name'));
+  }
   if (error) { showError('modules-error', error); return; }
   modulesCache = data;
   renderModuleSelect();
@@ -1481,6 +1675,8 @@ function resetModuleForm() {
   document.getElementById('module-active').checked = true;
   document.getElementById('module-invisible').checked = false;
   document.getElementById('module-decoration').checked = false;
+  document.getElementById('module-ceiling-clearance-enabled').checked = false;
+  document.getElementById('module-ceiling-clearance-mm').value = 0;
   duplicatingFromModuleId = null;
   setModuleFormMode(null);
 }
@@ -1553,6 +1749,8 @@ function fillModuleFormForEdit(m) {
   document.getElementById('module-active').checked = m.active;
   document.getElementById('module-invisible').checked = !!m.is_invisible;
   document.getElementById('module-decoration').checked = !!m.is_decoration;
+  document.getElementById('module-ceiling-clearance-enabled').checked = !!m.ceiling_clearance_enabled;
+  document.getElementById('module-ceiling-clearance-mm').value = m.ceiling_clearance_mm || 0;
   setModuleFormMode(m);
 }
 
@@ -1599,6 +1797,8 @@ window.duplicateModule = function (id) {
   document.getElementById('module-active').checked = m.active;
   document.getElementById('module-invisible').checked = !!m.is_invisible;
   document.getElementById('module-decoration').checked = !!m.is_decoration;
+  document.getElementById('module-ceiling-clearance-enabled').checked = !!m.ceiling_clearance_enabled;
+  document.getElementById('module-ceiling-clearance-mm').value = m.ceiling_clearance_mm || 0;
   duplicatingFromModuleId = m.id;
   setModuleFormMode(m, 'duplicate');
   showModuleFormTab();
@@ -1692,7 +1892,9 @@ document.getElementById('module-form').addEventListener('submit', async (e) => {
     depth_default_mm: parseFloat(document.getElementById('module-depth-default').value),
     active: document.getElementById('module-active').checked,
     is_invisible: document.getElementById('module-invisible').checked,
-    is_decoration: document.getElementById('module-decoration').checked
+    is_decoration: document.getElementById('module-decoration').checked,
+    ceiling_clearance_enabled: document.getElementById('module-ceiling-clearance-enabled').checked,
+    ceiling_clearance_mm: parseFloat(document.getElementById('module-ceiling-clearance-mm').value) || 0
   };
   if (id) payload.id = id;
   const { data: savedModule, error } = await supabaseClient.from('modules').upsert(payload).select().single();
@@ -1867,12 +2069,22 @@ function renderModuleConfigTree() {
         if (sKey !== '__none__') {
           html += `<div class="module-tree-subcategory-label">${subcategoryName(sKey)}</div>`;
         }
-        mods.forEach((m) => {
+        // Setas ▲▼ (migration 068) — reordena DENTRO do grupo (mesma família +
+        // categoria + subcategoria), que é exatamente o array `mods` aqui.
+        // data-group guarda os ids do grupo INTEIRO na ordem visual atual —
+        // moveModuleInTreeGroup usa isso pra reindexar o grupo todo a cada
+        // clique (ver comentário lá: evita empate em sort_order=0).
+        const groupIds = mods.map((x) => x.id).join(',');
+        mods.forEach((m, idx) => {
           const active = m.id === selectedModuleId ? ' active' : '';
+          const upDisabled = idx === 0 ? 'disabled' : '';
+          const downDisabled = idx === mods.length - 1 ? 'disabled' : '';
           html += `
-            <div class="module-tree-item${active}" data-module-id="${m.id}">
+            <div class="module-tree-item${active}" data-module-id="${m.id}" data-group="${groupIds}">
               <span class="module-tree-item-name">${m.name}${m.active ? '' : ' <span class="badge">inativo</span>'}</span>
               <span class="module-tree-item-actions">
+                <button type="button" class="secondary mc-row-btn" data-action="move-up" ${upDisabled} title="Mover pra cima">▲</button>
+                <button type="button" class="secondary mc-row-btn" data-action="move-down" ${downDisabled} title="Mover pra baixo">▼</button>
                 <button type="button" class="secondary mc-row-btn" data-action="edit" title="Editar">✎</button>
                 <button type="button" class="secondary mc-row-btn" data-action="duplicate" title="Duplicar">⧉</button>
                 <button type="button" class="danger mc-row-btn" data-action="delete" title="Excluir">🗑</button>
@@ -1900,13 +2112,44 @@ function renderModuleConfigTree() {
     row.querySelectorAll('[data-action]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (btn.disabled) return;
         const action = btn.dataset.action;
         if (action === 'edit') window.editModule(moduleId);
         else if (action === 'duplicate') window.duplicateModule(moduleId);
         else if (action === 'delete') window.deleteModule(moduleId);
+        else if (action === 'move-up') moveModuleInTreeGroup(moduleId, -1, row.dataset.group.split(','));
+        else if (action === 'move-down') moveModuleInTreeGroup(moduleId, 1, row.dataset.group.split(','));
       });
     });
   });
+}
+
+// Setas ▲▼ da árvore de módulos (migration 068) — reindexa o GRUPO INTEIRO
+// (mesma família + categoria + subcategoria, ver groupIds em
+// renderModuleConfigTree) a cada clique, não só o par trocado: se vários
+// módulos do grupo ainda estiverem empatados em sort_order=0 (nunca
+// reordenados manualmente), um swap simples de só 2 registros não teria
+// efeito visual nenhum (0 vira 0). Reatribuir 1,2,3... pra todo o grupo na
+// nova ordem visual corrige isso de vez, e depois de usado uma vez vira um
+// swap normal (mesma ideia de setupLookupCRUD/moveColor, só que num grupo
+// menor do que a tabela inteira).
+async function moveModuleInTreeGroup(moduleId, dir, groupIds) {
+  const index = groupIds.indexOf(moduleId);
+  const otherIndex = index + dir;
+  if (index === -1 || otherIndex < 0 || otherIndex >= groupIds.length) return;
+  const reordered = groupIds.slice();
+  const tmp = reordered[index];
+  reordered[index] = reordered[otherIndex];
+  reordered[otherIndex] = tmp;
+  const updates = reordered
+    .map((id, i) => {
+      const m = modulesCache.find((x) => x.id === id);
+      return m ? { ...m, sort_order: i + 1 } : null;
+    })
+    .filter(Boolean);
+  const { error } = await supabaseClient.from('modules').upsert(updates);
+  if (error) { showError('modules-error', error); return; }
+  await loadModules();
 }
 
 const moduleConfigSearchEl = document.getElementById('module-config-search');
@@ -1934,7 +2177,7 @@ if (moduleConfigSearchEl) moduleConfigSearchEl.addEventListener('input', renderM
 async function loadRecursivePiecesForModule(moduleId) {
   const { data, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, tilt_angle_deg, rotation_y_deg, components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId)
     .order('sort_order');
   if (error) { showError('module-image-error', error); return []; }
@@ -2000,6 +2243,8 @@ async function loadRecursivePiecesForModule(moduleId) {
         color_role_id: row.color_role_id || null,
         opening_type: row.opening_type || 'none',
         slides_per_unit: row.slides_per_unit || 0,
+        tilt_angle_deg: row.tilt_angle_deg || 0, // migration 066 — inclinação do conjunto (só 'shelf')
+        rotation_y_deg: row.rotation_y_deg || 0, // migration 067 — giro de canto do conjunto (só 'free')
         width_formula: row.width_formula_override,
         height_formula: row.height_formula_override,
         depth_formula: row.depth_formula_override,
@@ -2269,6 +2514,9 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // (ferragem pronta não é furada). Vem do spread de row.components.
         origin: piece.origin || 'fabricacao',
         position_role: piece.position_role,
+        shape_type: piece.shape_type, // migration 062 — desenho 3D (caixa/cabide tubular oval)
+        tilt_angle_deg: piece.tilt_angle_deg || 0, // migration 065 — inclinação (só 'shelf')
+        rotation_y_deg: piece.rotation_y_deg || 0, // migration 067 — giro de canto (só 'free')
         width_mm: resolvedWidthMm,
         height_mm: resolvedHeightMm,
         depth_mm: resolvedDepthMm,
@@ -2660,6 +2908,23 @@ const DIMENSION_PRESET_CATALOG = {
   depth: []
 };
 
+// Troca o sort_order de duas linhas VIZINHAS da mesma dimensão (mesmo padrão
+// de setupLookupCRUD/moveColor: troca os dois valores e regrava os dois) —
+// `rows` já vem ordenado por sort_order (query em renderModuleDimensionPresets),
+// então o índice na lista É a posição visual de verdade.
+async function moveDimensionPreset(rows, index, dir) {
+  const otherIndex = index + dir;
+  if (otherIndex < 0 || otherIndex >= rows.length) return;
+  const a = rows[index];
+  const b = rows[otherIndex];
+  const { error } = await supabaseClient.from('module_dimension_presets').upsert([
+    { ...a, sort_order: b.sort_order },
+    { ...b, sort_order: a.sort_order }
+  ]);
+  if (error) { showError('module-dimension-presets-error', error); return; }
+  renderModuleDimensionPresets();
+}
+
 async function renderModuleDimensionPresets() {
   const container = document.getElementById('module-dimension-presets-groups');
   if (!selectedModuleId) { container.innerHTML = ''; return; }
@@ -2722,13 +2987,108 @@ async function renderModuleDimensionPresets() {
       tr.appendChild(td);
       tbody.appendChild(tr);
     }
-    rows.forEach((row) => {
+    rows.forEach((row, index) => {
       const tr = document.createElement('tr');
       const valTd = document.createElement('td'); valTd.textContent = `${Number(row.value_mm).toFixed(0)} mm`;
       const labelTd = document.createElement('td'); labelTd.textContent = row.label || '—';
       const descTd = document.createElement('td'); descTd.textContent = row.description || '—';
       const refTd = document.createElement('td'); refTd.textContent = row.reference || '—';
       const actionTd = document.createElement('td');
+      actionTd.style.whiteSpace = 'nowrap';
+
+      // ▲▼ (pedido do usuário 2026-07-29: "quero poder reordenar as posições
+      // travadas, pra cima ou pra baixo") — mesma ideia das setas de
+      // família/categoria/cor (troca o sort_order dos dois vizinhos e regrava
+      // os dois); `rows` já vem ordenado por sort_order (query acima), então
+      // o índice na lista é a posição visual de verdade. Essa ordem é a
+      // mesma que o cliente vê no dropdown "Travado" (sem régua livre) do
+      // portal.
+      const upBtn = document.createElement('button');
+      upBtn.type = 'button';
+      upBtn.className = 'secondary';
+      upBtn.style.marginTop = '0';
+      upBtn.style.marginRight = '4px';
+      upBtn.textContent = '▲';
+      upBtn.title = 'Mover pra cima';
+      upBtn.disabled = index === 0;
+      upBtn.addEventListener('click', () => moveDimensionPreset(rows, index, -1));
+
+      const downBtn = document.createElement('button');
+      downBtn.type = 'button';
+      downBtn.className = 'secondary';
+      downBtn.style.marginTop = '0';
+      downBtn.style.marginRight = '6px';
+      downBtn.textContent = '▼';
+      downBtn.title = 'Mover pra baixo';
+      downBtn.disabled = index === rows.length - 1;
+      downBtn.addEventListener('click', () => moveDimensionPreset(rows, index, 1));
+
+      // "Editar" (pedido do usuário 2026-07-29: "quero mudar alguma
+      // informacao... para largura, altura e profundidade") — antes só dava
+      // pra Remover e recadastrar do zero pra corrigir um valor/nome/
+      // descrição/referência. Edição IN-PLACE: troca as 4 células de texto
+      // por inputs preenchidos com o valor atual, e os botões da linha por
+      // Salvar/Cancelar — mesmos campos do formulário "+ Adicionar" abaixo,
+      // só que fazendo update em vez de insert. Cancelar/Salvar chamam
+      // renderModuleDimensionPresets() de novo, que já busca do banco e
+      // desfaz a edição in-place sozinho (sem precisar de estado próprio).
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'secondary';
+      editBtn.style.marginTop = '0';
+      editBtn.style.marginRight = '6px';
+      editBtn.textContent = 'Editar';
+      editBtn.addEventListener('click', () => {
+        valTd.innerHTML = '';
+        const valueEditInput = document.createElement('input');
+        valueEditInput.type = 'number'; valueEditInput.min = '0'; valueEditInput.style.width = '90px';
+        valueEditInput.value = row.value_mm;
+        valTd.appendChild(valueEditInput);
+
+        labelTd.innerHTML = '';
+        const labelEditInput = document.createElement('input');
+        labelEditInput.type = 'text'; labelEditInput.value = row.label || '';
+        labelTd.appendChild(labelEditInput);
+
+        descTd.innerHTML = '';
+        const descEditInput = document.createElement('input');
+        descEditInput.type = 'text'; descEditInput.value = row.description || '';
+        descTd.appendChild(descEditInput);
+
+        refTd.innerHTML = '';
+        const refEditInput = document.createElement('input');
+        refEditInput.type = 'text'; refEditInput.value = row.reference || '';
+        refTd.appendChild(refEditInput);
+
+        actionTd.innerHTML = '';
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'secondary';
+        saveBtn.style.marginTop = '0';
+        saveBtn.style.marginRight = '6px';
+        saveBtn.textContent = 'Salvar';
+        saveBtn.addEventListener('click', async () => {
+          const value = parseFloat(valueEditInput.value);
+          if (!value || value <= 0) return;
+          const { error: updErr } = await supabaseClient.from('module_dimension_presets').update({
+            value_mm: value,
+            label: labelEditInput.value.trim() || null,
+            description: descEditInput.value.trim() || null,
+            reference: refEditInput.value.trim() || null
+          }).eq('id', row.id);
+          if (updErr) { showError('module-dimension-presets-error', updErr); return; }
+          renderModuleDimensionPresets();
+        });
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'secondary';
+        cancelBtn.style.marginTop = '0';
+        cancelBtn.textContent = 'Cancelar';
+        cancelBtn.addEventListener('click', () => renderModuleDimensionPresets());
+        actionTd.appendChild(saveBtn);
+        actionTd.appendChild(cancelBtn);
+      });
+
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.className = 'danger';
@@ -2738,6 +3098,9 @@ async function renderModuleDimensionPresets() {
         await supabaseClient.from('module_dimension_presets').delete().eq('id', row.id);
         renderModuleDimensionPresets();
       });
+      actionTd.appendChild(upBtn);
+      actionTd.appendChild(downBtn);
+      actionTd.appendChild(editBtn);
       actionTd.appendChild(removeBtn);
       tr.appendChild(valTd); tr.appendChild(labelTd); tr.appendChild(descTd); tr.appendChild(refTd); tr.appendChild(actionTd);
       tbody.appendChild(tr);
@@ -2847,6 +3210,19 @@ let moduleComponentRenderedModuleIds = new Set(); // ids de MÓDULOS já mostrad
 let moduleAddModuleSelectEl = null; // <select> vivo da seção "Adicionar módulo (peça aninhada)"
 let moduleAddModuleSectionEl = null; // wrapper vivo dessa seção — novas linhas entram antes dele
 
+// "📋 Copiar" / "📋 Colar aqui" (pedido do usuário 2026-07-31: a primeira
+// versão — escolher módulo de origem + escolher peça em 2 selects — "ficou
+// bem chata de fazer isso, quero copiar e colar mesmo, 2 cliques") —
+// clipboard em memória (dura a sessão inteira do admin, sobrevive trocar de
+// módulo): 📋 Copiar numa linha (renderModuleComponentRow/renderModuleNestedRow)
+// grava aqui a configuração INTEIRA daquela linha (mesmo buildLinkDataFromRef
+// já usado por "+ Duplicar" — funciona mesmo se a linha original ainda não
+// foi salva); abrir OUTRO módulo e clicar "📋 Colar aqui" (renderPasteComponentSection)
+// insere uma linha nova com essa configuração. null = nada copiado ainda.
+let copiedModuleComponentLink = null; // { kind: 'component'|'module', catalogId, catalogLabel, sourceModuleName, link }
+let modulePasteLabelEl = null; // <span> vivo que mostra "Copiado: X (de Y)" — atualizado por refreshPasteComponentButton
+let modulePasteBtnEl = null; // botão "📋 Colar aqui" vivo — habilitado/desabilitado por refreshPasteComponentButton
+
 // Reconta quais módulos estão em uso como peça aninhada (linhas atualmente
 // renderizadas, salvas ou não) — chamado depois de um "🔁 Trocar módulo"
 // (ver renderModuleNestedRow) pra manter moduleComponentRenderedModuleIds
@@ -2865,7 +3241,7 @@ async function renderModuleComponentsList() {
 
   const { data: links, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, tilt_angle_deg, rotation_y_deg, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm')
     .eq('module_id', selectedModuleId);
   if (error) { showError('pieces-error', error); return; }
   moduleComponentLinks = links || []; // estado como está gravado no banco agora (linha de base)
@@ -2923,8 +3299,96 @@ async function renderModuleComponentsList() {
 
   renderAddComponentSection(container);
   await renderAddModuleSection(container);
+  renderPasteComponentSection(container);
 
   computeModulePieces();
+}
+
+// "📋 Colar aqui" (pedido do usuário 2026-07-31, 2ª versão — a 1ª exigia
+// escolher módulo de origem + escolher a peça em 2 selects, "ficou bem
+// chata... quero copiar e colar mesmo, 2 cliques"): mostra o que está no
+// clipboard em memória (copiedModuleComponentLink, preenchido pelo botão
+// "📋 Copiar" de renderModuleComponentRow/renderModuleNestedRow) e um botão
+// que insere essa configuração aqui — só 2 cliques no total (Copiar na
+// linha de origem, Colar aqui). Sem nada copiado ainda, mostra só a dica e
+// o botão fica desabilitado (nunca escondido — senão o admin não saberia
+// que o recurso existe antes de usar o Copiar pela 1ª vez).
+function renderPasteComponentSection(container) {
+  const wrap = document.createElement('div');
+  wrap.style.marginTop = '10px';
+  wrap.style.borderTop = '1px solid #eee';
+  wrap.style.paddingTop = '12px';
+  wrap.style.display = 'flex';
+  wrap.style.gap = '8px';
+  wrap.style.alignItems = 'center';
+  wrap.style.flexWrap = 'wrap';
+
+  const label = document.createElement('span');
+  label.className = 'hint';
+  label.style.flex = '1';
+
+  const pasteBtn = document.createElement('button');
+  pasteBtn.type = 'button';
+  pasteBtn.className = 'secondary';
+  pasteBtn.textContent = '📋 Colar aqui';
+  pasteBtn.style.flex = '0 0 auto';
+
+  wrap.appendChild(label);
+  wrap.appendChild(pasteBtn);
+  container.appendChild(wrap);
+
+  modulePasteLabelEl = label;
+  modulePasteBtnEl = pasteBtn;
+  refreshPasteComponentButton();
+
+  pasteBtn.addEventListener('click', async () => {
+    const copied = copiedModuleComponentLink;
+    if (!copied) return;
+    pasteBtn.disabled = true;
+    try {
+      if (copied.kind === 'component') {
+        const c = componentsCache.find((x) => x.id === copied.catalogId);
+        if (!c) { alert('O componente copiado não existe mais no catálogo — não dá pra colar.'); return; }
+        renderModuleComponentRow(c, { ...copied.link, id: null }, container, wrap, true);
+        moduleComponentRenderedIds.add(c.id);
+        refreshAddComponentOptions();
+      } else {
+        const m = modulesCache.find((x) => x.id === copied.catalogId);
+        if (!m) { alert('O módulo copiado não existe mais — não dá pra colar.'); return; }
+        // Mesma trava de ciclo do "Adicionar módulo" (refreshAddModuleOptions)
+        // — colar uma peça-módulo que (direta ou indiretamente) contém ESTE
+        // módulo criaria uma recursão infinita no desenho 3D/cálculo de preço.
+        const descendants = await getModuleDescendantIds(m.id);
+        if (descendants.has(selectedModuleId)) {
+          alert('Não é possível colar esta peça aqui: ela faria este módulo entrar dentro dele mesmo (ciclo).');
+          return;
+        }
+        renderModuleNestedRow(m, { ...copied.link, id: null }, container, wrap, true);
+        moduleComponentRenderedModuleIds.add(m.id);
+        await refreshAddModuleOptions();
+      }
+      setSaveStatus('Alterações não salvas.', 'unsaved');
+      computeModulePieces();
+    } finally {
+      pasteBtn.disabled = false;
+    }
+  });
+}
+
+// Atualiza o texto/estado do botão "📋 Colar aqui" — chamado tanto ao
+// renderizar a seção (renderPasteComponentSection) quanto na hora do "📋
+// Copiar" de uma linha (pra refletir na hora, caso copiar e colar aconteçam
+// dentro do MESMO módulo aberto, sem trocar de tela no meio).
+function refreshPasteComponentButton() {
+  if (!modulePasteLabelEl || !modulePasteBtnEl) return;
+  if (!copiedModuleComponentLink) {
+    modulePasteLabelEl.textContent = 'Nada copiado ainda — clique em "📋 Copiar" numa peça (deste ou de outro módulo) pra poder colar aqui.';
+    modulePasteBtnEl.disabled = true;
+    return;
+  }
+  const kindLabel = copiedModuleComponentLink.kind === 'module' ? ' (módulo aninhado)' : '';
+  modulePasteLabelEl.textContent = `Copiado: ${copiedModuleComponentLink.catalogLabel}${kindLabel} — de "${copiedModuleComponentLink.sourceModuleName}".`;
+  modulePasteBtnEl.disabled = false;
 }
 
 // Seção "Adicionar componente" — uma lista suspensa só com os componentes do
@@ -3196,14 +3660,21 @@ function renderModuleComponentRow(c, existingLink, container, insertBeforeEl, fo
 
   // "Duplicar" — cria OUTRA instância deste MESMO componente neste módulo,
   // em posição diferente (migration 025: repetir o mesmo componente
-  // várias vezes deixou de ser bloqueado). Nasce em branco (sem herdar
-  // deslocamento/fórmula da linha original) — o admin configura essa nova
-  // instância do zero, cada uma na sua posição.
+  // várias vezes deixou de ser bloqueado). Pedido do usuário (2026-07-26:
+  // "quando duplicar um componente quero que leve todas as configuracoes
+  // originais pro novo componente duplicado") — a duplicata agora HERDA
+  // tudo o que já estava configurado nesta linha (fórmulas, deslocamento,
+  // visibilidade condicional, quantidade configurável, opcional, cor
+  // configurável...), lido do estado ATUAL dos campos (buildLinkDataFromRef
+  // — funciona mesmo se a linha original ainda não foi salva). Só id e
+  // nome customizado NÃO são herdados: id vira um novo (senão colidiria com
+  // a linha original ao salvar) e o nome cai pro numerado de sempre (senão
+  // as duas instâncias apareceriam com o mesmo nome customizado).
   const dupBtn = document.createElement('button');
   dupBtn.type = 'button';
   dupBtn.className = 'secondary mc-row-btn';
   dupBtn.style.flex = '0 0 auto';
-  dupBtn.title = 'Adicionar outra instância deste componente, em outra posição';
+  dupBtn.title = 'Adicionar outra instância deste componente, com a mesma configuração, em outra posição';
   dupBtn.textContent = '+ Duplicar';
   dupBtn.addEventListener('click', () => {
     // Sugere um nome numerado (ex: "RIPA RIPADO 2", "RIPA RIPADO 3"...)
@@ -3212,9 +3683,39 @@ function renderModuleComponentRow(c, existingLink, container, insertBeforeEl, fo
     // da PRÓXIMA instância, já que a original (linha 1) continua sem número.
     const existingCount = moduleComponentFieldRefs.filter((ref) => ref.kind === 'component' && ref.componentId === c.id).length;
     const suggestedName = `${c.reference} ${existingCount + 1}`;
-    renderModuleComponentRow(c, null, container, wrap.nextSibling, true, suggestedName);
+    const thisRef = moduleComponentFieldRefs.find((ref) => ref.rowId === rowId);
+    const clonedLink = thisRef ? { ...buildLinkDataFromRef(thisRef, 0), id: null, reference_override: null } : null;
+    renderModuleComponentRow(c, clonedLink, container, wrap.nextSibling, true, suggestedName);
     setSaveStatus('Alterações não salvas.', 'unsaved');
     computeModulePieces();
+  });
+
+  // "📋 Copiar" — pra colar em OUTRO módulo (pedido do usuário 2026-07-31,
+  // "quero copiar um componente de um modulo e colar ele com as mesmas
+  // configuracoes em outro modulo... quero copiar e colar mesmo, 2
+  // cliques"): grava a configuração INTEIRA desta linha (mesmo
+  // buildLinkDataFromRef do "+ Duplicar" acima — funciona mesmo se a linha
+  // ainda não foi salva) no clipboard em memória (copiedModuleComponentLink,
+  // sobrevive trocar de módulo). O botão "📋 Colar aqui" (fim da lista,
+  // renderPasteComponentSection) faz a outra metade.
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'secondary mc-row-btn';
+  copyBtn.style.flex = '0 0 auto';
+  copyBtn.title = 'Copiar esta peça (com toda a configuração) pra colar em outro módulo';
+  copyBtn.textContent = '📋 Copiar';
+  copyBtn.addEventListener('click', () => {
+    const thisRef = moduleComponentFieldRefs.find((ref) => ref.rowId === rowId);
+    if (!thisRef) return;
+    const sourceModule = modulesCache.find((x) => x.id === selectedModuleId);
+    copiedModuleComponentLink = {
+      kind: 'component',
+      catalogId: c.id,
+      catalogLabel: c.reference,
+      sourceModuleName: (sourceModule && sourceModule.name) || '?',
+      link: buildLinkDataFromRef(thisRef, 0)
+    };
+    refreshPasteComponentButton();
   });
 
   // "🔁 Trocar" — troca QUAL componente de catálogo esta linha referencia,
@@ -3316,6 +3817,7 @@ function renderModuleComponentRow(c, existingLink, container, insertBeforeEl, fo
   header.appendChild(moveDownBtn);
   header.appendChild(gotoBtn);
   header.appendChild(dupBtn);
+  header.appendChild(copyBtn);
   header.appendChild(swapBtn);
   header.appendChild(toggleBtn);
   wrap.appendChild(header);
@@ -3811,21 +4313,50 @@ function renderModuleNestedRow(childModule, existingLink, container, insertBefor
 
   // "Duplicar" — mesmo espírito do botão em renderModuleComponentRow: cria
   // outra instância deste MESMO módulo aninhado neste módulo pai, em posição
-  // diferente (migration 025).
+  // diferente (migration 025). Pedido do usuário (2026-07-26): a duplicata
+  // herda tudo o que já estava configurado nesta linha (fórmulas de L/A/P,
+  // posição, cor, abertura, deslocamento, visibilidade condicional,
+  // quantidade, sub-configuração de medidas...), lido do estado ATUAL dos
+  // campos (buildLinkDataFromRef) — só id (novo, senão colidiria ao salvar)
+  // e nome customizado (cai pro numerado de sempre) não são herdados.
   const dupBtn = document.createElement('button');
   dupBtn.type = 'button';
   dupBtn.className = 'secondary mc-row-btn';
   dupBtn.style.flex = '0 0 auto';
-  dupBtn.title = 'Adicionar outra instância deste módulo aninhado, em outra posição';
+  dupBtn.title = 'Adicionar outra instância deste módulo aninhado, com a mesma configuração, em outra posição';
   dupBtn.textContent = '+ Duplicar';
   dupBtn.addEventListener('click', () => {
     // Mesmo espírito do "+ Duplicar" de renderModuleComponentRow — sugere um
     // nome numerado pra diferenciar as instâncias repetidas deste módulo.
     const existingCount = moduleComponentFieldRefs.filter((ref) => ref.kind === 'module' && ref.childModuleId === childModule.id).length;
     const suggestedName = `${childModule.name} ${existingCount + 1}`;
-    renderModuleNestedRow(childModule, null, container, wrap.nextSibling, true, suggestedName);
+    const thisRef = moduleComponentFieldRefs.find((ref) => ref.rowId === rowId);
+    const clonedLink = thisRef ? { ...buildLinkDataFromRef(thisRef, 0), id: null, reference_override: null } : null;
+    renderModuleNestedRow(childModule, clonedLink, container, wrap.nextSibling, true, suggestedName);
     setSaveStatus('Alterações não salvas.', 'unsaved');
     computeModulePieces();
+  });
+
+  // "📋 Copiar" — pra colar em OUTRO módulo, mesmo mecanismo/pedido do
+  // usuário do botão gêmeo em renderModuleComponentRow (ver comentário lá).
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'secondary mc-row-btn';
+  copyBtn.style.flex = '0 0 auto';
+  copyBtn.title = 'Copiar esta peça-módulo (com toda a configuração) pra colar em outro módulo';
+  copyBtn.textContent = '📋 Copiar';
+  copyBtn.addEventListener('click', () => {
+    const thisRef = moduleComponentFieldRefs.find((ref) => ref.rowId === rowId);
+    if (!thisRef) return;
+    const sourceModule = modulesCache.find((x) => x.id === selectedModuleId);
+    copiedModuleComponentLink = {
+      kind: 'module',
+      catalogId: childModule.id,
+      catalogLabel: childModule.name,
+      sourceModuleName: (sourceModule && sourceModule.name) || '?',
+      link: buildLinkDataFromRef(thisRef, 0)
+    };
+    refreshPasteComponentButton();
   });
 
   // "🔁 Trocar módulo" — troca QUAL módulo aninhado esta linha referencia,
@@ -3925,6 +4456,7 @@ function renderModuleNestedRow(childModule, existingLink, container, insertBefor
   header.appendChild(moveDownBtn);
   header.appendChild(gotoBtn);
   header.appendChild(dupBtn);
+  header.appendChild(copyBtn);
   header.appendChild(swapBtn);
   header.appendChild(toggleBtn);
   wrap.appendChild(header);
@@ -4071,9 +4603,62 @@ function renderModuleNestedRow(childModule, existingLink, container, insertBefor
   openingDiv.appendChild(openingLbl);
   openingDiv.appendChild(openingSelect);
 
+  // Inclinação (migration 066) — mesmo campo/mesma regra da peça-componente
+  // (migration 065), só que aqui pro CONJUNTO inteiro (este módulo aninhado
+  // inteiro gira como um corpo rígido só, ver js/viewer3d.js resolveContent).
+  // Funciona com qualquer Posição (positionSelect acima) — em "Prateleira"
+  // mantém o pino/empilhamento automático; em "Peça livre" mantém o
+  // Deslocar X/Y/Z manual (caso real do usuário: sapateira posicionada à
+  // mão, não empilhada).
+  const angleDiv = document.createElement('div');
+  angleDiv.style.flex = '1';
+  const angleLbl = document.createElement('label');
+  angleLbl.style.fontSize = '12px';
+  angleLbl.style.marginTop = '0';
+  angleLbl.textContent = 'Inclinação (graus)';
+  const angleInput = document.createElement('input');
+  angleInput.type = 'number';
+  angleInput.step = '1';
+  angleInput.min = '-60';
+  angleInput.max = '60';
+  angleInput.style.marginTop = '2px';
+  angleInput.disabled = !checkbox.checked;
+  angleInput.value = (existingLink && existingLink.tilt_angle_deg) || 0;
+  angleInput.title = 'Funciona com qualquer Posição (Prateleira mantém o pino automático; Peça livre mantém o Deslocar X/Y/Z). Positivo = frente mais baixa que o fundo (sapateira).';
+  angleDiv.appendChild(angleLbl);
+  angleDiv.appendChild(angleInput);
+
+  // Giro de canto (migration 067) — pro CONJUNTO inteiro (este módulo
+  // aninhado inteiro gira como corpo rígido, mesmo espírito da Inclinação
+  // acima, eixo Y em vez de X). SÓ tem efeito de verdade com Posição =
+  // "Peça livre" (troca largura<->profundidade na hora de posicionar — ver
+  // js/viewer3d.js placePieceInBox); caso real: módulo em L/canto, o mesmo
+  // módulo usado 2x, um deles girado 90° encostado no outro sem lateral.
+  const rotYDiv = document.createElement('div');
+  rotYDiv.style.flex = '1';
+  const rotYLbl = document.createElement('label');
+  rotYLbl.style.fontSize = '12px';
+  rotYLbl.style.marginTop = '0';
+  rotYLbl.textContent = 'Giro (canto)';
+  const rotYSelect = document.createElement('select');
+  rotYSelect.style.marginTop = '2px';
+  rotYSelect.disabled = !checkbox.checked;
+  rotYSelect.innerHTML = `
+    <option value="0">0° (reto)</option>
+    <option value="90">90°</option>
+    <option value="180">180°</option>
+    <option value="270">270°</option>
+  `;
+  rotYSelect.value = String((existingLink && existingLink.rotation_y_deg) || 0);
+  rotYSelect.title = 'Só funciona de verdade com Posição = "Peça livre" (ex: módulo em L/canto). Troca largura por profundidade na posição, sem mudar como o módulo é construído.';
+  rotYDiv.appendChild(rotYLbl);
+  rotYDiv.appendChild(rotYSelect);
+
   roleRow.appendChild(positionDiv);
   roleRow.appendChild(colorDiv);
   roleRow.appendChild(openingDiv);
+  roleRow.appendChild(angleDiv);
+  roleRow.appendChild(rotYDiv);
   detailsDiv.appendChild(roleRow);
 
   // Corrediças por unidade — só relevante quando Abertura = "Desliza".
@@ -4494,6 +5079,7 @@ function renderModuleNestedRow(childModule, existingLink, container, insertBefor
   qtyInput.addEventListener('input', onAnyFieldChange);
   positionSelect.addEventListener('change', onAnyFieldChange);
   colorSelect.addEventListener('change', onAnyFieldChange);
+  rotYSelect.addEventListener('change', onAnyFieldChange);
   slidesInput.addEventListener('input', onAnyFieldChange);
   qtyConfigCheckbox.addEventListener('change', onAnyFieldChange);
   clientOptionalCheckbox.addEventListener('change', onAnyFieldChange);
@@ -4504,14 +5090,14 @@ function renderModuleNestedRow(childModule, existingLink, container, insertBefor
     qtyMinField.input, qtyDefaultField.input, qtyMaxField.input, visibilityMinInput, visibilityMaxInput,
     dimWidthMinField.input, dimWidthDefaultField.input, dimWidthMaxField.input,
     dimHeightMinField.input, dimHeightDefaultField.input, dimHeightMaxField.input,
-    dimDepthMinField.input, dimDepthDefaultField.input, dimDepthMaxField.input].forEach((input) => {
+    dimDepthMinField.input, dimDepthDefaultField.input, dimDepthMaxField.input, angleInput].forEach((input) => {
     input.addEventListener('input', onAnyFieldChange);
   });
 
   moduleComponentFieldRefs.push({
     kind: 'module',
     rowId, childModuleId: childModule.id, checkbox, qtyInput, nameOverrideInput, widthField, heightField, depthField,
-    positionSelect, colorSelect, openingSelect, slidesInput,
+    positionSelect, colorSelect, openingSelect, slidesInput, angleInput, rotYSelect,
     offsetXField, offsetYField, offsetZField,
     visibilityDimSelect, visibilityMinInput, visibilityMaxInput,
     qtyConfigCheckbox, qtyMinField, qtyDefaultField, qtyMaxField,
@@ -4529,6 +5115,111 @@ function renderModuleNestedRow(childModule, existingLink, container, insertBefor
 // overrides de fórmula) — inclusive o que ainda não foi salvo — no mesmo
 // formato de "link" que vem do banco, pra usar tanto na prévia quanto no
 // salvamento.
+// Lê o estado ATUAL dos campos de UMA linha (ref, ver moduleComponentFieldRefs)
+// e monta um objeto no mesmo formato de uma linha de `module_components` —
+// extraído de collectPendingLinks (mesma lógica campo-a-campo de sempre,
+// agora reaproveitada em 2 lugares) pra também servir o botão "+ Duplicar"
+// (pedido do usuário 2026-07-26: "quando duplicar um componente quero que
+// leve todas as configuracoes originais pro novo componente duplicado") —
+// lendo do DOM em vez de moduleComponentLinks (o snapshot do banco), a
+// duplicata reflete até edição ainda NÃO salva na linha original.
+function buildLinkDataFromRef(ref, sortOrder) {
+  const quantityConfigurable = ref.qtyConfigCheckbox.checked;
+  const base = {
+    // id = identidade da PRÓPRIA LINHA (não do componente/módulo) — ver
+    // renderModuleComponentRow/renderModuleNestedRow. Permite salvar via
+    // upsert(onConflict:'id') e permite 2+ linhas com o mesmo
+    // component_id/child_module_id (migration 025).
+    id: ref.rowId,
+    sort_order: sortOrder,
+    component_id: ref.kind === 'component' ? ref.componentId : null,
+    child_module_id: ref.kind === 'module' ? ref.childModuleId : null,
+    // Nome customizado desta instância (migration 032) — vazio = null =
+    // usa o nome do catálogo/módulo, como sempre.
+    reference_override: ref.nameOverrideInput.value.trim() === '' ? null : ref.nameOverrideInput.value.trim(),
+    quantity_override: ref.qtyInput.value === '' ? null : parseInt(ref.qtyInput.value, 10),
+    width_formula_override: ref.widthField.input.value.trim() === '' ? null : ref.widthField.input.value.trim(),
+    height_formula_override: ref.heightField.input.value.trim() === '' ? null : ref.heightField.input.value.trim(),
+    depth_formula_override: ref.depthField.input.value.trim() === '' ? null : ref.depthField.input.value.trim(),
+    // Deslocamento é uma FÓRMULA (aceita W, H, D) — vazio = "0".
+    offset_x_mm: ref.offsetXField.input.value.trim() === '' ? '0' : ref.offsetXField.input.value.trim(),
+    offset_y_mm: ref.offsetYField.input.value.trim() === '' ? '0' : ref.offsetYField.input.value.trim(),
+    offset_z_mm: ref.offsetZField.input.value.trim() === '' ? '0' : ref.offsetZField.input.value.trim(),
+    // Visibilidade condicional (migration 031) — sem dimensão escolhida,
+    // grava tudo null (sempre visível). Com dimensão escolhida, min/max
+    // em branco viram null individualmente (sem limite naquele lado).
+    visibility_dimension: ref.visibilityDimSelect.value || null,
+    visibility_min_mm: ref.visibilityDimSelect.value && ref.visibilityMinInput.value !== ''
+      ? parseFloat(ref.visibilityMinInput.value) : null,
+    visibility_max_mm: ref.visibilityDimSelect.value && ref.visibilityMaxInput.value !== ''
+      ? parseFloat(ref.visibilityMaxInput.value) : null,
+    // "Cliente escolhe a quantidade" — só faz sentido (e só é gravado)
+    // neste vínculo módulo x peça, não no componente/módulo global.
+    quantity_configurable: quantityConfigurable,
+    quantity_min: quantityConfigurable && ref.qtyMinField.input.value !== '' ? parseInt(ref.qtyMinField.input.value, 10) : null,
+    quantity_default: quantityConfigurable && ref.qtyDefaultField.input.value !== '' ? parseInt(ref.qtyDefaultField.input.value, 10) : null,
+    quantity_max: quantityConfigurable && ref.qtyMaxField.input.value !== '' ? parseInt(ref.qtyMaxField.input.value, 10) : null,
+    // "Cliente pode adicionar/remover" (opcional) — ex: puxador, rodapé,
+    // tampo, pé. Também só faz sentido por vínculo módulo x peça.
+    client_optional: ref.clientOptionalCheckbox.checked,
+    // Só grava true se "opcional" também estiver marcado — evita salvar
+    // um "vem marcado por padrão" órfão (sem efeito nenhum) se o admin
+    // desmarcar o opcional depois de já ter marcado este.
+    client_optional_default_on: ref.clientOptionalCheckbox.checked && ref.defaultOnCheckbox.checked
+  };
+  // position_role/color_role_id/opening_type/slides_per_unit só existem
+  // (e só são gravados) numa peça-módulo — peça-componente herda tudo
+  // isso de components/component_types, então grava null aqui pra não
+  // confundir com um valor que na verdade veio de outro lugar.
+  if (ref.kind === 'module') {
+    // Sub-configuração de medidas (migration 036) — só existe (e só é
+    // gravada) numa peça-módulo, mesmo raciocínio de position_role/cor/
+    // abertura logo acima. Campos min/padrão/máx em branco viram null
+    // individualmente quando a opção está desligada, igual ao padrão já
+    // usado em quantity_min/default/max.
+    const dimConfigurable = ref.dimConfigCheckbox.checked;
+    return {
+      ...base,
+      position_role: ref.positionSelect.value || 'other',
+      color_role_id: ref.colorSelect.value || (colorRolesCache[0] ? colorRolesCache[0].id : null),
+      opening_type: ref.openingSelect.value || 'none',
+      slides_per_unit: ref.openingSelect.value === 'slide_out' ? (parseInt(ref.slidesInput.value, 10) || 0) : 0,
+      // Inclinação do CONJUNTO (migration 066) — só peça-módulo tem esse
+      // campo (peça-componente usa components.tilt_angle_deg, migration 065).
+      tilt_angle_deg: parseFloat(ref.angleInput.value) || 0,
+      // Giro de canto (migration 067) — mesmo raciocínio de tilt_angle_deg
+      // acima, só peça-módulo tem esse campo por vínculo.
+      rotation_y_deg: parseInt(ref.rotYSelect.value, 10) || 0,
+      client_dimension_configurable: dimConfigurable,
+      width_min_mm: dimConfigurable && ref.dimWidthMinField.input.value !== '' ? parseFloat(ref.dimWidthMinField.input.value) : null,
+      width_default_mm: dimConfigurable && ref.dimWidthDefaultField.input.value !== '' ? parseFloat(ref.dimWidthDefaultField.input.value) : null,
+      width_max_mm: dimConfigurable && ref.dimWidthMaxField.input.value !== '' ? parseFloat(ref.dimWidthMaxField.input.value) : null,
+      height_min_mm: dimConfigurable && ref.dimHeightMinField.input.value !== '' ? parseFloat(ref.dimHeightMinField.input.value) : null,
+      height_default_mm: dimConfigurable && ref.dimHeightDefaultField.input.value !== '' ? parseFloat(ref.dimHeightDefaultField.input.value) : null,
+      height_max_mm: dimConfigurable && ref.dimHeightMaxField.input.value !== '' ? parseFloat(ref.dimHeightMaxField.input.value) : null,
+      depth_min_mm: dimConfigurable && ref.dimDepthMinField.input.value !== '' ? parseFloat(ref.dimDepthMinField.input.value) : null,
+      depth_default_mm: dimConfigurable && ref.dimDepthDefaultField.input.value !== '' ? parseFloat(ref.dimDepthDefaultField.input.value) : null,
+      depth_max_mm: dimConfigurable && ref.dimDepthMaxField.input.value !== '' ? parseFloat(ref.dimDepthMaxField.input.value) : null,
+      // "Cliente pode escolher a cor desta peça separadamente" (migration
+      // 046) — só existe (e só é gravado) numa peça-módulo, mesmo
+      // raciocínio de client_dimension_configurable acima.
+      client_color_configurable: ref.colorConfigCheckbox.checked
+    };
+  }
+  return {
+    ...base, position_role: null, color_role_id: null, opening_type: 'none', slides_per_unit: 0, tilt_angle_deg: null, rotation_y_deg: 0,
+    client_dimension_configurable: false,
+    width_min_mm: null, width_default_mm: null, width_max_mm: null,
+    height_min_mm: null, height_default_mm: null, height_max_mm: null,
+    depth_min_mm: null, depth_default_mm: null, depth_max_mm: null,
+    // "Cliente pode escolher a cor desta peça separadamente" (migration
+    // 046, generalizado pra peça-folha 2026-07-19) — aqui SIM existe pra
+    // peça-componente (diferente de client_dimension_configurable acima,
+    // que continua só pra peça-módulo).
+    client_color_configurable: ref.colorConfigCheckbox.checked
+  };
+}
+
 function collectPendingLinks() {
   // Ordem de exibição (setas ▲▼, ver moveModulePieceRow) — lida direto do
   // DOM (wrap.dataset.rowId, na ordem visual atual dos '.module-piece-row')
@@ -4545,96 +5236,7 @@ function collectPendingLinks() {
 
   return moduleComponentFieldRefs
     .filter((ref) => ref.checkbox.checked)
-    .map((ref) => {
-      const quantityConfigurable = ref.qtyConfigCheckbox.checked;
-      const base = {
-        // id = identidade da PRÓPRIA LINHA (não do componente/módulo) — ver
-        // renderModuleComponentRow/renderModuleNestedRow. Permite salvar via
-        // upsert(onConflict:'id') e permite 2+ linhas com o mesmo
-        // component_id/child_module_id (migration 025).
-        id: ref.rowId,
-        sort_order: sortOrderByRowId.has(ref.rowId) ? sortOrderByRowId.get(ref.rowId) : 0,
-        component_id: ref.kind === 'component' ? ref.componentId : null,
-        child_module_id: ref.kind === 'module' ? ref.childModuleId : null,
-        // Nome customizado desta instância (migration 032) — vazio = null =
-        // usa o nome do catálogo/módulo, como sempre.
-        reference_override: ref.nameOverrideInput.value.trim() === '' ? null : ref.nameOverrideInput.value.trim(),
-        quantity_override: ref.qtyInput.value === '' ? null : parseInt(ref.qtyInput.value, 10),
-        width_formula_override: ref.widthField.input.value.trim() === '' ? null : ref.widthField.input.value.trim(),
-        height_formula_override: ref.heightField.input.value.trim() === '' ? null : ref.heightField.input.value.trim(),
-        depth_formula_override: ref.depthField.input.value.trim() === '' ? null : ref.depthField.input.value.trim(),
-        // Deslocamento é uma FÓRMULA (aceita W, H, D) — vazio = "0".
-        offset_x_mm: ref.offsetXField.input.value.trim() === '' ? '0' : ref.offsetXField.input.value.trim(),
-        offset_y_mm: ref.offsetYField.input.value.trim() === '' ? '0' : ref.offsetYField.input.value.trim(),
-        offset_z_mm: ref.offsetZField.input.value.trim() === '' ? '0' : ref.offsetZField.input.value.trim(),
-        // Visibilidade condicional (migration 031) — sem dimensão escolhida,
-        // grava tudo null (sempre visível). Com dimensão escolhida, min/max
-        // em branco viram null individualmente (sem limite naquele lado).
-        visibility_dimension: ref.visibilityDimSelect.value || null,
-        visibility_min_mm: ref.visibilityDimSelect.value && ref.visibilityMinInput.value !== ''
-          ? parseFloat(ref.visibilityMinInput.value) : null,
-        visibility_max_mm: ref.visibilityDimSelect.value && ref.visibilityMaxInput.value !== ''
-          ? parseFloat(ref.visibilityMaxInput.value) : null,
-        // "Cliente escolhe a quantidade" — só faz sentido (e só é gravado)
-        // neste vínculo módulo x peça, não no componente/módulo global.
-        quantity_configurable: quantityConfigurable,
-        quantity_min: quantityConfigurable && ref.qtyMinField.input.value !== '' ? parseInt(ref.qtyMinField.input.value, 10) : null,
-        quantity_default: quantityConfigurable && ref.qtyDefaultField.input.value !== '' ? parseInt(ref.qtyDefaultField.input.value, 10) : null,
-        quantity_max: quantityConfigurable && ref.qtyMaxField.input.value !== '' ? parseInt(ref.qtyMaxField.input.value, 10) : null,
-        // "Cliente pode adicionar/remover" (opcional) — ex: puxador, rodapé,
-        // tampo, pé. Também só faz sentido por vínculo módulo x peça.
-        client_optional: ref.clientOptionalCheckbox.checked,
-        // Só grava true se "opcional" também estiver marcado — evita salvar
-        // um "vem marcado por padrão" órfão (sem efeito nenhum) se o admin
-        // desmarcar o opcional depois de já ter marcado este.
-        client_optional_default_on: ref.clientOptionalCheckbox.checked && ref.defaultOnCheckbox.checked
-      };
-      // position_role/color_role_id/opening_type/slides_per_unit só existem
-      // (e só são gravados) numa peça-módulo — peça-componente herda tudo
-      // isso de components/component_types, então grava null aqui pra não
-      // confundir com um valor que na verdade veio de outro lugar.
-      if (ref.kind === 'module') {
-        // Sub-configuração de medidas (migration 036) — só existe (e só é
-        // gravada) numa peça-módulo, mesmo raciocínio de position_role/cor/
-        // abertura logo acima. Campos min/padrão/máx em branco viram null
-        // individualmente quando a opção está desligada, igual ao padrão já
-        // usado em quantity_min/default/max.
-        const dimConfigurable = ref.dimConfigCheckbox.checked;
-        return {
-          ...base,
-          position_role: ref.positionSelect.value || 'other',
-          color_role_id: ref.colorSelect.value || (colorRolesCache[0] ? colorRolesCache[0].id : null),
-          opening_type: ref.openingSelect.value || 'none',
-          slides_per_unit: ref.openingSelect.value === 'slide_out' ? (parseInt(ref.slidesInput.value, 10) || 0) : 0,
-          client_dimension_configurable: dimConfigurable,
-          width_min_mm: dimConfigurable && ref.dimWidthMinField.input.value !== '' ? parseFloat(ref.dimWidthMinField.input.value) : null,
-          width_default_mm: dimConfigurable && ref.dimWidthDefaultField.input.value !== '' ? parseFloat(ref.dimWidthDefaultField.input.value) : null,
-          width_max_mm: dimConfigurable && ref.dimWidthMaxField.input.value !== '' ? parseFloat(ref.dimWidthMaxField.input.value) : null,
-          height_min_mm: dimConfigurable && ref.dimHeightMinField.input.value !== '' ? parseFloat(ref.dimHeightMinField.input.value) : null,
-          height_default_mm: dimConfigurable && ref.dimHeightDefaultField.input.value !== '' ? parseFloat(ref.dimHeightDefaultField.input.value) : null,
-          height_max_mm: dimConfigurable && ref.dimHeightMaxField.input.value !== '' ? parseFloat(ref.dimHeightMaxField.input.value) : null,
-          depth_min_mm: dimConfigurable && ref.dimDepthMinField.input.value !== '' ? parseFloat(ref.dimDepthMinField.input.value) : null,
-          depth_default_mm: dimConfigurable && ref.dimDepthDefaultField.input.value !== '' ? parseFloat(ref.dimDepthDefaultField.input.value) : null,
-          depth_max_mm: dimConfigurable && ref.dimDepthMaxField.input.value !== '' ? parseFloat(ref.dimDepthMaxField.input.value) : null,
-          // "Cliente pode escolher a cor desta peça separadamente" (migration
-          // 046) — só existe (e só é gravado) numa peça-módulo, mesmo
-          // raciocínio de client_dimension_configurable acima.
-          client_color_configurable: ref.colorConfigCheckbox.checked
-        };
-      }
-      return {
-        ...base, position_role: null, color_role_id: null, opening_type: 'none', slides_per_unit: 0,
-        client_dimension_configurable: false,
-        width_min_mm: null, width_default_mm: null, width_max_mm: null,
-        height_min_mm: null, height_default_mm: null, height_max_mm: null,
-        depth_min_mm: null, depth_default_mm: null, depth_max_mm: null,
-        // "Cliente pode escolher a cor desta peça separadamente" (migration
-        // 046, generalizado pra peça-folha 2026-07-19) — aqui SIM existe pra
-        // peça-componente (diferente de client_dimension_configurable acima,
-        // que continua só pra peça-módulo).
-        client_color_configurable: ref.colorConfigCheckbox.checked
-      };
-    });
+    .map((ref) => buildLinkDataFromRef(ref, sortOrderByRowId.has(ref.rowId) ? sortOrderByRowId.get(ref.rowId) : 0));
 }
 
 function setSaveStatus(text, kind) {
@@ -4789,7 +5391,7 @@ document.getElementById('module-components-save-btn').addEventListener('click', 
 async function loadRecursivePieces(moduleId) {
   const { data: links, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, width_formula_override, height_formula_override, depth_formula_override, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, width_formula_override, height_formula_override, depth_formula_override, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, tilt_angle_deg, rotation_y_deg, components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId);
   if (error) { console.error(error); return []; }
 
@@ -4837,6 +5439,8 @@ async function loadRecursivePieces(moduleId) {
         color_role_id: link.color_role_id || null,
         opening_type: link.opening_type || 'none',
         slides_per_unit: link.slides_per_unit || 0,
+        tilt_angle_deg: link.tilt_angle_deg || 0, // migration 066 — inclinação do conjunto (só 'shelf')
+        rotation_y_deg: link.rotation_y_deg || 0, // migration 067 — giro de canto do conjunto (só 'free')
         width_formula: link.width_formula_override,
         height_formula: link.height_formula_override,
         depth_formula: link.depth_formula_override,
@@ -4914,6 +5518,8 @@ async function computeModulePieces() {
         color_role_id: link.color_role_id || null,
         opening_type: link.opening_type || 'none',
         slides_per_unit: link.slides_per_unit || 0,
+        tilt_angle_deg: link.tilt_angle_deg || 0, // migration 066 — inclinação do conjunto (só 'shelf')
+        rotation_y_deg: link.rotation_y_deg || 0, // migration 067 — giro de canto do conjunto (só 'free')
         width_formula: link.width_formula_override,
         height_formula: link.height_formula_override,
         depth_formula: link.depth_formula_override,
@@ -5400,15 +6006,15 @@ async function renderOrdersList() {
   clearError('orders-error');
   const tbody = document.getElementById('orders-tbody');
   tbody.innerHTML = '<tr><td colspan="6" class="hint">Carregando...</td></tr>';
-  // 'submitted' ("Aberta") E 'approved' ("Aprovada", migration 047 — cliente
-  // aprova o próprio pedido no portal) — antes só existia 'submitted', então
-  // filtrar só por ele bastava; agora um pedido aprovado precisa continuar
-  // aparecendo aqui pro admin conseguir gerar a lista de peças/produção dele,
-  // senão sumiria da tela assim que o cliente aprovasse.
+  // 'submitted' ("Pendente"), 'approved' ("Aprovada", migration 047), 'paid'
+  // ("Paga") e 'delivered' ("Entregue", migration 059 — sequência Pendente →
+  // Aprovada → Paga → Entregue) — antes só existia 'submitted', então
+  // filtrar só por ele bastava; qualquer estágio novo precisa continuar
+  // aparecendo aqui, senão o pedido sumiria da tela do admin ao avançar.
   const { data, error } = await supabaseClient
     .from('orders')
     .select('id, po_name, client_name, client_email, client_phone, delivery_address, status, submitted_at, order_type')
-    .in('status', ['submitted', 'approved'])
+    .in('status', ['submitted', 'approved', 'paid', 'delivered'])
     .order('submitted_at', { ascending: false });
   if (error) { showError('orders-error', error); tbody.innerHTML = ''; return; }
   ordersCache = data || [];
@@ -5417,10 +6023,13 @@ async function renderOrdersList() {
     tbody.innerHTML = '<tr><td colspan="8" class="hint">Nenhum pedido enviado ainda.</td></tr>';
     return;
   }
+  // Rótulo do status (mesmo texto do portal do cliente, ver orderStatusLabel
+  // em portal.js) — 'submitted' virou "Pendente" (era "Aberta").
+  const orderStatusLabels = { submitted: 'Pendente', approved: 'Aprovada', paid: 'Paga', delivered: 'Entregue' };
   ordersCache.forEach((order) => {
     const tr = document.createElement('tr');
     const dateStr = order.submitted_at ? new Date(order.submitted_at).toLocaleString('pt-BR') : '—';
-    const statusLabel = order.status === 'approved' ? 'Aprovada' : 'Aberta';
+    const statusLabel = orderStatusLabels[order.status] || order.status;
     // order_type (migration 051) — 'cutting_list' é a planilha do Contractor
     // (cutting_list_items), sem order_type (ou 'modules') é o pedido normal
     // de módulo configurado (order_items) — botão abre a tela certa.
@@ -5433,12 +6042,36 @@ async function renderOrdersList() {
       <td>${order.client_phone || '—'}</td>
       <td>${statusLabel}</td>
       <td>${dateStr}</td>
-      <td><button type="button" class="secondary order-view-cutlist-btn" style="margin-top:0;">Ver peças</button></td>
+      <td style="white-space:nowrap;">
+        <button type="button" class="secondary order-view-cutlist-btn" style="margin-top:0;">Ver peças</button>
+        ${order.status === 'approved' ? '<button type="button" class="secondary order-mark-paid-btn" style="margin-top:0;">Marcar pago</button>' : ''}
+        ${order.status === 'paid' ? '<button type="button" class="secondary order-mark-delivered-btn" style="margin-top:0;">Marcar entregue</button>' : ''}
+      </td>
     `;
     tr.querySelector('.order-view-cutlist-btn').addEventListener('click', () => {
       if (isCutlist) openOrderCuttingList(order);
       else openOrderCutlist(order);
     });
+    // Pago/Entregue (migration 059) — mesma sequência/gravação do botão
+    // equivalente no portal do cliente (po-order-detail-mark-paid-btn/
+    // po-order-detail-mark-delivered-btn em portal.js); confirmado via
+    // AskUserQuestion que tanto o admin quanto o cliente podem marcar.
+    const markPaidBtn = tr.querySelector('.order-mark-paid-btn');
+    if (markPaidBtn) {
+      markPaidBtn.addEventListener('click', async () => {
+        const { error: payErr } = await supabaseClient.from('orders').update({ status: 'paid', paid_at: new Date().toISOString() }).eq('id', order.id);
+        if (payErr) { showError('orders-error', payErr); return; }
+        renderOrdersList();
+      });
+    }
+    const markDeliveredBtn = tr.querySelector('.order-mark-delivered-btn');
+    if (markDeliveredBtn) {
+      markDeliveredBtn.addEventListener('click', async () => {
+        const { error: delErr } = await supabaseClient.from('orders').update({ status: 'delivered', delivered_at: new Date().toISOString() }).eq('id', order.id);
+        if (delErr) { showError('orders-error', delErr); return; }
+        renderOrdersList();
+      });
+    }
     tbody.appendChild(tr);
   });
 }
@@ -6271,6 +6904,7 @@ async function showLoggedIn() {
   await colorRolesCRUD.load(); // antes de loadComponentTypes — o form de tipo de componente já nasce com o <select> de papel populado
   await loadPricingSettings();
   await loadComponentTypes();
+  await loadSheetSizes();
   await loadColors();
   await loadComponents();
   await loadModules();

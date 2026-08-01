@@ -633,6 +633,27 @@
     };
   }
 
+  // ---- Volume (m³) — pedido do usuário: mostrar metragem cúbica/peso junto
+  // com o preço, pro módulo/projeto/pedido. Mesma origem que já existe pro
+  // preço (width_mm/height_mm/depth_mm de cada PEÇA-COMPONENTE, folha do
+  // breakdown), só que somando volume em vez de custo. Peça-módulo
+  // (is_module:true) NUNCA soma volume próprio — ela é só um container (as
+  // dimensões dela são do vão, não de uma chapa real) — só as peças FOLHA
+  // dentro de child_breakdown contam, recursivamente, na mesma lógica que
+  // child_total já usa pra preço (child_total = childResult.total * qty,
+  // pricing.js:500): o volume da sub-montagem também precisa multiplicar
+  // pela quantidade da peça-módulo que a contém.
+  function calculateVolumeM3(breakdown) {
+    return (breakdown || []).reduce(function (sum, p) {
+      if (!p) return sum;
+      if (p.is_module) {
+        return sum + calculateVolumeM3(p.child_breakdown) * (p.quantity || 1);
+      }
+      const pieceVolumeMm3 = (p.width_mm || 0) * (p.height_mm || 0) * (p.depth_mm || 0) * (p.quantity || 1);
+      return sum + pieceVolumeMm3 / 1e9; // mm³ -> m³
+    }, 0);
+  }
+
   const Pricing = {
     evalFormula,
     setFormulaGlobals,
@@ -645,7 +666,8 @@
     clampToOwnRange,
     isPieceVisible,
     calculateAssembly,
-    calculateModulePrice
+    calculateModulePrice,
+    calculateVolumeM3
   };
 
   if (typeof module !== 'undefined' && module.exports) {
