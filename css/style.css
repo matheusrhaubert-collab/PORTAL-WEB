@@ -30,6 +30,17 @@ header.topbar {
 header.topbar a { color: #fff; opacity: .85; text-decoration: none; }
 header.topbar a:hover { opacity: 1; }
 
+/* #logout-btn usa button.secondary (texto var(--accent-dark)) mas o topbar
+   TAMBÉM usa var(--accent-dark) como fundo — texto marrom em cima de fundo
+   marrom, botão funcional mas invisível (bug relatado pelo usuário: "não
+   tem como deslogar" — o botão sempre funcionou, só nunca apareceu). */
+header.topbar button.secondary {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .55);
+  margin-top: 0;
+}
+header.topbar button.secondary:hover { background: rgba(255, 255, 255, .15); }
+
 main {
   max-width: 960px;
   margin: 0 auto;
@@ -150,6 +161,43 @@ button {
 button:hover { background: var(--accent-dark); }
 button.secondary { background: transparent; color: var(--accent-dark); border: 1px solid var(--border); }
 button.danger { background: var(--danger); }
+
+/* Aba Controladoria (dashboard) — cards de KPI + gráfico de barras simples,
+   sem biblioteca externa (mesmo espírito do resto do admin: HTML/CSS puro). */
+.kpi-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  min-width: 200px;
+  flex: 1;
+}
+.kpi-card .kpi-value { font-size: 32px; font-weight: 700; color: var(--accent-dark); line-height: 1; }
+.kpi-card .kpi-label { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.kpi-card .kpi-breakdown { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.7; }
+
+.bar-chart-block { flex: 1; min-width: 260px; }
+.bar-chart-block h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 110px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+.bar-chart .bar-col { flex: 1; display: flex; align-items: flex-end; height: 100%; }
+.bar-chart .bar { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 1px; cursor: default; }
+.bar-chart-labels { display: flex; gap: 2px; margin-top: 4px; }
+.bar-chart-labels span {
+  flex: 1;
+  font-size: 9px;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Botões do cabeçalho de cada peça em "Componentes deste módulo" (▲▼/Ver
    componente/+Duplicar/▸Configurar) — pedido do usuário: bem mais estreitos
@@ -417,6 +465,28 @@ th { color: var(--muted); font-weight: 600; }
   touch-action: none;
 }
 #viewer3d-canvas canvas { display: block; width: 100%; height: 100%; }
+/* #po-viewer3d-canvas é o id de verdade usado em portal.html (configurador
+   "2. Configure" do módulo) — a regra "#viewer3d-canvas" acima nunca bateu
+   com ele (só existe com esse id exato na calculadora legada,
+   calculadora-legado.html; mantida intocada acima). Sem CSS própria, o
+   container ficava sem altura definida e o viewer3d.js caía no fallback
+   fixo de 320px (containerEl.clientHeight || 320, ver init()/onResize em
+   viewer3d.js) — funcionava por coincidência, mas nunca aproveitava telas
+   maiores. Revisão pra iPad Air 13" (2026-08-05, pedido: "aproveitar o
+   maximo de espaco da tela"): altura agora escala com a viewport (mesmo
+   padrão clamp(min, vh, max) já usado em #po-proj-3d-canvas/
+   #po-proj-canvas-3d-edit), sem baixar do mínimo de antes. onResize já lê
+   containerEl.clientHeight a cada resize, então isso é só CSS — nenhuma
+   lógica de câmera/posicionamento foi tocada. */
+#po-viewer3d-canvas {
+  width: 100%;
+  height: clamp(320px, 48vh, 640px);
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+#po-viewer3d-canvas canvas { display: block; width: 100%; height: 100%; }
 /* Botões de abrir/fechar porta e gaveta SEPARADOS (cada um com seu próprio
    estado — abrir a porta não mexe na gaveta, e vice-versa). Lado a lado, com
    a mesma margem de cima que o botão único tinha antes. */
@@ -1153,6 +1223,33 @@ header.po-topnav {
 .po-logo { display: flex; flex-direction: column; line-height: 1; flex-shrink: 0; }
 .po-logo-main { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; color: var(--text); }
 .po-logo-sub { font-size: 9px; font-weight: 600; letter-spacing: 3px; color: var(--muted); margin-top: 3px; }
+/* Logo do Dealer (migration 075) — max-height trava o cabeçalho numa altura
+   consistente mesmo que a imagem enviada tenha proporção bem diferente do
+   wordmark LEGNO; largura livre (width:auto) preserva o aspecto original. */
+.po-logo-dealer-img { max-height: 34px; width: auto; display: block; }
+/* Toggle "Legno / Dealer" — mesmo espírito visual do po-lang-switcher
+   (borda fina, canto arredondado), só que como par de botões segmentados em
+   vez de <select>, pra trocar num clique só na frente do cliente final. */
+.po-portal-mode-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.po-portal-mode-btn {
+  background: var(--panel);
+  border: none;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  margin-top: 0;
+}
+.po-portal-mode-btn + .po-portal-mode-btn { border-left: 1px solid var(--border); }
+.po-portal-mode-btn.active { background: var(--text); color: #fff; }
+.po-portal-mode-btn:hover:not(.active) { background: var(--accent-light, #f2f0ea); color: var(--text); }
 .po-topnav-title {
   font-size: 15px;
   font-weight: 600;
@@ -1851,7 +1948,12 @@ header.po-topnav {
 #po-proj-3d-canvas-wrap { width: 100%; }
 #po-proj-3d-canvas {
   width: 100%;
-  height: 420px;
+  /* 2026-08-03 (pedido: "deixa essa janela maior pra trabalhar, muito
+     espaço vazio dos lados") — altura acompanha a TELA em vez dos 420px
+     fixos; canvas mais alto = câmera de fit-automático chega mais perto e
+     o móvel preenche a largura (o vazio lateral era consequência do fit
+     limitado pela altura baixa). */
+  height: clamp(420px, 74vh, 950px);
   border: none;
   overflow: hidden;
   background: #ffffff;
@@ -2140,6 +2242,76 @@ header.po-topnav {
   color: #fff; font-size: 34px; line-height: 1; cursor: pointer;
 }
 
+/* ---------- "Meus Projetos" (grid de cards, pedido do usuário 2026-08-02:
+   "essa tela ta muito baguncada... quer mais alinhados, quadrado para cada
+   pedido") — mesmo esqueleto visual de .po-gallery-card acima (card
+   panel + imagem no topo + corpo com nome/meta/ações), só que a imagem é
+   QUADRADA (1/1, não 4/3) e pode vir "partida" ao meio quando o projeto tem
+   as duas imagens (snapshot 3D automático + última imagem de IA publicada,
+   ver captureProjectThumbnail/publishProjectToGallery em portal.js) — cada
+   metade abre sozinha no lightbox (openGalleryLightbox reaproveitado). */
+.po-myproj-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.po-myproj-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.po-myproj-card:hover { border-color: var(--accent); }
+.po-myproj-card-image-wrap { background: #ffffff; aspect-ratio: 1 / 1; overflow: hidden; position: relative; }
+.po-myproj-card-image { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.po-myproj-card-image-empty { width: 100%; height: 100%; background: var(--accent-light, #f2f0ea); }
+.po-myproj-card-image-split { display: flex; width: 100%; height: 100%; }
+.po-myproj-card-image-half { position: relative; width: 50%; height: 100%; }
+.po-myproj-card-image-half + .po-myproj-card-image-half { border-left: 1px solid rgba(0,0,0,0.08); }
+.po-myproj-card-image-badge {
+  position: absolute; bottom: 6px; left: 6px; z-index: 2;
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 999px; pointer-events: none; letter-spacing: 0.02em;
+}
+.po-myproj-card-image-zoom-hint {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0,0,0,0.45); color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; pointer-events: none;
+}
+.po-myproj-card-body { padding: 10px 12px 12px; }
+.po-myproj-card-name { font-weight: 600; color: var(--accent-dark); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-myproj-card-meta { font-size: 12px; margin-top: 2px; }
+.po-myproj-card-total { font-size: 13px; font-weight: 600; color: var(--accent-dark); margin-top: 4px; }
+.po-myproj-card-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.po-myproj-card-actions button { margin-top: 0; }
+
+/* Grade de fotos realistas salvas (migration 077, aba Projetos) — mesma
+   miniatura quadrada com zoom da lista "Meus Projetos", só que com botão de
+   excluir por versão em vez de badge/split. */
+.po-photoreal-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.po-photoreal-gallery-item {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+.po-photoreal-gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.po-photoreal-gallery-delete {
+  position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0,0,0,0.55); color: #fff; border: none; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; cursor: pointer; padding: 0; margin: 0;
+  line-height: 1;
+}
+.po-photoreal-gallery-delete:hover { background: rgba(179,38,30,0.85); }
+
 /* ---------- Projetos (canvas 2D, Fase 1 — pedido do usuário 2026-07-21) ----------
    "tela de projetos... vista frontal 2D paralela (não perspectiva)... deve
    dar pra arrastar... tipo ímã que puxe os cantos... ao colocar um módulo na
@@ -2389,7 +2561,8 @@ header.po-topnav {
 #po-proj-canvas-3d-edit-wrap { width: 100%; }
 #po-proj-canvas-3d-edit {
   width: 100%;
-  height: 520px;
+  /* mesma razão do #po-proj-3d-canvas: altura de tela, não fixa (2026-08-03) */
+  height: clamp(520px, 74vh, 950px);
   border: none;
   overflow: hidden;
   background: #ffffff;
@@ -2526,3 +2699,65 @@ header.po-topnav {
 .po-proj-color-swatch img, .po-proj-color-swatch span { display: block; width: 100%; height: 100%; object-fit: cover; }
 .po-proj-color-swatch:hover { box-shadow: 0 0 0 1px var(--accent) inset; }
 .po-proj-color-swatch.selected { border-color: var(--accent); }
+
+/* ---------- CTAs da aba Projetos: Visualizar 3D + Foto realista ----------
+   (2026-08-03, pedido do usuário: "deixa os botoes mais atraentes, esta so
+   um grande quadrado preto") — classes PRÓPRIAS, sem tocar na genérica
+   po-btn-primary-block (usada em carrinho/pedido/galeria). Atenção: os
+   :hover precisam redeclarar o gradiente porque a regra global
+   `button:hover { background: var(--accent-dark) }` usa o shorthand
+   `background` (zera background-image) e venceria por ordem/pseudo. */
+.po-proj-cta-row { display: flex; gap: 10px; margin-top: 14px; }
+.po-proj-cta {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 16px;
+  border: none; border-radius: 10px;
+  font-weight: 700; font-size: 14px; color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.po-proj-cta:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2); filter: brightness(1.06); }
+.po-proj-cta:active:not(:disabled) { transform: translateY(0); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); }
+.po-proj-cta:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+.po-proj-cta-3d, .po-proj-cta-3d:hover { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); }
+.po-proj-cta-3d::before { content: '🧊'; font-size: 17px; }
+.po-proj-cta-photo, .po-proj-cta-photo:hover { background: linear-gradient(135deg, #2e6b4f 0%, #1d4a36 100%); }
+.po-proj-cta-photo::before { content: '📸'; font-size: 17px; }
+.po-proj-cta-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.22);
+  padding: 2px 7px; border-radius: 999px;
+}
+@media (max-width: 640px) { .po-proj-cta-row { flex-direction: column; } }
+
+/* Moldura "área da foto realista" nos viewers 3D da aba Projetos
+   (2026-08-03, pedido do usuário: "mostrar a area da foto realista no 3d")
+   — a foto sai travada em 4:3 com a MESMA câmera/fov vertical do viewer,
+   então o recorte real é: altura inteira, largura = altura×4/3, centrado.
+   Puro CSS (aspect-ratio) — nenhum recálculo por JS em resize. Injetada por
+   ensurePhotoFrameOverlay (portal.js) dentro do container de cada viewer. */
+.po-photoframe {
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  height: 100%;
+  aspect-ratio: 4 / 3;
+  max-width: 100%;
+  border-left: 2px dashed rgba(0, 0, 0, 0.3);
+  border-right: 2px dashed rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 5;
+}
+.po-photoframe-label {
+  position: absolute;
+  top: 6px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.45);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}

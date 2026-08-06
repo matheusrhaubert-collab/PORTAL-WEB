@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260731a" />
+<link rel="stylesheet" href="css/style.css?v=20260805a" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -25,11 +25,30 @@
 
 <header class="po-topnav">
   <div class="po-topnav-left">
-    <div class="po-logo">
-      <span class="po-logo-main">LEGNO</span>
-      <span class="po-logo-sub">CABINETS</span>
+    <!-- Migration 075 (pedido do usuário 2026-08-02: "portal exclusivo" pro
+         perfil Dealer/'lojista') — a logo ganhou uma imagem opcional
+         (po-logo-dealer-img) que fica escondida no modo Legno e substitui o
+         wordmark LEGNO/CABINETS no modo Dealer (ver applyPortalViewMode em
+         portal.js). Sem imagem própria enviada ainda, o modo Dealer cai no
+         wordmark padrão mesmo (fallback, nunca fica vazio). -->
+    <div class="po-logo" id="po-logo">
+      <img id="po-logo-dealer-img" class="po-logo-dealer-img" alt="" style="display:none;" />
+      <span class="po-logo-main" id="po-logo-main-text">LEGNO</span>
+      <span class="po-logo-sub" id="po-logo-sub-text">CABINETS</span>
     </div>
-    <div class="po-topnav-title" data-i18n="nav.portal_title">Portal do Cliente</div>
+    <!-- Toggle "Legno / Dealer" — só aparece pra quem tem user_profiles.role
+         'lojista' (ver refreshDealerUiVisibility em portal.js, chamado depois
+         de ensureOwnUserProfile em showLoggedIn). Pensado pra troca rápida na
+         frente do cliente final numa visita técnica. -->
+    <div class="po-portal-mode-toggle" id="po-portal-mode-toggle" style="display:none;">
+      <button type="button" class="po-portal-mode-btn active" id="po-portal-mode-legno-btn" data-mode="legno" data-i18n="nav.portal_mode_legno">Legno</button>
+      <button type="button" class="po-portal-mode-btn" id="po-portal-mode-dealer-btn" data-mode="dealer" data-i18n="nav.portal_mode_dealer">Dealer</button>
+    </div>
+    <!-- "Portal do Cliente" removido do cabeçalho a pedido do usuário
+         (2026-08-02) — visual mais limpo, sobretudo ao lado do toggle
+         Legno/Dealer. Reversível: elemento comentado, não apagado; CSS
+         .po-topnav-title intacto. -->
+    <!-- <div class="po-topnav-title" data-i18n="nav.portal_title">Portal do Cliente</div> -->
     <nav class="po-topnav-tabs" id="po-sidebar">
       <button type="button" class="portal-tab-btn active" data-tab="po-tab-new-order" data-i18n="nav.tab_new_order">Novo Orçamento</button>
       <button type="button" class="portal-tab-btn" data-tab="po-tab-my-orders" data-i18n="nav.tab_my_orders">Meus Pedidos</button>
@@ -133,6 +152,27 @@
         <div class="po-topnav-settings-row">
           <span data-i18n="nav.language_label">Idioma</span>
           <span id="po-lang-switcher" class="po-lang-switcher"></span>
+        </div>
+        <!-- Margem geral de revenda (migration 072, pedido do usuário
+             2026-08-02) — self-service: o PRÓPRIO cliente define quanto
+             quer ganhar em cima do preço de fábrica pra saber por quanto
+             revender. Só exibição em Galeria/Meus Projetos (ver
+             getResaleMarginPct em portal.js) — Meus Pedidos não usa isso. -->
+        <label class="po-topnav-settings-row" title="Sua margem de revenda sobre o preço de fábrica" data-i18n-title="nav.resale_margin_title">
+          <span data-i18n="nav.resale_margin_label">Margem geral de revenda (%)</span>
+          <input id="po-resale-margin-input" type="number" inputmode="decimal" min="0" step="1" style="width:80px;" />
+        </label>
+        <!-- Logo do Dealer (migration 075) — self-service, só aparece pra
+             role='lojista' (ver refreshDealerUiVisibility em portal.js).
+             Upload direto pro bucket 'dealer-logos' (dealer-logos/{uid}/...),
+             usada no cabeçalho quando o toggle está em modo Dealer. -->
+        <div class="po-topnav-settings-row" id="po-dealer-logo-settings-row" style="display:none; flex-direction:column; align-items:stretch; gap:6px;">
+          <span data-i18n="nav.dealer_logo_label">Sua logo (modo Dealer)</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <img id="po-dealer-logo-preview" alt="" style="width:36px; height:36px; object-fit:contain; border:1px solid var(--border); border-radius:6px; display:none;" />
+            <input id="po-dealer-logo-file-input" type="file" accept="image/*" style="flex:1;" />
+          </div>
+          <span id="po-dealer-logo-status" class="hint"></span>
         </div>
         <!-- Botão "Salvar" (pedido do usuário, 2026-07-23) — pé direito/
              rodapé/unidade já aplicam sozinhos ao sair do campo (roomSettings
@@ -725,6 +765,7 @@
                 <th data-i18n="cutlist.col_quantity">Qtd</th>
                 <th data-i18n="cutlist.col_length">Comprimento (mm)</th>
                 <th data-i18n="cutlist.col_width">Largura (mm)</th>
+                <th data-i18n="cutlist.col_grain">Veio</th>
                 <th data-i18n="cutlist.col_thickness">Espessura</th>
                 <th data-i18n="cutlist.col_color">Cor</th>
                 <th data-i18n="cutlist.col_edge">Fita de Borda</th>
@@ -940,7 +981,18 @@
       <section class="panel">
         <div class="po-comp-title-row">
           <h2 data-i18n="project.title">Projetos</h2>
-          <button type="button" id="po-proj-reset-btn" class="secondary" data-i18n="project.reset_btn">↺ Novo projeto</button>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <!-- "Enviar pro pedido" (pedido do usuário 2026-08-02: "projetos,
+                 cutting list e carrinho devem levar ao mesmo ponto: MY
+                 ORDERS... o projeto deve levar direto pra my orders, sem
+                 passar pelo carrinho, por que pode misturar com outras
+                 coisas") — ver sendProjectToOrder em portal.js: cria um
+                 pedido PRÓPRIO (order_type='project'), nunca mistura com o
+                 rascunho do carrinho, e abre direto na tela do pedido (Meus
+                 Pedidos). -->
+            <button type="button" id="po-proj-send-to-order-btn" style="margin-top:0;" data-i18n="project.send_to_order_btn">Enviar pro pedido</button>
+            <button type="button" id="po-proj-reset-btn" class="secondary" style="margin-top:0;" data-i18n="project.reset_btn">↺ Novo projeto</button>
+          </div>
         </div>
 
         <!-- Modo "configurando módulo do projeto" — mesmo padrão visual/
@@ -1135,8 +1187,33 @@
              soltos em posição livre (x_mm/floor_height_mm/z_order do canvas
              2D) em vez de empilhados em coluna única (ver
              ViewerProject.renderFreeform). -->
-        <button type="button" id="po-proj-generate-btn" class="po-btn-primary-block" disabled data-i18n="project.generate_3d_btn">Visualizar 3D</button>
+        <!-- Par de CTAs lado a lado (pedido do usuário 2026-08-03: "deixa os
+             botoes mais atraentes, esta so um grande quadrado preto") — CSS
+             próprio .po-proj-cta-row/.po-proj-cta (style.css), NÃO mexe na
+             classe genérica po-btn-primary-block (usada em vários lugares).
+             Foto realista: path tracer local (js/photoreal.js + bundle lazy);
+             texto fixo sem data-i18n de propósito (feature beta em teste). -->
+        <div class="po-proj-cta-row">
+          <button type="button" id="po-proj-generate-btn" class="po-proj-cta po-proj-cta-3d" disabled data-i18n="project.generate_3d_btn">Visualizar 3D</button>
+          <button type="button" id="po-proj-photoreal-btn" class="po-proj-cta po-proj-cta-photo" disabled>Foto realista<span class="po-proj-cta-badge">beta</span></button>
+        </div>
         <p id="po-proj-generate-hint" class="hint" data-i18n="project.generate_3d_hint">Adicione pelo menos 1 módulo pra visualizar em 3D.</p>
+
+        <!-- Grade de fotos realistas salvas (migration 077, pedido do usuário
+             2026-08-03: "quero que ela fique carregada no projeto salvo...
+             automaticamente ela salva e fica na tela, pode ser embaixo do
+             3d... botao de deletar... salvar mais de uma versao"). Fica FORA
+             de #po-proj-3d-wrap de propósito (aquele div só existe enquanto
+             "Visualizar 3D" está aberto) — a foto realista é gerada por um
+             botão à parte e precisa continuar visível mesmo com o 3D
+             fechado. Populada/escondida por refreshProjectPhotorealGallery
+             (portal.js), chamada sempre que o projeto carregado na tela
+             muda. -->
+        <div id="po-proj-photoreal-gallery-wrap" style="display:none;margin-top:14px;">
+          <p class="hint">📸 Fotos realistas salvas neste projeto:</p>
+          <div id="po-proj-photoreal-gallery" class="po-photoreal-gallery"></div>
+        </div>
+
         <div id="po-proj-3d-wrap" style="display:none;margin-top:16px;">
           <!-- Botão pra FECHAR o 3D e voltar pro canvas 2D (mesma aba) —
                pedido do usuário, 2026-07-21: "quando eu coloco voltar ele vai
@@ -1173,11 +1250,18 @@
                generateAiPreviewForProjectGallery/publishProjectToGallery).
                Reaproveita as MESMAS chaves i18n gallery.* de propósito — o
                texto é genérico o bastante (não fala "composição" em nenhum
-               rótulo), evitar duplicar em 3 idiomas por uma cópia idêntica. -->
-          <div class="po-comp-actions-row">
+               rótulo), evitar duplicar em 3 idiomas por uma cópia idêntica.
+
+               CONGELADO (pedido do usuário 2026-08-03: "ainda ta com botao
+               da IA, pode tirar ele, vamos congelar esse recurso por
+               enquanto") — display:none no bloco inteiro, reversível
+               (mesmo padrão de composicao_favoritos_hidden_meus_projetos.md
+               / room_view_hidden.md): a lógica em portal.js continua
+               intacta, só o gatilho na tela sumiu. -->
+          <div class="po-comp-actions-row" style="display:none;">
             <button type="button" id="po-proj-gallery-publish-toggle-btn" class="po-comp-ai-cta-btn" data-i18n="gallery.publish_toggle_btn">✨ Gerar imagem com IA</button>
           </div>
-          <div id="po-proj-gallery-publish-wrap" class="po-gallery-publish-wrap">
+          <div id="po-proj-gallery-publish-wrap" class="po-gallery-publish-wrap" style="display:none;">
             <div id="po-proj-gallery-publish-form" style="display:none;">
               <label data-i18n="gallery.room_type_label">Ambiente</label>
               <select id="po-proj-gallery-room-type"></select>
@@ -1333,7 +1417,13 @@
         <p class="hint" data-i18n="cutlist.import_format_hint">
           Colunas esperadas, nesta ordem: OP, Peça, Qtd, Comprimento (mm), Largura (mm), Espessura (19 ou 38), Cor, Fita (0, 2 ou 4), Obs.
         </p>
-        <p class="hint" data-i18n="cutlist.size_limits_hint">
+        <!-- Sem data-i18n direto aqui (2026-08-02) — o texto agora inclui os
+             limites FORMATADOS na unidade escolhida (mm/cm/m/ft/polegada
+             fracionada), escrito por updateCutlistUnitLabels() em portal.js
+             toda vez que a tabela renderiza ou a unidade global muda. Um
+             data-i18n aqui reescreveria o textContent puro (sem os valores)
+             sempre que o idioma trocasse. -->
+        <p class="hint" id="po-cutlist-size-limits-hint">
           Comprimento: 76mm a 2700mm. Largura: 76mm a 1500mm.
         </p>
 
@@ -1352,8 +1442,16 @@
                 <th data-i18n="cutlist.col_op">OP</th>
                 <th data-i18n="cutlist.col_part_name">Peça</th>
                 <th data-i18n="cutlist.col_quantity">Qtd</th>
-                <th data-i18n="cutlist.col_length">Comprimento (mm)</th>
-                <th data-i18n="cutlist.col_width">Largura (mm)</th>
+                <!-- Unidade (mm/cm/m/ft/polegada fracionada) ao lado do
+                     rótulo, atualizada por updateCutlistUnitLabels() —
+                     span SEPARADO do data-i18n (que só reescreve o próprio
+                     elemento, não os irmãos) pra sobreviver à troca de
+                     idioma. O valor gravado no banco continua SEMPRE em mm,
+                     não importa a unidade escolhida aqui (ver
+                     commitCutlistDimensionInput/comprimento_mm). -->
+                <th><span data-i18n="cutlist.col_length">Comprimento</span> <span id="po-cutlist-length-unit" class="hint"></span></th>
+                <th><span data-i18n="cutlist.col_width">Largura</span> <span id="po-cutlist-width-unit" class="hint"></span></th>
+                <th data-i18n="cutlist.col_grain">Veio</th>
                 <th data-i18n="cutlist.col_thickness">Espessura</th>
                 <th data-i18n="cutlist.col_color">Cor</th>
                 <th data-i18n="cutlist.col_edge">Fita de Borda</th>
@@ -1467,10 +1565,13 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=20260731b"></script>
+<script src="js/i18n.js?v=20260802g"></script>
 <script src="js/pricing.js?v=20260731a"></script>
 <script src="js/viewer3d.js?v=20260801a"></script>
-<script src="js/viewer3d_composition.js?v=20260801a"></script>
-<script src="js/portal.js?v=20260801c"></script>
+<script src="js/viewer3d_composition.js?v=20260803b"></script>
+<!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
+     bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
+<script src="js/photoreal.js?v=20260803l"></script>
+<script src="js/portal.js?v=20260803h"></script>
 </body>
 </html>

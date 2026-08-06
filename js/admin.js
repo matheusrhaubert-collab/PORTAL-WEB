@@ -22,6 +22,7 @@ let hingeModelsCache = [];
 let slideModelsCache = [];
 let laborTypesCache = [];
 let colorRolesCache = []; // catálogo de papéis de cor (migration 035) — ex: "Caixa", "Porta/Frente", e quantos mais o admin criar
+let marginProfilesCache = []; // catálogo de margens nomeadas (migration 070) — ver seção "MARGENS POR FAMÍLIA/CATEGORIA"
 
 function showError(elId, err) {
   const el = document.getElementById(elId);
@@ -45,6 +46,15 @@ function setupLookupCRUD(opts) {
   // continua mostrando erro em "taxonomy-error"; um uso novo (ex: color_roles,
   // fora da aba Taxonomia) pode passar o próprio elemento de erro.
   const errorElId = opts.errorElId || 'taxonomy-error';
+  // Campo extra opcional (migration 070, pedido do usuário: "na opcao da
+  // categoria ou familia, eu tenha opcao de ligar com a margem que eu
+  // quero") — só families/categories passam isso (ver setupLookupCRUD abaixo);
+  // subcategories/color_roles continuam sem, de propósito (pedido foi só
+  // "familia ou categoria"). extraLabel() resolve o nome exibido na tabela
+  // (ex: nome do perfil de margem, ou "Padrão" quando null).
+  const extraSelectFieldId = opts.extraSelectFieldId || null;
+  const extraSelectColumn = opts.extraSelectColumn || null;
+  const extraLabel = opts.extraLabel || (() => '');
 
   async function load() {
     let { data, error } = await supabaseClient.from(table).select('*').order('sort_order').order('name');
@@ -91,6 +101,7 @@ function setupLookupCRUD(opts) {
       const downDisabled = index === items.length - 1 ? 'disabled' : '';
       tr.innerHTML = `
         <td>${item.name}</td>
+        ${extraSelectFieldId ? `<td class="hint">${extraLabel(item) || 'Padrão'}</td>` : ''}
         <td>
           <button type="button" class="secondary" style="margin-top:0;padding:4px 8px;" ${upDisabled} onclick="window['${formId}_move']('${item.id}', -1)" title="Mover pra cima">▲</button>
           <button type="button" class="secondary" style="margin-top:0;padding:4px 8px;" ${downDisabled} onclick="window['${formId}_move']('${item.id}', 1)" title="Mover pra baixo">▼</button>
@@ -108,6 +119,10 @@ function setupLookupCRUD(opts) {
     if (!item) return;
     document.getElementById(idFieldId).value = item.id;
     document.getElementById(nameFieldId).value = item.name;
+    if (extraSelectFieldId) {
+      const extraEl = document.getElementById(extraSelectFieldId);
+      if (extraEl) extraEl.value = item[extraSelectColumn] || '';
+    }
   };
 
   window[formId + '_delete'] = async function (id) {
@@ -122,6 +137,10 @@ function setupLookupCRUD(opts) {
     clearError(errorElId);
     const id = document.getElementById(idFieldId).value || undefined;
     const payload = { name: document.getElementById(nameFieldId).value.trim(), active: true };
+    if (extraSelectFieldId) {
+      const extraEl = document.getElementById(extraSelectFieldId);
+      payload[extraSelectColumn] = (extraEl && extraEl.value) || null;
+    }
     if (id) {
       payload.id = id;
     } else {
@@ -143,14 +162,26 @@ function setupLookupCRUD(opts) {
   return { load };
 }
 
+// margin_profile_id (migration 070) — nome mostrado na tabela é resolvido
+// contra marginProfilesCache (declarado mais abaixo, na seção "MARGENS POR
+// FAMÍLIA/CATEGORIA"); populateMarginProfileSelects() (idem) é quem
+// preenche as <select id="family-margin-profile">/"category-margin-profile".
+function marginProfileLabel(item) {
+  if (!item.margin_profile_id) return '';
+  const profile = (marginProfilesCache || []).find((p) => p.id === item.margin_profile_id);
+  return profile ? `${profile.name} (${markupMultiplierToPercent(profile.markup_multiplier).toFixed(0)}%)` : '';
+}
+
 const familiesCRUD = setupLookupCRUD({
   table: 'families', tbodyId: 'families-tbody', formId: 'family-form',
   idFieldId: 'family-id', nameFieldId: 'family-name',
+  extraSelectFieldId: 'family-margin-profile', extraSelectColumn: 'margin_profile_id', extraLabel: marginProfileLabel,
   cacheSetter: (data) => { familiesCache = data; window['family-form_items'] = data; populateModuleTaxonomySelects(); }
 });
 const categoriesCRUD = setupLookupCRUD({
   table: 'categories', tbodyId: 'categories-tbody', formId: 'category-form',
   idFieldId: 'category-id', nameFieldId: 'category-name',
+  extraSelectFieldId: 'category-margin-profile', extraSelectColumn: 'margin_profile_id', extraLabel: marginProfileLabel,
   cacheSetter: (data) => { categoriesCache = data; window['category-form_items'] = data; populateModuleTaxonomySelects(); }
 });
 const subcategoriesCRUD = setupLookupCRUD({
@@ -320,6 +351,132 @@ async function loadPricingSettings() {
   if (typeof runTestCalculation === 'function' && selectedModuleId) runTestCalculation();
 }
 
+// ---------- MARGENS POR FAMÍLIA/CATEGORIA (migration 070) ----------
+// Catálogo de margens NOMEADAS, além da margem "Padrão" acima (pricing_settings.
+// markup_multiplier) — pedido do usuário 2026-08-02: "quero margens
+// diferentes que eu possa aplicar pra modulos diferentes... na opcao da
+// categoria ou familia, eu tenha opcao de ligar com a margem que eu quero".
+// Mesmo padrão visual/percentual do form de Margem Padrão acima (digita %,
+// grava multiplicador). families-form/category-form (setupLookupCRUD,
+// bem acima) ganharam um <select> "Margem" que lista estes perfis + "Padrão"
+// (value vazio = null = continua usando pricing_settings).
+async function loadMarginProfiles() {
+  clearError('margin-profiles-error');
+  const { data, error } = await supabaseClient.from('margin_profiles').select('*').order('sort_order').order('name');
+  if (error) { showError('margin-profiles-error', error); return; }
+  marginProfilesCache = data || [];
+  window['margin-profile-form_items'] = marginProfilesCache;
+  renderMarginProfiles(marginProfilesCache);
+  populateMarginProfileSelects();
+  // families/categories já carregadas mostram o NOME do perfil (marginProfileLabel
+  // lê marginProfilesCache) — precisa re-render pra refletir um rename/exclusão.
+  if (familiesCache.length) renderFamiliesTableIfLoaded();
+}
+
+// setupLookupCRUD (bem acima) só re-renderiza quando a PRÓPRIA tabela muda —
+// families/categories não sabem que margin_profiles mudou. Solução simples:
+// re-chama o load() de cada um (families/categoriesCRUD já existem nesse
+// ponto do arquivo, hoisting de const não ajuda aqui, então lê via
+// window['family-form_items'] em vez de re-fetch pra não gastar rede à toa).
+function renderFamiliesTableIfLoaded() {
+  if (typeof familiesCRUD !== 'undefined' && familiesCRUD.load) familiesCRUD.load();
+  if (typeof categoriesCRUD !== 'undefined' && categoriesCRUD.load) categoriesCRUD.load();
+}
+
+// Mesma resolução de portal.js (resolveMarkupMultiplierForModule) — CATEGORIA
+// do módulo tem prioridade sobre FAMÍLIA, e nenhuma das duas cai no Padrão
+// (pricing_settings.markup_multiplier). Duplicado de propósito (admin.js e
+// portal.js não compartilham módulo/bundle) — qualquer mudança na regra de
+// resolução precisa ser replicada nos dois arquivos.
+function resolveMarkupMultiplierForModule(module) {
+  const defaultMultiplier = pricingSettingsCache.markup_multiplier || 1;
+  if (!module) return defaultMultiplier;
+  const category = module.category_id ? categoriesCache.find((c) => c.id === module.category_id) : null;
+  if (category && category.margin_profile_id) {
+    const profile = marginProfilesCache.find((p) => p.id === category.margin_profile_id);
+    if (profile) return profile.markup_multiplier;
+  }
+  const family = module.family_id ? familiesCache.find((f) => f.id === module.family_id) : null;
+  if (family && family.margin_profile_id) {
+    const profile = marginProfilesCache.find((p) => p.id === family.margin_profile_id);
+    if (profile) return profile.markup_multiplier;
+  }
+  return defaultMultiplier;
+}
+
+function populateMarginProfileSelects() {
+  ['family-margin-profile', 'category-margin-profile'].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Padrão</option>';
+    marginProfilesCache.forEach((profile) => {
+      const opt = document.createElement('option');
+      opt.value = profile.id;
+      opt.textContent = `${profile.name} (${markupMultiplierToPercent(profile.markup_multiplier).toFixed(0)}%)`;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
+  });
+}
+
+function renderMarginProfiles(items) {
+  const tbody = document.getElementById('margin-profiles-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  items.forEach((item) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${item.name}</td>
+      <td>${markupMultiplierToPercent(item.markup_multiplier).toFixed(2)}%</td>
+      <td>
+        <button type="button" class="secondary" style="margin-top:0;" onclick="window.marginProfileEdit('${item.id}')">Editar</button>
+        <button type="button" class="danger" style="margin-top:0;" onclick="window.marginProfileDelete('${item.id}')">Excluir</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.marginProfileEdit = function (id) {
+  const item = marginProfilesCache.find((p) => p.id === id);
+  if (!item) return;
+  document.getElementById('margin-profile-id').value = item.id;
+  document.getElementById('margin-profile-name').value = item.name;
+  document.getElementById('margin-profile-percent').value = markupMultiplierToPercent(item.markup_multiplier).toFixed(2);
+};
+
+// Apagar um perfil em uso não quebra família/categoria nenhuma — a FK tem
+// "on delete set null" (migration 070), elas voltam pro Padrão sozinhas.
+window.marginProfileDelete = async function (id) {
+  if (!confirm('Excluir esta margem? Famílias/categorias vinculadas voltam pra margem Padrão.')) return;
+  const { error } = await supabaseClient.from('margin_profiles').delete().eq('id', id);
+  if (error) { showError('margin-profiles-error', error); return; }
+  loadMarginProfiles();
+};
+
+const marginProfileForm = document.getElementById('margin-profile-form');
+if (marginProfileForm) {
+  marginProfileForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearError('margin-profiles-error');
+    const id = document.getElementById('margin-profile-id').value || undefined;
+    const name = document.getElementById('margin-profile-name').value.trim();
+    const percent = parseFloat(document.getElementById('margin-profile-percent').value);
+    if (!name || !isFinite(percent) || percent <= -100) {
+      showError('margin-profiles-error', new Error('Informe um nome e uma margem válida (maior que -100%).'));
+      return;
+    }
+    const payload = { name, markup_multiplier: 1 + percent / 100 };
+    if (id) payload.id = id;
+    const { error } = await supabaseClient.from('margin_profiles').upsert(payload);
+    if (error) { showError('margin-profiles-error', error); return; }
+    marginProfileForm.reset();
+    document.getElementById('margin-profile-id').value = '';
+    loadMarginProfiles();
+  });
+}
+
 // ---------- PLANO DE CORTE — margem/espessura/mão de obra (migration 051) ----------
 const pricingCutlistSettingsForm = document.getElementById('pricing-cutlist-settings-form');
 if (pricingCutlistSettingsForm) {
@@ -357,20 +514,60 @@ if (pricingCutlistSettingsForm) {
 // user_profiles nasce só quando o cliente loga no portal ao menos uma vez
 // (ver ensureOwnUserProfile em portal.js) — role='cliente' por padrão, só o
 // admin (aqui) promove pra lojista/contractor/administrador.
-const ADMIN_ROLE_LABELS = { cliente: 'Cliente', lojista: 'Lojista', contractor: 'Contractor', administrador: 'Administrador' };
+//
+// "Lojista" virou "Dealer" na tela (migration 075, portal exclusivo do
+// dealer: logo própria, galeria privada, toggle Legno/Dealer) — só o RÓTULO
+// mudou aqui, o valor gravado em user_profiles.role continua sendo a string
+// 'lojista' (nenhuma migration de dado, nenhum outro lugar do código
+// precisou mudar).
+const ADMIN_ROLE_LABELS = { cliente: 'Cliente', lojista: 'Dealer', contractor: 'Contractor', administrador: 'Administrador' };
+
+// Valor em projetos por usuário (migration 078, pedido do usuário
+// 2026-08-03: "quero na tela admin saber quanto cada usuario esta fazendo
+// de projetos, em valores") — busca TODOS os user_projects (só possível
+// depois da policy "admin read user_projects" da migration 078) e agrupa
+// client_user_id -> {count, total, missing} em JS, mesmo padrão de
+// agrupamento client-side já usado em outras telas deste app (o volume de
+// projetos não justifica RPC/view nova). cached_value_usd é o valor de
+// VENDA já calculado (Pricing.calculateModulePrice, sem margem de revenda
+// — ver migration 076); projeto NUNCA aberto/salvo depois da 076 fica com
+// cached_value_usd null e entra em "missing" em vez de contar como $0 (pra
+// não subestimar o total mostrado).
+async function loadProjectValueByUser() {
+  const byUser = {};
+  try {
+    const { data, error } = await supabaseClient
+      .from('user_projects')
+      .select('client_user_id, cached_value_usd');
+    if (error) throw error;
+    (data || []).forEach((row) => {
+      const key = row.client_user_id;
+      if (!byUser[key]) byUser[key] = { count: 0, total: 0, missing: 0 };
+      byUser[key].count += 1;
+      if (row.cached_value_usd === null || row.cached_value_usd === undefined) {
+        byUser[key].missing += 1;
+      } else {
+        byUser[key].total += Number(row.cached_value_usd) || 0;
+      }
+    });
+  } catch (err) {
+    console.error('Não deu pra carregar o valor de projetos por usuário (migration 078 rodou?):', err);
+  }
+  return byUser;
+}
 
 async function loadProfiles() {
   clearError('profiles-error');
   const tbody = document.getElementById('profiles-tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="hint">Carregando...</td></tr>';
-  const { data, error } = await supabaseClient
-    .from('user_profiles')
-    .select('*')
-    .order('created_at', { ascending: false });
+  tbody.innerHTML = '<tr><td colspan="7" class="hint">Carregando...</td></tr>';
+  const [{ data, error }, projectValueByUser] = await Promise.all([
+    supabaseClient.from('user_profiles').select('*').order('created_at', { ascending: false }),
+    loadProjectValueByUser()
+  ]);
   if (error) { showError('profiles-error', error); tbody.innerHTML = ''; return; }
   tbody.innerHTML = '';
   if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="hint">Nenhum usuário cadastrado ainda.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="hint">Nenhum usuário cadastrado ainda.</td></tr>';
     return;
   }
   data.forEach((profile) => {
@@ -379,11 +576,18 @@ async function loadProfiles() {
     const options = Object.keys(ADMIN_ROLE_LABELS).map((role) =>
       `<option value="${role}" ${profile.role === role ? 'selected' : ''}>${ADMIN_ROLE_LABELS[role]}</option>`
     ).join('');
+    const projStats = projectValueByUser[profile.user_id];
+    const projectsCell = projStats ? String(projStats.count) : '0';
+    const valueCell = projStats
+      ? `$${projStats.total.toFixed(2)}` + (projStats.missing > 0 ? ` <span class="hint">(+${projStats.missing} sem valor calculado)</span>` : '')
+      : '—';
     tr.innerHTML = `
       <td><input type="text" class="profile-name-input" value="${(profile.full_name || '').replace(/"/g, '&quot;')}" placeholder="—" style="width:140px;" /></td>
       <td>${profile.email || '—'}</td>
       <td><select class="profile-role-select">${options}</select></td>
       <td>${dateStr}</td>
+      <td>${projectsCell}</td>
+      <td>${valueCell}</td>
       <td><button type="button" class="secondary profile-save-btn" style="margin-top:0;">Salvar</button></td>
     `;
     tr.querySelector('.profile-save-btn').addEventListener('click', async () => {
@@ -446,6 +650,353 @@ if (createUserForm) {
     }
   });
 }
+
+// ---------- CRM DE CLIENTES DA FÁBRICA (migration 079) ----------
+// Cadastro comercial da fábrica (nome, telefone, empresa, endereço +
+// histórico de reuniões) — DIFERENTE de user_profiles/"Perfis" (contas de
+// login do portal). Vínculo com um usuário do portal é opcional (campo
+// linked_user_id), pensado como primeiro passo do ERP integrado.
+let crmClientsCache = [];
+let selectedCrmClientId = null;
+
+async function loadCrmClients() {
+  clearError('crm-clients-list-error');
+  const tbody = document.getElementById('crm-clients-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="hint">Carregando...</td></tr>';
+  const { data, error } = await supabaseClient
+    .from('crm_clients')
+    .select('*')
+    .order('nome', { ascending: true });
+  if (error) { showError('crm-clients-list-error', error); tbody.innerHTML = ''; return; }
+  crmClientsCache = data || [];
+  renderCrmClientsTable(crmClientsCache);
+}
+
+function renderCrmClientsTable(list) {
+  const tbody = document.getElementById('crm-clients-tbody');
+  tbody.innerHTML = '';
+  if (!list || list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="hint">Nenhum cliente cadastrado ainda.</td></tr>';
+    return;
+  }
+  list.forEach((client) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${(client.nome || '—').replace(/</g, '&lt;')}</td>
+      <td>${(client.empresa || '—').replace(/</g, '&lt;')}</td>
+      <td>${(client.telefone || '—').replace(/</g, '&lt;')}</td>
+      <td>${(client.endereco || '—').replace(/</g, '&lt;')}</td>
+      <td><button type="button" class="secondary crm-client-view-btn" style="margin-top:0;">Ver</button></td>
+    `;
+    tr.querySelector('.crm-client-view-btn').addEventListener('click', () => openCrmClientDetail(client.id));
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('crm-clients-search').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { renderCrmClientsTable(crmClientsCache); return; }
+  renderCrmClientsTable(crmClientsCache.filter((c) =>
+    (c.nome || '').toLowerCase().includes(q) || (c.empresa || '').toLowerCase().includes(q)
+  ));
+});
+
+document.getElementById('crm-client-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError('crm-client-error');
+  const nome = document.getElementById('crm-client-nome').value.trim();
+  const telefone = document.getElementById('crm-client-telefone').value.trim();
+  const empresa = document.getElementById('crm-client-empresa').value.trim();
+  const endereco = document.getElementById('crm-client-endereco').value.trim();
+  const { error } = await supabaseClient.from('crm_clients').insert({
+    nome, telefone: telefone || null, empresa: empresa || null, endereco: endereco || null
+  });
+  if (error) { showError('crm-client-error', error); return; }
+  document.getElementById('crm-client-form').reset();
+  loadCrmClients();
+});
+
+// Popula o select de vínculo com usuário do portal (user_profiles) — só
+// carregado quando o painel de detalhe abre pela 1ª vez nesta sessão.
+let crmLinkedUserOptionsLoaded = false;
+async function populateCrmLinkedUserSelect() {
+  if (crmLinkedUserOptionsLoaded) return;
+  const { data, error } = await supabaseClient
+    .from('user_profiles')
+    .select('user_id, full_name, email')
+    .order('email', { ascending: true });
+  if (error) return; // não bloqueia o resto do painel por causa disso
+  const select = document.getElementById('crm-client-edit-linked-user');
+  data.forEach((profile) => {
+    const opt = document.createElement('option');
+    opt.value = profile.user_id;
+    opt.textContent = profile.full_name ? `${profile.full_name} (${profile.email})` : profile.email;
+    select.appendChild(opt);
+  });
+  crmLinkedUserOptionsLoaded = true;
+}
+
+async function openCrmClientDetail(clientId) {
+  selectedCrmClientId = clientId;
+  clearError('crm-client-detail-error');
+  await populateCrmLinkedUserSelect();
+  const client = crmClientsCache.find((c) => c.id === clientId);
+  if (!client) return;
+  document.getElementById('crm-client-edit-id').value = client.id;
+  document.getElementById('crm-client-edit-nome').value = client.nome || '';
+  document.getElementById('crm-client-edit-telefone').value = client.telefone || '';
+  document.getElementById('crm-client-edit-empresa').value = client.empresa || '';
+  document.getElementById('crm-client-edit-endereco').value = client.endereco || '';
+  document.getElementById('crm-client-edit-notes').value = client.notes || '';
+  document.getElementById('crm-client-edit-linked-user').value = client.linked_user_id || '';
+  document.getElementById('crm-client-detail-panel').style.display = '';
+  document.getElementById('crm-meeting-date').value = new Date().toISOString().slice(0, 10);
+  await loadCrmMeetings(clientId);
+  document.getElementById('crm-client-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+document.getElementById('crm-client-edit-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError('crm-client-detail-error');
+  const id = document.getElementById('crm-client-edit-id').value;
+  const statusEl = document.getElementById('crm-client-edit-status');
+  const linkedUserVal = document.getElementById('crm-client-edit-linked-user').value;
+  const { error } = await supabaseClient.from('crm_clients').update({
+    nome: document.getElementById('crm-client-edit-nome').value.trim(),
+    telefone: document.getElementById('crm-client-edit-telefone').value.trim() || null,
+    empresa: document.getElementById('crm-client-edit-empresa').value.trim() || null,
+    endereco: document.getElementById('crm-client-edit-endereco').value.trim() || null,
+    notes: document.getElementById('crm-client-edit-notes').value.trim() || null,
+    linked_user_id: linkedUserVal || null,
+    updated_at: new Date().toISOString()
+  }).eq('id', id);
+  if (error) { showError('crm-client-detail-error', error); return; }
+  statusEl.textContent = 'Salvo!';
+  setTimeout(() => { statusEl.textContent = ''; }, 2000);
+  loadCrmClients();
+});
+
+document.getElementById('crm-client-delete-btn').addEventListener('click', async () => {
+  const id = document.getElementById('crm-client-edit-id').value;
+  if (!id) return;
+  if (!confirm('Excluir este cliente e todo o histórico de reuniões dele? Essa ação não pode ser desfeita.')) return;
+  const { error } = await supabaseClient.from('crm_clients').delete().eq('id', id);
+  if (error) { showError('crm-client-detail-error', error); return; }
+  document.getElementById('crm-client-detail-panel').style.display = 'none';
+  selectedCrmClientId = null;
+  loadCrmClients();
+});
+
+async function loadCrmMeetings(clientId) {
+  clearError('crm-meetings-error');
+  const tbody = document.getElementById('crm-meetings-tbody');
+  tbody.innerHTML = '<tr><td colspan="3" class="hint">Carregando...</td></tr>';
+  const { data, error } = await supabaseClient
+    .from('crm_client_meetings')
+    .select('*')
+    .eq('client_id', clientId)
+    .order('meeting_date', { ascending: false });
+  if (error) { showError('crm-meetings-error', error); tbody.innerHTML = ''; return; }
+  tbody.innerHTML = '';
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="hint">Nenhuma reunião registrada ainda.</td></tr>';
+    return;
+  }
+  data.forEach((meeting) => {
+    const tr = document.createElement('tr');
+    const dateStr = meeting.meeting_date ? new Date(meeting.meeting_date + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+    tr.innerHTML = `
+      <td>${dateStr}</td>
+      <td>${(meeting.notes || '').replace(/</g, '&lt;')}</td>
+      <td><button type="button" class="secondary crm-meeting-delete-btn" style="margin-top:0;">Excluir</button></td>
+    `;
+    tr.querySelector('.crm-meeting-delete-btn').addEventListener('click', async () => {
+      if (!confirm('Excluir esta reunião do histórico?')) return;
+      const { error: delError } = await supabaseClient.from('crm_client_meetings').delete().eq('id', meeting.id);
+      if (delError) { showError('crm-meetings-error', delError); return; }
+      loadCrmMeetings(clientId);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('crm-meeting-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError('crm-meetings-error');
+  if (!selectedCrmClientId) return;
+  const meeting_date = document.getElementById('crm-meeting-date').value;
+  const notes = document.getElementById('crm-meeting-notes').value.trim();
+  const { error } = await supabaseClient.from('crm_client_meetings').insert({
+    client_id: selectedCrmClientId, meeting_date, notes
+  });
+  if (error) { showError('crm-meetings-error', error); return; }
+  document.getElementById('crm-meeting-notes').value = '';
+  loadCrmMeetings(selectedCrmClientId);
+});
+
+document.getElementById('crm-clients-tab-btn').addEventListener('click', loadCrmClients);
+
+// ---------- CONTROLADORIA (dashboard) ----------
+// Pedido do usuário 2026-08-05: "quantos pedidos entraram, quantos
+// orçamentos foram gerados, quantos novos clientes se cadastraram" — tudo
+// calculado no navegador em cima de tabelas que já existem (orders/quotes/
+// user_profiles), sem migration nova. "Pedidos entrados" usa o MESMO filtro
+// de status que a aba Pedidos já usa (submitted/approved/paid/delivered —
+// ver renderOrdersList), pra bater com o que o admin já vê lá. "Orçamentos
+// gerados" conta toda linha de quotes no período (a calculadora avulsa cria
+// a linha assim que o orçamento é gerado). "Novos clientes cadastrados" é
+// novo registro em user_profiles (contas de login do portal — não confundir
+// com o CRM acima, que é cadastro manual do admin).
+
+function getControladoriaRange() {
+  const preset = document.getElementById('controladoria-period-select').value;
+  const now = new Date();
+  let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  let start;
+  if (preset === 'custom') {
+    const fromVal = document.getElementById('controladoria-date-from').value;
+    const toVal = document.getElementById('controladoria-date-to').value;
+    start = fromVal ? new Date(fromVal + 'T00:00:00') : new Date(end.getFullYear(), end.getMonth(), end.getDate() - 29);
+    if (toVal) end = new Date(toVal + 'T23:59:59.999');
+  } else if (preset === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  } else {
+    const days = parseInt(preset, 10) || 30;
+    start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - (days - 1), 0, 0, 0, 0);
+  }
+  return { start, end };
+}
+
+function fmtDateBR(d) { return d.toLocaleDateString('pt-BR'); }
+
+// Chave local YYYY-MM-DD — evita o bug clássico de usar toISOString() (UTC)
+// pra bucketizar por dia, que desloca o dia perto da virada de fuso.
+function crmDayKey(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function buildDayBuckets(start, end) {
+  const days = [];
+  const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (cur <= last) {
+    days.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+}
+
+function renderBarChart(chartElId, labelsElId, days, countsByKey) {
+  const chartEl = document.getElementById(chartElId);
+  const labelsEl = document.getElementById(labelsElId);
+  chartEl.innerHTML = '';
+  labelsEl.innerHTML = '';
+  const max = Math.max(1, ...days.map((d) => countsByKey[crmDayKey(d)] || 0));
+  const labelEvery = Math.max(1, Math.ceil(days.length / 10));
+  days.forEach((d, i) => {
+    const key = crmDayKey(d);
+    const count = countsByKey[key] || 0;
+    const col = document.createElement('div');
+    col.className = 'bar-col';
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = `${Math.max(2, Math.round((count / max) * 100))}%`;
+    bar.title = `${fmtDateBR(d)}: ${count}`;
+    col.appendChild(bar);
+    chartEl.appendChild(col);
+    const span = document.createElement('span');
+    span.textContent = (i % labelEvery === 0 || i === days.length - 1) ? `${d.getDate()}/${d.getMonth() + 1}` : '';
+    labelsEl.appendChild(span);
+  });
+}
+
+function renderKpiCard(value, label, breakdownLines) {
+  const card = document.createElement('div');
+  card.className = 'kpi-card';
+  const breakdownHtml = breakdownLines && breakdownLines.length
+    ? `<div class="kpi-breakdown">${breakdownLines.join('<br>')}</div>` : '';
+  card.innerHTML = `<div class="kpi-value">${value}</div><div class="kpi-label">${label}</div>${breakdownHtml}`;
+  return card;
+}
+
+async function loadControladoria() {
+  clearError('controladoria-error');
+  const { start, end } = getControladoriaRange();
+  document.getElementById('controladoria-range-label').textContent = `${fmtDateBR(start)} — ${fmtDateBR(end)}`;
+  const startISO = start.toISOString();
+  const endISO = end.toISOString();
+
+  const [ordersRes, quotesRes, profilesRes] = await Promise.all([
+    supabaseClient.from('orders')
+      .select('id, order_type, submitted_at')
+      .in('status', ['submitted', 'approved', 'paid', 'delivered'])
+      .gte('submitted_at', startISO).lte('submitted_at', endISO),
+    supabaseClient.from('quotes')
+      .select('id, created_at')
+      .gte('created_at', startISO).lte('created_at', endISO),
+    supabaseClient.from('user_profiles')
+      .select('user_id, created_at, role')
+      .gte('created_at', startISO).lte('created_at', endISO)
+  ]);
+  if (ordersRes.error) { showError('controladoria-error', ordersRes.error); return; }
+  if (quotesRes.error) { showError('controladoria-error', quotesRes.error); return; }
+  if (profilesRes.error) { showError('controladoria-error', profilesRes.error); return; }
+
+  const orders = ordersRes.data || [];
+  const quotes = quotesRes.data || [];
+  const profiles = profilesRes.data || [];
+
+  const cardsEl = document.getElementById('controladoria-cards');
+  cardsEl.innerHTML = '';
+  const ORDER_TYPE_LABELS = { modules: 'Módulos', project: 'Projeto', cutting_list: 'Plano de Corte' };
+  const orderTypeCounts = {};
+  orders.forEach((o) => { const t = o.order_type || 'modules'; orderTypeCounts[t] = (orderTypeCounts[t] || 0) + 1; });
+  const orderBreakdown = Object.keys(orderTypeCounts).map((t) => `${ORDER_TYPE_LABELS[t] || t}: ${orderTypeCounts[t]}`);
+  cardsEl.appendChild(renderKpiCard(orders.length, 'Pedidos entrados', orderBreakdown));
+
+  cardsEl.appendChild(renderKpiCard(quotes.length, 'Orçamentos gerados'));
+
+  const roleCounts = {};
+  profiles.forEach((p) => { const r = p.role || 'cliente'; roleCounts[r] = (roleCounts[r] || 0) + 1; });
+  const roleBreakdown = Object.keys(roleCounts).map((r) => `${ADMIN_ROLE_LABELS[r] || r}: ${roleCounts[r]}`);
+  cardsEl.appendChild(renderKpiCard(profiles.length, 'Novos clientes cadastrados', roleBreakdown));
+
+  // Gráfico diário — só faz sentido pra período curto o bastante pra ficar
+  // legível; período mais longo (custom grande) fica só com os cards.
+  const days = buildDayBuckets(start, end);
+  const noteEl = document.getElementById('controladoria-chart-note');
+  const chartsEl = document.getElementById('controladoria-charts');
+  if (days.length > 92) {
+    chartsEl.style.display = 'none';
+    noteEl.style.display = 'block';
+    return;
+  }
+  chartsEl.style.display = 'flex';
+  noteEl.style.display = 'none';
+
+  const ordersByDay = {};
+  orders.forEach((o) => { if (o.submitted_at) { const k = crmDayKey(new Date(o.submitted_at)); ordersByDay[k] = (ordersByDay[k] || 0) + 1; } });
+  const quotesByDay = {};
+  quotes.forEach((q) => { const k = crmDayKey(new Date(q.created_at)); quotesByDay[k] = (quotesByDay[k] || 0) + 1; });
+  const profilesByDay = {};
+  profiles.forEach((p) => { const k = crmDayKey(new Date(p.created_at)); profilesByDay[k] = (profilesByDay[k] || 0) + 1; });
+
+  renderBarChart('controladoria-chart-orders', 'controladoria-chart-orders-labels', days, ordersByDay);
+  renderBarChart('controladoria-chart-quotes', 'controladoria-chart-quotes-labels', days, quotesByDay);
+  renderBarChart('controladoria-chart-clients', 'controladoria-chart-clients-labels', days, profilesByDay);
+}
+
+document.getElementById('controladoria-period-select').addEventListener('change', () => {
+  const isCustom = document.getElementById('controladoria-period-select').value === 'custom';
+  document.getElementById('controladoria-custom-from').style.display = isCustom ? '' : 'none';
+  document.getElementById('controladoria-custom-to').style.display = isCustom ? '' : 'none';
+  if (!isCustom) loadControladoria();
+});
+document.getElementById('controladoria-refresh-btn').addEventListener('click', loadControladoria);
+document.getElementById('controladoria-tab-btn').addEventListener('click', loadControladoria);
 
 document.getElementById('pricing-settings-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -824,7 +1375,7 @@ function renderColors() {
       <td>${c.name}</td>
       <td>$${Number(c.sheet_price_per_m2).toFixed(2)} / m²</td>
       <td>$${Number(c.edge_price_per_linear_m).toFixed(2)} / m</td>
-      <td>${c.stock_in_house ? '<span class="badge">stock in house</span>' : (sheetSize ? sheetSize.name : '<span class="hint">— nenhum —</span>')}</td>
+      <td>${c.stock_in_house ? '<span class="badge">stock in house</span>' : (c.skip_cutting_plan ? '<span class="badge">cor especial</span>' : (sheetSize ? sheetSize.name : '<span class="hint">— nenhum —</span>'))}</td>
       <td>${c.active ? '<span class="badge">ativa</span>' : '<span class="badge">inativa</span>'}</td>
       <td>
           <button class="secondary" ${upDisabled} onclick="moveColor('${c.id}', -1)" title="Mover pra cima">▲</button>
@@ -906,21 +1457,26 @@ window.editColor = function (id) {
   document.getElementById('color-texture-file').value = '';
   document.getElementById('color-default-sheet-size').value = c.default_sheet_size_id || '';
   document.getElementById('color-stock-in-house').checked = !!c.stock_in_house;
+  document.getElementById('color-skip-cutting-plan').checked = !!c.skip_cutting_plan;
   toggleColorSheetSizeFieldVisibility();
   const preview = document.getElementById('color-texture-preview');
   preview.innerHTML = c.texture_url ? `<img class="texture-thumb" src="${c.texture_url}" alt="preview" />` : '';
   document.getElementById('color-texture-upload-status').textContent = '';
 };
 
-// Esconde o select de tamanho de chapa quando "STOCK IN HOUSE" está marcado
-// — não tem por quê escolher um tamanho que nunca vai ser usado pra nesting
-// (migration 064, renomeado de "usa retalhos").
+// Esconde o select de tamanho de chapa quando "STOCK IN HOUSE" OU "Cor
+// Especial" está marcado — nenhum dos dois nunca roda nesting, não tem por
+// quê escolher um tamanho que não vai ser usado (migration 064/074).
 function toggleColorSheetSizeFieldVisibility() {
   const field = document.getElementById('color-sheet-size-field');
-  const checkbox = document.getElementById('color-stock-in-house');
-  if (field && checkbox) field.style.display = checkbox.checked ? 'none' : '';
+  const stockCheckbox = document.getElementById('color-stock-in-house');
+  const specialCheckbox = document.getElementById('color-skip-cutting-plan');
+  if (field && stockCheckbox && specialCheckbox) {
+    field.style.display = (stockCheckbox.checked || specialCheckbox.checked) ? 'none' : '';
+  }
 }
 document.getElementById('color-stock-in-house').addEventListener('change', toggleColorSheetSizeFieldVisibility);
+document.getElementById('color-skip-cutting-plan').addEventListener('change', toggleColorSheetSizeFieldVisibility);
 
 window.deleteColor = async function (id) {
   if (!confirm('Excluir esta cor?')) return;
@@ -951,6 +1507,7 @@ document.getElementById('color-form').addEventListener('submit', async (e) => {
     swatch_hex: document.getElementById('color-swatch-hex').value || '#cccccc',
     default_sheet_size_id: document.getElementById('color-default-sheet-size').value || null,
     stock_in_house: document.getElementById('color-stock-in-house').checked,
+    skip_cutting_plan: document.getElementById('color-skip-cutting-plan').checked,
     active: document.getElementById('color-active').checked
   };
   if (id) {
@@ -972,6 +1529,7 @@ document.getElementById('color-form').addEventListener('submit', async (e) => {
   document.getElementById('color-texture-upload-status').textContent = '';
   document.getElementById('color-default-sheet-size').value = '';
   document.getElementById('color-stock-in-house').checked = false;
+  document.getElementById('color-skip-cutting-plan').checked = false;
   toggleColorSheetSizeFieldVisibility();
   document.getElementById('color-active').checked = true;
   loadColors();
@@ -5892,18 +6450,22 @@ function runTestCalculation() {
       `;
     }
     let rows = result.breakdown.map((p) => renderBreakdownRow(p, 0)).join('');
-    // Preço do cliente = custo x margem (migration 037, ver pricing_settings)
-    // — calculado de novo aqui SÓ pra exibir lado a lado com o custo puro
-    // (result.total acima é sempre o CUSTO, sem margem, porque esta chamada
-    // não passa markupMultiplier — é o "Teste de cálculo" interno).
-    const clientTotal = result.total * (pricingSettingsCache.markup_multiplier || 1);
+    // Preço do cliente = custo x margem — calculado de novo aqui SÓ pra
+    // exibir lado a lado com o custo puro (result.total acima é sempre o
+    // CUSTO, sem margem, porque esta chamada não passa markupMultiplier — é
+    // o "Teste de cálculo" interno). Migration 070: a margem usada agora é a
+    // do módulo (categoria > família > Padrão, ver resolveMarkupMultiplierForModule),
+    // não mais sempre a Padrão — pra este teste bater com o que o cliente vê
+    // de verdade no portal.
+    const effectiveMultiplier = resolveMarkupMultiplierForModule(module);
+    const clientTotal = result.total * effectiveMultiplier;
     resultEl.innerHTML = `
       <table>
         <thead><tr><th>Peça</th><th>Dimensões</th><th>Chapa</th><th>Fita</th><th>Custo chapa</th><th>Custo fita</th><th>Mão de obra</th><th>Dobradiça</th><th>Corrediça</th><th>Total</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <p class="total-price">Custo do módulo pai: $${result.total.toFixed(2)}</p>
-      <p class="total-price">Preço pro cliente (com margem de ${markupMultiplierToPercent(pricingSettingsCache.markup_multiplier || 1).toFixed(2)}%): $${clientTotal.toFixed(2)}</p>
+      <p class="total-price">Preço pro cliente (com margem de ${markupMultiplierToPercent(effectiveMultiplier).toFixed(2)}%): $${clientTotal.toFixed(2)}</p>
       <p class="hint">Peças-módulo (sub-montagem, 📦) mostram as peças-folha de dentro indentadas ("↳") logo abaixo, com o custo de mão de obra de cada uma — confira aí se a mão de obra está sendo somada. Esta é a única visão com breakdown por peça e custo — o cliente vê apenas o total com margem.</p>
     `;
   } catch (err) {
@@ -6033,10 +6595,14 @@ async function renderOrdersList() {
     // order_type (migration 051) — 'cutting_list' é a planilha do Contractor
     // (cutting_list_items), sem order_type (ou 'modules') é o pedido normal
     // de módulo configurado (order_items) — botão abre a tela certa.
+    // 'project' (2026-08-02) — pedido criado pela aba Projetos do portal
+    // (sendProjectToOrder), vive em order_items igual a 'modules', só muda o
+    // rótulo aqui pra deixar claro de onde veio.
     const isCutlist = order.order_type === 'cutting_list';
+    const typeLabel = isCutlist ? 'Plano de Corte' : (order.order_type === 'project' ? 'Projeto' : 'Módulos');
     tr.innerHTML = `
       <td>${order.po_name || '—'}</td>
-      <td>${isCutlist ? 'Plano de Corte' : 'Módulos'}</td>
+      <td>${typeLabel}</td>
       <td>${order.client_name || '—'}</td>
       <td>${order.client_email || '—'}</td>
       <td>${order.client_phone || '—'}</td>
@@ -6089,7 +6655,7 @@ async function openOrderCuttingList(order) {
     `Cliente: ${order.client_name || '—'} · E-mail: ${order.client_email || '—'} · Enviado em: ${dateStr}`;
 
   const tbody = document.getElementById('order-cutting-list-tbody');
-  tbody.innerHTML = '<tr><td colspan="11" class="hint">Carregando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="12" class="hint">Carregando...</td></tr>';
 
   const { data: items, error } = await supabaseClient
     .from('cutting_list_items')
@@ -6100,7 +6666,7 @@ async function openOrderCuttingList(order) {
 
   tbody.innerHTML = '';
   if (!items || items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="hint">Nenhuma peça neste pedido.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="hint">Nenhuma peça neste pedido.</td></tr>';
     document.getElementById('order-cutting-list-total').textContent = '';
     return;
   }
@@ -6114,6 +6680,7 @@ async function openOrderCuttingList(order) {
       <td>${it.quantity}</td>
       <td>${Number(it.comprimento_mm).toFixed(0)}</td>
       <td>${Number(it.largura_mm).toFixed(0)}</td>
+      <td>${it.has_grain ? 'Sim' : 'Não'}</td>
       <td>${Number(it.espessura_mm).toFixed(0)}mm</td>
       <td>${it.color_name || '—'}</td>
       <td>${it.edge_banding}</td>
@@ -6241,6 +6808,171 @@ let galleryAdminHasMore = false;
 // apareceu numa página anterior.
 let galleryAdminFamilyNameById = new Map();
 
+// "Cliente de referência" (pedido do usuário 2026-08-02) — margem de
+// revenda (migration 072) do cliente escolhido no dropdown, usada só pra
+// PREVIEW numa coluna extra da tabela (ver renderGalleryAdminRows). 0 =
+// nenhum cliente escolhido, coluna mostra "—".
+let galleryAdminReferenceMarginPct = 0;
+
+// Lista de clientes com margem configurada, pro dropdown de referência.
+// user_profiles.select('*') já inclui resale_margin_pct (migration 072) —
+// mesma policy de leitura que loadProfiles() já usa (admin enxerga todas as
+// linhas via is_admin()).
+async function loadGalleryReferenceClients() {
+  const sel = document.getElementById('gallery-reference-client-select');
+  if (!sel) return;
+  const { data, error } = await supabaseClient
+    .from('user_profiles')
+    .select('user_id, email, full_name, resale_margin_pct')
+    .order('email');
+  if (error) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— nenhum —</option>';
+  (data || []).forEach((profile) => {
+    const opt = document.createElement('option');
+    opt.value = profile.user_id;
+    const label = profile.full_name || profile.email || profile.user_id;
+    opt.textContent = `${label} (margem ${Number(profile.resale_margin_pct || 0)}%)`;
+    opt.dataset.marginPct = Number(profile.resale_margin_pct || 0);
+    sel.appendChild(opt);
+  });
+  if (prev) sel.value = prev;
+}
+
+document.getElementById('gallery-reference-client-select').addEventListener('change', (ev) => {
+  const opt = ev.target.selectedOptions[0];
+  galleryAdminReferenceMarginPct = opt ? Number(opt.dataset.marginPct || 0) : 0;
+  renderGalleryAdminRows();
+});
+
+// Recalcula preço de UM post a partir do snapshot salvo em `slots` (mesmo
+// formato de user_compositions.slots/user_projects.slots) — mirror de
+// computeProjectSlotsTotal (portal.js), adaptado pros caches do admin
+// (modulesCache/loadRecursivePiecesForModule/resolveMarkupMultiplierForModule
+// já existem aqui, não precisa duplicar catálogo). Sem fallback de cor
+// padrão por papel (diferente do portal.js, que usa moduleColorsByRole pra
+// preencher cor não escolhida) — aqui só usa a cor que já estava salva no
+// slot; se faltar alguma, aquele slot é pulado (mesmo comportamento de
+// "catálogo mudou e a config não fecha mais" do portal.js).
+async function computeGalleryPostPrice(slotConfigs) {
+  if (!Array.isArray(slotConfigs) || slotConfigs.length === 0) return { total: 0, costTotal: 0, skipped: 0 };
+  if (!modulesCache.length) await loadModules();
+  const pieceColorOverrideColorIds = slotConfigs.flatMap((s) =>
+    Object.values(s.piece_color_overrides || {}).flatMap((perRole) => Object.values(perRole).map((e) => e.color_id))
+  );
+  const colorIds = [...new Set(
+    slotConfigs.flatMap((s) => (s.selected_colors || []).map((c) => c.color_id))
+      .concat(pieceColorOverrideColorIds)
+      .filter(Boolean)
+  )];
+  const hingeIds = [...new Set(slotConfigs.map((s) => s.hinge_model_id).filter(Boolean))];
+  const slideIds = [...new Set(slotConfigs.map((s) => s.slide_model_id).filter(Boolean))];
+  const [colorsRes, hingeRes, slideRes] = await Promise.all([
+    colorIds.length ? supabaseClient.from('colors').select('*').in('id', colorIds) : { data: [] },
+    hingeIds.length ? supabaseClient.from('hinge_models').select('*').in('id', hingeIds) : { data: [] },
+    slideIds.length ? supabaseClient.from('slide_models').select('*').in('id', slideIds) : { data: [] }
+  ]);
+  const colorById = new Map((colorsRes.data || []).map((c) => [c.id, c]));
+  const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
+  const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
+
+  let total = 0;
+  let costTotal = 0;
+  let skipped = 0;
+  for (const cfg of slotConfigs) {
+    const module = modulesCache.find((m) => m.id === cfg.module_id);
+    if (!module) { skipped += 1; continue; }
+    try {
+      const piecesList = await loadRecursivePiecesForModule(module.id);
+      if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
+      const optionalIds = cfg.selected_optional_ids || [];
+      const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
+      const colorsByRole = {};
+      (cfg.selected_colors || []).forEach((sc) => {
+        const color = colorById.get(sc.color_id);
+        if (color) colorsByRole[sc.role_id] = color;
+      });
+      const hingeModel = cfg.hinge_model_id ? (hingeById.get(cfg.hinge_model_id) || null) : null;
+      const slideModel = cfg.slide_model_id ? (slideById.get(cfg.slide_model_id) || null) : null;
+      const pieceColorOverrides = {};
+      Object.keys(cfg.piece_color_overrides || {}).forEach((pieceId) => {
+        const perRole = cfg.piece_color_overrides[pieceId];
+        const resolved = {};
+        Object.keys(perRole).forEach((roleId) => {
+          const color = colorById.get(perRole[roleId].color_id);
+          if (color) resolved[roleId] = color;
+        });
+        if (Object.keys(resolved).length) pieceColorOverrides[pieceId] = resolved;
+      });
+      const result = module.is_decoration
+        ? { total: 0, cost_total: 0 }
+        : Pricing.calculateModulePrice({
+          module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+          shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
+          pieceColorOverrides,
+          width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+          markupMultiplier: resolveMarkupMultiplierForModule(module)
+        });
+      total += Number(result.total) || 0;
+      costTotal += Number(result.cost_total) || 0;
+    } catch (calcErr) { skipped += 1; } // catálogo mudou e a config não fecha mais — não entra na soma
+  }
+  return { total, costTotal, skipped };
+}
+
+// Botão "Recalcular Galeria" (pedido do usuário 2026-08-02) — corrige
+// price_sale/price_cost desatualizados: esses valores são um SNAPSHOT
+// gravado no momento em que o cliente publicou (ver
+// publishCompositionToGallery/portal.js), então se o preço de um módulo ou
+// a margem do admin mudar depois, a Galeria fica com valor velho. Roda
+// sobre TODOS os posts pending/approved (rejeitado não aparece pra
+// ninguém, não vale a pena gastar tempo recalculando) — busca em páginas
+// pra não estourar limite de linha nenhuma consulta.
+const GALLERY_RECALC_PAGE_SIZE = 50;
+async function recalculateGalleryPrices() {
+  const btn = document.getElementById('gallery-recalc-btn');
+  const statusEl = document.getElementById('gallery-recalc-status');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  let processed = 0;
+  let updated = 0;
+  let totalSkippedSlots = 0;
+  try {
+    let from = 0;
+    for (;;) {
+      const { data, error } = await supabaseClient
+        .from('gallery_posts')
+        .select('id, slots')
+        .in('status', ['pending', 'approved'])
+        .order('created_at', { ascending: false })
+        .range(from, from + GALLERY_RECALC_PAGE_SIZE - 1);
+      if (error) { statusEl.textContent = 'Erro: ' + error.message; return; }
+      const page = data || [];
+      if (page.length === 0) break;
+      for (const post of page) {
+        processed += 1;
+        statusEl.textContent = `Recalculando… (${processed})`;
+        const slots = Array.isArray(post.slots) ? post.slots : [];
+        const { total, costTotal, skipped } = await computeGalleryPostPrice(slots);
+        totalSkippedSlots += skipped;
+        const { error: updErr } = await supabaseClient
+          .from('gallery_posts')
+          .update({ price_sale: total, price_cost: costTotal })
+          .eq('id', post.id);
+        if (!updErr) updated += 1;
+      }
+      if (page.length < GALLERY_RECALC_PAGE_SIZE) break;
+      from += GALLERY_RECALC_PAGE_SIZE;
+    }
+    statusEl.textContent = `Recalculado: ${updated}/${processed} post(s)`
+      + (totalSkippedSlots > 0 ? ` — ${totalSkippedSlots} módulo(s) ignorado(s) (não existem mais no catálogo).` : '.');
+  } finally {
+    btn.disabled = false;
+    renderGalleryAdminList();
+  }
+}
+document.getElementById('gallery-recalc-btn').addEventListener('click', recalculateGalleryPrices);
+
 function updateGalleryAdminLoadMoreBtn() {
   const btn = document.getElementById('gallery-admin-load-more-btn');
   if (btn) btn.style.display = galleryAdminHasMore ? 'inline-block' : 'none';
@@ -6249,7 +6981,7 @@ function updateGalleryAdminLoadMoreBtn() {
 async function renderGalleryAdminList() {
   clearError('gallery-admin-error');
   const tbody = document.getElementById('gallery-admin-tbody');
-  tbody.innerHTML = '<tr><td colspan="11" class="hint">Carregando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="12" class="hint">Carregando...</td></tr>';
   galleryAdminPostsCache = [];
   galleryAdminFamilyNameById = new Map();
   const statusFilter = document.getElementById('gallery-admin-status-filter').value;
@@ -6313,7 +7045,7 @@ async function renderGalleryAdminRows() {
   const tbody = document.getElementById('gallery-admin-tbody');
   const data = galleryAdminPostsCache;
   if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="hint">Nenhum post encontrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="hint">Nenhum post encontrado.</td></tr>';
     return;
   }
   const missingFamilyIds = [...new Set(data.map((p) => p.family_id).filter((id) => id && !galleryAdminFamilyNameById.has(id)))];
@@ -6330,6 +7062,13 @@ async function renderGalleryAdminRows() {
     const imgHtml = post.ai_image_data_url
       ? `<img src="${post.ai_image_data_url}" alt="" class="gallery-admin-thumb" style="width:70px;height:70px;object-fit:contain;border:1px solid var(--border);border-radius:6px;cursor:zoom-in;" />`
       : '—';
+    // Preview de revenda (pedido do usuário 2026-08-02) — preço de venda ×
+    // (1 + margem do cliente escolhido no dropdown "Cliente de
+    // referência"). Só cosmético, não grava nada — ver
+    // galleryAdminReferenceMarginPct/loadGalleryReferenceClients.
+    const resaleHtml = galleryAdminReferenceMarginPct > 0
+      ? `$${(Number(post.price_sale || 0) * (1 + galleryAdminReferenceMarginPct / 100)).toFixed(2)}`
+      : '—';
     tr.innerHTML = `
       <td>${imgHtml}</td>
       <td>${post.composition_name || '—'}</td>
@@ -6341,6 +7080,7 @@ async function renderGalleryAdminRows() {
       <td>${Number(post.likes_count || 0)}</td>
       <td>${statusLabel}</td>
       <td>${dateStr}</td>
+      <td>${resaleHtml}</td>
       <td></td>
     `;
     const actionsTd = tr.lastElementChild;
@@ -6442,7 +7182,10 @@ async function deleteGalleryPost(postId) {
   renderGalleryAdminList();
 }
 
-document.getElementById('gallery-tab-btn').addEventListener('click', renderGalleryAdminList);
+document.getElementById('gallery-tab-btn').addEventListener('click', () => {
+  renderGalleryAdminList();
+  loadGalleryReferenceClients();
+});
 document.getElementById('gallery-admin-status-filter').addEventListener('change', renderGalleryAdminList);
 
 // ---------- REFERÊNCIAS (fotos reais de MÓDULO pra fidelidade da IA) ----------
@@ -6895,6 +7638,10 @@ async function showLoggedIn() {
   document.getElementById('color-swatch-hex').value = '#cccccc';
   document.getElementById('module-active').checked = true;
   document.getElementById('component-quantity').value = 1;
+  // ANTES de families/categories (migration 070) — marginProfileLabel() usa
+  // marginProfilesCache pra mostrar o nome da margem vinculada na tabela,
+  // precisa estar populado no 1º render de families-tbody/categories-tbody.
+  await loadMarginProfiles();
   await familiesCRUD.load();
   await categoriesCRUD.load();
   await subcategoriesCRUD.load();
@@ -6910,6 +7657,30 @@ async function showLoggedIn() {
   await loadModules();
 }
 
+// Qualquer cliente com conta no portal.html (role='cliente'/'lojista'/
+// 'contractor') consegue logar AQUI TAMBÉM, porque é a mesma base de auth do
+// Supabase — login certo não significa "é admin". Antes, showLoggedIn() era
+// chamado direto após um login válido, sem checar nada: um perfil não-admin
+// via o painel inteiro renderizado (só as ESCRITAS falhavam depois, via RLS
+// is_admin(), migration_018_admin_allowlist.sql). ensureAdminOrSignOut() faz
+// a mesma checagem real (RPC is_admin(), allow-list admin_users) ANTES de
+// mostrar admin-content — quem não está na allow-list é deslogado na hora e
+// vê um erro, igual a um login errado.
+async function ensureAdminOrSignOut() {
+  const { data: isAdmin, error } = await supabaseClient.rpc('is_admin');
+  if (error || !isAdmin) {
+    await supabaseClient.auth.signOut();
+    showLoggedOut();
+    const errorEl = document.getElementById('login-error');
+    if (errorEl) {
+      errorEl.textContent = 'Este usuário não tem acesso ao painel administrativo.';
+      errorEl.style.display = 'block';
+    }
+    return false;
+  }
+  return true;
+}
+
 document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const errorEl = document.getElementById('login-error');
@@ -6922,6 +7693,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     errorEl.style.display = 'block';
     return;
   }
+  if (!(await ensureAdminOrSignOut())) return;
   await showLoggedIn();
 });
 
@@ -6935,7 +7707,7 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
 (async function init() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (session) {
-    await showLoggedIn();
+    if (await ensureAdminOrSignOut()) await showLoggedIn();
   } else {
     showLoggedOut();
   }

@@ -310,6 +310,12 @@ function createViewerComposition3D() {
       group.add(label);
     }
 
+    // Tag pro teste de AR (2026-08-01, ver generateArGlbForProject em
+    // portal.js): cotas CAD (linhas/rótulos) não fazem sentido plantadas no
+    // ambiente real do cliente — export busca por este nome pra esconder
+    // antes de exportar o .glb (GLTFExporter.parse com onlyVisible:true,
+    // default, pula tudo invisible), sem remover nada da cena ao vivo.
+    group.name = 'ar-export-exclude';
     return group;
   }
 
@@ -438,6 +444,8 @@ function createViewerComposition3D() {
       group.add(makeLine(new THREE.Vector3(wallW / 2, 0, 0.003), new THREE.Vector3(wallW / 2, ceilingH, 0.003)));
     }
 
+    // Tag pro teste de AR — ver comentário em buildDimensionAnnotations.
+    group.name = 'ar-export-exclude';
     return group;
   }
 
@@ -497,6 +505,8 @@ function createViewerComposition3D() {
       }
     });
 
+    // Tag pro teste de AR — ver comentário em buildDimensionAnnotations.
+    group.name = 'ar-export-exclude';
     return group;
   }
 
@@ -1411,6 +1421,8 @@ function createViewerComposition3D() {
       hoverBoxHelper.material.depthTest = false;
       hoverBoxHelper.material.linewidth = 2;
       hoverBoxHelper.renderOrder = 999;
+      // Tag pro teste de AR — ver comentário em buildDimensionAnnotations.
+      hoverBoxHelper.name = 'ar-export-exclude';
       scene.add(hoverBoxHelper);
     }
     hoverBoxHelper.setFromObject(group);
@@ -1449,8 +1461,28 @@ function createViewerComposition3D() {
     return scene;
   }
 
+  // Estado atual da câmera (posição + alvo + fov/aspect) em JSON puro —
+  // Foto realista (js/photoreal.js, 2026-08-03): o path tracer roda numa
+  // cena PRÓPRIA em three moderno (r181), então não dá pra passar o objeto
+  // THREE.Camera direto (instâncias de versões diferentes); números crus
+  // funcionam porque o MUNDO é o mesmo (mesma geometria de parede/módulo em
+  // metros). Inclui qualquer orbit/zoom manual que o usuário fez (pedido:
+  // "a foto deve pegar a camera do posicionamento do 3d").
+  function getCameraState() {
+    if (!camera) return null;
+    const t = (controls && controls.target) ? controls.target : lastFitTarget;
+    if (!t) return null;
+    return {
+      position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+      target: { x: t.x, y: t.y, z: t.z },
+      fov: camera.fov || 35,
+      aspect: camera.aspect || (4 / 3)
+    };
+  }
+
   return {
     init, available, render, renderFreeform, renderFreeformWalls, snapshot, canvasAspectRatio,
+    getCameraState,
     // Estado próprio de porta/gaveta da composição — ver comentário de
     // currentOpenables/doorsOpen acima. portal.js relê areDoorsOpen()/
     // areDrawersOpen() antes de reconstruir cada assembly (generateComposition3D),

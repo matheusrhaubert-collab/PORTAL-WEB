@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>Legno — Painel Admin</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="css/style.css?v=20260731a" />
+<link rel="stylesheet" href="css/style.css?v=20260802a" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -48,6 +48,14 @@
       <button type="button" class="admin-tab-btn" data-tab="tab-components">Componentes</button>
       <button type="button" class="admin-tab-btn" data-tab="tab-module-config">Configurar módulo</button>
       <button type="button" class="admin-tab-btn" data-tab="tab-pricing-settings">Margem de preço</button>
+      <!-- CRM de clientes da fábrica (migration 079) — cadastro comercial
+           (nome, telefone, empresa, endereço, histórico de reuniões),
+           diferente de "Perfis" (contas de login do portal). Primeiro
+           módulo do plano de ERP integrado (portal+engenharia+pedidos+fábrica). -->
+      <button type="button" class="admin-tab-btn" data-tab="tab-crm-clients" id="crm-clients-tab-btn">Clientes (CRM)</button>
+      <!-- Controladoria (dashboard) — visão geral de pedidos entrados,
+           orçamentos gerados e novos clientes cadastrados, por período. -->
+      <button type="button" class="admin-tab-btn" data-tab="tab-controladoria" id="controladoria-tab-btn">Controladoria</button>
       <!-- Perfis de usuário (migration 051) — quem promove cliente pra
            lojista/contractor/administrador. Só Contractor enxerga a aba
            "Plano de Corte" no portal. -->
@@ -96,6 +104,15 @@
            (não tem por quê escolher um tamanho que nunca vai ser usado). -->
       <label><input type="checkbox" id="color-stock-in-house" style="width:auto;display:inline-block;" /> STOCK IN HOUSE</label>
       <p class="hint">Material que já fica em estoque (sobra/retalho) — o Plano de Corte não mostra chapas nem fita pra ela, só o preço.</p>
+      <!-- CORTE ESPECIAL (migration 074, pedido do usuário 2026-08-02: "cores
+           egger... nao quero que gere plano de corte... cor especial") —
+           diferente de STOCK IN HOUSE: a fita de borda CONTINUA calculada
+           normalmente (é aplicada por nós, independe de onde a chapa veio),
+           só a diagramação/contagem de chapa (nesting) é pulada — chapa
+           EGGER especial não segue os tamanhos padrão cadastrados, então nem
+           faz sentido pedir pro Contractor escolher um tamanho manualmente. -->
+      <label><input type="checkbox" id="color-skip-cutting-plan" style="width:auto;display:inline-block;" /> Cor Especial (ex.: EGGER)</label>
+      <p class="hint">Não gera diagramação de chapa (nesting) no Plano de Corte — a fita de borda continua sendo calculada normalmente.</p>
       <div id="color-sheet-size-field">
         <label>Tamanho de chapa padrão (Plano de Corte)</label>
         <p class="hint">Cadastre os tamanhos disponíveis logo abaixo. Sem um tamanho vinculado, o Contractor escolhe manualmente ao gerar o plano de corte.</p>
@@ -158,19 +175,34 @@
     <div class="row">
       <div>
         <h2 style="font-size:14px;">Famílias</h2>
-        <table><tbody id="families-tbody"></tbody></table>
-        <form id="family-form" class="row" style="margin-top:8px;">
+        <table>
+          <thead><tr><th>Nome</th><th>Margem</th><th></th></tr></thead>
+          <tbody id="families-tbody"></tbody>
+        </table>
+        <form id="family-form" class="row" style="margin-top:8px;align-items:flex-end;">
           <input type="hidden" id="family-id" />
           <div><input id="family-name" placeholder="Nome da família" required /></div>
+          <!-- Margem por família (migration 070) — "Padrão" (value vazio =
+               null) usa pricing_settings.markup_multiplier, igual sempre;
+               os outros vêm do catálogo "Margens" na aba Margem de preço.
+               Ver marginProfileLabel/populateMarginProfileSelects em admin.js. -->
+          <div><label style="font-size:11px;">Margem</label><select id="family-margin-profile"><option value="">Padrão</option></select></div>
           <div style="flex:0;"><button type="submit" style="margin-top:0;">+</button></div>
         </form>
       </div>
       <div>
         <h2 style="font-size:14px;">Categorias</h2>
-        <table><tbody id="categories-tbody"></tbody></table>
-        <form id="category-form" class="row" style="margin-top:8px;">
+        <table>
+          <thead><tr><th>Nome</th><th>Margem</th><th></th></tr></thead>
+          <tbody id="categories-tbody"></tbody>
+        </table>
+        <form id="category-form" class="row" style="margin-top:8px;align-items:flex-end;">
           <input type="hidden" id="category-id" />
           <div><input id="category-name" placeholder="Nome da categoria" required /></div>
+          <!-- CATEGORIA tem prioridade sobre família quando as duas têm
+               margem vinculada (módulo mais específico vence) — ver
+               resolveMarkupMultiplierForModule em portal.js/admin.js. -->
+          <div><label style="font-size:11px;">Margem</label><select id="category-margin-profile"><option value="">Padrão</option></select></div>
           <div style="flex:0;"><button type="submit" style="margin-top:0;">+</button></div>
         </form>
       </div>
@@ -891,6 +923,34 @@
     </p>
   </section>
 
+  <!-- MARGENS POR FAMÍLIA/CATEGORIA (migration 070) — pedido do usuário
+       2026-08-02: "quero margens diferentes que eu possa aplicar pra
+       modulos diferentes... na opcao da categoria ou familia, eu tenha
+       opcao de ligar com a margem que eu quero". Cadastre aqui as margens
+       NOMEADAS extras; depois vá em Taxonomia e escolha, no formulário de
+       cada Família ou Categoria, qual delas usar (ou deixe "Padrão" pra
+       continuar usando a margem acima). Categoria tem prioridade sobre
+       família quando um módulo tem as duas com margem vinculada. -->
+  <section class="panel">
+    <h2>Margens por família/categoria</h2>
+    <p class="hint">
+      Além da margem Padrão acima, cadastre quantas margens nomeadas quiser aqui e vincule cada uma a
+      uma Família ou Categoria específica (aba Taxonomia). Módulo sem família/categoria vinculada a
+      nenhuma margem continua usando a Padrão, normalmente.
+    </p>
+    <div id="margin-profiles-error" class="error" style="display:none;"></div>
+    <table>
+      <thead><tr><th>Nome</th><th>Margem</th><th></th></tr></thead>
+      <tbody id="margin-profiles-tbody"></tbody>
+    </table>
+    <form id="margin-profile-form" class="row" style="margin-top:8px;align-items:flex-end;">
+      <input type="hidden" id="margin-profile-id" />
+      <div><label>Nome</label><input id="margin-profile-name" placeholder="Ex: Closets premium" required /></div>
+      <div><label>Margem (%)</label><input id="margin-profile-percent" type="number" step="0.01" required /></div>
+      <div style="flex:0;"><button type="submit" style="margin-top:0;">Salvar</button></div>
+    </form>
+  </section>
+
   <!-- PLANO DE CORTE (migration 051) — margem/espessura/mão de obra
        específicos da aba "Plano de Corte" do portal (exclusiva do perfil
        Contractor). Campo separado do markup_multiplier acima — confirmado
@@ -932,6 +992,169 @@
          portal (role='cliente' por padrão); só o admin promove pra
          lojista/contractor/administrador aqui. Contractor é o único que
          enxerga a aba "Plano de Corte" no portal. -->
+    <!-- CRM DE CLIENTES DA FÁBRICA (migration 079) — cadastro comercial
+         separado dos logins do portal ("Perfis"). 1 registro = 1 contato
+         (nome, telefone, empresa, endereço), com vínculo opcional a um
+         usuário do portal. Clicar em "Ver" abre o painel de detalhe com o
+         histórico de reuniões daquele cliente. -->
+    <div class="admin-tab-page" id="tab-crm-clients" style="display:none;">
+      <section class="panel">
+        <h2>Novo cliente</h2>
+        <p class="hint">Cadastro comercial da fábrica — não cria login no portal. Se a pessoa também tiver conta
+          no portal, você pode vincular depois no painel de detalhe.</p>
+        <div id="crm-client-error" class="error" style="display:none;"></div>
+        <form id="crm-client-form" class="row" style="align-items:flex-end;">
+          <div>
+            <label>Nome</label>
+            <input id="crm-client-nome" type="text" required />
+          </div>
+          <div>
+            <label>Telefone</label>
+            <input id="crm-client-telefone" type="text" placeholder="(11) 99999-9999" />
+          </div>
+          <div>
+            <label>Empresa</label>
+            <input id="crm-client-empresa" type="text" />
+          </div>
+          <div style="flex:2;">
+            <label>Endereço</label>
+            <input id="crm-client-endereco" type="text" />
+          </div>
+          <div style="flex:0;">
+            <button type="submit" style="margin-top:0;">Cadastrar</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Clientes cadastrados</h2>
+        <div id="crm-clients-list-error" class="error" style="display:none;"></div>
+        <input id="crm-clients-search" type="text" placeholder="Buscar por nome ou empresa..." style="margin-bottom:10px; max-width:320px;" />
+        <table>
+          <thead><tr><th>Nome</th><th>Empresa</th><th>Telefone</th><th>Endereço</th><th></th></tr></thead>
+          <tbody id="crm-clients-tbody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="crm-client-detail-panel" style="display:none;">
+        <h2>Detalhe do cliente</h2>
+        <div id="crm-client-detail-error" class="error" style="display:none;"></div>
+        <form id="crm-client-edit-form" class="row" style="align-items:flex-end;">
+          <input type="hidden" id="crm-client-edit-id" />
+          <div>
+            <label>Nome</label>
+            <input id="crm-client-edit-nome" type="text" required />
+          </div>
+          <div>
+            <label>Telefone</label>
+            <input id="crm-client-edit-telefone" type="text" />
+          </div>
+          <div>
+            <label>Empresa</label>
+            <input id="crm-client-edit-empresa" type="text" />
+          </div>
+          <div style="flex:2;">
+            <label>Endereço</label>
+            <input id="crm-client-edit-endereco" type="text" />
+          </div>
+          <div>
+            <label>Vínculo com usuário do portal (opcional)</label>
+            <select id="crm-client-edit-linked-user"><option value="">— nenhum —</option></select>
+          </div>
+          <div style="flex:0;">
+            <button type="submit" style="margin-top:0;">Salvar</button>
+          </div>
+          <div style="flex:0;">
+            <button type="button" id="crm-client-delete-btn" class="secondary" style="margin-top:0;">Excluir cliente</button>
+          </div>
+          <span id="crm-client-edit-status" class="hint" style="margin-left:10px;"></span>
+        </form>
+        <div style="margin-top:8px;">
+          <label>Anotações gerais</label>
+          <textarea id="crm-client-edit-notes" rows="2" style="width:100%;" placeholder="Observações sobre o cliente..."></textarea>
+        </div>
+
+        <h3 style="margin-top:24px;">Histórico de reuniões</h3>
+        <div id="crm-meetings-error" class="error" style="display:none;"></div>
+        <form id="crm-meeting-form" class="row" style="align-items:flex-end;">
+          <div>
+            <label>Data</label>
+            <input id="crm-meeting-date" type="date" required />
+          </div>
+          <div style="flex:2;">
+            <label>Anotação</label>
+            <input id="crm-meeting-notes" type="text" placeholder="O que foi conversado..." required />
+          </div>
+          <div style="flex:0;">
+            <button type="submit" style="margin-top:0;">Adicionar reunião</button>
+          </div>
+        </form>
+        <table style="margin-top:10px;">
+          <thead><tr><th style="width:120px;">Data</th><th>Anotação</th><th></th></tr></thead>
+          <tbody id="crm-meetings-tbody"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <!-- CONTROLADORIA (dashboard) — pedidos entrados, orçamentos gerados,
+         novos clientes cadastrados, filtráveis por período. Tudo calculado
+         no navegador em cima das mesmas tabelas já usadas em outras abas
+         (orders/quotes/user_profiles) — sem tabela nova, sem migration. -->
+    <div class="admin-tab-page" id="tab-controladoria" style="display:none;">
+      <section class="panel">
+        <h2>Controladoria</h2>
+        <p class="hint">Visão geral de pedidos, orçamentos e novos cadastros no período selecionado.</p>
+        <div id="controladoria-error" class="error" style="display:none;"></div>
+        <div class="row" style="align-items:flex-end;">
+          <div>
+            <label>Período</label>
+            <select id="controladoria-period-select">
+              <option value="7">Últimos 7 dias</option>
+              <option value="30" selected>Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+              <option value="month">Este mês</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </div>
+          <div id="controladoria-custom-from" style="display:none;">
+            <label>De</label>
+            <input type="date" id="controladoria-date-from" />
+          </div>
+          <div id="controladoria-custom-to" style="display:none;">
+            <label>Até</label>
+            <input type="date" id="controladoria-date-to" />
+          </div>
+          <div style="flex:0;">
+            <button type="button" id="controladoria-refresh-btn" style="margin-top:0;">Atualizar</button>
+          </div>
+          <span id="controladoria-range-label" class="hint" style="margin-left:6px;"></span>
+        </div>
+
+        <div id="controladoria-cards" style="display:flex; gap:16px; margin-top:20px; flex-wrap:wrap;"></div>
+
+        <div id="controladoria-charts" style="display:flex; gap:24px; margin-top:28px; flex-wrap:wrap;">
+          <div class="bar-chart-block">
+            <h3>Pedidos por dia</h3>
+            <div class="bar-chart" id="controladoria-chart-orders"></div>
+            <div class="bar-chart-labels" id="controladoria-chart-orders-labels"></div>
+          </div>
+          <div class="bar-chart-block">
+            <h3>Orçamentos por dia</h3>
+            <div class="bar-chart" id="controladoria-chart-quotes"></div>
+            <div class="bar-chart-labels" id="controladoria-chart-quotes-labels"></div>
+          </div>
+          <div class="bar-chart-block">
+            <h3>Novos clientes por dia</h3>
+            <div class="bar-chart" id="controladoria-chart-clients"></div>
+            <div class="bar-chart-labels" id="controladoria-chart-clients-labels"></div>
+          </div>
+        </div>
+        <p id="controladoria-chart-note" class="hint" style="display:none; margin-top:10px;">
+          Período muito longo pra mostrar dia a dia — os cards acima já somam o total do período.
+        </p>
+      </section>
+    </div>
+
     <div class="admin-tab-page" id="tab-profiles" style="display:none;">
       <!-- Criar usuário (migration 053 + Edge Function admin-create-user) —
            conta de verdade (e-mail + senha), pronta pra usar. O admin
@@ -961,7 +1184,7 @@
             <label>Perfil</label>
             <select id="create-user-role">
               <option value="cliente">Cliente</option>
-              <option value="lojista">Lojista</option>
+              <option value="lojista">Dealer</option>
               <option value="contractor">Contractor</option>
               <option value="administrador">Administrador</option>
             </select>
@@ -980,9 +1203,14 @@
           nome/perfil e clique em "Salvar" na linha — só Contractor (ou Administrador) enxerga a aba
           "Plano de Corte" no portal.
         </p>
+        <!-- Valor em projetos (migration 078, pedido do usuário 2026-08-03:
+             "quero na tela admin saber quanto cada usuario esta fazendo de
+             projetos, em valores") — soma de user_projects.cached_value_usd
+             (valor de venda já calculado, sem margem de revenda) de cada
+             usuário. Ver loadProfiles em admin.js. -->
         <div id="profiles-error" class="error" style="display:none;"></div>
         <table>
-          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Cadastro</th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Cadastro</th><th>Projetos</th><th>Valor em projetos</th><th></th></tr></thead>
           <tbody id="profiles-tbody"></tbody>
         </table>
       </section>
@@ -1163,6 +1391,7 @@
           <th>Qtd</th>
           <th>Comprimento (mm)</th>
           <th>Largura (mm)</th>
+          <th>Veio</th>
           <th>Espessura</th>
           <th>Cor</th>
           <th>Fita</th>
@@ -1204,6 +1433,29 @@
           <span id="gallery-migrate-storage-status" class="hint"></span>
         </div>
 
+        <!-- Recalcular Galeria (pedido do usuário 2026-08-02: "preciso um
+             botao recalcular galeria... buscando a margem de cada
+             cliente"). Recalcula price_sale/price_cost de TODOS os posts a
+             partir do snapshot salvo em slots (mesma reprecificação usada
+             em computeProjectSlotsTotal, portal.js) — corrige valores que
+             ficaram desatualizados depois que o post foi publicado (preço
+             de módulo/margem do admin mudou desde então). O "cliente de
+             referência" é só um PREVIEW: soma a margem de revenda DAQUELE
+             cliente em cima do preço já recalculado numa coluna extra da
+             tabela, pra admin mostrar/ajudar aquele cliente específico —
+             não grava nada no banco (cada cliente logado já vê a própria
+             margem sozinho na Galeria pública, isso não muda). -->
+        <div style="margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <button type="button" id="gallery-recalc-btn" class="secondary" style="margin-top:0;">Recalcular Galeria</button>
+          <span id="gallery-recalc-status" class="hint"></span>
+          <label style="display:flex; align-items:center; gap:6px; margin-left:12px;">
+            <span class="hint">Cliente de referência (preview de revenda):</span>
+            <select id="gallery-reference-client-select" style="max-width:280px;">
+              <option value="">— nenhum —</option>
+            </select>
+          </label>
+        </div>
+
         <div style="margin-bottom:10px;">
           <label>Filtrar por status: </label>
           <select id="gallery-admin-status-filter">
@@ -1226,6 +1478,7 @@
               <th>Curtidas</th>
               <th>Status</th>
               <th>Enviado em</th>
+              <th>Revenda (cliente)</th>
               <th></th>
             </tr>
           </thead>
@@ -1296,7 +1549,7 @@
 <script src="js/pricing.js"></script>
 <script src="js/viewer3d.js?v=20260801a"></script>
 <script src="js/drilling.js?v=20260720a"></script>
-<script src="js/admin.js?v=20260801a"></script>
+<script src="js/admin.js?v=20260805b"></script>
 <script>
 // Troca de aba do painel admin — puramente visual (mostra/esconde
 // .admin-tab-page), não interfere em nenhuma lógica de carregar/salvar

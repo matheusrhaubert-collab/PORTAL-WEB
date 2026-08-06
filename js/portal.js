@@ -44,6 +44,11 @@ let currentModule = null;
 // Multiplicador de margem (migration 037, admin > Margem de preço) — mesmo
 // espírito de client.js (ver comentário lá). Carregado uma vez no login.
 let pricingMarkupMultiplier = 1;
+// Margens NOMEADAS extras, vinculáveis por família/categoria (migration
+// 070) — ver resolveMarkupMultiplierForModule abaixo. Carregado junto de
+// pricingMarkupMultiplier (loadPricingMarkup), antes de loadTaxonomyFilters/
+// loadModules — precisa estar pronto antes de qualquer calculateModulePrice.
+let marginProfilesCache = [];
 // Densidade do material em kg/m³ (migration 061, admin > Preço) — usada só
 // pra estimar o PESO mostrado ao cliente (volume x densidade), junto do
 // preço e da metragem cúbica (m³). Default 700 (MDP/MDF cru) até carregar
@@ -288,6 +293,12 @@ function refreshAllUnitDependentViews() {
     const vwEl = document.getElementById('po-item-volume-weight');
     if (vwEl) vwEl.textContent = formatVolumeWeight(lastItemResult.result.breakdown);
   }
+  // Plano de Corte (migration 073, 2026-08-02) — Comprimento/Largura de cada
+  // linha reformatam pra unidade nova (o valor em MM por trás não muda,
+  // só o texto exibido/editável). Re-render completo (não só o cabeçalho)
+  // porque o VALOR de cada <input> também precisa reformatar.
+  if (typeof cutlistRows !== 'undefined' && cutlistRows.length) renderCutlistTable();
+  else if (typeof updateCutlistUnitLabels === 'function') updateCutlistUnitLabels();
 }
 
 document.getElementById('po-unit-select').addEventListener('change', refreshAllUnitDependentViews);
@@ -505,9 +516,16 @@ setupWeightUnitSelect(); // migration 061 — lê a unidade de peso salva (kg/lb
 // refresh explicitamente, sem exigir abrir/fechar a aba Projetos.
 const roomSettingsSaveBtn = document.getElementById('po-room-settings-save-btn');
 if (roomSettingsSaveBtn) {
-  roomSettingsSaveBtn.addEventListener('click', () => {
+  roomSettingsSaveBtn.addEventListener('click', async () => {
     if (typeof refreshProjectWallWidthInput === 'function') refreshProjectWallWidthInput();
     if (typeof renderProjectCanvas === 'function') renderProjectCanvas();
+    // Margem de revenda (migration 072) — persiste e já re-renderiza Galeria
+    // e Meus Projetos pra refletir o novo valor sem precisar trocar de aba.
+    await saveResaleMarginPct();
+    // Re-renderiza Galeria (respeitando os filtros atuais) e Meus Projetos
+    // pra refletir a nova margem sem precisar trocar de aba.
+    if (typeof applyGalleryFilters === 'function') applyGalleryFilters();
+    if (typeof loadProjectFavoritesList === 'function') loadProjectFavoritesList();
   });
 }
 
@@ -1110,7 +1128,7 @@ async function addModuleToCartWithSku(moduleId, reference, selectEl) {
       : Pricing.calculateModulePrice({
         module: m, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
         shelfQuantities, dimOverrides: {}, pieceColorOverrides: {},
-        width_mm, height_mm, depth_mm, markupMultiplier: pricingMarkupMultiplier
+        width_mm, height_mm, depth_mm, markupMultiplier: resolveMarkupMultiplierForModule(m)
       });
 
     const selectedColors = Object.keys(colorsByRole).map((roleId) => ({
@@ -1326,6 +1344,36 @@ async function loadPricingMarkup() {
   // migration 061 — densidade pro cálculo de peso exibido ao cliente.
   const density = Number(data.weight_density_kg_per_m3);
   if (isFinite(density) && density > 0) materialDensityKgPerM3 = density;
+  // migration 070 — margens nomeadas extras (família/categoria). Tabela pode
+  // não existir ainda (Matt não rodou a migration) — erro aqui não deve
+  // travar o resto do login, só deixa marginProfilesCache vazio (resolver
+  // cai sempre no Padrão, comportamento de antes).
+  try {
+    const { data: profiles, error: profilesError } = await supabaseClient.from('margin_profiles').select('*');
+    if (!profilesError && Array.isArray(profiles)) marginProfilesCache = profiles;
+  } catch (e) { /* tabela ainda não existe — segue só com a margem Padrão */ }
+}
+
+// Margem efetiva de UM módulo (migration 070, pedido do usuário: "quero
+// margens diferentes que eu possa aplicar pra modulos diferentes... na
+// opcao da categoria ou familia") — CATEGORIA do módulo tem prioridade
+// sobre FAMÍLIA (mais específico vence); nenhuma das duas com margem
+// vinculada cai no Padrão (pricingMarkupMultiplier, comportamento de
+// sempre). Duplicado em admin.js (resolveMarkupMultiplierForModule) — ver
+// comentário lá, os dois arquivos não compartilham módulo/bundle.
+function resolveMarkupMultiplierForModule(module) {
+  if (!module) return pricingMarkupMultiplier;
+  const category = module.category_id ? categoriesCacheList.find((c) => c.id === module.category_id) : null;
+  if (category && category.margin_profile_id) {
+    const profile = marginProfilesCache.find((p) => p.id === category.margin_profile_id);
+    if (profile) return profile.markup_multiplier;
+  }
+  const family = module.family_id ? familiesCacheList.find((f) => f.id === module.family_id) : null;
+  if (family && family.margin_profile_id) {
+    const profile = marginProfilesCache.find((p) => p.id === family.margin_profile_id);
+    if (profile) return profile.markup_multiplier;
+  }
+  return pricingMarkupMultiplier;
 }
 
 async function loadModuleColors(moduleId) {
@@ -2694,7 +2742,7 @@ function recalculatePreview() {
       ? { total: 0, breakdown: [] }
       : Pricing.calculateModulePrice({
         module: currentModule, pieces: effectivePieces, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides,
-        pieceColorOverrides, width_mm, height_mm, depth_mm, markupMultiplier: pricingMarkupMultiplier
+        pieceColorOverrides, width_mm, height_mm, depth_mm, markupMultiplier: resolveMarkupMultiplierForModule(currentModule)
       });
     // selected_colors (migration 035) — snapshot por papel, formato gravado
     // em order_items/quotes.
@@ -2851,6 +2899,17 @@ function updateOrderDetailVolumeWeight(items) {
 // (diferente do formatMoney acima, que continua com centavos pro
 // carrinho/pedidos — esse aqui é só cosmético pro card da Galeria).
 function formatGalleryPrice(v) { return '$' + Math.round(Number(v || 0)); }
+
+// Preço de revenda sugerido (migration 072) — preço de fábrica × (1 + margem
+// geral do cliente logado). Só exibe a linha se o cliente tiver margem > 0
+// configurada (getResaleMarginPct, menu de Configurações); visitante/cliente
+// sem margem não vê nada extra, card fica igual a antes.
+function galleryResaleMarginHtml(priceSale) {
+  const marginPct = getResaleMarginPct();
+  if (!marginPct) return '';
+  const resalePrice = Number(priceSale || 0) * (1 + marginPct / 100);
+  return `<div class="po-gallery-card-resale-price hint">${I18n.t('gallery.resale_price_label')} <strong>${formatGalleryPrice(resalePrice)}</strong></div>`;
+}
 
 // Locale pra Date.toLocaleString/toLocaleDateString — acompanha o idioma da
 // interface (I18n.getLanguage()), não fica sempre travado em pt-BR agora que
@@ -3668,6 +3727,11 @@ async function loadMyOrders() {
     // nesta versão — ver openCutlistOrderDetail).
     container.innerHTML = orders.map((o) => {
       const isCutlist = o.order_type === 'cutting_list';
+      // 'project' (pedido do usuário 2026-08-02) — pedido próprio criado
+      // pela aba Projetos (ver sendProjectToOrder), vive em order_items igual
+      // a um pedido normal de módulo, só ganha uma badge extra pra deixar
+      // claro de onde veio.
+      const isProjectOrder = o.order_type === 'project';
       const items = isCutlist ? (cutlistItemsByOrder[o.id] || []) : (itemsByOrder[o.id] || []);
       const total = items.reduce((sum, it) => sum + Number(it.total_price || 0), 0);
       const date = o.submitted_at ? new Date(o.submitted_at).toLocaleString(currentLocale()) : '';
@@ -3692,6 +3756,7 @@ async function loadMyOrders() {
               ${subtitle ? `<span class="hint">— ${subtitle}</span>` : ''}
               <span class="badge">${orderStatusLabel(o.status)}</span>
               ${isCutlist ? `<span class="badge" data-i18n="admin.orders_type_cutting_list">${I18n.t('admin.orders_type_cutting_list')}</span>` : ''}
+              ${isProjectOrder ? `<span class="badge" data-i18n="admin.orders_type_project">${I18n.t('admin.orders_type_project')}</span>` : ''}
             </div>
             <span class="portal-order-total">${formatMoney(total)}</span>
           </div>
@@ -4054,6 +4119,27 @@ async function resolveOrderItemColorContext(it) {
   return { colorsByRole, pieceColorOverrides, hingeModel: hingeRes.data || null, slideModel: slideRes.data || null };
 }
 
+// currentOrderDetail.colorById só é preenchido UMA VEZ, em openOrderDetail,
+// com os color_id que já apareciam nos itens NAQUELE momento (ver comentário
+// lá) — pra desenhar a bolinha/quadrado de cor de cada linha. Depois de trocar
+// uma cor pelo painel (recolorOrderItem grava um color_id NOVO em
+// selected_colors), esse mapa fica desatualizado: a cor trocada não está nele,
+// então renderOrderDetailItemCard cai no cinza padrão (#cccccc) mesmo com o
+// nome da cor certo ao lado. Chamado depois de aplicar troca(s), antes de
+// renderOrderDetail(), pra buscar só os color_id que ainda faltam e completar
+// o mapa (sem rebuscar os que já estão lá).
+async function ensureOrderDetailColorsLoaded() {
+  if (!currentOrderDetail) return;
+  const colorById = currentOrderDetail.colorById;
+  const colorIds = [...new Set(
+    currentOrderDetail.items.flatMap((it) => (it.selected_colors || []).map((c) => c.color_id)).filter(Boolean)
+  )];
+  const missingIds = colorIds.filter((id) => !colorById.has(id));
+  if (!missingIds.length) return;
+  const { data } = await supabaseClient.from('colors').select('id, swatch_hex, texture_url').in('id', missingIds);
+  (data || []).forEach((c) => colorById.set(c.id, c));
+}
+
 // Troca 1 OU MAIS papéis de cor NESTE item de uma vez (changes = [{roleId,
 // color}, ...]), recalcula preço, tenta regenerar a miniatura (best-effort,
 // ver comentário acima) e grava tudo numa única gravação. Aceitar VÁRIAS
@@ -4086,7 +4172,7 @@ async function recolorOrderItem(it, changes) {
       shelfQuantities: it.shelf_quantities || {}, dimOverrides: it.dim_overrides || {},
       pieceColorOverrides,
       width_mm: it.width_mm, height_mm: it.height_mm, depth_mm: it.depth_mm,
-      markupMultiplier: pricingMarkupMultiplier
+      markupMultiplier: resolveMarkupMultiplierForModule(m)
     });
 
   // Ordem = a mesma do cadastro (color_roles.sort_order, reordenável pelas
@@ -4182,6 +4268,12 @@ function renderOrderDetailColorPendingState() {
   const count = orderDetailPendingColorCount();
   applyBtn.style.display = count > 0 ? 'inline-block' : 'none';
   applyBtn.textContent = I18n.t('order_detail.apply_color_changes_btn', { n: count });
+  // Reabilita sempre que chamado fora do processamento em si (staging de nova
+  // troca ou fim de renderOrderDetailColorPanel) — sem isso, o botão ficava
+  // com disabled=true pra sempre depois da 1ª aplicação (só era desabilitado
+  // em applyPendingColorChangesToOrderItems, nunca reabilitado), então a 2ª
+  // troca reaparecia travada mesmo com display voltando a 'inline-block'.
+  applyBtn.disabled = false;
 }
 
 // Roda de verdade só quando o cliente clica "Alterar cores" — pra CADA item
@@ -4224,6 +4316,7 @@ async function applyPendingColorChangesToOrderItems() {
     errorEl.textContent = I18n.t('order_detail.color_swap_error', { msg: firstErrorMsg });
     errorEl.style.display = 'block';
   }
+  await ensureOrderDetailColorsLoaded(); // completa colorById com as cores novas antes de desenhar as bolinhas/quadrados
   renderOrderDetail(); // atualiza cards/total com os preços/cores/miniaturas novos (e o próprio painel de cor, já sem pendências)
 }
 
@@ -4247,6 +4340,7 @@ async function applyColorToSingleOrderItem(itemId, roleId, color) {
     // Troca por módulo continua IMEDIATA (não entra no estado pendente do
     // painel em massa) — é só 1 item, já é rápido o suficiente sozinho.
     await recolorOrderItem(it, [{ roleId, color }]);
+    await ensureOrderDetailColorsLoaded(); // completa colorById com a cor nova antes de desenhar as bolinhas/quadrados
     renderOrderDetail();
   } catch (err) {
     if (errorEl) { errorEl.textContent = I18n.t('order_detail.color_swap_error', { msg: err.message }); errorEl.style.display = 'block'; }
@@ -5872,7 +5966,7 @@ function applyColorRoleToComposition(roleId, color) {
           // (override sempre vence, ver effectiveColorsForPiece em pricing.js).
           pieceColorOverrides: slot.pieceColorOverrides,
           width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
-          markupMultiplier: pricingMarkupMultiplier
+          markupMultiplier: resolveMarkupMultiplierForModule(slot.module)
         });
       slot.colorsByRole = nextColorsByRole;
       slot.selectedColors = Object.keys(nextColorsByRole).map((rid) => ({
@@ -6427,7 +6521,7 @@ async function restoreFavoriteComposition(fav, bindAsFavorite = true) {
             shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
             pieceColorOverrides,
             width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
-            markupMultiplier: pricingMarkupMultiplier
+            markupMultiplier: resolveMarkupMultiplierForModule(module)
           });
       } catch (calcErr) { skipped += 1; continue; } // catálogo mudou e a config não fecha mais
       restored.push({
@@ -7319,6 +7413,19 @@ function updateGalleryLoadMoreBtn() {
   if (btn) btn.style.display = galleryHasMore ? 'inline-block' : 'none';
 }
 
+// No modo Dealer (migration 075), a Galeria vira PRIVADA — só os próprios
+// posts do dealer, pra ele mostrar exclusivamente o portfólio dele pro
+// cliente final (não a galeria pública com composições de outros clientes).
+// gallery_posts já tem a policy "author reads own gallery_posts" (migration
+// 048, RLS permite mesmo status pending/rejected pro dono) e a coluna
+// author_user_id — o filtro é só isso aqui, sem mudança de RLS.
+function applyGalleryDealerScopeToQuery(query) {
+  if (portalViewMode === 'dealer' && currentUser) {
+    return query.eq('author_user_id', currentUser.id);
+  }
+  return query.eq('status', 'approved');
+}
+
 async function loadGalleryList() {
   const errorEl = document.getElementById('po-gallery-error');
   errorEl.style.display = 'none';
@@ -7327,10 +7434,9 @@ async function loadGalleryList() {
   // LINHA, não por coluna — ver comentário da migration 048; a proteção de
   // verdade é nunca selecionar essas colunas nesta tela, mesmo raciocínio já
   // aceito no projeto pra margem/custo de order_items).
-  const { data, error } = await supabaseClient
+  const { data, error } = await applyGalleryDealerScopeToQuery(supabaseClient
     .from('gallery_posts')
-    .select('id, ai_image_data_url, render_status, composition_name, family_id, source_type, wall_width_mm, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at')
-    .eq('status', 'approved')
+    .select('id, ai_image_data_url, render_status, composition_name, family_id, source_type, wall_width_mm, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at'))
     .order('created_at', { ascending: false })
     .range(0, GALLERY_PAGE_SIZE - 1);
   if (error) { errorEl.textContent = error.message; errorEl.style.display = 'block'; return; }
@@ -7355,10 +7461,9 @@ async function loadMoreGalleryPosts() {
   errorEl.style.display = 'none';
   try {
     const from = galleryPostsCache.length;
-    const { data, error } = await supabaseClient
+    const { data, error } = await applyGalleryDealerScopeToQuery(supabaseClient
       .from('gallery_posts')
-      .select('id, ai_image_data_url, render_status, composition_name, family_id, source_type, wall_width_mm, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at')
-      .eq('status', 'approved')
+      .select('id, ai_image_data_url, render_status, composition_name, family_id, source_type, wall_width_mm, total_width_mm, total_height_mm, total_depth_mm, price_sale, colors_used, slots, likes_count, is_anonymous, author_display_name, created_at'))
       .order('created_at', { ascending: false })
       .range(from, from + GALLERY_PAGE_SIZE - 1);
     if (error) { errorEl.textContent = error.message; errorEl.style.display = 'block'; return; }
@@ -7470,6 +7575,7 @@ function renderGalleryGrid(posts) {
         <div class="po-gallery-card-author hint"></div>
         <div class="po-gallery-card-price-label hint">${I18n.t('gallery.price_label')}</div>
         <div class="po-gallery-card-price">${formatGalleryPrice(post.price_sale)}</div>
+        ${galleryResaleMarginHtml(post.price_sale)}
         <div class="po-gallery-card-actions">
           <button type="button" class="po-gallery-use-btn">${I18n.t('gallery.use_composition_btn')} →</button>
           <button type="button" class="po-gallery-share-btn" title="${I18n.t('gallery.share_btn_label')}" aria-label="${I18n.t('gallery.share_btn_label')}">${GALLERY_SHARE_ICON_SVG}</button>
@@ -7852,14 +7958,62 @@ let cutlistInitialized = false;
 let cutlistSheetSizesCache = [];
 let cutlistPendingPlanGroups = null; // grupos aguardando escolha manual de tamanho (painel visível)
 
-// Limites de medida da chapa (pedido do usuário 2026-07-19) — mesmos valores
-// no input (min/max do <input type="number">, só ajuda visual/teclado) e na
-// validação de verdade antes de "Gerar Preço" (validateCutlistRows) e no
-// banco (migration 051b, CHECK em cutting_list_items).
+// Limites de medida da chapa (pedido do usuário 2026-07-19) — SEMPRE em mm
+// (fonte da verdade), usados na validação de verdade antes de "Gerar Preço"
+// (validateCutlistRows), no banco (migration 051b, CHECK em
+// cutting_list_items) e no hint traduzido/unit-aware (ver
+// updateCutlistUnitLabels — desde 2026-08-02 os campos de comprimento/
+// largura viraram texto livre na unidade global, não dá mais pra usar
+// min/max nativo de <input type="number">).
 const CUTLIST_COMPRIMENTO_MIN = 76;
 const CUTLIST_COMPRIMENTO_MAX = 2700;
 const CUTLIST_LARGURA_MIN = 76;
 const CUTLIST_LARGURA_MAX = 1500;
+
+// Comprimento/Largura da planilha de Plano de Corte seguem a unidade GLOBAL
+// do portal (po-unit-select — mm/cm/m/ft/polegada fracionada 1/32", mesma
+// preferência já usada em largura/altura/profundidade do módulo) — pedido do
+// usuário 2026-08-02: "preciso que o cutting list funciona com polegada
+// fracionada tambem, conforme preferencia de cada usuario". O valor em MM
+// (row.comprimento_mm/largura_mm) continua sendo a fonte da verdade pra
+// preço/nesting/banco — só a caixa de texto exibida muda.
+function cutlistFormatFieldValue(mm, unit) {
+  const n = Number(mm);
+  if (mm === '' || mm == null || !Number.isFinite(n)) return '';
+  return formatDimensionNumber(n, unit);
+}
+
+// Só CONFIRMA (parseDimensionInput) se o texto digitado for válido na
+// unidade atual — string inválida/incompleta não sobrescreve o valor em mm
+// já commitado (evita zerar a peça por causa de um clique de blur no meio da
+// digitação de uma fração, ex. "15 1/1" ainda incompleto).
+function commitCutlistDimensionInput(row, field, rawValue) {
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const mm = parseDimensionInput(rawValue, unit);
+  if (mm !== null && !isNaN(mm)) row[field] = mm;
+}
+
+// Cabeçalho ("Comprimento (in)"/"Largura (in)") e hint de limites
+// (cutlist.size_limits_hint) acompanham a unidade escolhida — chamada no
+// início de renderCutlistTable() e também quando o cliente troca a unidade
+// global (ver refreshAllUnitDependentViews) mesmo sem nenhuma linha ainda.
+function updateCutlistUnitLabels(unit) {
+  const resolvedUnit = unit || (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const abbr = unitAbbrev(resolvedUnit);
+  const lenEl = document.getElementById('po-cutlist-length-unit');
+  const widEl = document.getElementById('po-cutlist-width-unit');
+  if (lenEl) lenEl.textContent = `(${abbr})`;
+  if (widEl) widEl.textContent = `(${abbr})`;
+  const hintEl = document.getElementById('po-cutlist-size-limits-hint');
+  if (hintEl) {
+    hintEl.textContent = I18n.t('cutlist.size_limits_hint', {
+      lenMin: formatDimension(CUTLIST_COMPRIMENTO_MIN, resolvedUnit),
+      lenMax: formatDimension(CUTLIST_COMPRIMENTO_MAX, resolvedUnit),
+      widMin: formatDimension(CUTLIST_LARGURA_MIN, resolvedUnit),
+      widMax: formatDimension(CUTLIST_LARGURA_MAX, resolvedUnit)
+    });
+  }
+}
 
 // Garante que o cliente logado tem uma linha em user_profiles. Só consegue
 // CRIAR a própria linha com role='cliente' (policy "self insert own profile
@@ -7884,7 +8038,191 @@ async function ensureOwnUserProfile() {
 }
 
 function canUseCuttingList() {
-  return !!currentUserProfile && (currentUserProfile.role === 'contractor' || currentUserProfile.role === 'administrador');
+  if (!currentUserProfile) return false;
+  if (currentUserProfile.role === 'contractor' || currentUserProfile.role === 'administrador') return true;
+  // Dealer (lojista) só vê o Plano de Corte quando o toggle do cabeçalho
+  // está em modo "Legno" (pedido do usuário 2026-08-02: "quando to no
+  // portal legno, nao dealer, pode deixar o cutting list aparecendo").
+  // Em modo "Dealer" a aba continua escondida (portal do cliente final).
+  if (currentUserProfile.role === 'lojista') return portalViewMode === 'legno';
+  return false;
+}
+
+// Margem geral de revenda (migration 072, pedido do usuário 2026-08-02) —
+// self-service, o próprio cliente define no menu de Configurações. Só usada
+// em EXIBIÇÃO (Galeria, Meus Projetos) — nunca entra em cálculo de pedido
+// nem aparece em Meus Pedidos.
+function getResaleMarginPct() {
+  const v = Number(currentUserProfile && currentUserProfile.resale_margin_pct);
+  return (Number.isFinite(v) && v > 0) ? v : 0;
+}
+
+// Preenche o campo do menu de Configurações com a margem já salva (chamada
+// depois de ensureOwnUserProfile, em showLoggedIn).
+function refreshResaleMarginInput() {
+  const input = document.getElementById('po-resale-margin-input');
+  if (input) input.value = getResaleMarginPct() || '';
+}
+
+// Persiste a margem digitada pelo cliente (botão "Salvar" do menu de
+// Configurações). Update direto em user_profiles — permitido pela policy
+// "self update own user_profiles" (migration 072); o trigger
+// prevent_self_profile_tampering bloqueia qualquer tentativa de mudar
+// role/email/user_id por essa via, então este update só pode afetar mesmo
+// a margem. Falha silenciosa (mesmo padrão de ensureOwnUserProfile) — não
+// deve travar o resto do botão Salvar (refresh do canvas etc.).
+async function saveResaleMarginPct() {
+  const input = document.getElementById('po-resale-margin-input');
+  if (!input || !currentUser) return;
+  let value = Number(input.value);
+  if (!Number.isFinite(value) || value < 0) value = 0;
+  try {
+    const { data, error } = await supabaseClient
+      .from('user_profiles')
+      .update({ resale_margin_pct: value })
+      .eq('user_id', currentUser.id)
+      .select()
+      .single();
+    if (!error && data) currentUserProfile = data;
+  } catch (err) {
+    // silencioso — ver comentário acima
+  }
+}
+
+// ---------- PORTAL DEALER (migration 075, 2026-08-02) ----------
+// "DEALER" reaproveita o role 'lojista' (user_profiles, migration 051) — só
+// ganhou comportamento de verdade agora. Self-service: o próprio dealer
+// envia a logo e escolhe, num toggle no cabeçalho, se quer ver o portal com
+// a marca Legno ou com a própria marca — pensado pra abrir na frente do
+// cliente final numa visita técnica sem precisar sair da tela. Estado do
+// toggle vive só no localStorage do navegador (não é coluna do banco) —
+// cada dispositivo lembra a última escolha, não precisa ida ao banco.
+const PORTAL_VIEW_MODE_STORAGE_KEY = 'legno_portal_view_mode';
+let portalViewMode = 'legno';
+
+function isDealer() {
+  return !!currentUserProfile && currentUserProfile.role === 'lojista';
+}
+
+// Só dealer pode ficar em modo 'dealer' — qualquer outro perfil (inclusive
+// se o localStorage tiver sobrado 'dealer' de uma sessão anterior noutra
+// conta no mesmo navegador) sempre cai em 'legno'.
+function loadPortalViewMode() {
+  if (!isDealer()) { portalViewMode = 'legno'; return; }
+  const saved = localStorage.getItem(PORTAL_VIEW_MODE_STORAGE_KEY);
+  portalViewMode = saved === 'dealer' ? 'dealer' : 'legno';
+}
+
+function setPortalViewMode(mode) {
+  const next = (mode === 'dealer' && isDealer()) ? 'dealer' : 'legno';
+  const changed = next !== portalViewMode;
+  portalViewMode = next;
+  localStorage.setItem(PORTAL_VIEW_MODE_STORAGE_KEY, next);
+  applyPortalViewMode();
+  applyCuttingListTabVisibility();
+  // Galeria muda de escopo (pública vs só os próprios posts) conforme o
+  // modo — recarrega se a aba já foi aberta ao menos uma vez nesta sessão.
+  if (changed && Array.isArray(galleryPostsCache)) loadGalleryList();
+}
+
+// Troca a logo do cabeçalho (wordmark LEGNO vs imagem própria do dealer) e
+// os botões ativos do toggle. Chamado no login e a cada clique no toggle.
+function applyPortalViewMode() {
+  const legnoBtn = document.getElementById('po-portal-mode-legno-btn');
+  const dealerBtn = document.getElementById('po-portal-mode-dealer-btn');
+  if (legnoBtn) legnoBtn.classList.toggle('active', portalViewMode === 'legno');
+  if (dealerBtn) dealerBtn.classList.toggle('active', portalViewMode === 'dealer');
+
+  const dealerImg = document.getElementById('po-logo-dealer-img');
+  const mainText = document.getElementById('po-logo-main-text');
+  const subText = document.getElementById('po-logo-sub-text');
+  const logoUrl = currentUserProfile && currentUserProfile.logo_url;
+  // Modo Dealer SEM logo enviada ainda cai no fallback do wordmark Legno —
+  // o cabeçalho nunca fica vazio.
+  const showDealerLogo = portalViewMode === 'dealer' && !!logoUrl;
+  if (dealerImg) {
+    dealerImg.src = showDealerLogo ? logoUrl : '';
+    dealerImg.style.display = showDealerLogo ? 'block' : 'none';
+  }
+  if (mainText) mainText.style.display = showDealerLogo ? 'none' : '';
+  if (subText) subText.style.display = showDealerLogo ? 'none' : '';
+}
+
+function setupPortalModeToggle() {
+  const legnoBtn = document.getElementById('po-portal-mode-legno-btn');
+  const dealerBtn = document.getElementById('po-portal-mode-dealer-btn');
+  if (legnoBtn) legnoBtn.addEventListener('click', () => setPortalViewMode('legno'));
+  if (dealerBtn) dealerBtn.addEventListener('click', () => setPortalViewMode('dealer'));
+}
+setupPortalModeToggle();
+
+// Mostra/esconde o toggle do cabeçalho + o campo de upload de logo nas
+// Configurações — só pra role='lojista'. Chamado em showLoggedIn (depois de
+// ensureOwnUserProfile, precisa do role já carregado) e em showLoggedOut
+// (esconde tudo de novo pro visitante).
+function refreshDealerUiVisibility() {
+  const toggleEl = document.getElementById('po-portal-mode-toggle');
+  const logoRowEl = document.getElementById('po-dealer-logo-settings-row');
+  const dealer = isDealer();
+  if (toggleEl) toggleEl.style.display = dealer ? '' : 'none';
+  if (logoRowEl) logoRowEl.style.display = dealer ? '' : 'none';
+  loadPortalViewMode();
+  applyPortalViewMode();
+  refreshDealerLogoPreview();
+}
+
+function refreshDealerLogoPreview() {
+  const preview = document.getElementById('po-dealer-logo-preview');
+  if (!preview) return;
+  const url = currentUserProfile && currentUserProfile.logo_url;
+  preview.src = url || '';
+  preview.style.display = url ? 'inline-block' : 'none';
+}
+
+// Envia o arquivo escolhido pro bucket 'dealer-logos' (path
+// dealer-logos/{uid}/logo.<ext>, upsert — sempre sobrescreve a logo
+// anterior do mesmo dealer), grava a URL pública em user_profiles.logo_url
+// (mesma policy self-update da margem de revenda, migration 072 — o
+// trigger prevent_self_profile_tampering só bloqueia role/email/user_id) e
+// atualiza o cabeçalho na hora se já estiver em modo Dealer.
+async function uploadDealerLogo(file) {
+  const statusEl = document.getElementById('po-dealer-logo-status');
+  if (!file || !currentUser) return;
+  if (statusEl) statusEl.textContent = I18n.t('nav.dealer_logo_uploading');
+  try {
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+    const path = `${currentUser.id}/logo.${ext}`;
+    const { error: uploadError } = await supabaseClient.storage
+      .from('dealer-logos')
+      .upload(path, file, { upsert: true, cacheControl: '3600' });
+    if (uploadError) throw uploadError;
+    const { data: publicUrlData } = supabaseClient.storage.from('dealer-logos').getPublicUrl(path);
+    // Cache-busting na URL salva — o path/URL pública em si não muda quando
+    // faz upsert, senão o navegador (e o <img> do cabeçalho) continuaria
+    // mostrando a logo antiga depois de trocar.
+    const publicUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+    const { data, error } = await supabaseClient
+      .from('user_profiles')
+      .update({ logo_url: publicUrl })
+      .eq('user_id', currentUser.id)
+      .select()
+      .single();
+    if (error) throw error;
+    currentUserProfile = data;
+    refreshDealerLogoPreview();
+    applyPortalViewMode();
+    if (statusEl) { statusEl.textContent = I18n.t('nav.dealer_logo_saved'); setTimeout(() => { statusEl.textContent = ''; }, 3000); }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = (err && err.message) || String(err);
+  }
+}
+
+const dealerLogoFileInputEl = document.getElementById('po-dealer-logo-file-input');
+if (dealerLogoFileInputEl) {
+  dealerLogoFileInputEl.addEventListener('change', () => {
+    const file = dealerLogoFileInputEl.files && dealerLogoFileInputEl.files[0];
+    if (file) uploadDealerLogo(file);
+  });
 }
 
 function applyCuttingListTabVisibility() {
@@ -7916,7 +8254,7 @@ async function loadCutlistColors() {
     // texture_url adicionado (pedido do usuário 2026-07-29: quadrado de cor
     // no lugar do <select> de texto puro) — sem ele o quadradinho cairia
     // sempre no swatch_hex genérico, mesmo pra cores com textura cadastrada.
-    .select('id, name, sheet_price_per_m2, edge_price_per_linear_m, swatch_hex, texture_url, default_sheet_size_id, stock_in_house')
+    .select('id, name, sheet_price_per_m2, edge_price_per_linear_m, swatch_hex, texture_url, default_sheet_size_id, stock_in_house, skip_cutting_plan')
     .eq('active', true)
     .order('sort_order');
   if (error) return;
@@ -7957,6 +8295,11 @@ function newCutlistRow() {
     espessura_mm: 19,
     color_id: cutlistColorsCache[0] ? cutlistColorsCache[0].id : null,
     edge_banding: 0,
+    // Veio da madeira (migration 073, pedido do usuário 2026-08-02) — 'sim'
+    // trava o comprimento no sentido do veio (nesting não gira a peça 90°,
+    // ver packSheetsMaxRects/cutlistPieceFitsSheet); 'não' (default) segue o
+    // comportamento de sempre, livre pra girar e aproveitar melhor a chapa.
+    has_grain: false,
     obs: ''
   };
 }
@@ -8267,6 +8610,11 @@ function renderCutlistBulkToolbar() {
       <option value="4">${I18n.t('cutlist.edge_4')}</option>
     </select>
     <button type="button" class="secondary cl-bulk-field" id="po-cutlist-bulk-edge-btn">${I18n.t('cutlist.bulk_apply_edge_btn')}</button>
+    <select id="po-cutlist-bulk-grain" class="po-project-input cl-bulk-field" style="width:100px;">
+      <option value="0">${I18n.t('cutlist.grain_no')}</option>
+      <option value="1">${I18n.t('cutlist.grain_yes')}</option>
+    </select>
+    <button type="button" class="secondary cl-bulk-field" id="po-cutlist-bulk-grain-btn">${I18n.t('cutlist.bulk_apply_grain_btn')}</button>
   `;
   wrap.querySelector('#po-cutlist-bulk-op-btn').addEventListener('click', () => {
     applyCutlistBulk('op', document.getElementById('po-cutlist-bulk-op').value);
@@ -8278,9 +8626,12 @@ function renderCutlistBulkToolbar() {
   wrap.querySelector('#po-cutlist-bulk-edge-btn').addEventListener('click', () => {
     applyCutlistBulk('edge_banding', Number(document.getElementById('po-cutlist-bulk-edge').value));
   });
+  wrap.querySelector('#po-cutlist-bulk-grain-btn').addEventListener('click', () => {
+    applyCutlistBulk('has_grain', document.getElementById('po-cutlist-bulk-grain').value === '1');
+  });
 }
 
-// field = 'op' | 'espessura_mm' | 'color_id' | 'edge_banding'. Aplica só nas
+// field = 'op' | 'espessura_mm' | 'color_id' | 'edge_banding' | 'has_grain'. Aplica só nas
 // linhas marcadas (cutlistCheckedIds). Fita "4 lados" respeita a mesma trava
 // por linha do dropdown individual (peça com lado < 100mm não pode) — pula
 // essas silenciosamente em vez de forçar um estado inválido.
@@ -8302,6 +8653,15 @@ function renderCutlistTable() {
   const tbody = document.getElementById('po-cutlist-tbody');
   if (!tbody) return;
   renderCutlistBulkToolbar();
+  // Comprimento/Largura seguem a unidade GLOBAL (po-unit-select, mesma do
+  // resto do portal, inclui polegada fracionada 1/32") — pedido do usuário
+  // 2026-08-02: "preciso que o cutting list funciona com polegada
+  // fracionada tambem, conforme preferencia de cada usuario". Internamente
+  // (row.comprimento_mm/largura_mm, preço, nesting, banco) continua tudo em
+  // mm sempre — só a caixa de texto exibida/digitada muda (ver
+  // commitCutlistDimensionInput). Cabeçalho/hint de limites acompanham.
+  const cutlistUnit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  updateCutlistUnitLabels(cutlistUnit);
   const selectAllEl = document.getElementById('po-cutlist-select-all');
   if (selectAllEl) {
     selectAllEl.checked = cutlistRows.length > 0 && cutlistRows.every((r) => cutlistCheckedIds.has(r._id));
@@ -8335,8 +8695,14 @@ function renderCutlistTable() {
       <td><input type="text" class="po-project-input cl-op" style="width:64px;" value="${row.op || ''}" /></td>
       <td><input type="text" class="po-project-input cl-part-name" style="width:140px;" value="${row.part_name || ''}" /></td>
       <td><input type="number" min="1" step="1" class="po-project-input cl-quantity" style="width:56px;" value="${row.quantity}" /></td>
-      <td><input type="number" min="${CUTLIST_COMPRIMENTO_MIN}" max="${CUTLIST_COMPRIMENTO_MAX}" step="1" class="po-project-input cl-comprimento" style="width:90px;" value="${row.comprimento_mm}" /></td>
-      <td><input type="number" min="${CUTLIST_LARGURA_MIN}" max="${CUTLIST_LARGURA_MAX}" step="1" class="po-project-input cl-largura" style="width:90px;" value="${row.largura_mm}" /></td>
+      <td><input type="text" inputmode="decimal" class="po-project-input cl-comprimento" style="width:90px;" value="${cutlistFormatFieldValue(row.comprimento_mm, cutlistUnit)}" placeholder="${unitAbbrev(cutlistUnit)}" /></td>
+      <td><input type="text" inputmode="decimal" class="po-project-input cl-largura" style="width:90px;" value="${cutlistFormatFieldValue(row.largura_mm, cutlistUnit)}" placeholder="${unitAbbrev(cutlistUnit)}" /></td>
+      <td>
+        <select class="po-project-input cl-grain" style="width:78px;" title="${row.has_grain ? I18n.t('cutlist.grain_yes_hint') : I18n.t('cutlist.grain_no_hint')}">
+          <option value="0" ${!row.has_grain ? 'selected' : ''}>${I18n.t('cutlist.grain_no')}</option>
+          <option value="1" ${row.has_grain ? 'selected' : ''}>${I18n.t('cutlist.grain_yes')}</option>
+        </select>
+      </td>
       <td>
         <select class="po-project-input cl-espessura" style="width:78px;">
           <option value="19" ${Number(row.espessura_mm) === 19 ? 'selected' : ''}>19mm</option>
@@ -8377,6 +8743,11 @@ function renderCutlistTable() {
     tr.querySelector('.cl-quantity').addEventListener('input', (e) => { row.quantity = e.target.value; hideCutlistFinalPrice(); refreshCutlistRowHighlight(tr, row); });
     tr.querySelector('.cl-obs').addEventListener('input', (e) => { row.obs = e.target.value; hideCutlistFinalPrice(); });
     tr.querySelector('.cl-color-btn').addEventListener('click', (e) => toggleCutlistColorPicker(row, e.currentTarget));
+    tr.querySelector('.cl-grain').addEventListener('change', (e) => {
+      row.has_grain = e.target.value === '1';
+      hideCutlistFinalPrice();
+      e.target.title = row.has_grain ? I18n.t('cutlist.grain_yes_hint') : I18n.t('cutlist.grain_no_hint');
+    });
     tr.querySelector('.cl-espessura').addEventListener('change', (e) => { row.espessura_mm = Number(e.target.value); hideCutlistFinalPrice(); refreshCutlistRowHighlight(tr, row); });
     tr.querySelector('.cl-edge').addEventListener('change', (e) => {
       row.edge_banding = Number(e.target.value);
@@ -8385,12 +8756,24 @@ function renderCutlistTable() {
       if (iconEl) iconEl.innerHTML = cutlistEdgeIconSvg(row.edge_banding);
       refreshCutlistRowHighlight(tr, row);
     });
-    // Comprimento/largura re-renderizam a linha (no blur) pra recalcular se
-    // a opção "4 lados" deve ficar bloqueada (regra dos 100mm).
-    tr.querySelector('.cl-comprimento').addEventListener('input', (e) => { row.comprimento_mm = e.target.value; hideCutlistFinalPrice(); });
-    tr.querySelector('.cl-comprimento').addEventListener('change', () => renderCutlistTable());
-    tr.querySelector('.cl-largura').addEventListener('input', (e) => { row.largura_mm = e.target.value; hideCutlistFinalPrice(); });
-    tr.querySelector('.cl-largura').addEventListener('change', () => renderCutlistTable());
+    // Comprimento/largura só CONFIRMAM o valor no 'change' (blur) — mesmo
+    // padrão de po-ceiling-input/po-width-exact (applyExactDimension):
+    // parseDimensionInput não dá pra rodar a cada tecla (fração de polegada
+    // tipo "15 1/16" fica ambígua/inválida no meio da digitação, ver
+    // comentário em applyFloorHeightInput). 'input' só marca preço
+    // desatualizado, sem mexer no valor em mm ainda; 'change' re-renderiza a
+    // linha inteira (recalcula se a opção "4 lados" deve ficar bloqueada,
+    // regra dos 100mm — só faz sentido com o valor em mm já commitado).
+    tr.querySelector('.cl-comprimento').addEventListener('input', hideCutlistFinalPrice);
+    tr.querySelector('.cl-comprimento').addEventListener('change', (e) => {
+      commitCutlistDimensionInput(row, 'comprimento_mm', e.target.value);
+      renderCutlistTable();
+    });
+    tr.querySelector('.cl-largura').addEventListener('input', hideCutlistFinalPrice);
+    tr.querySelector('.cl-largura').addEventListener('change', (e) => {
+      commitCutlistDimensionInput(row, 'largura_mm', e.target.value);
+      renderCutlistTable();
+    });
     tr.querySelector('.cl-remove-btn').addEventListener('click', () => removeCutlistRow(row._id));
 
     // Pedido do usuário 2026-07-31: "cada tab leve pra proxima caixa" — Tab
@@ -8408,7 +8791,7 @@ function renderCutlistTable() {
 
 // Sequência de "caixas" de digitação por linha, na mesma ordem visual das
 // colunas da tabela — ver handleCutlistFieldTab.
-const CUTLIST_TAB_FIELDS = ['cl-op', 'cl-part-name', 'cl-quantity', 'cl-comprimento', 'cl-largura', 'cl-espessura', 'cl-color-btn', 'cl-edge', 'cl-obs'];
+const CUTLIST_TAB_FIELDS = ['cl-op', 'cl-part-name', 'cl-quantity', 'cl-comprimento', 'cl-largura', 'cl-grain', 'cl-espessura', 'cl-color-btn', 'cl-edge', 'cl-obs'];
 
 // Foca uma caixa específica (por linha + classe do campo) DEPOIS de um
 // possível re-render — não guarda referência direta ao <input>/<select>
@@ -8439,6 +8822,14 @@ function handleCutlistFieldTab(e, row) {
   const fieldClass = CUTLIST_TAB_FIELDS.find((cls) => e.target.classList && e.target.classList.contains(cls));
   if (!fieldClass) return; // checkbox/botão ✕: deixa o Tab nativo agir
   e.preventDefault();
+  // Comprimento/Largura só commitam o valor digitado no 'change' (blur) —
+  // mas e.preventDefault() acima impede o navegador de mover o foco
+  // sozinho, então o blur nativo pode nunca disparar antes do re-render
+  // logo abaixo (o campo com foco é destruído no meio do processo). Sem
+  // isto, dar Tab no meio de "15 1/16" perderia o valor digitado — commita
+  // aqui, na mão, antes de qualquer render.
+  if (fieldClass === 'cl-comprimento') commitCutlistDimensionInput(row, 'comprimento_mm', e.target.value);
+  if (fieldClass === 'cl-largura') commitCutlistDimensionInput(row, 'largura_mm', e.target.value);
   const fieldIdx = CUTLIST_TAB_FIELDS.indexOf(fieldClass);
   if (fieldIdx < CUTLIST_TAB_FIELDS.length - 1) {
     renderCutlistTable();
@@ -8506,11 +8897,16 @@ function escapeHtmlCutlist(str) {
   return String(str == null ? '' : str).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
-// MaxRects Best-Area-Fit com rotação de 90° livre (sem dado de veio pra
-// travar orientação — ver comentário acima). kerf é reservado como margem
-// extra à direita/abaixo de cada peça colocada (aproximação padrão desse
-// tipo de calculadora rápida, mesmo espírito de "estimativa" já usado no
-// resto da aba).
+// MaxRects Best-Area-Fit com rotação de 90° livre POR PADRÃO. Peça com
+// piece.grain=true (migration 073, coluna has_grain, pedido do usuário
+// 2026-08-02: "sempre que veio e sim, ele deve considerar o comprimento no
+// sentido do veio") trava — só o candidato NÃO rotacionado entra, o
+// comprimento (piece.w) fica sempre no mesmo sentido em toda a chapa. Peça
+// com grain=false (default) continua livre pra girar e aproveitar melhor a
+// chapa, igual sempre foi. kerf é reservado como margem extra à direita/
+// abaixo de cada peça colocada (aproximação padrão desse tipo de
+// calculadora rápida, mesmo espírito de "estimativa" já usado no resto da
+// aba).
 function packSheetsMaxRects(pieces, sheetW, sheetH, kerf) {
   function rectContains(outer, inner) {
     return inner.x >= outer.x - 1e-6 && inner.y >= outer.y - 1e-6 &&
@@ -8539,7 +8935,7 @@ function packSheetsMaxRects(pieces, sheetW, sheetH, kerf) {
   }
   function placeInSheet(sheet, piece) {
     const candidates = [{ w: piece.w, h: piece.h, rotated: false }];
-    if (piece.w !== piece.h) candidates.push({ w: piece.h, h: piece.w, rotated: true });
+    if (!piece.grain && piece.w !== piece.h) candidates.push({ w: piece.h, h: piece.w, rotated: true });
     let best = null;
     sheet.freeRects.forEach((freeRect) => {
       candidates.forEach((cand) => {
@@ -8556,7 +8952,7 @@ function packSheetsMaxRects(pieces, sheetW, sheetH, kerf) {
     });
     if (!best) return false;
     const footprint = { x: best.freeRect.x, y: best.freeRect.y, w: best.cand.w + kerf, h: best.cand.h + kerf };
-    sheet.placed.push({ x: best.freeRect.x, y: best.freeRect.y, w: best.cand.w, h: best.cand.h, rotated: best.cand.rotated, label: piece.label, id: piece.id });
+    sheet.placed.push({ x: best.freeRect.x, y: best.freeRect.y, w: best.cand.w, h: best.cand.h, rotated: best.cand.rotated, label: piece.label, id: piece.id, grain: !!piece.grain });
     const newFreeRects = [];
     sheet.freeRects.forEach((fr) => splitFreeRect(fr, footprint, newFreeRects));
     pruneFreeRects(newFreeRects);
@@ -8576,17 +8972,20 @@ function packSheetsMaxRects(pieces, sheetW, sheetH, kerf) {
         // Não deveria acontecer — cutlistFitsSheetSize já filtra peça maior
         // que a chapa antes de chegar aqui. Marca como overflow em vez de
         // travar a geração inteira do plano.
-        current.placed.push({ x: 0, y: 0, w: Math.min(piece.w, sheetW), h: Math.min(piece.h, sheetH), rotated: false, label: piece.label, id: piece.id, overflow: true });
+        current.placed.push({ x: 0, y: 0, w: Math.min(piece.w, sheetW), h: Math.min(piece.h, sheetH), rotated: false, label: piece.label, id: piece.id, overflow: true, grain: !!piece.grain });
       }
     }
   });
   return sheets;
 }
 
-// Verifica se a peça cabe na chapa em QUALQUER orientação — usado antes de
-// rodar o nesting pra avisar o Contractor em vez de gerar um plano com peça
-// cortada errado.
-function cutlistPieceFitsSheet(w, h, sheetW, sheetH) {
+// Verifica se a peça cabe na chapa — em QUALQUER orientação pra peça sem
+// veio (comportamento de sempre), só na orientação FIXA (comprimento = w,
+// sem girar) pra peça com veio, mesma trava aplicada em placeInSheet —
+// usado antes de rodar o nesting pra avisar o Contractor em vez de gerar um
+// plano com peça cortada errado.
+function cutlistPieceFitsSheet(w, h, sheetW, sheetH, grain) {
+  if (grain) return w <= sheetW && h <= sheetH;
   return (w <= sheetW && h <= sheetH) || (h <= sheetW && w <= sheetH);
 }
 
@@ -8608,7 +9007,7 @@ function groupCutlistRowsForPlan() {
     }
     const g = groups.get(key);
     for (let i = 0; i < qty; i++) {
-      g.pieces.push({ id: `${row._id}-${i}`, w, h, label: row.part_name || row.op || '—' });
+      g.pieces.push({ id: `${row._id}-${i}`, w, h, label: row.part_name || row.op || '—', grain: !!row.has_grain });
     }
     const edge = Number(row.edge_banding);
     const comprimentoM = w / 1000;
@@ -8641,13 +9040,15 @@ async function startCutlistPlanFlow() {
     // STOCK IN HOUSE (migration 064, renomeado de "usa retalhos") — nunca
     // precisa de tamanho de chapa, porque nunca vai rodar nesting nenhum
     // pra esse grupo (só preço, sem chapa nem fita — pedido do usuário
-    // 2026-07-31).
-    if (g.color.stock_in_house) return;
+    // 2026-07-31). Cor Especial (migration 074, ex.: EGGER) também nunca
+    // precisa — nesting pulado igual, só que a fita continua contando (ver
+    // renderCutlistPlanResults).
+    if (g.color.stock_in_house || g.color.skip_cutting_plan) return;
     if (g.color.default_sheet_size_id) {
       g.sheetSize = cutlistSheetSizesCache.find((s) => s.id === g.color.default_sheet_size_id) || null;
     }
   });
-  const needsManual = groups.filter((g) => !g.color.stock_in_house && !g.sheetSize);
+  const needsManual = groups.filter((g) => !g.color.stock_in_house && !g.color.skip_cutting_plan && !g.sheetSize);
   if (needsManual.length > 0) {
     if (cutlistSheetSizesCache.length === 0) {
       const errorEl = document.getElementById('po-cutlist-error');
@@ -8693,6 +9094,24 @@ function renderCutlistSheetPickerPanel(allGroups, needsManual) {
   });
 }
 
+// Linhas de veio (pedido do usuário 2026-08-02: "quero mostrar veios no
+// desenho da peca quando tiver") — só desenhadas quando p.grain=true (ver
+// packSheetsMaxRects, que propaga row.has_grain pra cá através de
+// piece.grain). Peça com veio NUNCA gira (mesma trava em placeInSheet), então
+// p.w é sempre o comprimento original da peça — as linhas seguem PARALELAS a
+// esse lado (horizontais dentro do retângulo, espaçadas ao longo de p.h),
+// simulando o sentido do veio da madeira. Cosmético/estimativo, não muda o
+// encaixe (ver packSheetsMaxRects pra trava de verdade).
+function cutlistGrainLinesSVG(x, y, w, h) {
+  if (w < 12 || h < 12) return ''; // peça pequena demais no diagrama — linhas só poluiriam
+  const spacing = 7;
+  const lines = [];
+  for (let ly = y + spacing / 2; ly < y + h; ly += spacing) {
+    lines.push(`<line x1="${(x + 2).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(x + w - 2).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#8a6d3b" stroke-width="0.6" opacity="0.5"/>`);
+  }
+  return lines.join('');
+}
+
 // Desenha uma chapa como SVG (retângulos + rótulo peça/dimensão), escalado
 // pra caber num container de largura fixa — mesmo espírito visual do
 // diagrama de referência (chapa com as peças encaixadas e legendadas).
@@ -8711,6 +9130,7 @@ function renderCutlistSheetSVG(sheet) {
     const showText = w > 30 && h > 16;
     return `<g>
       <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="1"/>
+      ${p.grain ? cutlistGrainLinesSVG(x, y, w, h) : ''}
       ${showText ? `<text x="${(x + w / 2).toFixed(1)}" y="${(y + h / 2 - 5).toFixed(1)}" font-size="${fontSize}" text-anchor="middle" fill="#333">${label}</text>
       <text x="${(x + w / 2).toFixed(1)}" y="${(y + h / 2 + 9).toFixed(1)}" font-size="${fontSize}" text-anchor="middle" fill="#333">${dims}</text>` : ''}
     </g>`;
@@ -8788,8 +9208,47 @@ function renderCutlistPlanResults(groups) {
       `);
       return;
     }
+    // COR ESPECIAL (migration 074, ex.: EGGER, pedido do usuário 2026-08-02:
+    // "cutting list quando usar cores egger nao quero que gere plano de
+    // corte") — diferente de STOCK IN HOUSE: a fita de borda CONTINUA
+    // contando normalmente (entra em grandTotalEdgeM), só a diagramação/
+    // contagem de chapa é pulada (chapa EGGER especial não segue os tamanhos
+    // padrão cadastrados, nem faz sentido nestear). Mesma lista de peças
+    // agrupadas do STOCK IN HOUSE, sem preço extra aqui (o preço já entra no
+    // total normal de "Gerar Preço", igual pros grupos nesteados).
+    if (g.color.skip_cutting_plan) {
+      grandTotalEdgeM += g.edgeM;
+      const pieceCounts = new Map();
+      g.pieces.forEach((p) => {
+        const key = `${p.label}|${p.w}|${p.h}`;
+        if (!pieceCounts.has(key)) pieceCounts.set(key, { label: p.label, w: p.w, h: p.h, qty: 0 });
+        pieceCounts.get(key).qty += 1;
+      });
+      summaryRows.push(`
+        <tr>
+          <td>${escapeHtmlCutlist(g.color.name)} — ${g.espessura_mm}mm</td>
+          <td>${I18n.t('cutlist.plan_special_label')}</td>
+          <td>—</td>
+          <td>${g.edgeM.toFixed(2)} m</td>
+          <td>—</td>
+        </tr>
+      `);
+      sheetsHtml.push(`<h3 style="margin-top:22px;">${escapeHtmlCutlist(g.color.name)} — ${g.espessura_mm}mm · ${I18n.t('cutlist.plan_special_label')}</h3>`);
+      sheetsHtml.push(`
+        <table>
+          <thead><tr>
+            <th>${I18n.t('cutlist.col_part_name')}</th>
+            <th>${I18n.t('cutlist.col_length')}</th>
+            <th>${I18n.t('cutlist.col_width')}</th>
+            <th>${I18n.t('cutlist.col_quantity')}</th>
+          </tr></thead>
+          <tbody>${Array.from(pieceCounts.values()).map((p) => `<tr><td>${escapeHtmlCutlist(p.label)}</td><td>${Math.round(p.w)}</td><td>${Math.round(p.h)}</td><td>${p.qty}</td></tr>`).join('')}</tbody>
+        </table>
+      `);
+      return;
+    }
     if (!g.sheetSize) return; // defesa — não deveria sobrar grupo sem tamanho aqui
-    const oversizePieces = g.pieces.filter((p) => !cutlistPieceFitsSheet(p.w, p.h, g.sheetSize.width_mm, g.sheetSize.height_mm));
+    const oversizePieces = g.pieces.filter((p) => !cutlistPieceFitsSheet(p.w, p.h, g.sheetSize.width_mm, g.sheetSize.height_mm, p.grain));
     if (oversizePieces.length > 0) {
       oversizeWarnings.push(I18n.t('cutlist.plan_oversize_warning', {
         color: g.color.name, size: `${g.sheetSize.width_mm} x ${g.sheetSize.height_mm}`
@@ -8865,10 +9324,16 @@ function mapImportedRowsToCutlist(rowsArray) {
   return dataRows
     .filter((r) => (r || []).some((cell) => String(cell == null ? '' : cell).trim() !== ''))
     .map((r) => {
-      const [op, partName, quantity, comprimento, largura, espessura, colorName, edgeRaw, obs] = r;
+      const [op, partName, quantity, comprimento, largura, espessura, colorName, edgeRaw, obs, grainRaw] = r;
       const thickness = Number(espessura) === 38 ? 38 : 19; // qualquer valor diferente de 38 cai no padrão seguro (19)
       const edge = [0, 2, 4].includes(Number(edgeRaw)) ? Number(edgeRaw) : 0;
       const matchedColor = cutlistColorsCache.find((c) => c.name.trim().toLowerCase() === String(colorName == null ? '' : colorName).trim().toLowerCase());
+      // Veio (migration 073) — coluna nova no FIM da linha (não no meio, pra
+      // não quebrar planilhas antigas de quem já importava sem essa coluna).
+      // Aceita sim/não, yes/no, sí, true/false, 1/0 — qualquer coisa fora
+      // dessa lista cai no padrão seguro (sem veio, livre pra girar).
+      const grainStr = String(grainRaw == null ? '' : grainRaw).trim().toLowerCase();
+      const hasGrain = ['sim', 'yes', 'sí', 'si', 'true', '1'].includes(grainStr);
       return Object.assign(newCutlistRow(), {
         op: op || '',
         part_name: partName || '',
@@ -8878,6 +9343,7 @@ function mapImportedRowsToCutlist(rowsArray) {
         espessura_mm: thickness,
         color_id: matchedColor ? matchedColor.id : (cutlistColorsCache[0] ? cutlistColorsCache[0].id : null),
         edge_banding: edge,
+        has_grain: hasGrain,
         obs: obs || ''
       });
     });
@@ -8917,6 +9383,12 @@ async function importCutlistFile(file) {
 // do hint acima (cutlist.import_format_hint), cabeçalho traduzido no idioma
 // atual + 1 linha de exemplo já preenchida. mapImportedRowsToCutlist
 // reconhece o cabeçalho (looksLikeHeader) então funciona no reimport normal.
+// Comprimento/Largura da PLANILHA ficam sempre em mm, mesmo depois de
+// cutlist.col_length/col_width terem virado genéricos (2026-08-02, coluna na
+// tela virou unit-aware) — import/export não segue a unidade global (evitaria
+// ambiguidade em planilha reaberta depois de trocar a unidade), então o
+// cabeçalho aqui deixa a unidade explícita "(mm)" na mão, sem depender da
+// chave i18n genérica.
 async function downloadCutlistTemplate() {
   if (typeof XLSX === 'undefined') return;
   await loadCutlistColors(); // garante que a linha de exemplo use uma cor real do catálogo
@@ -8924,17 +9396,18 @@ async function downloadCutlistTemplate() {
     I18n.t('cutlist.col_op'),
     I18n.t('cutlist.col_part_name'),
     I18n.t('cutlist.col_quantity'),
-    I18n.t('cutlist.col_length'),
-    I18n.t('cutlist.col_width'),
+    `${I18n.t('cutlist.col_length')} (mm)`,
+    `${I18n.t('cutlist.col_width')} (mm)`,
     I18n.t('cutlist.col_thickness'),
     I18n.t('cutlist.col_color'),
     I18n.t('cutlist.col_edge'),
-    I18n.t('cutlist.col_obs')
+    I18n.t('cutlist.col_obs'),
+    I18n.t('cutlist.col_grain')
   ];
   const exampleColorName = cutlistColorsCache[0] ? cutlistColorsCache[0].name : '';
-  const exampleRow = ['OP-001', 'Lateral', 2, 600, 400, 19, exampleColorName, 2, ''];
+  const exampleRow = ['OP-001', 'Lateral', 2, 600, 400, 19, exampleColorName, 2, '', I18n.t('cutlist.grain_no')];
   const ws = XLSX.utils.aoa_to_sheet([header, exampleRow]);
-  ws['!cols'] = [8, 16, 6, 14, 12, 10, 16, 8, 20].map((w) => ({ wch: w }));
+  ws['!cols'] = [8, 16, 6, 14, 12, 10, 16, 8, 20, 8].map((w) => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Plano de Corte');
   XLSX.writeFile(wb, 'modelo-plano-de-corte.xlsx');
@@ -9070,6 +9543,7 @@ async function saveCutlistOrder(finalStatus) {
         color_id: row.color_id,
         color_name: color ? color.name : null,
         edge_banding: Number(row.edge_banding),
+        has_grain: !!row.has_grain,
         obs: row.obs || null,
         unit_price: Number((row._unit_price || 0).toFixed(2)),
         total_price: Number((row._total_price || 0).toFixed(2)),
@@ -9106,14 +9580,23 @@ function openCutlistOrderDetail(order, items) {
   document.getElementById('po-cutlist-order-detail-section').style.display = 'block';
   document.getElementById('po-cutlist-order-detail-title').textContent = order.po_name || order.client_name || I18n.t('pdf.order_fallback');
   document.getElementById('po-cutlist-order-detail-status-badge').textContent = orderStatusLabel(order.status);
+  // Comprimento/Largura na unidade GLOBAL atual (po-unit-select) — mesma
+  // preferência já usada pro resto do portal (ex.: dimensão dos order_items
+  // de módulo), não faz sentido um pedido de plano de corte salvo ficar
+  // preso em mm enquanto o resto da tela já mostra polegada fracionada.
+  // formatDimension já inclui o sufixo da unidade (ex. `23 27/32"`), então o
+  // cabeçalho não precisa de rótulo de unidade — cada célula já é
+  // autodescritiva.
+  const detailUnit = (document.getElementById('po-unit-select') || {}).value || 'mm';
   const tbody = document.getElementById('po-cutlist-order-detail-tbody');
   tbody.innerHTML = (items || []).map((it) => `
     <tr>
       <td>${it.op || '—'}</td>
       <td>${it.part_name}</td>
       <td>${it.quantity}</td>
-      <td>${Number(it.comprimento_mm).toFixed(0)}</td>
-      <td>${Number(it.largura_mm).toFixed(0)}</td>
+      <td>${formatDimension(Number(it.comprimento_mm), detailUnit)}</td>
+      <td>${formatDimension(Number(it.largura_mm), detailUnit)}</td>
+      <td>${it.has_grain ? I18n.t('cutlist.grain_yes') : I18n.t('cutlist.grain_no')}</td>
       <td>${Number(it.espessura_mm).toFixed(0)}mm</td>
       <td>${it.color_name || '—'}</td>
       <td>${it.edge_banding}</td>
@@ -10029,7 +10512,7 @@ async function insertProjectModuleDefault(moduleId) {
       : Pricing.calculateModulePrice({
         module: m, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
         shelfQuantities, dimOverrides: {}, pieceColorOverrides: {},
-        width_mm, height_mm, depth_mm, markupMultiplier: pricingMarkupMultiplier
+        width_mm, height_mm, depth_mm, markupMultiplier: resolveMarkupMultiplierForModule(m)
       });
 
     const slot = {
@@ -10489,7 +10972,7 @@ function recomputeProjectSlotPricing(slot) {
       shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides,
       pieceColorOverrides: slot.pieceColorOverrides,
       width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
-      markupMultiplier: pricingMarkupMultiplier
+      markupMultiplier: resolveMarkupMultiplierForModule(slot.module)
     });
 }
 
@@ -10835,6 +11318,9 @@ function renderProjectCanvas() {
   const genHint = document.getElementById('po-proj-generate-hint');
   if (genBtn) genBtn.disabled = projectSlots.length < 1;
   if (genHint) genHint.style.display = projectSlots.length < 1 ? 'block' : 'none';
+  // Foto realista segue a mesma regra do Visualizar 3D (>=1 módulo).
+  const photoBtn = document.getElementById('po-proj-photoreal-btn');
+  if (photoBtn) photoBtn.disabled = projectSlots.length < 1;
 
   // Mesmo comportamento de auto-regeneração da Composição (ver comp3dWrap em
   // renderCompositionSlots): se o 3D já estava aberto e o cliente mexeu no
@@ -11302,6 +11788,7 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   }
 
   ViewerProjectEdit.init('po-proj-canvas-3d-edit');
+  ensurePhotoFrameOverlay('po-proj-canvas-3d-edit');
   // OrbitControls LIGADO (pedido do usuário 2026-07-26: "ainda sim nao ficou
   // facil de projetar... pode testar uma camera que mexe? zoom e rotacao" —
   // depois dos ajustes de raycasting/ângulo terem melhorado bastante mas não
@@ -12136,6 +12623,7 @@ function generateProject3D() {
   }
 
   ViewerProject.init('po-proj-3d-canvas');
+  ensurePhotoFrameOverlay('po-proj-3d-canvas');
 
   // Forma 'single' (o caso de sempre) continua chamando renderFreeform tal
   // e qual — zero risco de regressão pro fluxo já existente. Só forma
@@ -12235,12 +12723,19 @@ function isAndroidBrowser() {
   return /Android/i.test(navigator.userAgent || '');
 }
 
-// Mostra o botão de teste só em Android — em qualquer outro aparelho o
-// Scene Viewer não existe, melhor nem oferecer um botão que não vai funcionar.
-(function initArTestVisibility() {
-  const wrap = document.getElementById('po-proj-ar-test-wrap');
-  if (wrap && isAndroidBrowser()) wrap.style.display = '';
-})();
+// PAUSADO (pedido do usuário, 2026-08-02: "pode retirar o ar que colocamos,
+// nao quero continuar essa funcao por enquanto") — o wrap já nasce
+// display:none no HTML (po-proj-ar-test-wrap) e este era o único código que
+// tirava ele do escondido; comentado em vez de apagado (mesmo padrão de
+// room_view_hidden/composicao_favoritos_hidden — reversível, é só
+// descomentar de volta). generateArGlbForProject (abaixo) fica intocado, só
+// inalcançável pela UI. Não mexe em captureProjectThumbnail (usado por
+// "Meus Projetos", ver saveProjectFavorite) — função separada, só reaproveita
+// a mesma técnica de snapshot, não depende deste bloco.
+// (function initArTestVisibility() {
+//   const wrap = document.getElementById('po-proj-ar-test-wrap');
+//   if (wrap && isAndroidBrowser()) wrap.style.display = '';
+// })();
 
 async function generateArGlbForProject() {
   const statusEl = document.getElementById('po-proj-ar-test-status');
@@ -12260,10 +12755,33 @@ async function generateArGlbForProject() {
   if (btn) btn.disabled = true;
   setStatus('Gerando modelo 3D (.glb)...');
 
+  // Esconde cotas CAD/ambiente virtual/contorno de hover antes de exportar
+  // (tag 'ar-export-exclude', ver viewer3d_composition.js) — nenhum desses
+  // faz sentido plantado no ambiente REAL do cliente via Scene Viewer, e um
+  // deles (Sprite/Line de texto e o ambiente virtual com múltiplos
+  // materiais) é o suspeito mais provável do Scene Viewer recusar o arquivo
+  // ("algo errado com este objeto"). GLTFExporter.parse tem onlyVisible:true
+  // por padrão, então só esconder já tira do .glb sem remover nada da cena
+  // ao vivo (restaura a visibilidade original logo depois, mesmo em erro).
+  const hiddenForExport = [];
+  scene.traverse((obj) => {
+    if (obj.name === 'ar-export-exclude' && obj.visible) {
+      hiddenForExport.push(obj);
+      obj.visible = false;
+    }
+  });
+
   try {
     const arrayBuffer = await new Promise((resolve, reject) => {
       const exporter = new THREE.GLTFExporter();
-      exporter.parse(scene, resolve, { binary: true }, reject);
+      // maxTextureSize (2026-08-01, arquivo de 20MB no 1º teste real): sem
+      // isso o GLTFExporter reencoda CADA textura de cor/veio de madeira no
+      // tamanho ORIGINAL do arquivo fonte (muitas vezes 2000px+, e se tiver
+      // canal alpha vira PNG sem perdas, bem mais pesado que o JPEG fonte) —
+      // pra visualização em AR no celular 1024px já é mais que suficiente
+      // (a tela do celular não mostra a diferença), e reduz MUITO o arquivo
+      // final (upload mais rápido + Scene Viewer carrega mais rápido).
+      exporter.parse(scene, resolve, { binary: true, maxTextureSize: 1024 }, reject);
     });
     const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
 
@@ -12289,14 +12807,22 @@ async function generateArGlbForProject() {
     // isto "resposta direta a um clique" e bloquear a navegação automática
     // pro intent://. Com o link na tela, Matt sempre consegue abrir na mão
     // mesmo se o redirect automático falhar silenciosamente.
+    // publicUrl também exposto como TEXTO puro (selecionável/copiável) e no
+    // console (2026-08-01, debug do "falha ao carregar objeto" no Scene
+    // Viewer — precisa do link cru pra validar o .glb fora do celular, sem
+    // depender do intent:// que só funciona dentro do próprio Android).
+    console.log('[AR test] modelo .glb:', publicUrl, `(${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
     if (statusEl) {
-      statusEl.innerHTML = `Modelo pronto. <a href="${sceneViewerUrl}">Abrir em AR</a> (se não abrir sozinho, toque no link).`;
+      statusEl.innerHTML = `Modelo pronto (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)} MB). ` +
+        `<a href="${sceneViewerUrl}">Abrir em AR</a> (se não abrir sozinho, toque no link).<br>` +
+        `<span style="font-size:11px;word-break:break-all;user-select:all;">${publicUrl}</span>`;
     }
     window.location.href = sceneViewerUrl;
   } catch (err) {
     console.error('generateArGlbForProject', err);
     setStatus(`Erro ao gerar AR: ${(err && err.message) || err}`);
   } finally {
+    hiddenForExport.forEach((obj) => { obj.visible = true; });
     if (btn) btn.disabled = false;
   }
 }
@@ -12314,6 +12840,228 @@ if (projGenerateBtn) {
     generateProject3D();
     const wrap = document.getElementById('po-proj-3d-wrap');
     if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+// Moldura "área da foto realista" (2026-08-03, pedido do usuário: "mostrar
+// a area da foto no 3d") — a foto sai 4:3 com a MESMA câmera/fov vertical
+// do viewer, então o recorte real na tela é: altura inteira, largura =
+// altura×4/3, centrado (a câmera da foto só estreita o campo HORIZONTAL).
+// Injeta uma vez por container (idempotente); posicionamento 100% via CSS
+// (.po-photoframe, aspect-ratio) — resize se ajusta sozinho. Texto fixo
+// sem i18n (beta, mesmo critério do botão).
+function ensurePhotoFrameOverlay(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container || container.querySelector('.po-photoframe')) return;
+  if (!container.style.position && getComputedStyle(container).position === 'static') {
+    container.style.position = 'relative';
+  }
+  const frame = document.createElement('div');
+  frame.className = 'po-photoframe';
+  frame.innerHTML = '<span class="po-photoframe-label">📸 área da foto</span>';
+  container.appendChild(frame);
+}
+
+// Botão "📸 Foto realista (beta)" (2026-08-03) — junta paredes + peças JÁ
+// RESOLVIDAS (mesmo resolvePiecesForViewer do viewer normal, zero lógica
+// nova de preço/dimensão) e entrega pro Photoreal (js/photoreal.js), que
+// renderiza com path tracer numa cena própria em three moderno. Nada aqui
+// toca no viewer atual — se Photoreal falhar, o resto da aba segue igual.
+// Callback passado como sceneData.onSave pro Photoreal — CHAMADO
+// AUTOMATICAMENTE por ele quando o render termina (ver maybeAutoSave em
+// photoreal.js), ATUALIZADO 2026-08-03 (pedido do usuário: "quero que ela
+// fique carregada no projeto salvo. automaticamente ela salva e fica na
+// tela... pode tambem deixar salvar mais de uma versao, porque podem ter
+// mais angulos"): antes gravava SEMPRE no mesmo campo user_projects.
+// ai_preview_url (cada foto sobrescrevia a anterior); agora insere uma
+// LINHA NOVA em project_photoreal_photos (migration 077) a cada render — a
+// grade inteira fica visível na aba Projetos (ver
+// refreshProjectPhotorealGallery). ai_preview_url CONTINUA sendo atualizado
+// pra apontar pra essa foto mais recente — é o valor que
+// generateAiPreviewForProjectGallery/publishProjectToGallery preferem como
+// base pro Gemini em vez de tirar um screenshot novo do 3D (ver comentário
+// grande perto de lá) — não mudou. Exige projeto já salvo em "Meus
+// Projetos" (precisa de loadedProjectFavorite.id pra saber em qual projeto
+// gravar).
+async function savePhotorealRenderToProject(dataUrl) {
+  if (!currentUser) throw new Error(I18n.t('fav.need_login'));
+  if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
+    throw new Error('Salve o projeto em "Meus Projetos" antes de guardar a foto realista.');
+  }
+  const publicUrl = await uploadGalleryImageToStorage(dataUrl);
+
+  // Grade de versões (migration 077, Matt precisa rodar) — se a tabela
+  // ainda não existir, não trava o salvamento: cai pro comportamento antigo
+  // (só ai_preview_url atualizado, sem grade de miniaturas na tela).
+  try {
+    const { data: photoRow, error: insertError } = await supabaseClient
+      .from('project_photoreal_photos')
+      .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl })
+      .select('id, image_url, created_at')
+      .single();
+    if (insertError) throw insertError;
+    projectPhotorealPhotos = [photoRow, ...projectPhotorealPhotos];
+    renderProjectPhotorealGallery();
+  } catch (galleryErr) {
+    console.error('Não deu pra guardar a versão na grade de fotos (migration 077 rodou?):', galleryErr);
+  }
+
+  const { error } = await supabaseClient.from('user_projects').update({ ai_preview_url: publicUrl }).eq('id', loadedProjectFavorite.id);
+  if (error) throw error;
+  loadedProjectFavorite.ai_preview_url = publicUrl;
+}
+
+// ---------- Grade de fotos realistas salvas (migration 077) ----------
+// Cache local da sessão (evita reconsultar a cada foto salva); populada por
+// refreshProjectPhotorealGallery() sempre que o projeto "amarrado" na tela
+// muda (salvar novo, restaurar da lista, excluir o carregado — mesmos 3
+// pontos que já chamavam refreshProjectFavoriteButtons()).
+let projectPhotorealPhotos = [];
+
+async function loadProjectPhotorealPhotos(projectId) {
+  if (!projectId) { projectPhotorealPhotos = []; return; }
+  try {
+    const { data, error } = await supabaseClient
+      .from('project_photoreal_photos')
+      .select('id, image_url, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    projectPhotorealPhotos = data || [];
+  } catch (err) {
+    console.error('Não deu pra carregar as fotos realistas salvas (migration 077 rodou?):', err);
+    projectPhotorealPhotos = [];
+  }
+}
+
+// Miniaturas com botão de excluir (pedido do usuário: "pode colcoar um
+// botao de deletar se precisar") — clique na imagem abre o mesmo lightbox
+// grande da Galeria pública (openGalleryLightbox), clique na lixeira exclui
+// só aquela versão sem mexer nas outras.
+function renderProjectPhotorealGallery() {
+  const wrap = document.getElementById('po-proj-photoreal-gallery-wrap');
+  const grid = document.getElementById('po-proj-photoreal-gallery');
+  if (!wrap || !grid) return;
+  if (!projectPhotorealPhotos.length) { wrap.style.display = 'none'; grid.innerHTML = ''; return; }
+  wrap.style.display = 'block';
+  grid.innerHTML = projectPhotorealPhotos.map((photo) => `
+    <div class="po-photoreal-gallery-item">
+      <img src="${photo.image_url}" alt="" data-photo-id="${photo.id}" />
+      <button type="button" class="po-photoreal-gallery-delete" title="Excluir esta foto" data-photo-id="${photo.id}">🗑️</button>
+    </div>
+  `).join('');
+  grid.querySelectorAll('img[data-photo-id]').forEach((img) => {
+    img.addEventListener('click', () => openGalleryLightbox(img.getAttribute('src')));
+  });
+  grid.querySelectorAll('.po-photoreal-gallery-delete').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      deleteProjectPhotorealPhoto(btn.dataset.photoId);
+    });
+  });
+}
+
+async function deleteProjectPhotorealPhoto(photoId) {
+  if (!photoId) return;
+  if (!confirm('Excluir esta foto realista salva?')) return;
+  try {
+    const { error } = await supabaseClient.from('project_photoreal_photos').delete().eq('id', photoId);
+    if (error) throw error;
+    projectPhotorealPhotos = projectPhotorealPhotos.filter((p) => String(p.id) !== String(photoId));
+    renderProjectPhotorealGallery();
+  } catch (err) {
+    alert('Falha ao excluir a foto: ' + (err && err.message ? err.message : err));
+  }
+}
+
+// Chamada em todo ponto que muda qual projeto está carregado na tela (ver
+// refreshProjectFavoriteButtons, que já roda nesses mesmos 3 pontos:
+// acabou de salvar um projeto novo, restaurou um projeto salvo, ou excluiu
+// o que estava carregado). Fire-and-forget de propósito — não atrasa o
+// resto do fluxo síncrono, e falha (migration ausente) já é tratada dentro
+// de loadProjectPhotorealPhotos.
+function refreshProjectPhotorealGallery() {
+  if (loadedProjectFavorite && loadedProjectFavorite.id) {
+    loadProjectPhotorealPhotos(loadedProjectFavorite.id).then(renderProjectPhotorealGallery);
+  } else {
+    projectPhotorealPhotos = [];
+    renderProjectPhotorealGallery();
+  }
+}
+
+const projPhotorealBtn = document.getElementById('po-proj-photoreal-btn');
+if (projPhotorealBtn) {
+  // Monta a cena e abre o modal do Photoreal — extraído numa função própria
+  // (2026-08-03, pedido do usuário: "pra gerar tem que salvar projeto. se
+  // nao da isso e perco tempo da renderizacao por que nao volta") porque
+  // agora tem 2 caminhos até aqui: direto (projeto já salvo) ou só DEPOIS
+  // de salvar com sucesso (ver checagem no listener de click, abaixo).
+  // Antes o aviso "salve o projeto" só aparecia no FIM do render inteiro
+  // (250 amostras, minutos de GPU), quando o callback onSave tentava
+  // gravar e falhava — agora barra ANTES de gastar esse tempo.
+  const openPhotorealModal = () => {
+    const walls = getProjectWallGeometry().map((wall) => ({
+      ...wall,
+      modules: projectSlotsOnWall(wall.wallIndex).map((slot) => ({
+        id: slot.id,
+        width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+        x_mm: Number(slot.x_mm || 0),
+        z_order: Number(slot.z_order || 0),
+        floor_height_mm: Number(slot.floor_height_mm || 0),
+        parts: resolvePiecesForViewer(
+          slot.pieces,
+          { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm },
+          slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+        )
+      }))
+    }));
+    // Câmera do "posicionamento 3D" (pedido do usuário 2026-08-03): a foto
+    // sai do MESMO ângulo/zoom que o usuário está vendo. DOIS viewers 3D
+    // convivem na aba Projetos (bug relatado no mesmo dia: "mudei a camera
+    // do 3d e o render nao esta puxando a nova posicao" — o usuário tinha
+    // girado no painel "Visualizar 3D", mas só a Vista de Canto de EDIÇÃO
+    // era consultada): prioridade pro painel Visualizar 3D (ViewerProject)
+    // quando ele está ABERTO na tela — é o que a pessoa está olhando na hora
+    // de pedir a foto; senão, a Vista de Canto de edição (ViewerProjectEdit).
+    // Se nenhum abriu nesta sessão, getCameraState() devolve null e o
+    // Photoreal cai no enquadramento automático dele.
+    let cameraState = null;
+    const proj3dWrapForPhoto = document.getElementById('po-proj-3d-wrap');
+    if (proj3dWrapForPhoto && proj3dWrapForPhoto.style.display !== 'none'
+      && ViewerProject && ViewerProject.getCameraState) {
+      cameraState = ViewerProject.getCameraState();
+    }
+    if (!cameraState && ViewerProjectEdit && ViewerProjectEdit.getCameraState) {
+      cameraState = ViewerProjectEdit.getCameraState();
+    }
+    Photoreal.open({
+      walls,
+      camera: cameraState,
+      room: {
+        ceiling_m: roomSettings.ceiling_mm / 1000,
+        baseboard_h_m: roomSettings.baseboard_mm / 1000
+      },
+      onSave: savePhotorealRenderToProject
+    });
+  };
+
+  projPhotorealBtn.addEventListener('click', async () => {
+    if (typeof Photoreal === 'undefined' || !Photoreal.open) {
+      alert('Foto realista indisponível (js/photoreal.js não carregou).');
+      return;
+    }
+    if (!currentUser) { alert(I18n.t('fav.need_login')); return; }
+    // Exige projeto salvo ANTES de abrir o render (não só ao tentar guardar
+    // a foto no fim) — oferece salvar na hora em vez de só bloquear.
+    if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
+      const wantsToSave = confirm('Salve o projeto antes de gerar a foto realista — a renderização demora, e sem o projeto salvo a foto não tem onde ser guardada no fim. Salvar agora?');
+      if (!wantsToSave) return;
+      await saveProjectFavorite(null);
+      // saveProjectFavorite cancela (prompt do nome) ou mostra erro sozinho
+      // (po-proj-error) sem lançar exceção — só segue se realmente salvou.
+      if (!loadedProjectFavorite || !loadedProjectFavorite.id) return;
+    }
+    openPhotorealModal();
   });
 }
 
@@ -12341,6 +13089,127 @@ function resetProject() {
 const projResetBtn = document.getElementById('po-proj-reset-btn');
 if (projResetBtn) projResetBtn.addEventListener('click', resetProject);
 
+// "Enviar pro pedido" (pedido do usuário 2026-08-02: "precisamos criar um
+// fluxo unico de pedidos. projetos, cutting list e carrinho devem levar ao
+// mesmo ponto. MY ORDERS" — e depois, refinando: "o projeto deve levar
+// direto pra my orders, sem passar pelo carrinho, por que pode misturar com
+// outras coisas. mantenha a mesma tela do my orders so separa por
+// modulos/componentes que estao no projeto") — cria um pedido PRÓPRIO
+// (orders + order_items, order_type='project'), totalmente separado do
+// rascunho do carrinho (currentDraftOrderId/cartItems nunca são tocados
+// aqui), pega TODOS os módulos de TODAS as paredes do projeto de uma vez
+// (projectSlots) e abre direto na tela de detalhe do pedido — a MESMA tela
+// usada por qualquer pedido em "Meus Pedidos" (openOrderDetail), só que os
+// itens dela são só os módulos deste projeto (separado por ser um pedido à
+// parte, não por um filtro na tela). O projeto em si (projectSlots/"Meus
+// Projetos") não é alterado — dá pra reabrir e enviar de novo quando quiser.
+// status nasce direto em 'submitted' (mesma distinção 'draft' vs 'submitted'
+// de saveOrderAndFreeCart: já aparece em "Meus Pedidos"/admin sem exigir os
+// 5 campos — só "Aprovar Pedido" continua exigindo isso, na mesma tela de
+// sempre).
+async function sendProjectToOrder() {
+  const errorEl = document.getElementById('po-proj-error');
+  if (errorEl) errorEl.style.display = 'none';
+  if (!projectSlots.length) {
+    if (errorEl) { errorEl.textContent = I18n.t('project.send_to_order_empty'); errorEl.style.display = 'block'; }
+    return;
+  }
+  const btn = document.getElementById('po-proj-send-to-order-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const { data: order, error: orderError } = await supabaseClient
+      .from('orders')
+      .insert({
+        client_user_id: currentUser.id,
+        client_email: currentUser.email,
+        order_type: 'project',
+        status: 'submitted',
+        submitted_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+    if (orderError) throw orderError;
+
+    // Miniatura (pedido do usuário 2026-08-02: "nao veio os desenhos
+    // (icones") — slot.thumbnail_data_url pode estar vazio (projeto salvo
+    // antes da captura automática existir, ou o snapshot do 3D falhou
+    // silenciosamente na hora de configurar o módulo — sempre foi
+    // "best-effort"). Em vez de mandar o item sem imagem nenhuma pro pedido,
+    // gera uma agora como FALLBACK, mesma técnica do "adicionar direto por
+    // SKU" (getSkuAddHiddenViewer/buildCompositionAssemblies, ver
+    // addModuleToCartWithSku): monta o módulo isolado num canvas escondido e
+    // tira o snapshot. Sequencial de propósito — o viewer escondido é
+    // reaproveitado (singleton), não dá pra rodar em paralelo.
+    const payloads = [];
+    for (let idx = 0; idx < projectSlots.length; idx++) {
+      const slot = projectSlots[idx];
+      let thumb = slot.thumbnail_data_url || null;
+      if (!thumb) {
+        try {
+          const viewer = getSkuAddHiddenViewer();
+          const syntheticSlot = {
+            pieces: slot.pieces,
+            width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+            colorsByRole: slot.colorsByRole, pieceColorOverrides: slot.pieceColorOverrides || {},
+            shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides
+          };
+          viewer.render(buildCompositionAssemblies([syntheticSlot]), null, null);
+          if (typeof Viewer3D.waitForPendingTextures === 'function') await Viewer3D.waitForPendingTextures();
+          const raw = viewer.snapshot();
+          thumb = raw ? await trimTransparentPng(raw) : null;
+        } catch (e) { /* sem 3D disponível — item entra sem imagem mesmo, não trava o envio */ }
+      }
+      payloads.push({
+        order_id: order.id,
+        module_id: slot.module.id,
+        module_name: slot.module.name,
+        module_description: slot.module.description || null,
+        selected_colors: slot.selectedColors,
+        hinge_model_id: slot.hingeModel ? slot.hingeModel.id : null,
+        slide_model_id: slot.slideModel ? slot.slideModel.id : null,
+        width_mm: slot.width_mm,
+        height_mm: slot.height_mm,
+        depth_mm: slot.depth_mm,
+        shelf_quantities: slot.shelfQuantities,
+        dim_overrides: slot.dimOverrides,
+        piece_color_overrides: buildPieceColorOverridesSnapshot(slot.pieceColorOverrides),
+        selected_optional_component_ids: slot.selectedOptionalIds,
+        quantity: 1,
+        unit_price: (slot.result && slot.result.total) || 0,
+        total_price: (slot.result && slot.result.total) || 0,
+        breakdown: (slot.result && slot.result.breakdown) || [],
+        thumbnail_data_url: thumb,
+        sort_order: idx
+      });
+    }
+    const { error: itemsError } = await supabaseClient.from('order_items').insert(payloads);
+    if (itemsError) throw itemsError;
+
+    myOrdersLoaded = false; // força "Meus Pedidos" recarregar na próxima vez que a lista aparecer
+
+    // Troca de aba SEM passar pelo listener genérico de .portal-tab-btn —
+    // aquele listener perguntaria "sair sem salvar alterações do projeto?"
+    // (projectDirty, ver comentário lá) só por estarmos saindo da aba
+    // Projetos, o que confundiria: o pedido JÁ foi enviado com sucesso nesse
+    // ponto, então esse aviso não ajudaria em nada (o projeto em si continua
+    // intacto do jeito que estava, salvo ou não).
+    document.getElementById('po-sidebar').querySelectorAll('.portal-tab-btn').forEach((b) => b.classList.remove('active'));
+    const myOrdersBtn = document.querySelector('.portal-tab-btn[data-tab="po-tab-my-orders"]');
+    if (myOrdersBtn) myOrdersBtn.classList.add('active');
+    document.querySelectorAll('.portal-tab-page').forEach((page) => { page.style.display = 'none'; });
+    const myOrdersPage = document.getElementById('po-tab-my-orders');
+    if (myOrdersPage) myOrdersPage.style.display = 'block';
+
+    await openOrderDetail(order.id);
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = I18n.t('project.send_to_order_error', { msg: err.message || String(err) }); errorEl.style.display = 'block'; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+const projSendToOrderBtn = document.getElementById('po-proj-send-to-order-btn');
+if (projSendToOrderBtn) projSendToOrderBtn.addEventListener('click', sendProjectToOrder);
+
 // Alternância Frontal/Superior (pedido do usuário, 2026-07-24) — só troca
 // projectViewMode e reaproveita renderProjectCanvas pra redesenhar (mesmo
 // padrão do toggle Grade/Lista do Passo 1).
@@ -12362,7 +13231,7 @@ if (projViewTopBtn) projViewTopBtn.addEventListener('click', () => setProjectVie
 // + existe um dado a mais que a Composição não tem (wall_width_mm, a
 // largura do ambiente).
 
-let loadedProjectFavorite = null; // { id, name } quando o projeto em edição veio de um projeto salvo
+let loadedProjectFavorite = null; // { id, name, ai_preview_url } quando o projeto em edição veio de um projeto salvo (ai_preview_url usado como base fixa da IA, ver savePhotorealRenderToProject/generateAiPreviewForProjectGallery)
 
 function serializeProjectSlots() {
   return projectSlots.map((slot) => ({
@@ -12388,12 +13257,43 @@ function serializeProjectSlots() {
 
 function refreshProjectFavoriteButtons() {
   const updateBtn = document.getElementById('po-proj-update-fav-btn');
+  // Grade de fotos realistas salvas (migration 077) segue o projeto
+  // "amarrado" na tela — mesmos 3 pontos que chamam esta função (salvou
+  // novo, restaurou da lista, excluiu o carregado) precisam recarregar.
+  refreshProjectPhotorealGallery();
   if (!updateBtn) return;
   if (loadedProjectFavorite) {
     updateBtn.textContent = I18n.t('fav.update_btn', { name: loadedProjectFavorite.name });
     updateBtn.style.display = 'inline-block';
   } else {
     updateBtn.style.display = 'none';
+  }
+}
+
+// Miniatura do PROJETO INTEIRO (todas as paredes juntas), pra mostrar na
+// lista "Meus Projetos" (pedido do usuário 2026-08-02: "preciso o 3d...
+// quadrado para cada pedido" — hoje só existe thumbnail POR MÓDULO dentro de
+// slots, não do projeto todo). Mesma técnica de
+// generateAiPreviewForProjectGallery/publishProjectToGallery:
+// renderProjectForAiSnapshot() monta uma cena "limpa" (sem cotas/ambiente
+// decorativo) e funciona mesmo com o canvas #po-proj-3d-canvas escondido
+// (display:none não impede o WebGL de renderizar pro buffer — só afeta o
+// que aparece na tela; ver comentário de fallback de tamanho em
+// viewer3d_composition.js/init). SEMPRE restaura a cena normal depois
+// (generateProject3D()), mesmo em erro — nunca deixa o "Visualizar 3D" da
+// sessão do usuário mostrando a versão "limpa" por engano.
+async function captureProjectThumbnail() {
+  if (!projectSlots.length) return null;
+  const usedCleanScene = renderProjectForAiSnapshot();
+  try {
+    if (!ViewerProject || !ViewerProject.snapshot) return null;
+    const snapshotOptions = getProjectWallCount() > 1 ? { angle: 'corner' } : { frontal: true };
+    const raw = ViewerProject.snapshot(snapshotOptions);
+    return raw ? await trimTransparentPng(raw) : null;
+  } catch (e) {
+    return null; // sem miniatura nunca deve travar o "Salvar"
+  } finally {
+    if (usedCleanScene) generateProject3D();
   }
 }
 
@@ -12418,35 +13318,59 @@ async function saveProjectFavorite(overwriteId) {
     // funcionalidade que ainda dependa dela — wall_shape/wall_widths_mm
     // (migration 058) é quem manda de verdade a partir de agora.
     const mainWidthMm = getProjectWallWidthMm(Math.max(getProjectWallRoles().indexOf('main'), 0));
+    // Miniatura automática (ver captureProjectThumbnail acima) — só entra no
+    // payload se REALMENTE capturou algo; se falhar (sem 3D disponível etc.),
+    // não sobrescreve com null uma miniatura boa que já estava salva.
+    const thumbnailDataUrl = await captureProjectThumbnail();
+    // Valor cacheado (migration 076) — calculado AGORA, no salvar, pra o
+    // card de "Meus Projetos" mostrar direto sem recalcular a lista toda
+    // (pedido do usuário 2026-08-03). skipped>0 → não grava (valor parcial
+    // fixo seria mentira; card recalcula em background até resolver).
+    // Se a migration 076 ainda não rodou, o update/insert com a coluna
+    // falharia e DERRUBARIA o salvar inteiro — por isso o retry sem a
+    // coluna no catch mais abaixo.
+    const slotsPayload = serializeProjectSlots();
+    let cachedValueUsd = null;
+    try {
+      const r = await computeProjectSlotsTotal(slotsPayload);
+      if (r && r.skipped === 0) cachedValueUsd = r.total;
+    } catch (e) { /* sem cache — card recalcula em background */ }
+    const basePayload = {
+      slots: slotsPayload,
+      wall_width_mm: mainWidthMm,
+      wall_shape: projectWallShape,
+      wall_widths_mm: projectWallWidthsMm,
+      ...(thumbnailDataUrl ? { thumbnail_data_url: thumbnailDataUrl } : {}),
+      ...(cachedValueUsd !== null ? { cached_value_usd: cachedValueUsd } : {})
+    };
+    // Roda a operação; se falhar POR CAUSA da coluna nova (migration 076
+    // ainda não rodada no banco), tenta de novo sem ela — salvar projeto
+    // nunca pode quebrar por causa do cache de valor.
+    const runWithCacheFallback = async (op) => {
+      const first = await op(basePayload);
+      if (first.error && /cached_value_usd/i.test(first.error.message || '')) {
+        const { cached_value_usd, ...withoutCache } = basePayload;
+        return op(withoutCache);
+      }
+      return first;
+    };
     if (overwriteId) {
-      const { error } = await supabaseClient
+      const { error } = await runWithCacheFallback((payload) => supabaseClient
         .from('user_projects')
-        .update({
-          slots: serializeProjectSlots(),
-          wall_width_mm: mainWidthMm,
-          wall_shape: projectWallShape,
-          wall_widths_mm: projectWallWidthsMm,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', overwriteId);
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', overwriteId));
       if (error) throw error;
       statusEl.textContent = I18n.t('project.updated_status', { name: loadedProjectFavorite ? loadedProjectFavorite.name : '' });
     } else {
       const name = (prompt(I18n.t('project.name_prompt'), I18n.t('project.default_name')) || '').trim();
       if (!name) return;
-      const { data, error } = await supabaseClient
+      const { data, error } = await runWithCacheFallback((payload) => supabaseClient
         .from('user_projects')
-        .insert({
-          client_user_id: currentUser.id, name,
-          slots: serializeProjectSlots(),
-          wall_width_mm: mainWidthMm,
-          wall_shape: projectWallShape,
-          wall_widths_mm: projectWallWidthsMm
-        })
+        .insert({ client_user_id: currentUser.id, name, ...payload })
         .select('id, name')
-        .single();
+        .single());
       if (error) throw error;
-      loadedProjectFavorite = { id: data.id, name: data.name };
+      loadedProjectFavorite = { id: data.id, name: data.name, ai_preview_url: null };
       statusEl.textContent = I18n.t('project.saved_status');
     }
     refreshProjectFavoriteButtons();
@@ -12467,46 +13391,164 @@ if (projUpdateFavBtn) {
   });
 }
 
+// Grid de cards quadrados (pedido do usuário 2026-08-02: "essa tela ta
+// muito baguncada... quer mais alinhados, quadrado para cada pedido") —
+// mesmo padrão visual de .po-gallery-card (Galeria pública), só com a
+// imagem em 1:1 em vez de 4:3 e um "split" quando o projeto tem os DOIS
+// tipos de imagem (thumbnail_data_url = snapshot 3D automático, ver
+// captureProjectThumbnail; ai_preview_url = última imagem de IA publicada,
+// ver publishProjectToGallery) — "ambos pra dar zoom se precisar" veio
+// literal: os dois ficam visíveis e cada um abre sozinho no lightbox
+// (openGalleryLightbox, reaproveitado da Galeria).
+// Recalcula o preço total de um projeto salvo SEM carregá-lo no editor —
+// usado só pra mostrar o valor no card da lista "Meus Projetos" (pedido do
+// usuário 2026-08-02). Reaproveita a mesma lógica de precificação de
+// restoreFavoriteProject (busca colors/hinge/slide em lote, Pricing.
+// calculateModulePrice por slot) mas SEM montar os slots completos pro
+// canvas/3D — só soma result.total. Sequencial de propósito, mesmo motivo de
+// restoreFavoriteProject: loadModuleColors mexe no global moduleColorsByRole.
+async function computeProjectSlotsTotal(slotConfigs) {
+  if (!Array.isArray(slotConfigs) || slotConfigs.length === 0) return { total: 0, skipped: 0 };
+  if (!allModules.length) await loadModules();
+  const pieceColorOverrideColorIds = slotConfigs.flatMap((s) =>
+    Object.values(s.piece_color_overrides || {}).flatMap((perRole) => Object.values(perRole).map((e) => e.color_id))
+  );
+  const colorIds = [...new Set(
+    slotConfigs.flatMap((s) => (s.selected_colors || []).map((c) => c.color_id))
+      .concat(pieceColorOverrideColorIds)
+      .filter(Boolean)
+  )];
+  const hingeIds = [...new Set(slotConfigs.map((s) => s.hinge_model_id).filter(Boolean))];
+  const slideIds = [...new Set(slotConfigs.map((s) => s.slide_model_id).filter(Boolean))];
+  const [colorsRes, hingeRes, slideRes] = await Promise.all([
+    colorIds.length ? supabaseClient.from('colors').select('*').in('id', colorIds) : { data: [] },
+    hingeIds.length ? supabaseClient.from('hinge_models').select('*').in('id', hingeIds) : { data: [] },
+    slideIds.length ? supabaseClient.from('slide_models').select('*').in('id', slideIds) : { data: [] }
+  ]);
+  const colorById = new Map((colorsRes.data || []).map((c) => [c.id, c]));
+  const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
+  const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
+
+  let total = 0;
+  let skipped = 0;
+  for (const cfg of slotConfigs) {
+    const module = allModules.find((m) => m.id === cfg.module_id);
+    if (!module) { skipped += 1; continue; }
+    try {
+      const piecesList = await loadRecursivePiecesForModule(module.id);
+      if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
+      const optionalIds = cfg.selected_optional_ids || [];
+      const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
+      await loadModuleColors(module.id); // preenche moduleColorsByRole pra ESTE módulo, igual restoreFavoriteProject
+      const colorsByRole = {};
+      (cfg.selected_colors || []).forEach((sc) => {
+        const color = colorById.get(sc.color_id);
+        if (color) colorsByRole[sc.role_id] = color;
+      });
+      collectUsedColorRoleIds(effectivePieces).forEach((roleId) => {
+        if (colorsByRole[roleId]) return;
+        const fallback = (moduleColorsByRole[roleId] || [])[0];
+        if (fallback) colorsByRole[roleId] = fallback;
+      });
+      const hingeModel = cfg.hinge_model_id ? (hingeById.get(cfg.hinge_model_id) || null) : null;
+      const slideModel = cfg.slide_model_id ? (slideById.get(cfg.slide_model_id) || null) : null;
+      const pieceColorOverrides = {};
+      Object.keys(cfg.piece_color_overrides || {}).forEach((pieceId) => {
+        const perRole = cfg.piece_color_overrides[pieceId];
+        const resolved = {};
+        Object.keys(perRole).forEach((roleId) => {
+          const color = colorById.get(perRole[roleId].color_id);
+          if (color) resolved[roleId] = color;
+        });
+        if (Object.keys(resolved).length) pieceColorOverrides[pieceId] = resolved;
+      });
+      const result = module.is_decoration
+        ? { total: 0 }
+        : Pricing.calculateModulePrice({
+          module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+          shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
+          pieceColorOverrides,
+          width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+          markupMultiplier: resolveMarkupMultiplierForModule(module)
+        });
+      total += Number(result.total) || 0;
+    } catch (calcErr) { skipped += 1; } // catálogo mudou e a config não fecha mais — não entra na soma
+  }
+  return { total, skipped };
+}
+
 async function loadProjectFavoritesList() {
   const listEl = document.getElementById('po-proj-fav-list');
   const errorEl = document.getElementById('po-proj-fav-error');
   if (!listEl) return;
   errorEl.style.display = 'none';
+  listEl.className = 'po-myproj-grid';
   listEl.innerHTML = '';
-  const { data, error } = await supabaseClient
+  // cached_value_usd = migration 076; se ela ainda não rodou no banco, o
+  // select com a coluna falha — refaz sem ela (todos os cards caem no
+  // recálculo em background de antes, e nada é persistido).
+  let cacheColumnAvailable = true;
+  let { data, error } = await supabaseClient
     .from('user_projects')
-    .select('id, name, slots, wall_width_mm, wall_shape, wall_widths_mm, updated_at')
+    .select('id, name, slots, wall_width_mm, wall_shape, wall_widths_mm, thumbnail_data_url, ai_preview_url, updated_at, cached_value_usd')
     .order('updated_at', { ascending: false });
+  if (error && /cached_value_usd/i.test(error.message || '')) {
+    cacheColumnAvailable = false;
+    ({ data, error } = await supabaseClient
+      .from('user_projects')
+      .select('id, name, slots, wall_width_mm, wall_shape, wall_widths_mm, thumbnail_data_url, ai_preview_url, updated_at')
+      .order('updated_at', { ascending: false }));
+  }
   if (error) { errorEl.textContent = error.message; errorEl.style.display = 'block'; return; }
   if (!data || data.length === 0) {
+    listEl.className = ''; // sem grid pro texto solo de "lista vazia"
     listEl.innerHTML = `<p class="hint">${I18n.t('project.saved_list_empty')}</p>`;
     return;
   }
+  const totalSpans = []; // preenchido no forEach abaixo, usado depois pra calcular o valor em background (sem travar o render da lista)
   data.forEach((proj) => {
     const card = document.createElement('div');
-    card.className = 'panel';
-    card.style.marginTop = '10px';
+    card.className = 'po-myproj-card';
     const slots = Array.isArray(proj.slots) ? proj.slots : [];
-    const thumbs = slots
-      .filter((s) => s.thumbnail_data_url)
-      .map((s) => `<img src="${s.thumbnail_data_url}" alt="" style="height:64px;margin-right:4px;" />`)
-      .join('');
     const dateStr = proj.updated_at ? new Date(proj.updated_at).toLocaleString() : '—';
-    card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div>
-          <strong class="po-proj-fav-name"></strong>
-          <div class="hint">${I18n.t('fav.modules_label', { n: slots.length })} · ${I18n.t('project.updated_label', { date: dateStr })}</div>
+    let imageHtml;
+    if (proj.thumbnail_data_url && proj.ai_preview_url) {
+      imageHtml = `
+        <div class="po-myproj-card-image-split">
+          <div class="po-myproj-card-image-half">
+            <img src="${proj.thumbnail_data_url}" alt="" class="po-myproj-card-image" />
+            <span class="po-myproj-card-image-badge">3D</span>
+          </div>
+          <div class="po-myproj-card-image-half">
+            <img src="${proj.ai_preview_url}" alt="" class="po-myproj-card-image" />
+            <span class="po-myproj-card-image-badge">IA</span>
+          </div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <div class="po-myproj-card-image-zoom-hint">🔍</div>`;
+    } else if (proj.thumbnail_data_url || proj.ai_preview_url) {
+      imageHtml = `
+        <img src="${proj.thumbnail_data_url || proj.ai_preview_url}" alt="" class="po-myproj-card-image" />
+        <div class="po-myproj-card-image-zoom-hint">🔍</div>`;
+    } else {
+      imageHtml = `<div class="po-myproj-card-image-empty"></div>`;
+    }
+    card.innerHTML = `
+      <div class="po-myproj-card-image-wrap">${imageHtml}</div>
+      <div class="po-myproj-card-body">
+        <div class="po-myproj-card-name"></div>
+        <div class="po-myproj-card-meta hint">${I18n.t('fav.modules_label', { n: slots.length })} · ${I18n.t('project.updated_label', { date: dateStr })}</div>
+        <div class="po-myproj-card-total hint">${I18n.t('fav.total_calculating')}</div>
+        <div class="po-myproj-card-actions">
           <button type="button" class="po-proj-fav-load">${I18n.t('project.load_btn')}</button>
-          <button type="button" class="secondary po-proj-fav-rename" style="margin-top:0;">${I18n.t('fav.rename_btn')}</button>
-          <button type="button" class="secondary po-proj-fav-delete" style="margin-top:0;">${I18n.t('fav.delete_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-rename">${I18n.t('fav.rename_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-delete">${I18n.t('fav.delete_btn')}</button>
         </div>
       </div>
-      ${thumbs ? `<div style="margin-top:8px;">${thumbs}</div>` : ''}
     `;
-    card.querySelector('.po-proj-fav-name').textContent = proj.name; // textContent: nome é texto livre do cliente
+    card.querySelector('.po-myproj-card-name').textContent = proj.name; // textContent: nome é texto livre do cliente
+    card.querySelectorAll('.po-myproj-card-image').forEach((img) => {
+      img.addEventListener('click', () => openGalleryLightbox(img.src));
+    });
     card.querySelector('.po-proj-fav-load').addEventListener('click', () => restoreFavoriteProject(proj));
     card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
       const newName = (prompt(I18n.t('project.name_prompt'), proj.name) || '').trim();
@@ -12527,7 +13569,58 @@ async function loadProjectFavoritesList() {
       loadProjectFavoritesList();
     });
     listEl.appendChild(card);
+    totalSpans.push({ el: card.querySelector('.po-myproj-card-total'), slots, proj });
   });
+
+  // Formata "Value: X · Suggested resale: Y" a partir de um total já
+  // conhecido — a margem de revenda (getResaleMarginPct) é aplicada NA
+  // EXIBIÇÃO, nunca entra no cache (pode mudar a qualquer momento).
+  const renderCardTotal = (el, total, skipped) => {
+    const marginPct = getResaleMarginPct();
+    const resaleSuffix = marginPct > 0
+      ? ' · ' + I18n.t('fav.resale_total_label', { total: formatMoney(total * (1 + marginPct / 100)) })
+      : '';
+    el.textContent = I18n.t('fav.total_label', { total: formatMoney(total) })
+      + resaleSuffix
+      + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
+  };
+
+  // VALOR CACHEADO (migration 076, pedido do usuário 2026-08-03: "fica
+  // calculando valor e perde tempo, deixa o valor fixo e só quando abre
+  // recalcula") — antes TODO projeto recalculava em background a cada
+  // abertura da aba ("Calculating value…" demorado, sequencial). Agora:
+  // 1) cached_value_usd preenchido → mostra NA HORA, zero cálculo;
+  // 2) NULL (projeto antigo, pré-migration) → calcula UMA vez em background
+  //    (comportamento antigo) e PERSISTE na linha — da próxima vez cai no
+  //    caso 1. O cache é re-gravado ao salvar (saveProjectFavorite) e ao
+  //    abrir (restoreFavoriteProject) o projeto.
+  const legacySpans = [];
+  totalSpans.forEach(({ el, slots, proj }) => {
+    if (!el) return;
+    if (proj.cached_value_usd !== null && proj.cached_value_usd !== undefined) {
+      renderCardTotal(el, Number(proj.cached_value_usd), 0);
+    } else {
+      legacySpans.push({ el, slots, proj });
+    }
+  });
+  // Backfill sequencial de propósito (mesmo motivo interno de
+  // computeProjectSlotsTotal/restoreFavoriteProject: loadModuleColors mexe
+  // no global moduleColorsByRole).
+  for (const { el, slots, proj } of legacySpans) {
+    try {
+      const { total, skipped } = await computeProjectSlotsTotal(slots);
+      renderCardTotal(el, total, skipped);
+      // Persiste SÓ se calculou tudo (skipped=0) — um total parcial salvo
+      // viraria um valor "fixo" errado pra sempre; parcial continua
+      // recalculando nas próximas aberturas até o catálogo se resolver.
+      if (skipped === 0 && cacheColumnAvailable) {
+        supabaseClient.from('user_projects').update({ cached_value_usd: total }).eq('id', proj.id)
+          .then(() => {}, () => {});
+      }
+    } catch (err) {
+      el.textContent = '';
+    }
+  }
 }
 
 // Toggle antigo (po-proj-fav-list-toggle-btn/po-proj-fav-list-wrap) foi
@@ -12645,7 +13738,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
             shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
             pieceColorOverrides,
             width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
-            markupMultiplier: pricingMarkupMultiplier
+            markupMultiplier: resolveMarkupMultiplierForModule(module)
           });
       } catch (calcErr) { skipped += 1; continue; } // catálogo mudou e a config não fecha mais
       restored.push({
@@ -12710,7 +13803,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     selectedProjectSlotId = null;
     project3DLastFitKey = null; // projeto TROCOU inteiro — reenquadra a câmera 3D mesmo se a chave coincidir (ver comentário na declaração)
     refreshProjectWallWidthInput();
-    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name } : null;
+    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name, ai_preview_url: fav.ai_preview_url || null } : null;
     refreshProjectFavoriteButtons();
     renderProjectCanvas();
     projectDirty = false; // acabou de carregar do banco, nada pendente ainda
@@ -12720,6 +13813,25 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
       statusEl.textContent = I18n.t('project.loaded_status', { name: fav.name })
         + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
       setTimeout(() => { statusEl.textContent = ''; }, 6000);
+    }
+
+    // Recálculo do valor cacheado AO ABRIR (migration 076 — "só quando abre
+    // ele recalcula"): atualiza cached_value_usd em background com os preços
+    // ATUAIS do catálogo (o cache do salvar pode ter ficado velho se preço/
+    // margem mudou desde então). Fire-and-forget de propósito: roda DEPOIS
+    // do restore completo (computeProjectSlotsTotal mexe no global
+    // moduleColorsByRole — não pode rodar em paralelo com o restore), nunca
+    // atrasa a abertura nem quebra nada se falhar (coluna ausente, rede).
+    // Só o projeto que abriu — a lista continua sem recálculo em massa.
+    if (bindAsFavorite && fav.id) {
+      (async () => {
+        try {
+          const r = await computeProjectSlotsTotal(Array.isArray(fav.slots) ? fav.slots : []);
+          if (r && r.skipped === 0) {
+            await supabaseClient.from('user_projects').update({ cached_value_usd: r.total }).eq('id', fav.id);
+          }
+        } catch (e) { /* silencioso — cache é só conveniência */ }
+      })();
     }
   } catch (err) {
     if (errorEl) {
@@ -12947,16 +14059,32 @@ async function generateAiPreviewForProjectGallery() {
   btn.disabled = true;
   const originalLabel = btn.textContent;
   btn.textContent = I18n.t('gallery.generating_ai_status');
-  const usedCleanScene = renderProjectForAiSnapshot();
+  // Base fixa (2026-08-03, pedido do usuário: "quero que a IA use dessa nova
+  // imagem renderizada como base"): se existe foto realista salva pra este
+  // projeto (loadedProjectFavorite.ai_preview_url, ver
+  // savePhotorealRenderToProject/photoreal.js), ela vira a base mandada ao
+  // Gemini em vez de tirar um screenshot novo do 3D — sempre no MESMO
+  // tamanho/proporção (4:3 travado no photoreal.js), então
+  // padImageToAspectRatio mais abaixo vira no-op pra ela (já bate exato) e a
+  // IA nunca precisa redimensionar/inventar nada pra encaixar formato. Sem
+  // foto salva, cai no comportamento de sempre (screenshot da cena limpa).
+  const photorealBaseUrl = loadedProjectFavorite && loadedProjectFavorite.ai_preview_url;
+  let usedCleanScene = false;
   try {
-    // 2+ paredes (L/C-U) usa angle:'corner' (pedido do usuário 2026-07-26:
-    // "Imagem de IA 2 paredes ou 3 paredes, camera pegando as duas
-    // paredes") — {frontal:true} é quase Z puro, pensado pra 1 parede só,
-    // e cortava as laterais fora do print principal. Ver comentário grande
-    // em snapshot()/lastFitDir (viewer3d_composition.js).
-    const snapshotOptions = getProjectWallCount() > 1 ? { angle: 'corner' } : { frontal: true };
-    const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot(snapshotOptions) : null;
-    const trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+    let trimmedSnapshot;
+    if (photorealBaseUrl) {
+      trimmedSnapshot = await fetchUrlAsDataUrl(photorealBaseUrl);
+    } else {
+      usedCleanScene = renderProjectForAiSnapshot();
+      // 2+ paredes (L/C-U) usa angle:'corner' (pedido do usuário 2026-07-26:
+      // "Imagem de IA 2 paredes ou 3 paredes, camera pegando as duas
+      // paredes") — {frontal:true} é quase Z puro, pensado pra 1 parede só,
+      // e cortava as laterais fora do print principal. Ver comentário grande
+      // em snapshot()/lastFitDir (viewer3d_composition.js).
+      const snapshotOptions = getProjectWallCount() > 1 ? { angle: 'corner' } : { frontal: true };
+      const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot(snapshotOptions) : null;
+      trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+    }
     if (!trimmedSnapshot) {
       errorEl.textContent = I18n.t('gallery.generate_ai_no_3d_error');
       errorEl.style.display = 'block';
@@ -13066,9 +14194,18 @@ async function publishProjectToGallery() {
       imageDataUrl = projectGalleryAiPreviewImage;
       renderStatus = projectGalleryAiPreviewStatus;
     } else {
-      const usedCleanSceneFallback = renderProjectForAiSnapshot();
-      const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot({ frontal: true }) : null;
-      const trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+      // Mesma preferência de generateAiPreviewForProjectGallery: foto
+      // realista salva (loadedProjectFavorite.ai_preview_url) vira a base,
+      // sem screenshot novo nem re-render da cena limpa.
+      const photorealBaseUrlFallback = loadedProjectFavorite && loadedProjectFavorite.ai_preview_url;
+      const usedCleanSceneFallback = photorealBaseUrlFallback ? false : renderProjectForAiSnapshot();
+      let trimmedSnapshot;
+      if (photorealBaseUrlFallback) {
+        trimmedSnapshot = await fetchUrlAsDataUrl(photorealBaseUrlFallback);
+      } else {
+        const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot({ frontal: true }) : null;
+        trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+      }
       imageDataUrl = trimmedSnapshot;
       renderStatus = trimmedSnapshot ? 'pending' : 'failed';
       if (trimmedSnapshot) {
@@ -13142,6 +14279,19 @@ async function publishProjectToGallery() {
     };
     const { error } = await supabaseClient.from('gallery_posts').insert(payload);
     if (error) throw error;
+    // Vincula a imagem de IA final (já em URL pública do Storage, ver
+    // uploadGalleryImageToStorage acima) ao projeto salvo, se este publish
+    // veio de um projeto vinculado em "Meus Projetos" (migration 069) — pra
+    // ela também aparecer no card do grid, além de ir pra Galeria pública.
+    // Não crítico: publicar sem projeto salvo (loadedProjectFavorite null)
+    // ou essa gravação falhando não deve travar o fluxo, a Galeria já foi
+    // publicada de qualquer jeito.
+    if (loadedProjectFavorite && loadedProjectFavorite.id) {
+      try {
+        await supabaseClient.from('user_projects').update({ ai_preview_url: imageDataUrl }).eq('id', loadedProjectFavorite.id);
+        loadedProjectFavorite.ai_preview_url = imageDataUrl; // mesma base que a próxima geração de IA vai preferir (ver generateAiPreviewForProjectGallery)
+      } catch (linkErr) { /* card de "Meus Projetos" só fica sem a imagem de IA */ }
+    }
     statusEl.textContent = I18n.t('gallery.publish_success');
     document.getElementById('po-proj-gallery-anonymous-chk').checked = false;
     projectGalleryAiPreviewImage = null;
@@ -13342,6 +14492,8 @@ function resumePendingGalleryAction() {
 
 function showLoggedOut() {
   currentUser = null;
+  currentUserProfile = null;
+  if (typeof refreshDealerUiVisibility === 'function') refreshDealerUiVisibility();
   closeAuthModal();
   document.getElementById('po-content').style.display = 'block';
   document.getElementById('po-logout-btn').style.display = 'none';
@@ -13394,6 +14546,8 @@ async function showLoggedIn(user) {
   // applyCuttingListTabVisibility, e a config de preço do plano de corte
   // pode carregar em paralelo (não bloqueia o resto do login).
   await ensureOwnUserProfile();
+  refreshResaleMarginInput();
+  refreshDealerUiVisibility();
   applyCuttingListTabVisibility();
   loadCuttingListPricingSettings();
   await loadTaxonomyFilters();
@@ -13504,7 +14658,27 @@ document.getElementById('po-signup-form').addEventListener('submit', async (e) =
   }
 });
 
+// Mesmo guard de "alterações não salvas" que já existia pra troca de aba
+// (ver po-sidebar .portal-tab-btn acima) — faltava aqui, então deslogar
+// direto (sem salvar) descartava silenciosamente troca de cor/medida/posição
+// feita na aba Projetos ou na tela do pedido: o próximo login carregava de
+// novo os dados do banco (a última versão SALVA), que pareciam "voltar pro
+// antigo" porque a edição nunca tinha sido persistida.
 document.getElementById('po-logout-btn').addEventListener('click', async () => {
+  if (
+    document.getElementById('po-tab-projects').style.display !== 'none' &&
+    projectDirty &&
+    !confirm(I18n.t('project.unsaved_changes_confirm'))
+  ) {
+    return;
+  }
+  if (
+    document.getElementById('po-order-detail-section').style.display !== 'none' &&
+    orderDetailHasUnsavedChanges() &&
+    !confirm(I18n.t('order_detail.unsaved_changes_confirm'))
+  ) {
+    return;
+  }
   await supabaseClient.auth.signOut();
   showLoggedOut();
 });
@@ -13560,6 +14734,12 @@ if (typeof I18n !== 'undefined' && I18n.onLanguageChange) {
     if (compositionSlots.length) renderCompositionSlots();
     // Rótulos das linhas do ambiente (Ceiling/altura máx) traduzidos.
     applyViewerRoomEnvironment();
+    // Cabeçalho/hint de unidade + textos traduzidos (Sim/Não do veio etc.)
+    // da tabela do Plano de Corte — sem data-i18n porque o hint de limites
+    // mistura tradução com valor formatado na unidade global (ver
+    // updateCutlistUnitLabels/commitCutlistDimensionInput).
+    if (typeof cutlistRows !== 'undefined' && cutlistRows.length) renderCutlistTable();
+    else if (typeof updateCutlistUnitLabels === 'function') updateCutlistUnitLabels();
   });
 }
 
