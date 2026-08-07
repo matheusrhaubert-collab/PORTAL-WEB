@@ -2692,6 +2692,55 @@ header.po-topnav {
 .po-proj-slot-resize-right { right: 0; }
 .po-proj-slot-resize-top { left: 0; right: 0; top: 0; height: 7px; cursor: ns-resize; }
 .po-proj-slot-resize:hover, .po-proj-slot-resize.dragging { background: rgba(0,0,0,0.16); }
+
+/* ---- Setas visíveis no módulo SELECIONADO (2026-08-06) ----
+   No iPad não existe :hover, então as setinhas eram literalmente invisíveis:
+   "não consigo esticar o móvel, não tem a seta, nenhum controle sobre isso".
+   Agora o módulo selecionado mostra as setas o tempo todo — e continua
+   selecionado depois de tirar o dedo, que foi o pedido explícito. No mouse
+   nada muda enquanto nada estiver selecionado (o :hover discreto de sempre). */
+.po-proj-slot.selected .po-proj-slot-resize {
+  background: var(--accent);
+  opacity: 0.55;
+}
+.po-proj-slot.selected .po-proj-slot-resize:hover,
+.po-proj-slot.selected .po-proj-slot-resize.dragging { opacity: 1; }
+
+/* Alvo de dedo: 7px é mira de mouse. Em tela de toque as setas ficam bem
+   mais largas (a área clicável, não o visual — o retângulo colorido cobre a
+   faixa inteira mesmo). Só em ponteiro grosso, pra não engordar no desktop. */
+@media (pointer: coarse) {
+  .po-proj-slot-resize-left, .po-proj-slot-resize-right { width: 18px; }
+  .po-proj-slot-resize-top { height: 18px; }
+}
+
+/* ---- Janela de propriedades do módulo (segurar o clique) ---- */
+#po-proj-props-modal {
+  display: none; position: fixed; inset: 0; z-index: 3200;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.5); padding: 16px;
+}
+#po-proj-props-modal.open { display: flex; }
+.po-proj-props-card {
+  background: var(--panel); border-radius: 12px;
+  width: 420px; max-width: 100%; max-height: 88vh;
+  display: flex; flex-direction: column;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.po-proj-props-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.po-proj-props-header .po-auth-modal-close { position: static; }
+/* Só o corpo rola: o nome do módulo fica sempre visível, senão a pessoa
+   perde a referência do que está editando ao descer até as prateleiras. */
+#po-proj-props-body { padding: 14px 16px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+/* Dentro da janela o painel não precisa da moldura dele — o card já é a
+   moldura. Sem isso ficam duas bordas encaixadas. */
+#po-proj-props-body .po-proj-config-panel {
+  border: none; padding: 0; background: transparent; max-height: none;
+}
 /* Profundidade (z_order) — cada "camada" mais pra frente (mais longe da
    parede) ganha uma sombra levemente mais forte, pra dar noção visual de
    frente/fundo mesmo numa vista frontal 2D sem eixo Z desenhado de verdade. */

@@ -37,8 +37,63 @@
 // Se a chave não estiver configurada, devolve 500 com mensagem clara e o
 // portal cai num aviso — sem travar a aba Projetos.
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+// ==========================================================================
+// Qual modelo usar — descoberto, não chumbado
+// ==========================================================================
+// 1ª versão fixava 'gemini-2.5-flash' e tomou 404 na estreia (2026-08-06).
+// Nome de modelo do Gemini é alvo móvel: são renomeados, ganham sufixo de
+// data e são descontinuados — 404 por nome inválido é o erro mais comum da
+// API. Chumbar um nome aqui garante que isso volte a quebrar sozinho daqui a
+// alguns meses, sem ninguém ter mexido em nada.
+//
+// Então: tenta os preferidos na ordem e, se todos derem 404, pergunta pra
+// PRÓPRIA API quais modelos existem (ListModels) e escolhe um flash que
+// suporte generateContent. O resultado fica em cache no processo, então a
+// descoberta acontece no máximo uma vez por instância.
+//
+// Pra forçar um modelo específico sem mexer no código:
+//   supabase secrets set GEMINI_TEXT_MODEL=nome-do-modelo
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_MODEL_CANDIDATES = [
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.0-flash'
+];
+
+// Cache do modelo que funcionou (por instância da function).
+let resolvedGeminiModel: string | null = null;
+
+function geminiEndpoint(model: string): string {
+  return `${GEMINI_API_BASE}/models/${model}:generateContent`;
+}
+
+// Pergunta pra API quais modelos existem e escolhe o melhor pro nosso caso:
+// texto, rápido e barato. Exclui explicitamente os de imagem/áudio/embedding,
+// que também aparecem na lista e dariam erro em generateContent de texto.
+async function listUsableGeminiModels(apiKey: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${GEMINI_API_BASE}/models?key=${apiKey}&pageSize=200`);
+    if (!res.ok) {
+      console.error('ListModels falhou:', res.status, (await res.text()).slice(0, 400));
+      return [];
+    }
+    const body = await res.json();
+    const models: string[] = (body?.models || [])
+      .filter((m: any) => Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map((m: any) => String(m.name || '').replace(/^models\//, ''))
+      .filter((name: string) => name && !/image|tts|audio|embedding|vision|live|thinking/i.test(name));
+
+    // Flash primeiro (mais barato/rápido pra escolher itens de catálogo),
+    // depois o resto como último recurso.
+    const flash = models.filter((n) => /flash/i.test(n));
+    const outros = models.filter((n) => !/flash/i.test(n));
+    console.log('Modelos utilizáveis encontrados:', flash.concat(outros).slice(0, 10).join(', '));
+    return flash.concat(outros);
+  } catch (err) {
+    console.error('Erro ao listar modelos do Gemini:', err);
+    return [];
+  }
+}
 
 // Teto defensivo: catálogo gigante estoura o contexto e deixa a resposta
 // lenta e cara à toa. O portal já manda só módulo ativo, visível e COM
@@ -248,22 +303,88 @@ async function callGemini(prompt: string): Promise<{ data?: any; error?: string;
     }
   };
 
-  let res: Response;
-  try {
-    res = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  } catch (err) {
-    return { error: `Falha de rede ao chamar o Gemini: ${String(err)}`, status: 502 };
+  // Ordem de tentativa: o que já funcionou nesta instância > o forçado por
+  // secret > os preferidos. Só se TODOS derem 404 é que vale perguntar a
+  // lista real pra API (uma requisição a mais, evitada no caminho feliz).
+  const forced = Deno.env.get('GEMINI_TEXT_MODEL');
+  let tentativas = [resolvedGeminiModel, forced, ...GEMINI_MODEL_CANDIDATES]
+    .filter((m): m is string => !!m);
+  tentativas = [...new Set(tentativas)];
+
+  let ultimoErro = '';
+  let jaListou = false;
+
+  for (let i = 0; i < tentativas.length; i++) {
+    const model = tentativas[i];
+    let res: Response;
+    try {
+      res = await fetch(`${geminiEndpoint(model)}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch (err) {
+      return { error: `Falha de rede ao chamar o Gemini: ${String(err)}`, status: 502 };
+    }
+
+    const raw = await res.text();
+
+    if (res.ok) {
+      if (resolvedGeminiModel !== model) {
+        resolvedGeminiModel = model;
+        console.log('Modelo do Gemini em uso:', model);
+      }
+      return parseGeminiText(raw);
+    }
+
+    // 404 = esse nome de modelo não existe (ou não serve pra generateContent).
+    // Segue pro próximo candidato; se acabaram, pergunta pra API quais existem.
+    if (res.status === 404) {
+      console.warn(`Modelo "${model}" devolveu 404, tentando o próximo.`);
+      ultimoErro = `nenhum dos modelos testados existe (último: ${model})`;
+      if (resolvedGeminiModel === model) resolvedGeminiModel = null;
+      if (i === tentativas.length - 1 && !jaListou) {
+        jaListou = true;
+        const descobertos = await listUsableGeminiModels(apiKey);
+        // Só os que ainda não foram tentados, no máximo 3 (evita varrer a
+        // lista inteira e estourar o tempo da function).
+        const novos = descobertos.filter((m) => !tentativas.includes(m)).slice(0, 3);
+        if (novos.length === 0) {
+          return {
+            error: 'Nenhum modelo de texto do Gemini disponível para esta chave. Confira a GEMINI_API_KEY no Google AI Studio.',
+            status: 502
+          };
+        }
+        tentativas = tentativas.concat(novos);
+      }
+      continue;
+    }
+
+    // Qualquer outro status é erro de verdade (chave inválida, cota, etc.) —
+    // não adianta tentar outro modelo. Devolve a mensagem REAL do Google,
+    // que costuma dizer exatamente o que fazer.
+    console.error('Gemini respondeu erro:', res.status, raw.slice(0, 800));
+    let detalhe = '';
+    try {
+      const parsedErr = JSON.parse(raw);
+      detalhe = parsedErr?.error?.message || '';
+    } catch { /* corpo não-JSON */ }
+    if (res.status === 429) {
+      return { error: 'Cota do Gemini esgotada no momento. Tente daqui a pouco.', status: 502 };
+    }
+    if (res.status === 400 && /API key/i.test(detalhe)) {
+      return { error: 'A GEMINI_API_KEY parece inválida. Confira no Google AI Studio.', status: 502 };
+    }
+    return { error: `Gemini respondeu ${res.status}${detalhe ? ': ' + detalhe.slice(0, 200) : '.'}`, status: 502 };
   }
 
-  const raw = await res.text();
-  if (!res.ok) {
-    console.error('Gemini respondeu erro:', res.status, raw.slice(0, 800));
-    return { error: `Gemini respondeu ${res.status}.`, status: 502 };
-  }
+  return { error: `Não consegui falar com o Gemini — ${ultimoErro}.`, status: 502 };
+}
+
+// Extrai o JSON de dentro da resposta do Gemini. Separado de callGemini
+// porque agora existem várias tentativas de modelo e o parse é o mesmo pra
+// qualquer uma delas.
+function parseGeminiText(raw: string): { data?: any; error?: string; status?: number } {
 
   let parsed: any;
   try {

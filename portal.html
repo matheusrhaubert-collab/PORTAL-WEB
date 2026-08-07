@@ -3,11 +3,32 @@
 <head>
 <meta charset="UTF-8" />
 <title>Legno — Portal do cliente</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- viewport-fit=cover + user-scalable=no (2026-08-06, pedido do usuário:
+     "tem como jogarmos a tela do projeto como app no iPad? pra tela ficar
+     bem travada no tamanho certo e não dentro de um navegador?"): trava o
+     zoom de pinça da PÁGINA, que no iPad brigava com o zoom das cenas 3D
+     (dois dedos no canvas dava zoom no site inteiro em vez de na cena), e
+     deixa o conteúdo ir até as bordas quando aberto como app. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+
+<!-- App instalável (PWA). No iPad: Compartilhar > "Adicionar à Tela de
+     Início". Abre em janela própria, SEM barra de endereço nem abas — que é
+     exatamente o "travado no tamanho certo" pedido. Precisa ser servido por
+     HTTPS (o GitHub Pages já é). -->
+<link rel="manifest" href="manifest.webmanifest" />
+<!-- Ícone da Tela de Início do iPad. O iOS ignora os icons do manifest e usa
+     ESTE — sem ele, o atalho vira um print da página, que fica ilegível. -->
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Legno" />
+<meta name="theme-color" content="#1a1a1a" />
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608062105" />
+<link rel="stylesheet" href="css/style.css?v=202608062141" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -302,6 +323,22 @@
        aparecem conforme o ambiente escolhido (ver PROJECT_AI_QUESTIONS em
        portal.js). Assim dá pra ligar closet/escritório depois sem mexer
        nesta marcação. -->
+  <!-- Propriedades do módulo (segurar o clique num módulo do projeto) —
+       pedido do usuário 2026-08-06, testando no iPad: "penso em segurar o
+       clique e abrir opções de cores, dimensões, agregados (prateleiras)".
+       O corpo nasce VAZIO de propósito: openProjectSlotProps (portal.js)
+       MOVE o #po-proj-config-panel pra cá e devolve pra coluna da direita ao
+       fechar. Nada de cor/medida/prateleira é duplicado aqui. -->
+  <div id="po-proj-props-modal">
+    <div class="po-proj-props-card">
+      <div class="po-proj-props-header">
+        <strong id="po-proj-props-title"></strong>
+        <button type="button" class="po-auth-modal-close" id="po-proj-props-close" aria-label="Fechar">&times;</button>
+      </div>
+      <div id="po-proj-props-body"></div>
+    </div>
+  </div>
+
   <div id="po-proj-ai-modal">
     <div class="po-proj-ai-modal-card">
       <button type="button" class="po-auth-modal-close" id="po-proj-ai-modal-close" aria-label="Fechar">&times;</button>
@@ -1629,13 +1666,13 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608062105"></script>
-<script src="js/pricing.js?v=202608062105"></script>
-<script src="js/viewer3d.js?v=202608062105"></script>
-<script src="js/viewer3d_composition.js?v=202608062105"></script>
+<script src="js/i18n.js?v=202608062141"></script>
+<script src="js/pricing.js?v=202608062141"></script>
+<script src="js/viewer3d.js?v=202608062141"></script>
+<script src="js/viewer3d_composition.js?v=202608062141"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608062105"></script>
-<script src="js/portal.js?v=202608062105"></script>
+<script src="js/photoreal.js?v=202608062141"></script>
+<script src="js/portal.js?v=202608062141"></script>
 </body>
 </html>

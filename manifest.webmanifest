@@ -1,0 +1,23 @@
+{
+  "name": "Legno — Portal do Cliente",
+  "short_name": "Legno",
+  "description": "Monte projetos de móveis sob medida, com preço calculado e visualização 3D.",
+  "start_url": "./portal.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#faf8f4",
+  "theme_color": "#1a1a1a",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

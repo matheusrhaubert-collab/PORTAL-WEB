@@ -10737,7 +10737,13 @@ async function loadProjectAiConfig() {
 function refreshProjectAiButton() {
   const btn = document.getElementById('po-proj-ai-open-btn');
   if (!btn) return;
-  btn.style.display = '';
+  // DESLIGADO a pedido do usuário (2026-08-06): "desabilita esse botão por
+  // enquanto, vamos seguir com ele no futuro". A Edge Function estava
+  // devolvendo 503 e a prioridade virou o controle do módulo no iPad.
+  // Nada foi apagado — migration 080, admin, Edge Function e todo o código
+  // do questionário seguem intactos. Pra religar, troque a linha abaixo por
+  //   btn.style.display = '';
+  btn.style.display = 'none';
 }
 
 // Devolve a mensagem do que está faltando pra usar o gerador, ou null se está
@@ -11307,6 +11313,11 @@ const PROJECT_CLICK_MOVE_THRESHOLD_PX = 4;      // abaixo disso, pointerup vira 
 // pra não parecer travado, longo o suficiente pra não disparar num tap).
 const PROJECT_TOUCH_SLOP_PX = 12;
 const PROJECT_TOUCH_HOLD_MS = 220;
+// Segurar parado por este tempo abre as PROPRIEDADES do módulo (cor,
+// dimensões, prateleiras) — pedido do usuário 2026-08-06, valendo tanto no
+// iPad quanto no navegador com mouse. 500ms é o padrão de "long press" que o
+// iOS usa; menos que isso dispara sem querer durante um arraste lento.
+const PROJECT_HOLD_MENU_MS = 500;
 
 // Altura máxima que a BASE (floor_height_mm) de um módulo de `heightMm` pode
 // ter sem estourar o teto útil — mesma regra de sempre (pé direito − afastamento
@@ -11553,20 +11564,30 @@ function projectSlotElevationHtml(slot, widthMm, heightMm) {
 // MOUSE: arrasta na hora; deslocamento abaixo de PROJECT_CLICK_MOVE_THRESHOLD_PX
 // vira clique (seleciona) em vez de mover.
 //
-// TOQUE (iPad, relatado pelo usuário 2026-08-06: "preciso selecionar o móvel
-// segurando clique no módulo... ele move e mexe facilmente, confunde os
-// cliques"): o comportamento antigo era o do mouse com 4px de tolerância —
-// num dedo isso é nada, então TODO toque virava arraste e nada selecionava.
-// Agora o toque é SEGURAR-PRA-ARRASTAR:
-//   - toque curto (tap) = seleciona o módulo;
-//   - segurar PROJECT_TOUCH_HOLD_MS parado = "engata" o arraste (o módulo
-//     ganha a sombra de .dragging, que é o aviso visual de que agora move);
-//   - deslizar o dedo ANTES de engatar = gesto do navegador (rolar a página),
-//     e o módulo nem se mexe.
-// Por isso o pointerdown NÃO dá preventDefault no toque: enquanto não
-// engatou, a página tem que rolar normalmente. Depois de engatar, quem
-// segura a rolagem é o listener de touchmove (passive:false) mais abaixo —
-// preventDefault em pointermove não basta pra impedir scroll no iOS.
+// TOQUE (iPad) — o mapa de gestos foi refeito 2 vezes em 2026-08-06, então
+// vale registrar o porquê de cada volta:
+//
+//   1ª: tratava toque igual mouse (4px de tolerância). Num dedo isso é nada,
+//       então TODO toque virava arraste e nada ficava selecionado.
+//   2ª: virou "segurar-pra-arrastar". Resolveu o arraste acidental, mas o
+//       usuário ficou SEM controle do módulo: "não consigo esticar o móvel,
+//       não tem a seta, o móvel não fica selecionado, nenhum controle".
+//   3ª (atual), desenhada pelo próprio usuário: "preciso ao ficar clicando
+//       ele permanecer clicado mesmo tirando o clique, e aí abrir opções das
+//       setas pra eu esticar" + "penso em segurar o clique e abrir opções de
+//       cores, dimensões, agregados".
+//
+// Mapa atual, igual no dedo e no mouse:
+//   - toque/clique curto  -> SELECIONA e continua selecionado (as setinhas de
+//                            esticar aparecem e ficam, ver .selected no CSS);
+//   - arrastar (passar de PROJECT_TOUCH_SLOP_PX) -> MOVE, sem espera nenhuma;
+//   - segurar parado PROJECT_HOLD_MENU_MS -> abre as PROPRIEDADES do módulo
+//                            (cor, dimensões, prateleiras) numa janela.
+//
+// O pointerdown NÃO dá preventDefault no toque: enquanto o gesto não virou
+// arraste, a página precisa poder rolar. Depois que vira, quem segura a
+// rolagem é o listener de touchmove (passive:false) logo abaixo —
+// preventDefault em pointermove não impede scroll no iOS.
 function attachProjectSlotDrag(div, slot) {
   // Timer do "segurar pra arrastar". Fica fora do state porque precisa ser
   // limpo em caminhos onde projectDragState já foi zerado (pointercancel).
@@ -11594,17 +11615,18 @@ function attachProjectSlotDrag(div, slot) {
       liveX: Number(slot.x_mm || 0),
       liveY: Number(slot.floor_height_mm || 0)
     };
-    if (isTouch) {
-      clearHoldTimer();
-      holdTimer = setTimeout(() => {
-        holdTimer = null;
-        if (!projectDragState || projectDragState.slotId !== slot.id || projectDragState.canceled) return;
-        projectDragState.armed = true;
-        div.classList.add('dragging');
-      }, PROJECT_TOUCH_HOLD_MS);
-    } else {
-      div.classList.add('dragging');
-    }
+    // Segurar parado (dedo OU mouse) abre as propriedades do módulo. Se o
+    // ponteiro se mexer antes, o pointermove cancela este timer e o gesto
+    // vira arraste — as duas coisas nunca disputam.
+    clearHoldTimer();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (!projectDragState || projectDragState.slotId !== slot.id || projectDragState.canceled || projectDragState.moved) return;
+      projectDragState.canceled = true;
+      projectDragState = null;
+      div.classList.remove('dragging');
+      openProjectSlotProps(slot.id);
+    }, PROJECT_HOLD_MENU_MS);
   });
 
   // Segura a rolagem da página SÓ enquanto o arraste está engatado. Precisa
@@ -11619,20 +11641,14 @@ function attachProjectSlotDrag(div, slot) {
     const dyPx = ev.clientY - projectDragState.startClientY;
     const dist = Math.hypot(dxPx, dyPx);
 
-    // Dedo saiu andando antes de engatar: não é arraste nem tap — é a pessoa
-    // rolando a tela. Desiste do gesto inteiro e devolve pro navegador.
-    if (projectDragState.isTouch && !projectDragState.armed) {
-      if (dist > PROJECT_TOUCH_SLOP_PX) {
-        clearHoldTimer();
-        projectDragState.canceled = true;
-        projectDragState = null;
-      }
-      return;
-    }
-
     const threshold = projectDragState.isTouch ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX;
     if (!projectDragState.moved && dist > threshold) {
+      // Passou do limiar: é arraste. Cancela o timer das propriedades — o
+      // ponteiro se mexeu, então a intenção claramente não era "segurar".
+      clearHoldTimer();
       projectDragState.moved = true;
+      projectDragState.armed = true;
+      div.classList.add('dragging');
     }
     if (!projectDragState.moved) return;
 
@@ -11687,6 +11703,62 @@ function attachProjectSlotDrag(div, slot) {
   div.addEventListener('pointerup', endDrag);
   div.addEventListener('pointercancel', endDrag);
 }
+
+// ==========================================================================
+// Propriedades do módulo numa janela (segurar o clique) — 2026-08-06
+// ==========================================================================
+// Pedido do usuário: "penso em segurar o clique (iPad e navegador normal) e
+// abrir opções de cores, dimensões, agregados (prateleiras)... abrir as
+// propriedades".
+//
+// Truque pra não duplicar NADA: em vez de recriar cor/medida/prateleira
+// dentro do modal (o que significaria IDs repetidos e dois caminhos de
+// listener pra manter em sincronia), a janela simplesmente MOVE o
+// #po-proj-config-panel — o painel da direita, que já tem tudo isso pronto —
+// pra dentro dela, e devolve pro lugar ao fechar. É o MESMO elemento: todo
+// listener, render e correção futura vale nos dois lugares de graça.
+//
+// É também o que resolve o painel da direita estar recolhido no iPad: mesmo
+// escondido, ele continua sendo a fonte da verdade.
+let projectPropsOpen = false;
+
+function openProjectSlotProps(slotId) {
+  const modal = document.getElementById('po-proj-props-modal');
+  const body = document.getElementById('po-proj-props-body');
+  const panel = document.getElementById('po-proj-config-panel');
+  if (!modal || !body || !panel) return;
+
+  selectProjectSlot(slotId);
+
+  const slot = projectSlots.find((s) => s.id === slotId);
+  const titleEl = document.getElementById('po-proj-props-title');
+  if (titleEl) titleEl.textContent = (slot && slot.module && slot.module.name) || I18n.t('project.props_title');
+
+  body.appendChild(panel);       // move (não copia)
+  modal.classList.add('open');
+  projectPropsOpen = true;
+}
+
+function closeProjectSlotProps() {
+  const modal = document.getElementById('po-proj-props-modal');
+  const panel = document.getElementById('po-proj-config-panel');
+  const home = document.getElementById('po-proj-config-col');
+  if (!modal || !panel || !home) return;
+  home.appendChild(panel);       // devolve pra coluna da direita
+  modal.classList.remove('open');
+  projectPropsOpen = false;
+}
+
+(function attachProjectPropsModal() {
+  const modal = document.getElementById('po-proj-props-modal');
+  if (!modal) return;
+  const closeBtn = document.getElementById('po-proj-props-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeProjectSlotProps);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeProjectSlotProps(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && projectPropsOpen) closeProjectSlotProps();
+  });
+})();
 
 function selectProjectSlot(slotId) {
   selectedProjectSlotId = slotId;
@@ -12779,13 +12851,16 @@ function attachProject3DEditDrag() {
     ViewerProjectEdit.setHoverHighlight(hit.group);
     domEl.style.cursor = grab.dragMode === 'resize' ? (grab.resizeAxis === 'height-top' ? 'ns-resize' : 'ew-resize') : 'grabbing';
 
-    if (isTouch3D) {
-      clearHold3DTimer();
-      hold3DTimer = setTimeout(() => {
-        hold3DTimer = null;
-        if (projectDrag3DState && projectDrag3DState.slotId === slot.id) projectDrag3DState.armed = true;
-      }, PROJECT_TOUCH_HOLD_MS);
-    }
+    // Mesmo mapa de gestos da Vista Frontal 2D (ver attachProjectSlotDrag):
+    // segurar parado abre as PROPRIEDADES, mexer vira arraste.
+    clearHold3DTimer();
+    hold3DTimer = setTimeout(() => {
+      hold3DTimer = null;
+      if (!projectDrag3DState || projectDrag3DState.slotId !== slot.id || projectDrag3DState.moved) return;
+      projectDrag3DState = null;
+      domEl.style.cursor = 'grab';
+      openProjectSlotProps(slot.id);
+    }, PROJECT_HOLD_MENU_MS);
   });
 
   domEl.addEventListener('pointermove', (ev) => {
@@ -12826,19 +12901,12 @@ function attachProject3DEditDrag() {
     }
     if (state.pointerId !== ev.pointerId) return;
     const dPx = Math.hypot(ev.clientX - state.startClientX, ev.clientY - state.startClientY);
-    // Toque ainda não engatado: deslizar o dedo cancela o gesto inteiro (era
-    // rolagem/pan, não intenção de mover o módulo).
-    if (state.isTouch && !state.armed) {
-      if (dPx > PROJECT_TOUCH_SLOP_PX) {
-        clearHold3DTimer();
-        projectDrag3DState = null;
-        domEl.style.cursor = 'grab';
-      }
-      return;
-    }
     if (!state.moved) {
       if (dPx < (state.isTouch ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX)) return;
+      // Mexeu: é arraste, não "segurar" — cancela a janela de propriedades.
+      clearHold3DTimer();
       state.moved = true;
+      state.armed = true;
     }
     const slot = projectSlots.find((s) => s.id === state.slotId);
     if (!slot) { projectDrag3DState = null; return; }
