@@ -1952,8 +1952,9 @@ header.po-topnav {
      espaço vazio dos lados") — altura acompanha a TELA em vez dos 420px
      fixos; canvas mais alto = câmera de fit-automático chega mais perto e
      o móvel preenche a largura (o vazio lateral era consequência do fit
-     limitado pela altura baixa). */
-  height: clamp(420px, 74vh, 950px);
+     limitado pela altura baixa).
+     2026-08-06 (iPad Air 13"): mesma subida do #po-proj-canvas-3d-edit. */
+  height: clamp(420px, 88vh, 1200px);
   border: none;
   overflow: hidden;
   background: #ffffff;
@@ -2379,6 +2380,41 @@ header.po-topnav {
   border: 1px solid var(--border); border-radius: 10px; padding: 10px;
   background: var(--panel); max-height: 640px; overflow-y: auto;
 }
+
+/* ---- Colunas recolhíveis (pedido do usuário 2026-08-06, no iPad Air 13") ----
+   Recolhida, a coluna vira uma tira de PROJECT_COLUMN_COLLAPSED_PX (ver
+   portal.js) só com o botão de expandir; todo o resto do conteúdo some e o
+   espaço vai pro centro, que é onde mora o visualizador 3D. As classes
+   .lib-collapsed/.cfg-collapsed ficam no .po-proj-layout (setadas por
+   applyProjectColumnWidths). */
+.po-proj-config-col { min-width: 0; position: relative; }
+
+.po-proj-col-toggle {
+  width: 100%; margin: 0 0 8px; padding: 4px 0;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; line-height: 1; cursor: pointer;
+  /* Alvo confortável de dedo no tablet sem virar um bloco no desktop. */
+  min-height: 32px;
+}
+.po-proj-col-toggle:hover { color: var(--text); border-color: var(--accent); }
+/* O glifo é CSS pra não duplicar string em 2 lugares nem passar por i18n —
+   a direção da seta é a AÇÃO (‹ recolhe, › expande). */
+.po-proj-col-toggle::after { content: '‹'; font-size: 16px; }
+.po-proj-col-toggle-right::after { content: '›'; }
+.po-proj-layout.lib-collapsed .po-proj-col-toggle::after { content: '›'; }
+.po-proj-layout.cfg-collapsed .po-proj-col-toggle-right::after { content: '‹'; }
+
+/* Recolhida: some tudo menos o botão, e a moldura/padding do painel some
+   junto (senão sobra uma caixa vazia de 40px com borda). */
+.po-proj-layout.lib-collapsed .po-proj-library {
+  padding: 0; border: none; background: transparent; overflow: visible;
+}
+.po-proj-layout.lib-collapsed .po-proj-library > *:not(.po-proj-col-toggle) { display: none; }
+.po-proj-layout.cfg-collapsed .po-proj-config-panel { display: none; }
+/* Sem coluna pra redimensionar, o handle de arrastar não faz sentido. */
+.po-proj-layout.lib-collapsed #po-proj-resize-handle-left,
+.po-proj-layout.cfg-collapsed #po-proj-resize-handle-right { visibility: hidden; }
 .po-proj-library-search {
   margin-bottom: 8px;
 }
@@ -2585,8 +2621,12 @@ header.po-topnav {
 #po-proj-canvas-3d-edit-wrap { width: 100%; }
 #po-proj-canvas-3d-edit {
   width: 100%;
-  /* mesma razão do #po-proj-3d-canvas: altura de tela, não fixa (2026-08-03) */
-  height: clamp(520px, 74vh, 950px);
+  /* mesma razão do #po-proj-3d-canvas: altura de tela, não fixa (2026-08-03).
+     2026-08-06 (iPad Air 13"): 74vh -> 88vh. Num tablet em paisagem a página
+     inteira cabe numa tela só, então sobra altura; o teto de 950px é que
+     estava segurando, subiu junto. O ganho maior vem das colunas recolhíveis
+     (largura), este é o complemento vertical. */
+  height: clamp(520px, 88vh, 1200px);
   border: none;
   overflow: hidden;
   background: #ffffff;

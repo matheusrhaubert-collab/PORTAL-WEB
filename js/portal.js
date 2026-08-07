@@ -10050,13 +10050,55 @@ try {
   if (savedCfg > 0) projectConfigWidthPx = clamp(savedCfg, PROJECT_COLUMN_MIN_PX, PROJECT_COLUMN_MAX_PX);
 } catch (e) { /* ok sem persistir */ }
 
+// Colunas recolhíveis (pedido do usuário 2026-08-06, testando no iPad Air
+// 13"): recolhida, a coluna some e vira uma tira só com o botão de expandir,
+// devolvendo a largura toda pro centro — que é onde ficam o canvas 2D e a
+// Vista de Canto 3D. É o ganho de espaço que mais importa no tablet, bem
+// maior do que qualquer aumento de altura.
+const PROJECT_COLUMN_COLLAPSED_PX = 34;
+let projectLibraryCollapsed = false;
+let projectConfigCollapsed = false;
+try {
+  projectLibraryCollapsed = localStorage.getItem('legno_project_library_collapsed') === '1';
+  projectConfigCollapsed = localStorage.getItem('legno_project_config_collapsed') === '1';
+} catch (e) { /* ok sem persistir */ }
+
 function applyProjectColumnWidths() {
   const layout = document.querySelector('#po-tab-projects .po-proj-layout');
   if (!layout) return;
-  layout.style.setProperty('--proj-lib-w', projectLibraryWidthPx + 'px');
-  layout.style.setProperty('--proj-cfg-w', projectConfigWidthPx + 'px');
+  layout.classList.toggle('lib-collapsed', projectLibraryCollapsed);
+  layout.classList.toggle('cfg-collapsed', projectConfigCollapsed);
+  layout.style.setProperty('--proj-lib-w', (projectLibraryCollapsed ? PROJECT_COLUMN_COLLAPSED_PX : projectLibraryWidthPx) + 'px');
+  layout.style.setProperty('--proj-cfg-w', (projectConfigCollapsed ? PROJECT_COLUMN_COLLAPSED_PX : projectConfigWidthPx) + 'px');
 }
 applyProjectColumnWidths();
+
+// Recolher/expandir muda a largura disponível do centro, e a escala do canvas
+// 2D (projectPxPerMm) é derivada dela — sem re-renderizar, os módulos ficam
+// desenhados na escala antiga. O mesmo vale pras cenas 3D, que leem
+// clientWidth/clientHeight do container: o 'resize' avisa os viewers que já
+// escutam a janela (ViewerProject/ViewerProjectEdit), sem precisar de
+// referência direta a eles daqui.
+function toggleProjectColumn(isLeftColumn) {
+  if (isLeftColumn) projectLibraryCollapsed = !projectLibraryCollapsed;
+  else projectConfigCollapsed = !projectConfigCollapsed;
+  applyProjectColumnWidths();
+  try {
+    localStorage.setItem('legno_project_library_collapsed', projectLibraryCollapsed ? '1' : '0');
+    localStorage.setItem('legno_project_config_collapsed', projectConfigCollapsed ? '1' : '0');
+  } catch (e) { /* ok sem persistir */ }
+  renderProjectCanvas();
+  // Um tick depois: o grid só recalcula a largura das colunas no próximo
+  // layout, então medir agora devolveria a largura ANTIGA.
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+}
+
+(function attachProjectColumnToggles() {
+  const libBtn = document.getElementById('po-proj-lib-toggle');
+  if (libBtn) libBtn.addEventListener('click', () => toggleProjectColumn(true));
+  const cfgBtn = document.getElementById('po-proj-cfg-toggle');
+  if (cfgBtn) cfgBtn.addEventListener('click', () => toggleProjectColumn(false));
+})();
 
 function attachProjectColumnResize(handleId, isLeftColumn) {
   const handle = document.getElementById(handleId);
@@ -11223,6 +11265,13 @@ const PROJECT_SNAP_PX = 10;                    // raio do "imã" em px de TELA �
 // direto num canvas DOM plano — um raio pequeno quase nunca disparava.
 const PROJECT_SNAP_3D_MM = 30;
 const PROJECT_CLICK_MOVE_THRESHOLD_PX = 4;      // abaixo disso, pointerup vira clique (seleciona) em vez de arraste
+// Toque (iPad) — ver attachProjectSlotDrag. 4px de tolerância serve pra
+// mouse, mas um dedo nunca fica parado nesse raio: o resultado no tablet era
+// todo toque virar arraste e nada selecionar. 12px é a folga típica de dedo;
+// 220ms é o tempo de "segurar" antes do arraste engatar (curto o suficiente
+// pra não parecer travado, longo o suficiente pra não disparar num tap).
+const PROJECT_TOUCH_SLOP_PX = 12;
+const PROJECT_TOUCH_HOLD_MS = 220;
 
 // Altura máxima que a BASE (floor_height_mm) de um módulo de `heightMm` pode
 // ter sem estourar o teto útil — mesma regra de sempre (pé direito − afastamento
@@ -11464,16 +11513,44 @@ function projectSlotElevationHtml(slot, widthMm, heightMm) {
 
 // Arraste por ponteiro (mouse/touch/caneta, unificado) — pointer capture no
 // próprio elemento, então move/up continuam chegando nele mesmo se o
-// ponteiro sair por cima de outro módulo. Distingue clique de arraste pelo
-// deslocamento total (PROJECT_CLICK_MOVE_THRESHOLD_PX): abaixo disso,
-// pointerup seleciona o módulo (abre o painel da direita) em vez de mover.
+// ponteiro sair por cima de outro módulo.
+//
+// MOUSE: arrasta na hora; deslocamento abaixo de PROJECT_CLICK_MOVE_THRESHOLD_PX
+// vira clique (seleciona) em vez de mover.
+//
+// TOQUE (iPad, relatado pelo usuário 2026-08-06: "preciso selecionar o móvel
+// segurando clique no módulo... ele move e mexe facilmente, confunde os
+// cliques"): o comportamento antigo era o do mouse com 4px de tolerância —
+// num dedo isso é nada, então TODO toque virava arraste e nada selecionava.
+// Agora o toque é SEGURAR-PRA-ARRASTAR:
+//   - toque curto (tap) = seleciona o módulo;
+//   - segurar PROJECT_TOUCH_HOLD_MS parado = "engata" o arraste (o módulo
+//     ganha a sombra de .dragging, que é o aviso visual de que agora move);
+//   - deslizar o dedo ANTES de engatar = gesto do navegador (rolar a página),
+//     e o módulo nem se mexe.
+// Por isso o pointerdown NÃO dá preventDefault no toque: enquanto não
+// engatou, a página tem que rolar normalmente. Depois de engatar, quem
+// segura a rolagem é o listener de touchmove (passive:false) mais abaixo —
+// preventDefault em pointermove não basta pra impedir scroll no iOS.
 function attachProjectSlotDrag(div, slot) {
+  // Timer do "segurar pra arrastar". Fica fora do state porque precisa ser
+  // limpo em caminhos onde projectDragState já foi zerado (pointercancel).
+  let holdTimer = null;
+  const clearHoldTimer = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+
   div.addEventListener('pointerdown', (ev) => {
-    ev.preventDefault();
+    const isTouch = ev.pointerType === 'touch';
+    // Caneta (pen) conta como preciso: engata na hora, igual mouse.
+    if (!isTouch) ev.preventDefault();
     try { div.setPointerCapture(ev.pointerId); } catch (e) { /* ok, alguns navegadores não precisam */ }
     projectDragState = {
       slotId: slot.id,
       pointerId: ev.pointerId,
+      isTouch,
+      // armed = o arraste está valendo. No mouse já nasce engatado; no toque
+      // só depois do hold.
+      armed: !isTouch,
+      canceled: false,
       startClientX: ev.clientX,
       startClientY: ev.clientY,
       startXMm: Number(slot.x_mm || 0),
@@ -11482,14 +11559,44 @@ function attachProjectSlotDrag(div, slot) {
       liveX: Number(slot.x_mm || 0),
       liveY: Number(slot.floor_height_mm || 0)
     };
-    div.classList.add('dragging');
+    if (isTouch) {
+      clearHoldTimer();
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        if (!projectDragState || projectDragState.slotId !== slot.id || projectDragState.canceled) return;
+        projectDragState.armed = true;
+        div.classList.add('dragging');
+      }, PROJECT_TOUCH_HOLD_MS);
+    } else {
+      div.classList.add('dragging');
+    }
   });
+
+  // Segura a rolagem da página SÓ enquanto o arraste está engatado. Precisa
+  // ser passive:false, senão o preventDefault é ignorado.
+  div.addEventListener('touchmove', (ev) => {
+    if (projectDragState && projectDragState.slotId === slot.id && projectDragState.armed) ev.preventDefault();
+  }, { passive: false });
 
   div.addEventListener('pointermove', (ev) => {
     if (!projectDragState || projectDragState.slotId !== slot.id || projectDragState.pointerId !== ev.pointerId) return;
     const dxPx = ev.clientX - projectDragState.startClientX;
     const dyPx = ev.clientY - projectDragState.startClientY;
-    if (!projectDragState.moved && Math.hypot(dxPx, dyPx) > PROJECT_CLICK_MOVE_THRESHOLD_PX) {
+    const dist = Math.hypot(dxPx, dyPx);
+
+    // Dedo saiu andando antes de engatar: não é arraste nem tap — é a pessoa
+    // rolando a tela. Desiste do gesto inteiro e devolve pro navegador.
+    if (projectDragState.isTouch && !projectDragState.armed) {
+      if (dist > PROJECT_TOUCH_SLOP_PX) {
+        clearHoldTimer();
+        projectDragState.canceled = true;
+        projectDragState = null;
+      }
+      return;
+    }
+
+    const threshold = projectDragState.isTouch ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX;
+    if (!projectDragState.moved && dist > threshold) {
       projectDragState.moved = true;
     }
     if (!projectDragState.moved) return;
@@ -11518,11 +11625,20 @@ function attachProjectSlotDrag(div, slot) {
   });
 
   const endDrag = (ev) => {
-    if (!projectDragState || projectDragState.slotId !== slot.id) return;
+    clearHoldTimer();
+    if (!projectDragState || projectDragState.slotId !== slot.id) {
+      // Gesto cancelado no meio (rolagem da página, ver pointermove) — só
+      // limpa o visual, sem selecionar nem mover.
+      div.classList.remove('dragging');
+      return;
+    }
     div.classList.remove('dragging');
     try { div.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
     const state = projectDragState;
     projectDragState = null;
+    // pointercancel = o navegador tomou o gesto (rolagem/zoom). Não é tap:
+    // selecionar aqui faria o módulo "pular" pro painel sem a pessoa querer.
+    if (ev.type === 'pointercancel') return;
     if (state.moved) {
       slot.x_mm = state.liveX;
       slot.floor_height_mm = state.liveY;
@@ -12517,6 +12633,10 @@ function attachProject3DEditDrag() {
   if (!domEl || domEl.dataset.legnoDragAttached === '1') return;
   domEl.dataset.legnoDragAttached = '1';
 
+  // Timer do "segurar pra arrastar" no toque (ver PROJECT_TOUCH_HOLD_MS).
+  let hold3DTimer = null;
+  const clearHold3DTimer = () => { if (hold3DTimer) { clearTimeout(hold3DTimer); hold3DTimer = null; } };
+
   domEl.addEventListener('pointerdown', (ev) => {
     // SÓ botão ESQUERDO (ev.button===0) — pedido do usuário 2026-07-26
     // ("pode fazer a rotacao apertando o scroll ao inves do botao direito")
@@ -12592,10 +12712,18 @@ function attachProject3DEditDrag() {
     else if (grab.resizeAxis === 'width-right') grabOffsetEdgeMm = grabAlongMm - (Number(slot.x_mm || 0) + widthMm);
     else if (grab.resizeAxis === 'height-top') grabOffsetEdgeMm = grabHeightMm - (Number(slot.floor_height_mm || 0) + Number(slot.height_mm || 0));
 
+    // Toque: mesmo "segurar pra arrastar" da Vista Frontal 2D (ver
+    // attachProjectSlotDrag) — no iPad, encostar o dedo pra SELECIONAR
+    // acabava movendo o módulo, porque 4px de tolerância não existe num dedo.
+    // Aqui o gesto começa desarmado e só engata depois do hold; enquanto
+    // isso, deslizar o dedo cancela tudo.
+    const isTouch3D = ev.pointerType === 'touch';
     projectDrag3DState = {
       pointerId: ev.pointerId,
       slotId: slot.id,
       group: hit.group,
+      isTouch: isTouch3D,
+      armed: !isTouch3D,
       depthOffsetM,
       dragMode: grab.dragMode,
       resizeAxis: grab.resizeAxis,
@@ -12615,6 +12743,14 @@ function attachProject3DEditDrag() {
     project3DHoveredSlotId = slot.id;
     ViewerProjectEdit.setHoverHighlight(hit.group);
     domEl.style.cursor = grab.dragMode === 'resize' ? (grab.resizeAxis === 'height-top' ? 'ns-resize' : 'ew-resize') : 'grabbing';
+
+    if (isTouch3D) {
+      clearHold3DTimer();
+      hold3DTimer = setTimeout(() => {
+        hold3DTimer = null;
+        if (projectDrag3DState && projectDrag3DState.slotId === slot.id) projectDrag3DState.armed = true;
+      }, PROJECT_TOUCH_HOLD_MS);
+    }
   });
 
   domEl.addEventListener('pointermove', (ev) => {
@@ -12654,9 +12790,19 @@ function attachProject3DEditDrag() {
       return;
     }
     if (state.pointerId !== ev.pointerId) return;
+    const dPx = Math.hypot(ev.clientX - state.startClientX, ev.clientY - state.startClientY);
+    // Toque ainda não engatado: deslizar o dedo cancela o gesto inteiro (era
+    // rolagem/pan, não intenção de mover o módulo).
+    if (state.isTouch && !state.armed) {
+      if (dPx > PROJECT_TOUCH_SLOP_PX) {
+        clearHold3DTimer();
+        projectDrag3DState = null;
+        domEl.style.cursor = 'grab';
+      }
+      return;
+    }
     if (!state.moved) {
-      const dPx = Math.hypot(ev.clientX - state.startClientX, ev.clientY - state.startClientY);
-      if (dPx < PROJECT_CLICK_MOVE_THRESHOLD_PX) return;
+      if (dPx < (state.isTouch ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX)) return;
       state.moved = true;
     }
     const slot = projectSlots.find((s) => s.id === state.slotId);
@@ -12785,12 +12931,15 @@ function attachProject3DEditDrag() {
   });
 
   const endDrag3D = (ev) => {
+    clearHold3DTimer();
     const state = projectDrag3DState;
     if (!state || state.pointerId !== ev.pointerId) return;
     projectDrag3DState = null;
     domEl.style.cursor = 'grab';
+    // Toque curto (soltou antes de engatar o arraste) = seleciona. É o
+    // caminho normal do tap no iPad.
     if (!state.moved) {
-      selectProjectSlot(state.slotId);
+      if (ev.type !== 'pointercancel') selectProjectSlot(state.slotId);
       return;
     }
     const slot = projectSlots.find((s) => s.id === state.slotId);

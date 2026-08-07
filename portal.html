@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260806a" />
+<link rel="stylesheet" href="css/style.css?v=202608062100" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1113,6 +1113,13 @@
 
         <div class="po-proj-layout">
           <aside class="po-proj-library">
+            <!-- Recolher a coluna (pedido do usuário 2026-08-06, testando no
+                 iPad Air 13": "quero o visualizador 3d muito maior... deixa o
+                 espaço das preferências da direita só ao clicar pra expandir,
+                 assim como os módulos da esquerda"). Recolhido, a coluna vira
+                 uma tira fina só com este botão e o espaço todo vai pro
+                 centro. Estado persiste no localStorage. -->
+            <button type="button" class="po-proj-col-toggle" id="po-proj-lib-toggle" title="Recolher/expandir os módulos" aria-label="Recolher ou expandir a lista de módulos"></button>
             <!-- Botão "Buscar" (pedido do usuário, 2026-07-23: "quero um
                  botao buscar no lugar de digitar") — no lugar do campo de
                  texto, abre um modal com as 3 camadas (família/categoria/
@@ -1199,9 +1206,16 @@
 
           <div class="po-proj-resize-handle" id="po-proj-resize-handle-right" title="Arrastar pra redimensionar"></div>
 
-          <aside class="po-proj-config-panel" id="po-proj-config-panel">
-            <p class="hint" id="po-proj-config-empty-hint" data-i18n="project.select_module_hint">Clique num módulo no ambiente pra ver os detalhes aqui.</p>
-          </aside>
+          <!-- Wrapper novo (2026-08-06): o botão de recolher precisa ser IRMÃO
+               do #po-proj-config-panel, não filho — renderProjectConfigPanel()
+               reescreve o innerHTML do painel a cada seleção e apagaria o
+               botão junto. O wrapper é que ocupa a coluna do grid agora. -->
+          <div class="po-proj-config-col" id="po-proj-config-col">
+            <button type="button" class="po-proj-col-toggle po-proj-col-toggle-right" id="po-proj-cfg-toggle" title="Recolher/expandir as preferências" aria-label="Recolher ou expandir o painel de preferências"></button>
+            <aside class="po-proj-config-panel" id="po-proj-config-panel">
+              <p class="hint" id="po-proj-config-empty-hint" data-i18n="project.select_module_hint">Clique num módulo no ambiente pra ver os detalhes aqui.</p>
+            </aside>
+          </div>
         </div>
 
         <div id="po-proj-total" class="po-comp-3d-total"></div>
@@ -1615,13 +1629,13 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=20260802g"></script>
-<script src="js/pricing.js?v=20260731a"></script>
-<script src="js/viewer3d.js?v=20260801a"></script>
-<script src="js/viewer3d_composition.js?v=20260803b"></script>
+<script src="js/i18n.js?v=202608062100"></script>
+<script src="js/pricing.js?v=202608062100"></script>
+<script src="js/viewer3d.js?v=202608062100"></script>
+<script src="js/viewer3d_composition.js?v=202608062100"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=20260803l"></script>
-<script src="js/portal.js?v=20260806b"></script>
+<script src="js/photoreal.js?v=202608062100"></script>
+<script src="js/portal.js?v=202608062100"></script>
 </body>
 </html>
