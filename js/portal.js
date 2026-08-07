@@ -11071,6 +11071,34 @@ function moduleNameById(id) {
   return m ? m.name : 'módulo';
 }
 
+// Traduz o erro de supabaseClient.functions.invoke numa frase que diz o que
+// FAZER. supabase-js embrulha a resposta HTTP em error.context (um Response),
+// e o corpo dela tem a mensagem escrita na própria Edge Function — sem ler
+// isso, todo problema vira um "não respondeu" genérico que não ajuda ninguém.
+async function describeEdgeFunctionError(error, data, functionName) {
+  if (data && data.error) return data.error;
+
+  const status = error && error.context && Number(error.context.status);
+  if (status === 404) {
+    return `A função "${functionName}" não está publicada no Supabase. Rode: supabase functions deploy ${functionName}`;
+  }
+  if (status === 401 || status === 403) {
+    return 'Sem permissão pra chamar a IA. Saia e entre de novo na sua conta.';
+  }
+
+  // Tenta ler a mensagem de dentro do corpo da resposta (pode já ter sido
+  // consumido; por isso o try).
+  if (error && error.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json();
+      if (body && body.error) return body.error;
+    } catch (e) { /* corpo já lido ou não é JSON — segue pro genérico */ }
+  }
+
+  if (status) return `A IA respondeu com erro ${status}. Veja o console (F12) pra detalhes.`;
+  return 'Não consegui falar com a IA. Verifique a conexão e tente de novo.';
+}
+
 // ---------- Execução ----------
 
 async function runProjectAiGeneration() {
@@ -11118,9 +11146,16 @@ async function runProjectAiGeneration() {
 
     // supabase-js marca como "error" por status HTTP, mas o corpo ainda traz
     // a mensagem boa da function — mesmo tratamento do generate-gallery-render.
+    //
+    // A 1ª versão disto devolvia sempre "A IA não respondeu, tente de novo",
+    // o que mandou o usuário tentar de novo várias vezes quando a causa real
+    // era a Edge Function nem estar publicada (404). Agora o motivo REAL vem
+    // pra tela: 404 = falta deploy, 401/403 = login, e nos outros casos o
+    // corpo da resposta (que tem a mensagem escrita na própria function,
+    // incluindo "GEMINI_API_KEY não configurada").
     if (error && !(data && data.items)) {
       console.error('generate-project-layout falhou:', error, data);
-      throw new Error((data && data.error) || 'A IA não respondeu. Tente de novo em alguns segundos.');
+      throw new Error(await describeEdgeFunctionError(error, data, 'generate-project-layout'));
     }
     if (!data || !Array.isArray(data.items) || data.items.length === 0) {
       throw new Error((data && data.error) || 'A IA não devolveu nenhum módulo.');
