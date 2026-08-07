@@ -218,6 +218,80 @@
     </div>
   </section>
 
+  <!-- FUNÇÕES DO MÓDULO + RECEITA DO AMBIENTE (migration 080) -->
+  <section class="panel">
+    <h2>Funções e receitas de ambiente (IA)</h2>
+    <p class="hint">
+      Isto é o cérebro do "Gerar projeto com IA" na aba Projetos do portal. <strong>Função</strong> é o que o módulo
+      faz (base de pia, cooktop, gaveteiro, aéreo...) — você marca uma em cada módulo, na aba Módulos.
+      <strong>Receita</strong> é a checklist do ambiente: quantos de cada função uma cozinha precisa ter pra estar
+      completa. A IA escolhe qual módulo concreto cumpre cada função; quem confere se o ambiente ficou completo é o
+      portal, lendo esta receita — se faltar uma função obrigatória, ele completa sozinho. Ou seja: mudar a regra
+      aqui muda o comportamento da IA, sem mexer em código.
+    </p>
+    <div id="room-ai-error" class="error" style="display:none;"></div>
+
+    <div class="row">
+      <div style="flex:1.2;">
+        <h2 style="font-size:14px;">Funções</h2>
+        <table>
+          <thead><tr><th>Chave</th><th>Nome</th><th>Montagem</th><th></th></tr></thead>
+          <tbody id="module-functions-tbody"></tbody>
+        </table>
+        <form id="module-function-form" style="margin-top:8px;">
+          <input type="hidden" id="module-function-id" />
+          <div class="row" style="align-items:flex-end;">
+            <div>
+              <label style="font-size:11px;">Chave (sem espaço, não editável depois)</label>
+              <input id="module-function-key" placeholder="ex: wine_cooler" required />
+            </div>
+            <div><label style="font-size:11px;">Nome</label><input id="module-function-name" placeholder="ex: Adega" required /></div>
+            <div>
+              <label style="font-size:11px;">Montagem sugerida</label>
+              <select id="module-function-mount">
+                <option value="">—</option>
+                <option value="floor">Chão</option>
+                <option value="wall">Suspenso</option>
+                <option value="tall">Coluna alta</option>
+              </select>
+            </div>
+          </div>
+          <label style="font-size:11px;">Descrição (é o que a IA lê — escreva pensando nela)</label>
+          <textarea id="module-function-description" style="min-height:34px;font-family:inherit;" placeholder="ex: Nicho climatizado para garrafas. Nunca ao lado do fogão."></textarea>
+          <button type="submit" style="margin-top:0;">Salvar função</button>
+        </form>
+      </div>
+
+      <div style="flex:1.4;">
+        <h2 style="font-size:14px;">Receita do ambiente</h2>
+        <div class="row" style="align-items:flex-end;">
+          <div>
+            <label style="font-size:11px;">Ambiente</label>
+            <select id="room-type-select"></select>
+          </div>
+        </div>
+        <table style="margin-top:8px;">
+          <thead>
+            <tr><th>Função</th><th title="Quantidade mínima — 1 ou mais torna a função obrigatória">Mín</th><th title="Vazio = sem limite">Máx</th><th title="Maior entra primeiro quando a parede não comporta tudo">Prior.</th><th></th></tr>
+          </thead>
+          <tbody id="room-recipes-tbody"></tbody>
+        </table>
+        <form id="room-recipe-form" style="margin-top:8px;">
+          <input type="hidden" id="room-recipe-id" />
+          <div class="row" style="align-items:flex-end;">
+            <div><label style="font-size:11px;">Função</label><select id="room-recipe-function" required></select></div>
+            <div style="flex:0.4;"><label style="font-size:11px;">Mín</label><input id="room-recipe-min" type="number" min="0" value="0" /></div>
+            <div style="flex:0.4;"><label style="font-size:11px;">Máx</label><input id="room-recipe-max" type="number" min="0" placeholder="∞" /></div>
+            <div style="flex:0.4;"><label style="font-size:11px;">Prior.</label><input id="room-recipe-priority" type="number" value="0" /></div>
+          </div>
+          <label style="font-size:11px;">Dica de posição (vai no prompt como está)</label>
+          <input id="room-recipe-note" placeholder="ex: afastado da pia e da geladeira" />
+          <button type="submit" style="margin-top:0;">Salvar linha da receita</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
     </div>
     <div class="admin-tab-page" id="tab-catalogs" style="display:none;">
 
@@ -629,8 +703,34 @@
         <div><label>Categoria</label><select id="module-category"><option value="">—</option></select></div>
         <div><label>Subcategoria</label><select id="module-subcategory"><option value="">—</option></select></div>
       </div>
+      <!-- Função + montagem (migration 080) — é o que o gerador de projeto
+           por IA lê pra saber PRA QUE SERVE este módulo. Módulo sem função
+           continua funcionando 100% no fluxo manual; ele só não é oferecido
+           pra IA (o portal filtra function_id not null ao montar o catálogo
+           que vai no prompt). Gerencie a lista de funções na aba Taxonomia. -->
+      <div class="row">
+        <div>
+          <label>Função (IA)</label>
+          <select id="module-function"><option value="">— sem função —</option></select>
+        </div>
+        <div>
+          <label>Montagem</label>
+          <select id="module-mount-type">
+            <option value="">— não definido —</option>
+            <option value="floor">Chão (base, gaveteiro)</option>
+            <option value="wall">Suspenso (aéreo)</option>
+            <option value="tall">Coluna alta (torre, despenseiro)</option>
+          </select>
+        </div>
+      </div>
       <label>Descrição</label>
       <textarea id="module-description" style="min-height:40px;font-family:inherit;"></textarea>
+
+      <!-- Escape hatch pra regra específica deste módulo, em texto livre —
+           vai direto no prompt. Ex: "só usar em cozinha americana",
+           "nunca colar na geladeira". Evita criar coluna nova a cada regra. -->
+      <label>Instrução extra para a IA (opcional)</label>
+      <textarea id="module-ai-hint" style="min-height:34px;font-family:inherit;" placeholder="Ex: sempre ao lado do cooktop; não usar em parede menor que 2000mm"></textarea>
 
       <div class="row">
         <div><label>Largura mín. (mm)</label><input id="module-width-min" type="number" required /></div>
@@ -1549,7 +1649,7 @@
 <script src="js/pricing.js"></script>
 <script src="js/viewer3d.js?v=20260801a"></script>
 <script src="js/drilling.js?v=20260720a"></script>
-<script src="js/admin.js?v=20260805b"></script>
+<script src="js/admin.js?v=20260806a"></script>
 <script>
 // Troca de aba do painel admin — puramente visual (mostra/esconde
 // .admin-tab-page), não interfere em nenhuma lógica de carregar/salvar

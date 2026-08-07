@@ -10446,9 +10446,16 @@ function collectDefaultShelfQuantities(piecesList, acc) {
   return acc;
 }
 
-async function insertProjectModuleDefault(moduleId) {
+// `overrides` (migration 080) é usado SÓ pelo gerador por IA — o clique
+// normal na biblioteca continua chamando sem segundo argumento e se comporta
+// exatamente como antes. Serve pra forçar largura/parede/altura do chão/X do
+// slot que está sendo criado, em vez de aceitar os defaults do catálogo.
+// Deliberadamente NÃO aceita preço nem peças: o resultado de um módulo
+// inserido pela IA tem que ser idêntico ao mesmo módulo inserido na mão.
+// Devolve o slot criado (ou null), pra quem chamou conseguir encadear.
+async function insertProjectModuleDefault(moduleId, overrides = null) {
   const m = allModules.find((mm) => mm.id === moduleId);
-  if (!m) return;
+  if (!m) return null;
   const errorEl = document.getElementById('po-proj-error');
   if (errorEl) errorEl.style.display = 'none';
   try {
@@ -10503,7 +10510,13 @@ async function insertProjectModuleDefault(moduleId) {
     // configuração correta já bate com os presets cadastrados).
     const maxHeightMm = Math.max(roomSettings.ceiling_mm - effectiveCeilingClearanceMm(m) - roomSettings.baseboard_mm, 0);
     const effHeightMaxMm = m.height_locked ? Number(m.height_max_mm || Infinity) : Math.min(Number(m.height_max_mm || Infinity), maxHeightMm);
-    const width_mm = clamp(Number(m.width_default_mm || 0), Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
+    // Largura pedida pela IA passa pelo MESMO clamp do default de catálogo —
+    // a Edge Function já clampa, mas nunca confiar só nela (o mín/máx pode
+    // ter mudado no admin entre montar o prompt e aplicar a resposta).
+    const requestedWidthMm = overrides && Number(overrides.width_mm) > 0
+      ? Number(overrides.width_mm)
+      : Number(m.width_default_mm || 0);
+    const width_mm = clamp(requestedWidthMm, Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
     const height_mm = clamp(Number(m.height_default_mm || 0), Number(m.height_min_mm || 0), effHeightMaxMm);
     const depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
 
@@ -10517,9 +10530,9 @@ async function insertProjectModuleDefault(moduleId) {
 
     const slot = {
       id: newProjectSlotId(),
-      wall_index: projectActiveWallIndex,
+      wall_index: (overrides && Number.isFinite(Number(overrides.wall_index))) ? Number(overrides.wall_index) : projectActiveWallIndex,
       x_mm: 0,
-      floor_height_mm: 0,
+      floor_height_mm: (overrides && Number(overrides.floor_height_mm) > 0) ? Number(overrides.floor_height_mm) : 0,
       z_order: 0,
       module: m,
       pieces: modulePieces,
@@ -10542,16 +10555,610 @@ async function insertProjectModuleDefault(moduleId) {
       widthPresetsMm: lockedDimensionPresets.width,
       heightPresetsMm: lockedDimensionPresets.height
     };
-    slot.x_mm = computeDefaultProjectSlotX(slot.width_mm);
-    resolveProjectSlotDepth(slot, projectSlotsOnWall(projectActiveWallIndex));
+    slot.x_mm = (overrides && Number.isFinite(Number(overrides.x_mm)))
+      ? Number(overrides.x_mm)
+      : computeDefaultProjectSlotX(slot.width_mm);
+    resolveProjectSlotDepth(slot, projectSlotsOnWall(slot.wall_index));
     projectSlots.push(slot);
-    selectedProjectSlotId = slot.id;
-    renderProjectCanvas();
-    markProjectDirty();
+    // A IA insere vários módulos em sequência: selecionar e re-renderizar a
+    // cada um é desperdício (e faz a tela piscar). Quem chamou com overrides
+    // é responsável por renderizar/marcar sujo no fim do lote.
+    if (!overrides) {
+      selectedProjectSlotId = slot.id;
+      renderProjectCanvas();
+      markProjectDirty();
+    }
+    return slot;
   } catch (err) {
     if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+    return null;
   }
 }
+
+// ==========================================================================
+// GERADOR DE PROJETO POR IA (migration 080)
+// ==========================================================================
+//
+// Fluxo: cliente mede a parede nos campos que já existem -> clica "Gerar com
+// IA" -> responde 3-4 perguntas -> a Edge Function generate-project-layout
+// (Gemini 2.5 Flash, texto) devolve uma lista de módulos -> ESTE arquivo
+// valida a lista contra a receita do ambiente (room_recipes), completa o que
+// faltou e cria os slots pelo caminho normal (insertProjectModuleDefault).
+//
+// A DIVISÃO É PROPOSITAL, não afrouxar:
+//   IA decide  -> quais módulos e que largura (gosto/proporção).
+//   JS decide  -> se o ambiente está completo, onde cada módulo encosta,
+//                 quanto custa. Tudo determinístico e auditável.
+//
+// Por isso o resultado de um projeto gerado por IA é indistinguível de um
+// montado na mão: mesmo slot, mesmo preço, mesma furação, mesmo 3D. Ele entra
+// sujo (markProjectDirty) e o cliente continua editando normalmente.
+
+let projectAiFunctions = [];   // module_functions
+let projectAiRoomTypes = [];   // room_types
+let projectAiRecipesByRoom = {}; // room_type_id -> [room_recipes] (com função embutida)
+let projectAiRunning = false;
+
+// Altura do chão onde começa a fileira de aéreos. 1400mm é a convenção de
+// bancada (900) + faixa livre (500) — não vira campo de cadastro por ora
+// porque o cliente pode arrastar depois; se virar reclamação recorrente,
+// promover pra coluna em room_types em vez de espalhar constante.
+const PROJECT_AI_UPPER_ROW_FLOOR_MM = 1400;
+
+// Perguntas por ambiente. `key` é o que vai no prompt (em português mesmo —
+// o Gemini lê bem, e assim o admin consegue relacionar pergunta e resposta
+// olhando o log). Ambiente sem entrada aqui cai em PROJECT_AI_COMMON_QUESTIONS
+// só, que já é suficiente pra gerar algo razoável.
+const PROJECT_AI_COMMON_QUESTIONS = [
+  {
+    key: 'orcamento',
+    label: 'Orçamento',
+    options: ['Econômico', 'Equilibrado', 'Sem economizar']
+  },
+  {
+    key: 'estilo',
+    label: 'Estilo das frentes',
+    options: ['Bastante gaveta', 'Bastante porta', 'Misto', 'Prefiro aberto/sem porta']
+  }
+];
+
+const PROJECT_AI_QUESTIONS = {
+  kitchen: [
+    {
+      key: 'quem_cozinha',
+      label: 'Quanto se cozinha aqui?',
+      options: ['Todo dia, pra família', 'De vez em quando', 'Quase nada, é decorativa']
+    },
+    {
+      key: 'eletros',
+      label: 'Eletrodomésticos que precisam de espaço',
+      options: ['Só cooktop e geladeira', 'Cooktop, geladeira e forno embutido', 'Tudo: forno, micro, lava-louças']
+    },
+    {
+      key: 'aereos',
+      label: 'Armários aéreos',
+      options: ['Quero o máximo possível', 'Só o necessário', 'Prefiro poucos, ambiente mais leve']
+    }
+  ],
+  closet: [
+    {
+      key: 'pendurado_vs_dobrado',
+      label: 'Roupa pendurada ou dobrada?',
+      options: ['Mais pendurada', 'Metade e metade', 'Mais dobrada']
+    },
+    { key: 'calcados', label: 'Espaço para calçados', options: ['Muito', 'Um pouco', 'Não precisa'] }
+  ],
+  office: [
+    { key: 'uso', label: 'Como usa o espaço?', options: ['Trabalho o dia todo', 'Algumas horas', 'Só estudo/leitura'] },
+    { key: 'armazenamento', label: 'Precisa guardar muita coisa?', options: ['Muita', 'Média', 'Pouca'] }
+  ]
+};
+
+function projectAiQuestionsFor(roomKey) {
+  return (PROJECT_AI_QUESTIONS[roomKey] || []).concat(PROJECT_AI_COMMON_QUESTIONS);
+}
+
+// Carregado uma vez no boot do portal (ver a chamada em initPortal/loadModules
+// — junto do resto do catálogo). Falha aqui não pode derrubar a aba Projetos:
+// sem migration 080 rodada, as tabelas nem existem e o botão só fica escondido.
+async function loadProjectAiConfig() {
+  try {
+    const [fnRes, roomRes, recipeRes] = await Promise.all([
+      supabaseClient.from('module_functions').select('*').eq('active', true).order('sort_order'),
+      supabaseClient.from('room_types').select('*').eq('active', true).order('sort_order'),
+      supabaseClient.from('room_recipes').select('*').order('priority', { ascending: false })
+    ]);
+    if (fnRes.error || roomRes.error || recipeRes.error) throw (fnRes.error || roomRes.error || recipeRes.error);
+    projectAiFunctions = fnRes.data || [];
+    projectAiRoomTypes = roomRes.data || [];
+    projectAiRecipesByRoom = {};
+    (recipeRes.data || []).forEach((r) => {
+      if (!projectAiRecipesByRoom[r.room_type_id]) projectAiRecipesByRoom[r.room_type_id] = [];
+      projectAiRecipesByRoom[r.room_type_id].push(r);
+    });
+  } catch (err) {
+    // Silencioso de propósito: quem não rodou a migration não deve ver erro
+    // vermelho numa aba que funciona perfeitamente sem esta funcionalidade.
+    console.warn('Gerador por IA indisponível (migration 080 rodada?):', err);
+    projectAiFunctions = [];
+    projectAiRoomTypes = [];
+    projectAiRecipesByRoom = {};
+  }
+  refreshProjectAiButton();
+}
+
+// O botão fica SEMPRE visível. A 1ª versão disto escondia o botão quando
+// faltava receita ou função cadastrada — e o resultado foi um botão que
+// simplesmente não existia, sem nenhuma pista do porquê (o usuário abriu a
+// aba, não achou nada e teve que perguntar). Configuração faltando agora é
+// explicada ao abrir o modal (projectAiConfigProblem), não escondida.
+function refreshProjectAiButton() {
+  const btn = document.getElementById('po-proj-ai-open-btn');
+  if (!btn) return;
+  btn.style.display = '';
+}
+
+// Devolve a mensagem do que está faltando pra usar o gerador, ou null se está
+// tudo pronto. Ordem das checagens = ordem em que a pessoa precisa resolver.
+function projectAiConfigProblem() {
+  if (projectAiRoomTypes.length === 0) {
+    return 'As tabelas do gerador ainda não existem no banco. Rode a migration 080 (database/migration_080_funcao_modulo_e_receita_ambiente.sql) no Supabase.';
+  }
+  const hasRoomWithRecipe = projectAiRoomTypes.some((rt) => (projectAiRecipesByRoom[rt.id] || []).length > 0);
+  if (!hasRoomWithRecipe) {
+    return 'Nenhum ambiente tem receita cadastrada. Configure em Admin > Taxonomia > Funções e receitas de ambiente.';
+  }
+  if (!allModules.some((m) => m.function_id)) {
+    return 'Nenhum módulo tem função cadastrada. No Admin > Módulos, marque o campo "Função (IA)" nos módulos de cozinha (base de pia, cooktop, gaveteiro, aéreo...).';
+  }
+  return null;
+}
+
+function projectAiFunctionById(id) {
+  return projectAiFunctions.find((f) => f.id === id) || null;
+}
+
+// ---------- Modal ----------
+
+function openProjectAiModal() {
+  const modal = document.getElementById('po-proj-ai-modal');
+  if (!modal) return;
+
+  // Configuração faltando: abre o modal mesmo assim, mostrando exatamente o
+  // que falta e escondendo o formulário/botão de gerar. Bem melhor que um
+  // botão inerte ou invisível.
+  const problem = projectAiConfigProblem();
+  const formEl = document.getElementById('po-proj-ai-form');
+  const runBtn = document.getElementById('po-proj-ai-run-btn');
+  if (problem) {
+    if (formEl) formEl.style.display = 'none';
+    if (runBtn) runBtn.style.display = 'none';
+    setProjectAiError(problem);
+    setProjectAiStatus('');
+    const summaryEl = document.getElementById('po-proj-ai-walls-summary');
+    if (summaryEl) summaryEl.textContent = '';
+    modal.classList.add('open');
+    return;
+  }
+  if (formEl) formEl.style.display = '';
+  if (runBtn) runBtn.style.display = '';
+
+  const roomSel = document.getElementById('po-proj-ai-room-select');
+  roomSel.innerHTML = '';
+  projectAiRoomTypes
+    .filter((rt) => (projectAiRecipesByRoom[rt.id] || []).length > 0)
+    .forEach((rt) => {
+      const opt = document.createElement('option');
+      opt.value = rt.id;
+      opt.textContent = rt.name;
+      roomSel.appendChild(opt);
+    });
+  renderProjectAiQuestions();
+  renderProjectAiWallsSummary();
+  setProjectAiError('');
+  setProjectAiStatus('');
+  modal.classList.add('open');
+}
+
+function closeProjectAiModal() {
+  const modal = document.getElementById('po-proj-ai-modal');
+  if (modal) modal.classList.remove('open');
+}
+
+function selectedProjectAiRoom() {
+  const roomSel = document.getElementById('po-proj-ai-room-select');
+  const id = roomSel ? roomSel.value : '';
+  return projectAiRoomTypes.find((rt) => rt.id === id) || null;
+}
+
+function renderProjectAiQuestions() {
+  const wrap = document.getElementById('po-proj-ai-questions');
+  if (!wrap) return;
+  const room = selectedProjectAiRoom();
+  wrap.innerHTML = '';
+  if (!room) return;
+  projectAiQuestionsFor(room.key).forEach((q) => {
+    const field = document.createElement('div');
+    field.className = 'dim-field';
+    const label = document.createElement('label');
+    label.textContent = q.label;
+    const sel = document.createElement('select');
+    sel.className = 'po-proj-library-filter-select';
+    sel.dataset.aiQuestionKey = q.key;
+    q.options.forEach((optText) => {
+      const opt = document.createElement('option');
+      opt.value = optText;
+      opt.textContent = optText;
+      sel.appendChild(opt);
+    });
+    field.appendChild(label);
+    field.appendChild(sel);
+    wrap.appendChild(field);
+  });
+}
+
+function collectProjectAiAnswers() {
+  const answers = {};
+  document.querySelectorAll('#po-proj-ai-questions select[data-ai-question-key]').forEach((sel) => {
+    answers[sel.dataset.aiQuestionKey] = sel.value;
+  });
+  return answers;
+}
+
+// Mostra as medidas que a IA vai receber — vindas dos campos que já existem
+// na tela, nunca digitadas de novo aqui (duas fontes de verdade pra mesma
+// medida é receita de divergência).
+function renderProjectAiWallsSummary() {
+  const el = document.getElementById('po-proj-ai-walls-summary');
+  if (!el) return;
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const parts = getProjectWallRoles().map((role, idx) => {
+    const w = getProjectWallWidthMm(idx);
+    return `Parede ${idx + 1}: ${formatDimension(w, unit)}`;
+  });
+  parts.push(`Pé direito: ${formatDimension(roomSettings.ceiling_mm, unit)}`);
+  el.textContent = parts.join(' · ');
+}
+
+function setProjectAiError(msg) {
+  const el = document.getElementById('po-proj-ai-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function setProjectAiStatus(msg) {
+  const el = document.getElementById('po-proj-ai-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// ---------- Catálogo que vai no prompt ----------
+//
+// Só módulo ATIVO, VISÍVEL e COM FUNÇÃO. `price_hint` é o preço de catálogo
+// aproximado (largura padrão, cores padrão) só pra IA respeitar a resposta de
+// orçamento — ela não soma nada, o preço de verdade sai do Pricing depois.
+// Aqui é o cached do módulo se existir; senão, null (a IA lida bem com
+// ausência).
+function buildProjectAiCatalog() {
+  return allModules
+    .filter((m) => m.function_id)
+    .map((m) => {
+      const fn = projectAiFunctionById(m.function_id);
+      return {
+        id: m.id,
+        name: m.name,
+        function_key: fn ? fn.key : null,
+        mount_type: m.mount_type || (fn ? fn.mount_hint : null) || 'floor',
+        width_min_mm: Number(m.width_min_mm) || 0,
+        width_max_mm: Number(m.width_max_mm) || 0,
+        width_default_mm: Number(m.width_default_mm) || 0,
+        height_default_mm: Number(m.height_default_mm) || 0,
+        depth_default_mm: Number(m.depth_default_mm) || 0,
+        is_decoration: !!m.is_decoration,
+        price_hint: null,
+        ai_hint: m.ai_hint || null
+      };
+    })
+    .filter((m) => m.function_key);
+}
+
+function buildProjectAiRecipePayload(room) {
+  return (projectAiRecipesByRoom[room.id] || []).map((r) => {
+    const fn = projectAiFunctionById(r.function_id);
+    return {
+      function_key: fn ? fn.key : null,
+      function_name: fn ? fn.name : '',
+      function_description: fn ? fn.description : null,
+      mount_hint: fn ? fn.mount_hint : null,
+      min_qty: Number(r.min_qty) || 0,
+      max_qty: r.max_qty == null ? null : Number(r.max_qty),
+      priority: Number(r.priority) || 0,
+      placement_note: r.placement_note || null
+    };
+  }).filter((r) => r.function_key);
+}
+
+// ---------- Validação determinística contra a receita ----------
+//
+// ESTE é o pedaço que garante "ambiente completo" — não o prompt. Roda DEPOIS
+// da IA responder:
+//   1. corta o que passou do max_qty da função;
+//   2. para cada função obrigatória (min_qty >= 1) que ficou faltando,
+//      escolhe sozinho um módulo daquela função (o mais estreito que sirva,
+//      pra ter mais chance de caber) e injeta;
+//   3. devolve os avisos, que o cliente vê depois de gerar.
+//
+// Nunca "conserta" silenciosamente sem avisar: se completou ou removeu algo,
+// isso aparece na tela. Projeto de cozinha errado e silencioso é pior que
+// projeto incompleto e explícito.
+function enforceProjectAiRecipe(items, room, catalog) {
+  const recipe = projectAiRecipesByRoom[room.id] || [];
+  const catalogById = new Map(catalog.map((c) => [c.id, c]));
+  const warnings = [];
+  const kept = [];
+  const countByFunction = {};
+
+  items.forEach((it) => {
+    const cat = catalogById.get(it.module_id);
+    if (!cat) return; // já filtrado na Edge Function, mas nunca confiar
+    const key = cat.function_key;
+    const rule = recipe.find((r) => {
+      const fn = projectAiFunctionById(r.function_id);
+      return fn && fn.key === key;
+    });
+    const max = rule && rule.max_qty != null ? Number(rule.max_qty) : Infinity;
+    const current = countByFunction[key] || 0;
+    if (current >= max) {
+      warnings.push(`Removi um "${(projectAiFunctions.find((f) => f.key === key) || {}).name || key}" a mais do que o permitido.`);
+      return;
+    }
+    countByFunction[key] = current + 1;
+    kept.push({ ...it, function_key: key, mount_type: cat.mount_type, is_decoration: cat.is_decoration });
+  });
+
+  // Completa funções obrigatórias que faltaram.
+  recipe.forEach((r) => {
+    const fn = projectAiFunctionById(r.function_id);
+    if (!fn || Number(r.min_qty) < 1) return;
+    const have = countByFunction[fn.key] || 0;
+    const missing = Number(r.min_qty) - have;
+    if (missing <= 0) return;
+    const candidates = catalog
+      .filter((c) => c.function_key === fn.key)
+      .sort((a, b) => a.width_min_mm - b.width_min_mm);
+    if (candidates.length === 0) {
+      warnings.push(`Nenhum módulo cadastrado com a função "${fn.name}" — este ambiente ficou sem ela.`);
+      return;
+    }
+    for (let i = 0; i < missing; i++) {
+      const pick = candidates[0];
+      kept.push({
+        module_id: pick.id,
+        function_key: fn.key,
+        mount_type: pick.mount_type,
+        is_decoration: pick.is_decoration,
+        width_mm: pick.width_default_mm || pick.width_min_mm,
+        wall_index: 0,
+        order: 999,
+        reasoning: null,
+        auto_completed: true
+      });
+      countByFunction[fn.key] = (countByFunction[fn.key] || 0) + 1;
+      warnings.push(`Faltava "${fn.name}" — adicionei "${pick.name}" pra completar o ambiente.`);
+    }
+  });
+
+  return { items: kept, warnings };
+}
+
+// ---------- Posicionamento (determinístico, nunca vem da IA) ----------
+//
+// Duas fileiras independentes por parede: chão (floor+tall) e suspensa
+// (wall). Cada uma preenche da esquerda pra direita na ordem que a IA pediu.
+// Se o que a IA escolheu não cabe, o excedente é CORTADO com aviso, em vez de
+// empilhar módulo em cima de módulo — melhor entregar uma parede correta e
+// avisar do que uma parede impossível.
+//
+// Decoração (fogão, geladeira, cuba) NÃO consome largura da fileira: ela
+// representa o eletro em cima/dentro de um móvel que já ocupou o espaço. Ela
+// é ancorada no X do último módulo não-decorativo da mesma parede.
+function layoutProjectAiItems(items) {
+  const placed = [];
+  const warnings = [];
+  const wallCount = getProjectWallCount();
+
+  for (let wallIndex = 0; wallIndex < wallCount; wallIndex++) {
+    const wallWidth = getProjectWallWidthMm(wallIndex);
+    const onWall = items
+      .filter((it) => Number(it.wall_index || 0) === wallIndex)
+      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+
+    const cursor = { floor: 0, wall: 0 };
+    let lastFloorX = 0;
+    let lastFloorWidth = 0;
+
+    onWall.forEach((it) => {
+      const isUpper = it.mount_type === 'wall';
+      const row = isUpper ? 'wall' : 'floor';
+      const width = Number(it.width_mm) || 0;
+
+      if (it.is_decoration) {
+        // Ancorada no último móvel colocado no chão desta parede (ou no
+        // início, se ainda não houver nenhum).
+        placed.push({
+          ...it,
+          wall_index: wallIndex,
+          x_mm: lastFloorX,
+          width_mm: Math.min(width || lastFloorWidth, wallWidth),
+          floor_height_mm: 0
+        });
+        return;
+      }
+
+      if (cursor[row] + width > wallWidth + 1) {
+        warnings.push(`"${moduleNameById(it.module_id)}" não coube na parede ${wallIndex + 1} e ficou de fora.`);
+        return;
+      }
+      const x = cursor[row];
+      cursor[row] += width;
+      if (!isUpper) { lastFloorX = x; lastFloorWidth = width; }
+      placed.push({
+        ...it,
+        wall_index: wallIndex,
+        x_mm: x,
+        width_mm: width,
+        floor_height_mm: isUpper ? projectAiUpperRowFloorMm() : 0
+      });
+    });
+  }
+
+  return { placed, warnings };
+}
+
+// Altura da fileira suspensa, respeitando o pé direito real do ambiente —
+// numa sala de pé direito baixo, 1400mm fixo jogaria o aéreo pro teto.
+function projectAiUpperRowFloorMm() {
+  const usable = Math.max(roomSettings.ceiling_mm - roomSettings.baseboard_mm, 0);
+  return Math.min(PROJECT_AI_UPPER_ROW_FLOOR_MM, Math.max(usable - 600, 0));
+}
+
+function moduleNameById(id) {
+  const m = allModules.find((mm) => mm.id === id);
+  return m ? m.name : 'módulo';
+}
+
+// ---------- Execução ----------
+
+async function runProjectAiGeneration() {
+  if (projectAiRunning) return;
+  const room = selectedProjectAiRoom();
+  if (!room) { setProjectAiError('Selecione um ambiente.'); return; }
+
+  // Projeto com módulo já posto: gerar SUBSTITUI tudo. Perguntar antes é
+  // obrigatório — perder uma cozinha inteira montada na mão por causa de um
+  // clique não é aceitável.
+  if (projectSlots.length > 0) {
+    const ok = confirm('Isto vai substituir os módulos que já estão no projeto. Continuar?');
+    if (!ok) return;
+  }
+
+  projectAiRunning = true;
+  setProjectAiError('');
+  setProjectAiStatus('Consultando a IA...');
+  const runBtn = document.getElementById('po-proj-ai-run-btn');
+  if (runBtn) runBtn.disabled = true;
+
+  try {
+    const catalog = buildProjectAiCatalog();
+    const recipe = buildProjectAiRecipePayload(room);
+    if (catalog.length === 0) throw new Error('Nenhum módulo com função cadastrada.');
+    if (recipe.length === 0) throw new Error('Este ambiente não tem receita cadastrada.');
+
+    const walls = getProjectWallRoles().map((role, idx) => ({
+      index: idx,
+      width_mm: getProjectWallWidthMm(idx),
+      label: `parede ${idx + 1} (${role})`
+    }));
+
+    const { data, error } = await supabaseClient.functions.invoke('generate-project-layout', {
+      body: {
+        room: { key: room.key, name: room.name, note: room.questionnaire_note },
+        walls,
+        ceiling_mm: roomSettings.ceiling_mm,
+        baseboard_mm: roomSettings.baseboard_mm,
+        recipe,
+        catalog,
+        answers: collectProjectAiAnswers()
+      }
+    });
+
+    // supabase-js marca como "error" por status HTTP, mas o corpo ainda traz
+    // a mensagem boa da function — mesmo tratamento do generate-gallery-render.
+    if (error && !(data && data.items)) {
+      console.error('generate-project-layout falhou:', error, data);
+      throw new Error((data && data.error) || 'A IA não respondeu. Tente de novo em alguns segundos.');
+    }
+    if (!data || !Array.isArray(data.items) || data.items.length === 0) {
+      throw new Error((data && data.error) || 'A IA não devolveu nenhum módulo.');
+    }
+
+    setProjectAiStatus('Montando o projeto...');
+    const { items: enforced, warnings: recipeWarnings } = enforceProjectAiRecipe(data.items, room, catalog);
+    const { placed, warnings: layoutWarnings } = layoutProjectAiItems(enforced);
+    if (placed.length === 0) throw new Error('Nenhum módulo coube nas medidas informadas.');
+
+    // Limpa e recria. Sequencial de propósito: insertProjectModuleDefault faz
+    // várias queries por módulo e resolve profundidade contra os slots que já
+    // estão na parede — em paralelo, a profundidade sairia inconsistente.
+    projectSlots = [];
+    selectedProjectSlotId = null;
+    for (const it of placed) {
+      await insertProjectModuleDefault(it.module_id, {
+        wall_index: it.wall_index,
+        x_mm: it.x_mm,
+        width_mm: it.width_mm,
+        floor_height_mm: it.floor_height_mm
+      });
+    }
+
+    renderProjectCanvas();
+    markProjectDirty();
+    closeProjectAiModal();
+
+    const allWarnings = recipeWarnings.concat(layoutWarnings);
+    showProjectAiResult(data.summary, allWarnings);
+  } catch (err) {
+    setProjectAiError(err.message || String(err));
+  } finally {
+    projectAiRunning = false;
+    setProjectAiStatus('');
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+// O "porquê" do layout + o que precisou ser corrigido. Vai no bloco de erro/
+// aviso que já existe na aba (po-proj-error), não num alert — o cliente
+// precisa poder reler enquanto ajusta os módulos.
+function showProjectAiResult(summary, warnings) {
+  const el = document.getElementById('po-proj-error');
+  if (!el) return;
+  const lines = [];
+  if (summary) lines.push(summary);
+  if (warnings && warnings.length) lines.push('Ajustes automáticos: ' + warnings.join(' '));
+  if (lines.length === 0) return;
+  el.textContent = lines.join(' — ');
+  el.style.display = 'block';
+}
+
+// ---------- Listeners do modal ----------
+
+(function attachProjectAiListeners() {
+  const openBtn = document.getElementById('po-proj-ai-open-btn');
+  if (openBtn) openBtn.addEventListener('click', openProjectAiModal);
+
+  const closeBtn = document.getElementById('po-proj-ai-modal-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeProjectAiModal);
+
+  const cancelBtn = document.getElementById('po-proj-ai-cancel-btn');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeProjectAiModal);
+
+  const runBtn = document.getElementById('po-proj-ai-run-btn');
+  if (runBtn) runBtn.addEventListener('click', runProjectAiGeneration);
+
+  const roomSel = document.getElementById('po-proj-ai-room-select');
+  if (roomSel) roomSel.addEventListener('change', renderProjectAiQuestions);
+
+  // Fecha no clique fora e no Esc — mesmo padrão do modal de busca.
+  const modal = document.getElementById('po-proj-ai-modal');
+  if (modal) {
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeProjectAiModal(); });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal && modal.classList.contains('open') && !projectAiRunning) closeProjectAiModal();
+  });
+})();
 
 // Reabre o configurador já preenchido com a configuração salva de um slot do
 // projeto (clicou "Editar configuração completa" no painel da direita) —
@@ -14552,6 +15159,9 @@ async function showLoggedIn(user) {
   loadCuttingListPricingSettings();
   await loadTaxonomyFilters();
   await loadModules();
+  // Depois de loadModules: refreshProjectAiButton() precisa de allModules
+  // preenchido pra saber se existe módulo com função cadastrada.
+  await loadProjectAiConfig();
   await loadDraftOrderIfAny();
 }
 

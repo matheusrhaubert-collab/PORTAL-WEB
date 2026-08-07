@@ -215,6 +215,257 @@ function fillSelect(selectId, items) {
 }
 
 // ==========================================================================
+// FUNÇÕES DO MÓDULO + RECEITA DO AMBIENTE (migration 080)
+// ==========================================================================
+//
+// Não usa setupLookupCRUD porque essas tabelas têm mais que name+active
+// (key/description/mount_hint), e a receita é uma tabela de ligação com
+// quantidade — o helper genérico não cobre nenhum dos dois sem virar um
+// emaranhado de opções.
+//
+// A `key` é o contrato com o prompt e com o validador do portal: só é
+// editável na CRIAÇÃO. Renomear o `name` depois é livre e não quebra nada.
+
+let moduleFunctionsCache = [];
+let roomTypesCache = [];
+let roomRecipesCache = [];
+
+const MOUNT_TYPE_LABELS = { floor: 'Chão', wall: 'Suspenso', tall: 'Coluna alta' };
+
+async function loadModuleFunctions() {
+  const { data, error } = await supabaseClient
+    .from('module_functions').select('*').order('sort_order').order('name');
+  if (error) { showError('room-ai-error', error); return; }
+  moduleFunctionsCache = data || [];
+  renderModuleFunctions();
+  populateModuleFunctionSelects();
+}
+
+function renderModuleFunctions() {
+  const tbody = document.getElementById('module-functions-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  moduleFunctionsCache.forEach((f) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><code style="font-size:11px;">${f.key}</code></td>
+      <td>${f.name}${f.active ? '' : ' <span class="badge">inativo</span>'}</td>
+      <td>${MOUNT_TYPE_LABELS[f.mount_hint] || '—'}</td>
+      <td>
+        <button type="button" class="secondary" onclick="editModuleFunction('${f.id}')">Editar</button>
+        <button type="button" class="danger" onclick="deleteModuleFunction('${f.id}')">Excluir</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// Popula tanto o <select> do formulário de módulo quanto o da receita.
+function populateModuleFunctionSelects() {
+  const moduleSel = document.getElementById('module-function');
+  if (moduleSel) {
+    const prev = moduleSel.value;
+    moduleSel.innerHTML = '<option value="">— sem função —</option>';
+    moduleFunctionsCache.filter((f) => f.active).forEach((f) => {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = f.name;
+      moduleSel.appendChild(opt);
+    });
+    if (prev) moduleSel.value = prev;
+  }
+  const recipeSel = document.getElementById('room-recipe-function');
+  if (recipeSel) {
+    const prev = recipeSel.value;
+    recipeSel.innerHTML = '';
+    moduleFunctionsCache.filter((f) => f.active).forEach((f) => {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = f.name;
+      recipeSel.appendChild(opt);
+    });
+    if (prev) recipeSel.value = prev;
+  }
+}
+
+window.editModuleFunction = function (id) {
+  const f = moduleFunctionsCache.find((x) => x.id === id);
+  if (!f) return;
+  document.getElementById('module-function-id').value = f.id;
+  document.getElementById('module-function-key').value = f.key;
+  document.getElementById('module-function-key').readOnly = true;
+  document.getElementById('module-function-name').value = f.name;
+  document.getElementById('module-function-mount').value = f.mount_hint || '';
+  document.getElementById('module-function-description').value = f.description || '';
+};
+
+window.deleteModuleFunction = async function (id) {
+  // modules.function_id é "on delete" sem cascade (fica null por não ser
+  // not null? não — a FK é restrita), então avisa em vez de dar erro cru.
+  const usedBy = (modulesCache || []).filter((m) => m.function_id === id).length;
+  const msg = usedBy > 0
+    ? `${usedBy} módulo(s) usam esta função e vão ficar sem função (e fora do gerador por IA). Excluir mesmo assim?`
+    : 'Excluir esta função?';
+  if (!confirm(msg)) return;
+  // Solta os módulos primeiro pra FK não barrar a exclusão.
+  if (usedBy > 0) {
+    const { error: clearErr } = await supabaseClient.from('modules').update({ function_id: null }).eq('function_id', id);
+    if (clearErr) { showError('room-ai-error', clearErr); return; }
+  }
+  const { error } = await supabaseClient.from('module_functions').delete().eq('id', id);
+  if (error) { showError('room-ai-error', error); return; }
+  await loadModuleFunctions();
+  await loadRoomRecipes();
+  await loadModules();
+};
+
+const moduleFunctionForm = document.getElementById('module-function-form');
+if (moduleFunctionForm) {
+  moduleFunctionForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearError('room-ai-error');
+    const id = document.getElementById('module-function-id').value || undefined;
+    // Normaliza a chave (minúscula, sem espaço) — ela vai pro prompt e pro
+    // validador; espaço/acento aqui só gera confusão depois.
+    const rawKey = document.getElementById('module-function-key').value.trim().toLowerCase();
+    const key = rawKey.replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!key) { showError('room-ai-error', 'Chave inválida.'); return; }
+    const maxSort = moduleFunctionsCache.reduce((max, f) => Math.max(max, f.sort_order || 0), 0);
+    const payload = {
+      key,
+      name: document.getElementById('module-function-name').value.trim(),
+      mount_hint: document.getElementById('module-function-mount').value || null,
+      description: document.getElementById('module-function-description').value.trim() || null
+    };
+    if (id) payload.id = id; else payload.sort_order = maxSort + 10;
+    const { error } = await supabaseClient.from('module_functions').upsert(payload);
+    if (error) { showError('room-ai-error', error); return; }
+    e.target.reset();
+    document.getElementById('module-function-id').value = '';
+    document.getElementById('module-function-key').readOnly = false;
+    await loadModuleFunctions();
+  });
+}
+
+// ---------- Ambientes + receita ----------
+
+async function loadRoomTypes() {
+  const { data, error } = await supabaseClient
+    .from('room_types').select('*').order('sort_order').order('name');
+  if (error) { showError('room-ai-error', error); return; }
+  roomTypesCache = data || [];
+  const sel = document.getElementById('room-type-select');
+  if (sel) {
+    const prev = sel.value;
+    sel.innerHTML = '';
+    roomTypesCache.forEach((rt) => {
+      const opt = document.createElement('option');
+      opt.value = rt.id;
+      opt.textContent = rt.name;
+      sel.appendChild(opt);
+    });
+    if (prev && roomTypesCache.some((rt) => rt.id === prev)) sel.value = prev;
+  }
+  await loadRoomRecipes();
+}
+
+function selectedRoomTypeId() {
+  const sel = document.getElementById('room-type-select');
+  return sel ? sel.value : '';
+}
+
+async function loadRoomRecipes() {
+  const roomTypeId = selectedRoomTypeId();
+  if (!roomTypeId) { roomRecipesCache = []; renderRoomRecipes(); return; }
+  const { data, error } = await supabaseClient
+    .from('room_recipes').select('*').eq('room_type_id', roomTypeId).order('priority', { ascending: false });
+  if (error) { showError('room-ai-error', error); return; }
+  roomRecipesCache = data || [];
+  renderRoomRecipes();
+}
+
+function renderRoomRecipes() {
+  const tbody = document.getElementById('room-recipes-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  roomRecipesCache.forEach((r) => {
+    const fn = moduleFunctionsCache.find((f) => f.id === r.function_id);
+    const tr = document.createElement('tr');
+    // Obrigatória (min >= 1) em negrito: é a informação que mais importa
+    // olhando a tabela — é o que o portal vai completar sozinho se faltar.
+    const nameHtml = r.min_qty >= 1
+      ? `<strong>${fn ? fn.name : '(função removida)'}</strong>`
+      : (fn ? fn.name : '(função removida)');
+    tr.innerHTML = `
+      <td>${nameHtml}</td>
+      <td>${r.min_qty}</td>
+      <td>${r.max_qty == null ? '∞' : r.max_qty}</td>
+      <td>${r.priority}</td>
+      <td>
+        <button type="button" class="secondary" onclick="editRoomRecipe('${r.id}')">Editar</button>
+        <button type="button" class="danger" onclick="deleteRoomRecipe('${r.id}')">Excluir</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.editRoomRecipe = function (id) {
+  const r = roomRecipesCache.find((x) => x.id === id);
+  if (!r) return;
+  document.getElementById('room-recipe-id').value = r.id;
+  document.getElementById('room-recipe-function').value = r.function_id;
+  document.getElementById('room-recipe-min').value = r.min_qty;
+  document.getElementById('room-recipe-max').value = r.max_qty == null ? '' : r.max_qty;
+  document.getElementById('room-recipe-priority').value = r.priority;
+  document.getElementById('room-recipe-note').value = r.placement_note || '';
+};
+
+window.deleteRoomRecipe = async function (id) {
+  if (!confirm('Excluir esta linha da receita?')) return;
+  const { error } = await supabaseClient.from('room_recipes').delete().eq('id', id);
+  if (error) { showError('room-ai-error', error); return; }
+  await loadRoomRecipes();
+};
+
+const roomTypeSelectEl = document.getElementById('room-type-select');
+if (roomTypeSelectEl) roomTypeSelectEl.addEventListener('change', () => { loadRoomRecipes(); });
+
+const roomRecipeForm = document.getElementById('room-recipe-form');
+if (roomRecipeForm) {
+  roomRecipeForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearError('room-ai-error');
+    const roomTypeId = selectedRoomTypeId();
+    if (!roomTypeId) { showError('room-ai-error', 'Selecione um ambiente primeiro.'); return; }
+    const maxRaw = document.getElementById('room-recipe-max').value;
+    const payload = {
+      room_type_id: roomTypeId,
+      function_id: document.getElementById('room-recipe-function').value,
+      min_qty: parseInt(document.getElementById('room-recipe-min').value, 10) || 0,
+      max_qty: maxRaw === '' ? null : (parseInt(maxRaw, 10) || 0),
+      priority: parseInt(document.getElementById('room-recipe-priority').value, 10) || 0,
+      placement_note: document.getElementById('room-recipe-note').value.trim() || null
+    };
+    const id = document.getElementById('room-recipe-id').value;
+    if (id) payload.id = id;
+    if (payload.max_qty != null && payload.max_qty < payload.min_qty) {
+      showError('room-ai-error', 'Máximo não pode ser menor que o mínimo.');
+      return;
+    }
+    // onConflict na chave única (room_type_id, function_id) — sem isso,
+    // salvar de novo a mesma função do mesmo ambiente estoura violação de
+    // unique em vez de atualizar a linha existente.
+    const { error } = await supabaseClient
+      .from('room_recipes').upsert(payload, { onConflict: 'room_type_id,function_id' });
+    if (error) { showError('room-ai-error', error); return; }
+    e.target.reset();
+    document.getElementById('room-recipe-id').value = '';
+    await loadRoomRecipes();
+  });
+}
+
+// ==========================================================================
 // Helper genérico: CRUD de catálogo com preço (hinge_models / slide_models /
 // labor_types) — todos têm name + price_per_unit + active.
 // ==========================================================================
@@ -2309,7 +2560,17 @@ function fillModuleFormForEdit(m) {
   document.getElementById('module-decoration').checked = !!m.is_decoration;
   document.getElementById('module-ceiling-clearance-enabled').checked = !!m.ceiling_clearance_enabled;
   document.getElementById('module-ceiling-clearance-mm').value = m.ceiling_clearance_mm || 0;
+  setModuleFunctionFields(m);
   setModuleFormMode(m);
+}
+
+// Função/montagem/dica de IA (migration 080) — extraído porque os DOIS
+// caminhos que preenchem o formulário (editar e duplicar) precisam disso, e
+// a lista de campos tende a crescer.
+function setModuleFunctionFields(m) {
+  document.getElementById('module-function').value = m.function_id || '';
+  document.getElementById('module-mount-type').value = m.mount_type || '';
+  document.getElementById('module-ai-hint').value = m.ai_hint || '';
 }
 
 // Editar (chamado pelos botões da árvore, ver renderModuleConfigTree) também
@@ -2357,6 +2618,7 @@ window.duplicateModule = function (id) {
   document.getElementById('module-decoration').checked = !!m.is_decoration;
   document.getElementById('module-ceiling-clearance-enabled').checked = !!m.ceiling_clearance_enabled;
   document.getElementById('module-ceiling-clearance-mm').value = m.ceiling_clearance_mm || 0;
+  setModuleFunctionFields(m);
   duplicatingFromModuleId = m.id;
   setModuleFormMode(m, 'duplicate');
   showModuleFormTab();
@@ -2452,7 +2714,11 @@ document.getElementById('module-form').addEventListener('submit', async (e) => {
     is_invisible: document.getElementById('module-invisible').checked,
     is_decoration: document.getElementById('module-decoration').checked,
     ceiling_clearance_enabled: document.getElementById('module-ceiling-clearance-enabled').checked,
-    ceiling_clearance_mm: parseFloat(document.getElementById('module-ceiling-clearance-mm').value) || 0
+    ceiling_clearance_mm: parseFloat(document.getElementById('module-ceiling-clearance-mm').value) || 0,
+    // migration 080 — função/montagem/dica de IA
+    function_id: document.getElementById('module-function').value || null,
+    mount_type: document.getElementById('module-mount-type').value || null,
+    ai_hint: document.getElementById('module-ai-hint').value.trim() || null
   };
   if (id) payload.id = id;
   const { data: savedModule, error } = await supabaseClient.from('modules').upsert(payload).select().single();
@@ -7649,6 +7915,11 @@ async function showLoggedIn() {
   await slideModelsCRUD.load();
   await laborTypesCRUD.load();
   await colorRolesCRUD.load(); // antes de loadComponentTypes — o form de tipo de componente já nasce com o <select> de papel populado
+  // migration 080 — funções/receitas precisam vir ANTES de loadModules: o
+  // <select id="module-function"> do formulário de módulo é populado a partir
+  // de moduleFunctionsCache, e a árvore de módulos mostra o nome da função.
+  await loadModuleFunctions();
+  await loadRoomTypes();
   await loadPricingSettings();
   await loadComponentTypes();
   await loadSheetSizes();

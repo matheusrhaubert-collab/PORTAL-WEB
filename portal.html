@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260805a" />
+<link rel="stylesheet" href="css/style.css?v=20260806a" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -291,6 +291,47 @@
         <div class="po-tabbar" id="po-proj-search-filter-subcategory"></div>
       </div>
       <div class="po-proj-search-modal-grid" id="po-proj-search-modal-grid"></div>
+    </div>
+  </div>
+
+  <!-- Questionário do gerador por IA (aba Projetos) — mesmo padrão de overlay
+       do modal de busca acima (.open abre, fecha no X/clique fora/Esc), só
+       que num card estreito, porque é um formulário curto.
+       As perguntas NÃO são fixas no HTML: o <select> de ambiente é populado
+       a partir de room_types (migration 080) e as perguntas específicas
+       aparecem conforme o ambiente escolhido (ver PROJECT_AI_QUESTIONS em
+       portal.js). Assim dá pra ligar closet/escritório depois sem mexer
+       nesta marcação. -->
+  <div id="po-proj-ai-modal">
+    <div class="po-proj-ai-modal-card">
+      <button type="button" class="po-auth-modal-close" id="po-proj-ai-modal-close" aria-label="Fechar">&times;</button>
+      <h2 data-i18n="project.ai_modal_title">Gerar projeto com IA</h2>
+      <p class="hint" data-i18n="project.ai_modal_hint">
+        Responda algumas perguntas e a IA monta uma primeira versão do projeto na parede que você já mediu.
+        Depois é só ajustar arrastando, como sempre.
+      </p>
+
+      <div id="po-proj-ai-form">
+        <div class="dim-field">
+          <label for="po-proj-ai-room-select" data-i18n="project.ai_room_label">Ambiente</label>
+          <select id="po-proj-ai-room-select" class="po-proj-library-filter-select"></select>
+        </div>
+        <!-- Perguntas específicas do ambiente, montadas em JS -->
+        <div id="po-proj-ai-questions"></div>
+      </div>
+
+      <!-- Resumo do que a parede comporta, só pra dar contexto antes de gerar
+           (as medidas vêm dos campos que já existem na tela, não são digitadas
+           de novo aqui — evita duas fontes de verdade pra mesma medida). -->
+      <p class="hint" id="po-proj-ai-walls-summary"></p>
+
+      <div id="po-proj-ai-error" class="error" style="display:none;"></div>
+      <div id="po-proj-ai-status" class="hint" style="display:none;"></div>
+
+      <div class="po-proj-ai-modal-actions">
+        <button type="button" id="po-proj-ai-cancel-btn" class="secondary" data-i18n="common.cancel">Cancelar</button>
+        <button type="button" id="po-proj-ai-run-btn" data-i18n="project.ai_run_btn">Gerar projeto</button>
+      </div>
     </div>
   </div>
 
@@ -1059,6 +1100,15 @@
               <span class="dim-exact-unit" id="po-proj-baseboard-unit"></span>
             </span>
           </div>
+          <!-- Gerador por IA (migration 080) — fica ao lado das medidas de
+               propósito: a ordem natural é medir a parede e AÍ pedir o
+               projeto. O botão só habilita quando existe pelo menos um
+               ambiente com receita cadastrada (ver refreshProjectAiButton em
+               portal.js) — sem receita, gerar não faria sentido. -->
+          <div class="dim-field po-proj-wall-width-field po-proj-ai-field">
+            <label>&nbsp;</label>
+            <button type="button" id="po-proj-ai-open-btn" class="secondary" data-i18n="project.ai_open_btn">✨ Gerar com IA</button>
+          </div>
         </div>
 
         <div class="po-proj-layout">
@@ -1572,6 +1622,6 @@
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
 <script src="js/photoreal.js?v=20260803l"></script>
-<script src="js/portal.js?v=20260803h"></script>
+<script src="js/portal.js?v=20260806b"></script>
 </body>
 </html>
