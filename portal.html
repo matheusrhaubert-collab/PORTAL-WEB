@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608082321" />
+<link rel="stylesheet" href="css/style.css?v=202608082358" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1196,21 +1196,28 @@
                  depth_mm de cada módulo (ver computeProjectSlotsTopViewLayout
                  em portal.js), só pra dar uma ideia aproximada de como os
                  módulos ficam empilhados da parede pra fora. -->
-            <div class="po-proj-view-toggle po-view-toggle">
-              <button type="button" class="po-view-toggle-btn active" id="po-proj-view-front-btn" data-i18n="project.view_front_btn">Frontal</button>
-              <button type="button" class="po-view-toggle-btn" id="po-proj-view-top-btn" data-i18n="project.view_top_btn">Superior</button>
-            </div>
-            <!-- Ferramentas da cena 3D (2026-08-08) — ver attachProject3DEditDrag
-                 em portal.js.
-                 · Colisão: quando ligado, arrastar um módulo o faz PARAR
-                   encostado no vizinho (lateral, acima e abaixo) em vez de
-                   atravessá-lo. Escolha explícita do usuário entre "para
-                   encostado", "empurra o vizinho" e "só avisa em vermelho".
+            <!-- Barra ÚNICA de controles do canvas (2026-08-08, 2ª rodada —
+                 pedido do usuário: "ambos os botoes front top, collison and
+                 rotate camera podem ficar na mesma linha"). Antes eram duas
+                 linhas empilhadas, o que roubava altura útil do canvas 3D
+                 justamente no iPad, onde a tela é mais curta. Tudo numa faixa
+                 só, com flex-wrap pra quebrar sozinho em tela estreita.
+                 · Voltar: desfaz a última alteração do projeto (ver
+                   projectUndoStack em portal.js). Fica primeiro e separado por
+                   uma divisória — é uma ação, não um modo.
+                 · Colisão: ligado, arrastar um módulo o faz PARAR encostado no
+                   vizinho (lateral, acima e abaixo) em vez de atravessá-lo.
                  · Girar câmera: só aparece em tela de TOQUE (iPad). Modo
-                   travado (liga/desliga, também escolha do usuário): aceso, o
-                   dedo orbita/dá zoom; apagado ("tela travada"), o dedo edita
-                   os módulos e nunca move a câmera sem querer. -->
+                   travado: aceso, o dedo orbita/dá zoom; apagado ("tela
+                   travada"), o dedo edita os módulos. -->
             <div class="po-proj-canvas-tools" id="po-proj-canvas-tools">
+              <button type="button" class="po-proj-tool-btn" id="po-proj-undo-btn" disabled
+                      data-i18n="project.undo_btn" data-i18n-title="project.undo_title">↩ Voltar</button>
+              <span class="po-proj-tools-sep"></span>
+              <div class="po-proj-view-toggle po-view-toggle">
+                <button type="button" class="po-view-toggle-btn active" id="po-proj-view-front-btn" data-i18n="project.view_front_btn">Frontal</button>
+                <button type="button" class="po-view-toggle-btn" id="po-proj-view-top-btn" data-i18n="project.view_top_btn">Superior</button>
+              </div>
               <button type="button" class="po-proj-tool-btn" id="po-proj-collision-btn"
                       data-i18n="project.collision_btn" data-i18n-title="project.collision_title">Colisão</button>
               <button type="button" class="po-proj-tool-btn" id="po-proj-camera-btn" style="display:none;"
@@ -1682,13 +1689,13 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608082321"></script>
-<script src="js/pricing.js?v=202608082321"></script>
-<script src="js/viewer3d.js?v=202608082321"></script>
-<script src="js/viewer3d_composition.js?v=202608082321"></script>
+<script src="js/i18n.js?v=202608082358"></script>
+<script src="js/pricing.js?v=202608082358"></script>
+<script src="js/viewer3d.js?v=202608082358"></script>
+<script src="js/viewer3d_composition.js?v=202608082358"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608082321"></script>
-<script src="js/portal.js?v=202608082321"></script>
+<script src="js/photoreal.js?v=202608082358"></script>
+<script src="js/portal.js?v=202608082358"></script>
 </body>
 </html>

@@ -2495,14 +2495,27 @@ header.po-topnav {
 .po-proj-ai-field button { width: 100%; white-space: nowrap; }
 
 .po-proj-canvas-outer { min-width: 0; }
-.po-proj-view-toggle { margin: 0 auto 4px; width: fit-content; }
+/* Frontal/Superior agora mora DENTRO da barra única (.po-proj-canvas-tools),
+   então não centraliza mais sozinho — quem centraliza é a barra. */
+.po-proj-view-toggle { margin: 0; width: fit-content; }
 
-/* Ferramentas da cena 3D (2026-08-08): Colisão + Girar câmera (iPad).
-   Mesma linguagem visual do .po-view-toggle logo acima (pílula discreta que
-   acende quando ligada) pra não competir com a troca Frontal/Superior. */
+/* Barra única de controles do canvas (2026-08-08, 2ª rodada): Voltar +
+   Frontal/Superior + Colisão + Girar câmera na MESMA linha (pedido do usuário
+   pro iPad, onde duas linhas empilhadas comiam altura do canvas).
+   align-items:center alinha o grupo Frontal/Superior (que é mais alto, tem
+   borda própria) com os botões soltos; flex-wrap deixa quebrar sozinho em
+   tela estreita em vez de estourar a largura. */
 .po-proj-canvas-tools {
-  display: flex; gap: 6px; justify-content: center; margin: 0 auto 4px; width: fit-content;
+  display: flex; gap: 6px; justify-content: center; align-items: center;
+  flex-wrap: wrap; margin: 0 auto 4px; width: fit-content; max-width: 100%;
 }
+/* Divisória fina separando a AÇÃO (Voltar) dos MODOS (o resto). */
+.po-proj-tools-sep {
+  width: 1px; align-self: stretch; min-height: 20px;
+  background: var(--border); margin: 0 2px;
+}
+.po-proj-tool-btn:disabled { opacity: 0.4; cursor: default; }
+.po-proj-tool-btn:disabled:hover { background: var(--panel); }
 .po-proj-tool-btn {
   background: var(--panel); color: var(--muted);
   border: 1px solid var(--border); border-radius: 8px;
@@ -2514,6 +2527,25 @@ header.po-topnav {
 /* Card da biblioteca sendo ARRASTADO pra dentro da cena (ver
    attachProjectLibraryDragToScene em portal.js) — o card original fica
    apagado e um "fantasma" preso ao dedo/cursor é criado em JS. */
+/* SELEÇÃO DE TEXTO no arraste (2026-08-08, relato do usuário no iPad: "ao
+   arrastar o modulo ele seleciona tudo que esta atras, fica azul"). Não era
+   bug de 3D nenhum: é a seleção NATIVA do navegador. Um arraste longo com o
+   dedo/mouse por cima de uma tela cheia de texto (nomes dos módulos, painel de
+   config, biblioteca) faz o iOS/Safari começar a selecionar tudo no caminho e
+   pintar de azul. Como NENHUM texto da aba Projetos é pra ser selecionado com
+   o dedo, a aba inteira desliga seleção e o menu de "copiar/definir" do toque
+   longo do iOS (-webkit-touch-callout). Campos de digitação são reabertos
+   logo abaixo — sem isso, digitar uma medida no painel ficaria impossível. */
+#po-tab-projects {
+  -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+#po-tab-projects input,
+#po-tab-projects textarea,
+#po-tab-projects select {
+  -webkit-user-select: text; -moz-user-select: text; -ms-user-select: text; user-select: text;
+}
+
 /* pan-y: o navegador continua rolando a lista na vertical sozinho; o
    movimento HORIZONTAL chega até o JS e vira o arraste do módulo pra dentro
    da cena (ver attachProjectLibraryCardDrag). */

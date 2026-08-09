@@ -9653,7 +9653,132 @@ let projectSlotIdSeq = 0;
 // resetProject). Usado pra avisar antes de trocar de aba com edição perdida
 // (ver o listener de .portal-tab-btn, mais abaixo no arquivo).
 let projectDirty = false;
-function markProjectDirty() { projectDirty = true; }
+function markProjectDirty() {
+  projectDirty = true;
+  // Desfazer (2026-08-08) — markProjectDirty já é o ponto por onde TODA
+  // alteração real do projeto passa (é uma regra do arquivo, ver memória:
+  // "novo ponto de mutação precisa lembrar de chamar markProjectDirty"), então
+  // é o gancho natural do histórico em vez de espalhar um pushUndo() por ~20
+  // call-sites. Ver pushProjectUndoState.
+  pushProjectUndoState();
+}
+
+// ==========================================================================
+// DESFAZER (botão "Voltar") — 2026-08-08
+// ==========================================================================
+// Pedido do usuário: "colocar botao voltar nas modificacoes do projeto".
+//
+// COMO FUNCIONA, e por que não é um "pushUndo() antes de cada mutação":
+// markProjectDirty() roda DEPOIS da alteração, não antes — então não dá pra
+// tirar a foto do estado anterior de dentro dele. A saída é manter uma
+// "linha de base" (projectUndoBaseline) com a foto do estado ATUAL, sempre
+// atualizada: quando uma alteração acontece, a baseline ainda guarda o mundo
+// de ANTES — é ela que vai pra pilha, e só então uma foto nova é tirada.
+//
+// COALESCÊNCIA: esticar um módulo arrastando dispara markProjectDirty a cada
+// pointermove (updateProjectSlotDimension re-renderiza a cada frame). Sem
+// agrupar, um único gesto encheria a pilha de dezenas de passos e o botão
+// Voltar andaria 1 pixel por clique. Alterações separadas por menos de
+// PROJECT_UNDO_COALESCE_MS contam como UM passo: a baseline avança, mas nada
+// novo é empilhado — o topo da pilha continua sendo o estado de antes do
+// gesto inteiro.
+//
+// A foto NÃO passa por serializeProjectSlots/restore (que refaz busca de
+// peças/cores no banco, é async e troca de aba): clona só os campos MUTÁVEIS
+// de cada slot e compartilha por referência o que é catálogo imutável
+// (module/pieces/colorOptionsByRole/hingeModel/slideModel). Resultado: desfazer
+// é instantâneo e não toca a rede.
+const PROJECT_UNDO_MAX = 40;
+const PROJECT_UNDO_COALESCE_MS = 600;
+let projectUndoStack = [];
+let projectUndoBaseline = null;
+let projectUndoLastPushAt = 0;
+
+function cloneProjectSlotForUndo(slot) {
+  return {
+    ...slot,
+    // Containers MUTADOS NO LUGAR em algum ponto do arquivo (push/atribuição
+    // por índice/chave) — precisam de cópia própria, senão a foto mudaria
+    // junto com o original e o desfazer não desfaria nada.
+    selectedColors: (slot.selectedColors || []).map((c) => ({ ...c })),
+    colorsByRole: { ...(slot.colorsByRole || {}) },
+    shelfQuantities: { ...(slot.shelfQuantities || {}) },
+    dimOverrides: { ...(slot.dimOverrides || {}) },
+    pieceColorOverrides: JSON.parse(JSON.stringify(slot.pieceColorOverrides || {})),
+    selectedOptionalIds: (slot.selectedOptionalIds || []).slice(),
+    widthPresetsMm: (slot.widthPresetsMm || []).slice(),
+    heightPresetsMm: (slot.heightPresetsMm || []).slice()
+  };
+}
+
+function projectUndoSnapshot() {
+  return {
+    slots: projectSlots.map(cloneProjectSlotForUndo),
+    wallShape: projectWallShape,
+    wallWidthsMm: projectWallWidthsMm.slice(),
+    activeWallIndex: projectActiveWallIndex,
+    selectedSlotId: selectedProjectSlotId
+  };
+}
+
+function pushProjectUndoState() {
+  const now = Date.now();
+  if (projectUndoBaseline) {
+    if (now - projectUndoLastPushAt >= PROJECT_UNDO_COALESCE_MS) {
+      projectUndoStack.push(projectUndoBaseline);
+      if (projectUndoStack.length > PROJECT_UNDO_MAX) projectUndoStack.shift();
+      projectUndoLastPushAt = now;
+    }
+  } else {
+    // Primeiríssima alteração desta sessão de edição sem baseline (não
+    // deveria acontecer — resetProjectUndo tira a foto inicial —, mas se
+    // acontecer é melhor não ter passo nenhum do que empilhar lixo).
+    projectUndoLastPushAt = now;
+  }
+  projectUndoBaseline = projectUndoSnapshot();
+  refreshProjectUndoButton();
+}
+
+// Zera o histórico e tira a foto inicial — chamado quando o projeto TROCA por
+// inteiro (carregar da lista, resetar, restaurar da galeria): o que veio antes
+// não é mais "alteração deste projeto", é outro projeto.
+function resetProjectUndo() {
+  projectUndoStack = [];
+  projectUndoLastPushAt = 0;
+  projectUndoBaseline = projectUndoSnapshot();
+  refreshProjectUndoButton();
+}
+
+function refreshProjectUndoButton() {
+  const btn = document.getElementById('po-proj-undo-btn');
+  if (btn) btn.disabled = projectUndoStack.length === 0;
+}
+
+function undoProjectChange() {
+  const prev = projectUndoStack.pop();
+  if (!prev) return;
+  projectSlots = prev.slots.map(cloneProjectSlotForUndo);
+  projectWallShape = prev.wallShape;
+  projectWallWidthsMm = prev.wallWidthsMm.slice();
+  projectActiveWallIndex = Math.min(prev.activeWallIndex, getProjectWallCount() - 1);
+  selectedProjectSlotId = prev.slots.some((s) => s.id === prev.selectedSlotId) ? prev.selectedSlotId : null;
+
+  // A foto volta a ser o estado restaurado, e o relógio da coalescência é
+  // zerado — a PRÓXIMA alteração vira um passo novo na hora, sem ser
+  // agrupada com o que veio antes do desfazer.
+  projectUndoBaseline = projectUndoSnapshot();
+  projectUndoLastPushAt = 0;
+
+  persistProjectWallConfig();
+  refreshProjectWallShapeButtons();
+  refreshProjectWallTabs();
+  refreshProjectWallWidthInput();
+  project3DLastFitKey = null; // o ambiente pode ter mudado de forma — reenquadra
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  refreshProjectUndoButton();
+  projectDirty = true; // desfazer também é uma diferença em relação ao que está salvo
+}
 
 // Alternância Frontal/Superior do canvas 2D (pedido do usuário, 2026-07-24:
 // "temos visao frontal. quero uma visao de cima, paralela, com um botao em
@@ -9787,6 +9912,12 @@ function refreshProjectWallWidthInput() {
   }
 }
 refreshProjectWallWidthInput();
+// Foto inicial do histórico de desfazer. Roda AQUI (e não junto da definição
+// de resetProjectUndo, lá em cima) porque a foto lê projectWallShape/
+// projectWallWidthsMm/projectActiveWallIndex — que só existem a partir deste
+// ponto do arquivo. Sem esta chamada, a PRIMEIRA alteração de cada sessão não
+// teria estado anterior guardado e ficaria impossível de desfazer.
+resetProjectUndo();
 
 function refreshProjectWallShapeButtons() {
   [
@@ -9943,6 +10074,21 @@ function attachProjectSlotResizeHandle(handleEl, slot, axis) {
       startHeightMm: Number(slot.height_mm || 0)
     };
     handleEl.classList.add('dragging');
+  });
+
+  // DUPLO clique na setinha: estica até encostar no vizinho (2026-08-08 — o
+  // pedido veio marcado como AMBOS, então vale também aqui na vista Frontal 2D
+  // de parede única, não só nas setas 3D). Aqui dá pra usar o 'dblclick'
+  // nativo: o alvo é um elemento DOM de verdade (na cena 3D não é, por isso lá
+  // a detecção é na mão). O pointerdown acima já terá armado um arraste; como
+  // o ponteiro não se moveu, esse arraste não mudou nada — cancelar aqui evita
+  // que o pointerup seguinte o dê por concluído por cima do esticão.
+  handleEl.addEventListener('dblclick', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    projectResizeDragState = null;
+    handleEl.classList.remove('dragging');
+    stretchProjectSlotToCollision(slot, axis);
   });
 }
 
@@ -10353,6 +10499,9 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
     st.ghost.style.left = ev.clientX + 'px';
     st.ghost.style.top = ev.clientY + 'px';
     highlightProjectDropTarget(ev.clientX, ev.clientY);
+    // Contorno vermelho DENTRO da cena mostrando onde o móvel vai parar —
+    // ver updateProjectDropPreview.
+    updateProjectDropPreview(moduleRow, ev.clientX, ev.clientY);
   });
 
   const endLibDrag = (ev) => {
@@ -10362,6 +10511,7 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
     if (st.ghost && st.ghost.parentNode) st.ghost.parentNode.removeChild(st.ghost);
     card.classList.remove('dragging-to-scene');
     highlightProjectDropTarget(null, null);
+    if (ViewerProjectEdit && ViewerProjectEdit.setDropPreview) ViewerProjectEdit.setDropPreview(null);
     if (ev.type === 'pointercancel') return;
     if (!st.moved) {
       // Não passou do limiar: é um clique normal, comportamento de sempre.
@@ -10379,6 +10529,71 @@ function buildProjectDragGhost(moduleRow) {
   ghost.className = 'po-proj-drag-ghost';
   ghost.innerHTML = `${moduleCardImage(moduleRow)}<div>${moduleRow.name}</div>`;
   return ghost;
+}
+
+// Contorno vermelho DENTRO da cena 3D marcando onde o módulo vai parar se o
+// arraste terminar agora (pedido do usuário 2026-08-08: "mostrar a area
+// vermelha... mostrando onde vai ficar o movel apos soltar o clique").
+//
+// Usa as medidas PADRÃO do catálogo (width_default_mm etc.) porque as medidas
+// finais só existem depois do insert (que clampa por min/max e pelo pé
+// direito) — pro objetivo aqui, que é mostrar POSIÇÃO, a diferença é
+// irrelevante e não custa uma ida ao banco a cada pointermove.
+//
+// A geometria de destino é calculada com a MESMA régua do drop de verdade
+// (dropProjectModuleAt): piso vira ilha centrada no ponto; parede vira módulo
+// centrado no ponto, na altura onde o ponteiro cruzou o plano dela.
+function updateProjectDropPreview(moduleRow, clientX, clientY) {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.setDropPreview) return;
+  const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  if (!edit3dWrap || edit3dWrap.offsetParent === null) { ViewerProjectEdit.setDropPreview(null); return; }
+  const r = edit3dWrap.getBoundingClientRect();
+  if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) {
+    ViewerProjectEdit.setDropPreview(null);
+    return;
+  }
+
+  const wM = Number(moduleRow.width_default_mm || 0) / 1000;
+  const hM = Number(moduleRow.height_default_mm || 0) / 1000;
+  const dM = Number(moduleRow.depth_default_mm || 0) / 1000;
+
+  const surface = ViewerProjectEdit.pickRoomSurfaceAt
+    ? ViewerProjectEdit.pickRoomSurfaceAt(clientX, clientY)
+    : null;
+
+  if (surface && surface.kind === 'floor') {
+    ViewerProjectEdit.setDropPreview({
+      width_m: wM, height_m: hM, depth_m: dM,
+      position: { x: surface.point.x, y: 0, z: surface.point.z },
+      rotationY: 0
+    });
+    return;
+  }
+
+  const wallIndex = (surface && Number.isFinite(Number(surface.wallIndex)))
+    ? Number(surface.wallIndex)
+    : projectActiveWallIndex;
+  const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
+  if (!wallGeo) { ViewerProjectEdit.setDropPreview(null); return; }
+  const p = ViewerProjectEdit.intersectPlaneAtClient(
+    clientX, clientY,
+    { x: wallGeo.originX, y: 0, z: wallGeo.originZ },
+    { x: wallGeo.intoDirX, y: 0, z: wallGeo.intoDirZ }
+  );
+  if (!p) { ViewerProjectEdit.setDropPreview(null); return; }
+  const alongM = (p.x - wallGeo.originX) * wallGeo.alongDirX + (p.z - wallGeo.originZ) * wallGeo.alongDirZ;
+  // Mesma recentralização do drop real: o ponteiro fica no MEIO do módulo.
+  const baseY = Math.max(0, p.y - hM / 2);
+  const depthOffM = dM / 2;
+  ViewerProjectEdit.setDropPreview({
+    width_m: wM, height_m: hM, depth_m: dM,
+    position: {
+      x: wallGeo.originX + wallGeo.alongDirX * alongM + wallGeo.intoDirX * depthOffM,
+      y: baseY,
+      z: wallGeo.originZ + wallGeo.alongDirZ * alongM + wallGeo.intoDirZ * depthOffM
+    },
+    rotationY: wallGeo.rotationY
+  });
 }
 
 // Acende o contorno tracejado no canvas que receberia o módulo se soltasse
@@ -11639,24 +11854,40 @@ function snapProjectEdge(rawEdgeMm, isXAxis, otherSlots, snapMmOverride) {
   return best;
 }
 
+// Sobreposição de dois retângulos. Ficou SEM CHAMADOR em 2026-08-08 (era usada
+// só por resolveProjectSlotDepth, cuja regra foi desligada — ver lá). Mantida
+// porque é a única definição de "sobrepõe" do arquivo e a colisão/Vista
+// Superior podem precisar dela de novo; a colisão de hoje usa a sua própria
+// conta com folga (EPS) em resolveCollisionSlide, que não serve pra um teste
+// booleano puro.
 function projectRectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-// Profundidade: ao soltar o módulo, se a posição final SOBREPÕE (de
-// verdade, não só encostada — ver projectRectsOverlap) outro módulo já no
-// ambiente, ele vira a camada mais à frente entre os que ele toca. Sem
-// sobreposição nenhuma, volta a ficar encostado na parede (z_order 0) —
-// pedido do usuário: "ao colocar um modulo na frente do outro, ele deve
-// levar o modulo novo pra frente".
-function resolveProjectSlotDepth(slot, otherSlots) {
-  const rectA = { x: slot.x_mm, w: slot.width_mm, y: slot.floor_height_mm, h: slot.height_mm };
-  let maxOverlapZ = -1;
-  otherSlots.forEach((s) => {
-    const rectB = { x: s.x_mm, w: s.width_mm, y: s.floor_height_mm, h: s.height_mm };
-    if (projectRectsOverlap(rectA, rectB)) maxOverlapZ = Math.max(maxOverlapZ, Number(s.z_order || 0));
-  });
-  slot.z_order = maxOverlapZ >= 0 ? maxOverlapZ + 1 : 0;
+// Profundidade (z_order) — REGRA DESLIGADA em 2026-08-08.
+//
+// Como era: ao soltar um módulo, se a posição final SOBREPUSESSE outro módulo
+// da mesma parede, ele virava a camada mais à frente entre os que tocava
+// (z_order+1), e o 3D empurrava ele pra fora da parede em degraus de
+// FREEFORM_DEPTH_STEP_M (6cm). Nasceu de um pedido antigo ("ao colocar um
+// modulo na frente do outro, ele deve levar o modulo novo pra frente").
+//
+// Por que saiu: pedido do usuário 2026-08-08 — "eliminar a regra que afasta da
+// parede quando mexe algum modulo se ja tiver um". Na prática, encostar dois
+// módulos (o caso NORMAL de um projeto de marcenaria) era detectado como
+// sobreposição em algum momento do arraste e o móvel "pulava" pra frente da
+// parede sozinho, saindo do lugar onde vai ser instalado de verdade. Agora
+// TODO módulo de parede fica encostado na parede, sempre.
+//
+// A função continua existindo (e sendo chamada nos mesmos ~8 lugares) em vez
+// de sair fora: `z_order` ainda é serializado, ainda é lido pelos dois viewers
+// e pelo photoreal.js, e a Vista Superior deriva profundidade dele. Zerar aqui,
+// num ponto só, garante que qualquer caminho que "resolvia" profundidade agora
+// aterrissa em 0 — inclusive projeto ANTIGO salvo com z_order alto, que se
+// corrige sozinho no primeiro movimento (e renderProjectCanvas zera de saída,
+// ver lá, pra projeto antigo já ABRIR encostado na parede).
+function resolveProjectSlotDepth(slot /* , otherSlots */) {
+  slot.z_order = 0;
 }
 
 // ==========================================================================
@@ -11815,6 +12046,21 @@ function applyProjectViewerControls() {
   const enabled = projectIsTouchDevice() ? projectCameraModeOn : true;
   ViewerProjectEdit.setControlsEnabled(enabled);
 }
+
+const projUndoBtn = document.getElementById('po-proj-undo-btn');
+if (projUndoBtn) projUndoBtn.addEventListener('click', () => undoProjectChange());
+// Ctrl+Z / ⌘Z também desfazem — mas só com a aba Projetos aberta e fora de
+// qualquer campo de texto (senão roubaria o desfazer nativo de quem está
+// digitando uma medida).
+document.addEventListener('keydown', (ev) => {
+  if (!(ev.ctrlKey || ev.metaKey) || ev.key !== 'z' || ev.shiftKey) return;
+  const tab = document.getElementById('po-tab-projects');
+  if (!tab || tab.style.display === 'none') return;
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+  ev.preventDefault();
+  undoProjectChange();
+});
 
 const projCollisionBtn = document.getElementById('po-proj-collision-btn');
 if (projCollisionBtn) {
@@ -12535,7 +12781,14 @@ function renderProjectCanvas() {
   if (!canvas || !wrap) return;
 
   const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
-  projectSlots.forEach((slot) => clampProjectSlotPosition(slot));
+  projectSlots.forEach((slot) => {
+    clampProjectSlotPosition(slot);
+    // z_order sempre 0 — a regra de "afastar da parede quando sobrepõe" foi
+    // desligada (ver resolveProjectSlotDepth). Zerar aqui, e não só no
+    // resolve, é o que faz um projeto ANTIGO (salvo com módulos em camadas)
+    // já ABRIR com tudo encostado na parede, sem precisar mexer em cada um.
+    slot.z_order = 0;
+  });
 
   if (projectViewMode === 'top') {
     renderProjectCanvasTop(canvas, wrap, dimsLabel, unit);
@@ -13194,9 +13447,13 @@ function classifyProject3DGrab(slot, grabAlongMm, grabHeightMm) {
 const PROJECT_ARROW_GAP_M = 0.06; // folga entre a face do módulo e o início da seta
 function refreshProject3DResizeArrows() {
   if (!ViewerProjectEdit || !ViewerProjectEdit.setResizeArrows) return;
-  // Setas só no TOQUE (o mouse já tem o agarre de borda + cursor) e só com um
-  // módulo selecionado.
-  const slot = (projectIsTouchDevice() && selectedProjectSlotId != null)
+  // Setas em TODO dispositivo (mudou em 2026-08-08, 2ª rodada). Nasceram só
+  // pro toque, mas o pedido "nas setas, 2 cliques" veio marcado como AMBOS —
+  // e no mouse a única forma de esticar era agarrar a borda invisível do
+  // módulo (classifyProject3DGrab), coisa que ninguém descobre sem ser
+  // avisado. Com alça visível, o gesto fica igual nos dois e o duplo clique
+  // tem onde acontecer. O agarre de borda continua funcionando em paralelo.
+  const slot = (selectedProjectSlotId != null)
     ? projectSlots.find((s) => s.id === selectedProjectSlotId)
     : null;
   if (!slot || projectCameraModeOn) { ViewerProjectEdit.setResizeArrows(null); return; }
@@ -13262,6 +13519,94 @@ function refreshProject3DResizeArrows() {
   ViewerProjectEdit.setResizeArrows(spec);
 }
 
+// ==========================================================================
+// ESTICAR ATÉ ENCOSTAR (duplo clique na seta) — 2026-08-08
+// ==========================================================================
+// Pedido do usuário: "nas setas, quando dar 2 cliques na seta, o modulo pode
+// ir ate encostar na primeira colisao. se tiver recurso de chegar ate la" —
+// confirmado por pergunta que é ESTICAR (não andar): a borda daquele lado
+// cresce até tocar o vizinho, "preenchendo o vão". O "se tiver recurso" está
+// respeitado de graça: quem aplica a medida é updateProjectSlotDimension /
+// updateProjectSlotWidthFromLeft, que já clampam no min/max do módulo (e a
+// altura também no pé direito) — pedir 3m numa peça que vai até 900mm resulta
+// em 900mm, não em erro.
+//
+// "Primeira colisão" = a borda mais próxima, NAQUELE sentido, entre os módulos
+// da mesma parede cuja faixa perpendicular se cruza com a deste (dois móveis
+// em alturas que não se cruzam não se estorvam), com a própria parede como
+// último obstáculo. Independe do botão Colisão estar ligado: aqui o usuário
+// pediu explicitamente pra encostar, não é uma trava de arraste.
+const PROJECT_TOUCH_GAP_EPS_MM = 0.5;
+function stretchProjectSlotToCollision(slot, axis) {
+  // Ilha no chão fica de fora: "vão até o vizinho" pressupõe uma parede como
+  // régua e vizinhos alinhados nela — solto no meio do ambiente isso não
+  // existe. Esticar ilha continua sendo arrastando a seta ou pelo painel.
+  if (isFloorSlot(slot)) return false;
+
+  const others = projectSlotsSameWallExcluding(slot);
+  const x0 = Number(slot.x_mm || 0);
+  const w = Number(slot.width_mm || 0);
+  const y0 = Number(slot.floor_height_mm || 0);
+  const h = Number(slot.height_mm || 0);
+  const wallWidthMm = getProjectWallWidthMm(Number(slot.wall_index || 0));
+  // Faixas que se cruzam: só conta como obstáculo quem divide altura com este
+  // módulo (pros eixos de largura) ou divide largura com ele (pro eixo da
+  // altura). EPS evita que um vizinho apenas ENCOSTADO na borda conte como
+  // sobreposição de faixa.
+  const sharesRow = (s) => (y0 < Number(s.floor_height_mm || 0) + Number(s.height_mm || 0) - PROJECT_TOUCH_GAP_EPS_MM)
+    && (y0 + h > Number(s.floor_height_mm || 0) + PROJECT_TOUCH_GAP_EPS_MM);
+  const sharesColumn = (s) => (x0 < Number(s.x_mm || 0) + Number(s.width_mm || 0) - PROJECT_TOUCH_GAP_EPS_MM)
+    && (x0 + w > Number(s.x_mm || 0) + PROJECT_TOUCH_GAP_EPS_MM);
+
+  if (axis === 'width-right') {
+    let limit = wallWidthMm;
+    others.forEach((s) => {
+      if (!sharesRow(s)) return;
+      const left = Number(s.x_mm || 0);
+      if (left >= x0 + w - PROJECT_TOUCH_GAP_EPS_MM) limit = Math.min(limit, left);
+    });
+    const target = limit - x0;
+    if (!(target > 0)) return false;
+    updateProjectSlotDimension(slot, 'width', target);
+    return true;
+  }
+
+  if (axis === 'width-left') {
+    let limit = 0;
+    others.forEach((s) => {
+      if (!sharesRow(s)) return;
+      const right = Number(s.x_mm || 0) + Number(s.width_mm || 0);
+      if (right <= x0 + PROJECT_TOUCH_GAP_EPS_MM) limit = Math.max(limit, right);
+    });
+    // A borda DIREITA fica ancorada (é o outro lado que anda) — mesma
+    // convenção de updateProjectSlotWidthFromLeft, que recebe a largura nova.
+    const target = (x0 + w) - limit;
+    if (!(target > 0)) return false;
+    updateProjectSlotWidthFromLeft(slot, target);
+    return true;
+  }
+
+  if (axis === 'height-top') {
+    // Sem vizinho acima, o limite é o teto útil — updateProjectSlotDimension
+    // já aplica essa mesma régua (pé direito − afastamento − rodapé) sozinho,
+    // então pedir Infinity aqui é seguro e evita duplicar a fórmula.
+    let limit = Infinity;
+    others.forEach((s) => {
+      if (!sharesColumn(s)) return;
+      const bottom = Number(s.floor_height_mm || 0);
+      if (bottom >= y0 + h - PROJECT_TOUCH_GAP_EPS_MM) limit = Math.min(limit, bottom);
+    });
+    const target = (limit === Infinity)
+      ? Number(slot.module.height_max_mm || 0) || 100000
+      : limit - y0;
+    if (!(target > 0)) return false;
+    updateProjectSlotDimension(slot, 'height', target);
+    return true;
+  }
+
+  return false;
+}
+
 // Ponto onde o raio do ponteiro cruza o PISO (plano y=0), em mm de mundo —
 // base do arraste de módulo ILHA e do "soltar no chão" (biblioteca / toque
 // longo). Devolve null se o ponteiro estiver apontando pro céu.
@@ -13316,6 +13661,14 @@ function attachProject3DEditDrag() {
   const ROOM_DOUBLE_TAP_MS = 320;
   const ROOM_DOUBLE_TAP_PX = 30;
 
+  // Último toque numa SETA de redimensionamento — duplo clique na mesma seta
+  // estica o módulo até encostar no vizinho (2026-08-08, ver
+  // stretchProjectSlotToCollision). Janela um pouco mais larga que a do duplo
+  // toque no ambiente: aqui o alvo é pequeno e a 2ª batida costuma demorar
+  // mais a acertar.
+  let lastArrowTap = null;
+  const ARROW_DOUBLE_TAP_MS = 400;
+
   // "Segurar" em cima de um módulo — o significado do gesto MUDOU no toque
   // (pedido do usuário 2026-08-08): "IPAD - clique longo, (tira a opcao de
   // mostrar preferencias) ele pode ser arrastado de uma parede pra outra ou
@@ -13364,6 +13717,22 @@ function attachProject3DEditDrag() {
       const arrowSlot = projectSlots.find((s) => s.id === selectedProjectSlotId);
       if (arrowSlot) {
         ev.preventDefault();
+        // DUPLO clique/toque na MESMA seta: estica até encostar no vizinho
+        // (2026-08-08 — ver stretchProjectSlotToCollision). Detectado aqui no
+        // pointerdown, e não por um listener 'dblclick', porque o dblclick não
+        // é confiável em toque no iOS e porque precisamos saber QUAL seta foi
+        // atingida (informação que só o raycaster tem).
+        const nowArrow = Date.now();
+        if (lastArrowTap && lastArrowTap.axis === arrowHit.axis
+          && lastArrowTap.slotId === arrowSlot.id
+          && nowArrow - lastArrowTap.t <= ARROW_DOUBLE_TAP_MS) {
+          lastArrowTap = null;
+          projectDrag3DState = null;
+          clearHold3DTimer();
+          stretchProjectSlotToCollision(arrowSlot, arrowHit.axis);
+          return;
+        }
+        lastArrowTap = { t: nowArrow, axis: arrowHit.axis, slotId: arrowSlot.id };
         try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
         projectDrag3DState = {
           pointerId: ev.pointerId,
@@ -14870,6 +15239,7 @@ function resetProject() {
   project3DLastFitKey = null; // força reenquadrar a câmera 3D no próximo render (ver comentário na declaração)
   renderProjectCanvas();
   projectDirty = false; // ambiente esvaziado de propósito, não é uma alteração pendente de salvar
+  resetProjectUndo();    // projeto TROCOU inteiro — histórico anterior não é mais "alteração deste projeto"
 }
 const projResetBtn = document.getElementById('po-proj-reset-btn');
 if (projResetBtn) projResetBtn.addEventListener('click', resetProject);
@@ -15607,6 +15977,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     refreshProjectFavoriteButtons();
     renderProjectCanvas();
     projectDirty = false; // acabou de carregar do banco, nada pendente ainda
+    resetProjectUndo();    // projeto TROCOU inteiro — ver comentário em resetProjectUndo
 
     const statusEl = document.getElementById('po-proj-fav-status');
     if (statusEl) {

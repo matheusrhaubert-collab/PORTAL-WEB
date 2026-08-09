@@ -312,6 +312,53 @@ function createViewerComposition3D() {
     return mesh;
   }
 
+  // GRADE do piso (pedido do usuário 2026-08-08: "deixa o piso visivel, tipo um
+  // grid"). O piso sólido sozinho é uma mancha lisa de uma cor só — não dá
+  // noção de escala nem de distância, e num render em perspectiva chega a
+  // parecer fundo vazio. Uma grade a cada FLOOR_GRID_STEP_M dá referência
+  // métrica e faz o chão "existir".
+  //
+  // Desenhada com UM único THREE.LineSegments (um par de vértices por
+  // segmento) em vez de N objetos Line — um por linha viraria dezenas de draw
+  // calls por render numa cena que já reconstrói tudo a cada arraste.
+  // THREE.GridHelper não serve aqui: ele é sempre QUADRADO e centrado na
+  // origem, e o piso deste app é um retângulo qualquer (largura da parede x
+  // profundidade do ambiente).
+  //
+  // Levantada 1mm do chão pra não brigar com o próprio piso no z-buffer, e
+  // marcada como superfície de ambiente NÃO (userData.isRoomSurface fica de
+  // fora de propósito): quem clica no chão deve acertar o PISO, não a grade —
+  // a grade é decoração, e um raio que passasse "entre" duas linhas devolveria
+  // resultado diferente de um que passasse em cima de uma, o que deixaria o
+  // pickRoomSurfaceAt errático.
+  const FLOOR_GRID_STEP_M = 0.5;   // 50cm — legível sem virar hachura
+  const FLOOR_GRID_COLOR = 0xc9c2b4;
+  const FLOOR_GRID_LIFT_M = 0.001;
+  function makeFloorGrid(x0, x1, z0, z1) {
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+    const minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
+    const pts = [];
+    // Linhas paralelas a Z (varrendo X) e vice-versa. Começa num múltiplo
+    // exato do passo pra a grade ficar ancorada no mundo (não no canto do
+    // retângulo) — assim ela não "escorrega" quando a largura da parede muda.
+    const first = (v) => Math.ceil(v / FLOOR_GRID_STEP_M) * FLOOR_GRID_STEP_M;
+    for (let x = first(minX); x <= maxX + 1e-6; x += FLOOR_GRID_STEP_M) {
+      pts.push(new THREE.Vector3(x, FLOOR_GRID_LIFT_M, minZ), new THREE.Vector3(x, FLOOR_GRID_LIFT_M, maxZ));
+    }
+    for (let z = first(minZ); z <= maxZ + 1e-6; z += FLOOR_GRID_STEP_M) {
+      pts.push(new THREE.Vector3(minX, FLOOR_GRID_LIFT_M, z), new THREE.Vector3(maxX, FLOOR_GRID_LIFT_M, z));
+    }
+    // Borda do piso sempre desenhada, mesmo que não caia num múltiplo do passo
+    // — é ela que mostra onde o ambiente acaba.
+    pts.push(new THREE.Vector3(minX, FLOOR_GRID_LIFT_M, minZ), new THREE.Vector3(maxX, FLOOR_GRID_LIFT_M, minZ));
+    pts.push(new THREE.Vector3(minX, FLOOR_GRID_LIFT_M, maxZ), new THREE.Vector3(maxX, FLOOR_GRID_LIFT_M, maxZ));
+    pts.push(new THREE.Vector3(minX, FLOOR_GRID_LIFT_M, minZ), new THREE.Vector3(minX, FLOOR_GRID_LIFT_M, maxZ));
+    pts.push(new THREE.Vector3(maxX, FLOOR_GRID_LIFT_M, minZ), new THREE.Vector3(maxX, FLOOR_GRID_LIFT_M, maxZ));
+
+    const geom = new THREE.BufferGeometry().setFromPoints(pts);
+    return new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color: FLOOR_GRID_COLOR }));
+  }
+
   // Parede em pé de p0 a p1 (pontos no chão), altura `ceilingH`, com a face
   // visível olhando pra `intoDir` (o vetor "pra dentro do ambiente" que
   // getProjectWallGeometry já define por parede em portal.js). Recuada
@@ -452,6 +499,7 @@ function createViewerComposition3D() {
     if (!room.minimal) {
       const floorDepth = Math.max((maxDepth || 0) + 0.6, ROOM_MIN_FLOOR_DEPTH_M);
       group.add(makeFloorSurface(-wallW / 2, wallW / 2, 0, floorDepth));
+      group.add(makeFloorGrid(-wallW / 2, wallW / 2, 0, floorDepth));
       if (ceilingH > 0) {
         group.add(makeWallSurface(
           { x: -wallW / 2, z: 0 }, { x: wallW / 2, z: 0 },
@@ -588,6 +636,7 @@ function createViewerComposition3D() {
       if (fz1 - fz0 < ROOM_MIN_FLOOR_DEPTH_M) fz1 = fz0 + ROOM_MIN_FLOOR_DEPTH_M;
       if (fx1 - fx0 < 0.3) fx1 = fx0 + 0.3;
       group.add(makeFloorSurface(fx0, fx1, fz0, fz1));
+      group.add(makeFloorGrid(fx0, fx1, fz0, fz1));
     }
 
     (segments || []).forEach((seg) => {
@@ -1731,6 +1780,59 @@ function createViewerComposition3D() {
     scene.add(group);
   }
 
+  // ---------- Prévia de onde o móvel vai cair ----------
+  // Pedido do usuário (2026-08-08, iPad): "mostrar a area vermelha onde estiver
+  // arrastando quando chegar no ambiente, mostrando onde vai ficar o movel
+  // apos soltar o clique". Vale principalmente pro arraste vindo da
+  // BIBLIOTECA: ali o módulo ainda não existe na cena, então não há nada
+  // vermelho pra acompanhar o dedo — o cliente arrastava às cegas e só
+  // descobria onde caiu depois de soltar.
+  //
+  // Desenha uma caixa de arestas (EdgesGeometry) do tamanho REAL do módulo,
+  // mais um retângulo achatado no chão logo abaixo dela (a "sombra"/pegada,
+  // que é o que dá a leitura de posição no piso — só a caixa flutuando é
+  // ambígua em perspectiva). spec = { width_m, height_m, depth_m, position:
+  // {x,y,z} (centro em X/Z, BASE em Y), rotationY }; null apaga.
+  let dropPreviewGroup = null;
+  const DROP_PREVIEW_COLOR = 0xd8442f;
+  function setDropPreview(spec) {
+    if (!scene) return;
+    if (dropPreviewGroup) {
+      scene.remove(dropPreviewGroup);
+      disposeObject3D(dropPreviewGroup);
+      dropPreviewGroup = null;
+    }
+    if (!spec) return;
+    const w = Math.max(Number(spec.width_m) || 0.01, 0.01);
+    const h = Math.max(Number(spec.height_m) || 0.01, 0.01);
+    const d = Math.max(Number(spec.depth_m) || 0.01, 0.01);
+    const group = new THREE.Group();
+    group.name = 'ar-export-exclude';
+    // depthTest:false — é indicador de UI, tem que aparecer por cima do móvel
+    // que estiver na frente, senão some justamente quando mais importa (o
+    // cliente arrastando pra um lugar já ocupado).
+    const mat = new THREE.LineBasicMaterial({ color: DROP_PREVIEW_COLOR, depthTest: false });
+    const box = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)), mat
+    );
+    box.position.y = h / 2;
+    group.add(box);
+    // Pegada no chão (y≈0), relativa à BASE do módulo.
+    const foot = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(w, d)),
+      new THREE.LineBasicMaterial({ color: DROP_PREVIEW_COLOR, depthTest: false })
+    );
+    foot.rotation.x = -Math.PI / 2;
+    foot.position.y = -(Number(spec.position.y) || 0) + 0.002;
+    group.add(foot);
+
+    group.traverse((o) => { o.renderOrder = 997; });
+    group.rotation.y = Number(spec.rotationY) || 0;
+    group.position.set(spec.position.x, Number(spec.position.y) || 0, spec.position.z);
+    dropPreviewGroup = group;
+    scene.add(group);
+  }
+
   // Qual seta de redimensionamento está embaixo do ponteiro (ou null).
   // Raycast SÓ no grupo das setas — elas ficam por cima de tudo, então
   // precisam ser testadas ANTES de pickAssemblyAt no pointerdown (ver
@@ -1793,6 +1895,7 @@ function createViewerComposition3D() {
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.
     pickRoomSurfaceAt, frameDirection, setResizeArrows, pickResizeArrowAt,
+    setDropPreview,
     // Teste AR (2026-08-01) — ver comentário de getScene acima.
     getScene
   };
