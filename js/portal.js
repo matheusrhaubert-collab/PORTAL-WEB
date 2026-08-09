@@ -12867,20 +12867,109 @@ function renderProjectConfigPanel() {
   if (removeBtn) removeBtn.addEventListener('click', () => removeProjectSlot(slot.id));
 }
 
-function renderProjectTotal() {
-  const totalEl = document.getElementById('po-proj-total');
-  if (!totalEl) return;
+// Quantas PEÇAS de verdade um módulo tem, descendo a árvore inteira — peça
+// que é módulo aninhado (is_module) não conta como peça, conta o que tem
+// dentro dela (mesma travessia de treeHasHinge/treeHasSlide, com child_pieces
+// como filho). É o número que responde "quantos itens esse projeto tem" pra
+// quem vai fabricar, e não "quantas linhas o catálogo mostra".
+function countProjectPiecesDeep(pieces) {
+  return (pieces || []).reduce((n, p) => (
+    p.is_module ? n + countProjectPiecesDeep(p.child_pieces) : n + 1
+  ), 0);
+}
+
+// Cartão "Resumo do projeto" (2026-08-08, etapa 3 do redesenho) — os números
+// que ficam colados no canvas enquanto o cliente monta o ambiente. Substitui
+// as duas linhas soltas (total e volume/peso) que viviam abaixo das 3 colunas,
+// longe demais do desenho pra alguém acompanhar o preço subindo.
+function renderProjectSummary() {
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
   const total = projectSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.total) || 0), 0);
-  totalEl.textContent = I18n.t('project.total_estimated', { total: formatMoney(total) });
-  // Volume/peso somado do projeto — migration 061. Cada slot é 1 unidade
-  // (sem conceito de quantidade em Projetos), então soma direta dos
-  // breakdowns, sem multiplicador.
-  const vwEl = document.getElementById('po-proj-volume-weight');
-  if (vwEl) {
-    vwEl.textContent = projectSlots.length > 0
-      ? formatVolumeWeightFromM3(projectSlots.reduce((sum, slot) => sum + itemVolumeM3((slot.result && slot.result.breakdown) || []), 0))
-      : '';
+  const items = projectSlots.reduce((sum, slot) => sum + countProjectPiecesDeep(projectSlotEffectivePieces(slot)), 0);
+  // Acabamentos = cores DISTINTAS usadas no projeto inteiro (por id, não por
+  // papel de cor: a mesma cor em caixa e porta é UM acabamento a comprar).
+  const finishIds = new Set();
+  projectSlots.forEach((slot) => {
+    Object.values(slot.colorsByRole || {}).forEach((c) => { if (c && c.id) finishIds.add(c.id); });
+    Object.values(slot.pieceColorOverrides || {}).forEach((perRole) => {
+      Object.values(perRole || {}).forEach((e) => { if (e && e.color_id) finishIds.add(e.color_id); });
+    });
+  });
+
+  setText('po-proj-sum-modules', String(projectSlots.length));
+  setText('po-proj-sum-items', String(items));
+  setText('po-proj-sum-finishes', String(finishIds.size));
+  setText('po-proj-total', formatMoney(total));
+  // Volume/peso somado — migration 061. Cada slot é 1 unidade (Projetos não
+  // tem conceito de quantidade), então soma direta dos breakdowns.
+  setText('po-proj-volume-weight', projectSlots.length > 0
+    ? formatVolumeWeightFromM3(projectSlots.reduce((sum, slot) => sum + itemVolumeM3((slot.result && slot.result.breakdown) || []), 0))
+    : '—');
+
+  // Empty state só enquanto o ambiente está vazio — com módulo, o resumo
+  // ocupa a linha inteira (ver .po-proj-bottom no CSS).
+  const emptyCard = document.getElementById('po-proj-empty-hint');
+  if (emptyCard) emptyCard.style.display = projectSlots.length ? 'none' : '';
+
+  // Lista detalhada — só redesenha se estiver aberta (é a única parte cara).
+  if (projectDetailsOpen) renderProjectSummaryDetails();
+}
+
+// Compatibilidade: renderProjectTotal continua existindo com o nome antigo
+// porque é chamada de vários pontos (troca de cor, medida, add/remove...).
+function renderProjectTotal() {
+  renderProjectSummary();
+}
+
+// Lista "Ver detalhes do projeto" — um resumo por módulo (nome, parede/chão,
+// medidas e preço). Fechada por padrão pra não empurrar o canvas pra cima.
+let projectDetailsOpen = false;
+
+function renderProjectSummaryDetails() {
+  const box = document.getElementById('po-proj-summary-details');
+  if (!box) return;
+  if (!projectSlots.length) {
+    box.innerHTML = `<p class="hint">${I18n.t('project.summary_empty_details')}</p>`;
+    return;
   }
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const roles = getProjectWallRoles();
+  box.innerHTML = projectSlots.map((slot) => {
+    const where = isFloorSlot(slot)
+      ? I18n.t('project.floor_island_label')
+      : projectWallRoleLabel(roles[Number(slot.wall_index || 0)] || 'main');
+    const dims = `${formatDimension(slot.width_mm, unit)} × ${formatDimension(slot.height_mm, unit)} × ${formatDimension(slot.depth_mm, unit)}`;
+    return `
+      <div class="po-proj-summary-detail-row" data-slot-id="${slot.id}">
+        <span class="po-proj-summary-detail-name">${slot.module.name}</span>
+        <span class="po-proj-summary-detail-meta">${where} · ${dims}</span>
+        <span class="po-proj-summary-detail-price">${formatMoney((slot.result && slot.result.total) || 0)}</span>
+      </div>
+    `;
+  }).join('');
+  // Clicar numa linha seleciona o módulo no ambiente — é o que torna a lista
+  // útil de verdade num projeto grande, em vez de só informativa.
+  box.querySelectorAll('.po-proj-summary-detail-row').forEach((row) => {
+    row.addEventListener('click', () => selectProjectSlot(row.dataset.slotId));
+  });
+}
+
+const projDetailsBtn = document.getElementById('po-proj-details-btn');
+if (projDetailsBtn) {
+  projDetailsBtn.addEventListener('click', () => {
+    projectDetailsOpen = !projectDetailsOpen;
+    const box = document.getElementById('po-proj-summary-details');
+    if (box) box.style.display = projectDetailsOpen ? 'block' : 'none';
+    projDetailsBtn.setAttribute('aria-expanded', projectDetailsOpen ? 'true' : 'false');
+    projDetailsBtn.textContent = I18n.t(projectDetailsOpen
+      ? 'project.summary_details_hide_btn'
+      : 'project.summary_details_btn');
+    if (projectDetailsOpen) renderProjectSummaryDetails();
+  });
 }
 
 // Desenha o canvas inteiro do zero a cada chamada (mesma filosofia de
@@ -12894,7 +12983,6 @@ function renderProjectCanvas() {
   const canvas = document.getElementById('po-proj-canvas');
   const wrap = document.querySelector('#po-tab-projects .po-proj-canvas-wrap');
   const dimsLabel = document.getElementById('po-proj-canvas-dims-label');
-  const emptyHint = document.getElementById('po-proj-empty-hint');
   const topViewHint = document.getElementById('po-proj-top-view-hint');
   if (!canvas || !wrap) return;
 
@@ -12930,10 +13018,13 @@ function renderProjectCanvas() {
   // acabou de ser desenhada (a de câmera só existe na 3D).
   refreshProjectCanvasHud();
 
-  // Frontal: "vazio" é por PAREDE ativa (é o que está na tela) — Superior
-  // mostra todas as paredes juntas, então usa o total do projeto.
-  const emptyCount = projectViewMode === 'top' ? projectSlots.length : projectSlotsOnWall(projectActiveWallIndex).length;
-  if (emptyHint) emptyHint.style.display = emptyCount ? 'none' : 'block';
+  // (O empty state deixou de ser controlado aqui em 2026-08-08, etapa 3:
+  // virou um CARTÃO no rodapé do canvas e quem o mostra/esconde é
+  // renderProjectSummary, chamada logo abaixo via renderProjectTotal. A regra
+  // também mudou de propósito: antes sumia quando a PAREDE ATIVA tinha
+  // módulo, o que fazia o convite "arraste um módulo" reaparecer só por
+  // trocar pra uma parede ainda vazia de um projeto cheio. Agora ele só
+  // aparece com o projeto INTEIRO vazio, que é quando o convite faz sentido.)
 
   const genBtn = document.getElementById('po-proj-generate-btn');
   const genHint = document.getElementById('po-proj-generate-hint');

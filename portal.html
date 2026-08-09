@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608090109" />
+<link rel="stylesheet" href="css/style.css?v=202608090126" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1334,7 +1334,49 @@
               </div>
             </div>
             <p class="hint" id="po-proj-top-view-hint" data-i18n="project.top_view_hint" style="display:none;">Vista de cima aproximada, gerada a partir da ordem de profundidade dos módulos — pra mover ou reorganizar, use a vista Frontal.</p>
-            <p class="hint" id="po-proj-empty-hint" data-i18n="project.empty_canvas_hint">Nenhum módulo no ambiente ainda — clique num módulo à esquerda pra configurar e adicionar.</p>
+
+            <!-- RODAPÉ DO CANVAS (2026-08-08, etapa 3 do redesenho mandado
+                 pelo usuário): empty state à esquerda + resumo do projeto à
+                 direita, como no mockup. Substitui a antiga linha solta de
+                 dica ("Nenhum módulo no ambiente ainda...") e as duas linhas
+                 de total/volume que ficavam lá embaixo, depois das 3 colunas —
+                 longe do desenho, então na prática ninguém via o preço subir
+                 enquanto montava o ambiente.
+                 O empty state some assim que existe módulo (ver
+                 renderProjectSummary), e aí o resumo ocupa a linha toda. -->
+            <div class="po-proj-bottom">
+              <div class="po-proj-empty-card" id="po-proj-empty-hint">
+                <div class="po-proj-empty-icon" aria-hidden="true">⬚</div>
+                <p class="po-proj-empty-title" data-i18n="project.empty_drag_title">Arraste um módulo para iniciar</p>
+                <span class="po-proj-empty-or" data-i18n="project.empty_or">ou</span>
+                <span class="po-proj-empty-hint-line" data-i18n="project.empty_click_hint">Clique em um módulo ao lado</span>
+              </div>
+
+              <div class="po-proj-summary" id="po-proj-summary">
+                <div class="po-proj-summary-title" data-i18n="project.summary_title">Resumo do projeto</div>
+                <div class="po-proj-summary-row">
+                  <span data-i18n="project.summary_modules">Módulos</span><span id="po-proj-sum-modules">0</span>
+                </div>
+                <div class="po-proj-summary-row">
+                  <span data-i18n="project.summary_items">Itens</span><span id="po-proj-sum-items">0</span>
+                </div>
+                <div class="po-proj-summary-row">
+                  <span data-i18n="project.summary_finishes">Acabamentos</span><span id="po-proj-sum-finishes">0</span>
+                </div>
+                <!-- Volume/peso somado do projeto — migration 061. Veio do
+                     antigo #po-proj-volume-weight, que era uma linha solta lá
+                     embaixo; aqui fica junto do resto dos números. -->
+                <div class="po-proj-summary-row">
+                  <span data-i18n="volume_weight.label">Volume / peso</span><span id="po-proj-volume-weight">—</span>
+                </div>
+                <div class="po-proj-summary-total">
+                  <span data-i18n="project.summary_total">Total estimado</span><span id="po-proj-total">—</span>
+                </div>
+                <button type="button" class="po-proj-summary-cta" id="po-proj-details-btn" aria-expanded="false"
+                        data-i18n="project.summary_details_btn">Ver detalhes do projeto ›</button>
+                <div class="po-proj-summary-details" id="po-proj-summary-details" style="display:none;"></div>
+              </div>
+            </div>
           </div>
 
           <div class="po-proj-resize-handle" id="po-proj-resize-handle-right" title="Arrastar pra redimensionar"></div>
@@ -1351,9 +1393,10 @@
           </div>
         </div>
 
-        <div id="po-proj-total" class="po-comp-3d-total"></div>
-        <!-- Volume/peso somado do projeto — migration 061. -->
-        <div id="po-proj-volume-weight" class="hint"></div>
+        <!-- (#po-proj-total e #po-proj-volume-weight saíram daqui em
+             2026-08-08, etapa 3 — foram pro cartão "Resumo do projeto", que
+             fica colado no canvas. Os ids são os MESMOS, então
+             renderProjectTotal continua encontrando os dois.) -->
 
         <!-- SALVAR PROJETO (migration 056, pedido do usuário 2026-07-21) —
              mesmo padrão de "★ Salvar como favorita" da Composição
@@ -1762,13 +1805,13 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608090109"></script>
-<script src="js/pricing.js?v=202608090109"></script>
-<script src="js/viewer3d.js?v=202608090109"></script>
-<script src="js/viewer3d_composition.js?v=202608090109"></script>
+<script src="js/i18n.js?v=202608090126"></script>
+<script src="js/pricing.js?v=202608090126"></script>
+<script src="js/viewer3d.js?v=202608090126"></script>
+<script src="js/viewer3d_composition.js?v=202608090126"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608090109"></script>
-<script src="js/portal.js?v=202608090109"></script>
+<script src="js/photoreal.js?v=202608090126"></script>
+<script src="js/portal.js?v=202608090126"></script>
 </body>
 </html>
