@@ -2544,8 +2544,8 @@ header.po-topnav {
 .po-proj-hud-btn.active { background: var(--text); color: #fff; }
 .po-proj-hud-btn:disabled { opacity: 0.3; cursor: default; }
 .po-proj-hud-btn:disabled:hover { background: transparent; }
-.po-proj-hud-danger { color: #b0503c; }
-.po-proj-hud-danger:hover { background: #f7e4e0; }
+/* (.po-proj-hud-danger ficou sem uso quando a lixeira saiu da barra em
+   2026-08-08 — mantida a regra fora, não há mais botão destrutivo aqui.) */
 /* Frontal/Superior dentro da barra fica um pouco menor que o padrão. */
 .po-proj-hud-tl .po-view-toggle-btn { padding: 5px 10px; font-size: 11px; }
 
@@ -2559,15 +2559,21 @@ header.po-topnav {
    ao container — assim não depende de nenhum offsetParent nem de o wrap ter
    position:relative. Alvo grande (34px) pra acertar com o dedo no iPad. */
 .po-proj-slot-actions {
-  position: fixed; z-index: 60; display: flex; gap: 6px;
+  position: fixed; z-index: 60; display: flex; gap: 4px;
   transform: translate(-50%, -50%); pointer-events: auto;
 }
+/* BOLINHAS (2026-08-08, pedido do usuário: "troca os quadrados de duplicar e
+   excluir por bolinhas, fica uma area menor"). O círculo ocupa ~78% da área de
+   um quadrado do mesmo lado, e o diâmetro caiu de 34 pra 28px — no total,
+   pouco menos da metade do que tapava o móvel antes. 28px continua acima do
+   mínimo confortável de alvo de toque porque as duas bolinhas ficam FORA do
+   contorno do módulo (canto superior direito), sem vizinho pra confundir. */
 .po-proj-slot-action-btn {
-  width: 34px; height: 34px; padding: 0; margin: 0;
+  width: 28px; height: 28px; padding: 0; margin: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 15px; line-height: 1; font-weight: 700;
+  font-size: 13px; line-height: 1; font-weight: 700;
   background: var(--panel); color: var(--text);
-  border: 1px solid var(--border); border-radius: 8px;
+  border: 1px solid var(--border); border-radius: 50%;
   box-shadow: 0 3px 10px rgba(0,0,0,0.22);
 }
 .po-proj-slot-action-btn:hover { background: var(--accent-light); }

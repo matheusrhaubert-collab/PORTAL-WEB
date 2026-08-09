@@ -12074,12 +12074,8 @@ function refreshProjectCanvasHud() {
   const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
   const is3d = !!edit3dWrap && edit3dWrap.style.display !== 'none' && projectViewMode !== 'top';
   if (cameraHud) cameraHud.style.display = is3d ? 'flex' : 'none';
-
-  // 🗑 da barra: atalho pro módulo selecionado. Redundante com o ✕ que flutua
-  // ao lado do módulo, mas o ✕ some quando o móvel sai do enquadramento (ver
-  // worldToClient devolvendo null) — este aqui está sempre no mesmo lugar.
-  const removeBtn = document.getElementById('po-proj-hud-remove-btn');
-  if (removeBtn) removeBtn.disabled = (selectedProjectSlotId == null);
+  // (A lixeira desta barra saiu a pedido do usuário — "pra nao clicar errado".
+  // Remover continua na bolinha ✕ ao lado do módulo e no painel da direita.)
 }
 
 const projFitBtn = document.getElementById('po-proj-fit-btn');
@@ -12110,13 +12106,6 @@ if (projZoomOutBtn) {
     if (ViewerProjectEdit && ViewerProjectEdit.zoomByStep) ViewerProjectEdit.zoomByStep(1 / PROJECT_ZOOM_STEP);
   });
 }
-const projHudRemoveBtn = document.getElementById('po-proj-hud-remove-btn');
-if (projHudRemoveBtn) {
-  projHudRemoveBtn.addEventListener('click', () => {
-    if (selectedProjectSlotId != null) removeProjectSlot(selectedProjectSlotId);
-  });
-}
-
 const projUndoBtn = document.getElementById('po-proj-undo-btn');
 if (projUndoBtn) projUndoBtn.addEventListener('click', () => undoProjectChange());
 // Ctrl+Z / ⌘Z também desfazem — mas só com a aba Projetos aberta e fora de

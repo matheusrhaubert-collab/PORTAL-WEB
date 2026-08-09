@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608090056" />
+<link rel="stylesheet" href="css/style.css?v=202608090109" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1253,8 +1253,13 @@
                    uma faixa própria) e virou overlay — devolve ~34px de altura
                    pro desenho, que era o ponto do mockup.
                    · Frontal/Superior: qual vista está na tela.
-                   · ↩ desfazer  · 🧲 colisão  · 🔄 girar câmera (só toque)
-                   · 🗑 remover o módulo selecionado.
+                   · ↩ desfazer  · 🧲 colisão  · 🔄 girar câmera (só toque).
+                   SEM lixeira aqui (tirada a pedido do usuário 2026-08-08:
+                   "pode tirar a lixeira la de cima, pra nao clicar errado") —
+                   remover é uma ação destrutiva e ficava encostada em botões
+                   que se clica o tempo todo. Continua na bolinha ✕ ao lado do
+                   módulo selecionado e no painel da direita, os dois lugares
+                   onde já está claro em QUEM a ação vai cair.
                    Os ids são os MESMOS de antes (po-proj-undo-btn,
                    po-proj-view-front-btn, po-proj-collision-btn,
                    po-proj-camera-btn) — o JS que os liga não mudou. -->
@@ -1270,8 +1275,6 @@
                         data-i18n-title="project.collision_title" title="Colisão">🧲</button>
                 <button type="button" class="po-proj-hud-btn" id="po-proj-camera-btn" style="display:none;"
                         data-i18n-title="project.camera_title" title="Girar câmera">🔄</button>
-                <button type="button" class="po-proj-hud-btn po-proj-hud-danger" id="po-proj-hud-remove-btn" disabled
-                        data-i18n-title="project.remove_title" title="Remover">🗑</button>
               </div>
 
               <!-- BARRA FLUTUANTE, lateral direita: câmera. Só faz sentido na
@@ -1759,13 +1762,13 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608090056"></script>
-<script src="js/pricing.js?v=202608090056"></script>
-<script src="js/viewer3d.js?v=202608090056"></script>
-<script src="js/viewer3d_composition.js?v=202608090056"></script>
+<script src="js/i18n.js?v=202608090109"></script>
+<script src="js/pricing.js?v=202608090109"></script>
+<script src="js/viewer3d.js?v=202608090109"></script>
+<script src="js/viewer3d_composition.js?v=202608090109"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608090056"></script>
-<script src="js/portal.js?v=202608090056"></script>
+<script src="js/photoreal.js?v=202608090109"></script>
+<script src="js/portal.js?v=202608090109"></script>
 </body>
 </html>
