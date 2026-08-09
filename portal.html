@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608082358" />
+<link rel="stylesheet" href="css/style.css?v=202608090046" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1105,45 +1105,65 @@
              setProjectActiveWallIndex/refreshProjectWallTabs em portal.js).
              Vista Superior e Visualizar 3D é que desenham as 2-3 paredes
              juntas, em ângulo reto. -->
-        <div class="po-proj-wall-shape-row">
-          <span class="po-proj-wall-shape-label" data-i18n="project.wall_shape_label">Formato da parede</span>
-          <div class="po-proj-wall-shape-toggle po-view-toggle">
-            <button type="button" class="po-view-toggle-btn active" id="po-proj-wall-shape-single-btn" data-i18n="project.wall_shape_single">Simples</button>
-            <button type="button" class="po-view-toggle-btn" id="po-proj-wall-shape-double-btn" data-i18n="project.wall_shape_double">Dupla</button>
-            <button type="button" class="po-view-toggle-btn" id="po-proj-wall-shape-u-btn" data-i18n="project.wall_shape_u">C / U</button>
-          </div>
-        </div>
-        <div class="po-proj-wall-tabs" id="po-proj-wall-tabs" style="display:none;"></div>
+        <!-- FAIXA SUPERIOR ÚNICA (2026-08-08, etapa 1 do redesenho mandado
+             pelo usuário como mockup: "acho que assim ficaria legal o
+             portal"). Antes isto eram TRÊS blocos empilhados — formato da
+             parede, abas de parede, e a linha de medidas — cada um com sua
+             margem, comendo uns 130px de altura antes do canvas começar.
+             Junta tudo numa faixa só: formato do ambiente | parede ativa |
+             largura/teto/rodapé | ação. flex-wrap deixa quebrar sozinho em
+             tela estreita, então no iPad em retrato continua legível.
 
-        <div class="po-proj-wall-settings">
-          <div class="dim-field po-proj-wall-width-field">
-            <label for="po-proj-wall-width-input" id="po-proj-wall-width-label" data-i18n="project.wall_width_label">Largura do ambiente</label>
-            <span class="dim-exact-wrap">
-              <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-wall-width-input" />
-              <span class="dim-exact-unit" id="po-proj-wall-width-unit"></span>
-            </span>
+             TODOS os ids foram mantidos de propósito (po-proj-wall-shape-*,
+             po-proj-wall-tabs, po-proj-wall-width-input, po-proj-ceiling-input,
+             po-proj-baseboard-input, po-proj-ai-open-btn) — o JS que os
+             encontra/atualiza (refreshProjectWallTabs, refreshProjectWallWidthInput,
+             ROOM_SETTINGS_FIELDS, refreshProjectAiButton) não precisou de
+             nenhuma mudança. É só layout. -->
+        <div class="po-proj-topbar">
+          <div class="po-proj-topbar-group">
+            <span class="po-proj-topbar-label" data-i18n="project.wall_shape_label">Formato do ambiente</span>
+            <div class="po-proj-wall-shape-toggle po-view-toggle">
+              <button type="button" class="po-view-toggle-btn active" id="po-proj-wall-shape-single-btn" data-i18n="project.wall_shape_single">Uma parede</button>
+              <button type="button" class="po-view-toggle-btn" id="po-proj-wall-shape-double-btn" data-i18n="project.wall_shape_double">Dupla parede</button>
+              <button type="button" class="po-view-toggle-btn" id="po-proj-wall-shape-u-btn" data-i18n="project.wall_shape_u">C / U</button>
+            </div>
           </div>
-          <div class="dim-field po-proj-wall-width-field">
-            <label for="po-proj-ceiling-input" data-i18n="nav.ceiling_label">Pé direito</label>
-            <span class="dim-exact-wrap">
-              <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-ceiling-input" />
-              <span class="dim-exact-unit" id="po-proj-ceiling-unit"></span>
-            </span>
+
+          <!-- Abas de parede: só aparecem com 2-3 paredes (refreshProjectWallTabs
+               põe display:flex). Vazias/escondidas não ocupam espaço na faixa. -->
+          <div class="po-proj-wall-tabs" id="po-proj-wall-tabs" style="display:none;"></div>
+
+          <div class="po-proj-topbar-fields">
+            <div class="dim-field po-proj-topbar-field">
+              <label for="po-proj-wall-width-input" id="po-proj-wall-width-label" data-i18n="project.wall_width_label">Largura da parede</label>
+              <span class="dim-exact-wrap">
+                <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-wall-width-input" />
+                <span class="dim-exact-unit" id="po-proj-wall-width-unit"></span>
+              </span>
+            </div>
+            <div class="dim-field po-proj-topbar-field">
+              <label for="po-proj-ceiling-input" data-i18n="project.ceiling_label">Altura do teto</label>
+              <span class="dim-exact-wrap">
+                <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-ceiling-input" />
+                <span class="dim-exact-unit" id="po-proj-ceiling-unit"></span>
+              </span>
+            </div>
+            <div class="dim-field po-proj-topbar-field">
+              <label for="po-proj-baseboard-input" data-i18n="project.baseboard_label">Rodapé</label>
+              <span class="dim-exact-wrap">
+                <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-baseboard-input" />
+                <span class="dim-exact-unit" id="po-proj-baseboard-unit"></span>
+              </span>
+            </div>
           </div>
-          <div class="dim-field po-proj-wall-width-field">
-            <label for="po-proj-baseboard-input" data-i18n="nav.baseboard_label">Rodapé</label>
-            <span class="dim-exact-wrap">
-              <input type="text" inputmode="decimal" class="dim-exact-input" id="po-proj-baseboard-input" />
-              <span class="dim-exact-unit" id="po-proj-baseboard-unit"></span>
-            </span>
-          </div>
-          <!-- Gerador por IA (migration 080) — fica ao lado das medidas de
-               propósito: a ordem natural é medir a parede e AÍ pedir o
-               projeto. O botão só habilita quando existe pelo menos um
-               ambiente com receita cadastrada (ver refreshProjectAiButton em
-               portal.js) — sem receita, gerar não faria sentido. -->
-          <div class="dim-field po-proj-wall-width-field po-proj-ai-field">
-            <label>&nbsp;</label>
+
+          <!-- Gerador por IA (migration 080) — encostado à direita da faixa,
+               que é onde o mockup põe a ação do ambiente. A ordem natural
+               continua: medir a parede e AÍ pedir o projeto. Só habilita
+               quando existe ambiente com receita cadastrada (ver
+               refreshProjectAiButton em portal.js). -->
+          <div class="po-proj-topbar-actions">
             <button type="button" id="po-proj-ai-open-btn" class="secondary" data-i18n="project.ai_open_btn">✨ Gerar com IA</button>
           </div>
         </div>
@@ -1250,6 +1270,22 @@
                      mesmo tempo. -->
                 <div id="po-proj-canvas-3d-edit-wrap" style="display:none;">
                   <div id="po-proj-canvas-3d-edit"></div>
+                  <!-- Ações do módulo SELECIONADO (2026-08-08, 3ª rodada —
+                       pedido do usuário: "quero uma opcao de, ao clicado, o
+                       modulo poder se repetir, com mesma cor e tamanho").
+                       Escolhido entre as opções como botões flutuando ao lado
+                       do módulo, e não como menu do toque longo: o toque longo
+                       já é o arraste livre entre parede e chão. São elementos
+                       DOM (não geometria 3D) posicionados a cada frame por
+                       refreshProjectSlotActions (portal.js) via
+                       ViewerProjectEdit.worldToClient — bem mais simples de
+                       estilizar e de acertar com o dedo que um sprite 3D. -->
+                  <div class="po-proj-slot-actions" id="po-proj-slot-actions" style="display:none;">
+                    <button type="button" class="po-proj-slot-action-btn" id="po-proj-slot-duplicate-btn"
+                            data-i18n-title="project.duplicate_title" title="Duplicar">⧉</button>
+                    <button type="button" class="po-proj-slot-action-btn po-proj-slot-action-danger" id="po-proj-slot-remove-btn"
+                            data-i18n-title="project.remove_title" title="Remover">✕</button>
+                  </div>
                 </div>
               </div>
               <div class="po-proj-mini-top-wrap" id="po-proj-mini-top-wrap" style="display:none;">
@@ -1689,13 +1725,13 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608082358"></script>
-<script src="js/pricing.js?v=202608082358"></script>
-<script src="js/viewer3d.js?v=202608082358"></script>
-<script src="js/viewer3d_composition.js?v=202608082358"></script>
+<script src="js/i18n.js?v=202608090046"></script>
+<script src="js/pricing.js?v=202608090046"></script>
+<script src="js/viewer3d.js?v=202608090046"></script>
+<script src="js/viewer3d_composition.js?v=202608090046"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608082358"></script>
-<script src="js/portal.js?v=202608082358"></script>
+<script src="js/photoreal.js?v=202608090046"></script>
+<script src="js/portal.js?v=202608090046"></script>
 </body>
 </html>

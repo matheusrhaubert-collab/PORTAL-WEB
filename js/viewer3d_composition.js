@@ -1441,6 +1441,37 @@ function createViewerComposition3D() {
     }, null, 2));
   }
 
+  // Wrapper de pickAssemblyAt com SELEÇÃO GRUDENTA (2026-08-08, 3ª rodada —
+  // relato do usuário no iPad: "modulo clicado e com as setas aparecendo, mas
+  // ao clicar na tela ele seleciona o modulo do lado, mesmo mostrando as setas
+  // do modulo clicado. deve ficar travado so no clicado").
+  //
+  // A causa não é o raycaster errar: é o DEDO. O ponto de contato reportado
+  // pelo navegador é o CENTRO da área tocada, e alguns milímetros de desvio
+  // num módulo estreito visto em perspectiva caem na caixa de clique do
+  // vizinho — o raio então acerta o vizinho de verdade, e a troca de seleção
+  // está "correta" pela geometria e errada pela intenção.
+  //
+  // Solução: quando já existe um módulo selecionado e o toque acerta OUTRO,
+  // relança o raio num anel de pontos ao redor do toque (o "raio do dedo").
+  // Se o módulo selecionado aparecer em qualquer um deles, ele vence — ou
+  // seja, encostar perto do que já está selecionado nunca rouba a seleção; só
+  // um toque claramente em cima de outro módulo (nenhum ponto do anel
+  // alcançando o selecionado) troca. Sem nada selecionado, ou no mouse (que é
+  // preciso e não passa stickySlotId), o comportamento é o de sempre.
+  const STICKY_RING_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+  function pickAssemblyAtSticky(clientX, clientY, preferredWallIndex, stickySlotId, slopPx) {
+    const direct = pickAssemblyAt(clientX, clientY, preferredWallIndex);
+    if (stickySlotId == null || !slopPx) return direct;
+    if (direct && direct.slotId === stickySlotId) return direct;
+    for (let i = 0; i < STICKY_RING_DIRS.length; i++) {
+      const d = STICKY_RING_DIRS[i];
+      const hit = pickAssemblyAt(clientX + d[0] * slopPx, clientY + d[1] * slopPx, preferredWallIndex);
+      if (hit && hit.slotId === stickySlotId) return hit;
+    }
+    return direct;
+  }
+
   function pickAssemblyAt(clientX, clientY, preferredWallIndex) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) {
       _debugPickLog(clientX, clientY, null, {
@@ -1536,7 +1567,15 @@ function createViewerComposition3D() {
   // mouse soltou em cima do piso, o módulo vira ilha (placement='floor'); se
   // soltou numa parede, vira módulo de parede.
   // Devolve { kind:'floor'|'wall', wallIndex, point:{x,y,z} } ou null.
-  function pickRoomSurfaceAt(clientX, clientY) {
+  //
+  // ignoreSlotId (2026-08-08, 3ª rodada — relato do usuário: "movel nao ta indo
+  // da parede pro piso"): torna UM módulo transparente pra este teste. Era
+  // exatamente o bug — durante o arraste, o módulo acompanha o ponteiro, então
+  // a caixa de clique dele está SEMPRE entre a câmera e o piso; o laço abaixo
+  // via "tem móvel na frente" e devolvia null a cada frame, e a conversão
+  // parede→chão (que depende deste retorno) nunca disparava. Passando o slot
+  // em arraste aqui, o raio enxerga o ambiente atrás dele.
+  function pickRoomSurfaceAt(clientX, clientY, ignoreSlotId) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
     const hits = _raycaster.intersectObjects(currentGroups, true);
@@ -1550,11 +1589,34 @@ function createViewerComposition3D() {
         };
       }
       // Um MÓDULO na frente da superfície ganha — clicar num móvel nunca deve
-      // ser lido como "cliquei no piso/parede atrás dele".
+      // ser lido como "cliquei no piso/parede atrás dele". Menos o ignorado.
       let p = obj;
-      while (p) { if (p.userData && p.userData.slotId != null) return null; p = p.parent; }
+      while (p) {
+        if (p.userData && p.userData.slotId != null) {
+          if (ignoreSlotId != null && p.userData.slotId === ignoreSlotId) break; // atravessa este
+          return null;
+        }
+        p = p.parent;
+      }
     }
     return null;
+  }
+
+  // Projeta um ponto do MUNDO 3D pras coordenadas de tela (client) do canvas —
+  // usado pelos botões flutuantes de Duplicar/Remover (2026-08-08, 3ª rodada),
+  // que são elementos DOM de verdade posicionados em cima do módulo
+  // selecionado. Devolve null se o ponto estiver ATRÁS da câmera (z do NDC
+  // fora de [-1,1]), senão os botões apareceriam espelhados quando o usuário
+  // gira a cena pra trás do móvel.
+  function worldToClient(point) {
+    if (!renderer || !camera) return null;
+    const v = new THREE.Vector3(point.x, point.y, point.z).project(camera);
+    if (v.z < -1 || v.z > 1) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    return {
+      x: rect.left + (v.x + 1) / 2 * rect.width,
+      y: rect.top + (-v.y + 1) / 2 * rect.height
+    };
   }
 
   function intersectPlaneAtClient(clientX, clientY, planeOrigin, planeNormal) {
@@ -1896,6 +1958,9 @@ function createViewerComposition3D() {
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.
     pickRoomSurfaceAt, frameDirection, setResizeArrows, pickResizeArrowAt,
     setDropPreview,
+    // 3ª rodada (2026-08-08) — ver pickAssemblyAtSticky (seleção que não pula
+    // pro vizinho no dedo) e worldToClient (botões DOM sobre o módulo).
+    pickAssemblyAtSticky, worldToClient,
     // Teste AR (2026-08-01) — ver comentário de getScene acima.
     getScene
   };

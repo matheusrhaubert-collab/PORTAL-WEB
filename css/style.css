@@ -2320,25 +2320,38 @@ header.po-topnav {
    simples (divs posicionados em px, escala = po-proj-canvas.dataset.pxPerMm),
    não Three.js — mais simples de arrastar/snapar e mais fiel ao mockup
    (retângulos com cota, não uma cena 3D vista de frente). */
-.po-proj-wall-settings {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  margin: 10px 0 4px;
+/* FAIXA SUPERIOR ÚNICA da aba Projetos (2026-08-08, etapa 1 do redesenho
+   mandado pelo usuário como mockup). Substitui .po-proj-wall-shape-row +
+   .po-proj-wall-settings, que eram blocos empilhados. Um cartão só, com as
+   coisas do AMBIENTE (formato, parede ativa, medidas) e a ação à direita.
+   align-items:flex-end alinha tudo pela BASE — os campos têm label em cima,
+   os toggles não, e sem isso um flutuaria no meio do outro. */
+.po-proj-topbar {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  padding: 10px 12px; margin: 8px 0 10px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
 }
-.po-proj-wall-width-field { max-width: 220px; }
+.po-proj-topbar-group { display: flex; flex-direction: column; gap: 5px; }
+.po-proj-topbar-label {
+  font-size: 11px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.po-proj-topbar-fields { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+/* Campos compactos: o valor é curto (uma medida) e o rótulo é que ocupa
+   espaço — 132px cabe "Largura da parede" em 2 linhas sem espremer o input. */
+.po-proj-topbar-field { width: 132px; max-width: 132px; margin: 0; }
+.po-proj-topbar-field label { font-size: 11px; }
+/* margin-left:auto empurra a ação pro fim da faixa; quando a linha quebra em
+   tela estreita, ela simplesmente vai pra baixo, sem regra extra. */
+.po-proj-topbar-actions { margin-left: auto; }
+.po-proj-topbar-actions button { margin: 0; white-space: nowrap; }
 
-/* Forma da parede (simples/dupla/C-U, pedido do usuário 2026-07-25) — mesmo
-   estilo visual do toggle Frontal/Superior (.po-view-toggle), só que com um
-   rótulo antes. Abas de parede (só aparecem com 2-3 paredes, ver
-   refreshProjectWallTabs em portal.js) usam um estilo mais discreto de
-   pill, pra não competir visualmente com o toggle de forma logo acima. */
-.po-proj-wall-shape-row {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin: 10px 0 0;
-}
-.po-proj-wall-shape-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+/* Abas de parede (só aparecem com 2-3 paredes, ver refreshProjectWallTabs em
+   portal.js) — estilo discreto de pill pra não competir com o toggle de
+   formato ao lado. Agora vivem DENTRO da faixa, por isso a margem zerada. */
 .po-proj-wall-tabs {
   display: flex; gap: 6px; flex-wrap: wrap;
-  margin: 6px 0 0;
+  margin: 0;
 }
 .po-proj-wall-tab-btn {
   background: var(--panel); color: var(--muted);
@@ -2490,9 +2503,8 @@ header.po-topnav {
 .po-proj-ai-modal-actions {
   display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px;
 }
-/* Botão "Gerar com IA" mora na mesma linha das medidas da parede; o label
-   vazio acima dele é só pra alinhar a base com os campos vizinhos. */
-.po-proj-ai-field button { width: 100%; white-space: nowrap; }
+/* (.po-proj-ai-field saiu em 2026-08-08 — o botão "Gerar com IA" foi pra
+   .po-proj-topbar-actions, encostado à direita da faixa superior.) */
 
 .po-proj-canvas-outer { min-width: 0; }
 /* Frontal/Superior agora mora DENTRO da barra única (.po-proj-canvas-tools),
@@ -2516,6 +2528,27 @@ header.po-topnav {
 }
 .po-proj-tool-btn:disabled { opacity: 0.4; cursor: default; }
 .po-proj-tool-btn:disabled:hover { background: var(--panel); }
+
+/* Ações do módulo selecionado — flutuam SOBRE o canvas 3D, posicionadas em px
+   por refreshProjectSlotActions (portal.js). position:fixed porque a conta vem
+   de worldToClient, que devolve coordenada de viewport (client), não relativa
+   ao container — assim não depende de nenhum offsetParent nem de o wrap ter
+   position:relative. Alvo grande (34px) pra acertar com o dedo no iPad. */
+.po-proj-slot-actions {
+  position: fixed; z-index: 60; display: flex; gap: 6px;
+  transform: translate(-50%, -50%); pointer-events: auto;
+}
+.po-proj-slot-action-btn {
+  width: 34px; height: 34px; padding: 0; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; font-weight: 700;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+}
+.po-proj-slot-action-btn:hover { background: var(--accent-light); }
+.po-proj-slot-action-danger { color: #b0503c; }
+.po-proj-slot-action-danger:hover { background: #f7e4e0; }
 .po-proj-tool-btn {
   background: var(--panel); color: var(--muted);
   border: 1px solid var(--border); border-radius: 8px;
@@ -2856,7 +2889,7 @@ header.po-topnav {
 .po-proj-library-filter-select + .po-proj-library-filter-select { margin-top: 6px; }
 
 #po-tab-projects .po-comp-title-row { margin-bottom: 2px; }
-#po-tab-projects .po-proj-wall-settings { margin: 4px 0 2px; gap: 10px; }
+#po-tab-projects .po-proj-topbar { margin: 4px 0 8px; }
 #po-tab-projects .po-comp-mode-banner { margin-bottom: 8px; padding: 6px 12px; }
 
 /* Pedido do usuário (3ª rodada, 2026-07-21): sem botão +/-, e label colado

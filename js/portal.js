@@ -11773,6 +11773,13 @@ const PROJECT_TOUCH_HOLD_MS = 220;
 // iPad quanto no navegador com mouse. 500ms é o padrão de "long press" que o
 // iOS usa; menos que isso dispara sem querer durante um arraste lento.
 const PROJECT_HOLD_MENU_MS = 500;
+// Raio (px de tela) em que um toque ainda "pertence" ao módulo já SELECIONADO,
+// mesmo que o centro do dedo tenha caído em cima do vizinho — ver
+// pickAssemblyAtSticky (viewer3d_composition.js). ~22px é meia largura típica
+// da área de contato de um dedo adulto num iPad; menos que isso não resolvia o
+// relato ("seleciona o modulo do lado"), muito mais e ficaria difícil trocar
+// pro vizinho de propósito.
+const PROJECT_STICKY_PICK_PX = 22;
 
 // Altura máxima que a BASE (floor_height_mm) de um módulo de `heightMm` pode
 // ter sem estourar o teto útil — mesma regra de sempre (pé direito − afastamento
@@ -12032,6 +12039,10 @@ function setProjectCameraMode(on) {
   projectCameraModeOn = !!on;
   const btn = document.getElementById('po-proj-camera-btn');
   if (btn) btn.classList.toggle('active', projectCameraModeOn);
+  // Em modo câmera some tudo que é alça de edição (setas e botões) — o dedo
+  // ali é só da câmera, e alça visível sem função só confunde.
+  if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
+  if (typeof refreshProjectSlotActions === 'function') refreshProjectSlotActions();
   // Com o modo desligado o OrbitControls sai de cena por completo no toque —
   // é isso que faz a "tela travada" ser travada de verdade. No mouse os
   // controles continuam sempre ligados (ver applyProjectViewerControls).
@@ -12429,6 +12440,57 @@ function selectProjectSlot(slotId) {
   // Setas 3D de redimensionamento (toque) acompanham a seleção — ver
   // refreshProject3DResizeArrows (não faz nada no mouse nem sem 3D).
   if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
+  // Botões Duplicar/Remover acompanham a seleção pelo mesmo caminho das setas.
+  if (typeof refreshProjectSlotActions === 'function') refreshProjectSlotActions();
+}
+
+// ==========================================================================
+// DUPLICAR MÓDULO — 2026-08-08 (3ª rodada)
+// ==========================================================================
+// Pedido do usuário: "quero uma opcao de, ao clicado, o modulo poder se
+// repetir, com mesma cor e tamanho". Reaproveita cloneProjectSlotForUndo (a
+// mesma cópia profunda dos campos mutáveis que o desfazer já usa — cor,
+// medidas, prateleiras, opcionais, overrides por peça), então "mesma cor e
+// tamanho" sai de graça e sem duplicar regra nenhuma. Módulo/peças/opções de
+// cor continuam compartilhados por referência: são catálogo, iguais pros dois.
+//
+// ONDE A CÓPIA NASCE: colada ao lado do original, no espaço livre mais
+// próximo. Preferência pela direita (leitura natural de uma parede); se não
+// couber até o fim da parede, tenta a esquerda; se não couber dos dois lados,
+// nasce em cima do original mesmo — melhor um módulo sobreposto pro cliente
+// arrastar do que um "não coube" que não explica nada.
+function duplicateProjectSlot(slotId) {
+  const original = projectSlots.find((s) => s.id === slotId);
+  if (!original) return null;
+  const copy = cloneProjectSlotForUndo(original);
+  copy.id = newProjectSlotId();
+  copy.thumbnail_data_url = null; // a miniatura é do slot antigo; deixa recalcular
+
+  if (isFloorSlot(copy)) {
+    // Ilha: desloca no eixo local da largura, sem parede pra limitar.
+    const rot = (Number(copy.floor_rotation_deg || 0) * Math.PI) / 180;
+    const stepMm = Number(copy.width_mm || 0) || 600;
+    copy.floor_x_mm = Number(copy.floor_x_mm || 0) + Math.cos(rot) * stepMm;
+    copy.floor_z_mm = Number(copy.floor_z_mm || 0) - Math.sin(rot) * stepMm;
+    projectSlots.push(copy);
+    clampFloorSlotIntoRoom(copy);
+  } else {
+    const widthMm = Number(copy.width_mm || 0);
+    const wallWidthMm = getProjectWallWidthMm(Number(copy.wall_index || 0));
+    const rightX = Number(original.x_mm || 0) + widthMm;
+    const leftX = Number(original.x_mm || 0) - widthMm;
+    if (rightX + widthMm <= wallWidthMm) copy.x_mm = rightX;
+    else if (leftX >= 0) copy.x_mm = leftX;
+    projectSlots.push(copy);
+    clampProjectSlotPosition(copy);
+  }
+
+  selectedProjectSlotId = copy.id;
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  refreshProject3DResizeArrows();
+  markProjectDirty();
+  return copy;
 }
 
 function removeProjectSlot(slotId) {
@@ -12722,6 +12784,7 @@ function renderProjectConfigPanel() {
     <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney((slot.result && slot.result.total) || 0)}</span></div>
     <div class="po-proj-config-row hint"><span>${I18n.t('volume_weight.label')}</span><span>${formatVolumeWeight((slot.result && slot.result.breakdown) || [])}</span></div>
     <button type="button" class="secondary" id="po-proj-config-edit-btn">${I18n.t('project.config_edit_btn')}</button>
+    <button type="button" class="secondary" id="po-proj-config-duplicate-btn" title="${I18n.t('project.duplicate_title')}">${I18n.t('project.duplicate_btn')}</button>
     <button type="button" class="secondary po-proj-config-remove-btn" id="po-proj-config-remove-btn">${I18n.t('project.config_remove_btn')}</button>
   `;
 
@@ -12745,6 +12808,11 @@ function renderProjectConfigPanel() {
 
   const editBtn = panel.querySelector('#po-proj-config-edit-btn');
   if (editBtn) editBtn.addEventListener('click', () => editProjectSlot(slot.id));
+  // Duplicar também aqui (além dos botões flutuantes na cena 3D) — é o caminho
+  // que funciona no desktop e na vista Frontal 2D de parede única, onde não
+  // existe cena 3D pra pendurar botão nenhum.
+  const dupBtn = panel.querySelector('#po-proj-config-duplicate-btn');
+  if (dupBtn) dupBtn.addEventListener('click', () => duplicateProjectSlot(slot.id));
   const removeBtn = panel.querySelector('#po-proj-config-remove-btn');
   if (removeBtn) removeBtn.addEventListener('click', () => removeProjectSlot(slot.id));
 }
@@ -13356,6 +13424,7 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // então elas precisam ser redesenhadas na posição nova do módulo
   // selecionado (ver refreshProject3DResizeArrows).
   refreshProject3DResizeArrows();
+  refreshProjectSlotActions();
 }
 
 // Estado do arraste em andamento na Vista de Canto 3D — null quando nenhum
@@ -13607,6 +13676,106 @@ function stretchProjectSlotToCollision(slot, axis) {
   return false;
 }
 
+// ==========================================================================
+// BOTÕES "DUPLICAR / REMOVER" SOBRE O MÓDULO SELECIONADO — 2026-08-08 (3ª rodada)
+// ==========================================================================
+// São DOM, não geometria 3D (ver o bloco em portal.html). Como a cena 3D é
+// interativa (orbit, zoom, arraste), a posição na tela muda a todo instante —
+// então enquanto houver módulo selecionado um laço de requestAnimationFrame
+// reposiciona os botões. O laço só existe enquanto os botões estão visíveis
+// (para sozinho quando some a seleção), e cada quadro faz duas escritas de
+// style: barato o suficiente pra não competir com o render do Three.js.
+//
+// Alternativa descartada: recalcular só nos eventos (pointerup, wheel, render).
+// O OrbitControls tem damping — a câmera continua se movendo DEPOIS do dedo
+// sair, e os botões ficariam derrapando atrás dela.
+let projectSlotActionsRafId = null;
+
+function projectSlotActionsAnchorWorld(slot) {
+  // Âncora: canto superior DIREITO do módulo, um pouco acima e pra fora — não
+  // tapa o móvel nem briga com as setas de redimensionamento (que ficam no
+  // meio das faces e no topo do centro).
+  const heightM = Number(slot.height_mm || 0) / 1000;
+  const baseY = Number(slot.floor_height_mm || 0) / 1000;
+  const y = baseY + heightM + 0.10;
+  if (isFloorSlot(slot)) {
+    const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
+    const halfW = Number(slot.width_mm || 0) / 2000;
+    return {
+      x: Number(slot.floor_x_mm || 0) / 1000 + Math.cos(rot) * halfW,
+      y,
+      z: Number(slot.floor_z_mm || 0) / 1000 - Math.sin(rot) * halfW
+    };
+  }
+  const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index || 0));
+  if (!wallGeo) return null;
+  const alongM = (Number(slot.x_mm || 0) + Number(slot.width_mm || 0)) / 1000;
+  const depthOffM = Number(slot.depth_mm || 0) / 2000;
+  return {
+    x: wallGeo.originX + wallGeo.alongDirX * alongM + wallGeo.intoDirX * depthOffM,
+    y,
+    z: wallGeo.originZ + wallGeo.alongDirZ * alongM + wallGeo.intoDirZ * depthOffM
+  };
+}
+
+function refreshProjectSlotActions() {
+  const el = document.getElementById('po-proj-slot-actions');
+  if (!el) return;
+  const wrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  const slot = (selectedProjectSlotId != null)
+    ? projectSlots.find((s) => s.id === selectedProjectSlotId)
+    : null;
+  const visible = !!slot
+    && !!wrap && wrap.offsetParent !== null      // só na Vista de Canto 3D
+    && !projectCameraModeOn                       // em modo câmera o dedo é da câmera
+    && !!ViewerProjectEdit && !!ViewerProjectEdit.worldToClient;
+
+  if (!visible) {
+    el.style.display = 'none';
+    if (projectSlotActionsRafId) { cancelAnimationFrame(projectSlotActionsRafId); projectSlotActionsRafId = null; }
+    return;
+  }
+
+  const tick = () => {
+    projectSlotActionsRafId = null;
+    const liveSlot = (selectedProjectSlotId != null)
+      ? projectSlots.find((s) => s.id === selectedProjectSlotId)
+      : null;
+    const stillVisible = !!liveSlot && !!wrap && wrap.offsetParent !== null && !projectCameraModeOn;
+    if (!stillVisible) { el.style.display = 'none'; return; }
+    const anchor = projectSlotActionsAnchorWorld(liveSlot);
+    const screen = anchor ? ViewerProjectEdit.worldToClient(anchor) : null;
+    if (!screen) { el.style.display = 'none'; }
+    else {
+      el.style.display = 'flex';
+      el.style.left = Math.round(screen.x) + 'px';
+      el.style.top = Math.round(screen.y) + 'px';
+    }
+    projectSlotActionsRafId = requestAnimationFrame(tick);
+  };
+  if (!projectSlotActionsRafId) projectSlotActionsRafId = requestAnimationFrame(tick);
+}
+
+const projSlotDuplicateBtn = document.getElementById('po-proj-slot-duplicate-btn');
+if (projSlotDuplicateBtn) {
+  // pointerdown com stopPropagation: o botão fica POR CIMA do canvas 3D, e sem
+  // isso o mesmo toque também viraria um pointerdown de seleção/arraste lá
+  // embaixo (o listener do canvas não sabe que o dedo pousou num botão).
+  projSlotDuplicateBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  projSlotDuplicateBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (selectedProjectSlotId != null) duplicateProjectSlot(selectedProjectSlotId);
+  });
+}
+const projSlotRemoveBtn = document.getElementById('po-proj-slot-remove-btn');
+if (projSlotRemoveBtn) {
+  projSlotRemoveBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  projSlotRemoveBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (selectedProjectSlotId != null) removeProjectSlot(selectedProjectSlotId);
+  });
+}
+
 // Ponto onde o raio do ponteiro cruza o PISO (plano y=0), em mm de mundo —
 // base do arraste de módulo ILHA e do "soltar no chão" (biblioteca / toque
 // longo). Devolve null se o ponteiro estiver apontando pro céu.
@@ -13771,7 +13940,16 @@ function attachProject3DEditDrag() {
     // pickAssemblyAt, viewer3d_composition.js): perto do canto, prefere o
     // módulo da parede em edição em vez do hit geometricamente mais
     // próximo, que pode pertencer à outra parede.
-    const hit = ViewerProjectEdit.pickAssemblyAt(ev.clientX, ev.clientY, projectActiveWallIndex);
+    //
+    // stickySlotId (2026-08-08, 3ª rodada): no TOQUE, o módulo já selecionado
+    // não perde a seleção pra um vizinho encostado só porque o centro do dedo
+    // caiu alguns milímetros fora dele — ver pickAssemblyAtSticky. No mouse
+    // não se aplica (ponteiro é preciso; passar sticky ali atrapalharia quem
+    // quer selecionar o vizinho de propósito).
+    const stickySlop = (ev.pointerType === 'touch') ? PROJECT_STICKY_PICK_PX : 0;
+    const hit = ViewerProjectEdit.pickAssemblyAtSticky(
+      ev.clientX, ev.clientY, projectActiveWallIndex, selectedProjectSlotId, stickySlop
+    );
     if (!hit || !hit.group) {
       // Clique em área vazia da cena (nenhum módulo embaixo do ponteiro) —
       // pedido do usuário (2026-07-26: "quando clicar na tela quero que nao
@@ -13785,6 +13963,7 @@ function attachProject3DEditDrag() {
         selectedProjectSlotId = null;
         renderProjectConfigPanel();
         refreshProject3DResizeArrows();
+        refreshProjectSlotActions();
       }
       return;
     }
@@ -13978,8 +14157,12 @@ function attachProject3DEditDrag() {
     // mouse/dedo o módulo continua preso ao plano da parede, senão passar o
     // ponteiro por cima do piso viraria conversão acidental.
     if (state.freeMode) {
+      // ignoreSlotId = o próprio módulo arrastado. SEM isso a conversão nunca
+      // acontecia (relato do usuário: "movel nao ta indo da parede pro piso"):
+      // o móvel acompanha o ponteiro, então a caixa de clique dele fica sempre
+      // entre a câmera e o chão e pickRoomSurfaceAt devolvia null.
       const surface = ViewerProjectEdit.pickRoomSurfaceAt
-        ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY)
+        ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY, state.slotId)
         : null;
       if (surface && surface.kind === 'floor') {
         const fp = projectFloorPointMm(ev.clientX, ev.clientY);
@@ -14264,7 +14447,9 @@ function handleProject3DFloorMove(state, slot, ev) {
   // uma parede a "encosta" nela de novo, virando módulo de parede. Simétrico
   // ao trecho parede→chão no pointermove (ver freeMode lá).
   if (state.freeMode && ViewerProjectEdit.pickRoomSurfaceAt) {
-    const surface = ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY);
+    // Mesmo motivo do caminho parede→chão: a ilha arrastada tapa a parede
+    // atrás dela e precisa ser ignorada no teste.
+    const surface = ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY, state.slotId);
     if (surface && surface.kind === 'wall' && Number.isFinite(Number(surface.wallIndex))) {
       const wallIndex = Number(surface.wallIndex);
       const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
@@ -15199,23 +15384,37 @@ if (projPhotorealBtn) {
     });
   };
 
+  // Guarda de reentrância do BOTÃO (além da trava global de
+  // saveProjectFavorite): sem ela, o segundo toque enquanto o confirm/prompt
+  // do salvar está aberto reentrava neste handler e mostrava um SEGUNDO
+  // confirm "salvar agora?" — foi o "pediu pra salvar 2x" do relato. A trava
+  // do save impede o banco duplicar; esta aqui impede a pergunta duplicar.
+  let photorealBtnBusy = false;
   projPhotorealBtn.addEventListener('click', async () => {
-    if (typeof Photoreal === 'undefined' || !Photoreal.open) {
-      alert('Foto realista indisponível (js/photoreal.js não carregou).');
-      return;
+    if (photorealBtnBusy) return;
+    photorealBtnBusy = true;
+    projPhotorealBtn.disabled = true;
+    try {
+      if (typeof Photoreal === 'undefined' || !Photoreal.open) {
+        alert('Foto realista indisponível (js/photoreal.js não carregou).');
+        return;
+      }
+      if (!currentUser) { alert(I18n.t('fav.need_login')); return; }
+      // Exige projeto salvo ANTES de abrir o render (não só ao tentar guardar
+      // a foto no fim) — oferece salvar na hora em vez de só bloquear.
+      if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
+        const wantsToSave = confirm('Salve o projeto antes de gerar a foto realista — a renderização demora, e sem o projeto salvo a foto não tem onde ser guardada no fim. Salvar agora?');
+        if (!wantsToSave) return;
+        await saveProjectFavorite(null);
+        // saveProjectFavorite cancela (prompt do nome) ou mostra erro sozinho
+        // (po-proj-error) sem lançar exceção — só segue se realmente salvou.
+        if (!loadedProjectFavorite || !loadedProjectFavorite.id) return;
+      }
+      openPhotorealModal();
+    } finally {
+      photorealBtnBusy = false;
+      projPhotorealBtn.disabled = false;
     }
-    if (!currentUser) { alert(I18n.t('fav.need_login')); return; }
-    // Exige projeto salvo ANTES de abrir o render (não só ao tentar guardar
-    // a foto no fim) — oferece salvar na hora em vez de só bloquear.
-    if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
-      const wantsToSave = confirm('Salve o projeto antes de gerar a foto realista — a renderização demora, e sem o projeto salvo a foto não tem onde ser guardada no fim. Salvar agora?');
-      if (!wantsToSave) return;
-      await saveProjectFavorite(null);
-      // saveProjectFavorite cancela (prompt do nome) ou mostra erro sozinho
-      // (po-proj-error) sem lançar exceção — só segue se realmente salvou.
-      if (!loadedProjectFavorite || !loadedProjectFavorite.id) return;
-    }
-    openPhotorealModal();
   });
 }
 
@@ -15236,6 +15435,18 @@ function resetProject() {
   if (projectSlots.length && !confirm(I18n.t('project.reset_confirm'))) return;
   projectSlots = [];
   selectedProjectSlotId = null;
+  // DESAMARRA do projeto salvo (BUG corrigido 2026-08-08, relato do usuário:
+  // "salvei projeto e comecei novo, ao comecar novo a imagem realista do
+  // antigo ficou la como se fosse o antigo ainda"). resetProject esvaziava só
+  // os módulos e deixava loadedProjectFavorite apontando pro projeto ANTERIOR
+  // — com três consequências, não só a visual: a grade de fotos realistas
+  // continuava na tela, o botão "Atualizar <nome>" continuava oferecendo
+  // sobrescrever o projeto antigo, e uma foto realista gerada no ambiente NOVO
+  // seria gravada como foto do projeto VELHO. refreshProjectFavoriteButtons()
+  // já chama refreshProjectPhotorealGallery(), que zera a grade quando não há
+  // projeto amarrado.
+  loadedProjectFavorite = null;
+  refreshProjectFavoriteButtons();
   project3DLastFitKey = null; // força reenquadrar a câmera 3D no próximo render (ver comentário na declaração)
   renderProjectCanvas();
   projectDirty = false; // ambiente esvaziado de propósito, não é uma alteração pendente de salvar
@@ -15460,7 +15671,29 @@ async function captureProjectThumbnail() {
   }
 }
 
+// Trava de reentrância do salvar (BUG corrigido 2026-08-08, relato do usuário:
+// "coloquei gerar imagem realista sem salvar, ele pediu pra salvar 2x, gerou 2
+// projetos iguais"). Salvar é uma sequência LONGA e assíncrona — captura da
+// miniatura 3D + cálculo do valor + insert — com um prompt() de nome no meio.
+// Qualquer segundo disparo nessa janela (toque duplicado no iPad, clique
+// impaciente, ou um segundo caminho de código chamando a mesma função) entrava
+// em paralelo, cada um com seu prompt, e cada um fazia o SEU insert: dois
+// projetos idênticos no banco. A trava é global (e não só um `disabled` no
+// botão) porque a função tem mais de um chamador — o botão Salvar, o botão
+// Atualizar e o fluxo da foto realista.
+let projectSaveInFlight = false;
+
 async function saveProjectFavorite(overwriteId) {
+  if (projectSaveInFlight) return;
+  projectSaveInFlight = true;
+  try {
+    await saveProjectFavoriteInner(overwriteId);
+  } finally {
+    projectSaveInFlight = false;
+  }
+}
+
+async function saveProjectFavoriteInner(overwriteId) {
   const statusEl = document.getElementById('po-proj-fav-status');
   const errorEl = document.getElementById('po-proj-error');
   errorEl.style.display = 'none';
