@@ -264,6 +264,76 @@ function createViewerComposition3D() {
     return new THREE.Line(geometry, material);
   }
 
+  // ---------- Superfícies sólidas do ambiente (piso + paredes) ----------
+  // Pedido do usuário (2026-08-08: "AMBOS - colocar chao"), escolhido entre as
+  // opções como "piso sólido + paredes sólidas": até aqui o ambiente era só um
+  // desenho de LINHAS (chão/teto/rodapé/altura máxima) sobre fundo branco — dá
+  // pra medir, mas não dá sensação nenhuma de estar num cômodo, e um módulo
+  // "solto no chão" (ilha, ver placement='floor' em portal.js) não teria
+  // nenhuma referência visual de onde o chão está.
+  //
+  // As linhas CONTINUAM todas desenhadas por cima (mesmas cotas de sempre) —
+  // as superfícies são aditivas, entram ATRÁS delas. Regras que fazem a coisa
+  // funcionar sem atrapalhar a edição:
+  //   - PAREDE usa FrontSide com a normal apontando PRA DENTRO do ambiente:
+  //     vista de fora (câmera atrás da parede), a face de trás é descartada
+  //     pelo backface culling e a parede simplesmente some — dá pra continuar
+  //     olhando o projeto de qualquer ângulo sem uma parede tapando a cena.
+  //   - PISO usa DoubleSide (aparece de cima E de baixo) — é o plano de
+  //     referência principal, some nunca.
+  //   - polygonOffset empurra a superfície pra trás no z-buffer, senão ela
+  //     brigaria (z-fighting) com o fundo dos módulos encostados nela e com as
+  //     próprias linhas de cota, que ficam no mesmo plano.
+  //   - userData.isRoomSurface marca essas malhas pra que o raycasting de
+  //     clique/arraste (pickAssemblyAt / pickRoomSurfaceAt) saiba distinguir
+  //     "cliquei no ambiente" de "cliquei num módulo".
+  const FLOOR_COLOR = 0xe3ddd2;
+  const WALL_COLOR = 0xf2efe8;
+  function makeRoomSurface(width, height, color, doubleSide, kind) {
+    const geom = new THREE.PlaneGeometry(Math.max(width, 0.01), Math.max(height, 0.01));
+    const mat = new THREE.MeshStandardMaterial({
+      color, roughness: 0.95, metalness: 0.0,
+      side: doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+      polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.userData.isRoomSurface = true;
+    mesh.userData.roomSurfaceKind = kind || 'wall';
+    return mesh;
+  }
+
+  // Piso retangular deitado no plano Y=0 (chão), cobrindo x∈[x0,x1] e
+  // z∈[z0,z1]. PlaneGeometry nasce em pé (normal +Z); girar -90° em X deita
+  // ela com a normal pra CIMA (+Y).
+  function makeFloorSurface(x0, x1, z0, z1) {
+    const mesh = makeRoomSurface(Math.abs(x1 - x0), Math.abs(z1 - z0), FLOOR_COLOR, true, 'floor');
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    return mesh;
+  }
+
+  // Parede em pé de p0 a p1 (pontos no chão), altura `ceilingH`, com a face
+  // visível olhando pra `intoDir` (o vetor "pra dentro do ambiente" que
+  // getProjectWallGeometry já define por parede em portal.js). Recuada
+  // WALL_SURFACE_BACKOFF_M no sentido CONTRÁRIO ao intoDir pra ficar um fio
+  // atrás das linhas de cota e do fundo dos módulos encostados nela.
+  const WALL_SURFACE_BACKOFF_M = 0.004;
+  function makeWallSurface(p0, p1, ceilingH, intoDir) {
+    const widthM = Math.hypot(p1.x - p0.x, p1.z - p0.z);
+    const mesh = makeRoomSurface(widthM, ceilingH, WALL_COLOR, false, 'wall');
+    const ix = (intoDir && intoDir.x) || 0;
+    const iz = (intoDir && intoDir.z) || 0;
+    // PlaneGeometry nasce com a normal em +Z; atan2 gira em Y até a normal
+    // coincidir com intoDir.
+    mesh.rotation.y = Math.atan2(ix, iz);
+    mesh.position.set(
+      (p0.x + p1.x) / 2 - ix * WALL_SURFACE_BACKOFF_M,
+      ceilingH / 2,
+      (p0.z + p1.z) / 2 - iz * WALL_SURFACE_BACKOFF_M
+    );
+    return mesh;
+  }
+
   // Cotas TOTAIS da composição inteira (pedido do usuário: "colocar essas
   // medidas no próprio desenho") — 3 linhas de cota estilo CAD, cada uma numa
   // face diferente do conjunto pra não se cruzarem: largura na FRENTE embaixo
@@ -345,6 +415,10 @@ function createViewerComposition3D() {
   // nem no valor máximo que o cliente consegue configurar, só onde a linha
   // de referência é DESENHADA). Mesma constante/comentário do viewer3d.js.
   const MAX_HEIGHT_LINE_RAISE_M = 0.127; // 5"
+  // Profundidade mínima do piso sólido quando o ambiente não define uma
+  // (parede única / móveis rasos) — ver makeFloorSurface e o uso em
+  // buildRoomEnvironment/buildRoomEnvironmentMultiWall.
+  const ROOM_MIN_FLOOR_DEPTH_M = 1.8;
 
   // exactWidth (pedido do usuário, 2026-07-26: "gostaria de ver o final das
   // paredes, conforme medidas delas", depois "nao estou vendo as ultimas
@@ -364,6 +438,27 @@ function createViewerComposition3D() {
     const wallW = totalWidth + margin * 2;
     const ceilingH = room.ceiling_m;
     const baseH = room.baseboard_h_m || 0;
+
+    // Superfícies SÓLIDAS (piso + parede) — pedido do usuário 2026-08-08
+    // ("AMBOS - colocar chao", opção "piso sólido + paredes sólidas"). Isso
+    // REVERTE em parte a escolha antiga de "só linhas limpas sobre o fundo
+    // branco" (ver comentário logo abaixo, mantido porque as LINHAS continuam
+    // todas exatamente como eram, desenhadas por cima das superfícies). O piso
+    // avança pra dentro do ambiente até um pouco além do móvel mais fundo, com
+    // um mínimo (ROOM_MIN_FLOOR_DEPTH_M) pra nunca ficar uma tira estreita
+    // quando os móveis são rasos. Modo minimal (imagem-base pra IA, ver
+    // room.minimal) continua SEM superfície nenhuma — a IA recebe o desenho
+    // limpo de sempre.
+    if (!room.minimal) {
+      const floorDepth = Math.max((maxDepth || 0) + 0.6, ROOM_MIN_FLOOR_DEPTH_M);
+      group.add(makeFloorSurface(-wallW / 2, wallW / 2, 0, floorDepth));
+      if (ceilingH > 0) {
+        group.add(makeWallSurface(
+          { x: -wallW / 2, z: 0 }, { x: wallW / 2, z: 0 },
+          ceilingH, { x: 0, z: 1 }
+        ));
+      }
+    }
 
     // Estilo escolhido pelo usuário ("deixa igual do cima"): SEM parede/piso
     // 3D — só linhas limpas sobre o fundo branco, como as do teto. Em cima:
@@ -471,11 +566,52 @@ function createViewerComposition3D() {
     const ceilingH = room.ceiling_m;
     const baseH = room.baseboard_h_m || 0;
 
+    // PISO SÓLIDO do ambiente (pedido do usuário 2026-08-08, "colocar chao").
+    // Aqui não existe uma "profundidade do cômodo" cadastrada em lugar nenhum:
+    // o ambiente é definido só pelos SEGMENTOS de parede (1 a 3, ver
+    // getProjectWallGeometry em portal.js). O retângulo do piso é a caixa
+    // delimitadora das PONTAS de todas as paredes, esticada pra dentro do
+    // ambiente até um mínimo. Em L/C-U isso já dá o cômodo certo (as paredes
+    // laterais correm ao longo de Z, então a caixa delimitadora sozinha já
+    // tem a profundidade real); em parede única a caixa é degenerada (tudo em
+    // z=0) e o mínimo é quem manda.
+    if (!room.minimal && (segments || []).length) {
+      let fx0 = Infinity, fx1 = -Infinity, fz0 = Infinity, fz1 = -Infinity;
+      (segments || []).forEach((seg) => {
+        const ax = seg.alongDir.x, az = seg.alongDir.z;
+        [[seg.originX, seg.originZ], [seg.originX + ax * seg.widthM, seg.originZ + az * seg.widthM]]
+          .forEach(([px, pz]) => {
+            fx0 = Math.min(fx0, px); fx1 = Math.max(fx1, px);
+            fz0 = Math.min(fz0, pz); fz1 = Math.max(fz1, pz);
+          });
+      });
+      if (fz1 - fz0 < ROOM_MIN_FLOOR_DEPTH_M) fz1 = fz0 + ROOM_MIN_FLOOR_DEPTH_M;
+      if (fx1 - fx0 < 0.3) fx1 = fx0 + 0.3;
+      group.add(makeFloorSurface(fx0, fx1, fz0, fz1));
+    }
+
     (segments || []).forEach((seg) => {
       const ax = seg.alongDir.x, az = seg.alongDir.z;
       const margin = seg.margin || 0;
       const p0 = new THREE.Vector3(seg.originX - ax * margin, 0, seg.originZ - az * margin);
       const p1 = new THREE.Vector3(seg.originX + ax * (seg.widthM + margin), 0, seg.originZ + az * (seg.widthM + margin));
+
+      // Superfície sólida desta parede (ver makeWallSurface) — a face visível
+      // olha pra intoDir, então vista de FORA do ambiente a parede some
+      // (backface culling) e não tapa o projeto. seg.intoDir vem de
+      // renderFreeformWalls; sem ele (chamador antigo), pula a superfície e o
+      // desenho fica só de linhas, exatamente como era antes.
+      if (!room.minimal && ceilingH > 0 && seg.intoDir) {
+        const wallSurface = makeWallSurface(
+          { x: p0.x, z: p0.z }, { x: p1.x, z: p1.z },
+          ceilingH, seg.intoDir
+        );
+        // De qual parede esta superfície é — lido por pickRoomSurfaceAt pra o
+        // duplo toque "mostra essa parede de frente" (iPad) saber qual parede
+        // ativar sem depender de nenhum módulo estar em cima dela.
+        wallSurface.userData.wallIndex = seg.wallIndex;
+        group.add(wallSurface);
+      }
 
       group.add(makeLine(p0.clone(), p1.clone()));
       group.add(makeLine(p0.clone().setY(ceilingH), p1.clone().setY(ceilingH)));
@@ -845,6 +981,36 @@ function createViewerComposition3D() {
       });
     });
 
+    // ---------- Módulos ILHA (soltos no chão) ----------
+    // Pedido do usuário (2026-08-08): "O modulo deve estar ligado a uma parede
+    // ou ao chao". Esses não pertencem a parede nenhuma — a posição vem em
+    // coordenadas de MUNDO (floorX/floorZ, em metros, ver placement='floor' e
+    // floor_x_mm/floor_z_mm em portal.js) mais um giro próprio em Y. Entram na
+    // MESMA cena/currentGroups dos módulos de parede (mesmo raycasting, mesmo
+    // contorno vermelho, mesmo arraste), só a matemática de posição muda.
+    const floorList = ((options && options.floorAssemblies) || []).filter((a) => a && a.group);
+    floorList.forEach((a) => {
+      a.group.rotation.y = Number(a.rotationY) || 0;
+      a.group.position.x = Number(a.floorX) || 0;
+      a.group.position.z = Number(a.floorZ) || 0;
+      a.group.position.y = a.floor_height_m || 0;
+      a.group.userData.slotId = a.id;
+      a.group.userData.wallIndex = null;
+      a.group.userData.isFloorIsland = true;
+      scene.add(a.group);
+      currentGroups.push(a.group);
+      if (Array.isArray(a.openables) && a.openables.length) currentOpenables.push(...a.openables);
+      maxHeight = Math.max(maxHeight, (a.floor_height_m || 0) + a.height_m);
+      const halfW = a.width_m / 2, halfD = a.depth_m / 2;
+      const cR = Math.cos(a.group.rotation.y), sR = Math.sin(a.group.rotation.y);
+      [[-halfW, -halfD], [halfW, -halfD], [-halfW, halfD], [halfW, halfD]].forEach(([lx, lz]) => {
+        const wx = a.group.position.x + lx * cR + lz * sR;
+        const wz = a.group.position.z - lx * sR + lz * cR;
+        minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
+        minZ = Math.min(minZ, wz); maxZ = Math.max(maxZ, wz);
+      });
+    });
+
     if (!isFinite(minX)) { minX = -0.15; maxX = 0.15; minZ = 0; maxZ = 0.3; }
 
     if (room && room.ceiling_m > 0) {
@@ -855,9 +1021,13 @@ function createViewerComposition3D() {
       const segments = walls.map((wall) => ({
         originX: wall.originX, originZ: wall.originZ,
         alongDir: { x: wall.alongDirX, z: wall.alongDirZ },
+        // intoDir (novo, 2026-08-08): a superfície SÓLIDA da parede precisa
+        // saber pra que lado a face visível olha — ver makeWallSurface.
+        intoDir: { x: wall.intoDirX, z: wall.intoDirZ },
         widthM: wall.widthM,
         margin: 0,
-        label: wall.role === 'main'
+        label: wall.role === 'main',
+        wallIndex: wall.wallIndex
       }));
       const envGroup = buildRoomEnvironmentMultiWall(segments, room);
       scene.add(envGroup);
@@ -1309,6 +1479,35 @@ function createViewerComposition3D() {
     return result;
   }
 
+  // "Que SUPERFÍCIE do ambiente (piso/parede) está embaixo do ponteiro" —
+  // contraparte de pickAssemblyAt (que só enxerga MÓDULOS). Usado por
+  // portal.js pra: (a) duplo toque numa parede enquadrar ela de frente e
+  // duplo toque no piso ir pra vista de cima (pedido 2026-08-08, iPad);
+  // (b) descobrir onde soltar um módulo arrastado da biblioteca — se o dedo/
+  // mouse soltou em cima do piso, o módulo vira ilha (placement='floor'); se
+  // soltou numa parede, vira módulo de parede.
+  // Devolve { kind:'floor'|'wall', wallIndex, point:{x,y,z} } ou null.
+  function pickRoomSurfaceAt(clientX, clientY) {
+    if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const hits = _raycaster.intersectObjects(currentGroups, true);
+    for (let i = 0; i < hits.length; i++) {
+      const obj = hits[i].object;
+      if (obj && obj.userData && obj.userData.isRoomSurface) {
+        return {
+          kind: obj.userData.roomSurfaceKind || 'wall',
+          wallIndex: obj.userData.wallIndex,
+          point: { x: hits[i].point.x, y: hits[i].point.y, z: hits[i].point.z }
+        };
+      }
+      // Um MÓDULO na frente da superfície ganha — clicar num móvel nunca deve
+      // ser lido como "cliquei no piso/parede atrás dele".
+      let p = obj;
+      while (p) { if (p.userData && p.userData.slotId != null) return null; p = p.parent; }
+    }
+    return null;
+  }
+
   function intersectPlaneAtClient(clientX, clientY, planeOrigin, planeNormal) {
     if (!renderer || !camera || !_raycaster) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
@@ -1452,6 +1651,103 @@ function createViewerComposition3D() {
     return null;
   }
 
+  // Recoloca a CÂMERA numa direção específica mantendo o alvo da órbita e a
+  // distância atuais (pedido do usuário 2026-08-08, iPad: "duplo clique na
+  // parede ele mostra a parede de frente. duplo clique no chao mostra vista de
+  // cima"). Não é um reenquadramento (não recalcula bounding box nem zoom) —
+  // só GIRA em volta do que já está enquadrado, então o usuário não perde o
+  // zoom que tinha. dir = vetor (mundo) de onde a câmera deve olhar PRA o
+  // alvo, ex.: {x:0,y:1,z:0.001} = de cima; -intoDir da parede = de frente
+  // pra ela. target (opcional) recentraliza a órbita antes de girar.
+  function frameDirection(dir, target) {
+    if (!camera || !controls) return;
+    const t = target
+      ? new THREE.Vector3(target.x, target.y, target.z)
+      : controls.target.clone();
+    const dist = camera.position.distanceTo(controls.target) || 3;
+    const d = new THREE.Vector3(dir.x, dir.y, dir.z);
+    if (d.lengthSq() < 1e-9) return;
+    d.normalize();
+    controls.target.copy(t);
+    camera.position.copy(t).addScaledVector(d, dist);
+    camera.lookAt(t);
+    controls.update();
+  }
+
+  // ---------- Setas de redimensionamento em 3D ----------
+  // Pedido do usuário (2026-08-08, iPad): "clique rapido no modulo (tela
+  // travada) mantem o vermelho envolta pra mostrar que esta selecionado, ele
+  // abre setas pra redimencionamento nos sentidos permitidos". No mouse o
+  // redimensionamento é por AGARRAR a borda do módulo (classifyProject3DGrab
+  // em portal.js) — no dedo isso é impreciso demais e não tem cursor pra
+  // avisar que ali estica, então o toque ganha alças VISÍVEIS de verdade.
+  //
+  // Quem decide QUAIS setas existem e ONDE elas ficam é portal.js (só ele
+  // conhece a geometria da parede e os limites min/max de cada módulo) — aqui
+  // só desenhamos e devolvemos qual foi tocada. spec = [{ axis, position:
+  // {x,y,z}, dir:{x,y,z} }] (axis é a string opaca devolvida por
+  // pickResizeArrowAt, ex. 'width-left'); null/[] apaga todas.
+  let resizeArrowGroup = null;
+  const RESIZE_ARROW_COLOR = 0xd8442f;
+  function setResizeArrows(spec) {
+    if (!scene) return;
+    if (resizeArrowGroup) {
+      scene.remove(resizeArrowGroup);
+      disposeObject3D(resizeArrowGroup);
+      resizeArrowGroup = null;
+    }
+    if (!spec || !spec.length) return;
+    const group = new THREE.Group();
+    group.name = 'ar-export-exclude';
+    const shaftLen = 0.10, shaftR = 0.014, headLen = 0.075, headR = 0.038;
+    // depthTest:false + renderOrder alto: a seta é UI, precisa aparecer por
+    // cima do módulo mesmo estando geometricamente dentro dele.
+    const mat = new THREE.MeshBasicMaterial({ color: RESIZE_ARROW_COLOR, depthTest: false });
+    spec.forEach((item) => {
+      const arrow = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 12), mat);
+      shaft.position.y = shaftLen / 2;
+      const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headLen, 16), mat);
+      head.position.y = shaftLen + headLen / 2;
+      // Alvo de toque generoso e invisível em volta da seta inteira — no dedo,
+      // acertar um cone de 4cm é frustrante.
+      const hit = new THREE.Mesh(
+        new THREE.CylinderGeometry(headR * 2.2, headR * 2.2, shaftLen + headLen, 8),
+        new THREE.MeshBasicMaterial({ visible: false, depthTest: false })
+      );
+      hit.position.y = (shaftLen + headLen) / 2;
+      arrow.add(shaft); arrow.add(head); arrow.add(hit);
+      arrow.renderOrder = 998;
+      arrow.traverse((o) => { o.renderOrder = 998; o.userData.resizeAxis = item.axis; });
+      arrow.userData.resizeAxis = item.axis;
+      // Cilindro/cone do Three.js nascem apontando pra +Y — gira até apontar
+      // pra dir.
+      const d = new THREE.Vector3(item.dir.x, item.dir.y, item.dir.z).normalize();
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+      arrow.position.set(item.position.x, item.position.y, item.position.z);
+      group.add(arrow);
+    });
+    resizeArrowGroup = group;
+    scene.add(group);
+  }
+
+  // Qual seta de redimensionamento está embaixo do ponteiro (ou null).
+  // Raycast SÓ no grupo das setas — elas ficam por cima de tudo, então
+  // precisam ser testadas ANTES de pickAssemblyAt no pointerdown (ver
+  // attachProject3DEditDrag em portal.js).
+  function pickResizeArrowAt(clientX, clientY) {
+    if (!resizeArrowGroup || !renderer || !camera || !_raycaster) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const hits = _raycaster.intersectObject(resizeArrowGroup, true);
+    if (!hits.length) return null;
+    let obj = hits[0].object;
+    while (obj) {
+      if (obj.userData && obj.userData.resizeAxis) return { axis: obj.userData.resizeAxis };
+      obj = obj.parent;
+    }
+    return null;
+  }
+
   // Devolve a THREE.Scene bruta desta instância — teste de exportação AR
   // (2026-08-01, "colocar o móvel no ambiente real"): generateArGlbForProject
   // (portal.js) usa isto pra rodar o THREE.GLTFExporter em cima da MESMA
@@ -1494,6 +1790,9 @@ function createViewerComposition3D() {
     // (preview) nunca chamam nenhum destes.
     setControlsEnabled, getDomElement, pickAssemblyAt, intersectPlaneAtClient,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId,
+    // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
+    // pickRoomSurfaceAt / frameDirection / setResizeArrows.
+    pickRoomSurfaceAt, frameDirection, setResizeArrows, pickResizeArrowAt,
     // Teste AR (2026-08-01) — ver comentário de getScene acima.
     getScene
   };

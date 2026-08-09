@@ -2496,6 +2496,41 @@ header.po-topnav {
 
 .po-proj-canvas-outer { min-width: 0; }
 .po-proj-view-toggle { margin: 0 auto 4px; width: fit-content; }
+
+/* Ferramentas da cena 3D (2026-08-08): Colisão + Girar câmera (iPad).
+   Mesma linguagem visual do .po-view-toggle logo acima (pílula discreta que
+   acende quando ligada) pra não competir com a troca Frontal/Superior. */
+.po-proj-canvas-tools {
+  display: flex; gap: 6px; justify-content: center; margin: 0 auto 4px; width: fit-content;
+}
+.po-proj-tool-btn {
+  background: var(--panel); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 8px;
+  margin: 0; padding: 5px 12px; font-size: 12px; font-weight: 600;
+}
+.po-proj-tool-btn:hover { background: var(--accent-light); }
+.po-proj-tool-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+/* Card da biblioteca sendo ARRASTADO pra dentro da cena (ver
+   attachProjectLibraryDragToScene em portal.js) — o card original fica
+   apagado e um "fantasma" preso ao dedo/cursor é criado em JS. */
+/* pan-y: o navegador continua rolando a lista na vertical sozinho; o
+   movimento HORIZONTAL chega até o JS e vira o arraste do módulo pra dentro
+   da cena (ver attachProjectLibraryCardDrag). */
+.po-proj-library-card { touch-action: pan-y; }
+.po-proj-library-card.dragging-to-scene { opacity: 0.35; }
+.po-proj-drag-ghost {
+  position: fixed; z-index: 4000; pointer-events: none;
+  width: 132px; padding: 6px 8px;
+  background: var(--panel); border: 2px solid var(--text); border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+  font-size: 11px; font-weight: 600; color: var(--text);
+  text-align: center; transform: translate(-50%, -50%);
+}
+.po-proj-drag-ghost img { width: 100%; height: 64px; object-fit: contain; display: block; margin-bottom: 4px; }
+/* Realce do canvas 3D enquanto um módulo está sendo arrastado por cima dele. */
+#po-proj-canvas-3d-edit-wrap.drop-target,
+.po-proj-canvas.drop-target { outline: 2px dashed var(--text); outline-offset: -4px; }
 /* Pedido do usuário (3ª rodada): "tem muita borda lá em cima só com umas
    coisas escritas que ninguém vai ler" — bem discreto, quase um detalhe. */
 .po-proj-canvas-scale-label {

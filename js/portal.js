@@ -9735,17 +9735,38 @@ function getProjectWallWidthMm(wallIndex) {
   return projectWallWidthsMm[idx] || PROJECT_WALL_WIDTH_DEFAULT_MM;
 }
 
+// ---------- Módulo de PAREDE vs módulo ILHA (solto no chão) ----------
+// Pedido do usuário (2026-08-08): "O modulo deve estar ligado a uma parede ou
+// ao chao". Até aqui TODO slot pertencia obrigatoriamente a uma parede
+// (wall_index + x_mm ao longo dela + floor_height_mm de altura). Agora um slot
+// pode ter placement='floor': ele não pertence a parede nenhuma e sua posição
+// é em coordenadas de MUNDO no piso — floor_x_mm/floor_z_mm (mesmo referencial
+// do 3D: X=0 no meio da parede 'main', Z=0 no plano dela, Z cresce pra dentro
+// do ambiente) + floor_rotation_deg (giro próprio em torno do eixo vertical).
+//
+// placement ausente = 'wall' em TODO lugar (projeto salvo antes desta
+// funcionalidade continua abrindo igual, sem migration nenhuma — os slots já
+// eram um JSON solto na coluna user_projects.slots, ver serializeProjectSlots).
+function isFloorSlot(slot) {
+  return !!slot && slot.placement === 'floor';
+}
+function projectFloorSlots() {
+  return projectSlots.filter(isFloorSlot);
+}
 function projectSlotsOnWall(wallIndex) {
-  return projectSlots.filter((s) => Number(s.wall_index || 0) === wallIndex);
+  return projectSlots.filter((s) => !isFloorSlot(s) && Number(s.wall_index || 0) === wallIndex);
 }
 // Mesma parede do slot dado, excluindo ele mesmo — substitui os antigos
 // `projectSlots.filter((s) => s.id !== slot.id)` espalhados pelo arraste/
 // snap/profundidade: com múltiplas paredes, "outro módulo" só deve contar
 // os que estão na MESMA parede (imã/sobreposição/z_order não fazem sentido
-// entre paredes fisicamente diferentes).
+// entre paredes fisicamente diferentes). Módulo ILHA nunca entra nessa conta
+// (não está em parede nenhuma) — colisão de ilha é tratada em 2D no piso, ver
+// clampFloorSlotAgainstCollision.
 function projectSlotsSameWallExcluding(slot) {
+  if (isFloorSlot(slot)) return [];
   const wallIndex = Number(slot.wall_index || 0);
-  return projectSlots.filter((s) => s.id !== slot.id && Number(s.wall_index || 0) === wallIndex);
+  return projectSlots.filter((s) => !isFloorSlot(s) && s.id !== slot.id && Number(s.wall_index || 0) === wallIndex);
 }
 
 function projectWallRoleLabel(role) { return I18n.t('project.wall_role_' + role); }
@@ -9816,6 +9837,7 @@ function setProjectWallShape(newShape) {
   const oldWidths = projectWallWidthsMm.slice();
 
   projectSlots.forEach((slot) => {
+    if (isFloorSlot(slot)) return; // ilha não pertence a parede nenhuma
     const role = oldRoles[Number(slot.wall_index || 0)] || 'main';
     let newIdx = newRoles.indexOf(role);
     if (newIdx < 0) newIdx = newRoles.indexOf('main');
@@ -10259,9 +10281,213 @@ function renderProjectLibrary() {
     // carrinho normal (ver memória) — decisão explícita do usuário só pra
     // esta tela de Projetos, que é uma ferramenta de rascunho/layout, não o
     // pedido final.
-    card.addEventListener('click', () => insertProjectModuleDefault(m.id));
+    // Clique simples continua inserindo com a posição automática de sempre;
+    // ARRASTAR o card e soltar dentro da cena posiciona onde o ponteiro
+    // largou (2026-08-08) — ver attachProjectLibraryCardDrag.
+    attachProjectLibraryCardDrag(card, m);
     grid.appendChild(card);
   });
+}
+
+// ==========================================================================
+// ARRASTAR DA BIBLIOTECA E SOLTAR NA CENA — 2026-08-08
+// ==========================================================================
+// Pedido do usuário: "os moveis devem ser arrastados da biblioteca e largados
+// onde o mause soltar do clique". Até aqui o card só respondia a CLIQUE e o
+// módulo entrava numa posição calculada automaticamente
+// (computeDefaultProjectSlotX) — quem quisesse colocar num lugar específico
+// tinha que inserir e depois arrastar dentro da cena, dois gestos pra uma
+// intenção só.
+//
+// Implementado com Pointer Events (não com a API nativa de drag-and-drop do
+// HTML5): a nativa não funciona em toque no iOS, e o alvo do drop aqui é um
+// <canvas> WebGL onde a posição do ponteiro precisa virar um raio 3D — nada
+// disso o dragover/drop nativo entrega de graça. O "fantasma" que acompanha o
+// dedo/cursor é um <div> position:fixed criado na hora (.po-proj-drag-ghost).
+//
+// Clique curto (sem passar do limiar de movimento) continua caindo no
+// comportamento antigo — inserir com posição automática.
+let projectLibDragState = null;
+
+function attachProjectLibraryCardDrag(card, moduleRow) {
+  card.addEventListener('pointerdown', (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    projectLibDragState = {
+      pointerId: ev.pointerId,
+      moduleId: moduleRow.id,
+      moduleName: moduleRow.name,
+      card,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      moved: false,
+      ghost: null
+    };
+    try { card.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+  });
+
+  card.addEventListener('pointermove', (ev) => {
+    const st = projectLibDragState;
+    if (!st || st.pointerId !== ev.pointerId) return;
+    if (!st.moved) {
+      const dx = ev.clientX - st.startX;
+      const dy = ev.clientY - st.startY;
+      const d = Math.hypot(dx, dy);
+      if (d < (ev.pointerType === 'touch' ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX)) return;
+      // TOQUE: a biblioteca é uma lista que ROLA na vertical — se qualquer
+      // movimento do dedo virasse arraste de módulo, rolar a lista no iPad
+      // ficaria impossível. Só um gesto predominantemente HORIZONTAL (que é
+      // exatamente o gesto natural de "puxar da coluna da esquerda pra dentro
+      // da cena") arma o arraste; o resto é rolagem e cancela o gesto. Casa
+      // com `touch-action: pan-y` no card (CSS), que deixa o navegador cuidar
+      // da rolagem vertical nativamente.
+      if (ev.pointerType === 'touch' && Math.abs(dx) <= Math.abs(dy)) {
+        projectLibDragState = null;
+        return;
+      }
+      st.moved = true;
+      st.ghost = buildProjectDragGhost(moduleRow);
+      document.body.appendChild(st.ghost);
+      card.classList.add('dragging-to-scene');
+    }
+    ev.preventDefault();
+    st.ghost.style.left = ev.clientX + 'px';
+    st.ghost.style.top = ev.clientY + 'px';
+    highlightProjectDropTarget(ev.clientX, ev.clientY);
+  });
+
+  const endLibDrag = (ev) => {
+    const st = projectLibDragState;
+    if (!st || st.pointerId !== ev.pointerId) return;
+    projectLibDragState = null;
+    if (st.ghost && st.ghost.parentNode) st.ghost.parentNode.removeChild(st.ghost);
+    card.classList.remove('dragging-to-scene');
+    highlightProjectDropTarget(null, null);
+    if (ev.type === 'pointercancel') return;
+    if (!st.moved) {
+      // Não passou do limiar: é um clique normal, comportamento de sempre.
+      insertProjectModuleDefault(st.moduleId);
+      return;
+    }
+    dropProjectModuleAt(st.moduleId, ev.clientX, ev.clientY);
+  };
+  card.addEventListener('pointerup', endLibDrag);
+  card.addEventListener('pointercancel', endLibDrag);
+}
+
+function buildProjectDragGhost(moduleRow) {
+  const ghost = document.createElement('div');
+  ghost.className = 'po-proj-drag-ghost';
+  ghost.innerHTML = `${moduleCardImage(moduleRow)}<div>${moduleRow.name}</div>`;
+  return ghost;
+}
+
+// Acende o contorno tracejado no canvas que receberia o módulo se soltasse
+// agora (o 3D de canto ou o 2D plano, o que estiver visível).
+function highlightProjectDropTarget(clientX, clientY) {
+  const targets = [
+    document.getElementById('po-proj-canvas-3d-edit-wrap'),
+    document.getElementById('po-proj-canvas')
+  ];
+  targets.forEach((el) => {
+    if (!el) return;
+    let over = false;
+    if (clientX != null && el.offsetParent !== null) {
+      const r = el.getBoundingClientRect();
+      over = clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    }
+    el.classList.toggle('drop-target', over);
+  });
+}
+
+// Solta o módulo no ponto (clientX, clientY). Três destinos possíveis, nesta
+// ordem:
+//   1. PISO da cena 3D  -> módulo ILHA (placement 'floor') exatamente onde o
+//      raio do ponteiro cruza o chão.
+//   2. PAREDE da cena 3D -> módulo de parede naquela parede, na posição/altura
+//      onde o raio cruza o plano dela (a parede também vira a ativa).
+//   3. Canvas 2D plano (parede única, vista Frontal) -> converte px em mm pela
+//      escala atual (projectPxPerMm) e insere ali.
+// Fora de qualquer canvas, o drop é ignorado (nada é inserido) — soltar no
+// vazio não deve criar módulo nenhum.
+async function dropProjectModuleAt(moduleId, clientX, clientY) {
+  const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  const flatCanvas = document.getElementById('po-proj-canvas');
+  const inside = (el) => {
+    if (!el || el.offsetParent === null) return false;
+    const r = el.getBoundingClientRect();
+    return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+  };
+
+  let overrides = null;
+
+  if (inside(edit3dWrap) && ViewerProjectEdit && ViewerProjectEdit.pickRoomSurfaceAt) {
+    const surface = ViewerProjectEdit.pickRoomSurfaceAt(clientX, clientY);
+    if (surface && surface.kind === 'floor') {
+      overrides = { placement: 'floor', floor_x_mm: surface.point.x * 1000, floor_z_mm: surface.point.z * 1000 };
+    } else {
+      // Parede (superfície de parede embaixo do ponteiro, ou o próprio plano
+      // da parede ativa quando o ponteiro caiu em cima de outro módulo).
+      const wallIndex = (surface && Number.isFinite(Number(surface.wallIndex)))
+        ? Number(surface.wallIndex)
+        : projectActiveWallIndex;
+      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
+      if (wallGeo) {
+        const p = ViewerProjectEdit.intersectPlaneAtClient(
+          clientX, clientY,
+          { x: wallGeo.originX, y: 0, z: wallGeo.originZ },
+          { x: wallGeo.intoDirX, y: 0, z: wallGeo.intoDirZ }
+        );
+        if (p) {
+          const alongMm = ((p.x - wallGeo.originX) * wallGeo.alongDirX + (p.z - wallGeo.originZ) * wallGeo.alongDirZ) * 1000;
+          overrides = { wall_index: wallIndex, x_mm: alongMm, floor_height_mm: Math.max(0, p.y * 1000) };
+        }
+      }
+    }
+  } else if (inside(flatCanvas)) {
+    const r = flatCanvas.getBoundingClientRect();
+    const xMm = (clientX - r.left) / (projectPxPerMm || 1);
+    const yMm = (r.bottom - clientY) / (projectPxPerMm || 1);
+    overrides = { wall_index: projectActiveWallIndex, x_mm: xMm, floor_height_mm: Math.max(0, yMm) };
+  }
+
+  if (!overrides) return; // soltou fora de qualquer canvas — não insere nada
+
+  const slot = await insertProjectModuleDefault(moduleId, overrides);
+  if (!slot) return;
+  // O módulo nasce CENTRADO no ponto onde o ponteiro soltou (é o que "largado
+  // onde o mouse soltar" quer dizer na prática) — insertProjectModuleDefault
+  // recebeu a borda esquerda/o centro cru, aqui só recentraliza agora que a
+  // largura final (já clampada pelo catálogo) é conhecida.
+  if (isFloorSlot(slot)) {
+    clampFloorSlotIntoRoom(slot);
+  } else {
+    slot.x_mm = Number(slot.x_mm || 0) - Number(slot.width_mm || 0) / 2;
+    slot.floor_height_mm = Math.max(0, Number(slot.floor_height_mm || 0) - Number(slot.height_mm || 0) / 2);
+    clampProjectSlotPosition(slot);
+    resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
+    if (Number(slot.wall_index || 0) !== projectActiveWallIndex) {
+      projectActiveWallIndex = Number(slot.wall_index || 0);
+      refreshProjectWallTabs();
+      refreshProjectWallWidthInput();
+    }
+  }
+  selectedProjectSlotId = slot.id;
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+}
+
+// Mantém uma ilha dentro do retângulo do ambiente (entre as paredes laterais,
+// da parede de fundo pra frente). Sem isso, soltar perto da borda do piso
+// deixaria o móvel meio atravessado na parede.
+function clampFloorSlotIntoRoom(slot) {
+  const roles = getProjectWallRoles();
+  const mainWidthMm = getProjectWallWidthMm(Math.max(roles.indexOf('main'), 0));
+  const fp = floorSlotFootprint(slot);
+  const halfW = fp.w / 2;
+  const halfD = fp.h / 2;
+  slot.floor_x_mm = clamp(Number(slot.floor_x_mm || 0), -mainWidthMm / 2 + halfW, mainWidthMm / 2 - halfW);
+  slot.floor_z_mm = Math.max(Number(slot.floor_z_mm || 0), halfD);
 }
 
 // ---------- Modal "Buscar módulo" (botão da biblioteca) ----------
@@ -10576,6 +10802,12 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
       x_mm: 0,
       floor_height_mm: (overrides && Number(overrides.floor_height_mm) > 0) ? Number(overrides.floor_height_mm) : 0,
       z_order: 0,
+      // Módulo de PAREDE por padrão; vira ilha só se o drop pedir (ver
+      // isFloorSlot/convertProjectSlotToFloor logo abaixo).
+      placement: 'wall',
+      floor_x_mm: 0,
+      floor_z_mm: 0,
+      floor_rotation_deg: 0,
       module: m,
       pieces: modulePieces,
       colorOptionsByRole,
@@ -10597,10 +10829,18 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
       widthPresetsMm: lockedDimensionPresets.width,
       heightPresetsMm: lockedDimensionPresets.height
     };
-    slot.x_mm = (overrides && Number.isFinite(Number(overrides.x_mm)))
-      ? Number(overrides.x_mm)
-      : computeDefaultProjectSlotX(slot.width_mm);
-    resolveProjectSlotDepth(slot, projectSlotsOnWall(slot.wall_index));
+    // Soltar no CHÃO (2026-08-08) — arrastar da biblioteca e largar em cima do
+    // piso cria um módulo ILHA em vez de um módulo de parede (ver isFloorSlot).
+    // As coordenadas já vêm em mm de mundo de quem chamou (o drop sabe onde o
+    // ponteiro cruzou o plano y=0).
+    if (overrides && overrides.placement === 'floor') {
+      convertProjectSlotToFloor(slot, Number(overrides.floor_x_mm || 0), Number(overrides.floor_z_mm || 0));
+    } else {
+      slot.x_mm = (overrides && Number.isFinite(Number(overrides.x_mm)))
+        ? Number(overrides.x_mm)
+        : computeDefaultProjectSlotX(slot.width_mm);
+      resolveProjectSlotDepth(slot, projectSlotsOnWall(slot.wall_index));
+    }
     projectSlots.push(slot);
     // A IA insere vários módulos em sequência: selecionar e re-renderizar a
     // cada um é desperdício (e faz a tela piscar). Quem chamou com overrides
@@ -11332,6 +11572,10 @@ function projectSlotMaxFloorHeightMm(heightMm, module) {
 }
 
 function clampProjectSlotPosition(slot) {
+  // Ilha no chão não é limitada por largura de parede nem por pé direito ao
+  // longo de um plano vertical — o limite dela é o retângulo do ambiente no
+  // piso (ver clampFloorSlotIntoRoom).
+  if (isFloorSlot(slot)) return;
   const maxX = Math.max(0, getProjectWallWidthMm(Number(slot.wall_index || 0)) - Number(slot.width_mm || 0));
   const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
   slot.x_mm = clamp(Number(slot.x_mm || 0), 0, maxX);
@@ -11413,6 +11657,176 @@ function resolveProjectSlotDepth(slot, otherSlots) {
     if (projectRectsOverlap(rectA, rectB)) maxOverlapZ = Math.max(maxOverlapZ, Number(s.z_order || 0));
   });
   slot.z_order = maxOverlapZ >= 0 ? maxOverlapZ + 1 : 0;
+}
+
+// ==========================================================================
+// COLISÃO ENTRE MÓDULOS (botão liga/desliga) — 2026-08-08
+// ==========================================================================
+// Pedido do usuário: "um botao de colisao deve existir, uma vez ligado os
+// moveis ligados na parede nao podem se ultrapassar; quando estiver
+// movimentando na parede ele deve parar ao encontrar outro modulo. dos lados
+// ou abaixo ou acima". Entre as três opções oferecidas (parar encostado /
+// parar + empurrar o vizinho / só avisar em vermelho), escolheu PARAR
+// ENCOSTADO — o módulo desliza até tocar o vizinho e trava ali.
+//
+// Desligado por padrão de propósito: o comportamento de sempre (módulos podem
+// se sobrepor, e a sobreposição vira camada de profundidade via
+// resolveProjectSlotDepth) continua sendo o default, então nada do que já
+// existia muda até o cliente ligar o botão.
+let projectCollisionEnabled = false;
+try {
+  projectCollisionEnabled = localStorage.getItem('legno_proj_collision') === '1';
+} catch (e) { /* ok sem persistir */ }
+
+function setProjectCollisionEnabled(on) {
+  projectCollisionEnabled = !!on;
+  try { localStorage.setItem('legno_proj_collision', projectCollisionEnabled ? '1' : '0'); } catch (e) { /* ok */ }
+  const btn = document.getElementById('po-proj-collision-btn');
+  if (btn) btn.classList.toggle('active', projectCollisionEnabled);
+}
+
+// Resolve o deslize de um retângulo contra uma lista de outros retângulos,
+// em DOIS PASSES independentes (primeiro o eixo horizontal, depois o
+// vertical) — é o algoritmo clássico de colisão de plataforma 2D, e é o que
+// dá a sensação de "deslizar rente ao vizinho" em vez de travar de vez assim
+// que os dois se tocam em qualquer canto.
+//
+// A regra "só bloqueia quem eu ainda NÃO estava atravessando" (o teste com
+// EPS contra a posição ANTERIOR) é o que impede um módulo que já nasceu
+// sobreposto — projeto salvo antes do botão existir, ou o próprio cliente
+// tendo ligado a colisão no meio da edição — de ficar preso pra sempre: um
+// vizinho que já estava sobreposto antes do movimento simplesmente não conta
+// como obstáculo, então dá pra arrastar pra fora dele normalmente.
+//
+// rect/prev/desired usam a convenção { x, y, w, h } com y CRESCENDO no
+// sentido "pra cima"/"pra dentro" conforme o plano (parede: x=ao longo da
+// parede, y=altura do chão; piso: x=X do mundo, y=Z do mundo).
+const PROJECT_COLLISION_EPS_MM = 0.5;
+function resolveCollisionSlide(desired, prev, sizeW, sizeH, others) {
+  const EPS = PROJECT_COLLISION_EPS_MM;
+  let x = desired.x;
+  const bandsOverlapY = (oy, oh, y) => (y < oy + oh - EPS && y + sizeH > oy + EPS);
+  const bandsOverlapX = (ox, ow, xx) => (xx < ox + ow - EPS && xx + sizeW > ox + EPS);
+
+  others.forEach((o) => {
+    if (!bandsOverlapY(o.y, o.h, prev.y)) return;
+    if (desired.x > prev.x && prev.x + sizeW <= o.x + EPS) x = Math.min(x, o.x - sizeW);
+    else if (desired.x < prev.x && prev.x >= o.x + o.w - EPS) x = Math.max(x, o.x + o.w);
+  });
+
+  let y = desired.y;
+  others.forEach((o) => {
+    if (!bandsOverlapX(o.x, o.w, x)) return;
+    if (desired.y > prev.y && prev.y + sizeH <= o.y + EPS) y = Math.min(y, o.y - sizeH);
+    else if (desired.y < prev.y && prev.y >= o.y + o.h - EPS) y = Math.max(y, o.y + o.h);
+  });
+
+  return { x, y };
+}
+
+// Colisão de um módulo de PAREDE: o plano é a própria parede (x ao longo
+// dela, y = altura do chão). Devolve a posição já corrigida; com o botão
+// desligado devolve o pedido intacto.
+function clampWallSlotAgainstCollision(slot, desiredXMm, desiredYMm, prevXMm, prevYMm, others) {
+  if (!projectCollisionEnabled) return { x: desiredXMm, y: desiredYMm };
+  const rects = others.map((s) => ({
+    x: Number(s.x_mm || 0), y: Number(s.floor_height_mm || 0),
+    w: Number(s.width_mm || 0), h: Number(s.height_mm || 0)
+  }));
+  return resolveCollisionSlide(
+    { x: desiredXMm, y: desiredYMm }, { x: prevXMm, y: prevYMm },
+    Number(slot.width_mm || 0), Number(slot.height_mm || 0), rects
+  );
+}
+
+// Pegada (footprint) de um módulo ILHA no piso, em mm de MUNDO — { x, y, w, h }
+// com y = Z do mundo. Giro de 90°/270° troca largura por profundidade.
+function floorSlotFootprint(slot, centerXMm, centerZMm) {
+  const rot = ((Number(slot.floor_rotation_deg || 0) % 360) + 360) % 360;
+  const swapped = (rot === 90 || rot === 270);
+  const w = swapped ? Number(slot.depth_mm || 0) : Number(slot.width_mm || 0);
+  const h = swapped ? Number(slot.width_mm || 0) : Number(slot.depth_mm || 0);
+  const cx = (centerXMm != null) ? centerXMm : Number(slot.floor_x_mm || 0);
+  const cz = (centerZMm != null) ? centerZMm : Number(slot.floor_z_mm || 0);
+  return { x: cx - w / 2, y: cz - h / 2, w, h };
+}
+
+// Colisão de um módulo ILHA: o plano é o PISO (x/z do mundo). Só colide com
+// outras ilhas — um módulo de parede está pendurado/encostado na parede e sua
+// pegada no chão não é uma informação que este app guarda de verdade (a
+// profundidade dele na Vista Superior é derivada, ver
+// computeProjectSlotsTopViewLayout), então tratá-lo como obstáculo aqui daria
+// bloqueio fantasma. Recebe/devolve o CENTRO do módulo.
+function clampFloorSlotAgainstCollision(slot, desiredXMm, desiredZMm, prevXMm, prevZMm) {
+  if (!projectCollisionEnabled) return { x: desiredXMm, y: desiredZMm };
+  const self = floorSlotFootprint(slot, desiredXMm, desiredZMm);
+  const prev = floorSlotFootprint(slot, prevXMm, prevZMm);
+  const others = projectFloorSlots()
+    .filter((s) => s.id !== slot.id)
+    .map((s) => floorSlotFootprint(s));
+  const solved = resolveCollisionSlide(
+    { x: self.x, y: self.y }, { x: prev.x, y: prev.y }, self.w, self.h, others
+  );
+  return { x: solved.x + self.w / 2, y: solved.y + self.h / 2 };
+}
+
+// ==========================================================================
+// MODO CÂMERA NO TOQUE (iPad) — 2026-08-08
+// ==========================================================================
+// Pedido do usuário: "IPAD - A camera so pode movimentar se clicar no botao
+// de rotacao da camera". No iPad a cena 3D acumulava dois papéis no MESMO
+// gesto de um dedo (arrastar módulo vs. orbitar a câmera) e qualquer toque
+// que escapasse do módulo saía girando a cena. Agora o dedo tem um dono só de
+// cada vez, escolhido por um botão em MODO TRAVADO (liga/desliga — opção
+// escolhida pelo usuário, em vez de "segurar o botão"):
+//   · botão APAGADO ("tela travada"): o dedo edita módulos; o OrbitControls
+//     fica desligado e nenhum gesto de 1 dedo move a câmera.
+//   · botão ACESO: o dedo orbita/dá zoom; nenhum toque seleciona ou arrasta
+//     módulo (o pointerdown de attachProject3DEditDrag sai fora logo no
+//     início, ver lá).
+// Mouse NUNCA passa por aqui: no desktop o botão do meio já gira e o esquerdo
+// já arrasta módulo, sem ambiguidade nenhuma — por isso o botão só aparece em
+// dispositivo de toque (projectIsTouchDevice).
+let projectCameraModeOn = false;
+
+function projectIsTouchDevice() {
+  try {
+    return (typeof window !== 'undefined')
+      && (('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0)
+      && window.matchMedia('(pointer: coarse)').matches;
+  } catch (e) { return false; }
+}
+
+function setProjectCameraMode(on) {
+  projectCameraModeOn = !!on;
+  const btn = document.getElementById('po-proj-camera-btn');
+  if (btn) btn.classList.toggle('active', projectCameraModeOn);
+  // Com o modo desligado o OrbitControls sai de cena por completo no toque —
+  // é isso que faz a "tela travada" ser travada de verdade. No mouse os
+  // controles continuam sempre ligados (ver applyProjectViewerControls).
+  applyProjectViewerControls();
+}
+
+// Fonte ÚNICA da verdade de "o OrbitControls está ligado?" nesta cena —
+// chamada tanto pelo toggle acima quanto por renderProjectCanvasFrontCorner
+// (que roda a cada re-render e antes reativava incondicionalmente).
+function applyProjectViewerControls() {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.setControlsEnabled) return;
+  const enabled = projectIsTouchDevice() ? projectCameraModeOn : true;
+  ViewerProjectEdit.setControlsEnabled(enabled);
+}
+
+const projCollisionBtn = document.getElementById('po-proj-collision-btn');
+if (projCollisionBtn) {
+  projCollisionBtn.addEventListener('click', () => setProjectCollisionEnabled(!projectCollisionEnabled));
+  projCollisionBtn.classList.toggle('active', projectCollisionEnabled);
+}
+const projCameraBtn = document.getElementById('po-proj-camera-btn');
+if (projCameraBtn) {
+  // Só faz sentido em tela de toque — no desktop o botão fica escondido (o
+  // mouse já tem botão do meio pra girar).
+  projCameraBtn.style.display = projectIsTouchDevice() ? 'inline-block' : 'none';
+  projCameraBtn.addEventListener('click', () => setProjectCameraMode(!projectCameraModeOn));
 }
 
 // Cor de fundo do retângulo do módulo no canvas — usa a primeira cor
@@ -11766,6 +12180,9 @@ function selectProjectSlot(slotId) {
     el.classList.toggle('selected', el.dataset.slotId === slotId);
   });
   renderProjectConfigPanel();
+  // Setas 3D de redimensionamento (toque) acompanham a seleção — ver
+  // refreshProject3DResizeArrows (não faz nada no mouse nem sem 3D).
+  if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
 }
 
 function removeProjectSlot(slotId) {
@@ -12629,7 +13046,9 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // ESQUERDO fica de fora do orbit (continua livre pro drag de módulo).
   // Chamado a cada render (idempotente) porque init() só roda de verdade na
   // 1ª vez (reaproveita o mesmo renderer depois).
-  ViewerProjectEdit.setControlsEnabled(true);
+  // 2026-08-08: passou a respeitar o MODO CÂMERA do toque (iPad) — no mouse
+  // continua sempre ligado, exatamente como era. Ver applyProjectViewerControls.
+  applyProjectViewerControls();
 
   const wallsGeometry = getProjectWallGeometry();
   const wallsData = wallsGeometry.map((wallGeo) => ({
@@ -12659,7 +13078,13 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   const fitKey = projectWallShape + '|' + activeIdx;
   const keepCamera = project3DLastFitKey === fitKey;
   project3DLastFitKey = fitKey;
-  ViewerProjectEdit.renderFreeformWalls(wallsData, viewerRoomEnvConfig(), activeIdx, { keepCamera });
+  ViewerProjectEdit.renderFreeformWalls(wallsData, viewerRoomEnvConfig(), activeIdx, {
+    keepCamera,
+    // Módulos ILHA (soltos no chão, 2026-08-08) — não pertencem a parede
+    // nenhuma, então entram por fora de wallsData (ver options.floorAssemblies
+    // em renderFreeformWalls/viewer3d_composition.js).
+    floorAssemblies: buildProjectAssemblies(projectFloorSlots())
+  });
 
   // Readota o contorno de destaque (ver project3DHoveredSlotId abaixo) —
   // renderFreeformWalls troca TODOS os Groups por instâncias novas, então o
@@ -12674,6 +13099,10 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   }
 
   attachProject3DEditDrag();
+  // Setas de redimensionamento (toque) — a cena acabou de ser reconstruída,
+  // então elas precisam ser redesenhadas na posição nova do módulo
+  // selecionado (ver refreshProject3DResizeArrows).
+  refreshProject3DResizeArrows();
 }
 
 // Estado do arraste em andamento na Vista de Canto 3D — null quando nenhum
@@ -12705,27 +13134,162 @@ let project3DLastFitKey = null;
 // (pointerdown, ver attachProject3DEditDrag) quanto só pra trocar o CURSOR
 // no hover (pedido do usuário: "nao sei se o comando sera arrastar o modulo
 // ou esticar ele"), sem duplicar a régua de detecção de borda duas vezes.
+// Quais eixos deste módulo aceitam redimensionar — extraído de
+// classifyProject3DGrab (2026-08-08) porque as SETAS 3D de toque (ver
+// refreshProject3DResizeArrows) precisam exatamente da mesma régua: "nos
+// sentidos permitidos", nas palavras do pedido. Medida travada
+// (width_locked/height_locked) só é redimensionável se houver 2+ valores
+// cadastrados pra pular entre eles (ver widthPresetsMm/heightPresetsMm).
+function projectSlotResizableAxes(slot) {
+  const widthPresetsMm = slot.widthPresetsMm || [];
+  const heightPresetsMm = slot.heightPresetsMm || [];
+  return {
+    width: slot.module.width_locked
+      ? widthPresetsMm.length > 1
+      : Number(slot.module.width_min_mm) !== Number(slot.module.width_max_mm),
+    height: slot.module.height_locked
+      ? heightPresetsMm.length > 1
+      : Number(slot.module.height_min_mm) !== Number(slot.module.height_max_mm)
+  };
+}
+
 function classifyProject3DGrab(slot, grabAlongMm, grabHeightMm) {
   const widthMm = Number(slot.width_mm || 0);
   const heightMm = Number(slot.height_mm || 0);
-  const widthPresetsMm = slot.widthPresetsMm || [];
-  const heightPresetsMm = slot.heightPresetsMm || [];
-  const widthResizable = slot.module.width_locked
-    ? widthPresetsMm.length > 1
-    : Number(slot.module.width_min_mm) !== Number(slot.module.width_max_mm);
-  const heightResizable = slot.module.height_locked
-    ? heightPresetsMm.length > 1
-    : Number(slot.module.height_min_mm) !== Number(slot.module.height_max_mm);
+  const axes = projectSlotResizableAxes(slot);
+  const widthResizable = axes.width;
+  const heightResizable = axes.height;
   const localLeftMm = grabAlongMm - Number(slot.x_mm || 0);
   const localRightMm = widthMm - localLeftMm;
   const localTopMm = (Number(slot.floor_height_mm || 0) + heightMm) - grabHeightMm;
   const EDGE_ZONE_W_MM = clamp(widthMm * 0.18, 25, 60);
   const EDGE_ZONE_H_MM = clamp(heightMm * 0.18, 25, 60);
 
+  // Ilha no chão: as bordas do módulo não estão num plano de parede nenhum
+  // (grabAlongMm/grabHeightMm seriam coordenadas de outro referencial), então
+  // agarrar sempre MOVE. Redimensionar ilha é pelas setas 3D (toque) ou pelo
+  // painel da direita.
+  if (isFloorSlot(slot)) return { dragMode: 'move', resizeAxis: null };
+
   if (widthResizable && localLeftMm <= EDGE_ZONE_W_MM) return { dragMode: 'resize', resizeAxis: 'width-left' };
   if (widthResizable && localRightMm <= EDGE_ZONE_W_MM) return { dragMode: 'resize', resizeAxis: 'width-right' };
   if (heightResizable && localTopMm <= EDGE_ZONE_H_MM) return { dragMode: 'resize', resizeAxis: 'height-top' };
   return { dragMode: 'move', resizeAxis: null };
+}
+
+// ==========================================================================
+// SETAS DE REDIMENSIONAMENTO EM 3D (toque) — 2026-08-08
+// ==========================================================================
+// Pedido do usuário (iPad): "clique rapido no modulo (tela travada) mantem o
+// vermelho envolta pra mostrar que esta selecionado, ele abre setas pra
+// redimencionamento nos sentidos permitidos". No mouse, esticar é agarrar a
+// borda do módulo (classifyProject3DGrab) com o cursor mudando pra ↔/↕ como
+// pista — no dedo não existe cursor nem precisão de borda, então a alça
+// precisa ser um objeto visível de verdade na cena.
+//
+// A geometria é calculada AQUI (não no viewer) porque só portal.js conhece a
+// parede em que o módulo está e o que ele pode ou não esticar; o viewer só
+// desenha e devolve qual seta foi tocada (setResizeArrows/pickResizeArrowAt em
+// viewer3d_composition.js).
+const PROJECT_ARROW_GAP_M = 0.06; // folga entre a face do módulo e o início da seta
+function refreshProject3DResizeArrows() {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.setResizeArrows) return;
+  // Setas só no TOQUE (o mouse já tem o agarre de borda + cursor) e só com um
+  // módulo selecionado.
+  const slot = (projectIsTouchDevice() && selectedProjectSlotId != null)
+    ? projectSlots.find((s) => s.id === selectedProjectSlotId)
+    : null;
+  if (!slot || projectCameraModeOn) { ViewerProjectEdit.setResizeArrows(null); return; }
+
+  const axes = projectSlotResizableAxes(slot);
+  const spec = [];
+  const heightM = Number(slot.height_mm || 0) / 1000;
+  const widthM = Number(slot.width_mm || 0) / 1000;
+  const baseY = Number(slot.floor_height_mm || 0) / 1000;
+
+  if (isFloorSlot(slot)) {
+    // Ilha: as setas de largura seguem o eixo local X do módulo (girado por
+    // floor_rotation_deg), não um eixo de parede.
+    const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
+    const ax = { x: Math.cos(rot), y: 0, z: -Math.sin(rot) }; // eixo local +X no mundo
+    const cx = Number(slot.floor_x_mm || 0) / 1000;
+    const cz = Number(slot.floor_z_mm || 0) / 1000;
+    const midY = baseY + heightM / 2;
+    if (axes.width) {
+      const off = widthM / 2 + PROJECT_ARROW_GAP_M;
+      spec.push({ axis: 'width-right', dir: ax, position: { x: cx + ax.x * off, y: midY, z: cz + ax.z * off } });
+      spec.push({ axis: 'width-left', dir: { x: -ax.x, y: 0, z: -ax.z }, position: { x: cx - ax.x * off, y: midY, z: cz - ax.z * off } });
+    }
+    if (axes.height) {
+      spec.push({ axis: 'height-top', dir: { x: 0, y: 1, z: 0 }, position: { x: cx, y: baseY + heightM + PROJECT_ARROW_GAP_M, z: cz } });
+    }
+    ViewerProjectEdit.setResizeArrows(spec);
+    return;
+  }
+
+  const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index || 0));
+  if (!wallGeo) { ViewerProjectEdit.setResizeArrows(null); return; }
+  // Ponto no MUNDO a partir de "quanto ao longo da parede" + "que altura" —
+  // mesma decomposição origin + alongDir*along + intoDir*depth já usada pra
+  // posicionar os módulos (ver renderFreeformWalls).
+  const depthOffM = Number(slot.depth_mm || 0) / 2000 + Number(slot.z_order || 0) * 0.004;
+  const worldAt = (alongM, y) => ({
+    x: wallGeo.originX + wallGeo.alongDirX * alongM + wallGeo.intoDirX * depthOffM,
+    y,
+    z: wallGeo.originZ + wallGeo.alongDirZ * alongM + wallGeo.intoDirZ * depthOffM
+  });
+  const x0M = Number(slot.x_mm || 0) / 1000;
+  const midY = baseY + heightM / 2;
+  if (axes.width) {
+    spec.push({
+      axis: 'width-right',
+      dir: { x: wallGeo.alongDirX, y: 0, z: wallGeo.alongDirZ },
+      position: worldAt(x0M + widthM + PROJECT_ARROW_GAP_M, midY)
+    });
+    spec.push({
+      axis: 'width-left',
+      dir: { x: -wallGeo.alongDirX, y: 0, z: -wallGeo.alongDirZ },
+      position: worldAt(x0M - PROJECT_ARROW_GAP_M, midY)
+    });
+  }
+  if (axes.height) {
+    spec.push({
+      axis: 'height-top',
+      dir: { x: 0, y: 1, z: 0 },
+      position: worldAt(x0M + widthM / 2, baseY + heightM + PROJECT_ARROW_GAP_M)
+    });
+  }
+  ViewerProjectEdit.setResizeArrows(spec);
+}
+
+// Ponto onde o raio do ponteiro cruza o PISO (plano y=0), em mm de mundo —
+// base do arraste de módulo ILHA e do "soltar no chão" (biblioteca / toque
+// longo). Devolve null se o ponteiro estiver apontando pro céu.
+function projectFloorPointMm(clientX, clientY) {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.intersectPlaneAtClient) return null;
+  const p = ViewerProjectEdit.intersectPlaneAtClient(clientX, clientY, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+  if (!p) return null;
+  return { xMm: p.x * 1000, zMm: p.z * 1000 };
+}
+
+// Converte um slot de parede em ILHA no chão (e vice-versa), preservando a
+// posição atual como ponto de partida — usado pelo arraste livre do toque
+// longo (iPad) e pelo soltar da biblioteca.
+function convertProjectSlotToFloor(slot, xMm, zMm) {
+  slot.placement = 'floor';
+  slot.floor_x_mm = Number(xMm || 0);
+  slot.floor_z_mm = Number(zMm || 0);
+  slot.floor_height_mm = 0; // ilha apoia no chão
+  slot.z_order = 0;
+  if (slot.floor_rotation_deg == null) slot.floor_rotation_deg = 0;
+}
+function convertProjectSlotToWall(slot, wallIndex, xMm, floorHeightMm) {
+  slot.placement = 'wall';
+  slot.wall_index = Number(wallIndex || 0);
+  slot.x_mm = Number(xMm || 0);
+  slot.floor_height_mm = Math.max(0, Number(floorHeightMm || 0));
+  clampProjectSlotPosition(slot);
+  resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
 }
 
 // Anexa os listeners de arrastar no <canvas> real do Three.js (uma única
@@ -12744,7 +13308,86 @@ function attachProject3DEditDrag() {
   let hold3DTimer = null;
   const clearHold3DTimer = () => { if (hold3DTimer) { clearTimeout(hold3DTimer); hold3DTimer = null; } };
 
+  // Duplo toque no AMBIENTE (2026-08-08, iPad): "duplo clica na parede ele
+  // mostra a parede de frente. duplo clique no chao mostra vista de cima".
+  // Detectado na mão (dois pointerup rápidos e próximos) em vez de usar
+  // 'dblclick', que no iOS só dispara de forma confiável com mouse/trackpad.
+  let lastRoomTap = null;
+  const ROOM_DOUBLE_TAP_MS = 320;
+  const ROOM_DOUBLE_TAP_PX = 30;
+
+  // "Segurar" em cima de um módulo — o significado do gesto MUDOU no toque
+  // (pedido do usuário 2026-08-08): "IPAD - clique longo, (tira a opcao de
+  // mostrar preferencias) ele pode ser arrastado de uma parede pra outra ou
+  // pro chao". Então:
+  //   · TOQUE: segurar arma o ARRASTE LIVRE (freeMode) — o módulo passa a
+  //     poder atravessar pra outra parede ou pro chão enquanto o dedo anda.
+  //     As propriedades saíram daqui de propósito; quem quer editar dá um
+  //     toque curto (seleciona) e usa o painel da direita.
+  //   · MOUSE: continua abrindo as PROPRIEDADES, exatamente como antes — o
+  //     pedido era explicitamente sobre o iPad, e no mouse arrastar já é
+  //     imediato (não precisa de gesto pra "armar" nada).
+  const startProject3DHoldGesture = (slot, isTouch) => {
+    clearHold3DTimer();
+    hold3DTimer = setTimeout(() => {
+      hold3DTimer = null;
+      const st = projectDrag3DState;
+      if (!st || st.slotId !== slot.id || st.moved) return;
+      if (isTouch) {
+        st.armed = true;
+        st.freeMode = true;
+        // Contorno vermelho já está aceso; o "engatou" fica evidente porque a
+        // partir daqui o módulo acompanha o dedo.
+        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) { /* ok */ } }
+        return;
+      }
+      projectDrag3DState = null;
+      domEl.style.cursor = 'grab';
+      openProjectSlotProps(slot.id);
+    }, PROJECT_HOLD_MENU_MS);
+  };
+
   domEl.addEventListener('pointerdown', (ev) => {
+    // MODO CÂMERA ligado (toque, iPad): o dedo é só da câmera — nenhum
+    // módulo é selecionado, arrastado ou esticado enquanto isso. Ver
+    // setProjectCameraMode.
+    if (projectCameraModeOn && ev.pointerType === 'touch') return;
+
+    // As SETAS de redimensionamento (toque) ficam desenhadas POR CIMA de
+    // tudo, então precisam ser testadas ANTES do módulo — senão o raycaster
+    // do módulo venceria e a seta nunca seria agarrada. Ver
+    // refreshProject3DResizeArrows/setResizeArrows.
+    const arrowHit = ViewerProjectEdit.pickResizeArrowAt
+      ? ViewerProjectEdit.pickResizeArrowAt(ev.clientX, ev.clientY)
+      : null;
+    if (arrowHit && selectedProjectSlotId != null) {
+      const arrowSlot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+      if (arrowSlot) {
+        ev.preventDefault();
+        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        projectDrag3DState = {
+          pointerId: ev.pointerId,
+          slotId: arrowSlot.id,
+          group: ViewerProjectEdit.findGroupBySlotId(arrowSlot.id),
+          isTouch: ev.pointerType === 'touch',
+          armed: true,
+          moved: false,
+          viaArrow: true,
+          dragMode: 'resize',
+          resizeAxis: arrowHit.axis,
+          // Agarrando a SETA (não a borda), não existe offset de agarre: a
+          // borda segue direto o ponteiro.
+          grabOffsetEdgeMm: 0,
+          startXMm: Number(arrowSlot.x_mm || 0),
+          startWidthMm: Number(arrowSlot.width_mm || 0),
+          startClientX: ev.clientX,
+          startClientY: ev.clientY,
+          liveWallIndex: Number(arrowSlot.wall_index || 0)
+        };
+        return;
+      }
+    }
+
     // SÓ botão ESQUERDO (ev.button===0) — pedido do usuário 2026-07-26
     // ("pode fazer a rotacao apertando o scroll ao inves do botao direito")
     // revelou um bug: esse handler não checava qual botão foi clicado, então
@@ -12772,6 +13415,7 @@ function attachProject3DEditDrag() {
       if (selectedProjectSlotId != null) {
         selectedProjectSlotId = null;
         renderProjectConfigPanel();
+        refreshProject3DResizeArrows();
       }
       return;
     }
@@ -12779,6 +13423,38 @@ function attachProject3DEditDrag() {
     if (!slot) return;
     ev.preventDefault();
     try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+
+    // ---------- Módulo ILHA (solto no chão) ----------
+    // Caminho totalmente separado do de parede: o plano de arraste é o PISO
+    // (y=0), não o plano vertical de uma parede, e a posição é o CENTRO do
+    // módulo em coordenadas de mundo. Sem esticar por borda aqui (ver
+    // classifyProject3DGrab) — só mover.
+    if (isFloorSlot(slot)) {
+      const fp = projectFloorPointMm(ev.clientX, ev.clientY);
+      const isTouchFloor = ev.pointerType === 'touch';
+      projectDrag3DState = {
+        pointerId: ev.pointerId,
+        slotId: slot.id,
+        group: hit.group,
+        isTouch: isTouchFloor,
+        armed: !isTouchFloor,
+        moved: false,
+        onFloor: true,
+        dragMode: 'move',
+        resizeAxis: null,
+        startClientX: ev.clientX,
+        startClientY: ev.clientY,
+        grabOffsetFloorXMm: fp ? fp.xMm - Number(slot.floor_x_mm || 0) : 0,
+        grabOffsetFloorZMm: fp ? fp.zMm - Number(slot.floor_z_mm || 0) : 0,
+        prevFloorXMm: Number(slot.floor_x_mm || 0),
+        prevFloorZMm: Number(slot.floor_z_mm || 0)
+      };
+      project3DHoveredSlotId = slot.id;
+      ViewerProjectEdit.setHoverHighlight(hit.group);
+      domEl.style.cursor = 'grabbing';
+      startProject3DHoldGesture(slot, isTouchFloor);
+      return;
+    }
 
     const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index || 0));
     if (!wallGeo) return;
@@ -12842,7 +13518,11 @@ function attachProject3DEditDrag() {
       startClientY: ev.clientY,
       liveWallIndex: wallGeo.wallIndex,
       grabOffsetXMm: grabAlongMm - Number(slot.x_mm || 0),
-      grabOffsetYMm: grabHeightMm - Number(slot.floor_height_mm || 0)
+      grabOffsetYMm: grabHeightMm - Number(slot.floor_height_mm || 0),
+      // Última posição ACEITA — a colisão precisa saber de onde o módulo veio
+      // pra decidir de que lado ele está batendo (ver resolveCollisionSlide).
+      prevXMm: Number(slot.x_mm || 0),
+      prevYMm: Number(slot.floor_height_mm || 0)
     };
     // Destaque vermelho continua no módulo sendo agarrado (já deveria estar
     // aceso pelo hover que precede o clique — reforçado aqui pra cobrir
@@ -12851,20 +13531,13 @@ function attachProject3DEditDrag() {
     ViewerProjectEdit.setHoverHighlight(hit.group);
     domEl.style.cursor = grab.dragMode === 'resize' ? (grab.resizeAxis === 'height-top' ? 'ns-resize' : 'ew-resize') : 'grabbing';
 
-    // Mesmo mapa de gestos da Vista Frontal 2D (ver attachProjectSlotDrag):
-    // segurar parado abre as PROPRIEDADES, mexer vira arraste.
-    clearHold3DTimer();
-    hold3DTimer = setTimeout(() => {
-      hold3DTimer = null;
-      if (!projectDrag3DState || projectDrag3DState.slotId !== slot.id || projectDrag3DState.moved) return;
-      projectDrag3DState = null;
-      domEl.style.cursor = 'grab';
-      openProjectSlotProps(slot.id);
-    }, PROJECT_HOLD_MENU_MS);
+    startProject3DHoldGesture(slot, isTouch3D);
   });
 
   domEl.addEventListener('pointermove', (ev) => {
     const state = projectDrag3DState;
+    // MODO CÂMERA (toque): nada de hover/arraste — o dedo é da câmera.
+    if (projectCameraModeOn && ev.pointerType === 'touch') return;
     if (!state) {
       // HOVER (nenhum arraste em andamento) — pedido do usuário 2026-07-26:
       // "quero que quando o mouse passe em cima do modulo ele fique
@@ -12919,6 +13592,42 @@ function attachProject3DEditDrag() {
     if (state.dragMode === 'resize') {
       handleProject3DResizeMove(state, slot, ev);
       return;
+    }
+
+    // ---------- Arraste de módulo ILHA (no piso) ----------
+    // Plano de arraste = piso (y=0). Movimento em X/Z do mundo, com colisão
+    // opcional contra as outras ilhas (ver clampFloorSlotAgainstCollision).
+    if (state.onFloor) {
+      handleProject3DFloorMove(state, slot, ev);
+      return;
+    }
+
+    // ---------- Passar da parede pro CHÃO (toque longo) ----------
+    // Pedido do usuário (2026-08-08, iPad): "clique longo ... ele pode ser
+    // arrastado de uma parede pra outra ou pro chao". Só em freeMode (o hold
+    // do toque armou, ver startProject3DHoldGesture) — num arraste normal de
+    // mouse/dedo o módulo continua preso ao plano da parede, senão passar o
+    // ponteiro por cima do piso viraria conversão acidental.
+    if (state.freeMode) {
+      const surface = ViewerProjectEdit.pickRoomSurfaceAt
+        ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY)
+        : null;
+      if (surface && surface.kind === 'floor') {
+        const fp = projectFloorPointMm(ev.clientX, ev.clientY);
+        if (fp) {
+          convertProjectSlotToFloor(slot, fp.xMm, fp.zMm);
+          state.onFloor = true;
+          state.grabOffsetFloorXMm = 0;
+          state.grabOffsetFloorZMm = 0;
+          state.prevFloorXMm = fp.xMm;
+          state.prevFloorZMm = fp.zMm;
+          renderProjectCanvas();
+          // A cena foi reconstruída: o Group antigo morreu, readota o novo.
+          state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
+          if (state.group) ViewerProjectEdit.setHoverHighlight(state.group);
+          return;
+        }
+      }
     }
 
     const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === state.liveWallIndex);
@@ -13003,6 +13712,32 @@ function attachProject3DEditDrag() {
       xMm = clamp(xMm, 0, Math.max(0, wallWidthMm - widthMm));
     }
 
+    // COLISÃO (botão, 2026-08-08) — última etapa antes de commitar a posição,
+    // DEPOIS do ímã e da troca de parede de propósito: o ímã pode encostar o
+    // módulo exatamente na borda do vizinho (posição perfeitamente válida, sem
+    // sobreposição), e atravessar a esquina troca o conjunto de vizinhos que
+    // conta. Ligada, "para encostado" no primeiro obstáculo do caminho
+    // (lateral, acima ou abaixo); desligada, devolve o pedido intacto e o
+    // comportamento é o de sempre.
+    if (projectCollisionEnabled) {
+      // Acabou de ATRAVESSAR a esquina: a posição anterior era no referencial
+      // da parede antiga e não diz nada sobre de que lado o módulo está
+      // batendo aqui — nesse frame a colisão não bloqueia nada (o próximo
+      // frame já tem um "de onde vim" válido nesta parede).
+      const crossedWall = (state.prevWallIndex != null && state.prevWallIndex !== state.liveWallIndex);
+      const solved = clampWallSlotAgainstCollision(
+        slot, xMm, yMm,
+        crossedWall ? xMm : state.prevXMm,
+        crossedWall ? yMm : state.prevYMm,
+        projectSlotsSameWallExcluding(slot)
+      );
+      xMm = solved.x;
+      yMm = solved.y;
+    }
+    state.prevXMm = xMm;
+    state.prevYMm = yMm;
+    state.prevWallIndex = state.liveWallIndex;
+
     slot.x_mm = xMm;
     slot.floor_height_mm = yMm;
 
@@ -13036,24 +13771,94 @@ function attachProject3DEditDrag() {
   const endDrag3D = (ev) => {
     clearHold3DTimer();
     const state = projectDrag3DState;
-    if (!state || state.pointerId !== ev.pointerId) return;
+    if (!state || state.pointerId !== ev.pointerId) {
+      // Sem arraste em andamento, um pointerup limpo pode ser a 2ª batida de
+      // um DUPLO TOQUE no ambiente (parede/chão) — ver handleRoomDoubleTap.
+      if (ev.type === 'pointerup') handleRoomTapForDoubleTap(ev);
+      return;
+    }
     projectDrag3DState = null;
     domEl.style.cursor = 'grab';
     // Toque curto (soltou antes de engatar o arraste) = seleciona. É o
-    // caminho normal do tap no iPad.
+    // caminho normal do tap no iPad. As SETAS de redimensionamento (toque)
+    // nascem exatamente daqui — pedido do usuário 2026-08-08: "clique rapido
+    // no modulo mantem o vermelho envolta... ele abre setas pra
+    // redimencionamento nos sentidos permitidos" (selectProjectSlot já
+    // mantém o contorno; refreshProject3DResizeArrows desenha as setas).
     if (!state.moved) {
-      if (ev.type !== 'pointercancel') selectProjectSlot(state.slotId);
+      if (ev.type !== 'pointercancel') {
+        selectProjectSlot(state.slotId);
+        refreshProject3DResizeArrows();
+      }
       return;
     }
     const slot = projectSlots.find((s) => s.id === state.slotId);
-    if (slot) {
+    if (slot && !isFloorSlot(slot)) {
       resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
     }
     renderProjectCanvas();
+    refreshProject3DResizeArrows();
     markProjectDirty();
   };
   domEl.addEventListener('pointerup', endDrag3D);
   domEl.addEventListener('pointercancel', endDrag3D);
+
+  // ---------- Duplo toque no ambiente (2026-08-08, iPad) ----------
+  // "duplo clica na parede ele mostra a parede de frente. duplo clique no chao
+  // mostra vista de cima". Duas batidas rápidas e próximas no MESMO tipo de
+  // superfície contam como duplo toque; qualquer toque em cima de um módulo
+  // não chega aqui (pickRoomSurfaceAt devolve null quando tem móvel na
+  // frente, e além disso o pointerdown do módulo consome o gesto).
+  function handleRoomTapForDoubleTap(ev) {
+    if (projectCameraModeOn && ev.pointerType === 'touch') return;
+    const surface = ViewerProjectEdit.pickRoomSurfaceAt
+      ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY)
+      : null;
+    if (!surface) { lastRoomTap = null; return; }
+    const now = Date.now();
+    const prev = lastRoomTap;
+    lastRoomTap = { t: now, x: ev.clientX, y: ev.clientY, kind: surface.kind, wallIndex: surface.wallIndex };
+    if (!prev || prev.kind !== surface.kind) return;
+    if (now - prev.t > ROOM_DOUBLE_TAP_MS) return;
+    if (Math.hypot(ev.clientX - prev.x, ev.clientY - prev.y) > ROOM_DOUBLE_TAP_PX) return;
+    lastRoomTap = null;
+    applyRoomDoubleTap(surface);
+  }
+
+  function applyRoomDoubleTap(surface) {
+    if (surface.kind === 'floor') {
+      // Chão → Vista Superior (a vista 2D de cima que já existe). É a
+      // resposta mais fiel a "mostra vista de cima": ela é ortográfica e
+      // cotada, bem melhor pra planejar planta que uma câmera 3D apontada
+      // pra baixo.
+      setProjectViewMode('top');
+      return;
+    }
+    // Parede → vira a câmera pra encarar essa parede de frente. A parede
+    // também vira a ATIVA (mesmo efeito das abas de parede), senão o
+    // raycasting continuaria preferindo a anterior perto do canto (ver
+    // preferredWallIndex em pickAssemblyAt).
+    const idx = Number(surface.wallIndex);
+    if (!Number.isFinite(idx)) return;
+    const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === idx);
+    if (!wallGeo) return;
+    projectActiveWallIndex = idx;
+    refreshProjectWallTabs();
+    refreshProjectWallWidthInput();
+    renderProjectCanvas();
+    if (ViewerProjectEdit.frameDirection) {
+      // Câmera na frente da parede (sentido CONTRÁRIO ao intoDir dela, que
+      // aponta pra dentro do ambiente), levemente acima da metade do pé
+      // direito pra não ficar rente ao chão.
+      const midAlongM = wallGeo.widthM / 2;
+      const target = {
+        x: wallGeo.originX + wallGeo.alongDirX * midAlongM,
+        y: (roomSettings.ceiling_mm / 1000) / 2,
+        z: wallGeo.originZ + wallGeo.alongDirZ * midAlongM
+      };
+      ViewerProjectEdit.frameDirection({ x: wallGeo.intoDirX, y: 0.18, z: wallGeo.intoDirZ }, target);
+    }
+  }
 
   // Ponteiro saiu do canvas sem estar arrastando nada — apaga o contorno de
   // destaque e o cursor especial (senão ficaria "grudado" mostrando o
@@ -13079,7 +13884,95 @@ function attachProject3DEditDrag() {
 // esticar junto) — então updateProjectSlotDimension/updateProjectSlotWidthFromLeft
 // chamam renderProjectCanvas() normalmente a cada pointermove, reconstruindo
 // a cena (mais pesado que mover, mas correto).
+// Arrastar um módulo ILHA pelo PISO (2026-08-08) — contraparte de "mover ao
+// longo da parede" pro caso em que o móvel não está preso a parede nenhuma.
+// Duas diferenças de fundo: o plano de arraste é horizontal (y=0, ver
+// projectFloorPointMm) e a posição guardada é o CENTRO do módulo, não a borda
+// esquerda. Igual ao mover de parede, o Group é reposicionado direto a cada
+// frame (sem reconstruir a cena) e só o soltar dispara um render de verdade.
+function handleProject3DFloorMove(state, slot, ev) {
+  // Caminho de VOLTA do arraste livre (toque longo): largar a ilha em cima de
+  // uma parede a "encosta" nela de novo, virando módulo de parede. Simétrico
+  // ao trecho parede→chão no pointermove (ver freeMode lá).
+  if (state.freeMode && ViewerProjectEdit.pickRoomSurfaceAt) {
+    const surface = ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY);
+    if (surface && surface.kind === 'wall' && Number.isFinite(Number(surface.wallIndex))) {
+      const wallIndex = Number(surface.wallIndex);
+      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
+      if (wallGeo) {
+        const alongMm = ((surface.point.x - wallGeo.originX) * wallGeo.alongDirX
+          + (surface.point.z - wallGeo.originZ) * wallGeo.alongDirZ) * 1000;
+        convertProjectSlotToWall(slot, wallIndex, alongMm - Number(slot.width_mm || 0) / 2, surface.point.y * 1000);
+        state.onFloor = false;
+        state.liveWallIndex = wallIndex;
+        state.prevWallIndex = wallIndex;
+        state.prevXMm = Number(slot.x_mm || 0);
+        state.prevYMm = Number(slot.floor_height_mm || 0);
+        state.grabOffsetXMm = 0;
+        state.grabOffsetYMm = 0;
+        state.depthOffsetM = Number(slot.depth_mm || 0) / 2000;
+        projectActiveWallIndex = wallIndex;
+        refreshProjectWallTabs();
+        refreshProjectWallWidthInput();
+        renderProjectCanvas();
+        state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
+        if (state.group) ViewerProjectEdit.setHoverHighlight(state.group);
+        return;
+      }
+    }
+  }
+
+  const fp = projectFloorPointMm(ev.clientX, ev.clientY);
+  if (!fp) return;
+  let xMm = fp.xMm - (state.grabOffsetFloorXMm || 0);
+  let zMm = fp.zMm - (state.grabOffsetFloorZMm || 0);
+
+  const solved = clampFloorSlotAgainstCollision(
+    slot, xMm, zMm,
+    (state.prevFloorXMm != null) ? state.prevFloorXMm : xMm,
+    (state.prevFloorZMm != null) ? state.prevFloorZMm : zMm
+  );
+  xMm = solved.x;
+  zMm = solved.y;
+  state.prevFloorXMm = xMm;
+  state.prevFloorZMm = zMm;
+
+  slot.floor_x_mm = xMm;
+  slot.floor_z_mm = zMm;
+  if (state.group) {
+    state.group.position.x = xMm / 1000;
+    state.group.position.z = zMm / 1000;
+    state.group.position.y = 0;
+    ViewerProjectEdit.updateHoverHighlight();
+  }
+}
+
 function handleProject3DResizeMove(state, slot, ev) {
+  // ---------- Ilha no chão ----------
+  // Sem parede de referência, a matemática de "coordenada ao longo da parede"
+  // não existe. Largura cresce SIMÉTRICA em torno do centro (o móvel é solto,
+  // não tem borda ancorada em nada) e a altura sai da interseção com o plano
+  // vertical lateral do próprio módulo.
+  if (isFloorSlot(slot)) {
+    const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
+    const axX = Math.cos(rot), axZ = -Math.sin(rot); // eixo local +X no mundo
+    const cx = Number(slot.floor_x_mm || 0) / 1000;
+    const cz = Number(slot.floor_z_mm || 0) / 1000;
+    if (state.resizeAxis === 'height-top') {
+      const p = ViewerProjectEdit.intersectPlaneAtClient(
+        ev.clientX, ev.clientY, { x: cx, y: 0, z: cz }, { x: axX, y: 0, z: axZ }
+      );
+      if (!p) return;
+      updateProjectSlotDimension(slot, 'height', p.y * 1000 - Number(slot.floor_height_mm || 0));
+      return;
+    }
+    const fp = projectFloorPointMm(ev.clientX, ev.clientY);
+    if (!fp) return;
+    const halfMm = Math.abs((fp.xMm - cx * 1000) * axX + (fp.zMm - cz * 1000) * axZ);
+    updateProjectSlotDimension(slot, 'width', halfMm * 2);
+    return;
+  }
+
   const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === state.liveWallIndex);
   if (!wallGeo) return;
   const hitPoint = ViewerProjectEdit.intersectPlaneAtClient(
@@ -13183,6 +14076,25 @@ function computeProjectWallTopViewPlacements() {
       maxYMm = Math.max(maxYMm, screenY + screenH);
       placements.push({ slot, screenX, screenY, screenW, screenH });
     });
+  });
+
+  // Módulos ILHA (soltos no chão, 2026-08-08 — ver isFloorSlot). A Vista
+  // Superior é EXATAMENTE o plano onde eles vivem, então aqui (ao contrário
+  // dos módulos de parede, cuja profundidade é derivada de z_order) a posição
+  // é a real, sem aproximação nenhuma. Conversão de coordenada: o desenho usa
+  // screenX medido a partir da PONTA ESQUERDA da parede 'main' e screenY pra
+  // dentro do ambiente; o mundo 3D usa X centrado em 0 na mesma parede — daí
+  // o + mainWidthMm/2. floor_x_mm/floor_z_mm são o CENTRO do módulo (mesma
+  // convenção do group no 3D), por isso o − metade em cada eixo.
+  projectFloorSlots().forEach((slot) => {
+    const rot = ((Number(slot.floor_rotation_deg || 0) % 360) + 360) % 360;
+    const swapped = (rot === 90 || rot === 270);
+    const screenW = swapped ? Number(slot.depth_mm || 0) : Number(slot.width_mm || 0);
+    const screenH = swapped ? Number(slot.width_mm || 0) : Number(slot.depth_mm || 0);
+    const screenX = Number(slot.floor_x_mm || 0) + mainWidthMm / 2 - screenW / 2;
+    const screenY = Number(slot.floor_z_mm || 0) - screenH / 2;
+    maxYMm = Math.max(maxYMm, screenY + screenH);
+    placements.push({ slot, screenX, screenY, screenW, screenH });
   });
 
   // Parede de retorno (dupla/C-U) sempre entra no orçamento de profundidade
@@ -13413,6 +14325,14 @@ function buildProjectAssemblies(slotsList) {
       assembly.floor_height_m = Number(slot.floor_height_mm || 0) / 1000;
       assembly.x_m = Number(slot.x_mm || 0) / 1000;
       assembly.z_order = Number(slot.z_order || 0);
+      // Módulo ILHA (2026-08-08, ver isFloorSlot): posição em coordenadas de
+      // MUNDO no piso em vez de "ao longo da parede". renderFreeformWalls lê
+      // floorX/floorZ/rotationY (options.floorAssemblies) e ignora x_m/z_order.
+      if (isFloorSlot(slot)) {
+        assembly.floorX = Number(slot.floor_x_mm || 0) / 1000;
+        assembly.floorZ = Number(slot.floor_z_mm || 0) / 1000;
+        assembly.rotationY = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
+      }
 
       // Caixa invisível de "alvo de clique" (pedido do usuário 2026-07-26:
       // "nao estou conseguindo chegar com o mause no modulo baixo") — o
@@ -13488,7 +14408,13 @@ function generateProject3D() {
   // e qual — zero risco de regressão pro fluxo já existente. Só forma
   // dupla/C-U (2-3 paredes) passa pelo caminho novo (renderFreeformWalls,
   // ver viewer3d_composition.js).
-  if (getProjectWallCount() <= 1) {
+  // Parede única E sem nenhuma ilha no chão continua no caminho antigo
+  // (renderFreeform) tal e qual — zero risco de regressão. Ilha no chão
+  // (2026-08-08) só existe no caminho multi-parede (renderFreeformWalls, que
+  // é quem sabe posicionar por coordenada de mundo), então basta UMA ilha pra
+  // o projeto de parede única também passar por lá.
+  const floorAssemblies = buildProjectAssemblies(projectFloorSlots());
+  if (getProjectWallCount() <= 1 && !floorAssemblies.length) {
     const assemblies = buildProjectAssemblies(projectSlots);
     ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, viewerRoomEnvConfig());
   } else {
@@ -13496,7 +14422,7 @@ function generateProject3D() {
       ...wall,
       assemblies: buildProjectAssemblies(projectSlotsOnWall(wall.wallIndex))
     }));
-    ViewerProject.renderFreeformWalls(wallsData, viewerRoomEnvConfig());
+    ViewerProject.renderFreeformWalls(wallsData, viewerRoomEnvConfig(), null, { floorAssemblies });
   }
 
   refreshProjectOpenButtons();
@@ -14099,6 +15025,14 @@ function serializeProjectSlots() {
     x_mm: Number(slot.x_mm || 0),
     floor_height_mm: Number(slot.floor_height_mm || 0),
     z_order: Number(slot.z_order || 0),
+    // Módulo ILHA (2026-08-08, ver isFloorSlot) — gravados SEMPRE, inclusive
+    // pra slot de parede (placement:'wall' + zeros), pra não precisar de
+    // nenhuma checagem de "campo existe?" na volta. Projeto salvo ANTES disso
+    // simplesmente não tem as chaves e o restore cai no default 'wall'.
+    placement: isFloorSlot(slot) ? 'floor' : 'wall',
+    floor_x_mm: Number(slot.floor_x_mm || 0),
+    floor_z_mm: Number(slot.floor_z_mm || 0),
+    floor_rotation_deg: Number(slot.floor_rotation_deg || 0),
     module_id: slot.module.id,
     width_mm: slot.width_mm,
     height_mm: slot.height_mm,
@@ -14606,6 +15540,12 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         x_mm: Number(cfg.x_mm || 0),
         floor_height_mm: Number(cfg.floor_height_mm || 0),
         z_order: Number(cfg.z_order || 0),
+        // Módulo ILHA (2026-08-08, ver isFloorSlot) — projeto salvo antes
+        // disso não tem `placement` nenhum e cai em 'wall', idêntico a antes.
+        placement: cfg.placement === 'floor' ? 'floor' : 'wall',
+        floor_x_mm: Number(cfg.floor_x_mm || 0),
+        floor_z_mm: Number(cfg.floor_z_mm || 0),
+        floor_rotation_deg: Number(cfg.floor_rotation_deg || 0),
         module,
         pieces: effectivePieces,
         colorOptionsByRole: moduleColorsByRole,
@@ -14655,6 +15595,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     // não existe mais nessa forma (ex.: salvo em C/U, restaurado depois de
     // já ter voltado pra 'single' manualmente) cai na primeira.
     restored.forEach((slot) => {
+      if (isFloorSlot(slot)) return; // ilha não pertence a parede nenhuma
       if (slot.wall_index < 0 || slot.wall_index >= restoredRoleCount) slot.wall_index = 0;
     });
 
@@ -14867,15 +15808,19 @@ function renderProjectForAiSnapshot() {
   ViewerProject.init('po-proj-3d-canvas');
   // Mesma ramificação single vs. dupla/C-U de generateProject3D (ver
   // comentário lá) — só muda a origem dos slots (cleanSlots, sem decoração).
-  if (getProjectWallCount() <= 1) {
+  // Módulos ILHA (2026-08-08) forçam o caminho multi-parede, mesmo com uma
+  // parede só — é renderFreeformWalls quem sabe posicionar por coordenada de
+  // mundo (ver a mesma ramificação em generateProject3D).
+  const floorAssemblies = buildProjectAssemblies(cleanSlots.filter(isFloorSlot));
+  if (getProjectWallCount() <= 1 && !floorAssemblies.length) {
     const assemblies = buildProjectAssemblies(cleanSlots);
     ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, room);
   } else {
     const wallsData = getProjectWallGeometry().map((wall) => ({
       ...wall,
-      assemblies: buildProjectAssemblies(cleanSlots.filter((s) => Number(s.wall_index || 0) === wall.wallIndex))
+      assemblies: buildProjectAssemblies(cleanSlots.filter((s) => !isFloorSlot(s) && Number(s.wall_index || 0) === wall.wallIndex))
     }));
-    ViewerProject.renderFreeformWalls(wallsData, room);
+    ViewerProject.renderFreeformWalls(wallsData, room, null, { floorAssemblies });
   }
   return true;
 }

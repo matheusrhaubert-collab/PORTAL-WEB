@@ -1,3 +1,3 @@
-﻿data: 2026-08-06 21:41:40
-cache: 202608062141
-mensagem: Portal: ajustes de 2026-08-06 21:41:40
+﻿data: 2026-08-08 23:21:54
+cache: 202608082321
+mensagem: chao solido, modulo no chao, colisao e gestos do ipad
