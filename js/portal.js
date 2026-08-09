@@ -12058,6 +12058,65 @@ function applyProjectViewerControls() {
   ViewerProjectEdit.setControlsEnabled(enabled);
 }
 
+// ==========================================================================
+// BARRAS FLUTUANTES DO CANVAS — 2026-08-08 (etapa 2 do redesenho)
+// ==========================================================================
+// Os botões que antes moravam numa faixa acima do desenho agora flutuam POR
+// CIMA dele (ver .po-proj-canvas-hud em style.css). O que muda em JS é pouco,
+// de propósito: os ids continuam os mesmos, então todo listener antigo segue
+// valendo. Só entram três botões novos de câmera e uma função que decide o que
+// aparece em cada vista.
+function refreshProjectCanvasHud() {
+  // Barra de CÂMERA (ajustar/zoom) só existe na cena 3D: a Vista Superior é um
+  // desenho 2D plano com escala calculada pra caber na tela (ver
+  // renderProjectCanvasTop), não tem câmera pra mexer.
+  const cameraHud = document.getElementById('po-proj-canvas-camera-hud');
+  const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  const is3d = !!edit3dWrap && edit3dWrap.style.display !== 'none' && projectViewMode !== 'top';
+  if (cameraHud) cameraHud.style.display = is3d ? 'flex' : 'none';
+
+  // 🗑 da barra: atalho pro módulo selecionado. Redundante com o ✕ que flutua
+  // ao lado do módulo, mas o ✕ some quando o móvel sai do enquadramento (ver
+  // worldToClient devolvendo null) — este aqui está sempre no mesmo lugar.
+  const removeBtn = document.getElementById('po-proj-hud-remove-btn');
+  if (removeBtn) removeBtn.disabled = (selectedProjectSlotId == null);
+}
+
+const projFitBtn = document.getElementById('po-proj-fit-btn');
+if (projFitBtn) {
+  projFitBtn.addEventListener('click', () => {
+    // Reenquadrar = zerar a chave de fit e re-renderizar. É exatamente o que
+    // resetProject/restoreFavoriteProject já fazem (ver project3DLastFitKey):
+    // com a chave nula, renderProjectCanvasFrontCorner passa keepCamera=false
+    // e renderFreeformWalls recalcula a distância/alvo pela caixa da cena.
+    // Nenhuma matemática de câmera nova precisou ser escrita.
+    project3DLastFitKey = null;
+    renderProjectCanvas();
+  });
+}
+// Mesma escala por passo que o OrbitControls usa por "notch" de scroll — o
+// botão dá o mesmo salto que uma volta da rodinha, então os dois gestos
+// parecem o mesmo zoom. factor < 1 aproxima (ver zoomByStep).
+const PROJECT_ZOOM_STEP = 0.82;
+const projZoomInBtn = document.getElementById('po-proj-zoom-in-btn');
+if (projZoomInBtn) {
+  projZoomInBtn.addEventListener('click', () => {
+    if (ViewerProjectEdit && ViewerProjectEdit.zoomByStep) ViewerProjectEdit.zoomByStep(PROJECT_ZOOM_STEP);
+  });
+}
+const projZoomOutBtn = document.getElementById('po-proj-zoom-out-btn');
+if (projZoomOutBtn) {
+  projZoomOutBtn.addEventListener('click', () => {
+    if (ViewerProjectEdit && ViewerProjectEdit.zoomByStep) ViewerProjectEdit.zoomByStep(1 / PROJECT_ZOOM_STEP);
+  });
+}
+const projHudRemoveBtn = document.getElementById('po-proj-hud-remove-btn');
+if (projHudRemoveBtn) {
+  projHudRemoveBtn.addEventListener('click', () => {
+    if (selectedProjectSlotId != null) removeProjectSlot(selectedProjectSlotId);
+  });
+}
+
 const projUndoBtn = document.getElementById('po-proj-undo-btn');
 if (projUndoBtn) projUndoBtn.addEventListener('click', () => undoProjectChange());
 // Ctrl+Z / ⌘Z também desfazem — mas só com a aba Projetos aberta e fora de
@@ -12442,6 +12501,8 @@ function selectProjectSlot(slotId) {
   if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
   // Botões Duplicar/Remover acompanham a seleção pelo mesmo caminho das setas.
   if (typeof refreshProjectSlotActions === 'function') refreshProjectSlotActions();
+  // 🗑 da barra flutuante só habilita com módulo selecionado.
+  if (typeof refreshProjectCanvasHud === 'function') refreshProjectCanvasHud();
 }
 
 // ==========================================================================
@@ -12876,6 +12937,9 @@ function renderProjectCanvas() {
   }
   if (topViewHint) topViewHint.style.display = projectViewMode === 'top' ? 'block' : 'none';
   renderProjectMiniTopView();
+  // Depois das vistas: o que a barra flutuante mostra depende de QUAL vista
+  // acabou de ser desenhada (a de câmera só existe na 3D).
+  refreshProjectCanvasHud();
 
   // Frontal: "vazio" é por PAREDE ativa (é o que está na tela) — Superior
   // mostra todas as paredes juntas, então usa o total do projeto.

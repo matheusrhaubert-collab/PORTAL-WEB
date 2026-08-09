@@ -2507,27 +2507,51 @@ header.po-topnav {
    .po-proj-topbar-actions, encostado à direita da faixa superior.) */
 
 .po-proj-canvas-outer { min-width: 0; }
-/* Frontal/Superior agora mora DENTRO da barra única (.po-proj-canvas-tools),
-   então não centraliza mais sozinho — quem centraliza é a barra. */
+/* Frontal/Superior mora DENTRO da barra flutuante — não centraliza sozinho. */
 .po-proj-view-toggle { margin: 0; width: fit-content; }
 
-/* Barra única de controles do canvas (2026-08-08, 2ª rodada): Voltar +
-   Frontal/Superior + Colisão + Girar câmera na MESMA linha (pedido do usuário
-   pro iPad, onde duas linhas empilhadas comiam altura do canvas).
-   align-items:center alinha o grupo Frontal/Superior (que é mais alto, tem
-   borda própria) com os botões soltos; flex-wrap deixa quebrar sozinho em
-   tela estreita em vez de estourar a largura. */
-.po-proj-canvas-tools {
-  display: flex; gap: 6px; justify-content: center; align-items: center;
-  flex-wrap: wrap; margin: 0 auto 4px; width: fit-content; max-width: 100%;
+/* ---------- Barras FLUTUANTES do canvas (2026-08-08, etapa 2) ----------
+   Antes eram uma faixa própria acima do desenho (.po-proj-canvas-tools);
+   viraram overlays por cima dele, como no mockup, devolvendo a altura que
+   ocupavam pro canvas — que era o objetivo, ainda mais no iPad.
+   O "palco" é quem dá o position:relative; ele NÃO pode ser
+   .po-proj-canvas-wrap (overflow:auto — as barras rolariam junto com o
+   desenho na vista 2D e sumiriam). */
+.po-proj-canvas-stage { position: relative; flex: 1; min-width: 0; display: flex; }
+.po-proj-canvas-stage > .po-proj-canvas-wrap { flex: 1; min-width: 0; }
+
+.po-proj-canvas-hud {
+  position: absolute; z-index: 30; display: flex; align-items: center; gap: 4px;
+  padding: 4px; border: 1px solid var(--border); border-radius: 10px;
+  /* Fundo semiopaco: a barra fica POR CIMA do desenho, então precisa se
+     destacar sem tapar o que está atrás dela. */
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
 }
-/* Divisória fina separando a AÇÃO (Voltar) dos MODOS (o resto). */
-.po-proj-tools-sep {
-  width: 1px; align-self: stretch; min-height: 20px;
-  background: var(--border); margin: 0 2px;
+.po-proj-hud-tl { top: 8px; left: 8px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+.po-proj-hud-right { top: 50%; right: 8px; transform: translateY(-50%); flex-direction: column; }
+.po-proj-hud-sep { width: 1px; align-self: stretch; min-height: 20px; background: var(--border); margin: 0 2px; }
+
+/* Botão da barra: quadrado, alvo confortável pro dedo (32px), só o ícone. */
+.po-proj-hud-btn {
+  width: 32px; height: 32px; padding: 0; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; font-weight: 700;
+  background: transparent; color: var(--text);
+  border: 1px solid transparent; border-radius: 8px;
 }
-.po-proj-tool-btn:disabled { opacity: 0.4; cursor: default; }
-.po-proj-tool-btn:disabled:hover { background: var(--panel); }
+.po-proj-hud-btn:hover { background: var(--accent-light); }
+.po-proj-hud-btn.active { background: var(--text); color: #fff; }
+.po-proj-hud-btn:disabled { opacity: 0.3; cursor: default; }
+.po-proj-hud-btn:disabled:hover { background: transparent; }
+.po-proj-hud-danger { color: #b0503c; }
+.po-proj-hud-danger:hover { background: #f7e4e0; }
+/* Frontal/Superior dentro da barra fica um pouco menor que o padrão. */
+.po-proj-hud-tl .po-view-toggle-btn { padding: 5px 10px; font-size: 11px; }
+
+/* (.po-proj-tool-btn/.po-proj-canvas-tools da 2ª rodada viraram
+   .po-proj-hud-btn/.po-proj-canvas-hud aqui em cima — as regras antigas foram
+   removidas junto com a faixa que elas estilizavam.) */
 
 /* Ações do módulo selecionado — flutuam SOBRE o canvas 3D, posicionadas em px
    por refreshProjectSlotActions (portal.js). position:fixed porque a conta vem
@@ -2549,13 +2573,6 @@ header.po-topnav {
 .po-proj-slot-action-btn:hover { background: var(--accent-light); }
 .po-proj-slot-action-danger { color: #b0503c; }
 .po-proj-slot-action-danger:hover { background: #f7e4e0; }
-.po-proj-tool-btn {
-  background: var(--panel); color: var(--muted);
-  border: 1px solid var(--border); border-radius: 8px;
-  margin: 0; padding: 5px 12px; font-size: 12px; font-weight: 600;
-}
-.po-proj-tool-btn:hover { background: var(--accent-light); }
-.po-proj-tool-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
 
 /* Card da biblioteca sendo ARRASTADO pra dentro da cena (ver
    attachProjectLibraryDragToScene em portal.js) — o card original fica

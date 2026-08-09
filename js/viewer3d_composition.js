@@ -1666,6 +1666,18 @@ function createViewerComposition3D() {
     controls.update();
   }
 
+  // Zoom por BOTÃO (2026-08-08, etapa 2 do redesenho — a barra flutuante do
+  // canvas tem + e −). Converge pro CENTRO do canvas, não pro alvo da órbita:
+  // é o que a pessoa espera de um botão de zoom (o que está no meio da tela
+  // continua no meio). Reaproveita zoomTowardClient, a mesma função do scroll
+  // e da pinça — nenhuma matemática de câmera nova.
+  // factor < 1 aproxima, > 1 afasta (mesma convenção de zoomTowardClient).
+  function zoomByStep(factor) {
+    if (!renderer || !controls || !controls.enabled) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    zoomTowardClient(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
+  }
+
   function handleZoomWheel(event) {
     event.preventDefault();
     if (!controls || !controls.enabled || !camera || !renderer) return;
@@ -1960,7 +1972,7 @@ function createViewerComposition3D() {
     setDropPreview,
     // 3ª rodada (2026-08-08) — ver pickAssemblyAtSticky (seleção que não pula
     // pro vizinho no dedo) e worldToClient (botões DOM sobre o módulo).
-    pickAssemblyAtSticky, worldToClient,
+    pickAssemblyAtSticky, worldToClient, zoomByStep,
     // Teste AR (2026-08-01) — ver comentário de getScene acima.
     getScene
   };
