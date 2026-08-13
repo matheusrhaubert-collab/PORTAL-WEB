@@ -14555,6 +14555,29 @@ function computeProjectSlotInnerZone(slot) {
     let fonte = 'casco';
     if (!r.achou) { r = deduzirCasco(computeProjectSlotCascoBoxes(slot, true)); fonte = 'cena'; }
     if (!r.achou) {
+      // PASSE FROUXO — "quem encosta na face, e é fino, é casco".
+      // Sem exigir que cubra a face (a exigência que barra lateral recortada,
+      // módulo com pé alto, casco cheio de divisória). O limite de 25% é o que
+      // impede uma porta ou um fundo inteiro de comer a caixa toda.
+      // A medida sai da PEÇA DE VERDADE, então acompanha 18mm, 3/4" ou o que
+      // for — diferente do palpite abaixo.
+      const bs = computeProjectSlotCascoBoxes(slot, true);
+      let a = 0, b0 = 0, c = 0, d1 = W, e1 = H;
+      const T = 8;
+      bs.forEach((b) => {
+        const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
+        if (b.x0 <= T && b.sx < W * 0.25 && ex > a) a = ex;
+        if (ex >= W - T && b.sx < W * 0.25 && b.x0 < d1) d1 = b.x0;
+        if (b.y0 <= T && b.sy < H * 0.25 && ey > b0) b0 = ey;
+        if (ey >= H - T && b.sy < H * 0.25 && b.y0 < e1) e1 = b.y0;
+        if (b.z0 <= T && b.sz < D * 0.25 && ez > c) c = ez;
+      });
+      if (!(a === 0 && b0 === 0 && c === 0 && d1 === W && e1 === H)) {
+        r = { x0: a, y0: b0, z0: c, x1: d1, y1: e1, achou: true };
+        fonte = 'contato';
+      }
+    }
+    if (!r.achou) {
       // NUNCA DEIXAR O VÃO SER O MÓDULO INTEIRO. Se nem o cadastro nem a cena
       // deixaram reconhecer o casco, um palpite de chapa de 18mm (6mm no
       // fundo) erra por milímetros; devolver a medida externa erra por uma
