@@ -370,16 +370,6 @@
       'project.module_exceeds_wall_error': 'Este módulo não cabe na largura do ambiente configurada.',
       'project.view_front_btn': 'Frontal',
       'project.view_top_btn': 'Superior',
-      'project.edge_thin': 'Línea fina',
-      'project.edge_thick': 'Línea gruesa',
-      'project.edge_soft': 'Línea transparente',
-      'project.edge_none': 'Sin línea',
-      'project.texture_toggle': 'Textura de madera / solo color (más liviano)',
-      'project.edge_thin': 'Linha fina',
-      'project.edge_thick': 'Linha grossa',
-      'project.edge_soft': 'Linha transparente',
-      'project.edge_none': 'Sem linha',
-      'project.texture_toggle': 'Textura de madeira / só a cor (mais leve)',
       'project.top_view_dims_label': '{{w}} x profundidade ~{{d}}',
       'project.top_view_hint': 'Vista de cima aproximada, gerada a partir da ordem de profundidade dos módulos — pra mover ou reorganizar, use a vista Frontal.',
       'project.mini_top_title': 'Ambiente (vista de cima)',
@@ -928,11 +918,6 @@
       'project.module_exceeds_wall_error': 'This module does not fit in the configured room width.',
       'project.view_front_btn': 'Front',
       'project.view_top_btn': 'Top',
-      'project.edge_thin': 'Thin outline',
-      'project.edge_thick': 'Thick outline',
-      'project.edge_soft': 'Faint outline',
-      'project.edge_none': 'No outline',
-      'project.texture_toggle': 'Wood texture / flat color (lighter)',
       'project.top_view_dims_label': '{{w}} x ~{{d}} deep',
       'project.top_view_hint': 'Approximate top view, generated from the modules\' depth order — to move or reorganize them, use the Front view.',
       'project.mini_top_title': 'Room (top view)',
@@ -1476,3 +1461,396 @@
       'project.wall_width_invalid_error': 'Ancho de ambiente inválido.',
       'project.module_exceeds_wall_error': 'Este módulo no cabe en el ancho de ambiente configurado.',
       'project.view_front_btn': 'Frontal',
+      'project.view_top_btn': 'Superior',
+      'project.top_view_dims_label': '{{w}} x profundidad ~{{d}}',
+      'project.top_view_hint': 'Vista superior aproximada, generada a partir del orden de profundidad de los módulos — para moverlos o reorganizarlos, usa la vista Frontal.',
+      'project.mini_top_title': 'Ambiente (vista superior)',
+      'project.mini_top_hint': 'Haz clic en una pared o módulo para editar.',
+      'project.collision_btn': 'Colisión',
+      'project.collision_title': 'Impide que los módulos se superpongan — al arrastrar, el módulo se detiene contra el vecino.',
+      'project.camera_btn': 'Girar cámara',
+      'project.camera_title': 'Mientras está activo, el toque gira y hace zoom en la cámara en vez de mover los módulos.',
+      'project.drag_library_hint': 'Arrastra un módulo de la biblioteca y suéltalo en una pared o en el suelo.',
+      'project.floor_island_label': 'En el suelo',
+      'project.undo_btn': '↩ Volver',
+      'project.undo_title': 'Deshace el último cambio del proyecto (mover, redimensionar, color, agregar o quitar módulo).',
+      'project.duplicate_btn': 'Duplicar',
+      'project.duplicate_title': 'Crea una copia de este módulo con el mismo color y las mismas medidas, a su lado.',
+      'project.remove_title': 'Quitar este módulo del ambiente',
+      'project.customize_title': 'Abrir este módulo en el creador de armarios para armar los internos',
+      'project.customize_confirm': 'Customizar crea una copia de este módulo solo para este proyecto — el módulo del catálogo no cambia.\n\nLas medidas y los colores se mantienen; los opcionales marcados y la cantidad de estantes vuelven al valor por defecto. ¿Continuar?',
+      'project.customize_error': 'No se pudo preparar la customización: {{msg}}',
+      'project.builder_hint': 'Haga clic en un espacio y luego en una pieza — o arrastre la pieza dentro. Haga clic en una pieza insertada para quitarla; arrastre el estante para moverlo.',
+      'project.builder_empty_lib': 'Ninguna pieza liberada para este módulo.',
+      'project.builder_no_fit': 'Nada cabe en este espacio.',
+      'project.builder_save': 'Guardar',
+      'project.builder_saved': 'Guardado en el proyecto.',
+      'project.builder_saved_partial': 'Guardado — {{n}} pieza(s) sin componente registrado quedaron fuera.',
+      'project.builder_undo': 'Deshacer',
+      'project.builder_reset': 'Empezar de nuevo',
+      'project.builder_engine_missing': 'El constructor no cargó. Recargue la página e intente de nuevo.',
+      'project.builder_load_error': 'No se pudieron cargar las piezas: {{msg}}',
+      'project.rotating_badge': 'Girando: {{deg}}°',
+      'project.fit_title': 'Ajustar todo el ambiente a la pantalla',
+      'project.zoom_in_title': 'Acercar',
+      'project.zoom_out_title': 'Alejar',
+      'project.empty_drag_title': 'Arrastra un módulo para empezar',
+      'project.empty_or': 'o',
+      'project.empty_click_hint': 'Haz clic en un módulo al lado',
+      'project.summary_title': 'Resumen del proyecto',
+      'project.summary_modules': 'Módulos',
+      'project.summary_items': 'Ítems',
+      'project.summary_finishes': 'Acabados',
+      'project.summary_total': 'Total estimado',
+      'project.summary_details_btn': 'Ver detalles del proyecto ›',
+      'project.summary_details_hide_btn': 'Ocultar detalles ‹',
+      'project.summary_empty_details': 'Aún no hay módulos en el ambiente.',
+      'composition.insert_here_title': 'Insertar un módulo aquí',
+      'composition.total_width_label': 'Ancho total',
+      'composition.total_height_label': 'Alto total',
+      'composition.total_depth_label': 'Profundidad total',
+      'composition.edit_module_unavailable_error': 'Este módulo ya no está disponible en el catálogo, no se puede editar.',
+      'composition.add_side_by_side_btn': 'Colocar al lado',
+      'composition.add_stacked_btn': 'Colocar encima',
+      'composition.stack_full_error': 'Esta columna ya tiene 2 módulos apilados — el máximo permitido.',
+      'composition.floor_height_short_label': 'Altura del suelo',
+      'composition.side_color_label': 'Cambio rápido de color',
+      'composition.side_color_hint': 'Cambia el color de todos los módulos de la composición a la vez. Usa las pestañas para elegir qué parte (caja, puerta, panel...).',
+      'composition.side_color_error': 'No se pudo cambiar el color de uno o más módulos: {{msg}}',
+
+      'room_view.title': 'Ver en mi espacio',
+      'room_view.hint': 'Sube una foto de tu espacio y arrastra los módulos de tu carrito encima para hacerte una idea de cómo quedarían. Es solo una vista previa para ayudarte a imaginarlo — las medidas y colores reales siguen siendo los que configuraste en "Nuevo Presupuesto".',
+      'room_view.photo_label': 'Foto del espacio',
+      'room_view.empty_hint': 'Sube una foto de tu espacio para empezar.',
+      'room_view.change_photo': 'Cambiar foto',
+      'room_view.download_image': 'Descargar imagen compuesta',
+      'room_view.add_module_label': 'Añadir un módulo de tu carrito',
+      'room_view.add_module_hint': 'Toca un módulo para colocarlo en la foto — luego arrástralo para posicionarlo y usa la esquina para cambiar el tamaño.',
+      'room_view.cart_empty_hint': 'Tu carrito está vacío — añade módulos en la pestaña "Nuevo Presupuesto" primero.',
+
+      'footer.custom_module_question': '¿Necesitas un módulo personalizado?',
+      'footer.request_link': 'Solicitar',
+      'footer.order_support': 'Soporte de pedidos',
+      'footer.support_hours': 'Lun–Vie: 8h a 17h',
+      'footer.delivery_time': 'Plazo de entrega',
+      'footer.delivery_days': '10–15 días hábiles',
+      'footer.free_shipping': 'Envío gratis',
+      'footer.free_shipping_condition': 'En pedidos superiores a $15,000',
+
+      'tooltip.close_label': 'Cerrar',
+      'tooltip.piece_fallback': 'Pieza',
+      'dims.width_abbrev': 'An',
+      'dims.height_abbrev': 'Al',
+      'dims.depth_abbrev': 'P',
+
+      'pdf.title': 'Legno — Pedido',
+      'pdf.reference': 'Referencia: {{title}}',
+      'pdf.client': 'Cliente: {{name}}',
+      'pdf.phone': 'Teléfono: {{phone}}',
+      'pdf.date': 'Fecha: {{date}}',
+      'pdf.status': 'Estado: {{status}}',
+      'pdf.modules': 'Módulos:',
+      'pdf.price_line_qty': 'Precio: {{unit}} x {{qty}} = {{total}}',
+      'pdf.price_line': 'Precio: {{total}}',
+      'pdf.decor_line': 'Artículo decorativo — no incluido en el presupuesto',
+      'decor.badge': 'Decorativo',
+      'decor.not_included': 'Artículo decorativo — no genera precio y no entra en el presupuesto.',
+      'decor.cart_note': 'Decorativo — no incluido en el presupuesto',
+      'nav.tab_favorites': 'Favoritos',
+      'fav.title': 'Composiciones favoritas',
+      'fav.hint': 'Sus composiciones guardadas — cargue una para reutilizarla o modificarla (y guardar encima), sin armar todo de nuevo.',
+      'fav.save_btn': '★ Guardar como favorita',
+      'fav.update_btn': 'Guardar cambios en "{{name}}"',
+      'fav.name_prompt': 'Nombre de la composición:',
+      'fav.default_name': 'Mi composición',
+      'fav.saved_status': 'Composición guardada en Favoritos.',
+      'fav.updated_status': 'Favorita "{{name}}" actualizada.',
+      'fav.need_login': 'Inicie sesión para guardar favoritos.',
+      'fav.need_slots': 'Agregue al menos 1 módulo a la composición antes de guardar.',
+      'fav.empty': 'Aún no hay composiciones guardadas — arme una en la pestaña Composición y haga clic en "★ Guardar como favorita".',
+      'fav.load_btn': 'Cargar en Composición',
+      'fav.rename_btn': 'Renombrar',
+      'fav.delete_btn': 'Eliminar',
+      'fav.delete_confirm': '¿Eliminar la composición "{{name}}"?',
+      'fav.updated_label': 'Actualizada el {{date}}',
+      'fav.modules_label': '{{n}} módulo(s)',
+      'fav.total_label': 'Valor: {{total}}',
+      'fav.resale_total_label': 'Reventa sugerida: {{total}}',
+      'fav.total_calculating': 'Calculando valor…',
+      'fav.load_partial': '{{n}} módulo(s) de esta composición ya no existen en el catálogo y fueron omitidos.',
+      'fav.loaded_status': 'Composición "{{name}}" cargada — los cambios pueden guardarse encima.',
+      'fav.load_error': 'No se pudo cargar esta composición: {{msg}}',
+      'nav.tab_gallery': 'Galería',
+      'nav.tab_cutting_list': 'Plano de Corte',
+      'cutlist.title': 'Plano de Corte',
+      'cutlist.hint': 'Escribe o importa la lista de piezas (planilla .xlsx, .csv o .txt). Todas las medidas en milímetros.',
+      'cutlist.access_denied': 'Esta pestaña es exclusiva del perfil Contractor.',
+      'cutlist.import_btn': 'Importar planilla',
+      'cutlist.download_template_btn': 'Descargar plantilla',
+      'cutlist.import_format_hint': 'Columnas esperadas, en este orden: OP, Pieza, Cant, Largo (mm), Ancho (mm), Espesor (19 o 38), Color, Cinta (0, 2 o 4), Obs, Veta (Sí o No).',
+      'cutlist.size_limits_hint': 'Largo: {{lenMin}} a {{lenMax}}. Ancho: {{widMin}} a {{widMax}}.',
+      'cutlist.add_row_btn': '+ Agregar fila',
+      'cutlist.clear_btn': 'Limpiar todo',
+      'cutlist.order_name_label': 'Nombre del pedido / OP general',
+      'cutlist.col_op': 'OP',
+      'cutlist.col_part_name': 'Pieza',
+      'cutlist.col_quantity': 'Cant',
+      'cutlist.col_length': 'Largo (mm)',
+      'cutlist.col_width': 'Ancho (mm)',
+      'cutlist.col_grain': 'Veta',
+      'cutlist.col_thickness': 'Espesor',
+      'cutlist.col_color': 'Color',
+      'cutlist.col_edge': 'Cinta de Borde',
+      'cutlist.col_obs': 'Obs',
+      'cutlist.grain_yes': 'Sí',
+      'cutlist.grain_no': 'No',
+      'cutlist.grain_yes_hint': 'Bloquea el largo en el sentido de la veta — no gira en la chapa.',
+      'cutlist.grain_no_hint': 'Sin veta — puede usar los dos sentidos de la pieza en la chapa.',
+      'cutlist.color_placeholder': 'Selecciona el color',
+      'cutlist.edge_0': '0 — Sin cinta',
+      'cutlist.edge_2': '2 — 2 largos',
+      'cutlist.edge_4': '4 — 4 lados laminados',
+      'cutlist.edge_4_blocked_title': 'Pieza con lado menor a 100mm — solo 0 o 2 largos',
+      'cutlist.generate_price_btn': 'Generar Precio',
+      'cutlist.generate_plan_btn': 'Generar Plano de Corte',
+      'cutlist.plan_no_sheet_sizes_error': 'Todavía no hay ningún tamaño de chapa registrado — pídale al admin que registre uno en Colores/Materiales.',
+      'cutlist.plan_choose_size_hint': 'Estos colores no tienen un tamaño de chapa predeterminado — elija uno manualmente antes de generar:',
+      'cutlist.plan_generate_confirm_btn': 'Generar plano',
+      'cutlist.plan_oversize_warning': '{{color}} — hay pieza(s) más grande(s) que la chapa {{size}}mm elegida (resaltadas en rojo en el diagrama).',
+      'cutlist.plan_sheet_label': 'Chapa {{n}} de {{total}}',
+      'cutlist.plan_summary_title': 'Resumen del Plano de Corte',
+      'cutlist.plan_col_material': 'Material',
+      'cutlist.plan_col_sheet_size': 'Tamaño de chapa',
+      'cutlist.plan_col_sheet_count': 'Chapas',
+      'cutlist.plan_col_edge_m': 'Cinta (m)',
+      'cutlist.plan_total_sheets': 'Total de chapas: {{n}}',
+      'cutlist.plan_total_edge_m': 'Total de cinta: {{m}} m',
+      'cutlist.plan_stock_label': 'STOCK IN HOUSE',
+      'cutlist.plan_special_label': 'COLOR ESPECIAL — sin plano de corte',
+      'cutlist.plan_col_price': 'Precio',
+      'cutlist.plan_total_stock_price': 'Total STOCK IN HOUSE: {{v}}',
+      'cutlist.plan_close_btn': 'Cerrar plano',
+      'cutlist.final_price_label': 'Precio final',
+      'cutlist.save_btn': 'Guardar',
+      'cutlist.approve_save_btn': 'Aprobar',
+      'cutlist.no_rows_error': 'Agrega al menos una pieza antes de generar el precio.',
+      'cutlist.invalid_rows_error': 'Corrige los elementos resaltados en rojo antes de generar el precio:',
+      'cutlist.row_issue_group': 'Fila {{n}}: {{fields}}',
+      'cutlist.import_error': 'No se pudo importar el archivo: {{msg}}',
+      'cutlist.import_success': '{{n}} fila(s) importada(s).',
+      'cutlist.save_error': 'No se pudo guardar el pedido: {{msg}}',
+      'cutlist.save_success': 'Pedido guardado — mira en "Mis Pedidos" (todavía no se envió a fábrica).',
+      'cutlist.approve_success': 'Pedido aprobado y enviado a fábrica — mira en "Mis Pedidos".',
+      'cutlist.bulk_selected_count': '{{n}} seleccionada(s)',
+      'cutlist.bulk_apply_op_btn': 'Aplicar OP',
+      'cutlist.bulk_apply_thickness_btn': 'Aplicar espesor',
+      'cutlist.bulk_apply_color_btn': 'Aplicar color…',
+      'cutlist.bulk_apply_edge_btn': 'Aplicar cinta',
+      'cutlist.bulk_apply_grain_btn': 'Aplicar veta',
+      'cutlist.bulk_none_selected': 'Marca al menos una fila (casilla a la izquierda) antes de aplicar.',
+      'cutlist.color_search_placeholder': 'Buscar color...',
+      'gallery.share_btn_label': 'Compartir',
+      'gallery.download_btn': '⬇️ Descargar',
+      'gallery.share_unsupported_hint': 'Compartir directo no es compatible con este navegador — la imagen se descargó.',
+      'gallery.share_pinterest': 'Pinterest',
+      'gallery.share_facebook': 'Facebook',
+      'gallery.share_whatsapp': 'WhatsApp',
+      'gallery.share_email': 'Correo',
+      'gallery.share_copy_link': 'Copiar enlace',
+      'gallery.share_copied': '¡Enlace copiado!',
+      'admin.tab_profiles': 'Perfiles',
+      'admin.profiles_title': 'Perfiles de Usuario',
+      'admin.profiles_hint': 'Define el perfil de cada cliente registrado en el portal. Solo el perfil Contractor ve la pestaña "Plano de Corte".',
+      'admin.profiles_col_email': 'Correo',
+      'admin.profiles_col_role': 'Perfil',
+      'admin.profiles_col_since': 'Registro',
+      'admin.profiles_save_btn': 'Guardar',
+      'admin.profiles_saved': 'Perfil guardado.',
+      'admin.profiles_load_error': 'No se pudieron cargar los perfiles: {{msg}}',
+      'admin.role_cliente': 'Cliente',
+      'admin.role_lojista': 'Comerciante',
+      'admin.role_contractor': 'Contractor',
+      'admin.role_administrador': 'Administrador',
+      'admin.pricing_cutlist_margin_label': 'Margen especial — Plano de Corte (%)',
+      'admin.pricing_cutlist_thickness_label': 'Recargo espesor 38mm sobre el precio/m² (%)',
+      'admin.pricing_cutlist_labor_label': 'Mano de obra por pieza ($)',
+      'admin.orders_col_type': 'Tipo',
+      'admin.orders_type_modules': 'Módulos',
+      'admin.orders_type_cutting_list': 'Plano de Corte',
+      'admin.orders_type_project': 'Projeto',
+      'admin.cutlist_order_back_btn': '← Volver',
+      'admin.cutlist_order_total_label': 'Total',
+      'gallery.title': 'Galería de composiciones',
+      'gallery.hint': 'Ambientes montados por otros clientes — filtra por ambiente, precio, tamaño y color, y abre cualquiera pra usarlo como punto de partida de tu propia composición.',
+      'gallery.ai_disclaimer': '⚠️ Las imágenes de esta galería son generadas por Inteligencia Artificial y pueden presentar diferencias respecto al producto real. El dibujo 3D (que se abre al usar una composición) es siempre la referencia fiel al proyecto.',
+      'gallery.publish_toggle_btn': '✨ Generar imagen con IA',
+      'gallery.generate_ai_btn': '✨ Generar imagen realista',
+      'gallery.generating_ai_status': 'Generando...',
+      'gallery.generate_ai_no_3d_error': 'Genera el 3D antes de crear la imagen.',
+      'gallery.generate_ai_ready_hint': 'Imagen generada por IA — lista para publicar.',
+      'gallery.generate_ai_fallback_hint': 'No se pudo generar la imagen de IA ahora — usando el dibujo 3D en su lugar.',
+      'gallery.base_image_label': 'Imagen base (3D) enviada a la IA:',
+      'gallery.room_type_label': 'Ambiente',
+      'gallery.anonymous_chk_label': 'Publicar de forma anónima (sin mi nombre)',
+      'gallery.publish_submit_btn': 'Enviar a la Galería',
+      'gallery.publish_success': '¡Publicado! Tu composición entra a la Galería en cuanto sea aprobada.',
+      'gallery.room_type_all': 'Todos los ambientes',
+      'gallery.filter_room_label': 'Ambiente',
+      'gallery.filter_price_label': 'Precio',
+      'gallery.filter_width_label': 'Ancho (mm)',
+      'gallery.filter_color_label': 'Color',
+      'gallery.filter_color_all': 'Todos los colores',
+      'gallery.filter_clear_btn': 'Limpiar filtros',
+      'gallery.empty_hint': 'Ninguna composición encontrada con esos filtros.',
+      'gallery.load_more_btn': 'Cargar más',
+      'gallery.admin_editing_banner': '✏️ Editando composición de la Galería — "Guardar" actualiza directamente el post existente.',
+      'gallery.admin_save_btn': 'Guardar cambios en la Galería',
+      'gallery.admin_save_success': '¡Cambios guardados en la Galería!',
+      'gallery.admin_save_error': 'Error al guardar: {{msg}}',
+      'gallery.admin_edit_not_allowed': 'Solo los administradores pueden editar posts de la Galería.',
+      'gallery.admin_edit_load_error': 'No se pudo cargar este post de la Galería.',
+      'gallery.untitled': 'Composición sin nombre',
+      'gallery.anonymous_author': 'Anónimo',
+      'gallery.posted_by': 'Publicado por {{name}}',
+      'gallery.use_composition_btn': 'Personalizar',
+      'gallery.price_label': 'Desde',
+      'gallery.resale_price_label': 'Reventa sugerida:',
+      'pdf.order_total': 'Total del pedido: {{total}}',
+      'pdf.order_fallback': 'Pedido',
+      'pdf.not_available': 'No se pudo generar el PDF (biblioteca no cargada). Intenta recargar la página.'
+    }
+  };
+
+  // ---- Detecção / persistência de idioma ----
+
+  function detectBrowserLanguage() {
+    const candidates = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || ''];
+    for (const raw of candidates) {
+      const prefix = String(raw || '').toLowerCase().slice(0, 2);
+      if (SUPPORTED.includes(prefix)) return prefix;
+    }
+    return DEFAULT_LANG;
+  }
+
+  function getLanguage() {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && SUPPORTED.includes(stored)) return stored;
+    // Sem escolha salva ainda (primeira visita) — detecta pelo navegador,
+    // e JÁ SALVA essa detecção, pra virar a "escolha" persistente dali em
+    // diante (não fica re-detectando a cada visita, só na primeiríssima).
+    const detected = detectBrowserLanguage();
+    localStorage.setItem(STORAGE_KEY, detected);
+    return detected;
+  }
+
+  function setLanguage(lang) {
+    if (!SUPPORTED.includes(lang)) return;
+    localStorage.setItem(STORAGE_KEY, lang);
+    applyStaticTranslations();
+    const select = document.getElementById('po-lang-select');
+    if (select) select.value = lang;
+    document.documentElement.lang = lang === 'pt' ? 'pt-BR' : lang;
+    languageChangeListeners.forEach((fn) => {
+      try { fn(lang); } catch (e) { /* um listener quebrado não deve travar os outros */ }
+    });
+  }
+
+  // ---- Listeners de troca de idioma ----
+  // Conteúdo montado dinamicamente em JS (cards da galeria, carrinho, lista de
+  // pedidos, slots de composição) já chama t() na hora de montar a string —
+  // então não tem data-i18n pra applyStaticTranslations() re-aplicar. Quem
+  // monta esse conteúdo registra aqui uma função de re-render, chamada toda
+  // vez que o idioma muda, pra não ficar com texto "congelado" no idioma
+  // antigo até o próximo re-render natural.
+  const languageChangeListeners = [];
+  function onLanguageChange(fn) {
+    if (typeof fn === 'function') languageChangeListeners.push(fn);
+  }
+
+  // ---- Tradução ----
+
+  // vars = { nome: valor } — substitui {{nome}} no template pelo valor. Não
+  // faz HTML-escaping (mesmo espírito do resto do código, que já monta
+  // template literals direto) — só usar com valores de confiança (nomes de
+  // catálogo/medidas/preço já formatados), nunca com HTML de origem externa.
+  function t(key, vars) {
+    const lang = getLanguage();
+    const dict = TRANSLATIONS[lang] || TRANSLATIONS[DEFAULT_LANG];
+    let template = dict[key];
+    if (template === undefined) template = (TRANSLATIONS[DEFAULT_LANG] || {})[key];
+    if (template === undefined) return key; // chave não encontrada em nenhum idioma — melhor mostrar a chave que quebrar
+    if (!vars) return template;
+    return template.replace(/\{\{(\w+)\}\}/g, (match, name) => (vars[name] !== undefined ? vars[name] : match));
+  }
+
+  // Aplica as traduções em todo elemento marcado com data-i18n/
+  // data-i18n-placeholder/data-i18n-title no DOM ATUAL — chamada uma vez no
+  // load (depois do DOM pronto) e de novo sempre que o idioma muda
+  // (setLanguage). Elementos criados DEPOIS disso dinamicamente (cards de
+  // módulo, linhas de carrinho etc.) não precisam de data-i18n — o próprio
+  // código que os monta já chama t() direto na hora de montar a string.
+  function applyStaticTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      // data-i18n-vars (opcional) — JSON com variáveis fixas pra chaves
+      // parametrizadas usadas em texto ESTÁTICO do HTML (ex: as opções de
+      // filtro "Até 300 mm"/"Acima de 1200 mm", onde o número já vem
+      // cravado no próprio <option>, só o texto ao redor precisa traduzir).
+      const varsAttr = el.getAttribute('data-i18n-vars');
+      let vars;
+      if (varsAttr) {
+        try { vars = JSON.parse(varsAttr); } catch (e) { vars = undefined; }
+      }
+      el.textContent = t(el.getAttribute('data-i18n'), vars);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+      el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+      el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
+    });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+      el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label')));
+    });
+  }
+
+  // Monta (se ainda não existir) o <select> de idioma no topo da página e
+  // liga o evento de troca — chamado uma vez no load. Os nomes das opções
+  // ficam sempre no PRÓPRIO idioma (Português/English/Español), nunca
+  // traduzidos — convenção universal de seletor de idioma, ajuda quem não lê
+  // o idioma atual a achar o dele.
+  function mountLanguageSwitcher() {
+    const mount = document.getElementById('po-lang-switcher');
+    if (!mount || document.getElementById('po-lang-select')) return;
+    const select = document.createElement('select');
+    select.id = 'po-lang-select';
+    select.className = 'po-lang-select';
+    [['pt', 'Português'], ['en', 'English'], ['es', 'Español']].forEach(([value, label]) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      select.appendChild(opt);
+    });
+    select.value = getLanguage();
+    select.addEventListener('change', () => setLanguage(select.value));
+    mount.appendChild(select);
+  }
+
+  function init() {
+    mountLanguageSwitcher();
+    applyStaticTranslations();
+    document.documentElement.lang = getLanguage() === 'pt' ? 'pt-BR' : getLanguage();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  const I18n = { t, getLanguage, setLanguage, applyStaticTranslations, onLanguageChange };
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = I18n;
+  } else {
+    global.I18n = I18n;
+  }
+})(typeof window !== 'undefined' ? window : globalThis);
