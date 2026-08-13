@@ -453,7 +453,7 @@ function renderSwatches(container, items, selectedId, onSelect) {
 async function loadRecursivePiecesForModule(moduleId) {
   const { data, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, tilt_angle_deg, rotation_y_deg, components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId)
     .order('sort_order');
   if (error) { showError('Erro ao carregar configuração do módulo: ' + error.message); return []; }
@@ -495,7 +495,39 @@ async function loadRecursivePiecesForModule(moduleId) {
         // nome do catálogo só na exibição (balão do 3D). Fica DEPOIS do
         // ...row.components pra não ser apagado pelo spread.
         reference: row.reference_override || row.components.reference,
-        quantity, labor_cost_per_unit, color_role_id, positioning,
+        quantity, labor_cost_per_unit, positioning,
+        /* Migration 090 — POSIÇÃO E COR PASSAM A SER DO USO, não da peça.
+           A peça genérica ("Flatbord 2C") é a mesma chapa em qualquer lugar
+           do módulo; o que ela vira — base, divisória, topo — é decidido
+           aqui, na linha que diz "este módulo usa esta peça".
+
+           As duas colunas já existiam em module_components e já eram lidas
+           na peça-MÓDULO; a peça-folha simplesmente nunca as leu. O schema
+           inclusive documenta a intenção: "componente usa
+           components.position_role" quando nulo.
+
+           Seguro por construção: o admin grava null em toda linha de
+           peça-folha (13-modulo-pecas.js), então nulo continua herdando e
+           nenhum módulo existente se mexe. */
+        position_role: row.position_role || row.components.position_role,
+        color_role_id: row.color_role_id || color_role_id,
+        // Metros de usinagem DESTE uso (migration 092) — a mesma lateral é
+        // entalhada numa carcaça e lisa em outra, por isso vem da linha do
+        // módulo e não do componente.
+        usinagem_m: row.usinagem_m || 0,
+        // Recortes em L DESTE uso (migration 094) — lista de {canto, h, d}.
+        // Por uso e não por componente, igual usinagem_m; lista porque a
+        // carcaça gola + toe 4½ leva dois na mesma lateral. Só desenho: a
+        // chapa continua sendo cortada retangular.
+        recortes: Array.isArray(row.recortes) ? row.recortes : [],
+        // Veio e "leva furo" (migration 086) — o Construtor valida o CASCO
+        // contra a chapa com estes dois, exatamente como valida as peças da
+        // árvore. Sem eles, uma peça grande demais pra chapa passava batido.
+        veio: row.components.veio || 'livre',
+        fura: row.components.fura !== false,
+        // Limite do lado no plano da máquina (migration 090)
+        lado_min_mm: row.components.lado_min_mm || null,
+        lado_max_mm: row.components.lado_max_mm || null,
         width_formula, height_formula, depth_formula,
         // Deslocamento — FÓRMULA (aceita W, H, D) só do DESENHO 3D — ex:
         // fundo que entra num rebaixo e fica "H-19" (19mm abaixo do topo) em
@@ -1119,6 +1151,9 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         shape_type: piece.shape_type, // migration 062 — desenho 3D (caixa/cabide tubular oval)
         tilt_angle_deg: piece.tilt_angle_deg || 0, // migration 065 — inclinação (só 'shelf')
         rotation_y_deg: piece.rotation_y_deg || 0, // migration 067 — giro de canto (só 'free')
+        // Recortes em L (migration 094) — entalhes do toe/gola na lateral,
+        // ver viewer3d.js buildPanelGeometry. [] = peça inteira.
+        recortes: piece.recortes || [],
         width_mm: resolvedWidthMm,
         height_mm: resolvedHeightMm,
         depth_mm: resolvedDepthMm,
@@ -1129,6 +1164,11 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         opening_type: piece.opening_type,
         slides_per_unit: piece.slides_per_unit,
         positioning: piece.positioning,
+        // Fita de borda (migration 088) — o 3D usa junto com positioning
+        // pra decidir qual face leva fita e qual mostra o miolo da chapa
+        // (js/viewer3d.js makeBoxMaterials). null = componente ainda na
+        // fórmula antiga: desenha como sempre, material único.
+        edge_banding: piece.edge_banding == null ? null : Number(piece.edge_banding),
         child_pieces: childParts
       });
     }

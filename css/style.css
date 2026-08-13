@@ -605,6 +605,17 @@ body.admin-page {
   .admin-sidebar { flex-direction: row; flex-wrap: wrap; position: static; width: 100%; }
 }
 
+/* ---------- Modo embutido (admin.html dentro do ERP) ----------
+   Quando o ERP abre um cadastro num iframe (?embed=1), o topo e a barra
+   lateral daqui somem: a navegação passa a ser a do ERP. Nada é removido
+   do DOM — só escondido — porque o admin.js continua consultando esses
+   elementos (o botão de logout, por exemplo) e sumir com eles de verdade
+   quebraria a inicialização. Abrir admin.html direto continua idêntico. */
+body.admin-embed > .topbar { display: none; }
+body.admin-embed .admin-sidebar { display: none; }
+body.admin-embed.admin-page main { padding: 18px 20px 40px; }
+body.admin-embed #login-section { max-width: 460px; margin: 40px auto; }
+
 /* ---------- "Configurar módulo": árvore de módulos + sub-abas ----------
    Antes era um <select> no topo + 5 seções empilhadas numa rolagem só,
    comprida e fácil de se perder. Agora, mesma ideia do .admin-sidebar de
@@ -1203,6 +1214,21 @@ body.portal-page {
    módulos (auto-fill) preenche sozinho com mais colunas. Telas menores não
    mudam nada (max-width só limita, não estica além da janela). */
 body.portal-page main { max-width: 1800px; padding: 28px 32px 0; }
+
+/* ---- Aba Projetos em tela cheia (pedido do Matt, 2026-08-12: "toda essa
+   sobra na esquerda e direita tem como aproveitar e ajustar conforme o máximo
+   da tela de cada computador? quanto mais área melhor pra desenhar") ----
+   O teto de 1800px continua valendo pro RESTO do portal de propósito: linha
+   de texto e formulário atravessando um monitor ultrawide fica ruim de ler.
+   Só a tela de desenho solta — lá a área é a ferramenta.
+   A classe entra no <body> na troca de aba (setProjectFullBleed em
+   portal.js), não por seletor tipo :has() — que o Safari mais velho do iPad
+   não suporta e esta tela é usada no iPad. */
+body.portal-page.proj-fullbleed main { max-width: none; padding: 14px 16px 0; }
+body.portal-page.proj-fullbleed .po-support-footer { max-width: none; }
+/* O painel da aba também aperta as próprias bordas: 16px de cada lado em vez
+   dos ~24px do padrão, tudo que sobra vai pro canvas. */
+body.portal-page.proj-fullbleed #po-tab-projects > section.panel { padding: 16px; }
 
 /* ---------- Nav superior ---------- */
 
@@ -1953,8 +1979,11 @@ header.po-topnav {
      fixos; canvas mais alto = câmera de fit-automático chega mais perto e
      o móvel preenche a largura (o vazio lateral era consequência do fit
      limitado pela altura baixa).
-     2026-08-06 (iPad Air 13"): mesma subida do #po-proj-canvas-3d-edit. */
-  height: clamp(420px, 88vh, 1200px);
+     2026-08-06 (iPad Air 13"): mesma subida do #po-proj-canvas-3d-edit.
+     2026-08-12: teto 1200 -> 1600px. Em monitor 1440p/4K o 88vh já passava de
+     1200 e o teto é que estava segurando — a faixa branca dos lados era só
+     metade do problema. */
+  height: clamp(420px, 88vh, 1600px);
   border: none;
   overflow: hidden;
   background: #ffffff;
@@ -2391,7 +2420,11 @@ header.po-topnav {
 .po-proj-resize-handle:hover::after, .po-proj-resize-handle.resizing::after { background: var(--accent); }
 .po-proj-library {
   border: 1px solid var(--border); border-radius: 10px; padding: 10px;
-  background: var(--panel); max-height: 640px; overflow-y: auto;
+  background: var(--panel);
+  /* 2026-08-12: era 640px fixo — numa tela alta a lista parava no meio com
+     espaço sobrando embaixo. Agora acompanha a tela, igual aos canvas. */
+  max-height: clamp(420px, 82vh, 1500px);
+  overflow-y: auto;
 }
 
 /* ---- Colunas recolhíveis (pedido do usuário 2026-08-06, no iPad Air 13") ----
@@ -2804,8 +2837,10 @@ header.po-topnav {
      2026-08-06 (iPad Air 13"): 74vh -> 88vh. Num tablet em paisagem a página
      inteira cabe numa tela só, então sobra altura; o teto de 950px é que
      estava segurando, subiu junto. O ganho maior vem das colunas recolhíveis
-     (largura), este é o complemento vertical. */
-  height: clamp(520px, 88vh, 1200px);
+     (largura), este é o complemento vertical.
+     2026-08-12: teto 1200 -> 1600px, junto com a tela cheia da aba (ver
+     .proj-fullbleed) — em 1440p/4K o teto é que segurava, não o 88vh. */
+  height: clamp(520px, 88vh, 1600px);
   border: none;
   overflow: hidden;
   background: #ffffff;

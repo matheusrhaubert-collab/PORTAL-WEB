@@ -158,6 +158,182 @@
   // deixa os outros dois na fórmula. Aplicado ANTES do cálculo de área/fita
   // (ctx usa w/h/d minúsculo já resolvidos), pra área/fita nunca divergirem
   // do tamanho que o cliente efetivamente escolheu pra peça.
+  // ==========================================================================
+  // A PEÇA NO PLANO DA MÁQUINA (migration 088)
+  // ==========================================================================
+  // "Podemos usar a mesma base de peça e só rotacionar depois" (Matt).
+  //
+  // Pra fábrica, uma peça é sempre ESPESSURA × COMPRIMENTO × LARGURA. É nesse
+  // plano que ela é cortada, furada (js/drilling.js machineDims) e fitada. No
+  // ambiente ela aparece rotacionada — o comprimento pode ser a altura de uma
+  // lateral, a largura de uma prateleira ou a profundidade de um fundo — mas
+  // isso é assunto de quem DESENHA, não de quem cadastra.
+  //
+  // Esta função é a tradução, e mora aqui (e não no viewer3d) porque preço,
+  // desenho e plano de corte precisam da MESMA resposta. Se cada um decidisse
+  // por conta o que é "o comprimento", a fita cobrada e a fita desenhada
+  // divergiriam — e ninguém descobriria até a peça chegar sem acabamento.
+  //
+  // Devolve também de que EIXO do módulo (w/h/d) cada medida veio, que é o
+  // que permite ao 3D pintar a face certa:
+  //   tKey  eixo da espessura   — as duas faces grandes, que levam a cor
+  //   cKey  eixo do comprimento — atravessado pelos lados da LARGURA
+  //   lKey  eixo da largura     — atravessado pelos lados do COMPRIMENTO
+  //
+  // A última linha é a que engana: os "2 comprimentos" são os lados que MEDEM
+  // o comprimento, e pra ir de um ao outro você anda no eixo da largura. Numa
+  // prateleira 800(w) × 18(h) × 500(d): comprimento 800 em w, largura 500 em
+  // d, e os dois lados fitados são a frente e o fundo — as faces ±Z, que são
+  // as perpendiculares a d. Daí lKey ser o eixo dos lados do comprimento.
+  function pecaNaMaquina(w, h, d, positioning) {
+    const dims = { w: w, h: h, d: d };
+    let tKey;
+    // Mesma escolha de eixo de splitThickness (viewer3d.js) e
+    // splitThicknessAxes (drilling.js): positioning do tipo de componente
+    // manda; sem ele, a menor das três é a espessura.
+    if (positioning === 'horizontal') tKey = 'h';
+    else if (positioning === 'vertical') tKey = 'w';
+    else if (positioning === 'vertical_no_plano' || positioning === 'horizontal_no_plano') tKey = 'd';
+    else {
+      const arr = [w, h, d];
+      tKey = ['w', 'h', 'd'][arr.indexOf(Math.min(w, h, d))];
+    }
+    const resto = ['w', 'h', 'd'].filter(function (k) { return k !== tKey; });
+    // Comprimento é o maior dos dois que sobraram — a mesma convenção da
+    // lista de corte (C = maior, L = média) e do .ban.
+    const maior = dims[resto[0]] >= dims[resto[1]] ? resto[0] : resto[1];
+    const menor = maior === resto[0] ? resto[1] : resto[0];
+    return {
+      espessura: dims[tKey], comprimento: dims[maior], largura: dims[menor],
+      tKey: tKey, cKey: maior, lKey: menor
+    };
+  }
+
+  // ==========================================================================
+  // MÃO DE OBRA POR PROCESSO (migration 090)
+  // ==========================================================================
+  // "vamos agregar as labors por processo: um por cutting, um por 2C, outro
+  // por 4L, outro por furação" (Matt, 2026-08-11).
+  //
+  // O ponto é que os quatro processos são DEDUTÍVEIS do que a peça já é —
+  // ninguém escolhe mão de obra por componente:
+  //   corte    origin != 'comprado'
+  //   fita     edge_banding 2 ou 4     (migration 088)
+  //   furação  fura != false           (migration 086)
+  //
+  // Furação por `fura` e não por "tem furo cadastrado" é o que faz as
+  // LATERAIS entrarem: elas têm zero furo próprio e recebem tudo por
+  // propagação (043/054). Era o pedido literal — "furação direto ou
+  // contrafuro".
+  //
+  // Os preços entram por setProcessLabor, e não por parâmetro, porque são da
+  // FÁBRICA e não da peça — mesma natureza do RODAPE em formulaGlobals.
+  // Threading mais um argumento por dez chamadas posicionais de
+  // calculateModulePrice seria dez chances de esquecer um.
+  //
+  // Nascem em zero. Peça em processo numa instalação que não configurou os
+  // preços sai SEM mão de obra — visível no breakdown (labor_breakdown), que
+  // é onde se confere, e melhor do que inventar um número numa tabela de
+  // custo.
+  let processLabor = {
+    corte_peca: 0, corte_metro: 0,
+    fita_passada: 0, fita_metro: 0,
+    furacao_peca: 0, furacao_furo: 0,
+    usinagem_peca: 0, usinagem_metro: 0
+  };
+  function setProcessLabor(v) {
+    processLabor = {
+      corte_peca: num(v && v.corte_peca), corte_metro: num(v && v.corte_metro),
+      fita_passada: num(v && v.fita_passada), fita_metro: num(v && v.fita_metro),
+      furacao_peca: num(v && v.furacao_peca), furacao_furo: num(v && v.furacao_furo),
+      usinagem_peca: num(v && v.usinagem_peca), usinagem_metro: num(v && v.usinagem_metro)
+    };
+  }
+  function num(x) { const n = parseFloat(x); return isFinite(n) ? n : 0; }
+
+  // Custo de mão de obra de UMA unidade da peça, aberto por processo. O
+  // detalhe vai pro breakdown de propósito: é o que transforma "quanto custa
+  // fitar" e "quantas peças passam na furadeira" em consulta, em vez de
+  // estimativa — base do apontamento por máquina.
+  // pieceDims = saída de calculatePiece (width_mm/height_mm/depth_mm e
+  // edge_band_m já resolvidos). Precisa das medidas REAIS porque a parte
+  // variável é toda em cima delas.
+  function processLaborFor(piece, pieceDims) {
+    const zero = { corte: 0, fita: 0, furacao: 0, usinagem: 0, total: 0 };
+    // Peça COMPRADA não passa por processo nenhum: não é cortada, não é
+    // fitada e não é furada — o drilling.js a pula pelo mesmo motivo
+    // ("ferragem comprada não fura"). O custo dela é o preço de compra, que
+    // continua vindo de labor_type_id. Sem esta saída um pé comprado pagava
+    // furação; foi o que o teste pegou.
+    if (piece.origin === 'comprado') return zero;
+
+    const m = pecaNaMaquina(pieceDims.width_mm, pieceDims.height_mm, pieceDims.depth_mm, piece.positioning);
+
+    // CORTE — por peça (montar, alinhar, tirar) + por metro serrado. O metro
+    // é o perímetro do plano da máquina: é o caminho que a serra faz em volta
+    // da peça, independente de como ela vai ser montada depois.
+    const perimetroM = 2 * (m.comprimento + m.largura) / 1000;
+    const corte = processLabor.corte_peca + processLabor.corte_metro * perimetroM;
+
+    // FITA — por passada + por metro. `edge_banding` já É a contagem de
+    // passadas (0, 2 ou 4 bordas = 0, 2 ou 4 passadas na coladeira), então
+    // não existe número novo pra cadastrar.
+    // edge_banding nulo (componente ainda na fórmula antiga) = zero passadas:
+    // sem a receita não dá pra saber quantas são, e chutar viraria custo
+    // inventado. Esses componentes não estão em processo mesmo.
+    const passadas = piece.edge_banding === 2 ? 2 : piece.edge_banding === 4 ? 4 : 0;
+    const fita = passadas
+      ? passadas * processLabor.fita_passada + num(pieceDims.edge_band_m) * processLabor.fita_metro
+      : 0;
+
+    // FURAÇÃO — por peça + por furo. furos_equivalentes conta os furos
+    // próprios MAIS os que esta peça gera na vizinha por propagação (ver
+    // migration 091): quem define a junta paga pelos dois lados, e aí o total
+    // do módulo fecha exato sem precisar rodar a propagação aqui.
+    const furos = num(piece.furos_equivalentes);
+    const furacao = piece.fura === false
+      ? 0
+      : processLabor.furacao_peca + furos * processLabor.furacao_furo;
+
+    // USINAGEM (migration 092) — o entalhe do toe 4½, o canal da gola, o rasgo
+    // do LED. Os metros vêm do USO (module_components.usinagem_m): a mesma
+    // lateral é entalhada numa carcaça e lisa em outra.
+    // Sem metros não há usinagem, e aí a parte fixa também não é cobrada —
+    // peça sem entalhe não passa na fresadora.
+    const usinagemM = num(piece.usinagem_m);
+    const usinagem = usinagemM > 0
+      ? processLabor.usinagem_peca + usinagemM * processLabor.usinagem_metro
+      : 0;
+
+    return {
+      corte: corte, fita: fita, furacao: furacao, usinagem: usinagem,
+      total: corte + fita + furacao + usinagem
+    };
+  }
+
+  // Metragem linear de fita, em metros. edge_banding (0/2/4) vence quando
+  // cadastrado; NULL cai na fórmula de sempre — ver o cabeçalho da migration
+  // 088 pro motivo de NULL não ser 0.
+  //
+  // ctx é o MESMO escopo que a fórmula de área usa ({W,H,D} do container +
+  // {w,h,d} da peça já resolvidos). Passar o ctx inteiro, em vez de só as
+  // medidas da peça, é o que mantém o caminho antigo idêntico: existe fórmula
+  // cadastrada em cima de W/H/D (a 071 corrigiu as erradas, mas não proibiu
+  // as legítimas), e reconstruir um ctx reduzido aqui mudaria o resultado
+  // delas sem ninguém pedir.
+  function edgeBandMeters(piece, ctx) {
+    const receita = piece ? piece.edge_banding : null;
+    if (receita === 0) return 0;
+    if (receita === 2 || receita === 4) {
+      const m = pecaNaMaquina(ctx.w, ctx.h, ctx.d, piece.positioning);
+      const mm = receita === 2
+        ? 2 * m.comprimento
+        : 2 * (m.comprimento + m.largura);
+      return mm / 1000;
+    }
+    return evalFormula((piece && piece.edge_band_linear_m_formula) || '0', ctx);
+  }
+
   function calculatePiece(piece, dims, quantityOverride, dimOverride) {
     const { W, H, D } = dims;
     let w = evalFormula(piece.width_formula, { W, H, D });
@@ -169,8 +345,22 @@
       if (dimOverride.depth_mm !== undefined && dimOverride.depth_mm !== null && isFinite(dimOverride.depth_mm)) d = dimOverride.depth_mm;
     }
     const ctx = { W, H, D, w, h, d };
-    const areaM2 = evalFormula(piece.area_m2_formula || '0', ctx);
-    const edgeM = evalFormula(piece.edge_band_linear_m_formula || '0', ctx);
+    // Área: calculada quando a peça é genérica (migration 090). A fórmula
+    // assume quais eixos são as faces — `w*h` numa peça 20×2000×560 devolve
+    // 0,04 m² em vez de 1,12, porque pega a espessura como face. Numa peça
+    // que roda conforme o uso não existe fórmula que acerte nas duas
+    // orientações, e não dá pra escrever melhor: o avaliador não tem max/min.
+    const areaM2 = piece.area_auto
+      ? (function () {
+        const m = pecaNaMaquina(w, h, d, piece.positioning);
+        return m.comprimento * m.largura / 1000000;
+      })()
+      : evalFormula(piece.area_m2_formula || '0', ctx);
+    // Fita: a receita da máquina (0/2/4, migration 088) ganha da fórmula
+    // quando cadastrada. Ver edgeBandMeters — e repare que ela recebe as
+    // medidas JÁ RESOLVIDAS, não as fórmulas: é o tamanho real da peça neste
+    // módulo que decide qual lado é o comprimento.
+    const edgeM = edgeBandMeters(piece, ctx);
     const quantity = quantityOverride !== undefined && quantityOverride !== null ? quantityOverride : piece.quantity;
     return { width_mm: w, height_mm: h, depth_mm: d, area_m2: areaM2, edge_band_m: edgeM, quantity };
   }
@@ -338,7 +528,19 @@
 
     const sheet_cost = pieceDims.area_m2 * color.sheet_price_per_m2 * qty;
     const edge_cost = pieceDims.edge_band_m * color.edge_price_per_linear_m * qty;
-    const labor_cost = (piece.labor_cost_per_unit || 0) * qty;
+    // Mão de obra: por processo (migration 090) ou pela labor do componente,
+    // NUNCA as duas. Os 62 componentes antigos apontam pra uma labor que já
+    // embute cortar+fitar+furar; somar processos em cima cobraria duas vezes.
+    // Por isso labor_por_processo é opt-in por peça, e não um interruptor
+    // geral.
+    // Peça comprada fica FORA do processo mesmo com o interruptor ligado: o
+    // custo dela é o preço de compra, que mora em labor_type_id. Sem esta
+    // ressalva, marcar "por processo" num pé zeraria o preço dele.
+    const proc = (piece.labor_por_processo && piece.origin !== 'comprado')
+      ? processLaborFor(piece, pieceDims) : null;
+    const labor_cost = proc
+      ? proc.total * qty
+      : (piece.labor_cost_per_unit || 0) * qty;
 
     // Dobradiça só se aplica a PORTAS: hinge_side definido, qualquer que
     // seja a Posição no módulo ('none' é frente fixa, não abre, não usa
@@ -389,6 +591,14 @@
       sheet_cost: sheet_cost,
       edge_cost: edge_cost,
       labor_cost: labor_cost,
+      // Aberto por processo quando a peça está em processo (migration 090);
+      // null nas peças antigas, que têm uma labor só e nada a abrir.
+      labor_breakdown: proc
+        ? {
+          corte: proc.corte * qty, fita: proc.fita * qty,
+          furacao: proc.furacao * qty, usinagem: proc.usinagem * qty
+        }
+        : null,
       hinge_cost: hinge_cost,
       hinge_count: hinge_count, // uso interno/admin — quantas dobradiças foram cobradas nesta peça
       slide_cost: slide_cost,
@@ -658,6 +868,17 @@
     evalFormula,
     setFormulaGlobals,
     calculatePiece,
+    // Migration 088 — a peça no plano da máquina (espessura/comprimento/
+    // largura + de que eixo cada uma veio) e a metragem de fita derivada da
+    // receita 0/2/4. Exportadas porque viewer3d.js precisa da MESMA resposta
+    // pra pintar a face certa, e o cadastro precisa dela pra mostrar a
+    // metragem antes de salvar.
+    pecaNaMaquina,
+    edgeBandMeters,
+    // Migration 090 — preços dos quatro processos (corte, fita 2C, fita 4L,
+    // furação). Chamado uma vez, logo depois de carregar pricing_settings.
+    setProcessLabor,
+    processLaborFor,
     resolveBodyDims,
     hingeCountForDoorHeight,
     pickDrawerDepth,

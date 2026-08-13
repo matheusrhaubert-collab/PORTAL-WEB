@@ -130,6 +130,31 @@ const Viewer3D = (function () {
   // "ver" este contexto no meio de um update() dela — JS é single-threaded.
   let activeOpenCtx = null;
 
+  // Peça sendo desenhada AGORA (migration 088). Mesmo padrão e mesma
+  // justificativa do activeOpenCtx acima: buildContentGroup só recebia a
+  // COR, e pra escolher o material de cada face ela precisa também de
+  // edge_banding e positioning — que são da peça.
+  //
+  // Passar `part` por parâmetro exigiria mudar a assinatura de emit /
+  // addPart / addPartToGroup / buildContentGroup e as ~8 chamadas espalhadas
+  // por placePieceInBox e placeFrontGroupInBox. Num arquivo onde uma mexida
+  // especulativa já custou uma regressão em cascata, trocar 8 assinaturas
+  // pra carregar um dado de leitura é risco à toa. O contexto é setado por
+  // quem já tem `part` em mãos, lido logo em seguida e limpo — tudo
+  // síncrono, JS é single-threaded, não há como uma peça ver a outra.
+  let activePart = null;
+
+  // Setar/limpar num lugar só — quem desenha uma peça chama isto em volta da
+  // emissão dela. Restaura o valor anterior (e não null) porque peça-módulo
+  // aninhada emite peças DENTRO da emissão da peça-pai; e limpa no finally,
+  // porque peça nenhuma pode herdar a receita de fita da peça anterior se
+  // alguma coisa estourar no meio.
+  function comPeca(part, fn) {
+    const antes = activePart;
+    activePart = part || null;
+    try { return fn(); } finally { activePart = antes; }
+  }
+
   function openAngleFor(hingeSide) {
     return hingeSide === 'left' ? -DOOR_OPEN_ANGLE : DOOR_OPEN_ANGLE;
   }
@@ -150,10 +175,46 @@ const Viewer3D = (function () {
   // contrário, específico só pra este positioning. Cacheia uma cópia por
   // modo de giro (chave própria pra cada um), pra não afetar as peças que
   // usam outro giro (ou nenhum) com a mesma textura.
-  function loadTexture(url, rotateMode) {
+  //
+  // ESCALA FÍSICA (2026-08-12, pedido do Matt: "a textura parece que se estica
+  // e encolhe... eu corto de uma chapa com uma só textura, então ela não pode
+  // se redimensionar conforme o tamanho"). Até aqui o UV 0..1 da face era
+  // esticado no tamanho da peça: um filler de 80mm e uma lateral de 2000mm
+  // mostravam a MESMA imagem inteira, então o veio saía gordo na peça pequena
+  // e espremido na grande — exatamente o oposto de peças cortadas da mesma
+  // chapa. Agora a imagem vale um pedaço FIXO de chapa (TEXTURE_TILE_MM) e o
+  // repeat sai do tamanho REAL da face em mm, igual já era feito no miolo
+  // (ver coreTexture/makeCoreMaterial). Peça pequena passa a mostrar só um
+  // PEDAÇO da textura — é o que acontece na chapa de verdade.
+  //
+  // O tile é constante mesmo (decisão do Matt: nada de coluna nova por cor).
+  // Pra calibrar sem editar código dá pra rodar no console:
+  //   window.LEGNO_TEXTURE_TILE_MM = 1500; Viewer3D.update(...)  // ou re-render
+  const TEXTURE_TILE_MM = 1000;
+  function textureTileMm() {
+    const v = Number(typeof window !== 'undefined' ? window.LEGNO_TEXTURE_TILE_MM : 0);
+    return v > 0 ? v : TEXTURE_TILE_MM;
+  }
+  // Quantiza o repeat pra 0.05: peça arrastada de 600 pra 601mm não pode criar
+  // uma textura NOVA na GPU a cada milímetro (o cache abaixo nunca é
+  // esvaziado por disposeObject3D, que só descarta MATERIAL — ver comentário
+  // do coreTextureCache).
+  // Passo mais fino embaixo de 0.5 de propósito: a FITA de 18mm dá repeat
+  // 0.018 e um passo único de 0.05 zeraria ela.
+  function quantizaRepeat(mm) {
+    if (!(mm > 0)) return 1;
+    const r = mm / textureTileMm();
+    const passo = r < 0.5 ? 200 : 20;
+    return Math.max(0.005, Math.min(64, Math.round(r * passo) / passo));
+  }
+  function loadTexture(url, rotateMode, uMm, vMm) {
     if (!url) return null;
     const rotateSuffix = rotateMode === true ? '|rot90' : rotateMode === 'right' ? '|rot90r' : '';
-    const cacheKey = url + rotateSuffix;
+    // Sem medida (cilindro do cabide, chamadas antigas) = comportamento de
+    // antes: uma imagem esticada na peça inteira.
+    const repU = uMm ? quantizaRepeat(uMm) : 1;
+    const repV = vMm ? quantizaRepeat(vMm) : 1;
+    const cacheKey = url + rotateSuffix + '|' + repU + 'x' + repV;
     if (textureCache[cacheKey]) return textureCache[cacheKey];
     // Rastreia o carregamento (assíncrono) desta textura — usado por
     // waitForPendingTextures(), pra quem quer tirar um snapshot "de verdade"
@@ -175,6 +236,26 @@ const Viewer3D = (function () {
     } else if (rotateMode === 'right') {
       tex.center.set(0.5, 0.5);
       tex.rotation = -Math.PI / 2;
+    }
+    // Repeat só faz sentido com wrap repetido; sem isso o que passa de 1 sai
+    // borrado na última fileira de pixels (ClampToEdge é o padrão do Three).
+    //
+    // COM GIRO, O REPEAT VAI TROCADO — e não é detalhe: foi o que deixou a
+    // base "esticada no comprimento" e o veio dos stretchers estranho na
+    // primeira versão disto (2026-08-12). O Three não escala o UV e DEPOIS
+    // gira: Matrix3.setUvTransform aplica o repeat nos eixos FINAIS da
+    // textura (x' = sx·(c·u + s·v), y' = sy·(-s·u + c·v)), então com 90° o
+    // eixo u da peça sai pelo y da textura. Passar (repU, repV) faz a peça de
+    // 1200×400 ser escalada como se fosse 400×1200. Mesma troca que
+    // coreTexture já fazia no miolo (`t.repeat.set(v, u)` quando gira).
+    const girou = rotateMode === true || rotateMode === 'right';
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(girou ? repV : repU, girou ? repU : repV);
+    // Textura repetida vista de raspão (a fita de 18mm, principalmente) vira
+    // moiré sem filtro anisotrópico.
+    if (renderer && renderer.capabilities && renderer.capabilities.getMaxAnisotropy) {
+      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     }
     textureCache[cacheKey] = tex;
     return tex;
@@ -200,17 +281,253 @@ const Viewer3D = (function () {
       uvAttr.setXY(i, v, 1 - u);
     }
     uvAttr.needsUpdate = true;
+    // Marca a geometria: quem for calcular o repeat físico (ver
+    // dimensoesDaFaceMm) precisa trocar U por V, senão a peça 'free' com veio
+    // girado sai com a escala trocada nos dois eixos.
+    geometry.userData = geometry.userData || {};
+    geometry.userData.uvRotated90 = !geometry.userData.uvRotated90;
+  }
+
+  // Face "grande" de uma caixa em mm, DEDUZIDA da própria geometria: os dois
+  // maiores lados (o menor é sempre a espessura). Usado só quando a peça cai
+  // no material ÚNICO (sem receita de fita cadastrada) — com receita, cada par
+  // de faces recebe a medida certa em makeBoxMaterials.
+  // Qual eixo da geometria vira U e qual vira V é FIXO no Three, por par de
+  // faces: ±X -> U=Z,V=Y; ±Y -> U=X,V=Z; ±Z -> U=X,V=Y. Ordenar os lados por
+  // tamanho (a 1ª versão disto) chutava errado numa porta 600×2000, onde o U
+  // é o lado MENOR — por isso a dedução aqui é pelo eixo da espessura.
+  function dimensoesDaFaceMm(geometry) {
+    const p = geometry && geometry.parameters;
+    if (!p || p.width == null || p.height == null || p.depth == null) return null;
+    const x = p.width * 1000, y = p.height * 1000, z = p.depth * 1000;
+    let u, v;
+    if (z <= x && z <= y) { u = x; v = y; }        // espessura em Z -> face ±Z
+    else if (x <= y && x <= z) { u = z; v = y; }   // espessura em X -> face ±X
+    else { u = x; v = z; }                          // espessura em Y -> face ±Y
+    // UV girado no próprio buffer (peça 'free', ver rotateGeometryUV90): o
+    // atributo u passa a carregar o que era v, então a escala troca junto.
+    const girado = !!(geometry.userData && geometry.userData.uvRotated90);
+    return girado ? { u: v, v: u } : { u: u, v: v };
   }
 
   // color = registro da tabela colors ({ texture_url, swatch_hex, name }).
-  function makeMaterial(color, rotateTexture) {
+  // uMm/vMm: tamanho REAL da face que vai receber esse material — é o que
+  // mantém a textura na escala da chapa em vez de esticar (ver loadTexture).
+  function makeMaterial(color, rotateTexture, uMm, vMm) {
     const textureUrl = color && color.texture_url;
-    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture) : null;
+    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture, uMm, vMm) : null;
     if (tex) {
       return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 });
     }
     const hex = (color && color.swatch_hex) || '#cccccc';
     return new THREE.MeshStandardMaterial({ color: hex, roughness: 0.85, metalness: 0.05 });
+  }
+
+  // ==========================================================================
+  // MIOLO DA CHAPA (migration 088) — o que aparece na borda SEM fita
+  // ==========================================================================
+  // Desenhado em canvas, não carregado de arquivo: é uma faixa de 18mm vista
+  // de raspão: uma foto de verdade seria vista a 3 pixels de altura e o custo
+  // (upload, Storage, mais um cadastro, offline quebrado no file://) não se
+  // pagaria. Procedural também deixa a lâmina do plywood ter espessura
+  // coerente independente do tamanho da peça.
+  //
+  // A diferença entre os três é o que se vê de longe, que é o ponto:
+  //   mdp      partícula grossa, granulado bem visível, bege puxando marrom
+  //   mdf      denso e liso, quase liso, um marrom mais escuro e uniforme
+  //   plywood  lâminas empilhadas — listras claras/escuras atravessando
+  const coreImageCache = {};
+  function coreImage(tipo) {
+    if (coreImageCache[tipo]) return coreImageCache[tipo];
+
+    const S = 128;
+    const cv = document.createElement('canvas');
+    cv.width = S; cv.height = S;
+    const g = cv.getContext('2d');
+
+    if (tipo === 'plywood') {
+      // Lâminas: faixas horizontais alternando claro/escuro, com a linha de
+      // cola mais escura entre elas. A faixa corre no sentido da LARGURA da
+      // borda (V da textura), que é o que se vê num compensado de canto.
+      const laminas = 7;
+      for (let i = 0; i < laminas; i++) {
+        const y = Math.round(i * S / laminas);
+        const alt = Math.round(S / laminas);
+        g.fillStyle = i % 2 ? '#c9a473' : '#ddbe93';
+        g.fillRect(0, y, S, alt);
+        g.fillStyle = 'rgba(120,86,48,0.55)';   // linha de cola
+        g.fillRect(0, y, S, 1);
+      }
+      // Fibra dentro de cada lâmina
+      for (let i = 0; i < 700; i++) {
+        g.fillStyle = 'rgba(150,110,66,' + (0.05 + Math.random() * 0.14).toFixed(2) + ')';
+        g.fillRect(Math.random() * S, Math.random() * S, 3 + Math.random() * 9, 1);
+      }
+    } else {
+      g.fillStyle = tipo === 'mdf' ? '#a8825a' : '#d6bd94';
+      g.fillRect(0, 0, S, S);
+      // MDP tem partícula grande e contrastada; MDF é pó prensado, quase liso.
+      const n = tipo === 'mdf' ? 900 : 1500;
+      const tamMax = tipo === 'mdf' ? 2 : 6;
+      const forca = tipo === 'mdf' ? 0.10 : 0.30;
+      for (let i = 0; i < n; i++) {
+        const claro = Math.random() > 0.5;
+        g.fillStyle = (claro ? 'rgba(245,228,198,' : 'rgba(122,90,52,')
+          + (0.05 + Math.random() * forca).toFixed(2) + ')';
+        const w = 1 + Math.random() * tamMax;
+        const h = 1 + Math.random() * (tamMax * 0.6);
+        g.fillRect(Math.random() * S, Math.random() * S, w, h);
+      }
+    }
+
+    coreImageCache[tipo] = cv;
+    return cv;
+  }
+
+  // A textura precisa de repeat DIFERENTE por face: a borda de uma prateleira
+  // é 800mm × 18mm, e esticar um quadrado nisso viraria um borrão. O repeat
+  // vem do tamanho real da face, então a partícula sai do mesmo tamanho em
+  // qualquer peça.
+  //
+  // No plywood tem mais: as lâminas têm que atravessar a ESPESSURA, não
+  // correr ao longo dela. As listras do canvas variam no eixo V, então quando
+  // a espessura cai no U a textura é girada 90°.
+  //
+  // Cache por (tipo, tiles, giro) com os tiles arredondados: o conjunto de
+  // combinações é pequeno e as texturas são reaproveitadas entre rebuilds.
+  // Isso não é só economia — disposeObject3D descarta MATERIAL, não textura,
+  // então textura criada por peça a cada update() vazaria na GPU.
+  const coreTextureCache = {};
+  function coreTexture(tipo, tilesU, tilesV, girar) {
+    const u = Math.max(1, Math.min(64, Math.round(tilesU)));
+    const v = Math.max(1, Math.min(64, Math.round(tilesV)));
+    const chave = tipo + '|' + u + '|' + v + '|' + (girar ? 1 : 0);
+    if (coreTextureCache[chave]) return coreTextureCache[chave];
+    const t = new THREE.CanvasTexture(coreImage(tipo));
+    // sRGB, igual loadTexture faz na textura da cor (2026-08-12, "onde era pra
+    // aparecer o MDP está branco em cima da lateral"): sem isto o Three trata
+    // o canvas como LINEAR e o renderer converte pra sRGB na saída de novo —
+    // o bege #d6bd94 do MDP sai lavado, quase branco. O miolo nasceu assim, o
+    // bug só ficou visível quando a escala da textura melhorou o resto.
+    if ('colorSpace' in t) {
+      t.colorSpace = THREE.SRGBColorSpace;
+    } else if ('encoding' in t) {
+      t.encoding = THREE.sRGBEncoding;
+    }
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    if (girar) {
+      t.center.set(0.5, 0.5);
+      t.rotation = Math.PI / 2;
+      t.repeat.set(v, u);
+    } else {
+      t.repeat.set(u, v);
+    }
+    coreTextureCache[chave] = t;
+    return t;
+  }
+
+  // uMm/vMm: tamanho REAL (mm) dos dois lados desta face; espessuraNoU diz
+  // se a espessura da peça caiu no eixo U.
+  function makeCoreMaterial(color, uMm, vMm, espessuraNoU) {
+    const s = (color && color.substrato);
+    const tipo = s === 'plywood' || s === 'mdf' ? s : 'mdp';
+    // Uma "casa" da textura vale a espessura da peça: é a escala em que o
+    // granulado e as lâminas ficam do tamanho que a gente vê na chapa.
+    const esp = Math.max(3, espessuraNoU ? uMm : vMm);
+    return new THREE.MeshStandardMaterial({
+      map: coreTexture(tipo, uMm / esp, vMm / esp, !!espessuraNoU),
+      roughness: 0.95, metalness: 0.0
+    });
+  }
+
+  // ==========================================================================
+  // MATERIAL POR FACE — face com cor, borda com fita ou miolo
+  // ==========================================================================
+  // BoxGeometry aceita 6 materiais, na ordem +X, -X, +Y, -Y, +Z, -Z. A peça
+  // tem duas faces GRANDES (as perpendiculares à espessura) — essas sempre
+  // levam a cor/textura, como sempre levaram. As outras quatro são as bordas.
+  //
+  // Qual borda tem fita vem da receita da máquina (0/2/4) traduzida por
+  // Pricing.pecaNaMaquina: "2 comprimentos" são os dois lados que MEDEM o
+  // comprimento, e pra ir de um ao outro você anda no eixo da LARGURA — daí
+  // as faces fitadas serem as perpendiculares a lKey. Essa é a rotação que o
+  // Matt pediu: a peça é cadastrada deitada na máquina e desenhada de pé no
+  // ambiente, sem dois cadastros.
+  //
+  // A fita é do mesmo material da face (fita e chapa são a mesma cor — é por
+  // isso que colors tem edge_price_per_linear_m). Sem receita cadastrada
+  // (edge_banding null, que é todo componente antes da 088) devolve null e
+  // quem chama usa um material só, exatamente como antes.
+  //
+  // Cada papel monta a BoxGeometry com a espessura num eixo diferente
+  // ('left' nasce (espessura, faceA, faceB), 'back' nasce (faceA, faceB,
+  // espessura), a porta nasce (largura, altura, espessura)...). Em vez de
+  // repetir essa tabela aqui — e ter que lembrar dela toda vez que um papel
+  // novo aparecer — o mapeamento é DEDUZIDO: cada eixo da geometria é casado
+  // com o eixo do módulo que tem aquela medida. A geometria é construída a
+  // partir de w/h/d, então o casamento sempre existe.
+  //
+  // Peça com dois lados iguais (quadrada) é ambígua, e tudo bem: se os dois
+  // lados medem o mesmo, comprimento e largura são o mesmo número e as duas
+  // leituras dão a mesma metragem de fita.
+  function eixosDaGeometria(geometry, part) {
+    const p = geometry && geometry.parameters;
+    if (!p) return null;
+    const alvo = { w: (part.width_mm || 0) / 1000, h: (part.height_mm || 0) / 1000, d: (part.depth_mm || 0) / 1000 };
+    const sobra = ['w', 'h', 'd'];
+    const casa = function (medida) {
+      let melhor = 0, dif = Infinity;
+      sobra.forEach(function (k, i) {
+        const e = Math.abs(alvo[k] - medida);
+        if (e < dif) { dif = e; melhor = i; }
+      });
+      return sobra.splice(melhor, 1)[0];
+    };
+    return { x: casa(p.width), y: casa(p.height), z: casa(p.depth) };
+  }
+
+  function makeBoxMaterials(geometry, part, color, rotateTexture) {
+    if (!part || part.edge_banding == null) return null;
+    if (typeof Pricing === 'undefined' || !Pricing.pecaNaMaquina) return null;
+    const ax = eixosDaGeometria(geometry, part);
+    if (!ax) return null;
+
+    const m = Pricing.pecaNaMaquina(
+      part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
+    const mm = { w: part.width_mm || 0, h: part.height_mm || 0, d: part.depth_mm || 0 };
+
+    // Fita e chapa são a MESMA cor (é por isso que colors tem
+    // edge_price_per_linear_m e não uma cor própria) — mas desde a escala
+    // física da textura (2026-08-12) não podem mais ser a mesma INSTÂNCIA de
+    // material: a face grande tem 600×2000mm e a fita 18×2000mm, e cada uma
+    // precisa do seu próprio repeat pra textura sair no tamanho da chapa. São
+    // no máximo 3 materiais por peça (um por par de faces), e a TEXTURA
+    // continua compartilhada via cache (ver loadTexture), que é o que
+    // realmente pesa na GPU.
+    //
+    // Orientação UV de cada par de faces numa BoxGeometry, em eixos da
+    // GEOMETRIA (o Three fixa isto): ±X -> U=Z, V=Y; ±Y -> U=X, V=Z;
+    // ±Z -> U=X, V=Y. Traduzido pra eixos do MÓDULO via ax.
+    const UV = {
+      x: { u: ax.z, v: ax.y },
+      y: { u: ax.x, v: ax.z },
+      z: { u: ax.x, v: ax.y }
+    };
+
+    // Pra cada par de faces, o material sai do eixo do módulo que aquele par
+    // atravessa: espessura -> face grande (cor); largura -> os lados do
+    // COMPRIMENTO; comprimento -> os lados da largura.
+    const doPar = function (geoEixo) {
+      const eixo = ax[geoEixo];
+      const uv = UV[geoEixo];
+      if (eixo === m.tKey) return makeMaterial(color, rotateTexture, mm[uv.u], mm[uv.v]);
+      const temFita = eixo === m.lKey ? part.edge_banding >= 2 : part.edge_banding === 4;
+      if (temFita) return makeMaterial(color, rotateTexture, mm[uv.u], mm[uv.v]);
+      return makeCoreMaterial(color, mm[uv.u], mm[uv.v], uv.u === m.tKey);
+    };
+    const mx = doPar('x'), my = doPar('y'), mz = doPar('z');
+    return [mx, mx, my, my, mz, mz];
   }
 
   // Cria a câmera de acordo com projectionMode atual — Perspectiva (padrão,
@@ -411,6 +728,38 @@ const Viewer3D = (function () {
     return fallback;
   }
 
+  // SENTIDO DO VEIO — a MESMA conta que o plano de corte já faz
+  // ======================================================================
+  // Pedido do Matt (2026-08-12): "todo rodapé e travessa deve ser deitado,
+  // nunca com sentido do veio em pé. a peça deve ser respeitada assim
+  // também". O plano de corte já fazia isso: LayoutEngine.validar, pra peça
+  // de veio 'livre', grava `p.veio = p.w >= p.h ? 'horizontal' : 'vertical'`
+  // — ou seja, a fábrica JÁ deita a peça no lado longo. Quem estava fora de
+  // sincronia era o desenho, que girava a textura pelo `positioning`: um
+  // rodapé/travessa 1200×100 cadastrado como vertical saía com o veio em pé
+  // na tela e deitado na chapa.
+  //
+  // Agora as duas contas são a mesma. Isto NÃO é um caso especial de rodapé:
+  // vale pra toda peça de painel, e nas formas comuns reproduz o padrão de
+  // antes — porta 600×2000 e lateral continuam em pé, prateleira/topo/base
+  // continuam deitados. O que muda é justamente a peça achatada, que era o
+  // caso errado.
+  //
+  // uM/vM = os dois lados da face VISÍVEL desta peça, nos eixos U e V da
+  // textura (o Three fixa isso por par de face: ±X -> U=Z,V=Y; ±Y -> U=X,V=Z;
+  // ±Z -> U=X,V=Y). true = veio no sentido do U, false = no sentido do V.
+  //
+  // Exceção continua existindo: cor/componente com veio CADASTRADO
+  // ('horizontal'/'vertical', migration 086) manda — é exigência estética e
+  // não tem jeitinho, mesma frase do LayoutEngine. Aí o formato não opina.
+  function resolveGrainRotate(part, uM, vM, fallback) {
+    const veio = part && part.veio;
+    if (veio === 'horizontal') return true;
+    if (veio === 'vertical') return false;
+    if (!veio || veio === 'livre') return uM >= vM;
+    return resolveRotateTexture(part && part.positioning, fallback);
+  }
+
   // Espessura resolvida (em metros) de uma peça já calculada — usado só pra
   // descobrir onde a base/topo terminam, e assim distribuir as prateleiras
   // dentro do VÃO INTERNO real do módulo (ver placePart -> 'shelf').
@@ -465,7 +814,22 @@ const Viewer3D = (function () {
   const EDGE_OPACITY = 0.45;
   function buildContentGroup(contentOrGeometry, color, rotateTexture) {
     if (contentOrGeometry && contentOrGeometry.isGroup) return contentOrGeometry;
-    const mesh = new THREE.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture));
+    // Fita/miolo por face (migration 088) só em caixa: um cabide tubular é
+    // cilindro e não tem borda de chapa pra mostrar. Sem receita cadastrada,
+    // makeBoxMaterials devolve null e cai no material único de sempre.
+    const ehCaixa = !!(contentOrGeometry && contentOrGeometry.type === 'BoxGeometry');
+    const materiais = ehCaixa
+      ? makeBoxMaterials(contentOrGeometry, activePart, color, rotateTexture)
+      : null;
+    // Sem receita de fita (todo componente antes da 088) é UM material nos 6
+    // lados — aí o repeat sai da face grande (ver dimensoesDaFaceMm); as
+    // bordas ficam com a escala dessa face, aproximação boa o bastante numa
+    // faixa de 18mm. Peça que não é caixa (cabide tubular) devolve null e cai
+    // no comportamento antigo, sem repeat.
+    const faceMm = ehCaixa ? dimensoesDaFaceMm(contentOrGeometry) : null;
+    const mesh = new THREE.Mesh(
+      contentOrGeometry,
+      materiais || makeMaterial(color, rotateTexture, faceMm && faceMm.u, faceMm && faceMm.v));
     const edgesGeometry = new THREE.EdgesGeometry(contentOrGeometry);
     const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY }));
     const group = new THREE.Group();
@@ -808,6 +1172,120 @@ const Viewer3D = (function () {
     return group;
   }
 
+  // ---- Recortes em L na lateral (migration 094) ----
+  // Matt, 2026-08-12: "todos modulos toe 4 1/2 tem esse recorte em L de
+  // 4 1/2 x 3". A lateral desce inteira até o chão e perde um pedaço no canto
+  // da FRENTE embaixo — é ali que o toe encaixa. Até agora o 3D desenhava a
+  // lateral como um retângulo cheio: o entalhe era cobrado (usinagem_m,
+  // migration 092) mas não aparecia, e o toe parecia flutuar dentro de uma
+  // caixa fechada.
+  //
+  // SÃO VÁRIOS, NÃO UM: a gola pede o mesmo recorte no canto de CIMA, e a
+  // carcaça niche.34.gola.toe45 existe — a mesma lateral leva os dois. Por
+  // isso part.recortes é uma LISTA de {canto, h, d} e cada canto do contorno
+  // é resolvido separado.
+  //
+  // O recorte NÃO muda a medida da peça: a chapa é serrada retangular e o L é
+  // feito depois, na fresadora. Por isso ele entra só aqui, na geometria, e
+  // não nas fórmulas de largura/altura/profundidade nem no plano de corte.
+  //
+  // TÉCNICA: um THREE.Shape com o contorno em L, extrudado na espessura.
+  // O shape vive no plano XY local; o mapeamento pro módulo é
+  //   shape.x -> profundidade (Z do módulo, +x = FRENTE)
+  //   shape.y -> altura       (Y do módulo, +y = CIMA)
+  //   extrusão -> espessura   (X do módulo)
+  // e o rotateY(-90°) no fim faz exatamente essa troca (a extrusão cai no -X,
+  // mas ela é simétrica depois de centrada, então o sinal não importa).
+  //
+  // SIMPLIFICAÇÃO CONSCIENTE: peça entalhada perde a fita/miolo por face
+  // (makeBoxMaterials só sabe ler BoxGeometry) e desenha com o material único
+  // da cor. A aresta (EdgesGeometry) continua funcionando em qualquer
+  // geometria — e é ela que faz o L ser LIDO como recorte na tela.
+  //
+  // Devolve uma BoxGeometry normal quando não há recorte, então todo o resto
+  // do viewer (incluindo material por face) continua exatamente como antes.
+  const CANTOS_RECORTE = {
+    // [sinal em profundidade (+1 = frente), sinal em altura (+1 = cima)]
+    'frente-baixo': [1, -1],
+    'frente-cima': [1, 1],
+    'fundo-baixo': [-1, -1],
+    'fundo-cima': [-1, 1]
+  };
+  function buildPanelGeometry(part, thickness, faceA, faceB) {
+    const box = function () { return new THREE.BoxGeometry(thickness, faceA, faceB); };
+    if (!part || !Array.isArray(part.recortes) || !part.recortes.length) return box();
+    if (typeof THREE.Shape !== 'function' || typeof THREE.ExtrudeGeometry !== 'function') return box();
+
+    const bx = faceB / 2, by = faceA / 2;
+    // Os 4 cantos em sentido anti-horário, começando no fundo-baixo, e a
+    // direção de chegada/saída de cada um (é o que diz pra que lado o recorte
+    // "come" a peça em cada canto).
+    const cantos = [
+      { nome: 'fundo-baixo', p: [-bx, -by], din: [0, -1], dout: [1, 0] },
+      { nome: 'frente-baixo', p: [bx, -by], din: [1, 0], dout: [0, 1] },
+      { nome: 'frente-cima', p: [bx, by], din: [0, 1], dout: [-1, 0] },
+      { nome: 'fundo-cima', p: [-bx, by], din: [-1, 0], dout: [0, -1] }
+    ];
+
+    // Cada canto recebe no máximo um recorte. Um recorte sem altura OU sem
+    // profundidade não é recorte nenhum; canto desconhecido é ignorado.
+    let algum = false;
+    (part.recortes || []).forEach(function (r) {
+      if (!r) return;
+      const nh = Math.max((r.h || 0) / 1000, 0); // altura do L
+      const nd = Math.max((r.d || 0) / 1000, 0); // profundidade do L
+      if (nh <= 0 || nd <= 0) return;
+      if (!CANTOS_RECORTE[r.canto]) return;
+      const c = cantos.find(function (x) { return x.nome === r.canto; });
+      if (!c || c.nh) return;
+      c.nh = nh; c.nd = nd;
+      algum = true;
+    });
+    if (!algum) return box();
+
+    // Dois recortes na mesma aresta não podem se encontrar, e um recorte
+    // sozinho não pode comer a peça inteira — nos dois casos o contorno sai
+    // degenerado (a peça vira uma fita ou some). Vale mais desenhar a peça
+    // inteira do que desenhar errado, então qualquer excesso cancela tudo.
+    //   arestas de baixo/cima medem faceB e são comidas pela PROFUNDIDADE;
+    //   arestas da frente/fundo medem faceA e são comidas pela ALTURA.
+    const arestas = [
+      [0, 1, faceB, 'nd'], [1, 2, faceA, 'nh'],
+      [2, 3, faceB, 'nd'], [3, 0, faceA, 'nh']
+    ];
+    const cabe = arestas.every(function (a) {
+      return (cantos[a[0]][a[3]] || 0) + (cantos[a[1]][a[3]] || 0) < a[2];
+    });
+    if (!cabe) return box();
+
+    // Quanto o recorte anda em cada eixo: nd na profundidade (x do shape),
+    // nh na altura (y do shape).
+    const pontos = [];
+    cantos.forEach(function (c) {
+      if (!c.nh) { pontos.push(c.p); return; }
+      const ext = function (dir) { return dir[0] !== 0 ? c.nd : c.nh; };
+      const ei = ext(c.din), eo = ext(c.dout);
+      const recuado = [c.p[0] - c.din[0] * ei, c.p[1] - c.din[1] * ei];
+      pontos.push(recuado);
+      pontos.push([recuado[0] + c.dout[0] * eo, recuado[1] + c.dout[1] * eo]);
+      pontos.push([c.p[0] + c.dout[0] * eo, c.p[1] + c.dout[1] * eo]);
+    });
+
+    const shape = new THREE.Shape();
+    pontos.forEach(function (p, i) {
+      if (i === 0) shape.moveTo(p[0], p[1]); else shape.lineTo(p[0], p[1]);
+    });
+    shape.closePath();
+
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1 });
+    // ExtrudeGeometry nasce de 0 a `depth` no eixo da extrusão; a peça precisa
+    // estar centrada na própria origem, igual a uma BoxGeometry, porque quem
+    // chama posiciona o CENTRO.
+    geometry.translate(0, 0, -thickness / 2);
+    geometry.rotateY(-Math.PI / 2);
+    return geometry;
+  }
+
   // Monta uma peça dentro de um volume-caixa (W,H,D em metros) conforme seu
   // position_role, delegando a criação/posicionamento efetivos pra `emit`
   // (content, color, x, y, z, rotateTexture, opening) — quem chama decide se
@@ -828,8 +1306,11 @@ const Viewer3D = (function () {
     // Envolve o emit recebido pra marcar userData.pieceInfo (duplo-clique) no
     // Object3D devolvido, sem precisar tocar em nenhuma das chamadas
     // emit(...) abaixo (uma por role) — part já está em escopo aqui.
+    // Toda peça-folha do módulo passa por aqui, em qualquer papel e em
+    // qualquer nível de aninhamento — é o ponto certo pra publicar a peça
+    // atual pro material por face (migration 088).
     const emit = (content, color, x, y, z, rotateTexture, opening) => {
-      const obj = emitRaw(content, color, x, y, z, rotateTexture, opening);
+      const obj = comPeca(part, () => emitRaw(content, color, x, y, z, rotateTexture, opening));
       tagPieceUserData(obj, part);
       return obj;
     };
@@ -880,25 +1361,46 @@ const Viewer3D = (function () {
     // acima dos pés só em algumas peças).
     if (role === 'left' || role === 'right') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const geometry = new THREE.BoxGeometry(thickness, faceA, faceB);
+      // Recorte em L (migration 094) — buildPanelGeometry devolve a
+      // BoxGeometry de sempre quando a peça não tem entalhe cadastrado.
+      const geometry = buildPanelGeometry(part, thickness, faceA, faceB);
       const x = -W / 2 + thickness / 2 + offX;
       const y = faceA / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveRotateTexture(part.positioning, false), null);
+      // Face visível da lateral é o par ±X: U = profundidade, V = altura.
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceB, faceA, false), null);
     } else if (role === 'top' || role === 'bottom') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const geometry = new THREE.BoxGeometry(faceA, thickness, faceB);
       const x = -W / 2 + faceA / 2 + offX;
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveRotateTexture(part.positioning, true), null);
+      // Vista de cima (par ±Y): U = largura, V = profundidade.
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null);
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const geometry = new THREE.BoxGeometry(faceA, faceB, thickness);
       const x = -W / 2 + faceA / 2 + offX;
       const y = faceB / 2 + offY + legH;
       const z = -D / 2 + thickness / 2 + offZ;
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveRotateTexture(part.positioning, false), null);
+      // VEIO LIVRE DEITA SOZINHO (Matt, 2026-08-11): "quando o lado maior for
+      // largura o fundo deve ter a textura deitada; quando for na altura,
+      // padrão veio em pé".
+      //
+      // O fundo é a peça com veio 'livre' (migration 086): ele não tem
+      // exigência estética, então gira pra caber na chapa — e é justamente
+      // essa a regra que limita o móvel ("passando de 1,2m trava o outro
+      // sentido"). Até agora o 3D desenhava sempre em pé, então um móvel
+      // 2400 × 800 aparecia com o veio vertical enquanto a fábrica cortava
+      // deitado.
+      //
+      // A conta é a MESMA de LayoutEngine.validar ('livre' -> horizontal
+      // quando w >= h); duas contas diferentes pro mesmo veio divergiriam.
+      // Só vale pra veio livre: porta e frente têm veio 'vertical' cadastrado
+      // e não giram nunca, por mais larga que a peça fique.
+      // 2026-08-12: essa conta virou a regra GERAL de todo painel
+      // (resolveGrainRotate) — o fundo foi só onde ela nasceu primeiro.
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, false), null);
     } else if (role === 'shelf') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const geometry = new THREE.BoxGeometry(faceA, thickness, faceB);
@@ -915,7 +1417,8 @@ const Viewer3D = (function () {
       const innerHigh = (bounds && bounds.innerTopY) || H;
       const span = Math.max(innerHigh - innerLow, 0.01);
       const y = innerLow + span * ((index + 1) / (count + 1));
-      emit(resolveContent(part, geometry), part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveRotateTexture(part.positioning, true), null);
+      // Prateleira também é vista de cima: U = largura, V = profundidade.
+      emit(resolveContent(part, geometry), part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true), null);
     } else if (role === 'drawer') {
       // Gaveta = caixa de verdade (não painel fino) — empilha as gavetas
       // verticalmente perto da frente do volume. offY (Deslocar Y) é um
@@ -980,7 +1483,9 @@ const Viewer3D = (function () {
       const x = -W / 2 + faceA / 2 + offX;
       const y = faceB / 2 + offY;
       const z = -D / 2 + thickness / 2 + offZ;
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveRotateTexture(part.positioning, false), null);
+      // RODAPÉ — é o caso que o Matt levantou: 1200×100 deita sozinho agora
+      // (U = comprimento, V = altura), sem depender do positioning.
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, false), null);
     } else if (role === 'countertop') {
       // Tampo — zero absoluto igual às demais. Antes nascia automaticamente
       // em cima do corpo inteiro (H+legH); agora isso é responsabilidade do
@@ -991,7 +1496,8 @@ const Viewer3D = (function () {
       const x = -W / 2 + faceA / 2 + offX;
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveRotateTexture(part.positioning, true), null);
+      // Tampo, vista de cima: U = largura, V = profundidade.
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null);
     } else if (role === 'free' && part.shape_type === 'oval_rod') {
       // Cabide tubular oval (migration 062) — MESMO cálculo de posição do
       // 'free' comum logo abaixo (zero absoluto, canto chão-fundo-esquerda),
@@ -1036,7 +1542,12 @@ const Viewer3D = (function () {
       // rotateGeometryUV90 — esse mecanismo é o que provou funcionar de
       // verdade nesta peça; tex.rotation, pensado pra peças vistas de CIMA
       // tipo prateleira/topo, não fazia efeito visual aqui).
-      if (resolveRotateTexture(part.positioning, false)) {
+      // 2026-08-12: a decisão passa pelo resolveGrainRotate (mesma conta do
+      // plano de corte) — uma travessa cadastrada como peça LIVRE, que é o
+      // caso comum desde que o papel 'Travamento' saiu (migration 026), deita
+      // sozinha por ser mais comprida que alta. O MECANISMO continua o mesmo
+      // (girar o UV da geometria, não a textura).
+      if (resolveGrainRotate(part, w, h, false)) {
         rotateGeometryUV90(geometry);
       }
       // Giro de canto (migration 067) — troca w<->d só na conta de POSIÇÃO
@@ -1195,7 +1706,14 @@ const Viewer3D = (function () {
       const x = cursorX + doorW / 2;
       const hingeSide = resolveHingeSide(part);
       const opening = hingeSide ? { type: 'hinge', side: hingeSide, width: doorW } : null;
-      const doorGroup = emit(content, part.color, x + offX, faceB / 2 + offY + legH, D / 2 + thickness / 2 + gap + offZ, resolveRotateTexture(part.positioning, false), opening);
+      // comPeca: a porta é o único papel que NÃO passa pelo emit de
+      // placePieceInBox (ela tem empilhamento próprio, ver o comentário
+      // grande acima), então o contexto da peça pro material por face
+      // (migration 088) precisa ser publicado aqui também. Sem isto a porta
+      // seria a única peça do módulo sem fita/miolo na borda.
+      // Porta vista de frente: U = largura da porta, V = altura. Porta comum
+      // (mais alta que larga) continua com veio em pé, igual sempre.
+      const doorGroup = comPeca(part, () => emit(content, part.color, x + offX, faceB / 2 + offY + legH, D / 2 + thickness / 2 + gap + offZ, resolveGrainRotate(part, doorW, faceB, false), opening));
       tagPieceUserData(doorGroup, part); // duplo-clique (ver placePieceInBox pro mesmo padrão nos outros papéis)
 
       // Dobradiças em qualquer porta de verdade (hingeSide resolvido — frente
@@ -1961,6 +2479,19 @@ const Viewer3D = (function () {
     // de buildStandaloneAssembly — reaproveita a mesma lógica de
     // posicionamento de update(), não duplica/reescreve nada dela.
     buildStandaloneAssembly,
+    // Materiais por face de UMA peça (migration 088) — face com a cor, borda
+    // com fita ou com o miolo da chapa. Exposto pra quem monta cena PRÓPRIA
+    // (o construtor de módulos do ERP) não precisar reimplementar a regra e
+    // acabar divergindo do 3D principal. Devolve null quando a peça ainda
+    // não tem receita de fita: quem chama usa o material único de sempre.
+    materialsForPart: makeBoxMaterials,
+    materialForColor: makeMaterial,
+    // Geometria da chapa de UMA peça (migration 094) — BoxGeometry normal, ou
+    // o contorno em L quando ela tem recorte cadastrado (o entalhe do toe).
+    // Exposto pelo mesmo motivo de materialsForPart logo acima: quem monta
+    // cena PRÓPRIA (o construtor de módulos do ERP) usa a mesma função em vez
+    // de criar uma BoxGeometry na mão e desenhar a lateral sem o entalhe.
+    geometryForPart: buildPanelGeometry,
     // Perspectiva <-> Ortográfica ("visão paralela") — ver setProjectionMode.
     // Usado hoje só pelo admin (geração de imagem 3D do módulo).
     setProjectionMode, getProjectionMode,

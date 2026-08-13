@@ -109,10 +109,41 @@ const Photoreal = (() => {
   let textureCache = {};
   let pendingTextures = [];
   let textureLoader = null;
-  function loadTexture(url, rotateMode) {
+  // ESCALA FÍSICA (2026-08-12) — mesma regra do viewer3d.js: a imagem vale um
+  // pedaço FIXO de chapa (TEXTURE_TILE_MM) e o repeat sai do tamanho real da
+  // face, senão a textura estica/encolhe conforme o tamanho da peça. Aqui o
+  // material é UM só pros 6 lados (o path tracer não monta material por face),
+  // então o repeat sai da face grande — as bordas herdam essa escala.
+  // Duplicado de propósito (photoreal.js não depende do viewer3d.js): se mudar
+  // o padrão aqui, mude no js/viewer3d.js também. O override de console
+  // (window.LEGNO_TEXTURE_TILE_MM) já vale pros dois.
+  const TEXTURE_TILE_MM = 1000;
+  function textureTileMm() {
+    const v = Number(typeof window !== 'undefined' ? window.LEGNO_TEXTURE_TILE_MM : 0);
+    return v > 0 ? v : TEXTURE_TILE_MM;
+  }
+  function quantizaRepeat(mm) {
+    if (!(mm > 0)) return 1;
+    const r = mm / textureTileMm();
+    const passo = r < 0.5 ? 200 : 20;   // passo fino embaixo de 0.5 (fita de 18mm)
+    return Math.max(0.005, Math.min(64, Math.round(r * passo) / passo));
+  }
+  // Face grande (mm) de uma caixa criada por makeBox. Mesma dedução do
+  // viewer3d.js (dimensoesDaFaceMm): U/V vêm do EIXO da espessura, não do
+  // tamanho — ordenar por tamanho erra em porta 600×2000, onde U é o menor.
+  function faceMmDaGeometria(geometry) {
+    const d = geometry && geometry.userData && geometry.userData.dimsMm;
+    if (!d) return null;
+    if (d.d <= d.w && d.d <= d.h) return { u: d.w, v: d.h };   // espessura em Z
+    if (d.w <= d.h && d.w <= d.d) return { u: d.d, v: d.h };   // espessura em X
+    return { u: d.w, v: d.d };                                  // espessura em Y
+  }
+  function loadTexture(url, rotateMode, uMm, vMm) {
     if (!url) return null;
     const rotateSuffix = rotateMode === true ? '|rot90' : rotateMode === 'right' ? '|rot90r' : '';
-    const cacheKey = url + rotateSuffix;
+    const repU = uMm ? quantizaRepeat(uMm) : 1;
+    const repV = vMm ? quantizaRepeat(vMm) : 1;
+    const cacheKey = url + rotateSuffix + '|' + repU + 'x' + repV;
     if (textureCache[cacheKey]) return textureCache[cacheKey];
     if (!textureLoader) { textureLoader = new T.TextureLoader(); textureLoader.setCrossOrigin('anonymous'); }
     let resolveLoaded;
@@ -121,6 +152,13 @@ const Photoreal = (() => {
     if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
     if (rotateMode === true) { tex.center.set(0.5, 0.5); tex.rotation = Math.PI / 2; }
     else if (rotateMode === 'right') { tex.center.set(0.5, 0.5); tex.rotation = -Math.PI / 2; }
+    // Com giro, o repeat vai TROCADO — o Three aplica o repeat nos eixos
+    // finais da textura, depois do giro (ver o comentário longo em
+    // loadTexture no viewer3d.js; foi o que esticou a base no comprimento).
+    const girou = rotateMode === true || rotateMode === 'right';
+    tex.wrapS = T.RepeatWrapping;
+    tex.wrapT = T.RepeatWrapping;
+    tex.repeat.set(girou ? repV : repU, girou ? repU : repV);
     textureCache[cacheKey] = tex;
     return tex;
   }
@@ -130,17 +168,31 @@ const Photoreal = (() => {
     if (positioning === 'vertical' || positioning === 'vertical_no_plano') return false;
     return fallback;
   }
-  function makeMaterial(color, rotateTexture) {
+  // Sentido do veio — cópia fiel de resolveGrainRotate (js/viewer3d.js), pra
+  // foto realista e visualizador nunca discordarem. Regra: veio cadastrado
+  // manda; veio livre deita no lado longo, a MESMA conta do plano de corte
+  // (LayoutEngine.validar). É o que corrige rodapé/travessa saindo com o veio
+  // em pé (Matt, 2026-08-12).
+  function resolveGrainRotate(part, uM, vM, fallback) {
+    const veio = part && part.veio;
+    if (veio === 'horizontal') return true;
+    if (veio === 'vertical') return false;
+    if (!veio || veio === 'livre') return uM >= vM;
+    return resolveRotateTexture(part && part.positioning, fallback);
+  }
+  function makeMaterial(color, rotateTexture, uMm, vMm) {
     const textureUrl = color && color.texture_url;
-    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture) : null;
+    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture, uMm, vMm) : null;
     if (tex) return new T.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 });
     const hex = (color && color.swatch_hex) || '#cccccc';
     return new T.MeshStandardMaterial({ color: hex, roughness: 0.85, metalness: 0.05 });
   }
   function emitInto(parentGroup, contentOrGeometry, color, x, y, z, rotateTexture) {
+    const faceMm = (contentOrGeometry && !contentOrGeometry.isGroup)
+      ? faceMmDaGeometria(contentOrGeometry) : null;
     const content = (contentOrGeometry && contentOrGeometry.isGroup)
       ? contentOrGeometry
-      : new T.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture));
+      : new T.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture, faceMm && faceMm.u, faceMm && faceMm.v));
     content.position.set(x, y, z);
     parentGroup.add(content);
     return content;
@@ -157,7 +209,12 @@ const Photoreal = (() => {
   function makeBox(w, h, d) {
     // 3mm (1mm→2mm→3mm, 2026-08-03 — usuário subindo até a emenda aparecer).
     const radius = Math.min(0.003, Math.min(w, h, d) * 0.3);
-    return new RenderFielLibs.RoundedBoxGeometry(w, h, d, 2, radius);
+    const g = new RenderFielLibs.RoundedBoxGeometry(w, h, d, 2, radius);
+    // RoundedBoxGeometry não expõe .parameters como a BoxGeometry — guarda as
+    // medidas aqui pro repeat físico da textura (ver faceMmDaGeometria).
+    g.userData = g.userData || {};
+    g.userData.dimsMm = { w: w * 1000, h: h * 1000, d: d * 1000 };
+    return g;
   }
 
   const LEG_COLOR = { swatch_hex: '#000000' };
@@ -190,7 +247,7 @@ const Photoreal = (() => {
       // composição) — mesma correção de meia-altura dos outros papéis.
       const content = resolveContentPh(part, doorW, faceB, thickness);
       const x = cursorX + doorW / 2;
-      emitInto(parentGroup, content, part.color, x + offX, faceB / 2 + offY + legH, D / 2 + thickness / 2 + gap + offZ, resolveRotateTexture(part.positioning, false));
+      emitInto(parentGroup, content, part.color, x + offX, faceB / 2 + offY + legH, D / 2 + thickness / 2 + gap + offZ, resolveGrainRotate(part, doorW, faceB, false));
       cursorX = x + doorW / 2 + gap;
     });
   }
@@ -241,15 +298,15 @@ const Photoreal = (() => {
     if (role === 'left' || role === 'right') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const content = resolveContentPh(part, thickness, faceA, faceB);
-      emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceA / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveRotateTexture(part.positioning, false));
+      emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceA / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceB, faceA, false));
     } else if (role === 'top' || role === 'bottom') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const content = resolveContentPh(part, faceA, thickness, faceB);
-      emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveRotateTexture(part.positioning, true));
+      emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const content = resolveContentPh(part, faceA, faceB, thickness);
-      emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, faceB / 2 + offY + legH, -D / 2 + thickness / 2 + offZ, resolveRotateTexture(part.positioning, false));
+      emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, faceB / 2 + offY + legH, -D / 2 + thickness / 2 + offZ, resolveGrainRotate(part, faceA, faceB, false));
     } else if (role === 'shelf') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const content = resolveContentPh(part, faceA, thickness, faceB);
@@ -257,7 +314,7 @@ const Photoreal = (() => {
       const innerHigh = (bounds && bounds.innerTopY) || H;
       const span = Math.max(innerHigh - innerLow, 0.01);
       const y = innerLow + span * ((index + 1) / (count + 1));
-      emitInto(parentGroup, content, part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveRotateTexture(part.positioning, true));
+      emitInto(parentGroup, content, part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'drawer') {
       const slotH = H / count;
       const drawerH = Math.min(h, slotH * 0.9), drawerW = Math.min(w, W * 0.97), drawerD = Math.min(d, D * 0.9);
@@ -275,13 +332,13 @@ const Photoreal = (() => {
       emitInto(parentGroup, geometry, part.color, x + offX, H / 2 + offY + legH, D / 2 + 0.02 + d / 2 + offZ, false);
     } else if (role === 'baseboard') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      emitInto(parentGroup, resolveContentPh(part, faceA, faceB, thickness), part.color, -W / 2 + faceA / 2 + offX, faceB / 2 + offY, -D / 2 + thickness / 2 + offZ, resolveRotateTexture(part.positioning, false));
+      emitInto(parentGroup, resolveContentPh(part, faceA, faceB, thickness), part.color, -W / 2 + faceA / 2 + offX, faceB / 2 + offY, -D / 2 + thickness / 2 + offZ, resolveGrainRotate(part, faceA, faceB, false));
     } else if (role === 'countertop') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      emitInto(parentGroup, resolveContentPh(part, faceA, thickness, faceB), part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveRotateTexture(part.positioning, true));
+      emitInto(parentGroup, resolveContentPh(part, faceA, thickness, faceB), part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'free') {
       const content = resolveContentPh(part, w, h, d);
-      emitInto(parentGroup, content, part.color, -W / 2 + w / 2 + offX, h / 2 + offY + legH, -D / 2 + d / 2 + offZ, resolveRotateTexture(part.positioning, false));
+      emitInto(parentGroup, content, part.color, -W / 2 + w / 2 + offX, h / 2 + offY + legH, -D / 2 + d / 2 + offZ, resolveGrainRotate(part, w, h, false));
     }
     // 'other' -> não desenha (igual viewer3d.js).
   }
