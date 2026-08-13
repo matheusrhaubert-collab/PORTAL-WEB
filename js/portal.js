@@ -14391,6 +14391,12 @@ let projectBuilderBuilt = null;     // { pieces, voids, zona } — saída do mot
 let projectBuilderSelId = null;     // nó (vão) selecionado
 let projectBuilderUndo = [];        // pilha de árvores serializadas
 let projectBuilderLoadError = null; // erro do banco, mostrado no lugar da lista
+// De onde saiu a zona interna: 'cadastro' (fórmula do módulo), 'casco'
+// (deduzida das peças via Drilling), 'cena' (medida no 3D) ou 'palpite'
+// (chapa de 18mm, quando nada foi reconhecido). Aparece NO RODAPÉ DA JANELA
+// do construtor — diagnóstico no lugar onde a pessoa já está olhando, em vez
+// de só no console.
+let projectBuilderZoneDiag = null;
 const PROJECT_BUILDER_ESPESSURA = 18;
 const PROJECT_BUILDER_FOLGA_DOB = 2;
 const PROJECT_BUILDER_MIN_VAO = 40;
@@ -14543,10 +14549,25 @@ function computeProjectSlotInnerZone(slot) {
     return { x0: a, y0: b0, z0: c, x1: d1, y1: e1, achou: !(a === 0 && b0 === 0 && c === 0 && d1 === W && e1 === H) };
   };
   let x0 = 0, y0 = 0, z0 = 0, x1 = W, y1 = H;
+  projectBuilderZoneDiag = null;
   try {
     let r = deduzirCasco(computeProjectSlotCascoBoxes(slot));
-    if (!r.achou) r = deduzirCasco(computeProjectSlotCascoBoxes(slot, true));
+    let fonte = 'casco';
+    if (!r.achou) { r = deduzirCasco(computeProjectSlotCascoBoxes(slot, true)); fonte = 'cena'; }
+    if (!r.achou) {
+      // NUNCA DEIXAR O VÃO SER O MÓDULO INTEIRO. Se nem o cadastro nem a cena
+      // deixaram reconhecer o casco, um palpite de chapa de 18mm (6mm no
+      // fundo) erra por milímetros; devolver a medida externa erra por uma
+      // lateral inteira e faz o cliente inserir peça que não cabe. A tela
+      // avisa que é palpite (ver projectBuilderZoneDiag).
+      const E = 18, EF = 6;
+      if (W > E * 3 && H > E * 3) {
+        r = { x0: E, y0: E, z0: EF, x1: W - E, y1: H - E, achou: false };
+        fonte = 'palpite';
+      }
+    }
     x0 = r.x0; y0 = r.y0; z0 = r.z0; x1 = r.x1; y1 = r.y1;
+    projectBuilderZoneDiag = { fonte, modulo: [Math.round(W), Math.round(H), Math.round(D)] };
     // REDE DE SEGURANÇA: nenhuma caixa reconhecida como casco. Acontece se
     // drilling.js não carregar (foi o bug de 2026-08-13: o portal não incluía
     // o arquivo) ou num módulo cadastrado de um jeito que a classificação não
@@ -14618,7 +14639,9 @@ function computeProjectSlotInnerZone(slot) {
   const usa = (formula, deduzido, cheio) => {
     const v = ev(formula, deduzido);
     if (!isFinite(v) || v <= 0) return deduzido;
-    return (v >= cheio * 0.99 && deduzido < cheio * 0.99) ? deduzido : v;
+    if (v >= cheio * 0.99 && deduzido < cheio * 0.99) return deduzido;
+    if (projectBuilderZoneDiag) projectBuilderZoneDiag.fonte = 'cadastro';
+    return v;
   };
   return {
     x: ev(m.inner_x_formula, dedu.x), y: ev(m.inner_y_formula, dedu.y), z: ev(m.inner_z_formula, dedu.z),
@@ -15213,7 +15236,16 @@ function renderProjectBuilderStage() {
 
   const dica = document.createElement('div');
   dica.className = 'po-proj-builder-empty';
-  dica.textContent = I18n.t('project.builder_hint');
+  const z = projectBuilderZone || {};
+  const dg = projectBuilderZoneDiag;
+  // O NÚMERO DO VÃO NA TELA. Enquanto a dedução do casco não estiver
+  // confiável em todo cadastro, mostrar a medida do vão AO LADO da medida do
+  // módulo é o que permite ver de relance se ele saiu interno ou externo — sem
+  // console, sem flag, no lugar onde a pessoa já está olhando.
+  dica.textContent = I18n.t('project.builder_hint')
+    + (dg ? '   ·   vão ' + Math.round(z.w) + '×' + Math.round(z.h) + '×' + Math.round(z.d)
+      + ' de ' + dg.modulo.join('×') + ' (' + dg.fonte + ')' : '');
+  if (dg && (dg.fonte === 'palpite' || Math.round(z.w) >= dg.modulo[0])) dica.style.color = '#b0503c';
   stage.appendChild(dica);
 }
 
