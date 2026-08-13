@@ -1639,14 +1639,25 @@ function createViewerComposition3D() {
     // A ambiguidade entre vizinhos continua tratada logo abaixo
     // (preferredWallIndex + AMBIGUITY_TOLERANCE_M), que é onde ela deve ser
     // tratada mesmo.
-    // SÓ SUPERFÍCIE CONTA. Contorno (LineSegments) é enfeite: mesmo com o
-    // threshold no mínimo, uma linha é infinitamente fina e acertá-la é
-    // questão de sorte — quem o usuário mira é a face da peça.
-    const reais = rawHits.filter((h) => h.object && h.object.isMesh
-      && !(h.object.userData && h.object.userData.isHitboxProxy));
-    const hits = reais.length
-      ? reais
-      : rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
+    // A CAIXA VOLTOU A SER O ALVO (2026-08-13, 4ª rodada) — e foi ERRO MEU ter
+    // tirado. Eu troquei o alvo pela geometria real achando que a caixa era a
+    // culpada pelo "clique pega 1 metro fora"; a culpada era o
+    // Line.threshold=1 (ver o comentário grande na criação do _raycaster).
+    // Com aquilo corrigido, a caixa é exata — do tamanho do módulo — e é ela
+    // que dá o clique confortável.
+    //
+    // Sem a caixa, um módulo de prateleiras abertas fica cheio de buraco: o
+    // raio atravessa o vão, acerta a parede atrás e o clique NO MEIO DO MÓVEL
+    // não seleciona nada. Foi exatamente o que o Matt relatou ("clico no meio
+    // do movel e nao clica... tava muito bom antes"), e é o mesmo motivo pelo
+    // qual a caixa foi criada em 2026-07-26.
+    //
+    // O filtro isMesh fica no fallback: contorno (LineSegments) nunca deve
+    // decidir seleção, mesmo com threshold mínimo.
+    const hitboxHits = rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
+    const hits = hitboxHits.length
+      ? hitboxHits
+      : rawHits.filter((h) => h.object && h.object.isMesh);
     let firstAny = null;
     let firstAnyDist = Infinity;
     let matchedPreferred = null;
