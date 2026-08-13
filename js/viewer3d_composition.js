@@ -1949,10 +1949,42 @@ function createViewerComposition3D() {
   // o contorno sempre aparece por CIMA das peças (não "afunda" atrás de uma
   // porta/prateleira mais perto da câmera), já que é só um indicador de UI,
   // não geometria real da cena.
+  // Caixa do que está DESENHADO — sem a caixa invisível de clique.
+  let hoverBoxAlvo = null;
+  function caixaSemHitbox(group) {
+    const b = new THREE.Box3();
+    const tmp = new THREE.Box3();
+    group.updateMatrixWorld(true);
+    group.traverse((o) => {
+      if (!o.isMesh || (o.userData && o.userData.isHitboxProxy)) return;
+      tmp.setFromObject(o);
+      if (!tmp.isEmpty()) b.union(tmp);
+    });
+    return b.isEmpty() ? new THREE.Box3().setFromObject(group) : b;
+  }
+  // Mesma ordem de cantos que THREE.BoxHelper.update() escreve.
+  function escreveCaixaNoHelper(helper, caixa) {
+    if (!helper || !helper.geometry || caixa.isEmpty()) return;
+    const min = caixa.min, max = caixa.max;
+    const pos = helper.geometry.attributes.position;
+    const a = pos.array;
+    a[0] = max.x; a[1] = max.y; a[2] = max.z;
+    a[3] = min.x; a[4] = max.y; a[5] = max.z;
+    a[6] = min.x; a[7] = min.y; a[8] = max.z;
+    a[9] = max.x; a[10] = min.y; a[11] = max.z;
+    a[12] = max.x; a[13] = max.y; a[14] = min.z;
+    a[15] = min.x; a[16] = max.y; a[17] = min.z;
+    a[18] = min.x; a[19] = min.y; a[20] = min.z;
+    a[21] = max.x; a[22] = min.y; a[23] = min.z;
+    pos.needsUpdate = true;
+    helper.geometry.computeBoundingSphere();
+  }
+
   function setHoverHighlight(group) {
     if (!scene) return;
     if (!group) {
       if (hoverBoxHelper) hoverBoxHelper.visible = false;
+      hoverBoxAlvo = null;
       return;
     }
     if (!hoverBoxHelper) {
@@ -1964,7 +1996,21 @@ function createViewerComposition3D() {
       hoverBoxHelper.name = 'ar-export-exclude';
       scene.add(hoverBoxHelper);
     }
-    hoverBoxHelper.setFromObject(group);
+    // O CONTORNO IGNORA A CAIXA DE CLIQUE (2026-08-13).
+    //
+    // BoxHelper.setFromObject(group) inclui TODOS os filhos — e um deles é a
+    // caixa invisível de clique (isHitboxProxy), que tem folga de propósito.
+    // Resultado: o contorno vermelho nascia alguns milímetros maior que o
+    // móvel e "passava" das peças. Ele é a única régua visual que a pessoa tem
+    // pra saber onde o módulo começa e termina; ele precisa ser a GEOMETRIA
+    // desenhada, nada além dela.
+    //
+    // BoxHelper.update() SEMPRE recalcula a partir de this.object e não aceita
+    // uma caixa pronta — então os 8 cantos são escritos na mão, na mesma ordem
+    // que ele usa (ver escreveCaixaNoHelper). O group fica guardado em
+    // hoverBoxAlvo pra updateHoverHighlight refazer a conta durante o arraste.
+    hoverBoxAlvo = group;
+    escreveCaixaNoHelper(hoverBoxHelper, caixaSemHitbox(group));
     hoverBoxHelper.visible = true;
   }
 
@@ -1974,7 +2020,11 @@ function createViewerComposition3D() {
   // sem isso o contorno ficaria "preso" na posição de quando o hover
   // começou, em vez de acompanhar o módulo sendo arrastado.
   function updateHoverHighlight() {
-    if (hoverBoxHelper && hoverBoxHelper.visible) hoverBoxHelper.update();
+    if (!hoverBoxHelper || !hoverBoxHelper.visible) return;
+    // Mesma caixa filtrada do setHoverHighlight — chamar update() aqui traria
+    // a caixa de clique de volta e o contorno voltaria a sobrar.
+    if (hoverBoxAlvo) escreveCaixaNoHelper(hoverBoxHelper, caixaSemHitbox(hoverBoxAlvo));
+    else hoverBoxHelper.update();
   }
 
   // Acha de volta o Group de um slotId específico dentro da cena ATUAL —

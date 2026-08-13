@@ -17231,8 +17231,12 @@ function buildProjectAssemblies(slotsList) {
           const wM = Number(slot.width_mm || 0) / 1000;
           const hM = Number(slot.height_mm || 0) / 1000;
           const dM = Number(slot.depth_mm || 0) / 1000;
-          const FOLGA = 0.02;        // 2cm — arredondamento e sobra de peça
-          const FOLGA_FRENTE = 0.06; // 6cm — porta sobreposta
+          // Folgas ENXUTAS (2026-08-13, depois do print do Matt): 2cm em volta
+          // fazia a caixa de clique — e, por tabela, o contorno vermelho —
+          // sobrar visivelmente do móvel. 2mm cobre arredondamento sem dar
+          // auréola. Na frente, 2cm ainda cobre a porta sobreposta.
+          const FOLGA = 0.002;
+          const FOLGA_FRENTE = 0.02;
           if (wM > 0 && hM > 0 && dM > 0) {
             const limite = new THREE.Box3(
               new THREE.Vector3(-wM / 2 - FOLGA, -FOLGA, -dM / 2 - FOLGA),
