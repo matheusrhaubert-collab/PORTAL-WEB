@@ -14600,11 +14600,31 @@ function computeProjectSlotInnerZone(slot) {
 
   const dedu = { x: x0, y: y0, z: z0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), d: Math.max(1, D - z0) };
   if (!(m.inner_w_formula || m.inner_h_formula || m.inner_d_formula)) return dedu;
+
+  // FÓRMULA CADASTRADA QUE NÃO DESCONTA NADA É IGNORADA (2026-08-13).
+  //
+  // modules.inner_*_formula existe pra a engenharia cravar a zona interna, e
+  // por isso ela ganha da dedução. Só que uma fórmula igual a 'W'/'H'/'D' (ou
+  // que resolva pro tamanho cheio) não é uma zona interna — é o módulo. E
+  // basta UMA dessas pro construtor oferecer um vão do tamanho do móvel,
+  // mesmo com o casco perfeitamente deduzido logo acima. Foi o "VÃO EXTERNO
+  // ainda" que sobreviveu a todas as correções da dedução: o problema não
+  // estava lá, estava aqui, um passo depois.
+  //
+  // Regra: eixo por eixo, a fórmula só vale se ela REDUZ de verdade (< 99% da
+  // medida do módulo). Não reduzindo, vale o que foi deduzido do casco.
+  // Cadastro certo continua mandando; cadastro vazio ou "cheio" deixa de
+  // atrapalhar.
+  const usa = (formula, deduzido, cheio) => {
+    const v = ev(formula, deduzido);
+    if (!isFinite(v) || v <= 0) return deduzido;
+    return (v >= cheio * 0.99 && deduzido < cheio * 0.99) ? deduzido : v;
+  };
   return {
     x: ev(m.inner_x_formula, dedu.x), y: ev(m.inner_y_formula, dedu.y), z: ev(m.inner_z_formula, dedu.z),
-    w: Math.max(1, ev(m.inner_w_formula, dedu.w)),
-    h: Math.max(1, ev(m.inner_h_formula, dedu.h)),
-    d: Math.max(1, ev(m.inner_d_formula, dedu.d))
+    w: Math.max(1, usa(m.inner_w_formula, dedu.w, W)),
+    h: Math.max(1, usa(m.inner_h_formula, dedu.h, H)),
+    d: Math.max(1, usa(m.inner_d_formula, dedu.d, D))
   };
 }
 
@@ -16396,7 +16416,22 @@ function attachProject3DEditDrag() {
     inicioGesto3D = { x: ev.clientX, y: ev.clientY, button: ev.button };
   }, true);
 
+  // O MESMO pointerup chegava aqui DUAS VEZES — e era isso que fazia UM clique
+  // valer por dois (2026-08-13).
+  //
+  // endDrag3D está registrado no canvas E na window (a rede de segurança pro
+  // arraste que perdia o pointerup fora do canvas). Como o evento do canvas
+  // BORBULHA até a window, os dois listeners recebem o MESMO objeto de evento:
+  // a primeira passagem gravava lastRoomTap, a segunda encontrava esse registro
+  // com 0ms e 0px de diferença e concluía "duplo toque". Resultado: um clique
+  // na parede já jogava a câmera pra frente dela.
+  //
+  // Comparar a IDENTIDADE do evento resolve independente de quantos listeners
+  // chamem — e não depende de qual deles chega primeiro.
+  let ultimoEventoRoomTap = null;
   function handleRoomTapForDoubleTap(ev) {
+    if (ev === ultimoEventoRoomTap) return;
+    ultimoEventoRoomTap = ev;
     if (projectCameraModeOn && ev.pointerType === 'touch') return;
     // SÓ CLIQUE ESQUERDO, E SÓ CLIQUE PARADO (2026-08-13).
     //
