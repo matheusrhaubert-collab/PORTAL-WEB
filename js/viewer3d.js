@@ -582,8 +582,10 @@ const Viewer3D = (function () {
     containerEl.appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    // Sem amortecimento — câmera 1:1 com o ponteiro (mesma decisão e mesmo
+    // motivo do viewer3d_composition.js, 2026-08-13: o damping de 0.08 deixava
+    // a cena ~12 quadros atrás do mouse e ainda escorregando depois de soltar).
+    controls.enableDamping = false;
     controls.minDistance = 0.3;
     controls.maxDistance = 8;
     controls.maxPolarAngle = Math.PI * 0.49; // não deixa olhar de baixo pra cima
@@ -675,6 +677,11 @@ const Viewer3D = (function () {
         }
       }
     });
+    // Não desenha o que ninguém está vendo — mesma decisão e mesmo motivo do
+    // viewer3d_composition.js (2026-08-13). O viewer escondido das miniaturas
+    // continuava renderizando a cena a cada quadro. snapshot() renderiza por
+    // conta própria antes do toDataURL, então a miniatura não muda.
+    if (containerEl && (!containerEl.clientWidth || !containerEl.clientHeight)) return;
     renderer.render(scene, camera);
   }
 
@@ -2449,8 +2456,9 @@ const Viewer3D = (function () {
     camera.updateProjectionMatrix();
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    // Sem amortecimento — ver o comentário na outra criação de OrbitControls
+    // deste arquivo (2026-08-13).
+    controls.enableDamping = false;
     controls.minDistance = 0.05;
     controls.maxDistance = 30;
     controls.maxPolarAngle = Math.PI * 0.49;

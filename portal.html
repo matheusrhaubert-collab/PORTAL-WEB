@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608122324" />
+<link rel="stylesheet" href="css/style.css?v=202608131555" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -336,6 +336,43 @@
         <button type="button" class="po-auth-modal-close" id="po-proj-props-close" aria-label="Fechar">&times;</button>
       </div>
       <div id="po-proj-props-body"></div>
+    </div>
+  </div>
+
+  <!-- CRIADOR DE ARMÁRIO dentro do portal (2026-08-12, pedido do Matt: "quero
+       um botao a mais de customizar que leve pra tela de criador de armario,
+       ja com modulo aberto pra ser inserido dos internos").
+       A tela do construtor NÃO é reescrita aqui: é a mesma do ERP
+       (erp/index.html#/construtor?m=<id>), carregada num iframe. Duplicar
+       aquela tela no portal significaria manter duas cópias da mesma regra de
+       vãos/casco/3D — o caminho que sempre diverge. Mesma origem, então o
+       iframe é só um contêiner: nada de postMessage/CORS envolvido. -->
+  <!-- CRIADOR DE INTERNOS DO PORTAL (2026-08-13) — tela PRÓPRIA, sem nenhuma
+       relação com o ERP. A 1ª versão embutia erp/index.html num iframe e o
+       Matt cortou: "NAOOOO... nao e pra abrir um portao e mandar pro ERP. e
+       pra ter uma tela como essa mas com a parte de insercao do construtor...
+       nao tem absolutamente nada haver com o ERP... deve ser bem mais facil e
+       intuitivo de trabalhar, sem texto, pouco preenchimento e bastante clique
+       e arraste."
+       Por isso aqui não tem formulário, nem árvore, nem campo de fórmula: um
+       desenho do vão à esquerda e as peças à direita. Clica no vão, clica (ou
+       arrasta) a peça. -->
+  <div id="po-proj-builder-modal">
+    <div class="po-proj-builder-card">
+      <div class="po-proj-builder-header">
+        <strong id="po-proj-builder-title"></strong>
+        <div class="po-proj-builder-tools">
+          <span class="po-proj-builder-status" id="po-proj-builder-status"></span>
+          <button type="button" class="po-proj-builder-tool" id="po-proj-builder-undo" data-i18n-title="project.builder_undo">&#8630;</button>
+          <button type="button" class="po-proj-builder-tool" id="po-proj-builder-reset" data-i18n-title="project.builder_reset">&#8635;</button>
+          <button type="button" class="po-proj-builder-save" id="po-proj-builder-save" data-i18n="project.builder_save">Salvar</button>
+          <button type="button" class="po-auth-modal-close" id="po-proj-builder-close" aria-label="Fechar">&times;</button>
+        </div>
+      </div>
+      <div class="po-proj-builder-body">
+        <div class="po-proj-builder-stage" id="po-proj-builder-stage"></div>
+        <div class="po-proj-builder-lib" id="po-proj-builder-lib"></div>
+      </div>
     </div>
   </div>
 
@@ -1319,9 +1356,24 @@
                   <div class="po-proj-slot-actions" id="po-proj-slot-actions" style="display:none;">
                     <button type="button" class="po-proj-slot-action-btn" id="po-proj-slot-duplicate-btn"
                             data-i18n-title="project.duplicate_title" title="Duplicar">⧉</button>
+                    <!-- Customizar (2026-08-12) — a 1ª versão abria o módulo do
+                         CATÁLOGO e foi cortada na hora pelo Matt: "cada modulo
+                         deve ser customizado exclusivamente pro seu projeto,
+                         por isso colocamos inclusive trava". Agora o clique
+                         tira uma CÓPIA privada do módulo (migration 098,
+                         clone_module_for_project) e abre o criador nela — o
+                         catálogo nunca é tocado. Ver openProjectModuleBuilder
+                         em portal.js. -->
+                    <button type="button" class="po-proj-slot-action-btn" id="po-proj-slot-customize-btn"
+                            data-i18n-title="project.customize_title" title="Customizar">✎</button>
                     <button type="button" class="po-proj-slot-action-btn po-proj-slot-action-danger" id="po-proj-slot-remove-btn"
                             data-i18n-title="project.remove_title" title="Remover">✕</button>
                   </div>
+                  <!-- Ângulo do giro (Shift + arrastar, 2026-08-12) — só
+                       aparece DURANTE o giro, no canto de baixo da cena, que
+                       é onde o Matt pediu ("me informe quando esta
+                       rotacionando no canto inferior da tela visivel"). -->
+                  <div class="po-proj-rotate-hud" id="po-proj-rotate-hud" style="display:none;"></div>
                 </div>
               </div>
               </div><!-- /.po-proj-canvas-stage -->
@@ -1805,13 +1857,17 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608122324"></script>
-<script src="js/pricing.js?v=202608122324"></script>
-<script src="js/viewer3d.js?v=202608122324"></script>
-<script src="js/viewer3d_composition.js?v=202608122324"></script>
+<script src="js/i18n.js?v=202608131555"></script>
+<script src="js/pricing.js?v=202608131555"></script>
+<script src="js/viewer3d.js?v=202608131555"></script>
+<script src="js/viewer3d_composition.js?v=202608131555"></script>
+<!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
+     arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
+     docs/criador-de-modulos-spec.md. -->
+<script src="js/layout-engine.js?v=202608131555"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608122324"></script>
-<script src="js/portal.js?v=202608122324"></script>
+<script src="js/photoreal.js?v=202608131555"></script>
+<script src="js/portal.js?v=202608131555"></script>
 </body>
 </html>

@@ -9775,6 +9775,9 @@ function cloneProjectSlotForUndo(slot) {
     shelfQuantities: { ...(slot.shelfQuantities || {}) },
     dimOverrides: { ...(slot.dimOverrides || {}) },
     pieceColorOverrides: JSON.parse(JSON.stringify(slot.pieceColorOverrides || {})),
+    // Árvore do construtor: é MUTADA no lugar (o motor mexe nos nós), então
+    // precisa de cópia funda — sem isso a foto do desfazer andaria junto.
+    layout: slot.layout ? JSON.parse(JSON.stringify(slot.layout)) : null,
     selectedOptionalIds: (slot.selectedOptionalIds || []).slice(),
     widthPresetsMm: (slot.widthPresetsMm || []).slice(),
     heightPresetsMm: (slot.heightPresetsMm || []).slice()
@@ -10586,6 +10589,16 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
       st.ghost = buildProjectDragGhost(moduleRow);
       document.body.appendChild(st.ghost);
       card.classList.add('dragging-to-scene');
+      // TRAVA A TELA (2026-08-12, iPad — "quando arrasto movel pro ambiente
+      // qualquer desce ou sobe da tela ele desclica no movel. acho que preciso
+      // travar a tela quando estiver arrastando"). O card nasce com
+      // touch-action:pan-y pra lista poder rolar; assim que o arraste ENGATA,
+      // essa permissão precisa sumir, senão qualquer componente vertical do
+      // gesto vira rolagem e o iOS mata o ponteiro no meio do caminho
+      // (pointercancel = "desclicou" sozinho). Só o touch-action não basta no
+      // iOS: o listener global de touchmove (passive:false, ver
+      // attachProjectDragScrollLock) é quem de fato segura a página.
+      card.style.touchAction = 'none';
     }
     ev.preventDefault();
     st.ghost.style.left = ev.clientX + 'px';
@@ -10602,6 +10615,7 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
     projectLibDragState = null;
     if (st.ghost && st.ghost.parentNode) st.ghost.parentNode.removeChild(st.ghost);
     card.classList.remove('dragging-to-scene');
+    card.style.touchAction = '';   // devolve a rolagem da lista (ver a trava no pointermove)
     highlightProjectDropTarget(null, null);
     if (ViewerProjectEdit && ViewerProjectEdit.setDropPreview) ViewerProjectEdit.setDropPreview(null);
     if (ev.type === 'pointercancel') return;
@@ -10615,6 +10629,29 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
   card.addEventListener('pointerup', endLibDrag);
   card.addEventListener('pointercancel', endLibDrag);
 }
+
+// TRAVA GLOBAL DE ROLAGEM ENQUANTO ARRASTA (2026-08-12, iPad)
+// ==========================================================================
+// "quando arrasto movel pro ambiente qualquer desce ou sobe da tela ele
+// desclica no movel. ta bem dificil de mover arrastar movel pro ambiente. acho
+// que preciso travar a tela quando estiver arrastando ai vai ficar bom."
+//
+// O que acontecia: o dedo sai do card da biblioteca e atravessa a página até a
+// cena. Nesse caminho ele passa por cima de elementos que ROLAM (a própria
+// lista, o painel, a página), o Safari começa a rolar e mata o gesto de
+// ponteiro no meio — o módulo "solta" sozinho.
+//
+// preventDefault em pointermove NÃO impede rolagem no iOS; só um touchmove com
+// passive:false impede. Por isso o listener é no documento, uma vez só, e
+// cobre os DOIS arrastes (o da biblioteca e o de dentro da cena 3D): enquanto
+// qualquer um estiver engatado, a página inteira fica parada.
+(function attachProjectDragScrollLock() {
+  document.addEventListener('touchmove', (ev) => {
+    const arrastandoDaBiblioteca = !!(projectLibDragState && projectLibDragState.moved);
+    const arrastandoNaCena = !!(projectDrag3DState && projectDrag3DState.moved);
+    if (arrastandoDaBiblioteca || arrastandoNaCena) ev.preventDefault();
+  }, { passive: false });
+})();
 
 function buildProjectDragGhost(moduleRow) {
   const ghost = document.createElement('div');
@@ -10784,17 +10821,123 @@ async function dropProjectModuleAt(moduleId, clientX, clientY) {
   markProjectDirty();
 }
 
+// Quanto o ponteiro precisa entrar no ambiente (distância da parede) pra um
+// arraste normal soltar o módulo da parede e jogá-lo no chão — ver o uso no
+// pointermove da Vista de Canto 3D. Grande o bastante pra não disparar quando
+// o cursor só raspa o piso ao mover um módulo baixo, pequeno o bastante pra
+// ser um gesto natural de "puxar pra dentro do quarto".
+const PROJECT_PULL_TO_FLOOR_MM = 350;
+
+// Distância em que a ilha "gruda" de volta numa parede (2026-08-13). Menor que
+// PROJECT_PULL_TO_FLOOR_MM de propósito: a folga pra SAIR precisa ser maior
+// que a folga pra ENTRAR, senão o módulo fica preso num vai-e-volta de um
+// frame só (gruda na parede, o ponteiro já está além do limite de saída,
+// solta, gruda de novo...). 250 < 350 dá uma faixa morta de 100mm.
+const PROJECT_SNAP_TO_WALL_MM = 250;
+
+// Em qual parede esta ilha deve encostar, se em alguma. Devolve
+// { wallIndex, xMm } (xMm = borda esquerda ao longo da parede) ou null.
+//
+// Critério: a traseira do móvel está a menos de PROJECT_SNAP_TO_WALL_MM do
+// plano da parede E o corpo dele cai dentro do trecho da parede. Testa TODAS
+// as paredes e fica com a mais próxima — num canto, as duas estão perto e a
+// escolha tem que ser a que ele está de fato encostando.
+function projectWallToSnapFloorSlot(slot, xMm, zMm) {
+  const larguraMm = Number(slot.width_mm || 0);
+  const fp = floorSlotFootprint(slot, xMm, zMm);
+  const meiaProfMm = fp.h / 2;
+  let melhor = null;
+  getProjectWallGeometry().forEach((w) => {
+    const dxM = xMm / 1000 - w.originX;
+    const dzM = zMm / 1000 - w.originZ;
+    const aoLongoMm = (dxM * w.alongDirX + dzM * w.alongDirZ) * 1000;
+    const paraDentroMm = (dxM * w.intoDirX + dzM * w.intoDirZ) * 1000;
+    const folgaMm = paraDentroMm - meiaProfMm;          // traseira até a parede
+    if (folgaMm > PROJECT_SNAP_TO_WALL_MM || folgaMm < -meiaProfMm) return;
+    const larguraDaParedeMm = getProjectWallWidthMm(w.wallIndex);
+    const esquerdaMm = aoLongoMm - larguraMm / 2;
+    // Precisa caber e estar dentro do trecho — encostar "no ar", passando da
+    // ponta da parede, não é encostar.
+    if (esquerdaMm < -larguraMm / 2 || esquerdaMm > larguraDaParedeMm - larguraMm / 2) return;
+    if (!melhor || folgaMm < melhor.folgaMm) {
+      melhor = {
+        wallIndex: w.wallIndex,
+        xMm: clamp(esquerdaMm, 0, Math.max(0, larguraDaParedeMm - larguraMm)),
+        folgaMm
+      };
+    }
+  });
+  return melhor;
+}
+function projectPointerPulledIntoRoom(state, ev) {
+  const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === state.liveWallIndex);
+  if (!wallGeo) return false;
+  const fp = projectFloorPointMm(ev.clientX, ev.clientY);
+  if (!fp) return false;
+  // Distância do ponto do piso até o PLANO da parede, medida no sentido de
+  // dentro do ambiente. Negativa = atrás da parede.
+  const dentroMm = ((fp.xMm / 1000 - wallGeo.originX) * wallGeo.intoDirX
+    + (fp.zMm / 1000 - wallGeo.originZ) * wallGeo.intoDirZ) * 1000;
+  return dentroMm >= PROJECT_PULL_TO_FLOOR_MM;
+}
+
+// PROFUNDIDADE DO PISO desenhado — espelha ROOM_MIN_FLOOR_DEPTH_M (1,8m) de
+// viewer3d_composition.js, que cresce junto com o móvel mais fundo do
+// ambiente. Usada só pra travar a ilha dentro do piso; se as duas contas
+// divergirem um pouco, o efeito é a ilha parar um dedo antes da borda — nunca
+// depois, que é o que não pode acontecer.
+const PROJECT_FLOOR_MIN_DEPTH_MM = 1800;
+function projectFloorDepthMm() {
+  const maisFundo = projectSlots.reduce((mx, s) => Math.max(mx, Number(s.depth_mm || 0)), 0);
+  return Math.max(PROJECT_FLOOR_MIN_DEPTH_MM, maisFundo + 400);
+}
+
 // Mantém uma ilha dentro do retângulo do ambiente (entre as paredes laterais,
 // da parede de fundo pra frente). Sem isso, soltar perto da borda do piso
 // deixaria o móvel meio atravessado na parede.
+//
+// 2026-08-13 ("no chao nunca deixe ele sair do quadrado do chao"): ganhou o
+// limite da FRENTE (antes só travava contra a parede de fundo, então dava pra
+// arrastar o móvel pra fora do piso pela frente) e passou a ser chamada
+// durante o ARRASTE, não só ao soltar — arrastar pra fora e ver o móvel
+// voltando sozinho no fim é pior que ele parar na borda.
 function clampFloorSlotIntoRoom(slot) {
-  const roles = getProjectWallRoles();
-  const mainWidthMm = getProjectWallWidthMm(Math.max(roles.indexOf('main'), 0));
+  const p = clampFloorPointIntoRoom(slot, Number(slot.floor_x_mm || 0), Number(slot.floor_z_mm || 0));
+  slot.floor_x_mm = p.x;
+  slot.floor_z_mm = p.z;
+}
+function clampFloorPointIntoRoom(slot, xMm, zMm) {
   const fp = floorSlotFootprint(slot);
   const halfW = fp.w / 2;
   const halfD = fp.h / 2;
-  slot.floor_x_mm = clamp(Number(slot.floor_x_mm || 0), -mainWidthMm / 2 + halfW, mainWidthMm / 2 - halfW);
-  slot.floor_z_mm = Math.max(Number(slot.floor_z_mm || 0), halfD);
+
+  // O RETÂNGULO VEM DO PISO DESENHADO (2026-08-13, "ele ta com uma limitacao
+  // bem estranha e nao vem ate a ponta do piso. que ta livre"). A 1ª versão
+  // estimava a área aqui — largura da parede principal e uma profundidade
+  // chutada — e a estimativa era MENOR que o piso de verdade, então o móvel
+  // parava no meio do nada. Agora quem responde é quem desenha
+  // (ViewerProjectEdit.getFloorRectM); a estimativa antiga ficou só de reserva
+  // pro caso do 3D ainda não ter sido construído.
+  const rect = (ViewerProjectEdit && ViewerProjectEdit.getFloorRectM)
+    ? ViewerProjectEdit.getFloorRectM() : null;
+  let xMin, xMax, zMin, zMax;
+  if (rect) {
+    xMin = rect.x0 * 1000 + halfW; xMax = rect.x1 * 1000 - halfW;
+    zMin = rect.z0 * 1000 + halfD; zMax = rect.z1 * 1000 - halfD;
+  } else {
+    const roles = getProjectWallRoles();
+    const mainWidthMm = getProjectWallWidthMm(Math.max(roles.indexOf('main'), 0));
+    xMin = -mainWidthMm / 2 + halfW; xMax = mainWidthMm / 2 - halfW;
+    zMin = halfD; zMax = Math.max(projectFloorDepthMm() - halfD, halfD);
+  }
+  const meioX = (xMin + xMax) / 2;
+  const meioZ = (zMin + zMax) / 2;
+  return {
+    // Móvel MAIOR que o ambiente inverte os limites (mín > máx) e o clamp
+    // comum jogaria ele pro canto. Nesse caso o certo é o meio.
+    x: (xMin > xMax) ? meioX : clamp(Number(xMm || 0), xMin, xMax),
+    z: (zMin > zMax) ? meioZ : clamp(Number(zMm || 0), zMin, zMax)
+  };
 }
 
 // ---------- Modal "Buscar módulo" (botão da biblioteca) ----------
@@ -11852,6 +11995,41 @@ const PROJECT_SNAP_PX = 10;                    // raio do "imã" em px de TELA �
 // numa cena 3D em perspectiva é naturalmente menos preciso que um clique
 // direto num canvas DOM plano — um raio pequeno quase nunca disparava.
 const PROJECT_SNAP_3D_MM = 30;
+
+// ÍMÃ DE CHÃO (2026-08-12) — "não está indo pro chão. preciso que ele se
+// conecte ao chão quando eu puxar arrastando ele".
+// O ímã de módulo (snapProjectSlotAxis) só encosta em OUTRO módulo: numa
+// parede vazia, ou depois de atravessar a esquina pra uma parede sem
+// vizinhos, não havia nada pra grudar e o módulo parava a 20/30mm do piso —
+// perto o bastante pra parecer encostado na tela e errado de verdade no
+// projeto. O chão passa a ser um alvo de ímã como qualquer outro.
+//
+// Raio generoso de propósito (mais que os 30mm entre módulos): "no chão" é o
+// caso mais comum de todos, e módulo suspenso de verdade (aéreo) fica bem
+// acima disso — quem quer 60mm de vão usa o campo de altura, não o arraste.
+// 2026-08-12, 2ª rodada: 80mm era pouco pra valer na prática ("nao ta indo pro
+// chao o movel"). 250mm é maior que qualquer rodapé e menor que qualquer
+// módulo aéreo de verdade — na altura em que se arrasta um móvel de chão, ele
+// desce; um armário suspenso a 1,4m não sente nada.
+const PROJECT_FLOOR_SNAP_MM = 250;
+function snapProjectSlotToFloor(yMm) {
+  return (yMm > 0 && yMm <= PROJECT_FLOOR_SNAP_MM) ? 0 : yMm;
+}
+
+// Tem outro módulo bem embaixo deste, na faixa de parede que ele ocupa? Só
+// serve pra decidir se o ímã de chão pode agir depois da colisão: com um
+// vizinho embaixo, "encostar no chão" atravessaria ele.
+function projectSlotHasNeighborBelow(slot, xMm, yMm) {
+  const w = Number(slot.width_mm || 0);
+  const x0 = Number(xMm || 0), x1 = x0 + w;
+  return projectSlotsSameWallExcluding(slot).some(function (o) {
+    const ox0 = Number(o.x_mm || 0), ox1 = ox0 + Number(o.width_mm || 0);
+    const sobrepoeX = ox1 > x0 + 1 && ox0 < x1 - 1;   // 1mm de folga: encostar de lado não conta
+    if (!sobrepoeX) return false;
+    const topoDoVizinho = Number(o.floor_height_mm || 0) + Number(o.height_mm || 0);
+    return topoDoVizinho > 1 && topoDoVizinho <= Number(yMm || 0) + 1;
+  });
+}
 const PROJECT_CLICK_MOVE_THRESHOLD_PX = 4;      // abaixo disso, pointerup vira clique (seleciona) em vez de arraste
 // Toque (iPad) — ver attachProjectSlotDrag. 4px de tolerância serve pra
 // mouse, mas um dedo nunca fica parado nesse raio: o resultado no tablet era
@@ -12479,6 +12657,7 @@ function attachProjectSlotDrag(div, slot) {
     let y = clamp(projectDragState.startYMm + dyMm, 0, maxY);
     x = clamp(snapProjectSlotAxis(x, Number(slot.width_mm || 0), true, others), 0, maxX);
     y = clamp(snapProjectSlotAxis(y, Number(slot.height_mm || 0), false, others), 0, maxY);
+    y = snapProjectSlotToFloor(y);   // mesmo ímã de chão da vista 3D
 
     div.style.left = Math.round(x * projectPxPerMm) + 'px';
     div.style.bottom = Math.round(y * projectPxPerMm) + 'px';
@@ -12576,6 +12755,10 @@ function selectProjectSlot(slotId) {
   document.querySelectorAll('#po-proj-canvas .po-proj-slot').forEach((el) => {
     el.classList.toggle('selected', el.dataset.slotId === slotId);
   });
+  // Contorno vermelho da Vista de Canto 3D acompanha a SELEÇÃO (ver
+  // refreshProject3DHighlight) — inclusive quando a seleção veio da vista 2D
+  // ou da lista, não só de um clique dentro da cena 3D.
+  if (typeof refreshProject3DHighlight === 'function') refreshProject3DHighlight();
   renderProjectConfigPanel();
   // Setas 3D de redimensionamento (toque) acompanham a seleção — ver
   // refreshProject3DResizeArrows (não faz nada no mouse nem sem 3D).
@@ -12585,6 +12768,43 @@ function selectProjectSlot(slotId) {
   // 🗑 da barra flutuante só habilita com módulo selecionado.
   if (typeof refreshProjectCanvasHud === 'function') refreshProjectCanvasHud();
 }
+
+// SOLTAR O MÓDULO — o contrário exato de selectProjectSlot.
+//
+// Virou função porque agora são QUATRO caminhos, e antes cada um repetia (ou
+// esquecia) parte da limpeza. O relato que forçou isso (Matt, 2026-08-13):
+// "em qualquer lugar que eu clique na parede ou no piso ele nao desclica o
+// modulo... preciso dar zoom out, girar camera e ir clicando ate desclicar.
+// por isso digo que esta incontrolavel."
+//
+// Os quatro caminhos: clique no vazio (pointerdown), clique que não acertou
+// módulo nenhum conferido de novo no pointerup (rede de segurança pros gestos
+// que abortam antes daquele ramo — a SETA é o caso comum, ela fica FORA do
+// contorno do módulo, bem onde a pessoa clica pra "soltar"), a tecla Esc, e o
+// clique na parede/piso da vista 2D.
+function deselectProjectSlot() {
+  if (selectedProjectSlotId == null) return;
+  selectedProjectSlotId = null;
+  if (typeof refreshProject3DHighlight === 'function') refreshProject3DHighlight();
+  document.querySelectorAll('#po-proj-canvas .po-proj-slot.selected')
+    .forEach((el) => el.classList.remove('selected'));
+  renderProjectConfigPanel();
+  if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
+  if (typeof refreshProjectSlotActions === 'function') refreshProjectSlotActions();
+  if (typeof refreshProjectCanvasHud === 'function') refreshProjectCanvasHud();
+}
+
+// Esc SEMPRE solta o módulo. É a saída que não depende de acertar pixel
+// nenhum — com a câmera de perto, o móvel ocupa a tela toda e "clicar no
+// vazio" pode simplesmente não existir na viewport.
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  if (selectedProjectSlotId == null) return;
+  // Janela aberta por cima: o Esc é dela (fechar a janela), não da seleção.
+  const abertas = ['po-proj-builder-modal', 'po-proj-props-modal', 'po-proj-ai-modal'];
+  if (abertas.some((id) => { const el = document.getElementById(id); return el && el.classList.contains('open'); })) return;
+  deselectProjectSlot();
+});
 
 // ==========================================================================
 // DUPLICAR MÓDULO — 2026-08-08 (3ª rodada)
@@ -12655,11 +12875,22 @@ function removeProjectSlot(slotId) {
 // Composição). Filtrar de novo aqui é idempotente nos dois casos (peça já
 // filtrada sempre passa no teste de novo), então funciona pros dois sem
 // precisar saber qual caminho o slot veio.
+// slot.layoutPieces = o que o CONSTRUTOR DE ARMÁRIO gerou (2026-08-13). São
+// linhas idênticas às do catálogo (LayoutEngine.toPieceRows: position_role
+// 'free' + offset absoluto), então daqui pra frente ninguém precisa saber que
+// elas vieram de uma árvore: preço, 3D, elevação 2D e plano de corte tratam
+// como peça normal. Este concat é o ÚNICO ponto de junção — é de propósito.
 function projectSlotEffectivePieces(slot) {
-  return slot.pieces.filter((p) => !p.client_optional || slot.selectedOptionalIds.includes(p.id));
+  return slot.pieces
+    .filter((p) => !p.client_optional || slot.selectedOptionalIds.includes(p.id))
+    .concat(slot.layoutPieces || []);
 }
 
 function recomputeProjectSlotPricing(slot) {
+  // As peças da árvore são geometria ABSOLUTA em mm: mudou a medida do módulo,
+  // elas têm que nascer de novo. Este é o funil por onde toda mudança de
+  // dimensão passa, então é aqui que o recálculo mora.
+  rebuildProjectSlotLayoutPieces(slot);
   const effectivePieces = projectSlotEffectivePieces(slot);
   slot.result = slot.module.is_decoration
     ? { total: 0, breakdown: [] }
@@ -13320,10 +13551,10 @@ function buildProjectWallPaneDom(paneEl, wallIndex, wallWidthMm, ceilingMm, unit
       paneEl.dataset.legnoWallClickAttached = '1';
       paneEl.addEventListener('click', (ev) => {
         if (ev.target.closest('.po-proj-slot, .po-proj-wall-resize-handle')) return;
-        if (selectedProjectSlotId != null) {
-          selectedProjectSlotId = null;
-          renderProjectConfigPanel();
-        }
+        // Clicar na parede desseleciona nas DUAS vistas (2026-08-12). Passou a
+        // usar deselectProjectSlot pra não esquecer as setas/botões flutuantes
+        // do 3D, que esta cópia deixava acesos.
+        deselectProjectSlot();
       });
     }
   }
@@ -13592,6 +13823,12 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   }
 
   ViewerProjectEdit.init('po-proj-canvas-3d-edit');
+  // Ponte pro console do navegador. ViewerProjectEdit é `const` de módulo, e
+  // const NÃO vira propriedade de window (ver a mesma armadilha em
+  // supabaseClient) — sem esta linha não há como diagnosticar clique/câmera
+  // pelo F12, que é justamente o que precisa quando o relato é "o clique pega
+  // fora do móvel". Só leitura; nada no código usa este nome.
+  if (typeof window !== 'undefined') window.__legnoViewerEdit = ViewerProjectEdit;
   ensurePhotoFrameOverlay('po-proj-canvas-3d-edit');
   // OrbitControls LIGADO (pedido do usuário 2026-07-26: "ainda sim nao ficou
   // facil de projetar... pode testar uma camera que mexe? zoom e rotacao" —
@@ -13643,17 +13880,13 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
     floorAssemblies: buildProjectAssemblies(projectFloorSlots())
   });
 
-  // Readota o contorno de destaque (ver project3DHoveredSlotId abaixo) —
+  // Readota o contorno de destaque (ver refreshProject3DHighlight) —
   // renderFreeformWalls troca TODOS os Groups por instâncias novas, então o
   // Group antigo que o contorno rastreava não existe mais na cena (ficaria
   // "preso"/desatualizado sem isto). Roda depois de QUALQUER render desta
   // vista, não importa a causa (arrastar, esticar, trocar de parede, add/
   // remover módulo) — mantém o destaque em sincronia sempre.
-  if (project3DHoveredSlotId) {
-    const g = ViewerProjectEdit.findGroupBySlotId(project3DHoveredSlotId);
-    ViewerProjectEdit.setHoverHighlight(g || null);
-    if (!g) project3DHoveredSlotId = null;
-  }
+  refreshProject3DHighlight();
 
   attachProject3DEditDrag();
   // Setas de redimensionamento (toque) — a cena acabou de ser reconstruída,
@@ -13667,15 +13900,34 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
 // arraste está rolando. Um só de cada vez (não precisa de Map por
 // pointerId: esta cena não tem multi-touch/dedos múltiplos previsto).
 let projectDrag3DState = null;
+// Encerra o arraste em andamento — apontada pro endDrag3D de dentro de
+// attachProject3DEditDrag (ver lá). Existe porque o pointermove precisa
+// conseguir encerrar o gesto quando descobre que o botão já foi solto, e ele
+// está no mesmo escopo, mas a rede de segurança de window/blur não.
+let finishProject3DDrag = function () { projectDrag3DState = null; };
 
-// Qual módulo está com o contorno vermelho de destaque agora (hover OU
-// sendo arrastado/esticado) — pedido do usuário 2026-07-26: "quero que
-// quando o mouse passe em cima do modulo ele fique contorno vermelho, pra
-// saber qual modulo sera editado ou movimentado". Variável própria (não
-// reaproveita selectedProjectSlotId, que é sobre CLIQUE/seleção — hover é
-// TRANSIENTE, sem precisar clicar) pra sobreviver a reconstruções da cena
-// (ver readoção acima em renderProjectCanvasFrontCorner).
-let project3DHoveredSlotId = null;
+// CONTORNO VERMELHO = MÓDULO SELECIONADO (2026-08-12)
+// ==========================================================================
+// Era hover: o contorno seguia o mouse e sumia quando o ponteiro saía de
+// cima. Reclamação do Matt: "quando eu clicar no modulo e ele ficar vermelho,
+// quando o mouse sair de cima dele ele precisa permanecer clicado e nao pode
+// selecionar outros modulos sem clique... isso perde totalmente meu
+// controle". Agora o contorno é o espelho de selectedProjectSlotId — só muda
+// com CLIQUE (num outro módulo, ou na parede/vazio, que desseleciona).
+//
+// Passar o mouse por cima continua trocando o CURSOR (grab/ew-resize/
+// ns-resize, ver o pointermove), que é o aviso de "o que um clique aqui
+// faria" sem mexer em seleção nenhuma.
+//
+// Precisa ser chamado depois de todo re-render da cena: renderFreeformWalls
+// cria Groups novos e o contorno rastreia o Group, não o id.
+function refreshProject3DHighlight() {
+  if (typeof ViewerProjectEdit === 'undefined' || !ViewerProjectEdit.setHoverHighlight) return;
+  const g = (selectedProjectSlotId != null && ViewerProjectEdit.findGroupBySlotId)
+    ? ViewerProjectEdit.findGroupBySlotId(selectedProjectSlotId)
+    : null;
+  ViewerProjectEdit.setHoverHighlight(g || null);
+}
 
 // Chave da última vez que a câmera da Vista de Canto 3D foi reenquadrada
 // automaticamente (forma da parede + parede ativa) — ver keepCamera em
@@ -13707,7 +13959,12 @@ function projectSlotResizableAxes(slot) {
       : Number(slot.module.width_min_mm) !== Number(slot.module.width_max_mm),
     height: slot.module.height_locked
       ? heightPresetsMm.length > 1
-      : Number(slot.module.height_min_mm) !== Number(slot.module.height_max_mm)
+      : Number(slot.module.height_min_mm) !== Number(slot.module.height_max_mm),
+    // PROFUNDIDADE (2026-08-13, "nao tem seta pra profundidade"). Não tem
+    // trava própria no cadastro (não existe depth_locked), então o critério é
+    // só "o mín é diferente do máx" — módulo de profundidade única não ganha
+    // seta, igual às outras duas.
+    depth: Number(slot.module.depth_min_mm) !== Number(slot.module.depth_max_mm)
   };
 }
 
@@ -13785,7 +14042,13 @@ function refreshProject3DResizeArrows() {
     if (axes.height) {
       spec.push({ axis: 'height-top', dir: { x: 0, y: 1, z: 0 }, position: { x: cx, y: baseY + heightM + PROJECT_ARROW_GAP_M, z: cz } });
     }
-    ViewerProjectEdit.setResizeArrows(spec);
+    if (axes.depth) {
+      // Eixo local +Z da ilha (perpendicular ao +X já calculado acima).
+      const az = { x: Math.sin(rot), y: 0, z: Math.cos(rot) };
+      const offD = Number(slot.depth_mm || 0) / 2000 + PROJECT_ARROW_GAP_M;
+      spec.push({ axis: 'depth-front', dir: az, position: { x: cx + az.x * offD, y: midY, z: cz + az.z * offD } });
+    }
+    ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
     return;
   }
 
@@ -13821,7 +14084,55 @@ function refreshProject3DResizeArrows() {
       position: worldAt(x0M + widthM / 2, baseY + heightM + PROJECT_ARROW_GAP_M)
     });
   }
-  ViewerProjectEdit.setResizeArrows(spec);
+  if (axes.depth) {
+    // Aponta pra DENTRO do ambiente (intoDir da parede), saindo da face da
+    // frente do módulo — é o sentido em que a profundidade cresce.
+    const frenteM = Number(slot.depth_mm || 0) / 1000 + PROJECT_ARROW_GAP_M;
+    spec.push({
+      axis: 'depth-front',
+      dir: { x: wallGeo.intoDirX, y: 0, z: wallGeo.intoDirZ },
+      position: {
+        x: wallGeo.originX + wallGeo.alongDirX * (x0M + widthM / 2) + wallGeo.intoDirX * frenteM,
+        y: midY,
+        z: wallGeo.originZ + wallGeo.alongDirZ * (x0M + widthM / 2) + wallGeo.intoDirZ * frenteM
+      }
+    });
+  }
+  // Alvo generoso só no dedo — no mouse, área grande vira imprecisão.
+  ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
+}
+
+// Enquadra UM módulo de frente na Vista de Canto 3D (duplo clique nele,
+// 2026-08-13). A direção de onde a câmera olha:
+//   * módulo de parede — de frente pra parede dele (o contrário do intoDir,
+//     que aponta pra dentro do ambiente), com uma leve inclinação de cima pra
+//     não ficar um desenho técnico chapado;
+//   * ilha — mantém a direção atual da câmera, só aproxima e centraliza (uma
+//     ilha não tem "frente" definida pelo ambiente; a frente dela depende do
+//     giro que o próprio cliente deu).
+function frameProjectSlotFront(slot) {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.frameGroupFront) return;
+  const g = ViewerProjectEdit.findGroupBySlotId(slot.id);
+  if (!g) return;
+  let dir = null;
+  if (!isFloorSlot(slot)) {
+    const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index || 0));
+    if (wallGeo) dir = { x: wallGeo.intoDirX, y: 0.16, z: wallGeo.intoDirZ };
+  }
+  if (!dir) {
+    const cam = ViewerProjectEdit.getCameraState && ViewerProjectEdit.getCameraState();
+    if (cam && cam.position && cam.target) {
+      dir = {
+        x: cam.position.x - cam.target.x,
+        y: cam.position.y - cam.target.y,
+        z: cam.position.z - cam.target.z
+      };
+    } else {
+      dir = { x: 0, y: 0.3, z: 1 };
+    }
+  }
+  ViewerProjectEdit.frameGroupFront(g, dir);
+  refreshProject3DResizeArrows();
 }
 
 // ==========================================================================
@@ -14012,6 +14323,1126 @@ if (projSlotRemoveBtn) {
   });
 }
 
+// ==========================================================================
+// CUSTOMIZAR — abre o CRIADOR DE ARMÁRIO com este módulo (2026-08-12)
+// ==========================================================================
+// "quero um botao a mais de customizar que leve pra tela de criador de
+// armario. ja com modulo aberto pra ser inserido dos internos."
+//
+// A tela é a do ERP (erp/index.html#/construtor?m=<uuid>, rota que já aceita o
+// módulo na query — ver app.js do ERP), carregada num iframe DENTRO do portal,
+// como o Matt pediu ("dentro do portal, na mesma tela"). Não é uma segunda
+// implementação do construtor: manter duas cópias da regra de vãos/casco/3D é
+// exatamente o tipo de divergência que já custou caro aqui.
+//
+// DOIS AVISOS que valem pra quem for mexer nisso:
+//  1. O construtor edita o MÓDULO DO CATÁLOGO, não esta instância do projeto.
+//     Salvar lá muda o módulo pra todo projeto/pedido que o use.
+//  2. O ERP tem login próprio; sem sessão lá, o iframe mostra a tela de login
+//     dele (é o mesmo Supabase, então normalmente já está logado).
+// ==========================================================================
+// CRIADOR DE INTERNOS — TELA DO PORTAL (2026-08-13)
+// ==========================================================================
+// Nasceu embutindo a tela do ERP num iframe e foi cortado na hora:
+//   "NAOOOO... nao e pra abrir um portao e mandar pro ERP. e pra ter uma tela
+//    como essa mas com a parte de insercao do construtor. escolhe o vao
+//    escolhe os itens e insere como achar melhor. mas nao tem absolutamente
+//    nada haver com o ERP... deve ser bem mais facil e intuitivo de trabalhar,
+//    sem texto, pouco preenchimento e bastante clique e arraste."
+//
+// Então: tela PRÓPRIA, nenhuma linha do ERP carregada, nenhum campo de texto,
+// nenhuma árvore. Dois painéis — o vão desenhado e as peças que cabem nele —
+// e a interação é clicar ou arrastar.
+//
+// ==========================================================================
+// 2ª PASSADA (2026-08-13) — O MESMO MOTOR DO ERP
+// ==========================================================================
+// A 1ª versão tinha VÃO ÚNICO e um formato de dados próprio (slot.internals):
+// inserir uma prateleira não criava espaço novo, só empilhava um retângulo
+// decorativo. O pedido foi direto:
+//
+//   "quero a mesma coisa que o construtor de armário do ERP. clicar no vão,
+//    escolher o que quero inserir"
+//
+// Então esta tela passou a rodar o MESMO MOTOR — js/layout-engine.js — e a
+// ler as MESMAS tabelas da migration 085 (accessory_types /
+// module_accessory_options / module_layout_nodes) que a tela do ERP.
+//
+// ISSO NÃO É "abrir o ERP no portal" (aquilo foi recusado, ver acima):
+// nenhum arquivo de erp/ é carregado aqui. O que é compartilhado é o
+// LayoutEngine, que é PURO (aritmética, sem DOM e sem banco) — a mesma peça
+// nasce no mesmo milímetro nas duas telas porque a conta é literalmente a
+// mesma função, e não duas cópias que vão divergir no terceiro ajuste.
+//
+// A árvore montada pelo cliente fica em slot.layout (spec §4.5:
+// user_projects.slots já é jsonb — nenhuma migration).
+//
+// O QUE FALTA (próxima etapa): a árvore virar peça de verdade no 3D, no preço
+// e na furação. A ponte já existe e é uma linha — LayoutEngine.toPieceRows(
+// projectBuilderBuilt.pieces, projectBuilderCat) devolve linhas no formato de
+// module_components. Ver docs/internos-como-modulos-no-projeto.md.
+let projectBuilderSlotId = null;
+let projectBuilderZone = null;      // { x, y, z, w, h, d } em mm, no módulo
+let projectBuilderCasco = [];       // caixas do casco — contexto cinza, não editável
+let projectBuilderRoot = null;      // árvore de vãos (nó do LayoutEngine)
+let projectBuilderCat = {};         // catálogo de agregados, keyed por accessory_type_id
+let projectBuilderWhite = {};       // module_accessory_options, keyed pelo mesmo id
+let projectBuilderBuilt = null;     // { pieces, voids, zona } — saída do motor
+let projectBuilderSelId = null;     // nó (vão) selecionado
+let projectBuilderUndo = [];        // pilha de árvores serializadas
+let projectBuilderLoadError = null; // erro do banco, mostrado no lugar da lista
+const PROJECT_BUILDER_ESPESSURA = 18;
+const PROJECT_BUILDER_FOLGA_DOB = 2;
+const PROJECT_BUILDER_MIN_VAO = 40;
+const PROJECT_BUILDER_PASSO = 5;    // passo do arrasto de divisória, em mm
+const PROJECT_BUILDER_UNDO_MAX = 30;
+
+async function openProjectModuleBuilder(slotId) {
+  const slot = projectSlots.find((s) => s.id === slotId);
+  if (!slot || !slot.module) return;
+  const modal = document.getElementById('po-proj-builder-modal');
+  if (!modal) return;
+  if (typeof LayoutEngine === 'undefined') {
+    alert(I18n.t('project.builder_engine_missing'));
+    return;
+  }
+
+  projectBuilderSlotId = slotId;
+  projectBuilderZone = computeProjectSlotInnerZone(slot);
+  projectBuilderCasco = computeProjectSlotCascoBoxes(slot);
+  projectBuilderCat = {};
+  projectBuilderWhite = {};
+  projectBuilderUndo = [];
+  projectBuilderLoadError = null;
+  projectBuilderRoot = LayoutEngine.newVoid();
+  projectBuilderSelId = projectBuilderRoot.id;
+  projectBuilderBuilt = null;
+
+  const titulo = document.getElementById('po-proj-builder-title');
+  if (titulo) titulo.textContent = slot.module.name || '';
+  modal.classList.add('open');
+  // Desenha o casco vazio ANTES da rede: a janela abre cheia, não em branco.
+  rebuildProjectBuilder();
+
+  let erro = null;
+  let carregado = null;
+  try {
+    carregado = await loadProjectBuilderCatalog(slot.module.id);
+  } catch (e) {
+    erro = e;
+  }
+  // A janela pode ter sido fechada (ou trocada de módulo) durante o await.
+  if (projectBuilderSlotId !== slotId) return;
+  if (carregado) {
+    projectBuilderCat = carregado.cat;
+    projectBuilderWhite = carregado.white;
+    // Layout que o CLIENTE já montou ganha do layout de fábrica; sem nenhum
+    // dos dois, começa num vão só (a zona interna inteira).
+    projectBuilderRoot = slot.layout
+      ? LayoutEngine.deserialize(slot.layout)
+      : (carregado.root || LayoutEngine.newVoid());
+  }
+  projectBuilderLoadError = erro;
+  rebuildProjectBuilder(true);
+}
+
+// Roda o motor e redesenha. É o único caminho: toda alteração da árvore
+// termina aqui, e nada desenha a partir da árvore direto (o motor é quem sabe
+// onde cada vão ficou depois do rateio).
+function rebuildProjectBuilder(reselecionar) {
+  if (!projectBuilderRoot || !projectBuilderZone) return;
+  try {
+    projectBuilderBuilt = LayoutEngine.build(projectBuilderRoot, projectBuilderZone, {
+      catalogo: projectBuilderCat,
+      espessura: PROJECT_BUILDER_ESPESSURA,
+      folgaDobradica: PROJECT_BUILDER_FOLGA_DOB
+    });
+  } catch (e) {
+    projectBuilderBuilt = { pieces: [], voids: [], zona: projectBuilderZone };
+  }
+  const vaos = projectBuilderBuilt.voids || [];
+  // Seleção sempre num vão que EXISTE: inserir uma prateleira apaga o vão
+  // selecionado e cria dois no lugar dele.
+  if (reselecionar || !vaos.some((v) => v.nodeId === projectBuilderSelId)) {
+    projectBuilderSelId = vaos.length ? vaos[0].nodeId : projectBuilderRoot.id;
+  }
+  renderProjectBuilderStage();
+  renderProjectBuilderLibrary();
+}
+
+function pushProjectBuilderUndo() {
+  if (!projectBuilderRoot) return;
+  projectBuilderUndo.push(JSON.stringify(LayoutEngine.serialize(projectBuilderRoot)));
+  if (projectBuilderUndo.length > PROJECT_BUILDER_UNDO_MAX) projectBuilderUndo.shift();
+}
+function undoProjectBuilder() {
+  const anterior = projectBuilderUndo.pop();
+  if (!anterior) return;
+  projectBuilderRoot = LayoutEngine.deserialize(JSON.parse(anterior));
+  markProjectDirty();
+  rebuildProjectBuilder(true);
+}
+function resetProjectBuilder() {
+  if (!projectBuilderRoot) return;
+  pushProjectBuilderUndo();
+  projectBuilderRoot = LayoutEngine.newVoid();
+  markProjectDirty();
+  rebuildProjectBuilder(true);
+}
+
+// Zona interna do módulo, em mm, no referencial do próprio módulo (canto
+// chão-fundo-esquerda). Fórmula cadastrada (modules.inner_*) ganha; sem ela,
+// deduz do casco — a MESMA regra do construtor do ERP, reescrita aqui em 20
+// linhas em vez de importar o arquivo dele (a tela é independente de
+// propósito). Sem casco reconhecível, cai no módulo inteiro.
+function computeProjectSlotInnerZone(slot) {
+  const W = Number(slot.width_mm || 0), H = Number(slot.height_mm || 0), D = Number(slot.depth_mm || 0);
+  const m = slot.module || {};
+  const vars = { W, H, D };
+  const ev = (f, padrao) => {
+    if (!f) return padrao;
+    try {
+      const n = Pricing.evalFormula(String(f), vars);
+      return isFinite(n) ? n : padrao;
+    } catch (e) { return padrao; }
+  };
+
+  // Dedução pelo casco: a maior borda interna de cada lado.
+  //
+  // POR GEOMETRIA, NÃO POR position_role (2026-08-13). A versão anterior lia
+  // b.role ('left'/'right'/'top'/'bottom'/'back') e não achava nada nos
+  // módulos cujo casco está cadastrado como PEÇA LIVRE — que é a maioria aqui
+  // (a posição "Frente/porta" tem bugs de posicionamento no 3D e o admin
+  // passou a usar 'free' com offset pra quase tudo; ver o comentário em
+  // pricing.js/calculateLeafPiece). Sem achar lateral nenhuma, a zona interna
+  // virava o módulo inteiro — o "hoje está pegando todo" que o Matt viu.
+  //
+  // A regra agora é o que a peça É, não como foi cadastrada: peça FINA que
+  // ENCOSTA numa face do módulo e COBRE boa parte dela é casco daquele lado.
+  // Prateleira no meio não encosta em y=0 nem em y=H, então não conta; porta
+  // fica na frente (z alto) e é ignorada de propósito — porta não muda o vão
+  // (quem recua os internos é o consumo de profundidade do próprio motor).
+  let x0 = 0, y0 = 0, z0 = 0, x1 = W, y1 = H;
+  try {
+    const boxes = computeProjectSlotCascoBoxes(slot);
+    boxes.forEach((b) => {
+      const lado = classifyProjectCascoBox(b, W, H, D);
+      const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
+      if (lado === 'left' && ex > x0) x0 = ex;
+      else if (lado === 'right' && b.x0 < x1) x1 = b.x0;
+      else if (lado === 'bottom' && ey > y0) y0 = ey;
+      else if (lado === 'top' && b.y0 < y1) y1 = b.y0;
+      else if (lado === 'back' && ez > z0) z0 = ez;
+    });
+  } catch (e) { /* sem casco: usa o módulo inteiro */ }
+  const MIN_VAO = 40;
+  if (x1 - x0 < MIN_VAO) { x0 = 0; x1 = W; }
+  if (y1 - y0 < MIN_VAO) { y0 = 0; y1 = H; }
+
+  const dedu = { x: x0, y: y0, z: z0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), d: Math.max(1, D - z0) };
+  if (!(m.inner_w_formula || m.inner_h_formula || m.inner_d_formula)) return dedu;
+  return {
+    x: ev(m.inner_x_formula, dedu.x), y: ev(m.inner_y_formula, dedu.y), z: ev(m.inner_z_formula, dedu.z),
+    w: Math.max(1, ev(m.inner_w_formula, dedu.w)),
+    h: Math.max(1, ev(m.inner_h_formula, dedu.h)),
+    d: Math.max(1, ev(m.inner_d_formula, dedu.d))
+  };
+}
+
+// Que LADO do casco esta peça é — 'left' | 'right' | 'top' | 'bottom' |
+// 'back', ou null quando ela não é casco (prateleira solta, porta, gaveta,
+// pé, peça decorativa).
+//
+// O papel cadastrado ganha quando existe: é informação explícita da
+// engenharia e vale mais que qualquer palpite. Mas a maioria dos módulos daqui
+// tem o casco em PEÇA LIVRE ('free') com offset — a posição "Frente/porta"
+// tem bugs de posicionamento no 3D e o admin passou a evitar os papéis. Por
+// isso existe o segundo caminho, pela geometria: peça FINA que ENCOSTA numa
+// face e COBRE boa parte dela é o casco daquele lado.
+//
+// Os três números são folgados de propósito. Fino em 30% deixa passar lateral
+// grossa de 25mm num módulo de 300mm (8%) e barra uma divisória central
+// (nunca encosta na face). Cobrir 55% aceita lateral recortada (toe kick,
+// gola — ver a coluna `recortes`) sem aceitar um rodapé baixinho como "base".
+function classifyProjectCascoBox(b, W, H, D) {
+  const r = b.role;
+  if (r === 'left' || r === 'right' || r === 'top' || r === 'bottom' || r === 'back') return r;
+  // Papéis que NUNCA são casco, mesmo encostando: pé fica embaixo cobrindo a
+  // largura toda (viraria "base" e comeria o vão inteiro do módulo baixo), e
+  // frente/porta encosta em tudo.
+  if (r === 'leg' || r === 'front') return null;
+
+  const TOL = 2;        // "encosta" = até 2mm da face
+  const FINA = 0.30;    // "fina" = < 30% da medida do módulo naquele eixo
+  const COBRE = 0.55;   // "cobre a face" = > 55% nos outros dois eixos
+  const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
+
+  if (b.sx < W * FINA && b.sy > H * COBRE && b.sz > D * COBRE) {
+    if (b.x0 <= TOL) return 'left';
+    if (ex >= W - TOL) return 'right';
+  }
+  if (b.sy < H * FINA && b.sx > W * COBRE && b.sz > D * COBRE) {
+    if (b.y0 <= TOL) return 'bottom';
+    if (ey >= H - TOL) return 'top';
+  }
+  if (b.sz < D * FINA && b.sx > W * COBRE && b.sy > H * COBRE && b.z0 <= TOL) return 'back';
+  return null;
+}
+
+// Caixas do casco em mm (as peças que já existem no módulo: laterais, topo,
+// base, fundo). Servem pra duas coisas: deduzir a zona interna e desenhar o
+// contorno cinza atrás dos vãos — o cliente precisa ver o armário, não um
+// retângulo solto.
+//
+// AS PEÇAS PRECISAM ESTAR RESOLVIDAS. slot.pieces são as linhas do catálogo,
+// com FÓRMULA em texto ('W-36'); Drilling lê width_mm/offset_x_mm, que só
+// existem depois de resolvePiecesForViewer. Passar slot.pieces cru (como esta
+// tela fazia na 1ª versão) devolve caixas de tamanho zero, a dedução não acha
+// lateral nenhuma e a zona interna vira o módulo inteiro — que era exatamente
+// o retângulo vazio que aparecia na tela.
+function computeProjectSlotCascoBoxes(slot) {
+  const W = Number(slot.width_mm || 0), H = Number(slot.height_mm || 0), D = Number(slot.depth_mm || 0);
+  if (!W || !H || !D) return [];
+  if (typeof Drilling === 'undefined' || !Drilling._internals || !Drilling._internals.buildBoxes) return [];
+  try {
+    const parts = resolvePiecesForViewer(
+      slot.pieces, { width_mm: W, height_mm: H, depth_mm: D },
+      slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+    );
+    return Drilling._internals.buildBoxes(parts || [], W, H, D).boxes || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// ==========================================================================
+// CATÁLOGO — as mesmas 3 tabelas da migration 085 que o ERP lê
+// ==========================================================================
+// Devolve { cat, white, root }:
+//   cat   agregados no formato que o LayoutEngine entende (keyed pelo uuid do
+//         accessory_type, que é o que fica gravado no nó da árvore — assim
+//         serializar/desserializar não precisa de tradução nenhuma no meio);
+//   white module_accessory_options deste módulo (o vão mínimo por módulo);
+//   root  a árvore de FÁBRICA (module_layout_nodes), ou null.
+//
+// A WHITELIST É OPCIONAL AQUI, e essa é a única diferença de comportamento
+// pro ERP. Regra: módulo COM whitelist mostra só o que está permitido e
+// visível pro cliente (é pra isso que ela existe); módulo SEM NENHUMA linha
+// de whitelist mostra o catálogo inteiro, filtrado pelo vão mínimo. Sem essa
+// saída, a tela nasce vazia em todo módulo que ainda não passou pela
+// engenharia — que é o estado de hoje, e foi o que apareceu na tela: "nenhuma
+// peça liberada para este módulo". Cadastrar a whitelist volta a apertar o
+// filtro, sem mexer aqui.
+async function loadProjectBuilderCatalog(moduleId) {
+  const [tipos, opcoes, nos] = await Promise.all([
+    // select('*') de propósito (mesmo motivo do ERP): accessory_types ganhou
+    // coluna em migration posterior, e pedir coluna que não existe derruba a
+    // consulta inteira.
+    supabaseClient.from('accessory_types')
+      .select('*, components(*, labor_types(*), component_types(*))')
+      .order('group_name').order('sort_order').order('name'),
+    supabaseClient.from('module_accessory_options').select('*').eq('module_id', moduleId),
+    supabaseClient.from('module_layout_nodes').select('*').eq('module_id', moduleId).order('sort_order')
+  ]);
+  if (tipos.error) throw tipos.error;
+
+  const white = {};
+  (opcoes.data || []).forEach((o) => { white[o.accessory_type_id] = o; });
+
+  // A WHITELIST SÓ BLOQUEIA — ela não é mais uma lista de "os únicos
+  // permitidos" (2026-08-13). Antes, um módulo com QUALQUER linha em
+  // module_accessory_options passava a mostrar só o que estava marcado ali, e
+  // agregado novo (gaveta, cabide, prateleira inclinada cadastrados depois)
+  // simplesmente não aparecia em módulo nenhum já configurado — sem nada na
+  // tela explicando por quê.
+  //
+  // Regra nova: some quem tem linha DIZENDO que não pode (allowed=false ou
+  // client_visible=false). Sem linha = aparece, filtrado pelo vão mínimo do
+  // catálogo. Bloquear passa a ser um ato explícito da engenharia, que é o que
+  // o desmarcar na tela do ERP já significa.
+  const cat = {};
+  (tipos.data || []).forEach((a) => {
+    if (a.active === false) return;
+    const o = white[a.id];
+    if (o && (o.allowed === false || o.client_visible === false)) return;
+    cat[a.id] = projectBuilderAccessoryEntry(a);
+  });
+  return { cat, white, root: projectBuilderTreeFromRows(nos.data || []) };
+}
+
+// Linha de accessory_types -> entrada do catálogo do motor. Espelha
+// CONSTR.catalogoDoBanco (erp/js/data-construtor.js) — se um dia um campo
+// novo entrar lá, entra aqui também.
+function projectBuilderAccessoryEntry(a) {
+  const p = a.default_params || {};
+  // 'forma' escolhe o desenho do conteúdo no resolvedor e NÃO é campo do
+  // banco: cabide se identifica pelo shape_type (migration 062), painel
+  // ripado pelo passo das ripas nos parâmetros.
+  let forma = null;
+  if (a.shape_type === 'oval_rod') forma = 'barra';
+  else if (p.passo_mm != null) forma = 'ripas';
+  const esp = parseFloat(a.thickness_formula);
+  return {
+    id: a.id,
+    name: a.name,
+    // slug: é por ele que o ícone é escolhido (os 13 da migration 087).
+    slug: a.slug || null,
+    group: a.group_name || 'Outros',
+    icon: a.icon || null,
+    role: a.role,
+    axis: a.split_axis || null,
+    espessura: isFinite(esp) && esp > 0 ? esp : PROJECT_BUILDER_ESPESSURA,
+    params: p,
+    forma: forma,
+    folhas: Number(p.folhas) === 2 ? 2 : 1,
+    shape_type: a.shape_type || null,
+    color_role_id: a.color_role_id || null,
+    componente: a.components || null,
+    child_module_id: a.child_module_id || null,
+    minW: Number(a.min_void_w_mm) || 0,
+    minH: Number(a.min_void_h_mm) || 0,
+    minD: Number(a.min_void_d_mm) || 0
+  };
+}
+
+// Linhas de module_layout_nodes -> raiz montada. Espelha CONSTR.loadArvore +
+// CONSTR.nodeFromRow, inclusive o detalhe das FRENTES: a coluna é singular
+// (front_accessory_id) mas o motor aceita várias por vão, e a lista completa
+// mora em params.fronts.
+function projectBuilderTreeFromRows(rows) {
+  if (!rows.length) return null;
+  const porId = {};
+  rows.forEach((r) => {
+    const params = Object.assign({}, r.params || {});
+    const fronts = params.fronts;
+    const contentParams = params.content;
+    delete params.fronts;
+    delete params.content;
+    porId[r.id] = {
+      id: r.id,
+      children: [],
+      splitAxis: r.split_axis || null,
+      splitAcc: r.split_accessory_id || null,
+      sizeMode: r.size_mode === 'fixed' ? 'fixed' : 'fill',
+      sizeValue: r.size_value == null ? null : Number(r.size_value),
+      content: r.content_accessory_id ? { acc: r.content_accessory_id, params: contentParams || {} } : null,
+      fronts: Array.isArray(fronts) && fronts.length
+        ? fronts
+        : (r.front_accessory_id ? [{ acc: r.front_accessory_id, params: {}, from: null, to: null }] : []),
+      params: params,
+      // 'locked' é da engenharia: no portal ele não some da tela, mas o vão
+      // travado não aceita alteração (ver insertProjectBuilderItem).
+      locked: !!r.locked
+    };
+  });
+  let raiz = null;
+  rows.forEach((r) => {
+    if (!r.parent_id) { raiz = porId[r.id]; return; }
+    const pai = porId[r.parent_id];
+    if (pai) pai.children.push(porId[r.id]);
+  });
+  return raiz;
+}
+
+// ==========================================================================
+// ÍCONES — desenho, não caractere
+// ==========================================================================
+// Antes eram caracteres soltos (▤ ▥ ▦ ▯ ⌒): dependem da fonte do sistema,
+// desalinham entre si e não dizem o que a peça é ("preciso um ícone bonitinho
+// de cada peça" — Matt, 2026-08-13). São SVGs de 22×22 em currentColor, então
+// herdam a cor do card (inclusive no hover) sem CSS extra.
+//
+// A escolha é por SLUG (os 13 da migration 087), com dois fallbacks pra
+// aguentar agregado cadastrado à mão no ERP, que tem slug qualquer: palavra no
+// NOME e, por último, o encaixe (split em x/y, content, front). Nunca fica sem
+// ícone.
+const PROJECT_BUILDER_SVG = (() => {
+  const abre = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">';
+  const caixa = '<rect x="2.5" y="2.5" width="17" height="17" rx="1.5"/>';
+  const fecha = '</svg>';
+  const mk = (miolo, semCaixa) => abre + (semCaixa ? '' : caixa) + miolo + fecha;
+  return {
+    prateleira: mk('<line x1="2.5" y1="11" x2="19.5" y2="11"/>'),
+    prateleiras2: mk('<line x1="2.5" y1="8" x2="19.5" y2="8"/><line x1="2.5" y1="14" x2="19.5" y2="14"/>'),
+    inclinada: mk('<line x1="3.5" y1="14.5" x2="18.5" y2="8.5"/>'),
+    divisoria: mk('<line x1="11" y1="2.5" x2="11" y2="19.5"/>'),
+    base: mk('<line x1="2.5" y1="15.5" x2="19.5" y2="15.5"/><line x1="11" y1="2.5" x2="11" y2="15.5"/>'),
+    gaveta: mk('<rect x="5" y="8" width="12" height="6.5" rx="1"/><line x1="9" y1="11.2" x2="13" y2="11.2"/>'),
+    gaveteiro: mk('<line x1="2.5" y1="8" x2="19.5" y2="8"/><line x1="2.5" y1="13" x2="19.5" y2="13"/>'
+      + '<line x1="9.5" y1="5.2" x2="12.5" y2="5.2"/><line x1="9.5" y1="10.4" x2="12.5" y2="10.4"/><line x1="9.5" y1="16" x2="12.5" y2="16"/>'),
+    porta: mk('<line x1="15.5" y1="2.5" x2="15.5" y2="19.5"/><circle cx="13.4" cy="11" r="0.9" fill="currentColor" stroke="none"/>'),
+    porta_int: abre + '<rect x="2.5" y="2.5" width="17" height="17" rx="1.5" stroke-dasharray="3 2.4"/>'
+      + '<line x1="15.5" y1="4.5" x2="15.5" y2="17.5"/><circle cx="13.4" cy="11" r="0.9" fill="currentColor" stroke="none"/>' + fecha,
+    porta_dupla: mk('<line x1="11" y1="2.5" x2="11" y2="19.5"/>'
+      + '<circle cx="9" cy="11" r="0.9" fill="currentColor" stroke="none"/><circle cx="13" cy="11" r="0.9" fill="currentColor" stroke="none"/>'),
+    cabide: mk('<line x1="4.5" y1="8" x2="17.5" y2="8"/><path d="M11 8v3.2a2.2 2.2 0 0 0 2.2 2.2"/>'),
+    cesto: mk('<path d="M5.5 8h11l-1.6 8h-7.8z"/><line x1="8.4" y1="8" x2="9.4" y2="16"/><line x1="13.6" y1="8" x2="12.6" y2="16"/>'),
+    ripado: mk('<line x1="7" y1="3.5" x2="7" y2="18.5"/><line x1="11" y1="3.5" x2="11" y2="18.5"/><line x1="15" y1="3.5" x2="15" y2="18.5"/>'),
+    generico: mk('')
+  };
+})();
+
+function projectBuilderIcon(acc) {
+  const S = PROJECT_BUILDER_SVG;
+  const slug = String(acc.slug || '').toLowerCase();
+  const porSlug = {
+    div_vert: S.divisoria, prat_fixa: S.prateleira, prat_movel: S.prateleira,
+    prat_inclinada: S.inclinada, gaveta: S.gaveta, gaveta_afast: S.gaveta,
+    gaveteiro: S.gaveteiro, porta_ext: S.porta, porta_int: S.porta_int,
+    porta_dupla: S.porta_dupla, cabide: S.cabide, cesto: S.cesto, ripado: S.ripado
+  };
+  if (porSlug[slug]) return porSlug[slug];
+
+  const n = String(acc.name || '').toLowerCase();
+  if (/inclinad|sapateir/.test(n)) return S.inclinada;
+  if (/gaveteiro/.test(n)) return S.gaveteiro;
+  if (/gaveta/.test(n)) return S.gaveta;
+  if (/cabide|tubo|vara/.test(n)) return S.cabide;
+  if (/cesto|aramad/.test(n)) return S.cesto;
+  if (/ripad|ripa/.test(n)) return S.ripado;
+  if (/dupla|2 folhas|duas folhas/.test(n)) return S.porta_dupla;
+  if (/porta intern|embutid/.test(n)) return S.porta_int;
+  if (/porta/.test(n)) return S.porta;
+  if (/base/.test(n)) return S.base;
+  if (/divis|lateral/.test(n)) return S.divisoria;
+  if (/pratele/.test(n)) return S.prateleira;
+
+  if (acc.role === 'front') return S.porta;
+  if (acc.role === 'split') return acc.axis === 'x' ? S.divisoria : S.prateleira;
+  if (acc.role === 'content') return S.gaveta;
+  return S.generico;
+}
+
+// Quantidade só faz sentido onde ela vira VÃOS IGUAIS (divisão) ou peças
+// empilhadas (gaveteiro/cesto). Porta não tem quantidade — quem faz porta de
+// duas folhas é o agregado "Porta dupla" (default_params.folhas), não um
+// número aqui.
+const PROJECT_BUILDER_QTDS = [1, 2, 3, 4, 5];
+function projectBuilderAceitaQtd(acc) {
+  if (!acc) return false;
+  if (acc.role === 'split') return true;
+  return acc.role === 'content' && acc.params && acc.params.quantidade != null;
+}
+
+function projectBuilderSelNode() {
+  if (!projectBuilderRoot) return null;
+  return LayoutEngine.findNode(projectBuilderRoot, projectBuilderSelId) || projectBuilderRoot;
+}
+function projectBuilderSelBox() {
+  const n = projectBuilderSelNode();
+  return (n && (n._box || n._boxFull)) || projectBuilderZone || null;
+}
+
+// Biblioteca: só o que CABE no vão selecionado. É esse filtro que faz a tela
+// parecer inteligente (spec §4.2) — cabide não aparece em nicho de 200mm, e o
+// mínimo efetivo é o MAIOR entre o do catálogo e o do módulo. Quem decide é
+// LayoutEngine.cabeNoVao, a mesma função que o ERP usa.
+function renderProjectBuilderLibrary() {
+  const el = document.getElementById('po-proj-builder-lib');
+  if (!el) return;
+  const aviso = (txt) => { el.innerHTML = '<div class="po-proj-builder-group">' + txt + '</div>'; };
+
+  if (projectBuilderLoadError) {
+    aviso(I18n.t('project.builder_load_error', {
+      msg: (projectBuilderLoadError.message || String(projectBuilderLoadError))
+    }));
+    return;
+  }
+  const chaves = Object.keys(projectBuilderCat);
+  if (!chaves.length) { aviso(I18n.t('project.builder_empty_lib')); return; }
+
+  const box = projectBuilderSelBox();
+  const disponiveis = chaves.filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]));
+  if (!disponiveis.length) { aviso(I18n.t('project.builder_no_fit')); return; }
+
+  const porGrupo = {};
+  disponiveis.forEach((k) => {
+    const g = projectBuilderCat[k].group || 'Outros';
+    (porGrupo[g] = porGrupo[g] || []).push(k);
+  });
+  el.innerHTML = Object.keys(porGrupo).map((g) => (
+    '<div class="po-proj-builder-group">' + escapeHtmlCutlist(g) + '</div>'
+    + porGrupo[g].map((k) => {
+      const acc = projectBuilderCat[k];
+      // A fileira de números insere DIRETO naquela quantidade — um clique, não
+      // "escolher e depois inserir". Divisão em N sai sempre em vãos IGUAIS
+      // (todos os filhos nascem elásticos; ver LayoutEngine.applySplit +
+      // splitSizes, que rateia e joga o resto do arredondamento no último).
+      const chips = projectBuilderAceitaQtd(acc)
+        ? '<span class="po-proj-builder-qty">'
+          + PROJECT_BUILDER_QTDS.map((n) => (
+            '<button type="button" class="po-proj-qty-btn" data-acc-id="' + k + '" data-qtd="' + n + '">' + n + '</button>'
+          )).join('')
+          + '</span>'
+        : '';
+      return '<div class="po-proj-builder-item" draggable="true" data-acc-id="' + k + '">'
+        + '<div class="po-proj-builder-item-top">'
+        + '<span class="po-proj-builder-item-icon">' + projectBuilderIcon(acc) + '</span>'
+        + '<span class="po-proj-builder-item-name">' + escapeHtmlCutlist(acc.name || '') + '</span>'
+        + '</div>' + chips
+        + '</div>';
+    }).join('')
+  )).join('');
+
+  el.querySelectorAll('.po-proj-builder-item').forEach((card) => {
+    // CLICAR insere no vão selecionado — o caminho rápido, e o único que
+    // funciona no dedo sem arrastar. Sem número = 1.
+    card.addEventListener('click', () => insertProjectBuilderItem(card.dataset.accId, projectBuilderSelId, 1));
+    // ARRASTAR e soltar em cima de um vão — o caminho "como achar melhor".
+    card.addEventListener('dragstart', (ev) => {
+      card.classList.add('dragging');
+      ev.dataTransfer.setData('text/plain', card.dataset.accId);
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+  });
+  el.querySelectorAll('.po-proj-qty-btn').forEach((btn) => {
+    // stopPropagation: o botão fica DENTRO do card, e sem isso o clique também
+    // dispararia o insert de quantidade 1 do card.
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      insertProjectBuilderItem(btn.dataset.accId, projectBuilderSelId, Number(btn.dataset.qtd) || 1);
+    });
+    btn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  });
+}
+
+// ==========================================================================
+// DESENHO — vista frontal, SVG com viewBox em MILÍMETROS
+// ==========================================================================
+// viewBox em mm significa que toda coordenada do motor entra direto no
+// desenho, sem escala intermediária pra errar. O único ajuste é o eixo Y (no
+// motor cresce pra cima; no SVG, pra baixo) -> sy(). Mesma técnica da tela do
+// ERP, pelo mesmo motivo.
+//
+// ORDEM IMPORTA: em SVG quem é criado depois fica por cima, inclusive pro
+// clique. Casco (não clicável) -> vãos (alvo do clique) -> peças -> pegadores
+// de arrasto.
+const PROJECT_BUILDER_SVGNS = 'http://www.w3.org/2000/svg';
+function projBuilderSvgEl(tag, attrs, parent) {
+  const e = document.createElementNS(PROJECT_BUILDER_SVGNS, tag);
+  for (const k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function renderProjectBuilderStage() {
+  const stage = document.getElementById('po-proj-builder-stage');
+  const slot = projectSlots.find((s) => s.id === projectBuilderSlotId);
+  if (!stage || !slot) return;
+  const W = Number(slot.width_mm || 0) || 1;
+  const H = Number(slot.height_mm || 0) || 1;
+  stage.innerHTML = '';
+
+  // Margem PROPORCIONAL ao módulo, não fixa em mm: 60mm sobra num roupeiro de
+  // 2100 e some num gaveteiro de 400.
+  const K = Math.max(W, H);
+  const m = K * 0.05, sw = K / 520, fs = K / 40;
+  const svg = projBuilderSvgEl('svg', {
+    class: 'po-proj-builder-svg',
+    viewBox: (-m) + ' ' + (-m) + ' ' + (W + m * 2) + ' ' + (H + m * 2),
+    preserveAspectRatio: 'xMidYMid meet'
+  }, stage);
+  const sy = (y, h) => H - y - (h || 0);
+
+  // ---- casco: contexto, não é editável aqui
+  const gC = projBuilderSvgEl('g', { 'pointer-events': 'none' }, svg);
+  projectBuilderCasco.slice().sort((a, b) => a.z0 - b.z0).forEach((bx) => {
+    const fundo = bx.role === 'back';
+    projBuilderSvgEl('rect', {
+      x: bx.x0, y: sy(bx.y0, bx.sy),
+      width: Math.max(bx.sx, 1), height: Math.max(bx.sy, 1),
+      fill: fundo ? '#efe9de' : '#ded5c6',
+      stroke: fundo ? '#c9c0b0' : '#8d8375', 'stroke-width': fundo ? sw : sw * 1.4
+    }, gC);
+  });
+
+  const built = projectBuilderBuilt || { pieces: [], voids: [] };
+  const gV = projBuilderSvgEl('g', {}, svg);
+  const gP = projBuilderSvgEl('g', {}, svg);
+  const gH = projBuilderSvgEl('g', {}, svg);
+
+  // ---- vãos: o alvo do clique e do solte
+  (built.voids || []).forEach((v) => {
+    const sel = v.nodeId === projectBuilderSelId;
+    const r = projBuilderSvgEl('rect', {
+      x: v.box.x, y: sy(v.box.y, v.box.h), width: v.box.w, height: v.box.h,
+      class: 'po-proj-void' + (sel ? ' selected' : '')
+    }, gV);
+    r.dataset.nodeId = v.nodeId;
+  });
+
+  // ---- peças geradas pela árvore
+  (built.pieces || []).slice().sort((a, b) => a.z - b.z).forEach((p) => {
+    if (p.shape_type === 'oval_rod') {
+      const l = projBuilderSvgEl('line', {
+        x1: p.x, y1: sy(p.y + p.h / 2), x2: p.x + p.w, y2: sy(p.y + p.h / 2),
+        stroke: '#59636d', 'stroke-width': sw * 3.2, 'stroke-linecap': 'round',
+        class: 'po-proj-void-item'
+      }, gP);
+      l.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderPiece(p); });
+      return;
+    }
+    const porta = p.kind === 'front';
+    const r = projBuilderSvgEl('rect', {
+      x: p.x, y: sy(p.y, p.h), width: p.w, height: p.h,
+      fill: porta ? '#2f6fb8' : '#c49a63',
+      'fill-opacity': porta ? 0.10 : 0.92,
+      stroke: porta ? '#2f6fb8' : '#8a6a3f',
+      'stroke-width': porta ? sw * 1.6 : sw,
+      'stroke-dasharray': porta ? (sw * 7) + ' ' + (sw * 5) : 'none',
+      class: 'po-proj-void-item',
+      // A PORTA É CLICÁVEL SÓ NO CONTORNO. Ela cobre o vão inteiro: se o
+      // miolo dela pegasse o clique, não daria mais pra selecionar o vão que
+      // está atrás (e é lá dentro que vão a prateleira e a gaveta).
+      'pointer-events': porta ? 'stroke' : 'auto'
+    }, gP);
+    r.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderPiece(p); });
+    if (porta) {
+      // Alvo gordo pro dedo, invisível, só no contorno.
+      const hit = projBuilderSvgEl('rect', {
+        x: p.x, y: sy(p.y, p.h), width: p.w, height: p.h,
+        fill: 'none', stroke: 'transparent', 'stroke-width': sw * 10,
+        'pointer-events': 'stroke', class: 'po-proj-void-item'
+      }, gP);
+      hit.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderPiece(p); });
+    }
+  });
+
+  // ---- cotas do vão selecionado (o único texto da tela)
+  const nSel = projectBuilderSelNode();
+  const bSel = nSel && nSel._box;
+  if (bSel) {
+    projBuilderSvgEl('rect', {
+      x: bSel.x, y: sy(bSel.y, bSel.h), width: bSel.w, height: bSel.h,
+      fill: 'none', stroke: '#e0921f', 'stroke-width': sw * 3, 'pointer-events': 'none'
+    }, svg);
+    const t = projBuilderSvgEl('text', {
+      x: bSel.x + bSel.w / 2, y: sy(bSel.y + bSel.h) - fs * 0.35,
+      'text-anchor': 'middle', 'font-size': fs * 0.75, fill: '#e0921f',
+      'font-family': 'sans-serif', 'pointer-events': 'none'
+    }, svg);
+    t.textContent = Math.round(bSel.w) + ' × ' + Math.round(bSel.h);
+  }
+
+  // ---- pegadores das divisórias: arrastar pra mover, clicar pra tirar
+  // Por último, pra ficarem por cima. A área de pega é bem maior que a peça:
+  // uma prateleira de 18mm é impossível de acertar no dedo.
+  (built.pieces || []).filter((p) => p.divIndex !== undefined).forEach((p) => {
+    const pai = LayoutEngine.findNode(projectBuilderRoot, p.nodeId);
+    if (!pai) return;
+    const vert = pai.splitAxis === 'x';
+    const folga = Math.max(K / 130, 16);
+    const g = projBuilderSvgEl('rect', {
+      x: vert ? p.x - folga / 2 : p.x,
+      y: vert ? sy(p.y, p.h) : sy(p.y, p.h) - folga / 2,
+      width: vert ? p.w + folga : p.w,
+      height: vert ? p.h : p.h + folga,
+      fill: 'transparent', class: vert ? 'po-proj-div-h' : 'po-proj-div-v'
+    }, gH);
+    g.addEventListener('pointerdown', (ev) => startProjectBuilderDivDrag(ev, pai, p, vert ? 'x' : 'y'));
+  });
+
+  // ---- seleção do vão + soltar a peça arrastada da biblioteca
+  gV.querySelectorAll('rect[data-node-id]').forEach((r) => {
+    r.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      projectBuilderSelId = r.dataset.nodeId;
+      renderProjectBuilderStage();
+      renderProjectBuilderLibrary();
+    });
+    r.addEventListener('dragover', (ev) => { ev.preventDefault(); r.classList.add('drop-target'); });
+    r.addEventListener('dragleave', () => r.classList.remove('drop-target'));
+    r.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      r.classList.remove('drop-target');
+      insertProjectBuilderItem(ev.dataTransfer.getData('text/plain'), r.dataset.nodeId);
+    });
+  });
+
+  const dica = document.createElement('div');
+  dica.className = 'po-proj-builder-empty';
+  dica.textContent = I18n.t('project.builder_hint');
+  stage.appendChild(dica);
+}
+
+// Arrastar divisória = cravar o tamanho dos DOIS vãos vizinhos preservando a
+// SOMA deles. Preservar a soma é o que mantém o arrasto LOCAL: nenhum outro
+// irmão se mexe, e os que estavam elásticos continuam rateando o mesmo espaço.
+// Mesma regra do ERP (CST.startDragDiv).
+//
+// Arrastar e CLICAR moram no mesmo alvo: se o dedo não andou (< 4px), o gesto
+// era clique e a divisória sai.
+function startProjectBuilderDivDrag(ev, node, peca, eixo) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const stage = document.getElementById('po-proj-builder-stage');
+  const svg = stage && stage.querySelector('svg');
+  const kids = node.children || [];
+  const idx = peca.divIndex;
+  if (!svg || !kids[idx] || !kids[idx]._box || !kids[idx + 1] || !kids[idx + 1]._box) return;
+
+  projectBuilderSelId = node.id;
+  const ini = eixo === 'x' ? kids[idx]._box.x : kids[idx]._box.y;
+  const soma = (eixo === 'x' ? kids[idx]._box.w : kids[idx]._box.h)
+    + (eixo === 'x' ? kids[idx + 1]._box.w : kids[idx + 1]._box.h);
+  const H = Number((projectSlots.find((s) => s.id === projectBuilderSlotId) || {}).height_mm || 0);
+  const x0 = ev.clientX, y0 = ev.clientY;
+  let andou = false;
+  let fotoTirada = false;
+
+  const paraMm = (e) => {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: p.x, y: H - p.y };
+  };
+  const mover = (e) => {
+    if (!andou && Math.abs(e.clientX - x0) < 4 && Math.abs(e.clientY - y0) < 4) return;
+    if (!fotoTirada) { pushProjectBuilderUndo(); fotoTirada = true; }
+    andou = true;
+    const mm = paraMm(e);
+    let novo = (eixo === 'x' ? mm.x : mm.y) - ini;
+    novo = Math.round(novo / PROJECT_BUILDER_PASSO) * PROJECT_BUILDER_PASSO;
+    novo = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(soma - PROJECT_BUILDER_MIN_VAO, novo));
+    kids[idx].sizeMode = 'fixed'; kids[idx].sizeValue = novo;
+    kids[idx + 1].sizeMode = 'fixed'; kids[idx + 1].sizeValue = soma - novo;
+    rebuildProjectBuilder();
+  };
+  const soltar = () => {
+    removeEventListener('pointermove', mover);
+    removeEventListener('pointerup', soltar);
+    if (andou) markProjectDirty();
+    else removeProjectBuilderPiece(peca);   // não andou: era clique
+  };
+  addEventListener('pointermove', mover);
+  addEventListener('pointerup', soltar);
+}
+
+// Clicar numa peça TIRA ela — sem menu e sem confirmação: é reversível (o ↶ do
+// cabeçalho, e basta clicar de novo na biblioteca) e é o gesto mais rápido.
+//
+// Tirar UMA divisória de um vão que tem várias não pode apagar a divisão
+// inteira (o cliente pediu 3 prateleiras e clicou na do meio: ele quer ficar
+// com 2). Então: sobrando mais de 2 filhos, some só o filho seguinte e o
+// anterior volta a ser elástico — os dois vãos viram um. Com 2 filhos, aí sim
+// a divisão acaba.
+function removeProjectBuilderPiece(p) {
+  const node = LayoutEngine.findNode(projectBuilderRoot, p.nodeId);
+  if (!node || node.locked) return;
+  pushProjectBuilderUndo();
+  if (p.kind === 'split') {
+    const kids = node.children || [];
+    if (kids.length > 2 && p.divIndex != null && kids[p.divIndex]) {
+      kids.splice(p.divIndex + 1, 1);
+      kids[p.divIndex].sizeMode = 'fill';
+      kids[p.divIndex].sizeValue = null;
+    } else {
+      LayoutEngine.clearNode(node, 'split');
+    }
+  } else if (p.kind === 'content') {
+    LayoutEngine.clearNode(node, 'content');
+  } else if (p.kind === 'front') {
+    LayoutEngine.removeFront(node, p.frontIndex);
+  }
+  projectBuilderSelId = node.id;
+  markProjectDirty();
+  rebuildProjectBuilder();
+}
+
+// ==========================================================================
+// DA ÁRVORE PRA PEÇA DE VERDADE — 3D, preço, elevação 2D, plano de corte
+// ==========================================================================
+// accessory_types é catálogo GLOBAL (só a whitelist é por módulo), então o
+// cache é um só pra sessão inteira. Ele é o que permite refazer as peças de um
+// slot sem reabrir a janela do construtor — precisa disso porque a geometria é
+// absoluta em mm e tem que nascer de novo quando o módulo muda de medida.
+let accessoryCatalogCache = null;
+let accessoryCatalogLoading = null;
+async function ensureAccessoryCatalog() {
+  if (accessoryCatalogCache) return accessoryCatalogCache;
+  if (accessoryCatalogLoading) return accessoryCatalogLoading;
+  accessoryCatalogLoading = (async () => {
+    try {
+      const { data, error } = await supabaseClient
+        .from('accessory_types')
+        .select('*, components(*, labor_types(*), component_types(*))');
+      if (error) throw error;
+      const cat = {};
+      (data || []).forEach((a) => { cat[a.id] = projectBuilderAccessoryEntry(a); });
+      accessoryCatalogCache = cat;
+    } catch (e) {
+      accessoryCatalogCache = {};   // migration 085 não rodou: segue sem agregado
+    }
+    accessoryCatalogLoading = null;
+    return accessoryCatalogCache;
+  })();
+  return accessoryCatalogLoading;
+}
+
+// SÍNCRONA de propósito: é chamada dentro de recomputeProjectSlotPricing, que
+// roda a cada pointermove do arraste de medida. Sem catálogo em memória ela
+// não faz nada (e, principalmente, NÃO apaga o que já estava lá — quem carrega
+// é hydrateProjectLayoutPieces / o próprio construtor).
+function rebuildProjectSlotLayoutPieces(slot) {
+  if (!slot) return;
+  if (!slot.layout) { slot.layoutPieces = []; return; }
+  if (typeof LayoutEngine === 'undefined' || !accessoryCatalogCache) return;
+  try {
+    const zona = computeProjectSlotInnerZone(slot);
+    const built = LayoutEngine.build(LayoutEngine.deserialize(slot.layout), zona, {
+      catalogo: accessoryCatalogCache,
+      espessura: PROJECT_BUILDER_ESPESSURA,
+      folgaDobradica: PROJECT_BUILDER_FOLGA_DOB
+    });
+    slot.layoutPieces = projectLayoutRowsForSlot(slot, built.pieces);
+  } catch (e) {
+    slot.layoutPieces = [];
+  }
+}
+
+// A ponte, com as três travas que o preço exige. Pricing.calculateLeafPiece
+// LANÇA (e derruba o preço do slot inteiro) quando falta cor, dobradiça ou
+// corrediça — e a peça que nasce aqui não passou por nenhuma das telas que
+// normalmente garantem isso. Então:
+//   1. papel de cor sem cor escolhida cai numa cor que o slot JÁ usa;
+//   2. porta sem modelo de dobradiça escolhido vira frente fixa;
+//   3. gaveta sem modelo de corrediça escolhido não cobra corrediça.
+// Nenhuma das três é silenciosa por preguiça: é sempre melhor a peça aparecer
+// no desenho com um custo levemente incompleto do que o módulo inteiro perder
+// o preço por causa de um cadastro que falta.
+function projectLayoutRowsForSlot(slot, pieces) {
+  const rows = LayoutEngine.toPieceRows(pieces || [], accessoryCatalogCache);
+  const escolhidas = slot.colorsByRole || {};
+  const papeisComCor = Object.keys(escolhidas).filter((k) => escolhidas[k]);
+  rows.forEach((r) => {
+    if (!r.color_role_id || !escolhidas[r.color_role_id]) {
+      const opcoes = (slot.colorOptionsByRole || {})[r.color_role_id] || [];
+      if (r.color_role_id && opcoes.length) {
+        // Papel existe no módulo e tem opção: adota a primeira, como faz
+        // qualquer inserção nova.
+        slot.colorsByRole = slot.colorsByRole || {};
+        slot.colorsByRole[r.color_role_id] = opcoes[0];
+      } else if (papeisComCor.length) {
+        r.color_role_id = papeisComCor[0];
+      }
+    }
+    if (r.hinge_side && r.hinge_side !== 'none' && !slot.hingeModel) r.hinge_side = 'none';
+    if (r.slides_per_unit > 0 && !slot.slideModel) r.slides_per_unit = 0;
+  });
+  return rows;
+}
+
+// Projeto restaurado do banco tem slot.layout mas não tem catálogo em memória.
+// Fire-and-forget: carrega, refaz as peças e redesenha. Nada trava esperando.
+function hydrateProjectLayoutPieces() {
+  if (!projectSlots.some((s) => s.layout)) return;
+  (async () => {
+    await ensureAccessoryCatalog();
+    projectSlots.forEach((slot) => {
+      if (!slot.layout) return;
+      rebuildProjectSlotLayoutPieces(slot);
+      try { recomputeProjectSlotPricing(slot); } catch (e) { /* catálogo mudou; o slot fica com o preço de antes */ }
+    });
+    renderProjectCanvas();
+  })();
+}
+
+// Aplica a árvore no slot (sem mexer na janela). É o miolo: quem fecha e quem
+// avisa é saveAndCloseProjectModuleBuilder / closeProjectModuleBuilder.
+function applyProjectBuilderToSlot() {
+  const slot = projectSlots.find((s) => s.id === projectBuilderSlotId);
+  if (!slot || !projectBuilderRoot) return null;
+  const r = projectBuilderRoot;
+  const vazia = !r.splitAxis && !r.content && !(r.fronts || []).length && !(r.children || []).length;
+  slot.layout = vazia ? null : LayoutEngine.serialize(r);
+
+  // O catálogo da janela é o filtrado pela whitelist; o cache global é o
+  // inteiro. Completa o cache com o que a janela carregou pra que o rebuild
+  // fora daqui (mudança de medida) ache os mesmos agregados.
+  accessoryCatalogCache = Object.assign({}, accessoryCatalogCache || {}, projectBuilderCat);
+  slot.layoutPieces = vazia ? [] : projectLayoutRowsForSlot(slot, (projectBuilderBuilt || {}).pieces || []);
+  // Preço pode LANÇAR (cadastro incompleto em alguma peça do módulo). Se
+  // lançar, o slot fica com o preço de antes — mas as peças já entraram no
+  // desenho, que é o que o cliente está olhando.
+  try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço antigo continua valendo */ }
+  renderProjectCanvas();
+  markProjectDirty();
+
+  // Agregado sem componente cadastrado não vira peça (não tem de onde tirar
+  // preço, cor nem espessura) — quem chama decide como contar isso.
+  const geradas = ((projectBuilderBuilt || {}).pieces || []).filter((p) => p.kind !== undefined).length;
+  return { slot, faltando: Math.max(0, geradas - (slot.layoutPieces || []).length) };
+}
+
+// SALVAR = aplicar, FECHAR e voltar pro projeto com o módulo selecionado.
+//
+// "quando dou save ele nao volta pro projeto, fica ali parado na tela, sem
+// saber se deu certo ou nao" (Matt, 2026-08-13). A janela ficar aberta depois
+// de salvar não é neutro: é a mesma tela de antes, então parece que nada
+// aconteceu. Fechar É a confirmação — e o módulo atrás já aparece mudado.
+function saveAndCloseProjectModuleBuilder() {
+  const r = applyProjectBuilderToSlot();
+  const slotId = projectBuilderSlotId;
+  fecharProjectBuilderModal();
+  if (r && r.slot) {
+    // Volta PRO MÓDULO: seleciona o que acabou de ser editado, pra ele já
+    // estar com as setas/painel na tela quando a janela sai da frente.
+    selectProjectSlot(slotId);
+    const status = document.getElementById('po-proj-fav-status');
+    if (status) {
+      status.textContent = r.faltando > 0
+        ? I18n.t('project.builder_saved_partial', { n: r.faltando })
+        : I18n.t('project.builder_saved');
+      setTimeout(() => { if (status) status.textContent = ''; }, 5000);
+    }
+  }
+}
+
+function fecharProjectBuilderModal() {
+  const modal = document.getElementById('po-proj-builder-modal');
+  if (modal) modal.classList.remove('open');
+  projectBuilderSlotId = null;
+  projectBuilderBuilt = null;
+  projectBuilderRoot = null;
+  projectBuilderUndo = [];
+  renderProjectCanvas();
+}
+
+// Inserir: o agregado diz SOZINHO o que ele faz com o vão (role, migration
+// 085) — divide, preenche ou fecha a frente. Não existe modo, nem menu, nem
+// pergunta: é o clique.
+function insertProjectBuilderItem(accessoryId, nodeId, qtd) {
+  const acc = projectBuilderCat[accessoryId];
+  const node = LayoutEngine.findNode(projectBuilderRoot, nodeId || projectBuilderSelId);
+  if (!acc || !node) return;
+  // Vão travado pela engenharia (locked): estrutura do produto, não opção.
+  if (node.locked) return;
+  const n = Math.max(1, Math.round(Number(qtd) || 1));
+  pushProjectBuilderUndo();
+  if (acc.role === 'split') {
+    // n DIVISÓRIAS => n+1 vãos IGUAIS (todos elásticos, o motor rateia).
+    LayoutEngine.applySplit(node, accessoryId, n, projectBuilderCat);
+    // O vão selecionado ACABOU de virar dois. Seleciona o primeiro filho, não
+    // o pai: senão a próxima peça cairia num vão qualquer da árvore (o
+    // reselecionar do rebuild cai no primeiro vão que existir).
+    projectBuilderSelId = (node.children[0] || node).id;
+  } else {
+    if (acc.role === 'front') {
+      LayoutEngine.applyFront(node, accessoryId, null, null, projectBuilderCat);
+    } else {
+      LayoutEngine.applyContent(node, accessoryId, projectBuilderCat);
+      // Conteúdo empilhável (gaveteiro, cesto): a quantidade é parâmetro do
+      // próprio agregado — emitContent divide a altura do vão em n iguais.
+      if (n > 1 && node.content) node.content.params = Object.assign({}, node.content.params, { quantidade: n });
+    }
+    projectBuilderSelId = node.id;
+  }
+  markProjectDirty();
+  rebuildProjectBuilder();
+}
+
+// Aponta este lugar do projeto pra CÓPIA privada do módulo (migration 098).
+//
+// O que sobrevive e o que não:
+//   * medidas escolhidas (largura/altura/profundidade) — sobrevivem, são
+//     números do slot;
+//   * cores — sobrevivem: são por PAPEL DE COR (color_role_id), e papel é
+//     catálogo, não muda na cópia;
+//   * opcionais marcados, quantidade de prateleira e cor por peça — voltam ao
+//     PADRÃO. Eles são guardados por id de module_components, e a cópia tem
+//     ids novos (é outra linha na mesma tabela; não dá pra repetir a chave).
+//     Recarregar do padrão é o único estado coerente com a cópia.
+// Isso é dito ao cliente antes de trocar (ver openProjectModuleBuilder).
+// SEM USO no fluxo atual (2026-08-13): ela pertence ao modelo de "cópia
+// privada do módulo" (migration 098/099), que foi substituído pelo de internos
+// como itens do projeto. Mantida porque a cópia continua fazendo sentido se um
+// dia o cliente puder mexer no CASCO — aí é por aqui que o slot passa a
+// apontar pra cópia. Ver docs/internos-como-modulos-no-projeto.md.
+async function repointProjectSlotToModule(slot, newModuleId) {
+  const [{ data: mod, error }, pieces, colorOptionsByRole, hinges, slides, presets] = await Promise.all([
+    supabaseClient.from('modules').select('*').eq('id', newModuleId).single(),
+    loadRecursivePiecesForModule(newModuleId),
+    fetchModuleColorsByRoleRaw(newModuleId),
+    fetchModuleHingeModelsRaw(newModuleId),
+    fetchModuleSlideModelsRaw(newModuleId),
+    fetchModuleLockedDimensionPresets(newModuleId)
+  ]);
+  if (error) throw error;
+
+  // Cores: mantém a escolha atual por papel; papel que não existia antes cai
+  // na primeira opção, igual a uma inserção nova.
+  const usados = collectUsedColorRoleIds(pieces);
+  const colorsByRole = {};
+  usados.forEach((roleId) => {
+    const atual = slot.colorsByRole && slot.colorsByRole[roleId];
+    const opts = colorOptionsByRole[roleId] || [];
+    colorsByRole[roleId] = (atual && opts.some((c) => c.id === atual.id)) ? atual : (opts[0] || null);
+  });
+
+  slot.module = mod;
+  slot.pieces = pieces;
+  slot.colorOptionsByRole = colorOptionsByRole;
+  slot.colorsByRole = colorsByRole;
+  slot.selectedColors = Object.keys(colorsByRole).map((roleId) => ({
+    role_id: roleId,
+    role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null,
+    color_id: colorsByRole[roleId] ? colorsByRole[roleId].id : null,
+    color_name: colorsByRole[roleId] ? colorsByRole[roleId].name : null
+  }));
+  slot.pieceColorOverrides = {};
+  slot.selectedOptionalIds = pieces.filter((p) => p.client_optional && p.client_optional_default_on).map((p) => p.id);
+  slot.shelfQuantities = collectDefaultShelfQuantities(pieces);
+  slot.dimOverrides = {};
+  slot.hingeModel = hinges[0] || slot.hingeModel || null;
+  slot.slideModel = slides[0] || slot.slideModel || null;
+  slot.widthPresetsMm = presets.width;
+  slot.heightPresetsMm = presets.height;
+  slot.thumbnail_data_url = null;
+  recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+}
+// Fechar = guardar a árvore no próprio projeto. Nada vai pro banco do
+// catálogo: o módulo NÃO é alterado (decisão de 2026-08-13, ver
+// docs/internos-como-modulos-no-projeto.md) — o que o cliente montou é dele,
+// e mora em slot.layout, que sai junto no serializeProjectSlots.
+//
+// Árvore "pelada" (nenhuma divisão, nenhum conteúdo, nenhuma frente) grava
+// null em vez de um objeto vazio: assim o projeto do cliente que só abriu e
+// fechou a janela continua idêntico ao que era.
+function closeProjectModuleBuilder() {
+  // Fechar TAMBÉM salva (o × não é "cancelar"): o cliente montou, viu na tela
+  // e fechou — perder isso seria uma armadilha. Desfazer é o ↶, e o projeto
+  // inteiro ainda tem o aviso de alterações não salvas.
+  if (projectBuilderSlotId != null) applyProjectBuilderToSlot();
+  fecharProjectBuilderModal();
+}
+const projSlotCustomizeBtn = document.getElementById('po-proj-slot-customize-btn');
+if (projSlotCustomizeBtn) {
+  projSlotCustomizeBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  projSlotCustomizeBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (selectedProjectSlotId != null) openProjectModuleBuilder(selectedProjectSlotId);
+  });
+}
+(function attachProjectBuilderModal() {
+  const modal = document.getElementById('po-proj-builder-modal');
+  if (!modal) return;
+  const closeBtn = document.getElementById('po-proj-builder-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeProjectModuleBuilder);
+  const undoBtn = document.getElementById('po-proj-builder-undo');
+  if (undoBtn) undoBtn.addEventListener('click', undoProjectBuilder);
+  const resetBtn = document.getElementById('po-proj-builder-reset');
+  if (resetBtn) resetBtn.addEventListener('click', resetProjectBuilder);
+  const saveBtn = document.getElementById('po-proj-builder-save');
+  if (saveBtn) saveBtn.addEventListener('click', saveAndCloseProjectModuleBuilder);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeProjectModuleBuilder(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) closeProjectModuleBuilder();
+  });
+})();
+
 // Ponto onde o raio do ponteiro cruza o PISO (plano y=0), em mm de mundo —
 // base do arraste de módulo ILHA e do "soltar no chão" (biblioteca / toque
 // longo). Devolve null se o ponteiro estiver apontando pro céu.
@@ -14033,6 +15464,73 @@ function convertProjectSlotToFloor(slot, xMm, zMm) {
   slot.z_order = 0;
   if (slot.floor_rotation_deg == null) slot.floor_rotation_deg = 0;
 }
+// ==========================================================================
+// GIRAR O MÓDULO — Shift + arrastar (2026-08-12)
+// ==========================================================================
+// Pedido do Matt: "ao apertar shift ele rotacione sobre o proprio eixo, pode
+// ser de 5 em 5 com imas a cada 90. e me informe quando esta rotacionando no
+// canto inferior da tela visivel", valendo pra "todos conectados ao chao".
+//
+// Quem pode girar: módulo que ESTÁ NO CHÃO — a ilha (placement='floor') e o
+// módulo de parede apoiado no piso. Um aéreo/suspenso não gira: ele está
+// pendurado na parede e o giro não teria significado físico (nem lugar pra
+// guardar: floor_rotation_deg é do referencial do piso).
+//
+// Módulo de parede que gira VIRA ILHA na hora — é a única representação que
+// tem ângulo próprio. Ele nasce na posição de mundo onde já estava e com o
+// ângulo da parede, então o primeiro frame do giro não "pula".
+const PROJECT_ROTATE_STEP_DEG = 5;      // passo do giro
+const PROJECT_ROTATE_SNAP_DEG = 7;      // ímã: a menos disso de um múltiplo de 90, cola
+const PROJECT_ROTATE_DEG_PER_PX = 0.5;  // sensibilidade do arraste horizontal
+
+function projectSlotCanRotate(slot) {
+  if (!slot) return false;
+  if (isFloorSlot(slot)) return true;
+  return Number(slot.floor_height_mm || 0) <= 0;
+}
+
+// Ângulo cru -> passo de 5° com ímã nos múltiplos de 90°. Devolve o ângulo e
+// se o ímã pegou (o aviso na tela muda de cor pra confirmar).
+function quantizeProjectRotation(rawDeg) {
+  const norm = ((rawDeg % 360) + 360) % 360;
+  const noventa = Math.round(norm / 90) * 90;
+  let diff = norm - noventa;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  if (Math.abs(diff) <= PROJECT_ROTATE_SNAP_DEG) {
+    return { deg: ((noventa % 360) + 360) % 360, snapped: true };
+  }
+  const passo = Math.round(norm / PROJECT_ROTATE_STEP_DEG) * PROJECT_ROTATE_STEP_DEG;
+  return { deg: ((passo % 360) + 360) % 360, snapped: false };
+}
+
+function showProjectRotateHud(deg, snapped) {
+  const el = document.getElementById('po-proj-rotate-hud');
+  if (!el) return;
+  el.textContent = I18n.t('project.rotating_badge', { deg: Math.round(deg) })
+    + (snapped ? ' ·' : '');
+  el.classList.toggle('snapped', !!snapped);
+  el.style.display = 'block';
+}
+function hideProjectRotateHud() {
+  const el = document.getElementById('po-proj-rotate-hud');
+  if (el) el.style.display = 'none';
+}
+
+// Solta o módulo da parede mantendo EXATAMENTE onde ele está na cena: a
+// posição de mundo vem do Group que renderFreeformWalls já posicionou (não
+// recalculada aqui — seria repetir a fórmula de origin/alongDir/intoDir e
+// arriscar divergir), e o ângulo inicial é o da parede em que ele estava.
+function detachProjectSlotFromWallForRotation(slot, group) {
+  const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index || 0));
+  const xMm = group ? group.position.x * 1000 : Number(slot.floor_x_mm || 0);
+  const zMm = group ? group.position.z * 1000 : Number(slot.floor_z_mm || 0);
+  const anguloParedeDeg = wallGeo ? (wallGeo.rotationY * 180) / Math.PI : 0;
+  convertProjectSlotToFloor(slot, xMm, zMm);
+  slot.floor_rotation_deg = ((anguloParedeDeg % 360) + 360) % 360;
+  return slot.floor_rotation_deg;
+}
+
 function convertProjectSlotToWall(slot, wallIndex, xMm, floorHeightMm) {
   slot.placement = 'wall';
   slot.wall_index = Number(wallIndex || 0);
@@ -14073,6 +15571,9 @@ function attachProject3DEditDrag() {
   // mais a acertar.
   let lastArrowTap = null;
   const ARROW_DOUBLE_TAP_MS = 400;
+  // Duplo clique no MÓDULO (2026-08-13) — enquadra ele de frente. Mesma janela
+  // de tempo do duplo clique na seta.
+  let lastModuleTap = null;
 
   // "Segurar" em cima de um módulo — o significado do gesto MUDOU no toque
   // (pedido do usuário 2026-08-08): "IPAD - clique longo, (tira a opcao de
@@ -14100,7 +15601,7 @@ function attachProject3DEditDrag() {
         return;
       }
       projectDrag3DState = null;
-      domEl.style.cursor = 'grab';
+      domEl.style.cursor = 'default';   // cursor sempre padrão (2026-08-13, ver o hover)
       openProjectSlotProps(slot.id);
     }, PROJECT_HOLD_MENU_MS);
   };
@@ -14195,18 +15696,72 @@ function attachProject3DEditDrag() {
       // desta vista é FIXA (setControlsEnabled(false), sem orbit), então um
       // pointerdown sem hit nunca é o início de um arraste de verdade — pode
       // desselecionar na hora, sem esperar o pointerup.
-      if (selectedProjectSlotId != null) {
-        selectedProjectSlotId = null;
-        renderProjectConfigPanel();
-        refreshProject3DResizeArrows();
-        refreshProjectSlotActions();
-      }
+      // Apaga o contorno vermelho junto — desde que ele virou espelho da
+      // seleção (2026-08-12), clicar na parede é o gesto de "solta esse
+      // módulo" que o Matt pediu.
+      deselectProjectSlot();
       return;
     }
     const slot = projectSlots.find((s) => s.id === hit.slotId);
     if (!slot) return;
     ev.preventDefault();
+
+    // ---------- DUPLO CLIQUE NO MÓDULO: ENQUADRA ELE DE FRENTE ----------
+    // Pedido do Matt (2026-08-13): "dar 2 cliques no modulo, cliques rapidos,
+    // ele centraliza frontal esse modulo pra poder ser visto, mexido,
+    // rotacionado". É também a resposta pro controle fino: de perto e
+    // centralizado, cada pixel do mouse vale poucos milímetros.
+    //
+    // Detectado aqui no pointerdown (não num listener 'dblclick') pelo mesmo
+    // motivo das setas: o dblclick não é confiável no toque do iOS e aqui já
+    // se sabe QUAL módulo foi atingido.
+    const agora = Date.now();
+    if (lastModuleTap && lastModuleTap.slotId === slot.id
+      && agora - lastModuleTap.t <= ARROW_DOUBLE_TAP_MS) {
+      lastModuleTap = null;
+      clearHold3DTimer();
+      projectDrag3DState = null;
+      selectProjectSlot(slot.id);
+      frameProjectSlotFront(slot);
+      return;
+    }
+    lastModuleTap = { t: agora, slotId: slot.id };
+
     try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+
+    // ---------- GIRAR (Shift + arrastar) ----------
+    // Antes de qualquer outro modo: com Shift pressionado o arraste inteiro é
+    // giro, nunca mover nem esticar (ver quantizeProjectRotation e o
+    // comentário grande em projectSlotCanRotate).
+    if (ev.shiftKey && projectSlotCanRotate(slot)) {
+      const anguloInicial = isFloorSlot(slot)
+        ? Number(slot.floor_rotation_deg || 0)
+        : detachProjectSlotFromWallForRotation(slot, hit.group);
+      selectProjectSlot(slot.id);
+      projectDrag3DState = {
+        pointerId: ev.pointerId,
+        slotId: slot.id,
+        group: hit.group,
+        isTouch: ev.pointerType === 'touch',
+        armed: true,
+        moved: false,
+        dragMode: 'rotate',
+        resizeAxis: null,
+        startClientX: ev.clientX,
+        startClientY: ev.clientY,
+        startRotationDeg: anguloInicial
+      };
+      domEl.style.cursor = 'default';
+      showProjectRotateHud(anguloInicial, quantizeProjectRotation(anguloInicial).snapped);
+      // Soltar da parede troca a representação do módulo (vira ilha): a cena
+      // precisa ser reconstruída pra ele sair do grupo da parede. Feito uma
+      // vez só, aqui — o giro em si só mexe em group.rotation.y.
+      if (!isFloorSlot(slot)) { /* já convertido acima */ }
+      renderProjectCanvas();
+      projectDrag3DState.group = ViewerProjectEdit.findGroupBySlotId(slot.id) || hit.group;
+      refreshProject3DHighlight();
+      return;
+    }
 
     // ---------- Módulo ILHA (solto no chão) ----------
     // Caminho totalmente separado do de parede: o plano de arraste é o PISO
@@ -14233,9 +15788,10 @@ function attachProject3DEditDrag() {
         prevFloorXMm: Number(slot.floor_x_mm || 0),
         prevFloorZMm: Number(slot.floor_z_mm || 0)
       };
-      project3DHoveredSlotId = slot.id;
-      ViewerProjectEdit.setHoverHighlight(hit.group);
-      domEl.style.cursor = 'grabbing';
+      // Agarrar JÁ seleciona (o contorno é a seleção agora) — assim o módulo
+      // arrastado fica vermelho na hora e CONTINUA vermelho depois de soltar.
+      selectProjectSlot(slot.id);
+      domEl.style.cursor = 'default';
       startProject3DHoldGesture(slot, isTouchFloor);
       return;
     }
@@ -14308,12 +15864,11 @@ function attachProject3DEditDrag() {
       prevXMm: Number(slot.x_mm || 0),
       prevYMm: Number(slot.floor_height_mm || 0)
     };
-    // Destaque vermelho continua no módulo sendo agarrado (já deveria estar
-    // aceso pelo hover que precede o clique — reforçado aqui pra cobrir
-    // toque/touch, que não dispara um pointermove de hover antes).
-    project3DHoveredSlotId = slot.id;
-    ViewerProjectEdit.setHoverHighlight(hit.group);
-    domEl.style.cursor = grab.dragMode === 'resize' ? (grab.resizeAxis === 'height-top' ? 'ns-resize' : 'ew-resize') : 'grabbing';
+    // Agarrar JÁ seleciona (2026-08-12): o contorno vermelho é o espelho da
+    // seleção, então o módulo agarrado acende na hora — no mouse E no toque —
+    // e continua aceso depois de soltar, até clicar em outro ou na parede.
+    selectProjectSlot(slot.id);
+    domEl.style.cursor = 'default';
 
     startProject3DHoldGesture(slot, isTouch3D);
   });
@@ -14331,32 +15886,38 @@ function attachProject3DEditDrag() {
       // o cursor conforme o MODO que um clique ali resultaria (mover vs
       // esticar largura/altura) — mesma classificação do pointerdown
       // (classifyProject3DGrab), só sem de fato começar nenhum arraste.
-      const hoverHit = ViewerProjectEdit.pickAssemblyAt(ev.clientX, ev.clientY, projectActiveWallIndex);
-      if (!hoverHit) {
-        project3DHoveredSlotId = null;
-        ViewerProjectEdit.setHoverHighlight(null);
-        domEl.style.cursor = 'default';
-        return;
+      // 2026-08-12: o hover NÃO mexe mais no contorno vermelho (ele é a
+      // seleção agora, ver refreshProject3DHighlight) — só no cursor.
+      // O AVISO DE "DÁ PRA AGARRAR AQUI" MUDOU DE LUGAR (2026-08-13).
+      // Era o cursor (grab / ew-resize / ns-resize), e o Matt disse que não
+      // resolvia: "mause longe e aparecendo seta... deixa o mouse sempre com o
+      // cursor triangulo padrao. mas quando estiver em cima de uma das setas do
+      // movel ela pode mudar de cor". Cursor agora é SEMPRE o padrão; quem
+      // avisa é a própria seta, acendendo na cor do eixo (ver
+      // highlightResizeArrow em viewer3d_composition.js). Vantagem prática: a
+      // cor está no lugar exato onde o clique vale, então não tem como "achar"
+      // que está em cima e não estar.
+      domEl.style.cursor = 'default';
+      const setaHover = ViewerProjectEdit.pickResizeArrowAt
+        ? ViewerProjectEdit.pickResizeArrowAt(ev.clientX, ev.clientY)
+        : null;
+      if (ViewerProjectEdit.highlightResizeArrow) {
+        ViewerProjectEdit.highlightResizeArrow(setaHover ? setaHover.axis : null);
       }
-      project3DHoveredSlotId = hoverHit.slotId;
-      ViewerProjectEdit.setHoverHighlight(hoverHit.group);
-      const hoverSlot = projectSlots.find((s) => s.id === hoverHit.slotId);
-      let cursor = 'grab';
-      const hoverWallGeo = hoverSlot && getProjectWallGeometry().find((w) => w.wallIndex === Number(hoverSlot.wall_index || 0));
-      if (hoverSlot && hoverWallGeo) {
-        const p = ViewerProjectEdit.intersectPlaneAtClient(ev.clientX, ev.clientY,
-          { x: hoverWallGeo.originX, y: 0, z: hoverWallGeo.originZ }, { x: hoverWallGeo.intoDirX, y: 0, z: hoverWallGeo.intoDirZ });
-        if (p) {
-          const hoverAlongMm = ((p.x - hoverWallGeo.originX) * hoverWallGeo.alongDirX + (p.z - hoverWallGeo.originZ) * hoverWallGeo.alongDirZ) * 1000;
-          const hoverHeightMm = p.y * 1000;
-          const grab = classifyProject3DGrab(hoverSlot, hoverAlongMm, hoverHeightMm);
-          if (grab.dragMode === 'resize') cursor = grab.resizeAxis === 'height-top' ? 'ns-resize' : 'ew-resize';
-        }
-      }
-      domEl.style.cursor = cursor;
       return;
     }
     if (state.pointerId !== ev.pointerId) return;
+    // BOTÃO JÁ SOLTO = arraste morto (2026-08-13). Relato do Matt: "levo o
+    // mouse bem longe e mesmo assim ele fica como se tivesse pegando no modulo
+    // ou nas setas... fica tudo balançando". É isto: o pointerup se perdia (o
+    // resize re-renderiza a cena a cada frame, e capture/foco podem sumir no
+    // meio), o estado do arraste ficava vivo e o módulo continuava seguindo o
+    // mouse pra sempre. ev.buttons === 0 é a verdade do hardware — mais
+    // confiável que esperar o evento de soltar chegar.
+    if (ev.pointerType !== 'touch' && ev.buttons === 0) {
+      finishProject3DDrag(ev);
+      return;
+    }
     const dPx = Math.hypot(ev.clientX - state.startClientX, ev.clientY - state.startClientY);
     if (!state.moved) {
       if (dPx < (state.isTouch ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX)) return;
@@ -14364,9 +15925,37 @@ function attachProject3DEditDrag() {
       clearHold3DTimer();
       state.moved = true;
       state.armed = true;
+      // SETAS SOMEM ENQUANTO MOVE (2026-08-13, Matt: "quando eu estou
+      // arrastando um movel selecionado as setas ficam paradas no ponto de
+      // partida, da uma sensacao ruim de usabilidade"). Mover não reconstrói a
+      // cena a cada quadro — só reposiciona o Group, de propósito, porque
+      // reconstruir seria caro — então as setas, que são objetos próprios da
+      // cena, ficavam plantadas onde o módulo estava. Some com elas no começo
+      // do gesto; o fim do arraste (renderProjectCanvas/endDrag3D) redesenha
+      // na posição nova.
+      // ESTICAR fica de fora: ali a cena É reconstruída a cada quadro
+      // (updateProjectSlotDimension), então as setas já acompanham — e some-las
+      // tiraria da tela justamente a alça que está sendo arrastada.
+      if (state.dragMode !== 'resize' && ViewerProjectEdit.setResizeArrows) {
+        ViewerProjectEdit.setResizeArrows(null);
+      }
     }
     const slot = projectSlots.find((s) => s.id === state.slotId);
     if (!slot) { projectDrag3DState = null; return; }
+
+    // ---------- GIRAR ----------
+    // Arraste HORIZONTAL vira ângulo (0,5° por pixel), quantizado em 5° com
+    // ímã nos múltiplos de 90°. O Group é girado ao vivo — sem reconstruir a
+    // cena a cada frame, igual ao mover; o render de verdade é no soltar.
+    if (state.dragMode === 'rotate') {
+      const bruto = state.startRotationDeg + (ev.clientX - state.startClientX) * PROJECT_ROTATE_DEG_PER_PX;
+      const q = quantizeProjectRotation(bruto);
+      slot.floor_rotation_deg = q.deg;
+      if (state.group) state.group.rotation.y = (q.deg * Math.PI) / 180;
+      ViewerProjectEdit.updateHoverHighlight();
+      showProjectRotateHud(q.deg, q.snapped);
+      return;
+    }
 
     // Esticar (largura/altura) é um modo TOTALMENTE separado de mover — ver
     // classificação no pointerdown acima. Delegado pra função própria
@@ -14386,13 +15975,21 @@ function attachProject3DEditDrag() {
       return;
     }
 
-    // ---------- Passar da parede pro CHÃO (toque longo) ----------
-    // Pedido do usuário (2026-08-08, iPad): "clique longo ... ele pode ser
-    // arrastado de uma parede pra outra ou pro chao". Só em freeMode (o hold
-    // do toque armou, ver startProject3DHoldGesture) — num arraste normal de
-    // mouse/dedo o módulo continua preso ao plano da parede, senão passar o
-    // ponteiro por cima do piso viraria conversão acidental.
-    if (state.freeMode) {
+    // ---------- Passar da parede pro CHÃO ----------
+    // Nasceu só pro toque longo (2026-08-08, iPad: "clique longo ... ele pode
+    // ser arrastado de uma parede pra outra ou pro chao"), com medo de que num
+    // arraste normal "passar o ponteiro por cima do piso viraria conversão
+    // acidental".
+    //
+    // 2026-08-13, Matt: "quando modulo esta em uma parede nao consigo passar
+    // ele pro chao. preciso que ele saia da parede pro chao como faz de uma
+    // parede pra outra." Ou seja: tem que valer no arraste normal, mouse
+    // incluído. O medo da conversão acidental continua legítimo, então em vez
+    // de liberar geral a conversão pede uma INTENÇÃO clara — puxar o módulo
+    // pra DENTRO do ambiente, além de PROJECT_PULL_TO_FLOOR_MM da parede.
+    // Encostar de leve no piso perto do rodapé não converte nada; o toque
+    // longo (freeMode) continua convertendo na hora, sem essa distância.
+    if (state.freeMode || projectPointerPulledIntoRoom(state, ev)) {
       // ignoreSlotId = o próprio módulo arrastado. SEM isso a conversão nunca
       // acontecia (relato do usuário: "movel nao ta indo da parede pro piso"):
       // o móvel acompanha o ponteiro, então a caixa de clique dele fica sempre
@@ -14443,6 +16040,9 @@ function attachProject3DEditDrag() {
     const snapOthers = projectSlotsSameWallExcluding(slot).concat(projectGhostSnapTargets(wallGeo.wallIndex));
     xMm = snapProjectSlotAxis(xMm, Number(slot.width_mm || 0), true, snapOthers, PROJECT_SNAP_3D_MM);
     yMm = snapProjectSlotAxis(yMm, Number(slot.height_mm || 0), false, snapOthers, PROJECT_SNAP_3D_MM);
+    // Chão por último: ele ganha de um ímã de módulo que tenha deixado a peça
+    // a poucos milímetros do piso (ver PROJECT_FLOOR_SNAP_MM).
+    yMm = snapProjectSlotToFloor(yMm);
 
     // Arrastar até a borda da parede ativa troca de parede (pedido do
     // usuário, confirmado via pergunta de esclarecimento: "arrastar até a
@@ -14522,6 +16122,16 @@ function attachProject3DEditDrag() {
       xMm = solved.x;
       yMm = solved.y;
     }
+    // CHÃO DE NOVO, DEPOIS DA COLISÃO (2026-08-12, 2ª rodada: "nao ta indo pro
+    // chao o movel"). A 1ª versão só grudava no chão ANTES do resolvedor de
+    // colisão — e ele empurra o módulo pra cima ao encostar em qualquer
+    // vizinho, desfazendo o ímã em silêncio. Só reaplica se NÃO houver módulo
+    // ocupando o pedaço de parede embaixo dele; com algo embaixo, parar em
+    // cima do vizinho é o certo e a colisão é quem manda.
+    if (yMm > 0 && yMm <= PROJECT_FLOOR_SNAP_MM
+        && !projectSlotHasNeighborBelow(slot, xMm, yMm)) {
+      yMm = 0;
+    }
     state.prevXMm = xMm;
     state.prevYMm = yMm;
     state.prevWallIndex = state.liveWallIndex;
@@ -14566,7 +16176,20 @@ function attachProject3DEditDrag() {
       return;
     }
     projectDrag3DState = null;
-    domEl.style.cursor = 'grab';
+    domEl.style.cursor = 'default';
+    // Giro: some com o aviso e fecha o ciclo com um render de verdade (a
+    // colisão da ilha usa a pegada girada, ver floorSlotFootprint).
+    if (state.dragMode === 'rotate') {
+      hideProjectRotateHud();
+      // Girar muda a PEGADA no piso (90° troca largura por profundidade), então
+      // o que estava dentro do quadrado pode ter passado a borda.
+      const girado = projectSlots.find((s) => s.id === state.slotId);
+      if (girado && isFloorSlot(girado)) clampFloorSlotIntoRoom(girado);
+      renderProjectCanvas();
+      refreshProject3DResizeArrows();
+      markProjectDirty();
+      return;
+    }
     // Toque curto (soltou antes de engatar o arraste) = seleciona. É o
     // caminho normal do tap no iPad. As SETAS de redimensionamento (toque)
     // nascem exatamente daqui — pedido do usuário 2026-08-08: "clique rapido
@@ -14575,6 +16198,29 @@ function attachProject3DEditDrag() {
     // mantém o contorno; refreshProject3DResizeArrows desenha as setas).
     if (!state.moved) {
       if (ev.type !== 'pointercancel') {
+        // CLIQUE PARADO: só é "selecionar" se o ponteiro estiver mesmo em cima
+        // do módulo. Se não estiver, é "soltar".
+        //
+        // Sem esta conferência, clicar numa SETA de redimensionamento e não
+        // arrastar re-selecionava o módulo — e a seta fica FORA do contorno
+        // dele, exatamente no pedaço de parede onde a pessoa clica pra
+        // desselecionar ("clico do ladinho dele na parede e não desclica").
+        // O ramo de "clique no vazio" do pointerdown nunca era alcançado nesse
+        // caso, porque a seta é testada antes e sai com return.
+        //
+        // Exceção no TOQUE via seta: lá o duplo toque na mesma seta estica o
+        // módulo até o vizinho (2026-08-08, iPad) — desselecionar no primeiro
+        // toque mataria a segunda batida. No mouse esse duplo clique deixa de
+        // existir; arrastar a seta (que é o gesto principal) continua igual.
+        const sobre = ViewerProjectEdit.pickAssemblyAt
+          ? ViewerProjectEdit.pickAssemblyAt(ev.clientX, ev.clientY, projectActiveWallIndex)
+          : null;
+        // Conservador de propósito: só solta quando NÃO HÁ MÓDULO NENHUM sob o
+        // ponteiro. Se houver outro módulo ali (seta desenhada por cima do
+        // vizinho), mantém o comportamento antigo — desselecionar seria uma
+        // surpresa pior que a de antes.
+        const soltar = !sobre && !(state.viaArrow && state.isTouch);
+        if (soltar) { deselectProjectSlot(); return; }
         selectProjectSlot(state.slotId);
         refreshProject3DResizeArrows();
       }
@@ -14590,6 +16236,17 @@ function attachProject3DEditDrag() {
   };
   domEl.addEventListener('pointerup', endDrag3D);
   domEl.addEventListener('pointercancel', endDrag3D);
+  // Rede de segurança (2026-08-13): soltar o botão FORA do canvas, trocar de
+  // aba/janela no meio do arraste ou o navegador engolir o pointerup deixavam
+  // o arraste eternamente vivo — o módulo continuava colado no ponteiro. Os
+  // três caminhos agora terminam o gesto. finishProject3DDrag é o mesmo
+  // endDrag3D, exposto pra quem está fora deste escopo (ver pointermove).
+  finishProject3DDrag = endDrag3D;
+  window.addEventListener('pointerup', endDrag3D);
+  window.addEventListener('pointercancel', endDrag3D);
+  window.addEventListener('blur', () => {
+    if (projectDrag3DState) endDrag3D({ type: 'pointercancel', pointerId: projectDrag3DState.pointerId });
+  });
 
   // ---------- Duplo toque no ambiente (2026-08-08, iPad) ----------
   // "duplo clica na parede ele mostra a parede de frente. duplo clique no chao
@@ -14648,13 +16305,28 @@ function attachProject3DEditDrag() {
     }
   }
 
-  // Ponteiro saiu do canvas sem estar arrastando nada — apaga o contorno de
-  // destaque e o cursor especial (senão ficaria "grudado" mostrando o
-  // último módulo sobrevoado mesmo com o mouse já fora da cena 3D).
+  // GIRAR EM TORNO DO MÓDULO SELECIONADO (2026-08-12)
+  // "quero chegar bem perto e rotacionar perto do movel sem perder ele do
+  // centro da tela." O giro do OrbitControls acontece em volta do ALVO, que é
+  // o centro do ambiente — de perto, o raio é tão grande que o móvel sai da
+  // tela no primeiro movimento. Aqui, no instante em que o giro COMEÇA (botão
+  // do meio, ver mouseButtons em viewer3d_composition.js), o alvo é
+  // recentralizado no módulo selecionado. É um pan, não um giro: a cena não
+  // salta, o móvel só desliza pro meio e o giro passa a ser em volta dele.
+  domEl.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 1) return;                    // só o botão do meio = girar
+    if (selectedProjectSlotId == null) return;
+    if (!ViewerProjectEdit.centerOrbitOnGroup) return;
+    const g = ViewerProjectEdit.findGroupBySlotId(selectedProjectSlotId);
+    if (g) ViewerProjectEdit.centerOrbitOnGroup(g);
+  }, true);   // captura: precisa rodar ANTES do OrbitControls começar a girar
+
+  // Ponteiro saiu do canvas sem estar arrastando nada — devolve o cursor
+  // padrão. NÃO apaga o contorno vermelho: ele é a seleção (2026-08-12), e
+  // era justamente isso que fazia o módulo "perder o vermelho" e o Matt
+  // perder o controle do que estava editando.
   domEl.addEventListener('pointerleave', () => {
     if (projectDrag3DState) return; // durante um arraste de verdade, mantém (setPointerCapture já garante os eventos)
-    project3DHoveredSlotId = null;
-    ViewerProjectEdit.setHoverHighlight(null);
     domEl.style.cursor = 'default';
   });
 }
@@ -14724,6 +16396,45 @@ function handleProject3DFloorMove(state, slot, ev) {
   );
   xMm = solved.x;
   zMm = solved.y;
+
+  // ---------- VOLTAR PRO ENCOSTO DA PAREDE ----------
+  // 2026-08-13, Matt: "agora saiu de uma parede foi pro piso mas nao volta pra
+  // parede nem pra outras. preciso que ele pule de uma pra outra. ir e voltar."
+  // O caminho de volta existia só no toque longo (freeMode) e exigia apontar
+  // EM CIMA da parede — impossível na prática, porque o próprio móvel arrastado
+  // fica na frente dela.
+  //
+  // Agora é por PROXIMIDADE, que é o gesto natural: encostou a traseira do
+  // móvel a menos de PROJECT_SNAP_TO_WALL_MM de uma parede (e dentro do trecho
+  // dela), ele gruda naquela parede. Vale pra QUALQUER parede do ambiente, o
+  // que responde o "nem pra outras". Sair de novo é só puxar pra dentro do
+  // ambiente (ver projectPointerPulledIntoRoom).
+  const encosto = projectWallToSnapFloorSlot(slot, xMm, zMm);
+  if (encosto) {
+    convertProjectSlotToWall(slot, encosto.wallIndex, encosto.xMm, 0);
+    state.onFloor = false;
+    state.liveWallIndex = encosto.wallIndex;
+    state.prevWallIndex = encosto.wallIndex;
+    state.prevXMm = Number(slot.x_mm || 0);
+    state.prevYMm = 0;
+    state.grabOffsetXMm = 0;
+    state.grabOffsetYMm = 0;
+    state.depthOffsetM = Number(slot.depth_mm || 0) / 2000;
+    projectActiveWallIndex = encosto.wallIndex;
+    refreshProjectWallTabs();
+    refreshProjectWallWidthInput();
+    renderProjectCanvas();
+    state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
+    refreshProject3DHighlight();
+    return;
+  }
+
+  // NUNCA SAIR DO QUADRADO DO CHÃO (2026-08-13, "no chao nunca deixe ele sair
+  // do quadrado do chao") — travado DURANTE o arraste, não só ao soltar: ver o
+  // móvel voltando sozinho no fim é pior que ele parar na borda.
+  const dentro = clampFloorPointIntoRoom(slot, xMm, zMm);
+  xMm = dentro.x;
+  zMm = dentro.z;
   state.prevFloorXMm = xMm;
   state.prevFloorZMm = zMm;
 
@@ -14758,6 +16469,14 @@ function handleProject3DResizeMove(state, slot, ev) {
     }
     const fp = projectFloorPointMm(ev.clientX, ev.clientY);
     if (!fp) return;
+    if (state.resizeAxis === 'depth-front') {
+      // Profundidade da ilha cresce simétrica no eixo local +Z, mesma ideia da
+      // largura (o móvel é solto, não tem borda ancorada em nada).
+      const azX = Math.sin(rot), azZ = Math.cos(rot);
+      const halfD = Math.abs((fp.xMm - cx * 1000) * azX + (fp.zMm - cz * 1000) * azZ);
+      updateProjectSlotDimension(slot, 'depth', halfD * 2);
+      return;
+    }
     const halfMm = Math.abs((fp.xMm - cx * 1000) * axX + (fp.zMm - cz * 1000) * axZ);
     updateProjectSlotDimension(slot, 'width', halfMm * 2);
     return;
@@ -14765,6 +16484,24 @@ function handleProject3DResizeMove(state, slot, ev) {
 
   const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === state.liveWallIndex);
   if (!wallGeo) return;
+
+  // PROFUNDIDADE (2026-08-13) — caminho próprio: as outras duas medidas vivem
+  // no plano DA PAREDE, mas profundidade cresce PERPENDICULAR a ele, e nesse
+  // plano o ponteiro não diz nada. A leitura aqui é no plano HORIZONTAL na
+  // altura do meio do módulo: a distância do ponto até a parede é a
+  // profundidade. Sem ímã de propósito — profundidade não alinha com vizinho,
+  // alinha com o corpo do móvel, e o cliente escolhe um valor de catálogo.
+  if (state.resizeAxis === 'depth-front') {
+    const yMeioM = (Number(slot.floor_height_mm || 0) + Number(slot.height_mm || 0) / 2) / 1000;
+    const p = ViewerProjectEdit.intersectPlaneAtClient(
+      ev.clientX, ev.clientY, { x: 0, y: yMeioM, z: 0 }, { x: 0, y: 1, z: 0 }
+    );
+    if (!p) return;
+    const distMm = ((p.x - wallGeo.originX) * wallGeo.intoDirX + (p.z - wallGeo.originZ) * wallGeo.intoDirZ) * 1000;
+    updateProjectSlotDimension(slot, 'depth', distMm);
+    return;
+  }
+
   const hitPoint = ViewerProjectEdit.intersectPlaneAtClient(
     ev.clientX, ev.clientY,
     { x: wallGeo.originX, y: 0, z: wallGeo.originZ },
@@ -15104,7 +16841,10 @@ const ViewerProject = (typeof ViewerComposition !== 'undefined' && ViewerComposi
 function buildProjectAssemblies(slotsList) {
   return slotsList.map((slot) => {
     const moduleDims = { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm };
-    const parts = resolvePiecesForViewer(slot.pieces, moduleDims, slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides);
+    // projectSlotEffectivePieces (e não slot.pieces): é ele que soma o que o
+    // construtor de armário gerou — sem isso a prateleira inserida existe no
+    // preço e some do 3D.
+    const parts = resolvePiecesForViewer(projectSlotEffectivePieces(slot), moduleDims, slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides);
     const openState = {
       doors: (ViewerProject && ViewerProject.areDoorsOpen) ? ViewerProject.areDoorsOpen() : false,
       drawers: (ViewerProject && ViewerProject.areDrawersOpen) ? ViewerProject.areDrawersOpen() : false
@@ -15142,14 +16882,119 @@ function buildProjectAssemblies(slotsList) {
       // (0..height_m) — por isso o offset (0, height_m/2, 0): BoxGeometry
       // nasce centrada nos 3 eixos, essa translação alinha com a convenção
       // Y do group.
+      // A CAIXA SEGUE O QUE ESTÁ DESENHADO, não a medida declarada
+      // (2026-08-13). Antes ela era um bloco de width×height×depth do slot,
+      // e essa é a diferença que o Matt sentiu: "o clique ta pegando no
+      // módulo mesmo estando longe dele... quero o clique somente onde o
+      // móvel está aparecendo na tela".
+      //
+      // Medida declarada ≠ volume ocupado sempre que alguma peça não existe
+      // nessa configuração: opcional desmarcado, peça escondida por
+      // visibilidade condicional (migration 031), peça-módulo que não coube no
+      // preset travado, módulo de base/rodapé com altura de slot grande. Em
+      // todos esses casos sobrava caixa invisível no ar, e clicar no vazio
+      // selecionava o móvel.
+      //
+      // Box3.setFromObject devolve a caixa em coordenadas de MUNDO; aqui o
+      // group ainda está na origem, sem rotação (quem posiciona é
+      // renderFreeformWalls, depois), então mundo == local. Se isso mudar um
+      // dia, esta conta passa a precisar da inversa da matriz do group.
+      //
+      // A caixa continua existindo (não dá pra raycastar só a geometria real):
+      // um módulo de prateleiras abertas tem buracos sem triângulo nenhum, e
+      // clicar no meio de um vão desses tem que selecionar o módulo — foi o
+      // pedido de 2026-07-26 ("nao estou conseguindo chegar com o mause no
+      // modulo baixo"). O que muda é só o TAMANHO dela.
       if (typeof THREE !== 'undefined') {
-        const wM = slot.width_mm / 1000, hM = slot.height_mm / 1000, dM = slot.depth_mm / 1000;
-        const hitboxGeom = new THREE.BoxGeometry(Math.max(wM, 0.01), Math.max(hM, 0.01), Math.max(dM, 0.01));
-        const hitboxMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-        const hitbox = new THREE.Mesh(hitboxGeom, hitboxMat);
-        hitbox.position.set(0, hM / 2, 0);
-        hitbox.userData.isHitboxProxy = true;
-        assembly.group.add(hitbox);
+        let caixa = null;
+        try {
+          assembly.group.updateMatrixWorld(true);
+          const b = new THREE.Box3().setFromObject(assembly.group);
+          if (!b.isEmpty()) caixa = b;
+        } catch (e) { caixa = null; }
+        // MÓDULO QUE NÃO DESENHA NADA NÃO É CLICÁVEL no 3D. Antes ele ganhava
+        // uma caixa do tamanho declarado: um volume invisível de 2 metros que
+        // roubava o clique de quem mirava o ambiente atrás. Continua
+        // selecionável pelo card do canvas 2D, que é onde ele aparece.
+        // TETO DURO: a caixa NUNCA passa da medida declarada do módulo
+        // (2026-08-13, 2ª rodada — o Matt mandou um print marcando de vermelho
+        // a área onde o clique ainda pegava o módulo: era MUITO maior que o
+        // móvel e maior até que as setas).
+        //
+        // A bounding box da geometria sozinha não bastava porque ela cresce
+        // com QUALQUER coisa desenhada no group: peça com offset errado no
+        // cadastro, porta desenhada aberta, peça-módulo aninhada que escapou
+        // do casco. Um triângulo perdido a 1m de distância e a caixa inteira
+        // vai junto — invisível, e catando clique no ambiente todo.
+        //
+        // Então a caixa final é a INTERSEÇÃO: bounding box do que está
+        // desenhado ∩ caixa declarada do módulo (com folga). A folga da
+        // FRENTE é maior porque porta sobreposta protrui de verdade
+        // (viewer3d.placeFrontGroupInBox põe em z = D/2 + espessura + gap) e
+        // ela É clicável.
+        //
+        // Convenção do group (renderFreeformWalls): X e Z centrados
+        // (-metade..+metade), Y do CHÃO pro topo (0..altura).
+        if (caixa) {
+          const wM = Number(slot.width_mm || 0) / 1000;
+          const hM = Number(slot.height_mm || 0) / 1000;
+          const dM = Number(slot.depth_mm || 0) / 1000;
+          const FOLGA = 0.02;        // 2cm — arredondamento e sobra de peça
+          const FOLGA_FRENTE = 0.06; // 6cm — porta sobreposta
+          if (wM > 0 && hM > 0 && dM > 0) {
+            const limite = new THREE.Box3(
+              new THREE.Vector3(-wM / 2 - FOLGA, -FOLGA, -dM / 2 - FOLGA),
+              new THREE.Vector3(wM / 2 + FOLGA, hM + FOLGA, dM / 2 + FOLGA_FRENTE)
+            );
+            caixa.intersect(limite);
+            // Interseção vazia = a geometria inteira está fora da caixa
+            // declarada (cadastro bem errado). Cai na caixa declarada, que é o
+            // pior caso aceitável — nunca no bounding box solto.
+            if (caixa.isEmpty()) caixa = limite;
+          }
+          const tam = caixa.getSize(new THREE.Vector3());
+          const meio = caixa.getCenter(new THREE.Vector3());
+          // Piso de 1cm por eixo: um módulo de uma peça plana só (prateleira
+          // solta) viraria uma caixa sem volume, impossível de acertar.
+          const hitboxGeom = new THREE.BoxGeometry(
+            Math.max(tam.x, 0.01), Math.max(tam.y, 0.01), Math.max(tam.z, 0.01)
+          );
+          // VER A CAIXA DE CLIQUE: no console do navegador (F12) rode
+          //   window.__legnoDebugHitbox = true
+          // e mexa em qualquer coisa que redesenhe a cena (arrastar um módulo,
+          // trocar de parede). A caixa aparece em azul. `false` volta ao normal.
+          //
+          // Atalho sem console: o CONTORNO VERMELHO do módulo selecionado É
+          // exatamente esta caixa — setHoverHighlight usa THREE.BoxHelper no
+          // mesmo group, ou seja, o mesmo bounding box. Se o vermelho está
+          // colado no móvel, a área de clique também está; o que sobra em
+          // volta são as SETAS de redimensionamento, que ficam de 6cm a 23cm
+          // FORA da face (PROJECT_ARROW_GAP_M + comprimento da seta) e são
+          // testadas antes do módulo.
+          const hitboxDebug = typeof window !== 'undefined' && window.__legnoDebugHitbox;
+          const hitboxMat = new THREE.MeshBasicMaterial(hitboxDebug
+            ? { color: 0x1e88e5, wireframe: true, transparent: true, opacity: 0.9, depthTest: false }
+            : { transparent: true, opacity: 0, depthWrite: false });
+          const hitbox = new THREE.Mesh(hitboxGeom, hitboxMat);
+          hitbox.position.set(meio.x, meio.y, meio.z);
+          hitbox.userData.isHitboxProxy = true;
+          assembly.group.add(hitbox);
+          // DIAGNÓSTICO — contraparte do window.__legnoDebugPick (que loga o
+          // que o clique ACERTOU). Aqui sai o tamanho real da caixa de clique
+          // no momento em que ela nasce. Com os dois lados dá pra afirmar, sem
+          // adivinhar, se o clique errado veio da caixa (grande demais), da
+          // seta (testada antes do módulo) ou de outra coisa.
+          if (typeof window !== 'undefined' && window.__legnoDebugPick) {
+            const mm = (v) => Math.round(v * 1000);
+            console.log('[legno hitbox] ' + JSON.stringify({
+              modulo: (slot.module && slot.module.name) || '', slot: slot.id,
+              declarado_mm: [Math.round(slot.width_mm), Math.round(slot.height_mm), Math.round(slot.depth_mm)],
+              caixa_mm: [mm(tam.x), mm(tam.y), mm(tam.z)],
+              centro_mm: [mm(meio.x), mm(meio.y), mm(meio.z)],
+              malhas: (() => { let n = 0; assembly.group.traverse((o) => { if (o.isMesh) n += 1; }); return n; })()
+            }));
+          }
+        }
       }
     }
     return assembly;
@@ -15584,7 +17429,7 @@ if (projPhotorealBtn) {
         z_order: Number(slot.z_order || 0),
         floor_height_mm: Number(slot.floor_height_mm || 0),
         parts: resolvePiecesForViewer(
-          slot.pieces,
+          projectSlotEffectivePieces(slot),
           { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm },
           slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
         )
@@ -15750,7 +17595,7 @@ async function sendProjectToOrder() {
         try {
           const viewer = getSkuAddHiddenViewer();
           const syntheticSlot = {
-            pieces: slot.pieces,
+            pieces: projectSlotEffectivePieces(slot),
             width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
             colorsByRole: slot.colorsByRole, pieceColorOverrides: slot.pieceColorOverrides || {},
             shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides
@@ -15864,6 +17709,9 @@ function serializeProjectSlots() {
     shelf_quantities: slot.shelfQuantities || {},
     dim_overrides: slot.dimOverrides || {},
     selected_optional_ids: slot.selectedOptionalIds || [],
+    // Árvore de vãos montada no construtor de armário (spec §4.5 — cabe no
+    // jsonb que já existe, sem migration). null = o cliente não mexeu.
+    layout: slot.layout || null,
     thumbnail_data_url: slot.thumbnail_data_url || null
   }));
 }
@@ -16399,6 +18247,9 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         shelfQuantities: cfg.shelf_quantities || {},
         dimOverrides: cfg.dim_overrides || {},
         selectedOptionalIds: optionalIds,
+        // Construtor de armário: a árvore volta como veio (o motor só a lê
+        // quando a janela abre). Projeto salvo antes disso não tem a chave.
+        layout: cfg.layout || null,
         result,
         thumbnail_data_url: cfg.thumbnail_data_url || null,
         widthPresetsMm: lockedDimensionPresets.width,
@@ -16442,6 +18293,10 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     });
 
     projectSlots = restored;
+    // Construtor de armário: o projeto salvo traz a ÁRVORE (slot.layout), não
+    // as peças. Carrega o catálogo de agregados e refaz a geometria em
+    // background — ver hydrateProjectLayoutPieces.
+    hydrateProjectLayoutPieces();
     selectedProjectSlotId = null;
     project3DLastFitKey = null; // projeto TROCOU inteiro — reenquadra a câmera 3D mesmo se a chave coincidir (ver comentário na declaração)
     refreshProjectWallWidthInput();

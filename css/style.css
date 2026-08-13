@@ -2586,6 +2586,23 @@ header.po-topnav {
    .po-proj-hud-btn/.po-proj-canvas-hud aqui em cima — as regras antigas foram
    removidas junto com a faixa que elas estilizavam.) */
 
+/* Aviso de GIRO (Shift + arrastar, 2026-08-12) — "me informe quando esta
+   rotacionando no canto inferior da tela visivel". Fica no canto de baixo da
+   PRÓPRIA cena 3D (não da janela): o wrap do canvas é o que o Matt está
+   olhando, e assim o aviso acompanha a cena mesmo com a página rolada.
+   pointer-events:none — é só informação, nunca rouba o arraste em andamento. */
+.po-proj-rotate-hud {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  z-index: 40; pointer-events: none;
+  padding: 6px 14px; border-radius: 999px;
+  background: rgba(23,22,19,0.92); color: #fff;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.3px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+  white-space: nowrap;
+}
+/* Encostou num múltiplo de 90° (o ímã pegou) — verde discreto de confirmação. */
+.po-proj-rotate-hud.snapped { background: rgba(28,110,64,0.94); }
+
 /* Ações do módulo selecionado — flutuam SOBRE o canvas 3D, posicionadas em px
    por refreshProjectSlotActions (portal.js). position:fixed porque a conta vem
    de worldToClient, que devolve coordenada de viewport (client), não relativa
@@ -2929,6 +2946,119 @@ header.po-topnav {
 }
 
 /* ---- Janela de propriedades do módulo (segurar o clique) ---- */
+/* Criador de armário embutido (2026-08-12) — quase tela cheia: a tela do
+   construtor tem três colunas (árvore, desenho, propriedades) e não cabe num
+   card estreito. O iframe carrega o ERP na MESMA origem. */
+#po-proj-builder-modal {
+  display: none; position: fixed; inset: 0; z-index: 3300;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 12px;
+}
+#po-proj-builder-modal.open { display: flex; }
+/* Janela MENOR (pedido do Matt: "ao clicar quero uma tela menor com as
+   configuracoes e salvar volta configurado pro projetos. simples") — não é
+   tela cheia: dá pra ver o ambiente por trás e entender que aquilo é uma
+   janela sobre o projeto, não outra página. Ainda assim larga o bastante pras
+   três colunas do criador (árvore, desenho, propriedades). */
+.po-proj-builder-card {
+  background: var(--panel); border-radius: 12px;
+  width: 1100px; max-width: 96vw;
+  height: 720px; max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.po-proj-builder-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex: none;
+}
+.po-proj-builder-header .po-auth-modal-close { position: static; }
+
+/* Duas colunas: o vão desenhado (grande) e as peças (estreita). Sem formulário
+   nenhum — ver o comentário no portal.html. */
+.po-proj-builder-body { flex: 1; display: flex; min-height: 0; }
+/* display:block (e não flex): o palco é UM svg que ocupa tudo e se centraliza
+   sozinho pelo preserveAspectRatio="xMidYMid meet". Com flex + align-items
+   center o svg perderia a altura (item flex de altura automática) e o desenho
+   viraria uma faixa. */
+.po-proj-builder-stage {
+  flex: 1; min-width: 0; position: relative;
+  background: #faf9f6; display: block;
+  padding: 18px; overflow: hidden;
+}
+.po-proj-builder-lib {
+  flex: 0 0 190px; border-left: 1px solid var(--border);
+  padding: 10px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--panel);
+}
+/* Peça da biblioteca: ícone desenhado + nome, e embaixo a fileira de
+   quantidades (só nas peças em que quantidade faz sentido — ver
+   projectBuilderAceitaQtd). */
+.po-proj-builder-item {
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 10px; background: #fff; cursor: grab;
+  font-size: 12px; font-weight: 600; color: var(--text);
+  user-select: none; touch-action: none;
+}
+.po-proj-builder-item-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.po-proj-builder-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-proj-builder-item:hover { border-color: var(--accent); background: var(--accent-light); }
+.po-proj-builder-item.dragging { opacity: 0.5; }
+/* O SVG herda a cor do card (currentColor), inclusive no hover. */
+.po-proj-builder-item-icon { flex: none; line-height: 0; color: var(--muted); }
+.po-proj-builder-item-icon svg { width: 22px; height: 22px; display: block; }
+.po-proj-builder-item:hover .po-proj-builder-item-icon { color: var(--accent); }
+/* Quantidade: clicar no número JÁ insere naquela quantidade (vãos iguais). */
+.po-proj-builder-qty { display: flex; gap: 4px; }
+.po-proj-qty-btn {
+  flex: 1; border: 1px solid var(--border); background: #fff; border-radius: 6px;
+  padding: 3px 0; font-size: 11px; font-weight: 700; color: var(--muted);
+  cursor: pointer; line-height: 1.2;
+}
+.po-proj-qty-btn:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+.po-proj-builder-group {
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--muted); margin-top: 6px;
+}
+/* Barra do cabeçalho: desfazer e recomeçar. Só ícone — a tela inteira é
+   "sem texto" por pedido do Matt. */
+.po-proj-builder-tools { display: flex; align-items: center; gap: 6px; }
+.po-proj-builder-tool {
+  border: 1px solid var(--border); background: #fff; border-radius: 8px;
+  width: 30px; height: 30px; font-size: 15px; line-height: 1;
+  color: var(--text); cursor: pointer;
+}
+.po-proj-builder-tool:hover { border-color: var(--accent); background: var(--accent-light); }
+.po-proj-builder-save {
+  border: none; background: var(--accent); color: #fff;
+  border-radius: 8px; padding: 7px 16px; font-size: 12px; font-weight: 700;
+  cursor: pointer;
+}
+.po-proj-builder-save:hover { filter: brightness(0.94); }
+.po-proj-builder-status { font-size: 11px; color: var(--muted); margin-right: 4px; }
+
+/* O palco é um SVG em MILÍMETROS que ocupa o espaço todo (ver
+   renderProjectBuilderStage). */
+.po-proj-builder-svg { width: 100%; height: 100%; display: block; }
+
+/* Vão desenhado: retângulo clicável. O selecionado ganha a borda de destaque
+   e é onde a próxima peça entra. */
+.po-proj-void { fill: #fff; fill-opacity: 0.35; stroke: #c9c2b4; stroke-width: 1; cursor: pointer; }
+.po-proj-void:hover { fill: var(--accent-light); fill-opacity: 0.8; }
+.po-proj-void.selected { fill: #f2f0ea; fill-opacity: 0.9; }
+.po-proj-void.drop-target { stroke: #d8442f; stroke-width: 3; fill: #fdeeea; fill-opacity: 0.9; }
+/* Peça gerada pela árvore: clicar tira. */
+.po-proj-void-item { cursor: pointer; }
+.po-proj-void-item:hover { fill: #d8442f; stroke: #a8231d; }
+/* Pegador da divisória: arrastar move, clicar tira. */
+.po-proj-div-h { cursor: ew-resize; touch-action: none; }
+.po-proj-div-v { cursor: ns-resize; touch-action: none; }
+.po-proj-builder-empty {
+  position: absolute; bottom: 10px; left: 0; right: 0; text-align: center;
+  font-size: 11px; color: var(--muted); pointer-events: none;
+}
+
 #po-proj-props-modal {
   display: none; position: fixed; inset: 0; z-index: 3200;
   align-items: center; justify-content: center;

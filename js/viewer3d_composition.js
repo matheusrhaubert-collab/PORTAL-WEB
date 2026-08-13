@@ -128,9 +128,25 @@ function createViewerComposition3D() {
     containerEl.appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.minDistance = 0.3;
+    // SEM AMORTECIMENTO — a câmera anda exatamente com o ponteiro, 1:1.
+    //
+    // enableDamping + dampingFactor 0.08 (o que estava aqui) NÃO é "suavizar":
+    // é fazer a câmera perseguir o alvo 8% por quadro. Na prática ela fica
+    // sempre ~12 quadros atrás do mouse durante o arrasto e ainda continua
+    // andando DEPOIS que o mouse parou. Foi exatamente o que o Matt relatou:
+    // "delay grande de mexer no mouse e ver a tela mexer... deixa bem seco,
+    // instantâneo". Isso também é meio caminho pro clique errado: com a cena
+    // ainda deslizando, o que está sob o cursor no momento do clique não é
+    // mais o que a pessoa mirou.
+    //
+    // Custo de desligar: o giro fica sem inércia (para na hora que o botão
+    // solta). É o pedido. Não voltar sem o Matt pedir.
+    controls.enableDamping = false;
+    // 0.3 (30cm) vinha do visualizador de UM módulo e era o que fazia o zoom
+    // "escorregar" na cena de ambiente: chegando perto do móvel o clamp
+    // empurrava a câmera de volta e o ponto sob o cursor saía andando (Matt,
+    // 2026-08-12). 5cm deixa encostar de verdade na peça.
+    controls.minDistance = 0.05;
     controls.maxDistance = 30;
     controls.maxPolarAngle = Math.PI * 0.49;
     // Zoom PRA ONDE O CURSOR/DEDOS APONTAM (pedido do usuário 2026-07-29: "o
@@ -198,6 +214,18 @@ function createViewerComposition3D() {
         }
       }
     });
+    // NÃO DESENHA O QUE NINGUÉM ESTÁ VENDO (2026-08-13). display:none não para
+    // o requestAnimationFrame: os viewers escondidos (o painel "Visualizar 3D"
+    // fechado, o viewer oculto das miniaturas) continuavam renderizando a cena
+    // inteira a cada quadro e disputando a GPU com o viewer que está na tela.
+    // Na aba Projetos são DUAS ou TRÊS instâncias vivas ao mesmo tempo, então
+    // isso é o orçamento de quadro do que a pessoa está mexendo.
+    //
+    // Só o desenho é pulado — o rAF continua, o estado das portas/gavetas
+    // continua convergindo, e nada muda pro snapshot: snapshot() chama
+    // renderer.render() por conta própria antes de ler o pixel (é o que faz a
+    // foto realista e a miniatura funcionarem com o canvas escondido).
+    if (containerEl && (!containerEl.clientWidth || !containerEl.clientHeight)) return;
     renderer.render(scene, camera);
   }
 
@@ -467,6 +495,14 @@ function createViewerComposition3D() {
   // buildRoomEnvironment/buildRoomEnvironmentMultiWall.
   const ROOM_MIN_FLOOR_DEPTH_M = 1.8;
 
+  // Retângulo REAL do piso desenhado (metros, mundo) — guardado na construção
+  // do ambiente e exposto por getFloorRectM(). Existe porque portal.js precisa
+  // travar o módulo ILHA dentro do piso e, até 2026-08-13, ele ESTIMAVA essa
+  // área por conta própria: o móvel parava antes da borda visível ("nao vem
+  // ate a ponta do piso. que ta livre"). Uma conta só, no lugar onde o piso é
+  // de fato desenhado.
+  let lastFloorRectM = null;
+
   // exactWidth (pedido do usuário, 2026-07-26: "gostaria de ver o final das
   // paredes, conforme medidas delas", depois "nao estou vendo as ultimas
   // alteracoes de piso e final da parede no 3D" — a versão original desse
@@ -498,6 +534,7 @@ function createViewerComposition3D() {
     // limpo de sempre.
     if (!room.minimal) {
       const floorDepth = Math.max((maxDepth || 0) + 0.6, ROOM_MIN_FLOOR_DEPTH_M);
+      lastFloorRectM = { x0: -wallW / 2, x1: wallW / 2, z0: 0, z1: floorDepth };
       group.add(makeFloorSurface(-wallW / 2, wallW / 2, 0, floorDepth));
       group.add(makeFloorGrid(-wallW / 2, wallW / 2, 0, floorDepth));
       if (ceilingH > 0) {
@@ -635,6 +672,7 @@ function createViewerComposition3D() {
       });
       if (fz1 - fz0 < ROOM_MIN_FLOOR_DEPTH_M) fz1 = fz0 + ROOM_MIN_FLOOR_DEPTH_M;
       if (fx1 - fx0 < 0.3) fx1 = fx0 + 0.3;
+      lastFloorRectM = { x0: fx0, x1: fx1, z0: fz0, z1: fz1 };
       group.add(makeFloorSurface(fx0, fx1, fz0, fz1));
       group.add(makeFloorGrid(fx0, fx1, fz0, fz1));
     }
@@ -1420,14 +1458,69 @@ function createViewerComposition3D() {
   // falha, e copiar as últimas linhas "[legno pickAssemblyAt]" logadas — só
   // loga quando o RESULTADO muda (não a cada pointermove) pra não lotar o
   // console. Não afeta nada em produção (fica mudo por padrão).
+  // ONDE CADA MÓDULO ESTÁ NA TELA, em pixels de viewport (2026-08-13).
+  //
+  // Nasceu do relato "o clique pega muito fora do móvel": o log do pick sozinho
+  // não resolve a dúvida, porque ele diz o que o raio acertou mas não diz onde
+  // o módulo aparece. Projetando os 8 cantos da caixa do módulo pela MESMA
+  // câmera que desenha, dá pra comparar direto com o clientX/clientY do clique:
+  //   · clique DENTRO do retângulo e mesmo assim "errado" -> o móvel está sendo
+  //     desenhado menor que a caixa dele (peça invisível/transparente esticando
+  //     o bounding box), e o alvo a corrigir é a geometria, não o raycasting;
+  //   · clique FORA do retângulo e ainda assim acertando -> aí sim é conta de
+  //     câmera/rect errada no raycasting.
+  function debugScreenRects() {
+    const out = [];
+    if (!camera || !renderer || typeof THREE === 'undefined') return out;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const caixa = new THREE.Box3();
+    const v = new THREE.Vector3();
+    currentGroups.forEach((g) => {
+      if (!g || !g.userData || g.userData.slotId == null) return;
+      caixa.setFromObject(g);
+      if (caixa.isEmpty()) return;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < 8; i++) {
+        v.set(
+          (i & 1) ? caixa.max.x : caixa.min.x,
+          (i & 2) ? caixa.max.y : caixa.min.y,
+          (i & 4) ? caixa.max.z : caixa.min.z
+        ).project(camera);
+        const px = rect.left + ((v.x + 1) / 2) * rect.width;
+        const py = rect.top + ((1 - v.y) / 2) * rect.height;
+        x0 = Math.min(x0, px); x1 = Math.max(x1, px);
+        y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+      }
+      out.push({
+        slotId: g.userData.slotId,
+        x: [Math.round(x0), Math.round(x1)],
+        y: [Math.round(y0), Math.round(y1)]
+      });
+    });
+    return out;
+  }
+
+  // `extra` pode vir como FUNÇÃO — e vem, no caminho quente: montar o objeto
+  // de diagnóstico (mapear todos os hits) custa alocação a cada pick, e pick
+  // acontece até 9 vezes por toque (o anel do pickAssemblyAtSticky). Com o
+  // diagnóstico desligado, a função simplesmente nunca é chamada.
   let _lastDebugPickKey = null;
-  function _debugPickLog(clientX, clientY, result, extra) {
+  function _debugPickLog(clientX, clientY, result, extraOuFn) {
     if (typeof window === 'undefined' || !window.__legnoDebugPick) return;
+    const extra = (typeof extraOuFn === 'function') ? extraOuFn() : extraOuFn;
     // Chave só pelo RESULTADO (slotId/wallIndex) + reason — não pelas
     // distâncias/coordenadas em `extra` (essas mudam a cada pixel de
     // pointermove, então incluí-las no throttle antes fazia logar quase
     // toda hora mesmo sem o resultado mudar, poluindo o console).
-    const key = JSON.stringify({ r: result ? [result.slotId, result.wallIndex] : null, reason: extra && extra.reason });
+    // window.__legnoDebugPick = 'all' loga TODO pick, com as coordenadas.
+    // O throttle por resultado escondia justamente o que interessa quando o
+    // relato é "vai clicando até desclicar": todos os cliques que acertaram o
+    // módulo davam o mesmo resultado e só o PRIMEIRO aparecia, então não dava
+    // pra saber até onde a área errada ia.
+    const tudo = window.__legnoDebugPick === 'all';
+    const key = tudo
+      ? (Math.round(clientX) + 'x' + Math.round(clientY))
+      : JSON.stringify({ r: result ? [result.slotId, result.wallIndex] : null, reason: extra && extra.reason });
     if (key === _lastDebugPickKey) return;
     _lastDebugPickKey = key;
     // Loga como STRING já formatada (JSON.stringify), não como objeto
@@ -1437,7 +1530,11 @@ function createViewerComposition3D() {
     // tela rápida). Texto puro aparece tudo de uma vez, sem precisar clicar
     // em nada, só printar a área e mandar o print de novo.
     console.log('[legno pickAssemblyAt] ' + JSON.stringify({
-      clientX, clientY, result: result ? { slotId: result.slotId, wallIndex: result.wallIndex } : null, ...extra
+      clientX: Math.round(clientX), clientY: Math.round(clientY),
+      result: result ? { slotId: result.slotId, wallIndex: result.wallIndex } : null,
+      // ONDE O MÓDULO ESTÁ NA TELA agora — compare com clientX/clientY acima.
+      moduloNaTela: debugScreenRects(),
+      ...extra
     }, null, 2));
   }
 
@@ -1498,8 +1595,32 @@ function createViewerComposition3D() {
     // nessa conta, só a caixa) resolve na raiz. Fallback pra rawHits inteiro
     // se por algum motivo NENHUM hit for de caixa (não deveria ocorrer,
     // buildProjectAssemblies sempre adiciona uma — ver lá).
-    const hitboxHits = rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
-    const hits = hitboxHits.length ? hitboxHits : rawHits;
+    // ==================================================================
+    // A GEOMETRIA DE VERDADE MANDA (2026-08-13, 3ª rodada)
+    // ==================================================================
+    // Era o contrário: só a caixa invisível contava (isHitboxProxy), e a
+    // geometria real era ignorada de propósito. O motivo original (2026-07-26)
+    // era ambiguidade entre módulos VIZINHOS encostados: peças finas vistas
+    // quase de perfil geram dezenas de hits a distâncias quase idênticas, e o
+    // "mais próximo" virava ruído sub-milimétrico entre módulos diferentes.
+    //
+    // O custo disso só apareceu agora, com dado na mão: a caixa é do tamanho
+    // DECLARADO do módulo (medido: 1757×900×560, igual ao cadastro), e um
+    // módulo é quase todo AR — um casco de 6 peças finas com vão aberto no
+    // meio. Clicar no buraco, vendo a parede do outro lado, selecionava o
+    // módulo. É o "clico fora do móvel e ele pega" repetido três vezes pelo
+    // Matt, e ele está certo: a área invisível É muito maior que o móvel.
+    //
+    // Agora: vence a PEÇA. A caixa fica só como último recurso, quando o raio
+    // não achou geometria nenhuma daquele módulo — assim um módulo desenhado
+    // com pouca coisa continua clicável, mas nunca mais o vazio dentro dele.
+    // A ambiguidade entre vizinhos continua tratada logo abaixo
+    // (preferredWallIndex + AMBIGUITY_TOLERANCE_M), que é onde ela deve ser
+    // tratada mesmo.
+    const reais = rawHits.filter((h) => !(h.object && h.object.userData && h.object.userData.isHitboxProxy));
+    const hits = reais.length
+      ? reais
+      : rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
     let firstAny = null;
     let firstAnyDist = Infinity;
     let matchedPreferred = null;
@@ -1545,7 +1666,7 @@ function createViewerComposition3D() {
     const result = (matchedPreferred && (matchedPreferredDist - firstAnyDist) <= AMBIGUITY_TOLERANCE_M)
       ? matchedPreferred
       : firstAny;
-    _debugPickLog(clientX, clientY, result, {
+    _debugPickLog(clientX, clientY, result, () => ({
       reason: 'checked', preferredWallIndex, rectInside: (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom),
       firstAnyDist: isFinite(firstAnyDist) ? Number(firstAnyDist.toFixed(3)) : null,
       matchedPreferredDist: isFinite(matchedPreferredDist) ? Number(matchedPreferredDist.toFixed(3)) : null,
@@ -1555,7 +1676,7 @@ function createViewerComposition3D() {
         while (o && !(o.userData && o.userData.slotId != null)) o = o.parent;
         return o ? { slotId: o.userData.slotId, wallIndex: o.userData.wallIndex, dist: Number(h.distance.toFixed(3)) } : null;
       }).filter(Boolean).slice(0, 8)
-    });
+    }));
     return result;
   }
 
@@ -1663,7 +1784,66 @@ function createViewerComposition3D() {
     const targetOffset = new THREE.Vector3().subVectors(controls.target, point);
     camera.position.copy(point).add(camOffset.multiplyScalar(factor));
     controls.target.copy(point).add(targetOffset.multiplyScalar(factor));
+    // ---- Por que o zoom "escorregava" (2026-08-12) ----
+    // "o zoom aqui no computador sempre ta levando pra baixo do ponteiro do
+    // mouse. acho que e uma limitacao da camera."
+    // Era o clamp de minDistance: a matemática acima aproxima câmera E alvo do
+    // ponto pelo mesmo fator, o que mantém o ponto parado na tela — MAS o
+    // controls.update() logo abaixo empurra a câmera de volta assim que a
+    // distância bate no mínimo, e aí o ponto sob o cursor sai andando. Com
+    // minDistance grande (0.3 = 30cm, herdado do visualizador de UM módulo)
+    // isso começava a acontecer bem antes de "chegar perto do móvel".
+    //
+    // minDistance agora é 0.05 (ver init) — o clamp só entra quando o nariz da
+    // câmera está de fato encostando na peça.
     controls.update();
+  }
+
+  // Centraliza a órbita num ponto do mundo SEM girar a cena: move o alvo e a
+  // câmera pelo MESMO vetor (é um pan, não um giro), então a direção do olhar
+  // não muda — o que estava sendo olhado desliza pro meio da tela e passa a
+  // ser o eixo do giro.
+  //
+  // Pedido do Matt (2026-08-12): "quero chegar bem perto e rotacionar perto do
+  // movel sem perder ele do centro da tela". Girar em torno do alvo antigo
+  // (normalmente o centro do AMBIENTE) joga o móvel pra fora da tela assim que
+  // se está perto dele — o raio da órbita é grande demais.
+  function centerOrbitOn(point) {
+    if (!controls || !camera || !point) return;
+    const delta = new THREE.Vector3(point.x, point.y, point.z).sub(controls.target);
+    controls.target.add(delta);
+    camera.position.add(delta);
+    controls.update();
+  }
+
+  // Mesmo que centerOrbitOn, mas a partir de um Group (usa o centro da caixa
+  // que o contém) — é o que portal.js tem em mãos ao selecionar um módulo.
+  function centerOrbitOnGroup(group) {
+    if (!group) return;
+    const box = new THREE.Box3().setFromObject(group);
+    if (box.isEmpty()) return;
+    const c = new THREE.Vector3();
+    box.getCenter(c);
+    centerOrbitOn({ x: c.x, y: c.y, z: c.z });
+  }
+
+  // ENQUADRAR UM MÓDULO DE FRENTE (2026-08-13) — duplo clique nele.
+  // "achando que dar 2 cliques no modulo cliques rapidos, ele centraliza
+  // frontal esse modulo pra poder ser visto mexido rotacionado."
+  // A distância sai do TAMANHO do módulo (esfera que o contém / tan(fov/2)),
+  // a mesma conta do enquadramento automático da cena — assim um nicho de
+  // 400mm e um closet de 2,4m ficam ambos preenchendo a tela, e o alvo da
+  // órbita passa a ser ele (girar acontece em volta do móvel, não do ambiente).
+  function frameGroupFront(group, dir) {
+    if (!group || !camera || !controls) return;
+    const box = new THREE.Box3().setFromObject(group);
+    if (box.isEmpty()) return;
+    const c = new THREE.Vector3(); box.getCenter(c);
+    const esfera = box.getBoundingSphere(new THREE.Sphere());
+    const fov = (camera.fov * Math.PI) / 180;
+    // 1.6 = respiro em volta do módulo (sem isso ele encosta nas bordas).
+    const dist = Math.max((esfera.radius * 1.6) / Math.tan(fov / 2), 0.35);
+    frameDirection(dir, { x: c.x, y: c.y, z: c.z }, dist);
   }
 
   // Zoom por BOTÃO (2026-08-08, etapa 2 do redesenho — a barra flutuante do
@@ -1782,12 +1962,18 @@ function createViewerComposition3D() {
   // zoom que tinha. dir = vetor (mundo) de onde a câmera deve olhar PRA o
   // alvo, ex.: {x:0,y:1,z:0.001} = de cima; -intoDir da parede = de frente
   // pra ela. target (opcional) recentraliza a órbita antes de girar.
-  function frameDirection(dir, target) {
+  // distOverride (2026-08-13): sem ele a câmera mantém a distância que já
+  // tinha, que é o certo pra "vira de frente pra esta parede". Pra enquadrar
+  // UM módulo (duplo clique) a distância precisa vir do tamanho DELE, senão
+  // ele aparece minúsculo no meio da tela.
+  function frameDirection(dir, target, distOverride) {
     if (!camera || !controls) return;
     const t = target
       ? new THREE.Vector3(target.x, target.y, target.z)
       : controls.target.clone();
-    const dist = camera.position.distanceTo(controls.target) || 3;
+    const dist = (distOverride > 0)
+      ? distOverride
+      : (camera.position.distanceTo(controls.target) || 3);
     const d = new THREE.Vector3(dir.x, dir.y, dir.z);
     if (d.lengthSq() < 1e-9) return;
     d.normalize();
@@ -1811,8 +1997,32 @@ function createViewerComposition3D() {
   // {x,y,z}, dir:{x,y,z} }] (axis é a string opaca devolvida por
   // pickResizeArrowAt, ex. 'width-left'); null/[] apaga todas.
   let resizeArrowGroup = null;
-  const RESIZE_ARROW_COLOR = 0xd8442f;
-  function setResizeArrows(spec) {
+  // CORES DA SETA (2026-08-13) — pedido do Matt, depois de o cursor especial
+  // não resolver a sensação de imprecisão: "deixa o mouse sempre com o cursor
+  // triangulo padrao. mas quando estiver em cima de uma das setas do movel ela
+  // pode mudar de cor. vermelho azul e verde conforme o sentido dela. quando
+  // ela se destacar com a cor ai sim saberei que posso clicar nela e
+  // arrastar".
+  //
+  // Parada, a seta é cinza discreta — ela é alça, não decoração. Sob o
+  // ponteiro, acende na cor do EIXO, na convenção universal de 3D (X vermelho,
+  // Y verde, Z azul), que é também "largura / altura / profundidade" aqui.
+  const RESIZE_ARROW_COLOR = 0x8a8580;
+  const RESIZE_ARROW_AXIS_COLOR = {
+    'width-left': 0xd8442f, 'width-right': 0xd8442f,   // X — vermelho
+    'height-top': 0x2e9e5b,                             // Y — verde
+    'depth-front': 0x2f6fd8                             // Z — azul
+  };
+  // Qual seta está acesa agora (string do eixo) — evita repintar a cada
+  // pointermove quando nada mudou.
+  let resizeArrowHot = null;
+  // alvoGeneroso: no DEDO a área de toque precisa ser bem maior que a seta
+  // desenhada; no MOUSE isso vira imprecisão — o ponteiro "pega" a seta a
+  // 8cm de distância dela e o cliente sente que perdeu o controle fino
+  // (Matt, 2026-08-13: "levo o mouse bem longe e mesmo assim ele fica como
+  // se tivesse pegando... isso e horrivel pra usabilidade"). Quem informa é
+  // portal.js, que sabe se o dispositivo é de toque.
+  function setResizeArrows(spec, alvoGeneroso) {
     if (!scene) return;
     if (resizeArrowGroup) {
       scene.remove(resizeArrowGroup);
@@ -1825,8 +2035,10 @@ function createViewerComposition3D() {
     const shaftLen = 0.10, shaftR = 0.014, headLen = 0.075, headR = 0.038;
     // depthTest:false + renderOrder alto: a seta é UI, precisa aparecer por
     // cima do módulo mesmo estando geometricamente dentro dele.
-    const mat = new THREE.MeshBasicMaterial({ color: RESIZE_ARROW_COLOR, depthTest: false });
     spec.forEach((item) => {
+      // Material POR SETA (antes era um só compartilhado): acender uma sem
+      // acender as outras exige cor própria em cada.
+      const mat = new THREE.MeshBasicMaterial({ color: RESIZE_ARROW_COLOR, depthTest: false });
       const arrow = new THREE.Group();
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 12), mat);
       shaft.position.y = shaftLen / 2;
@@ -1834,8 +2046,9 @@ function createViewerComposition3D() {
       head.position.y = shaftLen + headLen / 2;
       // Alvo de toque generoso e invisível em volta da seta inteira — no dedo,
       // acertar um cone de 4cm é frustrante.
+      const fatorAlvo = alvoGeneroso ? 2.2 : 1.15;
       const hit = new THREE.Mesh(
-        new THREE.CylinderGeometry(headR * 2.2, headR * 2.2, shaftLen + headLen, 8),
+        new THREE.CylinderGeometry(headR * fatorAlvo, headR * fatorAlvo, shaftLen + headLen, 8),
         new THREE.MeshBasicMaterial({ visible: false, depthTest: false })
       );
       hit.position.y = (shaftLen + headLen) / 2;
@@ -1848,10 +2061,29 @@ function createViewerComposition3D() {
       const d = new THREE.Vector3(item.dir.x, item.dir.y, item.dir.z).normalize();
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
       arrow.position.set(item.position.x, item.position.y, item.position.z);
+      arrow.userData.arrowMaterial = mat;
       group.add(arrow);
     });
     resizeArrowGroup = group;
+    resizeArrowHot = null;
     scene.add(group);
+  }
+
+  // Acende a seta do eixo dado (null apaga todas). Chamada pelo hover de
+  // portal.js — é o único aviso de "dá pra agarrar aqui", já que o cursor
+  // agora fica sempre no triângulo padrão.
+  function highlightResizeArrow(axis) {
+    if (!resizeArrowGroup) { resizeArrowHot = null; return; }
+    if (resizeArrowHot === axis) return;
+    resizeArrowHot = axis || null;
+    resizeArrowGroup.children.forEach((arrow) => {
+      const mat = arrow.userData && arrow.userData.arrowMaterial;
+      if (!mat) return;
+      const aceso = !!axis && arrow.userData.resizeAxis === axis;
+      mat.color.setHex(aceso
+        ? (RESIZE_ARROW_AXIS_COLOR[arrow.userData.resizeAxis] || RESIZE_ARROW_COLOR)
+        : RESIZE_ARROW_COLOR);
+    });
   }
 
   // ---------- Prévia de onde o móvel vai cair ----------
@@ -1972,7 +2204,15 @@ function createViewerComposition3D() {
     setDropPreview,
     // 3ª rodada (2026-08-08) — ver pickAssemblyAtSticky (seleção que não pula
     // pro vizinho no dedo) e worldToClient (botões DOM sobre o módulo).
-    pickAssemblyAtSticky, worldToClient, zoomByStep,
+    pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,
+    // Diagnóstico (ver debugScreenRects) — chamável pelo console via
+    // window.__legnoViewerEdit.debugScreenRects().
+    debugScreenRects,
+    // Retângulo do piso desenhado (ver lastFloorRectM) — quem trava a ilha
+    // dentro do ambiente usa este, não uma estimativa própria.
+    getFloorRectM: function () { return lastFloorRectM ? Object.assign({}, lastFloorRectM) : null; },
+    // Girar em torno do módulo selecionado (2026-08-12) — ver centerOrbitOn.
+    centerOrbitOn, centerOrbitOnGroup, frameGroupFront,
     // Teste AR (2026-08-01) — ver comentário de getScene acima.
     getScene
   };
