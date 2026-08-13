@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 16:05:40
-cache: 202608131605
-mensagem: raycaster: contorno nao e alvo (Line.threshold em metros)
+﻿data: 2026-08-13 16:18:43
+cache: 202608131618
+mensagem: portal carrega drilling.js e layout-engine.js; vao interno de verdade

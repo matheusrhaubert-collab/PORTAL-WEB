@@ -14534,6 +14534,26 @@ function computeProjectSlotInnerZone(slot) {
       else if (lado === 'top' && b.y0 < y1) y1 = b.y0;
       else if (lado === 'back' && ez > z0) z0 = ez;
     });
+    // REDE DE SEGURANÇA: nenhuma caixa reconhecida como casco. Acontece se
+    // drilling.js não carregar (foi o bug de 2026-08-13: o portal não incluía
+    // o arquivo) ou num módulo cadastrado de um jeito que a classificação não
+    // pega. Antes disso o vão silenciosamente virava o módulo INTEIRO, que é o
+    // pior resultado possível — o cliente insere prateleira do tamanho errado
+    // e nada na tela avisa. LayoutEngine.innerZoneFromParts faz a mesma
+    // dedução pelos PAPÉIS + offsets, sem depender do drilling.
+    if (x0 === 0 && y0 === 0 && z0 === 0 && x1 === W && y1 === H
+      && typeof LayoutEngine !== 'undefined' && LayoutEngine.innerZoneFromParts) {
+      try {
+        const parts = resolvePiecesForViewer(
+          slot.pieces, { width_mm: W, height_mm: H, depth_mm: D },
+          slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+        );
+        const z = LayoutEngine.innerZoneFromParts(parts || [], W, H, D);
+        if (z && z.w < W) { x0 = z.x; x1 = z.x + z.w; }
+        if (z && z.h < H) { y0 = z.y; y1 = z.y + z.h; }
+        if (z && z.z > 0) { z0 = z.z; }
+      } catch (e) { /* segue com o módulo inteiro */ }
+    }
   } catch (e) { /* sem casco: usa o módulo inteiro */ }
   const MIN_VAO = 40;
   if (x1 - x0 < MIN_VAO) { x0 = 0; x1 = W; }
@@ -15561,7 +15581,11 @@ function attachProject3DEditDrag() {
   // Detectado na mão (dois pointerup rápidos e próximos) em vez de usar
   // 'dblclick', que no iOS só dispara de forma confiável com mouse/trackpad.
   let lastRoomTap = null;
-  const ROOM_DOUBLE_TAP_MS = 320;
+  // 400ms: mesma janela do duplo clique na SETA e no MÓDULO (ver
+  // ARROW_DOUBLE_TAP_MS). Eram 320 aqui, mais apertado que o padrão do
+  // sistema (~500ms) — dois cliques que a pessoa deu como duplo às vezes
+  // contavam como dois simples e a câmera não focava.
+  const ROOM_DOUBLE_TAP_MS = 400;
   const ROOM_DOUBLE_TAP_PX = 30;
 
   // Último toque numa SETA de redimensionamento — duplo clique na mesma seta
@@ -16272,11 +16296,24 @@ function attachProject3DEditDrag() {
 
   function applyRoomDoubleTap(surface) {
     if (surface.kind === 'floor') {
-      // Chão → Vista Superior (a vista 2D de cima que já existe). É a
-      // resposta mais fiel a "mostra vista de cima": ela é ortográfica e
-      // cotada, bem melhor pra planejar planta que uma câmera 3D apontada
-      // pra baixo.
-      setProjectViewMode('top');
+      // CHÃO → A CÂMERA FOCA NO PONTO CLICADO (2026-08-13).
+      //
+      // Antes isto trocava a tela inteira pra Vista Superior 2D. Virou
+      // problema quando o Matt ficou clicando na cena pra desselecionar um
+      // módulo: dois cliques seguidos no chão jogavam ele numa OUTRA VISTA
+      // sem querer. E não era o que ele pediu agora — "2 cliques rápidos pra
+      // a câmera focar, tanto chão quanto paredes".
+      //
+      // Continua dando pra ir pra Vista Superior pelo botão "Top" ali em cima,
+      // que é onde se procura por isso.
+      //
+      // Ângulo: bem de cima, mas não a prumo (y bem maior que z). A prumo o
+      // desenho perde a noção de profundidade e o giro fica imprevisível perto
+      // do polo. A distância atual da câmera é mantida (frameDirection sem
+      // distOverride) — é aproximação de FOCO, não de zoom.
+      if (ViewerProjectEdit.frameDirection && surface.point) {
+        ViewerProjectEdit.frameDirection({ x: 0, y: 1, z: 0.35 }, surface.point);
+      }
       return;
     }
     // Parede → vira a câmera pra encarar essa parede de frente. A parede
@@ -16295,11 +16332,21 @@ function attachProject3DEditDrag() {
       // Câmera na frente da parede (sentido CONTRÁRIO ao intoDir dela, que
       // aponta pra dentro do ambiente), levemente acima da metade do pé
       // direito pra não ficar rente ao chão.
+      //
+      // O ALVO é O PONTO CLICADO, não mais o centro da parede (2026-08-13):
+      // "2 cliques rápidos pra a câmera FOCAR". Numa parede de 4m, mirar o
+      // centro dela quando a pessoa clicou na ponta não é focar. Só a ALTURA
+      // continua vindo do meio do pé direito — o ponto clicado no rodapé
+      // deixaria a câmera olhando pro chão.
       const midAlongM = wallGeo.widthM / 2;
-      const target = {
+      const centro = {
         x: wallGeo.originX + wallGeo.alongDirX * midAlongM,
-        y: (roomSettings.ceiling_mm / 1000) / 2,
         z: wallGeo.originZ + wallGeo.alongDirZ * midAlongM
+      };
+      const target = {
+        x: surface.point ? surface.point.x : centro.x,
+        y: (roomSettings.ceiling_mm / 1000) / 2,
+        z: surface.point ? surface.point.z : centro.z
       };
       ViewerProjectEdit.frameDirection({ x: wallGeo.intoDirX, y: 0.18, z: wallGeo.intoDirZ }, target);
     }
