@@ -15983,8 +15983,23 @@ function attachProject3DEditDrag() {
     // configurador de módulo único). Em vez disso, classifica se o AGARRE
     // inicial caiu perto de uma borda do módulo (classifyProject3DGrab,
     // MESMA função usada só pra trocar o cursor no hover, ver mais abaixo).
+    // ESTICAR SÓ PELA SETA (2026-08-13). O agarre invisível de borda foi
+    // DESLIGADO — a régua continua aqui e serve pro cursor/hover, mas não
+    // inicia mais um resize sozinho.
+    //
+    // Motivo, nas palavras do Matt: "quando clico na lateral ele tá esticando
+    // mesmo sem mostrar a seta colorida. preciso de controle e precisão nesses
+    // comandos, não posso controlar a usabilidade sem ver o que estou
+    // fazendo." Ele está certo: a borda não tem alça, não acende nada e ocupa
+    // justamente onde a pessoa clica pra selecionar/arrastar o móvel. Quando
+    // isso nasceu (2026-07-26) as setas ainda não existiam na cena — hoje
+    // existem, são visíveis, acendem no hover e já fazem o mesmo trabalho.
+    //
+    // Reversível numa linha: trocar `false &&` por nada. Não voltar sem o Matt
+    // pedir — foi decisão explícita dele.
     const widthMm = Number(slot.width_mm || 0);
-    const grab = classifyProject3DGrab(slot, grabAlongMm, grabHeightMm);
+    const grabBorda = classifyProject3DGrab(slot, grabAlongMm, grabHeightMm);
+    const grab = (false && grabBorda) ? grabBorda : { dragMode: 'move', resizeAxis: null };
     let grabOffsetEdgeMm = 0;
     if (grab.resizeAxis === 'width-left') grabOffsetEdgeMm = grabAlongMm - Number(slot.x_mm || 0);
     else if (grab.resizeAxis === 'width-right') grabOffsetEdgeMm = grabAlongMm - (Number(slot.x_mm || 0) + widthMm);
