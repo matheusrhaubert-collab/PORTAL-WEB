@@ -14559,6 +14559,30 @@ function computeProjectSlotInnerZone(slot) {
   if (x1 - x0 < MIN_VAO) { x0 = 0; x1 = W; }
   if (y1 - y0 < MIN_VAO) { y0 = 0; y1 = H; }
 
+  // AVISO QUE SE DENUNCIA. Zona interna igual ao módulo inteiro quase sempre
+  // é falha de dedução, não um módulo sem casco — e antes isso passava calado,
+  // com o construtor oferecendo um vão do tamanho do móvel. Agora deixa rastro
+  // no console com o material pra diagnosticar (quantas caixas vieram e como
+  // cada uma foi classificada), sem precisar ligar flag nenhuma.
+  if (x0 === 0 && y0 === 0 && z0 === 0 && x1 === W && y1 === H) {
+    try {
+      const bs = computeProjectSlotCascoBoxes(slot);
+      console.warn('[legno vao-interno] não achei o casco de "'
+        + ((slot.module && slot.module.name) || '?') + '" — o vão saiu do tamanho do módulo. '
+        + JSON.stringify({
+          modulo_mm: [Math.round(W), Math.round(H), Math.round(D)],
+          caixas: bs.length,
+          temDrilling: typeof Drilling !== 'undefined',
+          amostra: bs.slice(0, 8).map((b) => ({
+            role: b.role || null,
+            pos: [Math.round(b.x0), Math.round(b.y0), Math.round(b.z0)],
+            tam: [Math.round(b.sx), Math.round(b.sy), Math.round(b.sz)],
+            lado: classifyProjectCascoBox(b, W, H, D)
+          }))
+        }));
+    } catch (e) { /* diagnóstico nunca pode quebrar a tela */ }
+  }
+
   const dedu = { x: x0, y: y0, z: z0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), d: Math.max(1, D - z0) };
   if (!(m.inner_w_formula || m.inner_h_formula || m.inner_d_formula)) return dedu;
   return {
@@ -14623,15 +14647,78 @@ function classifyProjectCascoBox(b, W, H, D) {
 function computeProjectSlotCascoBoxes(slot) {
   const W = Number(slot.width_mm || 0), H = Number(slot.height_mm || 0), D = Number(slot.depth_mm || 0);
   if (!W || !H || !D) return [];
-  if (typeof Drilling === 'undefined' || !Drilling._internals || !Drilling._internals.buildBoxes) return [];
+  let parts = null;
   try {
-    const parts = resolvePiecesForViewer(
+    parts = resolvePiecesForViewer(
       slot.pieces, { width_mm: W, height_mm: H, depth_mm: D },
       slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
     );
-    return Drilling._internals.buildBoxes(parts || [], W, H, D).boxes || [];
+  } catch (e) { return []; }
+
+  // Caminho barato: Drilling espelha viewer3d.placePieceInBox e devolve a
+  // caixa de cada peça sem criar objeto 3D nenhum.
+  let boxes = [];
+  if (typeof Drilling !== 'undefined' && Drilling._internals && Drilling._internals.buildBoxes) {
+    try { boxes = Drilling._internals.buildBoxes(parts || [], W, H, D).boxes || []; } catch (e) { boxes = []; }
+  }
+  if (boxes.length) return boxes;
+
+  // Caminho de ÚLTIMO RECURSO: medir a CENA.
+  //
+  // Drilling.pieceBox só conhece um punhado de position_role (left, right,
+  // top, bottom, countertop, back, baseboard, shelf, free) e devolve null pro
+  // resto — módulo cadastrado com um papel fora dessa lista não gera caixa
+  // nenhuma, e a zona interna virava o módulo inteiro em silêncio.
+  //
+  // O 3D, por outro lado, desenha TODAS as peças. Então quando não sobrou
+  // nada, monta o mesmo assembly do viewer e mede a caixa de cada malha —
+  // é literalmente "onde a peça está desenhada", sem depender de cadastro.
+  //
+  // Só aqui porque é caro (cria geometria) e isto roda também durante o
+  // arraste de medida. O assembly é descartado no fim.
+  return measureProjectSlotBoxesFrom3D(parts, W, H, D);
+}
+
+// Converte a cena do módulo em caixas no MESMO formato que Drilling devolve
+// (x0/y0/z0 + sx/sy/sz em mm, canto chão-fundo-esquerda). A convenção do group
+// é a de renderFreeformWalls: X e Z centrados (-metade..+metade), Y do chão
+// pro topo.
+function measureProjectSlotBoxesFrom3D(parts, W, H, D) {
+  if (typeof THREE === 'undefined' || typeof Viewer3D === 'undefined'
+    || !Viewer3D.buildStandaloneAssembly) return [];
+  let asm = null;
+  try {
+    asm = Viewer3D.buildStandaloneAssembly(parts || [], W, H, D, { doors: false, drawers: false });
+    if (!asm || !asm.group) return [];
+    asm.group.updateMatrixWorld(true);
+    const caixas = [];
+    const b = new THREE.Box3();
+    asm.group.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      b.setFromObject(o);
+      if (b.isEmpty()) return;
+      caixas.push({
+        // role fica NULO de propósito: quem classifica é a geometria
+        // (classifyProjectCascoBox), que é justamente o que sobra quando o
+        // cadastro não ajudou.
+        role: null,
+        x0: (b.min.x + W / 2000) * 1000, sx: (b.max.x - b.min.x) * 1000,
+        y0: b.min.y * 1000, sy: (b.max.y - b.min.y) * 1000,
+        z0: (b.min.z + D / 2000) * 1000, sz: (b.max.z - b.min.z) * 1000
+      });
+    });
+    return caixas;
   } catch (e) {
     return [];
+  } finally {
+    // Sem dispose a cada abertura do construtor a memória de GPU vaza.
+    try {
+      if (asm && asm.group && typeof Viewer3D.disposeAssembly === 'function') Viewer3D.disposeAssembly(asm);
+      else if (asm && asm.group) asm.group.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m && m.dispose && m.dispose());
+      });
+    } catch (e) { /* ok */ }
   }
 }
 
