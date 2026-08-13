@@ -314,7 +314,10 @@ const Viewer3D = (function () {
   // uMm/vMm: tamanho REAL da face que vai receber esse material — é o que
   // mantém a textura na escala da chapa em vez de esticar (ver loadTexture).
   function makeMaterial(color, rotateTexture, uMm, vMm) {
-    const textureUrl = color && color.texture_url;
+    // Modo "só cor" (ver estiloDesenho): nem chega a pedir a imagem. É o que
+    // faz a cena pesar menos — textura de chapa é o item mais caro aqui, em
+    // download e em memória de GPU.
+    const textureUrl = estiloDesenho.textura ? (color && color.texture_url) : null;
     const tex = textureUrl ? loadTexture(textureUrl, rotateTexture, uMm, vMm) : null;
     if (tex) {
       return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 });
@@ -825,6 +828,59 @@ const Viewer3D = (function () {
   // material na hora de gerar a imagem realista.
   const EDGE_COLOR = 0x3a3a3a;
   const EDGE_OPACITY = 0.45;
+
+  // ==========================================================================
+  // ESTILO DE DESENHO — pedido do Matt (2026-08-13)
+  // ==========================================================================
+  // "uns botões... que deixe o 3d com linhas mais grossas, com linhas
+  // transparentes, e com texturas só de cores, pra pesar menos se quiser. ou
+  // também sem linhas grossas, deixar com linha fina como opcional".
+  //
+  //   contorno: 'fino' (padrão) | 'grosso' | 'suave' | 'nenhum'
+  //   textura:  true (madeira)  | false (só a cor da chapa — bem mais leve:
+  //             nenhuma imagem baixada, nenhuma textura na GPU)
+  //
+  // 'grosso' NÃO usa linewidth: WebGL ignora linewidth > 1 em praticamente
+  // todo navegador/plataforma (limitação do ANGLE), e foi por isso que
+  // material.linewidth = 2 nunca fez efeito em lugar nenhum deste projeto. O
+  // traço grosso aqui é uma linha DESENHADA DUAS VEZES com um deslocamento
+  // mínimo em cada eixo — barato e funciona em qualquer GPU.
+  //
+  // O estilo é global e só vale na PRÓXIMA montagem: quem troca precisa
+  // remontar a cena (o portal chama renderProjectCanvas logo depois).
+  const estiloDesenho = { contorno: 'fino', textura: true };
+  function setDrawStyle(opts) {
+    if (!opts) return estiloDesenho;
+    if (opts.contorno) estiloDesenho.contorno = opts.contorno;
+    if (opts.textura !== undefined) estiloDesenho.textura = !!opts.textura;
+    return estiloDesenho;
+  }
+  function getDrawStyle() { return { contorno: estiloDesenho.contorno, textura: estiloDesenho.textura }; }
+
+  // Monta o contorno de uma peça conforme o estilo. Devolve null quando o
+  // estilo é 'nenhum' — aí o grupo da peça sai sem contorno nenhum, que é o
+  // desenho mais leve possível.
+  function buildEdgesForStyle(geometria) {
+    const est = estiloDesenho.contorno;
+    if (est === 'nenhum') return null;
+    const opacidade = est === 'suave' ? 0.16 : (est === 'grosso' ? 0.75 : EDGE_OPACITY);
+    const eg = new THREE.EdgesGeometry(geometria);
+    const mat = new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: opacidade });
+    const linha = new THREE.LineSegments(eg, mat);
+    if (est !== 'grosso') return linha;
+    // Traço grosso: 4 cópias deslocadas de 0,4mm nas diagonais do plano da
+    // tela. Em escala de metros isso é 0.0004 — invisível como deslocamento,
+    // suficiente pra engrossar o traço.
+    const grosso = new THREE.Group();
+    grosso.add(linha);
+    const d = 0.0004;
+    [[d, d, 0], [-d, d, 0], [d, -d, 0], [-d, -d, 0]].forEach((o) => {
+      const c = new THREE.LineSegments(eg, mat);
+      c.position.set(o[0], o[1], o[2]);
+      grosso.add(c);
+    });
+    return grosso;
+  }
   function buildContentGroup(contentOrGeometry, color, rotateTexture) {
     if (contentOrGeometry && contentOrGeometry.isGroup) return contentOrGeometry;
     // Fita/miolo por face (migration 088) só em caixa: um cabide tubular é
@@ -843,11 +899,10 @@ const Viewer3D = (function () {
     const mesh = new THREE.Mesh(
       contentOrGeometry,
       materiais || makeMaterial(color, rotateTexture, faceMm && faceMm.u, faceMm && faceMm.v));
-    const edgesGeometry = new THREE.EdgesGeometry(contentOrGeometry);
-    const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: EDGE_OPACITY }));
+    const edges = buildEdgesForStyle(contentOrGeometry);
     const group = new THREE.Group();
     group.add(mesh);
-    group.add(edges);
+    if (edges) group.add(edges);
     return group;
   }
 
@@ -2493,6 +2548,11 @@ const Viewer3D = (function () {
     // de buildStandaloneAssembly — reaproveita a mesma lógica de
     // posicionamento de update(), não duplica/reescreve nada dela.
     buildStandaloneAssembly,
+    // Estilo de desenho (contorno fino/grosso/suave/nenhum + textura on/off) —
+    // ver estiloDesenho. Vale pra QUALQUER cena montada por este arquivo,
+    // inclusive a da Composição/Projetos, porque todas passam por
+    // addPartToGroup/makeMaterial. Só afeta a próxima montagem.
+    setDrawStyle, getDrawStyle,
     // Materiais por face de UMA peça (migration 088) — face com a cor, borda
     // com fita ou com o miolo da chapa. Exposto pra quem monta cena PRÓPRIA
     // (o construtor de módulos do ERP) não precisar reimplementar a regra e

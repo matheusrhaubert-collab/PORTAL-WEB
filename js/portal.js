@@ -17970,6 +17970,61 @@ function setProjectViewMode(mode) {
 if (projViewFrontBtn) projViewFrontBtn.addEventListener('click', () => setProjectViewMode('front'));
 if (projViewTopBtn) projViewTopBtn.addEventListener('click', () => setProjectViewMode('top'));
 
+// ==========================================================================
+// ESTILO DO DESENHO 3D — contorno e textura (2026-08-13)
+// ==========================================================================
+// Pedido do Matt: "uns botões... que deixe o 3d com linhas mais grossas, com
+// linhas transparentes, e com texturas só de cores, pra pesar menos se
+// quiser. ou também sem linhas grossas, deixar com linha fina como opcional".
+//
+// Quem desenha é o Viewer3D (setDrawStyle) — e o estilo só entra na PRÓXIMA
+// montagem, porque contorno e material são criados peça a peça. Então cada
+// clique aqui remonta a cena: renderProjectCanvas refaz a Vista de Canto, e
+// generateProject3D o painel "Visualizar 3D" quando ele está aberto.
+//
+// A escolha fica no localStorage: é preferência de trabalho (o Matt vai
+// querer "só cor" no notebook e textura na hora de mostrar pro cliente), não
+// dado do projeto — não tem por que virar campo salvo no banco.
+const PROJECT_DRAW_STYLE_KEY = 'legno_proj_draw_style';
+function applyProjectDrawStyle(estilo, remontar) {
+  if (typeof Viewer3D === 'undefined' || !Viewer3D.setDrawStyle) return;
+  const s = Viewer3D.setDrawStyle(estilo);
+  document.querySelectorAll('#po-proj-edge-toggle .po-view-toggle-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.edge === s.contorno);
+  });
+  const bt = document.getElementById('po-proj-texture-btn');
+  if (bt) {
+    bt.classList.toggle('active', !s.textura);
+    bt.textContent = s.textura ? '◍' : '○';
+  }
+  try { localStorage.setItem(PROJECT_DRAW_STYLE_KEY, JSON.stringify(s)); } catch (e) { /* modo anônimo */ }
+  if (remontar) {
+    renderProjectCanvas();
+    const wrap3d = document.getElementById('po-proj-3d-wrap');
+    if (wrap3d && wrap3d.style.display !== 'none' && typeof generateProject3D === 'function') generateProject3D();
+  }
+}
+(function attachProjectDrawStyle() {
+  const toggle = document.getElementById('po-proj-edge-toggle');
+  if (toggle) {
+    toggle.querySelectorAll('.po-view-toggle-btn').forEach((b) => {
+      b.addEventListener('click', () => applyProjectDrawStyle({ contorno: b.dataset.edge }, true));
+    });
+  }
+  const bt = document.getElementById('po-proj-texture-btn');
+  if (bt) {
+    bt.addEventListener('click', () => {
+      const atual = Viewer3D.getDrawStyle ? Viewer3D.getDrawStyle() : { textura: true };
+      applyProjectDrawStyle({ textura: !atual.textura }, true);
+    });
+  }
+  // Preferência da última sessão — aplicada SEM remontar (a cena ainda nem
+  // existe neste ponto do carregamento).
+  let salvo = null;
+  try { salvo = JSON.parse(localStorage.getItem(PROJECT_DRAW_STYLE_KEY) || 'null'); } catch (e) { salvo = null; }
+  applyProjectDrawStyle(salvo || {}, false);
+})();
+
 // ---------- PROJETOS SALVOS (migration 056) ----------
 // Mesmo espírito de "Composições favoritas" (ver bloco perto de
 // saveCompositionFavorite acima), mas numa tabela própria (user_projects) —
