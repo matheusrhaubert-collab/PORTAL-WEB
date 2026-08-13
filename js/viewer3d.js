@@ -601,6 +601,12 @@ const Viewer3D = (function () {
     textureLoader = new THREE.TextureLoader();
 
     raycaster = new THREE.Raycaster();
+    // Line.threshold vem 1 por padrão e a unidade aqui é o METRO: sem isto o
+    // raio acerta qualquer contorno que passe a até 1m dele. Mesma correção e
+    // mesmo motivo do viewer3d_composition.js (2026-08-13) — lá isso fazia o
+    // clique pegar o módulo a um metro de distância dele.
+    raycaster.params.Line.threshold = 0.0005;
+    if (raycaster.params.Points) raycaster.params.Points.threshold = 0.0005;
     renderer.domElement.addEventListener('dblclick', handleDoubleClick);
 
     window.addEventListener('resize', onResize);

@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 15:55:30
-cache: 202608131555
-mensagem: clique pega so a geometria real + construtor de armario
+﻿data: 2026-08-13 16:05:40
+cache: 202608131605
+mensagem: raycaster: contorno nao e alvo (Line.threshold em metros)

@@ -1425,7 +1425,29 @@ function createViewerComposition3D() {
     return renderer ? renderer.domElement : null;
   }
 
+  // ==========================================================================
+  // A CAUSA DO "O CLIQUE PEGA 1 METRO FORA DO MÓVEL" (2026-08-13)
+  // ==========================================================================
+  // THREE.Raycaster.params.Line.threshold vem 1 POR PADRÃO — e nesta cena a
+  // unidade de mundo é o METRO. Ou seja: o raio "acerta" qualquer LINHA que
+  // passe a até 1 METRO dele. O grupo de um módulo tem 11 LineSegments (os
+  // contornos das peças), então o módulo virava um alvo com 1m de auréola
+  // invisível em volta — foi exatamente isso, medido no navegador dele:
+  //   módulo desenhado em x 471..539 px  ·  clique pegando em x 335..650 px
+  // Os dois números batem: ~1m de cada lado, na escala daquela câmera.
+  //
+  // Isso também explica os hits "a 3mm um do outro" que apareceram no log: não
+  // era raio raspando peça fina de perfil, era a distância até várias linhas
+  // quase paralelas.
+  //
+  // 0.0005 (meio milímetro) = na prática, só acerta a linha quem passa em cima
+  // dela. Points recebe o mesmo tratamento por segurança (não há Points na cena
+  // hoje, mas o padrão dele também é generoso).
   const _raycaster = (typeof THREE !== 'undefined') ? new THREE.Raycaster() : null;
+  if (_raycaster) {
+    _raycaster.params.Line.threshold = 0.0005;
+    if (_raycaster.params.Points) _raycaster.params.Points.threshold = 0.0005;
+  }
 
   function ndcFromClient(clientX, clientY) {
     const rect = renderer.domElement.getBoundingClientRect();
@@ -1617,7 +1639,11 @@ function createViewerComposition3D() {
     // A ambiguidade entre vizinhos continua tratada logo abaixo
     // (preferredWallIndex + AMBIGUITY_TOLERANCE_M), que é onde ela deve ser
     // tratada mesmo.
-    const reais = rawHits.filter((h) => !(h.object && h.object.userData && h.object.userData.isHitboxProxy));
+    // SÓ SUPERFÍCIE CONTA. Contorno (LineSegments) é enfeite: mesmo com o
+    // threshold no mínimo, uma linha é infinitamente fina e acertá-la é
+    // questão de sorte — quem o usuário mira é a face da peça.
+    const reais = rawHits.filter((h) => h.object && h.object.isMesh
+      && !(h.object.userData && h.object.userData.isHitboxProxy));
     const hits = reais.length
       ? reais
       : rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
