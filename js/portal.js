@@ -14522,18 +14522,31 @@ function computeProjectSlotInnerZone(slot) {
   // Prateleira no meio não encosta em y=0 nem em y=H, então não conta; porta
   // fica na frente (z alto) e é ignorada de propósito — porta não muda o vão
   // (quem recua os internos é o consumo de profundidade do próprio motor).
-  let x0 = 0, y0 = 0, z0 = 0, x1 = W, y1 = H;
-  try {
-    const boxes = computeProjectSlotCascoBoxes(slot);
-    boxes.forEach((b) => {
+  // DUAS FONTES, NESTA ORDEM — e o critério pra trocar de uma pra outra NÃO é
+  // "veio caixa?", é "deu pra achar o casco?". Essa distinção era o bug que
+  // sobrou: Drilling.pieceBox só conhece alguns position_role e devolve null
+  // pro resto, então um módulo com as LATERAIS num papel desconhecido, mas com
+  // porta em 'free' e prateleira em 'shelf', DEVOLVIA CAIXAS — nenhuma delas
+  // casco. Como havia caixa, o caminho que mede a cena nunca era tentado e o
+  // vão continuava do tamanho do módulo.
+  const deduzirCasco = (boxes) => {
+    let a = 0, b0 = 0, c = 0, d1 = W, e1 = H;
+    (boxes || []).forEach((b) => {
       const lado = classifyProjectCascoBox(b, W, H, D);
       const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
-      if (lado === 'left' && ex > x0) x0 = ex;
-      else if (lado === 'right' && b.x0 < x1) x1 = b.x0;
-      else if (lado === 'bottom' && ey > y0) y0 = ey;
-      else if (lado === 'top' && b.y0 < y1) y1 = b.y0;
-      else if (lado === 'back' && ez > z0) z0 = ez;
+      if (lado === 'left' && ex > a) a = ex;
+      else if (lado === 'right' && b.x0 < d1) d1 = b.x0;
+      else if (lado === 'bottom' && ey > b0) b0 = ey;
+      else if (lado === 'top' && b.y0 < e1) e1 = b.y0;
+      else if (lado === 'back' && ez > c) c = ez;
     });
+    return { x0: a, y0: b0, z0: c, x1: d1, y1: e1, achou: !(a === 0 && b0 === 0 && c === 0 && d1 === W && e1 === H) };
+  };
+  let x0 = 0, y0 = 0, z0 = 0, x1 = W, y1 = H;
+  try {
+    let r = deduzirCasco(computeProjectSlotCascoBoxes(slot));
+    if (!r.achou) r = deduzirCasco(computeProjectSlotCascoBoxes(slot, true));
+    x0 = r.x0; y0 = r.y0; z0 = r.z0; x1 = r.x1; y1 = r.y1;
     // REDE DE SEGURANÇA: nenhuma caixa reconhecida como casco. Acontece se
     // drilling.js não carregar (foi o bug de 2026-08-13: o portal não incluía
     // o arquivo) ou num módulo cadastrado de um jeito que a classificação não
@@ -14566,7 +14579,9 @@ function computeProjectSlotInnerZone(slot) {
   // cada uma foi classificada), sem precisar ligar flag nenhuma.
   if (x0 === 0 && y0 === 0 && z0 === 0 && x1 === W && y1 === H) {
     try {
-      const bs = computeProjectSlotCascoBoxes(slot);
+      // As caixas MEDIDAS NA CENA (o último recurso, que também falhou) — são
+      // elas que interessam pra entender por que nada foi classificado.
+      const bs = computeProjectSlotCascoBoxes(slot, true);
       console.warn('[legno vao-interno] não achei o casco de "'
         + ((slot.module && slot.module.name) || '?') + '" — o vão saiu do tamanho do módulo. '
         + JSON.stringify({
@@ -14616,9 +14631,15 @@ function classifyProjectCascoBox(b, W, H, D) {
   // frente/porta encosta em tudo.
   if (r === 'leg' || r === 'front') return null;
 
-  const TOL = 2;        // "encosta" = até 2mm da face
-  const FINA = 0.30;    // "fina" = < 30% da medida do módulo naquele eixo
-  const COBRE = 0.55;   // "cobre a face" = > 55% nos outros dois eixos
+  // Folgas afrouxadas em 2026-08-13 (2ª rodada): 2mm de tolerância barrava
+  // lateral que nasce 3–5mm pra dentro (fundo em rebaixo, casco com folga de
+  // montagem), e 55% de cobertura barrava lateral de módulo com pé alto ou
+  // recorte de toe kick. O risco de afrouxar é confundir prateleira com base —
+  // e não confunde: prateleira não encosta em y=0 nem em y=H, que é a primeira
+  // condição de cada teste.
+  const TOL = 8;        // "encosta" = até 8mm da face
+  const FINA = 0.35;    // "fina" = < 35% da medida do módulo naquele eixo
+  const COBRE = 0.45;   // "cobre a face" = > 45% nos outros dois eixos
   const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
 
   if (b.sx < W * FINA && b.sy > H * COBRE && b.sz > D * COBRE) {
@@ -14644,7 +14665,7 @@ function classifyProjectCascoBox(b, W, H, D) {
 // tela fazia na 1ª versão) devolve caixas de tamanho zero, a dedução não acha
 // lateral nenhuma e a zona interna vira o módulo inteiro — que era exatamente
 // o retângulo vazio que aparecia na tela.
-function computeProjectSlotCascoBoxes(slot) {
+function computeProjectSlotCascoBoxes(slot, medirNaCena) {
   const W = Number(slot.width_mm || 0), H = Number(slot.height_mm || 0), D = Number(slot.depth_mm || 0);
   if (!W || !H || !D) return [];
   let parts = null;
@@ -14656,12 +14677,15 @@ function computeProjectSlotCascoBoxes(slot) {
   } catch (e) { return []; }
 
   // Caminho barato: Drilling espelha viewer3d.placePieceInBox e devolve a
-  // caixa de cada peça sem criar objeto 3D nenhum.
-  let boxes = [];
-  if (typeof Drilling !== 'undefined' && Drilling._internals && Drilling._internals.buildBoxes) {
-    try { boxes = Drilling._internals.buildBoxes(parts || [], W, H, D).boxes || []; } catch (e) { boxes = []; }
+  // caixa de cada peça sem criar objeto 3D nenhum. Quem chama pede o caminho
+  // caro explicitamente (medirNaCena) quando o barato não achou casco.
+  if (!medirNaCena) {
+    let boxes = [];
+    if (typeof Drilling !== 'undefined' && Drilling._internals && Drilling._internals.buildBoxes) {
+      try { boxes = Drilling._internals.buildBoxes(parts || [], W, H, D).boxes || []; } catch (e) { boxes = []; }
+    }
+    return boxes;
   }
-  if (boxes.length) return boxes;
 
   // Caminho de ÚLTIMO RECURSO: medir a CENA.
   //
@@ -16365,8 +16389,37 @@ function attachProject3DEditDrag() {
   // superfície contam como duplo toque; qualquer toque em cima de um módulo
   // não chega aqui (pickRoomSurfaceAt devolve null quando tem móvel na
   // frente, e além disso o pointerdown do módulo consome o gesto).
+  // Onde o gesto ATUAL começou. Em captura (true) pra rodar antes de qualquer
+  // outro handler deste canvas — só registra, não decide nada.
+  let inicioGesto3D = null;
+  domEl.addEventListener('pointerdown', (ev) => {
+    inicioGesto3D = { x: ev.clientX, y: ev.clientY, button: ev.button };
+  }, true);
+
   function handleRoomTapForDoubleTap(ev) {
     if (projectCameraModeOn && ev.pointerType === 'touch') return;
+    // SÓ CLIQUE ESQUERDO, E SÓ CLIQUE PARADO (2026-08-13).
+    //
+    // Relato do Matt: "quando rotaciono com o scroll do mouse, ao soltar ele
+    // vai pro frontal da parede que o mouse tá". Era isto: girar é o botão do
+    // MEIO, e o pointerup dele caía aqui como se fosse um toque no ambiente.
+    // Duas rotações seguidas viravam um "duplo toque" e a câmera pulava pra
+    // frente da parede — no meio de um gesto de câmera, que é o pior momento
+    // possível.
+    //
+    // O movimento também importa: soltar o botão depois de arrastar 300px não
+    // é clique, é o fim de um giro/pan. 6px é a mesma ordem de grandeza do
+    // limiar de clique do arraste de módulo (PROJECT_CLICK_MOVE_THRESHOLD_PX).
+    //
+    // Zerar lastRoomTap (em vez de só sair) é de propósito: um giro no meio de
+    // dois cliques quebra a sequência, senão o segundo clique casaria com um
+    // primeiro de antes da rotação.
+    if (ev.button !== 0) { lastRoomTap = null; return; }
+    if (inicioGesto3D && (inicioGesto3D.button !== 0
+      || Math.hypot(ev.clientX - inicioGesto3D.x, ev.clientY - inicioGesto3D.y) > 6)) {
+      lastRoomTap = null;
+      return;
+    }
     const surface = ViewerProjectEdit.pickRoomSurfaceAt
       ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY)
       : null;

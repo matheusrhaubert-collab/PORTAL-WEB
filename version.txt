@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 16:34:33
-cache: 202608131634
-mensagem: vao interno: mede a cena quando o papel da peca nao e reconhecido
+﻿data: 2026-08-13 16:45:06
+cache: 202608131645
+mensagem: vao interno: mede a cena quando a deducao falha, nao quando a lista vem vazia
