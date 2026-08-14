@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608132259" />
+<link rel="stylesheet" href="css/style.css?v=202608132304" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1552,6 +1552,10 @@
                          troca ESTE módulo pelo escolhido, mantendo largura,
                          altura, profundidade e posição. O antigo sai junto —
                          é troca, não inserção. Ver replaceProjectSlotModule. -->
+                    <!-- PEÇAS (2026-08-13): abre a lista de corte deste móvel + a
+                         vista explodida, pra conferência antes de mandar produzir. -->
+                    <button type="button" class="po-proj-slot-action-btn" id="po-proj-slot-pieces-btn"
+                            title="Peças deste móvel (conferência)">▤</button>
                     <button type="button" class="po-proj-slot-action-btn" id="po-proj-slot-replace-btn"
                             title="Substituir por outro módulo · Replace">⇄</button>
                   </div>
@@ -2049,10 +2053,10 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608132259"></script>
-<script src="js/pricing.js?v=202608132259"></script>
-<script src="js/viewer3d.js?v=202608132259"></script>
-<script src="js/viewer3d_composition.js?v=202608132259"></script>
+<script src="js/i18n.js?v=202608132304"></script>
+<script src="js/pricing.js?v=202608132304"></script>
+<script src="js/viewer3d.js?v=202608132304"></script>
+<script src="js/viewer3d_composition.js?v=202608132304"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -2062,17 +2066,43 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202608132259"></script>
+<script src="js/drilling.js?v=202608132304"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202608132259"></script>
+<script src="js/layout-engine.js?v=202608132304"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202608132259"></script>
+<script src="js/wall-editor.js?v=202608132304"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608132259"></script>
-<script src="js/portal.js?v=202608132259"></script>
+<script src="js/photoreal.js?v=202608132304"></script>
+<script src="js/portal.js?v=202608132304"></script>
+
+<!-- ======================================================================
+     PEÇAS DO MÓVEL — conferência (2026-08-13)
+     ======================================================================
+     Lista de corte deste módulo (descrição, medidas, cor, veio) ao lado de uma
+     vista EXPLODIDA. Pedido do Matt: "quero ver ele explodido, pra
+     conferência". A lista responde "o que vai ser cortado"; a explodida
+     responde "onde cada peça entra" — juntas, dá pra achar peça trocada antes
+     de virar chapa cortada. -->
+<div id="po-pieces-modal">
+  <div class="po-pieces-card">
+    <div class="po-pieces-header">
+      <strong id="po-pieces-title">Peças do móvel</strong>
+      <div class="po-pieces-tools">
+        <label class="po-pieces-explode">Explodir
+          <input type="range" id="po-pieces-explode" min="0" max="100" value="45">
+        </label>
+        <button type="button" class="po-auth-modal-close" id="po-pieces-close">&times;</button>
+      </div>
+    </div>
+    <div class="po-pieces-body">
+      <div class="po-pieces-3d" id="po-pieces-3d"></div>
+      <div class="po-pieces-list" id="po-pieces-list"></div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

@@ -14490,6 +14490,150 @@ async function replaceProjectSlotModule(slotId, novoModuleId) {
   markProjectDirty();
 }
 
+// ==========================================================================
+// PEÇAS DO MÓVEL — lista de corte + vista explodida (2026-08-13)
+// ==========================================================================
+// "quero uma tela mostrando todas as peças que esse móvel tem: descrição,
+// comprimento, largura, cor, veio... tipo uma lista de plano de corte. quero
+// ver ele explodido, pra conferência."
+//
+// As DUAS coisas na mesma tela de propósito: a lista diz o que vai ser
+// cortado, a explodida diz onde cada peça entra. Conferir uma sem a outra é
+// como conferir uma lista de compras sem saber a receita.
+//
+// A lista sai de resolvePiecesForViewer + Pricing.calculatePiece — as MESMAS
+// funções que alimentam preço e 3D. Não existe cálculo próprio aqui: se a
+// conferência usasse outra conta, ela deixaria de ser conferência.
+let piecesViewer = null;
+let piecesAssembly = null;
+
+function openProjectSlotPieces(slotId) {
+  const slot = projectSlots.find((s) => s.id === slotId);
+  const modal = document.getElementById('po-pieces-modal');
+  if (!slot || !modal) return;
+  const titulo = document.getElementById('po-pieces-title');
+  if (titulo) titulo.textContent = (slot.module && slot.module.name) || 'Peças do móvel';
+  modal.classList.add('open');
+  renderProjectSlotPiecesList(slot);
+  renderProjectSlotPiecesExploded(slot);
+}
+
+// Achata a árvore (peça-módulo tem filhas) — a conferência quer a peça que vai
+// pra serra, não o agrupamento.
+function flatProjectPieces(parts, prefixo) {
+  const saida = [];
+  (parts || []).forEach((p) => {
+    if (p.is_module && Array.isArray(p.child_parts) && p.child_parts.length) {
+      saida.push(...flatProjectPieces(p.child_parts, (prefixo ? prefixo + ' · ' : '') + (p.module_name || p.reference || '')));
+    } else {
+      saida.push({ p, grupo: prefixo || '' });
+    }
+  });
+  return saida;
+}
+
+function renderProjectSlotPiecesList(slot) {
+  const el = document.getElementById('po-pieces-list');
+  if (!el) return;
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  let parts = [];
+  try {
+    parts = resolvePiecesForViewer(
+      projectSlotEffectivePieces(slot),
+      { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm },
+      slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+    ) || [];
+  } catch (e) { parts = []; }
+  const linhas = flatProjectPieces(parts);
+  if (!linhas.length) { el.innerHTML = '<p class="hint">Sem peças resolvidas para este módulo.</p>'; return; }
+
+  // Maior × médio × menor: é assim que a peça chega na serra, e é assim que a
+  // lista de corte do ERP já mostra. Guardar "largura/altura/profundidade"
+  // aqui obrigaria quem confere a traduzir de cabeça a cada linha.
+  const dim = (p) => {
+    const v = [Number(p.width_mm) || 0, Number(p.height_mm) || 0, Number(p.depth_mm) || 0].sort((a, b) => b - a);
+    return { c: v[0], l: v[1], e: v[2] };
+  };
+  el.innerHTML = '<table class="po-pieces-table"><thead><tr>'
+    + '<th>#</th><th>Peça</th><th>Compr.</th><th>Larg.</th><th>Esp.</th><th>Cor</th><th>Veio</th>'
+    + '</tr></thead><tbody>'
+    + linhas.map(({ p, grupo }, i) => {
+      const d = dim(p);
+      const cor = (p.color && (p.color.name || p.color.code)) || '—';
+      const veio = p.veio || (p.components && p.components.veio) || 'livre';
+      return '<tr data-idx="' + i + '"><td>' + (i + 1) + '</td>'
+        + '<td>' + escapeHtmlCutlist((grupo ? grupo + ' · ' : '') + (p.reference || p.module_name || '')) + '</td>'
+        + '<td>' + formatDimension(d.c, unit) + '</td>'
+        + '<td>' + formatDimension(d.l, unit) + '</td>'
+        + '<td>' + formatDimension(d.e, unit) + '</td>'
+        + '<td>' + escapeHtmlCutlist(cor) + '</td>'
+        + '<td>' + escapeHtmlCutlist(veio) + '</td></tr>';
+    }).join('')
+    + '</tbody></table>'
+    + '<p class="hint">' + linhas.length + ' peça(s) · mesmas medidas que vão pro preço e pro plano de corte.</p>';
+}
+
+// Explodir = afastar cada peça do CENTRO do módulo, na direção em que ela já
+// está. Não recalcula posição nenhuma: pega o assembly pronto (o mesmo do 3D)
+// e empurra cada filho pra fora. Assim a explodida nunca "inventa" um arranjo
+// diferente do que está montado.
+function renderProjectSlotPiecesExploded(slot) {
+  const cont = document.getElementById('po-pieces-3d');
+  if (!cont || typeof ViewerComposition === 'undefined' || !ViewerComposition.createInstance) return;
+  if (!piecesViewer) piecesViewer = ViewerComposition.createInstance();
+  piecesViewer.init('po-pieces-3d');
+  const asm = buildCompositionAssemblies([{
+    pieces: projectSlotEffectivePieces(slot),
+    width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+    colorsByRole: slot.colorsByRole, pieceColorOverrides: slot.pieceColorOverrides || {},
+    shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides
+  }]);
+  piecesAssembly = (asm && asm[0]) || null;
+  if (!piecesAssembly || !piecesAssembly.group) return;
+  // Guarda a posição original de cada filho: explodir é interpolar entre ela e
+  // a posição afastada, e sem o original não há como voltar.
+  piecesAssembly.group.children.forEach((c) => {
+    if (!c.userData.__pos0) c.userData.__pos0 = c.position.clone();
+  });
+  piecesViewer.render(asm, null, null);
+  aplicaExplosao();
+}
+
+function aplicaExplosao() {
+  const range = document.getElementById('po-pieces-explode');
+  if (!piecesAssembly || !piecesAssembly.group || typeof THREE === 'undefined') return;
+  const f = (Number(range && range.value) || 0) / 100;
+  const h = (piecesAssembly.height_m || 0) / 2;
+  piecesAssembly.group.children.forEach((c) => {
+    const p0 = c.userData.__pos0;
+    if (!p0) return;
+    // Direção: do centro do módulo pra peça. Peça que nasce no centro exato
+    // (fundo, por ex.) recebe um empurrão pra trás, senão ficaria parada
+    // dentro da nuvem e escondida.
+    const dir = new THREE.Vector3(p0.x, p0.y - h, p0.z);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+    dir.normalize();
+    c.position.copy(p0).addScaledVector(dir, f * 0.55);
+  });
+}
+
+(function ligaPecasDoMovel() {
+  const b = document.getElementById('po-proj-slot-pieces-btn');
+  if (b) {
+    b.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (selectedProjectSlotId != null) openProjectSlotPieces(selectedProjectSlotId);
+    });
+  }
+  const fechar = document.getElementById('po-pieces-close');
+  const modal = document.getElementById('po-pieces-modal');
+  if (fechar && modal) fechar.addEventListener('click', () => modal.classList.remove('open'));
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
+  const range = document.getElementById('po-pieces-explode');
+  if (range) range.addEventListener('input', aplicaExplosao);
+})();
+
 const projSlotReplaceBtn = document.getElementById('po-proj-slot-replace-btn');
 if (projSlotReplaceBtn) {
   projSlotReplaceBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
