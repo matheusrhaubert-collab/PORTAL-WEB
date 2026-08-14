@@ -863,9 +863,17 @@ const Viewer3D = (function () {
   function buildEdgesForStyle(geometria) {
     const est = estiloDesenho.contorno;
     if (est === 'nenhum') return null;
-    const opacidade = est === 'suave' ? 0.16 : (est === 'grosso' ? 0.75 : EDGE_OPACITY);
+    // 'grosso' é PRETO CHEIO (pedido do Matt, 2026-08-13: "esse pode deixar
+    // preto"). O cinza de 45% do padrão existe pra não competir com a madeira;
+    // no traço grosso o objetivo é o oposto — é o modo de "desenho técnico",
+    // onde a linha tem que dominar. Os outros modos seguem o cinza de sempre.
+    const preto = est === 'grosso';
+    const opacidade = est === 'suave' ? 0.16 : (preto ? 1 : EDGE_OPACITY);
     const eg = new THREE.EdgesGeometry(geometria);
-    const mat = new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: opacidade });
+    const mat = new THREE.LineBasicMaterial({
+      color: preto ? 0x000000 : EDGE_COLOR,
+      transparent: !preto, opacity: opacidade
+    });
     const linha = new THREE.LineSegments(eg, mat);
     if (est !== 'grosso') return linha;
     // Traço grosso: 4 cópias deslocadas de 0,4mm nas diagonais do plano da

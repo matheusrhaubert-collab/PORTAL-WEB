@@ -2133,7 +2133,12 @@ function createViewerComposition3D() {
       head.position.y = shaftLen + headLen / 2;
       // Alvo de toque generoso e invisível em volta da seta inteira — no dedo,
       // acertar um cone de 4cm é frustrante.
-      const fatorAlvo = alvoGeneroso ? 2.2 : 1.15;
+      // 2.2 era generoso DEMAIS (2026-08-13, iPad): o cilindro invisível ficava
+      // com ~8cm de raio em volta de cada seta, encostando no módulo — tocar
+      // perto da borda pra selecionar agarrava a seta e começava a esticar sem
+      // nenhum aviso na tela. 1.6 continua confortável no dedo (o alvo fica com
+      // ~6cm de diâmetro, acima do mínimo de toque) sem invadir o móvel.
+      const fatorAlvo = alvoGeneroso ? 1.6 : 1.15;
       const hit = new THREE.Mesh(
         new THREE.CylinderGeometry(headR * fatorAlvo, headR * fatorAlvo, shaftLen + headLen, 8),
         new THREE.MeshBasicMaterial({ visible: false, depthTest: false })

@@ -12049,7 +12049,12 @@ const PROJECT_HOLD_MENU_MS = 500;
 // da área de contato de um dedo adulto num iPad; menos que isso não resolvia o
 // relato ("seleciona o modulo do lado"), muito mais e ficaria difícil trocar
 // pro vizinho de propósito.
-const PROJECT_STICKY_PICK_PX = 22;
+// 12px (era 22, baixado em 2026-08-13 a pedido do Matt no iPad: "clique fora
+// do móvel pega móvel"). O anel grudento existe pra o dedo não PERDER o módulo
+// já selecionado por 2-3mm de desvio — não pra alcançar o módulo de longe. Com
+// 22px ele ia buscar seleção quase meio centímetro fora do contorno, e no dedo
+// isso é bem visível. 12px cobre o desvio real do ponto de contato.
+const PROJECT_STICKY_PICK_PX = 12;
 
 // Altura máxima que a BASE (floor_height_mm) de um módulo de `heightMm` pode
 // ter sem estourar o teto útil — mesma regra de sempre (pé direito − afastamento
@@ -15849,6 +15854,12 @@ function attachProject3DEditDrag() {
           return;
         }
         lastArrowTap = { t: nowArrow, axis: arrowHit.axis, slotId: arrowSlot.id };
+        // ACENDE A SETA AGARRADA (2026-08-13, iPad). No mouse quem avisa é o
+        // hover; no dedo não existe hover — a seta só acendia depois, ou nunca.
+        // Sem isso o gesto começa às cegas: "arrasta sem seta marcada". Acender
+        // no pointerdown mostra, no instante do toque, exatamente qual eixo foi
+        // pego. Ela apaga no fim do arraste (endDrag3D -> refreshProject3DResizeArrows).
+        if (ViewerProjectEdit.highlightResizeArrow) ViewerProjectEdit.highlightResizeArrow(arrowHit.axis);
         try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
         projectDrag3DState = {
           pointerId: ev.pointerId,
@@ -16437,9 +16448,21 @@ function attachProject3DEditDrag() {
         // módulo até o vizinho (2026-08-08, iPad) — desselecionar no primeiro
         // toque mataria a segunda batida. No mouse esse duplo clique deixa de
         // existir; arrastar a seta (que é o gesto principal) continua igual.
-        const sobre = ViewerProjectEdit.pickAssemblyAt
-          ? ViewerProjectEdit.pickAssemblyAt(ev.clientX, ev.clientY, projectActiveWallIndex)
-          : null;
+        // NO TOQUE, A CONFERÊNCIA É GRUDENTA (2026-08-13, iPad).
+        //
+        // O dedo não é preciso: o navegador reporta o CENTRO da área tocada, e
+        // alguns milímetros fora do módulo bastam pra pickAssemblyAt devolver
+        // null. Com a conferência simples, o toque curto (que é o gesto de
+        // SELECIONAR no iPad) caía no "não tem módulo aqui" e DESSELECIONAVA —
+        // é o "não fixa o vermelho após o clique" que o Matt relatou.
+        // pickAssemblyAtSticky refaz o teste num anel em volta do ponto, que é
+        // exatamente pra isso que ele existe (ver viewer3d_composition.js).
+        const slopUp = (ev.pointerType === 'touch') ? PROJECT_STICKY_PICK_PX : 0;
+        const sobre = ViewerProjectEdit.pickAssemblyAtSticky
+          ? ViewerProjectEdit.pickAssemblyAtSticky(ev.clientX, ev.clientY, projectActiveWallIndex, state.slotId, slopUp)
+          : (ViewerProjectEdit.pickAssemblyAt
+            ? ViewerProjectEdit.pickAssemblyAt(ev.clientX, ev.clientY, projectActiveWallIndex)
+            : null);
         // Conservador de propósito: só solta quando NÃO HÁ MÓDULO NENHUM sob o
         // ponteiro. Se houver outro módulo ali (seta desenhada por cima do
         // vizinho), mantém o comportamento antigo — desselecionar seria uma
