@@ -677,58 +677,13 @@ function createViewerComposition3D() {
       new THREE.Vector3(-wallW / 2, ceilingH, 0.003),
       new THREE.Vector3(wallW / 2, ceilingH, 0.003)
     ));
-    if (room.ceilingLabel && !room.minimal) {
-      const label = makeTextSprite(room.ceilingLabel);
-      label.position.set(0, ceilingH + 0.11, 0.05);
-      group.add(label);
-    }
+    // (rótulo do pé-direito removido em 2026-08-13 — ver o comentário grande
+    // sobre rodapé/rodaforro na versão multi-parede desta função.)
 
-    // Linha tracejada da altura máxima + baseboard tracejado — pulados em
-    // modo minimal (só chão + teto, ver comentário de room acima).
-    if (!room.minimal) {
-      // Linha tracejada da altura máxima permitida (teto − 5" − rodapé) —
-      // CORREÇÃO (pedido do usuário, 2026-07-16: "to usando o maximo mas
-      // ainda nao toca na linha segura", mesmo bug do viewer3d.js/
-      // rebuildRoomEnv) — faltava descontar o rodapé (baseH) aqui, então a
-      // linha ficava mais alta que o teto efetivo de verdade (mesma conta de
-      // ceilingMaxHeightMm() em portal.js) e um módulo na altura MÁXIMA
-      // permitida pela régua nunca alcançava esta linha.
-      // + MAX_HEIGHT_LINE_RAISE_M: pedido do usuário logo depois ("subir a
-      // linha trasejada em 5inches") — só a linha sobe, a régua de altura
-      // continua com o mesmo máximo de antes.
-      const maxY = ceilingH - CEILING_CLEARANCE_M - baseH + MAX_HEIGHT_LINE_RAISE_M;
-      const dashGeom = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-wallW / 2, maxY, 0.003),
-        new THREE.Vector3(wallW / 2, maxY, 0.003)
-      ]);
-      const dashLine = new THREE.Line(dashGeom, new THREE.LineDashedMaterial({
-        color: 0xb0503c, dashSize: 0.07, gapSize: 0.05
-      }));
-      dashLine.computeLineDistances();
-      group.add(dashLine);
-      if (room.maxHeightLabel) {
-        const label = makeTextSprite(room.maxHeightLabel);
-        // Deslocado pra DIREITA e num z próprio — centralizado, ele brigava
-        // com o sprite do teto (mesmo plano) e aparecia cortado.
-        label.position.set(wallW * 0.25, maxY - 0.11, 0.06);
-        group.add(label);
-      }
-
-      // Baseboard — linha TRACEJADA na altura do topo do rodapé (mesmo
-      // estilo da tracejada do teto, só que discreta/cinza pra não confundir
-      // com a linha vermelha de limite), correndo a parede inteira.
-      if (baseH > 0) {
-        const baseGeom = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(-wallW / 2, baseH, 0.003),
-          new THREE.Vector3(wallW / 2, baseH, 0.003)
-        ]);
-        const baseLine = new THREE.Line(baseGeom, new THREE.LineDashedMaterial({
-          color: 0x8a8378, dashSize: 0.07, gapSize: 0.05
-        }));
-        baseLine.computeLineDistances();
-        group.add(baseLine);
-      }
-    }
+    // (tracejadas de altura máxima e de rodapé removidas em 2026-08-13 —
+    // ver o comentário grande na versão multi-parede desta função. A REGRA
+    // de altura máxima continua valendo em ceilingMaxHeightMm/portal.js;
+    // saiu só o desenho da linha.)
 
     // Traço vertical (chão até teto) em cada ponta — só quando a largura é
     // REAL (exactWidth), marcando o canto de verdade da parede (ver
@@ -819,27 +774,23 @@ function createViewerComposition3D() {
       group.add(makeLine(p0.clone(), p0.clone().setY(ceilingH)));
       group.add(makeLine(p1.clone(), p1.clone().setY(ceilingH)));
 
-      if (room.ceilingLabel && seg.label && !room.minimal) {
-        const mid = p0.clone().lerp(p1, 0.5);
-        const textLabel = makeTextSprite(room.ceilingLabel);
-        textLabel.position.set(mid.x, ceilingH + 0.11, mid.z + 0.05);
-        group.add(textLabel);
-      }
-
-      if (!room.minimal) {
-        const maxY = ceilingH - CEILING_CLEARANCE_M - baseH + MAX_HEIGHT_LINE_RAISE_M;
-        const dashGeom = new THREE.BufferGeometry().setFromPoints([p0.clone().setY(maxY), p1.clone().setY(maxY)]);
-        const dashLine = new THREE.Line(dashGeom, new THREE.LineDashedMaterial({ color: 0xb0503c, dashSize: 0.07, gapSize: 0.05 }));
-        dashLine.computeLineDistances();
-        group.add(dashLine);
-
-        if (baseH > 0) {
-          const baseGeom = new THREE.BufferGeometry().setFromPoints([p0.clone().setY(baseH), p1.clone().setY(baseH)]);
-          const baseLine = new THREE.Line(baseGeom, new THREE.LineDashedMaterial({ color: 0x8a8378, dashSize: 0.07, gapSize: 0.05 }));
-          baseLine.computeLineDistances();
-          group.add(baseLine);
-        }
-      }
+      // ==================================================================
+      // RÓTULO DE TETO E TRACEJADAS DE RODAPÉ/RODAFORRO — REMOVIDOS
+      // ==================================================================
+      // (2026-08-13, Matt: "essas linhas de limite que fizemos lá no começo
+      // pode eliminar" — rodapé e rodaforro.)
+      //
+      // Elas nasceram quando o ambiente era só um desenho de linhas: sem
+      // parede sólida, a tracejada era a ÚNICA pista de onde ia o rodapé e até
+      // onde o móvel podia subir. Agora a parede tem volume, o piso tem
+      // malha e o canto fecha — as tracejadas viraram ruído em cima do
+      // desenho, ainda por cima em vermelho, competindo com o contorno de
+      // seleção do módulo (que também é vermelho).
+      //
+      // O QUE NÃO MUDOU: a REGRA continua valendo. ceilingMaxHeightMm() em
+      // portal.js segue descontando teto − 5" − rodapé pra limitar a altura do
+      // módulo, e a regra do móvel suspenso sobre o rodapé (mais abaixo neste
+      // arquivo) segue igual. Saiu o desenho da linha, não o limite.
     });
 
     // Tag pro teste de AR — ver comentário em buildDimensionAnnotations.

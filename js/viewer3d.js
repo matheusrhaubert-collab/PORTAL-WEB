@@ -2107,38 +2107,18 @@ const Viewer3D = (function () {
 
     // Linha do chão (sólida) + baseboard (tracejada cinza).
     group.add(makeEnvLine(new THREE.Vector3(wallLeftX, 0, z), new THREE.Vector3(wallRightX, 0, z), false, 0x8a8378));
-    if (baseH > 0) {
-      group.add(makeEnvLine(new THREE.Vector3(wallLeftX, baseH, z), new THREE.Vector3(wallRightX, baseH, z), true, 0x8a8378));
-    }
+    // (tracejada do rodapé removida em 2026-08-13 — ver o comentário sobre
+    //  rodapé/rodaforro em viewer3d_composition.js. A regra do móvel suspenso
+    //  sobre o rodapé continua valendo; saiu só o desenho.)
 
     // Linha do teto (sólida) + rótulo, e tracejada vermelha da altura máx.
     if (ceilingH > 0) {
       group.add(makeEnvLine(new THREE.Vector3(wallLeftX, ceilingH, z), new THREE.Vector3(wallRightX, ceilingH, z), false, 0x8a8378));
-      if (cfg.ceilingLabel) {
-        const label = makeEnvTextSprite(cfg.ceilingLabel);
-        label.position.set(0, ceilingH + 0.11, z + 0.05);
-        group.add(label);
-      }
-      // CORREÇÃO (pedido do usuário, 2026-07-16: "to usando o maximo mas
-      // ainda nao toca na linha segura") — faltava descontar o rodapé
-      // (baseH) daqui, então esta linha ficava desenhada MAIS ALTA do que
-      // o teto efetivo de verdade (ceilingMaxHeightMm() em portal.js, que
-      // já descontava teto − 5" − rodapé − altura do chão do módulo) —
-      // um módulo na altura MÁXIMA permitida pela régua nunca alcançava
-      // esta linha, sobrava sempre uma folga do tamanho do rodapé. Mesma
-      // conta de ceilingMaxHeightMm() (com altura do chão = 0 — esta linha
-      // é uma referência FIXA do ambiente, não muda por módulo/coluna).
-      // + MAX_HEIGHT_LINE_RAISE_M: pedido do usuário logo depois ("subir a
-      // linha trasejada em 5inches") — só a linha sobe, a régua de altura
-      // continua com o mesmo máximo de antes.
-      const clearanceM = (typeof cfg.ceilingClearanceM === 'number') ? cfg.ceilingClearanceM : ENV_CEILING_CLEARANCE_DEFAULT_M;
-      const maxY = ceilingH - clearanceM - baseH + MAX_HEIGHT_LINE_RAISE_M;
-      group.add(makeEnvLine(new THREE.Vector3(wallLeftX, maxY, z), new THREE.Vector3(wallRightX, maxY, z), true, 0xb0503c));
-      if (cfg.maxHeightLabel) {
-        const label = makeEnvTextSprite(cfg.maxHeightLabel);
-        label.position.set(wallWFull * 0.25, maxY - 0.11, z + 0.06);
-        group.add(label);
-      }
+      // (rótulo do pé-direito, tracejada da altura máxima e o rótulo dela
+      //  removidos em 2026-08-13, a pedido do Matt: com parede sólida elas
+      //  viraram ruído sobre o desenho. ceilingMaxHeightMm() em portal.js
+      //  segue limitando a altura do módulo exatamente como antes.)
+
       // Traço vertical (chão até o teto) em cada ponta — só quando a largura
       // é REAL (hasRealWall), marcando o canto de verdade da parede. Sem
       // isso a linha simplesmente "acaba no ar" e não fica claro que ali é
