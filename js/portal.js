@@ -18436,6 +18436,12 @@ function applyProjectDrawStyle(estilo, remontar) {
 }
 (function attachProjectDrawStyle() {
   montaMenuEstilo();
+  // "← Projetos" da barra faz o mesmo que o "← Voltar" que existia no rodapé:
+  // sai da aba. Um só comportamento, dois lugares — o de baixo continua lá pra
+  // quem já se acostumou com ele.
+  const bVoltar = document.getElementById('po-proj-topo-voltar-btn');
+  const bVoltarOrig = document.getElementById('po-proj-back-btn');
+  if (bVoltar && bVoltarOrig) bVoltar.addEventListener('click', () => bVoltarOrig.click());
   // Projeção da câmera. Vale pros DOIS viewers da aba (a Vista de Canto e o
   // painel "Visualizar 3D"), pra não ficar um em cada modo. Não precisa
   // remontar a cena: é só a matriz de projeção.

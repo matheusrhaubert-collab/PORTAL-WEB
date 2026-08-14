@@ -3432,3 +3432,83 @@ header.po-topnav {
 .po-tb-seg-btn:disabled { opacity: 0.4; cursor: default; }
 /* Título dentro da barra, como no mockup — mesma linha de tudo. */
 .po-tb-titulo { font-size: 15px; font-weight: 700; color: var(--text); padding: 0 12px 0 4px; align-self: center; white-space: nowrap; }
+
+/* ==========================================================================
+   BARRA DE FERRAMENTAS — refinamento (2026-08-13, referência do Matt)
+   ==========================================================================
+   "está muito grotesco, quero mais delicado, refinado, mais fino e com mais
+   espaço pra visualização em vez de espaço perdido nas barras."
+
+   O que muda em relação à versão anterior, e por quê:
+   · SEM rótulo de grupo (Vista/Visual/…): eram três linhas de texto miúdo que
+     só existiam pra explicar botões que já têm nome. Sozinhos, comiam ~14px de
+     altura da barra inteira.
+   · SEM pílula preta: o preto pesa e disputa atenção com o desenho. Ativo agora
+     é ÂMBAR — cor de marca, leve, e suficiente pra separar do inativo.
+   · SEM moldura em volta dos segmentados: o filete fino entre grupos já separa.
+   · Altura ~46px no total, contra ~80px de antes: o que sobra vai pro ambiente.
+   ========================================================================== */
+#po-proj-canvas-tools.po-proj-hud-tl {
+  align-items: center; gap: 2px;
+  padding: 6px 10px; margin: 0 0 10px 0;
+  border: none; border-bottom: 1px solid var(--border);
+  border-radius: 0; box-shadow: none; background: var(--panel);
+}
+/* Rótulos de grupo saem de cena (ver comentário acima). */
+#po-proj-canvas-tools .po-tb-label { display: none; }
+#po-proj-canvas-tools .po-tb-group { padding: 0 3px; flex-direction: row; align-items: center; gap: 2px; }
+#po-proj-canvas-tools .po-tb-sep { margin: 6px 6px; opacity: 0.7; }
+#po-proj-canvas-tools .po-tb-seg { background: transparent; border: none; padding: 0; gap: 2px; }
+
+/* Botão da barra: texto discreto, ícone fino, alvo confortável sem volume. */
+#po-proj-canvas-tools .po-tb-seg-btn {
+  gap: 7px; padding: 7px 11px; border-radius: 9px;
+  font-size: 12.5px; font-weight: 500; color: #4a4740;
+  background: transparent; box-shadow: none;
+}
+#po-proj-canvas-tools .po-tb-seg-btn svg { width: 16px; height: 16px; color: #8d8478; }
+#po-proj-canvas-tools .po-tb-seg-btn:hover { background: #f4f2ed; }
+/* ATIVO = âmbar (texto + ícone + fundo bem claro). */
+#po-proj-canvas-tools .po-tb-seg-btn.active,
+#po-proj-canvas-tools .po-tb-seg-btn.active:hover {
+  background: #fdf4e6; color: #c98a1f; box-shadow: none;
+}
+#po-proj-canvas-tools .po-tb-seg-btn.active svg { color: #e0a44b; }
+
+/* Cartões de ícone (Medidas, desfazer, Encaixe) na mesma régua dos demais. */
+#po-proj-canvas-tools .po-tb-icon-card {
+  flex-direction: row; gap: 7px; padding: 7px 11px; border: none;
+  border-radius: 9px; background: transparent; min-width: 0;
+  font-size: 12.5px; font-weight: 500; color: #4a4740;
+}
+#po-proj-canvas-tools .po-tb-icon-card svg { width: 16px; height: 16px; color: #8d8478; }
+#po-proj-canvas-tools .po-tb-icon-card:hover { background: #f4f2ed; }
+#po-proj-canvas-tools .po-tb-dot { top: 4px; right: 4px; width: 6px; height: 6px; }
+#po-proj-collision-btn.active { background: #fdf4e6; }
+#po-proj-collision-btn.active svg { color: #c98a1f; }
+
+/* Menu de estilo: mesma pegada dos botões, sem caixa pesada. */
+#po-proj-style-menu .po-style-btn {
+  height: auto; padding: 7px 11px; border-radius: 9px; min-width: 0;
+  border: none; background: transparent; font-size: 12.5px; font-weight: 500; color: #4a4740;
+}
+#po-proj-style-menu .po-style-btn:hover { background: #f4f2ed; }
+
+/* Voltar, à esquerda de tudo — o "← Projects" da referência. */
+.po-tb-voltar {
+  display: flex; align-items: center; gap: 8px; border: none; background: transparent;
+  padding: 7px 10px 7px 4px; border-radius: 9px; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.po-tb-voltar svg { width: 17px; height: 17px; }
+.po-tb-voltar:hover { background: #f4f2ed; }
+
+/* Ações encostadas na direita. */
+.po-tb-direita { margin-left: auto; }
+#po-proj-canvas-tools .po-tb-seg-plano .po-tb-seg-btn {
+  border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 7px 14px;
+}
+#po-proj-canvas-tools .po-tb-primaria {
+  background: var(--text) !important; color: #fff !important; border-color: var(--text) !important;
+}
+#po-proj-canvas-tools .po-tb-primaria svg { color: #fff; }
