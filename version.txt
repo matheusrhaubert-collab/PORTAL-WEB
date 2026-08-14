@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 21:43:38
+﻿data: 2026-08-13 21:43:59
 cache: 202608132143
-mensagem: publica o editor de paredes
+mensagem: barra na lateral direita; abas de parede e largura fora da faixa
