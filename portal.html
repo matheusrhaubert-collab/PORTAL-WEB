@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608132146" />
+<link rel="stylesheet" href="css/style.css?v=202608132150" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1159,7 +1159,10 @@
              nenhuma mudança. É só layout. -->
         <div class="po-proj-topbar">
           <div class="po-proj-topbar-group">
-            <span class="po-proj-topbar-label" data-i18n="project.wall_shape_label">Formato do ambiente</span>
+            <!-- Rótulo "Formato do ambiente" saiu junto com as 3 formas
+                 (2026-08-13): não há mais formato a escolher, há planta a
+                 desenhar. -->
+            <span class="po-proj-topbar-label" data-i18n="project.wall_shape_label" style="display:none;">Formato do ambiente</span>
             <!-- As 3 formas fixas (uma parede / dupla / C-U) saíram em
                  2026-08-13: agora as paredes são desenhadas na planta baixa
                  (Ajustar paredes). Os botões continuam no DOM, escondidos, e o
@@ -1173,6 +1176,51 @@
             </div>
             <button type="button" class="secondary" id="po-proj-wall-editor-btn"
                     title="Desenhar as paredes na planta baixa · Edit walls">📐 Ajustar paredes</button>
+              <div class="po-proj-canvas-hud po-proj-hud-tl" id="po-proj-canvas-tools">
+                <div class="po-proj-view-toggle po-view-toggle">
+                  <button type="button" class="po-view-toggle-btn active" id="po-proj-view-front-btn" data-i18n="project.view_front_btn">Frontal</button>
+                  <button type="button" class="po-view-toggle-btn" id="po-proj-view-top-btn" data-i18n="project.view_top_btn">Superior</button>
+                </div>
+                <span class="po-proj-hud-sep"></span>
+                <!-- ESTILO DO DESENHO 3D (2026-08-13, pedido do Matt: "uns
+                     botões... linhas mais grossas, linhas transparentes, e
+                     texturas só de cores, pra pesar menos se quiser"). Os
+                     quatro primeiros são o CONTORNO das peças (um ligado por
+                     vez); o último liga/desliga a textura de madeira — sem
+                     ela a cena não baixa nem guarda imagem nenhuma, que é o
+                     jeito mais direto de deixar leve. Ver Viewer3D.setDrawStyle. -->
+                <!-- ESTILO DE EXIBIÇÃO — um seletor só, com combinações
+                     nomeadas, no modelo do Promob (menu "Texturas com Linhas /
+                     Texturas / Preenchimento / Sem Preenchimento..."), que o
+                     Matt mostrou na tela dele em 2026-08-13. Três grupos de
+                     botões soltos (linha × face × textura) davam as mesmas
+                     combinações mas obrigavam a montar cada uma na mão e
+                     ocupavam três vezes o espaço da barra.
+                     Cada opção vira {textura, contorno, face} — ver
+                     PROJECT_DRAW_PRESETS em portal.js. -->
+                <select id="po-proj-style-select" class="po-proj-hud-select"
+                        title="Estilo de exibição · Display style">
+                  <option value="textura_linhas">Texturas com linhas</option>
+                  <option value="textura">Texturas</option>
+                  <option value="cor_linhas">Preenchimento com linhas</option>
+                  <option value="cor">Preenchimento</option>
+                  <option value="translucido">Translúcido</option>
+                  <option value="arestas">Sem preenchimento</option>
+                  <option value="tecnico">Técnico (linha grossa)</option>
+                </select>
+                <!-- Projeção da câmera (2026-08-13): paralela (ortográfica) x
+                     perspectiva. Paralela é a de conferir alinhamento — sem
+                     fuga, duas peças iguais medem igual na tela. -->
+                <button type="button" class="po-proj-hud-btn" id="po-proj-camproj-btn"
+                        title="Câmera paralela / perspectiva · Parallel / perspective">⬛</button>
+                <span class="po-proj-hud-sep"></span>
+                <button type="button" class="po-proj-hud-btn" id="po-proj-undo-btn" disabled
+                        data-i18n-title="project.undo_title" title="Desfazer">↩</button>
+                <button type="button" class="po-proj-hud-btn" id="po-proj-collision-btn"
+                        data-i18n-title="project.collision_title" title="Colisão">🧲</button>
+                <button type="button" class="po-proj-hud-btn" id="po-proj-camera-btn" style="display:none;"
+                        data-i18n-title="project.camera_title" title="Girar câmera">🔄</button>
+              </div>
           </div>
 
           <!-- Abas de parede: só aparecem com 2-3 paredes (refreshProjectWallTabs
@@ -1314,51 +1362,6 @@
                    Os ids são os MESMOS de antes (po-proj-undo-btn,
                    po-proj-view-front-btn, po-proj-collision-btn,
                    po-proj-camera-btn) — o JS que os liga não mudou. -->
-              <div class="po-proj-canvas-hud po-proj-hud-tl" id="po-proj-canvas-tools">
-                <div class="po-proj-view-toggle po-view-toggle">
-                  <button type="button" class="po-view-toggle-btn active" id="po-proj-view-front-btn" data-i18n="project.view_front_btn">Frontal</button>
-                  <button type="button" class="po-view-toggle-btn" id="po-proj-view-top-btn" data-i18n="project.view_top_btn">Superior</button>
-                </div>
-                <span class="po-proj-hud-sep"></span>
-                <!-- ESTILO DO DESENHO 3D (2026-08-13, pedido do Matt: "uns
-                     botões... linhas mais grossas, linhas transparentes, e
-                     texturas só de cores, pra pesar menos se quiser"). Os
-                     quatro primeiros são o CONTORNO das peças (um ligado por
-                     vez); o último liga/desliga a textura de madeira — sem
-                     ela a cena não baixa nem guarda imagem nenhuma, que é o
-                     jeito mais direto de deixar leve. Ver Viewer3D.setDrawStyle. -->
-                <!-- ESTILO DE EXIBIÇÃO — um seletor só, com combinações
-                     nomeadas, no modelo do Promob (menu "Texturas com Linhas /
-                     Texturas / Preenchimento / Sem Preenchimento..."), que o
-                     Matt mostrou na tela dele em 2026-08-13. Três grupos de
-                     botões soltos (linha × face × textura) davam as mesmas
-                     combinações mas obrigavam a montar cada uma na mão e
-                     ocupavam três vezes o espaço da barra.
-                     Cada opção vira {textura, contorno, face} — ver
-                     PROJECT_DRAW_PRESETS em portal.js. -->
-                <select id="po-proj-style-select" class="po-proj-hud-select"
-                        title="Estilo de exibição · Display style">
-                  <option value="textura_linhas">Texturas com linhas</option>
-                  <option value="textura">Texturas</option>
-                  <option value="cor_linhas">Preenchimento com linhas</option>
-                  <option value="cor">Preenchimento</option>
-                  <option value="translucido">Translúcido</option>
-                  <option value="arestas">Sem preenchimento</option>
-                  <option value="tecnico">Técnico (linha grossa)</option>
-                </select>
-                <!-- Projeção da câmera (2026-08-13): paralela (ortográfica) x
-                     perspectiva. Paralela é a de conferir alinhamento — sem
-                     fuga, duas peças iguais medem igual na tela. -->
-                <button type="button" class="po-proj-hud-btn" id="po-proj-camproj-btn"
-                        title="Câmera paralela / perspectiva · Parallel / perspective">⬛</button>
-                <span class="po-proj-hud-sep"></span>
-                <button type="button" class="po-proj-hud-btn" id="po-proj-undo-btn" disabled
-                        data-i18n-title="project.undo_title" title="Desfazer">↩</button>
-                <button type="button" class="po-proj-hud-btn" id="po-proj-collision-btn"
-                        data-i18n-title="project.collision_title" title="Colisão">🧲</button>
-                <button type="button" class="po-proj-hud-btn" id="po-proj-camera-btn" style="display:none;"
-                        data-i18n-title="project.camera_title" title="Girar câmera">🔄</button>
-              </div>
 
               <!-- BARRA FLUTUANTE, lateral direita: câmera. Só faz sentido na
                    cena 3D (a vista Superior é um desenho 2D plano com escala
@@ -1909,10 +1912,10 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608132146"></script>
-<script src="js/pricing.js?v=202608132146"></script>
-<script src="js/viewer3d.js?v=202608132146"></script>
-<script src="js/viewer3d_composition.js?v=202608132146"></script>
+<script src="js/i18n.js?v=202608132150"></script>
+<script src="js/pricing.js?v=202608132150"></script>
+<script src="js/viewer3d.js?v=202608132150"></script>
+<script src="js/viewer3d_composition.js?v=202608132150"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -1922,17 +1925,17 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202608132146"></script>
+<script src="js/drilling.js?v=202608132150"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202608132146"></script>
+<script src="js/layout-engine.js?v=202608132150"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202608132146"></script>
+<script src="js/wall-editor.js?v=202608132150"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608132146"></script>
-<script src="js/portal.js?v=202608132146"></script>
+<script src="js/photoreal.js?v=202608132150"></script>
+<script src="js/portal.js?v=202608132150"></script>
 </body>
 </html>

@@ -2578,18 +2578,21 @@ header.po-topnav {
    ambiente (que cresce da esquerda pro centro), não gasta linha nenhuma da
    página, e as duas ferramentas ficam no mesmo lugar em vez de uma em cada
    canto. */
+/* 3ª e definitiva (2026-08-13): a barra MUDOU DE LUGAR NO HTML — saiu de
+   dentro do palco e virou parte da faixa de cima, na mesma linha do "Ajustar
+   paredes". Era o que o Matt pediu desde o começo ("joga essa barra pra
+   cima... elimina completamente daqui e coloca a barra que tava dentro").
+   Como a faixa já existia (ela tinha o formato do ambiente, as abas de parede
+   e a largura — tudo isso saiu), a barra não custa NENHUMA altura nova.
+   Aqui ela só perde o visual de flutuante: sem posição absoluta, sem fundo,
+   sem sombra. */
 .po-proj-hud-tl {
-  top: 8px; right: 8px; left: auto;
-  flex-direction: column; align-items: stretch; max-width: 200px;
+  position: static; background: transparent; box-shadow: none;
+  border-color: transparent; padding: 0; max-width: none;
 }
-/* A barra da câmera desce pra não bater na de cima. */
-.po-proj-hud-right { top: auto; bottom: 8px; transform: none; }
-.po-proj-hud-tl .po-proj-hud-sep { width: auto; height: 1px; min-height: 0; margin: 2px 0; align-self: stretch; }
-.po-proj-hud-tl .po-view-toggle { width: 100%; }
-.po-proj-hud-tl .po-proj-hud-select { max-width: 100%; width: 100%; }
-/* Linha com os botões de ícone: eles cabem lado a lado, não precisam de uma
-   linha cada. */
-.po-proj-hud-tl .po-proj-hud-btn { display: inline-flex; }
+/* A barra da câmera volta pro meio da altura, na direita — ela é a única que
+   continua flutuando sobre a cena. */
+.po-proj-hud-right { top: 50%; bottom: auto; transform: translateY(-50%); }
 .po-proj-hud-right { top: 50%; right: 8px; transform: translateY(-50%); flex-direction: column; }
 .po-proj-hud-sep { width: 1px; align-self: stretch; min-height: 20px; background: var(--border); margin: 0 2px; }
 

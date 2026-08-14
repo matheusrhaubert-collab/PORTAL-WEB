@@ -90,7 +90,7 @@
       '      <label>Comprimento <span class="po-wall-un">mm</span><input type="number" id="po-wall-comp" step="10"></label>',
       '      <label>Ângulo <span class="po-wall-un">°</span><input type="number" id="po-wall-ang" step="1"></label>',
       '      <label>Espessura <span class="po-wall-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
-      '      <label>Pé-direito <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10" placeholder="do ambiente"></label>',
+      '      <label>Altura desta parede <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
       '      <p class="po-wall-hint">Arraste as pontas pra mover. O ímã pega a malha de 1 m e os ângulos de 45°; segure Shift pra soltar.</p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
       '    </div>',
@@ -193,8 +193,11 @@
     const p = pontaBPor(s, comp, isFinite(ang) ? ang : anguloDe(s));
     s.bx = Math.round(p.x); s.bz = Math.round(p.z);
     s.thicknessMm = Math.max(20, Number(q('po-wall-esp').value) || ESPESSURA_PADRAO);
+    // null = "segue o pé-direito do ambiente". Guardar o número igual ao do
+    // ambiente congelaria esta parede: mudar o pé-direito depois deixaria ela
+    // pra trás sem ninguém entender por quê.
     const pd = Number(q('po-wall-pd').value);
-    s.ceilingMm = pd > 0 ? pd : null;
+    s.ceilingMm = (pd > 0 && pd !== estado.ceilingMm) ? pd : null;
     desenha();
   }
 
@@ -281,7 +284,13 @@
       q('po-wall-comp').value = Math.round(comprimentoDe(s));
       q('po-wall-ang').value = anguloDe(s);
       q('po-wall-esp').value = Number(s.thicknessMm) || ESPESSURA_PADRAO;
-      q('po-wall-pd').value = s.ceilingMm || '';
+      // Altura SEMPRE preenchida (2026-08-13, pedido do Matt: "ao clicar na
+      // parede tenho acesso aos tamanhos de cada uma, com altura também").
+      // Antes ficava vazia quando a parede seguia o pé-direito do ambiente, e
+      // "vazio" não é uma medida — quem abre quer LER o número, não deduzir.
+      // Continua saindo como null quando é igual ao do ambiente, pra parede
+      // que não foi customizada acompanhar mudanças do pé-direito.
+      q('po-wall-pd').value = s.ceilingMm || estado.ceilingMm || '';
     }
     const resumo = q('po-wall-resumo');
     if (resumo) {
