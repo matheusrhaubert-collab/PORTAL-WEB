@@ -14361,7 +14361,9 @@ function projectSlotActionsAnchorWorld(slot) {
   // lugar é sempre livre — nenhuma seta mora ali — e a barra fica no caminho
   // natural do olhar, logo abaixo do que está selecionado.
   const baseY = Number(slot.floor_height_mm || 0) / 1000;
-  const y = Math.max(baseY - 0.10, 0.02);
+  // 18cm abaixo da base (era 10cm). O afastamento em MUNDO acompanha o zoom —
+  // se ficasse só no CSS, a barra colaria no móvel ao aproximar a câmera.
+  const y = Math.max(baseY - 0.18, 0.01);
   if (isFloorSlot(slot)) {
     const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
     return {

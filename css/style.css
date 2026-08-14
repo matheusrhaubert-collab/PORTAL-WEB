@@ -2649,16 +2649,19 @@ header.po-topnav {
    ao container — assim não depende de nenhum offsetParent nem de o wrap ter
    position:relative. Alvo grande (34px) pra acertar com o dedo no iPad. */
 .po-proj-slot-actions {
-  /* BARRA ÚNICA EMBAIXO DO MÓDULO (2026-08-13, layout que o Matt mandou).
-     Eram bolinhas soltas no canto superior direito; viraram um cartão só,
-     com filete entre os ícones — lê como "ações deste módulo" em vez de
-     quatro enfeites flutuando. translate(-50%,0) porque a âncora agora é o
-     MEIO da base do móvel (ver projectSlotActionsAnchorWorld). */
+  /* BARRA ÚNICA ABAIXO DO MÓDULO (2026-08-13, ajustada à referência do Matt).
+     Ele comparou a minha com a dele: a dele é MENOR, mais AFASTADA do móvel e
+     menos arredondada — e fica mais elegante justamente por isso. Três ajustes,
+     nessa ordem de impacto:
+       · raio 12→8px: canto quase reto pesa menos que pílula;
+       · botão 34→29px e ícone menor: a barra encolhe ~20% no total;
+       · afastamento 8→24px: colada, ela lê como parte do móvel; afastada, lê
+         como ferramenta DELE — e para de disputar com a linha da base. */
   position: fixed; z-index: 60; display: flex; align-items: center; gap: 0;
-  transform: translate(-50%, 8px); pointer-events: auto;
+  transform: translate(-50%, 24px); pointer-events: auto;
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: 12px; padding: 3px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.16);
+  border-radius: 8px; padding: 2px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.13);
 }
 /* BOLINHAS (2026-08-08, pedido do usuário: "troca os quadrados de duplicar e
    excluir por bolinhas, fica uma area menor"). O círculo ocupa ~78% da área de
@@ -3523,11 +3526,11 @@ header.po-topnav {
 
 /* Ícones da barra do módulo: quadrados, sem borda própria, filete entre eles. */
 .po-proj-slot-actions .po-proj-slot-action-btn {
-  width: 34px; height: 32px; border: none; border-radius: 9px;
-  background: transparent; box-shadow: none; font-size: 14px; color: #4a4740;
+  width: 29px; height: 26px; border: none; border-radius: 6px;
+  background: transparent; box-shadow: none; font-size: 12.5px; color: #4a4740;
 }
 .po-proj-slot-actions .po-proj-slot-action-btn + .po-proj-slot-action-btn {
-  border-left: 1px solid var(--border); border-radius: 0 9px 9px 0;
+  border-left: 1px solid var(--border); border-radius: 0 6px 6px 0;
 }
 .po-proj-slot-actions .po-proj-slot-action-btn:hover { background: #f4f2ed; }
 .po-proj-slot-actions .po-proj-slot-action-danger { color: #b0503c; }

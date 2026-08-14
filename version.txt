@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 22:58:50
-cache: 202608132258
-mensagem: barra: abrir portas/gavetas e ocultar/mostrar tudo
+﻿data: 2026-08-13 22:59:54
+cache: 202608132259
+mensagem: barra do modulo menor, mais reta e mais afastada
