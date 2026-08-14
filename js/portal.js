@@ -17413,7 +17413,80 @@ function buildProjectAssemblies(slotsList) {
 // esticam em direção a quem olha o ambiente (mundo +Z) — ver comentário
 // grande em cima de renderFreeformWalls (viewer3d_composition.js) pra como
 // origin/alongDir/intoDir/rotationY são usados pra posicionar cada módulo.
+// ==========================================================================
+// PAREDES POR SEGMENTO — 2026-08-13 (reforma pedida pelo Matt)
+// ==========================================================================
+// "quero paredes sólidas... e quero poder desenhar as paredes num blueprint.
+// adicionar, remover, mexer nelas conforme necessário. sendo que elas sempre
+// tenham 150mm de espessura. projeto entra com padrão duas paredes de 3 metros
+// cada, chão de 3x3."
+//
+// Modelo (o mesmo do Editor de Paredes do Promob, conferido na tela dele):
+// cada parede é um SEGMENTO com ponta A e ponta B em mm no mundo, espessura e
+// pé-direito. Comprimento e ângulo são DERIVADOS das pontas — não guardados —
+// senão as duas informações divergem no primeiro arraste.
+//
+// A ORDEM IMPORTA: o índice do segmento é o wall_index do módulo. Apagar uma
+// parede do meio renumeraria as outras e os módulos iriam parar na parede
+// errada — por isso a remoção não usa splice cru (ver removeProjectWallSegment).
+//
+// COMPATIBILIDADE: quem consome parede no projeto inteiro (canvas 2D, 3D,
+// colisão, arraste, foto realista, pedido) passa por getProjectWallGeometry.
+// Enquanto projectWallSegments estiver vazio, ela responde exatamente como
+// antes, derivando de projectWallShape + projectWallWidthsMm. Projeto salvo
+// velho continua abrindo sem conversão nenhuma.
+const PROJECT_WALL_THICKNESS_MM = 150;
+const PROJECT_WALL_DEFAULT_LEN_MM = 3000;
+let projectWallSegments = [];   // [{ id, ax, az, bx, bz, thicknessMm, ceilingMm }]
+
+function newProjectWallSegmentId() {
+  return 'wseg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+// Padrão de projeto novo: duas paredes de 3m formando um canto, com o piso
+// 3x3 que elas delimitam. Em L, com o canto na origem — é o ambiente que o
+// Matt pediu como ponto de partida.
+function defaultProjectWallSegments() {
+  const L = PROJECT_WALL_DEFAULT_LEN_MM;
+  return [
+    // Parede principal: da esquerda pra direita, no fundo (z = 0).
+    { id: newProjectWallSegmentId(), ax: -L / 2, az: 0, bx: L / 2, bz: 0, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null },
+    // Parede lateral direita: do fundo pra frente, saindo da ponta B da 1ª.
+    { id: newProjectWallSegmentId(), ax: L / 2, az: 0, bx: L / 2, bz: L, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null }
+  ];
+}
+
+// Geometria de UM segmento no formato que o resto do sistema já entende.
+// intoDir = normal do segmento apontando pro lado de DENTRO do ambiente.
+// Convenção: dentro fica à ESQUERDA de quem caminha de A pra B — o mesmo
+// "Orientação: Direita/Esquerda" do Promob, aqui fixo pra não virar mais um
+// campo pra errar. Inverter a parede = trocar as pontas (o editor tem botão).
+function projectWallSegmentGeometry(seg, idx) {
+  const dx = (seg.bx - seg.ax) / 1000;
+  const dz = (seg.bz - seg.az) / 1000;
+  const comp = Math.hypot(dx, dz) || 0.001;
+  const ax = dx / comp, az = dz / comp;
+  return {
+    role: idx === 0 ? 'main' : 'seg' + idx,
+    wallIndex: idx,
+    widthM: comp,
+    originX: seg.ax / 1000,
+    originZ: seg.az / 1000,
+    alongDirX: ax, alongDirZ: az,
+    // Normal à esquerda de (ax,az) no plano XZ.
+    intoDirX: az, intoDirZ: -ax,
+    // rotationY do MÓDULO encostado nesta parede: ele olha pra dentro.
+    rotationY: Math.atan2(az, -ax) + Math.PI / 2,
+    segmentId: seg.id,
+    thicknessMm: Number(seg.thicknessMm) || PROJECT_WALL_THICKNESS_MM,
+    ceilingMm: seg.ceilingMm || null
+  };
+}
+
 function getProjectWallGeometry() {
+  if (projectWallSegments.length) {
+    return projectWallSegments.map((seg, idx) => projectWallSegmentGeometry(seg, idx));
+  }
   const roles = getProjectWallRoles();
   const mainIdx = roles.indexOf('main');
   const mainWidthM = getProjectWallWidthMm(mainIdx >= 0 ? mainIdx : 0) / 1000;
@@ -18113,20 +18186,31 @@ function aplicaProjecaoCamera(tipo) {
   atualizaBotaoProjecao(tipo);
   try { localStorage.setItem(PROJECT_CAM_PROJ_KEY, tipo); } catch (e) { /* anônimo */ }
 }
+// Combinações NOMEADAS, no modelo do menu de estilos do Promob. É o que o
+// usuário escolhe; os três interruptores de baixo (textura, contorno, face)
+// continuam existindo no Viewer3D, só deixaram de ser expostos um a um.
+const PROJECT_DRAW_PRESETS = {
+  textura_linhas: { textura: true, contorno: 'fino', face: 'solido' },
+  textura: { textura: true, contorno: 'nenhum', face: 'solido' },
+  cor_linhas: { textura: false, contorno: 'fino', face: 'solido' },
+  cor: { textura: false, contorno: 'nenhum', face: 'solido' },
+  translucido: { textura: false, contorno: 'fino', face: 'translucido' },
+  arestas: { textura: false, contorno: 'fino', face: 'nenhum' },
+  tecnico: { textura: false, contorno: 'grosso', face: 'nenhum' }
+};
+function nomeDoPresetAtual(s) {
+  const achado = Object.keys(PROJECT_DRAW_PRESETS).find((k) => {
+    const p = PROJECT_DRAW_PRESETS[k];
+    return p.textura === s.textura && p.contorno === s.contorno && p.face === (s.face || 'solido');
+  });
+  return achado || 'textura_linhas';
+}
+
 function applyProjectDrawStyle(estilo, remontar) {
   if (typeof Viewer3D === 'undefined' || !Viewer3D.setDrawStyle) return;
   const s = Viewer3D.setDrawStyle(estilo);
-  document.querySelectorAll('#po-proj-edge-toggle .po-view-toggle-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.edge === s.contorno);
-  });
-  document.querySelectorAll('#po-proj-face-toggle .po-view-toggle-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.face === (s.face || 'solido'));
-  });
-  const bt = document.getElementById('po-proj-texture-btn');
-  if (bt) {
-    bt.classList.toggle('active', !s.textura);
-    bt.textContent = s.textura ? '◍' : '○';
-  }
+  const sel = document.getElementById('po-proj-style-select');
+  if (sel) sel.value = nomeDoPresetAtual(s);
   try { localStorage.setItem(PROJECT_DRAW_STYLE_KEY, JSON.stringify(s)); } catch (e) { /* modo anônimo */ }
   if (remontar) {
     renderProjectCanvas();
@@ -18135,31 +18219,11 @@ function applyProjectDrawStyle(estilo, remontar) {
   }
 }
 (function attachProjectDrawStyle() {
-  const toggle = document.getElementById('po-proj-edge-toggle');
-  if (toggle) {
-    toggle.querySelectorAll('.po-view-toggle-btn').forEach((b) => {
-      b.addEventListener('click', () => applyProjectDrawStyle({ contorno: b.dataset.edge }, true));
-    });
-  }
-  const faceToggle = document.getElementById('po-proj-face-toggle');
-  if (faceToggle) {
-    faceToggle.querySelectorAll('.po-view-toggle-btn').forEach((b) => {
-      // "Só as arestas" com o contorno desligado deixaria a cena literalmente
-      // vazia — nesse caso liga a linha fina junto, senão o clique parece ter
-      // apagado o projeto.
-      b.addEventListener('click', () => {
-        const est = { face: b.dataset.face };
-        const atual = Viewer3D.getDrawStyle ? Viewer3D.getDrawStyle() : {};
-        if (b.dataset.face === 'nenhum' && atual.contorno === 'nenhum') est.contorno = 'fino';
-        applyProjectDrawStyle(est, true);
-      });
-    });
-  }
-  const bt = document.getElementById('po-proj-texture-btn');
-  if (bt) {
-    bt.addEventListener('click', () => {
-      const atual = Viewer3D.getDrawStyle ? Viewer3D.getDrawStyle() : { textura: true };
-      applyProjectDrawStyle({ textura: !atual.textura }, true);
+  const sel = document.getElementById('po-proj-style-select');
+  if (sel) {
+    sel.addEventListener('change', () => {
+      const p = PROJECT_DRAW_PRESETS[sel.value];
+      if (p) applyProjectDrawStyle(p, true);
     });
   }
   // Projeção da câmera. Vale pros DOIS viewers da aba (a Vista de Canto e o

@@ -2575,6 +2575,15 @@ header.po-topnav {
 }
 .po-proj-hud-btn:hover { background: var(--accent-light); }
 .po-proj-hud-btn.active { background: var(--text); color: #fff; }
+/* Seletor de estilo de exibição na barra flutuante — mesmo tamanho/altura dos
+   botões ao lado, pra não quebrar a linha da barra. */
+.po-proj-hud-select {
+  height: 28px; max-width: 190px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text);
+  font-size: 11px; font-weight: 600; padding: 0 6px; cursor: pointer;
+}
+.po-proj-hud-select:hover { border-color: var(--accent); }
 .po-proj-hud-btn:disabled { opacity: 0.3; cursor: default; }
 .po-proj-hud-btn:disabled:hover { background: transparent; }
 /* (.po-proj-hud-danger ficou sem uso quando a lixeira saiu da barra em
