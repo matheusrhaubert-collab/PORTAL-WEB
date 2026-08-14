@@ -17488,7 +17488,19 @@ function projectWallSegmentGeometry(seg, idx) {
 // wall_index + x_mm ao longo da parede, então continuam onde estavam mesmo se
 // a parede encurtar ou girar; quem quiser reposicionar, arrasta.
 function openProjectWallEditor() {
-  if (typeof WallEditor === 'undefined') return;
+  // FALHA BARULHENTA. Este `if` já existiu como `return` mudo e o botão não
+  // fazia nada — sem pista nenhuma na tela. O motivo real (2026-08-13) foi
+  // js/wall-editor.js não estar publicado: arquivo NOVO não é rastreado pelo
+  // git, e o subir.ps1 usa `git add -u` de propósito. Mesmo tropeço do
+  // layout-engine.js. Um alerta economiza a rodada inteira de diagnóstico.
+  if (typeof WallEditor === 'undefined') {
+    alert('O editor de paredes não carregou (js/wall-editor.js).\n\n'
+      + 'Se isto for o site publicado, o arquivo provavelmente não subiu: ele é '
+      + 'novo, e o subir.ps1 só envia o que o git já rastreia.\n\n'
+      + 'Rode uma vez, na pasta do projeto:\n  git add js/wall-editor.js\n'
+      + 'e publique de novo.');
+    return;
+  }
   WallEditor.open({
     segments: projectWallSegments.length ? projectWallSegments : WallEditor.padrao(),
     ceilingMm: (roomSettings && roomSettings.ceiling_mm) || 2600,
