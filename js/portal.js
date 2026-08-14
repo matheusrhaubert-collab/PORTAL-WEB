@@ -18263,6 +18263,7 @@ function aplicaProjecaoCamera(tipo) {
 // continuam existindo no Viewer3D, só deixaram de ser expostos um a um.
 const PROJECT_DRAW_PRESETS = {
   textura_linhas: { textura: true, contorno: 'fino', face: 'solido' },
+  textura_grossas: { textura: true, contorno: 'grosso', face: 'solido' },
   textura: { textura: true, contorno: 'nenhum', face: 'solido' },
   cor_linhas: { textura: false, contorno: 'fino', face: 'solido' },
   cor: { textura: false, contorno: 'nenhum', face: 'solido' },
@@ -18270,6 +18271,72 @@ const PROJECT_DRAW_PRESETS = {
   arestas: { textura: false, contorno: 'fino', face: 'nenhum' },
   tecnico: { textura: false, contorno: 'grosso', face: 'nenhum' }
 };
+
+// ==========================================================================
+// MENU DE ESTILO COM ÍCONE — 2026-08-13
+// ==========================================================================
+// "quero um ícone bem bonitinho colorido pra entender melhor na frente da
+// escrita." <option> nativo não aceita SVG (só texto), então o <select> virou
+// um menu próprio: botão + lista. Cada item é uma AMOSTRA do que o estilo faz
+// — madeira com contorno fino, madeira com contorno grosso, cinza chapado,
+// translúcido, só arestas — que é mais rápido de ler que o nome.
+const PROJECT_DRAW_OPCOES = [
+  { id: 'textura_linhas', nome: 'Texturas com linhas', madeira: true, linha: 'fina', face: 'cheia' },
+  { id: 'textura_grossas', nome: 'Texturas com linhas grossas', madeira: true, linha: 'grossa', face: 'cheia' },
+  { id: 'textura', nome: 'Texturas', madeira: true, linha: 'nenhuma', face: 'cheia' },
+  { id: 'cor_linhas', nome: 'Preenchimento com linhas', madeira: false, linha: 'fina', face: 'cheia' },
+  { id: 'cor', nome: 'Preenchimento', madeira: false, linha: 'nenhuma', face: 'cheia' },
+  { id: 'translucido', nome: 'Translúcido', madeira: false, linha: 'fina', face: 'meia' },
+  { id: 'arestas', nome: 'Sem preenchimento', madeira: false, linha: 'fina', face: 'vazia' },
+  { id: 'tecnico', nome: 'Técnico (linha grossa)', madeira: false, linha: 'grossa', face: 'vazia' }
+];
+function iconeEstilo(o) {
+  const preenche = o.face === 'vazia' ? 'none'
+    : (o.madeira ? '#c9a06a' : '#cfcac1');
+  const opac = o.face === 'meia' ? 0.35 : 1;
+  const larg = o.linha === 'grossa' ? 2.6 : (o.linha === 'fina' ? 1 : 0);
+  const cor = o.linha === 'grossa' ? '#111' : '#6b6357';
+  const veio = o.madeira && o.face !== 'vazia'
+    ? '<path d="M6 8h12M6 12h12M6 16h12" stroke="#a67c46" stroke-width="0.9" opacity="0.65"/>'
+    : '';
+  return '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">'
+    + '<rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="' + preenche + '" fill-opacity="' + opac + '"'
+    + (larg ? ' stroke="' + cor + '" stroke-width="' + larg + '"' : '') + '/>'
+    + veio + '</svg>';
+}
+function montaMenuEstilo() {
+  const raiz = document.getElementById('po-proj-style-menu');
+  if (!raiz) return;
+  raiz.innerHTML = '<button type="button" class="po-style-btn" id="po-proj-style-btn"></button>'
+    + '<div class="po-style-list" id="po-proj-style-list">'
+    + PROJECT_DRAW_OPCOES.map((o) => (
+      '<button type="button" class="po-style-item" data-estilo="' + o.id + '">'
+      + iconeEstilo(o) + '<span>' + o.nome + '</span></button>'
+    )).join('')
+    + '</div>';
+  const btn = raiz.querySelector('#po-proj-style-btn');
+  const lista = raiz.querySelector('#po-proj-style-list');
+  btn.addEventListener('click', (ev) => { ev.stopPropagation(); raiz.classList.toggle('aberto'); });
+  lista.querySelectorAll('.po-style-item').forEach((it) => {
+    it.addEventListener('click', () => {
+      raiz.classList.remove('aberto');
+      const p = PROJECT_DRAW_PRESETS[it.dataset.estilo];
+      if (p) applyProjectDrawStyle(p, true);
+    });
+  });
+  // Fechar clicando fora — sem isto o menu fica aberto por cima da cena e o
+  // primeiro clique no projeto é gasto só pra fechar ele.
+  document.addEventListener('click', () => raiz.classList.remove('aberto'));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') raiz.classList.remove('aberto'); });
+}
+function pintaBotaoEstilo(idAtual) {
+  const btn = document.getElementById('po-proj-style-btn');
+  const o = PROJECT_DRAW_OPCOES.find((x) => x.id === idAtual) || PROJECT_DRAW_OPCOES[0];
+  if (btn) btn.innerHTML = iconeEstilo(o) + '<span>' + o.nome + '</span><i class="po-style-caret">▾</i>';
+  document.querySelectorAll('#po-proj-style-list .po-style-item').forEach((it) => {
+    it.classList.toggle('ativo', it.dataset.estilo === o.id);
+  });
+}
 function nomeDoPresetAtual(s) {
   const achado = Object.keys(PROJECT_DRAW_PRESETS).find((k) => {
     const p = PROJECT_DRAW_PRESETS[k];
@@ -18281,8 +18348,7 @@ function nomeDoPresetAtual(s) {
 function applyProjectDrawStyle(estilo, remontar) {
   if (typeof Viewer3D === 'undefined' || !Viewer3D.setDrawStyle) return;
   const s = Viewer3D.setDrawStyle(estilo);
-  const sel = document.getElementById('po-proj-style-select');
-  if (sel) sel.value = nomeDoPresetAtual(s);
+  pintaBotaoEstilo(nomeDoPresetAtual(s));
   try { localStorage.setItem(PROJECT_DRAW_STYLE_KEY, JSON.stringify(s)); } catch (e) { /* modo anônimo */ }
   if (remontar) {
     renderProjectCanvas();
@@ -18291,13 +18357,7 @@ function applyProjectDrawStyle(estilo, remontar) {
   }
 }
 (function attachProjectDrawStyle() {
-  const sel = document.getElementById('po-proj-style-select');
-  if (sel) {
-    sel.addEventListener('change', () => {
-      const p = PROJECT_DRAW_PRESETS[sel.value];
-      if (p) applyProjectDrawStyle(p, true);
-    });
-  }
+  montaMenuEstilo();
   // Projeção da câmera. Vale pros DOIS viewers da aba (a Vista de Canto e o
   // painel "Visualizar 3D"), pra não ficar um em cada modo. Não precisa
   // remontar a cena: é só a matriz de projeção.
