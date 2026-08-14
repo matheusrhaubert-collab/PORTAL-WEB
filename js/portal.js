@@ -12115,10 +12115,45 @@ function clampProjectSlotPosition(slot) {
   // longo de um plano vertical — o limite dela é o retângulo do ambiente no
   // piso (ver clampFloorSlotIntoRoom).
   if (isFloorSlot(slot)) return;
-  const maxX = Math.max(0, getProjectWallWidthMm(Number(slot.wall_index || 0)) - Number(slot.width_mm || 0));
+  // O MÓDULO PARA NA PAREDE VIZINHA, não dentro dela (2026-08-13).
+  //
+  // O limite era 0..(largura da parede), e a largura vai até o EIXO do canto —
+  // então, no fim da parede, o módulo entrava os 150mm da parede
+  // perpendicular. Era o "ele permitiu entrar" que o Matt viu.
+  //
+  // Agora o vão útil desconta a espessura de quem encosta em cada ponta.
+  // Resultado: arrastado até o fim, o módulo encosta EXATAMENTE na face
+  // interna da parede vizinha — que é o que se quer num canto de marcenaria.
+  const idx = Number(slot.wall_index || 0);
+  const recuo = projectWallCornerInsetMm(idx);
+  const largura = getProjectWallWidthMm(idx) - recuo.ini - recuo.fim;
+  const maxX = Math.max(0, largura - Number(slot.width_mm || 0));
+  if (Number(slot.x_mm || 0) < recuo.ini) slot.x_mm = recuo.ini;
   const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
-  slot.x_mm = clamp(Number(slot.x_mm || 0), 0, maxX);
+  slot.x_mm = clamp(Number(slot.x_mm || 0), recuo.ini, recuo.ini + maxX);
   slot.floor_height_mm = clamp(Number(slot.floor_height_mm || 0), 0, maxY);
+}
+
+// Quanto cada ponta desta parede é "comida" pela parede que encosta nela.
+// Zero quando aquela ponta é livre (parede solta) — aí o módulo pode ir até o
+// fim de verdade. Só vale no modelo de segmentos; no modelo antigo das 3
+// formas as paredes se encontram por construção e nada muda.
+function projectWallCornerInsetMm(wallIndex) {
+  const vazio = { ini: 0, fim: 0 };
+  if (!projectWallSegments.length) return vazio;
+  const seg = projectWallSegments[wallIndex];
+  if (!seg) return vazio;
+  const TOL = 120; // mm — bem abaixo da espessura, então só conta encontro real
+  const encosta = (px, pz) => {
+    let esp = 0;
+    projectWallSegments.forEach((o, j) => {
+      if (j === wallIndex) return;
+      const perto = Math.hypot(o.ax - px, o.az - pz) < TOL || Math.hypot(o.bx - px, o.bz - pz) < TOL;
+      if (perto) esp = Math.max(esp, Number(o.thicknessMm) || PROJECT_WALL_THICKNESS_MM);
+    });
+    return esp;
+  };
+  return { ini: encosta(seg.ax, seg.az), fim: encosta(seg.bx, seg.bz) };
 }
 
 // Ímã: dado um valor bruto (posição que o ponteiro pediria) e o tamanho do
@@ -13857,18 +13892,24 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
     container3d.style.height = Math.round(availableHeightPx) + 'px';
   }
 
-  // AMBIENTE VAZIO ABRE NO CANTO, NÃO DE FRENTE PRA UMA PAREDE (2026-08-13).
+  // A CÂMERA NÃO GIRA MAIS SOZINHA PRA ENCARAR A PAREDE (2026-08-13).
   //
-  // activeIdx faz a câmera girar quase de frente pra parede em edição
-  // (ACTIVE_WALL_BIAS em viewer3d_composition.js) — o que existe por um motivo
-  // real: de perfil, os módulos daquela parede se sobrepõem na tela e viram
-  // um alvo impossível de clicar. Só que num projeto SEM MÓDULO não há nada
-  // pra clicar, e o viés só serve pra jogar fora o enquadramento do canto: as
-  // duas paredes de 4m apareciam tortas em vez de simétricas.
+  // activeIdx era o que fazia a câmera girar quase de frente pra parede em
+  // edição (ACTIVE_WALL_BIAS em viewer3d_composition.js), inclusive ao inserir
+  // um módulo. Nasceu pra resolver um problema real de 2026-07-26 — de perfil,
+  // os módulos de uma parede se sobrepõem na tela e viram alvo impossível de
+  // clicar —, mas o preço é a cena saltar debaixo da mão de quem está
+  // trabalhando. E aquele problema mudou de figura: o clique errado tinha
+  // outra causa (Raycaster.params.Line.threshold em metros, corrigido hoje),
+  // então o viés deixou de ser necessário pra acertar o módulo.
   //
-  // Sem módulo → null → bissetriz pura: as duas paredes iguais, canto no meio,
-  // que é a referência que o Matt mandou. Com módulo, tudo como era.
-  const activeIdx = projectSlots.length ? projectActiveWallIndex : null;
+  // null = bissetriz pura, sempre: as paredes ficam simétricas e a câmera só
+  // se move quando o usuário move. Pedido explícito do Matt: "quando módulo é
+  // inserido a câmera mostra a parede, vamos desativar essa função".
+  //
+  // Pra reativar: `projectActiveWallIndex` no lugar de null (o resto da cadeia
+  // — peso, bissetriz, fitKey — continua inteiro).
+  const activeIdx = null;
   const ceilingMm = roomSettings.ceiling_mm;
   const activeWidthMm = getProjectWallWidthMm(activeIdx);
   if (dimsLabel) dimsLabel.textContent = `${formatDimension(activeWidthMm, unit)} x ${formatDimension(ceilingMm, unit)}`;
@@ -13931,7 +13972,10 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // restoreGalleryPostAsProject) zeram project3DLastFitKey explicitamente
   // pra garantir reenquadramento mesmo se a chave calculada coincidir por
   // acaso com a de antes.
-  const fitKey = projectWallShape + '|' + activeIdx;
+  // A chave inclui a QUANTIDADE de paredes desenhadas: sem isso, adicionar ou
+  // remover parede no editor não reenquadraria (activeIdx virou constante), e
+  // o ambiente novo ficaria fora de vista até alguém mexer na câmera.
+  const fitKey = projectWallShape + '|' + activeIdx + '|' + projectWallSegments.length;
   const keepCamera = project3DLastFitKey === fitKey;
   project3DLastFitKey = fitKey;
   ViewerProjectEdit.renderFreeformWalls(wallsData, viewerRoomEnvConfig(), activeIdx, {
@@ -16422,6 +16466,26 @@ function attachProject3DEditDrag() {
     const widthMm = Number(slot.width_mm || 0);
     const wallWidthMm = getProjectWallWidthMm(wallGeo.wallIndex);
     const edgeInfo = getProjectAdjacentWallEdgeInfo(wallGeo.wallIndex);
+
+    // FORÇAR CONTRA A PAREDE PRA TROCAR (2026-08-13, pedido do Matt: "deixa
+    // ele forçar um pouco contra a parede pra ir pra outra, assim garantimos
+    // que ele vai ficar bem encostado").
+    //
+    // Antes bastava o módulo passar 1mm da borda pra ele pular pro outro lado
+    // do canto — e quem só queria encostar acabava trocando de parede sem
+    // querer, ou parando ANTES de encostar com medo de pular. Agora existe uma
+    // zona morta: dentro dela o módulo trava rente ao canto (fica bem
+    // encostado, que é o objetivo); passou dela, aí sim atravessa.
+    //
+    // O recuo do canto entra na conta porque o fim útil da parede não é a
+    // largura dela, é a face interna da vizinha (ver projectWallCornerInsetMm).
+    const FORCA_TROCA_MM = 140;
+    const recuoCanto = projectWallCornerInsetMm(wallGeo.wallIndex);
+    const limEsq = recuoCanto.ini;
+    const limDir = wallWidthMm - recuoCanto.fim;
+    if (xMm < limEsq && edgeInfo.left && xMm > limEsq - FORCA_TROCA_MM) { xMm = limEsq; }
+    else if (xMm + widthMm > limDir && edgeInfo.right && xMm + widthMm < limDir + FORCA_TROCA_MM) { xMm = limDir - widthMm; }
+
     if (xMm < 0 && edgeInfo.left) {
       const neighborWidthMm = getProjectWallWidthMm(edgeInfo.left.wallIndex);
       // neighborCornerAtZero: a esquina compartilhada fica no x=0 da vizinha
