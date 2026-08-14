@@ -149,11 +149,14 @@
     m.classList.add('open');
     desenha();
   }
+  // Espelha defaultProjectWallSegments() do portal.js — 4m, L centrado na
+  // origem. Existe aqui pro editor abrir sozinho (sem projeto) e não voltar a
+  // divergir; se um dia o padrão mudar, muda nos dois.
   function padrao() {
-    const L = 3000;
+    const L = 4000, h = L / 2;
     return [
-      { id: novoId(), ax: -L / 2, az: 0, bx: L / 2, bz: 0, thicknessMm: ESPESSURA_PADRAO, ceilingMm: null },
-      { id: novoId(), ax: L / 2, az: 0, bx: L / 2, bz: L, thicknessMm: ESPESSURA_PADRAO, ceilingMm: null }
+      { id: novoId(), ax: -h, az: -h, bx: h, bz: -h, thicknessMm: ESPESSURA_PADRAO, ceilingMm: null },
+      { id: novoId(), ax: h, az: -h, bx: h, bz: h, thicknessMm: ESPESSURA_PADRAO, ceilingMm: null }
     ];
   }
   function fechar(salvar) {

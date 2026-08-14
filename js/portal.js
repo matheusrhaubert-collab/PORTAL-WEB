@@ -9907,7 +9907,7 @@ let projectWallShape = 'single';
 // página inteira ficava sem Supabase — foi o "não abre projetos / sem conexão
 // com banco" de 2026-08-13.
 const PROJECT_WALL_THICKNESS_MM = 150;
-const PROJECT_WALL_DEFAULT_LEN_MM = 3000;
+const PROJECT_WALL_DEFAULT_LEN_MM = 4000;   // 4m (2026-08-13, pedido do Matt)
 let projectWallSegments = [];   // [{ id, ax, az, bx, bz, thicknessMm, ceilingMm }]
 // Slot que o botão ⇄ (substituir módulo) está esperando trocar. Mesma regra de
 // posição: é lido por closeProjectSearchModal e pelo clique do card da busca,
@@ -17476,11 +17476,18 @@ function newProjectWallSegmentId() {
 // Matt pediu como ponto de partida.
 function defaultProjectWallSegments() {
   const L = PROJECT_WALL_DEFAULT_LEN_MM;
+  // O L NASCE CENTRADO NA ORIGEM (2026-08-13). O enquadramento automático da
+  // Vista de Canto olha a caixa delimitadora do ambiente pela bissetriz das
+  // paredes; com o canto na origem e as duas pontas simétricas, a cena abre
+  // com o canto no meio da tela e as duas paredes iguais — que é o
+  // enquadramento que o Matt pediu ("a câmera bem no meio, dessa forma").
+  // Com o L começando em x=0 ele nascia deslocado pra um lado.
+  const h = L / 2;
   return [
-    // Parede principal: da esquerda pra direita, no fundo (z = 0).
-    { id: newProjectWallSegmentId(), ax: -L / 2, az: 0, bx: L / 2, bz: 0, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null },
-    // Parede lateral direita: do fundo pra frente, saindo da ponta B da 1ª.
-    { id: newProjectWallSegmentId(), ax: L / 2, az: 0, bx: L / 2, bz: L, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null }
+    // Parede do fundo: da esquerda pra direita, atrás (z = -h).
+    { id: newProjectWallSegmentId(), ax: -h, az: -h, bx: h, bz: -h, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null },
+    // Parede da direita: do fundo pra frente, saindo da ponta B da 1ª.
+    { id: newProjectWallSegmentId(), ax: h, az: -h, bx: h, bz: h, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null }
   ];
 }
 
