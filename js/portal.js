@@ -14345,24 +14345,24 @@ function stretchProjectSlotToCollision(slot, axis) {
 let projectSlotActionsRafId = null;
 
 function projectSlotActionsAnchorWorld(slot) {
-  // Âncora: canto superior DIREITO do módulo, um pouco acima e pra fora — não
-  // tapa o móvel nem briga com as setas de redimensionamento (que ficam no
-  // meio das faces e no topo do centro).
-  const heightM = Number(slot.height_mm || 0) / 1000;
+  // Âncora: EMBAIXO do módulo, centrada (2026-08-13, pedido do Matt com
+  // layout junto). Ficava no canto superior direito, onde disputava espaço
+  // com a seta de altura e, em módulo alto, saía do enquadramento. Embaixo o
+  // lugar é sempre livre — nenhuma seta mora ali — e a barra fica no caminho
+  // natural do olhar, logo abaixo do que está selecionado.
   const baseY = Number(slot.floor_height_mm || 0) / 1000;
-  const y = baseY + heightM + 0.10;
+  const y = Math.max(baseY - 0.10, 0.02);
   if (isFloorSlot(slot)) {
     const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
-    const halfW = Number(slot.width_mm || 0) / 2000;
     return {
-      x: Number(slot.floor_x_mm || 0) / 1000 + Math.cos(rot) * halfW,
+      x: Number(slot.floor_x_mm || 0) / 1000,
       y,
-      z: Number(slot.floor_z_mm || 0) / 1000 - Math.sin(rot) * halfW
+      z: Number(slot.floor_z_mm || 0) / 1000
     };
   }
   const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index || 0));
   if (!wallGeo) return null;
-  const alongM = (Number(slot.x_mm || 0) + Number(slot.width_mm || 0)) / 1000;
+  const alongM = (Number(slot.x_mm || 0) + Number(slot.width_mm || 0) / 2) / 1000;
   const depthOffM = Number(slot.depth_mm || 0) / 2000;
   return {
     x: wallGeo.originX + wallGeo.alongDirX * alongM + wallGeo.intoDirX * depthOffM,

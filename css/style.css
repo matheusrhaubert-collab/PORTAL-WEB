@@ -2649,8 +2649,16 @@ header.po-topnav {
    ao container — assim não depende de nenhum offsetParent nem de o wrap ter
    position:relative. Alvo grande (34px) pra acertar com o dedo no iPad. */
 .po-proj-slot-actions {
-  position: fixed; z-index: 60; display: flex; gap: 4px;
-  transform: translate(-50%, -50%); pointer-events: auto;
+  /* BARRA ÚNICA EMBAIXO DO MÓDULO (2026-08-13, layout que o Matt mandou).
+     Eram bolinhas soltas no canto superior direito; viraram um cartão só,
+     com filete entre os ícones — lê como "ações deste módulo" em vez de
+     quatro enfeites flutuando. translate(-50%,0) porque a âncora agora é o
+     MEIO da base do móvel (ver projectSlotActionsAnchorWorld). */
+  position: fixed; z-index: 60; display: flex; align-items: center; gap: 0;
+  transform: translate(-50%, 8px); pointer-events: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 3px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.16);
 }
 /* BOLINHAS (2026-08-08, pedido do usuário: "troca os quadrados de duplicar e
    excluir por bolinhas, fica uma area menor"). O círculo ocupa ~78% da área de
@@ -3512,3 +3520,15 @@ header.po-topnav {
   background: var(--text) !important; color: #fff !important; border-color: var(--text) !important;
 }
 #po-proj-canvas-tools .po-tb-primaria svg { color: #fff; }
+
+/* Ícones da barra do módulo: quadrados, sem borda própria, filete entre eles. */
+.po-proj-slot-actions .po-proj-slot-action-btn {
+  width: 34px; height: 32px; border: none; border-radius: 9px;
+  background: transparent; box-shadow: none; font-size: 14px; color: #4a4740;
+}
+.po-proj-slot-actions .po-proj-slot-action-btn + .po-proj-slot-action-btn {
+  border-left: 1px solid var(--border); border-radius: 0 9px 9px 0;
+}
+.po-proj-slot-actions .po-proj-slot-action-btn:hover { background: #f4f2ed; }
+.po-proj-slot-actions .po-proj-slot-action-danger { color: #b0503c; }
+.po-proj-slot-actions .po-proj-slot-action-danger:hover { background: #f7e4e0; }
