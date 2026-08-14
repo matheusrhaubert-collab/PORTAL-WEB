@@ -3568,3 +3568,52 @@ header.po-topnav {
 }
 .po-pieces-table td { padding: 6px; border-bottom: 1px solid #efece5; color: var(--text); }
 .po-pieces-table tbody tr:hover { background: #faf8f3; }
+
+/* ==========================================================================
+   BARRA CABENDO NA TELA — 2026-08-13
+   ==========================================================================
+   "minha barra passou da tela pra direita. faz ela caber dentro da tela. tem
+   muito espaço vazio entre os ícones, mas deixa eles em harmonia, separados de
+   forma igual."
+
+   Três mecanismos, do mais suave pro mais drástico — nessa ordem, pra a barra
+   só perder informação quando não houver mais espaço:
+     1. space-between distribui a sobra por igual entre os grupos (é o que dá a
+        "harmonia" pedida) em vez de amontoar tudo à esquerda e vazar à direita;
+     2. abaixo de 1600px somem os RÓTULOS dos botões secundários — o ícone
+        sozinho já identifica quem é usado o tempo todo;
+     3. abaixo de 1180px (iPad deitado) somem os rótulos dos segmentados também.
+   O que NUNCA some é "Send to order": é a ação final do fluxo. */
+#po-proj-canvas-tools.po-proj-hud-tl {
+  justify-content: space-between; gap: 0;
+  padding: 5px 12px; overflow: visible; flex-wrap: nowrap;
+}
+#po-proj-canvas-tools .po-tb-group { padding: 0; min-width: 0; }
+#po-proj-canvas-tools .po-tb-sep { margin: 6px 2px; }
+#po-proj-canvas-tools .po-tb-seg-btn,
+#po-proj-canvas-tools .po-tb-icon-card,
+#po-proj-style-menu .po-style-btn { padding: 6px 9px; }
+/* O nome do estilo é o texto mais longo da barra — ele encolhe primeiro. */
+#po-proj-style-menu .po-style-btn { max-width: 190px; overflow: hidden; }
+#po-proj-style-menu .po-style-btn span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+@media (max-width: 1600px) {
+  /* Secundários viram só ícone (o title= continua explicando no hover). */
+  #po-proj-wall-editor-btn span,
+  #po-proj-render-btn span,
+  #po-proj-render-linhas-btn span,
+  #po-proj-style-menu .po-style-btn span,
+  #po-proj-style-menu .po-style-caret { display: none; }
+  #po-proj-style-menu .po-style-btn { max-width: none; }
+}
+@media (max-width: 1180px) {
+  /* iPad deitado: sobra só ícone em tudo, menos a ação final. */
+  #po-proj-canvas-tools .po-tb-seg-btn span,
+  #po-proj-canvas-tools .po-tb-icon-card span,
+  .po-tb-voltar span { display: none; }
+  #po-proj-send-to-order-btn span,
+  #po-proj-send-to-order-btn { display: inline-flex !important; }
+  #po-proj-canvas-tools .po-tb-seg-btn { padding: 6px 8px; }
+}

@@ -12015,12 +12015,16 @@ if (projModeCancelBtn) {
 // volta pra x=0. Só um ponto de partida: o cliente arrasta pra reposicionar
 // depois (o imã cuida do alinhamento fino).
 function computeDefaultProjectSlotX(widthMm) {
-  const wallWidthMm = getProjectWallWidthMm(projectActiveWallIndex);
+  // Nasce DENTRO do vão útil, não em x=0 (2026-08-13). x=0 é o eixo do canto:
+  // um módulo colocado ali já nasce metido na parede vizinha, e o usuário
+  // ainda ia ter que arrastar pra fora. O recuo é a face interna dela.
+  const recuo = projectWallCornerInsetMm(projectActiveWallIndex);
+  const wallWidthMm = getProjectWallWidthMm(projectActiveWallIndex) - recuo.fim;
   const sameWallSlots = projectSlotsOnWall(projectActiveWallIndex);
-  if (!sameWallSlots.length) return 0;
-  const rightmost = sameWallSlots.reduce((max, s) => Math.max(max, Number(s.x_mm || 0) + Number(s.width_mm || 0)), 0);
+  if (!sameWallSlots.length) return recuo.ini;
+  const rightmost = sameWallSlots.reduce((max, s) => Math.max(max, Number(s.x_mm || 0) + Number(s.width_mm || 0)), recuo.ini);
   if (rightmost + widthMm <= wallWidthMm) return rightmost;
-  return Math.max(0, wallWidthMm - widthMm);
+  return Math.max(recuo.ini, wallWidthMm - widthMm);
 }
 
 // ---------- Canvas 2D: medidas, imã (snap) e profundidade ----------
@@ -12129,19 +12133,40 @@ function clampProjectSlotPosition(slot) {
   const largura = getProjectWallWidthMm(idx) - recuo.ini - recuo.fim;
   const maxX = Math.max(0, largura - Number(slot.width_mm || 0));
   const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
-  // ATENÇÃO AO MÍNIMO: ele continua 0, e NÃO recuo.ini.
+  // O MÍNIMO É O RECUO — MAS SÓ QUANDO DÁ PRA SAIR SEM ATROPELAR NINGUÉM.
   //
-  // Eu tinha posto recuo.ini como mínimo — e isso empurrava, em silêncio, todo
-  // módulo já posicionado em x < 150 pra dentro do vizinho, porque clamp roda
-  // em vários pontos (render, resize, troca de parede) SEM passar pela
-  // colisão. Foi o "colisão ligada e um módulo entrou no outro" — o culpado
-  // era justamente o que estava encostado na parede, deslocado pelo clamp.
+  // Duas exigências que brigam entre si, e a solução é atender as duas:
+  //   · módulo NÃO PODE ficar dentro da parede vizinha (o "ainda tá entrando
+  //     na parede"), então o mínimo tem que ser recuo.ini;
+  //   · o clamp roda em vários pontos SEM passar pela colisão (render, resize,
+  //     troca de parede), então empurrar cego mete o módulo no vizinho — foi
+  //     exatamente o bug do "um módulo entrou no outro".
   //
-  // Encostar bonito no canto é trabalho do ARRASTE (a zona morta de
-  // FORCA_TROCA_MM), onde a colisão roda logo depois e tem como reagir. O
-  // clamp só garante o teto: não passar da face da parede vizinha.
-  slot.x_mm = clamp(Number(slot.x_mm || 0), 0, recuo.ini + maxX);
+  // Aqui: tenta tirar da parede; se o lugar novo colidir com outro módulo, o
+  // empurrão é ABORTADO e a posição antiga fica. Sair da parede nunca vale
+  // criar sobreposição — e o módulo que ficou pra trás continua acessível
+  // (basta arrastar, e aí a colisão trabalha de verdade).
+  const xAtual = Number(slot.x_mm || 0);
+  let xMin = recuo.ini;
+  if (xAtual < xMin && projectSlotOverlapsNeighbor(slot, xMin)) xMin = xAtual;
+  slot.x_mm = clamp(xAtual, xMin, recuo.ini + maxX);
   slot.floor_height_mm = clamp(Number(slot.floor_height_mm || 0), 0, maxY);
+}
+
+// Este módulo, se fosse pra xProposto, encostaria em algum vizinho da MESMA
+// parede? Só compara o vão horizontal e a faixa vertical — é o mesmo critério
+// da colisão do arraste, sem o resolvedor de deslize (aqui a pergunta é
+// sim/não, não "pra onde escorregar").
+function projectSlotOverlapsNeighbor(slot, xProposto) {
+  const w = Number(slot.width_mm || 0), h = Number(slot.height_mm || 0);
+  const y0 = Number(slot.floor_height_mm || 0), y1 = y0 + h;
+  return projectSlotsSameWallExcluding(slot).some((o) => {
+    const ox = Number(o.x_mm || 0), ow = Number(o.width_mm || 0);
+    const oy0 = Number(o.floor_height_mm || 0), oy1 = oy0 + Number(o.height_mm || 0);
+    const cruzaX = xProposto < ox + ow - 1 && xProposto + w > ox + 1;
+    const cruzaY = y0 < oy1 - 1 && y1 > oy0 + 1;
+    return cruzaX && cruzaY;
+  });
 }
 
 // Quanto cada ponta desta parede é "comida" pela parede que encosta nela.
