@@ -13857,7 +13857,18 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
     container3d.style.height = Math.round(availableHeightPx) + 'px';
   }
 
-  const activeIdx = projectActiveWallIndex;
+  // AMBIENTE VAZIO ABRE NO CANTO, NÃO DE FRENTE PRA UMA PAREDE (2026-08-13).
+  //
+  // activeIdx faz a câmera girar quase de frente pra parede em edição
+  // (ACTIVE_WALL_BIAS em viewer3d_composition.js) — o que existe por um motivo
+  // real: de perfil, os módulos daquela parede se sobrepõem na tela e viram
+  // um alvo impossível de clicar. Só que num projeto SEM MÓDULO não há nada
+  // pra clicar, e o viés só serve pra jogar fora o enquadramento do canto: as
+  // duas paredes de 4m apareciam tortas em vez de simétricas.
+  //
+  // Sem módulo → null → bissetriz pura: as duas paredes iguais, canto no meio,
+  // que é a referência que o Matt mandou. Com módulo, tudo como era.
+  const activeIdx = projectSlots.length ? projectActiveWallIndex : null;
   const ceilingMm = roomSettings.ceiling_mm;
   const activeWidthMm = getProjectWallWidthMm(activeIdx);
   if (dimsLabel) dimsLabel.textContent = `${formatDimension(activeWidthMm, unit)} x ${formatDimension(ceilingMm, unit)}`;
