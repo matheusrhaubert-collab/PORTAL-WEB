@@ -91,7 +91,7 @@
       '      <label>Ângulo <span class="po-wall-un">°</span><input type="number" id="po-wall-ang" step="1"></label>',
       '      <label>Espessura <span class="po-wall-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
       '      <label>Altura desta parede <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
-      '      <p class="po-wall-hint">Arraste as pontas pra mover. O ímã pega a malha de 1 m e os ângulos de 45°; segure Shift pra soltar.</p>',
+      '      <p class="po-wall-hint">Arraste o <b>corpo</b> da parede pra levar ela inteira; arraste as <b>pontas</b> pra girar e esticar. O ímã pega a malha e os ângulos de 45° — segure Shift pra soltar.</p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
       '    </div>',
       '  </div>',
@@ -255,7 +255,18 @@
         'stroke-width': fino * (sel ? 2.5 : 1.2),
         class: 'po-wall-seg'
       }, svg);
-      poly.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); estado.sel = i; desenha(); });
+      // Clicar seleciona; ARRASTAR O CORPO leva a parede inteira pra onde
+      // quiser — inclusive solta, longe das outras (2026-08-13, pedido do
+      // Matt: "quero levar essa parede pra onde eu quiser, tipo deixar uma
+      // parede solta no chão"). As pontas continuam servindo pra girar e
+      // esticar; o corpo é o que translada, que é a divisão que qualquer CAD
+      // usa e dispensa botão de modo.
+      poly.addEventListener('pointerdown', (ev) => {
+        ev.stopPropagation();
+        estado.sel = i;
+        desenha();
+        iniciaArrasteCorpo(ev, i);
+      });
 
       // Cota do comprimento, no meio da parede.
       const t = el('text', {
@@ -307,19 +318,69 @@
   // ÂNGULO (direção a partir da outra ponta). Fazer o contrário deixaria o
   // ângulo certo e a ponta fora da malha, que é o pior dos dois mundos quando
   // se está fechando um canto.
-  function iniciaArraste(ev, svg, idx, qual) {
+  // Translada a parede INTEIRA (as duas pontas pelo mesmo vetor). O ímã aqui é
+  // só de malha — ângulo não muda quando se move, então não há o que travar.
+  function iniciaArrasteCorpo(ev, idx) {
     ev.preventDefault();
-    ev.stopPropagation();
-    const paraMm = (e) => {
+    const pos = (e) => {
+      const svg = document.querySelector('#po-wall-stage svg');
+      if (!svg) return null;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return null;
       const pt = svg.createSVGPoint();
       pt.x = e.clientX; pt.y = e.clientY;
-      const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+      const p = pt.matrixTransform(ctm.inverse());
+      return { x: p.x, z: p.y };
+    };
+    const ini = pos(ev);
+    const s = estado.segs[idx];
+    if (!ini || !s) return;
+    const base = { ax: s.ax, az: s.az, bx: s.bx, bz: s.bz };
+    let andou = false;
+    const mover = (e) => {
+      const p = pos(e);
+      if (!p) return;
+      let dx = p.x - ini.x, dz = p.z - ini.z;
+      if (Math.abs(dx) < 2 && Math.abs(dz) < 2 && !andou) return;  // clique puro
+      andou = true;
+      if (!e.shiftKey) { dx = Math.round(dx / SNAP_MM) * SNAP_MM; dz = Math.round(dz / SNAP_MM) * SNAP_MM; }
+      s.ax = Math.round(base.ax + dx); s.az = Math.round(base.az + dz);
+      s.bx = Math.round(base.bx + dx); s.bz = Math.round(base.bz + dz);
+      desenha();
+    };
+    const soltar = () => {
+      removeEventListener('pointermove', mover);
+      removeEventListener('pointerup', soltar);
+    };
+    addEventListener('pointermove', mover);
+    addEventListener('pointerup', soltar);
+  }
+
+  function iniciaArraste(ev, svgIgnorado, idx, qual) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    // O SVG É PROCURADO A CADA MOVIMENTO, de propósito.
+    //
+    // Este era o bug do "a parede fica num ponto só e não segue o mouse":
+    // desenha() reconstrói o SVG inteiro a cada quadro do arraste, então o
+    // elemento capturado aqui no pointerdown fica ÓRFÃO já no primeiro
+    // movimento. getScreenCTM() de um SVG fora do documento devolve null, a
+    // conversão tela->mm morre, e a ponta congela onde estava.
+    const paraMm = (e) => {
+      const svg = document.querySelector('#po-wall-stage svg');
+      if (!svg || !svg.getScreenCTM) return null;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return null;
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX; pt.y = e.clientY;
+      const p = pt.matrixTransform(ctm.inverse());
       return { x: p.x, z: p.y };
     };
     const mover = (e) => {
       const s = estado.segs[idx];
-      if (!s) return;
-      let { x, z } = paraMm(e);
+      const mm = paraMm(e);
+      if (!s || !mm) return;
+      let x = mm.x, z = mm.z;
       const livre = e.shiftKey;
       if (!livre) { x = Math.round(x / SNAP_MM) * SNAP_MM; z = Math.round(z / SNAP_MM) * SNAP_MM; }
       const ox = qual === 'a' ? s.bx : s.ax;

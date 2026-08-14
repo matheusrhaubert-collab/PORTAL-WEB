@@ -2591,6 +2591,11 @@ const Viewer3D = (function () {
     // inclusive a da Composição/Projetos, porque todas passam por
     // addPartToGroup/makeMaterial. Só afeta a próxima montagem.
     setDrawStyle, getDrawStyle,
+    // Exposto pra quem monta geometria FORA do addPartToGroup e ainda assim
+    // precisa do mesmo contorno — hoje as paredes do ambiente
+    // (viewer3d_composition.js/makeWallSurface). Sem isto o móvel teria
+    // aresta e a parede não.
+    buildEdgesForStyle,
     // Materiais por face de UMA peça (migration 088) — face com a cor, borda
     // com fita ou com o miolo da chapa. Exposto pra quem monta cena PRÓPRIA
     // (o construtor de módulos do ERP) não precisar reimplementar a regra e

@@ -505,6 +505,21 @@ function createViewerComposition3D() {
       ceilingH / 2,
       (p0.z + p1.z) / 2 - iz * recuo
     );
+
+    // ARESTA NA PAREDE, no mesmo estilo dos móveis (2026-08-13, Matt: "as
+    // paredes não estão recebendo as arestas grossas também como os móveis").
+    // A parede é montada aqui, fora do addPartToGroup, então não passava pelo
+    // buildEdgesForStyle do viewer3d.js — ficava um bloco chapado enquanto o
+    // móvel ao lado tinha contorno. Reaproveita a MESMA função, então os
+    // quatro modos (fino/grosso/suave/nenhum) valem pros dois sem regra
+    // duplicada: mudou o estilo, mudou nos dois juntos.
+    if (typeof Viewer3D !== 'undefined' && Viewer3D.buildEdgesForStyle) {
+      const arestas = Viewer3D.buildEdgesForStyle(geom);
+      if (arestas) {
+        arestas.userData.isRoomSurface = false;
+        mesh.add(arestas);
+      }
+    }
     return mesh;
   }
 
