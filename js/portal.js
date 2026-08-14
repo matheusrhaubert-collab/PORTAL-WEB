@@ -15827,6 +15827,21 @@ function attachProject3DEditDrag() {
     // setProjectCameraMode.
     if (projectCameraModeOn && ev.pointerType === 'touch') return;
 
+    // ====================================================================
+    // SÓ BOTÃO ESQUERDO — E ESTA CHECAGEM É A PRIMEIRA DE TODAS
+    // ====================================================================
+    // Ela existia, mas LÁ EMBAIXO, depois do teste das setas. Resultado: um
+    // clique com o BOTÃO DO MEIO em cima de uma seta entrava no ramo da seta,
+    // criava o arraste de resize e saía com return — tudo isso enquanto o
+    // OrbitControls, que usa o mesmo botão do meio, girava a câmera. Os dois
+    // gestos rodavam juntos: "cliquei com o scroll, rotacionou, selecionou
+    // módulo, moveu módulo e esticou módulo. perdi o controle total".
+    //
+    // Botão do meio = girar câmera. Botão direito = pan. Nenhum dos dois pode
+    // tocar em módulo, seta ou seleção. No toque e na caneta, ev.button é 0,
+    // então nada muda pro iPad.
+    if (ev.button !== 0) return;
+
     // As SETAS de redimensionamento (toque) ficam desenhadas POR CIMA de
     // tudo, então precisam ser testadas ANTES do módulo — senão o raycaster
     // do módulo venceria e a seta nunca seria agarrada. Ver
@@ -15884,16 +15899,8 @@ function attachProject3DEditDrag() {
       }
     }
 
-    // SÓ botão ESQUERDO (ev.button===0) — pedido do usuário 2026-07-26
-    // ("pode fazer a rotacao apertando o scroll ao inves do botao direito")
-    // revelou um bug: esse handler não checava qual botão foi clicado, então
-    // um clique do MEIO ou DIREITO em cima de um módulo (comum — módulos
-    // ocupam a maior parte da tela) também disparava a lógica de arrastar/
-    // esticar módulo, brigando com o OrbitControls (ver setControlsEnabled,
-    // viewer3d_composition.js — meio=girar, direito=pan agora). Sem este
-    // guard, girar a câmera podia mover o módulo embaixo do cursor por
-    // engano, ou simplesmente travar o gesto de orbit pela metade.
-    if (ev.button !== 0) return;
+    // (a checagem de botão esquerdo subiu pro topo deste handler — ver lá o
+    // porquê; ela precisa valer também pro ramo das setas.)
     // preferredWallIndex=projectActiveWallIndex (ver comentário grande em
     // pickAssemblyAt, viewer3d_composition.js): perto do canto, prefere o
     // módulo da parede em edição em vez do hit geometricamente mais
