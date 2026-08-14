@@ -210,11 +210,17 @@
     s.oculta = !s.oculta;
     desenha();
   }
+  // Virar agora é uma MARCA (inverterLado), não uma troca de pontas.
+  //
+  // O lado de dentro passou a ser deduzido da geometria (a normal que aponta
+  // pro centro do ambiente — ver projectWallSegmentGeometry no portal.js), e
+  // com isso trocar A por B deixou de mudar coisa alguma: a dedução daria o
+  // mesmo resultado. A marca é o que permite discordar dela, no caso em que
+  // "dentro" é ambíguo de verdade (parede solta, ilha, U).
   function inverter() {
     const s = estado && estado.segs[estado.sel];
     if (!s) return;
-    const ax = s.ax, az = s.az;
-    s.ax = s.bx; s.az = s.bz; s.bx = ax; s.bz = az;
+    s.inverterLado = !s.inverterLado;
     desenha();
   }
   function aplicaCampos() {
@@ -273,7 +279,17 @@
     estado.segs.forEach((s, i) => {
       const dx = s.bx - s.ax, dz = s.bz - s.az;
       const comp = Math.hypot(dx, dz) || 1;
-      const nx = dz / comp, nz = -dx / comp;       // normal esquerda = dentro
+      // A espessura cresce PRA FORA — o oposto do lado de dentro. E "dentro" é
+      // a normal que aponta pro centro do ambiente, a MESMA regra do 3D
+      // (projectWallSegmentGeometry no portal.js); se a planta usasse outra, o
+      // desenho aqui mostraria a parede de um lado e o 3D do outro.
+      let ix = -dz / comp, iz = dx / comp;
+      const cx = estado.segs.reduce((a, x) => a + x.ax + x.bx, 0) / (estado.segs.length * 2);
+      const cz = estado.segs.reduce((a, x) => a + x.az + x.bz, 0) / (estado.segs.length * 2);
+      const mx = (s.ax + s.bx) / 2, mz = (s.az + s.bz) / 2;
+      if ((cx - mx) * ix + (cz - mz) * iz < 0) { ix = -ix; iz = -iz; }
+      if (s.inverterLado) { ix = -ix; iz = -iz; }
+      const nx = -ix, nz = -iz;                    // espessura pro lado de fora
       const e = Number(s.thicknessMm) || ESPESSURA_PADRAO;
       const pts = [
         [s.ax, s.az], [s.bx, s.bz],

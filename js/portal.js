@@ -17774,11 +17774,38 @@ function defaultProjectWallSegments() {
 // Convenção: dentro fica à ESQUERDA de quem caminha de A pra B — o mesmo
 // "Orientação: Direita/Esquerda" do Promob, aqui fixo pra não virar mais um
 // campo pra errar. Inverter a parede = trocar as pontas (o editor tem botão).
+// Centro do ambiente = média das pontas de todas as paredes. É a referência
+// pra saber qual lado de cada parede é "dentro".
+function projectWallsCentroM() {
+  let sx = 0, sz = 0, n = 0;
+  projectWallSegments.forEach((s) => {
+    sx += s.ax + s.bx; sz += s.az + s.bz; n += 2;
+  });
+  return n ? { x: sx / n / 1000, z: sz / n / 1000 } : { x: 0, z: 0 };
+}
+
 function projectWallSegmentGeometry(seg, idx) {
   const dx = (seg.bx - seg.ax) / 1000;
   const dz = (seg.bz - seg.az) / 1000;
   const comp = Math.hypot(dx, dz) || 0.001;
   const ax = dx / comp, az = dz / comp;
+
+  // O LADO DE DENTRO É DECIDIDO PELA GEOMETRIA, NÃO PELA ORDEM DO DESENHO
+  // (2026-08-13). Antes era sempre a normal à direita de A→B — o que faz o
+  // módulo nascer FORA quando a parede foi desenhada no sentido contrário, e
+  // ninguém desenha planta prestando atenção em sentido de traço. Foi o "está
+  // colidindo com o lado externo da parede e deve ser interno".
+  //
+  // Agora: das duas normais, vale a que aponta pro CENTRO do ambiente. Numa
+  // parede sozinha o centro cai em cima dela (produto escalar ~0) e fica a
+  // normal à direita, igual a antes. O botão ⇋ virar continua mandando por
+  // cima disso (seg.inverterLado), pra o caso de U/ilha onde "dentro" é
+  // ambíguo de verdade.
+  let ix = -az, iz = ax;
+  const centro = projectWallsCentroM();
+  const mx = (seg.ax + seg.bx) / 2000, mz = (seg.az + seg.bz) / 2000;
+  if ((centro.x - mx) * ix + (centro.z - mz) * iz < -1e-6) { ix = -ix; iz = -iz; }
+  if (seg.inverterLado) { ix = -ix; iz = -iz; }
   return {
     role: idx === 0 ? 'main' : 'seg' + idx,
     wallIndex: idx,
@@ -17792,11 +17819,11 @@ function projectWallSegmentGeometry(seg, idx) {
     // que é (-az, ax). Eu tinha escrito a normal à ESQUERDA, e o resultado foi
     // o módulo nascer do lado de FORA do ambiente — "os módulos entram por
     // fora dessas paredes, não no chão onde deveriam".
-    intoDirX: -az, intoDirZ: ax,
+    intoDirX: ix, intoDirZ: iz,
     // rotationY do módulo encostado: ele olha pra dentro. Mesma derivação da
     // geometria antiga — main (intoDir 0,1) = 0; left (1,0) = +90°;
     // right (-1,0) = -90°.
-    rotationY: Math.atan2(-az, ax),
+    rotationY: Math.atan2(ix, iz),
     segmentId: seg.id,
     thicknessMm: Number(seg.thicknessMm) || PROJECT_WALL_THICKNESS_MM,
     ceilingMm: seg.ceilingMm || null,
