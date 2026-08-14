@@ -9908,7 +9908,14 @@ let projectWallShape = 'single';
 // com banco" de 2026-08-13.
 const PROJECT_WALL_THICKNESS_MM = 150;
 const PROJECT_WALL_DEFAULT_LEN_MM = 4000;   // 4m (2026-08-13, pedido do Matt)
-let projectWallSegments = [];   // [{ id, ax, az, bx, bz, thicknessMm, ceilingMm }]
+// JÁ NASCE COM O PADRÃO (2026-08-13). Antes começava vazia e só ganhava as
+// paredes no "↺ Novo projeto" — então um F5 caía no modelo antigo (uma parede
+// derivada de projectWallShape) e o ambiente aparecia diferente do padrão
+// combinado. Abrir um projeto salvo continua sobrescrevendo isto: com as
+// paredes dele, se ele tiver; com [] se for do modelo antigo.
+// defaultProjectWallSegments é `function` (hoisted), então pode ser chamada
+// aqui em cima.
+let projectWallSegments = defaultProjectWallSegments();
 // Slot que o botão ⇄ (substituir módulo) está esperando trocar. Mesma regra de
 // posição: é lido por closeProjectSearchModal e pelo clique do card da busca,
 // que ficam ANTES no arquivo.
@@ -18284,6 +18291,13 @@ if (projViewTopBtn) projViewTopBtn.addEventListener('click', () => setProjectVie
 // dado do projeto — não tem por que virar campo salvo no banco.
 const PROJECT_DRAW_STYLE_KEY = 'legno_proj_draw_style';
 const PROJECT_CAM_PROJ_KEY = 'legno_proj_cam_proj';
+// Contorno na FOTO REALISTA (2026-08-13). Sem linha o render fica fotográfico;
+// com linha vira apresentação técnica. Preferência de trabalho, igual ao
+// estilo do 3D — vai pro localStorage, não pro projeto.
+const PROJECT_RENDER_LINHAS_KEY = 'legno_proj_render_linhas';
+let projectRenderComLinhas = (function () {
+  try { return localStorage.getItem(PROJECT_RENDER_LINHAS_KEY) === '1'; } catch (e) { return false; }
+})();
 
 // Projeção da câmera nos dois viewers da aba de uma vez. O ícone muda junto:
 // ⬛ perspectiva (com fuga), ⬜ paralela (ortográfica).
@@ -18414,6 +18428,41 @@ function applyProjectDrawStyle(estilo, remontar) {
   document.querySelectorAll('#po-proj-canvas-tools [data-proj]').forEach((b) => {
     b.addEventListener('click', () => aplicaProjecaoCamera(b.dataset.proj));
   });
+
+  // RENDER na barra. O botão daqui apenas CLICA no de baixo (que ficou
+  // escondido): toda a regra de habilitar/desabilitar, projeto salvo, câmera e
+  // autosave continua num lugar só. Espelhar a lógica aqui seria criar uma
+  // segunda porta pro mesmo quarto — e uma delas ficaria pra trás.
+  // "Visualizar 3D" no cabeçalho — mesmo espelho do Render: clica no botão
+  // original, que continua sendo o dono da regra.
+  const b3dTopo = document.getElementById('po-proj-generate-top-btn');
+  const b3dOrig = document.getElementById('po-proj-generate-btn');
+  if (b3dTopo && b3dOrig) {
+    b3dTopo.addEventListener('click', () => { if (!b3dOrig.disabled) b3dOrig.click(); });
+    const espelha3d = () => { b3dTopo.disabled = b3dOrig.disabled; };
+    espelha3d();
+    new MutationObserver(espelha3d).observe(b3dOrig, { attributes: true, attributeFilter: ['disabled'] });
+  }
+  const bRender = document.getElementById('po-proj-render-btn');
+  const bOrig = document.getElementById('po-proj-photoreal-btn');
+  if (bRender && bOrig) {
+    bRender.addEventListener('click', () => { if (!bOrig.disabled) bOrig.click(); });
+    // O de baixo é quem sabe quando pode renderizar (precisa de módulo e de
+    // projeto salvo); este espelha o estado dele.
+    const espelha = () => { bRender.disabled = bOrig.disabled; };
+    espelha();
+    new MutationObserver(espelha).observe(bOrig, { attributes: true, attributeFilter: ['disabled'] });
+  }
+  const bLinhas = document.getElementById('po-proj-render-linhas-btn');
+  if (bLinhas) {
+    const pinta = () => bLinhas.classList.toggle('active', projectRenderComLinhas);
+    bLinhas.addEventListener('click', () => {
+      projectRenderComLinhas = !projectRenderComLinhas;
+      try { localStorage.setItem(PROJECT_RENDER_LINHAS_KEY, projectRenderComLinhas ? '1' : '0'); } catch (e) { /* ok */ }
+      pinta();
+    });
+    pinta();
+  }
   let projSalva = null;
   try { projSalva = localStorage.getItem(PROJECT_CAM_PROJ_KEY); } catch (e) { projSalva = null; }
   if (projSalva === 'paralela') setTimeout(() => aplicaProjecaoCamera('paralela'), 1200);

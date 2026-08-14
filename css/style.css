@@ -3401,3 +3401,11 @@ header.po-topnav {
   font-size: 12px; background: var(--panel);
 }
 #po-proj-style-menu .po-style-btn svg { flex: none; }
+
+/* Par Render + Linhas no cabeçalho: colados, porque "Linhas" é um interruptor
+   DO render, não uma ação irmã. Visual idêntico aos vizinhos (Send to order /
+   New project), só sem o vão entre os dois. */
+.po-proj-render-pair { display: inline-flex; gap: 0; }
+.po-proj-render-pair > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.po-proj-render-pair > button:last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.po-proj-render-linhas.active { background: var(--text); color: #fff; border-color: var(--text); }
