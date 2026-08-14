@@ -2550,10 +2550,9 @@ header.po-topnav {
    O "palco" é quem dá o position:relative; ele NÃO pode ser
    .po-proj-canvas-wrap (overflow:auto — as barras rolariam junto com o
    desenho na vista 2D e sumiriam). */
-/* COLUNA (2026-08-13): a barra de ferramentas passou a ser o primeiro filho,
-   estático, e o desenho vem embaixo ocupando o resto. Era `display:flex` em
-   linha com a barra por cima em absolute — ver .po-proj-hud-tl. */
-.po-proj-canvas-stage { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Voltou a ser linha: as duas barras são absolutas na direita (ver
+   .po-proj-hud-tl), então o palco não precisa reservar espaço pra elas. */
+.po-proj-canvas-stage { position: relative; flex: 1; min-width: 0; display: flex; }
 .po-proj-canvas-stage > .po-proj-canvas-wrap { flex: 1; min-width: 0; min-height: 0; }
 
 .po-proj-canvas-hud {
@@ -2573,11 +2572,24 @@ header.po-topnav {
    virou coluna): não tapa nada e não rouba área do canvas.
    A barra da DIREITA (câmera) continua flutuando — ela é estreita, fica no
    meio da altura e some fora da cena 3D. */
+/* 2ª tentativa (2026-08-13): tirar a barra de cima do desenho custou uma FAIXA
+   INTEIRA de altura — "piorou, usou mais espaço ainda". Agora ela é uma coluna
+   colada na DIREITA, junto da barra de câmera que já morava lá: não tapa o
+   ambiente (que cresce da esquerda pro centro), não gasta linha nenhuma da
+   página, e as duas ferramentas ficam no mesmo lugar em vez de uma em cada
+   canto. */
 .po-proj-hud-tl {
-  position: static; align-self: flex-start; margin: 0 0 6px 0;
-  flex-wrap: wrap; max-width: 100%;
-  background: transparent; box-shadow: none; border-color: transparent;
+  top: 8px; right: 8px; left: auto;
+  flex-direction: column; align-items: stretch; max-width: 200px;
 }
+/* A barra da câmera desce pra não bater na de cima. */
+.po-proj-hud-right { top: auto; bottom: 8px; transform: none; }
+.po-proj-hud-tl .po-proj-hud-sep { width: auto; height: 1px; min-height: 0; margin: 2px 0; align-self: stretch; }
+.po-proj-hud-tl .po-view-toggle { width: 100%; }
+.po-proj-hud-tl .po-proj-hud-select { max-width: 100%; width: 100%; }
+/* Linha com os botões de ícone: eles cabem lado a lado, não precisam de uma
+   linha cada. */
+.po-proj-hud-tl .po-proj-hud-btn { display: inline-flex; }
 .po-proj-hud-right { top: 50%; right: 8px; transform: translateY(-50%); flex-direction: column; }
 .po-proj-hud-sep { width: 1px; align-self: stretch; min-height: 20px; background: var(--border); margin: 0 2px; }
 

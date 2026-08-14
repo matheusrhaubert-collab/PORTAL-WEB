@@ -10004,6 +10004,11 @@ refreshProjectWallShapeButtons();
 function refreshProjectWallTabs() {
   const wrap = document.getElementById('po-proj-wall-tabs');
   if (!wrap) return;
+  // Com paredes desenhadas, as ABAS DE PAREDE saem da faixa (2026-08-13): a
+  // parede ativa passa a ser escolhida clicando nela no desenho, e uma lista
+  // de "Parede 1 / Parede 2 / Parede 3..." cresceria sem limite conforme o
+  // ambiente. A função continua inteira pro modelo antigo de 3 formas.
+  if (projectWallSegments.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
   const roles = getProjectWallRoles();
   if (roles.length <= 1) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
   wrap.style.display = 'flex';
