@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608132256" />
+<link rel="stylesheet" href="css/style.css?v=202608132258" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1278,6 +1278,42 @@
 
                 <span class="po-tb-sep"></span>
 
+                <!-- ABRIR / OCULTAR (2026-08-13). Só ícone: são quatro botões
+                     e a barra precisa caber numa linha. Portas e gavetas são
+                     ESTADO (ficam acesos enquanto abertos); ocultar/mostrar são
+                     ação. -->
+                <div class="po-tb-group">
+                  <span class="po-tb-label">Ver</span>
+                  <div class="po-tb-seg">
+                    <button type="button" class="po-tb-seg-btn po-tb-so-icone" id="po-proj-tb-doors-btn"
+                            title="Abrir / fechar portas">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+                        <rect x="4" y="3.5" width="9" height="17" rx="1.2"/><path d="M13 5.5l7 2.5v11l-7-2"/><circle cx="10.6" cy="12" r="0.9" fill="currentColor" stroke="none"/>
+                      </svg>
+                    </button>
+                    <button type="button" class="po-tb-seg-btn po-tb-so-icone" id="po-proj-tb-drawers-btn"
+                            title="Abrir / fechar gavetas">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+                        <rect x="3.5" y="4" width="17" height="6" rx="1.2"/><path d="M3.5 13.5h13v6.5h-13z"/><path d="M16.5 13.5l4 2v6.5l-4-2"/>
+                      </svg>
+                    </button>
+                    <button type="button" class="po-tb-seg-btn po-tb-so-icone" id="po-proj-tb-ocultar-btn"
+                            title="Ocultar o que está selecionado">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                        <path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.4"/><path d="M4 20L20 4"/>
+                      </svg>
+                    </button>
+                    <button type="button" class="po-tb-seg-btn po-tb-so-icone" id="po-proj-tb-mostrar-btn"
+                            title="Mostrar tudo que está oculto">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                        <path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.4"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <span class="po-tb-sep"></span>
+
                 <div class="po-tb-group">
                   <span class="po-tb-label">Render</span>
                   <div class="po-tb-seg">
@@ -2013,10 +2049,10 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608132256"></script>
-<script src="js/pricing.js?v=202608132256"></script>
-<script src="js/viewer3d.js?v=202608132256"></script>
-<script src="js/viewer3d_composition.js?v=202608132256"></script>
+<script src="js/i18n.js?v=202608132258"></script>
+<script src="js/pricing.js?v=202608132258"></script>
+<script src="js/viewer3d.js?v=202608132258"></script>
+<script src="js/viewer3d_composition.js?v=202608132258"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -2026,17 +2062,17 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202608132256"></script>
+<script src="js/drilling.js?v=202608132258"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202608132256"></script>
+<script src="js/layout-engine.js?v=202608132258"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202608132256"></script>
+<script src="js/wall-editor.js?v=202608132258"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608132256"></script>
-<script src="js/portal.js?v=202608132256"></script>
+<script src="js/photoreal.js?v=202608132258"></script>
+<script src="js/portal.js?v=202608132258"></script>
 </body>
 </html>

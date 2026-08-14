@@ -3532,3 +3532,8 @@ header.po-topnav {
 .po-proj-slot-actions .po-proj-slot-action-btn:hover { background: #f4f2ed; }
 .po-proj-slot-actions .po-proj-slot-action-danger { color: #b0503c; }
 .po-proj-slot-actions .po-proj-slot-action-danger:hover { background: #f7e4e0; }
+
+/* Botão só-ícone dentro da barra: some o vão do texto e encolhe o alvo, que é
+   o que permite os quatro (portas, gavetas, ocultar, mostrar) caberem sem
+   empurrar as ações pra fora da linha. */
+#po-proj-canvas-tools .po-tb-so-icone { padding: 7px 8px; gap: 0; }

@@ -17361,7 +17361,10 @@ const ViewerProject = (typeof ViewerComposition !== 'undefined' && ViewerComposi
 // livre no chão e profundidade da pilha, exclusivos do canvas 2D da
 // Projetos — a Composição não tem, sempre empilha em coluna única).
 function buildProjectAssemblies(slotsList) {
-  return slotsList.map((slot) => {
+  // MÓDULO OCULTO não é desenhado (2026-08-13). É filtro de visualização: ele
+  // continua no projeto, no preço e no pedido — some só da cena, pra dar de
+  // ver o que está atrás. "Mostrar tudo" na barra traz de volta.
+  return (slotsList || []).filter((s) => !s.oculto).map((slot) => {
     const moduleDims = { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm };
     // projectSlotEffectivePieces (e não slot.pieces): é ele que soma o que o
     // construtor de armário gerou — sem isso a prateleira inserida existe no
@@ -18510,6 +18513,57 @@ function applyProjectDrawStyle(estilo, remontar) {
 }
 (function attachProjectDrawStyle() {
   montaMenuEstilo();
+
+  // Portas / gavetas: espelham os botões que já existiam no painel 3D (hoje
+  // escondido). Quem sabe abrir/fechar é o viewer; aqui só refletimos o estado
+  // pra o botão acender enquanto está aberto.
+  [['po-proj-tb-doors-btn', 'po-proj-toggle-doors-btn', () => ViewerProjectEdit && ViewerProjectEdit.areDoorsOpen && ViewerProjectEdit.areDoorsOpen()],
+    ['po-proj-tb-drawers-btn', 'po-proj-toggle-drawers-btn', () => ViewerProjectEdit && ViewerProjectEdit.areDrawersOpen && ViewerProjectEdit.areDrawersOpen()]]
+    .forEach(([idNovo, idOrig, estaAberto]) => {
+      const b = document.getElementById(idNovo);
+      if (!b) return;
+      b.addEventListener('click', () => {
+        // A Vista de Canto é a cena que está na tela — é nela que abre.
+        if (idNovo.indexOf('doors') >= 0) {
+          if (ViewerProjectEdit && ViewerProjectEdit.toggleDoors) ViewerProjectEdit.toggleDoors();
+        } else if (ViewerProjectEdit && ViewerProjectEdit.toggleDrawers) {
+          ViewerProjectEdit.toggleDrawers();
+        }
+        // Mantém o painel antigo em sincronia (ele ainda alimenta a foto
+        // realista e a exportação AR).
+        const orig = document.getElementById(idOrig);
+        if (orig && orig.offsetParent !== null) orig.click();
+        setTimeout(() => b.classList.toggle('active', !!estaAberto()), 30);
+      });
+    });
+
+  // OCULTAR / MOSTRAR TUDO. Ocultar age no que estiver selecionado; sem
+  // seleção, avisa em vez de não fazer nada. "Mostrar tudo" é a saída de
+  // emergência: sem ela, um módulo escondido sem seleção seria impossível de
+  // recuperar pela interface.
+  const bOcultar = document.getElementById('po-proj-tb-ocultar-btn');
+  if (bOcultar) {
+    bOcultar.addEventListener('click', () => {
+      const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+      if (!slot) {
+        alert('Selecione um módulo pra ocultar. Pra ocultar uma parede, use 📐 Medidas → 👁 ocultar.');
+        return;
+      }
+      slot.oculto = true;
+      deselectProjectSlot();
+      renderProjectCanvas();
+      markProjectDirty();
+    });
+  }
+  const bMostrar = document.getElementById('po-proj-tb-mostrar-btn');
+  if (bMostrar) {
+    bMostrar.addEventListener('click', () => {
+      projectSlots.forEach((s) => { s.oculto = false; });
+      projectWallSegments.forEach((w) => { w.oculta = false; });
+      renderProjectCanvas();
+      markProjectDirty();
+    });
+  }
   // "← Projetos" da barra faz o mesmo que o "← Voltar" que existia no rodapé:
   // sai da aba. Um só comportamento, dois lugares — o de baixo continua lá pra
   // quem já se acostumou com ele.
