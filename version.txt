@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 22:08:58
-cache: 202608132208
-mensagem: paredes: lado de dentro correto, ima de canto, sem atravessar, ocultar parede
+﻿data: 2026-08-13 22:10:34
+cache: 202608132210
+mensagem: paredes em icone; pe-direito e rodape dentro do editor

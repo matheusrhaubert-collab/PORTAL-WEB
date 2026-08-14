@@ -17542,8 +17542,25 @@ function openProjectWallEditor() {
   WallEditor.open({
     segments: projectWallSegments.length ? projectWallSegments : WallEditor.padrao(),
     ceilingMm: (roomSettings && roomSettings.ceiling_mm) || 2600,
-    onSave: (segs) => {
+    baseboardMm: (roomSettings && roomSettings.baseboard_mm) || 0,
+    onSave: (segs, ambiente) => {
       projectWallSegments = segs;
+      // Pé-direito e rodapé saíram da faixa e vivem aqui agora (2026-08-13).
+      // Em vez de escrever em roomSettings direto, o editor ESCREVE NOS INPUTS
+      // antigos e dispara o 'change' deles: aquele listener já faz tudo que
+      // precisa acontecer junto (clamp, localStorage, variável RODAPE das
+      // fórmulas, régua de altura máxima, re-render dos viewers). Duplicar
+      // essa cadeia aqui era garantir que uma das pontas ficasse pra trás.
+      if (ambiente) {
+        const un = (document.getElementById('po-unit-select') || {}).value || 'mm';
+        [['po-proj-ceiling-input', ambiente.ceilingMm], ['po-proj-baseboard-input', ambiente.baseboardMm]]
+          .forEach(([id, mm]) => {
+            const inp = document.getElementById(id);
+            if (!inp || !(mm >= 0)) return;
+            inp.value = formatDimension(mm, un);
+            inp.dispatchEvent(new Event('change'));
+          });
+      }
       // Módulo que ficou apontando pra uma parede que não existe mais volta
       // pra primeira — é o mínimo pra ele não sumir do desenho. Fora isso,
       // ninguém é movido.

@@ -94,6 +94,9 @@
       '      <label>Altura desta parede <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
       '      <p class="po-wall-hint">Arraste o <b>corpo</b> da parede pra levar ela inteira; arraste as <b>pontas</b> pra girar e esticar. O ímã pega a malha e os ângulos de 45° — segure Shift pra soltar.</p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
+      '      <div class="po-wall-side-title" style="margin-top:6px;">Ambiente</div>',
+      '      <label>Pé-direito <span class="po-wall-un">mm</span><input type="number" id="po-wall-teto" step="10"></label>',
+      '      <label>Rodapé <span class="po-wall-un">mm</span><input type="number" id="po-wall-rodape" step="5"></label>',
       '    </div>',
       '  </div>',
       '  <div class="po-wall-footer">',
@@ -117,6 +120,18 @@
     ['po-wall-comp', 'po-wall-ang', 'po-wall-esp', 'po-wall-pd'].forEach((id) => {
       m.querySelector('#' + id).addEventListener('change', aplicaCampos);
     });
+    // Pé-direito e rodapé são do AMBIENTE, não da parede — por isso ficam numa
+    // seção própria e não entram em aplicaCampos (que edita o segmento
+    // selecionado). Eles voltam pro portal no OK, junto dos segmentos.
+    ['po-wall-teto', 'po-wall-rodape'].forEach((id) => {
+      m.querySelector('#' + id).addEventListener('change', () => {
+        if (!estado) return;
+        const v = Number(m.querySelector('#' + id).value);
+        if (!(v >= 0)) return;
+        if (id === 'po-wall-teto') estado.ceilingMm = v; else estado.baseboardMm = v;
+        desenha();
+      });
+    });
     return m;
   }
 
@@ -128,6 +143,7 @@
       sel: 0,
       onSave: opts && opts.onSave,
       ceilingMm: (opts && opts.ceilingMm) || 2600,
+      baseboardMm: (opts && opts.baseboardMm) || 0,
       arraste: null
     };
     m.classList.add('open');
@@ -144,7 +160,8 @@
     const m = document.getElementById('po-wall-editor-modal');
     if (m) m.classList.remove('open');
     if (salvar && estado && typeof estado.onSave === 'function') {
-      estado.onSave(estado.segs.map((s) => Object.assign({}, s)));
+      estado.onSave(estado.segs.map((s) => Object.assign({}, s)),
+        { ceilingMm: estado.ceilingMm, baseboardMm: estado.baseboardMm });
     }
     estado = null;
   }
@@ -319,6 +336,8 @@
       // que não foi customizada acompanhar mudanças do pé-direito.
       q('po-wall-pd').value = s.ceilingMm || estado.ceilingMm || '';
     }
+    if (q('po-wall-teto')) q('po-wall-teto').value = estado.ceilingMm || '';
+    if (q('po-wall-rodape')) q('po-wall-rodape').value = estado.baseboardMm || 0;
     const resumo = q('po-wall-resumo');
     if (resumo) {
       const total = estado.segs.reduce((a, x) => a + comprimentoDe(x), 0);
