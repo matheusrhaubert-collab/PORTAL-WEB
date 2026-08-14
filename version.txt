@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 21:07:46
-cache: 202608132107
-mensagem: face solida/translucida/so arestas
+﻿data: 2026-08-13 21:09:52
+cache: 202608132109
+mensagem: botao substituir modulo mantendo medidas e posicao

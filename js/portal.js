@@ -11021,7 +11021,16 @@ function renderProjectSearchModalGrid() {
     // insere já com config padrão) — só que aqui também fecha o modal em
     // seguida, pra voltar direto pro canvas com o módulo já no ambiente.
     card.addEventListener('click', () => {
-      insertProjectModuleDefault(m.id);
+      // MODO SUBSTITUIR (2026-08-13): a mesma busca serve pros dois gestos —
+      // inserir um módulo novo ou trocar o que está selecionado. Quem decide é
+      // projectReplaceSlotId, armado pelo botão ⇄ da barra do módulo.
+      if (projectReplaceSlotId != null) {
+        const alvo = projectReplaceSlotId;
+        projectReplaceSlotId = null;
+        replaceProjectSlotModule(alvo, m.id);
+      } else {
+        insertProjectModuleDefault(m.id);
+      }
       closeProjectSearchModal();
     });
     grid.appendChild(card);
@@ -11036,6 +11045,9 @@ function openProjectSearchModal() {
 
 function closeProjectSearchModal() {
   document.getElementById('po-proj-search-modal').classList.remove('open');
+  // Fechar sem escolher DESARMA a substituição — senão a próxima vez que a
+  // busca fosse aberta pelo botão normal trocaria o módulo em vez de inserir.
+  projectReplaceSlotId = null;
 }
 
 const projLibrarySearchBtn = document.getElementById('po-proj-library-search-btn');
@@ -14319,6 +14331,73 @@ if (projSlotDuplicateBtn) {
     if (selectedProjectSlotId != null) duplicateProjectSlot(selectedProjectSlotId);
   });
 }
+// ==========================================================================
+// SUBSTITUIR MÓDULO — 2026-08-13
+// ==========================================================================
+// "quero um botão depois de remover que abre os módulos e substitui pelo
+// módulo novo, porém mesma largura altura e profundidade. o antigo remove."
+//
+// Não cria slot novo: o MESMO slot passa a apontar pro outro módulo. Assim
+// posição, parede, altura do chão, giro e a ordem na cena continuam
+// exatamente como estavam — inserir + apagar perderia tudo isso e ainda
+// mudaria o id do slot (que é a chave da seleção, do undo e do layout do
+// construtor).
+//
+// Quem faz a troca é repointProjectSlotToModule, que já existia: ela mantém
+// as MEDIDAS (são números do slot, não do módulo) e as cores por PAPEL, e
+// recarrega peças/dobradiça/corrediça/presets do módulo novo. O que falta
+// aqui é só respeitar os limites do módulo novo — uma medida que era válida
+// no antigo pode estar fora do min/max do outro.
+let projectReplaceSlotId = null;
+
+async function replaceProjectSlotModule(slotId, novoModuleId) {
+  const slot = projectSlots.find((s) => s.id === slotId);
+  if (!slot || !novoModuleId) return;
+  const antes = { w: slot.width_mm, h: slot.height_mm, d: slot.depth_mm };
+  try {
+    await repointProjectSlotToModule(slot, novoModuleId);
+  } catch (e) {
+    alert((e && e.message) || String(e));
+    return;
+  }
+  // Medidas: mantém as de antes, clampadas no que o módulo novo aceita.
+  // Medida TRAVADA (width_locked/height_locked) pula pro valor cadastrado
+  // mais próximo, mesma regra do arraste (ver updateProjectSlotDimension).
+  const m = slot.module || {};
+  const ajusta = (valor, min, max, travado, presets) => {
+    if (travado && (presets || []).length) return Pricing.pickNearestPreset(presets, valor);
+    return clamp(valor, Number(min) || 1, Number(max) || valor);
+  };
+  slot.width_mm = ajusta(antes.w, m.width_min_mm, m.width_max_mm, m.width_locked, slot.widthPresetsMm);
+  slot.height_mm = ajusta(antes.h, m.height_min_mm, m.height_max_mm, m.height_locked, slot.heightPresetsMm);
+  slot.depth_mm = ajusta(antes.d, m.depth_min_mm, m.depth_max_mm, false, null);
+
+  // A árvore do construtor era do módulo ANTIGO: os ids de agregado até
+  // podem existir no novo, mas o casco (e portanto os vãos) é outro. Guardar
+  // ela geraria peça no lugar errado, calada. Some junto com o módulo velho.
+  slot.layout = null;
+  slot.layoutPieces = [];
+  slot.thumbnail_data_url = null;
+
+  clampProjectSlotPosition(slot);
+  resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
+  recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+  selectProjectSlot(slot.id);
+  markProjectDirty();
+}
+
+const projSlotReplaceBtn = document.getElementById('po-proj-slot-replace-btn');
+if (projSlotReplaceBtn) {
+  projSlotReplaceBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  projSlotReplaceBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (selectedProjectSlotId == null) return;
+    projectReplaceSlotId = selectedProjectSlotId;
+    openProjectSearchModal();
+  });
+}
+
 const projSlotRemoveBtn = document.getElementById('po-proj-slot-remove-btn');
 if (projSlotRemoveBtn) {
   projSlotRemoveBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
