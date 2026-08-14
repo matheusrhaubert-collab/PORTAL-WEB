@@ -848,14 +848,44 @@ const Viewer3D = (function () {
   //
   // O estilo é global e só vale na PRÓXIMA montagem: quem troca precisa
   // remontar a cena (o portal chama renderProjectCanvas logo depois).
-  const estiloDesenho = { contorno: 'fino', textura: true };
+  //   face: 'solido' (padrão) | 'translucido' | 'nenhum' (só as arestas)
+  const estiloDesenho = { contorno: 'fino', textura: true, face: 'solido' };
   function setDrawStyle(opts) {
     if (!opts) return estiloDesenho;
     if (opts.contorno) estiloDesenho.contorno = opts.contorno;
+    if (opts.face) estiloDesenho.face = opts.face;
     if (opts.textura !== undefined) estiloDesenho.textura = !!opts.textura;
     return estiloDesenho;
   }
-  function getDrawStyle() { return { contorno: estiloDesenho.contorno, textura: estiloDesenho.textura }; }
+  function getDrawStyle() {
+    return { contorno: estiloDesenho.contorno, textura: estiloDesenho.textura, face: estiloDesenho.face };
+  }
+
+  // Aplica o estilo de FACE no material já montado — depois, e não dentro do
+  // makeMaterial, porque uma peça pode ter material POR FACE (migration 088:
+  // face com a cor, borda com fita) e todos precisam do mesmo tratamento.
+  //
+  // 'nenhum' usa material.visible (não object.visible): o Raycaster do Three
+  // olha para object.visible, então a peça continua sendo alvo de clique
+  // mesmo sem aparecer — é o que mantém o móvel selecionável no modo "só
+  // arestas".
+  //
+  // depthWrite:false no translúcido evita que a peça da frente apague as de
+  // trás no buffer de profundidade, que é o efeito que faz um móvel
+  // "transparente" mostrar só a primeira camada e parecer quebrado.
+  function aplicaEstiloFace(material) {
+    const f = estiloDesenho.face;
+    if (!material || f === 'solido') return material;
+    const lista = Array.isArray(material) ? material : [material];
+    lista.forEach((m) => {
+      if (!m) return;
+      if (f === 'nenhum') { m.visible = false; return; }
+      m.transparent = true;
+      m.opacity = 0.28;
+      m.depthWrite = false;
+    });
+    return material;
+  }
 
   // Monta o contorno de uma peça conforme o estilo. Devolve null quando o
   // estilo é 'nenhum' — aí o grupo da peça sai sem contorno nenhum, que é o
@@ -906,7 +936,7 @@ const Viewer3D = (function () {
     const faceMm = ehCaixa ? dimensoesDaFaceMm(contentOrGeometry) : null;
     const mesh = new THREE.Mesh(
       contentOrGeometry,
-      materiais || makeMaterial(color, rotateTexture, faceMm && faceMm.u, faceMm && faceMm.v));
+      aplicaEstiloFace(materiais || makeMaterial(color, rotateTexture, faceMm && faceMm.u, faceMm && faceMm.v)));
     const edges = buildEdgesForStyle(contentOrGeometry);
     const group = new THREE.Group();
     group.add(mesh);

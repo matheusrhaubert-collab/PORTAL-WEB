@@ -18022,6 +18022,9 @@ function applyProjectDrawStyle(estilo, remontar) {
   document.querySelectorAll('#po-proj-edge-toggle .po-view-toggle-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.edge === s.contorno);
   });
+  document.querySelectorAll('#po-proj-face-toggle .po-view-toggle-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.face === (s.face || 'solido'));
+  });
   const bt = document.getElementById('po-proj-texture-btn');
   if (bt) {
     bt.classList.toggle('active', !s.textura);
@@ -18039,6 +18042,20 @@ function applyProjectDrawStyle(estilo, remontar) {
   if (toggle) {
     toggle.querySelectorAll('.po-view-toggle-btn').forEach((b) => {
       b.addEventListener('click', () => applyProjectDrawStyle({ contorno: b.dataset.edge }, true));
+    });
+  }
+  const faceToggle = document.getElementById('po-proj-face-toggle');
+  if (faceToggle) {
+    faceToggle.querySelectorAll('.po-view-toggle-btn').forEach((b) => {
+      // "Só as arestas" com o contorno desligado deixaria a cena literalmente
+      // vazia — nesse caso liga a linha fina junto, senão o clique parece ter
+      // apagado o projeto.
+      b.addEventListener('click', () => {
+        const est = { face: b.dataset.face };
+        const atual = Viewer3D.getDrawStyle ? Viewer3D.getDrawStyle() : {};
+        if (b.dataset.face === 'nenhum' && atual.contorno === 'nenhum') est.contorno = 'fino';
+        applyProjectDrawStyle(est, true);
+      });
     });
   }
   const bt = document.getElementById('po-proj-texture-btn');

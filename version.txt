@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 21:06:10
-cache: 202608132106
-mensagem: botao do meio so gira camera; nao mexe mais em modulo nem seta
+﻿data: 2026-08-13 21:07:46
+cache: 202608132107
+mensagem: face solida/translucida/so arestas
