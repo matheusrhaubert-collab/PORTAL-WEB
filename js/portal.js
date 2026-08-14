@@ -17882,6 +17882,9 @@ function ensurePhotoFrameOverlay(containerId) {
   frame.className = 'po-photoframe';
   frame.innerHTML = '<span class="po-photoframe-label">📸 área da foto</span>';
   container.appendChild(frame);
+  // Avisa quem controla a visibilidade (botão "Linhas" da barra) que existe
+  // moldura nova pra aplicar o estado atual.
+  document.dispatchEvent(new Event('legno:photoframe'));
 }
 
 // Botão "📸 Foto realista (beta)" (2026-08-03) — junta paredes + peças JÁ
@@ -18444,35 +18447,50 @@ function applyProjectDrawStyle(estilo, remontar) {
   // escondido): toda a regra de habilitar/desabilitar, projeto salvo, câmera e
   // autosave continua num lugar só. Espelhar a lógica aqui seria criar uma
   // segunda porta pro mesmo quarto — e uma delas ficaria pra trás.
-  // "Visualizar 3D" no cabeçalho — mesmo espelho do Render: clica no botão
-  // original, que continua sendo o dono da regra.
-  const b3dTopo = document.getElementById('po-proj-generate-top-btn');
-  const b3dOrig = document.getElementById('po-proj-generate-btn');
-  if (b3dTopo && b3dOrig) {
-    b3dTopo.addEventListener('click', () => { if (!b3dOrig.disabled) b3dOrig.click(); });
-    const espelha3d = () => { b3dTopo.disabled = b3dOrig.disabled; };
-    espelha3d();
-    new MutationObserver(espelha3d).observe(b3dOrig, { attributes: true, attributeFilter: ['disabled'] });
-  }
   const bRender = document.getElementById('po-proj-render-btn');
   const bOrig = document.getElementById('po-proj-photoreal-btn');
   if (bRender && bOrig) {
-    bRender.addEventListener('click', () => { if (!bOrig.disabled) bOrig.click(); });
+    bRender.addEventListener('click', () => {
+      // FALHA BARULHENTA: antes, com o original desabilitado, o clique não
+      // fazia nada e parecia botão quebrado ("o botão render não gera
+      // render"). O original só habilita com pelo menos 1 módulo — e isso
+      // precisa ser dito, não adivinhado.
+      if (bOrig.disabled) {
+        alert('Adicione pelo menos um módulo ao ambiente antes de gerar o render.');
+        return;
+      }
+      bOrig.click();
+    });
     // O de baixo é quem sabe quando pode renderizar (precisa de módulo e de
     // projeto salvo); este espelha o estado dele.
     const espelha = () => { bRender.disabled = bOrig.disabled; };
     espelha();
     new MutationObserver(espelha).observe(bOrig, { attributes: true, attributeFilter: ['disabled'] });
   }
+  // "Linhas" liga/desliga a MARCAÇÃO DA ÁREA DA FOTO — as tracejadas que
+  // mostram o recorte que o render vai pegar (2026-08-13: "o botão linha não
+  // desativa a linha de marcação do render"). Eu tinha entendido como
+  // contorno DENTRO da foto; é a moldura na tela, e ela atrapalha justamente
+  // quem está projetando e não vai renderizar agora.
   const bLinhas = document.getElementById('po-proj-render-linhas-btn');
   if (bLinhas) {
-    const pinta = () => bLinhas.classList.toggle('active', projectRenderComLinhas);
+    const pinta = () => {
+      bLinhas.classList.toggle('active', projectRenderComLinhas);
+      document.querySelectorAll('.po-photoframe').forEach((f) => {
+        f.style.display = projectRenderComLinhas ? '' : 'none';
+      });
+    };
     bLinhas.addEventListener('click', () => {
       projectRenderComLinhas = !projectRenderComLinhas;
       try { localStorage.setItem(PROJECT_RENDER_LINHAS_KEY, projectRenderComLinhas ? '1' : '0'); } catch (e) { /* ok */ }
       pinta();
     });
+    // A moldura é criada depois (ensurePhotoFrameOverlay, no primeiro render
+    // da cena), então reaplica quando ela aparecer — senão o estado "desligado"
+    // valeria só até o próximo redesenho.
     pinta();
+    setTimeout(pinta, 1500);
+    document.addEventListener('legno:photoframe', pinta);
   }
   let projSalva = null;
   try { projSalva = localStorage.getItem(PROJECT_CAM_PROJ_KEY); } catch (e) { projSalva = null; }

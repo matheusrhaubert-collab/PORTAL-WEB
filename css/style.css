@@ -3365,12 +3365,14 @@ header.po-topnav {
   border: 1px solid var(--border); border-radius: 12px; padding: 3px;
 }
 .po-tb-seg-btn {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; gap: 6px;
   border: none; background: transparent; color: var(--text);
-  border-radius: 9px; padding: 6px 12px; cursor: pointer;
+  border-radius: 9px; padding: 5px 11px; cursor: pointer;
   font-size: 12px; font-weight: 600; white-space: nowrap; line-height: 1;
 }
-.po-tb-seg-btn svg { width: 18px; height: 18px; flex: none; }
+/* Ícones menores (2026-08-13, pedido do Matt) — 15px lê igual e a barra
+   inteira encolhe junto. */
+.po-tb-seg-btn svg { width: 15px; height: 15px; flex: none; }
 .po-tb-seg-btn:hover { background: rgba(0,0,0,0.05); }
 .po-tb-seg-btn.active { background: var(--text); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
 /* Ícone do item ativo em âmbar, como no mockup — é o detalhe que separa
@@ -3385,7 +3387,7 @@ header.po-topnav {
   border-radius: 12px; padding: 7px 10px; cursor: pointer;
   font-size: 11px; font-weight: 600; min-width: 52px;
 }
-.po-tb-icon-card svg { width: 22px; height: 22px; }
+.po-tb-icon-card svg { width: 18px; height: 18px; }
 .po-tb-icon-card:hover { border-color: var(--accent); background: var(--accent-light); }
 .po-tb-icon-card:disabled { opacity: 0.35; cursor: default; }
 .po-tb-icon-card:disabled:hover { border-color: var(--border); background: var(--panel); }

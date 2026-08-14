@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608132232" />
+<link rel="stylesheet" href="css/style.css?v=202608132234" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1112,7 +1112,8 @@
                  obrigando a rolar. Mesma pílula dos vizinhos; "Linhas" é um
                  interruptor do render (contorno na foto), por isso vem colado
                  nele e não como ação separada. -->
-            <button type="button" id="po-proj-generate-top-btn" class="secondary" style="margin-top:0;">▣ Visualizar 3D</button>
+            <!-- "Visualizar 3D" removido em 2026-08-13: a Vista de Canto JÁ é o 3D.
+                 Dois lugares mostrando a mesma cena só dividiam a atenção. -->
             <span class="po-proj-render-pair">
               <button type="button" id="po-proj-render-btn" class="secondary" style="margin-top:0;" disabled>◉ Render</button>
               <button type="button" id="po-proj-render-linhas-btn" class="secondary po-proj-render-linhas" style="margin-top:0;"
@@ -1629,7 +1630,13 @@
           <div id="po-proj-photoreal-gallery" class="po-photoreal-gallery"></div>
         </div>
 
-        <div id="po-proj-3d-wrap" style="display:none;margin-top:16px;">
+        <!-- PAINEL "Visualizar 3D" APOSENTADO (2026-08-13). A Vista de Canto virou
+             uma cena 3D completa (parede sólida, projeção paralela, estilos), então
+             este painel mostrava a MESMA coisa num segundo lugar — e obrigava a
+             rolar a página pra ver. Fica no DOM, escondido, porque a foto realista
+             e a exportação AR ainda leem o canvas dele; some da interface, não do
+             código. -->
+        <div id="po-proj-3d-wrap" style="display:none !important;margin-top:16px;">
           <!-- Botão pra FECHAR o 3D e voltar pro canvas 2D (mesma aba) —
                pedido do usuário, 2026-07-21: "quando eu coloco voltar ele vai
                pra new quote e nao volta pro projects". O "← Voltar" lá
@@ -1980,10 +1987,10 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608132232"></script>
-<script src="js/pricing.js?v=202608132232"></script>
-<script src="js/viewer3d.js?v=202608132232"></script>
-<script src="js/viewer3d_composition.js?v=202608132232"></script>
+<script src="js/i18n.js?v=202608132234"></script>
+<script src="js/pricing.js?v=202608132234"></script>
+<script src="js/viewer3d.js?v=202608132234"></script>
+<script src="js/viewer3d_composition.js?v=202608132234"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -1993,17 +2000,17 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202608132232"></script>
+<script src="js/drilling.js?v=202608132234"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202608132232"></script>
+<script src="js/layout-engine.js?v=202608132234"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202608132232"></script>
+<script src="js/wall-editor.js?v=202608132234"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608132232"></script>
-<script src="js/portal.js?v=202608132232"></script>
+<script src="js/photoreal.js?v=202608132234"></script>
+<script src="js/portal.js?v=202608132234"></script>
 </body>
 </html>
