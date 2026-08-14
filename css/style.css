@@ -3341,3 +3341,63 @@ header.po-topnav {
 }
 .po-style-item:hover { background: var(--accent-light); }
 .po-style-item.ativo { background: var(--text); color: #fff; }
+
+/* ==========================================================================
+   BARRA DE FERRAMENTAS DA ABA PROJETOS — layout do mockup (2026-08-13)
+   ==========================================================================
+   Cartão branco arredondado com grupos ROTULADOS separados por filete, botão
+   ativo em pílula preta e ícone sempre ao lado do texto. Substitui a fileira
+   de botões só-ícone, que obrigava a decorar o que cada símbolo fazia. */
+#po-proj-canvas-tools.po-proj-hud-tl {
+  display: flex; align-items: stretch; gap: 0;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  padding: 8px 10px; margin-bottom: 8px;
+}
+.po-tb-group { display: flex; flex-direction: column; gap: 4px; padding: 0 10px; justify-content: flex-end; }
+.po-tb-group-solo { justify-content: flex-end; align-items: center; }
+.po-tb-label { font-size: 10px; color: var(--muted); letter-spacing: 0.02em; padding-left: 2px; }
+.po-tb-sep { width: 1px; background: var(--border); margin: 4px 0; flex: none; }
+
+/* Segmentado: fundo claro, item ativo em pílula preta. */
+.po-tb-seg {
+  display: flex; gap: 2px; background: #f6f4ef;
+  border: 1px solid var(--border); border-radius: 12px; padding: 3px;
+}
+.po-tb-seg-btn {
+  display: flex; align-items: center; gap: 7px;
+  border: none; background: transparent; color: var(--text);
+  border-radius: 9px; padding: 6px 12px; cursor: pointer;
+  font-size: 12px; font-weight: 600; white-space: nowrap; line-height: 1;
+}
+.po-tb-seg-btn svg { width: 18px; height: 18px; flex: none; }
+.po-tb-seg-btn:hover { background: rgba(0,0,0,0.05); }
+.po-tb-seg-btn.active { background: var(--text); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+/* Ícone do item ativo em âmbar, como no mockup — é o detalhe que separa
+   "selecionado" de "apenas escuro". */
+.po-tb-seg-btn.active svg { color: #e0a44b; }
+
+/* Cartão de ícone (Medidas, desfazer, encaixe). */
+.po-tb-icon-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  position: relative;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  border-radius: 12px; padding: 7px 10px; cursor: pointer;
+  font-size: 11px; font-weight: 600; min-width: 52px;
+}
+.po-tb-icon-card svg { width: 22px; height: 22px; }
+.po-tb-icon-card:hover { border-color: var(--accent); background: var(--accent-light); }
+.po-tb-icon-card:disabled { opacity: 0.35; cursor: default; }
+.po-tb-icon-card:disabled:hover { border-color: var(--border); background: var(--panel); }
+.po-tb-icon-only { min-width: 46px; }
+/* Pontinho de "ligado" no encaixe — mesma pista visual do mockup. */
+.po-tb-dot { display: none; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #e6007e; }
+#po-proj-collision-btn.active .po-tb-dot { display: block; }
+#po-proj-collision-btn.active { border-color: var(--text); }
+
+/* Menu de estilo dentro da barra: mesma altura e raio dos segmentados. */
+#po-proj-style-menu .po-style-btn {
+  height: 36px; border-radius: 12px; padding: 6px 10px; min-width: 210px;
+  font-size: 12px; background: var(--panel);
+}
+#po-proj-style-menu .po-style-btn svg { flex: none; }

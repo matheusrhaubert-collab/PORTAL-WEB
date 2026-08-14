@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608132212" />
+<link rel="stylesheet" href="css/style.css?v=202608132220" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1175,50 +1175,98 @@
               <button type="button" class="po-view-toggle-btn" id="po-proj-wall-shape-u-btn" data-i18n="project.wall_shape_u">C / U</button>
             </div>
             <!-- (o botão de paredes virou ícone na barra de ferramentas, logo abaixo) -->
+              <!-- ==================================================================
+                   BARRA DE FERRAMENTAS — layout do mockup do Matt (2026-08-13)
+                   ==================================================================
+                   Grupos rotulados (Vista · Visual · Projeção · Encaixe), cada um
+                   num bloco, separados por filete. Botão ativo = pílula preta.
+                   Ícone SEMPRE junto do texto: o ícone dá o reconhecimento rápido,
+                   o texto tira a ambiguidade — sozinho, nenhum dos dois resolve.
+                   Os IDs são os MESMOS de antes; o JS não mudou por causa disto. -->
               <div class="po-proj-canvas-hud po-proj-hud-tl" id="po-proj-canvas-tools">
-                <!-- Paredes: ícone, não botão com texto (2026-08-13). Como texto
-                     ele obrigava a faixa inteira a existir só pra ele; como ícone
-                     cabe entre os outros e aquela altura toda some. -->
-                <button type="button" class="po-proj-hud-btn" id="po-proj-wall-editor-btn"
-                        title="Ajustar paredes (planta baixa) · Edit walls">📐</button>
-                <span class="po-proj-hud-sep"></span>
-                <div class="po-proj-view-toggle po-view-toggle">
-                  <button type="button" class="po-view-toggle-btn active" id="po-proj-view-front-btn" data-i18n="project.view_front_btn">Frontal</button>
-                  <button type="button" class="po-view-toggle-btn" id="po-proj-view-top-btn" data-i18n="project.view_top_btn">Superior</button>
+
+                <!-- Medidas / paredes: bloco próprio, à esquerda, como no mockup. -->
+                <div class="po-tb-group po-tb-group-solo">
+                  <button type="button" class="po-tb-icon-card" id="po-proj-wall-editor-btn"
+                          title="Ajustar paredes (planta baixa) · Edit walls">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+                      <path d="M3 20h18L3 4z"/><path d="M7 17.5v-2M10 17.5v-3M13 17.5v-2" stroke-width="1.1"/>
+                    </svg>
+                    <span>Medidas</span>
+                  </button>
                 </div>
-                <span class="po-proj-hud-sep"></span>
-                <!-- ESTILO DO DESENHO 3D (2026-08-13, pedido do Matt: "uns
-                     botões... linhas mais grossas, linhas transparentes, e
-                     texturas só de cores, pra pesar menos se quiser"). Os
-                     quatro primeiros são o CONTORNO das peças (um ligado por
-                     vez); o último liga/desliga a textura de madeira — sem
-                     ela a cena não baixa nem guarda imagem nenhuma, que é o
-                     jeito mais direto de deixar leve. Ver Viewer3D.setDrawStyle. -->
-                <!-- ESTILO DE EXIBIÇÃO — um seletor só, com combinações
-                     nomeadas, no modelo do Promob (menu "Texturas com Linhas /
-                     Texturas / Preenchimento / Sem Preenchimento..."), que o
-                     Matt mostrou na tela dele em 2026-08-13. Três grupos de
-                     botões soltos (linha × face × textura) davam as mesmas
-                     combinações mas obrigavam a montar cada uma na mão e
-                     ocupavam três vezes o espaço da barra.
-                     Cada opção vira {textura, contorno, face} — ver
-                     PROJECT_DRAW_PRESETS em portal.js. -->
-                <!-- Menu de estilo com ÍCONE (2026-08-13): <option> nativo não aceita
-                     SVG, então virou botão + lista montados por montaMenuEstilo()
-                     em portal.js. Cada item mostra uma amostra do que o estilo
-                     faz — madeira com contorno fino/grosso, cinza chapado,
-                     translúcido, só arestas. -->
-                <div class="po-style-menu" id="po-proj-style-menu"></div>
-                <!-- Projeção da câmera (2026-08-13): paralela (ortográfica) x
-                     perspectiva. Paralela é a de conferir alinhamento — sem
-                     fuga, duas peças iguais medem igual na tela. -->
-                <button type="button" class="po-proj-hud-btn" id="po-proj-camproj-btn"
-                        title="Câmera paralela / perspectiva · Parallel / perspective">⬛</button>
-                <span class="po-proj-hud-sep"></span>
-                <button type="button" class="po-proj-hud-btn" id="po-proj-undo-btn" disabled
-                        data-i18n-title="project.undo_title" title="Desfazer">↩</button>
-                <button type="button" class="po-proj-hud-btn" id="po-proj-collision-btn"
-                        data-i18n-title="project.collision_title" title="Colisão">🧲</button>
+
+                <span class="po-tb-sep"></span>
+
+                <div class="po-tb-group">
+                  <span class="po-tb-label">Vista</span>
+                  <div class="po-tb-seg">
+                    <button type="button" class="po-tb-seg-btn active" id="po-proj-view-front-btn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M12 3.5v17M5 12h14"/>
+                      </svg>
+                      <span data-i18n="project.view_front_btn">Frontal</span>
+                    </button>
+                    <button type="button" class="po-tb-seg-btn" id="po-proj-view-top-btn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M3 8h18l-2.5 11h-13z"/><path d="M3 8l3-3h12l3 3"/>
+                      </svg>
+                      <span data-i18n="project.view_top_btn">Superior</span>
+                    </button>
+                  </div>
+                </div>
+
+                <span class="po-tb-sep"></span>
+
+                <div class="po-tb-group">
+                  <span class="po-tb-label">Visual</span>
+                  <div class="po-style-menu" id="po-proj-style-menu"></div>
+                </div>
+
+                <span class="po-tb-sep"></span>
+
+                <div class="po-tb-group">
+                  <span class="po-tb-label">Projeção</span>
+                  <div class="po-tb-seg">
+                    <button type="button" class="po-tb-seg-btn active" id="po-proj-camproj-btn" data-proj="perspectiva">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+                        <path d="M4 7.5l8-3.5 8 3.5v9l-8 3.5-8-3.5z"/><path d="M4 7.5l8 3.5 8-3.5M12 11v8.5" stroke-dasharray="2 2"/>
+                      </svg>
+                      <span>Perspectiva</span>
+                    </button>
+                    <button type="button" class="po-tb-seg-btn" id="po-proj-camproj-orto-btn" data-proj="paralela">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M12 4v16M4 12h16"/>
+                      </svg>
+                      <span>Paralelo</span>
+                    </button>
+                  </div>
+                </div>
+
+                <span class="po-tb-sep"></span>
+
+                <div class="po-tb-group po-tb-group-solo">
+                  <button type="button" class="po-tb-icon-card po-tb-icon-only" id="po-proj-undo-btn" disabled
+                          data-i18n-title="project.undo_title" title="Desfazer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9 7H15a5 5 0 0 1 0 10h-4"/><path d="M9 7L6 4M9 7L6 10"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <span class="po-tb-sep"></span>
+
+                <div class="po-tb-group po-tb-group-solo">
+                  <span class="po-tb-label">Encaixe</span>
+                  <button type="button" class="po-tb-icon-card po-tb-icon-only" id="po-proj-collision-btn"
+                          data-i18n-title="project.collision_title" title="Colisão">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+                      <path d="M6.5 19V10a5.5 5.5 0 0 1 11 0v9"/><path d="M6.5 15.5h11" stroke="#e6007e"/>
+                    </svg>
+                    <i class="po-tb-dot"></i>
+                  </button>
+                </div>
+
                 <button type="button" class="po-proj-hud-btn" id="po-proj-camera-btn" style="display:none;"
                         data-i18n-title="project.camera_title" title="Girar câmera">🔄</button>
               </div>
@@ -1919,10 +1967,10 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608132212"></script>
-<script src="js/pricing.js?v=202608132212"></script>
-<script src="js/viewer3d.js?v=202608132212"></script>
-<script src="js/viewer3d_composition.js?v=202608132212"></script>
+<script src="js/i18n.js?v=202608132220"></script>
+<script src="js/pricing.js?v=202608132220"></script>
+<script src="js/viewer3d.js?v=202608132220"></script>
+<script src="js/viewer3d_composition.js?v=202608132220"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -1932,17 +1980,17 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202608132212"></script>
+<script src="js/drilling.js?v=202608132220"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202608132212"></script>
+<script src="js/layout-engine.js?v=202608132220"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202608132212"></script>
+<script src="js/wall-editor.js?v=202608132220"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608132212"></script>
-<script src="js/portal.js?v=202608132212"></script>
+<script src="js/photoreal.js?v=202608132220"></script>
+<script src="js/portal.js?v=202608132220"></script>
 </body>
 </html>

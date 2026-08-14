@@ -18258,6 +18258,8 @@ const projViewFrontBtn = document.getElementById('po-proj-view-front-btn');
 const projViewTopBtn = document.getElementById('po-proj-view-top-btn');
 function setProjectViewMode(mode) {
   projectViewMode = mode;
+  // .active vale pros dois visuais: o segmentado novo (po-tb-seg-btn) usa a
+  // MESMA classe do antigo (po-view-toggle-btn), então esta função não mudou.
   if (projViewFrontBtn) projViewFrontBtn.classList.toggle('active', mode === 'front');
   if (projViewTopBtn) projViewTopBtn.classList.toggle('active', mode === 'top');
   renderProjectCanvas();
@@ -18286,10 +18288,12 @@ const PROJECT_CAM_PROJ_KEY = 'legno_proj_cam_proj';
 // Projeção da câmera nos dois viewers da aba de uma vez. O ícone muda junto:
 // ⬛ perspectiva (com fuga), ⬜ paralela (ortográfica).
 function atualizaBotaoProjecao(tipo) {
-  const b = document.getElementById('po-proj-camproj-btn');
-  if (!b) return;
-  b.textContent = tipo === 'paralela' ? '⬜' : '⬛';
-  b.classList.toggle('active', tipo === 'paralela');
+  // Virou um par de botões (Perspectiva | Paralelo) no layout novo — o estado
+  // é qual dos dois está aceso, em vez de um ícone que trocava de desenho.
+  // Dois botões dizem quais são as opções sem precisar clicar pra descobrir.
+  document.querySelectorAll('#po-proj-canvas-tools [data-proj]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.proj === tipo);
+  });
 }
 function aplicaProjecaoCamera(tipo) {
   [typeof ViewerProjectEdit !== 'undefined' ? ViewerProjectEdit : null,
@@ -18373,7 +18377,12 @@ function montaMenuEstilo() {
 function pintaBotaoEstilo(idAtual) {
   const btn = document.getElementById('po-proj-style-btn');
   const o = PROJECT_DRAW_OPCOES.find((x) => x.id === idAtual) || PROJECT_DRAW_OPCOES[0];
-  if (btn) btn.innerHTML = iconeEstilo(o) + '<span>' + o.nome + '</span><i class="po-style-caret">▾</i>';
+  // Nome curto no botão fechado (o longo fica na lista): "Texturas com linhas
+  // grossas" empurrava a barra inteira pra fora da tela.
+  const curto = o.nome.replace('Texturas com linhas grossas', 'Texturas e contornos')
+    .replace('Texturas com linhas', 'Texturas e linhas')
+    .replace('Preenchimento com linhas', 'Cor e linhas');
+  if (btn) btn.innerHTML = iconeEstilo(o) + '<span>' + curto + '</span><i class="po-style-caret">▾</i>';
   document.querySelectorAll('#po-proj-style-list .po-style-item').forEach((it) => {
     it.classList.toggle('ativo', it.dataset.estilo === o.id);
   });
@@ -18402,14 +18411,9 @@ function applyProjectDrawStyle(estilo, remontar) {
   // Projeção da câmera. Vale pros DOIS viewers da aba (a Vista de Canto e o
   // painel "Visualizar 3D"), pra não ficar um em cada modo. Não precisa
   // remontar a cena: é só a matriz de projeção.
-  const bp = document.getElementById('po-proj-camproj-btn');
-  if (bp) {
-    bp.addEventListener('click', () => {
-      const atual = (ViewerProjectEdit && ViewerProjectEdit.getCameraProjection)
-        ? ViewerProjectEdit.getCameraProjection() : 'perspectiva';
-      aplicaProjecaoCamera(atual === 'paralela' ? 'perspectiva' : 'paralela');
-    });
-  }
+  document.querySelectorAll('#po-proj-canvas-tools [data-proj]').forEach((b) => {
+    b.addEventListener('click', () => aplicaProjecaoCamera(b.dataset.proj));
+  });
   let projSalva = null;
   try { projSalva = localStorage.getItem(PROJECT_CAM_PROJ_KEY); } catch (e) { projSalva = null; }
   if (projSalva === 'paralela') setTimeout(() => aplicaProjecaoCamera('paralela'), 1200);
