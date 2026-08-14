@@ -17483,6 +17483,35 @@ function projectWallSegmentGeometry(seg, idx) {
   };
 }
 
+// Abre a planta baixa. O que volta substitui as paredes do projeto — e os
+// MÓDULOS NÃO SE MEXEM (decisão do Matt: "modulos nao mexem"). Eles guardam
+// wall_index + x_mm ao longo da parede, então continuam onde estavam mesmo se
+// a parede encurtar ou girar; quem quiser reposicionar, arrasta.
+function openProjectWallEditor() {
+  if (typeof WallEditor === 'undefined') return;
+  WallEditor.open({
+    segments: projectWallSegments.length ? projectWallSegments : WallEditor.padrao(),
+    ceilingMm: (roomSettings && roomSettings.ceiling_mm) || 2600,
+    onSave: (segs) => {
+      projectWallSegments = segs;
+      // Módulo que ficou apontando pra uma parede que não existe mais volta
+      // pra primeira — é o mínimo pra ele não sumir do desenho. Fora isso,
+      // ninguém é movido.
+      projectSlots.forEach((s) => {
+        if (Number(s.wall_index || 0) >= projectWallSegments.length) s.wall_index = 0;
+      });
+      refreshProjectWallTabs();
+      refreshProjectWallWidthInput();
+      renderProjectCanvas();
+      markProjectDirty();
+    }
+  });
+}
+(function ligaBotaoParedes() {
+  const b = document.getElementById('po-proj-wall-editor-btn');
+  if (b) b.addEventListener('click', openProjectWallEditor);
+})();
+
 function getProjectWallGeometry() {
   if (projectWallSegments.length) {
     return projectWallSegments.map((seg, idx) => projectWallSegmentGeometry(seg, idx));
@@ -17994,6 +18023,13 @@ function resetProject() {
   if (projectSlots.length && !confirm(I18n.t('project.reset_confirm'))) return;
   projectSlots = [];
   selectedProjectSlotId = null;
+  // AMBIENTE PADRÃO (2026-08-13): duas paredes de 3m em L e o piso 3x3 que
+  // elas delimitam — o ponto de partida que o Matt pediu. Antes o projeto novo
+  // nascia com UMA parede e o resto vinha das 3 formas fixas, que saíram.
+  projectWallSegments = defaultProjectWallSegments();
+  projectActiveWallIndex = 0;
+  refreshProjectWallTabs();
+  refreshProjectWallWidthInput();
   // DESAMARRA do projeto salvo (BUG corrigido 2026-08-08, relato do usuário:
   // "salvei projeto e comecei novo, ao comecar novo a imagem realista do
   // antigo ficou la como se fosse o antigo ainda"). resetProject esvaziava só
@@ -18397,6 +18433,10 @@ async function saveProjectFavoriteInner(overwriteId) {
       wall_width_mm: mainWidthMm,
       wall_shape: projectWallShape,
       wall_widths_mm: projectWallWidthsMm,
+      // Paredes desenhadas (2026-08-13). Vai junto com as antigas de propósito:
+      // projeto salvo no modelo velho continua abrindo pelo caminho de sempre,
+      // e projeto novo ignora as duas de cima. Cabe no jsonb que já existe.
+      wall_segments: projectWallSegments.length ? projectWallSegments : null,
       ...(thumbnailDataUrl ? { thumbnail_data_url: thumbnailDataUrl } : {}),
       ...(cachedValueUsd !== null ? { cached_value_usd: cachedValueUsd } : {})
     };
@@ -18852,6 +18892,10 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
 
     projectWallShape = restoredShape;
     projectWallWidthsMm = restoredWidths;
+    // Paredes desenhadas, quando o projeto foi salvo com elas. Sem esta chave
+    // (projeto antigo), a lista fica vazia e getProjectWallGeometry segue pelo
+    // caminho das formas fixas, exatamente como sempre foi.
+    projectWallSegments = Array.isArray(fav.wall_segments) ? fav.wall_segments : [];
     projectActiveWallIndex = Math.max(PROJECT_WALL_ROLES_BY_SHAPE[restoredShape].indexOf('main'), 0);
     persistProjectWallConfig();
     refreshProjectWallShapeButtons();

@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 21:25:32
-cache: 202608132125
-mensagem: estilos num seletor so + base do modelo de paredes por segmento
+﻿data: 2026-08-13 21:30:04
+cache: 202608132130
+mensagem: editor de paredes em planta baixa + padrao 2 paredes de 3m
