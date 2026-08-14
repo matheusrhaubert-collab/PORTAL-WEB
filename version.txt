@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 22:54:03
-cache: 202608132254
-mensagem: acoes do modulo numa barra unica embaixo, centradas
+﻿data: 2026-08-13 22:56:04
+cache: 202608132256
+mensagem: clamp nao empurra mais o modulo encostado no canto

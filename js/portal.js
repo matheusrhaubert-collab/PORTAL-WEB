@@ -12128,9 +12128,19 @@ function clampProjectSlotPosition(slot) {
   const recuo = projectWallCornerInsetMm(idx);
   const largura = getProjectWallWidthMm(idx) - recuo.ini - recuo.fim;
   const maxX = Math.max(0, largura - Number(slot.width_mm || 0));
-  if (Number(slot.x_mm || 0) < recuo.ini) slot.x_mm = recuo.ini;
   const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
-  slot.x_mm = clamp(Number(slot.x_mm || 0), recuo.ini, recuo.ini + maxX);
+  // ATENÇÃO AO MÍNIMO: ele continua 0, e NÃO recuo.ini.
+  //
+  // Eu tinha posto recuo.ini como mínimo — e isso empurrava, em silêncio, todo
+  // módulo já posicionado em x < 150 pra dentro do vizinho, porque clamp roda
+  // em vários pontos (render, resize, troca de parede) SEM passar pela
+  // colisão. Foi o "colisão ligada e um módulo entrou no outro" — o culpado
+  // era justamente o que estava encostado na parede, deslocado pelo clamp.
+  //
+  // Encostar bonito no canto é trabalho do ARRASTE (a zona morta de
+  // FORCA_TROCA_MM), onde a colisão roda logo depois e tem como reagir. O
+  // clamp só garante o teto: não passar da face da parede vizinha.
+  slot.x_mm = clamp(Number(slot.x_mm || 0), 0, recuo.ini + maxX);
   slot.floor_height_mm = clamp(Number(slot.floor_height_mm || 0), 0, maxY);
 }
 
