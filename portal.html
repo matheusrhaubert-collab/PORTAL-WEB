@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202608132234" />
+<link rel="stylesheet" href="css/style.css?v=202608132238" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1094,7 +1094,10 @@
          salvar projeto, gerar imagem com IA, comprar, ajuda. -->
     <div class="portal-tab-page" id="po-tab-projects" style="display:none;">
       <section class="panel">
-        <div class="po-comp-title-row">
+        <!-- Linha do título ficou SÓ com o título (2026-08-13): as ações foram
+             pra barra de ferramentas. Escondida, porque no layout novo o título
+             mora dentro da própria barra, como no mockup. -->
+        <div class="po-comp-title-row" style="display:none;">
           <h2 data-i18n="project.title">Projetos</h2>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <!-- "Enviar pro pedido" (pedido do usuário 2026-08-02: "projetos,
@@ -1105,20 +1108,11 @@
                  pedido PRÓPRIO (order_type='project'), nunca mistura com o
                  rascunho do carrinho, e abre direto na tela do pedido (Meus
                  Pedidos). -->
-            <button type="button" id="po-proj-send-to-order-btn" style="margin-top:0;" data-i18n="project.send_to_order_btn">Enviar pro pedido</button>
-            <button type="button" id="po-proj-reset-btn" class="secondary" style="margin-top:0;" data-i18n="project.reset_btn">↺ Novo projeto</button>
-            <!-- 3D e Render subiram pra cá (2026-08-13): estavam num bloco
-                 solto no meio da página, longe do resto das ações do projeto e
-                 obrigando a rolar. Mesma pílula dos vizinhos; "Linhas" é um
-                 interruptor do render (contorno na foto), por isso vem colado
-                 nele e não como ação separada. -->
-            <!-- "Visualizar 3D" removido em 2026-08-13: a Vista de Canto JÁ é o 3D.
-                 Dois lugares mostrando a mesma cena só dividiam a atenção. -->
-            <span class="po-proj-render-pair">
-              <button type="button" id="po-proj-render-btn" class="secondary" style="margin-top:0;" disabled>◉ Render</button>
-              <button type="button" id="po-proj-render-linhas-btn" class="secondary po-proj-render-linhas" style="margin-top:0;"
-                      title="Mostrar as linhas (contorno) na foto · Outlines in render">⌗ Linhas</button>
-            </span>
+            <!-- Ações do projeto (enviar/novo/render) MUDARAM PRA BARRA DE
+                 FERRAMENTAS em 2026-08-13: aqui elas ficavam numa linha e a barra
+                 em outra, então o conjunto aparecia quebrado em dois blocos
+                 desalinhados. Um container só = um alinhamento só. -->
+
           </div>
         </div>
 
@@ -1196,6 +1190,7 @@
                    o texto tira a ambiguidade — sozinho, nenhum dos dois resolve.
                    Os IDs são os MESMOS de antes; o JS não mudou por causa disto. -->
               <div class="po-proj-canvas-hud po-proj-hud-tl" id="po-proj-canvas-tools">
+                <span class="po-tb-titulo" data-i18n="project.title">Projetos</span>
 
                 <!-- Medidas / paredes: bloco próprio, à esquerda, como no mockup. -->
                 <div class="po-tb-group po-tb-group-solo">
@@ -1279,6 +1274,37 @@
                     </svg>
                     <i class="po-tb-dot"></i>
                   </button>
+                </div>
+
+                <span class="po-tb-sep"></span>
+
+                <div class="po-tb-group">
+                  <span class="po-tb-label">Render</span>
+                  <div class="po-tb-seg">
+                    <button type="button" class="po-tb-seg-btn" id="po-proj-render-btn" disabled title="Gerar foto realista">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+                        <rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8.5 6L10 4h4l1.5 2"/>
+                      </svg><span>Gerar</span>
+                    </button>
+                    <button type="button" class="po-tb-seg-btn" id="po-proj-render-linhas-btn"
+                            title="Mostrar a marcação da área da foto">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <path d="M7 3v18M17 3v18" stroke-dasharray="3 2.5"/><rect x="3" y="3" width="18" height="18" rx="2" opacity="0.35"/>
+                      </svg><span>Linhas</span>
+                    </button>
+                  </div>
+                </div>
+
+                <span class="po-tb-sep"></span>
+
+                <div class="po-tb-group po-tb-acoes">
+                  <span class="po-tb-label">Projeto</span>
+                  <div class="po-tb-seg po-tb-seg-plano">
+                    <button type="button" class="po-tb-seg-btn po-tb-primaria" id="po-proj-send-to-order-btn"
+                            data-i18n="project.send_to_order_btn">Enviar pro pedido</button>
+                    <button type="button" class="po-tb-seg-btn" id="po-proj-reset-btn"
+                            data-i18n="project.reset_btn">↺ Novo projeto</button>
+                  </div>
                 </div>
 
                 <button type="button" class="po-proj-hud-btn" id="po-proj-camera-btn" style="display:none;"
@@ -1987,10 +2013,10 @@
 </footer>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202608132234"></script>
-<script src="js/pricing.js?v=202608132234"></script>
-<script src="js/viewer3d.js?v=202608132234"></script>
-<script src="js/viewer3d_composition.js?v=202608132234"></script>
+<script src="js/i18n.js?v=202608132238"></script>
+<script src="js/pricing.js?v=202608132238"></script>
+<script src="js/viewer3d.js?v=202608132238"></script>
+<script src="js/viewer3d_composition.js?v=202608132238"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -2000,17 +2026,17 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202608132234"></script>
+<script src="js/drilling.js?v=202608132238"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202608132234"></script>
+<script src="js/layout-engine.js?v=202608132238"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202608132234"></script>
+<script src="js/wall-editor.js?v=202608132238"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202608132234"></script>
-<script src="js/portal.js?v=202608132234"></script>
+<script src="js/photoreal.js?v=202608132238"></script>
+<script src="js/portal.js?v=202608132238"></script>
 </body>
 </html>

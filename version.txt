@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 22:34:47
-cache: 202608132234
-mensagem: barra: icones menores, Linhas controla a moldura da foto, Render avisa, 3D aposentado
+﻿data: 2026-08-13 22:38:36
+cache: 202608132238
+mensagem: barra unica: titulo, ferramentas e acoes na mesma linha

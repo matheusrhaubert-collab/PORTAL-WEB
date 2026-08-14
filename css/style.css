@@ -3411,3 +3411,24 @@ header.po-topnav {
 .po-proj-render-pair > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .po-proj-render-pair > button:last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
 .po-proj-render-linhas.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+/* Barra única (2026-08-13): as ações do projeto entraram na MESMA barra das
+   ferramentas. Antes eram dois containers, um por linha — e bastava a janela
+   estreitar pra eles aparecerem desalinhados, um em cima do outro.
+   A barra rola na horizontal em tela apertada em vez de quebrar linha: manter
+   tudo num eixo só é o que o Matt pediu. */
+#po-proj-canvas-tools.po-proj-hud-tl {
+  flex-wrap: nowrap; overflow-x: auto; overflow-y: visible;
+  scrollbar-width: thin;
+}
+.po-tb-group { flex: none; }
+/* Grupo de ações: sem a moldura do segmentado (são ações, não escolha entre
+   opções) — só os botões alinhados na mesma altura dos outros. */
+.po-tb-seg-plano { background: transparent; border-color: transparent; padding: 0; gap: 6px; }
+.po-tb-seg-plano .po-tb-seg-btn { border: 1px solid var(--border); background: var(--panel); }
+.po-tb-seg-plano .po-tb-seg-btn:hover { border-color: var(--accent); background: var(--accent-light); }
+.po-tb-primaria { background: var(--text) !important; color: #fff !important; border-color: var(--text) !important; }
+.po-tb-primaria:hover { filter: brightness(0.92); }
+.po-tb-seg-btn:disabled { opacity: 0.4; cursor: default; }
+/* Título dentro da barra, como no mockup — mesma linha de tudo. */
+.po-tb-titulo { font-size: 15px; font-weight: 700; color: var(--text); padding: 0 12px 0 4px; align-self: center; white-space: nowrap; }
