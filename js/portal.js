@@ -9895,6 +9895,24 @@ const PROJECT_WALL_ROLES_BY_SHAPE = {
 };
 
 let projectWallShape = 'single';
+// PAREDES DESENHADAS (2026-08-13) — a lista de segmentos do editor de planta
+// baixa. Vazia = projeto no modelo antigo (as 3 formas fixas), e tudo se
+// comporta como sempre.
+//
+// A DECLARAÇÃO PRECISA FICAR AQUI, junto do resto do estado de parede, e não
+// perto das funções que a usam lá embaixo: `let` tem zona morta temporal, e
+// refreshProjectWallTabs() é CHAMADA no topo do arquivo durante o
+// carregamento. Com a declaração lá embaixo, essa chamada explodia
+// ("Cannot access before initialization"), o portal.js morria no meio e a
+// página inteira ficava sem Supabase — foi o "não abre projetos / sem conexão
+// com banco" de 2026-08-13.
+const PROJECT_WALL_THICKNESS_MM = 150;
+const PROJECT_WALL_DEFAULT_LEN_MM = 3000;
+let projectWallSegments = [];   // [{ id, ax, az, bx, bz, thicknessMm, ceilingMm }]
+// Slot que o botão ⇄ (substituir módulo) está esperando trocar. Mesma regra de
+// posição: é lido por closeProjectSearchModal e pelo clique do card da busca,
+// que ficam ANTES no arquivo.
+let projectReplaceSlotId = null;
 let projectWallWidthsMm = [PROJECT_WALL_WIDTH_DEFAULT_MM]; // 1 largura por parede, mesma ordem de PROJECT_WALL_ROLES_BY_SHAPE[projectWallShape]
 let projectActiveWallIndex = 0; // qual parede está sendo editada na vista Frontal agora
 
@@ -14353,7 +14371,9 @@ if (projSlotDuplicateBtn) {
 // recarrega peças/dobradiça/corrediça/presets do módulo novo. O que falta
 // aqui é só respeitar os limites do módulo novo — uma medida que era válida
 // no antigo pode estar fora do min/max do outro.
-let projectReplaceSlotId = null;
+//
+// (projectReplaceSlotId é declarado lá em cima, junto do resto do estado da
+// aba — ver o comentário sobre zona morta temporal em projectWallSegments.)
 
 async function replaceProjectSlotModule(slotId, novoModuleId) {
   const slot = projectSlots.find((s) => s.id === slotId);
@@ -17440,9 +17460,8 @@ function buildProjectAssemblies(slotsList) {
 // Enquanto projectWallSegments estiver vazio, ela responde exatamente como
 // antes, derivando de projectWallShape + projectWallWidthsMm. Projeto salvo
 // velho continua abrindo sem conversão nenhuma.
-const PROJECT_WALL_THICKNESS_MM = 150;
-const PROJECT_WALL_DEFAULT_LEN_MM = 3000;
-let projectWallSegments = [];   // [{ id, ax, az, bx, bz, thicknessMm, ceilingMm }]
+// (a declaração de projectWallSegments está lá em cima, junto de
+// projectWallShape — ver o porquê no comentário dela.)
 
 function newProjectWallSegmentId() {
   return 'wseg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
