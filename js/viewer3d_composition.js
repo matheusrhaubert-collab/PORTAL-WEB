@@ -187,9 +187,76 @@ function createViewerComposition3D() {
     if (!containerEl || !camera || !renderer) return;
     const w = containerEl.clientWidth || 300;
     const h = containerEl.clientHeight || 420;
-    camera.aspect = w / h;
+    if (camera.isOrthographicCamera) {
+      // Ortográfica não tem aspect: o enquadramento é o próprio frustum. Mantém
+      // a ALTURA visível e recalcula a largura, senão a cena estica ao mudar a
+      // proporção do painel.
+      const alturaVis = (camera.top - camera.bottom) || 1;
+      const a = w / h;
+      camera.left = -alturaVis * a / 2;
+      camera.right = alturaVis * a / 2;
+    } else {
+      camera.aspect = w / h;
+    }
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+  }
+
+  // ==========================================================================
+  // CÂMERA PARALELA (ortográfica) x PERSPECTIVA — 2026-08-13
+  // ==========================================================================
+  // Pedido do Matt. Paralela é o que marcenaria usa pra conferir alinhamento:
+  // sem fuga, duas peças do mesmo tamanho medem o mesmo na tela, esteja uma na
+  // frente da outra ou não.
+  //
+  // A troca preserva o enquadramento: a altura visível da ortográfica é
+  // calculada da MESMA altura que a perspectiva mostra na distância atual do
+  // alvo (2·d·tan(fov/2)), e o caminho de volta é o inverso. Assim o botão não
+  // dá salto nenhum — só muda a projeção.
+  //
+  // O OrbitControls do r128 já lida com os dois tipos; o que ele não prevê é
+  // TROCAR de câmera em pé. Trocar controls.object direto funciona (ele lê
+  // scope.object em tudo) e evita recriar os controles, o que exigiria
+  // reaplicar mouseButtons/enableZoom/limites e é onde isso costuma quebrar.
+  // Ponto do mundo sob o cursor, no plano que passa pelo alvo da órbita — a
+  // referência que o zoom ortográfico usa pra manter o ponto parado.
+  function ndcParaMundoOrto(clientX, clientY) {
+    if (!camera || !controls || !_raycaster) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const normal = new THREE.Vector3();
+    camera.getWorldDirection(normal);
+    const plano = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, controls.target);
+    const alvo = new THREE.Vector3();
+    return _raycaster.ray.intersectPlane(plano, alvo) ? alvo : null;
+  }
+
+  const CAM_FOV = 35;
+  function setCameraProjection(tipo) {
+    if (!camera || !controls || !renderer) return;
+    const querOrto = tipo === 'paralela';
+    if (querOrto === !!camera.isOrthographicCamera) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const a = (rect.width || 1) / (rect.height || 1);
+    const alvo = controls.target.clone();
+    const pos = camera.position.clone();
+    const d = pos.distanceTo(alvo) || 3;
+    let nova;
+    if (querOrto) {
+      const alturaVis = 2 * d * Math.tan((CAM_FOV * Math.PI / 180) / 2);
+      nova = new THREE.OrthographicCamera(-alturaVis * a / 2, alturaVis * a / 2, alturaVis / 2, -alturaVis / 2, 0.01, 400);
+    } else {
+      nova = new THREE.PerspectiveCamera(CAM_FOV, a, 0.01, 200);
+    }
+    nova.position.copy(pos);
+    nova.up.copy(camera.up);
+    nova.lookAt(alvo);
+    nova.updateProjectionMatrix();
+    camera = nova;
+    controls.object = camera;
+    controls.update();
+  }
+  function getCameraProjection() {
+    return (camera && camera.isOrthographicCamera) ? 'paralela' : 'perspectiva';
   }
 
   function animate() {
@@ -393,18 +460,50 @@ function createViewerComposition3D() {
   // WALL_SURFACE_BACKOFF_M no sentido CONTRÁRIO ao intoDir pra ficar um fio
   // atrás das linhas de cota e do fundo dos módulos encostados nela.
   const WALL_SURFACE_BACKOFF_M = 0.004;
+  // PAREDE SÓLIDA — 2026-08-13 (etapa 1 da reforma de paredes pedida pelo
+  // Matt: "quero paredes sólidas, não só com uma linha... sempre 150mm de
+  // espessura").
+  //
+  // Era um PlaneGeometry: uma folha sem volume, que de lado sumia e no canto
+  // não encostava na vizinha. Agora é um bloco de WALL_THICKNESS_M crescendo
+  // PRA TRÁS da face útil — a face que dá pro ambiente continua exatamente
+  // onde estava, então nada do que já existe se desloca: módulo encostado na
+  // parede, cota, colisão e o ímã continuam com a mesma referência.
+  //
+  // O comprimento é esticado em 1 espessura pra cada ponta (por isso o
+  // +WALL_THICKNESS_M no comprimento): é o que faz duas paredes se
+  // encontrarem no canto sem deixar fresta de 150mm.
+  //
+  // isRoomSurface continua marcado, então o duplo clique de focar a parede e
+  // o "soltar módulo na parede" seguem funcionando igual.
+  const WALL_THICKNESS_M = 0.15;
   function makeWallSurface(p0, p1, ceilingH, intoDir) {
     const widthM = Math.hypot(p1.x - p0.x, p1.z - p0.z);
-    const mesh = makeRoomSurface(widthM, ceilingH, WALL_COLOR, false, 'wall');
     const ix = (intoDir && intoDir.x) || 0;
     const iz = (intoDir && intoDir.z) || 0;
-    // PlaneGeometry nasce com a normal em +Z; atan2 gira em Y até a normal
-    // coincidir com intoDir.
+    const geom = new THREE.BoxGeometry(
+      Math.max(widthM + WALL_THICKNESS_M, 0.01),
+      Math.max(ceilingH, 0.01),
+      WALL_THICKNESS_M
+    );
+    const mat = new THREE.MeshStandardMaterial({
+      color: WALL_COLOR, roughness: 0.95, metalness: 0.0,
+      polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.userData.isRoomSurface = true;
+    mesh.userData.roomSurfaceKind = 'wall';
+    // A face +Z da caixa é a "de dentro": girar em Y até ela olhar pro
+    // intoDir é a mesma conta que o plano usava.
     mesh.rotation.y = Math.atan2(ix, iz);
+    // Centro recuado meia espessura (mais o fio de folga de sempre) no sentido
+    // CONTRÁRIO ao intoDir: assim a face interna fica no lugar exato da folha
+    // antiga.
+    const recuo = WALL_THICKNESS_M / 2 + WALL_SURFACE_BACKOFF_M;
     mesh.position.set(
-      (p0.x + p1.x) / 2 - ix * WALL_SURFACE_BACKOFF_M,
+      (p0.x + p1.x) / 2 - ix * recuo,
       ceilingH / 2,
-      (p0.z + p1.z) / 2 - iz * WALL_SURFACE_BACKOFF_M
+      (p0.z + p1.z) / 2 - iz * recuo
     );
     return mesh;
   }
@@ -1804,6 +1903,22 @@ function createViewerComposition3D() {
   // repetir esse clamp aqui.
   function zoomTowardClient(clientX, clientY, factor) {
     if (!_raycaster || !camera || !controls) return;
+    // ORTOGRÁFICA não tem "chegar perto": aproximar a câmera não muda o
+    // tamanho aparente. Quem dá zoom é o frustum. Mantém o ponto sob o cursor
+    // parado do mesmo jeito — só que movendo o ALVO em vez da câmera.
+    if (camera.isOrthographicCamera) {
+      const antes = ndcParaMundoOrto(clientX, clientY);
+      camera.zoom = Math.max(0.02, Math.min(80, camera.zoom / factor));
+      camera.updateProjectionMatrix();
+      const depois = ndcParaMundoOrto(clientX, clientY);
+      if (antes && depois) {
+        const delta = new THREE.Vector3().subVectors(antes, depois);
+        camera.position.add(delta);
+        controls.target.add(delta);
+      }
+      controls.update();
+      return;
+    }
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
     let point = null;
     if (currentGroups.length) {
@@ -2296,6 +2411,8 @@ function createViewerComposition3D() {
     setDropPreview,
     // 3ª rodada (2026-08-08) — ver pickAssemblyAtSticky (seleção que não pula
     // pro vizinho no dedo) e worldToClient (botões DOM sobre o módulo).
+    // Projeção da câmera (2026-08-13): 'paralela' (ortográfica) x 'perspectiva'.
+    setCameraProjection, getCameraProjection,
     pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,
     // Diagnóstico (ver debugScreenRects) — chamável pelo console via
     // window.__legnoViewerEdit.debugScreenRects().

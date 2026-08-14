@@ -18095,6 +18095,24 @@ if (projViewTopBtn) projViewTopBtn.addEventListener('click', () => setProjectVie
 // querer "só cor" no notebook e textura na hora de mostrar pro cliente), não
 // dado do projeto — não tem por que virar campo salvo no banco.
 const PROJECT_DRAW_STYLE_KEY = 'legno_proj_draw_style';
+const PROJECT_CAM_PROJ_KEY = 'legno_proj_cam_proj';
+
+// Projeção da câmera nos dois viewers da aba de uma vez. O ícone muda junto:
+// ⬛ perspectiva (com fuga), ⬜ paralela (ortográfica).
+function atualizaBotaoProjecao(tipo) {
+  const b = document.getElementById('po-proj-camproj-btn');
+  if (!b) return;
+  b.textContent = tipo === 'paralela' ? '⬜' : '⬛';
+  b.classList.toggle('active', tipo === 'paralela');
+}
+function aplicaProjecaoCamera(tipo) {
+  [typeof ViewerProjectEdit !== 'undefined' ? ViewerProjectEdit : null,
+    typeof ViewerProject !== 'undefined' ? ViewerProject : null].forEach((v) => {
+    if (v && v.setCameraProjection) v.setCameraProjection(tipo);
+  });
+  atualizaBotaoProjecao(tipo);
+  try { localStorage.setItem(PROJECT_CAM_PROJ_KEY, tipo); } catch (e) { /* anônimo */ }
+}
 function applyProjectDrawStyle(estilo, remontar) {
   if (typeof Viewer3D === 'undefined' || !Viewer3D.setDrawStyle) return;
   const s = Viewer3D.setDrawStyle(estilo);
@@ -18144,6 +18162,21 @@ function applyProjectDrawStyle(estilo, remontar) {
       applyProjectDrawStyle({ textura: !atual.textura }, true);
     });
   }
+  // Projeção da câmera. Vale pros DOIS viewers da aba (a Vista de Canto e o
+  // painel "Visualizar 3D"), pra não ficar um em cada modo. Não precisa
+  // remontar a cena: é só a matriz de projeção.
+  const bp = document.getElementById('po-proj-camproj-btn');
+  if (bp) {
+    bp.addEventListener('click', () => {
+      const atual = (ViewerProjectEdit && ViewerProjectEdit.getCameraProjection)
+        ? ViewerProjectEdit.getCameraProjection() : 'perspectiva';
+      aplicaProjecaoCamera(atual === 'paralela' ? 'perspectiva' : 'paralela');
+    });
+  }
+  let projSalva = null;
+  try { projSalva = localStorage.getItem(PROJECT_CAM_PROJ_KEY); } catch (e) { projSalva = null; }
+  if (projSalva === 'paralela') setTimeout(() => aplicaProjecaoCamera('paralela'), 1200);
+  else atualizaBotaoProjecao('perspectiva');
   // Preferência da última sessão — aplicada SEM remontar (a cena ainda nem
   // existe neste ponto do carregamento).
   let salvo = null;
