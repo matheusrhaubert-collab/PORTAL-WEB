@@ -2550,8 +2550,11 @@ header.po-topnav {
    O "palco" é quem dá o position:relative; ele NÃO pode ser
    .po-proj-canvas-wrap (overflow:auto — as barras rolariam junto com o
    desenho na vista 2D e sumiriam). */
-.po-proj-canvas-stage { position: relative; flex: 1; min-width: 0; display: flex; }
-.po-proj-canvas-stage > .po-proj-canvas-wrap { flex: 1; min-width: 0; }
+/* COLUNA (2026-08-13): a barra de ferramentas passou a ser o primeiro filho,
+   estático, e o desenho vem embaixo ocupando o resto. Era `display:flex` em
+   linha com a barra por cima em absolute — ver .po-proj-hud-tl. */
+.po-proj-canvas-stage { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.po-proj-canvas-stage > .po-proj-canvas-wrap { flex: 1; min-width: 0; min-height: 0; }
 
 .po-proj-canvas-hud {
   position: absolute; z-index: 30; display: flex; align-items: center; gap: 4px;
@@ -2561,7 +2564,20 @@ header.po-topnav {
   background: rgba(255,255,255,0.92);
   box-shadow: 0 2px 10px rgba(0,0,0,0.12);
 }
-.po-proj-hud-tl { top: 8px; left: 8px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+/* BARRA DE CIMA FORA DO DESENHO (2026-08-13). Ela era absolute dentro do
+   palco e ficava POR CIMA da cena — o Matt: "essa barra tá incomodando a
+   visualização, como as paredes vão sair, pode jogar essa barra pra cima".
+   Com parede sólida e ambiente fechado, o canto superior esquerdo passou a ser
+   justamente onde o desenho acontece.
+   Agora ela é estática e mora ACIMA do palco (ver .po-proj-canvas-stage, que
+   virou coluna): não tapa nada e não rouba área do canvas.
+   A barra da DIREITA (câmera) continua flutuando — ela é estreita, fica no
+   meio da altura e some fora da cena 3D. */
+.po-proj-hud-tl {
+  position: static; align-self: flex-start; margin: 0 0 6px 0;
+  flex-wrap: wrap; max-width: 100%;
+  background: transparent; box-shadow: none; border-color: transparent;
+}
 .po-proj-hud-right { top: 50%; right: 8px; transform: translateY(-50%); flex-direction: column; }
 .po-proj-hud-sep { width: 1px; align-self: stretch; min-height: 20px; background: var(--border); margin: 0 2px; }
 
