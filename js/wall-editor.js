@@ -80,6 +80,7 @@
       '    <div class="po-wall-tools">',
       '      <button type="button" class="po-wall-tool" data-acao="add" title="Adicionar parede na ponta da última">+ parede</button>',
       '      <button type="button" class="po-wall-tool" data-acao="inverter" title="Inverter o lado de dentro desta parede">⇋ virar</button>',
+      '      <button type="button" class="po-wall-tool" data-acao="ocultar" title="Esconder esta parede (e os móveis presos nela) — só na visualização">👁 ocultar</button>',
       '      <button type="button" class="po-wall-tool po-wall-tool-danger" data-acao="remover" title="Remover a parede selecionada">🗑 remover</button>',
       '    </div>',
       '  </div>',
@@ -111,6 +112,7 @@
       else if (a === 'add') adicionar();
       else if (a === 'remover') remover();
       else if (a === 'inverter') inverter();
+      else if (a === 'ocultar') alternaOculta();
     });
     ['po-wall-comp', 'po-wall-ang', 'po-wall-esp', 'po-wall-pd'].forEach((id) => {
       m.querySelector('#' + id).addEventListener('change', aplicaCampos);
@@ -177,6 +179,17 @@
   // Virar = trocar as pontas. O lado de dentro é sempre à esquerda de quem vai
   // de A pra B (ver projectWallSegmentGeometry no portal.js), então inverter as
   // pontas é o que troca a face útil da parede.
+  // OCULTAR é de VISUALIZAÇÃO, não de projeto: a parede continua existindo,
+  // com medida, e os móveis presos nela continuam no pedido. Ela só some do
+  // desenho — junto com os móveis daquela parede, senão eles ficariam
+  // flutuando no ar (pedido do Matt: "quando deixo uma parede invisível,
+  // preciso deixar os móveis conectados a ela invisíveis também").
+  function alternaOculta() {
+    const s = estado && estado.segs[estado.sel];
+    if (!s) return;
+    s.oculta = !s.oculta;
+    desenha();
+  }
   function inverter() {
     const s = estado && estado.segs[estado.sel];
     if (!s) return;
@@ -247,14 +260,17 @@
         [s.bx + nx * e, s.bz + nz * e], [s.ax + nx * e, s.az + nz * e]
       ].map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
       const sel = i === estado.sel;
-      const poly = el('polygon', {
+      // Parede oculta continua no desenho da planta — tracejada e apagada. Ela
+      // some só do 3D: aqui é onde se edita, e uma parede invisível também na
+      // planta seria impossível de trazer de volta.
+      const poly = el('polygon', Object.assign({
         points: pts,
         fill: sel ? '#e0921f' : '#cfc9bd',
-        'fill-opacity': sel ? 0.5 : 0.9,
+        'fill-opacity': s.oculta ? 0.12 : (sel ? 0.5 : 0.9),
         stroke: sel ? '#e0921f' : '#8d8375',
         'stroke-width': fino * (sel ? 2.5 : 1.2),
         class: 'po-wall-seg'
-      }, svg);
+      }, s.oculta ? { 'stroke-dasharray': (fino * 6) + ' ' + (fino * 4) } : {}), svg);
       // Clicar seleciona; ARRASTAR O CORPO leva a parede inteira pra onde
       // quiser — inclusive solta, longe das outras (2026-08-13, pedido do
       // Matt: "quero levar essa parede pra onde eu quiser, tipo deixar uma
@@ -394,6 +410,26 @@
           x = ox + Math.cos(r) * comp;
           z = oz - Math.sin(r) * comp;
         }
+      }
+      // ÍMÃ DE CANTO — a ponta gruda na ponta de outra parede (2026-08-13).
+      // Sem isto, duas paredes que "parecem" encostadas ficam a alguns
+      // milímetros uma da outra: na planta some, mas no 3D o canto abre uma
+      // fresta ou as duas se atravessam (foi o que o Matt viu). Cair na malha
+      // de 50mm não garante encontro nenhum quando a outra ponta está num
+      // valor qualquer, vindo de outro arraste.
+      // Prioridade máxima: vence a malha e o ângulo, porque encostar é o que
+      // define o ambiente.
+      if (!livre) {
+        const RAIO = 260;
+        let melhor = null, dist = RAIO;
+        estado.segs.forEach((o, j) => {
+          if (j === idx) return;
+          [[o.ax, o.az], [o.bx, o.bz]].forEach(([px, pz]) => {
+            const d = Math.hypot(px - x, pz - z);
+            if (d < dist) { dist = d; melhor = { x: px, z: pz }; }
+          });
+        });
+        if (melhor) { x = melhor.x; z = melhor.z; }
       }
       if (Math.hypot(x - ox, z - oz) < MIN_COMPRIMENTO) return;
       if (qual === 'a') { s.ax = Math.round(x); s.az = Math.round(z); }

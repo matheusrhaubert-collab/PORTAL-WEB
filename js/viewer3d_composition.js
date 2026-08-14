@@ -477,15 +477,32 @@ function createViewerComposition3D() {
   // isRoomSurface continua marcado, então o duplo clique de focar a parede e
   // o "soltar módulo na parede" seguem funcionando igual.
   const WALL_THICKNESS_M = 0.15;
-  function makeWallSurface(p0, p1, ceilingH, intoDir) {
+  // extras = { ini, fim } — esticar meia espessura naquela ponta, e SÓ quando
+  // existe outra parede encostada ali (2026-08-13).
+  //
+  // Antes esticava sempre, nas duas pontas. Em ambiente fechado isso preenche
+  // o canto e fica certo; em parede solta, ou em duas paredes que quase se
+  // encontram, o excesso aparece como parede furando parede — foi o "no visual
+  // elas atravessam umas às outras" que o Matt viu. Quem decide agora é a
+  // planta: encostou, estica; não encostou, termina onde termina.
+  function makeWallSurface(p0, p1, ceilingH, intoDir, extras) {
     const widthM = Math.hypot(p1.x - p0.x, p1.z - p0.z);
     const ix = (intoDir && intoDir.x) || 0;
     const iz = (intoDir && intoDir.z) || 0;
+    const eIni = (extras && extras.ini) ? WALL_THICKNESS_M / 2 : 0;
+    const eFim = (extras && extras.fim) ? WALL_THICKNESS_M / 2 : 0;
     const geom = new THREE.BoxGeometry(
-      Math.max(widthM + WALL_THICKNESS_M, 0.01),
+      Math.max(widthM + eIni + eFim, 0.01),
       Math.max(ceilingH, 0.01),
       WALL_THICKNESS_M
     );
+    // O excesso é assimétrico quando só uma ponta encosta: desloca o centro
+    // metade da diferença ao longo da parede, senão a parede "anda".
+    if (eIni !== eFim) {
+      const dx = (p1.x - p0.x) / (widthM || 1), dz = (p1.z - p0.z) / (widthM || 1);
+      geom.translate((eFim - eIni) / 2 * 0, 0, 0); // (o deslocamento real vai na posição, abaixo)
+      geom.userData = { desloc: { x: dx * (eFim - eIni) / 2, z: dz * (eFim - eIni) / 2 } };
+    }
     const mat = new THREE.MeshStandardMaterial({
       color: WALL_COLOR, roughness: 0.95, metalness: 0.0,
       polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2
@@ -500,10 +517,11 @@ function createViewerComposition3D() {
     // CONTRÁRIO ao intoDir: assim a face interna fica no lugar exato da folha
     // antiga.
     const recuo = WALL_THICKNESS_M / 2 + WALL_SURFACE_BACKOFF_M;
+    const desl = (geom.userData && geom.userData.desloc) || { x: 0, z: 0 };
     mesh.position.set(
-      (p0.x + p1.x) / 2 - ix * recuo,
+      (p0.x + p1.x) / 2 - ix * recuo + desl.x,
       ceilingH / 2,
-      (p0.z + p1.z) / 2 - iz * recuo
+      (p0.z + p1.z) / 2 - iz * recuo + desl.z
     );
 
     // ARESTA NA PAREDE, no mesmo estilo dos móveis (2026-08-13, Matt: "as
@@ -746,7 +764,16 @@ function createViewerComposition3D() {
       group.add(makeFloorGrid(fx0, fx1, fz0, fz1));
     }
 
-    (segments || []).forEach((seg) => {
+    // Ponta 0 ou 1 de um segmento, em mundo — usada pelo teste de canto
+    // (ver 'encosta' logo abaixo).
+    const pontoDoSegmento = (sg, qual) => {
+      const a = sg.alongDir.x, b = sg.alongDir.z;
+      const m = sg.margin || 0;
+      return qual === 0
+        ? { x: sg.originX - a * m, z: sg.originZ - b * m }
+        : { x: sg.originX + a * (sg.widthM + m), z: sg.originZ + b * (sg.widthM + m) };
+    };
+    (segments || []).forEach((seg, i) => {
       const ax = seg.alongDir.x, az = seg.alongDir.z;
       const margin = seg.margin || 0;
       const p0 = new THREE.Vector3(seg.originX - ax * margin, 0, seg.originZ - az * margin);
@@ -758,9 +785,18 @@ function createViewerComposition3D() {
       // renderFreeformWalls; sem ele (chamador antigo), pula a superfície e o
       // desenho fica só de linhas, exatamente como era antes.
       if (!room.minimal && ceilingH > 0 && seg.intoDir) {
+        // Encosta em alguém nesta ponta? (12cm de tolerância — abaixo da
+        // própria espessura da parede, então só conta encontro de verdade.)
+        const TOL = 0.12;
+        const encosta = (px, pz) => (segments || []).some((o, j) => {
+          if (j === i) return false;
+          const a = pontoDoSegmento(o, 0), b = pontoDoSegmento(o, 1);
+          return Math.hypot(a.x - px, a.z - pz) < TOL || Math.hypot(b.x - px, b.z - pz) < TOL;
+        });
         const wallSurface = makeWallSurface(
           { x: p0.x, z: p0.z }, { x: p1.x, z: p1.z },
-          ceilingH, seg.intoDir
+          ceilingH, seg.intoDir,
+          { ini: encosta(p0.x, p0.z), fim: encosta(p1.x, p1.z) }
         );
         // De qual parede esta superfície é — lido por pickRoomSurfaceAt pra o
         // duplo toque "mostra essa parede de frente" (iPad) saber qual parede

@@ -1,3 +1,3 @@
-﻿data: 2026-08-13 22:04:33
-cache: 202608132204
-mensagem: menu de estilo com icone + texturas com linhas grossas
+﻿data: 2026-08-13 22:08:58
+cache: 202608132208
+mensagem: paredes: lado de dentro correto, ima de canto, sem atravessar, ocultar parede

@@ -13884,7 +13884,11 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // continua sempre ligado, exatamente como era. Ver applyProjectViewerControls.
   applyProjectViewerControls();
 
-  const wallsGeometry = getProjectWallGeometry();
+  // PAREDE OCULTA some do 3D junto com os móveis dela (2026-08-13, pedido do
+  // Matt). É filtro de DESENHO: os slots continuam no projeto, no preço e no
+  // pedido — some só o que é mostrado, pra dar de ver o interior do ambiente
+  // sem a parede da frente atrapalhando.
+  const wallsGeometry = getProjectWallGeometry().filter((w) => !w.oculta);
   const wallsData = wallsGeometry.map((wallGeo) => ({
     ...wallGeo,
     assemblies: buildProjectAssemblies(projectSlotsOnWall(wallGeo.wallIndex))
@@ -17497,13 +17501,23 @@ function projectWallSegmentGeometry(seg, idx) {
     originX: seg.ax / 1000,
     originZ: seg.az / 1000,
     alongDirX: ax, alongDirZ: az,
-    // Normal à esquerda de (ax,az) no plano XZ.
-    intoDirX: az, intoDirZ: -ax,
-    // rotationY do MÓDULO encostado nesta parede: ele olha pra dentro.
-    rotationY: Math.atan2(az, -ax) + Math.PI / 2,
+    // NORMAL À DIREITA de (ax,az) — e isto NÃO é escolha estética, é a
+    // convenção que o resto do sistema já usa (2026-08-13). Conferido contra
+    // a geometria antiga: parede 'main' tem alongDir (1,0) e intoDir (0,1),
+    // que é (-az, ax). Eu tinha escrito a normal à ESQUERDA, e o resultado foi
+    // o módulo nascer do lado de FORA do ambiente — "os módulos entram por
+    // fora dessas paredes, não no chão onde deveriam".
+    intoDirX: -az, intoDirZ: ax,
+    // rotationY do módulo encostado: ele olha pra dentro. Mesma derivação da
+    // geometria antiga — main (intoDir 0,1) = 0; left (1,0) = +90°;
+    // right (-1,0) = -90°.
+    rotationY: Math.atan2(-az, ax),
     segmentId: seg.id,
     thicknessMm: Number(seg.thicknessMm) || PROJECT_WALL_THICKNESS_MM,
-    ceilingMm: seg.ceilingMm || null
+    ceilingMm: seg.ceilingMm || null,
+    // Só de visualização — ver alternaOculta no wall-editor.js. A parede
+    // continua existindo pro projeto e pro pedido.
+    oculta: !!seg.oculta
   };
 }
 
@@ -17596,7 +17610,10 @@ function generateProject3D() {
     const assemblies = buildProjectAssemblies(projectSlots);
     ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, viewerRoomEnvConfig());
   } else {
-    const wallsData = getProjectWallGeometry().map((wall) => ({
+    // Mesmo filtro de parede oculta da Vista de Canto — os dois viewers
+    // precisam concordar, senão o painel "Visualizar 3D" mostraria a parede
+    // que você acabou de esconder.
+    const wallsData = getProjectWallGeometry().filter((w) => !w.oculta).map((wall) => ({
       ...wall,
       assemblies: buildProjectAssemblies(projectSlotsOnWall(wall.wallIndex))
     }));
