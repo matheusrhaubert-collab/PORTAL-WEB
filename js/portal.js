@@ -14642,6 +14642,12 @@ function aplicaExplosao() {
   });
 }
 
+// ATENÇÃO À ORDEM NO HTML: esta função roda no carregamento do portal.js e
+// precisa que o modal JÁ EXISTA no documento. Eu tinha inserido o markup do
+// modal DEPOIS das tags <script> — os getElementById devolviam null, nenhum
+// listener era ligado, e o resultado foi "o Explodir não mexe e o X não fecha,
+// a tela trancou". Os dois sintomas, uma causa só. O bloco do modal agora fica
+// antes dos scripts; qualquer tela nova precisa nascer lá também.
 (function ligaPecasDoMovel() {
   const b = document.getElementById('po-proj-slot-pieces-btn');
   if (b) {
@@ -14651,10 +14657,16 @@ function aplicaExplosao() {
       if (selectedProjectSlotId != null) openProjectSlotPieces(selectedProjectSlotId);
     });
   }
-  const fechar = document.getElementById('po-pieces-close');
+  // Três saídas pra fechar: o ×, o fundo e Esc. Tela sem saída óbvia é tela
+  // trancada — e o × sozinho já falhou uma vez.
   const modal = document.getElementById('po-pieces-modal');
-  if (fechar && modal) fechar.addEventListener('click', () => modal.classList.remove('open'));
-  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
+  const fecha = () => { if (modal) modal.classList.remove('open'); };
+  const fechar = document.getElementById('po-pieces-close');
+  if (fechar) fechar.addEventListener('click', fecha);
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) fecha(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal && modal.classList.contains('open')) fecha();
+  });
   const range = document.getElementById('po-pieces-explode');
   if (range) range.addEventListener('input', aplicaExplosao);
 })();
