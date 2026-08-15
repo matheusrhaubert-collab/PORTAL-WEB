@@ -14892,7 +14892,7 @@ async function openProjectModuleBuilder(slotId) {
   // o Drilling conhece), que é o que "fiel" quer dizer. Cai pro Drilling se
   // o 3D não estiver disponível. Roda uma vez por abertura, não a cada
   // clique — renderProjectBuilderStage só lê a lista pronta.
-  projectBuilderDesenho = computeProjectSlotCascoBoxes(slot, true);
+  projectBuilderDesenho = computeProjectSlotCascoBoxes(slot, true, true);
   if (!projectBuilderDesenho || !projectBuilderDesenho.length) {
     projectBuilderDesenho = projectBuilderCasco;
   }
@@ -15081,8 +15081,11 @@ function computeProjectSlotInnerZone(slot) {
     if (x0 === 0 && y0 === 0 && z0 === 0 && x1 === W && y1 === H
       && typeof LayoutEngine !== 'undefined' && LayoutEngine.innerZoneFromParts) {
       try {
+        // { W, H, D } — mesma armadilha de computeProjectSlotCascoBoxes (ver
+        // comentário longo lá): a forma { width_mm, ... } fazia esta rede de
+        // segurança lançar e cair no catch, sem nunca ter chance de agir.
         const parts = resolvePiecesForViewer(
-          slot.pieces, { width_mm: W, height_mm: H, depth_mm: D },
+          slot.pieces, { W: W, H: H, D: D },
           slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
         );
         const z = LayoutEngine.innerZoneFromParts(parts || [], W, H, D);
@@ -15211,16 +15214,44 @@ function classifyProjectCascoBox(b, W, H, D) {
 // tela fazia na 1ª versão) devolve caixas de tamanho zero, a dedução não acha
 // lateral nenhuma e a zona interna vira o módulo inteiro — que era exatamente
 // o retângulo vazio que aparecia na tela.
-function computeProjectSlotCascoBoxes(slot, medirNaCena) {
+function computeProjectSlotCascoBoxes(slot, medirNaCena, semFrentes) {
   const W = Number(slot.width_mm || 0), H = Number(slot.height_mm || 0), D = Number(slot.depth_mm || 0);
   if (!W || !H || !D) return [];
   let parts = null;
   try {
+    // { W, H, D } — NÃO { width_mm, ... }. Pricing.calculatePiece começa com
+    // `const { W, H, D } = dims`, então a forma errada faz W/H/D chegarem
+    // undefined, toda fórmula que use H ou D virar NaN e a função INTEIRA
+    // lançar "Fórmula resultou em valor inválido (divisão por zero?)". O
+    // catch abaixo engolia isso e devolvia [] — em silêncio.
+    //
+    // Consequência (achada só em 2026-08-15, depurando no site publicado):
+    // NENHUMA caixa de casco era devolvida em módulo NENHUM. Era essa a causa
+    // real do "(palpite)" no rodapé do construtor e do módulo nunca aparecer
+    // desenhado atrás do vão — inclusive o toe kick. As duas tentativas
+    // anteriores (silhueta retangular, filtrar por classifyProjectCascoBox)
+    // mexeram no DESENHO, mas a lista já chegava vazia; não tinha o que
+    // desenhar. Os chamadores que sempre funcionaram (buildProjectAssemblies,
+    // photoreal) já passavam { W, H, D } — só os dois do construtor estavam
+    // fora do padrão.
     parts = resolvePiecesForViewer(
-      slot.pieces, { width_mm: W, height_mm: H, depth_mm: D },
+      slot.pieces, { W: W, H: H, D: D },
       slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
     );
   } catch (e) { return []; }
+
+  // semFrentes: tira porta/frente ANTES de medir (2026-08-15). Só o DESENHO
+  // do módulo no construtor pede isso, e o motivo é de desenho mesmo: a porta
+  // cobre a face inteira do módulo e o desenho pinta as caixas em ordem de
+  // profundidade, então ela sairia por ÚLTIMO, preenchida, tapando laterais,
+  // base e toe kick — virando de novo o "retângulo cheio que parece outro
+  // módulo". Quem edita internos está olhando pra DENTRO do móvel; a porta
+  // aqui só atrapalha. Não afeta a dedução da zona interna: quem chama sem
+  // esta flag continua recebendo tudo, e classifyProjectCascoBox já ignorava
+  // 'front' de propósito.
+  if (semFrentes) {
+    parts = (parts || []).filter((p) => (p && p.position_role) !== 'front');
+  }
 
   // Caminho barato: Drilling espelha viewer3d.placePieceInBox e devolve a
   // caixa de cada peça sem criar objeto 3D nenhum. Quem chama pede o caminho
