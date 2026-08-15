@@ -41,6 +41,10 @@
   const SNAP_MM = 50;          // passo do arraste
   const SNAP_ANGULO_GRAUS = 5; // ímã dos múltiplos de 45°
   const MIN_COMPRIMENTO = 200;
+  // Tolerância pra considerar duas pontas "o mesmo canto" — bem menor que o
+  // ímã de aproximação (260mm), porque aqui não é "tá perto, gruda": é "já
+  // ESTAVA encostada, então é o mesmo ponto fisicamente".
+  const TOQUE_TOL = 15;
 
   let estado = null;
 
@@ -63,6 +67,21 @@
   function pontaBPor(s, compMm, anguloGraus) {
     const r = anguloGraus * Math.PI / 180;
     return { x: s.ax + Math.cos(r) * compMm, z: s.az - Math.sin(r) * compMm };
+  }
+  // Quando a ponta de UMA parede está encostada na ponta de outra (dentro de
+  // TOQUE_TOL), as duas representam o MESMO canto físico — só que guardadas
+  // como dois números independentes. Esticar ou girar pela ponta idx sem
+  // avisar a outra parede deixa ela pra trás: o canto "descola" e vira uma
+  // fresta que some da planta e bugava os módulos ali (relatado pelo Matt em
+  // 2026-08-14). Esta função acha quem estava encostado no ponto ANTIGO e
+  // arrasta junto pro ponto NOVO — o mesmo gesto de puxar um canto de verdade.
+  function arrastaCantoJunto(idx, oldX, oldZ, newX, newZ) {
+    if (!estado) return;
+    estado.segs.forEach((o, j) => {
+      if (j === idx) return;
+      if (Math.hypot(o.ax - oldX, o.az - oldZ) <= TOQUE_TOL) { o.ax = Math.round(newX); o.az = Math.round(newZ); }
+      if (Math.hypot(o.bx - oldX, o.bz - oldZ) <= TOQUE_TOL) { o.bx = Math.round(newX); o.bz = Math.round(newZ); }
+    });
   }
 
   // ------------------------------------------------------------------------
@@ -230,7 +249,9 @@
     const comp = Math.max(MIN_COMPRIMENTO, Number(q('po-wall-comp').value) || comprimentoDe(s));
     const ang = Number(q('po-wall-ang').value);
     const p = pontaBPor(s, comp, isFinite(ang) ? ang : anguloDe(s));
+    const oldBx = s.bx, oldBz = s.bz;
     s.bx = Math.round(p.x); s.bz = Math.round(p.z);
+    arrastaCantoJunto(estado.sel, oldBx, oldBz, s.bx, s.bz);
     s.thicknessMm = Math.max(20, Number(q('po-wall-esp').value) || ESPESSURA_PADRAO);
     // null = "segue o pé-direito do ambiente". Guardar o número igual ao do
     // ambiente congelaria esta parede: mudar o pé-direito depois deixaria ela
@@ -470,8 +491,11 @@
         if (melhor) { x = melhor.x; z = melhor.z; }
       }
       if (Math.hypot(x - ox, z - oz) < MIN_COMPRIMENTO) return;
+      const oldX = qual === 'a' ? s.ax : s.bx;
+      const oldZ = qual === 'a' ? s.az : s.bz;
       if (qual === 'a') { s.ax = Math.round(x); s.az = Math.round(z); }
       else { s.bx = Math.round(x); s.bz = Math.round(z); }
+      arrastaCantoJunto(idx, oldX, oldZ, qual === 'a' ? s.ax : s.bx, qual === 'a' ? s.az : s.bz);
       desenha();
     };
     const soltar = () => {

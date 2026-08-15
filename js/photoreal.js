@@ -459,12 +459,13 @@ const Photoreal = (() => {
         const group = buildAssembly(m.parts, widthMod, heightMod, depthMod, true);
         const floorHeightM = (m.floor_height_mm || 0) / 1000;
         const alongOffset = (m.x_mm || 0) / 1000 + widthMod / 2;
-        // wallHung: mesma intenção do bbox.min.y do viewer (módulo aéreo não
-        // recua pelo baseboard) — aqui aproximado por floor_height, que é o
-        // que define módulo aéreo na aba Projetos.
-        const wallHung = floorHeightM > baseH + 0.001;
-        const zOffset = (baseH > 0 && !wallHung) ? BASEBOARD_DEPTH_M : 0;
-        const depthOffset = depthMod / 2 + zOffset + (Number(m.z_order) || 0) * FREEFORM_DEPTH_STEP_M;
+        // Sem recuo de rodapé (2026-08-15) — a regra que empurrava o módulo de
+        // CHÃO pra frente pela espessura do baseboard foi eliminada do sistema
+        // inteiro a pedido do Matt ("nao pode afastar de lugar nenhum"). Este
+        // arquivo é porta fiel de renderFreeformWalls (viewer3d_composition.js),
+        // então acompanha: qualquer divergência aqui faria a foto realista sair
+        // com o móvel em posição diferente da vista 3D.
+        const depthOffset = depthMod / 2 + (Number(m.z_order) || 0) * FREEFORM_DEPTH_STEP_M;
 
         group.rotation.y = rotY;
         group.position.set(

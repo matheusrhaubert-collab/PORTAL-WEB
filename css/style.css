@@ -1230,6 +1230,24 @@ body.portal-page.proj-fullbleed .po-support-footer { max-width: none; }
    dos ~24px do padrão, tudo que sobra vai pro canvas. */
 body.portal-page.proj-fullbleed #po-tab-projects > section.panel { padding: 16px; }
 
+/* ---- TELA CHEIA DE VERDADE (2026-08-14) ----
+   .proj-fullbleed acima só solta a largura; a barra do navegador e o topo do
+   portal continuavam comendo altura. Esta classe entra junto com o
+   requestFullscreen (setProjectTelaCheia em portal.js) e some com o topo e o
+   rodapé — em fullscreen a navegação por abas não faz sentido mesmo, e é
+   altura que vai direto pro desenho (os viewers são vh, então crescem
+   sozinhos). Classe separada de propósito: sair do fullscreen pelo Esc não
+   pode deixar o portal sem menu, e o fullscreenchange tira só esta.
+   O :fullscreen do documento NÃO é usado como seletor — Safari mais velho do
+   iPad (esta tela roda em iPad) não entrega o pseudo-classe no <html> de
+   forma confiável, e iPhone não tem Fullscreen API nenhuma. */
+body.portal-page.proj-tela-cheia header.po-topnav { display: none; }
+body.portal-page.proj-tela-cheia .po-support-footer { display: none; }
+body.portal-page.proj-tela-cheia main { padding-top: 8px; }
+/* Ícone do botão: as duas setas viram "encolher" enquanto está em tela cheia. */
+body.portal-page.proj-tela-cheia #po-proj-fullscreen-btn .po-fs-abrir { display: none; }
+body.portal-page.proj-tela-cheia #po-proj-fullscreen-btn .po-fs-fechar { display: inline; }
+
 /* ---------- Nav superior ---------- */
 
 header.po-topnav {

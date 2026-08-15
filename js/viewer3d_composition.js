@@ -897,19 +897,15 @@ function createViewerComposition3D() {
       // não importa a profundidade dele — módulos rasos/fundos ficam com a
       // mesma parede de trás, como no uso real.
       //
-      // Com ambiente (room): regra do baseboard pedida pelo usuário — móvel
-      // SUSPENSO na parede (nada dele abaixo da altura do baseboard, medido
-      // pelo bounding box real das peças, já considerando floor_height_m
-      // acima) fica flush na parede e o baseboard continua aparecendo
-      // embaixo dele; móvel NO CHÃO fica NA FRENTE do baseboard (recuado a
-      // espessura dele), tapando-o como na vida real.
-      let zOffset = 0;
-      if (room && room.baseboard_h_m > 0) {
-        const bbox = new THREE.Box3().setFromObject(a.group);
-        const wallHung = bbox.min.y > room.baseboard_h_m + 0.001;
-        zOffset = wallHung ? 0 : BASEBOARD_DEPTH_M;
-      }
-      a.group.position.z = a.depth_m / 2 + zOffset;
+      // NADA AFASTA O MÓVEL DA PAREDE (2026-08-15, Matt: "nao pode afastar de
+      // lugar nenhum. se tiver alguma regra de rodape, jogar pra frente, pode
+      // eliminar tudo isso"). Existia aqui uma regra que recuava o móvel de
+      // CHÃO pela espessura do rodapé (BASEBOARD_DEPTH_M) pra ele "tapar" o
+      // rodapé como na vida real. Na prática, num projeto de marcenaria o
+      // móvel é instalado rente à parede (o rodapé é recortado, não
+      // contornado), e o recuo só aparecia como um vão errado entre o móvel e
+      // a parede. Removida nos três renderers + photoreal.js.
+      a.group.position.z = a.depth_m / 2;
       scene.add(a.group);
       currentGroups.push(a.group);
       if (Array.isArray(a.openables) && a.openables.length) {
@@ -1012,14 +1008,10 @@ function createViewerComposition3D() {
     list.forEach((a) => {
       a.group.position.x = -totalWidth / 2 + Number(a.x_m || 0) + a.width_m / 2;
       a.group.position.y = a.floor_height_m || 0;
-      let zOffset = 0;
-      if (room && room.baseboard_h_m > 0) {
-        const bbox = new THREE.Box3().setFromObject(a.group);
-        const wallHung = bbox.min.y > room.baseboard_h_m + 0.001;
-        zOffset = wallHung ? 0 : BASEBOARD_DEPTH_M;
-      }
+      // Sem recuo de rodapé — ver comentário em placeOne() acima (2026-08-15:
+      // nada afasta o móvel da parede).
       const layerZ = Number(a.z_order || 0) * FREEFORM_DEPTH_STEP_M;
-      a.group.position.z = a.depth_m / 2 + zOffset + layerZ;
+      a.group.position.z = a.depth_m / 2 + layerZ;
       scene.add(a.group);
       currentGroups.push(a.group);
       if (Array.isArray(a.openables) && a.openables.length) {
@@ -1105,19 +1097,26 @@ function createViewerComposition3D() {
 
       list.forEach((a) => {
         const alongOffset = Number(a.x_m || 0) + a.width_m / 2;
-        let zOffset = 0;
-        if (room && room.baseboard_h_m > 0) {
-          const bbox = new THREE.Box3().setFromObject(a.group);
-          const wallHung = bbox.min.y > room.baseboard_h_m + 0.001;
-          zOffset = wallHung ? 0 : BASEBOARD_DEPTH_M;
-        }
-        const layerDepth = Number(a.z_order || 0) * FREEFORM_DEPTH_STEP_M;
-        const depthOffset = a.depth_m / 2 + zOffset + layerDepth;
-
+        // NADA AFASTA O MÓVEL DA PAREDE (2026-08-15, Matt: "movel afasta da
+        // parede ainda ... nao pode afastar de lugar nenhum. se tiver alguma
+        // regra de rodape, jogar pra frente, pode eliminar tudo isso").
+        //
+        // Havia aqui um recuo pela espessura do rodapé (BASEBOARD_DEPTH_M) pra
+        // móvel de CHÃO — a 1ª tentativa de corrigir o afastamento foi só
+        // arrumar a ORDEM (setar Y antes de medir o bbox que decidia
+        // "suspenso vs. no chão"), mas o recuo continuava existindo pra todo
+        // móvel de chão, que é o caso normal. Agora a regra saiu inteira: o
+        // fundo do módulo cai exatamente na face da parede, sempre.
+        // Removida também em placeOne()/renderFreeform() acima e em
+        // photoreal.js. O rodapé continua sendo DESENHADO no ambiente; ele só
+        // não empurra mais ninguém.
         a.group.rotation.y = rotY;
+        a.group.position.y = a.floor_height_m || 0;
+        const layerDepth = Number(a.z_order || 0) * FREEFORM_DEPTH_STEP_M;
+        const depthOffset = a.depth_m / 2 + layerDepth;
+
         a.group.position.x = ox + ax * alongOffset + ix * depthOffset;
         a.group.position.z = oz + az * alongOffset + iz * depthOffset;
-        a.group.position.y = a.floor_height_m || 0;
 
         // Marca de onde este assembly veio (pedido do usuário 2026-07-26:
         // "quero ver os modulos em 3d... preciso passar o modulo de uma

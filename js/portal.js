@@ -9953,8 +9953,23 @@ function getProjectWallCount() { return getProjectWallRoles().length; }
 
 // wallIndex omitido = parede ATIVA (mantém 100% compatível com todo
 // call-site antigo de antes desta funcionalidade, que só conhecia 1 parede).
+//
+// PAREDE DESENHADA VENCE (2026-08-14). Esta função nunca soube que
+// projectWallSegments existe — sempre voltou o número travado em
+// projectWallWidthsMm, que só o sistema antigo (single/double/U) escreve.
+// Desde a "Ajustar paredes" (2026-08-13) o comprimento de verdade é o das
+// pontas do segmento (ax/az/bx/bz), e esticar uma parede lá não atualiza
+// projectWallWidthsMm nenhuma — quem chamava getProjectWallWidthMm (clamp de
+// módulo, posição-padrão, ímã) continuava lendo o comprimento de ANTES do
+// esticamento. Resultado: o módulo parava curto do canto de verdade, um
+// "buraco invisível" (bug do Matt, 2026-08-14) sem nada de errado visível na
+// parede em si — só na conta de até onde o módulo podia ir.
 function getProjectWallWidthMm(wallIndex) {
   const idx = (typeof wallIndex === 'number') ? wallIndex : projectActiveWallIndex;
+  if (projectWallSegments.length) {
+    const seg = projectWallSegments[idx];
+    if (seg) return Math.hypot(seg.bx - seg.ax, seg.bz - seg.az);
+  }
   return projectWallWidthsMm[idx] || PROJECT_WALL_WIDTH_DEFAULT_MM;
 }
 
@@ -10379,12 +10394,87 @@ function setProjectFullBleed(on) {
   const jaEstava = document.body.classList.contains('proj-fullbleed');
   if (jaEstava === !!on) return;
   document.body.classList.toggle('proj-fullbleed', !!on);
+  // Saindo da aba: derruba a tela cheia junto (ver toggleProjectTelaCheia
+  // abaixo). O topo do portal fica ESCONDIDO enquanto ela está ligada — sair
+  // pra "Meus Pedidos" e achar a tela sem menu nenhum seria um beco sem saída.
+  if (!on) {
+    if (document.body.classList.contains('proj-tela-cheia')) {
+      const sair = document.exitFullscreen || document.webkitExitFullscreen;
+      if (sair && (document.fullscreenElement || document.webkitFullscreenElement)) {
+        try { sair.call(document); } catch (e) { /* o listener limpa a classe */ }
+      }
+      document.body.classList.remove('proj-tela-cheia'); // caso do fallback sem Fullscreen API (iPad)
+    }
+  }
   // Mesma razão do setTimeout em toggleProjectColumn: os viewers 3D leem
   // clientWidth/clientHeight do container, e o layout novo só existe no
   // próximo tick. O 'resize' avisa quem já escuta a janela
   // (ViewerProject/ViewerProjectEdit/Viewer3D) sem referência direta daqui.
   setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
 }
+
+// TELA CHEIA DE VERDADE da aba Projetos (pedido do Matt 2026-08-14: "um botão
+// na barra que expande a tela de projetos pra frente inclusive da barra do
+// navegador"). O .proj-fullbleed de cima só solta a largura do <main>; quem
+// come altura é a barra do navegador + o topo do portal. Aqui é a Fullscreen
+// API de verdade.
+//
+// Fullscreen no documentElement, NÃO no painel da aba: elemento em fullscreen
+// vira o topo da pilha de renderização e TUDO que está fora dele some — os
+// modais do portal (Buscar, Gerar com IA, editor de paredes em iframe) são
+// filhos do <body>, e em fullscreen do painel eles ficariam invisíveis com o
+// clique valendo mesmo assim. Com o documento inteiro, nada muda de contexto.
+//
+// A classe no <body> é separada do fullscreen real de propósito: quem sai pelo
+// Esc (o navegador faz sozinho, sem passar por este clique) precisa ver o menu
+// voltar — daí o listener de fullscreenchange ser a ÚNICA fonte da verdade da
+// classe. Nunca ligar/desligar a classe direto no clique.
+function projectFullscreenAtivo() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+async function toggleProjectTelaCheia() {
+  try {
+    if (projectFullscreenAtivo()) {
+      const sair = document.exitFullscreen || document.webkitExitFullscreen;
+      if (sair) await sair.call(document);
+      return;
+    }
+    const el = document.documentElement;
+    const pedir = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!pedir) {
+      // iPhone/iPad em Safari não tem Fullscreen API no documento. Sem ela,
+      // pelo menos esconde topo/rodapé (ganha ~130px de altura) — o navegador
+      // continua aparecendo, mas o botão não pode virar um clique morto.
+      // Aqui a classe é ligada na mão porque não vai existir fullscreenchange.
+      document.body.classList.toggle('proj-tela-cheia');
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+      return;
+    }
+    await pedir.call(el);
+  } catch (e) {
+    // Navegador pode recusar (política de gesto do usuário, iframe sem
+    // allow="fullscreen"). Não vale quebrar a aba por causa disso.
+  }
+}
+
+(function attachProjectTelaCheia() {
+  const btn = document.getElementById('po-proj-fullscreen-btn');
+  if (btn) btn.addEventListener('click', toggleProjectTelaCheia);
+  const sincroniza = () => {
+    const on = projectFullscreenAtivo();
+    document.body.classList.toggle('proj-tela-cheia', on);
+    if (btn) {
+      btn.classList.toggle('active', on);
+      btn.title = I18n.t(on ? 'project.fullscreen_exit_title' : 'project.fullscreen_title');
+    }
+    // Mesma razão do setTimeout em setProjectFullBleed: os viewers 3D leem o
+    // tamanho do container, que só existe no próximo layout.
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+  };
+  document.addEventListener('fullscreenchange', sincroniza);
+  document.addEventListener('webkitfullscreenchange', sincroniza);
+})();
 
 (function attachProjectColumnToggles() {
   const libBtn = document.getElementById('po-proj-lib-toggle');
@@ -14751,7 +14841,8 @@ if (projSlotRemoveBtn) {
 // module_components. Ver docs/internos-como-modulos-no-projeto.md.
 let projectBuilderSlotId = null;
 let projectBuilderZone = null;      // { x, y, z, w, h, d } em mm, no módulo
-let projectBuilderCasco = [];       // caixas do casco — contexto cinza, não editável
+let projectBuilderCasco = [];       // caixas do casco — só pra DEDUZIR a zona interna
+let projectBuilderDesenho = [];     // TODAS as peças — o desenho fiel do módulo no fundo
 let projectBuilderRoot = null;      // árvore de vãos (nó do LayoutEngine)
 let projectBuilderCat = {};         // catálogo de agregados, keyed por accessory_type_id
 let projectBuilderWhite = {};       // module_accessory_options, keyed pelo mesmo id
@@ -14765,7 +14856,12 @@ let projectBuilderLoadError = null; // erro do banco, mostrado no lugar da lista
 // do construtor — diagnóstico no lugar onde a pessoa já está olhando, em vez
 // de só no console.
 let projectBuilderZoneDiag = null;
-const PROJECT_BUILDER_ESPESSURA = 18;
+// 19.5mm (2026-08-15, pedido do Matt): era 18 — combinado antes como 20mm,
+// agora fixado em 19.5mm pros componentes principais (ver migration 101,
+// que corrige o catálogo pra bater com este número). Só entra quando o
+// agregado não tem thickness_formula próprio (ver projectBuilderAccessoryEntry
+// mais abaixo — isFinite(esp) && esp > 0 ? esp : PROJECT_BUILDER_ESPESSURA).
+const PROJECT_BUILDER_ESPESSURA = 19.5;
 const PROJECT_BUILDER_FOLGA_DOB = 2;
 const PROJECT_BUILDER_MIN_VAO = 40;
 const PROJECT_BUILDER_PASSO = 5;    // passo do arrasto de divisória, em mm
@@ -14784,6 +14880,22 @@ async function openProjectModuleBuilder(slotId) {
   projectBuilderSlotId = slotId;
   projectBuilderZone = computeProjectSlotInnerZone(slot);
   projectBuilderCasco = computeProjectSlotCascoBoxes(slot);
+  // Desenho FIEL do módulo, separado do casco (2026-08-15). São dois usos
+  // diferentes das mesmas peças e por isso duas listas:
+  //   projectBuilderCasco   -> DEDUZIR a zona interna. Só interessa lateral/
+  //                            topo/base/fundo, e Drilling basta.
+  //   projectBuilderDesenho -> DESENHAR o módulo atrás do vão. Aqui interessa
+  //                            TUDO: toe kick, pé, frente, travessa. Matt:
+  //                            "no construtor ainda nao aparece o modulo
+  //                            certo, com rodape se tem rodape".
+  // Medir na cena devolve TODA malha desenhada (não só os position_role que
+  // o Drilling conhece), que é o que "fiel" quer dizer. Cai pro Drilling se
+  // o 3D não estiver disponível. Roda uma vez por abertura, não a cada
+  // clique — renderProjectBuilderStage só lê a lista pronta.
+  projectBuilderDesenho = computeProjectSlotCascoBoxes(slot, true);
+  if (!projectBuilderDesenho || !projectBuilderDesenho.length) {
+    projectBuilderDesenho = projectBuilderCasco;
+  }
   projectBuilderCat = {};
   projectBuilderWhite = {};
   projectBuilderUndo = [];
@@ -15497,6 +15609,7 @@ function renderProjectBuilderStage() {
   if (!stage || !slot) return;
   const W = Number(slot.width_mm || 0) || 1;
   const H = Number(slot.height_mm || 0) || 1;
+  const D = Number(slot.depth_mm || 0) || 1;
   stage.innerHTML = '';
 
   // Margem PROPORCIONAL ao módulo, não fixa em mm: 60mm sobra num roupeiro de
@@ -15510,10 +15623,33 @@ function renderProjectBuilderStage() {
   }, stage);
   const sy = (y, h) => H - y - (h || 0);
 
-  // ---- casco: contexto, não é editável aqui
-  const gC = projBuilderSvgEl('g', { 'pointer-events': 'none' }, svg);
-  projectBuilderCasco.slice().sort((a, b) => a.z0 - b.z0).forEach((bx) => {
-    const fundo = bx.role === 'back';
+  // ---- DESENHO FIEL DO MÓDULO, em baixa opacidade, atrás de tudo.
+  //
+  // Pedido do Matt (2026-08-15), em três rodadas até chegar aqui:
+  //   1. "um desenho 2d paralelo frontal do modulo com baixa opacidade... pra
+  //      saber exatamente o que o usuario esta editando"
+  //   2. "peguei com toekick e ta mostrando como se fosse outro modulo atras.
+  //      quero o mesmo modulo / o modulo fiel"
+  //   3. "no construtor ainda nao aparece o modulo certo, com rodape se tem
+  //      rodape"
+  //
+  // As duas primeiras tentativas erraram por motivos OPOSTOS, e é por isso que
+  // o desenho agora é o que é:
+  //   * um RETÂNGULO liso 0,0→W,H: um armário base com toe kick tem recorte
+  //     embaixo, então um retângulo cheio parece mesmo "outro módulo";
+  //   * filtrar por classifyProjectCascoBox: essa função existe pra DEDUZIR a
+  //     zona interna e por isso rejeita de propósito pé, toe kick e frente —
+  //     exatamente as peças que dão a cara do módulo. Filtrar por ela apagava
+  //     o rodapé do desenho.
+  // Agora: TODAS as peças (projectBuilderDesenho, medido na cena — ver
+  // openProjectModuleBuilder), cada uma no seu lugar real. Fundo primeiro
+  // (ordenado por z0) pra peça da frente ficar por cima, igual ao módulo de
+  // verdade visto de frente.
+  const gC = projBuilderSvgEl('g', { 'pointer-events': 'none', opacity: 0.38 }, svg);
+  const desenho = (projectBuilderDesenho && projectBuilderDesenho.length)
+    ? projectBuilderDesenho : projectBuilderCasco;
+  desenho.slice().sort((a, b) => a.z0 - b.z0).forEach((bx) => {
+    const fundo = classifyProjectCascoBox(bx, W, H, D) === 'back';
     projBuilderSvgEl('rect', {
       x: bx.x0, y: sy(bx.y0, bx.sy),
       width: Math.max(bx.sx, 1), height: Math.max(bx.sy, 1),
@@ -15521,6 +15657,19 @@ function renderProjectBuilderStage() {
       stroke: fundo ? '#c9c0b0' : '#8d8375', 'stroke-width': fundo ? sw : sw * 1.4
     }, gC);
   });
+
+  // Contorno externo SÓ como último recurso: quando nenhuma peça foi
+  // reconhecida (módulo sem cadastro utilizável, "vão ... (palpite)" no
+  // rodapé), sem ele não sobraria referência nenhuma de onde o vão editado
+  // fica dentro do móvel. Com peças desenhadas ele só faria uma moldura
+  // sobrando, por isso é um OU, não um sempre.
+  if (!desenho.length) {
+    projBuilderSvgEl('rect', {
+      x: 0, y: sy(0, H), width: W, height: H,
+      fill: 'none', stroke: '#8a6a3f', 'stroke-width': sw * 1.2, 'stroke-opacity': 0.3,
+      'pointer-events': 'none'
+    }, svg);
+  }
 
   const built = projectBuilderBuilt || { pieces: [], voids: [] };
   const gV = projBuilderSvgEl('g', {}, svg);
@@ -19003,16 +19152,29 @@ async function saveProjectFavoriteInner(overwriteId) {
       ...(thumbnailDataUrl ? { thumbnail_data_url: thumbnailDataUrl } : {}),
       ...(cachedValueUsd !== null ? { cached_value_usd: cachedValueUsd } : {})
     };
-    // Roda a operação; se falhar POR CAUSA da coluna nova (migration 076
-    // ainda não rodada no banco), tenta de novo sem ela — salvar projeto
-    // nunca pode quebrar por causa do cache de valor.
+    // Roda a operação; se falhar POR CAUSA de uma coluna que ainda não existe
+    // no banco (migration pendente), TIRA essa coluna do payload e tenta de
+    // novo — uma por vez, até passar. Salvar projeto nunca pode quebrar por
+    // causa de um campo acessório: o essencial (slots + paredes) tem que ir
+    // pro banco mesmo com o schema atrasado. Era só cached_value_usd
+    // (migration 076); em 2026-08-14 o wall_segments (migration 100) caiu no
+    // mesmo buraco e derrubou o salvar inteiro com "Could not find the
+    // 'wall_segments' column of 'user_projects' in the schema cache"
+    // (PGRST204) — daí a lista, em vez de um if por coluna.
+    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url'];
     const runWithCacheFallback = async (op) => {
-      const first = await op(basePayload);
-      if (first.error && /cached_value_usd/i.test(first.error.message || '')) {
-        const { cached_value_usd, ...withoutCache } = basePayload;
-        return op(withoutCache);
+      let payload = basePayload;
+      let res = await op(payload);
+      for (let i = 0; i < OPTIONAL_COLUMNS.length; i++) {
+        if (!res.error) break;
+        const msg = res.error.message || '';
+        const missing = OPTIONAL_COLUMNS.find((c) => (c in payload) && msg.includes(c));
+        if (!missing) break;
+        payload = { ...payload };
+        delete payload[missing];
+        res = await op(payload);
       }
-      return first;
+      return res;
     };
     if (overwriteId) {
       const { error } = await runWithCacheFallback((payload) => supabaseClient
@@ -19144,21 +19306,29 @@ async function loadProjectFavoritesList() {
   errorEl.style.display = 'none';
   listEl.className = 'po-myproj-grid';
   listEl.innerHTML = '';
-  // cached_value_usd = migration 076; se ela ainda não rodou no banco, o
-  // select com a coluna falha — refaz sem ela (todos os cards caem no
-  // recálculo em background de antes, e nada é persistido).
-  let cacheColumnAvailable = true;
-  let { data, error } = await supabaseClient
+  // Colunas de migration recente (076 = cached_value_usd, 100 =
+  // wall_segments): se a migration ainda não rodou no banco, o select com a
+  // coluna falha inteiro. Mesma ideia do salvar: tira a coluna que faltou e
+  // refaz, uma por vez, até a lista carregar. Sem cached_value_usd os cards
+  // caem no recálculo em background de antes; sem wall_segments o projeto
+  // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
+  const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments'];
+  let optional = OPTIONAL_COLS.slice();
+  const runSelect = () => supabaseClient
     .from('user_projects')
-    .select('id, name, slots, wall_width_mm, wall_shape, wall_widths_mm, thumbnail_data_url, ai_preview_url, updated_at, cached_value_usd')
+    .select(BASE_COLS.concat(optional).join(', '))
     .order('updated_at', { ascending: false });
-  if (error && /cached_value_usd/i.test(error.message || '')) {
-    cacheColumnAvailable = false;
-    ({ data, error } = await supabaseClient
-      .from('user_projects')
-      .select('id, name, slots, wall_width_mm, wall_shape, wall_widths_mm, thumbnail_data_url, ai_preview_url, updated_at')
-      .order('updated_at', { ascending: false }));
+  let { data, error } = await runSelect();
+  for (let i = 0; i < OPTIONAL_COLS.length; i++) {
+    if (!error) break;
+    const msg = error.message || '';
+    const missing = optional.find((c) => msg.includes(c));
+    if (!missing) break;
+    optional = optional.filter((c) => c !== missing);
+    ({ data, error } = await runSelect());
   }
+  const cacheColumnAvailable = optional.includes('cached_value_usd');
   if (error) { errorEl.textContent = error.message; errorEl.style.display = 'block'; return; }
   if (!data || data.length === 0) {
     listEl.className = ''; // sem grid pro texto solo de "lista vazia"
