@@ -15763,6 +15763,14 @@ function renderProjectBuilderStage() {
   });
 
   // ---- cotas do vão selecionado (o único texto da tela)
+  //
+  // A COTA É CLICÁVEL (2026-08-15, Matt: "preciso poder colocar os vãos
+  // manualmente também. ao clicar no vão que eu quero, pode ser no desenho
+  // mesmo, usar a medida que eu quero, e continuar usando arrastar também").
+  // Clicar no número abre uma caixinha pra digitar — o arrasto da divisória
+  // continua exatamente como estava, os dois caminhos terminam na MESMA regra
+  // (cravar este vão e o vizinho preservando a soma, ver
+  // applyProjectBuilderVaoSize).
   const nSel = projectBuilderSelNode();
   const bSel = nSel && nSel._box;
   if (bSel) {
@@ -15770,12 +15778,60 @@ function renderProjectBuilderStage() {
       x: bSel.x, y: sy(bSel.y, bSel.h), width: bSel.w, height: bSel.h,
       fill: 'none', stroke: '#e0921f', 'stroke-width': sw * 3, 'pointer-events': 'none'
     }, svg);
+    // Só dá pra digitar a medida do eixo em que o vão foi DIVIDIDO: é esse o
+    // número que tem um vizinho pra ceder espaço. Vão raiz (sem pai) não tem
+    // de quem tirar, então continua só de leitura.
+    const eixoEdit = projectBuilderVaoAxis(nSel);
     const t = projBuilderSvgEl('text', {
       x: bSel.x + bSel.w / 2, y: sy(bSel.y + bSel.h) - fs * 0.35,
       'text-anchor': 'middle', 'font-size': fs * 0.75, fill: '#e0921f',
-      'font-family': 'sans-serif', 'pointer-events': 'none'
+      'font-family': 'sans-serif',
+      'pointer-events': eixoEdit ? 'auto' : 'none',
+      style: eixoEdit ? 'cursor:text' : ''
     }, svg);
     t.textContent = Math.round(bSel.w) + ' × ' + Math.round(bSel.h);
+    if (eixoEdit) {
+      // Sublinhado tracejado = "isto se edita". Sem texto explicativo, no
+      // espírito da tela (o rodapé já carrega a dica).
+      projBuilderSvgEl('line', {
+        x1: bSel.x + bSel.w / 2 - fs * 1.6, x2: bSel.x + bSel.w / 2 + fs * 1.6,
+        y1: sy(bSel.y + bSel.h) - fs * 0.1, y2: sy(bSel.y + bSel.h) - fs * 0.1,
+        stroke: '#e0921f', 'stroke-width': sw * 0.9,
+        'stroke-dasharray': (sw * 3) + ' ' + (sw * 3), 'pointer-events': 'none'
+      }, svg);
+      t.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openProjectBuilderSizeInput(t, nSel, eixoEdit);
+      });
+    }
+
+    // ---- ✕ APAGAR ESTE VÃO (2026-08-15, Matt: "uma vez que eu errei um vão,
+    // não consigo deletar depois de salvo. se puder incluir um delete de
+    // interno já salvo"). Clicar na peça pra remover já existia, mas depende
+    // de acertar uma prateleira de 19,5mm — e não resolve "tirei a divisão
+    // errada". Este botão apaga o que está DENTRO do vão selecionado e, se
+    // ele mesmo nasceu de uma divisão, desfaz essa divisão. Funciona igual em
+    // layout recém-montado e em layout já salvo (os dois viram a mesma árvore
+    // em memória — ver openProjectModuleBuilder/LayoutEngine.deserialize).
+    if (!nSel.locked) {
+      const r = Math.max(fs * 0.62, 9);
+      const cx = bSel.x + bSel.w - r * 1.5;
+      const cy = sy(bSel.y + bSel.h) + r * 1.5;
+      const gDel = projBuilderSvgEl('g', { style: 'cursor:pointer' }, svg);
+      projBuilderSvgEl('circle', {
+        cx: cx, cy: cy, r: r, fill: '#fff', stroke: '#b0503c', 'stroke-width': sw * 1.2
+      }, gDel);
+      const d = r * 0.42;
+      projBuilderSvgEl('path', {
+        d: 'M' + (cx - d) + ' ' + (cy - d) + 'L' + (cx + d) + ' ' + (cy + d)
+          + 'M' + (cx + d) + ' ' + (cy - d) + 'L' + (cx - d) + ' ' + (cy + d),
+        stroke: '#b0503c', 'stroke-width': sw * 1.6, 'stroke-linecap': 'round'
+      }, gDel);
+      gDel.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        deleteProjectBuilderVao(nSel);
+      });
+    }
   }
 
   // ---- pegadores das divisórias: arrastar pra mover, clicar pra tirar
@@ -15826,6 +15882,157 @@ function renderProjectBuilderStage() {
       + ' de ' + dg.modulo.join('×') + ' (' + dg.fonte + ')' : '');
   if (dg && (dg.fonte === 'palpite' || Math.round(z.w) >= dg.modulo[0])) dica.style.color = '#b0503c';
   stage.appendChild(dica);
+}
+
+// ==========================================================================
+// MEDIDA DIGITADA + APAGAR VÃO (2026-08-15)
+// ==========================================================================
+// O pai de um nó, que o LayoutEngine não guarda (a árvore só aponta pra
+// baixo). Varredura simples — a árvore de um módulo tem dezenas de nós, não
+// milhares.
+function projectBuilderFindParent(raiz, id) {
+  if (!raiz || !id) return null;
+  let achado = null;
+  (function anda(n) {
+    if (achado || !n || !n.children) return;
+    n.children.forEach((k) => {
+      if (achado) return;
+      if (k.id === id) { achado = n; return; }
+      anda(k);
+    });
+  })(raiz);
+  return achado;
+}
+
+// Em que eixo este vão pode ter a medida digitada: o eixo em que o PAI o
+// dividiu ('x' = largura, 'y' = altura). Null quando não dá — vão raiz (não
+// tem vizinho de quem tirar espaço), pai sem eixo, ou nó travado pela
+// engenharia.
+function projectBuilderVaoAxis(node) {
+  if (!node || node.locked) return null;
+  const pai = projectBuilderFindParent(projectBuilderRoot, node.id);
+  if (!pai || !pai.splitAxis || (pai.children || []).length < 2) return null;
+  return pai.splitAxis === 'x' ? 'x' : 'y';
+}
+
+// A REGRA ÚNICA de mudar o tamanho de um vão — vale pro arrasto da divisória
+// e pra medida digitada. Crava ESTE vão e o VIZINHO preservando a soma dos
+// dois: nenhum outro irmão se mexe e quem estava elástico continua rateando o
+// mesmo espaço. Mesma regra do ERP (CST, input data-kid).
+//
+// O vizinho é o de baixo/direita quando existe; no último filho, o de cima/
+// esquerda. Sem isso, digitar no último vão não teria de quem tirar.
+function applyProjectBuilderVaoSize(node, novoMm) {
+  const eixo = projectBuilderVaoAxis(node);
+  if (!eixo) return false;
+  const pai = projectBuilderFindParent(projectBuilderRoot, node.id);
+  const kids = pai.children || [];
+  const i = kids.indexOf(node);
+  const viz = i < kids.length - 1 ? i + 1 : i - 1;
+  if (i < 0 || viz < 0 || !kids[viz]) return false;
+  const tam = (k) => {
+    const b = k._box;
+    if (!b) return 0;
+    return eixo === 'x' ? b.w : b.h;
+  };
+  const soma = tam(kids[i]) + tam(kids[viz]);
+  const v = Math.max(PROJECT_BUILDER_MIN_VAO,
+    Math.min(soma - PROJECT_BUILDER_MIN_VAO, Math.round(Number(novoMm) || 0)));
+  if (!isFinite(v) || soma <= 0) return false;
+  pushProjectBuilderUndo();
+  kids[i].sizeMode = 'fixed'; kids[i].sizeValue = v;
+  kids[viz].sizeMode = 'fixed'; kids[viz].sizeValue = soma - v;
+  markProjectDirty();
+  rebuildProjectBuilder();
+  return true;
+}
+
+// Caixinha de digitar a medida, ancorada em cima da própria cota do desenho.
+// position:fixed a partir do retângulo de tela do <text> — assim não depende
+// do zoom do SVG nem de o stage ser position:relative.
+function openProjectBuilderSizeInput(textEl, node, eixo) {
+  const antigo = document.getElementById('po-proj-vao-input');
+  if (antigo) antigo.remove();
+  const r = textEl.getBoundingClientRect();
+  const b = node._box || {};
+  const inp = document.createElement('input');
+  inp.id = 'po-proj-vao-input';
+  inp.type = 'number';
+  inp.value = Math.round(eixo === 'x' ? (b.w || 0) : (b.h || 0));
+  inp.style.cssText = 'position:fixed;z-index:10000;width:88px;padding:4px 6px;'
+    + 'font-size:13px;text-align:center;border:2px solid #e0921f;border-radius:6px;'
+    + 'background:#fff;color:#7a4d0d;outline:none;'
+    + 'left:' + Math.round(r.left + r.width / 2 - 44) + 'px;'
+    + 'top:' + Math.round(r.top - 6) + 'px;';
+  document.body.appendChild(inp);
+  inp.focus();
+  inp.select();
+  let fechado = false;
+  const fechar = (aplicar) => {
+    if (fechado) return;
+    fechado = true;
+    const v = Number(inp.value);
+    inp.remove();
+    if (aplicar && isFinite(v) && v > 0) applyProjectBuilderVaoSize(node, v);
+  };
+  inp.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') { ev.preventDefault(); fechar(true); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); fechar(false); }
+  });
+  // Enter/Escape resolvem; sair do campo aplica também (é o que a pessoa
+  // espera depois de digitar e clicar fora).
+  inp.addEventListener('blur', () => fechar(true));
+}
+
+// APAGAR O VÃO SELECIONADO — o "delete de interno já salvo" que faltava.
+//
+// Duas camadas, nesta ordem, porque são dois erros diferentes:
+//   1. o vão TEM conteúdo/frente dentro dele -> esvazia só o conteúdo e
+//      mantém o vão (o cliente errou a peça, não a divisão);
+//   2. o vão está vazio -> aí o erro foi a DIVISÃO que o criou, então ele é
+//      fundido de volta (mesma regra de removeProjectBuilderPiece: com mais
+//      de 2 irmãos some só este e o anterior volta a ser elástico; com 2, a
+//      divisão inteira acaba).
+// Assim um clique só nunca destrói mais do que o necessário, e repetir o
+// clique vai desfazendo camada por camada — tudo reversível pelo ↶.
+function deleteProjectBuilderVao(node) {
+  if (!node || node.locked) return;
+  const temConteudo = !!node.content || ((node.fronts || []).length > 0);
+  if (temConteudo) {
+    pushProjectBuilderUndo();
+    if (node.content) LayoutEngine.clearNode(node, 'content');
+    if ((node.fronts || []).length) LayoutEngine.clearNode(node, 'front');
+    markProjectDirty();
+    rebuildProjectBuilder();
+    return;
+  }
+  // Vão vazio que ainda divide outros: desfaz a divisão DELE primeiro.
+  if ((node.children || []).length) {
+    pushProjectBuilderUndo();
+    LayoutEngine.clearNode(node, 'split');
+    projectBuilderSelId = node.id;
+    markProjectDirty();
+    rebuildProjectBuilder();
+    return;
+  }
+  const pai = projectBuilderFindParent(projectBuilderRoot, node.id);
+  if (!pai || pai.locked) return;
+  const kids = pai.children || [];
+  const i = kids.indexOf(node);
+  if (i < 0) return;
+  pushProjectBuilderUndo();
+  if (kids.length > 2) {
+    const sobra = kids[i === 0 ? 1 : i - 1];
+    kids.splice(i, 1);
+    if (sobra) { sobra.sizeMode = 'fill'; sobra.sizeValue = null; }
+    projectBuilderSelId = (sobra || pai).id;
+  } else {
+    LayoutEngine.clearNode(pai, 'split');
+    projectBuilderSelId = pai.id;
+  }
+  markProjectDirty();
+  rebuildProjectBuilder();
 }
 
 // Arrastar divisória = cravar o tamanho dos DOIS vãos vizinhos preservando a
