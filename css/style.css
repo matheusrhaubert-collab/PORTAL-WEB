@@ -3054,52 +3054,144 @@ header.po-topnav {
   background: #faf9f6; display: block;
   padding: 18px; overflow: hidden;
 }
+/* ==========================================================================
+   PAINEL DE COMPONENTES (coluna direita do construtor) — 2026-08-16
+   ==========================================================================
+   Redesenho pedido pelo Matt ("na parte direita da pra melhorar muito"), a
+   partir de um mockup: cabeçalho com título e subtítulo, campo de busca,
+   chips de filtro por grupo, GRID de 2 colunas com o desenho da peça grande,
+   e um rodapé com o contador e o "Limpar módulo".
+
+   A coluna virou um LAYOUT DE TRÊS FAIXAS (head / grid rolável / foot). Isso
+   é o que permite a busca e os chips ficarem SEMPRE visíveis enquanto a lista
+   rola — antes a coluna inteira era um único bloco com overflow-y.
+   O grid é 2 colunas porque o desenho da peça é o que identifica o
+   componente (ver .po-proj-builder-item-icon svg): numa lista de uma coluna
+   o ícone precisaria ser pequeno de novo, que é justamente o problema que o
+   card em grade resolve. */
 .po-proj-builder-lib {
-  flex: 0 0 190px; border-left: 1px solid var(--border);
-  padding: 10px; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 8px;
+  flex: 0 0 300px; border-left: 1px solid var(--border);
+  padding: 0; overflow: hidden;
+  display: flex; flex-direction: column; min-height: 0;
   background: var(--panel);
 }
-/* Peça da biblioteca: ícone desenhado + nome, e embaixo a fileira de
-   quantidades (só nas peças em que quantidade faz sentido — ver
-   projectBuilderAceitaQtd). */
-.po-proj-builder-item {
-  display: flex; flex-direction: column; gap: 6px;
+
+/* ---- Faixa 1: cabeçalho fixo (título, busca, filtros) ---- */
+.po-proj-lib-head { flex: none; padding: 14px 14px 10px; }
+.po-proj-lib-title { font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.2; }
+.po-proj-lib-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+.po-proj-lib-search { position: relative; margin-top: 12px; }
+.po-proj-lib-search input {
+  width: 100%; box-sizing: border-box;
   border: 1px solid var(--border); border-radius: 10px;
-  padding: 8px 10px; background: #fff; cursor: grab;
-  font-size: 12px; font-weight: 600; color: var(--text);
-  user-select: none; touch-action: none;
+  background: #fff; padding: 9px 32px 9px 12px;
+  font-size: 12.5px; color: var(--text); font-family: inherit;
 }
-.po-proj-builder-item-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.po-proj-builder-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.po-proj-builder-item:hover { border-color: var(--accent); background: var(--accent-light); }
+.po-proj-lib-search input:focus { outline: none; border-color: var(--accent); }
+.po-proj-lib-search svg {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--muted); pointer-events: none;
+}
+
+/* Chips de filtro: "Todos" + um por GRUPO do catálogo (não é lista fixa — o
+   grupo vem do cadastro, então a barra acompanha o que a fábrica cadastrar). */
+.po-proj-lib-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.po-proj-lib-chip {
+  border: 1px solid var(--border); background: #fff; border-radius: 999px;
+  padding: 4px 10px; font-size: 10.5px; font-weight: 600; color: var(--muted);
+  cursor: pointer; white-space: nowrap; font-family: inherit; line-height: 1.25;
+}
+.po-proj-lib-chip:hover { border-color: var(--accent); color: var(--accent); }
+.po-proj-lib-chip.active {
+  background: var(--text); border-color: var(--text); color: #fff;
+}
+
+/* ---- Faixa 2: o grid rolável ---- */
+.po-proj-lib-grid {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 4px 14px 14px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px; align-content: start;
+}
+.po-proj-lib-grid::-webkit-scrollbar { width: 8px; }
+.po-proj-lib-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* Título de grupo: ocupa a linha inteira do grid. */
+.po-proj-builder-group {
+  grid-column: 1 / -1;
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--muted); margin-top: 4px;
+}
+.po-proj-lib-empty {
+  grid-column: 1 / -1; text-align: center;
+  font-size: 12px; color: var(--muted); padding: 20px 6px; line-height: 1.5;
+}
+
+/* ---- O card da peça ---- */
+/* Vertical e centralizado: desenho grande em cima, nome embaixo, ação por
+   último. O card INTEIRO continua sendo o alvo do clique (bom pro dedo no
+   iPad) — o ⊕ é só a afordância visual de "isto entra no vão". */
+.po-proj-builder-item {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 8px 10px; background: #fff; cursor: grab;
+  font-size: 11.5px; font-weight: 600; color: var(--text);
+  text-align: center; user-select: none; touch-action: none;
+  transition: border-color .12s, box-shadow .12s, transform .12s;
+}
+.po-proj-builder-item:hover {
+  border-color: var(--accent); background: #fff;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.07); transform: translateY(-1px);
+}
 .po-proj-builder-item.dragging { opacity: 0.5; }
+/* Nome em até 2 linhas — "Prateleira fixa" não cabe numa linha de 130px. */
+.po-proj-builder-item-name {
+  line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; word-break: break-word;
+}
 /* O SVG herda a cor do card (currentColor), inclusive no hover. */
 .po-proj-builder-item-icon { flex: none; line-height: 0; color: var(--muted); }
-/* 34px, era 22 (2026-08-15, Matt: "quero ver o desenho de cada componente").
-   Em 22px o desenho da peça virava um borrão e não dava pra distinguir
-   prateleira de divisória de porta — que é justamente pra isso que os ícones
-   deixaram de ser caractere e viraram SVG. */
-.po-proj-builder-item-icon svg { width: 34px; height: 34px; display: block; }
+/* 56px, era 34 (2026-08-16). O card em grade tem espaço vertical de sobra e o
+   desenho é o que faz reconhecer a peça sem ler o nome. */
+/* stroke-width no CSS vence o atributo do <svg> (que é 1.4 num viewBox de 22).
+   Em 56px aquele 1.4 vira um traço de ~3.6px — o desenho fica pesado e as
+   linhas internas quase se encostam. 0.9 dá ~2.3px, a mesma leveza que o
+   ícone tinha em 34px. */
+.po-proj-builder-item-icon svg { width: 50px; height: 50px; display: block; stroke-width: 0.95; }
 .po-proj-builder-item:hover .po-proj-builder-item-icon { color: var(--accent); }
-/* Quantidade: clicar no número JÁ insere naquela quantidade (vãos iguais). */
+
+/* ⊕ das peças SEM quantidade. Quem aceita quantidade mostra o stepper no
+   lugar dele (ver .po-proj-builder-qty) — dois controles no mesmo card
+   confundiriam qual deles insere. */
+.po-proj-lib-add {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1.5px solid var(--accent); background: #fff; color: var(--accent);
+  font-size: 15px; line-height: 1; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: inherit;
+}
+.po-proj-builder-item:hover .po-proj-lib-add { background: var(--accent); color: #fff; }
+
 /* Quantidade: caixa compacta com setas (2026-08-15). Substituiu a fileira de
-   botões numerados — com o limite em 10 ela não cabia mais na coluna. */
+   botões numerados — com o limite em 10 ela não cabia mais na coluna.
+   Clicar no card insere naquela quantidade; as setas ajustam ao vivo. */
 .po-proj-builder-qty {
-  display: inline-flex; align-items: center; align-self: flex-start;
-  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  display: inline-flex; align-items: center; align-self: center;
+  border: 1px solid var(--border); border-radius: 999px; overflow: hidden;
   background: #fff;
 }
 .po-proj-qty-step {
   border: none; background: transparent; cursor: pointer;
-  width: 24px; height: 24px; line-height: 1; font-size: 14px;
-  color: var(--muted); padding: 0;
+  width: 22px; height: 22px; line-height: 1; font-size: 13px;
+  color: var(--muted); padding: 0; font-family: inherit;
 }
 .po-proj-qty-step:hover { background: var(--accent-light); color: var(--accent); }
 .po-proj-qty-val {
-  min-width: 22px; text-align: center; font-size: 12px;
+  min-width: 20px; text-align: center; font-size: 11.5px; font-weight: 700;
   border-left: 1px solid var(--border); border-right: 1px solid var(--border);
-  line-height: 24px;
+  line-height: 22px;
 }
 .po-proj-qty-btn {
   flex: 1; border: 1px solid var(--border); background: #fff; border-radius: 6px;
@@ -3107,10 +3199,26 @@ header.po-topnav {
   cursor: pointer; line-height: 1.2;
 }
 .po-proj-qty-btn:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
-.po-proj-builder-group {
-  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--muted); margin-top: 6px;
+
+/* ---- Faixa 3: rodapé (contador + limpar) ---- */
+.po-proj-lib-foot {
+  flex: none; border-top: 1px solid var(--border);
+  padding: 9px 14px; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px;
+  font-size: 11px; color: var(--muted); background: var(--panel);
 }
+.po-proj-lib-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Mesma ação do ↺ do cabeçalho (resetProjectBuilder) — aqui com nome, porque
+   no rodapé sobra largura e "recomeçar do zero" é destrutivo o bastante pra
+   não merecer só um ícone. */
+.po-proj-lib-clear {
+  flex: none; border: 1px solid var(--border); background: #fff;
+  border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 600;
+  color: var(--text); cursor: pointer; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 5px; line-height: 1;
+}
+.po-proj-lib-clear svg { width: 12px; height: 12px; }
+.po-proj-lib-clear:hover { border-color: #d8442f; color: #d8442f; }
 /* Barra do cabeçalho: desfazer e recomeçar. Só ícone — a tela inteira é
    "sem texto" por pedido do Matt. */
 .po-proj-builder-tools { display: flex; align-items: center; gap: 6px; }

@@ -15082,6 +15082,11 @@ let projectBuilderZoneDiag = null;
 //     cravado porque inserir move a seleção pro primeiro filho; sem isso, o
 //     2º clique dividiria o filho em vez de refazer a divisão do mesmo vão.
 let projectBuilderQtd = {};
+// Busca e filtro do painel de componentes (2026-08-16). Vivem FORA do render
+// porque o painel se redesenha a cada clique em vão (a lista muda: só entra o
+// que cabe), e perder o que a pessoa digitou a cada clique seria insuportável.
+let projectBuilderLibQuery = '';
+let projectBuilderLibGroup = '';   // '' = Todos
 let projectBuilderQtdAlvo = {};
 // SELEÇÃO DE VÁRIOS VÃOS (2026-08-15, Matt: "se eu colocar uma divisória e
 // várias prateleiras e quiser colocar uma porta única no vão, preciso clicar
@@ -15152,6 +15157,10 @@ async function openProjectModuleBuilder(slotId) {
   }
 
   projectBuilderSlotId = slotId;
+  // Busca/filtro do painel são de UMA sessão de edição — abrir outro módulo
+  // com "porta" ainda digitado esconderia metade do catálogo sem explicação.
+  projectBuilderLibQuery = '';
+  projectBuilderLibGroup = '';
   projectBuilderZone = computeProjectSlotInnerZone(slot);
   projectBuilderCasco = computeProjectSlotCascoBoxes(slot);
   // Desenho FIEL do módulo, separado do casco (2026-08-15). São dois usos
@@ -15832,10 +15841,91 @@ function projectBuilderSelBox() {
 // parecer inteligente (spec §4.2) — cabide não aparece em nicho de 200mm, e o
 // mínimo efetivo é o MAIOR entre o do catálogo e o do módulo. Quem decide é
 // LayoutEngine.cabeNoVao, a mesma função que o ERP usa.
+const PROJ_LIB_ICON_SEARCH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+  + ' stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>';
+const PROJ_LIB_ICON_TRASH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+  + ' stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/>'
+  + '<path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/></svg>';
+
+// Esqueleto do painel: cabeçalho (título, busca, chips) + grid + rodapé.
+// Montado UMA VEZ por janela e reaproveitado — se ele fosse refeito junto com
+// a lista, o campo de busca perderia o foco a cada letra digitada (o render da
+// lista roda a cada tecla) e o filtro seria inutilizável no teclado.
+function ensureProjectBuilderLibShell(el) {
+  // O esqueleto guarda o IDIOMA em que foi escrito: os textos dele são
+  // traduzidos na montagem (não têm data-i18n), então trocar de idioma com a
+  // janela fechada deixaria "Componentes" em português numa tela em inglês.
+  const lang = (typeof I18n !== 'undefined' && I18n.getLanguage && I18n.getLanguage()) || '';
+  if (el.dataset.shell === '1' && el.dataset.shellLang === lang) return;
+  el.dataset.shell = '1';
+  el.dataset.shellLang = lang;
+  el.innerHTML =
+    '<div class="po-proj-lib-head">'
+    + '<div class="po-proj-lib-title">' + escapeHtmlCutlist(I18n.t('project.builder_lib_title')) + '</div>'
+    + '<div class="po-proj-lib-sub">' + escapeHtmlCutlist(I18n.t('project.builder_lib_sub')) + '</div>'
+    + '<div class="po-proj-lib-search">'
+    + '<input type="text" id="po-proj-lib-search" autocomplete="off" placeholder="'
+    + escapeHtmlCutlist(I18n.t('project.builder_search')) + '">'
+    + PROJ_LIB_ICON_SEARCH
+    + '</div>'
+    + '<div class="po-proj-lib-chips" id="po-proj-lib-chips"></div>'
+    + '</div>'
+    + '<div class="po-proj-lib-grid" id="po-proj-lib-grid"></div>'
+    + '<div class="po-proj-lib-foot">'
+    + '<span class="po-proj-lib-count" id="po-proj-lib-count"></span>'
+    + '<button type="button" class="po-proj-lib-clear" id="po-proj-lib-clear">'
+    + PROJ_LIB_ICON_TRASH + '<span>' + escapeHtmlCutlist(I18n.t('project.builder_clear')) + '</span>'
+    + '</button>'
+    + '</div>';
+
+  const busca = el.querySelector('#po-proj-lib-search');
+  if (busca) {
+    busca.addEventListener('input', () => {
+      projectBuilderLibQuery = busca.value || '';
+      fillProjectBuilderLibGrid();   // só o grid: o input continua com o foco
+    });
+    // A janela fecha no Esc (attachProjectBuilderModal). Dentro da busca o Esc
+    // é "limpar o que digitei", não "jogar fora a edição inteira".
+    busca.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Escape') return;
+      ev.stopPropagation();
+      if (!busca.value) return;
+      busca.value = '';
+      projectBuilderLibQuery = '';
+      fillProjectBuilderLibGrid();
+    });
+  }
+  // Chips por delegação: eles são reescritos a cada troca de vão (os grupos
+  // disponíveis mudam), então listener no chip viraria listener órfão.
+  const chips = el.querySelector('#po-proj-lib-chips');
+  if (chips) chips.addEventListener('click', (ev) => {
+    const b = ev.target.closest('.po-proj-lib-chip');
+    if (!b) return;
+    projectBuilderLibGroup = b.dataset.group || '';
+    fillProjectBuilderLibGrid();
+  });
+  const limpar = el.querySelector('#po-proj-lib-clear');
+  // MESMA ação do ↺ do cabeçalho — o rodapé é só onde a mão já está.
+  if (limpar) limpar.addEventListener('click', resetProjectBuilder);
+}
+
+// Biblioteca: só o que CABE no vão selecionado. É esse filtro que faz a tela
+// parecer inteligente (spec §4.2) — cabide não aparece em nicho de 200mm, e o
+// mínimo efetivo é o MAIOR entre o do catálogo e o do módulo. Quem decide é
+// LayoutEngine.cabeNoVao, a mesma função que o ERP usa.
+//
+// Esta função só cuida do CASO DE ERRO (banco fora, catálogo vazio) e garante
+// o esqueleto; a lista em si é a fillProjectBuilderLibGrid.
 function renderProjectBuilderLibrary() {
   const el = document.getElementById('po-proj-builder-lib');
   if (!el) return;
-  const aviso = (txt) => { el.innerHTML = '<div class="po-proj-builder-group">' + txt + '</div>'; };
+  const aviso = (txt) => {
+    el.dataset.shell = '';
+    el.innerHTML = '<div class="po-proj-lib-head"><div class="po-proj-lib-sub">'
+      + escapeHtmlCutlist(txt) + '</div></div>';
+  };
 
   if (projectBuilderLoadError) {
     aviso(I18n.t('project.builder_load_error', {
@@ -15843,52 +15933,117 @@ function renderProjectBuilderLibrary() {
     }));
     return;
   }
-  const chaves = Object.keys(projectBuilderCat);
-  if (!chaves.length) { aviso(I18n.t('project.builder_empty_lib')); return; }
+  if (!Object.keys(projectBuilderCat).length) { aviso(I18n.t('project.builder_empty_lib')); return; }
+
+  ensureProjectBuilderLibShell(el);
+  // Abrir outro módulo zera a busca (ver openProjectModuleBuilder), e o
+  // esqueleto é reaproveitado — sem isto a caixa continuaria com o texto
+  // antigo escondendo metade do catálogo. Guardado pra não mexer no cursor
+  // enquanto a pessoa digita.
+  const busca = el.querySelector('#po-proj-lib-search');
+  if (busca && busca.value !== projectBuilderLibQuery) busca.value = projectBuilderLibQuery;
+  fillProjectBuilderLibGrid();
+}
+
+// Normaliza pra busca: sem acento e em minúscula, pra "porta dupla" achar
+// "Porta Dupla" e "divisoria" achar "Divisória".
+function projLibNorm(txt) {
+  return String(txt || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function fillProjectBuilderLibGrid() {
+  const grid = document.getElementById('po-proj-lib-grid');
+  const barra = document.getElementById('po-proj-lib-chips');
+  const contador = document.getElementById('po-proj-lib-count');
+  if (!grid) return;
 
   const box = projectBuilderSelBox();
-  const disponiveis = chaves.filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]));
-  if (!disponiveis.length) { aviso(I18n.t('project.builder_no_fit')); return; }
+  const cabem = Object.keys(projectBuilderCat)
+    .filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]));
 
-  const porGrupo = {};
-  disponiveis.forEach((k) => {
+  // ---- chips: "Todos" + um por grupo do que cabe AQUI ----
+  const grupos = [];
+  cabem.forEach((k) => {
     const g = projectBuilderCat[k].group || 'Outros';
-    (porGrupo[g] = porGrupo[g] || []).push(k);
+    if (grupos.indexOf(g) < 0) grupos.push(g);
   });
-  el.innerHTML = Object.keys(porGrupo).map((g) => (
-    '<div class="po-proj-builder-group">' + escapeHtmlCutlist(g) + '</div>'
+  // Trocar de vão pode tirar do ar o grupo que estava filtrado (um nicho baixo
+  // não tem "Portas"). Sem isso o painel ficaria vazio sem explicar por quê.
+  if (projectBuilderLibGroup && grupos.indexOf(projectBuilderLibGroup) < 0) projectBuilderLibGroup = '';
+  if (barra) {
+    barra.innerHTML = (grupos.length > 1
+      ? [{ id: '', nome: I18n.t('project.builder_filter_all') }]
+        .concat(grupos.map((g) => ({ id: g, nome: g })))
+      : []
+    ).map((c) => '<button type="button" class="po-proj-lib-chip'
+      + (projectBuilderLibGroup === c.id ? ' active' : '')
+      + '" data-group="' + escapeHtmlCutlist(c.id) + '">'
+      + escapeHtmlCutlist(c.nome) + '</button>').join('');
+  }
+
+  // ---- lista final: cabe no vão + grupo escolhido + busca ----
+  const q = projLibNorm(projectBuilderLibQuery).trim();
+  const visiveis = cabem.filter((k) => {
+    const acc = projectBuilderCat[k];
+    if (projectBuilderLibGroup && (acc.group || 'Outros') !== projectBuilderLibGroup) return false;
+    if (!q) return true;
+    return projLibNorm(acc.name).indexOf(q) >= 0 || projLibNorm(acc.group).indexOf(q) >= 0;
+  });
+
+  if (contador) {
+    contador.textContent = visiveis.length === 1
+      ? I18n.t('project.builder_count_one')
+      : I18n.t('project.builder_count', { n: visiveis.length });
+  }
+
+  if (!visiveis.length) {
+    grid.innerHTML = '<div class="po-proj-lib-empty">' + escapeHtmlCutlist(
+      cabem.length ? I18n.t('project.builder_no_search') : I18n.t('project.builder_no_fit')
+    ) + '</div>';
+    return;
+  }
+
+  // Título de grupo só quando a lista está MISTURADA (filtro em "Todos" e mais
+  // de um grupo à vista): com um grupo escolhido o título repetiria o chip.
+  const porGrupo = {};
+  const ordem = [];
+  visiveis.forEach((k) => {
+    const g = projectBuilderCat[k].group || 'Outros';
+    if (!porGrupo[g]) { porGrupo[g] = []; ordem.push(g); }
+    porGrupo[g].push(k);
+  });
+  const mostraTitulo = ordem.length > 1;
+
+  grid.innerHTML = ordem.map((g) => (
+    (mostraTitulo ? '<div class="po-proj-builder-group">' + escapeHtmlCutlist(g) + '</div>' : '')
     + porGrupo[g].map((k) => {
       const acc = projectBuilderCat[k];
-      // A fileira de números insere DIRETO naquela quantidade — um clique, não
-      // "escolher e depois inserir". Divisão em N sai sempre em vãos IGUAIS
-      // (todos os filhos nascem elásticos; ver LayoutEngine.applySplit +
-      // splitSizes, que rateia e joga o resto do arredondamento no último).
-      // CAIXA COM SETAS, não 10 botões (2026-08-15, Matt: "colocar um box com
-      // setas de 1 a 10"). Com o limite subindo de 5 pra 10, a fileira de
-      // chips virou uma parede de números que não cabia na coluna estreita da
-      // biblioteca. Aqui a quantidade é um seletor compacto: setas ajustam,
-      // e o CLIQUE NO CARD insere naquela quantidade (o card inteiro continua
-      // sendo o alvo grande, bom pro dedo).
-      const chips = projectBuilderAceitaQtd(acc)
+      // Um controle por card: quem aceita quantidade mostra a CAIXA COM SETAS
+      // (2026-08-15, Matt: "colocar um box com setas de 1 a 10"), quem não
+      // aceita mostra o ⊕. Divisão em N sai sempre em vãos IGUAIS (todos os
+      // filhos nascem elásticos; ver LayoutEngine.applySplit + splitSizes, que
+      // rateia e joga o resto do arredondamento no último).
+      const acao = projectBuilderAceitaQtd(acc)
         ? '<span class="po-proj-builder-qty" data-acc-id="' + k + '">'
           + '<button type="button" class="po-proj-qty-step" data-step="-1" tabindex="-1">&minus;</button>'
           + '<span class="po-proj-qty-val">' + (projectBuilderQtd[k] || 1) + '</span>'
           + '<button type="button" class="po-proj-qty-step" data-step="1" tabindex="-1">+</button>'
           + '</span>'
-        : '';
-      return '<div class="po-proj-builder-item" draggable="true" data-acc-id="' + k + '">'
-        + '<div class="po-proj-builder-item-top">'
+        : '<button type="button" class="po-proj-lib-add" tabindex="-1" aria-hidden="true">+</button>';
+      return '<div class="po-proj-builder-item" draggable="true" data-acc-id="' + k + '"'
+        + ' title="' + escapeHtmlCutlist(acc.name || '') + '">'
         + '<span class="po-proj-builder-item-icon">' + projectBuilderIcon(acc) + '</span>'
         + '<span class="po-proj-builder-item-name">' + escapeHtmlCutlist(acc.name || '') + '</span>'
-        + '</div>' + chips
+        + acao
         + '</div>';
     }).join('')
   )).join('');
 
-  el.querySelectorAll('.po-proj-builder-item').forEach((card) => {
+  grid.querySelectorAll('.po-proj-builder-item').forEach((card) => {
     // CLICAR insere no vão selecionado — o caminho rápido, e o único que
-    // funciona no dedo sem arrastar. Usa a quantidade da caixa de setas
-    // (1 quando a peça não aceita quantidade).
+    // funciona no dedo sem arrastar. O card INTEIRO é o alvo (o ⊕ é só
+    // afordância: o clique nele sobe pra cá). Usa a quantidade da caixa de
+    // setas (1 quando a peça não aceita quantidade).
     card.addEventListener('click', () => {
       const val = card.querySelector('.po-proj-qty-val');
       insertProjectBuilderItem(card.dataset.accId, projectBuilderSelId,
@@ -15905,7 +16060,7 @@ function renderProjectBuilderLibrary() {
   // Setas: só MEXEM no número, não inserem nada. stopPropagation porque elas
   // ficam dentro do card, e sem isso cada clique na seta também dispararia a
   // inserção.
-  el.querySelectorAll('.po-proj-qty-step').forEach((btn) => {
+  grid.querySelectorAll('.po-proj-qty-step').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       const wrap = btn.parentElement;
