@@ -14943,6 +14943,53 @@ let projectBuilderZoneDiag = null;
 //     2º clique dividiria o filho em vez de refazer a divisão do mesmo vão.
 let projectBuilderQtd = {};
 let projectBuilderQtdAlvo = {};
+// SELEÇÃO DE VÁRIOS VÃOS (2026-08-15, Matt: "se eu colocar uma divisória e
+// várias prateleiras e quiser colocar uma porta única no vão, preciso clicar
+// no vão, arrastar pros outros vãos, incluindo os vãos que quero, e aplicar
+// uma porta por cima").
+//
+// Guarda os ids dos vãos pintados. Eles são SEMPRE irmãos (mesmo pai): uma
+// porta cobre um intervalo contíguo de filhos de uma divisão — que é
+// exatamente o que LayoutEngine.applyFront(node, acc, from, to) já sabe
+// fazer, com from/to sendo índices dos filhos. Sem isso não haveria como
+// exprimir "uma folha na frente destes 3 vãos".
+let projectBuilderSelIds = [];
+let projectBuilderRangeDrag = null;   // { ancoraId } enquanto arrasta
+
+// Irmãos do nó (os filhos do pai dele) + o índice dele ali dentro.
+function projectBuilderIrmaos(nodeId) {
+  const pai = projectBuilderFindParent(projectBuilderRoot, nodeId);
+  if (!pai || !(pai.children || []).length) return null;
+  const i = pai.children.findIndex((k) => k.id === nodeId);
+  return i < 0 ? null : { pai, kids: pai.children, i };
+}
+
+// Pinta do vão-âncora até o vão sob o ponteiro, inclusive. Só entra na
+// seleção quem é IRMÃO da âncora — arrastar pra dentro de outra divisão não
+// seleciona nada, porque uma porta não cobre vãos de pais diferentes.
+function projectBuilderSelecionaFaixa(ancoraId, ateId) {
+  const a = projectBuilderIrmaos(ancoraId);
+  const b = projectBuilderIrmaos(ateId);
+  if (!a || !b || a.pai !== b.pai) return;
+  const ini = Math.min(a.i, b.i), fim = Math.max(a.i, b.i);
+  projectBuilderSelIds = a.kids.slice(ini, fim + 1).map((k) => k.id);
+  projectBuilderSelId = ancoraId;
+  projectBuilderPintaSelecao();
+}
+
+// Atualiza só as classes dos retângulos já desenhados — de propósito NÃO
+// redesenha o palco: no meio do arraste isso destruiria os elementos sob o
+// ponteiro e mataria o gesto (foi o que quebrou o arrasto da divisória, ver
+// startProjectBuilderDivDrag).
+function projectBuilderPintaSelecao() {
+  const stage = document.getElementById('po-proj-builder-stage');
+  if (!stage) return;
+  stage.querySelectorAll('rect[data-node-id]').forEach((r) => {
+    const dentro = projectBuilderSelIds.indexOf(r.dataset.nodeId) >= 0
+      || (!projectBuilderSelIds.length && r.dataset.nodeId === projectBuilderSelId);
+    r.classList.toggle('selected', dentro);
+  });
+}
 // 19.5mm (2026-08-15, pedido do Matt): era 18 — combinado antes como 20mm,
 // agora fixado em 19.5mm pros componentes principais (ver migration 101,
 // que corrige o catálogo pra bater com este número). Só entra quando o
@@ -15835,7 +15882,9 @@ function renderProjectBuilderStage() {
 
   // ---- vãos: o alvo do clique e do solte
   (built.voids || []).forEach((v) => {
-    const sel = v.nodeId === projectBuilderSelId;
+    const sel = projectBuilderSelIds.length
+      ? projectBuilderSelIds.indexOf(v.nodeId) >= 0
+      : v.nodeId === projectBuilderSelId;
     const r = projBuilderSvgEl('rect', {
       x: v.box.x, y: sy(v.box.y, v.box.h), width: v.box.w, height: v.box.h,
       class: 'po-proj-void' + (sel ? ' selected' : '')
@@ -15972,13 +16021,32 @@ function renderProjectBuilderStage() {
 
   // ---- seleção do vão + soltar a peça arrastada da biblioteca
   gV.querySelectorAll('rect[data-node-id]').forEach((r) => {
+    // ARRASTAR PELOS VÃOS = escolher a faixa que a porta vai cobrir. Clicar e
+    // soltar no mesmo vão continua sendo seleção simples (a faixa fica com um
+    // item só e o comportamento é o de sempre).
+    r.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      projectBuilderRangeDrag = { ancoraId: r.dataset.nodeId };
+      projectBuilderSelIds = [r.dataset.nodeId];
+      projectBuilderSelId = r.dataset.nodeId;
+      projectBuilderPintaSelecao();
+    });
+    r.addEventListener('pointerenter', () => {
+      if (!projectBuilderRangeDrag) return;
+      projectBuilderSelecionaFaixa(projectBuilderRangeDrag.ancoraId, r.dataset.nodeId);
+    });
     r.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      projectBuilderSelId = r.dataset.nodeId;
       // Escolher outro vão recomeça as caixas de quantidade: o número volta a
       // 1 e o próximo passo passa a mexer NESTE vão, não no anterior.
       projectBuilderQtd = {};
       projectBuilderQtdAlvo = {};
+      // Um vão só = seleção simples; faixa de vários só sobrevive se o arraste
+      // realmente passou por mais de um.
+      if (projectBuilderSelIds.length <= 1) {
+        projectBuilderSelId = r.dataset.nodeId;
+        projectBuilderSelIds = [];
+      }
       renderProjectBuilderStage();
       renderProjectBuilderLibrary();
     });
@@ -15990,6 +16058,23 @@ function renderProjectBuilderStage() {
       insertProjectBuilderItem(ev.dataTransfer.getData('text/plain'), r.dataset.nodeId);
     });
   });
+
+  // Fim do arraste de faixa. No window (e não no rect) porque soltar fora do
+  // desenho tem que encerrar o gesto do mesmo jeito — senão a próxima
+  // passagem do mouse continuaria pintando vãos sem botão apertado.
+  if (!renderProjectBuilderStage._fimFaixa) {
+    renderProjectBuilderStage._fimFaixa = true;
+    const fim = () => {
+      if (!projectBuilderRangeDrag) return;
+      projectBuilderRangeDrag = null;
+      // Faixa de 1 vão não é faixa — volta pro modo simples pra não confundir
+      // o resto da tela (cota, ✕, quantidade).
+      if (projectBuilderSelIds.length <= 1) projectBuilderSelIds = [];
+      renderProjectBuilderLibrary();
+    };
+    window.addEventListener('pointerup', fim);
+    window.addEventListener('pointercancel', fim);
+  }
 
   const dica = document.createElement('div');
   dica.className = 'po-proj-builder-empty';
@@ -16523,6 +16608,27 @@ function insertProjectBuilderItem(accessoryId, nodeId, qtd) {
     projectBuilderSelId = (node.children[0] || node).id;
   } else {
     if (acc.role === 'front') {
+      // PORTA SOBRE VÁRIOS VÃOS. Com faixa pintada (arrastou por mais de um
+      // vão), a frente é aplicada no PAI cobrindo os filhos de `from` até
+      // `to` — uma folha só na frente de todos eles. É pra isso que
+      // applyFront tem from/to; sem faixa, cai no caminho de sempre (a frente
+      // do próprio vão, from/to nulos = cobre ele inteiro).
+      const faixa = projectBuilderSelIds.length > 1
+        ? projectBuilderIrmaos(projectBuilderSelIds[0]) : null;
+      if (faixa) {
+        const idx = projectBuilderSelIds
+          .map((id) => faixa.kids.findIndex((k) => k.id === id))
+          .filter((i) => i >= 0);
+        LayoutEngine.applyFront(faixa.pai, accessoryId,
+          Math.min(...idx), Math.max(...idx), projectBuilderCat);
+        // A porta passa a ser do PAI: seguir com a faixa pintada faria a
+        // próxima peça cair num vão que agora está atrás da folha.
+        projectBuilderSelIds = [];
+        projectBuilderSelId = faixa.pai.id;
+        markProjectDirty();
+        rebuildProjectBuilder();
+        return;
+      }
       LayoutEngine.applyFront(node, accessoryId, null, null, projectBuilderCat);
     } else {
       LayoutEngine.applyContent(node, accessoryId, projectBuilderCat);
