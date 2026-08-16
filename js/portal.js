@@ -14951,6 +14951,11 @@ function rebuildProjectBuilder(reselecionar) {
       espessura: PROJECT_BUILDER_ESPESSURA,
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB
     });
+    // Nada do construtor pode atravessar peça do módulo (travessa de fundo,
+    // por exemplo) — ver clipProjectInternalsAgainstCasco. projectBuilderDesenho
+    // é a lista de TODAS as peças do módulo sem as frentes, medida na abertura
+    // da janela, que é exatamente o conjunto de obstáculos que interessa.
+    clipProjectInternalsAgainstCasco(projectBuilderBuilt.pieces, projectBuilderDesenho);
   } catch (e) {
     projectBuilderBuilt = { pieces: [], voids: [], zona: projectBuilderZone };
   }
@@ -15885,6 +15890,60 @@ function renderProjectBuilderStage() {
 }
 
 // ==========================================================================
+// NADA DO CONSTRUTOR ENCOSTA EM PEÇA DO CASCO (2026-08-15)
+// ==========================================================================
+// Pedido do Matt: "criar uma regra de nunca deixar as peças do construtor se
+// sobreporem umas nas outras, tipo essa travessa de trás do móvel: a lateral
+// divisória está em cima dela, isso não funciona na hora de montar, dá
+// problema. Deveria afastar a divisória pra frente."
+//
+// Por que acontecia: a zona interna tem UMA profundidade só, deduzida das
+// peças que o classificador reconhece como casco (lateral/topo/base/fundo).
+// Uma TRAVESSA de trás não é nenhuma delas — é uma tira estreita (76mm de
+// altura) colada no fundo, no alto do móvel. classifyProjectCascoBox devolve
+// null pra ela de propósito (não cobre a face, então não define o vão), e o
+// resultado é que a zona ignorava a travessa: a divisória nascia com a
+// profundidade cheia e ATRAVESSAVA a peça.
+//
+// A regra aqui é geométrica e não depende de classificação nenhuma: para cada
+// peça gerada pelo construtor, qualquer peça do módulo que cruze com ela em
+// X e Y e ocupe a faixa de TRÁS empurra a frente dela — a peça fica mais
+// rasa, começando na face frontal do obstáculo. É exatamente "afastar pra
+// frente", e é o que o montador faz na bancada.
+//
+// Só o fundo é tratado, de propósito: obstáculo na FRENTE (porta) já é
+// resolvido pelo próprio motor via consumo de profundidade
+// (LayoutEngine/emitFronts + folgaDobradica), e clipar de novo aqui
+// encolheria a peça duas vezes.
+const PROJECT_INTERNO_MIN_PROF_MM = 60;   // mesmo piso do LayoutEngine (emitDivider)
+function clipProjectInternalsAgainstCasco(pieces, obstaculos) {
+  const TOL = 0.5;   // mm — encostar não é sobrepor
+  if (!Array.isArray(pieces) || !Array.isArray(obstaculos) || !obstaculos.length) return pieces;
+  pieces.forEach((p) => {
+    if (!p || !isFinite(p.z) || !isFinite(p.d) || p.d <= 0) return;
+    const zFrente = p.z + p.d;
+    let zNovo = p.z;
+    obstaculos.forEach((b) => {
+      const bx1 = b.x0 + b.sx, by1 = b.y0 + b.sy, bz1 = b.z0 + b.sz;
+      const cruzaX = p.x < bx1 - TOL && p.x + p.w > b.x0 + TOL;
+      const cruzaY = p.y < by1 - TOL && p.y + p.h > b.y0 + TOL;
+      if (!cruzaX || !cruzaY) return;
+      // Obstáculo que começa ATRÁS (ou junto) da peça e avança pra dentro
+      // dela: a peça passa a começar onde ele termina.
+      if (b.z0 <= p.z + TOL && bz1 > p.z + TOL) zNovo = Math.max(zNovo, bz1);
+    });
+    if (zNovo > p.z + TOL) {
+      const nova = zFrente - zNovo;
+      // Nunca some com a peça: se o obstáculo comeria quase tudo, é sinal de
+      // cadastro estranho — melhor manter a peça no mínimo e deixar visível
+      // do que devolver profundidade negativa pro 3D e pro plano de corte.
+      if (nova >= PROJECT_INTERNO_MIN_PROF_MM) { p.z = zNovo; p.d = nova; }
+    }
+  });
+  return pieces;
+}
+
+// ==========================================================================
 // MEDIDA DIGITADA + APAGAR VÃO (2026-08-15)
 // ==========================================================================
 // O pai de um nó, que o LayoutEngine não guarda (a árvore só aponta pra
@@ -16052,6 +16111,8 @@ function startProjectBuilderDivDrag(ev, node, peca, eixo) {
   if (!svg || !kids[idx] || !kids[idx]._box || !kids[idx + 1] || !kids[idx + 1]._box) return;
 
   projectBuilderSelId = node.id;
+  // (ini era a origem do arrasto ABSOLUTO; o arrasto virou relativo — ver
+  // mm0/tam0 abaixo. Mantido só como referência da borda do par.)
   const ini = eixo === 'x' ? kids[idx]._box.x : kids[idx]._box.y;
   const soma = (eixo === 'x' ? kids[idx]._box.w : kids[idx]._box.h)
     + (eixo === 'x' ? kids[idx + 1]._box.w : kids[idx + 1]._box.h);
@@ -16066,12 +16127,34 @@ function startProjectBuilderDivDrag(ev, node, peca, eixo) {
     const p = pt.matrixTransform(svg.getScreenCTM().inverse());
     return { x: p.x, y: H - p.y };
   };
+
+  // ARRASTO RELATIVO — segue o DESLOCAMENTO do mouse, não a posição absoluta
+  // (2026-08-15). Antes era absoluto: `novo = ponteiro − ini`, ou seja, a
+  // divisória ia pra onde o ponteiro estivesse em mm. A conta estava certa,
+  // mas exigia que o ponteiro alcançasse a posição exata — e num módulo ALTO
+  // o desenho é maior que a área visível da janela, então as posições de
+  // baixo ficam literalmente fora da tela.
+  //
+  // Sintoma relatado pelo Matt: "a de cima eu consigo controlar, a do meio
+  // mais ou menos, e a de baixo é incontrolável: clico pra arrastar e ela
+  // joga lá pra cima e não tem edição". Medido no console dele: viewBox de
+  // 2970 unidades × escala 0.2077 = 617px de desenho, terminando em y≈889 na
+  // tela — abaixo do fim da janela. Qualquer ponto que ele CONSEGUIA clicar
+  // ficava acima do ponto correto, então a divisória subia; e pra descer
+  // precisaria apontar fora da tela ("como se não tivesse espaço no mouse").
+  //
+  // Com o delta, pegar a divisória em qualquer lugar não a move (delta 0 =
+  // fica onde está — acaba o salto ao clicar) e o curso do mouse é o mesmo
+  // pra qualquer divisória, alta ou baixa.
+  const mm0 = paraMm(ev);
+  const tam0 = eixo === 'x' ? kids[idx]._box.w : kids[idx]._box.h;
   const mover = (e) => {
     if (!andou && Math.abs(e.clientX - x0) < 4 && Math.abs(e.clientY - y0) < 4) return;
     if (!fotoTirada) { pushProjectBuilderUndo(); fotoTirada = true; }
     andou = true;
     const mm = paraMm(e);
-    let novo = (eixo === 'x' ? mm.x : mm.y) - ini;
+    const delta = (eixo === 'x' ? mm.x - mm0.x : mm.y - mm0.y);
+    let novo = tam0 + delta;
     novo = Math.round(novo / PROJECT_BUILDER_PASSO) * PROJECT_BUILDER_PASSO;
     novo = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(soma - PROJECT_BUILDER_MIN_VAO, novo));
     kids[idx].sizeMode = 'fixed'; kids[idx].sizeValue = novo;
@@ -16164,6 +16247,16 @@ function rebuildProjectSlotLayoutPieces(slot) {
       espessura: PROJECT_BUILDER_ESPESSURA,
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB
     });
+    // MESMA regra da janela do construtor (ver clipProjectInternalsAgainstCasco).
+    // Precisa estar nos DOIS lugares: a janela desenha, mas é aqui que nascem
+    // as peças que vão pro 3D, pro preço e pro plano de corte — se só a janela
+    // clipasse, o desenho mostraria a divisória afastada e a fábrica receberia
+    // a medida antiga, atravessando a travessa.
+    //
+    // Caminho BARATO de propósito (sem medirNaCena): esta função roda a cada
+    // pointermove do arraste de medida. O 3º argumento tira as frentes, que não
+    // são obstáculo aqui (o motor já desconta a porta sozinho).
+    clipProjectInternalsAgainstCasco(built.pieces, computeProjectSlotCascoBoxes(slot, false, true));
     slot.layoutPieces = projectLayoutRowsForSlot(slot, built.pieces);
   } catch (e) {
     slot.layoutPieces = [];
