@@ -265,14 +265,26 @@
       var recuo = num((node.params || {}).recuo_mm != null
         ? node.params.recuo_mm : (acc.params || {}).recuo_mm);
       if (axis === 'x') {
+        // O RECUO VALE NOS DOIS EIXOS (2026-08-15, Matt: "divisórias fixas
+        // (bases) 1mm menor e pra trás da lateral, horizontais E verticais").
+        // Só o ramo horizontal aplicava recuo; a divisória VERTICAL nascia
+        // rente à frente do vão, encostando na lateral — que é justamente o
+        // que dá problema na montagem.
+        // O RECUO SAI NA FRENTE, NÃO ATRÁS (2026-08-15). Antes era
+        // `z: box.z + recuo`, que empurra a peça pra FRENTE e deixa a folga
+        // ATRÁS — a divisória ficava rente à frente da lateral (o "ficou 1mm
+        // pra fora e não pra dentro" do Matt). Mantendo z e só encurtando a
+        // profundidade, o fundo fica alinhado e a folga aparece na FRENTE:
+        // é isso que "1mm menor e pra trás da lateral" quer dizer.
         push(node, {
           kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
-          x: pos, y: box.y, z: box.z, w: th, h: box.h, d: Math.max(60, box.d - cons)
+          x: pos, y: box.y, z: box.z,
+          w: th, h: box.h, d: Math.max(60, box.d - recuo - cons)
         });
       } else {
         push(node, {
           kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
-          x: box.x, y: pos, z: box.z + recuo,
+          x: box.x, y: pos, z: box.z,
           w: box.w, h: th, d: Math.max(60, box.d - recuo - cons),
           tilt_deg: num((node.params || {}).angulo_deg)
         });

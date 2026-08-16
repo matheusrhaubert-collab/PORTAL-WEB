@@ -14932,6 +14932,17 @@ let projectBuilderLoadError = null; // erro do banco, mostrado no lugar da lista
 // do construtor — diagnóstico no lugar onde a pessoa já está olhando, em vez
 // de só no console.
 let projectBuilderZoneDiag = null;
+// Estado da caixa de quantidade (2026-08-15, Matt: "conforme eu escolha a
+// quantidade ele vai aparecendo no vão, não precisa clicar no ícone").
+// Mora FORA do DOM de propósito: mexer na seta insere na hora, o que
+// redesenha a biblioteca inteira — se o número morasse no <span>, ele
+// voltaria pra 1 a cada clique.
+//   projectBuilderQtd[accId]  -> número mostrado na caixa
+//   projectBuilderQtdAlvo[accId] -> em QUAL vão esta caixa está mexendo. Fica
+//     cravado porque inserir move a seleção pro primeiro filho; sem isso, o
+//     2º clique dividiria o filho em vez de refazer a divisão do mesmo vão.
+let projectBuilderQtd = {};
+let projectBuilderQtdAlvo = {};
 // 19.5mm (2026-08-15, pedido do Matt): era 18 — combinado antes como 20mm,
 // agora fixado em 19.5mm pros componentes principais (ver migration 101,
 // que corrige o catálogo pra bater com este número). Só entra quando o
@@ -15555,7 +15566,11 @@ const PROJECT_BUILDER_SVG = (() => {
     prateleiras2: mk('<line x1="2.5" y1="8" x2="19.5" y2="8"/><line x1="2.5" y1="14" x2="19.5" y2="14"/>'),
     inclinada: mk('<line x1="3.5" y1="14.5" x2="18.5" y2="8.5"/>'),
     divisoria: mk('<line x1="11" y1="2.5" x2="11" y2="19.5"/>'),
-    base: mk('<line x1="2.5" y1="15.5" x2="19.5" y2="15.5"/><line x1="11" y1="2.5" x2="11" y2="15.5"/>'),
+    // Base/base divisória = UMA horizontal no meio (2026-08-15, Matt: "esse
+    // ícone tem uma divisória vertical e deveria ser só uma horizontal no
+    // meio"). O desenho antigo tinha uma vertical saindo da base, o que fazia
+    // parecer duas peças em L — e é justamente o ícone da Base Divisoria.
+    base: mk('<line x1="2.5" y1="11" x2="19.5" y2="11"/>'),
     gaveta: mk('<rect x="5" y="8" width="12" height="6.5" rx="1"/><line x1="9" y1="11.2" x2="13" y2="11.2"/>'),
     gaveteiro: mk('<line x1="2.5" y1="8" x2="19.5" y2="8"/><line x1="2.5" y1="13" x2="19.5" y2="13"/>'
       + '<line x1="9.5" y1="5.2" x2="12.5" y2="5.2"/><line x1="9.5" y1="10.4" x2="12.5" y2="10.4"/><line x1="9.5" y1="16" x2="12.5" y2="16"/>'),
@@ -15606,7 +15621,10 @@ function projectBuilderIcon(acc) {
 // empilhadas (gaveteiro/cesto). Porta não tem quantidade — quem faz porta de
 // duas folhas é o agregado "Porta dupla" (default_params.folhas), não um
 // número aqui.
-const PROJECT_BUILDER_QTDS = [1, 2, 3, 4, 5];
+// Até 10 (2026-08-15, Matt: "no construtor agregar opção de prateleiras (até
+// 10)"). Eram 5 — pouco pra uma torre de prateleiras, que é o caso normal
+// num módulo alto.
+const PROJECT_BUILDER_QTDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 function projectBuilderAceitaQtd(acc) {
   if (!acc) return false;
   if (acc.role === 'split') return true;
@@ -15657,11 +15675,17 @@ function renderProjectBuilderLibrary() {
       // "escolher e depois inserir". Divisão em N sai sempre em vãos IGUAIS
       // (todos os filhos nascem elásticos; ver LayoutEngine.applySplit +
       // splitSizes, que rateia e joga o resto do arredondamento no último).
+      // CAIXA COM SETAS, não 10 botões (2026-08-15, Matt: "colocar um box com
+      // setas de 1 a 10"). Com o limite subindo de 5 pra 10, a fileira de
+      // chips virou uma parede de números que não cabia na coluna estreita da
+      // biblioteca. Aqui a quantidade é um seletor compacto: setas ajustam,
+      // e o CLIQUE NO CARD insere naquela quantidade (o card inteiro continua
+      // sendo o alvo grande, bom pro dedo).
       const chips = projectBuilderAceitaQtd(acc)
-        ? '<span class="po-proj-builder-qty">'
-          + PROJECT_BUILDER_QTDS.map((n) => (
-            '<button type="button" class="po-proj-qty-btn" data-acc-id="' + k + '" data-qtd="' + n + '">' + n + '</button>'
-          )).join('')
+        ? '<span class="po-proj-builder-qty" data-acc-id="' + k + '">'
+          + '<button type="button" class="po-proj-qty-step" data-step="-1" tabindex="-1">&minus;</button>'
+          + '<span class="po-proj-qty-val">' + (projectBuilderQtd[k] || 1) + '</span>'
+          + '<button type="button" class="po-proj-qty-step" data-step="1" tabindex="-1">+</button>'
           + '</span>'
         : '';
       return '<div class="po-proj-builder-item" draggable="true" data-acc-id="' + k + '">'
@@ -15675,8 +15699,13 @@ function renderProjectBuilderLibrary() {
 
   el.querySelectorAll('.po-proj-builder-item').forEach((card) => {
     // CLICAR insere no vão selecionado — o caminho rápido, e o único que
-    // funciona no dedo sem arrastar. Sem número = 1.
-    card.addEventListener('click', () => insertProjectBuilderItem(card.dataset.accId, projectBuilderSelId, 1));
+    // funciona no dedo sem arrastar. Usa a quantidade da caixa de setas
+    // (1 quando a peça não aceita quantidade).
+    card.addEventListener('click', () => {
+      const val = card.querySelector('.po-proj-qty-val');
+      insertProjectBuilderItem(card.dataset.accId, projectBuilderSelId,
+        val ? (Number(val.textContent) || 1) : 1);
+    });
     // ARRASTAR e soltar em cima de um vão — o caminho "como achar melhor".
     card.addEventListener('dragstart', (ev) => {
       card.classList.add('dragging');
@@ -15685,12 +15714,28 @@ function renderProjectBuilderLibrary() {
     });
     card.addEventListener('dragend', () => card.classList.remove('dragging'));
   });
-  el.querySelectorAll('.po-proj-qty-btn').forEach((btn) => {
-    // stopPropagation: o botão fica DENTRO do card, e sem isso o clique também
-    // dispararia o insert de quantidade 1 do card.
+  // Setas: só MEXEM no número, não inserem nada. stopPropagation porque elas
+  // ficam dentro do card, e sem isso cada clique na seta também dispararia a
+  // inserção.
+  el.querySelectorAll('.po-proj-qty-step').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      insertProjectBuilderItem(btn.dataset.accId, projectBuilderSelId, Number(btn.dataset.qtd) || 1);
+      const wrap = btn.parentElement;
+      const accId = wrap && wrap.dataset.accId;
+      if (!accId) return;
+      const min = PROJECT_BUILDER_QTDS[0];
+      const max = PROJECT_BUILDER_QTDS[PROJECT_BUILDER_QTDS.length - 1];
+      const novo = clamp((projectBuilderQtd[accId] || 1) + Number(btn.dataset.step), min, max);
+      if (novo === (projectBuilderQtd[accId] || 1)) return;
+      projectBuilderQtd[accId] = novo;
+      // O vão-alvo é cravado no PRIMEIRO passo e não muda mais: inserir move a
+      // seleção pro primeiro filho, e sem isso o passo seguinte dividiria esse
+      // filho em vez de refazer a divisão do mesmo vão.
+      if (!projectBuilderQtdAlvo[accId]) projectBuilderQtdAlvo[accId] = projectBuilderSelId;
+      // Insere JÁ — é isto que faz a peça aparecer no vão conforme o número
+      // muda. applySplit substitui a divisão do nó (reaproveitando os filhos
+      // que já existem), então repetir com N maior/menor é prévia ao vivo.
+      insertProjectBuilderItem(accId, projectBuilderQtdAlvo[accId], novo);
     });
     btn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
   });
@@ -15930,6 +15975,10 @@ function renderProjectBuilderStage() {
     r.addEventListener('click', (ev) => {
       ev.stopPropagation();
       projectBuilderSelId = r.dataset.nodeId;
+      // Escolher outro vão recomeça as caixas de quantidade: o número volta a
+      // 1 e o próximo passo passa a mexer NESTE vão, não no anterior.
+      projectBuilderQtd = {};
+      projectBuilderQtdAlvo = {};
       renderProjectBuilderStage();
       renderProjectBuilderLibrary();
     });
@@ -16189,10 +16238,24 @@ function startProjectBuilderDivDrag(ev, node, peca, eixo) {
   let andou = false;
   let fotoTirada = false;
 
+  // O SVG É REBUSCADO A CADA LEITURA (2026-08-15) — não dá pra guardar o
+  // elemento capturado no pointerdown. Cada pointermove chama
+  // rebuildProjectBuilder(), que faz stage.innerHTML = '' e DESTRÓI o svg;
+  // do segundo movimento em diante o elemento antigo está solto da página e
+  // getScreenCTM() devolve null, quebrando a conta. O sintoma era a
+  // divisória travar onde o primeiro movimento a deixou — o "não consigo
+  // arrastar, ela fica grudada na de cima" do Matt.
+  const svgAtual = () => {
+    const st = document.getElementById('po-proj-builder-stage');
+    return (st && st.querySelector('svg')) || null;
+  };
   const paraMm = (e) => {
-    const pt = svg.createSVGPoint();
+    const el = svgAtual();
+    const m = el && el.getScreenCTM();
+    if (!m) return null;
+    const pt = el.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
-    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const p = pt.matrixTransform(m.inverse());
     return { x: p.x, y: H - p.y };
   };
 
@@ -16221,6 +16284,7 @@ function startProjectBuilderDivDrag(ev, node, peca, eixo) {
     if (!fotoTirada) { pushProjectBuilderUndo(); fotoTirada = true; }
     andou = true;
     const mm = paraMm(e);
+    if (!mm || !mm0) return;
     const delta = (eixo === 'x' ? mm.x - mm0.x : mm.y - mm0.y);
     let novo = tam0 + delta;
     novo = Math.round(novo / PROJECT_BUILDER_PASSO) * PROJECT_BUILDER_PASSO;
