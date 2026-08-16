@@ -1,3 +1,3 @@
-﻿data: 2026-08-15 20:47:33
-cache: 202608152047
-mensagem: arrasto relativo das divisorias + internos nao atravessam o casco
+﻿data: 2026-08-15 21:00:22
+cache: 202608152100
+mensagem: trava da furadeira no fundo (1050/2700, deita sozinho, ignora modulo sem fundo)

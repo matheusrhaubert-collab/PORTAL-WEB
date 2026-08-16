@@ -13125,6 +13125,68 @@ function recomputeProjectSlotPricing(slot) {
 // width_min_mm/max_mm etc. do catálogo) e, no eixo da altura, também no teto
 // útil (mesma regra de sempre — pé direito − 5" − rodapé, considerando a
 // posição vertical atual do módulo).
+// ==========================================================================
+// LIMITE DA FURADEIRA — o fundo tem que caber na máquina (2026-08-15)
+// ==========================================================================
+// Matt: "furo é furado e a máquina só passa até 1050mm (não é nem 1200mm).
+// Quando a largura de um móvel passa de 1050mm interno, ainda temos a opção
+// de deitar esse fundo pra ir até 2700mm interno. Porém se ele deitar, a
+// altura não pode passar de 1050mm também." E depois: "acima de 1050 deita,
+// 100%. Trava a medida do configurador quando chegar no limite. Detalhe
+// importante: módulos que não têm fundo não têm essa preocupação."
+//
+// Deitar é automático e não precisa de código: o plano de corte já orienta a
+// peça (ver veio/plano de corte). O que faltava era a TRAVA — hoje o
+// configurador deixava chegar numa medida que a fábrica não consegue furar.
+//
+// A pegadinha: o teto de uma dimensão DEPENDE da outra. Deitado, um lado vai
+// até 2700; o outro é que tem que caber nos 1050. Então não dá pra cravar um
+// width_max no cadastro — tem que ser calculado a cada mudança, que é o que
+// esta função faz.
+const FURADEIRA_LADO_MAX_MM = 1050;   // o lado que PASSA na máquina
+const FURADEIRA_COMP_MAX_MM = 2700;   // o lado que corre ao longo dela
+
+// Quanto o fundo é MENOR que o módulo em cada eixo. Sai da peça resolvida de
+// verdade (não de fórmula chutada), então acompanha qualquer cadastro: no
+// "Bottom · Toe 4½ · Back" medido no ar dá 39 na largura e 19,5 na altura.
+// Cacheado por módulo — isto é consultado a cada pointermove do arraste.
+function projectSlotFundoOffsets(slot) {
+  const modId = (slot.module || {}).id || null;
+  if (slot._fundoOffId === modId) return slot._fundoOff || null;
+  slot._fundoOffId = modId;
+  slot._fundoOff = null;
+  try {
+    const W = Number(slot.width_mm) || 0, H = Number(slot.height_mm) || 0, D = Number(slot.depth_mm) || 0;
+    if (!W || !H || !D) return null;
+    const parts = resolvePiecesForViewer(
+      slot.pieces, { W: W, H: H, D: D },
+      slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+    );
+    // MÓDULO SEM FUNDO NÃO TEM ESSA PREOCUPAÇÃO — é metade do catálogo aqui
+    // (todos os "… · No back"), e é a primeira coisa conferida de propósito.
+    const f = (parts || []).find((p) => p.position_role === 'back');
+    if (!f) return null;
+    slot._fundoOff = { kW: W - Number(f.width_mm || 0), kH: H - Number(f.height_mm || 0) };
+  } catch (e) { slot._fundoOff = null; }
+  return slot._fundoOff;
+}
+
+// Teto desta dimensão do MÓDULO pra que o fundo continue fabricável, dado o
+// tamanho ATUAL da outra. Infinity = sem restrição (módulo sem fundo).
+function projectSlotMaxDimForDrilling(slot, axis) {
+  if (axis !== 'width' && axis !== 'height') return Infinity;
+  const off = projectSlotFundoOffsets(slot);
+  if (!off) return Infinity;
+  const kEste  = axis === 'width' ? off.kW : off.kH;
+  const kOutro = axis === 'width' ? off.kH : off.kW;
+  const outroMm = Number(slot[(axis === 'width' ? 'height' : 'width') + '_mm']) || 0;
+  const ladoOutro = outroMm - kOutro;
+  // O outro lado já passa dos 1050: ele é obrigatoriamente o lado deitado
+  // (que corre até 2700), então ESTE é o que precisa passar na máquina.
+  const teto = (ladoOutro > FURADEIRA_LADO_MAX_MM) ? FURADEIRA_LADO_MAX_MM : FURADEIRA_COMP_MAX_MM;
+  return teto + kEste;
+}
+
 function updateProjectSlotDimension(slot, axis, mm) {
   const m = slot.module;
   // Medida TRAVADA (width_locked/height_locked) — pedido do usuário
@@ -13158,6 +13220,12 @@ function updateProjectSlotDimension(slot, axis, mm) {
   if (axis === 'height' && !m.height_locked) {
     maxMm = Math.min(maxMm, Math.max(roomSettings.ceiling_mm - effectiveCeilingClearanceMm(m) - roomSettings.baseboard_mm - Number(slot.floor_height_mm || 0), 0));
   }
+  // TRAVA DA FURADEIRA — o fundo tem que caber na máquina (ver
+  // projectSlotMaxDimForDrilling). Entra junto com os outros tetos, no mesmo
+  // clamp, então vale pro arraste das setas, pro campo digitado e pra
+  // qualquer caminho que passe por aqui. Módulo sem fundo devolve Infinity e
+  // nada muda.
+  maxMm = Math.min(maxMm, projectSlotMaxDimForDrilling(slot, axis));
   slot[`${axis}_mm`] = clamp(Number(mm) || 0, minMm, maxMm);
   recomputeProjectSlotPricing(slot);
   clampProjectSlotPosition(slot);

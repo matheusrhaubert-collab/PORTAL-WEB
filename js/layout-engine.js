@@ -430,7 +430,27 @@
   //
   // catalogo[accKey].componente = o registro de "components" já carregado
   //   (com labor_types e component_types embutidos, igual a query do portal).
-  //   Sem ele o agregado não pode ser usado — sem componente não há preço.
+  //
+  // catalogo[accKey].child_module_id (+ .module_meta/.child_pieces/
+  //   .fixed_depths/.locked_presets/.own_hinge_slide) = ALTERNATIVA a
+  //   .componente (migration 103 — MODELO DE PORTA/FRENTE). O agregado não é
+  //   uma peça de catálogo, é um MÓDULO INVISÍVEL inteiro usado como peça
+  //   aninhada — a "engenharia própria" do modelo (ex: Shaker = montantes +
+  //   travessas + painel), resolvida recursivamente ANTES de chegar aqui,
+  //   mesmíssimo shape que o branch child_module_id de
+  //   loadRecursivePiecesForModule produz em portal.js (module_meta = a linha
+  //   de `modules`; child_pieces = o resultado recursivo daquela função).
+  //   toPieceRows só CONSOME esse resultado já resolvido — quem decide QUAL
+  //   child_module_id vale pra um accKey com is_door_model_slot=true (o
+  //   modelo escolhido pelo cliente, ou o is_default da whitelist
+  //   module_door_models) é quem MONTA catalogo, não esta função. Ver
+  //   docs/modelos-de-porta-frente-spec.md — hoje (2026-08-16) essa resolução
+  //   ainda não está ligada: nenhum catalogo real popula child_module_id, o
+  //   branch abaixo fica morto até o carregador do catálogo (portal.js)
+  //   passar a fazer isso.
+  //
+  //   Sem .componente NEM .child_module_id o agregado não pode ser usado —
+  //   sem peça real não há preço.
   //
   // As fórmulas saem como NÚMERO LITERAL em texto ('864'): o avaliador aceita,
   // e assim a geometria calculada aqui é a palavra final, sem depender de W/H/D
@@ -440,47 +460,107 @@
     (geradas || []).forEach(function (p, i) {
       var acc = catalogo[p.accKey];
       var comp = acc && acc.componente;
-      if (!comp) return;                      // sem componente cadastrado, não gera
-      var ct = comp.component_types || {};
-      var row = Object.assign({}, comp, {
-        // id sintético e ESTÁVEL dentro do mesmo layout: shelfQuantities,
-        // pieceColorOverrides e selectedOptionalIds são keyed por id.
+      var childModuleId = acc && acc.child_module_id;
+      if (!comp && !childModuleId) return;    // sem peça real cadastrada, não gera
+
+      if (comp) {
+        var ct = comp.component_types || {};
+        var row = Object.assign({}, comp, {
+          // id sintético e ESTÁVEL dentro do mesmo layout: shelfQuantities,
+          // pieceColorOverrides e selectedOptionalIds são keyed por id.
+          id: 'lay:' + p.nodeId + ':' + i,
+          reference: p.label || comp.reference,
+          quantity: 1,
+          labor_cost_per_unit: comp.labor_types ? comp.labor_types.price_per_unit : 0,
+          color_role_id: acc.color_role_id || ct.color_role_id || null,
+          positioning: ct.positioning || null,
+          // geometria: literais em mm
+          width_formula: String(p.w),
+          height_formula: String(p.h),
+          depth_formula: String(p.d),
+          offset_x_formula: String(p.x),
+          offset_y_formula: String(p.y),
+          offset_z_formula: String(p.z),
+          // 'free' vem DEPOIS do spread de comp — o componente do catálogo tem
+          // position_role próprio e ele não vale aqui: a posição já foi
+          // calculada pela árvore, em absoluto.
+          position_role: 'free',
+          opening_type: p.opening_type || 'none',
+          slides_per_unit: p.opening_type === 'slide_out' ? 2 : 0,
+          shape_type: p.shape_type || comp.shape_type || null,
+          tilt_angle_deg: num(p.tilt_deg),
+          rotation_y_deg: 0,
+          quantity_configurable: false,
+          client_optional: false,
+          client_optional_default_on: false,
+          visibility_dimension: null,
+          visibility_min_mm: null,
+          visibility_max_mm: null,
+          client_color_configurable: false,
+          client_dimension_configurable: false,
+          is_module: false,
+          // rastro pra interface (a árvore que gerou esta linha)
+          _layoutNodeId: p.nodeId,
+          _layoutKind: p.kind
+        });
+        rows.push(row);
+        return;
+      }
+
+      // Peça-módulo (MODELO de porta/frente, migration 103) — mesmo shape do
+      // branch child_module_id de loadRecursivePiecesForModule (portal.js),
+      // só que a geometria vem da árvore de vãos (literal em mm) em vez de
+      // width_formula_override/offset_*_mm de uma linha de module_components.
+      var meta = acc.module_meta || {};
+      var lp = acc.locked_presets || {};
+      var hs = acc.own_hinge_slide || {};
+      rows.push(Object.assign({}, meta, {
         id: 'lay:' + p.nodeId + ':' + i,
-        reference: p.label || comp.reference,
-        quantity: 1,
-        labor_cost_per_unit: comp.labor_types ? comp.labor_types.price_per_unit : 0,
-        color_role_id: acc.color_role_id || ct.color_role_id || null,
-        positioning: ct.positioning || null,
-        // geometria: literais em mm
+        is_module: true,
+        reference: p.label || meta.name || null,
+        position_role: 'free',
+        color_role_id: acc.color_role_id || null,
+        opening_type: p.opening_type || 'none',
+        slides_per_unit: p.opening_type === 'slide_out' ? 2 : 0,
+        tilt_angle_deg: num(p.tilt_deg),
+        rotation_y_deg: 0,
         width_formula: String(p.w),
         height_formula: String(p.h),
         depth_formula: String(p.d),
         offset_x_formula: String(p.x),
         offset_y_formula: String(p.y),
         offset_z_formula: String(p.z),
-        // 'free' vem DEPOIS do spread de comp — o componente do catálogo tem
-        // position_role próprio e ele não vale aqui: a posição já foi
-        // calculada pela árvore, em absoluto.
-        position_role: 'free',
-        opening_type: p.opening_type || 'none',
-        slides_per_unit: p.opening_type === 'slide_out' ? 2 : 0,
-        shape_type: p.shape_type || comp.shape_type || null,
-        tilt_angle_deg: num(p.tilt_deg),
-        rotation_y_deg: 0,
+        quantity: 1,
         quantity_configurable: false,
         client_optional: false,
         client_optional_default_on: false,
         visibility_dimension: null,
         visibility_min_mm: null,
         visibility_max_mm: null,
-        client_color_configurable: false,
         client_dimension_configurable: false,
-        is_module: false,
+        client_color_configurable: false,
+        fixed_depths: acc.fixed_depths || [],
+        locked_width_presets: lp.width || [],
+        locked_height_presets: lp.height || [],
+        locked_depth_presets: lp.depth || [],
+        locked_width_preset_options: lp.widthLabeled || [],
+        locked_height_preset_options: lp.heightLabeled || [],
+        locked_depth_preset_options: lp.depthLabeled || [],
+        is_decoration: !!lp.is_decoration,
+        own_hinge_model: hs.hinge || null,
+        own_slide_model: hs.slide || null,
+        own_width_min_mm: lp.ownWidthMinMm != null ? lp.ownWidthMinMm : null,
+        own_width_max_mm: lp.ownWidthMaxMm != null ? lp.ownWidthMaxMm : null,
+        own_height_min_mm: lp.ownHeightMinMm != null ? lp.ownHeightMinMm : null,
+        own_height_max_mm: lp.ownHeightMaxMm != null ? lp.ownHeightMaxMm : null,
+        own_depth_min_mm: lp.ownDepthMinMm != null ? lp.ownDepthMinMm : null,
+        own_depth_max_mm: lp.ownDepthMaxMm != null ? lp.ownDepthMaxMm : null,
+        module_name: meta.name || null,
+        child_pieces: acc.child_pieces || [],
         // rastro pra interface (a árvore que gerou esta linha)
         _layoutNodeId: p.nodeId,
         _layoutKind: p.kind
-      });
-      rows.push(row);
+      }));
     });
     return rows;
   }
