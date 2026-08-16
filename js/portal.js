@@ -12263,22 +12263,30 @@ function projectSlotOverlapsNeighbor(slot, xProposto) {
 // Zero quando aquela ponta é livre (parede solta) — aí o módulo pode ir até o
 // fim de verdade. Só vale no modelo de segmentos; no modelo antigo das 3
 // formas as paredes se encontram por construção e nada muda.
+// SEMPRE ZERO desde 2026-08-15 — o módulo vai até o canto de verdade.
+//
+// Esta função descontava a ESPESSURA da parede vizinha (150mm por padrão) de
+// cada ponta, partindo da ideia de que o corpo da vizinha come esse pedaço do
+// trecho útil. Só que ele NÃO come: makeWallSurface (viewer3d_composition.js)
+// posiciona a parede com o centro recuado espessura/2 no sentido CONTRÁRIO ao
+// intoDir, ou seja, a FACE INTERNA da parede é exatamente a polilinha
+// desenhada e todo o corpo dela fica FORA do ambiente. Duas paredes que se
+// encontram num canto têm as duas faces internas passando pelo ponto do
+// canto — não sobra nada pra descontar.
+//
+// O sintoma era o do Matt (2026-08-15): "quando arrasto ele no canto, ele
+// afasta automaticamente" — o módulo parava 150mm antes da esquina e ficava
+// um vão. Medido no site publicado: recuo {ini:0, fim:150} numa parede de
+// 4000mm com vizinha de 150mm de espessura, e a caixa da parede vizinha
+// inteiramente fora do ambiente.
+//
+// Fica como função (em vez de sumir) porque os ~4 chamadores usam o par
+// {ini, fim} pra calcular limite esquerdo/direito e a zona morta de troca de
+// parede; devolver zero num ponto só mantém todos eles coerentes. Se um dia a
+// parede passar a ser desenhada CENTRADA na polilinha, é aqui que o desconto
+// volta — e aí ele vale meia espessura, não uma inteira.
 function projectWallCornerInsetMm(wallIndex) {
-  const vazio = { ini: 0, fim: 0 };
-  if (!projectWallSegments.length) return vazio;
-  const seg = projectWallSegments[wallIndex];
-  if (!seg) return vazio;
-  const TOL = 120; // mm — bem abaixo da espessura, então só conta encontro real
-  const encosta = (px, pz) => {
-    let esp = 0;
-    projectWallSegments.forEach((o, j) => {
-      if (j === wallIndex) return;
-      const perto = Math.hypot(o.ax - px, o.az - pz) < TOL || Math.hypot(o.bx - px, o.bz - pz) < TOL;
-      if (perto) esp = Math.max(esp, Number(o.thicknessMm) || PROJECT_WALL_THICKNESS_MM);
-    });
-    return esp;
-  };
-  return { ini: encosta(seg.ax, seg.az), fim: encosta(seg.bx, seg.bz) };
+  return { ini: 0, fim: 0 };
 }
 
 // Ímã: dado um valor bruto (posição que o ponteiro pediria) e o tamanho do

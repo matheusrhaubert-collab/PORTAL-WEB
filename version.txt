@@ -1,3 +1,3 @@
-﻿data: 2026-08-15 19:11:00
-cache: 202608151911
-mensagem: fix: construtor recebia dims na forma errada e nao achava casco nenhum
+﻿data: 2026-08-15 20:02:20
+cache: 202608152002
+mensagem: fix: modulo encosta no canto (recuo indevido da espessura da parede vizinha)
