@@ -361,12 +361,34 @@
   }
 
   // 1. FURAÇÃO PADRÃO (component_drillings) — fórmulas em C/L/E.
+  // DE ONDE SAEM OS FUROS DE UMA PEÇA (migration 105).
+  //
+  // Duas origens, nesta ordem:
+  //   1. o PROGRAMA escolhido na linha do módulo (part.drilling_pattern_id) —
+  //      a linha "flatbord", em que existem só duas chapas cruas e a função
+  //      (e portanto a furação) vem do USO;
+  //   2. a furação do COMPONENTE (component_drillings) — o modelo antigo, em
+  //      que cada peça especializada carrega os próprios furos.
+  //
+  // O programa GANHA quando existe. Sem ele, nada muda: os 62 módulos antigos
+  // seguem pelo caminho 2, byte a byte como antes. Era isto que faltava pro
+  // módulo novo gerar furo nenhum — o select gravava a escolha e o gerador
+  // continuava perguntando ao componente, que não tem furação.
+  function furosDaPeca(part, drillingsByComponent, holesByPattern) {
+    if (!part) return null;
+    if (part.drilling_pattern_id && holesByPattern) {
+      const doPrograma = holesByPattern[part.drilling_pattern_id];
+      if (doPrograma && doPrograma.length) return doPrograma;
+    }
+    if (!part.component_id || !drillingsByComponent) return null;
+    return drillingsByComponent[part.component_id] || null;
+  }
+
   // Com box (peça posicionável): passa pelo plano local pra aplicar o
   // espelhamento da gêmea 'right'. Sem box (drawer/handle/etc): direto,
   // como sempre foi.
-  function collectStandardHoles(store, part, box, drillingsByComponent) {
-    if (!part.component_id || !drillingsByComponent) return;
-    const rows = drillingsByComponent[part.component_id];
+  function collectStandardHoles(store, part, box, drillingsByComponent, holesByPattern) {
+    const rows = furosDaPeca(part, drillingsByComponent, holesByPattern);
     if (!rows || !rows.length) return;
     const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
     const vars = { C: t.faceA, L: t.faceB, E: t.thickness, W: part.width_mm || 0, H: part.height_mm || 0 };
@@ -477,15 +499,18 @@
   // o copo na FACE dela (counter_face_*, tambor minifix), a
   // counter_face_offset_mm da borda que encostou, entrando pela face voltada
   // pro INTERIOR do módulo. W/H/D = container, pra achar o interior.
-  function collectCounterHoles(store, boxes, drillingsByComponent, settings, W, H, D) {
-    if (!drillingsByComponent) return;
+  function collectCounterHoles(store, boxes, drillingsByComponent, settings, W, H, D, holesByPattern) {
+    if (!drillingsByComponent && !holesByPattern) return;
     const tol = (settings && Number(settings.touch_tolerance_mm)) || 5;
     const ORIG = { x: 'x0', y: 'y0', z: 'z0' };
     const SIZE = { x: 'sx', y: 'sy', z: 'sz' };
     const MODULE_CENTER = { x: (W || 0) / 2, y: (H || 0) / 2, z: (D || 0) / 2 };
 
     boxes.forEach(function (src) {
-      const rows = (src.part.component_id && drillingsByComponent[src.part.component_id]) || null;
+      // Mesma origem dupla dos furos padrão (programa ganha do componente) —
+      // sem isto, a propagação de contra-furo só existiria pros módulos
+      // antigos e a linha nova perderia as cavilhas/minifix.
+      const rows = furosDaPeca(src.part, drillingsByComponent, holesByPattern);
       if (!rows || !rows.length) return;
       const counterRows = rows.filter(function (r) {
         return Number(r.counter_diameter_mm) > 0 && Number(r.counter_depth_mm) > 0;
@@ -540,12 +565,37 @@
   // Um furo de FACE do src (linha face/verso com counter_*) propagado pra
   // peça cuja borda encosta na face — ver comentário 2b acima. x/y da linha
   // já avaliados (coordenadas LOCAIS do plano de cadastro faceA×faceB).
+  // OS DOIS LADOS, NÃO SÓ O DECLARADO (2026-08-16).
+  //
+  // Matt: "ele gera contra furo pra onde tocar" — e não era o que acontecia.
+  // O topcover de CIMA e o de BAIXO usam o MESMO programa (é a mesma peça,
+  // espelhada), com as linhas cadastradas em face='face'. Só que 'face' é o
+  // lado POSITIVO do eixo da espessura: no topcover inferior isso é a
+  // superfície de cima, onde a lateral realmente encosta, e funciona; no
+  // topcover superior a lateral encosta EMBAIXO, o plano calculado passava
+  // pela superfície de cima, nenhuma peça casava e nada propagava. Silêncio
+  // total: o topcover saía furado e a lateral lisa.
+  //
+  // A saída não é cadastrar dois programas (o mesmo furo, duas vezes, pra
+  // divergirem no primeiro ajuste): é procurar quem encosta. A face DECLARADA
+  // continua tendo prioridade — se alguém encosta nela, é ela que vale. Só
+  // quando não há ninguém do lado declarado é que o outro lado é tentado.
+  // Assim nada muda em cadastro que já funcionava, e o caso simétrico passa a
+  // funcionar sem cadastro novo.
+  //
+  // Por que não olhar os dois SEMPRE: uma peça pode encostar nos dois lados
+  // (prateleira entre dois módulos), e a cavilha é UMA — furar os dois
+  // vizinhos poria furo em peça que não leva nada.
   function collectFaceCounterHole(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER) {
+    const declarada = ((row.face || 'face') === 'face') !== (src.role === 'right');
+    if (propagarPelaFace(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER, declarada) > 0) return;
+    propagarPelaFace(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER, !declarada);
+  }
+
+  // Devolve quantas peças receberam contra-furo por esta face.
+  function propagarPelaFace(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER, physPositive) {
     const t = src.t;
-    // lado FÍSICO da face furada no eixo da espessura do src: 'face' = lado
-    // positivo do desenho canônico; na gêmea espelhada ('right') inverte —
-    // mesma convenção de emitLocalHole.
-    const physPositive = ((row.face || 'face') === 'face') !== (src.role === 'right');
+    let emitidos = 0;
     const facePlane = src[ORIG[src.tAxis]] + (physPositive ? src[SIZE[src.tAxis]] : 0);
 
     // ponto do furo em coordenadas do módulo (sobre o plano da face furada)
@@ -578,6 +628,7 @@
 
       // (a) furo entrando pela borda do contato (cavilha / canal do bolt)
       const edge = physPositive ? (edgeIsU ? 'u0' : 'v0') : (edgeIsU ? 'u1' : 'v1');
+      emitidos += 1;
       emitLocalHole(store, tgt, {
         u: edgeIsU ? 0 : pa, v: edgeIsU ? pa : 0, edge: edge,
         diameter: Number(row.counter_diameter_mm),
@@ -600,6 +651,7 @@
         diameter: camDia, depth: camDepth
       });
     });
+    return emitidos;
   }
 
   // 3b. BASE DA DOBRADIÇA NA LATERAL (migration 043) — pra cada porta com
@@ -809,7 +861,7 @@
   // com o volume local da peça-módulo, igual buildModuleAssembly no 3D).
   function collectAssembly(store, parts, W, H, D, config) {
     const built = buildBoxes(parts, W, H, D);
-    collectCounterHoles(store, built.boxes, config.drillingsByComponent, config.settings, W, H, D);
+    collectCounterHoles(store, built.boxes, config.drillingsByComponent, config.settings, W, H, D, config.holesByPattern);
     collectHingePlates(store, parts, built.boxes, config.settings);
     collectSlideHoles(store, parts, built.boxes, W, H, D, config.settings);
     collectShelfSupportHoles(store, built.boxes, config.settings);
@@ -819,9 +871,221 @@
         return;
       }
       if (part.is_module) return;
-      collectStandardHoles(store, part, built.byPart.get(part) || null, config.drillingsByComponent);
+      collectStandardHoles(store, part, built.byPart.get(part) || null, config.drillingsByComponent, config.holesByPattern);
       collectHingeHoles(store, part, config.settings);
     });
+  }
+
+
+  // ---- usinagem: recortes em L -> <SlotL> --------------------------------
+  //
+  // O QUE É: a lateral do toe 4½ leva um entalhe em L de 114 × 76 no canto da
+  // frente EMBAIXO, e a da gola um de 76 × 40 no canto da frente EM CIMA (a
+  // carcaça com gola + toe 4½ leva os DOIS na mesma lateral). Isso já existe
+  // em `module_components.recortes` (migration 094), já é desenhado no 3D
+  // (viewer3d.buildPanelGeometry) e já é cobrado (usinagem_m, migration 092).
+  // Faltava só sair no arquivo da máquina — é o que este bloco faz.
+  //
+  // NÃO É PROPAGAÇÃO POR TOQUE (Matt, 2026-08-16: "o toekick é uma regra que
+  // não precisa encostar pra gerar, quero deixar ela standart, só pras
+  // laterais de toe 4 1/2"). O recorte é regra FIXA do uso, lida direto da
+  // coluna. Contato só decide contra-furo (migrations 043/054).
+  //
+  // COMO A MÁQUINA RECEBE (arquivo real do Matt, 2026-08-16):
+  //
+  //   <SlotL Name="" Face="B" Start="0 -475.5 -7" End="1000 -475.5 -7"
+  //          Width="6.0" IsCuted="0"/>
+  //
+  // SlotL é um rasgo RETO: Start/End variam num eixo só, Width é a largura da
+  // ferramenta e o Z é a profundidade. ÁREA SE FAZ POR PASSES PARALELOS — no
+  // exemplo dele três rasgos de 6,0 em -475,5 / -481 / -487 varrem uma faixa
+  // de ~17,5mm. É essa a receita reproduzida aqui.
+  //
+  // ==== DOIS VALORES QUE PRECISAM DE CONFIRMAÇÃO NA MÁQUINA ====
+  // `face` e `is_cuted_passante` são a única parte que não saiu de arquivo
+  // real: o exemplo do Matt é rasgo CEGO (IsCuted="0", Z=-7 numa peça mais
+  // grossa) e o recorte do toe/gola é PASSANTE. A leitura natural é
+  // IsCuted="1" = corta a peça toda, mas leitura natural não é confirmação.
+  // Estão isolados aqui pra virar um valor só de trocar depois do primeiro
+  // teste na máquina — e expostos em Drilling.USINAGEM pra quem quiser
+  // sobrescrever sem editar o arquivo.
+  const USINAGEM = {
+    ferramenta_mm: 6,        // Width do SlotL — a fresa do exemplo dele
+    sobreposicao_mm: 0.5,    // quanto cada passe invade o anterior (só no bolsão)
+    // 'contorno' = corte passante de canto sai em DOIS passes e o retalho cai
+    //              solto (2 rasgos em vez de 22 numa lateral de toe 4½ + gola)
+    // 'bolsao'   = varre a área inteira em passes paralelos; o material sai em
+    //              cavaco, nada se solta. Mais lento, mas sem peça solta na mesa.
+    estrategia: 'contorno',
+    // ALÍVIO DE CANTO (Matt, 2026-08-16: "cuida do raio de 3mm que pode
+    // atrapalhar pra encostar as peças do gola ou toekick" / "pode avançar um
+    // pouco um corte pra dentro").
+    //
+    // Fresa redonda não faz canto vivo: com Ø6 sobra uma unha de raio 3mm na
+    // quina interna do L, e é justamente onde a ponta do painel do toe / da
+    // gola assenta. A peça encostaria na unha e ficaria pra fora, com fresta.
+    //
+    // A cura é um dos cortes AVANÇAR além da quina: a ponta redonda dele
+    // limpa a unha. Quem avança come 3mm (o raio) da peça que fica, e esses
+    // 3mm ficam escondidos atrás da ponta do painel.
+    //
+    //   'um-corte'    (padrão) só o corte MAIS LONGO avança. A unha some e a
+    //                 marca fica numa face só — é o que ele pediu.
+    //   'dois-cortes' os dois avançam. Limpeza com folga, marca nas duas faces.
+    //   'nenhum'      ninguém avança: nenhuma marca, mas a unha de 3mm fica e
+    //                 o painel não assenta rente (só serve se a ponta do
+    //                 painel for chanfrada na montagem).
+    //
+    // Qual dos dois avança no modo 'um-corte' é uma linha só, logo abaixo em
+    // cornerCutSlots — se a marca ficar do lado errado pra montagem, inverte
+    // ali.
+    alivio_canto: 'um-corte',
+    face: 'B',               // único Face visto num SlotL real
+    is_cuted_passante: '1'   // PALPITE: 1 = passante. Confirmar na máquina.
+  };
+
+  // canto do recorte -> onde ele fica no plano local da peça.
+  // u corre ao longo de faceA (na lateral: a ALTURA, u=0 embaixo);
+  // v corre ao longo de faceB (na lateral: a PROFUNDIDADE, v=0 no FUNDO).
+  // Mesma convenção do viewer3d (shape.x -> profundidade, shape.y -> altura).
+  const CANTO_UV = {
+    'frente-baixo': ['baixo', 'frente'],
+    'frente-cima': ['cima', 'frente'],
+    'fundo-baixo': ['baixo', 'fundo'],
+    'fundo-cima': ['cima', 'fundo']
+  };
+
+  // Recortes da peça -> retângulos em coordenadas da MÁQUINA (x/y positivos,
+  // o formatador nega o y), já com o espelhamento da gêmea direita aplicado
+  // — o mesmo v' = faceB - v de emitLocalHole. Sem isso o entalhe da lateral
+  // direita sairia no fundo em vez de na frente.
+  function recorteRects(part) {
+    const lista = (part && Array.isArray(part.recortes)) ? part.recortes : [];
+    if (!lista.length) return [];
+    const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
+    const mirrored = (part.position_role === 'right');
+    const out = [];
+    lista.forEach(function (r) {
+      if (!r) return;
+      const h = Number(r.h) || 0, d = Number(r.d) || 0;
+      const c = CANTO_UV[r.canto];
+      // Recorte que comeria a peça inteira é cadastro errado, não usinagem:
+      // mesma guarda do viewer3d, que devolve a caixa inteira nesse caso.
+      if (!c || h <= 0 || d <= 0 || h >= t.faceA || d >= t.faceB) return;
+      const u0 = (c[0] === 'baixo') ? 0 : t.faceA - h;
+      const u1 = u0 + h;
+      let v0 = (c[1] === 'fundo') ? 0 : t.faceB - d;
+      let v1 = v0 + d;
+      if (mirrored) { const a = t.faceB - v1; v1 = t.faceB - v0; v0 = a; }
+      const p0 = localToMachine(t, u0, v0);
+      const p1 = localToMachine(t, u1, v1);
+      out.push({
+        x0: Math.min(p0.x, p1.x), x1: Math.max(p0.x, p1.x),
+        y0: Math.min(p0.y, p1.y), y1: Math.max(p0.y, p1.y),
+        depth: t.thickness, passante: true, canto: r.canto
+      });
+    });
+    return out;
+  }
+
+  // Retângulo -> passes paralelos de SlotL.
+  //
+  // Varre na direção MAIS LONGA (menos passes, menos tempo de máquina). Os
+  // passes das pontas ficam a meia-ferramenta da borda, de modo que a aresta
+  // da fresa encoste exatamente no limite do retângulo — nem sobra material,
+  // nem come a peça além do recorte. Faixa mais estreita que a ferramenta
+  // vira UM passe com Width reduzido, em vez de um passe largo demais.
+  //
+  // LIMITE FÍSICO, não do formato: o canto INTERNO do L sai com o raio da
+  // fresa (3mm numa de 6). Quem precisar de canto vivo tem que quebrar na
+  // mão — nenhuma ferramenta redonda faz canto reto.
+  // Corte PASSANTE de canto: duas linhas e o retalho cai.
+  //
+  // O canto do L é um retângulo que toca DUAS bordas da peça. Se o corte
+  // atravessa a chapa, não há por que varrer a área inteira: bastam os dois
+  // rasgos que separam esse retângulo do resto, e ele se solta. Numa lateral
+  // de toe 4½ + gola isso é 4 passes em vez de 22.
+  //
+  // A fresa anda DENTRO do retalho (centro a meia-ferramenta da linha de
+  // corte), então a peça que fica preserva a medida exata do recorte — se
+  // andasse em cima da linha, comeria meia-ferramenta do que deveria ficar.
+  //
+  // Os dois rasgos se cruzam na quina interna de propósito: sem esse
+  // cruzamento sobra um filete inteiro segurando o retalho.
+  //
+  // Devolve null quando o retângulo NÃO é canto (não toca duas bordas
+  // adjacentes) ou quando o corte é cego — nesses casos só o bolsão serve.
+  function cornerCutSlots(rect, C, L) {
+    if (!rect.passante) return null;
+    const w = Math.max(USINAGEM.ferramenta_mm, 0.5);
+    const tol = 0.05;
+    const emX0 = rect.x0 <= tol, emX1 = rect.x1 >= C - tol;
+    const emY0 = rect.y0 <= tol, emY1 = rect.y1 >= L - tol;
+    if (emX0 === emX1 || emY0 === emY1) return null;   // não é canto
+    // A fresa tem que caber dentro do retalho nos dois sentidos.
+    if ((rect.x1 - rect.x0) < w || (rect.y1 - rect.y0) < w) return null;
+    const cx = emX0 ? rect.x1 - w / 2 : rect.x0 + w / 2;
+    const cy = emY0 ? rect.y1 - w / 2 : rect.y0 + w / 2;
+    // Onde cada rasgo TERMINA, do lado da quina interna. Com alívio, o centro
+    // da fresa vai até a quina (a ponta redonda limpa a unha); sem alívio,
+    // para a meia-fresa antes. Do outro lado os dois vão até a borda da peça:
+    // ali o centro para EM CIMA da borda e a ponta redonda sai fora da chapa,
+    // que é o que garante saída limpa.
+    // O rasgo VERTICAL (x constante) corre ao longo de Y, então o
+    // comprimento dele é a altura do retângulo; o HORIZONTAL, a largura.
+    // No modo 'um-corte' quem avança é o mais longo: é o passe principal, o
+    // curto só arremata.
+    const compVert = rect.y1 - rect.y0, compHoriz = rect.x1 - rect.x0;
+    const modo = USINAGEM.alivio_canto;
+    const avancaVert = (modo === 'dois-cortes') || (modo === 'um-corte' && compVert >= compHoriz);
+    const avancaHoriz = (modo === 'dois-cortes') || (modo === 'um-corte' && compHoriz > compVert);
+    const recuoVert = avancaVert ? 0 : w / 2;
+    const recuoHoriz = avancaHoriz ? 0 : w / 2;
+    const fimY = emY0 ? rect.y1 - recuoVert : rect.y0 + recuoVert;   // fim do rasgo vertical
+    const fimX = emX0 ? rect.x1 - recuoHoriz : rect.x0 + recuoHoriz; // fim do rasgo horizontal
+    return [
+      { x0: cx, x1: cx, y0: emY0 ? rect.y0 : fimY, y1: emY0 ? fimY : rect.y1,
+        width: w, depth: rect.depth, passante: true },
+      { x0: emX0 ? rect.x0 : fimX, x1: emX0 ? fimX : rect.x1, y0: cy, y1: cy,
+        width: w, depth: rect.depth, passante: true }
+    ];
+  }
+
+  function rectToSlots(rect, C, L) {
+    if (USINAGEM.estrategia === 'contorno') {
+      const corte = cornerCutSlots(rect, C, L);
+      if (corte) return corte;
+    }
+    const wMax = Math.max(USINAGEM.ferramenta_mm, 0.5);
+    const passo = Math.max(wMax - USINAGEM.sobreposicao_mm, 0.5);
+    const dx = rect.x1 - rect.x0, dy = rect.y1 - rect.y0;
+    if (!(dx > 0) || !(dy > 0)) return [];
+    const aoLongoDeX = dx >= dy;
+    const faixa = aoLongoDeX ? dy : dx;
+    const w = Math.min(wMax, faixa);
+    const n = Math.max(1, Math.ceil((faixa - w) / passo) + 1);
+    const c0 = (aoLongoDeX ? rect.y0 : rect.x0) + w / 2;
+    const c1 = (aoLongoDeX ? rect.y1 : rect.x1) - w / 2;
+    const slots = [];
+    for (let i = 0; i < n; i++) {
+      const c = (n === 1) ? (c0 + c1) / 2 : c0 + (c1 - c0) * (i / (n - 1));
+      slots.push(aoLongoDeX
+        ? { x0: rect.x0, x1: rect.x1, y0: c, y1: c, width: w, depth: rect.depth, passante: rect.passante }
+        : { x0: c, x1: c, y0: rect.y0, y1: rect.y1, width: w, depth: rect.depth, passante: rect.passante });
+    }
+    return slots;
+  }
+
+  // Todos os passes de uma peça, prontos pro .ban.
+  function slotsDaPeca(part) {
+    const rects = recorteRects(part);
+    if (!rects.length) return [];
+    const m = machineDims(splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning));
+    const out = [];
+    rects.forEach(function (r) {
+      rectToSlots(r, m.C, m.L).forEach(function (s) { out.push(s); });
+    });
+    return out;
   }
 
   // ---- formatador .ban (MicroDrawBan_XML v3.0) --------------------------
@@ -854,7 +1118,14 @@
     }
   }
 
-  function buildBanXml(name, C, L, E, holes) {
+  function slotToXml(s) {
+    return '<SlotL Name="" Face="' + USINAGEM.face + '" Start="' + fmt(s.x0) + ' -' + fmt(s.y0)
+      + ' -' + fmt(s.depth) + '" End="' + fmt(s.x1) + ' -' + fmt(s.y1) + ' -' + fmt(s.depth)
+      + '" Width="' + s.width.toFixed(1) + '" IsCuted="'
+      + (s.passante ? USINAGEM.is_cuted_passante : '0') + '"/>';
+  }
+
+  function buildBanXml(name, C, L, E, holes, slots) {
     const now = new Date();
     const pad = function (n) { return String(n).padStart(2, '0'); };
     const time = now.getFullYear() + '/' + pad(now.getMonth() + 1) + '/' + pad(now.getDate())
@@ -875,6 +1146,9 @@
       const xml = holeToXml(h, C, L, E);
       if (xml) lines.push(xml);
     });
+    // usinagem depois dos furos, dentro do mesmo <Plane> — é onde os SlotL
+    // aparecem no arquivo de exemplo da máquina.
+    (slots || []).forEach(function (s) { lines.push(slotToXml(s)); });
     lines.push('</Plane>');
     lines.push('</MicroDrawBan_XML>');
     return lines.join('\r\n') + '\r\n'; // CRLF, igual aos arquivos da máquina
@@ -909,8 +1183,57 @@
         (parts || []).forEach(function (part) {
           if (part.is_module) { walk(part.child_pieces); return; }
           const holes = store.get(part) || [];
-          if (!holes.length) return;
           if (part.origin === 'comprado') return; // ferragem comprada não fura
+          const slots = slotsDaPeca(part);
+          // COR E SENTIDO DO VEIO — só pro DESENHO (visualizador de furação do
+          // lote). O .ban não leva cor nenhuma; isto viaja no registro e o
+          // formatador ignora.
+          //
+          // O eixo do veio no plano da máquina sai de graça da convenção do
+          // formato: X é SEMPRE a maior das duas faces (machineDims escolhe
+          // C = max(faceA, faceB)), e "comprimento" é justamente a maior. Logo
+          // veio no comprimento = veio no X, largura = Y. Não precisa olhar o
+          // flip — ele já foi resolvido ao escolher C.
+          // swatch_hex pode estar VAZIO numa cor de textura (a foto da chapa
+          // é o que representa ela; o hex é só o quadradinho da interface e
+          // nem sempre foi preenchido). Sem ele a peça saía branca e parecia
+          // que a cor não tinha chegado — mesmo com o nome certo na tela.
+          // Aqui isso vira um bege de madeira neutro, e `cor_sem_swatch`
+          // avisa a interface pra dizer POR QUE a cor não é a de verdade.
+          // A COR DE VERDADE PODE ESTAR NA TEXTURA. Cor de madeira é
+          // cadastrada com foto da chapa, e o swatch_hex fica no '#cccccc'
+          // que o formulário preenche sozinho — foi o caso do Honey Carini:
+          // a peça era pintada de cinza claro a 30% sobre branco, ou seja,
+          // de nada. Quando existe textura, ela é o fundo; o hex vira só
+          // reserva. '#cccccc' é tratado como "não escolhido" de propósito.
+          const swatchBruto = (part.color && part.color.swatch_hex) || null;
+          const swatch = (swatchBruto && swatchBruto.toLowerCase() !== '#cccccc') ? swatchBruto : null;
+          const textura = (part.color && part.color.texture_url) || null;
+          const corPeca = swatch || (part.color ? '#d7c4a3' : null);
+          const semSwatch = !!(part.color && !swatch && !textura);
+          // VEIO EFETIVO = veio da COR **ou** veio exigido pela peça.
+          //
+          // É a regra da migration 083, e errei ela na 1ª versão: lia só o
+          // `veio` do componente e ignorava o `has_grain` da cor. Na linha
+          // flatbord o componente é sempre 'livre' (a chapa crua não exige
+          // orientação nenhuma), então marcar "tem veio" no Honey não mudava
+          // nada na tela — foi o que o Matt viu. Quem sabe se o material TEM
+          // veio é a cor; o componente só diz se aquela peça precisa de um
+          // sentido ESPECÍFICO.
+          //
+          // Direção: a 083 trava "comprimento sempre no sentido do veio", e no
+          // plano da máquina o X é sempre a maior face (machineDims escolhe
+          // C = max). Logo veio da cor = veio no X. Só um componente pedindo
+          // 'largura' explicitamente sai do X.
+          const veioPeca = part.grain_dir || part.veio || 'livre';
+          const corTemVeio = !!(part.color && part.color.has_grain);
+          const veioEixo = veioPeca === 'largura' ? 'y'
+            : ((veioPeca === 'comprimento' || corTemVeio) ? 'x' : null);
+          // Peça sem furo NEM usinagem não gera arquivo (máquina não precisa
+          // de .ban vazio). Com recorte e sem furo, GERA: o entalhe do toe 4½
+          // é trabalho de máquina igual — antes desta linha a condição era só
+          // `!holes.length` e a peça saía de fora.
+          if (!holes.length && !slots.length) return;
           const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
           const m = machineDims(t);
           // ordena furos (face primeiro, depois posição) pra assinatura ser
@@ -919,17 +1242,32 @@
             return (a.face > b.face ? 1 : a.face < b.face ? -1 : 0) || (a.x - b.x) || (a.y - b.y) || (a.diameter - b.diameter);
           });
           const signature = [item.moduleName, part.reference, m.C.toFixed(1), m.L.toFixed(1), m.E.toFixed(1),
-            JSON.stringify(sorted.map(function (h) { return [h.face, Math.round(h.x * 10), Math.round(h.y * 10), h.diameter, Math.round(h.depth * 10)]; }))
+            JSON.stringify(sorted.map(function (h) { return [h.face, Math.round(h.x * 10), Math.round(h.y * 10), h.diameter, Math.round(h.depth * 10)]; })),
+            // a usinagem entra na assinatura: duas peças com a MESMA furação e
+            // recortes diferentes (lateral de toe 4½ x lateral lisa) não podem
+            // colapsar no mesmo arquivo.
+            JSON.stringify(slots.map(function (sl) { return [Math.round(sl.x0 * 10), Math.round(sl.y0 * 10), Math.round(sl.x1 * 10), Math.round(sl.y1 * 10), sl.width, Math.round(sl.depth * 10), sl.passante ? 1 : 0]; }))
           ].join('|');
           if (!fileMap.has(signature)) {
             fileMap.set(signature, {
               module_name: item.moduleName,
               reference: part.reference || 'peca',
               comprimento_mm: m.C, largura_mm: m.L, espessura_mm: m.E,
-              holes: sorted, quantity: 0
+              holes: sorted, slots: slots, quantity: 0,
+              // cor NÃO entra na assinatura de propósito: a furação de duas
+              // peças iguais em cores diferentes é a MESMA, e separar os
+              // arquivos por cor faria a máquina furar duas vezes o que é um
+              // programa só. Quando isso acontece, cor_mista avisa o desenho
+              // pra não mentir mostrando uma cor que vale só pra parte delas.
+              cor: corPeca, cor_nome: (part.color && part.color.name) || null,
+              cor_mista: false, cor_sem_swatch: semSwatch, textura: textura,
+              veio: veioPeca, cor_tem_veio: corTemVeio, veio_eixo: veioEixo
             });
           }
-          fileMap.get(signature).quantity += (item.quantity || 1);
+          const reg = fileMap.get(signature);
+          reg.quantity += (item.quantity || 1);
+          if (corPeca && reg.cor && corPeca !== reg.cor) reg.cor_mista = true;
+          if (!reg.cor && corPeca) reg.cor = corPeca;
         });
       };
       walk(item.parts);
@@ -951,14 +1289,15 @@
         + Math.round(rec.comprimento_mm) + 'x' + Math.round(rec.largura_mm) + 'x' + Math.round(rec.espessura_mm);
       return {
         filename: base + '.ban',
-        content: buildBanXml(base, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes),
+        content: buildBanXml(base, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes, rec.slots),
         quantity: rec.quantity,
         reference: rec.reference,
         module_name: rec.module_name,
         comprimento_mm: rec.comprimento_mm,
         largura_mm: rec.largura_mm,
         espessura_mm: rec.espessura_mm,
-        holes_count: rec.holes.length
+        holes_count: rec.holes.length,
+        slots_count: (rec.slots || []).length
       };
     });
   }
@@ -969,7 +1308,63 @@
     buildBanXml: buildBanXml,
     // expostos pra teste/diagnóstico (e pra prévia 2D do admin usar a MESMA
     // correção de sentido do gerador — resolveDrillingHoleXY)
-    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes }
+    // ======================================================================
+    // CONTAGEM REAL DE FUROS POR PEÇA (2026-08-15)
+    // ======================================================================
+    // Devolve { [piece_id]: nº de furos } — o número que a peça DE FATO
+    // recebe, incluindo os propagados (contra-furo de cavilha/minifix) e os
+    // de dobradiça/corrediça/suporte de prateleira.
+    //
+    // Por que existe: o custo de furação usava `furos_equivalentes`, um número
+    // digitado à mão no cadastro, com a convenção "quem define a junta paga
+    // pelos dois lados". Funciona, mas desatualiza sozinho: mudou o programa,
+    // o número fica velho — e a LATERAL, que só recebe contra-furo, aparecia
+    // pagando zero de variável (foi o que o Matt viu).
+    //
+    // Aqui o número sai do MESMO gerador que produz o .ban. Se o furo existe
+    // no arquivo da máquina, ele é cobrado; se não existe, não é. Não há como
+    // divergir, e não há nada pra manter.
+    //
+    // Reaproveita collectAssembly inteiro de propósito — inclusive
+    // buildBoxes, que é a parte cara. Quem chama deve guardar o resultado
+    // enquanto as medidas não mudarem (ver o cache em portal.js).
+    countHolesByPiece: function (parts, W, H, D, config) {
+      const store = new Map();
+      try {
+        collectAssembly(store, parts, W, H, D, config || {});
+      } catch (e) {
+        return {};   // furação quebrada não pode derrubar o preço
+      }
+      const out = {};
+      store.forEach(function (holes, part) {
+        // piece_id é o id da LINHA module_components (o mesmo que o preço usa
+        // pra achar a peça). part.id existe como reserva pros caminhos que
+        // não passam por resolvePiecesForViewer.
+        const chave = part.piece_id || part.id;
+        if (!chave) return;
+        out[chave] = (out[chave] || 0) + holes.length;
+      });
+      return out;
+    },
+
+    // Agrupa as linhas de drilling_pattern_holes por programa, no formato que
+    // collectAssembly espera em config.holesByPattern (migration 105).
+    // Existe aqui, e não copiado em cada tela, porque são 5 chamadores (admin,
+    // teste de cálculo, .ban do pedido, lote, portal) e um deles esquecer o
+    // agrupamento significaria peça saindo sem furo na fábrica.
+    groupPatternHoles: function (rows) {
+      const map = {};
+      (rows || []).forEach(function (r) {
+        if (!map[r.pattern_id]) map[r.pattern_id] = [];
+        map[r.pattern_id].push(r);
+      });
+      return map;
+    },
+    // Parâmetros da usinagem (SlotL). Expostos pra dar pra ajustar ferramenta,
+    // sobreposição, Face e IsCuted sem editar o arquivo — os dois últimos
+    // ainda esperam confirmação na máquina.
+    USINAGEM: USINAGEM,
+    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 // migration 043 — propagação por componente + espelhamento esq/dir

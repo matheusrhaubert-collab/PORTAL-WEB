@@ -1,3 +1,3 @@
-﻿data: 2026-08-15 21:53:41
-cache: 202608152153
-mensagem: porta sobre multiplos vaos: arrastar pelos vaos pinta a faixa
+﻿data: 2026-08-16 10:50:44
+cache: 202608161050
+mensagem: Portal: ajustes de 2026-08-16 10:50:44

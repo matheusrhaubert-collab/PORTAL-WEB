@@ -3656,3 +3656,79 @@ header.po-topnav {
   #po-proj-send-to-order-btn { display: inline-flex !important; }
   #po-proj-canvas-tools .po-tb-seg-btn { padding: 6px 8px; }
 }
+
+/* ==========================================================================
+   $ ORÇAMENTO / $ FÁBRICA (2026-08-15)
+   ========================================================================== */
+#po-money-modal {
+  display: none; position: fixed; inset: 0; z-index: 3400;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 16px;
+}
+#po-money-modal.open { display: flex; }
+.po-money-card {
+  background: var(--panel); border-radius: 12px;
+  width: 780px; max-width: 96vw; max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.po-money-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--border); flex: none;
+}
+.po-money-tabs { display: flex; gap: 6px; }
+.po-money-tab {
+  border: 1px solid var(--border); background: none; cursor: pointer;
+  padding: 6px 14px; border-radius: 6px; font-size: 13px; color: var(--muted);
+}
+.po-money-tab.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+.po-money-body { padding: 14px 16px; overflow-y: auto; }
+.po-money-sub { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+.po-money-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.po-money-table th {
+  text-align: left; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.po-money-table td { padding: 5px 6px; border-bottom: 1px solid #f0ece3; }
+.po-money-table .num { text-align: right; }
+.po-money-table .dim { color: var(--muted); font-size: 12px; }
+.po-money-table .pct { color: var(--muted); width: 58px; }
+/* Cabeçalho de natureza: separa material / fita / mão de obra / ferragem. */
+.po-money-sec td {
+  padding-top: 12px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; color: #8a8378; border-bottom: none;
+}
+.po-money-total {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 12px; padding-top: 8px; border-top: 2px solid var(--border);
+  font-size: 15px;
+}
+.po-money-total.secundario {
+  border-top: none; margin-top: 4px; padding-top: 0;
+  font-size: 12px; color: var(--muted);
+}
+.po-money-lock { text-align: center; padding: 28px 10px; }
+.po-money-lock input {
+  width: 200px; text-align: center; margin: 10px auto 8px; display: block;
+}
+.po-money-erro { color: #b0503c; font-size: 12px; min-height: 16px; }
+
+/* Mais largo (2026-08-15, "deixa mais aberto"): a tabela por peça tem 12
+   colunas e precisa respirar. O scroll horizontal é só dela, não do modal. */
+.po-money-card { width: 1180px; }
+.po-money-h {
+  margin: 20px 0 4px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .08em; color: #8a8378;
+}
+.po-money-scroll { overflow-x: auto; }
+.po-money-peca { min-width: 900px; }
+.po-money-peca td, .po-money-peca th { padding: 4px 5px; font-size: 12px; }
+.po-money-table .zero { color: #cfc9bd; }
+
+/* Subtotal por natureza (matéria-prima / mão de obra): destaque sem virar
+   total — o total geral continua sendo o de baixo. */
+.po-money-subtotal td {
+  font-weight: 600; border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); background: #faf8f4;
+}

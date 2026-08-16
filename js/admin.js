@@ -2998,10 +2998,15 @@ if (moduleConfigSearchEl) moduleConfigSearchEl.addEventListener('input', renderM
 // deslocamento pro 3D) — só adaptadas pro padrão de erro do admin
 // (showError(elId, err) em vez de um banner global).
 
+// ⚠️ ARQUIVO FÓSSIL — js/admin.js NÃO É CARREGADO POR NENHUMA PÁGINA.
+// Conferido em 2026-08-15: nenhum .html tem <script src="js/admin.js">. O
+// painel admin virou o ERP e o código foi extraído pra erp/js/adm/*. Editar
+// aqui não tem efeito nenhum — eu mesmo perdi tempo fazendo isso, achando que
+// consertava a tela do ERP. A cópia VIVA deste resolvedor é js/module-pieces.js.
 async function loadRecursivePiecesForModule(moduleId) {
   const { data, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, drilling_pattern_id, grain_dir, components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId)
     .order('sort_order');
   if (error) { showError('module-image-error', error); return []; }
@@ -3028,6 +3033,14 @@ async function loadRecursivePiecesForModule(moduleId) {
         // da linha, migration 025), mas a furação (migration 038) precisa
         // dele pra buscar os furos padrão em component_drillings.
         component_id: row.component_id,
+        // PROGRAMA DE FURAÇÃO desta linha (migration 105). Vem do USO, não do
+        // componente: na linha "flatbord" existem só duas chapas cruas, então
+        // a furação não pode morar nelas. Quando preenchido, drilling.js usa
+        // os furos do programa; NULL cai em component_drillings, que é o
+        // caminho dos módulos antigos.
+        drilling_pattern_id: row.drilling_pattern_id || null,
+        // Sentido do veio por uso (migration 105) — mesma lógica.
+        grain_dir: row.grain_dir || null,
         // Nome customizado desta instância (migration 032) — sobrescreve o
         // nome do catálogo só na exibição (admin, teste de cálculo, balão do
         // 3D). Vazio/null = usa o nome do catálogo, como sempre (por isso
@@ -6801,13 +6814,21 @@ document.getElementById('module-drilling-preview-btn').addEventListener('click',
   statusEl.textContent = 'Gerando...';
   try {
     const module = modulesCache.find((m) => m.id === selectedModuleId);
-    const [pieces, drillsRes, settingsRes] = await Promise.all([
+    const [pieces, drillsRes, patternHolesRes, settingsRes] = await Promise.all([
       loadRecursivePiecesForModule(selectedModuleId),
       supabaseClient.from('component_drillings').select('*').order('sort_order'),
+      // Furos dos PROGRAMAS (migration 105) — é daqui que a linha "flatbord"
+      // tira a furação, já que os dois componentes crus não têm nenhuma.
+      supabaseClient.from('drilling_pattern_holes').select('*').order('sort_order'),
       supabaseClient.from('drilling_settings').select('*').eq('id', true).single()
     ]);
     if (drillsRes.error) throw drillsRes.error;
     if (settingsRes.error) throw settingsRes.error;
+
+    // Erro engolido de propósito: sem a migration 105 o mapa fica vazio e tudo
+    // segue pela furação do componente, como antes.
+    const holesByPattern = Drilling.groupPatternHoles(
+      (patternHolesRes && !patternHolesRes.error && patternHolesRes.data) || []);
 
     const drillingsByComponent = {};
     (drillsRes.data || []).forEach((row) => {
@@ -6833,7 +6854,7 @@ document.getElementById('module-drilling-preview-btn').addEventListener('click',
     const parts = resolvePiecesForViewer(effectivePieces, { W, H, D }, {}, shelfQuantities);
     const recs = Drilling.collectOrderPieces(
       [{ moduleName: module ? module.name : '', parts, W, H, D, quantity: 1 }],
-      { drillingsByComponent, settings: settingsRes.data || {} }
+      { drillingsByComponent, holesByPattern, settings: settingsRes.data || {} }
     );
 
     if (recs.length === 0) {
@@ -7846,14 +7867,19 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
   }
   statusEl.textContent = 'Gerando furação...';
   try {
-    const [itemsRes, drillsRes, settingsRes] = await Promise.all([
+    const [itemsRes, drillsRes, patternHolesRes, settingsRes] = await Promise.all([
       supabaseClient.from('order_items')
         .select('module_id, module_name, quantity, width_mm, height_mm, depth_mm, shelf_quantities, dim_overrides, selected_optional_component_ids, sort_order, modules(is_decoration)')
         .eq('order_id', currentCutlistOrder.id)
         .order('sort_order'),
       supabaseClient.from('component_drillings').select('*').order('sort_order'),
+      // Furos dos PROGRAMAS (migration 105) — sem isto o .ban do pedido sairia
+      // sem furo nenhum pros modulos da linha "flatbord".
+      supabaseClient.from('drilling_pattern_holes').select('*').order('sort_order'),
       supabaseClient.from('drilling_settings').select('*').eq('id', true).single()
     ]);
+    const holesByPattern = Drilling.groupPatternHoles(
+      (patternHolesRes && !patternHolesRes.error && patternHolesRes.data) || []);
     if (itemsRes.error) throw itemsRes.error;
     if (drillsRes.error) throw drillsRes.error;
     if (settingsRes.error) throw settingsRes.error;
@@ -7890,6 +7916,7 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
 
     const files = Drilling.generateOrderFiles(drillingItems, {
       drillingsByComponent,
+      holesByPattern,
       settings: settingsRes.data || {}
     });
 

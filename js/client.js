@@ -365,16 +365,9 @@ async function loadModuleColors(moduleId) {
 // Papéis de cor que as peças do módulo atual REALMENTE usam (recursivo —
 // inclui peças dentro de peças-módulo aninhadas), na ordem do catálogo
 // (colorRolesCache já vem ordenado por sort_order).
-function collectUsedColorRoleIds(piecesList) {
-  const ids = new Set();
-  (piecesList || []).forEach((p) => {
-    if (p.color_role_id) ids.add(p.color_role_id);
-    if (p.is_module && p.child_pieces) {
-      collectUsedColorRoleIds(p.child_pieces).forEach((id) => ids.add(id));
-    }
-  });
-  return ids;
-}
+// collectUsedColorRoleIds mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 // Monta um grupo de swatches por papel de cor usado neste módulo (migration
 // 035) — substitui os 2 blocos fixos "Cor da caixa"/"Cor da porta". Chamado
@@ -450,191 +443,19 @@ function renderSwatches(container, items, selectedId, onSelect) {
 // quanto, recursivamente, pra qualquer módulo filho (ex: um "modelo de
 // porta" ou "modelo de gaveta", que agora são só módulos comuns usados como
 // peça — sem tabela/UI especial nenhuma).
-async function loadRecursivePiecesForModule(moduleId) {
-  const { data, error } = await supabaseClient
-    .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, components(*, labor_types(*), component_types(*))')
-    .eq('module_id', moduleId)
-    .order('sort_order');
-  if (error) { showError('Erro ao carregar configuração do módulo: ' + error.message); return []; }
-
-  const result = [];
-  for (const row of (data || [])) {
-    if (row.component_id) {
-      if (!row.components || !row.components.active) continue;
-      const quantity = (row.quantity_override !== null && row.quantity_override !== undefined)
-        ? row.quantity_override
-        : row.components.quantity;
-      // Mão de obra vem de um catálogo pré-cadastrado (Mão de obra caixa,
-      // LED, 1, 2, 3...) — o componente só escolhe qual tipo usa.
-      const labor_cost_per_unit = row.components.labor_types ? row.components.labor_types.price_per_unit : 0;
-      // Papel de cor (migration 035) vem do tipo do componente (Lateral,
-      // Base, Porta, Gaveta...), não mais de um boolean is_front fixo.
-      const color_role_id = row.components.component_types ? row.components.component_types.color_role_id : null;
-      // Posicionamento (migration 024) — declara explicitamente o eixo de
-      // espessura da peça no 3D (viewer3d.js splitThickness), substituindo a
-      // auto-detecção por menor dimensão quando cadastrado no Tipo. null =
-      // automático (comportamento antigo).
-      const positioning = row.components.component_types ? row.components.component_types.positioning : null;
-      // Fórmula de L/A/P: a mesma peça de catálogo pode ter fórmula
-      // diferente dependendo do módulo pai (ex: espessura de lateral
-      // diferente) — usa o override deste módulo se existir, senão a
-      // fórmula padrão do componente.
-      const width_formula = row.width_formula_override || row.components.width_formula;
-      const height_formula = row.height_formula_override || row.components.height_formula;
-      const depth_formula = row.depth_formula_override || row.components.depth_formula;
-      result.push({
-        ...row.components,
-        // id vira o da LINHA (module_components.id — row.id), não o do
-        // catálogo (migration 025: o mesmo componente pode ter 2+ linhas no
-        // mesmo módulo, cada uma numa posição — se piece.id ficasse com o id
-        // do catálogo, as instâncias colidiriam em selectedOptionalComponentIds/
-        // shelfQuantities, que são keyed por piece.id em client.js/pricing.js).
-        id: row.id,
-        // Nome customizado desta instância (migration 032) — sobrescreve o
-        // nome do catálogo só na exibição (balão do 3D). Fica DEPOIS do
-        // ...row.components pra não ser apagado pelo spread.
-        reference: row.reference_override || row.components.reference,
-        quantity, labor_cost_per_unit, positioning,
-        /* Migration 090 — POSIÇÃO E COR PASSAM A SER DO USO, não da peça.
-           A peça genérica ("Flatbord 2C") é a mesma chapa em qualquer lugar
-           do módulo; o que ela vira — base, divisória, topo — é decidido
-           aqui, na linha que diz "este módulo usa esta peça".
-
-           As duas colunas já existiam em module_components e já eram lidas
-           na peça-MÓDULO; a peça-folha simplesmente nunca as leu. O schema
-           inclusive documenta a intenção: "componente usa
-           components.position_role" quando nulo.
-
-           Seguro por construção: o admin grava null em toda linha de
-           peça-folha (13-modulo-pecas.js), então nulo continua herdando e
-           nenhum módulo existente se mexe. */
-        position_role: row.position_role || row.components.position_role,
-        color_role_id: row.color_role_id || color_role_id,
-        // Metros de usinagem DESTE uso (migration 092) — a mesma lateral é
-        // entalhada numa carcaça e lisa em outra, por isso vem da linha do
-        // módulo e não do componente.
-        usinagem_m: row.usinagem_m || 0,
-        // Recortes em L DESTE uso (migration 094) — lista de {canto, h, d}.
-        // Por uso e não por componente, igual usinagem_m; lista porque a
-        // carcaça gola + toe 4½ leva dois na mesma lateral. Só desenho: a
-        // chapa continua sendo cortada retangular.
-        recortes: Array.isArray(row.recortes) ? row.recortes : [],
-        // Veio e "leva furo" (migration 086) — o Construtor valida o CASCO
-        // contra a chapa com estes dois, exatamente como valida as peças da
-        // árvore. Sem eles, uma peça grande demais pra chapa passava batido.
-        veio: row.components.veio || 'livre',
-        fura: row.components.fura !== false,
-        // Limite do lado no plano da máquina (migration 090)
-        lado_min_mm: row.components.lado_min_mm || null,
-        lado_max_mm: row.components.lado_max_mm || null,
-        width_formula, height_formula, depth_formula,
-        // Deslocamento — FÓRMULA (aceita W, H, D) só do DESENHO 3D — ex:
-        // fundo que entra num rebaixo e fica "H-19" (19mm abaixo do topo) em
-        // vez de centralizado. Ainda não é um valor em mm aqui — é avaliada
-        // em recalculate()/resolvePiecesForViewer com as medidas atuais do
-        // container. Não afeta preço.
-        offset_x_formula: row.offset_x_mm || '0',
-        offset_y_formula: row.offset_y_mm || '0',
-        offset_z_formula: row.offset_z_mm || '0',
-        // "Cliente escolhe a quantidade" (ex: prateleiras) vem do VÍNCULO
-        // módulo x componente, não mais do componente global — o mesmo
-        // componente pode ter um intervalo diferente em cada módulo.
-        quantity_configurable: !!row.quantity_configurable,
-        quantity_min: row.quantity_min,
-        quantity_max: row.quantity_max,
-        quantity_default: row.quantity_default,
-        // "Opcional" (puxador, rodapé, tampo, pé...) — o cliente decide
-        // incluir ou não via caixinha de marcar (ver renderOptionalComponents).
-        client_optional: !!row.client_optional,
-        // Só importa quando client_optional=true: caixinha já nasce marcada
-        // (item já entra), mas o cliente ainda pode desmarcar e tirar — ver
-        // o reset de selectedOptionalComponentIds na troca de módulo.
-        client_optional_default_on: !!row.client_optional_default_on,
-        visibility_dimension: row.visibility_dimension || null,
-        visibility_min_mm: row.visibility_min_mm,
-        visibility_max_mm: row.visibility_max_mm,
-        is_module: false
-      });
-    } else if (row.child_module_id) {
-      // Peça-módulo aninhada — busca a composição e as profundidades fixas
-      // do módulo FILHO recursivamente. As fórmulas de L/A/P aqui são
-      // OBRIGATÓRIAS (não são "override" de nada — são a única fonte de
-      // dimensão dessa peça, ver admin.js/pricing.js).
-      const [fixedDepths, childPieces, lockedPresets, ownHingeSlide] = await Promise.all([
-        fetchModuleFixedDepths(row.child_module_id),
-        loadRecursivePiecesForModule(row.child_module_id),
-        fetchModuleLockedDimensionPresets(row.child_module_id),
-        fetchModuleOwnHingeAndSlideModels(row.child_module_id)
-      ]);
-      result.push({
-        // id vira o da LINHA (row.id) em vez do child_module_id — mesmo
-        // motivo do branch de componente acima: o mesmo módulo aninhado
-        // também pode ter 2+ linhas no módulo pai (migration 025).
-        id: row.id,
-        is_module: true,
-        // reference_override (migration 032) tem prioridade; sem ele, cai no
-        // fallback module_name já existente em resolvePiecesForViewer
-        // (piece.reference || piece.module_name).
-        reference: row.reference_override || null,
-        position_role: row.position_role || 'other',
-        color_role_id: row.color_role_id || null,
-        opening_type: row.opening_type || 'none',
-        slides_per_unit: row.slides_per_unit || 0,
-        tilt_angle_deg: row.tilt_angle_deg || 0, // migration 066 — inclinação do conjunto (só 'shelf')
-        rotation_y_deg: row.rotation_y_deg || 0, // migration 067 — giro de canto do conjunto (só 'free')
-        width_formula: row.width_formula_override,
-        height_formula: row.height_formula_override,
-        depth_formula: row.depth_formula_override,
-        offset_x_formula: row.offset_x_mm || '0',
-        offset_y_formula: row.offset_y_mm || '0',
-        offset_z_formula: row.offset_z_mm || '0',
-        quantity: (row.quantity_override !== null && row.quantity_override !== undefined) ? row.quantity_override : 1,
-        quantity_configurable: !!row.quantity_configurable,
-        quantity_min: row.quantity_min,
-        quantity_max: row.quantity_max,
-        quantity_default: row.quantity_default,
-        client_optional: !!row.client_optional,
-        client_optional_default_on: !!row.client_optional_default_on,
-        visibility_dimension: row.visibility_dimension || null,
-        visibility_min_mm: row.visibility_min_mm,
-        visibility_max_mm: row.visibility_max_mm,
-        fixed_depths: fixedDepths,
-        locked_width_presets: lockedPresets.width,
-        locked_height_presets: lockedPresets.height,
-        locked_depth_presets: lockedPresets.depth,
-        own_hinge_model: ownHingeSlide.hinge,
-        own_slide_model: ownHingeSlide.slide,
-        // Limite de tamanho PRÓPRIO do módulo filho (sempre ativo, ver
-        // fetchModuleLockedDimensionPresets) — clampado em
-        // resolvePiecesForViewer/Pricing.calculateModulePiece.
-        own_width_min_mm: lockedPresets.ownWidthMinMm,
-        own_width_max_mm: lockedPresets.ownWidthMaxMm,
-        own_height_min_mm: lockedPresets.ownHeightMinMm,
-        own_height_max_mm: lockedPresets.ownHeightMaxMm,
-        own_depth_min_mm: lockedPresets.ownDepthMinMm,
-        own_depth_max_mm: lockedPresets.ownDepthMaxMm,
-        // Nome do módulo filho — só existe pra dar nome à peça no
-        // painel de duplo-clique do 3D (viewer3d.js); nada de cálculo
-        // depende disso.
-        module_name: lockedPresets.name,
-        child_pieces: childPieces
-      });
-    }
-  }
-  return result;
-}
+// loadRecursivePiecesForModule MUDOU DE CASA (2026-08-15): a cópia que ficava
+// aqui foi para js/module-pieces.js, que agora é a ÚNICA. Estava duplicada em
+// quatro arquivos e um campo novo esquecido numa delas fazia a peça sair SEM
+// FURO, em silêncio. Coluna nova de module_components entra lá, uma vez só.
 
 // Profundidades fixas cadastradas pra um módulo (module_fixed_depths) —
 // generaliza o antigo drawer_type_depths: QUALQUER módulo usado como peça
 // aninhada pode ter isso, não só um "modelo de gaveta" especial. A peça não
 // estica pra qualquer profundidade, só existe nessas medidas (ex: corrediças
 // de 300/350/400/450mm) — Pricing.pickDrawerDepth escolhe sozinha qual cabe.
-async function fetchModuleFixedDepths(moduleId) {
-  const { data, error } = await supabaseClient.from('module_fixed_depths').select('depth_mm').eq('module_id', moduleId);
-  if (error) { console.error(error); return []; }
-  return (data || []).map((r) => Number(r.depth_mm));
-}
+// fetchModuleFixedDepths mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 // Um módulo pode ter Largura/Altura/Profundidade "travadas" (migration 028 —
 // module_dimension_presets + width_locked/height_locked/depth_locked): quando
@@ -648,35 +469,9 @@ async function fetchModuleFixedDepths(moduleId) {
 // resolvePiecesForViewer/Pricing.calculateAssembly arredondarem pro valor
 // permitido mais próximo (Pricing.pickNearestPreset), igual já acontecia só
 // com profundidade fixa de gaveta (module_fixed_depths/pickDrawerDepth).
-async function fetchModuleLockedDimensionPresets(moduleId) {
-  const [moduleRes, presetsRes] = await Promise.all([
-    supabaseClient.from('modules').select('name, width_locked, height_locked, depth_locked, width_min_mm, width_max_mm, height_min_mm, height_max_mm, depth_min_mm, depth_max_mm').eq('id', moduleId).single(),
-    supabaseClient.from('module_dimension_presets').select('dimension, value_mm').eq('module_id', moduleId)
-  ]);
-  const mod = moduleRes.data || {};
-  const byDim = { width: [], height: [], depth: [] };
-  (presetsRes.data || []).forEach((row) => { if (byDim[row.dimension]) byDim[row.dimension].push(Number(row.value_mm)); });
-  return {
-    // Nome do módulo — reaproveitado aqui (já busca a linha de `modules`
-    // pra ler width_locked/height_locked/depth_locked) pra dar nome à peça
-    // aninhada nos parts do 3D (ver loadRecursivePiecesForModule abaixo e o
-    // recurso de duplo-clique em viewer3d.js/client.js).
-    name: mod.name || null,
-    width: mod.width_locked ? byDim.width : [],
-    height: mod.height_locked ? byDim.height : [],
-    depth: mod.depth_locked ? byDim.depth : [],
-    // Limite PRÓPRIO do módulo (sempre existe) — pedido do usuário: "quando
-    // um modulo e inserido em outro, ele respeite os limites de tamanho do
-    // modulo filho", regra fundamental, não opt-in. Ver clamp em
-    // resolvePiecesForViewer/Pricing.calculateModulePiece.
-    ownWidthMinMm: mod.width_min_mm,
-    ownWidthMaxMm: mod.width_max_mm,
-    ownHeightMinMm: mod.height_min_mm,
-    ownHeightMaxMm: mod.height_max_mm,
-    ownDepthMinMm: mod.depth_min_mm,
-    ownDepthMaxMm: mod.depth_max_mm
-  };
-}
+// fetchModuleLockedDimensionPresets mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 // Um módulo aninhado (usado como peça-módulo dentro de outro) pode já ter seu
 // PRÓPRIO modelo de dobradiça/corrediça vinculado (module_hinge_models/
@@ -693,15 +488,9 @@ async function fetchModuleLockedDimensionPresets(moduleId) {
 // vinculado aqui. Se houver mais de um modelo ativo vinculado no filho, usa
 // o primeiro — pensado pra hardware fixo (1 opção), não pra o cliente
 // escolher entre vários (isso continua sendo papel do módulo raiz).
-async function fetchModuleOwnHingeAndSlideModels(moduleId) {
-  const [hingeRes, slideRes] = await Promise.all([
-    supabaseClient.from('module_hinge_models').select('hinge_model_id, hinge_models(*)').eq('module_id', moduleId),
-    supabaseClient.from('module_slide_models').select('slide_model_id, slide_models(*)').eq('module_id', moduleId)
-  ]);
-  const hinge = (hingeRes.data || []).map((r) => r.hinge_models).find((h) => h && h.active) || null;
-  const slide = (slideRes.data || []).map((r) => r.slide_models).find((s) => s && s.active) || null;
-  return { hinge, slide };
-}
+// fetchModuleOwnHingeAndSlideModels mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 async function loadModulePieces(moduleId) {
   pieces = await loadRecursivePiecesForModule(moduleId);
@@ -999,182 +788,9 @@ let lastResult = null;
 // pai, pras peças internas dela). Mesma lógica de resolução (resolveBodyDims
 // pro pé, pickDrawerDepth pra profundidade fixa) usada por
 // Pricing.calculateAssembly, pra preço e desenho 3D nunca divergirem.
-function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities) {
-  const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
-  const parts = [];
-  (piecesList || []).forEach((piece) => {
-    const pieceContainerDims = piece.position_role === 'leg' ? containerDims : bodyDims;
-    const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
-    const dims = Pricing.calculatePiece(piece, pieceContainerDims, quantityOverride);
-
-    // Visibilidade condicional (migration 031) — mesma checagem do preço
-    // (Pricing.calculateAssembly), pra 3D e preço nunca divergirem: sem isso
-    // aqui, uma peça escondida do preço continuaria aparecendo no desenho.
-    if (!Pricing.isPieceVisible(piece, pieceContainerDims)) return;
-
-    // Peça-módulo com dimensão TRAVADA (locked_*_presets) que não cabe nem
-    // no MENOR valor cadastrado nessa dimensão: essa peça NÃO EXISTE nessa
-    // configuração (mesma regra de Pricing.calculateModulePiece/
-    // isBelowMinLockedPreset, pra preço e 3D nunca divergirem) — ex: cliente
-    // diminuiu a profundidade do módulo pai até sobrar menos espaço do que a
-    // menor gaveta configurada cabe; a gaveta some do desenho em vez de
-    // aparecer menor do que qualquer configuração real dela permite.
-    if (Pricing.isBelowMinLockedPreset(piece.locked_width_presets, dims.width_mm)
-      || Pricing.isBelowMinLockedPreset(piece.locked_height_presets, dims.height_mm)
-      || Pricing.isBelowMinLockedPreset(piece.locked_depth_presets, dims.depth_mm)) {
-      return;
-    }
-
-    const color = colorsByRole && colorsByRole[piece.color_role_id];
-    // Arredonda e nunca deixa negativo — mas RESPEITA 0 de propósito (ex:
-    // cliente escolheu 0 prateleiras). Só cai pra 1 se vier algo inválido.
-    const roundedQty = Math.round(dims.quantity);
-    const qty = Math.max(isNaN(roundedQty) ? 1 : roundedQty, 0);
-
-    // Peça (folha ou módulo aninhado) com profundidade FIXA cadastrada
-    // (module_fixed_depths, generaliza o antigo drawer_type_depths) — mesma
-    // regra usada no preço (Pricing.pickDrawerDepth), pra o 3D bater com o
-    // que foi cobrado. Tem prioridade sobre locked_depth_presets (sistema
-    // mais antigo, específico de gaveta/corrediça — não muda nada em módulos
-    // que já usam module_fixed_depths).
-    let resolvedDepthMm = dims.depth_mm;
-    if (piece.fixed_depths && piece.fixed_depths.length > 0) {
-      resolvedDepthMm = Pricing.pickDrawerDepth(piece.fixed_depths, dims.depth_mm);
-    } else if (piece.locked_depth_presets && piece.locked_depth_presets.length > 0) {
-      resolvedDepthMm = Pricing.pickNearestPreset(piece.locked_depth_presets, dims.depth_mm);
-    }
-    // Largura/altura TRAVADAS no módulo FILHO (migration 028 —
-    // width_locked/height_locked + module_dimension_presets): o módulo usado
-    // como peça só existe nesses valores, mesma ideia da profundidade acima
-    // generalizada — sem isso, a fórmula (ex: "W-50") dava uma medida
-    // contínua mesmo que esse módulo, configurado direto pelo cliente, só
-    // aceite um punhado de larguras/alturas fixas.
-    let resolvedWidthMm = dims.width_mm;
-    if (piece.locked_width_presets && piece.locked_width_presets.length > 0) {
-      resolvedWidthMm = Pricing.pickNearestPreset(piece.locked_width_presets, dims.width_mm);
-    }
-    let resolvedHeightMm = dims.height_mm;
-    if (piece.locked_height_presets && piece.locked_height_presets.length > 0) {
-      resolvedHeightMm = Pricing.pickNearestPreset(piece.locked_height_presets, dims.height_mm);
-    }
-
-    // LIMITE PRÓPRIO do módulo filho (sempre ativo, mesma trava de
-    // Pricing.calculateModulePiece — ver comentário lá) — pedido do
-    // usuário: "quando um modulo e inserido em outro, ele respeite os
-    // limites de tamanho do modulo filho". Peça-folha nunca tem
-    // own_*_min/max_mm setado (undefined), então isto não afeta ela.
-    resolvedWidthMm = Pricing.clampToOwnRange(resolvedWidthMm, piece.own_width_min_mm, piece.own_width_max_mm);
-    resolvedHeightMm = Pricing.clampToOwnRange(resolvedHeightMm, piece.own_height_min_mm, piece.own_height_max_mm);
-    resolvedDepthMm = Pricing.clampToOwnRange(resolvedDepthMm, piece.own_depth_min_mm, piece.own_depth_max_mm);
-
-    // TRAVA DE SEGURANÇA: uma peça (folha ou módulo aninhado) NUNCA pode
-    // ficar maior que o espaço disponível no container que a recebe — senão
-    // ela "vaza" pra fora do corpo do módulo pai. Isso pode acontecer com
-    // locked_*_presets, que arredonda pro valor mais PRÓXIMO (não
-    // necessariamente o que CABE) — ex: gaveta com presets [305,381,457,533]
-    // dentro de um vão de 500mm arredondaria pra 533mm (mais próximo de um
-    // valor cru de ~520mm) e estouraria o corpo. Clampa sempre, com ou sem
-    // trava configurada, nos 3 eixos — EXCETO pra position_role='free'.
-    //
-    // REVERTIDO (2026-07-07): tentei liberar isso só pra peça-folha (is_module)
-    // pra deixar "W+44"/"H+10" em frente de gaveta ficar maior de propósito —
-    // quebrou o desenho 3D em cascata, porque is_module não diz nada sobre
-    // COMO a peça se posiciona; pegou peças 'front'/'drawer' que dependem de
-    // empilhamento automático e as tirou do lugar.
-    // CORRIGIDO (2026-07-09): a condição certa é position_role==='free', não
-    // is_module. Esse papel já SEMPRE ignorou vão-interno e empilhamento
-    // automático em placePieceInBox (viewer3d.js) e sua posição já é 100%
-    // absoluta via Deslocar X/Y/Z; só faltava a MEDIDA também não ser
-    // clampada aqui, senão "W+44" numa peça livre nunca aparecia maior que o
-    // container por mais que a fórmula mandasse. Papéis com comportamento
-    // automático (front/drawer/shelf/etc.) continuam clampados — só 'free'
-    // fica de fora, porque só 'free' foi desenhado pra não depender de caber
-    // dentro do container.
-    if (piece.position_role !== 'free') {
-      resolvedWidthMm = Math.min(resolvedWidthMm, pieceContainerDims.W);
-      resolvedHeightMm = Math.min(resolvedHeightMm, pieceContainerDims.H);
-      resolvedDepthMm = Math.min(resolvedDepthMm, pieceContainerDims.D);
-    }
-
-    // Deslocamento é uma fórmula — avaliada contra o MESMO container que a
-    // peça usa pras próprias dimensões (pieceContainerDims: bodyDims
-    // reduzido pelo pé, exceto pro próprio pé, que usa o container cheio),
-    // MAIS as próprias dimensões RESOLVIDAS (já travadas/clampadas acima)
-    // desta peça, disponíveis em minúsculo (w/h/d) — mesma convenção já usada
-    // em area_m2_formula/edge_band_linear_m_formula (Pricing.calculatePiece).
-    // Isso permite fórmulas como "D-d" (Posição Z), que encostam a peça na
-    // FRENTE do vão (D = profundidade do container, d = profundidade da
-    // PRÓPRIA peça) — funciona pra QUALQUER container, ao contrário de um
-    // valor fixo tipo "20" (calibrado só pra um módulo pai específico, quebra
-    // se essa gaveta for reaproveitada num módulo com profundidade diferente
-    // — foi exatamente esse o bug reportado). CORREÇÃO ANTERIOR (mantida):
-    // usar o container CHEIO (em vez de pieceContainerDims) fazia legH ser
-    // contado 2x em Y quando o módulo tinha pé — X e Z não eram afetados.
-    // RECURSIVO: peça-módulo (is_module) tem sua própria composição
-    // (child_pieces) — resolve ela de novo aqui, usando as dimensões JÁ
-    // RESOLVIDAS (e já arredondadas pras travas acima) desta peça-módulo
-    // como o novo container, em profundidade ilimitada (ex: um "modelo de
-    // porta" com sua própria moldura/painel).
-    let childParts = null;
-    if (piece.is_module && piece.child_pieces && piece.child_pieces.length) {
-      const childContainerDims = { W: resolvedWidthMm, H: resolvedHeightMm, D: resolvedDepthMm };
-      childParts = resolvePiecesForViewer(piece.child_pieces, childContainerDims, colorsByRole, shelfQuantities);
-    }
-
-    // N/COUNT (pedido do usuário 2026-07-15, ESPELHA admin.js/portal.js):
-    // quando esta peça se repete (qty>1 — ex: várias prateleiras 'free' com
-    // "cliente escolhe a quantidade"), o deslocamento agora é avaliado
-    // DENTRO do loop, uma vez por cópia — cada cópia ganha N (seu número,
-    // 1..qty) e COUNT (qty total) na fórmula, além de W/H/D/w/h/d de sempre.
-    // Antes offset_x/y/z_mm era calculado uma vez só e repetido em toda
-    // cópia — por isso N cópias de 'free' nasciam empilhadas na mesma
-    // posição. Com qty=1 (caso mais comum), N=1/COUNT=1 sempre — fórmulas
-    // antigas sem N/COUNT continuam se comportando exatamente como antes.
-    for (let i = 0; i < qty; i++) {
-      const offsetVars = {
-        W: pieceContainerDims.W, H: pieceContainerDims.H, D: pieceContainerDims.D,
-        w: resolvedWidthMm, h: resolvedHeightMm, d: resolvedDepthMm,
-        N: i + 1, COUNT: qty
-      };
-      let offset_x_mm = 0, offset_y_mm = 0, offset_z_mm = 0;
-      try { offset_x_mm = Pricing.evalFormula(piece.offset_x_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
-      try { offset_y_mm = Pricing.evalFormula(piece.offset_y_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
-      try { offset_z_mm = Pricing.evalFormula(piece.offset_z_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
-      parts.push({
-        // Nome pra exibir no balão de duplo-clique (viewer3d.js/client.js):
-        // peça-folha usa a referência do catálogo (components.reference,
-        // já vem espalhado em piece via loadRecursivePiecesForModule);
-        // peça-módulo aninhada usa o nome do módulo filho (module_name,
-        // ver fetchModuleLockedDimensionPresets). Nunca inclui preço.
-        reference: piece.reference || piece.module_name || null,
-        position_role: piece.position_role,
-        shape_type: piece.shape_type, // migration 062 — desenho 3D (caixa/cabide tubular oval)
-        tilt_angle_deg: piece.tilt_angle_deg || 0, // migration 065 — inclinação (só 'shelf')
-        rotation_y_deg: piece.rotation_y_deg || 0, // migration 067 — giro de canto (só 'free')
-        // Recortes em L (migration 094) — entalhes do toe/gola na lateral,
-        // ver viewer3d.js buildPanelGeometry. [] = peça inteira.
-        recortes: piece.recortes || [],
-        width_mm: resolvedWidthMm,
-        height_mm: resolvedHeightMm,
-        depth_mm: resolvedDepthMm,
-        color,
-        offset_x_mm, offset_y_mm, offset_z_mm,
-        hinge_side: piece.hinge_side,
-        is_module: !!piece.is_module,
-        opening_type: piece.opening_type,
-        slides_per_unit: piece.slides_per_unit,
-        positioning: piece.positioning,
-        // Fita de borda (migration 088) — o 3D usa junto com positioning
-        // pra decidir qual face leva fita e qual mostra o miolo da chapa
-        // (js/viewer3d.js makeBoxMaterials). null = componente ainda na
-        // fórmula antiga: desenha como sempre, material único.
-        edge_banding: piece.edge_banding == null ? null : Number(piece.edge_banding),
-        child_pieces: childParts
-      });
-    }
-  });
-  return parts;
-}
+// resolvePiecesForViewer mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 function recalculate() {
   clearError();

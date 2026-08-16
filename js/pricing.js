@@ -236,20 +236,34 @@
   // é onde se confere, e melhor do que inventar um número numa tabela de
   // custo.
   let processLabor = {
-    corte_peca: 0, corte_metro: 0,
+    corte_peca: 0, corte_m2: 0,   // corte_m2: era corte_metro (perímetro) até 2026-08-15
     fita_passada: 0, fita_metro: 0,
     furacao_peca: 0, furacao_furo: 0,
     usinagem_peca: 0, usinagem_metro: 0
   };
   function setProcessLabor(v) {
     processLabor = {
-      corte_peca: num(v && v.corte_peca), corte_metro: num(v && v.corte_metro),
+      corte_peca: num(v && v.corte_peca),
+      // Aceita corte_m2 (novo) e corte_metro (chamador antigo), pra a troca
+      // não zerar o corte em nenhuma tela que ainda não foi atualizada.
+      corte_m2: num((v && v.corte_m2) != null && v.corte_m2 !== undefined ? v.corte_m2 : (v && v.corte_metro)),
       fita_passada: num(v && v.fita_passada), fita_metro: num(v && v.fita_metro),
       furacao_peca: num(v && v.furacao_peca), furacao_furo: num(v && v.furacao_furo),
       usinagem_peca: num(v && v.usinagem_peca), usinagem_metro: num(v && v.usinagem_metro)
     };
   }
   function num(x) { const n = parseFloat(x); return isFinite(n) ? n : 0; }
+
+  // Contagem REAL de furos por peça, publicada pelo chamador antes de pedir o
+  // preço (ver Drilling.countHolesByPiece). Vazio = cai no furos_equivalentes
+  // do cadastro, que era o único caminho até 2026-08-15.
+  //
+  // Fica em módulo, e não em parâmetro, pelo mesmo motivo de processLabor: são
+  // ~8 pontos que chamam calculateModulePrice, e acrescentar argumento em
+  // todos convidaria a esquecer um — e esquecer aqui significa peça cobrando
+  // furação errada, em silêncio.
+  let holeCounts = null;
+  function setHoleCounts(map) { holeCounts = map || null; }
 
   // Custo de mão de obra de UMA unidade da peça, aberto por processo. O
   // detalhe vai pro breakdown de propósito: é o que transforma "quanto custa
@@ -269,11 +283,23 @@
 
     const m = pecaNaMaquina(pieceDims.width_mm, pieceDims.height_mm, pieceDims.depth_mm, piece.positioning);
 
-    // CORTE — por peça (montar, alinhar, tirar) + por metro serrado. O metro
-    // é o perímetro do plano da máquina: é o caminho que a serra faz em volta
-    // da peça, independente de como ela vai ser montada depois.
-    const perimetroM = 2 * (m.comprimento + m.largura) / 1000;
-    const corte = processLabor.corte_peca + processLabor.corte_metro * perimetroM;
+    // CORTE — por peça (montar, alinhar, tirar) + por M² da peça.
+    //
+    // MUDOU EM 2026-08-15 (pedido do Matt: "preciso um valor fixo por peça +
+    // m² da peça"). Antes a parcela variável era o PERÍMETRO do plano da
+    // máquina — o caminho da serra em volta da peça. Passou a ser a ÁREA.
+    //
+    // A diferença não é cosmética e muda o preço relativo entre peças: duas
+    // peças de mesmo perímetro podem ter áreas bem diferentes (1000×100 e
+    // 550×550 têm perímetro parecido, mas 0,1 m² contra 0,3 m²). Área é como
+    // a chapa é consumida e faturada, e é o que o Matt usa na fábrica.
+    //
+    // area_m2 vem de calculatePiece, e já respeita `area_auto` (migration
+    // 090): na chapa genérica ela é comprimento × largura do plano da
+    // máquina, não `w*h` cru — que pegaria a espessura como face e daria
+    // 0,04 m² numa peça de 1,12.
+    const areaM2 = num(pieceDims.area_m2);
+    const corte = processLabor.corte_peca + processLabor.corte_m2 * areaM2;
 
     // FITA — por passada + por metro. `edge_banding` já É a contagem de
     // passadas (0, 2 ou 4 bordas = 0, 2 ou 4 passadas na coladeira), então
@@ -290,7 +316,20 @@
     // próprios MAIS os que esta peça gera na vizinha por propagação (ver
     // migration 091): quem define a junta paga pelos dois lados, e aí o total
     // do módulo fecha exato sem precisar rodar a propagação aqui.
-    const furos = num(piece.furos_equivalentes);
+    // CONTAGEM REAL ganha do número digitado (2026-08-15). holeCounts vem de
+    // Drilling.countHolesByPiece — os furos que a peça de fato recebe no .ban,
+    // incluindo os PROPAGADOS. É o que faz a lateral, que não tem furação
+    // própria, pagar pelos contra-furos que ela leva.
+    //
+    // Sem a contagem (chamador que não a forneceu), cai no
+    // `furos_equivalentes` do cadastro — comportamento anterior, intacto.
+    //
+    // Os dois NUNCA se somam: seria cobrar o mesmo furo duas vezes, já que a
+    // convenção antiga ("quem define a junta paga pelos dois lados") e a
+    // contagem real descrevem o mesmo furo por ângulos diferentes.
+    const chaveFuros = piece.id || piece.piece_id;
+    const contados = (holeCounts && chaveFuros != null) ? holeCounts[chaveFuros] : undefined;
+    const furos = contados !== undefined ? num(contados) : num(piece.furos_equivalentes);
     const furacao = piece.fura === false
       ? 0
       : processLabor.furacao_peca + furos * processLabor.furacao_furo;
@@ -878,6 +917,7 @@
     // Migration 090 — preços dos quatro processos (corte, fita 2C, fita 4L,
     // furação). Chamado uma vez, logo depois de carregar pricing_settings.
     setProcessLabor,
+    setHoleCounts,
     processLaborFor,
     resolveBodyDims,
     hingeCountForDoorHeight,

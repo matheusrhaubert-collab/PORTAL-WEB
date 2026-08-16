@@ -511,6 +511,12 @@
           client_color_configurable: false,
           client_dimension_configurable: false,
           is_module: false,
+          // ENTALHE DERIVADO (2026-08-16). A peça do construtor que cruza uma
+          // peça de casco marcada `abre_recorte` (gola, toe 4½) recebe o
+          // recorte em `p.recortes`, calculado em portal.js. Sem esta linha o
+          // campo morria aqui: a linha é montada com lista FECHADA de campos,
+          // o mesmo lugar onde o programa de furação já sumiu uma vez.
+          recortes: Array.isArray(p.recortes) ? p.recortes : null,
           // rastro pra interface (a árvore que gerou esta linha)
           _layoutNodeId: p.nodeId,
           _layoutKind: p.kind

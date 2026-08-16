@@ -144,6 +144,18 @@ function mmToFractionalInches(mm) {
   return whole > 0 ? `${whole} ${num}/${den}"` : `${num}/${den}"`;
 }
 
+// MILÍMETRO QUEBRADO APARECE (2026-08-15). Era `Math.round(mm)`, que
+// transformava 19,5 em "20 mm" na tela — a espessura nova da chapa ficava
+// invisível e o Matt não tinha como conferir ("veja que as peças estão com
+// 20mm"). Meio milímetro decide se a peça encaixa.
+//
+// Inteiro continua saindo inteiro ("761 mm", não "761.0 mm"): só quem tem
+// casa decimal a mostra, então nada do que já estava certo fica mais
+// poluído.
+function formatMmSemPerder(mm) {
+  const n = Number(mm) || 0;
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+}
 function formatDimension(mm, unit) {
   switch (unit) {
     case 'cm': return `${(mm / 10).toFixed(1)} cm`;
@@ -151,7 +163,7 @@ function formatDimension(mm, unit) {
     case 'ft': return `${(mm / 304.8).toFixed(3)} ft`;
     case 'in': return mmToFractionalInches(mm);
     case 'mm':
-    default: return `${Math.round(mm)} mm`;
+    default: return `${formatMmSemPerder(mm)} mm`;
   }
 }
 
@@ -162,7 +174,7 @@ function formatDimensionNumber(mm, unit) {
     case 'ft': return (mm / 304.8).toFixed(3);
     case 'in': return mmToFractionalInches(mm).replace('"', '');
     case 'mm':
-    default: return `${Math.round(mm)}`;
+    default: return formatMmSemPerder(mm);   // ver formatDimension: 19,5 ≠ 20
   }
 }
 
@@ -1237,6 +1249,18 @@ async function loadModules() {
     renderProjectLibraryFilterBars();
     renderProjectLibrary();
   }
+
+  // Catálogo de FURAÇÃO junto com o resto (2026-08-15). Ele alimenta a
+  // contagem real de furos que o custo de furação usa — e estava sendo
+  // carregado SÓ em hydrateProjectLayoutPieces, que roda ao restaurar um
+  // projeto salvo. Projeto montado do zero na sessão nunca passava por lá:
+  // a contagem vinha vazia, a furação caía no furos_equivalentes (zero na
+  // linha flatbord) e o custo não mudava — foi o "não mudou" do Matt.
+  //
+  // Fire-and-forget: quando terminar, repreça o que já estiver na tela.
+  // O reprice agora mora DENTRO de ensureProjectDrillingCatalog (ver lá): era
+  // aqui e no hydrate, e nenhum dos dois cobria o caminho real.
+  ensureProjectDrillingCatalog();
 }
 
 // Chamado ao clicar num cartão da biblioteca de módulos (antes era o
@@ -1363,7 +1387,11 @@ async function loadPricingMarkup() {
         return l ? Number(l.price_per_unit) || 0 : 0;
       };
       Pricing.setProcessLabor({
-        corte_peca: preco(data.labor_corte_peca_id), corte_metro: preco(data.labor_corte_metro_id),
+        // corte_m2: o id no banco continua sendo labor_corte_metro_id (não
+        // vale migration só pra renomear coluna), mas o SENTIDO mudou em
+        // 2026-08-15 — o preço agora é por m² da peça, não por metro de
+        // perímetro. Reajuste o valor no catálogo ao migrar.
+        corte_peca: preco(data.labor_corte_peca_id), corte_m2: preco(data.labor_corte_metro_id),
         fita_passada: preco(data.labor_fita_passada_id), fita_metro: preco(data.labor_fita_metro_id),
         furacao_peca: preco(data.labor_furacao_peca_id), furacao_furo: preco(data.labor_furacao_furo_id),
         usinagem_peca: preco(data.labor_usinagem_peca_id), usinagem_metro: preco(data.labor_usinagem_metro_id)
@@ -1427,16 +1455,9 @@ async function loadModuleColors(moduleId) {
 
 // Papéis de cor que as peças do módulo atual REALMENTE usam (recursivo —
 // inclui peças dentro de peças-módulo aninhadas), na ordem do catálogo.
-function collectUsedColorRoleIds(piecesList) {
-  const ids = new Set();
-  (piecesList || []).forEach((p) => {
-    if (p.color_role_id) ids.add(p.color_role_id);
-    if (p.is_module && p.child_pieces) {
-      collectUsedColorRoleIds(p.child_pieces).forEach((id) => ids.add(id));
-    }
-  });
-  return ids;
-}
+// collectUsedColorRoleIds mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 // Monta um grupo de swatches por papel de cor usado neste módulo (migration
 // 035) — substitui os 2 blocos fixos "Cor da caixa"/"Cor da porta".
@@ -1630,197 +1651,17 @@ function renderSwatches(container, items, selectedId, onSelect) {
 // (child_module_id) — nesse segundo caso, busca as próprias peças/
 // profundidades fixas desse módulo filho chamando esta mesma função de novo,
 // em profundidade ilimitada. Idêntica à de client.js.
-async function loadRecursivePiecesForModule(moduleId) {
-  const { data, error } = await supabaseClient
-    .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, client_color_configurable, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, components(*, labor_types(*), component_types(*))')
-    .eq('module_id', moduleId)
-    .order('sort_order');
-  if (error) { showError(I18n.t('loaderr.module_config', { msg: error.message })); return []; }
-
-  const result = [];
-  for (const row of (data || [])) {
-    if (row.component_id) {
-      if (!row.components || !row.components.active) continue;
-      const quantity = (row.quantity_override !== null && row.quantity_override !== undefined)
-        ? row.quantity_override
-        : row.components.quantity;
-      const labor_cost_per_unit = row.components.labor_types ? row.components.labor_types.price_per_unit : 0;
-      // Papel de cor (migration 035) vem do tipo do componente, não mais de
-      // um boolean is_front fixo.
-      const color_role_id = row.components.component_types ? row.components.component_types.color_role_id : null;
-      // Posicionamento (migration 024) — eixo de espessura explícito no 3D,
-      // ver client.js/viewer3d.js. null = automático (comportamento antigo).
-      const positioning = row.components.component_types ? row.components.component_types.positioning : null;
-      const width_formula = row.width_formula_override || row.components.width_formula;
-      const height_formula = row.height_formula_override || row.components.height_formula;
-      const depth_formula = row.depth_formula_override || row.components.depth_formula;
-      result.push({
-        ...row.components,
-        // id vira o da LINHA (row.id), não o do catálogo — migration 025
-        // permite repetir o mesmo componente em 2+ linhas do mesmo módulo;
-        // sem isso, as instâncias colidiriam em selectedOptionalComponentIds/
-        // shelfQuantities (keyed por piece.id em client.js/portal.js/pricing.js).
-        id: row.id,
-        // Nome customizado desta instância (migration 032) — sobrescreve o
-        // nome do catálogo só na exibição (balão do 3D). Fica DEPOIS do
-        // ...row.components pra não ser apagado pelo spread.
-        reference: row.reference_override || row.components.reference,
-        quantity, labor_cost_per_unit, positioning,
-        /* Migration 090 — POSIÇÃO E COR PASSAM A SER DO USO, não da peça.
-           A peça genérica ("Flatbord 2C") é a mesma chapa em qualquer lugar
-           do módulo; o que ela vira — base, divisória, topo — é decidido
-           aqui, na linha que diz "este módulo usa esta peça".
-
-           As duas colunas já existiam em module_components e já eram lidas
-           na peça-MÓDULO; a peça-folha simplesmente nunca as leu. O schema
-           inclusive documenta a intenção: "componente usa
-           components.position_role" quando nulo.
-
-           Seguro por construção: o admin grava null em toda linha de
-           peça-folha (13-modulo-pecas.js), então nulo continua herdando e
-           nenhum módulo existente se mexe. */
-        position_role: row.position_role || row.components.position_role,
-        color_role_id: row.color_role_id || color_role_id,
-        // Metros de usinagem DESTE uso (migration 092) — a mesma lateral é
-        // entalhada numa carcaça e lisa em outra, por isso vem da linha do
-        // módulo e não do componente.
-        usinagem_m: row.usinagem_m || 0,
-        // Recortes em L DESTE uso (migration 094) — lista de {canto, h, d}.
-        // Mesmo motivo de estar na linha do módulo: a mesma lateral é
-        // entalhada numa carcaça e lisa em outra. Lista e não um recorte só
-        // porque a carcaça gola + toe 4½ leva os dois na mesma peça. Só
-        // desenho: a chapa continua sendo cortada retangular.
-        recortes: Array.isArray(row.recortes) ? row.recortes : [],
-        // Veio e "leva furo" (migration 086) — o Construtor valida o CASCO
-        // contra a chapa com estes dois, exatamente como valida as peças da
-        // árvore. Sem eles, uma peça grande demais pra chapa passava batido.
-        veio: row.components.veio || 'livre',
-        fura: row.components.fura !== false,
-        // Limite do lado no plano da máquina (migration 090)
-        lado_min_mm: row.components.lado_min_mm || null,
-        lado_max_mm: row.components.lado_max_mm || null,
-        width_formula, height_formula, depth_formula,
-        offset_x_formula: row.offset_x_mm || '0',
-        offset_y_formula: row.offset_y_mm || '0',
-        offset_z_formula: row.offset_z_mm || '0',
-        quantity_configurable: !!row.quantity_configurable,
-        quantity_min: row.quantity_min,
-        quantity_max: row.quantity_max,
-        quantity_default: row.quantity_default,
-        client_optional: !!row.client_optional,
-        client_optional_default_on: !!row.client_optional_default_on,
-        visibility_dimension: row.visibility_dimension || null,
-        visibility_min_mm: row.visibility_min_mm,
-        visibility_max_mm: row.visibility_max_mm,
-        // Cor configurável separadamente (migration 046, generalizado pra
-        // peça-folha 2026-07-19) — "cliente pode escolher a cor desta peça
-        // separadamente", ver collectColorConfigurablePieces/
-        // renderColorRoleSwatchGroups. Antes só existia em peça-módulo.
-        client_color_configurable: !!row.client_color_configurable,
-        is_module: false
-      });
-    } else if (row.child_module_id) {
-      const [fixedDepths, childPieces, lockedPresets, ownHingeSlide] = await Promise.all([
-        fetchModuleFixedDepths(row.child_module_id),
-        loadRecursivePiecesForModule(row.child_module_id),
-        fetchModuleLockedDimensionPresets(row.child_module_id),
-        fetchModuleOwnHingeAndSlideModels(row.child_module_id)
-      ]);
-      result.push({
-        // id vira o da LINHA (row.id) em vez do child_module_id — mesmo
-        // motivo do branch de componente acima (migration 025).
-        id: row.id,
-        is_module: true,
-        // reference_override (migration 032) tem prioridade; sem ele, cai no
-        // fallback module_name já existente em resolvePiecesForViewer
-        // (piece.reference || piece.module_name).
-        reference: row.reference_override || null,
-        position_role: row.position_role || 'other',
-        color_role_id: row.color_role_id || null,
-        opening_type: row.opening_type || 'none',
-        slides_per_unit: row.slides_per_unit || 0,
-        tilt_angle_deg: row.tilt_angle_deg || 0, // migration 066 — inclinação do conjunto (só 'shelf')
-        rotation_y_deg: row.rotation_y_deg || 0, // migration 067 — giro de canto do conjunto (só 'free')
-        width_formula: row.width_formula_override,
-        height_formula: row.height_formula_override,
-        depth_formula: row.depth_formula_override,
-        offset_x_formula: row.offset_x_mm || '0',
-        offset_y_formula: row.offset_y_mm || '0',
-        offset_z_formula: row.offset_z_mm || '0',
-        quantity: (row.quantity_override !== null && row.quantity_override !== undefined) ? row.quantity_override : 1,
-        quantity_configurable: !!row.quantity_configurable,
-        quantity_min: row.quantity_min,
-        quantity_max: row.quantity_max,
-        quantity_default: row.quantity_default,
-        client_optional: !!row.client_optional,
-        client_optional_default_on: !!row.client_optional_default_on,
-        visibility_dimension: row.visibility_dimension || null,
-        visibility_min_mm: row.visibility_min_mm,
-        visibility_max_mm: row.visibility_max_mm,
-        // Sub-configuração de medidas (migration 036) — "cliente pode
-        // configurar as medidas desta peça", ver renderModuleNestedRow no
-        // admin. Só existe em peça-módulo (mesmo raciocínio de position_role/
-        // cor/abertura acima).
-        client_dimension_configurable: !!row.client_dimension_configurable,
-        // Cor configurável por instância (migration 046) — "cliente pode
-        // escolher a cor desta peça separadamente", ver
-        // collectColorConfigurablePieces/renderColorRoleSwatchGroups. Só
-        // existe (e só é gravado) numa peça-módulo, mesmo raciocínio de
-        // client_dimension_configurable acima.
-        client_color_configurable: !!row.client_color_configurable,
-        width_min_mm: row.width_min_mm,
-        width_default_mm: row.width_default_mm,
-        width_max_mm: row.width_max_mm,
-        height_min_mm: row.height_min_mm,
-        height_default_mm: row.height_default_mm,
-        height_max_mm: row.height_max_mm,
-        depth_min_mm: row.depth_min_mm,
-        depth_default_mm: row.depth_default_mm,
-        depth_max_mm: row.depth_max_mm,
-        fixed_depths: fixedDepths,
-        locked_width_presets: lockedPresets.width,
-        locked_height_presets: lockedPresets.height,
-        locked_depth_presets: lockedPresets.depth,
-        // Presets COM rótulo (ex: '55"') — pros dropdowns de tamanho
-        // (renderOptionalComponents e renderPieceDimensionSubconfigs); o
-        // cálculo usa os arrays sem rótulo acima.
-        locked_width_preset_options: lockedPresets.widthLabeled,
-        locked_height_preset_options: lockedPresets.heightLabeled,
-        locked_depth_preset_options: lockedPresets.depthLabeled,
-        // Módulo filho decorativo (migration 039) — o "Configurar peça" só
-        // mostra dropdowns de eixo travado (ex: polegada da TV), nunca
-        // sliders livres (ver renderPieceDimensionSubconfigs).
-        is_decoration: lockedPresets.is_decoration,
-        own_hinge_model: ownHingeSlide.hinge,
-        own_slide_model: ownHingeSlide.slide,
-        // Limite de tamanho PRÓPRIO do módulo filho (sempre ativo, ver
-        // fetchModuleLockedDimensionPresets) — clampado em
-        // resolvePiecesForViewer/Pricing.calculateModulePiece.
-        own_width_min_mm: lockedPresets.ownWidthMinMm,
-        own_width_max_mm: lockedPresets.ownWidthMaxMm,
-        own_height_min_mm: lockedPresets.ownHeightMinMm,
-        own_height_max_mm: lockedPresets.ownHeightMaxMm,
-        own_depth_min_mm: lockedPresets.ownDepthMinMm,
-        own_depth_max_mm: lockedPresets.ownDepthMaxMm,
-        // Nome do módulo filho — só pra dar nome à peça no painel de
-        // duplo-clique do 3D (viewer3d.js); nada de cálculo depende disso.
-        module_name: lockedPresets.name,
-        child_pieces: childPieces
-      });
-    }
-  }
-  return result;
-}
+// loadRecursivePiecesForModule MUDOU DE CASA (2026-08-15): a cópia que ficava
+// aqui foi para js/module-pieces.js, que agora é a ÚNICA. Estava duplicada em
+// quatro arquivos e um campo novo esquecido numa delas fazia a peça sair SEM
+// FURO, em silêncio. Coluna nova de module_components entra lá, uma vez só.
 
 // Profundidades fixas cadastradas pra um módulo (module_fixed_depths) —
 // generaliza o antigo drawer_type_depths: QUALQUER módulo usado como peça
 // aninhada pode ter isso, não só um "modelo de gaveta" especial.
-async function fetchModuleFixedDepths(moduleId) {
-  const { data, error } = await supabaseClient.from('module_fixed_depths').select('depth_mm').eq('module_id', moduleId);
-  if (error) { console.error(error); return []; }
-  return (data || []).map((r) => Number(r.depth_mm));
-}
+// fetchModuleFixedDepths mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 // Um módulo pode ter Largura/Altura/Profundidade "travadas" (migration 028 —
 // module_dimension_presets + width_locked/height_locked/depth_locked). Isso
@@ -1830,48 +1671,9 @@ async function fetchModuleFixedDepths(moduleId) {
 // resolvePiecesForViewer/Pricing.calculateAssembly arredondarem pro valor
 // permitido mais próximo (Pricing.pickNearestPreset), igual já acontecia só
 // com profundidade fixa de gaveta (module_fixed_depths/pickDrawerDepth).
-async function fetchModuleLockedDimensionPresets(moduleId) {
-  const [moduleRes, presetsRes] = await Promise.all([
-    supabaseClient.from('modules').select('name, width_locked, height_locked, depth_locked, is_decoration, width_min_mm, width_max_mm, height_min_mm, height_max_mm, depth_min_mm, depth_max_mm').eq('id', moduleId).single(),
-    supabaseClient.from('module_dimension_presets').select('dimension, value_mm, label, sort_order').eq('module_id', moduleId).order('sort_order')
-  ]);
-  const mod = moduleRes.data || {};
-  const byDim = { width: [], height: [], depth: [] };
-  // Versão com rótulo (label do admin, ex: '55"', 'Queen') — usada pelo
-  // dropdown de tamanho ao lado do opcional (ver renderOptionalComponents).
-  const byDimLabeled = { width: [], height: [], depth: [] };
-  (presetsRes.data || []).forEach((row) => {
-    if (!byDim[row.dimension]) return;
-    byDim[row.dimension].push(Number(row.value_mm));
-    byDimLabeled[row.dimension].push({ value_mm: Number(row.value_mm), label: row.label || null });
-  });
-  return {
-    // Nome do módulo — reaproveitado aqui (já busca a linha de `modules`)
-    // pra dar nome à peça aninhada nos parts do 3D (ver
-    // loadRecursivePiecesForModule abaixo e o duplo-clique em viewer3d.js).
-    name: mod.name || null,
-    is_decoration: !!mod.is_decoration,
-    width: mod.width_locked ? byDim.width : [],
-    height: mod.height_locked ? byDim.height : [],
-    depth: mod.depth_locked ? byDim.depth : [],
-    widthLabeled: mod.width_locked ? byDimLabeled.width : [],
-    heightLabeled: mod.height_locked ? byDimLabeled.height : [],
-    depthLabeled: mod.depth_locked ? byDimLabeled.depth : [],
-    // Limite PRÓPRIO do módulo (sempre existe, migration original de
-    // modules.width_min_mm/max_mm etc) — até agora só era buscado/respeitado
-    // quando o admin ligava "cliente pode configurar as medidas desta peça"
-    // (client_dimension_configurable, migration 036). Pedido do usuário:
-    // "quando um modulo e inserido em outro, ele respeite os limites de
-    // tamanho do modulo filho" — regra fundamental, sempre ativa, não
-    // opt-in. Ver clamp em resolvePiecesForViewer/pricing.js.
-    ownWidthMinMm: mod.width_min_mm,
-    ownWidthMaxMm: mod.width_max_mm,
-    ownHeightMinMm: mod.height_min_mm,
-    ownHeightMaxMm: mod.height_max_mm,
-    ownDepthMinMm: mod.depth_min_mm,
-    ownDepthMaxMm: mod.depth_max_mm
-  };
-}
+// fetchModuleLockedDimensionPresets mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 // Um módulo aninhado pode já ter seu PRÓPRIO modelo de dobradiça/corrediça
 // vinculado (module_hinge_models/module_slide_models DESSE módulo) — hardware
@@ -1882,15 +1684,9 @@ async function fetchModuleLockedDimensionPresets(moduleId) {
 // aninhada funcionar (ver client.js pro comentário completo). Se houver mais
 // de um modelo ativo vinculado no filho, usa o primeiro (pensado pra
 // hardware fixo, não pra escolha do cliente).
-async function fetchModuleOwnHingeAndSlideModels(moduleId) {
-  const [hingeRes, slideRes] = await Promise.all([
-    supabaseClient.from('module_hinge_models').select('hinge_model_id, hinge_models(*)').eq('module_id', moduleId),
-    supabaseClient.from('module_slide_models').select('slide_model_id, slide_models(*)').eq('module_id', moduleId)
-  ]);
-  const hinge = (hingeRes.data || []).map((r) => r.hinge_models).find((h) => h && h.active) || null;
-  const slide = (slideRes.data || []).map((r) => r.slide_models).find((s) => s && s.active) || null;
-  return { hinge, slide };
-}
+// fetchModuleOwnHingeAndSlideModels mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 async function loadModulePieces(moduleId) {
   pieces = await loadRecursivePiecesForModule(moduleId);
@@ -2593,160 +2389,9 @@ if (floorHeightInputEl) {
 // por INSTÂNCIA de peça-módulo aninhada com client_color_configurable (ver
 // collectColorConfigurablePieces/buildPieceColorOverrides), espelha
 // Pricing.effectiveColorsForPiece pra 3D e preço nunca divergirem.
-function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
-  const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
-  const parts = [];
-  (piecesList || []).forEach((piece) => {
-    const pieceContainerDims = piece.position_role === 'leg' ? containerDims : bodyDims;
-    const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
-    // Sub-configuração de medidas (migration 036) — mesma peça, mesmo id
-    // (module_components.id) usado em Pricing.calculateAssembly, pra 3D e
-    // preço nunca divergirem (ver comentário em calculatePiece/pricing.js).
-    const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
-    const dims = Pricing.calculatePiece(piece, pieceContainerDims, quantityOverride, dimOverride);
-
-    // Visibilidade condicional (migration 031) — mesma checagem do preço
-    // (Pricing.calculateAssembly), pra 3D e preço nunca divergirem: sem isso
-    // aqui, uma peça escondida do preço continuaria aparecendo no desenho.
-    if (!Pricing.isPieceVisible(piece, pieceContainerDims)) return;
-
-    // Peça-módulo com dimensão TRAVADA (locked_*_presets) que não cabe nem
-    // no MENOR valor cadastrado nessa dimensão: essa peça NÃO EXISTE nessa
-    // configuração (mesma regra de Pricing.calculateModulePiece, pra preço e
-    // 3D nunca divergirem) — some do desenho em vez de aparecer menor do que
-    // qualquer configuração real dela permite.
-    if (Pricing.isBelowMinLockedPreset(piece.locked_width_presets, dims.width_mm)
-      || Pricing.isBelowMinLockedPreset(piece.locked_height_presets, dims.height_mm)
-      || Pricing.isBelowMinLockedPreset(piece.locked_depth_presets, dims.depth_mm)) {
-      return;
-    }
-
-    // Cor própria desta instância (migration 046) — se pieceColorOverrides tiver uma entrada
-    // pra este piece.id, ela substitui só os papéis que tem, mantendo os demais herdados do
-    // pai; o resultado (não o colorsByRole original) desce pra child_pieces mais abaixo, pra um
-    // módulo aninhado ainda mais fundo com override PRÓPRIO continuar vencendo sobre este.
-    const pieceOverride = pieceColorOverrides && pieceColorOverrides[piece.id];
-    const effectiveColorsByRole = pieceOverride ? Object.assign({}, colorsByRole, pieceOverride) : colorsByRole;
-    const color = effectiveColorsByRole && effectiveColorsByRole[piece.color_role_id];
-    const roundedQty = Math.round(dims.quantity);
-    const qty = Math.max(isNaN(roundedQty) ? 1 : roundedQty, 0);
-
-    // Profundidade FIXA (module_fixed_depths, generaliza o antigo
-    // drawer_type_depths) tem prioridade sobre locked_depth_presets (sistema
-    // mais antigo, específico de gaveta/corrediça — não muda nada em
-    // módulos que já usam module_fixed_depths).
-    let resolvedDepthMm = dims.depth_mm;
-    if (piece.fixed_depths && piece.fixed_depths.length > 0) {
-      resolvedDepthMm = Pricing.pickDrawerDepth(piece.fixed_depths, dims.depth_mm);
-    } else if (piece.locked_depth_presets && piece.locked_depth_presets.length > 0) {
-      resolvedDepthMm = Pricing.pickNearestPreset(piece.locked_depth_presets, dims.depth_mm);
-    }
-    // Largura/altura TRAVADAS no módulo FILHO (migration 028) — mesma ideia
-    // acima, generalizada: o módulo usado como peça só existe nesses valores.
-    let resolvedWidthMm = dims.width_mm;
-    if (piece.locked_width_presets && piece.locked_width_presets.length > 0) {
-      resolvedWidthMm = Pricing.pickNearestPreset(piece.locked_width_presets, dims.width_mm);
-    }
-    let resolvedHeightMm = dims.height_mm;
-    if (piece.locked_height_presets && piece.locked_height_presets.length > 0) {
-      resolvedHeightMm = Pricing.pickNearestPreset(piece.locked_height_presets, dims.height_mm);
-    }
-
-    // LIMITE PRÓPRIO do módulo filho (sempre ativo, mesma trava de
-    // Pricing.calculateModulePiece — ver comentário lá) — pedido do
-    // usuário: "quando um modulo e inserido em outro, ele respeite os
-    // limites de tamanho do modulo filho". Peça-folha nunca tem
-    // own_*_min/max_mm setado (undefined), então isto não afeta ela.
-    resolvedWidthMm = Pricing.clampToOwnRange(resolvedWidthMm, piece.own_width_min_mm, piece.own_width_max_mm);
-    resolvedHeightMm = Pricing.clampToOwnRange(resolvedHeightMm, piece.own_height_min_mm, piece.own_height_max_mm);
-    resolvedDepthMm = Pricing.clampToOwnRange(resolvedDepthMm, piece.own_depth_min_mm, piece.own_depth_max_mm);
-
-    // TRAVA DE SEGURANÇA: uma peça (folha ou módulo aninhado) nunca pode
-    // ficar maior que o espaço disponível no container que a recebe
-    // (locked_*_presets pode arredondar pro valor mais PRÓXIMO, não
-    // necessariamente o que CABE). Clampa sempre, nos 3 eixos — EXCETO pra
-    // position_role='free' (ver client.js pro histórico completo).
-    //
-    // REVERTIDO (2026-07-07): tentei liberar isso só pra peça-folha (is_module)
-    // — quebrou o desenho 3D em cascata, porque is_module não diz nada sobre
-    // COMO a peça se posiciona.
-    // CORRIGIDO (2026-07-09): condição certa é position_role==='free', que já
-    // ignora vão-interno/empilhamento automático em placePieceInBox — só
-    // faltava a MEDIDA também não ser clampada aqui.
-    if (piece.position_role !== 'free') {
-      resolvedWidthMm = Math.min(resolvedWidthMm, pieceContainerDims.W);
-      resolvedHeightMm = Math.min(resolvedHeightMm, pieceContainerDims.H);
-      resolvedDepthMm = Math.min(resolvedDepthMm, pieceContainerDims.D);
-    }
-
-    // Deslocamento é uma fórmula — avaliada contra o MESMO container que a
-    // peça usa pras próprias dimensões, MAIS as próprias dimensões
-    // RESOLVIDAS (já travadas/clampadas acima) desta peça, disponíveis em
-    // minúsculo (w/h/d) — mesma convenção já usada em area_m2_formula/
-    // edge_band_linear_m_formula (Pricing.calculatePiece). Isso permite
-    // fórmulas como "D-d" (Posição Z), que encostam a peça na FRENTE do vão
-    // (D = profundidade do container, d = profundidade da PRÓPRIA peça) —
-    // funciona pra QUALQUER container, ao contrário de um valor fixo tipo
-    // "20" (calibrado só pra um módulo pai específico).
-    let childParts = null;
-    if (piece.is_module && piece.child_pieces && piece.child_pieces.length) {
-      const childContainerDims = { W: resolvedWidthMm, H: resolvedHeightMm, D: resolvedDepthMm };
-      childParts = resolvePiecesForViewer(piece.child_pieces, childContainerDims, effectiveColorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides);
-    }
-
-    // N/COUNT (pedido do usuário 2026-07-15, ESPELHA admin.js/client.js):
-    // quando esta peça se repete (qty>1 — ex: várias prateleiras 'free' com
-    // "cliente escolhe a quantidade"), o deslocamento agora é avaliado
-    // DENTRO do loop, uma vez por cópia — cada cópia ganha N (seu número,
-    // 1..qty) e COUNT (qty total) na fórmula, além de W/H/D/w/h/d de sempre.
-    // Antes offset_x/y/z_mm era calculado uma vez só e repetido em toda
-    // cópia — por isso N cópias de 'free' nasciam empilhadas na mesma
-    // posição. Com qty=1 (caso mais comum), N=1/COUNT=1 sempre — fórmulas
-    // antigas sem N/COUNT continuam se comportando exatamente como antes.
-    for (let i = 0; i < qty; i++) {
-      const offsetVars = {
-        W: pieceContainerDims.W, H: pieceContainerDims.H, D: pieceContainerDims.D,
-        w: resolvedWidthMm, h: resolvedHeightMm, d: resolvedDepthMm,
-        N: i + 1, COUNT: qty
-      };
-      let offset_x_mm = 0, offset_y_mm = 0, offset_z_mm = 0;
-      try { offset_x_mm = Pricing.evalFormula(piece.offset_x_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
-      try { offset_y_mm = Pricing.evalFormula(piece.offset_y_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
-      try { offset_z_mm = Pricing.evalFormula(piece.offset_z_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
-      parts.push({
-        // Nome pra exibir no balão de duplo-clique (viewer3d.js/portal.js):
-        // peça-folha usa a referência do catálogo (piece.reference,
-        // espalhado via loadRecursivePiecesForModule); peça-módulo aninhada
-        // usa o nome do módulo filho (module_name). Nunca inclui preço.
-        reference: piece.reference || piece.module_name || null,
-        position_role: piece.position_role,
-        shape_type: piece.shape_type, // migration 062 — desenho 3D (caixa/cabide tubular oval)
-        tilt_angle_deg: piece.tilt_angle_deg || 0, // migration 065 — inclinação (só 'shelf')
-        rotation_y_deg: piece.rotation_y_deg || 0, // migration 067 — giro de canto (só 'free')
-        // Recortes em L (migration 094) — entalhes do toe/gola na lateral,
-        // ver viewer3d.js buildPanelGeometry. [] = peça inteira.
-        recortes: piece.recortes || [],
-        width_mm: resolvedWidthMm,
-        height_mm: resolvedHeightMm,
-        depth_mm: resolvedDepthMm,
-        color,
-        offset_x_mm, offset_y_mm, offset_z_mm,
-        hinge_side: piece.hinge_side,
-        is_module: !!piece.is_module,
-        opening_type: piece.opening_type,
-        slides_per_unit: piece.slides_per_unit,
-        positioning: piece.positioning,
-        // Fita de borda (migration 088) — o 3D usa junto com positioning
-        // pra decidir qual face leva fita e qual mostra o miolo da chapa
-        // (js/viewer3d.js makeBoxMaterials). null = componente ainda na
-        // fórmula antiga: desenha como sempre, material único.
-        edge_banding: piece.edge_banding == null ? null : Number(piece.edge_banding),
-        child_pieces: childParts
-      });
-    }
-  });
-  return parts;
-}
+// resolvePiecesForViewer mudou de casa (2026-08-15): agora vive em js/module-pieces.js,
+// que e a UNICA copia. Estava duplicada em 3 arquivos — campo novo
+// esquecido numa delas some em silencio (peca sem furo).
 
 // Recalcula o preço/3D do módulo que está sendo configurado agora (ainda
 // não faz parte do pedido) — mesma lógica de recalculate() do client.js,
@@ -13101,12 +12746,148 @@ function projectSlotEffectivePieces(slot) {
     .concat(slot.layoutPieces || []);
 }
 
+// ==========================================================================
+// CONTAGEM REAL DE FUROS PRO PREÇO (2026-08-15)
+// ==========================================================================
+// O custo de furação passou a usar os furos que a peça DE FATO recebe — os
+// mesmos que saem no .ban, contra-furos propagados incluídos. É o que faz a
+// lateral, que não tem furação própria, pagar pelos furos que a base abre
+// nela (antes ela pagava só a parcela fixa; o Matt notou).
+//
+// CACHE, e não por preciosismo: recomputeProjectSlotPricing roda a CADA
+// pointermove do arraste de medida, e contar furo exige montar as caixas de
+// todas as peças (buildBoxes) — a parte cara do gerador. A chave é o que
+// realmente muda a furação: módulo + as três medidas. Cor, margem e
+// quantidade de prateleira não mexem em furo nenhum.
+const projectHoleCountCache = new Map();
+function projectHoleCountsFor(slot, parts) {
+  if (typeof Drilling === 'undefined' || !Drilling.countHolesByPiece) return null;
+  // CATÁLOGO AINDA NÃO CHEGOU: devolve null (= usa furos_equivalentes) e NÃO
+  // guarda no cache. Sem esta guarda, a primeira precificação — que roda
+  // antes do fetch terminar — gravava um mapa VAZIO na chave do módulo, e o
+  // cache continuava servindo esse vazio pra sempre. O catálogo carregava, a
+  // contagem passava a funcionar, e o preço não mudava: exatamente o "não
+  // mudou" com 60 furos contados e $0,05 por furo cadastrado.
+  if (!projectDrillingsByComponent) {
+    // AUTOCORREÇÃO (2026-08-15): em vez de só desistir, dispara o
+    // carregamento. Quando ele terminar, repriceAllProjectSlots recalcula
+    // tudo sozinho — inclusive este slot, que acabou de ser precificado com
+    // o número velho.
+    //
+    // Sem isto, o preço dependia de a furação ter carregado ANTES da
+    // primeira precificação. Quando não carregava (o caso real), o slot
+    // ficava com o valor do fallback pra sempre: um número errado com cara
+    // de certo, que não avisa que está velho. Foi o que fez este item voltar
+    // quatro vezes.
+    ensureProjectDrillingCatalog();
+    return null;
+  }
+  const chave = [(slot.module || {}).id, slot.width_mm, slot.height_mm, slot.depth_mm].join('|');
+  if (projectHoleCountCache.has(chave)) return projectHoleCountCache.get(chave);
+  let mapa = null;
+  try {
+    mapa = Drilling.countHolesByPiece(
+      parts, Number(slot.width_mm) || 0, Number(slot.height_mm) || 0, Number(slot.depth_mm) || 0,
+      {
+        drillingsByComponent: projectDrillingsByComponent,
+        holesByPattern: projectHolesByPattern,
+        settings: projectDrillingSettings
+      }
+    );
+  } catch (e) { mapa = null; }
+  // O cache não pode crescer sem fim numa sessão longa de arraste: cada
+  // milímetro arrastado é uma chave nova.
+  if (projectHoleCountCache.size > 300) projectHoleCountCache.clear();
+  projectHoleCountCache.set(chave, mapa);
+  return mapa;
+}
+
+// Furação do catálogo, carregada uma vez por sessão. Sem ela a contagem sai
+// vazia e o preço cai no furos_equivalentes do cadastro — o comportamento
+// anterior, que continua correto, só menos preciso.
+let projectDrillingsByComponent = null;
+let projectHolesByPattern = null;
+let projectDrillingSettings = null;
+
+// Repreça tudo que já está na tela e atualiza os números. Existe como função
+// própria porque é chamada de dentro de ensureProjectDrillingCatalog (quando
+// a furação finalmente chega) — e um slot com preço velho não avisa que está
+// velho: ele só mostra um número errado com cara de certo.
+function repriceAllProjectSlots() {
+  if (!projectSlots.length) return;
+  projectSlots.forEach((slot) => {
+    try { recomputeProjectSlotPricing(slot); } catch (e) { /* mantém o anterior */ }
+  });
+  try { renderProjectSummary(); } catch (e) { /* a tela pode não estar montada ainda */ }
+}
+// Promessa única: sem ela, várias precificações seguidas (é o que acontece no
+// carregamento) disparariam o mesmo fetch em paralelo.
+let projectDrillingCatalogLoading = null;
+async function ensureProjectDrillingCatalog() {
+  if (projectDrillingsByComponent) return;
+  if (projectDrillingCatalogLoading) return projectDrillingCatalogLoading;
+  projectDrillingCatalogLoading = (async () => {
+  try {
+    const [furos, programas, ajustes] = await Promise.all([
+      supabaseClient.from('component_drillings').select('*').order('sort_order'),
+      supabaseClient.from('drilling_pattern_holes').select('*').order('sort_order'),
+      supabaseClient.from('drilling_settings').select('*').eq('id', true).single()
+    ]);
+    const porComp = {};
+    (furos.data || []).forEach((r) => {
+      if (!porComp[r.component_id]) porComp[r.component_id] = [];
+      porComp[r.component_id].push(r);
+    });
+    projectDrillingsByComponent = porComp;
+    projectHolesByPattern = (typeof Drilling !== 'undefined' && Drilling.groupPatternHoles)
+      ? Drilling.groupPatternHoles((programas && programas.data) || []) : {};
+    projectDrillingSettings = (ajustes && ajustes.data) || {};
+    // Qualquer contagem feita ANTES daqui foi calculada sem catálogo. Zerar o
+    // cache é o que faz o preço realmente mudar quando a furação chega —
+    // cinto e suspensório junto com a guarda em projectHoleCountsFor.
+    projectHoleCountCache.clear();
+    // E REPREÇA AQUI DENTRO (2026-08-15). Antes o recálculo ficava nos dois
+    // CHAMADORES desta função, e nenhum dos dois pegava o caso real: o
+    // projeto era precificado no carregamento (catálogo ainda vindo pela
+    // rede), caía no furos_equivalentes, e nada o recalculava depois. O
+    // sintoma era o preço parado mostrando 20 furos (o número do cadastro)
+    // em vez dos 12 contados — com o mapa funcionando perfeitamente se
+    // chamado à mão.
+    //
+    // Dentro da função é o único lugar por onde TODO caminho passa, e roda
+    // uma vez só (a guarda no topo garante).
+    repriceAllProjectSlots();
+  } catch (e) {
+    // Falhar aqui não pode derrubar o preço: segue sem contagem real.
+    projectDrillingsByComponent = {};
+    projectHolesByPattern = {};
+    projectDrillingSettings = {};
+  }
+  })();
+  return projectDrillingCatalogLoading;
+}
+
 function recomputeProjectSlotPricing(slot) {
   // As peças da árvore são geometria ABSOLUTA em mm: mudou a medida do módulo,
   // elas têm que nascer de novo. Este é o funil por onde toda mudança de
   // dimensão passa, então é aqui que o recálculo mora.
   rebuildProjectSlotLayoutPieces(slot);
   const effectivePieces = projectSlotEffectivePieces(slot);
+  // Publica a contagem real de furos ANTES de calcular (ver
+  // projectHoleCountsFor). Pricing.setHoleCounts(null) volta ao
+  // furos_equivalentes do cadastro, então nenhum caminho fica sem número.
+  if (typeof Pricing !== 'undefined' && Pricing.setHoleCounts) {
+    let contagem = null;
+    try {
+      const parts = resolvePiecesForViewer(
+        effectivePieces,
+        { W: Number(slot.width_mm) || 0, H: Number(slot.height_mm) || 0, D: Number(slot.depth_mm) || 0 },
+        slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+      );
+      contagem = projectHoleCountsFor(slot, parts);
+    } catch (e) { contagem = null; }
+    Pricing.setHoleCounts(contagem);
+  }
   slot.result = slot.module.is_decoration
     ? { total: 0, breakdown: [] }
     : Pricing.calculateModulePrice({
@@ -13125,6 +12906,365 @@ function recomputeProjectSlotPricing(slot) {
 // width_min_mm/max_mm etc. do catálogo) e, no eixo da altura, também no teto
 // útil (mesma regra de sempre — pé direito − 5" − rodapé, considerando a
 // posição vertical atual do módulo).
+// A senha da aba Fábrica. Fica no código de propósito e isso está DOCUMENTADO
+// como decisão consciente: ela impede o cliente de abrir a tela por curiosidade,
+// não protege o dado — os custos já trafegam pro navegador dele hoje, e quem
+// abrir o DevTools alcança tudo com ou sem senha. Blindar de verdade exige o
+// cálculo sair do navegador (RPC com RLS). Adiado com o Matt, não esquecido.
+const MONEY_FABRICA_SENHA = 'legno';
+let moneyFabricaLiberada = false;
+let moneyAbaAtual = 'orcamento';
+
+function openMoneyModal() {
+  const modal = document.getElementById('po-money-modal');
+  if (!modal) return;
+  modal.classList.add('open');
+
+  // RECALCULA AO ABRIR (2026-08-15). O relatório lê slot.result, que pode ter
+  // sido calculado numa condição pior do que a atual — tipicamente no
+  // carregamento da página, antes de o catálogo de furação chegar pela rede.
+  // O resultado ficava congelado num número do fallback: errado, mas com cara
+  // de certo, sem nada na tela avisando que estava velho.
+  //
+  // Tentei antes garantir isso pela ORDEM (recalcular quando o catálogo
+  // chegasse). Falhou quatro vezes seguidas porque sempre havia um caminho de
+  // inicialização que não passava pelo gancho. Recalcular na abertura não
+  // depende de ordem nenhuma: o que você está olhando acabou de ser
+  // calculado, ponto.
+  //
+  // Custo: uma precificação de todos os módulos por abertura do painel. É um
+  // clique manual, não um laço de render — e o cache de furos absorve a parte
+  // cara.
+  if (!projectDrillingsByComponent) {
+    // Catálogo ainda não chegou: espera ele e só então desenha, senão o
+    // painel abriria mostrando o número velho de novo.
+    ensureProjectDrillingCatalog().then(() => { repriceAllProjectSlots(); renderMoneyModal(); });
+  } else {
+    repriceAllProjectSlots();
+  }
+  renderMoneyModal();
+}
+function closeMoneyModal() {
+  const modal = document.getElementById('po-money-modal');
+  if (modal) modal.classList.remove('open');
+}
+
+function renderMoneyModal() {
+  const body = document.getElementById('po-money-body');
+  if (!body) return;
+  document.querySelectorAll('.po-money-tab').forEach((b) => {
+    b.classList.toggle('active', b.dataset.moneyTab === moneyAbaAtual);
+  });
+  const rel = collectProjectCostReport(projectSlots);
+
+  if (moneyAbaAtual === 'orcamento') { renderMoneyOrcamento(body, rel); return; }
+  if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
+  renderMoneyFabrica(body, rel);
+}
+
+// ---- Aba ORÇAMENTO: o que o cliente pode ver. Preço de venda, sem custo.
+function renderMoneyOrcamento(body, rel) {
+  const linhas = projectSlots.filter((s) => s.result).map((s) => (
+    '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + '</td>'
+    + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
+    + '<td class="num">' + formatMoney(Number(s.result.total) || 0) + '</td></tr>'
+  )).join('');
+  body.innerHTML = '<p class="po-money-sub">Preço de venda, com a margem já aplicada. '
+    + 'É o que vale para o cliente.</p>'
+    + '<table class="po-money-table"><thead><tr><th>Módulo</th><th class="num">Medidas (mm)</th>'
+    + '<th class="num">Preço</th></tr></thead><tbody>' + linhas + '</tbody></table>'
+    + '<div class="po-money-total"><span>Total do orçamento</span>'
+    + '<strong>' + formatMoney(rel.totalVenda) + '</strong></div>';
+}
+
+// ---- Porta da aba FÁBRICA
+function renderMoneySenha(body) {
+  body.innerHTML = '<div class="po-money-lock">'
+    + '<p>Esta aba mostra o <strong>custo de fábrica</strong>, sem margem.</p>'
+    + '<input type="password" id="po-money-pass" placeholder="Senha" autocomplete="off">'
+    + '<button type="button" id="po-money-pass-btn">Abrir</button>'
+    + '<p class="po-money-erro" id="po-money-erro"></p>'
+    + '</div>';
+  const tenta = () => {
+    const v = (document.getElementById('po-money-pass') || {}).value || '';
+    if (v === MONEY_FABRICA_SENHA) { moneyFabricaLiberada = true; renderMoneyModal(); return; }
+    const e = document.getElementById('po-money-erro');
+    if (e) e.textContent = 'Senha incorreta.';
+  };
+  document.getElementById('po-money-pass-btn').addEventListener('click', tenta);
+  document.getElementById('po-money-pass').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') tenta();
+  });
+}
+
+// ---- Aba FÁBRICA: custo puro, aberto por natureza, com o % de cada linha.
+function renderMoneyFabrica(body, rel) {
+  const T = rel.totalCusto || 1;
+  const pct = (v) => ((v / T) * 100).toFixed(1) + '%';
+  const linha = (rot, detalhe, valor) => (
+    '<tr><td>' + rot + '</td><td class="num dim">' + (detalhe || '') + '</td>'
+    + '<td class="num">' + formatMoney(valor) + '</td>'
+    + '<td class="num pct">' + pct(valor) + '</td></tr>'
+  );
+  const secao = (titulo) => '<tr class="po-money-sec"><td colspan="4">' + titulo + '</td></tr>';
+
+  // SUBTOTAL POR NATUREZA (2026-08-15, Matt: "preciso um somatório de matéria-
+  // prima e um de mão de obra"). É a divisão que a fábrica usa pra decidir
+  // coisa diferente: matéria-prima se compra e se estoca; mão de obra é
+  // capacidade de máquina e de gente. Somadas num total só, não dá pra
+  // enxergar qual das duas está pesando.
+  //
+  // A FERRAGEM entra em matéria-prima, e não em mão de obra: dobradiça e
+  // corrediça são insumo comprado, igual à chapa e à fita. O rótulo diz o que
+  // está dentro pra não restar dúvida.
+  const fer = rel.ferragem;
+  const totalMateria = Object.keys(rel.material).reduce((s, k) => s + rel.material[k].custo, 0)
+    + Object.keys(rel.fita).reduce((s, k) => s + rel.fita[k].custo, 0)
+    + fer.dobradica.custo + fer['corrediça'].custo;
+  const totalMO = rel.labor.corte + rel.labor.fita + rel.labor.furacao
+    + rel.labor.usinagem + rel.labor.antiga;
+
+  const subtotal = (rot, valor) => (
+    '<tr class="po-money-subtotal"><td>' + rot + '</td><td></td>'
+    + '<td class="num">' + formatMoney(valor) + '</td>'
+    + '<td class="num pct">' + pct(valor) + '</td></tr>'
+  );
+
+  let html = '';
+  html += secao('Matéria-prima');
+  Object.keys(rel.material).sort().forEach((cor) => {
+    const m = rel.material[cor];
+    html += linha('Chapa · ' + escapeHtmlCutlist(cor), m.m2.toFixed(3) + ' m²', m.custo);
+  });
+  Object.keys(rel.fita).sort().forEach((cor) => {
+    const f = rel.fita[cor];
+    html += linha('Fita · ' + escapeHtmlCutlist(cor), f.m.toFixed(2) + ' m', f.custo);
+  });
+  if (fer.dobradica.custo > 0) html += linha('Dobradiças', fer.dobradica.qtd + ' un', fer.dobradica.custo);
+  if (fer['corrediça'].custo > 0) html += linha('Corrediças', fer['corrediça'].qtd + ' par', fer['corrediça'].custo);
+  html += subtotal('Subtotal matéria-prima <span class="dim">(chapa + fita + ferragem)</span>', totalMateria);
+
+  html += secao('Mão de obra');
+  const rotulos = { corte: 'Corte', fita: 'Fita (colagem)', furacao: 'Furação', usinagem: 'Usinagem' };
+  Object.keys(rotulos).forEach((k) => {
+    if (rel.labor[k] > 0) html += linha(rotulos[k], '', rel.labor[k]);
+  });
+  // Peça fora do modelo por processo: aparece SEPARADA, nunca somada num
+  // processo — senão o relatório diria que a fábrica gastou em furação um
+  // dinheiro que na verdade é de uma labor antiga, indivisível.
+  if (rel.labor.antiga > 0) {
+    html += linha('Peça fora do modelo por processo', '', rel.labor.antiga);
+  }
+  html += subtotal('Subtotal mão de obra', totalMO);
+
+  // ---- MÓDULO × VALOR (pedido do Matt: "coloca módulo valor")
+  let porMod = '';
+  rel.porModulo.forEach((m) => {
+    porMod += '<tr><td>' + escapeHtmlCutlist(m.nome) + '</td>'
+      + '<td class="num dim">' + m.dims + '</td>'
+      + '<td class="num">' + formatMoney(m.custo) + '</td>'
+      + '<td class="num pct">' + ((m.custo / T) * 100).toFixed(1) + '%</td></tr>';
+  });
+
+  // ---- POR PEÇA, CADA ETAPA SEPARADA. É a tabela que responde "quantos
+  // pequenos processos ele está cobrando" — uma linha por peça, uma coluna
+  // por etapa. Sem linha por furo, como o Matt pediu.
+  let porPeca = '';
+  rel.detalhe.forEach((l) => {
+    const cel = (v) => '<td class="num">' + (v > 0 ? formatMoney(v) : '<span class="zero">—</span>') + '</td>';
+    porPeca += '<tr><td>' + escapeHtmlCutlist(l.peca) + (l.qtd > 1 ? ' <span class="dim">×' + l.qtd + '</span>' : '') + '</td>'
+      + '<td class="num dim">' + l.m2.toFixed(3) + '</td>'
+      + '<td class="num dim">' + (l.fitaM > 0 ? l.fitaM.toFixed(2) : '—') + '</td>'
+      + cel(l.chapa) + cel(l.fita) + cel(l.corte) + cel(l.colagem) + cel(l.furacao)
+      + cel(l.usinagem) + cel(l.laborAntiga) + cel(l.ferragem)
+      + '<td class="num"><strong>' + formatMoney(l.total) + '</strong></td></tr>';
+  });
+
+  const margem = rel.totalVenda - rel.totalCusto;
+  body.innerHTML = '<p class="po-money-sub">Custo de fábrica, <strong>sem margem</strong>. '
+    + rel.pecas + ' peça(s) no projeto.</p>'
+    + '<table class="po-money-table"><thead><tr><th>Natureza</th><th class="num">Quantidade</th>'
+    + '<th class="num">Custo</th><th class="num">%</th></tr></thead><tbody>' + html + '</tbody></table>'
+
+    + (rel.porModulo.length ? '<h4 class="po-money-h">Por módulo</h4>'
+      + '<table class="po-money-table"><thead><tr><th>Módulo</th><th class="num">Medidas</th>'
+      + '<th class="num">Custo</th><th class="num">%</th></tr></thead><tbody>' + porMod + '</tbody></table>' : '')
+
+    + '<h4 class="po-money-h">Por peça — o que cada etapa cobra</h4>'
+    + '<p class="po-money-sub">Cada coluna é um processo. É aqui que dá pra ver peça pagando '
+    + 'furação sem levar furo, ou corte desproporcional ao tamanho.</p>'
+    + '<div class="po-money-scroll"><table class="po-money-table po-money-peca"><thead><tr>'
+    + '<th>Peça</th><th class="num">m²</th><th class="num">fita m</th>'
+    + '<th class="num">Chapa</th><th class="num">Fita</th><th class="num">Corte</th>'
+    + '<th class="num">Colagem</th><th class="num">Furação</th><th class="num">Usinagem</th>'
+    + '<th class="num">M.O. antiga</th><th class="num">Ferragem</th><th class="num">Total</th>'
+    + '</tr></thead><tbody>' + porPeca + '</tbody></table></div>'
+
+    + '<div class="po-money-total"><span>Custo total</span><strong>' + formatMoney(rel.totalCusto) + '</strong></div>'
+    + '<div class="po-money-total secundario"><span>Preço de venda (com margem do ERP)</span>'
+    + '<span>' + formatMoney(rel.totalVenda) + '</span></div>'
+    + '<div class="po-money-total secundario"><span>Diferença (margem bruta)</span>'
+    + '<span>' + formatMoney(margem)
+    + (rel.totalVenda > 0 ? ' · ' + ((margem / rel.totalVenda) * 100).toFixed(1) + '% do preço' : '')
+    + '</span></div>';
+}
+
+(function ligaMoneyModal() {
+  const liga = () => {
+    // Dois gatilhos: o da BARRA (principal, 2026-08-15) e o do rodapé do
+    // resumo. Se um dia o do resumo sair, o da barra continua valendo.
+    const btnTb = document.getElementById('po-proj-money-tb-btn');
+    const btn = document.getElementById('po-proj-money-btn');
+    if (!btnTb && !btn) return false;
+    if (btnTb) btnTb.addEventListener('click', openMoneyModal);
+    if (btn) btn.addEventListener('click', openMoneyModal);
+    const fechar = document.getElementById('po-money-close');
+    if (fechar) fechar.addEventListener('click', closeMoneyModal);
+    document.querySelectorAll('.po-money-tab').forEach((b) => {
+      b.addEventListener('click', () => { moneyAbaAtual = b.dataset.moneyTab; renderMoneyModal(); });
+    });
+    const modal = document.getElementById('po-money-modal');
+    if (modal) modal.addEventListener('click', (ev) => { if (ev.target === modal) closeMoneyModal(); });
+    return true;
+  };
+  if (!liga()) document.addEventListener('DOMContentLoaded', liga);
+})();
+
+// ==========================================================================
+// $ FÁBRICA — o custo do projeto aberto por natureza (2026-08-15)
+// ==========================================================================
+// Pedido do Matt: "quero enxergar esses custos todos separados no módulo...
+// um relatório completo, mostrando quantos m² de material, fita de borda, por
+// cor, e cada labor. % do lado sobre o total. Sem margem, só custo."
+//
+// NÃO calcula nada novo. Tudo isto já sai de Pricing.calculateModulePrice, por
+// peça, no `breakdown` (que o próprio pricing.js marca como "uso interno/admin
+// — NÃO mostrar ao cliente: custo puro"). Aqui é só somar e agrupar.
+//
+// Três detalhes que decidem se o número fecha:
+//   1. `area_m2` e `edge_band_m` são POR UNIDADE; sheet_cost/edge_cost/
+//      labor_cost já vêm multiplicados pela quantidade. Misturar isso é o
+//      jeito mais fácil de o relatório não bater com o total.
+//   2. Peça-MÓDULO (is_module) não tem custo próprio: o custo está nas
+//      child_breakdown dela. Por isso a travessia é recursiva e só soma folha.
+//   3. `labor_breakdown` só existe na peça que está em processo (migration
+//      090). Quem não está tem uma labor única e indivisível — ela vai pra
+//      linha "Mão de obra (peça antiga)" em vez de sumir ou ser chutada em
+//      cima de um processo.
+function collectProjectCostReport(slots) {
+  const rel = {
+    material: {},      // por cor: { m2, custo }
+    fita: {},          // por cor: { m, custo }
+    labor: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0 },
+    ferragem: { dobradica: { qtd: 0, custo: 0 }, corrediça: { qtd: 0, custo: 0 } },
+    totalCusto: 0,
+    totalVenda: 0,
+    pecas: 0,
+    detalhe: [],       // uma linha por PEÇA, com cada etapa separada
+    porModulo: []      // { nome, dims, custo, venda } — "módulo × valor"
+  };
+
+  const nomeCor = (slot, roleId) => {
+    const c = (slot.colorsByRole || {})[roleId];
+    return (c && c.name) || 'Sem cor definida';
+  };
+
+  const anda = (slot, linhas, prefixo) => {
+    (linhas || []).forEach((p) => {
+      if (p.is_module) {
+        // Peça-módulo não tem custo próprio (está nos filhos). O nome dela
+        // vira prefixo pra a peça-folha lá dentro não aparecer solta no
+        // detalhamento — "Gaveta › Fundo" diz de onde veio.
+        anda(slot, p.child_breakdown, (prefixo ? prefixo + ' › ' : '') + (p.reference || ''));
+        return;
+      }
+      const qtd = Number(p.quantity) || 1;
+      rel.pecas += qtd;
+
+      // DETALHE POR PEÇA (2026-08-15, Matt: "coloca o valor de cada etapa, não
+      // só somatório. Quero ver quantos pequenos processos ele está cobrando,
+      // não precisa uma linha por furo, mas POR PEÇA o que ele tá cobrando").
+      // É a linha que permite auditar: dá pra ver a peça que está pagando
+      // furação sem levar furo, ou corte caro demais pro tamanho dela.
+      const lb = p.labor_breakdown || {};
+      rel.detalhe.push({
+        modulo: (slot.module && slot.module.name) || '',
+        peca: (prefixo ? prefixo + ' › ' : '') + (p.reference || ''),
+        qtd: qtd,
+        m2: (Number(p.area_m2) || 0) * qtd,
+        fitaM: (Number(p.edge_band_m) || 0) * qtd,
+        chapa: Number(p.sheet_cost) || 0,
+        fita: Number(p.edge_cost) || 0,
+        corte: Number(lb.corte) || 0,
+        colagem: Number(lb.fita) || 0,
+        furacao: Number(lb.furacao) || 0,
+        usinagem: Number(lb.usinagem) || 0,
+        // Sem labor_breakdown a peça tem uma labor única e indivisível — ela
+        // vai nesta coluna, e NUNCA distribuída pelos processos.
+        laborAntiga: p.labor_breakdown ? 0 : (Number(p.labor_cost) || 0),
+        ferragem: (Number(p.hinge_cost) || 0) + (Number(p.slide_cost) || 0),
+        total: (Number(p.sheet_cost) || 0) + (Number(p.edge_cost) || 0)
+          + (Number(p.labor_cost) || 0) + (Number(p.hinge_cost) || 0) + (Number(p.slide_cost) || 0)
+      });
+
+      const cor = nomeCor(slot, p.color_role_id);
+      const m = rel.material[cor] || (rel.material[cor] = { m2: 0, custo: 0 });
+      m.m2 += (Number(p.area_m2) || 0) * qtd;
+      m.custo += Number(p.sheet_cost) || 0;
+
+      if ((Number(p.edge_band_m) || 0) > 0) {
+        const f = rel.fita[cor] || (rel.fita[cor] = { m: 0, custo: 0 });
+        f.m += (Number(p.edge_band_m) || 0) * qtd;
+        f.custo += Number(p.edge_cost) || 0;
+      }
+
+      if (p.labor_breakdown) {
+        rel.labor.corte += Number(p.labor_breakdown.corte) || 0;
+        rel.labor.fita += Number(p.labor_breakdown.fita) || 0;
+        rel.labor.furacao += Number(p.labor_breakdown.furacao) || 0;
+        rel.labor.usinagem += Number(p.labor_breakdown.usinagem) || 0;
+      } else {
+        rel.labor.antiga += Number(p.labor_cost) || 0;
+      }
+
+      if ((Number(p.hinge_cost) || 0) > 0) {
+        rel.ferragem.dobradica.qtd += (Number(p.hinge_count) || 0) * qtd;
+        rel.ferragem.dobradica.custo += Number(p.hinge_cost) || 0;
+      }
+      if ((Number(p.slide_cost) || 0) > 0) {
+        rel.ferragem['corrediça'].qtd += qtd;
+        rel.ferragem['corrediça'].custo += Number(p.slide_cost) || 0;
+      }
+    });
+  };
+
+  (slots || []).forEach((slot) => {
+    if (!slot.result) return;
+    const antes = rel.detalhe.length;
+    anda(slot, slot.result.breakdown, '');
+    // Custo do módulo = soma das peças DELE (as que acabaram de entrar no
+    // detalhe). Sai daí, e não de outro campo, pelo mesmo motivo do total
+    // geral: se alguma peça deixar de ser contada, o número denuncia.
+    const custo = rel.detalhe.slice(antes).reduce((s2, l) => s2 + l.total, 0);
+    rel.porModulo.push({
+      nome: (slot.module && slot.module.name) || '',
+      dims: Math.round(slot.width_mm) + '×' + Math.round(slot.height_mm) + '×' + Math.round(slot.depth_mm),
+      custo: custo,
+      venda: Number(slot.result.total) || 0
+    });
+    rel.totalVenda += Number(slot.result.total) || 0;
+  });
+
+  // O custo total sai da SOMA das partes, não de outro campo: assim, se
+  // alguma natureza deixar de ser contada, os percentuais denunciam na hora
+  // em vez de fechar 100% escondendo o buraco.
+  Object.keys(rel.material).forEach((k) => { rel.totalCusto += rel.material[k].custo; });
+  Object.keys(rel.fita).forEach((k) => { rel.totalCusto += rel.fita[k].custo; });
+  Object.keys(rel.labor).forEach((k) => { rel.totalCusto += rel.labor[k]; });
+  rel.totalCusto += rel.ferragem.dobradica.custo + rel.ferragem['corrediça'].custo;
+  return rel;
+}
+
 // ==========================================================================
 // LIMITE DA FURADEIRA — o fundo tem que caber na máquina (2026-08-15)
 // ==========================================================================
@@ -15082,6 +15222,7 @@ function rebuildProjectBuilder(reselecionar) {
     // é a lista de TODAS as peças do módulo sem as frentes, medida na abertura
     // da janela, que é exatamente o conjunto de obstáculos que interessa.
     clipProjectInternalsAgainstCasco(projectBuilderBuilt.pieces, projectBuilderDesenho);
+    recortarInternosContraCasco(projectBuilderBuilt.pieces, projectBuilderDesenho);
   } catch (e) {
     projectBuilderBuilt = { pieces: [], voids: [], zona: projectBuilderZone };
   }
@@ -16146,6 +16287,80 @@ function clipProjectInternalsAgainstCasco(pieces, obstaculos) {
 }
 
 // ==========================================================================
+// PEÇA DE CASCO QUE ENTALHA O INTERNO (2026-08-16)
+// ==========================================================================
+// Matt, depois de pôr uma divisória numa carcaça com gola: "ele precisa
+// recortar a lateral onde pega no gola".
+//
+// POR QUE A DIVISÓRIA ENTRAVA NA GOLA. A zona interna é deduzida das peças de
+// papel left/right/bottom/top/back. A gola é 'free' (não fecha o topo, é o
+// canto da frente), então não entra na conta — a divisória nasce com a
+// profundidade cheia. E clipProjectInternalsAgainstCasco, logo acima, só trata
+// obstáculo ATRÁS: obstáculo na frente ficou de fora de propósito, porque
+// porta o motor já desconta sozinho.
+//
+// POR QUE ENTALHAR E NÃO ENCURTAR. Encurtar deixaria a divisória parando
+// 40mm antes da frente em todo o vão, só porque os 76mm de cima esbarram na
+// gola — o móvel perderia a divisão justamente na boca. O montador entalha, e
+// é o que as LATERAIS já fazem (a 094 cadastra o recorte nelas à mão).
+//
+// A DIVISÓRIA NÃO PODE SER CADASTRADA À MÃO: ela nasce do LayoutEngine, não é
+// linha de module_components. Por isso aqui o recorte é DERIVADO da geometria
+// — e cai no mesmo campo `recortes` que o 3D (viewer3d.buildPanelGeometry) e
+// o .ban (drilling.js/slotsDaPeca) já sabem ler. Nenhum código novo nesses
+// dois: o entalhe aparece no desenho e vira SlotL no arquivo da máquina de
+// graça.
+//
+// GEOMÉTRICA, sem classificar peça (Matt escolheu "todas que cruzarem"):
+// divisória, prateleira, base — o que cruzar é entalhado. O `recortes` só sabe
+// representar CANTO, então a interseção precisa pegar a peça num canto em
+// altura E em profundidade; interseção no meio da peça (que seria um furo
+// passante, não um canto) é ignorada de propósito em vez de virar um recorte
+// errado.
+//
+// Só cortam as peças marcadas `abre_recorte` (migration 111): a gola e o toe
+// 4½. Sem a migration a lista sai vazia e nada muda.
+function recortarInternosContraCasco(pieces, obstaculos) {
+  const TOL = 0.5;   // mm — encostar não é cruzar
+  if (!Array.isArray(pieces) || !Array.isArray(obstaculos)) return pieces;
+  // buildBoxes devolve a caixa com `.part` junto; o caminho de último recurso
+  // (medir a cena) não tem part e simplesmente não corta ninguém.
+  const cortadores = obstaculos.filter((b) => b && b.part && b.part.abre_recorte);
+  if (!cortadores.length) return pieces;
+
+  pieces.forEach((p) => {
+    if (!p || !(p.w > 0) || !(p.h > 0) || !(p.d > 0)) return;
+    cortadores.forEach((b) => {
+      const ix0 = Math.max(p.x, b.x0), ix1 = Math.min(p.x + p.w, b.x0 + b.sx);
+      const iy0 = Math.max(p.y, b.y0), iy1 = Math.min(p.y + p.h, b.y0 + b.sy);
+      const iz0 = Math.max(p.z, b.z0), iz1 = Math.min(p.z + p.d, b.z0 + b.sz);
+      if (ix1 - ix0 <= TOL || iy1 - iy0 <= TOL || iz1 - iz0 <= TOL) return;
+
+      const emCima = iy1 >= p.y + p.h - TOL, emBaixo = iy0 <= p.y + TOL;
+      const naFrente = iz1 >= p.z + p.d - TOL, noFundo = iz0 <= p.z + TOL;
+      // Precisa ser canto: um extremo em altura e um em profundidade. Os dois
+      // extremos ao mesmo tempo (a peça inteira) também não é canto.
+      if (emCima === emBaixo || naFrente === noFundo) return;
+
+      const h = iy1 - iy0, d = iz1 - iz0;
+      // Recorte que comeria a peça toda é sinal de geometria estranha — a
+      // mesma guarda do viewer3d, que nesse caso desenha a peça inteira.
+      if (h >= p.h - TOL || d >= p.d - TOL) return;
+
+      const canto = (naFrente ? 'frente' : 'fundo') + '-' + (emCima ? 'cima' : 'baixo');
+      if (!Array.isArray(p.recortes)) p.recortes = [];
+      // Um recorte por canto (o viewer3d também só resolve um por canto). Se
+      // duas peças cortarem o mesmo canto, fica o MAIOR — quem corta mais
+      // fundo manda, senão a peça ainda esbarraria na outra.
+      const ja = p.recortes.find((r) => r && r.canto === canto);
+      if (ja) { ja.h = Math.max(ja.h || 0, h); ja.d = Math.max(ja.d || 0, d); return; }
+      p.recortes.push({ canto: canto, h: h, d: d });
+    });
+  });
+  return pieces;
+}
+
+// ==========================================================================
 // MEDIDA DIGITADA + APAGAR VÃO (2026-08-15)
 // ==========================================================================
 // O pai de um nó, que o LayoutEngine não guarda (a árvore só aponta pra
@@ -16473,7 +16688,13 @@ function rebuildProjectSlotLayoutPieces(slot) {
     // Caminho BARATO de propósito (sem medirNaCena): esta função roda a cada
     // pointermove do arraste de medida. O 3º argumento tira as frentes, que não
     // são obstáculo aqui (o motor já desconta a porta sozinho).
-    clipProjectInternalsAgainstCasco(built.pieces, computeProjectSlotCascoBoxes(slot, false, true));
+    // Os dois na sequência, e nesta ordem: o clip acerta a PROFUNDIDADE da
+    // peça (obstáculo atrás), e só depois o recorte mede a interseção com quem
+    // entalha. Invertido, o recorte sairia calculado sobre uma profundidade
+    // que o clip ainda ia mudar.
+    const cascoBoxes = computeProjectSlotCascoBoxes(slot, false, true);
+    clipProjectInternalsAgainstCasco(built.pieces, cascoBoxes);
+    recortarInternosContraCasco(built.pieces, cascoBoxes);
     slot.layoutPieces = projectLayoutRowsForSlot(slot, built.pieces);
   } catch (e) {
     slot.layoutPieces = [];
@@ -16515,6 +16736,13 @@ function projectLayoutRowsForSlot(slot, pieces) {
 // Projeto restaurado do banco tem slot.layout mas não tem catálogo em memória.
 // Fire-and-forget: carrega, refaz as peças e redesenha. Nada trava esperando.
 function hydrateProjectLayoutPieces() {
+  // A furação entra aqui mesmo sem layout nenhum: ela vale pra QUALQUER
+  // módulo, não só pros que têm internos montados. Fire-and-forget, e o
+  // recompute que vier depois já acha o catálogo pronto — enquanto não
+  // estiver, o preço usa furos_equivalentes, que é o comportamento antigo.
+  // O reprice agora mora DENTRO de ensureProjectDrillingCatalog (ver lá): era
+  // aqui e no hydrate, e nenhum dos dois cobria o caminho real.
+  ensureProjectDrillingCatalog();
   if (!projectSlots.some((s) => s.layout)) return;
   (async () => {
     await ensureAccessoryCatalog();
@@ -19615,6 +19843,45 @@ function serializeProjectSlots() {
   }));
 }
 
+// ==========================================================================
+// SALVAR PROJETO NA BARRA DE AÇÕES (2026-08-16)
+// ==========================================================================
+// Matt: "aqui nao quero enviar direto pra ordem, quero salvar projeto
+// primeiro". O "💾 Salvar projeto" existia só no painel lateral, longe do
+// "Enviar pro pedido" — dava pra mandar pro pedido sem nunca ter salvo.
+//
+// DELEGA, não duplica: no clique ele aciona o botão real do painel. Toda a
+// regra de "projeto novo x projeto carregado" (loadedProjectFavorite, nome,
+// thumbnail, foto realista) mora lá e continua num lugar só — copiar a
+// chamada aqui é como as telas de furação divergirem, erro que esta base já
+// pagou caro.
+//
+// O RÓTULO SEGUE O ESTADO: com um projeto carregado ele vira "Salvar
+// alterações", igual ao do painel. refreshProjectFavoriteButtons chama isto.
+function syncProjToolbarSaveButton() {
+  const barra = document.getElementById('po-proj-toolbar-save-btn');
+  if (!barra) return;
+  const updateBtn = document.getElementById('po-proj-update-fav-btn');
+  const editando = updateBtn && updateBtn.style.display !== 'none' && updateBtn.textContent;
+  barra.textContent = editando ? updateBtn.textContent : I18n.t('project.save_btn');
+}
+
+function bindProjToolbarSaveButton() {
+  const barra = document.getElementById('po-proj-toolbar-save-btn');
+  if (!barra || barra.dataset.bound) return;
+  barra.dataset.bound = '1';
+  barra.addEventListener('click', () => {
+    const updateBtn = document.getElementById('po-proj-update-fav-btn');
+    // Projeto carregado da lista: "Salvar alterações" (atualiza o registro).
+    // Projeto novo: "Salvar projeto" (cria). É a mesma escolha que ele faria
+    // no painel, sem obrigá-lo a abrir o painel.
+    if (updateBtn && updateBtn.style.display !== 'none') { updateBtn.click(); return; }
+    const saveBtn = document.getElementById('po-proj-save-fav-btn');
+    if (saveBtn) saveBtn.click();
+  });
+  syncProjToolbarSaveButton();
+}
+
 function refreshProjectFavoriteButtons() {
   const updateBtn = document.getElementById('po-proj-update-fav-btn');
   // Grade de fotos realistas salvas (migration 077) segue o projeto
@@ -19628,6 +19895,7 @@ function refreshProjectFavoriteButtons() {
   } else {
     updateBtn.style.display = 'none';
   }
+  syncProjToolbarSaveButton();
 }
 
 // Miniatura do PROJETO INTEIRO (todas as paredes juntas), pra mostrar na
@@ -19781,6 +20049,7 @@ async function saveProjectFavoriteInner(overwriteId) {
   }
 }
 
+bindProjToolbarSaveButton();
 const projSaveFavBtn = document.getElementById('po-proj-save-fav-btn');
 if (projSaveFavBtn) projSaveFavBtn.addEventListener('click', () => saveProjectFavorite(null));
 const projUpdateFavBtn = document.getElementById('po-proj-update-fav-btn');
