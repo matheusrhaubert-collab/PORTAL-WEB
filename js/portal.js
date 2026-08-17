@@ -10326,6 +10326,11 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
       startX: ev.clientX,
       startY: ev.clientY,
       moved: false,
+      // Maior distância que o dedo/cursor percorreu no gesto inteiro. É ela
+      // que separa "toque que tremeu" de "rolagem da lista" lá no pointerup —
+      // a posição FINAL não serve, porque uma rolagem volta perto de onde
+      // começou e seria lida como toque.
+      maxDist: 0,
       ghost: null
     };
     try { card.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
@@ -10338,18 +10343,31 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
       const dx = ev.clientX - st.startX;
       const dy = ev.clientY - st.startY;
       const d = Math.hypot(dx, dy);
+      st.maxDist = Math.max(st.maxDist, d);
       if (d < (ev.pointerType === 'touch' ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX)) return;
       // TOQUE: a biblioteca é uma lista que ROLA na vertical — se qualquer
       // movimento do dedo virasse arraste de módulo, rolar a lista no iPad
-      // ficaria impossível. Só um gesto predominantemente HORIZONTAL (que é
-      // exatamente o gesto natural de "puxar da coluna da esquerda pra dentro
-      // da cena") arma o arraste; o resto é rolagem e cancela o gesto. Casa
-      // com `touch-action: pan-y` no card (CSS), que deixa o navegador cuidar
-      // da rolagem vertical nativamente.
-      if (ev.pointerType === 'touch' && Math.abs(dx) <= Math.abs(dy)) {
-        projectLibDragState = null;
-        return;
-      }
+      // ficaria impossível. Casa com `touch-action: pan-y` no card (CSS), que
+      // deixa o navegador cuidar da rolagem vertical nativamente.
+      //
+      // 2026-08-16 — "iPad não tá conseguindo inserir no ambiente" (Matt,
+      // arrastando o card pra dentro da cena). A versão anterior decidia UMA
+      // VEZ, no primeiro ponto que passava dos 12px: se ali |dy| >= |dx| ela
+      // fazia `projectLibDragState = null` e o gesto MORRIA. Puxar da coluna
+      // da esquerda quase sempre começa com uma descidinha, então o arraste
+      // morria no primeiro milímetro e não ressuscitava nem indo 300px pra
+      // direita — e, pior, o pointerup achava o estado nulo e nem caía no
+      // atalho de toque curto. Nada acontecia, sem aviso nenhum.
+      //
+      // Agora a decisão é CONTÍNUA e o critério é o percurso HORIZONTAL de
+      // verdade: assim que o dedo andar PROJECT_TOUCH_SLOP_PX no eixo X, o
+      // arraste engata, não importa o quanto ele desceu no caminho. Enquanto
+      // isso não acontece o gesto fica INDECISO — nunca é descartado.
+      //
+      // Quem protege a rolagem não é mais este if: é o `touch-action: pan-y`.
+      // Quando o iOS decide que aquilo é uma rolagem vertical, ele assume o
+      // gesto e manda `pointercancel`, e o endLibDrag já sai fora nesse caso.
+      if (ev.pointerType === 'touch' && Math.abs(dx) < PROJECT_TOUCH_SLOP_PX) return;
       st.moved = true;
       st.ghost = buildProjectDragGhost(moduleRow);
       document.body.appendChild(st.ghost);
@@ -10386,7 +10404,14 @@ function attachProjectLibraryCardDrag(card, moduleRow) {
     if (ev.type === 'pointercancel') return;
     if (!st.moved) {
       // Não passou do limiar: é um clique normal, comportamento de sempre.
-      insertProjectModuleDefault(st.moduleId);
+      //
+      // O TESTE É O PERCURSO, NÃO A POSIÇÃO FINAL (2026-08-16). Desde que o
+      // gesto vertical parou de zerar o estado, uma rolagem da lista também
+      // chega aqui com `moved` falso — e ela costuma terminar perto de onde
+      // começou, então comparar início e fim a leria como toque e inseriria
+      // um módulo a cada rolagem. `maxDist` é o quanto o dedo REALMENTE
+      // andou: escorregão de toque fica embaixo do limiar, rolagem não.
+      if (st.maxDist <= PROJECT_LIB_TAP_SLIP_PX) insertProjectModuleDefault(st.moduleId);
       return;
     }
     dropProjectModuleAt(st.moduleId, ev.clientX, ev.clientY);
@@ -11818,6 +11843,10 @@ const PROJECT_CLICK_MOVE_THRESHOLD_PX = 4;      // abaixo disso, pointerup vira 
 // 220ms é o tempo de "segurar" antes do arraste engatar (curto o suficiente
 // pra não parecer travado, longo o suficiente pra não disparar num tap).
 const PROJECT_TOUCH_SLOP_PX = 12;
+// Escorregão que ainda vale como TOQUE no card da biblioteca (2026-08-16).
+// Acima disso o gesto foi rolagem da lista e não insere nada. Ver
+// attachProjectLibraryCardDrag.
+const PROJECT_LIB_TAP_SLIP_PX = 24;
 const PROJECT_TOUCH_HOLD_MS = 220;
 // Segurar parado por este tempo abre as PROPRIEDADES do módulo (cor,
 // dimensões, prateleiras) — pedido do usuário 2026-08-06, valendo tanto no

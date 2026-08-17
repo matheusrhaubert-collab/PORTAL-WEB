@@ -754,10 +754,19 @@ const Viewer3D = (function () {
   //   painel. Motivo: rodapé/travessa saíam com o veio em pé na tela e
   //   deitados na chapa.
   //
-  //   2026-08-16 — a conta do lado longo ficou SÓ NO FUNDO. Ver o comentário
-  //   grande em resolveGrainRotate: a troca comprimento/largura é assunto da
-  //   máquina, e no projeto ela fazia a lateral de um módulo baixo virar
-  //   sozinha.
+  //   2026-08-16 (manhã) — a conta do lado longo ficou SÓ NO FUNDO: a troca
+  //   comprimento/largura é assunto da máquina, e no projeto ela fazia a
+  //   lateral de um módulo baixo virar sozinha.
+  //
+  //   2026-08-16 (tarde) — REGRESSÃO E AJUSTE. Tirar a regra de TUDO que não
+  //   era fundo levou junto a peça 'free', e a base divisória do construtor
+  //   (761 × 19,5) passou a desenhar com o veio EM PÉ, seguindo um
+  //   `positioning` que ela não tem. "a prateleira não tá com textura certa
+  //   [...] não é uma prateleira, é uma base divisória" (Matt).
+  //   O corte certo não é "fundo x resto", é POR PAPEL: onde existe
+  //   orientação declarada (lateral, topo, base, prateleira, porta) o formato
+  //   não opina; onde não existe (fundo, peça livre) ele é a única fonte.
+  //   Ver PAPEIS_VEIO_PELO_FORMATO.
   //
   // O plano de corte, o preço e o .ban NÃO passam por aqui — eles continuam
   // com a conta do lado longo (LayoutEngine.validar). Este arquivo é só o
@@ -792,12 +801,23 @@ const Viewer3D = (function () {
   // volta a seguir o `positioning` cadastrado. Se um rodapé voltar a aparecer
   // com o veio em pé, o conserto é no CADASTRO da peça (positioning
   // 'horizontal'), não em reabrir a regra de formato aqui.
+  // PAPÉIS EM QUE O FORMATO DECIDE O VEIO LIVRE.
+  // 'back'         — o fundo deita pra caber na CHAPA. Limitação física.
+  // 'free'/'other' — a peça que não declara orientação nenhuma: rodapé,
+  //                  travessa (o papel 'Travamento' saiu na migration 026) e,
+  //                  desde o construtor, a base divisória e a divisória, que
+  //                  nascem do LayoutEngine com position_role 'free'.
+  //                  Aqui o formato é a ÚNICA informação que existe.
+  // Todo o resto (left/right/top/bottom/shelf/front/drawer) tem orientação
+  // própria e NÃO opina por formato — foi isso que fazia a lateral de um
+  // módulo baixo virar sozinha.
+  const PAPEIS_VEIO_PELO_FORMATO = { back: 1, free: 1, other: 1 };
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
     if (veio === 'horizontal') return true;
     if (veio === 'vertical') return false;
-    const ehFundo = (part && part.position_role) === 'back';
-    if (ehFundo && (!veio || veio === 'livre')) return uM >= vM;
+    const papel = (part && part.position_role) || 'other';
+    if (PAPEIS_VEIO_PELO_FORMATO[papel] && (!veio || veio === 'livre')) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
 

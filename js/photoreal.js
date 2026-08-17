@@ -192,12 +192,23 @@ const Photoreal = (() => {
   // volta a seguir o `positioning` cadastrado. Se um rodapé voltar a aparecer
   // com o veio em pé, o conserto é no CADASTRO da peça (positioning
   // 'horizontal'), não em reabrir a regra de formato aqui.
+  // PAPÉIS EM QUE O FORMATO DECIDE O VEIO LIVRE.
+  // 'back'         — o fundo deita pra caber na CHAPA. Limitação física.
+  // 'free'/'other' — a peça que não declara orientação nenhuma: rodapé,
+  //                  travessa (o papel 'Travamento' saiu na migration 026) e,
+  //                  desde o construtor, a base divisória e a divisória, que
+  //                  nascem do LayoutEngine com position_role 'free'.
+  //                  Aqui o formato é a ÚNICA informação que existe.
+  // Todo o resto (left/right/top/bottom/shelf/front/drawer) tem orientação
+  // própria e NÃO opina por formato — foi isso que fazia a lateral de um
+  // módulo baixo virar sozinha.
+  const PAPEIS_VEIO_PELO_FORMATO = { back: 1, free: 1, other: 1 };
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
     if (veio === 'horizontal') return true;
     if (veio === 'vertical') return false;
-    const ehFundo = (part && part.position_role) === 'back';
-    if (ehFundo && (!veio || veio === 'livre')) return uM >= vM;
+    const papel = (part && part.position_role) || 'other';
+    if (PAPEIS_VEIO_PELO_FORMATO[papel] && (!veio || veio === 'livre')) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
   function makeMaterial(color, rotateTexture, uMm, vMm) {
