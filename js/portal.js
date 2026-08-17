@@ -15270,6 +15270,36 @@ function resetProjectBuilder() {
 // deduz do casco — a MESMA regra do construtor do ERP, reescrita aqui em 20
 // linhas em vez de importar o arquivo dele (a tela é independente de
 // propósito). Sem casco reconhecível, cai no módulo inteiro.
+// FRENTE DO VÃO E RECUO DE 1mm (2026-08-16)
+// ==========================================================================
+// Matt: "as divisórias estão passando pra frente da lateral, e vejo pela
+// listagem que elas estão na mesma profundidade. o vão é menor, e quero 1mm
+// menor ainda do que o vão livre."
+//
+// Eram DOIS problemas somados:
+//
+//   1. A zona interna nunca teve FRENTE. A dedução achava x0/x1/y0/y1/z0 e a
+//      profundidade saía de `D - z0` — a medida EXTERNA do módulo. Numa
+//      lateral recuada pra porta (profundidade D-19.5, encostada em z=0) a
+//      divisória nascia com a MESMA profundidade da lateral, só que começando
+//      depois do fundo (z=19.5): mesmo número na listagem, 19.5mm pra fora na
+//      frente. Era exatamente o que ele estava vendo.
+//      Agora a frente do vão é a FRENTE DA LATERAL (o menor `z0+sz` entre as
+//      peças classificadas como left/right), e a profundidade é `z1 - z0`.
+//
+//   2. Mesmo com a frente certa, ele quer folga: a peça do construtor sai 1mm
+//      mais curta que o vão livre, sempre, sem depender de `recuo_mm`
+//      cadastrado em cada agregado. O desconto sai NA FRENTE (o fundo fica
+//      alinhado), a mesma escolha do emitDivider em 2026-08-15.
+//
+// Só as LATERAIS definem a frente — não topo/base. Uma travessa de base rasa
+// classificada como 'bottom' encolheria o vão inteiro sem motivo. Sem lateral
+// reconhecida, a frente continua sendo D (o comportamento de antes).
+const RECUO_FRENTE_INTERNO_MM = 1;
+// Piso de sanidade: peça estranha classificada como lateral não pode
+// engolir o vão. Abaixo disso, a frente volta pra D.
+const FRENTE_MIN_FRACAO_D = 0.4;
+
 function computeProjectSlotInnerZone(slot) {
   const W = Number(slot.width_mm || 0), H = Number(slot.height_mm || 0), D = Number(slot.depth_mm || 0);
   const m = slot.module || {};
@@ -15305,7 +15335,7 @@ function computeProjectSlotInnerZone(slot) {
   // casco. Como havia caixa, o caminho que mede a cena nunca era tentado e o
   // vão continuava do tamanho do módulo.
   const deduzirCasco = (boxes) => {
-    let a = 0, b0 = 0, c = 0, d1 = W, e1 = H;
+    let a = 0, b0 = 0, c = 0, d1 = W, e1 = H, f1 = 0;
     (boxes || []).forEach((b) => {
       const lado = classifyProjectCascoBox(b, W, H, D);
       const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
@@ -15314,10 +15344,16 @@ function computeProjectSlotInnerZone(slot) {
       else if (lado === 'bottom' && ey > b0) b0 = ey;
       else if (lado === 'top' && b.y0 < e1) e1 = b.y0;
       else if (lado === 'back' && ez > c) c = ez;
+      // A FRENTE do vão é a frente da lateral MAIS CURTA — assim a peça do
+      // construtor não passa da frente de nenhuma das duas.
+      if (lado === 'left' || lado === 'right') f1 = (f1 === 0) ? ez : Math.min(f1, ez);
     });
-    return { x0: a, y0: b0, z0: c, x1: d1, y1: e1, achou: !(a === 0 && b0 === 0 && c === 0 && d1 === W && e1 === H) };
+    return {
+      x0: a, y0: b0, z0: c, x1: d1, y1: e1, z1: f1,
+      achou: !(a === 0 && b0 === 0 && c === 0 && d1 === W && e1 === H)
+    };
   };
-  let x0 = 0, y0 = 0, z0 = 0, x1 = W, y1 = H;
+  let x0 = 0, y0 = 0, z0 = 0, x1 = W, y1 = H, z1 = 0;
   projectBuilderZoneDiag = null;
   try {
     let r = deduzirCasco(computeProjectSlotCascoBoxes(slot));
@@ -15331,18 +15367,20 @@ function computeProjectSlotInnerZone(slot) {
       // A medida sai da PEÇA DE VERDADE, então acompanha 18mm, 3/4" ou o que
       // for — diferente do palpite abaixo.
       const bs = computeProjectSlotCascoBoxes(slot, true);
-      let a = 0, b0 = 0, c = 0, d1 = W, e1 = H;
+      let a = 0, b0 = 0, c = 0, d1 = W, e1 = H, f1 = 0;
       const T = 8;
       bs.forEach((b) => {
         const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
+        const ehLateral = b.sx < W * 0.25 && (b.x0 <= T || ex >= W - T);
         if (b.x0 <= T && b.sx < W * 0.25 && ex > a) a = ex;
         if (ex >= W - T && b.sx < W * 0.25 && b.x0 < d1) d1 = b.x0;
         if (b.y0 <= T && b.sy < H * 0.25 && ey > b0) b0 = ey;
         if (ey >= H - T && b.sy < H * 0.25 && b.y0 < e1) e1 = b.y0;
         if (b.z0 <= T && b.sz < D * 0.25 && ez > c) c = ez;
+        if (ehLateral) f1 = (f1 === 0) ? ez : Math.min(f1, ez);
       });
       if (!(a === 0 && b0 === 0 && c === 0 && d1 === W && e1 === H)) {
-        r = { x0: a, y0: b0, z0: c, x1: d1, y1: e1, achou: true };
+        r = { x0: a, y0: b0, z0: c, x1: d1, y1: e1, z1: f1, achou: true };
         fonte = 'contato';
       }
     }
@@ -15358,7 +15396,7 @@ function computeProjectSlotInnerZone(slot) {
         fonte = 'palpite';
       }
     }
-    x0 = r.x0; y0 = r.y0; z0 = r.z0; x1 = r.x1; y1 = r.y1;
+    x0 = r.x0; y0 = r.y0; z0 = r.z0; x1 = r.x1; y1 = r.y1; z1 = r.z1 || 0;
     projectBuilderZoneDiag = { fonte, modulo: [Math.round(W), Math.round(H), Math.round(D)] };
     // REDE DE SEGURANÇA: nenhuma caixa reconhecida como casco. Acontece se
     // drilling.js não carregar (foi o bug de 2026-08-13: o portal não incluía
@@ -15414,8 +15452,19 @@ function computeProjectSlotInnerZone(slot) {
     } catch (e) { /* diagnóstico nunca pode quebrar a tela */ }
   }
 
-  const dedu = { x: x0, y: y0, z: z0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), d: Math.max(1, D - z0) };
-  if (!(m.inner_w_formula || m.inner_h_formula || m.inner_d_formula)) return dedu;
+  // Frente do vão: a da lateral, quando deu pra medir. O piso evita que uma
+  // peça mal classificada (ou um casco medido na cena com sobra) transforme o
+  // vão num filete — nesse caso vale D, como era antes desta regra existir.
+  if (!(z1 > z0 + MIN_VAO) || z1 < D * FRENTE_MIN_FRACAO_D) z1 = D;
+
+  // `dedu.d` é o VÃO LIVRE (frente da lateral menos o fundo). O recuo de 1mm
+  // é aplicado só na volta — assim a fórmula cadastrada abaixo também o
+  // recebe, e ninguém desconta duas vezes.
+  const dedu = { x: x0, y: y0, z: z0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), d: Math.max(1, z1 - z0) };
+  const recuada = (d) => Math.max(1, d - RECUO_FRENTE_INTERNO_MM);
+  if (!(m.inner_w_formula || m.inner_h_formula || m.inner_d_formula)) {
+    return Object.assign({}, dedu, { d: recuada(dedu.d) });
+  }
 
   // FÓRMULA CADASTRADA QUE NÃO DESCONTA NADA É IGNORADA (2026-08-13).
   //
@@ -15442,7 +15491,7 @@ function computeProjectSlotInnerZone(slot) {
     x: ev(m.inner_x_formula, dedu.x), y: ev(m.inner_y_formula, dedu.y), z: ev(m.inner_z_formula, dedu.z),
     w: Math.max(1, usa(m.inner_w_formula, dedu.w, W)),
     h: Math.max(1, usa(m.inner_h_formula, dedu.h, H)),
-    d: Math.max(1, usa(m.inner_d_formula, dedu.d, D))
+    d: recuada(usa(m.inner_d_formula, dedu.d, D))
   };
 }
 
@@ -16414,6 +16463,15 @@ function renderProjectBuilderStage() {
 // (LayoutEngine/emitFronts + folgaDobradica), e clipar de novo aqui
 // encolheria a peça duas vezes.
 const PROJECT_INTERNO_MIN_PROF_MM = 60;   // mesmo piso do LayoutEngine (emitDivider)
+const PROJECT_INTERNO_MIN_ALT_MM = 60;    // idem, no eixo da altura
+// Quanto da PROFUNDIDADE da peça o obstáculo precisa cobrir pra encurtar a
+// ALTURA dela. É o que separa PAINEL de TIRA (2026-08-16):
+//   - base/topo inteiro cobre a profundidade toda -> encurta a divisória, que
+//     é a única saída correta (não dá pra entalhar uma peça que fecha tudo);
+//   - travessa/gola cobre 76mm de 600 -> NÃO encurta. Encurtar deixaria a
+//     divisória baixa no vão inteiro só por causa da tira; esse caso é do
+//     recortarInternosContraCasco, que entalha só o cantinho.
+const PROJECT_INTERNO_COBERTURA_ALT = 0.7;
 function clipProjectInternalsAgainstCasco(pieces, obstaculos) {
   const TOL = 0.5;   // mm — encostar não é sobrepor
   if (!Array.isArray(pieces) || !Array.isArray(obstaculos) || !obstaculos.length) return pieces;
@@ -16436,6 +16494,46 @@ function clipProjectInternalsAgainstCasco(pieces, obstaculos) {
       // cadastro estranho — melhor manter a peça no mínimo e deixar visível
       // do que devolver profundidade negativa pro 3D e pro plano de corte.
       if (nova >= PROJECT_INTERNO_MIN_PROF_MM) { p.z = zNovo; p.d = nova; }
+    }
+
+    // ---- MESMA REGRA NA ALTURA (2026-08-16) ----------------------------
+    // Matt, vendo a divisória entrar na peça de cima: "lateral divisória tá
+    // passando do vão interno na altura" e, quando perguntado qual peça era,
+    // "não importa, não pode passar nenhum. mas neste caso é um bottom".
+    //
+    // Ou seja: a regra nunca foi "não atravessar a travessa do fundo", é
+    // "não atravessar peça nenhuma". O eixo Z foi só onde ela nasceu. Uma
+    // base cadastrada de um jeito que a dedução do vão não enxerga (papel
+    // desconhecido, base intermediária, base que não encosta em y=0) deixa a
+    // divisória nascer com a altura cheia e entrar nela.
+    //
+    // Roda DEPOIS do clip de profundidade de propósito: a cobertura é medida
+    // sobre a profundidade JÁ corrigida, senão uma peça que o obstáculo de
+    // trás vai encurtar seria avaliada com a profundidade velha.
+    if (!isFinite(p.y) || !isFinite(p.h) || p.h <= 0) return;
+    const yTopo = p.y + p.h;
+    let yBaixo = p.y, yAlto = yTopo;
+    obstaculos.forEach((b) => {
+      const bx1 = b.x0 + b.sx, by1 = b.y0 + b.sy, bz1 = b.z0 + b.sz;
+      const cruzaX = p.x < bx1 - TOL && p.x + p.w > b.x0 + TOL;
+      const cruzaZ = p.z < bz1 - TOL && p.z + p.d > b.z0 + TOL;
+      if (!cruzaX || !cruzaZ) return;
+      // PAINEL, não tira: ver PROJECT_INTERNO_COBERTURA_ALT.
+      const sobrepoeZ = Math.min(p.z + p.d, bz1) - Math.max(p.z, b.z0);
+      if (sobrepoeZ < p.d * PROJECT_INTERNO_COBERTURA_ALT) return;
+      // Obstáculo que vem de BAIXO e invade a peça: ela passa a começar em
+      // cima dele. Obstáculo que vem de CIMA: ela passa a terminar embaixo
+      // dele. Peça inteiramente DENTRO da altura (uma prateleira do próprio
+      // módulo no meio do vão) não satisfaz nenhum dos dois e é ignorada —
+      // ali quem resolve é o vão, não o clip.
+      if (b.y0 <= p.y + TOL && by1 > p.y + TOL) yBaixo = Math.max(yBaixo, by1);
+      if (by1 >= yTopo - TOL && b.y0 < yTopo - TOL) yAlto = Math.min(yAlto, b.y0);
+    });
+    if (yBaixo > p.y + TOL || yAlto < yTopo - TOL) {
+      const nova = yAlto - yBaixo;
+      // Mesmo piso do eixo Z: prateleira/base (que são ~19.5 de "altura")
+      // nunca chegam aqui, e cadastro estranho não vira peça negativa.
+      if (nova >= PROJECT_INTERNO_MIN_ALT_MM) { p.y = yBaixo; p.h = nova; }
     }
   });
   return pieces;

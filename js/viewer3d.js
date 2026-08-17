@@ -744,35 +744,60 @@ const Viewer3D = (function () {
     return fallback;
   }
 
-  // SENTIDO DO VEIO — a MESMA conta que o plano de corte já faz
+  // SENTIDO DO VEIO NO DESENHO
   // ======================================================================
-  // Pedido do Matt (2026-08-12): "todo rodapé e travessa deve ser deitado,
-  // nunca com sentido do veio em pé. a peça deve ser respeitada assim
-  // também". O plano de corte já fazia isso: LayoutEngine.validar, pra peça
-  // de veio 'livre', grava `p.veio = p.w >= p.h ? 'horizontal' : 'vertical'`
-  // — ou seja, a fábrica JÁ deita a peça no lado longo. Quem estava fora de
-  // sincronia era o desenho, que girava a textura pelo `positioning`: um
-  // rodapé/travessa 1200×100 cadastrado como vertical saía com o veio em pé
-  // na tela e deitado na chapa.
+  // HISTÓRICO, porque a regra já virou duas vezes:
   //
-  // Agora as duas contas são a mesma. Isto NÃO é um caso especial de rodapé:
-  // vale pra toda peça de painel, e nas formas comuns reproduz o padrão de
-  // antes — porta 600×2000 e lateral continuam em pé, prateleira/topo/base
-  // continuam deitados. O que muda é justamente a peça achatada, que era o
-  // caso errado.
+  //   2026-08-12 — o desenho passou a copiar a conta do plano de corte
+  //   (LayoutEngine.validar: peça de veio 'livre' recebe
+  //   `p.veio = p.w >= p.h ? 'horizontal' : 'vertical'`), pra TODA peça de
+  //   painel. Motivo: rodapé/travessa saíam com o veio em pé na tela e
+  //   deitados na chapa.
+  //
+  //   2026-08-16 — a conta do lado longo ficou SÓ NO FUNDO. Ver o comentário
+  //   grande em resolveGrainRotate: a troca comprimento/largura é assunto da
+  //   máquina, e no projeto ela fazia a lateral de um módulo baixo virar
+  //   sozinha.
+  //
+  // O plano de corte, o preço e o .ban NÃO passam por aqui — eles continuam
+  // com a conta do lado longo (LayoutEngine.validar). Este arquivo é só o
+  // desenho.
   //
   // uM/vM = os dois lados da face VISÍVEL desta peça, nos eixos U e V da
   // textura (o Three fixa isso por par de face: ±X -> U=Z,V=Y; ±Y -> U=X,V=Z;
   // ±Z -> U=X,V=Y). true = veio no sentido do U, false = no sentido do V.
   //
-  // Exceção continua existindo: cor/componente com veio CADASTRADO
-  // ('horizontal'/'vertical', migration 086) manda — é exigência estética e
-  // não tem jeitinho, mesma frase do LayoutEngine. Aí o formato não opina.
+  // Acima de tudo: cor/componente com veio CADASTRADO ('horizontal'/
+  // 'vertical', migration 086) manda — é exigência estética e não tem
+  // jeitinho, mesma frase do LayoutEngine. Aí nem o formato nem o
+  // positioning opinam.
+  // 2026-08-16 — SÓ O FUNDO deita pelo lado longo.
+  // Matt, olhando um módulo baixo: "as laterais estão invertindo no desenho
+  // quando ficam muito baixas [...] isso deve acontecer na máquina, mas não no
+  // projeto, a laminação e principalmente o veio da peça não pode mudar na
+  // lateral (só muda no fundo por uma questão de chapa)".
+  //
+  // Uma lateral de 300 de altura por 600 de profundidade caía em `uM >= vM` e
+  // saía com o veio deitado — o desenho contradizia a peça. A troca
+  // comprimento/largura é assunto da MÁQUINA (LayoutEngine.validar continua
+  // gravando p.veio pelo lado longo, e o plano de corte/.ban seguem iguais);
+  // o projeto tem que mostrar a peça como ela é.
+  //
+  // O fundo é a única exceção, e por um motivo físico: ele deita pra caber na
+  // chapa ("quando o lado maior for largura o fundo deve ter a textura
+  // deitada"), e é essa regra que limita o móvel.
+  //
+  // CUIDADO: isto REVERTE, de propósito, a parte de rodapé/travessa do pedido
+  // de 2026-08-12 ("todo rodapé e travessa deve ser deitado"). Peça 'free'
+  // volta a seguir o `positioning` cadastrado. Se um rodapé voltar a aparecer
+  // com o veio em pé, o conserto é no CADASTRO da peça (positioning
+  // 'horizontal'), não em reabrir a regra de formato aqui.
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
     if (veio === 'horizontal') return true;
     if (veio === 'vertical') return false;
-    if (!veio || veio === 'livre') return uM >= vM;
+    const ehFundo = (part && part.position_role) === 'back';
+    if (ehFundo && (!veio || veio === 'livre')) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
 
@@ -1504,8 +1529,10 @@ const Viewer3D = (function () {
       // quando w >= h); duas contas diferentes pro mesmo veio divergiriam.
       // Só vale pra veio livre: porta e frente têm veio 'vertical' cadastrado
       // e não giram nunca, por mais larga que a peça fique.
-      // 2026-08-12: essa conta virou a regra GERAL de todo painel
-      // (resolveGrainRotate) — o fundo foi só onde ela nasceu primeiro.
+      // 2026-08-12 essa conta virou regra geral de todo painel; em 2026-08-16
+      // voltou a ser SÓ DAQUI (resolveGrainRotate testa position_role==='back').
+      // O fundo é onde ela nasceu e o único lugar onde ela faz sentido: é
+      // limitação de CHAPA, não estética.
       emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, false), null);
     } else if (role === 'shelf') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
@@ -1648,11 +1675,12 @@ const Viewer3D = (function () {
       // rotateGeometryUV90 — esse mecanismo é o que provou funcionar de
       // verdade nesta peça; tex.rotation, pensado pra peças vistas de CIMA
       // tipo prateleira/topo, não fazia efeito visual aqui).
-      // 2026-08-12: a decisão passa pelo resolveGrainRotate (mesma conta do
-      // plano de corte) — uma travessa cadastrada como peça LIVRE, que é o
-      // caso comum desde que o papel 'Travamento' saiu (migration 026), deita
-      // sozinha por ser mais comprida que alta. O MECANISMO continua o mesmo
-      // (girar o UV da geometria, não a textura).
+      // 2026-08-12: a decisão passa pelo resolveGrainRotate. 2026-08-16: a
+      // regra do lado longo saiu de tudo que não é fundo, então a peça LIVRE
+      // (rodapé e travessa, o caso comum desde que o papel 'Travamento' saiu
+      // na migration 026) volta a seguir o `positioning` CADASTRADO — rodapé
+      // que precise sair deitado tem que estar como 'horizontal' no admin.
+      // O MECANISMO continua o mesmo (girar o UV da geometria, não a textura).
       if (resolveGrainRotate(part, w, h, false)) {
         rotateGeometryUV90(geometry);
       }

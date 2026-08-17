@@ -169,15 +169,35 @@ const Photoreal = (() => {
     return fallback;
   }
   // Sentido do veio — cópia fiel de resolveGrainRotate (js/viewer3d.js), pra
-  // foto realista e visualizador nunca discordarem. Regra: veio cadastrado
-  // manda; veio livre deita no lado longo, a MESMA conta do plano de corte
-  // (LayoutEngine.validar). É o que corrige rodapé/travessa saindo com o veio
-  // em pé (Matt, 2026-08-12).
+  // foto realista e visualizador nunca discordarem. QUALQUER mudança aqui tem
+  // que sair igual nos dois arquivos.
+  // 2026-08-16 — SÓ O FUNDO deita pelo lado longo.
+  // Matt, olhando um módulo baixo: "as laterais estão invertindo no desenho
+  // quando ficam muito baixas [...] isso deve acontecer na máquina, mas não no
+  // projeto, a laminação e principalmente o veio da peça não pode mudar na
+  // lateral (só muda no fundo por uma questão de chapa)".
+  //
+  // Uma lateral de 300 de altura por 600 de profundidade caía em `uM >= vM` e
+  // saía com o veio deitado — o desenho contradizia a peça. A troca
+  // comprimento/largura é assunto da MÁQUINA (LayoutEngine.validar continua
+  // gravando p.veio pelo lado longo, e o plano de corte/.ban seguem iguais);
+  // o projeto tem que mostrar a peça como ela é.
+  //
+  // O fundo é a única exceção, e por um motivo físico: ele deita pra caber na
+  // chapa ("quando o lado maior for largura o fundo deve ter a textura
+  // deitada"), e é essa regra que limita o móvel.
+  //
+  // CUIDADO: isto REVERTE, de propósito, a parte de rodapé/travessa do pedido
+  // de 2026-08-12 ("todo rodapé e travessa deve ser deitado"). Peça 'free'
+  // volta a seguir o `positioning` cadastrado. Se um rodapé voltar a aparecer
+  // com o veio em pé, o conserto é no CADASTRO da peça (positioning
+  // 'horizontal'), não em reabrir a regra de formato aqui.
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
     if (veio === 'horizontal') return true;
     if (veio === 'vertical') return false;
-    if (!veio || veio === 'livre') return uM >= vM;
+    const ehFundo = (part && part.position_role) === 'back';
+    if (ehFundo && (!veio || veio === 'livre')) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
   function makeMaterial(color, rotateTexture, uMm, vMm) {

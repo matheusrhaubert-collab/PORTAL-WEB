@@ -481,6 +481,25 @@
           // id sintético e ESTÁVEL dentro do mesmo layout: shelfQuantities,
           // pieceColorOverrides e selectedOptionalIds são keyed por id.
           id: 'lay:' + p.nodeId + ':' + i,
+          // FURAÇÃO DA PEÇA DO CONSTRUTOR (2026-08-16, Matt: "essa divisória
+          // deve gerar contra furo inclusive").
+          //
+          // A linha acima destrói `comp.id` — `id` aqui é o id SINTÉTICO da
+          // linha do layout, e precisa ser (shelfQuantities, cores e
+          // opcionais são keyed por ele). Só que `component_id` é o ÚNICO
+          // caminho que Drilling.furosDaPeca conhece além do programa:
+          //   drilling_pattern_id -> holesByPattern
+          //   component_id        -> component_drillings
+          // Sem ele a divisória entrava na furação como peça MUDA: recebia
+          // contra-furo das outras (a caixa dela existe, pieceBox conhece
+          // 'free') e nunca propagava nenhum. Era o "programa de furação
+          // sumiu aqui" que o comentário do `recortes` logo abaixo cita.
+          component_id: comp.id || null,
+          // O programa POR USO (migration 105) mora em module_components, e a
+          // peça do construtor não passa por lá. Fica lendo do agregado: o
+          // catálogo é carregado com select('*'), então no dia em que
+          // accessory_types ganhar a coluna isto começa a valer sozinho.
+          drilling_pattern_id: acc.drilling_pattern_id || null,
           reference: p.label || comp.reference,
           quantity: 1,
           labor_cost_per_unit: comp.labor_types ? comp.labor_types.price_per_unit : 0,
