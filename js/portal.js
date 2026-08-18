@@ -17140,7 +17140,7 @@ async function ensureAccessoryCatalog() {
 // é hydrateProjectLayoutPieces / o próprio construtor).
 function rebuildProjectSlotLayoutPieces(slot) {
   if (!slot) return;
-  if (!slot.layout) { slot.layoutPieces = []; return; }
+  if (!slot.layout) { slot.layoutPieces = []; slot._layoutGeometry = null; return; }
   if (typeof LayoutEngine === 'undefined' || !accessoryCatalogCache) return;
   try {
     const zona = computeProjectSlotInnerZone(slot);
@@ -17166,8 +17166,18 @@ function rebuildProjectSlotLayoutPieces(slot) {
     clipProjectInternalsAgainstCasco(built.pieces, cascoBoxes);
     recortarInternosContraCasco(built.pieces, cascoBoxes);
     slot.layoutPieces = projectLayoutRowsForSlot(slot, built.pieces);
+    // GEOMETRIA CONGELÁVEL (migration 121, Caminho B da furação do
+    // construtor — ver [[construtor_como_motor_principal]]). `built.pieces`
+    // já passou pelo recorte contra o casco acima; é exatamente o array que
+    // projectLayoutRowsForSlot/toPieceRows consome. Guardamos ele (não o
+    // resultado de toPieceRows) porque o que deve congelar no pedido é a
+    // GEOMETRIA — a decisão do cliente sobre onde cada peça fica —, não a
+    // furação/preço dela, que continuam podendo ser corrigidos depois no
+    // cadastro. sendProjectToOrder lê slot._layoutGeometry no checkout.
+    slot._layoutGeometry = slot.layout ? built.pieces : null;
   } catch (e) {
     slot.layoutPieces = [];
+    slot._layoutGeometry = null;
   }
 }
 
@@ -19906,6 +19916,13 @@ async function sendProjectToOrder() {
         dim_overrides: slot.dimOverrides,
         piece_color_overrides: buildPieceColorOverridesSnapshot(slot.pieceColorOverrides),
         selected_optional_component_ids: slot.selectedOptionalIds,
+        // GEOMETRIA DO CONSTRUTOR DE VÃOS (migration 121). null quando o
+        // slot não usa o construtor (a maioria). Não é o preço nem a
+        // furação — é só onde cada peça do interior ficou, pra os
+        // exportadores de furação do ERP conseguirem enxergar peça de
+        // construtor pela primeira vez. Ver rebuildProjectSlotLayoutPieces
+        // (._layoutGeometry) e [[construtor_como_motor_principal]].
+        layout: slot._layoutGeometry || null,
         quantity: 1,
         unit_price: (slot.result && slot.result.total) || 0,
         total_price: (slot.result && slot.result.total) || 0,
