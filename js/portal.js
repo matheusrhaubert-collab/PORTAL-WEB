@@ -9594,7 +9594,35 @@ try {
 } catch (e) { /* ok sem persistir */ }
 
 function getProjectWallRoles() { return PROJECT_WALL_ROLES_BY_SHAPE[projectWallShape] || ['main']; }
-function getProjectWallCount() { return getProjectWallRoles().length; }
+
+// QUANTAS PAREDES O AMBIENTE TEM, DE VERDADE (2026-08-18).
+//
+// Esta funcao devolvia o tamanho de getProjectWallRoles(), que sai de
+// PROJECT_WALL_ROLES_BY_SHAPE[projectWallShape] — o sistema ANTIGO de formas
+// fixas (uma parede / dupla / C-U), aposentado em 2026-08-13 quando as
+// paredes viraram planta desenhada (projectWallSegments / "Ajustar paredes").
+// projectWallShape continua 'single' pra sempre num projeto novo, entao a
+// contagem vinha 1 mesmo com o L de duas paredes que todo projeto novo ja
+// nasce tendo (ver defaultProjectWallSegments).
+//
+// Era a mesma armadilha de getProjectWallWidthMm (2026-08-14, "PAREDE
+// DESENHADA VENCE"): quem le parede tem que ler o DESENHO, nao a forma
+// legada. O sintoma de hoje foi o Matt abrir o portal e cair na vista frontal
+// 2D chapada — `getProjectWallCount() > 1` dava falso. E era so a ponta:
+//   - generateProject3D / renderProjectForAiSnapshot caiam no renderFreeform
+//     de UMA parede, ignorando as outras no "Visualizar 3D" e na foto de IA;
+//   - o snapshot da IA/miniatura usava {frontal:true} (camera quase de frente,
+//     pensada pra 1 parede) em vez de {angle:'corner'};
+//   - layoutProjectAiItems so percorria a parede 0;
+//   - o clamp de parede ativa do desfazer prendia tudo em 0.
+//
+// PROJECT_WALL_ROLES_BY_SHAPE continua servindo pro projeto salvo no modelo
+// velho (sem wall_segments): la projectWallSegments fica vazio e o caminho e
+// exatamente o de antes.
+function getProjectWallCount() {
+  if (projectWallSegments.length) return projectWallSegments.length;
+  return getProjectWallRoles().length;
+}
 
 // wallIndex omitido = parede ATIVA (mantém 100% compatível com todo
 // call-site antigo de antes desta funcionalidade, que só conhecia 1 parede).
@@ -9710,8 +9738,11 @@ function refreshProjectWallTabs() {
 refreshProjectWallTabs();
 
 function setProjectActiveWallIndex(idx) {
-  const roles = getProjectWallRoles();
-  if (idx < 0 || idx >= roles.length || idx === projectActiveWallIndex) return;
+  // Limite pela contagem REAL de paredes (getProjectWallCount, que respeita a
+  // planta desenhada) — nao por roles.length. Com a forma legada travada em
+  // 'single', roles.length era 1 e trocar pra parede 2/3 de um ambiente
+  // desenhado era silenciosamente recusado aqui.
+  if (idx < 0 || idx >= getProjectWallCount() || idx === projectActiveWallIndex) return;
   projectActiveWallIndex = idx;
   refreshProjectWallTabs();
   refreshProjectWallWidthInput();
@@ -10577,7 +10608,26 @@ async function dropProjectModuleAt(moduleId, clientX, clientY) {
         }
       }
     }
+  } else if (inside(flatCanvas) && projectViewMode === 'top') {
+    // VISTA SUPERIOR: soltar aqui e soltar no CHAO (2026-08-18). O canvas da
+    // vista de cima e o plano XZ do ambiente, entao o ponto do mouse tem uma
+    // coordenada de mundo exata — vira modulo ILHA ali. Antes este drop caia
+    // no ramo da Frontal 2D logo abaixo e era lido como "x ao longo da parede
+    // ativa + altura do chao": em cima o eixo vertical e PROFUNDIDADE, nao
+    // altura, entao o modulo nascia flutuando numa altura arbitraria.
+    // projectTopViewOrigin e o canto superior esquerdo do desenho em
+    // coordenada de mundo (ver renderProjectCanvasTop).
+    const r = flatCanvas.getBoundingClientRect();
+    const px = projectPxPerMm || 1;
+    overrides = {
+      placement: 'floor',
+      floor_x_mm: projectTopViewOrigin.xMm + (clientX - r.left) / px,
+      floor_z_mm: projectTopViewOrigin.zMm + (clientY - r.top) / px
+    };
   } else if (inside(flatCanvas)) {
+    // Frontal 2D plana — caminho aposentado em 2026-08-18 (o canvas nunca
+    // fica visivel nesse modo, ver renderProjectCanvas). Mantido junto da
+    // funcao que ele serve, pra voltar inteiro se o 2D voltar.
     const r = flatCanvas.getBoundingClientRect();
     const xMm = (clientX - r.left) / (projectPxPerMm || 1);
     const yMm = (r.bottom - clientY) / (projectPxPerMm || 1);
@@ -13773,19 +13823,22 @@ function renderProjectCanvas() {
 
   if (projectViewMode === 'top') {
     renderProjectCanvasTop(canvas, wrap, dimsLabel, unit);
-  } else if (getProjectWallCount() > 1) {
-    // Pedido do usuário (2026-07-26, olhando um projeto em L): "quando for
-    // parede em L devemos subir uma visao fixa em angulo... mostrando as
-    // duas paredes ao mesmo tempo... visao paralela das duas de uma vez,
-    // mostrando o fim das paredes" — confirmado via pergunta de
-    // esclarecimento que isso SUBSTITUI a Vista Frontal de 1 parede por vez
-    // (não fica ao lado dela) quando o projeto tem mais de 1 parede
-    // (dupla/L ou C-U), e que a câmera é FIXA/sem interação (sem
-    // orbitar/zoom) — só clique pra trocar de parede ativa, igual o
-    // traçado fantasma já fazia.
-    renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit);
   } else {
-    renderProjectCanvasFront(canvas, wrap, dimsLabel, unit);
+    // VISTA FRONTAL 2D APOSENTADA (2026-08-18, pedido do Matt: "acabei de
+    // abrir e entra naquela parede visao frontal. eliminamos essa pra deixar
+    // a visao 3d direto"). Antes: 1 parede -> canvas 2D plano
+    // (renderProjectCanvasFront); 2+ paredes -> cena 3D. Agora QUALQUER
+    // projeto abre direto na cena 3D — o desenho plano deixou de ser o
+    // primeiro contato com o projeto.
+    //
+    // renderProjectCanvasFront continua no arquivo, intacta e sem chamador
+    // (mesmo padrao das telas congeladas por display:none): se um dia o 2D
+    // precisar voltar, basta reativar o ramo `getProjectWallCount() <= 1`
+    // aqui. Nada mais depende dela — projectPxPerMm so e lido pelo drop no
+    // canvas plano, que agora nunca esta visivel (ver dropProjectModuleAt,
+    // que testa offsetParent antes de usar), e a Vista Superior tem escala
+    // propria.
+    renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit);
   }
   if (topViewHint) topViewHint.style.display = projectViewMode === 'top' ? 'block' : 'none';
   renderProjectMiniTopView();
@@ -18499,149 +18552,175 @@ function computeProjectSlotsTopViewLayout(slotsList) {
   return resolved;
 }
 
-// Junta a Vista Superior de CADA parede (computeProjectSlotsTopViewLayout,
-// função de cima — continua igual, opera só na lista de módulos de UMA
-// parede) num único sistema de coordenadas de tela, respeitando o canto reto
-// (90°) da forma escolhida (pedido do usuário, 2026-07-25). Não é
-// aproximação nova: o eixo Y (screenY) é literalmente a MESMA grandeza física
-// nas 3 paredes — distância da parede de FUNDO ('main') pra dentro do
-// ambiente — porque 'left'/'right' nascem exatamente nas pontas da 'main' e
-// esticam em direção à frente. Só o eixo X muda de sentido: 'main' usa a
-// posição ao longo dela mesma (x_mm, igual sempre foi); 'left'/'right' usam
-// a profundidade DERIVADA (depthOffsetMm, mesma conta de sempre, por
-// sobreposição de z_order) como posição X física — crescendo pra DENTRO do
-// ambiente a partir de cada ponta.
-function computeProjectWallTopViewPlacements() {
-  const roles = getProjectWallRoles();
-  const mainIdx = roles.indexOf('main');
-  const mainWidthMm = getProjectWallWidthMm(mainIdx >= 0 ? mainIdx : 0);
-  const placements = [];
-  let maxYMm = 0;
+// VISTA SUPERIOR = PLANTA BAIXA DE VERDADE (2026-08-18)
+// ==========================================================================
+// A versao antiga (computeProjectWallTopViewPlacements) montava a vista de
+// cima a partir dos PAPEIS legados 'main'/'left'/'right', com uma regra fixa
+// por papel ("left nasce na ponta esquerda da main e cresce pra dentro").
+// Isso so descrevia as 3 formas fixas de ambiente, aposentadas em 2026-08-13
+// quando as paredes viraram planta desenhada (projectWallSegments). Com a
+// forma legada travada em 'single', a Vista Superior:
+//   - so desenhava os modulos da parede 0 (roles tinha 1 item);
+//   - nao tinha como representar parede em angulo qualquer nem parede fora
+//     das posicoes L/C-U.
+//
+// Agora a fonte e getProjectWallGeometry() — origem, direcao e comprimento
+// REAIS de cada segmento, o mesmo que o 3D e o editor de paredes usam. Cada
+// modulo e projetado direto no plano XZ do mundo (mm), e o desenho e o
+// bounding box de tudo (paredes + modulos + ilhas) com uma margem. Parede
+// torta sai torta, com o modulo girado junto (transform: rotate).
+//
+// O que NAO mudou: a profundidade do modulo de parede continua DERIVADA de
+// z_order (computeProjectSlotsTopViewLayout, funcao acima, intacta) — por
+// isso o contorno tracejado continua avisando que e aproximacao. Modulo ILHA
+// (chao) continua com posicao real, sem aproximacao nenhuma.
+//
+// Sistema de coordenadas devolvido: screenX/screenY em MILIMETROS a partir do
+// canto superior esquerdo do desenho (ja com a margem), com X = mundo X e
+// Y = mundo Z. angleDeg gira o retangulo em torno do proprio canto (0,0).
+function computeProjectTopViewPlan() {
+  const walls = getProjectWallGeometry().map((w) => {
+    const lenMm = Number(w.widthM || 0) * 1000;
+    return {
+      wallIndex: w.wallIndex,
+      oculta: !!w.oculta,
+      xMm: Number(w.originX || 0) * 1000,
+      zMm: Number(w.originZ || 0) * 1000,
+      alongX: Number(w.alongDirX || 0), alongZ: Number(w.alongDirZ || 0),
+      intoX: Number(w.intoDirX || 0), intoZ: Number(w.intoDirZ || 0),
+      lenMm,
+      angleDeg: Math.atan2(Number(w.alongDirZ || 0), Number(w.alongDirX || 0)) * 180 / Math.PI
+    };
+  });
 
-  roles.forEach((role, idx) => {
-    const layout = computeProjectSlotsTopViewLayout(projectSlotsOnWall(idx));
-    layout.forEach(({ slot, depthOffsetMm }) => {
-      const depthMm = Number(slot.depth_mm || 0);
+  const items = [];
+  // Bounding box acumulado ponto a ponto (nada de Math.min(...array): com
+  // muitos modulos o spread estoura a pilha).
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  const eat = (x, z) => {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  };
+
+  walls.forEach((wall) => {
+    eat(wall.xMm, wall.zMm);
+    eat(wall.xMm + wall.alongX * wall.lenMm, wall.zMm + wall.alongZ * wall.lenMm);
+    computeProjectSlotsTopViewLayout(projectSlotsOnWall(wall.wallIndex)).forEach(({ slot, depthOffsetMm }) => {
+      const wMm = Number(slot.width_mm || 0);
+      const dMm = Number(slot.depth_mm || 0);
       const alongMm = Number(slot.x_mm || 0);
-      const widthMm = Number(slot.width_mm || 0);
-      let screenX, screenY, screenW, screenH;
-      if (role === 'left') {
-        screenX = depthOffsetMm;
-        screenY = alongMm;
-        screenW = depthMm;
-        screenH = widthMm;
-      } else if (role === 'right') {
-        screenX = mainWidthMm - depthOffsetMm - depthMm;
-        screenY = alongMm;
-        screenW = depthMm;
-        screenH = widthMm;
-      } else { // 'main'
-        screenX = alongMm;
-        screenY = depthOffsetMm;
-        screenW = widthMm;
-        screenH = depthMm;
-      }
-      maxYMm = Math.max(maxYMm, screenY + screenH);
-      placements.push({ slot, screenX, screenY, screenW, screenH });
+      // Canto do modulo mais proximo da ponta de origem da parede, ja
+      // afastado da parede pelo depthOffset (empilhamento por z_order).
+      const x = wall.xMm + wall.alongX * alongMm + wall.intoX * depthOffsetMm;
+      const z = wall.zMm + wall.alongZ * alongMm + wall.intoZ * depthOffsetMm;
+      items.push({ slot, xMm: x, zMm: z, wMm, dMm, angleDeg: wall.angleDeg });
+      // Os 4 cantos entram no enquadramento (a parede pode estar em angulo).
+      eat(x, z);
+      eat(x + wall.alongX * wMm, z + wall.alongZ * wMm);
+      eat(x + wall.intoX * dMm, z + wall.intoZ * dMm);
+      eat(x + wall.alongX * wMm + wall.intoX * dMm, z + wall.alongZ * wMm + wall.intoZ * dMm);
     });
   });
 
-  // Módulos ILHA (soltos no chão, 2026-08-08 — ver isFloorSlot). A Vista
-  // Superior é EXATAMENTE o plano onde eles vivem, então aqui (ao contrário
-  // dos módulos de parede, cuja profundidade é derivada de z_order) a posição
-  // é a real, sem aproximação nenhuma. Conversão de coordenada: o desenho usa
-  // screenX medido a partir da PONTA ESQUERDA da parede 'main' e screenY pra
-  // dentro do ambiente; o mundo 3D usa X centrado em 0 na mesma parede — daí
-  // o + mainWidthMm/2. floor_x_mm/floor_z_mm são o CENTRO do módulo (mesma
-  // convenção do group no 3D), por isso o − metade em cada eixo.
+  // Modulos ILHA (soltos no chao, 2026-08-08 — ver isFloorSlot): a Vista
+  // Superior e EXATAMENTE o plano onde eles vivem, entao a posicao e a real.
+  // floor_x_mm/floor_z_mm sao o CENTRO (mesma convencao do group no 3D).
+  // Giro de 90/270 troca largura por profundidade em vez de rotacionar o
+  // retangulo — o desenho fica igual e o rotulo continua na horizontal.
   projectFloorSlots().forEach((slot) => {
     const rot = ((Number(slot.floor_rotation_deg || 0) % 360) + 360) % 360;
     const swapped = (rot === 90 || rot === 270);
-    const screenW = swapped ? Number(slot.depth_mm || 0) : Number(slot.width_mm || 0);
-    const screenH = swapped ? Number(slot.width_mm || 0) : Number(slot.depth_mm || 0);
-    const screenX = Number(slot.floor_x_mm || 0) + mainWidthMm / 2 - screenW / 2;
-    const screenY = Number(slot.floor_z_mm || 0) - screenH / 2;
-    maxYMm = Math.max(maxYMm, screenY + screenH);
-    placements.push({ slot, screenX, screenY, screenW, screenH });
+    const wMm = swapped ? Number(slot.depth_mm || 0) : Number(slot.width_mm || 0);
+    const dMm = swapped ? Number(slot.width_mm || 0) : Number(slot.depth_mm || 0);
+    const x = Number(slot.floor_x_mm || 0) - wMm / 2;
+    const z = Number(slot.floor_z_mm || 0) - dMm / 2;
+    items.push({ slot, xMm: x, zMm: z, wMm, dMm, angleDeg: 0 });
+    eat(x, z); eat(x + wMm, z + dMm);
   });
 
-  // Parede de retorno (dupla/C-U) sempre entra no orçamento de profundidade
-  // do desenho, mesmo SEM nenhum módulo nela ainda (pedido do usuário
-  // 2026-07-26: "top nao ta mostrando a parede completa de um lado") — antes
-  // maxYMm só crescia com a posição/altura dos MÓDULOS já colocados (linha
-  // acima), então um projeto novo (sem módulo nenhum) tinha maxYMm=0 e o
-  // canvas nascia baixinho (só a margem mínima de renderProjectCanvasTop);
-  // a linha vertical que representa a parede lateral (po-proj-canvas-top-
-  // wall-line-side, ver renderProjectCanvasTop) é desenhada na largura REAL
-  // daquela parede na MESMA escala — ficava mais alta que o canvas e
-  // aparecia cortada. Usar a largura da própria parede como piso de maxYMm
-  // garante que o canvas sempre nasce alto o bastante pra mostrar a parede
-  // de retorno inteira, com ou sem módulo.
-  roles.forEach((role, idx) => {
-    if (role === 'left' || role === 'right') {
-      maxYMm = Math.max(maxYMm, getProjectWallWidthMm(idx));
-    }
-  });
+  if (!Number.isFinite(minX)) { minX = 0; maxX = 0; minZ = 0; maxZ = 0; }
+  const rawWidthMm = Math.max(maxX - minX, 100);
+  const rawDepthMm = Math.max(maxZ - minZ, 100);
+  // Margem: nunca menor que 300mm, e proporcional em ambiente grande — o
+  // desenho nao pode nascer colado nas bordas do canvas.
+  const marginMm = Math.max(300, Math.max(rawWidthMm, rawDepthMm) * 0.06);
+  const originXMm = minX - marginMm;
+  const originZMm = minZ - marginMm;
 
-  return { placements, mainWidthMm, maxYMm };
+  return {
+    // Origem do desenho no MUNDO — quem converte pixel de volta pra
+    // coordenada de mundo (drop de modulo na Vista Superior) precisa dela.
+    originXMm, originZMm,
+    widthMm: rawWidthMm + marginMm * 2,
+    depthMm: rawDepthMm + marginMm * 2,
+    rawWidthMm, rawDepthMm,
+    walls: walls.map((w) => ({
+      ...w,
+      screenX: w.xMm - originXMm,
+      screenY: w.zMm - originZMm
+    })),
+    placements: items.map((it) => ({
+      slot: it.slot,
+      screenX: it.xMm - originXMm,
+      screenY: it.zMm - originZMm,
+      screenW: it.wMm,
+      screenH: it.dMm,
+      angleDeg: it.angleDeg
+    }))
+  };
 }
 
+// Origem (canto superior esquerdo do desenho) da ultima Vista Superior
+// desenhada, em coordenada de MUNDO — ver dropProjectModuleAt, que precisa
+// dela pra transformar "onde o mouse soltou" em posicao de ilha no chao.
+let projectTopViewOrigin = { xMm: 0, zMm: 0 };
+
 function renderProjectCanvasTop(canvas, wrap, dimsLabel, unit) {
-  const roles = getProjectWallRoles();
-  const { placements, mainWidthMm, maxYMm } = computeProjectWallTopViewPlacements();
-  // Profundidade total do desenho: o que os módulos realmente ocupam + uma
-  // margem (mínimo 300mm) — sem sala com profundidade real cadastrada, é só
-  // um enquadramento razoável pro desenho não ficar colado nas bordas.
-  const totalDepthMm = Math.max(maxYMm, 100) + Math.max(maxYMm * 0.25, 300);
+  const plan = computeProjectTopViewPlan();
+  projectTopViewOrigin = { xMm: plan.originXMm, zMm: plan.originZMm };
 
   const availableWidthPx = Math.max(wrap.clientWidth - 4, 320);
   const wrapTop = wrap.getBoundingClientRect().top;
   const availableHeightPx = Math.max(window.innerHeight - wrapTop - 40, 240);
-  const widthScale = availableWidthPx / mainWidthMm;
-  const heightScale = availableHeightPx / totalDepthMm;
-  // Mesma escala nos dois eixos (vista PARALELA/ortográfica, como pedido —
-  // não "esticar" um eixo mais que o outro) — usa a menor das duas pra caber
+  // Mesma escala nos dois eixos (vista PARALELA/ortografica, como pedido —
+  // nao "esticar" um eixo mais que o outro) — usa a menor das duas pra caber
   // inteira na tela.
-  projectPxPerMm = clamp(Math.min(widthScale, heightScale), 0.015, 0.8);
+  projectPxPerMm = clamp(Math.min(availableWidthPx / plan.widthMm, availableHeightPx / plan.depthMm), 0.015, 0.8);
 
-  canvas.style.width = Math.round(mainWidthMm * projectPxPerMm) + 'px';
-  canvas.style.height = Math.round(totalDepthMm * projectPxPerMm) + 'px';
+  canvas.style.width = Math.round(plan.widthMm * projectPxPerMm) + 'px';
+  canvas.style.height = Math.round(plan.depthMm * projectPxPerMm) + 'px';
   canvas.innerHTML = '';
   canvas.classList.add('po-proj-canvas-top-mode');
-  // Vista Superior sempre usa o canvas 2D plano, mesmo com >1 parede —
-  // garante que a Vista de Canto 3D (renderProjectCanvasFrontCorner) fique
-  // escondida (só aparece no modo 'front').
+  // Vista Superior sempre usa o canvas 2D plano — garante que a cena 3D
+  // (renderProjectCanvasFrontCorner) fique escondida (so aparece no 'front').
   canvas.style.display = '';
   const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
   if (edit3dWrap) edit3dWrap.style.display = 'none';
 
-  const wallLine = document.createElement('div');
-  wallLine.className = 'po-proj-canvas-top-wall-line';
-  canvas.appendChild(wallLine);
-
-  // Paredes de retorno (dupla/C-U) — linha vertical em cada ponta, só pra
-  // dar noção do formato do ambiente (não é espessura de parede real).
-  if (roles.includes('left')) {
-    const leftLine = document.createElement('div');
-    leftLine.className = 'po-proj-canvas-top-wall-line-side po-proj-canvas-top-wall-line-left';
-    leftLine.style.height = Math.round(getProjectWallWidthMm(roles.indexOf('left')) * projectPxPerMm) + 'px';
-    canvas.appendChild(leftLine);
-  }
-  if (roles.includes('right')) {
-    const rightLine = document.createElement('div');
-    rightLine.className = 'po-proj-canvas-top-wall-line-side po-proj-canvas-top-wall-line-right';
-    rightLine.style.height = Math.round(getProjectWallWidthMm(roles.indexOf('right')) * projectPxPerMm) + 'px';
-    canvas.appendChild(rightLine);
-  }
+  // Uma linha por PAREDE DESENHADA, na posicao e no angulo dela. Parede
+  // oculta (2026-08-13) some aqui igual some no 3D — os dois desenhos tem que
+  // concordar sobre o que esta escondido.
+  plan.walls.forEach((wall) => {
+    if (wall.oculta) return;
+    const line = document.createElement('div');
+    line.className = 'po-proj-canvas-top-wall-seg' + (wall.wallIndex === projectActiveWallIndex ? ' active' : '');
+    line.style.left = Math.round(wall.screenX * projectPxPerMm) + 'px';
+    line.style.top = Math.round(wall.screenY * projectPxPerMm) + 'px';
+    line.style.width = Math.round(wall.lenMm * projectPxPerMm) + 'px';
+    line.style.transform = `rotate(${wall.angleDeg}deg)`;
+    line.title = `${wall.wallIndex + 1} · ${formatDimension(Math.round(wall.lenMm), unit)}`;
+    line.addEventListener('click', () => setProjectActiveWallIndex(wall.wallIndex));
+    canvas.appendChild(line);
+  });
 
   if (dimsLabel) {
     dimsLabel.textContent = I18n.t('project.top_view_dims_label', {
-      w: formatDimension(mainWidthMm, unit),
-      d: formatDimension(Math.round(maxYMm), unit)
+      w: formatDimension(Math.round(plan.rawWidthMm), unit),
+      d: formatDimension(Math.round(plan.rawDepthMm), unit)
     });
   }
 
-  placements.forEach(({ slot, screenX, screenY, screenW, screenH }) => {
+  plan.placements.forEach(({ slot, screenX, screenY, screenW, screenH, angleDeg }) => {
     const div = document.createElement('div');
     div.className = 'po-proj-slot po-proj-slot-top' + (slot.id === selectedProjectSlotId ? ' selected' : '');
     div.dataset.slotId = slot.id;
@@ -18649,6 +18728,10 @@ function renderProjectCanvasTop(canvas, wrap, dimsLabel, unit) {
     div.style.top = Math.round(screenY * projectPxPerMm) + 'px';
     div.style.width = Math.round(screenW * projectPxPerMm) + 'px';
     div.style.height = Math.round(screenH * projectPxPerMm) + 'px';
+    // Parede em angulo -> o modulo gira junto, em torno do proprio canto de
+    // origem (transform-origin: 0 0 no CSS). Angulo 0 nao emite transform
+    // nenhum, entao o caso comum (parede reta) fica identico ao de antes.
+    if (Math.abs(angleDeg) > 0.01) div.style.transform = `rotate(${angleDeg}deg)`;
     div.style.background = projectSlotColorSwatch(slot);
     div.title = slot.module.name;
     div.innerHTML = `
@@ -18678,93 +18761,23 @@ function renderProjectCanvasTop(canvas, wrap, dimsLabel, unit) {
 // esse painel mini está sendo desenhado ao lado dela; se o mini pisasse na
 // global, arrastar um módulo na tela grande ficaria com a conta errada.
 function renderProjectMiniTopView() {
+  // DESLIGADA desde 2026-07-26 (pedido do usuário: "pode tirar visao top do
+  // lado, aumentar a tela de projeto") — a Vista de Canto 3D ja mostra todas
+  // as paredes de uma vez, o painel virou redundante.
+  //
+  // Em 2026-08-18 o corpo foi ESVAZIADO: ele era a unica outra chamadora de
+  // computeProjectWallTopViewPlacements, que deixou de existir quando a Vista
+  // Superior passou a sair da planta desenhada (ver computeProjectTopViewPlan).
+  // Manter o corpo velho aqui seria guardar codigo que nao roda E nao compila
+  // com a fonte nova. Se um dia o painel voltar, ele se reescreve em cima de
+  // computeProjectTopViewPlan, que ja devolve tudo em coordenada de tela.
   const wrapEl = document.getElementById('po-proj-mini-top-wrap');
   const canvas = document.getElementById('po-proj-mini-top-canvas');
   if (!wrapEl || !canvas) return;
-
-  // Pedido do usuário (2026-07-26, olhando a Vista de Canto 3D já pronta):
-  // "pode tirar visao top do lado, aumentar a tela de projeto" — esse
-  // painel só ligava exatamente nas MESMAS condições da Vista de Canto 3D
-  // (>1 parede, modo 'front' — ver renderProjectCanvasFrontCorner), que
-  // agora já mostra as duas paredes de uma vez em 3D de verdade, tornando
-  // este painel redundante. Desligado (nunca mais aparece) — reversível
-  // (é só essa linha), o resto da função/lógica fica intacta caso precise
-  // voltar. Também libera a largura toda de .po-proj-canvas-row pro canvas
-  // 3D (flex:1, ver CSS — um elemento display:none não ocupa espaço).
-  const show = false;
-  wrapEl.style.display = show ? 'block' : 'none';
-  if (!show) { canvas.innerHTML = ''; return; }
-
-  const roles = getProjectWallRoles();
-  const { placements, mainWidthMm, maxYMm } = computeProjectWallTopViewPlacements();
-  const totalDepthMm = Math.max(maxYMm, 100) + Math.max(maxYMm * 0.25, 300);
-
-  const availableWidthPx = Math.max((canvas.parentElement.clientWidth || 170) - 4, 100);
-  const maxHeightPx = 260;
-  const widthScale = availableWidthPx / mainWidthMm;
-  const heightScale = maxHeightPx / totalDepthMm;
-  const miniPxPerMm = clamp(Math.min(widthScale, heightScale), 0.004, 0.4);
-
-  canvas.style.width = Math.round(mainWidthMm * miniPxPerMm) + 'px';
-  canvas.style.height = Math.round(totalDepthMm * miniPxPerMm) + 'px';
+  wrapEl.style.display = 'none';
   canvas.innerHTML = '';
-
-  const wallLine = document.createElement('div');
-  wallLine.className = 'po-proj-canvas-top-wall-line';
-  canvas.appendChild(wallLine);
-
-  if (roles.includes('left')) {
-    const leftLine = document.createElement('div');
-    leftLine.className = 'po-proj-canvas-top-wall-line-side po-proj-canvas-top-wall-line-left';
-    leftLine.style.height = Math.round(getProjectWallWidthMm(roles.indexOf('left')) * miniPxPerMm) + 'px';
-    canvas.appendChild(leftLine);
-  }
-  if (roles.includes('right')) {
-    const rightLine = document.createElement('div');
-    rightLine.className = 'po-proj-canvas-top-wall-line-side po-proj-canvas-top-wall-line-right';
-    rightLine.style.height = Math.round(getProjectWallWidthMm(roles.indexOf('right')) * miniPxPerMm) + 'px';
-    canvas.appendChild(rightLine);
-  }
-
-  // Faixa clicável por parede (atrás dos módulos) — dá contexto de qual
-  // trecho da mini planta é a parede ATIVA na Frontal ao lado, e permite
-  // trocar de parede clicando direto aqui (mesma função das abas em cima do
-  // canvas, ver setProjectActiveWallIndex).
-  const bandMm = Math.max(totalDepthMm * 0.18, 80);
-  roles.forEach((role, idx) => {
-    const zone = document.createElement('div');
-    zone.className = 'po-proj-mini-wall-zone' + (idx === projectActiveWallIndex ? ' active' : '');
-    let zx, zy, zw, zh;
-    if (role === 'left') { zx = 0; zy = 0; zw = bandMm; zh = getProjectWallWidthMm(idx); }
-    else if (role === 'right') { zx = mainWidthMm - bandMm; zy = 0; zw = bandMm; zh = getProjectWallWidthMm(idx); }
-    else { zx = 0; zy = 0; zw = mainWidthMm; zh = bandMm; }
-    zone.style.left = Math.round(zx * miniPxPerMm) + 'px';
-    zone.style.top = Math.round(zy * miniPxPerMm) + 'px';
-    zone.style.width = Math.round(zw * miniPxPerMm) + 'px';
-    zone.style.height = Math.round(zh * miniPxPerMm) + 'px';
-    zone.title = I18n.t('project.wall_tab_label', { n: idx + 1, role: projectWallRoleLabel(role) });
-    zone.addEventListener('click', () => setProjectActiveWallIndex(idx));
-    canvas.appendChild(zone);
-  });
-
-  placements.forEach(({ slot, screenX, screenY, screenW, screenH }) => {
-    const div = document.createElement('div');
-    div.className = 'po-proj-mini-slot' + (slot.id === selectedProjectSlotId ? ' selected' : '');
-    div.style.left = Math.round(screenX * miniPxPerMm) + 'px';
-    div.style.top = Math.round(screenY * miniPxPerMm) + 'px';
-    div.style.width = Math.round(screenW * miniPxPerMm) + 'px';
-    div.style.height = Math.round(screenH * miniPxPerMm) + 'px';
-    div.style.background = projectSlotColorSwatch(slot);
-    div.title = slot.module.name;
-    div.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const wallIdx = Number(slot.wall_index || 0);
-      if (wallIdx !== projectActiveWallIndex) setProjectActiveWallIndex(wallIdx);
-      selectProjectSlot(slot.id);
-    });
-    canvas.appendChild(div);
-  });
 }
+
 
 // Instância 3D PRÓPRIA da aba Projetos (createInstance, ver
 // viewer3d_composition.js) — renderer/scene/câmera/estado de porta-gaveta
@@ -19171,7 +19184,13 @@ function generateProject3D() {
   // é quem sabe posicionar por coordenada de mundo), então basta UMA ilha pra
   // o projeto de parede única também passar por lá.
   const floorAssemblies = buildProjectAssemblies(projectFloorSlots());
-  if (getProjectWallCount() <= 1 && !floorAssemblies.length) {
+  // PLANTA DESENHADA SEMPRE PELO CAMINHO MULTI-PAREDE (2026-08-18): so quem
+  // NAO tem wall_segments (projeto salvo no modelo velho de forma fixa) cai
+  // no renderFreeform de uma parede centrada na origem. Com planta desenhada
+  // a parede pode estar em qualquer lugar/angulo, e quem sabe posicionar por
+  // coordenada de mundo e o renderFreeformWalls — mesmo caminho da cena de
+  // edicao (renderProjectCanvasFrontCorner), pra os dois 3D concordarem.
+  if (!projectWallSegments.length && getProjectWallCount() <= 1 && !floorAssemblies.length) {
     const assemblies = buildProjectAssemblies(projectSlots);
     ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, viewerRoomEnvConfig());
   } else {
@@ -20989,7 +21008,13 @@ function renderProjectForAiSnapshot() {
   // parede só — é renderFreeformWalls quem sabe posicionar por coordenada de
   // mundo (ver a mesma ramificação em generateProject3D).
   const floorAssemblies = buildProjectAssemblies(cleanSlots.filter(isFloorSlot));
-  if (getProjectWallCount() <= 1 && !floorAssemblies.length) {
+  // PLANTA DESENHADA SEMPRE PELO CAMINHO MULTI-PAREDE (2026-08-18): so quem
+  // NAO tem wall_segments (projeto salvo no modelo velho de forma fixa) cai
+  // no renderFreeform de uma parede centrada na origem. Com planta desenhada
+  // a parede pode estar em qualquer lugar/angulo, e quem sabe posicionar por
+  // coordenada de mundo e o renderFreeformWalls — mesmo caminho da cena de
+  // edicao (renderProjectCanvasFrontCorner), pra os dois 3D concordarem.
+  if (!projectWallSegments.length && getProjectWallCount() <= 1 && !floorAssemblies.length) {
     const assemblies = buildProjectAssemblies(cleanSlots);
     ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, room);
   } else {

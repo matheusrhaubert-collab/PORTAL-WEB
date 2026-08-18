@@ -2786,8 +2786,23 @@ header.po-topnav {
 }
 .po-proj-canvas-top-wall-line-left { left: 0; }
 .po-proj-canvas-top-wall-line-right { right: 0; }
+/* PLANTA BAIXA DE VERDADE (2026-08-18) — uma linha por parede DESENHADA, na
+   posicao e no angulo dela (ver computeProjectTopViewPlan/renderProjectCanvasTop
+   em portal.js). Substitui .po-proj-canvas-top-wall-line + as duas -side, que
+   so sabiam desenhar "topo do canvas" e "cada ponta", geometria das 3 formas
+   fixas de ambiente ja aposentadas. transform-origin no canto esquerdo: o JS
+   posiciona a PONTA da parede e gira em torno dela; a espessura de 4px cresce
+   pro lado de DENTRO do ambiente, que e o sentido de intoDir. */
+.po-proj-canvas-top-wall-seg {
+  position: absolute; height: 4px; background: #a89f8a;
+  transform-origin: 0 0; z-index: 5; cursor: pointer;
+}
+.po-proj-canvas-top-wall-seg.active { background: var(--text); }
 .po-proj-slot-top {
   cursor: pointer; border-style: dashed;
+  /* Parede em angulo gira o modulo junto (transform inline no JS) — o giro
+     tem que ser em torno do canto que o JS posicionou, nao do centro. */
+  transform-origin: 0 0;
 }
 .po-proj-slot-top:active { cursor: pointer; }
 #po-proj-top-view-hint { margin-top: 6px; text-align: center; }
