@@ -541,6 +541,82 @@ function createViewerComposition3D() {
     return mesh;
   }
 
+  // PAREDE COM CANTO EM MEIA-ESQUADRIA (2026-08-18)
+  // ========================================================================
+  // O que incomodava o Matt: "essa juncao da parede... consegue deixar ela
+  // unificada?", com o Promob de referencia ("as paredes sao bem limpas nas
+  // juncoes").
+  //
+  // makeWallSurface (acima) resolve o canto ESTICANDO cada caixa meia
+  // espessura pra dentro da vizinha. Fecha a fresta, mas as duas caixas se
+  // SOBREPOEM: cada uma desenha o proprio contorno (buildEdgesForStyle), e o
+  // pedaco de uma que entra na outra vira aquele quadradinho no vertice.
+  // Aumentar/diminuir a sobra nao resolve — sobra pouco abre fresta, sobra
+  // muita aumenta o quadrado.
+  //
+  // Aqui a parede deixa de ser uma caixa e vira um PRISMA com a planta
+  // recortada: cada ponta encostada e cortada no angulo da bissetriz, do
+  // jeito que se corta um rodape pra fazer canto. Quem manda no corte sao as
+  // FACES, nao a espessura: o canto interno e o cruzamento das duas faces
+  // internas, o externo e o cruzamento das duas externas (ver montarMitra em
+  // buildRoomEnvironmentMultiWall). Vale pra qualquer angulo, nao so 90°.
+  //
+  // footprint = [A, B, C, D] em coordenada de MUNDO (metros, plano XZ):
+  //   A = face interna na ponta 0     B = face interna na ponta 1
+  //   C = face externa na ponta 1     D = face externa na ponta 0
+  // A geometria ja sai em mundo, entao o mesh fica em (0,0,0) sem rotacao —
+  // diferente de makeWallSurface, que posiciona/gira uma BoxGeometry local.
+  function makeWallPrism(footprint, ceilingH, intoDir, alongDir) {
+    const [A, B, C, D] = footprint;
+    const h = Math.max(ceilingH, 0.01);
+    const pos = [];
+    // Emite um quad como 2 triangulos, com a ordem dos vertices ajustada pra
+    // a normal apontar pro lado pedido. Fazer isso na conta (e nao "na
+    // tentativa") e o que garante que a parede continue solida por fora e
+    // vazada por dentro exatamente como a caixa era — o material usa
+    // FrontSide, entao winding trocado = face invisivel.
+    const quad = (v0, v1, v2, v3, n) => {
+      const ux = v1[0] - v0[0], uy = v1[1] - v0[1], uz = v1[2] - v0[2];
+      const vx = v2[0] - v0[0], vy = v2[1] - v0[1], vz = v2[2] - v0[2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const q = (nx * n[0] + ny * n[1] + nz * n[2]) >= 0 ? [v0, v1, v2, v3] : [v0, v3, v2, v1];
+      pos.push(...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]);
+    };
+    const b = (P) => [P.x, 0, P.z];
+    const t = (P) => [P.x, h, P.z];
+    const ix = (intoDir && intoDir.x) || 0, iz = (intoDir && intoDir.z) || 0;
+    const ax = (alongDir && alongDir.x) || 0, az = (alongDir && alongDir.z) || 0;
+
+    quad(b(A), b(B), t(B), t(A), [ix, 0, iz]);        // face de dentro do ambiente
+    quad(b(D), b(C), t(C), t(D), [-ix, 0, -iz]);      // face de fora
+    quad(b(A), b(D), t(D), t(A), [-ax, 0, -az]);      // topo da parede na ponta 0
+    quad(b(B), b(C), t(C), t(B), [ax, 0, az]);        // ponta 1
+    quad(t(A), t(B), t(C), t(D), [0, 1, 0]);          // topo
+    quad(b(A), b(B), b(C), b(D), [0, -1, 0]);         // base
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geom.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: WALL_COLOR, roughness: 0.95, metalness: 0.0,
+      polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.userData.isRoomSurface = true;
+    mesh.userData.roomSurfaceKind = 'wall';
+    // Mesma aresta dos moveis (ver makeWallSurface) — agora ela desenha o
+    // contorno da MITRA, que e justamente o traco limpo do canto.
+    if (typeof Viewer3D !== 'undefined' && Viewer3D.buildEdgesForStyle) {
+      const arestas = Viewer3D.buildEdgesForStyle(geom);
+      if (arestas) {
+        arestas.userData.isRoomSurface = false;
+        mesh.add(arestas);
+      }
+    }
+    return mesh;
+  }
+
   // Cotas TOTAIS da composição inteira (pedido do usuário: "colocar essas
   // medidas no próprio desenho") — 3 linhas de cota estilo CAD, cada uma numa
   // face diferente do conjunto pra não se cruzarem: largura na FRENTE embaixo
@@ -784,20 +860,68 @@ function createViewerComposition3D() {
       // (backface culling) e não tapa o projeto. seg.intoDir vem de
       // renderFreeformWalls; sem ele (chamador antigo), pula a superfície e o
       // desenho fica só de linhas, exatamente como era antes.
-      if (!room.minimal && ceilingH > 0 && seg.intoDir) {
-        // Encosta em alguém nesta ponta? (12cm de tolerância — abaixo da
-        // própria espessura da parede, então só conta encontro de verdade.)
-        const TOL = 0.12;
-        const encosta = (px, pz) => (segments || []).some((o, j) => {
-          if (j === i) return false;
+      // Encosta em alguém nesta ponta? Devolve o ÍNDICE da vizinha (-1 = ponta
+      // solta). Antes era um booleano ('encosta'), que bastava pra decidir
+      // "estica ou não estica"; a meia-esquadria precisa saber QUAL parede,
+      // pra cruzar as faces com as dela. 12cm de tolerância — abaixo da
+      // própria espessura da parede, então só conta encontro de verdade.
+      const TOL_CANTO = 0.12;
+      const vizinhaEm = (px, pz) => {
+        let achou = -1;
+        (segments || []).forEach((o, j) => {
+          if (j === i || achou >= 0) return;
           const a = pontoDoSegmento(o, 0), b = pontoDoSegmento(o, 1);
-          return Math.hypot(a.x - px, a.z - pz) < TOL || Math.hypot(b.x - px, b.z - pz) < TOL;
+          if (Math.hypot(a.x - px, a.z - pz) < TOL_CANTO || Math.hypot(b.x - px, b.z - pz) < TOL_CANTO) achou = j;
         });
-        const wallSurface = makeWallSurface(
-          { x: p0.x, z: p0.z }, { x: p1.x, z: p1.z },
-          ceilingH, seg.intoDir,
-          { ini: encosta(p0.x, p0.z), fim: encosta(p1.x, p1.z) }
-        );
+        return achou;
+      };
+      const temParede = !room.minimal && ceilingH > 0 && !!seg.intoDir;
+      const juntaIni = temParede ? vizinhaEm(p0.x, p0.z) : -1;
+      const juntaFim = temParede ? vizinhaEm(p1.x, p1.z) : -1;
+
+      if (temParede) {
+        // Reta de uma FACE (interna ou externa) do segmento, em mundo:
+        // ponto + direção. A face interna fica sobre a linha do segmento,
+        // recuada só o fio de folga; a externa, uma espessura atrás.
+        const faceDoSegmento = (sg, externa) => {
+          const jx = (sg.intoDir && sg.intoDir.x) || 0;
+          const jz = (sg.intoDir && sg.intoDir.z) || 0;
+          const rec = WALL_SURFACE_BACKOFF_M + (externa ? WALL_THICKNESS_M : 0);
+          const q = pontoDoSegmento(sg, 0);
+          return { P: { x: q.x - jx * rec, z: q.z - jz * rec }, D: { x: sg.alongDir.x, z: sg.alongDir.z } };
+        };
+        // Cruzamento de duas retas no plano XZ. null = paralelas (paredes
+        // colineares: não há esquadria a fazer, a ponta fica reta).
+        const cruzaRetas = (r1, r2) => {
+          const den = r1.D.x * r2.D.z - r1.D.z * r2.D.x;
+          if (Math.abs(den) < 1e-6) return null;
+          const t = ((r2.P.x - r1.P.x) * r2.D.z - (r2.P.z - r1.P.z) * r2.D.x) / den;
+          return { x: r1.P.x + r1.D.x * t, z: r1.P.z + r1.D.z * t };
+        };
+        // Ângulo quase raso (duas paredes quase em linha) manda a mitra pro
+        // infinito e a parede sai com um espeto. Acima de 4 espessuras de
+        // distância a ponta volta a ser reta — fresta de canto é bem menos
+        // feio que bico de agulha.
+        const LIMITE_MITRA_M = WALL_THICKNESS_M * 4;
+        const valida = (pt, ref) => pt && Math.hypot(pt.x - ref.x, pt.z - ref.z) < LIMITE_MITRA_M ? pt : null;
+
+        const ix = seg.intoDir.x || 0, iz = seg.intoDir.z || 0;
+        const recua = (P, r) => ({ x: P.x - ix * r, z: P.z - iz * r });
+        const IN = WALL_SURFACE_BACKOFF_M, OUT = WALL_SURFACE_BACKOFF_M + WALL_THICKNESS_M;
+        let A = recua(p0, IN), D = recua(p0, OUT);
+        let B = recua(p1, IN), C = recua(p1, OUT);
+
+        [[juntaIni, p0, 'ini'], [juntaFim, p1, 'fim']].forEach(([idxViz, pRef, qual]) => {
+          if (idxViz < 0) return;
+          const viz = segments[idxViz];
+          if (!viz || !viz.intoDir) return;
+          const dentro = valida(cruzaRetas(faceDoSegmento(seg, false), faceDoSegmento(viz, false)), pRef);
+          const fora = valida(cruzaRetas(faceDoSegmento(seg, true), faceDoSegmento(viz, true)), pRef);
+          if (!dentro || !fora) return;
+          if (qual === 'ini') { A = dentro; D = fora; } else { B = dentro; C = fora; }
+        });
+
+        const wallSurface = makeWallPrism([A, B, C, D], ceilingH, seg.intoDir, seg.alongDir);
         // De qual parede esta superfície é — lido por pickRoomSurfaceAt pra o
         // duplo toque "mostra essa parede de frente" (iPad) saber qual parede
         // ativar sem depender de nenhum módulo estar em cima dela.
@@ -807,8 +931,11 @@ function createViewerComposition3D() {
 
       group.add(makeLine(p0.clone(), p1.clone()));
       group.add(makeLine(p0.clone().setY(ceilingH), p1.clone().setY(ceilingH)));
-      group.add(makeLine(p0.clone(), p0.clone().setY(ceilingH)));
-      group.add(makeLine(p1.clone(), p1.clone().setY(ceilingH)));
+      // Traço vertical de canto SÓ na ponta solta (2026-08-18). Na ponta
+      // encostada ele fica enterrado dentro da mitra e cruza o contorno dela —
+      // era parte do risco que aparecia no vértice.
+      if (juntaIni < 0) group.add(makeLine(p0.clone(), p0.clone().setY(ceilingH)));
+      if (juntaFim < 0) group.add(makeLine(p1.clone(), p1.clone().setY(ceilingH)));
 
       // ==================================================================
       // RÓTULO DE TETO E TRACEJADAS DE RODAPÉ/RODAFORRO — REMOVIDOS
