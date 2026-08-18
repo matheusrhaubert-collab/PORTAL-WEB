@@ -54,7 +54,7 @@
         i++;
         continue;
       }
-      throw new Error('Caractere inválido na fórmula: "' + ch + '"');
+      throw new Error(tr('pricing.formula_invalid_char', { ch }, 'Caractere inválido na fórmula: "' + ch + '"'));
     }
     return tokens;
   }
@@ -65,10 +65,24 @@
     this.variables = variables || {};
   }
   Parser.prototype.peek = function () { return this.tokens[this.pos]; };
+  // TRADUÇÃO COM REDE DE SEGURANÇA (2026-08-18)
+  // Este arquivo roda em DOIS lugares: o portal (que carrega js/i18n.js) e o
+  // ERP (que não carrega — ver o cabeçalho do i18n.js). Chamar I18n.t direto
+  // aqui derrubaria o ERP com "I18n is not defined" na primeira fórmula
+  // inválida. Sem I18n, cai no texto em português, que é o que o ERP sempre
+  // mostrou.
+  function tr(chave, vars, padrao) {
+    if (typeof I18n !== 'undefined' && I18n && I18n.t) {
+      const v = I18n.t(chave, vars);
+      if (v !== chave) return v;
+    }
+    return padrao;
+  }
+
   Parser.prototype.next = function () { return this.tokens[this.pos++]; };
   Parser.prototype.expectEnd = function () {
     if (this.pos < this.tokens.length) {
-      throw new Error('Fórmula inválida: caracteres inesperados no final.');
+      throw new Error(tr('pricing.formula_unexpected_end', null, 'Fórmula inválida: caracteres inesperados no final.'));
     }
   };
   Parser.prototype.parseExpression = function () {
@@ -98,12 +112,12 @@
   };
   Parser.prototype.parsePrimary = function () {
     const tok = this.peek();
-    if (!tok) throw new Error('Fórmula inválida: fim inesperado.');
+    if (!tok) throw new Error(tr('pricing.formula_abrupt_end', null, 'Fórmula inválida: fim inesperado.'));
     if (tok.type === 'num') { this.next(); return tok.value; }
     if (tok.type === 'var') {
       this.next();
       if (!(tok.value in this.variables)) {
-        throw new Error('Variável desconhecida na fórmula: "' + tok.value + '"');
+        throw new Error(tr('pricing.formula_unknown_var', { name: tok.value }, 'Variável desconhecida na fórmula: "' + tok.value + '"'));
       }
       return this.variables[tok.value];
     }
@@ -111,10 +125,10 @@
       this.next();
       const value = this.parseExpression();
       const close = this.next();
-      if (!close || close.value !== ')') throw new Error('Fórmula inválida: parêntese não fechado.');
+      if (!close || close.value !== ')') throw new Error(tr('pricing.formula_unclosed_paren', null, 'Fórmula inválida: parêntese não fechado.'));
       return value;
     }
-    throw new Error('Fórmula inválida.');
+    throw new Error(tr('pricing.formula_invalid', null, 'Fórmula inválida.'));
   };
 
   // ---- Variáveis GLOBAIS de fórmula ----
@@ -136,7 +150,7 @@
     const parser = new Parser(tokens, Object.assign({}, formulaGlobals, variables));
     const result = parser.parseExpression();
     parser.expectEnd();
-    if (!isFinite(result)) throw new Error('Fórmula resultou em valor inválido (divisão por zero?).');
+    if (!isFinite(result)) throw new Error(tr('pricing.formula_invalid_result', null, 'Fórmula resultou em valor inválido (divisão por zero?).'));
     return result;
   }
 
@@ -563,7 +577,7 @@
 
     const effectiveColors = effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides);
     const color = effectiveColors && effectiveColors[piece.color_role_id];
-    if (!color) throw new Error('Nenhuma cor selecionada para a peça "' + piece.reference + '".');
+    if (!color) throw new Error(tr('pricing.no_color_for_piece', { ref: piece.reference }, 'Nenhuma cor selecionada para a peça "' + piece.reference + '".'));
 
     const sheet_cost = pieceDims.area_m2 * color.sheet_price_per_m2 * qty;
     const edge_cost = pieceDims.edge_band_m * color.edge_price_per_linear_m * qty;
@@ -595,13 +609,13 @@
     let hinge_count = 0;
     if (piece.hinge_side && piece.hinge_side !== 'none') {
       hinge_count = hingeCountForDoorHeight(pieceDims.height_mm);
-      if (!hingeModel) throw new Error('Nenhum modelo de dobradiça selecionado para a peça "' + piece.reference + '".');
+      if (!hingeModel) throw new Error(tr('pricing.no_hinge_for_piece', { ref: piece.reference }, 'Nenhum modelo de dobradiça selecionado para a peça "' + piece.reference + '".'));
       hinge_cost = hingeModel.price_per_unit * hinge_count * qty;
     }
 
     let slide_cost = 0;
     if (piece.slides_per_unit > 0) {
-      if (!slideModel) throw new Error('Nenhum modelo de corrediça selecionado para a peça "' + piece.reference + '".');
+      if (!slideModel) throw new Error(tr('pricing.no_slide_for_piece', { ref: piece.reference }, 'Nenhum modelo de corrediça selecionado para a peça "' + piece.reference + '".'));
       slide_cost = slideModel.price_per_unit * piece.slides_per_unit * qty;
     }
 
@@ -756,13 +770,13 @@
     let hinge_count = 0;
     if (piece.opening_type === 'hinge_left' || piece.opening_type === 'hinge_right') {
       hinge_count = hingeCountForDoorHeight(pieceDims.height_mm);
-      if (!effectiveHingeModel) throw new Error('Nenhum modelo de dobradiça selecionado para a peça "' + (piece.reference || piece.module_name) + '".');
+      if (!effectiveHingeModel) throw new Error(tr('pricing.no_hinge_for_piece', { ref: piece.reference || piece.module_name }, 'Nenhum modelo de dobradiça selecionado para a peça "' + (piece.reference || piece.module_name) + '".'));
       hinge_cost = effectiveHingeModel.price_per_unit * hinge_count * qty;
     }
 
     let slide_cost = 0;
     if (piece.opening_type === 'slide_out' && piece.slides_per_unit > 0) {
-      if (!effectiveSlideModel) throw new Error('Nenhum modelo de corrediça selecionado para a peça "' + (piece.reference || piece.module_name) + '".');
+      if (!effectiveSlideModel) throw new Error(tr('pricing.no_slide_for_piece', { ref: piece.reference || piece.module_name }, 'Nenhum modelo de corrediça selecionado para a peça "' + (piece.reference || piece.module_name) + '".'));
       slide_cost = effectiveSlideModel.price_per_unit * piece.slides_per_unit * qty;
     }
 

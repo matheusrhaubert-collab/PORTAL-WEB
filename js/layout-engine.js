@@ -623,18 +623,31 @@
     var maq = (limites && limites.maquina) || null;
     var porPeca = (limites && limites.porPeca) || {};
 
+    // TRADUÇÃO COM REDE DE SEGURANÇA (2026-08-18) — este arquivo roda no portal
+    // (que carrega js/i18n.js) E no ERP (que não carrega, ver cabeçalho do
+    // i18n.js). Sem I18n, cai no texto em português de sempre.
+    var tr = function (chave, vars, padrao) {
+      if (typeof I18n !== 'undefined' && I18n && I18n.t) {
+        var v = I18n.t(chave, vars);
+        if (v !== chave) return v;
+      }
+      return padrao;
+    };
     (pecas || []).forEach(function (p) {
       if (p.shape_type === 'oval_rod') { p.veio = null; return; }
       var lim = porPeca[p.accKey] || porPeca[p.position_role] || {};
       var nome = p.label || p.accKey || p.position_role;
 
-      [['largura', 'w', 'W'], ['altura', 'h', 'H'], ['profundidade', 'd', 'D']].forEach(function (t) {
+      [['largura', 'w', 'W', 'layout.dim_width'], ['altura', 'h', 'H', 'layout.dim_height'], ['profundidade', 'd', 'D', 'layout.dim_depth']].forEach(function (t) {
         var v = p[t[1]], mx = lim['max' + t[2]], mn = lim['min' + t[2]];
+        var dim = tr(t[3], null, t[0]);
         if (mx && v > mx) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + t[0] + ' ' + Math.round(v) + ' passa do máximo ' + mx + 'mm'
+          msg: tr('layout.err_above_max', { peca: nome, dim: dim, v: Math.round(v), mx: mx },
+            nome + ': ' + t[0] + ' ' + Math.round(v) + ' passa do máximo ' + mx + 'mm')
             + (lim.obs ? ' (' + lim.obs + ')' : '') });
         if (mn && v < mn) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + t[0] + ' ' + Math.round(v) + ' está abaixo do mínimo ' + mn + 'mm' });
+          msg: tr('layout.err_below_min', { peca: nome, dim: dim, v: Math.round(v), mn: mn },
+            nome + ': ' + t[0] + ' ' + Math.round(v) + ' está abaixo do mínimo ' + mn + 'mm') });
       });
 
       p.fura = lim.fura !== false;
@@ -642,12 +655,14 @@
 
       if (maq && p.fura) {
         if (cur > maq.largura) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + Math.round(p.w) + '×' + Math.round(p.h)
+          msg: tr('layout.err_drill_table_width', { peca: nome, w: Math.round(p.w), h: Math.round(p.h), c: Math.round(cur), l: maq.largura },
+            nome + ': ' + Math.round(p.w) + '×' + Math.round(p.h)
             + ' leva furação e não entra na furadeira (lado curto ' + Math.round(cur)
-            + ' > ' + maq.largura + 'mm de mesa)' });
+            + ' > ' + maq.largura + 'mm de mesa)') });
         else if (lon > maq.comprimento) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + Math.round(lon) + 'mm leva furação e passa do comprimento da furadeira ('
-            + maq.comprimento + 'mm)' });
+          msg: tr('layout.err_drill_table_length', { peca: nome, n: Math.round(lon), c: maq.comprimento },
+            nome + ': ' + Math.round(lon) + 'mm leva furação e passa do comprimento da furadeira ('
+            + maq.comprimento + 'mm)') });
       }
 
       if (!chapa) { p.veio = lim.veio || null; return; }
@@ -655,22 +670,26 @@
       if (exig === 'livre') {
         p.veio = p.w >= p.h ? 'horizontal' : 'vertical';
         if (cur > chapa.largura) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + Math.round(p.w) + '×' + Math.round(p.h)
+          msg: tr('layout.err_sheet_no_fit', { peca: nome, w: Math.round(p.w), h: Math.round(p.h), c: Math.round(cur), l: chapa.largura },
+            nome + ': ' + Math.round(p.w) + '×' + Math.round(p.h)
             + ' não cabe na chapa em nenhum sentido (lado curto ' + Math.round(cur)
-            + ' > ' + chapa.largura + 'mm)' });
+            + ' > ' + chapa.largura + 'mm)') });
         else if (lon > chapa.comprimento) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + Math.round(lon) + 'mm é mais comprido que a chapa ('
-            + chapa.comprimento + 'mm)' });
+          msg: tr('layout.err_sheet_too_long', { peca: nome, n: Math.round(lon), c: chapa.comprimento },
+            nome + ': ' + Math.round(lon) + 'mm é mais comprido que a chapa ('
+            + chapa.comprimento + 'mm)') });
       } else {
         p.veio = exig;
         var trans = exig === 'vertical' ? p.w : p.h;
         var along = exig === 'vertical' ? p.h : p.w;
         if (trans > chapa.largura) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + Math.round(trans) + 'mm com veio ' + exig
-            + ' obrigatório não cabe na chapa (' + chapa.largura + 'mm)' });
+          msg: tr('layout.err_grain_no_fit', { peca: nome, n: Math.round(trans), v: exig, l: chapa.largura },
+            nome + ': ' + Math.round(trans) + 'mm com veio ' + exig
+            + ' obrigatório não cabe na chapa (' + chapa.largura + 'mm)') });
         else if (along > chapa.comprimento) probs.push({ peca: nome, nodeId: p.nodeId, grave: true,
-          msg: nome + ': ' + Math.round(along) + 'mm passa do comprimento da chapa ('
-            + chapa.comprimento + 'mm)' });
+          msg: tr('layout.err_grain_too_long', { peca: nome, n: Math.round(along), c: chapa.comprimento },
+            nome + ': ' + Math.round(along) + 'mm passa do comprimento da chapa ('
+            + chapa.comprimento + 'mm)') });
       }
     });
     return probs;

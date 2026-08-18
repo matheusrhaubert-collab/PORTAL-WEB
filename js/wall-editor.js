@@ -48,6 +48,25 @@
 
   let estado = null;
 
+  // ------------------------------------------------------------------------
+  // IDIOMA
+  // ------------------------------------------------------------------------
+  // Este arquivo é independente de propósito (ver cabeçalho), então ele não
+  // pode DEPENDER do I18n existir — se o portal carregar sem ele, o modal tem
+  // que continuar abrindo, em português, em vez de morrer. Daí o fallback.
+  function tr(chave, vars) {
+    if (typeof I18n !== 'undefined' && I18n && I18n.t) return I18n.t(chave, vars);
+    return chave;
+  }
+  // O modal é montado UMA vez e reaproveitado (garanteModal cacheia pelo id).
+  // Se o cliente trocar de idioma com ele já montado, os data-i18n de dentro
+  // ficam na língua antiga — por isso re-aplica a cada abertura, e também no
+  // evento de troca de idioma (pro caso do modal estar aberto na hora).
+  function traduzModal(m) {
+    if (typeof I18n !== 'undefined' && I18n && I18n.applyStaticTranslations) I18n.applyStaticTranslations();
+    return m;
+  }
+
   function el(tag, attrs, pai) {
     const e = document.createElementNS(NS, tag);
     for (const k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) e.setAttribute(k, attrs[k]);
@@ -92,41 +111,48 @@
     if (m) return m;
     m = document.createElement('div');
     m.id = 'po-wall-editor-modal';
+    // TODO TEXTO PASSA PELO I18N (2026-08-18, Matt: "quando a lingua das
+    // preferencias for ingles ou espanhol voce deve adaptar... isso serve pra
+    // todas palavras do sistema"). O modal nasceu 100% em portugues cravado.
+    // Os rotulos ficam em <span> proprio dentro do <label> porque data-i18n
+    // escreve textContent — no <label> inteiro ele apagaria o <input> junto.
+    // As dicas usam data-i18n-html pra manter o <b> (ver applyStaticTranslations).
     m.innerHTML = [
       '<div class="po-wall-card">',
       '  <div class="po-wall-header">',
-      '    <strong>Ajustar paredes</strong>',
+      '    <strong data-i18n="wall_editor.title">Ajustar paredes</strong>',
       '    <div class="po-wall-tools">',
-      '      <button type="button" class="po-wall-tool" data-acao="add" title="Adicionar parede na ponta da última (grudada)">+ parede</button>',
-      '      <button type="button" class="po-wall-tool" data-acao="add-solta" title="Adicionar uma parede SOLTA no meio do ambiente (divisória, sem grudar em nenhuma outra)">+ solta</button>',
-      '      <button type="button" class="po-wall-tool" data-acao="inverter" title="Inverter o lado de dentro desta parede">⇋ virar</button>',
-      '      <button type="button" class="po-wall-tool" data-acao="ocultar" title="Esconder esta parede (e os móveis presos nela) — só na visualização">👁 ocultar</button>',
-      '      <button type="button" class="po-wall-tool po-wall-tool-danger" data-acao="remover" title="Remover a parede selecionada">🗑 remover</button>',
+      '      <button type="button" class="po-wall-tool" data-acao="add" data-i18n="wall_editor.add" data-i18n-title="wall_editor.add_title">+ parede</button>',
+      '      <button type="button" class="po-wall-tool" data-acao="add-solta" data-i18n="wall_editor.add_free" data-i18n-title="wall_editor.add_free_title">+ solta</button>',
+      '      <button type="button" class="po-wall-tool" data-acao="inverter" data-i18n="wall_editor.flip" data-i18n-title="wall_editor.flip_title">&#8651; virar</button>',
+      '      <button type="button" class="po-wall-tool" data-acao="ocultar" data-i18n="wall_editor.hide" data-i18n-title="wall_editor.hide_title">&#128065; ocultar</button>',
+      '      <button type="button" class="po-wall-tool po-wall-tool-danger" data-acao="remover" data-i18n="wall_editor.remove" data-i18n-title="wall_editor.remove_title">&#128465; remover</button>',
       '    </div>',
       '  </div>',
       '  <div class="po-wall-body">',
       '    <div class="po-wall-stage" id="po-wall-stage"></div>',
       '    <div class="po-wall-side">',
-      '      <div class="po-wall-side-title">Parede</div>',
-      '      <label>Comprimento <span class="po-wall-un">mm</span><input type="number" id="po-wall-comp" step="10"></label>',
-      '      <label>Ângulo <span class="po-wall-un">°</span><input type="number" id="po-wall-ang" step="1"></label>',
-      '      <label>Espessura <span class="po-wall-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
-      '      <label>Altura desta parede <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
-      '      <p class="po-wall-hint">Arraste o <b>corpo</b> da parede pra levar ela inteira; arraste as <b>pontas</b> pra girar e esticar. O ímã pega a malha e os ângulos de 45° — segure <b>Shift</b> pra soltar.</p>',
-      '      <p class="po-wall-hint"><b>Desconectar:</b> segure <b>Shift</b> e arraste a ponta pra fora — a parede vizinha fica onde está. Sem Shift, as duas andam juntas (é o mesmo canto). <b>+ solta</b> cria uma divisória no meio, sem grudar em ninguém.</p>',
+      '      <div class="po-wall-side-title" data-i18n="wall_editor.section_wall">Parede</div>',
+      '      <label><span data-i18n="wall_editor.length">Comprimento</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-comp" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.angle">&Acirc;ngulo</span> <span class="po-wall-un">&deg;</span><input type="number" id="po-wall-ang" step="1"></label>',
+      '      <label><span data-i18n="wall_editor.thickness">Espessura</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.wall_height">Altura desta parede</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
+      '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_drag"></p>',
+      '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_disconnect"></p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
-      '      <div class="po-wall-side-title" style="margin-top:6px;">Ambiente</div>',
-      '      <label>Pé-direito <span class="po-wall-un">mm</span><input type="number" id="po-wall-teto" step="10"></label>',
-      '      <label>Rodapé <span class="po-wall-un">mm</span><input type="number" id="po-wall-rodape" step="5"></label>',
+      '      <div class="po-wall-side-title" style="margin-top:6px;" data-i18n="wall_editor.section_room">Ambiente</div>',
+      '      <label><span data-i18n="wall_editor.ceiling">P&eacute;-direito</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-teto" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.baseboard">Rodap&eacute;</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-rodape" step="5"></label>',
       '    </div>',
       '  </div>',
       '  <div class="po-wall-footer">',
-      '    <button type="button" class="secondary" data-acao="cancelar">Cancelar</button>',
-      '    <button type="button" class="po-wall-ok" data-acao="ok">OK</button>',
+      '    <button type="button" class="secondary" data-acao="cancelar" data-i18n="wall_editor.cancel">Cancelar</button>',
+      '    <button type="button" class="po-wall-ok" data-acao="ok" data-i18n="wall_editor.ok">OK</button>',
       '  </div>',
       '</div>'
     ].join('');
     document.body.appendChild(m);
+    traduzModal(m);
     m.addEventListener('click', (ev) => {
       const b = ev.target.closest('[data-acao]');
       if (!b) { if (ev.target === m) fechar(false); return; }
@@ -169,6 +195,9 @@
       arraste: null
     };
     m.classList.add('open');
+    // Re-traduz a cada abertura: o modal é montado uma vez só e o cliente pode
+    // ter trocado de idioma entre uma abertura e outra.
+    traduzModal(m);
     desenha();
   }
   // Espelha defaultProjectWallSegments() do portal.js — 4m, L centrado na
@@ -416,8 +445,10 @@
     const resumo = q('po-wall-resumo');
     if (resumo) {
       const total = estado.segs.reduce((a, x) => a + comprimentoDe(x), 0);
-      resumo.textContent = estado.segs.length + ' parede(s) · perímetro '
-        + (Math.round(total) / 1000).toFixed(2) + ' m';
+      resumo.textContent = tr('wall_editor.summary', {
+        n: estado.segs.length,
+        m: (Math.round(total) / 1000).toFixed(2)
+      });
     }
   }
 
@@ -551,6 +582,18 @@
     };
     addEventListener('pointermove', mover);
     addEventListener('pointerup', soltar);
+  }
+
+  // Troca de idioma com o modal ABERTO: re-traduz na hora e redesenha (o
+  // resumo é montado em JS, então não tem data-i18n pra applyStaticTranslations
+  // pegar sozinha).
+  if (typeof I18n !== 'undefined' && I18n && I18n.onLanguageChange) {
+    I18n.onLanguageChange(() => {
+      const m = document.getElementById('po-wall-editor-modal');
+      if (!m || !m.classList.contains('open')) return;
+      traduzModal(m);
+      if (estado) desenha();
+    });
   }
 
   global.WallEditor = { open, padrao };

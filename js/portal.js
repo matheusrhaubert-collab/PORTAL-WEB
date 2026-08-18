@@ -679,7 +679,7 @@ function renderTabBar(containerId, items, selectedId, onSelect) {
   }
 
   items.forEach((item) => container.appendChild(makePill(item.id, item.name)));
-  container.appendChild(makePill('', 'Todas'));
+  container.appendChild(makePill('', I18n.t('project.filter_all')));
 }
 
 async function loadTaxonomyFilters() {
@@ -4726,8 +4726,8 @@ function generateOrderPDF(order, items) {
   doc.setFontSize(12);
   doc.text(I18n.t('pdf.order_total', { total: formatMoney(total) }), 14, y);
 
-  const filenameBase = (order.po_name || order.client_name || 'pedido')
-    .toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'pedido';
+  const filenameBase = (order.po_name || order.client_name || I18n.t('pdf.filename_fallback'))
+    .toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || I18n.t('pdf.filename_fallback');
   doc.save(`${filenameBase}.pdf`);
 }
 
@@ -4933,7 +4933,7 @@ document.getElementById('po-room-download-btn').addEventListener('click', () => 
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'meu-ambiente-legno.png';
+    a.download = I18n.t('room.download_filename');
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -7027,7 +7027,7 @@ function downloadGeneratedImage(dataUrl, filenameBase) {
   const ext = dataUrlFileExtension(dataUrl);
   const a = document.createElement('a');
   a.href = dataUrl;
-  a.download = `${filenameBase || 'imagem'}.${ext}`;
+  a.download = `${filenameBase || I18n.t('gallery.download_filename_fallback')}.${ext}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -7045,7 +7045,7 @@ async function shareGeneratedImage(dataUrl, filenameBase, statusEl) {
   try {
     const blob = await dataUrlToBlob(dataUrl);
     const ext = dataUrlFileExtension(dataUrl);
-    const file = new File([blob], `${filenameBase || 'imagem'}.${ext}`, { type: blob.type || 'image/png' });
+    const file = new File([blob], `${filenameBase || I18n.t('gallery.download_filename_fallback')}.${ext}`, { type: blob.type || 'image/png' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file] });
       return;
@@ -7059,11 +7059,11 @@ async function shareGeneratedImage(dataUrl, filenameBase, statusEl) {
 
 const galleryAiDownloadBtn = document.getElementById('po-gallery-ai-download-btn');
 if (galleryAiDownloadBtn) {
-  galleryAiDownloadBtn.addEventListener('click', () => downloadGeneratedImage(galleryAiPreviewImage, 'composicao'));
+  galleryAiDownloadBtn.addEventListener('click', () => downloadGeneratedImage(galleryAiPreviewImage, I18n.t('gallery.ai_image_filename')));
 }
 const galleryAiShareBtn = document.getElementById('po-gallery-ai-share-btn');
 if (galleryAiShareBtn) {
-  galleryAiShareBtn.addEventListener('click', () => shareGeneratedImage(galleryAiPreviewImage, 'composicao', document.getElementById('po-gallery-ai-preview-hint')));
+  galleryAiShareBtn.addEventListener('click', () => shareGeneratedImage(galleryAiPreviewImage, I18n.t('gallery.ai_image_filename'), document.getElementById('po-gallery-ai-preview-hint')));
 }
 
 // Migration 055 + pedido do usuário 2026-07-20 ("gallery muito lenta pra
@@ -7328,7 +7328,7 @@ function openGalleryLightbox(imageUrl) {
     overlay.id = 'po-gallery-lightbox';
     overlay.className = 'po-gallery-lightbox-overlay';
     overlay.innerHTML = `
-      <button type="button" class="po-gallery-lightbox-close" aria-label="Fechar">&times;</button>
+      <button type="button" class="po-gallery-lightbox-close" aria-label="${I18n.t('ui.close')}">&times;</button>
       <img class="po-gallery-lightbox-img" alt="" />
     `;
     overlay.addEventListener('click', (ev) => {
@@ -9076,7 +9076,7 @@ async function importCutlistFile(file) {
       const text = await file.text();
       rowsArray = parseCutlistDelimitedText(text);
     } else {
-      if (typeof XLSX === 'undefined') throw new Error('SheetJS não carregou (sem conexão?)');
+      if (typeof XLSX === 'undefined') throw new Error(I18n.t('cutlist.xlsx_lib_missing_error'));
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -9120,12 +9120,12 @@ async function downloadCutlistTemplate() {
     I18n.t('cutlist.col_grain')
   ];
   const exampleColorName = cutlistColorsCache[0] ? cutlistColorsCache[0].name : '';
-  const exampleRow = ['OP-001', 'Lateral', 2, 600, 400, 19, exampleColorName, 2, '', I18n.t('cutlist.grain_no')];
+  const exampleRow = ['OP-001', I18n.t('cutlist.template_example_part_name'), 2, 600, 400, 19, exampleColorName, 2, '', I18n.t('cutlist.grain_no')];
   const ws = XLSX.utils.aoa_to_sheet([header, exampleRow]);
   ws['!cols'] = [8, 16, 6, 14, 12, 10, 16, 8, 20, 8].map((w) => ({ wch: w }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Plano de Corte');
-  XLSX.writeFile(wb, 'modelo-plano-de-corte.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, I18n.t('cutlist.template_sheet_name'));
+  XLSX.writeFile(wb, I18n.t('cutlist.template_filename'));
 }
 
 // ---------- Botões da aba ----------
@@ -9680,7 +9680,21 @@ function projectSlotsSameWallExcluding(slot) {
   return projectSlots.filter((s) => !isFloorSlot(s) && s.id !== slot.id && Number(s.wall_index || 0) === wallIndex);
 }
 
-function projectWallRoleLabel(role) { return I18n.t('project.wall_role_' + role); }
+// PAPEL vs. NÚMERO (2026-08-18). Os papéis 'main'/'left'/'right' vêm das 3
+// formas fixas de ambiente, aposentadas em 13/08. Com planta desenhada, o
+// papel do segmento 1+ é 'seg1', 'seg2'... — chaves que não existem no
+// dicionário, e I18n.t devolve a própria chave quando não acha: o cliente
+// veria "project.wall_role_seg1" escrito na tela.
+// Agora: papel conhecido vira nome ("lateral esquerda"); qualquer outro (ou
+// nenhum) cai no NÚMERO da parede, que é como o editor de paredes já a
+// identifica.
+const PROJECT_WALL_ROLES_CONHECIDOS = ['main', 'left', 'right'];
+function projectWallRoleLabel(role, idx) {
+  if (PROJECT_WALL_ROLES_CONHECIDOS.indexOf(role) >= 0 && !projectWallSegments.length) {
+    return I18n.t('project.wall_role_' + role);
+  }
+  return I18n.t('project.wall_numbered', { n: Number(idx || 0) + 1 });
+}
 
 function refreshProjectWallWidthInput() {
   const input = document.getElementById('po-proj-wall-width-input');
@@ -9692,8 +9706,12 @@ function refreshProjectWallWidthInput() {
   if (unitLabel) unitLabel.textContent = unitAbbrev(unit);
   if (labelEl) {
     const roles = getProjectWallRoles();
-    labelEl.textContent = roles.length > 1
-      ? I18n.t('project.wall_width_label_multi', { n: projectActiveWallIndex + 1, role: projectWallRoleLabel(roles[projectActiveWallIndex]) })
+    // getProjectWallCount(), não roles.length: com planta desenhada os papéis
+    // legados continuam sendo 1 só (ver get_project_wall_count_ignorava_planta).
+    labelEl.textContent = getProjectWallCount() > 1
+      ? (projectWallSegments.length
+        ? I18n.t('project.wall_width_label_numbered', { n: projectActiveWallIndex + 1 })
+        : I18n.t('project.wall_width_label_multi', { n: projectActiveWallIndex + 1, role: projectWallRoleLabel(roles[projectActiveWallIndex], projectActiveWallIndex) }))
       : I18n.t('project.wall_width_label');
   }
 }
@@ -9730,7 +9748,7 @@ function refreshProjectWallTabs() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'po-proj-wall-tab-btn' + (idx === projectActiveWallIndex ? ' active' : '');
-    btn.textContent = I18n.t('project.wall_tab_label', { n: idx + 1, role: projectWallRoleLabel(role) });
+    btn.textContent = I18n.t('project.wall_tab_label', { n: idx + 1, role: projectWallRoleLabel(role, idx) });
     btn.addEventListener('click', () => setProjectActiveWallIndex(idx));
     wrap.appendChild(btn);
   });
@@ -10232,7 +10250,7 @@ function renderProjectLibraryFilterBars() {
   select.innerHTML = '';
   const allOption = document.createElement('option');
   allOption.value = '';
-  allOption.textContent = 'Todas';
+  allOption.textContent = I18n.t('project.filter_all');
   select.appendChild(allOption);
   familiesInScope.forEach((f) => {
     const opt = document.createElement('option');
@@ -10252,7 +10270,7 @@ function renderProjectLibraryFilterBars() {
   categorySelect.innerHTML = '';
   const allCategoryOption = document.createElement('option');
   allCategoryOption.value = '';
-  allCategoryOption.textContent = 'Todas';
+  allCategoryOption.textContent = I18n.t('project.filter_all');
   categorySelect.appendChild(allCategoryOption);
   categoriesInScope.forEach((c) => {
     const opt = document.createElement('option');
@@ -11193,16 +11211,21 @@ const PROJECT_AI_UPPER_ROW_FLOOR_MM = 1400;
 // o Gemini lê bem, e assim o admin consegue relacionar pergunta e resposta
 // olhando o log). Ambiente sem entrada aqui cai em PROJECT_AI_COMMON_QUESTIONS
 // só, que já é suficiente pra gerar algo razoável.
+// labelKey/optionKeys em vez de texto cravado (2026-08-18): estas perguntas
+// aparecem PRA QUEM COMPRA, então precisam sair em pt/en/es como todo o resto.
+// O texto é resolvido em renderProjectAiQuestions, na hora de desenhar — a
+// resposta escolhida vai pra IA já no idioma do cliente, o que é indiferente
+// pro modelo e evita ter que manter uma tabela de-para.
 const PROJECT_AI_COMMON_QUESTIONS = [
   {
     key: 'orcamento',
-    label: 'Orçamento',
-    options: ['Econômico', 'Equilibrado', 'Sem economizar']
+    labelKey: 'project_ai.q_budget',
+    optionKeys: ['project_ai.q_budget_1', 'project_ai.q_budget_2', 'project_ai.q_budget_3']
   },
   {
     key: 'estilo',
-    label: 'Estilo das frentes',
-    options: ['Bastante gaveta', 'Bastante porta', 'Misto', 'Prefiro aberto/sem porta']
+    labelKey: 'project_ai.q_style',
+    optionKeys: ['project_ai.q_style_1', 'project_ai.q_style_2', 'project_ai.q_style_3', 'project_ai.q_style_4']
   }
 ];
 
@@ -11210,31 +11233,31 @@ const PROJECT_AI_QUESTIONS = {
   kitchen: [
     {
       key: 'quem_cozinha',
-      label: 'Quanto se cozinha aqui?',
-      options: ['Todo dia, pra família', 'De vez em quando', 'Quase nada, é decorativa']
+      labelKey: 'project_ai.q_cooking',
+      optionKeys: ['project_ai.q_cooking_1', 'project_ai.q_cooking_2', 'project_ai.q_cooking_3']
     },
     {
       key: 'eletros',
-      label: 'Eletrodomésticos que precisam de espaço',
-      options: ['Só cooktop e geladeira', 'Cooktop, geladeira e forno embutido', 'Tudo: forno, micro, lava-louças']
+      labelKey: 'project_ai.q_appliances',
+      optionKeys: ['project_ai.q_appliances_1', 'project_ai.q_appliances_2', 'project_ai.q_appliances_3']
     },
     {
       key: 'aereos',
-      label: 'Armários aéreos',
-      options: ['Quero o máximo possível', 'Só o necessário', 'Prefiro poucos, ambiente mais leve']
+      labelKey: 'project_ai.q_upper',
+      optionKeys: ['project_ai.q_upper_1', 'project_ai.q_upper_2', 'project_ai.q_upper_3']
     }
   ],
   closet: [
     {
       key: 'pendurado_vs_dobrado',
-      label: 'Roupa pendurada ou dobrada?',
-      options: ['Mais pendurada', 'Metade e metade', 'Mais dobrada']
+      labelKey: 'project_ai.q_hanging',
+      optionKeys: ['project_ai.q_hanging_1', 'project_ai.q_hanging_2', 'project_ai.q_hanging_3']
     },
-    { key: 'calcados', label: 'Espaço para calçados', options: ['Muito', 'Um pouco', 'Não precisa'] }
+    { key: 'calcados', labelKey: 'project_ai.q_shoes', optionKeys: ['project_ai.q_shoes_1', 'project_ai.q_shoes_2', 'project_ai.q_shoes_3'] }
   ],
   office: [
-    { key: 'uso', label: 'Como usa o espaço?', options: ['Trabalho o dia todo', 'Algumas horas', 'Só estudo/leitura'] },
-    { key: 'armazenamento', label: 'Precisa guardar muita coisa?', options: ['Muita', 'Média', 'Pouca'] }
+    { key: 'uso', labelKey: 'project_ai.q_usage', optionKeys: ['project_ai.q_usage_1', 'project_ai.q_usage_2', 'project_ai.q_usage_3'] },
+    { key: 'armazenamento', labelKey: 'project_ai.q_storage', optionKeys: ['project_ai.q_storage_1', 'project_ai.q_storage_2', 'project_ai.q_storage_3'] }
   ]
 };
 
@@ -11292,14 +11315,14 @@ function refreshProjectAiButton() {
 // tudo pronto. Ordem das checagens = ordem em que a pessoa precisa resolver.
 function projectAiConfigProblem() {
   if (projectAiRoomTypes.length === 0) {
-    return 'As tabelas do gerador ainda não existem no banco. Rode a migration 080 (database/migration_080_funcao_modulo_e_receita_ambiente.sql) no Supabase.';
+    return I18n.t('project_ai.config_missing_tables');
   }
   const hasRoomWithRecipe = projectAiRoomTypes.some((rt) => (projectAiRecipesByRoom[rt.id] || []).length > 0);
   if (!hasRoomWithRecipe) {
-    return 'Nenhum ambiente tem receita cadastrada. Configure em Admin > Taxonomia > Funções e receitas de ambiente.';
+    return I18n.t('project_ai.config_no_recipe');
   }
   if (!allModules.some((m) => m.function_id)) {
-    return 'Nenhum módulo tem função cadastrada. No Admin > Módulos, marque o campo "Função (IA)" nos módulos de cozinha (base de pia, cooktop, gaveteiro, aéreo...).';
+    return I18n.t('project_ai.config_no_function');
   }
   return null;
 }
@@ -11371,11 +11394,11 @@ function renderProjectAiQuestions() {
     const field = document.createElement('div');
     field.className = 'dim-field';
     const label = document.createElement('label');
-    label.textContent = q.label;
+    label.textContent = I18n.t(q.labelKey);
     const sel = document.createElement('select');
     sel.className = 'po-proj-library-filter-select';
     sel.dataset.aiQuestionKey = q.key;
-    q.options.forEach((optText) => {
+    q.optionKeys.map((k) => I18n.t(k)).forEach((optText) => {
       const opt = document.createElement('option');
       opt.value = optText;
       opt.textContent = optText;
@@ -11404,9 +11427,9 @@ function renderProjectAiWallsSummary() {
   const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
   const parts = getProjectWallRoles().map((role, idx) => {
     const w = getProjectWallWidthMm(idx);
-    return `Parede ${idx + 1}: ${formatDimension(w, unit)}`;
+    return I18n.t('project_ai.wall_label', { n: idx + 1, size: formatDimension(w, unit) });
   });
-  parts.push(`Pé direito: ${formatDimension(roomSettings.ceiling_mm, unit)}`);
+  parts.push(I18n.t('project_ai.ceiling_label', { size: formatDimension(roomSettings.ceiling_mm, unit) }));
   el.textContent = parts.join(' · ');
 }
 
@@ -11501,7 +11524,7 @@ function enforceProjectAiRecipe(items, room, catalog) {
     const max = rule && rule.max_qty != null ? Number(rule.max_qty) : Infinity;
     const current = countByFunction[key] || 0;
     if (current >= max) {
-      warnings.push(`Removi um "${(projectAiFunctions.find((f) => f.key === key) || {}).name || key}" a mais do que o permitido.`);
+      warnings.push(I18n.t('project_ai.warn_removed_extra', { name: (projectAiFunctions.find((f) => f.key === key) || {}).name || key }));
       return;
     }
     countByFunction[key] = current + 1;
@@ -11519,7 +11542,7 @@ function enforceProjectAiRecipe(items, room, catalog) {
       .filter((c) => c.function_key === fn.key)
       .sort((a, b) => a.width_min_mm - b.width_min_mm);
     if (candidates.length === 0) {
-      warnings.push(`Nenhum módulo cadastrado com a função "${fn.name}" — este ambiente ficou sem ela.`);
+      warnings.push(I18n.t('project_ai.warn_function_without_module', { name: fn.name }));
       return;
     }
     for (let i = 0; i < missing; i++) {
@@ -11536,7 +11559,7 @@ function enforceProjectAiRecipe(items, room, catalog) {
         auto_completed: true
       });
       countByFunction[fn.key] = (countByFunction[fn.key] || 0) + 1;
-      warnings.push(`Faltava "${fn.name}" — adicionei "${pick.name}" pra completar o ambiente.`);
+      warnings.push(I18n.t('project_ai.warn_auto_completed', { missing: fn.name, added: pick.name }));
     }
   });
 
@@ -11588,7 +11611,7 @@ function layoutProjectAiItems(items) {
       }
 
       if (cursor[row] + width > wallWidth + 1) {
-        warnings.push(`"${moduleNameById(it.module_id)}" não coube na parede ${wallIndex + 1} e ficou de fora.`);
+        warnings.push(I18n.t('project_ai.warn_did_not_fit', { name: moduleNameById(it.module_id), n: wallIndex + 1 }));
         return;
       }
       const x = cursor[row];
@@ -11616,7 +11639,7 @@ function projectAiUpperRowFloorMm() {
 
 function moduleNameById(id) {
   const m = allModules.find((mm) => mm.id === id);
-  return m ? m.name : 'módulo';
+  return m ? m.name : I18n.t('project_ai.module_fallback_name');
 }
 
 // Traduz o erro de supabaseClient.functions.invoke numa frase que diz o que
@@ -11628,10 +11651,10 @@ async function describeEdgeFunctionError(error, data, functionName) {
 
   const status = error && error.context && Number(error.context.status);
   if (status === 404) {
-    return `A função "${functionName}" não está publicada no Supabase. Rode: supabase functions deploy ${functionName}`;
+    return I18n.t('project_ai.err_function_not_deployed', { fn: functionName });
   }
   if (status === 401 || status === 403) {
-    return 'Sem permissão pra chamar a IA. Saia e entre de novo na sua conta.';
+    return I18n.t('project_ai.err_no_permission');
   }
 
   // Tenta ler a mensagem de dentro do corpo da resposta (pode já ter sido
@@ -11643,8 +11666,8 @@ async function describeEdgeFunctionError(error, data, functionName) {
     } catch (e) { /* corpo já lido ou não é JSON — segue pro genérico */ }
   }
 
-  if (status) return `A IA respondeu com erro ${status}. Veja o console (F12) pra detalhes.`;
-  return 'Não consegui falar com a IA. Verifique a conexão e tente de novo.';
+  if (status) return I18n.t('project_ai.err_status', { status });
+  return I18n.t('project_ai.err_network');
 }
 
 // ---------- Execução ----------
@@ -11652,27 +11675,27 @@ async function describeEdgeFunctionError(error, data, functionName) {
 async function runProjectAiGeneration() {
   if (projectAiRunning) return;
   const room = selectedProjectAiRoom();
-  if (!room) { setProjectAiError('Selecione um ambiente.'); return; }
+  if (!room) { setProjectAiError(I18n.t('project_ai.err_select_room')); return; }
 
   // Projeto com módulo já posto: gerar SUBSTITUI tudo. Perguntar antes é
   // obrigatório — perder uma cozinha inteira montada na mão por causa de um
   // clique não é aceitável.
   if (projectSlots.length > 0) {
-    const ok = confirm('Isto vai substituir os módulos que já estão no projeto. Continuar?');
+    const ok = confirm(I18n.t('project_ai.confirm_replace'));
     if (!ok) return;
   }
 
   projectAiRunning = true;
   setProjectAiError('');
-  setProjectAiStatus('Consultando a IA...');
+  setProjectAiStatus(I18n.t('project_ai.status_calling'));
   const runBtn = document.getElementById('po-proj-ai-run-btn');
   if (runBtn) runBtn.disabled = true;
 
   try {
     const catalog = buildProjectAiCatalog();
     const recipe = buildProjectAiRecipePayload(room);
-    if (catalog.length === 0) throw new Error('Nenhum módulo com função cadastrada.');
-    if (recipe.length === 0) throw new Error('Este ambiente não tem receita cadastrada.');
+    if (catalog.length === 0) throw new Error(I18n.t('project_ai.err_no_module_function'));
+    if (recipe.length === 0) throw new Error(I18n.t('project_ai.err_no_recipe'));
 
     const walls = getProjectWallRoles().map((role, idx) => ({
       index: idx,
@@ -11706,13 +11729,13 @@ async function runProjectAiGeneration() {
       throw new Error(await describeEdgeFunctionError(error, data, 'generate-project-layout'));
     }
     if (!data || !Array.isArray(data.items) || data.items.length === 0) {
-      throw new Error((data && data.error) || 'A IA não devolveu nenhum módulo.');
+      throw new Error((data && data.error) || I18n.t('project_ai.err_empty_result'));
     }
 
-    setProjectAiStatus('Montando o projeto...');
+    setProjectAiStatus(I18n.t('project_ai.status_building'));
     const { items: enforced, warnings: recipeWarnings } = enforceProjectAiRecipe(data.items, room, catalog);
     const { placed, warnings: layoutWarnings } = layoutProjectAiItems(enforced);
-    if (placed.length === 0) throw new Error('Nenhum módulo coube nas medidas informadas.');
+    if (placed.length === 0) throw new Error(I18n.t('project_ai.err_nothing_fits'));
 
     // Limpa e recria. Sequencial de propósito: insertProjectModuleDefault faz
     // várias queries por módulo e resolve profundidade contra os slots que já
@@ -11751,7 +11774,7 @@ function showProjectAiResult(summary, warnings) {
   if (!el) return;
   const lines = [];
   if (summary) lines.push(summary);
-  if (warnings && warnings.length) lines.push('Ajustes automáticos: ' + warnings.join(' '));
+  if (warnings && warnings.length) lines.push(I18n.t('project_ai.auto_adjustments_prefix') + warnings.join(' '));
   if (lines.length === 0) return;
   el.textContent = lines.join(' — ');
   el.style.display = 'block';
@@ -13048,27 +13071,26 @@ function renderMoneyOrcamento(body, rel) {
     + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
     + '<td class="num">' + formatMoney(Number(s.result.total) || 0) + '</td></tr>'
   )).join('');
-  body.innerHTML = '<p class="po-money-sub">Preço de venda, com a margem já aplicada. '
-    + 'É o que vale para o cliente.</p>'
-    + '<table class="po-money-table"><thead><tr><th>Módulo</th><th class="num">Medidas (mm)</th>'
-    + '<th class="num">Preço</th></tr></thead><tbody>' + linhas + '</tbody></table>'
-    + '<div class="po-money-total"><span>Total do orçamento</span>'
+  body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.quote_sub') + '</p>'
+    + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
+    + '<th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>' + linhas + '</tbody></table>'
+    + '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span>'
     + '<strong>' + formatMoney(rel.totalVenda) + '</strong></div>';
 }
 
 // ---- Porta da aba FÁBRICA
 function renderMoneySenha(body) {
   body.innerHTML = '<div class="po-money-lock">'
-    + '<p>Esta aba mostra o <strong>custo de fábrica</strong>, sem margem.</p>'
-    + '<input type="password" id="po-money-pass" placeholder="Senha" autocomplete="off">'
-    + '<button type="button" id="po-money-pass-btn">Abrir</button>'
+    + '<p>' + I18n.t('money.lock_intro') + '</p>'
+    + '<input type="password" id="po-money-pass" placeholder="' + I18n.t('money.password_placeholder') + '" autocomplete="off">'
+    + '<button type="button" id="po-money-pass-btn">' + I18n.t('money.password_open_btn') + '</button>'
     + '<p class="po-money-erro" id="po-money-erro"></p>'
     + '</div>';
   const tenta = () => {
     const v = (document.getElementById('po-money-pass') || {}).value || '';
     if (v === MONEY_FABRICA_SENHA) { moneyFabricaLiberada = true; renderMoneyModal(); return; }
     const e = document.getElementById('po-money-erro');
-    if (e) e.textContent = 'Senha incorreta.';
+    if (e) e.textContent = I18n.t('money.wrong_password');
   };
   document.getElementById('po-money-pass-btn').addEventListener('click', tenta);
   document.getElementById('po-money-pass').addEventListener('keydown', (ev) => {
@@ -13110,21 +13132,24 @@ function renderMoneyFabrica(body, rel) {
   );
 
   let html = '';
-  html += secao('Matéria-prima');
+  html += secao(I18n.t('money.section_material'));
   Object.keys(rel.material).sort().forEach((cor) => {
     const m = rel.material[cor];
-    html += linha('Chapa · ' + escapeHtmlCutlist(cor), m.m2.toFixed(3) + ' m²', m.custo);
+    html += linha(I18n.t('money.row_board') + escapeHtmlCutlist(cor), m.m2.toFixed(3) + ' m²', m.custo);
   });
   Object.keys(rel.fita).sort().forEach((cor) => {
     const f = rel.fita[cor];
-    html += linha('Fita · ' + escapeHtmlCutlist(cor), f.m.toFixed(2) + ' m', f.custo);
+    html += linha(I18n.t('money.row_edgeband') + escapeHtmlCutlist(cor), f.m.toFixed(2) + ' m', f.custo);
   });
-  if (fer.dobradica.custo > 0) html += linha('Dobradiças', fer.dobradica.qtd + ' un', fer.dobradica.custo);
-  if (fer['corrediça'].custo > 0) html += linha('Corrediças', fer['corrediça'].qtd + ' par', fer['corrediça'].custo);
-  html += subtotal('Subtotal matéria-prima <span class="dim">(chapa + fita + ferragem)</span>', totalMateria);
+  if (fer.dobradica.custo > 0) html += linha(I18n.t('money.row_hinges'), fer.dobradica.qtd + ' ' + I18n.t('money.unit_pieces'), fer.dobradica.custo);
+  if (fer['corrediça'].custo > 0) html += linha(I18n.t('money.row_slides'), fer['corrediça'].qtd + ' ' + I18n.t('money.unit_pairs'), fer['corrediça'].custo);
+  html += subtotal(I18n.t('money.subtotal_material'), totalMateria);
 
-  html += secao('Mão de obra');
-  const rotulos = { corte: 'Corte', fita: 'Fita (colagem)', furacao: 'Furação', usinagem: 'Usinagem' };
+  html += secao(I18n.t('money.section_labor'));
+  const rotulos = {
+    corte: I18n.t('money.labor_cut'), fita: I18n.t('money.labor_glue'),
+    furacao: I18n.t('money.labor_drill'), usinagem: I18n.t('money.labor_machining')
+  };
   Object.keys(rotulos).forEach((k) => {
     if (rel.labor[k] > 0) html += linha(rotulos[k], '', rel.labor[k]);
   });
@@ -13132,9 +13157,9 @@ function renderMoneyFabrica(body, rel) {
   // processo — senão o relatório diria que a fábrica gastou em furação um
   // dinheiro que na verdade é de uma labor antiga, indivisível.
   if (rel.labor.antiga > 0) {
-    html += linha('Peça fora do modelo por processo', '', rel.labor.antiga);
+    html += linha(I18n.t('money.labor_legacy'), '', rel.labor.antiga);
   }
-  html += subtotal('Subtotal mão de obra', totalMO);
+  html += subtotal(I18n.t('money.subtotal_labor'), totalMO);
 
   // ---- MÓDULO × VALOR (pedido do Matt: "coloca módulo valor")
   let porMod = '';
@@ -13160,31 +13185,30 @@ function renderMoneyFabrica(body, rel) {
   });
 
   const margem = rel.totalVenda - rel.totalCusto;
-  body.innerHTML = '<p class="po-money-sub">Custo de fábrica, <strong>sem margem</strong>. '
-    + rel.pecas + ' peça(s) no projeto.</p>'
-    + '<table class="po-money-table"><thead><tr><th>Natureza</th><th class="num">Quantidade</th>'
-    + '<th class="num">Custo</th><th class="num">%</th></tr></thead><tbody>' + html + '</tbody></table>'
+  const th = (k, num) => '<th' + (num ? ' class="num"' : '') + '>' + I18n.t(k) + '</th>';
+  body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.factory_sub', { n: rel.pecas }) + '</p>'
+    + '<table class="po-money-table"><thead><tr>' + th('money.col_nature') + th('money.col_qty', 1)
+    + th('money.col_cost', 1) + '<th class="num">%</th></tr></thead><tbody>' + html + '</tbody></table>'
 
-    + (rel.porModulo.length ? '<h4 class="po-money-h">Por módulo</h4>'
-      + '<table class="po-money-table"><thead><tr><th>Módulo</th><th class="num">Medidas</th>'
-      + '<th class="num">Custo</th><th class="num">%</th></tr></thead><tbody>' + porMod + '</tbody></table>' : '')
+    + (rel.porModulo.length ? '<h4 class="po-money-h">' + I18n.t('money.by_module_title') + '</h4>'
+      + '<table class="po-money-table"><thead><tr>' + th('money.col_module') + th('money.col_dims', 1)
+      + th('money.col_cost', 1) + '<th class="num">%</th></tr></thead><tbody>' + porMod + '</tbody></table>' : '')
 
-    + '<h4 class="po-money-h">Por peça — o que cada etapa cobra</h4>'
-    + '<p class="po-money-sub">Cada coluna é um processo. É aqui que dá pra ver peça pagando '
-    + 'furação sem levar furo, ou corte desproporcional ao tamanho.</p>'
+    + '<h4 class="po-money-h">' + I18n.t('money.by_piece_title') + '</h4>'
+    + '<p class="po-money-sub">' + I18n.t('money.by_piece_sub') + '</p>'
     + '<div class="po-money-scroll"><table class="po-money-table po-money-peca"><thead><tr>'
-    + '<th>Peça</th><th class="num">m²</th><th class="num">fita m</th>'
-    + '<th class="num">Chapa</th><th class="num">Fita</th><th class="num">Corte</th>'
-    + '<th class="num">Colagem</th><th class="num">Furação</th><th class="num">Usinagem</th>'
-    + '<th class="num">M.O. antiga</th><th class="num">Ferragem</th><th class="num">Total</th>'
+    + th('money.col_piece') + '<th class="num">m²</th>' + th('money.col_edge_m', 1)
+    + th('money.col_board', 1) + th('money.col_edge', 1) + th('money.col_cut', 1)
+    + th('money.col_glue', 1) + th('money.col_drill', 1) + th('money.col_machining', 1)
+    + th('money.col_legacy_labor', 1) + th('money.col_hardware', 1) + th('money.col_total', 1)
     + '</tr></thead><tbody>' + porPeca + '</tbody></table></div>'
 
-    + '<div class="po-money-total"><span>Custo total</span><strong>' + formatMoney(rel.totalCusto) + '</strong></div>'
-    + '<div class="po-money-total secundario"><span>Preço de venda (com margem do ERP)</span>'
+    + '<div class="po-money-total"><span>' + I18n.t('money.total_cost') + '</span><strong>' + formatMoney(rel.totalCusto) + '</strong></div>'
+    + '<div class="po-money-total secundario"><span>' + I18n.t('money.total_sale') + '</span>'
     + '<span>' + formatMoney(rel.totalVenda) + '</span></div>'
-    + '<div class="po-money-total secundario"><span>Diferença (margem bruta)</span>'
+    + '<div class="po-money-total secundario"><span>' + I18n.t('money.gross_margin') + '</span>'
     + '<span>' + formatMoney(margem)
-    + (rel.totalVenda > 0 ? ' · ' + ((margem / rel.totalVenda) * 100).toFixed(1) + '% do preço' : '')
+    + (rel.totalVenda > 0 ? ' · ' + ((margem / rel.totalVenda) * 100).toFixed(1) + I18n.t('money.pct_of_price') : '')
     + '</span></div>';
 }
 
@@ -13245,7 +13269,7 @@ function collectProjectCostReport(slots) {
 
   const nomeCor = (slot, roleId) => {
     const c = (slot.colorsByRole || {})[roleId];
-    return (c && c.name) || 'Sem cor definida';
+    return (c && c.name) || I18n.t('money.no_color');
   };
 
   const anda = (slot, linhas, prefixo) => {
@@ -13766,7 +13790,7 @@ function renderProjectSummaryDetails() {
   box.innerHTML = projectSlots.map((slot) => {
     const where = isFloorSlot(slot)
       ? I18n.t('project.floor_island_label')
-      : projectWallRoleLabel(roles[Number(slot.wall_index || 0)] || 'main');
+      : projectWallRoleLabel(roles[Number(slot.wall_index || 0)], Number(slot.wall_index || 0));
     const dims = `${formatDimension(slot.width_mm, unit)} × ${formatDimension(slot.height_mm, unit)} × ${formatDimension(slot.depth_mm, unit)}`;
     return `
       <div class="po-proj-summary-detail-row" data-slot-id="${slot.id}">
@@ -14925,7 +14949,7 @@ function openProjectSlotPieces(slotId) {
   const modal = document.getElementById('po-pieces-modal');
   if (!slot || !modal) return;
   const titulo = document.getElementById('po-pieces-title');
-  if (titulo) titulo.textContent = (slot.module && slot.module.name) || 'Peças do móvel';
+  if (titulo) titulo.textContent = (slot.module && slot.module.name) || I18n.t('pieces.modal_title');
   modal.classList.add('open');
   renderProjectSlotPiecesList(slot);
   renderProjectSlotPiecesExploded(slot);
@@ -14958,7 +14982,7 @@ function renderProjectSlotPiecesList(slot) {
     ) || [];
   } catch (e) { parts = []; }
   const linhas = flatProjectPieces(parts);
-  if (!linhas.length) { el.innerHTML = '<p class="hint">Sem peças resolvidas para este módulo.</p>'; return; }
+  if (!linhas.length) { el.innerHTML = '<p class="hint">' + I18n.t('pieces.empty') + '</p>'; return; }
 
   // Maior × médio × menor: é assim que a peça chega na serra, e é assim que a
   // lista de corte do ERP já mostra. Guardar "largura/altura/profundidade"
@@ -14968,12 +14992,14 @@ function renderProjectSlotPiecesList(slot) {
     return { c: v[0], l: v[1], e: v[2] };
   };
   el.innerHTML = '<table class="po-pieces-table"><thead><tr>'
-    + '<th>#</th><th>Peça</th><th>Compr.</th><th>Larg.</th><th>Esp.</th><th>Cor</th><th>Veio</th>'
+    + '<th>#</th><th>' + I18n.t('pieces.col_piece') + '</th><th>' + I18n.t('pieces.col_length')
+    + '</th><th>' + I18n.t('pieces.col_width') + '</th><th>' + I18n.t('pieces.col_thickness')
+    + '</th><th>' + I18n.t('pieces.col_color') + '</th><th>' + I18n.t('pieces.col_grain') + '</th>'
     + '</tr></thead><tbody>'
     + linhas.map(({ p, grupo }, i) => {
       const d = dim(p);
       const cor = (p.color && (p.color.name || p.color.code)) || '—';
-      const veio = p.veio || (p.components && p.components.veio) || 'livre';
+      const veio = p.veio || (p.components && p.components.veio) || I18n.t('pieces.grain_free');
       return '<tr data-idx="' + i + '"><td>' + (i + 1) + '</td>'
         + '<td>' + escapeHtmlCutlist((grupo ? grupo + ' · ' : '') + (p.reference || p.module_name || '')) + '</td>'
         + '<td>' + formatDimension(d.c, unit) + '</td>'
@@ -14983,7 +15009,7 @@ function renderProjectSlotPiecesList(slot) {
         + '<td>' + escapeHtmlCutlist(veio) + '</td></tr>';
     }).join('')
     + '</tbody></table>'
-    + '<p class="hint">' + linhas.length + ' peça(s) · mesmas medidas que vão pro preço e pro plano de corte.</p>';
+    + '<p class="hint">' + I18n.t('pieces.footer_hint', { n: linhas.length }) + '</p>';
 }
 
 // Explodir = afastar cada peça do CENTRO do módulo, na direção em que ela já
@@ -15815,7 +15841,7 @@ function projectBuilderAccessoryEntry(a) {
     name: a.name,
     // slug: é por ele que o ícone é escolhido (os 13 da migration 087).
     slug: a.slug || null,
-    group: a.group_name || 'Outros',
+    group: a.group_name || I18n.t('builder.group_other'),
     icon: a.icon || null,
     role: a.role,
     axis: a.split_axis || null,
@@ -16095,7 +16121,7 @@ function fillProjectBuilderLibGrid() {
   // ---- chips: "Todos" + um por grupo do que cabe AQUI ----
   const grupos = [];
   cabem.forEach((k) => {
-    const g = projectBuilderCat[k].group || 'Outros';
+    const g = projectBuilderCat[k].group || I18n.t('builder.group_other');
     if (grupos.indexOf(g) < 0) grupos.push(g);
   });
   // Trocar de vão pode tirar do ar o grupo que estava filtrado (um nicho baixo
@@ -16116,7 +16142,7 @@ function fillProjectBuilderLibGrid() {
   const q = projLibNorm(projectBuilderLibQuery).trim();
   const visiveis = cabem.filter((k) => {
     const acc = projectBuilderCat[k];
-    if (projectBuilderLibGroup && (acc.group || 'Outros') !== projectBuilderLibGroup) return false;
+    if (projectBuilderLibGroup && (acc.group || I18n.t('builder.group_other')) !== projectBuilderLibGroup) return false;
     if (!q) return true;
     return projLibNorm(acc.name).indexOf(q) >= 0 || projLibNorm(acc.group).indexOf(q) >= 0;
   });
@@ -16139,7 +16165,7 @@ function fillProjectBuilderLibGrid() {
   const porGrupo = {};
   const ordem = [];
   visiveis.forEach((k) => {
-    const g = projectBuilderCat[k].group || 'Outros';
+    const g = projectBuilderCat[k].group || I18n.t('builder.group_other');
     if (!porGrupo[g]) { porGrupo[g] = []; ordem.push(g); }
     porGrupo[g].push(k);
   });
@@ -19093,11 +19119,7 @@ function openProjectWallEditor() {
   // git, e o subir.ps1 usa `git add -u` de propósito. Mesmo tropeço do
   // layout-engine.js. Um alerta economiza a rodada inteira de diagnóstico.
   if (typeof WallEditor === 'undefined') {
-    alert('O editor de paredes não carregou (js/wall-editor.js).\n\n'
-      + 'Se isto for o site publicado, o arquivo provavelmente não subiu: ele é '
-      + 'novo, e o subir.ps1 só envia o que o git já rastreia.\n\n'
-      + 'Rode uma vez, na pasta do projeto:\n  git add js/wall-editor.js\n'
-      + 'e publique de novo.');
+    alert(I18n.t('project.wall_editor_missing'));
     return;
   }
   WallEditor.open({
@@ -19307,17 +19329,17 @@ async function generateArGlbForProject() {
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
 
   if (!ViewerProject || !ViewerProject.getScene || typeof THREE === 'undefined' || !THREE.GLTFExporter) {
-    setStatus('3D não disponível — gere o "Visualizar 3D" primeiro.');
+    setStatus(I18n.t('ar.no_3d'));
     return;
   }
   const scene = ViewerProject.getScene();
   if (!scene) {
-    setStatus('Nenhuma cena 3D montada ainda — clique em "Visualizar 3D" antes.');
+    setStatus(I18n.t('ar.no_scene'));
     return;
   }
 
   if (btn) btn.disabled = true;
-  setStatus('Gerando modelo 3D (.glb)...');
+  setStatus(I18n.t('ar.generating'));
 
   // Esconde cotas CAD/ambiente virtual/contorno de hover antes de exportar
   // (tag 'ar-export-exclude', ver viewer3d_composition.js) — nenhum desses
@@ -19349,7 +19371,7 @@ async function generateArGlbForProject() {
     });
     const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
 
-    setStatus('Enviando pro servidor...');
+    setStatus(I18n.t('ar.uploading'));
     const path = `ar-test/${crypto.randomUUID()}.glb`;
     const { error: uploadError } = await supabaseClient.storage.from('gallery-images').upload(path, blob, {
       contentType: 'model/gltf-binary',
@@ -19362,7 +19384,7 @@ async function generateArGlbForProject() {
     // Scene Viewer: https://developers.google.com/ar/develop/scene-viewer
     const sceneViewerUrl =
       `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(publicUrl)}` +
-      `&mode=ar_preferred&title=${encodeURIComponent('Legno — teste AR')}` +
+      `&mode=ar_preferred&title=${encodeURIComponent(I18n.t('ar.scene_title'))}` +
       `#Intent;scheme=https;package=com.google.android.googlequicksearchbox;` +
       `action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(publicUrl)};end;`;
 
@@ -19377,14 +19399,14 @@ async function generateArGlbForProject() {
     // depender do intent:// que só funciona dentro do próprio Android).
     console.log('[AR test] modelo .glb:', publicUrl, `(${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
     if (statusEl) {
-      statusEl.innerHTML = `Modelo pronto (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)} MB). ` +
-        `<a href="${sceneViewerUrl}">Abrir em AR</a> (se não abrir sozinho, toque no link).<br>` +
+      statusEl.innerHTML = I18n.t('ar.model_ready', { mb: (arrayBuffer.byteLength / 1024 / 1024).toFixed(1) }) +
+        `<a href="${sceneViewerUrl}">${I18n.t('ar.open_link')}</a> ${I18n.t('ar.open_link_hint')}<br>` +
         `<span style="font-size:11px;word-break:break-all;user-select:all;">${publicUrl}</span>`;
     }
     window.location.href = sceneViewerUrl;
   } catch (err) {
     console.error('generateArGlbForProject', err);
-    setStatus(`Erro ao gerar AR: ${(err && err.message) || err}`);
+    setStatus(I18n.t('ar.error', { msg: (err && err.message) || err }));
   } finally {
     hiddenForExport.forEach((obj) => { obj.visible = true; });
     if (btn) btn.disabled = false;
@@ -19422,7 +19444,7 @@ function ensurePhotoFrameOverlay(containerId) {
   }
   const frame = document.createElement('div');
   frame.className = 'po-photoframe';
-  frame.innerHTML = '<span class="po-photoframe-label">📸 área da foto</span>';
+  frame.innerHTML = '<span class="po-photoframe-label">' + I18n.t('photoreal.frame_label') + '</span>';
   container.appendChild(frame);
   // Avisa quem controla a visibilidade (botão "Linhas" da barra) que existe
   // moldura nova pra aplicar o estado atual.
@@ -19453,7 +19475,7 @@ function ensurePhotoFrameOverlay(containerId) {
 async function savePhotorealRenderToProject(dataUrl) {
   if (!currentUser) throw new Error(I18n.t('fav.need_login'));
   if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
-    throw new Error('Salve o projeto em "Meus Projetos" antes de guardar a foto realista.');
+    throw new Error(I18n.t('photoreal.need_saved_project'));
   }
   const publicUrl = await uploadGalleryImageToStorage(dataUrl);
 
@@ -19514,7 +19536,7 @@ function renderProjectPhotorealGallery() {
   grid.innerHTML = projectPhotorealPhotos.map((photo) => `
     <div class="po-photoreal-gallery-item">
       <img src="${photo.image_url}" alt="" data-photo-id="${photo.id}" />
-      <button type="button" class="po-photoreal-gallery-delete" title="Excluir esta foto" data-photo-id="${photo.id}">🗑️</button>
+      <button type="button" class="po-photoreal-gallery-delete" title="${I18n.t('photoreal.delete_title')}" data-photo-id="${photo.id}">🗑️</button>
     </div>
   `).join('');
   grid.querySelectorAll('img[data-photo-id]').forEach((img) => {
@@ -19530,14 +19552,14 @@ function renderProjectPhotorealGallery() {
 
 async function deleteProjectPhotorealPhoto(photoId) {
   if (!photoId) return;
-  if (!confirm('Excluir esta foto realista salva?')) return;
+  if (!confirm(I18n.t('photoreal.delete_confirm'))) return;
   try {
     const { error } = await supabaseClient.from('project_photoreal_photos').delete().eq('id', photoId);
     if (error) throw error;
     projectPhotorealPhotos = projectPhotorealPhotos.filter((p) => String(p.id) !== String(photoId));
     renderProjectPhotorealGallery();
   } catch (err) {
-    alert('Falha ao excluir a foto: ' + (err && err.message ? err.message : err));
+    alert(I18n.t('photoreal.delete_error') + (err && err.message ? err.message : err));
   }
 }
 
@@ -19624,14 +19646,14 @@ if (projPhotorealBtn) {
     projPhotorealBtn.disabled = true;
     try {
       if (typeof Photoreal === 'undefined' || !Photoreal.open) {
-        alert('Foto realista indisponível (js/photoreal.js não carregou).');
+        alert(I18n.t('photoreal.unavailable'));
         return;
       }
       if (!currentUser) { alert(I18n.t('fav.need_login')); return; }
       // Exige projeto salvo ANTES de abrir o render (não só ao tentar guardar
       // a foto no fim) — oferece salvar na hora em vez de só bloquear.
       if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
-        const wantsToSave = confirm('Salve o projeto antes de gerar a foto realista — a renderização demora, e sem o projeto salvo a foto não tem onde ser guardada no fim. Salvar agora?');
+        const wantsToSave = confirm(I18n.t('photoreal.confirm_save_first'));
         if (!wantsToSave) return;
         await saveProjectFavorite(null);
         // saveProjectFavorite cancela (prompt do nome) ou mostra erro sozinho
@@ -19895,16 +19917,27 @@ const PROJECT_DRAW_PRESETS = {
 // um menu próprio: botão + lista. Cada item é uma AMOSTRA do que o estilo faz
 // — madeira com contorno fino, madeira com contorno grosso, cinza chapado,
 // translúcido, só arestas — que é mais rápido de ler que o nome.
+// nome/nomeCurto viraram CHAVES de i18n (2026-08-18) — este menu fica na barra
+// principal de Projetos, é das primeiras coisas que o cliente lê.
+// nomeCurto existe porque "Texturas com linhas grossas" empurrava a barra
+// inteira pra fora da tela: o botão fechado mostra o curto, a lista o longo.
+// Antes o curto era feito com três .replace() em cima do texto em português —
+// que não sobreviveria a tradução nenhuma.
 const PROJECT_DRAW_OPCOES = [
-  { id: 'textura_linhas', nome: 'Texturas com linhas', madeira: true, linha: 'fina', face: 'cheia' },
-  { id: 'textura_grossas', nome: 'Texturas com linhas grossas', madeira: true, linha: 'grossa', face: 'cheia' },
-  { id: 'textura', nome: 'Texturas', madeira: true, linha: 'nenhuma', face: 'cheia' },
-  { id: 'cor_linhas', nome: 'Preenchimento com linhas', madeira: false, linha: 'fina', face: 'cheia' },
-  { id: 'cor', nome: 'Preenchimento', madeira: false, linha: 'nenhuma', face: 'cheia' },
-  { id: 'translucido', nome: 'Translúcido', madeira: false, linha: 'fina', face: 'meia' },
-  { id: 'arestas', nome: 'Sem preenchimento', madeira: false, linha: 'fina', face: 'vazia' },
-  { id: 'tecnico', nome: 'Técnico (linha grossa)', madeira: false, linha: 'grossa', face: 'vazia' }
+  { id: 'textura_linhas', nomeKey: 'draw_style.texture_lines', nomeCurtoKey: 'draw_style.texture_lines_short', madeira: true, linha: 'fina', face: 'cheia' },
+  { id: 'textura_grossas', nomeKey: 'draw_style.texture_thick_lines', nomeCurtoKey: 'draw_style.texture_thick_lines_short', madeira: true, linha: 'grossa', face: 'cheia' },
+  { id: 'textura', nomeKey: 'draw_style.texture', madeira: true, linha: 'nenhuma', face: 'cheia' },
+  { id: 'cor_linhas', nomeKey: 'draw_style.fill_lines', nomeCurtoKey: 'draw_style.fill_lines_short', madeira: false, linha: 'fina', face: 'cheia' },
+  { id: 'cor', nomeKey: 'draw_style.fill', madeira: false, linha: 'nenhuma', face: 'cheia' },
+  { id: 'translucido', nomeKey: 'draw_style.translucent', madeira: false, linha: 'fina', face: 'meia' },
+  { id: 'arestas', nomeKey: 'draw_style.no_fill', madeira: false, linha: 'fina', face: 'vazia' },
+  { id: 'tecnico', nomeKey: 'draw_style.technical', madeira: false, linha: 'grossa', face: 'vazia' }
 ];
+// Nome da opção no idioma da vez. `curto` = versão que cabe no botão fechado;
+// opção sem nomeCurtoKey usa o nome normal (já é curto).
+function nomeEstilo(o, curto) {
+  return I18n.t(curto && o.nomeCurtoKey ? o.nomeCurtoKey : o.nomeKey);
+}
 function iconeEstilo(o) {
   const preenche = o.face === 'vazia' ? 'none'
     : (o.madeira ? '#c9a06a' : '#cfcac1');
@@ -19926,7 +19959,7 @@ function montaMenuEstilo() {
     + '<div class="po-style-list" id="po-proj-style-list">'
     + PROJECT_DRAW_OPCOES.map((o) => (
       '<button type="button" class="po-style-item" data-estilo="' + o.id + '">'
-      + iconeEstilo(o) + '<span>' + o.nome + '</span></button>'
+      + iconeEstilo(o) + '<span>' + nomeEstilo(o, false) + '</span></button>'
     )).join('')
     + '</div>';
   const btn = raiz.querySelector('#po-proj-style-btn');
@@ -19949,9 +19982,7 @@ function pintaBotaoEstilo(idAtual) {
   const o = PROJECT_DRAW_OPCOES.find((x) => x.id === idAtual) || PROJECT_DRAW_OPCOES[0];
   // Nome curto no botão fechado (o longo fica na lista): "Texturas com linhas
   // grossas" empurrava a barra inteira pra fora da tela.
-  const curto = o.nome.replace('Texturas com linhas grossas', 'Texturas e contornos')
-    .replace('Texturas com linhas', 'Texturas e linhas')
-    .replace('Preenchimento com linhas', 'Cor e linhas');
+  const curto = nomeEstilo(o, true);
   if (btn) btn.innerHTML = iconeEstilo(o) + '<span>' + curto + '</span><i class="po-style-caret">▾</i>';
   document.querySelectorAll('#po-proj-style-list .po-style-item').forEach((it) => {
     it.classList.toggle('ativo', it.dataset.estilo === o.id);
@@ -20011,7 +20042,7 @@ function applyProjectDrawStyle(estilo, remontar) {
     bOcultar.addEventListener('click', () => {
       const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
       if (!slot) {
-        alert('Selecione um módulo pra ocultar. Pra ocultar uma parede, use 📐 Medidas → 👁 ocultar.');
+        alert(I18n.t('project.hide_needs_selection'));
         return;
       }
       slot.oculto = true;
@@ -20055,7 +20086,7 @@ function applyProjectDrawStyle(estilo, remontar) {
       // render"). O original só habilita com pelo menos 1 módulo — e isso
       // precisa ser dito, não adivinhado.
       if (bOrig.disabled) {
-        alert('Adicione pelo menos um módulo ao ambiente antes de gerar o render.');
+        alert(I18n.t('project.render_needs_module'));
         return;
       }
       bOrig.click();
@@ -21544,7 +21575,7 @@ async function showLoggedIn(user) {
   // da sessão logada, não há tabela de perfil/nome cadastrado pra puxar daqui.
   const userNameEl = document.getElementById('po-user-name');
   const userAvatarEl = document.getElementById('po-user-avatar');
-  if (userNameEl) userNameEl.textContent = user.email || 'Minha conta';
+  if (userNameEl) userNameEl.textContent = user.email || I18n.t('account.my_account');
   if (userAvatarEl) userAvatarEl.textContent = (user.email || '?').charAt(0).toUpperCase();
   myOrdersLoaded = false;
   currentDraftOrderId = null;

@@ -592,6 +592,17 @@ const Photoreal = (() => {
   }
 
   // ---------- modal ----------
+  // TRADUÇÃO COM REDE DE SEGURANÇA (2026-08-18) — se por algum motivo este
+  // arquivo for carregado numa página sem js/i18n.js, cai no texto em
+  // português em vez de derrubar o render inteiro.
+  function tr(chave, vars, padrao) {
+    if (typeof I18n !== 'undefined' && I18n && I18n.t) {
+      const v = I18n.t(chave, vars);
+      if (v !== chave) return v;
+    }
+    return padrao;
+  }
+
   function ensureModal() {
     if (modalEl) return;
     modalEl = document.createElement('div');
@@ -600,12 +611,12 @@ const Photoreal = (() => {
     modalEl.innerHTML =
       '<div style="background:#fff;border-radius:10px;max-width:min(1600px,96vw);width:100%;padding:14px 16px 16px;box-shadow:0 10px 40px rgba(0,0,0,0.35);">' +
       '  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">' +
-      '    <strong style="font-size:15px;">Foto realista do projeto (beta)</strong>' +
+      '    <strong style="font-size:15px;">' + tr('photoreal.modal_title', null, 'Foto realista do projeto (beta)') + '</strong>' +
       '    <span id="po-photoreal-status" style="font-size:12px;color:#666;flex:1;"></span>' +
-      '    <button type="button" id="po-photoreal-stop" class="secondary" style="font-size:12px;">Parar</button>' +
-      '    <button type="button" id="po-photoreal-save" class="secondary" style="font-size:12px;display:none;">🔄 Tentar salvar de novo</button>' +
-      '    <button type="button" id="po-photoreal-dl" class="secondary" style="font-size:12px;" disabled>Baixar PNG</button>' +
-      '    <button type="button" id="po-photoreal-close" class="secondary" style="font-size:12px;">Fechar</button>' +
+      '    <button type="button" id="po-photoreal-stop" class="secondary" style="font-size:12px;">' + tr('photoreal.btn_stop', null, 'Parar') + '</button>' +
+      '    <button type="button" id="po-photoreal-save" class="secondary" style="font-size:12px;display:none;">' + tr('photoreal.btn_retry_save', null, '🔄 Tentar salvar de novo') + '</button>' +
+      '    <button type="button" id="po-photoreal-dl" class="secondary" style="font-size:12px;" disabled>' + tr('photoreal.btn_download_png', null, 'Baixar PNG') + '</button>' +
+      '    <button type="button" id="po-photoreal-close" class="secondary" style="font-size:12px;">' + tr('photoreal.btn_close', null, 'Fechar') + '</button>' +
       '  </div>' +
       '  <div id="po-photoreal-save-status" style="font-size:12px;color:#2a7a2a;margin:-4px 0 8px;"></div>' +
       '  <div id="po-photoreal-canvas-wrap" style="width:100%;aspect-ratio:4/3;background:#f2f2f2;border-radius:6px;overflow:hidden;"></div>' +
@@ -624,7 +635,7 @@ const Photoreal = (() => {
     // qualidade mínima do botão Baixar, samplesDone >= 3).
     stopBtn.addEventListener('click', () => {
       loopActive = false;
-      setStatus('Parado em ' + samplesDone + ' amostras — dá pra baixar assim mesmo.');
+      setStatus(tr('photoreal.status_stopped', { n: samplesDone }, 'Parado em ' + samplesDone + ' amostras — dá pra baixar assim mesmo.'));
       maybeAutoSave();
     });
     dlBtn.addEventListener('click', () => {
@@ -660,14 +671,14 @@ const Photoreal = (() => {
     if (!onSaveCallback) return;
     lastRenderDataUrl = dataUrl;
     saveBtn.style.display = 'none';
-    setSaveStatus('💾 Salvando no projeto…', false);
+    setSaveStatus(tr('photoreal.save_saving', null, '💾 Salvando no projeto…'), false);
     try {
       await onSaveCallback(dataUrl);
       savedForThisRender = true;
-      setSaveStatus('✅ Salvo no projeto (nova versão) — dá pra gerar outro ângulo e salvar de novo, ou fechar.', false);
+      setSaveStatus(tr('photoreal.save_ok', null, '✅ Salvo no projeto (nova versão) — dá pra gerar outro ângulo e salvar de novo, ou fechar.'), false);
     } catch (err) {
       console.error(err);
-      setSaveStatus('⚠️ Falha ao salvar no projeto: ' + (err && err.message ? err.message : err), true);
+      setSaveStatus(tr('photoreal.save_error', { msg: (err && err.message ? err.message : err) }, '⚠️ Falha ao salvar no projeto: ' + (err && err.message ? err.message : err)), true);
       saveBtn.style.display = 'inline-block';
     }
   }
@@ -688,7 +699,7 @@ const Photoreal = (() => {
   function createFreshRenderer() {
     const testCanvas = document.createElement('canvas');
     if (!testCanvas.getContext('webgl2')) {
-      setStatus('Este navegador/aparelho não tem WebGL2 — a foto realista não funciona aqui.');
+      setStatus(tr('photoreal.no_webgl2', null, 'Este navegador/aparelho não tem WebGL2 — a foto realista não funciona aqui.'));
       return false;
     }
     renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -756,13 +767,13 @@ const Photoreal = (() => {
     // orienta a recarregar a página (pode ser um limite real do
     // driver/GPU, não só um soluço passageiro).
     function runPathTracerAttempt() {
-      setStatus('Preparando cena/materiais — a tela pode congelar alguns segundos (normal na 1ª vez)…');
+      setStatus(tr('photoreal.status_preparing', null, 'Preparando cena/materiais — a tela pode congelar alguns segundos (normal na 1ª vez)…'));
       return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))).then(() => {
         const t0 = performance.now();
         pathTracer.setScene(scene, camera);
         pathTracer.reset();
         const secs = ((performance.now() - t0) / 1000).toFixed(1);
-        setStatus('Renderizando… (cena preparada em ' + secs + 's)');
+        setStatus(tr('photoreal.status_render_started', { s: secs }, 'Renderizando… (cena preparada em ' + secs + 's)'));
 
         samplesDone = 0;
         loopActive = true;
@@ -783,7 +794,7 @@ const Photoreal = (() => {
             if (samplesDone >= 3) { dlBtn.disabled = false; }
             if (samplesDone >= TARGET_SAMPLES) {
               loopActive = false;
-              setStatus('Pronto — ' + samplesDone + ' amostras. Baixa o PNG ou fecha.');
+              setStatus(tr('photoreal.status_done', { n: samplesDone }, 'Pronto — ' + samplesDone + ' amostras. Baixa o PNG ou fecha.'));
               maybeAutoSave();
               return;
             }
@@ -793,7 +804,7 @@ const Photoreal = (() => {
                 loopActive = false;
                 if (!hardResetTried) {
                   hardResetTried = true;
-                  setStatus('A GPU travou compilando o render — reiniciando automaticamente (só desta vez, não precisa sair da tela)…');
+                  setStatus(tr('photoreal.status_gpu_reset', null, 'A GPU travou compilando o render — reiniciando automaticamente (só desta vez, não precisa sair da tela)…'));
                   disposeRenderer();
                   if (createFreshRenderer()) {
                     attachAndSizeCanvas();
@@ -801,7 +812,7 @@ const Photoreal = (() => {
                     runPathTracerAttempt();
                   }
                 } else {
-                  setStatus('A GPU não terminou de compilar o render mesmo depois de reiniciar — recarrega a página inteira (F5) e tenta de novo, ou testa em outro navegador/aparelho.');
+                  setStatus(tr('photoreal.status_gpu_failed', null, 'A GPU não terminou de compilar o render mesmo depois de reiniciar — recarrega a página inteira (F5) e tenta de novo, ou testa em outro navegador/aparelho.'));
                 }
                 return;
               }
@@ -809,15 +820,15 @@ const Photoreal = (() => {
                 recoveryTried = true;
                 try { pathTracer.reset(); } catch (e) { /* segue esperando */ }
               }
-              setStatus('Compilando o render na GPU… ' + waited + 's (normal levar 1-2 min na 1ª vez; a imagem lisa é só a prévia)');
+              setStatus(tr('photoreal.status_compiling', { s: waited }, 'Compilando o render na GPU… ' + waited + 's (normal levar 1-2 min na 1ª vez; a imagem lisa é só a prévia)'));
             } else {
-              setStatus('Renderizando… ' + samplesDone + ' / ' + TARGET_SAMPLES + ' amostras');
+              setStatus(tr('photoreal.status_rendering', { n: samplesDone, total: TARGET_SAMPLES }, 'Renderizando… ' + samplesDone + ' / ' + TARGET_SAMPLES + ' amostras'));
             }
             requestAnimationFrame(loop);
           } catch (err) {
             loopActive = false;
             console.error(err);
-            setStatus('Erro no render: ' + (err && err.message ? err.message : err));
+            setStatus(tr('photoreal.status_render_error', { msg: (err && err.message ? err.message : err) }, 'Erro no render: ' + (err && err.message ? err.message : err)));
           }
         };
         requestAnimationFrame(loop);
@@ -826,7 +837,7 @@ const Photoreal = (() => {
 
     try {
       if (typeof RenderFielLibs === 'undefined') {
-        setStatus('Baixando motor de render (~250 KB, só na 1ª vez)…');
+        setStatus(tr('photoreal.status_downloading_engine', null, 'Baixando motor de render (~250 KB, só na 1ª vez)…'));
         await ensureBundle();
       }
       T = RenderFielLibs.THREE;
@@ -870,7 +881,7 @@ const Photoreal = (() => {
       renderer.setSize(renderW, Math.max(Math.round(renderW / PHOTO_ASPECT), 120), false);
 
       if (pendingTextures.length) {
-        setStatus('Carregando texturas das cores (' + pendingTextures.length + ')…');
+        setStatus(tr('photoreal.status_loading_textures', { n: pendingTextures.length }, 'Carregando texturas das cores (' + pendingTextures.length + ')…'));
         // Cada promise resolve TAMBÉM em erro (nunca trava pra sempre);
         // teto de 15s por segurança — o que não chegou vai sem textura.
         await Promise.race([
@@ -882,7 +893,7 @@ const Photoreal = (() => {
       await runPathTracerAttempt();
     } catch (err) {
       console.error(err);
-      setStatus('Erro: ' + (err && err.message ? err.message : err));
+      setStatus(tr('photoreal.status_error', { msg: (err && err.message ? err.message : err) }, 'Erro: ' + (err && err.message ? err.message : err)));
     }
   }
 
