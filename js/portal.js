@@ -13062,6 +13062,12 @@ function recomputeProjectSlotPricing(slot) {
       } catch (e) { ferragem = null; }
     }
     Pricing.setModuleHardware(ferragem);
+    // Guarda no PRÓPRIO slot pro $ Fábrica ler sem recalcular (collectProjectCostReport,
+    // 2026-08-18 — Matt: "nao esta aparecendo minifix, cavilha, corredica e tambor
+    // minifix" no relatório). calculateModulePrice só soma isto no total — não
+    // devolve a lista de volta pro chamador — então sem guardar aqui o relatório
+    // não tinha como saber QUAIS itens formam aquele custo escondido no total.
+    slot._hardwareConsumo = ferragem || [];
   }
   slot.result = slot.module.is_decoration
     ? { total: 0, breakdown: [] }
@@ -13192,9 +13198,12 @@ function renderMoneyFabrica(body, rel) {
   // corrediça são insumo comprado, igual à chapa e à fita. O rótulo diz o que
   // está dentro pra não restar dúvida.
   const fer = rel.ferragem;
+  const ferMontagem = Object.keys(rel.ferragemMontagem).map((k) => rel.ferragemMontagem[k])
+    .sort((a, b) => b.custo - a.custo || a.name.localeCompare(b.name));
+  const totalFerMontagem = ferMontagem.reduce((s, l) => s + l.custo, 0);
   const totalMateria = Object.keys(rel.material).reduce((s, k) => s + rel.material[k].custo, 0)
     + Object.keys(rel.fita).reduce((s, k) => s + rel.fita[k].custo, 0)
-    + fer.dobradica.custo + fer['corrediça'].custo;
+    + fer.dobradica.custo + fer['corrediça'].custo + totalFerMontagem;
   const totalMO = rel.labor.corte + rel.labor.fita + rel.labor.furacao
     + rel.labor.usinagem + rel.labor.antiga;
 
@@ -13216,6 +13225,13 @@ function renderMoneyFabrica(body, rel) {
   });
   if (fer.dobradica.custo > 0) html += linha(I18n.t('money.row_hinges'), fer.dobradica.qtd + ' ' + I18n.t('money.unit_pieces'), fer.dobradica.custo);
   if (fer['corrediça'].custo > 0) html += linha(I18n.t('money.row_slides'), fer['corrediça'].qtd + ' ' + I18n.t('money.unit_pairs'), fer['corrediça'].custo);
+  // FERRAGEM DE MONTAGEM — minifix (pino+tambor), cavilha, suporte de
+  // prateleira etc. (migration 119, ligada no $ Fábrica em 2026-08-18). Uma
+  // linha por ITEM comprado, nome vem direto do cadastro (Itens Comprados),
+  // então cavilha/tambor/pino aparecem com o nome que o Matt deu a eles lá.
+  ferMontagem.forEach((l) => {
+    html += linha(l.name, l.qtd + ' ' + (l.unit || 'un'), l.custo);
+  });
   html += subtotal(I18n.t('money.subtotal_material'), totalMateria);
 
   html += secao(I18n.t('money.section_labor'));
@@ -13333,6 +13349,15 @@ function collectProjectCostReport(slots) {
     fita: {},          // por cor: { m, custo }
     labor: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0 },
     ferragem: { dobradica: { qtd: 0, custo: 0 }, corrediça: { qtd: 0, custo: 0 } },
+    // FERRAGEM DE MONTAGEM (minifix/cavilha/tambor/suporte, migration 119,
+    // 2026-08-18) — Matt: "nao esta aparecendo minifix, cavilha, corredica e
+    // tambor minifix" no $ Fábrica. Causa: o cálculo (Hardware.consumoDoModulo,
+    // ligado hoje mais cedo em recomputeProjectSlotPricing) já soma certo no
+    // TOTAL do módulo, mas essa lista nunca virava linha nenhuma na tela —
+    // ficava escondida dentro do total, sem nome nem valor visível. Chave é o
+    // item_id (mesmo item comprado repetido em módulos diferentes soma numa
+    // linha só, igual dobradiça/corrediça acima).
+    ferragemMontagem: {}, // por item_id: { code, name, unit, qtd, custo }
     totalCusto: 0,
     totalVenda: 0,
     pecas: 0,
@@ -13421,7 +13446,21 @@ function collectProjectCostReport(slots) {
     // Custo do módulo = soma das peças DELE (as que acabaram de entrar no
     // detalhe). Sai daí, e não de outro campo, pelo mesmo motivo do total
     // geral: se alguma peça deixar de ser contada, o número denuncia.
-    const custo = rel.detalhe.slice(antes).reduce((s2, l) => s2 + l.total, 0);
+    let custo = rel.detalhe.slice(antes).reduce((s2, l) => s2 + l.total, 0);
+    // FERRAGEM DE MONTAGEM deste módulo (cavilha/tambor/pino/suporte) — é
+    // consumo do MÓDULO inteiro (o furo é da junta, não de UMA peça), então
+    // não tem como entrar na travessia peça-a-peça (`anda`) acima. Guardado
+    // em recomputeProjectSlotPricing (slot._hardwareConsumo).
+    (slot._hardwareConsumo || []).forEach((l) => {
+      if (!l || !l.item_id) return;
+      const c = Number(l.cost) || 0;
+      custo += c;
+      const acc = rel.ferragemMontagem[l.item_id] || (rel.ferragemMontagem[l.item_id] = {
+        code: l.code || null, name: l.name || '', unit: l.unit || 'un', qtd: 0, custo: 0
+      });
+      acc.qtd += Number(l.qty) || 0;
+      acc.custo += c;
+    });
     rel.porModulo.push({
       nome: (slot.module && slot.module.name) || '',
       dims: Math.round(slot.width_mm) + '×' + Math.round(slot.height_mm) + '×' + Math.round(slot.depth_mm),
@@ -13435,6 +13474,7 @@ function collectProjectCostReport(slots) {
   // alguma natureza deixar de ser contada, os percentuais denunciam na hora
   // em vez de fechar 100% escondendo o buraco.
   Object.keys(rel.material).forEach((k) => { rel.totalCusto += rel.material[k].custo; });
+  Object.keys(rel.ferragemMontagem).forEach((k) => { rel.totalCusto += rel.ferragemMontagem[k].custo; });
   Object.keys(rel.fita).forEach((k) => { rel.totalCusto += rel.fita[k].custo; });
   Object.keys(rel.labor).forEach((k) => { rel.totalCusto += rel.labor[k]; });
   rel.totalCusto += rel.ferragem.dobradica.custo + rel.ferragem['corrediça'].custo;
