@@ -324,6 +324,15 @@
         return;
       }
       // caixote (gaveta, gaveteiro, cesto): N empilhados no vão
+      //
+      // FOLGA LATERAL (2026-08-18, Matt: "a gaveta deve ter 12mm menor do
+      // que o vão pra corredica poder trabalhar, 6mm de cada lado"). Padrão
+      // 12mm de cada lado (24 no total) — o valor de sempre, pras gavetas
+      // genéricas de catálogo (accessory sem folga_lateral_mm cadastrada).
+      // Um agregado específico (ex: "Drawer Soft Closet Externa", cuja
+      // corrediça exige menos folga) sobrescreve via default_params:
+      // {"folga_lateral_mm": 6}. null/undefined = fica no padrão de 12.
+      var folgaLat = p.folga_lateral_mm != null ? num(p.folga_lateral_mm) : 12;
       var qtd = Math.max(1, Math.round(num(p.quantidade) || 1));
       var gap = 3, hCada = (box.h - gap * (qtd - 1)) / qtd;
       for (var j = 0; j < qtd; j++) {
@@ -331,8 +340,8 @@
         var prof = Math.max(120, box.d - recuo - 20);
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + 12, y: y + 4, z: box.z + recuo,
-          w: box.w - 24, h: hCada - 20, d: prof,
+          x: box.x + folgaLat, y: y + 4, z: box.z + recuo,
+          w: box.w - folgaLat * 2, h: hCada - 20, d: prof,
           opening_type: 'slide_out'
         });
       }

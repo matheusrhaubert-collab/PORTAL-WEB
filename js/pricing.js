@@ -532,6 +532,26 @@
     return fitting.length > 0 ? fitting[fitting.length - 1] : sorted[0];
   }
 
+  // Trava de EXISTÊNCIA pra profundidade fixa (2026-08-18, Matt: "profundidade
+  // travada em algumas opções que sempre deve caber no módulo, se o módulo
+  // ficar menor, a gaveta deve ser removida"). Mesma ideia de
+  // isBelowMinLockedPreset, mas pro sistema de fixed_depths acima: se nem a
+  // MENOR profundidade cadastrada cabe no espaço disponível (descontada a
+  // MESMA folga de fundo/trilho que pickDrawerDepth usa pra escolher), a peça
+  // não existe nessa configuração — ela deve SUMIR, não "espremer" pra um
+  // tamanho que não corresponde a nenhuma gaveta real. Chamar ANTES de
+  // pickDrawerDepth: o fallback "cai pra menor disponível" dele continua
+  // existindo como rede de segurança pra quem não checar esta trava antes,
+  // mas com ela em uso o caminho "nenhuma cabe" nunca chega lá.
+  // Sem fixed_depths cadastrado, nunca bloqueia (devolve false) — mesmo
+  // contrato de isBelowMinLockedPreset.
+  function isBelowMinFixedDepth(depths, availableDepthMm) {
+    const valid = (depths || []).filter(function (d) { return d !== null && d !== undefined && isFinite(d); });
+    if (valid.length === 0) return false;
+    const minDepth = Math.min.apply(null, valid);
+    return (availableDepthMm - DRAWER_DEPTH_CLEARANCE_MM) < minDepth;
+  }
+
   // Generaliza pra QUALQUER dimensão (não só profundidade de gaveta/
   // corrediça): dado um conjunto de valores PERMITIDOS (module_dimension_presets
   // de um módulo TRAVADO — migration 028 — na dimensão width/height/depth) e o
@@ -776,6 +796,14 @@
     if (isBelowMinLockedPreset(piece.locked_width_presets, pieceDims.width_mm)
       || isBelowMinLockedPreset(piece.locked_height_presets, pieceDims.height_mm)
       || isBelowMinLockedPreset(piece.locked_depth_presets, pieceDims.depth_mm)) {
+      return null;
+    }
+
+    // Mesma ideia, pro sistema de profundidade FIXA (fixed_depths): se nem a
+    // menor opção cabe no vão disponível, a gaveta não existe nessa
+    // configuração — ver isBelowMinFixedDepth. Checado contra o valor BRUTO
+    // (antes de pickDrawerDepth escolher/espremer), igual ao bloco acima.
+    if (isBelowMinFixedDepth(piece.fixed_depths, pieceDims.depth_mm)) {
       return null;
     }
 
@@ -1114,6 +1142,7 @@
     resolveBodyDims,
     hingeCountForDoorHeight,
     pickDrawerDepth,
+    isBelowMinFixedDepth,
     pickNearestPreset,
     isBelowMinLockedPreset,
     clampToOwnRange,

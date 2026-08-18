@@ -301,6 +301,15 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
       return;
     }
 
+    // Profundidade FIXA (fixed_depths) que não cabe nem na menor opção — a
+    // gaveta não existe nessa configuração, mesma regra de preço acima
+    // (Pricing.calculateModulePiece/isBelowMinFixedDepth), pra 3D e preço
+    // nunca divergirem. Some do desenho em vez de aparecer espremida num
+    // tamanho que não corresponde a nenhuma profundidade real cadastrada.
+    if (Pricing.isBelowMinFixedDepth(piece.fixed_depths, dims.depth_mm)) {
+      return;
+    }
+
     // Cor própria desta instância (migration 046) — se pieceColorOverrides tiver uma entrada
     // pra este piece.id, ela substitui só os papéis que tem, mantendo os demais herdados do
     // pai; o resultado (não o colorsByRole original) desce pra child_pieces mais abaixo, pra um

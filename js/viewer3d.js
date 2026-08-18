@@ -1007,6 +1007,17 @@ const Viewer3D = (function () {
   // "bater" fechada/aberta toda vez que o módulo é redesenhado (troca de
   // cor/medida) enquanto as peças estão abertas — e pra abrir as portas não
   // afetar as gavetas já abertas (ou fechadas), e vice-versa.
+
+  // Curso da corrediça, em metros (2026-08-18, Matt: "a gaveta abre toda pra
+  // fora, ela tá uma parte pra dentro"). Antes era `Math.min(d*0.7, 0.4)` —
+  // toda gaveta abria só 70% da própria profundidade (e travava em 400mm nas
+  // maiores), sobrando corpo visivelmente pra dentro do módulo mesmo aberta.
+  // Corrediça de extensão total (o caso comum, inclusive a "Soft Closet")
+  // puxa o corpo quase inteiro pra fora — 92% da profundidade da gaveta,
+  // sem teto fixo (uma gaveta funda agora sai proporcionalmente mais também).
+  function drawerSlideDistance(depthM) {
+    return Math.max(0, depthM) * 0.92;
+  }
   function positionWithOpening(content, opening, x, y, z) {
     // Contexto ativo (buildStandaloneAssembly/Composição) sobrepõe o estado
     // global da cena singleton — ver comentário de activeOpenCtx acima.
@@ -1645,7 +1656,7 @@ const Viewer3D = (function () {
         // 'slide_out' só existe numa peça-módulo de verdade (opening_type) —
         // gaveta desliza pra fora no eixo Z ao "abrir" (ver toggleOpenables).
         const opening = (part.is_module && part.opening_type === 'slide_out')
-          ? { type: 'slide', distance: Math.min(drawerD * 0.7, 0.4) }
+          ? { type: 'slide', distance: drawerSlideDistance(drawerD) }
           : null;
         emit(assembly, null, x, y - drawerH / 2 + legH, z, false, opening);
       } else {
@@ -1773,7 +1784,7 @@ const Viewer3D = (function () {
       const opening = hingeSide
         ? { type: 'hinge', side: hingeSide, width: w }
         : (part.is_module && part.opening_type === 'slide_out')
-          ? { type: 'slide', distance: Math.min(d * 0.7, 0.4) }
+          ? { type: 'slide', distance: drawerSlideDistance(d) }
           : null;
       // rotateTexture=false aqui embaixo (sempre) — o giro de 'free' já foi
       // aplicado na PRÓPRIA geometria acima (rotateGeometryUV90); passar

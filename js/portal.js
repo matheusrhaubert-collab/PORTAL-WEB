@@ -1410,65 +1410,31 @@ async function loadPricingMarkup() {
     if (!profilesError && Array.isArray(profiles)) marginProfilesCache = profiles;
   } catch (e) { /* tabela ainda não existe — segue só com a margem Padrão */ }
 
-  // migration 119 — ITENS COMPRADOS. Precisa vir DEPOIS de marginProfilesCache
-  // (a margem dos comprados é um perfil de lá) e recebe o `data` de
-  // pricing_settings, que é onde mora o ponteiro do perfil padrão.
-  await loadPurchasedCatalog(data);
-}
-
-/* ========================================================================
-   ITENS COMPRADOS + REGRAS DE FERRAGEM (migration 119)
-   ========================================================================
-   Carrega uma vez por sessão e publica nos dois motores: o Hardware (que
-   conta ferragem a partir dos furos) e o Pricing (que precisa do preço de
-   compra e da margem).
-
-   BEST-EFFORT, e isso importa: num banco sem a migration 119 as duas
-   consultas falham, `Hardware.isLoaded()` continua false e o preço sai
-   exatamente como antes — comprado com a margem do módulo, ferragem de
-   montagem não contada. Nenhum caminho fica sem número.
-
-   O que NÃO é best-effort: depois que carregou, o número tem que estar
-   certo. Por isso o repreço no fim — a primeira precificação da página roda
-   antes desta consulta terminar, e um preço velho não avisa que está velho
-   (foi o que fez a contagem de furos voltar quatro vezes; ver
-   ensureProjectDrillingCatalog logo abaixo). */
-let purchasedItemsCacheList = [];
-async function loadPurchasedCatalog(pricingSettings) {
+  // Itens comprados (migration 119) — publica o catálogo no Pricing pra
+  // qualquer lookup por purchased_item_id/attrs funcionar no PORTAL, não só
+  // no "Teste de cálculo" do ERP (que publica via aplicarMargemDosComprados
+  // em erp/js/adm/25-itens-comprados.js). 2026-08-18, Matt: "preciso colocar
+  // as corredicas la nos itens comprados e puxar dependendo da profundidade
+  // da gaveta" — sem isto, Pricing.pickDrawerSlidePurchasedItem nunca acha
+  // nada no cliente, porque purchasedItemsById fica sempre {}.
+  //
+  // Best-effort igual margin_profiles acima: banco sem a migration 119
+  // simplesmente não publica nada, e todo item comprado (inclusive o antigo
+  // labor_type_id de components 'comprado') continua exatamente como hoje.
+  //
+  // De propósito NÃO publica setPurchasedMarkup/setPurchasedMarkupByProfile
+  // aqui — isso reclassificaria margem de TODO comprado (pino, cavilha,
+  // tambor, pé…) de uma vez, mudança maior que o pedido desta vez. Sem eles,
+  // markupComprado() cai no markupMultiplier do módulo (a margem de sempre)
+  // — ver calculateModulePrice.
   try {
-    const [itens, regras] = await Promise.all([
-      supabaseClient.from('purchased_items').select('*').eq('active', true).order('sort_order'),
-      supabaseClient.from('hardware_rules').select('*').eq('active', true).order('sort_order')
-    ]);
-    if (itens.error || regras.error) return;
-    purchasedItemsCacheList = itens.data || [];
-
-    if (typeof Hardware !== 'undefined' && Hardware.setCatalog) {
-      Hardware.setCatalog(purchasedItemsCacheList, regras.data || []);
-    }
-    if (typeof Pricing !== 'undefined' && Pricing.setPurchasedItems) {
+    const { data: purchasedItems, error: purchasedError } = await supabaseClient.from('purchased_items').select('*');
+    if (!purchasedError && Array.isArray(purchasedItems) && Pricing.setPurchasedItems) {
       const porId = {};
-      purchasedItemsCacheList.forEach((i) => { porId[i.id] = i; });
+      purchasedItems.forEach((it) => { porId[it.id] = it; });
       Pricing.setPurchasedItems(porId);
     }
-    // MARGEM DOS COMPRADOS. Perfil não escolhido = não publica nada, e o
-    // Pricing mantém a margem do módulo pro comprado — o comportamento de
-    // antes da 119. Nascer neutro é decisão: reclassificar (ferragem sai de
-    // mão de obra e entra em material) e reprecificar no mesmo deploy
-    // deixaria impossível dizer qual dos dois mexeu no número.
-    if (typeof Pricing !== 'undefined' && Pricing.setPurchasedMarkup) {
-      const perfilId = pricingSettings && pricingSettings.purchased_margin_profile_id;
-      const perfil = perfilId ? marginProfilesCache.find((p) => p.id === perfilId) : null;
-      Pricing.setPurchasedMarkup(perfil ? Number(perfil.markup_multiplier) : 0);
-      const porPerfil = {};
-      marginProfilesCache.forEach((p) => { porPerfil[p.id] = Number(p.markup_multiplier) || 0; });
-      Pricing.setPurchasedMarkupByProfile(porPerfil);
-    }
-    // Tudo que já foi precificado antes desta consulta chegar foi calculado
-    // sem ferragem nenhuma. Ver o comentário longo em
-    // ensureProjectDrillingCatalog: é o mesmo erro, e a mesma correção.
-    if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots();
-  } catch (e) { /* migration 119 não rodou — segue sem ferragem automática */ }
+  } catch (e) { /* tabela ainda não existe (migration 119 não rodou) — segue sem itens comprados */ }
 }
 
 // Margem efetiva de UM módulo (migration 070, pedido do usuário: "quero
@@ -12972,42 +12938,6 @@ function projectHoleCountsFor(slot, parts) {
   return mapa;
 }
 
-// FERRAGEM CONSUMIDA POR SLOT (migration 119) — mesma mecânica, mesma chave
-// e mesmo motivo de cache do projectHoleCountsFor acima: rodar as regras
-// exige montar as caixas de todas as peças, e isso acontece a cada
-// pointermove do arraste de medida.
-//
-// A chave inclui as três medidas porque a furação muda com elas (móvel mais
-// alto ganha dobradiça e minifix). Cor e margem não mexem em furo nenhum e
-// ficam de fora de propósito.
-//
-// Devolve null (e NÃO grava no cache) enquanto o catálogo não chegou —
-// mesma guarda do projectHoleCountsFor, pelo mesmo motivo: gravar um []
-// nesse instante congelaria "este módulo não leva ferragem" pra sempre, e
-// zero com cara de verdade é o pior resultado possível aqui.
-const projectHardwareCache = new Map();
-function projectHardwareFor(slot, parts) {
-  if (typeof Hardware === 'undefined' || !Hardware.consumoDoModulo) return null;
-  if (!Hardware.isLoaded()) return null;
-  if (!projectDrillingsByComponent) { ensureProjectDrillingCatalog(); return null; }
-  const chave = [(slot.module || {}).id, slot.width_mm, slot.height_mm, slot.depth_mm].join('|');
-  if (projectHardwareCache.has(chave)) return projectHardwareCache.get(chave);
-  let lista = null;
-  try {
-    lista = Hardware.consumoDoModulo(
-      parts, Number(slot.width_mm) || 0, Number(slot.height_mm) || 0, Number(slot.depth_mm) || 0,
-      {
-        drillingsByComponent: projectDrillingsByComponent,
-        holesByPattern: projectHolesByPattern,
-        settings: projectDrillingSettings
-      }
-    );
-  } catch (e) { lista = null; }
-  if (projectHardwareCache.size > 300) projectHardwareCache.clear();
-  projectHardwareCache.set(chave, lista);
-  return lista;
-}
-
 // Furação do catálogo, carregada uma vez por sessão. Sem ela a contagem sai
 // vazia e o preço cai no furos_equivalentes do cadastro — o comportamento
 // anterior, que continua correto, só menos preciso.
@@ -13052,7 +12982,6 @@ async function ensureProjectDrillingCatalog() {
     // cache é o que faz o preço realmente mudar quando a furação chega —
     // cinto e suspensório junto com a guarda em projectHoleCountsFor.
     projectHoleCountCache.clear();
-    projectHardwareCache.clear();   // migration 119 — mesma razão, mesmo instante
     // E REPREÇA AQUI DENTRO (2026-08-15). Antes o recálculo ficava nos dois
     // CHAMADORES desta função, e nenhum dos dois pegava o caso real: o
     // projeto era precificado no carregamento (catálogo ainda vindo pela
@@ -13085,7 +13014,6 @@ function recomputeProjectSlotPricing(slot) {
   // furos_equivalentes do cadastro, então nenhum caminho fica sem número.
   if (typeof Pricing !== 'undefined' && Pricing.setHoleCounts) {
     let contagem = null;
-    let ferragem = null;
     try {
       const parts = resolvePiecesForViewer(
         effectivePieces,
@@ -13093,17 +13021,8 @@ function recomputeProjectSlotPricing(slot) {
         slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
       );
       contagem = projectHoleCountsFor(slot, parts);
-      // FERRAGEM DE MONTAGEM (migration 119) — tambor, pino, cavilha,
-      // suporte. Sai dos MESMOS `parts` e do mesmo catálogo de furação da
-      // contagem acima, e por isso reaproveita o cache dela.
-      ferragem = projectHardwareFor(slot, parts);
-    } catch (e) { contagem = null; ferragem = null; }
+    } catch (e) { contagem = null; }
     Pricing.setHoleCounts(contagem);
-    // setModuleHardware é POR MÓDULO: publicado logo antes do
-    // calculateModulePrice deste slot, sempre — inclusive com null, senão o
-    // slot seguinte herdaria a ferragem do anterior. Um esquecimento aqui não
-    // dá erro, dá orçamento com a ferragem do móvel errado.
-    if (Pricing.setModuleHardware) Pricing.setModuleHardware(ferragem);
   }
   slot.result = slot.module.is_decoration
     ? { total: 0, breakdown: [] }
@@ -13233,19 +13152,10 @@ function renderMoneyFabrica(body, rel) {
   // A FERRAGEM entra em matéria-prima, e não em mão de obra: dobradiça e
   // corrediça são insumo comprado, igual à chapa e à fita. O rótulo diz o que
   // está dentro pra não restar dúvida.
-  //
-  // ITENS COMPRADOS (migration 119, Matt 2026-08-18: "quero que os itens
-  // comprados apareçam no orçamento fábrica junto com os raw materials").
-  // Entram no MESMO subtotal de matéria-prima pela mesma razão da dobradiça:
-  // tambor, cavilha e suporte são insumo que se compra e se estoca. Antes
-  // eles apareciam em MÃO DE OBRA, porque o preço de compra deles estava
-  // gravado num labor_type — era a classificação que estava errada, não o
-  // número.
   const fer = rel.ferragem;
-  const totalComprados = rel.comprados.reduce((s, c) => s + c.custo, 0);
   const totalMateria = Object.keys(rel.material).reduce((s, k) => s + rel.material[k].custo, 0)
     + Object.keys(rel.fita).reduce((s, k) => s + rel.fita[k].custo, 0)
-    + fer.dobradica.custo + fer['corrediça'].custo + totalComprados;
+    + fer.dobradica.custo + fer['corrediça'].custo;
   const totalMO = rel.labor.corte + rel.labor.fita + rel.labor.furacao
     + rel.labor.usinagem + rel.labor.antiga;
 
@@ -13267,18 +13177,6 @@ function renderMoneyFabrica(body, rel) {
   });
   if (fer.dobradica.custo > 0) html += linha(I18n.t('money.row_hinges'), fer.dobradica.qtd + ' ' + I18n.t('money.unit_pieces'), fer.dobradica.custo);
   if (fer['corrediça'].custo > 0) html += linha(I18n.t('money.row_slides'), fer['corrediça'].qtd + ' ' + I18n.t('money.unit_pairs'), fer['corrediça'].custo);
-  // Uma linha POR ITEM comprado (tambor, pino, cavilha, suporte, pé...), com
-  // a quantidade ao lado — é a lista que vira pedido de compra.
-  rel.comprados.forEach((c) => {
-    html += linha(I18n.t('money.row_purchased') + escapeHtmlCutlist(c.name),
-      Math.round(c.qty * 1000) / 1000 + ' ' + (c.unit || 'un'), c.custo);
-  });
-  // Catálogo da 119 ausente = a ferragem de montagem NÃO está neste total.
-  // Dizer isso em voz alta é o ponto: um relatório de custo que esconde uma
-  // natureza inteira fecha 100% e mente com precisão de duas casas.
-  if (!rel.catalogoFerragem) {
-    html += '<tr><td colspan="4" class="hint">' + I18n.t('money.hardware_catalog_missing') + '</td></tr>';
-  }
   html += subtotal(I18n.t('money.subtotal_material'), totalMateria);
 
   html += secao(I18n.t('money.section_labor'));
@@ -13316,7 +13214,7 @@ function renderMoneyFabrica(body, rel) {
       + '<td class="num dim">' + l.m2.toFixed(3) + '</td>'
       + '<td class="num dim">' + (l.fitaM > 0 ? l.fitaM.toFixed(2) : '—') + '</td>'
       + cel(l.chapa) + cel(l.fita) + cel(l.corte) + cel(l.colagem) + cel(l.furacao)
-      + cel(l.usinagem) + cel(l.laborAntiga) + cel(l.ferragem) + cel(l.comprado)
+      + cel(l.usinagem) + cel(l.laborAntiga) + cel(l.ferragem)
       + '<td class="num"><strong>' + formatMoney(l.total) + '</strong></td></tr>';
   });
 
@@ -13336,8 +13234,7 @@ function renderMoneyFabrica(body, rel) {
     + th('money.col_piece') + '<th class="num">m²</th>' + th('money.col_edge_m', 1)
     + th('money.col_board', 1) + th('money.col_edge', 1) + th('money.col_cut', 1)
     + th('money.col_glue', 1) + th('money.col_drill', 1) + th('money.col_machining', 1)
-    + th('money.col_legacy_labor', 1) + th('money.col_hardware', 1)
-    + th('money.col_purchased', 1) + th('money.col_total', 1)
+    + th('money.col_legacy_labor', 1) + th('money.col_hardware', 1) + th('money.col_total', 1)
     + '</tr></thead><tbody>' + porPeca + '</tbody></table></div>'
 
     + '<div class="po-money-total"><span>' + I18n.t('money.total_cost') + '</span><strong>' + formatMoney(rel.totalCusto) + '</strong></div>'
@@ -13397,17 +13294,6 @@ function collectProjectCostReport(slots) {
     fita: {},          // por cor: { m, custo }
     labor: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0 },
     ferragem: { dobradica: { qtd: 0, custo: 0 }, corrediça: { qtd: 0, custo: 0 } },
-    // ITENS COMPRADOS (migration 119) — Matt: "quero que os itens comprados
-    // apareçam no orçamento fábrica junto com os raw materials". Duas fontes,
-    // mesma lista:
-    //   comprados[]      ferragem de montagem contada pelos FUROS (tambor,
-    //                    pino, cavilha, suporte) — vem de slot.result.hardware
-    //   as peças compradas do breakdown (um pé, um puxador): purchased_cost
-    // catalogoFerragem = false significa que o catálogo da 119 não carregou.
-    // O relatório PRECISA distinguir isso de "não leva ferragem": zero com
-    // cara de verdade é o pior número que este painel pode mostrar.
-    comprados: [],
-    catalogoFerragem: (typeof Hardware !== 'undefined' && Hardware.isLoaded && Hardware.isLoaded()),
     totalCusto: 0,
     totalVenda: 0,
     pecas: 0,
@@ -13418,19 +13304,6 @@ function collectProjectCostReport(slots) {
   const nomeCor = (slot, roleId) => {
     const c = (slot.colorsByRole || {})[roleId];
     return (c && c.name) || I18n.t('money.no_color');
-  };
-
-  // Acumula por ITEM, não por linha: o mesmo tambor aparece em cinco módulos
-  // e o comprador quer UMA linha com o total, não cinco pra somar de cabeça.
-  const compradosPorItem = {};
-  const somaComprado = (l) => {
-    if (!l || !(l.cost > 0 || l.qty > 0)) return;
-    const k = l.item_id;
-    if (!compradosPorItem[k]) {
-      compradosPorItem[k] = { item_id: k, name: l.name, unit: l.unit || 'un', qty: 0, unit_cost: Number(l.unit_cost) || 0, custo: 0 };
-    }
-    compradosPorItem[k].qty += Number(l.qty) || 0;
-    compradosPorItem[k].custo += Number(l.cost) || 0;
   };
 
   const anda = (slot, linhas, prefixo) => {
@@ -13467,26 +13340,9 @@ function collectProjectCostReport(slots) {
         // vai nesta coluna, e NUNCA distribuída pelos processos.
         laborAntiga: p.labor_breakdown ? 0 : (Number(p.labor_cost) || 0),
         ferragem: (Number(p.hinge_cost) || 0) + (Number(p.slide_cost) || 0),
-        // migration 119 — custo de COMPRA desta peça (um pé, um puxador).
-        // Antes vinha somado em labor_cost e aparecia como mão de obra.
-        comprado: Number(p.purchased_cost) || 0,
         total: (Number(p.sheet_cost) || 0) + (Number(p.edge_cost) || 0)
-          + (Number(p.labor_cost) || 0) + (Number(p.purchased_cost) || 0)
-          + (Number(p.hinge_cost) || 0) + (Number(p.slide_cost) || 0)
+          + (Number(p.labor_cost) || 0) + (Number(p.hinge_cost) || 0) + (Number(p.slide_cost) || 0)
       });
-
-      // A peça comprada entra na MESMA lista da ferragem de montagem: pro
-      // comprador as duas são a mesma coisa — linha de pedido de compra.
-      if ((Number(p.purchased_cost) || 0) > 0) {
-        somaComprado({
-          item_id: p.purchased_item_id || ('peca:' + (p.reference || p.piece_id)),
-          name: p.reference || '(comprado)',
-          unit: 'un',
-          qty: qtd,
-          unit_cost: (Number(p.purchased_cost) || 0) / (qtd || 1),
-          cost: Number(p.purchased_cost) || 0
-        });
-      }
 
       const cor = nomeCor(slot, p.color_role_id);
       const m = rel.material[cor] || (rel.material[cor] = { m2: 0, custo: 0 });
@@ -13522,13 +13378,6 @@ function collectProjectCostReport(slots) {
   (slots || []).forEach((slot) => {
     if (!slot.result) return;
     const antes = rel.detalhe.length;
-    // Ferragem de montagem deste módulo (migration 119). Vem do resultado do
-    // preço, que a recebeu de Hardware.consumoDoModulo — ou seja, contada a
-    // partir dos furos que o .ban de fato gera, não de uma lista digitada.
-    (slot.result.hardware || []).forEach((l) => somaComprado({
-      item_id: l.item_id, name: l.name, unit: l.unit,
-      qty: l.qty, unit_cost: l.unit_cost, cost: l.cost
-    }));
     anda(slot, slot.result.breakdown, '');
     // Custo do módulo = soma das peças DELE (as que acabaram de entrar no
     // detalhe). Sai daí, e não de outro campo, pelo mesmo motivo do total
@@ -13546,14 +13395,10 @@ function collectProjectCostReport(slots) {
   // O custo total sai da SOMA das partes, não de outro campo: assim, se
   // alguma natureza deixar de ser contada, os percentuais denunciam na hora
   // em vez de fechar 100% escondendo o buraco.
-  rel.comprados = Object.keys(compradosPorItem).map((k) => compradosPorItem[k])
-    .sort((a, b) => b.custo - a.custo || a.name.localeCompare(b.name));
-
   Object.keys(rel.material).forEach((k) => { rel.totalCusto += rel.material[k].custo; });
   Object.keys(rel.fita).forEach((k) => { rel.totalCusto += rel.fita[k].custo; });
   Object.keys(rel.labor).forEach((k) => { rel.totalCusto += rel.labor[k]; });
   rel.totalCusto += rel.ferragem.dobradica.custo + rel.ferragem['corrediça'].custo;
-  rel.comprados.forEach((c) => { rel.totalCusto += c.custo; });
   return rel;
 }
 
@@ -15891,10 +15736,37 @@ function computeProjectSlotCascoBoxes(slot, medirNaCena, semFrentes) {
   // Caminho barato: Drilling espelha viewer3d.placePieceInBox e devolve a
   // caixa de cada peça sem criar objeto 3D nenhum. Quem chama pede o caminho
   // caro explicitamente (medirNaCena) quando o barato não achou casco.
+  //
+  // PÉ (position_role='leg', migration 014/120) — 2026-08-18. H já inclui a
+  // altura do pé, mas resolvePiecesForViewer (acima) resolveu as peças do
+  // CORPO com offset_y_mm relativo ao CORPO (0 = piso do corpo, em cima do
+  // pé) — mesma convenção de viewer3d.js/screens-construtor.js. Passar H
+  // (o total) direto pro buildBoxes deixava as caixas do casco no
+  // referencial errado: a base "nascia" em y=0 (o piso REAL do módulo) em
+  // vez de y=legH_mm, e a zona interna deduzida por computeProjectSlotInnerZone
+  // saía ~altura do pé mais baixa do que devia. Bate com o "medir na cena"
+  // (measureProjectSlotBoxesFrom3D), que já está certo por medir a malha do
+  // 3D — foi comparando os dois que o bug apareceu (Matt: "o interno ta
+  // deslocado pra baixo", com o contorno laranja fora do lugar do desenho
+  // de fundo, que vem da cena e sempre esteve certo).
   if (!medirNaCena) {
     let boxes = [];
     if (typeof Drilling !== 'undefined' && Drilling._internals && Drilling._internals.buildBoxes) {
-      try { boxes = Drilling._internals.buildBoxes(parts || [], W, H, D).boxes || []; } catch (e) { boxes = []; }
+      try {
+        // resolveBodyDims precisa da lista CRUA (com as fórmulas, tipo
+        // height_formula) — `parts` já é a SAÍDA resolvida de
+        // resolvePiecesForViewer (height_mm numérico, sem fórmula nenhuma).
+        // Passar `parts` aqui faz calculatePiece tentar avaliar uma fórmula
+        // que não existe mais, lançar por dentro, cair no catch e devolver
+        // legH_mm=0 EM SILÊNCIO — o fix parecia certo no código e não fazia
+        // nada na prática. `slot.pieces` é a mesma lista crua que
+        // resolvePiecesForViewer usa (ver duas linhas acima).
+        let legH_mm = 0;
+        try { legH_mm = Pricing.resolveBodyDims(slot.pieces || [], { W, H, D }).legH_mm || 0; } catch (e) { /* sem pé, 0 */ }
+        const bodyH = H - legH_mm;
+        const built = Drilling._internals.buildBoxes(parts || [], W, bodyH, D);
+        boxes = (built.boxes || []).map((b) => (legH_mm ? Object.assign({}, b, { y0: b.y0 + legH_mm }) : b));
+      } catch (e) { boxes = []; }
     }
     return boxes;
   }
@@ -16003,12 +15875,49 @@ async function loadProjectBuilderCatalog(moduleId) {
   // client_visible=false). Sem linha = aparece, filtrado pelo vão mínimo do
   // catálogo. Bloquear passa a ser um ato explícito da engenharia, que é o que
   // o desmarcar na tela do ERP já significa.
-  const cat = {};
-  (tipos.data || []).forEach((a) => {
-    if (a.active === false) return;
+  const ativos = (tipos.data || []).filter((a) => {
+    if (a.active === false) return false;
     const o = white[a.id];
-    if (o && (o.allowed === false || o.client_visible === false)) return;
-    cat[a.id] = projectBuilderAccessoryEntry(a);
+    if (o && (o.allowed === false || o.client_visible === false)) return false;
+    return true;
+  });
+
+  // MÓDULO INTEIRO como agregado (accessory_types.child_module_id, migration
+  // 103) — 2026-08-18, Matt: "coloquei ela lá mas ela não entra com as
+  // peças" (a "Drawer Soft Closet Externa"). A causa: este catálogo só
+  // guardava o PONTEIRO (child_module_id) e nunca buscava as peças REAIS do
+  // módulo filho — LayoutEngine.toPieceRows monta a linha is_module:true com
+  // child_pieces=[] (nada dentro), então o vão aparece "ocupado" sem
+  // NENHUMA peça no 3D/preço/furação. Mesmo shape que
+  // loadRecursivePiecesForModule (module-pieces.js) monta pro branch
+  // child_module_id de module_components — dedupe por módulo porque mais de
+  // um agregado pode apontar pro mesmo.
+  const moduleExtras = {};
+  const moduleIds = Array.from(new Set(
+    ativos.filter((a) => a.child_module_id).map((a) => a.child_module_id)
+  ));
+  await Promise.all(moduleIds.map(async (mid) => {
+    const [fixedDepths, childPieces, lockedPresets, ownHingeSlide] = await Promise.all([
+      fetchModuleFixedDepths(mid),
+      loadRecursivePiecesForModule(mid),
+      fetchModuleLockedDimensionPresets(mid),
+      fetchModuleOwnHingeAndSlideModels(mid)
+    ]);
+    moduleExtras[mid] = {
+      // module_meta = "a linha de modules" (comentário do layout-engine.js);
+      // só o name importa lá (fallback de reference) — lockedPresets já fez
+      // a consulta em modules, reaproveita em vez de buscar de novo.
+      module_meta: { name: lockedPresets.name },
+      fixed_depths: fixedDepths,
+      locked_presets: lockedPresets,
+      own_hinge_slide: ownHingeSlide,
+      child_pieces: childPieces
+    };
+  }));
+
+  const cat = {};
+  ativos.forEach((a) => {
+    cat[a.id] = projectBuilderAccessoryEntry(a, a.child_module_id ? moduleExtras[a.child_module_id] : null);
   });
   return { cat, white, root: projectBuilderTreeFromRows(nos.data || []) };
 }
@@ -16016,7 +15925,13 @@ async function loadProjectBuilderCatalog(moduleId) {
 // Linha de accessory_types -> entrada do catálogo do motor. Espelha
 // CONSTR.catalogoDoBanco (erp/js/data-construtor.js) — se um dia um campo
 // novo entrar lá, entra aqui também.
-function projectBuilderAccessoryEntry(a) {
+//
+// moduleExtra (só quando a.child_module_id existe) = { module_meta,
+// fixed_depths, locked_presets, own_hinge_slide, child_pieces } — buscado em
+// loadProjectBuilderCatalog (precisa de await, por isso não é buscado aqui
+// dentro, que é síncrona). Ver LayoutEngine.toPieceRows (js/layout-engine.js)
+// pro formato exato que cada campo precisa ter.
+function projectBuilderAccessoryEntry(a, moduleExtra) {
   const p = a.default_params || {};
   // 'forma' escolhe o desenho do conteúdo no resolvedor e NÃO é campo do
   // banco: cabide se identifica pelo shape_type (migration 062), painel
@@ -16042,6 +15957,11 @@ function projectBuilderAccessoryEntry(a) {
     color_role_id: a.color_role_id || null,
     componente: a.components || null,
     child_module_id: a.child_module_id || null,
+    module_meta: (moduleExtra && moduleExtra.module_meta) || null,
+    fixed_depths: (moduleExtra && moduleExtra.fixed_depths) || [],
+    locked_presets: (moduleExtra && moduleExtra.locked_presets) || {},
+    own_hinge_slide: (moduleExtra && moduleExtra.own_hinge_slide) || {},
+    child_pieces: (moduleExtra && moduleExtra.child_pieces) || [],
     minW: Number(a.min_void_w_mm) || 0,
     minH: Number(a.min_void_h_mm) || 0,
     minD: Number(a.min_void_d_mm) || 0
