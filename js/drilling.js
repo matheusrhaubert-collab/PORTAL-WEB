@@ -136,6 +136,36 @@
         uAxis: 'y', vAxis: 'z', tAxis: 'x'
       };
     }
+    if (role === 'drawer_side') {
+      // LATERAL DE GAVETA (migration 118) — mesma caixa de 'left'/'right'
+      // (espessura no X, altura no Y, profundidade no Z), só que aqui a
+      // ALTURA é a MENOR das duas medidas que sobram e a PROFUNDIDADE é a
+      // MAIOR: é uma lateral deitada. Ver placePieceInBox no viewer3d.js.
+      // Com o cadastro 19.5/H/D e H<D as duas contas coincidem; a diferença
+      // só aparece se o cadastro escrever as medidas na outra ordem.
+      //
+      // ESTA BRANCH FALTAVA (2026-08-18) e o sintoma foi exatamente o da
+      // armadilha do arquivo "4 cópias do resolvedor de peças": pieceBox
+      // devolvia null pro papel novo, a lateral não entrava no contato
+      // borda-face, o contra-furo da travessa nunca chegava nela e a peça
+      // sumia da lista de furação — sem erro, sem aviso.
+      //
+      // t2 acompanha a troca: o plano local da furação é u = faceA (altura),
+      // v = faceB (profundidade), igual à lateral do casco. Sem isso o padrão
+      // de furos sairia transposto quando as medidas vêm na outra ordem.
+      const t2 = {
+        thickness: t.thickness,
+        faceA: Math.min(t.faceA, t.faceB),
+        faceB: Math.max(t.faceA, t.faceB)
+      };
+      return {
+        part, role, t: t2,
+        x0: offX, sx: t2.thickness,
+        y0: offY, sy: t2.faceA,
+        z0: offZ, sz: t2.faceB,
+        uAxis: 'y', vAxis: 'z', tAxis: 'x'
+      };
+    }
     if (role === 'top' || role === 'bottom' || role === 'countertop') {
       return {
         part, role, t,
@@ -283,9 +313,38 @@
 
   // ---- emissão de furos --------------------------------------------------
   // Cada furo vai pro array `holes` do part como
-  // { face, x, y, diameter, depth } já em coordenadas da MÁQUINA (x/y
+  // { face, x, y, diameter, depth, tipo } já em coordenadas da MÁQUINA (x/y
   // positivos; o formatador nega o y). face: 'face'|'verso'|'borda_esq'|
   // 'borda_dir'|'borda_sup'|'borda_inf'.
+  //
+  // ======================================================================
+  // `tipo` — O CARIMBO DE ORIGEM DO FURO (2026-08-18, migration 119)
+  // ======================================================================
+  // Serve pra dizer QUE FERRAGEM entra neste furo. Não é enfeite: sem ele o
+  // vínculo item comprado <-> módulo é impossível de fazer certo.
+  //
+  // O caso que obrigou: a migration 114 fixou "Ø8 = cavilha" e a 116 usa Ø8
+  // como PINO DO MINIFIX. Mesmo diâmetro, mesma face, profundidades
+  // parecidas. Contar "todo furo de Ø8 de face = 1 cavilha" contaria a
+  // cavilha certa MAIS um fantasma em cada junta minifix do tipo da base.
+  //
+  // O dado que separa os dois EXISTE no cadastro (a coluna counter_face_*, o
+  // tambor) e morria aqui: o furo emitido era só geometria. Agora cada ponto
+  // de emissão carimba o que ele já sabe — informação que estava sendo
+  // jogada fora, não informação nova.
+  //
+  //   proprio_face / proprio_borda   do cadastro da PRÓPRIA peça
+  //   contrafuro_face                recebido na FACE por propagação de uma
+  //                                  BORDA vizinha (= pino do minifix na
+  //                                  lateral; NÃO é cavilha)
+  //   contrafuro_borda               recebido na BORDA por propagação de uma
+  //                                  FACE vizinha (canal da cavilha/do pino)
+  //   copo_tambor                    o Ø12 do tambor minifix (counter_face_*)
+  //   copo_dobradica / marcacao_dobradica / base_dobradica
+  //   corredica / suporte_prateleira
+  //
+  // O .BAN NÃO MUDA UM BYTE: buildBanXml lê face/x/y/diameter/depth e ignora
+  // qualquer campo a mais. Foi conferido antes de subir.
   function addHole(store, part, hole) {
     if (!store.has(part)) store.set(part, []);
     // descarta furo fora da chapa (fórmula ruim/peça pequena demais) — mais
@@ -329,7 +388,7 @@
       face = (h.entersPositive !== mirrored) ? 'face' : 'verso';
     }
     const pos = localToMachine(t, u, v);
-    addHole(store, box.part, { face, x: pos.x, y: pos.y, diameter: h.diameter, depth: h.depth });
+    addHole(store, box.part, { face, x: pos.x, y: pos.y, diameter: h.diameter, depth: h.depth, tipo: h.tipo || null });
   }
 
   // Avalia as linhas de furação padrão de um componente, chamando
@@ -394,9 +453,24 @@
     const vars = { C: t.faceA, L: t.faceB, E: t.thickness, W: part.width_mm || 0, H: part.height_mm || 0 };
     eachDrillingInstance(rows, vars, function (row, x, y, depth) {
       const isEdge = /^borda_/.test(row.face || '');
+      // Furo do cadastro da PRÓPRIA peça.
+      //
+      // A distinção que decide a lista de ferragem: uma linha de FACE que
+      // também declara counter_face_* (o tambor) é MINIFIX — este furo é o
+      // canal do pino, e o tambor dele vai sair na peça vizinha como
+      // 'copo_tambor'. Uma linha de face SEM tambor é CAVILHA.
+      //
+      // As duas são Ø8 na mesma face (migrations 114 e 116). Sem esta
+      // separação, o topcover pagaria uma cavilha E um minifix pela mesma
+      // junta — a ferragem contada duas vezes, cada uma por um nome.
+      // Quem consome o minifix é sempre o tambor, nunca este furo.
+      const temTambor = Number(row.counter_face_diameter_mm) > 0
+        && Number(row.counter_face_depth_mm) > 0
+        && Number(row.counter_face_offset_mm) > 0;
+      const tipo = isEdge ? 'proprio_borda' : (temTambor ? 'proprio_face_tambor' : 'proprio_face');
       if (!box) {
         const r = resolveDrillingHoleXY(t, row, x, y);
-        if (r) addHole(store, part, { face: r.face, x: r.x, y: r.y, diameter: Number(row.diameter_mm), depth: depth });
+        if (r) addHole(store, part, { face: r.face, x: r.x, y: r.y, diameter: Number(row.diameter_mm), depth: depth, tipo: tipo });
         return;
       }
       if (isEdge) {
@@ -404,14 +478,14 @@
         if (r) {
           emitLocalHole(store, box, {
             u: r.u, v: r.v, edge: r.edge,
-            diameter: Number(row.diameter_mm), depth: depth
+            diameter: Number(row.diameter_mm), depth: depth, tipo: tipo
           });
         }
         return;
       }
       emitLocalHole(store, box, {
         u: x, v: y, edge: null, face: row.face || 'face',
-        diameter: Number(row.diameter_mm), depth: depth
+        diameter: Number(row.diameter_mm), depth: depth, tipo: tipo
       });
     });
   }
@@ -442,14 +516,16 @@
       addHole(store, part, {
         face: 'face', x: cup.x, y: cup.y,
         diameter: Number(settings.hinge_cup_diameter_mm) || 35,
-        depth: Number(settings.hinge_cup_depth_mm) || 13
+        depth: Number(settings.hinge_cup_depth_mm) || 13,
+        tipo: 'copo_dobradica'
       });
       [-markOffset, markOffset].forEach(function (dm) {
         const mk = localToMachine(t, uMark, v + dm);
         addHole(store, part, {
           face: 'face', x: mk.x, y: mk.y,
           diameter: Number(settings.hinge_mark_diameter_mm) || 3,
-          depth: Number(settings.hinge_mark_depth_mm) || 2
+          depth: Number(settings.hinge_mark_depth_mm) || 2,
+          tipo: 'marcacao_dobradica'
         });
       });
     }
@@ -555,7 +631,13 @@
             u: pu, v: pv, edge: null,
             entersPositive: entersPositive,
             diameter: Number(row.counter_diameter_mm),
-            depth: Number(row.counter_depth_mm)
+            depth: Number(row.counter_depth_mm),
+            // Junta do tipo BASE (migration 116): a BORDA da base encontra a
+            // FACE da lateral, o tambor é furo próprio da base e é o PINO que
+            // atravessa pra cá. Por isso este Ø8 na face NÃO é cavilha —
+            // carimbá-lo é justamente o que impede a lista de compra de
+            // inventar uma cavilha em cada minifix.
+            tipo: 'contrafuro_face'
           });
         });
       });
@@ -632,7 +714,12 @@
       emitLocalHole(store, tgt, {
         u: edgeIsU ? 0 : pa, v: edgeIsU ? pa : 0, edge: edge,
         diameter: Number(row.counter_diameter_mm),
-        depth: Number(row.counter_depth_mm)
+        depth: Number(row.counter_depth_mm),
+        // Contrapartida na peça apoiada. A ferragem em si é contada do lado
+        // de quem DEFINE a junta (o furo próprio de face do src) ou pelo
+        // tambor logo abaixo — nunca aqui, senão a mesma cavilha seria
+        // contada duas vezes, uma por ponta.
+        tipo: 'contrafuro_borda'
       });
 
       // (b) copo na FACE da peça apoiada (tambor minifix), na mesma linha,
@@ -648,7 +735,11 @@
       emitLocalHole(store, tgt, {
         u: edgeIsU ? camExt : pa, v: edgeIsU ? pa : camExt, edge: null,
         entersPositive: entersPositive,
-        diameter: camDia, depth: camDepth
+        diameter: camDia, depth: camDepth,
+        // O TAMBOR. É por ele que o minifix é contado, e por nenhum outro
+        // furo da junta: o tambor é ÚNICO por minifix, não importa em qual
+        // das duas peças ele caiu nem qual das duas geometrias de junta é.
+        tipo: 'copo_tambor'
       });
     });
     return emitidos;
@@ -721,7 +812,8 @@
             v: lb.sz - fromFront,          // vAxis = Z; frente do módulo = z0+sz
             edge: null,
             entersPositive: entersPositive,
-            diameter: plateDia, depth: plateDepth
+            diameter: plateDia, depth: plateDepth,
+            tipo: 'base_dobradica'
           });
         });
       }
@@ -802,7 +894,8 @@
             v: lb.sz - dist,                   // vAxis = Z; frente = z0+sz
             edge: null,
             entersPositive: entersPositive,
-            diameter: dia, depth: depth
+            diameter: dia, depth: depth,
+            tipo: 'corredica'
           });
         });
       });
@@ -848,7 +941,11 @@
             v: z - lb.z0,      // vAxis = Z (profundidade)
             edge: null,
             entersPositive: entersPositive,
-            diameter: dia, depth: depth
+            diameter: dia, depth: depth,
+            // 1 furo = 1 suporte. A conta "4 por prateleira" que o Matt deu
+            // sai daqui sozinha (2 furos por lateral x 2 laterais) — não há
+            // nenhum "4" digitado em lugar nenhum pra ficar velho.
+            tipo: 'suporte_prateleira'
           });
         });
       });
@@ -1345,6 +1442,48 @@
         out[chave] = (out[chave] || 0) + holes.length;
       });
       return out;
+    },
+
+    // ======================================================================
+    // FUROS DO MÓDULO AGRUPADOS POR ASSINATURA (2026-08-18, migration 119)
+    // ======================================================================
+    // Devolve [{ tipo, diameter_mm, face_kind, count }] — TODOS os furos do
+    // módulo (recursão nos aninhados incluída), agrupados pelo que identifica
+    // a ferragem que entra neles.
+    //
+    // É a matéria-prima do js/hardware.js: as regras de consumo casam contra
+    // estas três chaves. Sai do MESMO collectAssembly que escreve o .ban, de
+    // propósito — lista de compra e furadeira não podem divergir, porque são
+    // a mesma passagem de código. Se o furo existe no arquivo da máquina, a
+    // ferragem dele está na caixa; se não existe, não está.
+    //
+    // face_kind é 'borda' pra qualquer face 'borda_*' e 'face' pro resto
+    // (face/verso). A distinção esquerda/direita não interessa a ferragem
+    // nenhuma — o que interessa é se a broca entrou pelo topo ou pela face.
+    //
+    // Mesma advertência de custo do countHolesByPiece: buildBoxes é a parte
+    // cara. Quem chama guarda o resultado enquanto as medidas não mudarem.
+    holesBySignature: function (parts, W, H, D, config) {
+      const store = new Map();
+      try {
+        collectAssembly(store, parts, W, H, D, config || {});
+      } catch (e) {
+        return [];   // furação quebrada não pode derrubar o preço
+      }
+      const acc = {};
+      store.forEach(function (holes) {
+        holes.forEach(function (h) {
+          const tipo = h.tipo || 'desconhecido';
+          const faceKind = /^borda_/.test(h.face || '') ? 'borda' : 'face';
+          // Ø arredondado a 2 casas: o cadastro é numeric(6,2) e comparar
+          // float cru com o que veio do banco erra por 0.0000001.
+          const d = Math.round((Number(h.diameter) || 0) * 100) / 100;
+          const k = tipo + '|' + d + '|' + faceKind;
+          if (!acc[k]) acc[k] = { tipo: tipo, diameter_mm: d, face_kind: faceKind, count: 0 };
+          acc[k].count += 1;
+        });
+      });
+      return Object.keys(acc).map(function (k) { return acc[k]; });
     },
 
     // Agrupa as linhas de drilling_pattern_holes por programa, no formato que

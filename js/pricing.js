@@ -279,6 +279,63 @@
   let holeCounts = null;
   function setHoleCounts(map) { holeCounts = map || null; }
 
+  // ======================================================================
+  // ITENS COMPRADOS (migration 119) — bucket próprio, margem própria
+  // ======================================================================
+  // Matt, 2026-08-18: "quero que os itens comprados apareçam no orçamento
+  // fábrica junto com os raw materials. e quero ter uma margem especifica
+  // pra eles."
+  //
+  // Duas coisas mudam, e é bom separá-las porque só a segunda mexe no preço:
+  //
+  //  1. CLASSIFICAÇÃO. O comprado saía somado em `labor_cost` — porque o
+  //     preço de compra dele era, literalmente, um labor_type. No relatório
+  //     isso jogava ferragem na coluna de mão de obra, que é justamente a
+  //     divisão que a fábrica usa pra decidir coisa diferente: matéria-prima
+  //     se compra e se estoca, mão de obra é capacidade de máquina e de
+  //     gente. Agora vai em `purchased_cost`. O NÚMERO É O MESMO — só troca
+  //     de coluna.
+  //
+  //  2. MARGEM. O comprado passa a poder ter margem própria, vinda de um
+  //     perfil de margin_profiles (o mesmo cadastro que família/categoria
+  //     usam) apontado em pricing_settings.purchased_margin_profile_id, com
+  //     override por item.
+  //
+  // purchasedMarkup = null é o estado logo depois da migration: o comprado
+  // segue com a margem do MÓDULO, centavo por centavo como hoje. Nada muda
+  // até alguém escolher o perfil na tela. Isso é de propósito — reclassificar
+  // e reprecificar no mesmo deploy deixaria impossível saber qual dos dois
+  // mexeu no número, num caminho de preço que já causou regressão em cascata.
+  let purchasedMarkup = null;
+  function setPurchasedMarkup(m) {
+    const n = parseFloat(m);
+    purchasedMarkup = (isFinite(n) && n > 0) ? n : null;
+  }
+  // Margem por ITEM (purchased_items.margin_profile_id -> multiplicador).
+  // { [margin_profile_id]: multiplicador }
+  let purchasedMarkupByProfile = {};
+  function setPurchasedMarkupByProfile(map) { purchasedMarkupByProfile = map || {}; }
+
+  // Ferragem consumida pelo módulo, publicada pelo chamador ANTES de pedir o
+  // preço — mesma mecânica (e mesmo motivo) do setHoleCounts. Vem de
+  // Hardware.consumoDoModulo, que conta a partir dos furos que o .ban
+  // realmente gera. null = catálogo ainda não carregou; [] = carregou e não
+  // há ferragem. Os dois são coisas diferentes e o relatório distingue.
+  let moduleHardware = null;
+  function setModuleHardware(list) { moduleHardware = list || null; }
+
+  // Catálogo de itens comprados, { [purchased_items.id]: item }. Publicado
+  // pelo chamador junto com o resto do catálogo.
+  //
+  // Por que um MAPA aqui em vez de embutir `purchased_items(*)` no select de
+  // module_components: o embed é um join declarado no PostgREST e, num banco
+  // onde a migration 119 ainda não rodou, ele não falha bonito — derruba a
+  // consulta inteira e o módulo carrega SEM PEÇA NENHUMA. Já
+  // `piece.purchased_item_id` vem de graça no `components(*)` que já existe,
+  // e um id que não resolve neste mapa só cai no preço antigo.
+  let purchasedItemsById = {};
+  function setPurchasedItems(map) { purchasedItemsById = map || {}; }
+
   // Custo de mão de obra de UMA unidade da peça, aberto por processo. O
   // detalhe vai pro breakdown de propósito: é o que transforma "quanto custa
   // fitar" e "quantas peças passam na furadeira" em consulta, em vez de
@@ -575,12 +632,22 @@
     const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride);
     const qty = pieceDims.quantity;
 
+    // Peça COMPRADA (migration 119/120) não exige cor cadastrada: ferragem
+    // como o pé ("Plastic feet 4 1/2") não tem papel de cor nenhum — o 3D já
+    // ignora a cor dela de propósito (viewer3d.js: "Pé sempre preto e
+    // cilíndrico... a cor da peça no cadastro é ignorada aqui") e ela nasce
+    // com area_m2_formula/edge_band_linear_m_formula = '0', então sheet_cost/
+    // edge_cost dela são sempre zero mesmo — exigir uma cor só pra multiplicar
+    // por zero travava o cálculo do módulo inteiro com "Nenhuma cor
+    // selecionada" numa peça que o cliente nunca vê pintada de nada.
+    const comprado = piece.origin === 'comprado';
     const effectiveColors = effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides);
     const color = effectiveColors && effectiveColors[piece.color_role_id];
-    if (!color) throw new Error(tr('pricing.no_color_for_piece', { ref: piece.reference }, 'Nenhuma cor selecionada para a peça "' + piece.reference + '".'));
+    if (!color && !comprado) throw new Error(tr('pricing.no_color_for_piece', { ref: piece.reference }, 'Nenhuma cor selecionada para a peça "' + piece.reference + '".'));
+    const corParaChapa = color || { sheet_price_per_m2: 0, edge_price_per_linear_m: 0 };
 
-    const sheet_cost = pieceDims.area_m2 * color.sheet_price_per_m2 * qty;
-    const edge_cost = pieceDims.edge_band_m * color.edge_price_per_linear_m * qty;
+    const sheet_cost = pieceDims.area_m2 * corParaChapa.sheet_price_per_m2 * qty;
+    const edge_cost = pieceDims.edge_band_m * corParaChapa.edge_price_per_linear_m * qty;
     // Mão de obra: por processo (migration 090) ou pela labor do componente,
     // NUNCA as duas. Os 62 componentes antigos apontam pra uma labor que já
     // embute cortar+fitar+furar; somar processos em cima cobraria duas vezes.
@@ -591,9 +658,28 @@
     // ressalva, marcar "por processo" num pé zeraria o preço dele.
     const proc = (piece.labor_por_processo && piece.origin !== 'comprado')
       ? processLaborFor(piece, pieceDims) : null;
-    const labor_cost = proc
+    const custoUnitario = proc
       ? proc.total * qty
       : (piece.labor_cost_per_unit || 0) * qty;
+
+    // COMPRADO x FABRICADO (migration 119). A peça comprada (um pé, um
+    // puxador — peça de verdade, com posição e desenho, mas que a fábrica
+    // compra pronta) tem o custo dela reclassificado de mão de obra pra
+    // comprado. Mesmo valor, outra natureza.
+    //
+    // purchase_price do cadastro novo ganha do labor_type_id quando existe:
+    // é pra onde o preço de ferragem está mudando de casa. Enquanto o
+    // componente não estiver ligado a um purchased_item, o número antigo
+    // continua valendo — a migration 119 liga todos os que já existiam.
+    // (comprado já foi calculado mais acima, junto da checagem de cor.)
+    const itemComprado = piece.purchased_item
+      || (piece.purchased_item_id ? purchasedItemsById[piece.purchased_item_id] : null)
+      || null;
+    const precoComprado = (itemComprado && itemComprado.purchase_price != null)
+      ? Number(itemComprado.purchase_price) * qty
+      : custoUnitario;
+    const purchased_cost = comprado ? precoComprado : 0;
+    const labor_cost = comprado ? 0 : custoUnitario;
 
     // Dobradiça só se aplica a PORTAS: hinge_side definido, qualquer que
     // seja a Posição no módulo ('none' é frente fixa, não abre, não usa
@@ -619,7 +705,7 @@
       slide_cost = slideModel.price_per_unit * piece.slides_per_unit * qty;
     }
 
-    const piece_total = sheet_cost + edge_cost + labor_cost + hinge_cost + slide_cost;
+    const piece_total = sheet_cost + edge_cost + labor_cost + purchased_cost + hinge_cost + slide_cost;
 
     return {
       piece_id: piece.id,
@@ -644,6 +730,12 @@
       sheet_cost: sheet_cost,
       edge_cost: edge_cost,
       labor_cost: labor_cost,
+      // Custo de COMPRA desta peça (migration 119). Zero em peça fabricada.
+      // Sai separado de labor_cost pra o relatório de fábrica poder somar
+      // ferragem junto com chapa e fita, e não junto com a coladeira.
+      purchased_cost: purchased_cost,
+      purchased_item_id: (itemComprado && itemComprado.id) || piece.purchased_item_id || null,
+      purchased_margin_profile_id: (itemComprado && itemComprado.margin_profile_id) || null,
       // Aberto por processo quando a peça está em processo (migration 090);
       // null nas peças antigas, que têm uma labor só e nada a abrir.
       labor_breakdown: proc
@@ -830,6 +922,32 @@
     return { breakdown: breakdown, total: total };
   }
 
+  // ---- Custo COMPRADO dentro do breakdown, agrupado por perfil de margem ----
+  // (migration 119) Mesma travessia recursiva do calculateVolumeM3: peça-módulo
+  // não tem custo próprio, o dela está nas child_breakdown e precisa ser
+  // multiplicado pela quantidade da peça-módulo que a contém.
+  //
+  // Agrupa por perfil porque a margem do comprado pode ser POR ITEM — somar
+  // tudo num número só e aplicar uma margem média daria o total certo por
+  // acidente hoje e errado no dia em que os perfis divergirem.
+  // Chave '' = item sem perfil próprio (cai no padrão dos comprados).
+  function collectPurchasedCost(breakdown) {
+    const out = { total: 0, porPerfil: {} };
+    const anda = function (lista, fator) {
+      (lista || []).forEach(function (p) {
+        if (!p) return;
+        if (p.is_module) { anda(p.child_breakdown, fator * (p.quantity || 1)); return; }
+        const v = (Number(p.purchased_cost) || 0) * fator;
+        if (!v) return;
+        const k = p.purchased_margin_profile_id || '';
+        out.porPerfil[k] = (out.porPerfil[k] || 0) + v;
+        out.total += v;
+      });
+    };
+    anda(breakdown, 1);
+    return out;
+  }
+
   // ---- Cálculo do módulo PAI (topo da árvore) ----
   //
   // params:
@@ -880,6 +998,47 @@
     const moduleDims = { W: width_mm, H: height_mm, D: depth_mm };
     const result = calculateAssembly(pieces, moduleDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides);
 
+    // ======================================================================
+    // ITENS COMPRADOS (migration 119) — margem própria, aplicada aqui no topo
+    // ======================================================================
+    // Duas fontes de comprado, somadas no mesmo bucket:
+    //   a) PEÇA comprada (um pé, um puxador — está no breakdown, tem posição
+    //      e desenho): purchased_cost de cada folha;
+    //   b) FERRAGEM DE MONTAGEM (tambor, pino, cavilha, suporte): não é peça
+    //      de módulo nenhum, é consequência da FURAÇÃO. Vem de fora, por
+    //      setModuleHardware, contada por Hardware.consumoDoModulo a partir
+    //      dos furos que o .ban gera.
+    //
+    // A margem sai da mesma regra dos dois: perfil do ITEM > perfil padrão
+    // dos comprados > margem do módulo. O último degrau é o que faz esta
+    // mudança nascer neutra: sem perfil configurado, o comprado é
+    // multiplicado exatamente pelo mesmo markup de antes.
+    //
+    // Aplicada AQUI e só aqui, pelo mesmo motivo do markupMultiplier: dentro
+    // de calculateAssembly, uma peça-módulo aninhada componha margem sobre
+    // margem.
+    const markupComprado = function (perfilId) {
+      if (perfilId && purchasedMarkupByProfile[perfilId] > 0) return purchasedMarkupByProfile[perfilId];
+      if (purchasedMarkup > 0) return purchasedMarkup;
+      return markupMultiplier;
+    };
+
+    const compradosPecas = collectPurchasedCost(result.breakdown);
+    const ferragem = moduleHardware || [];
+    const custoFerragem = ferragem.reduce(function (s, l) { return s + (Number(l.cost) || 0); }, 0);
+
+    let vendaComprados = 0;
+    Object.keys(compradosPecas.porPerfil).forEach(function (k) {
+      vendaComprados += compradosPecas.porPerfil[k] * markupComprado(k);
+    });
+    ferragem.forEach(function (l) {
+      vendaComprados += (Number(l.cost) || 0) * markupComprado(l.margin_profile_id);
+    });
+
+    // O que sobra depois de tirar o comprado leva a margem do MÓDULO.
+    const custoFabricacao = result.total - compradosPecas.total;
+    const custoTotal = result.total + custoFerragem;
+
     return {
       module_id: module.id,
       module_name: module.name,
@@ -891,8 +1050,16 @@
       shelf_quantities: shelfQuantities,
       dim_overrides: dimOverrides,
       breakdown: result.breakdown,       // uso interno/admin — NÃO mostrar ao cliente (custo puro)
-      cost_total: result.total,          // custo puro (sem margem) — uso interno/admin
-      total: result.total * markupMultiplier // único valor que o cliente deve ver (custo x margem)
+      // Ferragem de montagem consumida por este módulo (migration 119) —
+      // [{ item_id, name, unit, qty, unit_cost, cost }]. Uso interno/admin:
+      // é o que alimenta a linha de comprados do $ Fábrica e a lista de
+      // compra do pedido. null = catálogo de ferragem ainda não carregou
+      // (que é diferente de "não leva ferragem", e o relatório precisa saber
+      // a diferença pra não mostrar zero com cara de verdade).
+      hardware: moduleHardware,
+      purchased_cost: compradosPecas.total + custoFerragem,  // custo puro dos comprados
+      cost_total: custoTotal,            // custo puro (sem margem) — uso interno/admin
+      total: custoFabricacao * markupMultiplier + vendaComprados // único valor que o cliente deve ver
     };
   }
 
@@ -933,6 +1100,17 @@
     setProcessLabor,
     setHoleCounts,
     processLaborFor,
+    // Migration 119 — itens comprados. Os três são publicadores (o chamador
+    // avisa ANTES de pedir o preço), mesma mecânica de setProcessLabor/
+    // setHoleCounts e pelo mesmo motivo: são ~8 pontos chamando
+    // calculateModulePrice e acrescentar parâmetro em todos convida a
+    // esquecer um. setModuleHardware é POR MÓDULO — quem calcula vários
+    // módulos num laço publica antes de cada um.
+    setPurchasedMarkup,
+    setPurchasedMarkupByProfile,
+    setPurchasedItems,
+    setModuleHardware,
+    collectPurchasedCost,
     resolveBodyDims,
     hingeCountForDoorHeight,
     pickDrawerDepth,
