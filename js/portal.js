@@ -1434,6 +1434,18 @@ async function loadPricingMarkup() {
       purchasedItems.forEach((it) => { porId[it.id] = it; });
       Pricing.setPurchasedItems(porId);
     }
+    // FERRAGEM DE MONTAGEM (minifix/cavilha/tambor/suporte, migration 119) —
+    // 2026-08-18, Matt notou que sumiu do $ Fábrica. Causa: js/hardware.js
+    // nunca carregava no portal (só no ERP) e ninguém publicava o catálogo
+    // aqui — Hardware.consumoDoModulo ficava undefined/vazio pra sempre, sem
+    // erro nenhum (ferragem só saía R$0, com cara de zero de verdade). Ver
+    // recomputeProjectSlotPricing, que é quem CONSOME este catálogo — mesmo
+    // padrão do purchasedItems acima: best-effort, banco sem a 119 = sem
+    // ferragem calculada, comportamento de sempre.
+    if (typeof Hardware !== 'undefined' && Hardware.setCatalog && Array.isArray(purchasedItems)) {
+      const { data: hardwareRules, error: hwError } = await supabaseClient.from('hardware_rules').select('*');
+      if (!hwError && Array.isArray(hardwareRules)) Hardware.setCatalog(purchasedItems, hardwareRules);
+    }
   } catch (e) { /* tabela ainda não existe (migration 119 não rodou) — segue sem itens comprados */ }
 }
 
@@ -13009,20 +13021,47 @@ function recomputeProjectSlotPricing(slot) {
   // dimensão passa, então é aqui que o recálculo mora.
   rebuildProjectSlotLayoutPieces(slot);
   const effectivePieces = projectSlotEffectivePieces(slot);
+  const containerDims = { W: Number(slot.width_mm) || 0, H: Number(slot.height_mm) || 0, D: Number(slot.depth_mm) || 0 };
+  // `parts` sai UMA vez e serve tanto a contagem de furos (abaixo) quanto o
+  // consumo de ferragem (mais abaixo) — as duas dependem da MESMA resolução
+  // (resolvePiecesForViewer), e calcular duas vezes só pra separar os dois
+  // blocos seria custo em dobro (buildBoxes é a parte cara) sem ganho nenhum.
+  let parts = null;
+  try {
+    parts = resolvePiecesForViewer(
+      effectivePieces, containerDims,
+      slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+    );
+  } catch (e) { parts = null; }
   // Publica a contagem real de furos ANTES de calcular (ver
   // projectHoleCountsFor). Pricing.setHoleCounts(null) volta ao
   // furos_equivalentes do cadastro, então nenhum caminho fica sem número.
   if (typeof Pricing !== 'undefined' && Pricing.setHoleCounts) {
     let contagem = null;
-    try {
-      const parts = resolvePiecesForViewer(
-        effectivePieces,
-        { W: Number(slot.width_mm) || 0, H: Number(slot.height_mm) || 0, D: Number(slot.depth_mm) || 0 },
-        slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
-      );
-      contagem = projectHoleCountsFor(slot, parts);
-    } catch (e) { contagem = null; }
+    try { contagem = parts ? projectHoleCountsFor(slot, parts) : null; } catch (e) { contagem = null; }
     Pricing.setHoleCounts(contagem);
+  }
+  // FERRAGEM DE MONTAGEM (minifix/cavilha/tambor/suporte, migration 119,
+  // 2026-08-18) — mesma publicação por-módulo que setHoleCounts acima, e
+  // pelo mesmo motivo: Hardware.consumoDoModulo conta a partir dos MESMOS
+  // furos deste slot (collectAssembly por dentro), então precisa do `parts`
+  // e das medidas de AGORA, não de um valor genérico. Sem isto — que era o
+  // bug: hardware.js nem carregava no portal e ninguém chamava esta função
+  // — moduleHardware ficava sempre null e a ferragem saía R$0 do $ Fábrica,
+  // sem erro nenhum. Ver o carregamento do catálogo (Hardware.setCatalog)
+  // logo depois do purchased_items, mais acima neste arquivo.
+  if (typeof Pricing !== 'undefined' && Pricing.setModuleHardware) {
+    let ferragem = null;
+    if (parts && typeof Hardware !== 'undefined' && Hardware.consumoDoModulo) {
+      try {
+        ferragem = Hardware.consumoDoModulo(parts, containerDims.W, containerDims.H, containerDims.D, {
+          drillingsByComponent: projectDrillingsByComponent,
+          holesByPattern: projectHolesByPattern,
+          settings: projectDrillingSettings
+        });
+      } catch (e) { ferragem = null; }
+    }
+    Pricing.setModuleHardware(ferragem);
   }
   slot.result = slot.module.is_decoration
     ? { total: 0, breakdown: [] }
