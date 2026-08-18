@@ -335,8 +335,21 @@ const Photoreal = (() => {
       // o comentário grande lá. Este arquivo tem que desenhar a MESMA peça no
       // MESMO lugar, senão a foto realista sai diferente do projeto.
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const faceY = faceB; // profundidade cadastrada -> altura do painel
-      const faceZ = faceA; // altura cadastrada -> profundidade do painel
+      // O LADO LONGO SEMPRE CORRE NA PROFUNDIDADE — é isso que "deitada pra
+      // trás" quer dizer, e é o que põe as duas bordas laminadas do 2C em
+      // cima e embaixo em vez de na frente.
+      //
+      // Trocar altura por profundidade CEGAMENTE (1ª versão, 18/08) estava
+      // errado: depende de qual medida o cadastro escreveu onde. A lateral
+      // direita deste mesmo módulo (cadastro antigo, que já estava certa) usa
+      // 19.5 / H / D — ali não há nada a trocar, e a troca cega deixava a peça
+      // D de altura por H de profundidade, de pé de novo.
+      //
+      // A regra que vale nas duas convenções: das duas medidas que sobram
+      // depois da espessura, a MENOR é a altura da lateral e a MAIOR é a
+      // profundidade. Uma lateral de gaveta é sempre mais funda que alta.
+      const faceY = Math.min(faceA, faceB); // menor -> altura da gaveta
+      const faceZ = Math.max(faceA, faceB); // maior -> profundidade (lado longo)
       const content = resolveContentPh(part, thickness, faceY, faceZ);
       emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceY / 2 + offY + legH, -D / 2 + faceZ / 2 + offZ, resolveGrainRotate(part, faceZ, faceY, true));
     } else if (role === 'top' || role === 'bottom') {

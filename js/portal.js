@@ -12443,8 +12443,10 @@ function computeProjectSlotElevationRects(piecesResolved, offsetXmm, offsetYmm) 
       // Lateral de gaveta (migration 118): vista de frente ela é a espessura
       // por uma ALTURA que, nesse papel, vem da profundidade cadastrada — a
       // mesma troca de eixos do 3D (ver placePieceInBox em viewer3d.js).
-      const { thickness, faceB } = projectSplitThickness(w, h, d, part.positioning);
-      push(offX, offY, thickness, faceB, 1);
+      const { thickness, faceA, faceB } = projectSplitThickness(w, h, d, part.positioning);
+      // Vista de frente: espessura por ALTURA — e a altura é a MENOR das duas
+      // medidas que sobram (ver a regra em placePieceInBox/viewer3d.js).
+      push(offX, offY, thickness, Math.min(faceA, faceB), 1);
     } else if (role === 'top' || role === 'bottom' || role === 'countertop') {
       const { thickness, faceA } = projectSplitThickness(w, h, d, part.positioning);
       push(offX, offY, faceA, thickness, 1);
