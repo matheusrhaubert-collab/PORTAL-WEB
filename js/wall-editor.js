@@ -97,7 +97,8 @@
       '  <div class="po-wall-header">',
       '    <strong>Ajustar paredes</strong>',
       '    <div class="po-wall-tools">',
-      '      <button type="button" class="po-wall-tool" data-acao="add" title="Adicionar parede na ponta da última">+ parede</button>',
+      '      <button type="button" class="po-wall-tool" data-acao="add" title="Adicionar parede na ponta da última (grudada)">+ parede</button>',
+      '      <button type="button" class="po-wall-tool" data-acao="add-solta" title="Adicionar uma parede SOLTA no meio do ambiente (divisória, sem grudar em nenhuma outra)">+ solta</button>',
       '      <button type="button" class="po-wall-tool" data-acao="inverter" title="Inverter o lado de dentro desta parede">⇋ virar</button>',
       '      <button type="button" class="po-wall-tool" data-acao="ocultar" title="Esconder esta parede (e os móveis presos nela) — só na visualização">👁 ocultar</button>',
       '      <button type="button" class="po-wall-tool po-wall-tool-danger" data-acao="remover" title="Remover a parede selecionada">🗑 remover</button>',
@@ -111,7 +112,8 @@
       '      <label>Ângulo <span class="po-wall-un">°</span><input type="number" id="po-wall-ang" step="1"></label>',
       '      <label>Espessura <span class="po-wall-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
       '      <label>Altura desta parede <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
-      '      <p class="po-wall-hint">Arraste o <b>corpo</b> da parede pra levar ela inteira; arraste as <b>pontas</b> pra girar e esticar. O ímã pega a malha e os ângulos de 45° — segure Shift pra soltar.</p>',
+      '      <p class="po-wall-hint">Arraste o <b>corpo</b> da parede pra levar ela inteira; arraste as <b>pontas</b> pra girar e esticar. O ímã pega a malha e os ângulos de 45° — segure <b>Shift</b> pra soltar.</p>',
+      '      <p class="po-wall-hint"><b>Desconectar:</b> segure <b>Shift</b> e arraste a ponta pra fora — a parede vizinha fica onde está. Sem Shift, as duas andam juntas (é o mesmo canto). <b>+ solta</b> cria uma divisória no meio, sem grudar em ninguém.</p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
       '      <div class="po-wall-side-title" style="margin-top:6px;">Ambiente</div>',
       '      <label>Pé-direito <span class="po-wall-un">mm</span><input type="number" id="po-wall-teto" step="10"></label>',
@@ -132,6 +134,7 @@
       if (a === 'cancelar') fechar(false);
       else if (a === 'ok') fechar(true);
       else if (a === 'add') adicionar();
+      else if (a === 'add-solta') adicionarSolta();
       else if (a === 'remover') remover();
       else if (a === 'inverter') inverter();
       else if (a === 'ocultar') alternaOculta();
@@ -206,6 +209,38 @@
       nova = padrao()[0];
     }
     estado.segs.push(nova);
+    estado.sel = estado.segs.length - 1;
+    desenha();
+  }
+  // PAREDE SOLTA (2026-08-18) — pedido do Matt: "as vezes eu quero colocar uma
+  // parede solta no ambiente".
+  //
+  // adicionar() sempre nasce GRUDADA na ponta da última, virando 90° — é o que
+  // faz sentido pra desenhar o contorno de um cômodo, e era o único jeito de
+  // criar parede aqui. Uma divisória no meio do ambiente não tem ponta pra
+  // herdar: nasce no CENTRO do que já existe, horizontal, longe das outras
+  // pontas (então o ímã de canto, RAIO 260, não a captura no primeiro
+  // arraste).
+  function adicionarSolta() {
+    if (!estado) return;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    estado.segs.forEach((s) => {
+      [[s.ax, s.az], [s.bx, s.bz]].forEach(([px, pz]) => {
+        x0 = Math.min(x0, px); x1 = Math.max(x1, px);
+        z0 = Math.min(z0, pz); z1 = Math.max(z1, pz);
+      });
+    });
+    if (!isFinite(x0)) { x0 = -1500; x1 = 1500; z0 = -1500; z1 = 1500; }
+    const cx = Math.round((x0 + x1) / 2), cz = Math.round((z0 + z1) / 2);
+    const comp = Math.max(1000, Math.min(2000, Math.round((x1 - x0) * 0.6)));
+    const base = estado.segs[estado.sel] || estado.segs[0];
+    estado.segs.push({
+      id: novoId(),
+      ax: Math.round(cx - comp / 2), az: cz,
+      bx: Math.round(cx + comp / 2), bz: cz,
+      thicknessMm: (base && base.thicknessMm) || ESPESSURA_PADRAO,
+      ceilingMm: null
+    });
     estado.sel = estado.segs.length - 1;
     desenha();
   }
@@ -495,7 +530,19 @@
       const oldZ = qual === 'a' ? s.az : s.bz;
       if (qual === 'a') { s.ax = Math.round(x); s.az = Math.round(z); }
       else { s.bx = Math.round(x); s.bz = Math.round(z); }
-      arrastaCantoJunto(idx, oldX, oldZ, qual === 'a' ? s.ax : s.bx, qual === 'a' ? s.az : s.bz);
+      // SHIFT DESCONECTA O CANTO (2026-08-18, Matt: "às vezes eu quero colocar
+      // uma parede solta no ambiente, deixa eu desconectar").
+      //
+      // Sem Shift a vizinha vem junto — é o comportamento certo pro caso
+      // comum: as duas pontas são o MESMO canto físico e separá-las sem querer
+      // abre fresta (o bug de 2026-08-14 que criou arrastaCantoJunto). Mas com
+      // ela SEMPRE colada não havia como desgrudar: puxar a ponta pra longe
+      // arrastava a vizinha atrás, pra sempre.
+      //
+      // Shift já significava "solta" nas outras três amarras deste arraste
+      // (malha de 50mm, ângulo de 45° e ímã de canto). Passa a soltar também a
+      // vizinha — um gesto só, mesma tecla, nada de modo escondido.
+      if (!livre) arrastaCantoJunto(idx, oldX, oldZ, qual === 'a' ? s.ax : s.bx, qual === 'a' ? s.az : s.bz);
       desenha();
     };
     const soltar = () => {

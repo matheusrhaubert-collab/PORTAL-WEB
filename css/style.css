@@ -3346,7 +3346,11 @@ header.po-topnav {
 .po-proj-library-filter-select + .po-proj-library-filter-select { margin-top: 6px; }
 
 #po-tab-projects .po-comp-title-row { margin-bottom: 2px; }
-#po-tab-projects .po-proj-topbar { margin: 4px 0 8px; }
+/* A CAIXA em volta da barra (2026-08-18). O padding de 10px em cima e embaixo
+   (.po-proj-topbar) mais o alinhamento flex-end deixavam os icones altos e com
+   uma faixa vazia embaixo. Metade do padding e alinhamento CENTRALIZADO: a
+   caixa encolhe e o conteudo fica no meio dela de verdade. */
+#po-tab-projects .po-proj-topbar { margin: 4px 0 8px; padding: 5px 12px; align-items: center; }
 #po-tab-projects .po-comp-mode-banner { margin-bottom: 8px; padding: 6px 12px; }
 
 /* Pedido do usuário (3ª rodada, 2026-07-21): sem botão +/-, e label colado
@@ -3623,9 +3627,19 @@ header.po-topnav {
    ========================================================================== */
 #po-proj-canvas-tools.po-proj-hud-tl {
   align-items: center; gap: 2px;
-  padding: 6px 10px; margin: 0 0 10px 0;
-  border: none; border-bottom: 1px solid var(--border);
-  border-radius: 0; box-shadow: none; background: var(--panel);
+  /* CAIXA MAIS BAIXA, ICONES NO MEIO (2026-08-18, Matt: "tem muito espaco
+     sobrando, os icones estao meio flutuando no meio dela, reduz pela metade,
+     os icones todos bem no meio").
+     Duas sobras somavam altura sem servir pra nada:
+       · margin-bottom de 10px, que existia so pra afastar do filete de baixo —
+         e o filete saiu ("tem uma linha correndo embaixo de todos icones, pode
+         eliminar"), entao a margem foi junto;
+       · o padding proprio, agora colado no minimo (a caixa de fora,
+         .po-proj-topbar, ja da o respiro).
+     Os filetes ENTRE grupos (.po-tb-sep) continuam — esses agrupam. */
+  padding: 2px 10px; margin: 0;
+  border: none;
+  border-radius: 0; box-shadow: none; background: transparent;
 }
 /* Rótulos de grupo saem de cena (ver comentário acima). */
 #po-proj-canvas-tools .po-tb-label { display: none; }
@@ -3634,12 +3648,18 @@ header.po-topnav {
 #po-proj-canvas-tools .po-tb-seg { background: transparent; border: none; padding: 0; gap: 2px; }
 
 /* Botão da barra: texto discreto, ícone fino, alvo confortável sem volume. */
+/* PRETO, NAO CINZA (2026-08-18, Matt: "os itens em cinza nao estao se
+   destacando, pode deixar eles pretos"). O cinza (#4a4740 no texto, #8d8478 no
+   icone) veio do refinamento de 13/08, que perseguia leveza — mas leveza
+   virou apagado: sobre o fundo creme do painel o contraste caia demais e a
+   barra sumia. Preto no texto E no icone; quem separa ativo de inativo
+   continua sendo o AMBAR do .active, nao o tom de cinza. */
 #po-proj-canvas-tools .po-tb-seg-btn {
   gap: 7px; padding: 7px 11px; border-radius: 9px;
-  font-size: 12.5px; font-weight: 500; color: #4a4740;
+  font-size: 12.5px; font-weight: 500; color: var(--text);
   background: transparent; box-shadow: none;
 }
-#po-proj-canvas-tools .po-tb-seg-btn svg { width: 16px; height: 16px; color: #8d8478; }
+#po-proj-canvas-tools .po-tb-seg-btn svg { width: 16px; height: 16px; color: var(--text); }
 #po-proj-canvas-tools .po-tb-seg-btn:hover { background: #f4f2ed; }
 /* ATIVO = âmbar (texto + ícone + fundo bem claro). */
 #po-proj-canvas-tools .po-tb-seg-btn.active,
@@ -3652,9 +3672,9 @@ header.po-topnav {
 #po-proj-canvas-tools .po-tb-icon-card {
   flex-direction: row; gap: 7px; padding: 7px 11px; border: none;
   border-radius: 9px; background: transparent; min-width: 0;
-  font-size: 12.5px; font-weight: 500; color: #4a4740;
+  font-size: 12.5px; font-weight: 500; color: var(--text);
 }
-#po-proj-canvas-tools .po-tb-icon-card svg { width: 16px; height: 16px; color: #8d8478; }
+#po-proj-canvas-tools .po-tb-icon-card svg { width: 16px; height: 16px; color: var(--text); }
 #po-proj-canvas-tools .po-tb-icon-card:hover { background: #f4f2ed; }
 #po-proj-canvas-tools .po-tb-dot { top: 4px; right: 4px; width: 6px; height: 6px; }
 #po-proj-collision-btn.active { background: #fdf4e6; }
@@ -3663,7 +3683,7 @@ header.po-topnav {
 /* Menu de estilo: mesma pegada dos botões, sem caixa pesada. */
 #po-proj-style-menu .po-style-btn {
   height: auto; padding: 7px 11px; border-radius: 9px; min-width: 0;
-  border: none; background: transparent; font-size: 12.5px; font-weight: 500; color: #4a4740;
+  border: none; background: transparent; font-size: 12.5px; font-weight: 500; color: var(--text);
 }
 #po-proj-style-menu .po-style-btn:hover { background: #f4f2ed; }
 
@@ -3748,7 +3768,9 @@ header.po-topnav {
    O que NUNCA some é "Send to order": é a ação final do fluxo. */
 #po-proj-canvas-tools.po-proj-hud-tl {
   justify-content: space-between; gap: 0;
-  padding: 5px 12px; overflow: visible; flex-wrap: nowrap;
+  /* Esta regra vem DEPOIS da de cima e e quem manda no padding — baixar so la
+     em cima nao adiantava nada (2026-08-18). */
+  padding: 2px 12px; overflow: visible; flex-wrap: nowrap;
 }
 #po-proj-canvas-tools .po-tb-group { padding: 0; min-width: 0; }
 #po-proj-canvas-tools .po-tb-sep { margin: 6px 2px; }
