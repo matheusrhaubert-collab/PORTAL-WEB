@@ -330,6 +330,15 @@ const Photoreal = (() => {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const content = resolveContentPh(part, thickness, faceA, faceB);
       emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceA / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceB, faceA, false));
+    } else if (role === 'drawer_side') {
+      // Cópia fiel do ramo 'drawer_side' de viewer3d.js (migration 118) — ver
+      // o comentário grande lá. Este arquivo tem que desenhar a MESMA peça no
+      // MESMO lugar, senão a foto realista sai diferente do projeto.
+      const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
+      const faceY = faceB; // profundidade cadastrada -> altura do painel
+      const faceZ = faceA; // altura cadastrada -> profundidade do painel
+      const content = resolveContentPh(part, thickness, faceY, faceZ);
+      emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceY / 2 + offY + legH, -D / 2 + faceZ / 2 + offZ, resolveGrainRotate(part, faceZ, faceY, true));
     } else if (role === 'top' || role === 'bottom') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const content = resolveContentPh(part, faceA, thickness, faceB);

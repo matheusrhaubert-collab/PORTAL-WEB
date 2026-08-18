@@ -1520,6 +1520,37 @@ const Viewer3D = (function () {
       const z = -D / 2 + faceB / 2 + offZ;
       // Face visível da lateral é o par ±X: U = profundidade, V = altura.
       emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceB, faceA, false), null);
+    // LATERAL DE GAVETA — a lateral do casco DEITADA PRA TRÁS (migration 118).
+    //
+    // Pedido do Matt (2026-08-18): "preciso uma posição nova para inserir as
+    // laterais dessa gaveta, que é um flatbord 2C. porém ele é uma lateral
+    // deitada pra trás. digo, na lateral as bordas vão na frente. nesse caso
+    // elas vão em cima e embaixo" + "a altura precisa virar profundidade".
+    //
+    // É o mesmo painel de 'left'/'right', com UMA troca: a medida cadastrada
+    // como ALTURA vira a profundidade do painel, e a PROFUNDIDADE vira a
+    // altura. Por isso faceA e faceB entram trocados em relação à lateral do
+    // casco — e a espessura continua saindo do MESMO splitThickness, pra não
+    // mudar qual das três medidas é lida como espessura.
+    //
+    // O veio nasce DEITADO (fallback true = corre no sentido do U, que aqui é
+    // a profundidade) em vez de em pé como na lateral do casco. Veio
+    // cadastrado continua vencendo, como em todo papel.
+    //
+    // ESCOPO, e isto é uma trava, não um detalhe: 'drawer_side' existe SÓ pro
+    // desenho. Plano de corte, preço, receita de fita, furação e .ban leem o
+    // componente Flatbord 2C exatamente como sempre leram — "o flatbord
+    // continua intacto no plano de corte, nele você não pode tocar. JAMAIS".
+    } else if (role === 'drawer_side') {
+      const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
+      const faceY = faceB; // profundidade cadastrada -> altura do painel
+      const faceZ = faceA; // altura cadastrada -> profundidade do painel
+      const geometry = buildPanelGeometry(part, thickness, faceY, faceZ);
+      const x = -W / 2 + thickness / 2 + offX;
+      const y = faceY / 2 + offY + legH;
+      const z = -D / 2 + faceZ / 2 + offZ;
+      // Face visível é o par ±X: U = profundidade (o lado longo agora), V = altura.
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceZ, faceY, true), null);
     } else if (role === 'top' || role === 'bottom') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       const geometry = new THREE.BoxGeometry(faceA, thickness, faceB);

@@ -12439,6 +12439,12 @@ function computeProjectSlotElevationRects(piecesResolved, offsetXmm, offsetYmm) 
     if (role === 'left' || role === 'right') {
       const { thickness, faceA } = projectSplitThickness(w, h, d, part.positioning);
       push(offX, offY, thickness, faceA, 1);
+    } else if (role === 'drawer_side') {
+      // Lateral de gaveta (migration 118): vista de frente ela é a espessura
+      // por uma ALTURA que, nesse papel, vem da profundidade cadastrada — a
+      // mesma troca de eixos do 3D (ver placePieceInBox em viewer3d.js).
+      const { thickness, faceB } = projectSplitThickness(w, h, d, part.positioning);
+      push(offX, offY, thickness, faceB, 1);
     } else if (role === 'top' || role === 'bottom' || role === 'countertop') {
       const { thickness, faceA } = projectSplitThickness(w, h, d, part.positioning);
       push(offX, offY, faceA, thickness, 1);

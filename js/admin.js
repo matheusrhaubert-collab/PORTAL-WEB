@@ -1803,6 +1803,10 @@ async function loadComponents() {
 const POSITION_ROLE_LABELS = {
   left: 'Lateral esq.', right: 'Lateral dir.', top: 'Topo', bottom: 'Base',
   back: 'Fundo', front: 'Frente/porta', shelf: 'Prateleira', drawer: 'Gaveta',
+  // 'drawer_side' (migration 118) = a lateral do CASCO deitada pra trás: o
+  // lado longo corre na profundidade, as bordas laminadas ficam em cima e
+  // embaixo. Só o DESENHO muda — o componente (Flatbord 2C) é o mesmo.
+  drawer_side: 'Lateral de gaveta',
   leg: 'Pé', handle: 'Puxador', baseboard: 'Rodapé',
   countertop: 'Tampo', free: 'Peça livre', other: 'Outro/interno'
 };
