@@ -3865,8 +3865,23 @@ function renderMoneyFabrica(body, rel) {
     const f = rel.fita[cor];
     html += linha(I18n.t('money.row_edgeband') + escapeHtmlCutlist(cor), f.m.toFixed(2) + ' m', f.custo);
   });
-  if (fer.dobradica.custo > 0) html += linha(I18n.t('money.row_hinges'), fer.dobradica.qtd + ' ' + I18n.t('money.unit_pieces'), fer.dobradica.custo);
-  if (fer['corrediça'].custo > 0) html += linha(I18n.t('money.row_slides'), fer['corrediça'].qtd + ' ' + I18n.t('money.unit_pairs'), fer['corrediça'].custo);
+  // Dobradiça/corrediça QUEBRADA POR MODELO (2026-08-19, Matt: "nao esta
+  // especificando qual corredica nem tamanho") — uma linha por modelo
+  // realmente usado, com nome + comprimento do trilho quando tem, em vez de
+  // um total genérico "Corrediças". Mesmo padrão de ferMontagem logo abaixo.
+  // fer.dobradica.custo/fer['corrediça'].custo continuam existindo (usados
+  // em totalMateria/rel.totalCusto), só não viram mais linha própria aqui.
+  const dobradicaPorModelo = Object.keys(fer.dobradicaPorModelo).map((k) => fer.dobradicaPorModelo[k])
+    .sort((a, b) => b.custo - a.custo || a.name.localeCompare(b.name));
+  dobradicaPorModelo.forEach((l) => {
+    html += linha(I18n.t('money.row_hinges') + ' — ' + l.name, l.qtd + ' ' + I18n.t('money.unit_pieces'), l.custo);
+  });
+  const corredicaPorModelo = Object.keys(fer.corredicaPorModelo).map((k) => fer.corredicaPorModelo[k])
+    .sort((a, b) => b.custo - a.custo || a.name.localeCompare(b.name));
+  corredicaPorModelo.forEach((l) => {
+    const tam = l.rail_length_mm != null ? ' (' + Math.round(l.rail_length_mm) + 'mm)' : '';
+    html += linha(I18n.t('money.row_slides') + ' — ' + l.name + tam, l.qtd + ' ' + I18n.t('money.unit_pairs'), l.custo);
+  });
   // FERRAGEM DE MONTAGEM — minifix (pino+tambor), cavilha, suporte de
   // prateleira etc. (migration 119, ligada no $ Fábrica em 2026-08-18). Uma
   // linha por ITEM comprado, nome vem direto do cadastro (Itens Comprados),
@@ -3990,7 +4005,17 @@ function collectProjectCostReport(slots) {
     material: {},      // por cor: { m2, custo }
     fita: {},          // por cor: { m, custo }
     labor: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0 },
-    ferragem: { dobradica: { qtd: 0, custo: 0 }, corrediça: { qtd: 0, custo: 0 } },
+    ferragem: {
+      dobradica: { qtd: 0, custo: 0 }, corrediça: { qtd: 0, custo: 0 },
+      // POR MODELO (2026-08-19, Matt: "nao esta especificando qual corredica
+      // nem tamanho"). Os buckets acima (dobradica/corrediça) continuam
+      // existindo pra rel.totalCusto e o "qtd total" — estes aqui são só pra
+      // exibir QUAL corrediça/dobradiça pagou por cada parcela, quebrado por
+      // modelo (nome + comprimento do trilho, quando tem). Chave: model_id
+      // (hinge_model_id/slide_model_id, ver Pricing.calculateModulePiece/
+      // calculateLeafPiece) — mesmo padrão de ferragemMontagem abaixo.
+      dobradicaPorModelo: {}, corredicaPorModelo: {}
+    },
     // FERRAGEM DE MONTAGEM (minifix/cavilha/tambor/suporte, migration 119,
     // 2026-08-18) — Matt: "nao esta aparecendo minifix, cavilha, corredica e
     // tambor minifix" no $ Fábrica. Causa: o cálculo (Hardware.consumoDoModulo,
@@ -4010,6 +4035,30 @@ function collectProjectCostReport(slots) {
   const nomeCor = (slot, roleId) => {
     const c = (slot.colorsByRole || {})[roleId];
     return (c && c.name) || I18n.t('money.no_color');
+  };
+
+  // Empilha custo de dobradiça/corrediça POR MODELO (2026-08-19) — id ausente
+  // (peça antiga calculada antes desta mudança, ou hardware sem modelo
+  // identificável) cai num balde "modelo não identificado" em vez de sumir.
+  const registraFerragemModelo = (mapa, modelId, modelName, railMm, qtd, custo) => {
+    const chave = modelId || ('#' + (modelName || '?'));
+    const acc = mapa[chave] || (mapa[chave] = {
+      name: modelName || I18n.t('money.no_hardware_model'),
+      rail_length_mm: railMm != null ? railMm : null,
+      qtd: 0, custo: 0
+    });
+    acc.qtd += qtd;
+    acc.custo += custo;
+    if (acc.rail_length_mm == null && railMm != null) acc.rail_length_mm = railMm;
+  };
+
+  // Rótulo da peça com "— Modelo NNNmm" quando tem hardware com nome
+  // identificado — é o que faz a tabela "BY PART" também responder "qual
+  // corrediça" sem precisar abrir a linha de matéria-prima.
+  const labelComModelo = (base, modelName, railMm) => {
+    if (!modelName) return base;
+    const tam = railMm != null ? ' ' + Math.round(railMm) + 'mm' : '';
+    return base + ' — ' + modelName + tam;
   };
 
   const anda = (slot, linhas, prefixo, fator) => {
@@ -4045,14 +4094,18 @@ function collectProjectCostReport(slots) {
         const slideCost = (Number(p.slide_cost) || 0) * fator;
         if (hingeCost > 0 || slideCost > 0) {
           const qtdEfetiva = (Number(p.quantity) || 1) * fator;
+          const baseLabel = (prefixo ? prefixo + ' › ' : '') + (p.reference || '');
           // Entra no detalhe (linha própria na tabela "BY PART", coluna
           // HARDWARE) pro total "By module" (que soma rel.detalhe) fechar —
           // sem isto, a linha "Corrediças" apareceria certa mas o total do
           // módulo continuaria batendo errado. NÃO soma em rel.pecas: não é
-          // uma peça física cortada, é hardware da peça-módulo.
+          // uma peça física cortada, é hardware da peça-módulo. Rótulo ganha
+          // "— Modelo NNNmm" (2026-08-19) quando o modelo é identificado.
           rel.detalhe.push({
             modulo: (slot.module && slot.module.name) || '',
-            peca: (prefixo ? prefixo + ' › ' : '') + (p.reference || ''),
+            peca: hingeCost > 0
+              ? labelComModelo(baseLabel, p.hinge_model_name, null)
+              : labelComModelo(baseLabel, p.slide_model_name, p.slide_model_rail_length_mm),
             qtd: qtdEfetiva,
             m2: 0, fitaM: 0, chapa: 0, fita: 0, corte: 0, colagem: 0, furacao: 0, usinagem: 0, laborAntiga: 0,
             ferragem: hingeCost + slideCost,
@@ -4061,10 +4114,14 @@ function collectProjectCostReport(slots) {
           if (hingeCost > 0) {
             rel.ferragem.dobradica.qtd += (Number(p.hinge_count) || 0) * qtdEfetiva;
             rel.ferragem.dobradica.custo += hingeCost;
+            registraFerragemModelo(rel.ferragem.dobradicaPorModelo, p.hinge_model_id, p.hinge_model_name, null,
+              (Number(p.hinge_count) || 0) * qtdEfetiva, hingeCost);
           }
           if (slideCost > 0) {
             rel.ferragem['corrediça'].qtd += qtdEfetiva;
             rel.ferragem['corrediça'].custo += slideCost;
+            registraFerragemModelo(rel.ferragem.corredicaPorModelo, p.slide_model_id, p.slide_model_name,
+              p.slide_model_rail_length_mm, qtdEfetiva, slideCost);
           }
         }
         // O nome dela vira prefixo pra a peça-folha lá dentro não aparecer
@@ -4081,9 +4138,19 @@ function collectProjectCostReport(slots) {
       // É a linha que permite auditar: dá pra ver a peça que está pagando
       // furação sem levar furo, ou corte caro demais pro tamanho dela.
       const lb = p.labor_breakdown || {};
+      const pecaBase = (prefixo ? prefixo + ' › ' : '') + (p.reference || '');
+      // "— Modelo NNNmm" (2026-08-19) na peça-folha comum também — uma porta/
+      // gaveta feita de componente de catálogo (não peça-módulo) pode ter
+      // hinge_cost/slide_cost própria (calculateLeafPiece), mesmo motivo do
+      // branch is_module acima.
+      const pecaLabel = (Number(p.hinge_cost) || 0) > 0
+        ? labelComModelo(pecaBase, p.hinge_model_name, null)
+        : (Number(p.slide_cost) || 0) > 0
+          ? labelComModelo(pecaBase, p.slide_model_name, p.slide_model_rail_length_mm)
+          : pecaBase;
       rel.detalhe.push({
         modulo: (slot.module && slot.module.name) || '',
-        peca: (prefixo ? prefixo + ' › ' : '') + (p.reference || ''),
+        peca: pecaLabel,
         qtd: qtd,
         m2: (Number(p.area_m2) || 0) * qtd,
         fitaM: (Number(p.edge_band_m) || 0) * qtd,
@@ -4124,10 +4191,14 @@ function collectProjectCostReport(slots) {
       if ((Number(p.hinge_cost) || 0) > 0) {
         rel.ferragem.dobradica.qtd += (Number(p.hinge_count) || 0) * qtd;
         rel.ferragem.dobradica.custo += Number(p.hinge_cost) || 0;
+        registraFerragemModelo(rel.ferragem.dobradicaPorModelo, p.hinge_model_id, p.hinge_model_name, null,
+          (Number(p.hinge_count) || 0) * qtd, Number(p.hinge_cost) || 0);
       }
       if ((Number(p.slide_cost) || 0) > 0) {
         rel.ferragem['corrediça'].qtd += qtd;
         rel.ferragem['corrediça'].custo += Number(p.slide_cost) || 0;
+        registraFerragemModelo(rel.ferragem.corredicaPorModelo, p.slide_model_id, p.slide_model_name,
+          p.slide_model_rail_length_mm, qtd, Number(p.slide_cost) || 0);
       }
     });
   };
