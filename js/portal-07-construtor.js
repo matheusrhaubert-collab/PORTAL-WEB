@@ -2144,7 +2144,27 @@ function projectLayoutRowsForSlot(slot, pieces) {
       }
     }
     if (r.hinge_side && r.hinge_side !== 'none' && !slot.hingeModel) r.hinge_side = 'none';
-    if (r.slides_per_unit > 0 && !slot.slideModel) r.slides_per_unit = 0;
+    // BUG (Matt, 2026-08-19: "e deixei tudo ligado e no construtor nao
+    // apareceu a corredica no preco"). Esta trava nasceu ANTES do hardware
+    // PRÓPRIO da peça-módulo existir (own_slide_model/own_slide_models,
+    // migration 103/127/128) — na época, a ÚNICA fonte de modelo de
+    // corrediça era o dropdown do slot (slot.slideModel, escolhido lá em
+    // cima pelo cliente/admin), então "sem escolha lá em cima = sem
+    // corrediça" fazia sentido. Só que r.slides_per_unit é o MESMO campo
+    // usado tanto pela peça-folha comum (calculateLeafPiece, que SÓ conhece
+    // slot.slideModel mesmo) quanto pela peça-módulo tipo gaveta
+    // (calculateModulePiece, que prioriza own_slide_model/own_slide_models —
+    // o hardware FIXO vinculado ao módulo filho, module_slide_models +
+    // module_purchased_slides — e só cai pro slot.slideModel se o módulo
+    // filho não tiver NADA vinculado, ver js/module-pieces.js
+    // fetchModuleOwnHingeAndSlideModels). Este `if` zerava slides_per_unit
+    // ANTES de calculateModulePiece nem chegar a olhar pro hardware próprio
+    // — uma gaveta com corrediça vinculada certinha (Itens Comprados,
+    // migration 128) nunca cobrava nada se o slot não tivesse (e normalmente
+    // não tem, de propósito — é hardware fixo, o cliente não escolhe) um
+    // slideModel escolhido lá em cima. Silencioso: nenhum erro, só o custo
+    // sumia. Fix: só zera quando a peça TAMBÉM não tem hardware próprio.
+    if (r.slides_per_unit > 0 && !slot.slideModel && !r.own_slide_model && !(r.own_slide_models && r.own_slide_models.length)) r.slides_per_unit = 0;
   });
   return rows;
 }
