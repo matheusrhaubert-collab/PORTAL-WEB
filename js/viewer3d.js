@@ -553,16 +553,39 @@ const Viewer3D = (function () {
     // pro par ERRADO (esquerda/direita) — a frente/fundo, que É onde a fita
     // tinha que estar, fica sem nada (miolo/madeira à mostra).
     //
-    // ESCOPO: só top/bottom/shelf/countertop (os papéis com receita fixa
+    // ESCOPO: top/bottom/shelf/countertop (os papéis com receita fixa
     // "2 lados = frente+fundo") — 'd' é sempre a largura(L) pra fita aqui,
     // nunca o lado maior. Guard `m.tKey !== 'd'` pra não colidir com
     // positioning 'vertical_no_plano'/'horizontal_no_plano' (onde 'd' É a
     // espessura, não uma face — caso raro, não visto em produção nesses
     // papéis, mas mais seguro checar). Pricing.pecaNaMaquina em si continua
     // INTOCADO — preço/plano de corte/.ban seguem "lado maior" de propósito.
+    //
+    // 2026-08-19 (8ª virada): estendido pro papel 'free' — Matt, com foto de
+    // um armário feito no Construtor de Armário: "essas bordas devem ficar
+    // sempre pra frente [...] quando a largura fica maior que o comprimento
+    // a borda gira". As peças da foto (divisórias/bases divisórias entre
+    // gavetas) nascem do LayoutEngine com position_role SEMPRE 'free'
+    // (toPieceRows, js/layout-engine.js linha ~644 — "a peça gerada sai
+    // sempre com position_role='free'... é o papel mais simples e o único
+    // sem comportamento automático por cima"). É o MESMO bug da 6ª virada
+    // (base/prateleira/topo em módulo quase quadrado): sem papel próprio
+    // cadastrado, `Pricing.pecaNaMaquina` escolhe o par de fita pelo lado
+    // MAIOR (magnitude), e quando o módulo fica mais largo que fundo (o
+    // caso reportado) a peça 'free' às vezes cai do lado errado — igual às
+    // pré-existentes 'top'/'bottom'/'shelf' antes do fix de 18/08. Pra uma
+    // peça 'free' sem `positioning` cadastrado (a esmagadora maioria: ela
+    // NASCE sem positioning, ver comentário da própria função), o eixo da
+    // FRENTE do módulo é sempre 'd' (profundidade) — vale tanto pra uma
+    // divisória vertical (frente/fundo são as pontas expostas) quanto pra
+    // uma base divisória horizontal (mesma lógica de prateleira). Mesmo
+    // guard `m.tKey !== 'd'` protege peças 'free' que por acaso vieram com
+    // a espessura no eixo de profundidade (positioning *_no_plano) — aí a
+    // frente já é face colorida, não borda, e o código não mexe.
     if (
       (part.position_role === 'top' || part.position_role === 'bottom' ||
-        part.position_role === 'shelf' || part.position_role === 'countertop') &&
+        part.position_role === 'shelf' || part.position_role === 'countertop' ||
+        part.position_role === 'free') &&
       m.tKey !== 'd'
     ) {
       m.lKey = 'd';
