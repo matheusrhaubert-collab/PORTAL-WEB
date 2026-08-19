@@ -1681,29 +1681,15 @@ function buildProjectAssemblies(slotsList) {
 // (a declaração de projectWallSegments está lá em cima, junto de
 // projectWallShape — ver o porquê no comentário dela.)
 
-function newProjectWallSegmentId() {
-  return 'wseg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
-}
-
-// Padrão de projeto novo: duas paredes de 3m formando um canto, com o piso
-// 3x3 que elas delimitam. Em L, com o canto na origem — é o ambiente que o
-// Matt pediu como ponto de partida.
-function defaultProjectWallSegments() {
-  const L = PROJECT_WALL_DEFAULT_LEN_MM;
-  // O L NASCE CENTRADO NA ORIGEM (2026-08-13). O enquadramento automático da
-  // Vista de Canto olha a caixa delimitadora do ambiente pela bissetriz das
-  // paredes; com o canto na origem e as duas pontas simétricas, a cena abre
-  // com o canto no meio da tela e as duas paredes iguais — que é o
-  // enquadramento que o Matt pediu ("a câmera bem no meio, dessa forma").
-  // Com o L começando em x=0 ele nascia deslocado pra um lado.
-  const h = L / 2;
-  return [
-    // Parede do fundo: da esquerda pra direita, atrás (z = -h).
-    { id: newProjectWallSegmentId(), ax: -h, az: -h, bx: h, bz: -h, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null },
-    // Parede da direita: do fundo pra frente, saindo da ponta B da 1ª.
-    { id: newProjectWallSegmentId(), ax: h, az: -h, bx: h, bz: h, thicknessMm: PROJECT_WALL_THICKNESS_MM, ceilingMm: null }
-  ];
-}
+// newProjectWallSegmentId() e defaultProjectWallSegments() MORARAM pro
+// portal-06-projetos-canvas.js (2026-08-19 — correção do bug de TDZ que
+// derrubava a aba Projetos inteira; ver comentário lá e a memória do
+// projeto). Motivo: `let projectWallSegments = defaultProjectWallSegments();`
+// no portal-06 roda no CARREGAMENTO do script, e portal-06 é carregado
+// ANTES deste arquivo — um <script> clássico não enxerga function de outro
+// <script> que ainda nem executou. Continuam chamáveis normalmente aqui
+// embaixo (mesmo escopo global depois que os dois arquivos carregam), só a
+// DEFINIÇÃO que precisou subir pra um arquivo mais cedo na ordem.
 
 // Geometria de UM segmento no formato que o resto do sistema já entende.
 // intoDir = normal do segmento apontando pro lado de DENTRO do ambiente.
