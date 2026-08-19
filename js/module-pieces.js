@@ -301,15 +301,6 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
       return;
     }
 
-    // Profundidade FIXA (fixed_depths) que não cabe nem na menor opção — a
-    // gaveta não existe nessa configuração, mesma regra de preço acima
-    // (Pricing.calculateModulePiece/isBelowMinFixedDepth), pra 3D e preço
-    // nunca divergirem. Some do desenho em vez de aparecer espremida num
-    // tamanho que não corresponde a nenhuma profundidade real cadastrada.
-    if (Pricing.isBelowMinFixedDepth(piece.fixed_depths, dims.depth_mm)) {
-      return;
-    }
-
     // Cor própria desta instância (migration 046) — se pieceColorOverrides tiver uma entrada
     // pra este piece.id, ela substitui só os papéis que tem, mantendo os demais herdados do
     // pai; o resultado (não o colorsByRole original) desce pra child_pieces mais abaixo, pra um
@@ -402,6 +393,41 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
       try { offset_x_mm = Pricing.evalFormula(piece.offset_x_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
       try { offset_y_mm = Pricing.evalFormula(piece.offset_y_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
       try { offset_z_mm = Pricing.evalFormula(piece.offset_z_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }
+
+      // GAVETA (PEÇA DO CONSTRUTOR) COM PROFUNDIDADE FIXA (2026-08-18, Matt:
+      // "a gaveta subiu e ficou no fundo... posicionamento da profundidade
+      // pra jogar pra alinhar pela frente" — regressão do fix anterior de
+      // 20->2mm em LayoutEngine.emitContent).
+      //
+      // LayoutEngine.toPieceRows (js/layout-engine.js) escreve
+      // offset_z_formula como NÚMERO LITERAL ('864', não uma fórmula) —
+      // "a geometria calculada [na árvore] é a palavra final, sem depender
+      // de W/H/D do módulo pai" (comentário lá). Esse literal já nasce
+      // calculado pra deixar a peça alinhada 2mm pra dentro da FRENTE do
+      // vão, assumindo que a profundidade da peça É a `prof` que
+      // emitContent calculou.
+      //
+      // Só que module_fixed_depths (acima, `resolvedDepthMm`) pode trocar
+      // essa profundidade pela corrediça cadastrada mais próxima — um
+      // número BEM diferente de `prof` — DEPOIS que o literal do Z já foi
+      // escrito. O literal não é fórmula, não sabe se ajustar: a peça
+      // continua "grudada" no Z antigo (calibrado pra profundidade grande)
+      // com uma caixa bem mais rasa (ou mais funda) por baixo — sobra vão
+      // na frente (gaveta "cai pro fundo") ou, se a profundidade escolhida
+      // for maior que o vão real, a caixa nova estoura a frente do casco.
+      //
+      // Corrige deslocando o Z exatamente pela diferença entre a
+      // profundidade PEDIDA (dims.depth_mm, o literal de toPieceRows) e a
+      // profundidade que realmente coube (resolvedDepthMm) — preserva a
+      // FRENTE (offset_z_mm + profundidade = constante), que é o que
+      // toPieceRows sempre quis. Só peças do CONSTRUTOR (_layoutNodeId
+      // presente — marcado só por toPieceRows, nunca em module_components
+      // do cadastro manual, cujo offset_z_formula pode ser uma fórmula de
+      // verdade tipo "D-d" que já se autoajusta e não deve ser tocada de novo).
+      if (piece._layoutNodeId != null && resolvedDepthMm !== dims.depth_mm) {
+        offset_z_mm += (dims.depth_mm - resolvedDepthMm);
+      }
+
       parts.push({
         // Nome pra exibir no balão de duplo-clique (viewer3d.js/portal.js):
         // peça-folha usa a referência do catálogo (piece.reference,

@@ -323,25 +323,30 @@
         }
         return;
       }
-      // caixote (gaveta, gaveteiro, cesto): N empilhados no vão
+      // caixote (gaveta, gaveteiro, cesto, Drawer agregado): N empilhados no
+      // vão, SEMPRE alinhados pela FRENTE do vão (Matt, 2026-08-18: "as
+      // gavetas ficam alinhadas por trás do módulo, preciso que elas
+      // alinhem pela frente do módulo e recuem 2mm pra dentro").
       //
-      // FOLGA LATERAL (2026-08-18, Matt: "a gaveta deve ter 12mm menor do
-      // que o vão pra corredica poder trabalhar, 6mm de cada lado"). Padrão
-      // 12mm de cada lado (24 no total) — o valor de sempre, pras gavetas
-      // genéricas de catálogo (accessory sem folga_lateral_mm cadastrada).
-      // Um agregado específico (ex: "Drawer Soft Closet Externa", cuja
-      // corrediça exige menos folga) sobrescreve via default_params:
-      // {"folga_lateral_mm": 6}. null/undefined = fica no padrão de 12.
-      var folgaLat = p.folga_lateral_mm != null ? num(p.folga_lateral_mm) : 12;
+      // z nasce no canto de TRÁS (box.z + recuo — recuo é o parâmetro de
+      // sempre, gap opcional em relação ao FUNDO, 0 se não cadastrado) e a
+      // peça se estende pra FRENTE por `prof`. Antes `prof` deixava 20mm de
+      // folga fixa na FRENTE (box.d - recuo - 20) — com recuo=0 (o caso
+      // comum, nenhuma gaveta tem recuo_mm cadastrado) a peça saía ENCOSTADA
+      // no fundo e a folga toda sobrava na frente, o oposto do que devia.
+      // Trocando a folga fixa da frente pra 2mm, a face frontal da peça
+      // sempre cai em `box.z + box.d - 2` — 2mm pra dentro da frente do vão
+      // — INDEPENDENTE do valor de `recuo` (recuo só ainda controla a folga
+      // do FUNDO, pra quem cadastrar recuo_mm por outro motivo).
       var qtd = Math.max(1, Math.round(num(p.quantidade) || 1));
       var gap = 3, hCada = (box.h - gap * (qtd - 1)) / qtd;
       for (var j = 0; j < qtd; j++) {
         var y = box.y + j * (hCada + gap);
-        var prof = Math.max(120, box.d - recuo - 20);
+        var prof = Math.max(120, box.d - recuo - 2);
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + folgaLat, y: y + 4, z: box.z + recuo,
-          w: box.w - folgaLat * 2, h: hCada - 20, d: prof,
+          x: box.x + 12, y: y + 4, z: box.z + recuo,
+          w: box.w - 24, h: hCada - 20, d: prof,
           opening_type: 'slide_out'
         });
       }

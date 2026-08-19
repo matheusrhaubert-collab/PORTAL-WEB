@@ -7,4 +7,4 @@ node_modules/
 database/
 
 # Teste local de desenvolvimento
-debug_texture_rotation_test.html
+scratch/debug_texture_rotation_test.html

@@ -500,6 +500,74 @@ const Viewer3D = (function () {
       part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
     const mm = { w: part.width_mm || 0, h: part.height_mm || 0, d: part.depth_mm || 0 };
 
+    // FUNDO COM VEIO TRAVADO — a fita não pode seguir "C = lado maior" da
+    // máquina quando o veio já é uma escolha FIXA do cadastro (Matt,
+    // 2026-08-18: "a borda trocou, mas a textura ainda tá no mesmo veio...
+    // como uma parte da peça gira e a outra não" — só o fundo, a única peça
+    // que ele viu girar, e a POSIÇÃO da peça nunca muda, só a orientação).
+    //
+    // resolveGrainRotate (a textura) olha part.veio ANTES de qualquer
+    // magnitude — 'horizontal'/'vertical' travam, sem depender de w×h.
+    // Pricing.pecaNaMaquina (a fita, logo acima) NUNCA soube que part.veio
+    // existe: sempre escolhe o lado maior como "comprimento" (mesma regra
+    // do plano de corte/.ban, que é onde ela TEM que valer). Resultado: ao
+    // esticar o módulo, a fita pula de par de borda sozinha (magnitude)
+    // enquanto o veio (corretamente travado) fica parado — a peça "gira
+    // pela metade".
+    //
+    // ESCOPO: só aqui no desenho 3D, só quando o papel é 'back' (único
+    // reportado) e só quando o veio está TRAVADO (não 'livre'/ausente) —
+    // sem veio travado não há nada fixo pra sincronizar, e o comportamento
+    // de sempre (C = lado maior, igual pricing/drilling) continua idêntico.
+    // Pricing.pecaNaMaquina em si NÃO muda — preço, .ban e plano de corte
+    // continuam no plano da máquina, que é onde esse "gira" É correto.
+    if (part.position_role === 'back' && (part.veio === 'horizontal' || part.veio === 'vertical')) {
+      // Mesma leitura que resolveGrainRotate faz pro fundo (uM=faceA=width,
+      // vM=faceB=height): 'horizontal' é o mesmo resultado de width>=height
+      // (cKey='w'), 'vertical' o mesmo de height>width (cKey='h') — força a
+      // MESMA escolha que a rota 'livre' já faria nesse caso, só sem
+      // depender da magnitude atual.
+      m.lKey = part.veio === 'horizontal' ? 'h' : 'w';
+    }
+
+    // BASE/PRATELEIRA/TOPO EM MÓDULO QUASE QUADRADO — a fita sumia (virava
+    // miolo/cor da madeira) numa borda que devia ser da cor do móvel (Matt,
+    // 2026-08-18, com foto: "são as bases, dá pra ver que a borda não é da
+    // cor do móvel, ela tá na cor da madeira (sem borda)").
+    //
+    // migration 097: a receita de fita É POR PAPEL — "sempre uma prateleira
+    // vai ser 2 lados" — e pra base/prateleira/topo esses "2 lados" SEMPRE
+    // são frente+fundo (os únicos bordos expostos: esquerda/direita ficam
+    // escondidos encostados nas laterais do casco). Isso NUNCA devia
+    // depender de qual medida é maior.
+    //
+    // Só que `Pricing.pecaNaMaquina` (a fita, acima) não sabe de papel
+    // nenhum — só olha w×h×d e escolhe C(comprimento)=o lado MAIOR entre
+    // width/depth, L(largura)=o menor, e é o par perpendicular a L que
+    // recebe a fita de 2 lados. No caso comum (módulo mais largo que
+    // fundo) largura=depth por acaso já dá o resultado certo (fita na
+    // frente/fundo) — mas quando o módulo fica mais FUNDO que LARGO (ou
+    // quase quadrado, onde arredondamento de polegada pode empurrar pra
+    // qualquer lado — foi exatamente o caso reportado, módulo ~31.5"×31.5"),
+    // depth vira "maior" (cKey), largura vira 'width' (lKey), e a fita pula
+    // pro par ERRADO (esquerda/direita) — a frente/fundo, que É onde a fita
+    // tinha que estar, fica sem nada (miolo/madeira à mostra).
+    //
+    // ESCOPO: só top/bottom/shelf/countertop (os papéis com receita fixa
+    // "2 lados = frente+fundo") — 'd' é sempre a largura(L) pra fita aqui,
+    // nunca o lado maior. Guard `m.tKey !== 'd'` pra não colidir com
+    // positioning 'vertical_no_plano'/'horizontal_no_plano' (onde 'd' É a
+    // espessura, não uma face — caso raro, não visto em produção nesses
+    // papéis, mas mais seguro checar). Pricing.pecaNaMaquina em si continua
+    // INTOCADO — preço/plano de corte/.ban seguem "lado maior" de propósito.
+    if (
+      (part.position_role === 'top' || part.position_role === 'bottom' ||
+        part.position_role === 'shelf' || part.position_role === 'countertop') &&
+      m.tKey !== 'd'
+    ) {
+      m.lKey = 'd';
+    }
+
     // Fita e chapa são a MESMA cor (é por isso que colors tem
     // edge_price_per_linear_m e não uma cor própria) — mas desde a escala
     // física da textura (2026-08-12) não podem mais ser a mesma INSTÂNCIA de
@@ -1007,17 +1075,6 @@ const Viewer3D = (function () {
   // "bater" fechada/aberta toda vez que o módulo é redesenhado (troca de
   // cor/medida) enquanto as peças estão abertas — e pra abrir as portas não
   // afetar as gavetas já abertas (ou fechadas), e vice-versa.
-
-  // Curso da corrediça, em metros (2026-08-18, Matt: "a gaveta abre toda pra
-  // fora, ela tá uma parte pra dentro"). Antes era `Math.min(d*0.7, 0.4)` —
-  // toda gaveta abria só 70% da própria profundidade (e travava em 400mm nas
-  // maiores), sobrando corpo visivelmente pra dentro do módulo mesmo aberta.
-  // Corrediça de extensão total (o caso comum, inclusive a "Soft Closet")
-  // puxa o corpo quase inteiro pra fora — 92% da profundidade da gaveta,
-  // sem teto fixo (uma gaveta funda agora sai proporcionalmente mais também).
-  function drawerSlideDistance(depthM) {
-    return Math.max(0, depthM) * 0.92;
-  }
   function positionWithOpening(content, opening, x, y, z) {
     // Contexto ativo (buildStandaloneAssembly/Composição) sobrepõe o estado
     // global da cena singleton — ver comentário de activeOpenCtx acima.
@@ -1656,7 +1713,7 @@ const Viewer3D = (function () {
         // 'slide_out' só existe numa peça-módulo de verdade (opening_type) —
         // gaveta desliza pra fora no eixo Z ao "abrir" (ver toggleOpenables).
         const opening = (part.is_module && part.opening_type === 'slide_out')
-          ? { type: 'slide', distance: drawerSlideDistance(drawerD) }
+          ? { type: 'slide', distance: Math.min(drawerD * 0.7, 0.4) }
           : null;
         emit(assembly, null, x, y - drawerH / 2 + legH, z, false, opening);
       } else {
@@ -1784,7 +1841,7 @@ const Viewer3D = (function () {
       const opening = hingeSide
         ? { type: 'hinge', side: hingeSide, width: w }
         : (part.is_module && part.opening_type === 'slide_out')
-          ? { type: 'slide', distance: drawerSlideDistance(d) }
+          ? { type: 'slide', distance: Math.min(d * 0.7, 0.4) }
           : null;
       // rotateTexture=false aqui embaixo (sempre) — o giro de 'free' já foi
       // aplicado na PRÓPRIA geometria acima (rotateGeometryUV90); passar

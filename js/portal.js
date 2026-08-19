@@ -16160,17 +16160,30 @@ function projectBuilderIcon(acc) {
 }
 
 // Quantidade só faz sentido onde ela vira VÃOS IGUAIS (divisão) ou peças
-// empilhadas (gaveteiro/cesto). Porta não tem quantidade — quem faz porta de
-// duas folhas é o agregado "Porta dupla" (default_params.folhas), não um
-// número aqui.
+// empilhadas (caixote: gaveta, gaveteiro, cesto — inclui agregado com
+// child_module_id, tipo "Drawer Soft Closet Externa"). Porta não tem
+// quantidade — quem faz porta de duas folhas é o agregado "Porta dupla"
+// (default_params.folhas), não um número aqui.
 // Até 10 (2026-08-15, Matt: "no construtor agregar opção de prateleiras (até
 // 10)"). Eram 5 — pouco pra uma torre de prateleiras, que é o caso normal
 // num módulo alto.
 const PROJECT_BUILDER_QTDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+// 2026-08-18, Matt: "quero colocar mais de uma gaveta no construtor,
+// acrescentar o botao quantidade assim como os outros componentes". A régua
+// − N + já funcionava genérico pra QUALQUER acessório 'content' empilhável —
+// emitContent (layout-engine.js) trata gaveta/gaveteiro/cesto/Drawer-agregado
+// no MESMO branch "caixote" (só barra=cabide e ripas=ripado saem fora, cada
+// um com sua própria repetição). O que faltava não era o motor, era esta
+// função só liberar o stepper quando o cadastro JÁ tinha `quantidade` escrito
+// no default_params — e "Drawer Soft Closet Externa" nunca teve, porque
+// ninguém pensou em empilhar duas quando ele foi cadastrado. Trocado pra
+// checar a FORMA (o mesmo campo que emitContent usa pra decidir o branch, não
+// mais a presença do campo quantidade), então todo caixote ganha o stepper
+// de saída, sem precisar editar cadastro nenhum.
 function projectBuilderAceitaQtd(acc) {
   if (!acc) return false;
   if (acc.role === 'split') return true;
-  return acc.role === 'content' && acc.params && acc.params.quantidade != null;
+  return acc.role === 'content' && acc.forma !== 'barra' && acc.forma !== 'ripas';
 }
 
 function projectBuilderSelNode() {
