@@ -1426,13 +1426,31 @@
     // buildBoxes, que é a parte cara. Quem chama deve guardar o resultado
     // enquanto as medidas não mudarem (ver o cache em portal.js).
     countHolesByPiece: function (parts, W, H, D, config) {
+      const out = {};
+      // SEMEIA 0 PRA TODA PEÇA ANTES DE CONTAR (2026-08-19). `store` (abaixo)
+      // só ganha uma entrada quando addHole/emitLocalHole roda pelo menos uma
+      // vez — uma peça com furação REAL zero (ex: fundo sem furo, peça que só
+      // recebe contra-furo em outro módulo) nunca aparecia em `store`, então
+      // `out[chave]` nunca era criado. `processLaborFor` (pricing.js) lê
+      // "chave ausente" como "sem contagem, cai no furos_equivalentes do
+      // cadastro" — o MESMO sinal de "não roda contagem nenhuma". Resultado:
+      // peça com zero furos reais cobrava o número digitado no cadastro em
+      // vez de zero, quebrando bem a garantia do comentário logo abaixo
+      // ("CONTAGEM REAL ganha do número digitado quando publicada"). Semear
+      // aqui faz "contei e deu zero" virar 0 de verdade, disponível pro
+      // lookup, e só a peça de fato NUNCA resolvida (fora de `parts`) continua
+      // caindo no fallback.
+      (parts || []).forEach(function (part) {
+        if (!part || part.is_module) return;
+        const chave = part.piece_id || part.id;
+        if (chave) out[chave] = 0;
+      });
       const store = new Map();
       try {
         collectAssembly(store, parts, W, H, D, config || {});
       } catch (e) {
         return {};   // furação quebrada não pode derrubar o preço
       }
-      const out = {};
       store.forEach(function (holes, part) {
         // piece_id é o id da LINHA module_components (o mesmo que o preço usa
         // pra achar a peça). part.id existe como reserva pros caminhos que

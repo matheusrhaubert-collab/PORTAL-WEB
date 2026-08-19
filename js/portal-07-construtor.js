@@ -833,6 +833,9 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     folhas: Number(p.folhas) === 2 ? 2 : 1,
     shape_type: a.shape_type || null,
     color_role_id: a.color_role_id || null,
+    // Programa de furação POR USO (migration 125) — espelha
+    // CONSTR.catalogoDoBanco (erp/js/data-construtor.js), mesmo campo.
+    drilling_pattern_id: a.drilling_pattern_id || null,
     componente: a.components || null,
     child_module_id: a.child_module_id || null,
     module_meta: (moduleExtra && moduleExtra.module_meta) || null,
