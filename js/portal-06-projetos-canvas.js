@@ -4012,13 +4012,64 @@ function collectProjectCostReport(slots) {
     return (c && c.name) || I18n.t('money.no_color');
   };
 
-  const anda = (slot, linhas, prefixo) => {
+  const anda = (slot, linhas, prefixo, fator) => {
+    fator = fator || 1;
     (linhas || []).forEach((p) => {
       if (p.is_module) {
-        // Peça-módulo não tem custo próprio (está nos filhos). O nome dela
-        // vira prefixo pra a peça-folha lá dentro não aparecer solta no
-        // detalhamento — "Gaveta › Fundo" diz de onde veio.
-        anda(slot, p.child_breakdown, (prefixo ? prefixo + ' › ' : '') + (p.reference || ''));
+        // Peça-módulo não tem CHAPA/FITA/MÃO DE OBRA próprias (isso está nos
+        // filhos, por isso a travessia recursiva abaixo) — mas PODE ter
+        // dobradiça/corrediça PRÓPRIA, quando ela mesma abre (opening_type/
+        // slides_per_unit do módulo filho, OU do agregado que a gerou — ver
+        // Pricing.calculateModulePiece, hinge_cost/slide_cost calculados em
+        // cima do "efetivo" da peça-módulo, não repassados pros filhos).
+        //
+        // BUG (Matt, 2026-08-19: "e deixei tudo ligado e no construtor nao
+        // apareceu a corredica no preco"): esta função assumia "peça-módulo
+        // nunca tem custo próprio" — verdade pra chapa/fita/mão de obra,
+        // falso pra dobradiça/corrediça. Uma gaveta usada como agregado
+        // (accessory_types.child_module_id, opening_type=slide_out) SEMPRE
+        // caía aqui sem a corrediça dela ser contada: nem a linha
+        // "Corrediças" aparecia (ferragem.corrediça.custo nunca recebia
+        // nada), nem o total "By module"/rel.totalCusto batiam com
+        // Pricing.calculateModulePrice (que soma certo — SÓ este relatório,
+        // que refaz a soma peça a peça, estava com o buraco). O total de
+        // VENDA (slot.result.total, o que o cliente paga) sempre esteve
+        // certo — só o detalhamento de CUSTO que escondia a parcela.
+        //
+        // `fator` acumula a quantidade dos ANCESTRAIS (peça-módulo dentro de
+        // peça-módulo) — mesmo padrão de collectPurchasedCost em
+        // js/pricing.js. hinge_cost/slide_cost do PRÓPRIO `p` já vêm
+        // multiplicados pela quantidade DELE (ver calculateModulePiece), por
+        // isso não entra de novo aqui — só o fator dos pais.
+        const hingeCost = (Number(p.hinge_cost) || 0) * fator;
+        const slideCost = (Number(p.slide_cost) || 0) * fator;
+        if (hingeCost > 0 || slideCost > 0) {
+          const qtdEfetiva = (Number(p.quantity) || 1) * fator;
+          // Entra no detalhe (linha própria na tabela "BY PART", coluna
+          // HARDWARE) pro total "By module" (que soma rel.detalhe) fechar —
+          // sem isto, a linha "Corrediças" apareceria certa mas o total do
+          // módulo continuaria batendo errado. NÃO soma em rel.pecas: não é
+          // uma peça física cortada, é hardware da peça-módulo.
+          rel.detalhe.push({
+            modulo: (slot.module && slot.module.name) || '',
+            peca: (prefixo ? prefixo + ' › ' : '') + (p.reference || ''),
+            qtd: qtdEfetiva,
+            m2: 0, fitaM: 0, chapa: 0, fita: 0, corte: 0, colagem: 0, furacao: 0, usinagem: 0, laborAntiga: 0,
+            ferragem: hingeCost + slideCost,
+            total: hingeCost + slideCost
+          });
+          if (hingeCost > 0) {
+            rel.ferragem.dobradica.qtd += (Number(p.hinge_count) || 0) * qtdEfetiva;
+            rel.ferragem.dobradica.custo += hingeCost;
+          }
+          if (slideCost > 0) {
+            rel.ferragem['corrediça'].qtd += qtdEfetiva;
+            rel.ferragem['corrediça'].custo += slideCost;
+          }
+        }
+        // O nome dela vira prefixo pra a peça-folha lá dentro não aparecer
+        // solta no detalhamento — "Gaveta › Fundo" diz de onde veio.
+        anda(slot, p.child_breakdown, (prefixo ? prefixo + ' › ' : '') + (p.reference || ''), fator * (Number(p.quantity) || 1));
         return;
       }
       const qtd = Number(p.quantity) || 1;
