@@ -188,21 +188,32 @@ const Photoreal = (() => {
   // deitada"), e é essa regra que limita o móvel.
   //
   // CUIDADO: isto REVERTE, de propósito, a parte de rodapé/travessa do pedido
-  // de 2026-08-12 ("todo rodapé e travessa deve ser deitado"). Peça 'free'
-  // volta a seguir o `positioning` cadastrado. Se um rodapé voltar a aparecer
-  // com o veio em pé, o conserto é no CADASTRO da peça (positioning
-  // 'horizontal'), não em reabrir a regra de formato aqui.
+  // de 2026-08-12 ("todo rodapé e travessa deve ser deitado") PRA PEÇA 'free'
+  // sem veio cadastrado. Se um rodapé voltar a aparecer com o veio em pé
+  // DEPOIS de conferir que ele está em PAPEIS_VEIO_PELO_FORMATO, o conserto é
+  // no CADASTRO da peça (positioning 'horizontal'), não em reabrir a regra de
+  // formato aqui.
   // PAPÉIS EM QUE O FORMATO DECIDE O VEIO LIVRE.
   // 'back'         — o fundo deita pra caber na CHAPA. Limitação física.
-  // 'free'/'other' — a peça que não declara orientação nenhuma: rodapé,
-  //                  travessa (o papel 'Travamento' saiu na migration 026) e,
-  //                  desde o construtor, a base divisória e a divisória, que
-  //                  nascem do LayoutEngine com position_role 'free'.
+  // 'free'/'other' — a peça que não declara orientação nenhuma: travessa (o
+  //                  papel 'Travamento' saiu na migration 026) e, desde o
+  //                  construtor, a base divisória e a divisória, que nascem
+  //                  do LayoutEngine com position_role 'free'.
   //                  Aqui o formato é a ÚNICA informação que existe.
+  // 'baseboard'    — rodapé tem PAPEL PRÓPRIO (não é 'free' — ver
+  //                  POSITION_ROLE_LABELS em admin.js), e por isso tinha
+  //                  ficado de fora desta lista até 2026-08-19: sem
+  //                  'baseboard' aqui, resolveGrainRotate caía direto no
+  //                  fallback=false que o placePart('baseboard') passa,
+  //                  então o veio saía sempre EM PÉ quando a peça não tinha
+  //                  `positioning` cadastrado — exatamente a regra de
+  //                  2026-08-12 que o comentário acima descreve, só que
+  //                  nunca tinha sido aplicada de fato pro papel 'baseboard'.
+  //                  Ver memória do projeto "veio no desenho" / rodapé.
   // Todo o resto (left/right/top/bottom/shelf/front/drawer) tem orientação
   // própria e NÃO opina por formato — foi isso que fazia a lateral de um
   // módulo baixo virar sozinha.
-  const PAPEIS_VEIO_PELO_FORMATO = { back: 1, free: 1, other: 1 };
+  const PAPEIS_VEIO_PELO_FORMATO = { back: 1, free: 1, other: 1, baseboard: 1 };
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
     if (veio === 'horizontal') return true;
