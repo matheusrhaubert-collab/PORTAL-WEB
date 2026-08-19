@@ -1,0 +1,1645 @@
+// portal-09-projetos-final.js — parte 9/9 (ÚLTIMO — tem que ser o ÚLTIMO
+// <script> a carregar) de js/portal.js (ver portal-01-core-catalogo.js).
+// Salvar projeto, favoritos de projeto, totais, geração de imagem por IA a
+// partir de um Projeto, modal de login/logout, tooltip de peça — e, no fim
+// do arquivo, o BOOT do portal inteiro ((async function init(){...})()):
+// inicializa o Viewer3D e decide tela logada/deslogada. Só roda depois que
+// TODOS os outros 8 arquivos já carregaram (é por isso que tem que ser o
+// último <script> no portal.html).
+
+// ==========================================================================
+// SALVAR PROJETO NA BARRA DE AÇÕES (2026-08-16)
+// ==========================================================================
+// Matt: "aqui nao quero enviar direto pra ordem, quero salvar projeto
+// primeiro". O "💾 Salvar projeto" existia só no painel lateral, longe do
+// "Enviar pro pedido" — dava pra mandar pro pedido sem nunca ter salvo.
+//
+// DELEGA, não duplica: no clique ele aciona o botão real do painel. Toda a
+// regra de "projeto novo x projeto carregado" (loadedProjectFavorite, nome,
+// thumbnail, foto realista) mora lá e continua num lugar só — copiar a
+// chamada aqui é como as telas de furação divergirem, erro que esta base já
+// pagou caro.
+//
+// O RÓTULO SEGUE O ESTADO: com um projeto carregado ele vira "Salvar
+// alterações", igual ao do painel. refreshProjectFavoriteButtons chama isto.
+function syncProjToolbarSaveButton() {
+  const barra = document.getElementById('po-proj-toolbar-save-btn');
+  if (!barra) return;
+  const updateBtn = document.getElementById('po-proj-update-fav-btn');
+  const editando = updateBtn && updateBtn.style.display !== 'none' && updateBtn.textContent;
+  barra.textContent = editando ? updateBtn.textContent : I18n.t('project.save_btn');
+}
+
+function bindProjToolbarSaveButton() {
+  const barra = document.getElementById('po-proj-toolbar-save-btn');
+  if (!barra || barra.dataset.bound) return;
+  barra.dataset.bound = '1';
+  barra.addEventListener('click', () => {
+    const updateBtn = document.getElementById('po-proj-update-fav-btn');
+    // Projeto carregado da lista: "Salvar alterações" (atualiza o registro).
+    // Projeto novo: "Salvar projeto" (cria). É a mesma escolha que ele faria
+    // no painel, sem obrigá-lo a abrir o painel.
+    if (updateBtn && updateBtn.style.display !== 'none') { updateBtn.click(); return; }
+    const saveBtn = document.getElementById('po-proj-save-fav-btn');
+    if (saveBtn) saveBtn.click();
+  });
+  syncProjToolbarSaveButton();
+}
+
+function refreshProjectFavoriteButtons() {
+  const updateBtn = document.getElementById('po-proj-update-fav-btn');
+  // Grade de fotos realistas salvas (migration 077) segue o projeto
+  // "amarrado" na tela — mesmos 3 pontos que chamam esta função (salvou
+  // novo, restaurou da lista, excluiu o carregado) precisam recarregar.
+  refreshProjectPhotorealGallery();
+  if (!updateBtn) return;
+  if (loadedProjectFavorite) {
+    updateBtn.textContent = I18n.t('fav.update_btn', { name: loadedProjectFavorite.name });
+    updateBtn.style.display = 'inline-block';
+  } else {
+    updateBtn.style.display = 'none';
+  }
+  syncProjToolbarSaveButton();
+}
+
+// Miniatura do PROJETO INTEIRO (todas as paredes juntas), pra mostrar na
+// lista "Meus Projetos" (pedido do usuário 2026-08-02: "preciso o 3d...
+// quadrado para cada pedido" — hoje só existe thumbnail POR MÓDULO dentro de
+// slots, não do projeto todo). Mesma técnica de
+// generateAiPreviewForProjectGallery/publishProjectToGallery:
+// renderProjectForAiSnapshot() monta uma cena "limpa" (sem cotas/ambiente
+// decorativo) e funciona mesmo com o canvas #po-proj-3d-canvas escondido
+// (display:none não impede o WebGL de renderizar pro buffer — só afeta o
+// que aparece na tela; ver comentário de fallback de tamanho em
+// viewer3d_composition.js/init). SEMPRE restaura a cena normal depois
+// (generateProject3D()), mesmo em erro — nunca deixa o "Visualizar 3D" da
+// sessão do usuário mostrando a versão "limpa" por engano.
+async function captureProjectThumbnail() {
+  if (!projectSlots.length) return null;
+  const usedCleanScene = renderProjectForAiSnapshot();
+  try {
+    if (!ViewerProject || !ViewerProject.snapshot) return null;
+    const snapshotOptions = getProjectWallCount() > 1 ? { angle: 'corner' } : { frontal: true };
+    const raw = ViewerProject.snapshot(snapshotOptions);
+    return raw ? await trimTransparentPng(raw) : null;
+  } catch (e) {
+    return null; // sem miniatura nunca deve travar o "Salvar"
+  } finally {
+    if (usedCleanScene) generateProject3D();
+  }
+}
+
+// Trava de reentrância do salvar (BUG corrigido 2026-08-08, relato do usuário:
+// "coloquei gerar imagem realista sem salvar, ele pediu pra salvar 2x, gerou 2
+// projetos iguais"). Salvar é uma sequência LONGA e assíncrona — captura da
+// miniatura 3D + cálculo do valor + insert — com um prompt() de nome no meio.
+// Qualquer segundo disparo nessa janela (toque duplicado no iPad, clique
+// impaciente, ou um segundo caminho de código chamando a mesma função) entrava
+// em paralelo, cada um com seu prompt, e cada um fazia o SEU insert: dois
+// projetos idênticos no banco. A trava é global (e não só um `disabled` no
+// botão) porque a função tem mais de um chamador — o botão Salvar, o botão
+// Atualizar e o fluxo da foto realista.
+let projectSaveInFlight = false;
+
+async function saveProjectFavorite(overwriteId) {
+  if (projectSaveInFlight) return;
+  projectSaveInFlight = true;
+  try {
+    await saveProjectFavoriteInner(overwriteId);
+  } finally {
+    projectSaveInFlight = false;
+  }
+}
+
+async function saveProjectFavoriteInner(overwriteId) {
+  const statusEl = document.getElementById('po-proj-fav-status');
+  const errorEl = document.getElementById('po-proj-error');
+  errorEl.style.display = 'none';
+  statusEl.textContent = '';
+  if (!currentUser) {
+    errorEl.textContent = I18n.t('fav.need_login');
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (projectSlots.length === 0) {
+    errorEl.textContent = I18n.t('project.need_slots');
+    errorEl.style.display = 'block';
+    return;
+  }
+  try {
+    // wall_width_mm (coluna antiga, só 1 número) continua gravada com a
+    // largura da parede 'main' pra qualquer projeto salvo antes desta
+    // funcionalidade que ainda dependa dela — wall_shape/wall_widths_mm
+    // (migration 058) é quem manda de verdade a partir de agora.
+    const mainWidthMm = getProjectWallWidthMm(Math.max(getProjectWallRoles().indexOf('main'), 0));
+    // Miniatura automática (ver captureProjectThumbnail acima) — só entra no
+    // payload se REALMENTE capturou algo; se falhar (sem 3D disponível etc.),
+    // não sobrescreve com null uma miniatura boa que já estava salva.
+    const thumbnailDataUrl = await captureProjectThumbnail();
+    // Valor cacheado (migration 076) — calculado AGORA, no salvar, pra o
+    // card de "Meus Projetos" mostrar direto sem recalcular a lista toda
+    // (pedido do usuário 2026-08-03). skipped>0 → não grava (valor parcial
+    // fixo seria mentira; card recalcula em background até resolver).
+    // Se a migration 076 ainda não rodou, o update/insert com a coluna
+    // falharia e DERRUBARIA o salvar inteiro — por isso o retry sem a
+    // coluna no catch mais abaixo.
+    const slotsPayload = serializeProjectSlots();
+    let cachedValueUsd = null;
+    try {
+      const r = await computeProjectSlotsTotal(slotsPayload);
+      if (r && r.skipped === 0) cachedValueUsd = r.total;
+    } catch (e) { /* sem cache — card recalcula em background */ }
+    const basePayload = {
+      slots: slotsPayload,
+      wall_width_mm: mainWidthMm,
+      wall_shape: projectWallShape,
+      wall_widths_mm: projectWallWidthsMm,
+      // Paredes desenhadas (2026-08-13). Vai junto com as antigas de propósito:
+      // projeto salvo no modelo velho continua abrindo pelo caminho de sempre,
+      // e projeto novo ignora as duas de cima. Cabe no jsonb que já existe.
+      wall_segments: projectWallSegments.length ? projectWallSegments : null,
+      ...(thumbnailDataUrl ? { thumbnail_data_url: thumbnailDataUrl } : {}),
+      ...(cachedValueUsd !== null ? { cached_value_usd: cachedValueUsd } : {})
+    };
+    // Roda a operação; se falhar POR CAUSA de uma coluna que ainda não existe
+    // no banco (migration pendente), TIRA essa coluna do payload e tenta de
+    // novo — uma por vez, até passar. Salvar projeto nunca pode quebrar por
+    // causa de um campo acessório: o essencial (slots + paredes) tem que ir
+    // pro banco mesmo com o schema atrasado. Era só cached_value_usd
+    // (migration 076); em 2026-08-14 o wall_segments (migration 100) caiu no
+    // mesmo buraco e derrubou o salvar inteiro com "Could not find the
+    // 'wall_segments' column of 'user_projects' in the schema cache"
+    // (PGRST204) — daí a lista, em vez de um if por coluna.
+    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url'];
+    const runWithCacheFallback = async (op) => {
+      let payload = basePayload;
+      let res = await op(payload);
+      for (let i = 0; i < OPTIONAL_COLUMNS.length; i++) {
+        if (!res.error) break;
+        const msg = res.error.message || '';
+        const missing = OPTIONAL_COLUMNS.find((c) => (c in payload) && msg.includes(c));
+        if (!missing) break;
+        payload = { ...payload };
+        delete payload[missing];
+        res = await op(payload);
+      }
+      return res;
+    };
+    if (overwriteId) {
+      const { error } = await runWithCacheFallback((payload) => supabaseClient
+        .from('user_projects')
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', overwriteId));
+      if (error) throw error;
+      statusEl.textContent = I18n.t('project.updated_status', { name: loadedProjectFavorite ? loadedProjectFavorite.name : '' });
+    } else {
+      const name = (prompt(I18n.t('project.name_prompt'), I18n.t('project.default_name')) || '').trim();
+      if (!name) return;
+      const { data, error } = await runWithCacheFallback((payload) => supabaseClient
+        .from('user_projects')
+        .insert({ client_user_id: currentUser.id, name, ...payload })
+        .select('id, name')
+        .single());
+      if (error) throw error;
+      loadedProjectFavorite = { id: data.id, name: data.name, ai_preview_url: null };
+      statusEl.textContent = I18n.t('project.saved_status');
+    }
+    refreshProjectFavoriteButtons();
+    projectDirty = false; // acabou de salvar — pedido do usuário 2026-07-29 ("preciso... uma mensagem salvar alteracoes")
+    setTimeout(() => { statusEl.textContent = ''; }, 4000);
+  } catch (err) {
+    errorEl.textContent = err.message || String(err);
+    errorEl.style.display = 'block';
+  }
+}
+
+bindProjToolbarSaveButton();
+const projSaveFavBtn = document.getElementById('po-proj-save-fav-btn');
+if (projSaveFavBtn) projSaveFavBtn.addEventListener('click', () => saveProjectFavorite(null));
+const projUpdateFavBtn = document.getElementById('po-proj-update-fav-btn');
+if (projUpdateFavBtn) {
+  projUpdateFavBtn.addEventListener('click', () => {
+    if (loadedProjectFavorite) saveProjectFavorite(loadedProjectFavorite.id);
+  });
+}
+
+// Grid de cards quadrados (pedido do usuário 2026-08-02: "essa tela ta
+// muito baguncada... quer mais alinhados, quadrado para cada pedido") —
+// mesmo padrão visual de .po-gallery-card (Galeria pública), só com a
+// imagem em 1:1 em vez de 4:3 e um "split" quando o projeto tem os DOIS
+// tipos de imagem (thumbnail_data_url = snapshot 3D automático, ver
+// captureProjectThumbnail; ai_preview_url = última imagem de IA publicada,
+// ver publishProjectToGallery) — "ambos pra dar zoom se precisar" veio
+// literal: os dois ficam visíveis e cada um abre sozinho no lightbox
+// (openGalleryLightbox, reaproveitado da Galeria).
+// Recalcula o preço total de um projeto salvo SEM carregá-lo no editor —
+// usado só pra mostrar o valor no card da lista "Meus Projetos" (pedido do
+// usuário 2026-08-02). Reaproveita a mesma lógica de precificação de
+// restoreFavoriteProject (busca colors/hinge/slide em lote, Pricing.
+// calculateModulePrice por slot) mas SEM montar os slots completos pro
+// canvas/3D — só soma result.total. Sequencial de propósito, mesmo motivo de
+// restoreFavoriteProject: loadModuleColors mexe no global moduleColorsByRole.
+async function computeProjectSlotsTotal(slotConfigs) {
+  if (!Array.isArray(slotConfigs) || slotConfigs.length === 0) return { total: 0, skipped: 0 };
+  if (!allModules.length) await loadModules();
+  const pieceColorOverrideColorIds = slotConfigs.flatMap((s) =>
+    Object.values(s.piece_color_overrides || {}).flatMap((perRole) => Object.values(perRole).map((e) => e.color_id))
+  );
+  const colorIds = [...new Set(
+    slotConfigs.flatMap((s) => (s.selected_colors || []).map((c) => c.color_id))
+      .concat(pieceColorOverrideColorIds)
+      .filter(Boolean)
+  )];
+  const hingeIds = [...new Set(slotConfigs.map((s) => s.hinge_model_id).filter(Boolean))];
+  const slideIds = [...new Set(slotConfigs.map((s) => s.slide_model_id).filter(Boolean))];
+  const [colorsRes, hingeRes, slideRes] = await Promise.all([
+    colorIds.length ? supabaseClient.from('colors').select('*').in('id', colorIds) : { data: [] },
+    hingeIds.length ? supabaseClient.from('hinge_models').select('*').in('id', hingeIds) : { data: [] },
+    slideIds.length ? supabaseClient.from('slide_models').select('*').in('id', slideIds) : { data: [] }
+  ]);
+  const colorById = new Map((colorsRes.data || []).map((c) => [c.id, c]));
+  const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
+  const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
+
+  let total = 0;
+  let skipped = 0;
+  for (const cfg of slotConfigs) {
+    const module = allModules.find((m) => m.id === cfg.module_id);
+    if (!module) { skipped += 1; continue; }
+    try {
+      const piecesList = await loadRecursivePiecesForModule(module.id);
+      if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
+      const optionalIds = cfg.selected_optional_ids || [];
+      const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
+      await loadModuleColors(module.id); // preenche moduleColorsByRole pra ESTE módulo, igual restoreFavoriteProject
+      const colorsByRole = {};
+      (cfg.selected_colors || []).forEach((sc) => {
+        const color = colorById.get(sc.color_id);
+        if (color) colorsByRole[sc.role_id] = color;
+      });
+      collectUsedColorRoleIds(effectivePieces).forEach((roleId) => {
+        if (colorsByRole[roleId]) return;
+        const fallback = (moduleColorsByRole[roleId] || [])[0];
+        if (fallback) colorsByRole[roleId] = fallback;
+      });
+      const hingeModel = cfg.hinge_model_id ? (hingeById.get(cfg.hinge_model_id) || null) : null;
+      const slideModel = cfg.slide_model_id ? (slideById.get(cfg.slide_model_id) || null) : null;
+      const pieceColorOverrides = {};
+      Object.keys(cfg.piece_color_overrides || {}).forEach((pieceId) => {
+        const perRole = cfg.piece_color_overrides[pieceId];
+        const resolved = {};
+        Object.keys(perRole).forEach((roleId) => {
+          const color = colorById.get(perRole[roleId].color_id);
+          if (color) resolved[roleId] = color;
+        });
+        if (Object.keys(resolved).length) pieceColorOverrides[pieceId] = resolved;
+      });
+      const result = module.is_decoration
+        ? { total: 0 }
+        : Pricing.calculateModulePrice({
+          module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+          shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
+          pieceColorOverrides,
+          width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+          markupMultiplier: resolveMarkupMultiplierForModule(module)
+        });
+      total += Number(result.total) || 0;
+    } catch (calcErr) { skipped += 1; } // catálogo mudou e a config não fecha mais — não entra na soma
+  }
+  return { total, skipped };
+}
+
+async function loadProjectFavoritesList() {
+  const listEl = document.getElementById('po-proj-fav-list');
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (!listEl) return;
+  errorEl.style.display = 'none';
+  listEl.className = 'po-myproj-grid';
+  listEl.innerHTML = '';
+  // Colunas de migration recente (076 = cached_value_usd, 100 =
+  // wall_segments): se a migration ainda não rodou no banco, o select com a
+  // coluna falha inteiro. Mesma ideia do salvar: tira a coluna que faltou e
+  // refaz, uma por vez, até a lista carregar. Sem cached_value_usd os cards
+  // caem no recálculo em background de antes; sem wall_segments o projeto
+  // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
+  const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments'];
+  let optional = OPTIONAL_COLS.slice();
+  const runSelect = () => supabaseClient
+    .from('user_projects')
+    .select(BASE_COLS.concat(optional).join(', '))
+    .order('updated_at', { ascending: false });
+  let { data, error } = await runSelect();
+  for (let i = 0; i < OPTIONAL_COLS.length; i++) {
+    if (!error) break;
+    const msg = error.message || '';
+    const missing = optional.find((c) => msg.includes(c));
+    if (!missing) break;
+    optional = optional.filter((c) => c !== missing);
+    ({ data, error } = await runSelect());
+  }
+  const cacheColumnAvailable = optional.includes('cached_value_usd');
+  if (error) { errorEl.textContent = error.message; errorEl.style.display = 'block'; return; }
+  if (!data || data.length === 0) {
+    listEl.className = ''; // sem grid pro texto solo de "lista vazia"
+    listEl.innerHTML = `<p class="hint">${I18n.t('project.saved_list_empty')}</p>`;
+    return;
+  }
+  const totalSpans = []; // preenchido no forEach abaixo, usado depois pra calcular o valor em background (sem travar o render da lista)
+  data.forEach((proj) => {
+    const card = document.createElement('div');
+    card.className = 'po-myproj-card';
+    const slots = Array.isArray(proj.slots) ? proj.slots : [];
+    const dateStr = proj.updated_at ? new Date(proj.updated_at).toLocaleString() : '—';
+    let imageHtml;
+    if (proj.thumbnail_data_url && proj.ai_preview_url) {
+      imageHtml = `
+        <div class="po-myproj-card-image-split">
+          <div class="po-myproj-card-image-half">
+            <img src="${proj.thumbnail_data_url}" alt="" class="po-myproj-card-image" />
+            <span class="po-myproj-card-image-badge">3D</span>
+          </div>
+          <div class="po-myproj-card-image-half">
+            <img src="${proj.ai_preview_url}" alt="" class="po-myproj-card-image" />
+            <span class="po-myproj-card-image-badge">IA</span>
+          </div>
+        </div>
+        <div class="po-myproj-card-image-zoom-hint">🔍</div>`;
+    } else if (proj.thumbnail_data_url || proj.ai_preview_url) {
+      imageHtml = `
+        <img src="${proj.thumbnail_data_url || proj.ai_preview_url}" alt="" class="po-myproj-card-image" />
+        <div class="po-myproj-card-image-zoom-hint">🔍</div>`;
+    } else {
+      imageHtml = `<div class="po-myproj-card-image-empty"></div>`;
+    }
+    card.innerHTML = `
+      <div class="po-myproj-card-image-wrap">${imageHtml}</div>
+      <div class="po-myproj-card-body">
+        <div class="po-myproj-card-name"></div>
+        <div class="po-myproj-card-meta hint">${I18n.t('fav.modules_label', { n: slots.length })} · ${I18n.t('project.updated_label', { date: dateStr })}</div>
+        <div class="po-myproj-card-total hint">${I18n.t('fav.total_calculating')}</div>
+        <div class="po-myproj-card-actions">
+          <button type="button" class="po-proj-fav-load">${I18n.t('project.load_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-rename">${I18n.t('fav.rename_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-delete">${I18n.t('fav.delete_btn')}</button>
+        </div>
+      </div>
+    `;
+    card.querySelector('.po-myproj-card-name').textContent = proj.name; // textContent: nome é texto livre do cliente
+    card.querySelectorAll('.po-myproj-card-image').forEach((img) => {
+      img.addEventListener('click', () => openGalleryLightbox(img.src));
+    });
+    card.querySelector('.po-proj-fav-load').addEventListener('click', () => restoreFavoriteProject(proj));
+    card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
+      const newName = (prompt(I18n.t('project.name_prompt'), proj.name) || '').trim();
+      if (!newName || newName === proj.name) return;
+      const { error: renameErr } = await supabaseClient
+        .from('user_projects')
+        .update({ name: newName, updated_at: new Date().toISOString() })
+        .eq('id', proj.id);
+      if (renameErr) { errorEl.textContent = renameErr.message; errorEl.style.display = 'block'; return; }
+      if (loadedProjectFavorite && loadedProjectFavorite.id === proj.id) { loadedProjectFavorite.name = newName; refreshProjectFavoriteButtons(); }
+      loadProjectFavoritesList();
+    });
+    card.querySelector('.po-proj-fav-delete').addEventListener('click', async () => {
+      if (!confirm(I18n.t('project.delete_confirm', { name: proj.name }))) return;
+      const { error: delErr } = await supabaseClient.from('user_projects').delete().eq('id', proj.id);
+      if (delErr) { errorEl.textContent = delErr.message; errorEl.style.display = 'block'; return; }
+      if (loadedProjectFavorite && loadedProjectFavorite.id === proj.id) { loadedProjectFavorite = null; refreshProjectFavoriteButtons(); }
+      loadProjectFavoritesList();
+    });
+    listEl.appendChild(card);
+    totalSpans.push({ el: card.querySelector('.po-myproj-card-total'), slots, proj });
+  });
+
+  // Formata "Value: X · Suggested resale: Y" a partir de um total já
+  // conhecido — a margem de revenda (getResaleMarginPct) é aplicada NA
+  // EXIBIÇÃO, nunca entra no cache (pode mudar a qualquer momento).
+  const renderCardTotal = (el, total, skipped) => {
+    const marginPct = getResaleMarginPct();
+    const resaleSuffix = marginPct > 0
+      ? ' · ' + I18n.t('fav.resale_total_label', { total: formatMoney(total * (1 + marginPct / 100)) })
+      : '';
+    el.textContent = I18n.t('fav.total_label', { total: formatMoney(total) })
+      + resaleSuffix
+      + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
+  };
+
+  // VALOR CACHEADO (migration 076, pedido do usuário 2026-08-03: "fica
+  // calculando valor e perde tempo, deixa o valor fixo e só quando abre
+  // recalcula") — antes TODO projeto recalculava em background a cada
+  // abertura da aba ("Calculating value…" demorado, sequencial). Agora:
+  // 1) cached_value_usd preenchido → mostra NA HORA, zero cálculo;
+  // 2) NULL (projeto antigo, pré-migration) → calcula UMA vez em background
+  //    (comportamento antigo) e PERSISTE na linha — da próxima vez cai no
+  //    caso 1. O cache é re-gravado ao salvar (saveProjectFavorite) e ao
+  //    abrir (restoreFavoriteProject) o projeto.
+  const legacySpans = [];
+  totalSpans.forEach(({ el, slots, proj }) => {
+    if (!el) return;
+    if (proj.cached_value_usd !== null && proj.cached_value_usd !== undefined) {
+      renderCardTotal(el, Number(proj.cached_value_usd), 0);
+    } else {
+      legacySpans.push({ el, slots, proj });
+    }
+  });
+  // Backfill sequencial de propósito (mesmo motivo interno de
+  // computeProjectSlotsTotal/restoreFavoriteProject: loadModuleColors mexe
+  // no global moduleColorsByRole).
+  for (const { el, slots, proj } of legacySpans) {
+    try {
+      const { total, skipped } = await computeProjectSlotsTotal(slots);
+      renderCardTotal(el, total, skipped);
+      // Persiste SÓ se calculou tudo (skipped=0) — um total parcial salvo
+      // viraria um valor "fixo" errado pra sempre; parcial continua
+      // recalculando nas próximas aberturas até o catálogo se resolver.
+      if (skipped === 0 && cacheColumnAvailable) {
+        supabaseClient.from('user_projects').update({ cached_value_usd: total }).eq('id', proj.id)
+          .then(() => {}, () => {});
+      }
+    } catch (err) {
+      el.textContent = '';
+    }
+  }
+}
+
+// Toggle antigo (po-proj-fav-list-toggle-btn/po-proj-fav-list-wrap) foi
+// REMOVIDO do HTML — a lista agora vive na aba própria "Meus Projetos"
+// (po-tab-my-projects, carregada no listener de troca de aba, ver
+// 'po-tab-my-projects' perto do fim deste arquivo). loadProjectFavoritesList
+// continua igual, só passou a escrever direto em po-proj-fav-list (mesmo id,
+// só mudou de aba-pai).
+
+// Reconstrói projectSlots a partir da configuração salva (ver
+// restoreFavoriteComposition acima pro mesmo raciocínio linha a linha, não
+// repetido aqui) — as diferenças: x_mm/z_order em vez de stack_on_id,
+// wall_width_mm próprio (ver setProjectWallWidthMm), e cada slot precisa de
+// colorOptionsByRole recarregado (loadModuleColors) pra alimentar o painel
+// de swatch inline (renderProjectConfigPanel) — a Composição não tem esse
+// painel inline, só o configurador completo, então não precisa disso.
+async function restoreFavoriteProject(fav, bindAsFavorite = true) {
+  const errorEl = document.getElementById('po-proj-fav-error') || document.getElementById('po-proj-error');
+  if (errorEl) errorEl.style.display = 'none';
+  try {
+    // Corrida no login: allModules só fica pronto depois de um showLoggedIn()
+    // assíncrono (loadColorRoles → ... → loadModules, no fim da cadeia — ver
+    // showLoggedIn). Clicar "Carregar no Projeto" rápido demais (ex.: acabou
+    // de logar/recarregar a página) pega allModules ainda vazio ([]) — e
+    // TODO módulo salvo é pulado por engano (.find nunca acha nada num
+    // array vazio), mesmo o módulo existindo de verdade no catálogo. Isso
+    // bate exatamente com o relato do usuário: "6 de 6" pulados, 100% —
+    // sinal de allModules vazio, não de módulo realmente apagado.
+    if (!allModules.length) await loadModules();
+    const slotConfigs = Array.isArray(fav.slots) ? fav.slots : [];
+
+    const pieceColorOverrideColorIds = slotConfigs.flatMap((s) =>
+      Object.values(s.piece_color_overrides || {}).flatMap((perRole) => Object.values(perRole).map((e) => e.color_id))
+    );
+    const colorIds = [...new Set(
+      slotConfigs.flatMap((s) => (s.selected_colors || []).map((c) => c.color_id))
+        .concat(pieceColorOverrideColorIds)
+        .filter(Boolean)
+    )];
+    const hingeIds = [...new Set(slotConfigs.map((s) => s.hinge_model_id).filter(Boolean))];
+    const slideIds = [...new Set(slotConfigs.map((s) => s.slide_model_id).filter(Boolean))];
+    const [colorsRes, hingeRes, slideRes] = await Promise.all([
+      colorIds.length ? supabaseClient.from('colors').select('*').in('id', colorIds) : { data: [] },
+      hingeIds.length ? supabaseClient.from('hinge_models').select('*').in('id', hingeIds) : { data: [] },
+      slideIds.length ? supabaseClient.from('slide_models').select('*').in('id', slideIds) : { data: [] }
+    ]);
+    const colorById = new Map((colorsRes.data || []).map((c) => [c.id, c]));
+    const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
+    const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
+
+    const restored = [];
+    let skipped = 0;
+    // Sequencial (não Promise.all) de propósito: loadModuleColors mexe no
+    // global moduleColorsByRole — chamadas concorrentes se sobrescreveriam.
+    for (const cfg of slotConfigs) {
+      const module = allModules.find((m) => m.id === cfg.module_id);
+      if (!module) { skipped += 1; continue; }
+      const piecesList = await loadRecursivePiecesForModule(module.id);
+      if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
+      const optionalIds = cfg.selected_optional_ids || [];
+      const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
+      await loadModuleColors(module.id); // preenche o global moduleColorsByRole pra ESTE módulo — precisa vir ANTES do fallback abaixo
+      // Valores de largura/altura TRAVADOS (module.width_locked/height_locked)
+      // — precisa buscar de novo aqui (o slot restaurado é um objeto NOVO,
+      // não carrega nada do que insertProjectModuleDefault já tinha buscado
+      // da 1ª vez) pras setinhas de esticar do canvas funcionarem também num
+      // projeto salvo recarregado (pedido do usuário 2026-07-26, ver
+      // widthPresetsMm/heightPresetsMm no slot).
+      const lockedDimensionPresets = await fetchModuleLockedDimensionPresets(module.id);
+      const selectedColorsResolved = [...(cfg.selected_colors || [])];
+      const colorsByRole = {};
+      selectedColorsResolved.forEach((sc) => {
+        const color = colorById.get(sc.color_id);
+        if (color) colorsByRole[sc.role_id] = color;
+      });
+      // Autocura (2026-07-21) — projetos salvos ANTES do fix de
+      // insertProjectModuleDefault (clicar na biblioteca insere direto)
+      // gravaram selected_colors VAZIO mesmo com peça exigindo cor, e o
+      // slot inteiro era pulado no restore ("Nenhuma cor selecionada para a
+      // peça X", relatado pelo usuário — projeto "bed3"). Em vez de só
+      // corrigir daqui pra frente, preenche aqui também qualquer papel de
+      // cor que as peças REALMENTE usam (recursivo, ver
+      // collectUsedColorRoleIds) mas que ficou faltando — com a 1ª opção
+      // disponível do catálogo, mesmo critério de "cor padrão" que
+      // insertProjectModuleDefault já usa pra módulo novo. Atualiza
+      // selectedColorsResolved junto, pra "Salvar alterações" gravar o
+      // preenchimento de volta e o projeto parar de precisar disso a cada load.
+      collectUsedColorRoleIds(effectivePieces).forEach((roleId) => {
+        if (colorsByRole[roleId]) return;
+        const fallback = (moduleColorsByRole[roleId] || [])[0];
+        if (!fallback) return;
+        colorsByRole[roleId] = fallback;
+        const idx = selectedColorsResolved.findIndex((sc) => sc.role_id === roleId);
+        const entry = { role_id: roleId, role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null, color_id: fallback.id, color_name: fallback.name };
+        if (idx >= 0) selectedColorsResolved[idx] = entry; else selectedColorsResolved.push(entry);
+      });
+      const hingeModel = cfg.hinge_model_id ? (hingeById.get(cfg.hinge_model_id) || null) : null;
+      const slideModel = cfg.slide_model_id ? (slideById.get(cfg.slide_model_id) || null) : null;
+      const pieceColorOverrides = {};
+      Object.keys(cfg.piece_color_overrides || {}).forEach((pieceId) => {
+        const perRole = cfg.piece_color_overrides[pieceId];
+        const resolved = {};
+        Object.keys(perRole).forEach((roleId) => {
+          const color = colorById.get(perRole[roleId].color_id);
+          if (color) resolved[roleId] = color;
+        });
+        if (Object.keys(resolved).length) pieceColorOverrides[pieceId] = resolved;
+      });
+      let result;
+      try {
+        result = module.is_decoration
+          ? { total: 0, breakdown: [] }
+          : Pricing.calculateModulePrice({
+            module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+            shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
+            pieceColorOverrides,
+            width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+            markupMultiplier: resolveMarkupMultiplierForModule(module)
+          });
+      } catch (calcErr) { skipped += 1; continue; } // catálogo mudou e a config não fecha mais
+      restored.push({
+        id: cfg.id || newProjectSlotId(),
+        wall_index: Number(cfg.wall_index || 0), // clampado mais abaixo, depois que a forma/parede é restaurada
+        x_mm: Number(cfg.x_mm || 0),
+        floor_height_mm: Number(cfg.floor_height_mm || 0),
+        z_order: Number(cfg.z_order || 0),
+        // Módulo ILHA (2026-08-08, ver isFloorSlot) — projeto salvo antes
+        // disso não tem `placement` nenhum e cai em 'wall', idêntico a antes.
+        placement: cfg.placement === 'floor' ? 'floor' : 'wall',
+        floor_x_mm: Number(cfg.floor_x_mm || 0),
+        floor_z_mm: Number(cfg.floor_z_mm || 0),
+        floor_rotation_deg: Number(cfg.floor_rotation_deg || 0),
+        module,
+        pieces: effectivePieces,
+        colorOptionsByRole: moduleColorsByRole,
+        colorsByRole,
+        selectedColors: selectedColorsResolved,
+        pieceColorOverrides,
+        hingeModel, slideModel,
+        width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+        shelfQuantities: cfg.shelf_quantities || {},
+        dimOverrides: cfg.dim_overrides || {},
+        selectedOptionalIds: optionalIds,
+        // Construtor de armário: a árvore volta como veio (o motor só a lê
+        // quando a janela abre). Projeto salvo antes disso não tem a chave.
+        layout: cfg.layout || null,
+        result,
+        thumbnail_data_url: cfg.thumbnail_data_url || null,
+        widthPresetsMm: lockedDimensionPresets.width,
+        heightPresetsMm: lockedDimensionPresets.height
+      });
+    }
+
+    // Vai pra aba Projetos ANTES de atribuir os dados novos — o canvas
+    // (renderProjectCanvas) mede o clientWidth do wrap pra calcular a escala
+    // px/mm, e isso só funciona com display:block (mesmo motivo do
+    // comentário em "if (btn.dataset.tab === 'po-tab-projects')" no listener
+    // de troca de aba, mais abaixo neste arquivo).
+    const projTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-projects"]');
+    if (projTabBtn) projTabBtn.click();
+
+    // Forma/largura das paredes (migration 058) — projeto salvo ANTES desta
+    // funcionalidade não tem wall_shape/wall_widths_mm, só o wall_width_mm
+    // antigo (1 parede só): cai em 'single' com essa largura, mesmo
+    // comportamento de sempre.
+    const restoredShape = (fav.wall_shape && PROJECT_WALL_ROLES_BY_SHAPE[fav.wall_shape]) ? fav.wall_shape : 'single';
+    const restoredRoleCount = PROJECT_WALL_ROLES_BY_SHAPE[restoredShape].length;
+    let restoredWidths = Array.isArray(fav.wall_widths_mm) ? fav.wall_widths_mm.map((w) => Number(w) || PROJECT_WALL_WIDTH_DEFAULT_MM) : [];
+    if (!restoredWidths.length) restoredWidths = [Number(fav.wall_width_mm) || PROJECT_WALL_WIDTH_DEFAULT_MM];
+    while (restoredWidths.length < restoredRoleCount) restoredWidths.push(PROJECT_WALL_WIDTH_DEFAULT_MM);
+    restoredWidths = restoredWidths.slice(0, restoredRoleCount).map((w) => clamp(w, PROJECT_WALL_WIDTH_MIN_MM, PROJECT_WALL_WIDTH_MAX_MM));
+
+    projectWallShape = restoredShape;
+    projectWallWidthsMm = restoredWidths;
+    // Paredes desenhadas, quando o projeto foi salvo com elas. Sem esta chave
+    // (projeto antigo), a lista fica vazia e getProjectWallGeometry segue pelo
+    // caminho das formas fixas, exatamente como sempre foi.
+    projectWallSegments = Array.isArray(fav.wall_segments) ? fav.wall_segments : [];
+    projectActiveWallIndex = Math.max(PROJECT_WALL_ROLES_BY_SHAPE[restoredShape].indexOf('main'), 0);
+    persistProjectWallConfig();
+    refreshProjectWallShapeButtons();
+    refreshProjectWallTabs();
+
+    // Só agora dá pra clampar wall_index com segurança (já sabemos quantas
+    // paredes a forma restaurada tem) — módulo apontando pra uma parede que
+    // não existe mais nessa forma (ex.: salvo em C/U, restaurado depois de
+    // já ter voltado pra 'single' manualmente) cai na primeira.
+    restored.forEach((slot) => {
+      if (isFloorSlot(slot)) return; // ilha não pertence a parede nenhuma
+      if (slot.wall_index < 0 || slot.wall_index >= restoredRoleCount) slot.wall_index = 0;
+    });
+
+    projectSlots = restored;
+    // Construtor de armário: o projeto salvo traz a ÁRVORE (slot.layout), não
+    // as peças. Carrega o catálogo de agregados e refaz a geometria em
+    // background — ver hydrateProjectLayoutPieces.
+    hydrateProjectLayoutPieces();
+    selectedProjectSlotId = null;
+    project3DLastFitKey = null; // projeto TROCOU inteiro — reenquadra a câmera 3D mesmo se a chave coincidir (ver comentário na declaração)
+    refreshProjectWallWidthInput();
+    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name, ai_preview_url: fav.ai_preview_url || null } : null;
+    refreshProjectFavoriteButtons();
+    renderProjectCanvas();
+    projectDirty = false; // acabou de carregar do banco, nada pendente ainda
+    resetProjectUndo();    // projeto TROCOU inteiro — ver comentário em resetProjectUndo
+
+    const statusEl = document.getElementById('po-proj-fav-status');
+    if (statusEl) {
+      statusEl.textContent = I18n.t('project.loaded_status', { name: fav.name })
+        + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
+      setTimeout(() => { statusEl.textContent = ''; }, 6000);
+    }
+
+    // Recálculo do valor cacheado AO ABRIR (migration 076 — "só quando abre
+    // ele recalcula"): atualiza cached_value_usd em background com os preços
+    // ATUAIS do catálogo (o cache do salvar pode ter ficado velho se preço/
+    // margem mudou desde então). Fire-and-forget de propósito: roda DEPOIS
+    // do restore completo (computeProjectSlotsTotal mexe no global
+    // moduleColorsByRole — não pode rodar em paralelo com o restore), nunca
+    // atrasa a abertura nem quebra nada se falhar (coluna ausente, rede).
+    // Só o projeto que abriu — a lista continua sem recálculo em massa.
+    if (bindAsFavorite && fav.id) {
+      (async () => {
+        try {
+          const r = await computeProjectSlotsTotal(Array.isArray(fav.slots) ? fav.slots : []);
+          if (r && r.skipped === 0) {
+            await supabaseClient.from('user_projects').update({ cached_value_usd: r.total }).eq('id', fav.id);
+          }
+        } catch (e) { /* silencioso — cache é só conveniência */ }
+      })();
+    }
+  } catch (err) {
+    if (errorEl) {
+      errorEl.textContent = I18n.t('project.load_error', { msg: err.message || String(err) });
+      errorEl.style.display = 'block';
+    }
+  }
+}
+
+// ---------- GERAR IMAGEM COM IA + GALERIA PARA PROJETOS (migration 056) ----------
+// Cópia adaptada do bloco da Composição (generateAiPreviewForGallery/
+// publishCompositionToGallery e os helpers que eles chamam — ver comentários
+// perto de cada um lá pro raciocínio completo, não repetido aqui) operando
+// em cima de projectSlots/ViewerProject em vez de compositionSlots/
+// ViewerComposition. gallery_posts ganha source_type='project' +
+// wall_width_mm (migration 056) pra "Personalizar" saber reconstruir de
+// volta na aba Projetos (ver restoreGalleryPostAsProject mais abaixo).
+
+// Largura = a da PAREDE (getProjectWallWidthMm), não a soma dos módulos
+// (teria vãos vazios contados errado) — equivalente a
+// computeCompositionTotalsMm(), que soma colunas em vez disso.
+function computeProjectTotalsMm() {
+  if (projectSlots.length === 0) return null;
+  let totalHeight = 0;
+  let totalDepth = 0;
+  projectSlots.forEach((s) => {
+    totalHeight = Math.max(totalHeight, Number(s.floor_height_mm || 0) + Number(s.height_mm || 0));
+    totalDepth = Math.max(totalDepth, Number(s.depth_mm || 0));
+  });
+  return { totalWidth: getProjectWallWidthMm(), totalHeight, totalDepth };
+}
+
+function aggregateColorsUsedForProject() {
+  const byColorId = new Map();
+  projectSlots.forEach((slot) => {
+    (slot.selectedColors || []).forEach((c) => { if (c.color_id) byColorId.set(c.color_id, c); });
+    Object.values(slot.pieceColorOverrides || {}).forEach((perRole) => {
+      Object.keys(perRole).forEach((roleId) => {
+        const color = perRole[roleId];
+        if (color && color.id && !byColorId.has(color.id)) {
+          byColorId.set(color.id, { role_id: roleId, role_name: null, color_id: color.id, color_name: color.name });
+        }
+      });
+    });
+  });
+  return [...byColorId.values()];
+}
+
+function aggregateColorsUsedPerModuleForProject() {
+  const byModule = new Map(); // moduleName -> Map(colorId -> colorEntry)
+  projectSlots.forEach((slot) => {
+    const moduleName = (slot.module && slot.module.name) || '?';
+    if (!byModule.has(moduleName)) byModule.set(moduleName, new Map());
+    const colorMap = byModule.get(moduleName);
+    (slot.selectedColors || []).forEach((c) => { if (c.color_id) colorMap.set(c.color_id, c); });
+    Object.values(slot.pieceColorOverrides || {}).forEach((perRole) => {
+      Object.keys(perRole).forEach((roleId) => {
+        const color = perRole[roleId];
+        if (color && color.id && !colorMap.has(color.id)) {
+          colorMap.set(color.id, { role_id: roleId, role_name: null, color_id: color.id, color_name: color.name });
+        }
+      });
+    });
+  });
+  return [...byModule.entries()].map(([moduleName, colorMap]) => ({ moduleName, colors: [...colorMap.values()] }));
+}
+
+async function buildColorDescriptionForProject() {
+  const perModule = aggregateColorsUsedPerModuleForProject();
+  if (!perModule.length) return null;
+  const allColorIds = [...new Set(perModule.flatMap((m) => m.colors.map((c) => c.color_id)).filter(Boolean))];
+  const hexByColorId = new Map();
+  if (allColorIds.length) {
+    try {
+      const { data } = await supabaseClient.from('colors').select('id, swatch_hex').in('id', allColorIds);
+      (data || []).forEach((c) => { if (c.swatch_hex) hexByColorId.set(c.id, c.swatch_hex); });
+    } catch (err) { /* segue só com o nome, sem hex */ }
+  }
+  const moduleLabels = perModule
+    .map(({ moduleName, colors }) => {
+      const names = [...new Set(colors
+        .map((c) => {
+          if (!c.color_name) return null;
+          const hex = hexByColorId.get(c.color_id);
+          return hex ? `${c.color_name} (hex aproximado ${hex})` : c.color_name;
+        })
+        .filter(Boolean))];
+      return names.length ? `${moduleName}: ${names.join(', ')}` : null;
+    })
+    .filter(Boolean);
+  return moduleLabels.length ? moduleLabels.join('; ') : null;
+}
+
+const MAX_COLOR_REF_PHOTOS_PROJECT = 4;
+async function buildColorReferencesForProject() {
+  const perModule = aggregateColorsUsedPerModuleForProject();
+  if (!perModule.length) return [];
+  const colorIds = [...new Set(perModule.flatMap((m) => m.colors.map((c) => c.color_id)).filter(Boolean))];
+  if (!colorIds.length) return [];
+  const modulesByColorId = new Map();
+  perModule.forEach(({ moduleName, colors }) => {
+    colors.forEach((c) => {
+      if (!c.color_id) return;
+      if (!modulesByColorId.has(c.color_id)) modulesByColorId.set(c.color_id, new Set());
+      modulesByColorId.get(c.color_id).add(moduleName);
+    });
+  });
+  try {
+    const { data } = await supabaseClient.from('colors').select('id, name, texture_url').in('id', colorIds);
+    const withPhoto = (data || []).filter((c) => c.texture_url).slice(0, MAX_COLOR_REF_PHOTOS_PROJECT);
+    const images = (await Promise.all(withPhoto.map(async (c) => {
+      const rawDataUrl = await fetchUrlAsDataUrl(c.texture_url);
+      if (!rawDataUrl) return null;
+      const dataUrl = await toJpegDataUrl(rawDataUrl);
+      const moduleNames = [...(modulesByColorId.get(c.id) || [])].join(', ');
+      const label = moduleNames ? `${moduleNames}: ${c.name}` : c.name;
+      return { label, dataUrl };
+    }))).filter(Boolean);
+    return images;
+  } catch (err) {
+    return [];
+  }
+}
+
+const MAX_MODULE_REF_PHOTOS_PROJECT = 3;
+async function fetchReferencePhotosForProject() {
+  const moduleNameById = new Map();
+  projectSlots.forEach((s) => { if (s.module && s.module.id) moduleNameById.set(s.module.id, s.module.name); });
+  const moduleIds = [...moduleNameById.keys()];
+  if (!moduleIds.length) return { moduleRefImages: [] };
+  try {
+    const { data } = await supabaseClient.from('reference_photos').select('id, module_id, photo_url').in('module_id', moduleIds);
+    const firstPhotoByModule = new Map();
+    (data || []).forEach((p) => { if (!firstPhotoByModule.has(p.module_id)) firstPhotoByModule.set(p.module_id, p.photo_url); });
+    const chosen = [...firstPhotoByModule.entries()].slice(0, MAX_MODULE_REF_PHOTOS_PROJECT);
+    const moduleRefImages = (await Promise.all(chosen.map(async ([moduleId, photoUrl]) => {
+      const dataUrl = await fetchUrlAsDataUrl(photoUrl);
+      return dataUrl ? { moduleName: moduleNameById.get(moduleId) || null, dataUrl } : null;
+    }))).filter(Boolean);
+    return { moduleRefImages };
+  } catch (err) {
+    return { moduleRefImages: [] };
+  }
+}
+
+async function captureProjectAngleReferences() {
+  if (!ViewerProject || !ViewerProject.snapshot) return [];
+  const angles = [
+    { angle: 'three_quarter', label: 'vista 3/4 (referência de geometria)' },
+    { angle: 'side', label: 'vista lateral (referência de geometria)' }
+  ];
+  const images = [];
+  for (const { angle, label } of angles) {
+    const raw = ViewerProject.snapshot({ angle });
+    if (!raw) continue;
+    const trimmed = await trimTransparentPng(raw);
+    if (trimmed) images.push({ label, dataUrl: trimmed });
+  }
+  return images;
+}
+
+// Versão "limpa" da cena do Projeto só pra tirar o(s) print(s) que viram
+// base pra IA — mesmo princípio de renderCompositionForAiSnapshot (ver
+// comentário lá). SEMPRE temporária: quem chamar isto tem que chamar
+// generateProject3D() de novo depois, pra devolver a cena normal.
+function renderProjectForAiSnapshot() {
+  if (!ViewerProject || !ViewerProject.available()
+    || typeof Viewer3D === 'undefined' || !Viewer3D.buildStandaloneAssembly) {
+    return false;
+  }
+  const cleanSlots = projectSlots.filter((slot) => !(slot.module && slot.module.is_decoration));
+  if (!cleanSlots.length) return false;
+  const room = { ...viewerRoomEnvConfig(), minimal: true };
+  ViewerProject.init('po-proj-3d-canvas');
+  // Mesma ramificação single vs. dupla/C-U de generateProject3D (ver
+  // comentário lá) — só muda a origem dos slots (cleanSlots, sem decoração).
+  // Módulos ILHA (2026-08-08) forçam o caminho multi-parede, mesmo com uma
+  // parede só — é renderFreeformWalls quem sabe posicionar por coordenada de
+  // mundo (ver a mesma ramificação em generateProject3D).
+  const floorAssemblies = buildProjectAssemblies(cleanSlots.filter(isFloorSlot));
+  // PLANTA DESENHADA SEMPRE PELO CAMINHO MULTI-PAREDE (2026-08-18): so quem
+  // NAO tem wall_segments (projeto salvo no modelo velho de forma fixa) cai
+  // no renderFreeform de uma parede centrada na origem. Com planta desenhada
+  // a parede pode estar em qualquer lugar/angulo, e quem sabe posicionar por
+  // coordenada de mundo e o renderFreeformWalls — mesmo caminho da cena de
+  // edicao (renderProjectCanvasFrontCorner), pra os dois 3D concordarem.
+  if (!projectWallSegments.length && getProjectWallCount() <= 1 && !floorAssemblies.length) {
+    const assemblies = buildProjectAssemblies(cleanSlots);
+    ViewerProject.renderFreeform(assemblies, getProjectWallWidthMm() / 1000, room);
+  } else {
+    const wallsData = getProjectWallGeometry().map((wall) => ({
+      ...wall,
+      assemblies: buildProjectAssemblies(cleanSlots.filter((s) => !isFloorSlot(s) && Number(s.wall_index || 0) === wall.wallIndex))
+    }));
+    ViewerProject.renderFreeformWalls(wallsData, room, null, { floorAssemblies });
+  }
+  return true;
+}
+
+let projectGalleryAiPreviewImage = null;
+let projectGalleryAiPreviewStatus = null;
+
+const projGalleryPublishToggleBtn = document.getElementById('po-proj-gallery-publish-toggle-btn');
+if (projGalleryPublishToggleBtn) {
+  projGalleryPublishToggleBtn.addEventListener('click', () => {
+    const form = document.getElementById('po-proj-gallery-publish-form');
+    if (!form) return;
+    const isHidden = form.style.display === 'none';
+    if (isHidden) {
+      populateGalleryFamilySelect(document.getElementById('po-proj-gallery-room-type'), false);
+      projectGalleryAiPreviewImage = null;
+      projectGalleryAiPreviewStatus = null;
+      document.getElementById('po-proj-gallery-ai-preview-wrap').style.display = 'none';
+      const baseWrap = document.getElementById('po-proj-gallery-base-preview-wrap');
+      if (baseWrap) baseWrap.style.display = 'none';
+    }
+    form.style.display = isHidden ? 'block' : 'none';
+  });
+}
+
+async function generateAiPreviewForProjectGallery() {
+  const btn = document.getElementById('po-proj-gallery-generate-ai-btn');
+  const previewWrap = document.getElementById('po-proj-gallery-ai-preview-wrap');
+  const previewImg = document.getElementById('po-proj-gallery-ai-preview-img');
+  const previewHint = document.getElementById('po-proj-gallery-ai-preview-hint');
+  const basePreviewWrap = document.getElementById('po-proj-gallery-base-preview-wrap');
+  const basePreviewImg = document.getElementById('po-proj-gallery-base-preview-img');
+  const errorEl = document.getElementById('po-proj-gallery-publish-error');
+  errorEl.style.display = 'none';
+  if (!projectSlots.length) {
+    errorEl.textContent = I18n.t('fav.need_slots');
+    errorEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = I18n.t('gallery.generating_ai_status');
+  // Base fixa (2026-08-03, pedido do usuário: "quero que a IA use dessa nova
+  // imagem renderizada como base"): se existe foto realista salva pra este
+  // projeto (loadedProjectFavorite.ai_preview_url, ver
+  // savePhotorealRenderToProject/photoreal.js), ela vira a base mandada ao
+  // Gemini em vez de tirar um screenshot novo do 3D — sempre no MESMO
+  // tamanho/proporção (4:3 travado no photoreal.js), então
+  // padImageToAspectRatio mais abaixo vira no-op pra ela (já bate exato) e a
+  // IA nunca precisa redimensionar/inventar nada pra encaixar formato. Sem
+  // foto salva, cai no comportamento de sempre (screenshot da cena limpa).
+  const photorealBaseUrl = loadedProjectFavorite && loadedProjectFavorite.ai_preview_url;
+  let usedCleanScene = false;
+  try {
+    let trimmedSnapshot;
+    if (photorealBaseUrl) {
+      trimmedSnapshot = await fetchUrlAsDataUrl(photorealBaseUrl);
+    } else {
+      usedCleanScene = renderProjectForAiSnapshot();
+      // 2+ paredes (L/C-U) usa angle:'corner' (pedido do usuário 2026-07-26:
+      // "Imagem de IA 2 paredes ou 3 paredes, camera pegando as duas
+      // paredes") — {frontal:true} é quase Z puro, pensado pra 1 parede só,
+      // e cortava as laterais fora do print principal. Ver comentário grande
+      // em snapshot()/lastFitDir (viewer3d_composition.js).
+      const snapshotOptions = getProjectWallCount() > 1 ? { angle: 'corner' } : { frontal: true };
+      const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot(snapshotOptions) : null;
+      trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+    }
+    if (!trimmedSnapshot) {
+      errorEl.textContent = I18n.t('gallery.generate_ai_no_3d_error');
+      errorEl.style.display = 'block';
+      return;
+    }
+    const roomFamilyId = document.getElementById('po-proj-gallery-room-type').value || null;
+    const roomLabel = roomFamilyId ? galleryFamilyName(roomFamilyId) : null;
+    const aspectRatio = currentGalleryAspectRatio(await getImageAspectRatio(trimmedSnapshot));
+    // Preenche a imagem ANTES de mandar pro Gemini, pra ela já sair
+    // exatamente na proporção pedida acima (nunca corta/estica o projeto) —
+    // ver padImageToAspectRatio, corrige o "muda o projeto pra caber".
+    const sourceImageForAi = (await padImageToAspectRatio(trimmedSnapshot, aspectRatioLabelToValue(aspectRatio))) || trimmedSnapshot;
+
+    if (basePreviewImg && basePreviewWrap) {
+      basePreviewImg.src = sourceImageForAi;
+      basePreviewWrap.style.display = 'block';
+    }
+
+    let imageDataUrl = sourceImageForAi;
+    let renderStatus = 'failed';
+    try {
+      const angleRefImages = await captureProjectAngleReferences();
+      const [{ moduleRefImages }, colorLabel, colorRefImages] = await Promise.all([
+        fetchReferencePhotosForProject(),
+        buildColorDescriptionForProject(),
+        buildColorReferencesForProject()
+      ]);
+      const { data: renderData, error: renderError } = await supabaseClient.functions.invoke('generate-gallery-render', {
+        body: { imageDataUrl: sourceImageForAi, moduleRefImages, colorLabel, colorRefImages, angleRefImages, roomLabel, aspectRatio }
+      });
+      if (!renderError && renderData && renderData.imageDataUrl) {
+        imageDataUrl = renderData.imageDataUrl;
+        renderStatus = 'ready';
+      } else {
+        console.error('generate-gallery-render falhou (projeto):', renderError, renderData);
+        if (renderError && typeof renderError.context?.json === 'function') {
+          renderError.context.json().then((body) => console.error('Corpo do erro:', body)).catch(() => {});
+        }
+      }
+    } catch (aiErr) {
+      console.error('generate-gallery-render: erro ao chamar a function (projeto):', aiErr);
+    }
+
+    projectGalleryAiPreviewImage = imageDataUrl;
+    projectGalleryAiPreviewStatus = renderStatus;
+    previewImg.src = imageDataUrl;
+    previewHint.textContent = renderStatus === 'ready'
+      ? I18n.t('gallery.generate_ai_ready_hint')
+      : I18n.t('gallery.generate_ai_fallback_hint');
+    previewWrap.style.display = 'block';
+  } finally {
+    if (usedCleanScene) generateProject3D();
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+const projGalleryGenerateAiBtn = document.getElementById('po-proj-gallery-generate-ai-btn');
+if (projGalleryGenerateAiBtn) projGalleryGenerateAiBtn.addEventListener('click', generateAiPreviewForProjectGallery);
+
+const projGalleryAiPreviewImgEl = document.getElementById('po-proj-gallery-ai-preview-img');
+if (projGalleryAiPreviewImgEl) {
+  projGalleryAiPreviewImgEl.addEventListener('click', () => {
+    if (projGalleryAiPreviewImgEl.src) openGalleryLightbox(projGalleryAiPreviewImgEl.src);
+  });
+}
+const projGalleryBasePreviewImgEl = document.getElementById('po-proj-gallery-base-preview-img');
+if (projGalleryBasePreviewImgEl) {
+  projGalleryBasePreviewImgEl.addEventListener('click', () => {
+    if (projGalleryBasePreviewImgEl.src) openGalleryLightbox(projGalleryBasePreviewImgEl.src);
+  });
+}
+
+// "⬇️ Baixar" / "↗️ Compartilhar" — mesma coisa da Composição (ver
+// downloadGeneratedImage/shareGeneratedImage acima), só lendo
+// projectGalleryAiPreviewImage em vez de galleryAiPreviewImage.
+const projGalleryAiDownloadBtn = document.getElementById('po-proj-gallery-ai-download-btn');
+if (projGalleryAiDownloadBtn) {
+  projGalleryAiDownloadBtn.addEventListener('click', () => downloadGeneratedImage(projectGalleryAiPreviewImage, 'projeto'));
+}
+const projGalleryAiShareBtn = document.getElementById('po-proj-gallery-ai-share-btn');
+if (projGalleryAiShareBtn) {
+  projGalleryAiShareBtn.addEventListener('click', () => shareGeneratedImage(projectGalleryAiPreviewImage, 'projeto', document.getElementById('po-proj-gallery-ai-preview-hint')));
+}
+
+async function publishProjectToGallery() {
+  const errorEl = document.getElementById('po-proj-gallery-publish-error');
+  const statusEl = document.getElementById('po-proj-gallery-publish-status');
+  errorEl.style.display = 'none';
+  statusEl.textContent = '';
+  if (!currentUser) {
+    errorEl.textContent = I18n.t('fav.need_login');
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (!projectSlots.length) {
+    errorEl.textContent = I18n.t('fav.need_slots');
+    errorEl.style.display = 'block';
+    return;
+  }
+  const submitBtn = document.getElementById('po-proj-gallery-publish-submit-btn');
+  submitBtn.disabled = true;
+  try {
+    let imageDataUrl;
+    let renderStatus;
+    if (projectGalleryAiPreviewImage) {
+      imageDataUrl = projectGalleryAiPreviewImage;
+      renderStatus = projectGalleryAiPreviewStatus;
+    } else {
+      // Mesma preferência de generateAiPreviewForProjectGallery: foto
+      // realista salva (loadedProjectFavorite.ai_preview_url) vira a base,
+      // sem screenshot novo nem re-render da cena limpa.
+      const photorealBaseUrlFallback = loadedProjectFavorite && loadedProjectFavorite.ai_preview_url;
+      const usedCleanSceneFallback = photorealBaseUrlFallback ? false : renderProjectForAiSnapshot();
+      let trimmedSnapshot;
+      if (photorealBaseUrlFallback) {
+        trimmedSnapshot = await fetchUrlAsDataUrl(photorealBaseUrlFallback);
+      } else {
+        const rawSnapshot = (ViewerProject && ViewerProject.snapshot) ? ViewerProject.snapshot({ frontal: true }) : null;
+        trimmedSnapshot = rawSnapshot ? await trimTransparentPng(rawSnapshot) : null;
+      }
+      imageDataUrl = trimmedSnapshot;
+      renderStatus = trimmedSnapshot ? 'pending' : 'failed';
+      if (trimmedSnapshot) {
+        try {
+          const fallbackFamilyId = document.getElementById('po-proj-gallery-room-type').value || null;
+          const fallbackRoomLabel = fallbackFamilyId ? galleryFamilyName(fallbackFamilyId) : null;
+          const fallbackAspectRatio = currentGalleryAspectRatio(await getImageAspectRatio(trimmedSnapshot));
+          // Mesma correção do preview: preenche pra bater exatamente a
+          // proporção pedida ao Gemini antes de mandar (ver padImageToAspectRatio).
+          const fallbackSourceImage = (await padImageToAspectRatio(trimmedSnapshot, aspectRatioLabelToValue(fallbackAspectRatio))) || trimmedSnapshot;
+          imageDataUrl = fallbackSourceImage;
+          const fallbackAngleRefImages = await captureProjectAngleReferences();
+          const [{ moduleRefImages }, fallbackColorLabel, fallbackColorRefImages] = await Promise.all([
+            fetchReferencePhotosForProject(),
+            buildColorDescriptionForProject(),
+            buildColorReferencesForProject()
+          ]);
+          const { data: renderData, error: renderError } = await supabaseClient.functions.invoke('generate-gallery-render', {
+            body: { imageDataUrl: fallbackSourceImage, moduleRefImages, colorLabel: fallbackColorLabel, colorRefImages: fallbackColorRefImages, angleRefImages: fallbackAngleRefImages, roomLabel: fallbackRoomLabel, aspectRatio: fallbackAspectRatio }
+          });
+          if (!renderError && renderData && renderData.imageDataUrl) {
+            imageDataUrl = renderData.imageDataUrl;
+            renderStatus = 'ready';
+          }
+        } catch (aiErr) {
+          // segue com o screenshot 3D mesmo (renderStatus continua 'pending')
+        } finally {
+          if (usedCleanSceneFallback) generateProject3D();
+        }
+      } else if (usedCleanSceneFallback) {
+        generateProject3D();
+      }
+    }
+
+    try {
+      imageDataUrl = await uploadGalleryImageToStorage(imageDataUrl);
+    } catch (uploadErr) {
+      console.error('Falha ao subir imagem da Galeria pro Storage (projeto), mantendo base64:', uploadErr);
+    }
+
+    const totalsMm = computeProjectTotalsMm();
+    const priceSale = projectSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.total) || 0), 0);
+    const priceCost = projectSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.cost_total) || 0), 0);
+    const isAnonymous = !!document.getElementById('po-proj-gallery-anonymous-chk').checked;
+    const familyId = document.getElementById('po-proj-gallery-room-type').value || null;
+
+    const payload = {
+      author_user_id: currentUser.id,
+      author_display_name: currentUser.email || null,
+      is_anonymous: isAnonymous,
+      status: 'pending',
+      render_status: renderStatus,
+      ai_image_data_url: imageDataUrl,
+      composition_name: loadedProjectFavorite ? loadedProjectFavorite.name : null,
+      family_id: familyId,
+      source_type: 'project',
+      // Sempre a largura da parede 'main' (não a da parede ativa no
+      // momento de publicar) — gallery_posts só guarda 1 número (não passou
+      // pela migration 058 de wall_shape/wall_widths_mm ainda), então isso é
+      // só um resumo aproximado pra forma dupla/C-U (a peça "Personalizar"
+      // de um post assim reabre em 'single', só com essa largura — gap
+      // conhecido, não implementado).
+      wall_width_mm: getProjectWallWidthMm(Math.max(getProjectWallRoles().indexOf('main'), 0)),
+      total_width_mm: totalsMm ? totalsMm.totalWidth : null,
+      total_height_mm: totalsMm ? totalsMm.totalHeight : null,
+      total_depth_mm: totalsMm ? totalsMm.totalDepth : null,
+      price_sale: priceSale,
+      price_cost: priceCost,
+      colors_used: aggregateColorsUsedForProject(),
+      slots: serializeProjectSlots()
+    };
+    const { error } = await supabaseClient.from('gallery_posts').insert(payload);
+    if (error) throw error;
+    // Vincula a imagem de IA final (já em URL pública do Storage, ver
+    // uploadGalleryImageToStorage acima) ao projeto salvo, se este publish
+    // veio de um projeto vinculado em "Meus Projetos" (migration 069) — pra
+    // ela também aparecer no card do grid, além de ir pra Galeria pública.
+    // Não crítico: publicar sem projeto salvo (loadedProjectFavorite null)
+    // ou essa gravação falhando não deve travar o fluxo, a Galeria já foi
+    // publicada de qualquer jeito.
+    if (loadedProjectFavorite && loadedProjectFavorite.id) {
+      try {
+        await supabaseClient.from('user_projects').update({ ai_preview_url: imageDataUrl }).eq('id', loadedProjectFavorite.id);
+        loadedProjectFavorite.ai_preview_url = imageDataUrl; // mesma base que a próxima geração de IA vai preferir (ver generateAiPreviewForProjectGallery)
+      } catch (linkErr) { /* card de "Meus Projetos" só fica sem a imagem de IA */ }
+    }
+    statusEl.textContent = I18n.t('gallery.publish_success');
+    document.getElementById('po-proj-gallery-anonymous-chk').checked = false;
+    projectGalleryAiPreviewImage = null;
+    projectGalleryAiPreviewStatus = null;
+    document.getElementById('po-proj-gallery-ai-preview-wrap').style.display = 'none';
+    const baseWrapAfterPublish = document.getElementById('po-proj-gallery-base-preview-wrap');
+    if (baseWrapAfterPublish) baseWrapAfterPublish.style.display = 'none';
+    setTimeout(() => {
+      statusEl.textContent = '';
+      document.getElementById('po-proj-gallery-publish-form').style.display = 'none';
+    }, 4000);
+  } catch (err) {
+    errorEl.textContent = err.message || String(err);
+    errorEl.style.display = 'block';
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+const projGalleryPublishSubmitBtn = document.getElementById('po-proj-gallery-publish-submit-btn');
+if (projGalleryPublishSubmitBtn) projGalleryPublishSubmitBtn.addEventListener('click', publishProjectToGallery);
+
+// "Personalizar" num post de PROJETO (source_type='project') — mesma ideia
+// de restoreGalleryPostAsComposition (ver acima), só que carrega em
+// projectSlots (ver restoreFavoriteProject) + a largura do ambiente salva
+// junto (post.wall_width_mm). id null: não existe (nem poderia, RLS
+// owner-only) nenhuma user_projects correspondente a um post de outra
+// pessoa.
+function restoreGalleryPostAsProject(post) {
+  restoreFavoriteProject({ id: null, name: post.composition_name || I18n.t('gallery.untitled'), slots: post.slots, wall_width_mm: post.wall_width_mm }, false);
+}
+
+// Despacha "Personalizar" pro restore certo conforme source_type do post
+// (migration 056) — composição (coluna empilhada, sem largura de ambiente)
+// ou projeto (módulos soltos, com wall_width_mm). Usada nos 3 pontos que
+// abrem um post da Galeria fora da própria tela (card "Personalizar", link
+// compartilhado ?galleryPost=, retomada de login pendente) — cada restore já
+// troca de aba sozinho (Composição ou Projetos), então quem chama isto não
+// precisa mais decidir a aba na mão.
+function restoreGalleryPostBySourceType(post) {
+  if (post && post.source_type === 'project') restoreGalleryPostAsProject(post);
+  else restoreGalleryPostAsComposition(post);
+}
+
+// Delete/Backspace remove o módulo SELECIONADO do projeto (pedido do
+// usuário, 2026-07-21: "clicando no modulo e delete ele deve ser deletado
+// do projeto") — só age quando: a aba Projetos está visível, tem um módulo
+// selecionado (ver selectProjectSlot) e o foco NÃO está num campo de texto
+// (senão apagaria o módulo enquanto o cliente só queria apagar uma letra
+// digitando a largura/nome de busca, etc.).
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+  if (!selectedProjectSlotId) return;
+  const projectsTab = document.getElementById('po-tab-projects');
+  if (!projectsTab || projectsTab.style.display === 'none') return;
+  const active = document.activeElement;
+  const tag = active && active.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (active && active.isContentEditable)) return;
+  ev.preventDefault();
+  removeProjectSlot(selectedProjectSlotId);
+});
+
+// ---------- Abas ----------
+
+document.getElementById('po-sidebar').querySelectorAll('.portal-tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    // Aviso de alterações não salvas (pedido do usuário 2026-07-29: "depois
+    // que mudo a cor dos modulos ja inseridos no projeto ele nao salva essa
+    // alteracao... preciso no botao voltar uma mensagem salvar alteracoes")
+    // — Projetos SEMPRE foi só-salva-manual (troca de cor, mover, redimensionar,
+    // forma da parede... nada disso grava sozinho, só o botão "Salvar
+    // projeto"/"Salvar alterações", ver saveProjectFavorite); antes disso não
+    // existia nenhum aviso ao sair da aba, então dava pra perder edição sem
+    // perceber. projectDirty (ver markProjectDirty) fica true a partir da
+    // primeira edição de verdade e só volta a false ao salvar/carregar um
+    // projeto — checado aqui, ANTES de qualquer outra coisa no handler, pra
+    // cancelar a troca de aba inteira se o cliente desistir no confirm().
+    if (
+      document.getElementById('po-tab-projects').style.display !== 'none' &&
+      btn.dataset.tab !== 'po-tab-projects' &&
+      projectDirty &&
+      !confirm(I18n.t('project.unsaved_changes_confirm'))
+    ) {
+      return;
+    }
+    // Mesmo aviso, agora pra tela do pedido (ver orderDetailHasUnsavedChanges/
+    // po-order-detail-back-btn acima) — trocar de aba pelo menu lateral
+    // enquanto a tela do pedido está aberta é OUTRO jeito de "sair" dela além
+    // do botão "Voltar", e tinha o mesmo buraco (perdia troca de cor em massa
+    // pendente/quantidade digitada sem confirmar).
+    if (
+      document.getElementById('po-order-detail-section').style.display !== 'none' &&
+      btn.dataset.tab !== 'po-tab-my-orders' &&
+      orderDetailHasUnsavedChanges() &&
+      !confirm(I18n.t('order_detail.unsaved_changes_confirm'))
+    ) {
+      return;
+    }
+    // Segurança: se o cliente clicar numa aba de verdade enquanto o modal de
+    // "escolher módulo da composição" está aberto por cima (ver
+    // startCompositionSlotConfig), fecha o modal primeiro — equivalente a
+    // cancelar, evita addTargetSlotIndex ficar "preso" e o botão de
+    // "Adicionar" com o texto errado na próxima vez.
+    if (addTargetSlotIndex !== null) {
+      exitCompositionSlotConfig();
+    }
+    // Mesma segurança acima, pro modal de "configurar módulo do Projeto"
+    // (ver startProjectSlotConfig) — nunca fica setado ao mesmo tempo que
+    // addTargetSlotIndex.
+    if (addTargetProjectSlotId !== null) {
+      exitProjectSlotConfig();
+    }
+    document.getElementById('po-sidebar').querySelectorAll('.portal-tab-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.portal-tab-page').forEach((page) => { page.style.display = 'none'; });
+    const target = document.getElementById(btn.dataset.tab);
+    if (target) target.style.display = 'block';
+    // Tela cheia ANTES de renderizar: renderProjectCanvas mede o clientWidth
+    // do wrap pra calcular a escala px/mm — se a largura mudasse depois, o
+    // desenho ficaria na escala da largura antiga até o próximo redraw.
+    setProjectFullBleed(btn.dataset.tab === 'po-tab-projects');
+    if (btn.dataset.tab === 'po-tab-projects') {
+      // display:block já aplicado logo acima — canvas consegue medir
+      // clientWidth do wrap agora pra calcular a escala px/mm (ver
+      // renderProjectCanvas). Biblioteca reconstruída toda vez (barata,
+      // allModules já está em memória) pra pegar módulo novo/alterado.
+      renderProjectLibraryFilterBars();
+      renderProjectLibrary();
+      refreshProjectWallWidthInput();
+      renderProjectCanvas();
+    }
+    if (btn.dataset.tab === 'po-tab-my-orders' && !myOrdersLoaded) {
+      loadMyOrders();
+    }
+    // Recarrega a lista de módulos disponíveis pra colar na foto sempre que
+    // a aba abre — o carrinho pode ter mudado desde a última visita.
+    if (btn.dataset.tab === 'po-tab-room-view') {
+      renderRoomCartPicker();
+    }
+    if (btn.dataset.tab === 'po-tab-composition') {
+      renderCompositionSlots();
+    }
+    // Favoritos (migration 042) — recarrega a lista a cada visita (pode ter
+    // salvo/renomeado/excluído desde a última vez).
+    if (btn.dataset.tab === 'po-tab-favorites') {
+      loadFavoritesList();
+    }
+    // Meus Projetos (pedido do usuário, 2026-07-24) — mesma ideia de
+    // Favoritos: recarrega a cada visita (loadProjectFavoritesList já
+    // existia, só rodava atrás do toggle antigo dentro da aba Projetos).
+    if (btn.dataset.tab === 'po-tab-my-projects') {
+      loadProjectFavoritesList();
+    }
+    // Galeria pública (migration 048) — recarrega a cada visita (outros
+    // clientes podem ter publicado desde a última vez).
+    if (btn.dataset.tab === 'po-tab-gallery') {
+      loadGalleryList();
+    }
+    // Plano de Corte (migration 051) — carrega o catálogo de cores só na
+    // primeira visita (cutlistInitialized), já parte com 1 linha vazia.
+    if (btn.dataset.tab === 'po-tab-cutting-list') {
+      initCuttingListTabIfNeeded();
+    }
+  });
+});
+
+// ---------- Autenticação ----------
+
+// Guarda a composição que o VISITANTE tentou abrir/curtir sem estar logado
+// — usada pra retomar a ação assim que o login (email/senha OU Google)
+// terminar, em vez de simplesmente cair na tela normal sem contexto. Ver
+// openAuthModal/resumePendingGalleryAction.
+let pendingGalleryPostForAuth = null;
+
+// Modal de login (pedido do usuário 2026-07-20: "deixa a pagina GALLERY
+// publica... ao clicar customizar pedir login") — reaproveita o MESMO
+// #po-auth-section de sempre (forms/ids intocados), só que agora abre por
+// cima em vez de ser a única coisa na tela. `post` é opcional — quando
+// existe, é a composição que o visitante estava tentando abrir (guardada
+// em pendingGalleryPostForAuth pra retomar depois do login).
+function openAuthModal(post) {
+  pendingGalleryPostForAuth = post || null;
+  document.getElementById('po-auth-section').classList.add('open');
+  document.getElementById('po-login-error').style.display = 'none';
+  document.getElementById('po-login-email').focus();
+}
+
+function closeAuthModal() {
+  document.getElementById('po-auth-section').classList.remove('open');
+}
+
+// Chamada depois de login/cadastro bem-sucedido (email+senha OU Google via
+// redirect, ver maybeOpenSharedGalleryPost/init) — se o visitante tinha
+// clicado em "Customizar" numa composição específica antes de ser
+// interrompido pelo login, abre ela agora em vez de só cair na tela normal.
+function resumePendingGalleryAction() {
+  if (!pendingGalleryPostForAuth) return;
+  const post = pendingGalleryPostForAuth;
+  pendingGalleryPostForAuth = null;
+  restoreGalleryPostBySourceType(post);
+}
+
+function showLoggedOut() {
+  currentUser = null;
+  currentUserProfile = null;
+  if (typeof refreshDealerUiVisibility === 'function') refreshDealerUiVisibility();
+  closeAuthModal();
+  document.getElementById('po-content').style.display = 'block';
+  document.getElementById('po-logout-btn').style.display = 'none';
+  // Modo visitante (pedido do usuário: Galeria pública) — só a aba Galeria
+  // fica acessível na navegação (ver CSS #po-sidebar.guest-mode); o resto
+  // do app continua exigindo conta de verdade.
+  const sidebar = document.getElementById('po-sidebar');
+  if (sidebar) sidebar.classList.add('guest-mode');
+  const guestLoginBtn = document.getElementById('po-guest-login-btn');
+  if (guestLoginBtn) guestLoginBtn.style.display = 'inline-block';
+  const userChip = document.getElementById('po-user-chip');
+  if (userChip) userChip.style.display = 'none';
+  // Nomes de família (usados em galleryFamilyName, pro filtro/legenda de
+  // cada card) normalmente só carregavam em showLoggedIn — visitante
+  // também precisa, senão o "Ambiente" do card fica em branco. Tabela
+  // pública (sem dado sensível), então seguro tentar mesmo sem sessão; se
+  // a RLS um dia mudar pra exigir login, isso só volta a ficar vazio (sem
+  // travar nada, ver loadTaxonomyFilters).
+  if (typeof loadTaxonomyFilters === 'function') loadTaxonomyFilters().catch(() => {});
+  const galleryTabBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-gallery"]');
+  if (galleryTabBtn) galleryTabBtn.click();
+}
+
+async function showLoggedIn(user) {
+  currentUser = user;
+  closeAuthModal();
+  document.getElementById('po-content').style.display = 'block';
+  document.getElementById('po-logout-btn').style.display = 'inline-block';
+  // Sai do modo visitante — nav completa de volta, chip de usuário no lugar
+  // do botão "Entrar".
+  const sidebar = document.getElementById('po-sidebar');
+  if (sidebar) sidebar.classList.remove('guest-mode');
+  const guestLoginBtn = document.getElementById('po-guest-login-btn');
+  if (guestLoginBtn) guestLoginBtn.style.display = 'none';
+  const userChip = document.getElementById('po-user-chip');
+  if (userChip) userChip.style.display = 'flex';
+  // Chip de usuário no nav superior (reskin 2026-07-09) — só exibe o e-mail
+  // da sessão logada, não há tabela de perfil/nome cadastrado pra puxar daqui.
+  const userNameEl = document.getElementById('po-user-name');
+  const userAvatarEl = document.getElementById('po-user-avatar');
+  if (userNameEl) userNameEl.textContent = user.email || I18n.t('account.my_account');
+  if (userAvatarEl) userAvatarEl.textContent = (user.email || '?').charAt(0).toUpperCase();
+  myOrdersLoaded = false;
+  currentDraftOrderId = null;
+  cartItems = [];
+  await loadColorRoles();
+  await loadPricingMarkup();
+  // Perfil (migration 051) — decide se a aba "Plano de Corte" aparece
+  // (só Contractor/Administrador). Precisa vir antes de
+  // applyCuttingListTabVisibility, e a config de preço do plano de corte
+  // pode carregar em paralelo (não bloqueia o resto do login).
+  await ensureOwnUserProfile();
+  refreshResaleMarginInput();
+  refreshDealerUiVisibility();
+  applyCuttingListTabVisibility();
+  loadCuttingListPricingSettings();
+  await loadTaxonomyFilters();
+  await loadModules();
+  // Depois de loadModules: refreshProjectAiButton() precisa de allModules
+  // preenchido pra saber se existe módulo com função cadastrada.
+  await loadProjectAiConfig();
+  await loadDraftOrderIfAny();
+}
+
+document.getElementById('po-show-signup').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('po-login-block').style.display = 'none';
+  document.getElementById('po-signup-block').style.display = 'block';
+});
+document.getElementById('po-show-login').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('po-signup-block').style.display = 'none';
+  document.getElementById('po-login-block').style.display = 'block';
+});
+
+document.getElementById('po-login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('po-login-error');
+  errorEl.style.display = 'none';
+  const email = document.getElementById('po-login-email').value.trim();
+  const password = document.getElementById('po-login-password').value;
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    errorEl.textContent = error.message;
+    errorEl.style.display = 'block';
+    return;
+  }
+  await showLoggedIn(data.user);
+  await maybeOpenSharedGalleryPost();
+  resumePendingGalleryAction();
+});
+
+// Fechar o modal de login: botão X, clicar no fundo escuro, ou Esc — igual
+// ao padrão já usado no lightbox da galeria (openGalleryLightbox). Guest
+// pode desistir e continuar navegando a Galeria sem logar.
+document.getElementById('po-auth-modal-close').addEventListener('click', () => { pendingGalleryPostForAuth = null; closeAuthModal(); });
+document.getElementById('po-auth-section').addEventListener('click', (ev) => {
+  if (ev.target.id === 'po-auth-section') { pendingGalleryPostForAuth = null; closeAuthModal(); }
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && document.getElementById('po-auth-section').classList.contains('open')) {
+    pendingGalleryPostForAuth = null;
+    closeAuthModal();
+  }
+});
+
+// Botão "Entrar" do topo (visitante, modo guest) — abre o modal sem
+// composição pendente nenhuma (é só o cliente pedindo pra entrar direto,
+// não uma ação interrompida).
+const guestLoginBtnEl = document.getElementById('po-guest-login-btn');
+if (guestLoginBtnEl) guestLoginBtnEl.addEventListener('click', () => openAuthModal(null));
+
+// Login com Google (pedido do usuário 2026-07-20: "faz ligar com google da
+// pessoa pra ser rapido") — supabaseClient.auth.signInWithOAuth manda a
+// pessoa pro Google e VOLTA pra esta mesma URL (redirectTo). Se tinha uma
+// composição pendente (pendingGalleryPostForAuth), embute ?galleryPost=<id>
+// no redirect — maybeOpenSharedGalleryPost() já roda no init() assim que a
+// sessão voltar, então reabre a composição certa sozinho, sem precisar de
+// nenhum código extra pra esse caminho (diferente do login por senha, que
+// não recarrega a página e por isso chama resumePendingGalleryAction()
+// direto). Só funciona depois do Matt configurar o provider Google no
+// painel do Supabase (Authentication > Providers) + OAuth client no Google
+// Cloud Console — sem isso, o Supabase devolve um erro claro (mostrado
+// em po-login-error), não trava nada.
+document.getElementById('po-google-login-btn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('po-login-error');
+  errorEl.style.display = 'none';
+  const basePath = `${window.location.origin}${window.location.pathname}`;
+  const redirectTo = pendingGalleryPostForAuth ? `${basePath}?galleryPost=${pendingGalleryPostForAuth.id}` : basePath;
+  const { error } = await supabaseClient.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+  if (error) {
+    errorEl.textContent = error.message;
+    errorEl.style.display = 'block';
+  }
+});
+
+document.getElementById('po-signup-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('po-signup-error');
+  const successEl = document.getElementById('po-signup-success');
+  errorEl.style.display = 'none';
+  successEl.style.display = 'none';
+  const name = document.getElementById('po-signup-name').value.trim();
+  const phone = document.getElementById('po-signup-phone').value.trim();
+  const email = document.getElementById('po-signup-email').value.trim();
+  const password = document.getElementById('po-signup-password').value;
+  const { data, error } = await supabaseClient.auth.signUp({
+    email, password,
+    options: { data: { name, phone } }
+  });
+  if (error) {
+    errorEl.textContent = error.message;
+    errorEl.style.display = 'block';
+    return;
+  }
+  // Se o projeto Supabase exige confirmação de e-mail, não há sessão ainda
+  // — pede pra checar o e-mail e ir pra tela de login depois de confirmar.
+  if (data.session) {
+    await showLoggedIn(data.user);
+    resumePendingGalleryAction();
+  } else {
+    successEl.textContent = I18n.t('auth.signup_success');
+    successEl.style.display = 'block';
+    document.getElementById('po-signup-form').reset();
+  }
+});
+
+// Mesmo guard de "alterações não salvas" que já existia pra troca de aba
+// (ver po-sidebar .portal-tab-btn acima) — faltava aqui, então deslogar
+// direto (sem salvar) descartava silenciosamente troca de cor/medida/posição
+// feita na aba Projetos ou na tela do pedido: o próximo login carregava de
+// novo os dados do banco (a última versão SALVA), que pareciam "voltar pro
+// antigo" porque a edição nunca tinha sido persistida.
+document.getElementById('po-logout-btn').addEventListener('click', async () => {
+  if (
+    document.getElementById('po-tab-projects').style.display !== 'none' &&
+    projectDirty &&
+    !confirm(I18n.t('project.unsaved_changes_confirm'))
+  ) {
+    return;
+  }
+  if (
+    document.getElementById('po-order-detail-section').style.display !== 'none' &&
+    orderDetailHasUnsavedChanges() &&
+    !confirm(I18n.t('order_detail.unsaved_changes_confirm'))
+  ) {
+    return;
+  }
+  await supabaseClient.auth.signOut();
+  showLoggedOut();
+});
+
+// Balão de info da peça (duplo-clique no 3D) — mesma lógica de client.js,
+// só que lendo a unidade e escrevendo no tooltip com prefixo "po-" (ver
+// portal.html). Mostra nome/referência, L/A/P e cor — nunca preço.
+function showPieceInfoTooltip(info, clientX, clientY) {
+  const tooltip = document.getElementById('po-piece-info-tooltip');
+  if (!tooltip) return;
+  const unitSelect = document.getElementById('po-unit-select');
+  const unit = unitSelect ? unitSelect.value : 'mm';
+  const dims = `${I18n.t('dims.width_abbrev')} ${formatDimension(info.width_mm, unit)} × ${I18n.t('dims.height_abbrev')} ${formatDimension(info.height_mm, unit)} × ${I18n.t('dims.depth_abbrev')} ${formatDimension(info.depth_mm, unit)}`;
+  tooltip.innerHTML = `
+    <button type="button" class="piece-info-close" aria-label="${I18n.t('tooltip.close_label')}">&times;</button>
+    <strong>${info.reference || I18n.t('tooltip.piece_fallback')}</strong>
+    <div>${dims}</div>
+    ${info.color_name ? `<div>${info.color_name}</div>` : ''}
+  `;
+  tooltip.style.display = 'block';
+  positionPieceInfoTooltip(tooltip, clientX, clientY);
+  const closeBtn = tooltip.querySelector('.piece-info-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => { tooltip.style.display = 'none'; });
+}
+
+function positionPieceInfoTooltip(tooltip, clientX, clientY) {
+  const rect = tooltip.getBoundingClientRect();
+  let left = clientX + 14;
+  let top = clientY + 14;
+  if (left + rect.width > window.innerWidth) left = clientX - rect.width - 14;
+  if (top + rect.height > window.innerHeight) top = clientY - rect.height - 14;
+  tooltip.style.left = Math.max(8, left) + 'px';
+  tooltip.style.top = Math.max(8, top) + 'px';
+}
+
+document.addEventListener('click', (e) => {
+  const tooltip = document.getElementById('po-piece-info-tooltip');
+  if (tooltip && tooltip.style.display !== 'none' && !tooltip.contains(e.target)) {
+    tooltip.style.display = 'none';
+  }
+});
+
+// Re-renderiza o conteúdo montado dinamicamente em JS (galeria, carrinho,
+// meus pedidos, slots de composição) sempre que o idioma muda — esses
+// pedaços já chamam I18n.t() na hora de montar a string, então não têm
+// data-i18n pra applyStaticTranslations() re-aplicar sozinha, e ficariam
+// "congelados" no idioma antigo até o próximo re-render natural.
+if (typeof I18n !== 'undefined' && I18n.onLanguageChange) {
+  I18n.onLanguageChange(() => {
+    if (typeof allModules !== 'undefined' && allModules.length) renderModuleGallery();
+    renderCart();
+    if (myOrdersLoaded) loadMyOrders();
+    if (compositionSlots.length) renderCompositionSlots();
+    // Rótulos das linhas do ambiente (Ceiling/altura máx) traduzidos.
+    applyViewerRoomEnvironment();
+    // Cabeçalho/hint de unidade + textos traduzidos (Sim/Não do veio etc.)
+    // da tabela do Plano de Corte — sem data-i18n porque o hint de limites
+    // mistura tradução com valor formatado na unidade global (ver
+    // updateCutlistUnitLabels/commitCutlistDimensionInput).
+    if (typeof cutlistRows !== 'undefined' && cutlistRows.length) renderCutlistTable();
+    else if (typeof updateCutlistUnitLabels === 'function') updateCutlistUnitLabels();
+  });
+}
+
+(async function init() {
+  try {
+    Viewer3D.init('po-viewer3d-canvas');
+    Viewer3D.onPieceDoubleClick(showPieceInfoTooltip);
+  } catch (err) {
+    // Sem Three.js/WebGL o portal continua funcionando, só sem o 3D.
+  }
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session) {
+    await showLoggedIn(session.user);
+    // Precisa vir DEPOIS de showLoggedIn (usa currentUser) — ver
+    // maybeLoadGalleryPostForAdminEdit.
+    await maybeLoadGalleryPostForAdminEdit();
+    await maybeOpenSharedGalleryPost();
+  } else {
+    showLoggedOut();
+  }
+
+  supabaseClient.auth.onAuthStateChange(async (event) => {
+    if (event === 'SIGNED_OUT') showLoggedOut();
+  });
+})();
+// fim de portal.js
