@@ -229,6 +229,12 @@ async function loadRecursivePiecesForModule(moduleId) {
         is_decoration: lockedPresets.is_decoration,
         own_hinge_model: ownHingeSlide.hinge,
         own_slide_model: ownHingeSlide.slide,
+        // Todos os modelos de corrediça vinculados a este módulo filho
+        // (migration 127) — não só o "primeiro ativo" acima. Usado por
+        // Pricing.pickSlideModelByDepth pra escolher o preço certo conforme
+        // a profundidade real da gaveta. Lista vazia (nenhum com
+        // rail_length_mm cadastrado) = cai no own_slide_model de sempre.
+        own_slide_models: ownHingeSlide.slides || [],
         // Limite de tamanho PRÓPRIO do módulo filho (sempre ativo, ver
         // fetchModuleLockedDimensionPresets) — clampado em
         // resolvePiecesForViewer/Pricing.calculateModulePiece.
@@ -536,13 +542,47 @@ async function fetchModuleLockedDimensionPresets(moduleId) {
 }
 
 async function fetchModuleOwnHingeAndSlideModels(moduleId) {
-  const [hingeRes, slideRes] = await Promise.all([
+  const [hingeRes, slideRes, purchasedSlideRes] = await Promise.all([
     supabaseClient.from('module_hinge_models').select('hinge_model_id, hinge_models(*)').eq('module_id', moduleId),
-    supabaseClient.from('module_slide_models').select('slide_model_id, slide_models(*)').eq('module_id', moduleId)
+    supabaseClient.from('module_slide_models').select('slide_model_id, slide_models(*)').eq('module_id', moduleId),
+    // Migration 128 — a corrediça de verdade mora em Itens Comprados
+    // (purchased_items, kind='corredica'), não em slide_models. Matt,
+    // 2026-08-19: "estao cadastradas certinhas" nos comprados; duplicar em
+    // slide_models só pra ganhar rail_length_mm era retrabalho.
+    // module_purchased_slides vincula o item comprado ao módulo-gaveta,
+    // mesmo papel que module_slide_models sempre teve.
+    supabaseClient.from('module_purchased_slides').select('purchased_item_id, purchased_items(*)').eq('module_id', moduleId)
   ]);
   const hinge = (hingeRes.data || []).map((r) => r.hinge_models).find((h) => h && h.active) || null;
-  const slide = (slideRes.data || []).map((r) => r.slide_models).find((s) => s && s.active) || null;
-  return { hinge, slide };
+  // TODOS os modelos de corrediça ativos vinculados (migration 127, não só
+  // "o primeiro ativo") — Matt pode vincular vários com comprimento de
+  // trilho (rail_length_mm) diferente no mesmo módulo-gaveta, e
+  // Pricing.pickSlideModelByDepth escolhe o certo pela profundidade real da
+  // peça. `slide` (singular) continua igual — quem usava só ele (furação,
+  // 3D) não muda nada.
+  const slideList = (slideRes.data || []).map((r) => r.slide_models).filter((s) => s && s.active);
+  // Itens comprados (kind=corredica) convertidos pro MESMO formato que
+  // slide_models sempre teve aqui — {id, price_per_unit, rail_length_mm,
+  // active}. purchase_price é custo de compra, sem margem, exatamente como
+  // slide_models.price_per_unit sempre foi tratado neste caminho (a margem
+  // do módulo entra uma vez só, no topo, em Pricing.calculateModulePrice) —
+  // ver cabeçalho da migration 128.
+  const purchasedSlideList = (purchasedSlideRes.data || [])
+    .map((r) => r.purchased_items)
+    .filter((it) => it && it.active && it.kind === 'corredica')
+    .map((it) => ({
+      id: it.id,
+      name: it.name,
+      price_per_unit: Number(it.purchase_price) || 0,
+      rail_length_mm: it.rail_length_mm,
+      active: true
+    }));
+  // União, não substituição: quem ainda tem corrediça vinculada via
+  // slide_models (127) continua funcionando igual; itens comprados (128) só
+  // somam à lista que Pricing.pickSlideModelByDepth escolhe.
+  const combinedSlideList = slideList.concat(purchasedSlideList);
+  const slide = combinedSlideList[0] || null;
+  return { hinge, slide, slides: combinedSlideList };
 }
 
 function collectUsedColorRoleIds(piecesList) {

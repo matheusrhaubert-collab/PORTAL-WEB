@@ -510,10 +510,93 @@
   // As fórmulas saem como NÚMERO LITERAL em texto ('864'): o avaliador aceita,
   // e assim a geometria calculada aqui é a palavra final, sem depender de W/H/D
   // do módulo pai.
+  // REASSINA id/piece_id em CADA peça de um `child_pieces` (recursivo), com
+  // um prefixo ÚNICO POR NÓ DA ÁRVORE (2026-08-19, Matt: "nao tem variavel
+  // tamanho no calculo... entao o calculo continua errado" — furação vindo
+  // 3× maior numa gaveta via construtor, exatamente o número de vezes que o
+  // MESMO agregado de gaveta aparecia no vão).
+  //
+  // POR QUÊ: um agregado child_module_id (migration 103 — gaveta/porta como
+  // MÓDULO inteiro) busca as peças do módulo filho UMA VEZ só
+  // (loadRecursivePiecesForModule em ensureAccessoryCatalog/loadProjectBuilderCatalog)
+  // e guarda no catálogo (acc.child_pieces). Cada peça ali carrega o id da
+  // LINHA de module_components do módulo filho — o MESMO sempre, porque é a
+  // mesma consulta no banco. Se esse MESMO agregado aparece 2+ vezes na
+  // árvore (2 gavetas do mesmo tipo empilhadas no vão — exatamente o caso
+  // "Drawer 1"/"Drawer 2"), toPieceRows cria uma linha-wrapper NOVA e única
+  // pra cada instância (id: 'lay:'+nodeId+':'+i, já era assim), mas até aqui
+  // as DUAS instâncias apontavam pro MESMO array `acc.child_pieces` — as
+  // peças de dentro (BACK/LEFT SIDE/RIGHT SIDE/Stretcher) continuavam com o
+  // MESMO id do catálogo nas duas.
+  //
+  // Drilling.countHolesByPiece e Pricing.processLaborFor agregam furos POR
+  // CHAVE (piece.id/piece_id) — dois wrappers diferentes, mas com peças
+  // filhas de MESMO id, jogam os furos das duas instâncias na MESMA gaveta
+  // do mapa (out[chave] += holes.length, chamado uma vez por instância). Com
+  // 3 gavetas iguais no mesmo vão, cada peça acumulava 3×. O preço de chapa/
+  // fita/corte não sofria (aqueles são resolvidos e somados por INSTÂNCIA,
+  // não por um mapa global keyed por id) — só a furação, que é keyed.
+  //
+  // O fix: cada NÓ da árvore (cada instância de agregado) recebe sua PRÓPRIA
+  // cópia de child_pieces com ids prefixados por row.id (já único por nó) —
+  // assim duas gavetas iguais nunca mais colidem na chave, em nenhum dos
+  // dois lados (pricing.js calculateAssembly e module-pieces.js
+  // resolvePiecesForViewer/Drilling.countHolesByPiece leem os MESMOS objetos
+  // desta árvore, então um fix só aqui vale pros dois).
+  function reidChildPieces(list, prefix) {
+    return (list || []).map(function (cp) {
+      var clone = Object.assign({}, cp, { id: prefix + ':' + cp.id });
+      if (clone.is_module && clone.child_pieces && clone.child_pieces.length) {
+        clone.child_pieces = reidChildPieces(clone.child_pieces, prefix);
+      }
+      return clone;
+    });
+  }
+
+  // VARIANTE POR PROFUNDIDADE (migration 126, 2026-08-19 — Matt: "quero ter
+  // um modelo de gaveta, por que quando troco modelo troca corpo e
+  // corredica. entao acho melhor ligarmos via componentes"). Vários
+  // agregados podem ser a MESMA oferta pro cliente (um único "Gaveta" no
+  // menu — ver o filtro em fillProjectBuilderLibGrid, portal-07-construtor.js,
+  // que esconde quem tem depth_variant_of), cada um apontando pra um
+  // módulo-corpo DIFERENTE — com a corrediça certa já embutida nele via
+  // module_slide_models/own_slide_model (mecanismo que já existia, migration
+  // 044/103; nada mudou ali). A escolha de QUAL módulo entra é automática:
+  // bate a profundidade REAL do vão (p.d, mm) contra a faixa cadastrada
+  // (depth_bracket_min_mm/max_mm) em cada agregado da família.
+  //
+  // Família = todo agregado cujo depth_variant_of aponta pro mesmo
+  // "representante" (o que aparece no menu) + o próprio representante (ele
+  // também pode ter faixa própria — ex: a faixa "padrão"). Sem faixa
+  // cadastrada em ninguém da família (o caso de sempre, catálogo antigo
+  // inteiro), devolve `acc` sem tocar em nada — zero efeito colateral em
+  // quem não usa isto. Faixa existe mas nenhuma bate a profundidade deste
+  // vão: cai no `acc` original (nunca some a peça por faixa mal cadastrada,
+  // erra pro lado de aparecer errado, não de sumir).
+  function resolveDepthVariant(acc, catalogo, depthMm) {
+    if (!acc) return acc;
+    var familyRoot = acc.depth_variant_of || acc.id;
+    var sawBracket = false;
+    var best = null;
+    for (var k in catalogo) {
+      var e = catalogo[k];
+      if (!e || (e.id !== familyRoot && e.depth_variant_of !== familyRoot)) continue;
+      if (e.depth_bracket_min_mm == null && e.depth_bracket_max_mm == null) continue;
+      sawBracket = true;
+      if (e.depth_bracket_min_mm != null && depthMm < e.depth_bracket_min_mm) continue;
+      if (e.depth_bracket_max_mm != null && depthMm > e.depth_bracket_max_mm) continue;
+      best = e;
+      break;
+    }
+    if (!sawBracket) return acc;
+    return best || acc;
+  }
+
   function toPieceRows(geradas, catalogo) {
     var rows = [];
     (geradas || []).forEach(function (p, i) {
       var acc = catalogo[p.accKey];
+      acc = resolveDepthVariant(acc, catalogo, p.d);
       var comp = acc && acc.componente;
       var childModuleId = acc && acc.child_module_id;
       if (!comp && !childModuleId) return;    // sem peça real cadastrada, não gera
@@ -594,8 +677,9 @@
       var meta = acc.module_meta || {};
       var lp = acc.locked_presets || {};
       var hs = acc.own_hinge_slide || {};
+      var rowId = 'lay:' + p.nodeId + ':' + i;
       rows.push(Object.assign({}, meta, {
-        id: 'lay:' + p.nodeId + ':' + i,
+        id: rowId,
         is_module: true,
         reference: p.label || meta.name || null,
         position_role: 'free',
@@ -629,6 +713,10 @@
         is_decoration: !!lp.is_decoration,
         own_hinge_model: hs.hinge || null,
         own_slide_model: hs.slide || null,
+        // Todos os modelos de corrediça vinculados (migration 127) — espelha
+        // js/module-pieces.js loadRecursivePiecesForModule, mesmo campo.
+        // Pricing.pickSlideModelByDepth escolhe o certo pela profundidade.
+        own_slide_models: hs.slides || [],
         own_width_min_mm: lp.ownWidthMinMm != null ? lp.ownWidthMinMm : null,
         own_width_max_mm: lp.ownWidthMaxMm != null ? lp.ownWidthMaxMm : null,
         own_height_min_mm: lp.ownHeightMinMm != null ? lp.ownHeightMinMm : null,
@@ -636,7 +724,12 @@
         own_depth_min_mm: lp.ownDepthMinMm != null ? lp.ownDepthMinMm : null,
         own_depth_max_mm: lp.ownDepthMaxMm != null ? lp.ownDepthMaxMm : null,
         module_name: meta.name || null,
-        child_pieces: acc.child_pieces || [],
+        // REASSINADO POR INSTÂNCIA (2026-08-19) — ver comentário de
+        // reidChildPieces acima. Sem isso, 2+ gavetas iguais no mesmo vão
+        // colidiam na chave de furação (Drilling.countHolesByPiece/
+        // Pricing.processLaborFor) e a furação saía multiplicada pelo número
+        // de instâncias.
+        child_pieces: reidChildPieces(acc.child_pieces || [], rowId),
         // rastro pra interface (a árvore que gerou esta linha)
         _layoutNodeId: p.nodeId,
         _layoutKind: p.kind

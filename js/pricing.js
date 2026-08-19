@@ -572,6 +572,35 @@
     }, valid[0]);
   }
 
+  // CORREDIÇA POR PROFUNDIDADE (migration 127, 2026-08-19 — Matt: "eu so
+  // preciso puxar o preco certo conforme a profundidade"). Vários modelos de
+  // corrediça (slide_models) podem estar vinculados ao MESMO módulo-gaveta
+  // (module_slide_models — vínculo que já existia, ver
+  // fetchModuleOwnHingeAndSlideModels em js/module-pieces.js), cada um com
+  // seu próprio comprimento de trilho (rail_length_mm) e preço. Escolhe o de
+  // MAIOR rail_length_mm que ainda caiba na profundidade REAL desta peça —
+  // mesma lógica (arredonda pra baixo) que Drilling.parseSlideHoles já usa
+  // pra escolher a tabela de posição de furo por comprimento, só que aqui é
+  // o PREÇO, não a posição do furo.
+  //
+  // Sem NENHUM modelo com rail_length_mm cadastrado na lista, devolve null —
+  // quem chama cai no comportamento de sempre (own_slide_model singular, "o
+  // primeiro ativo", preço fixo). Zero efeito em módulo que não usa isto.
+  function pickSlideModelByDepth(models, depthMm) {
+    const candidatos = (models || []).filter(function (m) {
+      return m && m.rail_length_mm !== null && m.rail_length_mm !== undefined && isFinite(m.rail_length_mm);
+    });
+    if (!candidatos.length) return null;
+    const ordenados = candidatos.slice().sort(function (a, b) { return a.rail_length_mm - b.rail_length_mm; });
+    let escolhido = null;
+    ordenados.forEach(function (m) { if (m.rail_length_mm <= depthMm + 0.5) escolhido = m; });
+    // Profundidade menor que a MENOR corrediça cadastrada: usa a menor mesmo
+    // assim (nunca fica sem hardware nenhum por causa de um vão raso demais
+    // — errar pro lado de cobrar a corrediça mais barata, não de sumir com
+    // o custo inteiro).
+    return escolhido || ordenados[0];
+  }
+
   // Uma peça-módulo com dimensão TRAVADA (locked_*_presets) só existe nos
   // valores cadastrados — se o espaço disponível de verdade (valor BRUTO
   // calculado pela fórmula, antes de qualquer arredondamento) é MENOR que o
@@ -865,8 +894,15 @@
     // pra frente na recursão (childResult) pra peças-módulo aninhadas AINDA
     // MAIS fundo herdarem o modelo resolvido aqui, se elas mesmas não
     // tiverem um próprio (mais próximo na árvore vence).
+    // own_slide_models (plural, migration 127) = todos os modelos de
+    // corrediça vinculados a este módulo filho com rail_length_mm
+    // cadastrado. pieceDims.depth_mm já está TOTALMENTE resolvido aqui
+    // (fixed_depths/locked_depth_presets/clamps acima já rodaram) — é a
+    // profundidade REAL desta gaveta, a mesma que o 3D desenha e a furação
+    // usa. Sem candidato por profundidade, cai no de sempre.
+    const slidePorProfundidade = pickSlideModelByDepth(piece.own_slide_models, pieceDims.depth_mm);
     const effectiveHingeModel = piece.own_hinge_model || hingeModel;
-    const effectiveSlideModel = piece.own_slide_model || slideModel;
+    const effectiveSlideModel = slidePorProfundidade || piece.own_slide_model || slideModel;
 
     // Cor própria desta instância (migration 046, client_color_configurable) — se o cliente
     // escolheu uma cor separada pra ESTA peça-módulo (ver pieceColorOverrides no topo do

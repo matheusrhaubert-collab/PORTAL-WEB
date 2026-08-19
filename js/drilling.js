@@ -1440,11 +1440,32 @@
       // aqui faz "contei e deu zero" virar 0 de verdade, disponível pro
       // lookup, e só a peça de fato NUNCA resolvida (fora de `parts`) continua
       // caindo no fallback.
-      (parts || []).forEach(function (part) {
-        if (!part || part.is_module) return;
-        const chave = part.piece_id || part.id;
-        if (chave) out[chave] = 0;
-      });
+      //
+      // PRECISA DESCER EM child_pieces (2026-08-19, Matt: "quando eu coloco
+      // direto a gaveta no ambiente ele calcula certo... ja quando eu insiro
+      // ela com construtor de armario ela nao sai certo"). Uma gaveta inserida
+      // via agregado `child_module_id` chega aqui como UM item de `parts` com
+      // is_module=true e as peças de verdade (BACK, LEFT SIDE, RIGHT SIDE,
+      // Stretcher…) dentro de `part.child_pieces` — collectAssembly (abaixo)
+      // JÁ recursava nesses child_pieces pra desenhar o furo real, mas este
+      // semeio parava no nível de cima e pulava is_module inteiro. Resultado:
+      // as peças aninhadas nunca ganhavam `out[chave]=0`, e uma peça aninhada
+      // com furação real zero caía no furos_equivalentes do cadastro — o
+      // mesmíssimo bug do comentário acima, só que só pra peça vinda do
+      // construtor. Peça inserida direto no ambiente nunca teve esse nível de
+      // aninhamento (é ela mesma o topo de `parts`), por isso sempre calculou
+      // certo.
+      (function semear(lista) {
+        (lista || []).forEach(function (part) {
+          if (!part) return;
+          if (part.is_module) {
+            if (part.child_pieces && part.child_pieces.length) semear(part.child_pieces);
+            return;
+          }
+          const chave = part.piece_id || part.id;
+          if (chave) out[chave] = 0;
+        });
+      })(parts);
       const store = new Map();
       try {
         collectAssembly(store, parts, W, H, D, config || {});

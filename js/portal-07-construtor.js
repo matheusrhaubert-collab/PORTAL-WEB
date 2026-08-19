@@ -836,6 +836,16 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     // Programa de furação POR USO (migration 125) — espelha
     // CONSTR.catalogoDoBanco (erp/js/data-construtor.js), mesmo campo.
     drilling_pattern_id: a.drilling_pattern_id || null,
+    // Variante POR PROFUNDIDADE (migration 126) — espelha
+    // CONSTR.catalogoDoBanco, mesmos dois campos. Consumido por
+    // LayoutEngine.resolveDepthVariant (js/layout-engine.js): troca sozinho
+    // pra outro agregado da mesma família (mesmo child_module_id na
+    // prática — módulo-corpo com a corrediça certa já embutida) batendo a
+    // profundidade real do vão contra a faixa cadastrada. NULL nos dois =
+    // comportamento de sempre, nada muda.
+    depth_bracket_min_mm: a.depth_bracket_min_mm != null ? Number(a.depth_bracket_min_mm) : null,
+    depth_bracket_max_mm: a.depth_bracket_max_mm != null ? Number(a.depth_bracket_max_mm) : null,
+    depth_variant_of: a.depth_variant_of || null,
     componente: a.components || null,
     child_module_id: a.child_module_id || null,
     module_meta: (moduleExtra && moduleExtra.module_meta) || null,
@@ -1119,6 +1129,12 @@ function fillProjectBuilderLibGrid() {
 
   const box = projectBuilderSelBox();
   const cabem = Object.keys(projectBuilderCat)
+    // Variante de profundidade (migration 126) nunca aparece como opção
+    // própria — só o representante da família aparece pro cliente; a
+    // variante certa é escolhida sozinha depois, em LayoutEngine.toPieceRows
+    // (resolveDepthVariant), batendo a profundidade real do vão. Sem isto o
+    // cliente veria "Gaveta" duplicada uma vez por faixa cadastrada.
+    .filter((k) => !projectBuilderCat[k].depth_variant_of)
     .filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]));
 
   // ---- chips: "Todos" + um por grupo do que cabe AQUI ----
