@@ -260,13 +260,17 @@ const Photoreal = (() => {
   }
 
   const LEG_COLOR = { swatch_hex: '#000000' };
+  // Cópia fiel do LEG_INSET_MM de js/viewer3d.js (2026-08-19, Matt: "pes
+  // plasticos... 100mm de distancia das pontas pra dentro") — mesmo valor,
+  // pra render fotorrealista não desalinhar do 3D normal.
+  const LEG_INSET_MM = 100;
   function placeLegsGroup(group, parentGroup, W, D) {
     if (!group || !group.length) return;
     const first = group[0];
     const legW = Math.max((first.width_mm || 40) / 1000, 0.01);
     const legHeight = Math.max((first.height_mm || 114) / 1000, 0.01);
     const legRadius = legW / 2;
-    const inset = legRadius + 0.01;
+    const inset = Math.max(LEG_INSET_MM / 1000, legRadius + 0.01);
     const corners = [[-W / 2 + inset, -D / 2 + inset], [W / 2 - inset, -D / 2 + inset], [-W / 2 + inset, D / 2 - inset], [W / 2 - inset, D / 2 - inset]];
     group.slice(0, 4).forEach((part, i) => {
       const [x, z] = corners[i] || corners[corners.length - 1];

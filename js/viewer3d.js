@@ -1927,6 +1927,13 @@ const Viewer3D = (function () {
   // de propósito. O diâmetro vem da largura resolvida do componente (a
   // mesma fórmula que antes definia a largura da "caixa" do pé).
   const LEG_COLOR = { swatch_hex: '#000000' };
+  // Distância padrão do CENTRO do pé até a quina do módulo (Matt,
+  // 2026-08-19: "quero que os pes plasticos fiquem a 100mm de distancia da
+  // spontas pra dentro. hoje eles estao muito pra fora" — antes era só o
+  // raio do pé + 10mm, quase na aresta). Usado nos 3 lugares que desenham pé
+  // (placeLegsGroup/placeLegsGroupIntoGroup aqui e a cópia fiel em
+  // photoreal.js) — mesmo valor, um lugar só pra não desalinhar de novo.
+  const LEG_INSET_MM = 100;
 
   function placeLegsGroup(group, W, D) {
     if (!group || !group.length) return;
@@ -1934,7 +1941,12 @@ const Viewer3D = (function () {
     const legW = Math.max((first.width_mm || 40) / 1000, 0.01);
     const legHeight = Math.max((first.height_mm || 114) / 1000, 0.01);
     const legRadius = legW / 2;
-    const inset = legRadius + 0.01; // um pouco pra dentro da quina, não cravado bem na aresta
+    // 100mm pra dentro da quina (Matt, 2026-08-19: "hoje eles estao muito
+    // pra fora") — antes era só legRadius+10mm (pé quase na aresta). O
+    // Math.max mantém a mesma folga de segurança de sempre (nunca deixar o
+    // pé pendurado pra fora do módulo) pro caso raro de um pé maior que
+    // 200mm de diâmetro.
+    const inset = Math.max(LEG_INSET_MM / 1000, legRadius + 0.01);
 
     const corners = [
       [-W / 2 + inset, -D / 2 + inset],
@@ -2576,7 +2588,7 @@ const Viewer3D = (function () {
     const legW = Math.max((first.width_mm || 40) / 1000, 0.01);
     const legHeight = Math.max((first.height_mm || 114) / 1000, 0.01);
     const legRadius = legW / 2;
-    const inset = legRadius + 0.01;
+    const inset = Math.max(LEG_INSET_MM / 1000, legRadius + 0.01); // ver LEG_INSET_MM
 
     const corners = [
       [-W / 2 + inset, -D / 2 + inset],
