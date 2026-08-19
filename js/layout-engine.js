@@ -543,9 +543,43 @@
   // dois lados (pricing.js calculateAssembly e module-pieces.js
   // resolvePiecesForViewer/Drilling.countHolesByPiece leem os MESMOS objetos
   // desta árvore, então um fix só aqui vale pros dois).
+  // 2026-08-19, MESMO DIA — o fix acima (comentário longo) tinha um furo: ele
+  // reescreve `cp.id`, mas os itens de `acc.child_pieces` NUNCA TÊM `.id` —
+  // vêm de `loadRecursivePiecesForModule` (module-pieces.js), que só grava
+  // `piece_id` (a linha de module_components), nunca `id` puro (conferido: a
+  // lista fechada de campos do `parts.push({...})` de lá não tem `id`). Então
+  // `cp.id` é sempre `undefined`, e TODA peça da gaveta (BACK, LEFT SIDE,
+  // RIGHT SIDE, Stretcher…) saía com o MESMO `id` sintético — literalmente
+  // `prefix + ':undefined'`, igual pra todas.
+  //
+  // Consequência (achada 19/08, Matt: furação de LEFT SIDE/RIGHT SIDE saindo
+  // menor que o certo e a de Stretcher saindo maior, só quando a gaveta é
+  // inserida via Construtor — testado direto no módulo e bateu certo):
+  // `Drilling.countHolesByPiece` indexa o mapa por `part.piece_id || part.id`
+  // (piece_id primeiro — e piece_id AQUI continua sendo o id ORIGINAL, não
+  // prefixado, porque só `id` era reescrito). `Pricing.processLaborFor` lê
+  // por `piece.id || piece.piece_id` (id primeiro) — e `id` É o prefixado.
+  // Ou seja: o mapa de furos reais é guardado com uma chave, e o preço
+  // procura com OUTRA. Nunca bate: toda peça aninhada via Construtor cai no
+  // fallback `furos_equivalentes` do cadastro (um número ESTÁTICO por
+  // componente), não na contagem real — e como várias peças diferentes hoje
+  // compartilham o mesmo componente genérico Flatbord (ver
+  // [[peca_generica_e_labor_por_processo]]), várias saem com o MESMO valor
+  // errado.
+  //
+  // Fix: reescrever OS DOIS campos (`id` e `piece_id`), cada um a partir do
+  // valor que a peça realmente tinha (fallback pro outro campo quando um
+  // estiver ausente) — assim os dois lados (drilling.js e pricing.js), não
+  // importa qual campo cada um prefere, leem a MESMA chave prefixada, única
+  // por instância de agregado.
   function reidChildPieces(list, prefix) {
     return (list || []).map(function (cp) {
-      var clone = Object.assign({}, cp, { id: prefix + ':' + cp.id });
+      var baseId = cp.id != null ? cp.id : cp.piece_id;
+      var basePieceId = cp.piece_id != null ? cp.piece_id : cp.id;
+      var clone = Object.assign({}, cp, {
+        id: baseId != null ? prefix + ':' + baseId : cp.id,
+        piece_id: basePieceId != null ? prefix + ':' + basePieceId : cp.piece_id
+      });
       if (clone.is_module && clone.child_pieces && clone.child_pieces.length) {
         clone.child_pieces = reidChildPieces(clone.child_pieces, prefix);
       }
