@@ -15445,7 +15445,8 @@ function rebuildProjectBuilder(reselecionar) {
     projectBuilderBuilt = LayoutEngine.build(projectBuilderRoot, projectBuilderZone, {
       catalogo: projectBuilderCat,
       espessura: PROJECT_BUILDER_ESPESSURA,
-      folgaDobradica: PROJECT_BUILDER_FOLGA_DOB
+      folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
+      temFundo: !!projectBuilderZone.temFundo
     });
     // Nada do construtor pode atravessar peça do módulo (travessa de fundo,
     // por exemplo) — ver clipProjectInternalsAgainstCasco. projectBuilderDesenho
@@ -15643,6 +15644,14 @@ function computeProjectSlotInnerZone(slot) {
       } catch (e) { /* segue com o módulo inteiro */ }
     }
   } catch (e) { /* sem casco: usa o módulo inteiro */ }
+  // z0 > 0 só acontece quando alguma das buscas acima achou (ou, no
+  // "palpite", assumiu) um fundo de verdade e descontou a espessura dele —
+  // computado só AGORA (depois da rede de segurança acima, que também pode
+  // reatribuir z0) pra não capturar um valor que ainda ia mudar. É o mesmo
+  // sinal que LayoutEngine.build usa (opts.temFundo) pra saber se o caixote
+  // (gaveta/gaveteiro/cesto) precisa de folga extra do fundo (2026-08-19,
+  // ver FOLGA_FUNDO_CAIXOTE_MM em layout-engine.js).
+  const temFundo = z0 > 0;
   const MIN_VAO = 40;
   if (x1 - x0 < MIN_VAO) { x0 = 0; x1 = W; }
   if (y1 - y0 < MIN_VAO) { y0 = 0; y1 = H; }
@@ -15681,7 +15690,7 @@ function computeProjectSlotInnerZone(slot) {
   // `dedu.d` é o VÃO LIVRE (frente da lateral menos o fundo). O recuo de 1mm
   // é aplicado só na volta — assim a fórmula cadastrada abaixo também o
   // recebe, e ninguém desconta duas vezes.
-  const dedu = { x: x0, y: y0, z: z0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), d: Math.max(1, z1 - z0) };
+  const dedu = { x: x0, y: y0, z: z0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), d: Math.max(1, z1 - z0), temFundo };
   const recuada = (d) => Math.max(1, d - RECUO_FRENTE_INTERNO_MM);
   if (!(m.inner_w_formula || m.inner_h_formula || m.inner_d_formula)) {
     return Object.assign({}, dedu, { d: recuada(dedu.d) });
@@ -15712,7 +15721,8 @@ function computeProjectSlotInnerZone(slot) {
     x: ev(m.inner_x_formula, dedu.x), y: ev(m.inner_y_formula, dedu.y), z: ev(m.inner_z_formula, dedu.z),
     w: Math.max(1, usa(m.inner_w_formula, dedu.w, W)),
     h: Math.max(1, usa(m.inner_h_formula, dedu.h, H)),
-    d: recuada(usa(m.inner_d_formula, dedu.d, D))
+    d: recuada(usa(m.inner_d_formula, dedu.d, D)),
+    temFundo: dedu.temFundo
   };
 }
 
@@ -17239,7 +17249,8 @@ function rebuildProjectSlotLayoutPieces(slot) {
     const built = LayoutEngine.build(LayoutEngine.deserialize(slot.layout), zona, {
       catalogo: accessoryCatalogCache,
       espessura: PROJECT_BUILDER_ESPESSURA,
-      folgaDobradica: PROJECT_BUILDER_FOLGA_DOB
+      folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
+      temFundo: !!zona.temFundo
     });
     // MESMA regra da janela do construtor (ver clipProjectInternalsAgainstCasco).
     // Precisa estar nos DOIS lugares: a janela desenha, mas é aqui que nascem
@@ -17284,7 +17295,32 @@ function rebuildProjectSlotLayoutPieces(slot) {
 // no desenho com um custo levemente incompleto do que o módulo inteiro perder
 // o preço por causa de um cadastro que falta.
 function projectLayoutRowsForSlot(slot, pieces) {
-  const rows = LayoutEngine.toPieceRows(pieces || [], accessoryCatalogCache);
+  // PÉ PLÁSTICO (2026-08-19, Matt: "os agregados do construtor pra todos
+  // modulos com pes de plastico estao ficando 114mm pra cima do ponto
+  // certo"). As peças da árvore (`pieces`, vindas de LayoutEngine.build)
+  // nascem com Y ABSOLUTO — `computeProjectSlotInnerZone` já soma legH_mm
+  // no y0 do vão desde 2026-08-18 (fix de "o interno tá 114mm baixo demais"
+  // no EDITOR). Mas offset_y_mm de peça normal (module_components, via
+  // resolvePiecesForViewer) é sempre RELATIVO AO CORPO (0 = piso do corpo,
+  // em cima do pé) — e todo o resto do pipeline (viewer3d.js
+  // placePieceInBox, elevação 2D) soma legH_mm de novo em cima disso, pra
+  // TODA peça não-perna, sem saber se ela já veio absoluta. Resultado: o
+  // agregado do construtor ganhava o pé DUAS VEZES e nascia 114mm ACIMA do
+  // lugar certo — regressão direta do fix de 18/08, que corrigiu o editor e
+  // quebrou o produto final. Reconverte pra RELATIVO AO CORPO aqui — este é
+  // o ÚNICO ponto de conversão pra linha de verdade (save do editor via
+  // applyProjectBuilderToSlot E o rebuild automático via
+  // rebuildProjectSlotLayoutPieces passam os dois por aqui) — numa CÓPIA,
+  // sem mexer no array original (`projectBuilderBuilt.pieces` continua
+  // absoluto, é o que o preview do editor/modal usa pra desenhar contra o
+  // casco absoluto).
+  const W = Number(slot.width_mm || 0), H = Number(slot.height_mm || 0), D = Number(slot.depth_mm || 0);
+  let legH_mm = 0;
+  try { legH_mm = Pricing.resolveBodyDims(slot.pieces || [], { W, H, D }).legH_mm || 0; } catch (e) { /* sem pé, 0 */ }
+  const pecas = legH_mm
+    ? (pieces || []).map((p) => Object.assign({}, p, { y: (Number(p.y) || 0) - legH_mm }))
+    : (pieces || []);
+  const rows = LayoutEngine.toPieceRows(pecas, accessoryCatalogCache);
   const escolhidas = slot.colorsByRole || {};
   const papeisComCor = Object.keys(escolhidas).filter((k) => escolhidas[k]);
   rows.forEach((r) => {

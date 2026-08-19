@@ -247,11 +247,35 @@
   // ------------------------------------------------------------------------
   // Devolve peças GEOMÉTRICAS (mm absolutos) + a lista de vãos clicáveis.
   // Quem transforma isso em linha de module_components é toPieceRows.
+  // Folga TRASEIRA do caixote (gaveta/gaveteiro/cesto/Drawer agregado),
+  // 2026-08-19 — Matt: "as gavetas estao invadindo o fundo... precisamos de
+  // 20mm de afastamento além do fundo (quando tem)". REVISADO no mesmo dia
+  // (2ª rodada), depois de reportar que a folga "não está valendo": "eu fui
+  // muito esplicito quando pedi. 20mm de seguranca alem do fundo. ou seja,
+  // se a gaveta tem 305mm o espaco minimo pra ela caber e de 325[mm], se
+  // tiver fundo, 345mm" — ou seja DUAS folgas que SOMAM, não uma só:
+  //   MECANISMO (20mm) — SEMPRE, existe mesmo sem fundo físico: é o espaço
+  //   que a ferragem da corrediça (bracket/curso) precisa atrás da gaveta,
+  //   qualquer que seja o vão.
+  //   FUNDO (+20mm) — só quando `opts.temFundo` confirma que a zona achou
+  //   um fundo de verdade (`dedu.d`/`zona.d`, o VÃO LIVRE, já descontam a
+  //   ESPESSURA do fundo — ver computeProjectSlotInnerZone no portal e
+  //   CST.zonaDoCasco no ERP — mas isso por si só não garante folga
+  //   nenhuma de AR entre a gaveta e o fundo).
+  // 305mm de gaveta -> 325mm de vão mínimo sem fundo, 345mm com fundo —
+  // bate com os dois números do Matt. Conceito irmão de
+  // DRAWER_DEPTH_CLEARANCE_MM em pricing.js (mesma soma, 40mm com fundo),
+  // mas esse é do sistema de módulo com fixed_depths — este é do construtor
+  // de vãos (aqui).
+  var FOLGA_CAIXOTE_MECANISMO_MM = 20;
+  var FOLGA_CAIXOTE_FUNDO_MM = 20;
+
   function build(root, zona, opts) {
     opts = opts || {};
     var cat = opts.catalogo || {};
     var esp = num(opts.espessura) || 18;
     var folgaDob = num(opts.folgaDobradica) || 2;
+    var folgaFundo = FOLGA_CAIXOTE_MECANISMO_MM + (opts.temFundo ? FOLGA_CAIXOTE_FUNDO_MM : 0);
 
     var out = [], voids = [];
 
@@ -338,14 +362,19 @@
       // sempre cai em `box.z + box.d - 2` — 2mm pra dentro da frente do vão
       // — INDEPENDENTE do valor de `recuo` (recuo só ainda controla a folga
       // do FUNDO, pra quem cadastrar recuo_mm por outro motivo).
+      // recuoCaixote é o recuo EFETIVO em relação ao fundo: o maior entre o
+      // `recuo_mm` cadastrado (motivo manual do acessório) e a folga de
+      // fundo automática (folgaFundo, acima) — nunca os dois somados, senão
+      // quem já cadastrasse recuo_mm=20 dobraria pra 40 à toa.
+      var recuoCaixote = Math.max(recuo, folgaFundo);
       var qtd = Math.max(1, Math.round(num(p.quantidade) || 1));
       var gap = 3, hCada = (box.h - gap * (qtd - 1)) / qtd;
       for (var j = 0; j < qtd; j++) {
         var y = box.y + j * (hCada + gap);
-        var prof = Math.max(120, box.d - recuo - 2);
+        var prof = Math.max(120, box.d - recuoCaixote - 2);
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + 12, y: y + 4, z: box.z + recuo,
+          x: box.x + 12, y: y + 4, z: box.z + recuoCaixote,
           w: box.w - 24, h: hCada - 20, d: prof,
           opening_type: 'slide_out'
         });
