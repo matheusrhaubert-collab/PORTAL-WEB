@@ -724,10 +724,27 @@
     const itemComprado = piece.purchased_item
       || (piece.purchased_item_id ? purchasedItemsById[piece.purchased_item_id] : null)
       || null;
+    // Migration 129: item comprado por METRO (unit === 'm', ex: "Cabide
+    // (metro)") cobra pelo COMPRIMENTO real da peça (pieceDims.width_mm),
+    // não pela quantidade de instâncias — todo item 'un'/'par'/'jogo'
+    // existente (pé, puxador, corrediça...) continua exatamente como antes,
+    // só entra neste ramo novo quando unit==='m'.
+    const metrosComprado = pieceDims.width_mm / 1000;
     const precoComprado = (itemComprado && itemComprado.purchase_price != null)
-      ? Number(itemComprado.purchase_price) * qty
+      ? Number(itemComprado.purchase_price) * (itemComprado.unit === 'm' ? metrosComprado : qty)
       : custoUnitario;
-    const purchased_cost = comprado ? precoComprado : 0;
+    // Migration 129: kit de suporte — item comprado SECUNDÁRIO que "vai
+    // junto" com a peça principal (ex: kit suporte de um cabide). Quantidade
+    // fixa por peça (support_purchased_item_qty, default 1 — regra
+    // confirmada pelo Matt: não escala com o comprimento), multiplicada por
+    // qty igual a qualquer outro custo de peça comprada.
+    const itemSuporte = piece.support_purchased_item_id
+      ? purchasedItemsById[piece.support_purchased_item_id]
+      : null;
+    const support_cost = (comprado && itemSuporte && itemSuporte.purchase_price != null)
+      ? Number(itemSuporte.purchase_price) * (piece.support_purchased_item_qty || 1) * qty
+      : 0;
+    const purchased_cost = comprado ? (precoComprado + support_cost) : 0;
     const labor_cost = comprado ? 0 : custoUnitario;
 
     // Dobradiça só se aplica a PORTAS: hinge_side definido, qualquer que
@@ -785,6 +802,12 @@
       purchased_cost: purchased_cost,
       purchased_item_id: (itemComprado && itemComprado.id) || piece.purchased_item_id || null,
       purchased_margin_profile_id: (itemComprado && itemComprado.margin_profile_id) || null,
+      // Custo do kit de suporte (migration 129) já somado dentro de
+      // purchased_cost acima — exposto separado só pro relatório $ Fábrica
+      // poder abrir numa linha própria, se quiser (mesmo padrão de
+      // hinge_cost/slide_cost, que também são subtotais dentro do total).
+      support_cost: support_cost,
+      support_purchased_item_id: (itemSuporte && itemSuporte.id) || piece.support_purchased_item_id || null,
       // Aberto por processo quando a peça está em processo (migration 090);
       // null nas peças antigas, que têm uma labor só e nada a abrir.
       labor_breakdown: proc

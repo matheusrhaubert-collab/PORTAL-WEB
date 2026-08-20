@@ -270,6 +270,18 @@
   var FOLGA_CAIXOTE_MECANISMO_MM = 20;
   var FOLGA_CAIXOTE_FUNDO_MM = 20;
 
+  // Folga de ALTURA na divisão do vão entre N caixotes empilhados
+  // (2026-08-19, Matt: "as gavetas precisams ter mais folga, considera uma
+  // folga de 50mm alem do tamanho da gaveta pra dividir ela melhor no
+  // construtor. quando e so uma gaveta ela pode ter a folga bem menor de
+  // 20mm"). Antes o corte de cada célula (emitContent, ramo caixote) sempre
+  // descontava 20mm fixos da altura de cada gaveta, mesmo com várias
+  // empilhadas — ficavam com pouco espaço de mecanismo/folga entre elas.
+  // Com mais de uma gaveta no mesmo vão (quantidade > 1) o desconto por
+  // gaveta sobe pra 50mm; com uma só, continua nos 20mm de antes.
+  var FOLGA_CAIXOTE_ALTURA_MULTIPLA_MM = 50;
+  var FOLGA_CAIXOTE_ALTURA_UNICA_MM = 20;
+
   function build(root, zona, opts) {
     opts = opts || {};
     var cat = opts.catalogo || {};
@@ -368,6 +380,7 @@
       // quem já cadastrasse recuo_mm=20 dobraria pra 40 à toa.
       var recuoCaixote = Math.max(recuo, folgaFundo);
       var qtd = Math.max(1, Math.round(num(p.quantidade) || 1));
+      var folgaAltura = qtd > 1 ? FOLGA_CAIXOTE_ALTURA_MULTIPLA_MM : FOLGA_CAIXOTE_ALTURA_UNICA_MM;
       var gap = 3, hCada = (box.h - gap * (qtd - 1)) / qtd;
       for (var j = 0; j < qtd; j++) {
         var y = box.y + j * (hCada + gap);
@@ -375,7 +388,7 @@
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
           x: box.x + 12, y: y + 4, z: box.z + recuoCaixote,
-          w: box.w - 24, h: hCada - 20, d: prof,
+          w: box.w - 24, h: Math.max(20, hCada - folgaAltura), d: prof,
           opening_type: 'slide_out'
         });
       }
