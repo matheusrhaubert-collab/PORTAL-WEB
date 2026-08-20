@@ -1394,6 +1394,26 @@ const Viewer3D = (function () {
   // igual a uma BoxGeometry comum — quem chama (placePieceInBox) posiciona
   // esse centro exatamente como posicionaria o centro de uma caixa do mesmo
   // w/h/d, então o cabide "ocupa o mesmo volume" que a caixa ocuparia.
+  //
+  // Cabide SEMPRE PRETO, igual ao pé plástico (ver LEG_COLOR/placeLegsGroup
+  // mais abaixo) — Matt, 2026-08-20: primeiro "o cabide aparece branco, como
+  // deixo ele preto"; depois, já com uma cor cadastrada: "troquei pra cor de
+  // rod black, mas o rod so sai com a cor da caixa de onde e inserido".
+  // CAUSA RAIZ das duas: o cabide (shape_type='oval_rod', componente "ROD
+  // BLACK") usa o MESMO mecanismo de papel de cor (color_role_id ->
+  // colorsByRole, escolhido pelo cliente por módulo via module_colors) de
+  // qualquer peça de madeira comum — só que o tipo "Hanger" nunca tem cor
+  // cadastrada pra esse papel em NENHUM módulo (ninguém vinculou
+  // module_colors pra ele), então: sem cor nenhuma, cai no fallback cinza de
+  // makeMaterial (1º sintoma, "aparece branco"); e o fallback DEFENSIVO de
+  // projectLayoutRowsForSlot (portal-07-construtor.js — "papel sem opção,
+  // usa o papel que o slot JÁ tem escolhido, senão o preço trava") REESCREVE
+  // o color_role_id da peça pro papel da CAIXA (2º sintoma, "só sai com a
+  // cor da caixa") — trocar a cor no cadastro do componente não ajuda porque
+  // o papel de cor nunca é dela pra começo de conversa. Fix igual ao pé:
+  // ferragem/acessório não usa a cor de caixa/porta escolhida pelo cliente —
+  // cor FIXA no código, ignorando o papel de cor de propósito.
+  const ROD_COLOR = { swatch_hex: '#000000' };
   function buildOvalRodContent(w, h, d, color) {
     const group = new THREE.Group();
     const material = makeMaterial(color, false);
@@ -1815,7 +1835,7 @@ const Viewer3D = (function () {
       const x = -W / 2 + fw / 2 + offX;
       const y = h / 2 + offY + legH;
       const z = -D / 2 + fd / 2 + offZ;
-      const rodContent = buildOvalRodContent(w, h, d, part.color);
+      const rodContent = buildOvalRodContent(w, h, d, ROD_COLOR);
       if (rotYDeg) rodContent.rotation.y = rotYDeg * Math.PI / 180;
       emit(rodContent, null, x, y, z, false, null);
     } else if (role === 'free') {

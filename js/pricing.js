@@ -801,6 +801,16 @@
       // ferragem junto com chapa e fita, e não junto com a coladeira.
       purchased_cost: purchased_cost,
       purchased_item_id: (itemComprado && itemComprado.id) || piece.purchased_item_id || null,
+      // Nome/unidade do item comprado (2026-08-20) — mesmo motivo de
+      // hinge_model_name/slide_model_name logo abaixo: o relatório $ Fábrica
+      // precisa saber QUAL peça comprada pagou por este custo pra poder abrir
+      // uma linha própria (ex: "Cabide (metro)"), não só o valor. qty é a
+      // quantidade consumida NA UNIDADE do item (metros quando unit='m',
+      // senão a mesma contagem de instâncias da peça) — pro relatório poder
+      // mostrar "12,4 m" em vez de só "1 peça".
+      purchased_item_name: (itemComprado && itemComprado.name) || null,
+      purchased_item_unit: (itemComprado && itemComprado.unit) || null,
+      purchased_item_qty: itemComprado ? (itemComprado.unit === 'm' ? metrosComprado * qty : qty) : 0,
       purchased_margin_profile_id: (itemComprado && itemComprado.margin_profile_id) || null,
       // Custo do kit de suporte (migration 129) já somado dentro de
       // purchased_cost acima — exposto separado só pro relatório $ Fábrica
@@ -808,6 +818,8 @@
       // hinge_cost/slide_cost, que também são subtotais dentro do total).
       support_cost: support_cost,
       support_purchased_item_id: (itemSuporte && itemSuporte.id) || piece.support_purchased_item_id || null,
+      support_purchased_item_name: (itemSuporte && itemSuporte.name) || null,
+      support_purchased_item_qty: itemSuporte ? (piece.support_purchased_item_qty || 1) * qty : 0,
       // Aberto por processo quando a peça está em processo (migration 090);
       // null nas peças antigas, que têm uma labor só e nada a abrir.
       labor_breakdown: proc

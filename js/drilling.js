@@ -952,6 +952,55 @@
     });
   }
 
+  // 3e. CONTRA-FURO DO SUPORTE DO CABIDE (2026-08-20, Matt: "o suporte do
+  // cabide tem contra furo. furo de 3mm diametro e 2mm profundidade bem no
+  // meio do suporte"). Mesma ideia de collectShelfSupportHoles logo acima
+  // (peça 'free' que encosta numa lateral ganha um furo-piloto nela) — só
+  // que aqui NÃO precisa de nenhum checkbox de opt-in: TODA peça
+  // shape_type='oval_rod' (o cabide, migration 062) sempre tem suporte nas
+  // duas pontas (ver js/viewer3d.js buildOvalRodContent, "2 suportes nas
+  // pontas... desenhados COAXIAIS ao tubo"), então o furo é automático.
+  //
+  // TOLERÂNCIA PRÓPRIA (não usa settings.touch_tolerance_mm, que é ~5mm e é
+  // pensado pra encaixe justo de painel-com-painel): o cabide nasce com uma
+  // margem FIXA de 12mm de cada lado dentro do vão (js/layout-engine.js
+  // emitContent, ramo acc.forma==='barra': "x: box.x + 12, w: box.w - 24") —
+  // é ESSA a distância real entre a ponta do tubo e a lateral, não um
+  // encaixe de 5mm. 15mm cobre a margem + folga de arredondamento.
+  //
+  // Furo SEMPRE no meio do suporte = centro vertical/de profundidade da
+  // PRÓPRIA peça (y0+sy/2, z0+sz/2) — o suporte é coaxial ao tubo, então o
+  // centro do tubo já é o centro do suporte.
+  function collectCabideSupportHoles(store, boxes) {
+    const CABIDE_SUPPORT_DIAMETER_MM = 3;
+    const CABIDE_SUPPORT_DEPTH_MM = 2;
+    const CABIDE_SUPPORT_TOUCH_TOLERANCE_MM = 15;
+
+    const laterals = boxes.filter(function (b) { return b.tAxis === 'x'; });
+    if (!laterals.length) return;
+
+    boxes.forEach(function (rod) {
+      if (!rod.part || rod.part.shape_type !== 'oval_rod') return;
+      const yHole = rod.y0 + rod.sy / 2;
+      const zHole = rod.z0 + rod.sz / 2;
+      laterals.forEach(function (lb) {
+        if (lb === rod) return;
+        const dLeft = Math.abs(rod.x0 - (lb.x0 + lb.sx));   // lateral à esquerda do cabide
+        const dRight = Math.abs((rod.x0 + rod.sx) - lb.x0); // lateral à direita
+        if (Math.min(dLeft, dRight) > CABIDE_SUPPORT_TOUCH_TOLERANCE_MM) return;
+        const entersPositive = (rod.x0 + rod.sx / 2) >= lb.x0 + lb.sx / 2;
+        emitLocalHole(store, lb, {
+          u: yHole - lb.y0,  // uAxis da lateral = Y (altura)
+          v: zHole - lb.z0,  // vAxis = Z (profundidade)
+          edge: null,
+          entersPositive: entersPositive,
+          diameter: CABIDE_SUPPORT_DIAMETER_MM, depth: CABIDE_SUPPORT_DEPTH_MM,
+          tipo: 'suporte_cabide'
+        });
+      });
+    });
+  }
+
   // ---- percurso recursivo do módulo ------------------------------------
   // parts = saída de resolvePiecesForViewer (admin.js); container = {W,H,D}
   // em mm. Coleta furos de TODAS as peças-folha (recursão em child_pieces
@@ -962,6 +1011,7 @@
     collectHingePlates(store, parts, built.boxes, config.settings);
     collectSlideHoles(store, parts, built.boxes, W, H, D, config.settings);
     collectShelfSupportHoles(store, built.boxes, config.settings);
+    collectCabideSupportHoles(store, built.boxes);
     (parts || []).forEach(function (part) {
       if (part.is_module && part.child_pieces && part.child_pieces.length) {
         collectAssembly(store, part.child_pieces, part.width_mm, part.height_mm, part.depth_mm, config);

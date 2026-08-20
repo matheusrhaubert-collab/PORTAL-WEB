@@ -282,6 +282,23 @@
   var FOLGA_CAIXOTE_ALTURA_MULTIPLA_MM = 50;
   var FOLGA_CAIXOTE_ALTURA_UNICA_MM = 20;
 
+  // Afastamento do CABIDE (acc.forma === 'barra') em relação ao FUNDO do vão
+  // (2026-08-20, Matt, 1º pedido: "quero que o rod entre sempre a 270mm
+  // afastado da parte de tras, essa medida serve perfeitamente para colocar
+  // o cabide. mesmo que o vao tenha 300, ele deve ficar 270mm do fundo").
+  // Antes emitContent centralizava o cabide no MEIO da profundidade do vão
+  // (box.z + box.d/2) — um vão mais raso ou mais fundo mudava a posição do
+  // cabide sozinho, sem controle.
+  //
+  // REGRA CORRIGIDA no mesmo dia (Matt: "desculpe, esqueci, a regra do rod e
+  // a seguinte se a profundidade for menor do que 540, deixa 270mm afastado.
+  // se for mais do que 540 pode dividir no meio."): 270mm fixo SÓ vale pra
+  // vão raso; vão fundo (>=540mm) volta a CENTRALIZAR — nesse caso 270mm
+  // deixaria sobrando muito espaço vazio atrás do cabide, então divide a
+  // profundidade ao meio como antes do 1º pedido.
+  var AFASTAMENTO_CABIDE_FUNDO_MM = 270;
+  var LIMIAR_CABIDE_CENTRALIZA_MM = 540;
+
   function build(root, zona, opts) {
     opts = opts || {};
     var cat = opts.catalogo || {};
@@ -338,9 +355,17 @@
 
       if (acc.forma === 'barra') {
         var off = num(p.altura_do_topo_mm) || 60;
+        // Vão raso (< 540mm): fixo a 270mm do FUNDO — ver
+        // AFASTAMENTO_CABIDE_FUNDO_MM/LIMIAR_CABIDE_CENTRALIZA_MM acima.
+        // Vão fundo (>= 540mm): CENTRALIZA (box.d/2), senão sobra vão vazio
+        // atrás do cabide. Clampa em box.d só pra não estourar a frente num
+        // vão mais raso que o afastamento fixo (defensivo).
+        var afastamentoFundo = box.d < LIMIAR_CABIDE_CENTRALIZA_MM
+          ? Math.min(num(p.afastamento_fundo_mm) || AFASTAMENTO_CABIDE_FUNDO_MM, box.d)
+          : box.d / 2;
         push(node, {
           kind: 'content', accKey: key, label: acc.name, shape_type: 'oval_rod',
-          x: box.x + 12, y: box.y + box.h - off, z: box.z + box.d / 2 - 15,
+          x: box.x + 12, y: box.y + box.h - off, z: box.z + afastamentoFundo - 15,
           w: box.w - 24, h: 30, d: 15
         });
         return;
