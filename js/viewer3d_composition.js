@@ -65,6 +65,14 @@ function createViewerComposition3D() {
   let currentOpenables = [];
   let doorsOpen = false;
   let drawersOpen = false;
+  // Junção automática de rodapé entre módulos adjacentes (migration 137,
+  // pedido do Matt 2026-08-23). Override de SESSÃO — botão "Encaixe" da
+  // barra do Projetos (ver toggleAutoJoinBaseboards/areBaseboardsAutoJoined
+  // mais abaixo, e portal-08-projetos-paredes.js pela wiring do botão).
+  // Nasce LIGADO (pedido original: "pode ate deixar botao la em cima na
+  // barra sempre ligado"). Quando desligado, ignora auto_join_adjacent do
+  // cadastro por inteiro — cada módulo sempre mantém seu próprio rodapé.
+  let autoJoinBaseboards = true;
 
   // Guarda as dimensões do último enquadramento (ver bloco "Enquadramento
   // PRECISO" em render(), mais abaixo) — necessário pra snapshotFrontal()
@@ -314,6 +322,142 @@ function createViewerComposition3D() {
     });
     currentGroups = [];
   }
+
+  // Material da peça original de rodapé, pra pintar a peça FUNDIDA igual —
+  // sem isso a junção trocaria a cor/textura por um cinza genérico. mesh pode
+  // ser o próprio Mesh (caso comum) ou um Group (giro de textura/conteúdo
+  // especial) — desce até achar o primeiro Mesh de verdade, igual outros
+  // pontos deste arquivo já fazem com objetos que podem vir dos dois jeitos.
+  function pickBaseboardMaterial(obj) {
+    if (!obj) return null;
+    if (obj.isMesh && obj.material) return obj.material;
+    let found = null;
+    obj.traverse((o) => { if (!found && o.isMesh && o.material) found = o.material; });
+    return found;
+  }
+
+  // JUNÇÃO AUTOMÁTICA DE RODAPÉ ENTRE MÓDULOS VIZINHOS (migration 137,
+  // pedido do Matt 2026-08-23): "o rodape toekick fica separado por modulo,
+  // porem na pratica ele precisa se unir ate no maximo 2.7metros... substitui
+  // os 2 por um so no tamanho total".
+  //
+  // Chamada DEPOIS que a lista de assemblies de uma fileira (Composição) ou
+  // de uma parede (Projetos) já foi posicionada no mundo (group.position/
+  // rotation já definitivos) — nunca antes, porque a peça fundida precisa da
+  // posição REAL de cada módulo, não da posição local dentro de cada um.
+  //
+  // Não recalcula NADA da posição/rotação por conta própria (perigoso demais
+  // pra reescrever aqui, com paredes em qualquer ângulo — migration 100,
+  // "paredes desenhadas"): lê a posição/rotação MUNDO já resolvida de cada
+  // peça de rodapé (getWorldPosition/getWorldQuaternion, Three.js de
+  // verdade), e só estende a peça ao longo do PRÓPRIO eixo local dela — por
+  // isso funciona igual em qualquer ângulo de parede sem precisar conhecer
+  // alongDir/intoDir/rotationY aqui.
+  //
+  // Cada peça de rodapé é identificada em viewer3d.js (placePieceInBox, ramo
+  // 'baseboard') via mesh.userData.baseboardGeom — ver comentário lá.
+  function applyBaseboardJoins(list) {
+    if (!Array.isArray(list) || list.length < 2) return;
+
+    const entries = [];
+    list.forEach((a) => {
+      if (!a || !a.group) return;
+      a.group.updateMatrixWorld(true);
+      let mesh = null;
+      a.group.traverse((o) => { if (!mesh && o.userData && o.userData.baseboardGeom) mesh = o; });
+      if (!mesh || mesh.visible === false) return;
+      const g = mesh.userData.baseboardGeom;
+      const worldPos = new THREE.Vector3(); mesh.getWorldPosition(worldPos);
+      const worldQuat = new THREE.Quaternion(); mesh.getWorldQuaternion(worldQuat);
+      const axisX = new THREE.Vector3(1, 0, 0).applyQuaternion(worldQuat).normalize();
+      const half = g.faceA_m / 2;
+      entries.push({
+        mesh, worldPos, worldQuat, axisX,
+        leftEdge: worldPos.clone().addScaledVector(axisX, -half),
+        rightEdge: worldPos.clone().addScaledVector(axisX, half),
+        faceA_m: g.faceA_m, faceB_m: g.faceB_m, thickness_m: g.thickness_m,
+        auto_join_adjacent: g.auto_join_adjacent !== false,
+        join_max_length_mm: g.join_max_length_mm || 2700
+      });
+    });
+    if (entries.length < 2) return;
+
+    // Ordena pela posição real ao longo do eixo local da 1ª peça — todas as
+    // peças de uma mesma fileira/parede compartilham a mesma direção (mesmo
+    // rotY), então projetar no eixo de qualquer uma dá a mesma ordem.
+    const refAxis = entries[0].axisX;
+    entries.forEach((e) => { e._t = e.worldPos.dot(refAxis); });
+    entries.sort((p, q) => p._t - q._t);
+
+    if (!autoJoinBaseboards) return; // botão "Encaixe" desligado pra sessão inteira
+
+    // GRUPO (não só par-a-par) — 3+ módulos em fileira encostados também
+    // viram 1 peça só, desde que o comprimento total não passe do limite. Um
+    // par que já bateu no limite fecha o grupo ali; o próximo módulo começa
+    // um grupo novo (não fica de fora pra sempre).
+    const canChain = (cur, next) => {
+      if (!next.auto_join_adjacent) return false;
+      if (Math.abs(cur.faceB_m - next.faceB_m) > 0.001) return false; // altura diferente — não é a mesma peça
+      if (Math.abs(cur.thickness_m - next.thickness_m) > 0.001) return false; // espessura diferente — não é a mesma peça
+      if (cur.worldQuat.angleTo(next.worldQuat) > 0.01) return false; // módulos girados de jeitos diferentes — não fica reto
+      if (cur.rightEdge.distanceTo(next.leftEdge) > BASEBOARD_JOIN_GAP_EPS_M) return false; // não está encostado (tolerância zero)
+      return true;
+    };
+
+    let i = 0;
+    while (i < entries.length) {
+      if (!entries[i].auto_join_adjacent) { i++; continue; }
+      let end = i;
+      let maxLen_mm = entries[i].join_max_length_mm;
+      while (end + 1 < entries.length && canChain(entries[end], entries[end + 1])) {
+        const nextMaxLen_mm = Math.min(maxLen_mm, entries[end + 1].join_max_length_mm);
+        const combined_mm = entries[i].leftEdge.distanceTo(entries[end + 1].rightEdge) * 1000;
+        if (combined_mm > nextMaxLen_mm + 0.5) break; // passou do comprimento máximo — fecha o grupo aqui
+        end++;
+        maxLen_mm = nextMaxLen_mm;
+      }
+
+      if (end > i) {
+        const L = entries[i], R = entries[end];
+        const combinedLength_m = L.leftEdge.distanceTo(R.rightEdge);
+        const material = pickBaseboardMaterial(L.mesh) || pickBaseboardMaterial(R.mesh);
+        const geometry = new THREE.BoxGeometry(combinedLength_m, L.faceB_m, L.thickness_m);
+        const merged = material ? new THREE.Mesh(geometry, material) : new THREE.Mesh(geometry);
+        merged.position.copy(L.leftEdge.clone().add(R.rightEdge).multiplyScalar(0.5));
+        merged.quaternion.copy(L.worldQuat);
+        merged.castShadow = !!L.mesh.castShadow;
+        merged.receiveShadow = !!L.mesh.receiveShadow;
+        merged.userData.isMergedBaseboard = true;
+        // ARESTA/CONTORNO (2026-08-23, Matt: "a textura dos materiais esta
+        // certa. oq ue esta errado e as arestas... o contorno") — peça
+        // montada aqui direto (fora do addPartToGroup do viewer3d.js) não
+        // passava pelo buildEdgesForStyle, então saía chapada sem o contorno
+        // que toda outra peça da cena tem (mesmo problema — e mesma correção
+        // — que a parede já teve em makeWallSurface/buildRoomEnvironment
+        // acima, ver comentário lá: "ARESTA NA PAREDE, no mesmo estilo dos
+        // móveis").
+        if (typeof Viewer3D !== 'undefined' && Viewer3D.buildEdgesForStyle) {
+          const arestas = Viewer3D.buildEdgesForStyle(geometry);
+          if (arestas) merged.add(arestas);
+        }
+        scene.add(merged);
+        currentGroups.push(merged);
+
+        // Esconde as peças originais do grupo inteiro — continuam existindo
+        // (preço/corte/furação, se algum dia tiver, seguem a peça original),
+        // só não aparecem mais desenhadas por cima da peça fundida.
+        for (let k = i; k <= end; k++) entries[k].mesh.visible = false;
+      }
+
+      i = end + 1;
+    }
+  }
+
+  function toggleAutoJoinBaseboards() {
+    autoJoinBaseboards = !autoJoinBaseboards;
+    return autoJoinBaseboards;
+  }
+  function areBaseboardsAutoJoined() { return autoJoinBaseboards; }
 
   // Sprite de texto simples (canvas 2D virando textura) — sem precisar
   // carregar fonte 3D nenhuma. Sempre de frente pra câmera (comportamento
@@ -689,6 +833,12 @@ function createViewerComposition3D() {
   // altura máxima, o baseboard tracejado, e os dois rótulos de texto — só as
   // 2 linhas sólidas (chão + teto) ficam.
   const BASEBOARD_DEPTH_M = 0.019; // ~3/4" — espessura típica de baseboard
+  // Junção automática de rodapé (migration 137) — "folga zero" pra fundir 2
+  // peças de módulos vizinhos numa peça só. Mesma tolerância que "esticar até
+  // encostar" já usa (PROJECT_TOUCH_GAP_EPS_MM, portal-06c-projetos-canvas-
+  // 3d-acoes.js) — não é exatamente 0 porque ponto flutuante de posição em
+  // metros nunca bate exato, mas 0.5mm não é uma folga real de fabricação.
+  const BASEBOARD_JOIN_GAP_EPS_M = 0.0005;
   const CEILING_CLEARANCE_M = 0.127; // 5" — afastamento mínimo móvel→teto
   // Pedido do usuário, 2026-07-16 ("subir a linha trasejada em 5inches"):
   // depois de alinhar a linha tracejada com a régua de altura MÁXIMA
@@ -1053,6 +1203,12 @@ function createViewerComposition3D() {
       cursorX += a.width_m + GAP_M;
     });
 
+    // Junção automática de rodapé (migration 137) — GAP_M é sempre 0 aqui,
+    // então qualquer par de colunas consecutivas já nasce encostado; a
+    // função decide sozinha, por par, se funde de verdade (cadastro +
+    // comprimento máximo + botão "Encaixe").
+    applyBaseboardJoins(baseList);
+
     if (room && room.ceiling_m > 0) {
       const envGroup = buildRoomEnvironment(totalWidth, maxDepth, room);
       scene.add(envGroup);
@@ -1275,6 +1431,12 @@ function createViewerComposition3D() {
           minZ = Math.min(minZ, wz); maxZ = Math.max(maxZ, wz);
         });
       });
+
+      // Junção automática de rodapé (migration 137) — só entre módulos DESTA
+      // mesma parede (list já é só os assemblies dela); módulos de paredes
+      // diferentes nunca se tocam de verdade, mesmo se as coordenadas locais
+      // parecerem próximas.
+      applyBaseboardJoins(list);
 
       // Inclui a PAREDE em si (não só os módulos) na caixa delimitadora —
       // pedido do usuário (2026-07-26, Vista de Canto 3D): "a cena esta
@@ -2528,6 +2690,11 @@ function createViewerComposition3D() {
     // pra um módulo novo/recolorido nascer já no estado atual em vez de
     // sempre fechado.
     toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen,
+    // Junção automática de rodapé entre módulos adjacentes (migration 137) —
+    // override de sessão do botão "Encaixe" (ver portal-08-projetos-
+    // paredes.js). Estado PRÓPRIO desta instância, mesma convenção de
+    // doorsOpen/drawersOpen acima.
+    toggleAutoJoinBaseboards, areBaseboardsAutoJoined,
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.

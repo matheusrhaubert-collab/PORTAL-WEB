@@ -71,6 +71,11 @@ function cloneProjectSlotForUndo(slot) {
     // precisa de cópia funda — sem isso a foto do desfazer andaria junto.
     layout: slot.layout ? JSON.parse(JSON.stringify(slot.layout)) : null,
     selectedOptionalIds: (slot.selectedOptionalIds || []).slice(),
+    // removedPieceIds (2026-08-20): mesmo motivo de selectedOptionalIds acima
+    // — array mutado no lugar (push/splice ao remover/restaurar peça no modal
+    // "Peças do móvel"), precisa de cópia própria pro desfazer e pra
+    // duplicateProjectSlot (que reusa esta função) não compartilharem array.
+    removedPieceIds: (slot.removedPieceIds || []).slice(),
     widthPresetsMm: (slot.widthPresetsMm || []).slice(),
     heightPresetsMm: (slot.heightPresetsMm || []).slice()
   };
@@ -981,6 +986,58 @@ if (projFilterCategorySelect) {
   });
 }
 
+// Monta (se o módulo tiver referência cadastrada) e pendura no card o
+// dropdown de SKU pra inserção rápida — ver comentário no chamador
+// (renderProjectLibrary) pra contexto do pedido. Função própria (não inline
+// no forEach) porque o mesmo bloco de "impedir o pointerdown/click de subir
+// pro card" tem que existir OU o arraste do card (attachProjectLibraryCardDrag,
+// que usa pointerdown+setPointerCapture no card INTEIRO) rouba o gesto e o
+// <select> nativo nem abre.
+function attachProjectLibrarySkuSelect(card, m, unit) {
+  const skuOptions = moduleSkuPresetsByModuleId[m.id] || [];
+  if (!skuOptions.length) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'po-proj-library-card-sku';
+  const sel = document.createElement('select');
+  sel.className = 'po-proj-library-card-sku-select';
+  const autoOpt = document.createElement('option');
+  autoOpt.value = '';
+  autoOpt.textContent = I18n.t('step1.sku_placeholder');
+  sel.appendChild(autoOpt);
+  skuOptions.forEach((s) => {
+    const o = document.createElement('option');
+    o.value = s.reference;
+    o.textContent = skuOptionLabelForUnit(s, unit);
+    sel.appendChild(o);
+  });
+  ['pointerdown', 'click'].forEach((evt) => sel.addEventListener(evt, (e) => e.stopPropagation()));
+  sel.addEventListener('change', () => {
+    const reference = sel.value;
+    if (!reference) return;
+    const sku = skuOptions.find((s) => s.reference === reference);
+    if (!sku) return;
+    sel.disabled = true;
+    insertProjectModuleDefault(m.id, { width_mm: sku.width_mm, height_mm: sku.height_mm })
+      .then((slot) => {
+        // insertProjectModuleDefault só seleciona/renderiza/marca sujo
+        // sozinha quando NENHUM overrides é passado (o motivo: a IA insere
+        // vários módulos em sequência e faz isso ela mesma 1x no fim do
+        // lote, ver comentário lá dentro) — como aqui é 1 inserção avulsa
+        // (não um lote), com overrides SEMPRE preenchido (é o próprio
+        // tamanho do SKU), tem que fazer esses 3 passos na mão, senão o
+        // módulo entra em projectSlots mas a cena continua exatamente como
+        // estava (achado ao testar ao vivo — o item existe, só não aparece).
+        if (!slot) return;
+        selectedProjectSlotId = slot.id;
+        renderProjectCanvas();
+        markProjectDirty();
+      })
+      .finally(() => { sel.disabled = false; sel.value = ''; });
+  });
+  wrap.appendChild(sel);
+  card.appendChild(wrap);
+}
+
 function renderProjectLibrary() {
   const grid = document.getElementById('po-proj-library-grid');
   if (!grid) return;
@@ -1007,6 +1064,16 @@ function renderProjectLibrary() {
       <div class="po-proj-library-card-name">${m.name}</div>
       <div class="po-proj-library-card-dims">${dimsLine}</div>
     `;
+    // Dropdown de referência/SKU (2026-08-21, pedido do usuário: "pensando em
+    // colocar nos modulos da esqureda tmabem pra insercao rapida no
+    // ambiente") — mesmo catálogo/texto da vitrine "New Quote" (ver
+    // moduleSkuPresetsByModuleId/skuOptionLabelForUnit em
+    // portal-01-core-catalogo.js). Escolher uma referência já INSERE o
+    // módulo no ambiente com a medida daquele SKU (em vez de só adicionar ao
+    // carrinho, que é o que a vitrine faz) — mesmo caminho de sempre
+    // (insertProjectModuleDefault), só que agora aceitando um override de
+    // altura também (ver requestedHeightMm acima).
+    attachProjectLibrarySkuSelect(card, m, unit);
     // Pedido do usuário (2ª rodada, 2026-07-21): "quero que clique no modulo
     // e ele seja inserido na tela do projeto... dando um clique no modulo
     // abre as configuracoes na direita e eu resolva tudo na mesma tela" —
@@ -1274,6 +1341,68 @@ function highlightProjectDropTarget(clientX, clientY) {
 //      escala atual (projectPxPerMm) e insere ali.
 // Fora de qualquer canvas, o drop é ignorado (nada é inserido) — soltar no
 // vazio não deve criar módulo nenhum.
+// EMPURRAR PRA FORA DE SOBREPOSIÇÃO AO SOLTAR (2026-08-20, relato do Matt:
+// "mesmo o ima ligado, os modulos nao estao respeitando o espaco um do
+// outro. nao deveria poder transpacar um sobre o outro" — com prints
+// mostrando dois módulos "Bottom" nascendo exatamente um em cima do outro).
+//
+// Achado: o botão de colisão (clampWallSlotAgainstCollision/
+// resolveCollisionSlide, ver portal-06b-projetos-canvas-ia-custo.js) só
+// existia no ARRASTE de um módulo já colocado — nunca no NASCIMENTO de um
+// módulo novo (soltar da biblioteca em cima de outro, ver dropProjectModuleAt
+// abaixo). Clicar na biblioteca sem arrastar está a salvo disso
+// (computeDefaultProjectSlotX já entra depois do último módulo da parede,
+// de propósito) — só o drag-and-drop tinha esse buraco.
+//
+// Por que não reaproveitar resolveCollisionSlide direto: aquele resolvedor
+// desliza a partir de uma posição ANTERIOR válida (sabe de que lado o
+// módulo vinha) — um módulo que acabou de NASCER não tem "de onde veio".
+// Por isso este é mais simples: só olha quem a posição de nascimento
+// atravessa de verdade (mesma faixa de altura, ver sharesRow em
+// stretchProjectSlotToCollision) e empurra pro lado — esquerda ou direita —
+// que precisar do MENOR deslocamento. Só roda com o botão de colisão
+// ligado; desligado, sobrepor de propósito continua sendo o comportamento
+// de sempre (camada de profundidade, ver resolveProjectSlotDepth).
+function pushProjectSlotClearOnDrop(slot) {
+  if (!projectCollisionEnabled || isFloorSlot(slot)) return;
+  const EPS = PROJECT_COLLISION_EPS_MM;
+  const w = Number(slot.width_mm || 0);
+  const h = Number(slot.height_mm || 0);
+  const x0 = Number(slot.x_mm || 0);
+  const y0 = Number(slot.floor_height_mm || 0);
+  const wallWidthMm = getProjectWallWidthMm(Number(slot.wall_index || 0));
+
+  const sharesRow = (s) => (y0 < Number(s.floor_height_mm || 0) + Number(s.height_mm || 0) - EPS)
+    && (y0 + h > Number(s.floor_height_mm || 0) + EPS);
+  const overlapping = projectSlotsSameWallExcluding(slot).filter((s) => sharesRow(s)
+    && x0 < Number(s.x_mm || 0) + Number(s.width_mm || 0) - EPS
+    && x0 + w > Number(s.x_mm || 0) + EPS);
+  if (!overlapping.length) return;
+
+  // rightLimit/leftLimit = a borda mais apertada entre TODOS os vizinhos que
+  // a posição de nascimento atravessa — encostar em qualquer uma delas já
+  // limpa a sobreposição com o grupo inteiro (o caso raro de um módulo tão
+  // largo que continua cruzando outro vizinho do OUTRO lado ao encostar fica
+  // sobreposto mesmo, igual ao resolveCollisionSlide também não ter milagre
+  // pra vão menor que o módulo).
+  let rightLimit = wallWidthMm, leftLimit = 0;
+  overlapping.forEach((s) => {
+    rightLimit = Math.min(rightLimit, Number(s.x_mm || 0));
+    leftLimit = Math.max(leftLimit, Number(s.x_mm || 0) + Number(s.width_mm || 0));
+  });
+  const moveLeftDist = x0 - (rightLimit - w);
+  const moveRightDist = leftLimit - x0;
+  const canGoLeft = (rightLimit - w) >= -EPS;
+  const canGoRight = (leftLimit + w) <= wallWidthMm + EPS;
+  if (canGoLeft && (!canGoRight || moveLeftDist <= moveRightDist)) {
+    slot.x_mm = Math.max(0, rightLimit - w);
+  } else if (canGoRight) {
+    slot.x_mm = Math.min(wallWidthMm - w, leftLimit);
+  }
+  // Nem um nem outro coube (vão mais estreito que o módulo): deixa
+  // sobreposto — não tem onde encostar sem sair da parede.
+}
+
 async function dropProjectModuleAt(moduleId, clientX, clientY) {
   const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
   const flatCanvas = document.getElementById('po-proj-canvas');
@@ -1348,6 +1477,7 @@ async function dropProjectModuleAt(moduleId, clientX, clientY) {
     slot.x_mm = Number(slot.x_mm || 0) - Number(slot.width_mm || 0) / 2;
     slot.floor_height_mm = Math.max(0, Number(slot.floor_height_mm || 0) - Number(slot.height_mm || 0) / 2);
     clampProjectSlotPosition(slot);
+    pushProjectSlotClearOnDrop(slot);
     resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
     if (Number(slot.wall_index || 0) !== projectActiveWallIndex) {
       projectActiveWallIndex = Number(slot.wall_index || 0);
@@ -1787,7 +1917,16 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
       ? Number(overrides.width_mm)
       : Number(m.width_default_mm || 0);
     const width_mm = clamp(requestedWidthMm, Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
-    const height_mm = clamp(Number(m.height_default_mm || 0), Number(m.height_min_mm || 0), effHeightMaxMm);
+    // Altura por override (2026-08-21) — mesma ideia da largura acima, só que
+    // até agora só a IA tinha esse caminho. Adicionado pro dropdown de
+    // referência/SKU da biblioteca (ver renderProjectLibrary/skuOptionLabelForUnit):
+    // uma referência pode definir largura E altura juntas (ex: "B30" =
+    // 30"x34.5"), e sem isso a altura entrava sempre com o default do
+    // catálogo, ignorando o que a referência escolhida realmente é.
+    const requestedHeightMm = overrides && Number(overrides.height_mm) > 0
+      ? Number(overrides.height_mm)
+      : Number(m.height_default_mm || 0);
+    const height_mm = clamp(requestedHeightMm, Number(m.height_min_mm || 0), effHeightMaxMm);
     const depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
 
     const result = m.is_decoration
@@ -1821,6 +1960,11 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
         color_name: colorsByRole[roleId] ? colorsByRole[roleId].name : null
       })),
       pieceColorOverrides: {},
+      // removedPieceIds (2026-08-20): peças removidas manualmente pelo
+      // cliente no modal "Peças do móvel" — começa vazio, nasce junto com o
+      // slot pra projectSlotEffectivePieces sempre achar o array (ver
+      // portal-06b-projetos-canvas-ia-custo.js).
+      removedPieceIds: [],
       hingeModel, slideModel,
       width_mm, height_mm, depth_mm,
       shelfQuantities,
@@ -1829,7 +1973,12 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
       result,
       thumbnail_data_url: null,
       widthPresetsMm: lockedDimensionPresets.width,
-      heightPresetsMm: lockedDimensionPresets.height
+      heightPresetsMm: lockedDimensionPresets.height,
+      // Versão com label/SKU (ver dimRow em portal-06c-projetos-canvas-3d-acoes.js)
+      // — mesma fonte, só que preservando o rótulo cadastrado no admin em vez
+      // de só o valor em mm.
+      widthPresetsLabeled: lockedDimensionPresets.widthLabeled,
+      heightPresetsLabeled: lockedDimensionPresets.heightLabeled
     };
     // Soltar no CHÃO (2026-08-08) — arrastar da biblioteca e largar em cima do
     // piso cria um módulo ILHA em vez de um módulo de parede (ver isFloorSlot).

@@ -759,10 +759,31 @@
     // acima), pra sempre bater com o desenho 3D.
     let hinge_cost = 0;
     let hinge_count = 0;
-    if (piece.hinge_side && piece.hinge_side !== 'none') {
+    // 2026-08-20: hinge_side também vale 'top'/'bottom' (basculante/
+    // basculante inverso) — NÃO entra aqui: dobradiça de embutir
+    // (hingeModel/hinge_count) é um produto diferente do pistão a gás que
+    // esses 2 mecanismos usam de verdade (ver viewer3d.js
+    // placeFlapHardware). Custo do pistão ainda não tem catálogo — fica
+    // hinge_cost=0 de propósito até essa peça ganhar cadastro próprio
+    // (PENDENTE, ver docs/modelos-de-porta-frente-spec.md).
+    if (piece.hinge_side === 'left' || piece.hinge_side === 'right') {
       hinge_count = hingeCountForDoorHeight(pieceDims.height_mm);
-      if (!hingeModel) throw new Error(tr('pricing.no_hinge_for_piece', { ref: piece.reference }, 'Nenhum modelo de dobradiça selecionado para a peça "' + piece.reference + '".'));
-      hinge_cost = hingeModel.price_per_unit * hinge_count * qty;
+      // NÃO joga mais erro (e não derruba o preço do módulo inteiro) quando
+      // falta hingeModel (2026-08-20, Matt: "a abertura deve vir única e
+      // exclusivamente da porta ou modelo. não pode ser diferente" / "não
+      // pode vir do módulo, e sim da porta sempre"). ANTES disso existia uma
+      // trava em js/portal-07-construtor.js (rebuild das peças do
+      // Construtor) que zerava hinge_side inteiro quando o MÓDULO não tinha
+      // nenhum modelo de dobradiça vinculado (module_hinge_models) — ou
+      // seja, a porta deixava de "ter dobradiça" (não abria no 3D, não
+      // furava copo) por causa de um cadastro do módulo, não da porta. Essa
+      // trava foi removida: hinge_side agora É SEMPRE o que a peça/o modelo
+      // de porta define, ponto. O que pode faltar é só o CUSTO da dobradiça
+      // (qual peça física cobrar) — igual já acontece com papel de cor sem
+      // opção escolhida (cai numa cor que o slot já usa) ou corrediça sem
+      // hardware: melhor a peça aparecer certa no desenho/furação com um
+      // custo incompleto do que o módulo inteiro perder o preço.
+      hinge_cost = hingeModel ? (hingeModel.price_per_unit * hinge_count * qty) : 0;
     }
 
     let slide_cost = 0;
@@ -969,8 +990,14 @@
     let hinge_count = 0;
     if (piece.opening_type === 'hinge_left' || piece.opening_type === 'hinge_right') {
       hinge_count = hingeCountForDoorHeight(pieceDims.height_mm);
-      if (!effectiveHingeModel) throw new Error(tr('pricing.no_hinge_for_piece', { ref: piece.reference || piece.module_name }, 'Nenhum modelo de dobradiça selecionado para a peça "' + (piece.reference || piece.module_name) + '".'));
-      hinge_cost = effectiveHingeModel.price_per_unit * hinge_count * qty;
+      // Mesma mudança de calculateLeafPiece acima (2026-08-20, Matt: "a
+      // abertura deve vir única e exclusivamente da porta ou modelo" — este
+      // é exatamente o caso "modelo", peça-módulo/MODELO de porta aninhado):
+      // sem effectiveHingeModel (nem próprio da peça, nem do módulo raiz),
+      // não lança mais erro — só fica sem custo de dobradiça. A peça-módulo
+      // continua abrindo (opening_type já resolvido, sem depender de
+      // hingeModel nenhum — ver viewer3d.resolveHingeSide).
+      hinge_cost = effectiveHingeModel ? (effectiveHingeModel.price_per_unit * hinge_count * qty) : 0;
     }
 
     let slide_cost = 0;

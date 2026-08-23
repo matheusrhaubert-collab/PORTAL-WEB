@@ -1475,6 +1475,55 @@ const ViewerProject = (typeof ViewerComposition !== 'undefined' && ViewerComposi
   ? ViewerComposition.createInstance()
   : null;
 
+// Junção automática de rodapé (migration 137, pedido do Matt 2026-08-23) —
+// botão "Encaixe" da barra, mesmo padrão de projectCollisionEnabled
+// (portal-06b): persiste em localStorage, .active pinta o ícone. Nasce
+// LIGADO (pedido original) — só fica desligado se o Matt já tiver desligado
+// antes nesta máquina.
+//
+// BUG CORRIGIDO (2026-08-23, "esse botao nao consigo desselecionar"): existem
+// TRÊS cenas 3D independentes nesta aba, cada uma sua própria instância de
+// ViewerComposition.createInstance() (portas/gavetas/rodapé são estado POR
+// INSTÂNCIA, de propósito — ver comentário em createViewerComposition3D):
+//   - ViewerProject     -> modal "Visualizar 3D" (generateProject3D, abaixo)
+//   - ViewerProjectEdit -> Vista de Canto interativa (o canvas principal que
+//     o cliente vê o tempo todo, ver renderProjectCanvasFrontCorner em
+//     portal-06c-projetos-canvas-3d-acoes.js) — É ESTA que o Matt está
+//     olhando quando clica o botão.
+// O botão só sincronizava ViewerProject — a cena que o Matt via de verdade
+// (ViewerProjectEdit) nascia sempre com autoJoinBaseboards=true e NUNCA era
+// tocada, então parecia "preso" ligado não importa quantas vezes clicasse.
+// Sincroniza as DUAS agora, sempre juntas.
+function syncBaseboardJoinToViewer(viewer, enabled) {
+  if (viewer && viewer.areBaseboardsAutoJoined && viewer.toggleAutoJoinBaseboards) {
+    if (viewer.areBaseboardsAutoJoined() !== enabled) viewer.toggleAutoJoinBaseboards();
+  }
+}
+
+let projectBaseboardJoinEnabled = true;
+try {
+  const saved = localStorage.getItem('legno_proj_baseboard_join');
+  if (saved != null) projectBaseboardJoinEnabled = saved === '1';
+} catch (e) { /* ok sem persistir */ }
+syncBaseboardJoinToViewer(ViewerProject, projectBaseboardJoinEnabled);
+syncBaseboardJoinToViewer(typeof ViewerProjectEdit !== 'undefined' ? ViewerProjectEdit : null, projectBaseboardJoinEnabled);
+
+function setProjectBaseboardJoinEnabled(on) {
+  projectBaseboardJoinEnabled = !!on;
+  try { localStorage.setItem('legno_proj_baseboard_join', projectBaseboardJoinEnabled ? '1' : '0'); } catch (e) { /* ok */ }
+  const btn = document.getElementById('po-proj-baseboard-join-btn');
+  if (btn) btn.classList.toggle('active', projectBaseboardJoinEnabled);
+  syncBaseboardJoinToViewer(ViewerProject, projectBaseboardJoinEnabled);
+  syncBaseboardJoinToViewer(typeof ViewerProjectEdit !== 'undefined' ? ViewerProjectEdit : null, projectBaseboardJoinEnabled);
+  // Refaz as cenas AGORA — sem isso o botão só valeria da próxima vez que
+  // algo mais mexesse no projeto (mover módulo, trocar cor...), o que pro
+  // usuário parece um botão quebrado. generateProject3D() é só o modal
+  // "Visualizar 3D"; renderProjectCanvas() é o canvas principal (Vista de
+  // Canto) que o Matt realmente está olhando — os dois precisam redesenhar.
+  generateProject3D();
+  if (typeof renderProjectCanvas === 'function') renderProjectCanvas();
+}
+
 // Monta os assemblies 3D dos módulos soltos no ambiente (mesma lógica de
 // buildCompositionAssemblies, ver comentário lá) + x_m/z_order (posição
 // livre no chão e profundidade da pilha, exclusivos do canvas 2D da
@@ -1929,6 +1978,16 @@ if (projToggleDrawersBtn) {
       // Sem 3D o botão não faz nada.
     }
   });
+}
+
+// Junção automática de rodapé (migration 137) — mesmo padrão do botão de
+// Colisão (portal-06b: setProjectCollisionEnabled), não do abrir-porta/
+// gaveta acima: é um toggle de sessão que fica ligado/desligado (classe
+// .active), não um verbo de ação com texto que troca.
+const projBaseboardJoinBtn = document.getElementById('po-proj-baseboard-join-btn');
+if (projBaseboardJoinBtn) {
+  projBaseboardJoinBtn.addEventListener('click', () => setProjectBaseboardJoinEnabled(!projectBaseboardJoinEnabled));
+  projBaseboardJoinBtn.classList.toggle('active', projectBaseboardJoinEnabled);
 }
 
 // ---------- TESTE de AR no navegador (2026-08-01, pedido do usuário) ----------
@@ -2444,6 +2503,10 @@ async function sendProjectToOrder() {
         dim_overrides: slot.dimOverrides,
         piece_color_overrides: buildPieceColorOverridesSnapshot(slot.pieceColorOverrides),
         selected_optional_component_ids: slot.selectedOptionalIds,
+        // removed_piece_ids (migration 134): peça removida manualmente pelo
+        // cliente no modal "Peças do móvel" — o ERP (furacao-ban/
+        // furacao-lote) precisa disto pra não cortar/furar peça removida.
+        removed_piece_ids: slot.removedPieceIds || [],
         // GEOMETRIA DO CONSTRUTOR DE VÃOS (migration 121). null quando o
         // slot não usa o construtor (a maioria). Não é o preço nem a
         // furação — é só onde cada peça do interior ficou, pra os
@@ -2822,6 +2885,11 @@ function serializeProjectSlots() {
     shelf_quantities: slot.shelfQuantities || {},
     dim_overrides: slot.dimOverrides || {},
     selected_optional_ids: slot.selectedOptionalIds || [],
+    // removed_piece_ids (2026-08-20): remoção manual de qualquer peça pelo
+    // cliente no modal "Peças do móvel" (pedido "quero remover qualquer
+    // peca") — cabe no mesmo jsonb de slots que já existe, sem migration,
+    // mesmo raciocínio do comentário do `layout` logo abaixo.
+    removed_piece_ids: slot.removedPieceIds || [],
     // Árvore de vãos montada no construtor de armário (spec §4.5 — cabe no
     // jsonb que já existe, sem migration). null = o cliente não mexeu.
     layout: slot.layout || null,

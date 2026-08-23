@@ -3374,6 +3374,29 @@ header.po-topnav {
 .po-proj-color-swatch:hover { box-shadow: 0 0 0 1px var(--accent) inset; }
 .po-proj-color-swatch.selected { border-color: var(--accent); }
 
+/* Movimentação fina (2026-08-23, pedido do Matt com print do Promob de
+   referência) — passo em mm/pol + setas que somam exatamente esse passo por
+   clique (ver nudgeProjectWallSlot/nudgeProjectFloorSlot/
+   nudgeProjectFloorSlotRotation em portal-06c-projetos-canvas-3d-acoes.js).
+   Especificidade `.po-proj-config-panel .po-proj-move-btn` de propósito —
+   precisa vencer `.po-proj-config-panel .secondary` (linha ~3324, que força
+   width:100%/margin-top:10px em QUALQUER botão .secondary do painel) sem
+   tocar naquela regra genérica, que outros botões do painel ainda usam. */
+.po-proj-config-move { margin-bottom: 10px; }
+.po-proj-move-step-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.po-proj-move-step-row label { font-size: 12px; color: var(--muted); min-width: 40px; }
+.po-proj-move-step-row .po-proj-move-step-input { width: 56px; padding: 3px 4px; font-size: 12px; text-align: right; }
+.po-proj-move-pad { display: flex; flex-direction: column; gap: 4px; }
+.po-proj-move-axis-row { display: flex; align-items: center; gap: 6px; }
+.po-proj-move-axis-label { font-size: 12px; color: var(--muted); min-width: 58px; flex: 1; }
+.po-proj-config-panel .po-proj-move-btn {
+  width: 30px; height: 26px; padding: 0; margin-top: 0; font-size: 13px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.po-proj-move-rotate-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.po-proj-move-rotate-row label { font-size: 12px; color: var(--muted); min-width: 40px; }
+.po-proj-move-rotate-step-input { width: 40px; padding: 3px 4px; font-size: 12px; text-align: right; }
+
 /* ---------- CTAs da aba Projetos: Visualizar 3D + Foto realista ----------
    (2026-08-03, pedido do usuário: "deixa os botoes mais atraentes, esta so
    um grande quadrado preto") — classes PRÓPRIAS, sem tocar na genérica
@@ -3750,6 +3773,24 @@ header.po-topnav {
 }
 .po-pieces-table td { padding: 6px; border-bottom: 1px solid #efece5; color: var(--text); }
 .po-pieces-table tbody tr:hover { background: #faf8f3; }
+
+/* Remover/restaurar/trocar cor por peça (2026-08-20) — "quero remover
+   qualquer peca", modal Peças do móvel. Linha removida fica riscada e
+   meio apagada em vez de sumir: é assim que dá pra restaurar sem precisar
+   de confirm() nativo (trava a automação/extensão do Chrome) — a ação
+   nunca é destrutiva de verdade, só um filtro. */
+.po-pieces-table tr.po-piece-removed td { opacity: 0.45; text-decoration: line-through; }
+.po-pieces-table tr.po-piece-removed td:last-child { text-decoration: none; } /* botão de restaurar continua legível */
+.po-piece-removed-badge { text-decoration: none; opacity: 1; font-size: 10px; color: var(--muted); }
+.po-piece-color-select { font-size: 12px; padding: 2px 4px; max-width: 140px; }
+.po-piece-remove-btn, .po-piece-restore-btn {
+  width: 26px; height: 26px; padding: 0; line-height: 1; font-size: 15px;
+  border-radius: 6px;
+}
+.po-piece-remove-btn { color: #b23b3b; border-color: #e7c9c9; }
+.po-piece-remove-btn:hover { background: #fbeaea; }
+.po-piece-restore-btn { color: #2f7a3d; border-color: #c8e0cc; }
+.po-piece-restore-btn:hover { background: #eaf6ec; }
 
 /* ==========================================================================
    BARRA CABENDO NA TELA — 2026-08-13

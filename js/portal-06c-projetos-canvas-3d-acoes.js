@@ -72,6 +72,26 @@ function projectSlotMaxDimForDrilling(slot, axis) {
   return teto + kEste;
 }
 
+// Aplica uma referência de SKU (module_dimension_presets.reference, mesmo
+// catálogo do dropdown "Selecionar referência" da vitrine — ver
+// moduleSkuPresetsByModuleId/loadModuleSkuPresets em portal-01-core-catalogo.js)
+// a um slot JÁ inserido no projeto. Pedido do usuário (2026-08-21, com print
+// do painel de configuração): "quando tem opcoes travas com sku deve ter um
+// dropbox mostrando as SKU pra rapida escolha" — o mesmo dropdown que já
+// existe na tela "New Quote" (clique = adiciona no carrinho já com aquela
+// medida) faltava aqui na aba Projetos (clique = aplica a medida no módulo
+// já selecionado). Uma referência pode definir só largura, só altura, ou as
+// duas — dimensão que ela não define fica como está (mesma regra de
+// addModuleToCartWithSku). Cada chamada de updateProjectSlotDimension já
+// recalcula preço/redesenha sozinha; chamar duas vezes (largura e depois
+// altura) é redundante mas inofensivo — mantém o mesmo caminho testado de
+// clamp/trava por eixo em vez de duplicar a lógica aqui.
+function applyProjectSlotSku(slot, sku) {
+  if (!sku) return;
+  if (sku.width_mm != null) updateProjectSlotDimension(slot, 'width', sku.width_mm);
+  if (sku.height_mm != null) updateProjectSlotDimension(slot, 'height', sku.height_mm);
+}
+
 function updateProjectSlotDimension(slot, axis, mm) {
   const m = slot.module;
   // Medida TRAVADA (width_locked/height_locked) — pedido do usuário
@@ -144,6 +164,129 @@ function applyColorToProjectSlot(slot, roleId, color) {
 function updateProjectSlotColor(slot, roleId, color) {
   applyColorToProjectSlot(slot, roleId, color);
   recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
+// ==========================================================================
+// MOVIMENTAÇÃO FINA (2026-08-23, pedido do Matt com print do Promob de
+// referência) — "movimentacao / rotacao fina do modulo ja inserido no
+// ambiente... coloco por exemplo 1mm e ele movimenta so essa quantidade pro
+// sentido que eu quero". Painel de configuração (po-proj-config-panel,
+// ver renderProjectConfigPanel) ganha um passo em mm/pol (lembrado durante a
+// sessão, não salvo no projeto — mesmo espírito de po-unit-select) + setas
+// que somam/subtraem exatamente esse passo do eixo escolhido, um clique = um
+// passo. Reaproveita os MESMOS clamps/mutação que o arraste já usa
+// (clampProjectSlotPosition, clampFloorSlotIntoRoom, resolveProjectSlotDepth)
+// — a seta não pode conseguir uma posição que o arraste recusaria.
+//
+// Dois modelos de posição coexistem (ver isFloorSlot):
+//   - módulo de PAREDE: x_mm (ao longo da parede) + floor_height_mm (altura
+//     do chão). Sem eixo de profundidade — módulo de parede está sempre
+//     encostado nela (z_order é só camada, não é uma medida). Sem rotação
+//     própria: a peça sempre olha pra fora da parede que ocupa.
+//   - módulo ILHA (placement='floor'): floor_x_mm/floor_z_mm (posição livre
+//     no piso) + floor_rotation_deg (giro livre, não só múltiplo de 90°).
+//
+// projectMoveStepMm/projectMoveRotateStepDeg persistem só em memória
+// (variável de módulo, não em `slot` nem no projeto) — trocar o passo com um
+// módulo selecionado e clicar noutro já continua no mesmo passo.
+let projectMoveStepMm = 1;
+let projectMoveRotateStepDeg = 1;
+
+// Módulo de PAREDE — axis 'x' (ao longo da parede) ou 'y' (altura do chão).
+function nudgeProjectWallSlot(slot, axis, deltaMm) {
+  if (axis === 'x') slot.x_mm = Number(slot.x_mm || 0) + deltaMm;
+  else slot.floor_height_mm = Number(slot.floor_height_mm || 0) + deltaMm;
+  // Mesmo clamp do arraste (largura da parede, recuo de canto, pé-direito) —
+  // ver clampProjectSlotPosition em portal-06b-projetos-canvas-ia-custo.js.
+  clampProjectSlotPosition(slot);
+  resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
+  renderProjectCanvas();
+  markProjectDirty();
+  renderProjectConfigPanel(); // atualiza a leitura de posição no painel
+}
+
+// Módulo ILHA — desloca no piso (dx/dz, mundo) e mantém dentro do retângulo
+// do ambiente (mesmo clamp do arraste livre, ver clampFloorSlotIntoRoom).
+function nudgeProjectFloorSlot(slot, dxMm, dzMm) {
+  slot.floor_x_mm = Number(slot.floor_x_mm || 0) + dxMm;
+  slot.floor_z_mm = Number(slot.floor_z_mm || 0) + dzMm;
+  clampFloorSlotIntoRoom(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
+// Módulo ILHA — gira em torno do próprio centro (graus, sentido livre, não
+// travado em 90° como o corner_rotation de peça-módulo do catálogo). Reclampa
+// a posição depois: girar troca a pegada (largura<->profundidade perto de
+// 90°) e pode empurrar a peça pra fora do retângulo do ambiente.
+function nudgeProjectFloorSlotRotation(slot, deltaDeg) {
+  slot.floor_rotation_deg = ((Number(slot.floor_rotation_deg || 0) + deltaDeg) % 360 + 360) % 360;
+  clampFloorSlotIntoRoom(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
+// ==========================================================================
+// REMOVER/RESTAURAR QUALQUER PEÇA (2026-08-20)
+// ==========================================================================
+// Pedido do Matt no modal "Peças do móvel": "nessa listagem eu gostaria de
+// poder remover alguma peca ou trocar de cor." Propus um default mais
+// conservador (só peça do Construtor, ou peça de casco com client_optional)
+// e ele foi explícito: "quero remover qualquer peca." — inclusive lateral,
+// fundo, base etc., sem depender de nenhuma flag do admin.
+//
+// slot.removedPieceIds guarda só os ids — a peça continua existindo em
+// slot.pieces/slot.layoutPieces (nada é apagado de verdade), então
+// restaurar é sempre possível e nenhum outro código (preço, 3D, furação)
+// precisa saber que "remover" existe além de checar essa lista uma vez —
+// ver projectSlotEffectivePieces (portal-06b) e o filtro espelhado nas
+// duas telas de furação do ERP (furacao-ban.js/furacao-lote.js).
+//
+// LIMITAÇÃO CONHECIDA: peça de catálogo com quantidade configurável pelo
+// cliente (shelfQuantities, ex. "3 prateleiras" do mesmo cadastro) tem UM
+// piece.id só pras N cópias — remover uma remove as N juntas. Peça do
+// Construtor (cada vão gera um id sintético PRÓPRIO, `lay:<nodeId>:<i>` em
+// layout-engine.js) não tem essa limitação: cada porta/prateleira/divisória
+// inserida no Construtor remove individualmente.
+function removeProjectSlotPiece(slot, pieceId) {
+  if (pieceId == null) return;
+  if (!slot.removedPieceIds) slot.removedPieceIds = [];
+  if (!slot.removedPieceIds.includes(pieceId)) slot.removedPieceIds.push(pieceId);
+  recomputeProjectSlotPricing(slot);
+  renderProjectSlotPiecesList(slot);
+  renderProjectSlotPiecesExploded(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
+function restoreProjectSlotPiece(slot, pieceId) {
+  if (pieceId == null || !slot.removedPieceIds) return;
+  slot.removedPieceIds = slot.removedPieceIds.filter((id) => id !== pieceId);
+  recomputeProjectSlotPricing(slot);
+  renderProjectSlotPiecesList(slot);
+  renderProjectSlotPiecesExploded(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
+// Cor de UMA instância de peça (migration 046, pieceColorOverrides) — mesmo
+// formato/mesma leitura já usada em todo o app (resolvePiecesForViewer,
+// Pricing.calculateAssembly/calculatePiece, buildCompositionAssemblies), só
+// que agora tem uma UI que escreve nele a partir do modal "Peças do móvel"
+// (antes só existia a leitura — ver [[pieceColorOverrides_so_leitura]] na
+// investigação desta sessão). Upsert por role_id dentro do piece_id, mesmo
+// padrão de applyColorToProjectSlot acima.
+function setProjectSlotPieceColor(slot, pieceId, roleId, color) {
+  if (pieceId == null || !roleId) return;
+  if (!slot.pieceColorOverrides) slot.pieceColorOverrides = {};
+  const perRole = { ...(slot.pieceColorOverrides[pieceId] || {}) };
+  perRole[roleId] = color;
+  slot.pieceColorOverrides = { ...slot.pieceColorOverrides, [pieceId]: perRole };
+  recomputeProjectSlotPricing(slot);
+  renderProjectSlotPiecesList(slot);
+  renderProjectSlotPiecesExploded(slot);
   renderProjectCanvas();
   markProjectDirty();
 }
@@ -285,15 +428,54 @@ function renderProjectConfigPanel() {
   // steppers (só o campo exato, editável por texto/Enter, como os outros
   // campos de medida do site) e label+input ficam colados, sem o
   // space-between que os separava (ver CSS .po-proj-config-dim-row).
-  const dimRow = (axis, label) => `
-    <div class="po-proj-config-dim-row">
-      <label>${label}</label>
-      <span class="po-proj-dim-value-wrap">
-        <input type="text" inputmode="decimal" class="po-proj-dim-input" data-axis="${axis}" value="${formatDimensionNumber(slot[`${axis}_mm`], unit)}" />
-        <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
-      </span>
-    </div>
-  `;
+  //
+  // Pedido do usuário (2026-08-21, com print do painel): "quando tem opcoes
+  // travas com sku deve ter um dropbox mostrando as SKU pra rapida escolha"
+  // — eixo TRAVADO (m.width_locked/height_locked) com valores cadastrados
+  // (module_dimension_presets, ver slot.widthPresetsLabeled/
+  // heightPresetsLabeled preenchidos por insertProjectModuleDefault/restore/
+  // duplicateProjectSlot) mostra um <select> com o rótulo/SKU de cada
+  // opção (mesmo texto "label — medida" do dropdown de tamanho do opcional
+  // aninhado, ver .po-optional-width-select em portal-01-core-catalogo.js)
+  // em vez do campo de texto livre — eixo travado já só aceitava esses
+  // valores mesmo (pickNearestPreset em updateProjectSlotDimension), só não
+  // tinha como VER as opções sem arrastar a flecha até bater numa. Eixo sem
+  // trava, ou travado mas sem preset cadastrado ainda (admin não populou),
+  // continua no campo de texto de sempre.
+  const dimRow = (axis, label) => {
+    const isLockedAxis = (axis === 'width' && m.width_locked) || (axis === 'height' && m.height_locked);
+    const labeledPresets = axis === 'width' ? (slot.widthPresetsLabeled || [])
+      : axis === 'height' ? (slot.heightPresetsLabeled || [])
+      : [];
+    if (isLockedAxis && labeledPresets.length) {
+      const currentMm = Number(slot[`${axis}_mm`]) || 0;
+      let bestIdx = 0, bestDiff = Infinity;
+      labeledPresets.forEach((p, i) => {
+        const diff = Math.abs(Number(p.value_mm) - currentMm);
+        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+      });
+      const options = labeledPresets.map((p, i) => `
+        <option value="${p.value_mm}"${i === bestIdx ? ' selected' : ''}>${p.label ? `${p.label} — ${formatDimension(p.value_mm, unit)}` : formatDimension(p.value_mm, unit)}</option>
+      `).join('');
+      return `
+        <div class="po-proj-config-dim-row">
+          <label>${label}</label>
+          <span class="po-proj-dim-value-wrap">
+            <select class="po-proj-dim-select" data-axis="${axis}">${options}</select>
+          </span>
+        </div>
+      `;
+    }
+    return `
+      <div class="po-proj-config-dim-row">
+        <label>${label}</label>
+        <span class="po-proj-dim-value-wrap">
+          <input type="text" inputmode="decimal" class="po-proj-dim-input" data-axis="${axis}" value="${formatDimensionNumber(slot[`${axis}_mm`], unit)}" />
+          <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+        </span>
+      </div>
+    `;
+  };
 
   const usedRoleIds = Array.from(collectUsedColorRoleIds(projectSlotEffectivePieces(slot)));
   const colorSections = usedRoleIds.map((roleId) => {
@@ -313,13 +495,92 @@ function renderProjectConfigPanel() {
     ? I18n.t('project.config_depth_value_front', { n: slot.z_order })
     : I18n.t('project.config_depth_value_back');
 
+  // Dropdown de referência/SKU (mesmo catálogo da vitrine "New Quote", ver
+  // moduleSkuPresetsByModuleId/skuOptionLabel em portal-01-core-catalogo.js)
+  // — só aparece se este módulo tem pelo menos 1 referência cadastrada.
+  // Pré-seleciona a referência que já bate com a medida atual do slot
+  // (findMatchingSkuReference), senão fica em "Selecionar..." sem aplicar
+  // nada sozinho.
+  const skuOptions = (typeof moduleSkuPresetsByModuleId !== 'undefined' ? moduleSkuPresetsByModuleId[m.id] : null) || [];
+  const currentSkuRef = skuOptions.length ? findMatchingSkuReference(m.id, slot.width_mm, slot.height_mm) : null;
+  const skuBlock = skuOptions.length ? `
+    <div class="po-proj-config-dim-row po-proj-config-sku-row">
+      <label>${I18n.t('step1.sku_label')}</label>
+      <select class="po-proj-config-sku-select">
+        <option value="">${I18n.t('step1.sku_placeholder')}</option>
+        ${skuOptions.map((s) => `<option value="${s.reference}"${s.reference === currentSkuRef ? ' selected' : ''}>${skuOptionLabelForUnit(s, unit)}</option>`).join('')}
+      </select>
+    </div>
+  ` : '';
+
+  // "Movimentação fina" (2026-08-23, pedido do Matt com print do Promob de
+  // referência) — ver nudgeProjectWallSlot/nudgeProjectFloorSlot/
+  // nudgeProjectFloorSlotRotation acima pro porquê dos dois modelos (parede
+  // vs. ilha). Módulo de parede também ganha a leitura "Posição" (chave de
+  // i18n já existia, sem uso — devia ser deixada de propósito por uma sessão
+  // anterior pra isto) pra dar feedback de onde ele está depois de cada seta,
+  // já que o 3D sozinho não deixa claro "quantos mm faltam pra encostar".
+  // Ilha (posição livre no piso) não ganha a leitura — o 3D já mostra o
+  // movimento em 2 eixos de uma vez, ao contrário da parede (1 eixo por vez).
+  const isFloor = isFloorSlot(slot);
+  const positionRow = !isFloor ? `
+    <div class="po-proj-config-row"><span>${I18n.t('project.config_position_label')}</span><span>${I18n.t('project.config_position_value', { x: formatDimension(slot.x_mm, unit), y: formatDimension(slot.floor_height_mm, unit) })}</span></div>
+  ` : '';
+  const moveAxesBlock = isFloor ? `
+    <div class="po-proj-move-axis-row">
+      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_x')}</span>
+      <button type="button" class="secondary po-proj-move-btn" data-move="x-1" title="-">◀</button>
+      <button type="button" class="secondary po-proj-move-btn" data-move="x1" title="+">▶</button>
+    </div>
+    <div class="po-proj-move-axis-row">
+      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_z')}</span>
+      <button type="button" class="secondary po-proj-move-btn" data-move="z-1" title="-">◀</button>
+      <button type="button" class="secondary po-proj-move-btn" data-move="z1" title="+">▶</button>
+    </div>
+  ` : `
+    <div class="po-proj-move-axis-row">
+      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_wall')}</span>
+      <button type="button" class="secondary po-proj-move-btn" data-move="x-1" title="-">◀</button>
+      <button type="button" class="secondary po-proj-move-btn" data-move="x1" title="+">▶</button>
+    </div>
+    <div class="po-proj-move-axis-row">
+      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_height')}</span>
+      <button type="button" class="secondary po-proj-move-btn" data-move="y-1" title="-">▼</button>
+      <button type="button" class="secondary po-proj-move-btn" data-move="y1" title="+">▲</button>
+    </div>
+  `;
+  const moveRotateBlock = isFloor ? `
+    <div class="po-proj-move-rotate-row">
+      <label>${I18n.t('project.move_rotate_label')}</label>
+      <button type="button" class="secondary po-proj-move-btn" data-rotate="-1" title="${I18n.t('project.move_rotate_label')} -">⟲</button>
+      <input type="text" inputmode="decimal" class="po-proj-move-rotate-step-input" value="${projectMoveRotateStepDeg}" />
+      <span class="po-proj-dim-unit">°</span>
+      <button type="button" class="secondary po-proj-move-btn" data-rotate="1" title="${I18n.t('project.move_rotate_label')} +">⟳</button>
+    </div>
+  ` : '';
+  const moveBlock = `
+    <div class="po-proj-config-move">
+      <span class="po-proj-config-section-label">${I18n.t('project.move_section_label')}</span>
+      <div class="po-proj-move-step-row">
+        <label>${I18n.t('project.move_step_label')}</label>
+        <input type="text" inputmode="decimal" class="po-proj-move-step-input" value="${formatDimensionNumber(projectMoveStepMm, unit)}" />
+        <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+      </div>
+      <div class="po-proj-move-pad">${moveAxesBlock}</div>
+      ${moveRotateBlock}
+    </div>
+  `;
+
   panel.innerHTML = `
     <h3>${slot.module.name}</h3>
+    ${skuBlock}
     <div class="po-proj-config-dims">
       ${dimRow('width', I18n.t('step1.filter_width'))}
       ${dimRow('height', I18n.t('step1.filter_height'))}
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
     </div>
+    ${positionRow}
+    ${moveBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     <div class="po-proj-config-row"><span>${I18n.t('project.config_depth_label')}</span><span>${depthLabel}</span></div>
     <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney((slot.result && slot.result.total) || 0)}</span></div>
@@ -338,12 +599,78 @@ function renderProjectConfigPanel() {
     });
     input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
   });
+  // Dropdown de SKU (eixo travado com preset cadastrado, ver dimRow acima) —
+  // escolher já aplica direto, mesmo caminho de sempre (updateProjectSlotDimension
+  // já sabe travar no preset mais próximo, aqui o valor já É um preset exato).
+  panel.querySelectorAll('.po-proj-dim-select').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const mm = Number(sel.value);
+      if (!isNaN(mm)) updateProjectSlotDimension(slot, sel.dataset.axis, mm);
+    });
+  });
+  const skuSelectEl = panel.querySelector('.po-proj-config-sku-select');
+  if (skuSelectEl) {
+    skuSelectEl.addEventListener('change', () => {
+      const reference = skuSelectEl.value;
+      if (!reference) return;
+      const sku = skuOptions.find((s) => s.reference === reference);
+      applyProjectSlotSku(slot, sku);
+      // updateProjectSlotDimension (chamada dentro de applyProjectSlotSku) só
+      // redesenha a CENA — os campos de Largura/Altura e o preço estimado
+      // aqui no painel ficariam com o valor velho até o usuário clicar em
+      // outra coisa. Reconstrói o painel inteiro pra refletir a medida nova
+      // (e a própria opção de SKU escolhida) na hora.
+      renderProjectConfigPanel();
+    });
+  }
   panel.querySelectorAll('.po-proj-color-swatch').forEach((el) => {
     el.addEventListener('click', () => {
       const roleId = el.dataset.roleId;
       const opts = (slot.colorOptionsByRole && slot.colorOptionsByRole[roleId]) || [];
       const color = opts.find((c) => String(c.id) === el.dataset.colorId);
       if (color) updateProjectSlotColor(slot, roleId, color);
+    });
+  });
+
+  // "Movimentação fina" — campo de passo (mesma conversão de unidade dos
+  // campos de medida acima, ver dimRow) + setas, ver moveBlock e
+  // nudgeProjectWallSlot/nudgeProjectFloorSlot/nudgeProjectFloorSlotRotation.
+  const moveStepInputEl = panel.querySelector('.po-proj-move-step-input');
+  if (moveStepInputEl) {
+    moveStepInputEl.addEventListener('change', () => {
+      const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const mm = parseDimensionInput(moveStepInputEl.value, unit2);
+      if (mm !== null && !isNaN(mm) && mm > 0) projectMoveStepMm = mm;
+      moveStepInputEl.value = formatDimensionNumber(projectMoveStepMm, unit2);
+    });
+    moveStepInputEl.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); moveStepInputEl.blur(); } });
+  }
+  panel.querySelectorAll('.po-proj-move-btn[data-move]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      // data-move: eixo + sinal grudados (ex: "x-1", "y1") — 1º char é o
+      // eixo, o resto (incl. sinal) é Number() direto.
+      const axis = btn.dataset.move[0];
+      const deltaMm = Number(btn.dataset.move.slice(1)) * projectMoveStepMm;
+      if (isFloor) {
+        if (axis === 'x') nudgeProjectFloorSlot(slot, deltaMm, 0);
+        else if (axis === 'z') nudgeProjectFloorSlot(slot, 0, deltaMm);
+      } else if (axis === 'x' || axis === 'y') {
+        nudgeProjectWallSlot(slot, axis, deltaMm);
+      }
+    });
+  });
+  const rotateStepInputEl = panel.querySelector('.po-proj-move-rotate-step-input');
+  if (rotateStepInputEl) {
+    rotateStepInputEl.addEventListener('change', () => {
+      const deg = parseFloat(String(rotateStepInputEl.value).replace(',', '.'));
+      if (!isNaN(deg) && deg > 0) projectMoveRotateStepDeg = deg;
+      rotateStepInputEl.value = String(projectMoveRotateStepDeg);
+    });
+    rotateStepInputEl.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); rotateStepInputEl.blur(); } });
+  }
+  panel.querySelectorAll('.po-proj-move-btn[data-rotate]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      nudgeProjectFloorSlotRotation(slot, Number(btn.dataset.rotate) * projectMoveRotateStepDeg);
     });
   });
 
@@ -1585,11 +1912,19 @@ async function replaceProjectSlotModule(slotId, novoModuleId) {
 // conferência usasse outra conta, ela deixaria de ser conferência.
 let piecesViewer = null;
 let piecesAssembly = null;
+// Slot do modal ABERTO no momento — os botões de remover/restaurar e o
+// seletor de cor (delegados em #po-pieces-list, ver ligaPecasDoMovel) usam
+// isto pra achar o slot de novo no clique, em vez de fechar sobre a
+// referência `slot` do render (que ficaria presa ao slot de quando o modal
+// abriu, e um clique rápido em "remover" logo após trocar de módulo
+// selecionado bateria no slot errado).
+let piecesModalSlotId = null;
 
 function openProjectSlotPieces(slotId) {
   const slot = projectSlots.find((s) => s.id === slotId);
   const modal = document.getElementById('po-pieces-modal');
   if (!slot || !modal) return;
+  piecesModalSlotId = slotId;
   const titulo = document.getElementById('po-pieces-title');
   if (titulo) titulo.textContent = (slot.module && slot.module.name) || I18n.t('pieces.modal_title');
   modal.classList.add('open');
@@ -1599,11 +1934,18 @@ function openProjectSlotPieces(slotId) {
 
 // Achata a árvore (peça-módulo tem filhas) — a conferência quer a peça que vai
 // pra serra, não o agrupamento.
+//
+// FIX (2026-08-20): estava lendo `p.child_parts`, mas resolvePiecesForViewer
+// (js/module-pieces.js) escreve `child_pieces` — o ramo de peça-módulo
+// aninhada nunca expandia de verdade, ela só aparecia como 1 linha só
+// (fallback do `else`). Achado ao dar `piece_id` a cada linha pra remoção;
+// não tinha bug report do usuário porque os módulos testados até aqui não
+// tinham peça aninhada com filhos resolvidos.
 function flatProjectPieces(parts, prefixo) {
   const saida = [];
   (parts || []).forEach((p) => {
-    if (p.is_module && Array.isArray(p.child_parts) && p.child_parts.length) {
-      saida.push(...flatProjectPieces(p.child_parts, (prefixo ? prefixo + ' · ' : '') + (p.module_name || p.reference || '')));
+    if (p.is_module && Array.isArray(p.child_pieces) && p.child_pieces.length) {
+      saida.push(...flatProjectPieces(p.child_pieces, (prefixo ? prefixo + ' · ' : '') + (p.reference || '')));
     } else {
       saida.push({ p, grupo: prefixo || '' });
     }
@@ -1611,6 +1953,11 @@ function flatProjectPieces(parts, prefixo) {
   return saida;
 }
 
+// "quero remover qualquer peca" (2026-08-20) — lista TODAS as peças,
+// inclusive a já removida (mostrada riscada, com botão de restaurar), por
+// isso usa projectSlotAllPiecesBeforeRemoval em vez de
+// projectSlotEffectivePieces (essa segunda seria o que sobra DEPOIS da
+// remoção — não dá pra restaurar o que nem aparece mais).
 function renderProjectSlotPiecesList(slot) {
   const el = document.getElementById('po-pieces-list');
   if (!el) return;
@@ -1618,13 +1965,16 @@ function renderProjectSlotPiecesList(slot) {
   let parts = [];
   try {
     parts = resolvePiecesForViewer(
-      projectSlotEffectivePieces(slot),
+      projectSlotAllPiecesBeforeRemoval(slot),
       { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm },
       slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
     ) || [];
   } catch (e) { parts = []; }
   const linhas = flatProjectPieces(parts);
   if (!linhas.length) { el.innerHTML = '<p class="hint">' + I18n.t('pieces.empty') + '</p>'; return; }
+
+  const removidas = slot.removedPieceIds || [];
+  const colorOptionsByRole = slot.colorOptionsByRole || {};
 
   // Maior × médio × menor: é assim que a peça chega na serra, e é assim que a
   // lista de corte do ERP já mostra. Guardar "largura/altura/profundidade"
@@ -1636,19 +1986,52 @@ function renderProjectSlotPiecesList(slot) {
   el.innerHTML = '<table class="po-pieces-table"><thead><tr>'
     + '<th>#</th><th>' + I18n.t('pieces.col_piece') + '</th><th>' + I18n.t('pieces.col_length')
     + '</th><th>' + I18n.t('pieces.col_width') + '</th><th>' + I18n.t('pieces.col_thickness')
-    + '</th><th>' + I18n.t('pieces.col_color') + '</th><th>' + I18n.t('pieces.col_grain') + '</th>'
+    + '</th><th>' + I18n.t('pieces.col_color') + '</th><th>' + I18n.t('pieces.col_grain')
+    + '</th><th>' + I18n.t('pieces.col_actions') + '</th>'
     + '</tr></thead><tbody>'
     + linhas.map(({ p, grupo }, i) => {
       const d = dim(p);
-      const cor = (p.color && (p.color.name || p.color.code)) || '—';
+      const pieceId = p.piece_id;
+      const removida = pieceId != null && removidas.includes(pieceId);
       const veio = p.veio || (p.components && p.components.veio) || I18n.t('pieces.grain_free');
-      return '<tr data-idx="' + i + '"><td>' + (i + 1) + '</td>'
-        + '<td>' + escapeHtmlCutlist((grupo ? grupo + ' · ' : '') + (p.reference || p.module_name || '')) + '</td>'
+      const pieceIdAttr = escapeHtmlCutlist(pieceId == null ? '' : pieceId);
+      const nome = escapeHtmlCutlist((grupo ? grupo + ' · ' : '') + (p.reference || p.module_name || ''))
+        + (removida ? ' <span class="po-piece-removed-badge">(' + I18n.t('pieces.removed_badge') + ')</span>' : '');
+
+      // Cor: seletor só quando o papel de cor desta peça tem mais de 1 opção
+      // cadastrada (pedido original: "trocar de cor" faz sentido quando há
+      // pra onde trocar) — senão mostra só o nome, igual sempre foi.
+      const opcoesCor = (p.color_role_id && colorOptionsByRole[p.color_role_id]) || [];
+      let corCell;
+      if (!removida && p.color_role_id && opcoesCor.length > 1) {
+        const currentId = p.color && p.color.id;
+        corCell = '<select class="po-piece-color-select" data-piece-id="' + pieceIdAttr
+          + '" data-role-id="' + escapeHtmlCutlist(p.color_role_id) + '">'
+          + opcoesCor.map((c) => '<option value="' + escapeHtmlCutlist(c.id) + '"'
+            + (c.id === currentId ? ' selected' : '') + '>' + escapeHtmlCutlist(c.name) + '</option>').join('')
+          + '</select>';
+      } else {
+        const cor = (p.color && (p.color.name || p.color.code)) || '—';
+        corCell = escapeHtmlCutlist(cor);
+      }
+
+      // Ação: remover qualquer peça, sem gating de client_optional (pedido
+      // explícito do Matt) — restaurar sempre disponível, sem confirm()
+      // nativo (trava o resto da extensão do Chrome/qualquer automação).
+      const acaoCell = pieceId == null ? '' : (removida
+        ? '<button type="button" class="secondary po-piece-restore-btn" data-piece-action="restore" data-piece-id="' + pieceIdAttr
+          + '" title="' + escapeHtmlCutlist(I18n.t('pieces.restore_btn')) + '">↺</button>'
+        : '<button type="button" class="secondary po-piece-remove-btn" data-piece-action="remove" data-piece-id="' + pieceIdAttr
+          + '" title="' + escapeHtmlCutlist(I18n.t('pieces.remove_btn')) + '">×</button>');
+
+      return '<tr data-idx="' + i + '"' + (removida ? ' class="po-piece-removed"' : '') + '><td>' + (i + 1) + '</td>'
+        + '<td>' + nome + '</td>'
         + '<td>' + formatDimension(d.c, unit) + '</td>'
         + '<td>' + formatDimension(d.l, unit) + '</td>'
         + '<td>' + formatDimension(d.e, unit) + '</td>'
-        + '<td>' + escapeHtmlCutlist(cor) + '</td>'
-        + '<td>' + escapeHtmlCutlist(veio) + '</td></tr>';
+        + '<td>' + corCell + '</td>'
+        + '<td>' + escapeHtmlCutlist(veio) + '</td>'
+        + '<td>' + acaoCell + '</td></tr>';
     }).join('')
     + '</tbody></table>'
     + '<p class="hint">' + I18n.t('pieces.footer_hint', { n: linhas.length }) + '</p>';
@@ -1725,6 +2108,35 @@ function aplicaExplosao() {
   });
   const range = document.getElementById('po-pieces-explode');
   if (range) range.addEventListener('input', aplicaExplosao);
+
+  // Remover/restaurar/trocar cor por peça (2026-08-20) — delegado no
+  // container em vez de um listener por linha: a tabela inteira é
+  // reconstruída (innerHTML) a cada ação, então listener por linha vazaria
+  // (o elemento antigo morre, mas closures acumulam) ou precisaria ser
+  // religado toda vez. Delegado, liga uma vez só aqui.
+  const lista = document.getElementById('po-pieces-list');
+  if (lista) {
+    lista.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-piece-action]');
+      if (!btn || !lista.contains(btn)) return;
+      const slot = projectSlots.find((s) => s.id === piecesModalSlotId);
+      if (!slot) return;
+      const pieceId = btn.getAttribute('data-piece-id');
+      if (btn.getAttribute('data-piece-action') === 'remove') removeProjectSlotPiece(slot, pieceId);
+      else if (btn.getAttribute('data-piece-action') === 'restore') restoreProjectSlotPiece(slot, pieceId);
+    });
+    lista.addEventListener('change', (e) => {
+      const sel = e.target.closest('select.po-piece-color-select');
+      if (!sel || !lista.contains(sel)) return;
+      const slot = projectSlots.find((s) => s.id === piecesModalSlotId);
+      if (!slot) return;
+      const pieceId = sel.getAttribute('data-piece-id');
+      const roleId = sel.getAttribute('data-role-id');
+      const colors = (slot.colorOptionsByRole && slot.colorOptionsByRole[roleId]) || [];
+      const color = colors.find((c) => c.id === sel.value);
+      if (color) setProjectSlotPieceColor(slot, pieceId, roleId, color);
+    });
+  }
 })();
 
 const projSlotReplaceBtn = document.getElementById('po-proj-slot-replace-btn');

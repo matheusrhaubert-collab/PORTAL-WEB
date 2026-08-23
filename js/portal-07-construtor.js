@@ -231,7 +231,14 @@ async function openProjectModuleBuilder(slotId) {
 function rebuildProjectBuilder(reselecionar) {
   if (!projectBuilderRoot || !projectBuilderZone) return;
   try {
-    projectBuilderBuilt = LayoutEngine.build(projectBuilderRoot, projectBuilderZone, {
+    // Sobreposição manual do vão raiz (arrastar as 4 bordas, 2026-08-21 2ª
+    // rodada) entra AQUI — por cima da zona deduzida do casco, só em x/y/w/h.
+    // Ver projectBuilderRootZoneEfetiva.
+    const zonaEfetiva = projectBuilderRootZoneEfetiva(
+      projectBuilderZone, projectBuilderRoot,
+      projectSlots.find((s) => s.id === projectBuilderSlotId)
+    );
+    projectBuilderBuilt = LayoutEngine.build(projectBuilderRoot, zonaEfetiva, {
       catalogo: projectBuilderCat,
       espessura: PROJECT_BUILDER_ESPESSURA,
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
@@ -254,6 +261,55 @@ function rebuildProjectBuilder(reselecionar) {
   }
   renderProjectBuilderStage();
   renderProjectBuilderLibrary();
+}
+
+// VÃO RAIZ — sobreposição manual (2026-08-21, 2ª rodada). Matt, depois do
+// 1º fix (digitar a medida do vão raiz mudava o MÓDULO inteiro): "nao me
+// ajudou . preciso mexer com setas e alinhas com as pecas do movel se
+// quiser. hoje ele deixa eu reduzir mas nao deixa eu deslocar. ou seja, nao
+// tenho controle do vao que quero utilizar". Confirmou querer arrastar as 4
+// bordas livremente (sem soma preservada com vizinho, porque o vão raiz não
+// tem vizinho — é o próprio interior do módulo).
+//
+// `projectBuilderRoot.params.zoneOverride` = {x,y,w,h} em mm, no sistema de
+// coordenadas do módulo (mesmo de projectBuilderZone) — quando presente,
+// substitui x/y/w/h da zona DEDUZIDA do casco (computeProjectSlotInnerZone)
+// só nesses 4 campos; z/d/temFundo (profundidade) sempre continuam vindo da
+// dedução, porque a tela 2D do Construtor é só frente (W×H), não edita
+// profundidade. Guardado em `params` de propósito: é o único campo genérico
+// que LayoutEngine.serialize/deserialize já carregam de um lado pro outro
+// sem precisar mexer em layout-engine.js (serialize whitelista id/splitAxis/
+// splitAcc/sizeMode/sizeValue/content/fronts/params/locked/children — ver lá
+// — e `params` sempre foi passthrough).
+//
+// Reclampa a CADA rebuild (não só no momento do arrasto) contra o W/H ATUAL
+// do módulo — rede de segurança pro caso de o módulo ter mudado de tamanho
+// por fora (canvas principal) enquanto essa sobreposição antiga ainda
+// existia; sem isso reabrir o Construtor podia mostrar um vão maior que o
+// próprio módulo.
+function projectBuilderRootZoneEfetiva(zonaAuto, root, slot) {
+  const ov = root && root.params && root.params.zoneOverride;
+  if (!ov || !zonaAuto) return zonaAuto;
+  const W = Number((slot && slot.width_mm) || 0) || (zonaAuto.x + zonaAuto.w);
+  const H = Number((slot && slot.height_mm) || 0) || (zonaAuto.y + zonaAuto.h);
+  let x0 = Math.max(0, Number(ov.x) || 0);
+  let y0 = Math.max(0, Number(ov.y) || 0);
+  let w = Math.max(PROJECT_BUILDER_MIN_VAO, Number(ov.w) || 0);
+  let h = Math.max(PROJECT_BUILDER_MIN_VAO, Number(ov.h) || 0);
+  if (x0 + w > W) { if (x0 > W - PROJECT_BUILDER_MIN_VAO) x0 = Math.max(0, W - PROJECT_BUILDER_MIN_VAO); w = Math.max(PROJECT_BUILDER_MIN_VAO, W - x0); }
+  if (y0 + h > H) { if (y0 > H - PROJECT_BUILDER_MIN_VAO) y0 = Math.max(0, H - PROJECT_BUILDER_MIN_VAO); h = Math.max(PROJECT_BUILDER_MIN_VAO, H - y0); }
+  return Object.assign({}, zonaAuto, { x: x0, y: y0, w: w, h: h });
+}
+
+// Apaga a sobreposição manual — volta a usar a zona deduzida do casco. Sem
+// isso não teria como "desfazer" um arrasto ruim a não ser pelo ↶ do
+// cabeçalho (que também funciona, mas exige acertar o número de passos).
+function clearProjectBuilderRootZoneOverride() {
+  if (!projectBuilderRoot || !projectBuilderRoot.params || !projectBuilderRoot.params.zoneOverride) return;
+  pushProjectBuilderUndo();
+  delete projectBuilderRoot.params.zoneOverride;
+  markProjectDirty();
+  rebuildProjectBuilder();
 }
 
 function pushProjectBuilderUndo() {
@@ -824,6 +880,18 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     // slug: é por ele que o ícone é escolhido (os 13 da migration 087).
     slug: a.slug || null,
     group: a.group_name || I18n.t('builder.group_other'),
+    // group_name CRU (2026-08-20, bug do Matt: "a gaveta entra sem a
+    // frente"): layout-engine.js/emitContent decide se sintetiza a frente
+    // automática de gaveta olhando `acc.group_name === 'Gavetas'` (ver
+    // frente_de_gaveta_agregada na memória) — mas esta função só expunha
+    // `group` (já traduzido/com fallback pro chip de UI, nunca 'Gavetas'
+    // sozinho quando I18n troca o texto). O motor recebia group_name
+    // undefined pra QUALQUER acessório vindo deste catálogo — a condição
+    // nunca batia, a gaveta entrava sem frente nenhuma. `group` continua
+    // aqui do jeito que estava (é o que os chips/filtro da biblioteca leem,
+    // linhas ~1215/1236/1238/1259) — isto só ACRESCENTA o valor cru pro
+    // motor, sem mexer no que a UI já usa.
+    group_name: a.group_name || null,
     icon: a.icon || null,
     role: a.role,
     axis: a.split_axis || null,
@@ -833,6 +901,15 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     folhas: Number(p.folhas) === 2 ? 2 : 1,
     shape_type: a.shape_type || null,
     color_role_id: a.color_role_id || null,
+    // MODELO de abertura de porta (migration 132, 2026-08-20) — é isto que
+    // LayoutEngine.emitFrontsResolvidos lê pra decidir a matemática externa/
+    // interna e a dobra automática de folhas. Faltou aqui na 1ª entrega:
+    // a linha vinha certa do banco (select('*')) mas o catálogo em memória
+    // nunca copiava os 2 campos pra fora — toda porta caía no ramo "sem
+    // door_position" (comportamento antigo, sem folga nenhuma), porque
+    // era exatamente o que faltava.
+    door_mechanism: a.door_mechanism || null,
+    door_position: a.door_position || null,
     // Programa de furação POR USO (migration 125) — espelha
     // CONSTR.catalogoDoBanco (erp/js/data-construtor.js), mesmo campo.
     drilling_pattern_id: a.drilling_pattern_id || null,
@@ -947,7 +1024,13 @@ function projectBuilderIcon(acc) {
     div_vert: S.divisoria, prat_fixa: S.prateleira, prat_movel: S.prateleira,
     prat_inclinada: S.inclinada, gaveta: S.gaveta, gaveta_afast: S.gaveta,
     gaveteiro: S.gaveteiro, porta_ext: S.porta, porta_int: S.porta_int,
-    porta_dupla: S.porta_dupla, cabide: S.cabide, cesto: S.cesto, ripado: S.ripado
+    porta_dupla: S.porta_dupla, cabide: S.cabide, cesto: S.cesto, ripado: S.ripado,
+    // Migration 132 (2026-08-20) — 6 mecanismos de porta novos. Sem ícone
+    // próprio ainda (nenhum foi desenhado): reaproveita porta/porta_int
+    // (mesmo espírito de 'base' reaproveitar o desenho de 'prateleira').
+    frente_gaveta_externa: S.porta, porta_giro_externa: S.porta,
+    basculante: S.porta, basculante_inverso: S.porta,
+    frente_gaveta_interna: S.porta_int, porta_giro_interna: S.porta_int
   };
   if (porSlug[slug]) return porSlug[slug];
 
@@ -1002,7 +1085,51 @@ function projectBuilderSelNode() {
   if (!projectBuilderRoot) return null;
   return LayoutEngine.findNode(projectBuilderRoot, projectBuilderSelId) || projectBuilderRoot;
 }
+
+// Faixa pintada (2+ vãos arrastados, ver projectBuilderSelIds) traduzida pra
+// {pai, kids, de, ate} — de/ate são índices em kids, o mesmo par que
+// LayoutEngine.applyFront(pai, acc, de, ate, cat) espera. Extraído aqui
+// (2026-08-20) porque ANTES só existia dentro de insertProjectBuilderItem
+// (o momento de aplicar a peça) — projectBuilderSelBox (o momento de decidir
+// o que MOSTRAR na biblioteca) não sabia nada da faixa e usava só o
+// vão-âncora. Ver o comentário em projectBuilderSelBox.
+function projectBuilderFaixaAtual() {
+  if (projectBuilderSelIds.length <= 1) return null;
+  const faixa = projectBuilderIrmaos(projectBuilderSelIds[0]);
+  if (!faixa) return null;
+  const idx = projectBuilderSelIds
+    .map((id) => faixa.kids.findIndex((k) => k.id === id))
+    .filter((i) => i >= 0);
+  if (!idx.length) return null;
+  return { pai: faixa.pai, kids: faixa.kids, de: Math.min(...idx), ate: Math.max(...idx) };
+}
+
 function projectBuilderSelBox() {
+  // Faixa pintada (2026-08-20, Matt: "quando tenho que colocar varias
+  // prateleiras e uma porta cobrindo todas elas, gostaria de clicar e
+  // arrastar o mouse nos vaos que quero aplicar a porta... essa funcao nao
+  // existe hoje"). A função JÁ EXISTIA (arraste, seleção, applyFront com
+  // from/to) — o que faltava era isto aqui: o filtro "o que cabe" (biblioteca
+  // de componentes) olhava só o vão-ÂNCORA (onde o arraste começou), não a
+  // faixa inteira. Numa pilha de prateleiras pequenas (ex.: vão de 35mm),
+  // isso fazia TODA porta sumir da lista por "não caber" — mesmo a faixa
+  // inteira, coberta pelos 3+ vãos juntos, sendo bem maior. Union box dos
+  // _boxFull dos vãos cobertos: é a MESMA conta que
+  // LayoutEngine.emitFrontsResolvidos faz pra achar a caixa de um front com
+  // from/to (bounding box dos filhos, ver layout-engine.js) — sem isso o
+  // filtro e o resultado real podiam discordar sobre o que cabe.
+  const faixa = projectBuilderFaixaAtual();
+  if (faixa) {
+    const boxes = faixa.kids.slice(faixa.de, faixa.ate + 1)
+      .map((k) => k._boxFull).filter(Boolean);
+    if (boxes.length === (faixa.ate - faixa.de + 1)) {
+      const x0 = Math.min(...boxes.map((b) => b.x));
+      const y0 = Math.min(...boxes.map((b) => b.y));
+      const x1 = Math.max(...boxes.map((b) => b.x + b.w));
+      const y1 = Math.max(...boxes.map((b) => b.y + b.h));
+      return { x: x0, y: y0, z: boxes[0].z, w: x1 - x0, h: y1 - y0, d: Math.max(...boxes.map((b) => b.d)) };
+    }
+  }
   const n = projectBuilderSelNode();
   return (n && (n._box || n._boxFull)) || projectBuilderZone || null;
 }
@@ -1135,6 +1262,19 @@ function fillProjectBuilderLibGrid() {
     // (resolveDepthVariant), batendo a profundidade real do vão. Sem isto o
     // cliente veria "Gaveta" duplicada uma vez por faixa cadastrada.
     .filter((k) => !projectBuilderCat[k].depth_variant_of)
+    // Filler de lateral compartilhada (migration 132) é sintetizado sozinho
+    // pela engine (LayoutEngine emitFrontsResolvidos) — nunca é algo que o
+    // cliente escolhe e arrasta pro vão, então nunca aparece na biblioteca.
+    .filter((k) => projectBuilderCat[k].slug !== '_filler_lateral_porta')
+    // Frente de gaveta (2026-08-20, Matt: "ela nao e um item separado do
+    // construtor, ela pode ate ficar oculta no construtor. ela vai agregada
+    // com a propria gaveta") — mesmo espírito do filler acima:
+    // LayoutEngine.emitContent sintetiza sozinho uma frente_gaveta_externa
+    // grudada em CADA gaveta/gaveta_afast/gaveteiro inserido (ver
+    // FRENTE_GAVETA_ACCKEY em layout-engine.js); o cliente nunca escolhe
+    // "Frente de Gaveta" solta na biblioteca pra arrastar num vão vazio.
+    .filter((k) => projectBuilderCat[k].slug !== 'frente_gaveta_externa'
+      && projectBuilderCat[k].slug !== 'frente_gaveta_interna')
     .filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]));
 
   // ---- chips: "Todos" + um por grupo do que cabe AQUI ----
@@ -1419,29 +1559,129 @@ function renderProjectBuilderStage() {
     }, svg);
     // Só dá pra digitar a medida do eixo em que o vão foi DIVIDIDO: é esse o
     // número que tem um vizinho pra ceder espaço. Vão raiz (sem pai) não tem
-    // de quem tirar, então continua só de leitura.
-    const eixoEdit = projectBuilderVaoAxis(nSel);
-    const t = projBuilderSvgEl('text', {
-      x: bSel.x + bSel.w / 2, y: sy(bSel.y + bSel.h) - fs * 0.35,
-      'text-anchor': 'middle', 'font-size': fs * 0.75, fill: '#e0921f',
-      'font-family': 'sans-serif',
-      'pointer-events': eixoEdit ? 'auto' : 'none',
-      style: eixoEdit ? 'cursor:text' : ''
-    }, svg);
-    t.textContent = Math.round(bSel.w) + ' × ' + Math.round(bSel.h);
-    if (eixoEdit) {
-      // Sublinhado tracejado = "isto se edita". Sem texto explicativo, no
-      // espírito da tela (o rodapé já carrega a dica).
-      projBuilderSvgEl('line', {
-        x1: bSel.x + bSel.w / 2 - fs * 1.6, x2: bSel.x + bSel.w / 2 + fs * 1.6,
-        y1: sy(bSel.y + bSel.h) - fs * 0.1, y2: sy(bSel.y + bSel.h) - fs * 0.1,
-        stroke: '#e0921f', 'stroke-width': sw * 0.9,
-        'stroke-dasharray': (sw * 3) + ' ' + (sw * 3), 'pointer-events': 'none'
+    // de quem tirar — mas dá pra editar do mesmo jeito, só que mudando o
+    // MÓDULO em vez de repartir espaço interno (ver bloco isRoot abaixo e
+    // applyProjectBuilderRootSize).
+    // !nSel.locked de propósito: um vão raiz travado (engenharia) cai no
+    // ramo "else" abaixo, que já é read-only pra locked (mesma checagem que
+    // projectBuilderVaoAxis faz pros vãos internos).
+    const isRoot = nSel === projectBuilderRoot && !nSel.locked;
+    const eixoEdit = isRoot ? null : projectBuilderVaoAxis(nSel);
+    if (isRoot) {
+      // Vão RAIZ (2026-08-21, Matt: "preciso mexer aqui, antes de qualquer
+      // item inserido"): largura e altura vêm as DUAS direto do módulo — não
+      // existe aqui um "eixo único da divisão" como nos vãos internos, então
+      // cada número é um alvo de clique separado (largura edita width_mm,
+      // altura edita height_mm). Desenha primeiro em x=0 e reposiciona pelas
+      // larguras reais (getBBox) pra centralizar o bloco igual ao texto único
+      // dos vãos internos, sem chutar largura de fonte por caractere.
+      const wStr = String(Math.round(bSel.w));
+      const hStr = String(Math.round(bSel.h));
+      const sep = ' × ';
+      const yTxt = sy(bSel.y + bSel.h) - fs * 0.35;
+      const mkTxt = (str) => {
+        const el = projBuilderSvgEl('text', {
+          x: 0, y: yTxt, 'text-anchor': 'start', 'font-size': fs * 0.75,
+          fill: '#e0921f', 'font-family': 'sans-serif', 'pointer-events': 'none'
+        }, svg);
+        el.textContent = str;
+        return el;
+      };
+      const tW = mkTxt(wStr), tSep = mkTxt(sep), tH = mkTxt(hStr);
+      let larguraW = 0, larguraSep = 0, larguraH = 0;
+      try {
+        larguraW = tW.getBBox().width;
+        larguraSep = tSep.getBBox().width;
+        larguraH = tH.getBBox().width;
+      } catch (e) { /* SVG desanexado (raro) — segue com 0, fica só desalinhado */ }
+      let cx = bSel.x + bSel.w / 2 - (larguraW + larguraSep + larguraH) / 2;
+      tW.setAttribute('x', cx); cx += larguraW;
+      tSep.setAttribute('x', cx); cx += larguraSep;
+      tH.setAttribute('x', cx);
+      const habilitar = (t, largura, eixo) => {
+        t.setAttribute('pointer-events', 'auto');
+        t.setAttribute('style', 'cursor:text');
+        const x0 = Number(t.getAttribute('x')) || 0;
+        projBuilderSvgEl('line', {
+          x1: x0, x2: x0 + largura,
+          y1: yTxt + fs * 0.1, y2: yTxt + fs * 0.1,
+          stroke: '#e0921f', 'stroke-width': sw * 0.9,
+          'stroke-dasharray': (sw * 3) + ' ' + (sw * 3), 'pointer-events': 'none'
+        }, svg);
+        t.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          openProjectBuilderSizeInput(t, nSel, eixo, applyProjectBuilderRootSize);
+        });
+      };
+      habilitar(tW, larguraW, 'x');
+      habilitar(tH, larguraH, 'y');
+
+      // Alças de arrastar as 4 bordas (2026-08-21, 2ª rodada — Matt: "hoje
+      // ele deixa eu reduzir mas nao deixa eu deslocar... nao tenho
+      // controle do vao que quero utilizar"). Uma tira grossa e invisível
+      // em cada borda do retângulo selecionado; arrastar move SÓ aquela
+      // borda (ver startProjectBuilderRootEdgeDrag) — diferente da
+      // divisória interna, aqui não tem vizinho pra preservar soma, então
+      // dá pra deslocar o vão inteiro (arrastar as duas bordas de um eixo,
+      // uma de cada vez) e não só encolher/esticar de um lado fixo.
+      const ALCA_ESP = Math.max(fs * 0.5, 7);
+      const yTopPx = sy(bSel.y + bSel.h), yBotPx = sy(bSel.y);
+      const mkAlca = (x1p, y1p, x2p, y2p, cursor, borda) => {
+        const hit = projBuilderSvgEl('line', {
+          x1: x1p, y1: y1p, x2: x2p, y2: y2p,
+          stroke: 'transparent', 'stroke-width': ALCA_ESP,
+          'pointer-events': 'stroke', style: 'cursor:' + cursor
+        }, svg);
+        hit.addEventListener('pointerdown', (ev) => startProjectBuilderRootEdgeDrag(ev, borda));
+      };
+      mkAlca(bSel.x, yTopPx, bSel.x + bSel.w, yTopPx, 'ns-resize', 'top');
+      mkAlca(bSel.x, yBotPx, bSel.x + bSel.w, yBotPx, 'ns-resize', 'bottom');
+      mkAlca(bSel.x, yTopPx, bSel.x, yBotPx, 'ew-resize', 'left');
+      mkAlca(bSel.x + bSel.w, yTopPx, bSel.x + bSel.w, yBotPx, 'ew-resize', 'right');
+
+      // ↺ volta a usar a zona deduzida do casco — só aparece depois de
+      // arrastar/digitar alguma coisa (sem sobreposição não tem o que
+      // desfazer aqui; o ↶ do cabeçalho continua valendo sempre).
+      if (projectBuilderRoot.params && projectBuilderRoot.params.zoneOverride) {
+        const rR = Math.max(fs * 0.62, 9);
+        const rCx = bSel.x + rR * 1.5, rCy = sy(bSel.y + bSel.h) + rR * 1.5;
+        const gReset = projBuilderSvgEl('g', { style: 'cursor:pointer' }, svg);
+        projBuilderSvgEl('circle', {
+          cx: rCx, cy: rCy, r: rR, fill: '#fff', stroke: '#2f6fb8', 'stroke-width': sw * 1.2
+        }, gReset);
+        const tReset = projBuilderSvgEl('text', {
+          x: rCx, y: rCy + rR * 0.36, 'text-anchor': 'middle', 'font-size': rR * 1.3,
+          fill: '#2f6fb8', 'font-family': 'sans-serif', 'pointer-events': 'none'
+        }, gReset);
+        tReset.textContent = '↺'; // ↺ — "voltar ao automático"
+        gReset.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          clearProjectBuilderRootZoneOverride();
+        });
+      }
+    } else {
+      const t = projBuilderSvgEl('text', {
+        x: bSel.x + bSel.w / 2, y: sy(bSel.y + bSel.h) - fs * 0.35,
+        'text-anchor': 'middle', 'font-size': fs * 0.75, fill: '#e0921f',
+        'font-family': 'sans-serif',
+        'pointer-events': eixoEdit ? 'auto' : 'none',
+        style: eixoEdit ? 'cursor:text' : ''
       }, svg);
-      t.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        openProjectBuilderSizeInput(t, nSel, eixoEdit);
-      });
+      t.textContent = Math.round(bSel.w) + ' × ' + Math.round(bSel.h);
+      if (eixoEdit) {
+        // Sublinhado tracejado = "isto se edita". Sem texto explicativo, no
+        // espírito da tela (o rodapé já carrega a dica).
+        projBuilderSvgEl('line', {
+          x1: bSel.x + bSel.w / 2 - fs * 1.6, x2: bSel.x + bSel.w / 2 + fs * 1.6,
+          y1: sy(bSel.y + bSel.h) - fs * 0.1, y2: sy(bSel.y + bSel.h) - fs * 0.1,
+          stroke: '#e0921f', 'stroke-width': sw * 0.9,
+          'stroke-dasharray': (sw * 3) + ' ' + (sw * 3), 'pointer-events': 'none'
+        }, svg);
+        t.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          openProjectBuilderSizeInput(t, nSel, eixoEdit);
+        });
+      }
     }
 
     // ---- ✕ APAGAR ESTE VÃO (2026-08-15, Matt: "uma vez que eu errei um vão,
@@ -1470,6 +1710,69 @@ function renderProjectBuilderStage() {
         ev.stopPropagation();
         deleteProjectBuilderVao(nSel);
       });
+    }
+
+    // ---- Porta Giro: dobra 1×2 folhas (500–600mm) + troca de lado
+    // (migration 132, 2026-08-20 — Matt: "uma porta deve ter opcao de troca
+    // de posicao de direita pra esquerda" / "de 500 a 600 podera ter opcao
+    // de 2 OU 1 porta para o cliente escolher"). Só aparece quando o vão
+    // selecionado tem um front cujo agregado resolve door_mechanism=
+    // 'porta_giro' — LayoutEngine.folhasEfetivas é a MESMA função que o
+    // resolvedor usa (js/layout-engine.js), pra nunca dessincronizar da
+    // regra real de largura.
+    const fSel = (nSel.fronts || []).find((fr) => fr.from == null) || null;
+    const accSel = fSel && projectBuilderCat[fSel.acc];
+    if (fSel && accSel && accSel.door_mechanism === 'porta_giro') {
+      const pSel = Object.assign({}, accSel.params, fSel.params || {});
+      const folhasAtuais = LayoutEngine.folhasEfetivas(accSel, bSel.w, pSel);
+      const btnR = Math.max(fs * 0.62, 9);
+      const by = sy(bSel.y + bSel.h) + btnR * 1.5;
+      let bx = bSel.x + btnR * 1.5;
+
+      // 1×2 folhas — só na faixa de indecisão (o cliente escolhe); fora
+      // dela a dobra já é automática e não tem o que trocar aqui.
+      if (bSel.w > 500 && bSel.w <= 600) {
+        const gFolhas = projBuilderSvgEl('g', { style: 'cursor:pointer' }, svg);
+        projBuilderSvgEl('circle', {
+          cx: bx, cy: by, r: btnR, fill: folhasAtuais === 2 ? '#2f6fb8' : '#fff',
+          stroke: '#2f6fb8', 'stroke-width': sw * 1.2
+        }, gFolhas);
+        const tFolhas = projBuilderSvgEl('text', {
+          x: bx, y: by + btnR * 0.35, 'text-anchor': 'middle',
+          'font-size': btnR * 1.05, 'font-family': 'sans-serif',
+          fill: folhasAtuais === 2 ? '#fff' : '#2f6fb8', 'pointer-events': 'none'
+        }, gFolhas);
+        tFolhas.textContent = folhasAtuais === 2 ? '2' : '1';
+        gFolhas.setAttribute('title', I18n.t('project.builder_door_leaves_toggle') || '');
+        gFolhas.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          fSel.params = Object.assign({}, fSel.params, { folhas_escolha: folhasAtuais === 2 ? '1' : '2' });
+          rebuildProjectBuilder();
+        });
+        bx += btnR * 2.6;
+      }
+
+      // Troca de lado — só faz sentido com 1 folha só (2 folhas já abrem uma
+      // pra cada lado, ver LayoutEngine emitFrontsResolvidos).
+      if (folhasAtuais === 1) {
+        const ladoAtual = pSel.lado === 'right' ? 'right' : 'left';
+        const gLado = projBuilderSvgEl('g', { style: 'cursor:pointer' }, svg);
+        projBuilderSvgEl('circle', {
+          cx: bx, cy: by, r: btnR, fill: '#fff', stroke: '#2f6fb8', 'stroke-width': sw * 1.2
+        }, gLado);
+        const tLado = projBuilderSvgEl('text', {
+          x: bx, y: by + btnR * 0.35, 'text-anchor': 'middle',
+          'font-size': btnR * 1.05, 'font-family': 'sans-serif',
+          fill: '#2f6fb8', 'pointer-events': 'none'
+        }, gLado);
+        tLado.textContent = ladoAtual === 'left' ? 'E' : 'D';
+        gLado.setAttribute('title', I18n.t('project.builder_door_side_toggle') || '');
+        gLado.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          fSel.params = Object.assign({}, fSel.params, { lado: ladoAtual === 'left' ? 'right' : 'left' });
+          rebuildProjectBuilder();
+        });
+      }
     }
   }
 
@@ -1803,10 +2106,125 @@ function applyProjectBuilderVaoSize(node, novoMm) {
   return true;
 }
 
+// VÃO RAIZ — digitar a medida (2026-08-21, 2ª rodada).
+//
+// 1ª versão (abandonada) redimensionava o MÓDULO inteiro via
+// updateProjectSlotDimension. Matt: "nao me ajudou . preciso mexer com
+// setas e alinhas com as pecas do movel se quiser. hoje ele deixa eu
+// reduzir mas nao deixa eu deslocar. ou seja, nao tenho controle do vao
+// que quero utilizar" — ele quer controlar o VÃO em si (arrastar as 4
+// bordas livremente, ver startProjectBuilderRootEdgeDrag), não o módulo.
+// Esta função agora é só o complemento de PRECISÃO do arrasto: digitar
+// ancora no canto inferior-esquerdo ATUAL da sobreposição (x0/y0
+// inalterados) e ajusta só a largura ou a altura — exatamente o que o
+// arrasto faz quando só a borda direita/de cima se move. Grava em
+// projectBuilderRoot.params.zoneOverride, mesmo lugar que o arrasto usa
+// (ver projectBuilderRootZoneEfetiva) — os dois caminhos terminam na MESMA
+// regra, igual applyProjectBuilderVaoSize/startProjectBuilderDivDrag pros
+// vãos internos.
+function applyProjectBuilderRootSize(node, novoMm, eixo) {
+  if (!node || node !== projectBuilderRoot || (eixo !== 'x' && eixo !== 'y')) return false;
+  const slot = projectSlots.find((s) => s.id === projectBuilderSlotId);
+  const b = node._box || projectBuilderZone;
+  if (!slot || !b) return false;
+  const v = Math.round(Number(novoMm) || 0);
+  if (!isFinite(v) || v < PROJECT_BUILDER_MIN_VAO) return false;
+  const W = Number(slot.width_mm || 0) || 0;
+  const H = Number(slot.height_mm || 0) || 0;
+  const atual = Object.assign({ x: b.x, y: b.y, w: b.w, h: b.h },
+    node.params && node.params.zoneOverride);
+  pushProjectBuilderUndo();
+  if (eixo === 'x') atual.w = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(v, W - atual.x));
+  else atual.h = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(v, H - atual.y));
+  node.params = node.params || {};
+  node.params.zoneOverride = atual;
+  markProjectDirty();
+  rebuildProjectBuilder();
+  return true;
+}
+
+// Arrastar qualquer BORDA do vão raiz livremente (2026-08-21, 2ª rodada).
+// Diferente da divisória interna (startProjectBuilderDivDrag), não existe
+// vizinho pra preservar soma — cada borda se move sozinha, então dá pra
+// tanto redimensionar (mover 1 borda) quanto DESLOCAR o vão inteiro (mover
+// as duas bordas do mesmo eixo, um arrasto de cada vez). Mesma técnica de
+// arrasto RELATIVO do startProjectBuilderDivDrag (delta do ponteiro desde o
+// pointerdown, não posição absoluta) — é o fix de 15/08 pro sintoma "a de
+// baixo é incontrolável, joga lá pra cima": sem isso, um módulo alto de
+// novo teria posições fora da área visível da janela.
+function startProjectBuilderRootEdgeDrag(ev, borda) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (!projectBuilderRoot || projectBuilderRoot.locked) return;
+  const slot = projectSlots.find((s) => s.id === projectBuilderSlotId);
+  const b = projectBuilderRoot._box;
+  if (!slot || !b) return;
+  const W = Number(slot.width_mm || 0) || 0;
+  const H = Number(slot.height_mm || 0) || 0;
+  projectBuilderSelId = projectBuilderRoot.id;
+
+  // Ponto de partida é sempre o retângulo EFETIVO atual (com sobreposição já
+  // aplicada, se houver) — arrastar nunca "esquece" um ajuste anterior.
+  const x0 = b.x, y0 = b.y, x1 = b.x + b.w, y1 = b.y + b.h;
+
+  const svgAtual = () => {
+    const st = document.getElementById('po-proj-builder-stage');
+    return (st && st.querySelector('svg')) || null;
+  };
+  const paraMm = (e) => {
+    const el = svgAtual();
+    const m = el && el.getScreenCTM();
+    if (!m) return null;
+    const pt = el.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(m.inverse());
+    return { x: p.x, y: H - p.y };
+  };
+
+  const cx0 = ev.clientX, cy0 = ev.clientY;
+  const mm0 = paraMm(ev);
+  let andou = false, fotoTirada = false;
+
+  const mover = (e) => {
+    if (!andou && Math.abs(e.clientX - cx0) < 4 && Math.abs(e.clientY - cy0) < 4) return;
+    if (!fotoTirada) { pushProjectBuilderUndo(); fotoTirada = true; }
+    andou = true;
+    const mm = paraMm(e);
+    if (!mm || !mm0) return;
+    const dx = mm.x - mm0.x, dy = mm.y - mm0.y;
+    const passo = (v) => Math.round(v / PROJECT_BUILDER_PASSO) * PROJECT_BUILDER_PASSO;
+    // Cada borda só mexe na SUA coordenada, clampada contra a borda OPOSTA
+    // (fixa, capturada no início do arrasto) e contra o módulo físico
+    // (0..W / 0..H) — não contra a sobreposição anterior, que é justamente
+    // o que este arrasto está substituindo.
+    let nx0 = x0, ny0 = y0, nx1 = x1, ny1 = y1;
+    if (borda === 'left') nx0 = Math.max(0, Math.min(passo(x0 + dx), x1 - PROJECT_BUILDER_MIN_VAO));
+    else if (borda === 'right') nx1 = Math.min(W, Math.max(passo(x1 + dx), x0 + PROJECT_BUILDER_MIN_VAO));
+    else if (borda === 'bottom') ny0 = Math.max(0, Math.min(passo(y0 + dy), y1 - PROJECT_BUILDER_MIN_VAO));
+    else if (borda === 'top') ny1 = Math.min(H, Math.max(passo(y1 + dy), y0 + PROJECT_BUILDER_MIN_VAO));
+    projectBuilderRoot.params = projectBuilderRoot.params || {};
+    projectBuilderRoot.params.zoneOverride = { x: nx0, y: ny0, w: nx1 - nx0, h: ny1 - ny0 };
+    rebuildProjectBuilder();
+  };
+  const soltar = () => {
+    removeEventListener('pointermove', mover);
+    removeEventListener('pointerup', soltar);
+    if (andou) markProjectDirty();
+  };
+  addEventListener('pointermove', mover);
+  addEventListener('pointerup', soltar);
+}
+
 // Caixinha de digitar a medida, ancorada em cima da própria cota do desenho.
 // position:fixed a partir do retângulo de tela do <text> — assim não depende
 // do zoom do SVG nem de o stage ser position:relative.
-function openProjectBuilderSizeInput(textEl, node, eixo) {
+//
+// aplicarFn (opcional, default applyProjectBuilderVaoSize): qual regra usar
+// pra gravar o valor digitado — o vão raiz usa applyProjectBuilderRootSize
+// (redimensiona o MÓDULO, ver comentário lá) em vez da regra de "cravar
+// este vão e o vizinho" (que não existe pra quem não tem vizinho).
+function openProjectBuilderSizeInput(textEl, node, eixo, aplicarFn) {
+  const aplicar = aplicarFn || applyProjectBuilderVaoSize;
   const antigo = document.getElementById('po-proj-vao-input');
   if (antigo) antigo.remove();
   const r = textEl.getBoundingClientRect();
@@ -1824,12 +2242,12 @@ function openProjectBuilderSizeInput(textEl, node, eixo) {
   inp.focus();
   inp.select();
   let fechado = false;
-  const fechar = (aplicar) => {
+  const fechar = (aplicarAgora) => {
     if (fechado) return;
     fechado = true;
     const v = Number(inp.value);
     inp.remove();
-    if (aplicar && isFinite(v) && v > 0) applyProjectBuilderVaoSize(node, v);
+    if (aplicarAgora && isFinite(v) && v > 0) aplicar(node, v, eixo);
   };
   inp.addEventListener('keydown', (ev) => {
     ev.stopPropagation();
@@ -2092,16 +2510,29 @@ function rebuildProjectSlotLayoutPieces(slot) {
   }
 }
 
-// A ponte, com as três travas que o preço exige. Pricing.calculateLeafPiece
-// LANÇA (e derruba o preço do slot inteiro) quando falta cor, dobradiça ou
-// corrediça — e a peça que nasce aqui não passou por nenhuma das telas que
-// normalmente garantem isso. Então:
+// A ponte, com as travas que o preço exige. Pricing.calculateLeafPiece
+// LANÇA (e derruba o preço do slot inteiro) quando falta cor ou corrediça —
+// e a peça que nasce aqui não passou por nenhuma das telas que normalmente
+// garantem isso. Então:
 //   1. papel de cor sem cor escolhida cai numa cor que o slot JÁ usa;
-//   2. porta sem modelo de dobradiça escolhido vira frente fixa;
-//   3. gaveta sem modelo de corrediça escolhido não cobra corrediça.
-// Nenhuma das três é silenciosa por preguiça: é sempre melhor a peça aparecer
-// no desenho com um custo levemente incompleto do que o módulo inteiro perder
-// o preço por causa de um cadastro que falta.
+//   2. gaveta sem modelo de corrediça escolhido não cobra corrediça.
+// Nenhuma das duas é silenciosa por preguiça: é sempre melhor a peça
+// aparecer no desenho com um custo levemente incompleto do que o módulo
+// inteiro perder o preço por causa de um cadastro que falta.
+//
+// A dobradiça NÃO tem mais trava aqui (2026-08-20, Matt: "a abertura deve
+// vir única e exclusivamente da porta ou modelo. não pode ser diferente" /
+// "não pode vir do módulo, e sim da porta sempre"). Existia um `if
+// (r.hinge_side... && !slot.hingeModel) r.hinge_side = 'none';` bem aqui —
+// zerava hinge_side (a porta "esquecia" que tem dobradiça: não abria no
+// 3D, não furava copo) só porque o MÓDULO não tinha nenhum modelo de
+// dobradiça vinculado (module_hinge_models). Era o inverso do que as
+// outras duas travas fazem: cor e corrediça degradam o CUSTO, preservando
+// o fato físico da peça; esta apagava o fato físico. Removida —
+// `js/pricing.js:calculateLeafPiece` agora não lança mais erro por falta
+// de hingeModel, só deixa `hinge_cost=0` (mesma filosofia das outras
+// duas): a porta sempre abre/fura conforme o mecanismo dela, o que pode
+// faltar é só o preço da dobradiça física até alguém escolher o modelo.
 function projectLayoutRowsForSlot(slot, pieces) {
   // PÉ PLÁSTICO (2026-08-19, Matt: "os agregados do construtor pra todos
   // modulos com pes de plastico estao ficando 114mm pra cima do ponto
@@ -2132,18 +2563,50 @@ function projectLayoutRowsForSlot(slot, pieces) {
   const escolhidas = slot.colorsByRole || {};
   const papeisComCor = Object.keys(escolhidas).filter((k) => escolhidas[k]);
   rows.forEach((r) => {
-    if (!r.color_role_id || !escolhidas[r.color_role_id]) {
+    if (!r.color_role_id) return;
+    // BUG DE VERDADE (Matt, 2026-08-21, com print: "cade a opcao PORTAS e
+    // as cores, so vem caixa"). Peça inserida pelo Construtor (ex.: porta
+    // num módulo tipo "Bottom · Bottom · Back" que nunca teve porta no
+    // catálogo) tem um papel de cor (accessory_types.color_role_id, ex.
+    // "Porta/Frente") que NUNCA foi curado em `module_colors` pra este
+    // módulo específico — normal, o módulo nasceu só com Caixa. Sem opção
+    // nenhuma em `slot.colorOptionsByRole[papel]`, o painel de configuração
+    // (renderProjectConfigPanel, portal-06c) só desenha o grupo de swatches
+    // de um papel se `colorOptionsByRole[papel].length` — então a seção
+    // "Portas" simplesmente NUNCA aparecia, pra sempre (não só na 1ª vez:
+    // isto roda de novo em todo rebuild, então também AUTOCURA projeto já
+    // salvo com esse defeito). O `else` de baixo já existia e emprestava a
+    // COR ESCOLHIDA de outro papel resolvido (normalmente Caixa) só pro
+    // preço não travar — mas nunca dava as OPÇÕES pro cliente escolher
+    // outra coisa, por isso "só vem branco": era a única cor que a peça
+    // jamais teria, e não tinha como trocar. Fix: se o papel não tem
+    // opções próprias, empresta a LISTA de opções de outro papel do mesmo
+    // slot que já tenha (mesma paleta de laminados do módulo, só que sob
+    // outro papel) — assim o grupo "Portas" passa a existir de verdade, com
+    // swatches clicáveis, e o cliente escolhe a cor que quiser.
+    slot.colorOptionsByRole = slot.colorOptionsByRole || {};
+    if (!(slot.colorOptionsByRole[r.color_role_id] || []).length) {
+      const doadora = Object.values(slot.colorOptionsByRole).find((lista) => (lista || []).length);
+      if (doadora) slot.colorOptionsByRole[r.color_role_id] = doadora;
+    }
+    if (!escolhidas[r.color_role_id]) {
       const opcoes = (slot.colorOptionsByRole || {})[r.color_role_id] || [];
-      if (r.color_role_id && opcoes.length) {
-        // Papel existe no módulo e tem opção: adota a primeira, como faz
-        // qualquer inserção nova.
+      if (opcoes.length) {
+        // Papel existe no módulo (ou ganhou opção emprestada acima) e tem
+        // opção: adota a primeira, como faz qualquer inserção nova.
         slot.colorsByRole = slot.colorsByRole || {};
         slot.colorsByRole[r.color_role_id] = opcoes[0];
       } else if (papeisComCor.length) {
-        r.color_role_id = papeisComCor[0];
+        // Último recurso (não deveria acontecer mais, com o backfill acima
+        // — só sobra se o slot inteiro não tem NENHUM papel com opção
+        // cadastrada, nem Caixa): não deixa Pricing.calculateLeafPiece
+        // lançar. Guarda a cor emprestada no PAPEL VERDADEIRO da peça, sem
+        // reescrever `r.color_role_id` (esse era o bug antigo, já corrigido
+        // — ver git blame).
+        slot.colorsByRole = slot.colorsByRole || {};
+        slot.colorsByRole[r.color_role_id] = escolhidas[papeisComCor[0]];
       }
     }
-    if (r.hinge_side && r.hinge_side !== 'none' && !slot.hingeModel) r.hinge_side = 'none';
     // BUG (Matt, 2026-08-19: "e deixei tudo ligado e no construtor nao
     // apareceu a corredica no preco"). Esta trava nasceu ANTES do hardware
     // PRÓPRIO da peça-módulo existir (own_slide_model/own_slide_models,
@@ -2276,15 +2739,14 @@ function insertProjectBuilderItem(accessoryId, nodeId, qtd) {
       // vão), a frente é aplicada no PAI cobrindo os filhos de `from` até
       // `to` — uma folha só na frente de todos eles. É pra isso que
       // applyFront tem from/to; sem faixa, cai no caminho de sempre (a frente
-      // do próprio vão, from/to nulos = cobre ele inteiro).
-      const faixa = projectBuilderSelIds.length > 1
-        ? projectBuilderIrmaos(projectBuilderSelIds[0]) : null;
+      // do próprio vão, from/to nulos = cobre ele inteiro). A tradução
+      // faixa->{pai,de,ate} agora mora em projectBuilderFaixaAtual (2026-08-20)
+      // — é a MESMA usada por projectBuilderSelBox pra filtrar a biblioteca,
+      // pra nunca discordarem sobre o que a faixa cobre.
+      const faixa = projectBuilderFaixaAtual();
       if (faixa) {
-        const idx = projectBuilderSelIds
-          .map((id) => faixa.kids.findIndex((k) => k.id === id))
-          .filter((i) => i >= 0);
         LayoutEngine.applyFront(faixa.pai, accessoryId,
-          Math.min(...idx), Math.max(...idx), projectBuilderCat);
+          faixa.de, faixa.ate, projectBuilderCat);
         // A porta passa a ser do PAI: seguir com a faixa pintada faria a
         // próxima peça cair num vão que agora está atrás da folha.
         projectBuilderSelIds = [];

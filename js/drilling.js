@@ -497,7 +497,13 @@
   // recuo da borda fica no eixo da LARGURA, encostado no lado da dobradiça.
   function collectHingeHoles(store, part, settings) {
     if (!settings || !settings.hinge_enabled) return;
-    if (!part.hinge_side || part.hinge_side === 'none') return;
+    // 2026-08-20: hinge_side também vale 'top'/'bottom' (basculante/
+    // basculante inverso, ver layout-engine.js openingTypeParaMecanismo) —
+    // esses 2 NÃO usam dobradiça de embutir (copo 35mm), então
+    // propositalmente não entram aqui. Ferragem deles é o pistão a gás
+    // (viewer3d.js placeFlapHardware), sem furação própria cadastrada
+    // ainda — PENDENTE, ver docs/modelos-de-porta-frente-spec.md.
+    if (part.hinge_side !== 'left' && part.hinge_side !== 'right') return;
     const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
     const doorW = t.faceA;
     const doorH = t.faceB;
@@ -768,11 +774,13 @@
       if (role === 'front') {
         const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
         const x0 = cursorX + (part.offset_x_mm || 0);
-        if (part.hinge_side && part.hinge_side !== 'none') {
+        // 'top'/'bottom' (basculante) não usa base de dobradiça de embutir
+        // — ver collectHingeHoles acima pro mesmo motivo.
+        if (part.hinge_side === 'left' || part.hinge_side === 'right') {
           doors.push({ part, x0, y0: part.offset_y_mm || 0, doorW: t.faceA, doorH: t.faceB });
         }
         cursorX += t.faceA + 2;
-      } else if (role === 'free' && part.hinge_side && part.hinge_side !== 'none') {
+      } else if (role === 'free' && (part.hinge_side === 'left' || part.hinge_side === 'right')) {
         doors.push({
           part,
           x0: part.offset_x_mm || 0, y0: part.offset_y_mm || 0,
@@ -851,6 +859,13 @@
     const drawers = [];
     (parts || []).forEach(function (part) {
       const role = part.position_role || 'other';
+      // Frente de gaveta agregada (2026-08-20, layout-engine.js emitContent)
+      // sai com opening_type='slide_out' (abre junto com a gaveta) mas NÃO
+      // tem corrediça própria — é só o painel decorativo, a corrediça de
+      // verdade já é furada pro CAIXOTE atrás dela. slide_distance_mm é o
+      // mesmo sinal usado em pricing.js/layout-engine.js pra não dobrar o
+      // custo/furação de corrediça pra 1 gaveta só.
+      if (part.slide_distance_mm != null) return;
       if (part.opening_type !== 'slide_out' && role !== 'drawer') return;
       if (role === 'drawer') {
         // mesma pilha de slots do viewer3d (placePieceInBox 'drawer')

@@ -33,7 +33,7 @@ function modulePiecesReportarErro(error) {
 async function loadRecursivePiecesForModule(moduleId) {
   const { data, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, client_color_configurable, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, abre_recorte, drilling_pattern_id, grain_dir, drilling_patterns(furos_equivalentes, fura), components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, client_color_configurable, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, abre_recorte, drilling_pattern_id, grain_dir, auto_join_adjacent, join_max_length_mm, drilling_patterns(furos_equivalentes, fura), components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId)
     .order('sort_order');
   if (error) { modulePiecesReportarErro(error); return []; }
@@ -132,6 +132,19 @@ async function loadRecursivePiecesForModule(moduleId) {
         // árvore. Sem eles, uma peça grande demais pra chapa passava batido.
         veio: row.components.veio || 'livre',
         fura: row.components.fura !== false,
+        // Junção automática de peças adjacentes (migration 137) — pedido do
+        // Matt (2026-08-23): rodapé de 2 módulos encostados vira 1 peça só.
+        // Vem do USO (row.auto_join_adjacent), NÃO do catálogo — corrigido
+        // no mesmo dia: a 1ª versão morava em components e o Matt apontou
+        // que o mesmo Flatbord 2C/4L vira prateleira/divisória/rodapé/topo
+        // em módulos diferentes, então um toggle por COMPONENTE ligaria/
+        // desligaria em TODO uso de uma vez. Mesmo raciocínio de
+        // usinagem_m/recortes/grain_dir acima, que também são por linha do
+        // módulo. null (linha antiga, de antes deste campo existir, ou
+        // peça-módulo aninhada que ainda não tem este campo na tela) = usa
+        // o padrão (true) — só false explícito desliga esta linha.
+        auto_join_adjacent: row.auto_join_adjacent !== false,
+        join_max_length_mm: row.join_max_length_mm != null ? Number(row.join_max_length_mm) : 2700,
         // Limite do lado no plano da máquina (migration 090)
         lado_min_mm: row.components.lado_min_mm || null,
         lado_max_mm: row.components.lado_max_mm || null,
@@ -204,6 +217,14 @@ async function loadRecursivePiecesForModule(moduleId) {
         // existe (e só é gravado) numa peça-módulo, mesmo raciocínio de
         // client_dimension_configurable acima.
         client_color_configurable: !!row.client_color_configurable,
+        // Junção automática de rodapé (migration 137) — mesmo campo do
+        // branch de peça-componente acima; a UI de editar isso ainda só
+        // existe pra peça-componente (erp/js/adm/13-modulo-pecas.js,
+        // renderModuleComponentRow), então uma peça-módulo aninhada usada
+        // como rodapé sempre cai no default (true/2700) por enquanto — sem
+        // efeito nenhum até existir um caso de uso real.
+        auto_join_adjacent: row.auto_join_adjacent !== false,
+        join_max_length_mm: row.join_max_length_mm != null ? Number(row.join_max_length_mm) : 2700,
         width_min_mm: row.width_min_mm,
         width_default_mm: row.width_default_mm,
         width_max_mm: row.width_max_mm,
@@ -446,6 +467,11 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // No portal eram simplesmente ausentes — inofensivo lá, indispensável
         // no ERP; juntar evita que a próxima coluna suma numa das pontas.
         component_id: piece.component_id || null,
+        // color_role_id (2026-08-20): faltava no `part` — só existia na
+        // `piece` de origem. Modal "Peças do móvel" (portal-06c) precisa
+        // dele pra saber que papel de cor cada linha usa, e assim montar o
+        // seletor de cor por peça (slot.colorOptionsByRole[role_id]).
+        color_role_id: piece.color_role_id || null,
         // PROGRAMA DE FURAÇÃO (migration 105) — precisa estar AQUI, no `part`,
         // e não só na `piece`: o drilling.js recebe o part, e é ele que
         // decide de onde vêm os furos (furosDaPeca). Carregar do banco e
@@ -479,16 +505,83 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         is_module: !!piece.is_module,
         opening_type: piece.opening_type,
         slides_per_unit: piece.slides_per_unit,
+        // Distância de abertura da FRENTE de gaveta agregada (2026-08-20,
+        // ver comentário grande em layout-engine.js emitContent/toPieceRows)
+        // — sem propagar aqui, viewer3d.js placePieceInBox (role 'free')
+        // cai no fallback genérico baseado na PRÓPRIA profundidade da
+        // frente (~19.5mm), que quase não anda; o caixote (com d de
+        // verdade, cadastro normal) andava até 400mm — resultado era a
+        // frente "travada" enquanto a gaveta saía sozinha (Matt, 2026-08-21:
+        // "as frentes não estão abrindo com as gavetas"). Esta linha faltava
+        // no whitelist de campos copiados de `piece` pra `part` — o resto do
+        // pipeline (emitContent -> toPieceRows -> slot.layoutPieces) já
+        // carregava o valor certo, só morria aqui.
+        slide_distance_mm: piece.slide_distance_mm != null ? Number(piece.slide_distance_mm) : null,
         positioning: piece.positioning,
         // Fita de borda (migration 088) — o 3D usa junto com positioning
         // pra decidir qual face leva fita e qual mostra o miolo da chapa
         // (js/viewer3d.js makeBoxMaterials). null = componente ainda na
         // fórmula antiga: desenha como sempre, material único.
         edge_banding: piece.edge_banding == null ? null : Number(piece.edge_banding),
-        child_pieces: childParts
+        child_pieces: childParts,
+        // Rastro da árvore do Construtor (ver comentário grande logo
+        // abaixo, "sincroniza a frente com a profundidade REAL do
+        // caixote") — só peça vinda de LayoutEngine.toPieceRows carrega
+        // isto (marcado lá, nunca em module_components do cadastro manual).
+        _layoutNodeId: piece._layoutNodeId,
+        _layoutKind: piece._layoutKind
       });
     }
   });
+
+  // SINCRONIZA a distância de abertura da FRENTE de gaveta com a
+  // profundidade REAL do caixote — 2ª causa do mesmo bug (Matt, 2026-08-21:
+  // "as frente nao estao abrindo suficiente e a gaveta esta passando pela
+  // frentes"). A causa 1 (slide_distance_mm morrendo aqui dentro, linha
+  // ~498 acima) já tinha sido corrigida, mas o VALOR que `slide_distance_mm`
+  // carrega vem de `layout-engine.js:emitContent`, calculado a partir da
+  // profundidade LITERAL do vão (`prof`, no MOMENTO em que a árvore foi
+  // resolvida) — só que essa profundidade pode mudar DEPOIS, bem aqui em
+  // cima (`resolvedDepthMm`, linhas ~324-329): gaveta com corrediça
+  // cadastrada (`piece.fixed_depths`/`module_fixed_depths`) troca a
+  // profundidade PEDIDA pela profundidade REAL da corrediça mais próxima
+  // (ex: pediu 480mm, só existe corrediça de 450mm ou 500mm) — o caixote
+  // (`kind:'content'`) já sabe disso (é ele quem tem `fixed_depths`, `dims`
+  // acima já usa `resolvedDepthMm`), mas a FRENTE (`kind:'front'`, peça
+  // IRMÃ, sem `fixed_depths` nenhum — ela não é gaveta, só cobre o vão da
+  // gaveta) continuava com o `slide_distance_mm` calculado em cima da
+  // profundidade ANTIGA, pré-corrediça. Caixote e frente divergiam — a
+  // frente abria menos (ou mais) do que o caixote atrás dela, e o caixote
+  // acabava passando por dentro da frente quando abria mais.
+  //
+  // Fix: depois que TODAS as peças deste nível já foram resolvidas (e
+  // `resolvedDepthMm` de cada uma já é definitivo), agrupa por
+  // `_layoutNodeId` (caixote e frente da MESMA gaveta sempre compartilham
+  // o mesmo `node.id` — `push()` em layout-engine.js grava
+  // `p.nodeId = node.id` em toda peça gerada pelo mesmo vão, gaveteiro de
+  // 2+ incluído) e força a frente a usar a MESMA fórmula de distância que
+  // viewer3d.js já usa pro caixote (`Math.min(d * 0.7, 0.4)`, aqui em mm:
+  // `Math.min(depth_mm * 0.7, 400)`), mas com o `depth_mm` FINAL do
+  // caixote — não o literal antigo. Zero efeito em peça sem `_layoutNodeId`
+  // (module_components de cadastro manual, nunca teve esse bug) nem em
+  // gaveta sem corrediça de profundidade fixa (`resolvedDepthMm ===
+  // dims.depth_mm` pro caixote, então o valor já bate igual antes).
+  const porNodeId = {};
+  parts.forEach((p) => {
+    if (p._layoutNodeId == null) return;
+    (porNodeId[p._layoutNodeId] = porNodeId[p._layoutNodeId] || []).push(p);
+  });
+  Object.keys(porNodeId).forEach((nodeId) => {
+    const grupo = porNodeId[nodeId];
+    const caixote = grupo.find((p) => p._layoutKind === 'content');
+    if (!caixote) return;
+    grupo.forEach((p) => {
+      if (p !== caixote && p._layoutKind === 'front' && p.opening_type === 'slide_out') {
+        p.slide_distance_mm = Math.min(caixote.depth_mm * 0.7, 400);
+      }
+    });
+  });
+
   return parts;
 }
 

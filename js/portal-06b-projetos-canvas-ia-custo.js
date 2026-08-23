@@ -1403,7 +1403,15 @@ function attachProjectSlotDrag(div, slot) {
       startYMm: Number(slot.floor_height_mm || 0),
       moved: false,
       liveX: Number(slot.x_mm || 0),
-      liveY: Number(slot.floor_height_mm || 0)
+      liveY: Number(slot.floor_height_mm || 0),
+      // "prev" pra COLISÃO (ver clampWallSlotAgainstCollision) — precisa ser
+      // a última posição JÁ RESOLVIDA (atualizada a cada pointermove, não a
+      // do início do arraste), senão resolveCollisionSlide não sabe de que
+      // lado o módulo está batendo num arraste rápido/de várias etapas.
+      // Mesmo padrão de state.prevXMm/prevYMm no arraste 3D (ver
+      // attachProject3DEditDrag, portal-08-projetos-paredes.js).
+      prevXMm: Number(slot.x_mm || 0),
+      prevYMm: Number(slot.floor_height_mm || 0)
     };
     // Segurar parado (dedo OU mouse) abre as propriedades do módulo. Se o
     // ponteiro se mexer antes, o pointermove cancela este timer e o gesto
@@ -1459,6 +1467,33 @@ function attachProjectSlotDrag(div, slot) {
     x = clamp(snapProjectSlotAxis(x, Number(slot.width_mm || 0), true, others), 0, maxX);
     y = clamp(snapProjectSlotAxis(y, Number(slot.height_mm || 0), false, others), 0, maxY);
     y = snapProjectSlotToFloor(y);   // mesmo ímã de chão da vista 3D
+
+    // COLISÃO (2026-08-20, relato do Matt: "mesmo o ima ligado, os modulos
+    // nao estao respeitando o espaco um do outro. nao deveria poder
+    // transpacar um sobre o outro"). O botão de colisão já existia e já
+    // funcionava no esticar (attachProjectSlotResizeHandle), na vista de
+    // canto 3D (attachProject3DEditDrag) e na Vista em 3D cheia
+    // (handleProject3DFloorMove) — só faltava aqui, no arraste da Vista
+    // Frontal padrão (a mais usada), que só tinha o ímã de ALINHAR
+    // (snapProjectSlotAxis, acima) e nunca um bloqueio de verdade. Mesma
+    // ordem das outras vistas: ímã primeiro (pode encostar exatamente na
+    // borda do vizinho sem contar como sobreposição), colisão por último.
+    if (projectCollisionEnabled) {
+      // Só os vizinhos DE VERDADE nesta parede — sem o traçado fantasma da
+      // parede vizinha (projectGhostSnapTargets, dentro de `others` acima):
+      // aquilo é só uma projeção pro ímã de ALINHAR, travar contra ele criaria
+      // um bloqueio fantasma (mesmo raciocínio do clampWallSlotAgainstCollision
+      // na vista de canto 3D, portal-08-projetos-paredes.js).
+      const solved = clampWallSlotAgainstCollision(
+        slot, x, y,
+        projectDragState.prevXMm, projectDragState.prevYMm,
+        projectSlotsSameWallExcluding(slot)
+      );
+      x = solved.x;
+      y = solved.y;
+    }
+    projectDragState.prevXMm = x;
+    projectDragState.prevYMm = y;
 
     div.style.left = Math.round(x * projectPxPerMm) + 'px';
     div.style.bottom = Math.round(y * projectPxPerMm) + 'px';
@@ -1681,10 +1716,28 @@ function removeProjectSlot(slotId) {
 // 'free' + offset absoluto), então daqui pra frente ninguém precisa saber que
 // elas vieram de uma árvore: preço, 3D, elevação 2D e plano de corte tratam
 // como peça normal. Este concat é o ÚNICO ponto de junção — é de propósito.
-function projectSlotEffectivePieces(slot) {
+// removedPieceIds (2026-08-20): remoção manual de QUALQUER peça pelo cliente,
+// via modal "Peças do móvel" — inclusive peça de casco sem client_optional
+// (pedido explícito do Matt: "quero remover qualquer peca", sobrepondo a
+// checagem de client_optional que só decidia o que É opcional por padrão).
+// Aplicado por último, depois do concat casco+construtor, pra cobrir os dois
+// mundos com um único filtro (mesmo raciocínio do comentário acima: "único
+// ponto de junção").
+// Mesmo concat de sempre, SEM o filtro de removedPieceIds — usado só pelo
+// modal "Peças do móvel" (portal-06c), que precisa listar a peça removida
+// também (pra mostrar riscada + botão de restaurar). Preço/3D/furação
+// continuam só em projectSlotEffectivePieces (com o filtro).
+function projectSlotAllPiecesBeforeRemoval(slot) {
   return slot.pieces
     .filter((p) => !p.client_optional || slot.selectedOptionalIds.includes(p.id))
     .concat(slot.layoutPieces || []);
+}
+
+function projectSlotEffectivePieces(slot) {
+  const removidas = slot.removedPieceIds;
+  const base = projectSlotAllPiecesBeforeRemoval(slot);
+  if (!removidas || !removidas.length) return base;
+  return base.filter((p) => !removidas.includes(p.id));
 }
 
 // ==========================================================================

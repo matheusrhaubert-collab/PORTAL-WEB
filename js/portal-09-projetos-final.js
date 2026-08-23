@@ -270,7 +270,10 @@ async function computeProjectSlotsTotal(slotConfigs) {
       const piecesList = await loadRecursivePiecesForModule(module.id);
       if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
       const optionalIds = cfg.selected_optional_ids || [];
-      const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
+      const removedIds = cfg.removed_piece_ids || [];
+      const effectivePieces = piecesList
+        .filter((p) => !p.client_optional || optionalIds.includes(p.id))
+        .filter((p) => !removedIds.includes(p.id));
       await loadModuleColors(module.id); // preenche moduleColorsByRole pra ESTE módulo, igual restoreFavoriteProject
       const colorsByRole = {};
       (cfg.selected_colors || []).forEach((sc) => {
@@ -604,13 +607,22 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         shelfQuantities: cfg.shelf_quantities || {},
         dimOverrides: cfg.dim_overrides || {},
         selectedOptionalIds: optionalIds,
+        // removedPieceIds (2026-08-20): peça removida manualmente pelo
+        // cliente ("Peças do móvel") — fica de fora de `pieces` acima (que
+        // guarda a árvore INTEIRA, igual selectedOptionalIds) e é filtrada
+        // depois por projectSlotEffectivePieces junto com layoutPieces.
+        removedPieceIds: cfg.removed_piece_ids || [],
         // Construtor de armário: a árvore volta como veio (o motor só a lê
         // quando a janela abre). Projeto salvo antes disso não tem a chave.
         layout: cfg.layout || null,
         result,
         thumbnail_data_url: cfg.thumbnail_data_url || null,
         widthPresetsMm: lockedDimensionPresets.width,
-        heightPresetsMm: lockedDimensionPresets.height
+        heightPresetsMm: lockedDimensionPresets.height,
+        // Ver mesmo comentário em insertProjectModuleDefault — dropdown de
+        // SKU no painel da direita precisa do rótulo, não só do mm.
+        widthPresetsLabeled: lockedDimensionPresets.widthLabeled,
+        heightPresetsLabeled: lockedDimensionPresets.heightLabeled
       });
     }
 

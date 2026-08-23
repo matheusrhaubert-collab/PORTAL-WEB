@@ -113,6 +113,12 @@ const Viewer3D = (function () {
   let doorsOpen = false;
   let drawersOpen = false;
   const DOOR_OPEN_ANGLE = Math.PI * 0.55; // ~99° — um pouco além de 90° pra parecer bem aberta
+  // Basculante/basculante inverso (2026-08-20, pedido do Matt com foto de
+  // referência) — ângulo MENOR que o da porta giro de propósito: o pistão a
+  // gás sustenta a porta numa posição intermediária, não deixa ela cair/
+  // levantar até quase encostar (o que aconteceria perto de 90°+); ~76°
+  // aberto dá a leitura de "sustentada pelo pistão" da foto.
+  const FLAP_OPEN_ANGLE = Math.PI * 0.42;
 
   // Contexto de abertura ATIVO durante uma chamada de buildStandaloneAssembly
   // (pedido do usuário, 2026-07-16: "quero opcao abrir portas e gavetas no
@@ -155,7 +161,18 @@ const Viewer3D = (function () {
     try { return fn(); } finally { activePart = antes; }
   }
 
+  // hingeSide 'left'/'right' = dobradiça de embutir (eixo Y, vertical, na
+  // ALTURA da porta) — porta_giro, sempre. 'top'/'bottom' = basculante/
+  // basculante inverso (eixo X, horizontal, na LARGURA) — ver
+  // positionWithOpening pro giro em si. Sinal escolhido pra a porta SEMPRE
+  // abrir pra FORA do móvel (+Z), nunca pra dentro (bateria nas
+  // prateleiras/fundo): 'top' (basculante) precisa de ângulo NEGATIVO em X
+  // pra a base da porta ir pra +Z; 'bottom' (basculante inverso) precisa de
+  // ângulo POSITIVO em X pelo mesmo motivo, espelhado (ver dedução completa
+  // no comentário de positionWithOpening).
   function openAngleFor(hingeSide) {
+    if (hingeSide === 'top') return -FLAP_OPEN_ANGLE;
+    if (hingeSide === 'bottom') return FLAP_OPEN_ANGLE;
     return hingeSide === 'left' ? -DOOR_OPEN_ANGLE : DOOR_OPEN_ANGLE;
   }
 
@@ -767,7 +784,22 @@ const Viewer3D = (function () {
         const diff = op.targetAngle - op.currentAngle;
         if (Math.abs(diff) > 0.0005) {
           op.currentAngle += diff * 0.14;
-          op.group.rotation.y = op.currentAngle;
+          // basculante/basculante inverso giram em X (ver
+          // positionWithOpening); dobradiça comum (left/right) em Y, como
+          // sempre.
+          if (op.hingeSide === 'top' || op.hingeSide === 'bottom') {
+            op.group.rotation.x = op.currentAngle;
+          } else {
+            op.group.rotation.y = op.currentAngle;
+          }
+          // Pistão a gás (basculante) tem uma ponta fixa no corpo e outra
+          // presa na porta — precisa ser recalculado a cada quadro que a
+          // porta girar (ver placeFlapHardware). Ferragem comum (dobradiça
+          // de embutir, pé...) nasce inteira dentro do grupo que já gira/já
+          // é fixo, não precisa disso.
+          if (op.group.userData && op.group.userData.updateStruts) {
+            op.group.userData.updateStruts();
+          }
         }
       } else if (op.kind === 'slide') {
         const diff = op.targetOffset - op.currentOffset;
@@ -1118,17 +1150,33 @@ const Viewer3D = (function () {
     const targetOpenables = ctx ? ctx.openables : openables;
 
     if (opening && opening.type === 'hinge') {
-      const halfW = (opening.width || 0) / 2;
-      const hingeX = opening.side === 'left' ? x - halfW : x + halfW;
-      const localX = opening.side === 'left' ? halfW : -halfW;
+      // 'top'/'bottom' (basculante/basculante inverso, 2026-08-20): eixo da
+      // dobradiça é HORIZONTAL, na LARGURA da porta — o pivô fica na
+      // ALTURA (Y), não na largura (X) como left/right. Mesmo mecanismo de
+      // sempre (grupo-pivô deslocado até a borda da dobradiça, content
+      // deslocado pro lado OPOSTO dentro dele), só trocando qual eixo/
+      // coordenada é a "borda que gira".
+      const isFlap = opening.side === 'top' || opening.side === 'bottom';
+      let hingeX = x, hingeY = y, localX = 0, localY = 0;
+      if (isFlap) {
+        const halfH = (opening.height || 0) / 2;
+        hingeY = opening.side === 'top' ? y + halfH : y - halfH;
+        localY = opening.side === 'top' ? -halfH : halfH;
+      } else {
+        const halfW = (opening.width || 0) / 2;
+        hingeX = opening.side === 'left' ? x - halfW : x + halfW;
+        localX = opening.side === 'left' ? halfW : -halfW;
+      }
 
       const pivot = new THREE.Group();
-      content.position.set(localX, 0, 0);
+      content.position.set(localX, localY, 0);
       pivot.add(content);
-      pivot.position.set(hingeX, y, z);
+      pivot.position.set(hingeX, hingeY, z);
 
       const angle = doors ? openAngleFor(opening.side) : 0;
-      pivot.rotation.y = angle;
+      // Giro em torno de X (basculante, horizontal) ou Y (dobradiça comum,
+      // vertical) — nunca os dois pro mesmo pivô.
+      if (isFlap) pivot.rotation.x = angle; else pivot.rotation.y = angle;
       targetOpenables.push({ kind: 'hinge', group: pivot, hingeSide: opening.side, currentAngle: angle, targetAngle: angle });
       return pivot;
     }
@@ -1196,6 +1244,10 @@ const Viewer3D = (function () {
     if (part.is_module) {
       if (part.opening_type === 'hinge_left') return 'left';
       if (part.opening_type === 'hinge_right') return 'right';
+      // basculante/basculante inverso (2026-08-20) — eixo horizontal, ver
+      // comentário grande de openAngleFor/positionWithOpening mais abaixo.
+      if (part.opening_type === 'hinge_top') return 'top';
+      if (part.opening_type === 'hinge_bottom') return 'bottom';
       return null;
     }
     return (part.hinge_side && part.hinge_side !== 'none') ? part.hinge_side : null;
@@ -1804,7 +1856,23 @@ const Viewer3D = (function () {
       const z = -D / 2 + thickness / 2 + offZ;
       // RODAPÉ — é o caso que o Matt levantou: 1200×100 deita sozinho agora
       // (U = comprimento, V = altura), sem depender do positioning.
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, false), null);
+      const baseboardObj = emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, false), null);
+      // Junção automática com módulo vizinho (migration 137) — não desenha
+      // nada diferente aqui (peça isolada continua exatamente igual); só
+      // publica em userData as medidas JÁ RESOLVIDAS desta peça (faceA =
+      // comprimento local, em metros, centro no mesmo eixo X do módulo) pra
+      // quem monta a COMPOSIÇÃO (viewer3d_composition.js) poder achar duas
+      // peças de módulos vizinhos e trocá-las por uma peça única — sem
+      // duplicar a conta de faceA/thickness (mesma fonte, sem risco de
+      // divergir como aconteceu com drilling.pieceBox no passado).
+      if (baseboardObj) {
+        baseboardObj.userData.baseboardGeom = {
+          faceA_m: faceA, faceB_m: faceB, thickness_m: thickness,
+          localX_m: x, localY_m: y, localZ_m: z,
+          auto_join_adjacent: part.auto_join_adjacent !== false,
+          join_max_length_mm: part.join_max_length_mm != null ? Number(part.join_max_length_mm) : 2700
+        };
+      }
     } else if (role === 'countertop') {
       // Tampo — zero absoluto igual às demais. Antes nascia automaticamente
       // em cima do corpo inteiro (H+legH); agora isso é responsabilidade do
@@ -1892,10 +1960,22 @@ const Viewer3D = (function () {
       // das PRÓPRIAS medidas resolvidas da peça (w/d), já que 'free' não
       // reparte em espessura/face como os papéis com posição automática.
       const hingeSide = resolveHingeSide(part);
+      // 2026-08-20 (Matt: frente de gaveta agregada) — 'free' com
+      // opening_type='slide_out' abre mesmo sem ser peça-módulo (is_module):
+      // antes só pegava aqui uma peça-módulo aninhada de verdade; a gaveta/
+      // frente de gaveta do Construtor são peças-COMPONENTE comuns
+      // (is_module:false, mesmo caso de toda porta do Construtor — ver
+      // resolveHingeSide/hinge_side), então nunca abriam no 3D antes desta
+      // correção (mesmo bug-irmão do BUG #2 de hinge_side, migration 132).
+      // slide_distance_mm (novo, só na frente de gaveta sintetizada por
+      // layout-engine.js emitContent): sobrescreve a distância genérica
+      // (baseada na PRÓPRIA profundidade `d`, ótima pro caixote da gaveta,
+      // errada pra frente fina de ~19.5mm) — a frente precisa abrir a MESMA
+      // distância que o caixote atrás dela, senão parece travada.
       const opening = hingeSide
-        ? { type: 'hinge', side: hingeSide, width: w }
-        : (part.is_module && part.opening_type === 'slide_out')
-          ? { type: 'slide', distance: Math.min(d * 0.7, 0.4) }
+        ? { type: 'hinge', side: hingeSide, width: w, height: h }
+        : (part.opening_type === 'slide_out')
+          ? { type: 'slide', distance: part.slide_distance_mm != null ? part.slide_distance_mm / 1000 : Math.min(d * 0.7, 0.4) }
           : null;
       // rotateTexture=false aqui embaixo (sempre) — o giro de 'free' já foi
       // aplicado na PRÓPRIA geometria acima (rotateGeometryUV90); passar
@@ -1921,7 +2001,9 @@ const Viewer3D = (function () {
       // manualmente em vez de automaticamente. Sem isso, a porta abria/fechava
       // (openables já cobria isso via resolveHingeSide) mas não desenhava a
       // ferragem física da dobradiça.
-      if (hingeSide) {
+      if (hingeSide === 'top' || hingeSide === 'bottom') {
+        placeFlapHardware(freeGroup, w, h, d, hingeSide);
+      } else if (hingeSide) {
         placeDoorHinges(freeGroup, w, h, d, part.height_mm, hingeSide);
       }
     }
@@ -2037,7 +2119,42 @@ const Viewer3D = (function () {
       const content = resolveContent(part, geometry);
       const x = cursorX + doorW / 2;
       const hingeSide = resolveHingeSide(part);
-      const opening = hingeSide ? { type: 'hinge', side: hingeSide, width: doorW } : null;
+      // height: doorHeightM — só usada por hingeSide 'top'/'bottom'
+      // (basculante), ver positionWithOpening; 'left'/'right' continuam
+      // usando só width, comportamento de sempre.
+      //
+      // CORRIGIDO (2026-08-23, Matt: "coloquei sistema de abertura
+      // deslizante mas ela nao abre" — frente de gaveta ligada direto no
+      // módulo, position_role='front', opening_type='slide_out'): esta
+      // função só sabia montar `opening` pro caso 'hinge' — quando
+      // hingeSide não resolvia (frente sem dobradiça, caso de toda gaveta/
+      // frente deslizante), `opening` caía sempre em null, então a peça
+      // nunca entrava em `openables` e o botão "Abrir gavetas" não tinha
+      // nada pra animar nela. Mesmo bug-irmão do já corrigido em 'free'
+      // (2026-08-20, ver comentário lá) — 'front' também precisa do
+      // fallback pra opening_type==='slide_out'. positionWithOpening já
+      // sabe posicionar type:'slide' (desloca no eixo Z a partir da base) —
+      // só faltava esta função pedir isso.
+      // CORRIGIDO (2026-08-23, 2ª parte — Matt: "a frente ainda nao abre,
+      // so a gaveta abre. mesmo as duas tendo abertura deslizante"): a
+      // distância de fallback (sem slide_distance_mm cadastrado, que hoje só
+      // a árvore do Construtor preenche — não existe campo pra isso no
+      // formulário manual de Componentes) usava `d` = a PRÓPRIA profundidade
+      // do painel (aqui sempre fina, ~19mm — é uma frente/porta, não uma
+      // caixa) — Math.min(0.019*0.7, 0.4) ≈ 13mm de curso. A peça ATÉ abria
+      // (entrava em openables certinho), só que 13mm ao lado da gaveta de
+      // verdade (papel 'drawer', que desliza uma fração da profundidade REAL
+      // do módulo, quase sempre 250-350mm) é visualmente imperceptível —
+      // parecia não abrir. Corrigido pra usar `D` (profundidade do
+      // CONTAINER, mesmo parâmetro que o papel 'drawer' já usa pro próprio
+      // fallback, ver `Math.min(drawerD * 0.7, 0.4)` no papel 'drawer' bem
+      // acima) — assim uma frente solta desliza a mesma ordem de grandeza da
+      // gaveta que ela cobre, mesmo sem slide_distance_mm cadastrado.
+      const opening = hingeSide
+        ? { type: 'hinge', side: hingeSide, width: doorW, height: faceB }
+        : (part.opening_type === 'slide_out')
+          ? { type: 'slide', distance: part.slide_distance_mm != null ? part.slide_distance_mm / 1000 : Math.min(D * 0.7, 0.4) }
+          : null;
       // comPeca: a porta é o único papel que NÃO passa pelo emit de
       // placePieceInBox (ela tem empilhamento próprio, ver o comentário
       // grande acima), então o contexto da peça pro material por face
@@ -2053,7 +2170,9 @@ const Viewer3D = (function () {
       // aninhado. Quantidade vem da MESMA regra usada no cálculo de preço
       // (Pricing.hingeCountForDoorHeight), pra nunca desenhar um número
       // diferente do que foi cobrado.
-      if (hingeSide) {
+      if (hingeSide === 'top' || hingeSide === 'bottom') {
+        placeFlapHardware(doorGroup, doorW, faceB, thickness, hingeSide);
+      } else if (hingeSide) {
         placeDoorHinges(doorGroup, doorW, faceB, thickness, part.height_mm, hingeSide);
       }
 
@@ -2173,6 +2292,120 @@ const Viewer3D = (function () {
         doorGroup.add(screwMesh);
       });
     }
+  }
+
+  // Ferragem de porta BASCULANTE/BASCULANTE INVERSO (2026-08-20, pedido do
+  // Matt com foto de referência — antes disso os 2 mecanismos saíam com
+  // opening_type:'none', sem hardware nenhum desenhado, ver migration 132).
+  // Diferente de placeDoorHinges (dobradiça de embutir, eixo vertical): a
+  // porta basculante não usa dobradiça de embutir — usa um par de PISTÕES A
+  // GÁS (1 de cada lado, esquerda/direita) que sustentam a porta aberta
+  // numa posição intermediária, mais uns "nós" de dobradiça simples na
+  // própria borda que gira (piano hinge / dobradiça de pressão, não copo
+  // broqueado).
+  //
+  // doorGroup AQUI já É o grupo-pivô (mesmo `doorGroup`/`freeGroup` que os
+  // dois chamadores passam pra placeDoorHinges — ver positionWithOpening: pra
+  // opening.type==='hinge' o `emit()` devolve o `pivot`, não o content cru).
+  // Local space do pivô: origem (0,0,0) = a PRÓPRIA borda que gira (topo da
+  // porta pra hingeSide 'top', base pra 'bottom' — ver positionWithOpening),
+  // eixo X = largura da porta (-doorWidthM/2..+doorWidthM/2, centrado),
+  // sinal de Y = pra ONDE a porta pendura a partir da dobradiça ('top':
+  // desce, Y local negativo; 'bottom': sobe, Y local positivo).
+  //
+  // O pistão conecta 2 pontos que NÃO giram juntos: uma ponta é fixa no
+  // corpo do móvel (não gira com a porta), a outra é presa na porta (gira
+  // junto). Por isso o cilindro do pistão não pode nascer uma vez só — ele
+  // é recalculado a cada quadro que a porta estiver girando (ver
+  // `updateStruts`, chamada de dentro de animate() via
+  // `pivot.userData.updateStruts`), igual uma peça de "olhar pro alvo"
+  // comum em jogos/3D. A ponta fixa e o cilindro do pistão são filhos do
+  // MESMO parent que o doorGroup (não do doorGroup em si — senão girariam
+  // junto com a porta), pra ficarem no mesmo espaço de coordenadas.
+  function placeFlapHardware(doorGroup, doorWidthM, doorHeightM, doorThicknessM, hingeSide) {
+    const parent = doorGroup && doorGroup.parent;
+    if (!parent || typeof THREE === 'undefined') return;
+    const { metal } = getHingeMaterials();
+
+    // ---- 1. "Nós" de dobradiça na própria borda que gira (visual simples,
+    // 3 pontos ao longo da largura — não tem copo/aba porque não é
+    // dobradiça de embutir). Ficam DENTRO do doorGroup: giram junto com a
+    // porta (fisicamente corretos, o corpo da dobradiça é preso na porta).
+    const knuckleRadius = 0.007;
+    const knuckleLen = Math.min(0.045, doorWidthM * 0.1);
+    [0.12, 0.5, 0.88].forEach((f) => {
+      const lx = -doorWidthM / 2 + doorWidthM * f;
+      const geo = new THREE.CylinderGeometry(knuckleRadius, knuckleRadius, knuckleLen, 12);
+      geo.rotateZ(Math.PI / 2); // cilindro nasce em pé (eixo Y); deita no eixo X (largura)
+      const knuckle = new THREE.Mesh(geo, metal);
+      knuckle.position.set(lx, 0, -doorThicknessM / 2 - knuckleRadius * 0.6);
+      doorGroup.add(knuckle);
+    });
+
+    // ---- 2. Pistão a gás — 1 de cada lado (esquerda/direita da porta) ----
+    // sign: 'top' (basculante) a porta pendura PRA BAIXO do pivô (Y local
+    // negativo); 'bottom' (basculante inverso) pendura PRA CIMA (Y local
+    // positivo) — ver positionWithOpening.
+    const sign = hingeSide === 'top' ? -1 : 1;
+    // Ponta da porta: perto da borda LIVRE (oposta à dobradiça), onde o
+    // pistão tem alavanca de verdade — igual a foto de referência.
+    const doorEndLocalY = sign * (doorHeightM - Math.min(0.12, doorHeightM * 0.25));
+    // Ponta fixa no corpo: mais perto da dobradiça que a ponta da porta
+    // (suporte curto, preso na lateral perto do topo/base do móvel), e
+    // puxada pra TRÁS (sentido do interior do móvel) a partir da posição
+    // FECHADA da porta — aproximação por não termos a profundidade real do
+    // módulo aqui (mesmo espírito das outras SIMPLIFICAÇÕES CONSCIENTES do
+    // arquivo, ex.: giro de peça inclinada).
+    const fixedLocalYOffset = sign * Math.min(0.15, doorHeightM * 0.4);
+    const fixedBackZ = doorGroup.position.z - Math.min(0.13, doorThicknessM + 0.09);
+
+    const insetX = Math.min(0.045, doorWidthM * 0.12);
+    const strutRadius = 0.006;
+    const braceGeo = () => new THREE.BoxGeometry(0.018, 0.05, 0.03);
+    const struts = [];
+
+    [-1, 1].forEach((sideX) => {
+      const lx = sideX * (doorWidthM / 2 - insetX);
+
+      // Suporte fixo na lateral do móvel — filho do PARENT (não gira).
+      const bracket = new THREE.Mesh(braceGeo(), metal);
+      bracket.position.set(doorGroup.position.x + lx, doorGroup.position.y + fixedLocalYOffset, fixedBackZ);
+      parent.add(bracket);
+
+      // Suporte na porta — filho do doorGroup (gira junto).
+      const doorBracket = new THREE.Mesh(braceGeo(), metal);
+      doorBracket.position.set(lx, doorEndLocalY, -doorThicknessM / 2 - 0.015);
+      doorGroup.add(doorBracket);
+
+      // Cilindro do pistão — filho do PARENT (não gira; sua ORIENTAÇÃO/
+      // COMPRIMENTO é que mudam a cada quadro pra continuar ligando as 2
+      // pontas, ver updateStruts).
+      const strutGeo = new THREE.CylinderGeometry(strutRadius, strutRadius, 0.1, 8);
+      const strutMesh = new THREE.Mesh(strutGeo, metal);
+      parent.add(strutMesh);
+
+      struts.push({ mesh: strutMesh, fixedPos: bracket.position, doorLocalPos: doorBracket.position });
+    });
+
+    const tmpWorld = new THREE.Vector3();
+    const tmpDir = new THREE.Vector3();
+    const upVec = new THREE.Vector3(0, 1, 0);
+    function updateStruts() {
+      parent.updateMatrixWorld(true);
+      doorGroup.updateMatrixWorld(true);
+      struts.forEach((s) => {
+        tmpWorld.copy(s.doorLocalPos);
+        doorGroup.localToWorld(tmpWorld); // ponta da porta -> espaço da cena
+        parent.worldToLocal(tmpWorld);    // -> espaço do parent (mesmo da ponta fixa/pistão)
+        tmpDir.subVectors(tmpWorld, s.fixedPos);
+        const len = Math.max(tmpDir.length(), 0.02);
+        s.mesh.position.copy(s.fixedPos).addScaledVector(tmpDir, 0.5);
+        s.mesh.scale.set(1, len / 0.1, 1); // strutGeo nasceu com altura 0.1
+        s.mesh.quaternion.setFromUnitVectors(upVec, tmpDir.normalize());
+      });
+    }
+    updateStruts(); // estado inicial (a porta já nasce aberta/fechada conforme doorsOpen)
+    doorGroup.userData.updateStruts = updateStruts;
   }
 
   // width_mm/height_mm/depth_mm = medidas atuais do módulo (do formulário do

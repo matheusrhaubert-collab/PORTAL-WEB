@@ -430,7 +430,12 @@ document.getElementById('po-add-item-btn').addEventListener('click', async () =>
       // usuário 2026-07-26, ver widthResizable/heightResizable e
       // updateProjectSlotDimension/updateProjectSlotWidthFromLeft).
       widthPresetsMm: currentModule.width_locked ? (dimensionPresets.width || []).map((r) => Number(r.value_mm)) : [],
-      heightPresetsMm: currentModule.height_locked ? (dimensionPresets.height || []).map((r) => Number(r.value_mm)) : []
+      heightPresetsMm: currentModule.height_locked ? (dimensionPresets.height || []).map((r) => Number(r.value_mm)) : [],
+      // Ver mesmo comentário em insertProjectModuleDefault (portal-06a) —
+      // dropdown de SKU no painel da direita precisa do rótulo, não só do mm.
+      // dimensionPresets já veio com select('*'), então já tem `.label`.
+      widthPresetsLabeled: currentModule.width_locked ? (dimensionPresets.width || []).map((r) => ({ value_mm: Number(r.value_mm), label: r.label || null })) : [],
+      heightPresetsLabeled: currentModule.height_locked ? (dimensionPresets.height || []).map((r) => ({ value_mm: Number(r.value_mm), label: r.label || null })) : []
     };
     if (!existingSlot) newSlot.x_mm = computeDefaultProjectSlotX(newSlot.width_mm);
 

@@ -911,20 +911,11 @@ function renderModuleGallery() {
     // ÚNICA exceção ao "sem atalho de adicionar rápido" (2026-07-19), pedida
     // explicitamente pelo usuário em 2026-07-29.
     const skuOptions = moduleSkuPresetsByModuleId[m.id] || [];
-    const skuOptionLabel = (s) => {
-      if (s.width_mm != null && s.height_mm != null) {
-        return `${s.reference} — ${formatDimension(s.width_mm, galleryUnit)} x ${formatDimension(s.height_mm, galleryUnit)}`;
-      }
-      if (s.width_mm != null) {
-        return `${s.reference} — ${I18n.t('step1.filter_width')} ${formatDimension(s.width_mm, galleryUnit)}`;
-      }
-      return `${s.reference} — ${I18n.t('step1.filter_height')} ${formatDimension(s.height_mm, galleryUnit)}`;
-    };
     const skuBlock = skuOptions.length ? `
       <div class="po-module-card-sku">
         <select class="po-module-card-sku-select">
           <option value="">${I18n.t('step1.sku_placeholder')}</option>
-          ${skuOptions.map((s) => `<option value="${s.reference}">${skuOptionLabel(s)}</option>`).join('')}
+          ${skuOptions.map((s) => `<option value="${s.reference}">${skuOptionLabelForUnit(s, galleryUnit)}</option>`).join('')}
         </select>
       </div>
     ` : '';
@@ -1073,6 +1064,23 @@ async function loadModuleSkuPresets() {
 // addModuleToCartWithSku, que usa o padrão do módulo pra dimensão sem
 // referência). Quando mais de um código bate, prioriza o mais específico
 // (o que define as duas dimensões, depois o de 1 dimensão só).
+// Texto de UMA opção do dropdown de referência/SKU — extraído (2026-08-21)
+// da vitrine (renderModuleGallery) pra virar função COMPARTILHADA: a aba
+// Projetos (renderProjectConfigPanel/renderProjectLibrary, ver
+// portal-06a/06c-projetos-*.js) precisava do MESMO texto "referência —
+// medida(s)" pro dropdown de SKU que ela ganhou ali (pedido do usuário:
+// "quando tem opcoes travas com sku deve ter um dropbox mostrando as SKU
+// pra rapida escolha... pensando em colocar nos modulos da esqureda
+// tambem") — duplicar a lógica de formatação seria a mesma armadilha de
+// [[quatro_copias_do_resolvedor_de_pecas]], só que pra texto de UI em vez
+// de cálculo.
+function skuOptionLabelForUnit(s, unit) {
+  // Matt (21/08): "pode deixar so o SKU. sem a largura." — só a referência,
+  // sem o sufixo de dimensão (unit fica sem uso aqui, mantido no parâmetro
+  // pra não mudar a assinatura chamada pelos 3 lugares que usam isso).
+  return s.reference;
+}
+
 function findMatchingSkuReference(moduleId, widthMm, heightMm) {
   const list = moduleSkuPresetsByModuleId[moduleId] || [];
   const eq = (a, b) => Math.round(Number(a)) === Math.round(Number(b));
@@ -1879,7 +1887,16 @@ function renderShelfQuantityInputs() {
 function collectDimConfigurablePieces(piecesList, results) {
   results = results || [];
   (piecesList || []).forEach((p) => {
-    if (p.is_module && p.client_dimension_configurable) results.push(p);
+    // Generalizado 2026-08-21 pra peça-FOLHA também (Matt: "para frentes e
+    // portas quero poder dar 2cliques na peca e redimencionar ela") — antes
+    // só peça-módulo (is_module) qualificava, mesmo raciocínio de
+    // collectColorConfigurablePieces (generalizada em 2026-07-19 pro mesmo
+    // motivo). O motor de preço/3D já mescla dimOverrides por piece.id
+    // genericamente (calculateLeafPiece/resolvePiecesForViewer, pricing.js/
+    // module-pieces.js), então uma peça-folha com o flag ligado (só
+    // `kind:'front'` do Construtor liga, ver layout-engine.js toPieceRows)
+    // funciona sem nenhuma outra mudança no cálculo.
+    if (p.client_dimension_configurable) results.push(p);
     if (p.is_module && p.child_pieces && p.child_pieces.length) {
       collectDimConfigurablePieces(p.child_pieces, results);
     }
