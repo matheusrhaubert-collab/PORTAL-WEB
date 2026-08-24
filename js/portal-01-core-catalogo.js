@@ -1247,7 +1247,16 @@ async function loadModules() {
   // todos esses lugares de uma vez, sem precisar duplicar a checagem em cada
   // um. admin.js NÃO usa esta função (tem sua própria modulesCache, sem
   // filtro, pra continuar deixando escolher um invisível como peça).
-  const { data, error } = await supabaseClient.from('modules').select('*').eq('active', true).eq('is_invisible', false).order('name');
+  // sort_order (migration 068) — mesma ordem que o admin/ERP usa pra listar
+  // módulos (erp/js/adm/10-modulos.js, loadModules). Antes esta query só
+  // ordenava por nome, então a ordem das setas ▲▼ que o Matt ajusta no ERP
+  // não refletia na vitrine "New Quote" do portal. Fallback pra quem ainda
+  // não rodou a migration (order('sort_order') quebraria a query inteira,
+  // não só a ordenação) — mesmo padrão do ERP.
+  let { data, error } = await supabaseClient.from('modules').select('*').eq('active', true).eq('is_invisible', false).order('sort_order').order('name');
+  if (error) {
+    ({ data, error } = await supabaseClient.from('modules').select('*').eq('active', true).eq('is_invisible', false).order('name'));
+  }
   if (error) { showError(I18n.t('loaderr.modules', { msg: error.message })); return; }
   allModules = data;
   // Dropdown de referência (SKU) do card do catálogo — pedido do usuário
