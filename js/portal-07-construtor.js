@@ -109,7 +109,7 @@ let projectBuilderQtdAlvo = {};
 // fazer, com from/to sendo índices dos filhos. Sem isso não haveria como
 // exprimir "uma folha na frente destes 3 vãos".
 let projectBuilderSelIds = [];
-let projectBuilderRangeDrag = null;   // { ancoraId } enquanto arrasta
+let projectBuilderRangeDrag = null;   // { ancoraId, startX, startY } enquanto arrasta
 
 // Irmãos do nó (os filhos do pai dele) + o índice dele ali dentro.
 function projectBuilderIrmaos(nodeId) {
@@ -155,6 +155,10 @@ const PROJECT_BUILDER_FOLGA_DOB = 2;
 const PROJECT_BUILDER_MIN_VAO = 40;
 const PROJECT_BUILDER_PASSO = 5;    // passo do arrasto de divisória, em mm
 const PROJECT_BUILDER_UNDO_MAX = 30;
+// Piso de distância (px de tela) pra um pointerenter em outro vão contar
+// como arraste de faixa de propósito — ver listener de pointerenter em
+// renderProjectBuilderStage (bug do iPad travando seleção, 2026-08-23).
+const PROJECT_BUILDER_DRAG_MIN_PX = 10;
 
 async function openProjectModuleBuilder(slotId) {
   const slot = projectSlots.find((s) => s.id === slotId);
@@ -1801,13 +1805,28 @@ function renderProjectBuilderStage() {
     // item só e o comportamento é o de sempre).
     r.addEventListener('pointerdown', (ev) => {
       ev.stopPropagation();
-      projectBuilderRangeDrag = { ancoraId: r.dataset.nodeId };
+      // startX/startY (2026-08-23, ver PROJECT_BUILDER_DRAG_MIN_PX abaixo):
+      // guarda onde o dedo/mouse pousou, pra `pointerenter` só valer como
+      // "arrastou de propósito pra outro vão" depois de andar um pouco —
+      // sem isso, no toque, um tap "parado" que treme 1-2px já cruzava pro
+      // vão vizinho e pintava uma faixa de 2 que ninguém pediu.
+      projectBuilderRangeDrag = { ancoraId: r.dataset.nodeId, startX: ev.clientX, startY: ev.clientY };
       projectBuilderSelIds = [r.dataset.nodeId];
       projectBuilderSelId = r.dataset.nodeId;
       projectBuilderPintaSelecao();
     });
-    r.addEventListener('pointerenter', () => {
+    r.addEventListener('pointerenter', (ev) => {
       if (!projectBuilderRangeDrag) return;
+      // PROJECT_BUILDER_DRAG_MIN_PX: distância mínima (em pixels de tela)
+      // desde o pointerdown pra um `pointerenter` em OUTRO vão contar como
+      // arraste de faixa de verdade. Toque tem bem mais tremor que mouse —
+      // sem esse piso, tocar uma vez já podia "vazar" pro vão ao lado
+      // (ainda mais depois que o vão fica menor, cada peça inserida deixa a
+      // grade mais apertada) e pintar uma faixa de 2 sem o usuário arrastar
+      // nada de propósito.
+      const dx = (ev.clientX || 0) - projectBuilderRangeDrag.startX;
+      const dy = (ev.clientY || 0) - projectBuilderRangeDrag.startY;
+      if ((dx * dx + dy * dy) < PROJECT_BUILDER_DRAG_MIN_PX * PROJECT_BUILDER_DRAG_MIN_PX) return;
       projectBuilderSelecionaFaixa(projectBuilderRangeDrag.ancoraId, r.dataset.nodeId);
     });
     r.addEventListener('click', (ev) => {
@@ -2764,6 +2783,25 @@ function insertProjectBuilderItem(accessoryId, nodeId, qtd) {
     }
     projectBuilderSelId = node.id;
   }
+  // BUG CORRIGIDO (2026-08-23, relato do Matt no iPad: "quando seleciono um
+  // vao... ele nao deixa eu selecionar outro. tipo ele trava no vao que eu
+  // cliquei depois de colocar qualquer coisa") — só o ramo 'front' COM faixa
+  // pintada (acima) zerava `projectBuilderSelIds` depois de inserir. Os
+  // outros 3 caminhos (split, content, front SEM faixa) deixavam uma faixa
+  // de 2+ vãos sobrevivendo à inserção sempre que o toque no vão tocasse de
+  // leve um vizinho antes de soltar o dedo (`pointerenter` em
+  // projectBuilderSelecionaFaixa, ver bloco de listeners em
+  // renderProjectBuilderStage — no touch, um "toque" raramente é 100%
+  // parado, e o vão fica MENOR a cada peça inserida, piorando a cada rodada,
+  // que é exatamente o "trava depois de colocar qualquer coisa" relatado).
+  // Com a faixa antiga viva, o `click` do próximo vão nunca atualiza
+  // `projectBuilderSelId` (ver `if (projectBuilderSelIds.length <= 1)` no
+  // listener de click) — trava visualmente no vão/faixa anterior até reabrir
+  // o Construtor (que reinicia o estado do zero). Zerar aqui, sempre, fecha
+  // os 3 caminhos que faltavam — mesmo que o usuário não tenha arrastado de
+  // propósito.
+  projectBuilderSelIds = [];
+  projectBuilderRangeDrag = null;
   markProjectDirty();
   rebuildProjectBuilder();
 }

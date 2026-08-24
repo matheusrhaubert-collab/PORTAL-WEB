@@ -194,36 +194,91 @@ function updateProjectSlotColor(slot, roleId, color) {
 let projectMoveStepMm = 1;
 let projectMoveRotateStepDeg = 1;
 
-// Módulo de PAREDE — axis 'x' (ao longo da parede) ou 'y' (altura do chão).
+// ATUALIZAÇÃO 2026-08-23 (pedido do Matt, com o mesmo print do Promob de
+// referência: "o dimencionamento esta so num sentido... sao os 3 sentidos.
+// rotacao nos 3 sentidos tambem"): os dois tipos de módulo passam a ter os 3
+// eixos de movimento (X/Y/Z) e os 3 eixos de rotação (X/Y/Z) na UI, não só
+// os 1-2 que o modelo de dados original previa. Pra não inventar colisão/
+// física nova nos eixos que NUNCA existiram (parede não tinha profundidade
+// livre nem rotação própria; ilha não tinha altura), cada tipo continua com
+// os eixos REAIS que já tinha (com o mesmo clamp de sempre) e ganha os que
+// faltavam como ajuste FINO — mesmo princípio já usado em offset_x_mm/
+// offset_z_mm de position_role='front' (26-modulo-pecas-3d.js): não
+// participa de colisão, não aparece nas vistas 2D (planta/frontal), só na
+// cena 3D de verdade (ver fineOffsetZ_m/fineOffsetY_m/fineRotX/Y/Z em
+// buildProjectAssemblies + renderFreeformWalls, portal-08/viewer3d_composition).
+//
+//   PAREDE:  X = x_mm (real, ao longo da parede) | Y = floor_height_mm (real,
+//            altura) | Z = fineOffsetZMm (fino, afasta da parede)
+//            Rotação X/Y/Z = fineRotXDeg/fineRotYDeg/fineRotZDeg (fino, os 3)
+//   ILHA:    X = floor_x_mm (real) | Y = fineOffsetYMm (fino, eleva do chão)
+//            | Z = floor_z_mm (real)
+//            Rotação Y = floor_rotation_deg (real, já tinha — giro no lugar)
+//            Rotação X/Z = fineRotXDeg/fineRotZDeg (fino, novos)
+
+// Módulo de PAREDE — axis 'x' (ao longo da parede, real), 'y' (altura, real)
+// ou 'z' (afastamento da parede, fino).
 function nudgeProjectWallSlot(slot, axis, deltaMm) {
-  if (axis === 'x') slot.x_mm = Number(slot.x_mm || 0) + deltaMm;
-  else slot.floor_height_mm = Number(slot.floor_height_mm || 0) + deltaMm;
-  // Mesmo clamp do arraste (largura da parede, recuo de canto, pé-direito) —
-  // ver clampProjectSlotPosition em portal-06b-projetos-canvas-ia-custo.js.
-  clampProjectSlotPosition(slot);
-  resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
+  if (axis === 'x') {
+    slot.x_mm = Number(slot.x_mm || 0) + deltaMm;
+  } else if (axis === 'y') {
+    slot.floor_height_mm = Number(slot.floor_height_mm || 0) + deltaMm;
+  } else {
+    // 'z' — fino, sem clamp (mesma filosofia do offset_z_mm de 'front').
+    slot.fineOffsetZMm = Number(slot.fineOffsetZMm || 0) + deltaMm;
+  }
+  if (axis === 'x' || axis === 'y') {
+    // Mesmo clamp do arraste (largura da parede, recuo de canto, pé-direito) —
+    // ver clampProjectSlotPosition em portal-06b-projetos-canvas-ia-custo.js.
+    clampProjectSlotPosition(slot);
+    resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
+  }
   renderProjectCanvas();
   markProjectDirty();
   renderProjectConfigPanel(); // atualiza a leitura de posição no painel
 }
 
-// Módulo ILHA — desloca no piso (dx/dz, mundo) e mantém dentro do retângulo
-// do ambiente (mesmo clamp do arraste livre, ver clampFloorSlotIntoRoom).
-function nudgeProjectFloorSlot(slot, dxMm, dzMm) {
-  slot.floor_x_mm = Number(slot.floor_x_mm || 0) + dxMm;
-  slot.floor_z_mm = Number(slot.floor_z_mm || 0) + dzMm;
-  clampFloorSlotIntoRoom(slot);
+// Módulo de PAREDE — rotação fina nos 3 eixos (nenhum é real: parede nunca
+// girava sozinha, sempre olhava pra fora dela — ver comentário acima).
+function nudgeProjectWallSlotRotation(slot, axis, deltaDeg) {
+  const key = axis === 'x' ? 'fineRotXDeg' : axis === 'z' ? 'fineRotZDeg' : 'fineRotYDeg';
+  slot[key] = ((Number(slot[key] || 0) + deltaDeg) % 360 + 360) % 360;
   renderProjectCanvas();
   markProjectDirty();
 }
 
-// Módulo ILHA — gira em torno do próprio centro (graus, sentido livre, não
-// travado em 90° como o corner_rotation de peça-módulo do catálogo). Reclampa
-// a posição depois: girar troca a pegada (largura<->profundidade perto de
-// 90°) e pode empurrar a peça pra fora do retângulo do ambiente.
-function nudgeProjectFloorSlotRotation(slot, deltaDeg) {
-  slot.floor_rotation_deg = ((Number(slot.floor_rotation_deg || 0) + deltaDeg) % 360 + 360) % 360;
-  clampFloorSlotIntoRoom(slot);
+// Módulo ILHA — axis 'x'/'z' (posição livre no piso, real, mesmo clamp do
+// arraste livre — ver clampFloorSlotIntoRoom) ou 'y' (elevação do chão, fina
+// — só teto como limite de bom senso, sem checagem de colisão de verdade).
+function nudgeProjectFloorSlot(slot, axis, deltaMm) {
+  if (axis === 'x') {
+    slot.floor_x_mm = Number(slot.floor_x_mm || 0) + deltaMm;
+    clampFloorSlotIntoRoom(slot);
+  } else if (axis === 'z') {
+    slot.floor_z_mm = Number(slot.floor_z_mm || 0) + deltaMm;
+    clampFloorSlotIntoRoom(slot);
+  } else {
+    const maxMm = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
+    slot.fineOffsetYMm = clamp(Number(slot.fineOffsetYMm || 0) + deltaMm, 0, maxMm);
+  }
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
+// Módulo ILHA — rotação. axis 'y' continua o giro REAL (gira em torno do
+// próprio centro, sentido livre, reclampa a posição depois: girar troca a
+// pegada largura<->profundidade perto de 90° e pode empurrar a peça pra fora
+// do retângulo do ambiente). axis 'x'/'z' são tombar/rolar — finos, sem
+// reclamp (a ilha pode "flutuar" visualmente ao inclinar, mesmo trade-off já
+// aceito nos outros eixos finos).
+function nudgeProjectFloorSlotRotation(slot, axis, deltaDeg) {
+  if (axis === 'y') {
+    slot.floor_rotation_deg = ((Number(slot.floor_rotation_deg || 0) + deltaDeg) % 360 + 360) % 360;
+    clampFloorSlotIntoRoom(slot);
+  } else {
+    const key = axis === 'x' ? 'fineRotXDeg' : 'fineRotZDeg';
+    slot[key] = ((Number(slot[key] || 0) + deltaDeg) % 360 + 360) % 360;
+  }
   renderProjectCanvas();
   markProjectDirty();
 }
@@ -513,61 +568,67 @@ function renderProjectConfigPanel() {
     </div>
   ` : '';
 
-  // "Movimentação fina" (2026-08-23, pedido do Matt com print do Promob de
-  // referência) — ver nudgeProjectWallSlot/nudgeProjectFloorSlot/
-  // nudgeProjectFloorSlotRotation acima pro porquê dos dois modelos (parede
-  // vs. ilha). Módulo de parede também ganha a leitura "Posição" (chave de
-  // i18n já existia, sem uso — devia ser deixada de propósito por uma sessão
-  // anterior pra isto) pra dar feedback de onde ele está depois de cada seta,
-  // já que o 3D sozinho não deixa claro "quantos mm faltam pra encostar".
-  // Ilha (posição livre no piso) não ganha a leitura — o 3D já mostra o
-  // movimento em 2 eixos de uma vez, ao contrário da parede (1 eixo por vez).
+  // "Movimentação/Rotação fina" (2026-08-23, pedido do Matt com print do
+  // Promob de referência — ver comentário grande em cima de
+  // nudgeProjectWallSlot pro porquê dos eixos reais vs. finos por tipo).
+  // Reformulado na mesma data (2ª rodada, o Matt: "o dimencionamento esta so
+  // num sentido... sao os 3 sentidos. rotacao nos 3 sentidos tambem. e ta
+  // muito proximo da configuracao de cima, sem cabecalho, ta baguncado
+  // jogado") — os dois tipos agora mostram os 3 eixos de movimento E os 3 de
+  // rotação, sempre (mesmos botões/rótulos X/Y/Z pros dois tipos, só o que
+  // cada eixo FAZ por baixo muda — ver nudgeProjectWallSlot(Rotation)/
+  // nudgeProjectFloorSlot(Rotation) acima), dentro de um cartão com
+  // cabeçalho próprio e separado visualmente do bloco de medidas acima
+  // (.po-proj-config-move no CSS: borda + fundo leve + margem de respiro).
   const isFloor = isFloorSlot(slot);
   const positionRow = !isFloor ? `
     <div class="po-proj-config-row"><span>${I18n.t('project.config_position_label')}</span><span>${I18n.t('project.config_position_value', { x: formatDimension(slot.x_mm, unit), y: formatDimension(slot.floor_height_mm, unit) })}</span></div>
   ` : '';
-  const moveAxesBlock = isFloor ? `
+
+  // Uma linha [rótulo do eixo] [−] [+] — mesmo layout pros 3 eixos de
+  // movimento (data-move) e pros 3 de rotação (data-rotate), só troca o
+  // atributo/ícone. `axis` vira o 1º char do data-attr; o handler do clique
+  // (abaixo) lê o resto como o sinal do passo (Number("-1")/Number("1")).
+  const axisRow = (attr, axis, labelKey, iconMinus, iconPlus) => `
     <div class="po-proj-move-axis-row">
-      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_x')}</span>
-      <button type="button" class="secondary po-proj-move-btn" data-move="x-1" title="-">◀</button>
-      <button type="button" class="secondary po-proj-move-btn" data-move="x1" title="+">▶</button>
-    </div>
-    <div class="po-proj-move-axis-row">
-      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_z')}</span>
-      <button type="button" class="secondary po-proj-move-btn" data-move="z-1" title="-">◀</button>
-      <button type="button" class="secondary po-proj-move-btn" data-move="z1" title="+">▶</button>
-    </div>
-  ` : `
-    <div class="po-proj-move-axis-row">
-      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_wall')}</span>
-      <button type="button" class="secondary po-proj-move-btn" data-move="x-1" title="-">◀</button>
-      <button type="button" class="secondary po-proj-move-btn" data-move="x1" title="+">▶</button>
-    </div>
-    <div class="po-proj-move-axis-row">
-      <span class="po-proj-move-axis-label">${I18n.t('project.move_axis_height')}</span>
-      <button type="button" class="secondary po-proj-move-btn" data-move="y-1" title="-">▼</button>
-      <button type="button" class="secondary po-proj-move-btn" data-move="y1" title="+">▲</button>
+      <span class="po-proj-move-axis-label">${I18n.t(labelKey)}</span>
+      <button type="button" class="secondary po-proj-move-btn" data-${attr}="${axis}-1" title="-">${iconMinus}</button>
+      <button type="button" class="secondary po-proj-move-btn" data-${attr}="${axis}1" title="+">${iconPlus}</button>
     </div>
   `;
-  const moveRotateBlock = isFloor ? `
-    <div class="po-proj-move-rotate-row">
-      <label>${I18n.t('project.move_rotate_label')}</label>
-      <button type="button" class="secondary po-proj-move-btn" data-rotate="-1" title="${I18n.t('project.move_rotate_label')} -">⟲</button>
-      <input type="text" inputmode="decimal" class="po-proj-move-rotate-step-input" value="${projectMoveRotateStepDeg}" />
-      <span class="po-proj-dim-unit">°</span>
-      <button type="button" class="secondary po-proj-move-btn" data-rotate="1" title="${I18n.t('project.move_rotate_label')} +">⟳</button>
-    </div>
-  ` : '';
+  const moveAxesBlock = axisRow('move', 'x', 'project.move_axis_x', '◀', '▶')
+    + axisRow('move', 'y', 'project.move_axis_y', '▼', '▲')
+    + axisRow('move', 'z', 'project.move_axis_z', '◀', '▶');
+  const rotateAxesBlock = axisRow('rotate', 'x', 'project.move_axis_x', '⟲', '⟳')
+    + axisRow('rotate', 'y', 'project.move_axis_y', '⟲', '⟳')
+    + axisRow('rotate', 'z', 'project.move_axis_z', '⟲', '⟳');
+  // Aviso curto: quais eixos têm colisão de verdade (real, igual arrastar)
+  // e quais são só ajuste visual fino (sem checagem nenhuma) — pra não
+  // parecer bug quando um eixo "não trava em nada".
+  const moveHint = isFloor ? I18n.t('project.move_hint_floor') : I18n.t('project.move_hint_wall');
   const moveBlock = `
     <div class="po-proj-config-move">
-      <span class="po-proj-config-section-label">${I18n.t('project.move_section_label')}</span>
-      <div class="po-proj-move-step-row">
-        <label>${I18n.t('project.move_step_label')}</label>
-        <input type="text" inputmode="decimal" class="po-proj-move-step-input" value="${formatDimensionNumber(projectMoveStepMm, unit)}" />
-        <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+      <div class="po-proj-move-section">
+        <div class="po-proj-move-section-header">
+          <span class="po-proj-config-section-label">${I18n.t('project.move_section_label')}</span>
+          <span class="po-proj-move-step-inline">
+            <input type="text" inputmode="decimal" class="po-proj-move-step-input" value="${formatDimensionNumber(projectMoveStepMm, unit)}" />
+            <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+          </span>
+        </div>
+        <div class="po-proj-move-pad">${moveAxesBlock}</div>
       </div>
-      <div class="po-proj-move-pad">${moveAxesBlock}</div>
-      ${moveRotateBlock}
+      <div class="po-proj-move-section po-proj-move-section-rotate">
+        <div class="po-proj-move-section-header">
+          <span class="po-proj-config-section-label">${I18n.t('project.move_rotate_section_label')}</span>
+          <span class="po-proj-move-step-inline">
+            <input type="text" inputmode="decimal" class="po-proj-move-rotate-step-input" value="${projectMoveRotateStepDeg}" />
+            <span class="po-proj-dim-unit">°</span>
+          </span>
+        </div>
+        <div class="po-proj-move-pad">${rotateAxesBlock}</div>
+      </div>
+      <p class="hint po-proj-move-hint">${moveHint}</p>
     </div>
   `;
 
@@ -651,12 +712,8 @@ function renderProjectConfigPanel() {
       // eixo, o resto (incl. sinal) é Number() direto.
       const axis = btn.dataset.move[0];
       const deltaMm = Number(btn.dataset.move.slice(1)) * projectMoveStepMm;
-      if (isFloor) {
-        if (axis === 'x') nudgeProjectFloorSlot(slot, deltaMm, 0);
-        else if (axis === 'z') nudgeProjectFloorSlot(slot, 0, deltaMm);
-      } else if (axis === 'x' || axis === 'y') {
-        nudgeProjectWallSlot(slot, axis, deltaMm);
-      }
+      if (isFloor) nudgeProjectFloorSlot(slot, axis, deltaMm);
+      else nudgeProjectWallSlot(slot, axis, deltaMm);
     });
   });
   const rotateStepInputEl = panel.querySelector('.po-proj-move-rotate-step-input');
@@ -670,7 +727,11 @@ function renderProjectConfigPanel() {
   }
   panel.querySelectorAll('.po-proj-move-btn[data-rotate]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      nudgeProjectFloorSlotRotation(slot, Number(btn.dataset.rotate) * projectMoveRotateStepDeg);
+      // Mesma convenção do data-move: 1º char = eixo, resto = sinal do passo.
+      const axis = btn.dataset.rotate[0];
+      const deltaDeg = Number(btn.dataset.rotate.slice(1)) * projectMoveRotateStepDeg;
+      if (isFloor) nudgeProjectFloorSlotRotation(slot, axis, deltaDeg);
+      else nudgeProjectWallSlotRotation(slot, axis, deltaDeg);
     });
   });
 

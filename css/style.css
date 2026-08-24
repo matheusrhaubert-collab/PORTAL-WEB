@@ -3374,28 +3374,43 @@ header.po-topnav {
 .po-proj-color-swatch:hover { box-shadow: 0 0 0 1px var(--accent) inset; }
 .po-proj-color-swatch.selected { border-color: var(--accent); }
 
-/* Movimentação fina (2026-08-23, pedido do Matt com print do Promob de
-   referência) — passo em mm/pol + setas que somam exatamente esse passo por
-   clique (ver nudgeProjectWallSlot/nudgeProjectFloorSlot/
-   nudgeProjectFloorSlotRotation em portal-06c-projetos-canvas-3d-acoes.js).
+/* Movimentação/Rotação fina (2026-08-23, pedido do Matt com print do Promob
+   de referência) — passo em mm/pol (ou graus) + setas que somam exatamente
+   esse passo por clique (ver nudgeProjectWallSlot(Rotation)/
+   nudgeProjectFloorSlot(Rotation) em portal-06c-projetos-canvas-3d-acoes.js).
+   Reformulado numa 2ª rodada no mesmo dia (o Matt: "ta muito proximo da
+   configuracao de cima, sem cabecalho, ta baguncado jogado. melhora isso
+   organiza essa coluna toda") — virou um CARTÃO próprio (borda + fundo
+   levemente destacado do painel, mesma ideia de "grupo visual" que falta no
+   resto do painel) com 2 seções internas headered (Movimentação/Rotação,
+   cada uma com [rótulo + campo de passo] alinhados na mesma linha, imitando
+   a separação em abas do Promob sem precisar de abas de verdade) e uma
+   dica de rodapé (.po-proj-move-hint) avisando quais eixos têm colisão real
+   e quais são só ajuste visual — ver moveHint em renderProjectConfigPanel.
    Especificidade `.po-proj-config-panel .po-proj-move-btn` de propósito —
    precisa vencer `.po-proj-config-panel .secondary` (linha ~3324, que força
    width:100%/margin-top:10px em QUALQUER botão .secondary do painel) sem
    tocar naquela regra genérica, que outros botões do painel ainda usam. */
-.po-proj-config-move { margin-bottom: 10px; }
-.po-proj-move-step-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.po-proj-move-step-row label { font-size: 12px; color: var(--muted); min-width: 40px; }
-.po-proj-move-step-row .po-proj-move-step-input { width: 56px; padding: 3px 4px; font-size: 12px; text-align: right; }
+.po-proj-config-move {
+  margin: 12px 0; padding: 10px 10px 8px; border-radius: 8px; border: 1px solid var(--border);
+}
+.po-proj-move-section + .po-proj-move-section {
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border);
+}
+.po-proj-move-section-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.po-proj-move-section-header .po-proj-config-section-label { margin: 0; font-weight: 600; color: var(--text); }
+.po-proj-move-step-inline { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.po-proj-move-step-inline input { width: 48px; padding: 3px 4px; font-size: 12px; text-align: right; }
 .po-proj-move-pad { display: flex; flex-direction: column; gap: 4px; }
 .po-proj-move-axis-row { display: flex; align-items: center; gap: 6px; }
-.po-proj-move-axis-label { font-size: 12px; color: var(--muted); min-width: 58px; flex: 1; }
+.po-proj-move-axis-label {
+  font-size: 12px; font-weight: 600; color: var(--muted); min-width: 18px; text-align: center;
+}
 .po-proj-config-panel .po-proj-move-btn {
   width: 30px; height: 26px; padding: 0; margin-top: 0; font-size: 13px; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
 }
-.po-proj-move-rotate-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-.po-proj-move-rotate-row label { font-size: 12px; color: var(--muted); min-width: 40px; }
-.po-proj-move-rotate-step-input { width: 40px; padding: 3px 4px; font-size: 12px; text-align: right; }
+.po-proj-move-hint { margin: 8px 0 0; font-size: 11px; line-height: 1.4; }
 
 /* ---------- CTAs da aba Projetos: Visualizar 3D + Foto realista ----------
    (2026-08-03, pedido do usuário: "deixa os botoes mais atraentes, esta so

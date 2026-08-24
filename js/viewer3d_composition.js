@@ -1393,10 +1393,19 @@ function createViewerComposition3D() {
         // Removida também em placeOne()/renderFreeform() acima e em
         // photoreal.js. O rodapé continua sendo DESENHADO no ambiente; ele só
         // não empurra mais ninguém.
-        a.group.rotation.y = rotY;
+        // Rotação fina 3 eixos (2026-08-23, ver assembly.fineRotX/Y/Z em
+        // buildProjectAssemblies) — X/Z são SEMPRE ajuste fino (parede nunca
+        // teve tilt/roll); Y soma o giro fino por cima do giro real da
+        // parede (rotY, fixo por qual parede o módulo ocupa).
+        a.group.rotation.set(a.fineRotX || 0, rotY + (a.fineRotY || 0), a.fineRotZ || 0);
         a.group.position.y = a.floor_height_m || 0;
         const layerDepth = Number(a.z_order || 0) * FREEFORM_DEPTH_STEP_M;
-        const depthOffset = a.depth_m / 2 + layerDepth;
+        // fineOffsetZ_m: afasta o módulo da parede além do "encostado" padrão
+        // — ajuste fino só visual (ver comentário em buildProjectAssemblies),
+        // soma na MESMA direção "pra dentro do ambiente" (ix/iz) que o resto
+        // do depthOffset já usa, então funciona certo em qualquer ângulo de
+        // parede.
+        const depthOffset = a.depth_m / 2 + layerDepth + (a.fineOffsetZ_m || 0);
 
         a.group.position.x = ox + ax * alongOffset + ix * depthOffset;
         a.group.position.z = oz + az * alongOffset + iz * depthOffset;
@@ -1466,10 +1475,17 @@ function createViewerComposition3D() {
     // contorno vermelho, mesmo arraste), só a matemática de posição muda.
     const floorList = ((options && options.floorAssemblies) || []).filter((a) => a && a.group);
     floorList.forEach((a) => {
-      a.group.rotation.y = Number(a.rotationY) || 0;
+      // Ilha: Y (rotationY, floor_rotation_deg) continua o giro REAL, com
+      // colisão/reclamp no ambiente (ver nudgeProjectFloorSlotRotation). X/Z
+      // de rotação (fineRotX/fineRotZ) são ajuste fino só visual — tombar/
+      // rolar não existia antes, não tem checagem de "saiu do ambiente".
+      a.group.rotation.set(a.fineRotX || 0, Number(a.rotationY) || 0, a.fineRotZ || 0);
       a.group.position.x = Number(a.floorX) || 0;
       a.group.position.z = Number(a.floorZ) || 0;
-      a.group.position.y = a.floor_height_m || 0;
+      // fineOffsetY_m: eleva a ilha do chão — ajuste fino só visual (mesmo
+      // princípio do fineOffsetZ_m de parede acima), com clamp de teto feito
+      // na origem (ver nudgeProjectFloorSlot, portal-06c).
+      a.group.position.y = (a.floor_height_m || 0) + (a.fineOffsetY_m || 0);
       a.group.userData.slotId = a.id;
       a.group.userData.wallIndex = null;
       a.group.userData.isFloorIsland = true;

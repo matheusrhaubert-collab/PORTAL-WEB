@@ -548,6 +548,10 @@ if (roomSettingsSaveBtn) {
     // Margem de revenda (migration 072) — persiste e já re-renderiza Galeria
     // e Meus Projetos pra refletir o novo valor sem precisar trocar de aba.
     await saveResaleMarginPct();
+    // Nome/telefone da loja (migration 138) — só grava algo pra quem pode
+    // gerar Proposta (lojista/contractor/administrador, saveDealerStoreInfo
+    // já se protege com canGenerateProposal() dentro).
+    await saveDealerStoreInfo();
     // Re-renderiza Galeria (respeitando os filtros atuais) e Meus Projetos
     // pra refletir a nova margem sem precisar trocar de aba.
     if (typeof applyGalleryFilters === 'function') applyGalleryFilters();

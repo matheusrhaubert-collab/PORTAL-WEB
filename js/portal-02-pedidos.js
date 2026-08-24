@@ -1113,6 +1113,16 @@ function renderOrderDetail() {
   document.getElementById('po-order-detail-total').textContent = formatMoney(total);
   updateOrderDetailVolumeWeight(items);
 
+  // "Gerar Proposta" (js/portal-10-proposta.js) — pra Dealer (lojista),
+  // administrador e contractor (canGenerateProposal, pedido do usuário
+  // 2026-08-24: "habilita gerar proposta pro administrador e pro
+  // lojista/contractor tambem"; era só isDealer() antes), em QUALQUER
+  // status do pedido (diferente de Aprovar/Salvar/Continuar comprando
+  // acima, que travam com isLocked) — pode querer gerar a proposta de novo
+  // mesmo depois de aprovado/pago.
+  const proposalBtn = document.getElementById('po-order-detail-proposal-btn');
+  if (proposalBtn) proposalBtn.style.display = canGenerateProposal() ? 'block' : 'none';
+
   // Aprovar só enquanto NADA foi decidido ainda (Pendente) — some a partir
   // de Aprovada em diante (isLocked cobre Aprovada/Paga/Entregue), não só
   // quando já está Aprovada como era antes de Pago/Entregue existirem.

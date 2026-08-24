@@ -1557,6 +1557,24 @@ function buildProjectAssemblies(slotsList) {
         assembly.rotationY = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
       }
 
+      // "Movimentação/Rotação fina" 3 eixos (2026-08-23, pedido do Matt: "sao
+      // os 3 sentidos... rotacao nos 3 sentidos tambem", com referência ao
+      // Promob) — ver nudgeProjectWallSlot/nudgeProjectFloorSlot em
+      // portal-06c-projetos-canvas-3d-acoes.js. Só os eixos que JÁ eram reais
+      // (x_mm/floor_height_mm de parede; floor_x_mm/floor_z_mm/floor_rotation_deg
+      // de ilha) continuam com colisão/clamp de verdade. Os eixos que o modelo
+      // de dados não tinha (Z de parede = afastar da parede; Y de ilha =
+      // elevar do chão; e QUALQUER rotação além do giro vertical da ilha) são
+      // um ajuste FINO só visual — mesmo princípio já usado em offset_x_mm/
+      // offset_z_mm de position_role='front' (26-modulo-pecas-3d.js): não
+      // participa de colisão nem aparece nas vistas 2D (planta/frontal), só
+      // na cena 3D de verdade (renderFreeformWalls, viewer3d_composition.js).
+      assembly.fineOffsetZ_m = Number(slot.fineOffsetZMm || 0) / 1000; // parede: afasta da parede
+      assembly.fineOffsetY_m = Number(slot.fineOffsetYMm || 0) / 1000; // ilha: eleva do chão
+      assembly.fineRotX = (Number(slot.fineRotXDeg || 0) * Math.PI) / 180;
+      assembly.fineRotY = (Number(slot.fineRotYDeg || 0) * Math.PI) / 180; // só parede — ilha usa rotationY (floor_rotation_deg) acima
+      assembly.fineRotZ = (Number(slot.fineRotZDeg || 0) * Math.PI) / 180;
+
       // Caixa invisível de "alvo de clique" (pedido do usuário 2026-07-26:
       // "nao estou conseguindo chegar com o mause no modulo baixo") — o
       // raycaster da Vista de Canto 3D (pickAssemblyAt, ver
@@ -2446,6 +2464,33 @@ async function sendProjectToOrder() {
   const btn = document.getElementById('po-proj-send-to-order-btn');
   if (btn) btn.disabled = true;
   try {
+    // Geometria do ambiente + render, CONGELADOS no momento do envio
+    // (migration 139, pedido do usuário 2026-08-24: "gerador de proposta...
+    // vista paralelo de todas as paredes e topo com cotas, isso deve gerar
+    // sozinho"). wall_shape/wall_widths_mm vêm do estado vivo do projeto
+    // (mesmos globais que renderProjectCanvas usa). Os 2 campos de render são
+    // lidos DIRETO do banco (não de loadedProjectFavorite, que só guarda
+    // {id,name,ai_preview_url} em memória e nunca teve thumbnail_data_url —
+    // ver photoreal_save_as_ai_base.md) pra pegar a versão mais fresca
+    // possível e não depender de todo ponto que reatribui aquele objeto.
+    // Sem projeto salvo (loadedProjectFavorite null), os 2 ficam null — a
+    // Proposta cai pro fallback dela mesma (aviso "sem render").
+    let projectRenderFields = { project_thumbnail_data_url: null, project_photoreal_url: null };
+    if (loadedProjectFavorite && loadedProjectFavorite.id) {
+      try {
+        const { data: freshProject } = await supabaseClient
+          .from('user_projects')
+          .select('thumbnail_data_url, ai_preview_url')
+          .eq('id', loadedProjectFavorite.id)
+          .single();
+        if (freshProject) {
+          projectRenderFields = {
+            project_thumbnail_data_url: freshProject.thumbnail_data_url || null,
+            project_photoreal_url: freshProject.ai_preview_url || null
+          };
+        }
+      } catch (e) { /* sem render disponível — pedido segue sem ele, Proposta avisa na hora */ }
+    }
     const { data: order, error: orderError } = await supabaseClient
       .from('orders')
       .insert({
@@ -2453,7 +2498,10 @@ async function sendProjectToOrder() {
         client_email: currentUser.email,
         order_type: 'project',
         status: 'submitted',
-        submitted_at: new Date().toISOString()
+        submitted_at: new Date().toISOString(),
+        wall_shape: projectWallShape,
+        wall_widths_mm: projectWallWidthsMm.slice(),
+        ...projectRenderFields
       })
       .select()
       .single();
@@ -2514,6 +2562,17 @@ async function sendProjectToOrder() {
         // construtor pela primeira vez. Ver rebuildProjectSlotLayoutPieces
         // (._layoutGeometry) e [[construtor_como_motor_principal]].
         layout: slot._layoutGeometry || null,
+        // POSIÇÃO NO AMBIENTE (migration 139) — congela onde este módulo
+        // ficava na sala no momento do envio, pros mesmos 4 campos que
+        // renderProjectCanvasTop/renderFreeformWalls usam pra desenhar
+        // elevação/planta baixa. Sem isto a Proposta só teria a lista solta
+        // de módulos, sem saber em qual parede/posição cada um fica.
+        project_placement: {
+          wall_index: Number(slot.wall_index || 0),
+          x_mm: Number(slot.x_mm || 0),
+          floor_height_mm: Number(slot.floor_height_mm || 0),
+          z_order: Number(slot.z_order || 0)
+        },
         quantity: 1,
         unit_price: (slot.result && slot.result.total) || 0,
         total_price: (slot.result && slot.result.total) || 0,
@@ -2874,6 +2933,16 @@ function serializeProjectSlots() {
     floor_x_mm: Number(slot.floor_x_mm || 0),
     floor_z_mm: Number(slot.floor_z_mm || 0),
     floor_rotation_deg: Number(slot.floor_rotation_deg || 0),
+    // Movimentação/Rotação FINA 3 eixos (2026-08-23, ver comentário grande em
+    // cima de nudgeProjectWallSlot, portal-06c-projetos-canvas-3d-acoes.js) —
+    // gravados SEMPRE (parede e ilha, default 0), mesmo padrão de
+    // floor_x_mm/floor_z_mm acima: sem chave = projeto salvo antes disso, cai
+    // no default 0 na restauração (ver portal-09-projetos-final.js).
+    fine_offset_z_mm: Number(slot.fineOffsetZMm || 0),
+    fine_offset_y_mm: Number(slot.fineOffsetYMm || 0),
+    fine_rot_x_deg: Number(slot.fineRotXDeg || 0),
+    fine_rot_y_deg: Number(slot.fineRotYDeg || 0),
+    fine_rot_z_deg: Number(slot.fineRotZDeg || 0),
     module_id: slot.module.id,
     width_mm: slot.width_mm,
     height_mm: slot.height_mm,

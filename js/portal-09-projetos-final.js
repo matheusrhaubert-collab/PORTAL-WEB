@@ -596,6 +596,14 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         floor_x_mm: Number(cfg.floor_x_mm || 0),
         floor_z_mm: Number(cfg.floor_z_mm || 0),
         floor_rotation_deg: Number(cfg.floor_rotation_deg || 0),
+        // Movimentação/Rotação fina 3 eixos (2026-08-23) — ver
+        // serializeProjectSlots (portal-08-projetos-paredes.js). Projeto
+        // salvo antes disso não tem essas chaves, cai no default 0.
+        fineOffsetZMm: Number(cfg.fine_offset_z_mm || 0),
+        fineOffsetYMm: Number(cfg.fine_offset_y_mm || 0),
+        fineRotXDeg: Number(cfg.fine_rot_x_deg || 0),
+        fineRotYDeg: Number(cfg.fine_rot_y_deg || 0),
+        fineRotZDeg: Number(cfg.fine_rot_z_deg || 0),
         module,
         pieces: effectivePieces,
         colorOptionsByRole: moduleColorsByRole,

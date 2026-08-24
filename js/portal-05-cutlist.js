@@ -136,6 +136,19 @@ function isDealer() {
   return !!currentUserProfile && currentUserProfile.role === 'lojista';
 }
 
+// Quem pode gerar Proposta (PDF) + configurar a marca (logo/dados da loja)
+// que aparece nela — pedido do usuário 2026-08-24: "habilita gerar proposta
+// pro administrador e pro lojista/contractor tambem". Nasceu só pra
+// isDealer() (role 'lojista'); passa a incluir 'administrador' e
+// 'contractor' também. NÃO mexe no toggle "ver como Dealer" (rebranding ao
+// vivo do cabeçalho pra apresentar pro cliente final na hora) nem em
+// portalViewMode — isso continua exclusivo de isDealer(), não foi pedido.
+function canGenerateProposal() {
+  if (!currentUserProfile) return false;
+  const role = currentUserProfile.role;
+  return role === 'lojista' || role === 'contractor' || role === 'administrador';
+}
+
 // Só dealer pode ficar em modo 'dealer' — qualquer outro perfil (inclusive
 // se o localStorage tiver sobrado 'dealer' de uma sessão anterior noutra
 // conta no mesmo navegador) sempre cai em 'legno'.
@@ -188,19 +201,26 @@ function setupPortalModeToggle() {
 }
 setupPortalModeToggle();
 
-// Mostra/esconde o toggle do cabeçalho + o campo de upload de logo nas
-// Configurações — só pra role='lojista'. Chamado em showLoggedIn (depois de
+// Mostra/esconde o toggle do cabeçalho (só role='lojista', rebranding ao
+// vivo pra apresentar pro cliente final) + os campos de logo/dados da loja
+// nas Configurações (role='lojista'/'contractor'/'administrador' — ver
+// canGenerateProposal acima, ampliado 2026-08-24 pra esses 2 usarem os
+// mesmos campos na Proposta). Chamado em showLoggedIn (depois de
 // ensureOwnUserProfile, precisa do role já carregado) e em showLoggedOut
 // (esconde tudo de novo pro visitante).
 function refreshDealerUiVisibility() {
   const toggleEl = document.getElementById('po-portal-mode-toggle');
   const logoRowEl = document.getElementById('po-dealer-logo-settings-row');
+  const storeInfoRowEl = document.getElementById('po-dealer-store-info-row');
   const dealer = isDealer();
+  const canBrand = canGenerateProposal();
   if (toggleEl) toggleEl.style.display = dealer ? '' : 'none';
-  if (logoRowEl) logoRowEl.style.display = dealer ? '' : 'none';
+  if (logoRowEl) logoRowEl.style.display = canBrand ? '' : 'none';
+  if (storeInfoRowEl) storeInfoRowEl.style.display = canBrand ? '' : 'none';
   loadPortalViewMode();
   applyPortalViewMode();
   refreshDealerLogoPreview();
+  refreshDealerStoreInfoInputs();
 }
 
 function refreshDealerLogoPreview() {
@@ -209,6 +229,38 @@ function refreshDealerLogoPreview() {
   const url = currentUserProfile && currentUserProfile.logo_url;
   preview.src = url || '';
   preview.style.display = url ? 'inline-block' : 'none';
+}
+
+// Nome/telefone da loja do dealer (migration 138) — pro cabeçalho da
+// Proposta (PDF). Mesmo padrão de refreshResaleMarginInput/
+// saveResaleMarginPct acima: preenche do perfil já carregado, persiste só
+// quando o cliente clica "Salvar" no menu de Configurações (mesmo botão que
+// já salva a margem de revenda — ver o listener em portal-01-core-catalogo.js).
+function refreshDealerStoreInfoInputs() {
+  const nameInput = document.getElementById('po-dealer-store-name-input');
+  const phoneInput = document.getElementById('po-dealer-store-phone-input');
+  if (nameInput) nameInput.value = (currentUserProfile && currentUserProfile.store_name) || '';
+  if (phoneInput) phoneInput.value = (currentUserProfile && currentUserProfile.store_phone) || '';
+}
+
+async function saveDealerStoreInfo() {
+  const nameInput = document.getElementById('po-dealer-store-name-input');
+  const phoneInput = document.getElementById('po-dealer-store-phone-input');
+  if (!currentUser || !canGenerateProposal()) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('user_profiles')
+      .update({
+        store_name: (nameInput && nameInput.value.trim()) || null,
+        store_phone: (phoneInput && phoneInput.value.trim()) || null
+      })
+      .eq('user_id', currentUser.id)
+      .select()
+      .single();
+    if (!error && data) currentUserProfile = data;
+  } catch (err) {
+    // silencioso — mesmo padrão de saveResaleMarginPct acima
+  }
 }
 
 // Envia o arquivo escolhido pro bucket 'dealer-logos' (path
