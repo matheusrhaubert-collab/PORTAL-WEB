@@ -416,17 +416,20 @@ const Photoreal = (() => {
     const groups = {};
     (parts || []).forEach((p) => {
       const role = p.position_role || 'other';
-      if (!isRoot && role === 'leg') return;
       if (!groups[role]) groups[role] = [];
       groups[role].push(p);
     });
 
-    let boxH = H, legH = 0;
-    if (isRoot) {
-      const legPart = (groups['leg'] || [])[0];
-      legH = legPart ? Math.max((legPart.height_mm || 0) / 1000, 0.01) : 0;
-      boxH = Math.max(H - legH, 0.05);
-    }
+    // Pés (position_role='leg') SEMPRE erguem o corpo do chão, seja no
+    // módulo raiz OU dentro de uma sub-montagem aninhada (ex: módulo "Gola",
+    // pé + rodapé, usado como peça aninhada em outro módulo). CORRIGIDO
+    // (2026-08-25, Matt: "não aparece os pés de plástico quando insiro como
+    // módulo aninhado") — antes só isRoot desenhava/descontava o pé; uma
+    // sub-montagem aninhada descartava a peça-pé em silêncio (mesmo bug
+    // irmão do já corrigido em js/viewer3d.js:buildModuleAssembly).
+    const legPart = (groups['leg'] || [])[0];
+    const legH = legPart ? Math.max((legPart.height_mm || 0) / 1000, 0.01) : 0;
+    const boxH = Math.max(H - legH, 0.05);
 
     const bounds = {
       innerBottomY: resolveThickness((groups['bottom'] || [])[0]),
@@ -437,7 +440,7 @@ const Photoreal = (() => {
     Object.keys(groups).forEach((role) => {
       const roleParts = groups[role];
       if (role === 'front') placeFrontGroup(roleParts, group, W, boxH, D, bounds);
-      else if (role === 'leg' && isRoot) placeLegsGroup(roleParts, group, W, D);
+      else if (role === 'leg') placeLegsGroup(roleParts, group, W, D);
       else roleParts.forEach((part, index) => placePieceInBox(part, group, W, boxH, D, index, roleParts.length, bounds));
     });
 

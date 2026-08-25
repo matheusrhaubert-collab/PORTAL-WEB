@@ -1375,19 +1375,34 @@ const Viewer3D = (function () {
     const groups = {};
     (pieces || []).forEach((p) => {
       const role = p.position_role || 'other';
-      if (role === 'leg') return; // pés não fazem sentido dentro de uma sub-montagem aninhada
       if (!groups[role]) groups[role] = [];
       groups[role].push(p);
     });
 
+    // Pés (position_role='leg') dentro de uma sub-montagem aninhada: mesma
+    // regra do módulo pai (ver update()) — o corpo (todas as outras peças
+    // desta composição) ocupa localH menos a altura do pé, e o pé preenche o
+    // vão de baixo. CORRIGIDO (2026-08-25, Matt: "não aparece os pés de
+    // plástico quando insiro como módulo aninhado") — antes esta peça era
+    // descartada aqui sem desenhar nada (comentário antigo: "pés não fazem
+    // sentido dentro de uma sub-montagem aninhada"), o que também escondia o
+    // pé de um módulo tipo "Gola" (pé + rodapé) empacotado pra reuso como
+    // peça aninhada em outros módulos. Agora desenha igual ao nível raiz, só
+    // que como filho do Group desta sub-montagem (placeLegsGroupIntoGroup,
+    // mesma função já usada por buildStandaloneAssembly, aba Composição).
+    const legPart = (groups['leg'] || [])[0];
+    const legH = legPart ? Math.max((legPart.height_mm || 0) / 1000, 0.01) : 0;
+    const boxH = Math.max(localH - legH, 0.05);
+
     // Vão interno (Y) desta sub-montagem — mesmo espírito do bounds do
     // módulo pai (ver update()), pra 'shelf' distribuir entre o topo da base
     // e a face de baixo do topo desta composição, se ela tiver essas peças;
-    // sem elas, cai pro volume local inteiro (innerBottomY=0, innerTopY=localH).
+    // sem elas, cai pro volume local do CORPO (boxH, já descontado o pé, se
+    // houver — innerBottomY=0, innerTopY=boxH sem 'bottom'/'top').
     const bounds = {
       innerBottomY: resolveThickness((groups['bottom'] || [])[0]),
-      innerTopY: localH - resolveThickness((groups['top'] || [])[0]),
-      legH: 0 // sub-montagem aninhada não tem pés próprios
+      innerTopY: boxH - resolveThickness((groups['top'] || [])[0]),
+      legH: legH
     };
 
     const emit = (content, color, x, y, z, rotateTexture, opening) =>
@@ -1396,9 +1411,11 @@ const Viewer3D = (function () {
     Object.keys(groups).forEach((role) => {
       const group = groups[role];
       if (role === 'front') {
-        placeFrontGroupInBox(group, localW, localH, localD, bounds, emit);
+        placeFrontGroupInBox(group, localW, boxH, localD, bounds, emit);
+      } else if (role === 'leg') {
+        placeLegsGroupIntoGroup(assembly, group, localW, localD);
       } else {
-        group.forEach((part, index) => placePieceInBox(part, localW, localH, localD, index, group.length, bounds, emit));
+        group.forEach((part, index) => placePieceInBox(part, localW, boxH, localD, index, group.length, bounds, emit));
       }
     });
 
