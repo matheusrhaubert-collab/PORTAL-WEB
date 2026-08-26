@@ -1403,6 +1403,62 @@ function pushProjectSlotClearOnDrop(slot) {
   // sobreposto — não tem onde encostar sem sair da parede.
 }
 
+// EMPURRAR ILHA PRA FORA DE SOBREPOSIÇÃO AO SOLTAR (2026-08-26, relato do
+// Matt: "mesmo com ima colisao ligado os moveis se sobrepoe um ao outro" —
+// print com dois módulos-ilha (Base 1/2 Drawer Cabinet) soltos no chão um
+// em cima do outro).
+//
+// Contraparte de pushProjectSlotClearOnDrop, só que no PISO (2 eixos, X/Z do
+// mundo) em vez de ao longo de uma parede (1 eixo). O buraco era o mesmo:
+// dropProjectModuleAt só chamava clampFloorSlotIntoRoom (limite do
+// AMBIENTE) pra módulo-ilha recém-solto — nunca checava sobreposição contra
+// outra ilha já no piso. clampFloorSlotAgainstCollision (usado no ARRASTE de
+// uma ilha já colocada, ver handleProject3DFloorMove) não serve aqui pelo
+// mesmo motivo do caso de parede: ele desliza a partir de uma posição
+// ANTERIOR válida, e um módulo recém-nascido não tem "de onde veio".
+//
+// Resolução por eixo separador (SAT simplificado): a cada rodada, acha a
+// primeira ilha que ainda penetra e empurra pelo eixo (X ou Z) de MENOR
+// penetração — é o deslocamento mínimo que já limpa aquele par. Repete até
+// não sobrar ninguém penetrando (ou estourar o limite de rodadas, caso raro
+// de várias ilhas empilhadas that se realimentam). Fecha com
+// clampFloorSlotIntoRoom de novo — empurrar pra limpar outra ilha pode ter
+// jogado o módulo pra fora do retângulo do ambiente.
+const PROJECT_FLOOR_PUSH_MAX_ITER = 12;
+function pushProjectFloorSlotClearOnDrop(slot) {
+  if (!projectCollisionEnabled) return;
+  const EPS = PROJECT_COLLISION_EPS_MM;
+  let fp = floorSlotFootprint(slot);
+  const others = projectFloorSlots()
+    .filter((s) => s.id !== slot.id)
+    .map((s) => floorSlotFootprint(s));
+  if (!others.length) return;
+
+  for (let iter = 0; iter < PROJECT_FLOOR_PUSH_MAX_ITER; iter++) {
+    let moved = false;
+    for (const o of others) {
+      const overlapX = Math.min(fp.x + fp.w, o.x + o.w) - Math.max(fp.x, o.x);
+      const overlapZ = Math.min(fp.y + fp.h, o.y + o.h) - Math.max(fp.y, o.y);
+      if (overlapX <= EPS || overlapZ <= EPS) continue; // não penetra este vizinho
+      const cx = fp.x + fp.w / 2;
+      const cz = fp.y + fp.h / 2;
+      const ocx = o.x + o.w / 2;
+      const ocz = o.y + o.h / 2;
+      if (overlapX <= overlapZ) {
+        fp.x += (cx >= ocx ? 1 : -1) * overlapX;
+      } else {
+        fp.y += (cz >= ocz ? 1 : -1) * overlapZ;
+      }
+      moved = true;
+    }
+    if (!moved) break;
+  }
+
+  slot.floor_x_mm = fp.x + fp.w / 2;
+  slot.floor_z_mm = fp.y + fp.h / 2;
+  clampFloorSlotIntoRoom(slot);
+}
+
 async function dropProjectModuleAt(moduleId, clientX, clientY) {
   const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
   const flatCanvas = document.getElementById('po-proj-canvas');
@@ -1473,6 +1529,7 @@ async function dropProjectModuleAt(moduleId, clientX, clientY) {
   // largura final (já clampada pelo catálogo) é conhecida.
   if (isFloorSlot(slot)) {
     clampFloorSlotIntoRoom(slot);
+    pushProjectFloorSlotClearOnDrop(slot);
   } else {
     slot.x_mm = Number(slot.x_mm || 0) - Number(slot.width_mm || 0) / 2;
     slot.floor_height_mm = Math.max(0, Number(slot.floor_height_mm || 0) - Number(slot.height_mm || 0) / 2);

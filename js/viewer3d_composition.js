@@ -2689,12 +2689,32 @@ function createViewerComposition3D() {
     if (!camera) return null;
     const t = (controls && controls.target) ? controls.target : lastFitTarget;
     if (!t) return null;
-    return {
+    const state = {
       position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
       target: { x: t.x, y: t.y, z: t.z },
       fov: camera.fov || 35,
       aspect: camera.aspect || (4 / 3)
     };
+    // ORTOGRÁFICA/Paralela (2026-08-26, Matt: "a foto realista gerada no
+    // portal, nao esta respeitando a posicao escolhida da camera... ela
+    // sempre traz so uma posicao fixa"). Em modo Paralelo (setCameraProjection,
+    // a projeção que a marcenaria usa pra conferir alinhamento) o zoom NÃO
+    // aproxima a câmera do alvo — quem muda é o FRUSTUM (camera.zoom, ver
+    // zoomTowardClient: "ortográfica não tem 'chegar perto'... quem dá zoom é
+    // o frustum"). position/target quase não se mexem nesse zoom (só a
+    // correção pra manter o ponto sob o cursor parado) — sem avisar disso,
+    // quem chama getCameraState (Foto realista) descartava o zoom de
+    // verdade que o usuário deu e sempre montava a foto a partir de uma
+    // posição perto do enquadramento automático inicial, não importa o
+    // quanto o usuário tivesse se aproximado em Paralelo. orthoHeight = altura
+    // visível em METROS de mundo (top-bottom já vêm em unidades de mundo,
+    // zoom é o fator de aproximação) — o suficiente pra quem monta a câmera
+    // do outro lado (photoreal.js) reconstruir o mesmo enquadramento.
+    if (camera.isOrthographicCamera) {
+      state.isOrthographic = true;
+      state.orthoHeight = (camera.top - camera.bottom) / (camera.zoom || 1);
+    }
+    return state;
   }
 
   return {

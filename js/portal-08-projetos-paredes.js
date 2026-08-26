@@ -2454,6 +2454,50 @@ if (projResetBtn) projResetBtn.addEventListener('click', resetProject);
 // de saveOrderAndFreeCart: já aparece em "Meus Pedidos"/admin sem exigir os
 // 5 campos — só "Aprovar Pedido" continua exigindo isso, na mesma tela de
 // sempre).
+// MINIATURA DE PEÇA — FALLBACK (extraída em 2026-08-26 de dentro de
+// sendProjectToOrder pra ser reaproveitada por 2 chamadores). slot.
+// thumbnail_data_url de um módulo da aba Projetos É SEMPRE null — em todo
+// o código de Projetos (portal-06/07/08) ele só é ZERADO (inserção nova,
+// duplicar, editar no Construtor), nunca CALCULADO; quem calcula de
+// verdade é só este fallback aqui, na hora de exportar. Mesma técnica do
+// "adicionar direto por SKU" (getSkuAddHiddenViewer/buildCompositionAssemblies,
+// ver addModuleToCartWithSku em portal-01): monta o módulo isolado num
+// canvas escondido e tira o snapshot.
+//
+// Motivo da extração (relato do Matt: "na proposta nem no pedido ta
+// aparecendo os modulos no icones"): buildProposalItemFromSlot
+// (portal-10-proposta.js), usada pelo botão "📄 Proposta" DIRETO na aba
+// Projetos, nunca teve esta rede de segurança — só lia
+// `slot.thumbnail_data_url || null`, que dá null SEMPRE pro caso acima, então
+// a prévia de Proposta saía com TODOS os ícones em branco, sem exceção. Se
+// o pedido de verdade ("Enviar pro pedido") também está saindo sem ícone,
+// o log de erro abaixo (antes era um catch mudo, "sem 3D disponível — item
+// entra sem imagem mesmo, não trava o envio") agora aparece no console pra
+// dar uma pista de verdade em vez de falhar calado.
+async function renderProjectSlotThumbnailFallback(slot) {
+  if (slot.thumbnail_data_url) return slot.thumbnail_data_url;
+  try {
+    const viewer = getSkuAddHiddenViewer();
+    const syntheticSlot = {
+      pieces: projectSlotEffectivePieces(slot),
+      width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+      colorsByRole: slot.colorsByRole, pieceColorOverrides: slot.pieceColorOverrides || {},
+      shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides
+    };
+    viewer.render(buildCompositionAssemblies([syntheticSlot]), null, null);
+    if (typeof Viewer3D.waitForPendingTextures === 'function') await Viewer3D.waitForPendingTextures();
+    const raw = viewer.snapshot();
+    return raw ? await trimTransparentPng(raw) : null;
+  } catch (e) {
+    // ANTES: catch mudo ("sem 3D disponível — item entra sem imagem mesmo,
+    // não trava o envio"). Isso é o que tornava este bug indiagnosticável —
+    // não tinha pista nenhuma de qual das 3+ coisas que podem falhar aqui
+    // (viewer sem WebGL, peças vazias, exceção no builder) era a real.
+    console.warn('[thumbnail fallback] falhou pro módulo', slot && slot.module && slot.module.name, e);
+    return null;
+  }
+}
+
 async function sendProjectToOrder() {
   const errorEl = document.getElementById('po-proj-error');
   if (errorEl) errorEl.style.display = 'none';
@@ -2512,30 +2556,14 @@ async function sendProjectToOrder() {
     // antes da captura automática existir, ou o snapshot do 3D falhou
     // silenciosamente na hora de configurar o módulo — sempre foi
     // "best-effort"). Em vez de mandar o item sem imagem nenhuma pro pedido,
-    // gera uma agora como FALLBACK, mesma técnica do "adicionar direto por
-    // SKU" (getSkuAddHiddenViewer/buildCompositionAssemblies, ver
-    // addModuleToCartWithSku): monta o módulo isolado num canvas escondido e
-    // tira o snapshot. Sequencial de propósito — o viewer escondido é
-    // reaproveitado (singleton), não dá pra rodar em paralelo.
+    // gera uma agora como FALLBACK — ver renderProjectSlotThumbnailFallback
+    // logo abaixo (extraída daqui em 2026-08-26 pra ser reaproveitada
+    // também pela prévia de Proposta). Sequencial de propósito — o viewer
+    // escondido é reaproveitado (singleton), não dá pra rodar em paralelo.
     const payloads = [];
     for (let idx = 0; idx < projectSlots.length; idx++) {
       const slot = projectSlots[idx];
-      let thumb = slot.thumbnail_data_url || null;
-      if (!thumb) {
-        try {
-          const viewer = getSkuAddHiddenViewer();
-          const syntheticSlot = {
-            pieces: projectSlotEffectivePieces(slot),
-            width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
-            colorsByRole: slot.colorsByRole, pieceColorOverrides: slot.pieceColorOverrides || {},
-            shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides
-          };
-          viewer.render(buildCompositionAssemblies([syntheticSlot]), null, null);
-          if (typeof Viewer3D.waitForPendingTextures === 'function') await Viewer3D.waitForPendingTextures();
-          const raw = viewer.snapshot();
-          thumb = raw ? await trimTransparentPng(raw) : null;
-        } catch (e) { /* sem 3D disponível — item entra sem imagem mesmo, não trava o envio */ }
-      }
+      const thumb = await renderProjectSlotThumbnailFallback(slot);
       payloads.push({
         order_id: order.id,
         module_id: slot.module.id,

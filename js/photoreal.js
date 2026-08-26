@@ -594,9 +594,35 @@ const Photoreal = (() => {
     // renderFreeformWalls) pra quando a vista 3D nunca foi aberta.
     const camState = sceneData.camera;
     if (camState && camState.position && camState.target) {
-      const cam = new T.PerspectiveCamera(camState.fov || 35, camState.aspect || (4 / 3), 0.01, 100);
-      cam.position.set(camState.position.x, camState.position.y, camState.position.z);
-      cam.lookAt(camState.target.x, camState.target.y, camState.target.z);
+      const fov = camState.fov || 35;
+      const targetVec = new T.Vector3(camState.target.x, camState.target.y, camState.target.z);
+      let posVec = new T.Vector3(camState.position.x, camState.position.y, camState.position.z);
+      // CÂMERA PARALELA/ortográfica (2026-08-26, Matt: "a foto realista...
+      // nao esta respeitando a posicao escolhida da camera... sempre traz so
+      // uma posicao fixa") — ver o comentário grande em getCameraState()
+      // (viewer3d_composition.js). Em modo Paralelo o zoom do usuário troca o
+      // FRUSTUM (camera.zoom), não a posição — então usar position/target crus
+      // igual ao modo Perspectiva jogava fora o zoom de verdade e a foto saía
+      // sempre perto do enquadramento automático inicial. O bundle do path
+      // tracer só sabe desenhar com PerspectiveCamera (não portamos suporte a
+      // OrthographicCamera pra não arriscar quebrar o render em cima de uma
+      // lib de terceiro sem poder testar ao vivo), então aqui a gente TRADUZ:
+      // mesma direção de visada (posição→alvo) que o usuário escolheu, só que
+      // reposicionada na distância que reproduz a MESMA altura visível
+      // (orthoHeight) via perspectiva — preserva o enquadramento/zoom em vez
+      // de descartar.
+      if (camState.isOrthographic && camState.orthoHeight > 0) {
+        const dir = posVec.clone().sub(targetVec);
+        const dist = dir.length();
+        if (dist > 0.001) {
+          dir.normalize();
+          const wantedDist = (camState.orthoHeight / 2) / Math.tan((fov * Math.PI / 180) / 2);
+          posVec = targetVec.clone().addScaledVector(dir, wantedDist);
+        }
+      }
+      const cam = new T.PerspectiveCamera(fov, camState.aspect || (4 / 3), 0.01, 100);
+      cam.position.copy(posVec);
+      cam.lookAt(targetVec.x, targetVec.y, targetVec.z);
       cam.updateProjectionMatrix();
       return { scene: sc, camera: cam };
     }

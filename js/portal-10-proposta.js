@@ -736,7 +736,14 @@ if (orderDetailProposalBtnEl) {
 // reaproveita o mesmo gerador. Sem projeto salvo com Photoreal/miniatura, o
 // snapshot é gerado na hora (captureProjectThumbnail, portal-09).
 
-function buildProposalItemFromSlot(slot) {
+// ASYNC desde 2026-08-26 (Matt: "na proposta nem no pedido ta aparecendo
+// os modulos no icones") — antes lia só `slot.thumbnail_data_url || null`,
+// que é SEMPRE null pra um módulo da aba Projetos (nunca é calculado nesse
+// fluxo, só zerado — ver renderProjectSlotThumbnailFallback, portal-08),
+// então a prévia de Proposta gerada direto da aba Projetos saía com TODOS
+// os ícones em branco, sem exceção nenhuma. Agora reaproveita o mesmo
+// fallback de render que "Enviar pro pedido" já usava.
+async function buildProposalItemFromSlot(slot) {
   return {
     module_name: slot.module.name,
     selected_colors: slot.selectedColors,
@@ -745,7 +752,7 @@ function buildProposalItemFromSlot(slot) {
     depth_mm: slot.depth_mm,
     quantity: 1,
     total_price: (slot.result && slot.result.total) || 0,
-    thumbnail_data_url: slot.thumbnail_data_url || null,
+    thumbnail_data_url: await renderProjectSlotThumbnailFallback(slot),
     project_placement: {
       wall_index: Number(slot.wall_index || 0),
       x_mm: Number(slot.x_mm || 0),
@@ -778,7 +785,13 @@ async function generateProjectProposalPDF() {
     if (!liveOrder.project_photoreal_url) {
       try { liveOrder.project_thumbnail_data_url = await captureProjectThumbnail(); } catch (e) { /* segue sem render — a Proposta avisa na seção */ }
     }
-    const liveItems = projectSlots.map((slot) => buildProposalItemFromSlot(slot));
+    // Sequencial de propósito (não Promise.all) — renderProjectSlotThumbnailFallback
+    // reaproveita o MESMO viewer escondido (singleton) pra cada módulo sem
+    // thumbnail salvo; rodar em paralelo faria um render pisar no outro.
+    const liveItems = [];
+    for (const slot of projectSlots) {
+      liveItems.push(await buildProposalItemFromSlot(slot));
+    }
     await generateOrderProposalPDF(liveOrder, liveItems);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
