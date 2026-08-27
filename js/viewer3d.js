@@ -2608,7 +2608,22 @@ const Viewer3D = (function () {
       const z = -D / 2 + fd / 2 + offZ;
       const decorContent = DECOR_BUILDERS[part.shape_type](w, h, d, resolveDecorMaterials(part.color));
       if (rotYDeg) decorContent.rotation.y = rotYDeg * Math.PI / 180;
-      emit(decorContent, null, x, y, z, false, null);
+      // Abertura (2026-08-27, Matt: "a lixeira e como uma gaveta e preciso
+      // colocar um aabertura de gaveta nela. assim como na frente de gaveta
+      // que ela recebe") — mesmo bug-irmão já corrigido em 'front' (23/08) e
+      // no 'free' comum logo abaixo (20/08): este branch sempre emitia com
+      // opening=null, então mesmo com Abertura="Desliza (corrediça)"
+      // cadastrada no vínculo módulo×peça, o item de decoração nunca entrava
+      // em `openables` — "Abrir gavetas" não tinha nada pra animar nele.
+      // Mesma regra genérica, width/distance calculados a partir das
+      // PRÓPRIAS medidas resolvidas da peça (w/d), igual ao 'free' comum.
+      const decorHingeSide = resolveHingeSide(part);
+      const decorOpening = decorHingeSide
+        ? { type: 'hinge', side: decorHingeSide, width: w, height: h }
+        : (part.opening_type === 'slide_out')
+          ? { type: 'slide', distance: part.slide_distance_mm != null ? part.slide_distance_mm / 1000 : Math.min(d * 0.7, 0.4) }
+          : null;
+      emit(decorContent, null, x, y, z, false, decorOpening);
     } else if (role === 'free') {
       // Peça livre — SEM nenhum papel/comportamento automático. Desenha a
       // caixa com as PRÓPRIAS medidas mapeadas DIRETO pros eixos da cena
