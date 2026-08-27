@@ -138,12 +138,16 @@ const Photoreal = (() => {
     if (d.w <= d.h && d.w <= d.d) return { u: d.d, v: d.h };   // espessura em X
     return { u: d.w, v: d.d };                                  // espessura em Y
   }
-  function loadTexture(url, rotateMode, uMm, vMm) {
+  function loadTexture(url, rotateMode) {
     if (!url) return null;
     const rotateSuffix = rotateMode === true ? '|rot90' : rotateMode === 'right' ? '|rot90r' : '';
-    const repU = uMm ? quantizaRepeat(uMm) : 1;
-    const repV = vMm ? quantizaRepeat(vMm) : 1;
-    const cacheKey = url + rotateSuffix + '|' + repU + 'x' + repV;
+    // 2026-08-27 — mesmo fix do js/viewer3d.js (ver o comentário grande de
+    // lá): a chave de cache não inclui mais o repeat físico (repU/repV) —
+    // agora é só (url, giro), no máximo 3 texturas por cor/acabamento. O
+    // "tamanho físico" que antes ia em tex.repeat passa a ser pré-escalado
+    // DIRETO no UV da geometria (ver scaleBoxUV, chamada em emitInto), antes
+    // desta função ser chamada.
+    const cacheKey = url + rotateSuffix;
     if (textureCache[cacheKey]) return textureCache[cacheKey];
     if (!textureLoader) { textureLoader = new T.TextureLoader(); textureLoader.setCrossOrigin('anonymous'); }
     let resolveLoaded;
@@ -152,13 +156,12 @@ const Photoreal = (() => {
     if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
     if (rotateMode === true) { tex.center.set(0.5, 0.5); tex.rotation = Math.PI / 2; }
     else if (rotateMode === 'right') { tex.center.set(0.5, 0.5); tex.rotation = -Math.PI / 2; }
-    // Com giro, o repeat vai TROCADO — o Three aplica o repeat nos eixos
-    // finais da textura, depois do giro (ver o comentário longo em
-    // loadTexture no viewer3d.js; foi o que esticou a base no comprimento).
-    const girou = rotateMode === true || rotateMode === 'right';
+    // Repeat fica em (1,1) sempre — o repeat físico agora é pré-escalado no
+    // UV da geometria (ver comentário grande acima). Ainda precisa de
+    // RepeatWrapping: o UV pré-escalado passa de 1 quando a peça é maior
+    // que 1 tile.
     tex.wrapS = T.RepeatWrapping;
     tex.wrapT = T.RepeatWrapping;
-    tex.repeat.set(girou ? repV : repU, girou ? repU : repV);
     textureCache[cacheKey] = tex;
     return tex;
   }
@@ -222,19 +225,43 @@ const Photoreal = (() => {
     if (PAPEIS_VEIO_PELO_FORMATO[papel] && (!veio || veio === 'livre')) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
-  function makeMaterial(color, rotateTexture, uMm, vMm) {
+  function makeMaterial(color, rotateTexture) {
     const textureUrl = color && color.texture_url;
-    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture, uMm, vMm) : null;
+    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture) : null;
     if (tex) return new T.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 });
     const hex = (color && color.swatch_hex) || '#cccccc';
     return new T.MeshStandardMaterial({ color: hex, roughness: 0.85, metalness: 0.05 });
   }
+  // Pré-escala o UV de TODA a geometria (aqui é sempre 1 material só pros 6
+  // lados, ver comentário de TEXTURE_TILE_MM acima) pelo tamanho físico da
+  // peça — mesmo mecanismo e mesma prova do js/viewer3d.js (scaleFaceUV, ver
+  // o comentário grande de lá sobre o pivô mudar com rotateTexture),
+  // simplificado aqui porque não existe divisão por face (sempre os 6 lados
+  // juntos, o path tracer não monta material por face/receita de fita).
+  function scaleBoxUV(geometry, repU, repV, rotateTexture) {
+    if (repU === 1 && repV === 1) return;
+    const uvAttr = geometry.attributes && geometry.attributes.uv;
+    if (!uvAttr) return;
+    const girou = rotateTexture === true || rotateTexture === 'right';
+    for (let i = 0; i < uvAttr.count; i++) {
+      const u = uvAttr.getX(i), v = uvAttr.getY(i);
+      if (girou) {
+        uvAttr.setXY(i, 0.5 + (u - 0.5) * repU, 0.5 + (v - 0.5) * repV);
+      } else {
+        uvAttr.setXY(i, u * repU, v * repV);
+      }
+    }
+    uvAttr.needsUpdate = true;
+  }
   function emitInto(parentGroup, contentOrGeometry, color, x, y, z, rotateTexture) {
-    const faceMm = (contentOrGeometry && !contentOrGeometry.isGroup)
-      ? faceMmDaGeometria(contentOrGeometry) : null;
+    const ehGeometria = !!(contentOrGeometry && !contentOrGeometry.isGroup);
+    const faceMm = ehGeometria ? faceMmDaGeometria(contentOrGeometry) : null;
+    if (faceMm && ehGeometria) {
+      scaleBoxUV(contentOrGeometry, quantizaRepeat(faceMm.u), quantizaRepeat(faceMm.v), rotateTexture);
+    }
     const content = (contentOrGeometry && contentOrGeometry.isGroup)
       ? contentOrGeometry
-      : new T.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture, faceMm && faceMm.u, faceMm && faceMm.v));
+      : new T.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture));
     content.position.set(x, y, z);
     parentGroup.add(content);
     return content;
@@ -722,43 +749,67 @@ const Photoreal = (() => {
 
   function buildDecorSpiceRack(W, H, D, mats) {
     const g = new T.Group();
-    // Carrinho porta-temperos pra gaveta/vão de armário inferior — só a
-    // ferragem (postes + 2 prateleiras + potes), sem gabinete em volta
-    // (mesmo princípio da lixeira dupla). Postes escalam com W, não com H.
-    const railD = D * 0.85;
-    const shelfW = W * 0.82;
-    const shelfD = railD * 0.9;
-    const postR = 0.007;
-    const postH = Math.min(H * 0.85, shelfW * 1.6);
+    // Carrinho porta-temperos "puxa-fora" de verdade (Matt mandou foto de
+    // produto real, 27/08: "spice rack quero um assim" — tipo Rev-A-Shelf
+    // 432, troca do desenho v1 de postes+potes): corpo estreito de madeira
+    // (2 laterais + 4 prateleiras, a de cima com bandeja/aba baixa em vez
+    // de trilho) + trilho de arame cromado em U na frente das 3
+    // prateleiras de baixo + corrediça na base + mãozinhas de fixação na
+    // frente. Solto, sem armário em volta — encaixa dentro do vão/armário
+    // que o usuário já modela (mesmo princípio da lixeira dupla).
+    const panelT = Math.min(0.014, Math.max(0.008, W * 0.09));
+    const bodyD = D * 0.92;
+    const shelfN = 4;
+    const shelfT = 0.012;
 
-    const halfW = shelfW / 2, halfD = shelfD / 2;
-    [[halfW, halfD], [-halfW, halfD], [halfW, -halfD], [-halfW, -halfD]].forEach(([x, z]) => {
-      const post = new T.Mesh(new T.CylinderGeometry(postR, postR, postH, 10), mats.chrome);
-      post.position.set(x, postH / 2, z);
-      g.add(post);
+    [-1, 1].forEach((side) => {
+      const panel = decorBoxMesh(panelT, H, bodyD, mats.cabinetFront);
+      panel.position.set(side * (W / 2 - panelT / 2), H / 2, 0);
+      g.add(panel);
     });
 
-    const shelfT = 0.008;
-    const shelfYs = [postH * 0.30, postH * 0.74];
-    shelfYs.forEach((sy) => {
-      const shelf = decorTaperedBox(shelfW, shelfT, shelfD, 1, mats.chrome);
-      shelf.position.set(0, sy, 0);
+    const innerW = Math.max(0.02, W - 2 * panelT);
+    const lipH = 0.03;
+    // Reserva lipH no topo pra bandeja da prateleira de cima NÃO furar o
+    // teto do módulo (H) — a prateleira de cima fica embaixo da bandeja,
+    // não no topo absoluto.
+    const shelfSpan = Math.max(0.05, H - shelfT - lipH);
+    const shelfGap = shelfSpan / (shelfN - 1);
+    for (let i = 0; i < shelfN; i++) {
+      const y = i * shelfGap + shelfT / 2;
+      const isTop = i === shelfN - 1;
+      const shelf = decorBoxMesh(innerW, shelfT, bodyD, mats.cabinetFront);
+      shelf.position.set(0, y, 0);
       g.add(shelf);
 
-      const jarR = Math.min(shelfW, shelfD) * 0.055;
-      const jarH = postH * 0.16;
-      const nJars = 5;
-      const spacing = (shelfW * 0.82) / (nJars - 1);
-      let jx = -shelfW * 0.41;
-      for (let i = 0; i < nJars; i++) {
-        const jar = new T.Mesh(new T.CylinderGeometry(jarR, jarR, jarH, 14), mats.glass);
-        jar.position.set(jx, sy + shelfT / 2 + jarH / 2, 0);
-        g.add(jar);
-        const cap = new T.Mesh(new T.CylinderGeometry(jarR * 1.05, jarR * 1.05, jarH * 0.16, 14), mats.detail);
-        cap.position.set(jx, sy + shelfT / 2 + jarH + jarH * 0.08, 0);
-        g.add(cap);
-        jx += spacing;
+      if (isTop) {
+        const lip = decorBoxMesh(innerW, lipH, 0.01, mats.cabinetFront);
+        lip.position.set(0, y + shelfT / 2 + lipH / 2, bodyD / 2 - 0.005);
+        g.add(lip);
+      } else {
+        const railY = y + shelfT / 2 + 0.05;
+        const railR = 0.004;
+        const front = new T.Mesh(new T.CylinderGeometry(railR, railR, innerW * 0.94, 8), mats.chrome);
+        front.rotation.z = Math.PI / 2;
+        front.position.set(0, railY, bodyD / 2 - 0.01);
+        g.add(front);
+        [-1, 1].forEach((side) => {
+          const ret = new T.Mesh(new T.CylinderGeometry(railR, railR, 0.10, 8), mats.chrome);
+          ret.rotation.x = Math.PI / 2;
+          ret.position.set(side * innerW * 0.47, railY, bodyD / 2 - 0.06);
+          g.add(ret);
+        });
       }
+    }
+
+    const slide = decorBoxMesh(W * 0.94, 0.02, bodyD * 0.9, mats.chrome);
+    slide.position.set(0, 0.01, 0);
+    g.add(slide);
+
+    [0.08, H - 0.08].forEach((y) => {
+      const bracket = decorBoxMesh(0.03, 0.05, 0.012, mats.detail);
+      bracket.position.set(-W / 2 + 0.02, y, bodyD / 2 + 0.006);
+      g.add(bracket);
     });
 
     return g;

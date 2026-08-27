@@ -224,14 +224,27 @@ const Viewer3D = (function () {
     const passo = r < 0.5 ? 200 : 20;
     return Math.max(0.005, Math.min(64, Math.round(r * passo) / passo));
   }
-  function loadTexture(url, rotateMode, uMm, vMm) {
+  function loadTexture(url, rotateMode) {
     if (!url) return null;
     const rotateSuffix = rotateMode === true ? '|rot90' : rotateMode === 'right' ? '|rot90r' : '';
-    // Sem medida (cilindro do cabide, chamadas antigas) = comportamento de
-    // antes: uma imagem esticada na peça inteira.
-    const repU = uMm ? quantizaRepeat(uMm) : 1;
-    const repV = vMm ? quantizaRepeat(vMm) : 1;
-    const cacheKey = url + rotateSuffix + '|' + repU + 'x' + repV;
+    // 2026-08-27 (Matt: "sobre as texturas pesando no ambiente, você chegou
+    // a avaliar?" — diagnóstico real: Viewer3D.textureMemoryReport() achou
+    // 61 uploads de GPU / ~1.93GB de VRAM com só 5 módulos abertos, uso real
+    // dele passa de 100). CAUSA: até aqui a chave de cache incluía o repeat
+    // físico (repU/repV, derivado do tamanho em mm da peça — ver
+    // quantizaRepeat), então a MESMA imagem de acabamento usada em peças de
+    // tamanhos diferentes virava um upload de GPU NOVO por tamanho. Agora a
+    // chave é só (url, giro) — no MÁXIMO 3 texturas por cor (sem giro,
+    // rot90, rot90r) — e o "tamanho físico" que antes ia em tex.repeat passa
+    // a ser pré-escalado DIRETO no UV de cada peça (ver scaleFaceUV/
+    // scaleAllFacesUV, chamadas em makeBoxMaterials e buildContentGroup), do
+    // mesmo jeito que rotateGeometryUV90 já mexe no buffer de UV pra girar o
+    // veio da peça 'free'. Resultado visual idêntico (matemática + harness
+    // de screenshot antes/depois, ver memória do projeto) — o que muda é só
+    // ONDE a escala é aplicada: antes na Texture (1 upload de GPU por
+    // combinação de tamanho/rotação), agora na geometria da peça (não custa
+    // upload nenhum, é só um buffer de vértice).
+    const cacheKey = url + rotateSuffix;
     if (textureCache[cacheKey]) return textureCache[cacheKey];
     // Rastreia o carregamento (assíncrono) desta textura — usado por
     // waitForPendingTextures(), pra quem quer tirar um snapshot "de verdade"
@@ -254,21 +267,13 @@ const Viewer3D = (function () {
       tex.center.set(0.5, 0.5);
       tex.rotation = -Math.PI / 2;
     }
-    // Repeat só faz sentido com wrap repetido; sem isso o que passa de 1 sai
-    // borrado na última fileira de pixels (ClampToEdge é o padrão do Three).
-    //
-    // COM GIRO, O REPEAT VAI TROCADO — e não é detalhe: foi o que deixou a
-    // base "esticada no comprimento" e o veio dos stretchers estranho na
-    // primeira versão disto (2026-08-12). O Three não escala o UV e DEPOIS
-    // gira: Matrix3.setUvTransform aplica o repeat nos eixos FINAIS da
-    // textura (x' = sx·(c·u + s·v), y' = sy·(-s·u + c·v)), então com 90° o
-    // eixo u da peça sai pelo y da textura. Passar (repU, repV) faz a peça de
-    // 1200×400 ser escalada como se fosse 400×1200. Mesma troca que
-    // coreTexture já fazia no miolo (`t.repeat.set(v, u)` quando gira).
-    const girou = rotateMode === true || rotateMode === 'right';
+    // Repeat fica em (1,1) sempre — o repeat físico agora é pré-escalado no
+    // UV de cada peça (ver comentário grande acima). Ainda precisa de
+    // RepeatWrapping: o UV pré-escalado passa de 1 (ex.: peça de 3 tiles
+    // vira UV até 3.0), e sem repeat wrapping isso viraria ClampToEdge
+    // (padrão do Three) em vez de repetir a imagem.
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(girou ? repV : repU, girou ? repU : repV);
     // Textura repetida vista de raspão (a fita de 18mm, principalmente) vira
     // moiré sem filtro anisotrópico.
     if (renderer && renderer.capabilities && renderer.capabilities.getMaxAnisotropy) {
@@ -305,6 +310,73 @@ const Viewer3D = (function () {
     geometry.userData.uvRotated90 = !geometry.userData.uvRotated90;
   }
 
+  // Pré-escala o UV de UM PAR de faces opostas de uma BoxGeometry pelo
+  // tamanho físico da peça (repU/repV, de quantizaRepeat) — substitui o que
+  // antes era tex.repeat.set(...) por instância de Texture (ver comentário
+  // grande em loadTexture, 2026-08-27). Só mexe nos vértices DESSE par (uma
+  // BoxGeometry tem 4 vértices próprios por face, sem compartilhar com as
+  // outras 5 — escalar um par não afeta os outros).
+  //
+  // pairIndex: 0 = par ±X (groups 0,1), 1 = par ±Y (groups 2,3), 2 = par ±Z
+  // (groups 4,5) — mesma ordem que o Three usa nos groups de uma
+  // BoxGeometry padrão (+X,-X,+Y,-Y,+Z,-Z), e a mesma ordem do array de
+  // materiais [mx, mx, my, my, mz, mz] que makeBoxMaterials devolve.
+  //
+  // rotateTexture importa pro PIVÔ da escala, não só pro giro em si — achado
+  // só no harness de screenshot antes/depois (a 1ª versão disto ignorava
+  // rotateTexture aqui e saía com a textura picada/deslocada nas peças
+  // giradas). Motivo: com giro, o Three roda a textura em torno do CENTRO
+  // (tex.center=(0.5,0.5), setado só quando rotateMode é true/'right' — ver
+  // loadTexture) — e como antes a escala física vinha JUNTO na mesma matriz
+  // da textura (repeat + rotação + center combinados por
+  // Matrix3.setUvTransform), ela saía "grudada" nesse mesmo pivô central.
+  // Sem giro, tex.center nunca foi setado (fica no default (0,0) do Three),
+  // então a escala sempre foi a partir da ORIGEM. Pra reproduzir o resultado
+  // antigo exatamente, esta função replica o mesmo pivô: SEM giro, escala a
+  // partir de 0 (u*repU); COM giro, escala em torno de 0.5
+  // (0.5 + (u-0.5)*repU) — testado com harness de screenshot antes/depois
+  // pros dois giros e sem giro (ver memória do projeto).
+  function scaleFaceUV(geometry, pairIndex, repU, repV, rotateTexture) {
+    if (repU === 1 && repV === 1) return;
+    const uvAttr = geometry.attributes && geometry.attributes.uv;
+    if (!uvAttr) return;
+    const idxAttr = geometry.index;
+    const feito = {};
+    const girou = rotateTexture === true || rotateTexture === 'right';
+    const escala = (vi) => {
+      if (feito[vi]) return;
+      feito[vi] = true;
+      const u = uvAttr.getX(vi), v = uvAttr.getY(vi);
+      if (girou) {
+        uvAttr.setXY(vi, 0.5 + (u - 0.5) * repU, 0.5 + (v - 0.5) * repV);
+      } else {
+        uvAttr.setXY(vi, u * repU, v * repV);
+      }
+    };
+    const groups = geometry.groups;
+    if (idxAttr && groups && groups.length === 6) {
+      [groups[pairIndex * 2], groups[pairIndex * 2 + 1]].forEach((g) => {
+        for (let i = g.start; i < g.start + g.count; i++) escala(idxAttr.getX(i));
+      });
+    } else {
+      // Fallback defensivo (BoxGeometry sem index/groups não é esperado no
+      // Three usado aqui, r128/r181 sempre gera os dois) — layout padrão: 4
+      // vértices por face, 2 faces por par, na ordem +X,-X,+Y,-Y,+Z,-Z.
+      const base = pairIndex * 8;
+      for (let i = base; i < base + 8; i++) escala(i);
+    }
+    uvAttr.needsUpdate = true;
+  }
+
+  // Mesma escala nos 3 pares — usado quando a peça inteira leva UM material
+  // só (sem receita de fita cadastrada, ver buildContentGroup): a escala
+  // vem da FACE GRANDE (dimensoesDaFaceMm) e vale pros 6 lados igual.
+  function scaleAllFacesUV(geometry, repU, repV, rotateTexture) {
+    scaleFaceUV(geometry, 0, repU, repV, rotateTexture);
+    scaleFaceUV(geometry, 1, repU, repV, rotateTexture);
+    scaleFaceUV(geometry, 2, repU, repV, rotateTexture);
+  }
+
   // Face "grande" de uma caixa em mm, DEDUZIDA da própria geometria: os dois
   // maiores lados (o menor é sempre a espessura). Usado só quando a peça cai
   // no material ÚNICO (sem receita de fita cadastrada) — com receita, cada par
@@ -328,14 +400,17 @@ const Viewer3D = (function () {
   }
 
   // color = registro da tabela colors ({ texture_url, swatch_hex, name }).
-  // uMm/vMm: tamanho REAL da face que vai receber esse material — é o que
-  // mantém a textura na escala da chapa em vez de esticar (ver loadTexture).
-  function makeMaterial(color, rotateTexture, uMm, vMm) {
+  // O tamanho REAL da face (o que mantinha a textura na escala da chapa em
+  // vez de esticar) não entra mais aqui — 2026-08-27, ver loadTexture: agora
+  // é pré-escalado direto no UV da geometria, ANTES desta função ser
+  // chamada (scaleFaceUV/scaleAllFacesUV, em makeBoxMaterials/
+  // buildContentGroup).
+  function makeMaterial(color, rotateTexture) {
     // Modo "só cor" (ver estiloDesenho): nem chega a pedir a imagem. É o que
     // faz a cena pesar menos — textura de chapa é o item mais caro aqui, em
     // download e em memória de GPU.
     const textureUrl = estiloDesenho.textura ? (color && color.texture_url) : null;
-    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture, uMm, vMm) : null;
+    const tex = textureUrl ? loadTexture(textureUrl, rotateTexture) : null;
     if (tex) {
       return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 });
     }
@@ -629,12 +704,25 @@ const Viewer3D = (function () {
     // Pra cada par de faces, o material sai do eixo do módulo que aquele par
     // atravessa: espessura -> face grande (cor); largura -> os lados do
     // COMPRIMENTO; comprimento -> os lados da largura.
+    // Índice do par de faces (±X/±Y/±Z) na ORDEM que o Three usa nos
+    // groups de uma BoxGeometry — mesma ordem do array [mx,mx,my,my,mz,mz]
+    // abaixo. Usado por scaleFaceUV pra escalar só os vértices DESSE par
+    // (2026-08-27, ver loadTexture pro motivo: a escala física saiu da
+    // Texture, foi pro UV da geometria).
+    const PAIR_INDEX = { x: 0, y: 1, z: 2 };
     const doPar = function (geoEixo) {
       const eixo = ax[geoEixo];
       const uv = UV[geoEixo];
-      if (eixo === m.tKey) return makeMaterial(color, rotateTexture, mm[uv.u], mm[uv.v]);
+      const pairIndex = PAIR_INDEX[geoEixo];
+      if (eixo === m.tKey) {
+        scaleFaceUV(geometry, pairIndex, quantizaRepeat(mm[uv.u]), quantizaRepeat(mm[uv.v]), rotateTexture);
+        return makeMaterial(color, rotateTexture);
+      }
       const temFita = eixo === m.lKey ? part.edge_banding >= 2 : part.edge_banding === 4;
-      if (temFita) return makeMaterial(color, rotateTexture, mm[uv.u], mm[uv.v]);
+      if (temFita) {
+        scaleFaceUV(geometry, pairIndex, quantizaRepeat(mm[uv.u]), quantizaRepeat(mm[uv.v]), rotateTexture);
+        return makeMaterial(color, rotateTexture);
+      }
       return makeCoreMaterial(color, mm[uv.u], mm[uv.v], uv.u === m.tKey);
     };
     const mx = doPar('x'), my = doPar('y'), mz = doPar('z');
@@ -1159,14 +1247,19 @@ const Viewer3D = (function () {
       ? makeBoxMaterials(contentOrGeometry, activePart, color, rotateTexture)
       : null;
     // Sem receita de fita (todo componente antes da 088) é UM material nos 6
-    // lados — aí o repeat sai da face grande (ver dimensoesDaFaceMm); as
-    // bordas ficam com a escala dessa face, aproximação boa o bastante numa
-    // faixa de 18mm. Peça que não é caixa (cabide tubular) devolve null e cai
-    // no comportamento antigo, sem repeat.
+    // lados — aí o repeat sai da face grande (ver dimensoesDaFaceMm), agora
+    // pré-escalado direto no UV dos 6 lados (scaleAllFacesUV) em vez de
+    // tex.repeat por instância de Texture (ver loadTexture, 2026-08-27) — 1
+    // textura só por cor/giro, não mais 1 por tamanho de peça. Peça que não
+    // é caixa (cabide tubular) fica com faceMm null, sem escala nenhuma
+    // (comportamento antigo, textura esticada na peça inteira).
     const faceMm = ehCaixa ? dimensoesDaFaceMm(contentOrGeometry) : null;
+    if (faceMm && !materiais) {
+      scaleAllFacesUV(contentOrGeometry, quantizaRepeat(faceMm.u), quantizaRepeat(faceMm.v), rotateTexture);
+    }
     const mesh = new THREE.Mesh(
       contentOrGeometry,
-      aplicaEstiloFace(materiais || makeMaterial(color, rotateTexture, faceMm && faceMm.u, faceMm && faceMm.v)));
+      aplicaEstiloFace(materiais || makeMaterial(color, rotateTexture)));
     const edges = buildEdgesForStyle(contentOrGeometry);
     const group = new THREE.Group();
     group.add(mesh);
@@ -2094,43 +2187,67 @@ const Viewer3D = (function () {
 
   function buildDecorSpiceRack(W, H, D, mats) {
     const g = new THREE.Group();
-    // Carrinho porta-temperos pra gaveta/vão de armário inferior — só a
-    // ferragem (postes + 2 prateleiras + potes), sem gabinete em volta
-    // (mesmo princípio da lixeira dupla). Postes escalam com W, não com H.
-    const railD = D * 0.85;
-    const shelfW = W * 0.82;
-    const shelfD = railD * 0.9;
-    const postR = 0.007;
-    const postH = Math.min(H * 0.85, shelfW * 1.6);
+    // Carrinho porta-temperos "puxa-fora" de verdade (Matt mandou foto de
+    // produto real, 27/08: "spice rack quero um assim" — tipo Rev-A-Shelf
+    // 432, troca do desenho v1 de postes+potes): corpo estreito de madeira
+    // (2 laterais + 4 prateleiras, a de cima com bandeja/aba baixa em vez
+    // de trilho) + trilho de arame cromado em U na frente das 3
+    // prateleiras de baixo + corrediça na base + mãozinhas de fixação na
+    // frente. Solto, sem armário em volta — encaixa dentro do vão/armário
+    // que o usuário já modela (mesmo princípio da lixeira dupla).
+    const panelT = Math.min(0.014, Math.max(0.008, W * 0.09));
+    const bodyD = D * 0.92;
+    const shelfN = 4;
+    const shelfT = 0.012;
 
-    const halfW = shelfW / 2, halfD = shelfD / 2;
-    [[halfW, halfD], [-halfW, halfD], [halfW, -halfD], [-halfW, -halfD]].forEach(([x, z]) => {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, postH, 10), mats.chrome);
-      post.position.set(x, postH / 2, z);
-      g.add(post);
+    [-1, 1].forEach((side) => {
+      const panel = decorBoxMesh(panelT, H, bodyD, mats.cabinetFront);
+      panel.position.set(side * (W / 2 - panelT / 2), H / 2, 0);
+      g.add(panel);
     });
 
-    const shelfT = 0.008;
-    const shelfYs = [postH * 0.30, postH * 0.74];
-    shelfYs.forEach((sy) => {
-      const shelf = decorTaperedBox(shelfW, shelfT, shelfD, 1, mats.chrome);
-      shelf.position.set(0, sy, 0);
+    const innerW = Math.max(0.02, W - 2 * panelT);
+    const lipH = 0.03;
+    // Reserva lipH no topo pra bandeja da prateleira de cima NÃO furar o
+    // teto do módulo (H) — a prateleira de cima fica embaixo da bandeja,
+    // não no topo absoluto.
+    const shelfSpan = Math.max(0.05, H - shelfT - lipH);
+    const shelfGap = shelfSpan / (shelfN - 1);
+    for (let i = 0; i < shelfN; i++) {
+      const y = i * shelfGap + shelfT / 2;
+      const isTop = i === shelfN - 1;
+      const shelf = decorBoxMesh(innerW, shelfT, bodyD, mats.cabinetFront);
+      shelf.position.set(0, y, 0);
       g.add(shelf);
 
-      const jarR = Math.min(shelfW, shelfD) * 0.055;
-      const jarH = postH * 0.16;
-      const nJars = 5;
-      const spacing = (shelfW * 0.82) / (nJars - 1);
-      let jx = -shelfW * 0.41;
-      for (let i = 0; i < nJars; i++) {
-        const jar = new THREE.Mesh(new THREE.CylinderGeometry(jarR, jarR, jarH, 14), mats.glass);
-        jar.position.set(jx, sy + shelfT / 2 + jarH / 2, 0);
-        g.add(jar);
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(jarR * 1.05, jarR * 1.05, jarH * 0.16, 14), mats.detail);
-        cap.position.set(jx, sy + shelfT / 2 + jarH + jarH * 0.08, 0);
-        g.add(cap);
-        jx += spacing;
+      if (isTop) {
+        const lip = decorBoxMesh(innerW, lipH, 0.01, mats.cabinetFront);
+        lip.position.set(0, y + shelfT / 2 + lipH / 2, bodyD / 2 - 0.005);
+        g.add(lip);
+      } else {
+        const railY = y + shelfT / 2 + 0.05;
+        const railR = 0.004;
+        const front = new THREE.Mesh(new THREE.CylinderGeometry(railR, railR, innerW * 0.94, 8), mats.chrome);
+        front.rotation.z = Math.PI / 2;
+        front.position.set(0, railY, bodyD / 2 - 0.01);
+        g.add(front);
+        [-1, 1].forEach((side) => {
+          const ret = new THREE.Mesh(new THREE.CylinderGeometry(railR, railR, 0.10, 8), mats.chrome);
+          ret.rotation.x = Math.PI / 2;
+          ret.position.set(side * innerW * 0.47, railY, bodyD / 2 - 0.06);
+          g.add(ret);
+        });
       }
+    }
+
+    const slide = decorBoxMesh(W * 0.94, 0.02, bodyD * 0.9, mats.chrome);
+    slide.position.set(0, 0.01, 0);
+    g.add(slide);
+
+    [0.08, H - 0.08].forEach((y) => {
+      const bracket = decorBoxMesh(0.03, 0.05, 0.012, mats.detail);
+      bracket.position.set(-W / 2 + 0.02, y, bodyD / 2 + 0.006);
+      g.add(bracket);
     });
 
     return g;
