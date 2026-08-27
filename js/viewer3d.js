@@ -2079,7 +2079,12 @@ const Viewer3D = (function () {
     const binWTop = platformW * 0.42;
     const binDTop = platformD * 0.86;
     const binGap = platformW * 0.12;
-    const binH = binWTop * 1.15;
+    // 27/08: Matt mandou foto real (Häfele Wood Double Waste Bin) —
+    // o carrinho tava baixo/achatado demais (1.15x a largura do balde).
+    // Balde real de puxa-saco duplo é bem mais alto que largo (~2.2–2.5x);
+    // teto em 78% do H do módulo só pra não furar o topo de um gabinete
+    // muito baixo (H min do catálogo é 600mm, então raramente entra em ação).
+    const binH = Math.min(binWTop * 2.3, H * 0.78);
     const railT = 0.01;
     const railH = binH + 0.04;
     const railD = platformD * 0.92;

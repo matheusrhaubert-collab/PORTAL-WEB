@@ -3609,8 +3609,20 @@ header.po-topnav {
 .po-tb-icon-only { min-width: 46px; }
 /* Pontinho de "ligado" no encaixe — mesma pista visual do mockup. */
 .po-tb-dot { display: none; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #e6007e; }
-#po-proj-collision-btn.active .po-tb-dot { display: block; }
-#po-proj-collision-btn.active { border-color: var(--text); }
+.po-tb-icon-card.active .po-tb-dot { display: block; }
+/* MARCADO de verdade quando ativo (2026-08-27, Matt: "o primeiro nao marca
+   quando esta ativo, so deixa ele diferente quando ativo" — sobre o botão
+   de Encaixe/Colisão perto de Abrir portas/Abrir gavetas). Antes só mudava
+   a borda + pontinho, sutil demais perto do fundo escuro que Portas/
+   Gavetas (.po-tb-seg-btn.active) ganham. Generalizei pra .po-tb-icon-card
+   (não só #po-proj-collision-btn) pra o botão de Rodapé, que usa o mesmo
+   componente, ficar consistente também — mesmo tratamento: fundo escuro +
+   ícone âmbar, igual ao segmentado. */
+.po-tb-icon-card.active {
+  border-color: var(--text); background: var(--text); color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+.po-tb-icon-card.active svg { color: #e0a44b; }
 
 /* Menu de estilo dentro da barra: mesma altura e raio dos segmentados. */
 #po-proj-style-menu .po-style-btn {
@@ -3715,8 +3727,17 @@ header.po-topnav {
 #po-proj-canvas-tools .po-tb-icon-card svg { width: 16px; height: 16px; color: var(--text); }
 #po-proj-canvas-tools .po-tb-icon-card:hover { background: #f4f2ed; }
 #po-proj-canvas-tools .po-tb-dot { top: 4px; right: 4px; width: 6px; height: 6px; }
-#po-proj-collision-btn.active { background: #fdf4e6; }
-#po-proj-collision-btn.active svg { color: #c98a1f; }
+/* 27/08: essas 2 regras estavam SEM o prefixo "#po-proj-canvas-tools" —
+   por ID, ganhavam de QUALQUER regra de classe (.po-tb-icon-card.active),
+   inclusive fora deste painel flutuante. Resultado: o botão de Encaixe
+   ficava preso nesse tom pálido em todo canto, mesmo na barra principal
+   (onde Portas/Gavetas ganham o fundo escuro forte de .po-tb-seg-btn.active)
+   — por isso "o primeiro não marca quando está ativo". Prefixado agora:
+   só vale dentro do painel flutuante, onde combina com o pill âmbar claro
+   que os botões segmentados também usam aqui perto. Fora daqui, quem manda
+   é a regra bold em .po-tb-icon-card.active (acima). */
+#po-proj-canvas-tools #po-proj-collision-btn.active { background: #fdf4e6; }
+#po-proj-canvas-tools #po-proj-collision-btn.active svg { color: #c98a1f; }
 
 /* Menu de estilo: mesma pegada dos botões, sem caixa pesada. */
 #po-proj-style-menu .po-style-btn {

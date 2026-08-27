@@ -1206,6 +1206,7 @@ function createViewerComposition3D() {
       scene.add(a.group);
       currentGroups.push(a.group);
       if (Array.isArray(a.openables) && a.openables.length) {
+        a.openables.forEach((op) => { op.slotId = a.id; });
         currentOpenables.push(...a.openables);
       }
       // Altura "total" de um bloco pro enquadramento/cotas é o TOPO dele
@@ -1318,6 +1319,7 @@ function createViewerComposition3D() {
       scene.add(a.group);
       currentGroups.push(a.group);
       if (Array.isArray(a.openables) && a.openables.length) {
+        a.openables.forEach((op) => { op.slotId = a.id; });
         currentOpenables.push(...a.openables);
       }
       maxHeight = Math.max(maxHeight, (a.floor_height_m || 0) + a.height_m);
@@ -1444,7 +1446,10 @@ function createViewerComposition3D() {
 
         scene.add(a.group);
         currentGroups.push(a.group);
-        if (Array.isArray(a.openables) && a.openables.length) currentOpenables.push(...a.openables);
+        if (Array.isArray(a.openables) && a.openables.length) {
+          a.openables.forEach((op) => { op.slotId = a.id; });
+          currentOpenables.push(...a.openables);
+        }
 
         maxHeight = Math.max(maxHeight, (a.floor_height_m || 0) + a.height_m);
 
@@ -1681,7 +1686,29 @@ function createViewerComposition3D() {
   // entre as peças-que-abrem atualmente na cena, sem precisar reconstruir
   // nenhum assembly (animate() interpola suavemente). Devolve o novo estado
   // (true = abertas) pra quem chamou atualizar o texto do botão.
-  function toggleDoors() {
+  //
+  // onlySlotId (2026-08-27, pedido do Matt: "quando clico no modulo do
+  // ambiente e deixo ele selecionado ao clicar nesses 2 de abertura quero
+  // que so o modulo selecionado abra. pra abrir todos do ambeinte somente
+  // se nenhum entiver selecionado") — opcional, passado pelo chamador
+  // (ver po-proj-tb-doors-btn/po-proj-tb-drawers-btn em
+  // portal-08-projetos-paredes.js) com o slot atualmente selecionado no
+  // canvas 2D. Com um slotId: mexe SÓ nas peças daquele módulo (currentOpenables
+  // já vem marcado com op.slotId, ver render()/renderFreeform()/
+  // renderFreeformWalls() acima) e o estado "aberto" desse módulo é lido
+  // DIRETO do targetAngle/targetOffset atual das peças dele — não existe
+  // uma variável própria por slot, pra nunca dessincronizar do que já foi
+  // aberto por um toggle "todos" anterior. Sem slotId (comportamento de
+  // sempre, sem seleção): continua mexendo em TODA currentOpenables e
+  // usando o booleano global doorsOpen/drawersOpen de sessão.
+  function toggleDoors(onlySlotId) {
+    if (onlySlotId != null) {
+      const nowOpen = !areDoorsOpen(onlySlotId);
+      currentOpenables.forEach((op) => {
+        if (op.kind === 'hinge' && op.slotId === onlySlotId) op.targetAngle = nowOpen ? openAngleFor(op.hingeSide) : 0;
+      });
+      return nowOpen;
+    }
     doorsOpen = !doorsOpen;
     currentOpenables.forEach((op) => {
       if (op.kind === 'hinge') op.targetAngle = doorsOpen ? openAngleFor(op.hingeSide) : 0;
@@ -1689,7 +1716,14 @@ function createViewerComposition3D() {
     return doorsOpen;
   }
 
-  function toggleDrawers() {
+  function toggleDrawers(onlySlotId) {
+    if (onlySlotId != null) {
+      const nowOpen = !areDrawersOpen(onlySlotId);
+      currentOpenables.forEach((op) => {
+        if (op.kind === 'slide' && op.slotId === onlySlotId) op.targetOffset = nowOpen ? op.distance : 0;
+      });
+      return nowOpen;
+    }
     drawersOpen = !drawersOpen;
     currentOpenables.forEach((op) => {
       if (op.kind === 'slide') op.targetOffset = drawersOpen ? op.distance : 0;
@@ -1697,8 +1731,18 @@ function createViewerComposition3D() {
     return drawersOpen;
   }
 
-  function areDoorsOpen() { return doorsOpen; }
-  function areDrawersOpen() { return drawersOpen; }
+  function areDoorsOpen(onlySlotId) {
+    if (onlySlotId != null) {
+      return currentOpenables.some((op) => op.kind === 'hinge' && op.slotId === onlySlotId && op.targetAngle);
+    }
+    return doorsOpen;
+  }
+  function areDrawersOpen(onlySlotId) {
+    if (onlySlotId != null) {
+      return currentOpenables.some((op) => op.kind === 'slide' && op.slotId === onlySlotId && op.targetOffset);
+    }
+    return drawersOpen;
+  }
 
   // Galeria pública (migration 048, pedido do usuário: "gerar uma imagem de
   // ia" a partir do 3D da composição) — captura a cena INTEIRA já montada

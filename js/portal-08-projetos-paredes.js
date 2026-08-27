@@ -2817,23 +2817,33 @@ function applyProjectDrawStyle(estilo, remontar) {
   // Portas / gavetas: espelham os botões que já existiam no painel 3D (hoje
   // escondido). Quem sabe abrir/fechar é o viewer; aqui só refletimos o estado
   // pra o botão acender enquanto está aberto.
-  [['po-proj-tb-doors-btn', 'po-proj-toggle-doors-btn', () => ViewerProjectEdit && ViewerProjectEdit.areDoorsOpen && ViewerProjectEdit.areDoorsOpen()],
-    ['po-proj-tb-drawers-btn', 'po-proj-toggle-drawers-btn', () => ViewerProjectEdit && ViewerProjectEdit.areDrawersOpen && ViewerProjectEdit.areDrawersOpen()]]
+  //
+  // Com módulo selecionado (2026-08-27, pedido do Matt): abre/fecha só ELE
+  // (selectedProjectSlotId, ver portal-06a); sem seleção, continua abrindo/
+  // fechando todos do ambiente, igual sempre foi. O painel antigo (ViewerProject,
+  // usado pela foto realista/AR) só entende "todos" — por isso só é
+  // sincronizado quando NÃO há seleção; abrir um módulo sozinho não teria
+  // como refletir lá.
+  [['po-proj-tb-doors-btn', 'po-proj-toggle-doors-btn', (slotId) => ViewerProjectEdit && ViewerProjectEdit.areDoorsOpen && ViewerProjectEdit.areDoorsOpen(slotId)],
+    ['po-proj-tb-drawers-btn', 'po-proj-toggle-drawers-btn', (slotId) => ViewerProjectEdit && ViewerProjectEdit.areDrawersOpen && ViewerProjectEdit.areDrawersOpen(slotId)]]
     .forEach(([idNovo, idOrig, estaAberto]) => {
       const b = document.getElementById(idNovo);
       if (!b) return;
       b.addEventListener('click', () => {
         // A Vista de Canto é a cena que está na tela — é nela que abre.
+        const onlySlotId = selectedProjectSlotId;
         if (idNovo.indexOf('doors') >= 0) {
-          if (ViewerProjectEdit && ViewerProjectEdit.toggleDoors) ViewerProjectEdit.toggleDoors();
+          if (ViewerProjectEdit && ViewerProjectEdit.toggleDoors) ViewerProjectEdit.toggleDoors(onlySlotId);
         } else if (ViewerProjectEdit && ViewerProjectEdit.toggleDrawers) {
-          ViewerProjectEdit.toggleDrawers();
+          ViewerProjectEdit.toggleDrawers(onlySlotId);
         }
         // Mantém o painel antigo em sincronia (ele ainda alimenta a foto
-        // realista e a exportação AR).
-        const orig = document.getElementById(idOrig);
-        if (orig && orig.offsetParent !== null) orig.click();
-        setTimeout(() => b.classList.toggle('active', !!estaAberto()), 30);
+        // realista e a exportação AR) — só no caso "todos" (sem seleção).
+        if (onlySlotId == null) {
+          const orig = document.getElementById(idOrig);
+          if (orig && orig.offsetParent !== null) orig.click();
+        }
+        setTimeout(() => b.classList.toggle('active', !!estaAberto(onlySlotId)), 30);
       });
     });
 

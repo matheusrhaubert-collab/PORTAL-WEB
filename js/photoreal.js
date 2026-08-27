@@ -642,7 +642,9 @@ const Photoreal = (() => {
     const binWTop = platformW * 0.42;
     const binDTop = platformD * 0.86;
     const binGap = platformW * 0.12;
-    const binH = binWTop * 1.15;
+    // 27/08: mesmo ajuste de js/viewer3d.js — carrinho baixo demais vs.
+    // a foto real (Häfele Wood Double Waste Bin). Ver comentário lá.
+    const binH = Math.min(binWTop * 2.3, H * 0.78);
     const railT = 0.01;
     const railH = binH + 0.04;
     const railD = platformD * 0.92;
