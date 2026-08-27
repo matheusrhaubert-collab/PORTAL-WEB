@@ -329,6 +329,495 @@ const Photoreal = (() => {
     return geom;
   }
 
+  // =====================================================================
+  // ITENS DE DECORAÇÃO COM GEOMETRIA PRÓPRIA (migration 141, 2026-08-26)
+  //
+  // Substitui as caixas planas da migration 039 (fogão/micro-ondas) e
+  // acrescenta 5 itens novos (forno de torre duplo, lava-louças, pia, farm
+  // pia, lixeira dupla) — mesmo padrão de dispatch por shape_type que o
+  // cabide tubular (oval_rod, migration 062) já usa: cada módulo decorativo
+  // tem UMA peça 'free' só, W/H/D=100% do módulo, e o shape_type
+  // ('decor_fogao', 'decor_pia'...) escolhe qual função abaixo desenha o
+  // conteúdo em vez da caixa padrão. Testado à parte (7 itens, screenshots
+  // via Chromium headless, Three.js r128 real) em
+  // scratch/teste-eletros-decor-3d.html antes de entrar aqui — ver
+  // CLAUDE.md / memória do projeto pra contexto.
+  //
+  // Cor: só o material "main" respeita a cor escolhida pelo cliente
+  // (part.color.swatch_hex, papel "Decor — Principal", as mesmas 5 cores
+  // fixas da migration 039). Os outros materiais (inox de detalhe, vidro,
+  // cromado, display, plástico do balde...) são FIXOS no código — mesmo
+  // princípio de LEG_COLOR/ROD_COLOR logo acima: ferragem/acabamento que não
+  // muda com a cor da caixa escolhida pelo cliente.
+
+  const DECOR_SWATCH_MATERIAL_HINTS = {
+    '#1c1c1e': { metal: 0.30, rough: 0.42 }, // Decor Preto
+    '#f4f4f2': { metal: 0.05, rough: 0.55 }, // Decor Branco
+    '#b9bdc1': { metal: 0.75, rough: 0.32 }, // Decor Inox
+    '#9a8f83': { metal: 0.02, rough: 0.85 }, // Decor Tecido
+    '#6b4f3a': { metal: 0.03, rough: 0.60 }, // Decor Madeira
+  };
+
+  function resolveDecorMaterials(color) {
+    const hex = (color && color.swatch_hex) || '#c9cdd1';
+    const hint = DECOR_SWATCH_MATERIAL_HINTS[String(hex).toLowerCase()] || { metal: 0.5, rough: 0.4 };
+    return {
+      main: new T.MeshStandardMaterial({ color: hex, metalness: hint.metal, roughness: hint.rough }),
+      detail: new T.MeshStandardMaterial({ color: 0x35383c, metalness: 0.55, roughness: 0.28 }),
+      glass: new T.MeshStandardMaterial({ color: 0x0c0d0f, metalness: 0.15, roughness: 0.12 }),
+      chrome: new T.MeshStandardMaterial({ color: 0xd7dadd, metalness: 0.9, roughness: 0.15 }),
+      display: new T.MeshStandardMaterial({ color: 0x0c1a12, emissive: 0x2ecc71, emissiveIntensity: 0.55, roughness: 0.4 }),
+      counter: new T.MeshStandardMaterial({ color: 0xe6e1d8, metalness: 0.02, roughness: 0.6 }),
+      binPlastic: new T.MeshStandardMaterial({ color: 0x2b2f33, metalness: 0.08, roughness: 0.55 }),
+      cabinetFront: new T.MeshStandardMaterial({ color: 0xa9764f, metalness: 0.02, roughness: 0.55 }),
+      cabinetCarc: new T.MeshStandardMaterial({ color: 0xcfc9bd, metalness: 0.02, roughness: 0.68 }),
+    };
+  }
+
+  // ---- helpers de geometria (eixo-alinhados, mesma técnica do teste solto) ----
+  function decorBoxMesh(w, h, d, material) {
+    return new T.Mesh(new T.BoxGeometry(Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001)), material);
+  }
+
+  function decorRoundedBox(w, d, h, r, material) {
+    const g = new T.Group();
+    r = Math.max(0, Math.min(r, w / 2 - 0.002, d / 2 - 0.002));
+    if (r <= 0.0015) { const m = decorBoxMesh(w, h, d, material); m.position.y = h / 2; g.add(m); return g; }
+    const coreW = w - 2 * r, coreD = d - 2 * r;
+    const bx = decorBoxMesh(w, h, coreD, material); bx.position.y = h / 2; g.add(bx);
+    const bz = decorBoxMesh(coreW, h, d, material); bz.position.y = h / 2; g.add(bz);
+    const cylGeo = new T.CylinderGeometry(r, r, h, 16);
+    [[coreW / 2, coreD / 2], [-coreW / 2, coreD / 2], [coreW / 2, -coreD / 2], [-coreW / 2, -coreD / 2]].forEach(([cx, cz]) => {
+      const c = new T.Mesh(cylGeo, material); c.position.set(cx, h / 2, cz); g.add(c);
+    });
+    return g;
+  }
+
+  // Caixa afunilada (mais estreita embaixo) — CylinderGeometry de 4 lados
+  // vira um prisma retangular ao girar 45° (mesmo truque de baixo risco já
+  // usado em decorRoundedBox/decorFlatRing, sem geometria customizada);
+  // radiusBottom < radiusTop afunila IGUAL nos eixos X e Z, e a escala não-
+  // uniforme (w, 1, d) achata esse prisma de círculo pra retângulo — topo e
+  // base saem com a MESMA proporção W:D, só a base menor (taper < 1). Base
+  // em y=0 (mesma convenção de decorRoundedBox). taper=1 = caixa reta (sem
+  // afunilar). Cópia fiel de js/viewer3d.js (ver comentário lá) — usada na
+  // lixeira dupla (26/08, referência: Häfele Wood Double Waste Bin
+  // Pull-Out).
+  function decorTaperedBox(w, h, d, taper, material) {
+    const t = Math.max(0.03, Math.min(1, taper));
+    const geo = new T.CylinderGeometry(1, t, Math.max(h, 0.001), 4, 1);
+    geo.rotateY(Math.PI / 4);
+    geo.translate(0, Math.max(h, 0.001) / 2, 0);
+    const mesh = new T.Mesh(geo, material);
+    mesh.scale.set(Math.max(w, 0.001), 1, Math.max(d, 0.001));
+    return mesh;
+  }
+
+  function decorFrontKnob(r, len, material) {
+    const m = new T.Mesh(new T.CylinderGeometry(r, r, len, 14), material);
+    m.rotation.x = Math.PI / 2;
+    return m;
+  }
+
+  function decorFlatRing(rOuter, tube, material) {
+    const m = new T.Mesh(new T.TorusGeometry(rOuter, tube, 8, 20), material);
+    m.rotation.x = Math.PI / 2;
+    return m;
+  }
+
+  function decorAddControlStrip(parent, w, h, depth, x, y, z, frameMat, displayMat, nButtons) {
+    const frame = decorBoxMesh(w, h, depth, frameMat); frame.position.set(x, y, z); parent.add(frame);
+    const dispW = w * 0.28, dispH = h * 0.55;
+    const disp = decorBoxMesh(dispW, dispH, 0.004, displayMat);
+    disp.position.set(x - w / 2 + dispW / 2 + w * 0.05, y, z + depth / 2 + 0.002);
+    parent.add(disp);
+    const btnSize = Math.min(0.016, h * 0.5), gap = 0.008;
+    let bx = x - w / 2 + dispW + w * 0.14;
+    for (let i = 0; i < nButtons; i++) {
+      const b = decorBoxMesh(btnSize, btnSize, 0.005, frameMat);
+      b.position.set(bx, y, z + depth / 2 + 0.0025);
+      parent.add(b);
+      bx += btnSize + gap;
+    }
+  }
+
+  function decorAddDoorWithGlass(parent, w, h, depth, x, y, z, frameMat, glassMat, handleMat, handleSide) {
+    const door = decorBoxMesh(w, h, depth, frameMat); door.position.set(x, y, z); parent.add(door);
+    const glassW = w * 0.8, glassH = h * 0.68;
+    const glass = decorBoxMesh(glassW, glassH, 0.006, glassMat);
+    glass.position.set(x, y + h * 0.03, z + depth / 2 + 0.0035);
+    parent.add(glass);
+    if (handleSide === 'top') {
+      const handle = decorBoxMesh(w * 0.86, 0.02, 0.03, handleMat);
+      handle.position.set(x, y + h / 2 - 0.03, z + depth / 2 + 0.02);
+      parent.add(handle);
+    } else if (handleSide === 'right') {
+      const handle = decorBoxMesh(0.02, h * 0.55, 0.03, handleMat);
+      handle.position.set(x + w / 2 - 0.03, y, z + depth / 2 + 0.02);
+      parent.add(handle);
+    }
+  }
+
+  function decorAddFeet(parent, w, d, material, footH) {
+    const inset = Math.min(0.05, w * 0.06, d * 0.06), r = 0.014;
+    const pts = [[w / 2 - inset, d / 2 - inset], [-(w / 2 - inset), d / 2 - inset], [w / 2 - inset, -(d / 2 - inset)], [-(w / 2 - inset), -(d / 2 - inset)]];
+    pts.forEach(([x, z]) => {
+      const foot = new T.Mesh(new T.CylinderGeometry(r, r * 0.8, footH, 10), material);
+      foot.position.set(x, footH / 2, z);
+      parent.add(foot);
+    });
+  }
+
+  function decorAddControlPanelKnobs(parent, W, y, z, material, n) {
+    const spacing = (W * 0.7) / Math.max(1, n - 1);
+    let x = -W * 0.35;
+    for (let i = 0; i < n; i++) {
+      const k = decorFrontKnob(0.013, 0.022, material);
+      k.position.set(x, y, z + 0.011);
+      parent.add(k);
+      x += spacing;
+    }
+  }
+
+  function decorFaucet(material, riserH, spoutLen) {
+    const g = new T.Group();
+    const r = 0.011;
+    const riser = new T.Mesh(new T.CylinderGeometry(r, r, riserH, 12), material);
+    riser.position.y = riserH / 2; g.add(riser);
+    const joint = new T.Mesh(new T.SphereGeometry(r * 1.2, 12, 8), material);
+    joint.position.y = riserH; g.add(joint);
+    const spout = new T.Mesh(new T.CylinderGeometry(r * 0.8, r * 0.8, spoutLen, 12), material);
+    spout.rotation.x = Math.PI / 2;
+    spout.position.set(0, riserH, spoutLen / 2);
+    g.add(spout);
+    const lever = new T.Mesh(new T.BoxGeometry(0.09, 0.014, 0.014), material);
+    lever.position.set(0.05, riserH * 0.55, 0.02);
+    g.add(lever);
+    return g;
+  }
+
+  function decorCounterWithCutout(W, D, counterT, cutW, cutD, material) {
+    const g = new T.Group();
+    const sideW = Math.max(0.001, (W - cutW) / 2);
+    const frontBackD = Math.max(0.001, (D - cutD) / 2);
+    const left = decorBoxMesh(sideW, counterT, D, material); left.position.set(-(cutW / 2 + sideW / 2), -counterT / 2, 0); g.add(left);
+    const right = decorBoxMesh(sideW, counterT, D, material); right.position.set((cutW / 2 + sideW / 2), -counterT / 2, 0); g.add(right);
+    const front = decorBoxMesh(cutW, counterT, frontBackD, material); front.position.set(0, -counterT / 2, (cutD / 2 + frontBackD / 2)); g.add(front);
+    const back = decorBoxMesh(cutW, counterT, frontBackD, material); back.position.set(0, -counterT / 2, -(cutD / 2 + frontBackD / 2)); g.add(back);
+    return g;
+  }
+
+  // ---- construtores por item (W,H,D em METROS — já resolvidos por placePieceInBox) ----
+  function buildDecorFogao(W, H, D, mats) {
+    const g = new T.Group();
+    const footH = 0.03;
+    const cooktopH = Math.max(0.02, H * 0.045);
+    const bodyH = Math.max(0.1, H - footH - cooktopH);
+    decorAddFeet(g, W, D, mats.detail, footH);
+    const body = decorRoundedBox(W, D, bodyH, 0.014, mats.main); body.position.y = footH; g.add(body);
+    const cooktop = decorRoundedBox(W, D, cooktopH, 0.012, mats.detail); cooktop.position.y = footH + bodyH; g.add(cooktop);
+    const topY = footH + bodyH + cooktopH;
+    const burnerPos = [[-W * 0.24, D * 0.18], [W * 0.24, D * 0.18], [-W * 0.24, -D * 0.16], [W * 0.24, -D * 0.16]];
+    burnerPos.forEach(([bx, bz], i) => {
+      const rOuter = i < 2 ? W * 0.10 : W * 0.085;
+      const r1 = decorFlatRing(rOuter, 0.006, mats.chrome); r1.position.set(bx, topY + 0.004, bz); g.add(r1);
+      const cap = new T.Mesh(new T.CylinderGeometry(0.012, 0.014, 0.014, 10), mats.chrome);
+      cap.position.set(bx, topY + 0.01, bz); g.add(cap);
+    });
+    decorAddControlPanelKnobs(g, W, footH + bodyH - 0.06, D / 2, mats.detail, 4);
+    const doorH = bodyH * 0.8, doorW = W - 0.08, doorD = 0.025;
+    decorAddDoorWithGlass(g, doorW, doorH, doorD, 0, footH + doorH / 2 + bodyH * 0.08, D / 2 + doorD / 2, mats.main, mats.glass, mats.chrome, 'top');
+    return g;
+  }
+
+  function buildDecorMicroondas(W, H, D, mats) {
+    const g = new T.Group();
+    const body = decorRoundedBox(W, D, H, 0.01, mats.main); g.add(body);
+    const doorW = W * 0.62, doorH = H * 0.8, doorD = 0.02;
+    decorAddDoorWithGlass(g, doorW, doorH, doorD, -W * 0.5 + doorW / 2 + 0.015, H * 0.52, D / 2 + doorD / 2, mats.detail, mats.glass, mats.chrome, 'right');
+    decorAddControlStrip(g, W * 0.28, H * 0.7, 0.015, W * 0.5 - W * 0.14 - 0.01, H * 0.52, D / 2 + 0.0075, mats.detail, mats.display, 4);
+    return g;
+  }
+
+  function buildDecorFornoTorreDuplo(W, H, D, mats) {
+    const g = new T.Group();
+    const body = decorRoundedBox(W, D, H, 0.014, mats.main); g.add(body);
+    const doorH = H * 0.34, doorW = W - 0.07, doorD = 0.025;
+    const y1 = H * 0.28, y2 = H * 0.70;
+    decorAddControlStrip(g, W * 0.7, 0.045, 0.018, 0, y1 + doorH / 2 + 0.05, D / 2 + 0.009, mats.detail, mats.display, 3);
+    decorAddDoorWithGlass(g, doorW, doorH, doorD, 0, y1, D / 2 + doorD / 2, mats.main, mats.glass, mats.chrome, 'top');
+    decorAddControlStrip(g, W * 0.7, 0.045, 0.018, 0, y2 + doorH / 2 + 0.05, D / 2 + 0.009, mats.detail, mats.display, 3);
+    decorAddDoorWithGlass(g, doorW, doorH, doorD, 0, y2, D / 2 + doorD / 2, mats.main, mats.glass, mats.chrome, 'top');
+    return g;
+  }
+
+  function buildDecorLavaLoucas(W, H, D, mats) {
+    const g = new T.Group();
+    const toeH = 0.09;
+    const bodyH = H - toeH;
+    const body = decorRoundedBox(W, D, bodyH, 0.012, mats.main); body.position.y = toeH; g.add(body);
+    const toe = decorBoxMesh(W * 0.94, toeH * 0.8, 0.02, mats.glass); toe.position.set(0, toeH * 0.4, D / 2 - 0.02); g.add(toe);
+    decorAddControlStrip(g, W * 0.9, 0.05, 0.02, 0, toeH + bodyH - 0.03, D / 2 + 0.01, mats.detail, mats.display, 5);
+    const doorH = bodyH - 0.12, doorW = W - 0.05, doorD = 0.02, doorY = toeH + doorH / 2 + 0.02;
+    const door = decorBoxMesh(doorW, doorH, doorD, mats.main); door.position.set(0, doorY, D / 2 + doorD / 2); g.add(door);
+    for (let i = 0; i < 3; i++) {
+      const line = decorBoxMesh(doorW * 0.86, 0.006, 0.006, mats.detail);
+      line.position.set(0, doorY - doorH * 0.28 + i * doorH * 0.22, D / 2 + doorD + 0.004);
+      g.add(line);
+    }
+    const handle = decorBoxMesh(doorW * 0.5, 0.018, 0.025, mats.chrome);
+    handle.position.set(0, doorY + doorH / 2 - 0.025, D / 2 + doorD + 0.014);
+    g.add(handle);
+    return g;
+  }
+
+  function buildDecorPia(W, H, D, mats) {
+    const g = new T.Group();
+    const counterT = 0.03;
+    const basinW = W * 0.78, basinD = D * 0.62, basinH = Math.max(0.1, Math.min(0.2, H * 0.9));
+    const counter = decorCounterWithCutout(W, D, counterT, basinW + 0.02, basinD + 0.02, mats.counter); g.add(counter);
+    const basin = decorBoxMesh(basinW, basinH, basinD, mats.main); basin.position.set(0, -basinH / 2 - 0.005, 0); g.add(basin);
+    const rim = decorRoundedBox(basinW + 0.02, basinD + 0.02, 0.008, 0.01, mats.chrome); rim.position.y = -0.004; g.add(rim);
+    const fct = decorFaucet(mats.chrome, Math.min(0.22, H * 1.05 || 0.2), 0.13);
+    fct.position.set(0, 0, -D * 0.32);
+    g.add(fct);
+    return g;
+  }
+
+  function buildDecorFarmPia(W, H, D, mats) {
+    const g = new T.Group();
+    const apronH = H * 0.75;
+    const counterT = 0.03;
+    const apron = decorBoxMesh(W * 0.92, apronH, 0.05, mats.main); apron.position.set(0, apronH / 2, D / 2 - 0.02); g.add(apron);
+    const basinW = W * 0.8, basinD = D * 0.68, basinH = apronH * 0.75;
+    const counter = decorCounterWithCutout(W, D, counterT, basinW + 0.02, basinD + 0.02, mats.counter);
+    counter.position.y = apronH; g.add(counter);
+    const basin = decorBoxMesh(basinW, basinH, basinD, mats.detail);
+    basin.position.set(0, apronH - counterT - basinH / 2 + 0.01, -0.01);
+    g.add(basin);
+    const fct = decorFaucet(mats.chrome, Math.min(0.24, apronH * 1.1), 0.15);
+    fct.position.set(0, apronH, -D * 0.28);
+    g.add(fct);
+    return g;
+  }
+
+  function buildDecorLixeiraDupla(W, H, D, mats) {
+    const g = new T.Group();
+    // SÓ o carrinho puxa-saco (sem gabinete/porta em volta) — cópia fiel
+    // de js/viewer3d.js (ver comentário lá pro histórico completo).
+    const platformW = W * 0.92;
+    const platformD = D * 0.85;
+    const platformT = Math.min(0.03, H * 0.08);
+    const platform = decorTaperedBox(platformW, platformT, platformD, 1, mats.cabinetFront);
+    platform.position.set(0, 0, 0);
+    g.add(platform);
+
+    const binWTop = platformW * 0.42;
+    const binDTop = platformD * 0.86;
+    const binGap = platformW * 0.12;
+    const binH = binWTop * 1.15;
+    const railT = 0.01;
+    const railH = binH + 0.04;
+    const railD = platformD * 0.92;
+    [-1, 1].forEach((side) => {
+      const rail = decorTaperedBox(railT, railH, railD, 1, mats.chrome);
+      rail.position.set(side * (platformW / 2 + railT / 2), platformT, 0);
+      g.add(rail);
+    });
+
+    [-1, 1].forEach((side) => {
+      const bx = side * (binWTop / 2 + binGap / 2);
+      const bin = decorTaperedBox(binWTop, binH, binDTop, 0.72, mats.binPlastic);
+      bin.position.set(bx, platformT, 0);
+      g.add(bin);
+      const rim = decorTaperedBox(binWTop * 1.08, 0.014, binDTop * 1.08, 1, mats.binPlastic);
+      rim.position.set(bx, platformT + binH, 0);
+      g.add(rim);
+    });
+
+    const bracket = new T.Mesh(new T.CylinderGeometry(0.007, 0.007, platformW + 2 * railT, 10), mats.chrome);
+    bracket.rotation.z = Math.PI / 2;
+    bracket.position.set(0, platformT + railH - 0.02, -railD / 2);
+    g.add(bracket);
+    return g;
+  }
+
+
+  function buildDecorCooktop(W, H, D, mats) {
+    const g = new T.Group();
+    // Placa de vidro/cerâmica com 4 bocas + controles touch no topo — sem
+    // gabinete embaixo (encaixa no recorte de bancada que o próprio usuário
+    // já modela). H não estica a peça — é só a espessura real do vidro
+    // (fixa e pequena); se o módulo for mais "alto" que isso, sobra vão
+    // embaixo/acima, e tudo bem (mesma lógica da lixeira dupla).
+    const platformW = W * 0.96;
+    const plateD = D * 0.90;
+    const plateT = Math.min(0.012, Math.max(0.006, H * 0.3));
+    const plate = decorRoundedBox(platformW, plateD, plateT, 0.012, mats.glass);
+    plate.position.set(0, 0, 0);
+    g.add(plate);
+
+    const burnerR = Math.min(platformW, plateD) * 0.13;
+    const offX = platformW * 0.24, offZ = plateD * 0.20;
+    [-1, 1].forEach((rz) => {
+      [-1, 1].forEach((cx) => {
+        const ring = decorFlatRing(burnerR, burnerR * 0.09, mats.detail);
+        ring.position.set(cx * offX, plateT + 0.0015, rz * offZ);
+        g.add(ring);
+        const innerRing = decorFlatRing(burnerR * 0.55, burnerR * 0.06, mats.detail);
+        innerRing.position.set(cx * offX, plateT + 0.0015, rz * offZ);
+        g.add(innerRing);
+      });
+    });
+
+    const dispW = platformW * 0.22, dispD = plateD * 0.10;
+    const disp = decorBoxMesh(dispW, 0.0015, dispD, mats.display);
+    disp.position.set(0, plateT + 0.002, plateD / 2 - plateD * 0.13);
+    g.add(disp);
+    const btnCount = 4, btnSize = Math.min(0.018, plateD * 0.05);
+    let bx = -btnSize * (btnCount - 1);
+    for (let i = 0; i < btnCount; i++) {
+      const b = decorBoxMesh(btnSize, 0.0012, btnSize, mats.detail);
+      b.position.set(bx, plateT + 0.0018, plateD / 2 - plateD * 0.045);
+      g.add(b);
+      bx += btnSize * 2;
+    }
+
+    return g;
+  }
+
+  function buildDecorCoifa(W, H, D, mats) {
+    const g = new T.Group();
+    // Coifa de parede: corpo/redoma embaixo (y=0 = base do corpo, altura
+    // de instalação típica acima do cooktop) + duto cônico subindo até H
+    // (topo, perto do teto). Diferente da lixeira: aqui H IMPORTA de
+    // verdade — o duto precisa vencer o vão até o teto que o cliente
+    // configurar.
+    const bodyW = W * 0.94;
+    const bodyD = D * 0.85;
+    const bodyH = Math.min(H * 0.22, 0.16);
+    const body = decorRoundedBox(bodyW, bodyD, bodyH, 0.015, mats.main);
+    body.position.set(0, 0, 0);
+    g.add(body);
+
+    decorAddControlStrip(g, bodyW * 0.5, bodyH * 0.28, 0.012, 0, bodyH * 0.5, bodyD / 2, mats.detail, mats.display, 3);
+
+    // duto cônico: largo perto do corpo, estreito perto do teto.
+    // decorTaperedBox nativo é base(y=0)=estreita / topo(y=h)=larga — aqui
+    // é o oposto, então invertemos com rotation.x=PI e compensamos
+    // position.y (o pivô passa a ser a ponta ESTREITA, no topo; a ponta
+    // LARGA fica pivô.y - ductH, que colocamos exatamente no topo do
+    // corpo).
+    const ductH = Math.max(0.05, H - bodyH);
+    const ductWBottom = bodyW * 0.55;
+    const ductDBottom = bodyD * 0.55;
+    const ductTaper = 0.42;
+    const duct = decorTaperedBox(ductWBottom, ductH, ductDBottom, ductTaper, mats.main);
+    duct.rotation.x = Math.PI;
+    duct.position.set(0, bodyH + ductH, 0);
+    g.add(duct);
+
+    return g;
+  }
+
+  function buildDecorSpiceRack(W, H, D, mats) {
+    const g = new T.Group();
+    // Carrinho porta-temperos pra gaveta/vão de armário inferior — só a
+    // ferragem (postes + 2 prateleiras + potes), sem gabinete em volta
+    // (mesmo princípio da lixeira dupla). Postes escalam com W, não com H.
+    const railD = D * 0.85;
+    const shelfW = W * 0.82;
+    const shelfD = railD * 0.9;
+    const postR = 0.007;
+    const postH = Math.min(H * 0.85, shelfW * 1.6);
+
+    const halfW = shelfW / 2, halfD = shelfD / 2;
+    [[halfW, halfD], [-halfW, halfD], [halfW, -halfD], [-halfW, -halfD]].forEach(([x, z]) => {
+      const post = new T.Mesh(new T.CylinderGeometry(postR, postR, postH, 10), mats.chrome);
+      post.position.set(x, postH / 2, z);
+      g.add(post);
+    });
+
+    const shelfT = 0.008;
+    const shelfYs = [postH * 0.30, postH * 0.74];
+    shelfYs.forEach((sy) => {
+      const shelf = decorTaperedBox(shelfW, shelfT, shelfD, 1, mats.chrome);
+      shelf.position.set(0, sy, 0);
+      g.add(shelf);
+
+      const jarR = Math.min(shelfW, shelfD) * 0.055;
+      const jarH = postH * 0.16;
+      const nJars = 5;
+      const spacing = (shelfW * 0.82) / (nJars - 1);
+      let jx = -shelfW * 0.41;
+      for (let i = 0; i < nJars; i++) {
+        const jar = new T.Mesh(new T.CylinderGeometry(jarR, jarR, jarH, 14), mats.glass);
+        jar.position.set(jx, sy + shelfT / 2 + jarH / 2, 0);
+        g.add(jar);
+        const cap = new T.Mesh(new T.CylinderGeometry(jarR * 1.05, jarR * 1.05, jarH * 0.16, 14), mats.detail);
+        cap.position.set(jx, sy + shelfT / 2 + jarH + jarH * 0.08, 0);
+        g.add(cap);
+        jx += spacing;
+      }
+    });
+
+    return g;
+  }
+
+
+  function buildDecorLavaSeca(W, H, D, mats) {
+    const g = new T.Group();
+    // Máquina de lavar e secar — aparelho independente com corpo próprio
+    // (como fogão/lava-louças, NÃO é peça solta pra dentro de um
+    // armário): corpo com cantos arredondados, porta redonda com visor de
+    // vidro, painel de controle + knobs no topo, pés.
+    const footH = Math.min(0.02, H * 0.03);
+    const bodyH = H - footH;
+    const body = decorRoundedBox(W, D, bodyH, 0.02, mats.main);
+    body.position.set(0, footH, 0);
+    g.add(body);
+
+    decorAddFeet(g, W, D, mats.detail, footH);
+
+    const panelY = footH + bodyH * 0.90;
+    decorAddControlStrip(g, W * 0.6, bodyH * 0.10, 0.02, 0, panelY, D / 2, mats.detail, mats.display, 5);
+    decorAddControlPanelKnobs(g, W * 0.5, panelY, D / 2, mats.chrome, 2);
+
+    const doorR = Math.min(W, bodyH) * 0.30;
+    const doorY = footH + bodyH * 0.42;
+    const doorZ = D / 2;
+    const rim = new T.Mesh(new T.TorusGeometry(doorR, doorR * 0.12, 10, 24), mats.chrome);
+    rim.position.set(0, doorY, doorZ + 0.005);
+    g.add(rim);
+    const glass = new T.Mesh(new T.CylinderGeometry(doorR * 0.85, doorR * 0.85, 0.02, 24), mats.glass);
+    glass.rotation.x = Math.PI / 2;
+    glass.position.set(0, doorY, doorZ + 0.01);
+    g.add(glass);
+    const drumRing = new T.Mesh(new T.TorusGeometry(doorR * 0.7, doorR * 0.05, 8, 20), mats.detail);
+    drumRing.position.set(0, doorY, doorZ + 0.012);
+    g.add(drumRing);
+    const handle = new T.Mesh(new T.CylinderGeometry(0.008, 0.008, doorR * 0.5, 10), mats.chrome);
+    handle.rotation.z = Math.PI / 2;
+    handle.position.set(doorR * 0.95, doorY, doorZ + 0.01);
+    g.add(handle);
+
+    return g;
+  }
+
+  const DECOR_BUILDERS = {
+    decor_fogao: buildDecorFogao,
+    decor_microondas: buildDecorMicroondas,
+    decor_forno_torre_duplo: buildDecorFornoTorreDuplo,
+    decor_lava_loucas: buildDecorLavaLoucas,
+    decor_pia: buildDecorPia,
+    decor_farm_pia: buildDecorFarmPia,
+    decor_lixeira_dupla: buildDecorLixeiraDupla,
+    decor_cooktop: buildDecorCooktop,
+    decor_coifa: buildDecorCoifa,
+    decor_spice_rack: buildDecorSpiceRack,
+    decor_lava_seca: buildDecorLavaSeca,
+  };
+
   function placePieceInBox(part, parentGroup, W, H, D, index, count, bounds) {
     const w = Math.max((part.width_mm || 0) / 1000, 0.002), h = Math.max((part.height_mm || 0) / 1000, 0.002), d = Math.max((part.depth_mm || 0) / 1000, 0.002);
     const role = part.position_role || 'other';
@@ -404,6 +893,12 @@ const Photoreal = (() => {
     } else if (role === 'countertop') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       emitInto(parentGroup, resolveContentPh(part, faceA, thickness, faceB), part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true));
+    } else if (role === 'free' && DECOR_BUILDERS[part.shape_type]) {
+      // Itens de decoração com geometria própria (migration 141) — cópia
+      // fiel do dispatch por shape_type em js/viewer3d.js (ver comentário
+      // lá), pra não sair diferente na foto realista.
+      const decorContent = DECOR_BUILDERS[part.shape_type](w, h, d, resolveDecorMaterials(part.color));
+      emitInto(parentGroup, decorContent, null, -W / 2 + w / 2 + offX, offY + legH, -D / 2 + d / 2 + offZ, false);
     } else if (role === 'free') {
       const content = resolveContentPh(part, w, h, d);
       emitInto(parentGroup, content, part.color, -W / 2 + w / 2 + offX, h / 2 + offY + legH, -D / 2 + d / 2 + offZ, resolveGrainRotate(part, w, h, false));

@@ -308,9 +308,29 @@ function createViewerComposition3D() {
     if (obj.geometry) obj.geometry.dispose();
     if (obj.material) {
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-      // .map (usado pelos sprites de texto das medidas, ver buildDimensionAnnotations)
-      // também precisa dispose senão a textura do canvas vaza a cada re-render.
-      materials.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+      // SÓ dispose de .map pros sprites de texto das medidas (canvas
+      // EXCLUSIVO de cada label, criado direto aqui em makeTextSprite/
+      // buildDimensionAnnotations — esse sim vaza se não descartar).
+      // NUNCA pros materiais de peça (corpo/porta/prateleira/etc): o .map
+      // deles vem do textureCache/coreTextureCache COMPARTILHADO de
+      // viewer3d.js (ver loadTexture/coreTexture lá, usados por
+      // Viewer3D.buildStandaloneAssembly) — dispor ele aqui invalida a
+      // textura pra QUALQUER outra peça que ainda esteja usando o mesmo
+      // cache (outro módulo do MESMO projeto, ou até o configurador de
+      // módulo único, já que o cache é uma variável só, compartilhada entre
+      // toda a aba). Foi exatamente isso que causou o crash "Error
+      // allocating Texture2D" / "WebGLRenderer: Context Lost" ao abrir um
+      // projeto grande (26/08): render() chama clearGroups() a cada
+      // (re)desenho, que descartava a textura compartilhada que os
+      // assemblies RECÉM-montados (via cache) ainda estavam usando.
+      // viewer3d.js já documenta essa regra no comentário de
+      // coreTextureCache ("disposeObject3D descarta MATERIAL, não textura")
+      // — esta função quebrava essa premissa sem os dois arquivos saberem.
+      const isLabelSprite = !!obj.isSprite;
+      materials.forEach((m) => {
+        if (isLabelSprite && m.map) m.map.dispose();
+        m.dispose();
+      });
     }
     (obj.children || []).forEach(disposeObject3D);
   }
