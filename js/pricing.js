@@ -373,12 +373,15 @@
     const corte = processLabor.corte_peca + processLabor.corte_m2 * areaM2;
 
     // FITA — por passada + por metro. `edge_banding` já É a contagem de
-    // passadas (0, 2 ou 4 bordas = 0, 2 ou 4 passadas na coladeira), então
-    // não existe número novo pra cadastrar.
+    // passadas (0, 1, 2 ou 4 bordas = 0, 1, 2 ou 4 passadas na coladeira),
+    // então não existe número novo pra cadastrar.
     // edge_banding nulo (componente ainda na fórmula antiga) = zero passadas:
     // sem a receita não dá pra saber quantas são, e chutar viraria custo
     // inventado. Esses componentes não estão em processo mesmo.
-    const passadas = piece.edge_banding === 2 ? 2 : piece.edge_banding === 4 ? 4 : 0;
+    // receita 1 (migration 145, "Flatbord 1C"): só UM dos dois comprimentos
+    // leva fita — peça que nasce cortada ao meio de uma chapa mais larga já
+    // fitada nas duas bordas (ver Ripa em [[flatbord_1c_ripa_pareamento]]).
+    const passadas = piece.edge_banding === 2 ? 2 : piece.edge_banding === 4 ? 4 : piece.edge_banding === 1 ? 1 : 0;
     const fita = passadas
       ? passadas * processLabor.fita_passada + num(pieceDims.edge_band_m) * processLabor.fita_metro
       : 0;
@@ -434,11 +437,16 @@
   function edgeBandMeters(piece, ctx) {
     const receita = piece ? piece.edge_banding : null;
     if (receita === 0) return 0;
-    if (receita === 2 || receita === 4) {
+    if (receita === 1 || receita === 2 || receita === 4) {
       const m = pecaNaMaquina(ctx.w, ctx.h, ctx.d, piece.positioning);
-      const mm = receita === 2
-        ? 2 * m.comprimento
-        : 2 * (m.comprimento + m.largura);
+      // receita 1 (migration 145, "Flatbord 1C"): só UM comprimento, não os
+      // dois — peça que sai da metade de uma chapa mais larga já fitada nos
+      // dois lados antes de ser partida (ver Ripa, [[flatbord_1c_ripa_pareamento]]).
+      const mm = receita === 1
+        ? m.comprimento
+        : receita === 2
+          ? 2 * m.comprimento
+          : 2 * (m.comprimento + m.largura);
       return mm / 1000;
     }
     return evalFormula((piece && piece.edge_band_linear_m_formula) || '0', ctx);
@@ -806,6 +814,16 @@
       // de corte; 'comprado' vira linha na lista de compra separada (ver
       // admin.js, aba Pedidos). Só uso na listagem, não afeta cálculo.
       origin: piece.origin || 'fabricacao',
+      // Pareamento de produção (migration 145, "Flatbord 1C"/Ripa). NÃO
+      // afeta o preço desta peça (sheet_cost/edge_cost acima já são o custo
+      // REAL por unidade vendida, metade da chapa + 1 fita) — só viaja até
+      // aqui pra `LOTES.explodeOrders` (erp/js/data-lotes.js) saber, na hora
+      // de montar o plano de corte, que cada N unidades vendidas desta
+      // referência viram 1 peça física de largura pair_physical_width_mm.
+      // null em toda peça que não usa isso (imensa maioria) — ver
+      // [[flatbord_1c_ripa_pareamento]].
+      pair_group_size: piece.pair_group_size || null,
+      pair_physical_width_mm: piece.pair_physical_width_mm || null,
       is_module: false,
       quantity: qty,
       color_role_id: piece.color_role_id,
