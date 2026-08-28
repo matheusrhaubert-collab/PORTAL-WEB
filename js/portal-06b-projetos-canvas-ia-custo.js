@@ -961,7 +961,8 @@ function resolveProjectSlotDepth(slot /* , otherSlots */) {
 }
 
 // ==========================================================================
-// COLISÃO ENTRE MÓDULOS (botão liga/desliga) — 2026-08-08
+// COLISÃO ENTRE MÓDULOS (botão liga/desliga) — 2026-08-08, 3D de verdade em
+// 2026-08-28
 // ==========================================================================
 // Pedido do usuário: "um botao de colisao deve existir, uma vez ligado os
 // moveis ligados na parede nao podem se ultrapassar; quando estiver
@@ -986,58 +987,164 @@ function setProjectCollisionEnabled(on) {
   if (btn) btn.classList.toggle('active', projectCollisionEnabled);
 }
 
-// Resolve o deslize de um retângulo contra uma lista de outros retângulos,
-// em DOIS PASSES independentes (primeiro o eixo horizontal, depois o
-// vertical) — é o algoritmo clássico de colisão de plataforma 2D, e é o que
-// dá a sensação de "deslizar rente ao vizinho" em vez de travar de vez assim
-// que os dois se tocam em qualquer canto.
-//
-// A regra "só bloqueia quem eu ainda NÃO estava atravessando" (o teste com
-// EPS contra a posição ANTERIOR) é o que impede um módulo que já nasceu
-// sobreposto — projeto salvo antes do botão existir, ou o próprio cliente
-// tendo ligado a colisão no meio da edição — de ficar preso pra sempre: um
-// vizinho que já estava sobreposto antes do movimento simplesmente não conta
-// como obstáculo, então dá pra arrastar pra fora dele normalmente.
-//
-// rect/prev/desired usam a convenção { x, y, w, h } com y CRESCENDO no
-// sentido "pra cima"/"pra dentro" conforme o plano (parede: x=ao longo da
-// parede, y=altura do chão; piso: x=X do mundo, y=Z do mundo).
 const PROJECT_COLLISION_EPS_MM = 0.5;
-function resolveCollisionSlide(desired, prev, sizeW, sizeH, others) {
-  const EPS = PROJECT_COLLISION_EPS_MM;
-  let x = desired.x;
-  const bandsOverlapY = (oy, oh, y) => (y < oy + oh - EPS && y + sizeH > oy + EPS);
-  const bandsOverlapX = (ox, ow, xx) => (xx < ox + ow - EPS && xx + sizeW > ox + EPS);
 
-  others.forEach((o) => {
-    if (!bandsOverlapY(o.y, o.h, prev.y)) return;
-    if (desired.x > prev.x && prev.x + sizeW <= o.x + EPS) x = Math.min(x, o.x - sizeW);
-    else if (desired.x < prev.x && prev.x >= o.x + o.w - EPS) x = Math.max(x, o.x + o.w);
-  });
-
-  let y = desired.y;
-  others.forEach((o) => {
-    if (!bandsOverlapX(o.x, o.w, x)) return;
-    if (desired.y > prev.y && prev.y + sizeH <= o.y + EPS) y = Math.min(y, o.y - sizeH);
-    else if (desired.y < prev.y && prev.y >= o.y + o.h - EPS) y = Math.max(y, o.y + o.h);
-  });
-
-  return { x, y };
+// ---- COLISÃO 3D DE VERDADE (2026-08-28) ---------------------------------
+// Matt: "a colisao esta funcionando so quando os modulos estao na mesma
+// parede ou chao. mas ele falha de um modulo do chao pra parede. ou de uma
+// parede pra outra. preciso que a colisao funcione nas 3 dimensoes,
+// independente de onde tiver conectado."
+//
+// A versão antiga (resolveCollisionSlide, removida aqui) comparava
+// retângulos { x, y, w, h } num referencial 2D LOCAL — "x ao longo desta
+// parede" pra módulo de parede, "X/Z do mundo" pra ilha — e só recebia como
+// obstáculo quem já estava nesse MESMO referencial (mesma parede, ou outra
+// ilha). Por construção nunca dava pra comparar um módulo desta parede
+// contra um da parede vizinha (outro ângulo, outro eixo "x ao longo de"
+// completamente diferente) nem um módulo de parede contra uma ilha (planos
+// diferentes: um é vertical-ao-longo-da-parede, o outro é o piso).
+//
+// A correção é comparar todo mundo no MESMO referencial — o MUNDO, em mm,
+// com Y = altura — que é o que projectSlotWorldBox3D devolve pra QUALQUER
+// slot (parede em qualquer ângulo, ou ilha): um retângulo giro (SAT) no
+// plano XZ (centro + meia-largura "ao longo" + meia-largura "pra dentro" +
+// ângulo) mais o intervalo vertical [yMin,yMax] que o módulo ocupa. Dois
+// módulos colidem em 3D quando os intervalos Y se cruzam E os retângulos XZ
+// se cruzam (obbOverlapXZ, Separating Axis Theorem — funciona pra
+// retângulos em QUALQUER ângulo relativo, ao contrário do "mesmo eixo" que
+// o código antigo exigia).
+//
+// Pra "deslizar até encostar" (em vez de só travar de vez no primeiro
+// toque), maxClearParamAlongPath faz uma busca binária ao longo do
+// segmento reto de prev até desired: 24 iterações bastam pra sub-décimo de
+// milímetro de precisão em qualquer distância de arraste razoável, e ao
+// contrário do algoritmo de "bandas" antigo (que só fazia sentido quando os
+// dois retângulos já estavam alinhados no mesmo eixo) não depende de
+// nenhuma suposição sobre o ângulo do obstáculo.
+//
+// A regra "só bloqueia quem eu ainda NÃO estava atravessando" (teste contra
+// a posição ANTERIOR, com EPS) continua igual — projeto salvo com
+// sobreposição antiga, ou colisão ligada no meio da edição, não pode travar
+// o módulo pra sempre.
+function projectSlotWorldBox3D(slot, overrides) {
+  const ov = overrides || {};
+  if (isFloorSlot(slot)) {
+    const cx = ov.floorXMm != null ? ov.floorXMm : Number(slot.floor_x_mm || 0);
+    const cz = ov.floorZMm != null ? ov.floorZMm : Number(slot.floor_z_mm || 0);
+    const rotDeg = ov.floorRotationDeg != null ? ov.floorRotationDeg : Number(slot.floor_rotation_deg || 0);
+    const rot = ((rotDeg % 360) + 360) % 360;
+    const swapped = (rot === 90 || rot === 270); // giro de ilha é sempre múltiplo de 90°
+    const wMm = swapped ? Number(slot.depth_mm || 0) : Number(slot.width_mm || 0);
+    const dMm = swapped ? Number(slot.width_mm || 0) : Number(slot.depth_mm || 0);
+    return {
+      cx, cz, angleRad: 0, // giro já absorvido pela troca w/d acima
+      halfAlongMm: wMm / 2, halfIntoMm: dMm / 2,
+      yMin: 0, yMax: Number(slot.height_mm || 0)
+    };
+  }
+  const wallGeo = (getProjectWallGeometry() || []).find((w) => w.wallIndex === Number(slot.wall_index || 0));
+  if (!wallGeo) return null;
+  const alongMm = ov.xMm != null ? ov.xMm : Number(slot.x_mm || 0);
+  const wMm = Number(slot.width_mm || 0);
+  const dMm = Number(slot.depth_mm || 0);
+  const yMin = ov.floorHeightMm != null ? ov.floorHeightMm : Number(slot.floor_height_mm || 0);
+  // slot.x_mm é a borda ao longo da parede mais perto da origem dela; a
+  // profundidade sempre começa encostada na face da parede (z_order zerado
+  // em resolveProjectSlotDepth, "TODO módulo de parede fica encostado na
+  // parede, sempre") e estica dMm pra dentro do ambiente — por isso o
+  // CENTRO é origin + along*(borda + w/2) + into*(d/2), nunca into*qualquer
+  // profundidade acumulada de camada.
+  const cx = wallGeo.originX * 1000 + wallGeo.alongDirX * (alongMm + wMm / 2) + wallGeo.intoDirX * (dMm / 2);
+  const cz = wallGeo.originZ * 1000 + wallGeo.alongDirZ * (alongMm + wMm / 2) + wallGeo.intoDirZ * (dMm / 2);
+  return {
+    cx, cz, angleRad: Math.atan2(wallGeo.alongDirZ, wallGeo.alongDirX),
+    halfAlongMm: wMm / 2, halfIntoMm: dMm / 2,
+    yMin, yMax: yMin + Number(slot.height_mm || 0)
+  };
 }
 
-// Colisão de um módulo de PAREDE: o plano é a própria parede (x ao longo
-// dela, y = altura do chão). Devolve a posição já corrigida; com o botão
-// desligado devolve o pedido intacto.
-function clampWallSlotAgainstCollision(slot, desiredXMm, desiredYMm, prevXMm, prevYMm, others) {
+// Sobreposição de dois retângulos girados no plano XZ (Separating Axis
+// Theorem — 4 eixos candidatos, os 2 lados de cada retângulo; achar UM eixo
+// onde as projeções não se tocam já prova que não há sobreposição).
+function obbOverlapXZ(a, b, epsMm) {
+  const eps = epsMm || 0;
+  const axisOf = (rect, i) => (i === 0
+    ? [Math.cos(rect.angleRad), Math.sin(rect.angleRad)]
+    : [-Math.sin(rect.angleRad), Math.cos(rect.angleRad)]);
+  const axes = [axisOf(a, 0), axisOf(a, 1), axisOf(b, 0), axisOf(b, 1)];
+  const dx = b.cx - a.cx, dz = b.cz - a.cz;
+  const projHalf = (rect, ux, uz) => {
+    const ax0 = axisOf(rect, 0), ax1 = axisOf(rect, 1);
+    return Math.abs(ax0[0] * ux + ax0[1] * uz) * rect.halfAlongMm
+      + Math.abs(ax1[0] * ux + ax1[1] * uz) * rect.halfIntoMm;
+  };
+  for (const [ux, uz] of axes) {
+    const centerDist = Math.abs(dx * ux + dz * uz);
+    const reach = projHalf(a, ux, uz) + projHalf(b, ux, uz);
+    if (centerDist >= reach - eps) return false; // eixo separador achado
+  }
+  return true;
+}
+
+// Sobreposição 3D = intervalo Y se cruza E retângulo XZ se cruza.
+function slotsOverlap3D(boxA, boxB, epsMm) {
+  if (!boxA || !boxB) return false;
+  const eps = epsMm || 0;
+  if (boxA.yMax <= boxB.yMin + eps || boxB.yMax <= boxA.yMin + eps) return false;
+  return obbOverlapXZ(boxA, boxB, eps);
+}
+
+// TODOS os outros módulos do projeto (parede, qualquer parede, ou ilha),
+// convertidos pra caixa 3D em mundo — é isso que permite comparar módulos
+// de referenciais diferentes.
+function projectAllOtherSlotWorldBoxes(slot) {
+  const boxes = [];
+  (projectSlots || []).forEach((s) => {
+    if (s.id === slot.id) return;
+    const b = projectSlotWorldBox3D(s);
+    if (b) boxes.push(b);
+  });
+  return boxes;
+}
+
+// Maior fração t (0=prev, 1=desired) do caminho reto prev->desired em que o
+// módulo (boxAtT(t)) ainda não colide com nenhum obstáculo — busca binária,
+// não assume nada sobre o ângulo/plano do obstáculo. `obstacles` já vem
+// filtrada por quem chama (exclui quem já atravessava a posição prev).
+function maxClearParamAlongPath(boxAtT, obstacles, epsMm) {
+  if (!obstacles.length) return 1;
+  if (!obstacles.some((o) => slotsOverlap3D(boxAtT(1), o, epsMm))) return 1;
+  if (obstacles.some((o) => slotsOverlap3D(boxAtT(0), o, epsMm))) return 1; // prev já colide: não é obstáculo válido, não trava
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (obstacles.some((o) => slotsOverlap3D(boxAtT(mid), o, epsMm))) hi = mid; else lo = mid;
+  }
+  return lo;
+}
+
+// Colisão de um módulo de PAREDE: dois passes (X ao longo da parede, depois
+// Y/altura) — cada um desliza pelo caminho reto até o primeiro toque real em
+// 3D contra QUALQUER outro módulo do projeto (mesma parede, parede
+// diferente em qualquer ângulo, ou ilha). Devolve a posição já corrigida;
+// com o botão desligado devolve o pedido intacto.
+function clampWallSlotAgainstCollision(slot, desiredXMm, desiredYMm, prevXMm, prevYMm) {
   if (!projectCollisionEnabled) return { x: desiredXMm, y: desiredYMm };
-  const rects = others.map((s) => ({
-    x: Number(s.x_mm || 0), y: Number(s.floor_height_mm || 0),
-    w: Number(s.width_mm || 0), h: Number(s.height_mm || 0)
-  }));
-  return resolveCollisionSlide(
-    { x: desiredXMm, y: desiredYMm }, { x: prevXMm, y: prevYMm },
-    Number(slot.width_mm || 0), Number(slot.height_mm || 0), rects
-  );
+  const EPS = PROJECT_COLLISION_EPS_MM;
+  const boxAt = (alongMm, floorHeightMm) => projectSlotWorldBox3D(slot, { xMm: alongMm, floorHeightMm: floorHeightMm });
+  const allObstacles = projectAllOtherSlotWorldBoxes(slot);
+  const prevBox = boxAt(prevXMm, prevYMm);
+  const freeObstacles = allObstacles.filter((o) => !slotsOverlap3D(prevBox, o, EPS));
+
+  const tx = maxClearParamAlongPath(
+    (t) => boxAt(prevXMm + (desiredXMm - prevXMm) * t, prevYMm), freeObstacles, EPS);
+  const x = prevXMm + (desiredXMm - prevXMm) * tx;
+
+  const ty = maxClearParamAlongPath(
+    (t) => boxAt(x, prevYMm + (desiredYMm - prevYMm) * t), freeObstacles, EPS);
+  const y = prevYMm + (desiredYMm - prevYMm) * ty;
+
+  return { x, y };
 }
 
 // Pegada (footprint) de um módulo ILHA no piso, em mm de MUNDO — { x, y, w, h }
@@ -1052,23 +1159,30 @@ function floorSlotFootprint(slot, centerXMm, centerZMm) {
   return { x: cx - w / 2, y: cz - h / 2, w, h };
 }
 
-// Colisão de um módulo ILHA: o plano é o PISO (x/z do mundo). Só colide com
-// outras ilhas — um módulo de parede está pendurado/encostado na parede e sua
-// pegada no chão não é uma informação que este app guarda de verdade (a
-// profundidade dele na Vista Superior é derivada, ver
-// computeProjectSlotsTopViewLayout), então tratá-lo como obstáculo aqui daria
-// bloqueio fantasma. Recebe/devolve o CENTRO do módulo.
+// Colisão de um módulo ILHA: dois passes (X, depois Z do mundo), mesma busca
+// binária em 3D de clampWallSlotAgainstCollision — agora colide com
+// QUALQUER módulo do projeto, não só outras ilhas. Um módulo de parede vira
+// obstáculo de verdade aqui (antes não entrava: "sua pegada no chão não é
+// informação que o app guarda" — mas agora projectSlotWorldBox3D calcula
+// essa pegada a partir da própria geometria da parede, então não é mais
+// aproximação nenhuma). Recebe/devolve o CENTRO do módulo.
 function clampFloorSlotAgainstCollision(slot, desiredXMm, desiredZMm, prevXMm, prevZMm) {
   if (!projectCollisionEnabled) return { x: desiredXMm, y: desiredZMm };
-  const self = floorSlotFootprint(slot, desiredXMm, desiredZMm);
-  const prev = floorSlotFootprint(slot, prevXMm, prevZMm);
-  const others = projectFloorSlots()
-    .filter((s) => s.id !== slot.id)
-    .map((s) => floorSlotFootprint(s));
-  const solved = resolveCollisionSlide(
-    { x: self.x, y: self.y }, { x: prev.x, y: prev.y }, self.w, self.h, others
-  );
-  return { x: solved.x + self.w / 2, y: solved.y + self.h / 2 };
+  const EPS = PROJECT_COLLISION_EPS_MM;
+  const boxAt = (fx, fz) => projectSlotWorldBox3D(slot, { floorXMm: fx, floorZMm: fz });
+  const allObstacles = projectAllOtherSlotWorldBoxes(slot);
+  const prevBox = boxAt(prevXMm, prevZMm);
+  const freeObstacles = allObstacles.filter((o) => !slotsOverlap3D(prevBox, o, EPS));
+
+  const tx = maxClearParamAlongPath(
+    (t) => boxAt(prevXMm + (desiredXMm - prevXMm) * t, prevZMm), freeObstacles, EPS);
+  const x = prevXMm + (desiredXMm - prevXMm) * tx;
+
+  const tz = maxClearParamAlongPath(
+    (t) => boxAt(x, prevZMm + (desiredZMm - prevZMm) * t), freeObstacles, EPS);
+  const z = prevZMm + (desiredZMm - prevZMm) * tz;
+
+  return { x, y: z };
 }
 
 // ==========================================================================
@@ -1479,15 +1593,14 @@ function attachProjectSlotDrag(div, slot) {
     // ordem das outras vistas: ímã primeiro (pode encostar exatamente na
     // borda do vizinho sem contar como sobreposição), colisão por último.
     if (projectCollisionEnabled) {
-      // Só os vizinhos DE VERDADE nesta parede — sem o traçado fantasma da
-      // parede vizinha (projectGhostSnapTargets, dentro de `others` acima):
-      // aquilo é só uma projeção pro ímã de ALINHAR, travar contra ele criaria
-      // um bloqueio fantasma (mesmo raciocínio do clampWallSlotAgainstCollision
-      // na vista de canto 3D, portal-08-projetos-paredes.js).
+      // clampWallSlotAgainstCollision agora monta a lista de obstáculos
+      // sozinha a partir de projectSlots (qualquer parede, qualquer ilha) —
+      // o traçado fantasma da parede vizinha (projectGhostSnapTargets, usado
+      // só pelo ímã de ALINHAR acima) nunca entra nessa lista porque não é
+      // um slot de verdade, então não precisa mais ser excluído aqui.
       const solved = clampWallSlotAgainstCollision(
         slot, x, y,
-        projectDragState.prevXMm, projectDragState.prevYMm,
-        projectSlotsSameWallExcluding(slot)
+        projectDragState.prevXMm, projectDragState.prevYMm
       );
       x = solved.x;
       y = solved.y;

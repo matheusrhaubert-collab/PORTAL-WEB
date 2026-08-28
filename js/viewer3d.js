@@ -336,7 +336,12 @@ const Viewer3D = (function () {
   // partir de 0 (u*repU); COM giro, escala em torno de 0.5
   // (0.5 + (u-0.5)*repU) — testado com harness de screenshot antes/depois
   // pros dois giros e sem giro (ver memória do projeto).
-  function scaleFaceUV(geometry, pairIndex, repU, repV, rotateTexture) {
+  // soLado (2026-08-28, edge_banding=1 / Flatbord 1C, migration 145): índice
+  // 0 ou 1 pra escalar só UMA das duas faces do par (a que "vira" +eixo ou
+  // -eixo), em vez das duas juntas — usado quando só um lado do par leva
+  // fita e o outro fica com o miolo (ver makeBoxMaterials/doPar). Omitido
+  // (undefined) continua escalando o par inteiro, igual sempre foi.
+  function scaleFaceUV(geometry, pairIndex, repU, repV, rotateTexture, soLado) {
     if (repU === 1 && repV === 1) return;
     const uvAttr = geometry.attributes && geometry.attributes.uv;
     if (!uvAttr) return;
@@ -353,17 +358,22 @@ const Viewer3D = (function () {
         uvAttr.setXY(vi, u * repU, v * repV);
       }
     };
+    const gIdx = soLado == null ? [pairIndex * 2, pairIndex * 2 + 1] : [pairIndex * 2 + soLado];
     const groups = geometry.groups;
     if (idxAttr && groups && groups.length === 6) {
-      [groups[pairIndex * 2], groups[pairIndex * 2 + 1]].forEach((g) => {
+      gIdx.forEach((gi) => {
+        const g = groups[gi];
         for (let i = g.start; i < g.start + g.count; i++) escala(idxAttr.getX(i));
       });
     } else {
       // Fallback defensivo (BoxGeometry sem index/groups não é esperado no
       // Three usado aqui, r128/r181 sempre gera os dois) — layout padrão: 4
-      // vértices por face, 2 faces por par, na ordem +X,-X,+Y,-Y,+Z,-Z.
-      const base = pairIndex * 8;
-      for (let i = base; i < base + 8; i++) escala(i);
+      // vértices por face, na ordem +X,-X,+Y,-Y,+Z,-Z (índice absoluto do
+      // grupo × 4 vértices).
+      gIdx.forEach((gi) => {
+        const base = gi * 4;
+        for (let i = base; i < base + 4; i++) escala(i);
+      });
     }
     uvAttr.needsUpdate = true;
   }
@@ -710,23 +720,44 @@ const Viewer3D = (function () {
     // (2026-08-27, ver loadTexture pro motivo: a escala física saiu da
     // Texture, foi pro UV da geometria).
     const PAIR_INDEX = { x: 0, y: 1, z: 2 };
+    // Cada doPar devolve SEMPRE um par [materialDoLado+, materialDoLado-] —
+    // normalmente os dois iguais (cor nas faces grandes, ou fita/miolo
+    // simétrico nos 0/2/4 lados de sempre). A exceção é edge_banding=1
+    // (Flatbord 1C, migration 145): a peça nasce partida de uma chapa já
+    // fitada dos dois lados, cada metade fica com fita de UM lado do
+    // comprimento só e miolo no outro — os dois lados do par deixam de ser
+    // iguais. Não tem como saber QUAL metade física é esta peça (a
+    // informação não existe no cadastro), então a convenção é fixa: o lado
+    // "+eixo" (índice 0 do par, sempre o mesmo em qualquer render) leva a
+    // fita, o "-eixo" mostra o miolo.
     const doPar = function (geoEixo) {
       const eixo = ax[geoEixo];
       const uv = UV[geoEixo];
       const pairIndex = PAIR_INDEX[geoEixo];
+      const core = () => makeCoreMaterial(color, mm[uv.u], mm[uv.v], uv.u === m.tKey);
+      const fita = (soLado) => {
+        scaleFaceUV(geometry, pairIndex, quantizaRepeat(mm[uv.u]), quantizaRepeat(mm[uv.v]), rotateTexture, soLado);
+        return makeMaterial(color, rotateTexture);
+      };
       if (eixo === m.tKey) {
-        scaleFaceUV(geometry, pairIndex, quantizaRepeat(mm[uv.u]), quantizaRepeat(mm[uv.v]), rotateTexture);
-        return makeMaterial(color, rotateTexture);
+        const cor = fita();
+        return [cor, cor];
       }
-      const temFita = eixo === m.lKey ? part.edge_banding >= 2 : part.edge_banding === 4;
-      if (temFita) {
-        scaleFaceUV(geometry, pairIndex, quantizaRepeat(mm[uv.u]), quantizaRepeat(mm[uv.v]), rotateTexture);
-        return makeMaterial(color, rotateTexture);
+      if (eixo === m.lKey) {
+        // lados que medem o comprimento: 0 sem fita, 1 fita só num lado
+        // (ver comentário de doPar acima), 2 ou 4 fita nos dois.
+        if (part.edge_banding >= 2) { const f = fita(); return [f, f]; }
+        if (part.edge_banding === 1) { return [fita(0), core()]; }
+        return [core(), core()];
       }
-      return makeCoreMaterial(color, mm[uv.u], mm[uv.v], uv.u === m.tKey);
+      // eixo === m.cKey: lados que medem a largura — só levam fita com
+      // receita 4 (edge_banding=1 nunca banha este par, é sempre 1 lado do
+      // COMPRIMENTO).
+      if (part.edge_banding === 4) { const f = fita(); return [f, f]; }
+      return [core(), core()];
     };
     const mx = doPar('x'), my = doPar('y'), mz = doPar('z');
-    return [mx, mx, my, my, mz, mz];
+    return [mx[0], mx[1], my[0], my[1], mz[0], mz[1]];
   }
 
   // Cria a câmera de acordo com projectionMode atual — Perspectiva (padrão,

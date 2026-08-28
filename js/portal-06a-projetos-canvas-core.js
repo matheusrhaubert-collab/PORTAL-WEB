@@ -17,6 +17,14 @@
 let projectDirty = false;
 function markProjectDirty() {
   projectDirty = true;
+  // Indicador verde de "salvo" (2026-08-28) — markProjectDirty é o MESMO
+  // ponto único citado no comentário do Desfazer logo abaixo, então é o
+  // gancho natural pra apagar o "✓ Salvo" também, sem duplicar em ~20
+  // call-sites. Ver refreshProjectSaveIndicator em portal-09-projetos-final.js
+  // (carrega DEPOIS deste arquivo, mas a chamada só acontece em uso real do
+  // usuário, bem depois de todo <script> já ter carregado — mesmo padrão já
+  // usado noutras pontes entre estes arquivos, ex. getProjectWallWidthMm).
+  if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
   // Desfazer (2026-08-08) — markProjectDirty já é o ponto por onde TODA
   // alteração real do projeto passa (é uma regra do arquivo, ver memória:
   // "novo ponto de mutação precisa lembrar de chamar markProjectDirty"), então
@@ -148,6 +156,7 @@ function undoProjectChange() {
   renderProjectConfigPanel();
   refreshProjectUndoButton();
   projectDirty = true; // desfazer também é uma diferença em relação ao que está salvo
+  if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
 }
 
 // Alternância Frontal/Superior do canvas 2D (pedido do usuário, 2026-07-24:

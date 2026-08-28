@@ -718,8 +718,7 @@ function attachProject3DEditDrag() {
       const solved = clampWallSlotAgainstCollision(
         slot, xMm, yMm,
         crossedWall ? xMm : state.prevXMm,
-        crossedWall ? yMm : state.prevYMm,
-        projectSlotsSameWallExcluding(slot)
+        crossedWall ? yMm : state.prevYMm
       );
       xMm = solved.x;
       yMm = solved.y;
@@ -2330,22 +2329,35 @@ if (projPhotorealBtn) {
     }));
     // Câmera do "posicionamento 3D" (pedido do usuário 2026-08-03): a foto
     // sai do MESMO ângulo/zoom que o usuário está vendo. DOIS viewers 3D
-    // convivem na aba Projetos (bug relatado no mesmo dia: "mudei a camera
-    // do 3d e o render nao esta puxando a nova posicao" — o usuário tinha
-    // girado no painel "Visualizar 3D", mas só a Vista de Canto de EDIÇÃO
-    // era consultada): prioridade pro painel Visualizar 3D (ViewerProject)
-    // quando ele está ABERTO na tela — é o que a pessoa está olhando na hora
-    // de pedir a foto; senão, a Vista de Canto de edição (ViewerProjectEdit).
-    // Se nenhum abriu nesta sessão, getCameraState() devolve null e o
-    // Photoreal cai no enquadramento automático dele.
+    // convivem na aba Projetos — a Vista de Canto de EDIÇÃO (ViewerProjectEdit,
+    // sempre presente enquanto o projeto é montado) e o painel separado
+    // "Visualizar 3D" (ViewerProject, aposentado da interface principal mas
+    // ainda alcançável pelo botão de mesmo nome).
+    //
+    // A 1ª versão disto (2026-08-03) priorizava ViewerProject sempre que
+    // #po-proj-3d-wrap estivesse VISÍVEL na tela — e ficou quebrada de novo
+    // em 2026-08-28 (Matt: "a camera ta ficando diferente do que eu vi no
+    // 3d... usei os dois [painéis] em momentos diferentes"): abrir
+    // "Visualizar 3D" uma vez deixa aquele painel visível PRA SEMPRE (nada
+    // esconde de volta sozinho, só o botão "← Voltar" dele) — então depois
+    // de girar a câmera de volta na Vista de Canto, a checagem de
+    // visibilidade continuava achando #po-proj-3d-wrap "aberto" e usando a
+    // câmera VELHA/abandonada de ViewerProject em vez da que a pessoa
+    // acabou de ajustar.
+    //
+    // Fix: em vez de "qual painel está visível", pergunta "em qual dos dois
+    // o usuário mexeu a câmera por ÚLTIMO" (touchedAt, ver
+    // lastUserCameraTouchAt em viewer3d_composition.js — só conta gesto
+    // manual de verdade, nunca reenquadramento automático). Empate (os dois
+    // em 0, nenhum tocado manualmente ainda) cai pra Vista de Canto por
+    // padrão, já que é a que fica na tela o tempo todo editando o projeto.
     let cameraState = null;
-    const proj3dWrapForPhoto = document.getElementById('po-proj-3d-wrap');
-    if (proj3dWrapForPhoto && proj3dWrapForPhoto.style.display !== 'none'
-      && ViewerProject && ViewerProject.getCameraState) {
-      cameraState = ViewerProject.getCameraState();
-    }
-    if (!cameraState && ViewerProjectEdit && ViewerProjectEdit.getCameraState) {
-      cameraState = ViewerProjectEdit.getCameraState();
+    const stateMain = (ViewerProject && ViewerProject.getCameraState) ? ViewerProject.getCameraState() : null;
+    const stateEdit = (ViewerProjectEdit && ViewerProjectEdit.getCameraState) ? ViewerProjectEdit.getCameraState() : null;
+    if (stateMain && stateEdit) {
+      cameraState = (Number(stateEdit.touchedAt || 0) >= Number(stateMain.touchedAt || 0)) ? stateEdit : stateMain;
+    } else {
+      cameraState = stateEdit || stateMain || null;
     }
     Photoreal.open({
       walls,
@@ -2431,6 +2443,7 @@ function resetProject() {
   project3DLastFitKey = null; // força reenquadrar a câmera 3D no próximo render (ver comentário na declaração)
   renderProjectCanvas();
   projectDirty = false; // ambiente esvaziado de propósito, não é uma alteração pendente de salvar
+  if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
   resetProjectUndo();    // projeto TROCOU inteiro — histórico anterior não é mais "alteração deste projeto"
 }
 const projResetBtn = document.getElementById('po-proj-reset-btn');

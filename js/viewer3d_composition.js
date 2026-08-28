@@ -37,6 +37,13 @@ function createViewerComposition3D() {
   let scene = null;
   let camera = null;
   let controls = null;
+  // Foto realista (2026-08-28, Matt: "a camera ta ficando diferente do
+  // que eu vi no 3d") — quando o instante do último toque manual do
+  // usuário nesta câmera (girar/arrastar/zoom), NÃO reação automática de
+  // reenquadramento (fitCamera etc.). Ver getCameraState() mais abaixo e o
+  // comentário grande em openPhotorealModal (portal-08-projetos-
+  // paredes.js) pro motivo de existir.
+  let lastUserCameraTouchAt = 0;
   let containerEl = null;
   let currentGroups = [];
   // Contorno de destaque (hover/seleção) — pedido do usuário 2026-07-26:
@@ -136,6 +143,11 @@ function createViewerComposition3D() {
     containerEl.appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
+    // 'start' dispara só em gesto de VERDADE do usuário (pointerdown que
+    // vira giro/pan) — nunca em reenquadramento automático (fitCamera não
+    // passa pelo OrbitControls). Zoom é tratado à parte, em
+    // zoomTowardClient (enableZoom=false aqui, ver comentário abaixo).
+    controls.addEventListener('start', () => { lastUserCameraTouchAt = Date.now(); });
     // SEM AMORTECIMENTO — a câmera anda exatamente com o ponteiro, 1:1.
     //
     // enableDamping + dampingFactor 0.08 (o que estava aqui) NÃO é "suavizar":
@@ -2273,6 +2285,7 @@ function createViewerComposition3D() {
   // repetir esse clamp aqui.
   function zoomTowardClient(clientX, clientY, factor) {
     if (!_raycaster || !camera || !controls) return;
+    lastUserCameraTouchAt = Date.now(); // ver comentário de lastUserCameraTouchAt lá em cima
     // ORTOGRÁFICA não tem "chegar perto": aproximar a câmera não muda o
     // tamanho aparente. Quem dá zoom é o frustum. Mantém o ponto sob o cursor
     // parado do mesmo jeito — só que movendo o ALVO em vez da câmera.
@@ -2757,7 +2770,10 @@ function createViewerComposition3D() {
       position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
       target: { x: t.x, y: t.y, z: t.z },
       fov: camera.fov || 35,
-      aspect: camera.aspect || (4 / 3)
+      aspect: camera.aspect || (4 / 3),
+      // Ver lastUserCameraTouchAt — 0 quando esta câmera nunca recebeu um
+      // gesto manual do usuário nesta sessão (só enquadramento automático).
+      touchedAt: lastUserCameraTouchAt
     };
     // ORTOGRÁFICA/Paralela (2026-08-26, Matt: "a foto realista gerada no
     // portal, nao esta respeitando a posicao escolhida da camera... ela

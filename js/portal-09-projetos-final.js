@@ -46,6 +46,36 @@ function bindProjToolbarSaveButton() {
   syncProjToolbarSaveButton();
 }
 
+// Indicador PERSISTENTE de salvo/não salvo, ao lado do botão da barra de
+// ferramentas (Matt, 2026-08-28: "deixa um verdinho dizendo que o projeto ta
+// salvo, e se alterei alguma coisa sai o verde... pra eu saber se ta salvo ou
+// nao"). Diferente de #po-proj-fav-status — aquele span é uma mensagem de
+// alguns segundos que some sozinha (setTimeout) e é reaproveitado por vários
+// fluxos (salvar projeto, salvar peça do Construtor...); este aqui fica
+// ligado o tempo todo, refletindo `projectDirty` ao vivo, sem timeout nenhum.
+//
+// forceState opcional ('saving') pra cobrir a JANELA ASSÍNCRONA do próprio
+// salvar (entre o clique e a resposta do banco) — sem isso o indicador
+// ficaria mostrando "não salvo" (vazio) até a resposta chegar, mesmo com o
+// salvamento já em andamento. Sem argumento, deriva o estado direto de
+// projectDirty (o caso normal: toda mutação do projeto passa por
+// markProjectDirty, ver portal-06a-projetos-canvas-core.js).
+function refreshProjectSaveIndicator(forceState) {
+  const el = document.getElementById('po-proj-save-indicator');
+  if (!el) return;
+  const state = forceState || ((typeof projectDirty !== 'undefined' && projectDirty) ? 'dirty' : 'saved');
+  el.classList.remove('is-saved', 'is-saving');
+  if (state === 'saving') {
+    el.classList.add('is-saving');
+    el.textContent = I18n.t('project.save_indicator_saving');
+  } else if (state === 'saved') {
+    el.classList.add('is-saved');
+    el.textContent = I18n.t('project.save_indicator_saved');
+  } else {
+    el.textContent = ''; // 'dirty' — nada a mostrar, é o próprio sumiço do verde que avisa
+  }
+}
+
 function refreshProjectFavoriteButtons() {
   const updateBtn = document.getElementById('po-proj-update-fav-btn');
   // Grade de fotos realistas salvas (migration 077) segue o projeto
@@ -126,6 +156,7 @@ async function saveProjectFavoriteInner(overwriteId) {
     errorEl.style.display = 'block';
     return;
   }
+  refreshProjectSaveIndicator('saving');
   try {
     // wall_width_mm (coluna antiga, só 1 número) continua gravada com a
     // largura da parede 'main' pra qualquer projeto salvo antes desta
@@ -206,10 +237,12 @@ async function saveProjectFavoriteInner(overwriteId) {
     }
     refreshProjectFavoriteButtons();
     projectDirty = false; // acabou de salvar — pedido do usuário 2026-07-29 ("preciso... uma mensagem salvar alteracoes")
+    refreshProjectSaveIndicator();
     setTimeout(() => { statusEl.textContent = ''; }, 4000);
   } catch (err) {
     errorEl.textContent = err.message || String(err);
     errorEl.style.display = 'block';
+    refreshProjectSaveIndicator(); // salvar falhou — sai do "Salvando…", volta a refletir projectDirty (continua true)
   }
 }
 
@@ -685,6 +718,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     refreshProjectFavoriteButtons();
     renderProjectCanvas();
     projectDirty = false; // acabou de carregar do banco, nada pendente ainda
+    refreshProjectSaveIndicator();
     resetProjectUndo();    // projeto TROCOU inteiro — ver comentário em resetProjectUndo
 
     const statusEl = document.getElementById('po-proj-fav-status');
