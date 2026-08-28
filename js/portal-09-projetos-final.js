@@ -533,16 +533,25 @@ async function shareProjectFavorite(proj) {
   try {
     let code = proj.share_code || null;
     if (!code) {
+      // .select('id') no update é DE PROPÓSITO (achado 28/08, testando com
+      // o Matt: 1º código gerado dava "Invalid code" na hora de importar) —
+      // .update() sem .select() no supabase-js usa Prefer: return=minimal,
+      // que NÃO acusa erro nenhum se o UPDATE bater 0 linhas (RLS silenciosa
+      // filtrando a linha, id errado, etc.) — parecia "sucesso" e mostrava
+      // um link com um código que nunca foi gravado. Com .select('id'), dá
+      // pra saber de verdade se a linha voltou.
       for (let attempt = 0; attempt < 5 && !code; attempt++) {
         const candidate = generateProjectShareCode();
-        const { error } = await supabaseClient.from('user_projects').update({ share_code: candidate }).eq('id', proj.id);
-        if (!error) { code = candidate; proj.share_code = candidate; }
-        else if (!/duplicate key|unique/i.test(error.message || '')) throw error; // erro real (ex.: migration 147 não rodou) — não adianta tentar de novo
+        const { data, error } = await supabaseClient.from('user_projects').update({ share_code: candidate }).eq('id', proj.id).select('id');
+        if (!error && data && data.length) { code = candidate; proj.share_code = candidate; }
+        else if (error && !/duplicate key|unique/i.test(error.message || '')) throw error; // erro real (ex.: migration 147 não rodou) — não adianta tentar de novo
+        else if (!error && (!data || !data.length)) throw new Error('Não consegui gravar o código nesse projeto (a atualização não encontrou a linha — recarregue a página e tente de novo).');
       }
       if (!code) throw new Error(I18n.t('project.share_error_retry'));
     }
     const url = new URL(window.location.href);
     url.search = '';
+    url.hash = ''; // link limpo (achado 28/08: um '#' solto sobrevivia da URL de origem e ficava pendurado no fim do link, confuso de colar embora o import já ignorasse)
     url.searchParams.set('importProject', code);
     const link = url.toString();
     try { await navigator.clipboard.writeText(link); } catch (e) { /* clipboard pode não estar disponível (http/permissão) — o alert abaixo mostra o link igual */ }
