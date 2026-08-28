@@ -359,7 +359,7 @@ async function loadProjectFavoritesList() {
   // caem no recálculo em background de antes; sem wall_segments o projeto
   // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
   const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
-  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code'];
   let optional = OPTIONAL_COLS.slice();
   const runSelect = () => supabaseClient
     .from('user_projects')
@@ -417,6 +417,7 @@ async function loadProjectFavoritesList() {
         <div class="po-myproj-card-actions">
           <button type="button" class="po-proj-fav-load">${I18n.t('project.load_btn')}</button>
           <button type="button" class="secondary po-proj-fav-rename">${I18n.t('fav.rename_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-share">${I18n.t('project.share_btn')}</button>
           <button type="button" class="secondary po-proj-fav-delete">${I18n.t('fav.delete_btn')}</button>
         </div>
       </div>
@@ -426,6 +427,7 @@ async function loadProjectFavoritesList() {
       img.addEventListener('click', () => openGalleryLightbox(img.src));
     });
     card.querySelector('.po-proj-fav-load').addEventListener('click', () => restoreFavoriteProject(proj));
+    card.querySelector('.po-proj-fav-share').addEventListener('click', () => shareProjectFavorite(proj));
     card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
       const newName = (prompt(I18n.t('project.name_prompt'), proj.name) || '').trim();
       if (!newName || newName === proj.name) return;
@@ -505,6 +507,118 @@ async function loadProjectFavoritesList() {
 // 'po-tab-my-projects' perto do fim deste arquivo). loadProjectFavoritesList
 // continua igual, só passou a escrever direto em po-proj-fav-list (mesmo id,
 // só mudou de aba-pai).
+
+// ---------- COMPARTILHAR / IMPORTAR PROJETO ENTRE USUÁRIOS (migration 147) ----------
+// Pedido do Matt (2026-08-28): "quero passar um projeto de um usuario pra
+// outro... exportar projeto, outro usuario pode abrir, ou o dealer passar
+// pro cliente". Em vez de transferir a linha (client_user_id fixo, precisa
+// de acesso direto ao banco), o dono gera um CÓDIGO curto; quem recebe cola
+// o link/código e abre uma cópia no editor da aba Projetos (mesmo caminho
+// de "Personalizar" um post da Galeria — restoreGalleryPostAsProject usa o
+// mesmo restoreFavoriteProject abaixo) — depois é só clicar em "Salvar"
+// pra virar um projeto próprio, dono original nunca perde o dele.
+
+// Gera um código curto (8 caracteres, base36 maiúsculo) — não precisa ser
+// criptograficamente perfeito, só difícil de adivinhar por acaso; unicidade
+// de verdade é garantida pelo índice único (migration 147), com retry aqui
+// se colidir.
+function generateProjectShareCode() {
+  const rnd = crypto.getRandomValues(new Uint32Array(2));
+  return Array.from(rnd, (n) => n.toString(36)).join('').toUpperCase().slice(0, 8);
+}
+
+async function shareProjectFavorite(proj) {
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (errorEl) errorEl.style.display = 'none';
+  try {
+    let code = proj.share_code || null;
+    if (!code) {
+      for (let attempt = 0; attempt < 5 && !code; attempt++) {
+        const candidate = generateProjectShareCode();
+        const { error } = await supabaseClient.from('user_projects').update({ share_code: candidate }).eq('id', proj.id);
+        if (!error) { code = candidate; proj.share_code = candidate; }
+        else if (!/duplicate key|unique/i.test(error.message || '')) throw error; // erro real (ex.: migration 147 não rodou) — não adianta tentar de novo
+      }
+      if (!code) throw new Error(I18n.t('project.share_error_retry'));
+    }
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('importProject', code);
+    const link = url.toString();
+    try { await navigator.clipboard.writeText(link); } catch (e) { /* clipboard pode não estar disponível (http/permissão) — o alert abaixo mostra o link igual */ }
+    alert(`${I18n.t('project.share_link_label')}\n${link}\n\n${I18n.t('project.share_code_hint', { code })}`);
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+  }
+}
+
+// Busca um projeto pelo código (function SECURITY DEFINER get_shared_project,
+// migration 147 — não é uma policy de SELECT aberta, só devolve a linha
+// exata que bate com o código) e abre no editor, SEM salvar sozinho — quem
+// importou revisa e decide clicando em "Salvar" (vira INSERT novo,
+// client_user_id = quem está logado, dono original intacto).
+async function openSharedProjectByCode(rawCode) {
+  const errorEl = document.getElementById('po-proj-fav-error');
+  const statusEl = document.getElementById('po-proj-import-status');
+  if (errorEl) errorEl.style.display = 'none';
+  if (statusEl) statusEl.textContent = '';
+  if (!currentUser) {
+    if (errorEl) { errorEl.textContent = I18n.t('fav.need_login'); errorEl.style.display = 'block'; }
+    return;
+  }
+  // Aceita tanto o link inteiro colado quanto só o código.
+  let code = (rawCode || '').trim();
+  const fromLink = code.match(/[?&]importProject=([A-Za-z0-9]+)/i);
+  if (fromLink) code = fromLink[1];
+  code = code.toUpperCase();
+  if (!code) return;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_shared_project', { p_code: code });
+    if (error) throw error;
+    const source = Array.isArray(data) ? data[0] : data;
+    if (!source) {
+      if (errorEl) { errorEl.textContent = I18n.t('project.import_error_notfound'); errorEl.style.display = 'block'; }
+      return;
+    }
+    const input = document.getElementById('po-proj-import-code');
+    if (input) input.value = '';
+    await restoreFavoriteProject({
+      id: null, // força INSERT novo ao salvar — nunca aponta pro projeto do dono original
+      name: I18n.t('project.import_copy_name', { name: source.name }),
+      slots: source.slots,
+      wall_width_mm: source.wall_width_mm,
+      wall_shape: source.wall_shape,
+      wall_widths_mm: source.wall_widths_mm,
+      wall_segments: source.wall_segments,
+      ai_preview_url: null
+    }, false);
+    if (statusEl) statusEl.textContent = I18n.t('project.import_success', { name: source.name });
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+  }
+}
+
+const projImportBtn = document.getElementById('po-proj-import-btn');
+const projImportInput = document.getElementById('po-proj-import-code');
+if (projImportBtn && projImportInput) {
+  projImportBtn.addEventListener('click', () => openSharedProjectByCode(projImportInput.value));
+  projImportInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') openSharedProjectByCode(projImportInput.value); });
+}
+
+// Link clicado direto (?importProject=CODE) — abre sozinho assim que há
+// sessão, mesmo padrão de maybeOpenSharedGalleryPost (portal-04-galeria.js)
+// pro post de Galeria compartilhado: chamado depois de showLoggedIn (usa
+// currentUser) tanto no init() quanto no submit do login. Tira o parâmetro
+// da URL depois de abrir — um F5 acidental não deve reabrir por cima de
+// alterações que o cliente já tenha feito.
+async function maybeOpenSharedProjectImport() {
+  const code = new URLSearchParams(window.location.search).get('importProject');
+  if (!code || !currentUser) return;
+  await openSharedProjectByCode(code);
+  const url = new URL(window.location.href);
+  url.searchParams.delete('importProject');
+  window.history.replaceState({}, '', url);
+}
 
 // Reconstrói projectSlots a partir da configuração salva (ver
 // restoreFavoriteComposition acima pro mesmo raciocínio linha a linha, não
@@ -1510,6 +1624,7 @@ document.getElementById('po-login-form').addEventListener('submit', async (e) =>
   }
   await showLoggedIn(data.user);
   await maybeOpenSharedGalleryPost();
+  await maybeOpenSharedProjectImport();
   resumePendingGalleryAction();
 });
 
@@ -1688,6 +1803,7 @@ if (typeof I18n !== 'undefined' && I18n.onLanguageChange) {
     // maybeLoadGalleryPostForAdminEdit.
     await maybeLoadGalleryPostForAdminEdit();
     await maybeOpenSharedGalleryPost();
+    await maybeOpenSharedProjectImport();
   } else {
     showLoggedOut();
   }

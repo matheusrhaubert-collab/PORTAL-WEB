@@ -2298,6 +2298,27 @@ header.po-topnav {
    as duas imagens (snapshot 3D automático + última imagem de IA publicada,
    ver captureProjectThumbnail/publishProjectToGallery em portal.js) — cada
    metade abre sozinha no lightbox (openGalleryLightbox reaproveitado). */
+
+/* Importar projeto compartilhado (migration 147) — caixa simples acima da
+   grade "Meus Projetos", mesmo tom visual de .hint/.panel já usados no
+   resto do portal, sem componente novo. */
+.po-proj-import-box {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: var(--accent-light, #f2f0ea);
+}
+.po-proj-import-box strong { display: block; font-size: 14px; color: var(--accent-dark); }
+.po-proj-import-box .hint { margin: 2px 0 8px; }
+.po-proj-import-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.po-proj-import-row input {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.po-proj-import-row button { margin-top: 0; white-space: nowrap; }
+#po-proj-import-status:not(:empty) { margin-top: 6px; }
+
 .po-myproj-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
