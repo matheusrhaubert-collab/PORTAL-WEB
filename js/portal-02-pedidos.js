@@ -1380,14 +1380,18 @@ async function recolorOrderItem(it, changes) {
 // verdade só roda quando o cliente clica "Alterar cores"
 // (applyPendingColorChangesToOrderItems), UMA vez só, já juntando todos os
 // papéis pendentes por item (ver recolorOrderItem(it, changes[])).
-// { [roleId]: colorObj }
+// { [roleId]: { color: colorObj, moduleColorIds } } — moduleColorIds
+// (moduleId -> Set(color_id), vindo do group de loadColorRoleGroupsForSlots,
+// 2026-09-02) é quem sabe se a cor escolhida vale pro módulo de CADA item;
+// ver comentário grande em applyPendingColorChangesToOrderItems.
 let orderDetailPendingColorChanges = {};
 
 // Só marca a escolha (não grava nada ainda) e atualiza a UI: swatch
 // selecionada na aba, e o botão "Alterar cores" aparece/mostra quantas
-// trocas estão pendentes.
-function stageColorRoleChange(roleId, color) {
-  orderDetailPendingColorChanges[roleId] = color;
+// trocas estão pendentes. Recebe o GRUPO inteiro (não só o roleId) — ver
+// applyPendingColorChangesToOrderItems pra saber por quê.
+function stageColorRoleChange(group, color) {
+  orderDetailPendingColorChanges[group.roleId] = { color, moduleColorIds: group.moduleColorIds };
   renderOrderDetailColorPendingState();
 }
 
@@ -1436,10 +1440,22 @@ async function applyPendingColorChangesToOrderItems() {
   for (const it of items) {
     try {
       const pieces = await loadRecursivePiecesForModule(it.module_id);
+      // pending[rid].moduleColorIds (2026-09-02, ver comentário na
+      // declaração de orderDetailPendingColorChanges) — desde que a lista de
+      // cores da aba passou a ser a UNIÃO entre os módulos (não mais só a
+      // interseção), uma cor pendente pode não valer pro módulo DESTE item
+      // específico (ex.: "Fast Closet" de cores limitadas ao lado de um
+      // módulo com o catálogo inteiro). Pula o papel pendente que este
+      // módulo não aceita — mantém a cor que ele já tinha nesse papel, só
+      // aplica os papéis/cores que ele realmente pode receber.
       const changes = roleIds
         .filter((rid) => pieceTreeHasColorRole(pieces, rid))
-        .map((rid) => ({ roleId: rid, color: pending[rid] }));
-      if (!changes.length) continue; // este módulo não usa nenhum dos papéis pendentes, pula
+        .filter((rid) => {
+          const allowedIds = pending[rid].moduleColorIds && pending[rid].moduleColorIds.get(it.module_id);
+          return allowedIds && allowedIds.has(pending[rid].color.id);
+        })
+        .map((rid) => ({ roleId: rid, color: pending[rid].color }));
+      if (!changes.length) continue; // este módulo não usa/não aceita nenhum dos papéis pendentes, pula
       await recolorOrderItem(it, changes);
     } catch (err) {
       if (!firstErrorMsg) firstErrorMsg = err.message || String(err);
@@ -1590,10 +1606,11 @@ function renderOrderDetailColorTabSwatches(groups) {
   // Swatch marcada = escolha PENDENTE desta aba (se já clicou uma), não a
   // cor que já estava aplicada — reflete o estado "ainda não confirmado"
   // (ver orderDetailPendingColorChanges/stageColorRoleChange).
-  const pendingColor = orderDetailPendingColorChanges[group.roleId];
+  const pendingEntry = orderDetailPendingColorChanges[group.roleId];
+  const pendingColor = pendingEntry ? pendingEntry.color : null;
   renderSwatches(swatchesEl, group.colors, pendingColor ? pendingColor.id : null, (colorId) => {
     const chosen = group.colors.find((c) => c.id === colorId);
-    if (chosen) stageColorRoleChange(group.roleId, chosen);
+    if (chosen) stageColorRoleChange(group, chosen);
   });
 }
 

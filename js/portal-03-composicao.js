@@ -576,21 +576,36 @@ function pieceTreeHasColorRole(piecesList, roleId) {
 // atual (não só o mais comum — pedido do usuário, 2026-07-16: "so apareceu
 // um modelo de cor pra trocar", depois generalizado pra além de laterais:
 // "preciso painel, caixas, portas") e, pra CADA papel, busca as cores
-// cadastradas em todos os módulos afetados por ele, devolvendo só a
-// INTERSEÇÃO (cor que existe pra todo mundo naquele grupo) — assim qualquer
-// swatch mostrado sempre funciona em todos os módulos que aquele grupo
-// afeta, sem precisar checar módulo por módulo na hora do clique. Devolve
-// [] se a composição não tem nenhuma peça com cor cadastrada (painel fica
-// escondido). Um módulo pode aparecer em mais de um grupo (ex: usa "Caixa"
-// nas laterais E "Porta" na frente) — cada grupo é independente, vira sua
-// própria aba na UI (ver renderCompositionSideColorPanel).
+// cadastradas em todos os módulos afetados por ele, devolvendo a UNIÃO
+// delas — qualquer cor que EXISTA em pelo menos um módulo do grupo aparece
+// na aba — junto com `moduleColorIds` (Map moduleId -> Set de color_id
+// válidos pra ESTE módulo neste papel), pra quem for APLICAR a troca saber,
+// módulo por módulo, se aquela cor específica vale pra ele ou não.
+//
+// MUDOU DE INTERSEÇÃO PRA UNIÃO em 2026-09-02 — Matt, com o caso do "Fast
+// Closet" (módulo com cores limitadas) ao lado de um módulo comum (todas as
+// cores do catálogo): "quando coloco um closet [...] que tem limitacao de
+// cores e coloco um modulo com todas as cores disponiveis. o painel lateral
+// so mostra as cores limitadas do closet. na verdade ele deve mostrar
+// todas se tiver um modulo com todas, mas nao deve trocar se algum com
+// limitacao nao possa receber a cor do modulo que pode". Ou seja: a
+// interseção escondia cores que o módulo "livre" aceitava só porque o
+// closet ao lado era mais restrito — mostrar a união resolve a 1ª metade
+// ("deve mostrar todas"). A 2ª metade ("nao deve trocar se nao possa
+// receber") não é mais garantida pela lista em si (agora pode ter cor que
+// só vale pra ALGUNS módulos do grupo, não todos) — por isso todo lugar que
+// aplica a troca em massa (applyColorRoleToComposition/
+// applyColorRoleToAllProjectSlots/applyPendingColorChangesToOrderItems)
+// precisa checar `moduleColorIds` antes de mexer em cada slot/item, e PULAR
+// (manter a cor antiga) quando o módulo daquele slot não tiver a cor
+// escolhida cadastrada pra esse papel — nunca forçar uma cor que o closet
+// limitado não pode receber.
+//
 // Extraído pra receber QUALQUER lista de slots (pedido do usuário
 // 2026-07-26, aba Projetos: "que eu possa trocar as cores conforme os
 // modelos de todos modulos inseridos de uma vez so" — mesmo painel de troca
 // rápida que já existia só na Composição, agora também em Projetos, ver
-// loadProjectColorRoleGroups/applyColorRoleToAllProjectSlots abaixo). Puro
-// leitura (só monta os grupos disponíveis), nenhuma mudança de comportamento
-// pra quem já chamava loadCompositionColorRoleGroups().
+// loadProjectColorRoleGroups/applyColorRoleToAllProjectSlots abaixo).
 async function loadColorRoleGroupsForSlots(slotsList) {
   const roleTally = new Map();
   slotsList.forEach((slot) => collectCompositionColorRoleIds(slot.pieces, roleTally));
@@ -632,14 +647,20 @@ async function loadColorRoleGroupsForSlots(slotsList) {
     const moduleIds = moduleIdsByRole.get(roleId) || [];
     const perModule = byRoleModule.get(roleId);
     if (!perModule || moduleIds.length === 0) return;
-    let commonIds = null;
+    // UNIÃO das cores de todos os módulos do grupo (ver comentário grande
+    // acima) + moduleColorIds pra apply-time saber quem aceita o quê.
+    const unionIds = new Set();
+    const moduleColorIds = new Map(); // moduleId -> Set(color_id)
+    const mergedColorMap = new Map(); // color_id -> colorObj (1ª ocorrência entre os módulos)
     moduleIds.forEach((mId) => {
-      const colorMap = perModule.get(mId);
-      const ids = new Set(colorMap ? colorMap.keys() : []);
-      commonIds = commonIds === null ? ids : new Set([...commonIds].filter((id) => ids.has(id)));
+      const colorMap = perModule.get(mId) || new Map();
+      moduleColorIds.set(mId, new Set(colorMap.keys()));
+      colorMap.forEach((colorObj, colorId) => {
+        unionIds.add(colorId);
+        if (!mergedColorMap.has(colorId)) mergedColorMap.set(colorId, colorObj);
+      });
     });
-    if (!commonIds || commonIds.size === 0) return;
-    const anyColorMap = perModule.get(moduleIds[0]);
+    if (unionIds.size === 0) return;
     // Ordem = a mesma do cadastro (colors.sort_order, migration_020) — sem
     // isso a ordem vinha de [...Set] (ordem de retorno da query em
     // module_colors, sem nenhum .order(), então praticamente aleatória/por
@@ -648,13 +669,13 @@ async function loadColorRoleGroupsForSlots(slotsList) {
     // administrativo" — função COMPARTILHADA (Composição/Projetos/tela do
     // pedido usam todas loadColorRoleGroupsForSlots), corrigir aqui resolve
     // as 3 telas de uma vez.
-    const colors = [...commonIds]
-      .map((id) => anyColorMap.get(id))
+    const colors = [...unionIds]
+      .map((id) => mergedColorMap.get(id))
       .filter(Boolean)
       .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
     if (colors.length === 0) return;
     const roleName = (colorRolesCache.find((r) => r.id === roleId) || {}).name || '';
-    groups.push({ roleId, roleName, colors, moduleIds });
+    groups.push({ roleId, roleName, colors, moduleIds, moduleColorIds });
   });
   return groups;
 }
@@ -672,12 +693,26 @@ async function loadCompositionColorRoleGroups() {
 // cada um roda seu próprio try/catch, mantendo o preço/cor anteriores
 // daquele slot se a troca não fechar por algum motivo (ex: catálogo mudou
 // entre a hora que o slot foi criado e agora).
-function applyColorRoleToComposition(roleId, color) {
+//
+// Recebe o GRUPO inteiro (não só o roleId, 2026-09-02) — desde que
+// loadColorRoleGroupsForSlots passou a devolver a UNIÃO das cores (ver
+// comentário lá), uma cor da lista pode valer pra alguns módulos do grupo e
+// não pra outros (ex.: "Fast Closet" de cores limitadas ao lado de um
+// módulo com o catálogo inteiro). `group.moduleColorIds` (moduleId ->
+// Set(color_id)) é quem sabe disso — todo slot cujo módulo NÃO tiver essa
+// cor cadastrada pro papel é PULADO (fica com a cor de antes), em vez de
+// forçar uma cor que aquele módulo não pode receber.
+function applyColorRoleToComposition(group, color) {
+  const { roleId, moduleColorIds } = group;
   const errorEl = document.getElementById('po-comp-side-color-error');
   if (errorEl) errorEl.style.display = 'none';
   let firstErrorMsg = null;
   compositionSlots.forEach((slot) => {
     if (!pieceTreeHasColorRole(slot.pieces, roleId)) return;
+    // Módulo sem essa cor cadastrada pra este papel — não força, mantém a
+    // cor que ele já tinha (ver comentário grande acima).
+    const allowedIds = moduleColorIds && moduleColorIds.get(slot.module.id);
+    if (!allowedIds || !allowedIds.has(color.id)) return;
     const nextColorsByRole = { ...slot.colorsByRole, [roleId]: color };
     try {
       const result = slot.module.is_decoration
@@ -773,7 +808,7 @@ function renderCompositionColorTabSwatches(groups) {
   if (!group) return;
   renderSwatches(swatchesEl, group.colors, null, (colorId) => {
     const chosen = group.colors.find((c) => c.id === colorId);
-    if (chosen) applyColorRoleToComposition(group.roleId, chosen);
+    if (chosen) applyColorRoleToComposition(group, chosen);
   });
 }
 

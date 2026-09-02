@@ -2633,6 +2633,14 @@ header.po-topnav {
    continua flutuando sobre a cena. */
 .po-proj-hud-right { top: 50%; bottom: auto; transform: translateY(-50%); }
 .po-proj-hud-right { top: 50%; right: 8px; transform: translateY(-50%); flex-direction: column; }
+/* Botão de girar câmera (2026-09-02, Matt: "no ipad o botao rotacionar esta
+   bem longe, deixa ele dentro da tela do projeto bem no canto superior
+   direito") — saiu da barra de cima (fora do palco, ficava longe da cena no
+   iPad) e virou um HUD flutuante igual ao da direita (ajustar/zoom), só que
+   ancorado no canto SUPERIOR direito do próprio palco do canvas em vez do
+   meio da altura. refreshProjectCanvasHud (portal-06b) decide quando aparece
+   (cena 3D + dispositivo de toque, igual antes). */
+.po-proj-hud-tr { top: 8px; right: 8px; }
 .po-proj-hud-sep { width: 1px; align-self: stretch; min-height: 20px; background: var(--border); margin: 0 2px; }
 
 /* Botão da barra: quadrado, alvo confortável pro dedo (32px), só o ícone. */
@@ -3778,14 +3786,21 @@ header.po-topnav {
 }
 #po-proj-style-menu .po-style-btn:hover { background: #f4f2ed; }
 
-/* Voltar, à esquerda de tudo — o "← Projects" da referência. */
+/* Voltar, à esquerda de tudo — o "← Projects" da referência.
+   Borda + fundo PERSISTENTES (2026-09-02, Matt: "o projects no comeco
+   parece estar sem funcao") — sem hover (iPad não tem cursor pairando),
+   ficava indistinguível de um texto solto, sem nenhuma pista de que é
+   clicável. Ganhou a mesma moldura de "cartão" que os vizinhos da barra
+   (.po-tb-icon-card, .po-tb-seg-plano .po-tb-seg-btn) já usam, só que mais
+   discreta (sem sombra) por ser uma ação de navegação, não uma ferramenta. */
 .po-tb-voltar {
-  display: flex; align-items: center; gap: 8px; border: none; background: transparent;
-  padding: 7px 10px 7px 4px; border-radius: 9px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border); background: var(--panel);
+  padding: 7px 10px 7px 8px; border-radius: 9px; cursor: pointer;
   font-size: 13px; font-weight: 600; color: var(--text);
 }
 .po-tb-voltar svg { width: 17px; height: 17px; }
-.po-tb-voltar:hover { background: #f4f2ed; }
+.po-tb-voltar:hover { border-color: var(--accent); background: #f4f2ed; }
 
 /* Ações encostadas na direita. */
 .po-tb-direita { margin-left: auto; }

@@ -92,7 +92,13 @@ function applyProjectSlotSku(slot, sku) {
   if (sku.height_mm != null) updateProjectSlotDimension(slot, 'height', sku.height_mm);
 }
 
-function updateProjectSlotDimension(slot, axis, mm) {
+// Calcula o valor FINAL (já clampado) de uma dimensão do slot, SEM mutar
+// nada — extraído de updateProjectSlotDimension (2026-09-02) pra poder ser
+// reaproveitado por quem precisa saber o tamanho final ANTES de aplicar (ver
+// handleProject3DResizeMove/isFloorSlot em portal-08-projetos-paredes.js: a
+// ilha precisa do tamanho já clampado pra recolocar o centro e ancorar a
+// borda oposta à seta agarrada, em vez de crescer simétrica pros dois lados).
+function projectSlotClampedDimensionMm(slot, axis, mm) {
   const m = slot.module;
   // Medida TRAVADA (width_locked/height_locked) — pedido do usuário
   // (2026-07-26): "quero usar o mesmo sistema de arrastar com as flechas so
@@ -105,15 +111,7 @@ function updateProjectSlotDimension(slot, axis, mm) {
   const isLocked = (axis === 'width' && m.width_locked) || (axis === 'height' && m.height_locked);
   if (isLocked) {
     const presets = axis === 'width' ? (slot.widthPresetsMm || []) : (slot.heightPresetsMm || []);
-    if (presets.length) {
-      slot[`${axis}_mm`] = Pricing.pickNearestPreset(presets, Number(mm) || 0);
-      recomputeProjectSlotPricing(slot);
-      clampProjectSlotPosition(slot);
-      resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
-      renderProjectCanvas();
-      markProjectDirty();
-      return;
-    }
+    if (presets.length) return Pricing.pickNearestPreset(presets, Number(mm) || 0);
   }
   const minMm = Number(m[`${axis}_min_mm`] || 0);
   let maxMm = Number(m[`${axis}_max_mm`]);
@@ -131,7 +129,11 @@ function updateProjectSlotDimension(slot, axis, mm) {
   // qualquer caminho que passe por aqui. Módulo sem fundo devolve Infinity e
   // nada muda.
   maxMm = Math.min(maxMm, projectSlotMaxDimForDrilling(slot, axis));
-  slot[`${axis}_mm`] = clamp(Number(mm) || 0, minMm, maxMm);
+  return clamp(Number(mm) || 0, minMm, maxMm);
+}
+
+function updateProjectSlotDimension(slot, axis, mm) {
+  slot[`${axis}_mm`] = projectSlotClampedDimensionMm(slot, axis, mm);
   recomputeProjectSlotPricing(slot);
   clampProjectSlotPosition(slot);
   resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
@@ -353,12 +355,24 @@ function setProjectSlotPieceColor(slot, pieceId, roleId, color) {
 // opcional não marcado — igual todo o resto da aba Projetos, ver
 // projectSlotEffectivePieces). Só mexe nos slots que realmente usam esse
 // papel de cor (pieceTreeHasColorRole); erro num slot não trava os outros.
-function applyColorRoleToAllProjectSlots(roleId, color) {
+//
+// Recebe o GRUPO inteiro, não só o roleId (2026-09-02) — mesma razão de
+// applyColorRoleToComposition: loadColorRoleGroupsForSlots agora devolve a
+// UNIÃO das cores do grupo, então uma cor pode não valer pra TODOS os
+// módulos (ex.: "Fast Closet" de cores limitadas ao lado de um módulo com o
+// catálogo inteiro — Matt: "nao deve trocar se algum com limitacao nao
+// possa receber a cor do modulo que pode"). `group.moduleColorIds` diz
+// quais módulos aceitam a cor escolhida; quem não aceita é PULADO, mantém
+// a cor de antes.
+function applyColorRoleToAllProjectSlots(group, color) {
+  const { roleId, moduleColorIds } = group;
   const errorEl = document.getElementById('po-proj-side-color-error');
   if (errorEl) errorEl.style.display = 'none';
   let firstErrorMsg = null;
   projectSlots.forEach((slot) => {
     if (!pieceTreeHasColorRole(slot.pieces, roleId)) return;
+    const allowedIds = moduleColorIds && moduleColorIds.get(slot.module.id);
+    if (!allowedIds || !allowedIds.has(color.id)) return;
     try {
       applyColorToProjectSlot(slot, roleId, color);
       recomputeProjectSlotPricing(slot);
@@ -436,7 +450,7 @@ function renderProjectColorTabSwatches(groups) {
   if (!group) return;
   renderSwatches(swatchesEl, group.colors, null, (colorId) => {
     const chosen = group.colors.find((c) => c.id === colorId);
-    if (chosen) applyColorRoleToAllProjectSlots(group.roleId, chosen);
+    if (chosen) applyColorRoleToAllProjectSlots(group, chosen);
   });
 }
 

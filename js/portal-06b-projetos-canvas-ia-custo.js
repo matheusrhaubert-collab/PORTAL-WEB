@@ -1251,6 +1251,15 @@ function refreshProjectCanvasHud() {
   const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
   const is3d = !!edit3dWrap && edit3dWrap.style.display !== 'none' && projectViewMode !== 'top';
   if (cameraHud) cameraHud.style.display = is3d ? 'flex' : 'none';
+  // Botão de girar câmera (2026-09-02, Matt: "no ipad o botao rotacionar
+  // esta bem longe, deixa ele dentro da tela do projeto bem no canto
+  // superior direito") — saiu da barra de cima e virou um HUD flutuante
+  // igual ao de ajustar/zoom, só que no canto SUPERIOR direito (ver
+  // .po-proj-hud-tr no CSS). Mesma regra de quando aparece: só faz sentido
+  // na cena 3D E em dispositivo de toque (mouse já gira com o botão do
+  // meio, ver projectIsTouchDevice/setProjectCameraMode acima).
+  const rotateHud = document.getElementById('po-proj-canvas-rotate-hud');
+  if (rotateHud) rotateHud.style.display = (is3d && projectIsTouchDevice()) ? 'flex' : 'none';
   // (A lixeira desta barra saiu a pedido do usuário — "pra nao clicar errado".
   // Remover continua na bolinha ✕ ao lado do módulo e no painel da direita.)
 }
@@ -1305,9 +1314,9 @@ if (projCollisionBtn) {
 }
 const projCameraBtn = document.getElementById('po-proj-camera-btn');
 if (projCameraBtn) {
-  // Só faz sentido em tela de toque — no desktop o botão fica escondido (o
-  // mouse já tem botão do meio pra girar).
-  projCameraBtn.style.display = projectIsTouchDevice() ? 'inline-block' : 'none';
+  // A visibilidade do botão (tela de toque + cena 3D) agora é toda decidida
+  // por refreshProjectCanvasHud, que controla o HUD #po-proj-canvas-rotate-hud
+  // que o envolve — aqui só liga o clique.
   projCameraBtn.addEventListener('click', () => setProjectCameraMode(!projectCameraModeOn));
 }
 

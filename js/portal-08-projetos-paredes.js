@@ -230,6 +230,15 @@ function attachProject3DEditDrag() {
           grabOffsetEdgeMm: 0,
           startXMm: Number(arrowSlot.x_mm || 0),
           startWidthMm: Number(arrowSlot.width_mm || 0),
+          // Ilha no chão (2026-09-02): pra ancorar a borda OPOSTA à seta
+          // agarrada (ver handleProject3DResizeMove) precisamos do centro e
+          // da profundidade no INÍCIO do arraste — width_mm/x_mm acima já
+          // servem pro módulo de parede, mas a ilha usa floor_x_mm/floor_z_mm
+          // como centro e tem profundidade própria (depth_mm) que também
+          // pode ser esticada.
+          startFloorXMm: Number(arrowSlot.floor_x_mm || 0),
+          startFloorZMm: Number(arrowSlot.floor_z_mm || 0),
+          startDepthMm: Number(arrowSlot.depth_mm || 0),
           startClientX: ev.clientX,
           startClientY: ev.clientY,
           liveWallIndex: Number(arrowSlot.wall_index || 0)
@@ -1131,15 +1140,16 @@ function handleProject3DFloorMove(state, slot, ev) {
 function handleProject3DResizeMove(state, slot, ev) {
   // ---------- Ilha no chão ----------
   // Sem parede de referência, a matemática de "coordenada ao longo da parede"
-  // não existe. Largura cresce SIMÉTRICA em torno do centro (o móvel é solto,
-  // não tem borda ancorada em nada) e a altura sai da interseção com o plano
-  // vertical lateral do próprio módulo.
+  // não existe. Largura/profundidade ancoram na borda OPOSTA à seta agarrada
+  // (ver bloco "ANCORAR NA BORDA OPOSTA À SETA" abaixo, 2026-09-02) e a
+  // altura sai da interseção com o plano vertical lateral do próprio módulo.
   if (isFloorSlot(slot)) {
     const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
     const axX = Math.cos(rot), axZ = -Math.sin(rot); // eixo local +X no mundo
-    const cx = Number(slot.floor_x_mm || 0) / 1000;
-    const cz = Number(slot.floor_z_mm || 0) / 1000;
+    const azX = Math.sin(rot), azZ = Math.cos(rot);  // eixo local +Z no mundo
     if (state.resizeAxis === 'height-top') {
+      const cx = Number(slot.floor_x_mm || 0) / 1000;
+      const cz = Number(slot.floor_z_mm || 0) / 1000;
       const p = ViewerProjectEdit.intersectPlaneAtClient(
         ev.clientX, ev.clientY, { x: cx, y: 0, z: cz }, { x: axX, y: 0, z: axZ }
       );
@@ -1149,16 +1159,34 @@ function handleProject3DResizeMove(state, slot, ev) {
     }
     const fp = projectFloorPointMm(ev.clientX, ev.clientY);
     if (!fp) return;
-    if (state.resizeAxis === 'depth-front') {
-      // Profundidade da ilha cresce simétrica no eixo local +Z, mesma ideia da
-      // largura (o móvel é solto, não tem borda ancorada em nada).
-      const azX = Math.sin(rot), azZ = Math.cos(rot);
-      const halfD = Math.abs((fp.xMm - cx * 1000) * azX + (fp.zMm - cz * 1000) * azZ);
-      updateProjectSlotDimension(slot, 'depth', halfD * 2);
-      return;
-    }
-    const halfMm = Math.abs((fp.xMm - cx * 1000) * axX + (fp.zMm - cz * 1000) * axZ);
-    updateProjectSlotDimension(slot, 'width', halfMm * 2);
+
+    // ANCORAR NA BORDA OPOSTA À SETA (2026-09-02) — Matt: "os paineis estao
+    // esticando em ambos os lados, quero que eles estiquem so no sentido da
+    // seta selecionada". Antes largura/profundidade da ilha cresciam
+    // SIMÉTRICAS em torno do centro (halfMm*2 pros dois lados de largura, e
+    // o mesmo pra profundidade) — o centro (floor_x_mm/floor_z_mm) nunca se
+    // deslocava, então esticar por QUALQUER seta empurrava a borda de trás
+    // junto. Agora a borda do lado OPOSTO à seta agarrada fica fixa (mesma
+    // régua já usada nos módulos de parede — width-right ancora a esquerda,
+    // width-left ancora a direita): acha o ponto-âncora a partir do
+    // centro/tamanho de INÍCIO do arraste (startFloorXMm/startFloorZMm/
+    // startWidthMm/startDepthMm — a âncora em si nunca se move durante o
+    // arraste), calcula o tamanho novo projetando o ponteiro nesse eixo a
+    // partir da âncora, e desloca o centro pra âncora + direção*(tamanho
+    // novo/2) antes de aplicar a dimensão — assim a MESMA renderização já
+    // sai na posição certa, sem precisar redesenhar duas vezes.
+    const dir = (state.resizeAxis === 'width-left') ? { x: -axX, z: -axZ }
+      : (state.resizeAxis === 'depth-front') ? { x: azX, z: azZ }
+      : { x: axX, z: axZ }; // width-right
+    const axisName = (state.resizeAxis === 'depth-front') ? 'depth' : 'width';
+    const startSizeMm = (axisName === 'depth') ? state.startDepthMm : state.startWidthMm;
+    const anchorXMm = state.startFloorXMm - dir.x * (startSizeMm / 2);
+    const anchorZMm = state.startFloorZMm - dir.z * (startSizeMm / 2);
+    const rawSizeMm = (fp.xMm - anchorXMm) * dir.x + (fp.zMm - anchorZMm) * dir.z;
+    const newSizeMm = projectSlotClampedDimensionMm(slot, axisName, rawSizeMm);
+    slot.floor_x_mm = anchorXMm + dir.x * (newSizeMm / 2);
+    slot.floor_z_mm = anchorZMm + dir.z * (newSizeMm / 2);
+    updateProjectSlotDimension(slot, axisName, newSizeMm);
     return;
   }
 

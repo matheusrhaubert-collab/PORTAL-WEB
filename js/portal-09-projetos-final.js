@@ -25,9 +25,14 @@
 function syncProjToolbarSaveButton() {
   const barra = document.getElementById('po-proj-toolbar-save-btn');
   if (!barra) return;
+  // Só o RÓTULO troca de texto (2026-09-02: o botão virou ícone 💾 + <span>,
+  // pra poder encolher só pro ícone em tela estreita — ver
+  // #po-proj-canvas-tools .po-tb-seg-btn span no CSS). Escrever em
+  // barra.textContent como antes apagaria o ícone junto.
+  const label = document.getElementById('po-proj-toolbar-save-label') || barra;
   const updateBtn = document.getElementById('po-proj-update-fav-btn');
   const editando = updateBtn && updateBtn.style.display !== 'none' && updateBtn.textContent;
-  barra.textContent = editando ? updateBtn.textContent : I18n.t('project.save_btn');
+  label.textContent = editando ? updateBtn.textContent : I18n.t('project.save_label');
 }
 
 function bindProjToolbarSaveButton() {
