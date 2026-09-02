@@ -26,6 +26,9 @@
 //               alongDirZ, intoDirX, intoDirZ, rotationY,
 //               modules: [{ id, width_mm, height_mm, depth_mm, x_mm,
 //                           z_order, floor_height_mm, parts }] }],
+//     floors: [{ id, width_mm, height_mm, depth_mm, floor_x_mm, floor_z_mm,
+//                floor_rotation_deg, floor_height_mm, fineOffsetYMm,
+//                fineRotXDeg, fineRotZDeg, parts }], // módulos ILHA, NOVO 02/09
 //     room: { ceiling_m, baseboard_h_m }
 //   }
 //   `parts` = saída crua de resolvePiecesForViewer (portal.js).
@@ -354,6 +357,86 @@ const Photoreal = (() => {
     if (tiltRad) geom.rotateX(tiltRad);
     if (rotYRad) geom.rotateY(rotYRad);
     return geom;
+  }
+
+  // ---- Recortes em L na lateral (migration 094) — porta fiel de
+  // js/viewer3d.js:buildPanelGeometry (ver o comentário grande lá pro
+  // detalhe da técnica: THREE.Shape com o contorno em L, extrudado na
+  // espessura). NOVO 02/09, pedido do Matt com foto ("no render ela mostra
+  // a lateral e nao o recorte certinho como no desenho") — até aqui esta
+  // peça (lateral de módulo toe 4½/gola) sempre saía como caixa cheia na
+  // foto realista, porque resolveContentPh/makeBox não sabem ler
+  // part.recortes, só viewer3d.js sabia. Devolve null (não uma caixa) quando
+  // não há recorte válido — quem chama cai pro resolveContentPh de sempre,
+  // preservando tilt/rotação/módulo aninhado que só ele resolve.
+  const CANTOS_RECORTE_PH = {
+    'frente-baixo': [1, -1],
+    'frente-cima': [1, 1],
+    'fundo-baixo': [-1, -1],
+    'fundo-cima': [-1, 1]
+  };
+  function buildPanelGeometryPh(part, thickness, faceA, faceB) {
+    if (!part || !Array.isArray(part.recortes) || !part.recortes.length) return null;
+    if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
+
+    const bx = faceB / 2, by = faceA / 2;
+    const cantos = [
+      { nome: 'fundo-baixo', p: [-bx, -by], din: [0, -1], dout: [1, 0] },
+      { nome: 'frente-baixo', p: [bx, -by], din: [1, 0], dout: [0, 1] },
+      { nome: 'frente-cima', p: [bx, by], din: [0, 1], dout: [-1, 0] },
+      { nome: 'fundo-cima', p: [-bx, by], din: [-1, 0], dout: [0, -1] }
+    ];
+
+    let algum = false;
+    (part.recortes || []).forEach(function (r) {
+      if (!r) return;
+      const nh = Math.max((r.h || 0) / 1000, 0);
+      const nd = Math.max((r.d || 0) / 1000, 0);
+      if (nh <= 0 || nd <= 0) return;
+      if (!CANTOS_RECORTE_PH[r.canto]) return;
+      const c = cantos.find(function (x) { return x.nome === r.canto; });
+      if (!c || c.nh) return;
+      c.nh = nh; c.nd = nd;
+      algum = true;
+    });
+    if (!algum) return null;
+
+    const arestas = [
+      [0, 1, faceB, 'nd'], [1, 2, faceA, 'nh'],
+      [2, 3, faceB, 'nd'], [3, 0, faceA, 'nh']
+    ];
+    const cabe = arestas.every(function (a) {
+      return (cantos[a[0]][a[3]] || 0) + (cantos[a[1]][a[3]] || 0) < a[2];
+    });
+    if (!cabe) return null;
+
+    const pontos = [];
+    cantos.forEach(function (c) {
+      if (!c.nh) { pontos.push(c.p); return; }
+      const ext = function (dir) { return dir[0] !== 0 ? c.nd : c.nh; };
+      const ei = ext(c.din), eo = ext(c.dout);
+      const recuado = [c.p[0] - c.din[0] * ei, c.p[1] - c.din[1] * ei];
+      pontos.push(recuado);
+      pontos.push([recuado[0] + c.dout[0] * eo, recuado[1] + c.dout[1] * eo]);
+      pontos.push([c.p[0] + c.dout[0] * eo, c.p[1] + c.dout[1] * eo]);
+    });
+
+    const shape = new T.Shape();
+    pontos.forEach(function (p, i) {
+      if (i === 0) shape.moveTo(p[0], p[1]); else shape.lineTo(p[0], p[1]);
+    });
+    shape.closePath();
+
+    const geometry = new T.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1 });
+    geometry.translate(0, 0, -thickness / 2);
+    geometry.rotateY(-Math.PI / 2);
+    // Sem isto faceMmDaGeometria (usada por emitInto pra escalar a textura no
+    // tamanho físico da peça) não acha dimsMm nesta geometria (só makeBox
+    // seta) e a madeira sai sem repetição de tile — aproximado (o recorte
+    // reduz a área real), mas muito melhor que UV cru do ExtrudeGeometry.
+    geometry.userData = geometry.userData || {};
+    geometry.userData.dimsMm = { w: thickness * 1000, h: faceA * 1000, d: faceB * 1000 };
+    return geometry;
   }
 
   // =====================================================================
@@ -885,7 +968,9 @@ const Photoreal = (() => {
     // o offset e jogaria a peça pra fora do módulo.
     if (role === 'left' || role === 'right') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const content = resolveContentPh(part, thickness, faceA, faceB);
+      // Recorte em L (migration 094, ver buildPanelGeometryPh acima) —
+      // devolve null quando a peça não tem entalhe cadastrado (toe 4½/gola).
+      const content = buildPanelGeometryPh(part, thickness, faceA, faceB) || resolveContentPh(part, thickness, faceA, faceB);
       emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceA / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceB, faceA, false));
     } else if (role === 'drawer_side') {
       // Cópia fiel do ramo 'drawer_side' de viewer3d.js (migration 118) — ver
@@ -907,7 +992,9 @@ const Photoreal = (() => {
       // profundidade. Uma lateral de gaveta é sempre mais funda que alta.
       const faceY = Math.min(faceA, faceB); // menor -> altura da gaveta
       const faceZ = Math.max(faceA, faceB); // maior -> profundidade (lado longo)
-      const content = resolveContentPh(part, thickness, faceY, faceZ);
+      // Mesma peça-irmã de 'left'/'right' (ver buildPanelGeometryPh) — a
+      // lateral de gaveta pode carregar o mesmo entalhe em L.
+      const content = buildPanelGeometryPh(part, thickness, faceY, faceZ) || resolveContentPh(part, thickness, faceY, faceZ);
       emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceY / 2 + offY + legH, -D / 2 + faceZ / 2 + offZ, resolveGrainRotate(part, faceZ, faceY, true));
     } else if (role === 'top' || role === 'bottom') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
@@ -1102,6 +1189,38 @@ const Photoreal = (() => {
           minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
           minZ = Math.min(minZ, wz); maxZ = Math.max(maxZ, wz);
         });
+      });
+    });
+
+    // ---------- Módulos ILHA (soltos no chão) ----------
+    // NOVO 02/09, pedido do Matt com foto ("essa mesa da esquerda
+    // desapareceu. sao so paineis que subi do piso") — até aqui esta função
+    // só sabia iterar sceneData.walls[].modules; um módulo com
+    // placement='floor' (ilha, incluindo painel solto erguido do chão, ver
+    // "Peças soltas" migration 21/08) nunca chegava aqui porque
+    // openPhotorealModal (portal-08-projetos-paredes.js) nunca coletava
+    // projectFloorSlots() nenhuma — corrigido lá (sceneData.floors) e aqui,
+    // porta fiel do 2º loop de renderFreeformWalls (viewer3d_composition.js,
+    // ver "Módulos ILHA" lá): posição em coordenadas de MUNDO
+    // (floor_x_mm/floor_z_mm/floor_rotation_deg), sem along/into de parede.
+    const floors = (sceneData.floors || []).filter((f) => f);
+    floors.forEach((m) => {
+      const widthMod = m.width_mm / 1000, heightMod = m.height_mm / 1000, depthMod = m.depth_mm / 1000;
+      const group = buildAssembly(m.parts, widthMod, heightMod, depthMod, true);
+      const rotY = (Number(m.floor_rotation_deg) || 0) * Math.PI / 180;
+      const floorHeightM = (m.floor_height_mm || 0) / 1000 + (Number(m.fineOffsetYMm || 0) / 1000);
+      group.rotation.set((Number(m.fineRotXDeg) || 0) * Math.PI / 180, rotY, (Number(m.fineRotZDeg) || 0) * Math.PI / 180);
+      group.position.set(Number(m.floor_x_mm || 0) / 1000, floorHeightM, Number(m.floor_z_mm || 0) / 1000);
+      sc.add(group);
+
+      maxHeight = Math.max(maxHeight, floorHeightM + heightMod);
+      const halfW = widthMod / 2, halfD = depthMod / 2;
+      const cR = Math.cos(rotY), sR = Math.sin(rotY);
+      [[-halfW, -halfD], [halfW, -halfD], [-halfW, halfD], [halfW, halfD]].forEach(([lx, lz]) => {
+        const wx = group.position.x + lx * cR + lz * sR;
+        const wz = group.position.z - lx * sR + lz * cR;
+        minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
+        minZ = Math.min(minZ, wz); maxZ = Math.max(maxZ, wz);
       });
     });
 

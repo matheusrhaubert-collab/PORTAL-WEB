@@ -2370,6 +2370,30 @@ if (projPhotorealBtn) {
         )
       }))
     }));
+    // Módulos ILHA (soltos no chão, ver isFloorSlot) — NOVO 02/09, pedido do
+    // Matt com foto ("essa mesa da esquerda desapareceu. sao so paineis que
+    // subi do piso"): até aqui só os módulos de PAREDE (projectSlotsOnWall)
+    // entravam nesta cena — a foto realista nunca soube que existe uma ilha.
+    // Mesmos campos que buildProjectAssemblies usa pra montar o assembly da
+    // Vista de Canto (ver lá), pra Photoreal.buildProjectScene posicionar
+    // idêntico (mesmo raciocínio do resto deste arquivo: "porta fiel de
+    // renderFreeformWalls").
+    const floors = projectFloorSlots().map((slot) => ({
+      id: slot.id,
+      width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+      floor_x_mm: Number(slot.floor_x_mm || 0),
+      floor_z_mm: Number(slot.floor_z_mm || 0),
+      floor_rotation_deg: Number(slot.floor_rotation_deg || 0),
+      floor_height_mm: Number(slot.floor_height_mm || 0),
+      fineOffsetYMm: Number(slot.fineOffsetYMm || 0),
+      fineRotXDeg: Number(slot.fineRotXDeg || 0),
+      fineRotZDeg: Number(slot.fineRotZDeg || 0),
+      parts: resolvePiecesForViewer(
+        projectSlotEffectivePieces(slot),
+        { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm },
+        slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+      )
+    }));
     // Câmera do "posicionamento 3D" (pedido do usuário 2026-08-03): a foto
     // sai do MESMO ângulo/zoom que o usuário está vendo. DOIS viewers 3D
     // convivem na aba Projetos — a Vista de Canto de EDIÇÃO (ViewerProjectEdit,
@@ -2404,6 +2428,7 @@ if (projPhotorealBtn) {
     }
     Photoreal.open({
       walls,
+      floors,
       camera: cameraState,
       room: {
         ceiling_m: roomSettings.ceiling_mm / 1000,
