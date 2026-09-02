@@ -424,6 +424,21 @@ function createViewerComposition3D() {
     const originAlong = (Number(ox) || 0) * ax + (Number(oz) || 0) * az;
     const wallW = Number(wallWidthM) || 0;
     const ceilingM = (room && Number(room.ceiling_m) > 0) ? Number(room.ceiling_m) : null;
+    // Ponto "colado na parede" (02/09, pedido do Matt: "eu quero as linhas
+    // azuis coladas na parede nao no centro do movel") — projeta qualquer
+    // posição ao longo do eixo da parede (alongScalar = p.dot(alongDir)) de
+    // volta pro PRÓPRIO PLANO da parede (profundidade zero), ignorando o
+    // quanto o módulo esteja puxado pra dentro do ambiente. Sem isso, um
+    // módulo com profundidade/afastamento da parede fazia a linha desenhar
+    // na diagonal (do centro do módulo, já deslocado, até um ponto que É da
+    // parede) em vez de ficar reta e encostada na parede como as larguras/
+    // alturas realmente são medidas (a distância nunca considerou a
+    // profundidade, só a posição ao longo da parede — só o DESENHO da linha
+    // estava errado).
+    const wallPoint = (alongScalar, y) => {
+      const t = alongScalar - originAlong;
+      return new THREE.Vector3(ox + ax * t, y, oz + az * t);
+    };
     const entries = list.filter((a) => a && a.group).map((a) => ({
       // Convenção do group (ver comentário grande de renderFreeformWalls):
       // X/Z local centralizados, Y do chão pro topo — a posição MUNDO do
@@ -471,21 +486,23 @@ function createViewerComposition3D() {
         if (gap < bestGap) { bestGap = gap; best = o; }
       });
       const yMidSelf = (e.yBottom + e.yTop) / 2;
+      const eAlongW = e.center.dot(alongDir);
       if (best && bestGap < DIM_MAX_GAP_M) {
         const yMid = (Math.max(e.yBottom, best.yBottom) + Math.min(e.yTop, best.yTop)) / 2;
-        const p1 = e.center.clone().addScaledVector(alongDir, e.halfW); p1.y = yMid;
-        const p2 = best.center.clone().addScaledVector(alongDir, -best.halfW); p2.y = yMid;
+        const bestAlongW = best.center.dot(alongDir);
+        const p1 = wallPoint(eAlongW + e.halfW, yMid);
+        const p2 = wallPoint(bestAlongW - best.halfW, yMid);
         addLine(p1, p2);
         addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
         addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
         addAnchor(p1.clone().lerp(p2, 0.5), bestGap * 1000);
       } else if (!best && wallW > 0) {
         // Fim da parede À DIREITA do módulo (relativo à origem da parede).
-        const rightEdgeRel = (e.center.dot(alongDir) - originAlong) + e.halfW;
+        const rightEdgeRel = (eAlongW - originAlong) + e.halfW;
         const gapToWall = wallW - rightEdgeRel;
         if (gapToWall > DIM_MIN_GAP_M) {
-          const p1 = e.center.clone().addScaledVector(alongDir, e.halfW); p1.y = yMidSelf;
-          const p2 = new THREE.Vector3(ox + ax * wallW, yMidSelf, oz + az * wallW);
+          const p1 = wallPoint(eAlongW + e.halfW, yMidSelf);
+          const p2 = wallPoint(originAlong + wallW, yMidSelf);
           addLine(p1, p2);
           addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
           addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
@@ -503,10 +520,10 @@ function createViewerComposition3D() {
         return (e.center.dot(alongDir) - e.halfW) - (o.center.dot(alongDir) + o.halfW) >= -DIM_MIN_GAP_M;
       });
       if (!hasLeftNeighbor && wallW > 0) {
-        const leftEdgeRel = (e.center.dot(alongDir) - originAlong) - e.halfW;
+        const leftEdgeRel = (eAlongW - originAlong) - e.halfW;
         if (leftEdgeRel > DIM_MIN_GAP_M) {
-          const p1 = new THREE.Vector3(ox, yMidSelf, oz);
-          const p2 = e.center.clone().addScaledVector(alongDir, -e.halfW); p2.y = yMidSelf;
+          const p1 = wallPoint(originAlong, yMidSelf);
+          const p2 = wallPoint(eAlongW - e.halfW, yMidSelf);
           addLine(p1, p2);
           addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
           addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
@@ -534,8 +551,8 @@ function createViewerComposition3D() {
       if (best && bestGap < DIM_MAX_GAP_M) {
         const eAlong = e.center.dot(alongDir), oAlong = best.center.dot(alongDir);
         const alongMid = (Math.max(eAlong - e.halfW, oAlong - best.halfW) + Math.min(eAlong + e.halfW, oAlong + best.halfW)) / 2;
-        const p1 = e.center.clone().addScaledVector(alongDir, alongMid - eAlong); p1.y = e.yTop;
-        const p2 = best.center.clone().addScaledVector(alongDir, alongMid - oAlong); p2.y = best.yBottom;
+        const p1 = wallPoint(alongMid, e.yTop);
+        const p2 = wallPoint(alongMid, best.yBottom);
         addLine(p1, p2);
         const perp = new THREE.Vector3(-az, 0, ax); // perpendicular a alongDir, no plano horizontal
         addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));
@@ -544,8 +561,9 @@ function createViewerComposition3D() {
       } else if (!best && ceilingM) {
         const gapToCeiling = ceilingM - e.yTop;
         if (gapToCeiling > DIM_MIN_GAP_M) {
-          const p1 = e.center.clone(); p1.y = e.yTop;
-          const p2 = e.center.clone(); p2.y = ceilingM;
+          const eAlongH = e.center.dot(alongDir);
+          const p1 = wallPoint(eAlongH, e.yTop);
+          const p2 = wallPoint(eAlongH, ceilingM);
           addLine(p1, p2);
           const perp = new THREE.Vector3(-az, 0, ax);
           addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));
@@ -565,8 +583,9 @@ function createViewerComposition3D() {
         return e.yBottom - o.yTop >= -DIM_MIN_GAP_M;
       });
       if (!hasBelowNeighbor && e.yBottom > DIM_MIN_GAP_M) {
-        const p1 = e.center.clone(); p1.y = 0;
-        const p2 = e.center.clone(); p2.y = e.yBottom;
+        const eAlongF = e.center.dot(alongDir);
+        const p1 = wallPoint(eAlongF, 0);
+        const p2 = wallPoint(eAlongF, e.yBottom);
         addLine(p1, p2);
         const perp = new THREE.Vector3(-az, 0, ax);
         addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));

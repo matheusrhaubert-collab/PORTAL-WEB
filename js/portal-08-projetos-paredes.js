@@ -3184,15 +3184,30 @@ function refreshProjectLayersMenu() {
   linhas.push({ key: PROJECT_LAYER_DECOR, nome: I18n.t('project.layers_decoration') });
   linhas.push({ key: PROJECT_LAYER_WALLS, nome: I18n.t('project.layers_walls') });
 
-  lista.innerHTML = linhas.map((l) => (
-    '<label class="po-layers-item">'
-    + '<input type="checkbox" data-layer-key="' + l.key + '"' + (projectHiddenLayers.has(l.key) ? '' : ' checked') + '>'
-    + '<span>' + l.nome + '</span></label>'
-  )).join('');
+  // Ícone de "olhinho" (02/09, pedido do Matt: "pode alinar isso e colocar
+  // um olhinho mostrando visualizacao. so pra deixar mais bonito.") — o
+  // checkbox continua sendo quem manda (funcionalidade igual), o olho é só
+  // um reforço visual do estado: 1 SVG só com um traço de "riscado" por
+  // cima (.po-layer-eye-slash) que a classe .oculto na linha mostra/esconde
+  // via CSS, sem precisar trocar de ícone no JS.
+  const olhoSvg = '<svg class="po-layer-eye" viewBox="0 0 24 24" width="15" height="15" fill="none" '
+    + 'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.4"/>'
+    + '<line class="po-layer-eye-slash" x1="4" y1="4" x2="20" y2="20"/></svg>';
+  lista.innerHTML = linhas.map((l) => {
+    const oculto = projectHiddenLayers.has(l.key);
+    return '<label class="po-layers-item' + (oculto ? ' oculto' : '') + '">'
+      + '<input type="checkbox" data-layer-key="' + l.key + '"' + (oculto ? '' : ' checked') + '>'
+      + '<span>' + l.nome + '</span>'
+      + olhoSvg
+      + '</label>';
+  }).join('');
   lista.querySelectorAll('input[data-layer-key]').forEach((cb) => {
     cb.addEventListener('change', () => {
       const key = cb.dataset.layerKey;
       if (cb.checked) projectHiddenLayers.delete(key); else projectHiddenLayers.add(key);
+      const linha = cb.closest('.po-layers-item');
+      if (linha) linha.classList.toggle('oculto', !cb.checked);
       applyProjectLayerVisibility();
       if (btn) btn.classList.toggle('active', projectHiddenLayers.size > 0);
     });

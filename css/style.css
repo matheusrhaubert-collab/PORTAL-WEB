@@ -3674,14 +3674,27 @@ header.po-topnav {
    ========================================================================== */
 .po-layers-btn { position: relative; }
 .po-layers-btn.active .po-tb-dot { display: block; }
-.po-layers-list { min-width: 190px; }
+.po-layers-list { min-width: 210px; }
 .po-layers-item {
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 6px 8px; border-radius: 6px; cursor: pointer;
   font-size: 12px; font-weight: 600; color: var(--text);
 }
 .po-layers-item:hover { background: var(--accent-light); }
-.po-layers-item input { margin: 0; accent-color: var(--text); cursor: pointer; }
+/* Checkbox herdava `input{width:100%}` do reset global lá em cima — isso
+   inflava a caixa do checkbox pra caber o resto da linha e criava aquele
+   espaço torto/desalinhado antes do texto (maior nas palavras curtas tipo
+   "Caixa", menor nas longas tipo "Porta/Frente" — pedido do Matt: "pode
+   alinar isso"). Fix: tamanho fixo pro checkbox, texto ocupa o resto
+   (flex:1) sempre coladinho ao lado dele, e o olhinho fica preso à direita
+   (flex:none), sem depender do tamanho da palavra. */
+.po-layers-item input { width: 16px; height: 16px; flex: none; margin: 0; accent-color: var(--text); cursor: pointer; }
+.po-layers-item span { flex: 1 1 auto; }
+.po-layer-eye { flex: none; color: var(--accent); }
+.po-layer-eye-slash { opacity: 0; }
+.po-layers-item.oculto { color: var(--muted); }
+.po-layers-item.oculto .po-layer-eye { color: var(--muted); }
+.po-layers-item.oculto .po-layer-eye-slash { opacity: 1; }
 
 /* ==========================================================================
    BARRA DE FERRAMENTAS DA ABA PROJETOS — layout do mockup (2026-08-13)
@@ -4257,6 +4270,11 @@ body.po-view3d-guest #po-proj-canvas-3d-edit {
 .po-help-content .po-help-tip {
   background: var(--accent-light); border-left: 3px solid var(--accent);
   border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 13px; margin: 0 0 14px;
+}
+.po-help-content img {
+  display: block; max-width: 100%; height: auto; margin: 4px 0 16px;
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
 }
 @media (max-width: 860px) {
   .po-help-modal-body { flex-direction: column; }
