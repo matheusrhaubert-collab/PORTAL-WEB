@@ -364,7 +364,7 @@ async function loadProjectFavoritesList() {
   // caem no recálculo em background de antes; sem wall_segments o projeto
   // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
   const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
-  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at'];
   let optional = OPTIONAL_COLS.slice();
   const runSelect = () => supabaseClient
     .from('user_projects')
@@ -419,6 +419,7 @@ async function loadProjectFavoritesList() {
           <button type="button" class="secondary po-proj-fav-rename">${I18n.t('fav.rename_btn')}</button>
           <button type="button" class="secondary po-proj-fav-duplicate">${I18n.t('fav.duplicate_btn')}</button>
           <button type="button" class="secondary po-proj-fav-share">${I18n.t('project.share_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-view3d">${I18n.t('fav.view3d_btn')}</button>
           <button type="button" class="secondary po-proj-fav-delete">${I18n.t('fav.delete_btn')}</button>
         </div>
       </div>
@@ -429,6 +430,7 @@ async function loadProjectFavoritesList() {
     });
     card.querySelector('.po-proj-fav-load').addEventListener('click', () => restoreFavoriteProject(proj));
     card.querySelector('.po-proj-fav-share').addEventListener('click', () => shareProjectFavorite(proj));
+    card.querySelector('.po-proj-fav-view3d').addEventListener('click', () => view3DFavoriteProject(proj));
     card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
       const newName = (prompt(I18n.t('project.name_prompt'), proj.name) || '').trim();
       if (!newName || newName === proj.name) return;
@@ -594,6 +596,55 @@ async function shareProjectFavorite(proj) {
     const link = url.toString();
     try { await navigator.clipboard.writeText(link); } catch (e) { /* clipboard pode não estar disponível (http/permissão) — o alert abaixo mostra o link igual */ }
     alert(`${I18n.t('project.share_link_label')}\n${link}\n\n${I18n.t('project.share_code_hint', { code })}`);
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+  }
+}
+
+// Link de visualização 3D pública (view3d, NOVO 02/09) — pedido do Matt:
+// "quero um botao pra compartilhar um link so do 3d, para por exemplo um
+// cliente poder ver. ou um montador poder consultar o projeto... o cliente
+// nao pode mudar nada, so opcao de visualizar rotacionar e dar zoom".
+// Diferente do "Compartilhar" acima (share_code — exige login, abre uma
+// CÓPIA editável): este é um código separado (view3d_code, migration 148),
+// não exige login nenhum e EXPIRA sozinho em 30 dias (esclarecido com o
+// Matt via pergunta: link com validade, não permanente). Mesmo cuidado do
+// bug de 28/08 documentado acima em shareProjectFavorite: .update() só
+// conta como sucesso com .select('id') retornando a linha de volta.
+const PROJECT_VIEW3D_LINK_DAYS = 30;
+
+async function generateOrGetView3DLink(proj) {
+  const now = Date.now();
+  const stillValid = proj.view3d_code && proj.view3d_expires_at && new Date(proj.view3d_expires_at).getTime() > now;
+  if (!stillValid) {
+    let code = null;
+    const newExpiresAt = new Date(now + PROJECT_VIEW3D_LINK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    for (let attempt = 0; attempt < 5 && !code; attempt++) {
+      const candidate = generateProjectShareCode();
+      const { data, error } = await supabaseClient.from('user_projects')
+        .update({ view3d_code: candidate, view3d_expires_at: newExpiresAt })
+        .eq('id', proj.id).select('id');
+      if (!error && data && data.length) { code = candidate; proj.view3d_code = candidate; proj.view3d_expires_at = newExpiresAt; }
+      else if (error && !/duplicate key|unique/i.test(error.message || '')) throw error; // erro real (ex.: migration 148 não rodou) — não adianta tentar de novo
+      else if (!error && (!data || !data.length)) throw new Error(I18n.t('fav.view3d_error'));
+    }
+    if (!code) throw new Error(I18n.t('fav.view3d_error'));
+  }
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = ''; // link limpo, mesmo cuidado de shareProjectFavorite
+  url.searchParams.set('view3d', proj.view3d_code);
+  return { link: url.toString(), expiresAt: proj.view3d_expires_at };
+}
+
+async function view3DFavoriteProject(proj) {
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (errorEl) errorEl.style.display = 'none';
+  try {
+    const { link, expiresAt } = await generateOrGetView3DLink(proj);
+    try { await navigator.clipboard.writeText(link); } catch (e) { /* clipboard pode não estar disponível — o alert abaixo mostra o link igual */ }
+    const dateLabel = new Date(expiresAt).toLocaleDateString();
+    alert(`${I18n.t('fav.view3d_link_label')}\n${link}\n\n${I18n.t('fav.view3d_link_expires', { date: dateLabel })}`);
   } catch (err) {
     if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
   }
@@ -1835,12 +1886,123 @@ if (typeof I18n !== 'undefined' && I18n.onLanguageChange) {
   });
 }
 
+// ==========================================================================
+// Link público de visualização 3D (view3d, NOVO 02/09) — pedido do Matt:
+// cliente/montador SEM CONTA abre um link e só vê a cena 3D pronta,
+// podendo girar/dar zoom (OrbitControls nativo), sem nenhuma opção de
+// editar. Reaproveita o painel "Visualizar 3D" retirado da interface normal
+// (#po-proj-3d-wrap/generateProject3D, ver comentário "APOSENTADO" em
+// portal.html) — ele nunca teve arrastar/selecionar/editar módulo, só o
+// canvas de leitura que a foto realista/exportação AR já usam. O resto da
+// interface (nav, login, biblioteca, painel de config, Salvar, "Visualizar
+// 3D"/"Foto realista") fica escondido via CSS (body.po-view3d-guest, ver
+// style.css) — ver bootView3DGuestView, chamado no init() ANTES de
+// getSession(), pulando login por completo.
+async function bootView3DGuestView(code) {
+  document.body.classList.add('po-view3d-guest');
+  const contentEl = document.getElementById('po-content');
+  if (contentEl) contentEl.style.display = 'block';
+  const errorEl = document.getElementById('po-view3d-guest-error');
+  try {
+    const { data, error } = await supabaseClient.rpc('get_view3d_project', { p_code: code });
+    const source = Array.isArray(data) ? data[0] : data;
+    if (error || !source) {
+      if (errorEl) { errorEl.textContent = I18n.t('view3d.not_found'); errorEl.style.display = 'block'; }
+      return;
+    }
+    await restoreFavoriteProject({
+      id: null,
+      name: source.name,
+      slots: source.slots,
+      wall_width_mm: source.wall_width_mm,
+      wall_shape: source.wall_shape,
+      wall_widths_mm: source.wall_widths_mm,
+      wall_segments: source.wall_segments,
+      ai_preview_url: null
+    }, false);
+    // generateProject3D() é a MESMA função do botão "Visualizar 3D" — só
+    // pinta a cena no canvas de leitura, não liga arrastar/selecionar nada
+    // (attachProject3DEditDrag, quem faz isso, só se conecta na Vista de
+    // Canto do editor normal, que fica escondida em modo visitante).
+    if (typeof generateProject3D === 'function') generateProject3D();
+    renderView3DGuestHeader(source.name);
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = I18n.t('view3d.not_found'); errorEl.style.display = 'block'; }
+  }
+}
+
+function renderView3DGuestHeader(name) {
+  const headerEl = document.getElementById('po-view3d-guest-header');
+  const nameEl = document.getElementById('po-view3d-guest-name');
+  const toggleBtn = document.getElementById('po-view3d-measurements-toggle-btn');
+  if (!headerEl) return;
+  headerEl.style.display = 'flex';
+  if (nameEl) nameEl.textContent = name || '';
+  if (toggleBtn) {
+    toggleBtn.textContent = I18n.t('view3d.measurements_btn_show');
+    toggleBtn.addEventListener('click', () => {
+      const panel = document.getElementById('po-view3d-guest-measurements');
+      if (!panel) return;
+      const showing = panel.style.display === 'block';
+      if (showing) {
+        panel.style.display = 'none';
+        toggleBtn.textContent = I18n.t('view3d.measurements_btn_show');
+      } else {
+        renderView3DGuestMeasurements();
+        panel.style.display = 'block';
+        toggleBtn.textContent = I18n.t('view3d.measurements_btn_hide');
+      }
+    });
+  }
+}
+
+// Lista de medidas (montador: "preciso saber medida, nao so olhar") —
+// tamanho de cada módulo + distância até o chão/parede mais próxima,
+// reaproveitando as MESMAS funções de limite que o painel "Posição no
+// ambiente" do editor usa (projectFloorRoomBoundsMm/projectWallSlotXBoundsMm,
+// 02/09) — o número aqui nunca diverge do que o app realmente desenhou.
+// Unidade fixa em polegada (padrão do app pra público US, ver po-unit-select
+// no HTML) — não depende de nenhuma preferência de conta, visitante não tem.
+function renderView3DGuestMeasurements() {
+  const panel = document.getElementById('po-view3d-guest-measurements');
+  if (!panel) return;
+  const unit = 'in';
+  const fmt = (mm) => `${formatDimensionNumber(mm, unit)}${unitAbbrev(unit)}`;
+  const rows = (projectSlots || []).map((slot) => {
+    const dims = `${I18n.t('view3d.measurements_dims_label')}: ${fmt(slot.width_mm)} × ${fmt(slot.height_mm)} × ${fmt(slot.depth_mm)}`;
+    let posLine;
+    if (isFloorSlot(slot)) {
+      const b = projectFloorRoomBoundsMm(slot);
+      const left = Number(slot.floor_x_mm || 0) - b.xMin;
+      const floorY = Number(slot.fineOffsetYMm || 0);
+      posLine = `${I18n.t('project.position_left_label')}: ${fmt(left)} · ${I18n.t('project.position_floor_label')}: ${fmt(floorY)}`;
+    } else {
+      const b = projectWallSlotXBoundsMm(slot);
+      const left = Number(slot.x_mm || 0) - b.min;
+      posLine = `${I18n.t('project.position_left_label')}: ${fmt(left)} · ${I18n.t('project.position_floor_label')}: ${fmt(slot.floor_height_mm || 0)}`;
+    }
+    const nameLabel = (slot.module && slot.module.name) || '';
+    return `<div class="po-view3d-measure-row"><strong>${nameLabel}</strong><br>${dims}<br>${posLine}</div>`;
+  }).join('');
+  panel.innerHTML = `<h3>${I18n.t('view3d.measurements_title')}</h3>${rows}`;
+}
+
 (async function init() {
   try {
     Viewer3D.init('po-viewer3d-canvas');
     Viewer3D.onPieceDoubleClick(showPieceInfoTooltip);
   } catch (err) {
     // Sem Three.js/WebGL o portal continua funcionando, só sem o 3D.
+  }
+
+  // Link público de visualização 3D (view3d, NOVO 02/09) — ?view3d=CODE na
+  // URL pula LOGIN INTEIRO (é o ponto da feature: cliente/montador sem
+  // conta) e cai direto no modo visitante-kiosk. Checado ANTES de
+  // getSession() de propósito — nem tenta achar sessão nenhuma.
+  const view3dCode = new URLSearchParams(window.location.search).get('view3d');
+  if (view3dCode) {
+    await bootView3DGuestView(view3dCode);
+    return;
   }
 
   const { data: { session } } = await supabaseClient.auth.getSession();

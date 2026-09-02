@@ -4059,3 +4059,53 @@ header.po-topnav {
   font-weight: 600; border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border); background: #faf8f4;
 }
+
+/* ==========================================================================
+   Visualização 3D pública (view3d, NOVO 02/09) — pedido do Matt: link só
+   de VER a cena 3D (girar/zoom), sem login, pra cliente ou montador. Modo
+   "kiosk": esconde nav/login/rodapé e todo o editor da aba Projetos,
+   deixando só o painel #po-proj-3d-wrap visível (reaproveitado — nunca
+   teve arrastar/selecionar/editar módulo, só OrbitControls nativo de
+   girar/zoom). Ver bootView3DGuestView em portal-09-projetos-final.js.
+   ========================================================================== */
+body.po-view3d-guest > header.po-topnav,
+body.po-view3d-guest > section#po-auth-section,
+body.po-view3d-guest > footer.po-support-footer,
+body.po-view3d-guest .po-proj-topbar-actions,
+body.po-view3d-guest .po-proj-layout,
+body.po-view3d-guest .po-proj-save-row,
+body.po-view3d-guest .po-proj-cta-row,
+body.po-view3d-guest #po-proj-generate-hint,
+body.po-view3d-guest #po-proj-photoreal-gallery-wrap,
+body.po-view3d-guest #po-proj-close-3d-btn {
+  display: none !important;
+}
+body.po-view3d-guest #po-content { display: block !important; padding: 0 !important; }
+body.po-view3d-guest #po-tab-projects { display: block !important; padding: 0 !important; margin: 0 !important; }
+body.po-view3d-guest #po-proj-3d-wrap { margin: 0 !important; }
+body.po-view3d-guest #po-proj-3d-canvas-wrap,
+body.po-view3d-guest #po-proj-3d-canvas {
+  height: calc(100vh - 58px);
+  min-height: 420px;
+}
+.po-view3d-guest-error {
+  max-width: 480px; margin: 96px auto; padding: 24px; text-align: center;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+  color: var(--text); font-size: 14px; line-height: 1.5;
+}
+.po-view3d-guest-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.po-view3d-guest-name { font-weight: 700; font-size: 16px; color: var(--text); }
+.po-view3d-guest-measurements {
+  position: fixed; top: 58px; right: 0; bottom: 0; width: 320px; max-width: 90vw;
+  overflow-y: auto; background: var(--panel); border-left: 1px solid var(--border);
+  padding: 14px; z-index: 50; box-shadow: -4px 0 12px rgba(0,0,0,0.15);
+}
+.po-view3d-guest-measurements h3 { margin: 0 0 10px; font-size: 14px; color: var(--text); }
+.po-view3d-measure-row {
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+  line-height: 1.5; color: var(--text);
+}
+.po-view3d-measure-row:last-child { border-bottom: none; }
