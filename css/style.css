@@ -3827,21 +3827,11 @@ header.po-topnav {
 }
 #po-proj-style-menu .po-style-btn:hover { background: #f4f2ed; }
 
-/* Voltar, à esquerda de tudo — o "← Projects" da referência.
-   Borda + fundo PERSISTENTES (2026-09-02, Matt: "o projects no comeco
-   parece estar sem funcao") — sem hover (iPad não tem cursor pairando),
-   ficava indistinguível de um texto solto, sem nenhuma pista de que é
-   clicável. Ganhou a mesma moldura de "cartão" que os vizinhos da barra
-   (.po-tb-icon-card, .po-tb-seg-plano .po-tb-seg-btn) já usam, só que mais
-   discreta (sem sombra) por ser uma ação de navegação, não uma ferramenta. */
-.po-tb-voltar {
-  display: flex; align-items: center; gap: 8px;
-  border: 1px solid var(--border); background: var(--panel);
-  padding: 7px 10px 7px 8px; border-radius: 9px; cursor: pointer;
-  font-size: 13px; font-weight: 600; color: var(--text);
-}
-.po-tb-voltar svg { width: 17px; height: 17px; }
-.po-tb-voltar:hover { border-color: var(--accent); background: #f4f2ed; }
+/* (.po-tb-voltar — o "← Projects" da barra — REMOVIDO 02/09 a pedido do
+   Matt, "esse botao pode remover e trazer a barra pra esquerda, mais
+   espaco". Botão de fato tirado do HTML; regras daqui saíram junto por
+   não terem mais dono. Sair da aba continua possível pelo "← Voltar" do
+   rodapé (#po-proj-back-btn) e pelo "Projects" do menu principal.) */
 
 /* Ações encostadas na direita. */
 .po-tb-direita { margin-left: auto; }
@@ -3969,8 +3959,7 @@ header.po-topnav {
 @media (max-width: 1180px) {
   /* iPad deitado: sobra só ícone em tudo, menos a ação final. */
   #po-proj-canvas-tools .po-tb-seg-btn span,
-  #po-proj-canvas-tools .po-tb-icon-card span,
-  .po-tb-voltar span { display: none; }
+  #po-proj-canvas-tools .po-tb-icon-card span { display: none; }
   #po-proj-send-to-order-btn span,
   #po-proj-send-to-order-btn { display: inline-flex !important; }
   #po-proj-canvas-tools .po-tb-seg-btn { padding: 6px 8px; }
