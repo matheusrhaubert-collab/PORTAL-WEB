@@ -60,7 +60,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202609020054" />
+<link rel="stylesheet" href="css/style.css?v=202609020057" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -2358,10 +2358,10 @@
 </div>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202609020054"></script>
-<script src="js/pricing.js?v=202609020054"></script>
-<script src="js/viewer3d.js?v=202609020054"></script>
-<script src="js/viewer3d_composition.js?v=202609020054"></script>
+<script src="js/i18n.js?v=202609020057"></script>
+<script src="js/pricing.js?v=202609020057"></script>
+<script src="js/viewer3d.js?v=202609020057"></script>
+<script src="js/viewer3d_composition.js?v=202609020057"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -2371,22 +2371,22 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202609020054"></script>
+<script src="js/drilling.js?v=202609020057"></script>
 <!-- Catálogo de ferragem (pino/cavilha/tambor minifix) por furo — migration 119. Faltando aqui = Hardware fica undefined e o custo de ferragem some do $ Fábrica SEM ERRO NENHUM (o código em portal.js é tolerante de propósito). Já sumiu 2x por este script cair fora do portal.html; ver memória do projeto "minifix sumiram do $ Fábrica". Tem que vir ANTES do layout-engine.js. -->
-<script src="js/hardware.js?v=202609020054"></script>
+<script src="js/hardware.js?v=202609020057"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202609020054"></script>
+<script src="js/layout-engine.js?v=202609020057"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202609020054"></script>
+<script src="js/wall-editor.js?v=202609020057"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202609020054"></script>
+<script src="js/photoreal.js?v=202609020057"></script>
 <!-- Resolvedor de peças do módulo — a ÚNICA cópia (antes duplicada em 4
      arquivos; ver o cabeçalho do arquivo). Tem que vir ANTES do portal.js. -->
-<script src="js/module-pieces.js?v=202609020054"></script>
+<script src="js/module-pieces.js?v=202609020057"></script>
 <script>MODULE_PIECES_ON_ERROR = (e) => showError(I18n.t('loaderr.module_config', { msg: e.message }));</script>
 <!-- portal.js foi QUEBRADO em 9 arquivos em 2026-08-19 (ver memória do
      projeto "portal_js_split_2026_08_19") pra reduzir o tamanho de cada
@@ -2397,18 +2397,18 @@
      portal-06 recresceu pra 312KB em 1 dia e foi quebrado DE NOVO em
      2026-08-20 em 3 pedaços (06a/06b/06c — ver memória do projeto
      "portal_js_monolito_performance"). Mesma regra: ordem entre eles importa. -->
-<script src="js/portal-01-core-catalogo.js?v=202609020054"></script>
-<script src="js/portal-02-pedidos.js?v=202609020054"></script>
-<script src="js/portal-03-composicao.js?v=202609020054"></script>
-<script src="js/portal-04-galeria.js?v=202609020054"></script>
-<script src="js/portal-05-cutlist.js?v=202609020054"></script>
-<script src="js/portal-06a-projetos-canvas-core.js?v=202609020054"></script>
-<script src="js/portal-06b-projetos-canvas-ia-custo.js?v=202609020054"></script>
-<script src="js/portal-06c-projetos-canvas-3d-acoes.js?v=202609020054"></script>
-<script src="js/portal-07-construtor.js?v=202609020054"></script>
-<script src="js/portal-08-projetos-paredes.js?v=202609020054"></script>
-<script src="js/portal-10-proposta.js?v=202609020054"></script>
-<script src="js/portal-09-projetos-final.js?v=202609020054"></script>
+<script src="js/portal-01-core-catalogo.js?v=202609020057"></script>
+<script src="js/portal-02-pedidos.js?v=202609020057"></script>
+<script src="js/portal-03-composicao.js?v=202609020057"></script>
+<script src="js/portal-04-galeria.js?v=202609020057"></script>
+<script src="js/portal-05-cutlist.js?v=202609020057"></script>
+<script src="js/portal-06a-projetos-canvas-core.js?v=202609020057"></script>
+<script src="js/portal-06b-projetos-canvas-ia-custo.js?v=202609020057"></script>
+<script src="js/portal-06c-projetos-canvas-3d-acoes.js?v=202609020057"></script>
+<script src="js/portal-07-construtor.js?v=202609020057"></script>
+<script src="js/portal-08-projetos-paredes.js?v=202609020057"></script>
+<script src="js/portal-10-proposta.js?v=202609020057"></script>
+<script src="js/portal-09-projetos-final.js?v=202609020057"></script>
 
 
 </body>
