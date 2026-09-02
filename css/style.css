@@ -3480,6 +3480,27 @@ header.po-topnav {
 }
 .po-proj-move-hint { margin: 8px 0 0; font-size: 11px; line-height: 1.4; }
 
+/* "Posição no ambiente" (2026-09-02, Matt: "eu posso subir ela 34 mas nao
+   consigo saber exatamente onde ela se encontra no ambiente, entao quero
+   uma aba que mostre nos 3 eixos quanto ela esta afastada de cada ponta")
+   — cartão-irmão de .po-proj-config-move logo acima (mesma moldura), só que
+   em vez de setas de passo mostra a distância EXATA até cada limite do
+   ambiente, editável dos dois lados de cada eixo (ver posField/posAxisRow
+   em renderProjectConfigPanel e setProjectSlotPositionFromSide,
+   portal-06c). Uma .po-proj-position-axis por eixo — 2 campos nos eixos
+   reais (ex.: Esquerda/Direita), só 1 no Z de parede (fino, sem "parede
+   oposta" definida). */
+.po-proj-config-position {
+  margin: 12px 0; padding: 10px 10px 8px; border-radius: 8px; border: 1px solid var(--border);
+}
+.po-proj-config-position .po-proj-config-section-label { margin: 0 0 8px; font-weight: 600; color: var(--text); }
+.po-proj-position-axis { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.po-proj-position-axis:first-of-type { margin-top: 0; }
+.po-proj-position-axis-label { font-size: 12px; font-weight: 600; color: var(--muted); min-width: 14px; text-align: center; }
+.po-proj-position-field { display: flex; align-items: center; gap: 4px; }
+.po-proj-position-field input { width: 56px; padding: 3px 4px; font-size: 12px; text-align: right; margin-top: 0; }
+.po-proj-position-field label { font-size: 11px; color: var(--muted); }
+
 /* ---------- CTAs da aba Projetos: Visualizar 3D + Foto realista ----------
    (2026-08-03, pedido do usuário: "deixa os botoes mais atraentes, esta so
    um grande quadrado preto") — classes PRÓPRIAS, sem tocar na genérica

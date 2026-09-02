@@ -782,6 +782,20 @@ function projectSlotMaxFloorHeightMm(heightMm, module) {
   return Math.max(roomSettings.ceiling_mm - effectiveCeilingClearanceMm(module) - roomSettings.baseboard_mm - Number(heightMm || 0), 0);
 }
 
+// Limites de x_mm (ao longo da parede) pra este slot, em mm — extraído de
+// dentro de clampProjectSlotPosition (2026-09-02) pra virar reutilizável: o
+// painel "Posição no ambiente" (portal-06c) precisa dos MESMOS limites pra
+// mostrar "quanto falta pra parede de cada lado" sem arriscar divergir do
+// que o clamp de verdade aceita. NÃO inclui o desvio por colisão de vizinho
+// (xAtual/projectSlotOverlapsNeighbor logo abaixo) — esse é só um resgate
+// pontual do clamp em si, não faz sentido num limite pra leitura/edição.
+function projectWallSlotXBoundsMm(slot) {
+  const idx = Number(slot.wall_index || 0);
+  const recuo = projectWallCornerInsetMm(idx);
+  const largura = getProjectWallWidthMm(idx) - recuo.ini - recuo.fim;
+  const maxX = Math.max(0, largura - Number(slot.width_mm || 0));
+  return { min: recuo.ini, max: recuo.ini + maxX };
+}
 function clampProjectSlotPosition(slot) {
   // Ilha no chão não é limitada por largura de parede nem por pé direito ao
   // longo de um plano vertical — o limite dela é o retângulo do ambiente no
@@ -796,10 +810,7 @@ function clampProjectSlotPosition(slot) {
   // Agora o vão útil desconta a espessura de quem encosta em cada ponta.
   // Resultado: arrastado até o fim, o módulo encosta EXATAMENTE na face
   // interna da parede vizinha — que é o que se quer num canto de marcenaria.
-  const idx = Number(slot.wall_index || 0);
-  const recuo = projectWallCornerInsetMm(idx);
-  const largura = getProjectWallWidthMm(idx) - recuo.ini - recuo.fim;
-  const maxX = Math.max(0, largura - Number(slot.width_mm || 0));
+  const xBounds = projectWallSlotXBoundsMm(slot);
   const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
   // O MÍNIMO É O RECUO — MAS SÓ QUANDO DÁ PRA SAIR SEM ATROPELAR NINGUÉM.
   //
@@ -815,9 +826,9 @@ function clampProjectSlotPosition(slot) {
   // criar sobreposição — e o módulo que ficou pra trás continua acessível
   // (basta arrastar, e aí a colisão trabalha de verdade).
   const xAtual = Number(slot.x_mm || 0);
-  let xMin = recuo.ini;
+  let xMin = xBounds.min;
   if (xAtual < xMin && projectSlotOverlapsNeighbor(slot, xMin)) xMin = xAtual;
-  slot.x_mm = clamp(xAtual, xMin, recuo.ini + maxX);
+  slot.x_mm = clamp(xAtual, xMin, xBounds.max);
   slot.floor_height_mm = clamp(Number(slot.floor_height_mm || 0), 0, maxY);
 }
 

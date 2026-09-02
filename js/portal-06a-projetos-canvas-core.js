@@ -1642,7 +1642,14 @@ function clampFloorSlotIntoRoom(slot) {
   slot.floor_x_mm = p.x;
   slot.floor_z_mm = p.z;
 }
-function clampFloorPointIntoRoom(slot, xMm, zMm) {
+// Limites do retângulo do ambiente no piso, em mm, JÁ COM a metade da
+// largura/profundidade do móvel descontada — ou seja, são os limites de
+// onde o CENTRO do móvel (floor_x_mm/floor_z_mm) pode estar sem nenhuma
+// parte dele passar da borda. Extraído de dentro de clampFloorPointIntoRoom
+// (2026-09-02) pra virar reutilizável — o painel "Posição no ambiente"
+// (portal-06c) precisa dos MESMOS limites pra mostrar "quanto falta pra
+// parede" sem arriscar divergir do que o clamp de verdade aceita.
+function projectFloorRoomBoundsMm(slot) {
   const fp = floorSlotFootprint(slot);
   const halfW = fp.w / 2;
   const halfD = fp.h / 2;
@@ -1666,6 +1673,10 @@ function clampFloorPointIntoRoom(slot, xMm, zMm) {
     xMin = -mainWidthMm / 2 + halfW; xMax = mainWidthMm / 2 - halfW;
     zMin = halfD; zMax = Math.max(projectFloorDepthMm() - halfD, halfD);
   }
+  return { xMin, xMax, zMin, zMax };
+}
+function clampFloorPointIntoRoom(slot, xMm, zMm) {
+  const { xMin, xMax, zMin, zMax } = projectFloorRoomBoundsMm(slot);
   const meioX = (xMin + xMax) / 2;
   const meioZ = (zMin + zMax) / 2;
   return {

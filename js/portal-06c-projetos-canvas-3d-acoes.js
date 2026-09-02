@@ -285,6 +285,54 @@ function nudgeProjectFloorSlotRotation(slot, axis, deltaDeg) {
   markProjectDirty();
 }
 
+// "Posição no ambiente" (2026-09-02, Matt: "quero subir pra 34 do chao essa
+// peca. eu posso subir ela 34 mas nao consigo saber exatamente onde ela se
+// encontra no ambiente, entao quero uma aba que mostre nos 3 eixos quanto
+// ela esta afastada de cada ponta") — complementa a Movimentação acima (que
+// só EMPURRA por passos) com uma LEITURA exata da distância até cada limite
+// do ambiente, dos dois lados de cada eixo real, e edição direta de
+// qualquer um dos dois lados. O outro lado NUNCA é guardado à parte — é
+// sempre "limite − valor", recalculado no próximo render (por isso não
+// existe "sincronizar os dois campos" aqui: editar um já move a peça, o
+// outro lado atualiza sozinho quando o painel re-renderiza no fim). Os
+// limites usados são os MESMOS das funções de clamp de verdade
+// (projectWallSlotXBoundsMm/projectSlotMaxFloorHeightMm/
+// projectFloorRoomBoundsMm, extraídas pra isso) — a leitura nunca pode
+// mostrar ou aceitar um número que o clamp de arrastar recusaria.
+// axisKey: 'x'|'y'|'z'. side: 'near' (rótulo da esquerda/frente/chão) ou
+// 'far' (direita/fundo/teto) — 'z' de módulo de PAREDE só tem 'near' (é
+// ajuste fino, sem "parede oposta" definida pro layout de paredes livres).
+function setProjectSlotPositionFromSide(slot, axisKey, side, mmValue) {
+  const v = Number(mmValue) || 0;
+  if (isFloorSlot(slot)) {
+    if (axisKey === 'y') {
+      const maxY = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
+      slot.fineOffsetYMm = clamp(side === 'near' ? v : maxY - v, 0, maxY);
+    } else {
+      const b = projectFloorRoomBoundsMm(slot);
+      const min = axisKey === 'x' ? b.xMin : b.zMin;
+      const max = axisKey === 'x' ? b.xMax : b.zMax;
+      const novo = side === 'near' ? min + v : max - v;
+      if (axisKey === 'x') slot.floor_x_mm = novo; else slot.floor_z_mm = novo;
+      clampFloorSlotIntoRoom(slot);
+    }
+  } else if (axisKey === 'x') {
+    const b = projectWallSlotXBoundsMm(slot);
+    slot.x_mm = side === 'near' ? b.min + v : b.max - v;
+    clampProjectSlotPosition(slot);
+    resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
+  } else if (axisKey === 'y') {
+    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
+    slot.floor_height_mm = clamp(side === 'near' ? v : maxY - v, 0, maxY);
+  } else {
+    // 'z' de parede — fino, sem clamp (só existe o lado 'near').
+    slot.fineOffsetZMm = v;
+  }
+  renderProjectCanvas();
+  markProjectDirty();
+  renderProjectConfigPanel(); // reflete o lado OPOSTO recalculado
+}
+
 // ==========================================================================
 // REMOVER/RESTAURAR QUALQUER PEÇA (2026-08-20)
 // ==========================================================================
@@ -646,6 +694,54 @@ function renderProjectConfigPanel() {
     </div>
   `;
 
+  // "Posição no ambiente" — ver comentário grande em cima de
+  // setProjectSlotPositionFromSide (function declaration) pro porquê de
+  // cada eixo/lado. posField gera 1 campo editável com rótulo embaixo;
+  // posAxisRow junta os campos de um eixo numa linha só (2 campos nos eixos
+  // reais, 1 campo só no Z de parede — fino, sem "parede oposta").
+  const posField = (axisKey, side, mm, label) => `
+    <span class="po-proj-position-field">
+      <input type="text" inputmode="decimal" class="po-proj-position-input" data-pos-axis="${axisKey}" data-pos-side="${side}" value="${formatDimensionNumber(mm, unit)}" />
+      <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+      <label>${label}</label>
+    </span>
+  `;
+  const posAxisRow = (axisLabel, fieldsHtml) => `
+    <div class="po-proj-position-axis">
+      <span class="po-proj-position-axis-label">${axisLabel}</span>
+      ${fieldsHtml}
+    </div>
+  `;
+  let positionAxesHtml;
+  if (isFloor) {
+    const fb = projectFloorRoomBoundsMm(slot);
+    const xNear = Number(slot.floor_x_mm || 0) - fb.xMin;
+    const xFar = fb.xMax - Number(slot.floor_x_mm || 0);
+    const zNear = Number(slot.floor_z_mm || 0) - fb.zMin;
+    const zFar = fb.zMax - Number(slot.floor_z_mm || 0);
+    const maxY = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
+    const yNear = Number(slot.fineOffsetYMm || 0);
+    positionAxesHtml = posAxisRow('X', posField('x', 'near', xNear, I18n.t('project.position_left_label')) + posField('x', 'far', xFar, I18n.t('project.position_right_label')))
+      + posAxisRow('Z', posField('z', 'near', zNear, I18n.t('project.position_front_label')) + posField('z', 'far', zFar, I18n.t('project.position_back_label')))
+      + posAxisRow('Y', posField('y', 'near', yNear, I18n.t('project.position_floor_label')) + posField('y', 'far', maxY - yNear, I18n.t('project.position_ceiling_label')));
+  } else {
+    const xb = projectWallSlotXBoundsMm(slot);
+    const xNear = Number(slot.x_mm || 0) - xb.min;
+    const xFar = xb.max - Number(slot.x_mm || 0);
+    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
+    const yNear = Number(slot.floor_height_mm || 0);
+    positionAxesHtml = posAxisRow('X', posField('x', 'near', xNear, I18n.t('project.position_left_label')) + posField('x', 'far', xFar, I18n.t('project.position_right_label')))
+      + posAxisRow('Y', posField('y', 'near', yNear, I18n.t('project.position_floor_label')) + posField('y', 'far', maxY - yNear, I18n.t('project.position_ceiling_label')))
+      + posAxisRow('Z', posField('z', 'near', Number(slot.fineOffsetZMm || 0), I18n.t('project.position_wall_label')));
+  }
+  const positionBlock = `
+    <div class="po-proj-config-position">
+      <span class="po-proj-config-section-label">${I18n.t('project.position_section_label')}</span>
+      ${positionAxesHtml}
+      <p class="hint po-proj-move-hint">${isFloor ? I18n.t('project.position_hint_floor') : I18n.t('project.position_hint_wall')}</p>
+    </div>
+  `;
+
   panel.innerHTML = `
     <h3>${slot.module.name}</h3>
     ${skuBlock}
@@ -655,8 +751,9 @@ function renderProjectConfigPanel() {
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
     </div>
     ${positionRow}
-    ${moveBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
+    ${moveBlock}
+    ${positionBlock}
     <div class="po-proj-config-row"><span>${I18n.t('project.config_depth_label')}</span><span>${depthLabel}</span></div>
     <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney((slot.result && slot.result.total) || 0)}</span></div>
     <div class="po-proj-config-row hint"><span>${I18n.t('volume_weight.label')}</span><span>${formatVolumeWeight((slot.result && slot.result.breakdown) || [])}</span></div>
@@ -670,6 +767,18 @@ function renderProjectConfigPanel() {
       const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
       const mm = parseDimensionInput(input.value, unit2);
       if (mm !== null && !isNaN(mm)) updateProjectSlotDimension(slot, input.dataset.axis, mm);
+      else renderProjectConfigPanel();
+    });
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  // "Posição no ambiente" — mesmo padrão de change/Enter dos campos de
+  // medida acima, só que manda pra setProjectSlotPositionFromSide (o "lado"
+  // vem do data-pos-side, near/far).
+  panel.querySelectorAll('.po-proj-position-input').forEach((input) => {
+    input.addEventListener('change', () => {
+      const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const mm = parseDimensionInput(input.value, unit2);
+      if (mm !== null && !isNaN(mm)) setProjectSlotPositionFromSide(slot, input.dataset.posAxis, input.dataset.posSide, mm);
       else renderProjectConfigPanel();
     });
     input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
