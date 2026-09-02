@@ -1583,7 +1583,12 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
     // Módulos ILHA (soltos no chão, 2026-08-08) — não pertencem a parede
     // nenhuma, então entram por fora de wallsData (ver options.floorAssemblies
     // em renderFreeformWalls/viewer3d_composition.js).
-    floorAssemblies: buildProjectAssemblies(projectFloorSlots())
+    floorAssemblies: buildProjectAssemblies(projectFloorSlots()),
+    // Botão "Cotas" (02/09) — liga as linhas de distância entre módulos
+    // vizinhos da MESMA parede (ver buildProjectDimensionLines,
+    // viewer3d_composition.js). Só módulos de parede nesta rodada — ver
+    // comentário PENDENTE lá sobre ilha/Vista Superior.
+    dimensionsEnabled: !!projectDimensionsOn
   });
 
   // Readota o contorno de destaque (ver refreshProject3DHighlight) —
@@ -1600,6 +1605,17 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // selecionado (ver refreshProject3DResizeArrows).
   refreshProject3DResizeArrows();
   refreshProjectSlotActions();
+  // Camadas (02/09) — renderFreeformWalls troca TODOS os Groups por
+  // instâncias novas a cada render, então tanto o estado de visibilidade
+  // quanto a lista de papéis em uso precisam ser reaplicados/recalculados
+  // depois de QUALQUER render desta vista (mesmo motivo de
+  // refreshProject3DHighlight logo acima).
+  if (typeof applyProjectLayerVisibility === 'function') applyProjectLayerVisibility();
+  if (typeof refreshProjectLayersMenu === 'function') refreshProjectLayersMenu();
+  // Cotas (02/09) — a cena inteira foi trocada por Groups novos
+  // (renderFreeformWalls), então as âncoras que refreshProjectDimensionLabels
+  // rastreava não existem mais; reconta do zero a cada render.
+  if (typeof refreshProjectDimensionLabels === 'function') refreshProjectDimensionLabels();
 }
 
 // Estado do arraste em andamento na Vista de Canto 3D — null quando nenhum
@@ -2009,6 +2025,64 @@ function refreshProjectSlotActions() {
     projectSlotActionsRafId = requestAnimationFrame(tick);
   };
   if (!projectSlotActionsRafId) projectSlotActionsRafId = requestAnimationFrame(tick);
+}
+
+// ==========================================================================
+// COTAS (02/09) — botão liga/desliga (ver #po-proj-dims-btn, wiring em
+// portal-08-projetos-paredes.js). A LINHA 3D de verdade é desenhada dentro
+// de renderFreeformWalls (ver buildProjectDimensionLines,
+// viewer3d_composition.js, só quando dimensionsEnabled) — esta função aqui
+// só cuida do NÚMERO flutuante (DOM, não dá pra escrever texto legível
+// direto no WebGL sem uma lib de fonte 3D à parte), reaproveitando o mesmo
+// padrão de refreshProjectSlotActions logo acima (RAF + worldToClient a
+// cada frame, pra acompanhar o giro/zoom da câmera).
+let projectDimensionsOn = false;
+let projectDimLabelsRafId = null;
+function refreshProjectDimensionLabels() {
+  const wrap3d = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  const container = document.getElementById('po-proj-dim-labels');
+  if (!container) return;
+  const stop = () => {
+    container.innerHTML = '';
+    if (projectDimLabelsRafId) { cancelAnimationFrame(projectDimLabelsRafId); projectDimLabelsRafId = null; }
+  };
+  if (!projectDimensionsOn || !wrap3d || wrap3d.offsetParent === null
+      || !ViewerProjectEdit || !ViewerProjectEdit.getScene || !ViewerProjectEdit.worldToClient) {
+    stop();
+    return;
+  }
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const tick = () => {
+    projectDimLabelsRafId = null;
+    if (!projectDimensionsOn || wrap3d.offsetParent === null) { stop(); return; }
+    const scene = ViewerProjectEdit.getScene();
+    const anchors = [];
+    if (scene) {
+      scene.traverse((obj) => {
+        if (obj.userData && typeof obj.userData.dimGapMm === 'number') anchors.push(obj);
+      });
+    }
+    // Reaproveita os <span> já existentes em vez de recriar tudo a cada
+    // frame (60x/s) — só muda a quantidade quando o número de cotas muda de
+    // verdade (módulo movido/adicionado/removido, ver renderProjectCanvasFrontCorner).
+    while (container.children.length < anchors.length) {
+      const span = document.createElement('span');
+      span.className = 'po-proj-dim-label';
+      container.appendChild(span);
+    }
+    while (container.children.length > anchors.length) container.removeChild(container.lastChild);
+    anchors.forEach((anchor, i) => {
+      const el = container.children[i];
+      const screen = ViewerProjectEdit.worldToClient(anchor.position);
+      if (!screen) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.style.left = Math.round(screen.x) + 'px';
+      el.style.top = Math.round(screen.y) + 'px';
+      el.textContent = formatDimensionNumber(anchor.userData.dimGapMm, unit) + unitAbbrev(unit);
+    });
+    projectDimLabelsRafId = requestAnimationFrame(tick);
+  };
+  if (!projectDimLabelsRafId) projectDimLabelsRafId = requestAnimationFrame(tick);
 }
 
 const projSlotDuplicateBtn = document.getElementById('po-proj-slot-duplicate-btn');

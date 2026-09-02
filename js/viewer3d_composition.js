@@ -388,6 +388,117 @@ function createViewerComposition3D() {
   //
   // Cada peça de rodapé é identificada em viewer3d.js (placePieceInBox, ramo
   // 'baseboard') via mesh.userData.baseboardGeom — ver comentário lá.
+  // ==========================================================================
+  // COTAS (02/09, pedido do Matt: "mostrar as cotas no projeto... quero
+  // saber quanto tem de espaco na parede... entre 2 objetos inseridos. na
+  // largura altura... quero ver as linhas apontando do meio do modulo ate
+  // bater no proximo objeto. com a cota no meio dessa linha").
+  //
+  // Só entre módulos da MESMA parede (list já é só os assemblies dela,
+  // mesmo escopo de applyBaseboardJoins abaixo) — 2 eixos: LARGURA (vizinho
+  // mais próximo ao lado, na mesma faixa de altura) e ALTURA (vizinho mais
+  // próximo em cima, na mesma faixa de largura). Chamada DEPOIS que a
+  // posição/rotação de cada assembly já é definitiva (mesma exigência de
+  // applyBaseboardJoins), porque lê group.position de verdade.
+  //
+  // Este arquivo não sabe de unidade nem preferência do usuário — só desenha
+  // a LINHA (geometria de verdade, THREE.Line) + uma "âncora" invisível no
+  // meio dela com a distância em mm (userData.dimGapMm). Quem lê essa âncora
+  // e escreve o texto é refreshProjectDimensionLabels
+  // (portal-06c-projetos-canvas-3d-acoes.js), do mesmo jeito que os botões
+  // flutuantes do módulo selecionado já fazem (ViewerProjectEdit.worldToClient
+  // a cada frame, ver refreshProjectSlotActions).
+  //
+  // ESCOPO DESTA RODADA: só módulos de PAREDE (list) — módulos de ILHA
+  // (chão) e a Vista Superior (plano 2D, sistema de desenho totalmente
+  // diferente, ver renderProjectCanvasTop em portal-06c) ficam de fora,
+  // PENDENTE de uma 2ª rodada.
+  function buildProjectDimensionLines(list, ax, az) {
+    if (!Array.isArray(list) || list.length < 2) return;
+    const alongDir = new THREE.Vector3(ax, 0, az);
+    const entries = list.filter((a) => a && a.group).map((a) => ({
+      // Convenção do group (ver comentário grande de renderFreeformWalls):
+      // X/Z local centralizados, Y do chão pro topo — a posição MUNDO do
+      // group já é o CENTRO ao longo da parede e a BASE (não o centro) na
+      // vertical.
+      center: a.group.position.clone(),
+      halfW: a.width_m / 2,
+      yBottom: a.group.position.y,
+      yTop: a.group.position.y + a.height_m
+    }));
+    const DIM_MIN_GAP_M = 0.003; // encostado (ou sobreposto) não desenha nada
+    const DIM_MAX_GAP_M = 3; // sanity: não "enxerga" vizinho do outro lado de um vão vazio enorme
+    const DIM_TICK_M = 0.04;
+
+    const dimGroup = new THREE.Group();
+    dimGroup.userData.legnoLayer = 'cotas';
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x2b6cb0 });
+    const addLine = (p1, p2) => {
+      dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2]), lineMat));
+    };
+    const addAnchor = (mid, mm) => {
+      const anchor = new THREE.Object3D();
+      anchor.position.copy(mid);
+      anchor.userData.dimGapMm = Math.round(mm);
+      dimGroup.add(anchor);
+    };
+
+    // ---- LARGURA: vizinho mais próximo À DIREITA que compartilha alguma
+    // faixa de altura com este módulo (senão um armário alto "veria" através
+    // de um vão de altura vazio de um módulo baixo do outro lado). ----
+    entries.forEach((e) => {
+      let best = null, bestGap = Infinity;
+      entries.forEach((o) => {
+        if (o === e) return;
+        const gap = o.center.dot(alongDir) - e.center.dot(alongDir) - e.halfW - o.halfW;
+        if (gap < DIM_MIN_GAP_M - 1e-6) return;
+        const overlap = Math.min(e.yTop, o.yTop) - Math.max(e.yBottom, o.yBottom);
+        if (overlap <= 0) return;
+        if (gap < bestGap) { bestGap = gap; best = o; }
+      });
+      if (best && bestGap < DIM_MAX_GAP_M) {
+        const yMid = (Math.max(e.yBottom, best.yBottom) + Math.min(e.yTop, best.yTop)) / 2;
+        const p1 = e.center.clone().addScaledVector(alongDir, e.halfW); p1.y = yMid;
+        const p2 = best.center.clone().addScaledVector(alongDir, -best.halfW); p2.y = yMid;
+        addLine(p1, p2);
+        addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+        addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+        addAnchor(p1.clone().lerp(p2, 0.5), bestGap * 1000);
+      }
+    });
+
+    // ---- ALTURA: vizinho mais próximo EM CIMA que compartilha alguma faixa
+    // de largura com este módulo (mesmo raciocínio, eixo trocado). ----
+    entries.forEach((e) => {
+      let best = null, bestGap = Infinity;
+      entries.forEach((o) => {
+        if (o === e) return;
+        const gap = o.yBottom - e.yTop;
+        if (gap < DIM_MIN_GAP_M - 1e-6) return;
+        const eAlong = e.center.dot(alongDir), oAlong = o.center.dot(alongDir);
+        const overlap = Math.min(eAlong + e.halfW, oAlong + o.halfW) - Math.max(eAlong - e.halfW, oAlong - o.halfW);
+        if (overlap <= 0) return;
+        if (gap < bestGap) { bestGap = gap; best = o; }
+      });
+      if (best && bestGap < DIM_MAX_GAP_M) {
+        const eAlong = e.center.dot(alongDir), oAlong = best.center.dot(alongDir);
+        const alongMid = (Math.max(eAlong - e.halfW, oAlong - best.halfW) + Math.min(eAlong + e.halfW, oAlong + best.halfW)) / 2;
+        const p1 = e.center.clone().addScaledVector(alongDir, alongMid - eAlong); p1.y = e.yTop;
+        const p2 = best.center.clone().addScaledVector(alongDir, alongMid - oAlong); p2.y = best.yBottom;
+        addLine(p1, p2);
+        const perp = new THREE.Vector3(-az, 0, ax); // perpendicular a alongDir, no plano horizontal
+        addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));
+        addLine(p2.clone().addScaledVector(perp, -DIM_TICK_M / 2), p2.clone().addScaledVector(perp, DIM_TICK_M / 2));
+        addAnchor(p1.clone().lerp(p2, 0.5), bestGap * 1000);
+      }
+    });
+
+    if (dimGroup.children.length) {
+      scene.add(dimGroup);
+      currentGroups.push(dimGroup);
+    }
+  }
+
   function applyBaseboardJoins(list) {
     if (!Array.isArray(list) || list.length < 2) return;
 
@@ -1455,6 +1566,9 @@ function createViewerComposition3D() {
         // Object3D, não sabe nada de "slot" ou "parede").
         a.group.userData.slotId = a.id;
         a.group.userData.wallIndex = wall.wallIndex;
+        // Botão "Camadas" (02/09) — toggle único de Decoração esconde o
+        // assembly inteiro (ver buildProjectAssemblies, portal-08).
+        a.group.userData.isDecoration = !!a.isDecoration;
 
         scene.add(a.group);
         currentGroups.push(a.group);
@@ -1483,6 +1597,7 @@ function createViewerComposition3D() {
       // diferentes nunca se tocam de verdade, mesmo se as coordenadas locais
       // parecerem próximas.
       applyBaseboardJoins(list);
+      if (options && options.dimensionsEnabled) buildProjectDimensionLines(list, ax, az);
 
       // Inclui a PAREDE em si (não só os módulos) na caixa delimitadora —
       // pedido do usuário (2026-07-26, Vista de Canto 3D): "a cena esta
@@ -1526,6 +1641,8 @@ function createViewerComposition3D() {
       a.group.userData.slotId = a.id;
       a.group.userData.wallIndex = null;
       a.group.userData.isFloorIsland = true;
+      // Botão "Camadas" (02/09) — mesma marca do ramo de parede acima.
+      a.group.userData.isDecoration = !!a.isDecoration;
       scene.add(a.group);
       currentGroups.push(a.group);
       if (Array.isArray(a.openables) && a.openables.length) currentOpenables.push(...a.openables);
@@ -1559,6 +1676,10 @@ function createViewerComposition3D() {
         wallIndex: wall.wallIndex
       }));
       const envGroup = buildRoomEnvironmentMultiWall(segments, room);
+      // Botão "Camadas" (02/09, pedido do Matt: "incluir... paredes como...
+      // camada unica") — piso+paredes viram 1 grupo só, escondido/mostrado
+      // de uma vez (ver applyProjectLayerVisibility, portal-06c).
+      envGroup.userData.legnoLayer = 'paredes';
       scene.add(envGroup);
       currentGroups.push(envGroup);
     }

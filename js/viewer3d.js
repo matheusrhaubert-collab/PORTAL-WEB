@@ -1407,6 +1407,17 @@ const Viewer3D = (function () {
       depth_mm: part.depth_mm,
       color_name: (part.color && part.color.name) || null
     };
+    // Botão "Camadas" da aba Projetos (02/09, pedido do Matt: "um que mostre
+    // as camadas... e que eu possa ocultar quantos eu quiser, por exemplo
+    // quero ocultar so as frentes pra ver os internos... tirar so os
+    // eletros"). Papel de cor já resolvido em part.color_role_id (migration
+    // 035 — Caixa/Porta-Frente/qualquer papel novo que o Matt cadastrar no
+    // admin) É a própria camada: aplyProjectLayerVisibility (portal-06c)
+    // esconde/mostra por este id, sem precisar inventar categoria nova.
+    // Módulo de decoração inteiro usa outra marca (userData.isDecoration no
+    // GROUP do assembly, ver buildProjectAssemblies/renderFreeformWalls) —
+    // não esta, que é por peça.
+    obj.userData.colorRoleId = part.color_role_id || null;
   }
 
   // Resolve o lado de dobradiça efetivo de uma peça, cobrindo os dois jeitos

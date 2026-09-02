@@ -1580,6 +1580,13 @@ function buildProjectAssemblies(slotsList) {
     const assembly = Viewer3D.buildStandaloneAssembly(parts, slot.width_mm, slot.height_mm, slot.depth_mm, openState);
     if (assembly) {
       assembly.id = slot.id;
+      // Camada "Decoração" do botão de camadas (02/09, pedido do Matt: "tirar
+      // so os eletros, com isso eu consigo" + "incluir decoracao... como
+      // camada unica") — marca o assembly INTEIRO (não peça a peça) porque o
+      // toggle esconde o módulo de decoração de uma vez, não peça por peça
+      // dele. Lido em renderFreeformWalls (viewer3d_composition.js), que
+      // repassa pro userData do group de verdade que entra na cena.
+      assembly.isDecoration = !!(slot.module && slot.module.is_decoration);
       assembly.floor_height_m = Number(slot.floor_height_mm || 0) / 1000;
       assembly.x_m = Number(slot.x_mm || 0) / 1000;
       assembly.z_order = Number(slot.z_order || 0);
@@ -2991,6 +2998,162 @@ function applyProjectDrawStyle(estilo, remontar) {
   let salvo = null;
   try { salvo = JSON.parse(localStorage.getItem(PROJECT_DRAW_STYLE_KEY) || 'null'); } catch (e) { salvo = null; }
   applyProjectDrawStyle(salvo || {}, false);
+})();
+
+// ==========================================================================
+// CAMADAS (02/09) — pedido do Matt: "um que mostre as camadas (caixa,
+// portas, paineis, decoracao,etc.) e que eu possa ocultar quantos eu
+// quiser, por exemplo quero ocultar so as frentes pra ver os internos...
+// tirar so os eletros, com isso eu consigo". Esclarecido por ele depois:
+// "modelo de cor. serve como camada" — a própria camada É o papel de cor
+// (color_role_id, migration 035) que cada peça já carrega pra pintura
+// (Caixa/Porta-Frente/qualquer papel novo que ele cadastrar no admin), sem
+// inventar categoria nenhuma nova — e "gostaria de incluir decoracao e
+// paredes como 2 camadas que sao unicas": essas 2 são linhas FIXAS, sempre
+// presentes, além da lista dinâmica de papéis de cor em uso no projeto.
+//
+// Onde cada objeto da cena diz a que camada pertence (ver
+// tagPieceUserData em viewer3d.js e renderFreeformWalls/
+// buildProjectAssemblies em viewer3d_composition.js/portal-08):
+//   - Object3D.userData.colorRoleId — POR PEÇA (uma porta é 'Porta/Frente',
+//     uma lateral é 'Caixa', um puxador cadastrado à parte seria seu
+//     próprio papel, etc.).
+//   - Object3D.userData.isDecoration — no GROUP do assembly INTEIRO de um
+//     módulo de decoração — esconde o módulo de uma vez, não peça a peça
+//     (um fogão não tem "papel de cor" que faça sentido separar).
+//   - Object3D.userData.legnoLayer === 'paredes' — no group do ambiente
+//     (piso+paredes) — mesma ideia, uma unidade só.
+// ==========================================================================
+const PROJECT_LAYER_DECOR = 'decoracao';
+const PROJECT_LAYER_WALLS = 'paredes';
+// Chaves (color_role_id, ou 'decoracao'/'paredes') atualmente OCULTAS —
+// vazio de propósito (nasce tudo visível); não persiste entre sessões, é
+// uma ferramenta de inspeção enquanto trabalha, não configuração do projeto.
+let projectHiddenLayers = new Set();
+
+// Percorre a cena da Vista de Canto aplicando fn em cada Object3D. fn pode
+// devolver true pra NÃO descer nos filhos — usado por isDecoration/paredes,
+// que são "tudo ou nada" (não faz sentido olhar peça por peça lá dentro).
+function walkProjectSceneObjects(node, fn) {
+  if (!node) return;
+  if (fn(node)) return;
+  (node.children || []).forEach((child) => walkProjectSceneObjects(child, fn));
+}
+function projectEditScene() {
+  return (typeof ViewerProjectEdit !== 'undefined' && ViewerProjectEdit.getScene) ? ViewerProjectEdit.getScene() : null;
+}
+
+// Aplica projectHiddenLayers na cena de verdade (só .visible, sem remontar
+// nada) — chamada depois de QUALQUER render da Vista de Canto e a cada
+// clique numa caixinha do menu.
+function applyProjectLayerVisibility() {
+  const scene = projectEditScene();
+  if (!scene) return;
+  walkProjectSceneObjects(scene, (obj) => {
+    if (!obj.userData) return false;
+    if (obj.userData.legnoLayer === PROJECT_LAYER_WALLS) {
+      obj.visible = !projectHiddenLayers.has(PROJECT_LAYER_WALLS);
+      return true;
+    }
+    if (obj.userData.isDecoration) {
+      obj.visible = !projectHiddenLayers.has(PROJECT_LAYER_DECOR);
+      return true;
+    }
+    if (obj.userData.colorRoleId) {
+      obj.visible = !projectHiddenLayers.has(obj.userData.colorRoleId);
+    }
+    return false;
+  });
+}
+
+// Papéis de cor REALMENTE em uso na cena aberta agora — a lista muda de
+// projeto pra projeto (só aparece "Painel", por exemplo, se esse papel
+// existir no admin E algum módulo do projeto usar ele). Decoração/Paredes
+// não entram aqui — são fixas, adicionadas direto em refreshProjectLayersMenu.
+function collectProjectColorRoleIdsInUse() {
+  const scene = projectEditScene();
+  const ids = new Set();
+  if (!scene) return ids;
+  walkProjectSceneObjects(scene, (obj) => {
+    if (!obj.userData) return false;
+    if (obj.userData.legnoLayer === PROJECT_LAYER_WALLS) return true;
+    if (obj.userData.isDecoration) return true;
+    if (obj.userData.colorRoleId) ids.add(obj.userData.colorRoleId);
+    return false;
+  });
+  return ids;
+}
+
+// Botão+lista montados por JS (mesmo padrão do menu "Visual", montaMenuEstilo
+// acima) — chamado 1 vez no carregamento; o CONTEÚDO da lista quem atualiza é
+// refreshProjectLayersMenu, chamada depois de cada render.
+function montaMenuCamadas() {
+  const raiz = document.getElementById('po-proj-layers-menu');
+  if (!raiz) return;
+  raiz.innerHTML = '<button type="button" class="po-style-btn po-layers-btn" id="po-proj-layers-btn">'
+    + '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>'
+    + '<span>' + I18n.t('project.layers_btn') + '</span>'
+    + '<i class="po-tb-dot" id="po-proj-layers-dot"></i>'
+    + '<i class="po-style-caret">\u25be</i></button>'
+    + '<div class="po-style-list po-layers-list" id="po-proj-layers-list"></div>';
+  const btn = raiz.querySelector('#po-proj-layers-btn');
+  btn.addEventListener('click', (ev) => { ev.stopPropagation(); raiz.classList.toggle('aberto'); });
+  document.addEventListener('click', () => raiz.classList.remove('aberto'));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') raiz.classList.remove('aberto'); });
+}
+
+// Reconstrói só a LISTA (checkboxes) — os papéis em uso podem ter mudado
+// (módulo novo, cor trocada). Preserva marcado/desmarcado (projectHiddenLayers
+// não é resetado aqui).
+function refreshProjectLayersMenu() {
+  const lista = document.getElementById('po-proj-layers-list');
+  const btn = document.getElementById('po-proj-layers-btn');
+  if (!lista) return;
+  const idsEmUso = Array.from(collectProjectColorRoleIdsInUse());
+  const linhas = idsEmUso
+    .map((id) => (colorRolesCache || []).find((r) => r.id === id))
+    .filter(Boolean)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map((r) => ({ key: r.id, nome: r.name }));
+  // Decoração/Paredes: FIXAS, sempre no fim, mesmo sem módulo de decoração
+  // no projeto agora (pedido do Matt: "camadas que sao unicas" — não somem).
+  linhas.push({ key: PROJECT_LAYER_DECOR, nome: I18n.t('project.layers_decoration') });
+  linhas.push({ key: PROJECT_LAYER_WALLS, nome: I18n.t('project.layers_walls') });
+
+  lista.innerHTML = linhas.map((l) => (
+    '<label class="po-layers-item">'
+    + '<input type="checkbox" data-layer-key="' + l.key + '"' + (projectHiddenLayers.has(l.key) ? '' : ' checked') + '>'
+    + '<span>' + l.nome + '</span></label>'
+  )).join('');
+  lista.querySelectorAll('input[data-layer-key]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const key = cb.dataset.layerKey;
+      if (cb.checked) projectHiddenLayers.delete(key); else projectHiddenLayers.add(key);
+      applyProjectLayerVisibility();
+      if (btn) btn.classList.toggle('active', projectHiddenLayers.size > 0);
+    });
+  });
+  if (btn) btn.classList.toggle('active', projectHiddenLayers.size > 0);
+}
+montaMenuCamadas();
+
+// ==========================================================================
+// COTAS (02/09) — botão liga/desliga (só isso, sem opção — ver
+// portal.html #po-proj-dims-btn). Quem desenha a linha 3D é
+// buildProjectDimensionLines (viewer3d_composition.js, só quando
+// dimensionsEnabled) e quem escreve o número flutuante é
+// refreshProjectDimensionLabels (portal-06c) — aqui só o estado
+// (projectDimensionsOn) e o remonte da cena pra ligar/desligar.
+// ==========================================================================
+(function attachProjectDimensionsToggle() {
+  const btn = document.getElementById('po-proj-dims-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    projectDimensionsOn = !projectDimensionsOn;
+    btn.classList.toggle('active', projectDimensionsOn);
+    renderProjectCanvas();
+  });
 })();
 
 // ---------- PROJETOS SALVOS (migration 056) ----------

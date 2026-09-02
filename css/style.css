@@ -2734,6 +2734,22 @@ header.po-topnav {
    de worldToClient, que devolve coordenada de viewport (client), não relativa
    ao container — assim não depende de nenhum offsetParent nem de o wrap ter
    position:relative. Alvo grande (34px) pra acertar com o dedo no iPad. */
+/* ==========================================================================
+   COTAS (02/09) — número flutuante no meio da linha de distância entre 2
+   módulos vizinhos (a linha 3D de verdade é geometria de verdade na cena,
+   ver buildProjectDimensionLines em viewer3d_composition.js; isto aqui é só
+   o texto, DOM por cima do canvas, mesmo esqueleto de .po-proj-slot-actions
+   abaixo — position:fixed porque worldToClient devolve coordenada de
+   VIEWPORT, não relativa a nenhum pai). Ver refreshProjectDimensionLabels,
+   portal-06c-projetos-canvas-3d-acoes.js.
+   ========================================================================== */
+.po-proj-dim-label {
+  position: fixed; z-index: 55; transform: translate(-50%, -50%);
+  background: #2b6cb0; color: #fff; font-size: 11px; font-weight: 700;
+  padding: 2px 6px; border-radius: 5px; white-space: nowrap;
+  pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+}
+
 .po-proj-slot-actions {
   /* BARRA ÚNICA ABAIXO DO MÓDULO (2026-08-13, ajustada à referência do Matt).
      Ele comparou a minha com a dele: a dele é MENOR, mais AFASTADA do móvel e
@@ -3647,6 +3663,23 @@ header.po-topnav {
 .po-style-item.ativo { background: var(--text); color: #fff; }
 
 /* ==========================================================================
+   MENU DE CAMADAS (02/09) — mesmo esqueleto do menu de estilo acima
+   (.po-style-btn/.po-style-list), só troca os itens por checkbox em vez de
+   botão de escolha única (aqui dá pra ligar/desligar quantos ao mesmo
+   tempo). Ver montaMenuCamadas/refreshProjectLayersMenu, portal-08.
+   ========================================================================== */
+.po-layers-btn { position: relative; }
+.po-layers-btn.active .po-tb-dot { display: block; }
+.po-layers-list { min-width: 190px; }
+.po-layers-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--text);
+}
+.po-layers-item:hover { background: var(--accent-light); }
+.po-layers-item input { margin: 0; accent-color: var(--text); cursor: pointer; }
+
+/* ==========================================================================
    BARRA DE FERRAMENTAS DA ABA PROJETOS — layout do mockup (2026-08-13)
    ==========================================================================
    Cartão branco arredondado com grupos ROTULADOS separados por filete, botão
@@ -3725,11 +3758,11 @@ header.po-topnav {
 .po-tb-icon-card.active svg { color: #e0a44b; }
 
 /* Menu de estilo dentro da barra: mesma altura e raio dos segmentados. */
-#po-proj-style-menu .po-style-btn {
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn {
   height: 36px; border-radius: 12px; padding: 6px 10px; min-width: 210px;
   font-size: 12px; background: var(--panel);
 }
-#po-proj-style-menu .po-style-btn svg { flex: none; }
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn svg { flex: none; }
 
 /* Par Render + Linhas no cabeçalho: colados, porque "Linhas" é um interruptor
    DO render, não uma ação irmã. Visual idêntico aos vizinhos (Send to order /
@@ -3840,11 +3873,11 @@ header.po-topnav {
 #po-proj-canvas-tools #po-proj-collision-btn.active svg { color: #c98a1f; }
 
 /* Menu de estilo: mesma pegada dos botões, sem caixa pesada. */
-#po-proj-style-menu .po-style-btn {
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn {
   height: auto; padding: 7px 11px; border-radius: 9px; min-width: 0;
   border: none; background: transparent; font-size: 12.5px; font-weight: 500; color: var(--text);
 }
-#po-proj-style-menu .po-style-btn:hover { background: #f4f2ed; }
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn:hover { background: #f4f2ed; }
 
 /* (.po-tb-voltar — o "← Projects" da barra — REMOVIDO 02/09 a pedido do
    Matt, "esse botao pode remover e trazer a barra pra esquerda, mais
@@ -3959,10 +3992,10 @@ header.po-topnav {
 #po-proj-canvas-tools .po-tb-sep { margin: 6px 2px; }
 #po-proj-canvas-tools .po-tb-seg-btn,
 #po-proj-canvas-tools .po-tb-icon-card,
-#po-proj-style-menu .po-style-btn { padding: 6px 9px; }
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn { padding: 6px 9px; }
 /* O nome do estilo é o texto mais longo da barra — ele encolhe primeiro. */
-#po-proj-style-menu .po-style-btn { max-width: 190px; overflow: hidden; }
-#po-proj-style-menu .po-style-btn span {
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn { max-width: 190px; overflow: hidden; }
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn span {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 
@@ -3971,9 +4004,9 @@ header.po-topnav {
   #po-proj-wall-editor-btn span,
   #po-proj-render-btn span,
   #po-proj-render-linhas-btn span,
-  #po-proj-style-menu .po-style-btn span,
-  #po-proj-style-menu .po-style-caret { display: none; }
-  #po-proj-style-menu .po-style-btn { max-width: none; }
+  #po-proj-style-menu, #po-proj-layers-menu .po-style-btn span,
+  #po-proj-style-menu, #po-proj-layers-menu .po-style-caret { display: none; }
+  #po-proj-style-menu, #po-proj-layers-menu .po-style-btn { max-width: none; }
 }
 @media (max-width: 1180px) {
   /* iPad deitado: sobra só ícone em tudo, menos a ação final. */
