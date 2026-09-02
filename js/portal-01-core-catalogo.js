@@ -2558,10 +2558,14 @@ function recalculatePreview() {
     // que a fórmula acabou de dar (ver syncUntouchedPieceDimSliders) — é
     // isso que faz a peça acompanhar o módulo pai por padrão.
     syncUntouchedPieceDimSliders(result.breakdown);
-    // Decorativo: mostra o aviso no lugar do preço.
+    // Decorativo: mostra o aviso no lugar do preço. Vendedor (migration 149,
+    // pedido do Matt 02/09/2026: "tira de todos os pontos onde aparecem, so
+    // para os vendedores") nunca vê o preço de fábrica cru aqui — é o preço
+    // AO VIVO enquanto configura o módulo, o ponto mais visível do portal
+    // inteiro pra isso.
     document.getElementById('po-item-price').textContent = currentModule.is_decoration
       ? I18n.t('decor.not_included')
-      : '$' + result.total.toFixed(2);
+      : '$' + (isSellerAccount() ? getDisplayPrice(result.total) : result.total).toFixed(2);
     // Volume (m³) + peso — migration 061. Módulo decorativo tem breakdown
     // vazio (ver comentário acima), formatVolumeWeight some sozinho (m³/kg
     // ficam 0.00/0.0, então esconde a linha em vez de mostrar zero).

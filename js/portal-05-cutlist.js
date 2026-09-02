@@ -69,6 +69,21 @@ async function ensureOwnUserProfile() {
   }
 }
 
+// "Controle de uso" (migration 149, pedido do Matt 02/09/2026: "quero
+// controlar quem esta usando o sistema... por usuario ativo talvez").
+// Painel simples de atividade — sem número de série nem limite de
+// assentos, só "última atividade" visível pro admin (ERP,
+// erp/js/adm/03-usuarios.js) e pro dealer na lista de vendedores
+// (loadDealerTeamList acima). Fire-and-forget, sempre que o portal loga —
+// nunca deve travar nem atrasar o login se falhar (rede, RLS, etc.).
+function touchLastActive() {
+  if (!currentUser) return;
+  supabaseClient.from('user_profiles')
+    .update({ last_active_at: new Date().toISOString() })
+    .eq('user_id', currentUser.id)
+    .then(() => {}, () => {});
+}
+
 function canUseCuttingList() {
   if (!currentUserProfile) return false;
   if (currentUserProfile.role === 'contractor' || currentUserProfile.role === 'administrador') return true;
@@ -84,14 +99,64 @@ function canUseCuttingList() {
 // self-service, o próprio cliente define no menu de Configurações. Só usada
 // em EXIBIÇÃO (Galeria, Meus Projetos) — nunca entra em cálculo de pedido
 // nem aparece em Meus Pedidos.
+// Vendedor (migration 149, "vendedores so veem preco de venda loja") não
+// tem margem própria — vê a do DEALER dono da loja. is_my_seller/
+// get_display_resale_margin_pct (RPC, security definer) resolvem isso no
+// banco sem o vendedor precisar ler a linha do dealer diretamente.
+function isSellerAccount() {
+  return !!currentUserProfile && currentUserProfile.role === 'vendedor';
+}
+
+// Cache síncrono do valor resolvido pela RPC abaixo — getResaleMarginPct()
+// continua síncrona pros ~30 call sites que já dependiam dela (Galeria,
+// Meus Projetos, Proposta, plano de corte). Populado 1x no login
+// (resolveDisplayMarginPct, chamada em showLoggedIn logo depois de
+// ensureOwnUserProfile) e atualizado na hora quando o próprio cliente
+// salva uma margem nova (saveResaleMarginPct abaixo).
+let resolvedDisplayMarginPct = 0;
+
+// RPC get_display_resale_margin_pct (migration 149): pra qualquer perfil
+// que NÃO é vendedor, devolve a PRÓPRIA margem (resale_margin_pct) — igual
+// ao comportamento de sempre (migration 072). Pra vendedor, devolve a
+// margem do DEALER dono da loja dele — o vendedor nunca lê a linha inteira
+// do dealer (que teria e-mail e outros dados), só este número já calculado.
+async function resolveDisplayMarginPct() {
+  try {
+    const { data, error } = await supabaseClient.rpc('get_display_resale_margin_pct');
+    resolvedDisplayMarginPct = (!error && Number.isFinite(Number(data)) && Number(data) > 0) ? Number(data) : 0;
+  } catch (err) {
+    resolvedDisplayMarginPct = 0;
+  }
+}
+
 function getResaleMarginPct() {
-  const v = Number(currentUserProfile && currentUserProfile.resale_margin_pct);
-  return (Number.isFinite(v) && v > 0) ? v : 0;
+  return resolvedDisplayMarginPct;
+}
+
+// Preço a EXIBIR pro usuário logado a partir de um valor de VENDA (preço de
+// fábrica) já calculado — pra vendedor, isto É o "preço de venda loja"
+// (nunca vê o valor cru sem a margem do dealer aplicada); pra quem tem
+// margem própria configurada, é o mesmo "preço de revenda sugerido" de
+// sempre; sem margem nenhuma, cai no próprio valor de fábrica (comportamento
+// idêntico a hoje).
+function getDisplayPrice(saleValue) {
+  const marginPct = getResaleMarginPct();
+  return marginPct > 0 ? Number(saleValue || 0) * (1 + marginPct / 100) : Number(saleValue || 0);
 }
 
 // Preenche o campo do menu de Configurações com a margem já salva (chamada
 // depois de ensureOwnUserProfile, em showLoggedIn).
+// Vendedor não tem margem própria pra editar (só enxerga o preço já com a
+// margem do dealer aplicada) — a linha inteira de "Margem geral de
+// revenda" some das Configurações pra esse perfil (migration 149, "vendedor
+// nao tem acesso aos outros perfis").
+function refreshResaleMarginRowVisibility() {
+  const row = document.getElementById('po-resale-margin-row');
+  if (row) row.style.display = isSellerAccount() ? 'none' : '';
+}
+
 function refreshResaleMarginInput() {
+  refreshResaleMarginRowVisibility();
   const input = document.getElementById('po-resale-margin-input');
   if (input) input.value = getResaleMarginPct() || '';
 }
@@ -115,7 +180,7 @@ async function saveResaleMarginPct() {
       .eq('user_id', currentUser.id)
       .select()
       .single();
-    if (!error && data) currentUserProfile = data;
+    if (!error && data) { currentUserProfile = data; resolvedDisplayMarginPct = Number(data.resale_margin_pct) || 0; }
   } catch (err) {
     // silencioso — ver comentário acima
   }
@@ -212,16 +277,113 @@ function refreshDealerUiVisibility() {
   const toggleEl = document.getElementById('po-portal-mode-toggle');
   const logoRowEl = document.getElementById('po-dealer-logo-settings-row');
   const storeInfoRowEl = document.getElementById('po-dealer-store-info-row');
+  const teamRowEl = document.getElementById('po-dealer-team-row');
   const dealer = isDealer();
   const canBrand = canGenerateProposal();
   if (toggleEl) toggleEl.style.display = dealer ? '' : 'none';
   if (logoRowEl) logoRowEl.style.display = canBrand ? '' : 'none';
   if (storeInfoRowEl) storeInfoRowEl.style.display = canBrand ? '' : 'none';
+  if (teamRowEl) teamRowEl.style.display = dealer ? '' : 'none';
   loadPortalViewMode();
   applyPortalViewMode();
   refreshDealerLogoPreview();
   refreshDealerStoreInfoInputs();
+  if (dealer) loadDealerTeamList();
 }
+
+// ---------- MINHA EQUIPE / VENDEDORES (migration 149, 2026-09-02) ----------
+// "preciso tambem de uma estrutura com mais niveis pros dealers (lojas)
+// por exmeplo ter o dono e abaixo os vendedores (dono exerga valores de
+// fabrica, margens, e enxerga todos os projetos dos vendedores. e talvez
+// algum dashbord com os dados por vendedor". Confirmado: o PRÓPRIO dealer
+// cria a conta do vendedor (Edge Function dealer-create-seller — checa
+// role='lojista' de verdade no servidor antes de criar qualquer coisa).
+//
+// Lista de vendedores + contagem/valor de projetos: 2 queries em paralelo
+// (mesmo padrão de loadProjectValueByUser no ERP, erp/js/adm/03-usuarios.js)
+// — user_profiles filtrado por parent_dealer_user_id (RLS "dealer reads own
+// sellers profiles" só deixa ver os PRÓPRIOS vendedores) + user_projects
+// sem filtro (RLS "dealer reads own sellers user_projects" já devolve só
+// os projetos dos vendedores dele, agrupados em JS por client_user_id).
+async function loadDealerTeamList() {
+  const listEl = document.getElementById('po-dealer-team-list');
+  if (!listEl || !currentUser) return;
+  listEl.textContent = I18n.t('nav.dealer_team_loading');
+  try {
+    const [{ data: sellers, error: sellersErr }, { data: projects, error: projErr }] = await Promise.all([
+      supabaseClient.from('user_profiles')
+        .select('user_id, email, full_name, created_at, last_active_at')
+        .eq('parent_dealer_user_id', currentUser.id)
+        .order('created_at', { ascending: false }),
+      supabaseClient.from('user_projects').select('client_user_id, cached_value_usd')
+    ]);
+    if (sellersErr) { listEl.textContent = sellersErr.message; return; }
+    const statsByUser = {};
+    (projects || []).forEach((row) => {
+      const key = row.client_user_id;
+      if (!statsByUser[key]) statsByUser[key] = { count: 0, total: 0 };
+      statsByUser[key].count += 1;
+      statsByUser[key].total += Number(row.cached_value_usd) || 0;
+    });
+    if (!sellers || sellers.length === 0) {
+      listEl.innerHTML = `<div class="hint">${I18n.t('nav.dealer_team_empty')}</div>`;
+      return;
+    }
+    listEl.innerHTML = sellers.map((s) => {
+      const stats = statsByUser[s.user_id] || { count: 0, total: 0 };
+      const lastActive = s.last_active_at ? new Date(s.last_active_at).toLocaleDateString(currentLocale()) : '—';
+      const nameOrEmail = (s.full_name || s.email || '').replace(/</g, '&lt;');
+      return `<div class="po-dealer-team-item">
+        <strong>${nameOrEmail}</strong>
+        <span class="hint">${(s.email || '').replace(/</g, '&lt;')}</span>
+        <span class="hint">${I18n.t('nav.dealer_team_projects_count', { n: stats.count })} · ${formatGalleryPrice(stats.total)}</span>
+        <span class="hint">${I18n.t('nav.dealer_team_last_active', { date: lastActive })}</span>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    listEl.textContent = String((err && err.message) || err);
+  }
+}
+
+// Criação self-service — mesmo padrão de tratamento de erro do
+// admin-create-user (erp/js/adm/03-usuarios.js): supabase-js só popula
+// `error` pra falha de rede/HTTP, uma resposta 4xx/5xx com corpo JSON
+// {error:"..."} pode cair como FunctionsHttpError com o corpo real em
+// error.context.
+(function attachDealerCreateSellerForm() {
+  const btn = document.getElementById('po-dealer-team-create-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const nameInput = document.getElementById('po-dealer-team-name-input');
+    const emailInput = document.getElementById('po-dealer-team-email-input');
+    const passwordInput = document.getElementById('po-dealer-team-password-input');
+    const statusEl = document.getElementById('po-dealer-team-status');
+    const full_name = (nameInput && nameInput.value || '').trim();
+    const email = (emailInput && emailInput.value || '').trim();
+    const password = (passwordInput && passwordInput.value) || '';
+    if (statusEl) statusEl.textContent = I18n.t('nav.dealer_team_creating');
+    try {
+      const { data, error } = await supabaseClient.functions.invoke('dealer-create-seller', {
+        body: { full_name, email, password }
+      });
+      if (error) {
+        let msg = error.message || 'Erro ao criar vendedor.';
+        if (error.context && typeof error.context.json === 'function') {
+          try { const body = await error.context.json(); if (body && body.error) msg = body.error; } catch (_e) { /* mantém msg genérica */ }
+        }
+        throw new Error(msg);
+      }
+      if (data && data.error) throw new Error(data.error);
+      if (statusEl) statusEl.textContent = I18n.t('nav.dealer_team_created', { email });
+      if (nameInput) nameInput.value = '';
+      if (emailInput) emailInput.value = '';
+      if (passwordInput) passwordInput.value = '';
+      loadDealerTeamList();
+    } catch (err) {
+      if (statusEl) statusEl.textContent = String((err && err.message) || err);
+    }
+  });
+})();
 
 function refreshDealerLogoPreview() {
   const preview = document.getElementById('po-dealer-logo-preview');

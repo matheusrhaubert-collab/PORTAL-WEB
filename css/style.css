@@ -1417,6 +1417,27 @@ header.po-topnav {
 .po-topnav-settings-menu .po-topnav-room-field { justify-content: space-between; }
 .po-topnav-settings-menu .po-lang-switcher .po-lang-select,
 .po-topnav-settings-menu .po-topnav-unit-select { margin-left: auto; }
+
+/* Minha Equipe / Vendedores (migration 149) — lista de vendedores do dealer
+   dentro do menu de Configurações (mesmo cartão que já tem Dados da loja). */
+.po-dealer-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.po-dealer-team-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.po-dealer-team-item strong { font-size: 13px; color: var(--text); }
+
 .po-user-chip {
   display: flex;
   align-items: center;

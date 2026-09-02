@@ -899,7 +899,11 @@ function generateComposition3D() {
   const totalEl = document.getElementById('po-comp-3d-total');
   if (totalEl) {
     const total = compositionSlots.reduce((sum, slot) => sum + Number((slot.result && slot.result.total) || 0), 0);
-    totalEl.textContent = I18n.t('composition.total_estimated', { total: formatMoney(total) });
+    // Vendedor (migration 149) nunca vê o preço de fábrica cru — aba
+    // Composição está escondida hoje (2026-07-24), mas o código continua
+    // vivo (ver comentário em portal.html), então corrigido junto por
+    // consistência caso volte a aparecer.
+    totalEl.textContent = I18n.t('composition.total_estimated', { total: formatMoney(isSellerAccount() ? getDisplayPrice(total) : total) });
   }
 
   // Painel de troca rápida de cor das laterais (ver bloco acima) — refeito

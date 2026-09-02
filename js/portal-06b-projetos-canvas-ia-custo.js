@@ -2079,6 +2079,13 @@ function openMoneyModal() {
   const modal = document.getElementById('po-money-modal');
   if (!modal) return;
   modal.classList.add('open');
+  // Vendedor (migration 149) nunca chega na aba Fábrica (custo puro + margem
+  // real do dealer) — nem a senha compartilhada adianta pra ele: o botão da
+  // aba nem aparece, e renderMoneyModal força de volta pra Orçamento se
+  // moneyAbaAtual tiver ficado em 'fabrica' de uma sessão anterior.
+  const fabricaTabBtn = document.querySelector('.po-money-tab[data-money-tab="fabrica"]');
+  if (fabricaTabBtn) fabricaTabBtn.style.display = isSellerAccount() ? 'none' : '';
+  if (isSellerAccount()) moneyAbaAtual = 'orcamento';
 
   // RECALCULA AO ABRIR (2026-08-15). O relatório lê slot.result, que pode ter
   // sido calculado numa condição pior do que a atual — tipicamente no
@@ -2112,28 +2119,40 @@ function closeMoneyModal() {
 function renderMoneyModal() {
   const body = document.getElementById('po-money-body');
   if (!body) return;
+  // Segunda trava (defesa em profundidade — a primeira é o clique no botão
+  // da aba já nem existir pro vendedor, ver openMoneyModal): mesmo que
+  // moneyAbaAtual tivesse ficado 'fabrica' de outra sessão, vendedor nunca
+  // renderiza o conteúdo da Fábrica.
+  if (isSellerAccount()) moneyAbaAtual = 'orcamento';
   document.querySelectorAll('.po-money-tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.moneyTab === moneyAbaAtual);
   });
   const rel = collectProjectCostReport(projectSlots);
 
   if (moneyAbaAtual === 'orcamento') { renderMoneyOrcamento(body, rel); return; }
+  if (isSellerAccount()) { renderMoneyOrcamento(body, rel); return; }
   if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
   renderMoneyFabrica(body, rel);
 }
 
 // ---- Aba ORÇAMENTO: o que o cliente pode ver. Preço de venda, sem custo.
+// Vendedor (migration 149, pedido do Matt 02/09/2026: "tira de todos os
+// pontos onde aparecem, so para os vendedores") nunca vê o preço de fábrica
+// cru aqui também — nem por módulo nem no total, sempre com a margem do
+// dealer já aplicada (getDisplayPrice).
 function renderMoneyOrcamento(body, rel) {
-  const linhas = projectSlots.filter((s) => s.result).map((s) => (
-    '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + '</td>'
-    + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
-    + '<td class="num">' + formatMoney(Number(s.result.total) || 0) + '</td></tr>'
-  )).join('');
+  const seller = isSellerAccount();
+  const linhas = projectSlots.filter((s) => s.result).map((s) => {
+    const preco = Number(s.result.total) || 0;
+    return '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + '</td>'
+      + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
+      + '<td class="num">' + formatMoney(seller ? getDisplayPrice(preco) : preco) + '</td></tr>';
+  }).join('');
   body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.quote_sub') + '</p>'
     + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
     + '<th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>' + linhas + '</tbody></table>'
     + '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span>'
-    + '<strong>' + formatMoney(rel.totalVenda) + '</strong></div>';
+    + '<strong>' + formatMoney(seller ? getDisplayPrice(rel.totalVenda) : rel.totalVenda) + '</strong></div>';
 }
 
 // ---- Porta da aba FÁBRICA

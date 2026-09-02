@@ -2150,8 +2150,18 @@ function applyProjectBuilderRootSize(node, novoMm, eixo) {
   if (!isFinite(v) || v < PROJECT_BUILDER_MIN_VAO) return false;
   const W = Number(slot.width_mm || 0) || 0;
   const H = Number(slot.height_mm || 0) || 0;
-  const atual = Object.assign({ x: b.x, y: b.y, w: b.w, h: b.h },
-    node.params && node.params.zoneOverride);
+  // b (node._box) já É o retângulo EFETIVO atual — override anterior +
+  // reclamp do rebuild mais recente (ver projectBuilderRootZoneEfetiva).
+  // Não mistura com o zoneOverride "cru" salvo em params: se aquele arrasto/
+  // digitação anterior tiver sido clampada (módulo mudou de tamanho por
+  // fora, ou o valor extrapolou o casco), o params.zoneOverride guarda o
+  // valor ANTIGO pré-clamp — usá-lo aqui faria o eixo que a pessoa NÃO está
+  // editando agora voltar sozinho pro valor de antes do clamp a cada nova
+  // digitação, como se a alteração anterior tivesse sido ignorada (2026-09-02,
+  // relato do Matt: "quando eu modifico a area interna ele ignora a
+  // modificacao e faz a insercao da medida como se nao tivesse alterado
+  // vao").
+  const atual = { x: b.x, y: b.y, w: b.w, h: b.h };
   pushProjectBuilderUndo();
   if (eixo === 'x') atual.w = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(v, W - atual.x));
   else atual.h = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(v, H - atual.y));
@@ -2679,7 +2689,17 @@ function applyProjectBuilderToSlot() {
   const slot = projectSlots.find((s) => s.id === projectBuilderSlotId);
   if (!slot || !projectBuilderRoot) return null;
   const r = projectBuilderRoot;
-  const vazia = !r.splitAxis && !r.content && !(r.fronts || []).length && !(r.children || []).length;
+  // CAUSA RAIZ do "modifico o vao raiz e ele ignora, insere com a medida
+  // antiga" (2026-09-02, relato do Matt). Um vao raiz só com zoneOverride
+  // (a pessoa ajustou a abertura mas ainda não colocou peça nenhuma dentro)
+  // não tem splitAxis/content/fronts/children — antes disso caía direto no
+  // "vazia" e o Save JOGAVA FORA o override (slot.layout virava null).
+  // Reabrir o Construtor depois (mesmo sem fechar o modal — só apertando
+  // Salvar de novo) voltava pra zona deduzida do casco, como se o ajuste
+  // nunca tivesse existido, e a próxima peça inserida nascia com a medida
+  // ANTIGA. zoneOverride sozinho já é conteúdo suficiente pra não ser vazio.
+  const vazia = !r.splitAxis && !r.content && !(r.fronts || []).length
+    && !(r.children || []).length && !(r.params && r.params.zoneOverride);
   slot.layout = vazia ? null : LayoutEngine.serialize(r);
 
   // O catálogo da janela é o filtrado pela whitelist; o cache global é o

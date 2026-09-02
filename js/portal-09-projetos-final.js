@@ -494,6 +494,15 @@ async function loadProjectFavoritesList() {
   // conhecido — a margem de revenda (getResaleMarginPct) é aplicada NA
   // EXIBIÇÃO, nunca entra no cache (pode mudar a qualquer momento).
   const renderCardTotal = (el, total, skipped) => {
+    // Vendedor (migration 149) nunca vê o valor de fábrica cru — só o
+    // "preço de venda loja" (getDisplayPrice, já com a margem do dealer),
+    // sem a linha "· Suggested resale" (aqui a margem NÃO é sugestão, é o
+    // preço de verdade que ele pratica).
+    if (isSellerAccount()) {
+      el.textContent = I18n.t('fav.total_label', { total: formatMoney(getDisplayPrice(total)) })
+        + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
+      return;
+    }
     const marginPct = getResaleMarginPct();
     const resaleSuffix = marginPct > 0
       ? ' · ' + I18n.t('fav.resale_total_label', { total: formatMoney(total * (1 + marginPct / 100)) })
@@ -1685,6 +1694,8 @@ async function showLoggedIn(user) {
   // applyCuttingListTabVisibility, e a config de preço do plano de corte
   // pode carregar em paralelo (não bloqueia o resto do login).
   await ensureOwnUserProfile();
+  touchLastActive();
+  await resolveDisplayMarginPct();
   refreshResaleMarginInput();
   refreshDealerUiVisibility();
   applyCuttingListTabVisibility();

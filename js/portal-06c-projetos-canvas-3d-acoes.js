@@ -755,7 +755,7 @@ function renderProjectConfigPanel() {
     ${moveBlock}
     ${positionBlock}
     <div class="po-proj-config-row"><span>${I18n.t('project.config_depth_label')}</span><span>${depthLabel}</span></div>
-    <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney((slot.result && slot.result.total) || 0)}</span></div>
+    <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney(isSellerAccount() ? getDisplayPrice((slot.result && slot.result.total) || 0) : (slot.result && slot.result.total) || 0)}</span></div>
     <div class="po-proj-config-row hint"><span>${I18n.t('volume_weight.label')}</span><span>${formatVolumeWeight((slot.result && slot.result.breakdown) || [])}</span></div>
     <button type="button" class="secondary" id="po-proj-config-edit-btn">${I18n.t('project.config_edit_btn')}</button>
     <button type="button" class="secondary" id="po-proj-config-duplicate-btn" title="${I18n.t('project.duplicate_title')}">${I18n.t('project.duplicate_btn')}</button>
@@ -905,7 +905,10 @@ function renderProjectSummary() {
   setText('po-proj-sum-modules', String(projectSlots.length));
   setText('po-proj-sum-items', String(items));
   setText('po-proj-sum-finishes', String(finishIds.size));
-  setText('po-proj-total', formatMoney(total));
+  // Vendedor (migration 149, pedido do Matt 02/09/2026: "tira de todos os
+  // pontos onde aparecem, so para os vendedores") nunca vê o preço de
+  // fábrica cru — nem no card "Resumo do projeto" enquanto monta o ambiente.
+  setText('po-proj-total', formatMoney(isSellerAccount() ? getDisplayPrice(total) : total));
   // Volume/peso somado — migration 061. Cada slot é 1 unidade (Projetos não
   // tem conceito de quantidade), então soma direta dos breakdowns.
   setText('po-proj-volume-weight', projectSlots.length > 0
@@ -949,7 +952,7 @@ function renderProjectSummaryDetails() {
       <div class="po-proj-summary-detail-row" data-slot-id="${slot.id}">
         <span class="po-proj-summary-detail-name">${slot.module.name}</span>
         <span class="po-proj-summary-detail-meta">${where} · ${dims}</span>
-        <span class="po-proj-summary-detail-price">${formatMoney((slot.result && slot.result.total) || 0)}</span>
+        <span class="po-proj-summary-detail-price">${formatMoney(isSellerAccount() ? getDisplayPrice((slot.result && slot.result.total) || 0) : (slot.result && slot.result.total) || 0)}</span>
       </div>
     `;
   }).join('');

@@ -921,9 +921,7 @@ function renderGalleryGrid(posts) {
         <div class="po-gallery-card-name"></div>
         <div class="po-gallery-card-meta hint">${galleryFamilyName(post.family_id) || ''}${dims ? ' · ' + dims : ''}</div>
         <div class="po-gallery-card-author hint"></div>
-        <div class="po-gallery-card-price-label hint">${I18n.t('gallery.price_label')}</div>
-        <div class="po-gallery-card-price">${formatGalleryPrice(post.price_sale)}</div>
-        ${galleryResaleMarginHtml(post.price_sale)}
+        ${galleryCardPriceHtml(post.price_sale)}
         <div class="po-gallery-card-actions">
           <button type="button" class="po-gallery-use-btn">${I18n.t('gallery.use_composition_btn')} →</button>
           <button type="button" class="po-gallery-share-btn" title="${I18n.t('gallery.share_btn_label')}" aria-label="${I18n.t('gallery.share_btn_label')}">${GALLERY_SHARE_ICON_SVG}</button>
@@ -1079,7 +1077,7 @@ function openGalleryShareMenu(post, anchorEl) {
   const pageUrl = buildGalleryShareUrl(post);
   const imageUrl = (post.ai_image_data_url && post.ai_image_data_url.startsWith('http')) ? post.ai_image_data_url : '';
   const title = post.composition_name || I18n.t('gallery.untitled');
-  const shareText = `${title} — ${I18n.t('gallery.price_label')} ${formatGalleryPrice(post.price_sale)}`;
+  const shareText = `${title} — ${I18n.t('gallery.price_label')} ${formatGalleryPrice(isSellerAccount() ? getDisplayPrice(post.price_sale) : post.price_sale)}`;
   const pinterestUrl = `https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(pageUrl)}${imageUrl ? `&media=${encodeURIComponent(imageUrl)}` : ''}&description=${encodeURIComponent(shareText)}`;
   const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}`;
   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText + ' ' + pageUrl)}`;

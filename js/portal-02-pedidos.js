@@ -32,6 +32,22 @@ function galleryResaleMarginHtml(priceSale) {
   return `<div class="po-gallery-card-resale-price hint">${I18n.t('gallery.resale_price_label')} <strong>${formatGalleryPrice(resalePrice)}</strong></div>`;
 }
 
+// Bloco de preço inteiro do card da Galeria (migration 149, "vendedores so
+// veem preco de venda loja") — pra vendedor, mostra só o preço já com a
+// margem do dealer (getDisplayPrice), como se fosse o preço de fábrica de
+// sempre, SEM a linha "Suggested resale" (aqui não é sugestão, é o preço
+// de verdade); pra qualquer outro perfil, comportamento idêntico a antes
+// (preço de fábrica + linha de revenda opcional).
+function galleryCardPriceHtml(priceSale) {
+  if (isSellerAccount()) {
+    return `<div class="po-gallery-card-price-label hint">${I18n.t('gallery.price_label')}</div>
+        <div class="po-gallery-card-price">${formatGalleryPrice(getDisplayPrice(priceSale))}</div>`;
+  }
+  return `<div class="po-gallery-card-price-label hint">${I18n.t('gallery.price_label')}</div>
+        <div class="po-gallery-card-price">${formatGalleryPrice(priceSale)}</div>
+        ${galleryResaleMarginHtml(priceSale)}`;
+}
+
 // Locale pra Date.toLocaleString/toLocaleDateString — acompanha o idioma da
 // interface (I18n.getLanguage()), não fica sempre travado em pt-BR agora que
 // o portal também existe em inglês/espanhol.
@@ -65,7 +81,11 @@ function renderCart() {
   listEl.innerHTML = cartItems.length > 0
     ? cartItems.map((it) => renderCartItemRow(it, true)).join('')
     : `<p class="hint po-cart-empty">${I18n.t('cart.empty')}</p>`;
-  document.getElementById('po-cart-total').textContent = formatMoney(cartTotal());
+  // Vendedor (migration 149, pedido do Matt 02/09/2026: "vendedor nao pode
+  // ver preco de fabrica... la no carrinho") nunca vê o valor de fábrica cru
+  // no total do carrinho — só o "preço de venda loja" (getDisplayPrice, já
+  // com a margem do dealer aplicada).
+  document.getElementById('po-cart-total').textContent = formatMoney(isSellerAccount() ? getDisplayPrice(cartTotal()) : cartTotal());
   // Volume/peso somados de todos os itens do carrinho — migration 061
   // (quantidade de cada item já considerada, ver itemVolumeM3).
   const cartVwEl = document.getElementById('po-cart-volume-weight');
@@ -114,11 +134,16 @@ function renderCartItemRow(it, removable) {
   // rápido da vitrine, removido 2026-07-19 — mantido aqui só pra exibir
   // itens já salvos, nada cria qty>1 mais) mostra o preço unitário x
   // quantidade também, pra ficar claro de onde veio o total.
+  // Idem por linha de item (migration 149) — preço unitário e total exibidos
+  // já com a margem do dealer aplicada pro vendedor; qty>1 continua batendo
+  // (unit×(1+margem) × qty == total×(1+margem), margem é % linear).
+  const displayUnitPrice = isSellerAccount() ? getDisplayPrice(it.unit_price) : it.unit_price;
+  const displayTotalPrice = isSellerAccount() ? getDisplayPrice(it.total_price) : it.total_price;
   const priceLine = isDecor
     ? `<span class="hint">${I18n.t('decor.cart_note')}</span>`
     : (qty > 1
-      ? `${formatMoney(it.unit_price)} × ${qty} = ${formatMoney(it.total_price)}`
-      : formatMoney(it.total_price));
+      ? `${formatMoney(displayUnitPrice)} × ${qty} = ${formatMoney(displayTotalPrice)}`
+      : formatMoney(displayTotalPrice));
   const qtyLine = qty > 1 ? `<div>${I18n.t('cart.qty_label', { n: qty })}</div>` : '';
   // Unidade GLOBAL (po-unit-select) — mesmo motivo do card da vitrine
   // (renderModuleGallery): não pode ficar preso em mm enquanto o resto do
@@ -860,6 +885,10 @@ async function loadMyOrders() {
       const isProjectOrder = o.order_type === 'project';
       const items = isCutlist ? (cutlistItemsByOrder[o.id] || []) : (itemsByOrder[o.id] || []);
       const total = items.reduce((sum, it) => sum + Number(it.total_price || 0), 0);
+      // Vendedor (migration 149, pedido do Matt 02/09/2026: "tira de todos os
+      // pontos onde aparecem, so para os vendedores") nunca vê o preço de
+      // fábrica cru — nem aqui, na lista de "Meus Pedidos".
+      const displayTotal = isSellerAccount() ? getDisplayPrice(total) : total;
       const date = o.submitted_at ? new Date(o.submitted_at).toLocaleString(currentLocale()) : '';
       // Título do cartão: PO e nome do cliente AGORA os dois em destaque
       // (pedido do usuário 2026-07-29: "quero ver o nome da PO em destaque
@@ -884,7 +913,7 @@ async function loadMyOrders() {
               ${isCutlist ? `<span class="badge" data-i18n="admin.orders_type_cutting_list">${I18n.t('admin.orders_type_cutting_list')}</span>` : ''}
               ${isProjectOrder ? `<span class="badge" data-i18n="admin.orders_type_project">${I18n.t('admin.orders_type_project')}</span>` : ''}
             </div>
-            <span class="portal-order-total">${formatMoney(total)}</span>
+            <span class="portal-order-total">${formatMoney(displayTotal)}</span>
           </div>
           <div class="portal-order-actions">
             <button type="button" class="secondary portal-order-view-btn" data-order-id="${o.id}">${I18n.t('my_orders.view_details')}</button>
@@ -1110,7 +1139,11 @@ function renderOrderDetail() {
   });
 
   const total = items.reduce((sum, it) => sum + Number(it.total_price || 0), 0);
-  document.getElementById('po-order-detail-total').textContent = formatMoney(total);
+  // Vendedor (migration 149) nunca vê o preço de fábrica cru na tela de
+  // detalhe/aprovação do pedido — só o "preço de venda loja" (margem do
+  // dealer já aplicada). O valor gravado no banco (order_items.total_price)
+  // continua sendo sempre o de fábrica — só a EXIBIÇÃO muda.
+  document.getElementById('po-order-detail-total').textContent = formatMoney(isSellerAccount() ? getDisplayPrice(total) : total);
   updateOrderDetailVolumeWeight(items);
 
   // "Gerar Proposta" (js/portal-10-proposta.js) — pra Dealer (lojista),
@@ -1661,7 +1694,7 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
   // Módulo decorativo (migration 039): mesmo aviso do carrinho, no lugar do preço.
   const decorModule = (allModules || []).find((mm) => mm.id === it.module_id);
   const isDecor = !!(decorModule && decorModule.is_decoration);
-  const priceLine = isDecor ? I18n.t('decor.cart_note') : formatMoney(it.total_price);
+  const priceLine = isDecor ? I18n.t('decor.cart_note') : formatMoney(isSellerAccount() ? getDisplayPrice(it.total_price) : it.total_price);
   // Volume (m³) + peso — migration 061. data-item-id pra updateOrderItemQuantity
   // conseguir atualizar só esta linha depois de mudar a quantidade.
   const volumeWeightLine = isDecor ? '' : formatVolumeWeight(it.breakdown || [], it.quantity);
@@ -1770,10 +1803,10 @@ async function updateOrderItemQuantity(itemId, newQtyRaw) {
     if (priceEl) {
       const decorModule = (allModules || []).find((mm) => mm.id === it.module_id);
       const isDecor = !!(decorModule && decorModule.is_decoration);
-      priceEl.textContent = isDecor ? I18n.t('decor.cart_note') : formatMoney(it.total_price);
+      priceEl.textContent = isDecor ? I18n.t('decor.cart_note') : formatMoney(isSellerAccount() ? getDisplayPrice(it.total_price) : it.total_price);
     }
     const total = currentOrderDetail.items.reduce((sum, x) => sum + Number(x.total_price || 0), 0);
-    document.getElementById('po-order-detail-total').textContent = formatMoney(total);
+    document.getElementById('po-order-detail-total').textContent = formatMoney(isSellerAccount() ? getDisplayPrice(total) : total);
     updateOrderDetailVolumeWeight(currentOrderDetail.items);
     const itemVwEl = document.querySelector(`.po-order-item-volume-weight[data-item-id="${itemId}"]`);
     if (itemVwEl) {
@@ -2151,18 +2184,23 @@ function generateOrderPDF(order, items) {
     // Módulo decorativo (migration 039): a linha do PDF avisa que o item é
     // só ambientação, em vez de mostrar "Preço: $0.00".
     const pdfDecorModule = (allModules || []).find((mm) => mm.id === it.module_id);
+    // Vendedor (migration 149) nunca vê o preço de fábrica cru no PDF do
+    // pedido — mesma troca de exibição de sempre (getDisplayPrice).
+    const pdfUnitPrice = isSellerAccount() ? getDisplayPrice(it.unit_price) : it.unit_price;
+    const pdfTotalPrice = isSellerAccount() ? getDisplayPrice(it.total_price) : it.total_price;
     const priceLine = (pdfDecorModule && pdfDecorModule.is_decoration)
       ? I18n.t('pdf.decor_line')
       : (qty > 1
-        ? I18n.t('pdf.price_line_qty', { unit: formatMoney(it.unit_price), qty, total: formatMoney(it.total_price) })
-        : I18n.t('pdf.price_line', { total: formatMoney(it.total_price) }));
+        ? I18n.t('pdf.price_line_qty', { unit: formatMoney(pdfUnitPrice), qty, total: formatMoney(pdfTotalPrice) })
+        : I18n.t('pdf.price_line', { total: formatMoney(pdfTotalPrice) }));
     doc.text(`   ${priceLine}`, 14, y); y += 7;
   });
 
   const total = items.reduce((sum, it) => sum + Number(it.total_price || 0), 0);
+  const pdfDisplayTotal = isSellerAccount() ? getDisplayPrice(total) : total;
   ensureSpace(10);
   doc.setFontSize(12);
-  doc.text(I18n.t('pdf.order_total', { total: formatMoney(total) }), 14, y);
+  doc.text(I18n.t('pdf.order_total', { total: formatMoney(pdfDisplayTotal) }), 14, y);
 
   const filenameBase = (order.po_name || order.client_name || I18n.t('pdf.filename_fallback'))
     .toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || I18n.t('pdf.filename_fallback');
