@@ -1890,15 +1890,40 @@ if (typeof I18n !== 'undefined' && I18n.onLanguageChange) {
 // Link público de visualização 3D (view3d, NOVO 02/09) — pedido do Matt:
 // cliente/montador SEM CONTA abre um link e só vê a cena 3D pronta,
 // podendo girar/dar zoom (OrbitControls nativo), sem nenhuma opção de
-// editar. Reaproveita o painel "Visualizar 3D" retirado da interface normal
-// (#po-proj-3d-wrap/generateProject3D, ver comentário "APOSENTADO" em
-// portal.html) — ele nunca teve arrastar/selecionar/editar módulo, só o
-// canvas de leitura que a foto realista/exportação AR já usam. O resto da
-// interface (nav, login, biblioteca, painel de config, Salvar, "Visualizar
-// 3D"/"Foto realista") fica escondido via CSS (body.po-view3d-guest, ver
-// style.css) — ver bootView3DGuestView, chamado no init() ANTES de
-// getSession(), pulando login por completo.
+// editar.
+//
+// 1ª versão (mesmo dia) reaproveitava o painel "Visualizar 3D" aposentado
+// (#po-proj-3d-wrap/generateProject3D) por parecer mais seguro (nunca teve
+// arrastar/editar módulo) — só que o Matt testou ao vivo e voltou bugado:
+// "depois que subiu jogou todos modulos na primeira parede". Esse painel é
+// um caminho raro (só usado por foto realista/exportação AR), enquanto a
+// Vista de Canto normal (ViewerProjectEdit, renderProjectCanvas) é o que
+// TODO projeto salvo já renderiza certo todo dia — então a troca foi usar
+// ESSA MESMA vista também pro visitante (restoreFavoriteProject já a
+// desenha sozinho, não precisa chamar mais nada) e, pra não reabrir a porta
+// de editar, travar na ORIGEM: attachProject3DEditDrag (o ÚNICO lugar que
+// liga clique/arrastar/redimensionar nela, ver portal-06c-projetos-canvas-
+// 3d-acoes.js) agora sai cedo se window.PO_VIEW3D_READONLY, setado bem no
+// início desta função. O resto da interface (nav, login, biblioteca, painel
+// de config, barra de ferramentas inteira, Salvar/Proposta/Enviar/$) fica
+// escondido via CSS (body.po-view3d-guest, ver style.css) +
+// simplifyToolbarForGuestView (abaixo) — ver bootView3DGuestView, chamado
+// no init() ANTES de getSession(), pulando login por completo.
+function endView3DBootOverlay() {
+  // Tira o overlay "Carregando projeto..." (anti-flash inline no <head>/
+  // topo do <body>) — precisa rodar tanto no sucesso quanto no erro, senão
+  // um link com código inválido/expirado fica preso na tela de loading pra
+  // sempre.
+  document.documentElement.classList.remove('po-view3d-boot');
+}
+
 async function bootView3DGuestView(code) {
+  // Trava attachProject3DEditDrag (portal-06c-projetos-canvas-3d-acoes.js) —
+  // é o ÚNICO lugar que liga clique/arrastar/redimensionar na Vista de
+  // Canto, então bloquear ALI é suficiente pra reaproveitar essa MESMA vista
+  // (a que todo projeto salvo já desenha certo, ao contrário do painel
+  // aposentado) sem abrir edição nenhuma pro visitante.
+  window.PO_VIEW3D_READONLY = true;
   document.body.classList.add('po-view3d-guest');
   const contentEl = document.getElementById('po-content');
   if (contentEl) contentEl.style.display = 'block';
@@ -1908,6 +1933,7 @@ async function bootView3DGuestView(code) {
     const source = Array.isArray(data) ? data[0] : data;
     if (error || !source) {
       if (errorEl) { errorEl.textContent = I18n.t('view3d.not_found'); errorEl.style.display = 'block'; }
+      endView3DBootOverlay();
       return;
     }
     await restoreFavoriteProject({
@@ -1920,15 +1946,46 @@ async function bootView3DGuestView(code) {
       wall_segments: source.wall_segments,
       ai_preview_url: null
     }, false);
-    // generateProject3D() é a MESMA função do botão "Visualizar 3D" — só
-    // pinta a cena no canvas de leitura, não liga arrastar/selecionar nada
-    // (attachProject3DEditDrag, quem faz isso, só se conecta na Vista de
-    // Canto do editor normal, que fica escondida em modo visitante).
-    if (typeof generateProject3D === 'function') generateProject3D();
+    // restoreFavoriteProject() já chama renderProjectCanvas() por dentro,
+    // que desenha a Vista de Canto (ViewerProjectEdit) sozinha — NÃO chamar
+    // generateProject3D() aqui (1ª versão chamava): aquilo pinta um painel
+    // separado e raramente exercitado (#po-proj-3d-wrap/ViewerProject, só
+    // usado hoje por foto realista/exportação AR) que não estava dando conta
+    // de layouts com mais de uma parede direito.
     renderView3DGuestHeader(source.name);
+    simplifyToolbarForGuestView();
   } catch (err) {
     if (errorEl) { errorEl.textContent = I18n.t('view3d.not_found'); errorEl.style.display = 'block'; }
+  } finally {
+    endView3DBootOverlay();
   }
+}
+
+// Barra de ferramentas do editor normal (#po-proj-canvas-tools) tem MUITO
+// botão que não serve pro visitante (Matt, 02/09, depois de ver o link ao
+// vivo: "ainda tem toda aba la em cima, so quero maximo abertura. e vistas.
+// mas os botoes salvar, enviar ordem, proposta, preco isso deve ser
+// eliminado dessa visualizacao simples. nao precisa renderizar nem
+// linhas..."). Em vez de reescrever a barra inteira só pro modo visitante,
+// esconde grupo por grupo (cada grupo é um <div class="po-tb-group"> ou
+// "po-tb-group-solo", ver portal.html) que NÃO tem nenhum dos botões que
+// ficam — Vista (Frontal/Superior) e Projeção (Perspectiva/Paralelo). Tela
+// cheia também fica (ajuda o "máximo abertura" pedido). Os filetes
+// separadores (.po-tb-sep) somem juntos — o gap do flex já dá o espaçamento
+// entre os grupos que sobraram, não precisam de linha divisória.
+function simplifyToolbarForGuestView() {
+  const tools = document.getElementById('po-proj-canvas-tools');
+  if (!tools) return;
+  const KEEP_BTN_IDS = [
+    'po-proj-view-front-btn', 'po-proj-view-top-btn',
+    'po-proj-camproj-btn', 'po-proj-camproj-orto-btn',
+    'po-proj-fullscreen-btn'
+  ];
+  tools.querySelectorAll(':scope > .po-tb-group, :scope > .po-tb-group-solo').forEach((group) => {
+    const keep = KEEP_BTN_IDS.some((id) => group.querySelector('#' + id));
+    if (!keep) group.style.display = 'none';
+  });
+  tools.querySelectorAll(':scope > .po-tb-sep').forEach((sep) => { sep.style.display = 'none'; });
 }
 
 function renderView3DGuestHeader(name) {

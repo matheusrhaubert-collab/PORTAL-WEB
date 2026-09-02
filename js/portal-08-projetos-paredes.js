@@ -97,6 +97,14 @@ function convertProjectSlotToWall(slot, wallIndex, xMm, floorHeightMm) {
 // init() no viewer3d_composition.js — anexar nesta função de novo a cada
 // render duplicaria o listener).
 function attachProject3DEditDrag() {
+  // Link público de visualização 3D (view3d, 02/09) — visitante sem conta
+  // reaproveita esta MESMA Vista de Canto (bootView3DGuestView, ver
+  // portal-09-projetos-final.js), então este é o ÚNICO lugar que precisa
+  // travar: é a função inteira que liga clique/selecionar/arrastar/
+  // redimensionar módulo nela. Sem isso o resto (rotacionar/zoom via
+  // OrbitControls nativo) continua funcionando igual — não é o que este
+  // guard bloqueia.
+  if (window.PO_VIEW3D_READONLY) return;
   if (!ViewerProjectEdit) return;
   const domEl = ViewerProjectEdit.getDomElement && ViewerProjectEdit.getDomElement();
   if (!domEl || domEl.dataset.legnoDragAttached === '1') return;
