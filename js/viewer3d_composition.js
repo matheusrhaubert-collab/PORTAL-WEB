@@ -413,9 +413,17 @@ function createViewerComposition3D() {
   // (chão) e a Vista Superior (plano 2D, sistema de desenho totalmente
   // diferente, ver renderProjectCanvasTop em portal-06c) ficam de fora,
   // PENDENTE de uma 2ª rodada.
-  function buildProjectDimensionLines(list, ax, az) {
-    if (!Array.isArray(list) || list.length < 2) return;
+  function buildProjectDimensionLines(list, ax, az, ox, oz, wallWidthM, room) {
+    if (!Array.isArray(list) || !list.length) return;
     const alongDir = new THREE.Vector3(ax, 0, az);
+    // Projeção escalar da ORIGEM da parede no próprio eixo dela — subtraindo
+    // isto de qualquer `center.dot(alongDir)` sobra a posição "ao longo da
+    // parede a partir do início dela" (0..wallWidthM), o mesmo referencial
+    // de x_mm/width_m que já posicionou o group. Precisa disso pra saber
+    // onde fica o LIMITE DA PAREDE (não só o vizinho mais próximo).
+    const originAlong = (Number(ox) || 0) * ax + (Number(oz) || 0) * az;
+    const wallW = Number(wallWidthM) || 0;
+    const ceilingM = (room && Number(room.ceiling_m) > 0) ? Number(room.ceiling_m) : null;
     const entries = list.filter((a) => a && a.group).map((a) => ({
       // Convenção do group (ver comentário grande de renderFreeformWalls):
       // X/Z local centralizados, Y do chão pro topo — a posição MUNDO do
@@ -445,7 +453,13 @@ function createViewerComposition3D() {
 
     // ---- LARGURA: vizinho mais próximo À DIREITA que compartilha alguma
     // faixa de altura com este módulo (senão um armário alto "veria" através
-    // de um vão de altura vazio de um módulo baixo do outro lado). ----
+    // de um vão de altura vazio de um módulo baixo do outro lado). Se não
+    // tiver NENHUM módulo daquele lado (best === null — não é só "longe",
+    // é ausência mesmo), pedido do Matt 02/09 ("pega ate final da parede a
+    // cota se nao tiver outro objeto inserido... sempre pega no limite ate
+    // a parede"): mede até o CANTO da parede em vez de não desenhar nada.
+    // Reta sempre reta (sem nada inclinado) — mesma altura yMid nas 2 pontas
+    // nos dois casos. ----
     entries.forEach((e) => {
       let best = null, bestGap = Infinity;
       entries.forEach((o) => {
@@ -456,6 +470,7 @@ function createViewerComposition3D() {
         if (overlap <= 0) return;
         if (gap < bestGap) { bestGap = gap; best = o; }
       });
+      const yMidSelf = (e.yBottom + e.yTop) / 2;
       if (best && bestGap < DIM_MAX_GAP_M) {
         const yMid = (Math.max(e.yBottom, best.yBottom) + Math.min(e.yTop, best.yTop)) / 2;
         const p1 = e.center.clone().addScaledVector(alongDir, e.halfW); p1.y = yMid;
@@ -464,11 +479,47 @@ function createViewerComposition3D() {
         addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
         addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
         addAnchor(p1.clone().lerp(p2, 0.5), bestGap * 1000);
+      } else if (!best && wallW > 0) {
+        // Fim da parede À DIREITA do módulo (relativo à origem da parede).
+        const rightEdgeRel = (e.center.dot(alongDir) - originAlong) + e.halfW;
+        const gapToWall = wallW - rightEdgeRel;
+        if (gapToWall > DIM_MIN_GAP_M) {
+          const p1 = e.center.clone().addScaledVector(alongDir, e.halfW); p1.y = yMidSelf;
+          const p2 = new THREE.Vector3(ox + ax * wallW, yMidSelf, oz + az * wallW);
+          addLine(p1, p2);
+          addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+          addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+          addAnchor(p1.clone().lerp(p2, 0.5), gapToWall * 1000);
+        }
+      }
+      // Fim da parede À ESQUERDA — só quando NENHUM módulo (de qualquer
+      // distância, sem limite de DIM_MAX_GAP_M: existência, não proximidade)
+      // fica antes dele nessa faixa de altura, senão duplicaria a linha que
+      // o vizinho já desenha pela busca "à direita" dele.
+      const hasLeftNeighbor = entries.some((o) => {
+        if (o === e) return false;
+        const overlap = Math.min(e.yTop, o.yTop) - Math.max(e.yBottom, o.yBottom);
+        if (overlap <= 0) return false;
+        return (e.center.dot(alongDir) - e.halfW) - (o.center.dot(alongDir) + o.halfW) >= -DIM_MIN_GAP_M;
+      });
+      if (!hasLeftNeighbor && wallW > 0) {
+        const leftEdgeRel = (e.center.dot(alongDir) - originAlong) - e.halfW;
+        if (leftEdgeRel > DIM_MIN_GAP_M) {
+          const p1 = new THREE.Vector3(ox, yMidSelf, oz);
+          const p2 = e.center.clone().addScaledVector(alongDir, -e.halfW); p2.y = yMidSelf;
+          addLine(p1, p2);
+          addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+          addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+          addAnchor(p1.clone().lerp(p2, 0.5), leftEdgeRel * 1000);
+        }
       }
     });
 
     // ---- ALTURA: vizinho mais próximo EM CIMA que compartilha alguma faixa
-    // de largura com este módulo (mesmo raciocínio, eixo trocado). ----
+    // de largura com este módulo (mesmo raciocínio, eixo trocado). Sem
+    // vizinho ACIMA, mede até o TETO; sem vizinho ABAIXO (módulo elevado da
+    // parede), mede até o CHÃO — mesmo princípio do "limite" acima, só que
+    // o limite vertical é teto/chão em vez de canto de parede. ----
     entries.forEach((e) => {
       let best = null, bestGap = Infinity;
       entries.forEach((o) => {
@@ -490,6 +541,37 @@ function createViewerComposition3D() {
         addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));
         addLine(p2.clone().addScaledVector(perp, -DIM_TICK_M / 2), p2.clone().addScaledVector(perp, DIM_TICK_M / 2));
         addAnchor(p1.clone().lerp(p2, 0.5), bestGap * 1000);
+      } else if (!best && ceilingM) {
+        const gapToCeiling = ceilingM - e.yTop;
+        if (gapToCeiling > DIM_MIN_GAP_M) {
+          const p1 = e.center.clone(); p1.y = e.yTop;
+          const p2 = e.center.clone(); p2.y = ceilingM;
+          addLine(p1, p2);
+          const perp = new THREE.Vector3(-az, 0, ax);
+          addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));
+          addLine(p2.clone().addScaledVector(perp, -DIM_TICK_M / 2), p2.clone().addScaledVector(perp, DIM_TICK_M / 2));
+          addAnchor(p1.clone().lerp(p2, 0.5), gapToCeiling * 1000);
+        }
+      }
+      // CHÃO — só quando nenhum módulo (qualquer distância) fica embaixo
+      // dele nessa faixa de largura, mesmo raciocínio de hasLeftNeighbor
+      // acima (existência, não proximidade — evita duplicar a linha que o
+      // vizinho de baixo já desenharia pela busca "em cima" dele).
+      const hasBelowNeighbor = entries.some((o) => {
+        if (o === e) return false;
+        const eAlong = e.center.dot(alongDir), oAlong = o.center.dot(alongDir);
+        const overlap = Math.min(eAlong + e.halfW, oAlong + o.halfW) - Math.max(eAlong - e.halfW, oAlong - o.halfW);
+        if (overlap <= 0) return false;
+        return e.yBottom - o.yTop >= -DIM_MIN_GAP_M;
+      });
+      if (!hasBelowNeighbor && e.yBottom > DIM_MIN_GAP_M) {
+        const p1 = e.center.clone(); p1.y = 0;
+        const p2 = e.center.clone(); p2.y = e.yBottom;
+        addLine(p1, p2);
+        const perp = new THREE.Vector3(-az, 0, ax);
+        addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));
+        addLine(p2.clone().addScaledVector(perp, -DIM_TICK_M / 2), p2.clone().addScaledVector(perp, DIM_TICK_M / 2));
+        addAnchor(p1.clone().lerp(p2, 0.5), e.yBottom * 1000);
       }
     });
 
@@ -1597,7 +1679,8 @@ function createViewerComposition3D() {
       // diferentes nunca se tocam de verdade, mesmo se as coordenadas locais
       // parecerem próximas.
       applyBaseboardJoins(list);
-      if (options && options.dimensionsEnabled) buildProjectDimensionLines(list, ax, az);
+      const wallWidthMForDims = Number(wall.widthM) || 0;
+      if (options && options.dimensionsEnabled) buildProjectDimensionLines(list, ax, az, ox, oz, wallWidthMForDims, room);
 
       // Inclui a PAREDE em si (não só os módulos) na caixa delimitadora —
       // pedido do usuário (2026-07-26, Vista de Canto 3D): "a cena esta
