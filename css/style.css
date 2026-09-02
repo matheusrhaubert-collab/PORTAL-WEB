@@ -1336,7 +1336,11 @@ header.po-topnav {
   background: var(--text);
 }
 .po-topnav-right { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
-.po-help-link { font-size: 13px; color: var(--muted); cursor: default; }
+.po-help-link {
+  font-size: 13px; color: var(--muted); background: none; border: none; cursor: pointer;
+  padding: 4px 2px; font-weight: 600;
+}
+.po-help-link:hover { color: var(--text); text-decoration: underline; }
 /* Seletor de idioma (js/i18n.js monta o <select> dentro deste span) — mesmo
    visual discreto do resto do topnav, sem herdar o width:100%/margin-top dos
    <select> genéricos do resto do site. */
@@ -4173,3 +4177,88 @@ body.po-view3d-guest #po-proj-canvas-3d-edit {
   line-height: 1.5; color: var(--text);
 }
 .po-view3d-measure-row:last-child { border-bottom: none; }
+
+/* ==========================================================================
+   CENTRAL DE AJUDA (02/09) — pedido do Matt: "precisamos de um help para os
+   clientes, mostrando tutorial de cada ferramenta como funciona. separado
+   por abas, e bem completo... com botao de ajuda e procurar... intuitivo...
+   tipo kb.promob (pesquisa)". Mesmo padrão de overlay dos outros modais
+   (#po-auth-section/#po-proj-search-modal: fixed/inset:0/classe .open abre),
+   card mais largo (sidebar + conteúdo, como uma central de ajuda de verdade).
+   Conteúdo/lógica em js/portal-12-ajuda.js (HELP_CONTENT, attachHelpCenter).
+   ========================================================================== */
+#po-help-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+#po-help-modal.open { display: flex; }
+.po-help-modal-card {
+  background: var(--panel); border-radius: 12px; padding: 24px;
+  width: 1080px; max-width: 100%; height: 85vh; max-height: 85vh;
+  display: flex; flex-direction: column;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.po-help-modal-header { flex: none; padding-right: 30px; }
+.po-help-modal-header h2 { margin: 0 0 12px; }
+.po-help-search { position: relative; }
+.po-help-search input[type="search"] {
+  width: 100%; box-sizing: border-box; padding: 10px 14px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  color: var(--text);
+}
+.po-help-search input[type="search"]:focus { outline: none; border-color: var(--accent); }
+.po-help-search-results {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18); padding: 6px; max-height: 320px;
+  overflow-y: auto;
+}
+.po-help-search-result {
+  display: block; width: 100%; text-align: left; border: none; background: transparent;
+  border-radius: 6px; padding: 8px 10px; cursor: pointer; color: var(--text);
+}
+.po-help-search-result:hover { background: var(--accent-light); }
+.po-help-search-result strong { display: block; font-size: 13px; margin-bottom: 2px; }
+.po-help-search-result span { display: block; font-size: 12px; color: var(--muted); }
+.po-help-search-empty { padding: 10px; font-size: 13px; color: var(--muted); }
+.po-help-modal-body {
+  display: flex; gap: 20px; margin-top: 16px; flex: 1 1 auto; min-height: 0;
+}
+.po-help-sidebar {
+  flex: none; width: 260px; overflow-y: auto; border-right: 1px solid var(--border);
+  padding-right: 14px;
+}
+.po-help-cat { margin-bottom: 4px; }
+.po-help-cat-title {
+  display: block; width: 100%; text-align: left; border: none; background: transparent;
+  padding: 9px 8px; border-radius: 6px; font-size: 13px; font-weight: 700;
+  color: var(--text); cursor: pointer;
+}
+.po-help-cat-title:hover { background: var(--accent-light); }
+.po-help-cat-title.ativo { background: var(--text); color: #fff; }
+.po-help-cat-articles { padding-left: 6px; }
+.po-help-cat-articles.escondido { display: none; }
+.po-help-article-link {
+  display: block; width: 100%; text-align: left; border: none; background: transparent;
+  padding: 7px 10px; border-radius: 6px; font-size: 12.5px; color: var(--muted);
+  cursor: pointer;
+}
+.po-help-article-link:hover { background: var(--accent-light); color: var(--text); }
+.po-help-article-link.ativo { color: var(--text); font-weight: 700; background: var(--accent-light); }
+.po-help-content {
+  flex: 1 1 auto; overflow-y: auto; min-height: 0; padding: 2px 6px 20px 4px; line-height: 1.6;
+}
+.po-help-content h3 { margin: 0 0 12px; font-size: 19px; color: var(--text); }
+.po-help-content p { margin: 0 0 12px; font-size: 13.5px; color: var(--text); }
+.po-help-content ul, .po-help-content ol { margin: 0 0 14px; padding-left: 22px; font-size: 13.5px; }
+.po-help-content li { margin-bottom: 6px; }
+.po-help-content strong { color: var(--text); }
+.po-help-content .po-help-tip {
+  background: var(--accent-light); border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 13px; margin: 0 0 14px;
+}
+@media (max-width: 860px) {
+  .po-help-modal-body { flex-direction: column; }
+  .po-help-sidebar { width: 100%; max-height: 160px; border-right: none; border-bottom: 1px solid var(--border); padding-right: 0; padding-bottom: 10px; }
+}

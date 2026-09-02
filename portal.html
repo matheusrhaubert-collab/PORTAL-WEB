@@ -60,7 +60,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202609020057" />
+<link rel="stylesheet" href="css/style.css?v=202609020742" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -266,7 +266,7 @@
         </div>
       </div>
     </div>
-    <span class="po-help-link" data-i18n="nav.help">Ajuda</span>
+    <button type="button" id="po-help-btn" class="po-help-link" data-i18n="nav.help" data-i18n-title="nav.help_title" title="Ajuda">Ajuda</button>
     <!-- Botão "Entrar" pro visitante (pedido do usuário 2026-07-20: "deixa a
          pagina GALLERY publica... ao clicar customizar pedir login") — só
          aparece em modo visitante (guest mode, ver showLoggedOut), abre o
@@ -345,6 +345,32 @@
       </div>
     </div>
   </section>
+
+  <!-- CENTRAL DE AJUDA (02/09, pedido do Matt: "precisamos de um help para os
+       clientes, mostrando tutorial de cada ferramenta como funciona.
+       separado por abas, e bem completo... com botao de ajuda e procurar...
+       intuitivo... tipo kb.promob (pesquisa)"). O texto "Ajuda" já existia
+       solto no topo (nav.help) mas nunca fazia nada (cursor:default) — virou
+       o botão #po-help-btn que abre isto. Mesmo padrão de overlay dos outros
+       modais (fixed/inset:0/classe .open) — ver attachHelpCenter em
+       js/portal-12-ajuda.js, que também guarda TODO o conteúdo dos artigos
+       (3 idiomas), renderiza a barra lateral/busca e liga o botão. -->
+  <div id="po-help-modal">
+    <div class="po-help-modal-card">
+      <button type="button" class="po-auth-modal-close" id="po-help-modal-close" aria-label="Fechar" data-i18n-aria-label="ui.close">&times;</button>
+      <div class="po-help-modal-header">
+        <h2 data-i18n="help.title">Central de Ajuda</h2>
+        <div class="po-help-search">
+          <input type="search" id="po-help-search-input" data-i18n-placeholder="help.search_placeholder" placeholder="Pesquisar na ajuda..." autocomplete="off" />
+          <div class="po-help-search-results" id="po-help-search-results" style="display:none;"></div>
+        </div>
+      </div>
+      <div class="po-help-modal-body">
+        <nav class="po-help-sidebar" id="po-help-sidebar"></nav>
+        <div class="po-help-content" id="po-help-content"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal de busca de módulos da aba Projetos (pedido do usuário,
        2026-07-23: botão "Buscar" no lugar de digitar) — abre por cima com as
@@ -2358,10 +2384,10 @@
 </div>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202609020057"></script>
-<script src="js/pricing.js?v=202609020057"></script>
-<script src="js/viewer3d.js?v=202609020057"></script>
-<script src="js/viewer3d_composition.js?v=202609020057"></script>
+<script src="js/i18n.js?v=202609020742"></script>
+<script src="js/pricing.js?v=202609020742"></script>
+<script src="js/viewer3d.js?v=202609020742"></script>
+<script src="js/viewer3d_composition.js?v=202609020742"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -2371,22 +2397,22 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202609020057"></script>
+<script src="js/drilling.js?v=202609020742"></script>
 <!-- Catálogo de ferragem (pino/cavilha/tambor minifix) por furo — migration 119. Faltando aqui = Hardware fica undefined e o custo de ferragem some do $ Fábrica SEM ERRO NENHUM (o código em portal.js é tolerante de propósito). Já sumiu 2x por este script cair fora do portal.html; ver memória do projeto "minifix sumiram do $ Fábrica". Tem que vir ANTES do layout-engine.js. -->
-<script src="js/hardware.js?v=202609020057"></script>
+<script src="js/hardware.js?v=202609020742"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202609020057"></script>
+<script src="js/layout-engine.js?v=202609020742"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202609020057"></script>
+<script src="js/wall-editor.js?v=202609020742"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202609020057"></script>
+<script src="js/photoreal.js?v=202609020742"></script>
 <!-- Resolvedor de peças do módulo — a ÚNICA cópia (antes duplicada em 4
      arquivos; ver o cabeçalho do arquivo). Tem que vir ANTES do portal.js. -->
-<script src="js/module-pieces.js?v=202609020057"></script>
+<script src="js/module-pieces.js?v=202609020742"></script>
 <script>MODULE_PIECES_ON_ERROR = (e) => showError(I18n.t('loaderr.module_config', { msg: e.message }));</script>
 <!-- portal.js foi QUEBRADO em 9 arquivos em 2026-08-19 (ver memória do
      projeto "portal_js_split_2026_08_19") pra reduzir o tamanho de cada
@@ -2397,18 +2423,19 @@
      portal-06 recresceu pra 312KB em 1 dia e foi quebrado DE NOVO em
      2026-08-20 em 3 pedaços (06a/06b/06c — ver memória do projeto
      "portal_js_monolito_performance"). Mesma regra: ordem entre eles importa. -->
-<script src="js/portal-01-core-catalogo.js?v=202609020057"></script>
-<script src="js/portal-02-pedidos.js?v=202609020057"></script>
-<script src="js/portal-03-composicao.js?v=202609020057"></script>
-<script src="js/portal-04-galeria.js?v=202609020057"></script>
-<script src="js/portal-05-cutlist.js?v=202609020057"></script>
-<script src="js/portal-06a-projetos-canvas-core.js?v=202609020057"></script>
-<script src="js/portal-06b-projetos-canvas-ia-custo.js?v=202609020057"></script>
-<script src="js/portal-06c-projetos-canvas-3d-acoes.js?v=202609020057"></script>
-<script src="js/portal-07-construtor.js?v=202609020057"></script>
-<script src="js/portal-08-projetos-paredes.js?v=202609020057"></script>
-<script src="js/portal-10-proposta.js?v=202609020057"></script>
-<script src="js/portal-09-projetos-final.js?v=202609020057"></script>
+<script src="js/portal-01-core-catalogo.js?v=202609020742"></script>
+<script src="js/portal-02-pedidos.js?v=202609020742"></script>
+<script src="js/portal-03-composicao.js?v=202609020742"></script>
+<script src="js/portal-04-galeria.js?v=202609020742"></script>
+<script src="js/portal-05-cutlist.js?v=202609020742"></script>
+<script src="js/portal-06a-projetos-canvas-core.js?v=202609020742"></script>
+<script src="js/portal-06b-projetos-canvas-ia-custo.js?v=202609020742"></script>
+<script src="js/portal-06c-projetos-canvas-3d-acoes.js?v=202609020742"></script>
+<script src="js/portal-07-construtor.js?v=202609020742"></script>
+<script src="js/portal-08-projetos-paredes.js?v=202609020742"></script>
+<script src="js/portal-10-proposta.js?v=202609020742"></script>
+<script src="js/portal-09-projetos-final.js?v=202609020742"></script>
+<script src="js/portal-12-ajuda.js?v=202609020742"></script>
 
 
 </body>

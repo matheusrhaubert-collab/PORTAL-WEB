@@ -2837,6 +2837,49 @@ function iconeEstilo(o) {
     + (larg ? ' stroke="' + cor + '" stroke-width="' + larg + '"' : '') + '/>'
     + veio + '</svg>';
 }
+// Dropdowns "flutuantes" (Estilo/Camadas) — 02/09: a barra
+// (#po-proj-canvas-tools) precisa de overflow-x:auto pra rolar em zoom alto
+// (ver comentario grande acima da regra CSS de "BARRA CABENDO NA TELA"), e
+// isso faz o navegador tratar overflow-y como 'auto' tambem (regra do
+// proprio spec de CSS Overflow quando overflow-x nao e 'visible' — nao e bug
+// de codigo) — a lista do dropdown, que nascia absoluta DENTRO da barra,
+// ficava cortada sempre que passava da altura dela. Matt reportou isso na
+// Camadas: "a camada abre pra baixo da barra que nao da pra ver, pode jogar
+// pra fora da barra". Fix: ao abrir, a lista sai do fluxo normal (reparent
+// pra <body>) e vira position:fixed, posicionada por JS a partir do
+// retangulo real do botao (getBoundingClientRect) — assim nenhum ancestral
+// (barra, card, scroll) consegue cortar ela. Mesmo helper serve Estilo e
+// Camadas (mesmo esqueleto HTML/CSS dos dois, .po-style-btn/.po-style-list).
+function attachFloatingDropdown(raiz, btn, lista) {
+  const posicionar = () => {
+    const rect = btn.getBoundingClientRect();
+    const largura = Math.max(lista.offsetWidth || 0, 190);
+    let left = rect.left;
+    if (left + largura > window.innerWidth - 8) left = Math.max(8, window.innerWidth - largura - 8);
+    lista.style.left = left + 'px';
+    lista.style.top = (rect.bottom + 4) + 'px';
+  };
+  const abrir = () => {
+    if (lista.parentNode !== document.body) document.body.appendChild(lista);
+    lista.style.position = 'fixed';
+    lista.style.zIndex = '9999';
+    lista.style.display = 'block';
+    posicionar();
+    raiz.classList.add('aberto');
+  };
+  const fechar = () => {
+    raiz.classList.remove('aberto');
+    lista.style.display = 'none';
+  };
+  btn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (raiz.classList.contains('aberto')) fechar(); else abrir();
+  });
+  document.addEventListener('click', fechar);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+  window.addEventListener('resize', () => { if (raiz.classList.contains('aberto')) posicionar(); });
+  return { abrir, fechar };
+}
 function montaMenuEstilo() {
   const raiz = document.getElementById('po-proj-style-menu');
   if (!raiz) return;
@@ -2849,18 +2892,14 @@ function montaMenuEstilo() {
     + '</div>';
   const btn = raiz.querySelector('#po-proj-style-btn');
   const lista = raiz.querySelector('#po-proj-style-list');
-  btn.addEventListener('click', (ev) => { ev.stopPropagation(); raiz.classList.toggle('aberto'); });
+  const dropdown = attachFloatingDropdown(raiz, btn, lista);
   lista.querySelectorAll('.po-style-item').forEach((it) => {
     it.addEventListener('click', () => {
-      raiz.classList.remove('aberto');
+      dropdown.fechar();
       const p = PROJECT_DRAW_PRESETS[it.dataset.estilo];
       if (p) applyProjectDrawStyle(p, true);
     });
   });
-  // Fechar clicando fora — sem isto o menu fica aberto por cima da cena e o
-  // primeiro clique no projeto é gasto só pra fechar ele.
-  document.addEventListener('click', () => raiz.classList.remove('aberto'));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') raiz.classList.remove('aberto'); });
 }
 function pintaBotaoEstilo(idAtual) {
   const btn = document.getElementById('po-proj-style-btn');
@@ -3123,9 +3162,8 @@ function montaMenuCamadas() {
     + '<i class="po-style-caret">\u25be</i></button>'
     + '<div class="po-style-list po-layers-list" id="po-proj-layers-list"></div>';
   const btn = raiz.querySelector('#po-proj-layers-btn');
-  btn.addEventListener('click', (ev) => { ev.stopPropagation(); raiz.classList.toggle('aberto'); });
-  document.addEventListener('click', () => raiz.classList.remove('aberto'));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') raiz.classList.remove('aberto'); });
+  const lista = raiz.querySelector('#po-proj-layers-list');
+  attachFloatingDropdown(raiz, btn, lista);
 }
 
 // Reconstrói só a LISTA (checkboxes) — os papéis em uso podem ter mudado
