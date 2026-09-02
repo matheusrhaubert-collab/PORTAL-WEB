@@ -2549,6 +2549,47 @@ header.po-topnav {
   display: flex; flex-direction: column; gap: 6px; margin: 10px 0 16px;
   flex: none;
 }
+/* Estilo "aba de Windows" pro modal de busca (Matt, 02/09, com print da
+   cascata já funcionando: "ao inves desses icones arredondados, tem como
+   colocar estilo abas mesmo, pra dar mais conecao entre elas. tipo aba de
+   windows mesmo... assim fica tudo meio solto"). Só AQUI dentro do modal —
+   .po-tab-pill é a MESMA classe usada em Categoria/Subcategoria da tela
+   "New Quote" (ver po-filter-group-secondary lá embaixo), então a régua
+   redonda de lá continua intocada de propósito, escopando tudo com
+   ".po-proj-search-modal-filters" na frente.
+   Mecânica do efeito "aba de verdade": cada fileira (família/categoria/
+   subcategoria) ganha uma linha-base (border-bottom do .po-tabbar); cada
+   pill vira um retângulo com cantos de cima arredondados, encostado no
+   vizinho (margin-left:-1px funde as bordas numa linha só, em vez do gap
+   de 6px de antes = "solto"); a aba ATIVA pinta a própria borda de baixo
+   na cor do modal (var(--panel)) bem em cima da linha-base — some
+   exatamente ali, dando a ilusão clássica de aba "grudada" no conteúdo
+   abaixo dela, como pasta de arquivo/aba de navegador. */
+.po-proj-search-modal-filters .po-tabbar {
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+}
+.po-proj-search-modal-filters .po-tab-pill {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  background: var(--bg);
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 -1px -1px;
+  position: relative;
+}
+.po-proj-search-modal-filters .po-tab-pill:first-child { margin-left: 0; }
+.po-proj-search-modal-filters .po-tab-pill:hover:not(.active) {
+  background: var(--accent-light); color: var(--text); z-index: 1;
+}
+.po-proj-search-modal-filters .po-tab-pill.active {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+  border-bottom-color: var(--panel);
+  z-index: 2;
+}
 .po-proj-search-modal-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 10px; align-content: start;
@@ -3889,12 +3930,21 @@ header.po-topnav {
      2. abaixo de 1600px somem os RÓTULOS dos botões secundários — o ícone
         sozinho já identifica quem é usado o tempo todo;
      3. abaixo de 1180px (iPad deitado) somem os rótulos dos segmentados também.
-   O que NUNCA some é "Send to order": é a ação final do fluxo. */
+   O que NUNCA some é "Send to order": é a ação final do fluxo.
+   4º mecanismo, ÚLTIMO recurso (corrigido 2026-09-02): se mesmo assim não
+   couber — zoom do navegador acima de 100%, por exemplo — a barra ROLA NA
+   HORIZONTAL em vez de estourar a tela. Esse comportamento já tinha sido
+   escrito lá em cima (overflow-x:auto, comentário "a barra rola na horizontal
+   em tela apertada"), mas ESTA regra, que vem depois no arquivo e também mexe
+   em overflow, usava o atalho `overflow: visible` — isso zera overflow-x E
+   overflow-y junto, cancelando o scroll sem querer. Matt reportou: com o zoom
+   do Chrome aumentado, "Send to order"/"New project" saíam da tela sem jeito
+   de alcançar. */
 #po-proj-canvas-tools.po-proj-hud-tl {
   justify-content: space-between; gap: 0;
   /* Esta regra vem DEPOIS da de cima e e quem manda no padding — baixar so la
      em cima nao adiantava nada (2026-08-18). */
-  padding: 2px 12px; overflow: visible; flex-wrap: nowrap;
+  padding: 2px 12px; overflow-x: auto; overflow-y: visible; flex-wrap: nowrap;
 }
 #po-proj-canvas-tools .po-tb-group { padding: 0; min-width: 0; }
 #po-proj-canvas-tools .po-tb-sep { margin: 6px 2px; }
