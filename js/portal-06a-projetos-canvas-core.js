@@ -1683,47 +1683,89 @@ function clampFloorPointIntoRoom(slot, xMm, zMm) {
 // num módulo já insere no projeto e fecha o modal (mesmo comportamento do
 // clique na biblioteca lateral). Estado PRÓPRIO (não usa
 // projectSelectedFamilyId do dropdown da biblioteca, nem
-// selectedCategoryId/SubcategoryId da aba "Novo Orçamento") — mesma cascata
-// de sempre: família reescopa categoria, categoria reescopa subcategoria.
+// selectedCategoryId/SubcategoryId da aba "Novo Orçamento").
+//
+// CASCATA ESTILO PROMOB (Matt, 02/09, com prints do Promob de referência):
+// "tem as abas la em cima e quando clica na aba ela abre as abas de baixo
+// estilo cascata, nao mostra abas de outros enquanto uma esta aberta". Antes
+// as 3 fileiras (família/categoria/subcategoria) ficavam SEMPRE visíveis,
+// mesmo sem nada escolhido — sem família selecionada, a fileira de categoria
+// já mostrava a UNIÃO de categorias do catálogo inteiro (e subcategoria, a
+// união de tudo também), virando uma parede de pills antes mesmo do usuário
+// decidir por onde começar. Agora cada fileira só aparece DEPOIS que a de
+// cima foi escolhida, e só com as opções daquele recorte (nunca a união de
+// "todo mundo") — categoria fica escondida até escolher família, subcategoria
+// até escolher categoria. Escolher uma família de novo fecha as duas de
+// baixo por completo (reset explícito), pra nunca sobrar aba de outra
+// família aberta ao mesmo tempo.
 let projSearchModalFamilyId = '';
 let projSearchModalCategoryId = '';
 let projSearchModalSubcategoryId = '';
 
 function renderProjectSearchModalFilterBars() {
+  const categoryEl = document.getElementById('po-proj-search-filter-category');
+  const subcategoryEl = document.getElementById('po-proj-search-filter-subcategory');
+
   const familiesInScope = familiesCacheList.filter((f) => allModules.some((m) => m.family_id === f.id));
   if (projSearchModalFamilyId && !familiesInScope.some((f) => f.id === projSearchModalFamilyId)) {
     projSearchModalFamilyId = '';
   }
-  const categoriesInScope = categoriesCacheList.filter((c) => allModules.some((m) =>
-    m.category_id === c.id && (!projSearchModalFamilyId || m.family_id === projSearchModalFamilyId)
-  ));
+  renderTabBar('po-proj-search-filter-family', familiesInScope, projSearchModalFamilyId, (id) => {
+    projSearchModalFamilyId = id;
+    // Reset explícito (não só "se ficou inválida") — trocar de família
+    // sempre fecha categoria/subcategoria, mesmo se por coincidência a
+    // mesma categoria também existisse na família nova.
+    projSearchModalCategoryId = '';
+    projSearchModalSubcategoryId = '';
+    renderProjectSearchModalFilterBars();
+    renderProjectSearchModalGrid();
+  });
+
+  // Categoria: só existe (e só é calculada) depois de escolher a família —
+  // sem família, a fileira fica escondida em vez de mostrar a união de
+  // categorias de todas as famílias.
+  const categoriesInScope = projSearchModalFamilyId
+    ? categoriesCacheList.filter((c) => allModules.some((m) => m.category_id === c.id && m.family_id === projSearchModalFamilyId))
+    : [];
   if (projSearchModalCategoryId && !categoriesInScope.some((c) => c.id === projSearchModalCategoryId)) {
     projSearchModalCategoryId = '';
   }
-  const subcategoriesInScope = subcategoriesCacheList.filter((s) => allModules.some((m) =>
-    m.subcategory_id === s.id
-    && (!projSearchModalFamilyId || m.family_id === projSearchModalFamilyId)
-    && (!projSearchModalCategoryId || m.category_id === projSearchModalCategoryId)
-  ));
+  const showCategoryRow = !!projSearchModalFamilyId && categoriesInScope.length > 0;
+  if (categoryEl) categoryEl.style.display = showCategoryRow ? '' : 'none';
+  if (showCategoryRow) {
+    renderTabBar('po-proj-search-filter-category', categoriesInScope, projSearchModalCategoryId, (id) => {
+      projSearchModalCategoryId = id;
+      projSearchModalSubcategoryId = '';
+      renderProjectSearchModalFilterBars();
+      renderProjectSearchModalGrid();
+    });
+  } else if (categoryEl) {
+    categoryEl.innerHTML = '';
+  }
+
+  // Subcategoria: mesma lógica, um degrau abaixo — só existe depois de
+  // escolher a categoria.
+  const subcategoriesInScope = projSearchModalCategoryId
+    ? subcategoriesCacheList.filter((s) => allModules.some((m) =>
+        m.subcategory_id === s.id
+        && m.family_id === projSearchModalFamilyId
+        && m.category_id === projSearchModalCategoryId
+      ))
+    : [];
   if (projSearchModalSubcategoryId && !subcategoriesInScope.some((s) => s.id === projSearchModalSubcategoryId)) {
     projSearchModalSubcategoryId = '';
   }
-  renderTabBar('po-proj-search-filter-family', familiesInScope, projSearchModalFamilyId, (id) => {
-    projSearchModalFamilyId = id;
-    renderProjectSearchModalFilterBars();
-    renderProjectSearchModalGrid();
-  });
-  renderTabBar('po-proj-search-filter-category', categoriesInScope, projSearchModalCategoryId, (id) => {
-    projSearchModalCategoryId = id;
-    projSearchModalSubcategoryId = '';
-    renderProjectSearchModalFilterBars();
-    renderProjectSearchModalGrid();
-  });
-  renderTabBar('po-proj-search-filter-subcategory', subcategoriesInScope, projSearchModalSubcategoryId, (id) => {
-    projSearchModalSubcategoryId = id;
-    renderProjectSearchModalFilterBars();
-    renderProjectSearchModalGrid();
-  });
+  const showSubcategoryRow = !!projSearchModalCategoryId && subcategoriesInScope.length > 0;
+  if (subcategoryEl) subcategoryEl.style.display = showSubcategoryRow ? '' : 'none';
+  if (showSubcategoryRow) {
+    renderTabBar('po-proj-search-filter-subcategory', subcategoriesInScope, projSearchModalSubcategoryId, (id) => {
+      projSearchModalSubcategoryId = id;
+      renderProjectSearchModalFilterBars();
+      renderProjectSearchModalGrid();
+    });
+  } else if (subcategoryEl) {
+    subcategoryEl.innerHTML = '';
+  }
 }
 
 function renderProjectSearchModalGrid() {
