@@ -392,23 +392,18 @@ async function loadProjectFavoritesList() {
     card.className = 'po-myproj-card';
     const slots = Array.isArray(proj.slots) ? proj.slots : [];
     const dateStr = proj.updated_at ? new Date(proj.updated_at).toLocaleString() : '—';
+    // UMA imagem só por card (Matt, 02/09: "quero so a foto renderizada ou
+    // se nao tiver render a imagem 3d centralizada do ambiente, nao duas
+    // imagens como esta mostrando agora") — antes, com as duas presentes,
+    // o card dividia a largura ao meio (3D | IA) lado a lado; agora prioriza
+    // a foto realista (ai_preview_url) e só cai pro 3D (thumbnail_data_url)
+    // se não tiver render nenhum ainda. .po-myproj-card-image já centraliza
+    // via object-fit — a "imagem-split"/badge 3D-IA saiu de uso.
+    const cardImageSrc = proj.ai_preview_url || proj.thumbnail_data_url;
     let imageHtml;
-    if (proj.thumbnail_data_url && proj.ai_preview_url) {
+    if (cardImageSrc) {
       imageHtml = `
-        <div class="po-myproj-card-image-split">
-          <div class="po-myproj-card-image-half">
-            <img src="${proj.thumbnail_data_url}" alt="" class="po-myproj-card-image" />
-            <span class="po-myproj-card-image-badge">3D</span>
-          </div>
-          <div class="po-myproj-card-image-half">
-            <img src="${proj.ai_preview_url}" alt="" class="po-myproj-card-image" />
-            <span class="po-myproj-card-image-badge">IA</span>
-          </div>
-        </div>
-        <div class="po-myproj-card-image-zoom-hint">🔍</div>`;
-    } else if (proj.thumbnail_data_url || proj.ai_preview_url) {
-      imageHtml = `
-        <img src="${proj.thumbnail_data_url || proj.ai_preview_url}" alt="" class="po-myproj-card-image" />
+        <img src="${cardImageSrc}" alt="" class="po-myproj-card-image" />
         <div class="po-myproj-card-image-zoom-hint">🔍</div>`;
     } else {
       imageHtml = `<div class="po-myproj-card-image-empty"></div>`;
@@ -422,6 +417,7 @@ async function loadProjectFavoritesList() {
         <div class="po-myproj-card-actions">
           <button type="button" class="po-proj-fav-load">${I18n.t('project.load_btn')}</button>
           <button type="button" class="secondary po-proj-fav-rename">${I18n.t('fav.rename_btn')}</button>
+          <button type="button" class="secondary po-proj-fav-duplicate">${I18n.t('fav.duplicate_btn')}</button>
           <button type="button" class="secondary po-proj-fav-share">${I18n.t('project.share_btn')}</button>
           <button type="button" class="secondary po-proj-fav-delete">${I18n.t('fav.delete_btn')}</button>
         </div>
@@ -449,6 +445,43 @@ async function loadProjectFavoritesList() {
       const { error: delErr } = await supabaseClient.from('user_projects').delete().eq('id', proj.id);
       if (delErr) { errorEl.textContent = delErr.message; errorEl.style.display = 'block'; return; }
       if (loadedProjectFavorite && loadedProjectFavorite.id === proj.id) { loadedProjectFavorite = null; refreshProjectFavoriteButtons(); }
+      loadProjectFavoritesList();
+    });
+    // Duplicar projeto (Matt, 02/09: "quero um botao de duplicar projeto,
+    // onde eu possa duplicar e trocar o nome do cliente, pra poder usar um
+    // projeto ja feito e agilizar meu processo para um outro cliente que
+    // quer algo parecido") — pergunta o nome NA HORA (não cria "cópia de X"
+    // pra depois renomear em 2 passos) e insere uma linha NOVA em
+    // user_projects com os mesmos dados. `proj` aqui já É a linha inteira
+    // que a lista carregou (BASE_COLS + as colunas opcionais que existirem
+    // no banco desta sessão) — não precisa buscar de novo no Supabase.
+    // client_user_id sempre currentUser.id (é sempre um projeto SEU sendo
+    // duplicado, "select own projects" não deixaria ver de outro dono
+    // mesmo que tentasse). share_code NUNCA copiado de propósito: tem
+    // índice ÚNICO (migration 147) — se o original já foi compartilhado,
+    // copiar o código quebraria o insert (ou pior, os dois projetos
+    // passariam a abrir pelo MESMO código de importação). O histórico de
+    // fotos realistas alternativas (project_photoreal_photos, migration
+    // 077) NÃO é duplicado — só a última (ai_preview_url) vai junto, que é
+    // a mesma foto que o card já estava mostrando.
+    card.querySelector('.po-proj-fav-duplicate').addEventListener('click', async () => {
+      const suggested = proj.name + I18n.t('fav.duplicate_name_suffix');
+      const newName = (prompt(I18n.t('fav.duplicate_name_prompt'), suggested) || '').trim();
+      if (!newName) return;
+      const dupPayload = {
+        client_user_id: currentUser.id,
+        name: newName,
+        slots: proj.slots,
+        wall_width_mm: proj.wall_width_mm,
+        wall_shape: proj.wall_shape,
+        wall_widths_mm: proj.wall_widths_mm,
+        ...(proj.wall_segments ? { wall_segments: proj.wall_segments } : {}),
+        ...(proj.thumbnail_data_url ? { thumbnail_data_url: proj.thumbnail_data_url } : {}),
+        ...(proj.ai_preview_url ? { ai_preview_url: proj.ai_preview_url } : {}),
+        ...(proj.cached_value_usd != null ? { cached_value_usd: proj.cached_value_usd } : {})
+      };
+      const { error: dupErr } = await supabaseClient.from('user_projects').insert(dupPayload);
+      if (dupErr) { errorEl.textContent = dupErr.message; errorEl.style.display = 'block'; return; }
       loadProjectFavoritesList();
     });
     listEl.appendChild(card);

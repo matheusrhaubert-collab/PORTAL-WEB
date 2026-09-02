@@ -2335,14 +2335,12 @@ header.po-topnav {
 .po-myproj-card-image-wrap { background: #ffffff; aspect-ratio: 1 / 1; overflow: hidden; position: relative; }
 .po-myproj-card-image { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
 .po-myproj-card-image-empty { width: 100%; height: 100%; background: var(--accent-light, #f2f0ea); }
-.po-myproj-card-image-split { display: flex; width: 100%; height: 100%; }
-.po-myproj-card-image-half { position: relative; width: 50%; height: 100%; }
-.po-myproj-card-image-half + .po-myproj-card-image-half { border-left: 1px solid rgba(0,0,0,0.08); }
-.po-myproj-card-image-badge {
-  position: absolute; bottom: 6px; left: 6px; z-index: 2;
-  background: rgba(0,0,0,0.55); color: #fff; font-size: 10px; font-weight: 700;
-  padding: 2px 6px; border-radius: 999px; pointer-events: none; letter-spacing: 0.02em;
-}
+/* (.po-myproj-card-image-split/-half/-badge — o card dividido em 3D | IA —
+   REMOVIDO 02/09 a pedido do Matt: "quero so a foto renderizada ou se nao
+   tiver render a imagem 3d centralizada do ambiente, nao duas imagens como
+   esta mostrando agora". O JS (portal-09) agora sempre manda 1 imagem só
+   pro card — ai_preview_url se tiver, senão thumbnail_data_url — e
+   .po-myproj-card-image (object-fit:cover) já centraliza sozinha.) */
 .po-myproj-card-image-zoom-hint {
   position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%;
   background: rgba(0,0,0,0.45); color: #fff; display: flex; align-items: center; justify-content: center;
