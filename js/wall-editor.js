@@ -67,6 +67,72 @@
     return m;
   }
 
+  // ------------------------------------------------------------------------
+  // UNIDADE DE MEDIDA (2026-09-03, bug relatado pelo usuário: "as paredes
+  // estao so em metros, nao estao respeitando a escolha do cliente" — na
+  // tela de Ajustar paredes). Antes, comprimento/espessura/pé-direito/
+  // rodapé eram sempre mm cru (rótulo "mm" cravado no HTML) e o resumo de
+  // perímetro era sempre metros cravado (" m" na própria chave de tradução)
+  // — nenhum dos dois olhava pro seletor global de unidade (po-unit-select,
+  // topo do portal: mm/cm/m/ft/in).
+  //
+  // Duplicado aqui (não chama formatDimension/parseDimensionInput de
+  // portal-01-core-catalogo.js) pelo mesmo motivo do fallback de tr() acima
+  // — este arquivo é "independente de propósito" (ver cabeçalho) e não pode
+  // depender de outro script já ter carregado. Mesmos fatores de conversão.
+  // Só que, diferente de lá, os <input> aqui continuam type="number" (não
+  // suportam fração de polegada tipo "8 1/2" — só decimal), então polegada
+  // aqui sai/entra em decimal ("8.5"), não fracionada.
+  const MM_PER_INCH_WE = 25.4;
+
+  function unidadeAtual() {
+    const sel = document.getElementById('po-unit-select');
+    return sel ? sel.value : 'mm';
+  }
+  function fatorMmWE(unidade) {
+    switch (unidade) {
+      case 'cm': return 10;
+      case 'm': return 1000;
+      case 'ft': return 304.8;
+      case 'in': return MM_PER_INCH_WE;
+      case 'mm':
+      default: return 1;
+    }
+  }
+  function unidadeAbrevWE(unidade) {
+    return unidade || 'mm';
+  }
+  // Meio milímetro decide se a parede fecha o canto — mesmo cuidado de
+  // formatMmSemPerder() em portal-01-core-catalogo.js: "10" sai inteiro,
+  // "10.5" não vira "11".
+  function formatMmSemPerderWE(mm) {
+    const n = Number(mm) || 0;
+    return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+  }
+  // mm -> número decimal pronto pro <input type="number"> na unidade atual.
+  function mmParaNumeroWE(mm, unidade) {
+    const fator = fatorMmWE(unidade);
+    if (fator === 1) return formatMmSemPerderWE(mm);
+    const casas = unidade === 'cm' ? 1 : 3;
+    return (Number(mm) / fator).toFixed(casas);
+  }
+  // O que o usuário digitou (na unidade atual) -> mm, pra guardar no
+  // segmento (que continua 100% mm por baixo, igual sempre foi).
+  function numeroParaMmWE(valorStr, unidade) {
+    const val = parseFloat(String(valorStr).replace(',', '.'));
+    if (isNaN(val)) return null;
+    return val * fatorMmWE(unidade);
+  }
+  // Passo do <input> (setinhas/scroll) na unidade atual, a partir do passo
+  // em mm de sempre — só pra não ficar um passo ridículo (ex.: "10" em
+  // metros seria 10000mm por clique).
+  function passoNaUnidadeWE(origStepMm, unidade) {
+    const fator = fatorMmWE(unidade);
+    if (fator === 1) return origStepMm;
+    const passo = origStepMm / fator;
+    return passo >= 1 ? Math.round(passo) : Number(passo.toFixed(3));
+  }
+
   function el(tag, attrs, pai) {
     const e = document.createElementNS(NS, tag);
     for (const k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) e.setAttribute(k, attrs[k]);
@@ -133,16 +199,16 @@
       '    <div class="po-wall-stage" id="po-wall-stage"></div>',
       '    <div class="po-wall-side">',
       '      <div class="po-wall-side-title" data-i18n="wall_editor.section_wall">Parede</div>',
-      '      <label><span data-i18n="wall_editor.length">Comprimento</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-comp" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.length">Comprimento</span> <span class="po-wall-un" id="po-wall-comp-un">mm</span><input type="number" id="po-wall-comp" step="10"></label>',
       '      <label><span data-i18n="wall_editor.angle">&Acirc;ngulo</span> <span class="po-wall-un">&deg;</span><input type="number" id="po-wall-ang" step="1"></label>',
-      '      <label><span data-i18n="wall_editor.thickness">Espessura</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
-      '      <label><span data-i18n="wall_editor.wall_height">Altura desta parede</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.thickness">Espessura</span> <span class="po-wall-un" id="po-wall-esp-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.wall_height">Altura desta parede</span> <span class="po-wall-un" id="po-wall-pd-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
       '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_drag"></p>',
       '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_disconnect"></p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
       '      <div class="po-wall-side-title" style="margin-top:6px;" data-i18n="wall_editor.section_room">Ambiente</div>',
-      '      <label><span data-i18n="wall_editor.ceiling">P&eacute;-direito</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-teto" step="10"></label>',
-      '      <label><span data-i18n="wall_editor.baseboard">Rodap&eacute;</span> <span class="po-wall-un">mm</span><input type="number" id="po-wall-rodape" step="5"></label>',
+      '      <label><span data-i18n="wall_editor.ceiling">P&eacute;-direito</span> <span class="po-wall-un" id="po-wall-teto-un">mm</span><input type="number" id="po-wall-teto" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.baseboard">Rodap&eacute;</span> <span class="po-wall-un" id="po-wall-rodape-un">mm</span><input type="number" id="po-wall-rodape" step="5"></label>',
       '    </div>',
       '  </div>',
       '  <div class="po-wall-footer">',
@@ -174,12 +240,17 @@
     ['po-wall-teto', 'po-wall-rodape'].forEach((id) => {
       m.querySelector('#' + id).addEventListener('change', () => {
         if (!estado) return;
-        const v = Number(m.querySelector('#' + id).value);
+        const v = numeroParaMmWE(m.querySelector('#' + id).value, unidadeAtual());
         if (!(v >= 0)) return;
         if (id === 'po-wall-teto') estado.ceilingMm = v; else estado.baseboardMm = v;
         desenha();
       });
     });
+    // Unidade global mudou (po-unit-select, topo do portal) com o editor
+    // aberto — reformata os campos/rótulos na hora, sem esperar o próximo
+    // clique/arraste (que já chamam desenha() de qualquer forma).
+    const unitSelectEl = document.getElementById('po-unit-select');
+    if (unitSelectEl) unitSelectEl.addEventListener('change', () => { if (estado) desenha(); });
     return m;
   }
 
@@ -310,17 +381,18 @@
     const s = estado && estado.segs[estado.sel];
     if (!s) return;
     const q = (id) => document.getElementById(id);
-    const comp = Math.max(MIN_COMPRIMENTO, Number(q('po-wall-comp').value) || comprimentoDe(s));
+    const unidade = unidadeAtual();
+    const comp = Math.max(MIN_COMPRIMENTO, numeroParaMmWE(q('po-wall-comp').value, unidade) || comprimentoDe(s));
     const ang = Number(q('po-wall-ang').value);
     const p = pontaBPor(s, comp, isFinite(ang) ? ang : anguloDe(s));
     const oldBx = s.bx, oldBz = s.bz;
     s.bx = Math.round(p.x); s.bz = Math.round(p.z);
     arrastaCantoJunto(estado.sel, oldBx, oldBz, s.bx, s.bz);
-    s.thicknessMm = Math.max(20, Number(q('po-wall-esp').value) || ESPESSURA_PADRAO);
+    s.thicknessMm = Math.max(20, numeroParaMmWE(q('po-wall-esp').value, unidade) || ESPESSURA_PADRAO);
     // null = "segue o pé-direito do ambiente". Guardar o número igual ao do
     // ambiente congelaria esta parede: mudar o pé-direito depois deixaria ela
     // pra trás sem ninguém entender por quê.
-    const pd = Number(q('po-wall-pd').value);
+    const pd = numeroParaMmWE(q('po-wall-pd').value, unidade);
     s.ceilingMm = (pd > 0 && pd !== estado.ceilingMm) ? pd : null;
     desenha();
   }
@@ -349,6 +421,7 @@
     }, stage);
     const K = Math.max(x1 - x0, z1 - z0);
     const fino = K / 500;
+    const unidadeDesenho = unidadeAtual();
 
     // Malha de 1 m — a referência de escala. Sem ela o desenho não tem tamanho.
     const g = el('g', { 'pointer-events': 'none' }, svg);
@@ -411,7 +484,7 @@
         'text-anchor': 'middle', 'font-size': K / 34, fill: sel ? '#b9761a' : '#8d8375',
         'font-family': 'sans-serif', 'pointer-events': 'none'
       }, svg);
-      t.textContent = Math.round(comp);
+      t.textContent = mmParaNumeroWE(comp, unidadeDesenho);
 
       // Alças das pontas — só na parede selecionada, pra não virar um campo de
       // bolinhas sobre o desenho.
@@ -425,29 +498,50 @@
       });
     });
 
-    // Painel lateral
+    // Painel lateral — valores na unidade escolhida pelo cliente
+    // (po-unit-select, topo do portal), não mais mm/metro cravados.
     const s = estado.segs[estado.sel];
     const q = (id) => document.getElementById(id);
+    const unidade = unidadeDesenho;
+    const passoComp = passoNaUnidadeWE(10, unidade);
+    const passoEsp = passoNaUnidadeWE(10, unidade);
+    const passoRodape = passoNaUnidadeWE(5, unidade);
     if (s) {
-      q('po-wall-comp').value = Math.round(comprimentoDe(s));
+      q('po-wall-comp').value = mmParaNumeroWE(comprimentoDe(s), unidade);
+      q('po-wall-comp').step = passoComp;
       q('po-wall-ang').value = anguloDe(s);
-      q('po-wall-esp').value = Number(s.thicknessMm) || ESPESSURA_PADRAO;
+      q('po-wall-esp').value = mmParaNumeroWE(Number(s.thicknessMm) || ESPESSURA_PADRAO, unidade);
+      q('po-wall-esp').step = passoEsp;
       // Altura SEMPRE preenchida (2026-08-13, pedido do Matt: "ao clicar na
       // parede tenho acesso aos tamanhos de cada uma, com altura também").
       // Antes ficava vazia quando a parede seguia o pé-direito do ambiente, e
       // "vazio" não é uma medida — quem abre quer LER o número, não deduzir.
       // Continua saindo como null quando é igual ao do ambiente, pra parede
       // que não foi customizada acompanhar mudanças do pé-direito.
-      q('po-wall-pd').value = s.ceilingMm || estado.ceilingMm || '';
+      const alturaMm = s.ceilingMm || estado.ceilingMm || '';
+      q('po-wall-pd').value = alturaMm === '' ? '' : mmParaNumeroWE(alturaMm, unidade);
+      q('po-wall-pd').step = passoComp;
     }
-    if (q('po-wall-teto')) q('po-wall-teto').value = estado.ceilingMm || '';
-    if (q('po-wall-rodape')) q('po-wall-rodape').value = estado.baseboardMm || 0;
+    if (q('po-wall-teto')) {
+      q('po-wall-teto').value = estado.ceilingMm ? mmParaNumeroWE(estado.ceilingMm, unidade) : '';
+      q('po-wall-teto').step = passoComp;
+    }
+    if (q('po-wall-rodape')) {
+      q('po-wall-rodape').value = mmParaNumeroWE(estado.baseboardMm || 0, unidade);
+      q('po-wall-rodape').step = passoRodape;
+    }
+    // Rótulos de unidade ("mm"/"cm"/"m"/"ft"/"in") ao lado de cada campo.
+    ['po-wall-comp-un', 'po-wall-esp-un', 'po-wall-pd-un', 'po-wall-teto-un', 'po-wall-rodape-un'].forEach((id) => {
+      const rotulo = q(id);
+      if (rotulo) rotulo.textContent = unidadeAbrevWE(unidade);
+    });
     const resumo = q('po-wall-resumo');
     if (resumo) {
       const total = estado.segs.reduce((a, x) => a + comprimentoDe(x), 0);
       resumo.textContent = tr('wall_editor.summary', {
         n: estado.segs.length,
-        m: (Math.round(total) / 1000).toFixed(2)
+        m: mmParaNumeroWE(total, unidade),
+        u: unidadeAbrevWE(unidade)
       });
     }
   }
