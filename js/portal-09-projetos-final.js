@@ -928,12 +928,29 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     refreshProjectWallTabs();
 
     // Só agora dá pra clampar wall_index com segurança (já sabemos quantas
-    // paredes a forma restaurada tem) — módulo apontando pra uma parede que
-    // não existe mais nessa forma (ex.: salvo em C/U, restaurado depois de
-    // já ter voltado pra 'single' manualmente) cai na primeira.
+    // paredes o ambiente restaurado tem de verdade) — módulo apontando pra
+    // uma parede que não existe mais cai na primeira.
+    //
+    // BUG CORRIGIDO (2026-09-03, relato do usuário: "salvei um projeto bem
+    // grande com 3 paredes de moveis, ao reabri-lo... todos os modulos das
+    // outras paredes foram parar na primeira parede"). Usava
+    // restoredRoleCount — PROJECT_WALL_ROLES_BY_SHAPE[restoredShape].length,
+    // do sistema ANTIGO de formas fixas (single/double/U). Desde a "Ajustar
+    // paredes" (2026-08-13) o ambiente é uma PLANTA DESENHADA
+    // (projectWallSegments) e wall_shape fica 'single' PRA SEMPRE em
+    // qualquer projeto novo — restoredRoleCount vinha sempre 1, e todo
+    // módulo de wall_index >= 1 (ou seja, de qualquer parede que não a
+    // primeira) era jogado de volta pra 0 aqui, mesmo com o dado certo já
+    // salvo no banco. Mesma classe de bug já corrigida em
+    // getProjectWallCount() (ver comentário lá, "QUANTAS PAREDES O AMBIENTE
+    // TEM, DE VERDADE") — esta chamada específica tinha ficado de fora
+    // daquela auditoria. getProjectWallCount() já lê projectWallSegments
+    // (atribuído 3 linhas acima) quando existe, senão cai no mesmo legado
+    // de antes — projeto salvo no modelo velho continua funcionando igual.
+    const restoredWallCount = getProjectWallCount();
     restored.forEach((slot) => {
       if (isFloorSlot(slot)) return; // ilha não pertence a parede nenhuma
-      if (slot.wall_index < 0 || slot.wall_index >= restoredRoleCount) slot.wall_index = 0;
+      if (slot.wall_index < 0 || slot.wall_index >= restoredWallCount) slot.wall_index = 0;
     });
 
     projectSlots = restored;

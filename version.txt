@@ -1,3 +1,3 @@
-﻿data: 2026-09-02 22:49:15
-cache: 202609022249
-mensagem: Portal: ajustes de 2026-09-02 22:49:15
+﻿data: 2026-09-02 23:01:18
+cache: 202609022301
+mensagem: Portal: ajustes de 2026-09-02 23:01:18

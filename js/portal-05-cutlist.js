@@ -87,11 +87,14 @@ function touchLastActive() {
 function canUseCuttingList() {
   if (!currentUserProfile) return false;
   if (currentUserProfile.role === 'contractor' || currentUserProfile.role === 'administrador') return true;
-  // Dealer (lojista) só vê o Plano de Corte quando o toggle do cabeçalho
-  // está em modo "Legno" (pedido do usuário 2026-08-02: "quando to no
-  // portal legno, nao dealer, pode deixar o cutting list aparecendo").
-  // Em modo "Dealer" a aba continua escondida (portal do cliente final).
-  if (currentUserProfile.role === 'lojista') return portalViewMode === 'legno';
+  // Dealer (lojista) — migration 072 (2026-08-02) só liberava com o toggle
+  // do cabeçalho em modo "Legno". Toggle DESABILITADO (2026-09-03, pedido
+  // do usuário: "essa troca que pedi de um pra outro nao faz mais sentido,
+  // pode desabilitar e coloca o cuting list aberto pro dealer") — Plano de
+  // Corte fica sempre visível pro dealer agora, sem depender de
+  // portalViewMode (ver loadPortalViewMode/refreshDealerUiVisibility
+  // abaixo, que travaram portalViewMode em 'dealer' e escondem o toggle).
+  if (currentUserProfile.role === 'lojista') return true;
   return false;
 }
 
@@ -176,15 +179,16 @@ function getDisplayPriceRatioOnly(saleValue) {
   return applyPricingExtras(withMargin, tableValue, margemExtrasPctOnly);
 }
 
-// Preenche o campo do menu de Configurações com a margem já salva (chamada
-// depois de ensureOwnUserProfile, em showLoggedIn).
-// Vendedor não tem margem própria pra editar (só enxerga o preço já com a
-// margem do dealer aplicada) — a linha inteira de "Margem geral de
-// revenda" some das Configurações pra esse perfil (migration 149, "vendedor
-// nao tem acesso aos outros perfis").
+// Linha antiga de "Margem geral de revenda" nas Configurações — ESCONDIDA
+// pra TODO perfil (migration 151, 2026-09-03, pedido do usuário: "essa
+// margem tem que tirar fora"), substituída pelo campo "Margem bruta (%)"
+// dentro do modal Margens (#po-margins-btn, isDealer()-only). Antes só
+// escondia pra vendedor (isSellerAccount(), migration 149) — o campo
+// #po-resale-margin-input continua existindo e funcionando por baixo
+// (mesma coluna resale_margin_pct), só não tem mais UI própria aqui.
 function refreshResaleMarginRowVisibility() {
   const row = document.getElementById('po-resale-margin-row');
-  if (row) row.style.display = isSellerAccount() ? 'none' : '';
+  if (row) row.style.display = 'none';
 }
 
 function refreshResaleMarginInput() {
@@ -343,13 +347,16 @@ function canGenerateProposal() {
   return role === 'lojista' || role === 'contractor' || role === 'administrador';
 }
 
-// Só dealer pode ficar em modo 'dealer' — qualquer outro perfil (inclusive
-// se o localStorage tiver sobrado 'dealer' de uma sessão anterior noutra
-// conta no mesmo navegador) sempre cai em 'legno'.
+// Toggle Legno/Dealer DESABILITADO (2026-09-03, pedido do usuário: "essa
+// troca que pedi de um pra outro nao faz mais sentido, pode desabilitar...
+// e tira opcao da legno") — dealer (isDealer()) fica SEMPRE travado em
+// modo 'dealer' (própria marca), sem opção de trocar pra 'legno' e sem ler
+// mais o localStorage (setPortalViewMode/os botões continuam no código,
+// só ficam inalcançáveis — o toggle inteiro está escondido, ver
+// refreshDealerUiVisibility). Qualquer outro perfil nunca teve o toggle,
+// continua em 'legno' de sempre.
 function loadPortalViewMode() {
-  if (!isDealer()) { portalViewMode = 'legno'; return; }
-  const saved = localStorage.getItem(PORTAL_VIEW_MODE_STORAGE_KEY);
-  portalViewMode = saved === 'dealer' ? 'dealer' : 'legno';
+  portalViewMode = isDealer() ? 'dealer' : 'legno';
 }
 
 function setPortalViewMode(mode) {
@@ -415,7 +422,10 @@ function refreshDealerUiVisibility() {
   const margensBtnEl = document.getElementById('po-margins-btn');
   const dealer = isDealer();
   const canBrand = canGenerateProposal();
-  if (toggleEl) toggleEl.style.display = dealer ? '' : 'none';
+  // Toggle Legno/Dealer sempre escondido (ver loadPortalViewMode acima) —
+  // dealer fica travado em modo 'dealer', não precisa mais de UI pra
+  // trocar.
+  if (toggleEl) toggleEl.style.display = 'none';
   if (logoRowEl) logoRowEl.style.display = canBrand ? '' : 'none';
   if (storeInfoRowEl) storeInfoRowEl.style.display = canBrand ? '' : 'none';
   if (teamRowEl) teamRowEl.style.display = dealer ? '' : 'none';
