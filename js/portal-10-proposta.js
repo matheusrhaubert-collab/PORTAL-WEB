@@ -135,25 +135,76 @@ function proposalWallList(order, items) {
   const wallCount = Math.max(segs ? segs.length : 0, roles ? roles.length : 0, maxItemWallIndex + 1);
   if (wallCount <= 0) return [];
 
+  // Centro do ambiente (só usado pela fonte 1) — mesma conta de
+  // projectWallsCentroM (portal-08-projetos-paredes.js), em mm em vez de
+  // metros: decide de que lado de cada segmento fica "dentro".
+  let centroX = 0, centroZ = 0;
+  if (segs && segs.length) {
+    let sx = 0, sz = 0, n = 0;
+    segs.forEach((s) => { sx += Number(s.ax || 0) + Number(s.bx || 0); sz += Number(s.az || 0) + Number(s.bz || 0); n += 2; });
+    if (n) { centroX = sx / n; centroZ = sz / n; }
+  }
+  const mainIdx = roles ? roles.indexOf('main') : -1;
+  const mainWidthMm = (roles && widths) ? (Number(widths[mainIdx >= 0 ? mainIdx : 0]) || 3000) : 3000;
+
+  // Cursor de encadeamento — só a fonte 3 (parede sem geometria nenhuma,
+  // nem desenhada nem legada) usa: continua RETO a partir de onde a última
+  // parede COM geometria de verdade terminou (o "menos errado" possível
+  // sem nenhuma informação de ângulo). Sem nenhuma parede com geometria
+  // antes dela, começa na origem olhando pro eixo +X.
+  let cursorX = 0, cursorZ = 0, cursorDirX = 1, cursorDirZ = 0;
+
   const all = [];
   for (let i = 0; i < wallCount; i++) {
     let widthMm = 0;
+    let originXMm, originZMm, alongDirX, alongDirZ, intoDirX, intoDirZ;
+    let thicknessMm = 150;
     const seg = segs && segs[i];
+    const role = roles && roles[i];
+
     if (seg) {
-      widthMm = Math.hypot(Number(seg.bx || 0) - Number(seg.ax || 0), Number(seg.bz || 0) - Number(seg.az || 0));
-    } else if (widths && widths[i]) {
-      widthMm = Number(widths[i]) || 0;
-    }
-    if (!(widthMm > 0)) {
-      // Sem parede desenhada nem largura legada pra esta posição (fonte 3
-      // acima) — usa o alcance real dos módulos, com uma folga de 150mm.
+      // FONTE 1 — planta desenhada de verdade (migration 153). Mesma
+      // fórmula de projectWallSegmentGeometry: "dentro" é o lado da normal
+      // que aponta pro centro do ambiente; inverterLado (botão ⇋ do
+      // editor) vira por cima disso.
+      const dx = Number(seg.bx || 0) - Number(seg.ax || 0);
+      const dz = Number(seg.bz || 0) - Number(seg.az || 0);
+      widthMm = Math.hypot(dx, dz) || 1;
+      alongDirX = dx / widthMm; alongDirZ = dz / widthMm;
+      let ix = -alongDirZ, iz = alongDirX;
+      const mx = (Number(seg.ax || 0) + Number(seg.bx || 0)) / 2, mz = (Number(seg.az || 0) + Number(seg.bz || 0)) / 2;
+      if ((centroX - mx) * ix + (centroZ - mz) * iz < -1e-6) { ix = -ix; iz = -iz; }
+      if (seg.inverterLado) { ix = -ix; iz = -iz; }
+      intoDirX = ix; intoDirZ = iz;
+      originXMm = Number(seg.ax || 0); originZMm = Number(seg.az || 0);
+      thicknessMm = Number(seg.thicknessMm) || 150;
+      cursorX = Number(seg.bx || 0); cursorZ = Number(seg.bz || 0); cursorDirX = alongDirX; cursorDirZ = alongDirZ;
+    } else if (role) {
+      // FONTE 2 — forma fixa legada (single/double/U, sempre 90°). Mesma
+      // fórmula do ramo sem segmentos de getProjectWallGeometry.
+      widthMm = (widths && widths[i]) ? Number(widths[i]) : 3000;
+      if (role === 'left') { originXMm = -mainWidthMm / 2; originZMm = 0; alongDirX = 0; alongDirZ = 1; intoDirX = 1; intoDirZ = 0; }
+      else if (role === 'right') { originXMm = mainWidthMm / 2; originZMm = 0; alongDirX = 0; alongDirZ = 1; intoDirX = -1; intoDirZ = 0; }
+      else { originXMm = -mainWidthMm / 2; originZMm = 0; alongDirX = 1; alongDirZ = 0; intoDirX = 0; intoDirZ = 1; }
+      cursorX = originXMm + alongDirX * widthMm; cursorZ = originZMm + alongDirZ * widthMm;
+      cursorDirX = alongDirX; cursorDirZ = alongDirZ;
+    } else {
+      // FONTE 3 — nem planta desenhada nem forma legada pra esta posição
+      // (pedido enviado ENTRE a planta desenhada nascer e a migration 153
+      // existir — o caso que motivou este ajuste). Largura vem do alcance
+      // real dos módulos, com uma folga de 150mm.
       const reach = proposalItemsOnWall(items, i).reduce((max, it) => {
         const p = it.project_placement;
         return Math.max(max, Number(p.x_mm || 0) + Number(it.width_mm || 0));
       }, 0);
       widthMm = reach > 0 ? reach + 150 : 3000;
+      originXMm = cursorX; originZMm = cursorZ;
+      alongDirX = cursorDirX; alongDirZ = cursorDirZ;
+      intoDirX = -alongDirZ; intoDirZ = alongDirX;
+      cursorX = originXMm + alongDirX * widthMm; cursorZ = originZMm + alongDirZ * widthMm;
     }
-    all.push({ wallIndex: i, widthMm });
+
+    all.push({ wallIndex: i, widthMm, originXMm, originZMm, alongDirX, alongDirZ, intoDirX, intoDirZ, thicknessMm });
   }
   const withItems = all.filter((w) => proposalItemsOnWall(items, w.wallIndex).length > 0);
   withItems.forEach((w, i) => { w.displayIndex = i + 1; });
@@ -593,7 +644,8 @@ async function generateOrderProposalPDF(order, items) {
     const hasLayout = proposalHasLayoutData(order, items);
     if (hasLayout && walls.length > 0) {
       newPage(I18n.t('proposal.elevations_section'));
-      walls.forEach((wall, idx) => {
+      for (let idx = 0; idx < walls.length; idx++) {
+        const wall = walls[idx];
         // 1 PAREDE = 1 PÁGINA (2026-09-04, bug relatado pelo usuário:
         // "muito amontuado os valores sem visibilidade, coisa passando pra
         // fora da pagina") — a altura de uma parede não é fixa (depende de
@@ -602,17 +654,17 @@ async function generateOrderProposalPDF(order, items) {
         // newPage() garante a folha inteira em branco pra cada parede,
         // sempre.
         if (idx > 0) newPage(I18n.t('proposal.elevations_section'));
-        y = proposalDrawElevation(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
+        y = await proposalDrawElevation(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
         y += 10;
-      });
+      }
 
+      // PLANTA BAIXA — UM AMBIENTE SÓ (2026-09-04, "nao tem a principla que
+      // e a planta baixa em paralelo de todo ambiente") — 1 página, 1
+      // desenho, paredes conectadas nos cantos de verdade (ver comentário
+      // grande em proposalDrawUnifiedFloorPlan).
       newPage(I18n.t('proposal.top_view_section'));
-      walls.forEach((wall, idx) => {
-        // Idem — ver comentário grande acima, no laço das elevações.
-        if (idx > 0) newPage(I18n.t('proposal.top_view_section'));
-        y = proposalDrawTopView(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
-        y += 10;
-      });
+      const floorPlanMaxH = pageHeight - y - PROPOSAL_MARGIN_MM - 4;
+      proposalDrawUnifiedFloorPlan(doc, walls, items, PROPOSAL_MARGIN_MM, y + 4, contentWidth, floorPlanMaxH, pdfUnit);
     } else {
       ensureSpace(20);
       proposalSectionHeader(doc, I18n.t('proposal.elevations_section'), PROPOSAL_MARGIN_MM, y, contentWidth); y += 8;
@@ -742,7 +794,7 @@ async function generateOrderProposalPDF(order, items) {
 // numerado (cross-reference com a lista) e cotas de verdade FORA da peça:
 // altura à direita de cada módulo, largura numa cota corrida embaixo de
 // toda a parede (segmentada por módulo) mais uma cota total por baixo.
-function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
+async function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
   const wallHeightMm = Math.max(2400, ...wallItems.map((it) => Number(it.project_placement.floor_height_mm || 0) + Number(it.height_mm || 0)), 0);
   // Prioriza ocupar a largura da folha inteira (pedido do Matt, 03/09:
   // "pegam o floor plan todo, preencher toda a folha") — antes a escala
@@ -783,12 +835,20 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
   });
   proposalDimAssignColumns(elevEntries, PROPOSAL_MARGIN_MM + contentWidth - 2);
 
-  elevEntries.forEach((e) => {
+  for (const e of elevEntries) {
     const { it, rectX, rectY, rectW, rectH, iH } = e;
     doc.setFillColor.apply(doc, PROPOSAL_COLOR_CARD_FILL);
     doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
     doc.setLineWidth(0.25);
     doc.roundedRect(rectX, rectY, rectW, rectH, 0.6, 0.6, 'FD');
+
+    // Miniatura real do módulo (ver comentário grande acima) — só se couber
+    // um mínimo visível (peça de filete/painel fino não ganha foto, ficaria
+    // ilegível espremida; continua só a cor de fundo).
+    if (it.thumbnail_data_url && rectW > 6 && rectH > 6) {
+      const iconMeta = await proposalImageMeta(it.thumbnail_data_url);
+      if (iconMeta) proposalFitImageCentered(doc, iconMeta, rectX + 0.8, rectY + 0.8, rectW - 1.6, rectH - 1.6);
+    }
 
     if (it._num) proposalNumberBadge(doc, rectX + 3, rectY + 3, 2, it._num);
 
@@ -798,7 +858,7 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
     proposalExtLineH(doc, rectY, rectX + rectW, e.dimAnchorX + 0.7);
     proposalExtLineH(doc, rectY + rectH, rectX + rectW, e.dimAnchorX + 0.7);
     proposalDimSegmentV(doc, e.dimAnchorX, rectY, rectY + rectH, formatDimension(iH, pdfUnit));
-  });
+  }
 
   // Cota de largura corrida embaixo de toda a parede, segmentada nos
   // limites de cada módulo (padrão de desenho de marcenaria) — empilha
@@ -825,110 +885,138 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
   return totalDimY + 4;
 }
 
-// Planta baixa ESQUEMÁTICA: cada parede vira uma tira reta própria (não a
-// geometria de canto real do 3D) — o eixo vertical da tira é a
-// profundidade (depth_mm) de cada módulo em vez da altura. Mesma lógica de
-// selo numerado + cotas de verdade da elevação: largura corrida embaixo,
-// profundidade de cada módulo do lado de fora (direita). Ver comentário
-// grande no topo do arquivo sobre esta simplificação deliberada.
+// PLANTA BAIXA — UM AMBIENTE SÓ (2026-09-04, pedido do usuário: "nao tem a
+// principla que e a planta baixa em paralelo de todo ambiente") — antes
+// cada parede virava uma TIRA RETA separada, empilhada solta na página,
+// sem canto nenhum entre elas; agora é UM desenho só, com as paredes na
+// posição/ângulo de VERDADE (mesma geometria de proposalWallList — planta
+// desenhada quando existe, forma fixa legada senão) e os módulos
+// desenhados no lugar certo do mundo, encostados no canto de verdade —
+// exatamente como a Vista de Canto do editor mostra.
 //
 // Armário de PAREDE (superior — floor_height_mm alto, mora acima da
-// bancada) ocupa a MESMA faixa de largura que o que fica embaixo dele: os
-// dois iam pro mesmo desenho e a caixa/selo de um ficava em cima do outro
-// (relato do Matt, 03/09: números "2 9" e "15 16" grudados). Pedido dele
-// depois de eu perguntar se cortava os de parede da planta: "pode colocar
-// eles, e separa as linhas de cotas pra nao ficarem uma em cima da outra"
-// — então continuam aparecendo, só em duas tiras empilhadas (parede em
-// cima, tracejada e sem preenchimento pra não competir visualmente com a
-// peça "de verdade"; base/torre embaixo, cheia como sempre foi).
+// bancada) ocupa a MESMA área de piso que o que fica embaixo dele — é
+// fisicamente assim (ele projeta pra baixo em cima do móvel de base). Vira
+// contorno TRACEJADO por cima do móvel de base cheio, convenção normal de
+// planta baixa de verdade pra "isto aqui está por cima, não do lado".
 const PROPOSAL_WALL_CABINET_HEIGHT_MM = 600;
 
-function proposalDrawTopView(doc, wall, wallItems, y, contentWidth, pdfUnit) {
-  const upperItems = wallItems.filter((it) => Number(it.project_placement.floor_height_mm || 0) > PROPOSAL_WALL_CABINET_HEIGHT_MM);
-  const baseItems = wallItems.filter((it) => Number(it.project_placement.floor_height_mm || 0) <= PROPOSAL_WALL_CABINET_HEIGHT_MM);
+// Caixa delimitadora do ambiente inteiro, em mm de mundo — pontas de TODAS
+// as paredes + o alcance dos módulos pra dentro do ambiente (senão um
+// módulo fundo cortaria fora do desenho). Devolve null sem parede nenhuma
+// (hasLayout já filtra isso antes de chamar, mas fica a prova de bala).
+const PROPOSAL_ROOM_MARGIN_MM = 220;
+function proposalRoomBoundsMm(walls, items) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  const consider = (x, z) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); };
+  (walls || []).forEach((w) => {
+    consider(w.originXMm, w.originZMm);
+    const bx = w.originXMm + w.alongDirX * w.widthMm, bz = w.originZMm + w.alongDirZ * w.widthMm;
+    consider(bx, bz);
+    const wallItems = proposalItemsOnWall(items, w.wallIndex);
+    const reachMm = wallItems.reduce((max, it) => Math.max(max, Number(it.depth_mm || 0)), 300) + w.thicknessMm;
+    consider(w.originXMm + w.intoDirX * reachMm, w.originZMm + w.intoDirZ * reachMm);
+    consider(bx + w.intoDirX * reachMm, bz + w.intoDirZ * reachMm);
+  });
+  if (!isFinite(minX)) return null;
+  return { minX: minX - PROPOSAL_ROOM_MARGIN_MM, maxX: maxX + PROPOSAL_ROOM_MARGIN_MM, minZ: minZ - PROPOSAL_ROOM_MARGIN_MM, maxZ: maxZ + PROPOSAL_ROOM_MARGIN_MM };
+}
 
-  const baseDepthMm = Math.max(300, ...baseItems.map((it) => Number(it.depth_mm || 0)), 0);
-  const upperDepthMm = Math.max(0, ...upperItems.map((it) => Number(it.depth_mm || 0)));
-  // Mesma prioridade da elevação: usar a largura da folha inteira (pedido
-  // do Matt) e só ceder pra altura num teto bem folgado.
-  const drawAreaH = 40;
-  const scale = Math.min(contentWidth / wall.widthMm, drawAreaH / baseDepthMm);
-  const drawW = wall.widthMm * scale;
-  const originX = PROPOSAL_MARGIN_MM;
+// Preenche/traça um polígono (fechado) a partir de uma lista de pontos JÁ
+// EM COORDENADA DE PÁGINA — jsPDF não tem "polígono de N pontos" pronto,
+// mas doc.lines() aceita uma sequência de deltas a partir de um ponto
+// inicial e fecha sozinho (closed=true) voltando pro início.
+function proposalFillQuad(doc, pts, style) {
+  if (!pts || pts.length < 3) return;
+  const segs = [];
+  for (let i = 1; i < pts.length; i++) segs.push([pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y]);
+  doc.lines(segs, pts[0].x, pts[0].y, [1, 1], style || 'S', true);
+}
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
-  doc.text(I18n.t('proposal.wall_label', { n: wall.displayIndex }), originX, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(0);
+function proposalDrawUnifiedFloorPlan(doc, walls, items, originPageX, originPageY, maxW, maxH, pdfUnit) {
+  const bounds = proposalRoomBoundsMm(walls, items);
+  if (!bounds) return originPageY;
+  const bboxWMm = Math.max(1, bounds.maxX - bounds.minX);
+  const bboxHMm = Math.max(1, bounds.maxZ - bounds.minZ);
+  const scale = Math.min(maxW / bboxWMm, maxH / bboxHMm);
+  const toPage = (xMm, zMm) => ({ x: originPageX + (xMm - bounds.minX) * scale, y: originPageY + (zMm - bounds.minZ) * scale });
 
-  let cursorY = y + 6;
+  // Paredes — tira cheia, espessura de verdade, cantos conectados.
+  walls.forEach((w) => {
+    const ax = w.originXMm, az = w.originZMm;
+    const bx = ax + w.alongDirX * w.widthMm, bz = az + w.alongDirZ * w.widthMm;
+    const aOutX = ax - w.intoDirX * w.thicknessMm, aOutZ = az - w.intoDirZ * w.thicknessMm;
+    const bOutX = bx - w.intoDirX * w.thicknessMm, bOutZ = bz - w.intoDirZ * w.thicknessMm;
+    doc.setFillColor(200, 197, 190);
+    proposalFillQuad(doc, [toPage(ax, az), toPage(bx, bz), toPage(bOutX, bOutZ), toPage(aOutX, aOutZ)], 'F');
+  });
 
-  if (upperItems.length) {
-    const upperDrawH = Math.max(4, upperDepthMm * scale);
-    doc.setDrawColor.apply(doc, PROPOSAL_COLOR_BORDER_SOFT);
-    doc.setLineWidth(0.2);
-    doc.line(originX, cursorY, originX + drawW, cursorY);
-    upperItems.forEach((it) => {
-      const p = it.project_placement;
-      const rectX = originX + Number(p.x_mm || 0) * scale;
-      const rectW = Number(it.width_mm || 0) * scale;
-      const rectH = Math.max(3, Number(it.depth_mm || 0) * scale);
-      doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
-      doc.setLineWidth(0.25);
-      doc.setLineDashPattern([0.9, 0.7], 0);
-      doc.roundedRect(rectX, cursorY, rectW, rectH, 0.5, 0.5, 'S');
-      doc.setLineDashPattern([], 0);
-      if (it._num) proposalNumberBadge(doc, rectX + 2.2, cursorY + 2.2, 1.5, it._num);
+  // Módulos — base (cheio) primeiro, depois armário de parede (tracejado,
+  // por cima, mesma faixa de piso — ver comentário grande acima).
+  const drawTier = (isUpperTier) => {
+    walls.forEach((w) => {
+      proposalItemsOnWall(items, w.wallIndex)
+        .filter((it) => (Number(it.project_placement.floor_height_mm || 0) > PROPOSAL_WALL_CABINET_HEIGHT_MM) === isUpperTier)
+        .forEach((it) => {
+          const p = it.project_placement;
+          const a0 = Number(p.x_mm || 0), a1 = a0 + Number(it.width_mm || 0);
+          const n0 = 0, n1 = Number(it.depth_mm || 0);
+          const corner = (a, n) => toPage(w.originXMm + w.alongDirX * a + w.intoDirX * n, w.originZMm + w.alongDirZ * a + w.intoDirZ * n);
+          const pts = [corner(a0, n0), corner(a1, n0), corner(a1, n1), corner(a0, n1)];
+          doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
+          doc.setLineWidth(0.25);
+          if (isUpperTier) {
+            doc.setLineDashPattern([0.9, 0.7], 0);
+            proposalFillQuad(doc, pts, 'S');
+            doc.setLineDashPattern([], 0);
+          } else {
+            doc.setFillColor.apply(doc, PROPOSAL_COLOR_CARD_FILL);
+            proposalFillQuad(doc, pts, 'FD');
+          }
+          if (it._num) proposalNumberBadge(doc, pts[0].x + 2.4, pts[0].y + 2.4, 1.7, it._num);
+        });
     });
-    cursorY += upperDrawH + 4;
-  }
+  };
+  drawTier(false);
+  drawTier(true);
 
-  const baseOriginY = cursorY;
-  const baseDrawH = baseDepthMm * scale;
-  doc.setDrawColor.apply(doc, PROPOSAL_COLOR_BORDER_SOFT);
-  doc.setLineWidth(0.2);
-  doc.line(originX, baseOriginY, originX + drawW, baseOriginY);
-
-  const baseEntries = baseItems.map((it) => {
-    const p = it.project_placement;
-    const xMm = Number(p.x_mm || 0);
-    const wMm = Number(it.width_mm || 0);
-    const dMm = Number(it.depth_mm || 0);
-    const rectX = originX + xMm * scale;
-    const rectW = wMm * scale;
-    const rectH = dMm * scale;
-    return { it, rectX, rectW, rectH, dMm, naturalAnchorX: rectX + rectW + 2.5 };
+  // Cotas — marca de limite (tick) em cada fronteira de módulo + 1 texto de
+  // comprimento total por parede. Deliberadamente MAIS LEVE que a cota
+  // corrida da elevação (proposalDimAssignRows) — foi exatamente o texto
+  // segmentado empilhado que amontoou antes (relato do usuário: "muito
+  // amontuado os valores sem visibilidade"); aqui, sem texto por segmento,
+  // não tem como colidir.
+  doc.setFont('helvetica', 'normal');
+  walls.forEach((w) => {
+    const wallItems = proposalItemsOnWall(items, w.wallIndex);
+    const outX = -w.intoDirX, outZ = -w.intoDirZ; // sentido pra FORA do ambiente
+    const tickReachMm = w.thicknessMm + 6 / scale;
+    const boundariesMm = Array.from(new Set(wallItems.flatMap((it) => {
+      const x0 = Math.round(Number(it.project_placement.x_mm || 0));
+      return [x0, Math.round(x0 + Number(it.width_mm || 0))];
+    }).concat([0, Math.round(w.widthMm)]))).sort((a, b) => a - b);
+    doc.setDrawColor.apply(doc, PROPOSAL_COLOR_MUTED);
+    doc.setLineWidth(0.12);
+    boundariesMm.forEach((a) => {
+      const baseX = w.originXMm + w.alongDirX * a, baseZ = w.originZMm + w.alongDirZ * a;
+      const tipX = baseX + outX * tickReachMm, tipZ = baseZ + outZ * tickReachMm;
+      const pA = toPage(baseX, baseZ), pB = toPage(tipX, tipZ);
+      doc.line(pA.x, pA.y, pB.x, pB.y);
+    });
+    // Comprimento total — texto único, sem vizinho pra colidir.
+    const midA = w.widthMm / 2;
+    const labelReachMm = w.thicknessMm + 11 / scale;
+    const labelX = w.originXMm + w.alongDirX * midA + outX * labelReachMm;
+    const labelZ = w.originZMm + w.alongDirZ * midA + outZ * labelReachMm;
+    const pLabel = toPage(labelX, labelZ);
+    const vertical = Math.abs(w.alongDirZ) > Math.abs(w.alongDirX);
+    doc.setFontSize(7);
+    doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED);
+    doc.text(formatDimension(w.widthMm, pdfUnit), pLabel.x, pLabel.y, { align: 'center', baseline: 'middle', angle: vertical ? 90 : 0 });
+    doc.setTextColor(0);
   });
-  proposalDimAssignColumns(baseEntries, PROPOSAL_MARGIN_MM + contentWidth - 2);
 
-  baseEntries.forEach((e) => {
-    const { it, rectX, rectW, rectH, dMm } = e;
-    doc.setFillColor.apply(doc, PROPOSAL_COLOR_CARD_FILL);
-    doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
-    doc.setLineWidth(0.25);
-    doc.roundedRect(rectX, baseOriginY, rectW, rectH, 0.5, 0.5, 'FD');
-
-    if (it._num) proposalNumberBadge(doc, rectX + 2.6, baseOriginY + 2.6, 1.8, it._num);
-
-    proposalExtLineH(doc, baseOriginY, rectX + rectW, e.dimAnchorX + 0.7);
-    proposalExtLineH(doc, baseOriginY + rectH, rectX + rectW, e.dimAnchorX + 0.7);
-    proposalDimSegmentV(doc, e.dimAnchorX, baseOriginY, baseOriginY + rectH, formatDimension(dMm, pdfUnit));
-  });
-
-  const dimY = baseOriginY + baseDrawH + 6;
-  const boundaries = Array.from(new Set(wallItems.flatMap((it) => {
-    const p = it.project_placement;
-    const x0 = Math.round(Number(p.x_mm || 0));
-    return [x0, Math.round(x0 + Number(it.width_mm || 0))];
-  }))).sort((a, b) => a - b);
-  const dimRows = proposalDimAssignRows(doc, boundaries, originX, scale, pdfUnit);
-  const segmentedBottomY = dimY + (dimRows.length - 1) * PROPOSAL_DIM_ROW_STEP;
-  boundaries.forEach((xMm) => proposalExtLineV(doc, originX + xMm * scale, baseOriginY + baseDrawH, segmentedBottomY + 1.2));
-  proposalDimDrawRows(doc, dimRows, dimY);
-
-  return segmentedBottomY + 4;
+  return originPageY + bboxHMm * scale + 10;
 }
 
 const orderDetailProposalBtnEl = document.getElementById('po-order-detail-proposal-btn');
