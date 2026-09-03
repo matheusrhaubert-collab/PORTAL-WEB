@@ -1043,13 +1043,27 @@ function projectSlotWorldBox3D(slot, overrides) {
     const cx = ov.floorXMm != null ? ov.floorXMm : Number(slot.floor_x_mm || 0);
     const cz = ov.floorZMm != null ? ov.floorZMm : Number(slot.floor_z_mm || 0);
     const rotDeg = ov.floorRotationDeg != null ? ov.floorRotationDeg : Number(slot.floor_rotation_deg || 0);
-    const rot = ((rotDeg % 360) + 360) % 360;
-    const swapped = (rot === 90 || rot === 270); // giro de ilha é sempre múltiplo de 90°
-    const wMm = swapped ? Number(slot.depth_mm || 0) : Number(slot.width_mm || 0);
-    const dMm = swapped ? Number(slot.width_mm || 0) : Number(slot.depth_mm || 0);
+    // BUG (2026-09-03, Matt: "fiz rotacao no modulo, ele perdeu a referencia,
+    // e esta esbarrando em coisas que nao existem... como se ele tivesse na
+    // posicao anterior ao giro que foi feito"): a versao antiga só tratava
+    // rotação de 90°/270° EXATOS (trocando w/d e travando angleRad em 0) —
+    // mas o giro por Shift+arrastar (quantizeProjectRotation) anda de 5 em
+    // 5° e só GRUDA num múltiplo de 90 dentro de 7° de diferença; qualquer
+    // ângulo fora disso (ex.: 15°, 40°, 235°) caía sempre no ramo "não
+    // trocado" com angleRad 0 — a caixa de colisão ficava DESALINHADA (sem
+    // giro nenhum), exatamente como se o módulo nunca tivesse girado.
+    // obbOverlapXZ já é um SAT de retângulo em QUALQUER ângulo — não precisa
+    // (nem deve) de caso especial pra 90°: usar o ângulo real sempre resolve
+    // 90/180/270 (mesmo resultado de antes) E qualquer ângulo intermediário.
+    // Sinal negativo porque group.rotation.y = floor_rotation_deg (radianos)
+    // no Three.js gira o eixo local +X do módulo pra (cosθ, -senθ) em
+    // (x,z) — ver renderFreeformWalls (rotationY) — enquanto angleRad aqui
+    // segue a convenção (cos(angleRad), sen(angleRad)) = (x,z), igual ao
+    // ramo de parede logo abaixo (Math.atan2(alongDirZ, alongDirX)).
+    const angleRad = -(rotDeg * Math.PI) / 180;
     return {
-      cx, cz, angleRad: 0, // giro já absorvido pela troca w/d acima
-      halfAlongMm: wMm / 2, halfIntoMm: dMm / 2,
+      cx, cz, angleRad,
+      halfAlongMm: Number(slot.width_mm || 0) / 2, halfIntoMm: Number(slot.depth_mm || 0) / 2,
       yMin: 0, yMax: Number(slot.height_mm || 0)
     };
   }
@@ -1159,12 +1173,26 @@ function clampWallSlotAgainstCollision(slot, desiredXMm, desiredYMm, prevXMm, pr
 }
 
 // Pegada (footprint) de um módulo ILHA no piso, em mm de MUNDO — { x, y, w, h }
-// com y = Z do mundo. Giro de 90°/270° troca largura por profundidade.
+// com y = Z do mundo. Retângulo alinhado aos eixos que ENVOLVE a peça já
+// girada (AABB do retângulo rotacionado, formula |hw·cosθ|+|hd·senθ| /
+// |hw·senθ|+|hd·cosθ|) — antes só cobria 90°/270° EXATOS (troca w/d);
+// qualquer ângulo livre (giro por Shift+arrastar — quantizeProjectRotation
+// anda de 5 em 5° e só gruda num múltiplo de 90 dentro de 7°) caía sempre
+// no ramo "sem troca", devolvendo uma pegada do tamanho/orientação de ANTES
+// do giro. Mesma causa-raiz do bug corrigido em projectSlotWorldBox3D (ver
+// ali) — aqui é só a caixa alinhada usada pro limite do AMBIENTE
+// (projectFloorRoomBoundsMm), não a colisão módulo-a-módulo (essa já usa
+// projectSlotWorldBox3D, com o ângulo real via SAT). A fórmula abaixo cai
+// exatamente no comportamento antigo em 0°/90°/180°/270° e generaliza pros
+// ângulos intermediários.
 function floorSlotFootprint(slot, centerXMm, centerZMm) {
-  const rot = ((Number(slot.floor_rotation_deg || 0) % 360) + 360) % 360;
-  const swapped = (rot === 90 || rot === 270);
-  const w = swapped ? Number(slot.depth_mm || 0) : Number(slot.width_mm || 0);
-  const h = swapped ? Number(slot.width_mm || 0) : Number(slot.depth_mm || 0);
+  const rad = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
+  const halfW = Number(slot.width_mm || 0) / 2;
+  const halfD = Number(slot.depth_mm || 0) / 2;
+  const cosA = Math.abs(Math.cos(rad));
+  const sinA = Math.abs(Math.sin(rad));
+  const w = 2 * (halfW * cosA + halfD * sinA);
+  const h = 2 * (halfW * sinA + halfD * cosA);
   const cx = (centerXMm != null) ? centerXMm : Number(slot.floor_x_mm || 0);
   const cz = (centerZMm != null) ? centerZMm : Number(slot.floor_z_mm || 0);
   return { x: cx - w / 2, y: cz - h / 2, w, h };
@@ -1724,6 +1752,15 @@ function selectProjectSlot(slotId) {
   document.querySelectorAll('#po-proj-canvas .po-proj-slot').forEach((el) => {
     el.classList.toggle('selected', el.dataset.slotId === slotId);
   });
+  // GRUPO SALVO (2026-09-03): clicar em QUALQUER peça de um grupo já feito
+  // seleciona o grupo inteiro pra mover/duplicar/ver orçamento juntos — não
+  // precisa Ctrl+clicar cada módulo de novo toda vez que reabre o projeto ou
+  // clica em outro lugar antes. Clicar num módulo AVULSO esvazia a seleção
+  // múltipla (era grupo, virou clique normal em outra coisa).
+  const clicked = projectSlots.find((s) => s.id === slotId);
+  projectMultiSelectIds = (clicked && clicked.group_id)
+    ? new Set(projectSlots.filter((s) => s.group_id === clicked.group_id).map((s) => s.id))
+    : new Set();
   // Contorno vermelho da Vista de Canto 3D acompanha a SELEÇÃO (ver
   // refreshProject3DHighlight) — inclusive quando a seleção veio da vista 2D
   // ou da lista, não só de um clique dentro da cena 3D.
@@ -1736,6 +1773,9 @@ function selectProjectSlot(slotId) {
   if (typeof refreshProjectSlotActions === 'function') refreshProjectSlotActions();
   // 🗑 da barra flutuante só habilita com módulo selecionado.
   if (typeof refreshProjectCanvasHud === 'function') refreshProjectCanvasHud();
+  // Barra do grupo (contador + total + ações) — some sozinha quando o grupo
+  // tem só 1 membro (ver refreshProjectGroupToolbar, portal-06c).
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
 }
 
 // SOLTAR O MÓDULO — o contrário exato de selectProjectSlot.
@@ -1752,7 +1792,12 @@ function selectProjectSlot(slotId) {
 // contorno do módulo, bem onde a pessoa clica pra "soltar"), a tecla Esc, e o
 // clique na parede/piso da vista 2D.
 function deselectProjectSlot() {
-  if (selectedProjectSlotId == null) return;
+  const hadMultiSelect = projectMultiSelectIds.size > 0;
+  projectMultiSelectIds = new Set();
+  if (selectedProjectSlotId == null) {
+    if (hadMultiSelect && typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
+    return;
+  }
   selectedProjectSlotId = null;
   if (typeof refreshProject3DHighlight === 'function') refreshProject3DHighlight();
   document.querySelectorAll('#po-proj-canvas .po-proj-slot.selected')
@@ -1761,6 +1806,7 @@ function deselectProjectSlot() {
   if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
   if (typeof refreshProjectSlotActions === 'function') refreshProjectSlotActions();
   if (typeof refreshProjectCanvasHud === 'function') refreshProjectCanvasHud();
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
 }
 
 // Esc SEMPRE solta o módulo. É a saída que não depende de acertar pixel
@@ -1796,6 +1842,11 @@ function duplicateProjectSlot(slotId) {
   const copy = cloneProjectSlotForUndo(original);
   copy.id = newProjectSlotId();
   copy.thumbnail_data_url = null; // a miniatura é do slot antigo; deixa recalcular
+  // Duplicar UM módulo (botão ⧉) nunca entra num grupo sozinho, mesmo se o
+  // original pertencer a um — é uma ação por módulo; quem quer duplicar o
+  // grupo inteiro junto usa duplicateProjectSlotGroup (menu do grupo).
+  copy.group_id = null;
+  copy.group_name = null;
 
   if (isFloorSlot(copy)) {
     // Ilha: desloca no eixo local da largura, sem parede pra limitar.
@@ -1827,8 +1878,169 @@ function duplicateProjectSlot(slotId) {
 function removeProjectSlot(slotId) {
   projectSlots = projectSlots.filter((s) => s.id !== slotId);
   if (selectedProjectSlotId === slotId) selectedProjectSlotId = null;
+  projectMultiSelectIds.delete(slotId);
   renderProjectCanvas();
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
   markProjectDirty();
+}
+
+// ==========================================================================
+// GRUPO DE MÓDULOS (2026-09-03) — pedido do Matt: "quero poder agrupar
+// varios modulos, (apertar control e ir clicando) botao direito criar
+// grupo. uma vez agrupados quer poder duplicar, movimentar, e ver o
+// orcamento so do que esta selecionado."
+// ==========================================================================
+// SELEÇÃO: Ctrl/Cmd+clique (mouse, ver o topo do pointerdown em
+// attachProject3DEditDrag, portal-08) acumula ids em projectMultiSelectIds
+// SEM tocar em selectedProjectSlotId nem iniciar arraste nenhum — é só
+// marcação. Clicar (sem Ctrl) num módulo de um GRUPO SALVO já expande
+// sozinho pra seleção múltipla, ver selectProjectSlot acima.
+//
+// GRUPO SALVO: "Criar grupo" grava group_id/group_name em CADA slot
+// selecionado (cabe no jsonb que já existe — ver serializeProjectSlots/
+// restauração em portal-09 —, sem migration, mesmo padrão de todo campo
+// novo de slot deste arquivo). Não existe uma lista separada de grupos: o
+// nome vive replicado em cada membro (mais simples que manter duas fontes
+// de verdade sincronizadas) — renomear/desagrupar escreve nos membros
+// atuais, não numa entidade à parte.
+function toggleProjectMultiSelect(slotId) {
+  const clicked = projectSlots.find((s) => s.id === slotId);
+  if (!clicked) return;
+  // Módulo já pertence a um grupo salvo: Ctrl+clique alterna o GRUPO INTEIRO
+  // de uma vez (não dá pra ficar com metade de um grupo já feito solta na
+  // seleção) — mesma regra de "clicar sem Ctrl" em selectProjectSlot.
+  const groupIds = clicked.group_id
+    ? projectSlots.filter((s) => s.group_id === clicked.group_id).map((s) => s.id)
+    : [slotId];
+  const ligando = !projectMultiSelectIds.has(slotId);
+  groupIds.forEach((id) => {
+    if (ligando) projectMultiSelectIds.add(id); else projectMultiSelectIds.delete(id);
+  });
+  // Ctrl+clique é seleção pura — nunca mexe no painel de config da direita
+  // (selectedProjectSlotId fica como estava) nem inicia arraste.
+  if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
+}
+
+// ids que devem se mover JUNTO com `primarySlot` num arraste — a seleção
+// múltipla ativa (Ctrl+clique solto, ou grupo salvo já expandido pra ela em
+// selectProjectSlot), sempre que primarySlot fizer parte dela e ela tiver
+// 2+ membros. Usado por beginProjectGroupCoDrag (portal-08).
+function projectActiveGroupSelectionIds(primarySlot) {
+  if (!primarySlot) return null;
+  if (projectMultiSelectIds.has(primarySlot.id) && projectMultiSelectIds.size >= 2) {
+    return projectMultiSelectIds;
+  }
+  return null;
+}
+
+function createProjectSlotGroup(ids) {
+  const idList = Array.from(ids || []);
+  if (idList.length < 2) return null;
+  const nome = (typeof prompt === 'function')
+    ? prompt(I18n.t('project.group_name_prompt'), I18n.t('project.group_default_name'))
+    : I18n.t('project.group_default_name');
+  if (nome == null) return null; // cancelou o prompt
+  const groupId = newProjectSlotId();
+  const groupName = nome.trim() || I18n.t('project.group_default_name');
+  idList.forEach((id) => {
+    const s = projectSlots.find((x) => x.id === id);
+    if (s) { s.group_id = groupId; s.group_name = groupName; }
+  });
+  projectMultiSelectIds = new Set(idList);
+  if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
+  markProjectDirty();
+  return groupId;
+}
+
+function ungroupProjectSlots(ids) {
+  const idList = Array.from(ids || []);
+  idList.forEach((id) => {
+    const s = projectSlots.find((x) => x.id === id);
+    if (s) { s.group_id = null; s.group_name = null; }
+  });
+  if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
+  markProjectDirty();
+}
+
+function renameProjectSlotGroup(ids) {
+  const idList = Array.from(ids || []);
+  const first = projectSlots.find((s) => s.id === idList[0]);
+  if (!first || !first.group_id) return;
+  const nome = (typeof prompt === 'function')
+    ? prompt(I18n.t('project.group_name_prompt'), first.group_name || I18n.t('project.group_default_name'))
+    : null;
+  if (nome == null) return;
+  const groupName = nome.trim() || I18n.t('project.group_default_name');
+  projectSlots.filter((s) => s.group_id === first.group_id).forEach((s) => { s.group_name = groupName; });
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
+  markProjectDirty();
+}
+
+// Duplica TODOS os módulos da seleção/grupo de uma vez, mantendo a posição
+// RELATIVA entre eles (o bloco inteiro anda junto, não cada peça pro seu
+// canto). Reaproveita duplicateProjectSlot pra decidir POR ONDE o bloco
+// nasce (o mesmo "cola à direita, senão à esquerda, senão sobrepõe" de
+// sempre, só que decidido pelo primeiro módulo = âncora) e depois aplica o
+// MESMO delta de mundo que esse primeiro módulo recebeu a todos os outros —
+// mecanismo idêntico ao "mover em grupo" (ver commitProjectGroupCoDrag,
+// portal-08), só que calculado uma vez em vez de a cada frame de arraste.
+function duplicateProjectSlotGroup(ids) {
+  const members = Array.from(ids || []).map((id) => projectSlots.find((s) => s.id === id)).filter(Boolean);
+  if (members.length < 2) {
+    return members.length ? duplicateProjectSlot(members[0].id) : null;
+  }
+  const anchor = members[0];
+  const anchorBoxBefore = projectSlotWorldBox3D(anchor);
+  const anchorClone = duplicateProjectSlot(anchor.id);
+  if (!anchorClone || !anchorBoxBefore) return null;
+  const anchorBoxAfter = projectSlotWorldBox3D(anchorClone);
+  if (!anchorBoxAfter) return null;
+  const deltaXMm = anchorBoxAfter.cx - anchorBoxBefore.cx;
+  const deltaZMm = anchorBoxAfter.cz - anchorBoxBefore.cz;
+
+  const newGroupId = newProjectSlotId();
+  const baseName = anchor.group_name || I18n.t('project.group_default_name');
+  const newGroupName = baseName + ' ' + I18n.t('project.group_copy_suffix');
+  anchorClone.group_id = newGroupId;
+  anchorClone.group_name = newGroupName;
+
+  const newIds = [anchorClone.id];
+  for (let i = 1; i < members.length; i++) {
+    const original = members[i];
+    const copy = cloneProjectSlotForUndo(original);
+    copy.id = newProjectSlotId();
+    copy.thumbnail_data_url = null;
+    copy.group_id = newGroupId;
+    copy.group_name = newGroupName;
+    if (isFloorSlot(copy)) {
+      const box = projectSlotWorldBox3D(original);
+      copy.floor_x_mm = box.cx + deltaXMm;
+      copy.floor_z_mm = box.cz + deltaZMm;
+      projectSlots.push(copy);
+      clampFloorSlotIntoRoom(copy);
+    } else {
+      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(original.wall_index || 0));
+      if (wallGeo) {
+        const alongDeltaMm = deltaXMm * wallGeo.alongDirX + deltaZMm * wallGeo.alongDirZ;
+        copy.x_mm = Number(original.x_mm || 0) + alongDeltaMm;
+      }
+      projectSlots.push(copy);
+      clampProjectSlotPosition(copy);
+    }
+    newIds.push(copy.id);
+  }
+
+  projectMultiSelectIds = new Set(newIds);
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
+  if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
+  markProjectDirty();
+  return newIds;
 }
 
 // Recalcula slot.result (preço) do zero a partir do estado atual do slot —
@@ -2074,10 +2286,19 @@ function recomputeProjectSlotPricing(slot) {
 const MONEY_FABRICA_SENHA = 'legno';
 let moneyFabricaLiberada = false;
 let moneyAbaAtual = 'orcamento';
+// ESCOPO por grupo (2026-09-03) — null = projeto inteiro (comportamento de
+// sempre). Setado por "Ver orçamento" na barra do grupo (ver
+// refreshProjectGroupToolbar, portal-06c) — abre o MESMO modal de sempre,
+// só filtrando as linhas/o total pros ids passados. Guardado à parte (não
+// dentro de projectMultiSelectIds) porque a seleção pode mudar/sumir
+// enquanto o modal ainda está aberto (clicar fora do grupo por engano não
+// pode fazer o modal aberto trocar de escopo sozinho).
+let moneyModalScopeIds = null;
 
-function openMoneyModal() {
+function openMoneyModal(scopeIds) {
   const modal = document.getElementById('po-money-modal');
   if (!modal) return;
+  moneyModalScopeIds = (scopeIds && scopeIds.size) ? new Set(scopeIds) : null;
   modal.classList.add('open');
   // Vendedor (migration 149) nunca chega na aba Fábrica (custo puro + margem
   // real do dealer) — nem a senha compartilhada adianta pra ele: o botão da
@@ -2127,10 +2348,15 @@ function renderMoneyModal() {
   document.querySelectorAll('.po-money-tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.moneyTab === moneyAbaAtual);
   });
-  const rel = collectProjectCostReport(projectSlots);
+  // ESCOPO (ver moneyModalScopeIds acima) — ids que já saíram do projeto
+  // (removidos com o modal aberto) somem sozinhos do filtro.
+  const scopedSlots = moneyModalScopeIds
+    ? projectSlots.filter((s) => moneyModalScopeIds.has(s.id))
+    : projectSlots;
+  const rel = collectProjectCostReport(scopedSlots);
 
-  if (moneyAbaAtual === 'orcamento') { renderMoneyOrcamento(body, rel); return; }
-  if (isSellerAccount()) { renderMoneyOrcamento(body, rel); return; }
+  if (moneyAbaAtual === 'orcamento') { renderMoneyOrcamento(body, rel, scopedSlots); return; }
+  if (isSellerAccount()) { renderMoneyOrcamento(body, rel, scopedSlots); return; }
   if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
   renderMoneyFabrica(body, rel);
 }
@@ -2140,15 +2366,16 @@ function renderMoneyModal() {
 // pontos onde aparecem, so para os vendedores") nunca vê o preço de fábrica
 // cru aqui também — nem por módulo nem no total, sempre com a margem do
 // dealer já aplicada (getDisplayPrice).
-function renderMoneyOrcamento(body, rel) {
+function renderMoneyOrcamento(body, rel, slots) {
   const seller = isSellerAccount();
-  const linhas = projectSlots.filter((s) => s.result).map((s) => {
+  const linhas = (slots || projectSlots).filter((s) => s.result).map((s) => {
     const preco = Number(s.result.total) || 0;
     return '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + '</td>'
       + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
       + '<td class="num">' + formatMoney(seller ? getDisplayPrice(preco) : preco) + '</td></tr>';
   }).join('');
-  body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.quote_sub') + '</p>'
+  const subKey = moneyModalScopeIds ? 'money.quote_sub_group' : 'money.quote_sub';
+  body.innerHTML = '<p class="po-money-sub">' + I18n.t(subKey) + '</p>'
     + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
     + '<th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>' + linhas + '</tbody></table>'
     + '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span>'
@@ -2336,8 +2563,14 @@ function renderMoneyFabrica(body, rel) {
     const btnTb = document.getElementById('po-proj-money-tb-btn');
     const btn = document.getElementById('po-proj-money-btn');
     if (!btnTb && !btn) return false;
-    if (btnTb) btnTb.addEventListener('click', openMoneyModal);
-    if (btn) btn.addEventListener('click', openMoneyModal);
+    // Chamada sem argumento explícito (2026-09-03): openMoneyModal(scopeIds)
+    // agora aceita um Set opcional pra abrir só num GRUPO (ver barra do
+    // grupo, portal-06c) — passar a função direto como listener passaria o
+    // MouseEvent no lugar de scopeIds; funcionaria por acidente
+    // (event.size é undefined, cai no "projeto inteiro" mesmo assim), mas
+    // não vale arriscar num refactor futuro do Event.
+    if (btnTb) btnTb.addEventListener('click', () => openMoneyModal());
+    if (btn) btn.addEventListener('click', () => openMoneyModal());
     const fechar = document.getElementById('po-money-close');
     if (fechar) fechar.addEventListener('click', closeMoneyModal);
     document.querySelectorAll('.po-money-tab').forEach((b) => {

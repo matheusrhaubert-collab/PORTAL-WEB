@@ -1608,6 +1608,12 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // selecionado (ver refreshProject3DResizeArrows).
   refreshProject3DResizeArrows();
   refreshProjectSlotActions();
+  // Grupo de módulos (2026-09-03) — mesmo motivo de refreshProject3DHighlight
+  // acima: a cena foi reconstruída, então tanto o contorno de todo mundo
+  // selecionado quanto a barra flutuante (contador/total/ações) precisam
+  // readotar o Group novo / reposicionar.
+  if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+  if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
   // Camadas (02/09) — renderFreeformWalls troca TODOS os Groups por
   // instâncias novas a cada render, então tanto o estado de visibilidade
   // quanto a lista de papéis em uso precisam ser reaplicados/recalculados
@@ -1652,6 +1658,20 @@ function refreshProject3DHighlight() {
     ? ViewerProjectEdit.findGroupBySlotId(selectedProjectSlotId)
     : null;
   ViewerProjectEdit.setHoverHighlight(g || null);
+}
+
+// Contorno de TODOS os módulos da seleção múltipla (Ctrl+clique ou grupo
+// salvo, ver projectMultiSelectIds) — aditivo ao contorno único acima (que
+// continua marcando o último clicado normalmente). Com menos de 2
+// selecionados não tem "grupo" pra desenhar (1 selecionado já é coberto
+// pelo contorno único de sempre).
+function refreshProject3DMultiHighlight() {
+  if (typeof ViewerProjectEdit === 'undefined' || !ViewerProjectEdit.setMultiHighlight) return;
+  if (projectMultiSelectIds.size < 2) { ViewerProjectEdit.setMultiHighlight(null); return; }
+  const groups = Array.from(projectMultiSelectIds)
+    .map((id) => ViewerProjectEdit.findGroupBySlotId(id))
+    .filter(Boolean);
+  ViewerProjectEdit.setMultiHighlight(groups);
 }
 
 // Chave da última vez que a câmera da Vista de Canto 3D foi reenquadrada
@@ -2029,6 +2049,134 @@ function refreshProjectSlotActions() {
   };
   if (!projectSlotActionsRafId) projectSlotActionsRafId = requestAnimationFrame(tick);
 }
+
+// ==========================================================================
+// BARRA FLUTUANTE DO GRUPO — contador, total e ações (2026-09-03)
+// ==========================================================================
+// Mesmo padrão de refreshProjectSlotActions logo acima (RAF + worldToClient
+// a cada frame pra acompanhar giro/zoom da câmera) — só que ancorada no
+// CENTRO da seleção múltipla inteira (média das posições de mundo dos
+// membros, ver projectSlotWorldBox3D), não num módulo só. O CONTEÚDO
+// (contador/total/botões) só é reconstruído quando a seleção muda de
+// verdade (chamado explicitamente de toggleProjectMultiSelect/
+// selectProjectSlot/deselectProjectSlot/create-duplicate-ungroup — nunca a
+// cada frame do RAF, que só reposiciona).
+let projectGroupToolbarRafId = null;
+
+function projectGroupToolbarAnchorWorld(members) {
+  if (!members.length) return null;
+  let sumX = 0, sumZ = 0, minBaseY = Infinity;
+  members.forEach((s) => {
+    const box = projectSlotWorldBox3D(s);
+    if (box) { sumX += box.cx; sumZ += box.cz; }
+    minBaseY = Math.min(minBaseY, Number(s.floor_height_mm || 0));
+  });
+  const baseYM = (minBaseY === Infinity ? 0 : minBaseY) / 1000;
+  return { x: sumX / members.length / 1000, y: Math.max(baseYM - 0.18, 0.01), z: sumZ / members.length / 1000 };
+}
+
+// "Grupo salvo por inteiro" = todo mundo que TEM aquele group_id está
+// selecionado, e ninguém a mais — é a diferença entre "Criar grupo" (ainda
+// avulso ou seleção parcial/mista) e "Desagrupar"/"Renomear" (já é um grupo
+// de verdade, inteiro, na seleção).
+function projectSelectionIsWholeSavedGroup(members) {
+  const first = members[0];
+  if (!first || !first.group_id) return false;
+  const wholeGroup = projectSlots.filter((s) => s.group_id === first.group_id);
+  return wholeGroup.length === members.length && wholeGroup.every((s) => projectMultiSelectIds.has(s.id));
+}
+
+function projectGroupToolbarContentHtml(members) {
+  const n = members.length;
+  const rel = (typeof collectProjectCostReport === 'function') ? collectProjectCostReport(members) : null;
+  const seller = (typeof isSellerAccount === 'function') && isSellerAccount();
+  const total = rel ? ((seller && typeof getDisplayPrice === 'function') ? getDisplayPrice(rel.totalVenda) : rel.totalVenda) : 0;
+  const isWholeGroup = projectSelectionIsWholeSavedGroup(members);
+  // Nome do grupo salvo entra ANTES do contador, só quando a seleção é o
+  // grupo inteiro — uma seleção Ctrl+clique solta (ainda sem nome nenhum)
+  // mostra só o contador/total, sem inventar rótulo.
+  const nomePrefix = (isWholeGroup && members[0] && members[0].group_name)
+    ? escapeHtmlCutlist(members[0].group_name) + ' · '
+    : '';
+  const countLabel = I18n.t('project.group_selected_count', { n: n })
+    + ' · ' + I18n.t('project.group_total_label') + ' ' + formatMoney(total);
+  const groupButtons = isWholeGroup
+    ? '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="rename">' + I18n.t('project.group_rename_btn') + '</button>'
+      + '<button type="button" class="po-proj-group-toolbar-btn po-proj-group-toolbar-btn-danger" data-group-action="ungroup">' + I18n.t('project.group_ungroup_btn') + '</button>'
+    : '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="create">' + I18n.t('project.group_create_btn') + '</button>';
+  return '<span class="po-proj-group-toolbar-label">' + nomePrefix + escapeHtmlCutlist(countLabel) + '</span>'
+    + groupButtons
+    + '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="duplicate">' + I18n.t('project.group_duplicate_btn') + '</button>'
+    + '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="budget">' + I18n.t('project.group_budget_btn') + '</button>';
+}
+
+function refreshProjectGroupToolbar() {
+  const el = document.getElementById('po-proj-group-toolbar');
+  if (!el) return;
+  const wrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  const members = Array.from(projectMultiSelectIds)
+    .map((id) => projectSlots.find((s) => s.id === id))
+    .filter(Boolean);
+  const visible = members.length >= 2
+    && !!wrap && wrap.offsetParent !== null
+    && !projectCameraModeOn
+    && !!ViewerProjectEdit && !!ViewerProjectEdit.worldToClient;
+
+  if (!visible) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    if (projectGroupToolbarRafId) { cancelAnimationFrame(projectGroupToolbarRafId); projectGroupToolbarRafId = null; }
+    return;
+  }
+
+  el.innerHTML = projectGroupToolbarContentHtml(members);
+
+  const tick = () => {
+    projectGroupToolbarRafId = null;
+    const liveMembers = Array.from(projectMultiSelectIds)
+      .map((id) => projectSlots.find((s) => s.id === id))
+      .filter(Boolean);
+    const stillVisible = liveMembers.length >= 2 && !!wrap && wrap.offsetParent !== null && !projectCameraModeOn;
+    if (!stillVisible) { el.style.display = 'none'; return; }
+    const anchor = projectGroupToolbarAnchorWorld(liveMembers);
+    const screen = anchor ? ViewerProjectEdit.worldToClient(anchor) : null;
+    if (!screen) { el.style.display = 'none'; }
+    else {
+      el.style.display = 'flex';
+      el.style.left = Math.round(screen.x) + 'px';
+      el.style.top = Math.round(screen.y) + 'px';
+    }
+    projectGroupToolbarRafId = requestAnimationFrame(tick);
+  };
+  if (!projectGroupToolbarRafId) projectGroupToolbarRafId = requestAnimationFrame(tick);
+}
+
+// Clique nos botões da barra — delegado (um listener só, funciona mesmo com
+// o innerHTML sendo reconstruído a cada mudança de seleção, ver
+// refreshProjectGroupToolbar acima).
+(function attachProjectGroupToolbarClicks() {
+  const el = document.getElementById('po-proj-group-toolbar');
+  if (!el) return;
+  el.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-group-action]');
+    if (!btn) return;
+    const action = btn.dataset.groupAction;
+    const ids = new Set(projectMultiSelectIds);
+    if (action === 'create') {
+      createProjectSlotGroup(ids);
+    } else if (action === 'ungroup') {
+      const first = projectSlots.find((s) => ids.has(s.id));
+      const nome = (first && first.group_name) ? first.group_name : I18n.t('project.group_default_name');
+      if (confirm(I18n.t('project.group_ungroup_confirm', { name: nome }))) ungroupProjectSlots(ids);
+    } else if (action === 'rename') {
+      renameProjectSlotGroup(ids);
+    } else if (action === 'duplicate') {
+      duplicateProjectSlotGroup(ids);
+    } else if (action === 'budget') {
+      if (typeof openMoneyModal === 'function') openMoneyModal(ids);
+    }
+  });
+})();
 
 // ==========================================================================
 // COTAS (02/09) — botão liga/desliga (ver #po-proj-dims-btn, wiring em

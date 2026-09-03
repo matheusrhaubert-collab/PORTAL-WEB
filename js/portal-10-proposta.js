@@ -325,6 +325,67 @@ function proposalDimSegmentV(doc, x, yA, yB, label) {
   doc.setTextColor(0);
 }
 
+// Espaçamento vertical entre linhas de cota empilhadas (ver
+// proposalDimAssignRows logo abaixo).
+const PROPOSAL_DIM_ROW_STEP = 4.2;
+
+// Separa uma "cota corrida" (vários segmentos lado a lado, ex.: largura de
+// cada módulo embaixo da parede) em quantas LINHAS forem necessárias pra
+// nenhum texto encostar no vizinho — em vez de só centralizar cada rótulo
+// no meio do próprio segmento e torcer pra não bater (o que quebrava toda
+// vez que um módulo era mais estreito que o próprio texto da medida, tipo
+// "13 7/16\"" numa peça de filete). Mesma ideia de desenho técnico de
+// verdade: quando não cabe, a cota sobe uma linha, não espreme o texto.
+// Só calcula os segmentos e decide as linhas; quem desenha é
+// proposalDimDrawRows, chamada depois de já saber quantas linhas vão
+// existir (pra poder desenhar as linhas de extensão até o fundo certo).
+function proposalDimAssignRows(doc, boundaries, originX, scale, pdfUnit) {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  const rows = [];
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const xA = originX + boundaries[i] * scale;
+    const xB = originX + boundaries[i + 1] * scale;
+    const label = formatDimension(boundaries[i + 1] - boundaries[i], pdfUnit);
+    const textW = doc.getTextWidth(label);
+    const mid = (xA + xB) / 2;
+    const seg = { xA, xB, label, labelL: mid - textW / 2 - 0.8, labelR: mid + textW / 2 + 0.8 };
+    const row = rows.find((r) => seg.labelL >= r[r.length - 1].labelR);
+    if (row) row.push(seg);
+    else rows.push([seg]);
+  }
+  return rows;
+}
+
+// Desenha as linhas já decididas por proposalDimAssignRows, uma abaixo da
+// outra a cada PROPOSAL_DIM_ROW_STEP.
+function proposalDimDrawRows(doc, rows, y) {
+  rows.forEach((row, i) => {
+    const rowY = y + i * PROPOSAL_DIM_ROW_STEP;
+    row.forEach((seg) => proposalDimSegmentH(doc, seg.xA, seg.xB, rowY, seg.label));
+  });
+}
+
+// Mesma ideia de proposalDimAssignRows, só que no outro eixo: a cota de
+// altura/profundidade de um módulo MUITO estreito (um filete de 3/4", por
+// exemplo) nasce a poucos milímetros da cota do vizinho — mesmo a cota
+// rodada 90° "engordando" só pela espessura da própria fonte, isso já
+// bastava pra uma escrever em cima da outra (visto no PDF de teste: duas
+// "34 1/32\"" empilhadas e ilegíveis). Ordena os módulos da esquerda pra
+// direita e empurra pra fora quem estiver mais perto do que
+// PROPOSAL_DIM_COL_GAP do vizinho anterior — a peça em si não se move, só a
+// cota (e a linha de chamada até ela) esticam mais longe quando precisa.
+const PROPOSAL_DIM_COL_GAP = 4.5;
+
+function proposalDimAssignColumns(entries) {
+  const sorted = entries.slice().sort((a, b) => a.naturalAnchorX - b.naturalAnchorX);
+  let lastAnchorX = -Infinity;
+  sorted.forEach((e) => {
+    e.dimAnchorX = Math.max(e.naturalAnchorX, lastAnchorX + PROPOSAL_DIM_COL_GAP);
+    lastAnchorX = e.dimAnchorX;
+  });
+}
+
 // Selo numerado no canto da peça desenhada — mesmo número da lista de
 // módulos (it._num), pra dar pra cruzar "isso aqui no desenho é qual item
 // da lista" (pedido do usuário: peças "uma a uma" identificáveis).
@@ -455,14 +516,19 @@ async function generateOrderProposalPDF(order, items) {
     if (hasLayout && walls.length > 0) {
       newPage(I18n.t('proposal.elevations_section'));
       walls.forEach((wall, idx) => {
-        if (idx > 0) ensureSpace(88);
+        // Folga generosa: cobre o teto novo de altura (drawAreaH=90) mais
+        // a cota corrida empilhando em 2-3 linhas quando os módulos são
+        // estreitos, pra nunca sobrar wall estourando pro fundo da página.
+        if (idx > 0) ensureSpace(140);
         y = proposalDrawElevation(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
         y += 10;
       });
 
       newPage(I18n.t('proposal.top_view_section'));
       walls.forEach((wall, idx) => {
-        if (idx > 0) ensureSpace(50);
+        // Idem: agora pode ter a tira extra dos armários de parede em cima
+        // da tira de base, então a folga também subiu.
+        if (idx > 0) ensureSpace(100);
         y = proposalDrawTopView(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
         y += 10;
       });
@@ -594,7 +660,13 @@ async function generateOrderProposalPDF(order, items) {
 // toda a parede (segmentada por módulo) mais uma cota total por baixo.
 function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
   const wallHeightMm = Math.max(2400, ...wallItems.map((it) => Number(it.project_placement.floor_height_mm || 0) + Number(it.height_mm || 0)), 0);
-  const drawAreaH = 55;
+  // Prioriza ocupar a largura da folha inteira (pedido do Matt, 03/09:
+  // "pegam o floor plan todo, preencher toda a folha") — antes a escala
+  // sempre cedia pra caber na altura (drawAreaH), sobrando espaço em branco
+  // do lado em paredes largas/baixas, que é o caso comum. O teto de altura
+  // continua existindo só pra não deixar uma parede muito alta estourar a
+  // página.
+  const drawAreaH = 90;
   const scale = Math.min(contentWidth / wall.widthMm, drawAreaH / wallHeightMm);
   const drawW = wall.widthMm * scale;
   const drawH = wallHeightMm * scale;
@@ -613,7 +685,7 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
   doc.setLineWidth(0.2);
   doc.line(originX, originY + drawH, originX + drawW, originY + drawH);
 
-  wallItems.forEach((it) => {
+  const elevEntries = wallItems.map((it) => {
     const p = it.project_placement;
     const xMm = Number(p.x_mm || 0);
     const hMm = Number(p.floor_height_mm || 0);
@@ -623,7 +695,12 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
     const rectY = originY + (wallHeightMm - hMm - iH) * scale;
     const rectW = wMm * scale;
     const rectH = iH * scale;
+    return { it, rectX, rectY, rectW, rectH, iH, naturalAnchorX: rectX + rectW + 2.5 };
+  });
+  proposalDimAssignColumns(elevEntries);
 
+  elevEntries.forEach((e) => {
+    const { it, rectX, rectY, rectW, rectH, iH } = e;
     doc.setFillColor.apply(doc, PROPOSAL_COLOR_CARD_FILL);
     doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
     doc.setLineWidth(0.25);
@@ -631,29 +708,34 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
 
     if (it._num) proposalNumberBadge(doc, rectX + 3, rectY + 3, 2, it._num);
 
-    // Cota de altura, do lado de fora (direita) da peça.
-    proposalExtLineH(doc, rectY, rectX + rectW, rectX + rectW + 3.2);
-    proposalExtLineH(doc, rectY + rectH, rectX + rectW, rectX + rectW + 3.2);
-    proposalDimSegmentV(doc, rectX + rectW + 2.5, rectY, rectY + rectH, formatDimension(iH, pdfUnit));
+    // Cota de altura, do lado de fora (direita) da peça — a linha de
+    // chamada estica até onde a cota precisou ir (proposalDimAssignColumns)
+    // quando o módulo é estreito demais pra caber do lado do vizinho.
+    proposalExtLineH(doc, rectY, rectX + rectW, e.dimAnchorX + 0.7);
+    proposalExtLineH(doc, rectY + rectH, rectX + rectW, e.dimAnchorX + 0.7);
+    proposalDimSegmentV(doc, e.dimAnchorX, rectY, rectY + rectH, formatDimension(iH, pdfUnit));
   });
 
   // Cota de largura corrida embaixo de toda a parede, segmentada nos
-  // limites de cada módulo (padrão de desenho de marcenaria).
+  // limites de cada módulo (padrão de desenho de marcenaria) — empilha
+  // sozinha em mais de uma linha quando um módulo é estreito demais pro
+  // próprio texto da medida (proposalDimAssignRows), em vez de deixar os
+  // números se atropelarem uns nos outros.
   const dimY = originY + drawH + 6;
   const boundaries = Array.from(new Set(wallItems.flatMap((it) => {
     const p = it.project_placement;
     const x0 = Math.round(Number(p.x_mm || 0));
     return [x0, Math.round(x0 + Number(it.width_mm || 0))];
   }))).sort((a, b) => a - b);
-  boundaries.forEach((xMm) => proposalExtLineV(doc, originX + xMm * scale, originY + drawH, dimY + 1.2));
-  for (let i = 0; i < boundaries.length - 1; i++) {
-    proposalDimSegmentH(doc, originX + boundaries[i] * scale, originX + boundaries[i + 1] * scale, dimY, formatDimension(boundaries[i + 1] - boundaries[i], pdfUnit));
-  }
+  const dimRows = proposalDimAssignRows(doc, boundaries, originX, scale, pdfUnit);
+  const segmentedBottomY = dimY + (dimRows.length - 1) * PROPOSAL_DIM_ROW_STEP;
+  boundaries.forEach((xMm) => proposalExtLineV(doc, originX + xMm * scale, originY + drawH, segmentedBottomY + 1.2));
+  proposalDimDrawRows(doc, dimRows, dimY);
 
-  // Cota total da parede, uma linha abaixo da segmentada.
-  const totalDimY = dimY + 6;
-  proposalExtLineV(doc, originX, dimY, totalDimY + 1.2);
-  proposalExtLineV(doc, originX + drawW, dimY, totalDimY + 1.2);
+  // Cota total da parede, uma linha abaixo da última linha da segmentada.
+  const totalDimY = segmentedBottomY + 6;
+  proposalExtLineV(doc, originX, segmentedBottomY, totalDimY + 1.2);
+  proposalExtLineV(doc, originX + drawW, segmentedBottomY, totalDimY + 1.2);
   proposalDimSegmentH(doc, originX, originX + drawW, totalDimY, formatDimension(wall.widthMm, pdfUnit));
 
   return totalDimY + 4;
@@ -665,14 +747,30 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
 // selo numerado + cotas de verdade da elevação: largura corrida embaixo,
 // profundidade de cada módulo do lado de fora (direita). Ver comentário
 // grande no topo do arquivo sobre esta simplificação deliberada.
+//
+// Armário de PAREDE (superior — floor_height_mm alto, mora acima da
+// bancada) ocupa a MESMA faixa de largura que o que fica embaixo dele: os
+// dois iam pro mesmo desenho e a caixa/selo de um ficava em cima do outro
+// (relato do Matt, 03/09: números "2 9" e "15 16" grudados). Pedido dele
+// depois de eu perguntar se cortava os de parede da planta: "pode colocar
+// eles, e separa as linhas de cotas pra nao ficarem uma em cima da outra"
+// — então continuam aparecendo, só em duas tiras empilhadas (parede em
+// cima, tracejada e sem preenchimento pra não competir visualmente com a
+// peça "de verdade"; base/torre embaixo, cheia como sempre foi).
+const PROPOSAL_WALL_CABINET_HEIGHT_MM = 600;
+
 function proposalDrawTopView(doc, wall, wallItems, y, contentWidth, pdfUnit) {
-  const stripDepthMm = Math.max(300, ...wallItems.map((it) => Number(it.depth_mm || 0)), 0);
-  const drawAreaH = 26;
-  const scale = Math.min(contentWidth / wall.widthMm, drawAreaH / stripDepthMm);
+  const upperItems = wallItems.filter((it) => Number(it.project_placement.floor_height_mm || 0) > PROPOSAL_WALL_CABINET_HEIGHT_MM);
+  const baseItems = wallItems.filter((it) => Number(it.project_placement.floor_height_mm || 0) <= PROPOSAL_WALL_CABINET_HEIGHT_MM);
+
+  const baseDepthMm = Math.max(300, ...baseItems.map((it) => Number(it.depth_mm || 0)), 0);
+  const upperDepthMm = Math.max(0, ...upperItems.map((it) => Number(it.depth_mm || 0)));
+  // Mesma prioridade da elevação: usar a largura da folha inteira (pedido
+  // do Matt) e só ceder pra altura num teto bem folgado.
+  const drawAreaH = 40;
+  const scale = Math.min(contentWidth / wall.widthMm, drawAreaH / baseDepthMm);
   const drawW = wall.widthMm * scale;
-  const drawH = stripDepthMm * scale;
   const originX = PROPOSAL_MARGIN_MM;
-  const originY = y + 6;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -681,11 +779,35 @@ function proposalDrawTopView(doc, wall, wallItems, y, contentWidth, pdfUnit) {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(0);
 
+  let cursorY = y + 6;
+
+  if (upperItems.length) {
+    const upperDrawH = Math.max(4, upperDepthMm * scale);
+    doc.setDrawColor.apply(doc, PROPOSAL_COLOR_BORDER_SOFT);
+    doc.setLineWidth(0.2);
+    doc.line(originX, cursorY, originX + drawW, cursorY);
+    upperItems.forEach((it) => {
+      const p = it.project_placement;
+      const rectX = originX + Number(p.x_mm || 0) * scale;
+      const rectW = Number(it.width_mm || 0) * scale;
+      const rectH = Math.max(3, Number(it.depth_mm || 0) * scale);
+      doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
+      doc.setLineWidth(0.25);
+      doc.setLineDashPattern([0.9, 0.7], 0);
+      doc.roundedRect(rectX, cursorY, rectW, rectH, 0.5, 0.5, 'S');
+      doc.setLineDashPattern([], 0);
+      if (it._num) proposalNumberBadge(doc, rectX + 2.2, cursorY + 2.2, 1.5, it._num);
+    });
+    cursorY += upperDrawH + 4;
+  }
+
+  const baseOriginY = cursorY;
+  const baseDrawH = baseDepthMm * scale;
   doc.setDrawColor.apply(doc, PROPOSAL_COLOR_BORDER_SOFT);
   doc.setLineWidth(0.2);
-  doc.line(originX, originY, originX + drawW, originY);
+  doc.line(originX, baseOriginY, originX + drawW, baseOriginY);
 
-  wallItems.forEach((it) => {
+  const baseEntries = baseItems.map((it) => {
     const p = it.project_placement;
     const xMm = Number(p.x_mm || 0);
     const wMm = Number(it.width_mm || 0);
@@ -693,31 +815,36 @@ function proposalDrawTopView(doc, wall, wallItems, y, contentWidth, pdfUnit) {
     const rectX = originX + xMm * scale;
     const rectW = wMm * scale;
     const rectH = dMm * scale;
+    return { it, rectX, rectW, rectH, dMm, naturalAnchorX: rectX + rectW + 2.5 };
+  });
+  proposalDimAssignColumns(baseEntries);
 
+  baseEntries.forEach((e) => {
+    const { it, rectX, rectW, rectH, dMm } = e;
     doc.setFillColor.apply(doc, PROPOSAL_COLOR_CARD_FILL);
     doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
     doc.setLineWidth(0.25);
-    doc.roundedRect(rectX, originY, rectW, rectH, 0.5, 0.5, 'FD');
+    doc.roundedRect(rectX, baseOriginY, rectW, rectH, 0.5, 0.5, 'FD');
 
-    if (it._num) proposalNumberBadge(doc, rectX + 2.6, originY + 2.6, 1.8, it._num);
+    if (it._num) proposalNumberBadge(doc, rectX + 2.6, baseOriginY + 2.6, 1.8, it._num);
 
-    proposalExtLineH(doc, originY, rectX + rectW, rectX + rectW + 3.2);
-    proposalExtLineH(doc, originY + rectH, rectX + rectW, rectX + rectW + 3.2);
-    proposalDimSegmentV(doc, rectX + rectW + 2.5, originY, originY + rectH, formatDimension(dMm, pdfUnit));
+    proposalExtLineH(doc, baseOriginY, rectX + rectW, e.dimAnchorX + 0.7);
+    proposalExtLineH(doc, baseOriginY + rectH, rectX + rectW, e.dimAnchorX + 0.7);
+    proposalDimSegmentV(doc, e.dimAnchorX, baseOriginY, baseOriginY + rectH, formatDimension(dMm, pdfUnit));
   });
 
-  const dimY = originY + drawH + 6;
+  const dimY = baseOriginY + baseDrawH + 6;
   const boundaries = Array.from(new Set(wallItems.flatMap((it) => {
     const p = it.project_placement;
     const x0 = Math.round(Number(p.x_mm || 0));
     return [x0, Math.round(x0 + Number(it.width_mm || 0))];
   }))).sort((a, b) => a - b);
-  boundaries.forEach((xMm) => proposalExtLineV(doc, originX + xMm * scale, originY + drawH, dimY + 1.2));
-  for (let i = 0; i < boundaries.length - 1; i++) {
-    proposalDimSegmentH(doc, originX + boundaries[i] * scale, originX + boundaries[i + 1] * scale, dimY, formatDimension(boundaries[i + 1] - boundaries[i], pdfUnit));
-  }
+  const dimRows = proposalDimAssignRows(doc, boundaries, originX, scale, pdfUnit);
+  const segmentedBottomY = dimY + (dimRows.length - 1) * PROPOSAL_DIM_ROW_STEP;
+  boundaries.forEach((xMm) => proposalExtLineV(doc, originX + xMm * scale, baseOriginY + baseDrawH, segmentedBottomY + 1.2));
+  proposalDimDrawRows(doc, dimRows, dimY);
 
-  return dimY + 4;
+  return segmentedBottomY + 4;
 }
 
 const orderDetailProposalBtnEl = document.getElementById('po-order-detail-proposal-btn');

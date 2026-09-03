@@ -140,8 +140,18 @@ function getResaleMarginPct() {
 // sempre; sem margem nenhuma, cai no próprio valor de fábrica (comportamento
 // idêntico a hoje).
 function getDisplayPrice(saleValue) {
+  // Migration 151 (2026-09-03): antes a margem entrava direto sobre
+  // saleValue (preço de fábrica cru); agora entra sobre computeCustoBase()
+  // (preço de fábrica já com desconto de fábrica + extras de custo do
+  // dealer aplicados — ver comentário de escopo acima de
+  // computeCustoBase). Pra quem não é dealer com desconto/extras
+  // configurados, computeCustoBase(saleValue) === saleValue, então o
+  // resultado fica idêntico a antes desta migration.
+  const tableValue = Number(saleValue) || 0;
+  const custoBase = computeCustoBase(tableValue);
   const marginPct = getResaleMarginPct();
-  return marginPct > 0 ? Number(saleValue || 0) * (1 + marginPct / 100) : Number(saleValue || 0);
+  const withMargin = marginPct > 0 ? custoBase * (1 + marginPct / 100) : custoBase;
+  return applyPricingExtras(withMargin, tableValue, resolveDealerPricingExtras('margem'));
 }
 
 // Preenche o campo do menu de Configurações com a margem já salva (chamada
@@ -184,6 +194,103 @@ async function saveResaleMarginPct() {
   } catch (err) {
     // silencioso — ver comentário acima
   }
+}
+
+// ---------- DESCONTO DE FÁBRICA + EXTRAS DO DEALER (migration 151, 2026-09-03) ----------
+// Pedido do Matt: "preciso uma configuracao de desconto de fabrica...
+// aplicado no valor de fabrica, que vira base de custo para ai sim a
+// margem do dealer ser acrecentada em cima... novo botao de margens na
+// barra (so habilita pra dealer) nao pra vendedores... custo fabrica:
+// tabela - desconto, extra tipo frete/tax que pode diminuir ou aumentar...
+// margem do lojista: margem bruta + extras tipo comissao/montagem/tax/
+// outros". Confirmado via AskUserQuestion: por dealer, self-service, sem
+// senha extra por dealer, extras em % OU valor fixo em $.
+//
+// Extensão do getDisplayPrice/getResaleMarginPct já existente (migration
+// 072) — MESMO escopo/risco: só afeta EXIBIÇÃO (Galeria, Meus Projetos,
+// modal $ Orçamento, canvas, Proposta). Nunca entra em
+// carrinho/checkout/Meus Pedidos (mesmo precedente documentado da
+// migration 072).
+//
+// Escopo deliberado (pedido explícito "nao pra vendedores"): diferente da
+// margem de revenda (que o vendedor HERDA do dealer via RPC
+// get_display_resale_margin_pct), o desconto de fábrica e os extras são
+// EXCLUSIVOS de quem está logado como o próprio dealer (isDealer()) — o
+// vendedor não configura nem herda nada disso. getFactoryDiscountPct() e
+// resolveDealerPricingExtras() devolvem 0/[] pra qualquer perfil que não
+// seja isDealer(), então o cálculo do vendedor (e do cliente final) fica
+// bit-a-bit idêntico a antes desta migration.
+//
+// Cache síncrono, mesmo padrão de resolvedDisplayMarginPct: populado em
+// loadDealerPricingConfig() (chamada de refreshDealerUiVisibility, junto
+// de loadDealerTeamList) e atualizado na hora quando o dealer salva no
+// modal de Margens (ver po-margins-modal, portal-06b).
+let dealerFactoryDiscountPct = 0;
+let dealerPricingExtras = []; // linhas de dealer_pricing_extras já carregadas (cache)
+
+function getFactoryDiscountPct() {
+  return isDealer() ? (Number(dealerFactoryDiscountPct) || 0) : 0;
+}
+
+// Extras de um lado ('custo' = custo de fábrica, 'margem' = margem do
+// lojista) já carregados em cache — ver comentário de escopo acima (só
+// dealer, nunca vendedor).
+function resolveDealerPricingExtras(side) {
+  if (!isDealer()) return [];
+  return dealerPricingExtras.filter((row) => row.side === side);
+}
+
+// Carrega o desconto de fábrica (coluna nova em user_profiles) + os extras
+// (tabela nova dealer_pricing_extras, migration 151) — só pra dealer
+// (isDealer()); qualquer outro perfil fica com os arrays/números zerados
+// (ver escopo acima). Chamada de refreshDealerUiVisibility (mesmo gancho
+// de loadDealerTeamList, já roda 1x no login) e de novo depois de qualquer
+// salvamento no modal de Margens. Falha silenciosa — mesmo padrão do resto
+// deste arquivo (ensureOwnUserProfile etc.), não deve travar o login.
+async function loadDealerPricingConfig() {
+  if (!isDealer() || !currentUser) { dealerFactoryDiscountPct = 0; dealerPricingExtras = []; return; }
+  try {
+    dealerFactoryDiscountPct = Number(currentUserProfile && currentUserProfile.factory_discount_pct) || 0;
+    const { data, error } = await supabaseClient
+      .from('dealer_pricing_extras')
+      .select('*')
+      .eq('dealer_user_id', currentUser.id)
+      .order('sort_order', { ascending: true });
+    dealerPricingExtras = (!error && Array.isArray(data)) ? data : [];
+  } catch (err) {
+    dealerPricingExtras = [];
+  }
+}
+
+// Aplica uma lista de extras (mesmo lado) sobre um valor de base — cada
+// extra soma OU subtrai, em % (sempre sobre o valor de TABELA original,
+// nunca composto em cima de outro extra já aplicado — cada linha fica
+// independente e fácil de auditar/bater com a tela) ou em $ fixo.
+// tableValue é sempre o preço de fábrica CRU (antes de desconto/margem) —
+// é a base dos extras percentuais dos dois lados.
+function applyPricingExtras(baseValue, tableValue, extras) {
+  let result = Number(baseValue) || 0;
+  (extras || []).forEach((extra) => {
+    const amount = extra.kind === 'fixed'
+      ? (Number(extra.value) || 0)
+      : (Number(tableValue) || 0) * (Number(extra.value) || 0) / 100;
+    result += extra.sign === 'subtract' ? -amount : amount;
+  });
+  return result;
+}
+
+// CUSTO DE FÁBRICA = preço de tabela − desconto de fábrica (%) + extras do
+// lado 'custo' (frete/tax/extra). Essa é a NOVA base de custo sobre a qual
+// a margem do lojista é acrescentada em getDisplayPrice() abaixo. Pra quem
+// não é dealer, ou é dealer sem nada configurado ainda, devolve o próprio
+// saleValue sem alteração (getFactoryDiscountPct()===0 e extras===[] fazem
+// disso um no-op matemático — comportamento idêntico a antes desta
+// migration).
+function computeCustoBase(saleValue) {
+  const tableValue = Number(saleValue) || 0;
+  const discountPct = getFactoryDiscountPct();
+  const afterDiscount = tableValue * (1 - discountPct / 100);
+  return applyPricingExtras(afterDiscount, tableValue, resolveDealerPricingExtras('custo'));
 }
 
 // ---------- PORTAL DEALER (migration 075, 2026-08-02) ----------
@@ -278,17 +385,25 @@ function refreshDealerUiVisibility() {
   const logoRowEl = document.getElementById('po-dealer-logo-settings-row');
   const storeInfoRowEl = document.getElementById('po-dealer-store-info-row');
   const teamRowEl = document.getElementById('po-dealer-team-row');
+  // Botão "Margens" (migration 151, 2026-09-03) — desconto de fábrica +
+  // extras, mesmo critério de visibilidade do toggle Dealer (só
+  // isDealer(), NÃO canGenerateProposal(): vendedor/contractor/admin não
+  // configuram isso, ver comentário de escopo em getFactoryDiscountPct,
+  // portal-05-cutlist.js).
+  const margensBtnEl = document.getElementById('po-margins-btn');
   const dealer = isDealer();
   const canBrand = canGenerateProposal();
   if (toggleEl) toggleEl.style.display = dealer ? '' : 'none';
   if (logoRowEl) logoRowEl.style.display = canBrand ? '' : 'none';
   if (storeInfoRowEl) storeInfoRowEl.style.display = canBrand ? '' : 'none';
   if (teamRowEl) teamRowEl.style.display = dealer ? '' : 'none';
+  if (margensBtnEl) margensBtnEl.style.display = dealer ? '' : 'none';
   loadPortalViewMode();
   applyPortalViewMode();
   refreshDealerLogoPreview();
   refreshDealerStoreInfoInputs();
   if (dealer) loadDealerTeamList();
+  loadDealerPricingConfig().then(() => { if (typeof renderMarginsModal === 'function') renderMarginsModal(); });
 }
 
 // ---------- MINHA EQUIPE / VENDEDORES (migration 149, 2026-09-02) ----------

@@ -165,6 +165,15 @@ function undoProjectChange() {
 // (arrastável); 'top' = vista de cima, só leitura — ver renderProjectCanvas/
 // renderProjectCanvasTop mais abaixo.
 let projectViewMode = 'front';
+
+// GRUPO DE MÓDULOS — seleção múltipla (2026-09-03, ver comentário grande em
+// selectProjectSlot/beginProjectGroupCoDrag). Ctrl/Cmd+clique acumula ids
+// aqui sem mexer em selectedProjectSlotId; clicar (sem Ctrl) num módulo que
+// já pertence a um GRUPO SALVO (slot.group_id) também popula este Set com
+// todo mundo do grupo, pra mover/duplicar/ver orçamento valerem pro grupo
+// inteiro sem precisar Ctrl+clicar cada peça de novo toda vez.
+let projectMultiSelectIds = new Set();
+
 function newProjectSlotId() {
   projectSlotIdSeq += 1;
   return `pslot_${Date.now()}_${projectSlotIdSeq}`;
@@ -2068,6 +2077,10 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
       floor_x_mm: 0,
       floor_z_mm: 0,
       floor_rotation_deg: 0,
+      // Grupo de módulos (2026-09-03) — null = avulso. Ver
+      // createProjectSlotGroup/ungroupProjectSlots (portal-06b).
+      group_id: null,
+      group_name: null,
       module: m,
       pieces: modulePieces,
       colorOptionsByRole,

@@ -81,6 +81,103 @@ function detachProjectSlotFromWallForRotation(slot, group) {
   return slot.floor_rotation_deg;
 }
 
+// ==========================================================================
+// CO-ARRASTAR O GRUPO — mover junto (2026-09-03, ver comentário grande em
+// portal-06b, seção "GRUPO DE MÓDULOS")
+// ==========================================================================
+// Mesmo padrão de "preview barato + commit no soltar" que o módulo agarrado
+// já usa (ver o comentário grande sobre não reconstruir a cena a cada
+// pointermove): os OUTROS membros do grupo só têm o Group do Three.js
+// deslocado ao vivo (applyProjectGroupCoDragPreview); a posição de verdade
+// (x_mm/floor_x_mm/floor_z_mm) só é gravada em commitProjectGroupCoDrag, no
+// pointerup — daí a única renderProjectCanvas() do gesto inteiro.
+function beginProjectGroupCoDrag(state, primarySlot) {
+  state.groupCoDrag = null;
+  if (!state || !primarySlot || typeof projectActiveGroupSelectionIds !== 'function') return;
+  const ids = projectActiveGroupSelectionIds(primarySlot);
+  if (!ids || ids.size < 2) return;
+  const startBox = projectSlotWorldBox3D(primarySlot);
+  if (!startBox) return;
+  state.groupStartWorldXMm = startBox.cx;
+  state.groupStartWorldZMm = startBox.cz;
+  const members = [];
+  ids.forEach((id) => {
+    if (id === primarySlot.id) return;
+    const m = projectSlots.find((s) => s.id === id);
+    if (!m) return;
+    const box = projectSlotWorldBox3D(m);
+    if (!box) return;
+    members.push({
+      id: m.id,
+      startWorldXMm: box.cx,
+      startWorldZMm: box.cz,
+      startXMm: Number(m.x_mm || 0), // só usado se for módulo de parede (commit)
+      group: ViewerProjectEdit.findGroupBySlotId(m.id)
+    });
+  });
+  if (members.length) state.groupCoDrag = members;
+}
+
+// Depois de uma renderProjectCanvas() NO MEIO do arraste (o módulo
+// PRINCIPAL trocou de parede<->chão — os 3 únicos pontos que reconstroem a
+// cena durante um arraste, ver "readota o novo" acima): os módulos do
+// grupo em si não se moveram, só o Group deles morreu e nasceu de novo
+// junto com a cena inteira. Reata as referências sem recalcular nada.
+function refreshProjectGroupCoDragRefs(state) {
+  if (!state || !state.groupCoDrag) return;
+  state.groupCoDrag.forEach((m) => { m.group = ViewerProjectEdit.findGroupBySlotId(m.id); });
+}
+
+// Chamada a cada pointermove, logo depois do PRIMÁRIO já ter a posição "ao
+// vivo" (state.group.position) atualizada — desloca o Group de cada outro
+// membro pelo MESMO delta de mundo. Não mexe em x_mm/floor_x_mm/floor_z_mm
+// ainda (só no soltar, ver commitProjectGroupCoDrag) — mesma separação
+// preview/commit do módulo agarrado.
+function applyProjectGroupCoDragPreview(state) {
+  if (!state || !state.groupCoDrag || !state.groupCoDrag.length || !state.group) return;
+  const deltaXMm = state.group.position.x * 1000 - state.groupStartWorldXMm;
+  const deltaZMm = state.group.position.z * 1000 - state.groupStartWorldZMm;
+  state.groupCoDrag.forEach((m) => {
+    if (!m.group) return;
+    m.group.position.x = (m.startWorldXMm + deltaXMm) / 1000;
+    m.group.position.z = (m.startWorldZMm + deltaZMm) / 1000;
+  });
+}
+
+// Commit de verdade, uma vez só no soltar (endDrag3D) — grava a posição
+// final de cada membro no PRÓPRIO referencial dele: x_mm ao longo da SUA
+// parede (projeção do delta de mundo no eixo along dela — funciona mesmo
+// pra um grupo espalhado por paredes de ângulos diferentes) ou
+// floor_x_mm/floor_z_mm de mundo direto pra ilha. Cada membro é clampado
+// dentro dos PRÓPRIOS limites (parede/ambiente) — colisão entre módulos do
+// grupo (uns contra os outros, ou contra módulos de FORA do grupo) não é
+// checada aqui, só o limite físico de cada um; ver nota na seção "GRUPO DE
+// MÓDULOS" (portal-06b) — simplificação deliberada, PENDENTE se o Matt
+// pedir colisão de verdade no arraste em grupo.
+function commitProjectGroupCoDrag(state, primarySlot) {
+  if (!state || !state.groupCoDrag || !state.groupCoDrag.length || !primarySlot) return;
+  const finalBox = projectSlotWorldBox3D(primarySlot);
+  if (!finalBox) return;
+  const deltaXMm = finalBox.cx - state.groupStartWorldXMm;
+  const deltaZMm = finalBox.cz - state.groupStartWorldZMm;
+  if (Math.abs(deltaXMm) < 0.01 && Math.abs(deltaZMm) < 0.01) return; // não moveu de verdade
+  state.groupCoDrag.forEach((m) => {
+    const member = projectSlots.find((s) => s.id === m.id);
+    if (!member) return;
+    if (isFloorSlot(member)) {
+      member.floor_x_mm = m.startWorldXMm + deltaXMm;
+      member.floor_z_mm = m.startWorldZMm + deltaZMm;
+      clampFloorSlotIntoRoom(member);
+    } else {
+      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(member.wall_index || 0));
+      if (!wallGeo) return;
+      const alongDeltaMm = deltaXMm * wallGeo.alongDirX + deltaZMm * wallGeo.alongDirZ;
+      member.x_mm = m.startXMm + alongDeltaMm;
+      clampProjectSlotPosition(member);
+    }
+  });
+}
+
 function convertProjectSlotToWall(slot, wallIndex, xMm, floorHeightMm) {
   slot.placement = 'wall';
   slot.wall_index = Number(wallIndex || 0);
@@ -188,6 +285,24 @@ function attachProject3DEditDrag() {
     // tocar em módulo, seta ou seleção. No toque e na caneta, ev.button é 0,
     // então nada muda pro iPad.
     if (ev.button !== 0) return;
+
+    // CTRL/CMD+CLIQUE = SELEÇÃO MÚLTIPLA, NÃO ARRASTE (2026-09-03, Matt:
+    // "quero poder agrupar varios modulos, apertar control e ir clicando").
+    // Só marcação — nunca inicia giro, esticar ou mover, e nunca mexe no
+    // painel de config da direita (esse continua sendo o último clique
+    // SIMPLES, ver selectProjectSlot/toggleProjectMultiSelect em
+    // portal-06b). Sai com return antes de qualquer outro ramo (setas,
+    // giro, ilha, parede) — Ctrl+clique nunca é o começo de mais nada.
+    if (ev.ctrlKey || ev.metaKey) {
+      const hitCtrl = ViewerProjectEdit.pickAssemblyAtSticky
+        ? ViewerProjectEdit.pickAssemblyAtSticky(ev.clientX, ev.clientY, projectActiveWallIndex, selectedProjectSlotId, 0)
+        : null;
+      if (hitCtrl && hitCtrl.slotId != null && typeof toggleProjectMultiSelect === 'function') {
+        ev.preventDefault();
+        toggleProjectMultiSelect(hitCtrl.slotId);
+      }
+      return;
+    }
 
     // As SETAS de redimensionamento (toque) ficam desenhadas POR CIMA de
     // tudo, então precisam ser testadas ANTES do módulo — senão o raycaster
@@ -372,6 +487,12 @@ function attachProject3DEditDrag() {
         prevFloorXMm: Number(slot.floor_x_mm || 0),
         prevFloorZMm: Number(slot.floor_z_mm || 0)
       };
+      // GRUPO: captura ANTES de selectProjectSlot (que troca a seleção
+      // múltipla pro grupo SALVO do módulo clicado, se houver — ver
+      // beginProjectGroupCoDrag) — se o arraste começou numa seleção AD HOC
+      // (só Ctrl+clique, sem grupo salvo), precisa ler projectMultiSelectIds
+      // ANTES dela ser sobrescrita.
+      beginProjectGroupCoDrag(projectDrag3DState, slot);
       // Agarrar JÁ seleciona (o contorno é a seleção agora) — assim o módulo
       // arrastado fica vermelho na hora e CONTINUA vermelho depois de soltar.
       selectProjectSlot(slot.id);
@@ -463,6 +584,9 @@ function attachProject3DEditDrag() {
       prevXMm: Number(slot.x_mm || 0),
       prevYMm: Number(slot.floor_height_mm || 0)
     };
+    // GRUPO: mesma ordem (captura antes de selectProjectSlot) do ramo da
+    // ilha acima — ver o comentário lá.
+    beginProjectGroupCoDrag(projectDrag3DState, slot);
     // Agarrar JÁ seleciona (2026-08-12): o contorno vermelho é o espelho da
     // seleção, então o módulo agarrado acende na hora — no mouse E no toque —
     // e continua aceso depois de soltar, até clicar em outro ou na parede.
@@ -609,6 +733,9 @@ function attachProject3DEditDrag() {
           // A cena foi reconstruída: o Group antigo morreu, readota o novo.
           state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
           if (state.group) ViewerProjectEdit.setHoverHighlight(state.group);
+          // GRUPO: os Groups dos OUTROS membros também morreram na
+          // reconstrução (renderProjectCanvas troca todos) — readota.
+          refreshProjectGroupCoDragRefs(state);
           return;
         }
       }
@@ -781,6 +908,10 @@ function attachProject3DEditDrag() {
       // recriar o contorno, só atualiza a caixa a partir da posição ATUAL
       // do Group, que acabou de mudar acima).
       ViewerProjectEdit.updateHoverHighlight();
+      // GRUPO: os outros membros seguem pelo MESMO delta de mundo, ao vivo
+      // (ver applyProjectGroupCoDragPreview) — commit de verdade só no
+      // soltar (endDrag3D), igual o módulo agarrado.
+      applyProjectGroupCoDragPreview(state);
     }
   });
 
@@ -860,6 +991,10 @@ function attachProject3DEditDrag() {
     if (slot && !isFloorSlot(slot)) {
       resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
     }
+    // GRUPO: commit de verdade da posição dos outros membros — grava
+    // x_mm/floor_x_mm/floor_z_mm de cada um (ver commitProjectGroupCoDrag),
+    // ANTES do render final pra sair tudo junto num quadro só.
+    if (slot) commitProjectGroupCoDrag(state, slot);
     renderProjectCanvas();
     refreshProject3DResizeArrows();
     markProjectDirty();
@@ -876,6 +1011,37 @@ function attachProject3DEditDrag() {
   window.addEventListener('pointercancel', endDrag3D);
   window.addEventListener('blur', () => {
     if (projectDrag3DState) endDrag3D({ type: 'pointercancel', pointerId: projectDrag3DState.pointerId });
+  });
+
+  // BOTÃO DIREITO = CRIAR/DESFAZER GRUPO (2026-09-03, Matt: "botao diretio
+  // criar grupo"). Sem menu próprio — reaproveita prompt()/confirm()
+  // nativos (mesmo padrão já usado no projeto pra nomear coisas, ver
+  // saveProjectFavoriteInner). Só faz algo com 2+ módulos na seleção
+  // múltipla (Ctrl+clique solto, ou um grupo salvo já expandido pelo clique
+  // simples — ver selectProjectSlot); com menos de 2, deixa o menu do
+  // sistema operacional aparecer normal (não atrapalha quem só quer
+  // inspecionar a página). O resto das ações do grupo (duplicar, ver
+  // orçamento, renomear) fica na barra flutuante — ver
+  // refreshProjectGroupToolbar, portal-06c.
+  domEl.addEventListener('contextmenu', (ev) => {
+    if (projectMultiSelectIds.size < 2) return;
+    ev.preventDefault();
+    const ids = Array.from(projectMultiSelectIds);
+    const first = projectSlots.find((s) => s.id === ids[0]);
+    const groupMembers = (first && first.group_id)
+      ? projectSlots.filter((s) => s.group_id === first.group_id)
+      : [];
+    const isWholeSavedGroup = groupMembers.length > 0
+      && groupMembers.length === ids.length
+      && groupMembers.every((s) => projectMultiSelectIds.has(s.id));
+    if (isWholeSavedGroup) {
+      const nomeGrupo = first.group_name || I18n.t('project.group_default_name');
+      if (confirm(I18n.t('project.group_ungroup_confirm', { name: nomeGrupo }))) {
+        ungroupProjectSlots(projectMultiSelectIds);
+      }
+    } else {
+      createProjectSlotGroup(projectMultiSelectIds);
+    }
   });
 
   // ---------- Duplo toque no ambiente (2026-08-08, iPad) ----------
@@ -1076,6 +1242,7 @@ function handleProject3DFloorMove(state, slot, ev) {
         renderProjectCanvas();
         state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
         if (state.group) ViewerProjectEdit.setHoverHighlight(state.group);
+        refreshProjectGroupCoDragRefs(state);
         return;
       }
     }
@@ -1123,6 +1290,7 @@ function handleProject3DFloorMove(state, slot, ev) {
     renderProjectCanvas();
     state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
     refreshProject3DHighlight();
+    refreshProjectGroupCoDragRefs(state);
     return;
   }
 
@@ -1142,6 +1310,7 @@ function handleProject3DFloorMove(state, slot, ev) {
     state.group.position.z = zMm / 1000;
     state.group.position.y = 0;
     ViewerProjectEdit.updateHoverHighlight();
+    applyProjectGroupCoDragPreview(state);
   }
 }
 
@@ -3287,6 +3456,11 @@ function serializeProjectSlots() {
     // Árvore de vãos montada no construtor de armário (spec §4.5 — cabe no
     // jsonb que já existe, sem migration). null = o cliente não mexeu.
     layout: slot.layout || null,
-    thumbnail_data_url: slot.thumbnail_data_url || null
+    thumbnail_data_url: slot.thumbnail_data_url || null,
+    // Grupo de módulos (2026-09-03) — null/null = avulso. Ver
+    // createProjectSlotGroup/ungroupProjectSlots (portal-06b) e a
+    // restauração em portal-09-projetos-final.js.
+    group_id: slot.group_id || null,
+    group_name: slot.group_name || null
   }));
 }

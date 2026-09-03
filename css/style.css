@@ -2790,6 +2790,31 @@ header.po-topnav {
   border-radius: 8px; padding: 2px;
   box-shadow: 0 4px 14px rgba(0,0,0,0.13);
 }
+
+/* BARRA DO GRUPO (2026-09-03) — mesmo esqueleto fixed+worldToClient da barra
+   de ações de um módulo só (acima), mas com TEXTO (contador, total, nomes de
+   ação) em vez de ícones — por isso classe própria em vez de reaproveitar
+   .po-proj-slot-action-btn, que trava largura/altura fixas (28px, pensado
+   pra ícone único). Ver refreshProjectGroupToolbar, portal-06c.js. */
+.po-proj-group-toolbar {
+  position: fixed; z-index: 61; display: flex; align-items: center; gap: 6px;
+  transform: translate(-50%, -50%); pointer-events: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.13);
+  font-size: 12.5px; white-space: nowrap;
+}
+.po-proj-group-toolbar-label {
+  color: #4a4740; font-weight: 600; padding-right: 4px;
+  border-right: 1px solid var(--border);
+}
+.po-proj-group-toolbar-btn {
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+  color: #4a4740; font-size: 12px; padding: 4px 9px; cursor: pointer;
+}
+.po-proj-group-toolbar-btn:hover { background: #f4f2ed; }
+.po-proj-group-toolbar-btn-danger { color: #b0503c; border-color: #e2b6ab; }
+.po-proj-group-toolbar-btn-danger:hover { background: #f7e4e0; }
 /* BOLINHAS (2026-08-08, pedido do usuário: "troca os quadrados de duplicar e
    excluir por bolinhas, fica uma area menor"). O círculo ocupa ~78% da área de
    um quadrado do mesmo lado, e o diâmetro caiu de 34 pra 28px — no total,

@@ -877,6 +877,11 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         // Construtor de armário: a árvore volta como veio (o motor só a lê
         // quando a janela abre). Projeto salvo antes disso não tem a chave.
         layout: cfg.layout || null,
+        // Grupo de módulos (2026-09-03) — projeto salvo antes disso não tem
+        // essas chaves, cai em null/null (avulso), igual sempre foi. Ver
+        // serializeProjectSlots (portal-08-projetos-paredes.js).
+        group_id: cfg.group_id || null,
+        group_name: cfg.group_name || null,
         result,
         thumbnail_data_url: cfg.thumbnail_data_url || null,
         widthPresetsMm: lockedDimensionPresets.width,

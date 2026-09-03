@@ -2748,6 +2748,35 @@ function createViewerComposition3D() {
     else hoverBoxHelper.update();
   }
 
+  // Contorno de VÁRIOS módulos ao mesmo tempo (2026-09-03, seleção múltipla/
+  // grupo — Ctrl+clique ou grupo salvo, ver projectMultiSelectIds em
+  // portal-06a). Mesma técnica de setHoverHighlight (caixa escrita na mão
+  // pra ignorar a hitbox invisível de clique), só que um BoxHelper por
+  // Group em vez de um só — o contorno ÚNICO (setHoverHighlight) continua
+  // existindo e cuidando do módulo "principal" clicado normalmente; este é
+  // aditivo, pros outros membros da seleção. groups = array de Object3D
+  // (vazio ou null apaga tudo).
+  let multiHighlightHelpers = [];
+  function setMultiHighlight(groups) {
+    if (!scene) return;
+    // Tira os de antes — tamanho do grupo mudou, ou a cena foi reconstruída
+    // (os Groups antigos já morreram; os helpers continuam na cena até
+    // serem tirados aqui).
+    multiHighlightHelpers.forEach((h) => scene.remove(h));
+    multiHighlightHelpers = [];
+    (groups || []).forEach((g) => {
+      if (!g) return;
+      const helper = new THREE.BoxHelper(g, 0xff0000);
+      helper.material.depthTest = false;
+      helper.material.linewidth = 2;
+      helper.renderOrder = 999;
+      helper.name = 'ar-export-exclude';
+      escreveCaixaNoHelper(helper, caixaSemHitbox(g));
+      scene.add(helper);
+      multiHighlightHelpers.push(helper);
+    });
+  }
+
   // Acha de volta o Group de um slotId específico dentro da cena ATUAL —
   // usado pra "readotar" o contorno de destaque depois de qualquer
   // reconstrução completa (renderFreeformWalls troca TODOS os Groups por
@@ -3038,7 +3067,7 @@ function createViewerComposition3D() {
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
     setControlsEnabled, getDomElement, pickAssemblyAt, intersectPlaneAtClient,
-    setHoverHighlight, updateHoverHighlight, findGroupBySlotId,
+    setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.
     pickRoomSurfaceAt, frameDirection, setResizeArrows, pickResizeArrowAt,
