@@ -967,6 +967,9 @@ function attachProject3DEditDrag() {
       // (ver applyProjectGroupCoDragPreview) — commit de verdade só no
       // soltar (endDrag3D), igual o módulo agarrado.
       applyProjectGroupCoDragPreview(state);
+      // Bloco grande do grupo (2026-09-04) acompanha o co-arraste — sem
+      // isto ficaria preso na caixa de quando a seleção começou.
+      if (ViewerProjectEdit.updateMultiHighlight) ViewerProjectEdit.updateMultiHighlight();
     }
   });
 
@@ -2845,7 +2848,7 @@ async function sendProjectToOrder() {
     // possível e não depender de todo ponto que reatribui aquele objeto.
     // Sem projeto salvo (loadedProjectFavorite null), os 2 ficam null — a
     // Proposta cai pro fallback dela mesma (aviso "sem render").
-    let projectRenderFields = { project_thumbnail_data_url: null, project_photoreal_url: null };
+    let projectRenderFields = { project_thumbnail_data_url: null, project_photoreal_url: null, project_photoreal_urls: null };
     if (loadedProjectFavorite && loadedProjectFavorite.id) {
       try {
         const { data: freshProject } = await supabaseClient
@@ -2854,12 +2857,26 @@ async function sendProjectToOrder() {
           .eq('id', loadedProjectFavorite.id)
           .single();
         if (freshProject) {
-          projectRenderFields = {
-            project_thumbnail_data_url: freshProject.thumbnail_data_url || null,
-            project_photoreal_url: freshProject.ai_preview_url || null
-          };
+          projectRenderFields.project_thumbnail_data_url = freshProject.thumbnail_data_url || null;
+          projectRenderFields.project_photoreal_url = freshProject.ai_preview_url || null;
         }
       } catch (e) { /* sem render disponível — pedido segue sem ele, Proposta avisa na hora */ }
+      // GRADE INTEIRA de fotos realistas (migration 153, pedido do usuário
+      // 2026-09-04: "quero que a proposta carregue todas as imagens
+      // renderizadas do projeto") — antes só ai_preview_url (a MAIS
+      // RECENTE) ia pro pedido, mesmo com várias fotos salvas na grade
+      // (project_photoreal_photos, migration 077). Mais antiga primeiro —
+      // mesma ordem em que os ângulos foram gerados.
+      try {
+        const { data: photos } = await supabaseClient
+          .from('project_photoreal_photos')
+          .select('image_url')
+          .eq('project_id', loadedProjectFavorite.id)
+          .order('created_at', { ascending: true });
+        if (Array.isArray(photos) && photos.length) {
+          projectRenderFields.project_photoreal_urls = photos.map((p) => p.image_url).filter(Boolean);
+        }
+      } catch (e) { /* migration 153 ainda não rodou, ou grade vazia — Proposta cai pro campo antigo */ }
     }
     const { data: order, error: orderError } = await supabaseClient
       .from('orders')
@@ -2871,6 +2888,7 @@ async function sendProjectToOrder() {
         submitted_at: new Date().toISOString(),
         wall_shape: projectWallShape,
         wall_widths_mm: projectWallWidthsMm.slice(),
+        wall_segments: projectWallSegments.length ? projectWallSegments : null,
         ...projectRenderFields
       })
       .select()

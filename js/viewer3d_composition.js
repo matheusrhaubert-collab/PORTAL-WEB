@@ -2748,33 +2748,53 @@ function createViewerComposition3D() {
     else hoverBoxHelper.update();
   }
 
-  // Contorno de VÁRIOS módulos ao mesmo tempo (2026-09-03, seleção múltipla/
-  // grupo — Ctrl+clique ou grupo salvo, ver projectMultiSelectIds em
-  // portal-06a). Mesma técnica de setHoverHighlight (caixa escrita na mão
-  // pra ignorar a hitbox invisível de clique), só que um BoxHelper por
-  // Group em vez de um só — o contorno ÚNICO (setHoverHighlight) continua
-  // existindo e cuidando do módulo "principal" clicado normalmente; este é
-  // aditivo, pros outros membros da seleção. groups = array de Object3D
-  // (vazio ou null apaga tudo).
-  let multiHighlightHelpers = [];
+  // Contorno de um GRUPO inteiro (2026-09-03, seleção múltipla/grupo —
+  // Ctrl+clique ou grupo salvo, ver projectMultiSelectIds em portal-06a).
+  // Virou UM BLOCO SÓ (2026-09-04, pedido do usuário: "quando vou
+  // selecionar ele seleciona os componentes do grupo, quero que fique um
+  // bloco grande vermelho selecionado, nao individualmente como esta
+  // acontecendo") — antes era um BoxHelper POR módulo (caixa individual em
+  // cada peça), o que lia como "vários selecionados", não "um grupo".
+  // Agora é a caixa UNIÃO de todos os membros escrita num único
+  // BoxHelper — mesma técnica de setHoverHighlight (caixa escrita na mão
+  // pra ignorar a hitbox invisível de clique), só que a união de vários
+  // Object3D em vez de um só. O contorno ÚNICO (setHoverHighlight) continua
+  // existindo por cima, cuidando do módulo "principal" clicado
+  // normalmente. groups = array de Object3D (vazio ou null apaga tudo).
+  let multiHighlightHelper = null;
+  let multiHighlightGroups = [];
+  function uniaoDeGrupos(groups) {
+    const b = new THREE.Box3();
+    groups.forEach((g) => { if (g) b.union(caixaSemHitbox(g)); });
+    return b;
+  }
   function setMultiHighlight(groups) {
     if (!scene) return;
-    // Tira os de antes — tamanho do grupo mudou, ou a cena foi reconstruída
-    // (os Groups antigos já morreram; os helpers continuam na cena até
-    // serem tirados aqui).
-    multiHighlightHelpers.forEach((h) => scene.remove(h));
-    multiHighlightHelpers = [];
-    (groups || []).forEach((g) => {
-      if (!g) return;
-      const helper = new THREE.BoxHelper(g, 0xff0000);
-      helper.material.depthTest = false;
-      helper.material.linewidth = 2;
-      helper.renderOrder = 999;
-      helper.name = 'ar-export-exclude';
-      escreveCaixaNoHelper(helper, caixaSemHitbox(g));
-      scene.add(helper);
-      multiHighlightHelpers.push(helper);
-    });
+    multiHighlightGroups = (groups || []).filter(Boolean);
+    if (!multiHighlightGroups.length) {
+      if (multiHighlightHelper) multiHighlightHelper.visible = false;
+      return;
+    }
+    if (!multiHighlightHelper) {
+      multiHighlightHelper = new THREE.BoxHelper(multiHighlightGroups[0], 0xff0000);
+      multiHighlightHelper.material.depthTest = false;
+      multiHighlightHelper.material.linewidth = 2.5;
+      multiHighlightHelper.renderOrder = 999;
+      multiHighlightHelper.name = 'ar-export-exclude';
+      scene.add(multiHighlightHelper);
+    }
+    escreveCaixaNoHelper(multiHighlightHelper, uniaoDeGrupos(multiHighlightGroups));
+    multiHighlightHelper.visible = true;
+  }
+  // Recalcula a união SEM trocar de grupo rastreado (mesmo espírito de
+  // updateHoverHighlight) — chamado a cada pointermove de um co-arraste de
+  // grupo (portal-08-projetos-paredes.js), que já reposiciona os Groups ao
+  // vivo sem reconstruir a cena; sem isto o bloco grande ficaria "preso" no
+  // tamanho/posição de quando a seleção começou, em vez de acompanhar o
+  // grupo sendo arrastado.
+  function updateMultiHighlight() {
+    if (!multiHighlightHelper || !multiHighlightHelper.visible || !multiHighlightGroups.length) return;
+    escreveCaixaNoHelper(multiHighlightHelper, uniaoDeGrupos(multiHighlightGroups));
   }
 
   // Acha de volta o Group de um slotId específico dentro da cena ATUAL —
@@ -3067,7 +3087,7 @@ function createViewerComposition3D() {
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
     setControlsEnabled, getDomElement, pickAssemblyAt, intersectPlaneAtClient,
-    setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight,
+    setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.
     pickRoomSurfaceAt, frameDirection, setResizeArrows, pickResizeArrowAt,

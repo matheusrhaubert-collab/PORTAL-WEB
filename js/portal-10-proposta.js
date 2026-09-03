@@ -97,20 +97,71 @@ function proposalItemsOnWall(items, wallIndex) {
 // vazias"). displayIndex é o número mostrado ("Parede 1", "Parede 2"...),
 // sequencial só entre as paredes exibidas — não pula número quando uma
 // parede do meio está vazia e é descartada.
+//
+// "PAREDE DESENHADA VENCE" (2026-09-04, mesma regra de
+// getProjectWallCount/getProjectWallWidthMm em
+// portal-06a-projetos-canvas-core.js chegando aqui) — bug relatado pelo
+// usuário: "nao esta mostrando as cotas de todas as paredes", só "Wall 1"
+// aparecia. Esta função só conhecia o sistema ANTIGO de forma fixa
+// (wall_shape/wall_widths_mm, até 3 paredes), aposentado em 13/08/2026
+// quando as paredes viraram planta desenhada (projectWallSegments) — mas
+// nunca foi atualizada pra saber disso, nem quando migration 139 (24/08,
+// 11 dias DEPOIS da planta desenhada já existir) congelou geometria no
+// pedido. 3 fontes, em ordem de prioridade:
+//   1) order.wall_segments — planta desenhada congelada (migration 153).
+//      Só existe em pedidos enviados DEPOIS dela.
+//   2) order.wall_shape/wall_widths_mm — forma fixa legada (1-3 paredes
+//      retas). Cobre pedidos de antes da planta desenhada existir.
+//   3) Nem uma nem outra bateu com o que os ITENS realmente usam: o MAIOR
+//      wall_index citado em project_placement decide quantas paredes
+//      existem (pedidos enviados ENTRE a planta desenhada nascer e a
+//      migration 153 — como o pedido que motivou este ajuste — têm
+//      wall_index certo no item, mas nenhuma das 2 fontes acima "sabe" que
+//      aquela parede existe). Largura, nesse caso, não é a parede "de
+//      verdade" (não temos a medida) — é o alcance real dos módulos nela
+//      mais uma folga, só pra caber tudo no desenho.
 function proposalWallList(order, items) {
-  const shape = (order && order.wall_shape) || 'single';
-  const roles = PROPOSAL_WALL_ROLES_BY_SHAPE[shape] || ['main'];
+  const segs = Array.isArray(order && order.wall_segments) ? order.wall_segments : null;
   const widths = Array.isArray(order && order.wall_widths_mm) && order.wall_widths_mm.length
     ? order.wall_widths_mm
-    : [3000];
-  const all = roles.map((role, i) => ({ wallIndex: i, role, widthMm: Number(widths[i]) || 3000 }));
+    : null;
+  const roles = (order && order.wall_shape && PROPOSAL_WALL_ROLES_BY_SHAPE[order.wall_shape]) || null;
+
+  const maxItemWallIndex = (items || []).reduce((max, it) => {
+    const wi = (it && it.project_placement) ? Number(it.project_placement.wall_index || 0) : -1;
+    return Math.max(max, wi);
+  }, -1);
+
+  const wallCount = Math.max(segs ? segs.length : 0, roles ? roles.length : 0, maxItemWallIndex + 1);
+  if (wallCount <= 0) return [];
+
+  const all = [];
+  for (let i = 0; i < wallCount; i++) {
+    let widthMm = 0;
+    const seg = segs && segs[i];
+    if (seg) {
+      widthMm = Math.hypot(Number(seg.bx || 0) - Number(seg.ax || 0), Number(seg.bz || 0) - Number(seg.az || 0));
+    } else if (widths && widths[i]) {
+      widthMm = Number(widths[i]) || 0;
+    }
+    if (!(widthMm > 0)) {
+      // Sem parede desenhada nem largura legada pra esta posição (fonte 3
+      // acima) — usa o alcance real dos módulos, com uma folga de 150mm.
+      const reach = proposalItemsOnWall(items, i).reduce((max, it) => {
+        const p = it.project_placement;
+        return Math.max(max, Number(p.x_mm || 0) + Number(it.width_mm || 0));
+      }, 0);
+      widthMm = reach > 0 ? reach + 150 : 3000;
+    }
+    all.push({ wallIndex: i, widthMm });
+  }
   const withItems = all.filter((w) => proposalItemsOnWall(items, w.wallIndex).length > 0);
   withItems.forEach((w, i) => { w.displayIndex = i + 1; });
   return withItems;
 }
 
 function proposalHasLayoutData(order, items) {
-  if (!order || !order.wall_shape) return false;
+  if (!order) return false;
   if (!(items || []).some((it) => it && it.project_placement && typeof it.project_placement === 'object')) return false;
   return proposalWallList(order, items).length > 0;
 }
@@ -377,12 +428,18 @@ function proposalDimDrawRows(doc, rows, y) {
 // cota (e a linha de chamada até ela) esticam mais longe quando precisa.
 const PROPOSAL_DIM_COL_GAP = 4.5;
 
-function proposalDimAssignColumns(entries) {
+function proposalDimAssignColumns(entries, maxX) {
   const sorted = entries.slice().sort((a, b) => a.naturalAnchorX - b.naturalAnchorX);
   let lastAnchorX = -Infinity;
   sorted.forEach((e) => {
-    e.dimAnchorX = Math.max(e.naturalAnchorX, lastAnchorX + PROPOSAL_DIM_COL_GAP);
-    lastAnchorX = e.dimAnchorX;
+    let anchor = Math.max(e.naturalAnchorX, lastAnchorX + PROPOSAL_DIM_COL_GAP);
+    // TRAVA DE SEGURANÇA (2026-09-04, "coisa passando pra fora da
+    // pagina"): módulos estreitos demais acumulam empurrão sem teto — sem
+    // isto a cota do último módulo de uma parede cheia podia nascer bem
+    // depois da margem direita da folha, fora da área imprimível.
+    if (maxX != null) anchor = Math.min(anchor, maxX);
+    e.dimAnchorX = anchor;
+    lastAnchorX = anchor;
   });
 }
 
@@ -496,11 +553,25 @@ async function generateOrderProposalPDF(order, items) {
       y += 3;
     }
 
-    // ---------- Render do projeto ----------
+    // ---------- Render(es) do projeto ----------
+    // GRADE inteira (2026-09-04, pedido do usuário: "quero que a proposta
+    // carregue todas as imagens renderizadas do projeto") — antes só a
+    // foto realista MAIS RECENTE (ou o snapshot rápido, sem foto nenhuma
+    // salva) aparecia aqui, mesmo quando o projeto tinha várias fotos
+    // salvas (📸 grade de fotos realistas, project_photoreal_photos,
+    // migration 077). project_photoreal_urls (plural, migration 153) é
+    // essa grade INTEIRA, congelada no pedido no momento do envio; sem ela
+    // (pedido enviado antes da migration, ou projeto sem nenhuma foto na
+    // grade) cai pro campo antigo (singular), igual já funcionava.
     proposalSectionHeader(doc, I18n.t('proposal.render_section'), PROPOSAL_MARGIN_MM, y, contentWidth); y += 8;
-    const renderUrl = order.project_photoreal_url || order.project_thumbnail_data_url || null;
-    const renderMeta = await proposalImageMeta(await proposalUrlToDataUrl(renderUrl));
-    if (renderMeta) {
+    const renderUrls = Array.isArray(order.project_photoreal_urls) && order.project_photoreal_urls.length
+      ? order.project_photoreal_urls
+      : [order.project_photoreal_url || order.project_thumbnail_data_url || null].filter(Boolean);
+    let renderedAny = false;
+    for (let ri = 0; ri < renderUrls.length; ri++) {
+      const renderMeta = await proposalImageMeta(await proposalUrlToDataUrl(renderUrls[ri]));
+      if (!renderMeta) continue;
+      renderedAny = true;
       ensureSpace(90);
       const availH = Math.min(140, pageHeight - y - PROPOSAL_MARGIN_MM);
       const fit = proposalFitImage(doc, renderMeta, PROPOSAL_MARGIN_MM, y, contentWidth, availH);
@@ -508,7 +579,8 @@ async function generateOrderProposalPDF(order, items) {
       doc.setLineWidth(0.3);
       doc.rect(fit.x, fit.y, fit.w, fit.h, 'S');
       y += fit.h + 8;
-    } else {
+    }
+    if (!renderedAny) {
       doc.setFontSize(10);
       doc.setTextColor(150);
       doc.text(I18n.t('proposal.render_missing'), PROPOSAL_MARGIN_MM, y);
@@ -522,19 +594,22 @@ async function generateOrderProposalPDF(order, items) {
     if (hasLayout && walls.length > 0) {
       newPage(I18n.t('proposal.elevations_section'));
       walls.forEach((wall, idx) => {
-        // Folga generosa: cobre o teto novo de altura (drawAreaH=90) mais
-        // a cota corrida empilhando em 2-3 linhas quando os módulos são
-        // estreitos, pra nunca sobrar wall estourando pro fundo da página.
-        if (idx > 0) ensureSpace(140);
+        // 1 PAREDE = 1 PÁGINA (2026-09-04, bug relatado pelo usuário:
+        // "muito amontuado os valores sem visibilidade, coisa passando pra
+        // fora da pagina") — a altura de uma parede não é fixa (depende de
+        // quantas linhas de cota ela precisa), então um chute de espaço
+        // (ensureSpace) podia ficar curto pra parede cheia de módulos.
+        // newPage() garante a folha inteira em branco pra cada parede,
+        // sempre.
+        if (idx > 0) newPage(I18n.t('proposal.elevations_section'));
         y = proposalDrawElevation(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
         y += 10;
       });
 
       newPage(I18n.t('proposal.top_view_section'));
       walls.forEach((wall, idx) => {
-        // Idem: agora pode ter a tira extra dos armários de parede em cima
-        // da tira de base, então a folga também subiu.
-        if (idx > 0) ensureSpace(100);
+        // Idem — ver comentário grande acima, no laço das elevações.
+        if (idx > 0) newPage(I18n.t('proposal.top_view_section'));
         y = proposalDrawTopView(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
         y += 10;
       });
@@ -706,7 +781,7 @@ function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
     const rectH = iH * scale;
     return { it, rectX, rectY, rectW, rectH, iH, naturalAnchorX: rectX + rectW + 2.5 };
   });
-  proposalDimAssignColumns(elevEntries);
+  proposalDimAssignColumns(elevEntries, PROPOSAL_MARGIN_MM + contentWidth - 2);
 
   elevEntries.forEach((e) => {
     const { it, rectX, rectY, rectW, rectH, iH } = e;
@@ -826,7 +901,7 @@ function proposalDrawTopView(doc, wall, wallItems, y, contentWidth, pdfUnit) {
     const rectH = dMm * scale;
     return { it, rectX, rectW, rectH, dMm, naturalAnchorX: rectX + rectW + 2.5 };
   });
-  proposalDimAssignColumns(baseEntries);
+  proposalDimAssignColumns(baseEntries, PROPOSAL_MARGIN_MM + contentWidth - 2);
 
   baseEntries.forEach((e) => {
     const { it, rectX, rectW, rectH, dMm } = e;
@@ -915,7 +990,9 @@ async function generateProjectProposalPDF() {
       submitted_at: null,
       wall_shape: projectWallShape,
       wall_widths_mm: (projectWallWidthsMm || []).slice(),
+      wall_segments: projectWallSegments.length ? projectWallSegments : null,
       project_photoreal_url: (loadedProjectFavorite && loadedProjectFavorite.ai_preview_url) || null,
+      project_photoreal_urls: (projectPhotorealPhotos || []).map((p) => p.image_url).filter(Boolean),
       project_thumbnail_data_url: null
     };
     if (!liveOrder.project_photoreal_url) {
