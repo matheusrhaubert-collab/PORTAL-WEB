@@ -1247,6 +1247,34 @@
     }, 0);
   }
 
+  // ---- Peso (kg) com densidade POR COR — migration 152 (2026-09-03, pedido
+  // do usuário: "o plywood... tem densidades diferentes, talvez tenhamos que
+  // tirar a densidade das margens e colocar nas cores"). Mesma travessia
+  // recursiva de calculateVolumeM3 (peça-módulo nunca soma peso próprio, só
+  // as peças FOLHA em child_breakdown), mas em vez de multiplicar o volume
+  // TOTAL por uma densidade global só no final, cada peça FOLHA resolve a
+  // SUA PRÓPRIA densidade — via p.color_role_id (papel de cor da peça,
+  // sempre presente no breakdown) buscado em colorsByRole (mesmo mapa que
+  // resolvePiecesForViewer/nomeCor já usam) — e cai pra fallbackDensity
+  // (a densidade global de sempre, pricing_settings.weight_density_kg_per_m3)
+  // quando a cor não tem density_kg_per_m3 preenchido (null) ou colorsByRole
+  // não foi passado. É por isso que "deixar tudo como padrão que existe
+  // hoje" funciona sozinho: nenhuma cor tem density_kg_per_m3 até o usuário
+  // preencher uma manualmente no ERP.
+  function calculateWeightKg(breakdown, colorsByRole, fallbackDensityKgPerM3) {
+    return (breakdown || []).reduce(function (sum, p) {
+      if (!p) return sum;
+      if (p.is_module) {
+        return sum + calculateWeightKg(p.child_breakdown, colorsByRole, fallbackDensityKgPerM3) * (p.quantity || 1);
+      }
+      const pieceVolumeM3 = ((p.width_mm || 0) * (p.height_mm || 0) * (p.depth_mm || 0) * (p.quantity || 1)) / 1e9;
+      const color = (colorsByRole || {})[p.color_role_id];
+      const ownDensity = color ? Number(color.density_kg_per_m3) : NaN;
+      const density = Number.isFinite(ownDensity) && ownDensity > 0 ? ownDensity : (Number(fallbackDensityKgPerM3) || 700);
+      return sum + pieceVolumeM3 * density;
+    }, 0);
+  }
+
   const Pricing = {
     evalFormula,
     setFormulaGlobals,
@@ -1284,7 +1312,8 @@
     isPieceVisible,
     calculateAssembly,
     calculateModulePrice,
-    calculateVolumeM3
+    calculateVolumeM3,
+    calculateWeightKg
   };
 
   if (typeof module !== 'undefined' && module.exports) {

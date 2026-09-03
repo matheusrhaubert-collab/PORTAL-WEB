@@ -756,7 +756,7 @@ function renderProjectConfigPanel() {
     ${positionBlock}
     <div class="po-proj-config-row"><span>${I18n.t('project.config_depth_label')}</span><span>${depthLabel}</span></div>
     <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney(isSellerAccount() ? getDisplayPrice((slot.result && slot.result.total) || 0) : (slot.result && slot.result.total) || 0)}</span></div>
-    <div class="po-proj-config-row hint"><span>${I18n.t('volume_weight.label')}</span><span>${formatVolumeWeight((slot.result && slot.result.breakdown) || [])}</span></div>
+    <div class="po-proj-config-row hint"><span>${I18n.t('volume_weight.label')}</span><span>${formatVolumeWeight((slot.result && slot.result.breakdown) || [], undefined, slot.colorsByRole)}</span></div>
     <button type="button" class="secondary" id="po-proj-config-edit-btn">${I18n.t('project.config_edit_btn')}</button>
     <button type="button" class="secondary" id="po-proj-config-duplicate-btn" title="${I18n.t('project.duplicate_title')}">${I18n.t('project.duplicate_btn')}</button>
     <button type="button" class="secondary po-proj-config-remove-btn" id="po-proj-config-remove-btn">${I18n.t('project.config_remove_btn')}</button>
@@ -908,11 +908,38 @@ function renderProjectSummary() {
   // Vendedor (migration 149, pedido do Matt 02/09/2026: "tira de todos os
   // pontos onde aparecem, so para os vendedores") nunca vê o preço de
   // fábrica cru — nem no card "Resumo do projeto" enquanto monta o ambiente.
-  setText('po-proj-total', formatMoney(isSellerAccount() ? getDisplayPrice(total) : total));
+  const summaryTotal = isSellerAccount() ? getDisplayPrice(total) : total;
+  setText('po-proj-total', formatMoney(summaryTotal));
+  // Custo final com desconto de fábrica (2026-09-03) — mesma regra da linha
+  // equivalente no modal $ Orçamento (renderMoneyOrcamento,
+  // portal-06b-projetos-canvas-ia-custo.js): computeCustoBase() é um no-op
+  // pra quem não tem nada configurado em Margens, então a linha só aparece
+  // quando o valor realmente muda.
+  const finalCostRow = document.getElementById('po-proj-total-final-cost-row');
+  if (finalCostRow) {
+    const finalCost = computeCustoBase(summaryTotal);
+    const showFinalCost = Math.abs(finalCost - summaryTotal) >= 0.005;
+    finalCostRow.style.display = showFinalCost ? '' : 'none';
+    if (showFinalCost) setText('po-proj-total-final-cost', formatMoney(finalCost));
+  }
   // Volume/peso somado — migration 061. Cada slot é 1 unidade (Projetos não
   // tem conceito de quantidade), então soma direta dos breakdowns.
+  //
+  // Migration 152 (2026-09-03) — densidade por cor: cada slot pode ter uma
+  // cor com density_kg_per_m3 própria (plywood etc.), então o PESO tem que
+  // ser somado slot a slot (itemVolumeAndWeightKg, com slot.colorsByRole),
+  // não dá mais pra somar só o volume total e multiplicar por UMA
+  // densidade global no final como antes.
   setText('po-proj-volume-weight', projectSlots.length > 0
-    ? formatVolumeWeightFromM3(projectSlots.reduce((sum, slot) => sum + itemVolumeM3((slot.result && slot.result.breakdown) || []), 0))
+    ? (function () {
+        const totals = projectSlots.reduce((acc, slot) => {
+          const vw = itemVolumeAndWeightKg((slot.result && slot.result.breakdown) || [], 1, slot.colorsByRole);
+          acc.m3 += vw.m3;
+          acc.kg += vw.kg;
+          return acc;
+        }, { m3: 0, kg: 0 });
+        return formatVolumeM3(totals.m3) + ' · ' + formatWeightKg(totals.kg);
+      })()
     : '—');
 
   // Empty state só enquanto o ambiente está vazio — com módulo, o resumo

@@ -317,7 +317,7 @@ function refreshAllUnitDependentViews() {
   // exibição (não precisa recalcular o preço, só reformatar).
   if (typeof lastItemResult !== 'undefined' && lastItemResult && lastItemResult.result) {
     const vwEl = document.getElementById('po-item-volume-weight');
-    if (vwEl) vwEl.textContent = formatVolumeWeight(lastItemResult.result.breakdown);
+    if (vwEl) vwEl.textContent = formatVolumeWeight(lastItemResult.result.breakdown, undefined, lastItemResult.colorsByRole);
   }
   // Plano de Corte (migration 073, 2026-08-02) — Comprimento/Largura de cada
   // linha reformatam pra unidade nova (o valor em MM por trás não muda,
@@ -2570,7 +2570,7 @@ function recalculatePreview() {
     // vazio (ver comentário acima), formatVolumeWeight some sozinho (m³/kg
     // ficam 0.00/0.0, então esconde a linha em vez de mostrar zero).
     const itemVwEl = document.getElementById('po-item-volume-weight');
-    if (itemVwEl) itemVwEl.textContent = currentModule.is_decoration ? '' : formatVolumeWeight(result.breakdown);
+    if (itemVwEl) itemVwEl.textContent = currentModule.is_decoration ? '' : formatVolumeWeight(result.breakdown, undefined, colorsByRole);
     document.getElementById('po-price-section').style.display = 'block';
   } catch (err) {
     showError(I18n.t('step2.price_calc_error', { msg: err.message }));
@@ -2668,17 +2668,45 @@ function itemVolumeM3(breakdown, quantity) {
   return Pricing.calculateVolumeM3(breakdown || []) * (Number(quantity) || 1);
 }
 
+// Volume E peso de UM item, já multiplicados pela quantidade — versão que
+// devolve os dois separados (não uma string pronta) pra quem precisa SOMAR
+// vários itens ANTES de formatar, com cada um podendo ter cor/densidade
+// diferente (migration 152, ver po-proj-volume-weight em
+// portal-06c-projetos-canvas-3d-acoes.js — ali não dá pra somar só o volume
+// e multiplicar por UMA densidade no final, porque cada slot pode ter uma
+// cor com density_kg_per_m3 própria). colorsByRole é o mesmo mapa
+// role->cor de sempre (ver resolvePiecesForViewer/nomeCor); omitido, cai
+// 100% na densidade global (mesmo resultado de antes).
+function itemVolumeAndWeightKg(breakdown, quantity, colorsByRole) {
+  if (typeof Pricing === 'undefined' || !Pricing.calculateVolumeM3) return { m3: 0, kg: 0 };
+  const qty = Number(quantity) || 1;
+  const m3 = Pricing.calculateVolumeM3(breakdown || []) * qty;
+  const kg = Pricing.calculateWeightKg
+    ? Pricing.calculateWeightKg(breakdown || [], colorsByRole || {}, materialDensityKgPerM3) * qty
+    : m3 * materialDensityKgPerM3;
+  return { m3, kg };
+}
+
 // String pronta pra colocar do lado do preço: "0.25 m³ · 12.3 kg", a partir
 // de um total em m³ JÁ SOMADO (ver itemVolumeM3/somas no carrinho/pedido/
 // projeto — cada chamador soma os itens que fizerem sentido pra ele, com
-// quantidade já considerada, antes de formatar aqui).
+// quantidade já considerada, antes de formatar aqui). Sempre densidade
+// GLOBAL (não sabe de cor nenhuma) — usada onde não existe colorsByRole
+// carregado em memória (carrinho/pedido, ver portal-02-pedidos.js).
 function formatVolumeWeightFromM3(totalM3) {
   const kg = totalM3 * materialDensityKgPerM3;
   return formatVolumeM3(totalM3) + ' · ' + formatWeightKg(kg);
 }
 
 // Atalho pro caso comum de UM item só (quantidade 1, ex: preview do módulo
-// em configuração — ainda não tem quantidade escolhida).
-function formatVolumeWeight(breakdown, quantity) {
+// em configuração — ainda não tem quantidade escolhida). colorsByRole
+// (migration 152, opcional) deixa cada peça usar a densidade DA SUA COR
+// (colors.density_kg_per_m3) quando ela tiver uma configurada — omitido,
+// comportamento idêntico a antes (densidade global pra tudo).
+function formatVolumeWeight(breakdown, quantity, colorsByRole) {
+  if (colorsByRole) {
+    const vw = itemVolumeAndWeightKg(breakdown, quantity, colorsByRole);
+    return formatVolumeM3(vw.m3) + ' · ' + formatWeightKg(vw.kg);
+  }
   return formatVolumeWeightFromM3(itemVolumeM3(breakdown, quantity));
 }

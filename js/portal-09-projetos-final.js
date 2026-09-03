@@ -511,7 +511,19 @@ async function loadProjectFavoritesList() {
     const resaleSuffix = Math.abs(resaleTotal - total) >= 0.005
       ? ' · ' + I18n.t('fav.resale_total_label', { total: formatMoney(resaleTotal) })
       : '';
+    // Custo final com desconto de fábrica, SEM margem (2026-09-03, pedido
+    // do usuário: "na ama my projects quero que mostre valor ja com
+    // descotno de fabrica tambem") — diferente de "Revenda sugerida" acima
+    // (que já soma a margem do lojista em cima do desconto): aqui é só o
+    // desconto de fábrica + extras de custo (computeCustoBase, mesma
+    // função das linhas equivalentes no modal $ Orçamento e no Resumo do
+    // projeto). Mesmo padrão de "esconder quando não muda nada".
+    const custoFinal = computeCustoBase(total);
+    const custoFinalSuffix = Math.abs(custoFinal - total) >= 0.005
+      ? ' · ' + I18n.t('fav.final_cost_label', { total: formatMoney(custoFinal) })
+      : '';
     el.textContent = I18n.t('fav.total_label', { total: formatMoney(total) })
+      + custoFinalSuffix
       + resaleSuffix
       + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
   };
