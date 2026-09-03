@@ -644,8 +644,7 @@ async function generateOrderProposalPDF(order, items) {
     const hasLayout = proposalHasLayoutData(order, items);
     if (hasLayout && walls.length > 0) {
       newPage(I18n.t('proposal.elevations_section'));
-      for (let idx = 0; idx < walls.length; idx++) {
-        const wall = walls[idx];
+      walls.forEach((wall, idx) => {
         // 1 PAREDE = 1 PÁGINA (2026-09-04, bug relatado pelo usuário:
         // "muito amontuado os valores sem visibilidade, coisa passando pra
         // fora da pagina") — a altura de uma parede não é fixa (depende de
@@ -654,9 +653,9 @@ async function generateOrderProposalPDF(order, items) {
         // newPage() garante a folha inteira em branco pra cada parede,
         // sempre.
         if (idx > 0) newPage(I18n.t('proposal.elevations_section'));
-        y = await proposalDrawElevation(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
+        y = proposalDrawElevation(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
         y += 10;
-      }
+      });
 
       // PLANTA BAIXA — UM AMBIENTE SÓ (2026-09-04, "nao tem a principla que
       // e a planta baixa em paralelo de todo ambiente") — 1 página, 1
@@ -794,7 +793,7 @@ async function generateOrderProposalPDF(order, items) {
 // numerado (cross-reference com a lista) e cotas de verdade FORA da peça:
 // altura à direita de cada módulo, largura numa cota corrida embaixo de
 // toda a parede (segmentada por módulo) mais uma cota total por baixo.
-async function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
+function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfUnit) {
   const wallHeightMm = Math.max(2400, ...wallItems.map((it) => Number(it.project_placement.floor_height_mm || 0) + Number(it.height_mm || 0)), 0);
   // Prioriza ocupar a largura da folha inteira (pedido do Matt, 03/09:
   // "pegam o floor plan todo, preencher toda a folha") — antes a escala
@@ -835,21 +834,18 @@ async function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfU
   });
   proposalDimAssignColumns(elevEntries, PROPOSAL_MARGIN_MM + contentWidth - 2);
 
-  for (const e of elevEntries) {
+  elevEntries.forEach((e) => {
     const { it, rectX, rectY, rectW, rectH, iH } = e;
     doc.setFillColor.apply(doc, PROPOSAL_COLOR_CARD_FILL);
     doc.setDrawColor.apply(doc, PROPOSAL_COLOR_ACCENT);
     doc.setLineWidth(0.25);
     doc.roundedRect(rectX, rectY, rectW, rectH, 0.6, 0.6, 'FD');
 
-    // Miniatura real do módulo (ver comentário grande acima) — só se couber
-    // um mínimo visível (peça de filete/painel fino não ganha foto, ficaria
-    // ilegível espremida; continua só a cor de fundo).
-    if (it.thumbnail_data_url && rectW > 6 && rectH > 6) {
-      const iconMeta = await proposalImageMeta(it.thumbnail_data_url);
-      if (iconMeta) proposalFitImageCentered(doc, iconMeta, rectX + 0.8, rectY + 0.8, rectW - 1.6, rectH - 1.6);
-    }
-
+    // SEM miniatura dentro do bloco (2026-09-04, pedido do usuário: "tira
+    // as imagens icones de dentro dos blocos na proposta, ficou muito
+    // poluido, mas a numeracao ficou boa") — testado numa rodada anterior
+    // e revertido; o selo numerado (linha abaixo) é o que ele confirmou
+    // que funciona bem pra identificar a peça, sem poluir o desenho.
     if (it._num) proposalNumberBadge(doc, rectX + 3, rectY + 3, 2, it._num);
 
     // Cota de altura, do lado de fora (direita) da peça — a linha de
@@ -858,7 +854,7 @@ async function proposalDrawElevation(doc, wall, wallItems, y, contentWidth, pdfU
     proposalExtLineH(doc, rectY, rectX + rectW, e.dimAnchorX + 0.7);
     proposalExtLineH(doc, rectY + rectH, rectX + rectW, e.dimAnchorX + 0.7);
     proposalDimSegmentV(doc, e.dimAnchorX, rectY, rectY + rectH, formatDimension(iH, pdfUnit));
-  }
+  });
 
   // Cota de largura corrida embaixo de toda a parede, segmentada nos
   // limites de cada módulo (padrão de desenho de marcenaria) — empilha
@@ -1003,13 +999,30 @@ function proposalDrawUnifiedFloorPlan(doc, walls, items, originPageX, originPage
       const pA = toPage(baseX, baseZ), pB = toPage(tipX, tipZ);
       doc.line(pA.x, pA.y, pB.x, pB.y);
     });
-    // Comprimento total — texto único, sem vizinho pra colidir.
-    const midA = w.widthMm / 2;
+    const vertical = Math.abs(w.alongDirZ) > Math.abs(w.alongDirX);
     const labelReachMm = w.thicknessMm + 11 / scale;
+
+    // Nome da parede — perto do INÍCIO dela (a = pouco depois da ponta,
+    // pra não empilhar em cima da marca de limite do canto), mesmo texto
+    // "Parede N" que a Elevação já usa (proposal.wall_label), pra bater com
+    // o resto da Proposta.
+    const nameA = Math.min(w.widthMm * 0.22, 55);
+    const nameX = w.originXMm + w.alongDirX * nameA + outX * labelReachMm;
+    const nameZ = w.originZMm + w.alongDirZ * nameA + outZ * labelReachMm;
+    const pName = toPage(nameX, nameZ);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
+    doc.text(I18n.t('proposal.wall_label', { n: w.displayIndex }), pName.x, pName.y, { align: 'center', baseline: 'middle', angle: vertical ? 90 : 0 });
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0);
+
+    // Comprimento total — no MEIO da parede, texto único, sem vizinho pra
+    // colidir (nem com o nome, que fica perto da ponta).
+    const midA = w.widthMm / 2;
     const labelX = w.originXMm + w.alongDirX * midA + outX * labelReachMm;
     const labelZ = w.originZMm + w.alongDirZ * midA + outZ * labelReachMm;
     const pLabel = toPage(labelX, labelZ);
-    const vertical = Math.abs(w.alongDirZ) > Math.abs(w.alongDirX);
     doc.setFontSize(7);
     doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED);
     doc.text(formatDimension(w.widthMm, pdfUnit), pLabel.x, pLabel.y, { align: 'center', baseline: 'middle', angle: vertical ? 90 : 0 });
