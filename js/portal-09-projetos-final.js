@@ -490,41 +490,26 @@ async function loadProjectFavoritesList() {
     totalSpans.push({ el: card.querySelector('.po-myproj-card-total'), slots, proj });
   });
 
-  // Formata "Value: X · Suggested resale: Y" a partir de um total já
-  // conhecido — a margem de revenda (getResaleMarginPct) é aplicada NA
-  // EXIBIÇÃO, nunca entra no cache (pode mudar a qualquer momento).
+  // Formata "Value: X" a partir de um total já conhecido.
+  //
+  // SIMPLIFICADO (2026-09-03, pedido do usuário depois de ver a versão com
+  // "Value: $27550.37 · Final cost w/ discount: $15703.71" na tela: "aqui
+  // deixa so valor sugerido, melhor pros vendedores nao verem. esse valor
+  // total nao precisa de qualqwuer forma aparecer") — o valor de fábrica
+  // CRU (sem desconto de fábrica nem margem) não aparece mais NUNCA neste
+  // card, nem uma linha extra ao lado dele: o card sempre mostra só UM
+  // número, já resolvido (getDisplayPrice — desconto de fábrica + margem,
+  // quando o dealer tem isso configurado em Margens/self-service). Não tem
+  // mais distinção seller/dealer aqui — getDisplayPrice() já resolve isso
+  // sozinho por dentro (RPC get_display_resale_margin_pct devolve a margem
+  // certa pra cada papel, computeCustoBase só desconta pra quem é dealer de
+  // verdade), e o resultado pros dois é o mesmo tipo de número: "o que o
+  // cliente final pagaria", nunca o custo de fábrica. Sem nada configurado
+  // (a imensa maioria das contas), getDisplayPrice(total) === total —
+  // idêntico ao que sempre apareceu.
   const renderCardTotal = (el, total, skipped) => {
-    // Vendedor (migration 149) nunca vê o valor de fábrica cru — só o
-    // "preço de venda loja" (getDisplayPrice, já com a margem do dealer),
-    // sem a linha "· Suggested resale" (aqui a margem NÃO é sugestão, é o
-    // preço de verdade que ele pratica).
-    if (isSellerAccount()) {
-      el.textContent = I18n.t('fav.total_label', { total: formatMoney(getDisplayPrice(total)) })
-        + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
-      return;
-    }
-    // Migration 151 (2026-09-03): mesmo getDisplayPrice() de sempre, agora
-    // também com desconto de fábrica + extras do dealer — ver comentário
-    // de escopo em computeCustoBase (portal-05-cutlist.js). Sem nada
-    // configurado, resultado idêntico a antes (migration 072).
-    const resaleTotal = getDisplayPrice(total);
-    const resaleSuffix = Math.abs(resaleTotal - total) >= 0.005
-      ? ' · ' + I18n.t('fav.resale_total_label', { total: formatMoney(resaleTotal) })
-      : '';
-    // Custo final com desconto de fábrica, SEM margem (2026-09-03, pedido
-    // do usuário: "na ama my projects quero que mostre valor ja com
-    // descotno de fabrica tambem") — diferente de "Revenda sugerida" acima
-    // (que já soma a margem do lojista em cima do desconto): aqui é só o
-    // desconto de fábrica + extras de custo (computeCustoBase, mesma
-    // função das linhas equivalentes no modal $ Orçamento e no Resumo do
-    // projeto). Mesmo padrão de "esconder quando não muda nada".
-    const custoFinal = computeCustoBase(total);
-    const custoFinalSuffix = Math.abs(custoFinal - total) >= 0.005
-      ? ' · ' + I18n.t('fav.final_cost_label', { total: formatMoney(custoFinal) })
-      : '';
-    el.textContent = I18n.t('fav.total_label', { total: formatMoney(total) })
-      + custoFinalSuffix
-      + resaleSuffix
+    const displayTotal = getDisplayPrice(total);
+    el.textContent = I18n.t('fav.total_label', { total: formatMoney(displayTotal) })
       + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
   };
 
