@@ -1765,6 +1765,12 @@ function selectProjectSlot(slotId) {
   // refreshProject3DHighlight) — inclusive quando a seleção veio da vista 2D
   // ou da lista, não só de um clique dentro da cena 3D.
   if (typeof refreshProject3DHighlight === 'function') refreshProject3DHighlight();
+  // BLOCO GRANDE DO GRUPO (2026-09-04) — faltava aqui. projectMultiSelectIds
+  // (linha acima) já virava o grupo inteiro ao reclicar num módulo já
+  // agrupado, mas sem isto o desenho do bloco único (setMultiHighlight)
+  // nunca era refeito — ficava vazio (apagado pelo deselect de antes),
+  // dando a impressão de que o agrupamento tinha sido perdido.
+  if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
   renderProjectConfigPanel();
   // Setas 3D de redimensionamento (toque) acompanham a seleção — ver
   // refreshProject3DResizeArrows (não faz nada no mouse nem sem 3D).
