@@ -2796,6 +2796,10 @@ header.po-topnav {
    ação) em vez de ícones — por isso classe própria em vez de reaproveitar
    .po-proj-slot-action-btn, que trava largura/altura fixas (28px, pensado
    pra ícone único). Ver refreshProjectGroupToolbar, portal-06c.js. */
+.po-proj-marquee-box {
+  position: fixed; z-index: 62; pointer-events: none;
+  border: 1.5px solid #d94f3d; background: rgba(217,79,61,0.12);
+}
 .po-proj-group-toolbar {
   position: fixed; z-index: 61; display: flex; align-items: center; gap: 6px;
   transform: translate(-50%, -50%); pointer-events: auto;

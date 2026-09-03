@@ -2137,45 +2137,43 @@ function projectGroupToolbarContentHtml(members) {
     + '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="budget">' + I18n.t('project.group_budget_btn') + '</button>';
 }
 
+// BARRA DO GRUPO — VIROU MENU DE BOTÃO DIREITO (2026-09-04, bug relatado
+// pelo usuário: "depois fica essa aba bem na frente do modulo atrapalhando
+// a visao. essa aba deve aparecer so clicando com botao direito. e depois
+// some."). Antes ela aparecia SOZINHA (RAF perseguindo a âncora em 3D a
+// cada quadro) sempre que 2+ módulos estavam selecionados — inclusive logo
+// em cima do módulo que a pessoa queria olhar. Agora:
+//   · openProjectGroupToolbarAt (chamada só pelo listener 'contextmenu' em
+//     portal-08-projetos-paredes.js) é quem ABRE, plantada no ponto exato
+//     do clique direito — sem RAF, sem perseguir câmera: é um menu, some
+//     antes de a câmera se mexer de novo.
+//   · refreshProjectGroupToolbar (chamada de toda mudança de seleção —
+//     selectProjectSlot, deselectProjectSlot, toggleProjectMultiSelect — e
+//     do fim de cada ação do próprio menu — criar/desagrupar/renomear/
+//     duplicar/orçamento) agora só FECHA. Não tenta mais decidir "deveria
+//     estar visível?": qualquer mudança de seleção invalida o menu aberto.
 function refreshProjectGroupToolbar() {
   const el = document.getElementById('po-proj-group-toolbar');
   if (!el) return;
-  const wrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  el.style.display = 'none';
+  el.innerHTML = '';
+}
+
+// Abre o menu ANCORADO no ponto do clique direito (clientX/clientY da tela,
+// mesmo referencial de position:fixed que a barra já usava). Só abre com 2+
+// módulos na seleção múltipla — com menos, quem chama (o listener de
+// 'contextmenu') deixa o menu do sistema operacional aparecer normal.
+function openProjectGroupToolbarAt(clientX, clientY) {
+  const el = document.getElementById('po-proj-group-toolbar');
+  if (!el) return;
   const members = Array.from(projectMultiSelectIds)
     .map((id) => projectSlots.find((s) => s.id === id))
     .filter(Boolean);
-  const visible = members.length >= 2
-    && !!wrap && wrap.offsetParent !== null
-    && !projectCameraModeOn
-    && !!ViewerProjectEdit && !!ViewerProjectEdit.worldToClient;
-
-  if (!visible) {
-    el.style.display = 'none';
-    el.innerHTML = '';
-    if (projectGroupToolbarRafId) { cancelAnimationFrame(projectGroupToolbarRafId); projectGroupToolbarRafId = null; }
-    return;
-  }
-
+  if (members.length < 2) return;
   el.innerHTML = projectGroupToolbarContentHtml(members);
-
-  const tick = () => {
-    projectGroupToolbarRafId = null;
-    const liveMembers = Array.from(projectMultiSelectIds)
-      .map((id) => projectSlots.find((s) => s.id === id))
-      .filter(Boolean);
-    const stillVisible = liveMembers.length >= 2 && !!wrap && wrap.offsetParent !== null && !projectCameraModeOn;
-    if (!stillVisible) { el.style.display = 'none'; return; }
-    const anchor = projectGroupToolbarAnchorWorld(liveMembers);
-    const screen = anchor ? ViewerProjectEdit.worldToClient(anchor) : null;
-    if (!screen) { el.style.display = 'none'; }
-    else {
-      el.style.display = 'flex';
-      el.style.left = Math.round(screen.x) + 'px';
-      el.style.top = Math.round(screen.y) + 'px';
-    }
-    projectGroupToolbarRafId = requestAnimationFrame(tick);
-  };
-  if (!projectGroupToolbarRafId) projectGroupToolbarRafId = requestAnimationFrame(tick);
+  el.style.left = Math.round(clientX) + 'px';
+  el.style.top = Math.round(clientY) + 'px';
+  el.style.display = 'flex';
 }
 
 // Clique nos botões da barra — delegado (um listener só, funciona mesmo com
@@ -2202,6 +2200,7 @@ function refreshProjectGroupToolbar() {
     } else if (action === 'budget') {
       if (typeof openMoneyModal === 'function') openMoneyModal(ids);
     }
+    if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
   });
 })();
 

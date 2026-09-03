@@ -1794,6 +1794,13 @@ function selectProjectSlot(slotId) {
 function deselectProjectSlot() {
   const hadMultiSelect = projectMultiSelectIds.size > 0;
   projectMultiSelectIds = new Set();
+  // BUG (2026-09-04, relato do usuário: "mesmo com grupo criado eu clico no
+  // chao ou em outro modulo ele nao sai da selecao"): faltava apagar o
+  // DESTAQUE visual múltiplo (contorno vermelho do grupo na cena 3D) — só o
+  // DADO (projectMultiSelectIds, linha acima) era zerado. Sem isto, o
+  // contorno do grupo ficava preso na tela mesmo depois de soltar,
+  // parecendo que a seleção "não sai".
+  if (hadMultiSelect && typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
   if (selectedProjectSlotId == null) {
     if (hadMultiSelect && typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
     return;
@@ -1906,6 +1913,28 @@ function removeProjectSlot(slotId) {
 function toggleProjectMultiSelect(slotId) {
   const clicked = projectSlots.find((s) => s.id === slotId);
   if (!clicked) return;
+  // SEMEIA o módulo já selecionado por clique simples (2026-09-04, bug
+  // relatado pelo usuário: "o segundo modulo clicaod com control nao fica
+  // selecionado so no terceiro que ele mostra selecionado. isso confunde").
+  // Ninguém começa uma seleção múltipla já segurando Ctrl no primeiro
+  // clique — o primeiro módulo é sempre um clique SIMPLES (selectProjectSlot,
+  // que zera projectMultiSelectIds). Sem isto, o 1º Ctrl+clique só adicionava
+  // o módulo recém-clicado ao Set — o primeiro nunca entrava, e como o
+  // destaque múltiplo (refreshProject3DMultiHighlight) só desenha com 2+
+  // membros, nada parecia selecionado até um SEGUNDO Ctrl+clique (o
+  // "terceiro módulo" do relato) — e mesmo aí o primeiro continuava de fora.
+  // Um grupo criado dali nascia incompleto, o que também explica "não
+  // consigo mover o grupo todo": o módulo esquecido ficava pra trás, sem
+  // group_id, enquanto os outros se moviam juntos.
+  if (projectMultiSelectIds.size === 0 && selectedProjectSlotId && selectedProjectSlotId !== slotId) {
+    const seed = projectSlots.find((s) => s.id === selectedProjectSlotId);
+    if (seed) {
+      const seedIds = seed.group_id
+        ? projectSlots.filter((s) => s.group_id === seed.group_id).map((s) => s.id)
+        : [seed.id];
+      seedIds.forEach((id) => projectMultiSelectIds.add(id));
+    }
+  }
   // Módulo já pertence a um grupo salvo: Ctrl+clique alterna o GRUPO INTEIRO
   // de uma vez (não dá pra ficar com metade de um grupo já feito solta na
   // seleção) — mesma regra de "clicar sem Ctrl" em selectProjectSlot.

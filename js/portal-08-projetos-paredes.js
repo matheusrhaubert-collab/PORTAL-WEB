@@ -193,6 +193,35 @@ function convertProjectSlotToWall(slot, wallIndex, xMm, floorHeightMm) {
 // instância é reaproveitado entre renders, ver "if (renderer) return" em
 // init() no viewer3d_composition.js — anexar nesta função de novo a cada
 // render duplicaria o listener).
+// Centro de um módulo (mundo 3D, em metros) projetado pra coordenada de tela
+// — mesma fórmula de cx/cz que beginProjectGroupCoDrag já usa pra
+// co-arrastar o grupo, só que aqui só precisamos do PONTO (não da caixa
+// inteira) pra testar contra a janela de seleção.
+function projectSlotScreenCenter(slot) {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.worldToClient) return null;
+  const box = (typeof projectSlotWorldBox3D === 'function') ? projectSlotWorldBox3D(slot) : null;
+  if (!box) return null;
+  return ViewerProjectEdit.worldToClient({
+    x: box.cx / 1000,
+    y: ((box.yMin + box.yMax) / 2) / 1000,
+    z: box.cz / 1000
+  });
+}
+
+function showProjectMarqueeBox(x0, y0, x1, y1) {
+  const el = document.getElementById('po-proj-marquee-box');
+  if (!el) return;
+  el.style.left = Math.round(Math.min(x0, x1)) + 'px';
+  el.style.top = Math.round(Math.min(y0, y1)) + 'px';
+  el.style.width = Math.round(Math.abs(x1 - x0)) + 'px';
+  el.style.height = Math.round(Math.abs(y1 - y0)) + 'px';
+  el.style.display = 'block';
+}
+function hideProjectMarqueeBox() {
+  const el = document.getElementById('po-proj-marquee-box');
+  if (el) el.style.display = 'none';
+}
+
 function attachProject3DEditDrag() {
   // Link público de visualização 3D (view3d, 02/09) — visitante sem conta
   // reaproveita esta MESMA Vista de Canto (bootView3DGuestView, ver
@@ -233,6 +262,12 @@ function attachProject3DEditDrag() {
   // Duplo clique no MÓDULO (2026-08-13) — enquadra ele de frente. Mesma janela
   // de tempo do duplo clique na seta.
   let lastModuleTap = null;
+
+  // JANELA DE SELEÇÃO (Shift+arrastar em área vazia, 2026-09-04) — ver
+  // comentário grande em showProjectMarqueeBox/projectSlotScreenCenter, no
+  // topo do arquivo. Vive aqui (closure) porque só o pointerdown/pointermove/
+  // endDrag3D DESTA função mexem nela.
+  let projectMarqueeState = null;
 
   // "Segurar" em cima de um módulo — o significado do gesto MUDOU no toque
   // (pedido do usuário 2026-08-08): "IPAD - clique longo, (tira a opcao de
@@ -387,6 +422,22 @@ function attachProject3DEditDrag() {
       ev.clientX, ev.clientY, projectActiveWallIndex, selectedProjectSlotId, stickySlop
     );
     if (!hit || !hit.group) {
+      // SHIFT + clique em área vazia = começa a JANELA DE SELEÇÃO
+      // (2026-09-04, pedido do usuário: "apertando shift e clicando na tela
+      // e arrastando clicado abra uma janela (vermelha) e pegue tudo que
+      // esta dentro dessa janela"). Sem Shift, cai no comportamento de
+      // sempre (comentário abaixo).
+      if (ev.shiftKey) {
+        ev.preventDefault();
+        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        projectMarqueeState = {
+          pointerId: ev.pointerId,
+          startClientX: ev.clientX,
+          startClientY: ev.clientY
+        };
+        showProjectMarqueeBox(ev.clientX, ev.clientY, ev.clientX, ev.clientY);
+        return;
+      }
       // Clique em área vazia da cena (nenhum módulo embaixo do ponteiro) —
       // pedido do usuário (2026-07-26: "quando clicar na tela quero que nao
       // apareca ennhum modulo nas configuracoes da direita") — antes não
@@ -597,6 +648,10 @@ function attachProject3DEditDrag() {
   });
 
   domEl.addEventListener('pointermove', (ev) => {
+    if (projectMarqueeState && ev.pointerId === projectMarqueeState.pointerId) {
+      showProjectMarqueeBox(projectMarqueeState.startClientX, projectMarqueeState.startClientY, ev.clientX, ev.clientY);
+      return;
+    }
     const state = projectDrag3DState;
     // MODO CÂMERA (toque): nada de hover/arraste — o dedo é da câmera.
     if (projectCameraModeOn && ev.pointerType === 'touch') return;
@@ -916,6 +971,44 @@ function attachProject3DEditDrag() {
   });
 
   const endDrag3D = (ev) => {
+    if (projectMarqueeState && ev.pointerId === projectMarqueeState.pointerId) {
+      const state = projectMarqueeState;
+      projectMarqueeState = null;
+      hideProjectMarqueeBox();
+      const dPx = Math.hypot(ev.clientX - state.startClientX, ev.clientY - state.startClientY);
+      // Arraste real, não um Shift+clique parado (que não tem gesto próprio
+      // — vira uma janela 0×0, ninguém cai dentro mesmo).
+      if (dPx < PROJECT_CLICK_MOVE_THRESHOLD_PX) return;
+      const x0 = Math.min(state.startClientX, ev.clientX), x1 = Math.max(state.startClientX, ev.clientX);
+      const y0 = Math.min(state.startClientY, ev.clientY), y1 = Math.max(state.startClientY, ev.clientY);
+      const picked = projectSlots.filter((s) => {
+        const c = projectSlotScreenCenter(s);
+        return c && c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1;
+      });
+      if (!picked.length) return;
+      if (picked.length === 1) {
+        // Só 1 pego dentro da janela: mesmo resultado de um clique simples
+        // nele — mais previsível que "grupo de 1" (que a barra/o botão
+        // direito nem tratam).
+        selectProjectSlot(picked[0].id);
+        return;
+      }
+      // Módulo já grupado: pega o GRUPO INTEIRO junto (mesma regra do
+      // Ctrl+clique — ver toggleProjectMultiSelect), mesmo que só parte dele
+      // tenha caído dentro da janela.
+      const ids = new Set();
+      picked.forEach((s) => {
+        if (s.group_id) {
+          projectSlots.filter((x) => x.group_id === s.group_id).forEach((x) => ids.add(x.id));
+        } else {
+          ids.add(s.id);
+        }
+      });
+      projectMultiSelectIds = ids;
+      if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+      if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
+      return;
+    }
     clearHold3DTimer();
     const state = projectDrag3DState;
     if (!state || state.pointerId !== ev.pointerId) {
@@ -1013,35 +1106,18 @@ function attachProject3DEditDrag() {
     if (projectDrag3DState) endDrag3D({ type: 'pointercancel', pointerId: projectDrag3DState.pointerId });
   });
 
-  // BOTÃO DIREITO = CRIAR/DESFAZER GRUPO (2026-09-03, Matt: "botao diretio
-  // criar grupo"). Sem menu próprio — reaproveita prompt()/confirm()
-  // nativos (mesmo padrão já usado no projeto pra nomear coisas, ver
-  // saveProjectFavoriteInner). Só faz algo com 2+ módulos na seleção
-  // múltipla (Ctrl+clique solto, ou um grupo salvo já expandido pelo clique
-  // simples — ver selectProjectSlot); com menos de 2, deixa o menu do
-  // sistema operacional aparecer normal (não atrapalha quem só quer
-  // inspecionar a página). O resto das ações do grupo (duplicar, ver
-  // orçamento, renomear) fica na barra flutuante — ver
-  // refreshProjectGroupToolbar, portal-06c.
+  // BOTÃO DIREITO = ABRE O MENU DO GRUPO (2026-09-03, Matt: "botao diretio
+  // criar grupo"; refeito 2026-09-04 depois do relato "essa aba deve
+  // aparecer so clicando com botao direito. e depois some" — ver comentário
+  // grande em refreshProjectGroupToolbar/openProjectGroupToolbarAt,
+  // portal-06c). Só faz algo com 2+ módulos na seleção múltipla (Ctrl+clique
+  // solto, ou um grupo salvo já expandido pelo clique simples — ver
+  // selectProjectSlot); com menos de 2, deixa o menu do sistema operacional
+  // aparecer normal (não atrapalha quem só quer inspecionar a página).
   domEl.addEventListener('contextmenu', (ev) => {
     if (projectMultiSelectIds.size < 2) return;
     ev.preventDefault();
-    const ids = Array.from(projectMultiSelectIds);
-    const first = projectSlots.find((s) => s.id === ids[0]);
-    const groupMembers = (first && first.group_id)
-      ? projectSlots.filter((s) => s.group_id === first.group_id)
-      : [];
-    const isWholeSavedGroup = groupMembers.length > 0
-      && groupMembers.length === ids.length
-      && groupMembers.every((s) => projectMultiSelectIds.has(s.id));
-    if (isWholeSavedGroup) {
-      const nomeGrupo = first.group_name || I18n.t('project.group_default_name');
-      if (confirm(I18n.t('project.group_ungroup_confirm', { name: nomeGrupo }))) {
-        ungroupProjectSlots(projectMultiSelectIds);
-      }
-    } else {
-      createProjectSlotGroup(projectMultiSelectIds);
-    }
+    if (typeof openProjectGroupToolbarAt === 'function') openProjectGroupToolbarAt(ev.clientX, ev.clientY);
   });
 
   // ---------- Duplo toque no ambiente (2026-08-08, iPad) ----------
