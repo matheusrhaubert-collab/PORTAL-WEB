@@ -2375,11 +2375,26 @@ function renderMoneyOrcamento(body, rel, slots) {
       + '<td class="num">' + formatMoney(seller ? getDisplayPrice(preco) : preco) + '</td></tr>';
   }).join('');
   const subKey = moneyModalScopeIds ? 'money.quote_sub_group' : 'money.quote_sub';
+  const quoteTotal = seller ? getDisplayPrice(rel.totalVenda) : rel.totalVenda;
+  // Linha extra (2026-09-03, pedido do usuário: "quero mostrar so o valor
+  // ja com desconto... valor final com as margens de fabrica carregadas.
+  // custo.") — o custo REAL do dealer depois do desconto de fábrica +
+  // extras de custo configurados no modal Margens (migration 151,
+  // computeCustoBase em portal-05-cutlist.js). Só aparece quando o dealer
+  // configurou alguma coisa lá (senão computeCustoBase(quoteTotal) ===
+  // quoteTotal, mesmo padrão de "esconder quando não muda nada" já usado
+  // no resto do app — ver galleryResaleMarginHtml).
+  const custoFinal = computeCustoBase(quoteTotal);
+  const custoFinalHtml = Math.abs(custoFinal - quoteTotal) >= 0.005
+    ? '<div class="po-money-total secundario"><span>' + I18n.t('money.quote_final_cost_label') + '</span>'
+      + '<strong>' + formatMoney(custoFinal) + '</strong></div>'
+    : '';
   body.innerHTML = '<p class="po-money-sub">' + I18n.t(subKey) + '</p>'
     + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
     + '<th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>' + linhas + '</tbody></table>'
     + '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span>'
-    + '<strong>' + formatMoney(seller ? getDisplayPrice(rel.totalVenda) : rel.totalVenda) + '</strong></div>';
+    + '<strong>' + formatMoney(quoteTotal) + '</strong></div>'
+    + custoFinalHtml;
 }
 
 // ---- Porta da aba FÁBRICA
