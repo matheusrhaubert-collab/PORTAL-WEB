@@ -4135,6 +4135,53 @@ header.po-topnav {
 .po-money-lock input {
   width: 200px; text-align: center; margin: 10px auto 8px; display: block;
 }
+/* ==========================================================================
+   MARGENS — desconto de fábrica + margem do lojista, com extras
+   (migration 151, 2026-09-03). Mesma estrutura de overlay/card do modal
+   $ Orçamento/$ Fábrica acima (#po-money-modal), classes próprias pra não
+   herdar o width:1180px pensado pra tabela de 12 colunas daquele modal.
+   ========================================================================== */
+#po-margins-modal {
+  display: none; position: fixed; inset: 0; z-index: 3400;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 16px;
+}
+#po-margins-modal.open { display: flex; }
+.po-margins-card {
+  background: var(--panel); border-radius: 12px;
+  width: 640px; max-width: 96vw; max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.po-margins-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--border); flex: none;
+}
+.po-margins-body { padding: 14px 16px; overflow-y: auto; }
+.po-margins-section { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.po-margins-section:last-of-type { border-bottom: none; margin-bottom: 8px; }
+.po-margins-section-title { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.po-margins-section-subtitle {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 12px 0 6px;
+}
+.po-margins-field { display: flex; flex-direction: column; gap: 4px; max-width: 220px; margin-top: 6px; }
+.po-margins-field input { width: 100%; }
+.po-margins-extras { display: flex; flex-direction: column; gap: 6px; }
+/* Nome | sinal (+/−) | valor | tipo (%/$) | remover */
+.po-margins-extra-row {
+  display: grid; grid-template-columns: 1fr 44px 84px 56px 28px;
+  gap: 6px; align-items: center;
+}
+.po-margins-extra-row input, .po-margins-extra-row select { width: 100%; font-size: 12px; }
+.po-margins-extra-remove {
+  border: none; background: none; color: var(--muted); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 2px;
+}
+.po-margins-extra-remove:hover { color: #b0503c; }
+.po-margins-add-extra-btn { align-self: flex-start; font-size: 12px; padding: 5px 12px; margin-top: 2px; }
+#po-margins-save-status { display: block; margin-top: 8px; text-align: center; }
+
 .po-money-erro { color: #b0503c; font-size: 12px; min-height: 16px; }
 
 /* Mais largo (2026-08-15, "deixa mais aberto"): a tabela por peça tem 12

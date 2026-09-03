@@ -418,7 +418,13 @@ async function generateOrderProposalPDF(order, items) {
     const pageHeight = doc.internal.pageSize.getHeight();
     const contentWidth = pageWidth - PROPOSAL_MARGIN_MM * 2;
     const pdfUnit = (document.getElementById('po-unit-select') || {}).value || 'mm';
-    const marginPct = getResaleMarginPct();
+    // Migration 151 (2026-09-03): marginPct não é mais lido direto aqui —
+    // getDisplayPriceRatioOnly()/getDisplayPrice() (portal-05-cutlist.js)
+    // já encapsulam desconto de fábrica + margem + extras do dealer. Ver
+    // os 2 usos abaixo: preço POR ITEM usa a versão só-proporcional (um
+    // extra fixo não pode entrar 1x por item — viraria "frete × nº de
+    // itens"); o TOTAL FINAL usa a versão completa, com extras fixos
+    // somados 1x só no agregado.
     let y = PROPOSAL_MARGIN_MM;
 
     // Numeração estável (lista de módulos <-> desenhos), calculada uma vez
@@ -588,7 +594,7 @@ async function generateOrderProposalPDF(order, items) {
 
       const itemFactoryTotal = Number(it.total_price || 0);
       factoryTotal += itemFactoryTotal;
-      const itemResaleTotal = itemFactoryTotal * (1 + marginPct / 100);
+      const itemResaleTotal = getDisplayPriceRatioOnly(itemFactoryTotal);
       const qty = it.quantity || 1;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
@@ -613,7 +619,7 @@ async function generateOrderProposalPDF(order, items) {
     // ---------- Faixa de total (com a margem de revenda) ----------
     ensureSpace(28);
     y += 4;
-    const finalTotal = factoryTotal * (1 + marginPct / 100);
+    const finalTotal = getDisplayPrice(factoryTotal);
     const bandH = 16;
     doc.setFillColor.apply(doc, PROPOSAL_COLOR_TEXT);
     doc.roundedRect(PROPOSAL_MARGIN_MM, y, contentWidth, bandH, 1.2, 1.2, 'F');
@@ -627,7 +633,10 @@ async function generateOrderProposalPDF(order, items) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(0);
     y += bandH + 6;
-    if (!marginPct) {
+    // Migration 151: hint só aparece se NADA (margem, desconto ou extra
+    // dos 2 lados) mudou o total em relação ao preço de fábrica cru —
+    // antes só checava a margem simples.
+    if (Math.abs(finalTotal - factoryTotal) < 0.005) {
       doc.setFontSize(9);
       doc.setTextColor(150);
       doc.text(I18n.t('proposal.margin_not_set_hint'), PROPOSAL_MARGIN_MM, y);

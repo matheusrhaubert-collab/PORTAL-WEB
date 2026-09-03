@@ -2584,6 +2584,254 @@ function renderMoneyFabrica(body, rel) {
 })();
 
 // ==========================================================================
+// MODAL "MARGENS" — desconto de fábrica + margem do lojista, com extras
+// (migration 151, 2026-09-03)
+// ==========================================================================
+// Pedido do Matt: "preciso uma configuracao de desconto de fabrica...
+// aplicado no valor de fabrica, que vira base de custo para ai sim a margem
+// do dealer ser acrecentada em cima... novo botao de margens na barra (so
+// habilita pra dealer) nao pra vendedores... com custo fabrica tabela -
+// desconto, extra tipo frete/tax/extra que pode diminuir ou aumentar... e
+// margem do lojista que acrescenta margem bruta, e tambem pode colocar
+// outros custos extras como comissao, montagem, tax, outros".
+//
+// Self-service, sem senha extra (diferente da aba $ Fábrica acima, que TEM
+// senha compartilhada) — o botão #po-margins-btn já só aparece pra
+// isDealer() (refreshDealerUiVisibility, portal-05-cutlist.js), e as
+// funções de leitura/gravação abaixo dependem de currentUser + RLS
+// owner-only (migration 151), então não precisa de outra trava na frente.
+//
+// Números de topo (desconto de fábrica % + margem bruta %) salvam juntos
+// num botão "Salvar" (mesmo gesto de sempre no projeto). Extras (linhas
+// dinâmicas) salvam IMEDIATAMENTE a cada mudança/adição/remoção — são
+// registros próprios (dealer_pricing_extras), não um campo de formulário
+// só, então não faz sentido represar num botão só.
+
+function marginsExtraRowHtml(extra) {
+  const id = escapeHtmlCutlist(extra.id);
+  const name = escapeHtmlCutlist(extra.name || '');
+  const kind = extra.kind === 'fixed' ? 'fixed' : 'pct';
+  const sign = extra.sign === 'subtract' ? 'subtract' : 'add';
+  const value = Number(extra.value) || 0;
+  return '<div class="po-margins-extra-row" data-extra-id="' + id + '">'
+    + '<input type="text" class="po-margins-extra-name" data-field="name" value="' + name + '" data-i18n-placeholder="margins.extra_name_placeholder" placeholder="' + I18n.t('margins.extra_name_placeholder') + '" />'
+    + '<select data-field="sign">'
+    + '<option value="add"' + (sign === 'add' ? ' selected' : '') + '>+</option>'
+    + '<option value="subtract"' + (sign === 'subtract' ? ' selected' : '') + '>&minus;</option>'
+    + '</select>'
+    + '<input type="number" class="po-margins-extra-value" data-field="value" min="0" step="0.01" value="' + value + '" />'
+    + '<select data-field="kind">'
+    + '<option value="pct"' + (kind === 'pct' ? ' selected' : '') + '>%</option>'
+    + '<option value="fixed"' + (kind === 'fixed' ? ' selected' : '') + '>$</option>'
+    + '</select>'
+    + '<button type="button" class="po-margins-extra-remove" data-remove-extra="' + id + '" title="' + I18n.t('margins.remove_extra_title') + '">&times;</button>'
+    + '</div>';
+}
+
+function marginsSectionExtrasHtml(side) {
+  const extras = resolveDealerPricingExtras(side);
+  const rows = extras.map(marginsExtraRowHtml).join('');
+  return '<div class="po-margins-extras" data-side="' + side + '">'
+    + (rows || '<div class="hint">' + I18n.t('margins.no_extras') + '</div>')
+    + '<button type="button" class="secondary po-margins-add-extra-btn" data-add-extra-side="' + side + '">' + I18n.t('margins.add_extra_btn') + '</button>'
+    + '</div>';
+}
+
+// Redesenha o corpo do modal a partir do cache (dealerFactoryDiscountPct/
+// resolvedDisplayMarginPct/dealerPricingExtras, todos em
+// portal-05-cutlist.js) — chamada ao abrir, depois de qualquer
+// salvar/adicionar/remover extra, e de refreshDealerUiVisibility (login).
+// Não-dealer: corpo fica vazio (o botão que abre isto nem aparece pra
+// esse perfil, ver refreshDealerUiVisibility).
+function renderMarginsModal() {
+  const body = document.getElementById('po-margins-body');
+  if (!body) return;
+  if (!isDealer()) { body.innerHTML = ''; return; }
+  const discountPct = getFactoryDiscountPct();
+  const marginPct = getResaleMarginPct();
+  body.innerHTML = ''
+    + '<div class="po-margins-section">'
+    + '<div class="po-margins-section-title">' + I18n.t('margins.factory_cost_title') + '</div>'
+    + '<p class="po-money-sub">' + I18n.t('margins.factory_cost_hint') + '</p>'
+    + '<label class="po-margins-field"><span>' + I18n.t('margins.factory_discount_label') + '</span>'
+    + '<input type="number" id="po-margins-discount-input" min="0" max="100" step="0.1" value="' + (discountPct || '') + '" /></label>'
+    + '<div class="po-margins-section-subtitle">' + I18n.t('margins.extras_title_custo') + '</div>'
+    + marginsSectionExtrasHtml('custo')
+    + '</div>'
+    + '<div class="po-margins-section">'
+    + '<div class="po-margins-section-title">' + I18n.t('margins.dealer_margin_title') + '</div>'
+    + '<p class="po-money-sub">' + I18n.t('margins.dealer_margin_hint') + '</p>'
+    + '<label class="po-margins-field"><span>' + I18n.t('margins.gross_margin_label') + '</span>'
+    + '<input type="number" id="po-margins-margin-input" min="0" step="0.1" value="' + (marginPct || '') + '" /></label>'
+    + '<div class="po-margins-section-subtitle">' + I18n.t('margins.extras_title_margem') + '</div>'
+    + marginsSectionExtrasHtml('margem')
+    + '</div>'
+    + '<button type="button" class="po-btn-primary-block" id="po-margins-save-btn">' + I18n.t('margins.save_btn') + '</button>'
+    + '<span id="po-margins-save-status" class="hint"></span>';
+}
+
+function openMarginsModal() {
+  const modal = document.getElementById('po-margins-modal');
+  if (!modal || !isDealer()) return;
+  modal.classList.add('open');
+  renderMarginsModal();
+}
+function closeMarginsModal() {
+  const modal = document.getElementById('po-margins-modal');
+  if (modal) modal.classList.remove('open');
+}
+
+// Salva os 2 números de topo juntos (mesmo update, 1 viagem ao banco):
+// desconto de fábrica (coluna nova) + margem bruta (resale_margin_pct,
+// já existia — migration 072, só ganhou um 2º lugar pra editar). Atualiza
+// os 2 caches síncronos (dealerFactoryDiscountPct/resolvedDisplayMarginPct)
+// e o campo antigo do menu de Configurações (refreshResaleMarginInput),
+// pra nunca ficar dessincronizado entre os dois lugares que editam a mesma
+// coluna.
+async function saveMarginsTopFields() {
+  if (!currentUser) return;
+  const discountInput = document.getElementById('po-margins-discount-input');
+  const marginInput = document.getElementById('po-margins-margin-input');
+  const statusEl = document.getElementById('po-margins-save-status');
+  let discountVal = Number(discountInput && discountInput.value);
+  if (!Number.isFinite(discountVal) || discountVal < 0) discountVal = 0;
+  if (discountVal > 100) discountVal = 100;
+  let marginVal = Number(marginInput && marginInput.value);
+  if (!Number.isFinite(marginVal) || marginVal < 0) marginVal = 0;
+  if (statusEl) statusEl.textContent = I18n.t('margins.saving');
+  try {
+    const { data, error } = await supabaseClient
+      .from('user_profiles')
+      .update({ factory_discount_pct: discountVal, resale_margin_pct: marginVal })
+      .eq('user_id', currentUser.id)
+      .select()
+      .single();
+    if (!error && data) {
+      currentUserProfile = data;
+      dealerFactoryDiscountPct = Number(data.factory_discount_pct) || 0;
+      resolvedDisplayMarginPct = Number(data.resale_margin_pct) || 0;
+      refreshResaleMarginInput();
+      if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots();
+      if (typeof renderProjectSummary === 'function') renderProjectSummary();
+      if (statusEl) statusEl.textContent = I18n.t('margins.saved');
+    } else if (statusEl) {
+      statusEl.textContent = (error && error.message) || I18n.t('margins.save_error');
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = I18n.t('margins.save_error');
+  }
+}
+
+// CRUD de uma linha de extra — cada ação já salva na hora (ver comentário
+// de escopo no topo desta seção) e redesenha o modal a partir da resposta
+// do banco (nunca do valor otimista local), pra ficar sempre fiel ao que
+// realmente foi gravado.
+async function addDealerPricingExtra(side) {
+  if (!currentUser || !isDealer()) return;
+  try {
+    const sortOrder = resolveDealerPricingExtras(side).length;
+    const { data, error } = await supabaseClient
+      .from('dealer_pricing_extras')
+      .insert({ dealer_user_id: currentUser.id, side, name: I18n.t('margins.new_extra_name'), kind: 'pct', sign: 'add', value: 0, sort_order: sortOrder })
+      .select()
+      .single();
+    if (!error && data) {
+      dealerPricingExtras.push(data);
+      renderMarginsModal();
+      if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots();
+    }
+  } catch (err) {
+    // silencioso — mesmo padrão do resto do arquivo
+  }
+}
+
+async function updateDealerPricingExtraField(id, field, rawValue) {
+  if (!currentUser || !isDealer() || !id || !field) return;
+  const patch = {};
+  if (field === 'value') {
+    let v = Number(rawValue);
+    if (!Number.isFinite(v) || v < 0) v = 0;
+    patch.value = v;
+  } else if (field === 'name' || field === 'kind' || field === 'sign') {
+    patch[field] = rawValue;
+  } else {
+    return;
+  }
+  try {
+    const { data, error } = await supabaseClient
+      .from('dealer_pricing_extras')
+      .update(patch)
+      .eq('id', id)
+      .eq('dealer_user_id', currentUser.id)
+      .select()
+      .single();
+    if (!error && data) {
+      const idx = dealerPricingExtras.findIndex((row) => row.id === id);
+      if (idx >= 0) dealerPricingExtras[idx] = data;
+      renderMarginsModal();
+      if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots();
+      if (typeof renderProjectSummary === 'function') renderProjectSummary();
+    }
+  } catch (err) {
+    // silencioso
+  }
+}
+
+async function deleteDealerPricingExtra(id) {
+  if (!currentUser || !isDealer() || !id) return;
+  try {
+    const { error } = await supabaseClient
+      .from('dealer_pricing_extras')
+      .delete()
+      .eq('id', id)
+      .eq('dealer_user_id', currentUser.id);
+    if (!error) {
+      dealerPricingExtras = dealerPricingExtras.filter((row) => row.id !== id);
+      renderMarginsModal();
+      if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots();
+      if (typeof renderProjectSummary === 'function') renderProjectSummary();
+    }
+  } catch (err) {
+    // silencioso
+  }
+}
+
+(function ligaMarginsModal() {
+  const liga = () => {
+    const btn = document.getElementById('po-margins-btn');
+    if (!btn) return false;
+    btn.addEventListener('click', openMarginsModal);
+    const fechar = document.getElementById('po-margins-close');
+    if (fechar) fechar.addEventListener('click', closeMarginsModal);
+    const modal = document.getElementById('po-margins-modal');
+    if (modal) {
+      modal.addEventListener('click', (ev) => {
+        if (ev.target === modal) { closeMarginsModal(); return; }
+        const saveBtn = ev.target.closest('#po-margins-save-btn');
+        if (saveBtn) { saveMarginsTopFields(); return; }
+        const addBtn = ev.target.closest('[data-add-extra-side]');
+        if (addBtn) { addDealerPricingExtra(addBtn.dataset.addExtraSide); return; }
+        const removeBtn = ev.target.closest('[data-remove-extra]');
+        if (removeBtn) { deleteDealerPricingExtra(removeBtn.dataset.removeExtra); return; }
+      });
+      // 'change' (não 'input') — só dispara ao sair do campo/trocar select,
+      // então redesenhar o modal inteiro aqui nunca atrapalha quem ainda
+      // está digitando (mesmo raciocínio do resto do app: commit só no
+      // blur, ver commitCutlistDimensionInput em portal-05-cutlist.js).
+      modal.addEventListener('change', (ev) => {
+        const row = ev.target.closest('.po-margins-extra-row');
+        if (!row) return;
+        const field = ev.target.dataset.field;
+        if (!field) return;
+        updateDealerPricingExtraField(row.dataset.extraId, field, ev.target.value);
+      });
+    }
+    return true;
+  };
+  if (!liga()) document.addEventListener('DOMContentLoaded', liga);
+})();
+
+// ==========================================================================
 // $ FÁBRICA — o custo do projeto aberto por natureza (2026-08-15)
 // ==========================================================================
 // Pedido do Matt: "quero enxergar esses custos todos separados no módulo...

@@ -26,9 +26,13 @@ function formatGalleryPrice(v) { return '$' + Math.round(Number(v || 0)); }
 // configurada (getResaleMarginPct, menu de Configurações); visitante/cliente
 // sem margem não vê nada extra, card fica igual a antes.
 function galleryResaleMarginHtml(priceSale) {
-  const marginPct = getResaleMarginPct();
-  if (!marginPct) return '';
-  const resalePrice = Number(priceSale || 0) * (1 + marginPct / 100);
+  // Migration 151 (2026-09-03): getDisplayPrice() agora também aplica
+  // desconto de fábrica + extras do dealer (custo e margem), não só a
+  // margem simples de antes (migration 072) — pra quem não configurou
+  // nada disso, o resultado fica idêntico a antes (ver comentário de
+  // escopo em computeCustoBase, portal-05-cutlist.js).
+  const resalePrice = getDisplayPrice(priceSale);
+  if (Math.abs(resalePrice - Number(priceSale || 0)) < 0.005) return '';
   return `<div class="po-gallery-card-resale-price hint">${I18n.t('gallery.resale_price_label')} <strong>${formatGalleryPrice(resalePrice)}</strong></div>`;
 }
 

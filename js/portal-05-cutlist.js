@@ -154,6 +154,28 @@ function getDisplayPrice(saleValue) {
   return applyPricingExtras(withMargin, tableValue, resolveDealerPricingExtras('margem'));
 }
 
+// Versão "só proporcional" de getDisplayPrice() — aplica desconto de
+// fábrica (%) + margem (%) + extras PERCENTUAIS dos dois lados, mas NUNCA
+// um extra em $ FIXO. Only pra quando o MESMO cálculo roda várias vezes
+// sobre PARTES de um todo (hoje, só o preço por item da Proposta/PDF antes
+// do total, ver portal-10-proposta.js) — um extra fixo (ex. "frete $50")
+// tem que entrar UMA VEZ só, no TOTAL; se cada item chamasse
+// getDisplayPrice() (que inclui o fixo), "frete $50" viraria "$50 × nº de
+// itens". getDisplayPrice() continua sendo a função certa pra qualquer
+// valor que já seja um AGREGADO (projeto inteiro, post da Galeria, total
+// final da Proposta) — só itens individuais de uma lista precisam desta
+// variante.
+function getDisplayPriceRatioOnly(saleValue) {
+  const tableValue = Number(saleValue) || 0;
+  const discountPct = getFactoryDiscountPct();
+  const custoExtrasPctOnly = resolveDealerPricingExtras('custo').filter((extra) => extra.kind !== 'fixed');
+  const custoBase = applyPricingExtras(tableValue * (1 - discountPct / 100), tableValue, custoExtrasPctOnly);
+  const marginPct = getResaleMarginPct();
+  const withMargin = marginPct > 0 ? custoBase * (1 + marginPct / 100) : custoBase;
+  const margemExtrasPctOnly = resolveDealerPricingExtras('margem').filter((extra) => extra.kind !== 'fixed');
+  return applyPricingExtras(withMargin, tableValue, margemExtrasPctOnly);
+}
+
 // Preenche o campo do menu de Configurações com a margem já salva (chamada
 // depois de ensureOwnUserProfile, em showLoggedIn).
 // Vendedor não tem margem própria pra editar (só enxerga o preço já com a

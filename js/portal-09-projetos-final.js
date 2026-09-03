@@ -503,9 +503,13 @@ async function loadProjectFavoritesList() {
         + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
       return;
     }
-    const marginPct = getResaleMarginPct();
-    const resaleSuffix = marginPct > 0
-      ? ' · ' + I18n.t('fav.resale_total_label', { total: formatMoney(total * (1 + marginPct / 100)) })
+    // Migration 151 (2026-09-03): mesmo getDisplayPrice() de sempre, agora
+    // também com desconto de fábrica + extras do dealer — ver comentário
+    // de escopo em computeCustoBase (portal-05-cutlist.js). Sem nada
+    // configurado, resultado idêntico a antes (migration 072).
+    const resaleTotal = getDisplayPrice(total);
+    const resaleSuffix = Math.abs(resaleTotal - total) >= 0.005
+      ? ' · ' + I18n.t('fav.resale_total_label', { total: formatMoney(resaleTotal) })
       : '';
     el.textContent = I18n.t('fav.total_label', { total: formatMoney(total) })
       + resaleSuffix
