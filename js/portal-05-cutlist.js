@@ -84,6 +84,25 @@ function touchLastActive() {
     .then(() => {}, () => {});
 }
 
+// "Quem está online agora" (pedido do Matt 2026-09-04) — sem isto,
+// last_active_at só era gravado UMA VEZ no login (acima), então quem
+// estava com o portal aberto há mais de alguns minutos já aparecia como
+// "offline" pro admin. Este heartbeat mantém a coluna fresca enquanto a
+// aba estiver de fato aberta e em primeiro plano; a checagem de
+// visibilityState evita gravar quando o usuário trocou de aba/minimizou
+// (senão uma aba esquecida aberta parece "online" pra sempre). O admin
+// (Central de Contatos, erp/js/screens-contatos.js) considera "online" um
+// last_active_at dentro dos últimos 5 minutos — o intervalo de 2 min aqui
+// dá folga de sobra pra essa janela sem gerar tráfego demais.
+let activityHeartbeatTimer = null;
+const ACTIVITY_HEARTBEAT_MS = 120000;
+function startActivityHeartbeat() {
+  if (activityHeartbeatTimer) return; // já rodando — não duplica em re-login sem reload de página
+  activityHeartbeatTimer = setInterval(function () {
+    if (document.visibilityState === 'visible') touchLastActive();
+  }, ACTIVITY_HEARTBEAT_MS);
+}
+
 function canUseCuttingList() {
   if (!currentUserProfile) return false;
   if (currentUserProfile.role === 'contractor' || currentUserProfile.role === 'administrador') return true;

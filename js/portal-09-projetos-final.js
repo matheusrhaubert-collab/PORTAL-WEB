@@ -1718,6 +1718,7 @@ async function showLoggedIn(user) {
   // pode carregar em paralelo (não bloqueia o resto do login).
   await ensureOwnUserProfile();
   touchLastActive();
+  startActivityHeartbeat();
   await resolveDisplayMarginPct();
   refreshResaleMarginInput();
   refreshDealerUiVisibility();
