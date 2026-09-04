@@ -1764,9 +1764,20 @@ document.getElementById('po-login-form').addEventListener('submit', async (e) =>
 // Fechar o modal de login: botão X, clicar no fundo escuro, ou Esc — igual
 // ao padrão já usado no lightbox da galeria (openGalleryLightbox). Guest
 // pode desistir e continuar navegando a Galeria sem logar.
+//
+// EXCEÇÃO — cadastro (pedido do usuário 2026-09-04: "no cadastro, ao tocar
+// fora da tela de login o login fecha"): no celular é fácil tocar fora sem
+// querer enquanto preenche nome/e-mail/telefone/senha, e isso fechava o
+// modal e jogava tudo digitado fora. Clicar fora só fecha durante a tela de
+// LOGIN (2 campos, pouco a perder); durante o CADASTRO (po-signup-block
+// visível) só fecha pelo X ou Esc.
 document.getElementById('po-auth-modal-close').addEventListener('click', () => { pendingGalleryPostForAuth = null; closeAuthModal(); });
 document.getElementById('po-auth-section').addEventListener('click', (ev) => {
-  if (ev.target.id === 'po-auth-section') { pendingGalleryPostForAuth = null; closeAuthModal(); }
+  if (ev.target.id !== 'po-auth-section') return;
+  const cadastroAberto = document.getElementById('po-signup-block').style.display !== 'none';
+  if (cadastroAberto) return;
+  pendingGalleryPostForAuth = null;
+  closeAuthModal();
 });
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && document.getElementById('po-auth-section').classList.contains('open')) {
