@@ -2432,36 +2432,43 @@ if (projTestArBtn) {
   projTestArBtn.addEventListener('click', generateArGlbForProject);
 }
 
-// ---------- Exportar pro SketchUp (OBJ + MTL + texturas, .zip) ----------
-// 2026-09-07, pedido do Matt: "quero um botao que exporte o arquivo 3d
-// gerado para sketchup. com as texturas de preferencia". Formato escolhido
-// (perguntei, ele confirmou): OBJ+MTL em vez de .glb — SketchUp Pro importa
-// .obj DIRETO (Arquivo > Importar), sem plugin nenhum; .glb (que já existe
-// aqui pro teste de AR, ver generateArGlbForProject acima) só abre no
-// SketchUp com uma extensão extra da Trimble instalada.
+// ---------- Exportar pro SketchUp (COLLADA .dae + texturas, .zip) ----------
+// 2026-09-07/08, pedido do Matt: "quero um botao que exporte o arquivo 3d
+// gerado para sketchup. com as texturas de preferencia". 1ª versão saiu em
+// OBJ+MTL (eu tinha entendido que SketchUp Pro importa .obj nativo) — Matt
+// testou e o diálogo de Importar do SketchUp DELE nem lista .obj como opção
+// (só SketchUp/3DS/COLLADA/DEM/DWG-DXF/IFC/KMZ/STL, print em anexo). Ou
+// seja: OBJ só entraria instalando a extensão "OBJ Importer" da Trimble.
+// Trocado pra COLLADA (.dae) — ESSE sim aparece nativo na lista dele, sem
+// instalar nada, cumprindo a promessa original de "abre direto".
 //
-// three.js NÃO tem um "MTLExporter" oficial (o OBJExporter dos examples/ só
-// escreve geometria, sem material/textura nenhuma) — por isso o exportador
-// abaixo é escrito na mão, direto em cima da MESMA THREE.Scene da Vista de
-// Canto (ViewerProject.getScene(), nenhum recálculo, é a cena que já está
-// desenhada). Reaproveita a tag 'ar-export-exclude' (viewer3d_composition.js)
-// pra pular cotas CAD/ambiente virtual/contorno de hover — é a mesma regra
-// "não faz sentido num arquivo externo" das duas exportações. Texturas são
-// reencodadas em JPEG a partir da própria Texture já carregada (mesma
-// técnica de canvas que o GLTFExporter usa no teste de AR — funciona pelo
-// mesmo motivo: TextureLoader do three.js já carrega com crossOrigin
-// 'anonymous' por padrão, então o canvas não fica "tainted").
+// three.js (r128, mesma versão CDN do resto do 3D) não tem um exportador
+// COLLADA oficial nos examples/ (só tem GLTFExporter, usado no teste de AR
+// acima) — esse .dae é escrito na mão, andando pela MESMA THREE.Scene da
+// Vista de Canto (ViewerProject.getScene(), nenhum recálculo). Reaproveita a
+// tag 'ar-export-exclude' (viewer3d_composition.js) pra pular cotas CAD/
+// ambiente virtual/contorno de hover — mesma regra "não faz sentido num
+// arquivo externo" das duas exportações. Texturas reencodadas em JPEG a
+// partir da própria Texture já carregada (mesma técnica de canvas do
+// GLTFExporter no teste de AR — funciona pelo mesmo motivo: TextureLoader
+// do three.js já carrega com crossOrigin 'anonymous' por padrão).
 //
-// UNIDADE: a cena inteira é modelada em METROS (1 unidade three.js = 1m,
-// ver os /1000 em viewer3d.js) — o .obj não carrega unidade nenhuma junto,
-// então no import do SketchUp tem que escolher "Metros" na caixa de diálogo
-// (senão o móvel vira do tamanho de um prédio ou de uma caixa de fósforo).
-// Isso está no aviso que aparece na tela depois do download.
+// UNIDADE/EIXO: ao contrário do OBJ (que não carrega unidade nenhuma junto),
+// COLLADA declara <unit meter="1"/> e <up_axis>Y_UP</up_axis> no <asset> —
+// o SketchUp lê isso e importa na escala certa sozinho, sem precisar
+// escolher "Metros" na mão (era o aviso que existia na 1ª versão em OBJ).
 const SKETCHUP_EXPORT_EXCLUDE_TAG = 'ar-export-exclude';
 
-function sketchupObjSafeName(name, fallback) {
-  const s = (name || '').toString().trim().replace(/[^\w-]+/g, '_');
-  return s || fallback;
+function sketchupSafeId(name, fallback) {
+  let s = (name || '').toString().trim().replace(/[^\w.-]+/g, '_');
+  if (!s || /^[0-9]/.test(s)) s = fallback + (s ? '_' + s : '');
+  return s;
+}
+
+function sketchupEscapeXml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
 // Sobe a árvore inteira (não só o objeto): scene.traverse() visita filhos
@@ -2475,124 +2482,6 @@ function isSketchupExportExcluded(obj) {
     p = p.parent;
   }
   return false;
-}
-
-function sketchupFaceToken(vIdx, vtIdx, vnIdx) {
-  if (vtIdx == null && vnIdx == null) return String(vIdx);
-  if (vnIdx == null) return vIdx + '/' + vtIdx;
-  if (vtIdx == null) return vIdx + '//' + vnIdx;
-  return vIdx + '/' + vtIdx + '/' + vnIdx;
-}
-
-// Monta o .obj + .mtl (texto) a partir da cena — devolve também um Map
-// Texture -> nome de arquivo, pra escrever as imagens depois (async, feito
-// à parte porque canvas.toBlob é assíncrono e essa função aqui não precisa
-// ser).
-function buildSketchupObjAndMtl(scene) {
-  const objLines = ['# Exportado do Portal Legno Home', '# Unidade: METROS (escolha "Meters" no import do SketchUp)', 'mtllib modelo.mtl', ''];
-  const mtlLines = [];
-  const materialNames = new Map(); // THREE.Material -> nome único no .mtl
-  const textureFiles = new Map(); // THREE.Texture -> nome do arquivo (dedup por TEXTURA, não por material — várias peças reusam a mesma imagem)
-  let vOffset = 0, vtOffset = 0, vnOffset = 0;
-  let meshIndex = 0;
-  let facesEscritas = 0;
-
-  function materialNameFor(material) {
-    if (materialNames.has(material)) return materialNames.get(material);
-    const base = sketchupObjSafeName(material.name, 'material_' + (materialNames.size + 1));
-    const usados = new Set(materialNames.values());
-    let nome = base, n = 1;
-    while (usados.has(nome)) { nome = base + '_' + (++n); }
-    materialNames.set(material, nome);
-    return nome;
-  }
-
-  function textureFileFor(material) {
-    const tex = material.map;
-    if (!tex || !tex.image) return null;
-    if (textureFiles.has(tex)) return textureFiles.get(tex);
-    const arquivo = 'textura_' + (textureFiles.size + 1) + '.jpg';
-    textureFiles.set(tex, arquivo);
-    return arquivo;
-  }
-
-  const _v = new THREE.Vector3();
-  const _n = new THREE.Vector3();
-  const _normalMatrix = new THREE.Matrix3();
-
-  scene.updateMatrixWorld(true);
-  scene.traverse((obj) => {
-    if (!obj.isMesh) return;
-    if (isSketchupExportExcluded(obj)) return;
-    const geometry = obj.geometry;
-    if (!geometry || !geometry.attributes || !geometry.attributes.position) return;
-
-    const posAttr = geometry.attributes.position;
-    const normAttr = geometry.attributes.normal;
-    const uvAttr = geometry.attributes.uv;
-    const index = geometry.index;
-    const hasUv = !!uvAttr;
-    const hasNormal = !!normAttr;
-
-    meshIndex += 1;
-    objLines.push('o ' + sketchupObjSafeName(obj.name, 'peca') + '_' + meshIndex);
-
-    _normalMatrix.getNormalMatrix(obj.matrixWorld);
-    for (let i = 0; i < posAttr.count; i++) {
-      _v.fromBufferAttribute(posAttr, i).applyMatrix4(obj.matrixWorld);
-      objLines.push('v ' + _v.x.toFixed(5) + ' ' + _v.y.toFixed(5) + ' ' + _v.z.toFixed(5));
-      if (hasNormal) {
-        _n.fromBufferAttribute(normAttr, i).applyMatrix3(_normalMatrix).normalize();
-        objLines.push('vn ' + _n.x.toFixed(5) + ' ' + _n.y.toFixed(5) + ' ' + _n.z.toFixed(5));
-      }
-      if (hasUv) {
-        objLines.push('vt ' + uvAttr.getX(i).toFixed(5) + ' ' + uvAttr.getY(i).toFixed(5));
-      }
-    }
-
-    const materiais = Array.isArray(obj.material) ? obj.material : [obj.material];
-    const grupos = (geometry.groups && geometry.groups.length)
-      ? geometry.groups
-      : [{ start: 0, count: index ? index.count : posAttr.count, materialIndex: 0 }];
-
-    grupos.forEach((grupo) => {
-      const material = materiais[grupo.materialIndex] || materiais[0];
-      if (!material) return;
-      objLines.push('usemtl ' + materialNameFor(material));
-      const faceCount = Math.floor(grupo.count / 3);
-      for (let f = 0; f < faceCount; f++) {
-        const base = grupo.start + f * 3;
-        const tokens = [0, 1, 2].map((k) => {
-          const localIdx = index ? index.getX(base + k) : (base + k);
-          const vIdx = localIdx + 1 + vOffset;
-          const vtIdx = hasUv ? localIdx + 1 + vtOffset : null;
-          const vnIdx = hasNormal ? localIdx + 1 + vnOffset : null;
-          return sketchupFaceToken(vIdx, vtIdx, vnIdx);
-        });
-        objLines.push('f ' + tokens.join(' '));
-        facesEscritas += 1;
-      }
-    });
-
-    vOffset += posAttr.count;
-    if (hasUv) vtOffset += posAttr.count;
-    if (hasNormal) vnOffset += posAttr.count;
-  });
-
-  materialNames.forEach((nome, material) => {
-    const cor = material.color || { r: 1, g: 1, b: 1 };
-    mtlLines.push('newmtl ' + nome);
-    mtlLines.push('Kd ' + cor.r.toFixed(4) + ' ' + cor.g.toFixed(4) + ' ' + cor.b.toFixed(4));
-    mtlLines.push('Ka 0.0000 0.0000 0.0000');
-    mtlLines.push('Ks 0.0000 0.0000 0.0000');
-    mtlLines.push('d 1.0000');
-    mtlLines.push('illum 1');
-    const arquivo = textureFileFor(material);
-    if (arquivo) mtlLines.push('map_Kd ' + arquivo);
-    mtlLines.push('');
-  });
-
-  return { obj: objLines.join('\n'), mtl: mtlLines.join('\n'), texturas: textureFiles, faces: facesEscritas };
 }
 
 // Reencoda a imagem de uma THREE.Texture em JPEG (Blob) via canvas — mesma
@@ -2612,9 +2501,205 @@ function sketchupTextureToJpegBlob(texture) {
       canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.88);
     } catch (e) {
       console.error('sketchupTextureToJpegBlob', e);
-      resolve(null); // 1 textura falhar não pode derrubar o export inteiro — fica sem aquela imagem, o resto do .zip continua
+      resolve(null); // 1 textura falhar não pode derrubar o export inteiro — fica sem aquela imagem, o resto do arquivo continua
     }
   });
+}
+
+// Monta o .dae (texto XML) a partir da cena — devolve também um Map
+// Texture -> nome de arquivo, pra escrever as imagens depois (async, feito
+// à parte porque canvas.toBlob é assíncrono e essa função aqui não precisa
+// ser). Cada MESH vira uma <geometry> com índice LOCAL (0-based, começa do
+// zero de novo a cada peça — diferente do .obj, que era um contador global
+// pro arquivo inteiro); cada grupo de material dentro da peça vira um bloco
+// <triangles> próprio, com um "símbolo" local (Sym1, Sym2...) resolvido pro
+// material de verdade no <bind_material> do <node> — permite a MESMA peça
+// ter, por exemplo, o corpo em textura de madeira e uma faixa em cor lisa,
+// exatamente como o menu "Visual" já monta hoje (ver PROJECT_DRAW_PRESETS).
+function buildSketchupCollada(scene) {
+  const materialInfos = new Map(); // THREE.Material -> { id, effectId, imageId?, arquivo?, nome, cor }
+  const textureFiles = new Map(); // THREE.Texture -> nome do arquivo (dedup por TEXTURA — várias peças reusam a mesma imagem)
+  const geometryXmlBlocks = [];
+  const nodeXmlBlocks = [];
+  let meshIndex = 0;
+  let facesEscritas = 0;
+
+  function materialInfoFor(material) {
+    if (materialInfos.has(material)) return materialInfos.get(material);
+    const n = materialInfos.size + 1;
+    const base = sketchupSafeId(material.name, 'material_' + n);
+    const usados = new Set(Array.from(materialInfos.values()).map((m) => m.base));
+    let baseUnico = base, k = 1;
+    while (usados.has(baseUnico)) { baseUnico = base + '_' + (++k); }
+    const info = {
+      base: baseUnico,
+      id: 'Material_' + baseUnico,
+      effectId: 'Effect_' + baseUnico,
+      nome: material.name || baseUnico,
+      cor: material.color || { r: 1, g: 1, b: 1 },
+    };
+    if (material.map && material.map.image) {
+      let arquivo = textureFiles.get(material.map);
+      if (!arquivo) { arquivo = 'textura_' + (textureFiles.size + 1) + '.jpg'; textureFiles.set(material.map, arquivo); }
+      info.imageId = 'Image_' + baseUnico;
+      info.arquivo = arquivo;
+    }
+    materialInfos.set(material, info);
+    return info;
+  }
+
+  const _v = new THREE.Vector3();
+  const _n = new THREE.Vector3();
+  const _normalMatrix = new THREE.Matrix3();
+
+  scene.updateMatrixWorld(true);
+  scene.traverse((obj) => {
+    if (!obj.isMesh) return;
+    if (isSketchupExportExcluded(obj)) return;
+    const geometry = obj.geometry;
+    if (!geometry || !geometry.attributes || !geometry.attributes.position) return;
+
+    const posAttr = geometry.attributes.position;
+    const normAttr = geometry.attributes.normal;
+    const uvAttr = geometry.attributes.uv;
+    const index = geometry.index;
+    const hasNormal = !!normAttr;
+    const hasUv = !!uvAttr;
+
+    meshIndex += 1;
+    const geoId = 'Geometry_peca_' + meshIndex;
+    const nodeId = 'Node_peca_' + meshIndex;
+    const nomePeca = sketchupEscapeXml(obj.name || ('Peça ' + meshIndex));
+
+    _normalMatrix.getNormalMatrix(obj.matrixWorld);
+    const posArr = [];
+    const normArr = [];
+    const uvArr = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      _v.fromBufferAttribute(posAttr, i).applyMatrix4(obj.matrixWorld);
+      posArr.push(_v.x, _v.y, _v.z);
+      if (hasNormal) {
+        _n.fromBufferAttribute(normAttr, i).applyMatrix3(_normalMatrix).normalize();
+        normArr.push(_n.x, _n.y, _n.z);
+      }
+      if (hasUv) uvArr.push(uvAttr.getX(i), uvAttr.getY(i));
+    }
+
+    // offsets do <p> ficam TODOS combinados aqui — são os mesmos offsets
+    // usados tanto pra montar os <input> quanto pra escrever os números do
+    // <p>, de propósito (nunca podem sair de sincronia um do outro).
+    const offsets = { position: 0 };
+    let proximoOffset = 1;
+    if (hasNormal) offsets.normal = proximoOffset++;
+    if (hasUv) offsets.uv = proximoOffset++;
+
+    const materiais = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const grupos = (geometry.groups && geometry.groups.length)
+      ? geometry.groups
+      : [{ start: 0, count: index ? index.count : posAttr.count, materialIndex: 0 }];
+
+    const blocosPorSimbolo = []; // { symbol, info, p: [] }
+    const simboloPorMaterial = new Map();
+
+    grupos.forEach((grupo) => {
+      const material = materiais[grupo.materialIndex] || materiais[0];
+      if (!material) return;
+      const info = materialInfoFor(material);
+      let simbolo = simboloPorMaterial.get(material);
+      let bloco;
+      if (simbolo) {
+        bloco = blocosPorSimbolo.find((b) => b.symbol === simbolo);
+      } else {
+        simbolo = 'Sym' + (simboloPorMaterial.size + 1);
+        simboloPorMaterial.set(material, simbolo);
+        bloco = { symbol: simbolo, info, p: [] };
+        blocosPorSimbolo.push(bloco);
+      }
+      const faceCount = Math.floor(grupo.count / 3);
+      for (let f = 0; f < faceCount; f++) {
+        const base = grupo.start + f * 3;
+        for (let k = 0; k < 3; k++) {
+          const localIdx = index ? index.getX(base + k) : (base + k);
+          bloco.p.push(localIdx); // POSITION (offset 0, sempre presente)
+          if (hasNormal) bloco.p.push(localIdx);
+          if (hasUv) bloco.p.push(localIdx);
+        }
+        facesEscritas += 1;
+      }
+    });
+
+    if (!blocosPorSimbolo.length) return; // peça sem material nenhum resolvido — não gera geometry vazia
+
+    let inputsXml = `<input semantic="VERTEX" source="#${geoId}-vertices" offset="${offsets.position}"/>`;
+    if (hasNormal) inputsXml += `<input semantic="NORMAL" source="#${geoId}-normals" offset="${offsets.normal}"/>`;
+    if (hasUv) inputsXml += `<input semantic="TEXCOORD" source="#${geoId}-uv" offset="${offsets.uv}" set="0"/>`;
+
+    const trianglesXml = blocosPorSimbolo.map((bloco) => {
+      const count = bloco.p.length / (1 + (hasNormal ? 1 : 0) + (hasUv ? 1 : 0)) / 3;
+      return `<triangles material="${bloco.symbol}" count="${count}">${inputsXml}<p>${bloco.p.join(' ')}</p></triangles>`;
+    }).join('');
+
+    const sourcesXml = [
+      `<source id="${geoId}-positions"><float_array id="${geoId}-positions-array" count="${posArr.length}">${posArr.map((n2) => n2.toFixed(6)).join(' ')}</float_array>`
+        + `<technique_common><accessor source="#${geoId}-positions-array" count="${posArr.length / 3}" stride="3">`
+        + `<param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>`,
+      hasNormal ? `<source id="${geoId}-normals"><float_array id="${geoId}-normals-array" count="${normArr.length}">${normArr.map((n2) => n2.toFixed(6)).join(' ')}</float_array>`
+        + `<technique_common><accessor source="#${geoId}-normals-array" count="${normArr.length / 3}" stride="3">`
+        + `<param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>` : '',
+      hasUv ? `<source id="${geoId}-uv"><float_array id="${geoId}-uv-array" count="${uvArr.length}">${uvArr.map((n2) => n2.toFixed(6)).join(' ')}</float_array>`
+        + `<technique_common><accessor source="#${geoId}-uv-array" count="${uvArr.length / 2}" stride="2">`
+        + `<param name="S" type="float"/><param name="T" type="float"/></accessor></technique_common></source>` : '',
+    ].join('');
+
+    geometryXmlBlocks.push(
+      `<geometry id="${geoId}" name="${nomePeca}"><mesh>${sourcesXml}`
+      + `<vertices id="${geoId}-vertices"><input semantic="POSITION" source="#${geoId}-positions"/></vertices>`
+      + `${trianglesXml}</mesh></geometry>`
+    );
+
+    const bindMaterialsXml = blocosPorSimbolo.map((bloco) => (
+      `<instance_material symbol="${bloco.symbol}" target="#${bloco.info.id}">`
+      + (hasUv ? '<bind_vertex_input semantic="UVMap" input_semantic="TEXCOORD" input_set="0"/>' : '')
+      + '</instance_material>'
+    )).join('');
+
+    nodeXmlBlocks.push(
+      `<node id="${nodeId}" name="${nomePeca}"><instance_geometry url="#${geoId}">`
+      + `<bind_material><technique_common>${bindMaterialsXml}</technique_common></bind_material>`
+      + `</instance_geometry></node>`
+    );
+  });
+
+  const imagesXml = Array.from(materialInfos.values())
+    .filter((info) => info.imageId)
+    .map((info) => `<image id="${info.imageId}"><init_from>${sketchupEscapeXml(info.arquivo)}</init_from></image>`)
+    .join('');
+
+  const effectsXml = Array.from(materialInfos.values()).map((info) => {
+    const diffuseXml = info.imageId
+      ? `<newparam sid="${info.effectId}-surface"><surface type="2D"><init_from>${info.imageId}</init_from></surface></newparam>`
+        + `<newparam sid="${info.effectId}-sampler"><sampler2D><source>${info.effectId}-surface</source></sampler2D></newparam>`
+        + `<technique sid="common"><lambert><diffuse><texture texture="${info.effectId}-sampler" texcoord="UVMap"/></diffuse></lambert></technique>`
+      : `<technique sid="common"><lambert><diffuse><color>${info.cor.r.toFixed(4)} ${info.cor.g.toFixed(4)} ${info.cor.b.toFixed(4)} 1</color></diffuse></lambert></technique>`;
+    return `<effect id="${info.effectId}"><profile_COMMON>${diffuseXml}</profile_COMMON></effect>`;
+  }).join('');
+
+  const materialsXml = Array.from(materialInfos.values())
+    .map((info) => `<material id="${info.id}" name="${sketchupEscapeXml(info.nome)}"><instance_effect url="#${info.effectId}"/></material>`)
+    .join('');
+
+  const dae = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">'
+    + '<asset><up_axis>Y_UP</up_axis><unit name="meter" meter="1"/></asset>'
+    + `<library_images>${imagesXml}</library_images>`
+    + `<library_effects>${effectsXml}</library_effects>`
+    + `<library_materials>${materialsXml}</library_materials>`
+    + `<library_geometries>${geometryXmlBlocks.join('')}</library_geometries>`
+    + `<library_visual_scenes><visual_scene id="Scene" name="Legno">${nodeXmlBlocks.join('')}</visual_scene></library_visual_scenes>`
+    + '<scene><instance_visual_scene url="#Scene"/></scene>'
+    + '</COLLADA>';
+
+  return { dae, texturas: textureFiles, faces: facesEscritas };
 }
 
 async function exportProjectToSketchUp() {
@@ -2623,6 +2708,12 @@ async function exportProjectToSketchUp() {
   const setStatus = (text, erro) => {
     if (!statusEl) return;
     statusEl.textContent = text || '';
+    // 2026-09-08 (Matt: "ta faltando botao, new project, send order...") — a
+    // barra "Projeto" virou só-ícone e o status aqui ganhou max-width fixo
+    // (ver .po-proj-export-status no CSS) JUSTAMENTE pra não empurrar mais
+    // "Enviar pro pedido"/"Novo projeto" pra fora da tela quando a mensagem
+    // é longa. O texto INTEIRO continua acessível no hover via title=.
+    statusEl.title = text || '';
     statusEl.classList.toggle('is-error', !!erro);
   };
 
@@ -2641,15 +2732,14 @@ async function exportProjectToSketchUp() {
   setStatus(I18n.t('export_sketchup.generating'));
 
   try {
-    const { obj, mtl, texturas, faces } = buildSketchupObjAndMtl(scene);
+    const { dae, texturas, faces } = buildSketchupCollada(scene);
     if (!faces) {
       setStatus(I18n.t('export_sketchup.empty'), true);
       return;
     }
 
     const zip = new JSZip();
-    zip.file('modelo.obj', obj);
-    zip.file('modelo.mtl', mtl);
+    zip.file('modelo.dae', dae);
 
     setStatus(I18n.t('export_sketchup.textures'));
     for (const [texture, arquivo] of texturas) {

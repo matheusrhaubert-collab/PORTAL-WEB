@@ -3879,9 +3879,9 @@ header.po-topnav {
 .po-proj-export-status {
   font-size: 12px; font-weight: 600; padding: 0 4px;
   white-space: nowrap; display: flex; align-items: center; gap: 4px;
-  color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+  color: var(--muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis;
 }
-.po-proj-export-status.is-error { color: var(--danger); white-space: normal; max-width: 320px; }
+.po-proj-export-status.is-error { color: var(--danger); }
 
 /* Cartão de ícone (Medidas, desfazer, encaixe). */
 .po-tb-icon-card {
@@ -3919,6 +3919,14 @@ header.po-topnav {
   font-size: 12px; background: var(--panel);
 }
 #po-proj-style-menu, #po-proj-layers-menu .po-style-btn svg { flex: none; }
+/* Ícone do botão FECHADO menor (2026-09-07, pedido do Matt: "diminui esse
+   icone, deixa so ele grande quando abre") — o iconeEstilo() em
+   portal-08-projetos-paredes.js desenha o MESMO svg (22x22) tanto pro botão
+   fechado quanto pra cada item da lista aberta; escala só o fechado via CSS
+   (.po-style-btn, não .po-style-item) pra não mexer em JS. Só a barra
+   "Visual" (#po-proj-style-menu) — Camadas (#po-proj-layers-menu) não usa
+   esse ícone colorido, é outro conteúdo. */
+#po-proj-style-menu .po-style-btn svg { width: 16px; height: 16px; }
 
 /* Par Render + Linhas no cabeçalho: colados, porque "Linhas" é um interruptor
    DO render, não uma ação irmã. Visual idêntico aos vizinhos (Send to order /
@@ -4043,9 +4051,19 @@ header.po-topnav {
 
 /* Ações encostadas na direita. */
 .po-tb-direita { margin-left: auto; }
+/* Quadrados, só ícone (2026-09-08, pedido do Matt: "quero todos icones
+   quadrados, em icones. nao quero ver textos, so quando passo mouse. assim
+   vamos ganhar espaco" — depois de reportar que "Enviar pro pedido"/"Novo
+   projeto" sumiram da barra: o status do Export SketchUp cresceu demais e
+   empurrou os dois pra fora da área visível, ver .po-proj-export-status
+   logo acima). O texto continua existindo — pro mouse, no title= nativo do
+   navegador (hover); pra leitor de tela, no aria-label — só não fica mais
+   sempre visível. */
 #po-proj-canvas-tools .po-tb-seg-plano .po-tb-seg-btn {
-  border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 7px 14px;
+  border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
+  width: 32px; height: 32px; padding: 0; justify-content: center; font-size: 15px;
 }
+#po-proj-canvas-tools .po-tb-seg-plano .po-tb-seg-btn span { display: none; }
 #po-proj-canvas-tools .po-tb-primaria {
   background: var(--text) !important; color: #fff !important; border-color: var(--text) !important;
 }

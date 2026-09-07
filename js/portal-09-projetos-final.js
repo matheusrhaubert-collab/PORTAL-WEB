@@ -32,7 +32,14 @@ function syncProjToolbarSaveButton() {
   const label = document.getElementById('po-proj-toolbar-save-label') || barra;
   const updateBtn = document.getElementById('po-proj-update-fav-btn');
   const editando = updateBtn && updateBtn.style.display !== 'none' && updateBtn.textContent;
-  label.textContent = editando ? updateBtn.textContent : I18n.t('project.save_label');
+  const texto = editando ? updateBtn.textContent : I18n.t('project.save_label');
+  label.textContent = texto;
+  // 2026-09-08: o botão virou só-ícone (texto do <span> escondido no CSS,
+  // ver #po-proj-canvas-tools .po-tb-seg-plano .po-tb-seg-btn span) — sem
+  // isto aqui o hover ficaria PRESO no title="Salvar projeto" estático do
+  // HTML, mesmo depois de virar "Salvar alterações".
+  barra.title = texto;
+  barra.setAttribute('aria-label', texto);
 }
 
 function bindProjToolbarSaveButton() {
