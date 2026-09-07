@@ -3928,6 +3928,25 @@ header.po-topnav {
    esse ícone colorido, é outro conteúdo. */
 #po-proj-style-menu .po-style-btn svg { width: 16px; height: 16px; }
 
+/* Botão fechado do "Visual" vira quadrado só-ícone, sempre — não só abaixo
+   de 1600px (2026-09-07, "comnbiamos de deixar so icone": faltava isso e os
+   grupos Vista/Projeção na 1a rodada do pedido "quero todos icones
+   quadrados"). O .po-style-btn base (acima) tem min-width:190px pensado
+   pro texto — sem isso o botão ficava uma caixa larga e vazia com o ícone
+   sozinho lá na esquerda (foi o "esqueceu desse?" do Matt). Nome completo
+   migra pro title=/aria-label (ver pintaBotaoEstilo em
+   portal-08-projetos-paredes.js). Escopado só em #po-proj-style-menu — o
+   menu de Camadas ao lado (#po-proj-layers-menu, mesmo esqueleto
+   .po-style-btn) continua mostrando texto, não foi pedido pra ele. A LISTA
+   aberta (.po-style-item, reparentada pro <body> ao abrir) não é afetada
+   por nenhuma regra daqui — continua com nome + ícone, são 8 estilos
+   parecidos demais pra diferenciar só por ícone. */
+#po-proj-style-menu .po-style-btn {
+  min-width: 0; width: 32px; height: 32px; padding: 0; justify-content: center;
+}
+#po-proj-style-menu .po-style-btn span,
+#po-proj-style-menu .po-style-caret { display: none; }
+
 /* Par Render + Linhas no cabeçalho: colados, porque "Linhas" é um interruptor
    DO render, não uma ação irmã. Visual idêntico aos vizinhos (Send to order /
    New project), só sem o vão entre os dois. */
@@ -4064,6 +4083,15 @@ header.po-topnav {
   width: 32px; height: 32px; padding: 0; justify-content: center; font-size: 15px;
 }
 #po-proj-canvas-tools .po-tb-seg-plano .po-tb-seg-btn span { display: none; }
+/* Vista (Frontal/Superior) e Projeção (Perspectiva/Paralelo) — mesmo
+   tratamento icone-so do grupo Projeto acima (2026-09-07, "comnbiamos de
+   deixar so icone" depois que o Matt apontou que esses dois grupos e o
+   botao fechado do menu Visual tinham ficado de fora da 1a rodada). */
+#po-proj-canvas-tools .po-tb-seg-icone .po-tb-seg-btn {
+  border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
+  width: 32px; height: 32px; padding: 0; justify-content: center; font-size: 15px;
+}
+#po-proj-canvas-tools .po-tb-seg-icone .po-tb-seg-btn span { display: none; }
 #po-proj-canvas-tools .po-tb-primaria {
   background: var(--text) !important; color: #fff !important; border-color: var(--text) !important;
 }

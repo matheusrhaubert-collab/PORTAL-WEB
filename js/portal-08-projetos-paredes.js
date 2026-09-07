@@ -3511,7 +3511,16 @@ function pintaBotaoEstilo(idAtual) {
   // Nome curto no botão fechado (o longo fica na lista): "Texturas com linhas
   // grossas" empurrava a barra inteira pra fora da tela.
   const curto = nomeEstilo(o, true);
-  if (btn) btn.innerHTML = iconeEstilo(o) + '<span>' + curto + '</span><i class="po-style-caret">▾</i>';
+  // Nome completo pro hover — o botão fechado virou ícone-só (CSS,
+  // #po-proj-style-menu .po-style-btn), o <span> continua no HTML só pra
+  // não mexer em mais nada, mas quem explica o botão agora é o
+  // title/aria-label (2026-09-07, "comnbiamos de deixar so icone").
+  const completo = nomeEstilo(o, false);
+  if (btn) {
+    btn.innerHTML = iconeEstilo(o) + '<span>' + curto + '</span><i class="po-style-caret">▾</i>';
+    btn.title = completo;
+    btn.setAttribute('aria-label', completo);
+  }
   document.querySelectorAll('#po-proj-style-list .po-style-item').forEach((it) => {
     it.classList.toggle('ativo', it.dataset.estilo === o.id);
   });
