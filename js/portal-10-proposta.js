@@ -1081,9 +1081,20 @@ async function generateProjectProposalPDF() {
     if (errorEl) { errorEl.textContent = I18n.t('proposal.empty_error'); errorEl.style.display = 'block'; }
     return;
   }
+  // (2026-09-07, Matt: "uma vez que ue gere a proposal ele fica aparecendo
+  // a escrita proposal e escolnde o icone") -- btn.textContent = ... aqui
+  // embaixo reescrevia TODO o conteúdo do <button> (SVG do ícone + <span>
+  // do texto), trocando os dois por um texto solto -- e o texto que
+  // "voltava" no finally era justamente esse texto solto (originalLabel),
+  // então o ícone NUNCA mais reaparecia depois da 1ª geração, só
+  // recarregando a página. Fix: mexe só no <span> (que já fica escondido
+  // por CSS, .po-tb-icon-card span { display:none }), o <svg> do ícone
+  // nunca é tocado.
   const btn = document.getElementById('po-proj-proposal-btn');
-  const originalLabel = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = I18n.t('proposal.generating'); }
+  const labelEl = btn ? btn.querySelector('span[data-i18n="project.proposal_btn"]') : null;
+  const originalLabel = labelEl ? labelEl.textContent : '';
+  if (btn) btn.disabled = true;
+  if (labelEl) labelEl.textContent = I18n.t('proposal.generating');
   try {
     const liveOrder = {
       po_name: loadedProjectFavorite ? loadedProjectFavorite.name : null,
@@ -1108,7 +1119,8 @@ async function generateProjectProposalPDF() {
     }
     await generateOrderProposalPDF(liveOrder, liveItems);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+    if (btn) btn.disabled = false;
+    if (labelEl) labelEl.textContent = originalLabel;
   }
 }
 

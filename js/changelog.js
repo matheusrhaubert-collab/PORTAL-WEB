@@ -20,6 +20,20 @@
 // bolinha de "tem novidade" atualizam sozinhos a partir do item [0] daqui.
 window.LEGNO_CHANGELOG = [
   {
+    version: '1.003',
+    date: '2026-09-07',
+    items: [
+      'Barra de ferramentas da tela de Projetos reorganizada em categorias (Paredes, Vista, Ferramentas, Camadas, Render, Orçamento, Projeto), com um textinho identificando cada grupo.',
+      'Novo botão "Refazer" ao lado do "Desfazer", pra reverter um desfazer feito a mais.',
+      'Corrigido a exportação para o SketchUp: uma caixa invisível usada só pra clicar no móvel na tela não sai mais junto como um bloco sólido atrapalhando o desenho.',
+      'Corrigido o ícone do menu "Visual" que aparecia mais baixo que os outros ícones da categoria Vista.',
+      'Na categoria Camadas, ocultar um móvel agora destaca o botão em rosa, igual aos outros indicadores da barra.',
+      'Botão "Enviar pro pedido" passou a usar o mesmo ícone preto e branco dos outros botões da barra, sem o fundo preto.',
+      'Corrigido bug que, depois de gerar uma Proposta, trocava o ícone do botão pela palavra "Proposal" e não voltava mais sem recarregar a página.',
+      'Ícones da barra reaproximados do texto de cada categoria, ocupando um pouco menos de altura.'
+    ]
+  },
+  {
     version: '1.002',
     date: '2026-09-07',
     items: [

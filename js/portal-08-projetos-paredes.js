@@ -2476,6 +2476,19 @@ function sketchupEscapeXml(str) {
 // peça), então "obj.visible" sozinho deixaria peça escondida vazando pro
 // arquivo exportado.
 function isSketchupExportExcluded(obj) {
+  // Caixa invisível de clique (hitbox) do módulo (2026-09-07, Matt: "esta
+  // indo um bloco do pai tambem. como ele vai solido acaba atrapalhando
+  // todo desenho") — é um THREE.Mesh de verdade (BoxGeometry do tamanho
+  // INTEIRO do módulo), filho do group do módulo ("pai" = assembly.group,
+  // ver portal-08-projetos-paredes.js ~linha 1985), com opacity:0 pra
+  // ficar invisível SÓ no viewer daqui. opacity/transparent não é algo que
+  // um exportador de malha olhe — a caixa saía sólida e do tamanho do
+  // móvel inteiro, tampando o desenho de verdade no SketchUp. `visible`
+  // continua true nela de propósito (senão o raycast de clique também
+  // pararia de funcionar, ver isHitboxProxy em viewer3d_composition.js),
+  // então tem que ser um check à parte, não cai no `p.visible === false`
+  // abaixo.
+  if (obj.userData && obj.userData.isHitboxProxy) return true;
   let p = obj;
   while (p) {
     if (p.name === SKETCHUP_EXPORT_EXCLUDE_TAG || p.visible === false) return true;
@@ -3832,6 +3845,20 @@ function refreshProjectLayersMenu() {
     });
   });
   if (btn) btn.classList.toggle('active', projectHiddenLayers.size > 0);
+
+  // Botão "Ocultar selecionado" (2026-09-07, Matt: "em layers, se ocultar
+  // um movel quero que ele fique rosa como os outros também") -- mesmo
+  // tratamento visual do botão de Camadas logo acima: pinta de ativo
+  // (rosa, via a regra genérica .po-tb-icon-card.active) sempre que
+  // EXISTIR pelo menos um módulo escondido no projeto (slot.oculto), não
+  // só no instante do clique -- por isso mora aqui, que já roda depois de
+  // TODO render da vista (ver a chamada em portal-06c), inclusive ao
+  // ABRIR um projeto salvo com módulo já oculto.
+  const bOcultarBtn = document.getElementById('po-proj-tb-ocultar-btn');
+  if (bOcultarBtn) {
+    const algumOculto = (projectSlots || []).some((s) => s.oculto);
+    bOcultarBtn.classList.toggle('active', algumOculto);
+  }
 }
 montaMenuCamadas();
 

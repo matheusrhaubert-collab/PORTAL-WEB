@@ -3914,11 +3914,11 @@ header.po-topnav {
 .po-tb-icon-card.active svg { color: #e0a44b; }
 
 /* Menu de estilo dentro da barra: mesma altura e raio dos segmentados. */
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn {
+#po-proj-style-menu .po-style-btn, #po-proj-layers-menu .po-style-btn {
   height: 36px; border-radius: 12px; padding: 6px 10px; min-width: 210px;
   font-size: 12px; background: var(--panel);
 }
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn svg { flex: none; }
+#po-proj-style-menu .po-style-btn svg, #po-proj-layers-menu .po-style-btn svg { flex: none; }
 /* Ícone do botão FECHADO menor (2026-09-07, pedido do Matt: "diminui esse
    icone, deixa so ele grande quando abre") — o iconeEstilo() em
    portal-08-projetos-paredes.js desenha o MESMO svg (22x22) tanto pro botão
@@ -3976,8 +3976,6 @@ header.po-topnav {
 .po-tb-seg-plano { background: transparent; border-color: transparent; padding: 0; gap: 6px; }
 .po-tb-seg-plano .po-tb-seg-btn { border: 1px solid var(--border); background: var(--panel); }
 .po-tb-seg-plano .po-tb-seg-btn:hover { border-color: var(--accent); background: var(--accent-light); }
-.po-tb-primaria { background: var(--text) !important; color: #fff !important; border-color: var(--text) !important; }
-.po-tb-primaria:hover { filter: brightness(0.92); }
 .po-tb-seg-btn:disabled { opacity: 0.4; cursor: default; }
 /* Título dentro da barra, como no mockup — mesma linha de tudo. */
 .po-tb-titulo { font-size: 15px; font-weight: 700; color: var(--text); padding: 0 12px 0 4px; align-self: center; white-space: nowrap; }
@@ -4027,7 +4025,7 @@ header.po-topnav {
 }
 #po-proj-canvas-tools .po-tb-group {
   display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
-  padding: 0 6px; gap: 1px;
+  padding: 0 6px; gap: 0;
 }
 /* Altura fixa (2026-09-07, pedido do Matt: "icones devem aumentar... a
    letra deve ficar menor, com menos espaco em cima e embaixo") — mesma
@@ -4134,10 +4132,15 @@ header.po-topnav {
    O texto continua existindo pro title=/aria-label (hover / leitor de
    tela), só não fica mais visível — regra genérica de span também já
    coberta acima. */
-#po-proj-canvas-tools .po-tb-primaria {
-  background: var(--text) !important; color: #fff !important; border-color: var(--text) !important;
-}
-#po-proj-canvas-tools .po-tb-primaria svg { color: #fff; }
+/* REMOVIDO (2026-09-07, Matt: "sent to orders, tira o fundo preto, dele
+   icone preto fundo branco como so outros") -- "Enviar pro pedido" tinha
+   fundo preto forçado aqui (com !important, e também na regra antiga sem
+   escopo lá em cima, ambas removidas agora), destoando dos vizinhos
+   Salvar/Exportar/Novo projeto, que são só ícone preto sobre fundo branco
+   (regra genérica .po-tb-icon-card, mais acima) e só ganham cor quando
+   .active. A classe .po-tb-primaria saiu do <button> em portal.html --
+   sem ela, o botão cai direto na regra genérica e fica igual aos outros.
+   */
 
 /* Ícones da barra do módulo: quadrados, sem borda própria, filete entre eles. */
 .po-proj-slot-actions .po-proj-slot-action-btn {
@@ -4230,16 +4233,16 @@ header.po-topnav {
   justify-content: space-between; gap: 0;
   /* Esta regra vem DEPOIS da de cima e e quem manda no padding — baixar so la
      em cima nao adiantava nada (2026-08-18). */
-  padding: 2px 12px; overflow-x: auto; overflow-y: visible; flex-wrap: nowrap;
+  padding: 0 12px; overflow-x: auto; overflow-y: visible; flex-wrap: nowrap;
 }
 #po-proj-canvas-tools .po-tb-group { padding: 0; min-width: 0; }
 #po-proj-canvas-tools .po-tb-sep { margin: 6px 2px; }
 #po-proj-canvas-tools .po-tb-seg-btn,
 #po-proj-canvas-tools .po-tb-icon-card,
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn { padding: 6px 9px; }
+#po-proj-style-menu .po-style-btn, #po-proj-layers-menu .po-style-btn { padding: 6px 9px; }
 /* O nome do estilo é o texto mais longo da barra — ele encolhe primeiro. */
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn { max-width: 190px; overflow: hidden; }
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn span {
+#po-proj-style-menu .po-style-btn, #po-proj-layers-menu .po-style-btn { max-width: 190px; overflow: hidden; }
+#po-proj-style-menu .po-style-btn span, #po-proj-layers-menu .po-style-btn span {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 
@@ -4259,7 +4262,7 @@ header.po-topnav {
   #po-proj-render-linhas-btn span,
   #po-proj-style-menu span, #po-proj-layers-menu .po-style-btn span,
   #po-proj-style-menu .po-style-caret, #po-proj-layers-menu .po-style-caret { display: none; }
-  #po-proj-style-menu, #po-proj-layers-menu .po-style-btn { max-width: none; }
+  #po-proj-style-menu .po-style-btn, #po-proj-layers-menu .po-style-btn { max-width: none; }
 }
 @media (max-width: 1180px) {
   /* iPad deitado: sobra só ícone em tudo, menos a ação final. */
