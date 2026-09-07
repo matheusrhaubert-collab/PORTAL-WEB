@@ -168,7 +168,14 @@ function createViewerComposition3D() {
     // 2026-08-12). 5cm deixa encostar de verdade na peça.
     controls.minDistance = 0.05;
     controls.maxDistance = 30;
-    controls.maxPolarAngle = Math.PI * 0.49;
+    // 0.499 (~89.8°), não mais 0.49 (~88.2°) — Matt, 2026-09-07: "nao
+    // consigo enxergar uma parede de frente de forma paralela, a camera
+    // sempre fica acima do ponto, limitada a descer um pouco mais". Os
+    // ~88.2° antigos pareciam quase horizontais mas ainda deixavam uma
+    // sombra perceptível de vista-de-cima numa parede grande. Mantém o
+    // teto (nunca deixa olhar de baixo pra cima, motivo original desta
+    // linha), só empurra bem mais perto do paralelo de verdade.
+    controls.maxPolarAngle = Math.PI * 0.499;
     // Zoom PRA ONDE O CURSOR/DEDOS APONTAM (pedido do usuário 2026-07-29: "o
     // zoom aproxima exatamente no meio da parede... quero mais liberdade pra
     // ver detalhes nas partes que ficam abaixo ou acima do meio da parede",
@@ -2421,18 +2428,60 @@ function createViewerComposition3D() {
     return result;
   }
 
+  // Cache de ARESTAS (em espaço LOCAL da geometria) por objeto Geometry —
+  // pickSurfacePointAt roda a cada pointermove (hover da régua), e recalcular
+  // EdgesGeometry a cada frame pra malhas que não mudam seria desperdício.
+  // Várias peças/paredes reaproveitam a MESMA geometria (BoxGeometry), então
+  // isto também deduplica trabalho entre elas.
+  const _edgesLocalCache = new WeakMap(); // Geometry -> [[Vector3,Vector3], ...]
+  function getLocalEdgesForGeometry(geometry) {
+    if (_edgesLocalCache.has(geometry)) return _edgesLocalCache.get(geometry);
+    let edges = [];
+    try {
+      const eg = new THREE.EdgesGeometry(geometry);
+      const pos = eg.attributes && eg.attributes.position;
+      if (pos) {
+        for (let i = 0; i < pos.count; i += 2) {
+          edges.push([
+            new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)),
+            new THREE.Vector3(pos.getX(i + 1), pos.getY(i + 1), pos.getZ(i + 1))
+          ]);
+        }
+      }
+      eg.dispose();
+    } catch (e) { edges = []; }
+    _edgesLocalCache.set(geometry, edges);
+    return edges;
+  }
+
   // "Que PONTO exato da geometria de verdade está embaixo do clique" —
   // usado pela RÉGUA MANUAL (2026-09-07, Matt: "vou ate um ponto de
   // intersecao das arestas clico nesse ponto e procuro o proximo ponto").
   // Diferente de pickAssemblyAt (que mira de propósito na CAIXA invisível
   // do módulo inteiro, pra seleção ficar estável — ver comentário grande
-  // lá), aqui o alvo é a MALHA de verdade (peça, parede, piso): o usuário
-  // está apontando pra um canto específico do desenho, não escolhendo
-  // "qual módulo". Depois de achar o ponto de impacto, gruda no VÉRTICE
-  // mais próximo da malha atingida — é o jeito prático de acertar "onde
-  // duas arestas se encontram" sem calcular interseção aresta-com-aresta
-  // de verdade (o clique já mira perto do canto; o vértice mais próximo
-  // DAQUELA peça é exatamente esse canto).
+  // lá), aqui o alvo é a MALHA de verdade (peça, parede, piso).
+  //
+  // REESCRITO (2026-09-07, 2ª rodada) — a 1ª versão grudava no VÉRTICE MAIS
+  // PRÓXIMO DE TODA A MALHA, então um clique no meio de uma parede grande
+  // "teleportava" a medição pro canto mais próximo, mesmo longe. Matt: "isso
+  // nao pode acontecer, por que so quando clicar em cima do ponto ele deve
+  // comecar ou terminar uma medida." + "quero que em uma reta ele mostre o
+  // ponto mexendo sobre ela, com ima pras pontas."
+  //
+  // Agora: acha a ARESTA (segmento reto, ver getLocalEdgesForGeometry) mais
+  // próxima do ponto de impacto, projeta o impacto NELA (o ponto desliza
+  // junto com o mouse ao longo da aresta, não pula pra longe) e só então
+  // aplica ímã — pras PONTAS da aresta (canto de verdade) e pro MEIO dela
+  // (Matt pediu os dois: "ao correr a reta... apareça o meio da reta"). Só
+  // gruda em canto/meio quando o ponto projetado já está BEM perto deles;
+  // o resto do percurso é livre, seguindo o mouse.
+  //
+  // Devolve, além de point/object: edgeStart/edgeEnd/edgeMid (mundo),
+  // fraction (0..1 na aresta) e isEndpointSnap/isMidpointSnap — usados pelo
+  // overlay (refreshProjectRulerOverlay, portal-06c) pra desenhar a aresta,
+  // a marca do meio e o guia perpendicular.
+  const RULER_ENDPOINT_SNAP_M = 0.05; // 5cm — "só quando clicar em cima do ponto"
+  const RULER_MIDPOINT_SNAP_M = 0.03; // 3cm — um pouco mais apertado que o de ponta
   function pickSurfacePointAt(clientX, clientY) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
@@ -2442,18 +2491,60 @@ function createViewerComposition3D() {
     if (!hit) return null;
     const mesh = hit.object;
     const geometry = mesh.geometry;
-    const posAttr = geometry && geometry.attributes && geometry.attributes.position;
-    if (!posAttr) return { point: hit.point.clone(), object: mesh };
+    if (!geometry) return { point: hit.point.clone(), object: mesh };
     mesh.updateMatrixWorld(true);
-    const v = new THREE.Vector3();
+    const edgesLocal = getLocalEdgesForGeometry(geometry);
+    if (!edgesLocal.length) return { point: hit.point.clone(), object: mesh };
+
+    const invMat = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+    const localHit = hit.point.clone().applyMatrix4(invMat);
+
     let melhorDistSq = Infinity;
-    let melhorPonto = null;
-    for (let i = 0; i < posAttr.count; i++) {
-      v.fromBufferAttribute(posAttr, i).applyMatrix4(mesh.matrixWorld);
-      const d = v.distanceToSquared(hit.point);
-      if (d < melhorDistSq) { melhorDistSq = d; melhorPonto = v.clone(); }
+    let melhorA = null, melhorB = null, melhorT = 0;
+    const ab = new THREE.Vector3();
+    const ah = new THREE.Vector3();
+    const closest = new THREE.Vector3();
+    for (let i = 0; i < edgesLocal.length; i++) {
+      const a = edgesLocal[i][0];
+      const b = edgesLocal[i][1];
+      ab.copy(b).sub(a);
+      const lenSq = ab.lengthSq();
+      let t = 0;
+      if (lenSq > 1e-12) {
+        ah.copy(localHit).sub(a);
+        t = Math.max(0, Math.min(1, ah.dot(ab) / lenSq));
+      }
+      closest.copy(a).addScaledVector(ab, t);
+      const dSq = closest.distanceToSquared(localHit);
+      if (dSq < melhorDistSq) {
+        melhorDistSq = dSq;
+        melhorA = a; melhorB = b; melhorT = t;
+      }
     }
-    return { point: melhorPonto || hit.point.clone(), object: mesh };
+    if (!melhorA) return { point: hit.point.clone(), object: mesh };
+
+    const worldA = melhorA.clone().applyMatrix4(mesh.matrixWorld);
+    const worldB = melhorB.clone().applyMatrix4(mesh.matrixWorld);
+    const edgeLenM = worldA.distanceTo(worldB);
+    let t = melhorT;
+    let isEndpointSnap = false;
+    let isMidpointSnap = false;
+    if (edgeLenM > 1e-6) {
+      const endLimiar = Math.min(RULER_ENDPOINT_SNAP_M, edgeLenM * 0.4);
+      const midLimiar = Math.min(RULER_MIDPOINT_SNAP_M, edgeLenM * 0.25);
+      const distInicioM = t * edgeLenM;
+      const distFimM = (1 - t) * edgeLenM;
+      if (distInicioM <= endLimiar) { t = 0; isEndpointSnap = true; }
+      else if (distFimM <= endLimiar) { t = 1; isEndpointSnap = true; }
+      else if (Math.abs(t - 0.5) * edgeLenM <= midLimiar) { t = 0.5; isMidpointSnap = true; }
+    }
+    const point = worldA.clone().lerp(worldB, t);
+    const edgeMid = worldA.clone().lerp(worldB, 0.5);
+    return {
+      point, object: mesh,
+      edgeStart: worldA, edgeEnd: worldB, edgeMid,
+      fraction: t, isEndpointSnap, isMidpointSnap
+    };
   }
 
   // "Que SUPERFÍCIE do ambiente (piso/parede) está embaixo do ponteiro" —

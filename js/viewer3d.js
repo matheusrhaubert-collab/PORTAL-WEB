@@ -869,7 +869,10 @@ const Viewer3D = (function () {
     controls.enableDamping = false;
     controls.minDistance = 0.3;
     controls.maxDistance = 8;
-    controls.maxPolarAngle = Math.PI * 0.49; // não deixa olhar de baixo pra cima
+    // 0.499, não 0.49 (2026-09-07, mesmo pedido do Matt no visualizador de
+    // projeto — ver viewer3d_composition.js) — mantém o teto (nunca olhar
+    // de baixo pra cima) mas deixa chegar bem mais perto do paralelo/frontal.
+    controls.maxPolarAngle = Math.PI * 0.499; // não deixa olhar de baixo pra cima
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1.15));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
@@ -3759,7 +3762,9 @@ const Viewer3D = (function () {
     controls.enableDamping = false;
     controls.minDistance = 0.05;
     controls.maxDistance = 30;
-    controls.maxPolarAngle = Math.PI * 0.49;
+    // 0.499, não 0.49 (2026-09-07, ver comentário na outra criação de
+    // OrbitControls deste arquivo, logo acima).
+    controls.maxPolarAngle = Math.PI * 0.499;
     controls.target.copy(prevTarget);
     controls.update();
 

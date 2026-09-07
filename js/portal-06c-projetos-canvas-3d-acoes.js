@@ -2292,10 +2292,33 @@ let projectRulerModeOn = false;
 let projectRulerPendingPoint = null; // THREE.Vector3 (mundo) do 1º ponto, aguardando o 2º
 let projectRulerMeasurements = []; // [{ p1: Vector3, p2: Vector3 }]
 let projectRulerRafId = null;
+// HOVER (2026-09-07, Matt: "ao ficar clicada regua nova, quero que ao passar
+// o mouse quero ver o pontos pra clicar") — ponto (mundo) onde o clique cairia
+// AGORA, calculado a cada pointermove enquanto o modo está ligado e nenhum
+// arraste de ponto existente está em andamento. Só existe pra DESENHAR uma
+// prévia; não vira medição até o clique de verdade (ver handleProjectRulerClick).
+let projectRulerHoverPoint = null;
+// Info da ARESTA sendo sobrevoada (2026-09-07, 2ª rodada — Matt pediu ímã só
+// nas pontas/meio + linha guia perpendicular): { edgeStart, edgeEnd, edgeMid,
+// isEndpointSnap, isMidpointSnap } vindo de pickSurfacePointAt
+// (viewer3d_composition.js). null quando o hover não está em cima de
+// nenhuma aresta (ex.: geometria sem EdgesGeometry válida).
+let projectRulerHoverEdge = null;
+// ARRASTAR PONTO JÁ MARCADO (2026-09-07, Matt: "quero poder segurar o ponto e
+// arrastar se eu quiser tambem") — { kind:'pending' } ou
+// { kind:'measurement', index, key:'p1'|'p2' }, achado por
+// findProjectRulerPointNear no pointerdown (portal-08-projetos-paredes.js).
+// Enquanto isto não for null, handleProjectRulerHover não roda (o ponto sob o
+// dedo/mouse já É o que está sendo arrastado) e updateProjectRulerPointDrag
+// reposiciona o ponto referenciado a cada pointermove.
+let projectRulerDragRef = null;
 
 function setProjectRulerMode(on) {
   projectRulerModeOn = !!on;
   projectRulerPendingPoint = null;
+  projectRulerHoverPoint = null;
+  projectRulerHoverEdge = null;
+  projectRulerDragRef = null;
   const btn = document.getElementById('po-proj-ruler-btn');
   if (btn) btn.classList.toggle('active', projectRulerModeOn);
   const domEl = ViewerProjectEdit && ViewerProjectEdit.getDomElement && ViewerProjectEdit.getDomElement();
@@ -2306,7 +2329,86 @@ function setProjectRulerMode(on) {
 function clearProjectRulerMeasurements() {
   projectRulerMeasurements = [];
   projectRulerPendingPoint = null;
+  projectRulerDragRef = null;
   refreshProjectRulerOverlay();
+}
+
+// Acha um ponto JÁ MARCADO (medição existente ou o pendente do 1º clique)
+// perto o bastante da tela (clientX, clientY) pra valer como "segurei ESTE
+// ponto pra arrastar" em vez de "cliquei pra marcar um ponto novo". Chamado
+// no pointerdown (portal-08) ANTES de handleProjectRulerClick — se achar algo,
+// quem chamou entra em modo arraste (beginProjectRulerPointDrag) em vez de
+// criar medição nova.
+const PROJECT_RULER_GRAB_PX = 16;
+function findProjectRulerPointNear(clientX, clientY) {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.worldToClient) return null;
+  let melhorRef = null;
+  let melhorDist = PROJECT_RULER_GRAB_PX;
+  const testa = (p, ref) => {
+    if (!p) return;
+    const s = ViewerProjectEdit.worldToClient(p);
+    if (!s) return;
+    const d = Math.hypot(s.x - clientX, s.y - clientY);
+    if (d <= melhorDist) { melhorDist = d; melhorRef = ref; }
+  };
+  projectRulerMeasurements.forEach((m, i) => {
+    testa(m.p1, { kind: 'measurement', index: i, key: 'p1' });
+    testa(m.p2, { kind: 'measurement', index: i, key: 'p2' });
+  });
+  testa(projectRulerPendingPoint, { kind: 'pending' });
+  return melhorRef;
+}
+
+function beginProjectRulerPointDrag(ref) {
+  projectRulerDragRef = ref;
+  projectRulerHoverPoint = null; // some a prévia — o próprio ponto arrastado já mostra onde está
+  projectRulerHoverEdge = null;
+  refreshProjectRulerOverlay();
+}
+
+// Chamado a cada pointermove (portal-08) enquanto projectRulerDragRef existe —
+// reaproveita o MESMO pickSurfacePointAt/vértice-mais-próximo do clique normal,
+// então o ponto arrastado gruda nos mesmos cantos de sempre, não flutua solto.
+function updateProjectRulerPointDrag(clientX, clientY) {
+  if (!projectRulerDragRef || !ViewerProjectEdit || typeof ViewerProjectEdit.pickSurfacePointAt !== 'function') return;
+  const hit = ViewerProjectEdit.pickSurfacePointAt(clientX, clientY);
+  if (!hit || !hit.point) return;
+  const ref = projectRulerDragRef;
+  if (ref.kind === 'pending') {
+    projectRulerPendingPoint = hit.point.clone();
+  } else if (ref.kind === 'measurement' && projectRulerMeasurements[ref.index]) {
+    projectRulerMeasurements[ref.index][ref.key] = hit.point.clone();
+  }
+  refreshProjectRulerOverlay();
+}
+
+function endProjectRulerPointDrag() {
+  projectRulerDragRef = null;
+}
+
+// HOVER — prévia de "onde cairia o clique agora", só quando NENHUM arraste de
+// ponto existente está rolando (senão a prévia e o ponto arrastado iam
+// disputar o mesmo lugar na tela).
+function handleProjectRulerHover(clientX, clientY) {
+  if (!projectRulerModeOn || projectRulerDragRef) return;
+  if (!ViewerProjectEdit || typeof ViewerProjectEdit.pickSurfacePointAt !== 'function') return;
+  const hit = ViewerProjectEdit.pickSurfacePointAt(clientX, clientY);
+  projectRulerHoverPoint = (hit && hit.point) ? hit.point.clone() : null;
+  projectRulerHoverEdge = (hit && hit.edgeStart && hit.edgeEnd)
+    ? { edgeStart: hit.edgeStart, edgeEnd: hit.edgeEnd, edgeMid: hit.edgeMid,
+        isEndpointSnap: !!hit.isEndpointSnap, isMidpointSnap: !!hit.isMidpointSnap }
+    : null;
+  refreshProjectRulerOverlay();
+}
+
+// Ponteiro saiu da área do canvas 3D — a prévia de hover não faz mais
+// sentido apontando pro último lugar onde o mouse esteve.
+function clearProjectRulerHover() {
+  if (projectRulerHoverPoint || projectRulerHoverEdge) {
+    projectRulerHoverPoint = null;
+    projectRulerHoverEdge = null;
+    refreshProjectRulerOverlay();
+  }
 }
 
 // Chamado pelo pointerdown do canvas 3D (ver attachProject3DEditDrag,
@@ -2356,26 +2458,96 @@ function refreshProjectRulerOverlay() {
     projectRulerRafId = null;
     if ((!projectRulerMeasurements.length && !projectRulerPendingPoint && !projectRulerModeOn) || wrap3d.offsetParent === null) { stop(); return; }
     svg.innerHTML = '';
+    const rect3d = wrap3d.getBoundingClientRect();
     // Dica "arme e clique" (2026-09-07) — só aparece com o modo ligado E
     // nenhum ponto ainda marcado (não atrapalha depois que já tem medição
     // na tela). Some sozinha assim que o 1º ponto é marcado.
     if (projectRulerModeOn && !projectRulerPendingPoint && !projectRulerMeasurements.length) {
-      const rectDica = wrap3d.getBoundingClientRect();
       const dicaTxt = document.createElementNS(NS, 'text');
-      dicaTxt.setAttribute('x', rectDica.left + rectDica.width / 2);
-      dicaTxt.setAttribute('y', rectDica.top + 22);
+      dicaTxt.setAttribute('x', rect3d.left + rect3d.width / 2);
+      dicaTxt.setAttribute('y', rect3d.top + 22);
       dicaTxt.setAttribute('text-anchor', 'middle');
       dicaTxt.setAttribute('fill', '#fff');
       dicaTxt.setAttribute('font-size', '12'); dicaTxt.setAttribute('font-weight', '700');
       dicaTxt.textContent = 'Régua: clique em 2 pontos do desenho pra medir';
       const largDica = dicaTxt.textContent.length * 6.4 + 16;
       const fundoDica = document.createElementNS(NS, 'rect');
-      fundoDica.setAttribute('x', rectDica.left + rectDica.width / 2 - largDica / 2);
-      fundoDica.setAttribute('y', rectDica.top + 8);
+      fundoDica.setAttribute('x', rect3d.left + rect3d.width / 2 - largDica / 2);
+      fundoDica.setAttribute('y', rect3d.top + 8);
       fundoDica.setAttribute('width', largDica); fundoDica.setAttribute('height', 20);
       fundoDica.setAttribute('rx', 5); fundoDica.setAttribute('fill', '#e6007e');
       svg.appendChild(fundoDica);
       svg.appendChild(dicaTxt);
+    }
+    // ARESTA SOBREVOADA (2026-09-07, 2ª rodada) — Matt: "quero que em uma
+    // reta ele mostre o ponto mexendo sobre ela" + "ao mover o mouse pra
+    // essa reta apareca o meio da reta" + "uma linha horizontal ou vertical
+    // mostrando... perpendicularmente". Só desenha enquanto sobrevoando (não
+    // durante o arraste de um ponto já marcado — ali o ponto já fala por si).
+    if (projectRulerHoverEdge && !projectRulerDragRef) {
+      const eS = ViewerProjectEdit.worldToClient(projectRulerHoverEdge.edgeStart);
+      const eE = ViewerProjectEdit.worldToClient(projectRulerHoverEdge.edgeEnd);
+      const eM = ViewerProjectEdit.worldToClient(projectRulerHoverEdge.edgeMid);
+      if (eS && eE) {
+        // A ARESTA em si, discreta — só pra deixar claro em qual linha o
+        // ponto está deslizando.
+        const linhaAresta = document.createElementNS(NS, 'line');
+        linhaAresta.setAttribute('x1', eS.x); linhaAresta.setAttribute('y1', eS.y);
+        linhaAresta.setAttribute('x2', eE.x); linhaAresta.setAttribute('y2', eE.y);
+        linhaAresta.setAttribute('stroke', 'rgba(230,0,126,0.45)');
+        linhaAresta.setAttribute('stroke-width', '3');
+        svg.appendChild(linhaAresta);
+      }
+      if (eM) {
+        // MEIO DA ARESTA — sempre visível enquanto sobrevoando ela (não só
+        // quando o ímã já grudou nele), é mais um alvo que dá pra mirar.
+        const meio = document.createElementNS(NS, 'rect');
+        meio.setAttribute('x', eM.x - 4); meio.setAttribute('y', eM.y - 4);
+        meio.setAttribute('width', 8); meio.setAttribute('height', 8);
+        meio.setAttribute('fill', projectRulerHoverEdge.isMidpointSnap ? '#e6007e' : '#fff');
+        meio.setAttribute('stroke', '#e6007e'); meio.setAttribute('stroke-width', '1.5');
+        svg.appendChild(meio);
+      }
+      // GUIA PERPENDICULAR — ao longo do ponto que está deslizando (a prévia
+      // de hover, desenhada logo abaixo). Se a aresta corre mais NA
+      // HORIZONTAL na tela, a guia é uma linha VERTICAL (perpendicular a
+      // ela) e vice-versa — "linha horizontal ou vertical... mostrando onde
+      // essa reta toda perpendicularmente".
+      const sHoverGuia = projectRulerHoverPoint ? ViewerProjectEdit.worldToClient(projectRulerHoverPoint) : null;
+      if (eS && eE && sHoverGuia) {
+        const dxAresta = Math.abs(eE.x - eS.x);
+        const dyAresta = Math.abs(eE.y - eS.y);
+        const guia = document.createElementNS(NS, 'line');
+        if (dxAresta >= dyAresta) {
+          // aresta mais horizontal -> guia vertical, na coluna do ponto
+          guia.setAttribute('x1', sHoverGuia.x); guia.setAttribute('y1', rect3d.top);
+          guia.setAttribute('x2', sHoverGuia.x); guia.setAttribute('y2', rect3d.top + rect3d.height);
+        } else {
+          // aresta mais vertical -> guia horizontal, na linha do ponto
+          guia.setAttribute('x1', rect3d.left); guia.setAttribute('y1', sHoverGuia.y);
+          guia.setAttribute('x2', rect3d.left + rect3d.width); guia.setAttribute('y2', sHoverGuia.y);
+        }
+        guia.setAttribute('stroke', 'rgba(255,255,255,0.55)');
+        guia.setAttribute('stroke-width', '1');
+        guia.setAttribute('stroke-dasharray', '3 4');
+        svg.appendChild(guia);
+      }
+    }
+    // PRÉVIA DE HOVER (2026-09-07) — o ponto que desliza com o mouse sobre a
+    // aresta. Vazado/claro enquanto livre; PREENCHIDO (mesma cor da régua)
+    // quando o ímã já grudou numa ponta ou no meio — sinal visual de "clicar
+    // agora fecha em cima do ponto certo".
+    if (projectRulerHoverPoint && !projectRulerDragRef) {
+      const sHover = ViewerProjectEdit.worldToClient(projectRulerHoverPoint);
+      if (sHover) {
+        const preso = !!(projectRulerHoverEdge && (projectRulerHoverEdge.isEndpointSnap || projectRulerHoverEdge.isMidpointSnap));
+        const cHover = document.createElementNS(NS, 'circle');
+        cHover.setAttribute('cx', sHover.x); cHover.setAttribute('cy', sHover.y);
+        cHover.setAttribute('r', preso ? 6 : 7);
+        cHover.setAttribute('fill', preso ? '#e6007e' : 'rgba(230,0,126,0.25)');
+        cHover.setAttribute('stroke', '#fff'); cHover.setAttribute('stroke-width', preso ? 2 : 1.5);
+        svg.appendChild(cHover);
+      }
     }
     const desenhaPonto = (p, cor) => {
       const screen = ViewerProjectEdit.worldToClient(p);

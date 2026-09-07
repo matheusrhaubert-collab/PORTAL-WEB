@@ -33,8 +33,9 @@ window.LEGNO_CHANGELOG = [
       'Ícones da barra reaproximados do texto de cada categoria, ocupando um pouco menos de altura.',
       'Corrigido a exportação para o SketchUp: peças com o mesmo acabamento agora viram UM material só (antes cada peça virava um material separado, mesmo usando a mesma textura, e era preciso trocar face por face).',
       'Corrigido a exportação para o SketchUp: textura que ainda estivesse carregando no momento do export não sai mais como "imagem não encontrada" no material.',
-      'Novo: ferramenta de Régua na categoria Ferramentas — clique em 2 pontos do desenho pra ver a distância entre eles, com botão "Limpar cotas" pra apagar as medições.',
-      'Novo: botão "Print" na categoria Render — tira uma foto da vista atual (portas, móveis ocultos e estilo de traço exatamente como estão na tela) e guarda direto na galeria de fotos realistas.'
+      'Novo: ferramenta de Régua na categoria Ferramentas — clique em 2 pontos do desenho pra ver a distância entre eles. O ponto desliza acompanhando o mouse ao longo da aresta (não pula mais pro canto mais próximo), com ímã só perto das pontas e do meio da aresta, uma linha guia mostrando o alinhamento, dá pra arrastar um ponto já marcado pra ajustar, e um botão "Limpar cotas" pra apagar as medições.',
+      'Novo: botão "Print" na categoria Render — tira uma foto da vista atual (portas, móveis ocultos e estilo de traço exatamente como estão na tela) e guarda direto na galeria de fotos realistas.',
+      'Câmera do visualizador de projeto agora gira quase até ficar totalmente de frente/paralela a uma parede, sem parar sempre um pouco de cima.'
     ]
   },
   {

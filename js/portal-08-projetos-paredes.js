@@ -328,9 +328,25 @@ function attachProject3DEditDrag() {
     // módulo — só marca ponto de medição (ver handleProjectRulerClick,
     // portal-06c-projetos-canvas-3d-acoes.js). Fica ANTES de qualquer outro
     // ramo (Ctrl+clique, setas, giro, arraste).
+    //
+    // ARRASTAR PONTO JÁ MARCADO (2026-09-07, Matt: "quero poder segurar o
+    // ponto e arrastar se eu quiser tambem") — antes de criar um ponto novo,
+    // testa se o clique caiu EM CIMA de um ponto que já existe (medição
+    // pronta ou o pendente do 1º clique); se sim, vira arraste daquele ponto
+    // em vez de marcar mais um. setPointerCapture garante que o pointermove/
+    // pointerup cheguem mesmo se o cursor sair do canvas no meio do arraste
+    // (mesmo padrão já usado pro arraste de módulo, ver acima na função).
     if (projectRulerModeOn) {
       ev.preventDefault();
-      handleProjectRulerClick(ev.clientX, ev.clientY);
+      const pontoRegua = (typeof findProjectRulerPointNear === 'function')
+        ? findProjectRulerPointNear(ev.clientX, ev.clientY)
+        : null;
+      if (pontoRegua) {
+        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        beginProjectRulerPointDrag(pontoRegua);
+      } else {
+        handleProjectRulerClick(ev.clientX, ev.clientY);
+      }
       return;
     }
 
@@ -661,6 +677,21 @@ function attachProject3DEditDrag() {
   });
 
   domEl.addEventListener('pointermove', (ev) => {
+    // RÉGUA MANUAL (2026-09-07) — enquanto ligada, o pointermove é TODO dela:
+    // arrasta o ponto pego no pointerdown (ver findProjectRulerPointNear/
+    // beginProjectRulerPointDrag acima) ou, se nenhum ponto está sendo
+    // arrastado, só atualiza a prévia de hover (Matt: "ao ficar clicada regua
+    // nova, quero que ao passar o mouse quero ver o pontos pra clicar").
+    // Nunca chega no hover de módulo/setas logo abaixo — igual ao pointerdown,
+    // que também sai fora ANTES de qualquer seleção/arraste normal.
+    if (projectRulerModeOn) {
+      if (projectRulerDragRef) {
+        updateProjectRulerPointDrag(ev.clientX, ev.clientY);
+      } else {
+        handleProjectRulerHover(ev.clientX, ev.clientY);
+      }
+      return;
+    }
     if (projectMarqueeState && ev.pointerId === projectMarqueeState.pointerId) {
       showProjectMarqueeBox(projectMarqueeState.startClientX, projectMarqueeState.startClientY, ev.clientX, ev.clientY);
       return;
@@ -1238,8 +1269,20 @@ function attachProject3DEditDrag() {
     renderProjectCanvas();
     if (ViewerProjectEdit.frameDirection) {
       // Câmera na frente da parede (sentido CONTRÁRIO ao intoDir dela, que
-      // aponta pra dentro do ambiente), levemente acima da metade do pé
-      // direito pra não ficar rente ao chão.
+      // aponta pra dentro do ambiente), na MESMA altura do alvo — de frente,
+      // em paralelo, sem inclinação. O alvo já fica a meia altura do pé
+      // direito (não no chão), então não precisa de nenhum viés extra pra
+      // "não ficar rente ao chão".
+      //
+      // y do dir ERA 0.18 (câmera de propósito um pouco ACIMA do alvo).
+      // Matt, 2026-09-07: "nao consigo enxergar uma parede de frente de
+      // forma paralela, a camera sempre fica acima do ponto, limitada a
+      // descer um pouco mais" — esse viés de 0.18 é exatamente o que
+      // impedia a vista frontal/paralela de verdade, mesmo já enquadrando
+      // na parede certa. Zerado: a câmera some pro nível do alvo, olhando
+      // reto pra parede. (Ver também o teto do orbit manual, maxPolarAngle,
+      // em viewer3d_composition.js — subiu de 0.49 pra 0.499 pelo mesmo
+      // motivo, pra girar manualmente até quase o paralelo também.)
       //
       // O ALVO é O PONTO CLICADO, não mais o centro da parede (2026-08-13):
       // "2 cliques rápidos pra a câmera FOCAR". Numa parede de 4m, mirar o
@@ -1256,7 +1299,7 @@ function attachProject3DEditDrag() {
         y: (roomSettings.ceiling_mm / 1000) / 2,
         z: surface.point ? surface.point.z : centro.z
       };
-      ViewerProjectEdit.frameDirection({ x: wallGeo.intoDirX, y: 0.18, z: wallGeo.intoDirZ }, target);
+      ViewerProjectEdit.frameDirection({ x: wallGeo.intoDirX, y: 0, z: wallGeo.intoDirZ }, target);
     }
   }
 
@@ -1280,7 +1323,18 @@ function attachProject3DEditDrag() {
   // padrão. NÃO apaga o contorno vermelho: ele é a seleção (2026-08-12), e
   // era justamente isso que fazia o módulo "perder o vermelho" e o Matt
   // perder o controle do que estava editando.
+  // RÉGUA MANUAL (2026-09-07) — solta o ponto arrastado (se algum) e some com
+  // a prévia de hover. Ouvido no domEl (mesmo padrão de endDrag3D acima) e
+  // também na window, porque um arraste com setPointerCapture pode soltar o
+  // botão fora da área do canvas.
+  const endProjectRulerDragEvt = () => { if (projectRulerDragRef) endProjectRulerPointDrag(); };
+  domEl.addEventListener('pointerup', endProjectRulerDragEvt);
+  domEl.addEventListener('pointercancel', endProjectRulerDragEvt);
+  window.addEventListener('pointerup', endProjectRulerDragEvt);
+  window.addEventListener('pointercancel', endProjectRulerDragEvt);
+
   domEl.addEventListener('pointerleave', () => {
+    if (projectRulerModeOn) clearProjectRulerHover();
     if (projectDrag3DState) return; // durante um arraste de verdade, mantém (setPointerCapture já garante os eventos)
     domEl.style.cursor = 'default';
   });
