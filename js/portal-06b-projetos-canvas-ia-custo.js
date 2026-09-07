@@ -1333,17 +1333,25 @@ if (projZoomOutBtn) {
 }
 const projUndoBtn = document.getElementById('po-proj-undo-btn');
 if (projUndoBtn) projUndoBtn.addEventListener('click', () => undoProjectChange());
-// Ctrl+Z / ⌘Z também desfazem — mas só com a aba Projetos aberta e fora de
-// qualquer campo de texto (senão roubaria o desfazer nativo de quem está
-// digitando uma medida).
+// Prosseguir/Refazer (2026-09-07, pedido do usuário: "quero um prosseguir se
+// por acaso eu voltar demais") — mesmo botão ao lado do Voltar, ver
+// projectRedoStack/redoProjectChange em portal-06a-projetos-canvas-core.js.
+const projRedoBtn = document.getElementById('po-proj-redo-btn');
+if (projRedoBtn) projRedoBtn.addEventListener('click', () => redoProjectChange());
+// Ctrl+Z / ⌘Z desfazem, Ctrl+Shift+Z / ⌘⇧Z / Ctrl+Y refazem — mesma condição
+// de guarda dos dois (só com a aba Projetos aberta e fora de campo de texto,
+// senão roubaria o desfazer/refazer nativo de quem está digitando).
 document.addEventListener('keydown', (ev) => {
-  if (!(ev.ctrlKey || ev.metaKey) || ev.key !== 'z' || ev.shiftKey) return;
+  if (!(ev.ctrlKey || ev.metaKey)) return;
+  const ehDesfazer = ev.key === 'z' && !ev.shiftKey;
+  const ehRefazer = (ev.key === 'z' && ev.shiftKey) || ev.key === 'y';
+  if (!ehDesfazer && !ehRefazer) return;
   const tab = document.getElementById('po-tab-projects');
   if (!tab || tab.style.display === 'none') return;
   const el = document.activeElement;
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
   ev.preventDefault();
-  undoProjectChange();
+  if (ehRefazer) redoProjectChange(); else undoProjectChange();
 });
 
 const projCollisionBtn = document.getElementById('po-proj-collision-btn');

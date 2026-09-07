@@ -63,6 +63,14 @@ const PROJECT_UNDO_COALESCE_MS = 600;
 let projectUndoStack = [];
 let projectUndoBaseline = null;
 let projectUndoLastPushAt = 0;
+// Refazer (2026-09-07, pedido do usuário: "quero um prosseguir se por
+// acaso eu voltar demais") — pilha espelhada da de desfazer. Só recebe
+// alguma coisa quando o Voltar é clicado (undoProjectChange empurra o
+// estado que está sendo deixado pra trás); qualquer alteração NOVA depois
+// de um desfazer invalida o que sobrou aqui (senão "refazer" poderia
+// reaplicar um estado de um ramo de edição que não existe mais) — ver
+// pushProjectUndoState.
+let projectRedoStack = [];
 
 function cloneProjectSlotForUndo(slot) {
   return {
@@ -101,6 +109,12 @@ function projectUndoSnapshot() {
 
 function pushProjectUndoState() {
   const now = Date.now();
+  // Toda alteração nova mata o "refazer" pendente — depois de editar de novo,
+  // o que tinha sido desfeito não faz mais sentido reaplicar.
+  if (projectRedoStack.length) {
+    projectRedoStack = [];
+    refreshProjectRedoButton();
+  }
   if (projectUndoBaseline) {
     if (now - projectUndoLastPushAt >= PROJECT_UNDO_COALESCE_MS) {
       projectUndoStack.push(projectUndoBaseline);
@@ -122,19 +136,29 @@ function pushProjectUndoState() {
 // não é mais "alteração deste projeto", é outro projeto.
 function resetProjectUndo() {
   projectUndoStack = [];
+  projectRedoStack = [];
   projectUndoLastPushAt = 0;
   projectUndoBaseline = projectUndoSnapshot();
   refreshProjectUndoButton();
+  refreshProjectRedoButton();
 }
 
 function refreshProjectUndoButton() {
   const btn = document.getElementById('po-proj-undo-btn');
   if (btn) btn.disabled = projectUndoStack.length === 0;
 }
+function refreshProjectRedoButton() {
+  const btn = document.getElementById('po-proj-redo-btn');
+  if (btn) btn.disabled = projectRedoStack.length === 0;
+}
 
 function undoProjectChange() {
   const prev = projectUndoStack.pop();
   if (!prev) return;
+  // O estado que estamos deixando pra trás (baseline atual, antes de
+  // restaurar `prev`) vai pra pilha de refazer — ver redoProjectChange.
+  projectRedoStack.push(projectUndoBaseline);
+  if (projectRedoStack.length > PROJECT_UNDO_MAX) projectRedoStack.shift();
   projectSlots = prev.slots.map(cloneProjectSlotForUndo);
   projectWallShape = prev.wallShape;
   projectWallWidthsMm = prev.wallWidthsMm.slice();
@@ -155,7 +179,40 @@ function undoProjectChange() {
   renderProjectCanvas();
   renderProjectConfigPanel();
   refreshProjectUndoButton();
+  refreshProjectRedoButton();
   projectDirty = true; // desfazer também é uma diferença em relação ao que está salvo
+  if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
+}
+
+// Prosseguir/Refazer — espelho exato de undoProjectChange, na direção
+// contrária: tira do topo da pilha de refazer, devolve o baseline atual pra
+// pilha de desfazer (assim um Voltar logo em seguida desfaz este Refazer de
+// novo) e restaura o resto do estado do mesmo jeito.
+function redoProjectChange() {
+  const next = projectRedoStack.pop();
+  if (!next) return;
+  projectUndoStack.push(projectUndoBaseline);
+  if (projectUndoStack.length > PROJECT_UNDO_MAX) projectUndoStack.shift();
+
+  projectSlots = next.slots.map(cloneProjectSlotForUndo);
+  projectWallShape = next.wallShape;
+  projectWallWidthsMm = next.wallWidthsMm.slice();
+  projectActiveWallIndex = Math.min(next.activeWallIndex, getProjectWallCount() - 1);
+  selectedProjectSlotId = next.slots.some((s) => s.id === next.selectedSlotId) ? next.selectedSlotId : null;
+
+  projectUndoBaseline = projectUndoSnapshot();
+  projectUndoLastPushAt = 0;
+
+  persistProjectWallConfig();
+  refreshProjectWallShapeButtons();
+  refreshProjectWallTabs();
+  refreshProjectWallWidthInput();
+  project3DLastFitKey = null; // o ambiente pode ter mudado de forma — reenquadra
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  refreshProjectUndoButton();
+  refreshProjectRedoButton();
+  projectDirty = true; // refazer também é uma diferença em relação ao que está salvo
   if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
 }
 
