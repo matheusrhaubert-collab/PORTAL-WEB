@@ -2432,6 +2432,257 @@ if (projTestArBtn) {
   projTestArBtn.addEventListener('click', generateArGlbForProject);
 }
 
+// ---------- Exportar pro SketchUp (OBJ + MTL + texturas, .zip) ----------
+// 2026-09-07, pedido do Matt: "quero um botao que exporte o arquivo 3d
+// gerado para sketchup. com as texturas de preferencia". Formato escolhido
+// (perguntei, ele confirmou): OBJ+MTL em vez de .glb — SketchUp Pro importa
+// .obj DIRETO (Arquivo > Importar), sem plugin nenhum; .glb (que já existe
+// aqui pro teste de AR, ver generateArGlbForProject acima) só abre no
+// SketchUp com uma extensão extra da Trimble instalada.
+//
+// three.js NÃO tem um "MTLExporter" oficial (o OBJExporter dos examples/ só
+// escreve geometria, sem material/textura nenhuma) — por isso o exportador
+// abaixo é escrito na mão, direto em cima da MESMA THREE.Scene da Vista de
+// Canto (ViewerProject.getScene(), nenhum recálculo, é a cena que já está
+// desenhada). Reaproveita a tag 'ar-export-exclude' (viewer3d_composition.js)
+// pra pular cotas CAD/ambiente virtual/contorno de hover — é a mesma regra
+// "não faz sentido num arquivo externo" das duas exportações. Texturas são
+// reencodadas em JPEG a partir da própria Texture já carregada (mesma
+// técnica de canvas que o GLTFExporter usa no teste de AR — funciona pelo
+// mesmo motivo: TextureLoader do three.js já carrega com crossOrigin
+// 'anonymous' por padrão, então o canvas não fica "tainted").
+//
+// UNIDADE: a cena inteira é modelada em METROS (1 unidade three.js = 1m,
+// ver os /1000 em viewer3d.js) — o .obj não carrega unidade nenhuma junto,
+// então no import do SketchUp tem que escolher "Metros" na caixa de diálogo
+// (senão o móvel vira do tamanho de um prédio ou de uma caixa de fósforo).
+// Isso está no aviso que aparece na tela depois do download.
+const SKETCHUP_EXPORT_EXCLUDE_TAG = 'ar-export-exclude';
+
+function sketchupObjSafeName(name, fallback) {
+  const s = (name || '').toString().trim().replace(/[^\w-]+/g, '_');
+  return s || fallback;
+}
+
+// Sobe a árvore inteira (não só o objeto): scene.traverse() visita filhos
+// mesmo com o PAI invisível (hide/show de módulo esconde o GRUPO, não cada
+// peça), então "obj.visible" sozinho deixaria peça escondida vazando pro
+// arquivo exportado.
+function isSketchupExportExcluded(obj) {
+  let p = obj;
+  while (p) {
+    if (p.name === SKETCHUP_EXPORT_EXCLUDE_TAG || p.visible === false) return true;
+    p = p.parent;
+  }
+  return false;
+}
+
+function sketchupFaceToken(vIdx, vtIdx, vnIdx) {
+  if (vtIdx == null && vnIdx == null) return String(vIdx);
+  if (vnIdx == null) return vIdx + '/' + vtIdx;
+  if (vtIdx == null) return vIdx + '//' + vnIdx;
+  return vIdx + '/' + vtIdx + '/' + vnIdx;
+}
+
+// Monta o .obj + .mtl (texto) a partir da cena — devolve também um Map
+// Texture -> nome de arquivo, pra escrever as imagens depois (async, feito
+// à parte porque canvas.toBlob é assíncrono e essa função aqui não precisa
+// ser).
+function buildSketchupObjAndMtl(scene) {
+  const objLines = ['# Exportado do Portal Legno Home', '# Unidade: METROS (escolha "Meters" no import do SketchUp)', 'mtllib modelo.mtl', ''];
+  const mtlLines = [];
+  const materialNames = new Map(); // THREE.Material -> nome único no .mtl
+  const textureFiles = new Map(); // THREE.Texture -> nome do arquivo (dedup por TEXTURA, não por material — várias peças reusam a mesma imagem)
+  let vOffset = 0, vtOffset = 0, vnOffset = 0;
+  let meshIndex = 0;
+  let facesEscritas = 0;
+
+  function materialNameFor(material) {
+    if (materialNames.has(material)) return materialNames.get(material);
+    const base = sketchupObjSafeName(material.name, 'material_' + (materialNames.size + 1));
+    const usados = new Set(materialNames.values());
+    let nome = base, n = 1;
+    while (usados.has(nome)) { nome = base + '_' + (++n); }
+    materialNames.set(material, nome);
+    return nome;
+  }
+
+  function textureFileFor(material) {
+    const tex = material.map;
+    if (!tex || !tex.image) return null;
+    if (textureFiles.has(tex)) return textureFiles.get(tex);
+    const arquivo = 'textura_' + (textureFiles.size + 1) + '.jpg';
+    textureFiles.set(tex, arquivo);
+    return arquivo;
+  }
+
+  const _v = new THREE.Vector3();
+  const _n = new THREE.Vector3();
+  const _normalMatrix = new THREE.Matrix3();
+
+  scene.updateMatrixWorld(true);
+  scene.traverse((obj) => {
+    if (!obj.isMesh) return;
+    if (isSketchupExportExcluded(obj)) return;
+    const geometry = obj.geometry;
+    if (!geometry || !geometry.attributes || !geometry.attributes.position) return;
+
+    const posAttr = geometry.attributes.position;
+    const normAttr = geometry.attributes.normal;
+    const uvAttr = geometry.attributes.uv;
+    const index = geometry.index;
+    const hasUv = !!uvAttr;
+    const hasNormal = !!normAttr;
+
+    meshIndex += 1;
+    objLines.push('o ' + sketchupObjSafeName(obj.name, 'peca') + '_' + meshIndex);
+
+    _normalMatrix.getNormalMatrix(obj.matrixWorld);
+    for (let i = 0; i < posAttr.count; i++) {
+      _v.fromBufferAttribute(posAttr, i).applyMatrix4(obj.matrixWorld);
+      objLines.push('v ' + _v.x.toFixed(5) + ' ' + _v.y.toFixed(5) + ' ' + _v.z.toFixed(5));
+      if (hasNormal) {
+        _n.fromBufferAttribute(normAttr, i).applyMatrix3(_normalMatrix).normalize();
+        objLines.push('vn ' + _n.x.toFixed(5) + ' ' + _n.y.toFixed(5) + ' ' + _n.z.toFixed(5));
+      }
+      if (hasUv) {
+        objLines.push('vt ' + uvAttr.getX(i).toFixed(5) + ' ' + uvAttr.getY(i).toFixed(5));
+      }
+    }
+
+    const materiais = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const grupos = (geometry.groups && geometry.groups.length)
+      ? geometry.groups
+      : [{ start: 0, count: index ? index.count : posAttr.count, materialIndex: 0 }];
+
+    grupos.forEach((grupo) => {
+      const material = materiais[grupo.materialIndex] || materiais[0];
+      if (!material) return;
+      objLines.push('usemtl ' + materialNameFor(material));
+      const faceCount = Math.floor(grupo.count / 3);
+      for (let f = 0; f < faceCount; f++) {
+        const base = grupo.start + f * 3;
+        const tokens = [0, 1, 2].map((k) => {
+          const localIdx = index ? index.getX(base + k) : (base + k);
+          const vIdx = localIdx + 1 + vOffset;
+          const vtIdx = hasUv ? localIdx + 1 + vtOffset : null;
+          const vnIdx = hasNormal ? localIdx + 1 + vnOffset : null;
+          return sketchupFaceToken(vIdx, vtIdx, vnIdx);
+        });
+        objLines.push('f ' + tokens.join(' '));
+        facesEscritas += 1;
+      }
+    });
+
+    vOffset += posAttr.count;
+    if (hasUv) vtOffset += posAttr.count;
+    if (hasNormal) vnOffset += posAttr.count;
+  });
+
+  materialNames.forEach((nome, material) => {
+    const cor = material.color || { r: 1, g: 1, b: 1 };
+    mtlLines.push('newmtl ' + nome);
+    mtlLines.push('Kd ' + cor.r.toFixed(4) + ' ' + cor.g.toFixed(4) + ' ' + cor.b.toFixed(4));
+    mtlLines.push('Ka 0.0000 0.0000 0.0000');
+    mtlLines.push('Ks 0.0000 0.0000 0.0000');
+    mtlLines.push('d 1.0000');
+    mtlLines.push('illum 1');
+    const arquivo = textureFileFor(material);
+    if (arquivo) mtlLines.push('map_Kd ' + arquivo);
+    mtlLines.push('');
+  });
+
+  return { obj: objLines.join('\n'), mtl: mtlLines.join('\n'), texturas: textureFiles, faces: facesEscritas };
+}
+
+// Reencoda a imagem de uma THREE.Texture em JPEG (Blob) via canvas — mesma
+// técnica que o GLTFExporter usa por baixo dos panos no teste de AR.
+function sketchupTextureToJpegBlob(texture) {
+  return new Promise((resolve) => {
+    try {
+      const img = texture.image;
+      const w = img && (img.width || img.naturalWidth);
+      const h = img && (img.height || img.naturalHeight);
+      if (!w || !h) { resolve(null); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.88);
+    } catch (e) {
+      console.error('sketchupTextureToJpegBlob', e);
+      resolve(null); // 1 textura falhar não pode derrubar o export inteiro — fica sem aquela imagem, o resto do .zip continua
+    }
+  });
+}
+
+async function exportProjectToSketchUp() {
+  const btn = document.getElementById('po-proj-export-sketchup-btn');
+  const statusEl = document.getElementById('po-proj-export-sketchup-status');
+  const setStatus = (text, erro) => {
+    if (!statusEl) return;
+    statusEl.textContent = text || '';
+    statusEl.classList.toggle('is-error', !!erro);
+  };
+
+  if (typeof ViewerProject === 'undefined' || !ViewerProject || !ViewerProject.getScene) {
+    setStatus(I18n.t('export_sketchup.no_scene'), true);
+    return;
+  }
+  const scene = ViewerProject.getScene();
+  if (!scene) { setStatus(I18n.t('export_sketchup.no_scene'), true); return; }
+  if (typeof JSZip === 'undefined') {
+    setStatus(I18n.t('export_sketchup.error', { msg: 'JSZip' }), true);
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  setStatus(I18n.t('export_sketchup.generating'));
+
+  try {
+    const { obj, mtl, texturas, faces } = buildSketchupObjAndMtl(scene);
+    if (!faces) {
+      setStatus(I18n.t('export_sketchup.empty'), true);
+      return;
+    }
+
+    const zip = new JSZip();
+    zip.file('modelo.obj', obj);
+    zip.file('modelo.mtl', mtl);
+
+    setStatus(I18n.t('export_sketchup.textures'));
+    for (const [texture, arquivo] of texturas) {
+      const blob = await sketchupTextureToJpegBlob(texture);
+      if (blob) zip.file(arquivo, blob);
+    }
+
+    setStatus(I18n.t('export_sketchup.zipping'));
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zipBlob);
+    a.download = 'projeto-sketchup.zip';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+
+    setStatus(I18n.t('export_sketchup.done'));
+    setTimeout(() => setStatus(''), 8000);
+  } catch (err) {
+    console.error('exportProjectToSketchUp', err);
+    setStatus(I18n.t('export_sketchup.error', { msg: (err && err.message) || err }), true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+const projExportSketchupBtn = document.getElementById('po-proj-export-sketchup-btn');
+if (projExportSketchupBtn) {
+  projExportSketchupBtn.addEventListener('click', exportProjectToSketchUp);
+}
+
 // Botão "Visualizar 3D" — só dispara generateProject3D() + rola até o
 // resultado (mesmo padrão de compGenerateBtn).
 const projGenerateBtn = document.getElementById('po-proj-generate-btn');

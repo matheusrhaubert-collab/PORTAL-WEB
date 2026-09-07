@@ -1243,6 +1243,7 @@ body.portal-page.proj-fullbleed #po-tab-projects > section.panel { padding: 16px
    forma confiável, e iPhone não tem Fullscreen API nenhuma. */
 body.portal-page.proj-tela-cheia header.po-topnav { display: none; }
 body.portal-page.proj-tela-cheia .po-support-footer { display: none; }
+body.portal-page.proj-tela-cheia .po-version-widget { display: none; }
 body.portal-page.proj-tela-cheia main { padding-top: 8px; }
 /* Ícone do botão: as duas setas viram "encolher" enquanto está em tela cheia. */
 body.portal-page.proj-tela-cheia #po-proj-fullscreen-btn .po-fs-abrir { display: none; }
@@ -1701,6 +1702,85 @@ header.po-topnav {
 .po-support-item { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
 .po-support-item strong { color: var(--text); font-size: 13px; }
 .po-support-item a { color: var(--text); font-weight: 600; text-decoration: underline; }
+
+/* Selo de versão + botão "Novidades" (2026-09-07, pedido do Matt) — fixo no
+   canto, discreto por padrão (opacidade baixa, sobe no hover do botão). Ver
+   comentário no HTML (portal.html, perto do </footer>) e em
+   js/version-news.js pra como funciona/atualiza. */
+.po-version-widget {
+  position: fixed;
+  right: 8px;
+  bottom: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.po-version-badge {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+.po-version-news-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 3px;
+  border-radius: 50%;
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: pointer;
+}
+.po-version-news-btn:hover { opacity: 1; color: var(--text); background: var(--border); }
+/* Bolinha de "tem novidade" — some sozinha ao abrir o modal (marca como
+   visto), ver ligaNovidadesDoPortal em js/version-news.js. */
+.po-version-news-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 1px solid var(--bg);
+}
+
+/* Modal "Novidades" — mesmo padrão visual do modal de login/cadastro
+   (#po-auth-section), reaproveitando .po-auth-modal-close pro ×. */
+#po-news-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3010;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 20px;
+}
+#po-news-modal.open { display: flex; }
+.po-news-card {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 28px;
+  max-width: 480px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.po-news-card h2 { margin: 0 0 16px; font-size: 18px; color: var(--text); }
+.po-news-list { display: flex; flex-direction: column; gap: 18px; }
+.po-news-entry:not(:last-child) { padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.po-news-version { font-weight: 700; font-size: 14px; color: var(--text); }
+.po-news-date { font-size: 12px; color: var(--muted); margin-left: 6px; }
+.po-news-entry ul { margin: 8px 0 0; padding-left: 18px; }
+.po-news-entry li { font-size: 13px; color: var(--text); margin-bottom: 4px; }
 
 @media (max-width: 720px) {
   header.po-topnav { flex-wrap: wrap; height: auto; padding: 12px 16px; gap: 12px; }
@@ -3794,6 +3874,15 @@ header.po-topnav {
 .po-proj-save-indicator.is-saved { color: #1c6e40; } /* mesmo verde do ímã de rotação (po-proj-rotate-hud.snapped) */
 .po-proj-save-indicator.is-saving { color: var(--muted); }
 
+/* Status do "Exportar SketchUp" (2026-09-07) — mesmo padrão do indicador de
+   salvo ao lado: só mostra texto quando HÁ algo a dizer (gerando/erro). */
+.po-proj-export-status {
+  font-size: 12px; font-weight: 600; padding: 0 4px;
+  white-space: nowrap; display: flex; align-items: center; gap: 4px;
+  color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+}
+.po-proj-export-status.is-error { color: var(--danger); white-space: normal; max-width: 320px; }
+
 /* Cartão de ícone (Medidas, desfazer, encaixe). */
 .po-tb-icon-card {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
@@ -4067,12 +4156,21 @@ header.po-topnav {
 }
 
 @media (max-width: 1600px) {
-  /* Secundários viram só ícone (o title= continua explicando no hover). */
+  /* Secundários viram só ícone (o title= continua explicando no hover).
+     BUG (achado 2026-09-07, relatado pelo Matt: "o botao de estilos...
+     nao esta mais aparecendo na barra"): as 2 linhas de #po-proj-style-menu
+     abaixo estavam SEM o " span"/" .po-style-caret" depois do seletor —
+     em vez de esconder só o texto/seta de dentro do menu "Visual", a
+     vírgula solta virava um seletor À PARTE que escondia o #po-proj-style-menu
+     INTEIRO (o container do botão inteiro, ícone junto) em qualquer tela
+     com menos de 1600px de largura, sem erro nenhum no console (é só CSS).
+     Corrigido pra esconder igual ao #po-proj-layers-menu ao lado: só o
+     span (texto) e a seta, o ícone continua aparecendo. */
   #po-proj-wall-editor-btn span,
   #po-proj-render-btn span,
   #po-proj-render-linhas-btn span,
-  #po-proj-style-menu, #po-proj-layers-menu .po-style-btn span,
-  #po-proj-style-menu, #po-proj-layers-menu .po-style-caret { display: none; }
+  #po-proj-style-menu span, #po-proj-layers-menu .po-style-btn span,
+  #po-proj-style-menu .po-style-caret, #po-proj-layers-menu .po-style-caret { display: none; }
   #po-proj-style-menu, #po-proj-layers-menu .po-style-btn { max-width: none; }
 }
 @media (max-width: 1180px) {
@@ -4236,6 +4334,7 @@ header.po-topnav {
 body.po-view3d-guest > header.po-topnav,
 body.po-view3d-guest > section#po-auth-section,
 body.po-view3d-guest > footer.po-support-footer,
+body.po-view3d-guest .po-version-widget,
 body.po-view3d-guest .po-proj-topbar-actions,
 body.po-view3d-guest .po-proj-topbar-fields,
 body.po-view3d-guest .po-proj-save-row,
