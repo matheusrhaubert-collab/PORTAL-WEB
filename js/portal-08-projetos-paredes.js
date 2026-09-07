@@ -3767,10 +3767,16 @@ function collectProjectColorRoleIdsInUse() {
 function montaMenuCamadas() {
   const raiz = document.getElementById('po-proj-layers-menu');
   if (!raiz) return;
-  raiz.innerHTML = '<button type="button" class="po-style-btn po-layers-btn" id="po-proj-layers-btn">'
+  // Ícone-só (2026-09-07, "todos icones... sem contorno quadrado" — o botão
+  // fechado escondeu o <span> via CSS igual ao Visual ao lado; título/
+  // aria-label são o que sobrou pra explicar o botão no hover/leitor de
+  // tela).
+  const nomeCamadas = I18n.t('project.layers_btn');
+  raiz.innerHTML = '<button type="button" class="po-style-btn po-layers-btn" id="po-proj-layers-btn"'
+    + ' title="' + nomeCamadas + '" aria-label="' + nomeCamadas + '">'
     + '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">'
     + '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>'
-    + '<span>' + I18n.t('project.layers_btn') + '</span>'
+    + '<span>' + nomeCamadas + '</span>'
     + '<i class="po-tb-dot" id="po-proj-layers-dot"></i>'
     + '<i class="po-style-caret">\u25be</i></button>'
     + '<div class="po-style-list po-layers-list" id="po-proj-layers-list"></div>';

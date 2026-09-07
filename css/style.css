@@ -3941,11 +3941,17 @@ header.po-topnav {
    aberta (.po-style-item, reparentada pro <body> ao abrir) não é afetada
    por nenhuma regra daqui — continua com nome + ícone, são 8 estilos
    parecidos demais pra diferenciar só por ícone. */
-#po-proj-style-menu .po-style-btn {
-  min-width: 0; width: 32px; height: 32px; padding: 0; justify-content: center;
+#po-proj-style-menu .po-style-btn,
+#po-proj-layers-menu .po-style-btn {
+  min-width: 0; width: 28px; height: 28px; padding: 0; justify-content: center;
 }
-#po-proj-style-menu .po-style-btn span,
-#po-proj-style-menu .po-style-caret { display: none; }
+#po-proj-style-menu .po-style-btn span, #po-proj-layers-menu .po-style-btn span,
+#po-proj-style-menu .po-style-caret, #po-proj-layers-menu .po-style-caret { display: none; }
+/* Camadas ganhou o MESMO tratamento icone-so do Visual acima nesta rodada
+   (2026-09-07) — antes era só o Visual (comentário logo acima), mas agora
+   os dois moram lado a lado dentro da categoria "Camadas" (junto de
+   ocultar/mostrar, também icone-so), então precisam da mesma casca pra não
+   destoar. */
 
 /* Par Render + Linhas no cabeçalho: colados, porque "Linhas" é um interruptor
    DO render, não uma ação irmã. Visual idêntico aos vizinhos (Send to order /
@@ -4007,9 +4013,23 @@ header.po-topnav {
   border: none;
   border-radius: 0; box-shadow: none; background: transparent;
 }
-/* Rótulos de grupo saem de cena (ver comentário acima). */
-#po-proj-canvas-tools .po-tb-label { display: none; }
-#po-proj-canvas-tools .po-tb-group { padding: 0 3px; flex-direction: row; align-items: center; gap: 2px; }
+/* Rótulos de grupo VOLTAM (2026-09-07, pedido do Matt: "quero um pequeno
+   texto por categoria... mostrando os icones abaixo daquela categoria...
+   faz um bom alinhamento de tudo isso, deixando bem organizado") — o
+   redesenho de 02/09 (comentário acima) os escondia de propósito porque a
+   barra virou 1 linha só; agora cada categoria reganha o nome, bem pequeno,
+   alinhado no topo, com os ícones dela numa fileira embaixo
+   (.po-tb-icons-row, novo wrapper). */
+#po-proj-canvas-tools .po-tb-label {
+  display: block; font-size: 9px; line-height: 1.1; font-weight: 600;
+  letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted);
+  padding-left: 1px; white-space: nowrap;
+}
+#po-proj-canvas-tools .po-tb-group {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
+  padding: 0 3px; gap: 2px;
+}
+#po-proj-canvas-tools .po-tb-icons-row { display: flex; flex-direction: row; align-items: center; gap: 2px; }
 #po-proj-canvas-tools .po-tb-sep { margin: 6px 6px; opacity: 0.7; }
 #po-proj-canvas-tools .po-tb-seg { background: transparent; border: none; padding: 0; gap: 2px; }
 
@@ -4021,46 +4041,57 @@ header.po-topnav {
    barra sumia. Preto no texto E no icone; quem separa ativo de inativo
    continua sendo o AMBAR do .active, nao o tom de cinza. */
 #po-proj-canvas-tools .po-tb-seg-btn {
-  gap: 7px; padding: 7px 11px; border-radius: 9px;
+  gap: 0; padding: 6px; border: none; border-radius: 8px;
+  width: 28px; height: 28px; justify-content: center;
   font-size: 12.5px; font-weight: 500; color: var(--text);
   background: transparent; box-shadow: none;
 }
 #po-proj-canvas-tools .po-tb-seg-btn svg { width: 16px; height: 16px; color: var(--text); }
-#po-proj-canvas-tools .po-tb-seg-btn:hover { background: #f4f2ed; }
-/* ATIVO = âmbar (texto + ícone + fundo bem claro). */
+#po-proj-canvas-tools .po-tb-seg-btn:hover { background: rgba(43,38,33,0.07); }
+/* ATIVO (2026-09-07, "ativados com fundo branco e sombra, botao vermelho
+   igual a juncao") — mesmo vermelho/rosa que já dava o acento da Junção/
+   Encaixe (#e6007e), agora é o padrão de "ligado" pra barra inteira, em vez
+   do fundo âmbar antigo. */
 #po-proj-canvas-tools .po-tb-seg-btn.active,
 #po-proj-canvas-tools .po-tb-seg-btn.active:hover {
-  background: #fdf4e6; color: #c98a1f; box-shadow: none;
+  background: var(--panel); color: #e6007e; box-shadow: 0 2px 6px rgba(0,0,0,0.16);
 }
-#po-proj-canvas-tools .po-tb-seg-btn.active svg { color: #e0a44b; }
+#po-proj-canvas-tools .po-tb-seg-btn.active svg { color: #e6007e; }
 
 /* Cartões de ícone (Medidas, desfazer, Encaixe) na mesma régua dos demais. */
 #po-proj-canvas-tools .po-tb-icon-card {
-  flex-direction: row; gap: 7px; padding: 7px 11px; border: none;
-  border-radius: 9px; background: transparent; min-width: 0;
+  flex-direction: row; gap: 0; padding: 6px; border: none;
+  border-radius: 8px; background: transparent; min-width: 0;
+  width: 28px; height: 28px; justify-content: center;
   font-size: 12.5px; font-weight: 500; color: var(--text);
 }
 #po-proj-canvas-tools .po-tb-icon-card svg { width: 16px; height: 16px; color: var(--text); }
-#po-proj-canvas-tools .po-tb-icon-card:hover { background: #f4f2ed; }
-#po-proj-canvas-tools .po-tb-dot { top: 4px; right: 4px; width: 6px; height: 6px; }
-/* 27/08: essas 2 regras estavam SEM o prefixo "#po-proj-canvas-tools" —
-   por ID, ganhavam de QUALQUER regra de classe (.po-tb-icon-card.active),
-   inclusive fora deste painel flutuante. Resultado: o botão de Encaixe
-   ficava preso nesse tom pálido em todo canto, mesmo na barra principal
-   (onde Portas/Gavetas ganham o fundo escuro forte de .po-tb-seg-btn.active)
-   — por isso "o primeiro não marca quando está ativo". Prefixado agora:
-   só vale dentro do painel flutuante, onde combina com o pill âmbar claro
-   que os botões segmentados também usam aqui perto. Fora daqui, quem manda
-   é a regra bold em .po-tb-icon-card.active (acima). */
-#po-proj-canvas-tools #po-proj-collision-btn.active { background: #fdf4e6; }
-#po-proj-canvas-tools #po-proj-collision-btn.active svg { color: #c98a1f; }
+#po-proj-canvas-tools .po-tb-icon-card:hover { background: rgba(43,38,33,0.07); }
+#po-proj-canvas-tools .po-tb-dot { top: 3px; right: 3px; width: 6px; height: 6px; background: #e6007e; }
+/* ATIVO — mesmo padrão do .po-tb-seg-btn.active acima (2026-09-07): fundo
+   branco + sombra + ícone vermelho. Uma regra só cobre TODO botão-cartão
+   (Encaixe, Rodapé, Cotas, Tela cheia, etc.) — o override específico do
+   Encaixe que existia aqui (27/08) foi removido, virou redundante. */
+#po-proj-canvas-tools .po-tb-icon-card.active {
+  background: var(--panel); color: #e6007e; box-shadow: 0 2px 6px rgba(0,0,0,0.16);
+}
+#po-proj-canvas-tools .po-tb-icon-card.active svg { color: #e6007e; }
+#po-proj-canvas-tools .po-tb-icon-card span,
+#po-proj-canvas-tools .po-tb-seg-btn span { display: none; }
 
 /* Menu de estilo: mesma pegada dos botões, sem caixa pesada. */
 #po-proj-style-menu, #po-proj-layers-menu .po-style-btn {
   height: auto; padding: 7px 11px; border-radius: 9px; min-width: 0;
   border: none; background: transparent; font-size: 12.5px; font-weight: 500; color: var(--text);
 }
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn:hover { background: #f4f2ed; }
+#po-proj-style-menu, #po-proj-layers-menu .po-style-btn:hover { background: rgba(43,38,33,0.07); }
+/* Aberto = mesmo "ativo" branco+sombra+vermelho do resto da barra
+   (2026-09-07). Camadas também acende assim quando alguma camada está
+   oculta (.po-layers-btn.active, setado em refreshProjectLayersMenu). */
+#po-proj-canvas-tools .po-style-menu.aberto .po-style-btn,
+#po-proj-canvas-tools .po-layers-btn.active {
+  background: var(--panel); color: #e6007e; box-shadow: 0 2px 6px rgba(0,0,0,0.16);
+}
 
 /* (.po-tb-voltar — o "← Projects" da barra — REMOVIDO 02/09 a pedido do
    Matt, "esse botao pode remover e trazer a barra pra esquerda, mais
@@ -4070,28 +4101,17 @@ header.po-topnav {
 
 /* Ações encostadas na direita. */
 .po-tb-direita { margin-left: auto; }
-/* Quadrados, só ícone (2026-09-08, pedido do Matt: "quero todos icones
-   quadrados, em icones. nao quero ver textos, so quando passo mouse. assim
-   vamos ganhar espaco" — depois de reportar que "Enviar pro pedido"/"Novo
-   projeto" sumiram da barra: o status do Export SketchUp cresceu demais e
-   empurrou os dois pra fora da área visível, ver .po-proj-export-status
-   logo acima). O texto continua existindo — pro mouse, no title= nativo do
-   navegador (hover); pra leitor de tela, no aria-label — só não fica mais
-   sempre visível. */
-#po-proj-canvas-tools .po-tb-seg-plano .po-tb-seg-btn {
-  border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
-  width: 32px; height: 32px; padding: 0; justify-content: center; font-size: 15px;
-}
-#po-proj-canvas-tools .po-tb-seg-plano .po-tb-seg-btn span { display: none; }
-/* Vista (Frontal/Superior) e Projeção (Perspectiva/Paralelo) — mesmo
-   tratamento icone-so do grupo Projeto acima (2026-09-07, "comnbiamos de
-   deixar so icone" depois que o Matt apontou que esses dois grupos e o
-   botao fechado do menu Visual tinham ficado de fora da 1a rodada). */
-#po-proj-canvas-tools .po-tb-seg-icone .po-tb-seg-btn {
-  border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
-  width: 32px; height: 32px; padding: 0; justify-content: center; font-size: 15px;
-}
-#po-proj-canvas-tools .po-tb-seg-icone .po-tb-seg-btn span { display: none; }
+/* Ícone-só, SEM caixa quadrada (2026-09-07, pedido do Matt: "todos icones
+   preto e branco, sem contorno quadrado... ativados com fundo branco e
+   sombra"). As DUAS regras que existiam aqui (Projeto e Vista/Projeção,
+   2026-09-08 e 2026-09-07 — caixas 32x32 com borda) foram removidas: a
+   regra genérica .po-tb-icon-card/.po-tb-seg-btn logo acima já cobre TODO
+   botão da barra (28x28, sem borda em repouso, branco+sombra+vermelho
+   quando .active) — manter as duas versões batendo uma na outra é a receita
+   do bug de seletor-solto que o CLAUDE.md deste projeto já pede pra evitar.
+   O texto continua existindo pro title=/aria-label (hover / leitor de
+   tela), só não fica mais visível — regra genérica de span também já
+   coberta acima. */
 #po-proj-canvas-tools .po-tb-primaria {
   background: var(--text) !important; color: #fff !important; border-color: var(--text) !important;
 }
