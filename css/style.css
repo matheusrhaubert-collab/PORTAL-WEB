@@ -4035,6 +4035,14 @@ header.po-topnav {
    vez da barra inteira. */
 #po-proj-canvas-tools .po-tb-icons-row {
   display: flex; flex-direction: row; align-items: center; gap: 2px; height: 34px;
+  /* Puxão fino pra cima (2026-09-07, Matt: "ainda temos um scrol rolando
+     pra baixo... por pouca coisa, pode subir um pouco mais os icones") --
+     o texto do rótulo em cima (8px, line-height:1) ainda sobra um respiro
+     de alguns pixels por causa do espaçamento natural da fonte (o
+     "meia-entrelinha" que line-height:1 não remove sozinho). Como o
+     .po-tb-icon-card/.po-tb-seg-btn continuam com os MESMOS 34px (nada de
+     tamanho mudou), a fileira só sobe por cima desse respiro sobrando. */
+  margin-top: -3px;
 }
 /* Filete só na altura dos ícones (pedido do Matt: "pode colocar ate uma
    linha na altura dos icones, conza fraca, pra evidenciar a separacao") —
