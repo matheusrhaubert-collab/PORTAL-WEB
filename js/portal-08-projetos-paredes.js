@@ -3774,7 +3774,7 @@ function montaMenuCamadas() {
   const nomeCamadas = I18n.t('project.layers_btn');
   raiz.innerHTML = '<button type="button" class="po-style-btn po-layers-btn" id="po-proj-layers-btn"'
     + ' title="' + nomeCamadas + '" aria-label="' + nomeCamadas + '">'
-    + '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">'
+    + '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">'
     + '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>'
     + '<span>' + nomeCamadas + '</span>'
     + '<i class="po-tb-dot" id="po-proj-layers-dot"></i>'

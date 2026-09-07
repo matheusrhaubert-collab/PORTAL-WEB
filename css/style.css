@@ -3926,7 +3926,7 @@ header.po-topnav {
    (.po-style-btn, não .po-style-item) pra não mexer em JS. Só a barra
    "Visual" (#po-proj-style-menu) — Camadas (#po-proj-layers-menu) não usa
    esse ícone colorido, é outro conteúdo. */
-#po-proj-style-menu .po-style-btn svg { width: 16px; height: 16px; }
+#po-proj-style-menu .po-style-btn svg { width: 20px; height: 20px; }
 
 /* Botão fechado do "Visual" vira quadrado só-ícone, sempre — não só abaixo
    de 1600px (2026-09-07, "comnbiamos de deixar so icone": faltava isso e os
@@ -3943,7 +3943,7 @@ header.po-topnav {
    parecidos demais pra diferenciar só por ícone. */
 #po-proj-style-menu .po-style-btn,
 #po-proj-layers-menu .po-style-btn {
-  min-width: 0; width: 28px; height: 28px; padding: 0; justify-content: center;
+  min-width: 0; width: 34px; height: 34px; padding: 0; justify-content: center;
 }
 #po-proj-style-menu .po-style-btn span, #po-proj-layers-menu .po-style-btn span,
 #po-proj-style-menu .po-style-caret, #po-proj-layers-menu .po-style-caret { display: none; }
@@ -4021,17 +4021,32 @@ header.po-topnav {
    alinhado no topo, com os ícones dela numa fileira embaixo
    (.po-tb-icons-row, novo wrapper). */
 #po-proj-canvas-tools .po-tb-label {
-  display: block; font-size: 9px; line-height: 1.1; font-weight: 600;
-  letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted);
+  display: block; font-size: 8px; line-height: 1; font-weight: 600;
+  letter-spacing: 0.01em; text-transform: uppercase; color: var(--muted);
   padding-left: 1px; white-space: nowrap;
 }
 #po-proj-canvas-tools .po-tb-group {
   display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
-  padding: 0 3px; gap: 2px;
+  padding: 0 6px; gap: 1px;
 }
-#po-proj-canvas-tools .po-tb-icons-row { display: flex; flex-direction: row; align-items: center; gap: 2px; }
-#po-proj-canvas-tools .po-tb-sep { margin: 6px 6px; opacity: 0.7; }
+/* Altura fixa (2026-09-07, pedido do Matt: "icones devem aumentar... a
+   letra deve ficar menor, com menos espaco em cima e embaixo") — mesma
+   altura do botão (34px, ver .po-tb-icon-card/.po-tb-seg-btn logo abaixo)
+   pra TODA categoria ter a fileira de ícones na mesma régua, e o filete
+   .po-tb-sep (logo abaixo) conseguir acompanhar exatamente essa altura em
+   vez da barra inteira. */
+#po-proj-canvas-tools .po-tb-icons-row {
+  display: flex; flex-direction: row; align-items: center; gap: 2px; height: 34px;
+}
+/* Filete só na altura dos ícones (pedido do Matt: "pode colocar ate uma
+   linha na altura dos icones, conza fraca, pra evidenciar a separacao") —
+   align-self:flex-end + altura igual à .po-tb-icons-row faz ele encostar
+   só na fileira de baixo, sem subir até a linha do rótulo. */
+#po-proj-canvas-tools .po-tb-sep {
+  align-self: flex-end; height: 34px; margin: 0 2px; opacity: 0.6;
+}
 #po-proj-canvas-tools .po-tb-seg { background: transparent; border: none; padding: 0; gap: 2px; }
+#po-proj-canvas-tools.po-proj-hud-tl { align-items: flex-start; }
 
 /* Botão da barra: texto discreto, ícone fino, alvo confortável sem volume. */
 /* PRETO, NAO CINZA (2026-08-18, Matt: "os itens em cinza nao estao se
@@ -4041,12 +4056,12 @@ header.po-topnav {
    barra sumia. Preto no texto E no icone; quem separa ativo de inativo
    continua sendo o AMBAR do .active, nao o tom de cinza. */
 #po-proj-canvas-tools .po-tb-seg-btn {
-  gap: 0; padding: 6px; border: none; border-radius: 8px;
-  width: 28px; height: 28px; justify-content: center;
+  gap: 0; padding: 7px; border: none; border-radius: 9px;
+  width: 34px; height: 34px; justify-content: center;
   font-size: 12.5px; font-weight: 500; color: var(--text);
   background: transparent; box-shadow: none;
 }
-#po-proj-canvas-tools .po-tb-seg-btn svg { width: 16px; height: 16px; color: var(--text); }
+#po-proj-canvas-tools .po-tb-seg-btn svg { width: 20px; height: 20px; color: var(--text); }
 #po-proj-canvas-tools .po-tb-seg-btn:hover { background: rgba(43,38,33,0.07); }
 /* ATIVO (2026-09-07, "ativados com fundo branco e sombra, botao vermelho
    igual a juncao") — mesmo vermelho/rosa que já dava o acento da Junção/
@@ -4060,12 +4075,12 @@ header.po-topnav {
 
 /* Cartões de ícone (Medidas, desfazer, Encaixe) na mesma régua dos demais. */
 #po-proj-canvas-tools .po-tb-icon-card {
-  flex-direction: row; gap: 0; padding: 6px; border: none;
-  border-radius: 8px; background: transparent; min-width: 0;
-  width: 28px; height: 28px; justify-content: center;
+  flex-direction: row; gap: 0; padding: 7px; border: none;
+  border-radius: 9px; background: transparent; min-width: 0;
+  width: 34px; height: 34px; justify-content: center;
   font-size: 12.5px; font-weight: 500; color: var(--text);
 }
-#po-proj-canvas-tools .po-tb-icon-card svg { width: 16px; height: 16px; color: var(--text); }
+#po-proj-canvas-tools .po-tb-icon-card svg { width: 20px; height: 20px; color: var(--text); }
 #po-proj-canvas-tools .po-tb-icon-card:hover { background: rgba(43,38,33,0.07); }
 #po-proj-canvas-tools .po-tb-dot { top: 3px; right: 3px; width: 6px; height: 6px; background: #e6007e; }
 /* ATIVO — mesmo padrão do .po-tb-seg-btn.active acima (2026-09-07): fundo
@@ -4079,12 +4094,19 @@ header.po-topnav {
 #po-proj-canvas-tools .po-tb-icon-card span,
 #po-proj-canvas-tools .po-tb-seg-btn span { display: none; }
 
-/* Menu de estilo: mesma pegada dos botões, sem caixa pesada. */
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn {
+/* Menu de estilo: mesma pegada dos botões, sem caixa pesada.
+   (2026-09-07: "#po-proj-style-menu, #po-proj-layers-menu .po-style-btn" —
+   sem o " .po-style-btn" depois da 1a vírgula — era o mesmo bug de vírgula
+   solta que o CLAUDE.md deste projeto já documenta: virava 2 seletores
+   (o CONTAINER #po-proj-style-menu inteiro + só o botão do Camadas), nunca
+   "os dois botões". Corrigido — e agora bate com o tamanho novo (34px) das
+   regras .po-style-btn logo abaixo, que antes ganhavam desse bug sem eu
+   perceber pro lado do Camadas.) */
+#po-proj-style-menu .po-style-btn, #po-proj-layers-menu .po-style-btn {
   height: auto; padding: 7px 11px; border-radius: 9px; min-width: 0;
   border: none; background: transparent; font-size: 12.5px; font-weight: 500; color: var(--text);
 }
-#po-proj-style-menu, #po-proj-layers-menu .po-style-btn:hover { background: rgba(43,38,33,0.07); }
+#po-proj-style-menu .po-style-btn:hover, #po-proj-layers-menu .po-style-btn:hover { background: rgba(43,38,33,0.07); }
 /* Aberto = mesmo "ativo" branco+sombra+vermelho do resto da barra
    (2026-09-07). Camadas também acende assim quando alguma camada está
    oculta (.po-layers-btn.active, setado em refreshProjectLayersMenu). */
