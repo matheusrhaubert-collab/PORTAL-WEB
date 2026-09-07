@@ -30,7 +30,11 @@ window.LEGNO_CHANGELOG = [
       'Na categoria Camadas, ocultar um móvel agora destaca o botão em rosa, igual aos outros indicadores da barra.',
       'Botão "Enviar pro pedido" passou a usar o mesmo ícone preto e branco dos outros botões da barra, sem o fundo preto.',
       'Corrigido bug que, depois de gerar uma Proposta, trocava o ícone do botão pela palavra "Proposal" e não voltava mais sem recarregar a página.',
-      'Ícones da barra reaproximados do texto de cada categoria, ocupando um pouco menos de altura.'
+      'Ícones da barra reaproximados do texto de cada categoria, ocupando um pouco menos de altura.',
+      'Corrigido a exportação para o SketchUp: peças com o mesmo acabamento agora viram UM material só (antes cada peça virava um material separado, mesmo usando a mesma textura, e era preciso trocar face por face).',
+      'Corrigido a exportação para o SketchUp: textura que ainda estivesse carregando no momento do export não sai mais como "imagem não encontrada" no material.',
+      'Novo: ferramenta de Régua na categoria Ferramentas — clique em 2 pontos do desenho pra ver a distância entre eles, com botão "Limpar cotas" pra apagar as medições.',
+      'Novo: botão "Print" na categoria Render — tira uma foto da vista atual (portas, móveis ocultos e estilo de traço exatamente como estão na tela) e guarda direto na galeria de fotos realistas.'
     ]
   },
   {

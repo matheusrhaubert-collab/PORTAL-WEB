@@ -2421,6 +2421,41 @@ function createViewerComposition3D() {
     return result;
   }
 
+  // "Que PONTO exato da geometria de verdade está embaixo do clique" —
+  // usado pela RÉGUA MANUAL (2026-09-07, Matt: "vou ate um ponto de
+  // intersecao das arestas clico nesse ponto e procuro o proximo ponto").
+  // Diferente de pickAssemblyAt (que mira de propósito na CAIXA invisível
+  // do módulo inteiro, pra seleção ficar estável — ver comentário grande
+  // lá), aqui o alvo é a MALHA de verdade (peça, parede, piso): o usuário
+  // está apontando pra um canto específico do desenho, não escolhendo
+  // "qual módulo". Depois de achar o ponto de impacto, gruda no VÉRTICE
+  // mais próximo da malha atingida — é o jeito prático de acertar "onde
+  // duas arestas se encontram" sem calcular interseção aresta-com-aresta
+  // de verdade (o clique já mira perto do canto; o vértice mais próximo
+  // DAQUELA peça é exatamente esse canto).
+  function pickSurfacePointAt(clientX, clientY) {
+    if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const rawHits = _raycaster.intersectObjects(currentGroups, true);
+    const hit = rawHits.find((h) => h.object && h.object.isMesh
+      && !(h.object.userData && h.object.userData.isHitboxProxy));
+    if (!hit) return null;
+    const mesh = hit.object;
+    const geometry = mesh.geometry;
+    const posAttr = geometry && geometry.attributes && geometry.attributes.position;
+    if (!posAttr) return { point: hit.point.clone(), object: mesh };
+    mesh.updateMatrixWorld(true);
+    const v = new THREE.Vector3();
+    let melhorDistSq = Infinity;
+    let melhorPonto = null;
+    for (let i = 0; i < posAttr.count; i++) {
+      v.fromBufferAttribute(posAttr, i).applyMatrix4(mesh.matrixWorld);
+      const d = v.distanceToSquared(hit.point);
+      if (d < melhorDistSq) { melhorDistSq = d; melhorPonto = v.clone(); }
+    }
+    return { point: melhorPonto || hit.point.clone(), object: mesh };
+  }
+
   // "Que SUPERFÍCIE do ambiente (piso/parede) está embaixo do ponteiro" —
   // contraparte de pickAssemblyAt (que só enxerga MÓDULOS). Usado por
   // portal.js pra: (a) duplo toque numa parede enquadrar ela de frente e
@@ -3086,7 +3121,7 @@ function createViewerComposition3D() {
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
-    setControlsEnabled, getDomElement, pickAssemblyAt, intersectPlaneAtClient,
+    setControlsEnabled, getDomElement, pickAssemblyAt, intersectPlaneAtClient, pickSurfacePointAt,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.

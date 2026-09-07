@@ -60,7 +60,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=202609070045" />
+<link rel="stylesheet" href="css/style.css?v=202609070721" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1513,6 +1513,30 @@
                       </svg>
                       <i class="po-tb-dot"></i>
                     </button>
+                    <!-- RÉGUA MANUAL (2026-09-07, novo recurso — Matt: "uma nova
+                         forma de medir com regua... clico num ponto, procuro o
+                         proximo ponto, ai clicando no segundo ele me da a cota
+                         na unidade de medida ajustada... essa informacao fica
+                         no desenho"). Liga um MODO: clique em dois pontos da
+                         cena (gruda no vértice mais próximo) desenha uma linha
+                         + a distância entre eles, que fica na tela até apagar
+                         com o botão "Limpar cotas" ao lado. Ver
+                         setProjectRulerMode/handleProjectRulerClick,
+                         portal-06c-projetos-canvas-3d-acoes.js. -->
+                    <button type="button" class="po-tb-icon-card po-tb-icon-only" id="po-proj-ruler-btn"
+                            data-i18n-title="project.ruler_title" title="Medir com régua (clique em 2 pontos)"
+                            aria-label="Régua" data-i18n-aria-label="project.ruler_btn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="8" width="20" height="8" rx="1.2"/><path d="M6 8v3M10 8v3M14 8v3M18 8v3"/>
+                      </svg>
+                    </button>
+                    <button type="button" class="po-tb-icon-card po-tb-icon-only" id="po-proj-ruler-clear-btn"
+                            data-i18n-title="project.ruler_clear_title" title="Limpar cotas da régua"
+                            aria-label="Limpar cotas" data-i18n-aria-label="project.ruler_clear_btn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 19H20"/><path d="M7 15l6.5-6.5a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L14 19H9l-4.5-4.5a1.5 1.5 0 0 1 0-2.1z"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
 
@@ -1563,6 +1587,28 @@
                               aria-label="Gerar" data-i18n-aria-label="project.render_generate_btn">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
                           <rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8.5 6L10 4h4l1.5 2"/>
+                        </svg>
+                      </button>
+                      <!-- "Print" (2026-09-07, novo recurso — Matt: "um print
+                           quer seria um render com as cotas selecionadas...
+                           vai pegar so a imagem sem renderizar nada... deve
+                           respeitar [portas ocultas/traço atual]"). Diferente
+                           do "Gerar" acima (chama o Photoreal, um render
+                           path-traced de verdade, cena PRÓPRIA): este só tira
+                           um screenshot puro da vista de edição EXATAMENTE como
+                           está na tela (câmera, portas abertas/fechadas,
+                           módulos ocultos, estilo de traço, régua desenhada —
+                           tudo, porque é um print daquele canvas, não uma cena
+                           remontada) e entra na MESMA galeria de fotos
+                           realistas do "Gerar". Ver printProjectCurrentView,
+                           portal-08-projetos-paredes.js. -->
+                      <button type="button" class="po-tb-seg-btn po-tb-so-icone" id="po-proj-print-view-btn"
+                              title="Tirar print da vista atual" data-i18n-title="project.print_view_title"
+                              aria-label="Print" data-i18n-aria-label="project.print_view_btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M4 8V5a1 1 0 0 1 1-1h3"/><path d="M20 8V5a1 1 0 0 0-1-1h-3"/>
+                          <path d="M4 16v3a1 1 0 0 0 1 1h3"/><path d="M20 16v3a1 1 0 0 1-1 1h-3"/>
+                          <circle cx="12" cy="12" r="3"/>
                         </svg>
                       </button>
                     </div>
@@ -1895,6 +1941,15 @@
                        "Cotas" ligar — ver refreshProjectDimensionLabels,
                        portal-06c-projetos-canvas-3d-acoes.js. -->
                   <div class="po-proj-dim-labels" id="po-proj-dim-labels"></div>
+                  <!-- RÉGUA MANUAL (2026-09-07) — overlay com a(s) linha(s) +
+                       número(s) de distância entre os pontos que o usuário
+                       clicou (ver po-proj-ruler-btn acima). SVG (não <div>
+                       position:absolute, como os outros overlays desta tela)
+                       porque aqui tem uma LINHA de verdade unindo os 2 pontos,
+                       não só um texto solto — ver refreshProjectRulerOverlay,
+                       portal-06c-projetos-canvas-3d-acoes.js. Vazio até o
+                       primeiro clique com a régua ligada. -->
+                  <svg class="po-proj-ruler-svg" id="po-proj-ruler-svg"></svg>
                   <!-- JANELA DE SELEÇÃO (Shift+arrastar, 2026-09-04) — pedido
                        do usuário: "apertando shift e clicando na tela e
                        arrastando clicado abra uma janela (vermelha) e pegue
@@ -2510,17 +2565,17 @@
 </div>
 
 <script src="js/config.js"></script>
-<script src="js/i18n.js?v=202609070045"></script>
+<script src="js/i18n.js?v=202609070721"></script>
 <!-- Histórico de versões do portal (dados) + comportamento do botão
      "Novidades" (2026-09-07). changelog.js é puro (só o array, sem DOM);
      version-news.js lê o DOM e o localStorage. Só precisam de i18n.js
      (formata a data no idioma da interface) e do DOM já no HTML acima
      deles — por isso ficam aqui, não lá no fim com os portal-0X. -->
-<script src="js/changelog.js?v=202609070045"></script>
-<script src="js/version-news.js?v=202609070045"></script>
-<script src="js/pricing.js?v=202609070045"></script>
-<script src="js/viewer3d.js?v=202609070045"></script>
-<script src="js/viewer3d_composition.js?v=202609070045"></script>
+<script src="js/changelog.js?v=202609070721"></script>
+<script src="js/version-news.js?v=202609070721"></script>
+<script src="js/pricing.js?v=202609070721"></script>
+<script src="js/viewer3d.js?v=202609070721"></script>
+<script src="js/viewer3d_composition.js?v=202609070721"></script>
 <!-- drilling.js no PORTAL (2026-08-13). Ele já existia no repositório e era
      usado só pelo ERP/admin — mas o construtor de armário precisa dele aqui:
      Drilling._internals.buildBoxes é quem devolve a caixa em mm de cada peça
@@ -2530,22 +2585,22 @@
      vão do construtor virava o módulo INTEIRO — o "está considerando o
      externo" relatado pelo Matt. Diagnosticado no site publicado: o arquivo
      respondia 200, só não estava sendo carregado nesta página. -->
-<script src="js/drilling.js?v=202609070045"></script>
+<script src="js/drilling.js?v=202609070721"></script>
 <!-- Catálogo de ferragem (pino/cavilha/tambor minifix) por furo — migration 119. Faltando aqui = Hardware fica undefined e o custo de ferragem some do $ Fábrica SEM ERRO NENHUM (o código em portal.js é tolerante de propósito). Já sumiu 2x por este script cair fora do portal.html; ver memória do projeto "minifix sumiram do $ Fábrica". Tem que vir ANTES do layout-engine.js. -->
-<script src="js/hardware.js?v=202609070045"></script>
+<script src="js/hardware.js?v=202609070721"></script>
 <!-- Motor do construtor de armário (árvore de vãos -> peças). É o MESMO
      arquivo que a tela do ERP usa: puro, sem DOM e sem banco. Ver
      docs/criador-de-modulos-spec.md. -->
-<script src="js/layout-engine.js?v=202609070045"></script>
+<script src="js/layout-engine.js?v=202609070721"></script>
 <!-- Editor de paredes em planta baixa (2026-08-13). Independente: recebe uma
      lista de segmentos e devolve outra; não conhece projeto, banco nem 3D. -->
-<script src="js/wall-editor.js?v=202609070045"></script>
+<script src="js/wall-editor.js?v=202609070721"></script>
 <!-- photoreal.js é leve (~15KB) e não faz nada até o clique no botão; o
      bundle pesado (~925KB) só é baixado DENTRO de Photoreal.open(), lazy. -->
-<script src="js/photoreal.js?v=202609070045"></script>
+<script src="js/photoreal.js?v=202609070721"></script>
 <!-- Resolvedor de peças do módulo — a ÚNICA cópia (antes duplicada em 4
      arquivos; ver o cabeçalho do arquivo). Tem que vir ANTES do portal.js. -->
-<script src="js/module-pieces.js?v=202609070045"></script>
+<script src="js/module-pieces.js?v=202609070721"></script>
 <script>MODULE_PIECES_ON_ERROR = (e) => showError(I18n.t('loaderr.module_config', { msg: e.message }));</script>
 <!-- portal.js foi QUEBRADO em 9 arquivos em 2026-08-19 (ver memória do
      projeto "portal_js_split_2026_08_19") pra reduzir o tamanho de cada
@@ -2556,19 +2611,19 @@
      portal-06 recresceu pra 312KB em 1 dia e foi quebrado DE NOVO em
      2026-08-20 em 3 pedaços (06a/06b/06c — ver memória do projeto
      "portal_js_monolito_performance"). Mesma regra: ordem entre eles importa. -->
-<script src="js/portal-01-core-catalogo.js?v=202609070045"></script>
-<script src="js/portal-02-pedidos.js?v=202609070045"></script>
-<script src="js/portal-03-composicao.js?v=202609070045"></script>
-<script src="js/portal-04-galeria.js?v=202609070045"></script>
-<script src="js/portal-05-cutlist.js?v=202609070045"></script>
-<script src="js/portal-06a-projetos-canvas-core.js?v=202609070045"></script>
-<script src="js/portal-06b-projetos-canvas-ia-custo.js?v=202609070045"></script>
-<script src="js/portal-06c-projetos-canvas-3d-acoes.js?v=202609070045"></script>
-<script src="js/portal-07-construtor.js?v=202609070045"></script>
-<script src="js/portal-08-projetos-paredes.js?v=202609070045"></script>
-<script src="js/portal-10-proposta.js?v=202609070045"></script>
-<script src="js/portal-09-projetos-final.js?v=202609070045"></script>
-<script src="js/portal-12-ajuda.js?v=202609070045"></script>
+<script src="js/portal-01-core-catalogo.js?v=202609070721"></script>
+<script src="js/portal-02-pedidos.js?v=202609070721"></script>
+<script src="js/portal-03-composicao.js?v=202609070721"></script>
+<script src="js/portal-04-galeria.js?v=202609070721"></script>
+<script src="js/portal-05-cutlist.js?v=202609070721"></script>
+<script src="js/portal-06a-projetos-canvas-core.js?v=202609070721"></script>
+<script src="js/portal-06b-projetos-canvas-ia-custo.js?v=202609070721"></script>
+<script src="js/portal-06c-projetos-canvas-3d-acoes.js?v=202609070721"></script>
+<script src="js/portal-07-construtor.js?v=202609070721"></script>
+<script src="js/portal-08-projetos-paredes.js?v=202609070721"></script>
+<script src="js/portal-10-proposta.js?v=202609070721"></script>
+<script src="js/portal-09-projetos-final.js?v=202609070721"></script>
+<script src="js/portal-12-ajuda.js?v=202609070721"></script>
 
 
 </body>

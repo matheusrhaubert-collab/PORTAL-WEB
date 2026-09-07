@@ -2855,6 +2855,19 @@ header.po-topnav {
   pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
 }
 
+/* RÉGUA MANUAL (2026-09-07) — overlay SVG com a linha + os pontos + o
+   número de cada medição feita à mão (ver po-proj-ruler-btn,
+   refreshProjectRulerOverlay em portal-06c-projetos-canvas-3d-acoes.js).
+   position:fixed cobrindo o viewport inteiro, mesma razão do
+   .po-proj-dim-label acima: worldToClient devolve coordenada de
+   VIEWPORT, não relativa a nenhum pai — sem viewBox, as coordenadas dos
+   elementos lá dentro (line/circle/text) são pixels de tela direto.
+   pointer-events:none pra clique atravessar até o canvas 3D por baixo. */
+.po-proj-ruler-svg {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  z-index: 56; pointer-events: none;
+}
+
 .po-proj-slot-actions {
   /* BARRA ÚNICA ABAIXO DO MÓDULO (2026-08-13, ajustada à referência do Matt).
      Ele comparou a minha com a dele: a dele é MENOR, mais AFASTADA do móvel e

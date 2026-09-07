@@ -321,6 +321,19 @@ function attachProject3DEditDrag() {
     // então nada muda pro iPad.
     if (ev.button !== 0) return;
 
+    // FERRAMENTA DE MEDIR — RÉGUA MANUAL (2026-09-07, novo recurso, Matt:
+    // "quando clico eu clico nela, eu vou ate um ponto de intersecao das
+    // arestas clico nesse ponto e procuro o proximo ponto"). Igual ao modo
+    // câmera acima: enquanto ligado, o clique NUNCA seleciona/arrasta
+    // módulo — só marca ponto de medição (ver handleProjectRulerClick,
+    // portal-06c-projetos-canvas-3d-acoes.js). Fica ANTES de qualquer outro
+    // ramo (Ctrl+clique, setas, giro, arraste).
+    if (projectRulerModeOn) {
+      ev.preventDefault();
+      handleProjectRulerClick(ev.clientX, ev.clientY);
+      return;
+    }
+
     // CTRL/CMD+CLIQUE = SELEÇÃO MÚLTIPLA, NÃO ARRASTE (2026-09-03, Matt:
     // "quero poder agrupar varios modulos, apertar control e ir clicando").
     // Só marcação — nunca inicia giro, esticar ou mover, e nunca mexe no
@@ -2529,33 +2542,92 @@ function sketchupTextureToJpegBlob(texture) {
 // material de verdade no <bind_material> do <node> — permite a MESMA peça
 // ter, por exemplo, o corpo em textura de madeira e uma faixa em cor lisa,
 // exatamente como o menu "Visual" já monta hoje (ver PROJECT_DRAW_PRESETS).
+// Monta o .dae (texto XML) a partir da cena — devolve também um Map
+// Texture -> nome de arquivo, pra escrever as imagens depois (async, feito
+// à parte porque canvas.toBlob é assíncrono e essa função aqui não precisa
+// ser). Cada MESH vira uma <geometry> com índice LOCAL (0-based, começa do
+// zero de novo a cada peça — diferente do .obj, que era um contador global
+// pro arquivo inteiro); cada grupo de material dentro da peça vira um bloco
+// <triangles> próprio, com um "símbolo" local (Sym1, Sym2...) resolvido pro
+// material de verdade no <bind_material> do <node> — permite a MESMA peça
+// ter, por exemplo, o corpo em textura de madeira e uma faixa em cor lisa,
+// exatamente como o menu "Visual" já monta hoje (ver PROJECT_DRAW_PRESETS).
+//
+// NÃO monta mais o XML final aqui (ver assembleSketchupDae logo abaixo) —
+// devolve só os dados coletados. Motivo dos dois bugs relatados pelo Matt em
+// 2026-09-07:
+//   1) "tenho que ir face por face [no SketchUp]... tem como agregar
+//      textura no grupo todo importado?" — makeMaterial() em viewer3d.js
+//      cria uma instância NOVA de material a cada peça/face (mesmo
+//      reaproveitando a MESMA textura, que essa sim é cacheada — ver
+//      loadTexture). Sem dedup aqui, cada face virava um <material>
+//      DIFERENTE no .dae, mesmo com o visual idêntico — no SketchUp isso é
+//      dezenas de materiais distintos, cada um só nas próprias faces: trocar
+//      a textura de um não muda os outros. Fix: materialInfoFor agora
+//      agrupa por uma ASSINATURA de aparência real (a textura em si, ou a
+//      cor quando não tem textura) em vez do objeto Material — um acabamento
+//      = um <material> só no arquivo inteiro, então trocar ele no SketchUp
+//      atualiza TODAS as peças que usam aquele acabamento de uma vez.
+//   2) "quando importo elas entram pretas, dizem que nao existem" — o dae
+//      antigo era montado SÍNCRONO, referenciando toda imagem que qualquer
+//      material tivesse — mas a conversão de verdade pra JPEG (nome do
+//      arquivo que de fato entra no zip) só acontece DEPOIS, assíncrona, em
+//      exportProjectToSketchUp. Se uma textura ainda não tinha terminado de
+//      carregar (ou falhasse por qualquer motivo), o .dae continuava citando
+//      um arquivo que NUNCA foi escrito no zip — exatamente o "diz que não
+//      existe" do SketchUp. Fix: exportProjectToSketchUp só monta o XML
+//      final (assembleSketchupDae) DEPOIS de tentar gerar cada textura de
+//      verdade, e tira a referência à imagem de qualquer material cuja
+//      conversão falhou (cai pra cor sólida em vez de apontar pra nada).
 function buildSketchupCollada(scene) {
-  const materialInfos = new Map(); // THREE.Material -> { id, effectId, imageId?, arquivo?, nome, cor }
+  const materialInfos = new Map(); // THREE.Material -> info (memoização por objeto — pode repetir a MESMA info pra materiais diferentes)
+  const materialInfosBySignature = new Map(); // assinatura de APARÊNCIA (textura ou cor) -> info ÚNICA, é quem de fato vira 1 <material> no .dae
   const textureFiles = new Map(); // THREE.Texture -> nome do arquivo (dedup por TEXTURA — várias peças reusam a mesma imagem)
   const geometryXmlBlocks = [];
   const nodeXmlBlocks = [];
   let meshIndex = 0;
   let facesEscritas = 0;
 
+  // Textura já é cacheada por (url, giro) em loadTexture (viewer3d.js) — o
+  // MESMO THREE.Texture (mesmo .uuid) sempre significa o MESMO acabamento
+  // visual, então basta usar o uuid dele como assinatura. Sem textura, a cor
+  // (arredondada, pra não deixar diferença de float de 0.0001 virar
+  // material novo) identifica o acabamento.
+  function materialSignature(material) {
+    if (material.map) return 'tex#' + material.map.uuid;
+    const c = material.color || { r: 1, g: 1, b: 1 };
+    const round = (n) => Math.round((n || 0) * 1000) / 1000;
+    return 'cor#' + round(c.r) + ',' + round(c.g) + ',' + round(c.b);
+  }
+
   function materialInfoFor(material) {
     if (materialInfos.has(material)) return materialInfos.get(material);
-    const n = materialInfos.size + 1;
-    const base = sketchupSafeId(material.name, 'material_' + n);
-    const usados = new Set(Array.from(materialInfos.values()).map((m) => m.base));
-    let baseUnico = base, k = 1;
-    while (usados.has(baseUnico)) { baseUnico = base + '_' + (++k); }
-    const info = {
-      base: baseUnico,
-      id: 'Material_' + baseUnico,
-      effectId: 'Effect_' + baseUnico,
-      nome: material.name || baseUnico,
-      cor: material.color || { r: 1, g: 1, b: 1 },
-    };
-    if (material.map && material.map.image) {
-      let arquivo = textureFiles.get(material.map);
-      if (!arquivo) { arquivo = 'textura_' + (textureFiles.size + 1) + '.jpg'; textureFiles.set(material.map, arquivo); }
-      info.imageId = 'Image_' + baseUnico;
-      info.arquivo = arquivo;
+    const sig = materialSignature(material);
+    let info = materialInfosBySignature.get(sig);
+    if (!info) {
+      const n = materialInfosBySignature.size + 1;
+      const base = sketchupSafeId(material.name, 'material_' + n);
+      const usados = new Set(Array.from(materialInfosBySignature.values()).map((m) => m.base));
+      let baseUnico = base, k = 1;
+      while (usados.has(baseUnico)) { baseUnico = base + '_' + (++k); }
+      info = {
+        base: baseUnico,
+        id: 'Material_' + baseUnico,
+        effectId: 'Effect_' + baseUnico,
+        nome: material.name || baseUnico,
+        cor: material.color || { r: 1, g: 1, b: 1 },
+      };
+      if (material.map && material.map.image) {
+        let arquivo = textureFiles.get(material.map);
+        if (!arquivo) { arquivo = 'textura_' + (textureFiles.size + 1) + '.jpg'; textureFiles.set(material.map, arquivo); }
+        info.imageId = 'Image_' + baseUnico;
+        info.arquivo = arquivo;
+        // Guardado pra achar esta info de novo se a conversão pra JPEG
+        // falhar depois (ver exportProjectToSketchUp) e poder tirar a
+        // referência à imagem ANTES do XML final ser montado.
+        info.texturaObj = material.map;
+      }
+      materialInfosBySignature.set(sig, info);
     }
     materialInfos.set(material, info);
     return info;
@@ -2683,12 +2755,22 @@ function buildSketchupCollada(scene) {
     );
   });
 
-  const imagesXml = Array.from(materialInfos.values())
+  return { materialInfosBySignature, textureFiles, geometryXmlBlocks, nodeXmlBlocks, faces: facesEscritas };
+}
+
+// Monta o XML final do .dae a partir do que buildSketchupCollada() coletou.
+// Separado dela de propósito (2026-09-07, ver comentário grande lá em cima):
+// só roda DEPOIS que exportProjectToSketchUp() souber, de verdade, quais
+// texturas viraram arquivo no zip — evita o .dae citar imagem que não existe.
+function assembleSketchupDae(materialInfosBySignature, geometryXmlBlocks, nodeXmlBlocks) {
+  const infos = Array.from(materialInfosBySignature.values());
+
+  const imagesXml = infos
     .filter((info) => info.imageId)
     .map((info) => `<image id="${info.imageId}"><init_from>${sketchupEscapeXml(info.arquivo)}</init_from></image>`)
     .join('');
 
-  const effectsXml = Array.from(materialInfos.values()).map((info) => {
+  const effectsXml = infos.map((info) => {
     const diffuseXml = info.imageId
       ? `<newparam sid="${info.effectId}-surface"><surface type="2D"><init_from>${info.imageId}</init_from></surface></newparam>`
         + `<newparam sid="${info.effectId}-sampler"><sampler2D><source>${info.effectId}-surface</source></sampler2D></newparam>`
@@ -2697,11 +2779,11 @@ function buildSketchupCollada(scene) {
     return `<effect id="${info.effectId}"><profile_COMMON>${diffuseXml}</profile_COMMON></effect>`;
   }).join('');
 
-  const materialsXml = Array.from(materialInfos.values())
+  const materialsXml = infos
     .map((info) => `<material id="${info.id}" name="${sketchupEscapeXml(info.nome)}"><instance_effect url="#${info.effectId}"/></material>`)
     .join('');
 
-  const dae = '<?xml version="1.0" encoding="UTF-8"?>'
+  return '<?xml version="1.0" encoding="UTF-8"?>'
     + '<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">'
     + '<asset><up_axis>Y_UP</up_axis><unit name="meter" meter="1"/></asset>'
     + `<library_images>${imagesXml}</library_images>`
@@ -2711,8 +2793,6 @@ function buildSketchupCollada(scene) {
     + `<library_visual_scenes><visual_scene id="Scene" name="Legno">${nodeXmlBlocks.join('')}</visual_scene></library_visual_scenes>`
     + '<scene><instance_visual_scene url="#Scene"/></scene>'
     + '</COLLADA>';
-
-  return { dae, texturas: textureFiles, faces: facesEscritas };
 }
 
 async function exportProjectToSketchUp() {
@@ -2745,20 +2825,44 @@ async function exportProjectToSketchUp() {
   setStatus(I18n.t('export_sketchup.generating'));
 
   try {
-    const { dae, texturas, faces } = buildSketchupCollada(scene);
-    if (!faces) {
+    // Espera qualquer textura ainda carregando ANTES de olhar pra cena
+    // (2026-09-07, Matt: "quando importo elas entram pretas, dizem que nao
+    // existem") — se o export rodasse bem no instante em que uma cor tinha
+    // acabado de ser trocada, a imagem podia ainda não ter terminado de
+    // carregar e a conversão pra JPEG (mais abaixo) falharia. Mesmo padrão
+    // já usado noutro lugar deste arquivo pra esperar textura antes de um
+    // snapshot de verdade (ver renderProjectSlotThumbnailFallback).
+    if (typeof Viewer3D !== 'undefined' && typeof Viewer3D.waitForPendingTextures === 'function') {
+      await Viewer3D.waitForPendingTextures();
+    }
+
+    const built = buildSketchupCollada(scene);
+    if (!built.faces) {
       setStatus(I18n.t('export_sketchup.empty'), true);
       return;
     }
 
     const zip = new JSZip();
-    zip.file('modelo.dae', dae);
 
     setStatus(I18n.t('export_sketchup.textures'));
-    for (const [texture, arquivo] of texturas) {
+    for (const [texture, arquivo] of built.textureFiles) {
       const blob = await sketchupTextureToJpegBlob(texture);
-      if (blob) zip.file(arquivo, blob);
+      if (blob) {
+        zip.file(arquivo, blob);
+      } else {
+        // Sem o arquivo de verdade, tira a referência à imagem AGORA — antes
+        // do .dae ser montado (assembleSketchupDae, logo abaixo) — pra esse
+        // material cair pra cor sólida em vez de apontar pra um arquivo que
+        // nunca existiu no zip (era exatamente o "dizem que nao existem" do
+        // SketchUp).
+        for (const info of built.materialInfosBySignature.values()) {
+          if (info.texturaObj === texture) { delete info.imageId; delete info.arquivo; }
+        }
+      }
     }
+
+    const dae = assembleSketchupDae(built.materialInfosBySignature, built.geometryXmlBlocks, built.nodeXmlBlocks);
+    zip.file('modelo.dae', dae);
 
     setStatus(I18n.t('export_sketchup.zipping'));
     const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -2780,7 +2884,6 @@ async function exportProjectToSketchUp() {
     if (btn) btn.disabled = false;
   }
 }
-
 const projExportSketchupBtn = document.getElementById('po-proj-export-sketchup-btn');
 if (projExportSketchupBtn) {
   projExportSketchupBtn.addEventListener('click', exportProjectToSketchUp);
@@ -3679,6 +3782,38 @@ function applyProjectDrawStyle(estilo, remontar) {
     setTimeout(pinta, 1500);
     document.addEventListener('legno:photoframe', pinta);
   }
+  // "PRINT" (2026-09-07, novo recurso — Matt: "um print... seria um render
+  // com as cotas selecionadas... que entra na galeria... vai pegar so a
+  // imagem sem renderizar nada. se as portas estiverem ocultas essa foto
+  // deve respeitar essa parte oculta. essa foto deve respeitar o mesmo
+  // traco"). Diferente do "Gerar" acima (chama o Photoreal — um render
+  // path-traced de verdade, numa cena PRÓPRIA reconstruída do zero): aqui
+  // é só ViewerProjectEdit.snapshot() sem nenhum argumento, que renderiza
+  // a MESMA cena/câmera que já está na tela e lê o canvas — então portas
+  // abertas/fechadas, módulos ocultos (ver isSketchupExportExcluded/
+  // s.oculto), o estilo de traço ativo (estiloDesenho) e a régua manual
+  // desenhada (ver po-proj-ruler-svg) saem exatamente como o usuário está
+  // vendo — nenhuma cena nova é montada, nada é "renderizado" de verdade.
+  // O resultado entra na MESMA galeria/tabela do Photoreal
+  // (savePhotorealRenderToProject, ver comentário grande dela acima) — o
+  // Matt pediu explicitamente "que entra na galeria de fotos realistas
+  // geradas", então reaproveitar em vez de criar uma segunda grade.
+  const bPrint = document.getElementById('po-proj-print-view-btn');
+  if (bPrint) {
+    bPrint.addEventListener('click', async () => {
+      if (!ViewerProjectEdit || typeof ViewerProjectEdit.snapshot !== 'function') return;
+      const dataUrl = ViewerProjectEdit.snapshot();
+      if (!dataUrl) { alert(I18n.t('project.print_view_no_scene')); return; }
+      bPrint.disabled = true;
+      try {
+        await savePhotorealRenderToProject(dataUrl);
+      } catch (e) {
+        alert((e && e.message) || String(e));
+      } finally {
+        bPrint.disabled = false;
+      }
+    });
+  }
   let projSalva = null;
   try { projSalva = localStorage.getItem(PROJECT_CAM_PROJ_KEY); } catch (e) { projSalva = null; }
   if (projSalva === 'paralela') setTimeout(() => aplicaProjecaoCamera('paralela'), 1200);
@@ -3878,6 +4013,20 @@ montaMenuCamadas();
     btn.classList.toggle('active', projectDimensionsOn);
     renderProjectCanvas();
   });
+})();
+
+// RÉGUA MANUAL (2026-09-07, novo recurso) — liga/desliga o modo (ver
+// projectRulerModeOn/handleProjectRulerClick/refreshProjectRulerOverlay,
+// portal-06c-projetos-canvas-3d-acoes.js) e limpa as medições feitas.
+(function attachProjectRulerToggle() {
+  const btn = document.getElementById('po-proj-ruler-btn');
+  if (btn) {
+    btn.addEventListener('click', () => setProjectRulerMode(!projectRulerModeOn));
+  }
+  const clearBtn = document.getElementById('po-proj-ruler-clear-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => clearProjectRulerMeasurements());
+  }
 })();
 
 // ---------- PROJETOS SALVOS (migration 056) ----------

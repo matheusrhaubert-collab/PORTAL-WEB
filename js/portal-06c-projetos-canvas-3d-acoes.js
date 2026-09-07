@@ -2262,6 +2262,138 @@ function refreshProjectDimensionLabels() {
   if (!projectDimLabelsRafId) projectDimLabelsRafId = requestAnimationFrame(tick);
 }
 
+// ==========================================================================
+// RÉGUA MANUAL (2026-09-07) — NOVO RECURSO, pedido do Matt: "uma nova forma
+// de medir com regua, quando clico eu clico nela, eu vou ate um ponto de
+// intersecao das arestas clico nesse ponto e procuro o proximo ponto, ai
+// clicando no ssegundo ele me da a cota na unidade de medida ajustada ao
+// lado. essa informacao fica no desenho."
+//
+// Diferente das Cotas automáticas logo acima (distância ENTRE MÓDULOS
+// vizinhos, calculada sozinha pelo layout): aqui o USUÁRIO escolhe os dois
+// pontos, em qualquer canto visível da cena — ponto A, ponto B, aparece a
+// distância real entre eles. O clique gruda no vértice mais próximo da
+// peça/parede/piso atingido (ver pickSurfacePointAt em
+// viewer3d_composition.js), que é o jeito prático de acertar "o canto onde
+// duas arestas se encontram" sem ter que calcular interseção de aresta com
+// aresta de verdade.
+//
+// SESSION-ONLY de propósito (não entra em user_projects nem nos slots): é
+// uma régua de CONFERÊNCIA na tela, não um dado do projeto — some sozinha
+// ao trocar de projeto/recarregar a página, ou na mão com "Limpar cotas".
+// Ligada em #po-proj-ruler-btn (toggle) + #po-proj-ruler-clear-btn (limpar),
+// ver wiring em portal-08-projetos-paredes.js. O clique em si é
+// interceptado no pointerdown do canvas 3D de edição — ver
+// attachProject3DEditDrag em portal-08-projetos-paredes.js, que chama
+// handleProjectRulerClick ANTES de qualquer seleção/arraste normal
+// enquanto o modo está ligado.
+// ==========================================================================
+let projectRulerModeOn = false;
+let projectRulerPendingPoint = null; // THREE.Vector3 (mundo) do 1º ponto, aguardando o 2º
+let projectRulerMeasurements = []; // [{ p1: Vector3, p2: Vector3 }]
+let projectRulerRafId = null;
+
+function setProjectRulerMode(on) {
+  projectRulerModeOn = !!on;
+  projectRulerPendingPoint = null;
+  const btn = document.getElementById('po-proj-ruler-btn');
+  if (btn) btn.classList.toggle('active', projectRulerModeOn);
+  const domEl = ViewerProjectEdit && ViewerProjectEdit.getDomElement && ViewerProjectEdit.getDomElement();
+  if (domEl) domEl.style.cursor = projectRulerModeOn ? 'crosshair' : 'default';
+  refreshProjectRulerOverlay();
+}
+
+function clearProjectRulerMeasurements() {
+  projectRulerMeasurements = [];
+  projectRulerPendingPoint = null;
+  refreshProjectRulerOverlay();
+}
+
+// Chamado pelo pointerdown do canvas 3D (ver attachProject3DEditDrag,
+// portal-08-projetos-paredes.js) quando projectRulerModeOn está ligado —
+// SUBSTITUI o clique normal de seleção/arraste enquanto durar.
+function handleProjectRulerClick(clientX, clientY) {
+  if (!ViewerProjectEdit || typeof ViewerProjectEdit.pickSurfacePointAt !== 'function') return;
+  const hit = ViewerProjectEdit.pickSurfacePointAt(clientX, clientY);
+  if (!hit || !hit.point) return;
+  if (!projectRulerPendingPoint) {
+    projectRulerPendingPoint = hit.point.clone();
+  } else {
+    projectRulerMeasurements.push({ p1: projectRulerPendingPoint, p2: hit.point.clone() });
+    projectRulerPendingPoint = null;
+  }
+  refreshProjectRulerOverlay();
+}
+
+// Mesmo esqueleto de refreshProjectDimensionLabels logo acima (RAF +
+// worldToClient a cada frame, pra acompanhar giro/zoom da câmera) — só
+// que desenhando numa <svg> (linha + 2 bolinhas + texto) em vez de <span>
+// soltos, porque aqui tem uma LINHA de verdade entre os pontos, não só um
+// número flutuante.
+function refreshProjectRulerOverlay() {
+  const svg = document.getElementById('po-proj-ruler-svg');
+  const wrap3d = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  if (!svg) return;
+  const stop = () => {
+    svg.innerHTML = '';
+    if (projectRulerRafId) { cancelAnimationFrame(projectRulerRafId); projectRulerRafId = null; }
+  };
+  const semNada = !projectRulerMeasurements.length && !projectRulerPendingPoint;
+  if (semNada || !wrap3d || wrap3d.offsetParent === null
+      || !ViewerProjectEdit || !ViewerProjectEdit.worldToClient) {
+    stop();
+    return;
+  }
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const NS = 'http://www.w3.org/2000/svg';
+  const tick = () => {
+    projectRulerRafId = null;
+    if ((!projectRulerMeasurements.length && !projectRulerPendingPoint) || wrap3d.offsetParent === null) { stop(); return; }
+    svg.innerHTML = '';
+    const desenhaPonto = (p, cor) => {
+      const screen = ViewerProjectEdit.worldToClient(p);
+      if (!screen) return;
+      const c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', screen.x); c.setAttribute('cy', screen.y); c.setAttribute('r', 4);
+      c.setAttribute('fill', cor); c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', '1.5');
+      svg.appendChild(c);
+    };
+    projectRulerMeasurements.forEach((m) => {
+      const s1 = ViewerProjectEdit.worldToClient(m.p1);
+      const s2 = ViewerProjectEdit.worldToClient(m.p2);
+      if (!s1 || !s2) return;
+      const line = document.createElementNS(NS, 'line');
+      line.setAttribute('x1', s1.x); line.setAttribute('y1', s1.y);
+      line.setAttribute('x2', s2.x); line.setAttribute('y2', s2.y);
+      line.setAttribute('stroke', '#e6007e'); line.setAttribute('stroke-width', '2');
+      line.setAttribute('stroke-dasharray', '5 3');
+      svg.appendChild(line);
+      desenhaPonto(m.p1, '#e6007e');
+      desenhaPonto(m.p2, '#e6007e');
+      const distM = m.p1.distanceTo(m.p2);
+      const mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
+      const texto = document.createElementNS(NS, 'text');
+      texto.setAttribute('x', mx); texto.setAttribute('y', my - 8);
+      texto.setAttribute('text-anchor', 'middle');
+      texto.setAttribute('fill', '#fff');
+      texto.setAttribute('font-size', '11'); texto.setAttribute('font-weight', '700');
+      texto.textContent = formatDimensionNumber(distM * 1000, unit) + unitAbbrev(unit);
+      // Fundo atrás do texto (SVG não tem "background" de texto nativo) —
+      // um <rect> do tamanho aproximado do texto, mesma cor da linha.
+      const largura = texto.textContent.length * 6.2 + 10;
+      const fundo = document.createElementNS(NS, 'rect');
+      fundo.setAttribute('x', mx - largura / 2); fundo.setAttribute('y', my - 20);
+      fundo.setAttribute('width', largura); fundo.setAttribute('height', 16);
+      fundo.setAttribute('rx', 4); fundo.setAttribute('fill', '#e6007e');
+      svg.appendChild(fundo);
+      svg.appendChild(texto);
+    });
+    if (projectRulerPendingPoint) desenhaPonto(projectRulerPendingPoint, '#e6007e');
+    projectRulerRafId = requestAnimationFrame(tick);
+  };
+  if (!projectRulerRafId) projectRulerRafId = requestAnimationFrame(tick);
+}
+
 const projSlotDuplicateBtn = document.getElementById('po-proj-slot-duplicate-btn');
 if (projSlotDuplicateBtn) {
   // pointerdown com stopPropagation: o botão fica POR CIMA do canvas 3D, e sem
