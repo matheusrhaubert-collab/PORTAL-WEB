@@ -2469,7 +2469,15 @@ function refreshProjectRulerOverlay() {
       dicaTxt.setAttribute('text-anchor', 'middle');
       dicaTxt.setAttribute('fill', '#fff');
       dicaTxt.setAttribute('font-size', '12'); dicaTxt.setAttribute('font-weight', '700');
-      dicaTxt.textContent = 'Régua: clique em 2 pontos do desenho pra medir';
+      // i18n (2026-09-07, Matt: "meu ta em ingles e apareceu uma frase
+      // portugues") — texto desenhado no canvas (SVG), não é HTML estático,
+      // então NÃO pega tradução sozinho via data-i18n; precisa chamar
+      // I18n.t() direto, igual todo texto dinâmico monta (ver topo de
+      // js/i18n.js). Fallback pro texto em pt-BR só se I18n não tiver
+      // carregado ainda por algum motivo.
+      dicaTxt.textContent = (typeof I18n !== 'undefined' && I18n.t)
+        ? I18n.t('project.ruler_hint')
+        : 'Régua: clique em 2 pontos do desenho pra medir';
       const largDica = dicaTxt.textContent.length * 6.4 + 16;
       const fundoDica = document.createElementNS(NS, 'rect');
       fundoDica.setAttribute('x', rect3d.left + rect3d.width / 2 - largDica / 2);
