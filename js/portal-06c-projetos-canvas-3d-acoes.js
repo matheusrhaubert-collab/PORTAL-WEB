@@ -2312,6 +2312,19 @@ let projectRulerHoverEdge = null;
 // dedo/mouse já É o que está sendo arrastado) e updateProjectRulerPointDrag
 // reposiciona o ponto referenciado a cada pointermove.
 let projectRulerDragRef = null;
+// SELEÇÃO + ARRASTAR A LINHA/RÓTULO (2026-09-07, 3ª rodada) — Matt: "quero
+// poder arrastar clicando na medida, para afastar da aresta" + "clicar na
+// medida gerada e deletar com botao delete". Clicar na LINHA (não numa
+// ponta) de uma medição não cria um ponto novo nem arrasta um ponto — em
+// vez disso, seleciona essa medição (projectRulerSelectedIndex, pro Delete
+// funcionar) e, se arrastar, desloca a linha/rótulo perpendicular à medição
+// (offsetPx em cada measurement) SEM mexer nos pontos de verdade (p1/p2) —
+// como um afastamento de cota de desenho técnico: os pontos medidos
+// continuam onde estavam, só o traço/número visual se afasta pra não
+// sobrepor a peça. Ver computeRulerDimensionScreen/findProjectRulerLineNear/
+// beginProjectRulerOffsetDrag mais abaixo.
+let projectRulerSelectedIndex = null;
+let projectRulerOffsetDragRef = null; // { index, startClientX, startClientY, startOffsetPx, perpX, perpY }
 
 function setProjectRulerMode(on) {
   projectRulerModeOn = !!on;
@@ -2319,6 +2332,8 @@ function setProjectRulerMode(on) {
   projectRulerHoverPoint = null;
   projectRulerHoverEdge = null;
   projectRulerDragRef = null;
+  projectRulerOffsetDragRef = null;
+  projectRulerSelectedIndex = null;
   const btn = document.getElementById('po-proj-ruler-btn');
   if (btn) btn.classList.toggle('active', projectRulerModeOn);
   const domEl = ViewerProjectEdit && ViewerProjectEdit.getDomElement && ViewerProjectEdit.getDomElement();
@@ -2330,7 +2345,107 @@ function clearProjectRulerMeasurements() {
   projectRulerMeasurements = [];
   projectRulerPendingPoint = null;
   projectRulerDragRef = null;
+  projectRulerOffsetDragRef = null;
+  projectRulerSelectedIndex = null;
   refreshProjectRulerOverlay();
+}
+
+// Apaga só a medição SELECIONADA (clicada na linha/rótulo, ver
+// findProjectRulerLineNear) — diferente do botão "Limpar cotas" acima, que
+// apaga todas de uma vez. Chamado pelo Delete/Backspace (ver o
+// addEventListener('keydown') no fim deste bloco).
+function deleteSelectedProjectRulerMeasurement() {
+  if (projectRulerSelectedIndex == null || !projectRulerMeasurements[projectRulerSelectedIndex]) return;
+  projectRulerMeasurements.splice(projectRulerSelectedIndex, 1);
+  projectRulerSelectedIndex = null;
+  refreshProjectRulerOverlay();
+}
+
+// Posição na TELA de uma medição JÁ FEITA, com o afastamento (offsetPx)
+// aplicado — usada tanto pra DESENHAR (tick, mais abaixo) quanto pra
+// TESTAR CLIQUE na linha/rótulo (findProjectRulerLineNear). As duas
+// precisam concordar exatamente, senão o "clicável" fica em lugar diferente
+// do "desenhado" — por isso é uma função só, chamada dos dois lados.
+// d1/d2 = onde a LINHA/rótulo aparecem (s1/s2 + afastamento perpendicular);
+// s1/s2 continuam sendo os PONTOS DE VERDADE (onde as bolinhas ficam).
+function computeRulerDimensionScreen(m) {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.worldToClient) return null;
+  const s1 = ViewerProjectEdit.worldToClient(m.p1);
+  const s2 = ViewerProjectEdit.worldToClient(m.p2);
+  if (!s1 || !s2) return null;
+  const dx = s2.x - s1.x, dy = s2.y - s1.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const perpX = -dy / len, perpY = dx / len; // perpendicular unitário, na tela
+  const off = m.offsetPx || 0;
+  const d1 = { x: s1.x + perpX * off, y: s1.y + perpY * off };
+  const d2 = { x: s2.x + perpX * off, y: s2.y + perpY * off };
+  return { s1, s2, d1, d2, mid: { x: (d1.x + d2.x) / 2, y: (d1.y + d2.y) / 2 }, perpX, perpY };
+}
+
+// Achou o CLIQUE numa linha/rótulo de medição já feita? Testado DEPOIS de
+// findProjectRulerPointNear (pontas têm prioridade — são o alvo mais
+// preciso) e ANTES de criar um ponto novo. Distância ponto-segmento até a
+// linha (com o afastamento já aplicado — é o que está desenhado, é nele que
+// a pessoa está mirando), clampada nas pontas.
+const PROJECT_RULER_LINE_GRAB_PX = 12;
+function findProjectRulerLineNear(clientX, clientY) {
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  for (let i = 0; i < projectRulerMeasurements.length; i++) {
+    const m = projectRulerMeasurements[i];
+    const geo = computeRulerDimensionScreen(m);
+    if (!geo) continue;
+    const { d1, d2, mid } = geo;
+    const vx = d2.x - d1.x, vy = d2.y - d1.y;
+    const lenSq = vx * vx + vy * vy;
+    let t = lenSq > 1e-6 ? ((clientX - d1.x) * vx + (clientY - d1.y) * vy) / lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    const px = d1.x + vx * t, py = d1.y + vy * t;
+    const dist = Math.hypot(clientX - px, clientY - py);
+    if (dist <= PROJECT_RULER_LINE_GRAB_PX) return i;
+    // O RÓTULO (o número com fundo rosa) fica sentado ACIMA do meio da
+    // linha, não em cima dela — o teste de distância acima às vezes não
+    // alcança o topo da caixinha. Mesma conta de tamanho/posição do fundo
+    // desenhado no tick (mais abaixo), pra clicável e desenhado baterem
+    // exatamente.
+    const texto = formatDimensionNumber(m.p1.distanceTo(m.p2) * 1000, unit) + unitAbbrev(unit);
+    const largura = texto.length * 6.2 + 10;
+    if (clientX >= mid.x - largura / 2 && clientX <= mid.x + largura / 2
+        && clientY >= mid.y - 20 && clientY <= mid.y - 4) return i;
+  }
+  return null;
+}
+
+function beginProjectRulerOffsetDrag(index, clientX, clientY) {
+  const m = projectRulerMeasurements[index];
+  const geo = m && computeRulerDimensionScreen(m);
+  if (!geo) return;
+  projectRulerOffsetDragRef = {
+    index, startClientX: clientX, startClientY: clientY,
+    startOffsetPx: m.offsetPx || 0,
+    perpX: geo.perpX, perpY: geo.perpY
+  };
+  projectRulerSelectedIndex = index;
+  refreshProjectRulerOverlay();
+}
+
+// Chamado a cada pointermove (portal-08) enquanto projectRulerOffsetDragRef
+// existe. A direção perpendicular fica FIXA no valor do início do arraste
+// (não recalculada a cada frame) — projeta o quanto o mouse andou nessa
+// direção fixa, então um arraste reto na tela sempre desloca limpo, sem
+// desviar por causa de arredondamento de tela durante o gesto.
+function updateProjectRulerOffsetDrag(clientX, clientY) {
+  const ref = projectRulerOffsetDragRef;
+  if (!ref) return;
+  const m = projectRulerMeasurements[ref.index];
+  if (!m) { projectRulerOffsetDragRef = null; return; }
+  const dx = clientX - ref.startClientX, dy = clientY - ref.startClientY;
+  const delta = dx * ref.perpX + dy * ref.perpY;
+  m.offsetPx = ref.startOffsetPx + delta;
+  refreshProjectRulerOverlay();
+}
+
+function endProjectRulerOffsetDrag() {
+  projectRulerOffsetDragRef = null;
 }
 
 // Acha um ponto JÁ MARCADO (medição existente ou o pendente do 1º clique)
@@ -2363,6 +2478,11 @@ function beginProjectRulerPointDrag(ref) {
   projectRulerDragRef = ref;
   projectRulerHoverPoint = null; // some a prévia — o próprio ponto arrastado já mostra onde está
   projectRulerHoverEdge = null;
+  // Agarrar uma ponta também seleciona a medição dela (consistente com
+  // agarrar a linha, ver beginProjectRulerOffsetDrag) — dá pra ajustar o
+  // ponto e já apertar Delete se decidir refazer, sem precisar clicar de
+  // novo na linha só pra selecionar.
+  if (ref.kind === 'measurement') projectRulerSelectedIndex = ref.index;
   refreshProjectRulerOverlay();
 }
 
@@ -2415,13 +2535,17 @@ function clearProjectRulerHover() {
 // portal-08-projetos-paredes.js) quando projectRulerModeOn está ligado —
 // SUBSTITUI o clique normal de seleção/arraste enquanto durar.
 function handleProjectRulerClick(clientX, clientY) {
+  // Clicar pra criar ponto novo é uma ação DIFERENTE de mexer numa medição
+  // já feita — desmarca a seleção (Delete não deve mais apagar a de antes
+  // depois que a atenção já foi pra outro lugar).
+  projectRulerSelectedIndex = null;
   if (!ViewerProjectEdit || typeof ViewerProjectEdit.pickSurfacePointAt !== 'function') return;
   const hit = ViewerProjectEdit.pickSurfacePointAt(clientX, clientY);
   if (!hit || !hit.point) return;
   if (!projectRulerPendingPoint) {
     projectRulerPendingPoint = hit.point.clone();
   } else {
-    projectRulerMeasurements.push({ p1: projectRulerPendingPoint, p2: hit.point.clone() });
+    projectRulerMeasurements.push({ p1: projectRulerPendingPoint, p2: hit.point.clone(), offsetPx: 0 });
     projectRulerPendingPoint = null;
   }
   refreshProjectRulerOverlay();
@@ -2565,20 +2689,40 @@ function refreshProjectRulerOverlay() {
       c.setAttribute('fill', cor); c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', '1.5');
       svg.appendChild(c);
     };
-    projectRulerMeasurements.forEach((m) => {
-      const s1 = ViewerProjectEdit.worldToClient(m.p1);
-      const s2 = ViewerProjectEdit.worldToClient(m.p2);
-      if (!s1 || !s2) return;
+    projectRulerMeasurements.forEach((m, i) => {
+      const geo = computeRulerDimensionScreen(m);
+      if (!geo) return;
+      const { s1, s2, d1, d2, mid } = geo;
+      const selecionada = (i === projectRulerSelectedIndex);
+      // LINHAS DE CHAMADA (2026-09-07) — só aparecem quando a linha/rótulo
+      // foi afastada da aresta (offsetPx !== 0, ver updateProjectRulerOffsetDrag):
+      // um traço fino ligando o ponto DE VERDADE (s1/s2) até onde a cota
+      // está desenhada agora (d1/d2), pra deixar claro que ainda é a MESMA
+      // medição, só desenhada mais longe. Com offset 0, d1===s1/d2===s2 e
+      // isso vira uma linha de comprimento zero — nem precisa checar.
+      const chamada = (a, b) => {
+        const lc = document.createElementNS(NS, 'line');
+        lc.setAttribute('x1', a.x); lc.setAttribute('y1', a.y);
+        lc.setAttribute('x2', b.x); lc.setAttribute('y2', b.y);
+        lc.setAttribute('stroke', 'rgba(230,0,126,0.55)'); lc.setAttribute('stroke-width', '1');
+        svg.appendChild(lc);
+      };
+      chamada(s1, d1);
+      chamada(s2, d2);
+      // A LINHA DA COTA em si — mais grossa quando selecionada (clicável
+      // pra arrastar/selecionar, ver findProjectRulerLineNear em
+      // portal-08-projetos-paredes.js), pra confirmar visualmente que o
+      // Delete vai apagar ESTA.
       const line = document.createElementNS(NS, 'line');
-      line.setAttribute('x1', s1.x); line.setAttribute('y1', s1.y);
-      line.setAttribute('x2', s2.x); line.setAttribute('y2', s2.y);
-      line.setAttribute('stroke', '#e6007e'); line.setAttribute('stroke-width', '2');
+      line.setAttribute('x1', d1.x); line.setAttribute('y1', d1.y);
+      line.setAttribute('x2', d2.x); line.setAttribute('y2', d2.y);
+      line.setAttribute('stroke', '#e6007e'); line.setAttribute('stroke-width', selecionada ? '3.5' : '2');
       line.setAttribute('stroke-dasharray', '5 3');
       svg.appendChild(line);
       desenhaPonto(m.p1, '#e6007e');
       desenhaPonto(m.p2, '#e6007e');
       const distM = m.p1.distanceTo(m.p2);
-      const mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
+      const mx = mid.x, my = mid.y;
       const texto = document.createElementNS(NS, 'text');
       texto.setAttribute('x', mx); texto.setAttribute('y', my - 8);
       texto.setAttribute('text-anchor', 'middle');
@@ -2587,11 +2731,14 @@ function refreshProjectRulerOverlay() {
       texto.textContent = formatDimensionNumber(distM * 1000, unit) + unitAbbrev(unit);
       // Fundo atrás do texto (SVG não tem "background" de texto nativo) —
       // um <rect> do tamanho aproximado do texto, mesma cor da linha.
+      // Selecionada ganha um contorno branco fino, mesma ideia de "isto vai
+      // ser apagado se apertar Delete".
       const largura = texto.textContent.length * 6.2 + 10;
       const fundo = document.createElementNS(NS, 'rect');
       fundo.setAttribute('x', mx - largura / 2); fundo.setAttribute('y', my - 20);
       fundo.setAttribute('width', largura); fundo.setAttribute('height', 16);
       fundo.setAttribute('rx', 4); fundo.setAttribute('fill', '#e6007e');
+      if (selecionada) { fundo.setAttribute('stroke', '#fff'); fundo.setAttribute('stroke-width', '1.5'); }
       svg.appendChild(fundo);
       svg.appendChild(texto);
     });
@@ -2600,6 +2747,23 @@ function refreshProjectRulerOverlay() {
   };
   if (!projectRulerRafId) projectRulerRafId = requestAnimationFrame(tick);
 }
+
+// EXCLUIR MEDIÇÃO SELECIONADA COM DELETE/BACKSPACE (2026-09-07) — Matt:
+// "quero tambem poder clicar na medida gerada e deletar com botao delete".
+// Clicar na LINHA/rótulo de uma medição seleciona ela (ver
+// beginProjectRulerOffsetDrag/beginProjectRulerPointDrag acima); Delete
+// aqui apaga só ESSA — diferente do botão "Limpar cotas", que apaga todas.
+// Só age com a régua LIGADA e algo selecionado, e nunca rouba o
+// Delete/Backspace de quem está digitando num campo — mesma guarda que o
+// desfazer/refazer (Ctrl+Z) já usa em portal-06b-projetos-canvas-ia-custo.js.
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+  if (!projectRulerModeOn || projectRulerSelectedIndex == null) return;
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+  ev.preventDefault();
+  deleteSelectedProjectRulerMeasurement();
+});
 
 const projSlotDuplicateBtn = document.getElementById('po-proj-slot-duplicate-btn');
 if (projSlotDuplicateBtn) {

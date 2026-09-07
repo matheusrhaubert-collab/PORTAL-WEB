@@ -35,7 +35,8 @@ window.LEGNO_CHANGELOG = [
       'Corrigido a exportação para o SketchUp: textura que ainda estivesse carregando no momento do export não sai mais como "imagem não encontrada" no material.',
       'Novo: ferramenta de Régua na categoria Ferramentas — clique em 2 pontos do desenho pra ver a distância entre eles. O ponto desliza acompanhando o mouse ao longo da aresta (não pula mais pro canto mais próximo), com ímã só perto das pontas e do meio da aresta, uma linha guia mostrando o alinhamento, dá pra arrastar um ponto já marcado pra ajustar, e um botão "Limpar cotas" pra apagar as medições.',
       'Novo: botão "Print" na categoria Render — tira uma foto da vista atual (portas, móveis ocultos e estilo de traço exatamente como estão na tela) e guarda direto na galeria de fotos realistas.',
-      'Câmera do visualizador de projeto agora gira quase até ficar totalmente de frente/paralela a uma parede, sem parar sempre um pouco de cima.'
+      'Câmera do visualizador de projeto agora gira quase até ficar totalmente de frente/paralela a uma parede, sem parar sempre um pouco de cima.',
+      'Régua: agora dá pra clicar na linha da medição e arrastar pra afastar o traço/número da peça (sem mudar os pontos medidos), e clicar numa medição e apertar Delete pra apagar só ela.'
     ]
   },
   {

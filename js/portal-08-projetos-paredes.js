@@ -336,6 +336,13 @@ function attachProject3DEditDrag() {
     // em vez de marcar mais um. setPointerCapture garante que o pointermove/
     // pointerup cheguem mesmo se o cursor sair do canvas no meio do arraste
     // (mesmo padrão já usado pro arraste de módulo, ver acima na função).
+    // ARRASTAR A LINHA/RÓTULO DE UMA MEDIÇÃO (2026-09-07, 3ª rodada) — Matt:
+    // "quero poder arrastar clicando na medida, para afstar da aresta" +
+    // "clicar na medida gerada e deletar com botao delete". Testado DEPOIS
+    // das PONTAS (mais preciso, tem prioridade) e ANTES de criar ponto novo:
+    // clicar na LINHA (não numa ponta) seleciona a medição — pro Delete
+    // funcionar (ver o keydown em portal-06c) — e, se arrastar, afasta só o
+    // traço/número da aresta, sem mexer nos pontos medidos de verdade.
     if (projectRulerModeOn) {
       ev.preventDefault();
       const pontoRegua = (typeof findProjectRulerPointNear === 'function')
@@ -344,6 +351,14 @@ function attachProject3DEditDrag() {
       if (pontoRegua) {
         try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
         beginProjectRulerPointDrag(pontoRegua);
+        return;
+      }
+      const linhaRegua = (typeof findProjectRulerLineNear === 'function')
+        ? findProjectRulerLineNear(ev.clientX, ev.clientY)
+        : null;
+      if (linhaRegua != null) {
+        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        beginProjectRulerOffsetDrag(linhaRegua, ev.clientX, ev.clientY);
       } else {
         handleProjectRulerClick(ev.clientX, ev.clientY);
       }
@@ -685,7 +700,9 @@ function attachProject3DEditDrag() {
     // Nunca chega no hover de módulo/setas logo abaixo — igual ao pointerdown,
     // que também sai fora ANTES de qualquer seleção/arraste normal.
     if (projectRulerModeOn) {
-      if (projectRulerDragRef) {
+      if (projectRulerOffsetDragRef) {
+        updateProjectRulerOffsetDrag(ev.clientX, ev.clientY);
+      } else if (projectRulerDragRef) {
         updateProjectRulerPointDrag(ev.clientX, ev.clientY);
       } else {
         handleProjectRulerHover(ev.clientX, ev.clientY);
@@ -1327,7 +1344,10 @@ function attachProject3DEditDrag() {
   // a prévia de hover. Ouvido no domEl (mesmo padrão de endDrag3D acima) e
   // também na window, porque um arraste com setPointerCapture pode soltar o
   // botão fora da área do canvas.
-  const endProjectRulerDragEvt = () => { if (projectRulerDragRef) endProjectRulerPointDrag(); };
+  const endProjectRulerDragEvt = () => {
+    if (projectRulerDragRef) endProjectRulerPointDrag();
+    if (projectRulerOffsetDragRef) endProjectRulerOffsetDrag();
+  };
   domEl.addEventListener('pointerup', endProjectRulerDragEvt);
   domEl.addEventListener('pointercancel', endProjectRulerDragEvt);
   window.addEventListener('pointerup', endProjectRulerDragEvt);
