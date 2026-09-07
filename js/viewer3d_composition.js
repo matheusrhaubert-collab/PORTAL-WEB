@@ -2482,12 +2482,35 @@ function createViewerComposition3D() {
   // a marca do meio e o guia perpendicular.
   const RULER_ENDPOINT_SNAP_M = 0.05; // 5cm — "só quando clicar em cima do ponto"
   const RULER_MIDPOINT_SNAP_M = 0.03; // 3cm — um pouco mais apertado que o de ponta
+  // THREE.Raycaster NÃO respeita object.visible (conferido na fonte da
+  // biblioteca — Raycaster.js não tem nenhum "if (!visible)"; visible só
+  // importa pro WebGLRenderer decidir o que DESENHAR, o raio atravessa peça
+  // invisível igual peça visível). Isso não incomodava em nenhum outro uso
+  // deste raycaster porque nada até agora escondia peça por peça — mas a
+  // camada "Ocultar" (applyProjectLayerVisibility, portal-08-projetos-
+  // paredes.js) põe .visible=false pra sumir com Porta/Frente e deixar ver
+  // os internos, e a régua continuava pegando ponto nessas peças "somem da
+  // tela mas o clique ainda acha". Matt, 2026-09-07: "podemos ao ocultar as
+  // frentes o sistema enxergar pra dentro do modulo? como se a partir da
+  // invisibilidade da camada as portas deixassem de existir" — sobe a
+  // cadeia de pais checando visible em cada nível (um grupo inteiro
+  // escondido, ex. Paredes/Decoração, também não pode ser achado só porque
+  // o filho técnico continua com visible=true).
+  function isEffectivelyVisible(obj) {
+    let o = obj;
+    while (o) {
+      if (o.visible === false) return false;
+      o = o.parent;
+    }
+    return true;
+  }
   function pickSurfacePointAt(clientX, clientY) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
     const rawHits = _raycaster.intersectObjects(currentGroups, true);
     const hit = rawHits.find((h) => h.object && h.object.isMesh
-      && !(h.object.userData && h.object.userData.isHitboxProxy));
+      && !(h.object.userData && h.object.userData.isHitboxProxy)
+      && isEffectivelyVisible(h.object));
     if (!hit) return null;
     const mesh = hit.object;
     const geometry = mesh.geometry;
