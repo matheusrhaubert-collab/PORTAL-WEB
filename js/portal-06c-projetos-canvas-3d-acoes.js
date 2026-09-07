@@ -2338,7 +2338,13 @@ function refreshProjectRulerOverlay() {
     svg.innerHTML = '';
     if (projectRulerRafId) { cancelAnimationFrame(projectRulerRafId); projectRulerRafId = null; }
   };
-  const semNada = !projectRulerMeasurements.length && !projectRulerPendingPoint;
+  // Mesmo com ZERO medições, se o MODO estiver ligado o overlay continua
+  // rodando só pra mostrar a dica "clique em 2 pontos" (ver dentro do tick
+  // abaixo) — sem isso, ligar a régua não muda NADA na tela até o primeiro
+  // clique, e foi exatamente esse silêncio que o Matt reportou como "clico
+  // no botão e não acontece nada" (2026-09-07). Sem medição E sem o modo
+  // ligado, aí sim não tem o que desenhar.
+  const semNada = !projectRulerMeasurements.length && !projectRulerPendingPoint && !projectRulerModeOn;
   if (semNada || !wrap3d || wrap3d.offsetParent === null
       || !ViewerProjectEdit || !ViewerProjectEdit.worldToClient) {
     stop();
@@ -2348,8 +2354,29 @@ function refreshProjectRulerOverlay() {
   const NS = 'http://www.w3.org/2000/svg';
   const tick = () => {
     projectRulerRafId = null;
-    if ((!projectRulerMeasurements.length && !projectRulerPendingPoint) || wrap3d.offsetParent === null) { stop(); return; }
+    if ((!projectRulerMeasurements.length && !projectRulerPendingPoint && !projectRulerModeOn) || wrap3d.offsetParent === null) { stop(); return; }
     svg.innerHTML = '';
+    // Dica "arme e clique" (2026-09-07) — só aparece com o modo ligado E
+    // nenhum ponto ainda marcado (não atrapalha depois que já tem medição
+    // na tela). Some sozinha assim que o 1º ponto é marcado.
+    if (projectRulerModeOn && !projectRulerPendingPoint && !projectRulerMeasurements.length) {
+      const rectDica = wrap3d.getBoundingClientRect();
+      const dicaTxt = document.createElementNS(NS, 'text');
+      dicaTxt.setAttribute('x', rectDica.left + rectDica.width / 2);
+      dicaTxt.setAttribute('y', rectDica.top + 22);
+      dicaTxt.setAttribute('text-anchor', 'middle');
+      dicaTxt.setAttribute('fill', '#fff');
+      dicaTxt.setAttribute('font-size', '12'); dicaTxt.setAttribute('font-weight', '700');
+      dicaTxt.textContent = 'Régua: clique em 2 pontos do desenho pra medir';
+      const largDica = dicaTxt.textContent.length * 6.4 + 16;
+      const fundoDica = document.createElementNS(NS, 'rect');
+      fundoDica.setAttribute('x', rectDica.left + rectDica.width / 2 - largDica / 2);
+      fundoDica.setAttribute('y', rectDica.top + 8);
+      fundoDica.setAttribute('width', largDica); fundoDica.setAttribute('height', 20);
+      fundoDica.setAttribute('rx', 5); fundoDica.setAttribute('fill', '#e6007e');
+      svg.appendChild(fundoDica);
+      svg.appendChild(dicaTxt);
+    }
     const desenhaPonto = (p, cor) => {
       const screen = ViewerProjectEdit.worldToClient(p);
       if (!screen) return;
