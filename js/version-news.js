@@ -45,11 +45,21 @@
       .replace(/"/g, '&quot;');
   }
 
+  function itemsForEntry(entry) {
+    // js/changelog.js agora guarda items como {pt, en, es} pra cada
+    // versao (2026-09-07) -- pega a lista no idioma da conta, cai pro
+    // pt se faltar traducao, e ainda aceita o formato antigo (array
+    // puro) por seguranca.
+    var lang = (typeof I18n !== 'undefined' && I18n.getLanguage && I18n.getLanguage()) || 'pt';
+    if (Array.isArray(entry.items)) return entry.items;
+    return (entry.items && (entry.items[lang] || entry.items.pt)) || [];
+  }
+
   function renderNewsList(changelog) {
     var list = document.getElementById('po-news-list');
     if (!list) return;
     list.innerHTML = changelog.map(function (entry) {
-      var itens = (entry.items || []).map(function (txt) {
+      var itens = itemsForEntry(entry).map(function (txt) {
         return '<li>' + escapeHtml(txt) + '</li>';
       }).join('');
       return '<div class="po-news-entry">'

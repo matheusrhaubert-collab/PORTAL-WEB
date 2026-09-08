@@ -2748,17 +2748,23 @@ function refreshProjectRulerOverlay() {
   if (!projectRulerRafId) projectRulerRafId = requestAnimationFrame(tick);
 }
 
-// EXCLUIR MEDIÇÃO SELECIONADA COM DELETE/BACKSPACE (2026-09-07) — Matt:
-// "quero tambem poder clicar na medida gerada e deletar com botao delete".
-// Clicar na LINHA/rótulo de uma medição seleciona ela (ver
-// beginProjectRulerOffsetDrag/beginProjectRulerPointDrag acima); Delete
-// aqui apaga só ESSA — diferente do botão "Limpar cotas", que apaga todas.
-// Só age com a régua LIGADA e algo selecionado, e nunca rouba o
-// Delete/Backspace de quem está digitando num campo — mesma guarda que o
-// desfazer/refazer (Ctrl+Z) já usa em portal-06b-projetos-canvas-ia-custo.js.
+// EXCLUIR MEDIÇÃO SELECIONADA COM DELETE/BACKSPACE (2026-09-07, 4ª rodada
+// — Matt: "coloquei a regua de 79 1/16 sem querer e quero deletar, nao
+// consigo selecionar ela e deletar"). Clicar na LINHA/rótulo de uma medição
+// seleciona ela (ver beginProjectRulerOffsetDrag/beginProjectRulerPointDrag
+// acima) — e isso agora funciona MESMO com a régua desligada (ver o
+// pointerdown em portal-08-projetos-paredes.js), porque a medição continua
+// desenhada na tela depois de desligar a ferramenta. Este listener não pode
+// mais exigir projectRulerModeOn por isso — se exigisse, dava pra
+// SELECIONAR uma medição com a régua desligada mas não dava pra apagar ela,
+// exatamente o travamento que o Matt relatou. Delete aqui apaga só a
+// selecionada — diferente do botão "Limpar cotas", que apaga todas. Nunca
+// rouba o Delete/Backspace de quem está digitando num campo — mesma guarda
+// que o desfazer/refazer (Ctrl+Z) já usa em
+// portal-06b-projetos-canvas-ia-custo.js.
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
-  if (!projectRulerModeOn || projectRulerSelectedIndex == null) return;
+  if (projectRulerSelectedIndex == null) return;
   const el = document.activeElement;
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
   ev.preventDefault();

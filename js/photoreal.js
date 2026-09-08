@@ -481,6 +481,9 @@ const Photoreal = (() => {
       binPlastic: new T.MeshStandardMaterial({ color: 0x2b2f33, metalness: 0.08, roughness: 0.55 }),
       cabinetFront: new T.MeshStandardMaterial({ color: 0xa9764f, metalness: 0.02, roughness: 0.55 }),
       cabinetCarc: new T.MeshStandardMaterial({ color: 0xcfc9bd, metalness: 0.02, roughness: 0.68 }),
+      // Azul imitando vidro (migration 154, porta/janela decorativas) — cópia
+      // fiel de js/viewer3d.js, FIXO no código (não segue a cor do cliente).
+      blueGlass: new T.MeshStandardMaterial({ color: 0x3f7fc4, metalness: 0.25, roughness: 0.08, transparent: true, opacity: 0.62 }),
     };
   }
 
@@ -940,6 +943,81 @@ const Photoreal = (() => {
     return g;
   }
 
+  // Porta e janela decorativas (migration 154) — cópia fiel dos builders de
+  // js/viewer3d.js (ver comentário lá), pra não sair diferente na foto
+  // realista. mats.main segue a cor do cliente (branco por padrão);
+  // mats.blueGlass (vidro azulado da janela) é FIXO, não editável.
+  function buildDecorPorta(W, H, D, mats) {
+    const g = new T.Group();
+    const slab = decorBoxMesh(W, H, D, mats.main);
+    slab.position.set(0, H / 2, 0);
+    g.add(slab);
+
+    const trimW = Math.min(0.035, W * 0.06);
+    const trimD = 0.008;
+    const panelInsetX = W * 0.12;
+    const panelW = Math.max(0.05, W - panelInsetX * 2);
+    const panelGap = H * 0.05;
+    const panelH = Math.max(0.05, (H - panelGap * 3) / 2);
+    for (let i = 0; i < 2; i++) {
+      const py = panelGap + panelH / 2 + i * (panelH + panelGap);
+      const pTop = decorBoxMesh(panelW, trimW, trimD, mats.detail);
+      pTop.position.set(0, py + panelH / 2 - trimW / 2, D / 2 + trimD / 2); g.add(pTop);
+      const pBottom = decorBoxMesh(panelW, trimW, trimD, mats.detail);
+      pBottom.position.set(0, py - panelH / 2 + trimW / 2, D / 2 + trimD / 2); g.add(pBottom);
+      const pLeft = decorBoxMesh(trimW, panelH, trimD, mats.detail);
+      pLeft.position.set(-panelW / 2 + trimW / 2, py, D / 2 + trimD / 2); g.add(pLeft);
+      const pRight = decorBoxMesh(trimW, panelH, trimD, mats.detail);
+      pRight.position.set(panelW / 2 - trimW / 2, py, D / 2 + trimD / 2); g.add(pRight);
+    }
+
+    const handle = decorBoxMesh(0.02, H * 0.28, 0.03, mats.chrome);
+    handle.position.set(W / 2 - 0.05, H * 0.5, D / 2 + 0.02);
+    g.add(handle);
+
+    return g;
+  }
+
+  function buildDecorJanela(W, H, D, mats) {
+    const g = new T.Group();
+    const frameT = Math.max(0.03, Math.min(0.06, W * 0.08, H * 0.08));
+    const mullionT = Math.max(0.02, Math.min(0.035, W * 0.045));
+    const glassD = Math.max(0.006, D * 0.3);
+
+    const top = decorBoxMesh(W, frameT, D, mats.main);
+    top.position.set(0, H - frameT / 2, 0); g.add(top);
+    const bottom = decorBoxMesh(W, frameT, D, mats.main);
+    bottom.position.set(0, frameT / 2, 0); g.add(bottom);
+    const innerH = Math.max(0.02, H - frameT * 2);
+    const left = decorBoxMesh(frameT, innerH, D, mats.main);
+    left.position.set(-W / 2 + frameT / 2, H / 2, 0); g.add(left);
+    const right = decorBoxMesh(frameT, innerH, D, mats.main);
+    right.position.set(W / 2 - frameT / 2, H / 2, 0); g.add(right);
+
+    const innerW = Math.max(0.02, W - frameT * 2);
+    const vMullion = decorBoxMesh(mullionT, innerH, D, mats.main);
+    vMullion.position.set(0, H / 2, 0); g.add(vMullion);
+    const hMullion = decorBoxMesh(innerW, mullionT, D, mats.main);
+    hMullion.position.set(0, H / 2, 0); g.add(hMullion);
+
+    const paneW = Math.max(0.01, (innerW - mullionT) / 2);
+    const paneH = Math.max(0.01, (innerH - mullionT) / 2);
+    const cx = mullionT / 2 + paneW / 2;
+    const cy = mullionT / 2 + paneH / 2;
+    [[-cx, cy], [cx, cy], [-cx, -cy], [cx, -cy]].forEach(([dx, dy]) => {
+      const pane = decorBoxMesh(paneW * 0.92, paneH * 0.92, glassD, mats.blueGlass);
+      pane.position.set(dx, H / 2 + dy, 0);
+      g.add(pane);
+    });
+
+    const sillW = W + frameT * 1.3, sillT = frameT * 0.5, sillD = D * 1.4;
+    const sill = decorBoxMesh(sillW, sillT, sillD, mats.main);
+    sill.position.set(0, sillT / 2, D / 2 - sillD / 2 + D * 0.1);
+    g.add(sill);
+
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
@@ -952,6 +1030,8 @@ const Photoreal = (() => {
     decor_coifa: buildDecorCoifa,
     decor_spice_rack: buildDecorSpiceRack,
     decor_lava_seca: buildDecorLavaSeca,
+    decor_porta: buildDecorPorta,
+    decor_janela: buildDecorJanela,
   };
 
   function placePieceInBox(part, parentGroup, W, H, D, index, count, bounds) {

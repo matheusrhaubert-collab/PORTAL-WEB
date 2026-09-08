@@ -1870,6 +1870,10 @@ const Viewer3D = (function () {
       binPlastic: new THREE.MeshStandardMaterial({ color: 0x2b2f33, metalness: 0.08, roughness: 0.55 }),
       cabinetFront: new THREE.MeshStandardMaterial({ color: 0xa9764f, metalness: 0.02, roughness: 0.55 }),
       cabinetCarc: new THREE.MeshStandardMaterial({ color: 0xcfc9bd, metalness: 0.02, roughness: 0.68 }),
+      // Azul imitando vidro (migration 154, porta/janela decorativas) — FIXO
+      // no código, não segue a cor escolhida pelo cliente (mesmo princípio
+      // de mats.glass/mats.chrome acima); usado só pelo vidro da Janela.
+      blueGlass: new THREE.MeshStandardMaterial({ color: 0x3f7fc4, metalness: 0.25, roughness: 0.08, transparent: true, opacity: 0.62 }),
     };
   }
 
@@ -2343,6 +2347,98 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // Porta e janela decorativas (migration 154) — pedido do usuário (08/09):
+  // "quero um porta e uma janela decorativa. porta branca e janela frame
+  // branco e interno pode usar um azul imitando vidro", cores editáveis.
+  // MESMO mecanismo dos demais itens decor: só mats.main segue a cor
+  // escolhida pelo cliente (papel "Decor — Principal", inclui "Decor
+  // Branco" — é o branco pedido, já disponível de fábrica); o vidro da
+  // janela usa mats.blueGlass, FIXO no código (não editável), pra imitar
+  // vidro azulado. Matt posiciona a peça no vão/parede que ele já modela —
+  // mesmo princípio da lixeira/cooktop/coifa (sem gabinete/parede em volta).
+  function buildDecorPorta(W, H, D, mats) {
+    const g = new THREE.Group();
+    const slab = decorBoxMesh(W, H, D, mats.main);
+    slab.position.set(0, H / 2, 0);
+    g.add(slab);
+
+    // Painéis em relevo — 2 painéis empilhados (moldura fina), estilo porta
+    // residencial clássica. mats.detail (cinza-escuro fixo) só marca a
+    // linha do baixo-relevo, igual ao uso em outros itens decor.
+    const trimW = Math.min(0.035, W * 0.06);
+    const trimD = 0.008;
+    const panelInsetX = W * 0.12;
+    const panelW = Math.max(0.05, W - panelInsetX * 2);
+    const panelGap = H * 0.05;
+    const panelH = Math.max(0.05, (H - panelGap * 3) / 2);
+    for (let i = 0; i < 2; i++) {
+      const py = panelGap + panelH / 2 + i * (panelH + panelGap);
+      const pTop = decorBoxMesh(panelW, trimW, trimD, mats.detail);
+      pTop.position.set(0, py + panelH / 2 - trimW / 2, D / 2 + trimD / 2); g.add(pTop);
+      const pBottom = decorBoxMesh(panelW, trimW, trimD, mats.detail);
+      pBottom.position.set(0, py - panelH / 2 + trimW / 2, D / 2 + trimD / 2); g.add(pBottom);
+      const pLeft = decorBoxMesh(trimW, panelH, trimD, mats.detail);
+      pLeft.position.set(-panelW / 2 + trimW / 2, py, D / 2 + trimD / 2); g.add(pLeft);
+      const pRight = decorBoxMesh(trimW, panelH, trimD, mats.detail);
+      pRight.position.set(panelW / 2 - trimW / 2, py, D / 2 + trimD / 2); g.add(pRight);
+    }
+
+    // Puxador — mesmo padrão de decorAddDoorWithGlass(handleSide='right').
+    const handle = decorBoxMesh(0.02, H * 0.28, 0.03, mats.chrome);
+    handle.position.set(W / 2 - 0.05, H * 0.5, D / 2 + 0.02);
+    g.add(handle);
+
+    return g;
+  }
+
+  function buildDecorJanela(W, H, D, mats) {
+    const g = new THREE.Group();
+    const frameT = Math.max(0.03, Math.min(0.06, W * 0.08, H * 0.08));
+    const mullionT = Math.max(0.02, Math.min(0.035, W * 0.045));
+    const glassD = Math.max(0.006, D * 0.3);
+
+    // Moldura externa (4 lados) — mats.main segue a cor do cliente (branco
+    // por padrão, pedido do usuário).
+    const top = decorBoxMesh(W, frameT, D, mats.main);
+    top.position.set(0, H - frameT / 2, 0); g.add(top);
+    const bottom = decorBoxMesh(W, frameT, D, mats.main);
+    bottom.position.set(0, frameT / 2, 0); g.add(bottom);
+    const innerH = Math.max(0.02, H - frameT * 2);
+    const left = decorBoxMesh(frameT, innerH, D, mats.main);
+    left.position.set(-W / 2 + frameT / 2, H / 2, 0); g.add(left);
+    const right = decorBoxMesh(frameT, innerH, D, mats.main);
+    right.position.set(W / 2 - frameT / 2, H / 2, 0); g.add(right);
+
+    // Travessas internas em cruz, dividindo em 4 vidros — mesma cor da
+    // moldura (branco).
+    const innerW = Math.max(0.02, W - frameT * 2);
+    const vMullion = decorBoxMesh(mullionT, innerH, D, mats.main);
+    vMullion.position.set(0, H / 2, 0); g.add(vMullion);
+    const hMullion = decorBoxMesh(innerW, mullionT, D, mats.main);
+    hMullion.position.set(0, H / 2, 0); g.add(hMullion);
+
+    // 4 vidros — azul imitando vidro (mats.blueGlass, FIXO, não segue a cor
+    // do cliente), levemente menores que a cavidade pra sobrar uma borda
+    // visível da travessa/moldura em volta.
+    const paneW = Math.max(0.01, (innerW - mullionT) / 2);
+    const paneH = Math.max(0.01, (innerH - mullionT) / 2);
+    const cx = mullionT / 2 + paneW / 2;
+    const cy = mullionT / 2 + paneH / 2;
+    [[-cx, cy], [cx, cy], [-cx, -cy], [cx, -cy]].forEach(([dx, dy]) => {
+      const pane = decorBoxMesh(paneW * 0.92, paneH * 0.92, glassD, mats.blueGlass);
+      pane.position.set(dx, H / 2 + dy, 0);
+      g.add(pane);
+    });
+
+    // Peitoril (sill) — leve saliência na base, mesma cor da moldura.
+    const sillW = W + frameT * 1.3, sillT = frameT * 0.5, sillD = D * 1.4;
+    const sill = decorBoxMesh(sillW, sillT, sillD, mats.main);
+    sill.position.set(0, sillT / 2, D / 2 - sillD / 2 + D * 0.1);
+    g.add(sill);
+
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
@@ -2355,6 +2451,8 @@ const Viewer3D = (function () {
     decor_coifa: buildDecorCoifa,
     decor_spice_rack: buildDecorSpiceRack,
     decor_lava_seca: buildDecorLavaSeca,
+    decor_porta: buildDecorPorta,
+    decor_janela: buildDecorJanela,
   };
 
   function placePieceInBox(part, W, H, D, index, count, bounds, emitRaw) {

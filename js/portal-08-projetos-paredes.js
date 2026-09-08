@@ -321,47 +321,48 @@ function attachProject3DEditDrag() {
     // então nada muda pro iPad.
     if (ev.button !== 0) return;
 
+    // AGARRAR UM PONTO OU A LINHA DE UMA MEDIÇÃO JÁ FEITA (2026-09-07,
+    // 4ª rodada) — Matt: "coloquei a regua de 79 1/16 sem querer e quero
+    // deletar, nao consigo selecionar ela e deletar". Antes isso só rodava
+    // com a régua LIGADA (projectRulerModeOn), mas a medição fica desenhada
+    // na tela mesmo depois de desligar a régua (é assim de propósito —
+    // "essa informacao fica no desenho") — então desligar a ferramenta
+    // deixava uma medição indesejada PRESA na tela, sem jeito de selecionar
+    // e apagar. Agora isso roda SEMPRE que existir alguma medição/ponto
+    // pendente, independente do modo — só CRIAR ponto novo (mais abaixo)
+    // continua exigindo a régua ligada.
+    if (projectRulerMeasurements.length || projectRulerPendingPoint) {
+      const pontoReguaExistente = (typeof findProjectRulerPointNear === 'function')
+        ? findProjectRulerPointNear(ev.clientX, ev.clientY)
+        : null;
+      if (pontoReguaExistente) {
+        ev.preventDefault();
+        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        beginProjectRulerPointDrag(pontoReguaExistente);
+        return;
+      }
+      const linhaReguaExistente = (typeof findProjectRulerLineNear === 'function')
+        ? findProjectRulerLineNear(ev.clientX, ev.clientY)
+        : null;
+      if (linhaReguaExistente != null) {
+        ev.preventDefault();
+        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        beginProjectRulerOffsetDrag(linhaReguaExistente, ev.clientX, ev.clientY);
+        return;
+      }
+    }
+
     // FERRAMENTA DE MEDIR — RÉGUA MANUAL (2026-09-07, novo recurso, Matt:
     // "quando clico eu clico nela, eu vou ate um ponto de intersecao das
     // arestas clico nesse ponto e procuro o proximo ponto"). Igual ao modo
     // câmera acima: enquanto ligado, o clique NUNCA seleciona/arrasta
     // módulo — só marca ponto de medição (ver handleProjectRulerClick,
-    // portal-06c-projetos-canvas-3d-acoes.js). Fica ANTES de qualquer outro
-    // ramo (Ctrl+clique, setas, giro, arraste).
-    //
-    // ARRASTAR PONTO JÁ MARCADO (2026-09-07, Matt: "quero poder segurar o
-    // ponto e arrastar se eu quiser tambem") — antes de criar um ponto novo,
-    // testa se o clique caiu EM CIMA de um ponto que já existe (medição
-    // pronta ou o pendente do 1º clique); se sim, vira arraste daquele ponto
-    // em vez de marcar mais um. setPointerCapture garante que o pointermove/
-    // pointerup cheguem mesmo se o cursor sair do canvas no meio do arraste
-    // (mesmo padrão já usado pro arraste de módulo, ver acima na função).
-    // ARRASTAR A LINHA/RÓTULO DE UMA MEDIÇÃO (2026-09-07, 3ª rodada) — Matt:
-    // "quero poder arrastar clicando na medida, para afstar da aresta" +
-    // "clicar na medida gerada e deletar com botao delete". Testado DEPOIS
-    // das PONTAS (mais preciso, tem prioridade) e ANTES de criar ponto novo:
-    // clicar na LINHA (não numa ponta) seleciona a medição — pro Delete
-    // funcionar (ver o keydown em portal-06c) — e, se arrastar, afasta só o
-    // traço/número da aresta, sem mexer nos pontos medidos de verdade.
+    // portal-06c-projetos-canvas-3d-acoes.js). CRIAR ponto novo continua
+    // exigindo o modo ligado (diferente do bloco acima, que já lidou com
+    // pontos/linhas de medições EXISTENTES antes de chegar aqui).
     if (projectRulerModeOn) {
       ev.preventDefault();
-      const pontoRegua = (typeof findProjectRulerPointNear === 'function')
-        ? findProjectRulerPointNear(ev.clientX, ev.clientY)
-        : null;
-      if (pontoRegua) {
-        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
-        beginProjectRulerPointDrag(pontoRegua);
-        return;
-      }
-      const linhaRegua = (typeof findProjectRulerLineNear === 'function')
-        ? findProjectRulerLineNear(ev.clientX, ev.clientY)
-        : null;
-      if (linhaRegua != null) {
-        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
-        beginProjectRulerOffsetDrag(linhaRegua, ev.clientX, ev.clientY);
-      } else {
-        handleProjectRulerClick(ev.clientX, ev.clientY);
-      }
+      handleProjectRulerClick(ev.clientX, ev.clientY);
       return;
     }
 
@@ -692,21 +693,28 @@ function attachProject3DEditDrag() {
   });
 
   domEl.addEventListener('pointermove', (ev) => {
-    // RÉGUA MANUAL (2026-09-07) — enquanto ligada, o pointermove é TODO dela:
-    // arrasta o ponto pego no pointerdown (ver findProjectRulerPointNear/
-    // beginProjectRulerPointDrag acima) ou, se nenhum ponto está sendo
-    // arrastado, só atualiza a prévia de hover (Matt: "ao ficar clicada regua
-    // nova, quero que ao passar o mouse quero ver o pontos pra clicar").
-    // Nunca chega no hover de módulo/setas logo abaixo — igual ao pointerdown,
-    // que também sai fora ANTES de qualquer seleção/arraste normal.
+    // RÉGUA MANUAL (2026-09-07, 4ª rodada) — um arraste de ponto/linha de
+    // medição JÁ EXISTENTE (ver o pointerdown acima) continua recebendo
+    // pointermove até soltar, MESMO com a régua desligada (é assim que o
+    // arraste pôde começar em primeiro lugar fora do modo — ver
+    // findProjectRulerPointNear/findProjectRulerLineNear no pointerdown).
+    // Testado ANTES do "if (projectRulerModeOn)" por isso — senão o arraste
+    // travava no meio do gesto se o modo estivesse desligado.
+    if (projectRulerOffsetDragRef) {
+      updateProjectRulerOffsetDrag(ev.clientX, ev.clientY);
+      return;
+    }
+    if (projectRulerDragRef) {
+      updateProjectRulerPointDrag(ev.clientX, ev.clientY);
+      return;
+    }
+    // Com a régua LIGADA e nenhum arraste rolando, o pointermove é todo da
+    // prévia de hover (Matt: "ao ficar clicada regua nova, quero que ao
+    // passar o mouse quero ver o pontos pra clicar"). Nunca chega no hover
+    // de módulo/setas logo abaixo — igual ao pointerdown, que também sai
+    // fora ANTES de qualquer seleção/arraste normal.
     if (projectRulerModeOn) {
-      if (projectRulerOffsetDragRef) {
-        updateProjectRulerOffsetDrag(ev.clientX, ev.clientY);
-      } else if (projectRulerDragRef) {
-        updateProjectRulerPointDrag(ev.clientX, ev.clientY);
-      } else {
-        handleProjectRulerHover(ev.clientX, ev.clientY);
-      }
+      handleProjectRulerHover(ev.clientX, ev.clientY);
       return;
     }
     if (projectMarqueeState && ev.pointerId === projectMarqueeState.pointerId) {
@@ -2546,6 +2554,19 @@ if (projTestArBtn) {
 // escolher "Metros" na mão (era o aviso que existia na 1ª versão em OBJ).
 const SKETCHUP_EXPORT_EXCLUDE_TAG = 'ar-export-exclude';
 
+// Liga/desliga o export em cor sólida em vez de textura (2026-09-08, Matt:
+// "por mais que exporte a textura eu nao sei carregar, entao penso em
+// colocar nao a textura mas sim uma cor generica so com as cordenadas mais
+// proxima da textura, seria possivel ? ai nao chegaria tudo preto pro
+// sketchup") — problema real do fluxo dele: SketchUp SÓ acha a imagem se o
+// .dae for aberto de dentro da pasta extraída do .zip (arquivo.jpg do lado
+// do modelo.dae); abrir só o .dae solto, ou de dentro do .zip ainda
+// fechado, dá exatamente o "tudo preto"/"não existe" que ele via antes.
+// Com isso ligado, buildSketchupCollada nem referencia imagem nenhuma — cada
+// material vira uma <color> sólida (ver sketchupTextureAverageColor logo
+// abaixo), então não tem arquivo pra perder o link nunca.
+let exportSketchupSolidColorOn = false;
+
 function sketchupSafeId(name, fallback) {
   let s = (name || '').toString().trim().replace(/[^\w.-]+/g, '_');
   if (!s || /^[0-9]/.test(s)) s = fallback + (s ? '_' + s : '');
@@ -2606,6 +2627,33 @@ function sketchupTextureToJpegBlob(texture) {
   });
 }
 
+// Reduz a textura inteira a 1 pixel (desenhando ela encolhida num canvas de
+// 1x1 com suavização ligada) pra pegar uma cor MÉDIA de verdade — não o
+// pixel do canto nem uma amostra qualquer. É síncrono (ao contrário do
+// sketchupTextureToJpegBlob acima, que usa canvas.toBlob assíncrono) porque
+// getImageData não precisa esperar nada além da imagem já estar carregada,
+// o que exportProjectToSketchUp já garante (waitForPendingTextures) antes
+// de chamar buildSketchupCollada.
+function sketchupTextureAverageColor(texture) {
+  try {
+    const img = texture.image;
+    const w = img && (img.width || img.naturalWidth);
+    const h = img && (img.height || img.naturalHeight);
+    if (!w || !h) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, 0, 0, w, h, 0, 0, 1, 1);
+    const px = ctx.getImageData(0, 0, 1, 1).data;
+    return { r: px[0] / 255, g: px[1] / 255, b: px[2] / 255 };
+  } catch (e) {
+    console.error('sketchupTextureAverageColor', e);
+    return null; // mesma ideia do catch acima: 1 textura falhar não derruba o export, só sobra a cor padrão do material (branco)
+  }
+}
+
 // Monta o .dae (texto XML) a partir da cena — devolve também um Map
 // Texture -> nome de arquivo, pra escrever as imagens depois (async, feito
 // à parte porque canvas.toBlob é assíncrono e essa função aqui não precisa
@@ -2653,7 +2701,8 @@ function sketchupTextureToJpegBlob(texture) {
 //      final (assembleSketchupDae) DEPOIS de tentar gerar cada textura de
 //      verdade, e tira a referência à imagem de qualquer material cuja
 //      conversão falhou (cai pra cor sólida em vez de apontar pra nada).
-function buildSketchupCollada(scene) {
+function buildSketchupCollada(scene, opts) {
+  const solidColorOnly = !!(opts && opts.solidColorOnly);
   const materialInfos = new Map(); // THREE.Material -> info (memoização por objeto — pode repetir a MESMA info pra materiais diferentes)
   const materialInfosBySignature = new Map(); // assinatura de APARÊNCIA (textura ou cor) -> info ÚNICA, é quem de fato vira 1 <material> no .dae
   const textureFiles = new Map(); // THREE.Texture -> nome do arquivo (dedup por TEXTURA — várias peças reusam a mesma imagem)
@@ -2691,7 +2740,13 @@ function buildSketchupCollada(scene) {
         nome: material.name || baseUnico,
         cor: material.color || { r: 1, g: 1, b: 1 },
       };
-      if (material.map && material.map.image) {
+      if (material.map && material.map.image && solidColorOnly) {
+        // Modo "Cor sólida" ligado (botão do toolbar) — nem tenta
+        // referenciar a imagem, então esse material sai como <color> sólida
+        // no assembleSketchupDae, igual peça sem textura nenhuma (mesmo
+        // caminho de baixo, sem info.imageId/info.arquivo).
+        info.cor = sketchupTextureAverageColor(material.map) || material.color || { r: 1, g: 1, b: 1 };
+      } else if (material.map && material.map.image) {
         let arquivo = textureFiles.get(material.map);
         if (!arquivo) { arquivo = 'textura_' + (textureFiles.size + 1) + '.jpg'; textureFiles.set(material.map, arquivo); }
         info.imageId = 'Image_' + baseUnico;
@@ -2910,7 +2965,7 @@ async function exportProjectToSketchUp() {
       await Viewer3D.waitForPendingTextures();
     }
 
-    const built = buildSketchupCollada(scene);
+    const built = buildSketchupCollada(scene, { solidColorOnly: exportSketchupSolidColorOn });
     if (!built.faces) {
       setStatus(I18n.t('export_sketchup.empty'), true);
       return;
@@ -2961,6 +3016,13 @@ async function exportProjectToSketchUp() {
 const projExportSketchupBtn = document.getElementById('po-proj-export-sketchup-btn');
 if (projExportSketchupBtn) {
   projExportSketchupBtn.addEventListener('click', exportProjectToSketchUp);
+}
+const projExportSketchupSolidColorBtn = document.getElementById('po-proj-export-sketchup-solidcolor-btn');
+if (projExportSketchupSolidColorBtn) {
+  projExportSketchupSolidColorBtn.addEventListener('click', () => {
+    exportSketchupSolidColorOn = !exportSketchupSolidColorOn;
+    projExportSketchupSolidColorBtn.classList.toggle('active', exportSketchupSolidColorOn);
+  });
 }
 
 // Botão "Visualizar 3D" — só dispara generateProject3D() + rola até o
