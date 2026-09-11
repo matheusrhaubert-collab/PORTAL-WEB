@@ -416,8 +416,26 @@ function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm
   const rangeUpM = Math.max(0, g.height - extentUpM);
   const sr = clamp(Number(slideRightM) || 0, 0, rangeRightM);
   const su = clamp(Number(slideUpM) || 0, 0, rangeUpM);
-  const childX = corner.x + Uc.x * hwc + Nc.x * hdc + g.right.x * sr + g.up.x * su;
-  const childZ = corner.z + Uc.z * hwc + Nc.z * hdc + g.right.z * sr + g.up.z * su;
+  // BUG achado 2026-09-11 (relato do Matt: peça "vazando" pro lado errado
+  // dentro da face amarela, "nao respeita limite das pecas") — nas faces
+  // VERTICAIS, Uc (eixo local +X do filho, já girado pra ficar de frente pra
+  // face) é PARALELO a g.right em 'pz'/'nx', mas ANTI-PARALELO em 'nz'/'px'
+  // (mesmo módulo, únicas 2 faces onde a fórmula do giro (atan2) escolhe o
+  // sentido oposto ao de g.right — conferido numericamente, não é intuição).
+  // Resultado prático: nessas 2 faces, o filho SEMPRE nascia ultrapassando o
+  // canto de referência por 1 largura inteira (metade "pra fora" do lado de
+  // trás), e o deslize nunca alcançava a borda oposta de verdade — o range
+  // clampado (0..rangeRightM) não correspondia ao range REAL da geometria
+  // desenhada. Corrigido usando g.right (nunca Uc) pra empurrar a largura nas
+  // 4 faces verticais — ali rotationOffsetDeg é sempre 0 (não gira, ver
+  // comentário grande acima), então Uc é sempre fixo por face e não muda o
+  // giro/renderização, só a base do deslize. Nas 2 faces HORIZONTAIS (py/ny)
+  // mantém Uc mesmo (giro real ali, RODADA 4) — lá Uc==g.right quando
+  // rotationOffsetDeg=0 (testado) e o pivô ao redor do canto quando gira é
+  // comportamento intencional, já testado em test_face_rotation_offset.js.
+  const widthAxis = isHorizontal ? Uc : g.right;
+  const childX = corner.x + widthAxis.x * hwc + Nc.x * hdc + g.right.x * sr + g.up.x * su;
+  const childZ = corner.z + widthAxis.z * hwc + Nc.z * hdc + g.right.z * sr + g.up.z * su;
   const childY = corner.y - (faceKey === 'ny' ? HC : 0) + g.right.y * sr + g.up.y * su;
   return {
     xMm: childX * 1000,
