@@ -2912,6 +2912,31 @@ header.po-topnav {
 .po-proj-group-toolbar-btn:hover { background: #f4f2ed; }
 .po-proj-group-toolbar-btn-danger { color: #b0503c; border-color: #e2b6ab; }
 .po-proj-group-toolbar-btn-danger:hover { background: #f7e4e0; }
+
+/* REPOSICIONAR (2026-09-11, RODADA 3 — botão direito arrastando de um
+   módulo pra outro, ver openProjectReposicionarModal em portal-08-projetos-
+   paredes.js) — painel fixo à direita da cena 3D, NUNCA um overlay escuro
+   cobrindo tudo: a própria Vista de Canto atrás dele já é a prévia ao vivo
+   (o módulo se move de verdade enquanto os campos são editados), então
+   tapar a cena tiraria exatamente a vantagem do gesto. */
+.po-proj-reposicionar-panel {
+  position: fixed; z-index: 65; top: 50%; right: 24px; transform: translateY(-50%);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; width: 240px; max-width: calc(100vw - 48px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.22); font-size: 12.5px;
+}
+.po-proj-reposicionar-panel h4 { margin: 0 0 10px; font-size: 13.5px; }
+.po-proj-reposicionar-panel .po-proj-position-field { margin-bottom: 8px; }
+.po-proj-reposicionar-panel .po-proj-position-field input { width: 72px; }
+.po-proj-reposicionar-step-row { display: flex; align-items: center; gap: 6px; margin: 10px 0 12px; }
+.po-proj-reposicionar-step-row input { width: 52px; padding: 3px 4px; font-size: 12px; text-align: right; margin-top: 0; }
+.po-proj-reposicionar-nudge {
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+  color: #4a4740; font-size: 12px; width: 22px; height: 22px; line-height: 1; cursor: pointer;
+}
+.po-proj-reposicionar-nudge:hover { background: #f4f2ed; }
+.po-proj-reposicionar-panel .hint { margin: 6px 0 10px; font-size: 11px; }
+.po-proj-reposicionar-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 /* BOLINHAS (2026-08-08, pedido do usuário: "troca os quadrados de duplicar e
    excluir por bolinhas, fica uma area menor"). O círculo ocupa ~78% da área de
    um quadrado do mesmo lado, e o diâmetro caiu de 34 pra 28px — no total,
