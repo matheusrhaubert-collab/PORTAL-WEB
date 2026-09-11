@@ -81,6 +81,24 @@ function moveProjectWallSegmentEndpoint(wallIndex, isBEnd, newXMm, newZMm) {
 // pra esticar módulo (handleProject3DResizeMove) — só que aqui o plano é
 // ancorado na ponta OPOSTA da PAREDE (fixa durante todo o gesto, capturada
 // no pointerdown), não num módulo.
+// Pura e testável isoladamente (ver teste sintético do projeto) — dado o
+// comprimento ATUAL da parede (oldLenMm), os módulos já colocados nela
+// (cada um só precisa de x_mm/width_mm) e qual ponta está sendo arrastada,
+// devolve o comprimento MÍNIMO que a parede pode ter sem "atravessar"
+// nenhum deles (ver comentário grande em handleProjectWallResize3DMove).
+// minAbsMm = o piso de sempre (PROJECT_WALL_WIDTH_MIN_MM), usado quando não
+// há módulo nenhum nesta parede.
+function computeProjectWallMinLenMm(oldLenMm, modulos, isRightEnd, minAbsMm) {
+  let minLenMm = minAbsMm;
+  (modulos || []).forEach((s) => {
+    const xMm = Number(s.x_mm || 0);
+    const wMm = Number(s.width_mm || 0);
+    const limite = isRightEnd ? (xMm + wMm) : (oldLenMm - xMm);
+    if (limite > minLenMm) minLenMm = limite;
+  });
+  return minLenMm;
+}
+
 function handleProjectWallResize3DMove(ev) {
   const state = projectWallResize3DState;
   const hitPoint = ViewerProjectEdit.intersectPlaneAtClient(
@@ -90,17 +108,62 @@ function handleProjectWallResize3DMove(ev) {
   );
   if (!hitPoint) return;
   const rawLenM = (hitPoint.x - state.anchorXM) * state.dirXM + (hitPoint.z - state.anchorZM) * state.dirZM;
-  const newLenMm = clamp(rawLenM * 1000, PROJECT_WALL_WIDTH_MIN_MM, PROJECT_WALL_WIDTH_MAX_MM);
-  const newXMm = state.anchorXM * 1000 + state.dirXM * newLenMm;
-  const newZMm = state.anchorZM * 1000 + state.dirZM * newLenMm;
+  let newLenMm = clamp(rawLenM * 1000, PROJECT_WALL_WIDTH_MIN_MM, PROJECT_WALL_WIDTH_MAX_MM);
 
   if (projectWallSegments.length) {
+    // OS MÓDULOS NÃO PODEM SE MEXER (2026-09-11) — Matt: "QUANDO reduzo uma
+    // parede os moveis nao podem mexer, posso limitar a reduzir ate pegar
+    // no primeiro objeto na parede, mas nao posso fazer com que os moveis
+    // se mexam ao reduzir uma parede, ou aumentar tambem."
+    //
+    // Dois problemas diferentes, corrigidos juntos aqui:
+    //
+    // (1) ENCOLHER NÃO PODE "ATRAVESSAR" MÓDULO NENHUM. Antes, nada
+    // impedia a parede de ficar mais curta que a posição de um módulo já
+    // colocado nela — o módulo ficava pendurado fora da parede (ou
+    // clampProjectSlotPosition, no topo de renderProjectCanvas, empurrava
+    // ele de volta pra dentro — exatamente o "os moveis se mexem" que o
+    // Matt não quer). Fix: acha, entre os módulos desta parede, a distância
+    // mínima que a parede PRECISA ter (a partir da ponta que está sendo
+    // arrastada) pra nenhum módulo ficar de fora, e usa isso como piso
+    // adicional do clamp — a parede simplesmente para de encolher ao
+    // "encostar" no primeiro módulo, do jeito que o Matt pediu.
+    //
+    // (2) ARRASTAR A PONTA ESQUERDA (isRightEnd=false) MOVE A ORIGEM DA
+    // PAREDE (originX/originZ = seg.ax/az, ver projectWallSegmentGeometry)
+    // — e todo módulo desta parede é posicionado por
+    // origin + alongDir*(x_mm+largura/2) (renderFreeformWalls,
+    // viewer3d_composition.js). Mover a origem sem tocar em x_mm desloca
+    // TODO módulo da parede pelo mesmo tanto que a origem andou — mesmo com
+    // x_mm intocado, a posição no MUNDO muda, e é isso que o Matt via como
+    // "o móvel se mexeu" (só a ponta DIREITA, que não move a origem, já
+    // era inofensiva). Fix: quando é a ponta esquerda, compensa x_mm de
+    // cada módulo pelo MESMO delta de comprimento da parede
+    // (deltaLenMm = newLenMm - oldLenMm) — a distância da origem NOVA até o
+    // módulo cresce/encolhe exatamente o que a origem andou, cancelando o
+    // deslocamento e mantendo o módulo no mesmo lugar do mundo real,
+    // encolhendo OU crescendo (funciona pros dois, é só o sinal do delta
+    // que muda).
+    const wallGeoAtual = getProjectWallGeometry().find((w) => w.wallIndex === state.wallIndex);
+    const oldLenMm = wallGeoAtual ? wallGeoAtual.widthM * 1000 : 0;
+    const modulosDaParede = projectSlotsOnWall(state.wallIndex);
+    const minLenMm = computeProjectWallMinLenMm(oldLenMm, modulosDaParede, state.isRightEnd, PROJECT_WALL_WIDTH_MIN_MM);
+    if (newLenMm < minLenMm) newLenMm = Math.min(minLenMm, PROJECT_WALL_WIDTH_MAX_MM);
+
+    const newXMm = state.anchorXM * 1000 + state.dirXM * newLenMm;
+    const newZMm = state.anchorZM * 1000 + state.dirZM * newLenMm;
     moveProjectWallSegmentEndpoint(state.wallIndex, state.isRightEnd, newXMm, newZMm);
+    if (!state.isRightEnd) {
+      const deltaLenMm = newLenMm - oldLenMm;
+      modulosDaParede.forEach((s) => { s.x_mm = Number(s.x_mm || 0) + deltaLenMm; });
+    }
     persistProjectWallConfig();
     renderProjectCanvas();
   } else {
     // Forma legada (single/double/CU, sem planta desenhada) — mesma função
-    // que a barra numérica e o handle 2D já usam (setProjectWallWidthMm).
+    // que a barra numérica e o handle 2D já usam (setProjectWallWidthMm),
+    // que já tem sua PRÓPRIA compensação de módulo (shiftModulesFromLeft) —
+    // não duplicada aqui.
     setProjectWallWidthMm(newLenMm, !state.isRightEnd, state.wallIndex);
   }
   refreshProjectWallWidthInput();
