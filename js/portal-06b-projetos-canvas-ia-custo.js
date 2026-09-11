@@ -1119,9 +1119,49 @@ function slotsOverlap3D(boxA, boxB, epsMm) {
   return obbOverlapXZ(boxA, boxB, eps);
 }
 
-// TODOS os outros módulos do projeto (parede, qualquer parede, ou ilha),
-// convertidos pra caixa 3D em mundo — é isso que permite comparar módulos
-// de referenciais diferentes.
+// Caixas 3D das PAREDES em si (perímetro OU "parede solta" no meio do
+// ambiente, ver editor_paredes_desconectar_e_parede_solta) — mesmo formato
+// de projectSlotWorldBox3D, pra entrar na mesma lista de obstáculos de
+// colisão. BUG relatado pelo Matt (11/09): "modulos no chao atravessam
+// paredes que estao no meio do chao, tipo divisorias. nenhuma parede deve
+// ser atravessada uma vez que o colisor esteja habilitado" — a lista de
+// obstáculos só tinha OUTROS MÓDULOS (ver função seguinte), nunca as
+// paredes propriamente ditas (que vivem em projectWallSegments/
+// getProjectWallGeometry, não em projectSlots) — por isso uma parede solta
+// no meio do ambiente nunca barrava nada, só outro móvel barrava.
+//
+// Direção da espessura: o traço desenhado (originX/Z + alongDir) é a face
+// ÚTIL (a que dá pro ambiente) — a parede cresce PRA TRÁS dela, no sentido
+// CONTRÁRIO a intoDir (mesma convenção de makeWallSurface, viewer3d_
+// composition.js: "um bloco de WALL_THICKNESS_M crescendo PRA TRÁS da face
+// útil"). Por isso o centro da caixa recua intoDir*(espessura/2), não avança.
+//
+// `excludeWallIndex`: deixa de fora a parede em que o PRÓPRIO módulo está
+// encostado — só faz sentido pra módulo de PAREDE (ele sempre "toca" a
+// própria parede por definição; isso não é colisão). Módulo de chão/ilha
+// não exclui nenhuma — pode esbarrar em qualquer parede, inclusive a solta.
+function projectWallSegmentWorldBoxes(excludeWallIndex) {
+  const ceilingMmPadrao = (roomSettings && roomSettings.ceiling_mm) || 2600;
+  return (getProjectWallGeometry() || [])
+    .filter((w) => excludeWallIndex == null || w.wallIndex !== excludeWallIndex)
+    .map((w) => {
+      const thicknessMm = Number(w.thicknessMm) || PROJECT_WALL_THICKNESS_MM;
+      const widthMm = w.widthM * 1000;
+      return {
+        cx: w.originX * 1000 + w.alongDirX * (widthMm / 2) - w.intoDirX * (thicknessMm / 2),
+        cz: w.originZ * 1000 + w.alongDirZ * (widthMm / 2) - w.intoDirZ * (thicknessMm / 2),
+        angleRad: Math.atan2(w.alongDirZ, w.alongDirX),
+        halfAlongMm: widthMm / 2,
+        halfIntoMm: thicknessMm / 2,
+        yMin: 0, yMax: Number(w.ceilingMm) || ceilingMmPadrao
+      };
+    });
+}
+
+// TODOS os outros módulos do projeto (parede, qualquer parede, ou ilha) MAIS
+// as próprias paredes (2026-09-11, ver projectWallSegmentWorldBoxes acima),
+// convertidos pra caixa 3D em mundo — é isso que permite comparar módulos de
+// referenciais diferentes.
 function projectAllOtherSlotWorldBoxes(slot) {
   const boxes = [];
   (projectSlots || []).forEach((s) => {
@@ -1129,6 +1169,8 @@ function projectAllOtherSlotWorldBoxes(slot) {
     const b = projectSlotWorldBox3D(s);
     if (b) boxes.push(b);
   });
+  const excludeWallIndex = isFloorSlot(slot) ? null : Number(slot.wall_index || 0);
+  boxes.push(...projectWallSegmentWorldBoxes(excludeWallIndex));
   return boxes;
 }
 
@@ -1136,16 +1178,41 @@ function projectAllOtherSlotWorldBoxes(slot) {
 // módulo (boxAtT(t)) ainda não colide com nenhum obstáculo — busca binária,
 // não assume nada sobre o ângulo/plano do obstáculo. `obstacles` já vem
 // filtrada por quem chama (exclui quem já atravessava a posição prev).
+//
+// BUG achado 2026-09-11 (relato do Matt: "modulos no chao atravessam
+// paredes... nenhuma parede deve ser atravessada uma vez que o colisor
+// esteja habilitado") — o atalho antigo ("se o ponto FINAL está livre, o
+// caminho inteiro está livre", 1ª linha depois do `if (!obstacles.length)`)
+// quebra bem fácil: quando o módulo fica PRESO encostado num obstáculo fino
+// (parede solta no meio do ambiente, ver projectWallSegmentWorldBoxes) mas o
+// MOUSE continua andando (o ponteiro não tem limite nenhum, só o módulo
+// fica travado), o próximo pointermove pede um salto grande — de "encostado
+// na parede" pra "bem do outro lado dela". O ponto final desse salto já
+// está livre (passou por cima do obstáculo), então o atalho antigo dizia
+// "caminho livre" sem checar NADA no meio — o módulo teleportava pro outro
+// lado da parede num quadro só. Trocado por uma VARREDURA GROSSA (N
+// amostras ao longo do caminho) que acha o PRIMEIRO trecho realmente
+// bloqueado antes de afinar com busca binária só ali dentro — barato (no
+// máximo N + 24 testes de caixa por eixo, por quadro) e pega qualquer
+// obstáculo fino no meio do caminho, não só o que sobra bem no ponto final.
 function maxClearParamAlongPath(boxAtT, obstacles, epsMm) {
   if (!obstacles.length) return 1;
-  if (!obstacles.some((o) => slotsOverlap3D(boxAtT(1), o, epsMm))) return 1;
   if (obstacles.some((o) => slotsOverlap3D(boxAtT(0), o, epsMm))) return 1; // prev já colide: não é obstáculo válido, não trava
-  let lo = 0, hi = 1;
-  for (let i = 0; i < 24; i++) {
-    const mid = (lo + hi) / 2;
-    if (obstacles.some((o) => slotsOverlap3D(boxAtT(mid), o, epsMm))) hi = mid; else lo = mid;
+  const N = 64;
+  let loSample = 0;
+  for (let i = 1; i <= N; i++) {
+    const t = i / N;
+    if (obstacles.some((o) => slotsOverlap3D(boxAtT(t), o, epsMm))) {
+      let lo = loSample, hi = t;
+      for (let j = 0; j < 24; j++) {
+        const mid = (lo + hi) / 2;
+        if (obstacles.some((o) => slotsOverlap3D(boxAtT(mid), o, epsMm))) hi = mid; else lo = mid;
+      }
+      return lo;
+    }
+    loSample = t;
   }
-  return lo;
+  return 1; // nenhuma amostra bateu em nada: caminho livre de verdade, não só o ponto final
 }
 
 // Colisão de um módulo de PAREDE: dois passes (X ao longo da parede, depois
