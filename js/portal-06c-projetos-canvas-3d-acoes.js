@@ -1685,6 +1685,12 @@ function refreshProject3DHighlight() {
     ? ViewerProjectEdit.findGroupBySlotId(selectedProjectSlotId)
     : null;
   ViewerProjectEdit.setHoverHighlight(g || null);
+  // Face conectada em amarelo (2026-09-11, portal-08-projetos-paredes.js) —
+  // mesmo gatilho do contorno vermelho acima: toda seleção/deseleção/
+  // re-render passa por aqui. typeof-guard pro caso raro de ordem de
+  // carregamento (portal-08 carrega DEPOIS deste arquivo, mas na prática só
+  // roda por evento, com tudo já carregado).
+  if (typeof refreshProjectConnectedFaceHighlight === 'function') refreshProjectConnectedFaceHighlight();
 }
 
 // Contorno de TODOS os módulos da seleção múltipla (Ctrl+clique ou grupo

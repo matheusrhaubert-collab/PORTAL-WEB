@@ -1203,13 +1203,20 @@ function attachProject3DEditDrag() {
   // selectProjectSlot); com menos de 2, deixa o menu do sistema operacional
   // aparecer normal (não atrapalha quem só quer inspecionar a página).
   domEl.addEventListener('contextmenu', (ev) => {
-    // CONECTAR FACE (2026-09-11, ver o pointerdown de botão direito logo
-    // abaixo): enquanto um módulo está sendo segurado pelo botão esquerdo,
-    // o botão direito virou "escolher parede/piso/módulo alvo" — nunca deve
-    // abrir o menu de grupo nem o menu do sistema operacional nesse instante.
-    // Fora de um arraste, este handler continua 100% como antes.
-    console.log('[legno conectarFace] contextmenu disparou', { temArraste: !!projectDrag3DState });
-    if (projectDrag3DState) { ev.preventDefault(); return; }
+    // CONECTAR FACE (2026-09-11) — enquanto um módulo está sendo segurado
+    // pelo botão esquerdo, o botão direito virou "escolher parede/piso alvo"
+    // (ver tentarConectarSlotArrastadoNaFace, definida mais abaixo nesta
+    // função). A conexão acontece AQUI, no 'contextmenu', e não num
+    // pointerdown de botão direito: log ao vivo (2026-09-11, touchpad do
+    // Matt) mostrou que o toque de 2 dedos do touchpad do Windows NUNCA gera
+    // um pointerdown com button===2 — só dispara este 'contextmenu' mesmo.
+    // Fora de um arraste, este handler continua 100% como antes (menu de
+    // grupo com 2+ selecionados, ou o menu do sistema operacional).
+    if (projectDrag3DState) {
+      ev.preventDefault();
+      tentarConectarSlotArrastadoNaFace(ev.clientX, ev.clientY);
+      return;
+    }
     if (projectMultiSelectIds.size < 2) return;
     ev.preventDefault();
     if (typeof openProjectGroupToolbarAt === 'function') openProjectGroupToolbarAt(ev.clientX, ev.clientY);
@@ -1251,21 +1258,17 @@ function attachProject3DEditDrag() {
   // "grudado na face de tal outro móvel" que ainda não existe no modelo de
   // dados (só existe wall_index e floor_x_mm/floor_z_mm hoje).
   //
-  // Fase de CAPTURA (mesmo motivo do inicioGesto3D acima, comprovado nesta
-  // mesma função): precisa rodar ANTES do OrbitControls, que tem o botão
-  // direito mapeado pra PAN da câmera (setControlsEnabled,
-  // viewer3d_composition.js) — sem preventDefault+stopImmediatePropagation
-  // aqui, a câmera panaria junto com o clique de conectar.
-  domEl.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 2) return;
+  // A CONEXÃO DE VERDADE (chamada pelo 'contextmenu' acima, que é o evento
+  // que dispara tanto num botão direito físico quanto no toque de 2 dedos
+  // do touchpad — ver o comentário grande no 'contextmenu'). `function`
+  // (não const) de propósito: hoisted, então pode ser chamada por um
+  // listener definido ANTES dela no arquivo, sem depender de ordem.
+  function tentarConectarSlotArrastadoNaFace(clientX, clientY) {
     const state = projectDrag3DState;
-    // DIAGNÓSTICO TEMPORÁRIO (2026-09-11) — Matt reportou que o botão
-    // direito não conecta a face nenhuma. Log incondicional (sem flag,
-    // pra não depender de mexer no console) até confirmarmos ao vivo; tirar
-    // depois que funcionar. Mesmo padrão de investigação do
-    // window.__legnoDebugPick (viewer3d_composition.js), só que ligado
-    // direto porque a feature é nova e ainda não tem certeza nenhuma.
-    console.log('[legno conectarFace] botão direito durante arraste', {
+    // DIAGNÓSTICO TEMPORÁRIO (2026-09-11) — tirar assim que confirmado ao
+    // vivo. Mesmo padrão do window.__legnoDebugPick (viewer3d_composition.js),
+    // só que ligado direto porque a feature é nova.
+    console.log('[legno conectarFace] tentando conectar', {
       temEstado: !!state,
       dragMode: state && state.dragMode,
       viaArrow: state && state.viaArrow,
@@ -1275,20 +1278,18 @@ function attachProject3DEditDrag() {
     // Só faz algo se JÁ existe um módulo sendo segurado pelo esquerdo (giro
     // e resize por seta ficam de fora de propósito — nenhum dos dois é
     // "mover", trocar de parede no meio de um giro não faz sentido físico).
-    if (!state || state.viaArrow || state.dragMode === 'resize' || state.dragMode === 'rotate') return;
+    if (!state || state.viaArrow || state.dragMode === 'resize' || state.dragMode === 'rotate') return false;
     const slot = projectSlots.find((s) => s.id === state.slotId);
-    if (!slot) return;
-    ev.preventDefault();
-    ev.stopImmediatePropagation();
+    if (!slot) return false;
     const surface = ViewerProjectEdit.pickRoomSurfaceAt
-      ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY, state.slotId)
+      ? ViewerProjectEdit.pickRoomSurfaceAt(clientX, clientY, state.slotId)
       : null;
     console.log('[legno conectarFace] resultado do pickRoomSurfaceAt', surface);
-    if (!surface) return; // botão direito não achou parede nem piso embaixo — não faz nada
+    if (!surface) return false; // não achou parede nem piso embaixo do clique — não faz nada
     if (surface.kind === 'wall' && Number.isFinite(Number(surface.wallIndex))) {
       const wallIndex = Number(surface.wallIndex);
       const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
-      if (!wallGeo) return;
+      if (!wallGeo) return false;
       const alongMm = ((surface.point.x - wallGeo.originX) * wallGeo.alongDirX
         + (surface.point.z - wallGeo.originZ) * wallGeo.alongDirZ) * 1000;
       convertProjectSlotToWall(slot, wallIndex, alongMm - Number(slot.width_mm || 0) / 2, surface.point.y * 1000);
@@ -1312,7 +1313,7 @@ function attachProject3DEditDrag() {
       state.prevFloorXMm = Number(slot.floor_x_mm || 0);
       state.prevFloorZMm = Number(slot.floor_z_mm || 0);
     } else {
-      return;
+      return false;
     }
     renderProjectCanvas();
     state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
@@ -1320,6 +1321,23 @@ function attachProject3DEditDrag() {
     refreshProjectGroupCoDragRefs(state);
     selectProjectSlot(slot.id);
     markProjectDirty();
+    return true;
+  }
+
+  // Botão direito FÍSICO de um mouse de verdade durante o arraste: só
+  // trava o OrbitControls (RIGHT=PAN, ver setControlsEnabled em
+  // viewer3d_composition.js) pra câmera não panar junto. A conexão em si
+  // NÃO roda aqui (rodaria em DOBRO num mouse de verdade, que dispara
+  // pointerdown E contextmenu pro mesmo clique) — só no 'contextmenu'
+  // acima, que é o único evento garantido nos dois casos (mouse E o toque
+  // de 2 dedos do touchpad, que nunca chega a gerar este pointerdown com
+  // button===2 — confirmado por log ao vivo em 2026-09-11).
+  domEl.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 2) return;
+    const state = projectDrag3DState;
+    if (!state || state.viaArrow || state.dragMode === 'resize' || state.dragMode === 'rotate') return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
   }, true);
 
   // O MESMO pointerup chegava aqui DUAS VEZES — e era isso que fazia UM clique
@@ -2398,6 +2416,80 @@ function getProjectWallGeometry() {
     }
     return { role, wallIndex: idx, widthM, originX: -mainWidthM / 2, originZ: 0, alongDirX: 1, alongDirZ: 0, intoDirX: 0, intoDirZ: 1, rotationY: 0 };
   });
+}
+
+// FACE CONECTADA EM AMARELO (2026-09-11) — "ja colocou a face amarela? so
+// quando o modulo estiver selecionado". Mesma ideia do contorno vermelho de
+// seleção (setHoverHighlight/hoverBoxHelper em viewer3d_composition.js), só
+// que aqui é um plano semi-transparente amarelo colado na parede (ou no
+// piso) à qual o módulo SELECIONADO está conectado hoje — não precisa estar
+// arrastando, éó estar selecionado (mesmo requisito do contorno vermelho:
+// chamado de dentro de refreshProject3DHighlight, que já roda em toda
+// seleção/deseleção/re-render, ver portal-06c-projetos-canvas-3d-acoes.js).
+// Igual ao hoverBoxHelper, o mesh vai DIRETO na scene (não em currentGroups),
+// então não interfere no raycasting de pickRoomSurfaceAt/pickAssemblyAt.
+let projectConnectedFaceHighlightMesh = null;
+const PROJECT_FACE_HIGHLIGHT_OFFSET_M = 0.01; // some pra dentro do ambiente, só pra não brigar (z-fighting) com a própria parede/piso
+function limparProjectConnectedFaceHighlight() {
+  if (!projectConnectedFaceHighlightMesh) return;
+  const scene = projectEditScene();
+  if (scene) scene.remove(projectConnectedFaceHighlightMesh);
+  if (projectConnectedFaceHighlightMesh.geometry) projectConnectedFaceHighlightMesh.geometry.dispose();
+  if (projectConnectedFaceHighlightMesh.material) projectConnectedFaceHighlightMesh.material.dispose();
+  projectConnectedFaceHighlightMesh = null;
+}
+function refreshProjectConnectedFaceHighlight() {
+  limparProjectConnectedFaceHighlight();
+  if (selectedProjectSlotId == null) return;
+  const scene = projectEditScene();
+  if (!scene || typeof THREE === 'undefined') return;
+  const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+  if (!slot) return;
+
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xf3c623, // tan/amarelo — mesmo tom da referência do Promob
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  let geom = null;
+  let posX = 0, posY = 0, posZ = 0;
+  let quat = null;
+
+  if (slot.placement === 'wall' && Number.isFinite(Number(slot.wall_index))) {
+    const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index));
+    if (!wallGeo) { mat.dispose(); return; }
+    const heightM = ((roomSettings && roomSettings.ceiling_mm) || 2600) / 1000;
+    geom = new THREE.PlaneGeometry(wallGeo.widthM, heightM);
+    const right = new THREE.Vector3(wallGeo.alongDirX, 0, wallGeo.alongDirZ);
+    const up = new THREE.Vector3(0, 1, 0);
+    const normal = new THREE.Vector3(wallGeo.intoDirX, 0, wallGeo.intoDirZ);
+    const basis = new THREE.Matrix4().makeBasis(right, up, normal);
+    quat = new THREE.Quaternion().setFromRotationMatrix(basis);
+    posX = wallGeo.originX + wallGeo.alongDirX * (wallGeo.widthM / 2) + normal.x * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posZ = wallGeo.originZ + wallGeo.alongDirZ * (wallGeo.widthM / 2) + normal.z * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posY = heightM / 2;
+  } else if (slot.placement === 'floor' && ViewerProjectEdit.getFloorRectM) {
+    const rect = ViewerProjectEdit.getFloorRectM();
+    if (!rect) { mat.dispose(); return; }
+    geom = new THREE.PlaneGeometry(rect.x1 - rect.x0, rect.z1 - rect.z0);
+    quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2); // deitado, olhando pra CIMA
+    posX = (rect.x0 + rect.x1) / 2;
+    posZ = (rect.z0 + rect.z1) / 2;
+    posY = PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+  } else {
+    mat.dispose();
+    return; // rodada 2 (conectado num MÓDULO, não parede/piso) ainda não existe
+  }
+
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.set(posX, posY, posZ);
+  if (quat) mesh.quaternion.copy(quat);
+  mesh.renderOrder = 10;
+  mesh.userData.legnoConnectedFaceHighlight = true;
+  scene.add(mesh);
+  projectConnectedFaceHighlightMesh = mesh;
 }
 
 function generateProject3D() {
