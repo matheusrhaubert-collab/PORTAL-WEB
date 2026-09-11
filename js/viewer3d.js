@@ -1119,12 +1119,37 @@ const Viewer3D = (function () {
   // própria e NÃO opina por formato — foi isso que fazia a lateral de um
   // módulo baixo virar sozinha.
   const PAPEIS_VEIO_PELO_FORMATO = { back: 1, free: 1, other: 1, baseboard: 1 };
+  // FIX 2026-09-11 — Painel/Filler 3/4 SOLTOS (família Panels,
+  // position_role='free', com `positioning` cadastrado por variante — é
+  // exatamente o que os nomes "· Horizontal"/"· Vertical"/"· ... no Plano"
+  // do catálogo representam) giravam a textura sozinhos ao redimensionar:
+  // cruzar largura/altura invertia `uM >= vM` e vencia o `positioning`
+  // gravado. Matt: "os paineis estao com uma funcao errada, uqando pego um
+  // painel vertical e deixo a largura menor que a altura ele vira a
+  // textura. isso nao pode acontecer a textura do vertical deve se manter
+  // vertical sempre, independente do tamanho da peca." — e, sobre o FUNDO
+  // (mesma função, `back`): "essa funcao funciona so la no fundo dos
+  // modulos, porem nao muda so textura e sim a peca muda de sentido. mas la
+  // pode deixar como esta nao mexa. so corriga so paineis."
+  //
+  // PAPEIS_POSITIONING_VENCE_FORMATO: quando o papel está aqui E a peça tem
+  // `positioning` cadastrado E não tem `veio` cadastrado, o `positioning`
+  // decide, IGNORANDO o formato — deliberadamente SEM 'back' (fundo
+  // continua 100% pelo formato, com ou sem positioning, por decisão
+  // explícita do Matt). Peça 'free'/'other'/'baseboard' SEM positioning
+  // cadastrado (travessa, base divisória do Construtor) continua pelo
+  // formato de sempre, como única informação que existe.
+  const PAPEIS_POSITIONING_VENCE_FORMATO = { free: 1, other: 1, baseboard: 1 };
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
     if (veio === 'horizontal') return true;
     if (veio === 'vertical') return false;
     const papel = (part && part.position_role) || 'other';
-    if (PAPEIS_VEIO_PELO_FORMATO[papel] && (!veio || veio === 'livre')) return uM >= vM;
+    const semVeioCadastrado = !veio || veio === 'livre';
+    if (PAPEIS_POSITIONING_VENCE_FORMATO[papel] && semVeioCadastrado && part && part.positioning) {
+      return resolveRotateTexture(part.positioning, fallback);
+    }
+    if (PAPEIS_VEIO_PELO_FORMATO[papel] && semVeioCadastrado) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
 
@@ -3904,7 +3929,7 @@ const Viewer3D = (function () {
     // Exposto só pra diagnóstico/teste automatizado (mesmo padrão de
     // Drilling._internals e Hardware._casaFuro) — ver
     // scripts/tests/teste-veio-rodape.js. Não é API pra telas usarem.
-    _internals: { resolveGrainRotate, resolveRotateTexture, PAPEIS_VEIO_PELO_FORMATO },
+    _internals: { resolveGrainRotate, resolveRotateTexture, PAPEIS_VEIO_PELO_FORMATO, PAPEIS_POSITIONING_VENCE_FORMATO },
     // Linhas de chão/teto/baseboard da casa do cliente no configurador —
     // opt-in, só o portal chama (ver setRoomEnvironment acima).
     setRoomEnvironment,

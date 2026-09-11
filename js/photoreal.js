@@ -220,12 +220,22 @@ const Photoreal = (() => {
   // própria e NÃO opina por formato — foi isso que fazia a lateral de um
   // módulo baixo virar sozinha.
   const PAPEIS_VEIO_PELO_FORMATO = { back: 1, free: 1, other: 1, baseboard: 1 };
+  // FIX 2026-09-11 — cópia fiel do mesmo fix em js/viewer3d.js (ver o
+  // comentário grande lá): Painel/Filler 3/4 soltos com `positioning`
+  // cadastrado não podem mais girar a textura sozinhos ao cruzar
+  // largura/altura; o fundo ('back') continua 100% pelo formato, sem
+  // mudança nenhuma.
+  const PAPEIS_POSITIONING_VENCE_FORMATO = { free: 1, other: 1, baseboard: 1 };
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
     if (veio === 'horizontal') return true;
     if (veio === 'vertical') return false;
     const papel = (part && part.position_role) || 'other';
-    if (PAPEIS_VEIO_PELO_FORMATO[papel] && (!veio || veio === 'livre')) return uM >= vM;
+    const semVeioCadastrado = !veio || veio === 'livre';
+    if (PAPEIS_POSITIONING_VENCE_FORMATO[papel] && semVeioCadastrado && part && part.positioning) {
+      return resolveRotateTexture(part.positioning, fallback);
+    }
+    if (PAPEIS_VEIO_PELO_FORMATO[papel] && semVeioCadastrado) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
   function makeMaterial(color, rotateTexture) {
