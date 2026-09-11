@@ -1140,15 +1140,50 @@ const Viewer3D = (function () {
   // cadastrado (travessa, base divisória do Construtor) continua pelo
   // formato de sempre, como única informação que existe.
   const PAPEIS_POSITIONING_VENCE_FORMATO = { free: 1, other: 1, baseboard: 1 };
+  // FIX 2026-09-11 (2ª rodada, mesmo dia) — Matt testou o fix acima
+  // (positioning vence FORMATO) e o painel AINDA girou o veio: "mesmo
+  // problema pro painel horizontal... por favor todos os paineis, todas as
+  // pecas an verdade nao podem mudar a orientacao do veio. devem respeitar
+  // o padrao." Causa raiz DIFERENTE da 1ª rodada: `part.veio` não é só o
+  // fallback "formato decide" — é um campo cadastrado direto no
+  // COMPONENTE do catálogo (`components.veio`, ver module-pieces.js
+  // `veio: row.components.veio || 'livre'`), SEPARADO do `positioning`
+  // (que mora no component_type). Painel/Filler 3/4 tem a variante
+  // (Horizontal/Vertical/no Plano) codificada no `positioning`; se o
+  // componente também tiver um `veio` cadastrado à parte (herança de antes
+  // do campo `positioning` existir, ou erro de cadastro) esse `veio`
+  // vencia ANTES de qualquer coisa (era o 1º if da função, acima de tudo)
+  // — o fix da 1ª rodada só ajudava quando `veio` já estava 'livre'/vazio,
+  // nunca quando havia um valor cadastrado de verdade.
+  //
+  // `part.veio` (o desta função) só alimenta o DESENHO 3D — plano de
+  // corte/preço/.ban recalculam o veio deles PRÓPRIOS, direto do
+  // formato, em LayoutEngine.validar (ver comentário grande acima, "duas
+  // contas diferentes pro mesmo veio divergiriam" — aquela conta nem lê
+  // este `part.veio`). Ou seja: fazer `positioning` vencer aqui, só pros 3
+  // papéis abaixo (nunca 'back' — Matt pediu explicitamente pra não mexer
+  // no fundo), é seguro pro corte/preço — só muda o que aparece na TELA.
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
-    if (veio === 'horizontal') return true;
-    if (veio === 'vertical') return false;
     const papel = (part && part.position_role) || 'other';
-    const semVeioCadastrado = !veio || veio === 'livre';
-    if (PAPEIS_POSITIONING_VENCE_FORMATO[papel] && semVeioCadastrado && part && part.positioning) {
+    // DIAGNÓSTICO (2026-09-11, mesmo padrão de window.__legnoDebugPick/
+    // __legnoDebugHitbox) — liga no console com
+    // `window.__legnoDebugVeio = true` antes de selecionar/olhar a peça;
+    // mostra exatamente o que decidiu o giro. Só pra confirmar ao vivo se
+    // este fix bateu na causa certa; sem custo quando desligado (padrão).
+    if (typeof window !== 'undefined' && window.__legnoDebugVeio) {
+      console.log('[legno veio] ' + JSON.stringify({
+        peca: (part && (part.reference || part.label)) || '?',
+        papel, veio: veio || null, positioning: (part && part.positioning) || null,
+        uM: Number(uM).toFixed(3), vM: Number(vM).toFixed(3)
+      }));
+    }
+    if (PAPEIS_POSITIONING_VENCE_FORMATO[papel] && part && part.positioning) {
       return resolveRotateTexture(part.positioning, fallback);
     }
+    if (veio === 'horizontal') return true;
+    if (veio === 'vertical') return false;
+    const semVeioCadastrado = !veio || veio === 'livre';
     if (PAPEIS_VEIO_PELO_FORMATO[papel] && semVeioCadastrado) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }

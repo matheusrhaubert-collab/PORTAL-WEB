@@ -226,15 +226,32 @@ const Photoreal = (() => {
   // largura/altura; o fundo ('back') continua 100% pelo formato, sem
   // mudança nenhuma.
   const PAPEIS_POSITIONING_VENCE_FORMATO = { free: 1, other: 1, baseboard: 1 };
+  // FIX 2026-09-11 (2ª rodada, mesmo dia) — cópia fiel do mesmo fix em
+  // js/viewer3d.js (ver o comentário grande lá): `part.veio` é um campo
+  // cadastrado direto no COMPONENTE do catálogo (`components.veio`),
+  // separado do `positioning` — quando cadastrado, vencia ANTES de
+  // qualquer coisa, então o fix da 1ª rodada só ajudava quando `veio` já
+  // estava 'livre'/vazio. Agora `positioning` vence TAMBÉM um `veio`
+  // cadastrado, pros 3 papéis abaixo (nunca 'back' — sem mudança no
+  // fundo). Seguro pro corte/preço: eles recalculam o veio deles próprios
+  // direto do formato (LayoutEngine.validar), nunca leem este `part.veio`.
   function resolveGrainRotate(part, uM, vM, fallback) {
     const veio = part && part.veio;
-    if (veio === 'horizontal') return true;
-    if (veio === 'vertical') return false;
     const papel = (part && part.position_role) || 'other';
-    const semVeioCadastrado = !veio || veio === 'livre';
-    if (PAPEIS_POSITIONING_VENCE_FORMATO[papel] && semVeioCadastrado && part && part.positioning) {
+    // DIAGNÓSTICO — cópia fiel do de viewer3d.js (window.__legnoDebugVeio).
+    if (typeof window !== 'undefined' && window.__legnoDebugVeio) {
+      console.log('[legno veio] ' + JSON.stringify({
+        peca: (part && (part.reference || part.label)) || '?',
+        papel, veio: veio || null, positioning: (part && part.positioning) || null,
+        uM: Number(uM).toFixed(3), vM: Number(vM).toFixed(3)
+      }));
+    }
+    if (PAPEIS_POSITIONING_VENCE_FORMATO[papel] && part && part.positioning) {
       return resolveRotateTexture(part.positioning, fallback);
     }
+    if (veio === 'horizontal') return true;
+    if (veio === 'vertical') return false;
+    const semVeioCadastrado = !veio || veio === 'livre';
     if (PAPEIS_VEIO_PELO_FORMATO[papel] && semVeioCadastrado) return uM >= vM;
     return resolveRotateTexture(part && part.positioning, fallback);
   }
