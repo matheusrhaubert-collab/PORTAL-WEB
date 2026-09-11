@@ -2428,6 +2428,61 @@ function createViewerComposition3D() {
     return result;
   }
 
+  // QUAL FACE DE OUTRO MÓDULO está embaixo do clique (2026-09-11, "rodada 2"
+  // de conectar módulo a módulo — Matt: "agora colocar a tela amarela com
+  // clique direito entre modulos/obejetos tambem"). Mesmo raycasting de
+  // pickAssemblyAt (a caixa invisível de clique manda, ver o comentário
+  // grande lá em cima — "4ª rodada"), só que aqui, além do slotId, também
+  // decido QUAL FACE (px/nx/py/ny/pz/nz, no referencial LOCAL do módulo
+  // alvo — ver "Convenção do group" em buildProjectAssemblies, portal-08:
+  // X/Z centrados, Y do chão pro topo, frente = local +Z) foi atingida.
+  //
+  // hits[i].face.normal do Three.js vem no espaço LOCAL do OBJETO ATINGIDO
+  // (a malha da caixa de clique), não do mundo — Mesh.raycast calcula a
+  // normal do triângulo já em coordenadas locais, antes de aplicar
+  // matrixWorld. Como a caixa de clique é filha do group SEM rotação própria
+  // (só position, ver "const hitbox = new THREE.Mesh(...); hitbox.position.
+  // set(...)" em buildProjectAssemblies — nunca hitbox.rotation.set), o local
+  // dela É o local do group: a normal local do hit já cai direto num dos 6
+  // eixos px/nx/py/ny/pz/nz sem precisar desfazer rotação nenhuma.
+  //
+  // LIMITAÇÃO CONHECIDA: no fallback sem caixa (módulo com alguma medida
+  // zerada — ver "caixa" em buildProjectAssemblies), o hit é na malha REAL, e
+  // aí sim a peça atingida pode ter rotação própria dentro do group (porta
+  // aberta, peça com fine rotation) — a normal local dela não bate mais 1:1
+  // com os eixos do group. Caso raro (exige medida cadastrada como 0); não
+  // tratado nesta 1ª entrega, documentado aqui pra não parecer bug escondido.
+  //
+  // excludeSlotId: o módulo que está sendo ARRASTADO (Matt não pode conectar
+  // um módulo nele mesmo) — mesmo papel do ignoreSlotId de pickRoomSurfaceAt.
+  function pickModuleFaceAt(clientX, clientY, excludeSlotId) {
+    if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const rawHits = _raycaster.intersectObjects(currentGroups, true);
+    const hitboxHits = rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
+    const hits = hitboxHits.length ? hitboxHits : rawHits.filter((h) => h.object && h.object.isMesh);
+    for (let i = 0; i < hits.length; i++) {
+      let obj = hits[i].object;
+      let group = null;
+      while (obj) {
+        if (obj.userData && obj.userData.slotId != null) { group = obj; break; }
+        obj = obj.parent;
+      }
+      if (!group) continue;
+      const slotId = group.userData.slotId;
+      if (excludeSlotId != null && slotId === excludeSlotId) continue;
+      if (!hits[i].face || !hits[i].face.normal) continue;
+      const n = hits[i].face.normal;
+      const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+      let faceKey;
+      if (ax >= ay && ax >= az) faceKey = n.x >= 0 ? 'px' : 'nx';
+      else if (ay >= ax && ay >= az) faceKey = n.y >= 0 ? 'py' : 'ny';
+      else faceKey = n.z >= 0 ? 'pz' : 'nz';
+      return { slotId, faceKey, point: hits[i].point.clone() };
+    }
+    return null;
+  }
+
   // Cache de ARESTAS (em espaço LOCAL da geometria) por objeto Geometry —
   // pickSurfacePointAt roda a cada pointermove (hover da régua), e recalcular
   // EdgesGeometry a cada frame pra malhas que não mudam seria desperdício.
@@ -3235,7 +3290,7 @@ function createViewerComposition3D() {
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
-    setControlsEnabled, getDomElement, pickAssemblyAt, intersectPlaneAtClient, pickSurfacePointAt,
+    setControlsEnabled, getDomElement, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.

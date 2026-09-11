@@ -1910,6 +1910,17 @@ function removeProjectSlot(slotId) {
   projectSlots = projectSlots.filter((s) => s.id !== slotId);
   if (selectedProjectSlotId === slotId) selectedProjectSlotId = null;
   projectMultiSelectIds.delete(slotId);
+  // Excluir o "pai" de um anexo módulo-a-módulo (ver
+  // convertProjectSlotToModuleFace, portal-08): quem seguia a face dele
+  // fica órfão — solta a referência (fica parado onde estava no último
+  // render válido) em vez de resolveModuleFaceAttachments ficar procurando
+  // um alvo que não existe mais a cada render.
+  projectSlots.forEach((s) => {
+    if (s.attached_to_slot_id === slotId) {
+      s.attached_to_slot_id = null;
+      s.attached_face = null;
+    }
+  });
   renderProjectCanvas();
   if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
   markProjectDirty();

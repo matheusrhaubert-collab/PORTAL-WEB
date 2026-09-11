@@ -1027,6 +1027,13 @@ function renderProjectCanvas() {
     // já ABRIR com tudo encostado na parede, sem precisar mexer em cada um.
     slot.z_order = 0;
   });
+  // "Segue o pai" (2026-09-11, conectar módulo em módulo — ver
+  // convertProjectSlotToModuleFace/resolveModuleFaceAttachments em portal-
+  // 08-projetos-paredes.js): DEPOIS do clamp/z_order de todo mundo (as duas
+  // coisas que resolveModuleFaceAttachments assume já resolvidas ao ler a
+  // pose do alvo via getSlotWorldFrame) e ANTES de desenhar qualquer coisa,
+  // pra quem está anexado já nascer na posição certa neste mesmo frame.
+  if (typeof resolveModuleFaceAttachments === 'function') resolveModuleFaceAttachments();
 
   if (projectViewMode === 'top') {
     renderProjectCanvasTop(canvas, wrap, dimsLabel, unit);

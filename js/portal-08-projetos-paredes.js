@@ -166,6 +166,12 @@ function refreshProject3DStatusBar() {
 // Converte um slot de parede em ILHA no chão (e vice-versa), preservando a
 // posição atual como ponto de partida — usado pelo arraste livre do toque
 // longo (iPad) e pelo soltar da biblioteca.
+//
+// Também é o ponto de DESCONEXÃO de um módulo-a-módulo (ver
+// convertProjectSlotToModuleFace, "RODADA 2" abaixo): mover um módulo
+// anexado de volta pro chão/parede à mão precisa soltar a referência velha,
+// senão resolveModuleFaceAttachments ia reescrever a posição por cima do
+// que a pessoa acabou de arrastar, no próximo render.
 function convertProjectSlotToFloor(slot, xMm, zMm) {
   slot.placement = 'floor';
   slot.floor_x_mm = Number(xMm || 0);
@@ -173,6 +179,192 @@ function convertProjectSlotToFloor(slot, xMm, zMm) {
   slot.floor_height_mm = 0; // ilha apoia no chão
   slot.z_order = 0;
   if (slot.floor_rotation_deg == null) slot.floor_rotation_deg = 0;
+  slot.attached_to_slot_id = null;
+  slot.attached_face = null;
+}
+
+// ==========================================================================
+// CONECTAR MÓDULO NA FACE DE OUTRO MÓDULO — "RODADA 2" (2026-09-11)
+// ==========================================================================
+// Pedido do Matt (depois da rodada 1, parede/piso): "agora colocar a tela
+// amarela com clique direito entre modulos/obejetos tambem" — mesmo gesto
+// (segurar o esquerdo num módulo, botão direito na face de OUTRO módulo)
+// só que o alvo agora pode ser outro módulo, não só parede/piso. Decisões já
+// fechadas com o Matt antes desta rodada (ver memória
+// conectar_modulo_face_promob.md):
+//   1. O botão direito SÓ muda de significado enquanto o esquerdo segura um
+//      módulo (igual à rodada 1 — nada novo aqui).
+//   2. Conectado a MÓDULO, o filho "segue o pai": se o pai (o módulo-alvo)
+//      se move ou gira depois, o filho recalcula sozinho pra continuar
+//      colado na mesma face dele — ver resolveModuleFaceAttachments, chamado
+//      a cada renderProjectCanvas().
+//   3. Trocar de face SEMPRE reseta pra uma posição de CANTO padrão (nunca
+//      preserva posição relativa) — ver computeModuleFaceAttachmentTransform.
+//
+// ESCOPO desta 1ª entrega (combinado, não é regressão, é decisão): sem
+// arrastar livremente DENTRO da face ainda (o filho sempre nasce no mesmo
+// canto da face-alvo); o alvo tem que ser um módulo NÃO anexado ele mesmo
+// (parede ou piso "de verdade") — encadear anexo-em-cima-de-anexo fica pra
+// depois, evita ciclo e mundo-recursivo por enquanto. Nenhum dos dois limita
+// o pedido de hoje: o Matt só pediu a tela amarela/conexão entre módulos.
+//
+// MODELO DE DADOS: o filho continua placement='floor' por baixo (reaproveita
+// TODO o resto — preço, furação, layout, cutlist — de graça, mesma ideia já
+// usada pela ilha comum), só ganha 2 campos novos, só em memória por
+// enquanto (NÃO persistem ainda — serializeProjectSlots, portal-08/09, não
+// os grava; PENDENTE se o Matt confirmar que quer isso salvo entre sessões):
+//   attached_to_slot_id — id do slot ALVO (o "pai")
+//   attached_face       — qual face DO ALVO (px/nx/py/ny/pz/nz, referencial
+//                          LOCAL do alvo — ver "Convenção do group" acima de
+//                          buildProjectAssemblies: X/Z centrados, Y do chão
+//                          pro topo, frente = local +Z)
+//
+// GEOMETRIA: getSlotWorldFrame devolve a "pose" atual de um slot (origem do
+// group em metros + ângulo Y) sem tocar na cena Three.js — funciona pra
+// qualquer slot de parede OU de chão, calculado com a MESMA fórmula que
+// renderFreeformWalls usa pra posicionar o group de verdade (origin +
+// alongDir*alongOffset + intoDir*depthOffset pra parede; floor_x/z_mm direto
+// pra ilha) — não pode divergir dali. computeModuleFaceAttachmentTransform
+// faz a conta inversa: dado o alvo + a face + o tamanho do filho, onde o
+// filho tem que nascer (canto padrão, encostado, nunca afundado na peça).
+function getSlotWorldFrame(slot) {
+  if (!slot) return null;
+  const widthM = Number(slot.width_mm || 0) / 1000;
+  const heightM = Number(slot.height_mm || 0) / 1000;
+  const depthM = Number(slot.depth_mm || 0) / 1000;
+  if (isFloorSlot(slot)) {
+    return {
+      ox: Number(slot.floor_x_mm || 0) / 1000,
+      oy: Number(slot.floor_height_mm || 0) / 1000,
+      oz: Number(slot.floor_z_mm || 0) / 1000,
+      rotY: (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180,
+      widthM, heightM, depthM
+    };
+  }
+  const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index || 0));
+  if (!wallGeo) return null;
+  const alongOffsetM = Number(slot.x_mm || 0) / 1000 + widthM / 2;
+  // z_order tratado como 0: no momento em que resolveModuleFaceAttachments
+  // roda (topo de renderProjectCanvas), o forEach de clamp já zerou o
+  // z_order de todo mundo (ver renderProjectCanvas, portal-06c) — mesma
+  // convenção, não precisa reler daqui.
+  const depthOffsetM = depthM / 2;
+  return {
+    ox: wallGeo.originX + wallGeo.alongDirX * alongOffsetM + wallGeo.intoDirX * depthOffsetM,
+    oy: Number(slot.floor_height_mm || 0) / 1000,
+    oz: wallGeo.originZ + wallGeo.alongDirZ * alongOffsetM + wallGeo.intoDirZ * depthOffsetM,
+    rotY: wallGeo.rotationY,
+    widthM, heightM, depthM
+  };
+}
+
+// Geometria (em METROS, mundo 3D) de UMA face do slot descrito por `frame`
+// (ver getSlotWorldFrame) — centro, largura/altura do retângulo da face, e
+// os 3 eixos (right/up/normal, todos unitários) que a orientam no mundo.
+// Mesma convenção de eixo local usada em pickModuleFaceAt (viewer3d_
+// composition.js): local +X = "right" do módulo, local +Z = frente, local
+// +Y = de baixo (chão do módulo) pra cima.
+function getModuleFaceGeometry(frame, faceKey) {
+  if (!frame) return null;
+  const cosR = Math.cos(frame.rotY), sinR = Math.sin(frame.rotY);
+  const U = { x: cosR, y: 0, z: -sinR }; // direção-mundo do local +X
+  const N = { x: sinR, y: 0, z: cosR };  // direção-mundo do local +Z (frente)
+  const V = { x: 0, y: 1, z: 0 };
+  const OG = { x: frame.ox, y: frame.oy, z: frame.oz };
+  const hw = frame.widthM / 2, hd = frame.depthM / 2, H = frame.heightM;
+  const add = (a, b, s) => ({ x: a.x + b.x * s, y: a.y + b.y * s, z: a.z + b.z * s });
+  const neg = (v) => ({ x: -v.x, y: -v.y, z: -v.z });
+  switch (faceKey) {
+    case 'pz': return { width: frame.widthM, height: H, right: U, up: V, normal: N, center: add(add(OG, N, hd), V, H / 2) };
+    case 'nz': return { width: frame.widthM, height: H, right: U, up: V, normal: neg(N), center: add(add(OG, N, -hd), V, H / 2) };
+    case 'px': return { width: frame.depthM, height: H, right: N, up: V, normal: U, center: add(add(OG, U, hw), V, H / 2) };
+    case 'nx': return { width: frame.depthM, height: H, right: N, up: V, normal: neg(U), center: add(add(OG, U, -hw), V, H / 2) };
+    case 'py': return { width: frame.widthM, height: frame.depthM, right: U, up: N, normal: V, center: add(OG, V, H) };
+    case 'ny': return { width: frame.widthM, height: frame.depthM, right: U, up: N, normal: neg(V), center: Object.assign({}, OG) };
+    default: return null;
+  }
+}
+
+// A conta inversa: dado o ALVO (targetFrame) + a FACE atingida + o tamanho
+// do FILHO (childWidthMm/childHeightMm/childDepthMm), devolve onde o filho
+// tem que nascer — sempre um CANTO da face (decisão fechada com o Matt:
+// trocar de face reseta a posição, nunca preserva relativo), encostado
+// (nunca afundado, nunca flutuando). Ver o comentário grande da seção acima
+// pra dedução geométrica passo a passo (feita à mão, com números redondos,
+// antes de escrever isto) — os 2 casos de topo/fundo (py/ny) não têm normal
+// que defina um giro (ela é vertical) então o filho herda o MESMO ângulo do
+// alvo nesses dois casos (só limitação documentada, não bug).
+function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm, childHeightMm, childDepthMm) {
+  const g = getModuleFaceGeometry(targetFrame, faceKey);
+  if (!g) return null;
+  const corner = {
+    x: g.center.x - g.right.x * (g.width / 2) - g.up.x * (g.height / 2),
+    y: g.center.y - g.right.y * (g.width / 2) - g.up.y * (g.height / 2),
+    z: g.center.z - g.right.z * (g.width / 2) - g.up.z * (g.height / 2)
+  };
+  const isHorizontal = (faceKey === 'py' || faceKey === 'ny');
+  const childRotY = isHorizontal ? targetFrame.rotY : Math.atan2(g.normal.x, g.normal.z);
+  const cosC = Math.cos(childRotY), sinC = Math.sin(childRotY);
+  const Uc = { x: cosC, z: -sinC }; // direção-mundo do local +X do filho
+  const Nc = { x: sinC, z: cosC };  // direção-mundo do local +Z do filho (frente = normal do alvo, exceto py/ny)
+  const hwc = (Number(childWidthMm) || 0) / 2000;
+  const hdc = (Number(childDepthMm) || 0) / 2000;
+  const HC = (Number(childHeightMm) || 0) / 1000;
+  const childX = corner.x + Uc.x * hwc + Nc.x * hdc;
+  const childZ = corner.z + Uc.z * hwc + Nc.z * hdc;
+  const childY = corner.y - (faceKey === 'ny' ? HC : 0);
+  return {
+    xMm: childX * 1000,
+    zMm: childZ * 1000,
+    floorHeightMm: childY * 1000,
+    rotationDeg: ((childRotY * 180 / Math.PI) % 360 + 360) % 360
+  };
+}
+
+// Chamada no TOPO de renderProjectCanvas (ver portal-06c), antes de qualquer
+// coisa ser desenhada: recalcula a posição de TODO módulo anexado a outro
+// módulo, a partir da posição ATUAL do alvo — é o que faz o filho "seguir o
+// pai" (decisão 2 do comentário grande acima) sem precisar de nenhum código
+// extra no arraste do pai (ele arrasta normal, sem saber que tem filho
+// pendurado nele; o filho é quem se recalcula, sempre, a cada render).
+function resolveModuleFaceAttachments() {
+  projectSlots.forEach((slot) => {
+    if (!slot || slot.attached_to_slot_id == null) return;
+    const target = projectSlots.find((s) => s.id === slot.attached_to_slot_id);
+    // Alvo sumiu (excluído) ou virou ele mesmo um anexado (não deveria
+    // acontecer — v1 nunca deixa escolher um alvo já anexado, ver
+    // convertProjectSlotToModuleFace) — não mexe na posição, fica como
+    // estava no último render válido em vez de sumir da tela.
+    if (!target || target.attached_to_slot_id != null) return;
+    const frame = getSlotWorldFrame(target);
+    if (!frame) return;
+    const result = computeModuleFaceAttachmentTransform(
+      frame, slot.attached_face,
+      Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0)
+    );
+    if (!result) return;
+    slot.placement = 'floor';
+    slot.floor_x_mm = result.xMm;
+    slot.floor_z_mm = result.zMm;
+    slot.floor_height_mm = result.floorHeightMm;
+    slot.floor_rotation_deg = result.rotationDeg;
+  });
+}
+
+// Conecta `slot` na face `faceKey` do módulo `targetSlotId` — chamada pelo
+// botão direito (ver tentarConectarSlotArrastadoNaFace) quando o alvo é
+// outro módulo em vez de parede/piso. Recusa alvo inválido (ele mesmo, ou um
+// alvo que já está anexado em outra coisa — restrição de escopo desta 1ª
+// entrega, ver comentário grande acima).
+function convertProjectSlotToModuleFace(slot, targetSlotId, faceKey) {
+  if (!slot || targetSlotId == null || !faceKey) return false;
+  const target = projectSlots.find((s) => s.id === targetSlotId);
+  if (!target || target.id === slot.id || target.attached_to_slot_id != null) return false;
+  convertProjectSlotToFloor(slot, Number(slot.floor_x_mm || 0), Number(slot.floor_z_mm || 0));
+  slot.attached_to_slot_id = targetSlotId;
+  slot.attached_face = faceKey;
+  resolveModuleFaceAttachments(); // posiciona já, sem esperar o próximo render pra não "piscar" no lugar velho
+  return true;
 }
 // ==========================================================================
 // GIRAR O MÓDULO — Shift + arrastar (2026-08-12)
@@ -343,6 +535,10 @@ function convertProjectSlotToWall(slot, wallIndex, xMm, floorHeightMm) {
   slot.wall_index = Number(wallIndex || 0);
   slot.x_mm = Number(xMm || 0);
   slot.floor_height_mm = Math.max(0, Number(floorHeightMm || 0));
+  // Solta de um eventual anexo-em-módulo (ver convertProjectSlotToFloor,
+  // mesmo motivo: voltar pra parede à mão precisa parar de seguir o pai).
+  slot.attached_to_slot_id = null;
+  slot.attached_face = null;
   clampProjectSlotPosition(slot);
   resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
 }
@@ -1519,6 +1715,33 @@ function attachProject3DEditDrag() {
     if (!state || state.viaArrow || state.dragMode === 'resize' || state.dragMode === 'rotate') return false;
     const slot = projectSlots.find((s) => s.id === state.slotId);
     if (!slot) return false;
+
+    // RODADA 2 (2026-09-11) — tenta primeiro a face de OUTRO MÓDULO embaixo
+    // do clique; só cai pra parede/piso (rodada 1, abaixo) se não achou
+    // módulo nenhum ali. moduleFaceHit.slotId inválido (o próprio módulo
+    // arrastado já é excluído dentro de pickModuleFaceAt via excludeSlotId;
+    // alvo já anexado é recusado dentro de convertProjectSlotToModuleFace)
+    // — nesses casos cai pro fallback de parede/piso normalmente.
+    const moduleFaceHit = ViewerProjectEdit.pickModuleFaceAt
+      ? ViewerProjectEdit.pickModuleFaceAt(clientX, clientY, state.slotId)
+      : null;
+    console.log('[legno conectarFace] resultado do pickModuleFaceAt', moduleFaceHit);
+    if (moduleFaceHit && convertProjectSlotToModuleFace(slot, moduleFaceHit.slotId, moduleFaceHit.faceKey)) {
+      state.onFloor = true;
+      state.dragMode = 'move';
+      state.grabOffsetFloorXMm = 0;
+      state.grabOffsetFloorZMm = 0;
+      state.prevFloorXMm = Number(slot.floor_x_mm || 0);
+      state.prevFloorZMm = Number(slot.floor_z_mm || 0);
+      renderProjectCanvas();
+      state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
+      if (state.group && ViewerProjectEdit.setHoverHighlight) ViewerProjectEdit.setHoverHighlight(state.group);
+      refreshProjectGroupCoDragRefs(state);
+      selectProjectSlot(slot.id);
+      markProjectDirty();
+      return true;
+    }
+
     const surface = ViewerProjectEdit.pickRoomSurfaceAt
       ? ViewerProjectEdit.pickRoomSurfaceAt(clientX, clientY, state.slotId)
       : null;
@@ -1761,6 +1984,15 @@ function attachProject3DEditDrag() {
 // esquerda. Igual ao mover de parede, o Group é reposicionado direto a cada
 // frame (sem reconstruir a cena) e só o soltar dispara um render de verdade.
 function handleProject3DFloorMove(state, slot, ev) {
+  // MÓDULO ANEXADO A OUTRO MÓDULO NÃO ARRASTA LIVRE (2026-09-11, escopo
+  // fechado desta 1ª entrega da "rodada 2" — ver o comentário grande em
+  // convertProjectSlotToModuleFace, portal-08). O left-hold continua
+  // segurando o módulo (é o que deixa o botão direito reconectar em outra
+  // face, ver tentarConectarSlotArrastadoNaFace) mas mover o mouse não
+  // desloca nada: a posição dele é sempre recalculada a partir do ALVO
+  // (resolveModuleFaceAttachments, a cada render) — arrastar livre aqui só
+  // ia ser desfeito no frame seguinte, então nem tenta.
+  if (slot.attached_to_slot_id != null) return;
   // Caminho de VOLTA do arraste livre (toque longo): largar a ilha em cima de
   // uma parede a "encosta" nela de novo, virando módulo de parede. Simétrico
   // ao trecho parede→chão no pointermove (ver freeMode lá).
@@ -2708,6 +2940,26 @@ function refreshProjectConnectedFaceHighlight() {
     posX = wallGeo.originX + wallGeo.alongDirX * (wallGeo.widthM / 2) + normal.x * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
     posZ = wallGeo.originZ + wallGeo.alongDirZ * (wallGeo.widthM / 2) + normal.z * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
     posY = heightM / 2;
+  } else if (slot.attached_to_slot_id != null && slot.attached_face) {
+    // RODADA 2 (2026-09-11) — módulo conectado na face de OUTRO MÓDULO.
+    // Mesma ideia da parede/piso acima (plano amarelo colado, offset de 1cm
+    // pra não brigar com a peça de verdade), só que a geometria da face vem
+    // de getModuleFaceGeometry (portal-08, mesma conta que posiciona o
+    // filho em computeModuleFaceAttachmentTransform) em vez de
+    // getProjectWallGeometry/getFloorRectM.
+    const target = projectSlots.find((s) => s.id === slot.attached_to_slot_id);
+    const targetFrame = target ? getSlotWorldFrame(target) : null;
+    const faceGeo = targetFrame ? getModuleFaceGeometry(targetFrame, slot.attached_face) : null;
+    if (!faceGeo) { mat.dispose(); return; }
+    geom = new THREE.PlaneGeometry(faceGeo.width, faceGeo.height);
+    const right = new THREE.Vector3(faceGeo.right.x, faceGeo.right.y, faceGeo.right.z);
+    const up = new THREE.Vector3(faceGeo.up.x, faceGeo.up.y, faceGeo.up.z);
+    const normal = new THREE.Vector3(faceGeo.normal.x, faceGeo.normal.y, faceGeo.normal.z);
+    const basis = new THREE.Matrix4().makeBasis(right, up, normal);
+    quat = new THREE.Quaternion().setFromRotationMatrix(basis);
+    posX = faceGeo.center.x + normal.x * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posY = faceGeo.center.y + normal.y * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posZ = faceGeo.center.z + normal.z * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
   } else if (slot.placement === 'floor' && ViewerProjectEdit.getFloorRectM) {
     const rect = ViewerProjectEdit.getFloorRectM();
     if (!rect) { mat.dispose(); return; }
@@ -2718,7 +2970,7 @@ function refreshProjectConnectedFaceHighlight() {
     posY = PROJECT_FACE_HIGHLIGHT_OFFSET_M;
   } else {
     mat.dispose();
-    return; // rodada 2 (conectado num MÓDULO, não parede/piso) ainda não existe
+    return;
   }
 
   const mesh = new THREE.Mesh(geom, mat);
