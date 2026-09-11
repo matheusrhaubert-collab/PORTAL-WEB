@@ -1089,6 +1089,15 @@ function attachProject3DEditDrag() {
       if (ev.type === 'pointerup') handleRoomTapForDoubleTap(ev);
       return;
     }
+    // SOLTAR O BOTÃO DIREITO NO MEIO DO GESTO DE CONECTAR FACE (2026-09-11)
+    // não pode terminar o arraste do ESQUERDO — no mouse os dois botões
+    // compartilham o MESMO pointerId (é o mesmo "ponteiro", só o botão que
+    // muda), então o pointerup do direito bateria aqui em cima igualzinho ao
+    // do esquerdo. ev.buttons é o retrato de quais botões CONTINUAM
+    // pressionados depois desta mudança — bit 1 = esquerdo. Se ele ainda
+    // estiver ligado, este pointerup é só do direito: ignora e deixa o
+    // arraste vivo, sem mexer em projectDrag3DState.
+    if (ev.type === 'pointerup' && (ev.buttons & 1)) return;
     projectDrag3DState = null;
     domEl.style.cursor = 'default';
     // Giro: some com o aviso e fecha o ciclo com um render de verdade (a
@@ -1187,6 +1196,12 @@ function attachProject3DEditDrag() {
   // selectProjectSlot); com menos de 2, deixa o menu do sistema operacional
   // aparecer normal (não atrapalha quem só quer inspecionar a página).
   domEl.addEventListener('contextmenu', (ev) => {
+    // CONECTAR FACE (2026-09-11, ver o pointerdown de botão direito logo
+    // abaixo): enquanto um módulo está sendo segurado pelo botão esquerdo,
+    // o botão direito virou "escolher parede/piso/módulo alvo" — nunca deve
+    // abrir o menu de grupo nem o menu do sistema operacional nesse instante.
+    // Fora de um arraste, este handler continua 100% como antes.
+    if (projectDrag3DState) { ev.preventDefault(); return; }
     if (projectMultiSelectIds.size < 2) return;
     ev.preventDefault();
     if (typeof openProjectGroupToolbarAt === 'function') openProjectGroupToolbarAt(ev.clientX, ev.clientY);
@@ -1203,6 +1218,86 @@ function attachProject3DEditDrag() {
   let inicioGesto3D = null;
   domEl.addEventListener('pointerdown', (ev) => {
     inicioGesto3D = { x: ev.clientX, y: ev.clientY, button: ev.button };
+  }, true);
+
+  // ==========================================================================
+  // CONECTAR MÓDULO À FACE (parede/piso) — botão direito DURANTE o arraste
+  // ==========================================================================
+  // Pedido do Matt (2026-09-11, referência Promob, confirmado com 2 vídeos):
+  // "ao clicar no modulo e continuar clicando com botao esquerdo, e ao clicar
+  // em qualquer objeto com botao direito quero que o modulo se conecte a face
+  // do modulo/parede clicado [...] uma vez conectado o modulo vai andar nas
+  // limitacoes dessa face". Ele escolheu (3 perguntas respondidas na sessão):
+  // o botão direito só muda de função ENQUANTO o esquerdo está segurando um
+  // módulo — fora disso continua pan de câmera/menu de grupo, sem mudança.
+  //
+  // RODADA 1 (esta): só parede e piso — reaproveita EXATAMENTE os mesmos
+  // convertProjectSlotToWall/convertProjectSlotToFloor que já existem pro
+  // arraste livre do toque longo (freeMode, ver handleProject3DFloorMove
+  // acima) e pro auto-encosto por proximidade (projectWallToSnapFloorSlot).
+  // A novidade aqui é só o GATILHO: um clique EXPLÍCITO com o botão direito,
+  // que funciona no MOUSE (freeMode/auto-encosto por proximidade não cobrem
+  // "quero mandar ESTE módulo pra ESTA parede especificamente, mesmo estando
+  // longe ou do outro lado do ambiente"). Conectar num MÓDULO (não
+  // parede/piso) fica pra rodada 2 — precisa de um jeito novo de guardar
+  // "grudado na face de tal outro móvel" que ainda não existe no modelo de
+  // dados (só existe wall_index e floor_x_mm/floor_z_mm hoje).
+  //
+  // Fase de CAPTURA (mesmo motivo do inicioGesto3D acima, comprovado nesta
+  // mesma função): precisa rodar ANTES do OrbitControls, que tem o botão
+  // direito mapeado pra PAN da câmera (setControlsEnabled,
+  // viewer3d_composition.js) — sem preventDefault+stopImmediatePropagation
+  // aqui, a câmera panaria junto com o clique de conectar.
+  domEl.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 2) return;
+    const state = projectDrag3DState;
+    // Só faz algo se JÁ existe um módulo sendo segurado pelo esquerdo (giro
+    // e resize por seta ficam de fora de propósito — nenhum dos dois é
+    // "mover", trocar de parede no meio de um giro não faz sentido físico).
+    if (!state || state.viaArrow || state.dragMode === 'resize' || state.dragMode === 'rotate') return;
+    const slot = projectSlots.find((s) => s.id === state.slotId);
+    if (!slot) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    const surface = ViewerProjectEdit.pickRoomSurfaceAt
+      ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY, state.slotId)
+      : null;
+    if (!surface) return; // botão direito não achou parede nem piso embaixo — não faz nada
+    if (surface.kind === 'wall' && Number.isFinite(Number(surface.wallIndex))) {
+      const wallIndex = Number(surface.wallIndex);
+      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
+      if (!wallGeo) return;
+      const alongMm = ((surface.point.x - wallGeo.originX) * wallGeo.alongDirX
+        + (surface.point.z - wallGeo.originZ) * wallGeo.alongDirZ) * 1000;
+      convertProjectSlotToWall(slot, wallIndex, alongMm - Number(slot.width_mm || 0) / 2, surface.point.y * 1000);
+      state.onFloor = false;
+      state.dragMode = 'move';
+      state.liveWallIndex = wallIndex;
+      state.prevXMm = Number(slot.x_mm || 0);
+      state.prevYMm = Number(slot.floor_height_mm || 0);
+      state.grabOffsetXMm = 0;
+      state.grabOffsetYMm = 0;
+      state.depthOffsetM = Number(slot.depth_mm || 0) / 2000;
+      projectActiveWallIndex = wallIndex;
+      refreshProjectWallTabs();
+      refreshProjectWallWidthInput();
+    } else if (surface.kind === 'floor') {
+      convertProjectSlotToFloor(slot, surface.point.x * 1000, surface.point.z * 1000);
+      state.onFloor = true;
+      state.dragMode = 'move';
+      state.grabOffsetFloorXMm = 0;
+      state.grabOffsetFloorZMm = 0;
+      state.prevFloorXMm = Number(slot.floor_x_mm || 0);
+      state.prevFloorZMm = Number(slot.floor_z_mm || 0);
+    } else {
+      return;
+    }
+    renderProjectCanvas();
+    state.group = ViewerProjectEdit.findGroupBySlotId(slot.id);
+    if (state.group && ViewerProjectEdit.setHoverHighlight) ViewerProjectEdit.setHoverHighlight(state.group);
+    refreshProjectGroupCoDragRefs(state);
+    selectProjectSlot(slot.id);
+    markProjectDirty();
   }, true);
 
   // O MESMO pointerup chegava aqui DUAS VEZES — e era isso que fazia UM clique
