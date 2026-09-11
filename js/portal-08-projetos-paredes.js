@@ -602,8 +602,24 @@ function closeProjectReposicionarModal(commit) {
 }
 
 function openProjectReposicionarModal(slotId, snapshot) {
-  const el = document.getElementById('po-proj-reposicionar-panel');
-  if (!el) return;
+  // DEFENSIVO (2026-09-11, achado depois do relato do Matt "arrasta e conecta
+  // mas a janela não abre") — beginProjectReposicionarFromDrag já CONECTOU o
+  // módulo de verdade (convertProjectSlotToModuleFace) ANTES de chamar esta
+  // função; se o container do painel não existir no HTML (ex.: aba já estava
+  // aberta no navegador ANTES do portal.html novo ser salvo no disco — a
+  // marcação só chega ao DOM com um reload), a conexão acontecia mesmo assim
+  // e o painel simplesmente nunca aparecia, em silêncio — pior tipo de bug,
+  // parece que "não fez nada" quando na verdade fez metade. Criando o
+  // container na hora (mesmo padrão de outros painéis flutuantes desta
+  // aba) elimina essa dependência de reload: funciona mesmo numa aba antiga.
+  let el = document.getElementById('po-proj-reposicionar-panel');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'po-proj-reposicionar-panel';
+    el.id = 'po-proj-reposicionar-panel';
+    el.style.display = 'none';
+    document.body.appendChild(el);
+  }
   projectReposicionarState = { slotId, snapshot };
   renderProjectReposicionarModalContent();
   el.style.display = 'block';
