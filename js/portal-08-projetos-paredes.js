@@ -3557,11 +3557,24 @@ function refreshProjectConnectedFaceHighlight() {
     geom = new THREE.PlaneGeometry(wallGeo.widthM, heightM);
     const right = new THREE.Vector3(wallGeo.alongDirX, 0, wallGeo.alongDirZ);
     const up = new THREE.Vector3(0, 1, 0);
-    const normal = new THREE.Vector3(wallGeo.intoDirX, 0, wallGeo.intoDirZ);
+    // BUG achado 2026-09-11 (relato do Matt: "faixa amarela ta ao contrario,
+    // como se tivesse girado no ambiente") — intoDir vem de
+    // projectWallSegmentGeometry, que ESCOLHE o lado (pro centro do ambiente,
+    // ou invertido pelo botão ⇋) — em metade dos casos intoDir é o OPOSTO de
+    // cross(right,up), e usar esse vetor oposto direto no makeBasis monta uma
+    // REFLEXÃO (determinante -1), não uma rotação — Quaternion.
+    // setFromRotationMatrix não sabe representar reflexão nenhuma, e o
+    // resultado é a orientação torta/diagonal que o Matt viu. Corrigido:
+    // pra ORIENTAR o plano, usa sempre cross(right,up) (garantidamente uma
+    // rotação de verdade, não importa o sentido de intoDir); intoDir de
+    // verdade continua servindo só pro empurrãozinho de posição (fora do
+    // plano, evita z-fighting), onde o sentido não muda nada visualmente.
+    const intoReal = new THREE.Vector3(wallGeo.intoDirX, 0, wallGeo.intoDirZ);
+    const normal = new THREE.Vector3().crossVectors(right, up);
     const basis = new THREE.Matrix4().makeBasis(right, up, normal);
     quat = new THREE.Quaternion().setFromRotationMatrix(basis);
-    posX = wallGeo.originX + wallGeo.alongDirX * (wallGeo.widthM / 2) + normal.x * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
-    posZ = wallGeo.originZ + wallGeo.alongDirZ * (wallGeo.widthM / 2) + normal.z * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posX = wallGeo.originX + wallGeo.alongDirX * (wallGeo.widthM / 2) + intoReal.x * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posZ = wallGeo.originZ + wallGeo.alongDirZ * (wallGeo.widthM / 2) + intoReal.z * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
     posY = heightM / 2;
   } else if (slot.attached_to_slot_id != null && slot.attached_face) {
     // RODADA 2 (2026-09-11) — módulo conectado na face de OUTRO MÓDULO.
@@ -3577,12 +3590,19 @@ function refreshProjectConnectedFaceHighlight() {
     geom = new THREE.PlaneGeometry(faceGeo.width, faceGeo.height);
     const right = new THREE.Vector3(faceGeo.right.x, faceGeo.right.y, faceGeo.right.z);
     const up = new THREE.Vector3(faceGeo.up.x, faceGeo.up.y, faceGeo.up.z);
-    const normal = new THREE.Vector3(faceGeo.normal.x, faceGeo.normal.y, faceGeo.normal.z);
+    // MESMO BUG da parede acima (ver comentário grande lá) — faceGeo.normal
+    // (getModuleFaceGeometry) é REFLEXO de cross(right,up) em 3 das 6 faces
+    // ('nz', 'px', 'py' — conferido numericamente), o que quebra o
+    // Quaternion.setFromRotationMatrix. Mesmo fix: cross(right,up) pra
+    // ORIENTAR (sempre rotação de verdade), faceGeo.normal de verdade só pro
+    // empurrãozinho de posição.
+    const normalReal = new THREE.Vector3(faceGeo.normal.x, faceGeo.normal.y, faceGeo.normal.z);
+    const normal = new THREE.Vector3().crossVectors(right, up);
     const basis = new THREE.Matrix4().makeBasis(right, up, normal);
     quat = new THREE.Quaternion().setFromRotationMatrix(basis);
-    posX = faceGeo.center.x + normal.x * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
-    posY = faceGeo.center.y + normal.y * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
-    posZ = faceGeo.center.z + normal.z * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posX = faceGeo.center.x + normalReal.x * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posY = faceGeo.center.y + normalReal.y * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
+    posZ = faceGeo.center.z + normalReal.z * PROJECT_FACE_HIGHLIGHT_OFFSET_M;
   } else if (slot.placement === 'floor' && ViewerProjectEdit.getFloorRectM) {
     const rect = ViewerProjectEdit.getFloorRectM();
     if (!rect) { mat.dispose(); return; }
