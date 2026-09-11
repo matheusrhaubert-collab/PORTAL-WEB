@@ -3,6 +3,166 @@
 // planta baixa, paredes por segmento (editor de paredes), estilo do desenho
 // 3D (contorno/textura) e o menu de estilo.
 
+// ==========================================================================
+// SELECIONAR PAREDE/PISO NA VISTA DE CANTO 3D (2026-09-11)
+// ==========================================================================
+// Pedido do Matt, com print do Promob (rodapé "Selecionado: ... -> PANEL
+// ... (900x1947x19)"): "sempre que seleciono qualquer peca ou parede, piso,
+// qualquer objeto, ele me informa abaixo o que e, nome, e medidas... pode
+// colocar a informacao dentro do visualizador 3d, no canto inferior
+// esquerdo" + "quero poder clicar nas paredes e arrastar igual ao que faco
+// nos cabinets, mesma coisa com o chao". Duas perguntas fechadas na sessão:
+// parede arrasta SÓ o comprimento (não move a parede inteira, não existe
+// hoje nenhum jeito de mover); piso é só clicável pra ver a info, sem
+// arraste nenhum (o piso nasce do formato das paredes, não faz sentido
+// "arrastar" ele isolado).
+//
+// Paralelo a selectedProjectSlotId — NUNCA os dois ao mesmo tempo (ver o
+// clear em selectProjectSlot, portal-06b, e em selectProjectRoomFace
+// abaixo). { kind:'wall', wallIndex } | { kind:'floor' } | null.
+let projectSelectedRoomFace = null;
+
+// Arraste ativo de "esticar a ponta da parede" (ver attachProject3DEditDrag
+// — bloco "ESTICAR O COMPRIMENTO DA PAREDE"). { pointerId, wallIndex,
+// isRightEnd, anchorXM, anchorZM, dirXM, dirZM, intoDirXM, intoDirZM } |
+// null. Independente de projectDrag3DState (aquele é só de módulo).
+let projectWallResize3DState = null;
+
+function selectProjectRoomFace(face) {
+  const hadModule = selectedProjectSlotId != null;
+  projectSelectedRoomFace = face;
+  if (hadModule) {
+    // deselectProjectSlot já dispara refreshProject3DHighlight/
+    // refreshProject3DResizeArrows/refreshProject3DStatusBar por dentro —
+    // como projectSelectedRoomFace já está setado ANTES dessa chamada, os
+    // três já desenham a parede/piso novo em vez do módulo solto.
+    deselectProjectSlot();
+  } else {
+    if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
+    if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
+  }
+}
+
+function deselectProjectRoomFace() {
+  if (!projectSelectedRoomFace) return;
+  projectSelectedRoomFace = null;
+  if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
+  if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
+}
+
+// Move UMA ponta (A se isBEnd=false, B se isBEnd=true) de projectWallSegments
+// pra uma coordenada nova (mm) — e, se essa ponta é um CANTO COMPARTILHADO
+// com outra parede desenhada (ponta de outro segmento colada na mesma
+// posição, dentro de uma tolerância pequena), arrasta o canto vizinho
+// JUNTO, senão esticar uma parede abriria um buraco no ambiente onde ela
+// encontra a próxima. Sem isso "só esticar o comprimento" (resposta do
+// Matt) rasgaria a sala toda vez que a ponta arrastada for um canto de
+// verdade — só pontas soltas (parede sem vizinho ali) ficam sem cascata.
+const PROJECT_WALL_CORNER_EPS_MM = 5;
+function moveProjectWallSegmentEndpoint(wallIndex, isBEnd, newXMm, newZMm) {
+  const seg = projectWallSegments[wallIndex];
+  if (!seg) return;
+  const oldXMm = isBEnd ? seg.bx : seg.ax;
+  const oldZMm = isBEnd ? seg.bz : seg.az;
+  projectWallSegments.forEach((other, idx) => {
+    if (idx === wallIndex) return;
+    if (Math.hypot(other.ax - oldXMm, other.az - oldZMm) <= PROJECT_WALL_CORNER_EPS_MM) {
+      other.ax = newXMm; other.az = newZMm;
+    }
+    if (Math.hypot(other.bx - oldXMm, other.bz - oldZMm) <= PROJECT_WALL_CORNER_EPS_MM) {
+      other.bx = newXMm; other.bz = newZMm;
+    }
+  });
+  if (isBEnd) { seg.bx = newXMm; seg.bz = newZMm; } else { seg.ax = newXMm; seg.az = newZMm; }
+}
+
+// pointermove do arraste "esticar a ponta da parede" (ver
+// attachProject3DEditDrag). Mesma técnica de intersectPlaneAtClient já usada
+// pra esticar módulo (handleProject3DResizeMove) — só que aqui o plano é
+// ancorado na ponta OPOSTA da PAREDE (fixa durante todo o gesto, capturada
+// no pointerdown), não num módulo.
+function handleProjectWallResize3DMove(ev) {
+  const state = projectWallResize3DState;
+  const hitPoint = ViewerProjectEdit.intersectPlaneAtClient(
+    ev.clientX, ev.clientY,
+    { x: state.anchorXM, y: 0, z: state.anchorZM },
+    { x: state.intoDirXM, y: 0, z: state.intoDirZM }
+  );
+  if (!hitPoint) return;
+  const rawLenM = (hitPoint.x - state.anchorXM) * state.dirXM + (hitPoint.z - state.anchorZM) * state.dirZM;
+  const newLenMm = clamp(rawLenM * 1000, PROJECT_WALL_WIDTH_MIN_MM, PROJECT_WALL_WIDTH_MAX_MM);
+  const newXMm = state.anchorXM * 1000 + state.dirXM * newLenMm;
+  const newZMm = state.anchorZM * 1000 + state.dirZM * newLenMm;
+
+  if (projectWallSegments.length) {
+    moveProjectWallSegmentEndpoint(state.wallIndex, state.isRightEnd, newXMm, newZMm);
+    persistProjectWallConfig();
+    renderProjectCanvas();
+  } else {
+    // Forma legada (single/double/CU, sem planta desenhada) — mesma função
+    // que a barra numérica e o handle 2D já usam (setProjectWallWidthMm).
+    setProjectWallWidthMm(newLenMm, !state.isRightEnd, state.wallIndex);
+  }
+  refreshProjectWallWidthInput();
+  if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows();
+  if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
+}
+
+// Rodapé "Selecionado: nome — medidas" (canto inferior esquerdo da Vista de
+// Canto 3D, mesmo lugar/ideia do rodapé do Promob). Criado uma vez só
+// (mesmo padrão do ensurePhotoFrameOverlay logo abaixo no arquivo) dentro
+// de #po-proj-canvas-3d-edit-wrap — ver CSS .po-proj-3d-statusbar.
+function ensureProject3DStatusBar() {
+  const container = document.getElementById('po-proj-canvas-3d-edit-wrap');
+  if (!container || container.querySelector('.po-proj-3d-statusbar')) return;
+  if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+  const bar = document.createElement('div');
+  bar.className = 'po-proj-3d-statusbar';
+  bar.style.display = 'none';
+  container.appendChild(bar);
+}
+
+function refreshProject3DStatusBar() {
+  const bar = document.querySelector('#po-proj-canvas-3d-edit-wrap .po-proj-3d-statusbar');
+  if (!bar) return;
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+
+  if (selectedProjectSlotId != null) {
+    const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+    if (slot && slot.module) {
+      const nome = escapeHtmlCutlist(slot.module.name || '');
+      const dims = `${formatDimension(slot.width_mm, unit)} × ${formatDimension(slot.height_mm, unit)} × ${formatDimension(slot.depth_mm, unit)}`;
+      bar.innerHTML = `<strong>${nome}</strong> — ${dims}`;
+      bar.style.display = 'block';
+      return;
+    }
+  }
+  if (projectSelectedRoomFace && projectSelectedRoomFace.kind === 'wall') {
+    const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === projectSelectedRoomFace.wallIndex);
+    if (wallGeo) {
+      const heightMm = (roomSettings && roomSettings.ceiling_mm) || 2600;
+      const nome = I18n.t('project.wall_numbered', { n: projectSelectedRoomFace.wallIndex + 1 });
+      const dims = `${formatDimension(Math.round(wallGeo.widthM * 1000), unit)} × ${formatDimension(heightMm, unit)}`;
+      bar.innerHTML = `<strong>${nome}</strong> — ${dims}`;
+      bar.style.display = 'block';
+      return;
+    }
+  }
+  if (projectSelectedRoomFace && projectSelectedRoomFace.kind === 'floor') {
+    const rect = ViewerProjectEdit.getFloorRectM ? ViewerProjectEdit.getFloorRectM() : null;
+    if (rect) {
+      const wMm = Math.round((rect.x1 - rect.x0) * 1000);
+      const dMm = Math.round((rect.z1 - rect.z0) * 1000);
+      const nome = I18n.t('project.floor_room_label');
+      bar.innerHTML = `<strong>${nome}</strong> — ${formatDimension(wMm, unit)} × ${formatDimension(dMm, unit)}`;
+      bar.style.display = 'block';
+      return;
+    }
+  }
+  bar.style.display = 'none';
+  bar.innerHTML = '';
+}
+
 // Converte um slot de parede em ILHA no chão (e vice-versa), preservando a
 // posição atual como ponto de partida — usado pelo arraste livre do toque
 // longo (iPad) e pelo soltar da biblioteca.
@@ -450,6 +610,39 @@ function attachProject3DEditDrag() {
       }
     }
 
+    // SETAS DE ESTICAR O COMPRIMENTO DA PAREDE SELECIONADA (2026-09-11) —
+    // mesmo padrão visual das setas de módulo acima, só que aparecem nas
+    // duas pontas da parede quando ELA (não um módulo) está selecionada —
+    // ver refreshProject3DResizeArrows/selectProjectRoomFace. Só entra aqui
+    // se NENHUM módulo está selecionado (senão o bloco acima já teria
+    // tratado o clique — as duas coisas nunca desenham seta ao mesmo tempo).
+    if (arrowHit && selectedProjectSlotId == null && projectSelectedRoomFace
+      && projectSelectedRoomFace.kind === 'wall'
+      && (arrowHit.axis === 'wall-end-left' || arrowHit.axis === 'wall-end-right')) {
+      const wallGeo0 = getProjectWallGeometry().find((w) => w.wallIndex === projectSelectedRoomFace.wallIndex);
+      if (wallGeo0) {
+        ev.preventDefault();
+        const isRightEnd = arrowHit.axis === 'wall-end-right';
+        if (ViewerProjectEdit.highlightResizeArrow) ViewerProjectEdit.highlightResizeArrow(arrowHit.axis);
+        try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        // ÂNCORA = a ponta OPOSTA à seta agarrada, capturada AGORA (nunca se
+        // move durante o arraste) — mesmo padrão "ancorar na borda oposta à
+        // seta" já usado pra esticar ilha (ver handleProject3DResizeMove).
+        projectWallResize3DState = {
+          pointerId: ev.pointerId,
+          wallIndex: projectSelectedRoomFace.wallIndex,
+          isRightEnd,
+          anchorXM: isRightEnd ? wallGeo0.originX : (wallGeo0.originX + wallGeo0.alongDirX * wallGeo0.widthM),
+          anchorZM: isRightEnd ? wallGeo0.originZ : (wallGeo0.originZ + wallGeo0.alongDirZ * wallGeo0.widthM),
+          dirXM: isRightEnd ? wallGeo0.alongDirX : -wallGeo0.alongDirX,
+          dirZM: isRightEnd ? wallGeo0.alongDirZ : -wallGeo0.alongDirZ,
+          intoDirXM: wallGeo0.intoDirX,
+          intoDirZM: wallGeo0.intoDirZ
+        };
+        return;
+      }
+    }
+
     // (a checagem de botão esquerdo subiu pro topo deste handler — ver lá o
     // porquê; ela precisa valer também pro ramo das setas.)
     // preferredWallIndex=projectActiveWallIndex (ver comentário grande em
@@ -494,9 +687,32 @@ function attachProject3DEditDrag() {
       // Apaga o contorno vermelho junto — desde que ele virou espelho da
       // seleção (2026-08-12), clicar na parede é o gesto de "solta esse
       // módulo" que o Matt pediu.
+      //
+      // NOVO (2026-09-11): "clicar na parede" só significa DESSELECIONAR
+      // quando não tem parede/piso NENHUM embaixo do clique (fora do
+      // ambiente desenhado). Quando tem, o clique agora SELECIONA aquela
+      // parede/piso (rodapé de nome+medidas + setas de esticar comprimento
+      // na parede — ver selectProjectRoomFace/refreshProject3DStatusBar).
+      const surfaceHit = ViewerProjectEdit.pickRoomSurfaceAt
+        ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY)
+        : null;
+      if (surfaceHit && surfaceHit.kind === 'wall' && Number.isFinite(Number(surfaceHit.wallIndex))) {
+        ev.preventDefault();
+        selectProjectRoomFace({ kind: 'wall', wallIndex: Number(surfaceHit.wallIndex) });
+        return;
+      }
+      if (surfaceHit && surfaceHit.kind === 'floor') {
+        ev.preventDefault();
+        selectProjectRoomFace({ kind: 'floor' });
+        return;
+      }
       deselectProjectSlot();
+      deselectProjectRoomFace();
       return;
     }
+    // Acertou um MÓDULO — solta qualquer parede/piso que estivesse
+    // selecionado (mutuamente exclusivos, ver selectProjectRoomFace).
+    deselectProjectRoomFace();
     const slot = projectSlots.find((s) => s.id === hit.slotId);
     if (!slot) return;
     ev.preventDefault();
@@ -1193,6 +1409,28 @@ function attachProject3DEditDrag() {
   window.addEventListener('blur', () => {
     if (projectDrag3DState) endDrag3D({ type: 'pointercancel', pointerId: projectDrag3DState.pointerId });
   });
+
+  // ---------- ESTICAR O COMPRIMENTO DA PAREDE (setas, 2026-09-11) ----------
+  // Estado PRÓPRIO, paralelo a projectDrag3DState (que é só de módulo) —
+  // mesmo padrão de isolamento da régua manual (projectRulerDragRef) logo
+  // abaixo no arquivo. Começa no pointerdown das setas 'wall-end-left'/
+  // 'wall-end-right' (ver acima); pointermove/pointerup ficam aqui, sempre
+  // ativos, sem interferir em nada do resto do arquivo.
+  domEl.addEventListener('pointermove', (ev) => {
+    if (!projectWallResize3DState || ev.pointerId !== projectWallResize3DState.pointerId) return;
+    handleProjectWallResize3DMove(ev);
+  });
+  const endProjectWallResize3D = (ev) => {
+    if (!projectWallResize3DState) return;
+    if (ev && ev.pointerId != null && ev.pointerId !== projectWallResize3DState.pointerId) return;
+    projectWallResize3DState = null;
+    if (ViewerProjectEdit.highlightResizeArrow) ViewerProjectEdit.highlightResizeArrow(null);
+    markProjectDirty();
+  };
+  domEl.addEventListener('pointerup', endProjectWallResize3D);
+  domEl.addEventListener('pointercancel', endProjectWallResize3D);
+  window.addEventListener('pointerup', endProjectWallResize3D);
+  window.addEventListener('pointercancel', endProjectWallResize3D);
 
   // BOTÃO DIREITO = ABRE O MENU DO GRUPO (2026-09-03, Matt: "botao diretio
   // criar grupo"; refeito 2026-09-04 depois do relato "essa aba deve

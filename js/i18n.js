@@ -478,6 +478,11 @@
       'project.camera_title': 'Enquanto ligado, o toque gira e dá zoom na câmera em vez de mexer nos módulos.',
       'project.drag_library_hint': 'Arraste um módulo da biblioteca e solte numa parede ou no chão.',
       'project.floor_island_label': 'No chão',
+      // Rodapé de info da Vista de Canto 3D (2026-09-11, pedido do Matt —
+      // "clicar em qualquer objeto e ver o que ele é e suas medidas",
+      // referência Promob): nome do PISO quando ele mesmo (não um módulo
+      // ilha) é o objeto selecionado.
+      'project.floor_room_label': 'Piso',
       'project.undo_btn': '↩ Voltar',
       'project.undo_title': 'Desfaz a última alteração do projeto (mover, redimensionar, cor, adicionar ou remover módulo).',
       'project.redo_title': 'Refaz a alteração desfeita pelo botão Voltar.',
@@ -1479,6 +1484,7 @@
       'project.camera_title': 'While on, touch orbits and zooms the camera instead of moving modules.',
       'project.drag_library_hint': 'Drag a module from the library and drop it on a wall or on the floor.',
       'project.floor_island_label': 'On the floor',
+      'project.floor_room_label': 'Floor',
       'project.undo_btn': '↩ Undo',
       'project.undo_title': 'Undoes the last project change (move, resize, color, add or remove a module).',
       'project.redo_title': 'Redoes the change undone by the Back button.',
@@ -2470,6 +2476,7 @@
       'project.camera_title': 'Mientras está activo, el toque gira y hace zoom en la cámara en vez de mover los módulos.',
       'project.drag_library_hint': 'Arrastra un módulo de la biblioteca y suéltalo en una pared o en el suelo.',
       'project.floor_island_label': 'En el suelo',
+      'project.floor_room_label': 'Piso',
       'project.undo_btn': '↩ Volver',
       'project.undo_title': 'Deshace el último cambio del proyecto (mover, redimensionar, color, agregar o quitar módulo).',
       'project.redo_title': 'Rehace el cambio deshecho por el botón Atrás.',

@@ -3162,7 +3162,34 @@ header.po-topnav {
 .po-proj-slot-readonly { cursor: pointer; }
 .po-proj-slot-readonly:active { cursor: pointer; }
 
-#po-proj-canvas-3d-edit-wrap { width: 100%; }
+#po-proj-canvas-3d-edit-wrap { width: 100%; position: relative; }
+
+/* Rodapé de info da Vista de Canto 3D (2026-09-11, pedido do Matt com print
+   do Promob: "sempre que seleciono qualquer peca ou parede, piso, qualquer
+   objeto, ele me informa abaixo o que e, nome, e medidas... pode colocar a
+   informacao dentro do visualizador 3d, no canto inferior esquerdo" — ver
+   ensureProject3DStatusBar/refreshProject3DStatusBar, portal-08). Some/
+   aparece por JS (display:none/block) conforme tem ou não módulo/parede/
+   piso selecionado — nunca ocupa espaço vazio na tela. pointer-events:none
+   pra nunca atrapalhar clique/arraste na cena por baixo dela. */
+.po-proj-3d-statusbar {
+  position: absolute;
+  left: 10px; bottom: 10px;
+  max-width: calc(100% - 20px);
+  background: rgba(255,255,255,0.88);
+  border: 1px solid rgba(0,0,0,0.14);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #222;
+  pointer-events: none;
+  z-index: 20;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.po-proj-3d-statusbar strong { font-weight: 600; }
 #po-proj-canvas-3d-edit {
   width: 100%;
   /* mesma razão do #po-proj-3d-canvas: altura de tela, não fixa (2026-08-03).

@@ -1756,6 +1756,12 @@ function closeProjectSlotProps() {
 })();
 
 function selectProjectSlot(slotId) {
+  // Selecionar um MÓDULO sempre solta a parede/piso que estivesse
+  // selecionado (mutuamente exclusivos — só um "objeto" comanda o rodapé de
+  // info e as setas de esticar por vez, 2026-09-11, portal-08-projetos-paredes.js).
+  if (typeof projectSelectedRoomFace !== 'undefined' && projectSelectedRoomFace) {
+    projectSelectedRoomFace = null;
+  }
   selectedProjectSlotId = slotId;
   document.querySelectorAll('#po-proj-canvas .po-proj-slot').forEach((el) => {
     el.classList.toggle('selected', el.dataset.slotId === slotId);
@@ -1835,11 +1841,15 @@ function deselectProjectSlot() {
 // vazio" pode simplesmente não existir na viewport.
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
-  if (selectedProjectSlotId == null) return;
+  // 2026-09-11: Esc também solta parede/piso selecionado (mesma ideia — não
+  // depende de acertar pixel nenhum).
+  const temRoomFace = typeof projectSelectedRoomFace !== 'undefined' && projectSelectedRoomFace;
+  if (selectedProjectSlotId == null && !temRoomFace) return;
   // Janela aberta por cima: o Esc é dela (fechar a janela), não da seleção.
   const abertas = ['po-proj-builder-modal', 'po-proj-props-modal', 'po-proj-ai-modal'];
   if (abertas.some((id) => { const el = document.getElementById(id); return el && el.classList.contains('open'); })) return;
   deselectProjectSlot();
+  if (typeof deselectProjectRoomFace === 'function') deselectProjectRoomFace();
 });
 
 // ==========================================================================

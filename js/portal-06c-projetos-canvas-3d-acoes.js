@@ -1630,6 +1630,9 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   refreshProject3DHighlight();
 
   attachProject3DEditDrag();
+  // Rodapé "nome — medidas" da Vista de Canto (2026-09-11) — criado uma vez
+  // só (mesmo padrão de ensurePhotoFrameOverlay), idempotente.
+  if (typeof ensureProject3DStatusBar === 'function') ensureProject3DStatusBar();
   // Setas de redimensionamento (toque) — a cena acabou de ser reconstruída,
   // então elas precisam ser redesenhadas na posição nova do módulo
   // selecionado (ver refreshProject3DResizeArrows).
@@ -1691,6 +1694,9 @@ function refreshProject3DHighlight() {
   // carregamento (portal-08 carrega DEPOIS deste arquivo, mas na prática só
   // roda por evento, com tudo já carregado).
   if (typeof refreshProjectConnectedFaceHighlight === 'function') refreshProjectConnectedFaceHighlight();
+  // Rodapé "nome — medidas" (2026-09-11, portal-08-projetos-paredes.js) —
+  // mesmo gatilho, mesmo motivo do typeof-guard acima.
+  if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
 }
 
 // Contorno de TODOS os módulos da seleção múltipla (Ctrl+clique ou grupo
@@ -1796,7 +1802,40 @@ function refreshProject3DResizeArrows() {
   const slot = (selectedProjectSlotId != null)
     ? projectSlots.find((s) => s.id === selectedProjectSlotId)
     : null;
-  if (!slot || projectCameraModeOn) { ViewerProjectEdit.setResizeArrows(null); return; }
+  if (!slot) {
+    // PAREDE SELECIONADA, sem módulo nenhum (2026-09-11, pedido do Matt:
+    // "clicar nas paredes e arrastar igual ao que faco nos cabinets") —
+    // setas nas duas PONTAS da parede pra esticar o comprimento (ver
+    // handleProjectWallResize3DMove, portal-08-projetos-paredes.js). Nunca
+    // ao mesmo tempo que as setas de módulo (selectProjectRoomFace/
+    // selectProjectSlot já garantem que só um dos dois está selecionado).
+    if (!projectCameraModeOn && typeof projectSelectedRoomFace !== 'undefined'
+      && projectSelectedRoomFace && projectSelectedRoomFace.kind === 'wall'
+      && typeof getProjectWallGeometry === 'function') {
+      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === projectSelectedRoomFace.wallIndex);
+      if (wallGeo) {
+        const midY = ((roomSettings && roomSettings.ceiling_mm) || 2600) / 1000 / 2;
+        const rightOff = wallGeo.widthM + PROJECT_ARROW_GAP_M;
+        const spec = [
+          {
+            axis: 'wall-end-right',
+            dir: { x: wallGeo.alongDirX, y: 0, z: wallGeo.alongDirZ },
+            position: { x: wallGeo.originX + wallGeo.alongDirX * rightOff, y: midY, z: wallGeo.originZ + wallGeo.alongDirZ * rightOff }
+          },
+          {
+            axis: 'wall-end-left',
+            dir: { x: -wallGeo.alongDirX, y: 0, z: -wallGeo.alongDirZ },
+            position: { x: wallGeo.originX - wallGeo.alongDirX * PROJECT_ARROW_GAP_M, y: midY, z: wallGeo.originZ - wallGeo.alongDirZ * PROJECT_ARROW_GAP_M }
+          }
+        ];
+        ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
+        return;
+      }
+    }
+    ViewerProjectEdit.setResizeArrows(null);
+    return;
+  }
+  if (projectCameraModeOn) { ViewerProjectEdit.setResizeArrows(null); return; }
 
   const axes = projectSlotResizableAxes(slot);
   const spec = [];
