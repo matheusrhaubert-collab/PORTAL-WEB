@@ -836,7 +836,14 @@ function attachProject3DEditDrag() {
     // pra DENTRO do ambiente, além de PROJECT_PULL_TO_FLOOR_MM da parede.
     // Encostar de leve no piso perto do rodapé não converte nada; o toque
     // longo (freeMode) continua convertendo na hora, sem essa distância.
-    if (state.freeMode || projectPointerPulledIntoRoom(state, ev)) {
+    // MOUSE (2026-09-11, Matt: "o modulo ja troca de parede automaticamente,
+    // essa funcao nao deveria existir, e no lugar dela o botao direito pra
+    // selecionar a face") — a troca automática parede->chão por "puxar pra
+    // dentro do ambiente" fica reservada só pro TOQUE (freeMode) agora; no
+    // mouse o botão direito durante o arraste (ver o pointerdown novo, mais
+    // abaixo nesta função) é o ÚNICO jeito de reconectar. `state.isTouch` é
+    // o mesmo campo já gravado no pointerdown (ev.pointerType==='touch').
+    if (state.freeMode || (state.isTouch && projectPointerPulledIntoRoom(state, ev))) {
       // ignoreSlotId = o próprio módulo arrastado. SEM isso a conversão nunca
       // acontecia (relato do usuário: "movel nao ta indo da parede pro piso"):
       // o móvel acompanha o ponteiro, então a caixa de clique dele fica sempre
@@ -1201,6 +1208,7 @@ function attachProject3DEditDrag() {
     // o botão direito virou "escolher parede/piso/módulo alvo" — nunca deve
     // abrir o menu de grupo nem o menu do sistema operacional nesse instante.
     // Fora de um arraste, este handler continua 100% como antes.
+    console.log('[legno conectarFace] contextmenu disparou', { temArraste: !!projectDrag3DState });
     if (projectDrag3DState) { ev.preventDefault(); return; }
     if (projectMultiSelectIds.size < 2) return;
     ev.preventDefault();
@@ -1251,6 +1259,19 @@ function attachProject3DEditDrag() {
   domEl.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 2) return;
     const state = projectDrag3DState;
+    // DIAGNÓSTICO TEMPORÁRIO (2026-09-11) — Matt reportou que o botão
+    // direito não conecta a face nenhuma. Log incondicional (sem flag,
+    // pra não depender de mexer no console) até confirmarmos ao vivo; tirar
+    // depois que funcionar. Mesmo padrão de investigação do
+    // window.__legnoDebugPick (viewer3d_composition.js), só que ligado
+    // direto porque a feature é nova e ainda não tem certeza nenhuma.
+    console.log('[legno conectarFace] botão direito durante arraste', {
+      temEstado: !!state,
+      dragMode: state && state.dragMode,
+      viaArrow: state && state.viaArrow,
+      slotId: state && state.slotId,
+      temPickRoomSurfaceAt: !!(ViewerProjectEdit && ViewerProjectEdit.pickRoomSurfaceAt)
+    });
     // Só faz algo se JÁ existe um módulo sendo segurado pelo esquerdo (giro
     // e resize por seta ficam de fora de propósito — nenhum dos dois é
     // "mover", trocar de parede no meio de um giro não faz sentido físico).
@@ -1262,6 +1283,7 @@ function attachProject3DEditDrag() {
     const surface = ViewerProjectEdit.pickRoomSurfaceAt
       ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY, state.slotId)
       : null;
+    console.log('[legno conectarFace] resultado do pickRoomSurfaceAt', surface);
     if (!surface) return; // botão direito não achou parede nem piso embaixo — não faz nada
     if (surface.kind === 'wall' && Number.isFinite(Number(surface.wallIndex))) {
       const wallIndex = Number(surface.wallIndex);
@@ -1542,7 +1564,10 @@ function handleProject3DFloorMove(state, slot, ev) {
   // dela), ele gruda naquela parede. Vale pra QUALQUER parede do ambiente, o
   // que responde o "nem pra outras". Sair de novo é só puxar pra dentro do
   // ambiente (ver projectPointerPulledIntoRoom).
-  const encosto = projectWallToSnapFloorSlot(slot, xMm, zMm);
+  // MOUSE (2026-09-11, mesmo pedido do trecho parede->chão acima): o
+  // auto-encosto por proximidade fica só pro TOQUE agora — no mouse, a
+  // única forma de reconectar numa parede é o botão direito explícito.
+  const encosto = state.isTouch ? projectWallToSnapFloorSlot(slot, xMm, zMm) : null;
   if (encosto) {
     convertProjectSlotToWall(slot, encosto.wallIndex, encosto.xMm, 0);
     state.onFloor = false;
