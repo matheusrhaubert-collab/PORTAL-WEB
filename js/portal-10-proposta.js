@@ -1115,6 +1115,12 @@ async function generateProjectProposalPDF() {
     // thumbnail salvo; rodar em paralelo faria um render pisar no outro.
     const liveItems = [];
     for (const slot of projectSlots) {
+      // Bloco — Cor da Parede (visual_only, migration 156): ambientação, não
+      // um item pra cotar — fora da prévia de Proposta pelo mesmo motivo de
+      // sendProjectToOrder (a Proposta de um PEDIDO já enviado nunca vê isto,
+      // porque o slot nunca virou order_item — este é só o caminho da
+      // prévia AO VIVO, direto de projectSlots, antes de enviar).
+      if (slot.module && slot.module.visual_only) continue;
       liveItems.push(await buildProposalItemFromSlot(slot));
     }
     await generateOrderProposalPDF(liveOrder, liveItems);

@@ -3498,8 +3498,16 @@ async function sendProjectToOrder() {
     // também pela prévia de Proposta). Sequencial de propósito — o viewer
     // escondido é reaproveitado (singleton), não dá pra rodar em paralelo.
     const payloads = [];
+    let sortOrder = 0;
     for (let idx = 0; idx < projectSlots.length; idx++) {
       const slot = projectSlots[idx];
+      // Bloco — Cor da Parede (visual_only, migration 156): é uma peça de
+      // AMBIENTAÇÃO/planejamento (coluna, volume, parede fina) — nunca devia
+      // virar item de pedido (sem preço, sem chapa, não é algo que a fábrica
+      // corta ou entrega). Pulado aqui pra nunca criar order_item — cutlist/
+      // furação/proposta do pedido nunca chegam a ver este slot, porque eles
+      // partem de order_items, não de projectSlots direto.
+      if (slot.module && slot.module.visual_only) continue;
       const thumb = await renderProjectSlotThumbnailFallback(slot);
       payloads.push({
         order_id: order.id,
@@ -3543,7 +3551,7 @@ async function sendProjectToOrder() {
         total_price: (slot.result && slot.result.total) || 0,
         breakdown: (slot.result && slot.result.breakdown) || [],
         thumbnail_data_url: thumb,
-        sort_order: idx
+        sort_order: sortOrder++
       });
     }
     const { error: itemsError } = await supabaseClient.from('order_items').insert(payloads);

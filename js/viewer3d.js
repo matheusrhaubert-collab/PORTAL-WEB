@@ -2439,6 +2439,27 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // Bloco — Cor da Parede (2026-09-11, pedido do Matt: "preciso de um bloco
+  // (geometria) na cor da parede, so pra fazer volumes no projeto tipo uma
+  // coluna. nao escolhe cor, ele e uma 'parede' que eu possa coloca no
+  // ambeinte arrastar e aumentar e diminuir, bem aberto mesmo"). Mesmo
+  // padrão de geometria própria dos outros DECOR_BUILDERS (migration 141),
+  // só que aqui é uma caixa lisa só — sem porta, sem puxador, sem nada —
+  // e a cor NUNCA segue mats/part.color (módulo não tem module_colors
+  // nenhum cadastrado, de propósito): é sempre a mesma cor/acabamento da
+  // parede de verdade (fosco, sem brilho), pra um "bloco" servir de coluna/
+  // parede fina/volume de referência sem competir visualmente com o
+  // ambiente. Cor DUPLICADA de WALL_COLOR (js/viewer3d_composition.js) —
+  // mesmo motivo de sempre (arquivo independente, não importa o outro) —
+  // se mudar lá, mudar aqui e em photoreal.js também.
+  const BLOCO_PAREDE_COLOR = 0xf2efe8;
+  function buildDecorBlocoParede(W, H, D) {
+    const material = new THREE.MeshStandardMaterial({ color: BLOCO_PAREDE_COLOR, roughness: 0.95, metalness: 0.0 });
+    const mesh = decorBoxMesh(W, H, D, material);
+    mesh.position.y = H / 2;
+    return mesh;
+  }
+
   const DECOR_BUILDERS = {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
@@ -2453,6 +2474,7 @@ const Viewer3D = (function () {
     decor_lava_seca: buildDecorLavaSeca,
     decor_porta: buildDecorPorta,
     decor_janela: buildDecorJanela,
+    bloco_parede: buildDecorBlocoParede,
   };
 
   function placePieceInBox(part, W, H, D, index, count, bounds, emitRaw) {

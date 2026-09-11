@@ -2411,7 +2411,7 @@ function renderMoneyModal() {
 // dealer já aplicada (getDisplayPrice).
 function renderMoneyOrcamento(body, rel, slots) {
   const seller = isSellerAccount();
-  const linhas = (slots || projectSlots).filter((s) => s.result).map((s) => {
+  const linhas = (slots || projectSlots).filter((s) => s.result && !(s.module && s.module.visual_only)).map((s) => {
     const preco = Number(s.result.total) || 0;
     return '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + '</td>'
       + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
@@ -3175,6 +3175,11 @@ function collectProjectCostReport(slots) {
   };
 
   (slots || []).forEach((slot) => {
+    // Bloco — Cor da Parede (visual_only, migration 156): sem custo por
+    // definição (peça 'comprada' sem item vinculado) — fora daqui também,
+    // pra não aparecer como linha "R$0,00" confusa no relatório de custo
+    // (mesmo raciocínio de sendProjectToOrder: é ambientação, não pedido).
+    if (slot.module && slot.module.visual_only) return;
     if (!slot.result) return;
     const antes = rel.detalhe.length;
     anda(slot, slot.result.breakdown, '');

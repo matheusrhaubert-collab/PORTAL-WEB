@@ -1018,6 +1018,20 @@ const Photoreal = (() => {
     return g;
   }
 
+  // Bloco — Cor da Parede (2026-09-11) — cópia fiel de js/viewer3d.js (ver
+  // comentário grande lá): caixa lisa, cor SEMPRE fixa (nunca segue mats/
+  // part.color — módulo sem module_colors de propósito), mesmo hex de
+  // WALL_COLOR (js/viewer3d_composition.js) duplicado aqui — se mudar lá,
+  // mudar em viewer3d.js e aqui também. Usa T (RenderFielLibs.THREE), igual
+  // todo o resto deste arquivo, não THREE global.
+  const BLOCO_PAREDE_COLOR = 0xf2efe8;
+  function buildDecorBlocoParede(W, H, D) {
+    const material = new T.MeshStandardMaterial({ color: BLOCO_PAREDE_COLOR, roughness: 0.95, metalness: 0.0 });
+    const mesh = decorBoxMesh(W, H, D, material);
+    mesh.position.y = H / 2;
+    return mesh;
+  }
+
   const DECOR_BUILDERS = {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
@@ -1032,6 +1046,7 @@ const Photoreal = (() => {
     decor_lava_seca: buildDecorLavaSeca,
     decor_porta: buildDecorPorta,
     decor_janela: buildDecorJanela,
+    bloco_parede: buildDecorBlocoParede,
   };
 
   function placePieceInBox(part, parentGroup, W, H, D, index, count, bounds) {

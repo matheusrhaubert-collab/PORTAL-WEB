@@ -80,9 +80,18 @@
   // portal-01-core-catalogo.js) pelo mesmo motivo do fallback de tr() acima
   // — este arquivo é "independente de propósito" (ver cabeçalho) e não pode
   // depender de outro script já ter carregado. Mesmos fatores de conversão.
-  // Só que, diferente de lá, os <input> aqui continuam type="number" (não
-  // suportam fração de polegada tipo "8 1/2" — só decimal), então polegada
-  // aqui sai/entra em decimal ("8.5"), não fracionada.
+  //
+  // 2026-09-11, bug relatado pelo Matt: "as paredes nao estao deixando eu
+  // colocar valor por polegada fracionada, preciso colocar numero quebrado
+  // pro tamanho das paredes". Os <input> eram type="number", que só aceita
+  // decimal puro — tentar digitar "8 1/2" (ou até só um "," em vez de "."
+  // dependendo do teclado/locale do dispositivo) não entrava. Viraram
+  // type="text" (mesmo padrão do campo "exato" de largura/altura/
+  // profundidade em portal-01-core-catalogo.js — dim-exact-input) e a
+  // conversão de/pra polegada agora aceita e devolve fração ("8 1/2"), não
+  // só decimal. Isso também resolve de graça o teclado numérico sem "."
+  // que Android/iOS mostravam pros <input type="number" step="10"> (step
+  // inteiro = teclado só de inteiros): texto puro não tem esse problema.
   const MM_PER_INCH_WE = 25.4;
 
   function unidadeAtual() {
@@ -109,28 +118,53 @@
     const n = Number(mm) || 0;
     return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
   }
-  // mm -> número decimal pronto pro <input type="number"> na unidade atual.
+  function gcdWE(a, b) { return b === 0 ? a : gcdWE(b, a % b); }
+  // mm -> fração de polegada mais próxima em 1/32" ("8 1/2", "3/4", "6"),
+  // sem a aspa dupla no final — isso aqui vai pro .value de um <input>, não
+  // pra um texto de exibição (o botão OK/campo teto etc. também usa).
+  function mmParaFracaoPolegadaWE(mm) {
+    const totalPol = Math.max(Number(mm) || 0, 0) / MM_PER_INCH_WE;
+    let inteiro = Math.floor(totalPol);
+    let numerador = Math.round((totalPol - inteiro) * 32);
+    if (numerador === 32) { numerador = 0; inteiro += 1; }
+    if (numerador === 0) return String(inteiro);
+    const div = gcdWE(numerador, 32);
+    const num = numerador / div;
+    const den = 32 / div;
+    return inteiro > 0 ? (inteiro + ' ' + num + '/' + den) : (num + '/' + den);
+  }
+  // mm -> texto pronto pro <input type="text"> na unidade atual (fração pra
+  // polegada, decimal pras outras).
   function mmParaNumeroWE(mm, unidade) {
+    if (unidade === 'in') return mmParaFracaoPolegadaWE(mm);
     const fator = fatorMmWE(unidade);
     if (fator === 1) return formatMmSemPerderWE(mm);
     const casas = unidade === 'cm' ? 1 : 3;
     return (Number(mm) / fator).toFixed(casas);
   }
   // O que o usuário digitou (na unidade atual) -> mm, pra guardar no
-  // segmento (que continua 100% mm por baixo, igual sempre foi).
+  // segmento (que continua 100% mm por baixo, igual sempre foi). Em
+  // polegada aceita fração ("8 1/2", "1/2") além de decimal ("8.5"), igual
+  // parseDimensionInput de portal-01-core-catalogo.js.
   function numeroParaMmWE(valorStr, unidade) {
-    const val = parseFloat(String(valorStr).replace(',', '.'));
+    const str = String(valorStr == null ? '' : valorStr).trim();
+    if (!str) return null;
+    if (unidade === 'in') {
+      const limpo = str.replace(/["']/g, '').replace(',', '.');
+      const fracao = limpo.match(/^(\d+(?:\.\d+)?)?\s*(\d+)\/(\d+)$/);
+      if (fracao) {
+        const inteiro = fracao[1] ? parseFloat(fracao[1]) : 0;
+        const num = parseFloat(fracao[2]);
+        const den = parseFloat(fracao[3]);
+        if (!den) return null;
+        return (inteiro + num / den) * MM_PER_INCH_WE;
+      }
+      const dec = parseFloat(limpo);
+      return isNaN(dec) ? null : dec * MM_PER_INCH_WE;
+    }
+    const val = parseFloat(str.replace(',', '.'));
     if (isNaN(val)) return null;
     return val * fatorMmWE(unidade);
-  }
-  // Passo do <input> (setinhas/scroll) na unidade atual, a partir do passo
-  // em mm de sempre — só pra não ficar um passo ridículo (ex.: "10" em
-  // metros seria 10000mm por clique).
-  function passoNaUnidadeWE(origStepMm, unidade) {
-    const fator = fatorMmWE(unidade);
-    if (fator === 1) return origStepMm;
-    const passo = origStepMm / fator;
-    return passo >= 1 ? Math.round(passo) : Number(passo.toFixed(3));
   }
 
   function el(tag, attrs, pai) {
@@ -199,16 +233,16 @@
       '    <div class="po-wall-stage" id="po-wall-stage"></div>',
       '    <div class="po-wall-side">',
       '      <div class="po-wall-side-title" data-i18n="wall_editor.section_wall">Parede</div>',
-      '      <label><span data-i18n="wall_editor.length">Comprimento</span> <span class="po-wall-un" id="po-wall-comp-un">mm</span><input type="number" id="po-wall-comp" step="10"></label>',
-      '      <label><span data-i18n="wall_editor.angle">&Acirc;ngulo</span> <span class="po-wall-un">&deg;</span><input type="number" id="po-wall-ang" step="1"></label>',
-      '      <label><span data-i18n="wall_editor.thickness">Espessura</span> <span class="po-wall-un" id="po-wall-esp-un">mm</span><input type="number" id="po-wall-esp" step="10"></label>',
-      '      <label><span data-i18n="wall_editor.wall_height">Altura desta parede</span> <span class="po-wall-un" id="po-wall-pd-un">mm</span><input type="number" id="po-wall-pd" step="10"></label>',
+      '      <label><span data-i18n="wall_editor.length">Comprimento</span> <span class="po-wall-un" id="po-wall-comp-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-comp"></label>',
+      '      <label><span data-i18n="wall_editor.angle">&Acirc;ngulo</span> <span class="po-wall-un">&deg;</span><input type="number" id="po-wall-ang" step="any"></label>',
+      '      <label><span data-i18n="wall_editor.thickness">Espessura</span> <span class="po-wall-un" id="po-wall-esp-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-esp"></label>',
+      '      <label><span data-i18n="wall_editor.wall_height">Altura desta parede</span> <span class="po-wall-un" id="po-wall-pd-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-pd"></label>',
       '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_drag"></p>',
       '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_disconnect"></p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
       '      <div class="po-wall-side-title" style="margin-top:6px;" data-i18n="wall_editor.section_room">Ambiente</div>',
-      '      <label><span data-i18n="wall_editor.ceiling">P&eacute;-direito</span> <span class="po-wall-un" id="po-wall-teto-un">mm</span><input type="number" id="po-wall-teto" step="10"></label>',
-      '      <label><span data-i18n="wall_editor.baseboard">Rodap&eacute;</span> <span class="po-wall-un" id="po-wall-rodape-un">mm</span><input type="number" id="po-wall-rodape" step="5"></label>',
+      '      <label><span data-i18n="wall_editor.ceiling">P&eacute;-direito</span> <span class="po-wall-un" id="po-wall-teto-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-teto"></label>',
+      '      <label><span data-i18n="wall_editor.baseboard">Rodap&eacute;</span> <span class="po-wall-un" id="po-wall-rodape-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-rodape"></label>',
       '    </div>',
       '  </div>',
       '  <div class="po-wall-footer">',
@@ -503,15 +537,10 @@
     const s = estado.segs[estado.sel];
     const q = (id) => document.getElementById(id);
     const unidade = unidadeDesenho;
-    const passoComp = passoNaUnidadeWE(10, unidade);
-    const passoEsp = passoNaUnidadeWE(10, unidade);
-    const passoRodape = passoNaUnidadeWE(5, unidade);
     if (s) {
       q('po-wall-comp').value = mmParaNumeroWE(comprimentoDe(s), unidade);
-      q('po-wall-comp').step = passoComp;
       q('po-wall-ang').value = anguloDe(s);
       q('po-wall-esp').value = mmParaNumeroWE(Number(s.thicknessMm) || ESPESSURA_PADRAO, unidade);
-      q('po-wall-esp').step = passoEsp;
       // Altura SEMPRE preenchida (2026-08-13, pedido do Matt: "ao clicar na
       // parede tenho acesso aos tamanhos de cada uma, com altura também").
       // Antes ficava vazia quando a parede seguia o pé-direito do ambiente, e
@@ -520,15 +549,12 @@
       // que não foi customizada acompanhar mudanças do pé-direito.
       const alturaMm = s.ceilingMm || estado.ceilingMm || '';
       q('po-wall-pd').value = alturaMm === '' ? '' : mmParaNumeroWE(alturaMm, unidade);
-      q('po-wall-pd').step = passoComp;
     }
     if (q('po-wall-teto')) {
       q('po-wall-teto').value = estado.ceilingMm ? mmParaNumeroWE(estado.ceilingMm, unidade) : '';
-      q('po-wall-teto').step = passoComp;
     }
     if (q('po-wall-rodape')) {
       q('po-wall-rodape').value = mmParaNumeroWE(estado.baseboardMm || 0, unidade);
-      q('po-wall-rodape').step = passoRodape;
     }
     // Rótulos de unidade ("mm"/"cm"/"m"/"ft"/"in") ao lado de cada campo.
     ['po-wall-comp-un', 'po-wall-esp-un', 'po-wall-pd-un', 'po-wall-teto-un', 'po-wall-rodape-un'].forEach((id) => {
