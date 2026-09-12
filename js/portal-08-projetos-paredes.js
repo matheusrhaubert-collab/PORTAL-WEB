@@ -927,8 +927,16 @@ function renderProjectReposicionarModalContent() {
   // COMPARTILHADA entre as 2 views (sharedTotalHMm, RODADA 11), com um piso
   // mínimo pra nunca ficar ilegível num alvo bem pequeno.
   const floorLabelFontSizeMm = Math.max(26, sharedTotalHMm * 0.045);
+  // RODADA 16 (2026-09-12) - a bolinha "rot-bl" foi REMOVIDA: ela nascia
+  // bem em cima de (rightMm, viewUpMm), que é EXATAMENTE o pivô do giro
+  // (ver o comentário grande sobre pivô da RODADA 14, mais abaixo, e o
+  // rotate(deg, cx, cy) do SVG). Uma alça com raio zero até o próprio pivô
+  // faz o ângulo inicial do arraste (atan2 de um ponto quase em cima do
+  // pivô) variar violentamente com o pixel exato do clique - é a causa do
+  // "clico e ele mexe sozinho e depois tenho pouco controle" que o Matt
+  // reportou. As outras 3 bolinhas (tl/tr/br) ficam a uma distância real
+  // do pivô (childFootWMm/childHMm) e não têm esse problema.
   const buildRotateHandles = (rectId, viewUpMm, childHMm) => `
-    <circle id="${rectId}-rot-bl" cx="${rightMm}" cy="${viewUpMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
     <circle id="${rectId}-rot-br" cx="${rightMm + childFootWMm}" cy="${viewUpMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
     <circle id="${rectId}-rot-tl" cx="${rightMm}" cy="${viewUpMm + childHMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
     <circle id="${rectId}-rot-tr" cx="${rightMm + childFootWMm}" cy="${viewUpMm + childHMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
@@ -1367,8 +1375,17 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
   // cantos foi agarrado (nem se o clique não caiu no pixel exato do centro
   // da bolinha), o resultado continua "girar acompanhando o dedo", agora em
   // torno do canto certo (o mesmo que a física 3D real já usava).
+  // RODADA 16 (2026-09-12) - só sobraram tl/tr/br (ver comentário da
+  // remoção da rot-bl em buildRotateHandles, mais acima) - e o ângulo cru
+  // agora passa por snapReposicionarRotationTo90 antes de chegar em
+  // onRotate: giro LIVRE/contínuo (sem o passo de 5° do
+  // quantizeProjectRotation, que é só do gesto de Shift+arrastar a parede),
+  // só grudando nos múltiplos de 90° quando chega perto. Pedido do Matt:
+  // "quero clique arraste livre ate ficar proximo de 90 e gera um ima nos
+  // 90 graus. deixa bem livre porque hoje eu clico e ele mexe sozinho e
+  // para dpeois tenho pouco controle, ta estranho."
   if (typeof onRotate === 'function') {
-    ['tl', 'tr', 'bl', 'br'].forEach((corner) => {
+    ['tl', 'tr', 'br'].forEach((corner) => {
       const handle = document.getElementById(rectId + '-rot-' + corner);
       if (!handle) return;
       handle.addEventListener('pointerdown', (ev) => {
@@ -1381,7 +1398,7 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
         const onMove = (mv) => {
           const p = toFaceCoords(mv.clientX, mv.clientY);
           const curAngleDeg = Math.atan2(p.up - verticalMm, p.right - rightMm) * 180 / Math.PI;
-          onRotate(rotDegAtStart + (curAngleDeg - startAngleDeg));
+          onRotate(snapReposicionarRotationTo90(rotDegAtStart + (curAngleDeg - startAngleDeg)));
         };
         const onUp = () => stopProjectReposicionarViewDrag();
         document.addEventListener('pointermove', onMove);
@@ -1430,6 +1447,26 @@ function quantizeProjectRotation(rawDeg) {
   }
   const passo = Math.round(norm / PROJECT_ROTATE_STEP_DEG) * PROJECT_ROTATE_STEP_DEG;
   return { deg: ((passo % 360) + 360) % 360, snapped: false };
+}
+
+// RODADA 16 (2026-09-12) - giro pelas bolinhas do Reposicionar (tl/tr/br,
+// ver wireProjectReposicionarView) - DIFERENTE do quantizeProjectRotation
+// acima (que dá passo de 5°, feito pro gesto de Shift+arrastar a parede):
+// aqui o giro fica TOTALMENTE livre/contínuo, só "gruda" (ímã) perto de um
+// múltiplo de 90°, usando o mesmo limiar PROJECT_ROTATE_SNAP_DEG. Preserva
+// o valor cru (não normaliza pra 0-360) quando não gruda, e quando gruda
+// desloca só a diferença até o múltiplo mais próximo - assim o ângulo não
+// "pula" de volta pro range 0-360 no meio de um giro de mais de uma volta.
+function snapReposicionarRotationTo90(rawDeg) {
+  const norm = ((rawDeg % 360) + 360) % 360;
+  const noventa = Math.round(norm / 90) * 90;
+  let diff = norm - noventa;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  if (Math.abs(diff) <= PROJECT_ROTATE_SNAP_DEG) {
+    return rawDeg - diff;
+  }
+  return rawDeg;
 }
 
 function showProjectRotateHud(deg, snapped) {
