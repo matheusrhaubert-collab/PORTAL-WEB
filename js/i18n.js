@@ -1088,6 +1088,19 @@
       // ---- Parede por NUMERO (planta desenhada, 2026-08-18) ----
       'project.wall_numbered': 'Parede {{n}}',
       'project.wall_width_label_numbered': 'Largura — Parede {{n}}',
+      // ---- Reposicionar módulo (encostado em outro módulo, 2026-09-11, referência Promob) ----
+      'project.reposicionar_title': 'Reposicionar módulo',
+      'project.reposicionar_view_frontal': 'Vista frontal',
+      'project.reposicionar_view_planta': 'Planta baixa',
+      'project.reposicionar_flush_hint': 'Encostado — sem ajuste neste eixo',
+      'project.reposicionar_field_right': 'Posição horizontal',
+      'project.reposicionar_field_up_horizontal': 'Profundidade',
+      'project.reposicionar_field_up_vertical': 'Altura',
+      'project.reposicionar_field_rotation': 'Giro',
+      'project.reposicionar_rotation_hint': 'Giro só é possível em módulos encostados no topo ou no fundo de outro módulo.',
+      'project.reposicionar_step_label': 'Passo do teclado',
+      'project.reposicionar_cancel_btn': 'Cancelar',
+      'project.reposicionar_ok_btn': 'OK',
     },
 
     en: {
@@ -2080,6 +2093,19 @@
       // ---- Parede por NUMERO (planta desenhada, 2026-08-18) ----
       'project.wall_numbered': 'Wall {{n}}',
       'project.wall_width_label_numbered': 'Width — Wall {{n}}',
+      // ---- Reposition module (attached to another module, 2026-09-11, Promob reference) ----
+      'project.reposicionar_title': 'Reposition module',
+      'project.reposicionar_view_frontal': 'Front view',
+      'project.reposicionar_view_planta': 'Floor plan',
+      'project.reposicionar_flush_hint': 'Flush — no adjustment on this axis',
+      'project.reposicionar_field_right': 'Horizontal position',
+      'project.reposicionar_field_up_horizontal': 'Depth',
+      'project.reposicionar_field_up_vertical': 'Height',
+      'project.reposicionar_field_rotation': 'Rotation',
+      'project.reposicionar_rotation_hint': 'Rotation is only available for modules attached to the top or bottom of another module.',
+      'project.reposicionar_step_label': 'Keyboard step',
+      'project.reposicionar_cancel_btn': 'Cancel',
+      'project.reposicionar_ok_btn': 'OK',
     },
 
     es: {
@@ -3072,6 +3098,19 @@
       // ---- Parede por NUMERO (planta desenhada, 2026-08-18) ----
       'project.wall_numbered': 'Pared {{n}}',
       'project.wall_width_label_numbered': 'Ancho — Pared {{n}}',
+      // ---- Reposicionar módulo (apoyado en otro módulo, 2026-09-11, referencia Promob) ----
+      'project.reposicionar_title': 'Reposicionar módulo',
+      'project.reposicionar_view_frontal': 'Vista frontal',
+      'project.reposicionar_view_planta': 'Planta baja',
+      'project.reposicionar_flush_hint': 'Apoyado — sin ajuste en este eje',
+      'project.reposicionar_field_right': 'Posición horizontal',
+      'project.reposicionar_field_up_horizontal': 'Profundidad',
+      'project.reposicionar_field_up_vertical': 'Altura',
+      'project.reposicionar_field_rotation': 'Giro',
+      'project.reposicionar_rotation_hint': 'El giro solo está disponible en módulos apoyados en la parte superior o inferior de otro módulo.',
+      'project.reposicionar_step_label': 'Paso de teclado',
+      'project.reposicionar_cancel_btn': 'Cancelar',
+      'project.reposicionar_ok_btn': 'Aceptar',
     }
   };
 

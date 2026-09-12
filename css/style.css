@@ -2969,6 +2969,80 @@ header.po-topnav {
 /* Realce do canvas 3D enquanto um módulo está sendo arrastado por cima dele. */
 #po-proj-canvas-3d-edit-wrap.drop-target,
 .po-proj-canvas.drop-target { outline: 2px dashed var(--text); outline-offset: -4px; }
+
+/* ==========================================================================
+   REPOSICIONAR — painel que abre ao soltar um módulo arrastado com o botão
+   DIREITO em cima de outro (RODADA 4/5/6, 2026-09-11, referência Promob —
+   ver o comentário grande em renderProjectReposicionarModalContent,
+   portal-08-projetos-paredes.js). Flutua sobre a cena 3D, mesmo espírito de
+   .po-proj-slot-actions/.po-proj-group-toolbar acima (var(--panel) + borda +
+   sombra), só que fixo num canto em vez de seguir um módulo pela tela.
+   ========================================================================== */
+.po-proj-reposicionar-panel {
+  position: fixed; top: 74px; right: 16px; z-index: 70;
+  width: 300px; max-width: calc(100vw - 32px);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 16px 16px; box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+  max-height: calc(100vh - 90px); overflow-y: auto;
+}
+.po-proj-reposicionar-panel h4 { margin: 0 0 10px; font-size: 14px; }
+/* As 2 vistas lado a lado (empilha em telas bem estreitas, já que o painel
+   inteiro tem só 300px — cada coluna cabe ~132px, suficiente pro SVG). */
+.po-proj-reposicionar-views-row {
+  display: flex; gap: 10px; margin-bottom: 10px;
+}
+.po-proj-reposicionar-view-col { flex: 1 1 0; min-width: 0; }
+.po-proj-reposicionar-view-label {
+  font-size: 10.5px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; text-align: center;
+}
+.po-proj-reposicionar-view-wrap {
+  background: #f4f1ea; border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px; display: flex; align-items: center; justify-content: center;
+}
+.po-proj-reposicionar-svg { width: 100%; height: 90px; display: block; touch-action: none; }
+.po-proj-reposicionar-face-rect { fill: #ffffff; stroke: var(--border); stroke-width: 4; }
+.po-proj-reposicionar-child-rect {
+  fill: #f2c14e; stroke: #b0862a; stroke-width: 4; cursor: grab;
+}
+.po-proj-reposicionar-child-rect:active { cursor: grabbing; }
+/* Eixo sem liberdade de ajuste (peça encostada/flush ali) — ver
+   frontInteractiveUp/planInteractiveUp no JS: some visualmente pra deixar
+   claro que aquele eixo não responde a arraste vertical. */
+.po-proj-reposicionar-flush-hint {
+  font-size: 10px; color: var(--muted); text-align: center; margin: 3px 0 0; font-style: italic;
+}
+.po-proj-reposicionar-panel .po-proj-position-field {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+}
+.po-proj-reposicionar-panel .po-proj-position-field input {
+  width: 72px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--text); font-size: 13px;
+}
+.po-proj-reposicionar-panel .po-proj-position-field .po-proj-dim-unit {
+  font-size: 11px; color: var(--muted);
+}
+.po-proj-reposicionar-panel .po-proj-position-field label {
+  font-size: 12px; color: var(--muted); margin-left: auto;
+}
+.po-proj-reposicionar-panel .hint { font-size: 11px; color: var(--muted); margin: -2px 0 8px; }
+.po-proj-reposicionar-step-row {
+  display: flex; align-items: center; gap: 6px; margin: 8px 0 12px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.po-proj-reposicionar-step-row label { font-size: 12px; color: var(--muted); }
+.po-proj-reposicionar-step-row input {
+  width: 64px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--text); font-size: 13px; margin-left: auto;
+}
+.po-proj-reposicionar-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.po-proj-reposicionar-actions button {
+  padding: 7px 14px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); background: var(--text); color: #fff;
+}
+.po-proj-reposicionar-actions button.secondary { background: var(--panel); color: var(--text); }
 /* Pedido do usuário (3ª rodada): "tem muita borda lá em cima só com umas
    coisas escritas que ninguém vai ler" — bem discreto, quase um detalhe. */
 .po-proj-canvas-scale-label {

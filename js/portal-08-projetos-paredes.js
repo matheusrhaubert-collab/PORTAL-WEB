@@ -649,48 +649,100 @@ function renderProjectReposicionarModalContent() {
   const rotDeg = Number(slot.attached_rotation_offset_deg || 0);
   const upLabel = isHorizontalFace ? I18n.t('project.reposicionar_field_up_horizontal') : I18n.t('project.reposicionar_field_up_vertical');
 
-  // VISTA 2D (RODADA 5, pedido "isso que quero" / referência Promob) — o
-  // retângulo da FACE do módulo-alvo (g.width x g.height, os mesmos eixos
-  // right/up de sempre) com o retângulo do FILHO desenhado dentro, na
-  // posição atual (rightMm/upMm) — arrastável (ver wireProjectReposicionarView
-  // abaixo). Só 1 view (não 2 como o Promob) — ver comentário no CSS.
+  // VISTA 2D — DUAS views, "Vista frontal" + "Planta baixa" (RODADA 6,
+  // 2026-09-11, pedido explícito do Matt com print do diálogo "Reposicionar"
+  // do Promob: "tenho visao 2d e visao frontal" / "nessa janela nunca uso
+  // teclado so clico dos lados"). RODADA 5 tinha só 1 view — ver histórico
+  // no memory conectar_modulo_face_promob.md.
+  //
+  // IMPORTANTE — por que as 2 views não são simetricamente "completas": o
+  // filho aqui é sempre um módulo ENCOSTADO numa face (nunca flutua, nunca
+  // afunda — regra de sempre desta feature, ver computeModuleFaceAttachment
+  // Transform), então a posição dele tem exatamente 2 graus de liberdade no
+  // total: rightMm (ao longo da face) e upMm (altura OU profundidade,
+  // dependendo da face — ver isHorizontalFace acima), nunca 3. O Promob
+  // mostra 2 views porque o objeto dele pode ter até 3 graus de liberdade
+  // (X, altura, profundidade independentes); aqui isso não existe fisicamente
+  // — então:
+  //   · Vista frontal = (rightMm, altura). Quando a face-alvo é uma das 4
+  //     verticais (pz/nz/px/nx), a "altura" É o upMm de sempre → view
+  //     totalmente arrastável nos 2 eixos (idêntica à view única da RODADA 5).
+  //     Quando a face-alvo é horizontal (py/ny, topo/fundo), não existe
+  //     ajuste de altura (o filho já nasce encostado, flush) → a view mostra
+  //     a peça na altura real dela só pra contexto visual, mas só o eixo
+  //     horizontal (rightMm) responde a clique/arraste ali.
+  //   · Planta baixa = (rightMm, profundidade). Espelha o raciocínio acima
+  //     trocado: totalmente arrastável quando a face-alvo é horizontal
+  //     (aí upMm JÁ é profundidade), só o eixo horizontal quando é vertical.
+  // As 2 views SEMPRE compartilham o mesmo eixo horizontal (rightMm) — arrastar
+  // em qualquer uma das duas atualiza a mesma peça, os campos numéricos e a
+  // outra view junto (mesmo applyValues de sempre).
   const faceWidthMm = g.width * 1000;
   const faceHeightMm = g.height * 1000;
   const childFootWMm = Number(slot.width_mm || 0);
   // "Extensão ao longo de up" da PRÓPRIA face (ver computeModuleFaceAttachmentTransform):
   // altura do filho nas 4 faces verticais, profundidade nas 2 horizontais.
   const childFootUpMm = isHorizontalFace ? Number(slot.depth_mm || 0) : Number(slot.height_mm || 0);
-  const VIEW_MAX_W = 208, VIEW_MAX_H = 160; // cabe dentro do painel de 240px (16px de padding de cada lado)
-  const viewScale = Math.min(VIEW_MAX_W / Math.max(faceWidthMm, 1), VIEW_MAX_H / Math.max(faceHeightMm, 1));
-  const viewPxW = Math.max(40, faceWidthMm * viewScale);
-  const viewPxH = Math.max(40, faceHeightMm * viewScale);
+  const childHeightMm = Number(slot.height_mm || 0);
+  const childDepthMm = Number(slot.depth_mm || 0);
+  const FLUSH_MIN_MM = 60; // altura/profundidade mínima só pra desenhar algo legível na view sem ajuste
+
+  // Vista frontal: eixo vertical é altura de verdade só nas 4 faces
+  // verticais (isHorizontalFace=false); nas 2 horizontais não há ajuste de
+  // altura (flush), então é só ilustrativo (childHeightMm real, não clampado).
+  const frontInteractiveUp = !isHorizontalFace;
+  const frontFaceHMm = frontInteractiveUp ? faceHeightMm : Math.max(childHeightMm, FLUSH_MIN_MM);
+  const frontChildHMm = frontInteractiveUp ? childFootUpMm : childHeightMm;
+  const frontViewUpMm = frontInteractiveUp ? upMm : 0;
+
+  // Planta baixa: eixo vertical (profundidade, no desenho) é de verdade só
+  // nas 2 faces horizontais (isHorizontalFace=true); nas 4 verticais não há
+  // ajuste de profundidade (sempre encostado), só ilustrativo.
+  const planInteractiveUp = isHorizontalFace;
+  const planFaceHMm = planInteractiveUp ? faceHeightMm : Math.max(childDepthMm, FLUSH_MIN_MM);
+  const planChildHMm = planInteractiveUp ? childFootUpMm : childDepthMm;
+  const planViewUpMm = planInteractiveUp ? upMm : 0;
+
   // Giro só existe (rotationOffsetDeg != 0) nas 2 faces horizontais, e pivota
   // ao redor do CANTO de referência da face (0,0 em right/up), não do centro
   // do filho — mesma física de computeModuleFaceAttachmentTransform (ver
   // comentário grande ali) — por isso o transform de giro do SVG usa (0,0)
-  // como pivô, não o centro do retângulo do filho.
-  const viewSvgHtml = `
-    <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_label')}</div>
+  // como pivô, não o centro do retângulo do filho. Só a view com liberdade
+  // real de giro (planta baixa, quando isHorizontalFace) desenha o giro.
+  const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation) => `
     <div class="po-proj-reposicionar-view-wrap">
-      <svg class="po-proj-reposicionar-svg" id="po-reposicionar-svg"
-           width="${viewPxW}" height="${viewPxH}"
-           viewBox="0 0 ${faceWidthMm} ${faceHeightMm}" preserveAspectRatio="none">
-        <rect x="0" y="0" width="${faceWidthMm}" height="${faceHeightMm}" class="po-proj-reposicionar-face-rect" />
-        <g transform="translate(0 ${faceHeightMm}) scale(1 -1)">
-          <g transform="rotate(${isHorizontalFace ? rotDeg : 0})">
-            <rect id="po-reposicionar-child-rect"
-                  x="${rightMm}" y="${upMm}"
-                  width="${childFootWMm}" height="${childFootUpMm}"
+      <svg class="po-proj-reposicionar-svg" id="${svgId}"
+           viewBox="0 0 ${faceWidthMm} ${faceHMm}" preserveAspectRatio="xMidYMid meet">
+        <rect x="0" y="0" width="${faceWidthMm}" height="${faceHMm}" class="po-proj-reposicionar-face-rect" />
+        <g transform="translate(0 ${faceHMm}) scale(1 -1)">
+          <g transform="rotate(${applyRotation ? rotDeg : 0})">
+            <rect id="${rectId}"
+                  x="${rightMm}" y="${viewUpMm}"
+                  width="${childFootWMm}" height="${childHMm}"
                   class="po-proj-reposicionar-child-rect" />
           </g>
         </g>
       </svg>
     </div>
   `;
+  const viewsHtml = `
+    <div class="po-proj-reposicionar-views-row">
+      <div class="po-proj-reposicionar-view-col">
+        <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_frontal')}</div>
+        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', frontFaceHMm, frontChildHMm, frontViewUpMm, false)}
+        ${!frontInteractiveUp ? `<p class="po-proj-reposicionar-flush-hint">${I18n.t('project.reposicionar_flush_hint')}</p>` : ''}
+      </div>
+      <div class="po-proj-reposicionar-view-col">
+        <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_planta')}</div>
+        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', planFaceHMm, planChildHMm, planViewUpMm, isHorizontalFace)}
+        ${!planInteractiveUp ? `<p class="po-proj-reposicionar-flush-hint">${I18n.t('project.reposicionar_flush_hint')}</p>` : ''}
+      </div>
+    </div>
+  `;
 
   el.innerHTML = `
     <h4>${I18n.t('project.reposicionar_title')}</h4>
-    ${viewSvgHtml}
+    ${viewsHtml}
     <div class="po-proj-position-field">
       <input type="text" inputmode="decimal" id="po-reposicionar-right" value="${formatDimensionNumber(rightMm, unit)}" />
       <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
@@ -774,7 +826,10 @@ function renderProjectReposicionarModalContent() {
   wireField('po-reposicionar-right', rightMm, (v) => applyValues(v, upMm, rotDeg));
   wireField('po-reposicionar-up', upMm, (v) => applyValues(rightMm, v, rotDeg));
   if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, v));
-  wireProjectReposicionarView(faceWidthMm, faceHeightMm, rightMm, upMm, rotDeg, applyValues);
+  wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
+    faceWidthMm, frontFaceHMm, rightMm, frontInteractiveUp, upMm, rotDeg, applyValues);
+  wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
+    faceWidthMm, planFaceHMm, rightMm, planInteractiveUp, upMm, rotDeg, applyValues);
 
   const stepInput = document.getElementById('po-reposicionar-step');
   if (stepInput) {
@@ -809,23 +864,33 @@ function stopProjectReposicionarViewDrag() {
   projectReposicionarViewDrag = null;
 }
 
-// Liga o arraste do retângulo do filho dentro da VISTA 2D — pega o SVG pelo
-// id (recriado a cada render, mas o id é sempre o mesmo) e converte
-// client(x,y) pra coordenadas da FACE (mm, eixo "up" crescendo pra cima,
-// mesma convenção de rightMm/upMm) usando só getBoundingClientRect (o
-// viewBox mapeia 1:1 em mm pro tamanho em px do próprio SVG, sem CSS
-// reescalando por cima — não precisa de getScreenCTM/matriz). O giro
-// (rotationOffsetDeg, só nas faces horizontais) é mantido como está durante
-// o arraste — arrastar move a posição (right/up), nunca o giro.
-function wireProjectReposicionarView(faceWidthMm, faceHeightMm, rightMm, upMm, rotDeg, applyValues) {
-  const svg = document.getElementById('po-reposicionar-svg');
-  const rect = document.getElementById('po-reposicionar-child-rect');
+// Liga o arraste do retângulo do filho dentro de UMA das 2 VISTAS 2D
+// (frontal ou planta, ver renderProjectReposicionarModalContent acima) —
+// pega o SVG/retângulo pelos ids passados (cada view tem os seus, recriados
+// a cada render mas sempre com o mesmo id) e converte client(x,y) pra
+// coordenadas da FACE (mm, eixo "up" crescendo pra cima, mesma convenção de
+// rightMm/upMm) usando só getBoundingClientRect (o viewBox mapeia 1:1 em mm
+// pro tamanho em px do próprio SVG, sem CSS reescalando por cima — não
+// precisa de getScreenCTM/matriz).
+//
+// `interactiveUp` (RODADA 6, 2026-09-11) — só é true na view que tem
+// liberdade FÍSICA real no eixo vertical do desenho (ver comentário grande
+// em renderProjectReposicionarModalContent sobre a peça só ter 2 graus de
+// liberdade no total, nunca 3): nessa view, arrastar move os 2 eixos
+// (rightMm/upMm) igual à view única da RODADA 5. Na OUTRA view (sem
+// liberdade ali — a peça já nasce encostada/flush nesse eixo), o arraste
+// SÓ atualiza rightMm (o eixo horizontal, sempre compartilhado entre as 2
+// views) — upMm/rotDeg passados em `realUpMm`/`realRotDeg` voltam intactos
+// pro applyValues, nunca um valor calculado a partir do clique.
+function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, rightMm, interactiveUp, realUpMm, realRotDeg, applyValues) {
+  const svg = document.getElementById(svgId);
+  const rect = document.getElementById(rectId);
   if (!svg || !rect) return;
   const toFaceCoords = (clientX, clientY) => {
     const box = svg.getBoundingClientRect();
-    if (!box.width || !box.height) return { right: rightMm, up: upMm };
+    if (!box.width || !box.height) return { right: rightMm, up: 0 };
     const faceRightMm = (clientX - box.left) * (faceWidthMm / box.width);
-    const faceUpMm = faceHeightMm - (clientY - box.top) * (faceHeightMm / box.height);
+    const faceUpMm = viewFaceHeightMm - (clientY - box.top) * (viewFaceHeightMm / box.height);
     return { right: faceRightMm, up: faceUpMm };
   };
   rect.addEventListener('pointerdown', (ev) => {
@@ -836,10 +901,13 @@ function wireProjectReposicionarView(faceWidthMm, faceHeightMm, rightMm, upMm, r
     // "pular" pro cursor no primeiro frame — o ponto agarrado fica sob o
     // cursor durante todo o arraste, igual aos outros arrastes 3D da aba.
     const offRight = start.right - rightMm;
-    const offUp = start.up - upMm;
+    const startUpMm = interactiveUp ? realUpMm : 0;
+    const offUp = interactiveUp ? (start.up - startUpMm) : 0;
     const onMove = (mv) => {
       const p = toFaceCoords(mv.clientX, mv.clientY);
-      applyValues(p.right - offRight, p.up - offUp, rotDeg);
+      const newRight = p.right - offRight;
+      const newUp = interactiveUp ? (p.up - offUp) : realUpMm;
+      applyValues(newRight, newUp, realRotDeg);
     };
     const onUp = () => stopProjectReposicionarViewDrag();
     document.addEventListener('pointermove', onMove);
