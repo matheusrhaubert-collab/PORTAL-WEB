@@ -1024,16 +1024,38 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
   // tinha listener - clicar no fundo (incluindo em cima do retangulo AMARELO
   // do alvo, ou na margem nova da RODADA 7) nao fazia nada, porque nao tinha
   // nada ali recebendo o clique. Este `bg` cobre a view inteira (ver
-  // buildViewSvg) e RELOCA o filho na hora, centralizado no ponto clicado -
-  // "conforme a tela e onde eu clico". Continuar segurando e arrastando
-  // depois do clique inicial continua funcionando, com o mesmo centro.
+  // buildViewSvg) e RELOCA o filho na hora - ver ENCAIXE (RODADA 10) abaixo
+  // pra como exatamente. Continuar segurando e arrastando depois do clique
+  // inicial continua funcionando, recalculando a cada frame.
   if (bg) {
     bg.addEventListener('pointerdown', (ev) => {
       ev.preventDefault();
       stopProjectReposicionarViewDrag();
+      // ENCAIXE (RODADA 10, 12/09) - Matt, depois de testar a RODADA 8/9:
+      // "quando clico ao lado do movel o modulo deve posicionar exatamente
+      // alinhado nao solto proximo dele como esta agora". Antes, QUALQUER
+      // clique (dentro ou fora do contorno do alvo) só centralizava o filho
+      // exatamente no ponto cru clicado — o que podia deixar uma folga (gap)
+      // ou uma leve sobreposição em relação ao alvo, dependendo de onde
+      // exatamente caiu o clique, em vez de ficar "encaixado" rente à borda
+      // dele. Agora: clicar FORA do contorno do alvo nesta view (à
+      // esquerda/direita, ou acima/abaixo — os 2 eixos são independentes)
+      // ENCAIXA o filho exatamente rente à borda correspondente, sem
+      // vão nem sobreposição nenhuma; clicar DENTRO do contorno do alvo
+      // continua centralizando no ponto clicado (ali não tem "borda" nenhuma
+      // do alvo pra encaixar contra — é posição livre de verdade, ex.: peça
+      // parcialmente sobreposta de propósito).
       const place = (clientX, clientY) => {
         const p = toFaceCoords(clientX, clientY);
-        onPlace(p.right - childFootWMm / 2, p.up - childVMm / 2);
+        let newRight;
+        if (p.right < 0) newRight = -childFootWMm; // encaixa rente à ESQUERDA do alvo
+        else if (p.right > faceWidthMm) newRight = faceWidthMm; // encaixa rente à DIREITA do alvo
+        else newRight = p.right - childFootWMm / 2;
+        let newVertical;
+        if (p.up < 0) newVertical = -childVMm; // encaixa rente ABAIXO do alvo
+        else if (p.up > viewFaceHeightMm) newVertical = viewFaceHeightMm; // encaixa rente ACIMA do alvo
+        else newVertical = p.up - childVMm / 2;
+        onPlace(newRight, newVertical);
       };
       place(ev.clientX, ev.clientY);
       const onMove = (mv) => place(mv.clientX, mv.clientY);

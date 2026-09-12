@@ -2986,12 +2986,16 @@ header.po-topnav {
   max-height: calc(100vh - 90px); overflow-y: auto;
 }
 .po-proj-reposicionar-panel h4 { margin: 0 0 10px; font-size: 14px; }
-/* As 2 vistas lado a lado (empilha em telas bem estreitas, já que o painel
-   inteiro tem só 300px — cada coluna cabe ~132px, suficiente pro SVG). */
+/* RODADA 10 (12/09) — as 2 vistas EMPILHADAS (uma em cima, outra embaixo),
+   nunca mais lado a lado — pedido explícito do Matt com a referência do
+   Promob: "as duas telas estao lado a lado eu pedi identico a minha
+   referencia que tela em cima e tela embaixo". Cada uma usa a largura
+   inteira do painel (300px), o que também dá mais espaço horizontal de
+   verdade pro desenho (antes cada vista side-by-side cabia só ~132px). */
 .po-proj-reposicionar-views-row {
-  display: flex; gap: 10px; margin-bottom: 10px;
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;
 }
-.po-proj-reposicionar-view-col { flex: 1 1 0; min-width: 0; }
+.po-proj-reposicionar-view-col { width: 100%; }
 .po-proj-reposicionar-view-label {
   font-size: 10.5px; font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; text-align: center;
@@ -3000,11 +3004,12 @@ header.po-topnav {
   background: #f4f1ea; border: 1px solid var(--border); border-radius: 6px;
   padding: 4px; display: flex; align-items: center; justify-content: center;
 }
-/* 110px (era 90px) — RODADA 7 (12/09): o viewBox agora inclui margem ao
-   redor do alvo (pra poder posicionar o filho além do contorno dele), então
-   o desenho fica mais "zoom out" que antes; um pouco mais de altura ajuda a
-   enxergar os 2 retângulos com folga. */
-.po-proj-reposicionar-svg { width: 100%; height: 110px; display: block; touch-action: none; }
+/* 150px (era 90px na RODADA 5, 110px na RODADA 7) — RODADA 10 (12/09): as
+   vistas agora ocupam a largura INTEIRA do painel empilhadas (ver
+   .po-proj-reposicionar-views-row acima), então sobra espaço de verdade
+   pra desenhar maior — ajuda a ver com clareza onde exatamente o clique
+   caiu em relação ao alvo. */
+.po-proj-reposicionar-svg { width: 100%; height: 150px; display: block; touch-action: none; }
 .po-proj-reposicionar-face-rect { fill: #ffffff; stroke: var(--border); stroke-width: 4; }
 .po-proj-reposicionar-child-rect {
   fill: #f2c14e; stroke: #b0862a; stroke-width: 4; cursor: grab;
