@@ -1143,19 +1143,46 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
       // esquerda/direita, ou acima/abaixo — os 2 eixos são independentes)
       // ENCAIXA o filho exatamente rente à borda correspondente, sem
       // vão nem sobreposição nenhuma; clicar DENTRO do contorno do alvo
-      // continua centralizando no ponto clicado (ali não tem "borda" nenhuma
-      // do alvo pra encaixar contra — é posição livre de verdade, ex.: peça
-      // parcialmente sobreposta de propósito).
+      // centralizava no ponto clicado (comportamento SUBSTITUÍDO na RODADA
+      // 12 logo abaixo — ver por quê).
+      // RODADA 12 (12/09) - ZONAS, sem posição intermediária nenhuma. Matt,
+      // depois de ver a RODADA 10/11 ao vivo: "a tolerancia do meu clique deve
+      // ser gigante... em qualquer ponto dentro do modulo deve enviar o novo
+      // exatamente centralizado nele... em qualquer ponto que fique na faixa
+      // da direita, ele deve colocar o modulo grudado e alinhado pela
+      // direita. nao e aproximado, e colado" — e depois, vendo um resultado
+      // levemente descentralizado: "isso aqui deve ser proibido, ou ta
+      // centralizado ou ta fora, ponto".
+      //
+      // CAUSA: a RODADA 8/10 usava o PONTO EXATO do clique pra centralizar
+      // quando caía "dentro" do contorno do alvo (`p.right - childFootWMm/2`)
+      // — dois cliques dentro do mesmo módulo, em pontos diferentes,
+      // produziam dois resultados levemente diferentes (nunca exatamente
+      // centralizado, a não ser que a pessoa acertasse o pixel exato do
+      // centro). Fora do contorno já encaixava certo num eixo, mas o OUTRO
+      // eixo (o que não estava "fora") continuava usando o ponto cru do
+      // clique — então um clique na "faixa da direita" bem alto ou bem baixo
+      // dava resultados diferentes entre si, não sempre "colado e alinhado".
+      //
+      // FIX: 3 zonas por eixo (abaixo/dentro/acima do intervalo do alvo,
+      // [0,faceWidthMm] ou [0,viewFaceHeightMm]) — sem gradação nenhuma
+      // dentro de uma zona. "Dentro" SEMPRE centraliza no ALVO (nunca no
+      // clique); "fora" SEMPRE encosta rente na borda correspondente. Um
+      // clique na faixa da direita (qualquer altura) sempre dá o MESMO
+      // resultado: encostado à direita E centralizado verticalmente no alvo
+      // — nunca um valor intermediário. 9 zonas no total (3 de cada eixo,
+      // independentes) cobrem cantos (as 2 bordas encaixam ao mesmo tempo) e
+      // o centro (as 2 bordas centralizam ao mesmo tempo).
       const place = (clientX, clientY) => {
         const p = toFaceCoords(clientX, clientY);
         let newRight;
         if (p.right < 0) newRight = -childFootWMm; // encaixa rente à ESQUERDA do alvo
         else if (p.right > faceWidthMm) newRight = faceWidthMm; // encaixa rente à DIREITA do alvo
-        else newRight = p.right - childFootWMm / 2;
+        else newRight = (faceWidthMm - childFootWMm) / 2; // CENTRALIZADO no alvo, nunca no clique
         let newVertical;
         if (p.up < 0) newVertical = -childVMm; // encaixa rente ABAIXO do alvo
         else if (p.up > viewFaceHeightMm) newVertical = viewFaceHeightMm; // encaixa rente ACIMA do alvo
-        else newVertical = p.up - childVMm / 2;
+        else newVertical = (viewFaceHeightMm - childVMm) / 2; // CENTRALIZADO no alvo, nunca no clique
         onPlace(newRight, newVertical);
       };
       place(ev.clientX, ev.clientY);
