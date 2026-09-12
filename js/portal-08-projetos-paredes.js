@@ -881,6 +881,21 @@ function renderProjectReposicionarModalContent() {
     <circle id="${rectId}-rot-tl" cx="${rightMm}" cy="${viewUpMm + childHMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
     <circle id="${rectId}-rot-tr" cx="${rightMm + childFootWMm}" cy="${viewUpMm + childHMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
   `;
+  // RODADA 14 (12/09) - PIVÔ DO GIRO CORRIGIDO. Matt, testando a RODADA 13 ao
+  // vivo: "aqui nao ta arrastando certinho com ima em 90 graus. eu clico ele
+  // gira em torno do eixo central. ele deve girar no eixo da ponta oposta
+  // mais proxima". CAUSA: o `rotate(rotDeg)` (sem 2o/3o argumento) gira em
+  // torno da ORIGEM do grupo pai (right=0,up=0) - que é o canto de
+  // referência do ALVO (amarelo), não tem nada a ver com o filho. Isso não
+  // bate com a física real: em computeModuleFaceAttachmentTransform, o giro
+  // sempre pivota no PRÓPRIO canto de ancoragem do filho - `corner +
+  // slideRightM*right + slideUpM*up` - que, nestas coordenadas de view, é
+  // exatamente `(rightMm, viewUpMm)`, o mesmo ponto em que o `<rect>` abaixo
+  // é desenhado. FIX: `rotate(deg, cx, cy)` (forma de 3 argumentos do SVG)
+  // pivotando em `(rightMm, viewUpMm)` - agora o desenho pivota EXATAMENTE
+  // onde a física 3D real já pivotava, sem mudar nada na física em si (só a
+  // exibição, que antes divergia dela). Ver também os `atan2` do arraste das
+  // alças em wireProjectReposicionarView, que precisam do MESMO pivô.
   // BG-CATCHER (RODADA 8, 2026-09-12) - ver wireProjectReposicionarView.
   const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm, withRotateHandles) => `
     <div class="po-proj-reposicionar-view-wrap">
@@ -891,7 +906,7 @@ function renderProjectReposicionarModalContent() {
               width="${faceWidthMm + 2 * H_MARGIN_MM}" height="${faceHMm + 2 * vMarginMm}"
               class="po-proj-reposicionar-bg-catcher" />
         <g transform="translate(0 ${faceHMm}) scale(1 -1)">
-          <g transform="rotate(${applyRotation ? rotDeg : 0})">
+          <g transform="rotate(${applyRotation ? rotDeg : 0} ${rightMm} ${viewUpMm})">
             <rect id="${rectId}"
                   x="${rightMm}" y="${viewUpMm}"
                   width="${childFootWMm}" height="${childHMm}"
@@ -1222,16 +1237,41 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
       // — nunca um valor intermediário. 9 zonas no total (3 de cada eixo,
       // independentes) cobrem cantos (as 2 bordas encaixam ao mesmo tempo) e
       // o centro (as 2 bordas centralizam ao mesmo tempo).
+      //
+      // RODADA 14 (12/09) - 5 ZONAS por eixo (em vez de 3). Matt, depois de
+      // ver a RODADA 12 ao vivo: "quando os modulos tem tamanhos diferentes,
+      // se eu clicar proximo de um canto ele deve alinhar por aquele canto
+      // se eu clicar no meio ele deve centralizar. isso pra todos os lados
+      // nas duas vistas". Antes, a zona "dentro do alvo" SEMPRE centralizava
+      // (mesmo clicando bem perto de uma borda) - Matt agora quer que, DENTRO
+      // do alvo, clicar perto de uma borda ALINHE por ela (encoste rente,
+      // igual à zona "fora"), e só clicar perto do meio continue
+      // centralizando. FIX: a zona "dentro" (que já era [0,faceWidthMm]/
+      // [0,viewFaceHeightMm]) agora se divide em 3 terços iguais - terço
+      // inicial alinha pela borda inicial (newRight=0/newVertical=0, igual à
+      // zona de fora, só que sem o gap: o filho fica ENCOSTADO na borda do
+      // alvo por dentro dele), terço do meio centraliza (comportamento da
+      // RODADA 12, inalterado), terço final alinha pela borda final. Total 5
+      // zonas por eixo (fora-antes / dentro-início / dentro-meio /
+      // dentro-fim / fora-depois), continuam 2 eixos independentes -> "todos
+      // os lados" cobertos nas 2 views (esta função é a mesma pras 2, ver
+      // wireProjectReposicionarView).
       const place = (clientX, clientY) => {
         const p = toFaceCoords(clientX, clientY);
+        const thirdWMm = faceWidthMm / 3;
         let newRight;
-        if (p.right < 0) newRight = -childFootWMm; // encaixa rente à ESQUERDA do alvo
-        else if (p.right > faceWidthMm) newRight = faceWidthMm; // encaixa rente à DIREITA do alvo
-        else newRight = (faceWidthMm - childFootWMm) / 2; // CENTRALIZADO no alvo, nunca no clique
+        if (p.right < 0) newRight = -childFootWMm; // fora, encaixa rente à ESQUERDA do alvo
+        else if (p.right > faceWidthMm) newRight = faceWidthMm; // fora, encaixa rente à DIREITA do alvo
+        else if (p.right < thirdWMm) newRight = 0; // dentro, perto do canto esquerdo -> ALINHA por ele
+        else if (p.right > 2 * thirdWMm) newRight = faceWidthMm - childFootWMm; // dentro, perto do canto direito -> ALINHA por ele
+        else newRight = (faceWidthMm - childFootWMm) / 2; // dentro, no meio -> CENTRALIZADO no alvo, nunca no clique
+        const thirdHMm = viewFaceHeightMm / 3;
         let newVertical;
-        if (p.up < 0) newVertical = -childVMm; // encaixa rente ABAIXO do alvo
-        else if (p.up > viewFaceHeightMm) newVertical = viewFaceHeightMm; // encaixa rente ACIMA do alvo
-        else newVertical = (viewFaceHeightMm - childVMm) / 2; // CENTRALIZADO no alvo, nunca no clique
+        if (p.up < 0) newVertical = -childVMm; // fora, encaixa rente ABAIXO do alvo
+        else if (p.up > viewFaceHeightMm) newVertical = viewFaceHeightMm; // fora, encaixa rente ACIMA do alvo
+        else if (p.up < thirdHMm) newVertical = 0; // dentro, perto da borda de baixo -> ALINHA por ela
+        else if (p.up > 2 * thirdHMm) newVertical = viewFaceHeightMm - childVMm; // dentro, perto da borda de cima -> ALINHA por ela
+        else newVertical = (viewFaceHeightMm - childVMm) / 2; // dentro, no meio -> CENTRALIZADO no alvo, nunca no clique
         onPlace(newRight, newVertical);
       };
       place(ev.clientX, ev.clientY);
@@ -1246,17 +1286,18 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
   // cantinho uma bolinha que posso clicar e rotacionar, principalmente
   // eixro do floor plan". `toFaceCoords` (acima) devolve, pra qualquer
   // client(x,y), a mesma coordenada (right,up) em que o retângulo do filho
-  // é desenhado ANTES do `rotate(rotDeg)` (ver buildViewSvg) - ou seja, é
-  // exatamente o referencial em que o giro pivota na origem (right=0,up=0),
-  // não importa pra qual client(x,y) ela é calculada. Isso deixa a conta do
-  // arraste simples e sem precisar decompor a matriz do transform: o ÂNGULO
-  // do mouse em torno dessa origem (atan2(up,right)) muda EXATAMENTE o
-  // mesmo tanto que precisa mudar em `rotDeg` pra acompanhar o dedo/cursor -
-  // então basta somar (ângulo atual - ângulo no instante do clique) a
-  // `rotDeg` capturado no mesmo instante. Não importa qual dos 4 cantos foi
-  // agarrado (nem se o clique não caiu no pixel exato do centro da bolinha)
-  // - o delta de ângulo é sempre relativo ao próprio ponto agarrado, então
-  // o resultado é sempre "girar acompanhando o dedo", igual nas 4 alças.
+  // é desenhado ANTES do `rotate(...)` (ver buildViewSvg).
+  //
+  // RODADA 14 (12/09) - PIVÔ CORRIGIDO pra `(rightMm, verticalMm)` (o canto
+  // de ancoragem do filho - mesmo ponto que buildViewSvg agora usa como
+  // centro do `rotate(deg,cx,cy)`, ver comentário grande lá), em vez da
+  // origem (right=0,up=0) - Matt: "eu clico ele gira em torno do eixo
+  // central. ele deve girar no eixo da ponta oposta mais proxima". Só
+  // precisa SUBTRAIR o pivô antes do atan2 (o delta de ângulo continua
+  // valendo igual, é só o referencial que muda) - não importa qual dos 4
+  // cantos foi agarrado (nem se o clique não caiu no pixel exato do centro
+  // da bolinha), o resultado continua "girar acompanhando o dedo", agora em
+  // torno do canto certo (o mesmo que a física 3D real já usava).
   if (typeof onRotate === 'function') {
     ['tl', 'tr', 'bl', 'br'].forEach((corner) => {
       const handle = document.getElementById(rectId + '-rot-' + corner);
@@ -1266,11 +1307,11 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
         ev.stopPropagation(); // nem o retângulo (arrastar) nem o bg-catcher (realocar) tratam este clique
         stopProjectReposicionarViewDrag();
         const start = toFaceCoords(ev.clientX, ev.clientY);
-        const startAngleDeg = Math.atan2(start.up, start.right) * 180 / Math.PI;
+        const startAngleDeg = Math.atan2(start.up - verticalMm, start.right - rightMm) * 180 / Math.PI;
         const rotDegAtStart = Number(rotDeg) || 0;
         const onMove = (mv) => {
           const p = toFaceCoords(mv.clientX, mv.clientY);
-          const curAngleDeg = Math.atan2(p.up, p.right) * 180 / Math.PI;
+          const curAngleDeg = Math.atan2(p.up - verticalMm, p.right - rightMm) * 180 / Math.PI;
           onRotate(rotDegAtStart + (curAngleDeg - startAngleDeg));
         };
         const onUp = () => stopProjectReposicionarViewDrag();
@@ -2292,81 +2333,33 @@ function attachProject3DEditDrag() {
     // a poucos milímetros do piso (ver PROJECT_FLOOR_SNAP_MM).
     yMm = snapProjectSlotToFloor(yMm);
 
-    // Arrastar até a borda da parede ativa troca de parede (pedido do
-    // usuário, confirmado via pergunta de esclarecimento: "arrastar até a
-    // borda da parede ativa") — o módulo "atravessa" o canto e continua o
-    // arraste na parede vizinha a partir da esquina compartilhada. Só
-    // possível se existir vizinha NAQUELA borda (getProjectAdjacentWallEdgeInfo);
-    // sem vizinha, clampa na própria borda (mesmo comportamento de sempre).
+    // CLAMPA DENTRO DA PRÓPRIA PAREDE — nunca atravessa a esquina sozinho
+    // (RODADA 12/09, Matt: "o modulo nas paredes da direita vao pra
+    // esquerda sem limitacao... deve ter limite por que o movel esta no
+    // plano amarelo daquela parede"). ATÉ 12/09 o módulo "atravessava" a
+    // esquina sozinho ao ser arrastado até a borda — pedido do PRÓPRIO Matt
+    // em 13/08 ("deixa ele forçar um pouco contra a parede pra ir pra
+    // outra, assim garantimos que ele vai ficar bem encostado") — decisão
+    // REVERTIDA a pedido dele mesmo hoje. Perguntei se ele já queria um
+    // gesto novo pra trocar de parede de propósito (ex.: clicar na outra
+    // parede com o módulo selecionado) — respondeu que não, só resolver o
+    // "sem limite" por enquanto; nenhum gesto de troca existe agora além de
+    // apagar/recriar o módulo na outra parede.
+    //
+    // O recuo do canto (`projectWallCornerInsetMm`) só entra no limite
+    // quando EXISTE vizinha naquela borda (getProjectAdjacentWallEdgeInfo)
+    // — o fim útil da parede aí é a face interna da vizinha, não a largura
+    // dela inteira (senão o módulo passaria visualmente por dentro da
+    // parede vizinha antes de "bater"); borda sem vizinha (ponta aberta,
+    // sem canto nenhum) usa a largura crua da própria parede, igual sempre
+    // foi antes de existir a travessia (13/08).
     const widthMm = Number(slot.width_mm || 0);
     const wallWidthMm = getProjectWallWidthMm(wallGeo.wallIndex);
     const edgeInfo = getProjectAdjacentWallEdgeInfo(wallGeo.wallIndex);
-
-    // FORÇAR CONTRA A PAREDE PRA TROCAR (2026-08-13, pedido do Matt: "deixa
-    // ele forçar um pouco contra a parede pra ir pra outra, assim garantimos
-    // que ele vai ficar bem encostado").
-    //
-    // Antes bastava o módulo passar 1mm da borda pra ele pular pro outro lado
-    // do canto — e quem só queria encostar acabava trocando de parede sem
-    // querer, ou parando ANTES de encostar com medo de pular. Agora existe uma
-    // zona morta: dentro dela o módulo trava rente ao canto (fica bem
-    // encostado, que é o objetivo); passou dela, aí sim atravessa.
-    //
-    // O recuo do canto entra na conta porque o fim útil da parede não é a
-    // largura dela, é a face interna da vizinha (ver projectWallCornerInsetMm).
-    const FORCA_TROCA_MM = 140;
     const recuoCanto = projectWallCornerInsetMm(wallGeo.wallIndex);
-    const limEsq = recuoCanto.ini;
-    const limDir = wallWidthMm - recuoCanto.fim;
-    if (xMm < limEsq && edgeInfo.left && xMm > limEsq - FORCA_TROCA_MM) { xMm = limEsq; }
-    else if (xMm + widthMm > limDir && edgeInfo.right && xMm + widthMm < limDir + FORCA_TROCA_MM) { xMm = limDir - widthMm; }
-
-    if (xMm < 0 && edgeInfo.left) {
-      const neighborWidthMm = getProjectWallWidthMm(edgeInfo.left.wallIndex);
-      // neighborCornerAtZero: a esquina compartilhada fica no x=0 da vizinha
-      // (true) ou no x=largura dela (false) — ver getProjectAdjacentWallEdgeInfo.
-      const cornerXMm = edgeInfo.left.neighborCornerAtZero ? 0 : Math.max(neighborWidthMm - widthMm, 0);
-      slot.wall_index = edgeInfo.left.wallIndex;
-      state.liveWallIndex = edgeInfo.left.wallIndex;
-      xMm = cornerXMm;
-      // Recalcula o offset de agarre NA NOVA parede a partir da posição
-      // atual do ponteiro, senão o próximo pointermove usaria um offset
-      // calculado no referencial da parede ANTERIOR (eixo along diferente).
-      const newWallGeo = getProjectWallGeometry().find((w) => w.wallIndex === state.liveWallIndex);
-      if (newWallGeo) {
-        const p = ViewerProjectEdit.intersectPlaneAtClient(ev.clientX, ev.clientY,
-          { x: newWallGeo.originX, y: 0, z: newWallGeo.originZ }, { x: newWallGeo.intoDirX, y: 0, z: newWallGeo.intoDirZ });
-        if (p) state.grabOffsetXMm = ((p.x - newWallGeo.originX) * newWallGeo.alongDirX + (p.z - newWallGeo.originZ) * newWallGeo.alongDirZ) * 1000 - cornerXMm;
-      }
-      // NÃO chama setProjectActiveWallIndex aqui — ela dispara
-      // renderProjectCanvas() (reconstrói a cena 3D inteira + reenquadra a
-      // câmera), o que invalidaria state.group NO MEIO do arraste e daria
-      // um solavanco visual bem no instante de atravessar o canto. Muda só
-      // a variável + os 2 indicadores de UI (abas/campo de largura, ambos
-      // sem efeito colateral nenhum na cena 3D) — o rebuild de verdade
-      // acontece uma vez só, no soltar (ver endDrag3D/renderProjectCanvas).
-      projectActiveWallIndex = state.liveWallIndex;
-      refreshProjectWallTabs();
-      refreshProjectWallWidthInput();
-    } else if (xMm + widthMm > wallWidthMm && edgeInfo.right) {
-      const cornerXMm = edgeInfo.right.neighborCornerAtZero ? 0 : Math.max(getProjectWallWidthMm(edgeInfo.right.wallIndex) - widthMm, 0);
-      slot.wall_index = edgeInfo.right.wallIndex;
-      state.liveWallIndex = edgeInfo.right.wallIndex;
-      xMm = cornerXMm;
-      const newWallGeo = getProjectWallGeometry().find((w) => w.wallIndex === state.liveWallIndex);
-      if (newWallGeo) {
-        const p = ViewerProjectEdit.intersectPlaneAtClient(ev.clientX, ev.clientY,
-          { x: newWallGeo.originX, y: 0, z: newWallGeo.originZ }, { x: newWallGeo.intoDirX, y: 0, z: newWallGeo.intoDirZ });
-        if (p) state.grabOffsetXMm = ((p.x - newWallGeo.originX) * newWallGeo.alongDirX + (p.z - newWallGeo.originZ) * newWallGeo.alongDirZ) * 1000 - cornerXMm;
-      }
-      // Mesmo motivo do bloco espelhado (borda esquerda) acima — não chamar
-      // setProjectActiveWallIndex no meio do arraste.
-      projectActiveWallIndex = state.liveWallIndex;
-      refreshProjectWallTabs();
-      refreshProjectWallWidthInput();
-    } else {
-      xMm = clamp(xMm, 0, Math.max(0, wallWidthMm - widthMm));
-    }
+    const limEsqMm = edgeInfo.left ? recuoCanto.ini : 0;
+    const limDirMm = (edgeInfo.right ? (wallWidthMm - recuoCanto.fim) : wallWidthMm) - widthMm;
+    xMm = clamp(xMm, limEsqMm, Math.max(limEsqMm, limDirMm));
 
     // COLISÃO (botão, 2026-08-08) — última etapa antes de commitar a posição,
     // DEPOIS do ímã e da troca de parede de propósito: o ímã pode encostar o
