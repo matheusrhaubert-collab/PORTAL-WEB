@@ -3000,7 +3000,11 @@ header.po-topnav {
   background: #f4f1ea; border: 1px solid var(--border); border-radius: 6px;
   padding: 4px; display: flex; align-items: center; justify-content: center;
 }
-.po-proj-reposicionar-svg { width: 100%; height: 90px; display: block; touch-action: none; }
+/* 110px (era 90px) — RODADA 7 (12/09): o viewBox agora inclui margem ao
+   redor do alvo (pra poder posicionar o filho além do contorno dele), então
+   o desenho fica mais "zoom out" que antes; um pouco mais de altura ajuda a
+   enxergar os 2 retângulos com folga. */
+.po-proj-reposicionar-svg { width: 100%; height: 110px; display: block; touch-action: none; }
 .po-proj-reposicionar-face-rect { fill: #ffffff; stroke: var(--border); stroke-width: 4; }
 .po-proj-reposicionar-child-rect {
   fill: #f2c14e; stroke: #b0862a; stroke-width: 4; cursor: grab;

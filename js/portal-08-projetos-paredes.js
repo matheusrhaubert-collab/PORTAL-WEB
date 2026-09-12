@@ -247,6 +247,7 @@ function convertProjectSlotToFloor(slot, xMm, zMm) {
   slot.attached_slide_right_mm = 0;
   slot.attached_slide_up_mm = 0;
   slot.attached_rotation_offset_deg = 0;
+  slot.attached_free_position = false; // ver RODADA 7 (12/09) em computeModuleFaceAttachmentTransform
 }
 
 // ==========================================================================
@@ -394,7 +395,28 @@ function projectFaceCorner(g) {
 // quem chama saber que não pegou) em vez de produzir uma peça flutuando/
 // atravessando o alvo. Documentado, não bug — mesma natureza da limitação
 // já registrada acima pro giro em py/ny sem deslize.
-function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm, childHeightMm, childDepthMm, slideRightM, slideUpM, rotationOffsetDeg) {
+// `freePosition` (RODADA 7, 2026-09-12, correção pedida pelo Matt com prints
+// REAIS do diálogo Reposicionar do Promob — X/Z/Y negativos/além do tamanho
+// do próprio alvo, ex.: "Z: -914" pra empilhar um armário abaixo do outro,
+// "X: -762" pra encostar um do LADO do outro, não só dentro dele): quando
+// true, PULA o clamp 0..range abaixo — o deslize pode ser qualquer número,
+// inclusive negativo ou maior que a face do alvo, exatamente como o campo
+// numérico do Promob. Sem isso, o filho só conseguia se mover DENTRO do
+// próprio contorno do alvo, nunca ao lado/acima/abaixo dele — Matt: "se eu
+// quiser pocisionar o modulo a esquerda, eu deveria clicar na esquerda do
+// modulo referencia e ele ir pra esquerda". `false` (padrão, comportamento
+// de sempre) preserva o clamp pro gesto de arrastar DIRETO na face amarela
+// na cena 3D (RODADA 3, handleProjectAttachedFaceMove) — aquele Matt
+// explicitamente pediu limitado ("os 2 eixos deve correr livre ATE OS
+// LIMITES desse modulo/objeto amarelo"), então as 2 físicas continuam
+// coexistindo: qual delas vale por slot é o campo `slot.attached_free_
+// position`, setado true só quando o slot chega pela tela Reposicionar
+// (ver beginProjectReposicionarFromDrag) — ambos os pontos que recalculam
+// a posição do MESMO slot (aqui e handleProjectAttachedFaceMove) leem esse
+// campo, então um slot "livre" continua livre nos 2 lugares, e um slot
+// "clampado" (RODADA 1/2, conectado com segurar-esquerdo+botão-direito na
+// face) continua clampado nos 2 — nunca os dois comportamentos no mesmo slot.
+function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm, childHeightMm, childDepthMm, slideRightM, slideUpM, rotationOffsetDeg, freePosition) {
   const g = getModuleFaceGeometry(targetFrame, faceKey);
   if (!g) return null;
   const corner = projectFaceCorner(g);
@@ -414,8 +436,8 @@ function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm
   const extentUpM = isHorizontal ? (Number(childDepthMm) || 0) / 1000 : HC;
   const rangeRightM = Math.max(0, g.width - (Number(childWidthMm) || 0) / 1000);
   const rangeUpM = Math.max(0, g.height - extentUpM);
-  const sr = clamp(Number(slideRightM) || 0, 0, rangeRightM);
-  const su = clamp(Number(slideUpM) || 0, 0, rangeUpM);
+  const sr = freePosition ? (Number(slideRightM) || 0) : clamp(Number(slideRightM) || 0, 0, rangeRightM);
+  const su = freePosition ? (Number(slideUpM) || 0) : clamp(Number(slideUpM) || 0, 0, rangeUpM);
   // BUG achado 2026-09-11 (relato do Matt: peça "vazando" pro lado errado
   // dentro da face amarela, "nao respeita limite das pecas") — nas faces
   // VERTICAIS, Uc (eixo local +X do filho, já girado pra ficar de frente pra
@@ -479,7 +501,8 @@ function resolveModuleFaceAttachments() {
       frame, slot.attached_face,
       Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0),
       Number(slot.attached_slide_right_mm || 0) / 1000, Number(slot.attached_slide_up_mm || 0) / 1000,
-      Number(slot.attached_rotation_offset_deg || 0)
+      Number(slot.attached_rotation_offset_deg || 0),
+      !!slot.attached_free_position // RODADA 7 — ver comentário grande em computeModuleFaceAttachmentTransform
     );
     if (!result) return;
     slot.placement = 'floor';
@@ -487,12 +510,14 @@ function resolveModuleFaceAttachments() {
     slot.floor_z_mm = result.zMm;
     slot.floor_height_mm = result.floorHeightMm;
     slot.floor_rotation_deg = result.rotationDeg;
-    // Regrava o deslize/giro JÁ CLAMPADOS por computeModuleFaceAttachmentTransform
-    // (nunca o valor cru que foi pedido acima) — cobre o caso do alvo (ou o
-    // próprio filho) ter mudado de tamanho e o deslize salvo não caber mais
-    // na face nova, ou o filho ter sido reconectado numa face vertical com
-    // um giro salvo de quando estava numa horizontal; sem isso o filho
-    // ficaria "preso" tentando voltar pra um deslize/giro que não existe mais.
+    // Regrava o deslize/giro JÁ CLAMPADOS (quando não-free) por
+    // computeModuleFaceAttachmentTransform (nunca o valor cru que foi pedido
+    // acima) — cobre o caso do alvo (ou o próprio filho) ter mudado de
+    // tamanho e o deslize salvo não caber mais na face nova, ou o filho ter
+    // sido reconectado numa face vertical com um giro salvo de quando estava
+    // numa horizontal; sem isso o filho ficaria "preso" tentando voltar pra
+    // um deslize/giro que não existe mais. Slot free (Reposicionar) volta
+    // exatamente o que foi pedido, sem clamp nenhum — ver `freePosition`.
     slot.attached_slide_right_mm = result.slideRightM * 1000;
     slot.attached_slide_up_mm = result.slideUpM * 1000;
     slot.attached_rotation_offset_deg = result.rotationOffsetDeg;
@@ -552,14 +577,22 @@ function beginProjectReposicionarFromDrag(childSlotId, targetSlotId, faceKey, dr
     attached_face: slot.attached_face,
     attached_slide_right_mm: slot.attached_slide_right_mm,
     attached_slide_up_mm: slot.attached_slide_up_mm,
-    attached_rotation_offset_deg: slot.attached_rotation_offset_deg
+    attached_rotation_offset_deg: slot.attached_rotation_offset_deg,
+    attached_free_position: slot.attached_free_position
   };
   if (!convertProjectSlotToModuleFace(slot, targetSlotId, faceKey)) return; // já valida (ele mesmo / alvo já anexado)
+  // RODADA 7 (12/09) — este slot passa a valer a física LIVRE (sem clamp ao
+  // tamanho do alvo) em TODA parte que recalcula a posição dele (aqui, no
+  // painel Reposicionar E no arraste direto na face amarela na 3D) — ver o
+  // comentário grande em computeModuleFaceAttachmentTransform.
+  slot.attached_free_position = true;
 
   // "IMÃS" (Matt: "ele ja carrega os imas pra alinhar os objetos em
   // sintonia") — em vez de sempre nascer no canto padrão, pré-alinha no
-  // ponto exato de onde soltou, dentro dos limites da face. Mesma conta do
-  // arraste livre dentro da face (RODADA 3, ver handleProjectAttachedFaceMove).
+  // ponto exato de onde soltou. Mesma conta do arraste livre (RODADA 3, ver
+  // handleProjectAttachedFaceMove) — agora sem clamp (RODADA 7), então o
+  // ponto exato de onde soltou é preservado de verdade, mesmo fora do
+  // contorno do alvo.
   const target = projectSlots.find((s) => s.id === targetSlotId);
   const targetFrame = target ? getSlotWorldFrame(target) : null;
   const g = targetFrame ? getModuleFaceGeometry(targetFrame, faceKey) : null;
@@ -686,6 +719,15 @@ function renderProjectReposicionarModalContent() {
   const childHeightMm = Number(slot.height_mm || 0);
   const childDepthMm = Number(slot.depth_mm || 0);
   const FLUSH_MIN_MM = 60; // altura/profundidade mínima só pra desenhar algo legível na view sem ajuste
+  // RODADA 7 (12/09) — margem de sobra ao REDOR do contorno do alvo, pra dar
+  // espaço de clicar/arrastar o filho pra ALÉM dele (do lado, acima, abaixo
+  // — nunca só "dentro"). Só produz efeito de verdade pra slot com
+  // attached_free_position=true (ver computeModuleFaceAttachmentTransform);
+  // é sempre desenhada, mas num slot old-style (RODADA 1/2/3, ainda
+  // clampado) o clique fora do contorno simplesmente não muda nada — o que
+  // não deveria acontecer na prática, já que só o Reposicionar abre esta
+  // tela e só ele marca o slot como free.
+  const H_MARGIN_MM = Math.max(faceWidthMm, childFootWMm, 300);
 
   // Vista frontal: eixo vertical é altura de verdade só nas 4 faces
   // verticais (isHorizontalFace=false); nas 2 horizontais não há ajuste de
@@ -694,6 +736,7 @@ function renderProjectReposicionarModalContent() {
   const frontFaceHMm = frontInteractiveUp ? faceHeightMm : Math.max(childHeightMm, FLUSH_MIN_MM);
   const frontChildHMm = frontInteractiveUp ? childFootUpMm : childHeightMm;
   const frontViewUpMm = frontInteractiveUp ? upMm : 0;
+  const frontVMarginMm = frontInteractiveUp ? Math.max(frontFaceHMm, frontChildHMm, 300) : 0;
 
   // Planta baixa: eixo vertical (profundidade, no desenho) é de verdade só
   // nas 2 faces horizontais (isHorizontalFace=true); nas 4 verticais não há
@@ -702,6 +745,7 @@ function renderProjectReposicionarModalContent() {
   const planFaceHMm = planInteractiveUp ? faceHeightMm : Math.max(childDepthMm, FLUSH_MIN_MM);
   const planChildHMm = planInteractiveUp ? childFootUpMm : childDepthMm;
   const planViewUpMm = planInteractiveUp ? upMm : 0;
+  const planVMarginMm = planInteractiveUp ? Math.max(planFaceHMm, planChildHMm, 300) : 0;
 
   // Giro só existe (rotationOffsetDeg != 0) nas 2 faces horizontais, e pivota
   // ao redor do CANTO de referência da face (0,0 em right/up), não do centro
@@ -709,10 +753,18 @@ function renderProjectReposicionarModalContent() {
   // comentário grande ali) — por isso o transform de giro do SVG usa (0,0)
   // como pivô, não o centro do retângulo do filho. Só a view com liberdade
   // real de giro (planta baixa, quando isHorizontalFace) desenha o giro.
-  const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation) => `
+  //
+  // O viewBox agora é MAIOR que o contorno do alvo (faceWidthMm x faceHMm) —
+  // estende `vMarginMm` pra cima/baixo e `H_MARGIN_MM` pros 2 lados — pra
+  // sobrar espaço de clicar além dele. O transform de flip (translate+scale)
+  // continua usando SÓ faceHMm (o tamanho do próprio alvo), nunca a margem —
+  // a conta de onde o retângulo do filho aparece não muda, só a "janela"
+  // visível ao redor dele cresce (ver wireProjectReposicionarView pra conta
+  // inversa, clique→mm, que precisa saber dessa margem pra bater).
+  const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm) => `
     <div class="po-proj-reposicionar-view-wrap">
       <svg class="po-proj-reposicionar-svg" id="${svgId}"
-           viewBox="0 0 ${faceWidthMm} ${faceHMm}" preserveAspectRatio="xMidYMid meet">
+           viewBox="${-H_MARGIN_MM} ${-vMarginMm} ${faceWidthMm + 2 * H_MARGIN_MM} ${faceHMm + 2 * vMarginMm}" preserveAspectRatio="xMidYMid meet">
         <rect x="0" y="0" width="${faceWidthMm}" height="${faceHMm}" class="po-proj-reposicionar-face-rect" />
         <g transform="translate(0 ${faceHMm}) scale(1 -1)">
           <g transform="rotate(${applyRotation ? rotDeg : 0})">
@@ -729,12 +781,12 @@ function renderProjectReposicionarModalContent() {
     <div class="po-proj-reposicionar-views-row">
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_frontal')}</div>
-        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', frontFaceHMm, frontChildHMm, frontViewUpMm, false)}
+        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', frontFaceHMm, frontChildHMm, frontViewUpMm, false, frontVMarginMm)}
         ${!frontInteractiveUp ? `<p class="po-proj-reposicionar-flush-hint">${I18n.t('project.reposicionar_flush_hint')}</p>` : ''}
       </div>
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_planta')}</div>
-        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', planFaceHMm, planChildHMm, planViewUpMm, isHorizontalFace)}
+        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', planFaceHMm, planChildHMm, planViewUpMm, isHorizontalFace, planVMarginMm)}
         ${!planInteractiveUp ? `<p class="po-proj-reposicionar-flush-hint">${I18n.t('project.reposicionar_flush_hint')}</p>` : ''}
       </div>
     </div>
@@ -780,7 +832,8 @@ function renderProjectReposicionarModalContent() {
     const result = computeModuleFaceAttachmentTransform(
       frame2, slot.attached_face,
       Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0),
-      newRightMm / 1000, newUpMm / 1000, newRotDeg
+      newRightMm / 1000, newUpMm / 1000, newRotDeg,
+      !!slot.attached_free_position // RODADA 7 — sem clamp aqui (sempre true nesta tela, ver beginProjectReposicionarFromDrag)
     );
     if (!result) return;
     slot.floor_x_mm = result.xMm;
@@ -827,9 +880,9 @@ function renderProjectReposicionarModalContent() {
   wireField('po-reposicionar-up', upMm, (v) => applyValues(rightMm, v, rotDeg));
   if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, v));
   wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
-    faceWidthMm, frontFaceHMm, rightMm, frontInteractiveUp, upMm, rotDeg, applyValues);
+    faceWidthMm, frontFaceHMm, H_MARGIN_MM, frontVMarginMm, rightMm, frontInteractiveUp, upMm, rotDeg, applyValues);
   wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
-    faceWidthMm, planFaceHMm, rightMm, planInteractiveUp, upMm, rotDeg, applyValues);
+    faceWidthMm, planFaceHMm, H_MARGIN_MM, planVMarginMm, rightMm, planInteractiveUp, upMm, rotDeg, applyValues);
 
   const stepInput = document.getElementById('po-reposicionar-step');
   if (stepInput) {
@@ -882,15 +935,24 @@ function stopProjectReposicionarViewDrag() {
 // SÓ atualiza rightMm (o eixo horizontal, sempre compartilhado entre as 2
 // views) — upMm/rotDeg passados em `realUpMm`/`realRotDeg` voltam intactos
 // pro applyValues, nunca um valor calculado a partir do clique.
-function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, rightMm, interactiveUp, realUpMm, realRotDeg, applyValues) {
+//
+// `hMarginMm`/`vMarginMm` (RODADA 7, 2026-09-12) — a MESMA margem usada por
+// buildViewSvg (renderProjectReposicionarModalContent) pra desenhar espaço
+// além do contorno do alvo; aqui entra na conta inversa (clique em pixel →
+// mm) pra bater exatamente com o viewBox deslocado (`${-H_MARGIN_MM} ${-vMarginMm} ...`)
+// — sem isso, o clique feito na margem nova mapearia pro mm errado (o
+// cálculo antigo assumia viewBox sempre começando em 0,0).
+function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, hMarginMm, vMarginMm, rightMm, interactiveUp, realUpMm, realRotDeg, applyValues) {
   const svg = document.getElementById(svgId);
   const rect = document.getElementById(rectId);
   if (!svg || !rect) return;
   const toFaceCoords = (clientX, clientY) => {
     const box = svg.getBoundingClientRect();
     if (!box.width || !box.height) return { right: rightMm, up: 0 };
-    const faceRightMm = (clientX - box.left) * (faceWidthMm / box.width);
-    const faceUpMm = viewFaceHeightMm - (clientY - box.top) * (viewFaceHeightMm / box.height);
+    const vbWidthMm = faceWidthMm + 2 * hMarginMm;
+    const vbHeightMm = viewFaceHeightMm + 2 * vMarginMm;
+    const faceRightMm = -hMarginMm + (clientX - box.left) * (vbWidthMm / box.width);
+    const faceUpMm = (viewFaceHeightMm + vMarginMm) - (clientY - box.top) * (vbHeightMm / box.height);
     return { right: faceRightMm, up: faceUpMm };
   };
   rect.addEventListener('pointerdown', (ev) => {
@@ -2753,7 +2815,8 @@ function handleProjectAttachedFaceMove(state, slot, ev) {
     targetFrame, slot.attached_face,
     Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0),
     wantRightM, wantUpM,
-    Number(slot.attached_rotation_offset_deg || 0) // deslize não mexe no giro (RODADA 4) — passado intacto
+    Number(slot.attached_rotation_offset_deg || 0), // deslize não mexe no giro (RODADA 4) — passado intacto
+    !!slot.attached_free_position // RODADA 7 — mesmo slot, mesma física do Reposicionar (ver comentário grande em computeModuleFaceAttachmentTransform)
   );
   if (!result) return;
   slot.floor_x_mm = result.xMm;
