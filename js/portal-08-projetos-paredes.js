@@ -246,6 +246,7 @@ function convertProjectSlotToFloor(slot, xMm, zMm) {
   slot.attached_face = null;
   slot.attached_slide_right_mm = 0;
   slot.attached_slide_up_mm = 0;
+  slot.attached_slide_normal_mm = 0; // ver RODADA 9 (12/09) em computeModuleFaceAttachmentTransform
   slot.attached_rotation_offset_deg = 0;
   slot.attached_free_position = false; // ver RODADA 7 (12/09) em computeModuleFaceAttachmentTransform
 }
@@ -416,7 +417,25 @@ function projectFaceCorner(g) {
 // campo, então um slot "livre" continua livre nos 2 lugares, e um slot
 // "clampado" (RODADA 1/2, conectado com segurar-esquerdo+botão-direito na
 // face) continua clampado nos 2 — nunca os dois comportamentos no mesmo slot.
-function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm, childHeightMm, childDepthMm, slideRightM, slideUpM, rotationOffsetDeg, freePosition) {
+// `slideNormalM` (RODADA 9, 2026-09-12, correção de fundo pedida pelo Matt:
+// "beeem meia boca ainda, tela pequena for plan e frontal mostram a mesma
+// coisa... preciso melhorar muito do que esta, abre uma tela identica a
+// referencia que mandei" — as 2 views da RODADA 6/7/8 ficavam parecidas
+// porque o modelo só tinha 2 graus de liberdade DE VERDADE (rightM/upM); o
+// 3º eixo, a distância do filho até a própria face do alvo ao longo da
+// NORMAL dela, era sempre fixa em 0 (sempre encostado/flush, nunca podia
+// flutuar). O Promob de verdade tem 3 eixos independentes (X/Y/Z no diálogo
+// Reposicionar dele) — este parâmetro é esse 3º eixo: desloca o filho ao
+// longo de g.normal (a direção que sai da face do alvo pra fora, ver
+// getModuleFaceGeometry). Com ele = 0 (freePosition=false SEMPRE força 0,
+// ver `sn` abaixo), o comportamento é IDÊNTICO a antes desta rodada. Com
+// freePosition=true, aceita qualquer valor (positivo afasta do alvo,
+// negativo aproxima/atravessa) — exatamente o campo Z (faces verticais) ou Y
+// (faces horizontais py/ny, onde a normal da face É o eixo vertical do
+// mundo) do Promob. Ver renderProjectReposicionarModalContent pra como isso
+// vira as 2 views SEMPRE totalmente interativas (nunca mais "flush hint"
+// estático).
+function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm, childHeightMm, childDepthMm, slideRightM, slideUpM, slideNormalM, rotationOffsetDeg, freePosition) {
   const g = getModuleFaceGeometry(targetFrame, faceKey);
   if (!g) return null;
   const corner = projectFaceCorner(g);
@@ -438,6 +457,10 @@ function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm
   const rangeUpM = Math.max(0, g.height - extentUpM);
   const sr = freePosition ? (Number(slideRightM) || 0) : clamp(Number(slideRightM) || 0, 0, rangeRightM);
   const su = freePosition ? (Number(slideUpM) || 0) : clamp(Number(slideUpM) || 0, 0, rangeUpM);
+  // RODADA 9 — 3º eixo (ver comentário grande acima): só existe pra slot
+  // livre; slot clampado (RODADA 1/2/3) nunca flutua da face, sn é sempre 0
+  // não importa o que foi pedido, preservando 100% o comportamento de antes.
+  const sn = freePosition ? (Number(slideNormalM) || 0) : 0;
   // BUG achado 2026-09-11 (relato do Matt: peça "vazando" pro lado errado
   // dentro da face amarela, "nao respeita limite das pecas") — nas faces
   // VERTICAIS, Uc (eixo local +X do filho, já girado pra ficar de frente pra
@@ -456,9 +479,12 @@ function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm
   // rotationOffsetDeg=0 (testado) e o pivô ao redor do canto quando gira é
   // comportamento intencional, já testado em test_face_rotation_offset.js.
   const widthAxis = isHorizontal ? Uc : g.right;
-  const childX = corner.x + widthAxis.x * hwc + Nc.x * hdc + g.right.x * sr + g.up.x * su;
-  const childZ = corner.z + widthAxis.z * hwc + Nc.z * hdc + g.right.z * sr + g.up.z * su;
-  const childY = corner.y - (faceKey === 'ny' ? HC : 0) + g.right.y * sr + g.up.y * su;
+  // `+ g.normal.* * sn` é o único termo NOVO desta rodada — desloca o filho
+  // pra fora/dentro da face ao longo da normal dela (0 = encostado, igual a
+  // sempre). Ortogonal aos termos de sr/su (right/up), nunca interfere neles.
+  const childX = corner.x + widthAxis.x * hwc + Nc.x * hdc + g.right.x * sr + g.up.x * su + g.normal.x * sn;
+  const childZ = corner.z + widthAxis.z * hwc + Nc.z * hdc + g.right.z * sr + g.up.z * su + g.normal.z * sn;
+  const childY = corner.y - (faceKey === 'ny' ? HC : 0) + g.right.y * sr + g.up.y * su + g.normal.y * sn;
   return {
     xMm: childX * 1000,
     zMm: childZ * 1000,
@@ -466,6 +492,7 @@ function computeModuleFaceAttachmentTransform(targetFrame, faceKey, childWidthMm
     rotationDeg: ((childRotY * 180 / Math.PI) % 360 + 360) % 360,
     slideRightM: sr,
     slideUpM: su,
+    slideNormalM: sn,
     // Devolve o que REALMENTE foi aplicado (0 nas 4 faces verticais, mesmo
     // que tenha sido pedido) — ver comentário grande acima. Quem chama grava
     // ESTE valor de volta no slot, nunca o pedido cru, mesmo motivo de
@@ -501,6 +528,7 @@ function resolveModuleFaceAttachments() {
       frame, slot.attached_face,
       Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0),
       Number(slot.attached_slide_right_mm || 0) / 1000, Number(slot.attached_slide_up_mm || 0) / 1000,
+      Number(slot.attached_slide_normal_mm || 0) / 1000, // RODADA 9 — 3º eixo, ver comentário grande na função
       Number(slot.attached_rotation_offset_deg || 0),
       !!slot.attached_free_position // RODADA 7 — ver comentário grande em computeModuleFaceAttachmentTransform
     );
@@ -520,6 +548,7 @@ function resolveModuleFaceAttachments() {
     // exatamente o que foi pedido, sem clamp nenhum — ver `freePosition`.
     slot.attached_slide_right_mm = result.slideRightM * 1000;
     slot.attached_slide_up_mm = result.slideUpM * 1000;
+    slot.attached_slide_normal_mm = result.slideNormalM * 1000;
     slot.attached_rotation_offset_deg = result.rotationOffsetDeg;
   });
 }
@@ -577,6 +606,7 @@ function beginProjectReposicionarFromDrag(childSlotId, targetSlotId, faceKey, dr
     attached_face: slot.attached_face,
     attached_slide_right_mm: slot.attached_slide_right_mm,
     attached_slide_up_mm: slot.attached_slide_up_mm,
+    attached_slide_normal_mm: slot.attached_slide_normal_mm, // RODADA 9
     attached_rotation_offset_deg: slot.attached_rotation_offset_deg,
     attached_free_position: slot.attached_free_position
   };
@@ -679,102 +709,62 @@ function renderProjectReposicionarModalContent() {
   const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
   const rightMm = Number(slot.attached_slide_right_mm || 0);
   const upMm = Number(slot.attached_slide_up_mm || 0);
-  const rotDeg = Number(slot.attached_rotation_offset_deg || 0);
-  const upLabel = isHorizontalFace ? I18n.t('project.reposicionar_field_up_horizontal') : I18n.t('project.reposicionar_field_up_vertical');
+  const normalMm = Number(slot.attached_slide_normal_mm || 0); // RODADA 9
 
-  // VISTA 2D — DUAS views, "Vista frontal" + "Planta baixa" (RODADA 6,
-  // 2026-09-11, pedido explícito do Matt com print do diálogo "Reposicionar"
-  // do Promob: "tenho visao 2d e visao frontal" / "nessa janela nunca uso
-  // teclado so clico dos lados"). RODADA 5 tinha só 1 view — ver histórico
-  // no memory conectar_modulo_face_promob.md.
-  //
-  // IMPORTANTE — por que as 2 views não são simetricamente "completas": o
-  // filho aqui é sempre um módulo ENCOSTADO numa face (nunca flutua, nunca
-  // afunda — regra de sempre desta feature, ver computeModuleFaceAttachment
-  // Transform), então a posição dele tem exatamente 2 graus de liberdade no
-  // total: rightMm (ao longo da face) e upMm (altura OU profundidade,
-  // dependendo da face — ver isHorizontalFace acima), nunca 3. O Promob
-  // mostra 2 views porque o objeto dele pode ter até 3 graus de liberdade
-  // (X, altura, profundidade independentes); aqui isso não existe fisicamente
-  // — então:
-  //   · Vista frontal = (rightMm, altura). Quando a face-alvo é uma das 4
-  //     verticais (pz/nz/px/nx), a "altura" É o upMm de sempre → view
-  //     totalmente arrastável nos 2 eixos (idêntica à view única da RODADA 5).
-  //     Quando a face-alvo é horizontal (py/ny, topo/fundo), não existe
-  //     ajuste de altura (o filho já nasce encostado, flush) → a view mostra
-  //     a peça na altura real dela só pra contexto visual, mas só o eixo
-  //     horizontal (rightMm) responde a clique/arraste ali.
-  //   · Planta baixa = (rightMm, profundidade). Espelha o raciocínio acima
-  //     trocado: totalmente arrastável quando a face-alvo é horizontal
-  //     (aí upMm JÁ é profundidade), só o eixo horizontal quando é vertical.
-  // As 2 views SEMPRE compartilham o mesmo eixo horizontal (rightMm) — arrastar
-  // em qualquer uma das duas atualiza a mesma peça, os campos numéricos e a
-  // outra view junto (mesmo applyValues de sempre).
+  const rotDeg = Number(slot.attached_rotation_offset_deg || 0);
+
+  // RODADA 9 (2026-09-12) - REDESENHO DE FUNDO das 2 views, depois de 3
+  // rodadas (6/7/8) em que o Matt continuou insatisfeito ("tela pequena for
+  // plan e frontal mostram a mesma coisa... preciso melhorar muito do que
+  // esta, abre uma tela identica a referencia que mandei, pelo menos das
+  // telas"). Causa raiz: ate aqui o modelo assumia so 2 graus de liberdade
+  // (o filho sempre "encostado"/flush na face, nunca podia se afastar dela),
+  // entao uma das 2 views sempre virava um "flush hint" estatico - por isso
+  // pareciam a mesma coisa, e o clique "nao alinhava bem" (so 1 eixo
+  // respondia na view flush, o outro ficava travado no valor real). Com o
+  // novo 3o eixo (attached_slide_normal_mm, ver computeModuleFaceAttachment
+  // Transform) isso deixa de ser necessario: agora SEMPRE existem 3 numeros
+  // independentes - X (rightMm, ao longo da face), Altura (mundo, eixo Y) e
+  // Profundidade (o quanto o filho esta afastado da face do alvo) - e as 2
+  // views mostram sempre 2 desses 3, SEMPRE totalmente clicaveis/arrastaveis
+  // nos 2 eixos, exatamente como o dialogo Reposicionar do Promob:
+  //   - Vista frontal = (X, Altura) - sempre livre nos 2 eixos.
+  //   - Planta baixa  = (X, Profundidade) - sempre livre nos 2 eixos.
+  // Qual dos 2 campos existentes (upMm/normalMm) E "Altura" vs "Profundidade"
+  // depende so de isHorizontalFace, porque e isso que ja determina se o eixo
+  // "up" da propria face (ver getModuleFaceGeometry) e o vertical do mundo
+  // ou um horizontal: nas 4 faces verticais (pz/nz/px/nx), up=altura(V) e
+  // normal=profundidade (sai da parede pra fora); nas 2 horizontais (py/ny,
+  // topo/fundo), up=profundidade (N, horizontal) e normal=altura (V, sobe/
+  // desce a partir do topo ou fundo do alvo).
+  const heightMm = isHorizontalFace ? normalMm : upMm;
+  const depthMm = isHorizontalFace ? upMm : normalMm;
+  const heightLabel = I18n.t('project.reposicionar_field_up_vertical'); // "Altura" - sempre
+  const depthLabel = I18n.t('project.reposicionar_field_up_horizontal'); // "Profundidade" - sempre
+
   const faceWidthMm = g.width * 1000;
-  const faceHeightMm = g.height * 1000;
   const childFootWMm = Number(slot.width_mm || 0);
-  // "Extensão ao longo de up" da PRÓPRIA face (ver computeModuleFaceAttachmentTransform):
-  // altura do filho nas 4 faces verticais, profundidade nas 2 horizontais.
-  const childFootUpMm = isHorizontalFace ? Number(slot.depth_mm || 0) : Number(slot.height_mm || 0);
   const childHeightMm = Number(slot.height_mm || 0);
   const childDepthMm = Number(slot.depth_mm || 0);
-  const FLUSH_MIN_MM = 60; // altura/profundidade mínima só pra desenhar algo legível na view sem ajuste
-  // RODADA 7 (12/09) — margem de sobra ao REDOR do contorno do alvo, pra dar
-  // espaço de clicar/arrastar o filho pra ALÉM dele (do lado, acima, abaixo
-  // — nunca só "dentro"). Só produz efeito de verdade pra slot com
-  // attached_free_position=true (ver computeModuleFaceAttachmentTransform);
-  // é sempre desenhada, mas num slot old-style (RODADA 1/2/3, ainda
-  // clampado) o clique fora do contorno simplesmente não muda nada — o que
-  // não deveria acontecer na prática, já que só o Reposicionar abre esta
-  // tela e só ele marca o slot como free.
+  const MIN_REF_MM = 60; // altura/profundidade minima do retangulo-alvo so pra desenhar algo legivel
+  // Referencia de cada view = tamanho REAL do alvo naquele eixo (nao mais um
+  // valor ilustrativo arbitrario) - a Vista frontal sempre mostra a altura
+  // TOTAL do alvo (targetFrame.heightM), a Planta baixa a profundidade TOTAL
+  // dele (targetFrame.depthM), nao importa em qual face o filho esta preso.
+  const targetHeightMm = Math.max((targetFrame.heightM || 0) * 1000, MIN_REF_MM);
+  const targetDepthMm = Math.max((targetFrame.depthM || 0) * 1000, MIN_REF_MM);
+
+  // RODADA 7 (12/09) - margem de sobra ao REDOR do contorno do alvo, pra dar
+  // espaco de clicar/arrastar o filho pra ALEM dele (do lado, acima, abaixo
+  // - nunca so "dentro"). Sempre desenhada; so produz efeito de verdade pra
+  // slot com attached_free_position=true (ver computeModuleFaceAttachment
+  // Transform) - mas so o Reposicionar abre esta tela, e so ele marca o slot
+  // como free, entao na pratica e sempre o caso aqui.
   const H_MARGIN_MM = Math.max(faceWidthMm, childFootWMm, 300);
+  const frontVMarginMm = Math.max(targetHeightMm, childHeightMm, 300);
+  const planVMarginMm = Math.max(targetDepthMm, childDepthMm, 300);
 
-  // Vista frontal: eixo vertical é altura de verdade só nas 4 faces
-  // verticais (isHorizontalFace=false); nas 2 horizontais não há ajuste de
-  // altura (flush), então é só ilustrativo (childHeightMm real, não clampado).
-  const frontInteractiveUp = !isHorizontalFace;
-  const frontFaceHMm = frontInteractiveUp ? faceHeightMm : Math.max(childHeightMm, FLUSH_MIN_MM);
-  const frontChildHMm = frontInteractiveUp ? childFootUpMm : childHeightMm;
-  const frontViewUpMm = frontInteractiveUp ? upMm : 0;
-  const frontVMarginMm = frontInteractiveUp ? Math.max(frontFaceHMm, frontChildHMm, 300) : 0;
-
-  // Planta baixa: eixo vertical (profundidade, no desenho) é de verdade só
-  // nas 2 faces horizontais (isHorizontalFace=true); nas 4 verticais não há
-  // ajuste de profundidade (sempre encostado), só ilustrativo.
-  const planInteractiveUp = isHorizontalFace;
-  const planFaceHMm = planInteractiveUp ? faceHeightMm : Math.max(childDepthMm, FLUSH_MIN_MM);
-  const planChildHMm = planInteractiveUp ? childFootUpMm : childDepthMm;
-  const planViewUpMm = planInteractiveUp ? upMm : 0;
-  const planVMarginMm = planInteractiveUp ? Math.max(planFaceHMm, planChildHMm, 300) : 0;
-
-  // Giro só existe (rotationOffsetDeg != 0) nas 2 faces horizontais, e pivota
-  // ao redor do CANTO de referência da face (0,0 em right/up), não do centro
-  // do filho — mesma física de computeModuleFaceAttachmentTransform (ver
-  // comentário grande ali) — por isso o transform de giro do SVG usa (0,0)
-  // como pivô, não o centro do retângulo do filho. Só a view com liberdade
-  // real de giro (planta baixa, quando isHorizontalFace) desenha o giro.
-  //
-  // O viewBox agora é MAIOR que o contorno do alvo (faceWidthMm x faceHMm) —
-  // estende `vMarginMm` pra cima/baixo e `H_MARGIN_MM` pros 2 lados — pra
-  // sobrar espaço de clicar além dele. O transform de flip (translate+scale)
-  // continua usando SÓ faceHMm (o tamanho do próprio alvo), nunca a margem —
-  // a conta de onde o retângulo do filho aparece não muda, só a "janela"
-  // visível ao redor dele cresce (ver wireProjectReposicionarView pra conta
-  // inversa, clique→mm, que precisa saber dessa margem pra bater).
-  // BG-CATCHER (RODADA 8, 2026-09-12, Matt: "ta ficando bem meia boca, clico
-  // do lado e nao vai... ele precisa realocar... conforme a tela e onde eu
-  // clico") — até aqui só o retângulo PEQUENO do filho tinha listener de
-  // clique/arraste; clicar em qualquer outro lugar da view (no fundo, na
-  // margem nova, até em cima do retângulo AMARELO do alvo) não fazia nada,
-  // porque não tinha NADA lá recebendo o evento. Este retângulo cobre a
-  // view INTEIRA (mesmo tamanho do viewBox, incluinda a margem), invisível
-  // (`fill: transparent`, ver CSS) mas com `pointer-events: all` — desenhado
-  // DEPOIS do retângulo do alvo (fica por cima dele na order de clique, sem
-  // esconder visualmente) e ANTES do retângulo do filho (que continua
-  // ganhando a prioridade de clique quando o clique é EXATAMENTE nele, pra
-  // preservar o arraste fino de sempre agarrando o filho). Um clique em
-  // qualquer outro ponto agora REALOCA o filho ali na hora — ver o novo
-  // listener em wireProjectReposicionarView.
+  // BG-CATCHER (RODADA 8, 2026-09-12) - ver wireProjectReposicionarView.
   const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm) => `
     <div class="po-proj-reposicionar-view-wrap">
       <svg class="po-proj-reposicionar-svg" id="${svgId}"
@@ -794,17 +784,17 @@ function renderProjectReposicionarModalContent() {
       </svg>
     </div>
   `;
+  // As 2 views agora SEMPRE totalmente interativas nos 2 eixos que mostram
+  // (nunca mais "flush hint" estatico) - ver comentario grande acima.
   const viewsHtml = `
     <div class="po-proj-reposicionar-views-row">
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_frontal')}</div>
-        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', frontFaceHMm, frontChildHMm, frontViewUpMm, false, frontVMarginMm)}
-        ${!frontInteractiveUp ? `<p class="po-proj-reposicionar-flush-hint">${I18n.t('project.reposicionar_flush_hint')}</p>` : ''}
+        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', targetHeightMm, childHeightMm, heightMm, false, frontVMarginMm)}
       </div>
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_planta')}</div>
-        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', planFaceHMm, planChildHMm, planViewUpMm, isHorizontalFace, planVMarginMm)}
-        ${!planInteractiveUp ? `<p class="po-proj-reposicionar-flush-hint">${I18n.t('project.reposicionar_flush_hint')}</p>` : ''}
+        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, childDepthMm, depthMm, true, planVMarginMm)}
       </div>
     </div>
   `;
@@ -818,9 +808,14 @@ function renderProjectReposicionarModalContent() {
       <label>${I18n.t('project.reposicionar_field_right')}</label>
     </div>
     <div class="po-proj-position-field">
-      <input type="text" inputmode="decimal" id="po-reposicionar-up" value="${formatDimensionNumber(upMm, unit)}" />
+      <input type="text" inputmode="decimal" id="po-reposicionar-height" value="${formatDimensionNumber(heightMm, unit)}" />
       <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
-      <label>${upLabel}</label>
+      <label>${heightLabel}</label>
+    </div>
+    <div class="po-proj-position-field">
+      <input type="text" inputmode="decimal" id="po-reposicionar-depth" value="${formatDimensionNumber(depthMm, unit)}" />
+      <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+      <label>${depthLabel}</label>
     </div>
     <div class="po-proj-position-field">
       <input type="text" inputmode="decimal" id="po-reposicionar-rotation" value="${Math.round(rotDeg)}" ${isHorizontalFace ? '' : 'disabled'} />
@@ -839,18 +834,18 @@ function renderProjectReposicionarModalContent() {
     </div>
   `;
 
-  // Aplica um novo (rightMm, upMm, rotDeg) de verdade — mesma conta de
-  // sempre (computeModuleFaceAttachmentTransform já clampa deslize/giro),
-  // grava no slot e re-renderiza a cena (o painel em si só re-renderiza se
-  // pedirmos — ver os 3 pontos de chamada abaixo).
-  const applyValues = (newRightMm, newUpMm, newRotDeg) => {
+  // Aplica um novo (rightMm, upMm, normalMm, rotDeg) de verdade - mesma
+  // conta de sempre (computeModuleFaceAttachmentTransform ja cuida do
+  // clamp/free), grava no slot e re-renderiza a cena + o proprio painel
+  // (pra refletir de volta nos campos e nas 2 views).
+  const applyValues = (newRightMm, newUpMm, newNormalMm, newRotDeg) => {
     const frame2 = getSlotWorldFrame(target);
     if (!frame2) return;
     const result = computeModuleFaceAttachmentTransform(
       frame2, slot.attached_face,
       Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0),
-      newRightMm / 1000, newUpMm / 1000, newRotDeg,
-      !!slot.attached_free_position // RODADA 7 — sem clamp aqui (sempre true nesta tela, ver beginProjectReposicionarFromDrag)
+      newRightMm / 1000, newUpMm / 1000, newNormalMm / 1000, newRotDeg,
+      !!slot.attached_free_position // RODADA 7 - sem clamp aqui (sempre true nesta tela, ver beginProjectReposicionarFromDrag)
     );
     if (!result) return;
     slot.floor_x_mm = result.xMm;
@@ -859,10 +854,32 @@ function renderProjectReposicionarModalContent() {
     slot.floor_rotation_deg = result.rotationDeg;
     slot.attached_slide_right_mm = result.slideRightM * 1000;
     slot.attached_slide_up_mm = result.slideUpM * 1000;
+    slot.attached_slide_normal_mm = result.slideNormalM * 1000;
     slot.attached_rotation_offset_deg = result.rotationOffsetDeg;
     renderProjectCanvas();
     refreshProject3DResizeArrows();
-    renderProjectReposicionarModalContent(); // reflete o valor CLAMPADO de volta nos campos
+    renderProjectReposicionarModalContent(); // reflete o valor final de volta nos campos
+  };
+
+  // Traduz (right, altura) da Vista frontal ou (right, profundidade) da
+  // Planta baixa pro trio (right, up, normal) que applyValues espera -
+  // mantendo o eixo que a OUTRA view controla intacto (lido de novo do slot
+  // a cada chamada, pra nunca usar um valor "congelado" de antes do ultimo
+  // applyValues - ver comentario grande em wireProjectReposicionarView sobre
+  // os listeners de arraste sobreviverem a recriacao do painel).
+  const applyFront = (newRightMm, newHeightMm) => {
+    const curUpMm = Number(slot.attached_slide_up_mm || 0);
+    const curNormalMm = Number(slot.attached_slide_normal_mm || 0);
+    const curRotDeg = Number(slot.attached_rotation_offset_deg || 0);
+    if (isHorizontalFace) applyValues(newRightMm, curUpMm, newHeightMm, curRotDeg);
+    else applyValues(newRightMm, newHeightMm, curNormalMm, curRotDeg);
+  };
+  const applyPlan = (newRightMm, newDepthMm) => {
+    const curUpMm = Number(slot.attached_slide_up_mm || 0);
+    const curNormalMm = Number(slot.attached_slide_normal_mm || 0);
+    const curRotDeg = Number(slot.attached_rotation_offset_deg || 0);
+    if (isHorizontalFace) applyValues(newRightMm, newDepthMm, curNormalMm, curRotDeg);
+    else applyValues(newRightMm, curUpMm, newDepthMm, curRotDeg);
   };
 
   const readStepMm = () => {
@@ -871,8 +888,8 @@ function renderProjectReposicionarModalContent() {
     return (v !== null && !isNaN(v) && v > 0) ? v : projectReposicionarStepMm;
   };
 
-  // Campo de POSIÇÃO/GIRO — mesmo padrão change/Enter dos outros campos
-  // numéricos desta tela (ver renderProjectConfigPanel/posField acima).
+  // Campo de POSICAO/GIRO - mesmo padrao change/Enter dos outros campos
+  // numericos desta tela (ver renderProjectConfigPanel/posField acima).
   const wireField = (id, currentMm, onApply) => {
     const input = document.getElementById(id);
     if (!input) return;
@@ -884,7 +901,7 @@ function renderProjectReposicionarModalContent() {
     });
     input.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); return; }
-      // "Passo Teclado" (Promob) — setas do teclado nudge pelo Passo atual,
+      // "Passo Teclado" (Promob) - setas do teclado nudge pelo Passo atual,
       // aplicado na hora (sem esperar Enter/blur).
       if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
         ev.preventDefault();
@@ -893,13 +910,14 @@ function renderProjectReposicionarModalContent() {
       }
     });
   };
-  wireField('po-reposicionar-right', rightMm, (v) => applyValues(v, upMm, rotDeg));
-  wireField('po-reposicionar-up', upMm, (v) => applyValues(rightMm, v, rotDeg));
-  if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, v));
+  wireField('po-reposicionar-right', rightMm, (v) => applyValues(v, upMm, normalMm, rotDeg));
+  wireField('po-reposicionar-height', heightMm, (v) => { if (isHorizontalFace) applyValues(rightMm, upMm, v, rotDeg); else applyValues(rightMm, v, normalMm, rotDeg); });
+  wireField('po-reposicionar-depth', depthMm, (v) => { if (isHorizontalFace) applyValues(rightMm, v, normalMm, rotDeg); else applyValues(rightMm, upMm, v, rotDeg); });
+  if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, normalMm, v));
   wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
-    faceWidthMm, frontFaceHMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, frontChildHMm, rightMm, frontInteractiveUp, upMm, rotDeg, applyValues);
+    faceWidthMm, targetHeightMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, heightMm, applyFront);
   wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
-    faceWidthMm, planFaceHMm, H_MARGIN_MM, planVMarginMm, childFootWMm, planChildHMm, rightMm, planInteractiveUp, upMm, rotDeg, applyValues);
+    faceWidthMm, targetDepthMm, H_MARGIN_MM, planVMarginMm, childFootWMm, childDepthMm, rightMm, depthMm, applyPlan);
 
   const stepInput = document.getElementById('po-reposicionar-step');
   if (stepInput) {
@@ -934,82 +952,79 @@ function stopProjectReposicionarViewDrag() {
   projectReposicionarViewDrag = null;
 }
 
-// Liga o arraste do retângulo do filho dentro de UMA das 2 VISTAS 2D
-// (frontal ou planta, ver renderProjectReposicionarModalContent acima) —
-// pega o SVG/retângulo pelos ids passados (cada view tem os seus, recriados
+// Liga o arraste do retangulo do filho dentro de UMA das 2 VISTAS 2D
+// (frontal ou planta, ver renderProjectReposicionarModalContent acima) -
+// pega o SVG/retangulo pelos ids passados (cada view tem os seus, recriados
 // a cada render mas sempre com o mesmo id) e converte client(x,y) pra
-// coordenadas da FACE (mm, eixo "up" crescendo pra cima, mesma convenção de
-// rightMm/upMm) usando só getBoundingClientRect (o viewBox mapeia 1:1 em mm
-// pro tamanho em px do próprio SVG, sem CSS reescalando por cima — não
+// coordenadas da FACE (mm, eixo "up" crescendo pra cima, mesma convencao de
+// rightMm/verticalMm) usando so getBoundingClientRect (o viewBox mapeia 1:1
+// em mm pro tamanho em px do proprio SVG, sem CSS reescalando por cima - nao
 // precisa de getScreenCTM/matriz).
 //
-// `interactiveUp` (RODADA 6, 2026-09-11) — só é true na view que tem
-// liberdade FÍSICA real no eixo vertical do desenho (ver comentário grande
-// em renderProjectReposicionarModalContent sobre a peça só ter 2 graus de
-// liberdade no total, nunca 3): nessa view, arrastar move os 2 eixos
-// (rightMm/upMm) igual à view única da RODADA 5. Na OUTRA view (sem
-// liberdade ali — a peça já nasce encostada/flush nesse eixo), o arraste
-// SÓ atualiza rightMm (o eixo horizontal, sempre compartilhado entre as 2
-// views) — upMm/rotDeg passados em `realUpMm`/`realRotDeg` voltam intactos
-// pro applyValues, nunca um valor calculado a partir do clique.
+// RODADA 9 (2026-09-12) - SIMPLIFICADO: as 2 views agora sao SEMPRE
+// totalmente interativas nos 2 eixos que mostram (nunca mais uma via
+// "flush", so 1 eixo respondendo - ver comentario grande em
+// renderProjectReposicionarModalContent sobre o novo 3o eixo/attached_slide_
+// normal_mm), entao esta funcao nao precisa mais saber QUAL eixo e livre -
+// so devolve (right, vertical) pro callback `onPlace(newRight, newVertical)`
+// de quem chamou (applyFront/applyPlan), que traduz pro trio (up, normal)
+// certo. Antes (RODADA 6/7/8) tinha `interactiveUp`/`realUpMm`/`realRotDeg`
+// aqui dentro so pra travar o eixo vertical na view flush - nao existe mais
+// via flush, entao nao existe mais essa trava.
 //
-// `hMarginMm`/`vMarginMm` (RODADA 7, 2026-09-12) — a MESMA margem usada por
-// buildViewSvg (renderProjectReposicionarModalContent) pra desenhar espaço
-// além do contorno do alvo; aqui entra na conta inversa (clique em pixel →
+// `hMarginMm`/`vMarginMm` (RODADA 7, 2026-09-12) - a MESMA margem usada por
+// buildViewSvg (renderProjectReposicionarModalContent) pra desenhar espaco
+// alem do contorno do alvo; aqui entra na conta inversa (clique em pixel ->
 // mm) pra bater exatamente com o viewBox deslocado (`${-H_MARGIN_MM} ${-vMarginMm} ...`)
-// — sem isso, o clique feito na margem nova mapearia pro mm errado (o
-// cálculo antigo assumia viewBox sempre começando em 0,0).
+// - sem isso, o clique feito na margem nova mapearia pro mm errado.
 //
-// `childFootWMm`/`childHMm` (RODADA 8, 2026-09-12) — tamanho do retângulo do
-// filho NESTA view, usado só pra CENTRALIZAR ele embaixo do clique no novo
-// gesto "clicar no fundo pra realocar" (ver bg-catcher abaixo).
-function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, hMarginMm, vMarginMm, childFootWMm, childHMm, rightMm, interactiveUp, realUpMm, realRotDeg, applyValues) {
+// `childFootWMm`/`childVMm` (RODADA 8, 2026-09-12) - tamanho do retangulo do
+// filho NESTA view, usado so pra CENTRALIZAR ele embaixo do clique no gesto
+// "clicar no fundo pra realocar" (ver bg-catcher abaixo).
+function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, hMarginMm, vMarginMm, childFootWMm, childVMm, rightMm, verticalMm, onPlace) {
   const svg = document.getElementById(svgId);
   const rect = document.getElementById(rectId);
   const bg = document.getElementById(svgId + '-bg');
   if (!svg || !rect) return;
   const toFaceCoords = (clientX, clientY) => {
     const box = svg.getBoundingClientRect();
-    if (!box.width || !box.height) return { right: rightMm, up: 0 };
+    if (!box.width || !box.height) return { right: rightMm, up: verticalMm };
     const vbWidthMm = faceWidthMm + 2 * hMarginMm;
     const vbHeightMm = viewFaceHeightMm + 2 * vMarginMm;
     const faceRightMm = -hMarginMm + (clientX - box.left) * (vbWidthMm / box.width);
     const faceUpMm = (viewFaceHeightMm + vMarginMm) - (clientY - box.top) * (vbHeightMm / box.height);
     return { right: faceRightMm, up: faceUpMm };
   };
-  // AGARRAR o retângulo do filho — arraste FINO, preserva o ponto exato
-  // agarrado (offset), pra ele não "pular" quando a pessoa pega numa ponta
+  // AGARRAR o retangulo do filho - arraste FINO, preserva o ponto exato
+  // agarrado (offset), pra ele nao "pular" quando a pessoa pega numa ponta
   // em vez do canto. Comportamento de sempre (RODADA 6), intocado.
   rect.addEventListener('pointerdown', (ev) => {
     ev.preventDefault();
-    ev.stopPropagation(); // não deixa o bg-catcher (abaixo) tratar o MESMO clique
+    ev.stopPropagation(); // nao deixa o bg-catcher (abaixo) tratar o MESMO clique
     stopProjectReposicionarViewDrag();
     const start = toFaceCoords(ev.clientX, ev.clientY);
-    // Offset entre o ponto clicado e o canto (right,up) do filho, pra ele não
-    // "pular" pro cursor no primeiro frame — o ponto agarrado fica sob o
+    // Offset entre o ponto clicado e o canto (right,up) do filho, pra ele nao
+    // "pular" pro cursor no primeiro frame - o ponto agarrado fica sob o
     // cursor durante todo o arraste, igual aos outros arrastes 3D da aba.
     const offRight = start.right - rightMm;
-    const startUpMm = interactiveUp ? realUpMm : 0;
-    const offUp = interactiveUp ? (start.up - startUpMm) : 0;
+    const offUp = start.up - verticalMm;
     const onMove = (mv) => {
       const p = toFaceCoords(mv.clientX, mv.clientY);
-      const newRight = p.right - offRight;
-      const newUp = interactiveUp ? (p.up - offUp) : realUpMm;
-      applyValues(newRight, newUp, realRotDeg);
+      onPlace(p.right - offRight, p.up - offUp);
     };
     const onUp = () => stopProjectReposicionarViewDrag();
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp, { once: true });
     projectReposicionarViewDrag = { onMove, onUp };
   });
-  // CLICAR EM QUALQUER OUTRO PONTO DA VIEW — RODADA 8 (12/09), pedido direto
-  // do Matt depois de ver a RODADA 7 funcionando só "meio boca": "clico do
+  // CLICAR EM QUALQUER OUTRO PONTO DA VIEW - RODADA 8 (12/09), pedido direto
+  // do Matt depois de ver a RODADA 7 funcionando so "meio boca": "clico do
   // lado e nao vai. ele precisa realocar e encaixar dos lados. ou na frente
-  // conforme a tela e onde eu clico". Antes, só o retângulo PEQUENO do filho
-  // tinha listener — clicar no fundo (incluindo em cima do retângulo AMARELO
-  // do alvo, ou na margem nova da RODADA 7) não fazia nada, porque não tinha
+  // conforme a tela e onde eu clico". Antes, so o retangulo PEQUENO do filho
+  // tinha listener - clicar no fundo (incluindo em cima do retangulo AMARELO
+  // do alvo, ou na margem nova da RODADA 7) nao fazia nada, porque nao tinha
   // nada ali recebendo o clique. Este `bg` cobre a view inteira (ver
-  // buildViewSvg) e RELOCA o filho na hora, centralizado no ponto clicado —
+  // buildViewSvg) e RELOCA o filho na hora, centralizado no ponto clicado -
   // "conforme a tela e onde eu clico". Continuar segurando e arrastando
   // depois do clique inicial continua funcionando, com o mesmo centro.
   if (bg) {
@@ -1018,9 +1033,7 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
       stopProjectReposicionarViewDrag();
       const place = (clientX, clientY) => {
         const p = toFaceCoords(clientX, clientY);
-        const newRight = p.right - childFootWMm / 2;
-        const newUp = interactiveUp ? (p.up - childHMm / 2) : realUpMm;
-        applyValues(newRight, newUp, realRotDeg);
+        onPlace(p.right - childFootWMm / 2, p.up - childVMm / 2);
       };
       place(ev.clientX, ev.clientY);
       const onMove = (mv) => place(mv.clientX, mv.clientY);
@@ -2869,6 +2882,7 @@ function handleProjectAttachedFaceMove(state, slot, ev) {
     targetFrame, slot.attached_face,
     Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0),
     wantRightM, wantUpM,
+    Number(slot.attached_slide_normal_mm || 0) / 1000, // RODADA 9 — este arraste direto na 3D não mexe no 3º eixo, passado intacto
     Number(slot.attached_rotation_offset_deg || 0), // deslize não mexe no giro (RODADA 4) — passado intacto
     !!slot.attached_free_position // RODADA 7 — mesmo slot, mesma física do Reposicionar (ver comentário grande em computeModuleFaceAttachmentTransform)
   );
@@ -2879,6 +2893,7 @@ function handleProjectAttachedFaceMove(state, slot, ev) {
   slot.floor_rotation_deg = result.rotationDeg;
   slot.attached_slide_right_mm = result.slideRightM * 1000;
   slot.attached_slide_up_mm = result.slideUpM * 1000;
+  slot.attached_slide_normal_mm = result.slideNormalM * 1000;
   if (state.group) {
     state.group.position.set(result.xMm / 1000, result.floorHeightMm / 1000, result.zMm / 1000);
     ViewerProjectEdit.updateHoverHighlight();
