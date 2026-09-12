@@ -793,19 +793,6 @@ function renderProjectReposicionarModalContent() {
   const heightLabel = I18n.t('project.reposicionar_field_up_vertical'); // "Altura" - sempre
   const depthLabel = I18n.t('project.reposicionar_field_up_horizontal'); // "Profundidade" - sempre
 
-  // RODADA 11 (12/09) - ver reposicionarNormalAnchor/anchorNormalToViewY
-  // acima. heightMm/depthMm (valores CRUS, os que os campos numericos usam)
-  // continuam os mesmos de sempre; frontViewUpMm/planViewUpMm sao so pra
-  // DESENHAR/interagir nas views, com a ancora certa aplicada no eixo que
-  // for o "normal" nesta face (o outro eixo passa direto, sem mudanca).
-  const normalAnchor = reposicionarNormalAnchor(slot.attached_face);
-  const frontViewUpMm = isHorizontalFace
-    ? anchorNormalToViewY(normalAnchor.edge, heightMm, targetHeightMm, childHeightMm)
-    : heightMm;
-  const planViewUpMm = isHorizontalFace
-    ? depthMm
-    : anchorNormalToViewY(normalAnchor.edge, depthMm, targetDepthMm, childDepthMm);
-
   const faceWidthMm = g.width * 1000;
   const childFootWMm = Number(slot.width_mm || 0);
   const childHeightMm = Number(slot.height_mm || 0);
@@ -817,6 +804,24 @@ function renderProjectReposicionarModalContent() {
   // dele (targetFrame.depthM), nao importa em qual face o filho esta preso.
   const targetHeightMm = Math.max((targetFrame.heightM || 0) * 1000, MIN_REF_MM);
   const targetDepthMm = Math.max((targetFrame.depthM || 0) * 1000, MIN_REF_MM);
+
+  // RODADA 11 (12/09) - ver reposicionarNormalAnchor/anchorNormalToViewY
+  // acima. heightMm/depthMm (valores CRUS, os que os campos numericos usam)
+  // continuam os mesmos de sempre; frontViewUpMm/planViewUpMm sao so pra
+  // DESENHAR/interagir nas views, com a ancora certa aplicada no eixo que
+  // for o "normal" nesta face (o outro eixo passa direto, sem mudanca).
+  // IMPORTANTE: isto tem que vir DEPOIS de targetHeightMm/targetDepthMm/
+  // childHeightMm/childDepthMm estarem declarados (usa os 4) - colocar
+  // antes quebra com ReferenceError de TDZ (const usado antes de
+  // inicializar), o que derrubava a função inteira e explicava "nao sobe
+  // tela e nao conecta" reportado pelo Matt depois desta rodada.
+  const normalAnchor = reposicionarNormalAnchor(slot.attached_face);
+  const frontViewUpMm = isHorizontalFace
+    ? anchorNormalToViewY(normalAnchor.edge, heightMm, targetHeightMm, childHeightMm)
+    : heightMm;
+  const planViewUpMm = isHorizontalFace
+    ? depthMm
+    : anchorNormalToViewY(normalAnchor.edge, depthMm, targetDepthMm, childDepthMm);
 
   // RODADA 7 (12/09) - margem de sobra ao REDOR do contorno do alvo, pra dar
   // espaco de clicar/arrastar o filho pra ALEM dele (do lado, acima, abaixo
