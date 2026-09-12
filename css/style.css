@@ -3049,25 +3049,12 @@ header.po-topnav {
 .po-proj-reposicionar-rotate-handle:hover { fill: #ffffff; }
 .po-proj-reposicionar-rotate-handle:active { cursor: grabbing; }
 /* RODADA 15 (12/09) — linha+rótulo do CHÃO REAL do ambiente, só na Vista
-   frontal (ver targetElevationMm/buildViewSvg em
-   portal-08-projetos-paredes.js). Matt: "no visualizador ele aparece do
-   lado da referencia mas a referencia esta longe do chao no ambiente [...]
-   e como se ele nao tivesse considerando a altura do chao". Tracejada e
-   discreta (não é um elemento editável) — pointer-events:none pelo MESMO
-   motivo do face-rect logo acima (nunca deve roubar o clique do
-   bg-catcher). */
-.po-proj-reposicionar-floor-line {
-  stroke: #8a6d3b; stroke-width: 3; stroke-dasharray: 10 8; pointer-events: none;
-}
-/* font-size NÃO fica aqui de propósito — o texto vive dentro do viewBox em
-   mm (não em px de tela), então o tamanho tem que escalar com o desenho
-   (ver `floorLabelFontSizeMm` em buildViewSvg) e é passado inline (`style=`
-   no próprio elemento), que sempre vence uma classe de folha externa - se
-   o font-size entrasse aqui, esta regra ganharia da inline e o texto
-   voltaria a ficar minúsculo/gigante dependendo da escala do módulo. */
-.po-proj-reposicionar-floor-label {
-  fill: #8a6d3b; font-weight: 600; pointer-events: none;
-}
+   frontal — REVERTIDA na RODADA 17 (12/09): Matt, ao vivo, "nao precisa
+   mostrar o chao no front view [...] depois do chao ele piorou pra
+   alinhar" (piorava a experiência em vez de ajudar). Classes removidas do
+   JS (buildViewSvg não desenha mais linha/rótulo nenhum) — regras CSS
+   removidas junto pra não deixar seletor morto na folha de estilo.
+   Se precisar reaproveitar: git blame / histórico desta rodada. */
 /* Eixo sem liberdade de ajuste (peça encostada/flush ali) — ver
    frontInteractiveUp/planInteractiveUp no JS: some visualmente pra deixar
    claro que aquele eixo não responde a arraste vertical. */

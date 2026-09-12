@@ -823,44 +823,26 @@ function renderProjectReposicionarModalContent() {
     ? depthMm
     : anchorNormalToViewY(normalAnchor.edge, depthMm, targetDepthMm, childDepthMm);
 
-  // RODADA 15 (12/09) - CHÃO DO AMBIENTE na Vista frontal. Matt, depois de
-  // ver um alvo montado ALTO na parede (longe do chão de verdade): "no
-  // visualizador ele aparece do lado da referencia mas a referencia esta
-  // longe do chao no ambiente [...] e como se ele nao tivesse considerando a
-  // altura do chao e todos estivessem no chao". CAUSA: até aqui a Vista
-  // frontal SEMPRE desenhava o alvo (retângulo branco) a partir de y=0 -
-  // certo pro TAMANHO dele (targetHeightMm é só a altura própria, nunca
-  // dependeu da elevação), mas a POSIÇÃO na tela nunca refletia a altura
-  // REAL do alvo no ambiente (slot.floor_height_mm, a mesma distância usada
-  // de verdade em getSlotWorldFrame pra chão OU parede) - um alvo pendurado
-  // alto sempre aparecia "no chão" do desenho, escondendo o vão de verdade.
-  // FIX: só a Vista frontal (é a única com o eixo Altura=mundo de verdade;
-  // Planta baixa é Profundidade, sem noção de "chão") ganha um deslocamento
-  // (`targetElevationMm`) aplicado só no DESENHO/interação (as views usam
-  // coordenadas de DESENHO desde a RODADA 11) - os campos numéricos e o
-  // valor gravado no slot continuam relativos ao alvo, sem mudança nenhuma
-  // na física. O conteúdo desenhado sempre INCLUI o y=0 real (o chão),
-  // mesmo que isso deixe o retângulo do alvo pequeno quando ele está bem
-  // alto - decisão deliberada (Matt: "considerando que o ambiente e o
-  // certo"), com uma linha+rótulo (ver buildViewSvg) marcando onde fica
-  // esse chão de verdade, já que só o deslocamento sozinho não muda nada
-  // visualmente (a janela sempre recentraliza no conteúdo, ver RODADA 11).
-  const targetElevationMm = Number(target.floor_height_mm || 0);
-  const frontContentLowMm = Math.min(0, targetElevationMm, targetElevationMm + frontViewUpMm);
-  const frontContentHighMm = Math.max(targetElevationMm + targetHeightMm, targetElevationMm + frontViewUpMm + childHeightMm);
-  const frontContentHMm = frontContentHighMm - frontContentLowMm;
-  // Deslocamento único (chão -> coordenada de desenho, sempre >= 0 na
-  // prática já que floor_height_mm nunca é negativo) - soma no alvo E no
-  // filho pra manter as posições RELATIVAS entre os 2 exatamente iguais a
-  // antes, só "sobe" o conjunto inteiro pra abrir espaço pro chão real
-  // embaixo.
-  const frontElevationOffsetMm = targetElevationMm - frontContentLowMm;
-  const frontDrawTargetYMm = frontElevationOffsetMm;
-  const frontDrawViewUpMm = frontViewUpMm + frontElevationOffsetMm;
-  // Onde o chão de verdade (y=0 real) cai na MESMA convenção de coordenada
-  // de desenho (0=embaixo do conteúdo, cresce pra cima) que os retângulos
-  // usam - ver buildViewSvg pra como isso vira a linha+rótulo.
-  const frontFloorDrawYMm = -frontContentLowMm;
+  // RODADA 15 (12/09) - tentativa de mostrar o CHÃO REAL do ambiente na
+  // Vista frontal (alvo desenhado na elevação real, target.floor_height_mm,
+  // com uma linha+rótulo marcando onde fica o y=0 de verdade).
+  //
+  // REVERTIDA na RODADA 17 (12/09) - Matt, vendo ao vivo (2 prints, alvo no
+  // chão): "nao precisa mostrar o chao no front view, por que voce colocou
+  // o chao e olha meu print. meu modulo esta conectado lateralmente na
+  // mesma linha no front, mas no ambiente nitidamente ele esta abaixo dele.
+  // o view esta errado! entao tira o chao dele. e so acerta a altura dele.
+  // depois do chao ele piorou pra alinhar." A mudança da R15 piorou a
+  // experiência em vez de ajudar (encolhia o desenho e confundia o
+  // alinhamento) sem resolver o que ele queria. Volta ao comportamento de
+  // antes da R15: a Vista frontal desenha o alvo SEMPRE a partir de y=0,
+  // com altura = só a altura própria dele (`targetHeightMm`) - nenhuma
+  // noção de elevação absoluta do ambiente aqui. A posição RELATIVA do
+  // filho (acima/abaixo/do lado do alvo, dependendo da face) continua
+  // vindo só da âncora da RODADA 11 (`frontViewUpMm`, ver
+  // anchorNormalToViewY acima) - essa parte nunca teve o problema relatado
+  // e não foi tocada.
+  const frontContentHMm = targetHeightMm;
 
   // RODADA 7 (12/09) - margem de sobra ao REDOR do contorno do alvo, pra dar
   // espaco de clicar/arrastar o filho pra ALEM dele (do lado, acima, abaixo
@@ -921,12 +903,6 @@ function renderProjectReposicionarModalContent() {
   // um raio fixo em mm fica com o mesmo tamanho visual nas 2, mas só é usado
   // aqui na Planta mesmo assim.
   const rotateHandleRMm = Math.min(60, Math.max(18, Math.min(childFootWMm, childDepthMm) * 0.18));
-  // RODADA 15 (12/09) - tamanho do rótulo do chão em mm (não em px de tela,
-  // ver comentário grande em .po-proj-reposicionar-floor-label no CSS) -
-  // mesmo padrão do rotateHandleRMm acima: proporcional à escala mm/px
-  // COMPARTILHADA entre as 2 views (sharedTotalHMm, RODADA 11), com um piso
-  // mínimo pra nunca ficar ilegível num alvo bem pequeno.
-  const floorLabelFontSizeMm = Math.max(26, sharedTotalHMm * 0.045);
   // RODADA 16 (2026-09-12) - a bolinha "rot-bl" foi REMOVIDA: ela nascia
   // bem em cima de (rightMm, viewUpMm), que é EXATAMENTE o pivô do giro
   // (ver o comentário grande sobre pivô da RODADA 14, mais abaixo, e o
@@ -957,24 +933,19 @@ function renderProjectReposicionarModalContent() {
   // exibição, que antes divergia dela). Ver também os `atan2` do arraste das
   // alças em wireProjectReposicionarView, que precisam do MESMO pivô.
   // BG-CATCHER (RODADA 8, 2026-09-12) - ver wireProjectReposicionarView.
-  // RODADA 15 (12/09) - `targetHMm`/`targetYMm` SEPARADOS de `contentHMm`
-  // (antes era um parâmetro só, `faceHMm`, servindo pras 2 coisas: altura do
-  // retângulo do ALVO e altura TOTAL do conteúdo/viewBox - sempre coincidiam
-  // porque o alvo sempre desenhava a partir de y=0). Agora só a Planta baixa
-  // continua com os 2 iguais (sem noção de chão); a Vista frontal passa
-  // `contentHMm` maior (inclui o chão real, ver RODADA 15 acima) com o alvo
-  // desenhado em `targetYMm` (não mais sempre 0) dentro dele. `floorDrawYMm`
-  // (só a Vista frontal passa) desenha a linha+rótulo do chão de verdade.
-  const buildViewSvg = (svgId, rectId, contentHMm, targetHMm, targetYMm, childHMm, viewUpMm, applyRotation, vMarginMm, withRotateHandles, floorDrawYMm) => `
+  // RODADA 17 (12/09) - assinatura revertida pra antes da RODADA 15 (ver
+  // comentário grande acima de frontContentHMm): sem `targetYMm`/
+  // `floorDrawYMm` - o alvo sempre desenha do y=0 até `faceHMm` (que agora é
+  // sempre a altura/profundidade própria do alvo, nunca inclui chão real).
+  const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm, withRotateHandles) => `
     <div class="po-proj-reposicionar-view-wrap">
       <svg class="po-proj-reposicionar-svg" id="${svgId}"
-           viewBox="${-H_MARGIN_MM} ${-vMarginMm} ${faceWidthMm + 2 * H_MARGIN_MM} ${contentHMm + 2 * vMarginMm}" preserveAspectRatio="xMidYMid meet">
+           viewBox="${-H_MARGIN_MM} ${-vMarginMm} ${faceWidthMm + 2 * H_MARGIN_MM} ${faceHMm + 2 * vMarginMm}" preserveAspectRatio="xMidYMid meet">
         <rect id="${svgId}-bg" x="${-H_MARGIN_MM}" y="${-vMarginMm}"
-              width="${faceWidthMm + 2 * H_MARGIN_MM}" height="${contentHMm + 2 * vMarginMm}"
+              width="${faceWidthMm + 2 * H_MARGIN_MM}" height="${faceHMm + 2 * vMarginMm}"
               class="po-proj-reposicionar-bg-catcher" />
-        <g transform="translate(0 ${contentHMm}) scale(1 -1)">
-          <rect x="0" y="${targetYMm || 0}" width="${faceWidthMm}" height="${targetHMm}" class="po-proj-reposicionar-face-rect" />
-          ${floorDrawYMm != null ? `<line x1="${-H_MARGIN_MM}" y1="${floorDrawYMm}" x2="${faceWidthMm + H_MARGIN_MM}" y2="${floorDrawYMm}" class="po-proj-reposicionar-floor-line" />` : ''}
+        <rect x="0" y="0" width="${faceWidthMm}" height="${faceHMm}" class="po-proj-reposicionar-face-rect" />
+        <g transform="translate(0 ${faceHMm}) scale(1 -1)">
           <g transform="rotate(${applyRotation ? rotDeg : 0} ${rightMm} ${viewUpMm})">
             <rect id="${rectId}"
                   x="${rightMm}" y="${viewUpMm}"
@@ -983,7 +954,6 @@ function renderProjectReposicionarModalContent() {
             ${withRotateHandles ? buildRotateHandles(rectId, viewUpMm, childHMm) : ''}
           </g>
         </g>
-        ${floorDrawYMm != null ? `<text x="${-H_MARGIN_MM + floorLabelFontSizeMm * 0.3}" y="${contentHMm - floorDrawYMm - floorLabelFontSizeMm * 0.3}" style="font-size:${floorLabelFontSizeMm}px" class="po-proj-reposicionar-floor-label">${I18n.t('project.reposicionar_floor_label', { value: formatDimensionNumber(targetElevationMm, unit) + ' ' + unitAbbrev(unit) })}</text>` : ''}
       </svg>
     </div>
   `;
@@ -993,11 +963,11 @@ function renderProjectReposicionarModalContent() {
     <div class="po-proj-reposicionar-views-row">
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_frontal')}</div>
-        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', frontContentHMm, targetHeightMm, frontDrawTargetYMm, childHeightMm, frontDrawViewUpMm, false, frontVMarginMm, false, frontFloorDrawYMm)}
+        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', targetHeightMm, childHeightMm, frontViewUpMm, false, frontVMarginMm, false)}
       </div>
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_planta')}</div>
-        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, targetDepthMm, 0, childDepthMm, planViewUpMm, true, planVMarginMm, isHorizontalFace, null)}
+        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, childDepthMm, planViewUpMm, true, planVMarginMm, isHorizontalFace)}
       </div>
     </div>
   `;
@@ -1142,15 +1112,13 @@ function renderProjectReposicionarModalContent() {
   wireField('po-reposicionar-height', heightMm, (v) => { if (isHorizontalFace) applyValues(rightMm, upMm, v, rotDeg); else applyValues(rightMm, v, normalMm, rotDeg); });
   wireField('po-reposicionar-depth', depthMm, (v) => { if (isHorizontalFace) applyValues(rightMm, v, normalMm, rotDeg); else applyValues(rightMm, upMm, v, rotDeg); });
   if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, normalMm, v));
-  // RODADA 15 (12/09) - a Vista frontal agora arrasta/clica em coordenada de
-  // DESENHO já com o chão real somado (frontContentHMm/frontDrawViewUpMm,
-  // ver comentário grande acima de targetElevationMm) - `applyFront` continua
-  // esperando o valor LOCAL de sempre (relativo ao alvo, sem o chão), então
-  // este wrapper só desfaz a soma antes de repassar pra ela; física e campos
-  // numéricos continuam intocados.
+  // RODADA 17 (12/09) - revertido o wrapper de deslocamento da RODADA 15
+  // (chão real removido, ver comentário grande acima de frontContentHMm) -
+  // a Vista frontal volta a arrastar/clicar direto na coordenada LOCAL de
+  // sempre (`frontViewUpMm`), sem nenhuma soma/subtração de elevação.
   wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
-    faceWidthMm, frontContentHMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, frontDrawViewUpMm,
-    (newRightMm, newDrawHeightMm) => applyFront(newRightMm, newDrawHeightMm - frontElevationOffsetMm));
+    faceWidthMm, frontContentHMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, frontViewUpMm,
+    applyFront);
   wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
     faceWidthMm, targetDepthMm, H_MARGIN_MM, planVMarginMm, childFootWMm, childDepthMm, rightMm, planViewUpMm, applyPlan,
     rotDeg, isHorizontalFace ? applyRotate : null);
@@ -3214,13 +3182,40 @@ function handleProjectAttachedFaceMove(state, slot, ev) {
   const wantRightM = rightM + (Number(state.grabOffsetSlideRightMm || 0) / 1000);
   const wantUpM = upM + (Number(state.grabOffsetSlideUpMm || 0) / 1000);
 
+  // RODADA 17 (12/09) - `freePosition` FORÇADO em `false` aqui, não mais
+  // `!!slot.attached_free_position`. Matt (12/09): "depois que eu coloco o
+  // modulo e dou ok, com botao esquerdo eu posso mover ele pra qualquer
+  // lado sem nenhuma restricao. isso nao pode acontecer ele so pode mexer
+  // nos 2 sentidos que peguem na tela amarela" - confirmado pra TODO módulo
+  // do ambiente, e reproduzido de novo (12/09) especificamente "quando eu
+  // conecto a outro modulo". CAUSA: todo slot que passa pelo Reposicionar
+  // fica com `attached_free_position=true` pra SEMPRE (ver
+  // beginProjectReposicionarFromDrag) - de propósito, pra permitir digitar/
+  // arrastar na TELA do Reposicionar valores ALÉM da face do alvo (RODADA 7,
+  // "X: -762 pra encostar um do lado do outro"). Mas esta função é o
+  // arraste com o ESQUERDO na cena 3D DEPOIS de fechar o Reposicionar - lia
+  // o MESMO `attached_free_position`, então herdava o "sem limite" da tela
+  // de reposicionar, deixando o módulo deslizar (nos 2 eixos da face, nunca
+  // saindo do plano dela) MUITO além do contorno do alvo, parecendo "sem
+  // nenhuma restrição". FIX: este arraste específico sempre clampa (`false`
+  // fixo), igual ao gesto antigo (segurar-esquerdo+botão-direito, que nunca
+  // teve esse problema) - "os 2 eixos deve correr livre ATE OS LIMITES
+  // desse modulo/objeto amarelo" (pedido original da RODADA 3) volta a
+  // valer pra TODO módulo anexado, veio ele de onde vier. A tela do
+  // Reposicionar (`applyValues`/`resolveModuleFaceAttachments`, que
+  // recalcula a cada render pra "seguir o pai") continuam lendo
+  // `attached_free_position` normalmente - só ESTE arraste 3D mudou. Efeito
+  // colateral aceito: um módulo posicionado de propósito ao lado/acima/
+  // abaixo do alvo (via Reposicionar, fora do contorno dele) vai "saltar"
+  // de volta pro contorno na primeira vez que for arrastado com o esquerdo
+  // na cena 3D - avisar o Matt disso e reverter se ele não quiser.
   const result = computeModuleFaceAttachmentTransform(
     targetFrame, slot.attached_face,
     Number(slot.width_mm || 0), Number(slot.height_mm || 0), Number(slot.depth_mm || 0),
     wantRightM, wantUpM,
     Number(slot.attached_slide_normal_mm || 0) / 1000, // RODADA 9 — este arraste direto na 3D não mexe no 3º eixo, passado intacto
     Number(slot.attached_rotation_offset_deg || 0), // deslize não mexe no giro (RODADA 4) — passado intacto
-    !!slot.attached_free_position // RODADA 7 — mesmo slot, mesma física do Reposicionar (ver comentário grande em computeModuleFaceAttachmentTransform)
+    false // RODADA 17 — sempre clampado, não importa attached_free_position (ver comentário grande acima)
   );
   if (!result) return;
   slot.floor_x_mm = result.xMm;
