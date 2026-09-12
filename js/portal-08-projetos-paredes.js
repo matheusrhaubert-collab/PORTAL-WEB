@@ -823,6 +823,45 @@ function renderProjectReposicionarModalContent() {
     ? depthMm
     : anchorNormalToViewY(normalAnchor.edge, depthMm, targetDepthMm, childDepthMm);
 
+  // RODADA 15 (12/09) - CHÃO DO AMBIENTE na Vista frontal. Matt, depois de
+  // ver um alvo montado ALTO na parede (longe do chão de verdade): "no
+  // visualizador ele aparece do lado da referencia mas a referencia esta
+  // longe do chao no ambiente [...] e como se ele nao tivesse considerando a
+  // altura do chao e todos estivessem no chao". CAUSA: até aqui a Vista
+  // frontal SEMPRE desenhava o alvo (retângulo branco) a partir de y=0 -
+  // certo pro TAMANHO dele (targetHeightMm é só a altura própria, nunca
+  // dependeu da elevação), mas a POSIÇÃO na tela nunca refletia a altura
+  // REAL do alvo no ambiente (slot.floor_height_mm, a mesma distância usada
+  // de verdade em getSlotWorldFrame pra chão OU parede) - um alvo pendurado
+  // alto sempre aparecia "no chão" do desenho, escondendo o vão de verdade.
+  // FIX: só a Vista frontal (é a única com o eixo Altura=mundo de verdade;
+  // Planta baixa é Profundidade, sem noção de "chão") ganha um deslocamento
+  // (`targetElevationMm`) aplicado só no DESENHO/interação (as views usam
+  // coordenadas de DESENHO desde a RODADA 11) - os campos numéricos e o
+  // valor gravado no slot continuam relativos ao alvo, sem mudança nenhuma
+  // na física. O conteúdo desenhado sempre INCLUI o y=0 real (o chão),
+  // mesmo que isso deixe o retângulo do alvo pequeno quando ele está bem
+  // alto - decisão deliberada (Matt: "considerando que o ambiente e o
+  // certo"), com uma linha+rótulo (ver buildViewSvg) marcando onde fica
+  // esse chão de verdade, já que só o deslocamento sozinho não muda nada
+  // visualmente (a janela sempre recentraliza no conteúdo, ver RODADA 11).
+  const targetElevationMm = Number(target.floor_height_mm || 0);
+  const frontContentLowMm = Math.min(0, targetElevationMm, targetElevationMm + frontViewUpMm);
+  const frontContentHighMm = Math.max(targetElevationMm + targetHeightMm, targetElevationMm + frontViewUpMm + childHeightMm);
+  const frontContentHMm = frontContentHighMm - frontContentLowMm;
+  // Deslocamento único (chão -> coordenada de desenho, sempre >= 0 na
+  // prática já que floor_height_mm nunca é negativo) - soma no alvo E no
+  // filho pra manter as posições RELATIVAS entre os 2 exatamente iguais a
+  // antes, só "sobe" o conjunto inteiro pra abrir espaço pro chão real
+  // embaixo.
+  const frontElevationOffsetMm = targetElevationMm - frontContentLowMm;
+  const frontDrawTargetYMm = frontElevationOffsetMm;
+  const frontDrawViewUpMm = frontViewUpMm + frontElevationOffsetMm;
+  // Onde o chão de verdade (y=0 real) cai na MESMA convenção de coordenada
+  // de desenho (0=embaixo do conteúdo, cresce pra cima) que os retângulos
+  // usam - ver buildViewSvg pra como isso vira a linha+rótulo.
+  const frontFloorDrawYMm = -frontContentLowMm;
+
   // RODADA 7 (12/09) - margem de sobra ao REDOR do contorno do alvo, pra dar
   // espaco de clicar/arrastar o filho pra ALEM dele (do lado, acima, abaixo
   // - nunca so "dentro"). Sempre desenhada; so produz efeito de verdade pra
@@ -830,7 +869,9 @@ function renderProjectReposicionarModalContent() {
   // Transform) - mas so o Reposicionar abre esta tela, e so ele marca o slot
   // como free, entao na pratica e sempre o caso aqui.
   const H_MARGIN_MM = Math.max(faceWidthMm, childFootWMm, 300);
-  let frontVMarginMm = Math.max(targetHeightMm, childHeightMm, 300);
+  // RODADA 15 - a margem da Vista frontal agora usa frontContentHMm (já
+  // inclui o alvo, o filho E o chão real) em vez de só targetHeightMm.
+  let frontVMarginMm = Math.max(frontContentHMm, 300);
   let planVMarginMm = Math.max(targetDepthMm, childDepthMm, 300);
   // RODADA 11 (12/09) - ESCALA COMPARTILHADA entre as 2 views. Antes, a
   // altura TOTAL do viewBox (mm) de cada svg era calculada separado (alvo +
@@ -845,10 +886,15 @@ function renderProjectReposicionarModalContent() {
   // ser sempre a mesma nas 2 views - a que precisar de menos margem ganha
   // margem extra (simetrica, nao afeta a posicao do alvo dentro dela) so
   // pra igualar o total, garantindo a MESMA escala mm/px nas 2 views.
-  const totalFrontHMm = targetHeightMm + 2 * frontVMarginMm;
+  // RODADA 15 - continua valendo com frontContentHMm no lugar de
+  // targetHeightMm: um alvo bem elevado agora pode dar um total MAIOR que
+  // antes, e a Planta baixa (que não tem noção de chão) encolhe junto, de
+  // propósito, pra manter a MESMA escala entre as 2 (regra já confirmada
+  // pelo Matt na RODADA 11 - nunca mais tamanhos diferentes entre as views).
+  const totalFrontHMm = frontContentHMm + 2 * frontVMarginMm;
   const totalPlanHMm = targetDepthMm + 2 * planVMarginMm;
   const sharedTotalHMm = Math.max(totalFrontHMm, totalPlanHMm);
-  frontVMarginMm = (sharedTotalHMm - targetHeightMm) / 2;
+  frontVMarginMm = (sharedTotalHMm - frontContentHMm) / 2;
   planVMarginMm = (sharedTotalHMm - targetDepthMm) / 2;
 
   // RODADA 13 (12/09) - "BOLINHAS" DE GIRO NOS CANTOS. Matt, depois de ver a
@@ -875,6 +921,12 @@ function renderProjectReposicionarModalContent() {
   // um raio fixo em mm fica com o mesmo tamanho visual nas 2, mas só é usado
   // aqui na Planta mesmo assim.
   const rotateHandleRMm = Math.min(60, Math.max(18, Math.min(childFootWMm, childDepthMm) * 0.18));
+  // RODADA 15 (12/09) - tamanho do rótulo do chão em mm (não em px de tela,
+  // ver comentário grande em .po-proj-reposicionar-floor-label no CSS) -
+  // mesmo padrão do rotateHandleRMm acima: proporcional à escala mm/px
+  // COMPARTILHADA entre as 2 views (sharedTotalHMm, RODADA 11), com um piso
+  // mínimo pra nunca ficar ilegível num alvo bem pequeno.
+  const floorLabelFontSizeMm = Math.max(26, sharedTotalHMm * 0.045);
   const buildRotateHandles = (rectId, viewUpMm, childHMm) => `
     <circle id="${rectId}-rot-bl" cx="${rightMm}" cy="${viewUpMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
     <circle id="${rectId}-rot-br" cx="${rightMm + childFootWMm}" cy="${viewUpMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
@@ -897,15 +949,24 @@ function renderProjectReposicionarModalContent() {
   // exibição, que antes divergia dela). Ver também os `atan2` do arraste das
   // alças em wireProjectReposicionarView, que precisam do MESMO pivô.
   // BG-CATCHER (RODADA 8, 2026-09-12) - ver wireProjectReposicionarView.
-  const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm, withRotateHandles) => `
+  // RODADA 15 (12/09) - `targetHMm`/`targetYMm` SEPARADOS de `contentHMm`
+  // (antes era um parâmetro só, `faceHMm`, servindo pras 2 coisas: altura do
+  // retângulo do ALVO e altura TOTAL do conteúdo/viewBox - sempre coincidiam
+  // porque o alvo sempre desenhava a partir de y=0). Agora só a Planta baixa
+  // continua com os 2 iguais (sem noção de chão); a Vista frontal passa
+  // `contentHMm` maior (inclui o chão real, ver RODADA 15 acima) com o alvo
+  // desenhado em `targetYMm` (não mais sempre 0) dentro dele. `floorDrawYMm`
+  // (só a Vista frontal passa) desenha a linha+rótulo do chão de verdade.
+  const buildViewSvg = (svgId, rectId, contentHMm, targetHMm, targetYMm, childHMm, viewUpMm, applyRotation, vMarginMm, withRotateHandles, floorDrawYMm) => `
     <div class="po-proj-reposicionar-view-wrap">
       <svg class="po-proj-reposicionar-svg" id="${svgId}"
-           viewBox="${-H_MARGIN_MM} ${-vMarginMm} ${faceWidthMm + 2 * H_MARGIN_MM} ${faceHMm + 2 * vMarginMm}" preserveAspectRatio="xMidYMid meet">
-        <rect x="0" y="0" width="${faceWidthMm}" height="${faceHMm}" class="po-proj-reposicionar-face-rect" />
+           viewBox="${-H_MARGIN_MM} ${-vMarginMm} ${faceWidthMm + 2 * H_MARGIN_MM} ${contentHMm + 2 * vMarginMm}" preserveAspectRatio="xMidYMid meet">
         <rect id="${svgId}-bg" x="${-H_MARGIN_MM}" y="${-vMarginMm}"
-              width="${faceWidthMm + 2 * H_MARGIN_MM}" height="${faceHMm + 2 * vMarginMm}"
+              width="${faceWidthMm + 2 * H_MARGIN_MM}" height="${contentHMm + 2 * vMarginMm}"
               class="po-proj-reposicionar-bg-catcher" />
-        <g transform="translate(0 ${faceHMm}) scale(1 -1)">
+        <g transform="translate(0 ${contentHMm}) scale(1 -1)">
+          <rect x="0" y="${targetYMm || 0}" width="${faceWidthMm}" height="${targetHMm}" class="po-proj-reposicionar-face-rect" />
+          ${floorDrawYMm != null ? `<line x1="${-H_MARGIN_MM}" y1="${floorDrawYMm}" x2="${faceWidthMm + H_MARGIN_MM}" y2="${floorDrawYMm}" class="po-proj-reposicionar-floor-line" />` : ''}
           <g transform="rotate(${applyRotation ? rotDeg : 0} ${rightMm} ${viewUpMm})">
             <rect id="${rectId}"
                   x="${rightMm}" y="${viewUpMm}"
@@ -914,6 +975,7 @@ function renderProjectReposicionarModalContent() {
             ${withRotateHandles ? buildRotateHandles(rectId, viewUpMm, childHMm) : ''}
           </g>
         </g>
+        ${floorDrawYMm != null ? `<text x="${-H_MARGIN_MM + floorLabelFontSizeMm * 0.3}" y="${contentHMm - floorDrawYMm - floorLabelFontSizeMm * 0.3}" style="font-size:${floorLabelFontSizeMm}px" class="po-proj-reposicionar-floor-label">${I18n.t('project.reposicionar_floor_label', { value: formatDimensionNumber(targetElevationMm, unit) + ' ' + unitAbbrev(unit) })}</text>` : ''}
       </svg>
     </div>
   `;
@@ -923,11 +985,11 @@ function renderProjectReposicionarModalContent() {
     <div class="po-proj-reposicionar-views-row">
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_frontal')}</div>
-        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', targetHeightMm, childHeightMm, frontViewUpMm, false, frontVMarginMm, false)}
+        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', frontContentHMm, targetHeightMm, frontDrawTargetYMm, childHeightMm, frontDrawViewUpMm, false, frontVMarginMm, false, frontFloorDrawYMm)}
       </div>
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_planta')}</div>
-        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, childDepthMm, planViewUpMm, true, planVMarginMm, isHorizontalFace)}
+        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, targetDepthMm, 0, childDepthMm, planViewUpMm, true, planVMarginMm, isHorizontalFace, null)}
       </div>
     </div>
   `;
@@ -1072,8 +1134,15 @@ function renderProjectReposicionarModalContent() {
   wireField('po-reposicionar-height', heightMm, (v) => { if (isHorizontalFace) applyValues(rightMm, upMm, v, rotDeg); else applyValues(rightMm, v, normalMm, rotDeg); });
   wireField('po-reposicionar-depth', depthMm, (v) => { if (isHorizontalFace) applyValues(rightMm, v, normalMm, rotDeg); else applyValues(rightMm, upMm, v, rotDeg); });
   if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, normalMm, v));
+  // RODADA 15 (12/09) - a Vista frontal agora arrasta/clica em coordenada de
+  // DESENHO já com o chão real somado (frontContentHMm/frontDrawViewUpMm,
+  // ver comentário grande acima de targetElevationMm) - `applyFront` continua
+  // esperando o valor LOCAL de sempre (relativo ao alvo, sem o chão), então
+  // este wrapper só desfaz a soma antes de repassar pra ela; física e campos
+  // numéricos continuam intocados.
   wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
-    faceWidthMm, targetHeightMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, frontViewUpMm, applyFront);
+    faceWidthMm, frontContentHMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, frontDrawViewUpMm,
+    (newRightMm, newDrawHeightMm) => applyFront(newRightMm, newDrawHeightMm - frontElevationOffsetMm));
   wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
     faceWidthMm, targetDepthMm, H_MARGIN_MM, planVMarginMm, childFootWMm, childDepthMm, rightMm, planViewUpMm, applyPlan,
     rotDeg, isHorizontalFace ? applyRotate : null);

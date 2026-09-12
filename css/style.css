@@ -3010,7 +3010,17 @@ header.po-topnav {
    pra desenhar maior — ajuda a ver com clareza onde exatamente o clique
    caiu em relação ao alvo. */
 .po-proj-reposicionar-svg { width: 100%; height: 150px; display: block; touch-action: none; }
-.po-proj-reposicionar-face-rect { fill: #ffffff; stroke: var(--border); stroke-width: 4; }
+/* RODADA 15 (12/09) — pointer-events:none explícito: até a RODADA 14 este
+   retângulo sempre desenhava ANTES (embaixo, na ordem do SVG) do bg-catcher
+   logo abaixo, que por sua vez SEMPRE captura o clique de propósito (ver
+   comentário grande dele) — então nunca importava se este aqui capturava
+   clique ou não. RODADA 15 passou a desenhar este retângulo DENTRO do mesmo
+   grupo invertido do filho (pra poder me mover pra fora de y=0, ver
+   buildViewSvg/targetYMm), o que o colocou ACIMA do bg-catcher na pilha —
+   sem este `none`, um clique bem em cima do retângulo branco (fill sólido)
+   pararia nele, nunca chegando no bg-catcher, quebrando o "clicar dentro do
+   alvo centraliza" (RODADA 12).  */
+.po-proj-reposicionar-face-rect { fill: #ffffff; stroke: var(--border); stroke-width: 4; pointer-events: none; }
 .po-proj-reposicionar-child-rect {
   fill: #f2c14e; stroke: #b0862a; stroke-width: 4; cursor: grab;
 }
@@ -3038,6 +3048,26 @@ header.po-topnav {
 }
 .po-proj-reposicionar-rotate-handle:hover { fill: #ffffff; }
 .po-proj-reposicionar-rotate-handle:active { cursor: grabbing; }
+/* RODADA 15 (12/09) — linha+rótulo do CHÃO REAL do ambiente, só na Vista
+   frontal (ver targetElevationMm/buildViewSvg em
+   portal-08-projetos-paredes.js). Matt: "no visualizador ele aparece do
+   lado da referencia mas a referencia esta longe do chao no ambiente [...]
+   e como se ele nao tivesse considerando a altura do chao". Tracejada e
+   discreta (não é um elemento editável) — pointer-events:none pelo MESMO
+   motivo do face-rect logo acima (nunca deve roubar o clique do
+   bg-catcher). */
+.po-proj-reposicionar-floor-line {
+  stroke: #8a6d3b; stroke-width: 3; stroke-dasharray: 10 8; pointer-events: none;
+}
+/* font-size NÃO fica aqui de propósito — o texto vive dentro do viewBox em
+   mm (não em px de tela), então o tamanho tem que escalar com o desenho
+   (ver `floorLabelFontSizeMm` em buildViewSvg) e é passado inline (`style=`
+   no próprio elemento), que sempre vence uma classe de folha externa - se
+   o font-size entrasse aqui, esta regra ganharia da inline e o texto
+   voltaria a ficar minúsculo/gigante dependendo da escala do módulo. */
+.po-proj-reposicionar-floor-label {
+  fill: #8a6d3b; font-weight: 600; pointer-events: none;
+}
 /* Eixo sem liberdade de ajuste (peça encostada/flush ali) — ver
    frontInteractiveUp/planInteractiveUp no JS: some visualmente pra deixar
    claro que aquele eixo não responde a arraste vertical. */
