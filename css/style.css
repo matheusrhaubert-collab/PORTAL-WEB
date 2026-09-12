@@ -3010,6 +3010,18 @@ header.po-topnav {
   fill: #f2c14e; stroke: #b0862a; stroke-width: 4; cursor: grab;
 }
 .po-proj-reposicionar-child-rect:active { cursor: grabbing; }
+/* RODADA 8 (12/09) — cobre a view INTEIRA (mesmo tamanho do viewBox,
+   incluindo a margem da RODADA 7) só pra CAPTURAR clique/arraste em
+   qualquer ponto que não seja o retângulo do filho (ver bg-catcher em
+   buildViewSvg + o novo listener em wireProjectReposicionarView,
+   portal-08-projetos-paredes.js) — sem isso, clicar no fundo ou em cima do
+   retângulo do alvo não tinha NADA ali pra reagir ao clique. `fill:
+   transparent` (nunca `none`) + `pointer-events: all` explícito garantem
+   que ele recebe o clique mesmo sendo invisível — sem esconder o retângulo
+   amarelo do alvo por baixo. */
+.po-proj-reposicionar-bg-catcher {
+  fill: transparent; pointer-events: all; cursor: crosshair;
+}
 /* Eixo sem liberdade de ajuste (peça encostada/flush ali) — ver
    frontInteractiveUp/planInteractiveUp no JS: some visualmente pra deixar
    claro que aquele eixo não responde a arraste vertical. */

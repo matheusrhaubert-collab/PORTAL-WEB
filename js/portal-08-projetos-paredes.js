@@ -761,11 +761,28 @@ function renderProjectReposicionarModalContent() {
   // a conta de onde o retângulo do filho aparece não muda, só a "janela"
   // visível ao redor dele cresce (ver wireProjectReposicionarView pra conta
   // inversa, clique→mm, que precisa saber dessa margem pra bater).
+  // BG-CATCHER (RODADA 8, 2026-09-12, Matt: "ta ficando bem meia boca, clico
+  // do lado e nao vai... ele precisa realocar... conforme a tela e onde eu
+  // clico") — até aqui só o retângulo PEQUENO do filho tinha listener de
+  // clique/arraste; clicar em qualquer outro lugar da view (no fundo, na
+  // margem nova, até em cima do retângulo AMARELO do alvo) não fazia nada,
+  // porque não tinha NADA lá recebendo o evento. Este retângulo cobre a
+  // view INTEIRA (mesmo tamanho do viewBox, incluinda a margem), invisível
+  // (`fill: transparent`, ver CSS) mas com `pointer-events: all` — desenhado
+  // DEPOIS do retângulo do alvo (fica por cima dele na order de clique, sem
+  // esconder visualmente) e ANTES do retângulo do filho (que continua
+  // ganhando a prioridade de clique quando o clique é EXATAMENTE nele, pra
+  // preservar o arraste fino de sempre agarrando o filho). Um clique em
+  // qualquer outro ponto agora REALOCA o filho ali na hora — ver o novo
+  // listener em wireProjectReposicionarView.
   const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm) => `
     <div class="po-proj-reposicionar-view-wrap">
       <svg class="po-proj-reposicionar-svg" id="${svgId}"
            viewBox="${-H_MARGIN_MM} ${-vMarginMm} ${faceWidthMm + 2 * H_MARGIN_MM} ${faceHMm + 2 * vMarginMm}" preserveAspectRatio="xMidYMid meet">
         <rect x="0" y="0" width="${faceWidthMm}" height="${faceHMm}" class="po-proj-reposicionar-face-rect" />
+        <rect id="${svgId}-bg" x="${-H_MARGIN_MM}" y="${-vMarginMm}"
+              width="${faceWidthMm + 2 * H_MARGIN_MM}" height="${faceHMm + 2 * vMarginMm}"
+              class="po-proj-reposicionar-bg-catcher" />
         <g transform="translate(0 ${faceHMm}) scale(1 -1)">
           <g transform="rotate(${applyRotation ? rotDeg : 0})">
             <rect id="${rectId}"
@@ -880,9 +897,9 @@ function renderProjectReposicionarModalContent() {
   wireField('po-reposicionar-up', upMm, (v) => applyValues(rightMm, v, rotDeg));
   if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, v));
   wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
-    faceWidthMm, frontFaceHMm, H_MARGIN_MM, frontVMarginMm, rightMm, frontInteractiveUp, upMm, rotDeg, applyValues);
+    faceWidthMm, frontFaceHMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, frontChildHMm, rightMm, frontInteractiveUp, upMm, rotDeg, applyValues);
   wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
-    faceWidthMm, planFaceHMm, H_MARGIN_MM, planVMarginMm, rightMm, planInteractiveUp, upMm, rotDeg, applyValues);
+    faceWidthMm, planFaceHMm, H_MARGIN_MM, planVMarginMm, childFootWMm, planChildHMm, rightMm, planInteractiveUp, upMm, rotDeg, applyValues);
 
   const stepInput = document.getElementById('po-reposicionar-step');
   if (stepInput) {
@@ -942,9 +959,14 @@ function stopProjectReposicionarViewDrag() {
 // mm) pra bater exatamente com o viewBox deslocado (`${-H_MARGIN_MM} ${-vMarginMm} ...`)
 // — sem isso, o clique feito na margem nova mapearia pro mm errado (o
 // cálculo antigo assumia viewBox sempre começando em 0,0).
-function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, hMarginMm, vMarginMm, rightMm, interactiveUp, realUpMm, realRotDeg, applyValues) {
+//
+// `childFootWMm`/`childHMm` (RODADA 8, 2026-09-12) — tamanho do retângulo do
+// filho NESTA view, usado só pra CENTRALIZAR ele embaixo do clique no novo
+// gesto "clicar no fundo pra realocar" (ver bg-catcher abaixo).
+function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, hMarginMm, vMarginMm, childFootWMm, childHMm, rightMm, interactiveUp, realUpMm, realRotDeg, applyValues) {
   const svg = document.getElementById(svgId);
   const rect = document.getElementById(rectId);
+  const bg = document.getElementById(svgId + '-bg');
   if (!svg || !rect) return;
   const toFaceCoords = (clientX, clientY) => {
     const box = svg.getBoundingClientRect();
@@ -955,8 +977,12 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
     const faceUpMm = (viewFaceHeightMm + vMarginMm) - (clientY - box.top) * (vbHeightMm / box.height);
     return { right: faceRightMm, up: faceUpMm };
   };
+  // AGARRAR o retângulo do filho — arraste FINO, preserva o ponto exato
+  // agarrado (offset), pra ele não "pular" quando a pessoa pega numa ponta
+  // em vez do canto. Comportamento de sempre (RODADA 6), intocado.
   rect.addEventListener('pointerdown', (ev) => {
     ev.preventDefault();
+    ev.stopPropagation(); // não deixa o bg-catcher (abaixo) tratar o MESMO clique
     stopProjectReposicionarViewDrag();
     const start = toFaceCoords(ev.clientX, ev.clientY);
     // Offset entre o ponto clicado e o canto (right,up) do filho, pra ele não
@@ -976,6 +1002,34 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
     document.addEventListener('pointerup', onUp, { once: true });
     projectReposicionarViewDrag = { onMove, onUp };
   });
+  // CLICAR EM QUALQUER OUTRO PONTO DA VIEW — RODADA 8 (12/09), pedido direto
+  // do Matt depois de ver a RODADA 7 funcionando só "meio boca": "clico do
+  // lado e nao vai. ele precisa realocar e encaixar dos lados. ou na frente
+  // conforme a tela e onde eu clico". Antes, só o retângulo PEQUENO do filho
+  // tinha listener — clicar no fundo (incluindo em cima do retângulo AMARELO
+  // do alvo, ou na margem nova da RODADA 7) não fazia nada, porque não tinha
+  // nada ali recebendo o clique. Este `bg` cobre a view inteira (ver
+  // buildViewSvg) e RELOCA o filho na hora, centralizado no ponto clicado —
+  // "conforme a tela e onde eu clico". Continuar segurando e arrastando
+  // depois do clique inicial continua funcionando, com o mesmo centro.
+  if (bg) {
+    bg.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      stopProjectReposicionarViewDrag();
+      const place = (clientX, clientY) => {
+        const p = toFaceCoords(clientX, clientY);
+        const newRight = p.right - childFootWMm / 2;
+        const newUp = interactiveUp ? (p.up - childHMm / 2) : realUpMm;
+        applyValues(newRight, newUp, realRotDeg);
+      };
+      place(ev.clientX, ev.clientY);
+      const onMove = (mv) => place(mv.clientX, mv.clientY);
+      const onUp = () => stopProjectReposicionarViewDrag();
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp, { once: true });
+      projectReposicionarViewDrag = { onMove, onUp };
+    });
+  }
 }
 
 // ==========================================================================
