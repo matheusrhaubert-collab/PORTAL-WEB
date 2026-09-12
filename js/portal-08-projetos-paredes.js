@@ -695,6 +695,57 @@ function openProjectReposicionarModal(slotId, snapshot) {
 // campo, ver abaixo) sem precisar reler do DOM.
 let projectReposicionarStepMm = 10;
 
+// RODADA 11 (12/09) - ANCORAGEM do eixo "normal" nas 2 views do Reposicionar.
+// Causa raiz do "DESALINHADO"/"nada bate" que o Matt reportou depois da
+// RODADA 9/10: o eixo "up" da face (getModuleFaceGeometry) e uma posicao
+// DENTRO do proprio alvo (ex.: profundidade de um modulo preso no topo,
+// sempre entre 0 e a profundidade total do alvo) - desenhar isso como
+// "posicao entre 0 e o tamanho do alvo" esta certo. Mas o eixo "normal"
+// (attached_slide_normal_mm) e outra coisa: e o quanto o filho esta
+// AFASTADO de uma borda ESPECIFICA do alvo (normal=0 = encostado nela) -
+// nao e uma posicao dentro do alvo, e um deslocamento ALEM de uma borda.
+// A RODADA 9 desenhava os 2 eixos exatamente da mesma forma (direto, sem
+// ancora), entao um filho com normal=0 preso no TOPO (py) aparecia
+// desenhado encostado no CHAO do alvo (y=0) em vez de no TOPO dele
+// (y=targetHeightMm) - daí os 2 retangulos aparecerem soltos/errados por
+// mais que o Matt clicasse. Esta tabela diz, pra cada face, (a) qual das 2
+// views mostra o eixo normal e (b) em qual extremidade do alvo ele ancora
+// quando normal=0:
+//   py (topo)  -> Vista frontal, ancora no TOPO do alvo (end)
+//   ny (fundo) -> Vista frontal, ancora no FUNDO do alvo (start)
+//   pz (frente)-> Planta baixa,  ancora na FRENTE do alvo (end)
+//   nz (fundo) -> Planta baixa,  ancora no FUNDO do alvo (start)
+//   px/nx (lados) -> Planta baixa, sem borda natural do alvo pra ancorar
+//   (o afastamento e PRA FORA do lado, nao tem relacao com a profundidade
+//   do alvo) - encosta em 0 e so cresce positivo, igual ao comportamento
+//   de sempre (nunca teve bug aqui).
+function reposicionarNormalAnchor(faceKey) {
+  switch (faceKey) {
+    case 'py': return { view: 'front', edge: 'end' };
+    case 'ny': return { view: 'front', edge: 'start' };
+    case 'pz': return { view: 'plan', edge: 'end' };
+    case 'nz': return { view: 'plan', edge: 'start' };
+    case 'px': case 'nx': return { view: 'plan', edge: 'zero' };
+    default: return { view: null, edge: 'zero' };
+  }
+}
+// Converte o valor CRU de normalMm (o que os campos numericos mostram/
+// gravam) na coordenada de DESENHO (posicao da borda de baixo do filho,
+// mesma convencao de viewUpMm/buildViewSvg abaixo) - normalMm=0 sempre cai
+// EXATAMENTE encostado (sem vao) na borda certa; positivo afasta dela.
+function anchorNormalToViewY(edge, normalMm, targetDimMm, childDimMm) {
+  if (edge === 'end') return targetDimMm + normalMm;
+  if (edge === 'start') return -childDimMm - normalMm;
+  return normalMm; // 'zero'
+}
+// Inverso - de uma coordenada de desenho/clique/arraste de volta pro
+// normalMm cru que vai pro slot.
+function anchorViewYToNormal(edge, viewYMm, targetDimMm, childDimMm) {
+  if (edge === 'end') return viewYMm - targetDimMm;
+  if (edge === 'start') return -viewYMm - childDimMm;
+  return viewYMm; // 'zero'
+}
+
 function renderProjectReposicionarModalContent() {
   const el = document.getElementById('po-proj-reposicionar-panel');
   const st = projectReposicionarState;
@@ -742,6 +793,19 @@ function renderProjectReposicionarModalContent() {
   const heightLabel = I18n.t('project.reposicionar_field_up_vertical'); // "Altura" - sempre
   const depthLabel = I18n.t('project.reposicionar_field_up_horizontal'); // "Profundidade" - sempre
 
+  // RODADA 11 (12/09) - ver reposicionarNormalAnchor/anchorNormalToViewY
+  // acima. heightMm/depthMm (valores CRUS, os que os campos numericos usam)
+  // continuam os mesmos de sempre; frontViewUpMm/planViewUpMm sao so pra
+  // DESENHAR/interagir nas views, com a ancora certa aplicada no eixo que
+  // for o "normal" nesta face (o outro eixo passa direto, sem mudanca).
+  const normalAnchor = reposicionarNormalAnchor(slot.attached_face);
+  const frontViewUpMm = isHorizontalFace
+    ? anchorNormalToViewY(normalAnchor.edge, heightMm, targetHeightMm, childHeightMm)
+    : heightMm;
+  const planViewUpMm = isHorizontalFace
+    ? depthMm
+    : anchorNormalToViewY(normalAnchor.edge, depthMm, targetDepthMm, childDepthMm);
+
   const faceWidthMm = g.width * 1000;
   const childFootWMm = Number(slot.width_mm || 0);
   const childHeightMm = Number(slot.height_mm || 0);
@@ -761,8 +825,26 @@ function renderProjectReposicionarModalContent() {
   // Transform) - mas so o Reposicionar abre esta tela, e so ele marca o slot
   // como free, entao na pratica e sempre o caso aqui.
   const H_MARGIN_MM = Math.max(faceWidthMm, childFootWMm, 300);
-  const frontVMarginMm = Math.max(targetHeightMm, childHeightMm, 300);
-  const planVMarginMm = Math.max(targetDepthMm, childDepthMm, 300);
+  let frontVMarginMm = Math.max(targetHeightMm, childHeightMm, 300);
+  let planVMarginMm = Math.max(targetDepthMm, childDepthMm, 300);
+  // RODADA 11 (12/09) - ESCALA COMPARTILHADA entre as 2 views. Antes, a
+  // altura TOTAL do viewBox (mm) de cada svg era calculada separado (alvo +
+  // margem de CADA view) - como as 2 caixas SVG tem o mesmo tamanho em
+  // pixel (mesma coluna, mesma altura CSS fixa), um viewBox mm mais "alto"
+  // numa das views forcava o preserveAspectRatio=meet a aplicar uma escala
+  // mm->px MENOR so ali - o MESMO modulo (mesma largura em mm) acabava
+  // desenhado em tamanhos de pixel diferentes nas 2 views. Era exatamente o
+  // "e o mesmo modulo por que um ta amior do que o outro" que o Matt
+  // reportou. Fix: a largura total (faceWidthMm+2*H_MARGIN_MM) ja e
+  // compartilhada (H_MARGIN_MM unico); agora a ALTURA total tambem passa a
+  // ser sempre a mesma nas 2 views - a que precisar de menos margem ganha
+  // margem extra (simetrica, nao afeta a posicao do alvo dentro dela) so
+  // pra igualar o total, garantindo a MESMA escala mm/px nas 2 views.
+  const totalFrontHMm = targetHeightMm + 2 * frontVMarginMm;
+  const totalPlanHMm = targetDepthMm + 2 * planVMarginMm;
+  const sharedTotalHMm = Math.max(totalFrontHMm, totalPlanHMm);
+  frontVMarginMm = (sharedTotalHMm - targetHeightMm) / 2;
+  planVMarginMm = (sharedTotalHMm - targetDepthMm) / 2;
 
   // BG-CATCHER (RODADA 8, 2026-09-12) - ver wireProjectReposicionarView.
   const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm) => `
@@ -790,11 +872,11 @@ function renderProjectReposicionarModalContent() {
     <div class="po-proj-reposicionar-views-row">
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_frontal')}</div>
-        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', targetHeightMm, childHeightMm, heightMm, false, frontVMarginMm)}
+        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', targetHeightMm, childHeightMm, frontViewUpMm, false, frontVMarginMm)}
       </div>
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_planta')}</div>
-        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, childDepthMm, depthMm, true, planVMarginMm)}
+        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, childDepthMm, planViewUpMm, true, planVMarginMm)}
       </div>
     </div>
   `;
@@ -867,19 +949,33 @@ function renderProjectReposicionarModalContent() {
   // a cada chamada, pra nunca usar um valor "congelado" de antes do ultimo
   // applyValues - ver comentario grande em wireProjectReposicionarView sobre
   // os listeners de arraste sobreviverem a recriacao do painel).
+  // RODADA 11 (12/09) - newHeightMm/newDepthMm que chegam aqui vindos do
+  // arraste/clique (wireProjectReposicionarView) estao em coordenada de
+  // DESENHO (mesma convencao de frontViewUpMm/planViewUpMm) - quando esta
+  // view for a que mostra o eixo "normal" desta face, precisa desfazer a
+  // ancora (anchorViewYToNormal) antes de gravar o normalMm cru no slot;
+  // quando mostra o eixo "up" de verdade, passa direto (igual sempre foi).
   const applyFront = (newRightMm, newHeightMm) => {
     const curUpMm = Number(slot.attached_slide_up_mm || 0);
     const curNormalMm = Number(slot.attached_slide_normal_mm || 0);
     const curRotDeg = Number(slot.attached_rotation_offset_deg || 0);
-    if (isHorizontalFace) applyValues(newRightMm, curUpMm, newHeightMm, curRotDeg);
-    else applyValues(newRightMm, newHeightMm, curNormalMm, curRotDeg);
+    if (isHorizontalFace) {
+      const newNormalMm = anchorViewYToNormal(normalAnchor.edge, newHeightMm, targetHeightMm, childHeightMm);
+      applyValues(newRightMm, curUpMm, newNormalMm, curRotDeg);
+    } else {
+      applyValues(newRightMm, newHeightMm, curNormalMm, curRotDeg);
+    }
   };
   const applyPlan = (newRightMm, newDepthMm) => {
     const curUpMm = Number(slot.attached_slide_up_mm || 0);
     const curNormalMm = Number(slot.attached_slide_normal_mm || 0);
     const curRotDeg = Number(slot.attached_rotation_offset_deg || 0);
-    if (isHorizontalFace) applyValues(newRightMm, newDepthMm, curNormalMm, curRotDeg);
-    else applyValues(newRightMm, curUpMm, newDepthMm, curRotDeg);
+    if (isHorizontalFace) {
+      applyValues(newRightMm, newDepthMm, curNormalMm, curRotDeg);
+    } else {
+      const newNormalMm = anchorViewYToNormal(normalAnchor.edge, newDepthMm, targetDepthMm, childDepthMm);
+      applyValues(newRightMm, curUpMm, newNormalMm, curRotDeg);
+    }
   };
 
   const readStepMm = () => {
@@ -915,9 +1011,9 @@ function renderProjectReposicionarModalContent() {
   wireField('po-reposicionar-depth', depthMm, (v) => { if (isHorizontalFace) applyValues(rightMm, v, normalMm, rotDeg); else applyValues(rightMm, upMm, v, rotDeg); });
   if (isHorizontalFace) wireField('po-reposicionar-rotation', rotDeg, (v) => applyValues(rightMm, upMm, normalMm, v));
   wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
-    faceWidthMm, targetHeightMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, heightMm, applyFront);
+    faceWidthMm, targetHeightMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, frontViewUpMm, applyFront);
   wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
-    faceWidthMm, targetDepthMm, H_MARGIN_MM, planVMarginMm, childFootWMm, childDepthMm, rightMm, depthMm, applyPlan);
+    faceWidthMm, targetDepthMm, H_MARGIN_MM, planVMarginMm, childFootWMm, childDepthMm, rightMm, planViewUpMm, applyPlan);
 
   const stepInput = document.getElementById('po-reposicionar-step');
   if (stepInput) {
