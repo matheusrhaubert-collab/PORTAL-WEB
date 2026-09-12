@@ -303,7 +303,25 @@ function getSlotWorldFrame(slot) {
   if (isFloorSlot(slot)) {
     return {
       ox: Number(slot.floor_x_mm || 0) / 1000,
-      oy: Number(slot.floor_height_mm || 0) / 1000,
+      // RODADA 18 (12/09) - Matt, ao vivo: "quando coloco modulo 1 no
+      // ambiente vou em ajuste fino na lateral direita e subo ele. o
+      // segundo modulo ao conectar a ele nao respeita essa subida que eu
+      // dei anteriormente. ele pega como se o modulo continuasse no chao."
+      // Causa: ilha/piso tem uma subida FINA separada (fineOffsetYMm,
+      // ajuste visual "3D de verdade" via botão Movimento/campo Posição no
+      // ambiente — de propósito fora de floor_height_mm pra não virar
+      // colisão real, ver comentário grande em nudgeProjectFloorSlot,
+      // portal-06c) que buildProjectAssemblies/photoreal.js JÁ somam pra
+      // desenhar o módulo (fineOffsetY_m = fineOffsetYMm/1000) - só esta
+      // função (getSlotWorldFrame), fonte de verdade do motor de anexação
+      // de face (resolveModuleFaceAttachments/handleProjectAttachedFaceMove),
+      // não lia esse campo, então um módulo conectado a uma ilha/piso
+      // levantado calculava a posição como se o alvo estivesse a 0. Fix
+      // cirúrgico: soma fineOffsetYMm aqui também (mesma fórmula do
+      // photoreal.js:1319) - NÃO mexe em floor_height_mm nem em nenhum
+      // clamp/colisão do próprio módulo (nudgeProjectFloorSlot continua
+      // igual), só faz o motor de anexação enxergar a posição visual real.
+      oy: (Number(slot.floor_height_mm || 0) + Number(slot.fineOffsetYMm || 0)) / 1000,
       oz: Number(slot.floor_z_mm || 0) / 1000,
       rotY: (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180,
       widthM, heightM, depthM
