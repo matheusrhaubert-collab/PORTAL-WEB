@@ -1470,6 +1470,14 @@ const Viewer3D = (function () {
       depth_mm: part.depth_mm,
       color_name: (part.color && part.color.name) || null
     };
+    // "peça piscando" (12/09, pedido do Matt: clicar numa linha da listagem
+    // de peças/cutlist faz a peça piscar no desenho, ver blinkProjectSlot
+    // PieceInViewer em portal-06c-projetos-canvas-3d-acoes.js) — mesmo
+    // piece_id estável que module-pieces.js já atribui a cada peça resolvida
+    // (usado pra remover/restaurar/trocar cor por peça), guardado aqui pra
+    // achar o Object3D de volta a partir do id clicado na tabela. String
+    // (não objeto), então nenhum problema de identidade/serialização.
+    obj.userData.pieceId = (part.piece_id != null) ? part.piece_id : null;
     // Botão "Camadas" da aba Projetos (02/09, pedido do Matt: "um que mostre
     // as camadas... e que eu possa ocultar quantos eu quiser, por exemplo
     // quero ocultar so as frentes pra ver os internos... tirar so os

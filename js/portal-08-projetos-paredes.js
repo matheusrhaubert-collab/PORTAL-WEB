@@ -851,8 +851,38 @@ function renderProjectReposicionarModalContent() {
   frontVMarginMm = (sharedTotalHMm - targetHeightMm) / 2;
   planVMarginMm = (sharedTotalHMm - targetDepthMm) / 2;
 
+  // RODADA 13 (12/09) - "BOLINHAS" DE GIRO NOS CANTOS. Matt, depois de ver a
+  // RODADA 12 funcionando ao vivo pela 1a vez ("agor FICOU muito bom,
+  // acertou!"): "quero em cada cantinho uma bolinha que posso clicar e
+  // rotacionar, principalmente eixro do floor plan" - alca circular em cada
+  // canto do retangulo do filho, arrastavel pra girar (mesmo padrao visual
+  // do dialogo Reposicionar do Promob, pendencia registrada desde a RODADA 9
+  // na memoria do projeto).
+  //
+  // Só a Planta baixa recebe as alças: é a única view que já desenha o
+  // retângulo GIRADO (`applyRotation`, ver abaixo) - a Vista frontal sempre
+  // desenha o filho sem rotação nenhuma (giro em torno do eixo Y do mundo
+  // não muda altura/silhueta frontal, só o contorno visto de cima), então
+  // uma alça de giro ali não teria nada visível pra acompanhar. E só
+  // aparecem quando `isHorizontalFace` é true - exatamente a mesma condição
+  // que já habilita/desabilita o campo numérico "Giro" logo abaixo das views
+  // (nas 4 faces verticais o giro não tem efeito nenhum, ver comentário
+  // grande em computeModuleFaceAttachmentTransform - não bug, limitação do
+  // motor).
+  //
+  // Raio em mm (não px) pra escalar junto com o desenho - a MESMA escala
+  // mm/px vale nas 2 views desde a RODADA 11 (viewBox compartilhado), então
+  // um raio fixo em mm fica com o mesmo tamanho visual nas 2, mas só é usado
+  // aqui na Planta mesmo assim.
+  const rotateHandleRMm = Math.min(60, Math.max(18, Math.min(childFootWMm, childDepthMm) * 0.18));
+  const buildRotateHandles = (rectId, viewUpMm, childHMm) => `
+    <circle id="${rectId}-rot-bl" cx="${rightMm}" cy="${viewUpMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
+    <circle id="${rectId}-rot-br" cx="${rightMm + childFootWMm}" cy="${viewUpMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
+    <circle id="${rectId}-rot-tl" cx="${rightMm}" cy="${viewUpMm + childHMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
+    <circle id="${rectId}-rot-tr" cx="${rightMm + childFootWMm}" cy="${viewUpMm + childHMm}" r="${rotateHandleRMm}" class="po-proj-reposicionar-rotate-handle" />
+  `;
   // BG-CATCHER (RODADA 8, 2026-09-12) - ver wireProjectReposicionarView.
-  const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm) => `
+  const buildViewSvg = (svgId, rectId, faceHMm, childHMm, viewUpMm, applyRotation, vMarginMm, withRotateHandles) => `
     <div class="po-proj-reposicionar-view-wrap">
       <svg class="po-proj-reposicionar-svg" id="${svgId}"
            viewBox="${-H_MARGIN_MM} ${-vMarginMm} ${faceWidthMm + 2 * H_MARGIN_MM} ${faceHMm + 2 * vMarginMm}" preserveAspectRatio="xMidYMid meet">
@@ -866,6 +896,7 @@ function renderProjectReposicionarModalContent() {
                   x="${rightMm}" y="${viewUpMm}"
                   width="${childFootWMm}" height="${childHMm}"
                   class="po-proj-reposicionar-child-rect" />
+            ${withRotateHandles ? buildRotateHandles(rectId, viewUpMm, childHMm) : ''}
           </g>
         </g>
       </svg>
@@ -877,11 +908,11 @@ function renderProjectReposicionarModalContent() {
     <div class="po-proj-reposicionar-views-row">
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_frontal')}</div>
-        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', targetHeightMm, childHeightMm, frontViewUpMm, false, frontVMarginMm)}
+        ${buildViewSvg('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal', targetHeightMm, childHeightMm, frontViewUpMm, false, frontVMarginMm, false)}
       </div>
       <div class="po-proj-reposicionar-view-col">
         <div class="po-proj-reposicionar-view-label">${I18n.t('project.reposicionar_view_planta')}</div>
-        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, childDepthMm, planViewUpMm, true, planVMarginMm)}
+        ${buildViewSvg('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta', targetDepthMm, childDepthMm, planViewUpMm, true, planVMarginMm, isHorizontalFace)}
       </div>
     </div>
   `;
@@ -982,6 +1013,17 @@ function renderProjectReposicionarModalContent() {
       applyValues(newRightMm, curUpMm, newNormalMm, curRotDeg);
     }
   };
+  // RODADA 13 (12/09) - giro pelas "bolinhas" dos cantos (ver
+  // buildRotateHandles/wireProjectReposicionarView) - só mexe no giro,
+  // mantém right/up/normal exatamente como estão agora (mesmo padrão de
+  // applyFront/applyPlan, que sempre releem o slot na hora em vez de usar um
+  // valor "congelado" de antes do último applyValues).
+  const applyRotate = (newRotDeg) => {
+    const curRightMm = Number(slot.attached_slide_right_mm || 0);
+    const curUpMm = Number(slot.attached_slide_up_mm || 0);
+    const curNormalMm = Number(slot.attached_slide_normal_mm || 0);
+    applyValues(curRightMm, curUpMm, curNormalMm, newRotDeg);
+  };
 
   const readStepMm = () => {
     const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
@@ -1018,7 +1060,8 @@ function renderProjectReposicionarModalContent() {
   wireProjectReposicionarView('po-reposicionar-svg-frontal', 'po-reposicionar-child-rect-frontal',
     faceWidthMm, targetHeightMm, H_MARGIN_MM, frontVMarginMm, childFootWMm, childHeightMm, rightMm, frontViewUpMm, applyFront);
   wireProjectReposicionarView('po-reposicionar-svg-planta', 'po-reposicionar-child-rect-planta',
-    faceWidthMm, targetDepthMm, H_MARGIN_MM, planVMarginMm, childFootWMm, childDepthMm, rightMm, planViewUpMm, applyPlan);
+    faceWidthMm, targetDepthMm, H_MARGIN_MM, planVMarginMm, childFootWMm, childDepthMm, rightMm, planViewUpMm, applyPlan,
+    rotDeg, isHorizontalFace ? applyRotate : null);
 
   const stepInput = document.getElementById('po-reposicionar-step');
   if (stepInput) {
@@ -1082,7 +1125,13 @@ function stopProjectReposicionarViewDrag() {
 // `childFootWMm`/`childVMm` (RODADA 8, 2026-09-12) - tamanho do retangulo do
 // filho NESTA view, usado so pra CENTRALIZAR ele embaixo do clique no gesto
 // "clicar no fundo pra realocar" (ver bg-catcher abaixo).
-function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, hMarginMm, vMarginMm, childFootWMm, childVMm, rightMm, verticalMm, onPlace) {
+// `rotDeg`/`onRotate` (RODADA 13, 2026-09-12) - só usados pelas "bolinhas"
+// de giro dos cantos (ver buildRotateHandles em renderProjectReposicionar
+// ModalContent); ambos opcionais - a Vista frontal chama esta função sem
+// eles (não desenha alças, ver `withRotateHandles` em buildViewSvg), e nas
+// faces verticais a Planta baixa também não passa `onRotate` (giro sem
+// efeito ali, mesma condição que já desabilita o campo numérico "Giro").
+function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightMm, hMarginMm, vMarginMm, childFootWMm, childVMm, rightMm, verticalMm, onPlace, rotDeg, onRotate) {
   const svg = document.getElementById(svgId);
   const rect = document.getElementById(rectId);
   const bg = document.getElementById(svgId + '-bg');
@@ -1191,6 +1240,44 @@ function wireProjectReposicionarView(svgId, rectId, faceWidthMm, viewFaceHeightM
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp, { once: true });
       projectReposicionarViewDrag = { onMove, onUp };
+    });
+  }
+  // GIRO PELOS CANTOS (RODADA 13, 2026-09-12) - Matt: "quero em cada
+  // cantinho uma bolinha que posso clicar e rotacionar, principalmente
+  // eixro do floor plan". `toFaceCoords` (acima) devolve, pra qualquer
+  // client(x,y), a mesma coordenada (right,up) em que o retângulo do filho
+  // é desenhado ANTES do `rotate(rotDeg)` (ver buildViewSvg) - ou seja, é
+  // exatamente o referencial em que o giro pivota na origem (right=0,up=0),
+  // não importa pra qual client(x,y) ela é calculada. Isso deixa a conta do
+  // arraste simples e sem precisar decompor a matriz do transform: o ÂNGULO
+  // do mouse em torno dessa origem (atan2(up,right)) muda EXATAMENTE o
+  // mesmo tanto que precisa mudar em `rotDeg` pra acompanhar o dedo/cursor -
+  // então basta somar (ângulo atual - ângulo no instante do clique) a
+  // `rotDeg` capturado no mesmo instante. Não importa qual dos 4 cantos foi
+  // agarrado (nem se o clique não caiu no pixel exato do centro da bolinha)
+  // - o delta de ângulo é sempre relativo ao próprio ponto agarrado, então
+  // o resultado é sempre "girar acompanhando o dedo", igual nas 4 alças.
+  if (typeof onRotate === 'function') {
+    ['tl', 'tr', 'bl', 'br'].forEach((corner) => {
+      const handle = document.getElementById(rectId + '-rot-' + corner);
+      if (!handle) return;
+      handle.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation(); // nem o retângulo (arrastar) nem o bg-catcher (realocar) tratam este clique
+        stopProjectReposicionarViewDrag();
+        const start = toFaceCoords(ev.clientX, ev.clientY);
+        const startAngleDeg = Math.atan2(start.up, start.right) * 180 / Math.PI;
+        const rotDegAtStart = Number(rotDeg) || 0;
+        const onMove = (mv) => {
+          const p = toFaceCoords(mv.clientX, mv.clientY);
+          const curAngleDeg = Math.atan2(p.up, p.right) * 180 / Math.PI;
+          onRotate(rotDegAtStart + (curAngleDeg - startAngleDeg));
+        };
+        const onUp = () => stopProjectReposicionarViewDrag();
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp, { once: true });
+        projectReposicionarViewDrag = { onMove, onUp };
+      });
     });
   }
 }

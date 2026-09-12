@@ -3020,7 +3020,15 @@ function renderProjectSlotPiecesList(slot) {
         : '<button type="button" class="secondary po-piece-remove-btn" data-piece-action="remove" data-piece-id="' + pieceIdAttr
           + '" title="' + escapeHtmlCutlist(I18n.t('pieces.remove_btn')) + '">×</button>');
 
-      return '<tr data-idx="' + i + '"' + (removida ? ' class="po-piece-removed"' : '') + '><td>' + (i + 1) + '</td>'
+      // data-piece-id na PRÓPRIA linha (12/09, "peça piscando") — antes só
+      // existia nos botões/select DENTRO da linha (ver acaoCell/corCell
+      // acima); clicar em qualquer lugar da linha (não só no botão) precisa
+      // achar o piece_id pra piscar a peça certa no desenho 3D (ver
+      // ligaPecasDoMovel/blinkProjectSlotPieceInViewer abaixo). Omitido
+      // quando pieceId é null (peça sem id resolvido - mesma condição que já
+      // esconde o botão de remover/restaurar, acaoCell acima).
+      return '<tr data-idx="' + i + '"' + (removida ? ' class="po-piece-removed"' : '')
+        + (pieceId != null ? ' data-piece-id="' + pieceIdAttr + '"' : '') + '><td>' + (i + 1) + '</td>'
         + '<td>' + nome + '</td>'
         + '<td>' + formatDimension(d.c, unit) + '</td>'
         + '<td>' + formatDimension(d.l, unit) + '</td>'
@@ -3040,6 +3048,11 @@ function renderProjectSlotPiecesList(slot) {
 function renderProjectSlotPiecesExploded(slot) {
   const cont = document.getElementById('po-pieces-3d');
   if (!cont || typeof ViewerComposition === 'undefined' || !ViewerComposition.createInstance) return;
+  // O assembly (piecesAssembly.group) é RECONSTRUÍDO do zero aqui embaixo -
+  // qualquer Object3D que "peça piscando" estivesse rastreando (ver
+  // blinkProjectSlotPieceInViewer) deixa de existir na cena nova; sem isto o
+  // timer do pisca-pisca continuaria rodando em cima de um objeto morto.
+  stopProjectPieceBlink();
   if (!piecesViewer) piecesViewer = ViewerComposition.createInstance();
   piecesViewer.init('po-pieces-3d');
   const asm = buildCompositionAssemblies([{
@@ -3057,6 +3070,48 @@ function renderProjectSlotPiecesExploded(slot) {
   });
   piecesViewer.render(asm, null, null);
   aplicaExplosao();
+}
+
+// "peça piscando" (12/09, pedido do Matt: "quero que ao clicar em qualquer
+// peca dessa listagem ela pisque no desenho mostrando qual se refere") -
+// acha o Object3D certo dentro de piecesAssembly.group por userData.pieceId
+// (ver tagPieceUserData em viewer3d.js) e usa `piecesViewer.setHoverHighlight`
+// - a MESMA infraestrutura de contorno vermelho (BoxHelper escrito na mão,
+// já ignora a caixa invisível de clique) que a Vista de Canto usa pro hover
+// normal - em vez de inventar um overlay novo. `group.traverse` (não só
+// `.children`) porque peça-módulo aninhada (child_pieces) mora em
+// profundidade dentro de sub-grupos (buildModuleAssembly), não só no
+// primeiro nível. `piecesViewer` é uma instância PRÓPRIA (createInstance,
+// ver renderProjectSlotPiecesExploded) - não é o viewer principal da cena,
+// então este highlight nunca conflita com o hover normal da Vista de Canto.
+let projectPieceBlinkTimer = null;
+function stopProjectPieceBlink() {
+  if (projectPieceBlinkTimer) { clearInterval(projectPieceBlinkTimer); projectPieceBlinkTimer = null; }
+  if (piecesViewer && typeof piecesViewer.setHoverHighlight === 'function') piecesViewer.setHoverHighlight(null);
+}
+function blinkProjectSlotPieceInViewer(pieceId) {
+  if (pieceId == null || !piecesViewer || typeof piecesViewer.setHoverHighlight !== 'function') return;
+  if (!piecesAssembly || !piecesAssembly.group) return;
+  let target = null;
+  piecesAssembly.group.traverse((o) => {
+    if (!target && o.userData && o.userData.pieceId != null && String(o.userData.pieceId) === String(pieceId)) target = o;
+  });
+  if (!target) return;
+  if (projectPieceBlinkTimer) clearInterval(projectPieceBlinkTimer);
+  const TICKS = 6; // 3 ciclos liga/desliga - dá pra notar mesmo se já tinha outra peça acesa
+  let tick = 0;
+  let on = true;
+  piecesViewer.setHoverHighlight(target);
+  projectPieceBlinkTimer = setInterval(() => {
+    on = !on;
+    piecesViewer.setHoverHighlight(on ? target : null);
+    tick++;
+    if (tick >= TICKS) {
+      clearInterval(projectPieceBlinkTimer);
+      projectPieceBlinkTimer = null;
+      piecesViewer.setHoverHighlight(target); // termina ACESO (não apagado) - a peça clicada fica marcada
+    }
+  }, 200);
 }
 
 function aplicaExplosao() {
@@ -3095,7 +3150,7 @@ function aplicaExplosao() {
   // Três saídas pra fechar: o ×, o fundo e Esc. Tela sem saída óbvia é tela
   // trancada — e o × sozinho já falhou uma vez.
   const modal = document.getElementById('po-pieces-modal');
-  const fecha = () => { if (modal) modal.classList.remove('open'); };
+  const fecha = () => { if (modal) modal.classList.remove('open'); stopProjectPieceBlink(); };
   const fechar = document.getElementById('po-pieces-close');
   if (fechar) fechar.addEventListener('click', fecha);
   if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) fecha(); });
@@ -3114,12 +3169,21 @@ function aplicaExplosao() {
   if (lista) {
     lista.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-piece-action]');
-      if (!btn || !lista.contains(btn)) return;
-      const slot = projectSlots.find((s) => s.id === piecesModalSlotId);
-      if (!slot) return;
-      const pieceId = btn.getAttribute('data-piece-id');
-      if (btn.getAttribute('data-piece-action') === 'remove') removeProjectSlotPiece(slot, pieceId);
-      else if (btn.getAttribute('data-piece-action') === 'restore') restoreProjectSlotPiece(slot, pieceId);
+      if (btn && lista.contains(btn)) {
+        const slot = projectSlots.find((s) => s.id === piecesModalSlotId);
+        if (slot) {
+          const pieceId = btn.getAttribute('data-piece-id');
+          if (btn.getAttribute('data-piece-action') === 'remove') removeProjectSlotPiece(slot, pieceId);
+          else if (btn.getAttribute('data-piece-action') === 'restore') restoreProjectSlotPiece(slot, pieceId);
+        }
+        return;
+      }
+      // "peça piscando" (12/09) - clicar em QUALQUER outro ponto da linha
+      // (não só no botão de remover/restaurar, tratado acima) pisca a peça
+      // correspondente no desenho 3D exploded ao lado. Ver
+      // blinkProjectSlotPieceInViewer/data-piece-id na <tr> acima.
+      const tr = e.target.closest('tr[data-piece-id]');
+      if (tr && lista.contains(tr)) blinkProjectSlotPieceInViewer(tr.getAttribute('data-piece-id'));
     });
     lista.addEventListener('change', (e) => {
       const sel = e.target.closest('select.po-piece-color-select');

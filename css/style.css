@@ -3027,6 +3027,17 @@ header.po-topnav {
 .po-proj-reposicionar-bg-catcher {
   fill: transparent; pointer-events: all; cursor: crosshair;
 }
+/* RODADA 13 (12/09) — "bolinhas" de giro nos 4 cantos do retângulo do
+   filho, só na Planta baixa (ver buildRotateHandles/wireProjectReposicionar
+   View, portal-08-projetos-paredes.js). Contorno grosso + preenchimento
+   translúcido pra ficar visível em cima do amarelo do retângulo sem
+   escondê-lo; cursor de "girar" avisa a interação antes do clique. */
+.po-proj-reposicionar-rotate-handle {
+  fill: rgba(255, 255, 255, 0.85); stroke: #b0862a; stroke-width: 4;
+  cursor: grab; touch-action: none;
+}
+.po-proj-reposicionar-rotate-handle:hover { fill: #ffffff; }
+.po-proj-reposicionar-rotate-handle:active { cursor: grabbing; }
 /* Eixo sem liberdade de ajuste (peça encostada/flush ali) — ver
    frontInteractiveUp/planInteractiveUp no JS: some visualmente pra deixar
    claro que aquele eixo não responde a arraste vertical. */
