@@ -2500,8 +2500,20 @@ function rebuildProjectSlotLayoutPieces(slot) {
   if (!slot.layout) { slot.layoutPieces = []; slot._layoutGeometry = null; return; }
   if (typeof LayoutEngine === 'undefined' || !accessoryCatalogCache) return;
   try {
-    const zona = computeProjectSlotInnerZone(slot);
-    const built = LayoutEngine.build(LayoutEngine.deserialize(slot.layout), zona, {
+    const root = LayoutEngine.deserialize(slot.layout);
+    // FIX 2026-09-14 (Matt: "a porta sai pra cima do modulo, exatamente
+    // como se pegasse o vao inicial sem minha alteracao"): esta função
+    // ignorava a sobreposição manual do vão raiz (root.params.zoneOverride
+    // — arrastar/digitar a medida no Construtor, ver
+    // projectBuilderRootZoneEfetiva). rebuildProjectBuilder (o preview
+    // DENTRO do Construtor) já mesclava certo; mas recomputeProjectSlotPricing
+    // chama ESTA função logo depois de applyProjectBuilderToSlot já ter
+    // gravado slot.layoutPieces certo — e SOBRESCREVIA com a zona
+    // auto-deduzida (sem o ajuste), mesmo sem fechar/reabrir o Construtor.
+    // Resultado: a porta ia pro ambiente/preço/corte na posição do vão
+    // ORIGINAL, como se o ajuste nunca tivesse existido.
+    const zona = projectBuilderRootZoneEfetiva(computeProjectSlotInnerZone(slot), root, slot);
+    const built = LayoutEngine.build(root, zona, {
       catalogo: accessoryCatalogCache,
       espessura: PROJECT_BUILDER_ESPESSURA,
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
