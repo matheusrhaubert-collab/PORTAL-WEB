@@ -229,11 +229,21 @@ async function saveProjectFavoriteInner(overwriteId) {
       return res;
     };
     if (overwriteId) {
-      const { error } = await runWithCacheFallback((payload) => supabaseClient
+      // .select('id') no UPDATE não é decoração: sem ele, o Supabase devolve
+      // {error: null} mesmo quando o RLS bloqueia a linha (auth.uid() !=
+      // client_user_id — ex.: login trocado no meio da sessão, ou o projeto
+      // pertence a outra conta) e ZERO linhas são gravadas. O código antigo só
+      // checava `error`, então mostrava "atualizado" com a atualização
+      // silenciosamente descartada — exatamente o "salvei mas não salvou"
+      // (Matt, 2026-09-14). Com `.select()`, `data` vem vazio quando nenhuma
+      // linha bateu no RLS, e isso vira erro visível em vez de sumir calado.
+      const { data, error } = await runWithCacheFallback((payload) => supabaseClient
         .from('user_projects')
         .update({ ...payload, updated_at: new Date().toISOString() })
-        .eq('id', overwriteId));
+        .eq('id', overwriteId)
+        .select('id'));
       if (error) throw error;
+      if (!data || !data.length) throw new Error(I18n.t('project.update_blocked'));
       statusEl.textContent = I18n.t('project.updated_status', { name: loadedProjectFavorite ? loadedProjectFavorite.name : '' });
     } else {
       const name = (prompt(I18n.t('project.name_prompt'), I18n.t('project.default_name')) || '').trim();
@@ -441,11 +451,17 @@ async function loadProjectFavoritesList() {
     card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
       const newName = (prompt(I18n.t('project.name_prompt'), proj.name) || '').trim();
       if (!newName || newName === proj.name) return;
-      const { error: renameErr } = await supabaseClient
+      // .select('id') pela mesma razão do saveProjectFavoriteInner: sem ele,
+      // um UPDATE bloqueado pelo RLS (linha de outra conta) devolve error:null
+      // com zero linhas afetadas, e a tela renomearia "com sucesso" sem ter
+      // mudado nada no banco.
+      const { data: renameData, error: renameErr } = await supabaseClient
         .from('user_projects')
         .update({ name: newName, updated_at: new Date().toISOString() })
-        .eq('id', proj.id);
+        .eq('id', proj.id)
+        .select('id');
       if (renameErr) { errorEl.textContent = renameErr.message; errorEl.style.display = 'block'; return; }
+      if (!renameData || !renameData.length) { errorEl.textContent = I18n.t('project.update_blocked'); errorEl.style.display = 'block'; return; }
       if (loadedProjectFavorite && loadedProjectFavorite.id === proj.id) { loadedProjectFavorite.name = newName; refreshProjectFavoriteButtons(); }
       loadProjectFavoritesList();
     });
