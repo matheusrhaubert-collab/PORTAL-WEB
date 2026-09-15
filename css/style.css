@@ -2722,6 +2722,27 @@ header.po-topnav {
 /* (.po-proj-ai-field saiu em 2026-08-08 — o botão "Gerar com IA" foi pra
    .po-proj-topbar-actions, encostado à direita da faixa superior.) */
 
+/* Modal "Duplicar módulo" (2026-09-14) — mesmo overlay/card do modal de IA
+   acima (#po-proj-ai-modal), card mais estreito por ser só 2 campos. */
+#po-proj-duplicate-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+#po-proj-duplicate-modal.open { display: flex; }
+.po-proj-duplicate-modal-card { width: 340px; }
+.po-proj-duplicate-dir-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.po-proj-duplicate-dir-option {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 8px;
+  cursor: pointer; font-weight: normal;
+}
+.po-proj-duplicate-dir-option:has(input:checked) {
+  border-color: var(--accent, #2f6fb8); background: rgba(47,111,184,0.08);
+}
+.po-proj-duplicate-dir-option input { margin: 0; }
+#po-proj-duplicate-qty { width: 100%; }
+
 .po-proj-canvas-outer { min-width: 0; }
 /* Frontal/Superior mora DENTRO da barra flutuante — não centraliza sozinho. */
 .po-proj-view-toggle { margin: 0; width: fit-content; }

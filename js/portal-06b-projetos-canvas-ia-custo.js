@@ -1421,6 +1421,48 @@ document.addEventListener('keydown', (ev) => {
   if (ehRefazer) redoProjectChange(); else undoProjectChange();
 });
 
+// Ctrl+C / Ctrl+V (2026-09-14) — mesma guarda do Ctrl+Z/Y acima (aba
+// Projetos aberta, fora de campo de texto — senão roubaria o
+// copiar/colar nativo de quem está digitando num campo). Só age quando dá
+// pra agir de verdade (há módulo selecionado pro C; há algo copiado E uma
+// posição de ponteiro conhecida pro V) — caso contrário deixa o
+// copiar/colar padrão do navegador seguir intocado (sem preventDefault).
+//
+// "No ponto em que cliquei": Ctrl+V usa a ÚLTIMA POSIÇÃO CONHECIDA do
+// ponteiro (projectPointerClientX/Y, portal-06a — atualizada pelo
+// pointermove global logo abaixo), não exige um clique de verdade no
+// instante do Ctrl+V. Na prática dá no mesmo que o Matt descreveu: mover o
+// mouse até o lugar (com ou sem clicar) e apertar Ctrl+V cola ali.
+document.addEventListener('keydown', (ev) => {
+  if (!(ev.ctrlKey || ev.metaKey)) return;
+  const ehCopiar = ev.key === 'c' || ev.key === 'C';
+  const ehColar = ev.key === 'v' || ev.key === 'V';
+  if (!ehCopiar && !ehColar) return;
+  const tab = document.getElementById('po-tab-projects');
+  if (!tab || tab.style.display === 'none') return;
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+  if (ehCopiar) {
+    if (!copySelectedProjectSlotToClipboard()) return;
+    ev.preventDefault();
+  } else {
+    const pasted = pasteProjectSlotAtClient(projectPointerClientX, projectPointerClientY);
+    if (!pasted) return;
+    ev.preventDefault();
+  }
+});
+
+// Rastreia a posição do ponteiro NA TELA o tempo todo (barato — só 2
+// atribuições), pra Ctrl+V acima saber "onde" colar sem exigir um clique no
+// instante exato da tecla. Sem guarda de "já anexado" — isto roda uma
+// única vez no carregamento do script, nunca de novo por render (ao
+// contrário dos listeners presos a nós recriados a cada
+// renderProjectCanvas()).
+document.addEventListener('pointermove', (ev) => {
+  projectPointerClientX = ev.clientX;
+  projectPointerClientY = ev.clientY;
+});
+
 const projCollisionBtn = document.getElementById('po-proj-collision-btn');
 if (projCollisionBtn) {
   projCollisionBtn.addEventListener('click', () => setProjectCollisionEnabled(!projectCollisionEnabled));
@@ -1913,7 +1955,7 @@ document.addEventListener('keydown', (ev) => {
   const temRoomFace = typeof projectSelectedRoomFace !== 'undefined' && projectSelectedRoomFace;
   if (selectedProjectSlotId == null && !temRoomFace) return;
   // Janela aberta por cima: o Esc é dela (fechar a janela), não da seleção.
-  const abertas = ['po-proj-builder-modal', 'po-proj-props-modal', 'po-proj-ai-modal'];
+  const abertas = ['po-proj-builder-modal', 'po-proj-props-modal', 'po-proj-ai-modal', 'po-proj-duplicate-modal'];
   if (abertas.some((id) => { const el = document.getElementById(id); return el && el.classList.contains('open'); })) return;
   deselectProjectSlot();
   if (typeof deselectProjectRoomFace === 'function') deselectProjectRoomFace();
@@ -1972,6 +2014,227 @@ function duplicateProjectSlot(slotId) {
   markProjectDirty();
   return copy;
 }
+
+// ==========================================================================
+// DUPLICAR MÓDULO — escolha de lado + quantidade (2026-09-14)
+// ==========================================================================
+// Pedido do Matt: "quando clico em duplicar movel, ele sempre duplica pra
+// direita. agora quero que abra uma pequena janela central mostrando pra
+// qual lado eu quero que duplique e quantas unidades dessa duplicacao."
+// duplicateProjectSlot (acima) continua existindo — é o fallback defensivo
+// de openProjectDuplicateModal quando o HTML do modal ainda não chegou no
+// navegador (aba antiga aberta antes do reload, mesmo cuidado de
+// openProjectReposicionarModal em portal-08). Esta função é a versão "de
+// verdade": N cópias, sempre do lado escolhido, cada uma encostada na
+// anterior (offset = i × largura, não "tenta direita, senão esquerda,
+// senão sobrepõe" — aqui o lado já foi decidido pelo usuário, não tem o
+// que adivinhar).
+// direction: 'left'/'right' (sempre existiu) ou, desde 2026-09-14 (Matt:
+// "cima baixo atras ou na frente tambem sao opcoes"), 'up'/'down'/'front'/
+// 'back'. Cada eixo usa o MESMO campo/clamp que já existia pro tipo de slot
+// (ver nudgeProjectWallSlot/nudgeProjectFloorSlot acima) — nada de eixo
+// novo, só reaproveita os 3 que cada tipo de módulo já tinha:
+//   PAREDE: esquerda/direita = x_mm (real) | cima/baixo = floor_height_mm
+//           (real) | frente/atrás = fineOffsetZMm (fino, afasta da parede)
+//   ILHA:   esquerda/direita = floor_x_mm/floor_z_mm no eixo LARGURA local
+//           (girado por floor_rotation_deg, já era assim) | frente/atrás =
+//           mesmo par, no eixo PROFUNDIDADE local (perpendicular) | cima/
+//           baixo = fineOffsetYMm (fino, eleva do chão)
+function duplicateProjectSlotDirectional(slotId, direction, count) {
+  const original = projectSlots.find((s) => s.id === slotId);
+  if (!original) return [];
+  const n = Math.max(1, Math.min(50, Math.round(Number(count) || 1)));
+  const sign = (direction === 'left' || direction === 'down' || direction === 'back') ? -1 : 1;
+  const copies = [];
+  for (let i = 1; i <= n; i++) {
+    const copy = cloneProjectSlotForUndo(original);
+    copy.id = newProjectSlotId();
+    copy.thumbnail_data_url = null;
+    // Mesma regra do duplicar de 1: nunca entra num grupo sozinho.
+    copy.group_id = null;
+    copy.group_name = null;
+    if (isFloorSlot(copy)) {
+      if (direction === 'up' || direction === 'down') {
+        const stepMm = ((Number(copy.height_mm || 0) || 300) * i) * sign;
+        const maxMm = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(copy.height_mm || 0), 0);
+        copy.fineOffsetYMm = clamp(Number(original.fineOffsetYMm || 0) + stepMm, 0, maxMm);
+        projectSlots.push(copy);
+      } else {
+        const rot = (Number(copy.floor_rotation_deg || 0) * Math.PI) / 180;
+        if (direction === 'front' || direction === 'back') {
+          // Eixo PROFUNDIDADE local — perpendicular ao da largura, mesma
+          // matriz de rotação (ver comentário no branch esquerda/direita).
+          const stepMm = ((Number(copy.depth_mm || 0) || 600) * i) * sign;
+          copy.floor_x_mm = Number(original.floor_x_mm || 0) + Math.sin(rot) * stepMm;
+          copy.floor_z_mm = Number(original.floor_z_mm || 0) + Math.cos(rot) * stepMm;
+        } else {
+          const stepMm = ((Number(copy.width_mm || 0) || 600) * i) * sign;
+          copy.floor_x_mm = Number(original.floor_x_mm || 0) + Math.cos(rot) * stepMm;
+          copy.floor_z_mm = Number(original.floor_z_mm || 0) - Math.sin(rot) * stepMm;
+        }
+        projectSlots.push(copy);
+        clampFloorSlotIntoRoom(copy);
+      }
+    } else if (direction === 'up' || direction === 'down') {
+      const stepMm = ((Number(copy.height_mm || 0) || 300) * i) * sign;
+      copy.x_mm = Number(original.x_mm || 0);
+      copy.floor_height_mm = Number(original.floor_height_mm || 0) + stepMm;
+      projectSlots.push(copy);
+      clampProjectSlotPosition(copy);
+    } else if (direction === 'front' || direction === 'back') {
+      // Fino, sem clamp (mesma filosofia do ajuste Z de Movimentação/Rotação).
+      const stepMm = ((Number(copy.depth_mm || 0) || 600) * i) * sign;
+      copy.fineOffsetZMm = Number(original.fineOffsetZMm || 0) + stepMm;
+      projectSlots.push(copy);
+    } else {
+      const widthMm = Number(copy.width_mm || 0);
+      copy.x_mm = Number(original.x_mm || 0) + sign * i * widthMm;
+      projectSlots.push(copy);
+      clampProjectSlotPosition(copy);
+    }
+    copies.push(copy);
+  }
+  if (copies.length) selectedProjectSlotId = copies[copies.length - 1].id;
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  refreshProject3DResizeArrows();
+  markProjectDirty();
+  return copies;
+}
+
+// ==========================================================================
+// COPIAR/COLAR COM TECLADO (2026-09-14) — pedido do Matt: "quero poder
+// clciar na peca, control C e clicar em algum lugar do ambiente control V
+// para copiar no ponto em que cliquei."
+// ==========================================================================
+// Ctrl+C guarda uma cópia congelada do módulo selecionado (mesmo clone
+// profundo usado no duplicar/desfazer, ver cloneProjectSlotForUndo).
+// Ctrl+V nasce a cópia NO PONTO onde o ponteiro está agora (não precisa de
+// um clique de verdade — só mover o mouse até lá já é "o ponto em que
+// cliquei", ver projectPointerClientX/Y em portal-06a, atualizados por um
+// pointermove global logo abaixo). Os dois keydown handlers (Ctrl+C/Ctrl+V
+// em si) ficam logo depois do Ctrl+Z/Y existente, mais acima neste mesmo
+// arquivo — mesma guarda (aba Projetos aberta, fora de campo de texto).
+function copySelectedProjectSlotToClipboard() {
+  if (selectedProjectSlotId == null) return false;
+  const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+  if (!slot) return false;
+  projectClipboardSlot = cloneProjectSlotForUndo(slot);
+  return true;
+}
+
+// clientX/clientY: posição na TELA (mesma unidade de ev.clientX/Y) de onde
+// colar — computeProjectScenePointAt (portal-06a) já sabe traduzir isso pro
+// ponto certo em cada vista (Vista de Canto 3D, chão ou parede; Vista
+// Superior; Frontal 2D aposentada). O tipo do módulo colado segue o LOCAL
+// clicado, não o tipo original — mesmo comportamento já usado ao arrastar
+// da biblioteca pro ambiente (dropProjectModuleAt): colar em cima do chão
+// vira ilha, colar em cima de uma parede vira módulo de parede, ainda que o
+// original fosse do outro tipo.
+function pasteProjectSlotAtClient(clientX, clientY) {
+  if (!projectClipboardSlot) return null;
+  if (clientX == null || clientY == null) return null;
+  const point = computeProjectScenePointAt(clientX, clientY);
+  if (!point) return null;
+  const copy = cloneProjectSlotForUndo(projectClipboardSlot);
+  copy.id = newProjectSlotId();
+  copy.thumbnail_data_url = null;
+  // Mesma regra do duplicar: a cópia nunca entra num grupo sozinha.
+  copy.group_id = null;
+  copy.group_name = null;
+  projectSlots.push(copy);
+  if (point.placement === 'floor') {
+    // floor_x_mm/floor_z_mm já são o CENTRO do módulo (ver
+    // convertProjectSlotToFloor/insertProjectModuleDefault) — o ponto vira
+    // centro direto, sem subtrair metade de nada.
+    convertProjectSlotToFloor(copy, point.floor_x_mm, point.floor_z_mm);
+  } else {
+    // x_mm/floor_height_mm de módulo de PAREDE são a borda esquerda/base —
+    // recentraliza no ponto clicado (mesma subtração que dropProjectModuleAt
+    // faz depois de inserir um módulo novo da biblioteca).
+    convertProjectSlotToWall(
+      copy,
+      point.wall_index,
+      point.x_mm - Number(copy.width_mm || 0) / 2,
+      point.floor_height_mm - Number(copy.height_mm || 0) / 2
+    );
+    // Colou numa parede diferente da ativa (Vista de Canto, 2+ paredes) —
+    // troca a aba pra ela, mesmo comportamento de dropProjectModuleAt.
+    if (Number(copy.wall_index || 0) !== projectActiveWallIndex) {
+      projectActiveWallIndex = Number(copy.wall_index || 0);
+      refreshProjectWallTabs();
+      refreshProjectWallWidthInput();
+    }
+  }
+  selectedProjectSlotId = copy.id;
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  refreshProject3DResizeArrows();
+  markProjectDirty();
+  return copy;
+}
+
+let projectDuplicateModalSlotId = null;
+
+function openProjectDuplicateModal(slotId) {
+  const slot = projectSlots.find((s) => s.id === slotId);
+  if (!slot) return;
+  const modal = document.getElementById('po-proj-duplicate-modal');
+  // DEFENSIVO (mesmo padrão de openProjectReposicionarModal, portal-08):
+  // aba antiga sem o HTML novo do modal ainda no DOM — não trava o botão,
+  // cai no comportamento de sempre (1 cópia, prefere a direita).
+  if (!modal) { duplicateProjectSlot(slotId); return; }
+  projectDuplicateModalSlotId = slotId;
+  const qtyInput = document.getElementById('po-proj-duplicate-qty');
+  if (qtyInput) qtyInput.value = '1';
+  const dirRight = document.getElementById('po-proj-duplicate-dir-right');
+  if (dirRight) dirRight.checked = true;
+  modal.classList.add('open');
+  if (qtyInput) qtyInput.focus();
+}
+
+function closeProjectDuplicateModal() {
+  const modal = document.getElementById('po-proj-duplicate-modal');
+  if (modal) modal.classList.remove('open');
+  projectDuplicateModalSlotId = null;
+}
+
+function confirmProjectDuplicateModal() {
+  const slotId = projectDuplicateModalSlotId;
+  if (slotId == null) return;
+  const dirEl = document.querySelector('input[name="po-proj-duplicate-dir"]:checked');
+  const validDirs = ['left', 'right', 'up', 'down', 'front', 'back'];
+  const direction = (dirEl && validDirs.includes(dirEl.value)) ? dirEl.value : 'right';
+  const qtyInput = document.getElementById('po-proj-duplicate-qty');
+  const qty = Math.max(1, Math.min(50, Math.round(Number(qtyInput && qtyInput.value) || 1)));
+  closeProjectDuplicateModal();
+  duplicateProjectSlotDirectional(slotId, direction, qty);
+}
+
+(function attachProjectDuplicateModal() {
+  const modal = document.getElementById('po-proj-duplicate-modal');
+  if (!modal) return;
+  const closeBtn = document.getElementById('po-proj-duplicate-modal-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => closeProjectDuplicateModal());
+  const cancelBtn = document.getElementById('po-proj-duplicate-cancel-btn');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => closeProjectDuplicateModal());
+  const okBtn = document.getElementById('po-proj-duplicate-run-btn');
+  if (okBtn) okBtn.addEventListener('click', () => confirmProjectDuplicateModal());
+  // Clique no fundo escuro fecha, igual aos outros modais desta aba.
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) closeProjectDuplicateModal(); });
+  // Enter no campo de quantidade confirma direto, sem precisar alcançar o
+  // botão — mesma conveniência de um form comum.
+  const qtyInput = document.getElementById('po-proj-duplicate-qty');
+  if (qtyInput) {
+    qtyInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); confirmProjectDuplicateModal(); }
+    });
+  }
+  // Esc fecha — mesmo padrão do modal de IA (attachProjectAiListeners acima).
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && modal.classList.contains('open')) closeProjectDuplicateModal();
+  });
+})();
 
 function removeProjectSlot(slotId) {
   projectSlots = projectSlots.filter((s) => s.id !== slotId);

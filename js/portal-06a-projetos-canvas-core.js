@@ -1188,6 +1188,21 @@ function renderProjectLibrary() {
 // comportamento antigo — inserir com posição automática.
 let projectLibDragState = null;
 
+// Copiar/colar com o teclado (2026-09-14, Matt: "quero poder clciar na peca,
+// control C e clicar em algum lugar do ambiente control V para copiar no
+// ponto em que cliquei") — projectClipboardSlot guarda uma cópia congelada
+// do slot (mesmo clone profundo de cloneProjectSlotForUndo), e
+// projectPointerClientX/Y guardam a última posição conhecida do
+// mouse/ponteiro NA TELA (atualizada por um pointermove global, ver
+// portal-08-projetos-paredes.js) — é o que diz "o ponto em que cliquei" na
+// hora do Ctrl+V, sem precisar de um clique de verdade (mover o mouse até lá
+// já basta). Lógica de copiar/colar em si:
+// copySelectedProjectSlotToClipboard/pasteProjectSlotAtClient, em
+// portal-06b-projetos-canvas-ia-custo.js.
+let projectClipboardSlot = null;
+let projectPointerClientX = null;
+let projectPointerClientY = null;
+
 function attachProjectLibraryCardDrag(card, moduleRow) {
   card.addEventListener('pointerdown', (ev) => {
     if (ev.button != null && ev.button !== 0) return;
@@ -1534,7 +1549,14 @@ function pushProjectFloorSlotClearOnDrop(slot) {
   clampFloorSlotIntoRoom(slot);
 }
 
-async function dropProjectModuleAt(moduleId, clientX, clientY) {
+// "Que ponto do ambiente está sob este pixel da tela?" — extraído de dentro
+// de dropProjectModuleAt (2026-09-14) pra reuso no Ctrl+V (colar na posição
+// do ponteiro, ver pasteProjectSlotAtClient em
+// portal-06b-projetos-canvas-ia-custo.js): mesmo cálculo exato, só que
+// devolvendo o PONTO (placement + coordenadas) em vez de já inserir módulo
+// nenhum. Retorna null quando o pixel não caiu em cima de nenhum canvas
+// conhecido (mesmo caso que antes abortava o drop sem inserir nada).
+function computeProjectScenePointAt(clientX, clientY) {
   const edit3dWrap = document.getElementById('po-proj-canvas-3d-edit-wrap');
   const flatCanvas = document.getElementById('po-proj-canvas');
   const inside = (el) => {
@@ -1543,32 +1565,31 @@ async function dropProjectModuleAt(moduleId, clientX, clientY) {
     return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
   };
 
-  let overrides = null;
-
   if (inside(edit3dWrap) && ViewerProjectEdit && ViewerProjectEdit.pickRoomSurfaceAt) {
     const surface = ViewerProjectEdit.pickRoomSurfaceAt(clientX, clientY);
     if (surface && surface.kind === 'floor') {
-      overrides = { placement: 'floor', floor_x_mm: surface.point.x * 1000, floor_z_mm: surface.point.z * 1000 };
-    } else {
-      // Parede (superfície de parede embaixo do ponteiro, ou o próprio plano
-      // da parede ativa quando o ponteiro caiu em cima de outro módulo).
-      const wallIndex = (surface && Number.isFinite(Number(surface.wallIndex)))
-        ? Number(surface.wallIndex)
-        : projectActiveWallIndex;
-      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
-      if (wallGeo) {
-        const p = ViewerProjectEdit.intersectPlaneAtClient(
-          clientX, clientY,
-          { x: wallGeo.originX, y: 0, z: wallGeo.originZ },
-          { x: wallGeo.intoDirX, y: 0, z: wallGeo.intoDirZ }
-        );
-        if (p) {
-          const alongMm = ((p.x - wallGeo.originX) * wallGeo.alongDirX + (p.z - wallGeo.originZ) * wallGeo.alongDirZ) * 1000;
-          overrides = { wall_index: wallIndex, x_mm: alongMm, floor_height_mm: Math.max(0, p.y * 1000) };
-        }
+      return { placement: 'floor', floor_x_mm: surface.point.x * 1000, floor_z_mm: surface.point.z * 1000 };
+    }
+    // Parede (superfície de parede embaixo do ponteiro, ou o próprio plano
+    // da parede ativa quando o ponteiro caiu em cima de outro módulo).
+    const wallIndex = (surface && Number.isFinite(Number(surface.wallIndex)))
+      ? Number(surface.wallIndex)
+      : projectActiveWallIndex;
+    const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === wallIndex);
+    if (wallGeo) {
+      const p = ViewerProjectEdit.intersectPlaneAtClient(
+        clientX, clientY,
+        { x: wallGeo.originX, y: 0, z: wallGeo.originZ },
+        { x: wallGeo.intoDirX, y: 0, z: wallGeo.intoDirZ }
+      );
+      if (p) {
+        const alongMm = ((p.x - wallGeo.originX) * wallGeo.alongDirX + (p.z - wallGeo.originZ) * wallGeo.alongDirZ) * 1000;
+        return { placement: 'wall', wall_index: wallIndex, x_mm: alongMm, floor_height_mm: Math.max(0, p.y * 1000) };
       }
     }
-  } else if (inside(flatCanvas) && projectViewMode === 'top') {
+    return null;
+  }
+  if (inside(flatCanvas) && projectViewMode === 'top') {
     // VISTA SUPERIOR: soltar aqui e soltar no CHAO (2026-08-18). O canvas da
     // vista de cima e o plano XZ do ambiente, entao o ponto do mouse tem uma
     // coordenada de mundo exata — vira modulo ILHA ali. Antes este drop caia
@@ -1579,20 +1600,26 @@ async function dropProjectModuleAt(moduleId, clientX, clientY) {
     // coordenada de mundo (ver renderProjectCanvasTop).
     const r = flatCanvas.getBoundingClientRect();
     const px = projectPxPerMm || 1;
-    overrides = {
+    return {
       placement: 'floor',
       floor_x_mm: projectTopViewOrigin.xMm + (clientX - r.left) / px,
       floor_z_mm: projectTopViewOrigin.zMm + (clientY - r.top) / px
     };
-  } else if (inside(flatCanvas)) {
+  }
+  if (inside(flatCanvas)) {
     // Frontal 2D plana — caminho aposentado em 2026-08-18 (o canvas nunca
     // fica visivel nesse modo, ver renderProjectCanvas). Mantido junto da
     // funcao que ele serve, pra voltar inteiro se o 2D voltar.
     const r = flatCanvas.getBoundingClientRect();
     const xMm = (clientX - r.left) / (projectPxPerMm || 1);
     const yMm = (r.bottom - clientY) / (projectPxPerMm || 1);
-    overrides = { wall_index: projectActiveWallIndex, x_mm: xMm, floor_height_mm: Math.max(0, yMm) };
+    return { placement: 'wall', wall_index: projectActiveWallIndex, x_mm: xMm, floor_height_mm: Math.max(0, yMm) };
   }
+  return null;
+}
+
+async function dropProjectModuleAt(moduleId, clientX, clientY) {
+  const overrides = computeProjectScenePointAt(clientX, clientY);
 
   if (!overrides) return; // soltou fora de qualquer canvas — não insere nada
 

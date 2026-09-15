@@ -864,7 +864,7 @@ function renderProjectConfigPanel() {
   // que funciona no desktop e na vista Frontal 2D de parede única, onde não
   // existe cena 3D pra pendurar botão nenhum.
   const dupBtn = panel.querySelector('#po-proj-config-duplicate-btn');
-  if (dupBtn) dupBtn.addEventListener('click', () => duplicateProjectSlot(slot.id));
+  if (dupBtn) dupBtn.addEventListener('click', () => openProjectDuplicateModal(slot.id));
   const removeBtn = panel.querySelector('#po-proj-config-remove-btn');
   if (removeBtn) removeBtn.addEventListener('click', () => removeProjectSlot(slot.id));
 }
@@ -2831,7 +2831,7 @@ if (projSlotDuplicateBtn) {
   projSlotDuplicateBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
   projSlotDuplicateBtn.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    if (selectedProjectSlotId != null) duplicateProjectSlot(selectedProjectSlotId);
+    if (selectedProjectSlotId != null) openProjectDuplicateModal(selectedProjectSlotId);
   });
 }
 // ==========================================================================
