@@ -240,6 +240,28 @@ function convertProjectSlotToFloor(slot, xMm, zMm) {
   slot.floor_x_mm = Number(xMm || 0);
   slot.floor_z_mm = Number(zMm || 0);
   slot.floor_height_mm = 0; // ilha apoia no chão
+  // RODADA 19b (16/09) — Matt, ao vivo (2 prints): módulo aparece alinhado
+  // no painel Reposicionar mas "jogado" bem alto/fora da sala na cena 3D de
+  // verdade. Confirmou que acontece em QUALQUER lugar do ambiente, não só
+  // perto de parede — descartou a hipótese de falta de clamp contra as
+  // paredes (ver getSlotWorldFrame/RODADA 18 - a matemática de anexação em
+  // si está correta). Causa real: esta função já reseta floor_height_mm pra
+  // 0 (módulo passa a apoiar "do zero"), mas NUNCA resetava
+  // slot.fineOffsetYMm (a subida FINA separada do ajuste fino/"Movimento",
+  // ver RODADA 18) — se o módulo já tinha sido levantado com o ajuste fino
+  // ANTES de ser conectado a outro módulo (ou de qualquer outra chamada
+  // desta função — voltar da parede pro chão, redropar, reconectar em nova
+  // face), essa subida antiga ficava "grudada" nele e o
+  // buildProjectAssemblies (que soma floor_height_m + fineOffsetY_m pra
+  // desenhar, ver linha ~3853) empilhava a elevação nova do encaixe (já
+  // correta, RODADA 18) com essa sobra antiga — o filho aparecia bem mais
+  // alto que o esperado, às vezes acima do teto/fora da sala visível,
+  // mesmo com o painel Reposicionar (que só mexe em slide/normal/giro
+  // relativos à face, nunca em fineOffsetYMm) mostrando tudo alinhado. FIX
+  // cirúrgico: zera fineOffsetYMm aqui também, no MESMO lugar/motivo que já
+  // zera floor_height_mm — "módulo passa a apoiar do zero" vale pros 2
+  // campos de elevação, não só um.
+  slot.fineOffsetYMm = 0;
   slot.z_order = 0;
   if (slot.floor_rotation_deg == null) slot.floor_rotation_deg = 0;
   slot.attached_to_slot_id = null;
@@ -3115,6 +3137,24 @@ function attachProject3DEditDrag() {
   };
   domEl.addEventListener('pointerup', endProjectConnectDrag);
   domEl.addEventListener('pointercancel', endProjectConnectDrag);
+  // RODADA 19 (15/09) — REDE DE SEGURANÇA (mesmo padrão de endDrag3D/
+  // finishProject3DDrag acima, "soltar o botão FORA do canvas, trocar de
+  // aba/janela no meio do arraste ou o navegador engolir o pointerup
+  // deixavam o arraste eternamente vivo") que esta função NUNCA tinha
+  // ganhado. Matt: "console f12 nao aparece erro nenhum, por que ele nem
+  // obedece o clique da direita mais... ele ignora completamente" — bate
+  // exatamente com este buraco: se o pointerup do botão direito nunca
+  // chegar em domEl (perdido pelo navegador, solto fora da janela, troca de
+  // foco no meio do arraste), `endProjectConnectDrag` nunca roda,
+  // `ViewerProjectEdit.setControlsEnabled(true)` nunca é chamado de volta —
+  // a câmera fica com o botão direito PERMANENTEMENTE desligado (pan nunca
+  // mais funciona) e `projectConnectDragState` fica preso, sem crash nenhum
+  // pra aparecer no console (por isso "nao aparece erro nenhum" bateu
+  // certinho com o relato). Sem isto, só um F5 (que reinicia
+  // ViewerProjectEdit do zero) resolvia — mesmo sintoma de "libera mais um"
+  // relatado antes pro bug de conectar módulo-em-módulo.
+  window.addEventListener('pointerup', endProjectConnectDrag);
+  window.addEventListener('pointercancel', endProjectConnectDrag);
 
   // Ponteiro saiu do canvas sem estar arrastando nada — devolve o cursor
   // padrão. NÃO apaga o contorno vermelho: ele é a seleção (2026-08-12), e
