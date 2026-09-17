@@ -6204,6 +6204,172 @@ montaMenuCamadas();
   }
 })();
 
+// ==========================================================================
+// VISTA COM COTAS (2026-09-17, pedido do Matt: "ferramenta de vista com
+// cota... seleciono a parede que eu quero ai posiciono a distancia da
+// camera (corte) vista sempre frontal e paralela... deve pegar tudo que
+// esta conectado a parede selecionada") — 1ª ENTREGA: isola a parede
+// escolhida (esconde módulo de qualquer outra parede/ilha) e posiciona a
+// câmera da Vista de Canto (frontal/topo/lateral esq./lateral dir., sempre
+// em projeção paralela) com uma distância de corte ajustável. Camadas
+// (montaMenuCamadas), Cotas de vão (po-proj-dims-btn) e o botão "Print"
+// (savePhotorealRenderToProject, mesma galeria/proposta de sempre)
+// CONTINUAM funcionando normalmente dentro deste modo — não duplicamos
+// nada disso aqui. Cota de largura/altura POR MÓDULO e numeração (3º/4º
+// pedido do Matt) ficam pra próxima etapa, combinado com ele.
+// ==========================================================================
+let projectDimViewActive = false;
+let projectDimViewWallIndex = null;
+let projectDimViewCutM = 3; // distância da câmera até a parede (m) — o "corte"
+let projectDimViewDir = 'front'; // 'front' | 'top' | 'left' | 'right'
+
+function projectDimViewWallGeo() {
+  if (projectDimViewWallIndex == null) return null;
+  return getProjectWallGeometry().find((w) => w.wallIndex === projectDimViewWallIndex) || null;
+}
+
+// Esconde qualquer módulo (Group com slotId — ver renderFreeformWalls/
+// buildProjectAssemblies, viewer3d_composition.js) que NÃO seja da parede
+// ativa, ilha incluída (wallIndex null nunca bate com um índice real).
+// Roda DEPOIS de applyProjectLayerVisibility (mesmo hook, ver portal-06c) —
+// só apaga (nunca reacende) então nunca briga com o que Camadas decidiu; e
+// como a visibilidade de Group é hierárquica no three.js, um Group
+// escondido aqui esconde as peças dele mesmo que Camadas tivesse deixado
+// alguma peça marcada visível lá dentro. Ambiente (chão/parede/teto,
+// legnoLayer==='paredes') não é tocado aqui — some só pelo botão Camadas,
+// igual sempre foi.
+function applyProjectDimViewIsolation() {
+  const scene = projectEditScene();
+  if (!scene) return;
+  walkProjectSceneObjects(scene, (obj) => {
+    if (!obj.userData) return false;
+    if (obj.userData.legnoLayer === PROJECT_LAYER_WALLS) return true;
+    if (obj.userData.slotId == null) return false;
+    const isolando = projectDimViewActive && projectDimViewWallIndex != null;
+    obj.visible = !isolando || obj.userData.wallIndex === projectDimViewWallIndex;
+    return true; // não desce — Camadas já decidiu a visibilidade das peças lá dentro antes desta função rodar
+  });
+}
+
+// Vetor de direção (mundo) pra ViewerProjectEdit.frameDirection, a partir da
+// geometria da parede ativa (mesma wallGeo de applyRoomDoubleTap acima):
+// 'front' = intoDir (mesmo vetor do duplo clique na parede — câmera de
+// frente, sem inclinação), 'top' = de cima (quase a prumo, com uma pitada
+// de Z pra não travar no polo do OrbitControls), 'left'/'right' = ao longo
+// da parede (alongDir), pra ver a parede pela ponta (elevação lateral/de
+// retorno).
+function projectDimViewDirVector(wallGeo, dir) {
+  if (!wallGeo) return null;
+  if (dir === 'top') return { x: 0, y: 1, z: 0.001 };
+  if (dir === 'left') return { x: -wallGeo.alongDirX, y: 0, z: -wallGeo.alongDirZ };
+  if (dir === 'right') return { x: wallGeo.alongDirX, y: 0, z: wallGeo.alongDirZ };
+  return { x: wallGeo.intoDirX, y: 0, z: wallGeo.intoDirZ };
+}
+
+// Reenquadra a câmera na parede/direção/distância atuais. distOverride =
+// projectDimViewCutM é o "corte" que o Matt pediu — quanto menor, mais perto
+// a câmera fica da parede (não é um clipping plane de verdade, é a mesma
+// distância de câmera que frameDirection já usa em todo o resto do app).
+function applyProjectDimViewFraming() {
+  if (!projectDimViewActive || projectDimViewWallIndex == null) return;
+  const wallGeo = projectDimViewWallGeo();
+  if (!wallGeo || !ViewerProjectEdit || !ViewerProjectEdit.frameDirection) return;
+  const midAlongM = wallGeo.widthM / 2;
+  const target = {
+    x: wallGeo.originX + wallGeo.alongDirX * midAlongM,
+    y: (roomSettings.ceiling_mm / 1000) / 2,
+    z: wallGeo.originZ + wallGeo.alongDirZ * midAlongM
+  };
+  const dirVec = projectDimViewDirVector(wallGeo, projectDimViewDir);
+  if (!dirVec) return;
+  ViewerProjectEdit.frameDirection(dirVec, target, Math.max(0.3, Number(projectDimViewCutM) || 3));
+}
+
+// Botão+painel (mesmo padrão de montaMenuCamadas/attachFloatingDropdown,
+// acima) — lista de paredes, distância de corte e as 4 direções.
+function montaMenuDimView() {
+  const raiz = document.getElementById('po-proj-dimview-menu');
+  if (!raiz) return;
+  const nome = I18n.t('project.dimview_btn');
+  raiz.innerHTML = '<button type="button" class="po-style-btn po-dimview-btn" id="po-proj-dimview-btn"'
+    + ' title="' + I18n.t('project.dimview_title') + '" aria-label="' + nome + '">'
+    + '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<rect x="3" y="5" width="18" height="12" rx="1"/><path d="M3 20h18M7 17v2M12 17v2M17 17v2"/>'
+    + '</svg>'
+    + '<span>' + nome + '</span>'
+    + '<i class="po-tb-dot" id="po-proj-dimview-dot"></i>'
+    + '<i class="po-style-caret">\u25be</i></button>'
+    + '<div class="po-style-list po-dimview-list" id="po-proj-dimview-list"></div>';
+  const btn = raiz.querySelector('#po-proj-dimview-btn');
+  const lista = raiz.querySelector('#po-proj-dimview-list');
+  attachFloatingDropdown(raiz, btn, lista);
+  refreshProjectDimViewMenu();
+}
+
+function refreshProjectDimViewMenu() {
+  const lista = document.getElementById('po-proj-dimview-list');
+  const btn = document.getElementById('po-proj-dimview-btn');
+  if (!lista) return;
+  const walls = getProjectWallGeometry();
+  const wallBtns = walls.map((w) => {
+    const ativo = projectDimViewActive && projectDimViewWallIndex === w.wallIndex;
+    return '<button type="button" class="po-dimview-chip' + (ativo ? ' ativo' : '') + '" data-dimview-wall="' + w.wallIndex + '">'
+      + I18n.t('project.dimview_wall', { n: w.wallIndex + 1 }) + '</button>';
+  }).join('');
+  const dirs = [['front', 'project.view_front_btn'], ['top', 'project.view_top_btn'], ['left', 'project.dimview_left'], ['right', 'project.dimview_right']];
+  const dirBtns = dirs.map(([d, key]) => {
+    const ativo = projectDimViewDir === d;
+    const disabled = projectDimViewActive ? '' : ' disabled';
+    return '<button type="button" class="po-dimview-chip' + (ativo ? ' ativo' : '') + '" data-dimview-dir="' + d + '"' + disabled + '>' + I18n.t(key) + '</button>';
+  }).join('');
+  lista.innerHTML = ''
+    + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_wall_label') + '</span>'
+    + '<div class="po-dimview-row">' + wallBtns + '</div></div>'
+    + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_cut_label') + '</span>'
+    + '<div class="po-dimview-row"><input type="number" min="0.3" step="0.1" id="po-proj-dimview-cut" value="' + Number(projectDimViewCutM).toFixed(1) + '"' + (projectDimViewActive ? '' : ' disabled') + '> m</div></div>'
+    + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_dir_label') + '</span>'
+    + '<div class="po-dimview-row">' + dirBtns + '</div></div>'
+    + (projectDimViewActive ? '<button type="button" class="po-dimview-exit-btn" id="po-proj-dimview-exit">' + I18n.t('project.dimview_exit') + '</button>' : '');
+  lista.querySelectorAll('[data-dimview-wall]').forEach((b) => {
+    b.addEventListener('click', () => {
+      projectDimViewWallIndex = Number(b.dataset.dimviewWall);
+      projectDimViewActive = true;
+      projectDimViewDir = 'front';
+      aplicaProjecaoCamera('paralela');
+      applyProjectDimViewIsolation();
+      applyProjectDimViewFraming();
+      refreshProjectDimViewMenu();
+    });
+  });
+  lista.querySelectorAll('[data-dimview-dir]').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (!projectDimViewActive) return;
+      projectDimViewDir = b.dataset.dimviewDir;
+      applyProjectDimViewFraming();
+      refreshProjectDimViewMenu();
+    });
+  });
+  const cutInput = lista.querySelector('#po-proj-dimview-cut');
+  if (cutInput) {
+    cutInput.addEventListener('change', () => {
+      const v = parseFloat(cutInput.value);
+      projectDimViewCutM = (Number.isFinite(v) && v > 0) ? v : 3;
+      applyProjectDimViewFraming();
+    });
+  }
+  const exitBtn = lista.querySelector('#po-proj-dimview-exit');
+  if (exitBtn) {
+    exitBtn.addEventListener('click', () => {
+      projectDimViewActive = false;
+      projectDimViewWallIndex = null;
+      applyProjectDimViewIsolation();
+      refreshProjectDimViewMenu();
+    });
+  }
+  if (btn) btn.classList.toggle('active', projectDimViewActive);
+}
+montaMenuDimView();
+
 // ---------- PROJETOS SALVOS (migration 056) ----------
 // Mesmo espírito de "Composições favoritas" (ver bloco perto de
 // saveCompositionFavorite acima), mas numa tabela própria (user_projects) —

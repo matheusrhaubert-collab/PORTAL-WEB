@@ -1658,6 +1658,11 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // refreshProject3DHighlight logo acima).
   if (typeof applyProjectLayerVisibility === 'function') applyProjectLayerVisibility();
   if (typeof refreshProjectLayersMenu === 'function') refreshProjectLayersMenu();
+  // Vista com Cotas (2026-09-17) — mesmo motivo de Camadas acima: a cena
+  // trocou de Groups, reaplica o isolamento por parede e mantém a lista de
+  // paredes do painel em dia (parede pode ter sido adicionada/removida).
+  if (typeof applyProjectDimViewIsolation === 'function') applyProjectDimViewIsolation();
+  if (typeof refreshProjectDimViewMenu === 'function') refreshProjectDimViewMenu();
   // Cotas (02/09) — a cena inteira foi trocada por Groups novos
   // (renderFreeformWalls), então as âncoras que refreshProjectDimensionLabels
   // rastreava não existem mais; reconta do zero a cada render.

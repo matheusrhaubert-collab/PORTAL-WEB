@@ -2722,6 +2722,40 @@ header.po-topnav {
 /* (.po-proj-ai-field saiu em 2026-08-08 — o botão "Gerar com IA" foi pra
    .po-proj-topbar-actions, encostado à direita da faixa superior.) */
 
+/* Modal "Importar do 2020" (2026-09-17, pedido do Matt) — mesmo overlay/
+   card do modal de IA acima (#po-proj-ai-modal), só mais largo pra caber a
+   tabela de revisão (código → módulo casado / sem equivalente). Ver
+   js/portal-2020-import.js. */
+#po-proj-import2020-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+#po-proj-import2020-modal.open { display: flex; }
+.po-proj-import2020-modal-card { width: 640px; }
+#po-proj-import2020-text {
+  width: 100%; min-height: 160px; font-family: ui-monospace, monospace;
+  font-size: 12px; resize: vertical;
+}
+.po-import2020-tablewrap {
+  max-height: 320px; overflow: auto; border: 1px solid var(--border);
+  border-radius: 8px; margin-top: 10px;
+}
+.po-import2020-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.po-import2020-table th, .po-import2020-table td {
+  padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border);
+}
+.po-import2020-table thead th {
+  position: sticky; top: 0; background: var(--panel);
+}
+.po-import2020-status {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+}
+.po-import2020-status.ok { background: #e7f0e6; color: #3f7a49; }
+.po-import2020-status.warn { background: #f6ecd6; color: #93611a; }
+.mono { font-family: ui-monospace, monospace; }
+
 /* Modal "Duplicar módulo" (2026-09-14) — mesmo overlay/card do modal de IA
    acima (#po-proj-ai-modal), card mais estreito por ser só 2 campos. */
 #po-proj-duplicate-modal {
@@ -4009,6 +4043,31 @@ header.po-topnav {
 .po-layers-item.oculto { color: var(--muted); }
 .po-layers-item.oculto .po-layer-eye { color: var(--muted); }
 .po-layers-item.oculto .po-layer-eye-slash { opacity: 1; }
+
+/* ==========================================================================
+   VISTA COM COTAS (2026-09-17) — mesmo esqueleto do menu de Camadas acima
+   (.po-style-btn/.po-style-list), com "chips" (parede/direção) em vez de
+   checkbox. Ver montaMenuDimView/refreshProjectDimViewMenu, portal-08.
+   ========================================================================== */
+.po-dimview-list { min-width: 230px; }
+.po-dimview-section { margin-bottom: 8px; }
+.po-dimview-section:last-of-type { margin-bottom: 4px; }
+.po-dimview-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 2px 4px 4px; }
+.po-dimview-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px; align-items: center; }
+.po-dimview-chip {
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.po-dimview-chip:hover:not(:disabled) { border-color: var(--accent); }
+.po-dimview-chip.ativo { background: var(--text); color: #fff; border-color: var(--text); }
+.po-dimview-chip:disabled { opacity: 0.4; cursor: default; }
+.po-dimview-row input[type="number"] { width: 64px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
+.po-dimview-exit-btn {
+  width: 100%; margin-top: 2px; border: none; border-radius: 6px; background: var(--accent-light);
+  color: var(--text); font-size: 11px; font-weight: 700; padding: 6px; cursor: pointer;
+}
+.po-dimview-exit-btn:hover { background: var(--accent); color: #fff; }
+.po-dimview-btn.active .po-tb-dot { display: block; }
 
 /* ==========================================================================
    BARRA DE FERRAMENTAS DA ABA PROJETOS — layout do mockup (2026-08-13)
