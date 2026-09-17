@@ -5773,7 +5773,7 @@ function attachFloatingDropdown(raiz, btn, lista) {
   document.addEventListener('click', (ev) => {
     if (lista.contains(ev.target) || btn.contains(ev.target)) return;
     fechar();
-  });
+  }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
   window.addEventListener('resize', () => { if (raiz.classList.contains('aberto')) posicionar(); });
   return { abrir, fechar };
@@ -6302,6 +6302,34 @@ function applyProjectDimViewFraming() {
 
 // Botão+painel (mesmo padrão de montaMenuCamadas/attachFloatingDropdown,
 // acima) — lista de paredes, distância de corte e as 4 direções.
+// Cria (uma vez só) a janela modal da Vista com Cotas, centralizada na tela
+// — pedido do Matt, 18/09: "quero uma janela nova bem no meio da tela que
+// eu possa abrir e fechar depois de configurar" (o painel flutuante antigo,
+// preso embaixo do botão da barra, ficava pequeno demais e cortado). Fecha
+// só pelo X, pelo fundo escurecido, ou por Esc — NUNCA sozinha a qualquer
+// clique (era esse o comportamento ruim do painel antigo).
+function ensureProjectDimViewModal() {
+  if (document.getElementById('po-proj-dimview-modal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'po-proj-dimview-modal';
+  modal.className = 'po-dimview-modal';
+  modal.innerHTML = '<div class="po-dimview-modal-backdrop" id="po-proj-dimview-modal-backdrop"></div>'
+    + '<div class="po-dimview-modal-card">'
+    + '<div class="po-dimview-modal-head">'
+    + '<span class="po-dimview-modal-title">' + I18n.t('project.dimview_btn') + '</span>'
+    + '<button type="button" class="po-dimview-modal-close" id="po-proj-dimview-modal-close" aria-label="' + I18n.t('project.dimview_close') + '">×</button>'
+    + '</div>'
+    + '<div class="po-dimview-modal-body" id="po-proj-dimview-list"></div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  const fechar = () => modal.classList.remove('aberto');
+  document.getElementById('po-proj-dimview-modal-backdrop').addEventListener('click', fechar);
+  document.getElementById('po-proj-dimview-modal-close').addEventListener('click', fechar);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+}
+
+// Botão da barra — só abre/fecha a janela modal (a montagem do CONTEÚDO é
+// refreshProjectDimViewMenu, chamada toda vez que abre).
 function montaMenuDimView() {
   const raiz = document.getElementById('po-proj-dimview-menu');
   if (!raiz) return;
@@ -6313,11 +6341,18 @@ function montaMenuDimView() {
     + '</svg>'
     + '<span>' + nome + '</span>'
     + '<i class="po-tb-dot" id="po-proj-dimview-dot"></i>'
-    + '<i class="po-style-caret">\u25be</i></button>'
-    + '<div class="po-style-list po-dimview-list" id="po-proj-dimview-list"></div>';
+    + '</button>';
+  ensureProjectDimViewModal();
   const btn = raiz.querySelector('#po-proj-dimview-btn');
-  const lista = raiz.querySelector('#po-proj-dimview-list');
-  attachFloatingDropdown(raiz, btn, lista);
+  if (btn) {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const modal = document.getElementById('po-proj-dimview-modal');
+      if (!modal) return;
+      modal.classList.toggle('aberto');
+      if (modal.classList.contains('aberto')) refreshProjectDimViewMenu();
+    });
+  }
   refreshProjectDimViewMenu();
 }
 
@@ -6337,7 +6372,7 @@ function montaMenuDimView() {
 // nesse toDataURL().
 let projectDimViewCotasGroup = null;
 const PROJECT_DIMVIEW_CUT_MIN = 0.3;
-const PROJECT_DIMVIEW_CUT_MAX = 8;
+const PROJECT_DIMVIEW_CUT_MAX = 5;
 
 function clearProjectDimViewCotas() {
   if (!projectDimViewCotasGroup) return;
@@ -6537,30 +6572,114 @@ async function projectDimViewSaveImage(btnEl) {
   }
 }
 
-// Conversão clique-na-tela -> coordenada do viewBox do mini-mapa de topo
-// (ver refreshProjectDimViewMenu) — mesma ideia da "Vista Dinâmica" do
-// Promob que o Matt mandou de exemplo, só que SEM o cone de abertura (não
-// precisa: a projeção é sempre paralela, "pegando tudo") e sem a vista de
-// altura (ele confirmou que não precisa, "ajuda a posicionar a câmera" já
-// basta com a vista de cima).
-function projectDimViewSvgY(svg, clientY) {
-  const rect = svg.getBoundingClientRect();
-  const vb = svg.viewBox.baseVal;
-  if (!rect.height) return vb.y;
-  return vb.y + ((clientY - rect.top) / rect.height) * vb.height;
+// Ponto do cursor (tela) convertido pra coordenada LOCAL do SVG da planta —
+// usa a matriz de tela de verdade (getScreenCTM) em vez de contas manuais
+// de bounding box, então continua certo mesmo com o SVG escalado/CSS
+// diferente do viewBox.
+function projectDimViewSvgPoint(svg, clientX, clientY) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x: 0, y: 0 };
+  const p = pt.matrixTransform(ctm.inverse());
+  return { x: p.x, y: p.y };
 }
-function projectDimViewSetCutFromSvgY(svgY) {
-  const t = Math.min(1, Math.max(0, (svgY - 14) / (90 - 14)));
-  projectDimViewCutM = PROJECT_DIMVIEW_CUT_MIN + t * (PROJECT_DIMVIEW_CUT_MAX - PROJECT_DIMVIEW_CUT_MIN);
-  applyProjectDimViewFraming();
-  refreshProjectDimViewMenu();
+
+// Geometria da PLANTA BAIXA completa (todas as paredes + módulos de cada
+// uma), com a transformação mundo(metros) -> SVG já pronta — pedido do
+// Matt, 18/09: "quero um layout com as paredes e moveis mostrando nessa
+// tela. uma vista completa de cima". Recalculada toda vez que o painel
+// reabre/redesenha (é barato: só soma/multiplica, não toca no three.js).
+function projectDimViewPlanGeometry() {
+  const walls = getProjectWallGeometry();
+  if (!walls.length) return null;
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  walls.forEach((w) => {
+    const x1 = w.originX + w.alongDirX * w.widthM;
+    const z1 = w.originZ + w.alongDirZ * w.widthM;
+    minX = Math.min(minX, w.originX, x1); maxX = Math.max(maxX, w.originX, x1);
+    minZ = Math.min(minZ, w.originZ, z1); maxZ = Math.max(maxZ, w.originZ, z1);
+  });
+  // Margem >= distância MÁXIMA de corte, pra alça de câmera arrastada até o
+  // fim nunca sair da área visível do mini-mapa.
+  const PAD = PROJECT_DIMVIEW_CUT_MAX + 0.6;
+  minX -= PAD; maxX += PAD; minZ -= PAD; maxZ += PAD;
+  const spanX = Math.max(0.5, maxX - minX), spanZ = Math.max(0.5, maxZ - minZ);
+  const VB = 320;
+  const scale = VB / Math.max(spanX, spanZ);
+  const offX = (VB - spanX * scale) / 2;
+  const offZ = (VB - spanZ * scale) / 2;
+  const toSvg = (x, z) => ({ x: offX + (x - minX) * scale, y: offZ + (z - minZ) * scale });
+  const wallItemsByIndex = {};
+  (projectSlots || []).forEach((slot) => {
+    if (typeof isFloorSlot === 'function' && isFloorSlot(slot)) return; // ilha não pertence a nenhuma parede, não desenha aqui
+    const wi = Number(slot.wall_index || 0);
+    (wallItemsByIndex[wi] || (wallItemsByIndex[wi] = [])).push(slot);
+  });
+  return { walls, toSvg, scale, wallItemsByIndex, VB };
+}
+
+// Desenha o SVG da planta: móveis (retângulos, embaixo), paredes (linhas
+// clicáveis, cada uma com seu número — pedido do Matt: "as paredes devem
+// estar descritas na planta baixa para saber qual esta clicando") e, se
+// alguma estiver ativa, a alça de câmera arrastável (linha + bolinha) saindo
+// dela pra dentro do ambiente.
+function renderProjectDimViewPlanSvg(plan) {
+  if (!plan) return '<div class="po-dimview-plan-empty">' + I18n.t('project.dimview_no_walls') + '</div>';
+  const { walls, toSvg, wallItemsByIndex, VB } = plan;
+  let svg = '<svg class="po-dimview-plan-svg" id="po-proj-dimview-plan-svg" viewBox="0 0 ' + VB + ' ' + VB + '" width="100%" height="300">';
+  walls.forEach((w) => {
+    (wallItemsByIndex[w.wallIndex] || []).forEach((slot) => {
+      const x0 = Number(slot.x_mm || 0) / 1000;
+      const width = Number(slot.width_mm || 0) / 1000;
+      const depth = Math.max(0.05, Number(slot.depth_mm || 500) / 1000);
+      const a = { x: w.originX + w.alongDirX * x0, z: w.originZ + w.alongDirZ * x0 };
+      const b = { x: w.originX + w.alongDirX * (x0 + width), z: w.originZ + w.alongDirZ * (x0 + width) };
+      const c = { x: b.x + w.intoDirX * depth, z: b.z + w.intoDirZ * depth };
+      const d = { x: a.x + w.intoDirX * depth, z: a.z + w.intoDirZ * depth };
+      const pts = [a, b, c, d].map((p) => toSvg(p.x, p.z)).map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
+      svg += '<polygon points="' + pts + '" class="po-dimview-mod-rect"/>';
+    });
+  });
+  walls.forEach((w) => {
+    const p0 = toSvg(w.originX, w.originZ);
+    const p1 = toSvg(w.originX + w.alongDirX * w.widthM, w.originZ + w.alongDirZ * w.widthM);
+    const ativo = projectDimViewActive && projectDimViewWallIndex === w.wallIndex;
+    // rótulo do lado de FORA da parede (sentido oposto ao intoDir, que
+    // aponta pra dentro do ambiente) — não fica em cima dos móveis.
+    const lbl = toSvg(
+      w.originX + w.alongDirX * (w.widthM / 2) - w.intoDirX * 0.32,
+      w.originZ + w.alongDirZ * (w.widthM / 2) - w.intoDirZ * 0.32
+    );
+    svg += '<line x1="' + p0.x.toFixed(1) + '" y1="' + p0.y.toFixed(1) + '" x2="' + p1.x.toFixed(1) + '" y2="' + p1.y.toFixed(1) + '"'
+      + ' class="po-dimview-wall-line' + (ativo ? ' ativo' : '') + '" data-dimview-plan-wall="' + w.wallIndex + '"/>';
+    svg += '<circle cx="' + lbl.x.toFixed(1) + '" cy="' + lbl.y.toFixed(1) + '" r="9"'
+      + ' class="po-dimview-wall-badge' + (ativo ? ' ativo' : '') + '" data-dimview-plan-wall="' + w.wallIndex + '"/>';
+    svg += '<text x="' + lbl.x.toFixed(1) + '" y="' + lbl.y.toFixed(1) + '"'
+      + ' class="po-dimview-wall-badge-text' + (ativo ? ' ativo' : '') + '" data-dimview-plan-wall="' + w.wallIndex + '">' + (w.wallIndex + 1) + '</text>';
+  });
+  if (projectDimViewActive && projectDimViewWallIndex != null) {
+    const w = walls.find((ww) => ww.wallIndex === projectDimViewWallIndex);
+    if (w) {
+      const mid = { x: w.originX + w.alongDirX * (w.widthM / 2), z: w.originZ + w.alongDirZ * (w.widthM / 2) };
+      const cam = { x: mid.x + w.intoDirX * projectDimViewCutM, z: mid.z + w.intoDirZ * projectDimViewCutM };
+      const p0 = toSvg(mid.x, mid.z);
+      const p1 = toSvg(cam.x, cam.z);
+      svg += '<line x1="' + p0.x.toFixed(1) + '" y1="' + p0.y.toFixed(1) + '" x2="' + p1.x.toFixed(1) + '" y2="' + p1.y.toFixed(1) + '"'
+        + ' id="po-proj-dimview-camline" class="po-dimview-camline"/>';
+      svg += '<circle cx="' + p1.x.toFixed(1) + '" cy="' + p1.y.toFixed(1) + '" r="9" id="po-proj-dimview-camdot" class="po-dimview-camdot"/>';
+    }
+  }
+  svg += '</svg>';
+  return svg;
 }
 
 function refreshProjectDimViewMenu() {
   const lista = document.getElementById('po-proj-dimview-list');
   const btn = document.getElementById('po-proj-dimview-btn');
   if (!lista) return;
-  const walls = getProjectWallGeometry();
+  const plan = projectDimViewPlanGeometry();
+  const walls = plan ? plan.walls : [];
   const wallBtns = walls.map((w) => {
     const ativo = projectDimViewActive && projectDimViewWallIndex === w.wallIndex;
     return '<button type="button" class="po-dimview-chip' + (ativo ? ' ativo' : '') + '" data-dimview-wall="' + w.wallIndex + '">'
@@ -6572,26 +6691,13 @@ function refreshProjectDimViewMenu() {
     const disabled = projectDimViewActive ? '' : ' disabled';
     return '<button type="button" class="po-dimview-chip' + (ativo ? ' ativo' : '') + '" data-dimview-dir="' + d + '"' + disabled + '>' + I18n.t(key) + '</button>';
   }).join('');
-  // Mini-mapa de topo pra posicionar a câmera (distância de corte) — linha
-  // = parede, ponto = câmera. Clique em qualquer altura do mini-mapa já
-  // reposiciona (não precisa arrastar).
-  const t = (Math.min(PROJECT_DIMVIEW_CUT_MAX, Math.max(PROJECT_DIMVIEW_CUT_MIN, projectDimViewCutM)) - PROJECT_DIMVIEW_CUT_MIN) / (PROJECT_DIMVIEW_CUT_MAX - PROJECT_DIMVIEW_CUT_MIN);
-  const camY = 14 + t * (90 - 14);
-  const camSvg = '<svg class="po-dimview-camsvg" id="po-proj-dimview-camsvg" viewBox="0 0 200 100" width="200" height="70"' + (projectDimViewActive ? '' : ' style="opacity:0.4;pointer-events:none;"') + '>'
-    + '<line x1="20" y1="14" x2="180" y2="14" stroke="#2b6cb0" stroke-width="3"/>'
-    + '<line x1="100" y1="14" x2="100" y2="' + camY.toFixed(1) + '" stroke="#e6007e" stroke-width="1.5" stroke-dasharray="3 3"/>'
-    + '<circle cx="100" cy="' + camY.toFixed(1) + '" r="5" fill="#e6007e"/>'
-    + '</svg>';
   lista.innerHTML = ''
     + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_wall_label') + '</span>'
     + '<div class="po-dimview-row">' + wallBtns + '</div></div>'
     + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_cut_label') + '</span>'
-    + camSvg
-    + '<div class="po-dimview-row">'
-    + '<button type="button" class="po-dimview-chip" id="po-proj-dimview-cut-minus"' + (projectDimViewActive ? '' : ' disabled') + '>−</button>'
-    + '<span id="po-proj-dimview-cut-value">' + Number(projectDimViewCutM).toFixed(1) + ' m</span>'
-    + '<button type="button" class="po-dimview-chip" id="po-proj-dimview-cut-plus"' + (projectDimViewActive ? '' : ' disabled') + '>+</button>'
-    + '</div></div>'
+    + '<div class="po-dimview-plan-wrap">' + renderProjectDimViewPlanSvg(plan) + '</div>'
+    + '<div class="po-dimview-row"><span id="po-proj-dimview-cut-value">' + Number(projectDimViewCutM).toFixed(1) + ' m</span></div>'
+    + '</div>'
     + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_dir_label') + '</span>'
     + '<div class="po-dimview-row">' + dirBtns + '</div></div>'
     + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_cotas_label') + '</span>'
@@ -6602,18 +6708,27 @@ function refreshProjectDimViewMenu() {
     + I18n.t('project.dimview_save_btn') + '</button>'
     + '</div></div>'
     + (projectDimViewActive ? '<button type="button" class="po-dimview-exit-btn" id="po-proj-dimview-exit">' + I18n.t('project.dimview_exit') + '</button>' : '');
+
+  const selectWall = (idx) => {
+    projectDimViewWallIndex = idx;
+    projectDimViewActive = true;
+    projectDimViewDir = 'front';
+    clearProjectDimViewCotas();
+    aplicaProjecaoCamera('paralela');
+    applyProjectDimViewIsolation();
+    applyProjectDimViewFraming();
+    refreshProjectDimViewMenu();
+  };
   lista.querySelectorAll('[data-dimview-wall]').forEach((b) => {
-    b.addEventListener('click', () => {
-      projectDimViewWallIndex = Number(b.dataset.dimviewWall);
-      projectDimViewActive = true;
-      projectDimViewDir = 'front';
-      clearProjectDimViewCotas();
-      aplicaProjecaoCamera('paralela');
-      applyProjectDimViewIsolation();
-      applyProjectDimViewFraming();
-      refreshProjectDimViewMenu();
-    });
+    b.addEventListener('click', () => selectWall(Number(b.dataset.dimviewWall)));
   });
+  // Clicar direto na parede (linha ou selo numerado) DENTRO da planta faz o
+  // mesmo que o chip — pedido do Matt: poder escolher a parede olhando o
+  // desenho, não só a lista de botões.
+  lista.querySelectorAll('[data-dimview-plan-wall]').forEach((el) => {
+    el.addEventListener('click', () => selectWall(Number(el.dataset.dimviewPlanWall)));
+  });
+
   lista.querySelectorAll('[data-dimview-dir]').forEach((b) => {
     b.addEventListener('click', () => {
       if (!projectDimViewActive) return;
@@ -6622,24 +6737,48 @@ function refreshProjectDimViewMenu() {
       refreshProjectDimViewMenu();
     });
   });
-  const camSvgEl = lista.querySelector('#po-proj-dimview-camsvg');
-  if (camSvgEl && projectDimViewActive) {
-    camSvgEl.addEventListener('click', (ev) => {
-      projectDimViewSetCutFromSvgY(projectDimViewSvgY(camSvgEl, ev.clientY));
+
+  // ARRASTAR a alça de câmera na planta — pedido do Matt, 18/09: "pra eu
+  // poder posicoonar a camera arrastando a linha nao com esse + e -".
+  // Atualiza SÓ os atributos da linha/bolinha/texto durante o arraste (não
+  // reconstrói o innerHTML inteiro) pra não perder o ponteiro no meio do
+  // gesto; um refreshProjectDimViewMenu() só roda de novo no próximo evento
+  // que precisar (mudar parede/direção/etc.), não a cada pointermove.
+  const camDot = lista.querySelector('#po-proj-dimview-camdot');
+  if (camDot && plan && projectDimViewActive && projectDimViewWallIndex != null) {
+    const svgEl = lista.querySelector('#po-proj-dimview-plan-svg');
+    const w = plan.walls.find((ww) => ww.wallIndex === projectDimViewWallIndex);
+    camDot.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      if (!svgEl || !w) return;
+      const mid = { x: w.originX + w.alongDirX * (w.widthM / 2), z: w.originZ + w.alongDirZ * (w.widthM / 2) };
+      const midSvg = plan.toSvg(mid.x, mid.z);
+      const dirSvg = { x: w.intoDirX * plan.scale, y: w.intoDirZ * plan.scale };
+      const dirLen = Math.hypot(dirSvg.x, dirSvg.y) || 1;
+      const onMove = (mv) => {
+        const p = projectDimViewSvgPoint(svgEl, mv.clientX, mv.clientY);
+        const rel = { x: p.x - midSvg.x, y: p.y - midSvg.y };
+        const alongSvg = (rel.x * dirSvg.x + rel.y * dirSvg.y) / dirLen;
+        const meters = alongSvg / plan.scale;
+        projectDimViewCutM = Math.min(PROJECT_DIMVIEW_CUT_MAX, Math.max(PROJECT_DIMVIEW_CUT_MIN, meters));
+        applyProjectDimViewFraming();
+        const p1 = plan.toSvg(mid.x + w.intoDirX * projectDimViewCutM, mid.z + w.intoDirZ * projectDimViewCutM);
+        const line = document.getElementById('po-proj-dimview-camline');
+        const dot = document.getElementById('po-proj-dimview-camdot');
+        if (line) { line.setAttribute('x2', p1.x.toFixed(1)); line.setAttribute('y2', p1.y.toFixed(1)); }
+        if (dot) { dot.setAttribute('cx', p1.x.toFixed(1)); dot.setAttribute('cy', p1.y.toFixed(1)); }
+        const readout = document.getElementById('po-proj-dimview-cut-value');
+        if (readout) readout.textContent = projectDimViewCutM.toFixed(1) + ' m';
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
     });
   }
-  const cutMinus = lista.querySelector('#po-proj-dimview-cut-minus');
-  const cutPlus = lista.querySelector('#po-proj-dimview-cut-plus');
-  if (cutMinus) cutMinus.addEventListener('click', () => {
-    projectDimViewCutM = Math.max(PROJECT_DIMVIEW_CUT_MIN, Number(projectDimViewCutM) - 0.5);
-    applyProjectDimViewFraming();
-    refreshProjectDimViewMenu();
-  });
-  if (cutPlus) cutPlus.addEventListener('click', () => {
-    projectDimViewCutM = Math.min(PROJECT_DIMVIEW_CUT_MAX, Number(projectDimViewCutM) + 0.5);
-    applyProjectDimViewFraming();
-    refreshProjectDimViewMenu();
-  });
+
   const cotasBtn = lista.querySelector('#po-proj-dimview-cotas-btn');
   if (cotasBtn) cotasBtn.addEventListener('click', () => {
     buildProjectDimViewCotas();
@@ -6655,12 +6794,13 @@ function refreshProjectDimViewMenu() {
       clearProjectDimViewCotas();
       applyProjectDimViewIsolation();
       refreshProjectDimViewMenu();
+      const modal = document.getElementById('po-proj-dimview-modal');
+      if (modal) modal.classList.remove('aberto');
     });
   }
   if (btn) btn.classList.toggle('active', projectDimViewActive);
 }
 montaMenuDimView();
-
 // ---------- PROJETOS SALVOS (migration 056) ----------
 // Mesmo espírito de "Composições favoritas" (ver bloco perto de
 // saveCompositionFavorite acima), mas numa tabela própria (user_projects) —

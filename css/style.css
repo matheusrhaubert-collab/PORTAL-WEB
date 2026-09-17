@@ -4078,6 +4078,46 @@ header.po-topnav {
 #po-proj-dimview-cut-value { font-size: 12px; font-weight: 700; min-width: 44px; text-align: center; }
 
 /* ==========================================================================
+   VISTA COM COTAS — JANELA MODAL (2026-09-18) — pedido do Matt: "quero uma
+   janela nova bem no meio da tela que eu possa abrir e fechar depois de
+   configurar" (o dropdown preso na barra ficava pequeno/cortado demais pra
+   caber a planta baixa). Fecha só pelo X, pelo fundo, ou Esc.
+   ========================================================================== */
+.po-dimview-modal { display: none; position: fixed; inset: 0; z-index: 10000; align-items: center; justify-content: center; }
+.po-dimview-modal.aberto { display: flex; }
+.po-dimview-modal-backdrop { position: absolute; inset: 0; background: rgba(20,16,12,0.45); }
+.po-dimview-modal-card {
+  position: relative; z-index: 1; background: var(--panel); border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.35); width: min(440px, 92vw); max-height: 88vh; overflow-y: auto;
+}
+.po-dimview-modal-head {
+  display: flex; align-items: center; justify-content: space-between; padding: 14px 16px;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); z-index: 1;
+}
+.po-dimview-modal-title { font-weight: 800; font-size: 14px; }
+.po-dimview-modal-close {
+  border: none; background: transparent; font-size: 24px; line-height: 1; cursor: pointer;
+  color: var(--muted); padding: 2px 8px; border-radius: 6px;
+}
+.po-dimview-modal-close:hover { color: var(--text); background: var(--accent-light); }
+.po-dimview-modal-body { padding: 12px 16px 16px; }
+
+/* Planta baixa (paredes + móveis + alça de câmera arrastável) */
+.po-dimview-plan-wrap { border: 1px solid var(--border); border-radius: 8px; background: #f4f1ec; margin: 2px 4px 6px; overflow: hidden; }
+.po-dimview-plan-svg { display: block; width: 100%; height: auto; touch-action: none; }
+.po-dimview-plan-empty { padding: 30px 10px; text-align: center; color: var(--muted); font-size: 12px; }
+.po-dimview-mod-rect { fill: #d9c39c; fill-opacity: 0.55; stroke: #a67c46; stroke-width: 0.6; }
+.po-dimview-wall-line { stroke: #6b6357; stroke-width: 3; cursor: pointer; }
+.po-dimview-wall-line.ativo { stroke: #e6007e; stroke-width: 4; }
+.po-dimview-wall-badge { fill: #fff; stroke: #6b6357; stroke-width: 1.5; cursor: pointer; }
+.po-dimview-wall-badge.ativo { fill: #e6007e; stroke: #e6007e; }
+.po-dimview-wall-badge-text { font-size: 9px; font-weight: 800; fill: #2b2621; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.po-dimview-wall-badge-text.ativo { fill: #fff; }
+.po-dimview-camline { stroke: #2b6cb0; stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
+.po-dimview-camdot { fill: #2b6cb0; stroke: #fff; stroke-width: 1.5; cursor: grab; }
+.po-dimview-camdot:active { cursor: grabbing; }
+
+/* ==========================================================================
    BARRA DE FERRAMENTAS DA ABA PROJETOS — layout do mockup (2026-08-13)
    ==========================================================================
    Cartão branco arredondado com grupos ROTULADOS separados por filete, botão
