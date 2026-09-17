@@ -6479,50 +6479,95 @@ function buildProjectDimViewCotas() {
   const addLine = (p1, p2) => group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2]), lineMat));
   const TICK = 0.05;
 
-  // LARGURA — linha corrida embaixo da parede, segmentada em cada limite de
-  // módulo (igual proposalDrawElevation no PDF). Os NÚMEROS (não as
-  // marcações) vão em FILEIRAS diferentes quando não cabem lado a lado sem
-  // se sobrepor — pedido do Matt, 18/09: "ficou ruim de visualizar as
-  // medidas... se precisar em diferentes niveis pra nunca ficar um em cima
-  // do outro" (mesmo algoritmo greedy de proposalDimAssignRows no PDF,
-  // portal-10-proposta.js: varre da esquerda pra direita, só reaproveita
   // uma fileira já aberta se o rótulo anterior dela já "acabou" antes do
-  // próximo começar, senão abre fileira nova).
-  const yBar = -0.06;
-  const bounds = Array.from(new Set(wallItems.flatMap((e) => {
-    const x0 = Number(e.slot.x_mm || 0) / 1000;
-    return [x0, x0 + Number(e.slot.width_mm || 0) / 1000];
-  }))).sort((a, b) => a - b);
-  bounds.forEach((b) => {
-    const p = wp(b, yBar);
-    addLine(p.clone().add(new THREE.Vector3(0, -TICK / 2, 0)), p.clone().add(new THREE.Vector3(0, TICK / 2, 0)));
+  // próximo começar, senão abre fileira nova). Pedido do Matt, 19/09 (2ª
+  // rodada): "os modulos aereos as medidas pra cima da imagem, voce
+  // continuou jogando pra baixo. copia as cotas como no exemplo" — então
+  // antes de gerar as cotas os módulos são separados em "níveis" por altura
+  // do chão (floor_height_mm); níveis na metade de cima da parede formam o
+  // grupo "superior" (barra de cota ACIMA do topo desses módulos, fileiras
+  // extras empilhando pra CIMA) e os da metade de baixo formam o grupo
+  // "inferior" (barra rente ao chão, fileiras extras empilhando pra BAIXO,
+  // como antes). Com um só nível (sem módulos aéreos), tudo cai no grupo
+  // inferior — igual era antes.
+  const LEVEL_GAP_M = 0.12;
+  const levelsRaw = wallItems
+    .map((e) => ({
+      e,
+      yBottom: Number(e.slot.floor_height_mm || 0) / 1000,
+      yTop: Number(e.slot.floor_height_mm || 0) / 1000 + Number(e.slot.height_mm || 0) / 1000,
+    }))
+    .sort((a, b) => a.yBottom - b.yBottom);
+  const levels = [];
+  levelsRaw.forEach((it) => {
+    const lvl = levels.find((l) => it.yBottom <= l.yBottom + LEVEL_GAP_M);
+    if (lvl) {
+      lvl.items.push(it.e);
+      lvl.yBottom = Math.min(lvl.yBottom, it.yBottom);
+      lvl.yTop = Math.max(lvl.yTop, it.yTop);
+    } else {
+      levels.push({ yBottom: it.yBottom, yTop: it.yTop, items: [it.e] });
+    }
   });
-  const widthSegs = [];
-  for (let i = 0; i < bounds.length - 1; i++) {
-    addLine(wp(bounds[i], yBar), wp(bounds[i + 1], yBar));
-    const mm = Math.round((bounds[i + 1] - bounds[i]) * 1000);
-    if (mm <= 0) continue;
-    const text = formatDimensionNumber(mm, unit) + unitAbbrev(unit);
-    const labelWM = measureProjectDimLabelWidthM(text, 0.07);
-    const mid = (bounds[i] + bounds[i + 1]) / 2;
-    const margin = 0.015; // respiro entre rótulos vizinhos na mesma fileira
-    widthSegs.push({ text, mid, labelL: mid - labelWM / 2 - margin, labelR: mid + labelWM / 2 + margin });
+  levels.sort((a, b) => a.yBottom - b.yBottom);
+  const upperSet = new Set();
+  if (levels.length > 1) {
+    const overallMin = levels[0].yBottom;
+    const overallMax = levels[levels.length - 1].yTop;
+    const mid = (overallMin + overallMax) / 2;
+    let upperLevels = levels.filter((l) => (l.yBottom + l.yTop) / 2 >= mid);
+    if (!upperLevels.length || upperLevels.length === levels.length) {
+      // fallback: divide os níveis ao meio pelo índice (garante os dois grupos)
+      const cut = Math.ceil(levels.length / 2);
+      upperLevels = levels.slice(cut);
+    }
+    upperLevels.forEach((l) => l.items.forEach((slot) => upperSet.add(slot)));
   }
-  const widthRows = [];
-  widthSegs.forEach((seg) => {
-    const row = widthRows.find((r) => seg.labelL >= r[r.length - 1].labelR);
-    if (row) row.push(seg); else widthRows.push([seg]);
-  });
-  const WIDTH_ROW_STEP_M = 0.1;
-  widthRows.forEach((row, ri) => {
-    const rowY = yBar - 0.09 - ri * WIDTH_ROW_STEP_M;
-    row.forEach((seg) => {
-      if (ri > 0) addLine(wp(seg.mid, yBar), wp(seg.mid, rowY + 0.03)); // puxador até a fileira de baixo
-      const label = makeProjectDimTextSprite(seg.text, 0.07);
-      label.position.copy(wp(seg.mid, rowY));
-      group.add(label);
+
+  const buildWidthGroup = (items, isUpper) => {
+    if (!items.length) return;
+    const bounds = Array.from(new Set(items.flatMap((e) => {
+      const x0 = Number(e.slot.x_mm || 0) / 1000;
+      return [x0, x0 + Number(e.slot.width_mm || 0) / 1000];
+    }))).sort((a, b) => a - b);
+    const barY = isUpper
+      ? Math.max(...items.map((e) => Number(e.slot.floor_height_mm || 0) / 1000 + Number(e.slot.height_mm || 0) / 1000)) + 0.06
+      : -0.06;
+    bounds.forEach((b) => {
+      const p = wp(b, barY);
+      addLine(p.clone().add(new THREE.Vector3(0, -TICK / 2, 0)), p.clone().add(new THREE.Vector3(0, TICK / 2, 0)));
     });
-  });
+    const segs = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      addLine(wp(bounds[i], barY), wp(bounds[i + 1], barY));
+      const mm = Math.round((bounds[i + 1] - bounds[i]) * 1000);
+      if (mm <= 0) continue;
+      const text = formatDimensionNumber(mm, unit) + unitAbbrev(unit);
+      const labelWM = measureProjectDimLabelWidthM(text, 0.07);
+      const mid = (bounds[i] + bounds[i + 1]) / 2;
+      const margin = 0.015; // respiro entre rótulos vizinhos na mesma fileira
+      segs.push({ text, mid, labelL: mid - labelWM / 2 - margin, labelR: mid + labelWM / 2 + margin });
+    }
+    const rows = [];
+    segs.forEach((seg) => {
+      const row = rows.find((r) => seg.labelL >= r[r.length - 1].labelR);
+      if (row) row.push(seg); else rows.push([seg]);
+    });
+    const STEP_M = 0.1;
+    rows.forEach((row, ri) => {
+      const rowY = isUpper ? barY + 0.09 + ri * STEP_M : barY - 0.09 - ri * STEP_M;
+      row.forEach((seg) => {
+        if (ri > 0) addLine(wp(seg.mid, barY), wp(seg.mid, isUpper ? rowY - 0.03 : rowY + 0.03)); // puxador até a fileira extra
+        const label = makeProjectDimTextSprite(seg.text, 0.07);
+        label.position.copy(wp(seg.mid, rowY));
+        group.add(label);
+      });
+    });
+  };
+  const lowerItems = wallItems.filter((e) => !upperSet.has(e));
+  const upperItems = wallItems.filter((e) => upperSet.has(e));
+  buildWidthGroup(lowerItems, false);
+  buildWidthGroup(upperItems, true);
 
   // ALTURA (por módulo, do lado direito) + NUMERAÇÃO (centralizada) — mesmo
   // módulo, duas cotas diferentes.
