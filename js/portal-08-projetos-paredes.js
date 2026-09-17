@@ -5770,7 +5770,10 @@ function attachFloatingDropdown(raiz, btn, lista) {
     ev.stopPropagation();
     if (raiz.classList.contains('aberto')) fechar(); else abrir();
   });
-  document.addEventListener('click', fechar);
+  document.addEventListener('click', (ev) => {
+    if (lista.contains(ev.target) || btn.contains(ev.target)) return;
+    fechar();
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
   window.addEventListener('resize', () => { if (raiz.classList.contains('aberto')) posicionar(); });
   return { abrir, fechar };
@@ -5894,6 +5897,18 @@ function applyProjectDrawStyle(estilo, remontar) {
     bMostrar.addEventListener('click', () => {
       projectSlots.forEach((s) => { s.oculto = false; });
       projectWallSegments.forEach((w) => { w.oculta = false; });
+      // "Mostrar tudo" precisa mostrar TUDO de verdade -- sem isto, quem
+      // estivesse com a Vista com Cotas isolando uma parede continuaria sem
+      // ver o resto do projeto mesmo depois de clicar aqui (Matt, 18/09:
+      // "tem um botao de mostrar tudo que quando clico ele nao volta mais
+      // pro anterior").
+      if (typeof projectDimViewActive !== 'undefined' && projectDimViewActive) {
+        projectDimViewActive = false;
+        projectDimViewWallIndex = null;
+        if (typeof clearProjectDimViewCotas === 'function') clearProjectDimViewCotas();
+        if (typeof applyProjectDimViewIsolation === 'function') applyProjectDimViewIsolation();
+        if (typeof refreshProjectDimViewMenu === 'function') refreshProjectDimViewMenu();
+      }
       renderProjectCanvas();
       markProjectDirty();
     });
@@ -6306,6 +6321,202 @@ function montaMenuDimView() {
   refreshProjectDimViewMenu();
 }
 
+// ---------- COTAS DOS MÓDULOS + NUMERAÇÃO (2026-09-18, pedido do Matt:
+// "quero botao de fazer cotas, ou refazer cotas" + "nao encontrei botao de
+// tirar e salvar a foto com as cotas") ----------
+// Diferente da Cota de vão (po-proj-dims-btn, distância ENTRE módulos
+// vizinhos) e da Régua manual: aqui é a cota de CADA MÓDULO da parede
+// isolada — largura embaixo (segmentada nos limites de cada um) + altura do
+// lado + numeração centralizada — do jeito que a Proposta em PDF já desenha
+// (ver proposalDrawElevation/proposalDimSegmentH/V/proposalNumberBadge,
+// portal-10-proposta.js). A DIFERENÇA CRÍTICA pro PDF: aqui é geometria 3D
+// DE VERDADE (Sprite com texto desenhado num canvas 2D), não <span> HTML por
+// cima da tela como refreshProjectDimensionLabels — precisa disso porque o
+// botão "Salvar imagem" abaixo lê o canvas WebGL puro (mesmo
+// ViewerProjectEdit.snapshot() do Print), e um <span> HTML nunca aparece
+// nesse toDataURL().
+let projectDimViewCotasGroup = null;
+const PROJECT_DIMVIEW_CUT_MIN = 0.3;
+const PROJECT_DIMVIEW_CUT_MAX = 8;
+
+function clearProjectDimViewCotas() {
+  if (!projectDimViewCotasGroup) return;
+  const scene = projectEditScene();
+  if (scene) scene.remove(projectDimViewCotasGroup);
+  projectDimViewCotasGroup.traverse((o) => {
+    if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    if (o.geometry) o.geometry.dispose();
+  });
+  projectDimViewCotasGroup = null;
+}
+
+// Sprite de texto (número da cota) — supersample simples num canvas 2D,
+// vira textura. worldHeightM = altura do texto no mundo 3D (metros).
+function makeProjectDimTextSprite(text, worldHeightM) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const fontPx = 40;
+  ctx.font = 'bold ' + fontPx + 'px Arial';
+  const textW = Math.max(10, ctx.measureText(text).width);
+  canvas.width = Math.ceil(textW + 20);
+  canvas.height = fontPx + 16;
+  ctx.font = 'bold ' + fontPx + 'px Arial';
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#1f3b63';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 10, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true });
+  const spr = new THREE.Sprite(mat);
+  const h = worldHeightM || 0.08;
+  spr.scale.set(h * (canvas.width / canvas.height), h, 1);
+  spr.renderOrder = 999;
+  return spr;
+}
+
+// Selo numerado (número do módulo) — mesma ideia do proposalNumberBadge do
+// PDF, só que como Sprite 3D. Número = índice em projectSlots (mesma ordem
+// que vira o número oficial quando o projeto é enviado como pedido —
+// combinado com o Matt).
+function makeProjectDimNumberBadge(num, worldSizeM) {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2 - 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#e6007e';
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 60px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(num), size / 2, size / 2 + 3);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true });
+  const spr = new THREE.Sprite(mat);
+  const s = worldSizeM || 0.14;
+  spr.scale.set(s, s, 1);
+  spr.renderOrder = 1000;
+  return spr;
+}
+
+function buildProjectDimViewCotas() {
+  clearProjectDimViewCotas();
+  if (!projectDimViewActive || projectDimViewWallIndex == null) return;
+  const wallGeo = projectDimViewWallGeo();
+  const scene = projectEditScene();
+  if (!wallGeo || !scene || typeof THREE === 'undefined') return;
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const wallItems = (projectSlots || [])
+    .map((slot, i) => ({ slot, num: i + 1 }))
+    .filter((e) => Number(e.slot.wall_index || 0) === projectDimViewWallIndex && typeof isFloorSlot === 'function' && !isFloorSlot(e.slot));
+  if (!wallItems.length) return;
+
+  const group = new THREE.Group();
+  group.userData.legnoLayer = 'cotas-modulo';
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x2b6cb0 });
+  const wp = (alongM, y) => new THREE.Vector3(
+    wallGeo.originX + wallGeo.alongDirX * alongM,
+    y,
+    wallGeo.originZ + wallGeo.alongDirZ * alongM
+  );
+  const addLine = (p1, p2) => group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2]), lineMat));
+  const TICK = 0.05;
+
+  // LARGURA — linha corrida embaixo da parede, segmentada em cada limite de
+  // módulo (igual proposalDrawElevation no PDF).
+  const yBar = -0.06;
+  const bounds = Array.from(new Set(wallItems.flatMap((e) => {
+    const x0 = Number(e.slot.x_mm || 0) / 1000;
+    return [x0, x0 + Number(e.slot.width_mm || 0) / 1000];
+  }))).sort((a, b) => a - b);
+  bounds.forEach((b) => {
+    const p = wp(b, yBar);
+    addLine(p.clone().add(new THREE.Vector3(0, -TICK / 2, 0)), p.clone().add(new THREE.Vector3(0, TICK / 2, 0)));
+  });
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const a = wp(bounds[i], yBar);
+    const b = wp(bounds[i + 1], yBar);
+    addLine(a, b);
+    const mm = Math.round((bounds[i + 1] - bounds[i]) * 1000);
+    if (mm > 0) {
+      const label = makeProjectDimTextSprite(formatDimensionNumber(mm, unit) + unitAbbrev(unit), 0.07);
+      label.position.copy(wp((bounds[i] + bounds[i + 1]) / 2, yBar - 0.09));
+      group.add(label);
+    }
+  }
+
+  // ALTURA (por módulo, do lado direito) + NUMERAÇÃO (centralizada) — mesmo
+  // módulo, duas cotas diferentes.
+  wallItems.forEach((e) => {
+    const x0 = Number(e.slot.x_mm || 0) / 1000;
+    const w = Number(e.slot.width_mm || 0) / 1000;
+    const yBottom = Number(e.slot.floor_height_mm || 0) / 1000;
+    const yTop = yBottom + Number(e.slot.height_mm || 0) / 1000;
+    const along = x0 + w + 0.06;
+    const p1 = wp(along, yBottom);
+    const p2 = wp(along, yTop);
+    addLine(p1, p2);
+    const tickDir = new THREE.Vector3(wallGeo.intoDirX, 0, wallGeo.intoDirZ).multiplyScalar(TICK / 2);
+    addLine(p1.clone().sub(tickDir), p1.clone().add(tickDir));
+    addLine(p2.clone().sub(tickDir), p2.clone().add(tickDir));
+    const mm = Math.round((yTop - yBottom) * 1000);
+    const label = makeProjectDimTextSprite(formatDimensionNumber(mm, unit) + unitAbbrev(unit), 0.06);
+    label.position.copy(wp(along + 0.09, (yBottom + yTop) / 2));
+    group.add(label);
+
+    const badge = makeProjectDimNumberBadge(e.num, 0.12);
+    badge.position.copy(wp(x0 + w / 2, (yBottom + yTop) / 2));
+    group.add(badge);
+  });
+
+  scene.add(group);
+  projectDimViewCotasGroup = group;
+}
+
+// "Salvar imagem" (2026-09-18) — Matt: "nao encontrei botao de tirar e
+// salvar a foto com as cotas" — o botão "Print" já existia (topo da barra,
+// grupo Render) e faz exatamente isto (ViewerProjectEdit.snapshot() +
+// savePhotorealRenderToProject, mesma galeria/Proposta de sempre), só que
+// escondido longe do painel desta ferramenta — este botão aqui é um atalho
+// pro MESMO fluxo, só que óbvio dentro da Vista com Cotas.
+async function projectDimViewSaveImage(btnEl) {
+  if (!ViewerProjectEdit || typeof ViewerProjectEdit.snapshot !== 'function') return;
+  const dataUrl = ViewerProjectEdit.snapshot();
+  if (!dataUrl) { alert(I18n.t('project.print_view_no_scene')); return; }
+  if (btnEl) btnEl.disabled = true;
+  try {
+    await savePhotorealRenderToProject(dataUrl);
+  } catch (e) {
+    alert((e && e.message) || String(e));
+  } finally {
+    if (btnEl) btnEl.disabled = false;
+  }
+}
+
+// Conversão clique-na-tela -> coordenada do viewBox do mini-mapa de topo
+// (ver refreshProjectDimViewMenu) — mesma ideia da "Vista Dinâmica" do
+// Promob que o Matt mandou de exemplo, só que SEM o cone de abertura (não
+// precisa: a projeção é sempre paralela, "pegando tudo") e sem a vista de
+// altura (ele confirmou que não precisa, "ajuda a posicionar a câmera" já
+// basta com a vista de cima).
+function projectDimViewSvgY(svg, clientY) {
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  if (!rect.height) return vb.y;
+  return vb.y + ((clientY - rect.top) / rect.height) * vb.height;
+}
+function projectDimViewSetCutFromSvgY(svgY) {
+  const t = Math.min(1, Math.max(0, (svgY - 14) / (90 - 14)));
+  projectDimViewCutM = PROJECT_DIMVIEW_CUT_MIN + t * (PROJECT_DIMVIEW_CUT_MAX - PROJECT_DIMVIEW_CUT_MIN);
+  applyProjectDimViewFraming();
+  refreshProjectDimViewMenu();
+}
+
 function refreshProjectDimViewMenu() {
   const lista = document.getElementById('po-proj-dimview-list');
   const btn = document.getElementById('po-proj-dimview-btn');
@@ -6322,19 +6533,42 @@ function refreshProjectDimViewMenu() {
     const disabled = projectDimViewActive ? '' : ' disabled';
     return '<button type="button" class="po-dimview-chip' + (ativo ? ' ativo' : '') + '" data-dimview-dir="' + d + '"' + disabled + '>' + I18n.t(key) + '</button>';
   }).join('');
+  // Mini-mapa de topo pra posicionar a câmera (distância de corte) — linha
+  // = parede, ponto = câmera. Clique em qualquer altura do mini-mapa já
+  // reposiciona (não precisa arrastar).
+  const t = (Math.min(PROJECT_DIMVIEW_CUT_MAX, Math.max(PROJECT_DIMVIEW_CUT_MIN, projectDimViewCutM)) - PROJECT_DIMVIEW_CUT_MIN) / (PROJECT_DIMVIEW_CUT_MAX - PROJECT_DIMVIEW_CUT_MIN);
+  const camY = 14 + t * (90 - 14);
+  const camSvg = '<svg class="po-dimview-camsvg" id="po-proj-dimview-camsvg" viewBox="0 0 200 100" width="200" height="70"' + (projectDimViewActive ? '' : ' style="opacity:0.4;pointer-events:none;"') + '>'
+    + '<line x1="20" y1="14" x2="180" y2="14" stroke="#2b6cb0" stroke-width="3"/>'
+    + '<line x1="100" y1="14" x2="100" y2="' + camY.toFixed(1) + '" stroke="#e6007e" stroke-width="1.5" stroke-dasharray="3 3"/>'
+    + '<circle cx="100" cy="' + camY.toFixed(1) + '" r="5" fill="#e6007e"/>'
+    + '</svg>';
   lista.innerHTML = ''
     + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_wall_label') + '</span>'
     + '<div class="po-dimview-row">' + wallBtns + '</div></div>'
     + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_cut_label') + '</span>'
-    + '<div class="po-dimview-row"><input type="number" min="0.3" step="0.1" id="po-proj-dimview-cut" value="' + Number(projectDimViewCutM).toFixed(1) + '"' + (projectDimViewActive ? '' : ' disabled') + '> m</div></div>'
+    + camSvg
+    + '<div class="po-dimview-row">'
+    + '<button type="button" class="po-dimview-chip" id="po-proj-dimview-cut-minus"' + (projectDimViewActive ? '' : ' disabled') + '>−</button>'
+    + '<span id="po-proj-dimview-cut-value">' + Number(projectDimViewCutM).toFixed(1) + ' m</span>'
+    + '<button type="button" class="po-dimview-chip" id="po-proj-dimview-cut-plus"' + (projectDimViewActive ? '' : ' disabled') + '>+</button>'
+    + '</div></div>'
     + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_dir_label') + '</span>'
     + '<div class="po-dimview-row">' + dirBtns + '</div></div>'
+    + '<div class="po-dimview-section"><span class="po-dimview-label">' + I18n.t('project.dimview_cotas_label') + '</span>'
+    + '<div class="po-dimview-row">'
+    + '<button type="button" class="po-dimview-chip" id="po-proj-dimview-cotas-btn"' + (projectDimViewActive ? '' : ' disabled') + '>'
+    + I18n.t(projectDimViewCotasGroup ? 'project.dimview_cotas_btn_redo' : 'project.dimview_cotas_btn_generate') + '</button>'
+    + '<button type="button" class="po-dimview-chip po-dimview-save-chip" id="po-proj-dimview-save-btn" title="' + I18n.t('project.dimview_save_title') + '"' + (projectDimViewActive ? '' : ' disabled') + '>'
+    + I18n.t('project.dimview_save_btn') + '</button>'
+    + '</div></div>'
     + (projectDimViewActive ? '<button type="button" class="po-dimview-exit-btn" id="po-proj-dimview-exit">' + I18n.t('project.dimview_exit') + '</button>' : '');
   lista.querySelectorAll('[data-dimview-wall]').forEach((b) => {
     b.addEventListener('click', () => {
       projectDimViewWallIndex = Number(b.dataset.dimviewWall);
       projectDimViewActive = true;
       projectDimViewDir = 'front';
+      clearProjectDimViewCotas();
       aplicaProjecaoCamera('paralela');
       applyProjectDimViewIsolation();
       applyProjectDimViewFraming();
@@ -6349,19 +6583,37 @@ function refreshProjectDimViewMenu() {
       refreshProjectDimViewMenu();
     });
   });
-  const cutInput = lista.querySelector('#po-proj-dimview-cut');
-  if (cutInput) {
-    cutInput.addEventListener('change', () => {
-      const v = parseFloat(cutInput.value);
-      projectDimViewCutM = (Number.isFinite(v) && v > 0) ? v : 3;
-      applyProjectDimViewFraming();
+  const camSvgEl = lista.querySelector('#po-proj-dimview-camsvg');
+  if (camSvgEl && projectDimViewActive) {
+    camSvgEl.addEventListener('click', (ev) => {
+      projectDimViewSetCutFromSvgY(projectDimViewSvgY(camSvgEl, ev.clientY));
     });
   }
+  const cutMinus = lista.querySelector('#po-proj-dimview-cut-minus');
+  const cutPlus = lista.querySelector('#po-proj-dimview-cut-plus');
+  if (cutMinus) cutMinus.addEventListener('click', () => {
+    projectDimViewCutM = Math.max(PROJECT_DIMVIEW_CUT_MIN, Number(projectDimViewCutM) - 0.5);
+    applyProjectDimViewFraming();
+    refreshProjectDimViewMenu();
+  });
+  if (cutPlus) cutPlus.addEventListener('click', () => {
+    projectDimViewCutM = Math.min(PROJECT_DIMVIEW_CUT_MAX, Number(projectDimViewCutM) + 0.5);
+    applyProjectDimViewFraming();
+    refreshProjectDimViewMenu();
+  });
+  const cotasBtn = lista.querySelector('#po-proj-dimview-cotas-btn');
+  if (cotasBtn) cotasBtn.addEventListener('click', () => {
+    buildProjectDimViewCotas();
+    refreshProjectDimViewMenu();
+  });
+  const saveBtn = lista.querySelector('#po-proj-dimview-save-btn');
+  if (saveBtn) saveBtn.addEventListener('click', () => projectDimViewSaveImage(saveBtn));
   const exitBtn = lista.querySelector('#po-proj-dimview-exit');
   if (exitBtn) {
     exitBtn.addEventListener('click', () => {
       projectDimViewActive = false;
       projectDimViewWallIndex = null;
+      clearProjectDimViewCotas();
       applyProjectDimViewIsolation();
       refreshProjectDimViewMenu();
     });

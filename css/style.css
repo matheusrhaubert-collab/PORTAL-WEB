@@ -4068,6 +4068,9 @@ header.po-topnav {
 }
 .po-dimview-exit-btn:hover { background: var(--accent); color: #fff; }
 .po-dimview-btn.active .po-tb-dot { display: block; }
+.po-dimview-camsvg { display: block; margin: 2px 4px 4px; cursor: pointer; border: 1px solid var(--border); border-radius: 6px; background: #f7f5f2; }
+.po-dimview-save-chip { background: var(--accent-light); border-color: var(--accent); }
+#po-proj-dimview-cut-value { font-size: 12px; font-weight: 700; min-width: 44px; text-align: center; }
 
 /* ==========================================================================
    BARRA DE FERRAMENTAS DA ABA PROJETOS — layout do mockup (2026-08-13)
