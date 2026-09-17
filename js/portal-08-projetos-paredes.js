@@ -6350,6 +6350,23 @@ function clearProjectDimViewCotas() {
   projectDimViewCotasGroup = null;
 }
 
+// Largura (mundo, metros) que makeProjectDimTextSprite abaixo vai dar pro
+// texto, SEM criar o Sprite de verdade — usado só pra decidir em que
+// fileira cada rótulo de largura cabe (buildProjectDimViewCotas), mesmo
+// espírito de doc.getTextWidth no proposalDimAssignRows do PDF. Precisa
+// espelhar EXATAMENTE o mesmo font/padding de makeProjectDimTextSprite
+// (fonte 40px, +20px de largura/+16px de altura de respiro), senão a conta
+// de quem cabe do lado de quem fica errada.
+let __projectDimMeasureCtx = null;
+function measureProjectDimLabelWidthM(text, worldHeightM) {
+  if (!__projectDimMeasureCtx) __projectDimMeasureCtx = document.createElement('canvas').getContext('2d');
+  __projectDimMeasureCtx.font = 'bold 40px Arial';
+  const textW = Math.max(10, __projectDimMeasureCtx.measureText(text).width);
+  const canvasW = Math.ceil(textW + 20);
+  const canvasH = 40 + 16;
+  return (worldHeightM || 0.08) * (canvasW / canvasH);
+}
+
 // Sprite de texto (número da cota) — supersample simples num canvas 2D,
 // vira textura. worldHeightM = altura do texto no mundo 3D (metros).
 function makeProjectDimTextSprite(text, worldHeightM) {
@@ -6428,7 +6445,14 @@ function buildProjectDimViewCotas() {
   const TICK = 0.05;
 
   // LARGURA — linha corrida embaixo da parede, segmentada em cada limite de
-  // módulo (igual proposalDrawElevation no PDF).
+  // módulo (igual proposalDrawElevation no PDF). Os NÚMEROS (não as
+  // marcações) vão em FILEIRAS diferentes quando não cabem lado a lado sem
+  // se sobrepor — pedido do Matt, 18/09: "ficou ruim de visualizar as
+  // medidas... se precisar em diferentes niveis pra nunca ficar um em cima
+  // do outro" (mesmo algoritmo greedy de proposalDimAssignRows no PDF,
+  // portal-10-proposta.js: varre da esquerda pra direita, só reaproveita
+  // uma fileira já aberta se o rótulo anterior dela já "acabou" antes do
+  // próximo começar, senão abre fileira nova).
   const yBar = -0.06;
   const bounds = Array.from(new Set(wallItems.flatMap((e) => {
     const x0 = Number(e.slot.x_mm || 0) / 1000;
@@ -6438,17 +6462,32 @@ function buildProjectDimViewCotas() {
     const p = wp(b, yBar);
     addLine(p.clone().add(new THREE.Vector3(0, -TICK / 2, 0)), p.clone().add(new THREE.Vector3(0, TICK / 2, 0)));
   });
+  const widthSegs = [];
   for (let i = 0; i < bounds.length - 1; i++) {
-    const a = wp(bounds[i], yBar);
-    const b = wp(bounds[i + 1], yBar);
-    addLine(a, b);
+    addLine(wp(bounds[i], yBar), wp(bounds[i + 1], yBar));
     const mm = Math.round((bounds[i + 1] - bounds[i]) * 1000);
-    if (mm > 0) {
-      const label = makeProjectDimTextSprite(formatDimensionNumber(mm, unit) + unitAbbrev(unit), 0.07);
-      label.position.copy(wp((bounds[i] + bounds[i + 1]) / 2, yBar - 0.09));
-      group.add(label);
-    }
+    if (mm <= 0) continue;
+    const text = formatDimensionNumber(mm, unit) + unitAbbrev(unit);
+    const labelWM = measureProjectDimLabelWidthM(text, 0.07);
+    const mid = (bounds[i] + bounds[i + 1]) / 2;
+    const margin = 0.015; // respiro entre rótulos vizinhos na mesma fileira
+    widthSegs.push({ text, mid, labelL: mid - labelWM / 2 - margin, labelR: mid + labelWM / 2 + margin });
   }
+  const widthRows = [];
+  widthSegs.forEach((seg) => {
+    const row = widthRows.find((r) => seg.labelL >= r[r.length - 1].labelR);
+    if (row) row.push(seg); else widthRows.push([seg]);
+  });
+  const WIDTH_ROW_STEP_M = 0.1;
+  widthRows.forEach((row, ri) => {
+    const rowY = yBar - 0.09 - ri * WIDTH_ROW_STEP_M;
+    row.forEach((seg) => {
+      if (ri > 0) addLine(wp(seg.mid, yBar), wp(seg.mid, rowY + 0.03)); // puxador até a fileira de baixo
+      const label = makeProjectDimTextSprite(seg.text, 0.07);
+      label.position.copy(wp(seg.mid, rowY));
+      group.add(label);
+    });
+  });
 
   // ALTURA (por módulo, do lado direito) + NUMERAÇÃO (centralizada) — mesmo
   // módulo, duas cotas diferentes.
