@@ -3219,6 +3219,11 @@ header.po-topnav {
   transform-origin: 0 0;
 }
 .po-proj-slot-top:active { cursor: pointer; }
+/* Pedido do Matt, 19/09: "na visao top aparece as descricoes, quero ver
+   visao limpa" — nome+medidas de cada módulo (.po-proj-slot-label) continua
+   aparecendo na vista Frontal (ajuda a editar), mas some na vista de Cima
+   (só os retângulos, sem o texto sobrepondo tudo). */
+.po-proj-slot-top .po-proj-slot-label { display: none; }
 #po-proj-top-view-hint { margin-top: 6px; text-align: center; }
 
 /* ---------- Rodapé do canvas: empty state + resumo (2026-08-08, etapa 3) ----------

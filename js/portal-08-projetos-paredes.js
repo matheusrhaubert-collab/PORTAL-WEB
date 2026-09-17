@@ -6643,9 +6643,17 @@ function buildProjectDimViewCotas() {
     label.position.copy(wp(along + 0.09, (yBottom + yTop) / 2));
     group.add(label);
 
-    const badge = makeProjectDimNumberBadge(e.num, 0.12);
-    badge.position.copy(wp(x0 + w / 2, (yBottom + yTop) / 2));
-    group.add(badge);
+    // SEM selo de número pra módulo de DECORAÇÃO (is_decoration) — pedido
+    // do Matt, 19/09: "nao quero que eles entrem com numeracao. nao sao
+    // produzidos nem comprados... pode eliminar essa numeracao das
+    // indicacoes" (mesma bandeira que já tira decoração de preço/volume-peso/
+    // furação/composição por IA em outros lugares do portal — aqui só evita
+    // desenhar o selo, sem mexer na numeração dos módulos de verdade).
+    if (!(e.slot.module && e.slot.module.is_decoration)) {
+      const badge = makeProjectDimNumberBadge(e.num, 0.12);
+      badge.position.copy(wp(x0 + w / 2, (yBottom + yTop) / 2));
+      group.add(badge);
+    }
   });
 
   scene.add(group);
