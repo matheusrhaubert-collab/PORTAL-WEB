@@ -6314,8 +6314,8 @@ function ensureProjectDimViewModal() {
   modal.id = 'po-proj-dimview-modal';
   modal.className = 'po-dimview-modal';
   modal.innerHTML = '<div class="po-dimview-modal-backdrop" id="po-proj-dimview-modal-backdrop"></div>'
-    + '<div class="po-dimview-modal-card">'
-    + '<div class="po-dimview-modal-head">'
+    + '<div class="po-dimview-modal-card" id="po-proj-dimview-modal-card">'
+    + '<div class="po-dimview-modal-head" id="po-proj-dimview-modal-head">'
     + '<span class="po-dimview-modal-title">' + I18n.t('project.dimview_btn') + '</span>'
     + '<button type="button" class="po-dimview-modal-close" id="po-proj-dimview-modal-close" aria-label="' + I18n.t('project.dimview_close') + '">×</button>'
     + '</div>'
@@ -6326,6 +6326,49 @@ function ensureProjectDimViewModal() {
   document.getElementById('po-proj-dimview-modal-backdrop').addEventListener('click', fechar);
   document.getElementById('po-proj-dimview-modal-close').addEventListener('click', fechar);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechar(); });
+
+  // ARRASTAR a janela pelo cabeçalho — pedido do Matt, 19/09: "quero poder
+  // movimentar essa janela arrastanco la em cima pros lados, pra eu
+  // visualizar a tela como esta" (quer poder ver o 3D atrás enquanto
+  // configura). No primeiro arraste tira o card da centralização automática
+  // (flex do .po-dimview-modal) fixando a posição atual em left/top px —
+  // dali em diante só soma o delta do ponteiro. Clampado pra sempre sobrar
+  // um pedaço do cabeçalho visível (não dá pra "perder" a janela pra fora
+  // da tela). Fica ligado direto no <head> aqui em ensureProjectDimViewModal
+  // (roda 1x só) pra sobreviver aos refreshProjectDimViewMenu() que
+  // reconstroem só o body de dentro.
+  const card = document.getElementById('po-proj-dimview-modal-card');
+  const head = document.getElementById('po-proj-dimview-modal-head');
+  if (card && head) {
+    head.addEventListener('pointerdown', (ev) => {
+      if (ev.target.closest('#po-proj-dimview-modal-close')) return;
+      ev.preventDefault();
+      const rect = card.getBoundingClientRect();
+      card.style.position = 'fixed';
+      card.style.margin = '0';
+      card.style.left = rect.left + 'px';
+      card.style.top = rect.top + 'px';
+      const startX = ev.clientX, startY = ev.clientY;
+      const origLeft = rect.left, origTop = rect.top;
+      head.classList.add('arrastando');
+      const onMove = (mv) => {
+        const w = card.offsetWidth;
+        let left = origLeft + (mv.clientX - startX);
+        let top = origTop + (mv.clientY - startY);
+        left = Math.min(Math.max(left, 60 - w), window.innerWidth - 60);
+        top = Math.min(Math.max(top, 0), window.innerHeight - 40);
+        card.style.left = left + 'px';
+        card.style.top = top + 'px';
+      };
+      const onUp = () => {
+        head.classList.remove('arrastando');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  }
 }
 
 // Botão da barra — só abre/fecha a janela modal (a montagem do CONTEÚDO é
@@ -6374,6 +6417,18 @@ let projectDimViewCotasGroup = null;
 const PROJECT_DIMVIEW_CUT_MIN = 0.3;
 const PROJECT_DIMVIEW_CUT_MAX = 5;
 
+// ZOOM da planta baixa (scroll do mouse) — pedido do Matt, 19/09: "quero
+// pdoer dar zoon nessa tela. com scroll mesmo". zoom=1 é o enquadramento
+// cheio (mesmo de antes); panX/panY (em unidades do viewBox, 0..VB) seguem
+// o ponto sob o cursor durante o zoom pra não "pular". Variáveis no nível
+// do módulo (não dentro da função) pra sobreviver aos refreshProjectDimViewMenu()
+// que só reconstroem o innerHTML da lista, não o estado.
+let projectDimViewPlanZoom = 1;
+let projectDimViewPlanPanX = 0;
+let projectDimViewPlanPanY = 0;
+const PROJECT_DIMVIEW_PLAN_ZOOM_MIN = 1;
+const PROJECT_DIMVIEW_PLAN_ZOOM_MAX = 8;
+
 function clearProjectDimViewCotas() {
   if (!projectDimViewCotasGroup) return;
   const scene = projectEditScene();
@@ -6413,9 +6468,9 @@ function makeProjectDimTextSprite(text, worldHeightM) {
   canvas.width = Math.ceil(textW + 20);
   canvas.height = fontPx + 16;
   ctx.font = 'bold ' + fontPx + 'px Arial';
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillStyle = 'rgba(255,255,255,1)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#1f3b63';
+  ctx.fillStyle = '#000000';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, 10, canvas.height / 2);
   const tex = new THREE.CanvasTexture(canvas);
@@ -6672,7 +6727,11 @@ function projectDimViewPlanGeometry() {
 function renderProjectDimViewPlanSvg(plan) {
   if (!plan) return '<div class="po-dimview-plan-empty">' + I18n.t('project.dimview_no_walls') + '</div>';
   const { walls, toSvg, wallItemsByIndex, VB } = plan;
-  let svg = '<svg class="po-dimview-plan-svg" id="po-proj-dimview-plan-svg" viewBox="0 0 ' + VB + ' ' + VB + '" width="100%" height="300">';
+  const vbSize = VB / projectDimViewPlanZoom;
+  const vbX = (VB - vbSize) / 2 + projectDimViewPlanPanX;
+  const vbY = (VB - vbSize) / 2 + projectDimViewPlanPanY;
+  let svg = '<svg class="po-dimview-plan-svg" id="po-proj-dimview-plan-svg" viewBox="'
+    + vbX.toFixed(1) + ' ' + vbY.toFixed(1) + ' ' + vbSize.toFixed(1) + ' ' + vbSize.toFixed(1) + '" width="100%" height="300">';
   walls.forEach((w) => {
     (wallItemsByIndex[w.wallIndex] || []).forEach((slot) => {
       const x0 = Number(slot.x_mm || 0) / 1000;
@@ -6822,6 +6881,42 @@ function refreshProjectDimViewMenu() {
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     });
+  }
+
+  // ZOOM da planta com a RODINHA do mouse — pedido do Matt, 19/09: "quero
+  // pdoer dar zoon nessa tela. com scroll mesmo". Mantém o ponto que está
+  // sob o cursor fixo na tela enquanto o zoom muda (não recentraliza),
+  // atualizando só o atributo viewBox do próprio SVG (sem refresh/rebuild)
+  // pra ficar suave rolando contínuo. preventDefault() também evita que a
+  // rolagem "vaze" pro scroll da janela modal atrás da planta.
+  const planSvgEl = lista.querySelector('#po-proj-dimview-plan-svg');
+  if (planSvgEl && plan) {
+    planSvgEl.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const VB = plan.VB;
+      const oldZoom = projectDimViewPlanZoom;
+      const factor = ev.deltaY < 0 ? 1.15 : 1 / 1.15;
+      const newZoom = Math.min(PROJECT_DIMVIEW_PLAN_ZOOM_MAX, Math.max(PROJECT_DIMVIEW_PLAN_ZOOM_MIN, oldZoom * factor));
+      if (newZoom === oldZoom) return;
+      const oldVbSize = VB / oldZoom;
+      const oldVbX = (VB - oldVbSize) / 2 + projectDimViewPlanPanX;
+      const oldVbY = (VB - oldVbSize) / 2 + projectDimViewPlanPanY;
+      const p = projectDimViewSvgPoint(planSvgEl, ev.clientX, ev.clientY);
+      const fx = (p.x - oldVbX) / oldVbSize;
+      const fy = (p.y - oldVbY) / oldVbSize;
+      const newVbSize = VB / newZoom;
+      let newVbX = p.x - fx * newVbSize;
+      let newVbY = p.y - fy * newVbSize;
+      // não deixa a planta "fugir" de vez da área útil quando dá zoom bem
+      // perto de uma quina e depois volta a diminuir o zoom
+      const minVb = -VB * 0.5, maxVb = VB * 1.5;
+      newVbX = Math.min(Math.max(newVbX, minVb), maxVb - newVbSize);
+      newVbY = Math.min(Math.max(newVbY, minVb), maxVb - newVbSize);
+      projectDimViewPlanZoom = newZoom;
+      projectDimViewPlanPanX = newVbX - (VB - newVbSize) / 2;
+      projectDimViewPlanPanY = newVbY - (VB - newVbSize) / 2;
+      planSvgEl.setAttribute('viewBox', newVbX.toFixed(1) + ' ' + newVbY.toFixed(1) + ' ' + newVbSize.toFixed(1) + ' ' + newVbSize.toFixed(1));
+    }, { passive: false });
   }
 
   const cotasBtn = lista.querySelector('#po-proj-dimview-cotas-btn');

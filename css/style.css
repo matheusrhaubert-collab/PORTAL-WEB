@@ -4093,7 +4093,9 @@ header.po-topnav {
 .po-dimview-modal-head {
   display: flex; align-items: center; justify-content: space-between; padding: 14px 16px;
   border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); z-index: 1;
+  cursor: grab; user-select: none;
 }
+.po-dimview-modal-head.arrastando { cursor: grabbing; }
 .po-dimview-modal-title { font-weight: 800; font-size: 14px; }
 .po-dimview-modal-close {
   border: none; background: transparent; font-size: 24px; line-height: 1; cursor: pointer;
