@@ -127,14 +127,24 @@ function openProjectImport2020Modal() {
   if (!modal) return;
   projectImport2020Result = null;
   const textEl = document.getElementById('po-proj-import2020-text');
-  if (textEl) textEl.value = '';
+  if (textEl) { textEl.value = ''; textEl.style.display = 'none'; }
   const reviewEl = document.getElementById('po-proj-import2020-review');
   if (reviewEl) { reviewEl.innerHTML = ''; reviewEl.style.display = 'none'; }
   const createBtn = document.getElementById('po-proj-import2020-create-btn');
   if (createBtn) createBtn.style.display = 'none';
+  // "Processar lista" só aparece no fluxo manual (colar texto) — no fluxo
+  // normal (anexar PDF) o processamento roda sozinho assim que o arquivo é
+  // lido, sem precisar de clique extra ("quote sozinho num clique").
   const processBtn = document.getElementById('po-proj-import2020-process-btn');
-  if (processBtn) { processBtn.style.display = ''; processBtn.disabled = false; }
-  if (textEl) textEl.style.display = '';
+  if (processBtn) { processBtn.style.display = 'none'; processBtn.disabled = false; }
+  const pdfInput = document.getElementById('po-proj-import2020-pdf-input');
+  if (pdfInput) pdfInput.value = '';
+  const pdfBtn = document.getElementById('po-proj-import2020-pdf-btn');
+  if (pdfBtn) pdfBtn.disabled = false;
+  const filenameEl = document.getElementById('po-proj-import2020-pdf-filename');
+  if (filenameEl) filenameEl.textContent = '';
+  const manualLink = document.getElementById('po-proj-import2020-manual-link');
+  if (manualLink) manualLink.parentElement.style.display = '';
   setProjectImport2020Error('');
   setProjectImport2020Status('');
   modal.classList.add('open');
@@ -157,6 +167,77 @@ function setProjectImport2020Status(msg) {
   if (!el) return;
   el.textContent = msg || '';
   el.style.display = msg ? 'block' : 'none';
+}
+
+// ---------- Passo 0: ler o PDF anexado (sem copiar/colar) ----------
+//
+// Pedido do Matt (2026-09-17, depois de ver a caixa de colar texto):
+// "quero importar o pdf ou o arquivo completo .kit". O .kit fica pra fase
+// futura (formato binário ainda não decodificado o suficiente pra contar
+// quantidade por peça com segurança — ver claude/importador-2020-crosswalk-
+// catalogo.md). O PDF dá pra ler direto no navegador com pdf.js (mesma
+// família de CDN que supabase-js/three.js já usados aqui), sem precisar de
+// nenhum passo manual de copiar/colar.
+//
+// pdf.js devolve os itens de texto da página com posição (x,y) solta, sem
+// juntar em linha — juntamos por Y (mesma linha) e ordenamos por X (ordem
+// de leitura esquerda→direita), igual um "pdftotext -layout" simplificado.
+function groupPdfTextItemsIntoLinesImport2020(items) {
+  const rows = [];
+  items.forEach((it) => {
+    const y = Math.round(it.transform[5]);
+    const x = it.transform[4];
+    let row = rows.find((r) => Math.abs(r.y - y) <= 2);
+    if (!row) { row = { y, parts: [] }; rows.push(row); }
+    row.parts.push({ x, str: it.str });
+  });
+  // Y do PDF cresce pra CIMA — maior Y primeiro é topo da página primeiro.
+  rows.sort((a, b) => b.y - a.y);
+  return rows
+    .map((r) => r.parts.sort((a, b) => a.x - b.x).map((p) => p.str).join(' ').replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 0);
+}
+
+async function extractProjectImport2020PdfText(file) {
+  if (typeof pdfjsLib === 'undefined') {
+    throw new Error(I18n.t('project_import2020.err_pdfjs_missing'));
+  }
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  }
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pageTexts = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    pageTexts.push(groupPdfTextItemsIntoLinesImport2020(content.items).join('\n'));
+  }
+  return pageTexts.join('\n');
+}
+
+async function runProjectImport2020PdfAttach(file) {
+  setProjectImport2020Error('');
+  const filenameEl = document.getElementById('po-proj-import2020-pdf-filename');
+  if (filenameEl) filenameEl.textContent = file.name;
+  const pdfBtn = document.getElementById('po-proj-import2020-pdf-btn');
+  if (pdfBtn) pdfBtn.disabled = true;
+  setProjectImport2020Status(I18n.t('project_import2020.status_extracting'));
+  try {
+    const text = await extractProjectImport2020PdfText(file);
+    const textEl = document.getElementById('po-proj-import2020-text');
+    if (textEl) textEl.value = text;
+    setProjectImport2020Status('');
+    // Fluxo "num clique": lido o PDF, já processa sozinho — não espera outro
+    // clique em "Processar lista" (esse botão só existe pro fluxo manual).
+    await runProjectImport2020Parse();
+  } catch (err) {
+    setProjectImport2020Status('');
+    console.error('[import2020] falha lendo PDF:', err); // detalhe técnico só no console — mensagem na tela vem do dicionário
+    setProjectImport2020Error(I18n.t('project_import2020.err_pdf_read'));
+  } finally {
+    if (pdfBtn) pdfBtn.disabled = false;
+  }
 }
 
 // ---------- Passo 1→2: processar o texto colado e mostrar a revisão ----------
@@ -188,10 +269,15 @@ async function runProjectImport2020Parse() {
       const createBtn = document.getElementById('po-proj-import2020-create-btn');
       if (createBtn) createBtn.style.display = '';
     }
-    // Já processou — esconde a caixa de texto e o botão "Processar" pra não
-    // confundir (evita reprocessar em cima da revisão sem querer).
+    // Já processou — esconde a caixa de texto, o botão "Processar" e o
+    // anexar/colar manual pra não confundir (evita reprocessar em cima da
+    // revisão sem querer).
     if (textEl) textEl.style.display = 'none';
     if (processBtn) processBtn.style.display = 'none';
+    const pdfRow = document.querySelector('.po-import2020-pdf-row');
+    if (pdfRow) pdfRow.style.display = 'none';
+    const manualLink = document.getElementById('po-proj-import2020-manual-link');
+    if (manualLink) manualLink.parentElement.style.display = 'none';
   } catch (err) {
     setProjectImport2020Error(err.message || String(err));
   } finally {
@@ -336,6 +422,33 @@ async function runProjectImport2020Build() {
 
   const createBtn = document.getElementById('po-proj-import2020-create-btn');
   if (createBtn) createBtn.addEventListener('click', runProjectImport2020Build);
+
+  // Anexar PDF (fluxo principal) — clicar no botão visível abre o <input
+  // type="file"> escondido; escolher o arquivo já dispara a leitura +
+  // processamento automático (runProjectImport2020PdfAttach).
+  const pdfBtn = document.getElementById('po-proj-import2020-pdf-btn');
+  const pdfInput = document.getElementById('po-proj-import2020-pdf-input');
+  if (pdfBtn && pdfInput) {
+    pdfBtn.addEventListener('click', () => pdfInput.click());
+    pdfInput.addEventListener('change', () => {
+      const file = pdfInput.files && pdfInput.files[0];
+      if (file) runProjectImport2020PdfAttach(file);
+    });
+  }
+
+  // "ou colar o texto manualmente" — fallback pra quando o Matt já tem o
+  // texto em mãos (ou o pdf.js não deu conta de um PDF fora do padrão).
+  const manualLink = document.getElementById('po-proj-import2020-manual-link');
+  if (manualLink) {
+    manualLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      const textEl = document.getElementById('po-proj-import2020-text');
+      const processBtnEl = document.getElementById('po-proj-import2020-process-btn');
+      if (textEl) { textEl.style.display = ''; textEl.focus(); }
+      if (processBtnEl) processBtnEl.style.display = '';
+      manualLink.parentElement.style.display = 'none';
+    });
+  }
 
   const modal = document.getElementById('po-proj-import2020-modal');
   if (modal) {
