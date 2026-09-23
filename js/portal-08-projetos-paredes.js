@@ -5585,6 +5585,23 @@ async function sendProjectToOrder() {
         sort_order: sortOrder++
       });
     }
+    // MÓDULOS ANTES DE PAINÉIS/PEÇAS SOLTAS (pedido do Matt, 23/09: "quero
+    // que os módulos sempre fiquem antes dos painéis e outras peças no
+    // pedido"). Não existe coluna "é painel" no cadastro, então a regra é
+    // estrutural, pelo breakdown do preço: módulo = 2+ peças fabricadas
+    // (caixa); painel, rodapé, prateleira avulsa etc. = 1 peça só. Sort
+    // ESTÁVEL — dentro de cada grupo continua a ordem do projeto. O
+    // sort_order é renumerado depois, e é ele que o pedido, a Proposta e o
+    // ERP (número do módulo na etiqueta) usam pra ordenar.
+    const pecasFabricadas = (bd) => (bd || []).reduce((n, pc) => {
+      if (!pc) return n;
+      if (pc.is_module) return n + pecasFabricadas(pc.child_breakdown) * (pc.quantity || 1);
+      return n + (pc.origin === 'comprado' ? 0 : (pc.quantity || 1));
+    }, 0);
+    payloads
+      .map((pl, i) => ({ pl, i, peca: pecasFabricadas(pl.breakdown) < 2 ? 1 : 0 }))
+      .sort((x, y) => (x.peca - y.peca) || (x.i - y.i))
+      .forEach((x, novo) => { x.pl.sort_order = novo; payloads[novo] = x.pl; });
     const { error: itemsError } = await supabaseClient.from('order_items').insert(payloads);
     if (itemsError) throw itemsError;
 
