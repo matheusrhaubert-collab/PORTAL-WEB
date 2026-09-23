@@ -824,6 +824,19 @@
       // [[flatbord_1c_ripa_pareamento]].
       pair_group_size: piece.pair_group_size || null,
       pair_physical_width_mm: piece.pair_physical_width_mm || null,
+      // Receita de fita do CADASTRO (migration 088/145: null/0/1/2/4 —
+      // null quando o componente ainda usa a fórmula antiga
+      // edge_band_linear_m_formula em vez da contagem por lados). Pedido do
+      // Matt (21/09): a etiqueta da peça precisa mostrar 0/2/4 "conforme
+      // cadastro", não só o metro linear calculado (edge_band_m abaixo) —
+      // antes esse número existia só como INPUT desta função (`piece.
+      // edge_banding`, usado em processLaborFor/edgeBandMeters) e nunca
+      // saía no breakdown. Viaja até LOTES.explodeOrders (erp/js/
+      // data-lotes.js), que hoje ZERA isso pra peça de módulo — ver o
+      // comentário lá sobre por que 1 nunca pode chegar em erp.batch_pieces
+      // (CHECK só aceita 0/2/4).
+      edge_banding: (piece.edge_banding === 0 || piece.edge_banding === 1 ||
+        piece.edge_banding === 2 || piece.edge_banding === 4) ? piece.edge_banding : null,
       is_module: false,
       quantity: qty,
       color_role_id: piece.color_role_id,

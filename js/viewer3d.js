@@ -1163,8 +1163,64 @@ const Viewer3D = (function () {
   // este `part.veio`). Ou seja: fazer `positioning` vencer aqui, só pros 3
   // papéis abaixo (nunca 'back' — Matt pediu explicitamente pra não mexer
   // no fundo), é seguro pro corte/preço — só muda o que aparece na TELA.
+  // EIXO FINO — 2026-09-22, 3ª RODADA DO MESMO PEDIDO (as duas de 11/09
+  // estão no comentário logo acima). Matt, com print de dois painéis lado a
+  // lado na mesma ilha — o largo com o veio deitado e o vizinho mais
+  // estreito com o veio em pé: "novamente o painel inverteu a textura pra
+  // vertical sendo um horizontal, eu solicitei a tempos atras que isso nunca
+  // poderia acontecer. se o painel e horizontal independente do seu tamanho
+  // ele deve ter a textura horizontal, memsa regra pro vertical pra todos
+  // paineis."
+  //
+  // As duas rodadas de 11/09 só cobriram a peça que TEM `positioning` (ou
+  // `veio`) cadastrado. A peça de painel que NÃO DECLARA NADA continuava
+  // caindo no `uM >= vM` de PAPEIS_VEIO_PELO_FORMATO — ou seja, ainda virava
+  // a textura sozinha ao cruzar largura/altura. É esse último buraco que
+  // esta função fecha: sem declaração nenhuma, o veio passa a sair do EIXO DA
+  // ESPESSURA (que é fixo no cadastro de todo painel/chapa — 19,5mm — e por
+  // isso NÃO muda quando a peça é esticada), nunca mais do lado maior.
+  //
+  //   espessura na ALTURA       -> peça deitada (prateleira/tampo/painel
+  //                                "Horizontal"): veio na LARGURA  -> true
+  //   espessura na LARGURA      -> peça em pé de canto (lateral/painel
+  //                                "Vertical"): veio na ALTURA     -> false
+  //   espessura na PROFUNDIDADE -> peça de frente pro cliente (painel "no
+  //                                Plano", rodapé, travessa): nenhum dos dois
+  //                                lados é "natural", e o FORMATO está
+  //                                proibido de opinar — fica DEITADA sempre.
+  //                                É a mesma regra que o Matt já tinha pedido
+  //                                pra rodapé/travessa em 2026-08-12, e é o
+  //                                que o painel vizinho (mais largo) mostra
+  //                                hoje na cena — os dois passam a bater.
+  //
+  // O FUNDO ('back') NÃO passa por aqui: continua deitando pelo lado longo,
+  // por limitação física da chapa, exatamente como ele mandou deixar ("essa
+  // funcao funciona so la no fundo dos modulos [...] mas la pode deixar como
+  // esta nao mexa. so corriga so paineis").
+  //
+  // Sem as três medidas na peça (não deveria acontecer, mas o 3D nunca
+  // quebra por dado faltando) devolve null e quem chama volta pro
+  // comportamento antigo.
+  function veioPeloEixoFino(part) {
+    const w = Number(part && part.width_mm) || 0;
+    const h = Number(part && part.height_mm) || 0;
+    const d = Number(part && part.depth_mm) || 0;
+    if (!(w > 0) || !(h > 0) || !(d > 0)) return null;
+    const fino = Math.min(w, h, d);
+    if (h === fino) return true;
+    if (w === fino) return false;
+    return true;
+  }
   function resolveGrainRotate(part, uM, vM, fallback) {
-    const veio = part && part.veio;
+    // `veio_declarado` (gravado por LayoutEngine.validar, ver
+    // js/layout-engine.js) é o veio COMO ESTÁ NO CADASTRO, guardado antes de
+    // `p.veio` ser sobrescrito pelo veio da MÁQUINA (lado longo manda quando
+    // o cadastro diz 'livre'). O desenho tem que ler o cadastro: sem isso a
+    // regra da chapa volta pela porta dos fundos e a peça gira a textura
+    // sozinha ao ser redimensionada — o mesmo sintoma, por outro caminho.
+    // Quem não passa pelo validar (o portal inteiro) não tem o campo e lê
+    // `part.veio` de sempre.
+    const veio = part && (part.veio_declarado != null ? part.veio_declarado : part.veio);
     const papel = (part && part.position_role) || 'other';
     // DIAGNÓSTICO (2026-09-11, mesmo padrão de window.__legnoDebugPick/
     // __legnoDebugHitbox) — liga no console com
@@ -1175,6 +1231,9 @@ const Viewer3D = (function () {
       console.log('[legno veio] ' + JSON.stringify({
         peca: (part && (part.reference || part.label)) || '?',
         papel, veio: veio || null, positioning: (part && part.positioning) || null,
+        veio_declarado: (part && part.veio_declarado) || null,
+        eixoFino: veioPeloEixoFino(part),
+        mm: part ? [part.width_mm, part.height_mm, part.depth_mm] : null,
         uM: Number(uM).toFixed(3), vM: Number(vM).toFixed(3)
       }));
     }
@@ -1184,7 +1243,15 @@ const Viewer3D = (function () {
     if (veio === 'horizontal') return true;
     if (veio === 'vertical') return false;
     const semVeioCadastrado = !veio || veio === 'livre';
-    if (PAPEIS_VEIO_PELO_FORMATO[papel] && semVeioCadastrado) return uM >= vM;
+    // FUNDO — Única peça que ainda deita pelo LADO LONGO (limitação física
+    // da chapa, pedido explícito do Matt pra não mexer).
+    if (papel === 'back' && semVeioCadastrado) return uM >= vM;
+    // TODO O RESTO que decide sozinho (free/other/baseboard — e portanto
+    // todo painel solto): NUNCA MAIS pelo tamanho, ver veioPeloEixoFino.
+    if (PAPEIS_VEIO_PELO_FORMATO[papel] && semVeioCadastrado) {
+      const porEixoFino = veioPeloEixoFino(part);
+      return porEixoFino === null ? (uM >= vM) : porEixoFino;
+    }
     return resolveRotateTexture(part && part.positioning, fallback);
   }
 

@@ -1493,6 +1493,15 @@
             + maq.comprimento + 'mm)') });
       }
 
+      // VEIO DO CADASTRO preservado pro DESENHO (2026-09-22). Daí pra baixo
+      // `p.veio` vira o veio da MÁQUINA — quando o cadastro diz 'livre', o
+      // lado longo manda — e é isso que plano de corte, preço e .ban
+      // precisam. O 3D precisa do contrário (o que está no CADASTRO), senão
+      // a peça vira a textura sozinha ao ser redimensionada; ver
+      // resolveGrainRotate em js/viewer3d.js. Grava UMA vez só: validar()
+      // roda de novo a cada edição e na 2ª vez `p.veio` já seria o valor da
+      // máquina.
+      if (p.veio_declarado === undefined) p.veio_declarado = p.veio || null;
       if (!chapa) { p.veio = lim.veio || null; return; }
       var exig = lim.veio || 'livre';
       if (exig === 'livre') {
