@@ -44,6 +44,8 @@
 // Num contorno fechado alguém tem que absorver a diferença — é a parede de
 // fechamento (a última), e o painel avisa. Arrastar canto continua
 // existindo, como ajuste grosseiro: mexe só nas duas paredes daquele canto.
+// Shift + arrastar um canto DESGRUDA (abre o contorno ali); soltar uma ponta
+// em cima de outra ponta EMENDA. São os dois únicos gestos de ligar/desligar.
 //
 // Entrada igual ao levantamento: comprimento + GIRO em relação à parede
 // anterior (a primeira tem ângulo absoluto). 193 9/16 → giro 90° →
@@ -507,17 +509,34 @@
   // lado do giro anterior (ou 90° pra dentro) — é como se desenha um
   // ambiente: uma parede puxa a outra. Contorno fechado não tem ponta: aí
   // nasce solta.
+  // Nasce na ponta LIVRE da parede SELECIONADA (Matt, 22/09: "como está
+  // laranja, eu acho que deveria conectar a nova parede nessa selecionada, e
+  // não em nenhuma outra"): selecionada é a última → cresce no fim; é a
+  // primeira → cresce no começo; está no meio (as duas pontas já têm vizinha)
+  // → cresce no fim do contorno.
   function adicionar() {
     const s = selecionada();
     if (!s) return adicionarSolta();
     const c = s.c;
     if (c.fechada) return adicionarSolta();
     const n = nParedes(c);
+    const comp = Math.max(1000, Math.min(3000, compDe(c, s.i)));
+    if (s.i === 0 && n > 1) {
+      // cresce no COMEÇO: a parede nova termina em v[0] (parede única, i=0 é
+      // também a última — aí cresce no fim, como sempre foi)
+      const a01 = anguloEntre(c.v[0], c.v[1]);
+      const giro = Math.sign(giroDe(c, 1) || -1) * 90;
+      const r = (a01 - giro) * Math.PI / 180;        // a parede 0 vira `giro` em relação à nova
+      c.v.unshift({ x: c.v[0].x - Math.cos(r) * comp, z: c.v[0].z + Math.sin(r) * comp });
+      c.paredes.unshift(propsPadrao(s.p));
+      estado.sel = { c: estado.sel.c, i: 0 };
+      desenha();
+      return;
+    }
     const ult = c.v[n], pen = c.v[n - 1];
     const angUlt = anguloEntre(pen, ult);
     let giro = -90;
     if (n >= 2) giro = Math.sign(giroDe(c, n - 1) || -1) * 90;
-    const comp = Math.max(1000, Math.min(3000, compDe(c, n - 1)));
     const r = (angUlt + giro) * Math.PI / 180;
     c.v.push({ x: ult.x + Math.cos(r) * comp, z: ult.z - Math.sin(r) * comp });
     c.paredes.push(propsPadrao(s.p));
@@ -853,9 +872,44 @@
   // JUNÇÃO — soltar a ponta de um contorno aberto em cima da ponta de outro
   // emenda os dois (o único "ligar pontos" que existe, e só quando é pedido).
   // Shift solta todos os ímãs.
+  // DESGRUDAR um canto (Matt, 22/09: "grudei sem querer nesse ponto, não tem
+  // como desgrudar"): Shift + arrastar o canto abre o contorno ali. Contorno
+  // fechado vira aberto com a abertura nesse canto; contorno aberto parte em
+  // dois. A ponta que vai com o mouse é a da parede SELECIONADA; a outra
+  // parede fica com a cópia do canto, parada. Devolve {ci, k} de quem arrasta.
+  function desgrudar(ci, k) {
+    const c = estado.cadeias[ci];
+    const n = c.v.length, np = nParedes(c);
+    const selI = estado.sel.c === ci ? estado.sel.i : null;
+    if (c.fechada) {
+      // reordena pra abertura ficar em k: paredes k..n-1, 0..k-1
+      const v = c.v.slice(k).concat(c.v.slice(0, k)).map((p) => ({ x: p.x, z: p.z }));
+      v.push({ x: c.v[k].x, z: c.v[k].z });                 // cópia do canto no fim
+      const paredes = c.paredes.slice(k).concat(c.paredes.slice(0, k));
+      c.v = v; c.paredes = paredes; c.fechada = false;
+      // parede que CHEGA em k era a k-1 (agora a última) → arrasta a ponta final;
+      // parede que SAI de k era a k (agora a primeira) → arrasta v[0]
+      const chega = selI != null && selI === (k - 1 + np) % np;
+      estado.sel = { c: ci, i: chega ? np - 1 : 0 };
+      return { ci, k: chega ? np : 0 };
+    }
+    if (k === 0 || k === n - 1) return { ci, k };             // já é ponta livre
+    const A = { fechada: false, v: c.v.slice(0, k + 1), paredes: c.paredes.slice(0, k) };
+    const B = { fechada: false, v: c.v.slice(k).map((p) => ({ x: p.x, z: p.z })), paredes: c.paredes.slice(k) };
+    estado.cadeias.splice(ci, 1, A, B);
+    const chega = selI == null || selI <= k - 1;              // selecionada estava antes do canto?
+    if (chega) { estado.sel = { c: ci, i: Math.max(0, k - 1) }; return { ci, k: A.v.length - 1 }; }
+    estado.sel = { c: ci + 1, i: 0 }; return { ci: ci + 1, k: 0 };
+  }
+
   function iniciaArrasteCanto(ev, ci, k) {
     ev.preventDefault();
     ev.stopPropagation();
+    if (ev.shiftKey) {
+      const r = desgrudar(ci, k);
+      ci = r.ci; k = r.k;
+      desenha();
+    }
     const c = estado.cadeias[ci];
     if (!c) return;
     const n = c.v.length;
