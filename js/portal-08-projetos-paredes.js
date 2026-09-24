@@ -5458,6 +5458,20 @@ async function sendProjectToOrder() {
     if (errorEl) { errorEl.textContent = I18n.t('project.send_to_order_empty'); errorEl.style.display = 'block'; }
     return;
   }
+  // PROJETO CONGELA NO ENVIO (migration 179, Matt 24/09: "uma vez que ele
+  // foi aprovado como pedido ele deve ficar congelado... se precisar
+  // alterar, deve duplicar"). Avisa antes, e exige o projeto SALVO e sem
+  // alteração pendente — o pedido tem que ser exatamente o projeto que fica
+  // congelado (é ele que o QR da etiqueta abre pro instalador).
+  if (!confirm(I18n.t('project.send_freeze_confirm'))) return;
+  if (!loadedProjectFavorite || !loadedProjectFavorite.id || projectDirty) {
+    await saveProjectFavorite(loadedProjectFavorite && loadedProjectFavorite.id ? loadedProjectFavorite.id : undefined);
+    if (!loadedProjectFavorite || !loadedProjectFavorite.id || projectDirty) {
+      if (errorEl) { errorEl.textContent = I18n.t('project.send_needs_save'); errorEl.style.display = 'block'; }
+      return;
+    }
+  }
+  const frozenProjectId = loadedProjectFavorite.id;
   const btn = document.getElementById('po-proj-send-to-order-btn');
   if (btn) btn.disabled = true;
   try {
@@ -5502,21 +5516,27 @@ async function sendProjectToOrder() {
         }
       } catch (e) { /* migration 153 ainda não rodou, ou grade vazia — Proposta cai pro campo antigo */ }
     }
-    const { data: order, error: orderError } = await supabaseClient
-      .from('orders')
-      .insert({
-        client_user_id: currentUser.id,
-        client_email: currentUser.email,
-        order_type: 'project',
-        status: 'submitted',
-        submitted_at: new Date().toISOString(),
-        wall_shape: projectWallShape,
-        wall_widths_mm: projectWallWidthsMm.slice(),
-        wall_segments: projectWallSegments.length ? projectWallSegments : null,
-        ...projectRenderFields
-      })
-      .select()
-      .single();
+    const orderPayload = {
+      client_user_id: currentUser.id,
+      client_email: currentUser.email,
+      order_type: 'project',
+      status: 'submitted',
+      submitted_at: new Date().toISOString(),
+      wall_shape: projectWallShape,
+      wall_widths_mm: projectWallWidthsMm.slice(),
+      wall_segments: projectWallSegments.length ? projectWallSegments : null,
+      // de qual projeto veio (migration 179) — QR da etiqueta de módulo
+      source_project_id: frozenProjectId,
+      ...projectRenderFields
+    };
+    let { data: order, error: orderError } = await supabaseClient
+      .from('orders').insert(orderPayload).select().single();
+    if (orderError && /source_project_id/.test(orderError.message || '')) {
+      // migration 179 ainda não rodou — envia sem a origem (etiqueta sai sem QR)
+      delete orderPayload.source_project_id;
+      ({ data: order, error: orderError } = await supabaseClient
+        .from('orders').insert(orderPayload).select().single());
+    }
     if (orderError) throw orderError;
 
     // Miniatura (pedido do usuário 2026-08-02: "nao veio os desenhos
@@ -5602,6 +5622,22 @@ async function sendProjectToOrder() {
       .forEach((x, novo) => { x.pl.sort_order = novo; payloads[novo] = x.pl; });
     const { error: itemsError } = await supabaseClient.from('order_items').insert(payloads);
     if (itemsError) throw itemsError;
+
+    // Congela o projeto (migration 179). Sem a migration, a coluna não
+    // existe e o update falha — o pedido já foi, então só registra.
+    try {
+      const { error: freezeErr } = await supabaseClient.from('user_projects')
+        .update({ frozen_order_id: order.id, frozen_at: new Date().toISOString() })
+        .eq('id', frozenProjectId).select('id');
+      if (freezeErr) console.warn('[pedido] não congelou o projeto (migration 179 rodou?):', freezeErr.message);
+    } catch (e) { console.warn('[pedido] não congelou o projeto:', e); }
+    // O editor solta o projeto congelado: o que ficou na tela vira rascunho
+    // SEM vínculo — salvar de novo cria um projeto NOVO (= duplicar), nunca
+    // mexe no que foi pedido.
+    loadedProjectFavorite = null;
+    projectDirty = false;
+    if (typeof refreshProjectFavoriteButtons === 'function') refreshProjectFavoriteButtons();
+    if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
 
     myOrdersLoaded = false; // força "Meus Pedidos" recarregar na próxima vez que a lista aparecer
 

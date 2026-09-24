@@ -381,7 +381,7 @@ async function loadProjectFavoritesList() {
   // caem no recálculo em background de antes; sem wall_segments o projeto
   // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
   const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
-  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id'];
   let optional = OPTIONAL_COLS.slice();
   const runSelect = () => supabaseClient
     .from('user_projects')
@@ -442,10 +442,36 @@ async function loadProjectFavoritesList() {
       </div>
     `;
     card.querySelector('.po-myproj-card-name').textContent = proj.name; // textContent: nome é texto livre do cliente
+    // PROJETO CONGELADO (migration 179): já virou pedido — não abre no
+    // editor nem apaga. "Ver" abre o link 3D só-leitura; pra alterar, Duplicar
+    // (a cópia nasce sem frozen_order_id, editável).
+    if (proj.frozen_order_id) {
+      card.classList.add('po-myproj-card-frozen');
+      const badge = document.createElement('div');
+      badge.className = 'po-myproj-card-frozen-badge';
+      badge.textContent = I18n.t('fav.frozen_badge');
+      card.querySelector('.po-myproj-card-name').after(badge);
+      const loadBtn = card.querySelector('.po-proj-fav-load');
+      loadBtn.textContent = I18n.t('fav.frozen_view_btn');
+      loadBtn.classList.add('po-proj-fav-frozen-view');
+      loadBtn.classList.remove('po-proj-fav-load');
+      loadBtn.addEventListener('click', async () => {
+        const win = window.open('', '_blank'); // abre no clique (bloqueador de pop-up)
+        try {
+          const { link } = await generateOrGetView3DLink(proj);
+          if (win) win.location.href = link; else window.location.href = link;
+        } catch (err) {
+          if (win) win.close();
+          errorEl.textContent = err.message || String(err); errorEl.style.display = 'block';
+        }
+      });
+      card.querySelector('.po-proj-fav-delete').remove();
+    }
     card.querySelectorAll('.po-myproj-card-image').forEach((img) => {
       img.addEventListener('click', () => openGalleryLightbox(img.src));
     });
-    card.querySelector('.po-proj-fav-load').addEventListener('click', () => restoreFavoriteProject(proj));
+    const loadBtnNormal = card.querySelector('.po-proj-fav-load');
+    if (loadBtnNormal) loadBtnNormal.addEventListener('click', () => restoreFavoriteProject(proj));
     card.querySelector('.po-proj-fav-share').addEventListener('click', () => shareProjectFavorite(proj));
     card.querySelector('.po-proj-fav-view3d').addEventListener('click', () => view3DFavoriteProject(proj));
     card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
@@ -465,7 +491,7 @@ async function loadProjectFavoritesList() {
       if (loadedProjectFavorite && loadedProjectFavorite.id === proj.id) { loadedProjectFavorite.name = newName; refreshProjectFavoriteButtons(); }
       loadProjectFavoritesList();
     });
-    card.querySelector('.po-proj-fav-delete').addEventListener('click', async () => {
+    if (card.querySelector('.po-proj-fav-delete')) card.querySelector('.po-proj-fav-delete').addEventListener('click', async () => {
       if (!confirm(I18n.t('project.delete_confirm', { name: proj.name }))) return;
       const { error: delErr } = await supabaseClient.from('user_projects').delete().eq('id', proj.id);
       if (delErr) { errorEl.textContent = delErr.message; errorEl.style.display = 'block'; return; }
@@ -769,6 +795,9 @@ async function maybeOpenSharedProjectImport() {
 // de swatch inline (renderProjectConfigPanel) — a Composição não tem esse
 // painel inline, só o configurador completo, então não precisa disso.
 async function restoreFavoriteProject(fav, bindAsFavorite = true) {
+  // projeto congelado (migration 179) nunca vira o projeto "em edição" —
+  // se chegar aqui por algum caminho, abre como rascunho sem vínculo
+  if (fav && fav.frozen_order_id) bindAsFavorite = false;
   const errorEl = document.getElementById('po-proj-fav-error') || document.getElementById('po-proj-error');
   if (errorEl) errorEl.style.display = 'none';
   try {
@@ -2012,6 +2041,12 @@ async function bootView3DGuestView(code) {
   // Canto, então basta a camada já estar no conjunto de ocultas.
   if (typeof projectHiddenLayers !== 'undefined' && typeof PROJECT_LAYER_WALLS !== 'undefined') projectHiddenLayers.add(PROJECT_LAYER_WALLS);
   document.body.classList.add('po-view3d-guest');
+  // LINHA GROSSA por padrão no link público (Matt, 24/09: "deixa por padrão
+  // estilo de linha mais grossa pra ver melhor") — direto no Viewer3D, sem
+  // gravar no localStorage (não muda a preferência de quem usa o portal
+  // no mesmo navegador). Precisa ser antes da 1ª montagem da cena.
+  try { if (typeof Viewer3D !== 'undefined' && Viewer3D.setDrawStyle) Viewer3D.setDrawStyle({ textura: true, contorno: 'grosso', face: 'solido' }); if (typeof pintaBotaoEstilo === 'function') pintaBotaoEstilo('textura_grossas'); } catch (e) { /* segue no padrão */ }
+  attachView3DGuestFit();
   const contentEl = document.getElementById('po-content');
   if (contentEl) contentEl.style.display = 'block';
   const errorEl = document.getElementById('po-view3d-guest-error');
@@ -2040,6 +2075,9 @@ async function bootView3DGuestView(code) {
     // usado hoje por foto realista/exportação AR) que não estava dando conta
     // de layouts com mais de uma parede direito.
     renderView3DGuestHeader(source.name);
+    // white label (Matt, 24/09): a aba do navegador do visitante mostra só o
+    // nome do projeto — nada de marca
+    document.title = source.name || '3D';
     attachView3DLocatePiece(code);
     simplifyToolbarForGuestView();
   } catch (err) {
@@ -2052,7 +2090,7 @@ async function bootView3DGuestView(code) {
     // "o link abre estranho e depois de clicar em algum botão lá em cima
     // ele fica visualmente melhor"). Um resize depois de o layout assentar
     // faz o ViewerProjectEdit (onResize) reler o tamanho real.
-    const remedir = () => { try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ } };
+    const remedir = () => { fitView3DGuestCanvas(); try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ } };
     requestAnimationFrame(remedir);
     setTimeout(remedir, 250);
     // Ainda abria em meia tela até clicar numa vista (Matt, 24/09) — o clique
@@ -2298,6 +2336,9 @@ function openView3DPieceInExplodedModule(slot, obj) {
   if (typeof openProjectSlotPieces !== 'function') return false;
   const pieceId = obj && obj.userData ? obj.userData.pieceId : null;
   openProjectSlotPieces(slot.id);
+  // celular: o desenho do módulo só ganha tamanho depois que o modal empilha
+  // (3D em cima, lista embaixo) — um resize faz o viewer do modal remedir
+  [80, 300].forEach((ms) => setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ } }, ms));
   if (pieceId != null && typeof blinkProjectSlotPieceInViewer === 'function') {
     // o assembly explodido é montado no openProjectSlotPieces; um tique
     // depois pra garantir que a cena do modal já existe
@@ -2320,7 +2361,29 @@ async function locateView3DModule(viewCode, numero, setStatus) {
     setStatus(I18n.t('view3d.locate_error'), 'err');
     return;
   }
-  const num = String(numero).padStart(3, '0');
+  showView3DModuleRows(rows, String(numero).padStart(3, '0'), setStatus);
+}
+
+// ?item=<order_item id> — QR da etiqueta de módulo (migration 179): o item
+// EXATO do pedido, sem a ambiguidade do número entre pedidos do mesmo dono.
+async function locateView3DModuleByItem(viewCode, itemId, setStatus) {
+  let rows;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_view3d_module_by_item', { p_code: viewCode, p_item_id: itemId });
+    if (error) throw error;
+    rows = Array.isArray(data) ? data : (data ? [data] : []);
+  } catch (err) {
+    console.error('[view3d] localizar módulo (item):', err);
+    setStatus(I18n.t('view3d.locate_error'), 'err');
+    return;
+  }
+  const num = rows[0] && rows[0].module_number ? String(rows[0].module_number).padStart(3, '0') : '—';
+  const input = document.getElementById('po-view3d-locate-input');
+  if (input && rows[0] && rows[0].module_number) input.value = num;
+  showView3DModuleRows(rows, num, setStatus);
+}
+
+function showView3DModuleRows(rows, num, setStatus) {
   if (!rows.length) { setStatus(I18n.t('view3d.locate_module_not_found', { num }), 'err'); return; }
   // pode haver o mesmo número em 2 pedidos do dono — fica com o 1º cujo
   // módulo existe neste projeto
@@ -2335,6 +2398,177 @@ async function locateView3DModule(viewCode, numero, setStatus) {
   const wh = Math.round(row.item_w_mm) + '×' + Math.round(row.item_h_mm) + '×' + Math.round(row.item_d_mm);
   setStatus(I18n.t('view3d.locate_module_found', { num, module: row.module_name || '', dims: wh }) +
     (groups.length > 1 ? ' — ' + I18n.t('view3d.locate_equal_modules', { n: groups.length }) : ''), 'ok');
+  // Vista 2D da parede com cotas, junto do 3D (Matt, 24/09: "os dois na
+  // mesma página") — abre sozinha ao localizar.
+  view3DWallSlot = slots[0];
+  openView3DWallPanel(slots[0], num);
+}
+
+// ==========================================================================
+// VISTA DA PAREDE (2D) — instalador (24/09). Metade de baixo da tela:
+// elevação da parede do módulo, vista de DENTRO do ambiente, com todos os
+// módulos daquela parede numerados como a etiqueta, o módulo procurado em
+// laranja e as cotas dele até as paredes dos lados e até o chão. O 3D
+// continua em cima, piscando o mesmo módulo. Botão no cabeçalho alterna.
+// Posições = os MESMOS campos que o painel de medidas usa (x_mm/
+// floor_height_mm/projectWallSlotXBoundsMm) — nunca diverge do 3D.
+// ==========================================================================
+let view3DWallSlot = null;
+
+// TUDO DENTRO DA TELA DO CELULAR (Matt, 24/09: "ao abrir no celular o
+// ambiente tem muita altura, e confunde... tudo deve ficar dentro da tela de
+// um celular"). O CSS dava 96vh fixo pro 3D, MAIS o cabeçalho e a barra em
+// cima — no celular passava da tela e a página rolava junto com o gesto.
+// Aqui a altura é a que SOBRA de verdade: da borda de cima do 3D até o fim
+// da tela (ou até a vista da parede, quando ela está aberta).
+function fitView3DGuestCanvas() {
+  if (!document.body.classList.contains('po-view3d-guest')) return;
+  const el = document.getElementById('po-proj-canvas-3d-edit');
+  if (!el) return;
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const topo = el.getBoundingClientRect().top + (window.scrollY || 0);
+  const parede = document.body.classList.contains('po-view3d-wall-open');
+  const fim = parede ? vh * 0.52 : vh;
+  const h = Math.max(220, Math.floor(fim - topo - 6));
+  el.style.setProperty('height', h + 'px', 'important');
+}
+let view3DGuestFitTimer = null;
+function attachView3DGuestFit() {
+  if (window.__view3DGuestFit) return;
+  window.__view3DGuestFit = true;
+  const agenda = () => {
+    clearTimeout(view3DGuestFitTimer);
+    view3DGuestFitTimer = setTimeout(() => {
+      const el = document.getElementById('po-proj-canvas-3d-edit');
+      const antes = el ? el.style.height : '';
+      fitView3DGuestCanvas();
+      // só avisa o viewer se a altura mudou (evita laço resize -> resize)
+      if (el && el.style.height !== antes) { try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ } }
+    }, 120);
+  };
+  window.addEventListener('resize', agenda);
+  window.addEventListener('orientationchange', agenda);
+}
+let view3DWallNum = '';
+
+function view3DWallFmt(mm) {
+  const polegada = `${formatDimensionNumber(mm, 'in')}"`;
+  return `${polegada} (${Math.round(mm)} mm)`;
+}
+
+function openView3DWallPanel(slot, num) {
+  if (!slot) return;
+  view3DWallSlot = slot;
+  if (num) view3DWallNum = num;
+  let panel = document.getElementById('po-view3d-guest-wall');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'po-view3d-guest-wall';
+    panel.className = 'po-view3d-guest-wall';
+    document.body.appendChild(panel);
+  }
+  const wallBtn = document.getElementById('po-view3d-wall-toggle-btn');
+  if (wallBtn) { wallBtn.style.display = ''; wallBtn.textContent = I18n.t('view3d.wall_btn_hide'); }
+  document.body.classList.add('po-view3d-wall-open');
+  panel.style.display = 'flex';
+  const fechar = `<button type="button" class="po-view3d-panel-close" title="${I18n.t('view3d.close')}" onclick="window.closeView3DWallPanel && window.closeView3DWallPanel()">&times;</button>`;
+  if (isFloorSlot(slot)) {
+    panel.innerHTML = `<div class="po-view3d-panel-head"><h3>${I18n.t('view3d.wall_title_floor', { num: view3DWallNum })}</h3>${fechar}</div>` +
+      `<p class="hint">${I18n.t('view3d.wall_floor_hint')}</p>`;
+    return;
+  }
+  const wi = Number(slot.wall_index || 0);
+  panel.innerHTML = `<div class="po-view3d-panel-head"><h3>${I18n.t('view3d.wall_title', { wall: wi + 1, num: view3DWallNum })}</h3>${fechar}</div>` +
+    `<div class="po-view3d-wall-hint">${I18n.t('view3d.wall_hint')}</div>` +
+    `<div class="po-view3d-wall-svg">${buildView3DWallSvg(slot)}</div>`;
+  // redimensiona o 3D pra metade de cima
+  fitView3DGuestCanvas();
+  try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ }
+}
+
+window.closeView3DWallPanel = function () {
+  const panel = document.getElementById('po-view3d-guest-wall');
+  if (panel) panel.style.display = 'none';
+  document.body.classList.remove('po-view3d-wall-open');
+  const wallBtn = document.getElementById('po-view3d-wall-toggle-btn');
+  if (wallBtn) wallBtn.textContent = I18n.t('view3d.wall_btn_show');
+  fitView3DGuestCanvas();
+  try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ }
+};
+
+function buildView3DWallSvg(alvo) {
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const wi = Number(alvo.wall_index || 0);
+  const W = getProjectWallWidthMm(wi);
+  const recuo = (typeof projectWallCornerInsetMm === 'function') ? projectWallCornerInsetMm(wi) : { ini: 0, fim: 0 };
+  const xIni = recuo.ini, xFim = W - recuo.fim;
+  const naParede = (projectSlots || []).filter((s) => !isFloorSlot(s) && Number(s.wall_index || 0) === wi && !(s.module && s.module.visual_only));
+  const topo = naParede.reduce((m, s) => Math.max(m, Number(s.floor_height_mm || 0) + Number(s.height_mm || 0)), 0);
+  const tetoCfg = (typeof roomSettings !== 'undefined' && roomSettings && Number(roomSettings.ceiling_mm)) || 0;
+  const H = Math.max(tetoCfg || 2440, topo + 100);
+  const numero = {};
+  ((typeof projectSlotsOrderSequence === 'function') ? projectSlotsOrderSequence() : []).forEach((x) => { numero[x.slot.id] = String(x.numero).padStart(3, '0'); });
+
+  const escala = Math.max(W, H);
+  const fs = Math.max(55, escala / 38);           // fonte (mm do desenho)
+  const padL = fs * 5.5, padR = fs * 1.5, padT = fs * 2.2, padB = fs * 5.2;
+  const vbW = W + padL + padR, vbH = H + padT + padB;
+  const X = (mm) => padL + mm;
+  const Y = (mm) => padT + (H - mm);             // chão embaixo
+  const sw = escala / 600;
+  let g = '';
+  // parede + chão
+  g += `<rect x="${X(0)}" y="${Y(H)}" width="${W}" height="${H}" fill="#f7f4ee" stroke="#b9b2a5" stroke-width="${sw}"/>`;
+  g += `<line x1="${X(-fs)}" y1="${Y(0)}" x2="${X(W + fs)}" y2="${Y(0)}" stroke="#4a443a" stroke-width="${sw * 3}"/>`;
+  if (recuo.ini > 0) g += `<rect x="${X(0)}" y="${Y(H)}" width="${recuo.ini}" height="${H}" fill="#d9d3c7"/>`;
+  if (recuo.fim > 0) g += `<rect x="${X(W - recuo.fim)}" y="${Y(H)}" width="${recuo.fim}" height="${H}" fill="#d9d3c7"/>`;
+  // módulos (alvo por último, por cima)
+  const ordem = naParede.filter((s) => s !== alvo).concat(naParede.includes(alvo) ? [alvo] : []);
+  ordem.forEach((s) => {
+    const x0 = Number(s.x_mm || 0), y0 = Number(s.floor_height_mm || 0);
+    const w = Number(s.width_mm || 0), h = Number(s.height_mm || 0);
+    const ehAlvo = s === alvo;
+    g += `<rect x="${X(x0)}" y="${Y(y0 + h)}" width="${w}" height="${h}" fill="${ehAlvo ? '#f2a23a' : '#e4dfd6'}" stroke="${ehAlvo ? '#5a2d0c' : '#8f887b'}" stroke-width="${ehAlvo ? sw * 4 : sw * 1.5}"/>`;
+    const n = numero[s.id];
+    if (n) {
+      const f = Math.min(ehAlvo ? fs * 1.9 : fs * 1.2, w * 0.42, h * 0.5);
+      g += `<text x="${X(x0 + w / 2)}" y="${Y(y0 + h / 2) + f * 0.35}" font-size="${f}" font-weight="${ehAlvo ? 900 : 700}" text-anchor="middle" fill="${ehAlvo ? '#3a1d05' : '#6b665c'}">${n}</text>`;
+    }
+  });
+  // cotas do alvo
+  const ax0 = Number(alvo.x_mm || 0), aw = Number(alvo.width_mm || 0);
+  const ay0 = Number(alvo.floor_height_mm || 0), ah = Number(alvo.height_mm || 0);
+  const cor = '#b3261e';
+  const tick = fs * 0.35;
+  const cotaH = (a, b, y, txt) => {
+    if (b - a < 1) return '';
+    return `<line x1="${X(a)}" y1="${y}" x2="${X(b)}" y2="${y}" stroke="${cor}" stroke-width="${sw * 1.6}"/>` +
+      `<line x1="${X(a)}" y1="${y - tick}" x2="${X(a)}" y2="${y + tick}" stroke="${cor}" stroke-width="${sw * 1.6}"/>` +
+      `<line x1="${X(b)}" y1="${y - tick}" x2="${X(b)}" y2="${y + tick}" stroke="${cor}" stroke-width="${sw * 1.6}"/>` +
+      `<text x="${X((a + b) / 2)}" y="${y - fs * 0.35}" font-size="${fs * 0.95}" font-weight="700" text-anchor="middle" fill="${cor}" stroke="#fff" stroke-width="${fs * 0.22}" paint-order="stroke">${esc(txt)}</text>`;
+  };
+  const cotaV = (a, b, x, txt) => {
+    if (b - a < 1) return '';
+    const ym = (Y(a) + Y(b)) / 2;
+    return `<line x1="${x}" y1="${Y(a)}" x2="${x}" y2="${Y(b)}" stroke="${cor}" stroke-width="${sw * 1.6}"/>` +
+      `<line x1="${x - tick}" y1="${Y(a)}" x2="${x + tick}" y2="${Y(a)}" stroke="${cor}" stroke-width="${sw * 1.6}"/>` +
+      `<line x1="${x - tick}" y1="${Y(b)}" x2="${x + tick}" y2="${Y(b)}" stroke="${cor}" stroke-width="${sw * 1.6}"/>` +
+      `<text x="${x - fs * 0.4}" y="${ym}" font-size="${fs * 0.95}" font-weight="700" text-anchor="middle" fill="${cor}" stroke="#fff" stroke-width="${fs * 0.22}" paint-order="stroke" transform="rotate(-90 ${x - fs * 0.4} ${ym})">${esc(txt)}</text>`;
+  };
+  // linhas de chamada do alvo até as cotas de baixo
+  const yC1 = Y(0) + fs * 1.8, yC2 = Y(0) + fs * 3.9;
+  g += `<line x1="${X(ax0)}" y1="${Y(ay0)}" x2="${X(ax0)}" y2="${yC2 + tick}" stroke="${cor}" stroke-width="${sw}" stroke-dasharray="${fs * 0.3} ${fs * 0.2}"/>`;
+  g += `<line x1="${X(ax0 + aw)}" y1="${Y(ay0)}" x2="${X(ax0 + aw)}" y2="${yC2 + tick}" stroke="${cor}" stroke-width="${sw}" stroke-dasharray="${fs * 0.3} ${fs * 0.2}"/>`;
+  g += cotaH(xIni, ax0, yC1, view3DWallFmt(ax0 - xIni));
+  g += cotaH(ax0 + aw, xFim, yC1, view3DWallFmt(xFim - ax0 - aw));
+  g += cotaH(ax0, ax0 + aw, yC2, view3DWallFmt(aw));
+  // altura: do chão até a base do alvo, e a altura dele
+  const xV1 = X(0) - fs * 1.4, xV2 = X(0) - fs * 3.6;
+  g += `<line x1="${X(ax0)}" y1="${Y(ay0 + ah)}" x2="${xV2 - tick}" y2="${Y(ay0 + ah)}" stroke="${cor}" stroke-width="${sw}" stroke-dasharray="${fs * 0.3} ${fs * 0.2}"/>`;
+  if (ay0 > 0) g += `<line x1="${X(ax0)}" y1="${Y(ay0)}" x2="${xV1 - tick}" y2="${Y(ay0)}" stroke="${cor}" stroke-width="${sw}" stroke-dasharray="${fs * 0.3} ${fs * 0.2}"/>`;
+  g += cotaV(0, ay0, xV1, view3DWallFmt(ay0));
+  g += cotaV(ay0, ay0 + ah, xV2, view3DWallFmt(ah));
+  return `<svg viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,'Segoe UI',Arial,sans-serif">${g}</svg>`;
 }
 
 function stopView3DLocateBlink() {
@@ -2367,7 +2601,14 @@ function frameView3DObjects(objs, group) {
     const c = box.getCenter(new THREE.Vector3());
     const dir = new THREE.Vector3(0.35, 0.45, 1);
     if (group) { group.updateWorldMatrix(true, false); dir.applyQuaternion(group.getWorldQuaternion(new THREE.Quaternion())); }
-    ViewerProjectEdit.frameDirection({ x: dir.x, y: dir.y, z: dir.z }, { x: c.x, y: c.y, z: c.z }, 2.5);
+    // celular em pé: tela estreita corta o módulo nas laterais — afasta a
+    // câmera na proporção (e um pouco pelo tamanho do alvo)
+    const cv = document.getElementById('po-proj-canvas-3d-edit');
+    const aspecto = cv && cv.clientHeight ? cv.clientWidth / cv.clientHeight : 1.6;
+    const tam = box.getSize(new THREE.Vector3());
+    const base = Math.max(2.2, Math.max(tam.x, tam.y, tam.z) * 2.2);
+    const dist = base * Math.max(1, 1.25 / aspecto);
+    ViewerProjectEdit.frameDirection({ x: dir.x, y: dir.y, z: dir.z }, { x: c.x, y: c.y, z: c.z }, dist);
   } catch (e) { /* enquadrar é cortesia; o pisca-pisca já mostra a peça */ }
 }
 
@@ -2440,8 +2681,34 @@ function attachView3DLocatePiece(viewCode) {
     locateView3DPiece(viewCode, input.value);
   });
   // ?peca=PC-002297 na URL já localiza ao abrir (dá pra gerar link direto da etiqueta)
-  const pre = new URLSearchParams(window.location.search).get('peca');
+  const qs = new URLSearchParams(window.location.search);
+  const pre = qs.get('peca');
+  // ?item=<order_item id> (QR da etiqueta de módulo) / ?mod=032 — já abre no módulo
+  const item = qs.get('item');
+  const mod = qs.get('mod');
   if (pre) { input.value = pre; locateView3DPiece(viewCode, pre); }
+  else if (item) {
+    const statusEl = document.getElementById('po-view3d-locate-status');
+    const setStatus = (txt, cls) => { if (statusEl) { statusEl.textContent = txt; statusEl.className = 'po-view3d-locate-status' + (cls ? ' ' + cls : ''); } };
+    setStatus(I18n.t('view3d.locate_searching'), '');
+    // a cena termina de assentar ~400ms depois do boot (ver bootView3DGuestView)
+    setTimeout(() => locateView3DModuleByItem(viewCode, item, setStatus), 700);
+  } else if (mod) { input.value = mod; setTimeout(() => locateView3DPiece(viewCode, mod), 700); }
+  // botão da vista da parede (aparece depois de localizar um módulo)
+  const header = document.getElementById('po-view3d-guest-header');
+  if (header && !document.getElementById('po-view3d-wall-toggle-btn')) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'po-view3d-wall-toggle-btn';
+    b.className = 'secondary po-view3d-measurements-toggle-btn';
+    b.style.display = 'none';
+    b.textContent = I18n.t('view3d.wall_btn_show');
+    b.addEventListener('click', () => {
+      if (document.body.classList.contains('po-view3d-wall-open')) window.closeView3DWallPanel();
+      else openView3DWallPanel(view3DWallSlot);
+    });
+    header.insertBefore(b, document.getElementById('po-view3d-items-toggle-btn'));
+  }
 }
 
 // Lista de medidas (montador: "preciso saber medida, nao so olhar") —
