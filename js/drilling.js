@@ -537,6 +537,70 @@
     }
   }
 
+  // LADO DA DOBRADIÇA de uma peça, valendo pra PEÇA-MÓDULO também
+  // (2026-09-24, Matt, 1º lote real: "nenhum módulo até agora puxou furação
+  // das portas... foram construídos com o construtor de armário"). Toda
+  // porta do Construtor é um MODELO de porta (Flat/Shaker..., migration
+  // 103/132) = módulo invisível usado como peça aninhada; a linha que
+  // LayoutEngine.toPieceRows monta pra ela (is_module:true) só carrega
+  // opening_type ('hinge_left'/'hinge_right'), nunca hinge_side — é a
+  // mesma regra que viewer3d.resolveHingeSide e pricing.calculateModulePiece
+  // já usam pra peça-módulo. Aqui a furação lia SÓ hinge_side, então nem o
+  // copo na porta nem a base na lateral existiam pra porta de modelo.
+  function hingeSideOf(part) {
+    if (!part) return null;
+    if (part.hinge_side === 'left' || part.hinge_side === 'right') return part.hinge_side;
+    if (part.is_module) {
+      if (part.opening_type === 'hinge_left') return 'left';
+      if (part.opening_type === 'hinge_right') return 'right';
+    }
+    return null;
+  }
+
+  // COPO + MARCAÇÕES DE DOBRADIÇA NUMA PORTA DE MODELO (peça-módulo). A
+  // porta inteira é o módulo (W×H no frame dele); a posição do copo é a
+  // MESMA conta de collectHingeHoles (22mm da borda do lado da dobradiça,
+  // margem de 100mm nas pontas, N copos por altura). O furo cai na PEÇA DO
+  // MODELO que está naquele ponto — no Flat é o painel único, no Shaker é
+  // o montante (a chapa mais grossa/na frente naquele XY). Só peças com a
+  // espessura no Z do módulo (chapa de frente) contam.
+  function collectHingeHolesModulo(store, part, settings) {
+    if (!settings || !settings.hinge_enabled) return;
+    const side = hingeSideOf(part);
+    if (!side || !part.is_module || !part.child_pieces || !part.child_pieces.length) return;
+    const W = part.width_mm || 0, H = part.height_mm || 0, D = part.depth_mm || 0;
+    const chapas = buildBoxes(part.child_pieces, W, H, D).boxes
+      .concat(boxesAninhadas(part.child_pieces, W, H, D))
+      .filter(function (b) { return b.tAxis === 'z'; });
+    if (!chapas.length) return;
+    const count = hingeCount(H);
+    const margin = Number(settings.hinge_edge_margin_mm) || 100;
+    const cupFromEdge = Number(settings.hinge_cup_center_from_edge_mm) || 22;
+    const markFromEdge = Number(settings.hinge_mark_center_from_edge_mm) || 28;
+    const markOffset = Number(settings.hinge_mark_offset_mm) || 24;
+    const lowV = margin;
+    const highV = Math.max(H - margin, margin);
+    const u = side === 'left' ? cupFromEdge : W - cupFromEdge;
+    const uMark = side === 'left' ? markFromEdge : W - markFromEdge;
+    const furar = function (x, y, diameter, depth, tipo) {
+      let alvo = null;
+      chapas.forEach(function (b) {
+        if (x < b.x0 - 0.01 || x > b.x0 + b.sx + 0.01 || y < b.y0 - 0.01 || y > b.y0 + b.sy + 0.01) return;
+        // mais grossa primeiro (montante ganha do painel rebaixado); empate: a da frente
+        if (!alvo || b.sz > alvo.sz + 0.01 || (Math.abs(b.sz - alvo.sz) <= 0.01 && b.z0 > alvo.z0)) alvo = b;
+      });
+      if (!alvo) return;
+      emitLocalHole(store, alvo, { u: x - alvo.x0, v: y - alvo.y0, edge: null, face: 'face', diameter: diameter, depth: depth, tipo: tipo });
+    };
+    for (let i = 0; i < count; i++) {
+      const v = count > 1 ? lowV + (highV - lowV) * (i / (count - 1)) : H / 2;
+      furar(u, v, Number(settings.hinge_cup_diameter_mm) || 35, Number(settings.hinge_cup_depth_mm) || 13, 'copo_dobradica');
+      [-markOffset, markOffset].forEach(function (dm) {
+        furar(uMark, v + dm, Number(settings.hinge_mark_diameter_mm) || 3, Number(settings.hinge_mark_depth_mm) || 2, 'marcacao_dobradica');
+      });
+    }
+  }
+
   function hingeCount(doorHeightMm) {
     return (typeof Pricing !== 'undefined' && Pricing.hingeCountForDoorHeight)
       ? Pricing.hingeCountForDoorHeight(doorHeightMm)
@@ -845,13 +909,14 @@
         const x0 = cursorX + (part.offset_x_mm || 0);
         // 'top'/'bottom' (basculante) não usa base de dobradiça de embutir
         // — ver collectHingeHoles acima pro mesmo motivo.
-        if (part.hinge_side === 'left' || part.hinge_side === 'right') {
-          doors.push({ part, x0, y0: part.offset_y_mm || 0, doorW: t.faceA, doorH: t.faceB });
+        if (hingeSideOf(part)) {
+          doors.push({ part, side: hingeSideOf(part), x0, y0: part.offset_y_mm || 0, doorW: t.faceA, doorH: t.faceB });
         }
         cursorX += t.faceA + 2;
-      } else if (role === 'free' && (part.hinge_side === 'left' || part.hinge_side === 'right')) {
+      } else if (role === 'free' && hingeSideOf(part)) {
+        // inclui a PORTA DE MODELO (peça-módulo do Construtor, ver hingeSideOf)
         doors.push({
-          part,
+          part, side: hingeSideOf(part),
           x0: part.offset_x_mm || 0, y0: part.offset_y_mm || 0,
           doorW: part.width_mm || 0, doorH: part.height_mm || 0
         });
@@ -865,7 +930,7 @@
     if (!laterals.length) return;
 
     doors.forEach(function (door) {
-      const hingeX = door.part.hinge_side === 'left' ? door.x0 : door.x0 + door.doorW;
+      const hingeX = door.side === 'left' ? door.x0 : door.x0 + door.doorW;
       let best = null;
       laterals.forEach(function (lb) {
         const d = Math.min(Math.abs(hingeX - lb.x0), Math.abs(hingeX - (lb.x0 + lb.sx)));
@@ -1104,6 +1169,9 @@
     collectCabideSupportHoles(store, todas);
     (parts || []).forEach(function (part) {
       if (part.is_module && part.child_pieces && part.child_pieces.length) {
+        // Porta de MODELO (Construtor): copo + marcações caem na chapa do
+        // modelo — ver collectHingeHolesModulo.
+        collectHingeHolesModulo(store, part, config.settings);
         collectAssembly(store, part.child_pieces, part.width_mm, part.height_mm, part.depth_mm, config);
         return;
       }

@@ -647,11 +647,22 @@ async function shareProjectFavorite(proj) {
 const PROJECT_VIEW3D_LINK_DAYS = 30;
 
 async function generateOrGetView3DLink(proj) {
+  // SEM VALIDADE (24/09, Matt: "pode tirar o link necessário... não tem
+  // problema se alguém tiver o 3D e porque faz parte do projeto. fica mais
+  // simples") — antes expirava em 30 dias. O código, uma vez gerado, é
+  // permanente: view3d_expires_at fica null (get_view3d_project já trata
+  // null como "não expira"). Link antigo que ainda tinha data ganha null
+  // ao ser reaproveitado, pra não morrer no meio da montagem.
   const now = Date.now();
-  const stillValid = proj.view3d_code && proj.view3d_expires_at && new Date(proj.view3d_expires_at).getTime() > now;
-  if (!stillValid) {
+  const temCodigo = !!proj.view3d_code;
+  if (temCodigo && proj.view3d_expires_at) {
+    const { error } = await supabaseClient.from('user_projects')
+      .update({ view3d_expires_at: null }).eq('id', proj.id);
+    if (!error) proj.view3d_expires_at = null;
+  }
+  if (!temCodigo) {
     let code = null;
-    const newExpiresAt = new Date(now + PROJECT_VIEW3D_LINK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const newExpiresAt = null;
     for (let attempt = 0; attempt < 5 && !code; attempt++) {
       const candidate = generateProjectShareCode();
       const { data, error } = await supabaseClient.from('user_projects')
@@ -674,10 +685,9 @@ async function view3DFavoriteProject(proj) {
   const errorEl = document.getElementById('po-proj-fav-error');
   if (errorEl) errorEl.style.display = 'none';
   try {
-    const { link, expiresAt } = await generateOrGetView3DLink(proj);
+    const { link } = await generateOrGetView3DLink(proj);
     try { await navigator.clipboard.writeText(link); } catch (e) { /* clipboard pode não estar disponível — o alert abaixo mostra o link igual */ }
-    const dateLabel = new Date(expiresAt).toLocaleDateString();
-    alert(`${I18n.t('fav.view3d_link_label')}\n${link}\n\n${I18n.t('fav.view3d_link_expires', { date: dateLabel })}`);
+    alert(`${I18n.t('fav.view3d_link_label')}\n${link}\n\n${I18n.t('fav.view3d_link_copied')}`);
   } catch (err) {
     if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
   }
@@ -2028,6 +2038,16 @@ async function bootView3DGuestView(code) {
     if (errorEl) { errorEl.textContent = I18n.t('view3d.not_found'); errorEl.style.display = 'block'; }
   } finally {
     endView3DBootOverlay();
+    // A cena é medida ENQUANTO o overlay de boot ainda esconde o <body>
+    // (display:none no html.po-view3d-boot) e o CSS de visitante troca o
+    // grid pra 1 coluna — o canvas nascia com a largura errada (Matt, 24/09:
+    // "o link abre estranho e depois de clicar em algum botão lá em cima
+    // ele fica visualmente melhor"). Um resize depois de o layout assentar
+    // faz o ViewerProjectEdit (onResize) reler o tamanho real.
+    const remedir = () => { try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ } };
+    requestAnimationFrame(remedir);
+    setTimeout(remedir, 250);
+    setTimeout(remedir, 1000);
   }
 }
 
@@ -2125,7 +2145,16 @@ function view3DSameDims(d1, d2) {
 // congelada (parede/x/altura) — se nenhum bate na posição (projeto editado
 // depois do pedido), todos os slots do mesmo módulo.
 function view3DSlotsForOrderItem(row) {
-  const mesmoModulo = (projectSlots || []).filter((s) => s.module && s.module.id === row.module_id);
+  let mesmoModulo = (projectSlots || []).filter((s) => s.module && s.module.id === row.module_id);
+  // mesmo módulo E mesmas medidas do item pedido (2 armários iguais de
+  // larguras diferentes não se confundem) — só se a RPC trouxe as medidas
+  if (row.item_w_mm != null && mesmoModulo.length > 1) {
+    const mesmaMedida = mesmoModulo.filter((s) =>
+      Math.abs(Number(s.width_mm || 0) - Number(row.item_w_mm)) <= 1 &&
+      Math.abs(Number(s.height_mm || 0) - Number(row.item_h_mm)) <= 1 &&
+      Math.abs(Number(s.depth_mm || 0) - Number(row.item_d_mm)) <= 1);
+    if (mesmaMedida.length) mesmoModulo = mesmaMedida;
+  }
   const pl = row.project_placement || null;
   if (pl && mesmoModulo.length > 1) {
     const naPosicao = mesmoModulo.filter((s) =>
@@ -2220,9 +2249,17 @@ async function locateView3DPiece(viewCode, raw) {
     view3DPieceObjectsInGroup(g, row).forEach((o) => objs.push(o));
   });
   if (objs.length) {
-    blinkView3DObjects(objs);
-    frameView3DObjects(objs, groups[0]);
-    setStatus(I18n.t('view3d.locate_found', { num, module: row.module_name || '', ref: row.reference || '', dims }), 'ok');
+    // PEÇAS IGUAIS NO MESMO MÓDULO (Matt, 24/09: "apontei uma porta do
+    // módulo 48, ele mostrou todas as portas"): 3 portas idênticas casam as
+    // 3 — e o código da etiqueta não distingue uma da outra (o .ban por
+    // peça as numera em sequência; são intercambiáveis). Pisca UMA (a
+    // caixa de seleção múltipla desenha a união, que parecia "todas") e
+    // avisa quantas iguais existem.
+    const alvo = [objs[0]];
+    blinkView3DObjects(alvo);
+    frameView3DObjects(alvo, groups[0]);
+    const iguais = objs.length > 1 ? ' — ' + I18n.t('view3d.locate_equal_pieces', { n: objs.length }) : '';
+    setStatus(I18n.t('view3d.locate_found', { num, module: row.module_name || '', ref: row.reference || '', dims }) + iguais, 'ok');
   } else if (groups.length) {
     blinkView3DObjects(groups);
     frameView3DObjects(groups, groups[0]);
