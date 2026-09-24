@@ -33,7 +33,7 @@ function modulePiecesReportarErro(error) {
 async function loadRecursivePiecesForModule(moduleId) {
   const { data, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, client_color_configurable, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, abre_recorte, drilling_pattern_id, grain_dir, auto_join_adjacent, join_max_length_mm, drilling_patterns(furos_equivalentes, fura), components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, client_color_configurable, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, abre_recorte, drilling_pattern_id, grain_dir, auto_join_adjacent, join_max_length_mm, drill_shelf_support, drilling_patterns(furos_equivalentes, fura), components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId)
     .order('sort_order');
   if (error) { modulePiecesReportarErro(error); return []; }
@@ -145,6 +145,17 @@ async function loadRecursivePiecesForModule(moduleId) {
         // o padrão (true) — só false explícito desliga esta linha.
         auto_join_adjacent: row.auto_join_adjacent !== false,
         join_max_length_mm: row.join_max_length_mm != null ? Number(row.join_max_length_mm) : 2700,
+        // FUROS DE SUPORTE DE PRATELEIRA POR USO (migration 162, 2026-09-24,
+        // Matt: "as prateleiras não saíram com furação, nem na prateleira nem
+        // na lateral"). Drilling.collectShelfSupportHoles só abre os 4 furos
+        // Ø3 na lateral quando a peça tem drill_shelf_support — que até aqui
+        // só existia em `components` (migration 045, marcado só no
+        // componente SHELF antigo). Desde a migration 090 a prateleira é a
+        // MESMA chapa genérica (Flatbord 2C) que vira base/topo/divisória, e
+        // uma flag por componente ligaria os furos em todo uso ou em nenhum
+        // — na prática ficou em nenhum. Agora é por vínculo: null herda o
+        // componente (linha antiga não muda), true/false decidem.
+        drill_shelf_support: row.drill_shelf_support != null ? !!row.drill_shelf_support : !!row.components.drill_shelf_support,
         // Limite do lado no plano da máquina (migration 090)
         lado_min_mm: row.components.lado_min_mm || null,
         lado_max_mm: row.components.lado_max_mm || null,

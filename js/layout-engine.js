@@ -464,6 +464,15 @@
     opts = opts || {};
     var cat = opts.catalogo || {};
     var esp = num(opts.espessura) || 18;
+    // ESPESSURA DO CASCO (2026-09-24, migration 160/161 — plywood 18mm):
+    // divisória/prateleira do construtor é chapa do MESMO material do casco,
+    // então a espessura dela segue a cor do casco (opts.espessuraCasco =
+    // Pricing.cascoThicknessMm do slot), não a de porta/frente (`esp`, que
+    // continua sendo a espessura de referência da frente — porta nunca é
+    // plywood). Agregado com thickness_formula NUMÉRICA própria ('15') não
+    // segue nada; só quem tem 'E' (espessura: null no catálogo) cai aqui.
+    // Sem opts.espessuraCasco (ERP, projeto sem cor): igual a antes (esp).
+    var espCasco = num(opts.espessuraCasco) || esp;
     var folgaDob = num(opts.folgaDobradica) || 2;
     var folgaFundo = FOLGA_CAIXOTE_MECANISMO_MM + (opts.temFundo ? FOLGA_CAIXOTE_FUNDO_MM : 0);
 
@@ -1028,7 +1037,7 @@
       if (node.splitAxis && node.children.length > 1) {
         var acc = cat[node.splitAcc];
         if (!acc) { node._box = box; voids.push({ nodeId: node.id, box: box, locked: !!node.locked }); return; }
-        var th = num(acc.espessura) || esp;
+        var th = num(acc.espessura) || espCasco;
         var axis = node.splitAxis;
         var sizes = splitSizes(axis === 'x' ? box.w : box.h, node.children, th);
         var consDiv = consumoMax(node, cat, esp, folgaDob);
@@ -1254,6 +1263,12 @@
           // catálogo é carregado com select('*'), então no dia em que
           // accessory_types ganhar a coluna isto começa a valer sozinho.
           drilling_pattern_id: acc.drilling_pattern_id || null,
+          // Suporte de prateleira POR USO (migration 162): o agregado
+          // "Prateleira" liga os 4 furos Ø3 na lateral mesmo que o
+          // componente seja a chapa genérica (que não pode ter a flag,
+          // senão base/topo/divisória ganhariam furo de suporte também).
+          // null no agregado = herda do componente, como sempre foi.
+          drill_shelf_support: acc.drill_shelf_support != null ? !!acc.drill_shelf_support : !!comp.drill_shelf_support,
           reference: p.label || comp.reference,
           quantity: 1,
           labor_cost_per_unit: comp.labor_types ? comp.labor_types.price_per_unit : 0,

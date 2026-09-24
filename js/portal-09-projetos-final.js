@@ -2022,6 +2022,7 @@ async function bootView3DGuestView(code) {
     // usado hoje por foto realista/exportação AR) que não estava dando conta
     // de layouts com mais de uma parede direito.
     renderView3DGuestHeader(source.name);
+    attachView3DLocatePiece(code);
     simplifyToolbarForGuestView();
   } catch (err) {
     if (errorEl) { errorEl.textContent = I18n.t('view3d.not_found'); errorEl.style.display = 'block'; }
@@ -2080,6 +2081,171 @@ function renderView3DGuestHeader(name) {
       }
     });
   }
+}
+
+// ==========================================================================
+// LOCALIZAR PEÇA PELO CÓDIGO DA ETIQUETA (24/09) — Matt, montando o 1º lote
+// real: "preciso encontrar onde vai alguns painéis dentro do projeto... já
+// temos um visualizador pro cliente, podemos usar ele e colocar um campo
+// onde se busque o ID da peça e ela pisque no projeto mostrando onde deve
+// ser instalado."
+//
+// Fluxo: código da etiqueta (PC-002297, ou só os dígitos) -> RPC
+// get_view3d_piece (migration 166, anon, só peças de pedidos do MESMO dono
+// do projeto) -> devolve o módulo (module_id + project_placement congelado
+// no pedido, migration 139), o número do módulo na etiqueta e a peça
+// (referência + medidas) -> aqui acha o slot na cena (mesmo módulo e mesma
+// posição; se a posição mudou depois do pedido, cai em "mesmo módulo") e,
+// dentro do group desse slot (userData.slotId), a peça desenhada pelo
+// userData.pieceInfo (tagPieceUserData, viewer3d.js) com a MESMA regra de
+// casamento do .ban por peça (referência + medidas ±1mm, espessura ±2mm;
+// senão só medidas). Pisca com setMultiHighlight (a caixa vermelha da
+// seleção de grupo) e leva a câmera até a peça (frameDirection).
+// Sem achar a peça mas achando o módulo: pisca o módulo inteiro e avisa.
+// ==========================================================================
+let view3DLocateBlinkTimer = null;
+
+function normalizeView3DPieceCode(raw) {
+  const t = String(raw || '').trim().toUpperCase();
+  if (!t) return '';
+  const digits = t.replace(/[^0-9]/g, '');
+  // "2297" / "pc2297" / "PC-2297" -> PC-002297 (código da etiqueta tem 6 dígitos)
+  if (/^(PC[-\s]?)?[0-9]{1,6}$/.test(t) && digits) return 'PC-' + digits.padStart(6, '0');
+  return t;
+}
+
+function view3DPieceDims(a, b, c) {
+  return [Number(a) || 0, Number(b) || 0, Number(c) || 0].sort((x, y) => y - x);
+}
+function view3DSameDims(d1, d2) {
+  return Math.abs(d1[0] - d2[0]) <= 1 && Math.abs(d1[1] - d2[1]) <= 1 && Math.abs(d1[2] - d2[2]) <= 2;
+}
+
+// Slots candidatos pro item do pedido: mesmo módulo E mesma posição
+// congelada (parede/x/altura) — se nenhum bate na posição (projeto editado
+// depois do pedido), todos os slots do mesmo módulo.
+function view3DSlotsForOrderItem(row) {
+  const mesmoModulo = (projectSlots || []).filter((s) => s.module && s.module.id === row.module_id);
+  const pl = row.project_placement || null;
+  if (pl && mesmoModulo.length > 1) {
+    const naPosicao = mesmoModulo.filter((s) =>
+      Number(s.wall_index || 0) === Number(pl.wall_index || 0) &&
+      Math.abs(Number(s.x_mm || 0) - Number(pl.x_mm || 0)) <= 1 &&
+      Math.abs(Number(s.floor_height_mm || 0) - Number(pl.floor_height_mm || 0)) <= 1);
+    if (naPosicao.length) return naPosicao;
+  }
+  return mesmoModulo;
+}
+
+// Object3D das peças que casam com a linha, dentro do group do slot.
+function view3DPieceObjectsInGroup(group, row) {
+  if (!group) return [];
+  const alvo = view3DPieceDims(row.w_mm, row.h_mm, row.espessura_mm);
+  const ref = String(row.reference || '').trim().toLowerCase();
+  const porRef = [], porDims = [];
+  group.traverse((obj) => {
+    const info = obj.userData && obj.userData.pieceInfo;
+    if (!info) return;
+    const d = view3DPieceDims(info.width_mm, info.height_mm, info.depth_mm);
+    if (!view3DSameDims(d, alvo)) return;
+    if (ref && String(info.reference || '').trim().toLowerCase() === ref) porRef.push(obj);
+    else porDims.push(obj);
+  });
+  return porRef.length ? porRef : porDims;
+}
+
+function stopView3DLocateBlink() {
+  if (view3DLocateBlinkTimer) { clearInterval(view3DLocateBlinkTimer); view3DLocateBlinkTimer = null; }
+}
+
+function blinkView3DObjects(objs) {
+  stopView3DLocateBlink();
+  if (typeof ViewerProjectEdit === 'undefined' || !ViewerProjectEdit.setMultiHighlight) return;
+  let on = false, n = 0;
+  ViewerProjectEdit.setMultiHighlight(objs);
+  on = true;
+  view3DLocateBlinkTimer = setInterval(() => {
+    n += 1;
+    on = !on;
+    ViewerProjectEdit.setMultiHighlight(on ? objs : []);
+    // 8 trocas (~3s) e termina ACESO, pra ficar marcado enquanto o montador olha.
+    if (n >= 8) { stopView3DLocateBlink(); ViewerProjectEdit.setMultiHighlight(objs); }
+  }, 350);
+}
+
+// Câmera olhando pra peça pela FRENTE do módulo (eixo +Z local do group,
+// com um pouco de cima), a 2.5m. Sem THREE/camera disponível, só pisca.
+function frameView3DObjects(objs, group) {
+  try {
+    if (!objs.length || typeof THREE === 'undefined' || !ViewerProjectEdit.frameDirection) return;
+    const box = new THREE.Box3();
+    objs.forEach((o) => { o.updateWorldMatrix(true, false); box.expandByObject(o); });
+    if (box.isEmpty()) return;
+    const c = box.getCenter(new THREE.Vector3());
+    const dir = new THREE.Vector3(0.35, 0.45, 1);
+    if (group) { group.updateWorldMatrix(true, false); dir.applyQuaternion(group.getWorldQuaternion(new THREE.Quaternion())); }
+    ViewerProjectEdit.frameDirection({ x: dir.x, y: dir.y, z: dir.z }, { x: c.x, y: c.y, z: c.z }, 2.5);
+  } catch (e) { /* enquadrar é cortesia; o pisca-pisca já mostra a peça */ }
+}
+
+async function locateView3DPiece(viewCode, raw) {
+  const statusEl = document.getElementById('po-view3d-locate-status');
+  const setStatus = (txt, cls) => { if (statusEl) { statusEl.textContent = txt; statusEl.className = 'po-view3d-locate-status' + (cls ? ' ' + cls : ''); } };
+  const code = normalizeView3DPieceCode(raw);
+  if (!code) return;
+  const input = document.getElementById('po-view3d-locate-input');
+  if (input) input.value = code;
+  setStatus(I18n.t('view3d.locate_searching'), '');
+  let rows;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_view3d_piece', { p_code: viewCode, p_piece_code: code });
+    if (error) throw error;
+    rows = Array.isArray(data) ? data : (data ? [data] : []);
+  } catch (err) {
+    console.error('[view3d] localizar peça:', err);
+    setStatus(I18n.t('view3d.locate_error'), 'err');
+    return;
+  }
+  if (!rows.length) { setStatus(I18n.t('view3d.locate_not_found', { code }), 'err'); return; }
+  const row = rows[0]; // plano mais recente primeiro (order by version desc)
+  const num = String(row.module_number || '').padStart(3, '0');
+  const dims = Math.round(row.w_mm) + '×' + Math.round(row.h_mm) + '×' + Math.round(Number(row.espessura_mm) * 10) / 10;
+  const slots = view3DSlotsForOrderItem(row);
+  if (!slots.length) { setStatus(I18n.t('view3d.locate_no_slot', { code, num, module: row.module_name || '' }), 'err'); return; }
+  const objs = [], groups = [];
+  slots.forEach((slot) => {
+    const g = ViewerProjectEdit.findGroupBySlotId ? ViewerProjectEdit.findGroupBySlotId(slot.id) : null;
+    if (!g) return;
+    groups.push(g);
+    view3DPieceObjectsInGroup(g, row).forEach((o) => objs.push(o));
+  });
+  if (objs.length) {
+    blinkView3DObjects(objs);
+    frameView3DObjects(objs, groups[0]);
+    setStatus(I18n.t('view3d.locate_found', { num, module: row.module_name || '', ref: row.reference || '', dims }), 'ok');
+  } else if (groups.length) {
+    blinkView3DObjects(groups);
+    frameView3DObjects(groups, groups[0]);
+    setStatus(I18n.t('view3d.locate_module_only', { num, module: row.module_name || '', ref: row.reference || '', dims }), 'ok');
+  } else {
+    setStatus(I18n.t('view3d.locate_no_slot', { code, num, module: row.module_name || '' }), 'err');
+  }
+}
+
+function attachView3DLocatePiece(viewCode) {
+  const form = document.getElementById('po-view3d-locate-form');
+  const input = document.getElementById('po-view3d-locate-input');
+  const btn = document.getElementById('po-view3d-locate-btn');
+  if (!form || !input || !btn) return;
+  input.placeholder = I18n.t('view3d.locate_placeholder');
+  btn.textContent = I18n.t('view3d.locate_btn');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    locateView3DPiece(viewCode, input.value);
+  });
+  // ?peca=PC-002297 na URL já localiza ao abrir (dá pra gerar link direto da etiqueta)
+  const pre = new URLSearchParams(window.location.search).get('peca');
+  if (pre) { input.value = pre; locateView3DPiece(viewCode, pre); }
 }
 
 // Lista de medidas (montador: "preciso saber medida, nao so olhar") —

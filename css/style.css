@@ -4778,6 +4778,14 @@ body.po-view3d-guest #po-proj-canvas-3d-edit {
   padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
 }
 .po-view3d-guest-name { font-weight: 700; font-size: 16px; color: var(--text); }
+/* Localizar peça (24/09, montador): campo + botão no cabeçalho do link
+   público, resultado em texto ao lado. Em tela estreita quebra linha. */
+.po-view3d-locate { display: flex; align-items: center; gap: 8px; flex: 1 1 320px; flex-wrap: wrap; margin: 0; }
+.po-view3d-locate-input { width: 190px; max-width: 60vw; padding: 8px 10px; font-size: 14px; text-transform: uppercase; }
+.po-view3d-locate-btn { white-space: nowrap; }
+.po-view3d-locate-status { font-size: 13px; color: var(--muted, #6b6b6b); flex: 1 1 100%; }
+.po-view3d-locate-status.ok { color: var(--text); font-weight: 600; }
+.po-view3d-locate-status.err { color: #b3261e; }
 .po-view3d-guest-measurements {
   position: fixed; top: 58px; right: 0; bottom: 0; width: 320px; max-width: 90vw;
   overflow-y: auto; background: var(--panel); border-left: 1px solid var(--border);

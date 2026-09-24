@@ -232,6 +232,18 @@ async function openProjectModuleBuilder(slotId) {
 // Roda o motor e redesenha. É o único caminho: toda alteração da árvore
 // termina aqui, e nada desenha a partir da árvore direto (o motor é quem sabe
 // onde cada vão ficou depois do rateio).
+// Espessura da chapa do CASCO deste slot (2026-09-24, plywood 18mm) — o E
+// que resolvePiecesForViewer usa nas laterais/base (Pricing.cascoThicknessMm,
+// pela cor escolhida), passado pro motor como opts.espessuraCasco pra
+// divisória/prateleira do construtor sair na mesma chapa do casco. Sem slot
+// ou sem cor: 19.5, o comportamento de sempre.
+function projectBuilderEspessuraCasco(slot) {
+  try {
+    if (!slot || !slot.pieces || typeof Pricing === 'undefined' || !Pricing.cascoThicknessMm) return PROJECT_BUILDER_ESPESSURA;
+    return Pricing.cascoThicknessMm(slot.pieces, slot.colorsByRole || {}, slot.pieceColorOverrides) || PROJECT_BUILDER_ESPESSURA;
+  } catch (e) { return PROJECT_BUILDER_ESPESSURA; }
+}
+
 function rebuildProjectBuilder(reselecionar) {
   if (!projectBuilderRoot || !projectBuilderZone) return;
   try {
@@ -245,6 +257,7 @@ function rebuildProjectBuilder(reselecionar) {
     projectBuilderBuilt = LayoutEngine.build(projectBuilderRoot, zonaEfetiva, {
       catalogo: projectBuilderCat,
       espessura: PROJECT_BUILDER_ESPESSURA,
+      espessuraCasco: projectBuilderEspessuraCasco(projectSlots.find((s) => s.id === projectBuilderSlotId)),
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
       temFundo: !!projectBuilderZone.temFundo
     });
@@ -878,6 +891,11 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
   if (a.shape_type === 'oval_rod') forma = 'barra';
   else if (p.passo_mm != null) forma = 'ripas';
   const esp = parseFloat(a.thickness_formula);
+  // 'E' (migration 161) = "segue a espessura da chapa do casco": entra como
+  // null e LayoutEngine.build usa opts.espessuraCasco (a cor do módulo —
+  // plywood 18, MDF 19.5). Número ('15') continua fixo. Ver
+  // projectBuilderEspessuraCasco.
+  const segueCasco = /^\s*E\s*$/i.test(String(a.thickness_formula || ''));
   return {
     id: a.id,
     name: a.name,
@@ -899,7 +917,7 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     icon: a.icon || null,
     role: a.role,
     axis: a.split_axis || null,
-    espessura: isFinite(esp) && esp > 0 ? esp : PROJECT_BUILDER_ESPESSURA,
+    espessura: segueCasco ? null : (isFinite(esp) && esp > 0 ? esp : PROJECT_BUILDER_ESPESSURA),
     params: p,
     forma: forma,
     folhas: Number(p.folhas) === 2 ? 2 : 1,
@@ -917,6 +935,8 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     // Programa de furação POR USO (migration 125) — espelha
     // CONSTR.catalogoDoBanco (erp/js/data-construtor.js), mesmo campo.
     drilling_pattern_id: a.drilling_pattern_id || null,
+    // Suporte de prateleira por uso (migration 162) — null herda do componente.
+    drill_shelf_support: a.drill_shelf_support != null ? !!a.drill_shelf_support : null,
     // Variante POR PROFUNDIDADE (migration 126) — espelha
     // CONSTR.catalogoDoBanco, mesmos dois campos. Consumido por
     // LayoutEngine.resolveDepthVariant (js/layout-engine.js): troca sozinho
@@ -2516,6 +2536,7 @@ function rebuildProjectSlotLayoutPieces(slot) {
     const built = LayoutEngine.build(root, zona, {
       catalogo: accessoryCatalogCache,
       espessura: PROJECT_BUILDER_ESPESSURA,
+      espessuraCasco: projectBuilderEspessuraCasco(slot),
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
       temFundo: !!zona.temFundo
     });

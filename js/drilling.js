@@ -567,6 +567,60 @@
     return { boxes, byPart };
   }
 
+  // ---- MÓDULO ANINHADO PARTICIPA DO CONTATO (2026-09-24) -----------------
+  // Matt, 1º lote real (LT-26-0014, módulo 47 "Wall Cabinet CUSTOM"): "não
+  // puxou a furação da marcação das prateleiras na lateral". A prateleira
+  // desse módulo é uma PEÇA-MÓDULO — o módulo "Shelf" da família
+  // Componentes (2026-08-21) colocado como 'free' dentro do armário, com a
+  // chapa de verdade como child_piece. collectAssembly recursa nas
+  // child_pieces com o frame do FILHO, onde não existe lateral nenhuma; e
+  // buildBoxes do PAI pula is_module. Resultado: a prateleira nunca ficava
+  // na mesma lista que as laterais, e o suporte (e qualquer contra-furo
+  // entre peça aninhada e peça do pai — uma "Base" aninhada tem o mesmo
+  // problema) simplesmente não existia. É o mesmo desenho do viewer3d
+  // (resolveContent monta a sub-composição DENTRO da caixa da peça-módulo),
+  // só que a furação não trazia a sub-composição pro frame do pai.
+  //
+  // boxesAninhadas: as caixas das peças-folha de cada módulo aninhado (em
+  // qualquer profundidade), TRANSLADADAS pro frame deste nível — origem =
+  // canto da caixa da peça-módulo (pieceBox), igual ao viewer3d. Cada caixa
+  // leva `_owner` = a peça-módulo deste nível a que pertence; par de caixas
+  // com o MESMO _owner é contato interno daquele módulo, que a recursão
+  // já resolve no frame dele (mesmaSubarvore) — aqui só entram os pares
+  // CRUZADOS (aninhada × peça do pai, ou aninhada × outra aninhada). Por
+  // construção, nada do que já saía muda: os pares antigos continuam
+  // iguais, só aparecem pares novos.
+  function boxesAninhadas(parts, W, H, D) {
+    const out = [];
+    const groups = {};
+    (parts || []).forEach(function (p) {
+      if (p.is_module) return;
+      const role = p.position_role || 'other';
+      (groups[role] = groups[role] || []).push(p);
+    });
+    const bounds = {
+      innerBottomY: resolveThicknessMm((groups['bottom'] || [])[0]),
+      innerTopY: H - resolveThicknessMm((groups['top'] || [])[0])
+    };
+    (parts || []).forEach(function (part) {
+      if (!part.is_module || !part.child_pieces || !part.child_pieces.length) return;
+      const box = pieceBox(part, W, H, D, 0, 1, bounds);
+      if (!box) return; // front/drawer/other: sem posição reconstituível, fica como era
+      const cw = box.sx, ch = box.sy, cd = box.sz;
+      const inner = buildBoxes(part.child_pieces, cw, ch, cd).boxes
+        .concat(boxesAninhadas(part.child_pieces, cw, ch, cd));
+      inner.forEach(function (b) {
+        out.push(Object.assign({}, b, {
+          x0: b.x0 + box.x0, y0: b.y0 + box.y0, z0: b.z0 + box.z0, _owner: part
+        }));
+      });
+    });
+    return out;
+  }
+  function mesmaSubarvore(a, b) {
+    return !!(a && b && a._owner && a._owner === b._owner);
+  }
+
   // 2. CONTRA-FURO PROPAGADO (migration 043) — pra cada furo de BORDA
   // cadastrado com counter_diameter/counter_depth, acha a peça cuja FACE
   // coincide com aquela borda (tolerância) e fura o contra-furo no ponto
@@ -584,6 +638,19 @@
   function collectCounterHoles(store, boxes, drillingsByComponent, settings, W, H, D, holesByPattern) {
     if (!drillingsByComponent && !holesByPattern) return;
     const tol = (settings && Number(settings.touch_tolerance_mm)) || 5;
+    // PROFUNDIDADE DO CONTRA-FURO QUE CAI NUMA FACE (2026-09-24, Matt, 1º
+    // lote real: "o furo da cavilha na lateral (furo de face) está com
+    // 19.5mm de profundidade e isso atravessaria a máquina, deve deixar com
+    // 12mm"). counter_depth_mm é UM número por linha, mas o contra-furo tem
+    // dois destinos: a BORDA da peça apoiada (topcover embaixo da lateral —
+    // o pino precisa de curso, 22mm, migration 117) e a FACE da peça que a
+    // borda encosta (base x lateral — 22 numa chapa de 19.5 é furo
+    // passante; o formatador cortava em E e saía 19.5). A migration 117
+    // pôs 22 em TODO Ø8 sem separar os dois. Aqui separa: furo de FACE
+    // fica no menor entre o cadastro e counter_face_depth_mm dos ajustes
+    // (drilling_settings, migration 163 — padrão 12). Furo de BORDA
+    // (collectFaceCounterHole) não muda.
+    const profFace = (settings && Number(settings.counter_face_depth_mm) > 0) ? Number(settings.counter_face_depth_mm) : 12;
     const ORIG = { x: 'x0', y: 'y0', z: 'z0' };
     const SIZE = { x: 'sx', y: 'sy', z: 'sz' };
     const MODULE_CENTER = { x: (W || 0) / 2, y: (H || 0) / 2, z: (D || 0) / 2 };
@@ -618,6 +685,7 @@
 
         boxes.forEach(function (tgt) {
           if (tgt === src) return;
+          if (mesmaSubarvore(src, tgt)) return; // contato interno do módulo aninhado: a recursão resolve
           // a borda precisa coincidir com uma das duas FACES do alvo (plano
           // perpendicular ao eixo da espessura dele)...
           const c = p[tgt.tAxis];
@@ -637,7 +705,7 @@
             u: pu, v: pv, edge: null,
             entersPositive: entersPositive,
             diameter: Number(row.counter_diameter_mm),
-            depth: Number(row.counter_depth_mm),
+            depth: Math.min(Number(row.counter_depth_mm), profFace),
             // Junta do tipo BASE (migration 116): a BORDA da base encontra a
             // FACE da lateral, o tambor é furo próprio da base e é o PINO que
             // atravessa pra cá. Por isso este Ø8 na face NÃO é cavilha —
@@ -694,6 +762,7 @@
 
     boxes.forEach(function (tgt) {
       if (tgt === src) return;
+      if (mesmaSubarvore(src, tgt)) return; // ver boxesAninhadas
       // peça apoiada = peça cuja EXTENSÃO DE FACE corre no eixo da espessura
       // do src (a espessura dela é PERPENDICULAR — senão o contato seria
       // face-com-face, que não é este caso)
@@ -945,6 +1014,7 @@
       const zHoles = [sb.z0 + sb.sz - front, sb.z0 + back];
       laterals.forEach(function (lb) {
         if (lb === sb) return;
+        if (mesmaSubarvore(sb, lb)) return; // ver boxesAninhadas
         // a ponta da prateleira precisa encostar numa das faces da lateral
         const dLeft = Math.abs(sb.x0 - (lb.x0 + lb.sx));  // lateral à esquerda
         const dRight = Math.abs((sb.x0 + sb.sx) - lb.x0); // lateral à direita
@@ -1000,6 +1070,7 @@
       const zHole = rod.z0 + rod.sz / 2;
       laterals.forEach(function (lb) {
         if (lb === rod) return;
+        if (mesmaSubarvore(rod, lb)) return; // ver boxesAninhadas
         const dLeft = Math.abs(rod.x0 - (lb.x0 + lb.sx));   // lateral à esquerda do cabide
         const dRight = Math.abs((rod.x0 + rod.sx) - lb.x0); // lateral à direita
         if (Math.min(dLeft, dRight) > CABIDE_SUPPORT_TOUCH_TOLERANCE_MM) return;
@@ -1022,11 +1093,15 @@
   // com o volume local da peça-módulo, igual buildModuleAssembly no 3D).
   function collectAssembly(store, parts, W, H, D, config) {
     const built = buildBoxes(parts, W, H, D);
-    collectCounterHoles(store, built.boxes, config.drillingsByComponent, config.settings, W, H, D, config.holesByPattern);
+    // Peças de módulos aninhados no frame deste nível (2026-09-24) — só pros
+    // passes de CONTATO (contra-furo, suporte de prateleira, suporte de
+    // cabide). Dobradiça/corrediça continuam lendo `parts` como sempre.
+    const todas = built.boxes.concat(boxesAninhadas(parts, W, H, D));
+    collectCounterHoles(store, todas, config.drillingsByComponent, config.settings, W, H, D, config.holesByPattern);
     collectHingePlates(store, parts, built.boxes, config.settings);
     collectSlideHoles(store, parts, built.boxes, W, H, D, config.settings);
-    collectShelfSupportHoles(store, built.boxes, config.settings);
-    collectCabideSupportHoles(store, built.boxes);
+    collectShelfSupportHoles(store, todas, config.settings);
+    collectCabideSupportHoles(store, todas);
     (parts || []).forEach(function (part) {
       if (part.is_module && part.child_pieces && part.child_pieces.length) {
         collectAssembly(store, part.child_pieces, part.width_mm, part.height_mm, part.depth_mm, config);
@@ -1607,7 +1682,7 @@
     // sobreposição, Face e IsCuted sem editar o arquivo — os dois últimos
     // ainda esperam confirmação na máquina.
     USINAGEM: USINAGEM,
-    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca }
+    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 // migration 043 — propagação por componente + espelhamento esq/dir
