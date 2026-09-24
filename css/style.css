@@ -4786,6 +4786,10 @@ body.po-view3d-guest #po-proj-canvas-3d-edit {
 .po-view3d-locate-status { font-size: 13px; color: var(--muted, #6b6b6b); flex: 1 1 100%; }
 .po-view3d-locate-status.ok { color: var(--text); font-weight: 600; }
 .po-view3d-locate-status.err { color: #b3261e; }
+/* Modal "Peças do móvel" aberto pelo Localizar peça no link público: só
+   olhar — sem remover/restaurar peça nem trocar cor. */
+body.po-view3d-guest #po-pieces-list [data-piece-action],
+body.po-view3d-guest #po-pieces-list select { display: none !important; }
 .po-view3d-guest-measurements {
   position: fixed; top: 58px; right: 0; bottom: 0; width: 320px; max-width: 90vw;
   overflow-y: auto; background: var(--panel); border-left: 1px solid var(--border);

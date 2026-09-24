@@ -2125,13 +2125,21 @@ function renderView3DGuestHeader(name) {
 // ==========================================================================
 let view3DLocateBlinkTimer = null;
 
-function normalizeView3DPieceCode(raw) {
+// O que foi digitado: { tipo: 'peca', code: 'PC-002297' } ou
+// { tipo: 'modulo', numero: 32 } (número da etiqueta "Mód 032": até 3
+// dígitos, com ou sem M/MOD na frente). 4+ dígitos ou "PC" = código de peça.
+function parseView3DLocateInput(raw) {
   const t = String(raw || '').trim().toUpperCase();
-  if (!t) return '';
+  if (!t) return null;
+  const mod = t.match(/^(?:M(?:[OÓ]D?)?[-\s]?)?([0-9]{1,3})$/);
+  if (mod) return { tipo: 'modulo', numero: Number(mod[1]) };
   const digits = t.replace(/[^0-9]/g, '');
-  // "2297" / "pc2297" / "PC-2297" -> PC-002297 (código da etiqueta tem 6 dígitos)
-  if (/^(PC[-\s]?)?[0-9]{1,6}$/.test(t) && digits) return 'PC-' + digits.padStart(6, '0');
-  return t;
+  if (/^(PC[-\s]?)?[0-9]{1,6}$/.test(t) && digits) return { tipo: 'peca', code: 'PC-' + digits.padStart(6, '0') };
+  return { tipo: 'peca', code: t };
+}
+function normalizeView3DPieceCode(raw) {
+  const p = parseView3DLocateInput(raw);
+  return p && p.tipo === 'peca' ? p.code : '';
 }
 
 function view3DPieceDims(a, b, c) {
@@ -2171,16 +2179,71 @@ function view3DPieceObjectsInGroup(group, row) {
   if (!group) return [];
   const alvo = view3DPieceDims(row.w_mm, row.h_mm, row.espessura_mm);
   const ref = String(row.reference || '').trim().toLowerCase();
-  const porRef = [], porDims = [];
+  const porRefEDims = [], porDims = [], soRef = [], vistas = [];
   group.traverse((obj) => {
     const info = obj.userData && obj.userData.pieceInfo;
     if (!info) return;
     const d = view3DPieceDims(info.width_mm, info.height_mm, info.depth_mm);
-    if (!view3DSameDims(d, alvo)) return;
-    if (ref && String(info.reference || '').trim().toLowerCase() === ref) porRef.push(obj);
-    else porDims.push(obj);
+    const mesmaRef = ref && String(info.reference || '').trim().toLowerCase() === ref;
+    vistas.push((info.reference || '?') + ' ' + d.map(Math.round).join('×'));
+    if (view3DSameDims(d, alvo)) { if (mesmaRef) porRefEDims.push(obj); else porDims.push(obj); }
+    else if (mesmaRef) soRef.push(obj);
   });
-  return porRef.length ? porRef : porDims;
+  // 1º referência + medidas; 2º só medidas; 3º só referência (a peça
+  // desenhada hoje pode ter medida diferente da congelada no pedido — ex.:
+  // módulo mexido depois, ou fundo/rodapé juntado — ver o console).
+  const achou = porRefEDims.length ? porRefEDims : (porDims.length ? porDims : soRef);
+  if (!achou.length) console.warn('[view3d] peça ' + (row.piece_code || '') + ' (' + ref + ' ' + alvo.map(Math.round).join('×') + ') não casou com nenhuma do módulo. Peças desenhadas:', vistas);
+  return achou;
+}
+
+// Abre o módulo EXPLODIDO (modal "Peças do móvel", portal-06c) com a peça
+// piscando lá dentro — Matt, 24/09: "quando for peça de módulo (construtor
+// ou não) quero que ele abra o módulo explodido, só o módulo, e mostre a
+// peça piscando vermelho no módulo". Reaproveita openProjectSlotPieces +
+// blinkProjectSlotPieceInViewer (o pisca da listagem de peças, 12/09), pelo
+// piece_id que o Object3D da cena principal já carrega (userData.pieceId).
+function openView3DPieceInExplodedModule(slot, obj) {
+  if (typeof openProjectSlotPieces !== 'function') return false;
+  const pieceId = obj && obj.userData ? obj.userData.pieceId : null;
+  openProjectSlotPieces(slot.id);
+  if (pieceId != null && typeof blinkProjectSlotPieceInViewer === 'function') {
+    // o assembly explodido é montado no openProjectSlotPieces; um tique
+    // depois pra garantir que a cena do modal já existe
+    setTimeout(() => blinkProjectSlotPieceInViewer(pieceId), 60);
+  }
+  return true;
+}
+
+// Módulo pelo NÚMERO da etiqueta ("Mód 032") — pisca o módulo inteiro no
+// projeto (Matt, 24/09: "quando colocar o ID inteiro do módulo ele mostre
+// piscando no projeto"). RPC get_view3d_module (migration 168).
+async function locateView3DModule(viewCode, numero, setStatus) {
+  let rows;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_view3d_module', { p_code: viewCode, p_module_number: numero });
+    if (error) throw error;
+    rows = Array.isArray(data) ? data : (data ? [data] : []);
+  } catch (err) {
+    console.error('[view3d] localizar módulo:', err);
+    setStatus(I18n.t('view3d.locate_error'), 'err');
+    return;
+  }
+  const num = String(numero).padStart(3, '0');
+  if (!rows.length) { setStatus(I18n.t('view3d.locate_module_not_found', { num }), 'err'); return; }
+  // pode haver o mesmo número em 2 pedidos do dono — fica com o 1º cujo
+  // módulo existe neste projeto
+  let slots = [], row = null;
+  for (const r of rows) { const s = view3DSlotsForOrderItem(r); if (s.length) { slots = s; row = r; break; } }
+  if (!row) { setStatus(I18n.t('view3d.locate_no_slot', { code: I18n.t('view3d.locate_module_word') + ' ' + num, num, module: rows[0].module_name || '' }), 'err'); return; }
+  const groups = slots.map((s) => ViewerProjectEdit.findGroupBySlotId ? ViewerProjectEdit.findGroupBySlotId(s.id) : null).filter(Boolean);
+  if (!groups.length) { setStatus(I18n.t('view3d.locate_no_slot', { code: num, num, module: row.module_name || '' }), 'err'); return; }
+  const alvo = [groups[0]];
+  blinkView3DObjects(alvo);
+  frameView3DObjects(alvo, groups[0]);
+  const wh = Math.round(row.item_w_mm) + '×' + Math.round(row.item_h_mm) + '×' + Math.round(row.item_d_mm);
+  setStatus(I18n.t('view3d.locate_module_found', { num, module: row.module_name || '', dims: wh }) +
+    (groups.length > 1 ? ' — ' + I18n.t('view3d.locate_equal_modules', { n: groups.length }) : ''), 'ok');
 }
 
 function stopView3DLocateBlink() {
@@ -2220,11 +2283,13 @@ function frameView3DObjects(objs, group) {
 async function locateView3DPiece(viewCode, raw) {
   const statusEl = document.getElementById('po-view3d-locate-status');
   const setStatus = (txt, cls) => { if (statusEl) { statusEl.textContent = txt; statusEl.className = 'po-view3d-locate-status' + (cls ? ' ' + cls : ''); } };
-  const code = normalizeView3DPieceCode(raw);
-  if (!code) return;
+  const pedido = parseView3DLocateInput(raw);
+  if (!pedido) return;
+  setStatus(I18n.t('view3d.locate_searching'), '');
+  if (pedido.tipo === 'modulo') { await locateView3DModule(viewCode, pedido.numero, setStatus); return; }
+  const code = pedido.code;
   const input = document.getElementById('po-view3d-locate-input');
   if (input) input.value = code;
-  setStatus(I18n.t('view3d.locate_searching'), '');
   let rows;
   try {
     const { data, error } = await supabaseClient.rpc('get_view3d_piece', { p_code: viewCode, p_piece_code: code });
@@ -2252,12 +2317,15 @@ async function locateView3DPiece(viewCode, raw) {
     // PEÇAS IGUAIS NO MESMO MÓDULO (Matt, 24/09: "apontei uma porta do
     // módulo 48, ele mostrou todas as portas"): 3 portas idênticas casam as
     // 3 — e o código da etiqueta não distingue uma da outra (o .ban por
-    // peça as numera em sequência; são intercambiáveis). Pisca UMA (a
-    // caixa de seleção múltipla desenha a união, que parecia "todas") e
-    // avisa quantas iguais existem.
+    // peça as numera em sequência; são intercambiáveis). Pisca UMA e avisa
+    // quantas iguais existem.
     const alvo = [objs[0]];
-    blinkView3DObjects(alvo);
+    // No projeto: o MÓDULO da peça fica marcado (pra saber onde ele está
+    // quando fechar o modal); a peça em si pisca no módulo explodido.
+    blinkView3DObjects([groups[0]]);
     frameView3DObjects(alvo, groups[0]);
+    const slotDaPeca = slots.find((s) => ViewerProjectEdit.findGroupBySlotId(s.id) === groups[0]) || slots[0];
+    openView3DPieceInExplodedModule(slotDaPeca, objs[0]);
     const iguais = objs.length > 1 ? ' — ' + I18n.t('view3d.locate_equal_pieces', { n: objs.length }) : '';
     setStatus(I18n.t('view3d.locate_found', { num, module: row.module_name || '', ref: row.reference || '', dims }) + iguais, 'ok');
   } else if (groups.length) {
