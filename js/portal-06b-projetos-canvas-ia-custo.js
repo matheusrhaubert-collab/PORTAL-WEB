@@ -1337,7 +1337,10 @@ function setProjectCameraMode(on) {
 // (que roda a cada re-render e antes reativava incondicionalmente).
 function applyProjectViewerControls() {
   if (!ViewerProjectEdit || !ViewerProjectEdit.setControlsEnabled) return;
-  const enabled = projectIsTouchDevice() ? projectCameraModeOn : true;
+  // Link público de visualização (view3d): no celular a rotação já nasce
+  // liberada, sem o modo câmera — não há nada pra editar ali (Matt, 24/09:
+  // "no celular já libera com rotação padrão, porque é só pra visualização").
+  const enabled = window.PO_VIEW3D_READONLY ? true : (projectIsTouchDevice() ? projectCameraModeOn : true);
   ViewerProjectEdit.setControlsEnabled(enabled);
 }
 

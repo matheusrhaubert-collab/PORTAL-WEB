@@ -2003,6 +2003,14 @@ async function bootView3DGuestView(code) {
   // (a que todo projeto salvo já desenha certo, ao contrário do painel
   // aposentado) sem abrir edição nenhuma pro visitante.
   window.PO_VIEW3D_READONLY = true;
+  // Modo leve do renderer (ver viewer3d_composition.js init) — precisa
+  // estar setado ANTES da 1ª montagem da cena.
+  window.PO_VIEW3D_LIGHT = true;
+  // Paredes/piso escondidos de saída (camada "paredes" do botão Camadas) —
+  // Matt, 24/09: "deixa invisível as paredes pra agilizar a visualização".
+  // applyProjectLayerVisibility roda depois de todo render da Vista de
+  // Canto, então basta a camada já estar no conjunto de ocultas.
+  if (typeof projectHiddenLayers !== 'undefined' && typeof PROJECT_LAYER_WALLS !== 'undefined') projectHiddenLayers.add(PROJECT_LAYER_WALLS);
   document.body.classList.add('po-view3d-guest');
   const contentEl = document.getElementById('po-content');
   if (contentEl) contentEl.style.display = 'block';
@@ -2047,7 +2055,14 @@ async function bootView3DGuestView(code) {
     const remedir = () => { try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignora */ } };
     requestAnimationFrame(remedir);
     setTimeout(remedir, 250);
-    setTimeout(remedir, 1000);
+    // Ainda abria em meia tela até clicar numa vista (Matt, 24/09) — o clique
+    // na vista só faz renderProjectCanvas() de novo. Faz o mesmo aqui, já com
+    // o layout de visitante assentado e o overlay fora, e remede por cima.
+    setTimeout(() => {
+      try { if (typeof renderProjectCanvas === 'function' && (projectSlots || []).length) renderProjectCanvas(); } catch (e) { /* mantém o que já desenhou */ }
+      remedir();
+    }, 400);
+    setTimeout(remedir, 1200);
   }
 }
 
