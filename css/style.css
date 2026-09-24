@@ -4796,6 +4796,28 @@ body.po-view3d-guest #po-pieces-list select { display: none !important; }
   padding: 14px; z-index: 50; box-shadow: -4px 0 12px rgba(0,0,0,0.15);
 }
 .po-view3d-guest-measurements h3 { margin: 0 0 10px; font-size: 14px; color: var(--text); }
+/* Cabeçalho do painel com botão de FECHAR (24/09, Matt: "não sai mais dessa
+   tela, não tem fechar") — no celular o painel cobre o botão do topo. */
+.po-view3d-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.po-view3d-panel-head h3 { margin: 0; }
+.po-view3d-panel-close {
+  width: 34px; height: 34px; padding: 0; border-radius: 8px; font-size: 20px; line-height: 1;
+  background: var(--panel); border: 1px solid var(--border); color: var(--text); cursor: pointer; margin: 0;
+}
+/* Lista de itens: número grande da etiqueta + miniatura + nome/medidas;
+   clicar numa linha pisca o módulo na cena. */
+.po-view3d-item-row {
+  display: grid; grid-template-columns: 44px 56px 1fr; gap: 8px; align-items: center;
+  padding: 6px 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; color: var(--text); line-height: 1.4;
+}
+.po-view3d-item-row:last-child { border-bottom: none; }
+.po-view3d-item-row:hover, .po-view3d-item-row.active { background: rgba(0,0,0,0.04); }
+.po-view3d-item-num { font-weight: 800; font-size: 15px; letter-spacing: 0.5px; text-align: center; }
+.po-view3d-item-thumb {
+  width: 56px; height: 56px; object-fit: contain; background: #fff; border: 1px solid var(--border); border-radius: 6px;
+}
+.po-view3d-item-thumb.pending { opacity: 0.35; }
+.po-view3d-item-name { font-weight: 700; }
 .po-view3d-measure-row {
   padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
   line-height: 1.5; color: var(--text);

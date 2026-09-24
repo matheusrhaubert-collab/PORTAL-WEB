@@ -2100,22 +2100,98 @@ function renderView3DGuestHeader(name) {
   if (!headerEl) return;
   headerEl.style.display = 'flex';
   if (nameEl) nameEl.textContent = name || '';
+  // Painéis laterais (medidas / lista de itens): um aberto de cada vez, e
+  // cada um com o próprio X (24/09, Matt: "quando clico no show measures
+  // ele não sai mais dessa tela, não tem fechar" — no celular o painel
+  // cobre o botão do topo).
+  const itemsBtn = document.getElementById('po-view3d-items-toggle-btn');
+  const setMeasureLabel = (open) => { if (toggleBtn) toggleBtn.textContent = I18n.t(open ? 'view3d.measurements_btn_hide' : 'view3d.measurements_btn_show'); };
+  window.closeView3DGuestPanels = () => {
+    ['po-view3d-guest-measurements', 'po-view3d-guest-items'].forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+    setMeasureLabel(false);
+  };
   if (toggleBtn) {
-    toggleBtn.textContent = I18n.t('view3d.measurements_btn_show');
+    setMeasureLabel(false);
     toggleBtn.addEventListener('click', () => {
       const panel = document.getElementById('po-view3d-guest-measurements');
       if (!panel) return;
       const showing = panel.style.display === 'block';
-      if (showing) {
-        panel.style.display = 'none';
-        toggleBtn.textContent = I18n.t('view3d.measurements_btn_show');
-      } else {
-        renderView3DGuestMeasurements();
-        panel.style.display = 'block';
-        toggleBtn.textContent = I18n.t('view3d.measurements_btn_hide');
-      }
+      window.closeView3DGuestPanels();
+      if (!showing) { renderView3DGuestMeasurements(); panel.style.display = 'block'; setMeasureLabel(true); }
     });
   }
+  if (itemsBtn) {
+    itemsBtn.textContent = I18n.t('view3d.items_btn');
+    itemsBtn.addEventListener('click', () => {
+      const panel = document.getElementById('po-view3d-guest-items');
+      if (!panel) return;
+      const showing = panel.style.display === 'block';
+      window.closeView3DGuestPanels();
+      if (!showing) { renderView3DGuestItems(); panel.style.display = 'block'; }
+    });
+  }
+}
+
+function view3DPanelHead(titulo) {
+  return `<div class="po-view3d-panel-head"><h3>${titulo}</h3>` +
+    `<button type="button" class="po-view3d-panel-close" title="${I18n.t('view3d.close')}" onclick="window.closeView3DGuestPanels && window.closeView3DGuestPanels()">&times;</button></div>`;
+}
+
+// LISTA DE ITENS NUMERADA COMO A ETIQUETA (24/09, Matt: "um botão pra abrir
+// uma janela e mostrar todos itens numerados conforme a etiqueta (ID) de
+// cada um, do 1 até o último, com o ícone do lado igual a proposta").
+// Numeração = projectSlotsOrderSequence (portal-08): a MESMA conta que dá o
+// sort_order do pedido (módulos antes de painéis, ordem do projeto) — o
+// "Mód 032" da etiqueta. Ícone = miniatura do slot; quando o projeto não tem
+// uma salva, gera na hora com o viewer escondido (renderProjectSlotThumbnail
+// Fallback, o mesmo da Proposta), uma por vez, preenchendo a lista aos
+// poucos. Clicar numa linha pisca o módulo na cena e leva a câmera até ele.
+let view3DItemsThumbRun = 0;
+function renderView3DGuestItems() {
+  const panel = document.getElementById('po-view3d-guest-items');
+  if (!panel) return;
+  const unit = 'in';
+  const fmt = (mm) => `${formatDimensionNumber(mm, unit)}${unitAbbrev(unit)}`;
+  const seq = (typeof projectSlotsOrderSequence === 'function') ? projectSlotsOrderSequence() : [];
+  const rows = seq.map(({ slot, numero }) => {
+    const num = String(numero).padStart(3, '0');
+    const nome = (slot.module && slot.module.name) || '';
+    const dims = `${fmt(slot.width_mm)} × ${fmt(slot.height_mm)} × ${fmt(slot.depth_mm)}`;
+    const thumb = slot.thumbnail_data_url || '';
+    return `<div class="po-view3d-item-row" data-slot-id="${slot.id}">` +
+      `<div class="po-view3d-item-num">${num}</div>` +
+      `<img class="po-view3d-item-thumb${thumb ? '' : ' pending'}" data-slot-id="${slot.id}" alt="" ${thumb ? `src="${thumb}"` : ''}>` +
+      `<div><div class="po-view3d-item-name">${nome}</div><div>${dims}</div></div></div>`;
+  }).join('');
+  panel.innerHTML = view3DPanelHead(I18n.t('view3d.items_title')) +
+    `<p class="hint" style="margin:0 0 8px;font-size:11px;">${I18n.t('view3d.items_hint')}</p>` + rows;
+  panel.querySelectorAll('.po-view3d-item-row').forEach((rowEl) => {
+    rowEl.addEventListener('click', () => {
+      panel.querySelectorAll('.po-view3d-item-row.active').forEach((r) => r.classList.remove('active'));
+      rowEl.classList.add('active');
+      const slot = (projectSlots || []).find((s) => String(s.id) === rowEl.dataset.slotId);
+      const g = slot && ViewerProjectEdit.findGroupBySlotId ? ViewerProjectEdit.findGroupBySlotId(slot.id) : null;
+      if (!g) return;
+      blinkView3DObjects([g]);
+      frameView3DObjects([g], g);
+    });
+  });
+  // miniaturas que faltam, uma por vez (viewer escondido é singleton)
+  const run = ++view3DItemsThumbRun;
+  (async () => {
+    for (const { slot } of seq) {
+      if (run !== view3DItemsThumbRun) return;
+      if (slot.thumbnail_data_url || typeof renderProjectSlotThumbnailFallback !== 'function') continue;
+      let url = null;
+      try { url = await renderProjectSlotThumbnailFallback(slot); } catch (e) { url = null; }
+      if (run !== view3DItemsThumbRun) return;
+      if (url) {
+        slot.thumbnail_data_url = url;
+        const img = panel.querySelector(`.po-view3d-item-thumb[data-slot-id="${slot.id}"]`);
+        if (img) { img.src = url; img.classList.remove('pending'); }
+      }
+    }
+  })();
 }
 
 // ==========================================================================
@@ -2396,7 +2472,7 @@ function renderView3DGuestMeasurements() {
     const nameLabel = (slot.module && slot.module.name) || '';
     return `<div class="po-view3d-measure-row"><strong>${nameLabel}</strong><br>${dims}<br>${posLine}</div>`;
   }).join('');
-  panel.innerHTML = `<h3>${I18n.t('view3d.measurements_title')}</h3>${rows}`;
+  panel.innerHTML = view3DPanelHead(I18n.t('view3d.measurements_title')) + rows;
 }
 
 (async function init() {

@@ -5593,13 +5593,11 @@ async function sendProjectToOrder() {
     // ESTÁVEL — dentro de cada grupo continua a ordem do projeto. O
     // sort_order é renumerado depois, e é ele que o pedido, a Proposta e o
     // ERP (número do módulo na etiqueta) usam pra ordenar.
-    const pecasFabricadas = (bd) => (bd || []).reduce((n, pc) => {
-      if (!pc) return n;
-      if (pc.is_module) return n + pecasFabricadas(pc.child_breakdown) * (pc.quantity || 1);
-      return n + (pc.origin === 'comprado' ? 0 : (pc.quantity || 1));
-    }, 0);
+    // pecasFabricadas / a ordenação viraram função compartilhada
+    // (projectBreakdownPecasFabricadas / projectSlotsOrderSequence, abaixo) —
+    // a lista de itens do link público numera pelos MESMOS critérios.
     payloads
-      .map((pl, i) => ({ pl, i, peca: pecasFabricadas(pl.breakdown) < 2 ? 1 : 0 }))
+      .map((pl, i) => ({ pl, i, peca: projectBreakdownPecasFabricadas(pl.breakdown) < 2 ? 1 : 0 }))
       .sort((x, y) => (x.peca - y.peca) || (x.i - y.i))
       .forEach((x, novo) => { x.pl.sort_order = novo; payloads[novo] = x.pl; });
     const { error: itemsError } = await supabaseClient.from('order_items').insert(payloads);
@@ -5632,6 +5630,29 @@ async function sendProjectToOrder() {
 }
 const projSendToOrderBtn = document.getElementById('po-proj-send-to-order-btn');
 if (projSendToOrderBtn) projSendToOrderBtn.addEventListener('click', sendProjectToOrder);
+
+// Peças FABRICADAS de um breakdown (módulo = 2+; painel/peça solta = 1) —
+// o critério de "módulos antes de painéis" do pedido (23/09).
+function projectBreakdownPecasFabricadas(bd) {
+  return (bd || []).reduce((n, pc) => {
+    if (!pc) return n;
+    if (pc.is_module) return n + projectBreakdownPecasFabricadas(pc.child_breakdown) * (pc.quantity || 1);
+    return n + (pc.origin === 'comprado' ? 0 : (pc.quantity || 1));
+  }, 0);
+}
+// Os slots do projeto NA ORDEM E COM O NÚMERO que ganham ao virar pedido
+// (001, 002... = o "Mód" da etiqueta / a Proposta): pula Bloco visual_only,
+// módulos antes de painéis, ordem do projeto dentro de cada grupo — mesma
+// conta de sendProjectToOrder. Usada pela lista de itens do link público
+// (24/09) pra o montador ver a numeração da etiqueta sem abrir o pedido.
+// Só bate com um pedido já enviado se o projeto não mudou depois dele.
+function projectSlotsOrderSequence() {
+  return (projectSlots || [])
+    .filter((slot) => slot.module && !slot.module.visual_only)
+    .map((slot, i) => ({ slot, i, peca: projectBreakdownPecasFabricadas(slot.result && slot.result.breakdown) < 2 ? 1 : 0 }))
+    .sort((x, y) => (x.peca - y.peca) || (x.i - y.i))
+    .map((x, idx) => ({ slot: x.slot, numero: idx + 1 }));
+}
 
 // Alternância Frontal/Superior (pedido do usuário, 2026-07-24) — só troca
 // projectViewMode e reaproveita renderProjectCanvas pra redesenhar (mesmo

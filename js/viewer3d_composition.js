@@ -133,10 +133,10 @@ function createViewerComposition3D() {
 
     // MODO LEVE (link público view3d, Matt 24/09: "deixa o mais fluido
     // possível pra rodar leve"): pixel ratio 1 (num celular retina é 4× menos
-    // pixel por quadro) e sem preserveDrawingBuffer (só serve pra capturar
-    // miniatura/foto, que o visitante não faz). Editor normal: igual antes.
+    // pixel por quadro). preserveDrawingBuffer fica: a lista de itens do
+    // visitante tira miniatura (snapshot) de cada módulo. Editor: igual antes.
     const leve = !!(typeof window !== 'undefined' && window.PO_VIEW3D_LIGHT);
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: !leve });
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(leve ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(width, height);
     if ('outputColorSpace' in renderer) {
