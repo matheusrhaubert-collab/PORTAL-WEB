@@ -334,7 +334,12 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
     // abaixo, pra um módulo aninhado ainda mais fundo com override PRÓPRIO
     // continuar vencendo sobre este.
     const effectiveColorsByRole = Pricing.effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides);
-    const pieceE = Pricing.thicknessForPiece(piece, effectiveColorsByRole, cascoE);
+    // Peça-módulo (gaveta, prateleira-módulo, casco aninhado): E = espessura
+    // do CASCO deste nível, não da cor dela — a fórmula dela fala do vão em
+    // que ela cabe. Mesma regra de Pricing.calculateModulePiece (24/09).
+    const pieceE = piece.is_module
+      ? (cascoE || Pricing.DEFAULT_THICKNESS_MM || 19.5)
+      : Pricing.thicknessForPiece(piece, effectiveColorsByRole, cascoE);
     const dims = Pricing.calculatePiece(piece, pieceContainerDims, quantityOverride, dimOverride, { E: pieceE });
 
     // Visibilidade condicional (migration 031) — mesma checagem do preço

@@ -224,8 +224,32 @@
   // furação é CADASTRADA (faceA na horizontal). Plano da máquina: X ao longo
   // da MAIOR face (convenção Width>=Hight dos .ban de exemplo, igual à
   // lista de corte C=maior/L=média).
+  // GIRO DE 90° NO ARQUIVO DA MÁQUINA — SÓ QUANDO PRECISA (2026-09-24).
+  //
+  // Antes: girava sempre que faceB > faceA ("Width >= Hight", convenção
+  // tirada dos .ban de exemplo, que eram todos deitados). Efeito colateral
+  // que só apareceu no 1º lote real (PC-002278, fundo do Wall Cabinet 032,
+  // 376 largo × 799 alto): girada, a peça fica com os furos de BORDA das
+  // pontas (borda_esq/dir, o pino que entra na lateral) nas bordas de
+  // cima/baixo do plano da máquina — que saem como HoleH Face="T"/"B",
+  // códigos que nunca foram confirmados com arquivo real (só A/L/R foram).
+  // A máquina não entendeu: Matt, "os furos de 8 mm na face ainda estão lá,
+  // que deveriam estar nos topos". Os fundos deitados do mesmo lote
+  // (47/48/51, 723 × 443) saíram certos porque não giravam.
+  //
+  // Agora: a peça sai como foi cadastrada (X = faceA, Y = faceB) e só gira
+  // quando faceB passa do que a furadeira consegue passar em Y
+  // (FURADEIRA_LADO_MAX_MM = 1050, ver limite_furadeira_1050mm_fundo_deitado)
+  // — porta alta, painel alto. Aí ainda cai em T/B (pendente de um .ban de
+  // exemplo da máquina com furo nessas bordas), mas é raro: porta não tem
+  // furo de borda.
+  //
+  // Plane com Width < Hight passa a existir no arquivo (ex.: 375.7 × 799.2).
+  // Se a máquina recusar isso, o caminho alternativo é confirmar os códigos
+  // T/B e voltar a girar — não mexer aqui sem um .ban real na mão.
+  const FURADEIRA_LADO_MAX_MM = 1050;
   function machineDims(t) {
-    const flip = t.faceB > t.faceA; // X da máquina segue faceB em vez de faceA
+    const flip = t.faceB > t.faceA && t.faceB > FURADEIRA_LADO_MAX_MM;
     return {
       flip,
       C: flip ? t.faceB : t.faceA, // Width do Plane
@@ -608,6 +632,22 @@
   }
 
   // ---- caixas de um nível de montagem ------------------------------------
+  // PÉ / TOE (position_role='leg') — mesma regra do viewer3d (update() e
+  // buildModuleAssembly): o CORPO inteiro (toda peça que não é o pé) sobe
+  // na altura resolvida do pé, e as medidas/offsets das peças já vêm
+  // calculados contra o corpo (H − pé, Pricing.resolveBodyDims em
+  // resolvePiecesForViewer). FALTAVA AQUI (2026-09-24, Matt, módulo 006
+  // "Base Full High Cabinet", pé plástico 4½: "furo das marcações da
+  // dobradiça estão fora da medida na altura... não está considerando o
+  // toekick pra cima"): a lateral dentro do casco "Plastic feets 4½" ficava
+  // em y=0 na furação enquanto a porta (nível de cima, construtor) está na
+  // altura absoluta — a base de dobradiça saía 114 mm abaixo. Vale pra
+  // qualquer altura de pé (76, 114...), é a altura da própria peça 'leg'.
+  function legHeightMm(parts) {
+    const leg = (parts || []).find(function (p) { return !p.is_module && p.position_role === 'leg'; });
+    return leg ? Math.max(Number(leg.height_mm) || 0, 0) : 0;
+  }
+
   function buildBoxes(parts, W, H, D) {
     const groups = {};
     (parts || []).forEach(function (p) {
@@ -616,16 +656,19 @@
       if (!groups[role]) groups[role] = [];
       groups[role].push(p);
     });
+    const legH = legHeightMm(parts);
+    const boxH = Math.max(H - legH, 1);
     const bounds = {
       innerBottomY: resolveThicknessMm((groups['bottom'] || [])[0]),
-      innerTopY: H - resolveThicknessMm((groups['top'] || [])[0])
+      innerTopY: boxH - resolveThicknessMm((groups['top'] || [])[0])
     };
     const boxes = [];
     const byPart = new Map();
     Object.keys(groups).forEach(function (role) {
+      if (role === 'leg') return; // o pé é comprado, não fura e não é corpo
       groups[role].forEach(function (part, index) {
-        const box = pieceBox(part, W, H, D, index, groups[role].length, bounds);
-        if (box) { boxes.push(box); byPart.set(part, box); }
+        const box = pieceBox(part, W, boxH, D, index, groups[role].length, bounds);
+        if (box) { box.y0 += legH; boxes.push(box); byPart.set(part, box); }
       });
     });
     return { boxes, byPart };
@@ -654,28 +697,56 @@
   // CRUZADOS (aninhada × peça do pai, ou aninhada × outra aninhada). Por
   // construção, nada do que já saía muda: os pares antigos continuam
   // iguais, só aparecem pares novos.
-  function boxesAninhadas(parts, W, H, D) {
-    const out = [];
+  // Peça que ABRE (porta/gaveta, de peça ou de modelo). Ela e tudo que está
+  // DENTRO dela (chapa da porta, laterais do caixote da gaveta) nunca
+  // RECEBEM base de dobradiça nem piloto de corrediça — isso é do casco.
+  // Sem essa marca, com a árvore inteira achatada, a gaveta achava as
+  // próprias laterais do caixote a 15 mm e furava a corrediça nelas.
+  function ehAbertura(part) {
+    if (!part) return false;
+    const role = part.position_role || 'other';
+    return role === 'front' || role === 'drawer' || part.opening_type === 'slide_out' || !!hingeSideOf(part);
+  }
+
+  // Caixa (no frame deste nível) de cada peça-módulo posicionável — a mesma
+  // conta do viewer3d. Map peça-módulo → caixa; sem entrada = sem posição
+  // reconstituível (front/drawer/other), tratada como antes.
+  function caixasDasPecasModulo(parts, W, H, D) {
     const groups = {};
     (parts || []).forEach(function (p) {
       if (p.is_module) return;
       const role = p.position_role || 'other';
       (groups[role] = groups[role] || []).push(p);
     });
+    const legH = legHeightMm(parts); // ver buildBoxes: corpo sobe no pé
+    const boxH = Math.max(H - legH, 1);
     const bounds = {
       innerBottomY: resolveThicknessMm((groups['bottom'] || [])[0]),
-      innerTopY: H - resolveThicknessMm((groups['top'] || [])[0])
+      innerTopY: boxH - resolveThicknessMm((groups['top'] || [])[0])
     };
+    const out = new Map();
     (parts || []).forEach(function (part) {
       if (!part.is_module || !part.child_pieces || !part.child_pieces.length) return;
-      const box = pieceBox(part, W, H, D, 0, 1, bounds);
+      const box = pieceBox(part, W, boxH, D, 0, 1, bounds);
+      if (box) { box.y0 += legH; out.set(part, box); }
+    });
+    return out;
+  }
+
+  function boxesAninhadas(parts, W, H, D) {
+    const out = [];
+    const caixas = caixasDasPecasModulo(parts, W, H, D);
+    (parts || []).forEach(function (part) {
+      const box = caixas.get(part);
       if (!box) return; // front/drawer/other: sem posição reconstituível, fica como era
       const cw = box.sx, ch = box.sy, cd = box.sz;
       const inner = buildBoxes(part.child_pieces, cw, ch, cd).boxes
         .concat(boxesAninhadas(part.child_pieces, cw, ch, cd));
+      const abre = ehAbertura(part);
       inner.forEach(function (b) {
         out.push(Object.assign({}, b, {
-          x0: b.x0 + box.x0, y0: b.y0 + box.y0, z0: b.z0 + box.z0, _owner: part
+          x0: b.x0 + box.x0, y0: b.y0 + box.y0, z0: b.z0 + box.z0, _owner: part,
+          _abre: !!(b._abre || abre)
         }));
       });
     });
@@ -891,8 +962,12 @@
   // FRONTAL da lateral). Portas 'front' seguem a fila do viewer3d
   // (placeFrontGroupInBox: cursor da esquerda, gap 2mm); porta 'free' usa a
   // própria posição.
-  function collectHingePlates(store, parts, boxes, settings) {
+  function collectHingePlates(store, parts, boxes, settings, origem) {
     if (!settings || !settings.hinge_enabled) return;
+    // `origem` = onde este nível está no frame da RAIZ (ver collectAssembly):
+    // as portas deste nível são levadas pra lá, porque `boxes` é a árvore
+    // inteira no frame da raiz.
+    const ox = origem ? origem.x : 0, oy = origem ? origem.y : 0;
     if (settings.hinge_plate_enabled === false) return;
     const plateDia = Number(settings.hinge_plate_diameter_mm) || 5;
     const plateDepth = Number(settings.hinge_plate_depth_mm) || 12;
@@ -910,14 +985,14 @@
         // 'top'/'bottom' (basculante) não usa base de dobradiça de embutir
         // — ver collectHingeHoles acima pro mesmo motivo.
         if (hingeSideOf(part)) {
-          doors.push({ part, side: hingeSideOf(part), x0, y0: part.offset_y_mm || 0, doorW: t.faceA, doorH: t.faceB });
+          doors.push({ part, side: hingeSideOf(part), x0: x0 + ox, y0: (part.offset_y_mm || 0) + oy, doorW: t.faceA, doorH: t.faceB });
         }
         cursorX += t.faceA + 2;
       } else if (role === 'free' && hingeSideOf(part)) {
         // inclui a PORTA DE MODELO (peça-módulo do Construtor, ver hingeSideOf)
         doors.push({
           part, side: hingeSideOf(part),
-          x0: part.offset_x_mm || 0, y0: part.offset_y_mm || 0,
+          x0: (part.offset_x_mm || 0) + ox, y0: (part.offset_y_mm || 0) + oy,
           doorW: part.width_mm || 0, doorH: part.height_mm || 0
         });
       }
@@ -925,8 +1000,8 @@
     if (!doors.length) return;
 
     // candidatas a receber a base: peças com espessura no eixo X (laterais,
-    // divisórias em pé)
-    const laterals = boxes.filter(function (b) { return b.tAxis === 'x'; });
+    // divisórias em pé) do CASCO — nunca de dentro de porta/gaveta (_abre)
+    const laterals = boxes.filter(function (b) { return b.tAxis === 'x' && !b._abre; });
     if (!laterals.length) return;
 
     doors.forEach(function (door) {
@@ -982,8 +1057,9 @@
     } catch (e) { return def; }
   }
 
-  function collectSlideHoles(store, parts, boxes, W, H, D, settings) {
+  function collectSlideHoles(store, parts, boxes, W, H, D, settings, origem) {
     if (!settings || settings.slide_enabled === false) return;
+    const ox = origem ? origem.x : 0, oy = origem ? origem.y : 0; // ver collectHingePlates
     const dia = Number(settings.slide_diameter_mm) || 5;
     const depth = Number(settings.slide_depth_mm) || 12;
     const height = Number(settings.slide_height_mm) || 37;
@@ -1010,19 +1086,21 @@
         const drawerW = Math.min(part.width_mm || 0, W * 0.97);
         const drawerD = Math.min(part.depth_mm || 0, D * 0.9);
         const centerY = slotH * (count - index - 0.5) + (part.offset_y_mm || 0);
-        drawers.push({ part, x0: W / 2 - drawerW / 2 + (part.offset_x_mm || 0), w: drawerW, bottomY: centerY - drawerH / 2, d: drawerD });
+        drawers.push({ part, x0: W / 2 - drawerW / 2 + (part.offset_x_mm || 0) + ox, w: drawerW, bottomY: centerY - drawerH / 2 + oy, d: drawerD });
       } else {
         // posição própria (free/other com slide_out) — zero-absoluto
         drawers.push({
           part,
-          x0: part.offset_x_mm || 0, w: part.width_mm || 0,
-          bottomY: part.offset_y_mm || 0, d: part.depth_mm || 0
+          x0: (part.offset_x_mm || 0) + ox, w: part.width_mm || 0,
+          bottomY: (part.offset_y_mm || 0) + oy, d: part.depth_mm || 0
         });
       }
     });
     if (!drawers.length) return;
 
-    const laterals = boxes.filter(function (b) { return b.tAxis === 'x'; });
+    // só laterais do CASCO: as do próprio caixote da gaveta ficam a 15 mm
+    // dela e passariam no "gap ≤ 30" (ver ehAbertura)
+    const laterals = boxes.filter(function (b) { return b.tAxis === 'x' && !b._abre; });
     if (!laterals.length) return;
 
     drawers.forEach(function (dr) {
@@ -1156,23 +1234,46 @@
   // parts = saída de resolvePiecesForViewer (admin.js); container = {W,H,D}
   // em mm. Coleta furos de TODAS as peças-folha (recursão em child_pieces
   // com o volume local da peça-módulo, igual buildModuleAssembly no 3D).
-  function collectAssembly(store, parts, W, H, D, config) {
+  // ENGENHARIA DE ENCAIXE POR CONEXÃO (Matt, 2026-09-24: "o importante é a
+  // engenharia de encaixe por conexão de componentes"): a furação que nasce
+  // do ENCONTRO de duas peças (base de dobradiça porta→lateral, piloto de
+  // corrediça gaveta→lateral, suporte de prateleira, contra-furo, cabide)
+  // não depende de COMO o módulo foi cadastrado — peça direta, casco
+  // aninhado, gaveteiro aninhado dentro de casco aninhado... A árvore
+  // inteira é achatada no frame da RAIZ (`todas`, via boxesAninhadas) e
+  // cada porta/gaveta, em qualquer nível, é levada pra esse frame
+  // (`origem`) e procura a lateral que encosta nela, esteja a lateral onde
+  // estiver. Os passes de contato puro (contra-furo, prateleira, cabide) já
+  // eram assim por nível + pares cruzados (mesmaSubarvore).
+  //
+  // `ctx` = { origem:{x,y,z} deste nível no frame da raiz, todas } — ausente
+  // na raiz; null num nível sem posição reconstituível (cai no local).
+  function collectAssembly(store, parts, W, H, D, config, ctx) {
     const built = buildBoxes(parts, W, H, D);
-    // Peças de módulos aninhados no frame deste nível (2026-09-24) — só pros
-    // passes de CONTATO (contra-furo, suporte de prateleira, suporte de
-    // cabide). Dobradiça/corrediça continuam lendo `parts` como sempre.
-    const todas = built.boxes.concat(boxesAninhadas(parts, W, H, D));
-    collectCounterHoles(store, todas, config.drillingsByComponent, config.settings, W, H, D, config.holesByPattern);
-    collectHingePlates(store, parts, built.boxes, config.settings);
-    collectSlideHoles(store, parts, built.boxes, W, H, D, config.settings);
-    collectShelfSupportHoles(store, todas, config.settings);
-    collectCabideSupportHoles(store, todas);
+    const todasLocal = built.boxes.concat(boxesAninhadas(parts, W, H, D));
+    const raiz = ctx || { origem: { x: 0, y: 0, z: 0 }, todas: todasLocal };
+    // Porta/gaveta cadastrada NESTE nível também sobe no pé (ver legHeightMm)
+    // — a do construtor já vem em altura absoluta, mas ela é peça do nível
+    // de cima, que não tem 'leg' (o pé está dentro do casco aninhado).
+    const legH = legHeightMm(parts);
+    const origemCorpo = { x: raiz.origem.x, y: raiz.origem.y + legH, z: raiz.origem.z };
+    collectCounterHoles(store, todasLocal, config.drillingsByComponent, config.settings, W, H, D, config.holesByPattern);
+    collectHingePlates(store, parts, raiz.todas, config.settings, origemCorpo);
+    collectSlideHoles(store, parts, raiz.todas, W, Math.max(H - legH, 1), D, config.settings, origemCorpo);
+    collectShelfSupportHoles(store, todasLocal, config.settings);
+    collectCabideSupportHoles(store, todasLocal);
+    const caixas = caixasDasPecasModulo(parts, W, H, D);
     (parts || []).forEach(function (part) {
       if (part.is_module && part.child_pieces && part.child_pieces.length) {
         // Porta de MODELO (Construtor): copo + marcações caem na chapa do
         // modelo — ver collectHingeHolesModulo.
         collectHingeHolesModulo(store, part, config.settings);
-        collectAssembly(store, part.child_pieces, part.width_mm, part.height_mm, part.depth_mm, config);
+        const box = caixas.get(part);
+        const sub = box ? {
+          origem: { x: raiz.origem.x + box.x0, y: raiz.origem.y + box.y0, z: raiz.origem.z + box.z0 },
+          todas: raiz.todas
+        } : null;
+        collectAssembly(store, part.child_pieces, part.width_mm, part.height_mm, part.depth_mm, config, sub);
         return;
       }
       if (part.is_module) return;
@@ -1430,7 +1531,28 @@
       + (s.passante ? USINAGEM.is_cuted_passante : '0') + '"/>';
   }
 
-  function buildBanXml(name, C, L, E, holes, slots) {
+  // CONTORNO do .ban com o recorte em L descontado (2026-09-24). Matt testou
+  // na máquina um .ban da lateral PC-002259 com o <Outline> de 7 pontos
+  // (o retângulo menos o L de 114×76) e "funcionou perfeitamente": a máquina
+  // corta o <Outline>. Então o recorte de toe/gola vai AQUI, no mesmo
+  // arquivo dos furos — nem SlotL (não cortava) nem corte.xml separado.
+  // Mesmo polígono de contornoComRecortes, só que no sentido e ponto de
+  // partida do .ban testado: (114,609) (876,609) (876,0) (0,0) (0,533)
+  // (114,533) e fecha — Y negado na escrita, como todo o resto do .ban.
+  function outlineBan(C, L, rects) {
+    const ciclo = contornoComRecortes(C, L, rects || []).slice().reverse();
+    // começa no ponto de y = L com menor x (no retângulo puro é o (0,L) de sempre)
+    let ini = 0;
+    ciclo.forEach(function (p, i) {
+      const q = ciclo[ini];
+      if (Math.abs(p[1] - L) < 0.01 && (Math.abs(q[1] - L) >= 0.01 || p[0] < q[0])) ini = i;
+    });
+    const pts = ciclo.slice(ini).concat(ciclo.slice(0, ini));
+    pts.push(pts[0]);
+    return pts;
+  }
+
+  function buildBanXml(name, C, L, E, holes, slots, recortes) {
     const now = new Date();
     const pad = function (n) { return String(n).padStart(2, '0'); };
     const time = now.getFullYear() + '/' + pad(now.getMonth() + 1) + '/' + pad(now.getDate())
@@ -1441,11 +1563,11 @@
       + C.toFixed(1) + '" Hight="' + L.toFixed(1) + '" Thickness="' + fmt(E)
       + '" Grain="DIR_NONE" EdgeFBLR="0 ,0 ,0 ,0" PlaneSize="1" MachineBase="-1">');
     lines.push('<Outline>');
-    lines.push('<Point Value="0 -' + L.toFixed(1) + ' 0"/>');
-    lines.push('<Point Value="' + C.toFixed(1) + ' -' + L.toFixed(1) + ' 0"/>');
-    lines.push('<Point Value="' + C.toFixed(1) + ' 0 0"/>');
-    lines.push('<Point Value="0 0 0"/>');
-    lines.push('<Point Value="0 -' + L.toFixed(1) + ' 0"/>');
+    outlineBan(C, L, recortes).forEach(function (p) {
+      const x = p[0] === 0 ? '0' : p[0].toFixed(1);
+      const y = p[1] === 0 ? '0' : '-' + p[1].toFixed(1);
+      lines.push('<Point Value="' + x + ' ' + y + ' 0"/>');
+    });
     lines.push('</Outline>');
     holes.forEach(function (h) {
       const xml = holeToXml(h, C, L, E);
@@ -1457,6 +1579,81 @@
     lines.push('</Plane>');
     lines.push('</MicroDrawBan_XML>');
     return lines.join('\r\n') + '\r\n'; // CRLF, igual aos arquivos da máquina
+  }
+
+  // ---- formatador do RECORTE (contorno) — XML "WEIHONG Cabinets" ----------
+  //
+  // Matt, 2026-09-24 (LT-26-0014, lateral do módulo 2, PC-002259): "a lateral
+  // levou o slot pra máquina fazer o recorte do toekick mas não cortou, então
+  // gerei um modelo novo que coloquei na máquina e funcionou... só a parte do
+  // recorte". O modelo que funcionou NÃO é o .ban: é um XML separado no
+  // formato "Cabinets" da Weihong, onde a peça vai com o CONTORNO inteiro
+  // como polilinha (Machining Type=3, Face=5) já com o L descontado — a
+  // máquina corta o contorno e o canto sai sozinho. Reproduzido aqui
+  // byte a byte do arquivo dele (WHPC-002259corte.xml):
+  //
+  //   <Panel Id="PC-002259" Name="PC-002259" Width="609.00" Length="876.00"
+  //          Thickness="18.00" Grain="None" HasSetSort="False" IsAccurate="1">
+  //     <EdgeGroup Is4Sides="false"> 4 × <Edge Face="n" Thickness="0"/> </EdgeGroup>
+  //     <Machines><Machining ID="0" Type="3" Face="5" X="0.00" Y="0.00" GrooveType="0" IsClosed="false">
+  //       <Lines><Line LineID="1" EndX="876.00" EndY="0.00" Angle="0.00"/> ... </Lines>
+  //
+  // Eixos: Length = X = o COMPRIMENTO da máquina (o mesmo C/Width do .ban),
+  // Width = Y = a largura (o mesmo L/Hight do .ban), Y POSITIVO (no .ban é
+  // negado). No arquivo dele o L de 114 × 76 ficou em x 0..114 (pé da
+  // lateral) e y 533..609 (frente) — exatamente o retângulo que recorteRects
+  // devolve pra 'frente-baixo', sem conversão nenhuma.
+  //
+  // O polígono: anda (0,0) -> (C,0) -> (C,L) -> (0,L) -> (0,0) e, em cada
+  // canto que tem recorte, troca a quina pelos 3 pontos do L. Os furos
+  // continuam no .ban; o SlotL saiu do .ban (era o que não cortava).
+  function contornoComRecortes(C, L, rects) {
+    const eps = 0.05;
+    const noCanto = function (cx, cy) {
+      return (rects || []).find(function (r) {
+        return (cx === 0 ? r.x0 <= eps : r.x1 >= C - eps) && (cy === 0 ? r.y0 <= eps : r.y1 >= L - eps);
+      }) || null;
+    };
+    const pts = [];
+    let r;
+    r = noCanto(0, 0);   if (r) pts.push([0, r.y1], [r.x1, r.y1], [r.x1, 0]); else pts.push([0, 0]);
+    r = noCanto(C, 0);   if (r) pts.push([r.x0, 0], [r.x0, r.y1], [C, r.y1]); else pts.push([C, 0]);
+    r = noCanto(C, L);   if (r) pts.push([C, r.y0], [r.x0, r.y0], [r.x0, L]); else pts.push([C, L]);
+    r = noCanto(0, L);   if (r) pts.push([r.x1, L], [r.x1, r.y0], [0, r.y0]); else pts.push([0, L]);
+    return pts;
+  }
+  function buildCorteXml(name, C, L, E, rects) {
+    const f2 = function (n) { return (Math.round(n * 100) / 100).toFixed(2); };
+    const pts = contornoComRecortes(C, L, rects);
+    const lines = [];
+    lines.push('<?xml version="1.0" encoding="utf-8"?>');
+    lines.push('<Root Name="WEIHONG" ContentType="Cabinets">');
+    lines.push('  <Cabinets>');
+    lines.push('    <Cabinet>');
+    lines.push('      <Panels>');
+    lines.push('        <Panel Id="' + esc(name) + '" Name="' + esc(name) + '" Width="' + f2(L) + '" Length="' + f2(C)
+      + '" Thickness="' + f2(E) + '" Grain="None" HasSetSort="False" IsAccurate="1">');
+    lines.push('          <EdgeGroup Is4Sides="false">');
+    for (let i = 1; i <= 4; i++) lines.push('            <Edge Face="' + i + '" Thickness="0" />');
+    lines.push('          </EdgeGroup>');
+    lines.push('          <Machines>');
+    const p0 = pts[0];
+    lines.push('            <Machining ID="0" Type="3" Face="5" X="' + f2(p0[0]) + '" Y="' + f2(p0[1]) + '" GrooveType="0" IsClosed="false">');
+    lines.push('              <Lines>');
+    const seq = pts.slice(1).concat([p0]); // fecha no ponto de partida
+    seq.forEach(function (pt, i) {
+      lines.push('                <Line LineID="' + (i + 1) + '" EndX="' + f2(pt[0]) + '" EndY="' + f2(pt[1]) + '" Angle="0.00" />');
+    });
+    lines.push('              </Lines>');
+    lines.push('            </Machining>');
+    lines.push('          </Machines>');
+    lines.push('          <MachineSorts />');
+    lines.push('        </Panel>');
+    lines.push('      </Panels>');
+    lines.push('    </Cabinet>');
+    lines.push('  </Cabinets>');
+    lines.push('</Root>');
+    return lines.join('\r\n'); // CRLF, sem quebra no fim — igual ao arquivo dele
   }
 
   // ---- entrada principal -------------------------------------------------
@@ -1487,7 +1684,7 @@
       const walk = function (parts) {
         (parts || []).forEach(function (part) {
           if (part.is_module) { walk(part.child_pieces); return; }
-          const holes = store.get(part) || [];
+          let holes = store.get(part) || [];
           if (part.origin === 'comprado') return; // ferragem comprada não fura
           const slots = slotsDaPeca(part);
           // COR E SENTIDO DO VEIO — só pro DESENHO (visualizador de furação do
@@ -1541,6 +1738,25 @@
           if (!holes.length && !slots.length) return;
           const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
           const m = machineDims(t);
+          // BORDA DE CIMA/BAIXO -> GIRA PRA VIRAR ESQ/DIR (2026-09-24, PC-002263
+          // fundo de gaveta: "furo que está na face e deve ser [de borda]").
+          // Os códigos de face "T"/"B" do HoleH pra borda_sup/borda_inf nunca
+          // foram confirmados na máquina (holeToXml) — e "B" é o código que a
+          // máquina usa pra FACE DE TRÁS, então furo de borda de baixo virava
+          // furo de face. Só L (x=0) e R (x=Width) são confirmados. Quando TODOS
+          // os furos de borda da peça estão em cima/baixo, gira a peça 90° no
+          // arquivo (mesma rotação rígida do flip de machineDims) e eles caem
+          // em L/R. Peça que precisa das duas duplas de borda (ou tem
+          // recorte) fica como está até termos os códigos certos.
+          if (!m.flip && !slots.length && t.faceA <= FURADEIRA_LADO_MAX_MM
+              && holes.some(function (h) { return h.face === 'borda_sup' || h.face === 'borda_inf'; })
+              && !holes.some(function (h) { return h.face === 'borda_esq' || h.face === 'borda_dir'; })) {
+            const trocaFace = { borda_sup: 'borda_dir', borda_inf: 'borda_esq' };
+            holes = holes.map(function (h) {
+              return Object.assign({}, h, { x: t.faceB - h.y, y: h.x, face: trocaFace[h.face] || h.face });
+            });
+            m.flip = true; m.C = t.faceB; m.L = t.faceA;
+          }
           // ordena furos (face primeiro, depois posição) pra assinatura ser
           // estável entre instâncias idênticas
           const sorted = holes.slice().sort(function (a, b) {
@@ -1558,7 +1774,7 @@
               module_name: item.moduleName,
               reference: part.reference || 'peca',
               comprimento_mm: m.C, largura_mm: m.L, espessura_mm: m.E,
-              holes: sorted, slots: slots, quantity: 0,
+              holes: sorted, slots: slots, recortes: recorteRects(part), quantity: 0,
               // cor NÃO entra na assinatura de propósito: a furação de duas
               // peças iguais em cores diferentes é a MESMA, e separar os
               // arquivos por cor faria a máquina furar duas vezes o que é um
@@ -1611,6 +1827,7 @@
     generateOrderFiles: generateOrderFiles,
     collectOrderPieces: collectOrderPieces,
     buildBanXml: buildBanXml,
+    buildCorteXml: buildCorteXml,
     // expostos pra teste/diagnóstico (e pra prévia 2D do admin usar a MESMA
     // correção de sentido do gerador — resolveDrillingHoleXY)
     // ======================================================================
@@ -1750,7 +1967,7 @@
     // sobreposição, Face e IsCuted sem editar o arquivo — os dois últimos
     // ainda esperam confirmação na máquina.
     USINAGEM: USINAGEM,
-    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca }
+    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 // migration 043 — propagação por componente + espelhamento esq/dir

@@ -49,7 +49,7 @@
         tokens.push({ type: 'var', value: name });
         continue;
       }
-      if ('+-*/()'.includes(ch)) {
+      if ('+-*/(),'.includes(ch)) {
         tokens.push({ type: 'op', value: ch });
         i++;
         continue;
@@ -110,12 +110,54 @@
     }
     return this.parsePrimary();
   };
+  // FUNÇÕES NA FÓRMULA (2026-09-24). Matt, gaveta de 210 mm (PC-002194):
+  // "para gavetas altas... acima de 130 mm coloca mais um minifix no
+  // stretcher e consequentemente na lateral. só acima de 130, abaixo mantém
+  // igual". Isso é uma linha de furação CONDICIONAL — e a fórmula só tinha
+  // + - * / ( ). Entram funções, chamadas como em qualquer planilha:
+  //   min(a,b,...)  max(a,b,...)  abs(a)  floor(a)  ceil(a)  round(a)
+  //   maior(a,b)  -> 1 se a > b, senão 0     (ex: repetições = maior(H,130))
+  //   menor(a,b)  -> 1 se a < b, senão 0
+  //   se(cond,a,b)-> a se cond ≠ 0, senão b  (ex: y = se(maior(H,130),H-40,H/2))
+  // Nome de função só vale seguido de "(" — variável com o mesmo nome (não
+  // há nenhuma hoje) continuaria funcionando sem parêntese.
+  const FUNCOES = {
+    min: function (a) { return Math.min.apply(null, a); },
+    max: function (a) { return Math.max.apply(null, a); },
+    abs: function (a) { return Math.abs(a[0]); },
+    floor: function (a) { return Math.floor(a[0]); },
+    ceil: function (a) { return Math.ceil(a[0]); },
+    round: function (a) { return Math.round(a[0]); },
+    maior: function (a) { return a[0] > a[1] ? 1 : 0; },
+    menor: function (a) { return a[0] < a[1] ? 1 : 0; },
+    se: function (a) { return a[0] ? a[1] : (a.length > 2 ? a[2] : 0); }
+  };
+  Parser.prototype.parseArgs = function () {
+    // já consumiu o nome; consome "(" args ")"
+    this.next();
+    const args = [];
+    if (this.peek() && this.peek().type === 'op' && this.peek().value === ')') { this.next(); return args; }
+    for (;;) {
+      args.push(this.parseExpression());
+      const t = this.next();
+      if (!t) throw new Error(tr('pricing.formula_unclosed_paren', null, 'Fórmula inválida: parêntese não fechado.'));
+      if (t.value === ')') return args;
+      if (t.value !== ',') throw new Error(tr('pricing.formula_invalid', null, 'Fórmula inválida.'));
+    }
+  };
   Parser.prototype.parsePrimary = function () {
     const tok = this.peek();
     if (!tok) throw new Error(tr('pricing.formula_abrupt_end', null, 'Fórmula inválida: fim inesperado.'));
     if (tok.type === 'num') { this.next(); return tok.value; }
     if (tok.type === 'var') {
       this.next();
+      const nomeFn = tok.value.toLowerCase();
+      const abre = this.peek();
+      if (FUNCOES[nomeFn] && abre && abre.type === 'op' && abre.value === '(') {
+        const args = this.parseArgs();
+        if (!args.length) throw new Error(tr('pricing.formula_invalid', null, 'Fórmula inválida.'));
+        return FUNCOES[nomeFn](args);
+      }
       if (!(tok.value in this.variables)) {
         throw new Error(tr('pricing.formula_unknown_var', { name: tok.value }, 'Variável desconhecida na fórmula: "' + tok.value + '"'));
       }
@@ -232,6 +274,77 @@
       espessura: dims[tKey], comprimento: dims[maior], largura: dims[menor],
       tKey: tKey, cKey: maior, lKey: menor
     };
+  }
+
+  // ==========================================================================
+  // EIXO DO VEIO DA PEÇA (2026-09-24)
+  // ==========================================================================
+  // Matt, 1º lote real (LT-26-0014), depois de tudo cortado: "surgiram peças
+  // com veio trocado. as portas do módulo 11 estão na horizontal e deveriam
+  // estar na vertical. painéis que mostram na vertical no projeto foram
+  // cortados na horizontal."
+  //
+  // CAUSA: o plano de corte (erp/js/data-lotes.js, LOTES.sortCutDims) definia
+  // COMPRIMENTO = maior medida, e o nesting põe o comprimento sempre no
+  // sentido do veio. Ou seja: o veio seguia o LADO LONGO — porta mais larga
+  // que alta (377×328) saía com veio deitado; painel "Vertical no Plano" mais
+  // largo que alto, idem. O 3D não faz isso: ele lê positioning/veio/papel
+  // (viewer3d.resolveGrainRotate, 3 rodadas de pedido do Matt em set/26:
+  // "se o painel é horizontal independente do seu tamanho ele deve ter a
+  // textura horizontal, mesma regra pro vertical"). Corte e desenho
+  // divergiam — e o corte é o que custa chapa.
+  //
+  // Esta função é a MESMA regra do desenho, traduzida pra "em qual eixo do
+  // módulo (w/h/d) o veio corre", pra viajar no breakdown (grain_axis) e o
+  // plano de corte orientar comprimento = medida no eixo do veio.
+  //
+  //   rotate=false no 3D = veio "em pé"  -> eixo h (numa peça DEITADA, eixo d)
+  //   rotate=true  no 3D = veio "deitado"-> eixo w (numa LATERAL, eixo d)
+  //
+  // Precedência (igual ao viewer): papel free/other/baseboard com
+  // positioning -> positioning manda; senão `veio` cadastrado
+  // ('horizontal'/'vertical'); fundo sem veio -> lado longo (limitação da
+  // chapa, pedido explícito pra não mexer); free/other/baseboard sem nada ->
+  // eixo fino (peça deitada = deitado, em pé de canto = em pé, no plano =
+  // deitado); demais papéis (lateral, base, topo, porta, prateleira) ->
+  // positioning do tipo; sem nada -> lado longo (comportamento antigo).
+  function grainAxisForPiece(piece, dims) {
+    const w = Number(dims && dims.width_mm) || 0;
+    const h = Number(dims && dims.height_mm) || 0;
+    const d = Number(dims && dims.depth_mm) || 0;
+    if (!(w > 0) || !(h > 0) || !(d > 0)) return null;
+    const role = (piece && piece.position_role) || 'other';
+    const positioning = (piece && piece.positioning) || null;
+    const veio = piece && (piece.veio_declarado != null ? piece.veio_declarado : piece.veio);
+    const m = pecaNaMaquina(w, h, d, positioning);
+    const tKey = m.tKey;
+    const eixo = function (rotate) {
+      if (rotate === false) return tKey === 'h' ? 'd' : 'h';
+      return tKey === 'w' ? 'd' : 'w';
+    };
+    const pelaPos = function () {
+      if (positioning === 'horizontal' || positioning === 'horizontal_no_plano') return eixo(true);
+      if (positioning === 'vertical' || positioning === 'vertical_no_plano') return eixo(false);
+      return null;
+    };
+    const longo = function () { return m.cKey; };
+    if ((role === 'free' || role === 'other' || role === 'baseboard') && positioning) {
+      const r = pelaPos();
+      if (r) return r;
+    }
+    if (veio === 'horizontal') return eixo(true);
+    if (veio === 'vertical') return eixo(false);
+    const semVeio = !veio || veio === 'livre';
+    if (role === 'back' && semVeio) return longo();
+    if ((role === 'free' || role === 'other' || role === 'baseboard') && semVeio) {
+      const fino = Math.min(w, h, d);
+      if (h === fino) return eixo(true);
+      if (w === fino) return eixo(false);
+      return eixo(true);
+    }
+    const r = pelaPos();
+    if (r) return r;
+    return longo();
   }
 
   // ==========================================================================
@@ -906,6 +1019,12 @@
       width_mm: pieceDims.width_mm,
       height_mm: pieceDims.height_mm,
       depth_mm: pieceDims.depth_mm,
+      // Eixo do módulo em que o VEIO corre ('w'|'h'|'d', ver
+      // grainAxisForPiece) + positioning do tipo — pro plano de corte
+      // (LOTES.explodeOrders) pôr o comprimento no sentido do veio em vez de
+      // no lado longo. Ausente em pedido gravado antes de 2026-09-24.
+      grain_axis: grainAxisForPiece(piece, pieceDims),
+      positioning: piece.positioning || null,
       area_m2: pieceDims.area_m2,
       edge_band_m: pieceDims.edge_band_m,
       sheet_cost: sheet_cost,
@@ -968,8 +1087,17 @@
   function calculateModulePiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE) {
     const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
-    // E igual ao de resolvePiecesForViewer (ver calculateLeafPiece).
-    const pieceE = thicknessForPiece(piece, effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides), cascoE);
+    // E de uma PEÇA-MÓDULO = a espessura do CASCO que a cerca, nunca a da
+    // cor dela (2026-09-24, Matt: "mexeu no cálculo das gavetas internas dos
+    // módulos já cadastrados quando mexeu no E, agora elas estão erradas").
+    // A fórmula de uma gaveta aninhada ('W-2*E', offset x = 'E') descreve o
+    // VÃO entre as laterais do pai — é a chapa das laterais que manda. A
+    // cor da gaveta (caixote) é outra, e desde a 160 o E dela estava
+    // entrando nessa conta, mudando a largura da gaveta com o material do
+    // caixote. Com E = casco, casco de 19.5 volta a dar exatamente o 39 de
+    // antes da 160; casco de plywood (18) dá o vão real. Igual em
+    // resolvePiecesForViewer (js/module-pieces.js).
+    const pieceE = cascoE || DEFAULT_THICKNESS_MM;
     const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, { E: pieceE });
     const qty = pieceDims.quantity;
 
@@ -1374,6 +1502,7 @@
     // pra pintar a face certa, e o cadastro precisa dela pra mostrar a
     // metragem antes de salvar.
     pecaNaMaquina,
+    grainAxisForPiece,
     edgeBandMeters,
     // Migration 090 — preços dos quatro processos (corte, fita 2C, fita 4L,
     // furação). Chamado uma vez, logo depois de carregar pricing_settings.
