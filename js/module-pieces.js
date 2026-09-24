@@ -302,6 +302,11 @@ async function loadRecursivePiecesForModule(moduleId) {
    ========================================================================== */
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
+  // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.
+  // thicknessForPiece. Espessura do casco deste nível = fallback pra peça
+  // sem cor. Precisa ser a MESMA conta de Pricing.calculateAssembly, senão
+  // preço e desenho/plano/furação divergem na medida.
+  const cascoE = Pricing.cascoThicknessMm(piecesList, colorsByRole, pieceColorOverrides);
   const parts = [];
   (piecesList || []).forEach((piece) => {
     const pieceContainerDims = piece.position_role === 'leg' ? containerDims : bodyDims;
@@ -310,7 +315,16 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
     // (module_components.id) usado em Pricing.calculateAssembly, pra 3D e
     // preço nunca divergirem (ver comentário em calculatePiece/pricing.js).
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
-    const dims = Pricing.calculatePiece(piece, pieceContainerDims, quantityOverride, dimOverride);
+    // Cor própria desta instância (migration 046) — resolvida ANTES das
+    // medidas desde 24/09, porque a espessura (E) da fórmula vem da cor.
+    // Se pieceColorOverrides tiver uma entrada pra este piece.id, ela
+    // substitui só os papéis que tem, mantendo os demais herdados do pai; o
+    // resultado (não o colorsByRole original) desce pra child_pieces mais
+    // abaixo, pra um módulo aninhado ainda mais fundo com override PRÓPRIO
+    // continuar vencendo sobre este.
+    const effectiveColorsByRole = Pricing.effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides);
+    const pieceE = Pricing.thicknessForPiece(piece, effectiveColorsByRole, cascoE);
+    const dims = Pricing.calculatePiece(piece, pieceContainerDims, quantityOverride, dimOverride, { E: pieceE });
 
     // Visibilidade condicional (migration 031) — mesma checagem do preço
     // (Pricing.calculateAssembly), pra 3D e preço nunca divergirem: sem isso
@@ -328,12 +342,6 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
       return;
     }
 
-    // Cor própria desta instância (migration 046) — se pieceColorOverrides tiver uma entrada
-    // pra este piece.id, ela substitui só os papéis que tem, mantendo os demais herdados do
-    // pai; o resultado (não o colorsByRole original) desce pra child_pieces mais abaixo, pra um
-    // módulo aninhado ainda mais fundo com override PRÓPRIO continuar vencendo sobre este.
-    const pieceOverride = pieceColorOverrides && pieceColorOverrides[piece.id];
-    const effectiveColorsByRole = pieceOverride ? Object.assign({}, colorsByRole, pieceOverride) : colorsByRole;
     const color = effectiveColorsByRole && effectiveColorsByRole[piece.color_role_id];
     const roundedQty = Math.round(dims.quantity);
     const qty = Math.max(isNaN(roundedQty) ? 1 : roundedQty, 0);
@@ -414,7 +422,10 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
       const offsetVars = {
         W: pieceContainerDims.W, H: pieceContainerDims.H, D: pieceContainerDims.D,
         w: resolvedWidthMm, h: resolvedHeightMm, d: resolvedDepthMm,
-        N: i + 1, COUNT: qty
+        N: i + 1, COUNT: qty,
+        // E (24/09): offset com espessura embutida ('W-E' da lateral
+        // direita, 'D-E' de porta) segue a chapa desta peça, igual L/A/P.
+        E: pieceE
       };
       let offset_x_mm = 0, offset_y_mm = 0, offset_z_mm = 0;
       try { offset_x_mm = Pricing.evalFormula(piece.offset_x_formula, offsetVars); } catch (e) { /* ignora, usa 0 */ }

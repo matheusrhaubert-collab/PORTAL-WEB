@@ -139,7 +139,18 @@
   // o valor digitado pelo cliente (roomSettings); admin/client.js usam o
   // padrão 5 1/2" pra pré-visualizar. Merge: a variável local (W,H,D,w,h,d)
   // vence se tiver o mesmo nome.
-  let formulaGlobals = { RODAPE: 5.5 * 25.4, RB: 5.5 * 25.4 };
+  // E (2026-09-24) = ESPESSURA da chapa da peça, em mm. Nasceu porque o
+  // plywood do Matt tem 18mm e todo o resto 19.5 — e a espessura estava
+  // cravada como número nas fórmulas (migrations 101/102: '19.5', 'W-39',
+  // 'W-19.5'). A migration 160 troca esses literais por 'E' / '2*E', e
+  // calculatePiece/resolvePiecesForViewer/calculateAssembly passam o E REAL
+  // da peça (colors.thickness_mm da cor dela, ver thicknessForPiece). Este
+  // valor global é só a REDE: qualquer chamador que avalie fórmula sem
+  // saber a cor (admin, validação, pré-visualização, pé) recebe 19.5 —
+  // exatamente o número que estava escrito na fórmula antes da 160, então
+  // pra ele nada muda.
+  const DEFAULT_THICKNESS_MM = 19.5;
+  let formulaGlobals = { RODAPE: 5.5 * 25.4, RB: 5.5 * 25.4, E: DEFAULT_THICKNESS_MM };
   function setFormulaGlobals(vars) {
     formulaGlobals = Object.assign({}, formulaGlobals, vars || {});
   }
@@ -452,11 +463,15 @@
     return evalFormula((piece && piece.edge_band_linear_m_formula) || '0', ctx);
   }
 
-  function calculatePiece(piece, dims, quantityOverride, dimOverride) {
+  // extraVars (2026-09-24): variáveis a mais pra fórmula de L/A/P — hoje só
+  // { E } (espessura da chapa desta peça, ver thicknessForPiece). Opcional:
+  // sem ele, E cai no global (19.5) e o resultado é o mesmo de antes.
+  function calculatePiece(piece, dims, quantityOverride, dimOverride, extraVars) {
     const { W, H, D } = dims;
-    let w = evalFormula(piece.width_formula, { W, H, D });
-    let h = evalFormula(piece.height_formula, { W, H, D });
-    let d = evalFormula(piece.depth_formula, { W, H, D });
+    const fv = Object.assign({ W, H, D }, extraVars || {});
+    let w = evalFormula(piece.width_formula, fv);
+    let h = evalFormula(piece.height_formula, fv);
+    let d = evalFormula(piece.depth_formula, fv);
     if (dimOverride) {
       if (dimOverride.width_mm !== undefined && dimOverride.width_mm !== null && isFinite(dimOverride.width_mm)) w = dimOverride.width_mm;
       if (dimOverride.height_mm !== undefined && dimOverride.height_mm !== null && isFinite(dimOverride.height_mm)) h = dimOverride.height_mm;
@@ -683,10 +698,58 @@
     return override ? Object.assign({}, colorsByRole, override) : colorsByRole;
   }
 
-  function calculateLeafPiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides) {
+  // ---- E: espessura da chapa (2026-09-24, plywood 18mm) ----
+  // colors.thickness_mm (migration 160) — null = padrão 19.5. Só o plywood
+  // do Matt tem valor cadastrado; MDF/MDP ficam nulos e caem no 19.5 de
+  // sempre, o que reproduz byte a byte as fórmulas de antes da 160.
+  function colorThicknessMm(color) {
+    const t = color ? Number(color.thickness_mm) : NaN;
+    return isFinite(t) && t > 0 ? t : null;
+  }
+
+  // Espessura do CASCO desta lista de peças = a da cor da lateral (left/
+  // right); sem lateral com cor, a primeira peça com cor que tenha espessura
+  // cadastrada; sem nada, 19.5. Serve de E pra peça que NÃO tem cor própria
+  // resolvível (peça-módulo aninhada sem papel de cor, peça comprada): a
+  // fórmula dela ('W-2*E' = cabe entre as laterais) fala da espessura de
+  // QUEM a cerca, não da dela.
+  function cascoThicknessMm(pieces, colorsByRole, pieceColorOverrides) {
+    const list = pieces || [];
+    const lateral = list.filter(function (p) { return (p.position_role === 'left' || p.position_role === 'right') && p.color_role_id; });
+    const cands = lateral.concat(list);
+    for (let i = 0; i < cands.length; i++) {
+      const p = cands[i];
+      if (!p.color_role_id) continue;
+      const cores = effectiveColorsForPiece(p, colorsByRole, pieceColorOverrides) || {};
+      const t = colorThicknessMm(cores[p.color_role_id]);
+      if (t) return t;
+    }
+    return DEFAULT_THICKNESS_MM;
+  }
+
+  // E de UMA peça: a espessura da cor dela (própria ou herdada pelo papel);
+  // cor sem espessura cadastrada = 19.5; peça sem cor nenhuma = a do casco.
+  //
+  // LIMITE CONHECIDO: E tem um significado só por peça. Numa prateleira de
+  // MDF (19.5) dentro de um casco de plywood (18), 'W-2*E' deveria usar o E
+  // do casco e a espessura dela o E próprio — não dá pra saber pela fórmula
+  // qual dos dois cada '19.5' antigo queria dizer. Hoje isso não acontece
+  // (Matt, 24/09: só o casco é plywood; porta nunca é), por isso a regra é
+  // "E = a chapa desta peça" e o casco só entra como fallback.
+  function thicknessForPiece(piece, effectiveColors, cascoE) {
+    const color = effectiveColors && piece && piece.color_role_id ? effectiveColors[piece.color_role_id] : null;
+    if (color) return colorThicknessMm(color) || DEFAULT_THICKNESS_MM;
+    return cascoE || DEFAULT_THICKNESS_MM;
+  }
+
+  function calculateLeafPiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE) {
     const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
-    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride);
+    // E (espessura da chapa desta peça) entra na fórmula de L/A/P — precisa
+    // ser o MESMO E que resolvePiecesForViewer usa, senão preço e desenho/
+    // plano de corte divergem na medida da peça.
+    const pieceE = thicknessForPiece(piece, effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides), cascoE);
+    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, { E: pieceE });
     const qty = pieceDims.quantity;
 
     // Peça COMPRADA (migration 119/120) não exige cor cadastrada: ferragem
@@ -902,10 +965,12 @@
   // obra aqui, EM CIMA do custo de mão de obra de cada peça filha, contaria a
   // mão de obra da sub-montagem DUAS vezes (esse era um risco do desenho
   // antigo do sistema de door_style/drawer_type, corrigido aqui).
-  function calculateModulePiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides) {
+  function calculateModulePiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE) {
     const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
-    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride);
+    // E igual ao de resolvePiecesForViewer (ver calculateLeafPiece).
+    const pieceE = thicknessForPiece(piece, effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides), cascoE);
+    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, { E: pieceE });
     const qty = pieceDims.quantity;
 
     // Peça-módulo com dimensão TRAVADA (locked_*_presets) que não cabe nem
@@ -1078,6 +1143,9 @@
   // já as dimensões locais de uma peça-módulo pai, se estivermos recursando).
   function calculateAssembly(pieces, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides) {
     const { bodyDims } = resolveBodyDims(pieces, dims);
+    // Espessura do casco deste nível (fallback de E pra peça sem cor) —
+    // calculada uma vez por lista, mesma conta de resolvePiecesForViewer.
+    const cascoE = cascoThicknessMm(pieces, colorsByRole, pieceColorOverrides);
     const breakdown = (pieces || []).map(function (piece) {
       const pieceContainerDims = piece.position_role === 'leg' ? dims : bodyDims;
       // Visibilidade condicional (migration 031) — checada ANTES de calcular
@@ -1087,8 +1155,8 @@
       // no ponto comum às duas, em vez de duplicado nas duas funções abaixo.
       if (!isPieceVisible(piece, pieceContainerDims)) return null;
       return piece.is_module
-        ? calculateModulePiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides)
-        : calculateLeafPiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides);
+        ? calculateModulePiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE)
+        : calculateLeafPiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE);
     // calculateModulePiece devolve null quando a peça-módulo tem dimensão
     // travada que não cabe nem no menor valor configurado (ver
     // isBelowMinLockedPreset) — filtra fora do breakdown, ela simplesmente
@@ -1292,6 +1360,14 @@
     evalFormula,
     setFormulaGlobals,
     calculatePiece,
+    // Espessura da chapa (2026-09-24, plywood 18mm) — E das fórmulas.
+    // resolvePiecesForViewer (module-pieces.js) usa os três pra chegar no
+    // MESMO E que calculateAssembly usa aqui.
+    DEFAULT_THICKNESS_MM,
+    colorThicknessMm,
+    cascoThicknessMm,
+    thicknessForPiece,
+    effectiveColorsForPiece,
     // Migration 088 — a peça no plano da máquina (espessura/comprimento/
     // largura + de que eixo cada uma veio) e a metragem de fita derivada da
     // receita 0/2/4. Exportadas porque viewer3d.js precisa da MESMA resposta
