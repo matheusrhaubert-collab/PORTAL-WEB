@@ -45,6 +45,7 @@ const Photoreal = (() => {
   let renderer = null, pathTracer = null, envTexture = null;
   let scene = null, camera = null;
   let loopActive = false, samplesDone = 0;
+  let barWrapEl = null, barEl = null, barLabelEl = null;
   let modalEl = null, canvasWrapEl = null, statusEl = null, saveStatusEl = null, dlBtn = null, stopBtn = null, saveBtn = null;
   // onSaveCallback (2026-08-03, ATUALIZADO 2026-08-03 pra salvamento
   // AUTOMÁTICO — pedido do usuário: "quando gero uma foto realista quero
@@ -1540,6 +1541,16 @@ const Photoreal = (() => {
       '    <button type="button" id="po-photoreal-dl" class="secondary" style="font-size:12px;" disabled>' + tr('photoreal.btn_download_png', null, 'Baixar PNG') + '</button>' +
       '    <button type="button" id="po-photoreal-close" class="secondary" style="font-size:12px;">' + tr('photoreal.btn_close', null, 'Fechar') + '</button>' +
       '  </div>' +
+      // Barra de progresso (2026-09-24, pedido do Matt: "tem como colocar
+      // uma barra de carregamento pra saber quanto tempo vai levar?").
+      // Duas fases: compilação do shader (tempo estimado pela ÚLTIMA vez que
+      // compilou nesta máquina — localStorage) e amostras (exato).
+      '  <div id="po-photoreal-bar-wrap" style="display:none;margin:-2px 0 6px;">' +
+      '    <div style="height:8px;background:#ece8e1;border-radius:4px;overflow:hidden;">' +
+      '      <div id="po-photoreal-bar" style="height:100%;width:0;background:#8b5e3c;border-radius:4px;transition:width .4s linear;"></div>' +
+      '    </div>' +
+      '    <div id="po-photoreal-bar-label" style="font-size:11px;color:#777;margin-top:3px;"></div>' +
+      '  </div>' +
       '  <div id="po-photoreal-save-status" style="font-size:12px;color:#2a7a2a;margin:-4px 0 8px;"></div>' +
       '  <div id="po-photoreal-canvas-wrap" style="width:100%;aspect-ratio:4/3;background:#f2f2f2;border-radius:6px;overflow:hidden;"></div>' +
       '</div>';
@@ -1547,6 +1558,9 @@ const Photoreal = (() => {
     canvasWrapEl = modalEl.querySelector('#po-photoreal-canvas-wrap');
     statusEl = modalEl.querySelector('#po-photoreal-status');
     saveStatusEl = modalEl.querySelector('#po-photoreal-save-status');
+    barWrapEl = modalEl.querySelector('#po-photoreal-bar-wrap');
+    barEl = modalEl.querySelector('#po-photoreal-bar');
+    barLabelEl = modalEl.querySelector('#po-photoreal-bar-label');
     dlBtn = modalEl.querySelector('#po-photoreal-dl');
     stopBtn = modalEl.querySelector('#po-photoreal-stop');
     saveBtn = modalEl.querySelector('#po-photoreal-save');
@@ -1557,6 +1571,7 @@ const Photoreal = (() => {
     // qualidade mínima do botão Baixar, samplesDone >= 3).
     stopBtn.addEventListener('click', () => {
       loopActive = false;
+      setProgress(null);
       setStatus(tr('photoreal.status_stopped', { n: samplesDone }, 'Parado em ' + samplesDone + ' amostras — dá pra baixar assim mesmo.'));
       maybeAutoSave();
     });
@@ -1575,6 +1590,27 @@ const Photoreal = (() => {
     });
   }
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+  /* Barra: frac 0..1 (null esconde), label embaixo. */
+  function setProgress(frac, label) {
+    if (!barWrapEl) return;
+    if (frac == null) { barWrapEl.style.display = 'none'; return; }
+    barWrapEl.style.display = 'block';
+    barEl.style.width = Math.max(0, Math.min(100, Math.round(frac * 100))) + '%';
+    barLabelEl.textContent = label || '';
+  }
+  function fmtSecs(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const m = Math.floor(sec / 60), s2 = sec % 60;
+    return m > 0 ? (m + 'min ' + (s2 < 10 ? '0' : '') + s2 + 's') : (s2 + 's');
+  }
+  // Tempo que a compilação do shader levou da última vez NESTA máquina —
+  // é a única base honesta pra estimar (a compilação assíncrona da GPU não
+  // dá progresso nenhum). Guardado quando a 1ª amostra chega.
+  const COMPILE_KEY = 'legno.photoreal.compileSecs';
+  function lastCompileSecs() {
+    try { const v = Number(localStorage.getItem(COMPILE_KEY)); return isFinite(v) && v > 0 ? v : null; } catch (e) { return null; }
+  }
+  function saveCompileSecs(v) { try { localStorage.setItem(COMPILE_KEY, String(Math.round(v))); } catch (e) { /* ignora */ } }
   function setSaveStatus(msg, isError) {
     if (!saveStatusEl) return;
     saveStatusEl.textContent = msg;
@@ -1673,6 +1709,7 @@ const Photoreal = (() => {
     savedForThisRender = false;
     lastRenderDataUrl = null;
     hardResetTried = false;
+    setProgress(null);
 
     // ---------- 1 tentativa de render (setScene + loop de amostras) ----------
     // Extraído do corpo de open() (2026-08-03, pedido do usuário: "antes de
@@ -1708,21 +1745,54 @@ const Photoreal = (() => {
         // tenta o reset PESADO (novo contexto WebGL) uma única vez.
         const loopStart = performance.now();
         let recoveryTried = false;
+        /* Limite do reset pesado (2026-09-24): era 120s fixo e na máquina do
+           Matt a compilação passava disso — "chega nos 120 e volta pro
+           início", e na 2ª vez desistia. Matar uma compilação que estava
+           quase pronta só piora. Agora: pelo menos 5 min, ou 2,5x o tempo
+           que levou da última vez nesta máquina. */
+        const compileEst = lastCompileSecs() || 120;
+        const HARD_RESET_SECS = Math.max(300, compileEst * 2.5);
+        let renderStart = null; // quando a 1ª amostra chegou (fim da compilação)
+        setProgress(0, tr('photoreal.bar_compiling', { eta: fmtSecs(compileEst) }, 'Compilando na GPU — estimativa ' + fmtSecs(compileEst) + (lastCompileSecs() ? ' (tempo da última vez nesta máquina)' : ' (1ª vez: sem histórico, chute)')));
         const loop = () => {
           if (!loopActive) return;
           try {
             pathTracer.renderSample();
             samplesDone = Math.round(pathTracer.samples);
+            if (samplesDone >= 1 && renderStart === null) {
+              renderStart = performance.now();
+              saveCompileSecs((renderStart - loopStart) / 1000);
+            }
             if (samplesDone >= 3) { dlBtn.disabled = false; }
             if (samplesDone >= TARGET_SAMPLES) {
               loopActive = false;
               setStatus(tr('photoreal.status_done', { n: samplesDone }, 'Pronto — ' + samplesDone + ' amostras. Baixa o PNG ou fecha.'));
+              setProgress(1, tr('photoreal.bar_done', null, 'Concluído'));
               maybeAutoSave();
               return;
             }
             if (samplesDone < 1) {
               const waited = Math.round((performance.now() - loopStart) / 1000);
-              if (waited > 120) {
+              const fracC = Math.min(0.97, waited / compileEst);
+              const restC = compileEst - waited;
+              setProgress(fracC, restC > 0
+                ? tr('photoreal.bar_compiling_eta', { eta: fmtSecs(restC), total: fmtSecs(compileEst) }, 'Compilando na GPU — faltam ~' + fmtSecs(restC) + ' (estimativa: ' + fmtSecs(compileEst) + ')')
+                : tr('photoreal.bar_compiling_over', { s: fmtSecs(waited), limit: fmtSecs(HARD_RESET_SECS) }, 'Compilando na GPU há ' + fmtSecs(waited) + ' — mais que da última vez; aguarda, reinicia sozinho só depois de ' + fmtSecs(HARD_RESET_SECS)));
+              /* A biblioteca diz se a GPU AINDA está compilando
+                 (pathTracer.isCompiling — KHR_parallel_shader_compile). Enquanto
+                 for true, a GPU está trabalhando: NUNCA reinicia, por mais que
+                 demore (na máquina do Matt, Intel UHD via D3D11, passou de 4
+                 min — 24/09: "demorou quase 10 min e deu essa mensagem; saí,
+                 entrei de novo e aí começou a renderizar" — ou seja, a
+                 compilação tinha terminado em segundo plano e o reset só
+                 atrapalhava). O reset pesado fica só pro caso real de travar:
+                 isCompiling=false, sem amostra, por mais de 30 s. */
+              const gpuCompilando = !!(pathTracer && pathTracer.isCompiling);
+              const travado = !gpuCompilando && waited > 30;
+              if (gpuCompilando && waited > HARD_RESET_SECS) {
+                setProgress(0.97, tr('photoreal.bar_compiling_long', { s: fmtSecs(waited) }, 'A GPU ainda está compilando (' + fmtSecs(waited) + ') — está demorando, mas está trabalhando; não fecha a tela'));
+              }
+              if (travado) {
                 loopActive = false;
                 if (!hardResetTried) {
                   hardResetTried = true;
@@ -1745,10 +1815,16 @@ const Photoreal = (() => {
               setStatus(tr('photoreal.status_compiling', { s: waited }, 'Compilando o render na GPU… ' + waited + 's (normal levar 1-2 min na 1ª vez; a imagem lisa é só a prévia)'));
             } else {
               setStatus(tr('photoreal.status_rendering', { n: samplesDone, total: TARGET_SAMPLES }, 'Renderizando… ' + samplesDone + ' / ' + TARGET_SAMPLES + ' amostras'));
+              // Fase 2: amostras — progresso exato, tempo restante pela taxa real.
+              const elapsedR = (performance.now() - renderStart) / 1000;
+              const rate = samplesDone / Math.max(elapsedR, 0.001);
+              const restR = rate > 0 ? (TARGET_SAMPLES - samplesDone) / rate : 0;
+              setProgress(samplesDone / TARGET_SAMPLES, tr('photoreal.bar_rendering', { n: samplesDone, total: TARGET_SAMPLES, eta: fmtSecs(restR) }, 'Renderizando ' + samplesDone + ' / ' + TARGET_SAMPLES + ' amostras — faltam ~' + fmtSecs(restR)));
             }
             requestAnimationFrame(loop);
           } catch (err) {
             loopActive = false;
+            setProgress(null);
             console.error(err);
             setStatus(tr('photoreal.status_render_error', { msg: (err && err.message ? err.message : err) }, 'Erro no render: ' + (err && err.message ? err.message : err)));
           }
