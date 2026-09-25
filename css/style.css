@@ -4974,3 +4974,14 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
   body.po-view3d-guest .po-pieces-3d { flex: 0 0 55%; min-height: 0; touch-action: none; }
   body.po-view3d-guest .po-pieces-list { width: 100%; flex: 1 1 auto; border-left: none; border-top: 1px solid var(--border); padding: 8px 10px; }
 }
+
+/* ===== Projeto a partir de foto (2026-09-24) — ver js/portal-11-foto-projeto.js ===== */
+#po-proj-photo-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+#po-proj-photo-modal.open { display: flex; }
+.po-proj-photo-modal-card { max-height: 92vh; overflow: auto; }
+.po-proj-photo-preview { display: block; max-width: 100%; max-height: 260px; margin: 10px 0; border-radius: 8px; object-fit: contain; }
+.po-proj-photo-measures { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+.po-proj-photo-measures .dim-field { flex: 1 1 160px; }
+#po-proj-photo-notes { width: 100%; box-sizing: border-box; margin: 6px 0 10px; }
+.po-proj-photo-table td, .po-proj-photo-table th { white-space: nowrap; }
+.po-proj-photo-wall-apply { margin-left: 8px; font-weight: normal; }
