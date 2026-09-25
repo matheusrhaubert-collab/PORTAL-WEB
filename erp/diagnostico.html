@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnóstico — Legno ERP</title>
+<link rel="stylesheet" href="css/erp.css?v=3">
+<style>
+  body { padding: 24px; max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .d-step { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .d-mark { flex: none; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-weight: 700; font-size: 13px; color: #fff; background: #c9c2b6; }
+  .d-mark.ok { background: var(--ok); }
+  .d-mark.err { background: var(--danger); }
+  .d-mark.warn { background: var(--warn); }
+  .d-body { flex: 1; min-width: 0; }
+  .d-title { font-weight: 600; }
+  .d-detail { font-size: 12.5px; color: var(--muted); margin-top: 3px; word-break: break-word; }
+  .d-detail code { font-family: ui-monospace, Menlo, Consolas, monospace; background: #f2efe9;
+                   padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .d-fix { margin-top: 8px; padding: 10px 12px; background: #fdf6e8; border-left: 3px solid var(--warn);
+           border-radius: 0 6px 6px 0; font-size: 12.5px; }
+  .d-fix b { color: #8a6318; }
+</style>
+</head>
+<body>
+
+<h1>Diagnóstico do ERP</h1>
+<p class="erp-muted erp-small">Roda a mesma sequência que o app faz ao abrir e mostra onde trava. Nada é gravado.</p>
+
+<div class="erp-panel">
+  <form id="d-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <label class="erp-field" style="flex:1;min-width:200px;margin:0"><span>E-mail</span>
+      <input type="email" id="d-email" autocomplete="username"></label>
+    <label class="erp-field" style="flex:1;min-width:200px;margin:0"><span>Senha</span>
+      <input type="password" id="d-pass" autocomplete="current-password"></label>
+    <button type="submit">Testar</button>
+  </form>
+  <div class="erp-muted erp-xs" style="margin-top:8px">
+    Se você já entrou no ERP nesta aba do navegador, pode deixar em branco — a sessão salva é reaproveitada.
+  </div>
+</div>
+
+<div id="d-out"></div>
+
+<script src="js/vendor/supabase.js?v=2110"></script>
+<script src="../js/config.js?v=1"></script>
+<script>
+/* Diagnóstico independente do app: não usa data.js de propósito, para
+   conseguir testar mesmo se o data.js for a peça quebrada. */
+
+const out = document.getElementById('d-out');
+let painel = null;
+
+function passo(estado, titulo, detalhe, correcao) {
+  const marca = { ok: '✓', err: '✕', warn: '!', info: '·' }[estado] || '·';
+  const el = document.createElement('div');
+  el.className = 'd-step';
+  el.innerHTML =
+    '<div class="d-mark ' + (estado === 'info' ? '' : estado) + '">' + marca + '</div>' +
+    '<div class="d-body"><div class="d-title">' + titulo + '</div>' +
+    (detalhe ? '<div class="d-detail">' + detalhe + '</div>' : '') +
+    (correcao ? '<div class="d-fix"><b>Como resolver:</b> ' + correcao + '</div>' : '') +
+    '</div>';
+  painel.appendChild(el);
+  return el;
+}
+
+function novoPainel(titulo) {
+  const p = document.createElement('div');
+  p.className = 'erp-panel';
+  p.innerHTML = '<h2>' + titulo + '</h2>';
+  out.appendChild(p);
+  painel = p;
+}
+
+function msgErro(e) {
+  if (!e) return '';
+  return (e.message || String(e)) + (e.code ? ' <code>' + e.code + '</code>' : '') +
+    (e.hint ? '<br>Dica do banco: ' + e.hint : '');
+}
+
+async function rodar(email, senha) {
+  out.innerHTML = '';
+
+  /* ---- 1. Carregamento dos arquivos ---- */
+  novoPainel('1. Arquivos');
+
+  if (typeof window.supabase === 'undefined') {
+    passo('err', 'Biblioteca do Supabase não carregou',
+      'O arquivo <code>erp/js/vendor/supabase.js</code> não foi executado.',
+      'Confirme que o arquivo existe. Ele é cópia de <code>node_modules/@supabase/supabase-js/dist/umd/supabase.js</code>.');
+    return;
+  }
+  passo('ok', 'Biblioteca do Supabase carregada', 'Servida local, sem depender de CDN.');
+
+  if (typeof supabaseClient === 'undefined') {
+    passo('err', 'config.js do portal não carregou',
+      '<code>../js/config.js</code> não foi encontrado a partir de <code>erp/</code>.',
+      'A pasta <code>erp/</code> precisa ficar dentro da raiz do projeto, ao lado de <code>js/</code>.');
+    return;
+  }
+  passo('ok', 'config.js do portal carregado',
+    'URL: <code>' + SUPABASE_URL + '</code><br>Chave: <code>' + SUPABASE_ANON_KEY.slice(0, 18) + '…</code>');
+
+  const sb = supabaseClient;
+
+  /* ---- 2. Sessão ---- */
+  novoPainel('2. Sessão');
+
+  if (email && senha) {
+    const { error } = await sb.auth.signInWithPassword({ email: email, password: senha });
+    if (error) {
+      passo('err', 'Login recusado', msgErro(error),
+        'Confira e-mail e senha. É a mesma conta do portal.');
+      return;
+    }
+    passo('ok', 'Login aceito');
+  }
+
+  const { data: sess } = await sb.auth.getSession();
+  const user = sess && sess.session ? sess.session.user : null;
+
+  if (!user) {
+    passo('err', 'Sem sessão ativa', 'Ninguém está logado neste navegador.',
+      'Preencha e-mail e senha acima e clique em Testar.');
+    return;
+  }
+  passo('ok', 'Sessão ativa', 'Usuário: <code>' + user.email + '</code><br>ID: <code>' + user.id + '</code>');
+
+  /* ---- 3. Allow-list de admin ---- */
+  novoPainel('3. Permissão de admin');
+
+  const { data: ehAdmin, error: errAdmin } = await sb.rpc('is_admin');
+  if (errAdmin) {
+    passo('err', 'A função is_admin() falhou', msgErro(errAdmin),
+      'Essa função vem da <code>migration_018</code>. Se ela não existe neste banco, rode a migration.');
+  } else if (ehAdmin !== true) {
+    passo('err', 'Esta conta NÃO é admin',
+      '<code>is_admin()</code> devolveu <code>' + JSON.stringify(ehAdmin) + '</code>.',
+      'Esta é a causa mais comum de "só aparece exemplo": sem admin, as policies ' +
+      '<code>admin read orders</code> e <code>admin read user_projects</code> não valem, ' +
+      'e o RLS devolve <b>lista vazia sem erro nenhum</b>. Insira o seu user_id na tabela ' +
+      '<code>admin_users</code>:<br><br><code>insert into admin_users (user_id) values (\'' + user.id + '\');</code>');
+  } else {
+    passo('ok', 'Conta é admin', 'As policies de leitura da fábrica valem para você.');
+  }
+
+  /* ---- 4. Leitura das tabelas ---- */
+  novoPainel('4. Leitura das tabelas');
+
+  const testes = [
+    { nome: 'modules', rotulo: 'Produtos (catálogo)', publico: true },
+    { nome: 'families', rotulo: 'Famílias', publico: true },
+    { nome: 'components', rotulo: 'Componentes', publico: true },
+    { nome: 'module_components', rotulo: 'Estrutura dos módulos', publico: true },
+    { nome: 'orders', rotulo: 'Pedidos', policy: 'admin read orders (migration 033)' },
+    { nome: 'order_items', rotulo: 'Itens do pedido', policy: 'admin read order_items (migration 033)' },
+    { nome: 'user_projects', rotulo: 'Projetos 3D', policy: 'admin read user_projects (migration 078)' }
+  ];
+
+  const vazias = [];
+  for (const t of testes) {
+    const { data, error, count } = await sb.from(t.nome)
+      .select('*', { count: 'exact', head: false }).limit(1);
+
+    if (error) {
+      const faltaTabela = /does not exist|schema cache/i.test(error.message || '');
+      passo('err', t.rotulo + ' — erro', '<code>' + t.nome + '</code>: ' + msgErro(error),
+        faltaTabela ? 'A tabela não existe neste banco. Falta rodar alguma migration.' : null);
+      continue;
+    }
+
+    const n = count != null ? count : (data || []).length;
+    if (n === 0) {
+      vazias.push(t);
+      passo('warn', t.rotulo + ' — 0 linhas',
+        '<code>' + t.nome + '</code> respondeu sem erro, mas não veio nada.',
+        t.policy
+          ? 'RLS negando devolve lista vazia, não erro. Confirme que você é admin (passo 3) e que a policy ' +
+            '<code>' + t.policy + '</code> existe neste banco.'
+          : 'Esta tabela tem leitura pública, então 0 linhas aqui significa que ela está mesmo vazia.');
+    } else {
+      passo('ok', t.rotulo + ' — ' + n + ' linha(s)',
+        '<code>' + t.nome + '</code>' +
+        (data && data[0] ? '<br>Colunas: <code>' + Object.keys(data[0]).slice(0, 10).join(', ') + '…</code>' : ''));
+    }
+  }
+
+  /* ---- 5. Consulta encadeada do app ---- */
+  novoPainel('5. A consulta que o app realmente faz');
+
+  const { data: pedidos, error: errPed } = await sb.from('orders')
+    .select('*, order_items(id, module_id, module_name, quantity, total_price)')
+    .order('created_at', { ascending: false }).limit(300);
+
+  if (errPed) {
+    passo('err', 'A consulta de Pedidos falhou', msgErro(errPed),
+      'É esta consulta que alimenta a Central de Pedidos. O erro acima é a causa da tela vazia.');
+  } else if (!pedidos.length) {
+    passo('warn', 'Consulta OK, mas nenhum pedido voltou', 'Sem erro — ou não há pedido, ou o RLS filtrou tudo.');
+  } else {
+    const naFabrica = pedidos.filter(function (o) { return o.status !== 'draft' && o.status !== 'saved'; });
+    passo('ok', pedidos.length + ' pedido(s) lidos',
+      'Status encontrados: <code>' +
+      [...new Set(pedidos.map(function (o) { return o.status; }))].join(', ') + '</code>');
+
+    if (!naFabrica.length) {
+      passo('warn', 'Todos os pedidos são rascunho',
+        'A Central de Pedidos esconde <code>draft</code> e <code>saved</code> de propósito — rascunho é do cliente, não da fábrica.',
+        'Envie um pedido de verdade pelo portal (status <code>submitted</code>) para ele aparecer.');
+    } else {
+      passo('ok', naFabrica.length + ' pedido(s) visíveis na fábrica',
+        'Estes devem aparecer na Central de Pedidos.');
+    }
+
+    const semItens = pedidos.filter(function (o) { return !o.order_items || !o.order_items.length; }).length;
+    if (semItens) {
+      passo('warn', semItens + ' pedido(s) sem itens',
+        'O pedido existe mas <code>order_items</code> veio vazio.',
+        'Pode ser a policy <code>admin read order_items</code> faltando — o pedido aparece, mas sem linha nenhuma dentro.');
+    }
+  }
+
+  /* ---- Conclusão ---- */
+  novoPainel('Conclusão');
+  const semAdmin = ehAdmin !== true;
+  const bloqueadas = vazias.filter(function (v) { return v.policy; });
+
+  if (semAdmin && bloqueadas.length) {
+    passo('err', 'Causa provável: sua conta não está na allow-list de admin',
+      'As tabelas protegidas voltaram vazias e <code>is_admin()</code> deu falso. ' +
+      'Isso explica exatamente o sintoma de "só aparece dado de exemplo".',
+      'Rode no SQL editor do Supabase:<br><code>insert into admin_users (user_id) values (\'' + user.id + '\');</code>');
+  } else if (bloqueadas.length) {
+    passo('warn', 'Você é admin, mas ' + bloqueadas.length + ' tabela(s) protegida(s) voltaram vazias',
+      bloqueadas.map(function (v) { return v.nome; }).join(', '),
+      'Verifique se as policies citadas acima existem neste banco — em especial a <code>migration_078</code>, ' +
+      'que é a mais recente e a que costuma estar pendente.');
+  } else if (!vazias.length) {
+    passo('ok', 'Tudo respondeu com dados',
+      'Se mesmo assim o ERP mostra só exemplo, é cache do navegador.',
+      'Recarregue com <b>Ctrl+Shift+R</b> para forçar o recarregamento dos scripts.');
+  } else {
+    passo('info', 'Sem bloqueio de permissão detectado',
+      'As tabelas vazias são de leitura pública, então estão vazias de verdade.');
+  }
+}
+
+document.getElementById('d-form').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  out.innerHTML = '<div class="erp-loading">Testando…</div>';
+  try {
+    await rodar(document.getElementById('d-email').value.trim(), document.getElementById('d-pass').value);
+  } catch (err) {
+    out.innerHTML = '';
+    novoPainel('Erro inesperado');
+    passo('err', 'O diagnóstico quebrou', msgErro(err));
+    console.error(err);
+  }
+});
+
+/* Roda sozinho ao abrir, aproveitando a sessão salva */
+rodar('', '').catch(function (err) {
+  novoPainel('Erro inesperado');
+  passo('err', 'O diagnóstico quebrou', msgErro(err));
+  console.error(err);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+[
+  {
+    "id": "tab-colors",
+    "slug": "colors",
+    "linhas": 99
+  },
+  {
+    "id": "tab-taxonomy",
+    "slug": "taxonomy",
+    "linhas": 128
+  },
+  {
+    "id": "tab-catalogs",
+    "slug": "catalogs",
+    "linhas": 47
+  },
+  {
+    "id": "tab-component-types",
+    "slug": "component-types",
+    "linhas": 35
+  },
+  {
+    "id": "tab-components",
+    "slug": "components",
+    "linhas": 240
+  },
+  {
+    "id": "tab-module-config",
+    "slug": "module-config",
+    "linhas": 351
+  },
+  {
+    "id": "tab-pricing-settings",
+    "slug": "pricing-settings",
+    "linhas": 109
+  },
+  {
+    "id": "tab-crm-clients",
+    "slug": "crm-clients",
+    "linhas": 118
+  },
+  {
+    "id": "tab-controladoria",
+    "slug": "controladoria",
+    "linhas": 54
+  },
+  {
+    "id": "tab-profiles",
+    "slug": "profiles",
+    "linhas": 77
+  },
+  {
+    "id": "tab-drilling-settings",
+    "slug": "drilling-settings",
+    "linhas": 91
+  },
+  {
+    "id": "tab-orders",
+    "slug": "orders",
+    "linhas": 91
+  },
+  {
+    "id": "tab-gallery",
+    "slug": "gallery",
+    "linhas": 81
+  },
+  {
+    "id": "tab-references",
+    "slug": "references",
+    "linhas": 30
+  },
+  {
+    "id": "tab-purchased-items",
+    "slug": "itens-comprados",
+    "linhas": 201
+  }
+]

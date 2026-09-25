@@ -1,0 +1,181 @@
+/* Construtor de módulos (migration 085) — layout de 3 colunas.
+ *
+ * Regra que decidiu o desenho: a EDIÇÃO acontece no 2D FRONTAL, que é onde
+ * dá pra ler o interior inteiro de uma vez e cotar. O 3D fica ao lado,
+ * menor, só pra conferir. É o mesmo arranjo do protótipo aprovado
+ * (teste-construtor-modulo.html) e a referência é o Construtor de Armários
+ * do Promob.
+ *
+ * minmax(0,1fr) e não 1fr: o mínimo automático de uma trilha de grid é o
+ * min-content dela, então a coluna estufa junto com o conteúdo e o desenho
+ * sai pela borda de baixo. minmax(0,…) tira esse piso.
+ */
+
+.cst {
+  display: grid;
+  grid-template-columns: 226px minmax(0, 1fr) 322px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  /* Altura fixa: o SVG do desenho precisa de um pai com altura resolvida,
+     senão ele colapsa. 78vh deixa a faixa de cabeçalho do ERP visível. */
+  height: 78vh;
+  min-height: 520px;
+}
+
+.cst-col {
+  background: #fff;
+  border: 1px solid var(--line, #e2e0dc);
+  border-radius: 10px;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cst-sec { padding: 9px 12px; border-bottom: 1px solid var(--line, #e2e0dc); }
+.cst-sec:last-child { border-bottom: 0; }
+.cst-sec h3 {
+  margin: 0 0 8px; font-size: 10px; letter-spacing: .13em;
+  text-transform: uppercase; color: #8a8378; font-weight: 600;
+}
+.cst-scroll { overflow-y: auto; min-height: 0; flex: 1; }
+
+/* ---------- biblioteca (esquerda) ---------- */
+.cst-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; margin-bottom: 3px; border-radius: 6px;
+  background: #f6f4f1; border: 1px solid transparent;
+  cursor: pointer; user-select: none; transition: .12s;
+}
+.cst-item:hover { border-color: #c8933f; transform: translateX(2px); }
+.cst-item.off { opacity: .34; cursor: not-allowed; pointer-events: none; }
+.cst-item .ic {
+  width: 22px; height: 22px; flex: 0 0 22px; border-radius: 4px;
+  background: #e7e3dd; display: grid; place-items: center; font-size: 11px;
+}
+.cst-item .nm { font-size: 12px; line-height: 1.15; }
+.cst-item .nm em { display: block; font-style: normal; font-size: 10px; color: #8a8378; }
+.cst-group { margin-bottom: 10px; }
+.cst-group > span {
+  display: block; font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase;
+  color: #a8792c; margin: 0 0 5px 2px;
+}
+
+/* ---------- centro: desenho ---------- */
+.cst-dimbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 7px 12px; background: #faf9f7;
+  border-bottom: 1px solid var(--line, #e2e0dc); flex: 0 0 auto;
+}
+.cst-dimbar label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #6b655c; }
+.cst-dimbar input[type=range] { width: 108px; accent-color: #c8933f; }
+.cst-dimbar b { color: #2a2621; font-variant-numeric: tabular-nums; min-width: 54px; }
+.cst-dimbar input[type=number] {
+  border: 1px solid var(--line, #e2e0dc); border-radius: 5px; padding: 2px 5px; font: inherit;
+}
+.cst-dimbar .sp { flex: 1; }
+
+.cst-err {
+  flex: 0 0 auto; max-height: 108px; overflow: auto;
+  background: #fdecea; border-bottom: 1px solid #d8433c; padding: 6px 12px; font-size: 11.5px;
+}
+.cst-err .eh { color: #98221c; font-weight: 600; margin-bottom: 3px; }
+.cst-err .ei { color: #7d2b26; cursor: pointer; padding: 1px 0; line-height: 1.45; }
+.cst-err .ei:hover { text-decoration: underline; }
+
+.cst-stage { position: relative; flex: 1; min-height: 0; background: #f4f2ee; overflow: hidden; }
+.cst-stage svg { width: 100%; height: 100%; display: block; user-select: none; }
+.cst-hit { fill: transparent; cursor: pointer; }
+.cst-hit:hover { fill: #2f6fb8; fill-opacity: .14; }
+.cst-hint {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  background: rgba(28, 26, 22, .88); color: #f3efe8; border-radius: 99px;
+  padding: 5px 14px; font-size: 11px; pointer-events: none; white-space: nowrap;
+}
+.cst-hint b { color: #ffc562; }
+
+/* menu que abre no vão clicado */
+.cst-ctx {
+  position: absolute; z-index: 30; width: 258px; max-height: 78%; overflow: auto;
+  background: #fff; border: 1px solid #c8933f; border-radius: 10px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .22);
+}
+.cst-ctx-h {
+  position: sticky; top: 0; display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; background: #faf7f2; border-bottom: 1px solid var(--line, #e2e0dc);
+}
+.cst-ctx-h b { flex: 1; font-size: 11px; color: #a8792c; font-variant-numeric: tabular-nums; }
+.cst-ctx-x { background: none; border: 0; color: #8a8378; font-size: 17px; line-height: 1; cursor: pointer; }
+.cst-ctx-g { padding: 7px 8px 2px; }
+.cst-ctx-g > span {
+  display: block; font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: #8a8378; margin: 0 0 4px 2px;
+}
+.cst-ctx-i { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.cst-ctx-i:hover { background: #c8933f; color: #241a08; }
+.cst-ctx-i:hover em { color: #5a4213; }
+.cst-ctx-i .ic {
+  width: 21px; height: 21px; flex: 0 0 21px; border-radius: 4px;
+  background: #efeae2; display: grid; place-items: center; font-size: 11px;
+}
+.cst-ctx-i .nm { font-size: 12px; line-height: 1.15; }
+.cst-ctx-i em { display: block; font-style: normal; font-size: 10px; color: #8a8378; }
+.cst-ctx-i.rm { color: #c0392b; }
+.cst-ctx-none { padding: 12px 10px; color: #8a8378; font-size: 11.5px; line-height: 1.5; }
+
+/* ---------- direita: 3D + propriedades ---------- */
+.cst-3d {
+  height: 236px; flex: 0 0 236px; border-bottom: 1px solid var(--line, #e2e0dc);
+  position: relative; background: radial-gradient(ellipse at 50% 35%, #f7f5f1, #e6e1d8 72%);
+}
+.cst-3d canvas { display: block; }
+.cst-3d-tools { position: absolute; right: 7px; top: 7px; display: flex; gap: 5px; }
+
+.cst-field {
+  display: grid; grid-template-columns: 1fr 92px; align-items: center;
+  gap: 7px; margin-bottom: 7px; font-size: 12px; color: #6b655c;
+}
+.cst-field input, .cst-field select {
+  width: 100%; border: 1px solid var(--line, #e2e0dc); border-radius: 5px; padding: 4px 6px; font: inherit;
+}
+.cst-empty { color: #8a8378; font-size: 12px; padding: 14px 4px; text-align: center; line-height: 1.6; }
+.cst-chip {
+  display: inline-block; background: #f2efe9; border: 1px solid var(--line, #e2e0dc);
+  border-radius: 5px; padding: 2px 7px; margin: 0 4px 4px 0; font-size: 11px;
+  color: #6b655c; font-variant-numeric: tabular-nums;
+}
+.cst-chip.lock { color: #2f6fb8; border-color: #b9d2ee; }
+.cst-sub { font-size: 11px; color: #8a8378; line-height: 1.5; }
+
+/* ---------- rodapé: árvore + resumo ---------- */
+.cst-foot {
+  grid-column: 1 / -1; display: flex; min-height: 0;
+  background: #fff; border: 1px solid var(--line, #e2e0dc); border-radius: 10px;
+}
+.cst-treewrap { flex: 1; overflow: auto; padding: 6px 12px; max-height: 170px; }
+.cst-treetoggle {
+  background: none; border: 0; padding: 2px 0; color: #8a8378;
+  font-size: 10px; letter-spacing: .13em; text-transform: uppercase; cursor: pointer;
+}
+.cst-treetoggle:hover { color: #a8792c; }
+.cst-tree {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; line-height: 1.7; white-space: pre;
+}
+.cst-tree.hide { display: none; }
+.cst-tnode { cursor: pointer; padding: 0 5px; border-radius: 4px; }
+.cst-tnode:hover { background: #f0ece5; }
+.cst-tnode.sel { background: #c8933f; color: #241a08; font-weight: 600; }
+.cst-tnode .dim { color: #8a8378; font-weight: 400; }
+.cst-tnode.sel .dim { color: #5a4213; }
+.cst-side {
+  width: 322px; border-left: 1px solid var(--line, #e2e0dc);
+  padding: 8px 12px; overflow: auto;
+}
+
+@media (max-width: 1180px) {
+  .cst { grid-template-columns: 200px minmax(0, 1fr); }
+  .cst-col.cst-rail { grid-column: 1 / -1; }
+  .cst-side { width: 240px; }
+}

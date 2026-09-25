@@ -1,0 +1,270 @@
+/* Legno ERP — estilos do Lote / Plano de Corte.
+   Arquivo separado de erp.css de propósito: é tudo específico de uma área
+   (etiqueta e impressão), e impressão é o tipo de CSS que a gente não quer
+   esbarrando no resto do app sem querer. */
+
+/* ---------- Campos de formulário ----------
+   .erp-field já existe no erp.css pro login; aqui ele aparece em grid, então
+   precisa ocupar a coluna inteira e não encolher. */
+.erp-field { display: flex; flex-direction: column; gap: 4px; }
+.erp-field > span { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #7c766c; }
+.erp-field input,
+.erp-field select {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid #d6d1c7;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  color: inherit;
+}
+.erp-field input:focus,
+.erp-field select:focus { outline: 2px solid #b9cbe0; outline-offset: -1px; }
+
+/* ---------- Abas como link ----------
+   O .erp-tabs do erp.css estiliza só <button>. Em Materiais a aba é <a> com
+   href — de propósito: assim o navegador guarda a aba no histórico, o botão
+   Voltar funciona e dá pra mandar o link de uma aba específica. Aqui vai o
+   mesmo visual aplicado ao <a>. */
+.erp-tabs a {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 9px 14px;
+  border-radius: 0;
+  font-weight: 500;
+  text-decoration: none;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.erp-tabs a:hover { background: rgba(0,0,0,.03); color: var(--text); }
+.erp-tabs a.active { color: var(--accent-dark); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* ---------- Erro em várias linhas ----------
+   UI.errorBox escapa o texto (certo), então \n não vira <br>. Em vez de
+   passar HTML por ali — que abriria a porta pra injeção num lugar que hoje é
+   seguro — o CSS respeita a quebra de linha. Serve pro erro do schema erp,
+   que é um passo a passo e ilegível numa linha só. */
+.erp-error-detail { white-space: pre-line; }
+
+/* ---------- Folha de etiquetas ----------
+   4 colunas na tela, 3 na impressão (etiqueta maior no papel = mais fácil de
+   ler na bancada). */
+.erp-etq-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.erp-etq {
+  position: relative;
+  border: 1px solid #b9b3a7;
+  border-radius: 4px;
+  padding: 7px 9px 40px;
+  background: #fff;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+}
+
+.erp-etq-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* Topo: nome da peça (à esquerda) e material (à direita) -- pedido do
+   Matt (21/09-3): "deixa o nome da parte do produto no lugar da chapa1, e
+   o plywood coloca la to topo alinhado na direita". */
+.erp-etq-part { font-size: 11px; font-weight: 700; color: #2a2822; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.erp-etq-material { font-size: 10px; color: #3a3730; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.erp-etq-bc { margin: 3px 0; text-align: center; position: relative; }
+/* Bolinha preta = peça vai pra furadeira (pedido do Matt, 23/09). Embaixo do
+   código de barras, à direita, na altura do texto PC-... */
+.erp-etq-furo {
+  position: absolute; right: 0; bottom: 1px;
+  width: 10px; height: 10px; border-radius: 50%; background: #000;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.erp-etq-bc svg { display: inline-block; }
+
+/* Medida em mm + "chapa N" na mesma linha, chapa encostada na borda direita
+   -- a chapa foi pro lugar que era do material (pedido do Matt, 21/09-3:
+   "a chapa1 coloca no lugar do plywood"). */
+.erp-etq-dim-row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.erp-etq-dim { font-weight: 700; font-size: 13px; white-space: nowrap; }
+.erp-etq-sheet { font-size: 10px; color: #7c766c; }
+
+/* Mesma medida em polegada fracionada, linha pequena logo abaixo do mm
+   (pedido do Matt, 21/09: 1/16" pra comprimento/largura, 1/4" pra
+   espessura — ver LOTES_UI.mmToFraction). */
+.erp-etq-in { font-size: 10px; color: #7c766c; }
+
+/* Módulo (MÓD) e fita (EDGEBAND) — 2 selos separados, negrito, só o número
+   (pedido do Matt, 21/09: "bem visiveis, negrito e caixa alta" pro módulo,
+   "deixa separado pra nao confundir com o numero do modulo" pra fita). MÓD
+   maior que EDGEBAND de propósito — foi o que o Matt pediu mais ênfase. */
+.erp-etq-badges { display: flex; align-items: baseline; justify-content: space-between; margin: 3px 0 4px; }
+.erp-etq-badge { display: inline-flex; align-items: baseline; gap: 3px; line-height: 1; }
+.erp-etq-badge-label {
+  font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: #7c766c;
+}
+.erp-etq-badge-num { font-weight: 800; }
+.erp-etq-badge-mod .erp-etq-badge-num { font-size: 20px; }
+.erp-etq-badge-edge .erp-etq-badge-num { font-size: 18px; }
+
+.erp-etq-line { color: #3a3730; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Pedido (centralizado) grudado logo ACIMA do cliente, os 2 sempre no
+   limite inferior da etiqueta (pedido do Matt, 21/09-2 e 21/09-3: "deixar
+   ele sempre no limite inferior da etiqueta, centralizado" +
+   "coloca o nome do pedido centralizado em cima do cliente"). Ambos em
+   position:absolute relativo a .erp-etq (position:relative +
+   overflow:hidden + padding-bottom reservado), então ficam sempre visíveis
+   na mesma linha, não importa quanto conteúdo tem acima. */
+.erp-etq-po {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 24px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5a5548;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.erp-etq-client {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 6px;
+  font-weight: 800;
+  font-size: 13px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Impressão ----------
+   Some tudo que não é etiqueta: barra de cima, navegação, cabeçalho da tela.
+   O que sobra é a folha, com margem de impressora.
+
+   Etiqueta real (Matt, 21/09): impressora térmica de rolo, 3" x 2"
+   (largura x altura, 76,2 x 50,8mm) — UMA etiqueta = UMA página do rolo,
+   não uma grade de N por folha (isso só faz sentido pra etiqueta adesiva
+   em folha Carta/A4, que não é o caso aqui). @page abaixo trava o tamanho
+   físico exato; sem isso o navegador imprimiria na página padrão (Carta/
+   A4) e a grade de 3 colunas ficava do tamanho errado pro rolo. */
+@media print {
+  .erp-topbar,
+  .erp-noprint,
+  .erp-page-head,
+  .erp-crumb { display: none !important; }
+
+  body { background: #fff; }
+  main, #erp-main { padding: 0 !important; margin: 0 !important; }
+
+  /* 1 etiqueta por "página" do rolo, não grade — cada .erp-etq quebra pra a
+     próxima etiqueta física (break-after cobre navegador moderno,
+     page-break-after é o fallback pra driver de impressora mais velho). */
+  .erp-etq-sheet-grid { display: block; gap: 0; }
+  .erp-etq {
+    width: 3in;
+    height: 2in;
+    box-sizing: border-box;
+    border-color: #555;
+    break-after: page;
+    page-break-after: always;
+  }
+  /* A última não deve empurrar uma etiqueta em branco atrás dela. */
+  .erp-etq:last-child { break-after: auto; page-break-after: auto; }
+
+  @page { size: 3in 2in; margin: 0; }
+}
+
+/* ---------- Visor 3D da peça (#/peca/:codigo, migration 158) ----------
+   Layout lado a lado: desenho 3D + explode + info à esquerda, lista de
+   peças resolvidas à direita. Empilha em telas estreitas (mesmo padrão de
+   #viewer-config-row em erp/css/adm.css). */
+.pc3-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-top: 6px; }
+.pc3-viewer-col { flex: 1 1 380px; min-width: 320px; }
+.pc3-table-col { flex: 1 1 380px; min-width: 320px; }
+
+.pc3-viewer-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}
+.pc3-viewer-head input[type="range"] { flex: 1; }
+
+.pc3-canvas {
+  width: 100%;
+  height: clamp(320px, 44vh, 560px);
+  border: 1px solid #d6d1c7;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  touch-action: none;
+}
+.pc3-canvas canvas { display: block; width: 100%; height: 100%; }
+
+/* Projeto / Nº módulo / Cliente lado a lado, abaixo do desenho (pedido do
+   Matt, 21/09-4: "alem do desenho quero as informacoes, projeto, numero do
+   modulo, cliente"). */
+.pc3-info {
+  display: flex; gap: 18px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid #eae7e0;
+}
+.pc3-info-item { display: flex; flex-direction: column; gap: 2px; }
+.pc3-info-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: #7c766c;
+}
+.pc3-info-value { font-size: 14px; font-weight: 700; color: #2a2822; }
+
+/* Linha da peça destacada no desenho — mesma cor de aviso já usada em
+   outras telas do ERP pra "isto é o que importa aqui". */
+.pc3-row-match { background: #fdeeee; }
+.pc3-row-match td { font-weight: 700; }
+
+/* Peça clicável no nesting (plano já salvo) — leve destaque no hover pra
+   avisar que dá pra clicar e abrir o visor 3D (ver NESTING.sheetSVG). */
+.erp-nest-piece:hover rect { fill: #b7d3ea; stroke-width: 1.6; }
+
+/* ============================================================
+   Popup do visor 3D da peça (PECA3D.openModal, erp/js/screens-peca3d.js) —
+   pedido do Matt (21/09-6): "pode deixar so num popup. com fechar no
+   botao?" em vez de abrir aba nova.
+   ============================================================ */
+.pc3-modal-overlay {
+  display: none; /* JS troca pra 'flex' ao abrir */
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(30, 28, 22, 0.55);
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.pc3-modal-box {
+  position: relative;
+  background: #fbfbf9;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 20px 22px 22px;
+}
+.pc3-modal-close {
+  position: absolute; top: 10px; right: 10px;
+  width: 32px; height: 32px; border-radius: 999px;
+  border: 1px solid #d6d1c7; background: #fff; color: #5a5548;
+  font-size: 20px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.pc3-modal-close:hover { background: #eae7e0; }

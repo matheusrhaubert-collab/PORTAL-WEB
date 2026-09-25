@@ -1,0 +1,165 @@
+/* Cadastro de componentes reorganizado (migration 089).
+ *
+ * Queixa do Matt (2026-08-10): "bem confuso, desorganizado, muito texto
+ * miúdo... quero uma tela mais intuitiva que não rode tanto pra baixo, bem
+ * visual, com as informações separadas por tipo".
+ *
+ * Três decisões, nesta ordem de importância:
+ *
+ * 1. TRÊS COLUNAS. Árvore | formulário | desenho. O desenho fica GRUDADO
+ *    (sticky) do lado: era ele que obrigava a rolar a página inteira pra
+ *    conferir o efeito de um campo e rolar de volta pra corrigir.
+ *
+ * 2. <details>/<summary> nativo pras seções. Sem JS de estado, sem bug de
+ *    "abriu duas", funciona com teclado e o navegador lembra o foco. Só a
+ *    primeira nasce aberta.
+ *
+ * 3. AJUDA ATRÁS DO "?". O texto continua ali (várias daquelas explicações
+ *    registram decisão que custou caro), só não ocupa a tela o tempo todo.
+ *
+ * Este arquivo é carregado FORA do .adm-scope de propósito — as classes
+ * .cad-* são novas e não colidem com nada do admin antigo.
+ */
+
+/* ---------- estrutura ---------- */
+.cad-grid {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr) 400px;
+  gap: 14px;
+  align-items: start;
+}
+.cad-grid > * { min-width: 0; }
+
+@media (max-width: 1500px) {
+  .cad-grid { grid-template-columns: 230px minmax(0, 1fr); }
+  .cad-view { grid-column: 2; }
+}
+@media (max-width: 1000px) {
+  .cad-grid { grid-template-columns: minmax(0, 1fr); }
+  .cad-view { grid-column: 1; }
+}
+
+/* ---------- coluna 1: árvore ---------- */
+.cad-tree {
+  position: sticky; top: 12px;
+  border: 1px solid #ddd; border-radius: 8px; background: #fff;
+  max-height: calc(100vh - 130px); display: flex; flex-direction: column; overflow: hidden;
+}
+.cad-tree-head { padding: 8px 10px; border-bottom: 1px solid #eee; }
+.cad-tree-head input[type=search] {
+  width: 100%; box-sizing: border-box; padding: 5px 8px;
+  border: 1px solid #ddd; border-radius: 5px; font: inherit; margin: 0;
+}
+.cad-tree-actions { display: flex; gap: 6px; margin-top: 6px; }
+.cad-tree-actions button { margin: 0; padding: 4px 8px; font-size: 11.5px; }
+.cad-tree-body { overflow: auto; padding: 6px 4px 12px; flex: 1; }
+
+.cad-node { user-select: none; }
+.cad-folder > .cad-row { font-weight: 600; }
+.cad-row {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 6px; border-radius: 5px; cursor: pointer;
+  font-size: 12.5px; line-height: 1.35; border: 1px solid transparent;
+}
+.cad-row:hover { background: #f3f0ea; }
+.cad-row.sel { background: #c8933f; color: #241a08; }
+.cad-row.drop { border-color: #c8933f; background: #fbf3e4; }
+.cad-caret {
+  width: 14px; flex: 0 0 14px; text-align: center; color: #999; font-size: 10px;
+}
+.cad-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cad-row .qt { color: #999; font-size: 11px; font-variant-numeric: tabular-nums; }
+.cad-row.sel .qt { color: #5a4213; }
+.cad-row .act {
+  opacity: 0; border: 0; background: none; cursor: pointer; color: #888;
+  font-size: 12px; padding: 0 2px; line-height: 1;
+}
+.cad-row:hover .act { opacity: 1; }
+.cad-row .act:hover { color: #c0392b; }
+.cad-children { margin-left: 12px; border-left: 1px dotted #e0dcd4; padding-left: 4px; }
+.cad-node.fechado > .cad-children { display: none; }
+.cad-empty { color: #999; font-size: 11.5px; padding: 8px 10px; line-height: 1.5; }
+
+/* ---------- coluna 2: formulário em seções ---------- */
+.cad-main { min-width: 0; }
+.cad-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; margin-bottom: 10px;
+  background: #fff; border: 1px solid #ddd; border-radius: 8px;
+}
+.cad-bar .titulo { flex: 1; min-width: 160px; font-weight: 600; font-size: 14px; }
+.cad-bar .titulo small { display: block; font-weight: 400; font-size: 11.5px; color: #8a8378; }
+.cad-bar button { margin: 0; }
+
+.cad-sec {
+  border: 1px solid #ddd; border-radius: 8px; background: #fff;
+  margin-bottom: 8px; overflow: hidden;
+}
+.cad-sec > summary {
+  cursor: pointer; padding: 9px 12px; font-weight: 600; font-size: 13px;
+  background: #faf9f7; list-style: none; display: flex; align-items: center; gap: 8px;
+}
+.cad-sec > summary::-webkit-details-marker { display: none; }
+.cad-sec > summary::before { content: '▸'; color: #a8792c; font-size: 11px; }
+.cad-sec[open] > summary::before { content: '▾'; }
+.cad-sec > summary .sub {
+  font-weight: 400; font-size: 11.5px; color: #8a8378; margin-left: auto; text-align: right;
+}
+.cad-sec-body { padding: 10px 12px 14px; border-top: 1px solid #eee; }
+
+/* Grade de campos: rótulo em cima, campos lado a lado, sem <br> */
+.cad-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 12px; }
+.cad-campos.duas { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.cad-campo { min-width: 0; }
+.cad-campo > label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #6b655c; margin: 0 0 3px; font-weight: 500;
+}
+.cad-campo input, .cad-campo select, .cad-campo textarea {
+  width: 100%; box-sizing: border-box; margin: 0;
+  padding: 5px 7px; border: 1px solid #ddd; border-radius: 5px; font: inherit;
+}
+.cad-campo .calc {
+  display: block; margin-top: 3px; font-size: 11px; color: #8a8378; line-height: 1.4;
+}
+.cad-check { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.cad-check input { width: auto; margin: 0; }
+
+/* ---------- ajuda atrás do "?" ---------- */
+.cad-q { position: relative; display: inline-flex; }
+.cad-q-btn {
+  width: 15px; height: 15px; flex: 0 0 15px; padding: 0; margin: 0;
+  border: 1px solid #cfc8bc; border-radius: 50%; background: #fff;
+  color: #8a8378; font-size: 10px; line-height: 1; cursor: pointer;
+}
+.cad-q-btn:hover { border-color: #c8933f; color: #a8792c; }
+.cad-q-txt {
+  display: none; position: absolute; z-index: 20; top: 20px; left: -4px;
+  width: 340px; max-width: 60vw;
+  background: #fff; border: 1px solid #c8933f; border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .16);
+  padding: 9px 11px; font-size: 11.5px; line-height: 1.55; color: #4a453d;
+  font-weight: 400; white-space: normal; text-align: left;
+}
+.cad-q.aberto .cad-q-txt { display: block; }
+.cad-q-txt code {
+  background: #f2efe9; border-radius: 3px; padding: 0 3px; font-size: 11px;
+}
+
+/* ---------- coluna 3: desenho grudado ---------- */
+.cad-view { position: sticky; top: 12px; }
+.cad-view-box {
+  border: 1px solid #ddd; border-radius: 8px; background: #fff;
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.cad-view-box h3 {
+  margin: 0 0 3px; font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: #8a8378; font-weight: 600;
+}
+.cad-view-box .meta { font-size: 11px; color: #8a8378; line-height: 1.45; margin: 0 0 6px; }
+.cad-view-box .legenda { font-size: 11px; color: #6b655c; line-height: 1.45; margin: 6px 0 0; }
+
+/* Tabela de furação: densa, cabe na coluna do meio */
+.cad-sec-body table { font-size: 11.5px; }
+.cad-sec-body table input, .cad-sec-body table select { padding: 3px 4px; font-size: 11.5px; }

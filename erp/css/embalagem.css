@@ -1,0 +1,24 @@
+/* Legno ERP — Produção → Embalagem (#/embalagem), ver js/screens-embalagem.js */
+.emb-selecao { align-items: flex-end; }
+.emb-selecao > label.erp-field { flex: 1 1 220px; }
+.emb-acao { flex: 0 0 auto; padding-bottom: 2px; }
+.emb-campo { flex: 1 1 180px !important; }
+.emb-campo input[type=number] { text-align: right; }
+.emb-layout { margin-top: 14px; }
+.emb-vista { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.emb-vista label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.emb-legenda { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+.emb-legenda i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.emb-h2 { font-size: 15px; margin: 0 0 10px; }
+
+/* Camadas: de cima pra baixo na tela como no pallet; a ativa é a que o
+   slider está mostrando por último. */
+.emb-camada { border: 1px solid #d6d1c7; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; background: #fff; }
+.emb-camada:hover { border-color: var(--accent, #8a5a34); }
+.emb-camada-ativa { border-color: var(--accent, #8a5a34); box-shadow: 0 0 0 2px rgba(138,90,52,.12); }
+.emb-camada-head { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; flex-wrap: wrap; }
+.emb-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid #b8b2a6; }
+.emb-item { padding: 2px 0 2px 20px; font-size: 13px; }
+.emb-item-n { display: inline-block; min-width: 26px; font-variant-numeric: tabular-nums; color: #6b6458; }
+.emb-item-parcial { color: #a3312a; }
+.erp-table-compact td, .erp-table-compact th { padding: 5px 8px; font-size: 12px; }

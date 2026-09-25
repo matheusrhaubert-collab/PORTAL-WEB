@@ -1,0 +1,3086 @@
+/* GERADO POR scripts/gerar-adm-css.js — NÃO EDITAR À MÃO.
+   Fonte: css/style.css. Todo seletor foi preso a .adm-scope para o
+   painel admin conviver com erp.css na mesma página, sem iframe.
+   Mudou o style.css? Rode: node scripts/gerar-adm-css.js */
+
+.adm-scope {
+  --bg: #f7f6f3;
+  --panel: #ffffff;
+  --border: #e0ddd6;
+  --text: #2b2621;
+  --muted: #766f64;
+  --accent: #8a5a34;
+  --accent-dark: #6e4527;
+  --danger: #b3432f;
+}
+
+.adm-scope * { box-sizing: border-box; }
+
+.adm-scope {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.adm-scope header.topbar {
+  background: var(--accent-dark);
+  color: #fff;
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.adm-scope header.topbar a { color: #fff; opacity: .85; text-decoration: none; }
+.adm-scope header.topbar a:hover { opacity: 1; }
+
+/* #logout-btn usa button.secondary (texto var(--accent-dark)) mas o topbar
+   TAMBÉM usa var(--accent-dark) como fundo — texto marrom em cima de fundo
+   marrom, botão funcional mas invisível (bug relatado pelo usuário: "não
+   tem como deslogar" — o botão sempre funcionou, só nunca apareceu). */
+.adm-scope header.topbar button.secondary {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .55);
+  margin-top: 0;
+}
+.adm-scope header.topbar button.secondary:hover { background: rgba(255, 255, 255, .15); }
+
+.adm-scope main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.adm-scope section.panel, .adm-scope details.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+/* Modal de login/cadastro (pedido do usuário 2026-07-20: Galeria pública,
+   login só quando precisa) — #po-auth-section deixou de ser um <section
+   class="panel"> sempre visível bloqueando a tela e virou um overlay
+   fixo, escondido por padrão, aberto via openAuthModal()/fechado via
+   closeAuthModal() em portal.js. */
+.adm-scope #po-auth-section {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+.adm-scope #po-auth-section.open { display: flex; }
+.adm-scope .po-auth-modal-card {
+  background: var(--panel); border-radius: 12px; padding: 28px;
+  max-width: 420px; width: 100%; max-height: 90vh; overflow-y: auto;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.adm-scope .po-auth-modal-close {
+  position: absolute; top: 10px; right: 12px; background: none; border: none;
+  font-size: 24px; line-height: 1; cursor: pointer; color: var(--muted); padding: 4px;
+}
+.adm-scope .po-auth-modal-close:hover { color: var(--text); }
+/* Botão "Continuar com Google" — largura total, ícone + texto centralizados,
+   visual neutro (branco/borda) igual o padrão real desse botão em outros
+   sites, não a cor de destaque do app. */
+.adm-scope .po-google-btn {
+  width: 100%; margin-top: 10px; display: flex; align-items: center;
+  justify-content: center; gap: 10px; font-weight: 600;
+}
+/* Modo visitante (sem login) — só a aba Galeria fica visível na navegação;
+   o resto do app exige conta (pedido do usuário: Gallery pública, mas
+   Customizar/Curtir pedem login). Ver showLoggedOut/showLoggedIn. */
+.adm-scope #po-sidebar.guest-mode .portal-tab-btn:not([data-tab="po-tab-gallery"]) { display: none; }
+
+/* Seções de "Configurar módulo" viraram <details> (fechadas por padrão —
+   pedido do usuário: "colocar tudo sempre minimizado e abro só o que
+   preciso"). Mesmo id/lógica de mostrar-esconder o bloco inteiro que já
+   existia (admin.js continua fazendo display:none/block no elemento
+   pai) — o <details> só controla se o CONTEÚDO interno aparece ou não. */
+.adm-scope details.panel > summary {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent-dark);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -20px -20px 0;
+  padding: 20px;
+  border-radius: 10px;
+}
+.adm-scope details.panel > summary::-webkit-details-marker { display: none; }
+.adm-scope details.panel > summary::before {
+  content: "▸";
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform .15s;
+  flex-shrink: 0;
+}
+.adm-scope details.panel[open] > summary {
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 10px 10px 0 0;
+}
+.adm-scope details.panel[open] > summary::before { transform: rotate(90deg); }
+.adm-scope details.panel > summary:hover { background: var(--bg); }
+
+.adm-scope h1 { font-size: 20px; margin: 0; }
+.adm-scope h2 { font-size: 16px; margin-top: 0; color: var(--accent-dark); }
+
+.adm-scope label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.adm-scope input, .adm-scope select, .adm-scope textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+}
+
+.adm-scope textarea { min-height: 50px; font-family: monospace; }
+
+.adm-scope .row { display: flex; gap: 12px; flex-wrap: wrap; }
+.adm-scope .row > div { flex: 1; min-width: 140px; }
+
+.adm-scope button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 14px;
+}
+.adm-scope button:hover { background: var(--accent-dark); }
+.adm-scope button.secondary { background: transparent; color: var(--accent-dark); border: 1px solid var(--border); }
+.adm-scope button.danger { background: var(--danger); }
+
+/* Aba Controladoria (dashboard) — cards de KPI + gráfico de barras simples,
+   sem biblioteca externa (mesmo espírito do resto do admin: HTML/CSS puro). */
+.adm-scope .kpi-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  min-width: 200px;
+  flex: 1;
+}
+.adm-scope .kpi-card .kpi-value { font-size: 32px; font-weight: 700; color: var(--accent-dark); line-height: 1; }
+.adm-scope .kpi-card .kpi-label { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.adm-scope .kpi-card .kpi-breakdown { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.7; }
+
+.adm-scope .bar-chart-block { flex: 1; min-width: 260px; }
+.adm-scope .bar-chart-block h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+.adm-scope .bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 110px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+.adm-scope .bar-chart .bar-col { flex: 1; display: flex; align-items: flex-end; height: 100%; }
+.adm-scope .bar-chart .bar { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 1px; cursor: default; }
+.adm-scope .bar-chart-labels { display: flex; gap: 2px; margin-top: 4px; }
+.adm-scope .bar-chart-labels span {
+  flex: 1;
+  font-size: 9px;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Botões do cabeçalho de cada peça em "Componentes deste módulo" (▲▼/Ver
+   componente/+Duplicar/▸Configurar) — pedido do usuário: bem mais estreitos
+   e sem o margin-top padrão de todo botão, senão a linha toda cresce em
+   altura e (com as setas de reordenar) chega a quebrar em 2 linhas,
+   dificultando enxergar vários componentes de uma vez na tela. */
+.adm-scope .mc-row-btn { margin-top: 0; padding: 5px 10px; font-size: 12px; }
+.adm-scope .mc-row-btn-arrow { padding: 5px 8px; min-width: 0; }
+
+.adm-scope table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+.adm-scope th, .adm-scope td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.adm-scope th { color: var(--muted); font-weight: 600; }
+
+.adm-scope .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.adm-scope .error { color: var(--danger); font-size: 13px; margin-top: 8px; }
+
+.adm-scope .total-price {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent-dark);
+  margin: 8px 0;
+}
+
+/* Cabeçalho da seção 2 (medidas/opcionais) com o preço no canto superior
+   direito, ao lado do título — compacto, não o destaque grande de antes. */
+.adm-scope .section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.adm-scope .section-header-row h2 { margin-bottom: 0; }
+.adm-scope #price-section { text-align: right; flex-shrink: 0; }
+.adm-scope .total-price-label { display: block; font-size: 11px; color: var(--muted); }
+.adm-scope .total-price-mini {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-dark);
+  margin: 0;
+  white-space: nowrap;
+}
+
+.adm-scope .texture-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+/* Um grupo de swatches por papel de cor (migration 035) — número de grupos é
+   dinâmico (depende de quantos papéis o módulo atual usa), por isso a regra
+   é por CLASSE, criada via JS em client.js/portal.js (renderColorRoleSwatchGroups),
+   não mais por uma lista fixa de 2x2 IDs (antigo box/door, calculadora/portal). */
+.adm-scope .color-role-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.adm-scope .color-role-swatch-group {
+  margin-top: 14px;
+}
+.adm-scope .color-role-swatch-group:first-child {
+  margin-top: 0;
+}
+.adm-scope .color-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 0;
+}
+.adm-scope .color-swatch.selected { border-color: var(--accent); background: #fbf3ec; }
+.adm-scope .color-swatch img { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); display: block; }
+.adm-scope .color-swatch .swatch-fallback { width: 36px; height: 36px; border-radius: 6px; background: var(--border); border: 1px solid var(--border); display: block; }
+/* Ícones só (nome fica disponível via tooltip/title, pra ficar compacto). */
+.adm-scope .color-swatch span:not(.swatch-fallback) { display: none; }
+/* Nome da cor ESCOLHIDA (só ela — ver renderColorRoleSwatchGroups em
+   portal.js), ao lado do rótulo do papel de cor ("Cor — Caixa: Preto"). */
+.adm-scope .color-role-selected-name { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
+
+/* Botão de cor do Plano de Corte (substitui o <select> nativo — pedido do
+   usuário 2026-07-29: "quadrado pequeno do lado mostrando a cor", <option>
+   não aceita HTML/imagem dentro, então virou botão+popup como o de
+   order-detail). Popup é position:absolute pra não empurrar o resto da
+   linha da tabela (linhas de outras colunas ficariam com altura extra). */
+.adm-scope .cl-color-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-top: 0;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 130px;
+  max-width: 150px;
+  text-align: left;
+  color: var(--text);
+}
+.adm-scope .cl-color-btn:hover { border-color: var(--accent); }
+/* Alinhamento da barra de aplicar-em-massa do Plano de Corte (pedido do
+   usuário 2026-07-31: "alinha melhor") — o <button> global tem
+   margin-top:14px, então os botões "Aplicar..." ficavam mais baixos que os
+   <select>/<input> ao lado mesmo com align-items:center no wrap. Zera
+   margem e unifica padding/altura de todo filho direto marcado. */
+.adm-scope .po-cutlist-bulk-toolbar .cl-bulk-field {
+  margin-top: 0;
+  box-sizing: border-box;
+  height: 34px;
+}
+.adm-scope .po-cutlist-bulk-toolbar button.cl-bulk-field { padding: 0 12px; font-size: 13px; }
+.adm-scope .po-cutlist-bulk-toolbar select.cl-bulk-field, .adm-scope .po-cutlist-bulk-toolbar input.cl-bulk-field { padding: 0 10px; }
+.adm-scope .cl-color-dot {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.adm-scope .cl-color-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Popup singleton, position:fixed, anexado no <body> (não filho da célula/
+   tabela) — pedido do usuário 2026-07-29: o popup antigo (filho da célula)
+   ficava cortado pelo overflow-x:auto de #po-cutlist-table-wrap. */
+.adm-scope .cl-color-popup-fixed {
+  position: fixed;
+  z-index: 500;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+  width: 220px;
+}
+/* Campo de busca (pedido do usuário 2026-07-31: "quero poder digitar as
+   primeiras letras e puxar as cores conforme escrevo") — FORA do wrap que
+   rola (.cl-color-list-wrap abaixo), fica sempre visível/fixo no topo do
+   popup mesmo rolando a lista. */
+.adm-scope .cl-color-search-input {
+  display: block;
+  margin: 2px 2px 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  width: calc(100% - 12px);
+}
+/* Só o WRAP da lista rola (antes era o popup inteiro, ver bug corrigido em
+   getCutlistColorPopupEl — scroll dentro do popup fechava ele por engano) —
+   max-height um pouco menor que os 320px de antes pra sobrar espaço pro
+   campo de busca acima sem estourar a tela. */
+.adm-scope .cl-color-list-wrap {
+  max-height: 280px;
+  overflow-y: auto;
+}
+/* Lista vertical (não grade) com nome sempre visível em texto — pedido do
+   usuário 2026-07-29 ("quero em lista como antes mas com o icone na frente"),
+   diferente do padrão .color-swatch (grade de ícones, nome só em tooltip)
+   usado no resto do app. */
+.adm-scope .cl-color-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.adm-scope .cl-color-list-item:hover { background: var(--border); }
+.adm-scope .cl-color-list-item.selected { background: #fbf3ec; font-weight: 600; }
+
+/* Destaque de vermelho de verdade nos campos inválidos do Plano de Corte —
+   pedido do usuário 2026-07-29 ("a mensagem nao esta clara do que esta
+   faltando"): o aviso já dizia "corrija as linhas em vermelho" há tempos,
+   mas nada realmente ficava vermelho. Ver getCutlistRowIssues/
+   refreshCutlistRowHighlight em portal.js. */
+.adm-scope .cl-field-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 1px var(--danger); }
+
+.adm-scope .dim-field { margin-top: 16px; }
+.adm-scope .dim-field:first-child { margin-top: 0; }
+.adm-scope .dim-field label { display: block; margin-bottom: 4px; }
+.adm-scope .dim-slider-row { display: flex; align-items: center; gap: 8px; }
+.adm-scope .dim-bound { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 46px; }
+.adm-scope .dim-bound.dim-bound-max { text-align: right; }
+.adm-scope .dim-slider { flex: 1; accent-color: var(--accent); }
+.adm-scope .dim-value-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.adm-scope .dim-value { font-weight: 600; color: var(--accent-dark); white-space: nowrap; }
+.adm-scope .dim-exact-wrap { display: flex; align-items: center; gap: 4px; }
+.adm-scope .dim-exact-input { width: 78px; padding: 4px 6px; font-size: 13px; text-align: right; }
+.adm-scope .dim-exact-unit { font-size: 12px; color: var(--muted); min-width: 20px; }
+
+/* Sub-configuração de medidas por peça-módulo aninhada (migration 036) — um
+   bloco por peça com "cliente pode configurar as medidas" ligado no admin,
+   nasce fechado (mesmo espírito do "▸ Configurar" das listas do admin). */
+.adm-scope .po-piece-subconfig { margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.adm-scope .po-piece-subconfig-toggle {
+  background: none; border: none; padding: 0; margin: 0;
+  font-weight: 600; color: var(--accent-dark); cursor: pointer; font-size: 14px;
+}
+.adm-scope .po-piece-subconfig-body { margin-top: 10px; }
+.adm-scope .po-piece-subconfig-body .dim-field { margin-top: 14px; }
+.adm-scope .po-piece-subconfig-body .dim-field:first-child { margin-top: 0; }
+/* Some por padrão — só aparece quando o cliente mexe manualmente naquele
+   eixo (ver renderPieceDimensionSubconfigs), como saída pra voltar a
+   acompanhar o módulo pai. */
+.adm-scope .po-piece-subconfig-reset {
+  background: none; border: none; padding: 0; margin: 0;
+  font-size: 12px; color: var(--muted); text-decoration: underline;
+  cursor: pointer; white-space: nowrap;
+}
+.adm-scope .po-piece-subconfig-reset:hover { color: var(--accent-dark); }
+
+/* Cor separada por peça-módulo aninhada (migration 046, client_color_configurable)
+   — bloco visualmente igual a .po-piece-subconfig (borda própria, pra separar do
+   grupo de cor "geral" do módulo pai logo acima), ver renderColorRoleSwatchGroups. */
+.adm-scope .color-role-piece-block {
+  margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+}
+.adm-scope .color-role-piece-block-title {
+  font-weight: 600; color: var(--accent-dark); font-size: 14px; margin-bottom: 10px;
+}
+
+/* Valores sugeridos/travados de medida (migration 028). Modo travado: o
+   dropdown assume o lugar da régua livre (mesma largura, mesmo espaço).
+   Modo sugerido: chips clicáveis logo abaixo, empilham em telas estreitas. */
+.adm-scope .dim-locked-select { width: 100%; margin-bottom: 6px; }
+.adm-scope .dim-preset-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.adm-scope .dim-preset-chip {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--accent-dark);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.adm-scope .dim-preset-chip:hover { border-color: var(--accent); background: var(--accent-light, #fdf3e6); }
+
+/* Visualizador 3D + medidas lado a lado, compacto. Empilha em telas estreitas. */
+.adm-scope #viewer-config-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 18px; }
+.adm-scope #viewer3d-wrap { flex: 1 1 340px; margin-bottom: 0; }
+.adm-scope #dims-col { flex: 1 1 240px; max-width: 320px; }
+.adm-scope .dim-unit-wrap { max-width: 220px; }
+.adm-scope #shelf-quantities-wrap:not(:empty) { margin-top: 14px; }
+
+.adm-scope #viewer3d-canvas {
+  width: 100%;
+  height: 320px;
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+.adm-scope #viewer3d-canvas canvas { display: block; width: 100%; height: 100%; }
+/* #po-viewer3d-canvas é o id de verdade usado em portal.html (configurador
+   "2. Configure" do módulo) — a regra "#viewer3d-canvas" acima nunca bateu
+   com ele (só existe com esse id exato na calculadora legada,
+   calculadora-legado.html; mantida intocada acima). Sem CSS própria, o
+   container ficava sem altura definida e o viewer3d.js caía no fallback
+   fixo de 320px (containerEl.clientHeight || 320, ver init()/onResize em
+   viewer3d.js) — funcionava por coincidência, mas nunca aproveitava telas
+   maiores. Revisão pra iPad Air 13" (2026-08-05, pedido: "aproveitar o
+   maximo de espaco da tela"): altura agora escala com a viewport (mesmo
+   padrão clamp(min, vh, max) já usado em #po-proj-3d-canvas/
+   #po-proj-canvas-3d-edit), sem baixar do mínimo de antes. onResize já lê
+   containerEl.clientHeight a cada resize, então isso é só CSS — nenhuma
+   lógica de câmera/posicionamento foi tocada. */
+.adm-scope #po-viewer3d-canvas {
+  width: 100%;
+  height: clamp(320px, 48vh, 640px);
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+.adm-scope #po-viewer3d-canvas canvas { display: block; width: 100%; height: 100%; }
+/* Botões de abrir/fechar porta e gaveta SEPARADOS (cada um com seu próprio
+   estado — abrir a porta não mexe na gaveta, e vice-versa). Lado a lado, com
+   a mesma margem de cima que o botão único tinha antes. */
+.adm-scope .viewer-toggle-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.adm-scope .viewer-toggle-btns button { margin-top: 0; }
+
+/* Balão de info da peça (duplo-clique no 3D) — posicionado perto do ponto
+   clicado via left/top em JS (position:fixed, coordenadas de tela). Mostra
+   só nome/medidas/cor, nunca preço (o breakdown de custo é interno/admin). */
+.adm-scope .piece-info-tooltip {
+  position: fixed;
+  z-index: 500;
+  max-width: 240px;
+  background: #1f2430;
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.adm-scope .piece-info-tooltip strong { display: block; font-size: 14px; margin-bottom: 2px; padding-right: 16px; }
+.adm-scope .piece-info-tooltip .piece-info-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  background: none;
+  border: none;
+  color: #fff;
+  opacity: 0.7;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px;
+}
+.adm-scope .piece-info-tooltip .piece-info-close:hover { opacity: 1; }
+
+/* Painel admin mais largo (tem sidebar de abas) do que a calculadora do cliente.
+   margin:0 (em vez do "margin:0 auto" herdado de main{}) tira a centralização —
+   pedido do usuário: "colunas jogarem mais pra esquerda" (em monitores largos,
+   1200px centralizado deixava uma sobra enorme e simétrica dos 2 lados). Cap
+   de 1600px só pra não esticar o texto/formulários até virar ilegível em
+   monitores ultrawide. */
+.adm-scope main { max-width: 1600px; margin: 0; padding: 24px 32px; }
+
+/* Painel admin em preto e branco, sem cantos arredondados — pedido do
+   usuário. Escopado em body.admin-page (mesmo padrão de body.portal-page
+   logo abaixo) pra não afetar o portal do cliente nem a calculadora
+   (index.html), que ficam com a paleta/cantos de sempre. */
+.adm-scope {
+  --bg: #f0f0f0;
+  --panel: #ffffff;
+  --border: #000000;
+  --text: #000000;
+  --muted: #595959;
+  --accent: #000000;
+  --accent-dark: #000000;
+  --danger: #000000;
+}
+/* !important porque border-radius aparece espalhado em dezenas de regras
+   (botões, painéis, pills, tabelas, badges, tooltips...) — resetar tudo de
+   uma vez aqui é bem mais confiável do que caçar regra por regra. Também
+   bate um inline style (ver banners de "editando X" em admin.html). */
+.adm-scope, .adm-scope * { border-radius: 0 !important; }
+/* Excluir (danger) ficaria idêntico a um botão comum já que os dois usam
+   --accent/--danger pretos agora — invertido (fundo branco, borda preta)
+   pra continuar distinguível sem usar cor nenhuma. */
+.adm-scope button.danger {
+  background: #fff;
+  color: #000;
+  border: 1px solid #000;
+  font-weight: 600;
+}
+.adm-scope button.danger:hover { background: #000; color: #fff; }
+
+/* Abas do painel admin: sidebar fixa à esquerda + conteúdo da aba ativa à
+   direita — antes tudo ficava empilhado numa rolagem só, gigante. Cada
+   seção existente (Cores, Taxonomia, Componentes...) vira o conteúdo de
+   uma aba, sem mudar nenhum id usado pelo admin.js. */
+.adm-scope .admin-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.adm-scope .admin-sidebar {
+  flex: 0 0 200px;
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+.adm-scope .admin-tab-btn {
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 0;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.adm-scope .admin-tab-btn:hover { background: var(--bg); }
+.adm-scope .admin-tab-btn.active { background: var(--accent); color: #fff; }
+.adm-scope .admin-tab-content { flex: 1; min-width: 0; }
+.adm-scope .admin-tab-page section.panel:last-child, .adm-scope .admin-tab-page details.panel:last-child { margin-bottom: 0; }
+
+@media (max-width: 720px) {
+  .adm-scope .admin-layout { flex-direction: column; }
+  .adm-scope .admin-sidebar { flex-direction: row; flex-wrap: wrap; position: static; width: 100%; }
+}
+
+/* ---------- Modo embutido (admin.html dentro do ERP) ----------
+   Quando o ERP abre um cadastro num iframe (?embed=1), o topo e a barra
+   lateral daqui somem: a navegação passa a ser a do ERP. Nada é removido
+   do DOM — só escondido — porque o admin.js continua consultando esses
+   elementos (o botão de logout, por exemplo) e sumir com eles de verdade
+   quebraria a inicialização. Abrir admin.html direto continua idêntico. */
+.adm-scope > .topbar { display: none; }
+.adm-scope .admin-sidebar { display: none; }
+.adm-scope.admin-page main { padding: 18px 20px 40px; }
+.adm-scope #login-section { max-width: 460px; margin: 40px auto; }
+
+/* ---------- "Configurar módulo": árvore de módulos + sub-abas ----------
+   Antes era um <select> no topo + 5 seções empilhadas numa rolagem só,
+   comprida e fácil de se perder. Agora, mesma ideia do .admin-sidebar de
+   abas, só que um nível mais fundo: árvore de módulos (agrupada por
+   família/categoria/subcategoria — campos que cada módulo já tem, não é
+   critério novo) à esquerda, sub-abas por tipo de configuração à direita.
+   Puramente visual — não muda nenhum id nem lógica de dados do admin.js. */
+.adm-scope .module-config-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.adm-scope .module-config-tree-col {
+  flex: 0 0 300px;
+  position: sticky;
+  top: 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.adm-scope .module-config-tree-col h2 { margin-bottom: 4px; }
+.adm-scope .module-config-search { margin-top: 8px; margin-bottom: 10px; }
+.adm-scope .module-config-tree { font-size: 13px; }
+
+/* Família/categoria viraram <details> (fechados por padrão). O antigo
+   formulário de criar/editar módulo não mora mais aqui — foi pra
+   #module-form-section, como mais uma aba na tira de Cores/Modelos/etc na
+   coluna da direita (ver .module-subtabs). Esta coluna só tem busca + a
+   árvore em si; "+ Novo módulo"/Editar/Duplicar/Excluir continuam
+   disparando a partir daqui (botão no topo da coluna direita + botões por
+   item da árvore), só o CONTEÚDO do formulário que fica ao lado. */
+.adm-scope .module-tree-family { margin-top: 10px; }
+.adm-scope .module-tree-family:first-child { margin-top: 0; }
+.adm-scope .module-tree-family > summary {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--accent-dark);
+  cursor: pointer;
+  list-style: none;
+  padding: 4px 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.adm-scope .module-tree-family > summary::-webkit-details-marker { display: none; }
+.adm-scope .module-tree-family > summary::before { content: "▸"; font-size: 10px; color: var(--muted); transition: transform .15s; }
+.adm-scope .module-tree-family[open] > summary::before { transform: rotate(90deg); }
+.adm-scope .module-tree-family-body { padding-left: 4px; }
+
+.adm-scope .module-tree-category { margin-top: 6px; }
+.adm-scope .module-tree-category > summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+  padding: 3px 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.adm-scope .module-tree-category > summary::-webkit-details-marker { display: none; }
+.adm-scope .module-tree-category > summary::before { content: "▸"; font-size: 10px; color: var(--muted); transition: transform .15s; }
+.adm-scope .module-tree-category[open] > summary::before { transform: rotate(90deg); }
+.adm-scope .module-tree-category-body { padding-left: 8px; }
+
+.adm-scope .module-tree-subcategory-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  padding-left: 12px;
+}
+.adm-scope .module-tree-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 5px 4px 5px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.adm-scope .module-tree-item:hover { background: var(--bg); }
+.adm-scope .module-tree-item.active { background: var(--accent); color: #fff; }
+.adm-scope .module-tree-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Ações (editar/duplicar/excluir) só aparecem no hover/foco da linha ou
+   quando o item está ativo — reduz ruído visual da árvore quando fechada. */
+.adm-scope .module-tree-item-actions { display: none; flex-shrink: 0; gap: 2px; }
+.adm-scope .module-tree-item:hover .module-tree-item-actions, .adm-scope .module-tree-item.active .module-tree-item-actions { display: flex; }
+.adm-scope .module-tree-item-actions button {
+  margin-top: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  border-radius: 4px;
+}
+.adm-scope .module-tree-item.active .module-tree-item-actions button.secondary {
+  background: rgba(255,255,255,.15);
+  color: #fff;
+  border-color: rgba(255,255,255,.4);
+}
+
+/* "+ Novo módulo" + formulário recolhido (migrado da antiga aba "Módulos") —
+   fica na coluna da direita (module-config-main-col), com o mesmo espaço
+   generoso dos outros painéis (Cores/Modelos/...) — não mais espremido na
+   árvore estreita de 300px, onde os 3 campos por linha (largura/altura/
+   profundidade) quebravam feio. */
+.adm-scope #module-new-btn { margin: 0 0 14px; }
+
+.adm-scope .module-config-main-col { flex: 1; min-width: 0; }
+.adm-scope .module-config-header { margin-bottom: 4px; }
+.adm-scope .module-config-header h2 { margin: 0; }
+
+/* Tira de abas (Cores/Modelos/Imagem 3D/Medidas/Componentes/Teste de
+   cálculo) de volta no topo — pedido do usuário: o accordion vertical
+   ficava "muito afastado" (gap de 24px entre cada seção); a tira horizontal
+   é bem mais compacta e só um bloco fica visível por vez. */
+.adm-scope .module-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+  position: sticky;
+  top: 24px;
+  background: var(--bg);
+  padding: 4px 0;
+  z-index: 5;
+}
+.adm-scope .module-subtab-btn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  margin-top: 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.adm-scope .module-subtab-btn:hover { background: var(--bg); }
+.adm-scope .module-subtab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Árvore + coluna de configuração ficam lado a lado SEMPRE (pedido do
+   usuário) — antes, abaixo de 860px de largura a coluna da direita
+   (Cores/Modelos/Imagem 3D/...) empilhava embaixo da árvore em vez de ficar
+   ao lado; removido de propósito, mesmo que fique apertado em tela bem
+   estreita (o admin é usado em desktop). */
+
+/* ---------- Portal do cliente ---------- */
+
+.adm-scope .portal-page main { max-width: 1100px; }
+
+/* Mesma ideia de sidebar+abas do painel admin, com nome próprio pra não
+   acoplar o estilo do portal ao do admin (podem divergir no futuro). */
+.adm-scope .portal-tabs {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.adm-scope .portal-sidebar {
+  flex: 0 0 180px;
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+.adm-scope .portal-tab-btn {
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 0;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.adm-scope .portal-tab-btn:hover { background: var(--bg); }
+.adm-scope .portal-tab-btn.active { background: var(--accent); color: #fff; }
+.adm-scope .portal-tab-content { flex: 1; min-width: 0; }
+
+@media (max-width: 720px) {
+  .adm-scope .portal-tabs { flex-direction: column; }
+  .adm-scope .portal-sidebar { flex-direction: row; flex-wrap: wrap; position: static; width: 100%; }
+}
+
+/* Linha de item do pedido (carrinho ou histórico) — imagem, dados, preço. */
+.adm-scope .portal-item-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.adm-scope .portal-item-row:last-child { border-bottom: none; }
+.adm-scope .portal-item-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  flex-shrink: 0;
+}
+.adm-scope .portal-item-thumb-empty { background: var(--bg); }
+.adm-scope .portal-item-info { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); }
+.adm-scope .portal-item-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.adm-scope .portal-item-price {
+  flex-shrink: 0;
+  text-align: right;
+  font-weight: 700;
+  color: var(--accent-dark);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.adm-scope .portal-item-remove { margin-top: 0; font-size: 12px; padding: 5px 10px; }
+
+.adm-scope .portal-cart-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-dark);
+  padding: 14px 0 4px;
+  border-top: 2px solid var(--border);
+  margin-top: 8px;
+}
+
+.adm-scope .portal-order-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.adm-scope .portal-order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+.adm-scope .portal-order-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Só o total em destaque — antes essa regra pegava QUALQUER <span> dentro do
+   header (inclusive o badge de status novo), deixando o badge com o mesmo
+   negrito/cor do preço, o que ficava estranho. */
+.adm-scope .portal-order-total { color: var(--accent-dark); font-weight: 700; }
+
+/* Ações do pedido salvo ("Ver detalhes"/"Gerar PDF") e o painel de detalhes
+   que só aparece depois de "entrar" no pedido (fica recolhido por padrão). */
+.adm-scope .portal-order-actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.adm-scope .portal-order-actions button { margin-top: 0; font-size: 12px; padding: 6px 12px; }
+.adm-scope .portal-order-details { margin-top: 8px; }
+
+/* ---------- Tela do pedido (migration 047, 2026-07-19) ----------
+   Aberta a partir de "Meus Pedidos" (ver openOrderDetail/renderOrderDetail
+   em portal.js) — substitui o antigo expand-inline. Read-only por padrão
+   (produto não se edita direto aqui); "Editar" por módulo reabre o
+   configurador de sempre, "Aprovar Pedido" trava a tela inteira. */
+.adm-scope .po-order-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.adm-scope .po-order-detail-header .secondary { margin-top: 0; flex-shrink: 0; }
+.adm-scope .po-order-detail-title-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.adm-scope .po-order-detail-title-wrap h2 { margin: 0; font-size: 18px; }
+
+.adm-scope .po-order-detail-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.adm-scope .po-order-detail-field-wide { grid-column: 1 / -1; }
+/* Depois de aprovado (ou enquanto ainda carrega), os campos viram texto
+   simples em vez de <input> disabled — disabled tem aparência "cinza
+   quebrado" que parece erro; um valor só-leitura deve parecer uma resposta
+   normal, não um campo travado. */
+.adm-scope .po-order-detail-fields.readonly input {
+  border: none;
+  background: none;
+  padding: 4px 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.adm-scope .po-order-item-card {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.adm-scope .po-order-item-card:last-child { border-bottom: none; }
+.adm-scope .po-order-item-number {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--text);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.adm-scope .po-order-item-image {
+  flex-shrink: 0;
+  /* Pedido do usuário 2026-07-19: "quero o tamanho maior" (era 200px). */
+  width: 260px;
+  height: 260px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+.adm-scope .po-order-item-image-empty { background: var(--bg); }
+/* Código de referência (SKU) grande ao lado do ícone do módulo — pedido do
+   usuário (2026-07-29): "quando tiver referencia cadastrada quero ela bem
+   grande no lado do icone do modulo". Só aparece quando
+   findMatchingSkuReference (portal.js) acha um código cadastrado batendo com
+   a largura/altura do item — sem código, este bloco nem entra no HTML. */
+.adm-scope .po-order-item-sku-code {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: .01em;
+}
+.adm-scope .po-order-item-info { flex: 1; min-width: 0; }
+/* Pedido do usuário 2026-07-29: "deixa as informacoes do produto maiores,
+   tem espaco" — o card tinha bastante largura livre à direita da imagem
+   (.po-order-item-info é flex:1), texto pequeno demais pra ela. Aumentado
+   em toda a coluna de informações (medidas/nome/descrição/cores). */
+.adm-scope .po-order-item-dims { color: var(--muted); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.adm-scope .po-order-item-reference { font-size: 22px; font-weight: 700; color: var(--text); margin-top: 8px; }
+.adm-scope .po-order-item-description { color: var(--muted); font-size: 15px; margin-top: 4px; }
+.adm-scope .po-order-item-colors { margin-top: 12px; font-size: 15px; display: flex; flex-direction: column; gap: 8px; }
+/* Cada linha de cor virou um BOTÃO clicável (pedido do usuário 2026-07-29:
+   "quero uma opcao de trocar a cor por modulo tambem") — reset de aparência
+   de botão nativo, mantendo o mesmo layout de antes (bolinha + texto), só
+   que agora abre um seletor de cor SÓ deste item (ver
+   toggleOrderItemColorPicker/applyColorToSingleOrderItem em portal.js;
+   diferente do painel de abas no topo, que troca em todos os itens de uma
+   vez). */
+.adm-scope .po-order-item-color-line { display: flex; flex-direction: column; align-items: flex-start; }
+.adm-scope .po-order-item-color-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  margin-top: 0;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.adm-scope .po-order-item-color-btn:hover:not(:disabled) { color: var(--accent-dark); text-decoration: underline; }
+.adm-scope .po-order-item-color-btn:disabled { cursor: default; color: var(--text); }
+.adm-scope .po-order-item-color-picker {
+  margin: 4px 0 2px 24px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+/* Preview da cor/textura escolhida, ao lado do nome do papel — pedido do
+   usuário 2026-07-19 (era só uma "bolinha") e 2026-07-29 (era um círculo
+   pequeno de 20px): "quero a imagem escolhida em cada modulo bem maior, hoje
+   ela ta pequena circular e cinza" — trocado de círculo pra quadrado
+   arredondado bem maior (44px), mesma linguagem visual dos swatches do
+   seletor de cor (.color-swatch img/.swatch-fallback, 36px), só um pouco
+   maior ainda pra ficar em destaque na tela do pedido. */
+.adm-scope .po-order-item-color-dot {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: inline-block;
+  object-fit: cover;
+}
+.adm-scope .po-order-item-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 110px;
+}
+.adm-scope .po-order-item-unit-price { font-size: 22px; font-weight: 700; color: var(--accent-dark); }
+.adm-scope .po-order-item-edit-btn { margin-top: 0; font-size: 13px; padding: 7px 16px; }
+/* Quantidade editável (pedido do usuário 2026-07-29: "quero opcao de
+   quantidade, pode ser alterada e salvar alteracao. muda preco."; campo
+   aumentado no mesmo dia, feedback seguinte: "quero quantidade maior") — ver
+   updateOrderItemQuantity em portal.js. */
+.adm-scope .po-order-item-qty-row { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); }
+.adm-scope .po-order-item-qty-input { width: 72px; padding: 8px 6px; margin-top: 0; text-align: center; font-size: 18px; font-weight: 700; }
+
+.adm-scope .po-order-detail-footer { margin-top: 8px; }
+.adm-scope .po-order-detail-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-dark);
+  padding: 14px 0;
+  border-top: 2px solid var(--border);
+}
+.adm-scope #po-order-detail-approve-hint { text-align: right; margin: 4px 0 0; }
+
+.adm-scope .badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+/* Filtros de família/categoria/subcategoria da biblioteca de módulos do
+   portal (substituem os <select> por pills clicáveis, tipo abas). */
+.adm-scope .po-filter-group {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.adm-scope .po-tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.adm-scope .po-tab-pill {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 0;
+}
+.adm-scope .po-tab-pill:hover { background: var(--bg); }
+.adm-scope .po-tab-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Biblioteca visual de módulos (cartões com desenho, tipo Promob) — cada
+   cartão troca o antigo <select> de módulo por um clique direto. */
+.adm-scope .po-module-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.adm-scope .po-module-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  background: var(--panel);
+  transition: border-color 0.15s, background 0.15s;
+}
+.adm-scope .po-module-card:hover { border-color: var(--accent); }
+.adm-scope .po-module-card.selected { border-color: var(--accent); background: #fbf3ec; }
+.adm-scope .po-module-card svg { width: 100%; height: 72px; display: block; cursor: pointer; }
+/* Imagem 3D de verdade (modules.thumbnail_data_url, gerada no admin) — mesmo
+   espaço/comportamento do ícone SVG genérico que ela substitui. */
+.adm-scope .po-module-card .po-module-card-image { width: 100%; height: 72px; object-fit: contain; display: block; cursor: pointer; }
+.adm-scope .po-module-card .po-module-card-name {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-dark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* Linha de medidas padrão — mesmo clique do nome/desenho, abre a
+   configuração completa. Escondida a pedido do usuário (2026-07-25): nos
+   cards do catálogo, mostrar só ícone + nome, sem as medidas. Reversível:
+   só tirar o display:none. */
+.adm-scope .po-module-card .po-module-card-dims {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  display: none;
+}
+.adm-scope .po-module-gallery-empty {
+  color: var(--muted);
+  font-size: 13px;
+  grid-column: 1 / -1;
+}
+
+/* Busca + faixas de Largura/Altura/Profundidade acima da vitrine (fase 1 da
+   reformulação do portal). */
+.adm-scope .po-search-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.adm-scope .po-module-search {
+  flex: 1 1 220px;
+  margin-top: 0;
+}
+.adm-scope .po-dim-filter-select {
+  flex: 0 1 150px;
+  margin-top: 0;
+}
+
+/* "Adicionar módulo" rápido, direto no card — quantidade + botão, separado
+   visualmente do corpo clicável (nome/desenho/medidas) que abre a
+   configuração completa. */
+.adm-scope .po-module-card-quickadd {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  align-items: center;
+}
+.adm-scope .po-quickadd-qty {
+  width: 46px;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 0;
+}
+.adm-scope .po-quickadd-btn {
+  flex: 1;
+  font-size: 12px;
+  padding: 5px 8px;
+  margin-top: 0;
+  white-space: nowrap;
+}
+.adm-scope .po-quickadd-error {
+  font-size: 11px;
+  margin-top: 4px;
+  text-align: left;
+}
+
+/* ==========================================================================
+   Portal — reskin "contractor portal" (2026-07-09)
+   Referência: mockup compartilhado pelo usuário (nav superior + catálogo em
+   grade + carrinho fixo do lado), confirmado em [[portal_redesign_reference]].
+   Paleta/tipografia ficam ESCOPADAS em body.portal-page — os componentes
+   admin/cliente (que usam o mesmo style.css) não são afetados, porque essas
+   variáveis só existem dentro desse seletor mais específico.
+   ========================================================================== */
+
+.adm-scope.portal-page {
+  --bg: #faf9f6;
+  --panel: #ffffff;
+  --border: #e6e2da;
+  --text: #171613;
+  --muted: #6b655c;
+  --accent: #171613;
+  --accent-dark: #000000;
+  --accent-light: #f2f0ea;
+  font-family: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+/* Largura do portal: aproveita telas grandes (antes 1400px deixava muita
+   faixa branca dos lados num monitor largo) — 1800px de teto, e o grid de
+   módulos (auto-fill) preenche sozinho com mais colunas. Telas menores não
+   mudam nada (max-width só limita, não estica além da janela). */
+.adm-scope.portal-page main { max-width: 1800px; padding: 28px 32px 0; }
+
+/* ---------- Nav superior ---------- */
+
+.adm-scope header.po-topnav {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.adm-scope .po-topnav-left { display: flex; align-items: center; gap: 32px; min-width: 0; }
+.adm-scope .po-logo { display: flex; flex-direction: column; line-height: 1; flex-shrink: 0; }
+.adm-scope .po-logo-main { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; color: var(--text); }
+.adm-scope .po-logo-sub { font-size: 9px; font-weight: 600; letter-spacing: 3px; color: var(--muted); margin-top: 3px; }
+/* Logo do Dealer (migration 075) — max-height trava o cabeçalho numa altura
+   consistente mesmo que a imagem enviada tenha proporção bem diferente do
+   wordmark LEGNO; largura livre (width:auto) preserva o aspecto original. */
+.adm-scope .po-logo-dealer-img { max-height: 34px; width: auto; display: block; }
+/* Toggle "Legno / Dealer" — mesmo espírito visual do po-lang-switcher
+   (borda fina, canto arredondado), só que como par de botões segmentados em
+   vez de <select>, pra trocar num clique só na frente do cliente final. */
+.adm-scope .po-portal-mode-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.adm-scope .po-portal-mode-btn {
+  background: var(--panel);
+  border: none;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  margin-top: 0;
+}
+.adm-scope .po-portal-mode-btn + .po-portal-mode-btn { border-left: 1px solid var(--border); }
+.adm-scope .po-portal-mode-btn.active { background: var(--text); color: #fff; }
+.adm-scope .po-portal-mode-btn:hover:not(.active) { background: var(--accent-light, #f2f0ea); color: var(--text); }
+.adm-scope .po-topnav-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  padding-left: 24px;
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+}
+.adm-scope .po-topnav-tabs#po-sidebar {
+  display: flex;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  position: static;
+}
+.adm-scope .po-topnav-tabs .portal-tab-btn {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 0;
+  padding: 10px 4px;
+  margin: 0 10px;
+  font-size: 14px;
+  font-weight: 500;
+  position: relative;
+}
+.adm-scope .po-topnav-tabs .portal-tab-btn:hover { background: transparent; color: var(--text); }
+.adm-scope .po-topnav-tabs .portal-tab-btn.active {
+  color: var(--text);
+  font-weight: 700;
+  background: transparent;
+}
+.adm-scope .po-topnav-tabs .portal-tab-btn.active::after {
+  content: "";
+  position: absolute;
+  left: 4px; right: 4px; bottom: -1px;
+  height: 2px;
+  background: var(--text);
+}
+.adm-scope .po-topnav-right { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+.adm-scope .po-help-link { font-size: 13px; color: var(--muted); cursor: default; }
+/* Seletor de idioma (js/i18n.js monta o <select> dentro deste span) — mesmo
+   visual discreto do resto do topnav, sem herdar o width:100%/margin-top dos
+   <select> genéricos do resto do site. */
+.adm-scope .po-lang-switcher .po-lang-select {
+  width: auto; margin-top: 0; padding: 4px 8px; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text);
+}
+/* Seletor de unidade de medida (mm/cm/m/pol/ft) — pedido do usuário: é global
+   (régua do configurador, totais da Composição, tooltip do 3D), então mora
+   aqui no topo junto do idioma em vez de escondido dentro da tela "2.
+   Configure". Mesmo visual discreto do seletor de idioma ao lado. Começa
+   sempre em polegada fracionada (ver option[selected] no HTML) — o cliente
+   troca a qualquer momento, sem persistir entre sessões. */
+.adm-scope .po-topnav-unit-select {
+  width: auto; margin-top: 0; padding: 4px 8px; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text);
+}
+/* Pé direito (ceiling) + rodapé (baseboard) da casa — campos globais no topo,
+   ao lado do idioma/unidade (pedido do usuário). O valor é digitado na
+   unidade global do po-unit-select e re-formatado no blur (ver
+   setupRoomSettingsInputs em portal.js). */
+.adm-scope .po-topnav-room-wrap { display: flex; align-items: center; gap: 10px; }
+.adm-scope .po-topnav-room-field {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; font-size: 12px; color: var(--muted, #6b6459); white-space: nowrap;
+}
+.adm-scope .po-topnav-room-field input {
+  width: 64px; margin-top: 0; padding: 4px 6px; font-size: 12px; text-align: right;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text);
+}
+
+/* Menu de Configurações (pé direito/rodapé/unidade/idioma) — antes esses 4
+   controles ficavam soltos e sempre visíveis na barra superior; pedido do
+   usuário: "a barra de ferramentas esta baguncada, precisa deixar algumas
+   coisas ocultas, pra dar espaco e deixar bem clean". Agora atrás de um
+   ícone de engrenagem, painel dropdown simples (mesmo visual de --panel/
+   --border do resto do app). */
+.adm-scope .po-topnav-settings { position: relative; }
+.adm-scope .po-topnav-settings-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  color: var(--muted);
+  padding: 0;
+  line-height: 1;
+}
+.adm-scope .po-topnav-settings-toggle:hover { background: var(--accent-light, #f2f0ea); color: var(--text); }
+.adm-scope .po-topnav-settings-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 14px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.adm-scope .po-topnav-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.adm-scope .po-topnav-settings-menu .po-topnav-room-field { justify-content: space-between; }
+.adm-scope .po-topnav-settings-menu .po-lang-switcher .po-lang-select, .adm-scope .po-topnav-settings-menu .po-topnav-unit-select { margin-left: auto; }
+.adm-scope .po-user-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+}
+.adm-scope .po-user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.adm-scope .po-user-meta { display: flex; flex-direction: column; line-height: 1.3; }
+.adm-scope .po-user-name { font-size: 13px; font-weight: 600; color: var(--text); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-scope .po-logout-link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0;
+  margin: 2px 0 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.adm-scope .po-logout-link:hover { background: none; color: var(--text); }
+
+/* ---------- Layout de 2 colunas (catálogo + carrinho) ---------- */
+
+.adm-scope .po-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+  margin-top: 24px;
+  padding-bottom: 40px;
+}
+.adm-scope .po-main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.adm-scope .po-cart-col { flex: 0 0 340px; position: sticky; top: 96px; }
+
+@media (max-width: 960px) {
+  .adm-scope .po-shell { flex-direction: column; }
+  .adm-scope .po-cart-col { width: 100%; position: static; }
+}
+
+.adm-scope .po-section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.adm-scope .po-section-heading-row h2 { margin: 0; }
+
+.adm-scope .po-view-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.adm-scope .po-view-toggle-btn {
+  background: var(--panel);
+  color: var(--muted);
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.adm-scope .po-view-toggle-btn:hover { background: var(--accent-light); }
+.adm-scope .po-view-toggle-btn.active { background: var(--text); color: #fff; }
+.adm-scope .po-view-toggle-btn + .po-view-toggle-btn { border-left: 1px solid var(--border); }
+
+/* ---------- Tabs de família (tira principal, estilo "Base Cabinets") ---------- */
+
+.adm-scope .po-family-tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-top: 6px;
+}
+.adm-scope .po-family-tabbar .po-tab-pill {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.adm-scope .po-family-tabbar .po-tab-pill:hover { background: var(--accent-light); color: var(--text); }
+.adm-scope .po-family-tabbar .po-tab-pill.active {
+  background: transparent;
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+/* Categoria/subcategoria — filtros secundários, menores, sob a tira de família.
+   gap usa dois valores (row-gap column-gap): pouco espaço vertical quando
+   Categoria/Subcategoria quebram linha (telas estreitas ou lista comprida de
+   pills), mantendo respiro horizontal normal quando cabem lado a lado. Label
+   com margin próprio (em vez do "label { margin-top:10px }" global) — a
+   herança do global tava somando com o gap e deixando a faixa toda mais alta
+   do que precisava (pedido do usuário — "bem juntinho"). */
+.adm-scope .po-filter-group-secondary { margin-top: 6px; gap: 4px 20px; }
+.adm-scope .po-filter-group-secondary label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);
+  margin-top: 0; margin-bottom: 2px;
+}
+.adm-scope .po-filter-group-secondary .po-tab-pill { font-size: 12px; padding: 4px 10px; }
+
+/* ---------- Grid de módulos (catálogo) ---------- */
+
+.adm-scope .po-module-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 16px;
+}
+.adm-scope .po-module-card {
+  border-radius: 10px;
+  padding: 8px;
+}
+.adm-scope .po-module-card.selected { background: var(--panel); border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+.adm-scope .po-module-card-image-wrap {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 10px;
+}
+.adm-scope .po-module-card .po-module-card-image-wrap svg, .adm-scope .po-module-card .po-module-card-image-wrap .po-module-card-image { height: 130px; }
+.adm-scope .po-module-card .po-module-card-name { color: var(--text); font-size: 13px; }
+.adm-scope .po-module-card .po-module-card-dims { color: var(--muted); display: none; }
+.adm-scope .po-module-card-quickadd { margin-top: 10px; }
+.adm-scope .po-quickadd-qty { border-radius: 6px; }
+.adm-scope .po-quickadd-btn {
+  background: var(--text);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.adm-scope .po-quickadd-btn:hover { background: #000; }
+.adm-scope .po-quickadd-btn.secondary { background: var(--text); color: #fff; border: none; }
+
+/* Dropdown de referência (SKU) abaixo do card do catálogo — pedido do
+   usuário 2026-07-29, ver renderModuleGallery/addModuleToCartWithSku em
+   portal.js. Só existe quando o módulo tem referência cadastrada (largura +
+   altura com o mesmo código); selecionar uma opção já insere no carrinho,
+   sem botão. */
+.adm-scope .po-module-card-sku { margin-top: 8px; }
+.adm-scope .po-module-card-sku-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* Modo lista — mesma galeria, card vira linha horizontal. */
+.adm-scope .po-module-gallery.po-view-list { grid-template-columns: 1fr; }
+.adm-scope .po-module-gallery.po-view-list .po-module-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+}
+.adm-scope .po-module-gallery.po-view-list .po-module-card-image-wrap {
+  width: 110px;
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+.adm-scope .po-module-gallery.po-view-list .po-module-card-body { flex: 1; min-width: 0; }
+.adm-scope .po-module-gallery.po-view-list .po-module-card-quickadd { margin-top: 0; flex-shrink: 0; width: 220px; }
+.adm-scope .po-module-gallery.po-view-list .po-module-card-sku { margin-top: 0; flex-shrink: 0; width: 200px; }
+.adm-scope .po-module-gallery.po-view-list .po-quickadd-error { flex-basis: 100%; order: 99; }
+
+/* ---------- Carrinho lateral fixo ("Seu Pedido") ---------- */
+
+.adm-scope .po-project-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+}
+.adm-scope .po-project-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.adm-scope .po-project-title { font-size: 15px; font-weight: 700; color: var(--text); }
+
+.adm-scope .po-project-fields { display: flex; flex-direction: column; gap: 6px; }
+.adm-scope .po-project-input {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  margin-top: 0;
+  width: 100%;
+}
+.adm-scope .po-project-input-sub { color: var(--muted); font-size: 12px; }
+
+.adm-scope .po-project-divider { height: 1px; background: var(--border); margin: 14px 0; }
+
+.adm-scope .po-selected-modules-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.adm-scope .po-cart-list { max-height: 420px; overflow-y: auto; }
+.adm-scope .po-cart-list .portal-item-row { padding: 10px 0; gap: 10px; }
+.adm-scope .po-cart-list .portal-item-thumb { width: 48px; height: 48px; }
+.adm-scope .po-cart-list .portal-item-info { font-size: 11px; }
+.adm-scope .po-cart-list .portal-item-title { font-size: 13px; }
+.adm-scope .po-cart-empty { font-size: 12px; padding: 8px 0; }
+
+.adm-scope .po-project-summary { display: flex; flex-direction: column; gap: 6px; }
+.adm-scope .po-summary-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.adm-scope .po-summary-row.po-summary-total { font-size: 17px; font-weight: 700; color: var(--text); }
+
+.adm-scope .po-project-phone-row { margin-top: 14px; }
+.adm-scope .po-project-phone-row label { font-size: 11px; color: var(--muted); }
+
+.adm-scope .po-btn-primary-block {
+  width: 100%;
+  margin-top: 14px;
+  background: var(--text);
+  font-weight: 700;
+  padding: 12px;
+}
+.adm-scope .po-btn-primary-block:hover { background: #000; }
+
+/* ---------- Rodapé de suporte ---------- */
+
+.adm-scope .po-support-footer {
+  max-width: 1800px; /* acompanha o main (ver body.portal-page main acima) */
+  margin: 24px auto 0;
+  padding: 24px 32px 32px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+.adm-scope .po-support-item { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.adm-scope .po-support-item strong { color: var(--text); font-size: 13px; }
+.adm-scope .po-support-item a { color: var(--text); font-weight: 600; text-decoration: underline; }
+
+@media (max-width: 720px) {
+  .adm-scope header.po-topnav { flex-wrap: wrap; height: auto; padding: 12px 16px; gap: 12px; }
+  .adm-scope .po-topnav-title { display: none; }
+  .adm-scope.portal-page main { padding: 16px; }
+}
+
+/* ---------- "Visualizar no meu ambiente" — overlay manual de módulo sobre
+   foto do cliente (sem IA, tudo client-side). O stage tem display:inline-
+   block + line-height:0 pra encolher exatamente do tamanho da <img> da foto
+   (senão getBoundingClientRect() no JS não bateria com o que o cliente vê),
+   e cada "camada" (módulo colocado em cima) é um <div> position:absolute
+   dentro do stage, arrastável e redimensionável via Pointer Events (cobre
+   mouse E touch com o mesmo código — importante porque o uso alvo é celular). */
+
+.adm-scope #po-room-upload-wrap input[type="file"] { padding: 8px; }
+
+.adm-scope #po-room-stage-wrap {
+  margin-top: 14px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.adm-scope #po-room-stage {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  touch-action: none; /* evita o navegador roubar o gesto pra scroll/zoom da página ao arrastar uma camada */
+}
+.adm-scope #po-room-photo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.adm-scope .po-room-layer {
+  position: absolute;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+  border: 2px dashed transparent;
+}
+.adm-scope .po-room-layer:hover, .adm-scope .po-room-layer:active { border-color: var(--accent); }
+.adm-scope .po-room-layer img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none; /* clique/drag sempre resolve no wrapper .po-room-layer, nunca na <img> em si */
+  -webkit-user-drag: none;
+}
+.adm-scope .po-room-layer-remove {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  padding: 0;
+  margin-top: 0;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+.adm-scope .po-room-layer-resize-handle {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--accent);
+  border: 2px solid #fff;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.adm-scope #po-room-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.adm-scope #po-room-toolbar button { margin-top: 0; }
+
+.adm-scope #po-room-picker { margin-top: 22px; }
+.adm-scope .po-room-cart-picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+.adm-scope .po-room-cart-picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 84px;
+  padding: 8px 6px;
+  margin-top: 0;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.25;
+  cursor: pointer;
+  text-align: center;
+}
+.adm-scope .po-room-cart-picker-item:hover { border-color: var(--accent); background: var(--bg); }
+.adm-scope .po-room-cart-picker-item img { width: 56px; height: 56px; object-fit: contain; }
+
+/* ---------- Composição — fileira de slots esquerda->direita ---------- */
+
+.adm-scope .po-comp-mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fbf3ec;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--accent-dark);
+}
+.adm-scope .po-comp-mode-banner button { margin-top: 0; padding: 5px 12px; }
+/* Editando post da Galeria como admin — mesma marcação/layout de
+   .po-comp-mode-banner, cor azul só pra distinguir visualmente do banner
+   laranja de "Configurando módulo X" (contextos diferentes, mas podem
+   coexistir na tela). */
+.adm-scope .po-comp-admin-edit-banner { background: #eaf1fb; border-color: #6b8fc9; color: #2c4a75; }
+
+.adm-scope .po-comp-slots {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.adm-scope .po-comp-slot {
+  width: 190px;
+  min-height: 210px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+  padding: 10px;
+}
+.adm-scope .po-comp-slot.empty {
+  border: 2px dashed var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  gap: 6px;
+  font-size: 13px;
+}
+.adm-scope .po-comp-slot.empty:hover { border-color: var(--accent); color: var(--accent-dark); background: var(--bg); }
+.adm-scope .po-comp-slot-plus { font-size: 28px; line-height: 1; color: var(--accent); }
+
+.adm-scope .po-comp-slot.filled {
+  border: 1px solid var(--border);
+  background: #fff;
+  justify-content: flex-start;
+  cursor: pointer;
+}
+.adm-scope .po-comp-slot.filled:hover { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.adm-scope .po-comp-slot-thumb { width: 140px; height: 140px; object-fit: contain; margin-top: 4px; }
+
+/* Divisor clicável "inserir módulo aqui" entre dois cards já preenchidos
+   (pedido do usuário: "acrescentar algum módulo no meio de dois já
+   configurados") — fica discreto até o hover, pra não competir visualmente
+   com os cards de verdade. */
+.adm-scope .po-comp-slot-divider {
+  width: 22px;
+  min-height: 210px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: transparent;
+  font-size: 18px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.adm-scope .po-comp-slot-divider:hover { color: var(--accent-dark); background: var(--bg); }
+.adm-scope .po-comp-slot-name { font-size: 12px; font-weight: 600; color: var(--text); margin-top: 6px; line-height: 1.25; }
+.adm-scope .po-comp-slot-dims { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.adm-scope .po-comp-slot-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  padding: 0;
+  margin-top: 0;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Empilhamento vertical (2026-07-16): altura do chão editável direto no
+   card (pedido do usuário: "poder escolher a altura de cada item... que eu
+   possa mexer depois de inserido vendo os dois no mesmo ambiente") — input
+   pequeno, sem o padding/width padrão de input (que ocupa 100% e é alto
+   demais pra um card de 190px), e o botão "Colocar em cima" (topo da
+   coluna, acima do quadro, ver comentário no columnWrap em portal.js).
+   stopPropagation nos dois evita abrir o configurador ao clicar neles. */
+.adm-scope .po-comp-slot-floor-height {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: default;
+}
+.adm-scope .po-comp-slot-floor-height-input {
+  width: 60px;
+  padding: 3px 5px;
+  font-size: 11px;
+  text-align: right;
+}
+.adm-scope .po-comp-slot-floor-height-unit { font-size: 10px; color: var(--muted); }
+.adm-scope .po-comp-slot-stack-btn {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-top: 0;
+}
+
+.adm-scope #po-comp-generate-btn { max-width: 320px; }
+.adm-scope #po-comp-generate-hint { margin-top: 8px; }
+
+/* Checkboxes de habilitar/desabilitar cada medida total + a linha de chips
+   com o resultado (largura = soma dos slots, altura/profundidade = maior
+   entre os slots — ver renderCompositionTotals em portal.js). */
+.adm-scope .po-comp-totals-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.adm-scope .po-comp-totals-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 0;
+  cursor: pointer;
+}
+.adm-scope .po-comp-totals-toggle input { width: auto; margin-top: 0; }
+.adm-scope .po-comp-totals-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  width: 100%;
+}
+.adm-scope .po-comp-total-chip {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Cena 3D combinada (ver js/viewer3d_composition.js) — mais larga/alta que
+   o viewer de um módulo só (#viewer3d-canvas), já que mostra vários módulos
+   lado a lado em escala real. */
+/* Canvas + painel de troca rápida de cor das laterais lado a lado (pedido
+   do usuário: "deve ficar em quadros do lado do 3d, sem espremer o
+   visualizador") — mesmo padrão de #viewer-config-row (configurador de um
+   módulo só): flex-wrap pra empilhar em telas estreitas, canvas com
+   flex:1 (cresce/encolhe livre) e o painel lateral com largura própria
+   limitada, então o painel nunca "espreme" o canvas — ele só ocupa o
+   espaço que sobra depois do painel reservar a própria faixa. */
+.adm-scope #po-comp-3d-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+/* Canvas + botões "Abrir portas"/"Abrir gavetas" (ver portal.html) agrupados
+   num wrap próprio — é ELE que ocupa a faixa flex:1 da fileira agora (canvas
+   sozinho não tem mais espaço pros botões abaixo dele senão). */
+.adm-scope #po-comp-3d-canvas-wrap { flex: 1 1 420px; min-width: 0; }
+.adm-scope #po-comp-3d-canvas {
+  width: 100%;
+  height: 420px;
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+.adm-scope #po-comp-3d-canvas canvas { display: block; width: 100%; height: 100%; }
+/* Visualizar 3D da aba Projetos (ViewerProject, própria instância — ver
+   viewer3d_composition.js/createInstance) — mesmo visual do canvas 3D da
+   Composição acima, só sem o painel de troca rápida de cor ao lado (não
+   pedido pra esta fase). */
+.adm-scope #po-proj-close-3d-btn { display: block; margin-bottom: 10px; }
+.adm-scope #po-proj-3d-canvas-wrap { width: 100%; }
+.adm-scope #po-proj-3d-canvas {
+  width: 100%;
+  /* 2026-08-03 (pedido: "deixa essa janela maior pra trabalhar, muito
+     espaço vazio dos lados") — altura acompanha a TELA em vez dos 420px
+     fixos; canvas mais alto = câmera de fit-automático chega mais perto e
+     o móvel preenche a largura (o vazio lateral era consequência do fit
+     limitado pela altura baixa).
+     2026-08-06 (iPad Air 13"): mesma subida do #po-proj-canvas-3d-edit. */
+  height: clamp(420px, 88vh, 1200px);
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+.adm-scope #po-proj-3d-canvas canvas { display: block; width: 100%; height: 100%; }
+.adm-scope #po-comp-side-color-panel {
+  flex: 0 1 220px;
+  max-width: 240px;
+  min-width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+}
+.adm-scope #po-comp-side-color-panel label { display: block; font-weight: 600; margin-bottom: 2px; }
+/* Mesmo painel de troca rápida de cor (abas por papel de cor), só que na
+   tela do pedido (#po-order-detail-color-panel) não tem canvas 3D ao lado
+   pra dividir espaço com — ocupa a largura toda, acima da lista de itens. */
+.adm-scope .po-order-detail-save-info-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+.adm-scope .po-order-detail-save-info-row button { margin-top: 0; }
+.adm-scope .po-order-detail-color-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  margin: 12px 0;
+}
+.adm-scope .po-order-detail-color-panel label { display: block; font-weight: 600; margin-bottom: 2px; }
+/* "Processando" (pedido do usuário 2026-07-29: "talvez uma janela de
+   carregamento mostrando que esta processando ate finalizar") — desabilita
+   visualmente as abas/swatches enquanto applyPendingColorChangesToOrderItems
+   roda, pra não deixar clicar de novo no meio do processamento. */
+.adm-scope .po-order-detail-color-panel-busy #po-order-detail-color-tabs, .adm-scope .po-order-detail-color-panel-busy #po-order-detail-color-swatches {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.adm-scope .po-order-detail-color-panel-busy { cursor: progress; }
+/* Abas do painel de troca rápida de cor (pedido do usuário, 2026-07-16:
+   "pode fazer por abas pra nao ocupar muito espaco na tela") — mesmo visual
+   de chip de .dim-preset-chip, só com estado .active (mesma cor sólida de
+   .portal-tab-btn.active) pra marcar qual papel de cor está sendo mostrado. */
+.adm-scope .po-comp-color-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.adm-scope .po-comp-color-tab-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--accent-dark);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.adm-scope .po-comp-color-tab-btn:hover { border-color: var(--accent); background: var(--accent-light, #fdf3e6); }
+.adm-scope .po-comp-color-tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.adm-scope #po-comp-side-color-swatches { margin-top: 8px; }
+.adm-scope .po-comp-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.adm-scope .po-comp-title-row h2 { margin-bottom: 0; }
+.adm-scope .po-comp-3d-total {
+  margin: 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+/* Linha de ações da Composição — botão de IA (chamativo) à esquerda,
+   carrinho jogado pra direita (pedido do usuário, 2026-07-19: "joga esse
+   botao de carrinho pra direita e deixa um botao chamativo de gerar ia").
+   .po-btn-primary-block normalmente é width:100% (ver definição genérica) —
+   aqui dentro vira automático pra caber ao lado do botão de IA sem esticar. */
+.adm-scope .po-comp-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+.adm-scope .po-comp-actions-row .po-btn-primary-block {
+  width: auto;
+  margin-top: 0;
+  min-width: 220px;
+}
+.adm-scope .po-comp-ai-cta-btn {
+  background: linear-gradient(135deg, #f7971e 0%, #d64ec2 55%, #7b5cff 100%);
+  color: #fff;
+  border: none;
+  font-weight: 700;
+  padding: 12px 22px;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(123, 92, 255, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.adm-scope .po-comp-ai-cta-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(123, 92, 255, 0.45);
+}
+.adm-scope #po-comp-add-cart-btn { max-width: 320px; }
+
+/* "Novo Orçamento" abrindo como MODAL de tela cheia por cima da aba
+   Composição (ver startCompositionSlotConfig em portal.js) — mesma
+   marcação/lógica de sempre (nada duplicado), só muda a apresentação: em
+   vez de virar a aba ativa (o que esconderia a Composição por trás), fica
+   fixo cobrindo a tela toda, com scroll próprio, enquanto a Composição
+   continua "por baixo" sem nunca ter sido escondida. Fechar o modal (Cancelar
+   ou Adicionar) é só voltar o display a 'none' — a Composição reaparece
+   sozinha, sem precisar recarregar nada. */
+.adm-scope #po-tab-new-order.po-modal-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 20px 16px 40px;
+  margin: 0;
+}
+
+/* ---------- Galeria pública de composições (migration 048) ---------- */
+
+.adm-scope .po-gallery-ai-disclaimer {
+  background: #fff8e6;
+  border: 1px solid #f0d999;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #7a5c00;
+  margin: 8px 0 16px;
+}
+
+.adm-scope .po-gallery-publish-wrap { margin-top: 14px; }
+.adm-scope #po-gallery-publish-form {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+  max-width: 420px;
+}
+.adm-scope #po-gallery-publish-form label { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
+.adm-scope #po-gallery-publish-form select { width: 100%; margin-top: 4px; }
+.adm-scope .po-gallery-anon-label { display: flex !important; align-items: center; gap: 6px; cursor: pointer; }
+.adm-scope .po-gallery-anon-label input { width: auto; }
+.adm-scope #po-gallery-ai-preview-wrap { margin: 10px 0; }
+.adm-scope #po-gallery-ai-preview-img {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: 220px;
+  object-fit: contain;
+  background: #ffffff;
+  cursor: zoom-in;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.adm-scope .po-gallery-ai-preview-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; max-width: 320px; }
+.adm-scope .po-gallery-ai-preview-actions button { margin-top: 0; }
+.adm-scope #po-gallery-base-preview-wrap { margin-top: 8px; }
+.adm-scope #po-gallery-base-preview-img {
+  display: block;
+  width: 100%;
+  max-width: 200px;
+  height: 140px;
+  object-fit: contain;
+  background: #ffffff;
+  cursor: zoom-in;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.adm-scope .po-gallery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.adm-scope .po-gallery-filter-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.adm-scope .po-gallery-filter-field select { min-width: 140px; }
+.adm-scope .po-gallery-filter-range { display: flex; align-items: center; gap: 6px; }
+.adm-scope .po-gallery-filter-range input { width: 80px; }
+
+.adm-scope .po-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.adm-scope .po-gallery-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.adm-scope .po-gallery-card:hover { border-color: var(--accent); }
+/* aspect-ratio (em vez de height fixo) + object-fit:cover — a imagem
+   preenche o quadro do card sem distorcer nem sobrar faixa branca dos
+   lados quando o render da IA sai em proporção diferente do card; ver
+   quem quiser sem corte, `.po-gallery-card-image` abre no lightbox
+   (object-fit:contain lá, ninguém perde detalhe). */
+.adm-scope .po-gallery-card-image-wrap { background: #ffffff; aspect-ratio: 4 / 3; overflow: hidden; position: relative; }
+.adm-scope .po-gallery-card-image { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.adm-scope .po-gallery-card-image-empty { width: 100%; height: 100%; background: var(--accent-light, #f2f0ea); }
+.adm-scope .po-gallery-card-image-zoom-hint {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0,0,0,0.45); color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; pointer-events: none;
+}
+.adm-scope .po-gallery-card-body { padding: 10px 12px 12px; }
+.adm-scope .po-gallery-card-name { font-weight: 600; color: var(--accent-dark); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-scope .po-gallery-card-meta { font-size: 12px; margin-top: 2px; }
+.adm-scope .po-gallery-card-author { font-size: 11px; margin-top: 2px; }
+/* Preço no estilo "Starting at $X" da referência (pedido do usuário
+   2026-07-19: foto de catálogo com botão "Customize →") — rótulo pequeno em
+   cima, valor grande embaixo, sem casas decimais nem separador de milhar
+   (ver formatGalleryPrice em portal.js — diferente do formatMoney usado no
+   carrinho/pedidos, que continua com centavos). */
+.adm-scope .po-gallery-card-price-label { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.adm-scope .po-gallery-card-price { font-weight: 700; color: var(--ink, #1a1a1a); font-size: 19px; margin-top: 2px; }
+.adm-scope .po-gallery-card-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+/* Curtir (♥) vira um botão circular flutuante sobre a FOTO (canto superior
+   esquerdo), igual à referência — antes ficava ao lado do botão principal,
+   embaixo do card. */
+.adm-scope .po-gallery-like-btn {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  width: 26px; height: 26px; padding: 0; margin-top: 0;
+  border-radius: 50%; border: 1px solid var(--border); background: #fff;
+  display: flex; align-items: center; justify-content: center; gap: 1px; font-size: 11px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+}
+/* Pedido do usuário 2026-07-20: menor e SEMPRE círculo perfeito, mesmo com
+   número (nada de virar pill/oval — ver galleryLikeButtonContent). */
+.adm-scope .po-gallery-like-heart { color: #e0245e; line-height: 1; font-size: 12px; }
+.adm-scope .po-gallery-like-count { font-size: 9px; font-weight: 700; color: var(--ink, #1a1a1a); line-height: 1; }
+/* Botão principal ("Customize →" na referência) — pill de borda fina,
+   largura total do card, texto + seta, preenche na cor de destaque no
+   hover. Mesmo tamanho/proporção da referência (padding generoso, bem
+   arredondado). */
+.adm-scope .po-gallery-use-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 1; height: 40px; padding: 0 16px; border-radius: 999px;
+  border: 1.5px solid var(--accent-dark); background: #fff; color: var(--accent-dark);
+  font-weight: 600; font-size: 14px; transition: background 0.15s, color 0.15s;
+}
+.adm-scope .po-gallery-use-btn:hover { background: var(--accent-dark); color: #fff; }
+/* Botão "Compartilhar" (pedido do usuário 2026-07-20) — MESMA altura exata
+   do botão principal (height:40px nos dois, em vez de depender de padding
+   pra chegar num tamanho parecido — era o que desalinhava), só que
+   circular. Reduzido de 44px pra 40px (pedido: "deixa o botão... menor"). */
+.adm-scope .po-gallery-share-btn {
+  flex: none; width: 40px; height: 40px; padding: 0; margin-top: 0;
+  border-radius: 50%; border: 1.5px solid var(--border); background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  color: #1a1a1a; /* ícone SVG usa stroke="currentColor" */
+  transition: border-color 0.15s, background 0.15s;
+}
+.adm-scope .po-gallery-share-btn:hover { border-color: var(--accent-dark); background: var(--accent-light, #f2f0ea); }
+.adm-scope .po-gallery-share-menu {
+  display: none; position: absolute; z-index: 2100; min-width: 180px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 6px; flex-direction: column; gap: 2px;
+}
+.adm-scope .po-gallery-share-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px;
+  font-size: 13px; text-align: left; color: var(--ink, #1a1a1a); background: none; border: none;
+  cursor: pointer; text-decoration: none; width: 100%; font-family: inherit;
+}
+.adm-scope .po-gallery-share-item:hover { background: var(--accent-light, #f2f0ea); }
+
+.adm-scope .po-gallery-lightbox-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.86);
+  z-index: 2000; align-items: center; justify-content: center; padding: 24px;
+}
+.adm-scope .po-gallery-lightbox-img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+.adm-scope .po-gallery-lightbox-close {
+  position: absolute; top: 16px; right: 20px; background: none; border: none;
+  color: #fff; font-size: 34px; line-height: 1; cursor: pointer;
+}
+
+/* ---------- "Meus Projetos" (grid de cards, pedido do usuário 2026-08-02:
+   "essa tela ta muito baguncada... quer mais alinhados, quadrado para cada
+   pedido") — mesmo esqueleto visual de .po-gallery-card acima (card
+   panel + imagem no topo + corpo com nome/meta/ações), só que a imagem é
+   QUADRADA (1/1, não 4/3) e pode vir "partida" ao meio quando o projeto tem
+   as duas imagens (snapshot 3D automático + última imagem de IA publicada,
+   ver captureProjectThumbnail/publishProjectToGallery em portal.js) — cada
+   metade abre sozinha no lightbox (openGalleryLightbox reaproveitado). */
+.adm-scope .po-myproj-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.adm-scope .po-myproj-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.adm-scope .po-myproj-card:hover { border-color: var(--accent); }
+.adm-scope .po-myproj-card-image-wrap { background: #ffffff; aspect-ratio: 1 / 1; overflow: hidden; position: relative; }
+.adm-scope .po-myproj-card-image { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.adm-scope .po-myproj-card-image-empty { width: 100%; height: 100%; background: var(--accent-light, #f2f0ea); }
+.adm-scope .po-myproj-card-image-split { display: flex; width: 100%; height: 100%; }
+.adm-scope .po-myproj-card-image-half { position: relative; width: 50%; height: 100%; }
+.adm-scope .po-myproj-card-image-half + .po-myproj-card-image-half { border-left: 1px solid rgba(0,0,0,0.08); }
+.adm-scope .po-myproj-card-image-badge {
+  position: absolute; bottom: 6px; left: 6px; z-index: 2;
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 999px; pointer-events: none; letter-spacing: 0.02em;
+}
+.adm-scope .po-myproj-card-image-zoom-hint {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0,0,0,0.45); color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; pointer-events: none;
+}
+.adm-scope .po-myproj-card-body { padding: 10px 12px 12px; }
+.adm-scope .po-myproj-card-name { font-weight: 600; color: var(--accent-dark); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-scope .po-myproj-card-meta { font-size: 12px; margin-top: 2px; }
+.adm-scope .po-myproj-card-total { font-size: 13px; font-weight: 600; color: var(--accent-dark); margin-top: 4px; }
+.adm-scope .po-myproj-card-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.adm-scope .po-myproj-card-actions button { margin-top: 0; }
+
+/* Grade de fotos realistas salvas (migration 077, aba Projetos) — mesma
+   miniatura quadrada com zoom da lista "Meus Projetos", só que com botão de
+   excluir por versão em vez de badge/split. */
+.adm-scope .po-photoreal-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.adm-scope .po-photoreal-gallery-item {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+.adm-scope .po-photoreal-gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.adm-scope .po-photoreal-gallery-delete {
+  position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0,0,0,0.55); color: #fff; border: none; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; cursor: pointer; padding: 0; margin: 0;
+  line-height: 1;
+}
+.adm-scope .po-photoreal-gallery-delete:hover { background: rgba(179,38,30,0.85); }
+
+/* ---------- Projetos (canvas 2D, Fase 1 — pedido do usuário 2026-07-21) ----------
+   "tela de projetos... vista frontal 2D paralela (não perspectiva)... deve
+   dar pra arrastar... tipo ímã que puxe os cantos... ao colocar um módulo na
+   frente do outro, ele deve levar o módulo novo pra frente". Canvas é um DOM
+   simples (divs posicionados em px, escala = po-proj-canvas.dataset.pxPerMm),
+   não Three.js — mais simples de arrastar/snapar e mais fiel ao mockup
+   (retângulos com cota, não uma cena 3D vista de frente). */
+/* FAIXA SUPERIOR ÚNICA da aba Projetos (2026-08-08, etapa 1 do redesenho
+   mandado pelo usuário como mockup). Substitui .po-proj-wall-shape-row +
+   .po-proj-wall-settings, que eram blocos empilhados. Um cartão só, com as
+   coisas do AMBIENTE (formato, parede ativa, medidas) e a ação à direita.
+   align-items:flex-end alinha tudo pela BASE — os campos têm label em cima,
+   os toggles não, e sem isso um flutuaria no meio do outro. */
+.adm-scope .po-proj-topbar {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  padding: 10px 12px; margin: 8px 0 10px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+}
+.adm-scope .po-proj-topbar-group { display: flex; flex-direction: column; gap: 5px; }
+.adm-scope .po-proj-topbar-label {
+  font-size: 11px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.adm-scope .po-proj-topbar-fields { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+/* Campos compactos: o valor é curto (uma medida) e o rótulo é que ocupa
+   espaço — 132px cabe "Largura da parede" em 2 linhas sem espremer o input. */
+.adm-scope .po-proj-topbar-field { width: 132px; max-width: 132px; margin: 0; }
+.adm-scope .po-proj-topbar-field label { font-size: 11px; }
+/* margin-left:auto empurra a ação pro fim da faixa; quando a linha quebra em
+   tela estreita, ela simplesmente vai pra baixo, sem regra extra. */
+.adm-scope .po-proj-topbar-actions { margin-left: auto; }
+.adm-scope .po-proj-topbar-actions button { margin: 0; white-space: nowrap; }
+
+/* Abas de parede (só aparecem com 2-3 paredes, ver refreshProjectWallTabs em
+   portal.js) — estilo discreto de pill pra não competir com o toggle de
+   formato ao lado. Agora vivem DENTRO da faixa, por isso a margem zerada. */
+.adm-scope .po-proj-wall-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 0;
+}
+.adm-scope .po-proj-wall-tab-btn {
+  background: var(--panel); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px;
+  margin: 0; padding: 4px 12px; font-size: 12px; font-weight: 600;
+}
+.adm-scope .po-proj-wall-tab-btn:hover { background: var(--accent-light); }
+.adm-scope .po-proj-wall-tab-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+.adm-scope .po-proj-layout {
+  display: grid;
+  /* Colunas ajustáveis (pedido do usuário, 2026-07-21) — largura em
+     variáveis CSS setadas por applyProjectColumnWidths() (portal.js),
+     arrastando .po-proj-resize-handle-left/right. Padrão só entra em uso se
+     o JS ainda não rodou (var() sem fallback nunca acontece na prática). */
+  grid-template-columns: var(--proj-lib-w, 200px) 8px 1fr 8px var(--proj-cfg-w, 240px);
+  gap: 10px;
+  margin-top: 8px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .adm-scope .po-proj-layout { grid-template-columns: 1fr; }
+  .adm-scope .po-proj-resize-handle { display: none; }
+}
+.adm-scope .po-proj-resize-handle {
+  align-self: stretch;
+  width: 8px;
+  min-height: 200px;
+  cursor: col-resize;
+  position: relative;
+}
+.adm-scope .po-proj-resize-handle::after {
+  content: '';
+  position: absolute; left: 50%; top: 8%; bottom: 8%; width: 3px;
+  transform: translateX(-50%); background: var(--border); border-radius: 2px;
+  transition: background 0.15s;
+}
+.adm-scope .po-proj-resize-handle:hover::after, .adm-scope .po-proj-resize-handle.resizing::after { background: var(--accent); }
+.adm-scope .po-proj-library {
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+  background: var(--panel); max-height: 640px; overflow-y: auto;
+}
+
+/* ---- Colunas recolhíveis (pedido do usuário 2026-08-06, no iPad Air 13") ----
+   Recolhida, a coluna vira uma tira de PROJECT_COLUMN_COLLAPSED_PX (ver
+   portal.js) só com o botão de expandir; todo o resto do conteúdo some e o
+   espaço vai pro centro, que é onde mora o visualizador 3D. As classes
+   .lib-collapsed/.cfg-collapsed ficam no .po-proj-layout (setadas por
+   applyProjectColumnWidths). */
+.adm-scope .po-proj-config-col { min-width: 0; position: relative; }
+
+.adm-scope .po-proj-col-toggle {
+  width: 100%; margin: 0 0 8px; padding: 4px 0;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; line-height: 1; cursor: pointer;
+  /* Alvo confortável de dedo no tablet sem virar um bloco no desktop. */
+  min-height: 32px;
+}
+.adm-scope .po-proj-col-toggle:hover { color: var(--text); border-color: var(--accent); }
+/* O glifo é CSS pra não duplicar string em 2 lugares nem passar por i18n —
+   a direção da seta é a AÇÃO (‹ recolhe, › expande). */
+.adm-scope .po-proj-col-toggle::after { content: '‹'; font-size: 16px; }
+.adm-scope .po-proj-col-toggle-right::after { content: '›'; }
+.adm-scope .po-proj-layout.lib-collapsed .po-proj-col-toggle::after { content: '›'; }
+.adm-scope .po-proj-layout.cfg-collapsed .po-proj-col-toggle-right::after { content: '‹'; }
+
+/* Recolhida: some tudo menos o botão, e a moldura/padding do painel some
+   junto (senão sobra uma caixa vazia de 40px com borda). */
+.adm-scope .po-proj-layout.lib-collapsed .po-proj-library {
+  padding: 0; border: none; background: transparent; overflow: visible;
+}
+.adm-scope .po-proj-layout.lib-collapsed .po-proj-library > *:not(.po-proj-col-toggle) { display: none; }
+.adm-scope .po-proj-layout.cfg-collapsed .po-proj-config-panel { display: none; }
+/* Sem coluna pra redimensionar, o handle de arrastar não faz sentido. */
+.adm-scope .po-proj-layout.lib-collapsed #po-proj-resize-handle-left, .adm-scope .po-proj-layout.cfg-collapsed #po-proj-resize-handle-right { visibility: hidden; }
+.adm-scope .po-proj-library-search {
+  margin-bottom: 8px;
+}
+.adm-scope .po-proj-library-search button {
+  width: 100%; margin-top: 0;
+}
+.adm-scope .po-proj-library-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.adm-scope .po-proj-library-card {
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px;
+  text-align: center; cursor: grab; background: #fff;
+  transition: border-color 0.15s, background 0.15s;
+  font-size: 11px;
+}
+.adm-scope .po-proj-library-card:hover { border-color: var(--accent); background: #fbf3ec; }
+.adm-scope .po-proj-library-card:active { cursor: grabbing; }
+.adm-scope .po-proj-library-card svg, .adm-scope .po-proj-library-card .po-module-card-image { width: 100%; height: 56px; display: block; pointer-events: none; object-fit: contain; }
+.adm-scope .po-proj-library-card-name { font-weight: 600; margin-top: 4px; line-height: 1.2; }
+.adm-scope .po-proj-library-card-dims { color: var(--muted); margin-top: 2px; display: none; }
+.adm-scope .po-proj-library-empty { grid-column: 1 / -1; color: var(--muted); font-size: 12px; text-align: center; padding: 12px 0; }
+
+/* Modal de busca de módulos (botão "Buscar" da aba Projetos, pedido do
+   usuário 2026-07-23) — mesmo padrão de overlay do #po-auth-section
+   (fixed/inset:0/z-index alto, escondido por padrão, classe .open abre),
+   só com um card bem mais largo pra caber as 3 camadas + grade de módulos. */
+.adm-scope #po-proj-search-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+.adm-scope #po-proj-search-modal.open { display: flex; }
+/* Pedido do usuário (2026-07-23): "a tela muda de tamanho conforme os
+   modulos que tem disponivel. quero deixar ela fixa sempre. maior possivel.
+   arrastando pra baixo se tiver mais do que a tela" — card com ALTURA FIXA
+   (não mais max-height que encolhia com poucos resultados), maior possível
+   dentro da viewport; só a GRADE de módulos rola por dentro quando não cabe
+   (título/filtros ficam sempre visíveis, fixos no topo). */
+.adm-scope .po-proj-search-modal-card {
+  background: var(--panel); border-radius: 12px; padding: 24px;
+  width: 960px; max-width: 100%; height: 85vh; max-height: 85vh;
+  display: flex; flex-direction: column;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.adm-scope .po-proj-search-modal-card > h2 { flex: none; }
+.adm-scope .po-proj-search-modal-filters {
+  display: flex; flex-direction: column; gap: 6px; margin: 10px 0 16px;
+  flex: none;
+}
+.adm-scope .po-proj-search-modal-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px; align-content: start;
+  flex: 1 1 auto; overflow-y: auto; min-height: 0;
+}
+
+/* Modal do gerador por IA (aba Projetos, migration 080) — mesmo overlay do
+   modal de busca acima, mas card estreito e com altura pelo conteúdo: é um
+   formulário curto, não uma grade. */
+.adm-scope #po-proj-ai-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+.adm-scope #po-proj-ai-modal.open { display: flex; }
+.adm-scope .po-proj-ai-modal-card {
+  background: var(--panel); border-radius: 12px; padding: 24px;
+  width: 460px; max-width: 100%; max-height: 90vh; overflow-y: auto;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.adm-scope .po-proj-ai-modal-card .dim-field { margin-bottom: 12px; }
+.adm-scope .po-proj-ai-modal-card select, .adm-scope .po-proj-ai-modal-card input[type="text"] { width: 100%; }
+.adm-scope .po-proj-ai-modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px;
+}
+/* (.po-proj-ai-field saiu em 2026-08-08 — o botão "Gerar com IA" foi pra
+   .po-proj-topbar-actions, encostado à direita da faixa superior.) */
+
+.adm-scope .po-proj-canvas-outer { min-width: 0; }
+/* Frontal/Superior mora DENTRO da barra flutuante — não centraliza sozinho. */
+.adm-scope .po-proj-view-toggle { margin: 0; width: fit-content; }
+
+/* ---------- Barras FLUTUANTES do canvas (2026-08-08, etapa 2) ----------
+   Antes eram uma faixa própria acima do desenho (.po-proj-canvas-tools);
+   viraram overlays por cima dele, como no mockup, devolvendo a altura que
+   ocupavam pro canvas — que era o objetivo, ainda mais no iPad.
+   O "palco" é quem dá o position:relative; ele NÃO pode ser
+   .po-proj-canvas-wrap (overflow:auto — as barras rolariam junto com o
+   desenho na vista 2D e sumiriam). */
+.adm-scope .po-proj-canvas-stage { position: relative; flex: 1; min-width: 0; display: flex; }
+.adm-scope .po-proj-canvas-stage > .po-proj-canvas-wrap { flex: 1; min-width: 0; }
+
+.adm-scope .po-proj-canvas-hud {
+  position: absolute; z-index: 30; display: flex; align-items: center; gap: 4px;
+  padding: 4px; border: 1px solid var(--border); border-radius: 10px;
+  /* Fundo semiopaco: a barra fica POR CIMA do desenho, então precisa se
+     destacar sem tapar o que está atrás dela. */
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+}
+.adm-scope .po-proj-hud-tl { top: 8px; left: 8px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+.adm-scope .po-proj-hud-right { top: 50%; right: 8px; transform: translateY(-50%); flex-direction: column; }
+.adm-scope .po-proj-hud-sep { width: 1px; align-self: stretch; min-height: 20px; background: var(--border); margin: 0 2px; }
+
+/* Botão da barra: quadrado, alvo confortável pro dedo (32px), só o ícone. */
+.adm-scope .po-proj-hud-btn {
+  width: 32px; height: 32px; padding: 0; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; font-weight: 700;
+  background: transparent; color: var(--text);
+  border: 1px solid transparent; border-radius: 8px;
+}
+.adm-scope .po-proj-hud-btn:hover { background: var(--accent-light); }
+.adm-scope .po-proj-hud-btn.active { background: var(--text); color: #fff; }
+.adm-scope .po-proj-hud-btn:disabled { opacity: 0.3; cursor: default; }
+.adm-scope .po-proj-hud-btn:disabled:hover { background: transparent; }
+/* (.po-proj-hud-danger ficou sem uso quando a lixeira saiu da barra em
+   2026-08-08 — mantida a regra fora, não há mais botão destrutivo aqui.) */
+/* Frontal/Superior dentro da barra fica um pouco menor que o padrão. */
+.adm-scope .po-proj-hud-tl .po-view-toggle-btn { padding: 5px 10px; font-size: 11px; }
+
+/* (.po-proj-tool-btn/.po-proj-canvas-tools da 2ª rodada viraram
+   .po-proj-hud-btn/.po-proj-canvas-hud aqui em cima — as regras antigas foram
+   removidas junto com a faixa que elas estilizavam.) */
+
+/* Ações do módulo selecionado — flutuam SOBRE o canvas 3D, posicionadas em px
+   por refreshProjectSlotActions (portal.js). position:fixed porque a conta vem
+   de worldToClient, que devolve coordenada de viewport (client), não relativa
+   ao container — assim não depende de nenhum offsetParent nem de o wrap ter
+   position:relative. Alvo grande (34px) pra acertar com o dedo no iPad. */
+.adm-scope .po-proj-slot-actions {
+  position: fixed; z-index: 60; display: flex; gap: 4px;
+  transform: translate(-50%, -50%); pointer-events: auto;
+}
+/* BOLINHAS (2026-08-08, pedido do usuário: "troca os quadrados de duplicar e
+   excluir por bolinhas, fica uma area menor"). O círculo ocupa ~78% da área de
+   um quadrado do mesmo lado, e o diâmetro caiu de 34 pra 28px — no total,
+   pouco menos da metade do que tapava o móvel antes. 28px continua acima do
+   mínimo confortável de alvo de toque porque as duas bolinhas ficam FORA do
+   contorno do módulo (canto superior direito), sem vizinho pra confundir. */
+.adm-scope .po-proj-slot-action-btn {
+  width: 28px; height: 28px; padding: 0; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; font-weight: 700;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 50%;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+}
+.adm-scope .po-proj-slot-action-btn:hover { background: var(--accent-light); }
+.adm-scope .po-proj-slot-action-danger { color: #b0503c; }
+.adm-scope .po-proj-slot-action-danger:hover { background: #f7e4e0; }
+
+/* Card da biblioteca sendo ARRASTADO pra dentro da cena (ver
+   attachProjectLibraryDragToScene em portal.js) — o card original fica
+   apagado e um "fantasma" preso ao dedo/cursor é criado em JS. */
+/* SELEÇÃO DE TEXTO no arraste (2026-08-08, relato do usuário no iPad: "ao
+   arrastar o modulo ele seleciona tudo que esta atras, fica azul"). Não era
+   bug de 3D nenhum: é a seleção NATIVA do navegador. Um arraste longo com o
+   dedo/mouse por cima de uma tela cheia de texto (nomes dos módulos, painel de
+   config, biblioteca) faz o iOS/Safari começar a selecionar tudo no caminho e
+   pintar de azul. Como NENHUM texto da aba Projetos é pra ser selecionado com
+   o dedo, a aba inteira desliga seleção e o menu de "copiar/definir" do toque
+   longo do iOS (-webkit-touch-callout). Campos de digitação são reabertos
+   logo abaixo — sem isso, digitar uma medida no painel ficaria impossível. */
+.adm-scope #po-tab-projects {
+  -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+.adm-scope #po-tab-projects input, .adm-scope #po-tab-projects textarea, .adm-scope #po-tab-projects select {
+  -webkit-user-select: text; -moz-user-select: text; -ms-user-select: text; user-select: text;
+}
+
+/* pan-y: o navegador continua rolando a lista na vertical sozinho; o
+   movimento HORIZONTAL chega até o JS e vira o arraste do módulo pra dentro
+   da cena (ver attachProjectLibraryCardDrag). */
+.adm-scope .po-proj-library-card { touch-action: pan-y; }
+.adm-scope .po-proj-library-card.dragging-to-scene { opacity: 0.35; }
+.adm-scope .po-proj-drag-ghost {
+  position: fixed; z-index: 4000; pointer-events: none;
+  width: 132px; padding: 6px 8px;
+  background: var(--panel); border: 2px solid var(--text); border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+  font-size: 11px; font-weight: 600; color: var(--text);
+  text-align: center; transform: translate(-50%, -50%);
+}
+.adm-scope .po-proj-drag-ghost img { width: 100%; height: 64px; object-fit: contain; display: block; margin-bottom: 4px; }
+/* Realce do canvas 3D enquanto um módulo está sendo arrastado por cima dele. */
+.adm-scope #po-proj-canvas-3d-edit-wrap.drop-target, .adm-scope .po-proj-canvas.drop-target { outline: 2px dashed var(--text); outline-offset: -4px; }
+/* Pedido do usuário (3ª rodada): "tem muita borda lá em cima só com umas
+   coisas escritas que ninguém vai ler" — bem discreto, quase um detalhe. */
+.adm-scope .po-proj-canvas-scale-label {
+  font-size: 9px; color: var(--muted); opacity: 0.6; margin-bottom: 1px; text-align: center;
+}
+.adm-scope .po-proj-canvas-wrap {
+  border: 1px solid var(--border); border-radius: 10px; background: #f4f1ea;
+  overflow: auto; display: flex; justify-content: center;
+}
+.adm-scope .po-proj-canvas {
+  position: relative; background: #f8f6f1;
+  background-image: linear-gradient(#e9e4d8 1px, transparent 1px), linear-gradient(90deg, #e9e4d8 1px, transparent 1px);
+  background-size: 40px 40px;
+  flex: none; /* largura/altura setadas via JS em px, escala real da parede */
+  overflow: hidden; /* trava o traçado fantasma (.po-proj-ghost-slot) dentro do canvas */
+}
+.adm-scope .po-proj-canvas-baseboard {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: #fff;
+  border-top: 1px solid #a89f8a;
+  pointer-events: none;
+}
+.adm-scope .po-proj-canvas-ceiling-line {
+  position: absolute; left: 0; right: 0; top: 0;
+  border-top: 2px dashed var(--muted);
+  pointer-events: none;
+}
+.adm-scope .po-proj-empty-hint { margin-top: 6px; text-align: center; }
+
+/* Vista de cima (pedido do usuário 2026-07-24) — parede desenhada como uma
+   linha grossa no TOPO do canvas (y=0), profundidade cresce pra baixo. Só
+   leitura: sem cursor de arraste, borda tracejada pra deixar claro que é uma
+   aproximação (a profundidade real vem de z_order + depth_mm, ver
+   computeProjectSlotsTopViewLayout em portal.js), não uma posição travada. */
+.adm-scope .po-proj-canvas-top-wall-line {
+  position: absolute; left: 0; right: 0; top: 0; height: 4px;
+  background: #a89f8a; pointer-events: none; z-index: 5;
+}
+/* Paredes de retorno (forma dupla/C-U, pedido do usuário 2026-07-25) — linha
+   vertical em cada ponta da parede principal, mesmo estilo/espessura da
+   horizontal acima, só girada 90°. Altura setada via JS (renderProjectCanvasTop,
+   proporcional à largura de verdade daquela parede lateral). */
+.adm-scope .po-proj-canvas-top-wall-line-side {
+  position: absolute; top: 0; width: 4px;
+  background: #a89f8a; pointer-events: none; z-index: 5;
+}
+.adm-scope .po-proj-canvas-top-wall-line-left { left: 0; }
+.adm-scope .po-proj-canvas-top-wall-line-right { right: 0; }
+.adm-scope .po-proj-slot-top {
+  cursor: pointer; border-style: dashed;
+}
+.adm-scope .po-proj-slot-top:active { cursor: pointer; }
+.adm-scope #po-proj-top-view-hint { margin-top: 6px; text-align: center; }
+
+/* ---------- Rodapé do canvas: empty state + resumo (2026-08-08, etapa 3) ----------
+   Dois cartões lado a lado logo abaixo do desenho, como no mockup. O empty
+   state some quando existe módulo (display:none via JS) e aí o resumo, sendo
+   o único filho com flex, ocupa a linha inteira sozinho — sem precisar de
+   nenhuma regra condicional. */
+.adm-scope .po-proj-bottom {
+  display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap;
+  margin-top: 10px;
+}
+.adm-scope .po-proj-empty-card {
+  flex: 1 1 260px; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 22px 16px; text-align: center;
+  border: 1px dashed var(--border); border-radius: 12px; background: var(--panel);
+}
+.adm-scope .po-proj-empty-icon { font-size: 26px; color: var(--muted); opacity: 0.7; line-height: 1; }
+.adm-scope .po-proj-empty-title { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.adm-scope .po-proj-empty-or { font-size: 11px; color: var(--muted); }
+.adm-scope .po-proj-empty-hint-line { font-size: 12px; color: var(--muted); }
+
+.adm-scope .po-proj-summary {
+  flex: 1 1 260px; min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+}
+.adm-scope .po-proj-summary-title {
+  font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 8px;
+}
+.adm-scope .po-proj-summary-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 12px; color: var(--muted); padding: 3px 0;
+}
+.adm-scope .po-proj-summary-row span:last-child { color: var(--text); font-weight: 600; }
+.adm-scope .po-proj-summary-total {
+  display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: 13px; font-weight: 700; color: var(--text);
+}
+.adm-scope .po-proj-summary-total span:last-child { font-size: 17px; }
+.adm-scope .po-proj-summary-cta {
+  width: 100%; margin: 10px 0 0; padding: 8px 12px;
+  font-size: 12px; font-weight: 600;
+  background: var(--accent-light); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.adm-scope .po-proj-summary-cta:hover { background: var(--border); }
+.adm-scope .po-proj-summary-details { margin-top: 8px; max-height: 220px; overflow-y: auto; }
+.adm-scope .po-proj-summary-detail-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px;
+  padding: 6px 4px; border-top: 1px solid var(--border); cursor: pointer;
+}
+.adm-scope .po-proj-summary-detail-row:hover { background: var(--accent-light); }
+.adm-scope .po-proj-summary-detail-name { font-size: 12px; font-weight: 600; color: var(--text); }
+.adm-scope .po-proj-summary-detail-price { font-size: 12px; font-weight: 600; color: var(--text); text-align: right; }
+.adm-scope .po-proj-summary-detail-meta { font-size: 11px; color: var(--muted); grid-column: 1 / -1; }
+
+/* Mini Vista Superior fixa ao lado da Frontal (pedido do usuário,
+   2026-07-26) — reaproveita a mesma geometria de computeProjectWallTopViewPlacements,
+   só desenhada bem menor e com escala LOCAL própria (renderProjectMiniTopView
+   em portal.js não mexe na variável global projectPxPerMm, que a Frontal
+   grande usa pro cálculo de arrastar/esticar — ver comentário lá). */
+.adm-scope .po-proj-canvas-row { display: flex; gap: 14px; align-items: flex-start; }
+.adm-scope .po-proj-canvas-row .po-proj-canvas-wrap { flex: 1 1 auto; min-width: 0; }
+.adm-scope .po-proj-mini-top-wrap {
+  flex: none; width: 190px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); padding: 8px;
+}
+.adm-scope .po-proj-mini-top-title {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-align: center; margin-bottom: 6px;
+}
+.adm-scope .po-proj-mini-top-canvas-wrap {
+  display: flex; justify-content: center; overflow: auto; max-height: 280px;
+}
+.adm-scope .po-proj-mini-top-canvas {
+  position: relative; background: #f8f6f1; flex: none;
+}
+.adm-scope .po-proj-mini-top-hint {
+  font-size: 9px; color: var(--muted); opacity: 0.7;
+  text-align: center; margin: 6px 0 0;
+}
+/* Faixa clicável por parede (atrás dos módulos) — destaca qual trecho da
+   planta corresponde à parede ATIVA na Frontal ao lado, e clicar em
+   qualquer parede troca a ativa (mesma função das abas em cima do canvas,
+   setProjectActiveWallIndex). */
+.adm-scope .po-proj-mini-wall-zone {
+  position: absolute; cursor: pointer; z-index: 2; transition: background 0.15s;
+}
+.adm-scope .po-proj-mini-wall-zone:hover { background: rgba(0,0,0,0.06); }
+.adm-scope .po-proj-mini-wall-zone.active { background: var(--accent-light); }
+.adm-scope .po-proj-mini-slot {
+  position: absolute; box-sizing: border-box; z-index: 6; cursor: pointer;
+  border: 1px solid rgba(0,0,0,0.28); border-radius: 2px;
+}
+.adm-scope .po-proj-mini-slot.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+/* Traçado fantasma dos módulos da parede VIZINHA perto da esquina, dentro do
+   canvas da Frontal (pedido do usuário 2026-07-26, ver renderProjectCanvasFront
+   em portal.js) — hachurado tracejado pra ficar claramente diferente dos
+   módulos de VERDADE desta parede (.po-proj-slot), z-index baixo pra ficar
+   atrás de qualquer módulo real que esteja no mesmo lugar. Clicável (troca
+   de parede + seleciona), mas não arrastável/redimensionável — pertence a
+   outro plano/parede. */
+.adm-scope .po-proj-ghost-slot {
+  position: absolute; box-sizing: border-box; z-index: 2;
+  border: 1px dashed var(--muted);
+  background: repeating-linear-gradient(45deg, rgba(0,0,0,0.05), rgba(0,0,0,0.05) 4px, rgba(0,0,0,0.1) 4px, rgba(0,0,0,0.1) 8px);
+  cursor: pointer;
+}
+.adm-scope .po-proj-ghost-slot:hover { border-color: var(--accent); }
+
+/* Vista de Canto 3D interativa (paredes L/C-U — pedido do usuário
+   2026-07-26). 1ª versão usava uma "dobra" de CSS 3D (perspective+rotateY)
+   que saiu QUEBRADA (parede vizinha virava uma fatia torta) — descartada
+   por completo, substituída por uma cena Three.js de verdade (ver
+   renderProjectCanvasFrontCorner/ViewerProjectEdit em portal.js,
+   #po-proj-canvas-3d-edit-wrap em portal.html). Módulo de parede vizinha
+   dobrada (buildProjectWallPaneDom, interactive=false) continua clicável
+   sem cursor de arraste — usado só pela vista Frontal de 1 parede agora
+   (nunca mais numa parede "dobrada" de verdade). */
+.adm-scope .po-proj-slot-readonly { cursor: pointer; }
+.adm-scope .po-proj-slot-readonly:active { cursor: pointer; }
+
+.adm-scope #po-proj-canvas-3d-edit-wrap { width: 100%; }
+.adm-scope #po-proj-canvas-3d-edit {
+  width: 100%;
+  /* mesma razão do #po-proj-3d-canvas: altura de tela, não fixa (2026-08-03).
+     2026-08-06 (iPad Air 13"): 74vh -> 88vh. Num tablet em paisagem a página
+     inteira cabe numa tela só, então sobra altura; o teto de 950px é que
+     estava segurando, subiu junto. O ganho maior vem das colunas recolhíveis
+     (largura), este é o complemento vertical. */
+  height: clamp(520px, 88vh, 1200px);
+  border: none;
+  overflow: hidden;
+  background: #ffffff;
+  touch-action: none;
+}
+.adm-scope #po-proj-canvas-3d-edit canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+
+/* Setas de esticar a parede (pedido do usuário, 2026-07-21: "uma setinha na
+   parede pra esticar ela pro lado direito e esquerdo") — mesma ideia dos
+   handles de redimensionar as colunas, só que arrastando muda
+   projectWallWidthMm em vez da largura de uma coluna. Fica colado na borda
+   interna do canvas (não negativo — ia poder ser cortado pelo overflow:auto
+   do wrap) e sempre no meio da altura, acima de tudo (z-index alto). */
+/* Pedido do usuário (4ª rodada): "quando coloco o mouse aparecem 2 setas e
+   confunde, pode deletar o círculo e deixar só a seta que aparece quando
+   chego perto... assim como no módulo" — mesmo padrão discreto das setinhas
+   de módulo (.po-proj-slot-resize): tira fina, invisível até passar perto,
+   sem círculo nem glifo de seta permanente. */
+.adm-scope .po-proj-wall-resize-handle {
+  position: absolute; top: 0; bottom: 0; width: 10px;
+  cursor: ew-resize; z-index: 500; user-select: none;
+}
+.adm-scope .po-proj-wall-resize-handle:hover, .adm-scope .po-proj-wall-resize-handle.dragging {
+  background: rgba(0,0,0,0.16);
+}
+.adm-scope .po-proj-wall-resize-left { left: 0; }
+.adm-scope .po-proj-wall-resize-right { right: 0; }
+
+.adm-scope .po-proj-slot {
+  position: absolute; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: #e4d9c8; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  overflow: hidden; cursor: grab; user-select: none;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  font-size: 11px; line-height: 1.2; padding: 2px;
+}
+.adm-scope .po-proj-slot:active { cursor: grabbing; }
+.adm-scope .po-proj-slot.dragging { box-shadow: 0 6px 18px rgba(0,0,0,0.28); z-index: 999 !important; opacity: 0.92; }
+.adm-scope .po-proj-slot.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+/* Vista frontal 2D real (pedido do usuário: "não me serve esse bloco
+   cinza... quero ver com as cores escolhidas e os componentes") — peças de
+   verdade (ver projectSlotElevationHtml/portal.js) desenhadas por cima do
+   preenchimento sólido de fundo, com o nome/medidas flutuando por cima de
+   tudo num "selo" legível. */
+.adm-scope .po-proj-slot-elevation { position: absolute; inset: 0; z-index: 1; }
+.adm-scope .po-proj-slot-piece { position: absolute; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.16); }
+.adm-scope .po-proj-slot-label {
+  position: relative; z-index: 2; background: rgba(255,255,255,0.82);
+  border-radius: 4px; padding: 2px 5px; pointer-events: none;
+}
+.adm-scope .po-proj-slot-name { font-weight: 600; }
+.adm-scope .po-proj-slot-dims { color: var(--muted); }
+
+/* Setinhas de esticar cada módulo (pedido do usuário: "sem círculo", mesma
+   ideia das setas da parede mas discretas — tiras finas nas bordas,
+   escurecem no hover/arraste em vez de um botão chamativo). */
+.adm-scope .po-proj-slot-resize { position: absolute; z-index: 30; }
+.adm-scope .po-proj-slot-resize-left, .adm-scope .po-proj-slot-resize-right {
+  top: 0; bottom: 0; width: 7px; cursor: ew-resize;
+}
+.adm-scope .po-proj-slot-resize-left { left: 0; }
+.adm-scope .po-proj-slot-resize-right { right: 0; }
+.adm-scope .po-proj-slot-resize-top { left: 0; right: 0; top: 0; height: 7px; cursor: ns-resize; }
+.adm-scope .po-proj-slot-resize:hover, .adm-scope .po-proj-slot-resize.dragging { background: rgba(0,0,0,0.16); }
+
+/* ---- Setas visíveis no módulo SELECIONADO (2026-08-06) ----
+   No iPad não existe :hover, então as setinhas eram literalmente invisíveis:
+   "não consigo esticar o móvel, não tem a seta, nenhum controle sobre isso".
+   Agora o módulo selecionado mostra as setas o tempo todo — e continua
+   selecionado depois de tirar o dedo, que foi o pedido explícito. No mouse
+   nada muda enquanto nada estiver selecionado (o :hover discreto de sempre). */
+.adm-scope .po-proj-slot.selected .po-proj-slot-resize {
+  background: var(--accent);
+  opacity: 0.55;
+}
+.adm-scope .po-proj-slot.selected .po-proj-slot-resize:hover, .adm-scope .po-proj-slot.selected .po-proj-slot-resize.dragging { opacity: 1; }
+
+/* Alvo de dedo: 7px é mira de mouse. Em tela de toque as setas ficam bem
+   mais largas (a área clicável, não o visual — o retângulo colorido cobre a
+   faixa inteira mesmo). Só em ponteiro grosso, pra não engordar no desktop. */
+@media (pointer: coarse) {
+  .adm-scope .po-proj-slot-resize-left, .adm-scope .po-proj-slot-resize-right { width: 18px; }
+  .adm-scope .po-proj-slot-resize-top { height: 18px; }
+}
+
+/* ---- Janela de propriedades do módulo (segurar o clique) ---- */
+.adm-scope #po-proj-props-modal {
+  display: none; position: fixed; inset: 0; z-index: 3200;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.5); padding: 16px;
+}
+.adm-scope #po-proj-props-modal.open { display: flex; }
+.adm-scope .po-proj-props-card {
+  background: var(--panel); border-radius: 12px;
+  width: 420px; max-width: 100%; max-height: 88vh;
+  display: flex; flex-direction: column;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.adm-scope .po-proj-props-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.adm-scope .po-proj-props-header .po-auth-modal-close { position: static; }
+/* Só o corpo rola: o nome do módulo fica sempre visível, senão a pessoa
+   perde a referência do que está editando ao descer até as prateleiras. */
+.adm-scope #po-proj-props-body { padding: 14px 16px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+/* Dentro da janela o painel não precisa da moldura dele — o card já é a
+   moldura. Sem isso ficam duas bordas encaixadas. */
+.adm-scope #po-proj-props-body .po-proj-config-panel {
+  border: none; padding: 0; background: transparent; max-height: none;
+}
+/* Profundidade (z_order) — cada "camada" mais pra frente (mais longe da
+   parede) ganha uma sombra levemente mais forte, pra dar noção visual de
+   frente/fundo mesmo numa vista frontal 2D sem eixo Z desenhado de verdade. */
+.adm-scope .po-proj-slot[data-z-order="1"] { box-shadow: 2px 2px 5px rgba(0,0,0,0.18); }
+.adm-scope .po-proj-slot[data-z-order="2"] { box-shadow: 3px 3px 7px rgba(0,0,0,0.24); }
+.adm-scope .po-proj-slot[data-z-order="3"] { box-shadow: 4px 4px 9px rgba(0,0,0,0.3); }
+
+/* Guias de imã (snap) — linha fina que aparece só durante o arraste, quando
+   a borda do módulo alinha com a de outro módulo/parede (ver snapProjectSlotPosition
+   em portal.js). */
+.adm-scope .po-proj-snap-guide-v, .adm-scope .po-proj-snap-guide-h {
+  position: absolute; background: var(--accent); pointer-events: none; z-index: 1000;
+}
+.adm-scope .po-proj-snap-guide-v { width: 1px; top: 0; bottom: 0; }
+.adm-scope .po-proj-snap-guide-h { height: 1px; left: 0; right: 0; }
+
+.adm-scope .po-proj-config-panel {
+  border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+  background: var(--panel); min-height: 160px;
+}
+.adm-scope .po-proj-config-panel h3 { margin: 0 0 8px; font-size: 15px; }
+.adm-scope .po-proj-config-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+.adm-scope .po-proj-config-row span:first-child { color: var(--muted); }
+.adm-scope .po-proj-config-panel .secondary, .adm-scope .po-proj-config-panel .po-btn-primary-block { margin-top: 10px; width: 100%; }
+.adm-scope .po-proj-config-remove-btn { color: #b3261e; border-color: #e3b3ae; }
+.adm-scope .po-proj-config-remove-btn:hover { background: #fdeceb; }
+
+/* ---------- Ajustes Fase 1.1 (feedback do usuário, 2026-07-21) ----------
+   1) Filtros de categoria/subcategoria pequenos na biblioteca.
+   2) Espaço vertical acima do canvas reduzido + escala do canvas agora leva
+      a ALTURA disponível da tela em conta também (não só a largura), pra
+      parede inteira caber sem rolar (ver renderProjectCanvas em portal.js).
+   3) Clique no módulo da biblioteca insere direto (config padrão) — painel
+      da direita virou editor de verdade (steppers de medida + cor), não só
+      um resumo. */
+.adm-scope .po-proj-library-filters { margin: 6px 0 4px; }
+.adm-scope .po-proj-library-filter-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+}
+.adm-scope .po-proj-library-filter-select + .po-proj-library-filter-select { margin-top: 6px; }
+
+.adm-scope #po-tab-projects .po-comp-title-row { margin-bottom: 2px; }
+.adm-scope #po-tab-projects .po-proj-topbar { margin: 4px 0 8px; }
+.adm-scope #po-tab-projects .po-comp-mode-banner { margin-bottom: 8px; padding: 6px 12px; }
+
+/* Pedido do usuário (3ª rodada, 2026-07-21): sem botão +/-, e label colado
+   no valor (nada de space-between empurrando o campo pra longe do rótulo). */
+.adm-scope .po-proj-config-dims { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.adm-scope .po-proj-config-dim-row { display: flex; align-items: center; gap: 6px; }
+.adm-scope .po-proj-config-dim-row label { font-size: 12px; color: var(--muted); min-width: 58px; }
+.adm-scope .po-proj-dim-value-wrap { display: flex; align-items: center; gap: 3px; }
+.adm-scope .po-proj-dim-input { width: 56px; padding: 3px 4px; font-size: 12px; text-align: right; }
+.adm-scope .po-proj-dim-unit { font-size: 11px; color: var(--muted); min-width: 16px; }
+
+.adm-scope .po-proj-config-section-label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+.adm-scope .po-proj-color-role-group { margin-bottom: 8px; }
+.adm-scope .po-proj-color-role-group label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.adm-scope .po-proj-color-swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+.adm-scope .po-proj-color-swatch {
+  width: 24px; height: 24px; border-radius: 5px; border: 2px solid transparent;
+  overflow: hidden; cursor: pointer; box-shadow: 0 0 0 1px var(--border) inset;
+}
+.adm-scope .po-proj-color-swatch img, .adm-scope .po-proj-color-swatch span { display: block; width: 100%; height: 100%; object-fit: cover; }
+.adm-scope .po-proj-color-swatch:hover { box-shadow: 0 0 0 1px var(--accent) inset; }
+.adm-scope .po-proj-color-swatch.selected { border-color: var(--accent); }
+
+/* ---------- CTAs da aba Projetos: Visualizar 3D + Foto realista ----------
+   (2026-08-03, pedido do usuário: "deixa os botoes mais atraentes, esta so
+   um grande quadrado preto") — classes PRÓPRIAS, sem tocar na genérica
+   po-btn-primary-block (usada em carrinho/pedido/galeria). Atenção: os
+   :hover precisam redeclarar o gradiente porque a regra global
+   `button:hover { background: var(--accent-dark) }` usa o shorthand
+   `background` (zera background-image) e venceria por ordem/pseudo. */
+.adm-scope .po-proj-cta-row { display: flex; gap: 10px; margin-top: 14px; }
+.adm-scope .po-proj-cta {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 16px;
+  border: none; border-radius: 10px;
+  font-weight: 700; font-size: 14px; color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.adm-scope .po-proj-cta:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2); filter: brightness(1.06); }
+.adm-scope .po-proj-cta:active:not(:disabled) { transform: translateY(0); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); }
+.adm-scope .po-proj-cta:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+.adm-scope .po-proj-cta-3d, .adm-scope .po-proj-cta-3d:hover { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); }
+.adm-scope .po-proj-cta-3d::before { content: '🧊'; font-size: 17px; }
+.adm-scope .po-proj-cta-photo, .adm-scope .po-proj-cta-photo:hover { background: linear-gradient(135deg, #2e6b4f 0%, #1d4a36 100%); }
+.adm-scope .po-proj-cta-photo::before { content: '📸'; font-size: 17px; }
+.adm-scope .po-proj-cta-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.22);
+  padding: 2px 7px; border-radius: 999px;
+}
+@media (max-width: 640px) { .adm-scope .po-proj-cta-row { flex-direction: column; } }
+
+/* Moldura "área da foto realista" nos viewers 3D da aba Projetos
+   (2026-08-03, pedido do usuário: "mostrar a area da foto realista no 3d")
+   — a foto sai travada em 4:3 com a MESMA câmera/fov vertical do viewer,
+   então o recorte real é: altura inteira, largura = altura×4/3, centrado.
+   Puro CSS (aspect-ratio) — nenhum recálculo por JS em resize. Injetada por
+   ensurePhotoFrameOverlay (portal.js) dentro do container de cada viewer. */
+.adm-scope .po-photoframe {
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  height: 100%;
+  aspect-ratio: 4 / 3;
+  max-width: 100%;
+  border-left: 2px dashed rgba(0, 0, 0, 0.3);
+  border-right: 2px dashed rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 5;
+}
+.adm-scope .po-photoframe-label {
+  position: absolute;
+  top: 6px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.45);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   PROGRAMAS DE FURAÇÃO (migration 105) — lista + visualizador
+   ========================================================================== */
+/* Lista à esquerda: um botão por programa, selecionável. Rolagem própria pra
+   a coluna não empurrar o editor quando o catálogo cresce. */
+.dp-list {
+  border: 1px solid #ddd6c9; border-radius: 6px; background: #fff;
+  max-height: 460px; overflow-y: auto; margin-top: 2px;
+}
+.dp-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; background: none; border: none;
+  border-bottom: 1px solid #efe9de; padding: 8px 10px; cursor: pointer;
+  font-size: 13px; color: inherit;
+}
+.dp-item:last-child { border-bottom: none; }
+.dp-item:hover { background: #faf7f0; }
+.dp-item.sel { background: #f0e6d2; font-weight: 600; }
+.dp-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-item-meta { flex: none; font-size: 11px; color: #8a8378; }
+
+/* O desenho da peça no plano da máquina. */
+.dp-preview {
+  border: 1px solid #ddd6c9; border-radius: 6px; background: #fff;
+  padding: 10px; margin-top: 4px;
+}
