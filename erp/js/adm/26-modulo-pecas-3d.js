@@ -426,7 +426,10 @@ const ModulePieces3D = (function () {
       offset_z_mm: '0',
       opening_type: 'none'
     };
-    renderModuleNestedRow(frontModule, link, container, insertBeforeEl, true, 'Frente de gaveta');
+    // Nome sugerido em inglês, igual ao módulo do catálogo ("Front Drawer") —
+    // pedido do Matt (2026-09-25): é esse nome que vai pro lote/etiqueta
+    // (ver LOTES.flattenBreakdown, sub-módulo de 1 peça herda o nome).
+    renderModuleNestedRow(frontModule, link, container, insertBeforeEl, true, 'Front Drawer');
     moduleComponentRenderedModuleIds.add(frontModule.id);
     refreshAddModuleOptions();
     afterInsert();

@@ -205,16 +205,31 @@ LOTES.cutDimsPeloVeio = function (leaf, hasGrain) {
   return { espessura_mm: dims[fino], largura_mm: dims[outro], comprimento_mm: dims[eixo] };
 };
 
-LOTES.flattenBreakdown = function (breakdown, multiplier, out) {
+LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai) {
   out = out || [];
   (breakdown || []).forEach(function (p) {
     const qty = (p.quantity || 1) * multiplier;
     if (p.is_module) {
-      LOTES.flattenBreakdown(p.child_breakdown, qty, out);
+      // Sub-módulo de UMA peça cortada só (2026-09-25, Matt, lote LT-26-0014:
+      // "as frentes de gaveta vem com nome porta, confunde muito"): o módulo
+      // "Front Drawer" do catálogo é uma chapa só por dentro, e a chapa se
+      // chama "Porta" no cadastro de componentes — o achatamento descia até
+      // a folha e jogava fora o nome que o Matt deu à linha do módulo
+      // ("Front Drawer 2", "Porta esquerda (2 folhas)", ...). Quando o
+      // sub-módulo tem exatamente 1 peça de fabricação (comprado não conta:
+      // puxador etc.) e nenhum sub-módulo aninhado, ele É essa peça — a
+      // folha herda o nome do sub-módulo (reference_override, senão o nome
+      // do módulo do catálogo — é o que pricing.js já põe em `reference`
+      // da peça-módulo). Gaveta/casco (várias peças) continuam como antes.
+      const filhos = p.child_breakdown || [];
+      const cortadas = filhos.filter(function (c) { return !c.is_module && (c.origin || 'fabricacao') !== 'comprado'; });
+      const temSubModulo = filhos.some(function (c) { return c.is_module; });
+      const nomeUnico = (cortadas.length === 1 && !temSubModulo && p.reference) ? p.reference : null;
+      LOTES.flattenBreakdown(filhos, qty, out, nomeUnico);
       return;
     }
     out.push({
-      reference: p.reference || '—',
+      reference: (nomeDoPai && (p.origin || 'fabricacao') !== 'comprado') ? nomeDoPai : (p.reference || '—'),
       description: p.description || '—',
       origin: p.origin || 'fabricacao',
       color_role_id: p.color_role_id,
