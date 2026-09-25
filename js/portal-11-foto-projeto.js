@@ -557,6 +557,40 @@ async function runProjectPhotoBuild() {
   });
 })();
 
+// ---------- Visibilidade: só administrador (pedido do Matt, 24/09) ----------
+//
+// Os dois botões ("📷 Projeto a partir de foto" e "📥 Importar do 2020")
+// nascem com display:none no portal.html e só aparecem quando o servidor
+// confirma que o usuário logado é admin — a mesma RPC is_admin() (migration
+// 018, security definer) que a moderação da galeria usa. Nada de lista de
+// e-mail no front: quem decide é o banco. Roda no carregamento e de novo a
+// cada mudança de login/logout.
+async function refreshProjectAdminOnlyButtons() {
+  const ids = ['po-proj-photo-open-btn', 'po-proj-import2020-open-btn'];
+  let isAdmin = false;
+  try {
+    const { data: session } = await supabaseClient.auth.getSession();
+    if (session && session.session) {
+      const { data, error } = await supabaseClient.rpc('is_admin');
+      isAdmin = !error && data === true;
+    }
+  } catch (e) {
+    isAdmin = false;
+  }
+  ids.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = isAdmin ? '' : 'none';
+  });
+}
+
+(function attachProjectAdminOnlyButtons() {
+  if (typeof supabaseClient === 'undefined') return;
+  refreshProjectAdminOnlyButtons();
+  try {
+    supabaseClient.auth.onAuthStateChange(() => { refreshProjectAdminOnlyButtons(); });
+  } catch (e) { /* sem auth listener — fica só a checagem do load */ }
+})();
+
 // Globais usados (todos já existem no portal antes deste arquivo carregar):
 //   supabaseClient, allModules, roomSettings, projectSlots, selectedProjectSlotId,
 //   projectActiveWallIndex, getProjectWallWidthMm, setProjectWallWidthMm,
