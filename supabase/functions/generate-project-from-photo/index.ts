@@ -4,8 +4,8 @@
 // de cores, e devolve a proposta de projeto: quais módulos, em que posição
 // (x a partir da esquerda, altura do chão), com que medidas e cor.
 //
-// Irmã da generate-project-layout (mesma GEMINI_API_KEY, mesmo modelo
-// gemini-2.5-flash, que já é multimodal — a foto vai como inlineData no
+// Irmã da generate-project-layout (mesma GEMINI_API_KEY, modelo flash
+// multimodal — a foto vai como inlineData no
 // mesmo generateContent, não precisa de outro modelo nem outra chave).
 //
 // Regras (decididas com o Matt em 24/09):
@@ -20,8 +20,21 @@
 // (a GEMINI_API_KEY já está nos secrets do projeto — usada pelas outras
 // functions; se não estiver: supabase secrets set GEMINI_API_KEY=...)
 
-const GEMINI_MODEL = "gemini-2.5-flash";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+// Nome de modelo do Gemini é alvo móvel (o 2.5-flash deu 404 na estreia
+// desta function, 24/09: "no longer available to new users"). Mesma
+// estratégia da generate-project-layout: tenta os candidatos na ordem e cai
+// pro próximo em 404. Pra forçar um sem mexer no código:
+//   supabase secrets set GEMINI_TEXT_MODEL=nome-do-modelo
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_MODEL_CANDIDATES = [
+  "gemini-3.8-flash",
+  "gemini-flash-latest",
+  "gemini-2.5-flash",
+];
+let resolvedGeminiModel: string | null = null;
+function geminiUrl(model: string) {
+  return `${GEMINI_API_BASE}/models/${model}:generateContent`;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -251,20 +264,37 @@ Deno.serve(async (req) => {
     },
   };
 
-  let geminiRes: Response;
-  try {
-    geminiRes = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiReq),
-    });
-  } catch (e) {
-    return json(502, { error: `Falha ao chamar o Gemini: ${(e as Error).message}` });
-  }
+  const forced = Deno.env.get("GEMINI_TEXT_MODEL") || null;
+  const tentativas = [resolvedGeminiModel, forced, ...GEMINI_MODEL_CANDIDATES]
+    .filter((m, i, arr): m is string => !!m && arr.indexOf(m) === i);
 
-  if (!geminiRes.ok) {
-    const txt = await geminiRes.text().catch(() => "");
-    return json(502, { error: `Gemini respondeu ${geminiRes.status}: ${txt.slice(0, 400)}` });
+  let geminiRes: Response | null = null;
+  let lastErr = "";
+  for (const model of tentativas) {
+    try {
+      const res = await fetch(`${geminiUrl(model)}?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(geminiReq),
+      });
+      if (res.status === 404) {
+        lastErr = `${model}: 404 (modelo indisponível)`;
+        if (resolvedGeminiModel === model) resolvedGeminiModel = null;
+        continue;
+      }
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        return json(502, { error: `Gemini (${model}) respondeu ${res.status}: ${txt.slice(0, 400)}` });
+      }
+      resolvedGeminiModel = model;
+      geminiRes = res;
+      break;
+    } catch (e) {
+      lastErr = `${model}: ${(e as Error).message}`;
+    }
+  }
+  if (!geminiRes) {
+    return json(502, { error: `Nenhum modelo Gemini respondeu (${lastErr}). Tente: supabase secrets set GEMINI_TEXT_MODEL=<modelo>` });
   }
 
   const payload = await geminiRes.json().catch(() => null);

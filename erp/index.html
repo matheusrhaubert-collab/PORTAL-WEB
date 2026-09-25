@@ -18,16 +18,16 @@
 <!-- adm.css é gerado de css/style.css com tudo preso a .adm-scope
      (scripts/gerar-adm-css.js). Vem ANTES do erp.css: se algum dia escapar
      um seletor solto, quem ganha é o ERP. -->
-<link rel="stylesheet" href="css/adm.css?v=202609242241">
-<link rel="stylesheet" href="css/erp.css?v=202609242241">
-<link rel="stylesheet" href="css/lotes.css?v=202609242241">
-<link rel="stylesheet" href="css/embalagem.css?v=202609242241">
-<link rel="stylesheet" href="css/apont-embalagem.css?v=202609242241">
-<link rel="stylesheet" href="css/construtor.css?v=202609242241">
+<link rel="stylesheet" href="css/adm.css?v=202609242246">
+<link rel="stylesheet" href="css/erp.css?v=202609242246">
+<link rel="stylesheet" href="css/lotes.css?v=202609242246">
+<link rel="stylesheet" href="css/embalagem.css?v=202609242246">
+<link rel="stylesheet" href="css/apont-embalagem.css?v=202609242246">
+<link rel="stylesheet" href="css/construtor.css?v=202609242246">
 <!-- Cadastro de componentes reorganizado (migration 089): arvore de pastas,
      secoes recolhiveis e ajuda atras do "?". Classes .cad-* sao novas e nao
      colidem com o admin antigo. -->
-<link rel="stylesheet" href="css/cadastro.css?v=202609242241">
+<link rel="stylesheet" href="css/cadastro.css?v=202609242246">
 </head>
 <body>
 
@@ -100,42 +100,42 @@
      (js/vendor/render-fiel-bundle.js). Cópia de
      node_modules/@supabase/supabase-js/dist/umd/supabase.js — para atualizar:
      npm update @supabase/supabase-js && copiar o arquivo de novo. -->
-<script src="js/vendor/supabase.js?v=202609242241"></script>
+<script src="js/vendor/supabase.js?v=202609242246"></script>
 <!-- config.js do portal: a URL e a anon key moram num lugar só -->
-<script src="../js/config.js?v=202609242241"></script>
-<script src="js/data.js?v=202609242241"></script>
-<script src="js/mock-data.js?v=202609242241"></script>
+<script src="../js/config.js?v=202609242246"></script>
+<script src="js/data.js?v=202609242246"></script>
+<script src="js/mock-data.js?v=202609242246"></script>
 <!-- Central de Contatos (migration 084). data-contatos.js entra ANTES do
      app.js porque APP.routes referencia CT.explainError na hora que o
      arquivo carrega, não na hora da navegação. O antigo mock-contatos.js
      foi apagado — a tela roda com dado de verdade agora. -->
-<script src="js/data-contatos.js?v=202609242241"></script>
-<script src="js/ui.js?v=202609242241"></script>
+<script src="js/data-contatos.js?v=202609242246"></script>
+<script src="js/ui.js?v=202609242246"></script>
 <!-- Lote / Plano de Corte (migration 081). A ordem importa: data-lotes usa
      DATA, nesting e barcode usam UI, e screens-lotes usa os três. app.js vem
      por último porque monta as rotas apontando pra LOTES_UI. -->
-<script src="js/data-lotes.js?v=202609242241"></script>
-<script src="js/nesting.js?v=202609242241"></script>
-<script src="js/barcode.js?v=202609242241"></script>
-<script src="js/emf-writer.js?v=202609242241"></script>
-<script src="js/machine-export.js?v=202609242241"></script>
-<script src="js/retalhos-pdf.js?v=202609242241"></script>
-<script src="js/export-corte.js?v=202609242241"></script>
-<script src="js/screens-comercial.js?v=202609242241"></script>
-<script src="js/screens-producao.js?v=202609242241"></script>
-<script src="js/screens-apoio.js?v=202609242241"></script>
-<script src="js/screens-contatos.js?v=202609242241"></script>
-<script src="js/screens-lotes.js?v=202609242241"></script>
-<script src="js/screens-furacao.js?v=202609242241"></script>
-<script src="js/screens-materiais.js?v=202609242241"></script>
+<script src="js/data-lotes.js?v=202609242246"></script>
+<script src="js/nesting.js?v=202609242246"></script>
+<script src="js/barcode.js?v=202609242246"></script>
+<script src="js/emf-writer.js?v=202609242246"></script>
+<script src="js/machine-export.js?v=202609242246"></script>
+<script src="js/retalhos-pdf.js?v=202609242246"></script>
+<script src="js/export-corte.js?v=202609242246"></script>
+<script src="js/screens-comercial.js?v=202609242246"></script>
+<script src="js/screens-producao.js?v=202609242246"></script>
+<script src="js/screens-apoio.js?v=202609242246"></script>
+<script src="js/screens-contatos.js?v=202609242246"></script>
+<script src="js/screens-lotes.js?v=202609242246"></script>
+<script src="js/screens-furacao.js?v=202609242246"></script>
+<script src="js/screens-materiais.js?v=202609242246"></script>
 <!-- Furação (.ban) do lote. Usa Drilling/resolvePiecesForViewer, que são do
      painel admin e carregam mais abaixo — só é chamado no clique, então a
      ordem aqui não importa. -->
-<script src="js/furacao-lote.js?v=202609242241"></script>
+<script src="js/furacao-lote.js?v=202609242246"></script>
 <!-- Tela de PCP → Etiquetas. Entra ANTES do app.js porque APP.routes
      referencia ADMINX.printLabelsLoad na hora que o arquivo carrega, não na
      hora da navegação (mesmo motivo do data-contatos.js). -->
-<script src="js/screens-admin.js?v=202609242241"></script>
+<script src="js/screens-admin.js?v=202609242246"></script>
 
 <!-- Construtor de módulos (migration 085). Os dois entram ANTES do app.js
      porque APP.routes referencia CST.load/CST.after/CONSTR.explainError na
@@ -143,8 +143,8 @@
      data-contatos.js). O motor (../js/layout-engine.js), o Three.js e o
      resolvedor de peças do admin só são usados no clique, então a posição
      deles mais abaixo não importa. -->
-<script src="js/data-construtor.js?v=202609242241"></script>
-<script src="js/screens-construtor.js?v=202609242241"></script>
+<script src="js/data-construtor.js?v=202609242246"></script>
+<script src="js/screens-construtor.js?v=202609242246"></script>
 
 <!-- ==========================================================================
      PAINEL ADMIN — a ordem abaixo é obrigatória, não é estilo:
@@ -155,33 +155,33 @@
                          listeners por getElementById — se rodar antes do
                          passo 3 não acha nada e quebra em silêncio.
      ========================================================================== -->
-<script src="js/adm/_adm.js?v=202609242241"></script>
+<script src="js/adm/_adm.js?v=202609242246"></script>
 
-<script src="js/adm/telas/colors.js?v=202609242241"></script>
-<script src="js/adm/telas/taxonomy.js?v=202609242241"></script>
-<script src="js/adm/telas/catalogs.js?v=202609242241"></script>
-<script src="js/adm/telas/component-types.js?v=202609242241"></script>
-<script src="js/adm/telas/components.js?v=202609242241"></script>
-<script src="js/adm/telas/module-config.js?v=202609242241"></script>
-<script src="js/adm/telas/pricing-settings.js?v=202609242241"></script>
-<script src="js/adm/telas/crm-clients.js?v=202609242241"></script>
-<script src="js/adm/telas/controladoria.js?v=202609242241"></script>
-<script src="js/adm/telas/profiles.js?v=202609242241"></script>
-<script src="js/adm/telas/drilling-settings.js?v=202609242241"></script>
-<script src="js/adm/telas/orders.js?v=202609242241"></script>
-<script src="js/adm/telas/gallery.js?v=202609242241"></script>
-<script src="js/adm/telas/references.js?v=202609242241"></script>
+<script src="js/adm/telas/colors.js?v=202609242246"></script>
+<script src="js/adm/telas/taxonomy.js?v=202609242246"></script>
+<script src="js/adm/telas/catalogs.js?v=202609242246"></script>
+<script src="js/adm/telas/component-types.js?v=202609242246"></script>
+<script src="js/adm/telas/components.js?v=202609242246"></script>
+<script src="js/adm/telas/module-config.js?v=202609242246"></script>
+<script src="js/adm/telas/pricing-settings.js?v=202609242246"></script>
+<script src="js/adm/telas/crm-clients.js?v=202609242246"></script>
+<script src="js/adm/telas/controladoria.js?v=202609242246"></script>
+<script src="js/adm/telas/profiles.js?v=202609242246"></script>
+<script src="js/adm/telas/drilling-settings.js?v=202609242246"></script>
+<script src="js/adm/telas/orders.js?v=202609242246"></script>
+<script src="js/adm/telas/gallery.js?v=202609242246"></script>
+<script src="js/adm/telas/references.js?v=202609242246"></script>
 <!-- Tela nova, não veio do admin.html: a moldura do Configurador de furação.
      O editor em si é emprestado da tela de componentes em tempo de execução. -->
-<script src="js/adm/telas/drilling-editor.js?v=202609242241"></script>
+<script src="js/adm/telas/drilling-editor.js?v=202609242246"></script>
 <!-- Agregados do construtor de armários (migration 085). -->
-<script src="js/adm/telas/agregados.js?v=202609242241"></script>
+<script src="js/adm/telas/agregados.js?v=202609242246"></script>
 <!-- Programas de furação (migration 105) — o catálogo reutilizável, separado
      do configurador de furação do componente. -->
-<script src="js/adm/telas/programas-furacao.js?v=202609242241"></script>
+<script src="js/adm/telas/programas-furacao.js?v=202609242246"></script>
 <!-- Itens comprados (migration 119) — cadastro próprio do que a fábrica
      compra pronto + as regras de consumo (furo -> ferragem). -->
-<script src="js/adm/telas/itens-comprados.js?v=202609242241"></script>
+<script src="js/adm/telas/itens-comprados.js?v=202609242246"></script>
 
 <script>ADM.montar();</script>
 
@@ -191,75 +191,75 @@
      .ban parando de responder. Ver erp/js/vendor/LEIA-ME.md.
      A ordem importa: three antes de OrbitControls, os dois antes de
      viewer3d.js. -->
-<script src="js/vendor/jszip.min.js?v=202609242241"></script>
-<script src="js/vendor/three.min.js?v=202609242241"></script>
-<script src="js/vendor/OrbitControls.js?v=202609242241"></script>
-<script src="../js/pricing.js?v=202609242241"></script>
-<script src="../js/viewer3d.js?v=202609242241"></script>
+<script src="js/vendor/jszip.min.js?v=202609242246"></script>
+<script src="js/vendor/three.min.js?v=202609242246"></script>
+<script src="js/vendor/OrbitControls.js?v=202609242246"></script>
+<script src="../js/pricing.js?v=202609242246"></script>
+<script src="../js/viewer3d.js?v=202609242246"></script>
 <!-- Cena 3D independente da singleton acima, com instâncias próprias
      (ViewerComposition.createInstance) — precisa pro visor 3D da peça
      (#/peca/:codigo, migration 158, erp/js/screens-peca3d.js), que abre o
      módulo explodido com a peça piscando. Único requisito real é
      THREE.OrbitControls, já carregado 2 linhas acima. -->
-<script src="../js/viewer3d_composition.js?v=202609242241"></script>
-<script src="../js/drilling.js?v=202609242241"></script>
+<script src="../js/viewer3d_composition.js?v=202609242246"></script>
+<script src="../js/drilling.js?v=202609242246"></script>
 <!-- Motor de ferragem: furo -> item comprado (migration 119). DEPOIS do
      drilling.js (usa Drilling.holesBySignature) e do pricing.js. É a ÚNICA
      cópia — portal, ERP e calculadora carregam este mesmo arquivo. -->
-<script src="../js/hardware.js?v=202609242241"></script>
+<script src="../js/hardware.js?v=202609242246"></script>
 <!-- Motor do construtor de módulos: árvore de vãos -> peças (migration 085).
      Puro, sem DOM — é o MESMO arquivo que o portal vai usar na etapa 6, por
      isso mora em js/ e não em erp/js/. -->
-<script src="../js/layout-engine.js?v=202609242241"></script>
+<script src="../js/layout-engine.js?v=202609242246"></script>
 
-<script src="js/adm/00-base.js?v=202609242241"></script>
-<script src="js/adm/01-ambientes.js?v=202609242241"></script>
-<script src="js/adm/02-precos.js?v=202609242241"></script>
-<script src="js/adm/03-usuarios.js?v=202609242241"></script>
-<script src="js/adm/04-crm.js?v=202609242241"></script>
-<script src="js/adm/05-controladoria.js?v=202609242241"></script>
-<script src="js/adm/06-furacao-config.js?v=202609242241"></script>
-<script src="js/adm/07-tipos-componente.js?v=202609242241"></script>
-<script src="js/adm/08-cores.js?v=202609242241"></script>
-<script src="js/adm/09-componentes.js?v=202609242241"></script>
-<script src="js/adm/10-modulos.js?v=202609242241"></script>
+<script src="js/adm/00-base.js?v=202609242246"></script>
+<script src="js/adm/01-ambientes.js?v=202609242246"></script>
+<script src="js/adm/02-precos.js?v=202609242246"></script>
+<script src="js/adm/03-usuarios.js?v=202609242246"></script>
+<script src="js/adm/04-crm.js?v=202609242246"></script>
+<script src="js/adm/05-controladoria.js?v=202609242246"></script>
+<script src="js/adm/06-furacao-config.js?v=202609242246"></script>
+<script src="js/adm/07-tipos-componente.js?v=202609242246"></script>
+<script src="js/adm/08-cores.js?v=202609242246"></script>
+<script src="js/adm/09-componentes.js?v=202609242246"></script>
+<script src="js/adm/10-modulos.js?v=202609242246"></script>
 <!-- Resolvedor de peças do módulo — a ÚNICA cópia (ver cabeçalho do arquivo).
      ANTES do 11-modulo-3d.js, que era quem tinha a cópia do ERP. -->
-<script src="../js/module-pieces.js?v=202609242241"></script>
+<script src="../js/module-pieces.js?v=202609242246"></script>
 <script>MODULE_PIECES_ON_ERROR = (e) => showError('module-image-error', e);</script>
-<script src="js/adm/11-modulo-3d.js?v=202609242241"></script>
-<script src="js/adm/12-modulo-medidas.js?v=202609242241"></script>
-<script src="js/adm/13-modulo-pecas.js?v=202609242241"></script>
+<script src="js/adm/11-modulo-3d.js?v=202609242246"></script>
+<script src="js/adm/12-modulo-medidas.js?v=202609242246"></script>
+<script src="js/adm/13-modulo-pecas.js?v=202609242246"></script>
 <!-- 3D ao vivo + steppers de posição pra "Componentes deste módulo"
      (2026-08-22) — depois de viewer3d.js, module-pieces.js e
      13-modulo-pecas.js (embrulha renderModuleComponentsList de lá) e depois
      de 11-modulo-3d.js (usa moduleImageColorSelectEls/moduleImageColorsCache
      de lá). Ver comentário grande no topo do próprio arquivo. -->
-<script src="js/adm/26-modulo-pecas-3d.js?v=202609242241"></script>
-<script src="js/adm/14-modulo-vinculos.js?v=202609242241"></script>
-<script src="js/adm/15-teste-calculo.js?v=202609242241"></script>
-<script src="js/adm/16-pedidos.js?v=202609242241"></script>
-<script src="js/adm/17-galeria.js?v=202609242241"></script>
-<script src="js/adm/18-referencias.js?v=202609242241"></script>
-<script src="js/adm/19-furacao-ban.js?v=202609242241"></script>
-<script src="js/adm/20-auth.js?v=202609242241"></script>
+<script src="js/adm/26-modulo-pecas-3d.js?v=202609242246"></script>
+<script src="js/adm/14-modulo-vinculos.js?v=202609242246"></script>
+<script src="js/adm/15-teste-calculo.js?v=202609242246"></script>
+<script src="js/adm/16-pedidos.js?v=202609242246"></script>
+<script src="js/adm/17-galeria.js?v=202609242246"></script>
+<script src="js/adm/18-referencias.js?v=202609242246"></script>
+<script src="js/adm/19-furacao-ban.js?v=202609242246"></script>
+<script src="js/adm/20-auth.js?v=202609242246"></script>
 <!-- Depois do 09-componentes.js, que é de onde o editor é emprestado. -->
-<script src="js/adm/21-furacao-peca.js?v=202609242241"></script>
+<script src="js/adm/21-furacao-peca.js?v=202609242246"></script>
 <!-- Agregados (migration 085) — depois de 09-componentes e 10-modulos: os
      <select> de componente/módulo saem de componentsCache/modulesCache. -->
-<script src="js/adm/22-agregados.js?v=202609242241"></script>
+<script src="js/adm/22-agregados.js?v=202609242246"></script>
 <!-- Arvore de pastas do cadastro de componentes (migration 089). Depois do
      09-componentes.js: renderComponents() chama renderComponentTree() daqui,
      e a arvore chama editComponent de la — as duas so em tempo de execucao. -->
-<script src="js/adm/23-pastas-componentes.js?v=202609242241"></script>
+<script src="js/adm/23-pastas-componentes.js?v=202609242246"></script>
 <!-- Programas de furação (migration 105). Depois do ADM.montar() acima, e
      depende de drilling.js (o desenho usa Drilling._internals) e de
      pricing.js (avaliador de fórmulas) — os dois já carregados no topo. -->
-<script src="js/adm/24-programas-furacao.js?v=202609242241"></script>
+<script src="js/adm/24-programas-furacao.js?v=202609242246"></script>
 <!-- Itens comprados (migration 119). Depois do 02-precos.js (de onde sai
      marginProfilesCache, que popula os selects de margem) e depois do
      ADM.montar() acima. -->
-<script src="js/adm/25-itens-comprados.js?v=202609242241"></script>
+<script src="js/adm/25-itens-comprados.js?v=202609242246"></script>
 
 <!-- Visor 3D da peça (#/peca/:codigo, migration 158). Por último, de
      propósito: usa LOTES_UI (screens-lotes.js), resolvePiecesForViewer/
@@ -267,17 +267,17 @@
      (linha acima) — tudo já carregado a esta altura. app.js referencia
      PECA3D.load/render/after na hora que APP.routes é montado, então
      precisa vir ANTES dele. -->
-<script src="js/screens-peca3d.js?v=202609242241"></script>
+<script src="js/screens-peca3d.js?v=202609242246"></script>
 <!-- Embalagem (22/09): motor + visor do pallet (os mesmos de scratch/teste-pallet-3d.html) e a tela #/embalagem -->
-<script src="js/pallet-engine.js?v=202609242241"></script>
-<script src="js/pallet-view3d.js?v=202609242241"></script>
+<script src="js/pallet-engine.js?v=202609242246"></script>
+<script src="js/pallet-view3d.js?v=202609242246"></script>
 <!-- Etiqueta de módulo (24/09): ½ Letter, 2 por folha — botão em Produção → Embalagem -->
-<script src="js/vendor/qrcode.js?v=202609242241"></script>
-<script src="js/etiqueta-modulo.js?v=202609242241"></script>
-<script src="js/screens-embalagem.js?v=202609242241"></script>
+<script src="js/vendor/qrcode.js?v=202609242246"></script>
+<script src="js/etiqueta-modulo.js?v=202609242246"></script>
+<script src="js/screens-embalagem.js?v=202609242246"></script>
 <!-- Apontamento + Embalagem (TESTE, 25/09): nichos da estante, pallet dinamico com calco/pulmao/remanejo, volumes de ate 25 kg, modulo montado, cavalete, folha do pallet -->
-<script src="js/apont-embalagem-plano.js?v=202609242241"></script>
-<script src="js/screens-apont-embalagem.js?v=202609242241"></script>
-<script src="js/app.js?v=202609242241"></script>
+<script src="js/apont-embalagem-plano.js?v=202609242246"></script>
+<script src="js/screens-apont-embalagem.js?v=202609242246"></script>
+<script src="js/app.js?v=202609242246"></script>
 </body>
 </html>
