@@ -42,6 +42,9 @@ const DEFAULTS = {
   pallet: { planW: 1219, planD: 1016, hMax: 1800, nome: '48 × 40 pol' }
 };
 
+// módulo que é só um painel/filler (vai pro grupo de painéis do pedido)
+const RX_PAINEL = /\b(pain[eé]is|painel|paineis|panels?|fillers?)\b/i;
+
 function pesoKg(p, dens) {
   if (p.peso > 0) return p.peso;
   return (p.c / 1000) * (p.l / 1000) * (p.e / 1000) * dens;
@@ -186,10 +189,22 @@ function gerar(pecas, opt) {
     if (p._peso > opt.pesoMax) avisos.push('Peça ' + p.codigo + ' pesa ' + r1(p._peso) + ' kg sozinha — passa do limite de ' + opt.pesoMax + ' kg.');
   });
 
-  // grupos: por módulo; peça sem módulo agrupa por pedido
+  // grupos: por módulo; peça sem módulo agrupa por pedido.
+  // PAINÉIS (Matt, 27/09: "pode colocar os painéis semelhantes na mesma
+  // embalagem, pilhas como nos módulos"): módulo painel/filler — ou qualquer
+  // módulo de 1 peça só — entra num grupo único do PEDIDO, em vez de virar
+  // um volume de 1 peça cada.
+  const porMod = {};
+  ps.forEach(function (p) { if (p.modKey) porMod[p.modKey] = (porMod[p.modKey] || 0) + 1; });
+  const ehPainel = function (p) {
+    if (!p.modKey) return false;
+    return RX_PAINEL.test(p.moduloNome || '') || porMod[p.modKey] === 1;
+  };
   const grupos = {}, ordemGrupos = [];
   ps.forEach(function (p) {
-    const k = p.modKey || ('AVULSO|' + (p.orderId || p.pedido || ''));
+    let k;
+    if (ehPainel(p)) { k = 'PAINEIS|' + (p.orderId || p.pedido || ''); p = Object.assign({}, p, { _painel: true }); }
+    else k = p.modKey || ('AVULSO|' + (p.orderId || p.pedido || ''));
     if (!grupos[k]) { grupos[k] = { key: k, pecas: [], p: p }; ordemGrupos.push(k); }
     grupos[k].pecas.push(p);
   });
@@ -211,9 +226,11 @@ function gerar(pecas, opt) {
       res.forEach(function (pc) { pc.tipo = tipo; lista.push(pc); });
     });
     const mod = g.p;
+    const painel = k.indexOf('PAINEIS|') === 0;
     lista.forEach(function (pc, i) {
       pc.idx = i + 1; pc.total = lista.length;
-      pc.modKey = mod.modKey || null; pc.moduloNumero = mod.moduloNumero || '—'; pc.moduloNome = mod.moduloNome || (mod.modKey ? '' : 'Peças avulsas');
+      if (painel) { pc.modKey = k; pc.moduloNumero = 'P'; pc.moduloNome = 'Painéis do pedido'; }
+      else { pc.modKey = mod.modKey || null; pc.moduloNumero = mod.moduloNumero || '—'; pc.moduloNome = mod.moduloNome || (mod.modKey ? '' : 'Peças avulsas'); }
       pc.pedido = mod.pedido || ''; pc.orderId = mod.orderId || null; pc.cliente = mod.cliente || '';
       pc.id = 'V|' + k + '|' + pc.idx;
       pc.rotulo = 'Vol. ' + pc.moduloNumero + '-' + pc.idx + (pc.tipo === 'grande' ? ' G' : '');
@@ -308,7 +325,7 @@ function pallets(pacotes, cfg) {
   return out;
 }
 
-return { DEFAULTS: DEFAULTS, pesoKg: pesoKg, gerar: gerar, pallets: pallets, fitas: fitas, _montarCamada: montarCamada };
+return { DEFAULTS: DEFAULTS, RX_PAINEL: RX_PAINEL, pesoKg: pesoKg, gerar: gerar, pallets: pallets, fitas: fitas, _montarCamada: montarCamada };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PACOTES;

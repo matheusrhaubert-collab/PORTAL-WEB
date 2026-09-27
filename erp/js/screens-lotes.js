@@ -303,7 +303,8 @@ LOTES_UI.camposVolumes = function (usado, aberto) {
   const presets = LOTES_UI.PALLETS.map(function (p, i) {
     return '<button type="button" class="erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.presetPallet(' + i + ')">' + UI.esc(p.nome) + '</button>';
   }).join(' ');
-  return '<details class="apemb-cfg"' + (aberto ? ' open' : '') + '><summary>Configurar pallet e regras' +
+  // aberto por padrão (Matt não achou quando estava recolhido, 27/09)
+  return '<details class="apemb-cfg" open><summary><b>Configurar pallet e regras</b>' +
       (usado && usado.pallet ? ' <span class="erp-muted">(este lote foi calculado com ' + UI.esc(usado.pallet.nome || (usado.pallet.planW + ' × ' + usado.pallet.planD)) +
         ', ' + usado.pesoMax + ' kg, grande &gt; ' + usado.grandeMm + ' mm)</span>' : '') + '</summary>' +
     '<div class="erp-inline-fields" style="margin-top:6px">' +

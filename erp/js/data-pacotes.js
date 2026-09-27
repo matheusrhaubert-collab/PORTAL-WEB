@@ -142,7 +142,9 @@ PACOTES_DB.criarVolumes = async function (batchId, opt, avisar) {
     pc.camadas.forEach(function (cam, ci) {
       cam.itens.forEach(function (it) {
         const p = porCodigo[it.codigo] || {};
-        rowsPp.push({ package_id: idPorSeq[pc.seq], batch_id: batchId, piece_code: it.codigo, reference: p.ref || null,
+        // painel agrupado: a referência leva o nº do módulo original (a etiqueta de módulo continua sendo dele)
+        const ref = (pc.modKey && pc.modKey.indexOf('PAINEIS|') === 0 && p.moduloNumero) ? 'Mód ' + p.moduloNumero + ' · ' + (p.ref || '') : (p.ref || null);
+        rowsPp.push({ package_id: idPorSeq[pc.seq], batch_id: batchId, piece_code: it.codigo, reference: ref,
           c_mm: p.c, l_mm: p.l, e_mm: p.e, color_name: p.cor || null, camada: ci + 1,
           x_mm: it.x, y_mm: it.y, w_mm: it.w, d_mm: it.d, rotated: !!it.rot });
       });
