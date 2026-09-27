@@ -48,7 +48,7 @@ VOLUMES.render = function (params, d) {
   return UI.crumb([{ label: 'Produção' }, { label: 'Apontamento + Embalagem' }]) +
     UI.head('Apontamento + Embalagem',
       'Leia a etiqueta: a tela mostra o <b>volume</b> da peça e o <b>nicho</b> onde ela vai (vermelho = onde pôr). ' +
-      'Volume com todas as peças fica <b>verde</b> — arquear e clicar em "Embalado" pra ver o lugar no pallet do pedido. ' +
+      'Volume com todas as peças fica <b>verde</b> — arquear; ele espera no nicho até ser a vez dele no pallet (quem fica embaixo entra antes) e o botão <b>→ PALLET</b> do nicho libera. ' +
       'Todo volume vai pra estante (painel e peça grande também — configure nichos maiores pra eles); só o que não cabe em nicho nenhum vai pra <b>área do chão</b>.', '') +
     '<div class="erp-panel apemb-topo">' +
       '<div class="erp-inline-fields">' +
@@ -225,7 +225,9 @@ VOLUMES.mostrar = function (p, pc, prefixo) {
     ' · camada ' + p.camada + ' de ' + pc.n_camadas + (p.camada === 1 ? ' — é a BASE do volume' : '') + ' · ' + feitas + '/' + total + ' peças';
   if (pc._avisoNicho) html += '<div class="apemb-calco-aviso">' + UI.esc(pc._avisoNicho) + '</div>';
   if (VOLUMES.completo(pc) && !VOLUMES.embalado(pc)) {
-    html += '<div class="apemb-calco-aviso" style="color:#14532d">✓ VOLUME COMPLETO — arquear. Veja abaixo como empilhar e onde passar as fitas; depois clique em "Embalado".</div>';
+    const lib = VOLUMES.liberado(pc);
+    html += '<div class="apemb-calco-aviso" style="color:#14532d">✓ VOLUME COMPLETO — arquear. Veja abaixo como empilhar e onde passar as fitas.' +
+      (lib.ok ? ' O pallet já tem lugar pra ele: clique em "→ Pallet" no nicho.' : ' Fica no nicho <b>aguardando</b> o pallet — antes vai ' + UI.esc(lib.faltam.join(', ')) + '.') + '</div>';
     VOLUMES.msg('ok', html);
   } else VOLUMES.msg('info', html);
 };
@@ -246,16 +248,68 @@ VOLUMES.bip = function (ok) {
   } catch (e) { /* sem áudio */ }
 };
 
+/* ORDEM NO PALLET (Matt, 27/09: "pro volume da camada 2 precisa ter
+   colocado a camada 1; mesmo que fique pronto no nicho, se não chegou a
+   hora dele no pallet ele fica lá aguardando"). Um volume só entra no
+   pallet quando TODOS os que ficam embaixo dele (mesmo pallet, planta
+   sobreposta, mais baixos) já estão lá. Sem lugar no pallet = livre. */
+VOLUMES.itemPallet = function (pc) {
+  for (let i = 0; i < VOLUMES.S.pallets.length; i++) {
+    const pals = (VOLUMES.S.pallets[i].plano || {}).pallets || [];
+    for (let j = 0; j < pals.length; j++) {
+      const it = (pals[j].itens || []).find(function (x) { return x.id === pc.id; });
+      if (it) return { it: it, pal: pals[j] };
+    }
+  }
+  return null;
+};
+VOLUMES.liberado = function (pc) {
+  const S = VOLUMES.S;
+  const r = VOLUMES.itemPallet(pc);
+  if (!r) return { ok: true, faltam: [] };
+  const b = r.it;
+  const sobrepoe = function (a) {
+    return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 5 && Math.min(a.y + a.d, b.y + b.d) - Math.max(a.y, b.y) > 5;
+  };
+  const faltam = r.pal.itens.filter(function (a) {
+    if (a.id === b.id || a.z + a.e > b.z + 0.6 || !sobrepoe(a)) return false;
+    const o = S.porId[a.id];
+    return !(o && VOLUMES.embalado(o));
+  }).map(function (a) { const o = S.porId[a.id]; return o ? o.rotulo : '?'; });
+  return { ok: !faltam.length, faltam: faltam };
+};
+/* Próximo volume que o pallet aceita: o mais baixo (menor z, depois seq)
+   ainda não embalado cujo apoio já está no pallet — pra tela dizer "agora
+   é a vez do Vol. X". */
+VOLUMES.proximosDoPallet = function () {
+  const S = VOLUMES.S, out = [];
+  S.pallets.forEach(function (row) {
+    ((row.plano || {}).pallets || []).forEach(function (pal) {
+      const pend = pal.itens.filter(function (it) { const o = S.porId[it.id]; return o && !VOLUMES.embalado(o); })
+        .sort(function (a, b) { return (a.z - b.z) || (a.seq - b.seq); });
+      const prox = pend.find(function (it) { return VOLUMES.liberado(S.porId[it.id]).ok; });
+      if (prox) out.push({ pedido: row.po_name, pallet: pal.n, pc: S.porId[prox.id] });
+    });
+  });
+  return out;
+};
+
 VOLUMES.embalar = async function (pkgId) {
   const S = VOLUMES.S, pc = S && S.porId[pkgId];
   if (!pc || !VOLUMES.completo(pc)) return;
+  const lib = VOLUMES.liberado(pc);
+  if (!lib.ok) {
+    S.alvo = pkgId;
+    VOLUMES.msg('erro', '<b>' + UI.esc(pc.rotulo) + '</b> ainda não pode ir pro pallet: primeiro ' + UI.esc(lib.faltam.join(', ')) + ' (fica embaixo dele).');
+    VOLUMES.bip(false); VOLUMES.redesenhar(); return;
+  }
   try {
     await PACOTES_DB.embalar(pkgId);
     pc.status = 'embalado'; pc.packed_at = new Date().toISOString();
     S.alvo = pkgId;
     const pos = pc.pallet_pos;
-    VOLUMES.msg('ok', '<span class="apemb-big">✓ <b>' + UI.esc(pc.rotulo) + '</b> embalado' + (pc.nicho && pc.nicho !== 'CHAO' ? ' — nicho ' + UI.esc(pc.nicho) + ' liberado' : '') + '.</span><br>' +
-      (pc.pallet_n ? 'Vai pro <b>pallet ' + pc.pallet_n + '</b> do pedido ' + UI.esc(pc.po_name || '') + (pos ? ' · nível ' + pos.nivel + ' · posição ' + pos.seq + ' (x ' + Math.round(pos.x) + ', y ' + Math.round(pos.y) + ' mm)' : '')
+    VOLUMES.msg('ok', '<span class="apemb-big">✓ <b>' + UI.esc(pc.rotulo) + '</b> no pallet' + (pc.nicho && pc.nicho !== 'CHAO' ? ' — nicho ' + UI.esc(pc.nicho) + ' liberado' : '') + '.</span><br>' +
+      (pc.pallet_n ? '<b>Pallet ' + pc.pallet_n + '</b> do pedido ' + UI.esc(pc.po_name || '') + (pos ? ' · nível ' + pos.nivel + ' · posição ' + pos.seq + ' (x ' + Math.round(pos.x) + ', y ' + Math.round(pos.y) + ' mm)' : '')
         : 'Volume mais largo que o pallet padrão — vai em separado.'));
     VOLUMES.bip(true);
   } catch (err) { VOLUMES.msg('erro', 'Não gravou: ' + UI.esc(err.message || String(err))); }
@@ -312,7 +366,15 @@ VOLUMES.desenharResumo = function () {
     UI.kpi('Volumes completos', '<span class="apemb-kpi-grande">' + completos + '</span> / ' + S.pacotes.length, 'prontos pra arquear') +
     UI.kpi('Embalados', '<span class="apemb-kpi-grande">' + embalados + '</span> / ' + S.pacotes.length, 'no pallet') +
     UI.kpi('Pallets', '<span class="apemb-kpi-grande">' + nPallets + '</span>', S.pallets.length + ' pedido(s)') +
-  '</div>';
+  '</div>' + (function () {
+    const prox = VOLUMES.proximosDoPallet();
+    if (!prox.length) return '';
+    return '<div class="apemb-proximos">Vez no pallet agora: ' + prox.map(function (p) {
+      const pronto = VOLUMES.completo(p.pc);
+      return '<span class="apemb-chip' + (pronto ? ' ok' : '') + '" onclick="VOLUMES.abrir(\'' + p.pc.id + '\')" title="' + UI.esc(p.pedido || '') + ' · pallet ' + p.pallet + '">' +
+        'pallet ' + p.pallet + ': <b>' + UI.esc(p.pc.rotulo) + '</b>' + (pronto ? ' (pronto no ' + (p.pc.nicho === 'CHAO' ? 'chão' : 'nicho ' + UI.esc(p.pc.nicho || '?')) + ')' : ' (' + VOLUMES.apontadas(p.pc) + '/' + p.pc.pecas.length + ' peças)') + '</span>';
+    }).join(' ') + '</div>';
+  })();
 };
 
 VOLUMES.desenharEstante = function () {
@@ -353,6 +415,15 @@ VOLUMES.desenharEstante = function () {
       svg += '<text x="' + (x + n.W - 14) + '" y="' + (y + fsM + mi * (fsM + fsS)) + '" text-anchor="end" class="apemb-t-mod" style="font-size:' + fsM + 'px">' + UI.esc(pc.rotulo.replace(/^Vol\. /, '')) + '</text>' +
         '<text x="' + (x + n.W - 14) + '" y="' + (y + fsM + fsS + 4 + mi * (fsM + fsS)) + '" text-anchor="end" class="apemb-t-mod-s" style="font-size:' + fsS + 'px">' +
         feitas.length + '/' + pc.pecas.length + (VOLUMES.completo(pc) ? ' ✓' : '') + '</text>';
+      // botão "→ Pallet" (só libera quando o apoio dele já está no pallet)
+      if (VOLUMES.completo(pc) && mi === 0) {
+        const lib = VOLUMES.liberado(pc);
+        const bw = Math.min(n.W - 28, 420), bh = Math.round(fsM * 1.1), bx = x + 14, by = y + n.H - bh - 12;
+        svg += '<g class="apemb-btn-nicho' + (lib.ok ? ' ok' : ' espera') + '" onclick="event.stopPropagation();VOLUMES.embalar(\'' + pc.id + '\')">' +
+          '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + bh + '" rx="8"/>' +
+          '<text x="' + (bx + bw / 2) + '" y="' + (by + bh * 0.7) + '" text-anchor="middle" style="font-size:' + Math.round(fsS * 1.05) + 'px">' +
+          (lib.ok ? '→ PALLET' : 'AGUARDA ' + UI.esc(lib.faltam[0].replace(/^Vol\. /, '')) + (lib.faltam.length > 1 ? ' +' + (lib.faltam.length - 1) : '')) + '</text></g>';
+      }
     });
     svg += '</g>';
   });
@@ -360,7 +431,7 @@ VOLUMES.desenharEstante = function () {
     ' nichos · prof. ' + cfg.prof + ' mm</text></svg>';
   VOLUMES.$('vol-estante').innerHTML = svg +
     '<div class="erp-muted erp-xs apemb-legenda"><i class="lg-verm"></i> onde pôr a peça lida <i class="lg-verde"></i> volume completo — arquear ' +
-    '<i class="lg-ocup"></i> em andamento · clique num nicho pra ver o volume · nicho é escolhido pelo tamanho do volume (o menor livre onde cabe)</div>';
+    '<i class="lg-ocup"></i> em andamento · botão no nicho: <b>→ PALLET</b> quando o apoio dele já está no pallet, <b>AGUARDA</b> enquanto não · clique no nicho pra ver o volume</div>';
 };
 
 VOLUMES.cliqueNicho = function (id) {
@@ -378,8 +449,14 @@ VOLUMES.desenharChao = function () {
     let cls = 'apemb-chao-mod';
     if (pc.id === S.alvo && !VOLUMES.completo(pc)) cls += ' apemb-pisca-verm-bg';
     else if (VOLUMES.completo(pc)) cls += ' apemb-pisca-verde-bg';
+    let botao = '';
+    if (VOLUMES.completo(pc)) {
+      const lib = VOLUMES.liberado(pc);
+      botao = lib.ok ? ' <button class="erp-btn erp-btn-sm" onclick="event.stopPropagation();VOLUMES.embalar(\'' + pc.id + '\')">→ Pallet</button>'
+                     : ' <span class="erp-muted">aguarda ' + UI.esc(lib.faltam.join(', ')) + '</span>';
+    }
     return '<span class="' + cls + '" onclick="VOLUMES.abrir(\'' + pc.id + '\')">' + UI.esc(pc.rotulo) + ' · ' + UI.esc(pc.module_name || 'avulsas') +
-      ' · ' + Math.round(pc.c_mm) + ' × ' + Math.round(pc.l_mm) + ' × ' + Math.round(pc.h_mm) + ' — ' + feitas + '/' + pc.pecas.length + '</span>';
+      ' · ' + Math.round(pc.c_mm) + ' × ' + Math.round(pc.l_mm) + ' × ' + Math.round(pc.h_mm) + ' — ' + feitas + '/' + pc.pecas.length + botao + '</span>';
   }).join('') + '</div><div class="erp-muted erp-xs">Volume que não coube em nenhum nicho livre (grande demais, ou estante cheia). ' +
     'Se for sempre o mesmo tamanho, aumente um nicho em "Estante" (colunas/linhas aceitam medidas diferentes, ex.: 1300, 900, 600, 600).</div>';
 };
@@ -418,7 +495,7 @@ VOLUMES.desenharEmbalar = function () {
   el.innerHTML = '<div class="erp-panel apemb-embalar' + (pronto ? ' pronto' : '') + '">' +
     '<h2>' + UI.esc(pc.rotulo) + ' — ' + UI.esc(pc.module_number || '') + ' · ' + UI.esc(pc.module_name || 'peças avulsas') + ' · ' + UI.esc(pc.po_name || '') + (pc.client_name ? ' · ' + UI.esc(pc.client_name) : '') +
       (pc.tipo === 'grande' ? ' ' + UI.pill('peça grande', 'erp-pill-warn') : '') + ' ' +
-      UI.pill(emb ? 'embalado' : (pronto ? 'completo — arquear' : 'em andamento ' + VOLUMES.apontadas(pc) + '/' + pc.pecas.length), emb ? 'erp-pill-neutral' : (pronto ? 'erp-pill-ok' : 'erp-pill-info')) + '</h2>' +
+      UI.pill(emb ? 'no pallet' : (pronto ? (VOLUMES.liberado(pc).ok ? 'completo — vez dele no pallet' : 'completo — aguardando pallet') : 'em andamento ' + VOLUMES.apontadas(pc) + '/' + pc.pecas.length), emb ? 'erp-pill-neutral' : (pronto ? 'erp-pill-ok' : 'erp-pill-info')) + '</h2>' +
     '<div class="erp-muted erp-small">' + Math.round(pc.c_mm) + ' × ' + Math.round(pc.l_mm) + ' × ' + Math.round(pc.h_mm) + ' mm · ' + Number(pc.peso_kg).toFixed(1) + ' kg · ' + pc.n_camadas + ' camadas' +
       (pc.nicho ? ' · ' + (pc.nicho === 'CHAO' ? 'área do chão' : 'nicho ' + UI.esc(pc.nicho)) : '') +
       (pc.pallet_n ? ' · pallet ' + pc.pallet_n + (pos ? ', nível ' + pos.nivel + ', posição ' + pos.seq : '') : ' · não cabe no pallet padrão') +
@@ -434,7 +511,12 @@ VOLUMES.desenharEmbalar = function () {
     '<div style="margin-top:8px">' + pecasHtml + '</div>' +
     '<div style="margin-top:10px;display:flex;gap:8px">' +
       (emb ? '<button class="erp-btn-secondary erp-btn-sm" onclick="VOLUMES.desembalar(\'' + pc.id + '\')">↶ Desfazer "embalado"</button>'
-           : '<button class="erp-btn" ' + (pronto ? '' : 'disabled title="Ainda faltam peças"') + ' onclick="VOLUMES.embalar(\'' + pc.id + '\')">✓ Embalado — liberar nicho</button>') +
+           : (function () {
+               if (!pronto) return '<button class="erp-btn" disabled title="Ainda faltam peças">→ Pallet</button>';
+               const lib = VOLUMES.liberado(pc);
+               return lib.ok ? '<button class="erp-btn" onclick="VOLUMES.embalar(\'' + pc.id + '\')">→ Pallet — colocar agora e liberar o nicho</button>'
+                             : '<button class="erp-btn" disabled>→ Pallet</button> <span class="apemb-espera">aguardando no nicho — antes: ' + UI.esc(lib.faltam.join(', ')) + '</span>';
+             })()) +
       '<button class="erp-btn-ghost erp-btn-sm" onclick="VOLUMES.S.alvo=null;VOLUMES.redesenhar()">fechar</button>' +
     '</div></div>';
 };
@@ -524,7 +606,7 @@ VOLUMES.desenharLista = function () {
     return '<div class="apemb-lista-sec"><div class="erp-strong">' + UI.esc(k) + ' <span class="erp-muted erp-small">' + porPedido[k].length + ' volumes</span></div>' +
       porPedido[k].map(function (pc) {
         const feitas = VOLUMES.apontadas(pc);
-        const st = VOLUMES.embalado(pc) ? UI.pill('embalado', 'erp-pill-neutral') : (VOLUMES.completo(pc) ? UI.pill('completo', 'erp-pill-ok') : (feitas ? UI.pill(feitas + '/' + pc.pecas.length, 'erp-pill-info') : UI.pill('0/' + pc.pecas.length, 'erp-pill-neutral')));
+        const st = VOLUMES.embalado(pc) ? UI.pill('no pallet', 'erp-pill-neutral') : (VOLUMES.completo(pc) ? UI.pill(VOLUMES.liberado(pc).ok ? 'completo · → pallet' : 'completo · aguarda pallet', 'erp-pill-ok') : (feitas ? UI.pill(feitas + '/' + pc.pecas.length, 'erp-pill-info') : UI.pill('0/' + pc.pecas.length, 'erp-pill-neutral')));
         return '<div class="apemb-mod-linha"><a href="javascript:void(0)" onclick="VOLUMES.abrir(\'' + pc.id + '\')"><b>' + UI.esc(pc.rotulo) + '</b></a> · ' +
           UI.esc(pc.module_number || '') + ' ' + UI.esc(pc.module_name || 'avulsas') + ' · ' + Math.round(pc.c_mm) + ' × ' + Math.round(pc.l_mm) + ' × ' + Math.round(pc.h_mm) + ' · ' + Number(pc.peso_kg).toFixed(1) + ' kg · ' +
           pc.n_camadas + ' cam' + (pc.tipo === 'grande' ? ' · <b>GRANDE</b>' : '') + (pc.nicho ? ' · ' + (pc.nicho === 'CHAO' ? 'chão' : 'nicho ' + UI.esc(pc.nicho)) : '') +

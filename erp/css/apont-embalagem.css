@@ -130,3 +130,13 @@
 .apemb-escolhido { margin: 4px 0 10px; padding: 6px 10px; background: #e6f4ea; border-radius: 6px; font-size: 14px; }
 .apemb-opcao { display: flex !important; flex-direction: column; align-items: center; gap: 4px; height: auto; line-height: 1.3; color: #2d2a26; }
 .apemb-opcao > div { display: block; width: 100%; }
+
+/* Apontamento por VOLUME (#/volumes, 27/09) — botão "→ Pallet" dentro do nicho e "vez no pallet" */
+.apemb-btn-nicho { cursor: pointer; }
+.apemb-btn-nicho rect { fill: #2e9e4f; stroke: #14532d; stroke-width: 4; }
+.apemb-btn-nicho text { fill: #fff; font-weight: 800; font-family: system-ui, sans-serif; pointer-events: none; }
+.apemb-btn-nicho.espera rect { fill: #e9e4dc; stroke: #b9a88f; }
+.apemb-btn-nicho.espera text { fill: #6a5a48; }
+.apemb-btn-nicho.ok:hover rect { fill: #24803f; }
+.apemb-proximos { margin: -2px 0 10px; padding: 6px 10px; background: #e6f4ea; border-left: 4px solid #2e9e4f; border-radius: 4px; font-size: 13px; }
+.apemb-proximos .apemb-chip { font-size: 13px; }
