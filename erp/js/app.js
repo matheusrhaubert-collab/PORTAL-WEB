@@ -40,7 +40,8 @@ APP.menu = [
     { hash: '#/apontamento', label: 'Apontamentos' },
     { hash: '#/processos',   label: 'Processos' },
     { hash: '#/embalagem',   label: 'Embalagem' },
-    { hash: '#/embalagem-teste', label: 'Apontamento + Embalagem (teste)' },
+    { hash: '#/volumes',     label: 'Apontamento + Embalagem' },
+    { hash: '#/embalagem-teste', label: 'Apontamento + Embalagem (teste antigo)' },
     { hash: '#/expedicao',   label: 'Expedição' }
   ] },
 
@@ -304,6 +305,10 @@ APP.routes = [
      motor de scratch/teste-pallet-3d.html (erp/js/pallet-engine.js). */
   /* Apontamento + Embalagem (TESTE, 25/09) — erp/js/screens-apont-embalagem.js */
   { re: /^#\/embalagem-teste$/, load: APEMB.load, render: APEMB.render, nav: '#/embalagem-teste', after: APEMB.after },
+  /* Apontamento + Embalagem por VOLUME (27/09) — volumes prontos do banco
+     (botão "Criar volumes" do lote, migration 180). erp/js/screens-volumes.js */
+  { re: /^#\/volumes$/,         load: VOLUMES.load, render: VOLUMES.render, nav: '#/volumes', after: VOLUMES.after },
+  { re: /^#\/volumes\/([^/]+)$/, load: VOLUMES.load, render: VOLUMES.render, nav: '#/volumes', after: VOLUMES.after },
   { re: /^#\/embalagem$/,       load: EMBALAGEM.load,                      render: EMBALAGEM.render,              nav: '#/embalagem', after: EMBALAGEM.after },
   { re: /^#\/etiquetas$/,                                                  render: ScreensApoio.labels,           nav: '#/etiquetas' },
   /* PCP → Etiquetas: escolher o plano e imprimir. Endereço separado do

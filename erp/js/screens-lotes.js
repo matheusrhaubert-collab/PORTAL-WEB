@@ -242,7 +242,72 @@ LOTES_UI.criarLote = async function (btn) {
 LOTES_UI.detailLoad = async function (p) {
   const [batch, colors] = await Promise.all([LOTES.batch(p.id), LOTES.colors()]);
   if (!batch) return { batch: null };
-  return { batch: batch, colors: colors, groups: LOTES.groupPieces(batch._pieces, colors) };
+  /* Volumes (migration 180) — melhor esforço: sem a migration a consulta
+     falha e a faixa mostra o aviso em vez de derrubar a tela do lote. */
+  let volumes = null, volumesErro = null;
+  if (typeof PACOTES_DB !== 'undefined') {
+    try { volumes = await PACOTES_DB.resumo(p.id); }
+    catch (e) { volumesErro = (LOTES.explainError && LOTES.explainError(e)) || e.message || String(e); }
+  }
+  return { batch: batch, colors: colors, groups: LOTES.groupPieces(batch._pieces, colors), volumes: volumes, volumesErro: volumesErro };
+};
+
+/* Faixa "Volumes" da tela do lote (Matt, 27/09: "no lote criado — colocar
+   `criar volumes`"). Calcula os pacotes de TODAS as peças (pacotes-engine.js),
+   os pallets por pedido, e grava (data-pacotes.js). */
+LOTES_UI.faixaVolumes = function (b, v, erro) {
+  const btn = function (label, cls, title) {
+    return '<button type="button" class="erp-btn ' + (cls || '') + ' erp-btn-sm" title="' + UI.esc(title || '') + '" ' +
+      'onclick="LOTES_UI.criarVolumes(\'' + b.id + '\', this)">' + label + '</button>';
+  };
+  if (erro) {
+    return UI.panel(null, '<div class="erp-strong">' + UI.pill('volumes', 'erp-pill-neutral') + ' <span class="erp-muted erp-small">' +
+      UI.esc(erro.split('\n')[0]) + '</span></div><div class="erp-muted erp-xs" style="margin-top:4px">Rode a database/migration_180_volumes_pacotes_apontamento.sql no Supabase pra liberar "Criar volumes".</div>');
+  }
+  if (!v || !v.pacotes) {
+    return UI.panel(null,
+      '<div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center">' +
+        '<div><div class="erp-strong">' + UI.pill('sem volumes', 'erp-pill-warn') + '</div>' +
+        '<div class="erp-muted erp-small" style="margin-top:4px">Calcula os pacotes de todas as peças (módulo junto, até 25 kg, base sólida, camadas pares; peça &gt; 900 mm em pacote separado) e o pallet de cada pedido.</div></div>' +
+        btn('📦 Criar volumes', '', 'Gera os pacotes e os pallets deste lote') +
+      '</div>');
+  }
+  const pct = v.pecas ? Math.round(100 * v.apontadas / v.pecas) : 0;
+  return UI.panel(null,
+    '<div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center">' +
+      '<div>' +
+        '<div class="erp-strong" style="font-size:15px">' + UI.pill('✓ ' + v.pacotes + ' volumes', 'erp-pill-ok') +
+          (v.grandes ? ' <span class="erp-muted erp-small">(' + v.grandes + ' de peça grande)</span>' : '') +
+          ' · ' + v.pallets + ' pallet(s) em ' + v.pedidos + ' pedido(s)</div>' +
+        '<div class="erp-muted erp-small" style="margin-top:4px">' +
+          'Criados em ' + UI.date(b.volumes_created_at) + ' · apontamento: ' + v.apontadas + '/' + v.pecas + ' peças (' + pct + '%) · ' +
+          v.completos + ' volume(s) completo(s), ' + v.embalados + ' embalado(s)' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<a class="erp-btn erp-btn-sm" href="#/volumes/' + b.id + '">Apontar + embalar</a>' +
+        btn('↻ Recriar volumes', 'erp-btn-ghost', 'Recalcula do zero (apaga o apontamento, se houver)') +
+      '</div>' +
+    '</div>');
+};
+
+LOTES_UI.criarVolumes = async function (batchId, btn, forcar) {
+  LOTES_UI.busy(btn, true, 'Calculando…');
+  try {
+    const r = await PACOTES_DB.criarVolumes(batchId, { forcar: !!forcar }, function (t) { if (btn) btn.textContent = t; });
+    LOTES_UI.toast(r.pacotes + ' volumes criados (' + r.pecas + ' peças' + (r.grandes ? ', ' + r.grandes + ' de peça grande' : '') + ') · ' +
+      r.pallets + ' pallet(s) em ' + r.pedidos + ' pedido(s)' + (r.semLugar ? ' · ' + r.semLugar + ' volume(s) mais largo(s) que o pallet' : '') +
+      (r.avisos.length ? ' · ' + r.avisos.join(' ') : ''));
+    APP.render();
+  } catch (err) {
+    if (err && err.precisaConfirmar) {
+      LOTES_UI.busy(btn, false);
+      if (confirm(err.message)) return LOTES_UI.criarVolumes(batchId, btn, true);
+      return;
+    }
+    console.error('[volumes]', err);
+    LOTES_UI.toast((LOTES.explainError && LOTES.explainError(err)) || err.message || String(err), true);
+  } finally { LOTES_UI.busy(btn, false); }
 };
 
 LOTES_UI.detail = function (params, d) {
@@ -378,6 +443,7 @@ LOTES_UI.detail = function (params, d) {
         : '<a class="erp-btn" href="#/lotes/' + b.id + '/plano">Gerar plano de corte</a>')) +
     '<div id="lotes-toast" style="display:none"></div>' +
     faixaPlano +
+    LOTES_UI.faixaVolumes(b, d.volumes, d.volumesErro) +
     '<div class="erp-grid erp-grid-4" style="margin-bottom:18px">' +
       UI.kpi('Status', UI.pill(st.label, st.pill), (b.batch_orders || b._orders || []).length + ' pedidos') +
       UI.kpi('Peças', totalPieces, b._pieces.length + ' linhas em ' + d.groups.length + ' materiais') +
