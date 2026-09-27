@@ -49,7 +49,7 @@ VOLUMES.render = function (params, d) {
     UI.head('Apontamento + Embalagem',
       'Leia a etiqueta: a tela mostra o <b>volume</b> da peça e o <b>nicho</b> onde ela vai (vermelho = onde pôr). ' +
       'Volume com todas as peças fica <b>verde</b> — arquear e clicar em "Embalado" pra ver o lugar no pallet do pedido. ' +
-      'Volume de peça grande (&gt; 900 mm) fica na <b>área do chão</b>.', '') +
+      'Todo volume vai pra estante (painel e peça grande também — configure nichos maiores pra eles); só o que não cabe em nicho nenhum vai pra <b>área do chão</b>.', '') +
     '<div class="erp-panel apemb-topo">' +
       '<div class="erp-inline-fields">' +
         '<label class="erp-field"><span>Lote</span><select id="vol-lote"><option value="">— escolher —</option>' + ops + '</select></label>' +
@@ -77,7 +77,7 @@ VOLUMES.render = function (params, d) {
       '</div>' +
       '<div class="apemb-grid">' +
         '<div class="erp-panel"><h2>Estante — vista de frente</h2><div id="vol-estante"></div></div>' +
-        '<div class="erp-panel"><h2>Área do chão — volumes de peça grande</h2><div id="vol-chao"></div></div>' +
+        '<div class="erp-panel"><h2>Área do chão — o que não coube na estante</h2><div id="vol-chao"></div></div>' +
       '</div>' +
       '<div id="vol-embalar"></div>' +
       '<div class="erp-panel"><h2>Pallets por pedido</h2><div id="vol-pallets"></div></div>' +
@@ -151,11 +151,12 @@ VOLUMES.normalizar = function (txt) {
 };
 
 /* Nicho pro volume: o menor livre onde a planta C × L e a pilha H cabem
-   (mesma regra da tela de teste: APEMB_PLANO.escolherNicho). Volume de peça
-   grande vai direto pra área do chão. */
+   (mesma regra da tela de teste: APEMB_PLANO.escolherNicho). TODO volume
+   vai pra estante, painel e peça grande inclusive (Matt, 27/09: "todas as
+   peças entram nos nichos, por isso vamos ter nichos maiores e menores") —
+   o chão é só pro que não cabe em nicho nenhum. */
 VOLUMES.escolherNicho = function (pc) {
   const S = VOLUMES.S;
-  if (pc.tipo === 'grande') return { nicho: 'CHAO', aviso: null };
   const ocup = {};
   S.pacotes.forEach(function (o) { if (o.nicho && o.nicho !== 'CHAO' && !VOLUMES.embalado(o) && o.id !== pc.id) ocup[o.nicho] = o.id; });
   const mod = { pecasNicho: [{ c: Number(pc.c_mm), l: Number(pc.l_mm), e: Number(pc.h_mm) }] };
@@ -359,7 +360,7 @@ VOLUMES.desenharEstante = function () {
     ' nichos · prof. ' + cfg.prof + ' mm</text></svg>';
   VOLUMES.$('vol-estante').innerHTML = svg +
     '<div class="erp-muted erp-xs apemb-legenda"><i class="lg-verm"></i> onde pôr a peça lida <i class="lg-verde"></i> volume completo — arquear ' +
-    '<i class="lg-ocup"></i> em andamento · clique num nicho pra ver o volume</div>';
+    '<i class="lg-ocup"></i> em andamento · clique num nicho pra ver o volume · nicho é escolhido pelo tamanho do volume (o menor livre onde cabe)</div>';
 };
 
 VOLUMES.cliqueNicho = function (id) {
@@ -370,7 +371,7 @@ VOLUMES.cliqueNicho = function (id) {
 
 VOLUMES.desenharChao = function () {
   const S = VOLUMES.S;
-  const lista = S.pacotes.filter(function (pc) { return (pc.tipo === 'grande' || pc.nicho === 'CHAO') && !VOLUMES.embalado(pc); });
+  const lista = S.pacotes.filter(function (pc) { return pc.nicho === 'CHAO' && !VOLUMES.embalado(pc); });
   if (!lista.length) { VOLUMES.$('vol-chao').innerHTML = '<span class="erp-muted erp-small">Nenhum volume no chão agora.</span>'; return; }
   VOLUMES.$('vol-chao').innerHTML = '<div class="apemb-chao">' + lista.map(function (pc) {
     const feitas = VOLUMES.apontadas(pc);
@@ -378,9 +379,9 @@ VOLUMES.desenharChao = function () {
     if (pc.id === S.alvo && !VOLUMES.completo(pc)) cls += ' apemb-pisca-verm-bg';
     else if (VOLUMES.completo(pc)) cls += ' apemb-pisca-verde-bg';
     return '<span class="' + cls + '" onclick="VOLUMES.abrir(\'' + pc.id + '\')">' + UI.esc(pc.rotulo) + ' · ' + UI.esc(pc.module_name || 'avulsas') +
-      ' · ' + Math.round(pc.c_mm) + ' × ' + Math.round(pc.l_mm) + ' — ' + feitas + '/' + pc.pecas.length + (pc.nicho ? '' : ' (ainda não começou)') + '</span>';
-  }).join('') + '</div><div class="erp-muted erp-xs">Volumes de peça grande (&gt; ' + (S.batch && S.batch.volumes_opt && S.batch.volumes_opt.grandeMm || 900) +
-    ' mm) nunca vão pra estante — ficam no chão, ao lado, e vão pro pallet especial do pedido.</div>';
+      ' · ' + Math.round(pc.c_mm) + ' × ' + Math.round(pc.l_mm) + ' × ' + Math.round(pc.h_mm) + ' — ' + feitas + '/' + pc.pecas.length + '</span>';
+  }).join('') + '</div><div class="erp-muted erp-xs">Volume que não coube em nenhum nicho livre (grande demais, ou estante cheia). ' +
+    'Se for sempre o mesmo tamanho, aumente um nicho em "Estante" (colunas/linhas aceitam medidas diferentes, ex.: 1300, 900, 600, 600).</div>';
 };
 
 /* Painel "como embalar" do volume alvo: camadas de baixo pra cima (vista de
