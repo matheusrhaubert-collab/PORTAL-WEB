@@ -136,6 +136,9 @@ LOTES_UI.list = function (params, d) {
         '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" ' +
           'onclick="FURACAO_LOTE.gerar(\'' + b.id + '\', this)">Furação (.ban)</button>' +
         '<a class="erp-btn erp-btn-ghost erp-btn-sm" href="#/lotes/' + b.id + '/furacao">Ver furação</a>' +
+        /* Volumes + pallet (27/09): a faixa fica dentro do lote; ?cfg=volumes
+           abre já com "Configurar pallet e regras" expandido. */
+        '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/lotes/' + b.id + '?cfg=volumes" title="Criar volumes e configurar o pallet">📦 Volumes / pallet</a>' +
       '</div>');
   }).join('');
 
@@ -255,7 +258,70 @@ LOTES_UI.detailLoad = async function (p) {
 /* Faixa "Volumes" da tela do lote (Matt, 27/09: "no lote criado — colocar
    `criar volumes`"). Calcula os pacotes de TODAS as peças (pacotes-engine.js),
    os pallets por pedido, e grava (data-pacotes.js). */
-LOTES_UI.faixaVolumes = function (b, v, erro) {
+/* Parâmetros do cálculo (pallet padrão, peso máx., limite de peça grande,
+   densidade). Ficam no navegador (localStorage); o que foi usado em cada lote
+   fica gravado em batches.volumes_opt. Presets de pallet: 48 × 40 pol (GMA,
+   padrão), 1200 × 1000 (ISO), 1200 × 800 (EUR). */
+LOTES_UI.K_VOLUMES_OPT = 'legno.volumes.opt.v1';
+LOTES_UI.PALLETS = [
+  { nome: '48 × 40 pol', planW: 1219, planD: 1016 },
+  { nome: '1200 × 1000 mm', planW: 1200, planD: 1000 },
+  { nome: '1200 × 800 mm', planW: 1200, planD: 800 }
+];
+LOTES_UI.volumesOpt = function () {
+  const d = PACOTES_DB.OPT_PADRAO();
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(LOTES_UI.K_VOLUMES_OPT) || 'null'); } catch (e) { s = null; }
+  if (!s) return d;
+  return { pesoMax: s.pesoMax || d.pesoMax, grandeMm: s.grandeMm || d.grandeMm, dens: s.dens || d.dens, parCamadas: s.parCamadas !== false,
+    pallet: Object.assign({}, d.pallet, s.pallet || {}) };
+};
+LOTES_UI.lerVolumesOpt = function () {
+  const $ = function (id) { return document.getElementById(id); };
+  if (!$('vol-opt-w')) return LOTES_UI.volumesOpt();
+  const n = function (id, padrao) { const v = Number($(id).value); return v > 0 ? v : padrao; };
+  const d = PACOTES_DB.OPT_PADRAO();
+  const planW = n('vol-opt-w', d.pallet.planW), planD = n('vol-opt-d', d.pallet.planD);
+  const preset = LOTES_UI.PALLETS.find(function (p) { return p.planW === planW && p.planD === planD; });
+  const opt = { pesoMax: n('vol-opt-peso', d.pesoMax), grandeMm: n('vol-opt-grande', d.grandeMm), dens: n('vol-opt-dens', d.dens),
+    parCamadas: $('vol-opt-par').checked,
+    pallet: { planW: planW, planD: planD, hMax: n('vol-opt-h', d.pallet.hMax), nome: preset ? preset.nome : planW + ' × ' + planD + ' mm' } };
+  try { localStorage.setItem(LOTES_UI.K_VOLUMES_OPT, JSON.stringify(opt)); } catch (e) { /* ok */ }
+  return opt;
+};
+LOTES_UI.presetPallet = function (i) {
+  const p = LOTES_UI.PALLETS[i];
+  if (!p) return;
+  document.getElementById('vol-opt-w').value = p.planW;
+  document.getElementById('vol-opt-d').value = p.planD;
+};
+LOTES_UI.camposVolumes = function (usado, aberto) {
+  const o = LOTES_UI.volumesOpt();
+  const campo = function (id, label, val, extra) {
+    return '<label class="erp-field"><span>' + label + '</span><input id="' + id + '" type="number" value="' + UI.esc(String(val)) + '"' + (extra || '') + '></label>';
+  };
+  const presets = LOTES_UI.PALLETS.map(function (p, i) {
+    return '<button type="button" class="erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.presetPallet(' + i + ')">' + UI.esc(p.nome) + '</button>';
+  }).join(' ');
+  return '<details class="apemb-cfg"' + (aberto ? ' open' : '') + '><summary>Configurar pallet e regras' +
+      (usado && usado.pallet ? ' <span class="erp-muted">(este lote foi calculado com ' + UI.esc(usado.pallet.nome || (usado.pallet.planW + ' × ' + usado.pallet.planD)) +
+        ', ' + usado.pesoMax + ' kg, grande &gt; ' + usado.grandeMm + ' mm)</span>' : '') + '</summary>' +
+    '<div class="erp-inline-fields" style="margin-top:6px">' +
+      campo('vol-opt-w', 'Pallet — comprimento (mm)', o.pallet.planW) +
+      campo('vol-opt-d', 'Pallet — largura (mm)', o.pallet.planD) +
+      campo('vol-opt-h', 'Altura máx. da carga (mm)', o.pallet.hMax) +
+      '<div class="emb-acao">' + presets + '</div>' +
+    '</div><div class="erp-inline-fields">' +
+      campo('vol-opt-peso', 'Peso máx. por volume (kg)', o.pesoMax) +
+      campo('vol-opt-grande', 'Peça grande a partir de (mm)', o.grandeMm) +
+      campo('vol-opt-dens', 'Densidade (kg/m³)', o.dens) +
+      '<label class="erp-field"><span>Camadas pares</span><input id="vol-opt-par" type="checkbox"' + (o.parCamadas ? ' checked' : '') + '></label>' +
+    '</div>' +
+    '<div class="erp-muted erp-xs">Vale pra próxima vez que clicar em Criar/Recriar volumes. Volume mais largo que o pallet vai em separado; volume mais comprido vai pro pallet especial.</div>' +
+  '</details>';
+};
+
+LOTES_UI.faixaVolumes = function (b, v, erro, abrirCfg) {
   const btn = function (label, cls, title) {
     return '<button type="button" class="erp-btn ' + (cls || '') + ' erp-btn-sm" title="' + UI.esc(title || '') + '" ' +
       'onclick="LOTES_UI.criarVolumes(\'' + b.id + '\', this)">' + label + '</button>';
@@ -270,7 +336,7 @@ LOTES_UI.faixaVolumes = function (b, v, erro) {
         '<div><div class="erp-strong">' + UI.pill('sem volumes', 'erp-pill-warn') + '</div>' +
         '<div class="erp-muted erp-small" style="margin-top:4px">Calcula os pacotes de todas as peças (módulo junto, até 25 kg, base sólida, camadas pares; peça &gt; 900 mm em pacote separado) e o pallet de cada pedido.</div></div>' +
         btn('📦 Criar volumes', '', 'Gera os pacotes e os pallets deste lote') +
-      '</div>');
+      '</div>' + LOTES_UI.camposVolumes(null, abrirCfg));
   }
   const pct = v.pecas ? Math.round(100 * v.apontadas / v.pecas) : 0;
   return UI.panel(null,
@@ -288,13 +354,14 @@ LOTES_UI.faixaVolumes = function (b, v, erro) {
         '<a class="erp-btn erp-btn-sm" href="#/volumes/' + b.id + '">Apontar + embalar</a>' +
         btn('↻ Recriar volumes', 'erp-btn-ghost', 'Recalcula do zero (apaga o apontamento, se houver)') +
       '</div>' +
-    '</div>');
+    '</div>' + LOTES_UI.camposVolumes(b.volumes_opt, abrirCfg));
 };
 
 LOTES_UI.criarVolumes = async function (batchId, btn, forcar) {
   LOTES_UI.busy(btn, true, 'Calculando…');
   try {
-    const r = await PACOTES_DB.criarVolumes(batchId, { forcar: !!forcar }, function (t) { if (btn) btn.textContent = t; });
+    const opt = Object.assign(LOTES_UI.lerVolumesOpt(), { forcar: !!forcar });
+    const r = await PACOTES_DB.criarVolumes(batchId, opt, function (t) { if (btn) btn.textContent = t; });
     LOTES_UI.toast(r.pacotes + ' volumes criados (' + r.pecas + ' peças' + (r.grandes ? ', ' + r.grandes + ' de peça grande' : '') + ') · ' +
       r.pallets + ' pallet(s) em ' + r.pedidos + ' pedido(s)' + (r.semLugar ? ' · ' + r.semLugar + ' volume(s) mais largo(s) que o pallet' : '') +
       (r.avisos.length ? ' · ' + r.avisos.join(' ') : ''));
@@ -443,7 +510,7 @@ LOTES_UI.detail = function (params, d) {
         : '<a class="erp-btn" href="#/lotes/' + b.id + '/plano">Gerar plano de corte</a>')) +
     '<div id="lotes-toast" style="display:none"></div>' +
     faixaPlano +
-    LOTES_UI.faixaVolumes(b, d.volumes, d.volumesErro) +
+    LOTES_UI.faixaVolumes(b, d.volumes, d.volumesErro, params && params.cfg === 'volumes') +
     '<div class="erp-grid erp-grid-4" style="margin-bottom:18px">' +
       UI.kpi('Status', UI.pill(st.label, st.pill), (b.batch_orders || b._orders || []).length + ' pedidos') +
       UI.kpi('Peças', totalPieces, b._pieces.length + ' linhas em ' + d.groups.length + ' materiais') +

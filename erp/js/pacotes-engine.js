@@ -276,6 +276,14 @@ function pallets(pacotes, cfg) {
       const its = pal.pecas.map(function (it) {
         return { id: it.peca.id, x: it.x, y: it.y, w: it.w, d: it.d, z: it.z, e: it.peca.e, peso: it.peca.peso || 0, parcial: !!it.parcial };
       });
+      // CENTRALIZADO no pallet (Matt, 27/09: "não encostados num dos cantos").
+      // O conjunto inteiro desloca junto — o apoio entre níveis não muda.
+      if (its.length) {
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        its.forEach(function (it) { x0 = Math.min(x0, it.x); x1 = Math.max(x1, it.x + it.w); y0 = Math.min(y0, it.y); y1 = Math.max(y1, it.y + it.d); });
+        const dx = Math.round((planW - (x1 - x0)) / 2 - x0), dy = Math.round((planD - (y1 - y0)) / 2 - y0);
+        its.forEach(function (it) { it.x += dx; it.y += dy; });
+      }
       its.sort(function (a, b) { return (a.z - b.z) || (a.y - b.y) || (a.x - b.x); });
       const niveis = [];
       its.forEach(function (it, k) {

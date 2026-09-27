@@ -169,7 +169,8 @@ PACOTES_DB.criarVolumes = async function (batchId, opt, avisar) {
     }));
     if (error) throw error;
   }
-  await LOTES.updateBatch(batchId, { volumes_created_at: new Date().toISOString(), volumes_opt: opt });
+  const optSalvo = Object.assign({}, opt); delete optSalvo.forcar;
+  await LOTES.updateBatch(batchId, { volumes_created_at: new Date().toISOString(), volumes_opt: optSalvo });
 
   return { pacotes: r.pacotes.length, pecas: src.pecas.length, grandes: r.pacotes.filter(function (p) { return p.tipo === 'grande'; }).length,
     pallets: planos.reduce(function (s, p) { return s + p.plano.pallets.length; }, 0), pedidos: planos.length,
