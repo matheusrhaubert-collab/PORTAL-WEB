@@ -228,9 +228,9 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
     /* removed_piece_ids (migration 134): peça removida manualmente pelo
        cliente no modal "Peças do móvel" não pode ser cortada/furada aqui. */
     const removidos = item.removed_piece_ids || [];
-    const efetivas = todasPecas.filter(function (p) {
-      return (!p.client_optional || escolhidos.includes(p.id)) && !removidos.includes(p.id);
-    });
+    const efetivas = filterRemovedPiecesDeep(todasPecas.filter(function (p) {
+      return !p.client_optional || escolhidos.includes(p.id);
+    }), removidos); /* recursivo: porta/prateleira aninhada (29/09) */
 
     /* colorsByRole a partir do que o cliente escolheu no pedido.
        ATENÇÃO AO FORMATO (errei isto na 1ª versão, 2026-08-16): o

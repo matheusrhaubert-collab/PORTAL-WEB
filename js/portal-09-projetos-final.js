@@ -326,9 +326,8 @@ async function computeProjectSlotsTotal(slotConfigs) {
       if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
       const optionalIds = cfg.selected_optional_ids || [];
       const removedIds = cfg.removed_piece_ids || [];
-      const effectivePieces = piecesList
-        .filter((p) => !p.client_optional || optionalIds.includes(p.id))
-        .filter((p) => !removedIds.includes(p.id));
+      const effectivePieces = filterRemovedPiecesDeep(piecesList
+        .filter((p) => !p.client_optional || optionalIds.includes(p.id)), removedIds);
       await loadModuleColors(module.id); // preenche moduleColorsByRole pra ESTE módulo, igual restoreFavoriteProject
       const colorsByRole = {};
       (cfg.selected_colors || []).forEach((sc) => {

@@ -2479,7 +2479,7 @@ function projectSlotEffectivePieces(slot) {
   const removidas = slot.removedPieceIds;
   const base = projectSlotAllPiecesBeforeRemoval(slot);
   if (!removidas || !removidas.length) return base;
-  return base.filter((p) => !removidas.includes(p.id));
+  return filterRemovedPiecesDeep(base, removidas); // recursivo: porta/prateleira aninhada (29/09)
 }
 
 // ==========================================================================

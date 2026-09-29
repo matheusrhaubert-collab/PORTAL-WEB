@@ -70,9 +70,8 @@ PECA3D.load = async function (p) {
      selecionada, peça removida manualmente pelo cliente/vendedor não entra. */
   const selectedOptionalIds = orderItem.selected_optional_component_ids || [];
   const removedIds = orderItem.removed_piece_ids || [];
-  const effectivePieces = rawPieces
-    .filter(function (pc) { return !pc.client_optional || selectedOptionalIds.includes(pc.id); })
-    .filter(function (pc) { return !removedIds.includes(pc.id); });
+  const effectivePieces = filterRemovedPiecesDeep(rawPieces
+    .filter(function (pc) { return !pc.client_optional || selectedOptionalIds.includes(pc.id); }), removedIds); /* recursivo (29/09) */
 
   const colorsByRole = {};
   (orderItem.selected_colors || []).forEach(function (sc) {

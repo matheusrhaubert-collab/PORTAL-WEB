@@ -94,9 +94,8 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
       // removed_piece_ids (migration 134): peça removida manualmente pelo
       // cliente no modal "Peças do móvel" não pode ser cortada/furada aqui.
       const removedIds = item.removed_piece_ids || [];
-      const effectivePieces = todasPecas
-        .filter((p) => !p.client_optional || selectedIds.includes(p.id))
-        .filter((p) => !removedIds.includes(p.id));
+      const effectivePieces = filterRemovedPiecesDeep(todasPecas
+        .filter((p) => !p.client_optional || selectedIds.includes(p.id)), removedIds); // recursivo (29/09)
       const containerDims = { W: item.width_mm, H: item.height_mm, D: item.depth_mm };
       const parts = resolvePiecesForViewer(
         effectivePieces, containerDims, {}, item.shelf_quantities || {}, item.dim_overrides || {}

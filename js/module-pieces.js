@@ -311,6 +311,38 @@ async function loadRecursivePiecesForModule(moduleId) {
        (is_decoration + presets com rótulo). Campo a mais não atrapalha quem
        não usa.
    ========================================================================== */
+// ==========================================================================
+// REMOVER PEÇA ANINHADA (2026-09-29) — Matt: "tiro a porta do módulo, aparece
+// eliminada na lista mas continua no ambiente e cobrando". Causa: a porta
+// (e a prateleira) de vários módulos é uma PEÇA-MÓDULO (is_module, com
+// child_pieces — ex. "Porta (1 folha)" → peça "Porta"). A lista "Peças do
+// móvel" mostra a peça de DENTRO e grava o id DELA em removed_piece_ids, mas
+// todos os filtros (preço, 3D, pedido, furação) só olhavam o 1º nível —
+// o id interno nunca batia e a porta seguia viva. Este é o filtro ÚNICO,
+// recursivo, que todos os pontos usam agora:
+//   - remove peça de qualquer nível cujo id esteja em removedIds;
+//   - peça-módulo que ficou SEM nenhum filho sai inteira (senão a dobradiça /
+//     corrediça que mora nela continuaria sendo cobrada);
+//   - nunca muta o array original (slot.pieces é reaproveitado pra restaurar).
+// Limitação que já existia continua: o mesmo id interno usado em N cópias
+// (ex. 2 folhas da mesma porta, N prateleiras) sai junto.
+function filterRemovedPiecesDeep(piecesList, removedIds) {
+  if (!Array.isArray(piecesList)) return piecesList;
+  if (!removedIds || !removedIds.length) return piecesList;
+  const out = [];
+  piecesList.forEach((p) => {
+    if (!p || removedIds.includes(p.id)) return;
+    if (Array.isArray(p.child_pieces) && p.child_pieces.length) {
+      const kids = filterRemovedPiecesDeep(p.child_pieces, removedIds);
+      if (!kids.length) return;
+      out.push(kids.length === p.child_pieces.length ? p : Object.assign({}, p, { child_pieces: kids }));
+      return;
+    }
+    out.push(p);
+  });
+  return out;
+}
+
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
   // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.
