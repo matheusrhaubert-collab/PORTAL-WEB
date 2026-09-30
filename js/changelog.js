@@ -31,6 +31,57 @@
 // bolinha de "tem novidade" atualizam sozinhos a partir do item [0] daqui.
 window.LEGNO_CHANGELOG = [
   {
+    version: '1.004',
+    date: '2026-09-30',
+    items: {
+      pt: [
+        "Novo módulo Aéreo de Canto 45°: porta na diagonal (encaixada no vão entre as laterais), dobradiça 135° com amortecedor, prateleira chanfrada e veio da porta na vertical.",
+        "Novo módulo Base de Canto 90° (em L): duas portas com dobradiça 165°, larguras de cada lado independentes, prateleiras, e opção de rodapé (toe) ou pés plásticos.",
+        "Nova ferramenta LED embutido na barra do módulo: escolha a peça, em cima ou embaixo, distância do fundo e margem nas pontas. O LED aparece no 3D e na foto realista, o rasgo sai no arquivo da máquina e a usinagem por metro entra no orçamento.",
+        "Novo: conectar um módulo a qualquer face de outro módulo ou parede (botão direito), com a janela \"Reposicionar\" em duas vistas para ajustar a posição e girar.",
+        "Novo: duplicar módulo agora pergunta a direção (esquerda, direita, cima, baixo, frente, atrás) e quantas cópias.",
+        "Novo: Ctrl+C num módulo e Ctrl+V no ponto do ambiente onde está o mouse para colar uma cópia ali.",
+        "Novo: clicar numa parede ou no piso mostra nome e medidas no canto do visualizador 3D; a parede pode ser esticada pelas setas das pontas sem mexer os móveis.",
+        "Novo: clicar numa peça da listagem de peças faz ela piscar no desenho 3D.",
+        "Arrastar um módulo até a esquina agora trava no canto, sem pular sozinho para a parede vizinha.",
+        "Peças chanfradas e em L saem com o contorno certo no arquivo da máquina; furação de borda a borda entre bases e travessas vizinhas; travessa longa vai até o fundo.",
+        "Corrigido: salvar/atualizar projeto podia mostrar sucesso sem gravar — agora avisa quando não foi salvo.",
+        "Corrigido: porta inserida no Construtor depois de ajustar o vão saía na posição antiga.",
+        "Corrigido: fita de borda aparecendo trocada em peças longas no 3D, e contra-furo fantasma em peças estreitas."
+      ],
+      en: [
+        "New 45° Corner Wall Cabinet: diagonal door (fitted in the opening between the sides), 135° soft-close hinge, chamfered shelf and vertical door grain.",
+        "New 90° Corner Base Cabinet (L-shaped): two doors with 165° hinges, independent widths for each side, shelves, and toe kick or plastic legs option.",
+        "New built-in LED tool in the module toolbar: pick the piece, top or bottom, distance from the back and end margin. The LED shows in 3D and in the photorealistic render, the groove goes into the machine file and machining per meter is added to the quote.",
+        "New: connect a module to any face of another module or wall (right click), with the \"Reposition\" window in two views to adjust position and rotate.",
+        "New: duplicating a module now asks for the direction (left, right, up, down, front, back) and how many copies.",
+        "New: Ctrl+C on a module and Ctrl+V at the spot in the room where the mouse is to paste a copy there.",
+        "New: clicking a wall or the floor shows its name and size in the corner of the 3D viewer; walls can be stretched with the end arrows without moving the furniture.",
+        "New: clicking a piece in the parts list makes it blink in the 3D drawing.",
+        "Dragging a module to the corner now stops at the corner, without jumping to the next wall on its own.",
+        "Chamfered and L-shaped pieces get the right outline in the machine file; edge-to-edge drilling between neighboring bottoms and stretchers; the long stretcher now reaches the back panel.",
+        "Fixed: saving/updating a project could show success without saving — it now warns when nothing was saved.",
+        "Fixed: a door inserted in the Builder after adjusting the opening came out in the old position.",
+        "Fixed: edge banding showing on the wrong side of long pieces in 3D, and phantom counter-holes on narrow pieces."
+      ],
+      es: [
+        "Nuevo módulo Aéreo de Esquina 45°: puerta en diagonal (encajada en el hueco entre los laterales), bisagra 135° con cierre suave, estante chaflanado y veta de la puerta en vertical.",
+        "Nuevo módulo Base de Esquina 90° (en L): dos puertas con bisagra 165°, anchos independientes de cada lado, estantes y opción de zócalo o patas plásticas.",
+        "Nueva herramienta LED empotrado en la barra del módulo: elija la pieza, arriba o abajo, distancia del fondo y margen en las puntas. El LED aparece en el 3D y en la foto realista, la ranura sale en el archivo de la máquina y el mecanizado por metro entra en el presupuesto.",
+        "Nuevo: conectar un módulo a cualquier cara de otro módulo o pared (botón derecho), con la ventana \"Reposicionar\" en dos vistas para ajustar la posición y girar.",
+        "Nuevo: duplicar módulo ahora pregunta la dirección (izquierda, derecha, arriba, abajo, adelante, atrás) y cuántas copias.",
+        "Nuevo: Ctrl+C en un módulo y Ctrl+V en el punto del ambiente donde está el mouse para pegar una copia allí.",
+        "Nuevo: hacer clic en una pared o en el piso muestra nombre y medidas en la esquina del visor 3D; la pared se puede estirar con las flechas de las puntas sin mover los muebles.",
+        "Nuevo: hacer clic en una pieza de la lista de piezas la hace parpadear en el dibujo 3D.",
+        "Arrastrar un módulo hasta la esquina ahora se detiene en el rincón, sin saltar solo a la pared vecina.",
+        "Piezas chaflanadas y en L salen con el contorno correcto en el archivo de la máquina; perforación de canto a canto entre bases y travesaños vecinos; el travesaño largo llega hasta el fondo.",
+        "Corregido: guardar/actualizar el proyecto podía mostrar éxito sin guardar — ahora avisa cuando no se guardó.",
+        "Corregido: la puerta insertada en el Constructor después de ajustar el hueco salía en la posición anterior.",
+        "Corregido: tapacanto apareciendo del lado equivocado en piezas largas en el 3D, y contraperforación fantasma en piezas angostas."
+      ]
+    }
+  },
+  {
     version: '1.003',
     date: '2026-09-07',
     items: {
