@@ -467,17 +467,143 @@
   // pieceDims = saída de calculatePiece (width_mm/height_mm/depth_mm e
   // edge_band_m já resolvidos). Precisa das medidas REAIS porque a parte
   // variável é toda em cima delas.
-  // LED EMBUTIDO (2026-09-30): metros de rasgo de uma peça com `led`
-  // (applyLedConfigsDeep, js/module-pieces.js). O LED corre na LARGURA da
-  // peça horizontal (eixo X do módulo), de ponta a ponta menos a margem de
-  // cada lado. Mesma conta do desenho e do .ban — ver ledComprimentoMm.
-  function ledComprimentoMm(led, widthMm) {
-    if (!led) return 0;
-    return Math.max(num(widthMm) - 2 * num(led.margem_mm), 0);
+  // LED EMBUTIDO (2026-09-30) — GEOMETRIA ÚNICA do LED. Preço (metros de
+  // usinagem), 3D (viewer3d), foto (photoreal), .ban (drilling) e a janela
+  // do LED (portal-06c, vista 2D) leem TODOS daqui, então o desenho, o
+  // arquivo da máquina e o orçamento nunca discordam.
+  //
+  // 2ª rodada (mesmo dia), Matt: "todas as peças devem poder receber o canal
+  // do LED, lateral, fundo..." + "olhando de frente qualquer peça, o LED pode
+  // ser horizontal ou vertical e começar e parar onde precisar (a margem das
+  // bordas deve ser individual)". Então o LED deixou de ser "na largura da
+  // peça deitada, X do fundo" e passou a ser um retângulo na VISTA 2D da peça:
+  //
+  //   vista (a = horizontal 0..W da esquerda, b = vertical 0..H de cima):
+  //     espessura em Y (base/topo/prateleira): vista de CIMA — a = X, b = Z
+  //       (fundo em cima, frente embaixo)
+  //     espessura em X (laterais): vista pelo lado ESQUERDO — a = Z (fundo à
+  //       esquerda, frente à direita), b = altura (cima em cima)
+  //     espessura em Z (fundo, porta, rodapé): vista de FRENTE — a = X, b = Y
+  //
+  //   led = { orientacao: 'h'|'v', face: 'A'|'B', pos_mm, margem_ini_mm,
+  //           margem_fim_mm, largura_mm, profundidade_mm, modelo_id, ... }
+  //     'h': corre na horizontal da vista, de margem_ini (esquerda) até
+  //          W - margem_fim (direita); a borda de cima do rasgo fica a pos_mm
+  //          da borda de CIMA da vista.
+  //     'v': corre na vertical, de margem_ini (cima) até H - margem_fim
+  //          (baixo); a borda esquerda do rasgo fica a pos_mm da ESQUERDA.
+  //     face 'A' = lado POSITIVO do eixo da espessura (em cima / lado direito
+  //          / frente), 'B' = negativo (embaixo / lado esquerdo / trás).
+  //
+  // Config da 1ª rodada (face 'superior'|'inferior', dist_fundo_mm,
+  // margem_mm) continua valendo — ledNormaliza traduz: era sempre peça
+  // deitada, 'h', pos = distância do fundo, margem igual nas duas pontas.
+  function ledSplitAxes(w, h, d, positioning) {
+    let tKey;
+    if (positioning === 'horizontal') tKey = 'h';
+    else if (positioning === 'vertical') tKey = 'w';
+    else if (positioning === 'vertical_no_plano' || positioning === 'horizontal_no_plano') tKey = 'd';
+    else { const arr = [w, h, d]; tKey = ['w', 'h', 'd'][arr.indexOf(Math.min(w, h, d))]; }
+    const dims = { w: w, h: h, d: d };
+    const rest = ['w', 'h', 'd'].filter(function (k) { return k !== tKey; });
+    return { thickness: dims[tKey], faceA: dims[rest[0]], faceB: dims[rest[1]], tKey: tKey, aKey: rest[0], bKey: rest[1] };
+  }
+  // Eixos da peça no MÓDULO — mesma tabela de drilling.pieceBox (u/v = plano
+  // local da furação, t = espessura). sizes = medida em cada eixo do módulo.
+  function ledEixos(part) {
+    if (!part) return null;
+    const s = ledSplitAxes(num(part.width_mm), num(part.height_mm), num(part.depth_mm), part.positioning);
+    const role = part.position_role || 'other';
+    let tAxis, uAxis, vAxis, faceA = s.faceA, faceB = s.faceB, mirror = null;
+    if (role === 'left' || role === 'right') {
+      tAxis = 'x'; uAxis = 'y'; vAxis = 'z'; if (role === 'right') mirror = 'v';
+    } else if (role === 'drawer_side') {
+      tAxis = 'x'; uAxis = 'y'; vAxis = 'z';
+      faceA = Math.min(s.faceA, s.faceB); faceB = Math.max(s.faceA, s.faceB);
+    } else if (role === 'top' || role === 'bottom' || role === 'countertop' || role === 'shelf') {
+      tAxis = 'y'; uAxis = 'x'; vAxis = 'z';
+    } else if (role === 'back' || role === 'baseboard') {
+      tAxis = 'z'; uAxis = 'x'; vAxis = 'y'; if (part._viradaU) mirror = 'u';
+    } else {
+      const ax = { w: 'x', h: 'y', d: 'z' };
+      tAxis = ax[s.tKey]; uAxis = ax[s.aKey]; vAxis = ax[s.bKey];
+    }
+    const sizes = {};
+    sizes[tAxis] = s.thickness; sizes[uAxis] = faceA; sizes[vAxis] = faceB;
+    return { sizes: sizes, tAxis: tAxis, uAxis: uAxis, vAxis: vAxis, mirror: mirror, thickness: s.thickness, faceA: faceA, faceB: faceB };
+  }
+  // Vista 2D por eixo da espessura. bordas = nome de cada borda da vista
+  // (chave de i18n led.edge_*), faces = nome do lado A/B (led.side_*).
+  const LED_VISTAS = {
+    y: { h: 'x', v: 'z', vInverte: false, nome: 'cima',
+      bordas: { esq: 'esquerda', dir: 'direita', cima: 'fundo', baixo: 'frente' }, faces: { A: 'cima', B: 'baixo' } },
+    x: { h: 'z', v: 'y', vInverte: true, nome: 'lado',
+      bordas: { esq: 'fundo', dir: 'frente', cima: 'cima', baixo: 'baixo' }, faces: { A: 'direita', B: 'esquerda' } },
+    z: { h: 'x', v: 'y', vInverte: true, nome: 'frente',
+      bordas: { esq: 'esquerda', dir: 'direita', cima: 'cima', baixo: 'baixo' }, faces: { A: 'frente', B: 'tras' } }
+  };
+  function ledNormaliza(led) {
+    if (!led || typeof led !== 'object') return null;
+    const out = Object.assign({}, led);
+    out.orientacao = led.orientacao === 'v' ? 'v' : 'h';
+    out.face = (led.face === 'A' || led.face === 'B') ? led.face : (led.face === 'superior' ? 'A' : 'B');
+    const m = led.margem_mm;
+    out.pos_mm = Math.max(num(led.pos_mm != null ? led.pos_mm : led.dist_fundo_mm), 0);
+    out.margem_ini_mm = Math.max(num(led.margem_ini_mm != null ? led.margem_ini_mm : m), 0);
+    out.margem_fim_mm = Math.max(num(led.margem_fim_mm != null ? led.margem_fim_mm : m), 0);
+    out.largura_mm = num(led.largura_mm);
+    out.profundidade_mm = num(led.profundidade_mm);
+    return out;
+  }
+  // Retângulo do rasgo: na vista (a0..a1 × b0..b1) e nos eixos do módulo
+  // (ranges[x|y|z] = [de, até] em mm a partir do canto mínimo da peça,
+  // espessura incluída: o rasgo entra `profundidade_mm` pelo lado escolhido).
+  // erro: null | 'modelo' | 'espessura' | 'curto' | 'fora'.
+  function ledLayout(ledIn, sizes, tAxis) {
+    const led = ledNormaliza(ledIn);
+    const vi = LED_VISTAS[tAxis];
+    if (!led || !sizes || !vi) return null;
+    const W = num(sizes[vi.h]), H = num(sizes[vi.v]), T = num(sizes[tAxis]);
+    const larg = led.largura_mm, prof = led.profundidade_mm;
+    let a0, a1, b0, b1;
+    if (led.orientacao === 'v') { a0 = led.pos_mm; a1 = a0 + larg; b0 = led.margem_ini_mm; b1 = H - led.margem_fim_mm; }
+    else { a0 = led.margem_ini_mm; a1 = W - led.margem_fim_mm; b0 = led.pos_mm; b1 = b0 + larg; }
+    const comprimento = led.orientacao === 'v' ? b1 - b0 : a1 - a0;
+    let erro = null;
+    if (!(larg > 0) || !(prof > 0)) erro = 'modelo';
+    else if (prof >= T) erro = 'espessura';
+    else if (!(comprimento > 0)) erro = 'curto';
+    else if (a1 > W + 0.01 || b1 > H + 0.01) erro = 'fora';
+    const ranges = {};
+    ranges[vi.h] = [a0, a1];
+    ranges[vi.v] = vi.vInverte ? [H - b1, H - b0] : [b0, b1];
+    const lado = led.face === 'A' ? 1 : -1;
+    ranges[tAxis] = lado > 0 ? [T - prof, T] : [0, prof];
+    return {
+      led: led, vista: vi, W: W, H: H, T: T, a0: a0, a1: a1, b0: b0, b1: b1,
+      comprimento_mm: Math.max(comprimento, 0),
+      eixoComprimento: led.orientacao === 'v' ? vi.v : vi.h,
+      eixoLargura: led.orientacao === 'v' ? vi.h : vi.v,
+      posMax: Math.max((led.orientacao === 'v' ? W : H) - larg, 0),
+      ranges: ranges, lado: lado, erro: erro
+    };
+  }
+  function ledLayoutDaPeca(part, led) {
+    const e = ledEixos(part);
+    return e ? ledLayout(led || (part && part.led), e.sizes, e.tAxis) : null;
+  }
+  // metros de rasgo (usinagem por metro no orçamento)
+  function ledComprimentoMm(led, part) {
+    if (!led || !part) return 0;
+    const L = ledLayoutDaPeca(part, led);
+    return (L && !L.erro) ? L.comprimento_mm : 0;
   }
   function ledMetros(piece, pieceDims) {
     if (!piece || !piece.led || !pieceDims) return 0;
-    return ledComprimentoMm(piece.led, pieceDims.width_mm) / 1000;
+    const dims = Object.assign({}, piece, {
+      width_mm: pieceDims.width_mm, height_mm: pieceDims.height_mm, depth_mm: pieceDims.depth_mm
+    });
+    return ledComprimentoMm(piece.led, dims) / 1000;
   }
 
   function processLaborFor(piece, pieceDims) {
@@ -1529,7 +1655,7 @@
     setProcessLabor,
     setHoleCounts,
     processLaborFor,
-    ledComprimentoMm, ledMetros,
+    ledComprimentoMm, ledMetros, ledEixos, ledLayout, ledLayoutDaPeca, ledNormaliza,
     // Migration 119 — itens comprados. Os três são publicadores (o chamador
     // avisa ANTES de pedir o preço), mesma mecânica de setProcessLabor/
     // setHoleCounts e pelo mesmo motivo: são ~8 pontos chamando

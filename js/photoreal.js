@@ -361,6 +361,7 @@ const Photoreal = (() => {
       ? contentOrGeometry
       : new T.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture));
     content.position.set(x, y, z);
+    if (ehGeometria && ledPecaAtualPh && ledPecaAtualPh.led) ledMeshesPh(content, contentOrGeometry, ledPecaAtualPh); // LED embutido
     parentGroup.add(content);
     return content;
   }
@@ -418,7 +419,10 @@ const Photoreal = (() => {
       // composição) — mesma correção de meia-altura dos outros papéis.
       const content = resolveContentPh(part, doorW, faceB, thickness);
       const x = cursorX + doorW / 2;
-      emitInto(parentGroup, content, part.color, x + offX, faceB / 2 + offY + legH, D / 2 + thickness / 2 + gap + offZ, resolveGrainRotate(part, doorW, faceB, false));
+      const antesLed = ledPecaAtualPh; ledPecaAtualPh = part; // LED embutido na porta
+      try {
+        emitInto(parentGroup, content, part.color, x + offX, faceB / 2 + offY + legH, D / 2 + thickness / 2 + gap + offZ, resolveGrainRotate(part, doorW, faceB, false));
+      } finally { ledPecaAtualPh = antesLed; }
       cursorX = x + doorW / 2 + gap;
     });
   }
@@ -1220,6 +1224,11 @@ const Photoreal = (() => {
   };
 
   function placePieceInBox(part, parentGroup, W, H, D, index, count, bounds) {
+    const antes = ledPecaAtualPh;
+    ledPecaAtualPh = part || null;
+    try { placePieceInBoxInner(part, parentGroup, W, H, D, index, count, bounds); } finally { ledPecaAtualPh = antes; }
+  }
+  function placePieceInBoxInner(part, parentGroup, W, H, D, index, count, bounds) {
     const w = Math.max((part.width_mm || 0) / 1000, 0.002), h = Math.max((part.height_mm || 0) / 1000, 0.002), d = Math.max((part.depth_mm || 0) / 1000, 0.002);
     const role = part.position_role || 'other';
     const gap = 0.002;
@@ -1265,8 +1274,7 @@ const Photoreal = (() => {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       // Chanfro 45° (aéreo de canto) — null sem chanfro, cai no de sempre.
       const content = buildChanfroGeometryPh(part, faceA, thickness, faceB) || resolveContentPh(part, faceA, thickness, faceB);
-      attachLedPh(emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true)),
-        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
+      emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       // Recorte em L numa lateral cadastrada como 'back' (base de canto 90°,
@@ -1281,8 +1289,7 @@ const Photoreal = (() => {
       const innerHigh = (bounds && bounds.innerTopY) || H;
       const span = Math.max(innerHigh - innerLow, 0.01);
       const y = innerLow + span * ((index + 1) / (count + 1));
-      attachLedPh(emitInto(parentGroup, content, part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true)),
-        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
+      emitInto(parentGroup, content, part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'drawer') {
       const slotH = H / count;
       const drawerH = Math.min(h, slotH * 0.9), drawerW = Math.min(w, W * 0.97), drawerD = Math.min(d, D * 0.9);
@@ -1303,8 +1310,7 @@ const Photoreal = (() => {
       emitInto(parentGroup, resolveContentPh(part, faceA, faceB, thickness), part.color, -W / 2 + faceA / 2 + offX, faceB / 2 + offY, -D / 2 + thickness / 2 + offZ, resolveGrainRotate(part, faceA, faceB, false));
     } else if (role === 'countertop') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      attachLedPh(emitInto(parentGroup, resolveContentPh(part, faceA, thickness, faceB), part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true)),
-        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
+      emitInto(parentGroup, resolveContentPh(part, faceA, thickness, faceB), part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'free' && DECOR_BUILDERS[part.shape_type]) {
       // Itens de decoração com geometria própria (migration 141) — cópia
       // fiel do dispatch por shape_type em js/viewer3d.js (ver comentário
@@ -1325,33 +1331,47 @@ const Photoreal = (() => {
       const swap = rotY === 90 || rotY === 270;
       const fw = swap ? d : w, fd = swap ? w : d;
       const objFree = emitInto(parentGroup, content, part.color, -W / 2 + fw / 2 + offX, h / 2 + offY + legH, -D / 2 + fd / 2 + offZ, resolveGrainRotate(part, w, h, false));
-      if (!rotY && h <= w && h <= d) attachLedPh(objFree, part, w, h, d); // LED embutido (2026-09-30), peça livre deitada
     }
     // 'other' -> não desenha (igual viewer3d.js).
   }
 
-  // ---- LED EMBUTIDO (2026-09-30) — porta de viewer3d.buildLedStrip, só que
-  // o difusor é EMISSIVO: no path tracer material emissivo é fonte de luz de
-  // verdade, então o LED ilumina a peça de baixo na foto. Coordenadas LOCAIS
-  // da peça (origem no centro), pendurado no objeto que emitInto devolve.
-  function attachLedPh(obj, part, faceA, thickness, faceB) {
-    const led = part && part.led;
-    if (!obj || !led || part.tilt_angle_deg) return;
-    const larg = (Number(led.largura_mm) || 0) / 1000;
-    const margem = Math.max(Number(led.margem_mm) || 0, 0) / 1000;
-    const dist = Math.max(Number(led.dist_fundo_mm) || 0, 0) / 1000;
-    const comp = faceA - 2 * margem;
-    if (!(larg > 0) || !(comp > 0) || dist + larg > faceB + 1e-5) return;
-    const lado = led.face === 'superior' ? 1 : -1;
-    const zc = -faceB / 2 + dist + larg / 2;
-    const yFace = lado * thickness / 2;
-    const perfil = new T.Mesh(new T.BoxGeometry(comp, 0.0006, larg),
-      new T.MeshStandardMaterial({ color: 0xb9bcc0, metalness: 0.6, roughness: 0.35 }));
-    perfil.position.set(0, yFace + lado * 0.0003, zc);
-    const difusor = new T.Mesh(new T.BoxGeometry(Math.max(comp - 0.002, 0.001), 0.0004, Math.max(larg - 0.005, 0.002)),
-      new T.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffe2b0, emissiveIntensity: 6, roughness: 0.9 }));
-    difusor.position.set(0, yFace + lado * 0.0008, zc);
-    obj.add(perfil); obj.add(difusor);
+  // ---- LED EMBUTIDO (2026-09-30) — porta de viewer3d.ledStripFromGeometry,
+  // só que o difusor é EMISSIVO: no path tracer material emissivo é fonte de
+  // luz de verdade, então o LED ilumina a peça vizinha na foto. Geometria
+  // ÚNICA em Pricing.ledLayout. Pendurado em emitInto (toda peça-folha passa
+  // por lá) usando ledPecaAtualPh, publicada por placePieceInBox/
+  // placeFrontGroup em volta da emissão de cada peça.
+  let ledPecaAtualPh = null;
+  function ledMeshesPh(mesh, geometry, part) {
+    if (!part || !part.led || part.tilt_angle_deg || !geometry || !geometry.isBufferGeometry) return;
+    const P = (typeof Pricing !== 'undefined') ? Pricing : null;
+    if (!P || !P.ledLayout) return;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const bb = geometry.boundingBox;
+    const sz = { x: (bb.max.x - bb.min.x) * 1000, y: (bb.max.y - bb.min.y) * 1000, z: (bb.max.z - bb.min.z) * 1000 };
+    const e = P.ledEixos(part);
+    const menor = ['x', 'y', 'z'].reduce((m, k) => (sz[k] < sz[m] ? k : m), 'x');
+    let tAxis = e && e.tAxis;
+    if (!tAxis || Math.abs(sz[tAxis] - sz[menor]) > 0.5) tAxis = menor;
+    const L = P.ledLayout(part.led, sz, tAxis);
+    if (!L || L.erro) return;
+    const faceCoord = L.lado > 0 ? bb.max[tAxis] : bb.min[tAxis];
+    const mk = (espessura, encolheComp, encolheLarg, afasta, material) => {
+      const s = {}, c = {};
+      ['x', 'y', 'z'].forEach((k) => {
+        const a = L.ranges[k][0] / 1000 + bb.min[k], b = L.ranges[k][1] / 1000 + bb.min[k];
+        c[k] = (a + b) / 2; s[k] = b - a;
+      });
+      s[L.eixoComprimento] = Math.max(s[L.eixoComprimento] - encolheComp, 0.001);
+      s[L.eixoLargura] = Math.max(s[L.eixoLargura] - encolheLarg, 0.001);
+      s[tAxis] = espessura; c[tAxis] = faceCoord + L.lado * afasta;
+      const m = new T.Mesh(new T.BoxGeometry(s.x, s.y, s.z), material);
+      m.position.set(c.x, c.y, c.z);
+      return m;
+    };
+    mesh.add(mk(0.0006, 0, 0, 0.0003, new T.MeshStandardMaterial({ color: 0xb9bcc0, metalness: 0.6, roughness: 0.35 })));
+    mesh.add(mk(0.0004, 0.002, 0.005, 0.0008,
+      new T.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffe2b0, emissiveIntensity: 6, roughness: 0.9 })));
   }
 
   function buildAssembly(parts, W, H, D, isRoot) {

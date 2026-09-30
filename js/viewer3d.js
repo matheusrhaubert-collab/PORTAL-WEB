@@ -1435,6 +1435,11 @@ const Viewer3D = (function () {
     const group = new THREE.Group();
     group.add(mesh);
     if (edges) group.add(edges);
+    // LED embutido (2026-09-30) — ver ledStripFromGeometry.
+    if (activePart && activePart.led) {
+      const strip = ledStripFromGeometry(contentOrGeometry, activePart);
+      if (strip) group.add(strip);
+    }
     return group;
   }
 
@@ -2082,46 +2087,55 @@ const Viewer3D = (function () {
   }
 
   // ---- LED EMBUTIDO (2026-09-30) ----
-  // Perfil de alumínio embutido no rasgo + difusor aceso, na face de cima ou
-  // de baixo de uma peça HORIZONTAL (base/topo/prateleira/peça livre
-  // deitada). Mesma geometria do .ban (drilling.js ledRect): corre na LARGURA
-  // da peça de margem a largura - margem, começa a dist_fundo_mm do FUNDO
-  // (borda do rasgo) e tem largura_mm. Devolve um Group em coordenadas LOCAIS
-  // da peça (origem no centro dela) — quem chama pendura no objeto que o
-  // emit() devolveu, então ele gira/abre/some junto com a peça.
+  // Perfil de alumínio + difusor aceso na face da peça, onde o rasgo sai no
+  // .ban. Geometria ÚNICA em Pricing.ledLayout (a mesma do .ban, do preço e
+  // da vista 2D da janela do LED). 2ª rodada: vale pra QUALQUER peça-chapa
+  // (lateral, fundo, porta...), horizontal ou vertical — por isso o LED é
+  // pendurado aqui, em buildContentGroup (por onde TODA peça-folha passa,
+  // dentro do comPeca que publica activePart), em vez de em cada papel.
+  // A caixa da geometria (boundingBox, frame local da peça = eixos do módulo)
+  // dá o canto mínimo e as medidas reais em cada eixo; Pricing.ledEixos diz
+  // qual eixo é a espessura. Vai DENTRO do content: gira/abre (porta) e some
+  // (camadas) junto com a peça.
   //
   // O difusor é MeshBasicMaterial (não depende da luz da cena: "aceso" em
   // qualquer ângulo). Um pouco pra fora da face (0,4mm) pra não brigar com
   // ela no z-buffer. A foto realista tem a própria versão (photoreal.js), com
-  // material EMISSIVO — lá o LED ilumina de verdade a peça de baixo.
+  // material EMISSIVO — lá o LED ilumina de verdade a peça vizinha.
   const LED_COR_DIFUSOR = 0xfff1d0;   // branco quente (3000K aprox.)
   const LED_COR_PERFIL = 0xb9bcc0;    // alumínio
-  function buildLedStrip(part, faceA, thickness, faceB) {
-    const led = part && part.led;
-    if (!led) return null;
-    const larg = (Number(led.largura_mm) || 0) / 1000;
-    const margem = Math.max(Number(led.margem_mm) || 0, 0) / 1000;
-    const dist = Math.max(Number(led.dist_fundo_mm) || 0, 0) / 1000;
-    const comp = faceA - 2 * margem;
-    if (!(larg > 0) || !(comp > 0) || dist + larg > faceB + 1e-5) return null;
-    const lado = led.face === 'superior' ? 1 : -1;
-    const zc = -faceB / 2 + dist + larg / 2;
-    const yFace = lado * thickness / 2;
+  function ledStripFromGeometry(geometry, part) {
+    if (!part || !part.led || part.tilt_angle_deg || !geometry || !geometry.isBufferGeometry) return null;
+    if (typeof Pricing === 'undefined' || !Pricing.ledLayout) return null;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const bb = geometry.boundingBox;
+    const sz = { x: (bb.max.x - bb.min.x) * 1000, y: (bb.max.y - bb.min.y) * 1000, z: (bb.max.z - bb.min.z) * 1000 };
+    const e = Pricing.ledEixos(part);
+    const menor = ['x', 'y', 'z'].reduce((m, k) => (sz[k] < sz[m] ? k : m), 'x');
+    let tAxis = e && e.tAxis;
+    if (!tAxis || Math.abs(sz[tAxis] - sz[menor]) > 0.5) tAxis = menor;
+    const L = Pricing.ledLayout(part.led, sz, tAxis);
+    if (!L || L.erro) return null;
+    const lado = L.lado;
+    const faceCoord = lado > 0 ? bb.max[tAxis] : bb.min[tAxis];
+    const mk = (espessura, encolheComp, encolheLarg, afasta, material) => {
+      const s = {}, c = {};
+      ['x', 'y', 'z'].forEach((k) => {
+        const a = L.ranges[k][0] / 1000 + bb.min[k], b = L.ranges[k][1] / 1000 + bb.min[k];
+        c[k] = (a + b) / 2; s[k] = b - a;
+      });
+      s[L.eixoComprimento] = Math.max(s[L.eixoComprimento] - encolheComp, 0.001);
+      s[L.eixoLargura] = Math.max(s[L.eixoLargura] - encolheLarg, 0.001);
+      s[tAxis] = espessura; c[tAxis] = faceCoord + lado * afasta;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(s.x, s.y, s.z), material);
+      m.position.set(c.x, c.y, c.z);
+      return m;
+    };
     const g = new THREE.Group();
-    const perfil = new THREE.Mesh(new THREE.BoxGeometry(comp, 0.0006, larg),
-      new THREE.MeshStandardMaterial({ color: LED_COR_PERFIL, metalness: 0.6, roughness: 0.35 }));
-    perfil.position.set(0, yFace + lado * 0.0003, zc);
-    const difusor = new THREE.Mesh(new THREE.BoxGeometry(Math.max(comp - 0.002, 0.001), 0.0004, Math.max(larg - 0.005, 0.002)),
-      new THREE.MeshBasicMaterial({ color: LED_COR_DIFUSOR }));
-    difusor.position.set(0, yFace + lado * 0.0008, zc);
-    g.add(perfil); g.add(difusor);
+    g.add(mk(0.0006, 0, 0, 0.0003, new THREE.MeshStandardMaterial({ color: LED_COR_PERFIL, metalness: 0.6, roughness: 0.35 })));
+    g.add(mk(0.0004, 0.002, 0.005, 0.0008, new THREE.MeshBasicMaterial({ color: LED_COR_DIFUSOR })));
     g.userData.ledStrip = true;
     return g;
-  }
-  function attachLed(obj, part, faceA, thickness, faceB) {
-    if (!obj || !part || !part.led || part.tilt_angle_deg) return;
-    const strip = buildLedStrip(part, faceA, thickness, faceB);
-    if (strip) obj.add(strip);
   }
 
   // Monta uma peça dentro de um volume-caixa (W,H,D em metros) conforme seu
@@ -2908,8 +2922,7 @@ const Viewer3D = (function () {
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
       // Vista de cima (par ±Y): U = largura, V = profundidade.
-      attachLed(emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null),
-        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null);
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       // Recorte em L (lateral cadastrada como 'back', base de canto 90°) —
@@ -2956,8 +2969,7 @@ const Viewer3D = (function () {
       const span = Math.max(innerHigh - innerLow, 0.01);
       const y = innerLow + span * ((index + 1) / (count + 1));
       // Prateleira também é vista de cima: U = largura, V = profundidade.
-      attachLed(emit(resolveContent(part, geometry), part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true), null),
-        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
+      emit(resolveContent(part, geometry), part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true), null);
     } else if (role === 'drawer') {
       // Gaveta = caixa de verdade (não painel fino) — empilha as gavetas
       // verticalmente perto da frente do volume. offY (Deslocar Y) é um
@@ -3052,8 +3064,7 @@ const Viewer3D = (function () {
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
       // Tampo, vista de cima: U = largura, V = profundidade.
-      attachLed(emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null),
-        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
+      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null);
     } else if (role === 'free' && part.shape_type === 'oval_rod') {
       // Cabide tubular oval (migration 062) — MESMO cálculo de posição do
       // 'free' comum logo abaixo (zero absoluto, canto chão-fundo-esquerda),
@@ -3208,9 +3219,6 @@ const Viewer3D = (function () {
         }
       }
       const freeGroup = emit(freeContent, part.color, x, y, z, false, opening);
-      // LED embutido (2026-09-30) — só em peça livre DEITADA (espessura na
-      // altura) e sem giro/abertura: é o caso da prateleira/base do Construtor.
-      if (!rotYDeg && !opening && h <= w && h <= d) attachLed(freeGroup, part, w, h, d);
       if (rotFino) wrapRotatedFreePiece(freeGroup, x, y, z, rotYDeg);
       // Dobradiças visuais — mesma regra de 'front' (linha ~944): peça 'free'
       // com hingeSide resolvido é uma porta de verdade, só que posicionada

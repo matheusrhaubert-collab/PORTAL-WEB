@@ -2884,7 +2884,14 @@ function createViewerComposition3D() {
   function caixaSemHitbox(group) {
     const b = new THREE.Box3();
     const tmp = new THREE.Box3();
-    group.updateMatrixWorld(true);
+    // Atualiza a partir da RAIZ (2026-09-30, janela do LED: "a marcação em
+    // vermelho está mais pra trás em relação à peça"). group.updateMatrixWorld
+    // sozinho usa a matriz do PAI como estava no último quadro — logo depois
+    // de um render() que reposicionou o módulo, ela ainda é a velha e o
+    // contorno sai deslocado até o próximo quadro.
+    let raiz = group;
+    while (raiz.parent) raiz = raiz.parent;
+    raiz.updateMatrixWorld(true);
     group.traverse((o) => {
       if (!o.isMesh || (o.userData && o.userData.isHitboxProxy)) return;
       tmp.setFromObject(o);
@@ -3236,6 +3243,16 @@ function createViewerComposition3D() {
     return scene;
   }
 
+  // Órbita LIVRE (2026-09-30, janela do LED: "preciso mais ângulo pra ver de
+  // baixo, a câmera para"). O teto de ~90° (maxPolarAngle, ver init) é do
+  // AMBIENTE — lá olhar de baixo do piso não faz sentido. Numa instância que
+  // mostra UM móvel solto (LED, peças do móvel) dá pra girar por baixo.
+  function setOrbitFree(livre) {
+    if (!controls) return;
+    controls.maxPolarAngle = livre ? Math.PI : Math.PI * 0.499;
+    controls.minPolarAngle = 0;
+  }
+
   // Estado atual da câmera (posição + alvo + fov/aspect) em JSON puro —
   // Foto realista (js/photoreal.js, 2026-08-03): o path tracer roda numa
   // cena PRÓPRIA em three moderno (r181), então não dá pra passar o objeto
@@ -3281,6 +3298,7 @@ function createViewerComposition3D() {
   return {
     init, available, render, renderFreeform, renderFreeformWalls, snapshot, canvasAspectRatio,
     getCameraState,
+    setOrbitFree,
     // Estado próprio de porta/gaveta da composição — ver comentário de
     // currentOpenables/doorsOpen acima. portal.js relê areDoorsOpen()/
     // areDrawersOpen() antes de reconstruir cada assembly (generateComposition3D),

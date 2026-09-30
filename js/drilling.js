@@ -1865,31 +1865,40 @@
   // dist_fundo_mm do fundo (borda do rasgo, não o centro) e tem largura_mm.
   // Face: 'superior' = Face A (a de cima, a mesma que a broca de cima fura);
   // 'inferior' = Face B (a de baixo) — é a do exemplo real.
+  // 2ª rodada (2026-09-30): LED em QUALQUER peça, horizontal ou vertical na
+  // vista, margem por ponta — a geometria mora em Pricing.ledLayout (a MESMA
+  // que o 3D, a foto, o preço e a vista 2D da janela usam). Aqui só se leva
+  // o retângulo dos eixos do módulo pro plano local (u,v) da peça, aplica o
+  // espelho da gêmea (lateral direita 'v', fundo virado 'u' — mesmo
+  // emitLocalHole dos furos) e decide a face da máquina: Face A é o lado
+  // POSITIVO do eixo da espessura, ou o NEGATIVO na peça espelhada (é o lado
+  // que a furadeira fura por cima). Coordenadas no mesmo plano pras duas
+  // faces, como o SlotL Face B do exemplo real.
   function ledRect(part) {
-    const led = part && part.led;
-    if (!led) return null;
-    const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
-    const larg = Number(led.largura_mm) || 0, prof = Number(led.profundidade_mm) || 0;
-    const margem = Math.max(Number(led.margem_mm) || 0, 0);
-    const dist = Math.max(Number(led.dist_fundo_mm) || 0, 0);
-    const u0 = margem, u1 = t.faceA - margem;
-    const v0 = dist, v1 = dist + larg;
-    // guardas: rasgo tem que caber na chapa e não pode atravessá-la
-    if (!(larg > 0) || !(prof > 0) || prof >= t.thickness || u1 - u0 <= 0 || v1 > t.faceB + 0.01) return null;
-    const p0 = localToMachine(t, u0, v0);
-    const p1 = localToMachine(t, u1, v1);
+    if (!part || !part.led || typeof Pricing === 'undefined' || !Pricing.ledEixos) return null;
+    const e = Pricing.ledEixos(part);
+    const L = e && Pricing.ledLayout(part.led, e.sizes, e.tAxis);
+    if (!L || L.erro) return null;
+    const t = { thickness: e.thickness, faceA: e.faceA, faceB: e.faceB };
+    let u = L.ranges[e.uAxis].slice(), v = L.ranges[e.vAxis].slice();
+    if (e.mirror === 'v') v = [t.faceB - v[1], t.faceB - v[0]];
+    else if (e.mirror === 'u') u = [t.faceA - u[1], t.faceA - u[0]];
+    const ladoA = e.mirror ? -1 : 1;
+    const p0 = localToMachine(t, u[0], v[0]);
+    const p1 = localToMachine(t, u[1], v[1]);
     return {
       x0: Math.min(p0.x, p1.x), x1: Math.max(p0.x, p1.x),
       y0: Math.min(p0.y, p1.y), y1: Math.max(p0.y, p1.y),
-      depth: prof, passante: false,
-      face: led.face === 'superior' ? 'A' : 'B'
+      depth: L.led.profundidade_mm, passante: false,
+      face: L.lado === ladoA ? 'A' : 'B'
     };
   }
 
   function ledSlotsDaPeca(part) {
     const r = ledRect(part);
     if (!r) return [];
-    const m = machineDims(splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning));
+    const e = Pricing.ledEixos(part);
+    const m = machineDims({ thickness: e.thickness, faceA: e.faceA, faceB: e.faceB });
     // bolsão SEMPRE (rasgo cego não tem retalho pra cair). As passadas do
     // bolsão vão de BORDA a borda do retângulo pelo CENTRO da fresa — no
     // canto passante do toe isso sai fora da chapa e não importa, mas aqui

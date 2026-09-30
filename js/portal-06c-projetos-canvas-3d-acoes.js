@@ -3254,13 +3254,17 @@ function projectLedModels() {
 
 let ledModalSlotId = null;
 let ledSelPieceId = null;
-let ledDraft = null;          // { modelo_id, face, dist_fundo_mm, margem_mm }
+// { modelo_id, face: 'A'|'B', orientacao: 'h'|'v', pos_mm, margem_ini_mm, margem_fim_mm }
+let ledDraft = null;
 let ledViewer = null;
 let ledAssembly = null;
 let ledPreviewTimer = null;
 
-// Peça que PODE receber LED: folha, deitada (espessura na altura), sem giro
-// nem inclinação, fabricada. É onde o 3D e o .ban sabem pôr o rasgo.
+// 2ª rodada (2026-09-30), Matt: "todas as peças devem poder receber o canal
+// do LED, se quiser colocar na lateral, ou no fundo". Entra toda peça-CHAPA
+// fabricada que o 3D e o .ban sabem desenhar: sem giro/inclinação (o 3D não
+// saberia a vista), sem caixa de gaveta/puxador/pé/eletro/cabide.
+const LED_PAPEIS_ELEGIVEIS = { left: 1, right: 1, top: 1, bottom: 1, shelf: 1, countertop: 1, back: 1, baseboard: 1, drawer_side: 1, front: 1, free: 1 };
 function projectLedPecasElegiveis(slot) {
   let parts = [];
   try {
@@ -3270,14 +3274,14 @@ function projectLedPecasElegiveis(slot) {
       slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
     ) || [];
   } catch (e) { parts = []; }
-  const PAPEIS = { top: 1, bottom: 1, shelf: 1, countertop: 1, free: 1 };
   const vistos = new Set();
   return flatProjectPieces(parts).map(({ p, grupo }) => ({ p, grupo })).filter(({ p }) => {
     if (p.piece_id == null || vistos.has(p.piece_id)) return false;
-    if (!PAPEIS[p.position_role]) return false;
+    if (!LED_PAPEIS_ELEGIVEIS[p.position_role]) return false;
     if (p.origin === 'comprado' || p.rotation_y_deg || p.tilt_angle_deg) return false;
+    if (p.shape_type && p.shape_type !== 'box') return false;
     const w = Number(p.width_mm) || 0, h = Number(p.height_mm) || 0, d = Number(p.depth_mm) || 0;
-    if (!(h > 0) || h > w || h > d) return false;
+    if (!(w > 0) || !(h > 0) || !(d > 0)) return false;
     vistos.add(p.piece_id);
     return true;
   });
@@ -3292,25 +3296,37 @@ function ledModeloPorId(id) {
 function ledConfigDoRascunho() {
   if (!ledDraft) return null;
   const m = ledModeloPorId(ledDraft.modelo_id);
+  const n = (v) => { const x = Number(v); return isFinite(x) && x > 0 ? x : 0; };
   return {
     modelo_id: m.id, modelo_nome: m.name,
     largura_mm: Number(m.largura_mm), profundidade_mm: Number(m.profundidade_mm),
-    face: ledDraft.face === 'superior' ? 'superior' : 'inferior',
-    dist_fundo_mm: Math.max(Number(ledDraft.dist_fundo_mm) || 0, 0),
-    margem_mm: Math.max(Number(ledDraft.margem_mm) || 0, 0)
+    face: ledDraft.face === 'A' ? 'A' : 'B',
+    orientacao: ledDraft.orientacao === 'v' ? 'v' : 'h',
+    pos_mm: n(ledDraft.pos_mm),
+    margem_ini_mm: n(ledDraft.margem_ini_mm),
+    margem_fim_mm: n(ledDraft.margem_fim_mm)
   };
 }
 
-// Mesmas guardas do .ban (drilling.js ledRect) — o que a tela aceita é o que
-// a máquina recebe. Devolve a mensagem de erro, ou null.
-function ledValidar(cfg, part) {
-  if (!cfg || !part) return I18n.t('led.pick_piece');
-  const w = Number(part.width_mm) || 0, e = Number(part.height_mm) || 0, d = Number(part.depth_mm) || 0;
-  if (!(cfg.largura_mm > 0) || !(cfg.profundidade_mm > 0)) return I18n.t('led.err_no_model');
-  if (w - 2 * cfg.margem_mm <= 0) return I18n.t('led.err_too_short');
-  if (cfg.dist_fundo_mm + cfg.largura_mm > d) return I18n.t('led.err_depth', { max: Math.max(d - cfg.largura_mm, 0) });
-  if (cfg.profundidade_mm >= e) return I18n.t('led.err_depth', { max: e });
-  return null;
+// Mesma conta do .ban/3D/preço (Pricing.ledLayout) — o que a tela aceita é o
+// que a máquina recebe. Devolve { layout, erro }.
+function ledAvaliar(cfg, part) {
+  if (!part) return { layout: null, erro: I18n.t('led.pick_piece') };
+  const L = cfg ? Pricing.ledLayoutDaPeca(part, cfg) : null;
+  if (!L) return { layout: null, erro: I18n.t('led.pick_piece') };
+  const fmt = (v) => Math.round(v * 10) / 10;
+  let erro = null;
+  if (L.erro === 'modelo') erro = I18n.t('led.err_no_model');
+  else if (L.erro === 'espessura') erro = I18n.t('led.err_thick', { p: fmt(L.led.profundidade_mm), e: fmt(L.T) });
+  else if (L.erro === 'curto') erro = I18n.t('led.err_too_short');
+  else if (L.erro === 'fora') erro = I18n.t('led.err_out', { max: fmt(L.posMax) });
+  return { layout: L, erro };
+}
+
+function ledVistaDaPeca(part) {
+  const e = part ? Pricing.ledEixos(part) : null;
+  const L = e ? Pricing.ledLayout({ largura_mm: 1, profundidade_mm: 0 }, e.sizes, e.tAxis) : null;
+  return L ? L.vista : null;
 }
 
 function openProjectSlotLed(slotId) {
@@ -3328,23 +3344,32 @@ function openProjectSlotLed(slotId) {
   const elegiveis = projectLedPecasElegiveis(slot);
   // abre na primeira peça que já tem LED; senão na primeira da lista
   const comLed = elegiveis.find(({ p }) => slot.ledConfigs && slot.ledConfigs[p.piece_id]);
-  ledSelecionarPeca(slot, (comLed || elegiveis[0] || { p: {} }).p.piece_id);
   modal.classList.add('open');
+  ledSelecionarPeca(slot, (comLed || elegiveis[0] || { p: {} }).p.piece_id);
   renderProjectLedPreview(slot);
 }
 
 function ledSelecionarPeca(slot, pieceId) {
   ledSelPieceId = pieceId == null ? null : pieceId;
-  const atual = (pieceId != null && slot.ledConfigs && slot.ledConfigs[pieceId]) || null;
+  const atualRaw = (pieceId != null && slot.ledConfigs && slot.ledConfigs[pieceId]) || null;
+  const atual = atualRaw ? Pricing.ledNormaliza(atualRaw) : null;
   const m = atual ? ledModeloPorId(atual.modelo_id) : projectLedModels()[0];
-  ledDraft = {
-    modelo_id: m.id,
-    face: atual ? atual.face : 'inferior',
-    dist_fundo_mm: atual ? atual.dist_fundo_mm : 50,
-    margem_mm: atual ? atual.margem_mm : 30
+  const part = ledPecaSelecionada(slot);
+  const vi = ledVistaDaPeca(part);
+  ledDraft = atual ? {
+    modelo_id: m.id, face: atual.face, orientacao: atual.orientacao,
+    pos_mm: atual.pos_mm, margem_ini_mm: atual.margem_ini_mm, margem_fim_mm: atual.margem_fim_mm
+  } : {
+    // peça deitada nasce embaixo (luz pra baixo); em pé, na face positiva
+    modelo_id: m.id, face: (vi && vi.nome === 'cima') ? 'B' : 'A', orientacao: 'h',
+    pos_mm: 50, margem_ini_mm: 30, margem_fim_mm: 30
   };
   renderProjectLedList(slot);
   renderProjectLedForm(slot);
+}
+
+function ledNomeFace(vi, face) {
+  return vi ? I18n.t('led.side_' + vi.faces[face]) : face;
 }
 
 function renderProjectLedList(slot) {
@@ -3356,13 +3381,13 @@ function renderProjectLedList(slot) {
   el.innerHTML = lista.map(({ p, grupo }) => {
     const tem = slot.ledConfigs && slot.ledConfigs[p.piece_id];
     const nome = (grupo ? grupo + ' · ' : '') + (p.reference || '');
-    const med = formatDimension(Number(p.width_mm) || 0, unit) + ' × ' + formatDimension(Number(p.depth_mm) || 0, unit)
-      + ' × ' + formatDimension(Number(p.height_mm) || 0, unit);
+    const med = formatDimension(Number(p.width_mm) || 0, unit) + ' × ' + formatDimension(Number(p.height_mm) || 0, unit)
+      + ' × ' + formatDimension(Number(p.depth_mm) || 0, unit);
+    const faceTxt = tem ? ledNomeFace(ledVistaDaPeca(p), Pricing.ledNormaliza(tem).face) : '';
     return '<button type="button" class="po-led-piece' + (String(p.piece_id) === String(ledSelPieceId) ? ' active' : '')
       + '" data-led-piece="' + escapeHtmlCutlist(p.piece_id) + '"><span>' + escapeHtmlCutlist(nome) + '</span>'
       + '<small>' + escapeHtmlCutlist(med) + '</small>'
-      + (tem ? '<span class="po-led-badge">' + escapeHtmlCutlist(I18n.t('led.badge')) + ' · '
-        + escapeHtmlCutlist(tem.face === 'superior' ? I18n.t('led.face_top') : I18n.t('led.face_bottom')) + '</span>' : '')
+      + (tem ? '<span class="po-led-badge">' + escapeHtmlCutlist(I18n.t('led.badge')) + ' · ' + escapeHtmlCutlist(faceTxt) + '</span>' : '')
       + '</button>';
   }).join('');
 }
@@ -3375,31 +3400,103 @@ function ledPecaSelecionada(slot) {
 
 function renderProjectLedForm(slot) {
   const part = ledPecaSelecionada(slot);
+  const vi = ledVistaDaPeca(part);
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('po-led-piece-name', part ? (part.reference || '—') : '—');
   const sel = document.getElementById('po-led-model');
   if (sel && ledDraft) sel.value = String(ledDraft.modelo_id);
+  set('po-led-face-a', ledNomeFace(vi, 'A'));
+  set('po-led-face-b', ledNomeFace(vi, 'B'));
   document.querySelectorAll('#po-led-modal [data-led-face]').forEach((b) => {
     b.classList.toggle('active', !!ledDraft && b.getAttribute('data-led-face') === ledDraft.face);
   });
-  const dist = document.getElementById('po-led-dist');
-  const marg = document.getElementById('po-led-margin');
-  if (dist && ledDraft && document.activeElement !== dist) dist.value = ledDraft.dist_fundo_mm;
-  if (marg && ledDraft && document.activeElement !== marg) marg.value = ledDraft.margem_mm;
+  document.querySelectorAll('#po-led-modal [data-led-orient]').forEach((b) => {
+    b.classList.toggle('active', !!ledDraft && b.getAttribute('data-led-orient') === ledDraft.orientacao);
+  });
+  // rótulos seguem a vista da peça: horizontal mede a posição da borda de
+  // CIMA da vista e as margens nas bordas esquerda/direita; vertical, o
+  // contrário
+  const vert = !!ledDraft && ledDraft.orientacao === 'v';
+  if (vi) {
+    set('po-led-pos-label', I18n.t('led.dist_' + (vert ? vi.bordas.esq : vi.bordas.cima)));
+    set('po-led-mini-label', I18n.t('led.margin_' + (vert ? vi.bordas.cima : vi.bordas.esq)));
+    set('po-led-mfim-label', I18n.t('led.margin_' + (vert ? vi.bordas.baixo : vi.bordas.dir)));
+  }
+  [['po-led-pos', 'pos_mm'], ['po-led-margin-ini', 'margem_ini_mm'], ['po-led-margin-fim', 'margem_fim_mm']].forEach(([id, campo]) => {
+    const inp = document.getElementById(id);
+    if (inp && ledDraft && document.activeElement !== inp) inp.value = ledDraft[campo];
+  });
   const cfg = ledConfigDoRascunho();
-  const comp = (part && cfg) ? Pricing.ledComprimentoMm(cfg, part.width_mm) : 0;
-  set('po-led-length', part ? (Math.round(comp * 10) / 10) + ' mm' : '—');
-  set('po-led-groove', cfg ? I18n.t('led.groove_fmt', {
-    w: cfg.largura_mm, p: cfg.profundidade_mm,
-    f: cfg.face === 'superior' ? I18n.t('led.face_a') : I18n.t('led.face_b')
-  }) : '—');
-  const erro = part ? ledValidar(cfg, part) : I18n.t('led.pick_piece');
+  const { layout, erro } = ledAvaliar(cfg, part);
+  set('po-led-length', (layout && !layout.erro) ? (Math.round(layout.comprimento_mm * 10) / 10) + ' mm' : '—');
+  set('po-led-groove', cfg ? I18n.t('led.groove_fmt', { w: cfg.largura_mm, p: cfg.profundidade_mm, f: ledNomeFace(vi, cfg.face) }) : '—');
   const errEl = document.getElementById('po-led-error');
   if (errEl) { errEl.textContent = erro || ''; errEl.style.display = erro ? '' : 'none'; }
   const apply = document.getElementById('po-led-apply-btn');
   if (apply) apply.disabled = !!erro;
   const rem = document.getElementById('po-led-remove-btn');
   if (rem) rem.style.visibility = (part && slot.ledConfigs && slot.ledConfigs[part.piece_id]) ? 'visible' : 'hidden';
+  renderProjectLed2D(part, layout, !!erro);
+}
+
+// VISTA 2D da peça (2026-09-30, 2ª rodada — Matt: "é importante ter um
+// visualizador 2D da peça, em visão paralela, mostrando um tracejado onde vai
+// ficar o LED"). SVG em milímetros: a peça, o rasgo tracejado e as cotas
+// (posição, as duas margens e o que sobra do outro lado), com o nome de cada
+// borda. Mesma vista que Pricing.ledLayout usa (a = esquerda→direita,
+// b = cima→baixo), então o que está desenhado é o que vai pro .ban.
+function renderProjectLed2D(part, L, comErro) {
+  const el = document.getElementById('po-led-2d');
+  const tit = document.getElementById('po-led-2d-view');
+  if (!el) return;
+  if (!part || !L) { el.innerHTML = ''; if (tit) tit.textContent = ''; return; }
+  const vi = L.vista;
+  if (tit) tit.textContent = '· ' + I18n.t('led.view_' + vi.nome) + (part.reference ? ' · ' + part.reference : '');
+  const W = L.W, H = L.H;
+  const M = Math.max(W, H);
+  const fs = M * 0.034;             // fonte em mm do desenho
+  const pad = fs * 4.2;
+  const r = (v) => Math.round(v * 10) / 10;
+  const esc = escapeHtmlCutlist;
+  const t = (x, y, txt, cls, extra) => '<text x="' + r(x) + '" y="' + r(y) + '" font-size="' + r(fs) + '" class="' + cls
+    + '" text-anchor="middle" dominant-baseline="middle"' + (extra || '') + '>' + esc(txt) + '</text>';
+  const linha = (x1, y1, x2, y2) => '<line x1="' + r(x1) + '" y1="' + r(y1) + '" x2="' + r(x2) + '" y2="' + r(y2)
+    + '" class="cota" vector-effect="non-scaling-stroke" stroke-width="1"/>';
+  // cota horizontal/vertical com tracinhos nas pontas e o valor no meio
+  const tick = fs * 0.35;
+  const cotaH = (x1, x2, y) => (Math.abs(x2 - x1) < 0.05) ? '' : linha(x1, y, x2, y) + linha(x1, y - tick, x1, y + tick) + linha(x2, y - tick, x2, y + tick)
+    + t((x1 + x2) / 2, y - fs * 0.75, r(Math.abs(x2 - x1)), 'cota-txt');
+  const cotaV = (y1, y2, x) => (Math.abs(y2 - y1) < 0.05) ? '' : linha(x, y1, x, y2) + linha(x - tick, y1, x + tick, y1) + linha(x - tick, y2, x + tick, y2)
+    + t(x - fs * 0.75, (y1 + y2) / 2, r(Math.abs(y2 - y1)), 'cota-txt', ' transform="rotate(-90 ' + r(x - fs * 0.75) + ' ' + r((y1 + y2) / 2) + ')"');
+  const a0 = Math.max(L.a0, 0), a1 = Math.min(L.a1, W), b0 = Math.max(L.b0, 0), b1 = Math.min(L.b1, H);
+  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + r(-pad) + ' ' + r(-pad) + ' ' + r(W + 2 * pad) + ' ' + r(H + 2 * pad)
+    + '" preserveAspectRatio="xMidYMid meet">';
+  svg += '<rect x="0" y="0" width="' + r(W) + '" height="' + r(H) + '" class="peca" vector-effect="non-scaling-stroke" stroke-width="1.5"/>';
+  // nomes das bordas
+  svg += t(W / 2, -pad + fs * 0.9, I18n.t('led.edge_' + vi.bordas.cima), 'borda-txt');
+  svg += t(W / 2, H + pad - fs * 0.9, I18n.t('led.edge_' + vi.bordas.baixo), 'borda-txt');
+  svg += t(-pad + fs * 0.9, H / 2, I18n.t('led.edge_' + vi.bordas.esq), 'borda-txt', ' transform="rotate(-90 ' + r(-pad + fs * 0.9) + ' ' + r(H / 2) + ')"');
+  svg += t(W + pad - fs * 0.9, H / 2, I18n.t('led.edge_' + vi.bordas.dir), 'borda-txt', ' transform="rotate(90 ' + r(W + pad - fs * 0.9) + ' ' + r(H / 2) + ')"');
+  if (a1 > a0 && b1 > b0) {
+    svg += '<rect x="' + r(a0) + '" y="' + r(b0) + '" width="' + r(a1 - a0) + '" height="' + r(b1 - b0) + '" class="led' + (comErro ? ' erro' : '')
+      + '" vector-effect="non-scaling-stroke" stroke-width="1.5"/>';
+    const off = fs * 2.2;
+    if (L.led.orientacao === 'v') {
+      // margens (cima/baixo) à direita do rasgo; posição e o resto embaixo
+      const x = Math.min(a1 + off, W + pad * 0.55);
+      svg += cotaV(0, b0, x) + cotaV(b1, H, x);
+      const y = H + fs * 1.6;
+      svg += cotaH(0, a0, y) + cotaH(a1, W, y);
+    } else {
+      // margens (esquerda/direita) embaixo do rasgo; posição e resto à esquerda
+      const y = Math.min(b1 + off, H + pad * 0.55);
+      svg += cotaH(0, a0, y) + cotaH(a1, W, y);
+      const x = -fs * 1.6;
+      svg += cotaV(0, b0, x) + cotaV(b1, H, x);
+    }
+  }
+  svg += '</svg>';
+  el.innerHTML = svg;
 }
 
 // 3D do módulo com o RASCUNHO aplicado na peça escolhida (prévia ao vivo) +
@@ -3409,10 +3506,13 @@ function renderProjectLedPreview(slot) {
   if (!cont || typeof ViewerComposition === 'undefined' || !ViewerComposition.createInstance) return;
   if (!ledViewer) ledViewer = ViewerComposition.createInstance();
   ledViewer.init('po-led-3d');
+  // girar por baixo pra ver o LED embaixo da prateleira (o teto de ~90° é
+  // do ambiente, não faz sentido num móvel solto)
+  if (typeof ledViewer.setOrbitFree === 'function') ledViewer.setOrbitFree(true);
   const configs = Object.assign({}, slot.ledConfigs || {});
   const part = ledPecaSelecionada(slot);
   const cfg = ledConfigDoRascunho();
-  if (part && cfg && !ledValidar(cfg, part)) configs[part.piece_id] = cfg;
+  if (part && cfg && !ledAvaliar(cfg, part).erro) configs[part.piece_id] = cfg;
   const asm = buildCompositionAssemblies([{
     pieces: projectSlotEffectivePiecesWithLeds(slot, configs),
     width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
@@ -3438,7 +3538,7 @@ function agendarPreviewLed(slot) {
 function aplicarLedNaPeca(slot) {
   const part = ledPecaSelecionada(slot);
   const cfg = ledConfigDoRascunho();
-  if (!part || ledValidar(cfg, part)) return;
+  if (!part || ledAvaliar(cfg, part).erro) return;
   slot.ledConfigs = Object.assign({}, slot.ledConfigs || {}, { [part.piece_id]: cfg });
   recomputeProjectSlotPricing(slot);
   renderProjectCanvas();
@@ -3457,8 +3557,7 @@ function removerLedDaPeca(slot) {
   recomputeProjectSlotPricing(slot);
   renderProjectCanvas();
   markProjectDirty();
-  renderProjectLedList(slot);
-  renderProjectLedForm(slot);
+  ledSelecionarPeca(slot, part.piece_id);
   renderProjectLedPreview(slot);
 }
 
@@ -3491,13 +3590,15 @@ function removerLedDaPeca(slot) {
     ledSelecionarPeca(slot, btn.getAttribute('data-led-piece'));
     renderProjectLedPreview(slot);
   });
-  modal.querySelectorAll('[data-led-face]').forEach((bt) => bt.addEventListener('click', () => {
+  const liga = (sel, campo) => modal.querySelectorAll(sel).forEach((bt) => bt.addEventListener('click', () => {
     const slot = slotAtual();
     if (!slot || !ledDraft) return;
-    ledDraft.face = bt.getAttribute('data-led-face');
+    ledDraft[campo] = bt.getAttribute(sel.slice(1, -1));
     renderProjectLedForm(slot);
     agendarPreviewLed(slot);
   }));
+  liga('[data-led-face]', 'face');
+  liga('[data-led-orient]', 'orientacao');
   const sel = document.getElementById('po-led-model');
   if (sel) sel.addEventListener('change', () => {
     const slot = slotAtual();
@@ -3506,16 +3607,21 @@ function removerLedDaPeca(slot) {
     renderProjectLedForm(slot);
     agendarPreviewLed(slot);
   });
-  [['po-led-dist', 'dist_fundo_mm'], ['po-led-margin', 'margem_mm']].forEach(([id, campo]) => {
+  // Campo vazio no meio da digitação conta 0 (não volta pro valor antigo) —
+  // "quando coloco 0 ele continua 30".
+  [['po-led-pos', 'pos_mm'], ['po-led-margin-ini', 'margem_ini_mm'], ['po-led-margin-fim', 'margem_fim_mm']].forEach(([id, campo]) => {
     const inp = document.getElementById(id);
     if (!inp) return;
-    inp.addEventListener('input', () => {
+    const muda = () => {
       const slot = slotAtual();
       if (!slot || !ledDraft) return;
-      ledDraft[campo] = Number(inp.value) || 0;
+      const v = parseFloat(String(inp.value).replace(',', '.'));
+      ledDraft[campo] = isFinite(v) && v > 0 ? v : 0;
       renderProjectLedForm(slot);
       agendarPreviewLed(slot);
-    });
+    };
+    inp.addEventListener('input', muda);
+    inp.addEventListener('change', muda);
   });
   const apply = document.getElementById('po-led-apply-btn');
   if (apply) apply.addEventListener('click', () => { const slot = slotAtual(); if (slot) aplicarLedNaPeca(slot); });
