@@ -684,11 +684,21 @@ const Viewer3D = (function () {
     // guard `m.tKey !== 'd'` protege peças 'free' que por acaso vieram com
     // a espessura no eixo de profundidade (positioning *_no_plano) — aí a
     // frente já é face colorida, não borda, e o código não mexe.
+    //
+    // EXCEÇÃO (2026-09-30, base de canto 90°): peça que corre NA
+    // PROFUNDIDADE do módulo — a travessa da asa em Z (76 × 875) e o toe B.
+    // Ali "frente = d" pinta a fita nas duas PONTAS e deixa o miolo nas
+    // bordas compridas (Matt: "aparece o material onde deveria aparecer fita
+    // de borda, pois é uma peça 2C"). Pelo tamanho não dá pra separar esse
+    // caso de uma divisória estreita e funda do Construtor, então a peça diz
+    // por cadastro: veio DE USO = 'comprimento' (module_components.grain_dir,
+    // migration 105) -> o desenho segue o plano de corte (fita nos lados do
+    // comprimento = o lado maior, Pricing.pecaNaMaquina), que é a peça real.
     if (
       (part.position_role === 'top' || part.position_role === 'bottom' ||
         part.position_role === 'shelf' || part.position_role === 'countertop' ||
         part.position_role === 'free') &&
-      m.tKey !== 'd'
+      m.tKey !== 'd' && part.grain_dir !== 'comprimento'
     ) {
       m.lKey = 'd';
     }
