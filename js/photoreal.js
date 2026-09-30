@@ -397,7 +397,7 @@ const Photoreal = (() => {
     const legRadius = legW / 2;
     const inset = Math.max(LEG_INSET_MM / 1000, legRadius + 0.01);
     const corners = [[-W / 2 + inset, -D / 2 + inset], [W / 2 - inset, -D / 2 + inset], [-W / 2 + inset, D / 2 - inset], [W / 2 - inset, D / 2 - inset]];
-    group.slice(0, 4).forEach((part, i) => {
+    group.forEach((part, i) => { // mais de 4 pés: ver viewer3d.placeLegsGroup
       const [x, z] = corners[i] || corners[corners.length - 1];
       const geometry = new T.CylinderGeometry(legRadius, legRadius, legHeight, 16);
       const offX = (part.offset_x_mm || 0) / 1000, offY = (part.offset_y_mm || 0) / 1000, offZ = (part.offset_z_mm || 0) / 1000;
@@ -560,6 +560,52 @@ const Photoreal = (() => {
     geometry.rotateX(Math.PI / 2);
     geometry.userData = geometry.userData || {};
     geometry.userData.dimsMm = { w: faceA * 1000, h: thickness * 1000, d: faceB * 1000 };
+    return geometry;
+  }
+
+  // ---- Recorte em L num painel com espessura em Z ('back') — porta fiel de
+  // js/viewer3d.js:buildBackPanelGeometry (base de canto 90°, 2026-09-30).
+  // shape.x -> largura (X), shape.y -> altura (Y), extrusão -> Z; 'frente' é
+  // a ponta +X. Devolve null sem recorte válido.
+  function buildBackPanelGeometryPh(part, faceA, faceB, thickness) {
+    if (!part || !Array.isArray(part.recortes) || !part.recortes.length) return null;
+    if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
+    const ax = faceA / 2, by = faceB / 2;
+    const cantos = [
+      { nome: 'fundo-baixo', p: [-ax, -by], din: [0, -1], dout: [1, 0] },
+      { nome: 'frente-baixo', p: [ax, -by], din: [1, 0], dout: [0, 1] },
+      { nome: 'frente-cima', p: [ax, by], din: [0, 1], dout: [-1, 0] },
+      { nome: 'fundo-cima', p: [-ax, by], din: [-1, 0], dout: [0, -1] }
+    ];
+    let algum = false;
+    (part.recortes || []).forEach(function (r) {
+      if (!r || !CANTOS_RECORTE_PH[r.canto]) return;
+      const nh = Math.max((r.h || 0) / 1000, 0), nd = Math.max((r.d || 0) / 1000, 0);
+      if (nh <= 0 || nd <= 0) return;
+      const c = cantos.find(function (x) { return x.nome === r.canto; });
+      if (!c || c.nh) return;
+      c.nh = nh; c.nd = nd; algum = true;
+    });
+    if (!algum) return null;
+    const arestas = [[0, 1, faceA, 'nd'], [1, 2, faceB, 'nh'], [2, 3, faceA, 'nd'], [3, 0, faceB, 'nh']];
+    if (!arestas.every(function (a) { return (cantos[a[0]][a[3]] || 0) + (cantos[a[1]][a[3]] || 0) < a[2]; })) return null;
+    const pontos = [];
+    cantos.forEach(function (c) {
+      if (!c.nh) { pontos.push(c.p); return; }
+      const ext = function (dir) { return dir[0] !== 0 ? c.nd : c.nh; };
+      const ei = ext(c.din), eo = ext(c.dout);
+      const recuado = [c.p[0] - c.din[0] * ei, c.p[1] - c.din[1] * ei];
+      pontos.push(recuado);
+      pontos.push([recuado[0] + c.dout[0] * eo, recuado[1] + c.dout[1] * eo]);
+      pontos.push([c.p[0] + c.dout[0] * eo, c.p[1] + c.dout[1] * eo]);
+    });
+    const shape = new T.Shape();
+    pontos.forEach(function (pt, i) { if (i === 0) shape.moveTo(pt[0], pt[1]); else shape.lineTo(pt[0], pt[1]); });
+    shape.closePath();
+    const geometry = new T.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1 });
+    geometry.translate(0, 0, -thickness / 2);
+    geometry.userData = geometry.userData || {};
+    geometry.userData.dimsMm = { w: faceA * 1000, h: faceB * 1000, d: thickness * 1000 };
     return geometry;
   }
 
@@ -1222,7 +1268,9 @@ const Photoreal = (() => {
       emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const content = resolveContentPh(part, faceA, faceB, thickness);
+      // Recorte em L numa lateral cadastrada como 'back' (base de canto 90°,
+      // ver viewer3d.buildBackPanelGeometry) — null sem recorte.
+      const content = buildBackPanelGeometryPh(part, faceA, faceB, thickness) || resolveContentPh(part, faceA, faceB, thickness);
       emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, faceB / 2 + offY + legH, -D / 2 + thickness / 2 + offZ, resolveGrainRotate(part, faceA, faceB, false));
     } else if (role === 'shelf') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
@@ -1259,10 +1307,21 @@ const Photoreal = (() => {
       // fiel do dispatch por shape_type em js/viewer3d.js (ver comentário
       // lá), pra não sair diferente na foto realista.
       const decorContent = DECOR_BUILDERS[part.shape_type](w, h, d, resolveDecorMaterials(part.color));
-      emitInto(parentGroup, decorContent, null, -W / 2 + w / 2 + offX, offY + legH, -D / 2 + d / 2 + offZ, false);
+      const rotYd = ((((part.rotation_y_deg || 0) % 360) + 360) % 360);
+      if (rotYd) decorContent.rotation.y = rotYd * Math.PI / 180; // igual viewer3d
+      const swapD = rotYd === 90 || rotYd === 270;
+      emitInto(parentGroup, decorContent, null, -W / 2 + (swapD ? d : w) / 2 + offX, offY + legH, -D / 2 + (swapD ? w : d) / 2 + offZ, false);
     } else if (role === 'free') {
       const content = resolveContentPh(part, w, h, d);
-      emitInto(parentGroup, content, part.color, -W / 2 + w / 2 + offX, h / 2 + offY + legH, -D / 2 + d / 2 + offZ, resolveGrainRotate(part, w, h, false));
+      // Giro de canto 90°/270° (migration 067): a POSIÇÃO troca w<->d igual
+      // js/viewer3d.js ('free', swapFootprint) — o centro da peça girada é o
+      // canto + meia PROFUNDIDADE em X e meia LARGURA em Z. Faltava aqui
+      // (2026-09-30, porta girada 90° da base de canto): a foto punha a
+      // porta da asa em Z meio módulo fora do lugar.
+      const rotY = ((((part.rotation_y_deg || 0) % 360) + 360) % 360);
+      const swap = rotY === 90 || rotY === 270;
+      const fw = swap ? d : w, fd = swap ? w : d;
+      emitInto(parentGroup, content, part.color, -W / 2 + fw / 2 + offX, h / 2 + offY + legH, -D / 2 + fd / 2 + offZ, resolveGrainRotate(part, w, h, false));
     }
     // 'other' -> não desenha (igual viewer3d.js).
   }

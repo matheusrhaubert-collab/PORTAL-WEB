@@ -2017,6 +2017,60 @@ const Viewer3D = (function () {
     return geometry;
   }
 
+  // ---- Recorte em L num PAINEL COM ESPESSURA EM Z ('back', 2026-09-30) ----
+  // Base de canto 90°: a lateral da asa em Z é cadastrada como 'back'
+  // deslocado pra z=D-E (mesma peça física de uma lateral, só que virada).
+  // Com toe 4½ ela leva o mesmo L de 114 × 76 no canto da FRENTE embaixo —
+  // e aqui a "frente" é a ponta +X (o lado da porta), o "fundo" é x=0.
+  // Mesma técnica de buildPanelGeometry: shape.x -> largura (X), shape.y ->
+  // altura (Y), extrusão -> espessura (Z), sem rotação nenhuma. Devolve a
+  // BoxGeometry de sempre sem recorte válido (fundo comum nunca tem).
+  const CANTOS_RECORTE_Z = {
+    'frente-baixo': [1, -1], 'frente-cima': [1, 1], 'fundo-baixo': [-1, -1], 'fundo-cima': [-1, 1]
+  };
+  function buildBackPanelGeometry(part, faceA, faceB, thickness) {
+    const box = function () { return new THREE.BoxGeometry(faceA, faceB, thickness); };
+    if (!part || !Array.isArray(part.recortes) || !part.recortes.length) return box();
+    if (typeof THREE.Shape !== 'function' || typeof THREE.ExtrudeGeometry !== 'function') return box();
+    const ax = faceA / 2, by = faceB / 2;
+    const cantos = [
+      { nome: 'fundo-baixo', p: [-ax, -by], din: [0, -1], dout: [1, 0] },
+      { nome: 'frente-baixo', p: [ax, -by], din: [1, 0], dout: [0, 1] },
+      { nome: 'frente-cima', p: [ax, by], din: [0, 1], dout: [-1, 0] },
+      { nome: 'fundo-cima', p: [-ax, by], din: [-1, 0], dout: [0, -1] }
+    ];
+    let algum = false;
+    (part.recortes || []).forEach(function (r) {
+      if (!r || !CANTOS_RECORTE_Z[r.canto]) return;
+      const nh = Math.max((r.h || 0) / 1000, 0), nd = Math.max((r.d || 0) / 1000, 0);
+      if (nh <= 0 || nd <= 0) return;
+      const c = cantos.find(function (x) { return x.nome === r.canto; });
+      if (!c || c.nh) return;
+      c.nh = nh; c.nd = nd; algum = true;
+    });
+    if (!algum) return box();
+    // arestas de baixo/cima medem faceA (largura) e são comidas por d;
+    // arestas frente/fundo medem faceB (altura) e são comidas por h
+    const arestas = [[0, 1, faceA, 'nd'], [1, 2, faceB, 'nh'], [2, 3, faceA, 'nd'], [3, 0, faceB, 'nh']];
+    if (!arestas.every(function (a) { return (cantos[a[0]][a[3]] || 0) + (cantos[a[1]][a[3]] || 0) < a[2]; })) return box();
+    const pontos = [];
+    cantos.forEach(function (c) {
+      if (!c.nh) { pontos.push(c.p); return; }
+      const ext = function (dir) { return dir[0] !== 0 ? c.nd : c.nh; };
+      const ei = ext(c.din), eo = ext(c.dout);
+      const recuado = [c.p[0] - c.din[0] * ei, c.p[1] - c.din[1] * ei];
+      pontos.push(recuado);
+      pontos.push([recuado[0] + c.dout[0] * eo, recuado[1] + c.dout[1] * eo]);
+      pontos.push([c.p[0] + c.dout[0] * eo, c.p[1] + c.dout[1] * eo]);
+    });
+    const shape = new THREE.Shape();
+    pontos.forEach(function (pt, i) { if (i === 0) shape.moveTo(pt[0], pt[1]); else shape.lineTo(pt[0], pt[1]); });
+    shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1 });
+    geometry.translate(0, 0, -thickness / 2);
+    return geometry;
+  }
+
   // Monta uma peça dentro de um volume-caixa (W,H,D em metros) conforme seu
   // position_role, delegando a criação/posicionamento efetivos pra `emit`
   // (content, color, x, y, z, rotateTexture, opening) — quem chama decide se
@@ -2804,7 +2858,9 @@ const Viewer3D = (function () {
       emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null);
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const geometry = new THREE.BoxGeometry(faceA, faceB, thickness);
+      // Recorte em L (lateral cadastrada como 'back', base de canto 90°) —
+      // BoxGeometry de sempre quando não há recorte.
+      const geometry = buildBackPanelGeometry(part, faceA, faceB, thickness);
       const x = -W / 2 + faceA / 2 + offX;
       const y = faceB / 2 + offY + legH;
       const z = -D / 2 + thickness / 2 + offZ;
@@ -3083,7 +3139,11 @@ const Viewer3D = (function () {
       // próprio centro e o pivô/dobradiça giram junto, então "Abrir portas"
       // continua girando em torno da borda certa. Múltiplos de 90° seguem
       // o caminho de sempre (nada muda pra ninguém).
-      const rotFino = rotYDeg % 90 !== 0;
+      // (2026-09-30) porta girada 90° (base de canto 90°, asa em Z) passa pelo
+      // MESMO envelope: o pivô da dobradiça precisa girar junto com a porta.
+      // Peça girada 90° SEM abertura (módulo de canto em L, migration 067)
+      // continua no caminho antigo, byte a byte.
+      const rotFino = (rotYDeg % 90 !== 0) || (!!rotYDeg && !!hingeSide);
       if (rotYDeg && !rotFino) {
         if (freeContent.isGroup) {
           freeContent.rotation.y = rotYDeg * Math.PI / 180;
@@ -3154,7 +3214,11 @@ const Viewer3D = (function () {
       [W / 2 - inset, D / 2 - inset]
     ];
 
-    group.slice(0, 4).forEach((part, i) => {
+    // (2026-09-30) mais de 4 pés (base de canto em L leva 6): do 5º em diante
+    // a quina de referência é a última e a posição vem dos offsets — a
+    // fórmula de offset aceita N/COUNT (ver resolvePiecesForViewer), então
+    // cada pé decide onde fica.
+    group.forEach((part, i) => {
       const [x, z] = corners[i] || corners[corners.length - 1];
       // CylinderGeometry já nasce com o eixo (altura) alinhado a Y — exatamente
       // a orientação que o pé precisa, sem rotação nenhuma.
@@ -3947,7 +4011,7 @@ const Viewer3D = (function () {
       [W / 2 - inset, D / 2 - inset]
     ];
 
-    group.slice(0, 4).forEach((part, i) => {
+    group.forEach((part, i) => { // ver placeLegsGroup: mais de 4 pés
       const [x, z] = corners[i] || corners[corners.length - 1];
       const geometry = new THREE.CylinderGeometry(legRadius, legRadius, legHeight, 16);
       const offX = (part.offset_x_mm || 0) / 1000;

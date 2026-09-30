@@ -131,10 +131,21 @@
     const rot = (((part && part.rotation_y_deg) || 0) % 360 + 360) % 360;
     return rot % 90 !== 0;
   }
+  // PORTA GIRADA (2026-09-30, base de canto 90°): a porta da asa em Z é uma
+  // peça 'free' com rotation_y_deg=90. A caixa 'free' mapeia w->X sem saber
+  // do giro, então a caixa sairia deitada no eixo errado — e porta girada
+  // não participa de contato nenhum de qualquer jeito (ela ABRE). Mesma
+  // regra da porta a 45°: sem caixa; copo/marcação saem no frame dela e a
+  // base da dobradiça por collectHingePlates45 (que já é geométrica).
+  function semCaixaAlinhada(part) {
+    if (giradaForaDe90(part)) return true;
+    const rot = (((part && part.rotation_y_deg) || 0) % 360 + 360) % 360;
+    return rot !== 0 && !!hingeSideOf(part);
+  }
 
   function pieceBox(part, W, H, D, index, count, bounds) {
     const role = part.position_role || 'other';
-    if (giradaForaDe90(part)) return null;
+    if (semCaixaAlinhada(part)) return null;
     const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
     const offX = part.offset_x_mm || 0;
     const offY = part.offset_y_mm || 0;
@@ -204,6 +215,9 @@
       // peça como ESPELHADA em u (largura), igual a gêmea direita é em v, os
       // furos saem em Face A e o desenho vira a peça como a fábrica vira.
       const virada = (offZ + t.thickness / 2) > D / 2;
+      // recorteRects (que não vê a caixa) precisa espelhar o L em u do mesmo
+      // jeito — a marca fica na peça resolvida, que é transitória.
+      part._viradaU = virada;
       return {
         part, role, t,
         x0: offX, sx: t.faceA,
@@ -846,6 +860,12 @@
         const r = edgeRealUV(t, row, x, y);
         if (!r) return;
         const u = r.u, v = r.v;
+        // Furo que cai FORA da própria chapa (peça estreita demais pro
+        // programa — ex.: asa de 100 mm da base de canto 90°, onde o furo "a
+        // 114 da ponta" passa da outra ponta) não existe na peça (addHole já
+        // o descarta), então também não pode gerar contra-furo na vizinha.
+        // Faltava (2026-09-30): o contra-furo fantasma caía na base ao lado.
+        if (u < -0.5 || u > t.faceA + 0.5 || v < -0.5 || v > t.faceB + 0.5) return;
 
         // ponto do furo em coordenadas do módulo: na borda, centro da espessura
         const p = {};
@@ -856,6 +876,36 @@
         boxes.forEach(function (tgt) {
           if (tgt === src) return;
           if (mesmaSubarvore(src, tgt)) return; // contato interno do módulo aninhado: a recursão resolve
+          // BORDA COM BORDA (2026-09-30, base de canto 90°: "a base encosta em
+          // outra base pela frente e deve fazer a furação no toque em um novo
+          // sentido"). Duas chapas COPLANARES (mesmo eixo de espessura, mesma
+          // altura de centro) em que a borda furada de uma encosta na borda da
+          // outra: a base da asa em X termina na borda da base da asa em Z, o
+          // stretcher em X termina na borda do stretcher em Z. O contra-furo
+          // entra pela BORDA da peça vizinha, no mesmo ponto (cavilha borda
+          // a borda). Só coplanar de verdade: centro da espessura alinhado.
+          if (tgt.tAxis === src.tAxis) {
+            const meioTgt = tgt[ORIG[tgt.tAxis]] + tgt[SIZE[tgt.tAxis]] / 2;
+            if (Math.abs(p[tgt.tAxis] - meioTgt) > tol) return;
+            const pu = p[tgt.uAxis] - tgt[ORIG[tgt.uAxis]];
+            const pv = p[tgt.vAxis] - tgt[ORIG[tgt.vAxis]];
+            const su = tgt[SIZE[tgt.uAxis]], sv = tgt[SIZE[tgt.vAxis]];
+            let edge = null;
+            if (Math.abs(pu) <= tol && pv >= -0.5 && pv <= sv + 0.5) edge = 'u0';
+            else if (Math.abs(pu - su) <= tol && pv >= -0.5 && pv <= sv + 0.5) edge = 'u1';
+            else if (Math.abs(pv) <= tol && pu >= -0.5 && pu <= su + 0.5) edge = 'v0';
+            else if (Math.abs(pv - sv) <= tol && pu >= -0.5 && pu <= su + 0.5) edge = 'v1';
+            if (!edge) return;
+            emitLocalHole(store, tgt, {
+              u: (edge === 'u0' || edge === 'u1') ? 0 : pu,
+              v: (edge === 'v0' || edge === 'v1') ? 0 : pv,
+              edge: edge,
+              diameter: Number(row.counter_diameter_mm),
+              depth: Number(row.counter_depth_mm),
+              tipo: 'contrafuro_borda'
+            });
+            return;
+          }
           // a borda precisa coincidir com uma das duas FACES do alvo (plano
           // perpendicular ao eixo da espessura dele)...
           const c = p[tgt.tAxis];
@@ -1014,7 +1064,7 @@
     let cursorX = 2; // mesmo gap de 2mm do placeFrontGroupInBox
     (parts || []).forEach(function (part) {
       const role = part.position_role || 'other';
-      if (giradaForaDe90(part)) return; // porta a 45°: ver collectHingePlates45
+      if (semCaixaAlinhada(part)) return; // porta girada (45°/90°): ver collectHingePlates45
       if (role === 'front') {
         const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
         const x0 = cursorX + (part.offset_x_mm || 0);
@@ -1100,8 +1150,10 @@
     const ORIG = { x: 'x0', y: 'y0', z: 'z0' };
     const SIZE = { x: 'sx', y: 'sy', z: 'sz' };
 
+    // (2026-09-30) vale pra QUALQUER porta girada, 90° inclusive — a porta da
+    // asa em Z da base de canto 90° é 'free' com rotation_y_deg=90.
     const doors = (parts || []).filter(function (p) {
-      return giradaForaDe90(p) && (p.position_role || 'other') === 'free' && !!hingeSideOf(p);
+      return semCaixaAlinhada(p) && (p.position_role || 'other') === 'free' && !!hingeSideOf(p);
     });
     if (!doors.length) return;
 
@@ -1124,8 +1176,11 @@
       const th = rot * Math.PI / 180;
       // centro da porta no frame da raiz (mesma conta do 'free' no viewer3d:
       // canto chão-fundo-esquerda + metade das medidas)
-      const cx = (door.offset_x_mm || 0) + w / 2 + ox;
-      const cz = (door.offset_z_mm || 0) + d / 2 + oz;
+      // Giro de 90°/270°: a POSIÇÃO troca w<->d igual ao viewer3d ('free',
+      // swapFootprint) — o canto cadastrado é o da caixa JÁ girada.
+      const swap = rot === 90 || rot === 270;
+      const cx = (door.offset_x_mm || 0) + (swap ? d : w) / 2 + ox;
+      const cz = (door.offset_z_mm || 0) + (swap ? w : d) / 2 + oz;
       const y0 = (door.offset_y_mm || 0) + oy;
       const dirX = Math.cos(th), dirZ = -Math.sin(th); // +X local no plano XZ
       const sgn = side === 'left' ? -1 : 1;
@@ -1287,10 +1342,31 @@
     const tol = Number(settings.touch_tolerance_mm) || 5;
 
     const laterals = boxes.filter(function (b) { return b.tAxis === 'x'; });
-    if (!laterals.length) return;
+    // LATERAL EM Z (2026-09-30, base de canto 90°): a lateral da asa em Z é um
+    // painel 'back' VIRADO pra frente (mirrorAxis 'u', ver pieceBox). A
+    // prateleira dessa asa apoia nela pela ponta da FRENTE (z1). Só painel
+    // virado entra — o fundo de verdade (atrás) nunca recebe suporte.
+    const lateraisZ = boxes.filter(function (b) { return b.tAxis === 'z' && b.mirrorAxis === 'u' && !b._abre; });
+    if (!laterals.length && !lateraisZ.length) return;
 
     boxes.forEach(function (sb) {
       if (!sb.part.drill_shelf_support) return;
+      if (sb.tAxis === 'y' && sb.part.shape_type !== 'chanfro45') {
+        lateraisZ.forEach(function (lb) {
+          if (mesmaSubarvore(sb, lb)) return;
+          if (Math.abs((sb.z0 + sb.sz) - lb.z0) > tol) return;
+          const lo = Math.max(sb.x0, lb.x0), hi = Math.min(sb.x0 + sb.sx, lb.x0 + lb.sx);
+          if (hi - lo < front + back) return;
+          const y = sb.y0 + sb.sy / 2 + vOff;
+          [lo + back, hi - front].forEach(function (x) {
+            emitLocalHole(store, lb, {
+              u: x - lb.x0, v: y - lb.y0, edge: null,
+              entersPositive: false, // face voltada pra dentro = -Z
+              diameter: dia, depth: depth, tipo: 'suporte_prateleira'
+            });
+          });
+        });
+      }
       if (sb.tAxis !== 'y') return; // prateleira = chapa deitada (espessura no Y)
       if (sb.part.shape_type === 'chanfro45') return; // ver collectShelfSupportHoles45
       const yHole = sb.y0 + sb.sy / 2 + vOff;
@@ -1641,19 +1717,38 @@
     if (!lista.length) return chanfro ? [chanfro] : [];
     const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
     const mirrored = (part.position_role === 'right');
+    // LATERAL CADASTRADA COMO 'back' (2026-09-30, base de canto 90°: a
+    // lateral da asa em Z é um painel com a espessura em Z). No plano dela
+    // u = LARGURA (X do módulo) e v = ALTURA — o contrário da lateral
+    // comum (u = altura, v = profundidade). 'frente' é a ponta u = faceA
+    // (o lado da porta), 'fundo' é u = 0; baixo/cima correm em v. Se a peça
+    // está virada (frente do módulo, ver pieceBox 'back'), o L espelha em u
+    // igual os furos (emitLocalHole mirrorAxis 'u').
+    const painelZ = (part.position_role === 'back' || part.position_role === 'baseboard');
     const out = chanfro ? [chanfro] : [];
     lista.forEach(function (r) {
       if (!r) return;
       const h = Number(r.h) || 0, d = Number(r.d) || 0;
       const c = CANTO_UV[r.canto];
-      // Recorte que comeria a peça inteira é cadastro errado, não usinagem:
-      // mesma guarda do viewer3d, que devolve a caixa inteira nesse caso.
-      if (!c || h <= 0 || d <= 0 || h >= t.faceA || d >= t.faceB) return;
-      const u0 = (c[0] === 'baixo') ? 0 : t.faceA - h;
-      const u1 = u0 + h;
-      let v0 = (c[1] === 'fundo') ? 0 : t.faceB - d;
-      let v1 = v0 + d;
-      if (mirrored) { const a = t.faceB - v1; v1 = t.faceB - v0; v0 = a; }
+      if (!c || h <= 0 || d <= 0) return;
+      let u0, u1, v0, v1;
+      if (painelZ) {
+        if (d >= t.faceA || h >= t.faceB) return;
+        u0 = (c[1] === 'fundo') ? 0 : t.faceA - d;
+        u1 = u0 + d;
+        v0 = (c[0] === 'baixo') ? 0 : t.faceB - h;
+        v1 = v0 + h;
+        if (part._viradaU) { const a = t.faceA - u1; u1 = t.faceA - u0; u0 = a; }
+      } else {
+        // Recorte que comeria a peça inteira é cadastro errado, não usinagem:
+        // mesma guarda do viewer3d, que devolve a caixa inteira nesse caso.
+        if (h >= t.faceA || d >= t.faceB) return;
+        u0 = (c[0] === 'baixo') ? 0 : t.faceA - h;
+        u1 = u0 + h;
+        v0 = (c[1] === 'fundo') ? 0 : t.faceB - d;
+        v1 = v0 + d;
+        if (mirrored) { const a = t.faceB - v1; v1 = t.faceB - v0; v0 = a; }
+      }
       const p0 = localToMachine(t, u0, v0);
       const p1 = localToMachine(t, u1, v1);
       out.push({
