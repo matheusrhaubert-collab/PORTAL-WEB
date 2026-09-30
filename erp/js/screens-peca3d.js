@@ -54,7 +54,7 @@ PECA3D.load = async function (p) {
   const { data: orderItem, error: eItem } = await supabaseClient
     .from('order_items')
     .select('id, order_id, module_id, module_name, width_mm, height_mm, depth_mm, ' +
-      'selected_colors, shelf_quantities, selected_optional_component_ids, dim_overrides, piece_color_overrides, removed_piece_ids')
+      'selected_colors, shelf_quantities, selected_optional_component_ids, dim_overrides, piece_color_overrides, removed_piece_ids, led_configs')
     .eq('id', orderItemIds[0]).maybeSingle();
   if (eItem) throw eItem;
   if (!orderItem || !orderItem.module_id) return { code: code, piece: piece, orderItemMissing: true };
@@ -70,8 +70,9 @@ PECA3D.load = async function (p) {
      selecionada, peça removida manualmente pelo cliente/vendedor não entra. */
   const selectedOptionalIds = orderItem.selected_optional_component_ids || [];
   const removedIds = orderItem.removed_piece_ids || [];
-  const effectivePieces = filterRemovedPiecesDeep(rawPieces
-    .filter(function (pc) { return !pc.client_optional || selectedOptionalIds.includes(pc.id); }), removedIds); /* recursivo (29/09) */
+  /* + LED embutido (migration 183): a peça aparece com o LED no 3D da etiqueta */
+  const effectivePieces = applyLedConfigsDeep(filterRemovedPiecesDeep(rawPieces
+    .filter(function (pc) { return !pc.client_optional || selectedOptionalIds.includes(pc.id); }), removedIds), orderItem.led_configs || null); /* recursivo (29/09) */
 
   const colorsByRole = {};
   (orderItem.selected_colors || []).forEach(function (sc) {

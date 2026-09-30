@@ -34,7 +34,7 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
         // não por lote — ver [[quatro_copias_do_resolvedor_de_pecas]]);
         // sem este campo aqui a peça do construtor nunca chegava no .ban
         // gerado por este botão, mesmo já chegando no de furacao-lote.js.
-        .select('module_id, module_name, quantity, width_mm, height_mm, depth_mm, shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, sort_order, layout, modules(is_decoration)')
+        .select('module_id, module_name, quantity, width_mm, height_mm, depth_mm, shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, led_configs, sort_order, layout, modules(is_decoration)')
         .eq('order_id', currentCutlistOrder.id)
         .order('sort_order'),
       supabaseClient.from('component_drillings').select('*').order('sort_order'),
@@ -94,8 +94,9 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
       // removed_piece_ids (migration 134): peça removida manualmente pelo
       // cliente no modal "Peças do móvel" não pode ser cortada/furada aqui.
       const removedIds = item.removed_piece_ids || [];
-      const effectivePieces = filterRemovedPiecesDeep(todasPecas
-        .filter((p) => !p.client_optional || selectedIds.includes(p.id)), removedIds); // recursivo (29/09)
+      // led_configs (migration 183): LED embutido -> rasgo no .ban.
+      const effectivePieces = applyLedConfigsDeep(filterRemovedPiecesDeep(todasPecas
+        .filter((p) => !p.client_optional || selectedIds.includes(p.id)), removedIds), item.led_configs || null); // recursivo (29/09)
       const containerDims = { W: item.width_mm, H: item.height_mm, D: item.depth_mm };
       const parts = resolvePiecesForViewer(
         effectivePieces, containerDims, {}, item.shelf_quantities || {}, item.dim_overrides || {}

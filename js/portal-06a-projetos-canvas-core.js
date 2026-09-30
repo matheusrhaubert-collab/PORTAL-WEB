@@ -92,6 +92,9 @@ function cloneProjectSlotForUndo(slot) {
     // "Peças do móvel"), precisa de cópia própria pro desfazer e pra
     // duplicateProjectSlot (que reusa esta função) não compartilharem array.
     removedPieceIds: (slot.removedPieceIds || []).slice(),
+    // LED embutido (2026-09-30) — objeto por peça; cópia rasa basta (a janela
+    // do LED sempre SUBSTITUI o objeto, nunca muta uma config no lugar).
+    ledConfigs: Object.assign({}, slot.ledConfigs || {}),
     widthPresetsMm: (slot.widthPresetsMm || []).slice(),
     heightPresetsMm: (slot.heightPresetsMm || []).slice()
   };
@@ -2181,6 +2184,7 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
       // slot pra projectSlotEffectivePieces sempre achar o array (ver
       // portal-06b-projetos-canvas-ia-custo.js).
       removedPieceIds: [],
+      ledConfigs: {}, // LED embutido (2026-09-30), ver portal-06c
       hingeModel, slideModel,
       width_mm, height_mm, depth_mm,
       shelfQuantities,

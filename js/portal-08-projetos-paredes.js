@@ -5579,6 +5579,9 @@ async function sendProjectToOrder() {
         // cliente no modal "Peças do móvel" — o ERP (furacao-ban/
         // furacao-lote) precisa disto pra não cortar/furar peça removida.
         removed_piece_ids: slot.removedPieceIds || [],
+        // LED embutido (migration 183): { piece_id: config } — o ERP aplica
+        // na hora de gerar o .ban (rasgo), igual removed_piece_ids.
+        led_configs: slot.ledConfigs || {},
         // GEOMETRIA DO CONSTRUTOR DE VÃOS (migration 121). null quando o
         // slot não usa o construtor (a maioria). Não é o preço nem a
         // furação — é só onde cada peça do interior ficou, pra os
@@ -5620,7 +5623,18 @@ async function sendProjectToOrder() {
       .map((pl, i) => ({ pl, i, peca: projectBreakdownPecasFabricadas(pl.breakdown) < 2 ? 1 : 0 }))
       .sort((x, y) => (x.peca - y.peca) || (x.i - y.i))
       .forEach((x, novo) => { x.pl.sort_order = novo; payloads[novo] = x.pl; });
-    const { error: itemsError } = await supabaseClient.from('order_items').insert(payloads);
+    let { error: itemsError } = await supabaseClient.from('order_items').insert(payloads);
+    // LED embutido (2026-09-30): order_items.led_configs nasce na migration
+    // 183. Se o site subir antes dela, a coluna não existe e o insert INTEIRO
+    // falha. Sem nenhum LED no pedido, reenvia sem o campo (pedido comum não
+    // pode quebrar por causa disto). COM LED, para com erro claro — mandar
+    // pra fábrica sem o rasgo seria pior que não mandar.
+    if (itemsError && /led_configs/.test(String(itemsError.message || '') + String(itemsError.details || ''))) {
+      const temLed = payloads.some((pl) => pl.led_configs && Object.keys(pl.led_configs).length);
+      if (temLed) throw new Error('Este pedido tem LED embutido, mas o banco ainda não tem a coluna order_items.led_configs — rode a migration 183 no Supabase e envie de novo.');
+      payloads.forEach((pl) => { delete pl.led_configs; });
+      ({ error: itemsError } = await supabaseClient.from('order_items').insert(payloads));
+    }
     if (itemsError) throw itemsError;
 
     // Congela o projeto (migration 179). Sem a migration, a coluna não
@@ -7073,6 +7087,8 @@ function serializeProjectSlots() {
     // peca") — cabe no mesmo jsonb de slots que já existe, sem migration,
     // mesmo raciocínio do comentário do `layout` logo abaixo.
     removed_piece_ids: slot.removedPieceIds || [],
+    // LED embutido (2026-09-30) — cabe no jsonb de slots, sem migration.
+    led_configs: slot.ledConfigs || {},
     // Árvore de vãos montada no construtor de armário (spec §4.5 — cabe no
     // jsonb que já existe, sem migration). null = o cliente não mexeu.
     layout: slot.layout || null,

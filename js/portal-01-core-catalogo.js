@@ -1468,6 +1468,17 @@ async function loadPricingMarkup() {
       const porId = {};
       purchasedItems.forEach((it) => { porId[it.id] = it; });
       Pricing.setPurchasedItems(porId);
+      // LED EMBUTIDO (2026-09-30): modelos de perfil = itens comprados do
+      // grupo 'led_perfil' (migration 183), largura/profundidade do rasgo em
+      // attrs. A janela do LED (portal-06c, projectLedModels) lê daqui; sem
+      // nenhum cadastrado ela usa o perfil de hoje (17,5 × 7,5).
+      window.__legnoLedModels = purchasedItems
+        .filter((it) => it && it.kind === 'led_perfil' && it.active !== false)
+        .map((it) => ({
+          id: it.id, name: it.name,
+          largura_mm: Number((it.attrs || {}).largura_mm) || 17.5,
+          profundidade_mm: Number((it.attrs || {}).profundidade_mm) || 7.5
+        }));
     }
     // FERRAGEM DE MONTAGEM (minifix/cavilha/tambor/suporte, migration 119) —
     // 2026-08-18, Matt notou que sumiu do $ Fábrica. Causa: js/hardware.js

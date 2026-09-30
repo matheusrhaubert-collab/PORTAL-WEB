@@ -326,8 +326,9 @@ async function computeProjectSlotsTotal(slotConfigs) {
       if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
       const optionalIds = cfg.selected_optional_ids || [];
       const removedIds = cfg.removed_piece_ids || [];
-      const effectivePieces = filterRemovedPiecesDeep(piecesList
-        .filter((p) => !p.client_optional || optionalIds.includes(p.id)), removedIds);
+      // + LED embutido (2026-09-30): a usinagem por metro entra no valor salvo
+      const effectivePieces = applyLedConfigsDeep(filterRemovedPiecesDeep(piecesList
+        .filter((p) => !p.client_optional || optionalIds.includes(p.id)), removedIds), cfg.led_configs || null);
       await loadModuleColors(module.id); // preenche moduleColorsByRole pra ESTE módulo, igual restoreFavoriteProject
       const colorsByRole = {};
       (cfg.selected_colors || []).forEach((sc) => {
@@ -936,6 +937,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         // guarda a árvore INTEIRA, igual selectedOptionalIds) e é filtrada
         // depois por projectSlotEffectivePieces junto com layoutPieces.
         removedPieceIds: cfg.removed_piece_ids || [],
+        ledConfigs: cfg.led_configs || {}, // LED embutido (2026-09-30)
         // Construtor de armário: a árvore volta como veio (o motor só a lê
         // quando a janela abre). Projeto salvo antes disso não tem a chave.
         layout: cfg.layout || null,

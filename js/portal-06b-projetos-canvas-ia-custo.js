@@ -2476,10 +2476,20 @@ function projectSlotAllPiecesBeforeRemoval(slot) {
 }
 
 function projectSlotEffectivePieces(slot) {
+  return projectSlotEffectivePiecesWithLeds(slot, slot.ledConfigs);
+}
+
+// LED EMBUTIDO (2026-09-30): slot.ledConfigs ({piece_id: config}, ver
+// applyLedConfigsDeep em js/module-pieces.js) entra AQUI, no mesmo ponto de
+// junção do removedPieceIds — preço (usinagem por metro), 3D, foto e furação
+// do portal saem com o LED sem saber que ele existe. A variante com
+// `ledConfigs` explícito serve a janela do LED (portal-06c), que mostra a
+// prévia do rascunho ANTES de aplicar sem mexer no slot.
+function projectSlotEffectivePiecesWithLeds(slot, ledConfigs) {
   const removidas = slot.removedPieceIds;
-  const base = projectSlotAllPiecesBeforeRemoval(slot);
-  if (!removidas || !removidas.length) return base;
-  return filterRemovedPiecesDeep(base, removidas); // recursivo: porta/prateleira aninhada (29/09)
+  let base = projectSlotAllPiecesBeforeRemoval(slot);
+  if (removidas && removidas.length) base = filterRemovedPiecesDeep(base, removidas); // recursivo: porta/prateleira aninhada (29/09)
+  return applyLedConfigsDeep(base, ledConfigs);
 }
 
 // ==========================================================================

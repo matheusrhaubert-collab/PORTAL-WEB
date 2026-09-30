@@ -343,6 +343,37 @@ function filterRemovedPiecesDeep(piecesList, removedIds) {
   return out;
 }
 
+// ==========================================================================
+// LED EMBUTIDO (2026-09-30) — Matt: "nesse botão o usuário escolhe qual peça
+// vai querer o LED, se é em cima ou embaixo, qual a distância do fundo da
+// peça e quanto de margem fica entre as pontas. Onde foi colocado naquela
+// peça deverá ser incluído no .ban um rasgo (slot)".
+//
+// ledConfigs = { [piece_id]: { modelo_id, modelo_nome, largura_mm,
+//   profundidade_mm, face: 'inferior'|'superior', dist_fundo_mm, margem_mm } }
+// (slot.ledConfigs no projeto, order_items.led_configs no pedido).
+//
+// Mesmo desenho de filterRemovedPiecesDeep logo acima: aplicado UMA vez no
+// ponto de junção (projectSlotEffectivePieces no portal, e nas três telas do
+// ERP que reconstroem o pedido), recursivo, nunca muta o original. A peça
+// ganha `led`; daí pra frente preço (usinagem por metro), 3D, foto e .ban
+// leem o campo sem saber de onde ele veio.
+function applyLedConfigsDeep(piecesList, ledConfigs) {
+  if (!Array.isArray(piecesList)) return piecesList;
+  if (!ledConfigs || typeof ledConfigs !== 'object' || !Object.keys(ledConfigs).length) return piecesList;
+  return piecesList.map((p) => {
+    if (!p) return p;
+    let out = p;
+    const cfg = p.id != null ? ledConfigs[p.id] : null;
+    if (cfg) out = Object.assign({}, out, { led: cfg });
+    if (Array.isArray(p.child_pieces) && p.child_pieces.length) {
+      const kids = applyLedConfigsDeep(p.child_pieces, ledConfigs);
+      if (kids !== p.child_pieces) out = Object.assign({}, out, { child_pieces: kids });
+    }
+    return out;
+  });
+}
+
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
   // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.
@@ -555,6 +586,10 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // ver viewer3d.js buildPanelGeometry. [] = peça inteira.
         recortes: piece.recortes || [],
         abre_recorte: !!piece.abre_recorte,
+        // LED embutido (2026-09-30, ver applyLedConfigsDeep) — rasgo no .ban e
+        // desenho no 3D/foto. Sem esta linha o dado morreria aqui, como já
+        // aconteceu com drilling_pattern_id e slide_distance_mm.
+        led: piece.led || null,
         width_mm: resolvedWidthMm,
         height_mm: resolvedHeightMm,
         depth_mm: resolvedDepthMm,

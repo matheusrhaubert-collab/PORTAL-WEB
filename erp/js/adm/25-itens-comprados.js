@@ -33,6 +33,9 @@ const PURCHASED_KIND_LABELS = {
   puxador: 'Puxador',
   pe: 'Pé / sapata',
   acessorio: 'Acessório',
+  // LED embutido (migration 183): um item deste grupo = um MODELO na janela
+  // do LED do portal. Largura/profundidade do rasgo vão em Atributos (JSON).
+  led_perfil: 'Perfil de LED',
   outro: 'Outro'
 };
 

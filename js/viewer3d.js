@@ -2081,6 +2081,49 @@ const Viewer3D = (function () {
     return geometry;
   }
 
+  // ---- LED EMBUTIDO (2026-09-30) ----
+  // Perfil de alumínio embutido no rasgo + difusor aceso, na face de cima ou
+  // de baixo de uma peça HORIZONTAL (base/topo/prateleira/peça livre
+  // deitada). Mesma geometria do .ban (drilling.js ledRect): corre na LARGURA
+  // da peça de margem a largura - margem, começa a dist_fundo_mm do FUNDO
+  // (borda do rasgo) e tem largura_mm. Devolve um Group em coordenadas LOCAIS
+  // da peça (origem no centro dela) — quem chama pendura no objeto que o
+  // emit() devolveu, então ele gira/abre/some junto com a peça.
+  //
+  // O difusor é MeshBasicMaterial (não depende da luz da cena: "aceso" em
+  // qualquer ângulo). Um pouco pra fora da face (0,4mm) pra não brigar com
+  // ela no z-buffer. A foto realista tem a própria versão (photoreal.js), com
+  // material EMISSIVO — lá o LED ilumina de verdade a peça de baixo.
+  const LED_COR_DIFUSOR = 0xfff1d0;   // branco quente (3000K aprox.)
+  const LED_COR_PERFIL = 0xb9bcc0;    // alumínio
+  function buildLedStrip(part, faceA, thickness, faceB) {
+    const led = part && part.led;
+    if (!led) return null;
+    const larg = (Number(led.largura_mm) || 0) / 1000;
+    const margem = Math.max(Number(led.margem_mm) || 0, 0) / 1000;
+    const dist = Math.max(Number(led.dist_fundo_mm) || 0, 0) / 1000;
+    const comp = faceA - 2 * margem;
+    if (!(larg > 0) || !(comp > 0) || dist + larg > faceB + 1e-5) return null;
+    const lado = led.face === 'superior' ? 1 : -1;
+    const zc = -faceB / 2 + dist + larg / 2;
+    const yFace = lado * thickness / 2;
+    const g = new THREE.Group();
+    const perfil = new THREE.Mesh(new THREE.BoxGeometry(comp, 0.0006, larg),
+      new THREE.MeshStandardMaterial({ color: LED_COR_PERFIL, metalness: 0.6, roughness: 0.35 }));
+    perfil.position.set(0, yFace + lado * 0.0003, zc);
+    const difusor = new THREE.Mesh(new THREE.BoxGeometry(Math.max(comp - 0.002, 0.001), 0.0004, Math.max(larg - 0.005, 0.002)),
+      new THREE.MeshBasicMaterial({ color: LED_COR_DIFUSOR }));
+    difusor.position.set(0, yFace + lado * 0.0008, zc);
+    g.add(perfil); g.add(difusor);
+    g.userData.ledStrip = true;
+    return g;
+  }
+  function attachLed(obj, part, faceA, thickness, faceB) {
+    if (!obj || !part || !part.led || part.tilt_angle_deg) return;
+    const strip = buildLedStrip(part, faceA, thickness, faceB);
+    if (strip) obj.add(strip);
+  }
+
   // Monta uma peça dentro de um volume-caixa (W,H,D em metros) conforme seu
   // position_role, delegando a criação/posicionamento efetivos pra `emit`
   // (content, color, x, y, z, rotateTexture, opening) — quem chama decide se
@@ -2865,7 +2908,8 @@ const Viewer3D = (function () {
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
       // Vista de cima (par ±Y): U = largura, V = profundidade.
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null);
+      attachLed(emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null),
+        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
       // Recorte em L (lateral cadastrada como 'back', base de canto 90°) —
@@ -2912,7 +2956,8 @@ const Viewer3D = (function () {
       const span = Math.max(innerHigh - innerLow, 0.01);
       const y = innerLow + span * ((index + 1) / (count + 1));
       // Prateleira também é vista de cima: U = largura, V = profundidade.
-      emit(resolveContent(part, geometry), part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true), null);
+      attachLed(emit(resolveContent(part, geometry), part.color, 0 + offX, y + offY + legH, 0 + offZ, resolveGrainRotate(part, faceA, faceB, true), null),
+        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
     } else if (role === 'drawer') {
       // Gaveta = caixa de verdade (não painel fino) — empilha as gavetas
       // verticalmente perto da frente do volume. offY (Deslocar Y) é um
@@ -3007,7 +3052,8 @@ const Viewer3D = (function () {
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
       // Tampo, vista de cima: U = largura, V = profundidade.
-      emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null);
+      attachLed(emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, true), null),
+        part, faceA, thickness, faceB); // LED embutido (2026-09-30)
     } else if (role === 'free' && part.shape_type === 'oval_rod') {
       // Cabide tubular oval (migration 062) — MESMO cálculo de posição do
       // 'free' comum logo abaixo (zero absoluto, canto chão-fundo-esquerda),
@@ -3162,6 +3208,9 @@ const Viewer3D = (function () {
         }
       }
       const freeGroup = emit(freeContent, part.color, x, y, z, false, opening);
+      // LED embutido (2026-09-30) — só em peça livre DEITADA (espessura na
+      // altura) e sem giro/abertura: é o caso da prateleira/base do Construtor.
+      if (!rotYDeg && !opening && h <= w && h <= d) attachLed(freeGroup, part, w, h, d);
       if (rotFino) wrapRotatedFreePiece(freeGroup, x, y, z, rotYDeg);
       // Dobradiças visuais — mesma regra de 'front' (linha ~944): peça 'free'
       // com hingeSide resolvido é uma porta de verdade, só que posicionada

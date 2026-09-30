@@ -189,7 +189,7 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
        ver o comentário grande no topo do arquivo e em
        FURACAO_LOTE._catalogoDeAgregados. */
     .select('id, module_id, module_name, quantity, width_mm, height_mm, depth_mm, ' +
-            'shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, sort_order, ' +
+            'shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, led_configs, sort_order, ' +
             'selected_colors, layout, modules(is_decoration)')
     .eq('order_id', orderId)
     .order('sort_order');
@@ -228,9 +228,10 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
     /* removed_piece_ids (migration 134): peça removida manualmente pelo
        cliente no modal "Peças do móvel" não pode ser cortada/furada aqui. */
     const removidos = item.removed_piece_ids || [];
-    const efetivas = filterRemovedPiecesDeep(todasPecas.filter(function (p) {
+    /* led_configs (migration 183): LED embutido -> rasgo cego no .ban. */
+    const efetivas = applyLedConfigsDeep(filterRemovedPiecesDeep(todasPecas.filter(function (p) {
       return !p.client_optional || escolhidos.includes(p.id);
-    }), removidos); /* recursivo: porta/prateleira aninhada (29/09) */
+    }), removidos), item.led_configs || null); /* recursivo: porta/prateleira aninhada (29/09) */
 
     /* colorsByRole a partir do que o cliente escolheu no pedido.
        ATENÇÃO AO FORMATO (errei isto na 1ª versão, 2026-08-16): o
@@ -560,9 +561,11 @@ FURACAO_LOTE._arquivosPorPeca = function (itens, config, pecasPlano) {
            o contorno. Ver Drilling.outlineBan. */
         files.push(Object.assign({}, base, {
           filename: nome + '.ban',
-          content: Drilling.buildBanXml(nome, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes, [], recortes),
+          /* LED embutido (2026-09-30): o rasgo cego vai como <SlotL> em
+             passadas (rec.ledSlots) — é o formato do .ban real da máquina. */
+          content: Drilling.buildBanXml(nome, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes, rec.ledSlots || [], recortes),
           holes_count: rec.holes.length,
-          slots_count: recortes.length
+          slots_count: recortes.length + (rec.ledSlots || []).length
         }));
       }
     });

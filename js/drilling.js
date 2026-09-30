@@ -1848,18 +1848,75 @@
     return slots;
   }
 
+  // ---- LED EMBUTIDO: rasgo cego -> <SlotL> em passadas (2026-09-30) ------
+  //
+  // Matt: "onde foi colocado naquela peça deverá ser incluído no .ban um
+  // rasgo (slot) conforme o usuário configurou". O perfil de hoje é 17,5 de
+  // largura × 7,5 de profundidade — e é EXATAMENTE a receita do .ban real que
+  // ele mandou em 16/08 (três SlotL de Ø6 em 475,5 / 481 / 487 varrendo
+  // 472,5–490 = 17,5mm, Z=-7, IsCuted=0, Face B): o arquivo de exemplo da
+  // máquina já ERA um rasgo de LED. Então aqui é bolsão cego (rectToSlots,
+  // passes paralelos), IsCuted="0", e — ao contrário do L do toe, que saiu do
+  // SlotL e foi pro <Outline> porque é passante — o LED vai mesmo em SlotL.
+  //
+  // Geometria (peça HORIZONTAL — base/topo/prateleira/peça livre deitada):
+  // u = LARGURA (X do módulo, 0 na esquerda), v = PROFUNDIDADE (0 no FUNDO).
+  // O rasgo corre em u de margem a faceA - margem; em v começa a
+  // dist_fundo_mm do fundo (borda do rasgo, não o centro) e tem largura_mm.
+  // Face: 'superior' = Face A (a de cima, a mesma que a broca de cima fura);
+  // 'inferior' = Face B (a de baixo) — é a do exemplo real.
+  function ledRect(part) {
+    const led = part && part.led;
+    if (!led) return null;
+    const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
+    const larg = Number(led.largura_mm) || 0, prof = Number(led.profundidade_mm) || 0;
+    const margem = Math.max(Number(led.margem_mm) || 0, 0);
+    const dist = Math.max(Number(led.dist_fundo_mm) || 0, 0);
+    const u0 = margem, u1 = t.faceA - margem;
+    const v0 = dist, v1 = dist + larg;
+    // guardas: rasgo tem que caber na chapa e não pode atravessá-la
+    if (!(larg > 0) || !(prof > 0) || prof >= t.thickness || u1 - u0 <= 0 || v1 > t.faceB + 0.01) return null;
+    const p0 = localToMachine(t, u0, v0);
+    const p1 = localToMachine(t, u1, v1);
+    return {
+      x0: Math.min(p0.x, p1.x), x1: Math.max(p0.x, p1.x),
+      y0: Math.min(p0.y, p1.y), y1: Math.max(p0.y, p1.y),
+      depth: prof, passante: false,
+      face: led.face === 'superior' ? 'A' : 'B'
+    };
+  }
+
+  function ledSlotsDaPeca(part) {
+    const r = ledRect(part);
+    if (!r) return [];
+    const m = machineDims(splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning));
+    // bolsão SEMPRE (rasgo cego não tem retalho pra cair). As passadas do
+    // bolsão vão de BORDA a borda do retângulo pelo CENTRO da fresa — no
+    // canto passante do toe isso sai fora da chapa e não importa, mas aqui
+    // a ponta redonda comeria meia-fresa (3mm) ALÉM da margem em cada ponta.
+    // Recua meia-fresa nas pontas: o rasgo termina exatamente na margem
+    // (com o raio de 3mm da fresa nos cantos, que o perfil cobre).
+    return rectToSlots(r, m.C, m.L).map(function (sl) {
+      const meia = sl.width / 2;
+      if (sl.y0 === sl.y1) { sl.x0 += meia; sl.x1 -= meia; }
+      else { sl.y0 += meia; sl.y1 -= meia; }
+      return Object.assign(sl, { face: r.face, led: true });
+    });
+  }
+
   // Todos os passes de uma peça, prontos pro .ban.
   function slotsDaPeca(part) {
     // o chanfro NÃO vira SlotL: ele só existe no contorno (<Outline>), que é
     // o que a máquina de fato corta (ver outlineBan)
     const rects = recorteRects(part).filter(function (r) { return !r.chanfro; });
-    if (!rects.length) return [];
+    const led = ledSlotsDaPeca(part);
+    if (!rects.length) return led;
     const m = machineDims(splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning));
     const out = [];
     rects.forEach(function (r) {
       rectToSlots(r, m.C, m.L).forEach(function (s) { out.push(s); });
     });
-    return out;
+    return out.concat(led);
   }
 
   // ---- formatador .ban (MicroDrawBan_XML v3.0) --------------------------
@@ -1893,7 +1950,8 @@
   }
 
   function slotToXml(s) {
-    return '<SlotL Name="" Face="' + USINAGEM.face + '" Start="' + fmt(s.x0) + ' -' + fmt(s.y0)
+    // Face por rasgo (LED em cima = A, embaixo = B); sem ela, a de sempre.
+    return '<SlotL Name="" Face="' + (s.face || USINAGEM.face) + '" Start="' + fmt(s.x0) + ' -' + fmt(s.y0)
       + ' -' + fmt(s.depth) + '" End="' + fmt(s.x1) + ' -' + fmt(s.y1) + ' -' + fmt(s.depth)
       + '" Width="' + s.width.toFixed(1) + '" IsCuted="'
       + (s.passante ? USINAGEM.is_cuted_passante : '0') + '"/>';
@@ -2141,7 +2199,7 @@
             // a usinagem entra na assinatura: duas peças com a MESMA furação e
             // recortes diferentes (lateral de toe 4½ x lateral lisa) não podem
             // colapsar no mesmo arquivo.
-            JSON.stringify(slots.map(function (sl) { return [Math.round(sl.x0 * 10), Math.round(sl.y0 * 10), Math.round(sl.x1 * 10), Math.round(sl.y1 * 10), sl.width, Math.round(sl.depth * 10), sl.passante ? 1 : 0]; })),
+            JSON.stringify(slots.map(function (sl) { return [Math.round(sl.x0 * 10), Math.round(sl.y0 * 10), Math.round(sl.x1 * 10), Math.round(sl.y1 * 10), sl.width, Math.round(sl.depth * 10), sl.passante ? 1 : 0, sl.face || '']; })),
             // o contorno também: chapa chanfrada (aéreo 45°) e chapa reta de
             // mesma medida/furação são arquivos diferentes na máquina
             JSON.stringify(rects.map(function (r) { return [Math.round(r.x0 * 10), Math.round(r.y0 * 10), Math.round(r.x1 * 10), Math.round(r.y1 * 10), r.chanfro ? 1 : 0]; }))
@@ -2152,6 +2210,10 @@
               reference: part.reference || 'peca',
               comprimento_mm: m.C, largura_mm: m.L, espessura_mm: m.E,
               holes: sorted, slots: slots, recortes: rects, quantity: 0,
+              // Só os rasgos do LED vão como <SlotL> pro .ban (os do L do
+              // toe/gola saíram pro <Outline>, ver outlineBan); `slots`
+              // inteiro continua indo pro DESENHO (screens-furacao).
+              ledSlots: slots.filter(function (sl) { return sl.led; }),
               // cor NÃO entra na assinatura de propósito: a furação de duas
               // peças iguais em cores diferentes é a MESMA, e separar os
               // arquivos por cor faria a máquina furar duas vezes o que é um
@@ -2191,7 +2253,7 @@
       // o contorno retangular — divergia do lote.
       return {
         filename: base + '.ban',
-        content: buildBanXml(base, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes, [], rec.recortes),
+        content: buildBanXml(base, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes, rec.ledSlots || [], rec.recortes),
         quantity: rec.quantity,
         reference: rec.reference,
         module_name: rec.module_name,
@@ -2351,7 +2413,7 @@
     // Aéreo de canto 45° (2026-09-29): profundidade das laterais que fecham
     // o canto — define onde a diagonal da chapa chanfrada começa.
     CHANFRO45_LATERAL_MM: CHANFRO45_LATERAL_MM,
-    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan, chanfroDaPeca, chanfroRect, collectAssembly }
+    _internals: { ledRect, ledSlotsDaPeca, splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan, chanfroDaPeca, chanfroRect, collectAssembly }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 // migration 043 — propagação por componente + espelhamento esq/dir

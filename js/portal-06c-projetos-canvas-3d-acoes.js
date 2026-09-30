@@ -3223,3 +3223,302 @@ if (projSlotRemoveBtn) {
     if (selectedProjectSlotId != null) removeProjectSlot(selectedProjectSlotId);
   });
 }
+
+// ==========================================================================
+// LED EMBUTIDO (2026-09-30)
+// ==========================================================================
+// Matt: "quero uma nova tool para inserir LED. a nova ferramenta quero que
+// apareça na barra do módulo. ela deve mostrar basicamente qual modelo de
+// LED que quer (tamanho) — hoje temos só um de 17.5mm largura x 7.5mm
+// profundidade pelo comprimento da peça. nesse botão o usuário escolhe qual
+// peça vai querer o LED, se é em cima ou embaixo, qual a distância do fundo
+// da peça, e quanto de margem fica entre as pontas. onde foi colocado
+// naquela peça deverá ser incluído no .ban um rasgo (slot). na renderização
+// deve constar o LED aparecendo. no 3D deve aparecer o LED também. um custo
+// por metro de usinagem deverá ser acrescentado."
+//
+// O que esta tela GRAVA: só slot.ledConfigs = { [piece_id]: config }. Todo o
+// resto sai sozinho do ponto de junção (projectSlotEffectivePieces →
+// applyLedConfigsDeep): usinagem por metro no preço (Pricing.ledMetros), LED
+// aceso no 3D e na foto (viewer3d/photoreal attachLed), rasgo no .ban
+// (Drilling.ledSlotsDaPeca). O projeto salvo e o pedido levam a mesma chave
+// (led_configs) — ver portal-08/09 e as telas de furação do ERP.
+//
+// Modelos: purchased_items com kind='led_perfil' (migration 183), largura e
+// profundidade do rasgo em attrs. Sem a migration, cai no perfil de hoje.
+const LED_MODELO_PADRAO = { id: 'led-17.5', name: 'LED 17,5 × 7,5 mm', largura_mm: 17.5, profundidade_mm: 7.5 };
+function projectLedModels() {
+  const lista = (typeof window !== 'undefined' && Array.isArray(window.__legnoLedModels)) ? window.__legnoLedModels : [];
+  return lista.length ? lista : [LED_MODELO_PADRAO];
+}
+
+let ledModalSlotId = null;
+let ledSelPieceId = null;
+let ledDraft = null;          // { modelo_id, face, dist_fundo_mm, margem_mm }
+let ledViewer = null;
+let ledAssembly = null;
+let ledPreviewTimer = null;
+
+// Peça que PODE receber LED: folha, deitada (espessura na altura), sem giro
+// nem inclinação, fabricada. É onde o 3D e o .ban sabem pôr o rasgo.
+function projectLedPecasElegiveis(slot) {
+  let parts = [];
+  try {
+    parts = resolvePiecesForViewer(
+      projectSlotEffectivePiecesWithLeds(slot, null),
+      { W: slot.width_mm, H: slot.height_mm, D: slot.depth_mm },
+      slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides
+    ) || [];
+  } catch (e) { parts = []; }
+  const PAPEIS = { top: 1, bottom: 1, shelf: 1, countertop: 1, free: 1 };
+  const vistos = new Set();
+  return flatProjectPieces(parts).map(({ p, grupo }) => ({ p, grupo })).filter(({ p }) => {
+    if (p.piece_id == null || vistos.has(p.piece_id)) return false;
+    if (!PAPEIS[p.position_role]) return false;
+    if (p.origin === 'comprado' || p.rotation_y_deg || p.tilt_angle_deg) return false;
+    const w = Number(p.width_mm) || 0, h = Number(p.height_mm) || 0, d = Number(p.depth_mm) || 0;
+    if (!(h > 0) || h > w || h > d) return false;
+    vistos.add(p.piece_id);
+    return true;
+  });
+}
+
+function ledModeloPorId(id) {
+  const ms = projectLedModels();
+  return ms.find((m) => String(m.id) === String(id)) || ms[0];
+}
+
+// Config completa (o que vai pro slot) a partir do rascunho da tela.
+function ledConfigDoRascunho() {
+  if (!ledDraft) return null;
+  const m = ledModeloPorId(ledDraft.modelo_id);
+  return {
+    modelo_id: m.id, modelo_nome: m.name,
+    largura_mm: Number(m.largura_mm), profundidade_mm: Number(m.profundidade_mm),
+    face: ledDraft.face === 'superior' ? 'superior' : 'inferior',
+    dist_fundo_mm: Math.max(Number(ledDraft.dist_fundo_mm) || 0, 0),
+    margem_mm: Math.max(Number(ledDraft.margem_mm) || 0, 0)
+  };
+}
+
+// Mesmas guardas do .ban (drilling.js ledRect) — o que a tela aceita é o que
+// a máquina recebe. Devolve a mensagem de erro, ou null.
+function ledValidar(cfg, part) {
+  if (!cfg || !part) return I18n.t('led.pick_piece');
+  const w = Number(part.width_mm) || 0, e = Number(part.height_mm) || 0, d = Number(part.depth_mm) || 0;
+  if (!(cfg.largura_mm > 0) || !(cfg.profundidade_mm > 0)) return I18n.t('led.err_no_model');
+  if (w - 2 * cfg.margem_mm <= 0) return I18n.t('led.err_too_short');
+  if (cfg.dist_fundo_mm + cfg.largura_mm > d) return I18n.t('led.err_depth', { max: Math.max(d - cfg.largura_mm, 0) });
+  if (cfg.profundidade_mm >= e) return I18n.t('led.err_depth', { max: e });
+  return null;
+}
+
+function openProjectSlotLed(slotId) {
+  const slot = projectSlots.find((s) => s.id === slotId);
+  const modal = document.getElementById('po-led-modal');
+  if (!slot || !modal) return;
+  ledModalSlotId = slotId;
+  const titulo = document.getElementById('po-led-title');
+  if (titulo) titulo.textContent = I18n.t('led.modal_title') + ((slot.module && slot.module.name) ? ' · ' + slot.module.name : '');
+  const sel = document.getElementById('po-led-model');
+  if (sel) {
+    sel.innerHTML = projectLedModels().map((m) => '<option value="' + escapeHtmlCutlist(m.id) + '">'
+      + escapeHtmlCutlist(m.name) + '</option>').join('');
+  }
+  const elegiveis = projectLedPecasElegiveis(slot);
+  // abre na primeira peça que já tem LED; senão na primeira da lista
+  const comLed = elegiveis.find(({ p }) => slot.ledConfigs && slot.ledConfigs[p.piece_id]);
+  ledSelecionarPeca(slot, (comLed || elegiveis[0] || { p: {} }).p.piece_id);
+  modal.classList.add('open');
+  renderProjectLedPreview(slot);
+}
+
+function ledSelecionarPeca(slot, pieceId) {
+  ledSelPieceId = pieceId == null ? null : pieceId;
+  const atual = (pieceId != null && slot.ledConfigs && slot.ledConfigs[pieceId]) || null;
+  const m = atual ? ledModeloPorId(atual.modelo_id) : projectLedModels()[0];
+  ledDraft = {
+    modelo_id: m.id,
+    face: atual ? atual.face : 'inferior',
+    dist_fundo_mm: atual ? atual.dist_fundo_mm : 50,
+    margem_mm: atual ? atual.margem_mm : 30
+  };
+  renderProjectLedList(slot);
+  renderProjectLedForm(slot);
+}
+
+function renderProjectLedList(slot) {
+  const el = document.getElementById('po-led-pieces');
+  if (!el) return;
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const lista = projectLedPecasElegiveis(slot);
+  if (!lista.length) { el.innerHTML = '<p class="hint">' + escapeHtmlCutlist(I18n.t('led.no_pieces')) + '</p>'; return; }
+  el.innerHTML = lista.map(({ p, grupo }) => {
+    const tem = slot.ledConfigs && slot.ledConfigs[p.piece_id];
+    const nome = (grupo ? grupo + ' · ' : '') + (p.reference || '');
+    const med = formatDimension(Number(p.width_mm) || 0, unit) + ' × ' + formatDimension(Number(p.depth_mm) || 0, unit)
+      + ' × ' + formatDimension(Number(p.height_mm) || 0, unit);
+    return '<button type="button" class="po-led-piece' + (String(p.piece_id) === String(ledSelPieceId) ? ' active' : '')
+      + '" data-led-piece="' + escapeHtmlCutlist(p.piece_id) + '"><span>' + escapeHtmlCutlist(nome) + '</span>'
+      + '<small>' + escapeHtmlCutlist(med) + '</small>'
+      + (tem ? '<span class="po-led-badge">' + escapeHtmlCutlist(I18n.t('led.badge')) + ' · '
+        + escapeHtmlCutlist(tem.face === 'superior' ? I18n.t('led.face_top') : I18n.t('led.face_bottom')) + '</span>' : '')
+      + '</button>';
+  }).join('');
+}
+
+function ledPecaSelecionada(slot) {
+  if (ledSelPieceId == null) return null;
+  const achada = projectLedPecasElegiveis(slot).find(({ p }) => String(p.piece_id) === String(ledSelPieceId));
+  return achada ? achada.p : null;
+}
+
+function renderProjectLedForm(slot) {
+  const part = ledPecaSelecionada(slot);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('po-led-piece-name', part ? (part.reference || '—') : '—');
+  const sel = document.getElementById('po-led-model');
+  if (sel && ledDraft) sel.value = String(ledDraft.modelo_id);
+  document.querySelectorAll('#po-led-modal [data-led-face]').forEach((b) => {
+    b.classList.toggle('active', !!ledDraft && b.getAttribute('data-led-face') === ledDraft.face);
+  });
+  const dist = document.getElementById('po-led-dist');
+  const marg = document.getElementById('po-led-margin');
+  if (dist && ledDraft && document.activeElement !== dist) dist.value = ledDraft.dist_fundo_mm;
+  if (marg && ledDraft && document.activeElement !== marg) marg.value = ledDraft.margem_mm;
+  const cfg = ledConfigDoRascunho();
+  const comp = (part && cfg) ? Pricing.ledComprimentoMm(cfg, part.width_mm) : 0;
+  set('po-led-length', part ? (Math.round(comp * 10) / 10) + ' mm' : '—');
+  set('po-led-groove', cfg ? I18n.t('led.groove_fmt', {
+    w: cfg.largura_mm, p: cfg.profundidade_mm,
+    f: cfg.face === 'superior' ? I18n.t('led.face_a') : I18n.t('led.face_b')
+  }) : '—');
+  const erro = part ? ledValidar(cfg, part) : I18n.t('led.pick_piece');
+  const errEl = document.getElementById('po-led-error');
+  if (errEl) { errEl.textContent = erro || ''; errEl.style.display = erro ? '' : 'none'; }
+  const apply = document.getElementById('po-led-apply-btn');
+  if (apply) apply.disabled = !!erro;
+  const rem = document.getElementById('po-led-remove-btn');
+  if (rem) rem.style.visibility = (part && slot.ledConfigs && slot.ledConfigs[part.piece_id]) ? 'visible' : 'hidden';
+}
+
+// 3D do módulo com o RASCUNHO aplicado na peça escolhida (prévia ao vivo) +
+// contorno na peça. Instância própria, igual à explodida do "Peças do móvel".
+function renderProjectLedPreview(slot) {
+  const cont = document.getElementById('po-led-3d');
+  if (!cont || typeof ViewerComposition === 'undefined' || !ViewerComposition.createInstance) return;
+  if (!ledViewer) ledViewer = ViewerComposition.createInstance();
+  ledViewer.init('po-led-3d');
+  const configs = Object.assign({}, slot.ledConfigs || {});
+  const part = ledPecaSelecionada(slot);
+  const cfg = ledConfigDoRascunho();
+  if (part && cfg && !ledValidar(cfg, part)) configs[part.piece_id] = cfg;
+  const asm = buildCompositionAssemblies([{
+    pieces: projectSlotEffectivePiecesWithLeds(slot, configs),
+    width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+    colorsByRole: slot.colorsByRole, pieceColorOverrides: slot.pieceColorOverrides || {},
+    shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides
+  }]);
+  ledAssembly = (asm && asm[0]) || null;
+  if (!ledAssembly) return;
+  ledViewer.render(asm, null, null);
+  if (part && typeof ledViewer.setHoverHighlight === 'function' && ledAssembly.group) {
+    let alvo = null;
+    ledAssembly.group.traverse((o) => {
+      if (!alvo && o.userData && o.userData.pieceId != null && String(o.userData.pieceId) === String(part.piece_id)) alvo = o;
+    });
+    ledViewer.setHoverHighlight(alvo);
+  }
+}
+function agendarPreviewLed(slot) {
+  if (ledPreviewTimer) clearTimeout(ledPreviewTimer);
+  ledPreviewTimer = setTimeout(() => { ledPreviewTimer = null; renderProjectLedPreview(slot); }, 180);
+}
+
+function aplicarLedNaPeca(slot) {
+  const part = ledPecaSelecionada(slot);
+  const cfg = ledConfigDoRascunho();
+  if (!part || ledValidar(cfg, part)) return;
+  slot.ledConfigs = Object.assign({}, slot.ledConfigs || {}, { [part.piece_id]: cfg });
+  recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+  renderProjectLedList(slot);
+  renderProjectLedForm(slot);
+  renderProjectLedPreview(slot);
+}
+
+function removerLedDaPeca(slot) {
+  const part = ledPecaSelecionada(slot);
+  if (!part || !slot.ledConfigs || !slot.ledConfigs[part.piece_id]) return;
+  const novo = Object.assign({}, slot.ledConfigs);
+  delete novo[part.piece_id];
+  slot.ledConfigs = novo;
+  recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+  renderProjectLedList(slot);
+  renderProjectLedForm(slot);
+  renderProjectLedPreview(slot);
+}
+
+(function ligaLedEmbutido() {
+  const b = document.getElementById('po-proj-slot-led-btn');
+  if (b) {
+    b.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (selectedProjectSlotId != null) openProjectSlotLed(selectedProjectSlotId);
+    });
+  }
+  const modal = document.getElementById('po-led-modal');
+  if (!modal) return;
+  const slotAtual = () => projectSlots.find((s) => s.id === ledModalSlotId) || null;
+  const fecha = () => {
+    modal.classList.remove('open');
+    if (ledViewer && typeof ledViewer.setHoverHighlight === 'function') ledViewer.setHoverHighlight(null);
+  };
+  const fechar = document.getElementById('po-led-close');
+  if (fechar) fechar.addEventListener('click', fecha);
+  modal.addEventListener('click', (e) => { if (e.target === modal) fecha(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) fecha(); });
+
+  const lista = document.getElementById('po-led-pieces');
+  if (lista) lista.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-led-piece]');
+    const slot = slotAtual();
+    if (!btn || !slot) return;
+    ledSelecionarPeca(slot, btn.getAttribute('data-led-piece'));
+    renderProjectLedPreview(slot);
+  });
+  modal.querySelectorAll('[data-led-face]').forEach((bt) => bt.addEventListener('click', () => {
+    const slot = slotAtual();
+    if (!slot || !ledDraft) return;
+    ledDraft.face = bt.getAttribute('data-led-face');
+    renderProjectLedForm(slot);
+    agendarPreviewLed(slot);
+  }));
+  const sel = document.getElementById('po-led-model');
+  if (sel) sel.addEventListener('change', () => {
+    const slot = slotAtual();
+    if (!slot || !ledDraft) return;
+    ledDraft.modelo_id = sel.value;
+    renderProjectLedForm(slot);
+    agendarPreviewLed(slot);
+  });
+  [['po-led-dist', 'dist_fundo_mm'], ['po-led-margin', 'margem_mm']].forEach(([id, campo]) => {
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    inp.addEventListener('input', () => {
+      const slot = slotAtual();
+      if (!slot || !ledDraft) return;
+      ledDraft[campo] = Number(inp.value) || 0;
+      renderProjectLedForm(slot);
+      agendarPreviewLed(slot);
+    });
+  });
+  const apply = document.getElementById('po-led-apply-btn');
+  if (apply) apply.addEventListener('click', () => { const slot = slotAtual(); if (slot) aplicarLedNaPeca(slot); });
+  const rem = document.getElementById('po-led-remove-btn');
+  if (rem) rem.addEventListener('click', () => { const slot = slotAtual(); if (slot) removerLedDaPeca(slot); });
+})();

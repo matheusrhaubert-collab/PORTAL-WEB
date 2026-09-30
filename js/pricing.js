@@ -467,6 +467,19 @@
   // pieceDims = saída de calculatePiece (width_mm/height_mm/depth_mm e
   // edge_band_m já resolvidos). Precisa das medidas REAIS porque a parte
   // variável é toda em cima delas.
+  // LED EMBUTIDO (2026-09-30): metros de rasgo de uma peça com `led`
+  // (applyLedConfigsDeep, js/module-pieces.js). O LED corre na LARGURA da
+  // peça horizontal (eixo X do módulo), de ponta a ponta menos a margem de
+  // cada lado. Mesma conta do desenho e do .ban — ver ledComprimentoMm.
+  function ledComprimentoMm(led, widthMm) {
+    if (!led) return 0;
+    return Math.max(num(widthMm) - 2 * num(led.margem_mm), 0);
+  }
+  function ledMetros(piece, pieceDims) {
+    if (!piece || !piece.led || !pieceDims) return 0;
+    return ledComprimentoMm(piece.led, pieceDims.width_mm) / 1000;
+  }
+
   function processLaborFor(piece, pieceDims) {
     const zero = { corte: 0, fita: 0, furacao: 0, usinagem: 0, total: 0 };
     // Peça COMPRADA não passa por processo nenhum: não é cortada, não é
@@ -537,7 +550,8 @@
     // lateral é entalhada numa carcaça e lisa em outra.
     // Sem metros não há usinagem, e aí a parte fixa também não é cobrada —
     // peça sem entalhe não passa na fresadora.
-    const usinagemM = num(piece.usinagem_m);
+    // + o rasgo do LED embutido (2026-09-30), que é usinagem por metro igual.
+    const usinagemM = num(piece.usinagem_m) + ledMetros(piece, pieceDims);
     const usinagem = usinagemM > 0
       ? processLabor.usinagem_peca + usinagemM * processLabor.usinagem_metro
       : 0;
@@ -891,9 +905,15 @@
     // ressalva, marcar "por processo" num pé zeraria o preço dele.
     const proc = (piece.labor_por_processo && piece.origin !== 'comprado')
       ? processLaborFor(piece, pieceDims) : null;
+    // LED em peça do cadastro ANTIGO (sem mão de obra por processo): a labor
+    // do componente não sabe do rasgo, então a usinagem dele entra à parte —
+    // senão o LED sairia de graça justamente nas peças antigas.
+    const ledAntigoM = (!proc && piece.origin !== 'comprado') ? ledMetros(piece, pieceDims) : 0;
+    const ledAntigo = ledAntigoM > 0
+      ? (processLabor.usinagem_peca + ledAntigoM * processLabor.usinagem_metro) : 0;
     const custoUnitario = proc
       ? proc.total * qty
-      : (piece.labor_cost_per_unit || 0) * qty;
+      : ((piece.labor_cost_per_unit || 0) + ledAntigo) * qty;
 
     // COMPRADO x FABRICADO (migration 119). A peça comprada (um pé, um
     // puxador — peça de verdade, com posição e desenho, mas que a fábrica
@@ -1509,6 +1529,7 @@
     setProcessLabor,
     setHoleCounts,
     processLaborFor,
+    ledComprimentoMm, ledMetros,
     // Migration 119 — itens comprados. Os três são publicadores (o chamador
     // avisa ANTES de pedir o preço), mesma mecânica de setProcessLabor/
     // setHoleCounts e pelo mesmo motivo: são ~8 pontos chamando

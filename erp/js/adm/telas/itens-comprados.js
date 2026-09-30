@@ -55,6 +55,7 @@ ADM_TELAS['tab-purchased-items'] = `
             <option value="puxador">Puxador</option>
             <option value="pe">Pé / sapata</option>
             <option value="acessorio">Acessório</option>
+            <option value="led_perfil">Perfil de LED (rasgo) — attrs: {"largura_mm":17.5,"profundidade_mm":7.5}</option>
             <option value="outro">Outro</option>
           </select>
         </div>
