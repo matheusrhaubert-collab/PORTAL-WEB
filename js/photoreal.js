@@ -534,6 +534,35 @@ const Photoreal = (() => {
     return geometry;
   }
 
+  // ---- Chapa com CHANFRO 45° (aéreo de canto, 2026-09-29) — porta fiel de
+  // js/viewer3d.js:buildHorizontalPanelGeometry (ver o comentário lá).
+  // Base/topo/prateleira do módulo de canto: quadrado que perde o canto da
+  // frente-direita numa diagonal; shape.x -> largura, shape.y -> profundidade
+  // (+y = frente), extrusão -> espessura (Y), rotateX(+90°). Devolve null
+  // sem chanfro válido — quem chama cai pro resolveContentPh de sempre.
+  const CHANFRO45_LATERAL_MM_PH = 305;
+  function buildChanfroGeometryPh(part, faceA, thickness, faceB) {
+    if (!part || part.shape_type !== 'chanfro45') return null;
+    if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
+    const reta = (CHANFRO45_LATERAL_MM_PH / 1000) - thickness;
+    const cx = faceA - reta, cz = faceB - reta;
+    if (!(cx > 0) || !(cz > 0) || cx >= faceA || cz >= faceB) return null;
+    const ax = faceA / 2, bz = faceB / 2;
+    const shape = new T.Shape();
+    shape.moveTo(-ax, -bz);
+    shape.lineTo(ax, -bz);
+    shape.lineTo(ax, bz - cz);
+    shape.lineTo(ax - cx, bz);
+    shape.lineTo(-ax, bz);
+    shape.closePath();
+    const geometry = new T.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1 });
+    geometry.translate(0, 0, -thickness / 2);
+    geometry.rotateX(Math.PI / 2);
+    geometry.userData = geometry.userData || {};
+    geometry.userData.dimsMm = { w: faceA * 1000, h: thickness * 1000, d: faceB * 1000 };
+    return geometry;
+  }
+
   // =====================================================================
   // ITENS DE DECORAÇÃO COM GEOMETRIA PRÓPRIA (migration 141, 2026-08-26)
   //
@@ -1188,7 +1217,8 @@ const Photoreal = (() => {
       emitInto(parentGroup, content, part.color, -W / 2 + thickness / 2 + offX, faceY / 2 + offY + legH, -D / 2 + faceZ / 2 + offZ, resolveGrainRotate(part, faceZ, faceY, true));
     } else if (role === 'top' || role === 'bottom') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const content = resolveContentPh(part, faceA, thickness, faceB);
+      // Chanfro 45° (aéreo de canto) — null sem chanfro, cai no de sempre.
+      const content = buildChanfroGeometryPh(part, faceA, thickness, faceB) || resolveContentPh(part, faceA, thickness, faceB);
       emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, thickness / 2 + offY + legH, -D / 2 + faceB / 2 + offZ, resolveGrainRotate(part, faceA, faceB, true));
     } else if (role === 'back') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
@@ -1196,7 +1226,8 @@ const Photoreal = (() => {
       emitInto(parentGroup, content, part.color, -W / 2 + faceA / 2 + offX, faceB / 2 + offY + legH, -D / 2 + thickness / 2 + offZ, resolveGrainRotate(part, faceA, faceB, false));
     } else if (role === 'shelf') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const content = resolveContentPh(part, faceA, thickness, faceB);
+      // Chanfro 45° (aéreo de canto) — null sem chanfro, cai no de sempre.
+      const content = buildChanfroGeometryPh(part, faceA, thickness, faceB) || resolveContentPh(part, faceA, thickness, faceB);
       const innerLow = (bounds && bounds.innerBottomY) || 0;
       const innerHigh = (bounds && bounds.innerTopY) || H;
       const span = Math.max(innerHigh - innerLow, 0.01);

@@ -1768,11 +1768,19 @@ function renderModuleNestedRow(childModule, existingLink, container, insertBefor
   const rotYSelect = document.createElement('select');
   rotYSelect.style.marginTop = '2px';
   rotYSelect.disabled = !checkbox.checked;
+  // 45°/135°/225°/315° (2026-09-29, aéreo de canto 45°): porta girada na
+  // diagonal — migration 181 amplia o CHECK de rotation_y_deg. Só faz
+  // sentido em "Peça livre"; o 3D gira a peça inteira (pivô da porta
+  // junto) e a furação trata a porta a 45° à parte (collectHingePlates45).
   rotYSelect.innerHTML = `
     <option value="0">0° (reto)</option>
+    <option value="45">45° (canto/diagonal)</option>
     <option value="90">90°</option>
+    <option value="135">135°</option>
     <option value="180">180°</option>
+    <option value="225">225°</option>
     <option value="270">270°</option>
+    <option value="315">315°</option>
   `;
   rotYSelect.value = String((existingLink && existingLink.rotation_y_deg) || 0);
   rotYSelect.title = 'Só funciona de verdade com Posição = "Peça livre" (ex: módulo em L/canto). Troca largura por profundidade na posição, sem mudar como o módulo é construído.';

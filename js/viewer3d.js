@@ -1509,6 +1509,31 @@ const Viewer3D = (function () {
     return placed;
   }
 
+  // Giro fino (fora de 90°) de uma peça 'free' já emitida — ver o comentário
+  // no branch 'free' de placePieceInBox. `placed` é o que emit() devolveu
+  // (o pivô da porta, ou o content posicionado) e está no pai certo
+  // (scene/moduleGroup via addPart, ou o grupo da sub-montagem via
+  // addPartToGroup). Envolve num Group centrado em (x,y,z) girado em Y e
+  // passa `placed` pra dentro dele com a posição RELATIVA ao centro — o
+  // pivô continua na borda da dobradiça, só que da porta girada. Como
+  // partMeshes rastreia o objeto de 1º nível (é o que clearParts remove da
+  // cena e descarta), a entrada dele passa a ser o wrapper.
+  function wrapRotatedFreePiece(placed, x, y, z, rotYDeg) {
+    if (!placed || !placed.parent) return placed;
+    const parent = placed.parent;
+    const wrapper = new THREE.Group();
+    wrapper.position.set(x, y, z);
+    wrapper.rotation.y = rotYDeg * Math.PI / 180;
+    placed.position.set(placed.position.x - x, placed.position.y - y, placed.position.z - z);
+    parent.remove(placed);
+    wrapper.add(placed);
+    parent.add(wrapper);
+    if (placed.userData && placed.userData.pieceInfo) wrapper.userData.pieceInfo = placed.userData.pieceInfo;
+    const i = partMeshes.indexOf(placed);
+    if (i >= 0) partMeshes[i] = wrapper;
+    return wrapper;
+  }
+
   // Mesma coisa, mas encaixa como filho de um grupo maior em vez de ir
   // direto pra scene/partMeshes — usada dentro de buildModuleAssembly, onde
   // quem rastreia/descarta é o grupo externo da montagem (o "content" que um
@@ -1949,6 +1974,46 @@ const Viewer3D = (function () {
     // chama posiciona o CENTRO.
     geometry.translate(0, 0, -thickness / 2);
     geometry.rotateY(-Math.PI / 2);
+    return geometry;
+  }
+
+  // ---- Chapa com CHANFRO 45° (aéreo de canto, 2026-09-29) ----
+  // Base/topo/prateleira do módulo de canto 45°: um quadrado de (W-2E) que
+  // perde o canto da FRENTE-DIREITA numa diagonal. A peça se identifica por
+  // components.shape_type = 'chanfro45' (por coluna, igual 'oval_rod').
+  //
+  // Onde a diagonal começa é geometria do módulo, não cadastro: as duas
+  // laterais que fecham o canto têm 305 de profundidade e a chapa encosta
+  // nelas por dentro, então o trecho reto de cada aresta chanfrada mede
+  // 305 - E (E = espessura da chapa) e o chanfro come o resto. Mesmo número
+  // em js/drilling.js (CHANFRO45_LATERAL_MM, que faz o contorno do .ban) e
+  // js/photoreal.js — os três desenham/cortam a mesma peça.
+  //
+  // Mesma técnica do L (buildPanelGeometry): THREE.Shape extrudado na
+  // espessura. Só que a chapa é DEITADA: shape.x -> largura (X do módulo),
+  // shape.y -> profundidade (Z do módulo, +y = frente), extrusão -> Y.
+  // rotateX(+90°) faz exatamente essa troca. Mesma simplificação consciente
+  // do L: peça chanfrada perde fita/miolo por face (material único da cor).
+  // Devolve a BoxGeometry de sempre quando não há chanfro válido.
+  const CHANFRO45_LATERAL_MM = 305;
+  function buildHorizontalPanelGeometry(part, faceA, thickness, faceB) {
+    const box = function () { return new THREE.BoxGeometry(faceA, thickness, faceB); };
+    if (!part || part.shape_type !== 'chanfro45') return box();
+    if (typeof THREE.Shape !== 'function' || typeof THREE.ExtrudeGeometry !== 'function') return box();
+    const reta = (CHANFRO45_LATERAL_MM / 1000) - thickness;
+    const cx = faceA - reta, cz = faceB - reta;
+    if (!(cx > 0) || !(cz > 0) || cx >= faceA || cz >= faceB) return box();
+    const ax = faceA / 2, bz = faceB / 2;
+    const shape = new THREE.Shape();
+    shape.moveTo(-ax, -bz);
+    shape.lineTo(ax, -bz);
+    shape.lineTo(ax, bz - cz);   // começa a diagonal na aresta da direita
+    shape.lineTo(ax - cx, bz);   // termina na aresta da frente
+    shape.lineTo(-ax, bz);
+    shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1 });
+    geometry.translate(0, 0, -thickness / 2);
+    geometry.rotateX(Math.PI / 2);
     return geometry;
   }
 
@@ -2730,7 +2795,8 @@ const Viewer3D = (function () {
       emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceZ, faceY, true), null);
     } else if (role === 'top' || role === 'bottom') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const geometry = new THREE.BoxGeometry(faceA, thickness, faceB);
+      // Chanfro 45° (aéreo de canto) — BoxGeometry de sempre sem chanfro.
+      const geometry = buildHorizontalPanelGeometry(part, faceA, thickness, faceB);
       const x = -W / 2 + faceA / 2 + offX;
       const y = thickness / 2 + offY + legH;
       const z = -D / 2 + faceB / 2 + offZ;
@@ -2764,7 +2830,8 @@ const Viewer3D = (function () {
       emit(resolveContent(part, geometry), part.color, x, y, z, resolveGrainRotate(part, faceA, faceB, false), null);
     } else if (role === 'shelf') {
       const { thickness, faceA, faceB } = splitThickness(w, h, d, part.positioning);
-      const geometry = new THREE.BoxGeometry(faceA, thickness, faceB);
+      // Chanfro 45° (aéreo de canto) — BoxGeometry de sempre sem chanfro.
+      const geometry = buildHorizontalPanelGeometry(part, faceA, thickness, faceB);
       // Inclinação (migration 065/066, pedido do usuário: sapateira) — ver
       // resolveContent, que aplica o giro (peça-folha OU módulo aninhado
       // inteiro) em torno do PRÓPRIO CENTRO, sem mexer em nada do
@@ -3006,7 +3073,18 @@ const Viewer3D = (function () {
       // is_module) já nasce centrado nos 3 eixos, então só girar; geometria
       // solta (BufferGeometry, caso peça-folha comum) baqueia a rotação nos
       // próprios vértices, igual ao tilt_angle_deg em X logo acima.
-      if (rotYDeg) {
+      // GIRO FORA DE 90° (2026-09-29, aéreo de canto 45°: a porta fecha a
+      // diagonal entre as duas laterais, girada 45°). Não dá pra girar só o
+      // conteúdo como acima: a abertura (positionWithOpening) cria o pivô
+      // na borda da dobradiça no eixo X do MÓDULO, e uma porta girada
+      // abriria em torno de uma aresta que não é a dela. Por isso o giro
+      // fino é aplicado DEPOIS, num grupo que envolve o pivô inteiro
+      // (wrapRotatedFreePiece): a porta gira como corpo rígido em torno do
+      // próprio centro e o pivô/dobradiça giram junto, então "Abrir portas"
+      // continua girando em torno da borda certa. Múltiplos de 90° seguem
+      // o caminho de sempre (nada muda pra ninguém).
+      const rotFino = rotYDeg % 90 !== 0;
+      if (rotYDeg && !rotFino) {
         if (freeContent.isGroup) {
           freeContent.rotation.y = rotYDeg * Math.PI / 180;
         } else {
@@ -3014,6 +3092,7 @@ const Viewer3D = (function () {
         }
       }
       const freeGroup = emit(freeContent, part.color, x, y, z, false, opening);
+      if (rotFino) wrapRotatedFreePiece(freeGroup, x, y, z, rotYDeg);
       // Dobradiças visuais — mesma regra de 'front' (linha ~944): peça 'free'
       // com hingeSide resolvido é uma porta de verdade, só que posicionada
       // manualmente em vez de automaticamente. Sem isso, a porta abria/fechava

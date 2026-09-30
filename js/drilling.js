@@ -119,8 +119,22 @@
   // padrão e de dobradiça, só não participam do contato borda-face.
   // uAxis/vAxis/tAxis: a qual eixo do MÓDULO correspondem faceA, faceB e a
   // espessura desta peça.
+  // PEÇA GIRADA FORA DE 90° (2026-09-29, aéreo de canto 45°): a porta a 45°
+  // não tem caixa alinhada aos eixos — qualquer caixa que se desse pra ela
+  // seria mentira, e mentira aqui vira contra-furo em peça errada (a caixa
+  // "reta" da porta passava a 1,3 mm de um furo de borda da base e recebia
+  // o pino). Sem caixa ela não entra em contato nenhum; a furação DELA
+  // (copo/marcação) continua saindo por collectHingeHolesModulo, no frame
+  // dela mesma, e a base da dobradiça na lateral sai por
+  // collectHingePlates45.
+  function giradaForaDe90(part) {
+    const rot = (((part && part.rotation_y_deg) || 0) % 360 + 360) % 360;
+    return rot % 90 !== 0;
+  }
+
   function pieceBox(part, W, H, D, index, count, bounds) {
     const role = part.position_role || 'other';
+    if (giradaForaDe90(part)) return null;
     const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
     const offX = part.offset_x_mm || 0;
     const offY = part.offset_y_mm || 0;
@@ -133,7 +147,8 @@
         x0: offX, sx: t.thickness,
         y0: offY, sy: t.faceA,
         z0: offZ, sz: t.faceB,
-        uAxis: 'y', vAxis: 'z', tAxis: 'x'
+        uAxis: 'y', vAxis: 'z', tAxis: 'x',
+        mirrorAxis: role === 'right' ? 'v' : null
       };
     }
     if (role === 'drawer_side') {
@@ -163,7 +178,8 @@
         x0: offX, sx: t2.thickness,
         y0: offY, sy: t2.faceA,
         z0: offZ, sz: t2.faceB,
-        uAxis: 'y', vAxis: 'z', tAxis: 'x'
+        uAxis: 'y', vAxis: 'z', tAxis: 'x',
+        mirrorAxis: null
       };
     }
     if (role === 'top' || role === 'bottom' || role === 'countertop') {
@@ -178,12 +194,23 @@
     if (role === 'back' || role === 'baseboard') {
       // fundo: faceA no X (largura), faceB no Y (altura), espessura no Z —
       // mesma ancoragem zero-absoluto do viewer3d (placePieceInBox 'back').
+      //
+      // FUNDO NA METADE DA FRENTE = PEÇA VIRADA (2026-09-29, aéreo de canto
+      // 45°): a lateral da frente-esquerda daquele módulo é cadastrada como
+      // 'back' deslocado pra z=D-E — é um painel com a espessura em Z, como o
+      // fundo, só que de frente pra trás. Todo furo dela entra pela face
+      // voltada pro interior (-Z), que no desenho canônico do fundo seria o
+      // "verso" (Face B, código nunca confirmado na máquina). Marcando a
+      // peça como ESPELHADA em u (largura), igual a gêmea direita é em v, os
+      // furos saem em Face A e o desenho vira a peça como a fábrica vira.
+      const virada = (offZ + t.thickness / 2) > D / 2;
       return {
         part, role, t,
         x0: offX, sx: t.faceA,
         y0: offY, sy: t.faceB,
         z0: offZ, sz: t.thickness,
-        uAxis: 'x', vAxis: 'y', tAxis: 'z'
+        uAxis: 'x', vAxis: 'y', tAxis: 'z',
+        mirrorAxis: virada ? 'u' : null
       };
     }
     if (role === 'shelf') {
@@ -388,14 +415,22 @@
   // Na peça espelhada (role 'right'): v espelha, bordas v0/v1 trocam, e a
   // face "de cima" do desenho passa a ser a NEGATIVA (a peça é virada em
   // torno do eixo u — topo continua topo, frente/fundo trocam no desenho).
+  // 2026-09-29: o espelho passou a ser `box.mirrorAxis` ('v' na gêmea
+  // direita, como sempre; 'u' no fundo virado de frente — ver pieceBox
+  // 'back'). Sem mirrorAxis, nada muda.
   function emitLocalHole(store, box, h) {
     const t = box.t;
-    const mirrored = box.role === 'right';
+    const mirrorAxis = box.mirrorAxis || (box.role === 'right' ? 'v' : null);
+    const mirrored = !!mirrorAxis;
     let u = h.u, v = h.v, edge = h.edge || null;
-    if (mirrored) {
+    if (mirrorAxis === 'v') {
       v = t.faceB - v;
       if (edge === 'v0') edge = 'v1';
       else if (edge === 'v1') edge = 'v0';
+    } else if (mirrorAxis === 'u') {
+      u = t.faceA - u;
+      if (edge === 'u0') edge = 'u1';
+      else if (edge === 'u1') edge = 'u0';
     }
     let face;
     if (edge) {
@@ -878,7 +913,7 @@
   // (prateleira entre dois módulos), e a cavilha é UMA — furar os dois
   // vizinhos poria furo em peça que não leva nada.
   function collectFaceCounterHole(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER) {
-    const declarada = ((row.face || 'face') === 'face') !== (src.role === 'right');
+    const declarada = ((row.face || 'face') === 'face') !== !!(src.mirrorAxis || src.role === 'right');
     if (propagarPelaFace(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER, declarada) > 0) return;
     propagarPelaFace(store, boxes, src, row, x, y, tol, ORIG, SIZE, MODULE_CENTER, !declarada);
   }
@@ -979,6 +1014,7 @@
     let cursorX = 2; // mesmo gap de 2mm do placeFrontGroupInBox
     (parts || []).forEach(function (part) {
       const role = part.position_role || 'other';
+      if (giradaForaDe90(part)) return; // porta a 45°: ver collectHingePlates45
       if (role === 'front') {
         const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
         const x0 = cursorX + (part.offset_x_mm || 0);
@@ -1027,6 +1063,109 @@
           emitLocalHole(store, lb, {
             u: (cupY + dm) - lb.y0,        // uAxis da lateral = Y (altura)
             v: lb.sz - fromFront,          // vAxis = Z; frente do módulo = z0+sz
+            edge: null,
+            entersPositive: entersPositive,
+            diameter: plateDia, depth: plateDepth,
+            tipo: 'base_dobradica'
+          });
+        });
+      }
+    });
+  }
+
+  // 3b'. BASE DA DOBRADIÇA DA PORTA A 45° (2026-09-29, aéreo de canto 45°).
+  //
+  // A porta do módulo de canto é uma peça 'free' com rotation_y_deg=45 —
+  // ela fecha a diagonal entre as duas laterais de 305 (a da direita, em X,
+  // e a da frente-esquerda, em Z). A conta genérica acima procura a lateral
+  // pela borda da porta no eixo X, e pra uma porta girada isso não aponta
+  // pra lateral nenhuma. Aqui a borda da dobradiça é levada pro frame do
+  // módulo COM o giro (mesma rotação do THREE em viewer3d: rotation.y=θ leva
+  // o +X local pra (cos θ, -sin θ) no plano XZ) e a lateral escolhida é a
+  // peça em pé (espessura em X OU em Z) mais perto dessa borda.
+  //
+  // Os furos são os mesmos da base comum (2 por dobradiça, na altura do
+  // copo, recuados hinge_plate_from_front_mm da borda da lateral que fica
+  // junto da porta). A dobradiça de 135° usa a mesma base reta na lateral —
+  // é o braço dela que faz o ângulo, não a base.
+  function collectHingePlates45(store, parts, boxes, settings, origem) {
+    if (!settings || !settings.hinge_enabled) return;
+    if (settings.hinge_plate_enabled === false) return;
+    const ox = origem ? origem.x : 0, oy = origem ? origem.y : 0, oz = origem ? origem.z : 0;
+    const plateDia = Number(settings.hinge_plate_diameter_mm) || 5;
+    const plateDepth = Number(settings.hinge_plate_depth_mm) || 12;
+    const fromFront = Number(settings.hinge_plate_from_front_mm) || 37;
+    const spacing = Number(settings.hinge_plate_screw_spacing_mm) || 32;
+    const margin = Number(settings.hinge_edge_margin_mm) || 100;
+    const ORIG = { x: 'x0', y: 'y0', z: 'z0' };
+    const SIZE = { x: 'sx', y: 'sy', z: 'sz' };
+
+    const doors = (parts || []).filter(function (p) {
+      return giradaForaDe90(p) && (p.position_role || 'other') === 'free' && !!hingeSideOf(p);
+    });
+    if (!doors.length) return;
+
+    // laterais candidatas: peças em pé do casco (espessura em X ou Z)
+    const laterals = boxes.filter(function (b) { return (b.tAxis === 'x' || b.tAxis === 'z') && !b._abre; });
+    if (!laterals.length) return;
+    // centro do casco (pra decidir qual face é a interna) — a partir das
+    // próprias caixas, que estão no frame da raiz
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    laterals.forEach(function (b) {
+      minX = Math.min(minX, b.x0); maxX = Math.max(maxX, b.x0 + b.sx);
+      minZ = Math.min(minZ, b.z0); maxZ = Math.max(maxZ, b.z0 + b.sz);
+    });
+    const centro = { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+
+    doors.forEach(function (door) {
+      const side = hingeSideOf(door);
+      const w = door.width_mm || 0, h = door.height_mm || 0, d = door.depth_mm || 0;
+      const rot = (((door.rotation_y_deg || 0) % 360) + 360) % 360;
+      const th = rot * Math.PI / 180;
+      // centro da porta no frame da raiz (mesma conta do 'free' no viewer3d:
+      // canto chão-fundo-esquerda + metade das medidas)
+      const cx = (door.offset_x_mm || 0) + w / 2 + ox;
+      const cz = (door.offset_z_mm || 0) + d / 2 + oz;
+      const y0 = (door.offset_y_mm || 0) + oy;
+      const dirX = Math.cos(th), dirZ = -Math.sin(th); // +X local no plano XZ
+      const sgn = side === 'left' ? -1 : 1;
+      const hx = cx + sgn * (w / 2) * dirX;
+      const hz = cz + sgn * (w / 2) * dirZ;
+
+      // lateral mais próxima da borda da dobradiça (distância ponto-retângulo
+      // no plano XZ). A porta sobrepõe a quina da lateral, então a borda fica
+      // a ~meia espessura dela — 60 mm cobre folga e arredondamento.
+      let best = null;
+      laterals.forEach(function (lb) {
+        const dx = Math.max(lb.x0 - hx, 0, hx - (lb.x0 + lb.sx));
+        const dz = Math.max(lb.z0 - hz, 0, hz - (lb.z0 + lb.sz));
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist <= 60 && (!best || dist < best.dist)) best = { lb, dist };
+      });
+      if (!best) return;
+      const lb = best.lb;
+
+      // eixo horizontal da face da lateral (u ou v — o que não é Y) e qual
+      // ponta dele está junto da porta
+      const horizAxis = lb.uAxis === 'y' ? lb.vAxis : lb.uAxis;
+      const horizIsU = horizAxis === lb.uAxis;
+      const hc = (horizAxis === 'x' ? hx : hz) - lb[ORIG[horizAxis]];
+      const size = lb[SIZE[horizAxis]];
+      const along = hc > size / 2 ? size - fromFront : fromFront;
+      // face interna = a voltada pro centro do casco
+      const lbMid = lb[ORIG[lb.tAxis]] + lb[SIZE[lb.tAxis]] / 2;
+      const entersPositive = lbMid <= centro[lb.tAxis];
+
+      const count = hingeCount(h);
+      const lowV = margin;
+      const highV = Math.max(h - margin, margin);
+      for (let i = 0; i < count; i++) {
+        const cupY = y0 + (count > 1 ? lowV + (highV - lowV) * (i / (count - 1)) : h / 2);
+        [-spacing / 2, spacing / 2].forEach(function (dm) {
+          const yLocal = (cupY + dm) - lb.y0;
+          emitLocalHole(store, lb, {
+            u: horizIsU ? along : yLocal,
+            v: horizIsU ? yLocal : along,
             edge: null,
             entersPositive: entersPositive,
             diameter: plateDia, depth: plateDepth,
@@ -1153,6 +1292,7 @@
     boxes.forEach(function (sb) {
       if (!sb.part.drill_shelf_support) return;
       if (sb.tAxis !== 'y') return; // prateleira = chapa deitada (espessura no Y)
+      if (sb.part.shape_type === 'chanfro45') return; // ver collectShelfSupportHoles45
       const yHole = sb.y0 + sb.sy / 2 + vOff;
       const zHoles = [sb.z0 + sb.sz - front, sb.z0 + back];
       laterals.forEach(function (lb) {
@@ -1176,6 +1316,79 @@
             tipo: 'suporte_prateleira'
           });
         });
+      });
+    });
+  }
+
+  // 3d'. SUPORTE DA PRATELEIRA CHANFRADA (2026-09-29, aéreo de canto 45°).
+  //
+  // Matt: "prateleira interna, com furação de prateleira para apoiar nas
+  // laterais... cuidado com as furações das bases e prateleiras porque são
+  // para lateral profundidade de 305, mesmo o módulo tendo 609mm".
+  //
+  // A prateleira do canto é a chapa com chanfro (shape_type='chanfro45'): um
+  // quadrado de W-2E que perde o canto da FRENTE-DIREITA. Ela encosta em
+  // quatro peças em pé — os dois fundos (atrás e à esquerda) e as duas
+  // laterais de 305 (à direita, em X, e na frente-esquerda, em Z). O
+  // suporte vai SÓ nas laterais: a regra genérica acima furaria o fundo da
+  // esquerda (é uma peça com espessura em X, igual a uma lateral) e ainda
+  // ancoraria o furo da frente na profundidade cheia da prateleira, 552 mm
+  // adiante, onde a lateral de 305 nem existe.
+  //
+  // Aqui as laterais são as peças que encostam nas duas faces do CHANFRO:
+  // a que toca a ponta x1 da prateleira (espessura em X) e a que toca a
+  // ponta z1 (espessura em Z). Os dois furos de cada uma ficam nos recuos
+  // de sempre (shelf_back/front_setback_mm) medidos no TRECHO RETO da
+  // aresta da prateleira junto dessa lateral — do começo dela até onde o
+  // chanfro começa (305 - E) —, que é exatamente o comprimento da lateral.
+  function collectShelfSupportHoles45(store, boxes, settings) {
+    if (!settings || settings.shelf_enabled === false) return;
+    const dia = Number(settings.shelf_diameter_mm) || 3;
+    const depth = Number(settings.shelf_depth_mm) || 10;
+    const front = Number(settings.shelf_front_setback_mm) || 37;
+    const back = Number(settings.shelf_back_setback_mm) || 37;
+    const vOff = Number(settings.shelf_vertical_offset_mm) || 0;
+    const tol = Number(settings.touch_tolerance_mm) || 5;
+
+    boxes.forEach(function (sb) {
+      if (!sb.part || sb.part.shape_type !== 'chanfro45') return;
+      if (!sb.part.drill_shelf_support) return;
+      if (sb.tAxis !== 'y') return;
+      const ch = chanfroDaPeca(sb.part);
+      if (!ch) return;
+      const yHole = sb.y0 + sb.sy / 2 + vOff;
+      // trecho reto de cada aresta chanfrada (em coordenadas do módulo)
+      const retaX = { lo: sb.x0, hi: sb.x0 + sb.sx - ch.cu }; // ao longo de X, na aresta z1
+      const retaZ = { lo: sb.z0, hi: sb.z0 + sb.sz - ch.cv }; // ao longo de Z, na aresta x1
+
+      boxes.forEach(function (lb) {
+        if (lb === sb) return;
+        if (mesmaSubarvore(sb, lb)) return;
+        if (lb.tAxis === 'x') {
+          // lateral da direita: a ponta x1 da prateleira encosta na face dela
+          if (Math.abs((sb.x0 + sb.sx) - lb.x0) > tol) return;
+          const lo = Math.max(retaZ.lo, lb.z0), hi = Math.min(retaZ.hi, lb.z0 + lb.sz);
+          if (hi - lo < front + back) return;
+          [lo + back, hi - front].forEach(function (z) {
+            emitLocalHole(store, lb, {
+              u: yHole - lb.y0, v: z - lb.z0, edge: null,
+              entersPositive: false, // face voltada pra dentro = -X
+              diameter: dia, depth: depth, tipo: 'suporte_prateleira'
+            });
+          });
+        } else if (lb.tAxis === 'z') {
+          // lateral da frente-esquerda: a ponta z1 da prateleira encosta na face dela
+          if (Math.abs((sb.z0 + sb.sz) - lb.z0) > tol) return;
+          const lo = Math.max(retaX.lo, lb.x0), hi = Math.min(retaX.hi, lb.x0 + lb.sx);
+          if (hi - lo < front + back) return;
+          [lo + back, hi - front].forEach(function (x) {
+            emitLocalHole(store, lb, {
+              u: x - lb.x0, v: yHole - lb.y0, edge: null,
+              entersPositive: false, // face voltada pra dentro = -Z
+              diameter: dia, depth: depth, tipo: 'suporte_prateleira'
+            });
+          });
+        }
       });
     });
   }
@@ -1259,8 +1472,10 @@
     const origemCorpo = { x: raiz.origem.x, y: raiz.origem.y + legH, z: raiz.origem.z };
     collectCounterHoles(store, todasLocal, config.drillingsByComponent, config.settings, W, H, D, config.holesByPattern);
     collectHingePlates(store, parts, raiz.todas, config.settings, origemCorpo);
+    collectHingePlates45(store, parts, raiz.todas, config.settings, origemCorpo);
     collectSlideHoles(store, parts, raiz.todas, W, Math.max(H - legH, 1), D, config.settings, origemCorpo);
     collectShelfSupportHoles(store, todasLocal, config.settings);
+    collectShelfSupportHoles45(store, todasLocal, config.settings);
     collectCabideSupportHoles(store, todasLocal);
     const caixas = caixasDasPecasModulo(parts, W, H, D);
     (parts || []).forEach(function (part) {
@@ -1365,12 +1580,68 @@
   // o formatador nega o y), já com o espelhamento da gêmea direita aplicado
   // — o mesmo v' = faceB - v de emitLocalHole. Sem isso o entalhe da lateral
   // direita sairia no fundo em vez de na frente.
+  // ---- CHANFRO 45° (aéreo de canto, 2026-09-29) --------------------------
+  //
+  // Matt: "a peça especial são as bases com chanfro 45 (cortadas quadradas
+  // no corte e na furação tem recorte) — base e prateleira. junto com
+  // recorte levam a furação".
+  //
+  // A base/topo/prateleira do módulo de canto é um QUADRADO de (W-2E) que
+  // perde o canto da frente-direita numa diagonal a 45°. Serra corta o
+  // quadrado inteiro (plano de corte não muda), a furadeira faz os furos E o
+  // contorno com a diagonal (<Outline> do .ban, mesmo mecanismo do L do toe
+  // 4½, que a máquina já cortou certo em 24/09).
+  //
+  // Onde a diagonal começa não é cadastro: é a geometria do módulo. As
+  // duas laterais que fecham o canto têm 305 de profundidade e a chapa
+  // encosta nelas por dentro, então o trecho RETO de cada aresta chanfrada
+  // é 305 - E (E = espessura da chapa, a mesma das laterais) e o chanfro
+  // come o resto: c = faceA - (305 - E) em cada eixo. Com W = D = 609 e
+  // E = 19,5 isso dá 284,5 × 284,5. A peça se identifica pela coluna
+  // components.shape_type = 'chanfro45' (mesmo mecanismo do cabide
+  // 'oval_rod' — por coluna, nunca por nome, ver cabide_itens_comprados_por_metro).
+  //
+  // Mesmo número em js/viewer3d.js e js/photoreal.js (CHANFRO45_LATERAL_MM),
+  // igual LEG_INSET_MM — os três desenham a mesma peça.
+  const CHANFRO45_LATERAL_MM = 305;
+
+  // Devolve { cu, cv } (quanto o chanfro anda ao longo de faceA e de faceB,
+  // em mm) ou null quando a peça não é chanfrada / o chanfro não cabe.
+  function chanfroDaPeca(part) {
+    if (!part || part.shape_type !== 'chanfro45') return null;
+    const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
+    const reta = CHANFRO45_LATERAL_MM - t.thickness;
+    const cu = t.faceA - reta, cv = t.faceB - reta;
+    if (!(cu > 0) || !(cv > 0) || cu >= t.faceA || cv >= t.faceB) return null;
+    return { cu: cu, cv: cv, t: t };
+  }
+
+  // O chanfro como "recorte" de canto, no MESMO formato dos retângulos do L
+  // (x0/x1/y0/y1 em coordenadas da máquina) mais a marca `chanfro: true` —
+  // é o que deixa contornoComRecortes trocar a quina por UMA diagonal em vez
+  // dos 3 pontos do L, sem quem chama (furacao-lote.js, buildBanXml)
+  // precisar saber de nada. Canto: u1/v1 (frente-direita da chapa deitada —
+  // u = X do módulo, v = Z do módulo, ver pieceBox 'bottom'/'shelf').
+  function chanfroRect(part) {
+    const ch = chanfroDaPeca(part);
+    if (!ch) return null;
+    const t = ch.t;
+    const p0 = localToMachine(t, t.faceA - ch.cu, t.faceB - ch.cv);
+    const p1 = localToMachine(t, t.faceA, t.faceB);
+    return {
+      x0: Math.min(p0.x, p1.x), x1: Math.max(p0.x, p1.x),
+      y0: Math.min(p0.y, p1.y), y1: Math.max(p0.y, p1.y),
+      depth: t.thickness, passante: true, canto: 'frente-direita', chanfro: true
+    };
+  }
+
   function recorteRects(part) {
     const lista = (part && Array.isArray(part.recortes)) ? part.recortes : [];
-    if (!lista.length) return [];
+    const chanfro = chanfroRect(part);
+    if (!lista.length) return chanfro ? [chanfro] : [];
     const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
     const mirrored = (part.position_role === 'right');
-    const out = [];
+    const out = chanfro ? [chanfro] : [];
     lista.forEach(function (r) {
       if (!r) return;
       const h = Number(r.h) || 0, d = Number(r.d) || 0;
@@ -1484,7 +1755,9 @@
 
   // Todos os passes de uma peça, prontos pro .ban.
   function slotsDaPeca(part) {
-    const rects = recorteRects(part);
+    // o chanfro NÃO vira SlotL: ele só existe no contorno (<Outline>), que é
+    // o que a máquina de fato corta (ver outlineBan)
+    const rects = recorteRects(part).filter(function (r) { return !r.chanfro; });
     if (!rects.length) return [];
     const m = machineDims(splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning));
     const out = [];
@@ -1614,12 +1887,14 @@
         return (cx === 0 ? r.x0 <= eps : r.x1 >= C - eps) && (cy === 0 ? r.y0 <= eps : r.y1 >= L - eps);
       }) || null;
     };
+    // Chanfro (r.chanfro, aéreo de canto 45°): a quina vira UMA diagonal —
+    // são os mesmos dois pontos das pontas do L, sem o ponto do meio.
     const pts = [];
     let r;
-    r = noCanto(0, 0);   if (r) pts.push([0, r.y1], [r.x1, r.y1], [r.x1, 0]); else pts.push([0, 0]);
-    r = noCanto(C, 0);   if (r) pts.push([r.x0, 0], [r.x0, r.y1], [C, r.y1]); else pts.push([C, 0]);
-    r = noCanto(C, L);   if (r) pts.push([C, r.y0], [r.x0, r.y0], [r.x0, L]); else pts.push([C, L]);
-    r = noCanto(0, L);   if (r) pts.push([r.x1, L], [r.x1, r.y0], [0, r.y0]); else pts.push([0, L]);
+    r = noCanto(0, 0);   if (r) { if (r.chanfro) pts.push([0, r.y1], [r.x1, 0]); else pts.push([0, r.y1], [r.x1, r.y1], [r.x1, 0]); } else pts.push([0, 0]);
+    r = noCanto(C, 0);   if (r) { if (r.chanfro) pts.push([r.x0, 0], [C, r.y1]); else pts.push([r.x0, 0], [r.x0, r.y1], [C, r.y1]); } else pts.push([C, 0]);
+    r = noCanto(C, L);   if (r) { if (r.chanfro) pts.push([C, r.y0], [r.x0, L]); else pts.push([C, r.y0], [r.x0, r.y0], [r.x0, L]); } else pts.push([C, L]);
+    r = noCanto(0, L);   if (r) { if (r.chanfro) pts.push([r.x1, L], [0, r.y0]); else pts.push([r.x1, L], [r.x1, r.y0], [0, r.y0]); } else pts.push([0, L]);
     return pts;
   }
   function buildCorteXml(name, C, L, E, rects) {
@@ -1735,7 +2010,11 @@
           // de .ban vazio). Com recorte e sem furo, GERA: o entalhe do toe 4½
           // é trabalho de máquina igual — antes desta linha a condição era só
           // `!holes.length` e a peça saía de fora.
-          if (!holes.length && !slots.length) return;
+          // Chanfro 45° (2026-09-29): a prateleira do canto pode não ter
+          // furo nenhum (o suporte dela é furado na LATERAL) e mesmo assim
+          // precisa do .ban — é nele que vai o contorno com a diagonal.
+          const rects = recorteRects(part);
+          if (!holes.length && !slots.length && !rects.length) return;
           const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
           const m = machineDims(t);
           // BORDA DE CIMA/BAIXO -> GIRA PRA VIRAR ESQ/DIR (2026-09-24, PC-002263
@@ -1748,7 +2027,7 @@
           // arquivo (mesma rotação rígida do flip de machineDims) e eles caem
           // em L/R. Peça que precisa das duas duplas de borda (ou tem
           // recorte) fica como está até termos os códigos certos.
-          if (!m.flip && !slots.length && t.faceA <= FURADEIRA_LADO_MAX_MM
+          if (!m.flip && !slots.length && !rects.length && t.faceA <= FURADEIRA_LADO_MAX_MM
               && holes.some(function (h) { return h.face === 'borda_sup' || h.face === 'borda_inf'; })
               && !holes.some(function (h) { return h.face === 'borda_esq' || h.face === 'borda_dir'; })) {
             const trocaFace = { borda_sup: 'borda_dir', borda_inf: 'borda_esq' };
@@ -1767,14 +2046,17 @@
             // a usinagem entra na assinatura: duas peças com a MESMA furação e
             // recortes diferentes (lateral de toe 4½ x lateral lisa) não podem
             // colapsar no mesmo arquivo.
-            JSON.stringify(slots.map(function (sl) { return [Math.round(sl.x0 * 10), Math.round(sl.y0 * 10), Math.round(sl.x1 * 10), Math.round(sl.y1 * 10), sl.width, Math.round(sl.depth * 10), sl.passante ? 1 : 0]; }))
+            JSON.stringify(slots.map(function (sl) { return [Math.round(sl.x0 * 10), Math.round(sl.y0 * 10), Math.round(sl.x1 * 10), Math.round(sl.y1 * 10), sl.width, Math.round(sl.depth * 10), sl.passante ? 1 : 0]; })),
+            // o contorno também: chapa chanfrada (aéreo 45°) e chapa reta de
+            // mesma medida/furação são arquivos diferentes na máquina
+            JSON.stringify(rects.map(function (r) { return [Math.round(r.x0 * 10), Math.round(r.y0 * 10), Math.round(r.x1 * 10), Math.round(r.y1 * 10), r.chanfro ? 1 : 0]; }))
           ].join('|');
           if (!fileMap.has(signature)) {
             fileMap.set(signature, {
               module_name: item.moduleName,
               reference: part.reference || 'peca',
               comprimento_mm: m.C, largura_mm: m.L, espessura_mm: m.E,
-              holes: sorted, slots: slots, recortes: recorteRects(part), quantity: 0,
+              holes: sorted, slots: slots, recortes: rects, quantity: 0,
               // cor NÃO entra na assinatura de propósito: a furação de duas
               // peças iguais em cores diferentes é a MESMA, e separar os
               // arquivos por cor faria a máquina furar duas vezes o que é um
@@ -1808,9 +2090,13 @@
       seq += 1;
       const base = String(seq).padStart(3, '0') + '_' + sanitize(rec.reference) + '_'
         + Math.round(rec.comprimento_mm) + 'x' + Math.round(rec.largura_mm) + 'x' + Math.round(rec.espessura_mm);
+      // Mesma receita do lote (erp/js/furacao-lote.js, testada na máquina em
+      // 24/09): recorte em L e chanfro 45° vão no <Outline> do próprio .ban,
+      // sem SlotL (não cortava). Até 2026-09-29 este caminho mandava o SlotL e
+      // o contorno retangular — divergia do lote.
       return {
         filename: base + '.ban',
-        content: buildBanXml(base, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes, rec.slots),
+        content: buildBanXml(base, rec.comprimento_mm, rec.largura_mm, rec.espessura_mm, rec.holes, [], rec.recortes),
         quantity: rec.quantity,
         reference: rec.reference,
         module_name: rec.module_name,
@@ -1967,7 +2253,10 @@
     // sobreposição, Face e IsCuted sem editar o arquivo — os dois últimos
     // ainda esperam confirmação na máquina.
     USINAGEM: USINAGEM,
-    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan }
+    // Aéreo de canto 45° (2026-09-29): profundidade das laterais que fecham
+    // o canto — define onde a diagonal da chapa chanfrada começa.
+    CHANFRO45_LATERAL_MM: CHANFRO45_LATERAL_MM,
+    _internals: { splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan, chanfroDaPeca, chanfroRect, collectAssembly }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 // migration 043 — propagação por componente + espelhamento esq/dir
