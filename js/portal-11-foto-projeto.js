@@ -543,7 +543,25 @@ async function projectPhotoApplyInterior(slot, it, warnings) {
   try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[foto-projeto] interior:', e); }
 }
 
-function projectPhotoBuildItems(match, room, catalog, warnings) {
+// PROFUNDIDADES PADRÃO DA LEGNO (01/10, Matt: "todo vanity tem 21
+// polegadas de profundidade. isso é padrão") — valem por cima do que a IA
+// leu (a leitura erra profundidade com facilidade: numa foto de frente ela
+// quase não aparece). Clampado no min/max do módulo escolhido.
+const PROJECT_PHOTO_STANDARD_DEPTH_MM = {
+  vanity: 533.4 // 21"
+};
+// Em ambiente de BANHEIRO (PDF: room.kind='bathroom'), todo corpo de piso
+// baixo (base, gaveteiro, pia) é vanity, mesmo que a IA tenha chamado de base.
+function projectPhotoStandardDepthKind(v, roomKind) {
+  if (v.kind === 'vanity') return 'vanity';
+  // vanity pode ser de piso OU suspenso (lavabo) — só fica de fora o que é
+  // alto (torre) ou de parede alta (espelheira/aéreo).
+  const corpoDeVanity = v.layer !== 'floor' && Number(v.floor_height_mm) < 1000 && Number(v.height_mm) < 1100;
+  if (roomKind === 'bathroom' && corpoDeVanity && ['base_cabinet', 'sink_base', 'drawer_base', 'other'].includes(v.kind)) return 'vanity';
+  return null;
+}
+
+function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   const byId = new Map(catalog.map((m) => [m.id, m]));
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
   const items = [];
@@ -555,7 +573,8 @@ function projectPhotoBuildItems(match, room, catalog, warnings) {
     const wall = room.walls[v.wall_index] || room.walls[0];
     const width_mm = clampNum(raw.width_mm, m.w[0], m.w[2]);
     const height_mm = clampNum(raw.height_mm, m.h[0], m.h[2]);
-    const depth_mm = clampNum(raw.depth_mm, m.d[0], m.d[2]);
+    const padrao = PROJECT_PHOTO_STANDARD_DEPTH_MM[projectPhotoStandardDepthKind(v, roomKind)];
+    const depth_mm = clampNum(padrao || raw.depth_mm, m.d[0], m.d[2]);
     const floor_height_mm = clampNum(raw.floor_height_mm, 0, Math.max(wall.height_mm - height_mm, 0));
     let x_mm = Number(raw.x_mm);
     if (v.layer !== 'floor') {
@@ -765,7 +784,7 @@ async function projectPhotoRunPipeline(opts, status) {
 
   const warnings = [];
   if (planoB) warnings.push(tPhoto('warn_fallback_fast', { n: planoB.n }));
-  const items = projectPhotoBuildItems(match, room, catalog, warnings);
+  const items = projectPhotoBuildItems(match, room, catalog, warnings, opts.roomKind || null);
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
   const unmatched = (match.unmatched || []).map((u) => ({ volume: volById.get(u.volume_id), reason: u.reason })).filter((u) => u.volume);
   return {

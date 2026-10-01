@@ -358,6 +358,7 @@ ${b.notes ? `- Observações: ${String(b.notes).slice(0, 800)}` : ""}
 
 REFERÊNCIAS DE ESCALA (padrão americano e brasileiro — confira umas contra as outras):
 - Balcão/base de cozinha: altura do corpo ~ 876 mm (34.5") + tampo ~ 914 mm (36") total; profundidade 610 mm (24"); rodapé recuado ~ 100 mm.
+- Gabinete de banheiro (VANITY): kind="vanity", profundidade SEMPRE 533 mm (21") — padrão da Legno; altura do corpo ~ 787–876 mm (31–34.5"). Todo gabinete de pia/gaveteiro de piso em banheiro é vanity.
 - Aéreo de cozinha: profundidade 305–330 mm (12–13"); base do aéreo ~ 1370–1450 mm do chão (18" acima do tampo); alturas comuns 762/914/1067 mm (30/36/42").
 - Torre/paneleiro: 2134–2438 mm (84–96"), profundidade 610 mm.
 - Geladeira: 762–914 mm (30–36") de largura, ~1780 mm de altura. Fogão/cooktop: 762 mm (30"). Lava-louças: 610 mm (24"). Coifa: 762–914 mm.

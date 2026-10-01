@@ -381,7 +381,7 @@ async function runProjectPdfCreate() {
         images.push({ base64: im.base64, mime: im.mime, label: tPdf('page_label', { n }) });
       }
       return projectPhotoRunPipeline({
-        images, quality, ceilingMm, source: 'drawing', roomName: r.name, catalogP,
+        images, quality, ceilingMm, source: 'drawing', roomName: r.name, roomKind: r.kind, catalogP,
         notes: [sp.project_title ? 'Projeto: ' + sp.project_title : '', notes].filter(Boolean).join(' · ')
       }, (msg) => setRoom(r, 'reading', msg));
     }), PROJECT_PDF_AI_PARALLEL);
