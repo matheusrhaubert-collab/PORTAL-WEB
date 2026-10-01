@@ -33,6 +33,11 @@
 //       dentro do min/max, cor do cadastro. O que não tem módulo vai pra
 //       `unmatched` e NUNCA vira "parecido" (regra de 24/09 continua).
 //
+// v3 (2026-10-01, mesmo dia): stage='split' — PDF de projeto inteiro
+// separado por ambiente (portal-12-pdf-projetos.js), e o 'read' aceita
+// VÁRIAS imagens (images: [{base64, mime, label}]) + source='drawing' (modo
+// prancha: cota escrita vale mais que estimativa).
+//
 // Ordem das propriedades no schema (propertyOrdering) é proposital: o modelo
 // escreve as NOTAS de câmera/escala antes dos números, as PAREDES antes das
 // aberturas, e as aberturas antes dos volumes — é o raciocínio na ordem que
@@ -280,10 +285,24 @@ function buildReadPrompt(b: any) {
   const ref = Number(b.ref_wall_mm) > 0
     ? `- Comprimento REAL da parede principal (a que tem mais marcenaria, ou a do fundo): ${Math.round(b.ref_wall_mm)} mm — use como escala principal na horizontal.`
     : `- Comprimento da parede principal: NÃO informado — estime pelas referências de escala.`;
-  return `Você é um medidor/projetista de marcenaria planejada com 20 anos de obra. Vai receber a FOTO (ou render) de um ambiente e deve LEVANTAR o ambiente com o máximo de fidelidade, como se fosse fazer a medição no local. Ainda NÃO escolha produtos — só geometria.
+  const desenho = b.source === "drawing";
+  const intro = desenho
+    ? `Você é um projetista de marcenaria planejada com 20 anos de obra. Vai receber PRANCHAS de um projeto em PDF (planta baixa, elevações/vistas, cortes, detalhes, às vezes render) — todas do MESMO ambiente: "${String(b.room_name || "").slice(0, 80)}". Deve LEVANTAR esse ambiente com o máximo de fidelidade. Ainda NÃO escolha produtos — só geometria.
 
-DADOS INFORMADOS PELO USUÁRIO (são verdade; prevalecem sobre a sua estimativa):
-- Pé-direito: ${Math.round(b.ceiling_mm)} mm — use como escala principal na vertical.
+REGRAS DE PRANCHA (valem mais que tudo abaixo):
+- COTAS ESCRITAS SÃO A VERDADE. Leia cada cota (mm, cm, m, pés-polegadas como 2'-6" ou 30", frações 34 1/2") e converta pra mm. VÍRGULA DECIMAL é comum (PDF em espanhol/português): "2,83 m" = 2830 mm, "0,6 m" = 600 mm, "85" numa cota em cm = 850 mm. Só estime quando não houver cota.
+- Cota total × parciais: confira que as parciais somam a total (ex.: 2,67 + 3,59 + 2,59 = 8,85 m). Se não somarem, confie nas parciais e diga em scale_notes.
+- Uma prancha pode ter VÁRIAS vistas (ex.: as duas faces de uma ilha, "lado A"/"lado B", balcão + ilha). Identifique cada vista antes de medir e não some vistas diferentes como se fossem uma parede só.
+- RENDERS/fotos do PDF servem pra aparência (cor, veio, puxador, iluminação, o que é porta e o que é painel) — as medidas vêm das pranchas cotadas.
+- Use a PLANTA para comprimento das paredes, ângulos, portas/janelas e profundidades; use as ELEVAÇÕES/VISTAS para x, larguras, alturas, altura do chão e divisão de portas/gavetas; CORTES para profundidade.
+- Se a prancha tiver outros ambientes junto, IGNORE-OS: levante só "${String(b.room_name || "").slice(0, 80)}".
+- Tabelas de módulos/legendas (W24, B36, SB36, DB18, UC…) ajudam a identificar tipo e largura: B=base, W=aéreo, SB=base de pia, DB=gaveteiro, T/UC/P=torre, número = largura em polegadas.
+- camera_notes: diga quais pranchas/vistas você usou e para quê.`
+    : `Você é um medidor/projetista de marcenaria planejada com 20 anos de obra. Vai receber a FOTO (ou render) de um ambiente e deve LEVANTAR o ambiente com o máximo de fidelidade, como se fosse fazer a medição no local. Ainda NÃO escolha produtos — só geometria.`;
+  return `${intro}
+
+DADOS INFORMADOS PELO USUÁRIO (${desenho ? "use só se a prancha não cotar" : "são verdade; prevalecem sobre a sua estimativa"}):
+- Pé-direito: ${Math.round(b.ceiling_mm)} mm — ${desenho ? "padrão; se a prancha cotar o pé-direito, use a prancha." : "use como escala principal na vertical."}
 ${ref}
 - Rodapé: ${Math.round(b.baseboard_mm || 0)} mm
 ${b.notes ? `- Observações: ${String(b.notes).slice(0, 800)}` : ""}
@@ -319,7 +338,11 @@ Cada corpo de móvel ou equipamento, um por item, em ordem: primeiro tudo que en
 - height_mm/width_mm/depth_mm: do CORPO. Base de cozinha: altura do corpo SEM o tampo (o tampo é volume separado kind="countertop").
 - wall_offset_mm: distância da parede até as COSTAS do volume. 0 para tudo encostado. Para layer="front", quanto ele fica afastado da parede (ex.: prateleira na frente de painel ripado de 30 mm = 30). Para layer="floor", distância da parede de referência até as costas da ilha.
 - facing (só piso): "into_room" se a frente olha pro centro do ambiente (costas pra parede de referência), "toward_wall" se a frente olha pra parede.
-- Canto: em L, a corrida de UMA das paredes vai até o canto; a da outra começa depois da profundidade da primeira (ex.: base de 610 mm de profundidade na parede 0 indo até o canto → bases da parede 1 começam em x≈610, a não ser que exista módulo de canto). Nunca sobreponha volumes de paredes vizinhas no canto.
+- CANTO EM L (cozinha): olhe o canto com atenção.
+  • Base de canto: quando no canto aparecem DUAS portas em 90° (uma em cada parede, se encontrando no canto), é UM volume kind="corner_base" de ~914 × 914 mm (36" × 36"), altura de base. Não divida em duas bases comuns.
+  • Aéreo de canto: porta única na DIAGONAL (45°) cortando o canto = kind="corner_wall_cabinet" de ~610 × 610 mm (24" × 24"). Duas portas em 90° no canto alto = também corner_wall_cabinet.
+  • O volume de canto vai SEMPRE na parede que vem DEPOIS do canto (a da direita na foto), com x_mm=0, width_mm = o lado dele nessa parede e depth_mm = o lado dele na parede anterior. Os módulos da parede seguinte começam em x = width do canto; a corrida da parede ANTERIOR termina a depth_mm do canto (ex.: canto 914×914 → parede anterior termina em comprimento−914).
+  • Sem módulo de canto: a corrida de UMA das paredes vai até o canto e a da outra começa depois da profundidade da primeira (base de 610 de profundidade → x≈610). Nunca sobreponha volumes de paredes vizinhas no canto.
 - Nunca coloque volume sobre uma porta/passagem. Embaixo de janela só base (até o peitoril).
 - Eletros (geladeira, fogão, coifa, lava-louças, micro-ondas), coluna, viga, TV, sofá também viram volume com o kind certo — eles ocupam espaço.
 - doors/drawers: quantas portas e gavetas aparecem na frente do volume. front_style: "shaker", "lisa", "ripada", "vidro", "aberta", "almofadada"… color_description: cor e acabamento como aparecem (ex.: "cinza médio fosco", "carvalho claro com veio").
@@ -335,7 +358,9 @@ function num(v: unknown, fb = 0) { const n = Number(v); return Number.isFinite(n
 function clamp(n: number, a: number, b: number) { return Math.min(Math.max(n, a), b); }
 
 function sanitizeRead(raw: any, b: any) {
-  const ceiling = clamp(num(b.ceiling_mm, num(raw?.ceiling_mm, 2600)), 1800, 6000);
+  const ceiling = b.source === "drawing" && num(raw?.ceiling_mm, 0) > 0
+    ? clamp(num(raw.ceiling_mm, 2600), 1800, 6000)
+    : clamp(num(b.ceiling_mm, num(raw?.ceiling_mm, 2600)), 1800, 6000);
   let walls = (Array.isArray(raw?.walls) ? raw.walls : []).slice(0, 12).map((w: any, i: number) => ({
     label: String(w?.label || `#${i + 1}`).slice(0, 80),
     length_mm: Math.round(clamp(num(w?.length_mm, 3000), 100, 20000)),
@@ -469,12 +494,13 @@ function buildMatchPrompt(b: any) {
 
 REGRAS:
 1. module_id = id EXATO do catálogo. Nunca invente.
-2. Mesma função: base com portas → módulo base de portas; base de gavetas → gaveteiro; aéreo → aéreo; torre/paneleiro → torre; painel → painel; prateleira → prateleira; etc. Respeite número de portas/gavetas quando o catálogo tiver as duas versões.
-3. MEDIDAS: mantenha as do volume (x, largura, altura, profundidade, altura do chão). Só mude quando o módulo não aceitar (fora do min/max) — aí use o valor permitido mais próximo.
-4. Volume mais largo que o máximo do módulo (ou que claramente tem 2+ caixas): DIVIDA em vários módulos lado a lado, cobrindo exatamente a largura do volume (soma das larguras = largura do volume; o primeiro começa no x do volume, cada um encostado no anterior). Todos com o mesmo volume_id.
-5. Sem módulo equivalente (eletrodoméstico sem módulo de decoração, tampo/countertop sem módulo, TV, sofá, coluna, viga, LED…): vai para "unmatched" com o motivo curto. NUNCA troque por algo parecido de outra função.
-6. COR: color_name da lista, pelo aspecto (color_description + foto). Peças iguais na foto = mesmo nome de cor.
-7. "notes": 1–3 frases. "label" e "reason" em ${langName(b.lang)}.
+2. CANTOS: kind="corner_base" → SEMPRE um módulo "Base Canto 90°" (nunca base comum); kind="corner_wall_cabinet" → "Aéreo Canto 45°" (porta Dir./Esq. conforme o lado da dobradiça na foto; na dúvida, Esq.). Medidas do canto: width = lado na parede do volume, depth = lado na parede anterior. Não divida volume de canto.
+3. Mesma função: base com portas → módulo base de portas; base de gavetas → gaveteiro; aéreo → aéreo; torre/paneleiro → torre; painel → painel; prateleira → prateleira; etc. Respeite número de portas/gavetas quando o catálogo tiver as duas versões.
+4. MEDIDAS: mantenha as do volume (x, largura, altura, profundidade, altura do chão). Só mude quando o módulo não aceitar (fora do min/max) — aí use o valor permitido mais próximo.
+5. Volume mais largo que o máximo do módulo (ou que claramente tem 2+ caixas): DIVIDA em vários módulos lado a lado, cobrindo exatamente a largura do volume (soma das larguras = largura do volume; o primeiro começa no x do volume, cada um encostado no anterior). Todos com o mesmo volume_id.
+6. Sem módulo equivalente (eletrodoméstico sem módulo de decoração, tampo/countertop sem módulo, TV, sofá, coluna, viga, LED…): vai para "unmatched" com o motivo curto. NUNCA troque por algo parecido de outra função.
+7. COR: color_name da lista, pelo aspecto (color_description + foto). Peças iguais na foto = mesmo nome de cor.
+8. "notes": 1–3 frases. "label" e "reason" em ${langName(b.lang)}.
 
 VOLUMES MEDIDOS:
 ${vols}
@@ -535,6 +561,95 @@ function sanitizeMatch(raw: any, b: any) {
 }
 
 // ==========================================================================
+// ETAPA 0 — SEPARAR UM PDF DE PROJETO POR AMBIENTE (stage='split', 01/10)
+// ==========================================================================
+// Matt: "ferramenta que leia projetos em pdf completos, separe por ambiente,
+// crie uma lista pra selecionar os ambientes a serem criados pela IA
+// separadamente, com o mesmo nome de cliente final". O portal renderiza cada
+// página do PDF em miniatura (pdf.js) + extrai o texto e manda tudo aqui; a
+// IA devolve o cliente e a lista de ambientes com as PÁGINAS de cada um. As
+// páginas de cada ambiente selecionado depois vão, em alta, pro stage 'read'
+// em modo prancha (source='drawing').
+const SPLIT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    notes: { type: "STRING" },
+    client_name: { type: "STRING" },
+    project_title: { type: "STRING" },
+    rooms: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING" },
+          kind: { type: "STRING", enum: ["kitchen", "bathroom", "closet", "bedroom", "living", "laundry", "office", "pantry", "garage", "bar", "other"] },
+          pages: { type: "ARRAY", items: { type: "INTEGER" } },
+          summary: { type: "STRING" },
+          has_dimensions: { type: "BOOLEAN" },
+        },
+        required: ["name", "kind", "pages", "summary", "has_dimensions"],
+        propertyOrdering: ["name", "kind", "pages", "summary", "has_dimensions"],
+      },
+    },
+  },
+  required: ["notes", "client_name", "project_title", "rooms"],
+  propertyOrdering: ["notes", "client_name", "project_title", "rooms"],
+};
+
+function buildSplitPrompt(b: any, nPages: number) {
+  const textos = (b.pages || []).map((p: any) => `--- página ${p.page} ---\n${String(p.text || "").slice(0, 1500)}`).join("\n");
+  return `Você recebe as ${nPages} páginas de um PDF de projeto de marcenaria/móveis planejados (miniaturas na ordem, cada uma precedida do número da página) e o TEXTO extraído de cada página. Separe o projeto POR AMBIENTE.
+
+O QUE FAZER:
+1. "client_name": o nome do cliente final / da obra (carimbo, capa, cabeçalho: "Cliente", "Owner", "Residência X", "Projeto: X"). Só o nome, sem "Residência"/"Projeto". Vazio se não houver.
+2. "project_title": título geral do projeto (curto).
+3. "rooms": um item por AMBIENTE de marcenaria (Cozinha, Banheiro Suíte, Closet Master, Lavanderia, Sala TV, Home Office, Bar…). Ambientes repetidos com o mesmo nome no PDF (ex.: "Banheiro 1" e "Banheiro 2") são itens SEPARADOS. Para cada um:
+   - name: nome curto como aparece no PDF, no idioma do PDF (ex.: "Cocina", "Despensa", "Kitchen", "Master Bath", "Cozinha"); se o PDF não nomear, invente um curto em ${langName(b.lang)}.
+   - Projetos em espanhol/inglês: cocina/kitchen, despensa/pantry, baño/bath, vestidor/closet/walk-in, lavandería/laundry, sala/living, bar, barra, oficina/office. Despensa/pantry é ambiente SEPARADO da cozinha quando tem pranchas próprias (ex.: "lado A", "lado B" de um L), mesmo que encostado nela.
+   - pages: TODAS as páginas que mostram esse ambiente (planta, elevações, cortes, detalhes, render, tabela de módulos dele), as COTADAS primeiro (plantas/elevações), depois renders. Uma página pode entrar em mais de um ambiente (ex.: planta geral). Em apresentações (PDF de slides com renders e depois pranchas), renders sem cota também contam pro ambiente que mostram.
+   - summary: 1 frase do que tem (ex.: "Cozinha em L com ilha, 2 torres").
+   - has_dimensions: true se as páginas têm cotas legíveis.
+4. Não crie ambiente pra capa, índice, notas gerais, especificações de material ou planta geral sem marcenaria.
+5. "notes": 1–2 frases sobre o PDF (quantos ambientes, unidade usada nas cotas).
+
+TEXTO EXTRAÍDO:
+${textos}
+
+Responda SOMENTE o JSON no schema pedido.`;
+}
+
+function sanitizeSplit(raw: any, nPages: number) {
+  const valid = (n: any) => Number.isInteger(Number(n)) && Number(n) >= 1 && Number(n) <= nPages;
+  const rooms = (Array.isArray(raw?.rooms) ? raw.rooms : []).slice(0, 40).map((r: any, i: number) => ({
+    name: String(r?.name || `Ambiente ${i + 1}`).slice(0, 60),
+    kind: String(r?.kind || "other"),
+    pages: [...new Set((Array.isArray(r?.pages) ? r.pages : []).filter(valid).map((n: any) => Number(n)))].sort((a: any, b: any) => a - b),
+    summary: String(r?.summary || "").slice(0, 200),
+    has_dimensions: !!r?.has_dimensions,
+  })).filter((r: any) => r.pages.length);
+  return {
+    notes: String(raw?.notes || "").slice(0, 600),
+    client_name: String(raw?.client_name || "").trim().slice(0, 80),
+    project_title: String(raw?.project_title || "").trim().slice(0, 120),
+    rooms,
+  };
+}
+
+// Várias imagens (pranchas) por chamada: [{ base64, mime, label }]
+function imageParts(b: any) {
+  const list = Array.isArray(b.images) && b.images.length
+    ? b.images
+    : (b.image_base64 ? [{ base64: b.image_base64, mime: b.image_mime || "image/jpeg" }] : []);
+  const parts: any[] = [];
+  list.slice(0, 8).forEach((im: any, i: number) => {
+    if (!im?.base64) return;
+    if (list.length > 1) parts.push({ text: im.label ? String(im.label).slice(0, 80) : `Imagem ${i + 1}` });
+    parts.push({ inlineData: { mimeType: im.mime || "image/jpeg", data: im.base64 } });
+  });
+  return parts;
+}
+
+// ==========================================================================
 // HTTP
 // ==========================================================================
 Deno.serve(async (req) => {
@@ -546,23 +661,37 @@ Deno.serve(async (req) => {
   let b: any;
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
 
-  const stage = b?.stage === "match" ? "match" : "read";
-  if (!b?.image_base64) return json(400, { error: "Foto ausente (image_base64).", code: "no_image" });
-  if (String(b.image_base64).length > 8_000_000) return json(413, { error: "Foto grande demais — use uma imagem menor.", code: "too_big" });
-  const imagePart = { inlineData: { mimeType: b.image_mime || "image/jpeg", data: b.image_base64 } };
+  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : "read";
+  const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length;
+  if (tamanho > 14_000_000) return json(413, { error: "Imagens grandes demais — use menos páginas.", code: "too_big" });
 
   try {
+    if (stage === "split") {
+      const pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 60);
+      if (!pages.length) return json(400, { error: "PDF sem páginas.", code: "no_image" });
+      const parts: any[] = [];
+      pages.forEach((p: any) => {
+        parts.push({ text: `Página ${p.page}` });
+        if (p.base64) parts.push({ inlineData: { mimeType: p.mime || "image/jpeg", data: p.base64 } });
+      });
+      parts.push({ text: buildSplitPrompt({ ...b, pages }, pages.length) });
+      const tier = b.quality === "pro" ? "pro" : "flash";
+      const { data, model } = await callGemini(apiKey, tier, parts, SPLIT_SCHEMA);
+      return json(200, { ...sanitizeSplit(data, Math.max(...pages.map((p: any) => Number(p.page) || 0))), model });
+    }
+    const imgs = imageParts(b);
+    if (!imgs.length) return json(400, { error: "Foto ausente (image_base64).", code: "no_image" });
     if (stage === "read") {
       if (!(Number(b.ceiling_mm) > 0)) return json(400, { error: "Informe o pé-direito.", code: "bad_measures" });
       const tier = b.quality === "pro" ? "pro" : "flash";
       // imagem ANTES do texto: recomendação do Gemini pra prompt de visão
-      const { data, model } = await callGemini(apiKey, tier, [imagePart, { text: buildReadPrompt(b) }], READ_SCHEMA);
+      const { data, model } = await callGemini(apiKey, tier, [...imgs, { text: buildReadPrompt(b) }], READ_SCHEMA);
       return json(200, { ...sanitizeRead(data, b), model });
     }
     if (!Array.isArray(b.catalog) || !b.catalog.length) return json(400, { error: "Catálogo vazio.", code: "no_catalog" });
     if (!Array.isArray(b.volumes) || !b.volumes.length) return json(200, { notes: "", items: [], unmatched: [], model: null });
     if (!Array.isArray(b.colors)) b.colors = [];
-    const { data, model } = await callGemini(apiKey, "flash", [imagePart, { text: buildMatchPrompt(b) }], MATCH_SCHEMA);
+    const { data, model } = await callGemini(apiKey, "flash", [...imgs, { text: buildMatchPrompt(b) }], MATCH_SCHEMA);
     return json(200, { ...sanitizeMatch(data, b), model });
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });

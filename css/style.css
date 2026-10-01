@@ -4978,6 +4978,36 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 /* ===== Projeto a partir de foto (2026-09-24) — ver js/portal-11-foto-projeto.js ===== */
 #po-proj-photo-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
 #po-proj-photo-modal.open { display: flex; }
+/* Projetos a partir de PDF (2026-10-01) */
+#po-proj-pdf-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+#po-proj-pdf-modal.open { display: flex; }
+.po-proj-pdf-client { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0; }
+.po-proj-pdf-client label { font-weight: 600; font-size: 13px; }
+.po-proj-pdf-client input { flex: 1 1 220px; padding: 6px 8px; font: inherit; }
+.po-proj-pdf-client .hint { flex-basis: 100%; }
+.po-proj-pdf-selall { display: flex; gap: 6px; margin: 6px 0; }
+.po-proj-pdf-selall button { font-size: 12px; padding: 4px 10px; }
+.po-proj-pdf-rooms { display: flex; flex-direction: column; gap: 8px; }
+.po-proj-pdf-room { border: 1px solid #e6e2d9; border-radius: 8px; padding: 8px 10px; background: #fbfaf7; }
+.po-proj-pdf-room.off { opacity: .55; }
+.po-proj-pdf-room-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.po-proj-pdf-room-head input[type="checkbox"], .po-proj-photo-quality input[type="radio"] { width: auto; flex: 0 0 auto; margin: 0; }
+.po-proj-photo-quality label { white-space: nowrap; }
+.po-proj-pdf-room-name { flex: 1 1 180px; font-weight: 600; padding: 4px 6px; font: inherit; }
+.po-proj-pdf-room-pages { font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.po-proj-pdf-room-pages input { width: 110px; padding: 3px 6px; font: inherit; font-size: 12px; }
+.po-proj-pdf-room-status { font-size: 12px; margin-left: auto; }
+.po-proj-pdf-room-status.st-done { color: #2f7a46; }
+.po-proj-pdf-room-status.st-error { color: #c0392b; }
+.po-proj-pdf-room-sum { margin: 4px 0; }
+.po-proj-pdf-thumbs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.po-proj-pdf-thumbs figure { margin: 0; flex: 0 0 auto; text-align: center; }
+.po-proj-pdf-thumbs img { height: 72px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: zoom-in; display: block; }
+.po-proj-pdf-thumbs figcaption { font-size: 10px; color: var(--muted); }
+/* Pastas de cliente final em Meus projetos (migration 184) */
+.po-myproj-folders { display: flex; flex-direction: column; gap: 12px; }
+.po-myproj-folder > summary { cursor: pointer; font-weight: 700; font-size: 15px; padding: 8px 4px; list-style: revert; }
+.po-myproj-folder > .po-myproj-grid { margin-top: 6px; }
 .po-proj-photo-modal-card { max-height: 92vh; overflow: auto; }
 .po-proj-photo-preview { display: block; max-width: 100%; max-height: 260px; margin: 10px 0; border-radius: 8px; object-fit: contain; }
 .po-proj-photo-measures { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; }

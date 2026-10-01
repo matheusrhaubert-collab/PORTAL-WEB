@@ -272,6 +272,105 @@ function projectPhotoFixCorners(items, walls, warnings) {
   }
 }
 
+// MÓDULO DE CANTO (2026-10-01, Matt: "canto 45 graus entrou virado" /
+// "canto inferior com duas portas deve ser o canto 90°, ~36×36 pol, e depois
+// os módulos ao lado dele").
+//
+// Os módulos de canto do catálogo (Base Canto 90°, Aéreo Canto 45°) são
+// desenhados pra encostar no FUNDO e na ESQUERDA (peças "Fundo (trás)" +
+// "Fundo (esquerda)"). Ou seja: só ficam certos no INÍCIO de uma parede
+// (x=0), com a parede anterior à esquerda. Posto no FIM da parede (x+L=
+// comprimento), o lado aberto/diagonal fica virado pra parede — o "entrou
+// virado". Regra: canto no fim da parede i (canto côncavo 60–120° com a
+// i+1) muda pra parede i+1, x=0 — é o MESMO canto físico, visto da parede
+// seguinte. Depois:
+//   - parede i (anterior): o que chegava no canto, na mesma faixa de
+//     altura, recua pra terminar em comprimento − profundidade do canto;
+//   - parede i+1: o que começa antes da largura do canto anda pra depois
+//     dele (em cascata).
+function projectPhotoIsCorner(it) {
+  return it.kind === 'corner_base' || it.kind === 'corner_wall_cabinet' || /\bcanto\b|corner/i.test(it.module_name || '');
+}
+function projectPhotoNormalizeCorners(items, walls, warnings) {
+  const faixa = (a, b) => a.floor_height_mm < b.floor_height_mm + b.height_mm && b.floor_height_mm < a.floor_height_mm + a.height_mm;
+  const anguloOk = (i) => { const a = Number(walls[i] && walls[i].angle_to_next_deg); return a >= 60 && a <= 120; };
+  items.filter((it) => it.layer !== 'floor' && projectPhotoIsCorner(it)).forEach((c) => {
+    const i = c.wall_index;
+    const L = walls[i] ? walls[i].length_mm : 0;
+    if (c.x_mm + c.width_mm >= L - 150 && i < walls.length - 1 && anguloOk(i)) {
+      // no fim da parede i → começo da parede i+1. Os lados trocam de papel:
+      // o que era "largura ao longo da parede i" vira a profundidade.
+      const w = c.width_mm, d = c.depth_mm;
+      c.wall_index = i + 1; c.x_mm = 0; c.width_mm = d; c.depth_mm = w;
+      warnings.push(tPhoto('warn_corner_moved', { label: c.label, n: i + 2 }));
+    } else if (c.x_mm <= 150) {
+      c.x_mm = 0;
+    } else {
+      warnings.push(tPhoto('warn_corner_not_in_corner', { label: c.label }));
+      return;
+    }
+    const j = c.wall_index;
+    // parede anterior: recua quem invadia o canto
+    if (j > 0 && anguloOk(j - 1)) {
+      const Lp = walls[j - 1].length_mm;
+      let limite = Lp - c.depth_mm;
+      items.filter((o) => o !== c && o.layer !== 'floor' && o.wall_index === j - 1 && faixa(o, c))
+        .sort((a, b) => b.x_mm - a.x_mm)
+        .forEach((o) => {
+          if (o.x_mm + o.width_mm > limite + 1) {
+            const novo = Math.round(limite - o.width_mm);
+            if (novo >= 0) { o.x_mm = novo; warnings.push(tPhoto('warn_corner_shift', { label: o.label, mm: novo })); }
+            else warnings.push(tPhoto('warn_corner_conflict', { label: o.label }));
+          }
+          limite = Math.min(limite, o.x_mm);
+        });
+    }
+    // mesma parede: o resto da corrida começa depois do canto
+    let fim = c.x_mm + c.width_mm;
+    items.filter((o) => o !== c && o.layer !== 'floor' && o.wall_index === j && faixa(o, c))
+      .sort((a, b) => a.x_mm - b.x_mm)
+      .forEach((o) => {
+        if (o.x_mm < fim - 1) {
+          if (fim + o.width_mm <= walls[j].length_mm + 1) { o.x_mm = Math.round(fim); }
+          else warnings.push(tPhoto('warn_corner_conflict', { label: o.label }));
+        }
+        fim = Math.max(fim, o.x_mm + o.width_mm);
+      });
+  });
+}
+
+// Rede de segurança: a IA às vezes lê o canto de base como DUAS bases comuns
+// (uma de cada parede, se encontrando no canto). Regra do Matt: base de canto
+// com duas portas é o "Base Canto 90°" (~36"×36"). Se num canto côncavo
+// 60–120° sem módulo de canto houver base no FIM da parede i e base no
+// COMEÇO da parede i+1, a da parede i+1 vira Base Canto 90° 914×914 (o
+// normalize logo depois recua a corrida da parede i e empurra a da i+1).
+function projectPhotoAutoCornerBase(items, walls, catalog, warnings) {
+  const cantos = catalog.filter((m) => /base\s*canto\s*90/i.test(m.name));
+  if (!cantos.length) return;
+  const ehBase = (it) => it.layer !== 'floor' && it.floor_height_mm < 200 && it.height_mm < 1100 && !projectPhotoIsCorner(it);
+  for (let i = 0; i < walls.length - 1; i++) {
+    const a = Number(walls[i].angle_to_next_deg);
+    if (!(a >= 60 && a <= 120)) continue;
+    const temCanto = items.some((it) => projectPhotoIsCorner(it) && it.floor_height_mm < 200 &&
+      ((it.wall_index === i + 1 && it.x_mm <= 150) || (it.wall_index === i && it.x_mm + it.width_mm >= walls[i].length_mm - 150)));
+    if (temCanto) continue;
+    const fimI = items.find((it) => ehBase(it) && it.wall_index === i && it.x_mm + it.width_mm >= walls[i].length_mm - 50);
+    const iniJ = items.find((it) => ehBase(it) && it.wall_index === i + 1 && it.x_mm <= (fimI ? fimI.depth_mm : 650) + 50);
+    if (!fimI || !iniJ) continue;
+    // mesma variante de pé (Toe / Plastic feet) das bases vizinhas, se der pra saber
+    const pes = /plastic|feet/i.test(iniJ.module_name + ' ' + fimI.module_name) ? /plastic|feet/i : /toe/i;
+    const m = cantos.find((c) => pes.test(c.name)) || cantos[0];
+    const lado = (r) => clampNum(914, r[0], r[2]);
+    Object.assign(iniJ, {
+      kind: 'corner_base', module_id: m.id, module_name: m.name,
+      x_mm: 0, width_mm: lado(m.w), depth_mm: lado(m.d),
+      height_mm: clampNum(iniJ.height_mm, m.h[0], m.h[2])
+    });
+    warnings.push(tPhoto('warn_corner_auto', { label: iniJ.label, module: m.name }));
+  }
+}
+
 // Módulo em cima de porta/passagem, ou cobrindo janela → aviso.
 function projectPhotoCheckOpenings(items, openings, warnings) {
   items.forEach((it) => {
@@ -316,6 +415,8 @@ function projectPhotoBuildItems(match, room, catalog, warnings) {
       color_name: raw.color_name || null
     });
   });
+  projectPhotoAutoCornerBase(items, room.walls, catalog, warnings);
+  projectPhotoNormalizeCorners(items, room.walls, warnings);
   projectPhotoFixCorners(items, room.walls, warnings);
   projectPhotoCheckOpenings(items, room.openings, warnings);
   items.forEach((it, i) => { it.n = i + 1; });
@@ -417,6 +518,49 @@ async function invokeProjectPhotoStage(body) {
 }
 
 // ---------- Ler a foto: etapa 1 (ambiente+volumes) → etapa 2 (catálogo) ----------
+// Pipeline de IA reaproveitável (01/10): o modal da foto E o "Projeto a
+// partir de PDF" (portal-12) passam por aqui. images = [{base64, mime,
+// label}] — 1 foto, ou várias pranchas do mesmo ambiente (source='drawing').
+// catalogP: Promise de [catalog, colors] (o PDF carrega uma vez só pra todos
+// os ambientes). status(msg) é opcional.
+async function projectPhotoRunPipeline(opts, status) {
+  const say = typeof status === 'function' ? status : () => {};
+  const lang = (typeof I18n !== 'undefined' && typeof I18n.getLanguage === 'function') ? (I18n.getLanguage() || 'pt') : 'pt';
+  const images = opts.images || [];
+  const catalogP = opts.catalogP || Promise.all([buildProjectPhotoCatalog(), buildProjectPhotoColorList()]);
+  catalogP.catch(() => {});
+
+  say(tPhoto(opts.quality === 'pro' ? 'status_step1_pro' : 'status_step1'));
+  const room = await invokeProjectPhotoStage({
+    stage: 'read', quality: opts.quality, images,
+    source: opts.source || 'photo', room_name: opts.roomName || '',
+    ceiling_mm: opts.ceilingMm, ref_wall_mm: opts.refWallMm > 0 ? opts.refWallMm : null,
+    baseboard_mm: roomSettings.baseboard_mm || 0, notes: opts.notes || '', lang
+  });
+  if (!Array.isArray(room.walls) || !room.walls.length) throw new Error(tPhoto('err_empty_result'));
+
+  const [catalog, colors] = await catalogP;
+  if (!catalog.length) throw new Error(tPhoto('err_no_catalog'));
+
+  say(tPhoto('status_step2'));
+  // casamento: a 1ª imagem basta pra estilo/cor (economiza payload)
+  const match = await invokeProjectPhotoStage({
+    stage: 'match', images: images.slice(0, 2), volumes: room.volumes, catalog, colors, lang
+  });
+
+  const warnings = [];
+  const items = projectPhotoBuildItems(match, room, catalog, warnings);
+  const volById = new Map(room.volumes.map((v) => [v.id, v]));
+  const unmatched = (match.unmatched || []).map((u) => ({ volume: volById.get(u.volume_id), reason: u.reason })).filter((u) => u.volume);
+  return {
+    room, items, unmatched, warnings,
+    notes: match.notes || '',
+    models: [room.model, match.model].filter(Boolean),
+    applyRoom: true
+  };
+}
+
+// ---------- Ler a foto: etapa 1 (ambiente+volumes) → etapa 2 (catálogo) ----------
 async function runProjectPhotoAnalyze() {
   if (projectPhotoRunning) return;
   if (!projectPhotoImage) { setProjectPhotoError(tPhoto('err_no_image')); return; }
@@ -432,7 +576,6 @@ async function runProjectPhotoAnalyze() {
   setProjectPhotoError('');
   const runBtn = document.getElementById('po-proj-photo-run-btn');
   if (runBtn) runBtn.disabled = true;
-  const lang = (typeof I18n !== 'undefined' && typeof I18n.getLanguage === 'function') ? (I18n.getLanguage() || 'pt') : 'pt';
   const notes = (document.getElementById('po-proj-photo-notes') || {}).value || '';
   const t0 = Date.now();
   const tick = setInterval(() => {
@@ -446,45 +589,16 @@ async function runProjectPhotoAnalyze() {
   };
 
   try {
-    // catálogo/cores carregam em paralelo com a leitura da foto
-    const catalogP = Promise.all([buildProjectPhotoCatalog(), buildProjectPhotoColorList()]);
-    catalogP.catch(() => {});
-
-    status(tPhoto(quality === 'pro' ? 'status_step1_pro' : 'status_step1'));
-    const room = await invokeProjectPhotoStage({
-      stage: 'read', quality,
-      image_base64: projectPhotoImage.base64, image_mime: projectPhotoImage.mime,
-      ceiling_mm: ceilingMm, ref_wall_mm: refWallMm > 0 ? refWallMm : null,
-      baseboard_mm: roomSettings.baseboard_mm || 0, notes, lang
-    });
-    if (!Array.isArray(room.walls) || !room.walls.length) throw new Error(tPhoto('err_empty_result'));
-
-    const [catalog, colors] = await catalogP;
-    if (!catalog.length) throw new Error(tPhoto('err_no_catalog'));
-
-    status(tPhoto('status_step2'));
-    const match = await invokeProjectPhotoStage({
-      stage: 'match',
-      image_base64: projectPhotoImage.base64, image_mime: projectPhotoImage.mime,
-      volumes: room.volumes, catalog, colors, lang
-    });
-
-    const warnings = [];
-    const items = projectPhotoBuildItems(match, room, catalog, warnings);
-    const volById = new Map(room.volumes.map((v) => [v.id, v]));
-    const unmatched = (match.unmatched || []).map((u) => ({ volume: volById.get(u.volume_id), reason: u.reason })).filter((u) => u.volume);
-    projectPhotoState = {
-      room, items, unmatched, warnings,
-      notes: match.notes || '',
-      models: [room.model, match.model].filter(Boolean),
-      applyRoom: true
-    };
+    projectPhotoState = await projectPhotoRunPipeline({
+      images: [{ base64: projectPhotoImage.base64, mime: projectPhotoImage.mime }],
+      quality, ceilingMm, refWallMm, notes, source: 'photo'
+    }, status);
     renderProjectPhotoReview();
 
     const createBtn = document.getElementById('po-proj-photo-create-btn');
     if (createBtn) createBtn.style.display = '';
     if (runBtn) runBtn.style.display = 'none';
-    if (!items.length) setProjectPhotoError(tPhoto('err_nothing_matched'));
+    if (!projectPhotoState.items.length) setProjectPhotoError(tPhoto('err_nothing_matched'));
   } catch (err) {
     setProjectPhotoError(err.message || String(err));
   } finally {
@@ -744,6 +858,108 @@ function onProjectPhotoReviewClick(ev) {
 // ============================================================
 // CRIAR NO PROJETO
 // ============================================================
+// Constrói o estado da IA no PROJETO ABERTO (paredes + módulos), sem UI.
+// Usado pelo botão "Criar no projeto" e pelo lote do PDF (portal-12).
+// Zera projectSlots — quem chama decide se precisa confirmar.
+async function projectPhotoApplyState(st) {
+  const chosen = st.items.filter((it) => it.include);
+  const warnings = [];
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  const room = st.room;
+
+  // 1. AMBIENTE — paredes (com aberturas dentro) e pé-direito.
+  let wallMap = room.walls.map((w, i) => i); // parede lida → índice no projeto
+  if (st.applyRoom) {
+    projectWallSegments = projectPhotoWallsToSegments(room.walls, room.openings, room.ceiling_mm, projectPhotoMainWallIndex(room));
+    const ceilInput = document.getElementById('po-proj-ceiling-input');
+    const un = (document.getElementById('po-unit-select') || {}).value || 'mm';
+    if (ceilInput && Math.abs(room.ceiling_mm - roomSettings.ceiling_mm) > 1) {
+      ceilInput.value = formatDimension(room.ceiling_mm, un);
+      ceilInput.dispatchEvent(new Event('change'));
+    } else if (Math.abs(room.ceiling_mm - roomSettings.ceiling_mm) > 1) {
+      roomSettings.ceiling_mm = room.ceiling_mm;
+      if (typeof refreshRoomSettingsInputs === 'function') refreshRoomSettingsInputs();
+    }
+    projectActiveWallIndex = Math.min(projectPhotoMainWallIndex(room), projectWallSegments.length - 1);
+    try { project3DLastFitKey = null; } catch (e) { /* vista 3D ainda não carregou */ }
+    if (typeof refreshProjectWallTabs === 'function') refreshProjectWallTabs();
+    if (typeof refreshProjectWallWidthInput === 'function') refreshProjectWallWidthInput();
+  } else {
+    const n = getProjectWallCount();
+    wallMap = room.walls.map((w, i) => Math.min(i, n - 1));
+    if (room.walls.length > n) warnings.push(tPhoto('warn_walls_merged', { n }));
+  }
+
+  // 2. MÓDULOS — parede, depois frente, depois piso.
+  projectSlots = [];
+  selectedProjectSlotId = null;
+  const ordemCamada = { wall: 0, front: 1, floor: 2 };
+  const ordered = chosen.slice().sort((a, b) =>
+    (ordemCamada[a.layer] - ordemCamada[b.layer]) || (a.wall_index - b.wall_index) || (a.order - b.order));
+  const geoByWall = new Map((getProjectWallGeometry() || []).map((g) => [g.wallIndex, g]));
+  const colorCache = new Map();
+  let created = 0;
+
+  for (const it of ordered) {
+    const wi = wallMap[it.wall_index] != null ? wallMap[it.wall_index] : 0;
+    const wallLen = getProjectWallWidthMm(wi);
+    let slot;
+    if (it.layer === 'floor') {
+      // Ilha: centro = origem da parede + ao longo (x + L/2) + pra dentro
+      // (afastamento + P/2). Giro = o da parede (frente pro ambiente) ou
+      // +180° quando a frente olha pra parede.
+      const g = geoByWall.get(wi);
+      if (!g) { warnings.push(tPhoto('warn_insert_failed', { label: it.label })); continue; }
+      const along = it.x_mm + it.width_mm / 2;
+      const into = (it.wall_offset_mm || 0) + it.depth_mm / 2;
+      const cx = g.originX * 1000 + g.alongDirX * along + g.intoDirX * into;
+      const cz = g.originZ * 1000 + g.alongDirZ * along + g.intoDirZ * into;
+      slot = await insertProjectModuleDefault(it.module_id, {
+        placement: 'floor', floor_x_mm: Math.round(cx), floor_z_mm: Math.round(cz),
+        width_mm: it.width_mm, height_mm: it.height_mm, floor_height_mm: it.floor_height_mm
+      });
+      if (slot) {
+        let deg = (g.rotationY * 180 / Math.PI) + (it.facing === 'toward_wall' ? 180 : 0);
+        deg = ((deg % 360) + 540) % 360 - 180;
+        slot.floor_rotation_deg = Math.round(deg * 10) / 10;
+      }
+    } else {
+      slot = await insertProjectModuleDefault(it.module_id, {
+        wall_index: wi, x_mm: it.x_mm, width_mm: it.width_mm,
+        height_mm: it.height_mm, floor_height_mm: it.floor_height_mm
+      });
+    }
+    if (!slot) { warnings.push(tPhoto('warn_insert_failed', { label: it.label })); continue; }
+    created++;
+
+    if (Math.abs(Number(slot.depth_mm) - it.depth_mm) > 0.5) updateProjectSlotDimension(slot, 'depth', it.depth_mm);
+    if (Math.abs(Number(slot.height_mm) - it.height_mm) > 0.5) {
+      warnings.push(tPhoto('warn_height_adjusted', { label: it.label, mm: Math.round(slot.height_mm) }));
+    }
+    // Camada FRENTE: afastado da parede (mesmo campo do ajuste fino de
+    // posição Z — é serializado, salva e recarrega).
+    if (it.layer === 'front' && it.wall_offset_mm > 0) slot.fineOffsetZMm = Math.round(it.wall_offset_mm);
+
+    if (it.color_name) {
+      let opts = colorCache.get(it.module_id);
+      if (!opts) { opts = await fetchModuleColorsByRoleRaw(it.module_id); colorCache.set(it.module_id, opts); }
+      let applied = 0;
+      Object.keys(opts || {}).forEach((roleId) => {
+        const c = (opts[roleId] || []).find((o) => o.name === it.color_name);
+        if (c) { applyColorToProjectSlot(slot, roleId, c); applied++; }
+      });
+      if (applied === 0) warnings.push(tPhoto('warn_color_missing', { label: it.label, color: it.color_name }));
+    }
+
+    if (it.layer !== 'floor') {
+      slot.x_mm = Math.max(0, Math.min(it.x_mm, wallLen - Number(slot.width_mm || 0)));
+      clampProjectSlotPosition(slot);
+    }
+  }
+
+  return { created, warnings, chosen: chosen.length };
+}
+
 async function runProjectPhotoBuild() {
   const st = projectPhotoState;
   if (!st) return;
@@ -755,103 +971,10 @@ async function runProjectPhotoBuild() {
   if (createBtn) createBtn.disabled = true;
   setProjectPhotoError('');
   setProjectPhotoStatus(tPhoto('status_building'));
-  const warnings = [];
   try {
-    if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+    const { created, warnings } = await projectPhotoApplyState(st);
     const room = st.room;
-
-    // 1. AMBIENTE — paredes (com aberturas dentro) e pé-direito.
-    let wallMap = room.walls.map((w, i) => i); // parede lida → índice no projeto
-    if (st.applyRoom) {
-      projectWallSegments = projectPhotoWallsToSegments(room.walls, room.openings, room.ceiling_mm, projectPhotoMainWallIndex(room));
-      const ceilInput = document.getElementById('po-proj-ceiling-input');
-      const un = (document.getElementById('po-unit-select') || {}).value || 'mm';
-      if (ceilInput && Math.abs(room.ceiling_mm - roomSettings.ceiling_mm) > 1) {
-        ceilInput.value = formatDimension(room.ceiling_mm, un);
-        ceilInput.dispatchEvent(new Event('change'));
-      } else if (Math.abs(room.ceiling_mm - roomSettings.ceiling_mm) > 1) {
-        roomSettings.ceiling_mm = room.ceiling_mm;
-        if (typeof refreshRoomSettingsInputs === 'function') refreshRoomSettingsInputs();
-      }
-      projectActiveWallIndex = Math.min(projectPhotoMainWallIndex(room), projectWallSegments.length - 1);
-      try { project3DLastFitKey = null; } catch (e) { /* vista 3D ainda não carregou */ }
-      if (typeof refreshProjectWallTabs === 'function') refreshProjectWallTabs();
-      if (typeof refreshProjectWallWidthInput === 'function') refreshProjectWallWidthInput();
-    } else {
-      const n = getProjectWallCount();
-      wallMap = room.walls.map((w, i) => Math.min(i, n - 1));
-      if (room.walls.length > n) warnings.push(tPhoto('warn_walls_merged', { n }));
-    }
-
-    // 2. MÓDULOS — parede, depois frente, depois piso.
-    projectSlots = [];
-    selectedProjectSlotId = null;
-    const ordemCamada = { wall: 0, front: 1, floor: 2 };
-    const ordered = chosen.slice().sort((a, b) =>
-      (ordemCamada[a.layer] - ordemCamada[b.layer]) || (a.wall_index - b.wall_index) || (a.order - b.order));
-    const geoByWall = new Map((getProjectWallGeometry() || []).map((g) => [g.wallIndex, g]));
-    const colorCache = new Map();
-    let created = 0;
-
-    for (const it of ordered) {
-      const wi = wallMap[it.wall_index] != null ? wallMap[it.wall_index] : 0;
-      const wallLen = getProjectWallWidthMm(wi);
-      let slot;
-      if (it.layer === 'floor') {
-        // Ilha: centro = origem da parede + ao longo (x + L/2) + pra dentro
-        // (afastamento + P/2). Giro = o da parede (frente pro ambiente) ou
-        // +180° quando a frente olha pra parede.
-        const g = geoByWall.get(wi);
-        if (!g) { warnings.push(tPhoto('warn_insert_failed', { label: it.label })); continue; }
-        const along = it.x_mm + it.width_mm / 2;
-        const into = (it.wall_offset_mm || 0) + it.depth_mm / 2;
-        const cx = g.originX * 1000 + g.alongDirX * along + g.intoDirX * into;
-        const cz = g.originZ * 1000 + g.alongDirZ * along + g.intoDirZ * into;
-        slot = await insertProjectModuleDefault(it.module_id, {
-          placement: 'floor', floor_x_mm: Math.round(cx), floor_z_mm: Math.round(cz),
-          width_mm: it.width_mm, height_mm: it.height_mm, floor_height_mm: it.floor_height_mm
-        });
-        if (slot) {
-          let deg = (g.rotationY * 180 / Math.PI) + (it.facing === 'toward_wall' ? 180 : 0);
-          deg = ((deg % 360) + 540) % 360 - 180;
-          slot.floor_rotation_deg = Math.round(deg * 10) / 10;
-        }
-      } else {
-        slot = await insertProjectModuleDefault(it.module_id, {
-          wall_index: wi, x_mm: it.x_mm, width_mm: it.width_mm,
-          height_mm: it.height_mm, floor_height_mm: it.floor_height_mm
-        });
-      }
-      if (!slot) { warnings.push(tPhoto('warn_insert_failed', { label: it.label })); continue; }
-      created++;
-
-      if (Math.abs(Number(slot.depth_mm) - it.depth_mm) > 0.5) updateProjectSlotDimension(slot, 'depth', it.depth_mm);
-      if (Math.abs(Number(slot.height_mm) - it.height_mm) > 0.5) {
-        warnings.push(tPhoto('warn_height_adjusted', { label: it.label, mm: Math.round(slot.height_mm) }));
-      }
-      // Camada FRENTE: afastado da parede (mesmo campo do ajuste fino de
-      // posição Z — é serializado, salva e recarrega).
-      if (it.layer === 'front' && it.wall_offset_mm > 0) slot.fineOffsetZMm = Math.round(it.wall_offset_mm);
-
-      if (it.color_name) {
-        let opts = colorCache.get(it.module_id);
-        if (!opts) { opts = await fetchModuleColorsByRoleRaw(it.module_id); colorCache.set(it.module_id, opts); }
-        let applied = 0;
-        Object.keys(opts || {}).forEach((roleId) => {
-          const c = (opts[roleId] || []).find((o) => o.name === it.color_name);
-          if (c) { applyColorToProjectSlot(slot, roleId, c); applied++; }
-        });
-        if (applied === 0) warnings.push(tPhoto('warn_color_missing', { label: it.label, color: it.color_name }));
-      }
-
-      if (it.layer !== 'floor') {
-        slot.x_mm = Math.max(0, Math.min(it.x_mm, wallLen - Number(slot.width_mm || 0)));
-        clampProjectSlotPosition(slot);
-      }
-    }
-
     if (chosen.length && created === 0) throw new Error(tPhoto('err_nothing_created'));
-
     renderProjectCanvas();
     markProjectDirty();
     closeProjectPhotoModal();
@@ -917,7 +1040,7 @@ async function runProjectPhotoBuild() {
 
 // ---------- Visibilidade: só administrador (pedido do Matt, 24/09) ----------
 async function refreshProjectAdminOnlyButtons() {
-  const ids = ['po-proj-photo-open-btn', 'po-proj-import2020-open-btn'];
+  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn'];
   let isAdmin = false;
   try {
     const { data: session } = await supabaseClient.auth.getSession();

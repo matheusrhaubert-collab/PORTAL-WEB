@@ -143,17 +143,20 @@ async function captureProjectThumbnail() {
 // Atualizar e o fluxo da foto realista.
 let projectSaveInFlight = false;
 
-async function saveProjectFavorite(overwriteId) {
-  if (projectSaveInFlight) return;
+// opts (01/10, "Projeto a partir de PDF"): { name, clientFolder } — salva
+// sem prompt, já com nome e pasta do cliente final. Devolve o id salvo
+// (null se não salvou); com opts, erro de gravação é RELANÇADO pro lote saber.
+async function saveProjectFavorite(overwriteId, opts) {
+  if (projectSaveInFlight) return null;
   projectSaveInFlight = true;
   try {
-    await saveProjectFavoriteInner(overwriteId);
+    return await saveProjectFavoriteInner(overwriteId, opts);
   } finally {
     projectSaveInFlight = false;
   }
 }
 
-async function saveProjectFavoriteInner(overwriteId) {
+async function saveProjectFavoriteInner(overwriteId, opts) {
   const statusEl = document.getElementById('po-proj-fav-status');
   const errorEl = document.getElementById('po-proj-error');
   errorEl.style.display = 'none';
@@ -213,7 +216,10 @@ async function saveProjectFavoriteInner(overwriteId) {
     // mesmo buraco e derrubou o salvar inteiro com "Could not find the
     // 'wall_segments' column of 'user_projects' in the schema cache"
     // (PGRST204) — daí a lista, em vez de um if por coluna.
-    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url'];
+    // Pasta do cliente final (migration 184) — só vai no payload quando quem
+    // chama manda uma; sem a migration, o fallback abaixo tira a coluna.
+    if (opts && opts.clientFolder) basePayload.client_folder = String(opts.clientFolder).trim().slice(0, 80);
+    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url', 'client_folder'];
     const runWithCacheFallback = async (op) => {
       let payload = basePayload;
       let res = await op(payload);
@@ -246,8 +252,9 @@ async function saveProjectFavoriteInner(overwriteId) {
       if (!data || !data.length) throw new Error(I18n.t('project.update_blocked'));
       statusEl.textContent = I18n.t('project.updated_status', { name: loadedProjectFavorite ? loadedProjectFavorite.name : '' });
     } else {
-      const name = (prompt(I18n.t('project.name_prompt'), I18n.t('project.default_name')) || '').trim();
-      if (!name) return;
+      const name = (opts && opts.name) ? String(opts.name).trim()
+        : (prompt(I18n.t('project.name_prompt'), I18n.t('project.default_name')) || '').trim();
+      if (!name) return null;
       const { data, error } = await runWithCacheFallback((payload) => supabaseClient
         .from('user_projects')
         .insert({ client_user_id: currentUser.id, name, ...payload })
@@ -261,10 +268,13 @@ async function saveProjectFavoriteInner(overwriteId) {
     projectDirty = false; // acabou de salvar — pedido do usuário 2026-07-29 ("preciso... uma mensagem salvar alteracoes")
     refreshProjectSaveIndicator();
     setTimeout(() => { statusEl.textContent = ''; }, 4000);
+    return overwriteId || (loadedProjectFavorite && loadedProjectFavorite.id) || null;
   } catch (err) {
     errorEl.textContent = err.message || String(err);
     errorEl.style.display = 'block';
     refreshProjectSaveIndicator(); // salvar falhou — sai do "Salvando…", volta a refletir projectDirty (continua true)
+    if (opts) throw err;
+    return null;
   }
 }
 
@@ -381,7 +391,7 @@ async function loadProjectFavoritesList() {
   // caem no recálculo em background de antes; sem wall_segments o projeto
   // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
   const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
-  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder'];
   let optional = OPTIONAL_COLS.slice();
   const runSelect = () => supabaseClient
     .from('user_projects')
@@ -402,6 +412,39 @@ async function loadProjectFavoritesList() {
     listEl.className = ''; // sem grid pro texto solo de "lista vazia"
     listEl.innerHTML = `<p class="hint">${I18n.t('project.saved_list_empty')}</p>`;
     return;
+  }
+  // PASTAS DE CLIENTE FINAL (01/10, migration 184) — Matt: "podemos criar
+  // pasta de cliente final para ajudar na organização em meus projetos".
+  // Só muda o layout quando algum projeto TEM pasta: aí cada pasta vira uma
+  // seção recolhível (<details>) com a própria grade, e os sem pasta ficam
+  // numa seção "Sem pasta" no fim. Sem nenhuma pasta, a grade é a de sempre.
+  const folderColumn = optional.includes('client_folder');
+  const hasFolders = folderColumn && data.some((p) => p.client_folder);
+  const folderGrids = new Map();
+  if (hasFolders) {
+    listEl.className = 'po-myproj-folders';
+    const nomes = [...new Set(data.map((p) => p.client_folder).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    if (data.some((p) => !p.client_folder)) nomes.push('');
+    let fechadas = {};
+    try { fechadas = JSON.parse(localStorage.getItem('legno_myproj_folders_closed') || '{}') || {}; } catch (e) { /* ok */ }
+    nomes.forEach((nome) => {
+      const det = document.createElement('details');
+      det.className = 'po-myproj-folder';
+      det.open = !fechadas[nome || '__none__'];
+      const n = data.filter((p) => (p.client_folder || '') === nome).length;
+      const sum = document.createElement('summary');
+      sum.textContent = (nome ? '📁 ' + nome : I18n.t('fav.folder_none')) + ' · ' + I18n.t('fav.folder_count', { n });
+      det.appendChild(sum);
+      const grid = document.createElement('div');
+      grid.className = 'po-myproj-grid';
+      det.appendChild(grid);
+      det.addEventListener('toggle', () => {
+        fechadas[nome || '__none__'] = !det.open;
+        try { localStorage.setItem('legno_myproj_folders_closed', JSON.stringify(fechadas)); } catch (e) { /* ok */ }
+      });
+      listEl.appendChild(det);
+      folderGrids.set(nome, grid);
+    });
   }
   const totalSpans = []; // preenchido no forEach abaixo, usado depois pra calcular o valor em background (sem travar o render da lista)
   data.forEach((proj) => {
@@ -437,6 +480,7 @@ async function loadProjectFavoritesList() {
           <button type="button" class="secondary po-proj-fav-duplicate">${I18n.t('fav.duplicate_btn')}</button>
           <button type="button" class="secondary po-proj-fav-share">${I18n.t('project.share_btn')}</button>
           <button type="button" class="secondary po-proj-fav-view3d">${I18n.t('fav.view3d_btn')}</button>
+          ${folderColumn ? `<button type="button" class="secondary po-proj-fav-folder">${I18n.t('fav.folder_btn')}</button>` : ''}
           <button type="button" class="secondary po-proj-fav-delete">${I18n.t('fav.delete_btn')}</button>
         </div>
       </div>
@@ -474,6 +518,16 @@ async function loadProjectFavoritesList() {
     if (loadBtnNormal) loadBtnNormal.addEventListener('click', () => restoreFavoriteProject(proj));
     card.querySelector('.po-proj-fav-share').addEventListener('click', () => shareProjectFavorite(proj));
     card.querySelector('.po-proj-fav-view3d').addEventListener('click', () => view3DFavoriteProject(proj));
+    const folderBtn = card.querySelector('.po-proj-fav-folder');
+    if (folderBtn) folderBtn.addEventListener('click', async () => {
+      const resp = prompt(I18n.t('fav.folder_prompt'), proj.client_folder || '');
+      if (resp === null) return;
+      const novo = resp.trim().slice(0, 80) || null;
+      if (novo === (proj.client_folder || null)) return;
+      const { error: fErr } = await supabaseClient.from('user_projects').update({ client_folder: novo }).eq('id', proj.id);
+      if (fErr) { errorEl.textContent = fErr.message; errorEl.style.display = 'block'; return; }
+      loadProjectFavoritesList();
+    });
     card.querySelector('.po-proj-fav-rename').addEventListener('click', async () => {
       const newName = (prompt(I18n.t('project.name_prompt'), proj.name) || '').trim();
       if (!newName || newName === proj.name) return;
@@ -529,13 +583,14 @@ async function loadProjectFavoritesList() {
         ...(proj.wall_segments ? { wall_segments: proj.wall_segments } : {}),
         ...(proj.thumbnail_data_url ? { thumbnail_data_url: proj.thumbnail_data_url } : {}),
         ...(proj.ai_preview_url ? { ai_preview_url: proj.ai_preview_url } : {}),
-        ...(proj.cached_value_usd != null ? { cached_value_usd: proj.cached_value_usd } : {})
+        ...(proj.cached_value_usd != null ? { cached_value_usd: proj.cached_value_usd } : {}),
+        ...(proj.client_folder ? { client_folder: proj.client_folder } : {})
       };
       const { error: dupErr } = await supabaseClient.from('user_projects').insert(dupPayload);
       if (dupErr) { errorEl.textContent = dupErr.message; errorEl.style.display = 'block'; return; }
       loadProjectFavoritesList();
     });
-    listEl.appendChild(card);
+    (hasFolders ? folderGrids.get(proj.client_folder || '') : listEl).appendChild(card);
     totalSpans.push({ el: card.querySelector('.po-myproj-card-total'), slots, proj });
   });
 
