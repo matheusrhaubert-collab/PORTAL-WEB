@@ -418,6 +418,10 @@ const PROJECT_PHOTO_COMPOSITIONS = {
   }
 };
 
+// Altura a partir da qual o móvel de composição é separado em uma caixa por
+// coluna (montagem: caixa larga e alta não passa por porta/corredor).
+const PROJECT_PHOTO_SPLIT_TALL_MM = 1200;
+
 function projectPhotoCompositionOf(v) {
   return Object.keys(PROJECT_PHOTO_COMPOSITIONS).find((k) => PROJECT_PHOTO_COMPOSITIONS[k].kinds.includes(v.kind)) || null;
 }
@@ -631,21 +635,42 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
     const height_mm = clampNum(v.height_mm, m.h[0], m.h[2]);
     const temInterior = v.interior && Array.isArray(v.interior.columns) && v.interior.columns.some((c) => c.zones && c.zones.length);
     if (!temInterior) warnings.push(tPhoto('warn_interior_default', { label: v.label }));
+    const interior = temInterior ? v.interior : projectPhotoDefaultInterior(v);
+    // MÓVEL ALTO = UMA CAIXA POR COLUNA (01/10, Matt: "por uma questão de
+    // montagem sempre separar módulos na largura. Esse módulo grande na
+    // largura serve pra módulos baixos de living, escritório, mas ele fica
+    // pesado e não tem como montar dentro do ambiente apertado"). Closet/
+    // armário a partir de PROJECT_PHOTO_SPLIT_TALL_MM: cada coluna lida vira
+    // a sua própria caixa crua, lado a lado, com o interior daquela coluna.
+    // Baixo (living, escritório) continua uma caixa só com divisórias.
+    const cols = (interior.columns || []).filter((c) => c && Array.isArray(c.zones));
+    // (e também o baixo que não cabe numa caixa só: mais largo que o máximo)
+    const larguraLida = Number(v.width_mm) || width_mm;
+    const separa = cols.length > 1 && (height_mm >= PROJECT_PHOTO_SPLIT_TALL_MM || larguraLida > (m.w[2] || Infinity));
+    const partes = separa ? cols : [null];
+    const somaCols = separa ? (cols.reduce((acc, c) => acc + (Number(c.width_mm) || 0), 0) || larguraLida) : 1;
+    const x0 = clampNum(v.x_mm, 0, Math.max(wall.length_mm - (separa ? larguraLida : width_mm), 0));
+    let xCursor = x0;
+    partes.forEach((col, ci) => {
+    const larg = separa ? clampNum(Math.round((Number(col.width_mm) || larguraLida / cols.length) * larguraLida / somaCols), m.w[0], m.w[2]) : width_mm;
+    const x_mm = separa ? clampNum(xCursor, 0, Math.max(wall.length_mm - larg, 0)) : x0;
+    xCursor += larg;
     items.push({
       include: true, order: 1000 + items.length,
       volume_id: v.id, kind: v.kind, layer: v.layer, wall_index: v.wall_index,
       wall_offset_mm: v.wall_offset_mm || 0, facing: v.facing,
       module_id: m.id, module_name: m.name,
-      label: v.label || m.name,
-      x_mm: clampNum(v.x_mm, 0, Math.max(wall.length_mm - width_mm, 0)),
-      width_mm, height_mm,
+      label: (v.label || m.name) + (separa ? ' · ' + (ci + 1) + '/' + cols.length : ''),
+      x_mm,
+      width_mm: larg, height_mm,
       depth_mm: clampNum(v.depth_mm, m.d[0], m.d[2]),
       floor_height_mm: clampNum(v.floor_height_mm, 0, Math.max(wall.height_mm - height_mm, 0)),
       color_name: (corDireta.get(v.id) || {}).color_name || null,
       front_color_name: (corDireta.get(v.id) || {}).front_color_name || null,
       color_description: v.color_description || '',
       composition: comp,
-      interior: temInterior ? v.interior : projectPhotoDefaultInterior(v)
+      interior: separa ? Object.assign({}, interior, { columns: [Object.assign({}, col, { width_mm: larg })] }) : interior
+    });
     });
   });
   // Cor das caixas cruas: a mais usada entre os módulos casados (o closet
