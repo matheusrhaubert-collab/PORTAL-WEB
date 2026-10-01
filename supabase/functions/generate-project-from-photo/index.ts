@@ -118,11 +118,22 @@ async function candidateModels(apiKey: string, tier: "pro" | "flash"): Promise<s
 
 // Chama o Gemini com fallback de modelo (404 → próximo) e com UMA nova
 // tentativa quando a resposta vem cortada ou não é JSON.
+// PRAZO (01/10): a Edge Function tem limite de tempo de parede (150 s no
+// plano grátis) — passou disso, o Supabase corta com um 504 cru e o portal
+// não sabe o que houve (foi o "Cozinha · erro 504" do Indiana: Pro + 6
+// pranchas grandes). Agora a própria função desiste antes (135 s, ajustável
+// em EDGE_SOFT_LIMIT_MS) e responde code='timeout', e o portal tenta de novo
+// no modo rápido / com menos páginas (projectPhotoRunPipeline, portal-11).
+const SOFT_LIMIT_MS = Number(Deno.env.get("EDGE_SOFT_LIMIT_MS")) || 135_000;
+
 async function callGemini(apiKey: string, tier: "pro" | "flash", parts: any[], schema: any) {
+  const deadline = Date.now() + SOFT_LIMIT_MS;
+  const timeout = () => new HttpError(504, "A IA demorou demais pra responder (limite da função).", "timeout");
   const models = await candidateModels(apiKey, tier);
   let lastErr = "";
   for (const model of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (deadline - Date.now() < 15_000) throw timeout();
       const generationConfig: any = {
         responseMimeType: "application/json",
         responseSchema: schema,
@@ -140,8 +151,11 @@ async function callGemini(apiKey: string, tier: "pro" | "flash", parts: any[], s
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig }),
+          signal: AbortSignal.timeout(Math.max(5_000, deadline - Date.now())),
         });
       } catch (e) {
+        const nome = (e as Error).name;
+        if (nome === "TimeoutError" || nome === "AbortError") throw timeout();
         lastErr = `${model}: ${(e as Error).message}`;
         break; // rede — tenta o próximo modelo
       }

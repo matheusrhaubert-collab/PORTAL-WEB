@@ -284,22 +284,28 @@ function onProjectPdfReviewClick(ev) {
   if (img && typeof openGalleryLightbox === 'function') openGalleryLightbox(img.src);
 }
 
-// Quais páginas do ambiente vão pra IA (máx. 6): as COTADAS primeiro (mais
-// cotas no texto extraído = planta/elevação) e os renders só completam o que
-// sobrar — sempre com vaga pra pelo menos 1 render (aparência). PDF de
-// apresentação tem muito render; mandar 6 renders deixaria as medidas de fora.
+// Quais páginas do ambiente vão pra IA (máx. 6), EM ORDEM DE PRIORIDADE (o
+// plano B do portal-11 corta pras 3 primeiras se a leitura estourar o tempo):
+//   1. no máximo UMA planta geral — página que aparece em 3+ ambientes (ex.:
+//      Indiana: "planta original pés/polegadas" e "planta convertida cm" iam
+//      em TODOS os 11 ambientes, ocupando 2 das 6 vagas com a casa inteira);
+//   2. as páginas PRÓPRIAS do ambiente com mais cotas (elevações/vistas);
+//   3. renders/sem cota completam o que sobrar.
+// PDF de apresentação (RITU) tem muito render — sem isso, as pranchas de
+// medida ficavam de fora.
 const PROJECT_PDF_DIM_RE = /\d+[.,]\d+\s*(?:m|cm|mm)\b|\d+\s*(?:mm|cm)\b|\d+'\s*-?\s*\d*(?:\s\d+\/\d+)?"|\d+(?:\s\d+\/\d+)?"/g;
 function projectPdfDimScore(n) {
   const t = (projectPdfPages[n - 1] || {}).text || '';
   return (t.match(PROJECT_PDF_DIM_RE) || []).length;
 }
 function projectPdfPickPages(pages) {
-  const comCota = pages.filter((n) => projectPdfDimScore(n) >= 2).sort((a, b) => projectPdfDimScore(b) - projectPdfDimScore(a));
-  const semCota = pages.filter((n) => projectPdfDimScore(n) < 2);
-  const max = PROJECT_PDF_MAX_PAGES_PER_ROOM;
-  const escolhidas = comCota.slice(0, semCota.length ? max - 1 : max).concat(semCota).slice(0, max);
-  // ordem do PDF dentro do escolhido (planta antes de elevação, como o autor pôs)
-  return escolhidas.sort((a, b) => pages.indexOf(a) - pages.indexOf(b));
+  const rooms = (projectPdfSplit && projectPdfSplit.rooms) || [];
+  const usos = (n) => rooms.filter((r) => r.pages.includes(n)).length;
+  const geral = pages.filter((n) => usos(n) >= 3);
+  const proprias = pages.filter((n) => usos(n) < 3);
+  const comCota = proprias.filter((n) => projectPdfDimScore(n) >= 2).sort((a, b) => projectPdfDimScore(b) - projectPdfDimScore(a));
+  const semCota = proprias.filter((n) => projectPdfDimScore(n) < 2);
+  return [...geral.slice(0, 1), ...comCota, ...semCota].slice(0, PROJECT_PDF_MAX_PAGES_PER_ROOM);
 }
 
 // ---------- 2. Criar os projetos ----------

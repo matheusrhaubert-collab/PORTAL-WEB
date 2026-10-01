@@ -511,7 +511,13 @@ async function invokeProjectPhotoStage(body) {
   const { data, error } = await supabaseClient.functions.invoke('generate-project-from-photo', { body });
   if (error && !(data && !data.error)) {
     console.error('generate-project-from-photo falhou:', body.stage, error, data);
-    throw new Error(await describeEdgeFunctionError(error, data, 'generate-project-from-photo'));
+    const status = (error && error.context && error.context.status) || 0;
+    const err = new Error(await describeEdgeFunctionError(error, data, 'generate-project-from-photo'));
+    err.status = status;
+    // 504 = a função desistiu no prazo (code 'timeout') ou o gateway cortou;
+    // 546 = WORKER_LIMIT (memória/CPU) — os dois melhoram com menos imagem.
+    err.isTimeout = status === 504 || status === 546 || /timeout|demorou|504|546/i.test(err.message);
+    throw err;
   }
   if (!data || data.error) throw new Error((data && data.error) || tPhoto('err_empty_result'));
   return data;
@@ -530,13 +536,29 @@ async function projectPhotoRunPipeline(opts, status) {
   const catalogP = opts.catalogP || Promise.all([buildProjectPhotoCatalog(), buildProjectPhotoColorList()]);
   catalogP.catch(() => {});
 
-  say(tPhoto(opts.quality === 'pro' ? 'status_step1_pro' : 'status_step1'));
-  const room = await invokeProjectPhotoStage({
-    stage: 'read', quality: opts.quality, images,
-    source: opts.source || 'photo', room_name: opts.roomName || '',
-    ceiling_mm: opts.ceilingMm, ref_wall_mm: opts.refWallMm > 0 ? opts.refWallMm : null,
-    baseboard_mm: roomSettings.baseboard_mm || 0, notes: opts.notes || '', lang
-  });
+  // ESCADA DE PLANO B (01/10, Indiana: "Cozinha · erro 504" com Pro + 6
+  // pranchas): se a leitura estoura o tempo da função, tenta de novo no
+  // modo rápido e depois com menos páginas — melhor um projeto um pouco
+  // menos fiel do que nenhum. Quem caiu pro plano B ganha um aviso.
+  const tentativas = [{ quality: opts.quality, n: images.length }];
+  if (opts.quality === 'pro') tentativas.push({ quality: 'flash', n: images.length });
+  if (images.length > 3) tentativas.push({ quality: 'flash', n: 3 });
+  let room = null, planoB = null;
+  for (let k = 0; k < tentativas.length && !room; k++) {
+    const tt = tentativas[k];
+    say(k === 0 ? tPhoto(tt.quality === 'pro' ? 'status_step1_pro' : 'status_step1') : tPhoto('status_retry_fast', { n: tt.n }));
+    try {
+      room = await invokeProjectPhotoStage({
+        stage: 'read', quality: tt.quality, images: images.slice(0, tt.n),
+        source: opts.source || 'photo', room_name: opts.roomName || '',
+        ceiling_mm: opts.ceilingMm, ref_wall_mm: opts.refWallMm > 0 ? opts.refWallMm : null,
+        baseboard_mm: roomSettings.baseboard_mm || 0, notes: opts.notes || '', lang
+      });
+      if (k > 0) planoB = tt;
+    } catch (err) {
+      if (!err.isTimeout || k === tentativas.length - 1) throw err;
+    }
+  }
   if (!Array.isArray(room.walls) || !room.walls.length) throw new Error(tPhoto('err_empty_result'));
 
   const [catalog, colors] = await catalogP;
@@ -549,6 +571,7 @@ async function projectPhotoRunPipeline(opts, status) {
   });
 
   const warnings = [];
+  if (planoB) warnings.push(tPhoto('warn_fallback_fast', { n: planoB.n }));
   const items = projectPhotoBuildItems(match, room, catalog, warnings);
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
   const unmatched = (match.unmatched || []).map((u) => ({ volume: volById.get(u.volume_id), reason: u.reason })).filter((u) => u.volume);
