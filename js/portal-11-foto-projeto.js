@@ -384,6 +384,165 @@ function projectPhotoCheckOpenings(items, openings, warnings) {
 }
 
 // Itens do casamento + volume de origem → item pronto pra criar, clampado.
+// ============================================================
+// COMPOSIÇÕES PARAMETRIZADAS (01/10) — caixa crua + configurador de vãos
+// ============================================================
+// Matt: "seria muito mais preciso e versátil buscar o módulo cru na família
+// dos componentes e inserir através do configurador os internos [...] um
+// módulo de closet, com as prateleiras, gavetas, nichos, tudo pode ser
+// colocado com o configurador, até portas". E: "todo closet usa essa base"
+// = Bottom · Toe 3 · Back (com fundo).
+//
+// Pra cada tipo de composição: os kinds de volume que entram nela, a CAIXA
+// CRUA (por nome exato, família Componentes) e os INTERNOS do configurador
+// (accessory_types, por nome). A IA de leitura descreve o interior
+// (colunas → zonas de baixo pra cima → portas) e o código monta a árvore de
+// vãos com SÓ estes internos — a IA não escolhe peça nem monta árvore.
+// Volume dessas composições NÃO passa pelo casamento com o catálogo.
+//
+// Pra mudar o padrão (outra caixa, outro interno), é aqui. Se virar tabela
+// no ERP depois, esta constante vira o default de quando a tabela estiver
+// vazia.
+const PROJECT_PHOTO_COMPOSITIONS = {
+  closet: {
+    kinds: ['closet_tower', 'closet_drawer_unit', 'wardrobe'],
+    carcass: 'Bottom · Toe 3 · Back',
+    acc: {
+      split_x: 'Lateral Divisoria',
+      shelf: 'Prateleira fixa',
+      drawer: 'Drawer',
+      hanger: 'Cabide tubular',
+      door: 'Porta Giro Externa',
+      flap: 'Basculante Inverso'
+    }
+  }
+};
+
+function projectPhotoCompositionOf(v) {
+  return Object.keys(PROJECT_PHOTO_COMPOSITIONS).find((k) => PROJECT_PHOTO_COMPOSITIONS[k].kinds.includes(v.kind)) || null;
+}
+// Volumes que vão pelo caminho "caixa crua + configurador" (se a caixa
+// existir no catálogo — senão caem no casamento normal, sem perder nada).
+function projectPhotoDirectVolumes(room, catalog) {
+  return room.volumes.filter((v) => {
+    const comp = projectPhotoCompositionOf(v);
+    return comp && v.layer !== 'floor' && catalog.some((m) => m.name === PROJECT_PHOTO_COMPOSITIONS[comp].carcass);
+  });
+}
+
+// Interior padrão quando a IA não descreveu (porta fechada, sem vista).
+function projectPhotoDefaultInterior(v) {
+  if (v.kind === 'closet_drawer_unit') {
+    return { columns: [{ width_mm: v.width_mm, zones: [{ type: 'drawers', height_mm: v.height_mm, count: Math.max(2, v.drawers || 3) }], doors: 'none', doors_cover: 'all' }] };
+  }
+  return { columns: [{ width_mm: v.width_mm, zones: [
+    { type: 'hanging', height_mm: 1650, count: 1 },
+    { type: 'shelves', height_mm: Math.max(300, v.height_mm - 1650), count: 2 }
+  ], doors: (v.doors || 0) > 0 ? 'hinged' : 'none', doors_cover: 'all' }] };
+}
+
+// Árvore de vãos (LayoutEngine) a partir da descrição da IA. PURA: recebe o
+// catálogo do configurador (cat, chave = id do accessory_type) e a zona
+// interna real da caixa ({w, h}); devolve a raiz. Avisos vão em warnings.
+function projectPhotoInteriorTree(spec, cat, zona, comp, warnings, label) {
+  const L = LayoutEngine;
+  const accId = (nome) => Object.keys(cat).find((k) => cat[k] && cat[k].name === nome) || null;
+  const A = {};
+  Object.keys(comp.acc).forEach((k) => { A[k] = accId(comp.acc[k]); });
+  const ESP = 19.5;
+  const root = L.newVoid();
+  const avisados = new Set();
+  const avisa = (chave, vars) => { if (!avisados.has(chave)) { avisados.add(chave); warnings.push(tPhoto(chave, Object.assign({ label }, vars || {}))); } };
+
+  let cols = (spec && Array.isArray(spec.columns) ? spec.columns : []).filter((c) => c && Array.isArray(c.zones));
+  if (!cols.length) return root;
+  if (cols.length > 1 && !A.split_x) { avisa('warn_interior_missing_acc', { acc: comp.acc.split_x }); cols = [cols[0]]; }
+
+  // larguras: todas fixas menos a MAIOR (elástica, absorve o erro de leitura)
+  if (cols.length > 1) {
+    L.applySplit(root, A.split_x, cols.length - 1, cat);
+    const util = zona.w - ESP * (cols.length - 1);
+    const soma = cols.reduce((a, c) => a + (Number(c.width_mm) || 0), 0) || util;
+    const k = util / soma;
+    const fillIdx = cols.reduce((bi, c, i) => (c.width_mm > cols[bi].width_mm ? i : bi), 0);
+    root.children.forEach((n, i) => {
+      if (i === fillIdx) { n.sizeMode = 'fill'; n.sizeValue = null; }
+      else { n.sizeMode = 'fixed'; n.sizeValue = Math.max(150, Math.round((Number(cols[i].width_mm) || 300) * k)); }
+    });
+  }
+  const colNodes = cols.length > 1 ? root.children : [root];
+
+  cols.forEach((c, ci) => {
+    const node = colNodes[ci];
+    const zonas = c.zones.filter((z) => z && Number(z.height_mm) > 0);
+    if (!zonas.length) return;
+    let zoneNodes = [node];
+    if (zonas.length > 1) {
+      if (!A.shelf) { avisa('warn_interior_missing_acc', { acc: comp.acc.shelf }); return; }
+      L.applySplit(node, A.shelf, zonas.length - 1, cat);
+      const util = zona.h - ESP * (zonas.length - 1);
+      const soma = zonas.reduce((a, z) => a + Number(z.height_mm), 0) || util;
+      const k = soma > util ? util / soma : 1;
+      // elástica = cabideiro (ou a maior zona) — é onde 2 cm a mais não fazem falta
+      let fillIdx = zonas.findIndex((z) => z.type === 'hanging');
+      if (fillIdx < 0) fillIdx = zonas.reduce((bi, z, i) => (Number(z.height_mm) > Number(zonas[bi].height_mm) ? i : bi), 0);
+      node.children.forEach((n, i) => {
+        if (i === fillIdx) { n.sizeMode = 'fill'; n.sizeValue = null; }
+        else { n.sizeMode = 'fixed'; n.sizeValue = Math.max(60, Math.round(Number(zonas[i].height_mm) * k)); }
+      });
+      zoneNodes = node.children;
+    }
+    zonas.forEach((z, zi) => {
+      const zn = zoneNodes[zi];
+      const n = Math.max(0, Math.round(Number(z.count) || 0));
+      if (z.type === 'drawers') {
+        if (!A.drawer) return avisa('warn_interior_missing_acc', { acc: comp.acc.drawer });
+        L.applyContent(zn, A.drawer, cat);
+        if (n > 1) zn.content.params = Object.assign({}, zn.content.params, { quantidade: n });
+      } else if (z.type === 'hanging') {
+        if (!A.hanger) return avisa('warn_interior_missing_acc', { acc: comp.acc.hanger });
+        L.applyContent(zn, A.hanger, cat);
+      } else if ((z.type === 'shelves' || z.type === 'shoes') && n > 0) {
+        if (z.type === 'shoes') avisa('warn_interior_shoes');
+        if (A.shelf) L.applySplit(zn, A.shelf, n, cat);
+      }
+    });
+
+    // portas
+    if (c.doors && c.doors !== 'none') {
+      let porta = c.doors === 'flap' ? (A.flap || A.door) : A.door;
+      if (c.doors === 'sliding') avisa('warn_interior_sliding');
+      if (!porta) return avisa('warn_interior_missing_acc', { acc: comp.acc.door });
+      const temGaveta = zonas.some((z) => z.type === 'drawers');
+      if (!temGaveta && c.doors_cover !== 'above_drawers') {
+        if (cols.length > 1) L.applyFront(root, porta, ci, ci, cat);
+        else L.applyFront(root, porta, null, null, cat);
+      } else if (zonas.length > 1) {
+        const ini = zonas.findIndex((z, i) => z.type !== 'drawers' && zonas.slice(0, i).every((q) => q.type === 'drawers'));
+        if (ini >= 0) L.applyFront(node, porta, ini, zonas.length - 1, cat);
+      }
+    }
+  });
+  return root;
+}
+
+// Aplica o interior no slot recém-criado (caixa crua) — o mesmo caminho do
+// botão "Salvar" do configurador (applyProjectBuilderToSlot, portal-07).
+async function projectPhotoApplyInterior(slot, it, warnings) {
+  if (typeof LayoutEngine === 'undefined' || typeof loadProjectBuilderCatalog !== 'function') return;
+  const comp = PROJECT_PHOTO_COMPOSITIONS[it.composition];
+  if (!comp) return;
+  const carregado = await loadProjectBuilderCatalog(slot.module.id);
+  const cat = (carregado && carregado.cat) || {};
+  const zona = computeProjectSlotInnerZone(slot);
+  const root = projectPhotoInteriorTree(it.interior, cat, zona, comp, warnings, it.label);
+  const vazia = !root.splitAxis && !root.content && !(root.fronts || []).length;
+  if (vazia) return;
+  slot.layout = LayoutEngine.serialize(root);
+  accessoryCatalogCache = Object.assign({}, (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || {}, cat);
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[foto-projeto] interior:', e); }
+}
+
 function projectPhotoBuildItems(match, room, catalog, warnings) {
   const byId = new Map(catalog.map((m) => [m.id, m]));
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
@@ -415,6 +574,36 @@ function projectPhotoBuildItems(match, room, catalog, warnings) {
       color_name: raw.color_name || null
     });
   });
+  // Composições por caixa crua (closet…): não passaram pelo casamento.
+  projectPhotoDirectVolumes(room, catalog).forEach((v) => {
+    const comp = projectPhotoCompositionOf(v);
+    const m = catalog.find((c) => c.name === PROJECT_PHOTO_COMPOSITIONS[comp].carcass);
+    const wall = room.walls[v.wall_index] || room.walls[0];
+    const width_mm = clampNum(v.width_mm, m.w[0], m.w[2]);
+    const height_mm = clampNum(v.height_mm, m.h[0], m.h[2]);
+    const temInterior = v.interior && Array.isArray(v.interior.columns) && v.interior.columns.some((c) => c.zones && c.zones.length);
+    if (!temInterior) warnings.push(tPhoto('warn_interior_default', { label: v.label }));
+    items.push({
+      include: true, order: 1000 + items.length,
+      volume_id: v.id, kind: v.kind, layer: v.layer, wall_index: v.wall_index,
+      wall_offset_mm: v.wall_offset_mm || 0, facing: v.facing,
+      module_id: m.id, module_name: m.name,
+      label: v.label || m.name,
+      x_mm: clampNum(v.x_mm, 0, Math.max(wall.length_mm - width_mm, 0)),
+      width_mm, height_mm,
+      depth_mm: clampNum(v.depth_mm, m.d[0], m.d[2]),
+      floor_height_mm: clampNum(v.floor_height_mm, 0, Math.max(wall.height_mm - height_mm, 0)),
+      color_name: null, color_description: v.color_description || '',
+      composition: comp,
+      interior: temInterior ? v.interior : projectPhotoDefaultInterior(v)
+    });
+  });
+  // Cor das caixas cruas: a mais usada entre os módulos casados (o closet
+  // costuma ser o mesmo acabamento do resto); sem nenhum, fica a padrão.
+  const freq = {};
+  items.forEach((it) => { if (it.color_name) freq[it.color_name] = (freq[it.color_name] || 0) + 1; });
+  const corMaisUsada = Object.keys(freq).sort((p, q) => freq[q] - freq[p])[0] || null;
+  items.forEach((it) => { if (it.composition && !it.color_name) it.color_name = corMaisUsada; });
   projectPhotoAutoCornerBase(items, room.walls, catalog, warnings);
   projectPhotoNormalizeCorners(items, room.walls, warnings);
   projectPhotoFixCorners(items, room.walls, warnings);
@@ -567,7 +756,11 @@ async function projectPhotoRunPipeline(opts, status) {
   say(tPhoto('status_step2'));
   // casamento: a 1ª imagem basta pra estilo/cor (economiza payload)
   const match = await invokeProjectPhotoStage({
-    stage: 'match', images: images.slice(0, 2), volumes: room.volumes, catalog, colors, lang
+    stage: 'match', images: images.slice(0, 2), lang, colors,
+    // closet & cia. (caixa crua + configurador) não passam pelo casamento;
+    // o catálogo vai sem as caixas cruas pra IA não usá-las no resto.
+    volumes: room.volumes.filter((v) => !projectPhotoDirectVolumes(room, catalog).includes(v)),
+    catalog: catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name))
   });
 
   const warnings = [];
@@ -660,11 +853,43 @@ function projectPhotoElevationSvg(st, wi) {
   st.items.filter((it) => it.wall_index === wi && it.layer !== 'floor').forEach((it) => {
     const op = it.include ? 0.85 : 0.2;
     parts.push(`<rect x="${it.x_mm}" y="${y(it.floor_height_mm + it.height_mm)}" width="${it.width_mm}" height="${it.height_mm}" fill="${PHOTO_LAYER_FILL[it.layer]}" fill-opacity="${op}" stroke="#5b4a35" stroke-width="${fs / 8}"/>`);
+    if (it.interior && Array.isArray(it.interior.columns)) parts.push(projectPhotoInteriorSvg(it, y, fs));
     parts.push(`<text x="${it.x_mm + it.width_mm / 2}" y="${y(it.floor_height_mm + it.height_mm / 2)}" font-size="${fs}" font-weight="700" text-anchor="middle" dominant-baseline="middle" fill="#2b2118" fill-opacity="${it.include ? 1 : 0.3}">${it.n}</text>`);
   });
   const unit = projectPhotoUnit();
   parts.push(`<text x="${W / 2}" y="${H + pad * 0.8}" font-size="${fs * 0.8}" text-anchor="middle" fill="#6f665a">${projectPhotoFormatMm(W, unit)} ${unit}</text>`);
   return `<svg viewBox="${vb}" preserveAspectRatio="xMidYMid meet" class="po-proj-photo-elev-svg">${parts.join('')}</svg>`;
+}
+
+// Esboço do interior (colunas, zonas, prateleiras, gavetas, cabide, porta)
+// dentro do retângulo do módulo na elevação da revisão.
+function projectPhotoInteriorSvg(it, y, fs) {
+  const cols = it.interior.columns.filter((c) => c && Array.isArray(c.zones));
+  if (!cols.length) return '';
+  const out = [];
+  const x0 = it.x_mm + 20, w0 = it.width_mm - 40, y0 = it.floor_height_mm + 100, h0 = it.height_mm - 120;
+  const soma = cols.reduce((a, c) => a + (Number(c.width_mm) || 0), 0) || w0;
+  const traco = (x1, y1, x2, y2, extra) => out.push(`<line x1="${x1}" y1="${y(y1)}" x2="${x2}" y2="${y(y2)}" stroke="#5b4a35" stroke-width="${fs / 12}" ${extra || ''}/>`);
+  let cx = x0;
+  cols.forEach((c, ci) => {
+    const cw = w0 * (Number(c.width_mm) || 0) / soma;
+    if (ci > 0) traco(cx, y0, cx, y0 + h0);
+    const zs = c.zones.filter((z) => Number(z.height_mm) > 0);
+    const zsoma = zs.reduce((a, z) => a + Number(z.height_mm), 0) || h0;
+    let zy = y0;
+    zs.forEach((z, zi) => {
+      const zh = h0 * Number(z.height_mm) / zsoma;
+      if (zi > 0) traco(cx, zy, cx + cw, zy);
+      const n = Math.max(0, Number(z.count) || 0);
+      if (z.type === 'drawers') for (let k = 1; k < Math.max(1, n); k++) traco(cx + 8, zy + zh * k / n, cx + cw - 8, zy + zh * k / n, 'stroke-dasharray="20 10"');
+      if (z.type === 'shelves' || z.type === 'shoes') for (let k = 1; k <= n; k++) traco(cx, zy + zh * k / (n + 1), cx + cw, zy + zh * k / (n + 1));
+      if (z.type === 'hanging') traco(cx + 20, zy + zh - 80, cx + cw - 20, zy + zh - 80, 'stroke-width="' + (fs / 6) + '" stroke="#8a6d3b"');
+      zy += zh;
+    });
+    if (c.doors && c.doors !== 'none') traco(cx + 4, y0, cx + cw - 4, y0 + h0, 'stroke-dasharray="6 18" stroke="#4a7fa8"');
+    cx += cw;
+  });
+  return out.join('');
 }
 
 // Planta: contorno lido + aberturas + pegada dos módulos (inclusive ilha).
@@ -962,6 +1187,11 @@ async function projectPhotoApplyState(st) {
     // Camada FRENTE: afastado da parede (mesmo campo do ajuste fino de
     // posição Z — é serializado, salva e recarrega).
     if (it.layer === 'front' && it.wall_offset_mm > 0) slot.fineOffsetZMm = Math.round(it.wall_offset_mm);
+    // Caixa crua de composição (closet…): interior pelo configurador.
+    if (it.composition && it.interior) {
+      try { await projectPhotoApplyInterior(slot, it, warnings); }
+      catch (e) { console.error('[foto-projeto] interior falhou:', e); warnings.push(tPhoto('warn_insert_failed', { label: it.label + ' (interior)' })); }
+    }
 
     if (it.color_name) {
       let opts = colorCache.get(it.module_id);

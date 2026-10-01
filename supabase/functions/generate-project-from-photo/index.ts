@@ -215,7 +215,7 @@ const VOLUME_KINDS = [
   "open_shelf", "floating_shelf", "wall_panel", "slat_panel", "filler", "end_panel",
   "countertop", "backsplash", "hood", "crown_molding", "toe_kick",
   "refrigerator", "range", "cooktop", "oven", "dishwasher", "microwave", "sink",
-  "island", "peninsula", "vanity", "wardrobe", "tv_unit", "desk", "bed", "table",
+  "island", "peninsula", "vanity", "wardrobe", "closet_tower", "closet_drawer_unit", "tv_unit", "desk", "bed", "table",
   "sofa", "tv", "column", "beam", "other",
 ];
 
@@ -279,10 +279,45 @@ const READ_SCHEMA = {
           drawers: { type: "INTEGER" },
           front_style: { type: "STRING" },
           color_description: { type: "STRING" },
+          // INTERIOR (01/10, closet via caixa crua + configurador): só para
+          // torre/guarda-roupa de closet. Colunas da esquerda pra direita;
+          // dentro de cada coluna, zonas de BAIXO pra CIMA.
+          interior: {
+            type: "OBJECT",
+            properties: {
+              columns: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    width_mm: { type: "NUMBER" },
+                    zones: {
+                      type: "ARRAY",
+                      items: {
+                        type: "OBJECT",
+                        properties: {
+                          type: { type: "STRING", enum: ["drawers", "shelves", "hanging", "open", "shoes"] },
+                          height_mm: { type: "NUMBER" },
+                          count: { type: "INTEGER" },
+                        },
+                        required: ["type", "height_mm", "count"],
+                        propertyOrdering: ["type", "height_mm", "count"],
+                      },
+                    },
+                    doors: { type: "STRING", enum: ["none", "hinged", "sliding", "flap"] },
+                    doors_cover: { type: "STRING", enum: ["all", "above_drawers"] },
+                  },
+                  required: ["width_mm", "zones", "doors"],
+                  propertyOrdering: ["width_mm", "zones", "doors", "doors_cover"],
+                },
+              },
+            },
+            required: ["columns"],
+          },
           notes: { type: "STRING" },
         },
         required: ["id", "label", "kind", "wall_index", "layer", "x_mm", "width_mm", "height_mm", "depth_mm", "floor_height_mm", "wall_offset_mm", "doors", "drawers", "front_style", "color_description"],
-        propertyOrdering: ["id", "label", "kind", "wall_index", "layer", "notes", "x_mm", "width_mm", "floor_height_mm", "height_mm", "depth_mm", "wall_offset_mm", "facing", "doors", "drawers", "front_style", "color_description"],
+        propertyOrdering: ["id", "label", "kind", "wall_index", "layer", "notes", "x_mm", "width_mm", "floor_height_mm", "height_mm", "depth_mm", "wall_offset_mm", "facing", "doors", "drawers", "front_style", "color_description", "interior"],
       },
     },
     summary: { type: "STRING" },
@@ -359,6 +394,12 @@ Cada corpo de móvel ou equipamento, um por item, em ordem: primeiro tudo que en
   • Sem módulo de canto: a corrida de UMA das paredes vai até o canto e a da outra começa depois da profundidade da primeira (base de 610 de profundidade → x≈610). Nunca sobreponha volumes de paredes vizinhas no canto.
 - Nunca coloque volume sobre uma porta/passagem. Embaixo de janela só base (até o peitoril).
 - Eletros (geladeira, fogão, coifa, lava-louças, micro-ondas), coluna, viga, TV, sofá também viram volume com o kind certo — eles ocupam espaço.
+- CLOSET / GUARDA-ROUPA / DESPENSA COM TORRES: cada TORRE (caixa independente, entre duas laterais que vão do chão ao topo) é UM volume kind="closet_tower" (gaveteiro baixo/ilha de closet = "closet_drawer_unit"). Preencha "interior":
+  • columns: as colunas internas da ESQUERDA pra DIREITA (divididas por divisória vertical), com width_mm interno de cada uma. Torre de 1 coluna = 1 item.
+  • zones de cada coluna, de BAIXO pra CIMA, com height_mm de cada zona (a soma ≈ altura interna da torre): "drawers" (count = nº de gavetas), "shelves" (count = nº de prateleiras DENTRO da zona), "hanging" (cabideiro; zona de cabide curto ~1000–1100, longo ~1600–1700), "shoes" (sapateira, count = nº de prateleiras), "open" (nicho vazio/maleiro sem prateleira).
+  • doors: "none" (aberto), "hinged" (porta de giro), "sliding" (porta de correr), "flap" (basculante); doors_cover: "all" ou "above_drawers" (gavetas à vista e porta só em cima).
+  Leia o interior das ELEVAÇÕES internas da prancha ou de render com porta aberta. Se as portas estão fechadas e não há vista interna, use o padrão de closet: 1 coluna cabideiro longo + prateleiras em cima a cada ~350.
+  Para os outros kinds, "interior" fica com columns vazio.
 - doors/drawers: quantas portas e gavetas aparecem na frente do volume. front_style: "shaker", "lisa", "ripada", "vidro", "aberta", "almofadada"… color_description: cor e acabamento como aparecem (ex.: "cinza médio fosco", "carvalho claro com veio").
 
 REGRAS:
@@ -366,6 +407,21 @@ REGRAS:
 - id dos volumes: "v1", "v2"… únicos.
 - label, notes, camera_notes, scale_notes e summary em ${langName(b.lang)}. "summary": 2–3 frases com a leitura do ambiente.
 Responda SOMENTE o JSON no schema pedido.`;
+}
+
+const ZONE_TYPES = ["drawers", "shelves", "hanging", "open", "shoes"];
+function sanitizeInterior(raw: any, W: number, H: number) {
+  const cols = (Array.isArray(raw?.columns) ? raw.columns : []).slice(0, 8).map((c: any) => ({
+    width_mm: Math.round(clamp(num(c?.width_mm, W), 100, W)),
+    zones: (Array.isArray(c?.zones) ? c.zones : []).slice(0, 10).map((z: any) => ({
+      type: ZONE_TYPES.includes(z?.type) ? z.type : "open",
+      height_mm: Math.round(clamp(num(z?.height_mm, 300), 60, H)),
+      count: clamp(Math.round(num(z?.count, 1)), 0, 12),
+    })),
+    doors: ["none", "hinged", "sliding", "flap"].includes(c?.doors) ? c.doors : "none",
+    doors_cover: c?.doors_cover === "above_drawers" ? "above_drawers" : "all",
+  }));
+  return { columns: cols };
 }
 
 function num(v: unknown, fb = 0) { const n = Number(v); return Number.isFinite(n) ? n : fb; }
@@ -424,6 +480,7 @@ function sanitizeRead(raw: any, b: any) {
       floor_height_mm: Math.round(fh), wall_offset_mm: Math.round(layer === "wall" ? 0 : off),
       facing: v?.facing === "toward_wall" ? "toward_wall" : "into_room",
       doors: clamp(Math.round(num(v?.doors, 0)), 0, 20), drawers: clamp(Math.round(num(v?.drawers, 0)), 0, 20),
+      interior: sanitizeInterior(v?.interior, width, height),
       front_style: String(v?.front_style || "").slice(0, 60),
       color_description: String(v?.color_description || "").slice(0, 80),
       notes: v?.notes ? String(v.notes).slice(0, 200) : "",

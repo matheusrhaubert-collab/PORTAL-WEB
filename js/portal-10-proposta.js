@@ -640,6 +640,33 @@ async function generateOrderProposalPDF(order, items) {
     }
 
     // ---------- Elevações + planta baixa (esquemáticas, só paredes com peça) ----------
+    // PROJETO DE REFERÊNCIA (migration 185, pedido do Matt 01/10: "subir as
+    // imagens técnicas e renders originais do pdf pro projeto [...] anexa na
+    // proposta") — cada prancha/render/print numa página própria, inteira,
+    // com o rótulo (ex.: "PDF p. 6") em cima.
+    const refs = Array.isArray(order.project_reference_urls) ? order.project_reference_urls : [];
+    for (let k = 0; k < refs.length; k++) {
+      const ref = refs[k];
+      const refUrl = typeof ref === 'string' ? ref : (ref && ref.url);
+      if (!refUrl) continue;
+      const refMeta = await proposalImageMeta(await proposalUrlToDataUrl(refUrl));
+      if (!refMeta) continue;
+      newPage(I18n.t('proposal.references_section'));
+      const refLabel = ref && ref.label ? String(ref.label) : '';
+      if (refLabel) {
+        doc.setFontSize(9);
+        doc.setTextColor(120);
+        doc.text(refLabel, PROPOSAL_MARGIN_MM, y);
+        doc.setTextColor(0);
+        y += 5;
+      }
+      const refFit = proposalFitImage(doc, refMeta, PROPOSAL_MARGIN_MM, y, contentWidth, pageHeight - y - PROPOSAL_MARGIN_MM - 8);
+      doc.setDrawColor.apply(doc, PROPOSAL_COLOR_BORDER);
+      doc.setLineWidth(0.3);
+      doc.rect(refFit.x, refFit.y, refFit.w, refFit.h, 'S');
+      y += refFit.h + 8;
+    }
+
     const walls = proposalWallList(order, items);
     const hasLayout = proposalHasLayoutData(order, items);
     if (hasLayout && walls.length > 0) {
@@ -1105,6 +1132,7 @@ async function generateProjectProposalPDF() {
       wall_segments: projectWallSegments.length ? projectWallSegments : null,
       project_photoreal_url: (loadedProjectFavorite && loadedProjectFavorite.ai_preview_url) || null,
       project_photoreal_urls: (projectPhotorealPhotos || []).map((p) => p.image_url).filter(Boolean),
+      project_reference_urls: (typeof projectReferenceListForProposal === 'function') ? projectReferenceListForProposal() : null,
       project_thumbnail_data_url: null
     };
     if (!liveOrder.project_photoreal_url) {

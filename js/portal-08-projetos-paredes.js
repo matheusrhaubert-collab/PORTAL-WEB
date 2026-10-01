@@ -5212,6 +5212,9 @@ async function deleteProjectPhotorealPhoto(photoId) {
 // resto do fluxo síncrono, e falha (migration ausente) já é tratada dentro
 // de loadProjectPhotorealPhotos.
 function refreshProjectPhotorealGallery() {
+  // Referências do PDF/prints (migration 185, portal-13) — mesma hora de
+  // atualizar: sempre que o projeto amarrado na tela muda.
+  if (typeof refreshProjectReferenceImages === 'function') refreshProjectReferenceImages();
   if (loadedProjectFavorite && loadedProjectFavorite.id) {
     loadProjectPhotorealPhotos(loadedProjectFavorite.id).then(renderProjectPhotorealGallery);
   } else {
@@ -5363,6 +5366,7 @@ if (projClose3dBtn) {
 
 function resetProject() {
   if (projectSlots.length && !confirm(I18n.t('project.reset_confirm'))) return;
+  if (typeof projectReferencePending !== 'undefined') projectReferencePending = [];
   projectSlots = [];
   selectedProjectSlotId = null;
   // AMBIENTE PADRÃO (2026-08-13): duas paredes de 3m em L e o piso 3x3 que
@@ -5519,6 +5523,17 @@ async function sendProjectToOrder() {
           projectRenderFields.project_photoreal_urls = photos.map((p) => p.image_url).filter(Boolean);
         }
       } catch (e) { /* migration 153 ainda não rodou, ou grade vazia — Proposta cai pro campo antigo */ }
+      // Pranchas/renders/prints anexados (migration 185) — cópia no pedido.
+      try {
+        const { data: refs } = await supabaseClient
+          .from('project_reference_images')
+          .select('image_url, label, kind')
+          .eq('project_id', loadedProjectFavorite.id)
+          .order('sort_order', { ascending: true });
+        if (Array.isArray(refs) && refs.length) {
+          projectRenderFields.project_reference_urls = refs.map((r) => ({ url: r.image_url, label: r.label || '', kind: r.kind || '' }));
+        }
+      } catch (e) { /* migration 185 ainda não rodou — pedido sai sem referências */ }
     }
     const orderPayload = {
       client_user_id: currentUser.id,
@@ -5535,6 +5550,12 @@ async function sendProjectToOrder() {
     };
     let { data: order, error: orderError } = await supabaseClient
       .from('orders').insert(orderPayload).select().single();
+    if (orderError && /project_reference_urls/.test(orderError.message || '')) {
+      // migration 185 ainda não rodou — envia sem as referências
+      delete orderPayload.project_reference_urls;
+      ({ data: order, error: orderError } = await supabaseClient
+        .from('orders').insert(orderPayload).select().single());
+    }
     if (orderError && /source_project_id/.test(orderError.message || '')) {
       // migration 179 ainda não rodou — envia sem a origem (etiqueta sai sem QR)
       delete orderPayload.source_project_id;

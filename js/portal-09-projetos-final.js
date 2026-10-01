@@ -268,7 +268,13 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
     projectDirty = false; // acabou de salvar — pedido do usuário 2026-07-29 ("preciso... uma mensagem salvar alteracoes")
     refreshProjectSaveIndicator();
     setTimeout(() => { statusEl.textContent = ''; }, 4000);
-    return overwriteId || (loadedProjectFavorite && loadedProjectFavorite.id) || null;
+    const idSalvo = overwriteId || (loadedProjectFavorite && loadedProjectFavorite.id) || null;
+    // Imagens de referência pendentes (PDF/prints, portal-13) sobem agora
+    // que o projeto tem id. Falha aqui não desfaz o salvar.
+    if (idSalvo && typeof flushProjectReferencePending === 'function') {
+      try { await flushProjectReferencePending(idSalvo); } catch (e) { console.error('[referencias]', e); }
+    }
+    return idSalvo;
   } catch (err) {
     errorEl.textContent = err.message || String(err);
     errorEl.style.display = 'block';

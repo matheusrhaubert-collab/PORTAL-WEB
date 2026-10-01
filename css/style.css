@@ -5118,3 +5118,13 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
   .po-led-3d { min-height: 220px; }
   .po-led-2d-wrap { height: 200px; }
 }
+
+/* Referências do projeto (migration 185, portal-13) */
+.po-proj-ref-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.po-proj-ref-head .hint { margin: 0; }
+.po-proj-ref-head button { font-size: 12px; padding: 4px 10px; }
+.po-proj-ref-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.po-proj-ref-item { position: relative; margin: 0; width: 160px; }
+.po-proj-ref-item img { width: 100%; height: 100px; object-fit: contain; background: #fff; border: 1px solid #e0ddd6; border-radius: 6px; cursor: zoom-in; display: block; }
+.po-proj-ref-item figcaption { font-size: 10px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.po-proj-ref-item .po-photoreal-gallery-delete { position: absolute; top: 4px; right: 4px; }

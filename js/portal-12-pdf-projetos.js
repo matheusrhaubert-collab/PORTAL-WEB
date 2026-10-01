@@ -45,6 +45,8 @@ const PROJECT_PDF_THUMB_PX = 900;
 const PROJECT_PDF_HIRES_PX = 2200;
 const PROJECT_PDF_MAX_PAGES_PER_ROOM = 6;
 const PROJECT_PDF_AI_PARALLEL = 2;
+const PROJECT_PDF_MAX_REF_PAGES = 12;
+let projectPdfFileName = '';
 
 function tPdf(key, vars) { return I18n.t('project_pdf.' + key, vars); }
 
@@ -137,6 +139,7 @@ async function runProjectPdfAttach(file) {
   try {
     ensureProjectPdfJs();
     setProjectPdfStatus(tPdf('status_opening'));
+    projectPdfFileName = file.name.replace(/\.pdf$/i, '');
     const buf = await file.arrayBuffer();
     projectPdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
     projectPdfHiResCache.clear();
@@ -312,6 +315,7 @@ function projectPdfPickPages(pages) {
 // Mesmo "zerar" do botão ↺ Novo projeto (resetProject, portal-08), sem o
 // confirm — o lote já perguntou uma vez só no começo.
 function projectPdfResetOpenProject() {
+  if (typeof projectReferencePending !== 'undefined') projectReferencePending = [];
   projectSlots = [];
   selectedProjectSlotId = null;
   projectWallSegments = defaultProjectWallSegments();
@@ -401,7 +405,28 @@ async function runProjectPdfCreate() {
         if (!created) throw new Error(tPhoto('err_nothing_created'));
         renderProjectCanvas();
         await new Promise((res) => setTimeout(res, 400)); // 3D desenhar antes da miniatura
-        const name = sp.client_name ? sp.client_name + ' · ' + r.name : r.name;
+        // Pranchas e renders do ambiente viram "Referências" do projeto
+        // (migration 185, portal-13): sobem logo depois do salvar e entram
+        // na Proposta. TODAS as páginas do ambiente (não só as 6 da IA),
+        // até 12, na ordem do PDF.
+        if (typeof projectReferencePending !== 'undefined') {
+          const refPages = r.pages.slice(0, PROJECT_PDF_MAX_REF_PAGES);
+          const refs = [];
+          for (const n of refPages) {
+            const im = await projectPdfHiRes(n);
+            refs.push({
+              dataUrl: 'data:' + im.mime + ';base64,' + im.base64,
+              kind: projectPdfDimScore(n) >= 2 ? 'drawing' : 'render',
+              label: tPdf('ref_label', { name: projectPdfFileName || 'PDF', n }),
+              page_number: n
+            });
+          }
+          projectReferencePending = refs;
+        }
+        // Nome do projeto = só o AMBIENTE (Matt, 01/10: "quero o nome do
+        // ambiente, e só no nome do cliente colocar o nome dele") — o cliente
+        // já é a PASTA em Meus projetos.
+        const name = r.name;
         const id = await saveProjectFavorite(null, { name, clientFolder: sp.client_name || null });
         if (!id) throw new Error(tPdf('err_save'));
         r.projectId = id;
