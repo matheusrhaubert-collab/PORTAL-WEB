@@ -411,6 +411,21 @@ function getProjectWallWidthMm(wallIndex) {
   return projectWallWidthsMm[idx] || PROJECT_WALL_WIDTH_DEFAULT_MM;
 }
 
+// ABERTURAS DA PAREDE (2026-10-01) — porta, janela, passagem, nicho.
+// Moram DENTRO do segmento desenhado (projectWallSegments[i].openings), então
+// salvam/recarregam junto com wall_segments sem migration nenhuma (a coluna
+// já é JSON solto). Projeto no modelo antigo (sem segmentos) não tem
+// aberturas. Formato: { id, type: 'door'|'window'|'passage'|'niche',
+// x_mm (da ponta A, face interna), width_mm, height_mm, sill_mm }.
+// Quem cria hoje: "Projeto a partir de foto" (portal-11) e o editor de
+// paredes (wall-editor.js). Quem desenha: makeWallPrism (3D) e
+// buildProjectWallPaneDom (vista frontal 2D).
+function getProjectWallOpenings(wallIndex) {
+  const idx = (typeof wallIndex === 'number') ? wallIndex : projectActiveWallIndex;
+  const seg = projectWallSegments[idx];
+  return (seg && Array.isArray(seg.openings)) ? seg.openings : [];
+}
+
 // ---------- Módulo de PAREDE vs módulo ILHA (solto no chão) ----------
 // Pedido do usuário (2026-08-08): "O modulo deve estar ligado a uma parede ou
 // ao chao". Até aqui TODO slot pertencia obrigatoriamente a uma parede

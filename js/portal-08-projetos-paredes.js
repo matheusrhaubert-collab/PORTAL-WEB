@@ -4120,7 +4120,11 @@ function projectWallSegmentGeometry(seg, idx) {
     ceilingMm: seg.ceilingMm || null,
     // Só de visualização — ver alternaOculta no wall-editor.js. A parede
     // continua existindo pro projeto e pro pedido.
-    oculta: !!seg.oculta
+    oculta: !!seg.oculta,
+    // Portas/janelas/passagens desta parede (2026-10-01) — x medido da ponta
+    // A ao longo da face interna. Lido por makeWallPrism (recorte no 3D) e
+    // pela vista frontal 2D. Ver getProjectWallOpenings (portal-06a).
+    openings: Array.isArray(seg.openings) ? seg.openings : []
   };
 }
 

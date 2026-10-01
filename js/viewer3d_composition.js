@@ -966,7 +966,22 @@ function createViewerComposition3D() {
   //   C = face externa na ponta 1     D = face externa na ponta 0
   // A geometria ja sai em mundo, entao o mesh fica em (0,0,0) sem rotacao —
   // diferente de makeWallSurface, que posiciona/gira uma BoxGeometry local.
-  function makeWallPrism(footprint, ceilingH, intoDir, alongDir) {
+  // ABERTURAS (2026-10-01, "Projeto a partir de foto" v2 — Matt: "identificar
+  // onde tem paredes, janelas, portas, aberturas"). openings = lista do
+  // segmento ({type, x_mm, width_mm, height_mm, sill_mm}, x medido da ponta 0
+  // da parede, ao longo da face interna); origin = ponta 0 em mundo (p0);
+  // thick = distância face interna → externa. Sem aberturas o prisma é
+  // EXATAMENTE o de antes (mesmos 6 quads) — nada muda em projeto antigo.
+  //
+  // Com aberturas, as faces interna e externa viram uma MALHA de células
+  // (cortes em todo x e y de abertura, nas duas direções) e só as células
+  // fora dos vãos são emitidas. Malha completa, e não faixas verticais, de
+  // propósito: faixa gera junção em T, e o buildEdgesForStyle desenha toda
+  // aresta usada por um triângulo só — apareceriam riscos verticais
+  // atravessando a parede acima/abaixo da janela. Na malha, aresta interna é
+  // sempre compartilhada por duas células coplanares (não desenha) e só o
+  // contorno do vão sobra (desenha — é o requadro que se quer ver).
+  function makeWallPrism(footprint, ceilingH, intoDir, alongDir, openings, origin, thick) {
     const [A, B, C, D] = footprint;
     const h = Math.max(ceilingH, 0.01);
     const pos = [];
@@ -987,8 +1002,55 @@ function createViewerComposition3D() {
     const ix = (intoDir && intoDir.x) || 0, iz = (intoDir && intoDir.z) || 0;
     const ax = (alongDir && alongDir.x) || 0, az = (alongDir && alongDir.z) || 0;
 
-    quad(b(A), b(B), t(B), t(A), [ix, 0, iz]);        // face de dentro do ambiente
-    quad(b(D), b(C), t(C), t(D), [-ix, 0, -iz]);      // face de fora
+    const vaos = (Array.isArray(openings) && origin) ? openings.map((o) => {
+      const x0 = Number(o.x_mm) / 1000, w = Number(o.width_mm) / 1000;
+      const y0 = Math.max(0, Number(o.sill_mm) || 0) / 1000;
+      const y1 = Math.min(h - 0.03, y0 + (Number(o.height_mm) || 0) / 1000);
+      return (w > 0.05 && y1 - y0 > 0.05 && Number.isFinite(x0)) ? { x0, x1: x0 + w, y0, y1, type: o.type } : null;
+    }).filter(Boolean) : [];
+    const ox = origin ? origin.x : 0, oz = origin ? origin.z : 0;
+    const uDe = (P) => (P.x - ox) * ax + (P.z - oz) * az;
+    // ponto da face (interna: recuo 0 a partir de A; externa: a partir de D)
+    const pontoFace = (P0, u0, u, y) => [P0.x + ax * (u - u0), y, P0.z + az * (u - u0)];
+    const faceComVaos = (P0, P1, n) => {
+      const u0 = uDe(P0), u1 = uDe(P1);
+      const lo = Math.min(u0, u1), hi = Math.max(u0, u1);
+      const us = [lo, hi], ys = [0, h];
+      vaos.forEach((v) => {
+        [v.x0, v.x1].forEach((u) => { if (u > lo + 1e-4 && u < hi - 1e-4) us.push(u); });
+        [v.y0, v.y1].forEach((y) => { if (y > 1e-4 && y < h - 1e-4) ys.push(y); });
+      });
+      const uniq = (arr) => arr.sort((p, q) => p - q).filter((v, i, a) => i === 0 || v - a[i - 1] > 1e-5);
+      const U = uniq(us), Y = uniq(ys);
+      for (let i = 0; i < U.length - 1; i++) {
+        const um = (U[i] + U[i + 1]) / 2;
+        for (let j = 0; j < Y.length - 1; j++) {
+          const ym = (Y[j] + Y[j + 1]) / 2;
+          if (vaos.some((v) => um > v.x0 && um < v.x1 && ym > v.y0 && ym < v.y1)) continue;
+          quad(pontoFace(P0, u0, U[i], Y[j]), pontoFace(P0, u0, U[i + 1], Y[j]),
+               pontoFace(P0, u0, U[i + 1], Y[j + 1]), pontoFace(P0, u0, U[i], Y[j + 1]), n);
+        }
+      }
+    };
+
+    if (vaos.length) {
+      faceComVaos(A, B, [ix, 0, iz]);                  // face de dentro do ambiente
+      faceComVaos(D, C, [-ix, 0, -iz]);                // face de fora
+      // Requadro de cada vão: laterais, verga e peitoril, ligando face
+      // interna (linha de A) à externa (linha de D). Normal aponta PRO VÃO.
+      const T = Number(thick) || 0.15;
+      const pin = (u, y) => pontoFace(A, uDe(A), u, y);
+      const pout = (u, y) => { const q = pin(u, y); return [q[0] - ix * T, y, q[2] - iz * T]; };
+      vaos.forEach((v) => {
+        quad(pin(v.x0, v.y0), pout(v.x0, v.y0), pout(v.x0, v.y1), pin(v.x0, v.y1), [ax, 0, az]);
+        quad(pin(v.x1, v.y0), pout(v.x1, v.y0), pout(v.x1, v.y1), pin(v.x1, v.y1), [-ax, 0, -az]);
+        quad(pin(v.x0, v.y1), pout(v.x0, v.y1), pout(v.x1, v.y1), pin(v.x1, v.y1), [0, -1, 0]);
+        if (v.y0 > 1e-4) quad(pin(v.x0, v.y0), pout(v.x0, v.y0), pout(v.x1, v.y0), pin(v.x1, v.y0), [0, 1, 0]);
+      });
+    } else {
+      quad(b(A), b(B), t(B), t(A), [ix, 0, iz]);        // face de dentro do ambiente
+      quad(b(D), b(C), t(C), t(D), [-ix, 0, -iz]);      // face de fora
+    }
     quad(b(A), b(D), t(D), t(A), [-ax, 0, -az]);      // topo da parede na ponta 0
     quad(b(B), b(C), t(C), t(B), [ax, 0, az]);        // ponta 1
     quad(t(A), t(B), t(C), t(D), [0, 1, 0]);          // topo
@@ -1014,6 +1076,21 @@ function createViewerComposition3D() {
         mesh.add(arestas);
       }
     }
+    // Vidro da janela: lâmina fina no meio da espessura, só pra leitura
+    // (não entra no raycast — clique atravessa pra parede/móvel atrás).
+    vaos.filter((v) => v.type === 'window').forEach((v) => {
+      const T = Number(thick) || 0.15;
+      const w = v.x1 - v.x0, hh = v.y1 - v.y0;
+      const g = new THREE.PlaneGeometry(w, hh);
+      const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfd9ea, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide, depthWrite: false });
+      const glass = new THREE.Mesh(g, glassMat);
+      const uA = uDe(A), um = (v.x0 + v.x1) / 2;
+      glass.position.set(A.x + ax * (um - uA) - ix * T / 2, (v.y0 + v.y1) / 2, A.z + az * (um - uA) - iz * T / 2);
+      glass.rotation.y = Math.atan2(ix, iz);
+      glass.raycast = function () {};
+      glass.userData.isRoomSurface = false;
+      mesh.add(glass);
+    });
     return mesh;
   }
 
@@ -1327,7 +1404,7 @@ function createViewerComposition3D() {
           if (qual === 'ini') { A = dentro; D = fora; } else { B = dentro; C = fora; }
         });
 
-        const wallSurface = makeWallPrism([A, B, C, D], ceilingH, seg.intoDir, seg.alongDir);
+        const wallSurface = makeWallPrism([A, B, C, D], ceilingH, seg.intoDir, seg.alongDir, seg.openings, p0, OUT - IN);
         // De qual parede esta superfície é — lido por pickRoomSurfaceAt pra o
         // duplo toque "mostra essa parede de frente" (iPad) saber qual parede
         // ativar sem depender de nenhum módulo estar em cima dela.
@@ -1787,7 +1864,9 @@ function createViewerComposition3D() {
         widthM: wall.widthM,
         margin: 0,
         label: wall.role === 'main',
-        wallIndex: wall.wallIndex
+        wallIndex: wall.wallIndex,
+        // Aberturas (porta/janela/passagem, 2026-10-01) — ver makeWallPrism.
+        openings: Array.isArray(wall.openings) ? wall.openings : []
       }));
       const envGroup = buildRoomEnvironmentMultiWall(segments, room);
       // Botão "Camadas" (02/09, pedido do Matt: "incluir... paredes como...

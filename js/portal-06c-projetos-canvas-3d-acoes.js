@@ -1226,6 +1226,22 @@ function buildProjectWallPaneDom(paneEl, wallIndex, wallWidthMm, ceilingMm, unit
   ceilingLine.className = 'po-proj-canvas-ceiling-line';
   paneEl.appendChild(ceilingLine);
 
+  // Portas/janelas desta parede (2026-10-01) — só desenho, atrás dos
+  // módulos e sem capturar clique (o clique na parede continua
+  // desselecionando, ver abaixo).
+  if (typeof getProjectWallOpenings === 'function') {
+    getProjectWallOpenings(wallIndex).forEach((o) => {
+      const el = document.createElement('div');
+      el.className = 'po-proj-wall-opening po-proj-wall-opening-' + (o.type || 'passage');
+      el.style.left = Math.round(Number(o.x_mm || 0) * pxPerMm) + 'px';
+      el.style.bottom = Math.round(Number(o.sill_mm || 0) * pxPerMm) + 'px';
+      el.style.width = Math.round(Number(o.width_mm || 0) * pxPerMm) + 'px';
+      el.style.height = Math.round(Number(o.height_mm || 0) * pxPerMm) + 'px';
+      el.title = I18n.t('project_photo.opening_' + (o.type || 'passage'));
+      paneEl.appendChild(el);
+    });
+  }
+
   if (interactive) {
     const resizeTitle = I18n.t('project.wall_resize_title');
     const resizeLeft = document.createElement('div');

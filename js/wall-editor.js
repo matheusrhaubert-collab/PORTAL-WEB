@@ -101,7 +101,21 @@
     'wall_editor.gap_closed': 'Ambiente fechado — a parede {{n}} é a de fechamento',
     'wall_editor.gap_far': 'Contorno aberto ({{n}} paredes)',
     'wall_editor.summary': '{{n}} parede(s) · perímetro {{m}} {{u}}',
-    'wall_editor.chains': '{{c}} contorno(s)'
+    'wall_editor.chains': '{{c}} contorno(s)',
+    'wall_editor.section_openings': 'Portas e janelas',
+    'wall_editor.add_door': '+ porta',
+    'wall_editor.add_window': '+ janela',
+    'wall_editor.add_passage': '+ passagem',
+    'wall_editor.op_door': 'Porta',
+    'wall_editor.op_window': 'Janela',
+    'wall_editor.op_passage': 'Passagem',
+    'wall_editor.op_niche': 'Nicho',
+    'wall_editor.op_x': 'Do início',
+    'wall_editor.op_width': 'Largura',
+    'wall_editor.op_height': 'Altura',
+    'wall_editor.op_sill': 'Peitoril',
+    'wall_editor.op_none': 'Nenhuma abertura nesta parede.',
+    'wall_editor.op_remove': 'Remover abertura'
   };
   function tr(chave, vars) {
     if (typeof I18n !== 'undefined' && I18n && I18n.t) {
@@ -211,8 +225,24 @@
       thicknessMm: (base && base.thicknessMm) || ESPESSURA_PADRAO,
       ceilingMm: null,
       oculta: false,
-      inverterLado: false
+      inverterLado: false,
+      openings: []
     };
+  }
+
+  // ABERTURAS (2026-10-01) — porta/janela/passagem/nicho moram na PAREDE
+  // ({id, type, x_mm, width_mm, height_mm, sill_mm}), com x medido da ponta
+  // INICIAL (v[i]) ao longo da face interna. Toda vez que uma parede tem o
+  // SENTIDO invertido (importar começando pela ponta B, emendar contornos),
+  // o x precisa ser espelhado — senão a janela pula pro outro lado da parede.
+  function copiaAberturas(lista) {
+    return (Array.isArray(lista) ? lista : []).map((o) => Object.assign({}, o));
+  }
+  function espelhaAberturas(props, comp) {
+    props.openings = copiaAberturas(props.openings).map((o) => Object.assign(o, {
+      x_mm: Math.max(0, comp - Number(o.x_mm || 0) - Number(o.width_mm || 0))
+    }));
+    return props;
   }
 
   // ------------------------------------------------------------------------
@@ -326,7 +356,8 @@
     const restantes = segs.map((s, ordem) => ({
       ordem, ax: Number(s.ax), az: Number(s.az), bx: Number(s.bx), bz: Number(s.bz),
       props: { id: s.id || novoId(), thicknessMm: Number(s.thicknessMm) || ESPESSURA_PADRAO,
-               ceilingMm: s.ceilingMm || null, oculta: !!s.oculta, inverterLado: !!s.inverterLado }
+               ceilingMm: s.ceilingMm || null, oculta: !!s.oculta, inverterLado: !!s.inverterLado,
+               openings: copiaAberturas(s.openings) }
     })).filter((s) => isFinite(s.ax) && isFinite(s.az) && isFinite(s.bx) && isFinite(s.bz));
     const toca = (x, z, px, pz) => Math.hypot(px - x, pz - z) <= TOQUE_TOL;
     const cadeias = [];
@@ -346,6 +377,7 @@
       const c = { fechada: false, v: [], paredes: [], _ordem: s0.ordem };
       if (inverte) { c.v.push({ x: s0.bx, z: s0.bz }, { x: s0.ax, z: s0.az }); }
       else { c.v.push({ x: s0.ax, z: s0.az }, { x: s0.bx, z: s0.bz }); }
+      if (inverte) espelhaAberturas(s0.props, Math.hypot(s0.bx - s0.ax, s0.bz - s0.az));
       c.paredes.push(s0.props);
       let cresceu = true;
       while (cresceu) {
@@ -354,7 +386,7 @@
         for (let i = 0; i < restantes.length; i++) {
           const s = restantes[i];
           if (toca(fim.x, fim.z, s.ax, s.az)) { c.v.push({ x: s.bx, z: s.bz }); c.paredes.push(s.props); c._ordem = Math.min(c._ordem, s.ordem); restantes.splice(i, 1); cresceu = true; break; }
-          if (toca(fim.x, fim.z, s.bx, s.bz)) { c.v.push({ x: s.ax, z: s.az }); c.paredes.push(s.props); c._ordem = Math.min(c._ordem, s.ordem); restantes.splice(i, 1); cresceu = true; break; }
+          if (toca(fim.x, fim.z, s.bx, s.bz)) { c.v.push({ x: s.ax, z: s.az }); c.paredes.push(espelhaAberturas(s.props, Math.hypot(s.bx - s.ax, s.bz - s.az))); c._ordem = Math.min(c._ordem, s.ordem); restantes.splice(i, 1); cresceu = true; break; }
         }
         // fechou o laço?
         const ult = c.v[c.v.length - 1], pri = c.v[0];
@@ -375,7 +407,11 @@
         const a = vIni(c, i), b = vFim(c, i), p = c.paredes[i];
         segs.push({
           id: p.id, ax: arred(a.x, 2), az: arred(a.z, 2), bx: arred(b.x, 2), bz: arred(b.z, 2),
-          thicknessMm: p.thicknessMm, ceilingMm: p.ceilingMm, oculta: !!p.oculta, inverterLado: !!p.inverterLado
+          thicknessMm: p.thicknessMm, ceilingMm: p.ceilingMm, oculta: !!p.oculta, inverterLado: !!p.inverterLado,
+          // Abertura que ficou fora da parede (parede encurtada) é descartada;
+          // a que passa da ponta é aparada.
+          openings: copiaAberturas(p.openings).filter((o) => Number(o.x_mm) < compDe(c, i) - 50).map((o) =>
+            Object.assign(o, { width_mm: Math.min(Number(o.width_mm) || 0, compDe(c, i) - Number(o.x_mm)) }))
         });
       }
     });
@@ -420,6 +456,13 @@
       '      <label><span id="po-wall-ang-rotulo">Giro</span> <span class="po-wall-un">&deg;</span><input type="number" id="po-wall-ang" step="any"></label>',
       '      <label><span data-i18n="wall_editor.thickness">Espessura</span> <span class="po-wall-un" id="po-wall-esp-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-esp"></label>',
       '      <label><span data-i18n="wall_editor.wall_height">Altura desta parede</span> <span class="po-wall-un" id="po-wall-pd-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-pd"></label>',
+      '      <div class="po-wall-side-title" style="margin-top:6px;" data-i18n="wall_editor.section_openings">Portas e janelas</div>',
+      '      <div id="po-wall-aberturas" class="po-wall-aberturas"></div>',
+      '      <div class="po-wall-aberturas-add">',
+      '        <button type="button" class="po-wall-tool" data-acao="ab-door" data-i18n="wall_editor.add_door">+ porta</button>',
+      '        <button type="button" class="po-wall-tool" data-acao="ab-window" data-i18n="wall_editor.add_window">+ janela</button>',
+      '        <button type="button" class="po-wall-tool" data-acao="ab-passage" data-i18n="wall_editor.add_passage">+ passagem</button>',
+      '      </div>',
       '      <p class="po-wall-hint po-wall-gap" id="po-wall-gap"></p>',
       '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_drag"></p>',
       '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_disconnect"></p>',
@@ -449,6 +492,15 @@
       else if (a === 'remover') remover();
       else if (a === 'inverter') inverter();
       else if (a === 'ocultar') alternaOculta();
+      else if (a === 'ab-door') adicionaAbertura('door');
+      else if (a === 'ab-window') adicionaAbertura('window');
+      else if (a === 'ab-passage') adicionaAbertura('passage');
+      else if (a === 'ab-remover') removeAbertura(Number(b.dataset.idx));
+    });
+    // Campos das aberturas (lista refeita a cada desenha → delegação).
+    m.addEventListener('change', (ev) => {
+      const campo = ev.target.closest('[data-ab-idx]');
+      if (campo) aplicaAbertura(Number(campo.dataset.abIdx), campo.dataset.abCampo, campo.value);
     });
     ['po-wall-comp', 'po-wall-ang', 'po-wall-esp', 'po-wall-pd'].forEach((id) => {
       m.querySelector('#' + id).addEventListener('change', aplicaCampos);
@@ -640,6 +692,62 @@
     desenha();
   }
 
+  // Abertura nova nasce centrada na parede selecionada, com medida padrão.
+  function adicionaAbertura(tipo) {
+    const s = selecionada();
+    if (!s) return;
+    const comp = compDe(s.c, s.i);
+    const padraoAb = {
+      door: { width_mm: 813, height_mm: 2032, sill_mm: 0 },
+      window: { width_mm: 1000, height_mm: 1100, sill_mm: 1050 },
+      passage: { width_mm: 900, height_mm: 2100, sill_mm: 0 }
+    }[tipo];
+    const w = Math.min(padraoAb.width_mm, comp - 100);
+    if (!Array.isArray(s.p.openings)) s.p.openings = [];
+    s.p.openings.push(Object.assign({ id: 'op_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), type: tipo },
+      padraoAb, { width_mm: w, x_mm: Math.max(0, Math.round((comp - w) / 2)) }));
+    desenha();
+  }
+  function removeAbertura(idx) {
+    const s = selecionada();
+    if (!s || !Array.isArray(s.p.openings)) return;
+    s.p.openings.splice(idx, 1);
+    desenha();
+  }
+  function aplicaAbertura(idx, campo, valor) {
+    const s = selecionada();
+    if (!s || !Array.isArray(s.p.openings) || !s.p.openings[idx]) return;
+    const o = s.p.openings[idx];
+    if (campo === 'type') {
+      o.type = valor;
+      if (valor === 'door' || valor === 'passage') o.sill_mm = 0;
+    } else {
+      const v = numeroParaMmWE(valor, unidadeAtual());
+      if (v != null && v >= 0) o[campo] = v;
+    }
+    const comp = compDe(s.c, s.i);
+    o.width_mm = Math.max(100, Math.min(Number(o.width_mm) || 0, comp));
+    o.x_mm = Math.max(0, Math.min(Number(o.x_mm) || 0, comp - o.width_mm));
+    desenha();
+  }
+  function desenhaListaAberturas(s, unidade) {
+    const box = document.getElementById('po-wall-aberturas');
+    if (!box) return;
+    const lista = (s && Array.isArray(s.p.openings)) ? s.p.openings : [];
+    if (!lista.length) { box.innerHTML = '<p class="po-wall-hint">' + tr('wall_editor.op_none') + '</p>'; return; }
+    const un = unidadeAbrevWE(unidade);
+    const campo = (i, k, v) => '<label><span>' + tr('wall_editor.op_' + ({ x_mm: 'x', width_mm: 'width', height_mm: 'height', sill_mm: 'sill' })[k]) +
+      ' <span class="po-wall-un">' + un + '</span></span><input type="text" inputmode="decimal" autocomplete="off" data-ab-idx="' + i +
+      '" data-ab-campo="' + k + '" value="' + mmParaNumeroWE(Number(v) || 0, unidade) + '"></label>';
+    box.innerHTML = lista.map((o, i) =>
+      '<div class="po-wall-abertura">' +
+      '<div class="po-wall-abertura-top"><select data-ab-idx="' + i + '" data-ab-campo="type">' +
+      ['door', 'window', 'passage', 'niche'].map((t) => '<option value="' + t + '"' + (o.type === t ? ' selected' : '') + '>' + tr('wall_editor.op_' + t) + '</option>').join('') +
+      '</select><button type="button" class="po-wall-tool po-wall-tool-danger" data-acao="ab-remover" data-idx="' + i + '" title="' + tr('wall_editor.op_remove') + '">&times;</button></div>' +
+      '<div class="po-wall-abertura-campos">' + campo(i, 'x_mm', o.x_mm) + campo(i, 'width_mm', o.width_mm) + campo(i, 'sill_mm', o.sill_mm) + campo(i, 'height_mm', o.height_mm) + '</div>' +
+      '</div>').join('');
+  }
+
   // ------------------------------------------------------------------------
   // DESENHO
   // ------------------------------------------------------------------------
@@ -747,6 +855,28 @@
         // Face interna em traço mais forte: é a linha medida.
         const a = vIni(c, i), b = vFim(c, i);
         el('line', { x1: a.x, y1: a.z, x2: b.x, y2: b.z, stroke: sel ? '#b9761a' : '#6f665a', 'stroke-width': fino * 1.6, 'pointer-events': 'none' }, svg);
+        // Aberturas: vão em branco atravessando a espessura; janela com o
+        // traço do vidro no meio; porta com o arco de abertura pra dentro.
+        const compI = compDe(c, i) || 1;
+        const ux = (b.x - a.x) / compI, uz = (b.z - a.z) / compI;
+        const eAb = Number(p.thicknessMm) || ESPESSURA_PADRAO;
+        (Array.isArray(p.openings) ? p.openings : []).forEach((o) => {
+          const x0 = Math.max(0, Number(o.x_mm) || 0), x1 = Math.min(compI, x0 + (Number(o.width_mm) || 0));
+          if (x1 - x0 < 10) return;
+          const P = (u, off) => ({ x: a.x + ux * u + pol.n.x * off, z: a.z + uz * u + pol.n.z * off });
+          const q4 = [P(x0, -fino), P(x1, -fino), P(x1, eAb + fino), P(x0, eAb + fino)];
+          el('polygon', { points: q4.map((q) => q.x.toFixed(1) + ',' + q.z.toFixed(1)).join(' '), fill: '#fff', stroke: '#4a7fa8',
+            'stroke-width': fino, 'pointer-events': 'none' }, svg);
+          if (o.type === 'window') {
+            const m0 = P(x0, eAb / 2), m1 = P(x1, eAb / 2);
+            el('line', { x1: m0.x, y1: m0.z, x2: m1.x, y2: m1.z, stroke: '#4a7fa8', 'stroke-width': fino * 1.5, 'pointer-events': 'none' }, svg);
+          } else if (o.type === 'door') {
+            const w = x1 - x0, h0 = P(x0, 0), fimFolha = P(x0, -w), fimVao = P(x1, 0);
+            el('line', { x1: h0.x, y1: h0.z, x2: fimFolha.x, y2: fimFolha.z, stroke: '#4a7fa8', 'stroke-width': fino, 'pointer-events': 'none' }, svg);
+            el('path', { d: 'M ' + fimFolha.x + ' ' + fimFolha.z + ' A ' + w + ' ' + w + ' 0 0 ' + (((-pol.n.x) * uz - (-pol.n.z) * ux) > 0 ? 1 : 0) + ' ' + fimVao.x + ' ' + fimVao.z,
+              fill: 'none', stroke: '#4a7fa8', 'stroke-width': fino * 0.8, 'stroke-dasharray': (fino * 3) + ' ' + (fino * 2), 'pointer-events': 'none' }, svg);
+          }
+        });
         // Cota do comprimento, do lado de fora.
         const e = Number(p.thicknessMm) || ESPESSURA_PADRAO;
         const t = el('text', {
@@ -797,6 +927,7 @@
       }
       if (btnFechar) btnFechar.disabled = s.c.fechada || nParedes(s.c) < 2;
     }
+    desenhaListaAberturas(s, unidade);
     if (q('po-wall-teto')) q('po-wall-teto').value = estado.ceilingMm ? mmParaNumeroWE(estado.ceilingMm, unidade) : '';
     if (q('po-wall-rodape')) q('po-wall-rodape').value = mmParaNumeroWE(estado.baseboardMm || 0, unidade);
     ['po-wall-comp-un', 'po-wall-esp-un', 'po-wall-pd-un', 'po-wall-teto-un', 'po-wall-rodape-un'].forEach((id) => {
@@ -968,8 +1099,9 @@
     if (!A || !B || A === B) return;
     let va = A.v.map((p) => ({ x: p.x, z: p.z })), pa = A.paredes.slice();
     let vb = B.v.map((p) => ({ x: p.x, z: p.z })), pb = B.paredes.slice();
-    if (ka === 0) { va.reverse(); pa.reverse(); }            // ponta de A vira o fim
-    if (kb !== 0) { vb.reverse(); pb.reverse(); }            // ponta de B vira o início
+    // Inverter o contorno inverte o sentido de cada parede: espelha as aberturas.
+    if (ka === 0) { pa = pa.map((p, i) => espelhaAberturas(Object.assign({}, p), compDe(A, i))); va.reverse(); pa.reverse(); }
+    if (kb !== 0) { pb = pb.map((p, i) => espelhaAberturas(Object.assign({}, p), compDe(B, i))); vb.reverse(); pb.reverse(); }
     vb.shift();                                              // o canto é um só
     const novo = { fechada: false, v: va.concat(vb), paredes: pa.concat(pb) };
     const selI = pa.length - 1;

@@ -4985,6 +4985,41 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 #po-proj-photo-notes { width: 100%; box-sizing: border-box; margin: 6px 0 10px; }
 .po-proj-photo-table td, .po-proj-photo-table th { white-space: nowrap; }
 .po-proj-photo-wall-apply { margin-left: 8px; font-weight: normal; }
+/* Projeto a partir de foto v2 (2026-10-01): seletor de precisão, revisão com
+   elevações por parede + planta, tabelas editáveis. */
+.po-proj-photo-modal-card { width: min(1100px, 96vw); }
+.po-proj-photo-quality { display: flex; gap: 16px; flex-wrap: wrap; margin: 4px 0 8px; font-size: 13px; }
+.po-proj-photo-quality label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.po-proj-photo-h { font-size: 14px; margin: 16px 0 6px; }
+.po-proj-photo-details { margin: 6px 0 10px; font-size: 12px; }
+.po-proj-photo-details summary { cursor: pointer; color: var(--muted); }
+.po-proj-photo-elevs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.po-proj-photo-elev, .po-proj-photo-plan { margin: 0; background: #fbfaf7; border: 1px solid #e6e2d9; border-radius: 8px; padding: 6px; }
+.po-proj-photo-elev figcaption, .po-proj-photo-plan figcaption { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
+.po-proj-photo-elev-svg { width: 100%; height: 170px; display: block; }
+.po-proj-photo-plan { margin-top: 10px; max-width: 420px; }
+.po-proj-photo-plan-svg { width: 100%; height: 240px; display: block; }
+.po-proj-photo-warn-tag { color: #b9761a; font-size: 11px; }
+.po-proj-photo-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.po-proj-photo-legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: middle; border: 1px solid #5b4a35; }
+.po-proj-photo-legend .sw-open { background: #dcebf5; border-color: #4a7fa8; }
+.po-proj-photo-legend .sw-miss { background: transparent; border: 1px dashed #c0392b; }
+.po-proj-photo-num { width: 76px; padding: 3px 6px; font: inherit; font-size: 12px; text-align: right; }
+.po-proj-photo-table select { font-size: 12px; padding: 2px 4px; }
+.po-proj-photo-x { border: none; background: none; color: #c0392b; font-size: 16px; cursor: pointer; padding: 0 4px; }
+.po-proj-photo-addopen { margin: 6px 0 4px; font-size: 12px; }
+.po-proj-photo-warnings { margin: 6px 0; padding-left: 18px; font-size: 12px; color: #8a5a12; }
+/* Aberturas na vista frontal 2D da parede */
+.po-proj-wall-opening { position: absolute; pointer-events: none; z-index: 1; border: 2px solid #4a7fa8; background: rgba(255,255,255,0.85); box-sizing: border-box; }
+.po-proj-wall-opening-window { background: rgba(191,217,234,0.55); }
+.po-proj-wall-opening-passage { border-style: dashed; }
+/* Editor de paredes: lista de portas/janelas */
+.po-wall-aberturas { display: flex; flex-direction: column; gap: 8px; }
+.po-wall-abertura { border: 1px solid #e6e2d9; border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+.po-wall-abertura-top { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
+.po-wall-abertura-top select { flex: 1; font-size: 12px; }
+.po-wall-abertura-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.po-wall-aberturas-add { display: flex; gap: 4px; flex-wrap: wrap; }
 
 
 /* ==========================================================================
