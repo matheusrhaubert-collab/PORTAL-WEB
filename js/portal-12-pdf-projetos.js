@@ -190,6 +190,7 @@ async function runProjectPdfSplit() {
     });
     const rooms = (data.rooms || []).map((r) => ({ ...r, include: true, status: 'idle', message: '', warnings: [] }));
     if (!rooms.length) throw new Error(tPdf('err_no_rooms'));
+    projectPdfCleanRoomPages(rooms);
     projectPdfSplit = { client_name: data.client_name || '', project_title: data.project_title || '', notes: data.notes || '', model: data.model || '', rooms };
     projectPdfRunning = false; // antes do render: a lista nasce editável
     renderProjectPdfReview();
@@ -205,6 +206,47 @@ async function runProjectPdfSplit() {
     projectPdfRunning = false;
     setProjectPdfStatus('');
   }
+}
+
+// PÁGINA DE OUTRO AMBIENTE (01/10, Matt, Indiana: "pegou o armário de apoio
+// e fez outro projeto em cima" — o separador pôs o render "Armário de apoio |
+// garagem" (p. 20) também no "Closet do quarto 3", que não tinha render
+// próprio; a leitura usou a imagem e a Proposta anexou). Página que não é
+// planta geral (está em < 3 ambientes) e cujo título/código fala de OUTRO
+// ambiente — e não deste — sai da lista deste. Nunca esvazia a lista.
+function projectPdfNorm(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ');
+}
+function projectPdfRoomKeys(r) {
+  const keys = [];
+  const nome = projectPdfNorm(String(r.name || '').split(/\s[|\/–-]\s/)[0]).trim();
+  if (nome.length >= 6) keys.push(nome);
+  const code = projectPdfNorm(r.code || '').trim();
+  if (code.length >= 3) keys.push(code);
+  return keys;
+}
+function projectPdfCleanRoomPages(rooms) {
+  const usos = (n) => rooms.filter((r) => r.pages.includes(n)).length;
+  const keys = rooms.map(projectPdfRoomKeys);
+  const saidas = rooms.map(() => []);
+  rooms.forEach((r, i) => {
+    const meus = keys[i];
+    if (!meus.length) return;
+    r.pages.forEach((n) => {
+      if (usos(n) >= 3) return;
+      const tit = projectPdfNorm(((projectPdfPages[n - 1] || {}).text || '').slice(0, 400));
+      if (meus.some((k) => tit.includes(k))) return;
+      const deOutro = rooms.some((o, j) => j !== i && keys[j].some((k) => tit.includes(k) && !meus.some((m) => m.includes(k))));
+      if (deOutro) saidas[i].push(n);
+    });
+  });
+  rooms.forEach((r, i) => {
+    const fica = r.pages.filter((n) => !saidas[i].includes(n));
+    if (fica.length && saidas[i].length) {
+      r.pages = fica;
+      r.summary = (r.summary ? r.summary + ' · ' : '') + tPdf('pages_removed', { pages: saidas[i].join(', ') });
+    }
+  });
 }
 
 function projectPdfParsePages(text) {

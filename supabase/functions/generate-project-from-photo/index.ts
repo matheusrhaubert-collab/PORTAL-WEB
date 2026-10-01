@@ -343,6 +343,8 @@ REGRAS DE PRANCHA (valem mais que tudo abaixo):
 - Cota total × parciais: confira que as parciais somam a total (ex.: 2,67 + 3,59 + 2,59 = 8,85 m). Se não somarem, confie nas parciais e diga em scale_notes.
 - Uma prancha pode ter VÁRIAS vistas (ex.: as duas faces de uma ilha, "lado A"/"lado B", balcão + ilha). Identifique cada vista antes de medir e não some vistas diferentes como se fossem uma parede só.
 - RENDERS/fotos do PDF servem pra aparência (cor, veio, puxador, iluminação, o que é porta e o que é painel) — as medidas vêm das pranchas cotadas.
+- COR: além do render, leia o texto de ACABAMENTO/material/finish da prancha (ex.: "Acabamento: taupe fosco", "Finish: white oak", "MDF Louro Freijó"). color_description = esse acabamento; se caixa e frentes forem diferentes, escreva "caixa: X; frentes: Y".
+- Prancha de OUTRO ambiente que veio junto por engano (título/código de outro ambiente, ex.: render do "Armário de apoio" num pedido de "Closet do quarto 3"): IGNORE-A inteira — nem medida, nem volume, nem cor.
 - Use a PLANTA para comprimento das paredes, ângulos, portas/janelas e profundidades; use as ELEVAÇÕES/VISTAS para x, larguras, alturas, altura do chão e divisão de portas/gavetas; CORTES para profundidade.
 - Se a prancha tiver outros ambientes junto, IGNORE-OS: levante só "${String(b.room_name || "").slice(0, 80)}".
 - Tabelas de módulos/legendas (W24, B36, SB36, DB18, UC…) ajudam a identificar tipo e largura: B=base, W=aéreo, SB=base de pia, DB=gaveteiro, T/UC/P=torre, número = largura em polegadas.
@@ -540,9 +542,21 @@ const MATCH_SCHEMA = {
         required: ["volume_id", "reason"],
       },
     },
+    // Cor das CAIXAS CRUAS (closet & cia., montadas pelo configurador e que
+    // não passam pelo casamento de módulo) — 01/10, Matt: "os closets
+    // entraram brancos". Caixa e frentes separadas.
+    direct_colors: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { volume_id: { type: "STRING" }, color_name: { type: "STRING" }, front_color_name: { type: "STRING" } },
+        required: ["volume_id", "color_name", "front_color_name"],
+        propertyOrdering: ["volume_id", "color_name", "front_color_name"],
+      },
+    },
   },
-  required: ["notes", "items", "unmatched"],
-  propertyOrdering: ["notes", "items", "unmatched"],
+  required: ["notes", "items", "unmatched", "direct_colors"],
+  propertyOrdering: ["notes", "items", "unmatched", "direct_colors"],
 };
 
 function fmtRange(r: [number | null, number | null, number | null]) {
@@ -562,6 +576,9 @@ function buildMatchPrompt(b: any) {
   const vols = (b.volumes || []).map((v: any) =>
     `- ${v.id} | ${v.kind} | "${v.label}" | parede ${v.wall_index} | camada ${v.layer} | x ${v.x_mm} | L ${v.width_mm} × A ${v.height_mm} × P ${v.depth_mm} | chão ${v.floor_height_mm} | portas ${v.doors} gavetas ${v.drawers} | frente ${v.front_style} | cor "${v.color_description}"`
   ).join("\n");
+  const diretos = (b.direct_volumes || []).map((v: any) =>
+    `- ${v.id} | ${v.kind} | "${v.label}" | L ${v.width_mm} × A ${v.height_mm} | portas ${v.doors} gavetas ${v.drawers} | cor "${v.color_description}"`
+  ).join("\n");
   return `Você é projetista de móveis planejados. O ambiente da foto JÁ FOI MEDIDO (lista de VOLUMES abaixo, em mm). Sua tarefa é só escolher, para cada volume, o(s) módulo(s) do CATÁLOGO que o reproduzem, e a cor. A foto vai junto só para você conferir estilo de frente, puxador e cor.
 
 REGRAS:
@@ -573,9 +590,13 @@ REGRAS:
 6. Sem módulo equivalente (eletrodoméstico sem módulo de decoração, tampo/countertop sem módulo, TV, sofá, coluna, viga, LED…): vai para "unmatched" com o motivo curto. NUNCA troque por algo parecido de outra função.
 7. COR: color_name da lista, pelo aspecto (color_description + foto). Peças iguais na foto = mesmo nome de cor.
 8. "notes": 1–3 frases. "label" e "reason" em ${langName(b.lang)}.
+9. CAIXAS CRUAS (lista própria abaixo — closet, armário montado pelo configurador): NÃO viram items. Para CADA uma, um item em "direct_colors": color_name = cor da CAIXA (laterais, prateleiras); front_color_name = cor das PORTAS/FRENTES DE GAVETA (igual à caixa se não houver diferença visível ou se for aberto). Use o acabamento escrito (color_description) e a imagem; mesmos móveis = mesmas cores. Nunca deixe vazio: na dúvida, a cor mais próxima da lista. Lista vazia → direct_colors = [].
 
 VOLUMES MEDIDOS:
-${vols}
+${vols || "(nenhum)"}
+
+CAIXAS CRUAS (só cor):
+${diretos || "(nenhuma)"}
 
 CATÁLOGO (id | nome | família › categoria › subcategoria | L A P em mm: min–max(padrão)):
 ${catText}
@@ -629,7 +650,12 @@ function sanitizeMatch(raw: any, b: any) {
   // volume sem item nenhum e sem motivo → motivo genérico
   const covered = new Set([...items.map((i) => i.volume_id), ...unmatched.map((u) => u.volume_id)]);
   for (const v of (b.volumes || [])) if (!covered.has(String(v.id))) unmatched.push({ volume_id: String(v.id), reason: "" });
-  return { notes: String(raw?.notes || "").slice(0, 800), items, unmatched };
+  const diretos = new Set((b.direct_volumes || []).map((v: any) => String(v.id)));
+  const cor = (n: unknown) => colorNames.has(String(n)) ? String(n) : null;
+  const direct_colors = (Array.isArray(raw?.direct_colors) ? raw.direct_colors : [])
+    .filter((d: any) => diretos.has(String(d?.volume_id || "")))
+    .map((d: any) => ({ volume_id: String(d.volume_id), color_name: cor(d.color_name), front_color_name: cor(d.front_color_name) || cor(d.color_name) }));
+  return { notes: String(raw?.notes || "").slice(0, 800), items, unmatched, direct_colors };
 }
 
 // ==========================================================================
@@ -654,13 +680,14 @@ const SPLIT_SCHEMA = {
         type: "OBJECT",
         properties: {
           name: { type: "STRING" },
+          code: { type: "STRING" },
           kind: { type: "STRING", enum: ["kitchen", "bathroom", "closet", "bedroom", "living", "laundry", "office", "pantry", "garage", "bar", "other"] },
           pages: { type: "ARRAY", items: { type: "INTEGER" } },
           summary: { type: "STRING" },
           has_dimensions: { type: "BOOLEAN" },
         },
         required: ["name", "kind", "pages", "summary", "has_dimensions"],
-        propertyOrdering: ["name", "kind", "pages", "summary", "has_dimensions"],
+        propertyOrdering: ["name", "code", "kind", "pages", "summary", "has_dimensions"],
       },
     },
   },
@@ -679,6 +706,8 @@ O QUE FAZER:
    - name: nome curto como aparece no PDF, no idioma do PDF (ex.: "Cocina", "Despensa", "Kitchen", "Master Bath", "Cozinha"); se o PDF não nomear, invente um curto em ${langName(b.lang)}.
    - Projetos em espanhol/inglês: cocina/kitchen, despensa/pantry, baño/bath, vestidor/closet/walk-in, lavandería/laundry, sala/living, bar, barra, oficina/office. Despensa/pantry é ambiente SEPARADO da cozinha quando tem pranchas próprias (ex.: "lado A", "lado B" de um L), mesmo que encostado nela.
    - pages: TODAS as páginas que mostram esse ambiente (planta, elevações, cortes, detalhes, render, tabela de módulos dele), as COTADAS primeiro (plantas/elevações), depois renders. Uma página pode entrar em mais de um ambiente (ex.: planta geral). Em apresentações (PDF de slides com renders e depois pranchas), renders sem cota também contam pro ambiente que mostram.
+   - code: código do ambiente no PDF, se houver (ex.: "CL-Q03", "AP-01", "LV-01", "K-01"); vazio se não houver.
+   - PÁGINA EXCLUSIVA: render/elevação/detalhe cujo TÍTULO ou código é de UM ambiente (ex.: "Armário de apoio | garagem", "AP-01") pertence SÓ a ele. NUNCA coloque em outro ambiente — nem se esse outro não tiver render próprio (aí ele fica só com as pranchas que são dele). Só plantas gerais e ampliações que mostram vários ambientes de verdade entram em mais de um.
    - summary: 1 frase do que tem (ex.: "Cozinha em L com ilha, 2 torres").
    - has_dimensions: true se as páginas têm cotas legíveis.
 4. Não crie ambiente pra capa, índice, notas gerais, especificações de material ou planta geral sem marcenaria.
@@ -694,6 +723,7 @@ function sanitizeSplit(raw: any, nPages: number) {
   const valid = (n: any) => Number.isInteger(Number(n)) && Number(n) >= 1 && Number(n) <= nPages;
   const rooms = (Array.isArray(raw?.rooms) ? raw.rooms : []).slice(0, 40).map((r: any, i: number) => ({
     name: String(r?.name || `Ambiente ${i + 1}`).slice(0, 60),
+    code: String(r?.code || "").trim().slice(0, 20),
     kind: String(r?.kind || "other"),
     pages: [...new Set((Array.isArray(r?.pages) ? r.pages : []).filter(valid).map((n: any) => Number(n)))].sort((a: any, b: any) => a - b),
     summary: String(r?.summary || "").slice(0, 200),
@@ -761,7 +791,9 @@ Deno.serve(async (req) => {
       return json(200, { ...sanitizeRead(data, b), model });
     }
     if (!Array.isArray(b.catalog) || !b.catalog.length) return json(400, { error: "Catálogo vazio.", code: "no_catalog" });
-    if (!Array.isArray(b.volumes) || !b.volumes.length) return json(200, { notes: "", items: [], unmatched: [], model: null });
+    if (!Array.isArray(b.volumes)) b.volumes = [];
+    if (!Array.isArray(b.direct_volumes)) b.direct_volumes = [];
+    if (!b.volumes.length && !b.direct_volumes.length) return json(200, { notes: "", items: [], unmatched: [], direct_colors: [], model: null });
     if (!Array.isArray(b.colors)) b.colors = [];
     const { data, model } = await callGemini(apiKey, "flash", [...imgs, { text: buildMatchPrompt(b) }], MATCH_SCHEMA);
     return json(200, { ...sanitizeMatch(data, b), model });

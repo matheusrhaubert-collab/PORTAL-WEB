@@ -561,6 +561,33 @@ function projectPhotoStandardDepthKind(v, roomKind) {
   return null;
 }
 
+// COR DA CAIXA CRUA (01/10, Matt: "os closets entraram brancos, e tem cores
+// diferentes"). Duas causas: (1) closet não passava pelo casamento, então
+// ficava sem cor nenhuma = a padrão (White Classic); (2) as portas/frentes
+// que o CONFIGURADOR insere têm papel de cor próprio (Porta/Frente) que o
+// módulo cru nunca teve — rebuildProjectSlotLayoutPieces (portal-07) dá a
+// esse papel a 1ª opção da lista, não a cor da caixa. Aqui, DEPOIS do
+// interior montado, pinta todos os papéis do slot: frentes com
+// front_color_name, o resto com color_name; e recalcula o preço.
+const PROJECT_PHOTO_FRONT_ROLE_RE = /porta|frente|gaveta|door|front|drawer|puerta|cajon|cajón/i;
+function projectPhotoPaintComposition(slot, it, warnings) {
+  const roles = (typeof colorRolesCache !== 'undefined' && colorRolesCache) || [];
+  const opcoes = slot.colorOptionsByRole || {};
+  const todas = [].concat(...Object.values(opcoes).map((l) => l || []));
+  // papel com lista própria (ex.: Puxador) só aceita cor da própria lista
+  const acha = (roleId, nome) => ((opcoes[roleId] || []).length ? opcoes[roleId] : todas).find((c) => c.name === nome) || null;
+  const papeis = new Set([...Object.keys(opcoes), ...Object.keys(slot.colorsByRole || {})]);
+  let aplicou = 0, faltou = null;
+  papeis.forEach((roleId) => {
+    const nomePapel = (roles.find((r) => String(r.id) === String(roleId)) || {}).name || '';
+    const nome = PROJECT_PHOTO_FRONT_ROLE_RE.test(nomePapel) ? (it.front_color_name || it.color_name) : it.color_name;
+    const c = acha(roleId, nome);
+    if (c) { applyColorToProjectSlot(slot, roleId, c); aplicou++; } else if (/caixa|box|casco/i.test(nomePapel)) faltou = nome;
+  });
+  if (!aplicou || faltou) warnings.push(tPhoto('warn_color_missing', { label: it.label, color: faltou || it.color_name }));
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[foto-projeto] cor:', e); }
+}
+
 function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   const byId = new Map(catalog.map((m) => [m.id, m]));
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
@@ -593,7 +620,9 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
       color_name: raw.color_name || null
     });
   });
-  // Composições por caixa crua (closet…): não passaram pelo casamento.
+  // Composições por caixa crua (closet…): não passaram pelo casamento —
+  // só a cor (match.direct_colors: caixa + frentes).
+  const corDireta = new Map((match.direct_colors || []).map((d) => [d.volume_id, d]));
   projectPhotoDirectVolumes(room, catalog).forEach((v) => {
     const comp = projectPhotoCompositionOf(v);
     const m = catalog.find((c) => c.name === PROJECT_PHOTO_COMPOSITIONS[comp].carcass);
@@ -612,7 +641,9 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
       width_mm, height_mm,
       depth_mm: clampNum(v.depth_mm, m.d[0], m.d[2]),
       floor_height_mm: clampNum(v.floor_height_mm, 0, Math.max(wall.height_mm - height_mm, 0)),
-      color_name: null, color_description: v.color_description || '',
+      color_name: (corDireta.get(v.id) || {}).color_name || null,
+      front_color_name: (corDireta.get(v.id) || {}).front_color_name || null,
+      color_description: v.color_description || '',
       composition: comp,
       interior: temInterior ? v.interior : projectPhotoDefaultInterior(v)
     });
@@ -622,7 +653,10 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   const freq = {};
   items.forEach((it) => { if (it.color_name) freq[it.color_name] = (freq[it.color_name] || 0) + 1; });
   const corMaisUsada = Object.keys(freq).sort((p, q) => freq[q] - freq[p])[0] || null;
-  items.forEach((it) => { if (it.composition && !it.color_name) it.color_name = corMaisUsada; });
+  items.forEach((it) => {
+    if (it.composition && !it.color_name) it.color_name = it.front_color_name || corMaisUsada;
+    if (it.composition && !it.front_color_name) it.front_color_name = it.color_name;
+  });
   projectPhotoAutoCornerBase(items, room.walls, catalog, warnings);
   projectPhotoNormalizeCorners(items, room.walls, warnings);
   projectPhotoFixCorners(items, room.walls, warnings);
@@ -774,11 +808,18 @@ async function projectPhotoRunPipeline(opts, status) {
 
   say(tPhoto('status_step2'));
   // casamento: a 1ª imagem basta pra estilo/cor (economiza payload)
+  const diretos = projectPhotoDirectVolumes(room, catalog);
   const match = await invokeProjectPhotoStage({
     stage: 'match', images: images.slice(0, 2), lang, colors,
     // closet & cia. (caixa crua + configurador) não passam pelo casamento;
     // o catálogo vai sem as caixas cruas pra IA não usá-las no resto.
-    volumes: room.volumes.filter((v) => !projectPhotoDirectVolumes(room, catalog).includes(v)),
+    volumes: room.volumes.filter((v) => !diretos.includes(v)),
+    // ...mas a COR delas sim (01/10, Matt: "os closets entraram brancos"):
+    // a IA escolhe cor da caixa e das frentes de cada uma.
+    direct_volumes: diretos.map((v) => ({
+      id: v.id, kind: v.kind, label: v.label, width_mm: v.width_mm, height_mm: v.height_mm,
+      doors: v.doors, drawers: v.drawers, color_description: v.color_description || ''
+    })),
     catalog: catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name))
   });
 
@@ -1010,7 +1051,7 @@ function renderProjectPhotoReview() {
       <td>${escapeHtmlPhoto(it.module_name)}</td>
       <td class="mono">${f(it.width_mm)} × ${f(it.height_mm)} × ${f(it.depth_mm)}</td>
       <td class="mono">${f(it.x_mm)} / ${f(it.floor_height_mm)}${it.wall_offset_mm ? ' / ↤' + f(it.wall_offset_mm) : ''}</td>
-      <td>${escapeHtmlPhoto(it.color_name || '—')}</td>
+      <td>${escapeHtmlPhoto(it.color_name || '—')}${it.front_color_name && it.front_color_name !== it.color_name ? ' / ' + escapeHtmlPhoto(it.front_color_name) : ''}</td>
     </tr>`).join('');
 
   const unmatchedHtml = st.unmatched.length
@@ -1212,7 +1253,9 @@ async function projectPhotoApplyState(st) {
       catch (e) { console.error('[foto-projeto] interior falhou:', e); warnings.push(tPhoto('warn_insert_failed', { label: it.label + ' (interior)' })); }
     }
 
-    if (it.color_name) {
+    if (it.composition && it.color_name) {
+      projectPhotoPaintComposition(slot, it, warnings);
+    } else if (it.color_name) {
       let opts = colorCache.get(it.module_id);
       if (!opts) { opts = await fetchModuleColorsByRoleRaw(it.module_id); colorCache.set(it.module_id, opts); }
       let applied = 0;
