@@ -1353,7 +1353,8 @@ const Photoreal = (() => {
     const menor = ['x', 'y', 'z'].reduce((m, k) => (sz[k] < sz[m] ? k : m), 'x');
     let tAxis = e && e.tAxis;
     if (!tAxis || Math.abs(sz[tAxis] - sz[menor]) > 0.5) tAxis = menor;
-    const L = P.ledLayout(part.led, sz, tAxis);
+    (P.ledLista ? P.ledLista(part.led) : [part.led]).forEach((led) => {
+    const L = P.ledLayout(led, sz, tAxis);
     if (!L || L.erro) return;
     const faceCoord = L.lado > 0 ? bb.max[tAxis] : bb.min[tAxis];
     const mk = (espessura, encolheComp, encolheLarg, afasta, material) => {
@@ -1372,6 +1373,7 @@ const Photoreal = (() => {
     mesh.add(mk(0.0006, 0, 0, 0.0003, new T.MeshStandardMaterial({ color: 0xb9bcc0, metalness: 0.6, roughness: 0.35 })));
     mesh.add(mk(0.0004, 0.002, 0.005, 0.0008,
       new T.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffe2b0, emissiveIntensity: 6, roughness: 0.9 })));
+    });
   }
 
   function buildAssembly(parts, W, H, D, isRoot) {

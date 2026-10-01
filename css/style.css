@@ -5011,6 +5011,20 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-led-2d .led.erro { stroke: #b0503c; fill: rgba(176, 80, 60, 0.15); }
 .po-led-2d .cota { stroke: #6b6b6b; }
 .po-led-2d .cota-txt { fill: #333; }
+.po-led-lines-row { align-items: flex-start; }
+.po-led-lines { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; max-width: 200px; }
+.po-led-line { margin: 0; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: none; border-radius: 999px; padding: 3px 9px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
+.po-led-line.active { background: var(--text); color: #e0a44b; border-color: var(--text); }
+.po-led-line .x { font-weight: 700; opacity: 0.7; padding-left: 2px; }
+.po-led-line .x:hover { opacity: 1; color: #b0503c; }
+.po-led-line.add { border-style: dashed; color: var(--muted); }
+.po-led-side-row { margin-top: -6px; }
+.po-led-side-row small { color: var(--muted); font-size: 11px; }
+.po-led-2d svg { touch-action: none; user-select: none; }
+.po-led-2d .led { cursor: move; }
+.po-led-2d .led.outro { stroke: #b9a27a; fill: rgba(185, 162, 122, 0.12); cursor: pointer; }
+.po-led-2d .ponta { fill: #d08a1e; cursor: ew-resize; }
+.po-led-2d .ponta.v { cursor: ns-resize; }
 .po-led-2d .borda-txt { fill: #8a8a8a; font-weight: 700; text-transform: uppercase; }
 .po-led-form { width: 320px; flex: none; border-left: 1px solid var(--border); overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 .po-led-col-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin-bottom: 4px; }

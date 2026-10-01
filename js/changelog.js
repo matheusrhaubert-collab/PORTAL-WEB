@@ -37,7 +37,7 @@ window.LEGNO_CHANGELOG = [
       pt: [
         "Novo módulo Aéreo de Canto 45°: porta na diagonal (encaixada no vão entre as laterais), dobradiça 135° com amortecedor, prateleira chanfrada e veio da porta na vertical.",
         "Novo módulo Base de Canto 90° (em L): duas portas com dobradiça 165°, larguras de cada lado independentes, prateleiras, e opção de rodapé (toe) ou pés plásticos.",
-        "Nova ferramenta LED embutido na barra do módulo: qualquer peça (base, prateleira, lateral, fundo, porta), em qualquer face, na horizontal ou na vertical, com distância e margem de cada ponta separadas. Vista 2D da peça com o LED tracejado e as cotas, e o 3D gira por baixo. O LED aparece no 3D e na foto realista, o rasgo sai no arquivo da máquina e a usinagem por metro entra no orçamento.",
+        "Nova ferramenta LED embutido na barra do módulo: qualquer peça (base, prateleira, lateral, fundo, porta), em qualquer face, na horizontal ou na vertical, com distância e margem de cada ponta separadas, e quantos LEDs precisar na mesma peça. Botões Top/Under, vista 2D da peça com o LED tracejado e as cotas (dá pra arrastar a linha e as pontas com o mouse), e o 3D gira por baixo. O LED aparece no 3D e na foto realista, o rasgo sai no arquivo da máquina e a usinagem por metro entra no orçamento.",
         "Novo: conectar um módulo a qualquer face de outro módulo ou parede (botão direito), com a janela \"Reposicionar\" em duas vistas para ajustar a posição e girar.",
         "Novo: duplicar módulo agora pergunta a direção (esquerda, direita, cima, baixo, frente, atrás) e quantas cópias.",
         "Novo: Ctrl+C num módulo e Ctrl+V no ponto do ambiente onde está o mouse para colar uma cópia ali.",
@@ -52,7 +52,7 @@ window.LEGNO_CHANGELOG = [
       en: [
         "New 45° Corner Wall Cabinet: diagonal door (fitted in the opening between the sides), 135° soft-close hinge, chamfered shelf and vertical door grain.",
         "New 90° Corner Base Cabinet (L-shaped): two doors with 165° hinges, independent widths for each side, shelves, and toe kick or plastic legs option.",
-        "New built-in LED tool in the module toolbar: any part (bottom, shelf, side, back, door), on either face, horizontal or vertical, with its own distance and a separate margin at each end. 2D view of the part with the LED dashed and dimensioned, and the 3D rotates to look underneath. The LED shows in 3D and in the photorealistic render, the groove goes into the machine file and machining per meter is added to the quote.",
+        "New built-in LED tool in the module toolbar: any part (bottom, shelf, side, back, door), on either face, horizontal or vertical, with its own distance and a separate margin at each end, and as many LEDs as needed on the same part. Top/Under buttons, 2D view of the part with the LED dashed and dimensioned (drag the line and its ends with the mouse), and the 3D rotates to look underneath. The LED shows in 3D and in the photorealistic render, the groove goes into the machine file and machining per meter is added to the quote.",
         "New: connect a module to any face of another module or wall (right click), with the \"Reposition\" window in two views to adjust position and rotate.",
         "New: duplicating a module now asks for the direction (left, right, up, down, front, back) and how many copies.",
         "New: Ctrl+C on a module and Ctrl+V at the spot in the room where the mouse is to paste a copy there.",
@@ -67,7 +67,7 @@ window.LEGNO_CHANGELOG = [
       es: [
         "Nuevo módulo Aéreo de Esquina 45°: puerta en diagonal (encajada en el hueco entre los laterales), bisagra 135° con cierre suave, estante chaflanado y veta de la puerta en vertical.",
         "Nuevo módulo Base de Esquina 90° (en L): dos puertas con bisagra 165°, anchos independientes de cada lado, estantes y opción de zócalo o patas plásticas.",
-        "Nueva herramienta LED empotrado en la barra del módulo: cualquier pieza (base, estante, lateral, fondo, puerta), en cualquier cara, horizontal o vertical, con distancia y margen de cada punta por separado. Vista 2D de la pieza con el LED punteado y acotado, y el 3D gira por debajo. El LED aparece en el 3D y en la foto realista, la ranura sale en el archivo de la máquina y el mecanizado por metro entra en el presupuesto.",
+        "Nueva herramienta LED empotrado en la barra del módulo: cualquier pieza (base, estante, lateral, fondo, puerta), en cualquier cara, horizontal o vertical, con distancia y margen de cada punta por separado, y tantos LED como hagan falta en la misma pieza. Botones Top/Under, vista 2D de la pieza con el LED punteado y acotado (se arrastra la línea y sus puntas con el mouse), y el 3D gira por debajo. El LED aparece en el 3D y en la foto realista, la ranura sale en el archivo de la máquina y el mecanizado por metro entra en el presupuesto.",
         "Nuevo: conectar un módulo a cualquier cara de otro módulo o pared (botón derecho), con la ventana \"Reposicionar\" en dos vistas para ajustar la posición y girar.",
         "Nuevo: duplicar módulo ahora pregunta la dirección (izquierda, derecha, arriba, abajo, adelante, atrás) y cuántas copias.",
         "Nuevo: Ctrl+C en un módulo y Ctrl+V en el punto del ambiente donde está el mouse para pegar una copia allí.",

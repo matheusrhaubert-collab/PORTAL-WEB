@@ -365,7 +365,7 @@ function applyLedConfigsDeep(piecesList, ledConfigs) {
     if (!p) return p;
     let out = p;
     const cfg = p.id != null ? ledConfigs[p.id] : null;
-    if (cfg) out = Object.assign({}, out, { led: cfg });
+    if (cfg && (!Array.isArray(cfg) || cfg.length)) out = Object.assign({}, out, { led: cfg }); // 1 LED (objeto) ou vários (lista)
     if (Array.isArray(p.child_pieces) && p.child_pieces.length) {
       const kids = applyLedConfigsDeep(p.child_pieces, ledConfigs);
       if (kids !== p.child_pieces) out = Object.assign({}, out, { child_pieces: kids });

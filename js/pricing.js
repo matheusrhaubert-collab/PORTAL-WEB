@@ -592,11 +592,21 @@
     const e = ledEixos(part);
     return e ? ledLayout(led || (part && part.led), e.sizes, e.tAxis) : null;
   }
-  // metros de rasgo (usinagem por metro no orçamento)
+  // VÁRIOS LEDs NA MESMA PEÇA (2026-09-30, 3ª rodada — Matt: "preciso uma
+  // linha pra colocar mais de um led, tipo 2 ou mais"). part.led pode ser um
+  // objeto (1 LED, formato das rodadas anteriores) ou uma LISTA — ledLista
+  // devolve sempre a lista, e todo mundo (preço, .ban, 3D, foto) percorre ela.
+  function ledLista(led) {
+    if (Array.isArray(led)) return led.filter(function (x) { return x && typeof x === 'object'; });
+    return (led && typeof led === 'object') ? [led] : [];
+  }
+  // metros de rasgo (usinagem por metro no orçamento) — soma de todos
   function ledComprimentoMm(led, part) {
     if (!led || !part) return 0;
-    const L = ledLayoutDaPeca(part, led);
-    return (L && !L.erro) ? L.comprimento_mm : 0;
+    return ledLista(led).reduce(function (tot, um) {
+      const L = ledLayoutDaPeca(part, um);
+      return tot + ((L && !L.erro) ? L.comprimento_mm : 0);
+    }, 0);
   }
   function ledMetros(piece, pieceDims) {
     if (!piece || !piece.led || !pieceDims) return 0;
@@ -1655,7 +1665,7 @@
     setProcessLabor,
     setHoleCounts,
     processLaborFor,
-    ledComprimentoMm, ledMetros, ledEixos, ledLayout, ledLayoutDaPeca, ledNormaliza,
+    ledComprimentoMm, ledMetros, ledEixos, ledLayout, ledLayoutDaPeca, ledNormaliza, ledLista,
     // Migration 119 — itens comprados. Os três são publicadores (o chamador
     // avisa ANTES de pedir o preço), mesma mecânica de setProcessLabor/
     // setHoleCounts e pelo mesmo motivo: são ~8 pontos chamando

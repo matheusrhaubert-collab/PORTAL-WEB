@@ -2114,8 +2114,10 @@ const Viewer3D = (function () {
     const menor = ['x', 'y', 'z'].reduce((m, k) => (sz[k] < sz[m] ? k : m), 'x');
     let tAxis = e && e.tAxis;
     if (!tAxis || Math.abs(sz[tAxis] - sz[menor]) > 0.5) tAxis = menor;
-    const L = Pricing.ledLayout(part.led, sz, tAxis);
-    if (!L || L.erro) return null;
+    const g = new THREE.Group();
+    (Pricing.ledLista ? Pricing.ledLista(part.led) : [part.led]).forEach((led) => {
+    const L = Pricing.ledLayout(led, sz, tAxis);
+    if (!L || L.erro) return;
     const lado = L.lado;
     const faceCoord = lado > 0 ? bb.max[tAxis] : bb.min[tAxis];
     const mk = (espessura, encolheComp, encolheLarg, afasta, material) => {
@@ -2131,9 +2133,10 @@ const Viewer3D = (function () {
       m.position.set(c.x, c.y, c.z);
       return m;
     };
-    const g = new THREE.Group();
     g.add(mk(0.0006, 0, 0, 0.0003, new THREE.MeshStandardMaterial({ color: LED_COR_PERFIL, metalness: 0.6, roughness: 0.35 })));
     g.add(mk(0.0004, 0.002, 0.005, 0.0008, new THREE.MeshBasicMaterial({ color: LED_COR_DIFUSOR })));
+    });
+    if (!g.children.length) return null;
     g.userData.ledStrip = true;
     return g;
   }

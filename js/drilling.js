@@ -1874,10 +1874,10 @@
   // POSITIVO do eixo da espessura, ou o NEGATIVO na peça espelhada (é o lado
   // que a furadeira fura por cima). Coordenadas no mesmo plano pras duas
   // faces, como o SlotL Face B do exemplo real.
-  function ledRect(part) {
-    if (!part || !part.led || typeof Pricing === 'undefined' || !Pricing.ledEixos) return null;
+  function ledRect(part, led) {
+    if (!part || !led || typeof Pricing === 'undefined' || !Pricing.ledEixos) return null;
     const e = Pricing.ledEixos(part);
-    const L = e && Pricing.ledLayout(part.led, e.sizes, e.tAxis);
+    const L = e && Pricing.ledLayout(led, e.sizes, e.tAxis);
     if (!L || L.erro) return null;
     const t = { thickness: e.thickness, faceA: e.faceA, faceB: e.faceB };
     let u = L.ranges[e.uAxis].slice(), v = L.ranges[e.vAxis].slice();
@@ -1894,23 +1894,28 @@
     };
   }
 
+  // Um bolsão por LED (a peça pode ter vários — Pricing.ledLista).
   function ledSlotsDaPeca(part) {
-    const r = ledRect(part);
-    if (!r) return [];
+    if (!part || !part.led || typeof Pricing === 'undefined' || !Pricing.ledLista) return [];
     const e = Pricing.ledEixos(part);
     const m = machineDims({ thickness: e.thickness, faceA: e.faceA, faceB: e.faceB });
-    // bolsão SEMPRE (rasgo cego não tem retalho pra cair). As passadas do
-    // bolsão vão de BORDA a borda do retângulo pelo CENTRO da fresa — no
-    // canto passante do toe isso sai fora da chapa e não importa, mas aqui
-    // a ponta redonda comeria meia-fresa (3mm) ALÉM da margem em cada ponta.
-    // Recua meia-fresa nas pontas: o rasgo termina exatamente na margem
-    // (com o raio de 3mm da fresa nos cantos, que o perfil cobre).
-    return rectToSlots(r, m.C, m.L).map(function (sl) {
-      const meia = sl.width / 2;
-      if (sl.y0 === sl.y1) { sl.x0 += meia; sl.x1 -= meia; }
-      else { sl.y0 += meia; sl.y1 -= meia; }
-      return Object.assign(sl, { face: r.face, led: true });
+    const out = [];
+    Pricing.ledLista(part.led).forEach(function (led) {
+      const r = ledRect(part, led);
+      if (!r) return;
+      // bolsão SEMPRE (rasgo cego não tem retalho pra cair). As passadas do
+      // bolsão vão de BORDA a borda do retângulo pelo CENTRO da fresa — aqui
+      // a ponta redonda comeria meia-fresa (3mm) ALÉM da margem em cada
+      // ponta. Recua meia-fresa nas pontas: o rasgo termina exatamente na
+      // margem (com o raio de 3mm da fresa nos cantos, que o perfil cobre).
+      rectToSlots(r, m.C, m.L).forEach(function (sl) {
+        const meia = sl.width / 2;
+        if (sl.y0 === sl.y1) { sl.x0 += meia; sl.x1 -= meia; }
+        else { sl.y0 += meia; sl.y1 -= meia; }
+        out.push(Object.assign(sl, { face: r.face, led: true }));
+      });
     });
+    return out;
   }
 
   // Todos os passes de uma peça, prontos pro .ban.

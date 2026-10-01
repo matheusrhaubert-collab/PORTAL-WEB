@@ -3254,11 +3254,15 @@ function projectLedModels() {
 
 let ledModalSlotId = null;
 let ledSelPieceId = null;
-// { modelo_id, face: 'A'|'B', orientacao: 'h'|'v', pos_mm, margem_ini_mm, margem_fim_mm }
-let ledDraft = null;
+// Rascunho da peça escolhida: VÁRIAS linhas de LED (3ª rodada, Matt: "uma
+// linha pra colocar mais de um led, tipo 2 ou mais"). Cada linha:
+// { modelo_id, face: 'A'|'B', orientacao: 'h'|'v', pos_mm, margem_ini_mm,
+//   margem_fim_mm }. idx = a linha que o formulário e o arraste editam.
+let ledDraft = null;          // { linhas: [...], idx }
 let ledViewer = null;
 let ledAssembly = null;
 let ledPreviewTimer = null;
+const LED_AFASTAMENTO_PADRAO = 50; // "continuar com 50 de afastamento do fundo"
 
 // 2ª rodada (2026-09-30), Matt: "todas as peças devem poder receber o canal
 // do LED, se quiser colocar na lateral, ou no fundo". Entra toda peça-CHAPA
@@ -3292,20 +3296,24 @@ function ledModeloPorId(id) {
   return ms.find((m) => String(m.id) === String(id)) || ms[0];
 }
 
-// Config completa (o que vai pro slot) a partir do rascunho da tela.
-function ledConfigDoRascunho() {
-  if (!ledDraft) return null;
-  const m = ledModeloPorId(ledDraft.modelo_id);
-  const n = (v) => { const x = Number(v); return isFinite(x) && x > 0 ? x : 0; };
+// Config completa de UMA linha (o que vai pro slot).
+function ledConfigDaLinha(l) {
+  if (!l) return null;
+  const m = ledModeloPorId(l.modelo_id);
+  const n = (v) => { const x = Number(v); return isFinite(x) && x > 0 ? Math.round(x * 10) / 10 : 0; };
   return {
     modelo_id: m.id, modelo_nome: m.name,
     largura_mm: Number(m.largura_mm), profundidade_mm: Number(m.profundidade_mm),
-    face: ledDraft.face === 'A' ? 'A' : 'B',
-    orientacao: ledDraft.orientacao === 'v' ? 'v' : 'h',
-    pos_mm: n(ledDraft.pos_mm),
-    margem_ini_mm: n(ledDraft.margem_ini_mm),
-    margem_fim_mm: n(ledDraft.margem_fim_mm)
+    face: l.face === 'A' ? 'A' : 'B',
+    orientacao: l.orientacao === 'v' ? 'v' : 'h',
+    pos_mm: n(l.pos_mm), margem_ini_mm: n(l.margem_ini_mm), margem_fim_mm: n(l.margem_fim_mm)
   };
+}
+function ledConfigsDoRascunho() {
+  return ledDraft ? ledDraft.linhas.map(ledConfigDaLinha).filter(Boolean) : [];
+}
+function ledLinhaAtual() {
+  return (ledDraft && ledDraft.linhas[ledDraft.idx]) || null;
 }
 
 // Mesma conta do .ban/3D/preço (Pricing.ledLayout) — o que a tela aceita é o
@@ -3329,6 +3337,46 @@ function ledVistaDaPeca(part) {
   return L ? L.vista : null;
 }
 
+// TOP / UNDER (3ª rodada, Matt: "preciso um botão pra top e under"). É a
+// face da peça DEITADA NA MÁQUINA — Top = Face A do .ban (a que a furadeira
+// fura por cima), Under = Face B. Na peça espelhada (lateral direita) a
+// Face A é o lado NEGATIVO do eixo da espessura; então Top é sempre a face
+// de dentro das duas laterais, igual aos furos. Por baixo continua gravado o
+// lado físico ('A' = +, 'B' = -), que é o que o 3D e o .ban leem.
+function ledLadoTop(part) {
+  const e = part ? Pricing.ledEixos(part) : null;
+  return (e && e.mirror) ? 'B' : 'A';
+}
+function ledFaceDoBotao(part, botao) {
+  const top = ledLadoTop(part);
+  return botao === 'top' ? top : (top === 'A' ? 'B' : 'A');
+}
+function ledBotaoDaFace(part, face) {
+  return face === ledLadoTop(part) ? 'top' : 'under';
+}
+
+// Linha nova: margens ZERADAS e 50 de afastamento do fundo (Matt, 3ª rodada:
+// "começar sempre com as margens laterais zeradas e continuar com 50 de
+// afastamento do fundo"). Direção padrão = a que mede do FUNDO na vista da
+// peça (deitada: horizontal; lateral: vertical; fundo/porta: horizontal, a
+// 50 de cima). Da 2ª linha em diante copia a anterior e anda mais 50.
+function ledLinhaPadrao(part, anterior) {
+  const vi = ledVistaDaPeca(part);
+  const m = anterior ? ledModeloPorId(anterior.modelo_id) : projectLedModels()[0];
+  if (anterior) {
+    const larg = Number(m.largura_mm) || 0;
+    const L = Pricing.ledLayoutDaPeca(part, ledConfigDaLinha(anterior));
+    const max = L ? L.posMax : Infinity;
+    return Object.assign({}, anterior, { pos_mm: Math.min(Number(anterior.pos_mm) + larg + LED_AFASTAMENTO_PADRAO, max) });
+  }
+  return {
+    modelo_id: m.id,
+    face: ledFaceDoBotao(part, (vi && vi.nome === 'cima') ? 'under' : 'top'),
+    orientacao: (vi && vi.nome === 'lado') ? 'v' : 'h',
+    pos_mm: LED_AFASTAMENTO_PADRAO, margem_ini_mm: 0, margem_fim_mm: 0
+  };
+}
+
 function openProjectSlotLed(slotId) {
   const slot = projectSlots.find((s) => s.id === slotId);
   const modal = document.getElementById('po-led-modal');
@@ -3343,7 +3391,7 @@ function openProjectSlotLed(slotId) {
   }
   const elegiveis = projectLedPecasElegiveis(slot);
   // abre na primeira peça que já tem LED; senão na primeira da lista
-  const comLed = elegiveis.find(({ p }) => slot.ledConfigs && slot.ledConfigs[p.piece_id]);
+  const comLed = elegiveis.find(({ p }) => slot.ledConfigs && Pricing.ledLista(slot.ledConfigs[p.piece_id]).length);
   modal.classList.add('open');
   ledSelecionarPeca(slot, (comLed || elegiveis[0] || { p: {} }).p.piece_id);
   renderProjectLedPreview(slot);
@@ -3351,19 +3399,14 @@ function openProjectSlotLed(slotId) {
 
 function ledSelecionarPeca(slot, pieceId) {
   ledSelPieceId = pieceId == null ? null : pieceId;
-  const atualRaw = (pieceId != null && slot.ledConfigs && slot.ledConfigs[pieceId]) || null;
-  const atual = atualRaw ? Pricing.ledNormaliza(atualRaw) : null;
-  const m = atual ? ledModeloPorId(atual.modelo_id) : projectLedModels()[0];
+  const salvos = Pricing.ledLista(pieceId != null && slot.ledConfigs ? slot.ledConfigs[pieceId] : null)
+    .map((c) => Pricing.ledNormaliza(c));
   const part = ledPecaSelecionada(slot);
-  const vi = ledVistaDaPeca(part);
-  ledDraft = atual ? {
-    modelo_id: m.id, face: atual.face, orientacao: atual.orientacao,
-    pos_mm: atual.pos_mm, margem_ini_mm: atual.margem_ini_mm, margem_fim_mm: atual.margem_fim_mm
-  } : {
-    // peça deitada nasce embaixo (luz pra baixo); em pé, na face positiva
-    modelo_id: m.id, face: (vi && vi.nome === 'cima') ? 'B' : 'A', orientacao: 'h',
-    pos_mm: 50, margem_ini_mm: 30, margem_fim_mm: 30
-  };
+  const linhas = salvos.map((a) => ({
+    modelo_id: ledModeloPorId(a.modelo_id).id, face: a.face, orientacao: a.orientacao,
+    pos_mm: a.pos_mm, margem_ini_mm: a.margem_ini_mm, margem_fim_mm: a.margem_fim_mm
+  }));
+  ledDraft = { linhas: linhas.length ? linhas : [ledLinhaPadrao(part, null)], idx: 0 };
   renderProjectLedList(slot);
   renderProjectLedForm(slot);
 }
@@ -3379,15 +3422,14 @@ function renderProjectLedList(slot) {
   const lista = projectLedPecasElegiveis(slot);
   if (!lista.length) { el.innerHTML = '<p class="hint">' + escapeHtmlCutlist(I18n.t('led.no_pieces')) + '</p>'; return; }
   el.innerHTML = lista.map(({ p, grupo }) => {
-    const tem = slot.ledConfigs && slot.ledConfigs[p.piece_id];
+    const qtd = Pricing.ledLista(slot.ledConfigs && slot.ledConfigs[p.piece_id]).length;
     const nome = (grupo ? grupo + ' · ' : '') + (p.reference || '');
     const med = formatDimension(Number(p.width_mm) || 0, unit) + ' × ' + formatDimension(Number(p.height_mm) || 0, unit)
       + ' × ' + formatDimension(Number(p.depth_mm) || 0, unit);
-    const faceTxt = tem ? ledNomeFace(ledVistaDaPeca(p), Pricing.ledNormaliza(tem).face) : '';
     return '<button type="button" class="po-led-piece' + (String(p.piece_id) === String(ledSelPieceId) ? ' active' : '')
       + '" data-led-piece="' + escapeHtmlCutlist(p.piece_id) + '"><span>' + escapeHtmlCutlist(nome) + '</span>'
       + '<small>' + escapeHtmlCutlist(med) + '</small>'
-      + (tem ? '<span class="po-led-badge">' + escapeHtmlCutlist(I18n.t('led.badge')) + ' · ' + escapeHtmlCutlist(faceTxt) + '</span>' : '')
+      + (qtd ? '<span class="po-led-badge">' + escapeHtmlCutlist(I18n.t('led.badge')) + (qtd > 1 ? ' × ' + qtd : '') + '</span>' : '')
       + '</button>';
   }).join('');
 }
@@ -3398,25 +3440,46 @@ function ledPecaSelecionada(slot) {
   return achada ? achada.p : null;
 }
 
+// Primeiro erro entre TODAS as linhas (Aplicar só com todas válidas).
+function ledErroGeral(part) {
+  if (!part || !ledDraft) return { erro: I18n.t('led.pick_piece'), idx: -1 };
+  for (let i = 0; i < ledDraft.linhas.length; i++) {
+    const r = ledAvaliar(ledConfigDaLinha(ledDraft.linhas[i]), part);
+    if (r.erro) return { erro: (ledDraft.linhas.length > 1 ? I18n.t('led.line_n', { n: i + 1 }) + ': ' : '') + r.erro, idx: i };
+  }
+  return { erro: null, idx: -1 };
+}
+
 function renderProjectLedForm(slot) {
   const part = ledPecaSelecionada(slot);
   const vi = ledVistaDaPeca(part);
+  const linha = ledLinhaAtual();
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('po-led-piece-name', part ? (part.reference || '—') : '—');
+  // linhas de LED (chips) + adicionar
+  const linhasEl = document.getElementById('po-led-lines');
+  if (linhasEl) {
+    const n = ledDraft ? ledDraft.linhas.length : 0;
+    linhasEl.innerHTML = (ledDraft ? ledDraft.linhas : []).map((l, i) => '<button type="button" class="po-led-line'
+      + (i === ledDraft.idx ? ' active' : '') + '" data-led-line="' + i + '">' + escapeHtmlCutlist(I18n.t('led.line_n', { n: i + 1 }))
+      + (n > 1 ? '<span class="x" data-led-line-del="' + i + '" title="' + escapeHtmlCutlist(I18n.t('led.remove_line_title')) + '">×</span>' : '')
+      + '</button>').join('')
+      + (part ? '<button type="button" class="po-led-line add" data-led-line-add="1">' + escapeHtmlCutlist(I18n.t('led.add_line')) + '</button>' : '');
+  }
   const sel = document.getElementById('po-led-model');
-  if (sel && ledDraft) sel.value = String(ledDraft.modelo_id);
-  set('po-led-face-a', ledNomeFace(vi, 'A'));
-  set('po-led-face-b', ledNomeFace(vi, 'B'));
+  if (sel && linha) sel.value = String(linha.modelo_id);
+  const botao = (part && linha) ? ledBotaoDaFace(part, linha.face) : null;
   document.querySelectorAll('#po-led-modal [data-led-face]').forEach((b) => {
-    b.classList.toggle('active', !!ledDraft && b.getAttribute('data-led-face') === ledDraft.face);
+    b.classList.toggle('active', b.getAttribute('data-led-face') === botao);
   });
+  set('po-led-side-hint', (vi && linha) ? ledNomeFace(vi, linha.face) : '');
   document.querySelectorAll('#po-led-modal [data-led-orient]').forEach((b) => {
-    b.classList.toggle('active', !!ledDraft && b.getAttribute('data-led-orient') === ledDraft.orientacao);
+    b.classList.toggle('active', !!linha && b.getAttribute('data-led-orient') === linha.orientacao);
   });
   // rótulos seguem a vista da peça: horizontal mede a posição da borda de
   // CIMA da vista e as margens nas bordas esquerda/direita; vertical, o
   // contrário
-  const vert = !!ledDraft && ledDraft.orientacao === 'v';
+  const vert = !!linha && linha.orientacao === 'v';
   if (vi) {
     set('po-led-pos-label', I18n.t('led.dist_' + (vert ? vi.bordas.esq : vi.bordas.cima)));
     set('po-led-mini-label', I18n.t('led.margin_' + (vert ? vi.bordas.cima : vi.bordas.esq)));
@@ -3424,35 +3487,38 @@ function renderProjectLedForm(slot) {
   }
   [['po-led-pos', 'pos_mm'], ['po-led-margin-ini', 'margem_ini_mm'], ['po-led-margin-fim', 'margem_fim_mm']].forEach(([id, campo]) => {
     const inp = document.getElementById(id);
-    if (inp && ledDraft && document.activeElement !== inp) inp.value = ledDraft[campo];
+    if (inp && linha && document.activeElement !== inp) inp.value = linha[campo];
   });
-  const cfg = ledConfigDoRascunho();
-  const { layout, erro } = ledAvaliar(cfg, part);
+  const cfg = ledConfigDaLinha(linha);
+  const { layout } = ledAvaliar(cfg, part);
   set('po-led-length', (layout && !layout.erro) ? (Math.round(layout.comprimento_mm * 10) / 10) + ' mm' : '—');
-  set('po-led-groove', cfg ? I18n.t('led.groove_fmt', { w: cfg.largura_mm, p: cfg.profundidade_mm, f: ledNomeFace(vi, cfg.face) }) : '—');
+  set('po-led-groove', cfg ? I18n.t('led.groove_fmt', { w: cfg.largura_mm, p: cfg.profundidade_mm,
+    f: I18n.t(botao === 'top' ? 'led.face_top_btn' : 'led.face_under_btn') + ' (' + ledNomeFace(vi, cfg.face) + ')' }) : '—');
+  const geral = ledErroGeral(part);
   const errEl = document.getElementById('po-led-error');
-  if (errEl) { errEl.textContent = erro || ''; errEl.style.display = erro ? '' : 'none'; }
+  if (errEl) { errEl.textContent = geral.erro || ''; errEl.style.display = geral.erro ? '' : 'none'; }
   const apply = document.getElementById('po-led-apply-btn');
-  if (apply) apply.disabled = !!erro;
+  if (apply) apply.disabled = !!geral.erro;
   const rem = document.getElementById('po-led-remove-btn');
-  if (rem) rem.style.visibility = (part && slot.ledConfigs && slot.ledConfigs[part.piece_id]) ? 'visible' : 'hidden';
-  renderProjectLed2D(part, layout, !!erro);
+  if (rem) rem.style.visibility = (part && Pricing.ledLista(slot.ledConfigs && slot.ledConfigs[part.piece_id]).length) ? 'visible' : 'hidden';
+  renderProjectLed2D(part);
 }
 
-// VISTA 2D da peça (2026-09-30, 2ª rodada — Matt: "é importante ter um
-// visualizador 2D da peça, em visão paralela, mostrando um tracejado onde vai
-// ficar o LED"). SVG em milímetros: a peça, o rasgo tracejado e as cotas
-// (posição, as duas margens e o que sobra do outro lado), com o nome de cada
-// borda. Mesma vista que Pricing.ledLayout usa (a = esquerda→direita,
-// b = cima→baixo), então o que está desenhado é o que vai pro .ban.
-function renderProjectLed2D(part, L, comErro) {
+// VISTA 2D da peça (2026-09-30 — Matt: "é importante ter um visualizador 2D
+// da peça, em visão paralela, mostrando um tracejado onde vai ficar o LED").
+// SVG em milímetros: a peça, todas as linhas de LED (a escolhida em laranja,
+// as outras mais claras) e as cotas da escolhida, com o nome de cada borda.
+// 3ª rodada: ARRASTÁVEL — pegar o meio da linha move a distância; as
+// bolinhas das pontas mexem cada margem (ver o arraste em ligaLedEmbutido).
+function renderProjectLed2D(part) {
   const el = document.getElementById('po-led-2d');
   const tit = document.getElementById('po-led-2d-view');
   if (!el) return;
-  if (!part || !L) { el.innerHTML = ''; if (tit) tit.textContent = ''; return; }
-  const vi = L.vista;
+  const vi = ledVistaDaPeca(part);
+  const e = part ? Pricing.ledEixos(part) : null;
+  if (!part || !vi || !e || !ledDraft) { el.innerHTML = ''; if (tit) tit.textContent = ''; return; }
   if (tit) tit.textContent = '· ' + I18n.t('led.view_' + vi.nome) + (part.reference ? ' · ' + part.reference : '');
-  const W = L.W, H = L.H;
+  const W = Number(e.sizes[vi.h]) || 0, H = Number(e.sizes[vi.v]) || 0;
   const M = Math.max(W, H);
   const fs = M * 0.034;             // fonte em mm do desenho
   const pad = fs * 4.2;
@@ -3462,41 +3528,98 @@ function renderProjectLed2D(part, L, comErro) {
     + '" text-anchor="middle" dominant-baseline="middle"' + (extra || '') + '>' + esc(txt) + '</text>';
   const linha = (x1, y1, x2, y2) => '<line x1="' + r(x1) + '" y1="' + r(y1) + '" x2="' + r(x2) + '" y2="' + r(y2)
     + '" class="cota" vector-effect="non-scaling-stroke" stroke-width="1"/>';
-  // cota horizontal/vertical com tracinhos nas pontas e o valor no meio
   const tick = fs * 0.35;
   const cotaH = (x1, x2, y) => (Math.abs(x2 - x1) < 0.05) ? '' : linha(x1, y, x2, y) + linha(x1, y - tick, x1, y + tick) + linha(x2, y - tick, x2, y + tick)
     + t((x1 + x2) / 2, y - fs * 0.75, r(Math.abs(x2 - x1)), 'cota-txt');
   const cotaV = (y1, y2, x) => (Math.abs(y2 - y1) < 0.05) ? '' : linha(x, y1, x, y2) + linha(x - tick, y1, x + tick, y1) + linha(x - tick, y2, x + tick, y2)
     + t(x - fs * 0.75, (y1 + y2) / 2, r(Math.abs(y2 - y1)), 'cota-txt', ' transform="rotate(-90 ' + r(x - fs * 0.75) + ' ' + r((y1 + y2) / 2) + ')"');
-  const a0 = Math.max(L.a0, 0), a1 = Math.min(L.a1, W), b0 = Math.max(L.b0, 0), b1 = Math.min(L.b1, H);
   let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + r(-pad) + ' ' + r(-pad) + ' ' + r(W + 2 * pad) + ' ' + r(H + 2 * pad)
     + '" preserveAspectRatio="xMidYMid meet">';
   svg += '<rect x="0" y="0" width="' + r(W) + '" height="' + r(H) + '" class="peca" vector-effect="non-scaling-stroke" stroke-width="1.5"/>';
-  // nomes das bordas
   svg += t(W / 2, -pad + fs * 0.9, I18n.t('led.edge_' + vi.bordas.cima), 'borda-txt');
   svg += t(W / 2, H + pad - fs * 0.9, I18n.t('led.edge_' + vi.bordas.baixo), 'borda-txt');
   svg += t(-pad + fs * 0.9, H / 2, I18n.t('led.edge_' + vi.bordas.esq), 'borda-txt', ' transform="rotate(-90 ' + r(-pad + fs * 0.9) + ' ' + r(H / 2) + ')"');
   svg += t(W + pad - fs * 0.9, H / 2, I18n.t('led.edge_' + vi.bordas.dir), 'borda-txt', ' transform="rotate(90 ' + r(W + pad - fs * 0.9) + ' ' + r(H / 2) + ')"');
-  if (a1 > a0 && b1 > b0) {
-    svg += '<rect x="' + r(a0) + '" y="' + r(b0) + '" width="' + r(a1 - a0) + '" height="' + r(b1 - b0) + '" class="led' + (comErro ? ' erro' : '')
-      + '" vector-effect="non-scaling-stroke" stroke-width="1.5"/>';
-    const off = fs * 2.2;
-    if (L.led.orientacao === 'v') {
-      // margens (cima/baixo) à direita do rasgo; posição e o resto embaixo
-      const x = Math.min(a1 + off, W + pad * 0.55);
-      svg += cotaV(0, b0, x) + cotaV(b1, H, x);
-      const y = H + fs * 1.6;
-      svg += cotaH(0, a0, y) + cotaH(a1, W, y);
-    } else {
-      // margens (esquerda/direita) embaixo do rasgo; posição e resto à esquerda
-      const y = Math.min(b1 + off, H + pad * 0.55);
-      svg += cotaH(0, a0, y) + cotaH(a1, W, y);
-      const x = -fs * 1.6;
-      svg += cotaV(0, b0, x) + cotaV(b1, H, x);
+  const grab = Math.max(fs * 0.9, 1);   // área de pegar em volta da linha
+  const desenha = (i, ativo) => {
+    const { layout: L, erro } = ledAvaliar(ledConfigDaLinha(ledDraft.linhas[i]), part);
+    if (!L) return '';
+    const a0 = Math.max(L.a0, 0), a1 = Math.min(L.a1, W), b0 = Math.max(L.b0, 0), b1 = Math.min(L.b1, H);
+    if (!(a1 > a0 && b1 > b0)) return '';
+    let s = '';
+    const vert = L.led.orientacao === 'v';
+    // alça invisível mais gorda que o rasgo (17,5 mm some numa peça de 2 m)
+    const hx = vert ? a0 - grab : a0, hy = vert ? b0 : b0 - grab;
+    const hw = vert ? (a1 - a0) + 2 * grab : a1 - a0, hh = vert ? b1 - b0 : (b1 - b0) + 2 * grab;
+    s += '<rect x="' + r(a0) + '" y="' + r(b0) + '" width="' + r(a1 - a0) + '" height="' + r(b1 - b0) + '" class="led'
+      + (ativo ? '' : ' outro') + (erro ? ' erro' : '') + '" vector-effect="non-scaling-stroke" stroke-width="1.5"/>';
+    s += '<rect x="' + r(hx) + '" y="' + r(hy) + '" width="' + r(hw) + '" height="' + r(hh) + '" fill="transparent" class="led"'
+      + ' style="stroke:none" data-led-drag="corpo" data-led-idx="' + i + '"/>';
+    if (ativo) {
+      const rr = fs * 0.45;
+      const pontas = vert
+        ? [[(a0 + a1) / 2, b0, 'ini'], [(a0 + a1) / 2, b1, 'fim']]
+        : [[a0, (b0 + b1) / 2, 'ini'], [a1, (b0 + b1) / 2, 'fim']];
+      pontas.forEach(([x, y, q]) => {
+        s += '<circle cx="' + r(x) + '" cy="' + r(y) + '" r="' + r(rr) + '" class="ponta' + (vert ? ' v' : '') + '" data-led-drag="' + q + '" data-led-idx="' + i + '"/>';
+      });
+      const off = fs * 2.2;
+      if (vert) {
+        const x = Math.min(a1 + off, W + pad * 0.55);
+        s += cotaV(0, b0, x) + cotaV(b1, H, x);
+        const y = H + fs * 1.6;
+        s += cotaH(0, a0, y) + cotaH(a1, W, y);
+      } else {
+        const y = Math.min(b1 + off, H + pad * 0.55);
+        s += cotaH(0, a0, y) + cotaH(a1, W, y);
+        const x = -fs * 1.6;
+        s += cotaV(0, b0, x) + cotaV(b1, H, x);
+      }
     }
-  }
+    return s;
+  };
+  ledDraft.linhas.forEach((_, i) => { if (i !== ledDraft.idx) svg += desenha(i, false); });
+  svg += desenha(ledDraft.idx, true);   // a escolhida por cima
   svg += '</svg>';
   el.innerHTML = svg;
+}
+
+// Arrastar na vista 2D. Coordenada do mouse -> mm do desenho pela matriz do
+// próprio SVG (getScreenCTM), então funciona em qualquer tamanho da janela.
+let ledArraste = null;
+function ledPontoSvg(ev) {
+  const svg = document.querySelector('#po-led-2d svg');
+  if (!svg || !svg.getScreenCTM || !svg.createSVGPoint) return null;
+  const m = svg.getScreenCTM();
+  if (!m) return null;
+  const p = svg.createSVGPoint();
+  p.x = ev.clientX; p.y = ev.clientY;
+  const q = p.matrixTransform(m.inverse());
+  return { x: q.x, y: q.y };
+}
+function ledAplicarArraste(slot, ponto, a) {
+  if (!a) return;
+  const l = ledDraft && ledDraft.linhas[a.idx];
+  const part = ledPecaSelecionada(slot);
+  if (!l || !part || !ponto) return;
+  const e = Pricing.ledEixos(part), vi = ledVistaDaPeca(part);
+  const W = Number(e.sizes[vi.h]) || 0, H = Number(e.sizes[vi.v]) || 0;
+  const larg = Number(ledModeloPorId(l.modelo_id).largura_mm) || 0;
+  const meio = (v) => Math.round(v * 2) / 2;       // passo de 0,5 mm
+  const lim = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(hi, lo));
+  const vert = l.orientacao === 'v';
+  if (a.modo === 'corpo') {
+    const d = vert ? ponto.x - a.inicio.x : ponto.y - a.inicio.y;
+    l.pos_mm = meio(lim(a.pos0 + d, 0, (vert ? W : H) - larg));
+  } else {
+    const comp = vert ? H : W;
+    const coord = vert ? ponto.y : ponto.x;
+    const outra = a.modo === 'ini' ? l.margem_fim_mm : l.margem_ini_mm;
+    const v = a.modo === 'ini' ? coord : comp - coord;
+    l[a.modo === 'ini' ? 'margem_ini_mm' : 'margem_fim_mm'] = meio(lim(v, 0, comp - outra - 10));
+  }
+  renderProjectLedForm(slot);
+  agendarPreviewLed(slot);
 }
 
 // 3D do módulo com o RASCUNHO aplicado na peça escolhida (prévia ao vivo) +
@@ -3511,8 +3634,10 @@ function renderProjectLedPreview(slot) {
   if (typeof ledViewer.setOrbitFree === 'function') ledViewer.setOrbitFree(true);
   const configs = Object.assign({}, slot.ledConfigs || {});
   const part = ledPecaSelecionada(slot);
-  const cfg = ledConfigDoRascunho();
-  if (part && cfg && !ledAvaliar(cfg, part).erro) configs[part.piece_id] = cfg;
+  if (part && ledDraft) {
+    const validas = ledConfigsDoRascunho().filter((c) => !ledAvaliar(c, part).erro);
+    if (validas.length) configs[part.piece_id] = validas; else delete configs[part.piece_id];
+  }
   const asm = buildCompositionAssemblies([{
     pieces: projectSlotEffectivePiecesWithLeds(slot, configs),
     width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
@@ -3537,9 +3662,8 @@ function agendarPreviewLed(slot) {
 
 function aplicarLedNaPeca(slot) {
   const part = ledPecaSelecionada(slot);
-  const cfg = ledConfigDoRascunho();
-  if (!part || ledAvaliar(cfg, part).erro) return;
-  slot.ledConfigs = Object.assign({}, slot.ledConfigs || {}, { [part.piece_id]: cfg });
+  if (!part || ledErroGeral(part).erro) return;
+  slot.ledConfigs = Object.assign({}, slot.ledConfigs || {}, { [part.piece_id]: ledConfigsDoRascunho() });
   recomputeProjectSlotPricing(slot);
   renderProjectCanvas();
   markProjectDirty();
@@ -3579,8 +3703,12 @@ function removerLedDaPeca(slot) {
   };
   const fechar = document.getElementById('po-led-close');
   if (fechar) fechar.addEventListener('click', fecha);
-  modal.addEventListener('click', (e) => { if (e.target === modal) fecha(); });
+  // soltar um arraste da vista 2D em cima do fundo escuro NÃO fecha a janela
+  // (o navegador manda o click pro ancestral comum, que pode ser o fundo)
+  let fimArraste = 0;
+  modal.addEventListener('click', (e) => { if (e.target === modal && Date.now() - fimArraste > 400) fecha(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) fecha(); });
+  const redesenha = (slot) => { renderProjectLedForm(slot); agendarPreviewLed(slot); };
 
   const lista = document.getElementById('po-led-pieces');
   if (lista) lista.addEventListener('click', (e) => {
@@ -3590,39 +3718,95 @@ function removerLedDaPeca(slot) {
     ledSelecionarPeca(slot, btn.getAttribute('data-led-piece'));
     renderProjectLedPreview(slot);
   });
-  const liga = (sel, campo) => modal.querySelectorAll(sel).forEach((bt) => bt.addEventListener('click', () => {
+  // linhas de LED: escolher / adicionar / tirar
+  const linhasEl = document.getElementById('po-led-lines');
+  if (linhasEl) linhasEl.addEventListener('click', (e) => {
     const slot = slotAtual();
     if (!slot || !ledDraft) return;
-    ledDraft[campo] = bt.getAttribute(sel.slice(1, -1));
-    renderProjectLedForm(slot);
-    agendarPreviewLed(slot);
+    const del = e.target.closest('[data-led-line-del]');
+    const add = e.target.closest('[data-led-line-add]');
+    const sel = e.target.closest('[data-led-line]');
+    if (del) {
+      const i = Number(del.getAttribute('data-led-line-del'));
+      if (ledDraft.linhas.length > 1) {
+        ledDraft.linhas.splice(i, 1);
+        if (ledDraft.idx >= i && ledDraft.idx > 0) ledDraft.idx -= 1;
+        ledDraft.idx = Math.min(ledDraft.idx, ledDraft.linhas.length - 1);
+      }
+    } else if (add) {
+      ledDraft.linhas.push(ledLinhaPadrao(ledPecaSelecionada(slot), ledDraft.linhas[ledDraft.linhas.length - 1]));
+      ledDraft.idx = ledDraft.linhas.length - 1;
+    } else if (sel) {
+      ledDraft.idx = Number(sel.getAttribute('data-led-line'));
+    } else return;
+    redesenha(slot);
+  });
+  modal.querySelectorAll('[data-led-face]').forEach((bt) => bt.addEventListener('click', () => {
+    const slot = slotAtual();
+    const l = ledLinhaAtual();
+    if (!slot || !l) return;
+    l.face = ledFaceDoBotao(ledPecaSelecionada(slot), bt.getAttribute('data-led-face'));
+    redesenha(slot);
   }));
-  liga('[data-led-face]', 'face');
-  liga('[data-led-orient]', 'orientacao');
+  modal.querySelectorAll('[data-led-orient]').forEach((bt) => bt.addEventListener('click', () => {
+    const slot = slotAtual();
+    const l = ledLinhaAtual();
+    if (!slot || !l) return;
+    l.orientacao = bt.getAttribute('data-led-orient');
+    redesenha(slot);
+  }));
   const sel = document.getElementById('po-led-model');
   if (sel) sel.addEventListener('change', () => {
     const slot = slotAtual();
-    if (!slot || !ledDraft) return;
-    ledDraft.modelo_id = sel.value;
-    renderProjectLedForm(slot);
-    agendarPreviewLed(slot);
+    const l = ledLinhaAtual();
+    if (!slot || !l) return;
+    l.modelo_id = sel.value;
+    redesenha(slot);
   });
-  // Campo vazio no meio da digitação conta 0 (não volta pro valor antigo) —
-  // "quando coloco 0 ele continua 30".
+  // Campo vazio no meio da digitação conta 0 (não volta pro valor antigo).
   [['po-led-pos', 'pos_mm'], ['po-led-margin-ini', 'margem_ini_mm'], ['po-led-margin-fim', 'margem_fim_mm']].forEach(([id, campo]) => {
     const inp = document.getElementById(id);
     if (!inp) return;
     const muda = () => {
       const slot = slotAtual();
-      if (!slot || !ledDraft) return;
+      const l = ledLinhaAtual();
+      if (!slot || !l) return;
       const v = parseFloat(String(inp.value).replace(',', '.'));
-      ledDraft[campo] = isFinite(v) && v > 0 ? v : 0;
-      renderProjectLedForm(slot);
-      agendarPreviewLed(slot);
+      l[campo] = isFinite(v) && v > 0 ? v : 0;
+      redesenha(slot);
     };
     inp.addEventListener('input', muda);
     inp.addEventListener('change', muda);
   });
+  // ARRASTE na vista 2D (3ª rodada — Matt: "tem como arrastar com mouse essa
+  // linha, seja vertical ou horizontal"). Meio da linha = distância; bolinha
+  // da ponta = margem daquela ponta. Pegar uma linha que não é a escolhida
+  // já passa a editar ela.
+  const area = document.getElementById('po-led-2d');
+  if (area) {
+    area.addEventListener('pointerdown', (ev) => {
+      const alvo = ev.target.closest && ev.target.closest('[data-led-drag]');
+      const slot = slotAtual();
+      if (!alvo || !slot || !ledDraft) return;
+      const idx = Number(alvo.getAttribute('data-led-idx'));
+      const l = ledDraft.linhas[idx];
+      const ponto = ledPontoSvg(ev);
+      if (!l || !ponto) return;
+      ev.preventDefault();
+      ledDraft.idx = idx;
+      ledArraste = { idx, modo: alvo.getAttribute('data-led-drag'), inicio: ponto, pos0: Number(l.pos_mm) || 0 };
+      renderProjectLedForm(slot);
+    });
+    const move = (ev) => {
+      if (!ledArraste) return;
+      const slot = slotAtual();
+      if (slot) ledAplicarArraste(slot, ledPontoSvg(ev), ledArraste);
+    };
+    const solta = () => { if (ledArraste) fimArraste = Date.now(); ledArraste = null; };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', solta);
+    window.addEventListener('pointercancel', solta);
+  }
   const apply = document.getElementById('po-led-apply-btn');
   if (apply) apply.addEventListener('click', () => { const slot = slotAtual(); if (slot) aplicarLedNaPeca(slot); });
   const rem = document.getElementById('po-led-remove-btn');
