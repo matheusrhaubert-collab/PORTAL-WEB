@@ -83,7 +83,11 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
       let pecasDoConstrutor = [];
       if (Array.isArray(item.layout) && item.layout.length && catAgregados) {
         try {
-          pecasDoConstrutor = LayoutEngine.toPieceRows(item.layout, catAgregados) || [];
+          pecasDoConstrutor = LayoutEngine.toPieceRows(item.layout,
+          // MODELO DE PORTA (migration 188): porta trocada (ex.: Glass
+          // Aluminium) vem com accKey sintético 'dm:...' — carrega a
+          // engenharia do modelo no catálogo. Sem troca, catálogo intacto.
+          (typeof ensureDoorModelCatalog === 'function') ? await ensureDoorModelCatalog(catAgregados, item.layout) : catAgregados) || [];
         } catch (e) {
           console.error('[furacao-ban] geometria do construtor deste item não resolveu:', e);
         }

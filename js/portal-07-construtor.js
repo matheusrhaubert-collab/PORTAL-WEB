@@ -2556,6 +2556,11 @@ function rebuildProjectSlotLayoutPieces(slot) {
     const cascoBoxes = computeProjectSlotCascoBoxes(slot, false, true);
     clipProjectInternalsAgainstCasco(built.pieces, cascoBoxes);
     recortarInternosContraCasco(built.pieces, cascoBoxes);
+    // MODELO DE PORTA (migration 188): troca o accKey das portas de abrir
+    // giro pelo do modelo escolhido ANTES de virar linha e ANTES de congelar
+    // (_layoutGeometry vai pro pedido — o ERP refaz a furação dela). Flat
+    // (padrão) = o mesmo array, intocado.
+    built.pieces = applySlotDoorModelToPieces(slot, built.pieces);
     slot.layoutPieces = projectLayoutRowsForSlot(slot, built.pieces);
     // GEOMETRIA CONGELÁVEL (migration 121, Caminho B da furação do
     // construtor — ver [[construtor_como_motor_principal]]). `built.pieces`
@@ -2595,6 +2600,126 @@ function rebuildProjectSlotLayoutPieces(slot) {
 // de hingeModel, só deixa `hinge_cost=0` (mesma filosofia das outras
 // duas): a porta sempre abre/fura conforme o mecanismo dela, o que pode
 // faltar é só o preço da dobradiça física até alguém escolher o modelo.
+// ==========================================================================
+// MODELO DE PORTA no projeto (migration 188, 2026-10-02). Matt: "preciso que
+// eu possa substituir portas de abrir giro por portas de alumínio... de
+// padrão entra sempre a flat. não mude nada do que já está funcionando."
+//   slot.doorModelId = null  -> Flat (padrão): NADA muda, nenhuma troca.
+//   slot.doorModelId = <id>  -> toda porta de abrir giro (agregado do
+//     Construtor com door_mechanism='porta_giro', externa ou interna) vira a
+//     engenharia do modelo (door_models.child_module_id), mesma medida,
+//     posição e lado de dobradiça. Ver js/module-pieces.js (accKey 'dm:...').
+// ==========================================================================
+let projectDoorModelsCache = null;
+let projectDoorModelsLoading = null;
+async function ensureProjectDoorModels() {
+  if (projectDoorModelsCache) return projectDoorModelsCache;
+  if (projectDoorModelsLoading) return projectDoorModelsLoading;
+  projectDoorModelsLoading = (async () => {
+    try {
+      const { data, error } = await supabaseClient.from('door_models').select('*')
+        .eq('active', true).order('sort_order').order('name');
+      projectDoorModelsCache = error ? [] : (data || []);
+    } catch (e) { projectDoorModelsCache = []; }
+    projectDoorModelsLoading = null;
+    return projectDoorModelsCache;
+  })();
+  return projectDoorModelsLoading;
+}
+
+// Modelo efetivo do slot que TROCA alguma coisa (null = Flat/padrão).
+function projectSlotDoorModel(slot) {
+  if (!slot || !slot.doorModelId || !projectDoorModelsCache) return null;
+  const m = projectDoorModelsCache.find((x) => x.id === slot.doorModelId);
+  if (!m || !m.child_module_id || m.slug === 'flat') return null;
+  return m;
+}
+
+function isPortaGiroAccKey(key) {
+  const k = (typeof parseDoorModelKey === 'function') ? parseDoorModelKey(key) : null;
+  const acc = accessoryCatalogCache && accessoryCatalogCache[k ? k.accKey : key];
+  return !!(acc && acc.door_mechanism === 'porta_giro');
+}
+
+// Slot tem porta de abrir giro? (decide se o seletor aparece no painel)
+function projectSlotHasPortaGiro(slot) {
+  return ((slot && slot._layoutGeometry) || []).some((p) => p && isPortaGiroAccKey(p.accKey));
+}
+
+// Troca (ou destroca) o accKey das portas de abrir giro conforme o modelo do
+// slot. Engenharia ainda não carregada = fica Flat por enquanto (o seletor
+// carrega e recalcula). Sem porta de giro / sem módulo-pieces novo: devolve
+// o MESMO array.
+function applySlotDoorModelToPieces(slot, pieces) {
+  if (typeof parseDoorModelKey !== 'function' || !Array.isArray(pieces)) return pieces;
+  const m = projectSlotDoorModel(slot);
+  const alvo = (m && doorModelExtrasCache[m.child_module_id]) ? m.child_module_id : null;
+  let mudou = false;
+  const out = pieces.map((p) => {
+    if (!p || !p.accKey) return p;
+    const k = parseDoorModelKey(p.accKey);
+    const orig = k ? k.accKey : p.accKey;
+    if (!k && !alvo) return p;                 // Flat e peça nunca trocada: intocada
+    if (!isPortaGiroAccKey(orig)) return p;
+    const novo = alvo ? doorModelKey(alvo, orig) : orig;
+    if (novo === p.accKey) return p;
+    mudou = true;
+    return Object.assign({}, p, { accKey: novo });
+  });
+  return mudou ? out : pieces;
+}
+
+// Cores dos papéis PRÓPRIOS do modelo (ex.: "Perfil alumínio", "Vidro") —
+// as opções vêm do module_colors do módulo de engenharia; a 1ª entra como
+// escolhida se o slot ainda não tem cor nesse papel.
+function applySlotDoorModelColors(slot) {
+  const m = projectSlotDoorModel(slot);
+  const ex = m && doorModelExtrasCache[m.child_module_id];
+  if (!ex || !ex.color_options_by_role) return;
+  slot.colorOptionsByRole = slot.colorOptionsByRole || {};
+  Object.keys(ex.color_options_by_role).forEach((roleId) => {
+    const opts = ex.color_options_by_role[roleId] || [];
+    if (!opts.length) return;
+    slot.colorOptionsByRole[roleId] = opts;
+    const atual = (slot.colorsByRole || {})[roleId];
+    if (!atual || !opts.some((c) => c.id === atual.id)) applyColorToProjectSlot(slot, roleId, opts[0]);
+  });
+}
+
+// Clique no cartão do modelo (painel do módulo). modelId null/Flat = volta
+// pra porta original do módulo e limpa os papéis de cor que eram só do modelo.
+async function setProjectSlotDoorModel(slot, modelId) {
+  if (!slot) return;
+  await ensureProjectDoorModels();
+  const m = (projectDoorModelsCache || []).find((x) => x.id === modelId) || null;
+  const anterior = projectSlotDoorModel(slot);
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  if (m && m.child_module_id && m.slug !== 'flat') {
+    try { await loadDoorModelExtras(m.child_module_id); } catch (e) { console.error('[modelo de porta]', e); return; }
+    slot.doorModelId = m.id;
+  } else {
+    slot.doorModelId = null;
+  }
+  // papéis que eram só do modelo anterior (e não do módulo) saem do slot
+  const exAnt = anterior && doorModelExtrasCache[anterior.child_module_id];
+  const novo = projectSlotDoorModel(slot);
+  const exNovo = novo && doorModelExtrasCache[novo.child_module_id];
+  if (exAnt && exAnt.color_options_by_role) {
+    const doModulo = collectUsedColorRoleIds(slot.pieces || []);
+    Object.keys(exAnt.color_options_by_role).forEach((roleId) => {
+      if (doModulo.has(roleId)) return;
+      if (exNovo && exNovo.color_options_by_role && exNovo.color_options_by_role[roleId]) return;
+      if (slot.colorsByRole) delete slot.colorsByRole[roleId];
+      if (slot.colorOptionsByRole) delete slot.colorOptionsByRole[roleId];
+      slot.selectedColors = (slot.selectedColors || []).filter((sc) => sc.role_id !== roleId);
+    });
+  }
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[modelo de porta] preço:', e); }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+}
+
 function projectLayoutRowsForSlot(slot, pieces) {
   // PÉ PLÁSTICO (2026-08-19, Matt: "os agregados do construtor pra todos
   // modulos com pes de plastico estao ficando 114mm pra cima do ponto
@@ -2621,7 +2746,12 @@ function projectLayoutRowsForSlot(slot, pieces) {
   const pecas = legH_mm
     ? (pieces || []).map((p) => Object.assign({}, p, { y: (Number(p.y) || 0) - legH_mm }))
     : (pieces || []);
-  const rows = LayoutEngine.toPieceRows(pecas, accessoryCatalogCache);
+  // MODELO DE PORTA (migration 188) — idempotente (rebuild já trocou; o
+  // save do Construtor chega aqui com as peças cruas da janela).
+  const pecasModelo = applySlotDoorModelToPieces(slot, pecas);
+  const rows = LayoutEngine.toPieceRows(pecasModelo,
+    (typeof doorModelCatalogFor === 'function') ? doorModelCatalogFor(accessoryCatalogCache, pecasModelo) : accessoryCatalogCache);
+  applySlotDoorModelColors(slot);
   const escolhidas = slot.colorsByRole || {};
   const papeisComCor = Object.keys(escolhidas).filter((k) => escolhidas[k]);
   rows.forEach((r) => {
@@ -2707,6 +2837,17 @@ function hydrateProjectLayoutPieces() {
   if (!projectSlots.some((s) => s.layout)) return;
   (async () => {
     await ensureAccessoryCatalog();
+    // MODELO DE PORTA (migration 188): engenharia carregada antes do rebuild,
+    // senão o projeto reabre com a porta Flat até o próximo recálculo.
+    if (projectSlots.some((s) => s.doorModelId)) {
+      try {
+        await ensureProjectDoorModels();
+        await Promise.all(projectSlots.map((s) => {
+          const m = projectSlotDoorModel(s);
+          return m ? loadDoorModelExtras(m.child_module_id).catch(() => null) : null;
+        }));
+      } catch (e) { /* segue Flat */ }
+    }
     projectSlots.forEach((slot) => {
       if (!slot.layout) return;
       rebuildProjectSlotLayoutPieces(slot);

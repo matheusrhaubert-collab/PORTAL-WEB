@@ -782,3 +782,116 @@ function collectUsedColorRoleIds(piecesList) {
   });
   return ids;
 }
+
+// ==========================================================================
+// MODELO DE PORTA (migration 188, 2026-10-02) — troca as portas de abrir giro
+// do Construtor pela engenharia de um modelo (ex.: Glass Aluminium = perfil
+// de alumínio + vidro). Aqui (e não em portal-07) porque o ERP precisa da
+// MESMA resolução pra refazer a furação a partir da geometria congelada no
+// pedido (order_items.layout): a peça trocada carrega um accKey sintético
+// 'dm:<child_module_id>:<accKey original>', e qualquer catálogo de agregados
+// (portal ou ERP) ganha a entrada correspondente por estas funções — sem a
+// entrada, LayoutEngine.toPieceRows simplesmente não gera a peça.
+// Flat (padrão) = nenhuma troca; nada disto roda.
+// ==========================================================================
+const DOOR_MODEL_KEY_PREFIX = 'dm:';
+const doorModelExtrasCache = {};      // { [child_module_id]: extras }
+const doorModelExtrasLoading = {};    // { [child_module_id]: Promise }
+
+function doorModelKey(childModuleId, accKey) {
+  return DOOR_MODEL_KEY_PREFIX + childModuleId + ':' + accKey;
+}
+function parseDoorModelKey(key) {
+  if (typeof key !== 'string' || key.indexOf(DOOR_MODEL_KEY_PREFIX) !== 0) return null;
+  const resto = key.slice(DOOR_MODEL_KEY_PREFIX.length);
+  const i = resto.indexOf(':');
+  if (i < 0) return null;
+  return { childModuleId: resto.slice(0, i), accKey: resto.slice(i + 1) };
+}
+
+// Peças (do módulo de engenharia) + cores permitidas por papel (module_colors
+// do módulo de engenharia — é de lá que saem as opções "Perfil alumínio" e
+// "Vidro" no painel). Cacheado por módulo.
+async function loadDoorModelExtras(childModuleId) {
+  if (!childModuleId) return null;
+  if (doorModelExtrasCache[childModuleId]) return doorModelExtrasCache[childModuleId];
+  if (doorModelExtrasLoading[childModuleId]) return doorModelExtrasLoading[childModuleId];
+  doorModelExtrasLoading[childModuleId] = (async () => {
+    const [fixedDepths, childPieces, lockedPresets, ownHingeSlide, cores] = await Promise.all([
+      fetchModuleFixedDepths(childModuleId),
+      loadRecursivePiecesForModule(childModuleId),
+      fetchModuleLockedDimensionPresets(childModuleId),
+      fetchModuleOwnHingeAndSlideModels(childModuleId),
+      supabaseClient.from('module_colors').select('color_role_id, colors(*)').eq('module_id', childModuleId)
+    ]);
+    const colorOptionsByRole = {};
+    ((cores && cores.data) || []).forEach((r) => {
+      if (!r.colors || r.colors.active === false) return;
+      (colorOptionsByRole[r.color_role_id] = colorOptionsByRole[r.color_role_id] || []).push(r.colors);
+    });
+    Object.keys(colorOptionsByRole).forEach((k) => {
+      colorOptionsByRole[k].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)));
+    });
+    const extras = {
+      module_meta: { name: lockedPresets.name },
+      fixed_depths: fixedDepths,
+      locked_presets: lockedPresets,
+      own_hinge_slide: ownHingeSlide,
+      child_pieces: childPieces || [],
+      color_options_by_role: colorOptionsByRole
+    };
+    doorModelExtrasCache[childModuleId] = extras;
+    delete doorModelExtrasLoading[childModuleId];
+    return extras;
+  })();
+  return doorModelExtrasLoading[childModuleId];
+}
+
+// Entrada de catálogo pra um accKey sintético — a porta original (mesmo
+// agregado: papel de cor, mecanismo, posição) com a engenharia do modelo no
+// lugar do componente. null se a porta original ou a engenharia não estão
+// carregadas.
+function doorModelCatalogEntry(catalogo, key) {
+  const k = parseDoorModelKey(key);
+  if (!k || !catalogo) return null;
+  const orig = catalogo[k.accKey];
+  const ex = doorModelExtrasCache[k.childModuleId];
+  if (!orig || !ex) return null;
+  return Object.assign({}, orig, {
+    componente: null,
+    child_module_id: k.childModuleId,
+    module_meta: ex.module_meta,
+    fixed_depths: ex.fixed_depths,
+    locked_presets: ex.locked_presets,
+    own_hinge_slide: ex.own_hinge_slide,
+    child_pieces: ex.child_pieces
+  });
+}
+
+// Catálogo (cópia rasa) com as entradas sintéticas que `pieces` usa. SÍNCRONA:
+// só resolve engenharia já carregada (o portal chama dentro do recálculo de
+// preço, que roda a cada arraste). Sem accKey sintético, devolve o próprio
+// catálogo (zero custo, zero mudança).
+function doorModelCatalogFor(catalogo, pieces) {
+  const keys = (pieces || []).map((p) => p && p.accKey).filter((k) => parseDoorModelKey(k));
+  if (!keys.length) return catalogo;
+  const cat = Object.assign({}, catalogo || {});
+  keys.forEach((k) => {
+    if (cat[k]) return;
+    const e = doorModelCatalogEntry(catalogo, k);
+    if (e) cat[k] = e;
+  });
+  return cat;
+}
+
+// Versão ASSÍNCRONA (ERP: furação do lote / .ban por pedido) — carrega a
+// engenharia que faltar antes de montar o catálogo.
+async function ensureDoorModelCatalog(catalogo, pieces) {
+  const ids = Array.from(new Set((pieces || []).map((p) => {
+    const k = parseDoorModelKey(p && p.accKey);
+    return k ? k.childModuleId : null;
+  }).filter(Boolean)));
+  if (!ids.length) return catalogo;
+  await Promise.all(ids.map((id) => loadDoorModelExtras(id).catch((e) => { console.error('[modelo de porta]', e); return null; })));
+  return doorModelCatalogFor(catalogo, pieces);
+}

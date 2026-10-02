@@ -7117,6 +7117,8 @@ function serializeProjectSlots() {
     // Árvore de vãos montada no construtor de armário (spec §4.5 — cabe no
     // jsonb que já existe, sem migration). null = o cliente não mexeu.
     layout: slot.layout || null,
+    // Modelo de porta (migration 188) — null = Flat (padrão). Cabe no jsonb.
+    door_model_id: slot.doorModelId || null,
     thumbnail_data_url: slot.thumbnail_data_url || null,
     // Grupo de módulos (2026-09-03) — null/null = avulso. Ver
     // createProjectSlotGroup/ungroupProjectSlots (portal-06b) e a

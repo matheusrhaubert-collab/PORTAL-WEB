@@ -566,6 +566,26 @@ function renderProjectColorTabSwatches(groups) {
 // aninhada — casos avançados que duplicar aqui traria mais risco de
 // regressão (ver memória sobre fragilidade do 3D) do que valor pra Fase 1;
 // reabre o MESMO configurador único de sempre (editProjectSlot).
+// Desenho do cartão do MODELO DE PORTA (migration 188, door_models.preview).
+// Esquemático de propósito — o que o cliente precisa ver é a diferença de
+// construção (chapa lisa / quadro com vidro / quadro com almofada).
+function projectDoorModelPreviewSvg(kind) {
+  const ext = '<rect x="3" y="3" width="38" height="56" rx="1.5" fill="#f3efe8" stroke="#6b6358" stroke-width="1.5"/>';
+  const puxador = '<rect x="33" y="24" width="2.5" height="14" rx="1" fill="#6b6358"/>';
+  let miolo = '';
+  if (kind === 'vidro') {
+    miolo = '<rect x="3" y="3" width="38" height="56" rx="1.5" fill="#55524d"/>'
+      + '<rect x="9" y="9" width="26" height="44" fill="#bcd6dd" fill-opacity="0.85" stroke="#8fb2bc" stroke-width="0.8"/>'
+      + '<path d="M13 46 L29 14" stroke="#ffffff" stroke-opacity="0.8" stroke-width="1.6"/>'
+      + '<path d="M18 49 L31 23" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1"/>';
+    return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + miolo + '</svg>';
+  }
+  if (kind === 'shaker') {
+    miolo = '<rect x="10" y="10" width="24" height="42" fill="none" stroke="#6b6358" stroke-width="1.2"/>';
+  }
+  return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + ext + miolo + puxador + '</svg>';
+}
+
 function renderProjectConfigPanel() {
   const panel = document.getElementById('po-proj-config-panel');
   if (!panel) return;
@@ -663,6 +683,27 @@ function renderProjectConfigPanel() {
     `).join('');
     return `<div class="po-proj-color-role-group"><label>${roleName}</label><div class="po-proj-color-swatches">${swatches}</div></div>`;
   }).join('');
+
+  // MODELO DE PORTA (migration 188) — acima das cores, cartões com desenho.
+  // Só aparece se o módulo tem porta de abrir giro (Construtor) e existe mais
+  // de um modelo cadastrado. Padrão = Flat (slot.doorModelId null).
+  let doorModelBlock = '';
+  if (typeof projectSlotHasPortaGiro === 'function' && projectSlotHasPortaGiro(slot)) {
+    if (!projectDoorModelsCache) {
+      ensureProjectDoorModels().then(() => { if (selectedProjectSlotId === slot.id) renderProjectConfigPanel(); });
+    } else if (projectDoorModelsCache.length > 1) {
+      const efetivo = projectSlotDoorModel(slot);
+      const cards = projectDoorModelsCache.map((dm) => {
+        const ehFlat = !dm.child_module_id || dm.slug === 'flat';
+        const sel = efetivo ? efetivo.id === dm.id : ehFlat;
+        return `<button type="button" class="po-proj-door-model-card${sel ? ' selected' : ''}" data-door-model-id="${ehFlat ? '' : dm.id}" title="${dm.name}">
+          ${projectDoorModelPreviewSvg(dm.preview || (ehFlat ? 'flat' : 'shaker'))}
+          <span>${dm.name}</span>
+        </button>`;
+      }).join('');
+      doorModelBlock = `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.door_model_label')}</span><div class="po-proj-door-model-cards">${cards}</div></div>`;
+    }
+  }
 
   const depthLabel = Number(slot.z_order || 0) > 0
     ? I18n.t('project.config_depth_value_front', { n: slot.z_order })
@@ -807,6 +848,7 @@ function renderProjectConfigPanel() {
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
     </div>
     ${positionRow}
+    ${doorModelBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     ${moveBlock}
     ${positionBlock}
@@ -863,6 +905,12 @@ function renderProjectConfigPanel() {
       renderProjectConfigPanel();
     });
   }
+  panel.querySelectorAll('.po-proj-door-model-card').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('selected')) return;
+      setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
+    });
+  });
   panel.querySelectorAll('.po-proj-color-swatch').forEach((el) => {
     el.addEventListener('click', () => {
       const roleId = el.dataset.roleId;
