@@ -555,6 +555,39 @@ const Photoreal = (() => {
   // frente-direita numa diagonal; shape.x -> largura, shape.y -> profundidade
   // (+y = frente), extrusão -> espessura (Y), rotateX(+90°). Devolve null
   // sem chanfro válido — quem chama cai pro resolveContentPh de sempre.
+
+  // ---- PERFIL DE ALUMÍNIO com corte 45° (porta de vidro, 2026-10-02) ----
+  // components.shape_type = 'perfil45'. As 4 peças do quadro (laterais em pé,
+  // travessas deitadas) se encontram em meia-esquadria: a borda EXTERNA tem o
+  // comprimento cheio (= medida de corte, ponta longa) e a INTERNA perde a
+  // largura do perfil em cada ponta. O lado externo sai da posição da peça
+  // dentro da porta (centro à esquerda/abaixo do meio = borda externa à
+  // esquerda/embaixo). Trapézio no plano XY, extrudado na espessura (Z),
+  // centrado igual a BoxGeometry. null = sem corte válido (cai na caixa).
+  function buildPerfil45GeometryPh(part, w, h, d, offX, offY, W, H) {
+    if (!part || part.shape_type !== 'perfil45') return null;
+    if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
+    const ax = w / 2, by = h / 2;
+    const s = new T.Shape();
+    if (h >= w) {                                   // lateral (em pé)
+      if (h - 2 * w <= 0) return null;
+      const esquerda = (offX + w / 2) < W / 2;
+      if (esquerda) { s.moveTo(-ax, -by); s.lineTo(ax, -by + w); s.lineTo(ax, by - w); s.lineTo(-ax, by); }
+      else { s.moveTo(ax, -by); s.lineTo(ax, by); s.lineTo(-ax, by - w); s.lineTo(-ax, -by + w); }
+    } else {                                        // travessa (deitada)
+      if (w - 2 * h <= 0) return null;
+      const embaixo = (offY + h / 2) < H / 2;
+      if (embaixo) { s.moveTo(-ax, -by); s.lineTo(ax, -by); s.lineTo(ax - h, by); s.lineTo(-ax + h, by); }
+      else { s.moveTo(-ax, by); s.lineTo(-ax + h, -by); s.lineTo(ax - h, -by); s.lineTo(ax, by); }
+    }
+    s.closePath();
+    const g = new T.ExtrudeGeometry(s, { depth: d, bevelEnabled: false, steps: 1 });
+    g.translate(0, 0, -d / 2);
+    g.userData = g.userData || {};
+    g.userData.dimsMm = { w: w * 1000, h: h * 1000, d: d * 1000 };
+    return g;
+  }
+
   const CHANFRO45_LATERAL_MM_PH = 305;
   function buildChanfroGeometryPh(part, faceA, thickness, faceB) {
     if (!part || part.shape_type !== 'chanfro45') return null;
@@ -1332,7 +1365,8 @@ const Photoreal = (() => {
       const swapD = rotYd === 90 || rotYd === 270;
       emitInto(parentGroup, decorContent, null, -W / 2 + (swapD ? d : w) / 2 + offX, offY + legH, -D / 2 + (swapD ? w : d) / 2 + offZ, false);
     } else if (role === 'free') {
-      const content = resolveContentPh(part, w, h, d);
+      // perfil de alumínio 45° (porta de vidro) — igual viewer3d.js
+      const content = buildPerfil45GeometryPh(part, w, h, d, offX, offY, W, H) || resolveContentPh(part, w, h, d);
       // Giro de canto 90°/270° (migration 067): a POSIÇÃO troca w<->d igual
       // js/viewer3d.js ('free', swapFootprint) — o centro da peça girada é o
       // canto + meia PROFUNDIDADE em X e meia LARGURA em Z. Faltava aqui

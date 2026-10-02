@@ -2030,6 +2030,39 @@ const Viewer3D = (function () {
   // rotateX(+90°) faz exatamente essa troca. Mesma simplificação consciente
   // do L: peça chanfrada perde fita/miolo por face (material único da cor).
   // Devolve a BoxGeometry de sempre quando não há chanfro válido.
+
+  // ---- PERFIL DE ALUMÍNIO com corte 45° (porta de vidro, 2026-10-02) ----
+  // components.shape_type = 'perfil45'. As 4 peças do quadro (laterais em pé,
+  // travessas deitadas) se encontram em meia-esquadria: a borda EXTERNA tem o
+  // comprimento cheio (= medida de corte, ponta longa) e a INTERNA perde a
+  // largura do perfil em cada ponta. O lado externo sai da posição da peça
+  // dentro da porta (centro à esquerda/abaixo do meio = borda externa à
+  // esquerda/embaixo). Trapézio no plano XY, extrudado na espessura (Z),
+  // centrado igual a BoxGeometry. null = sem corte válido (cai na caixa).
+  function buildPerfil45Geometry(part, w, h, d, offX, offY, W, H) {
+    if (!part || part.shape_type !== 'perfil45') return null;
+    if (typeof THREE.Shape !== 'function' || typeof THREE.ExtrudeGeometry !== 'function') return null;
+    const ax = w / 2, by = h / 2;
+    const s = new THREE.Shape();
+    if (h >= w) {                                   // lateral (em pé)
+      if (h - 2 * w <= 0) return null;
+      const esquerda = (offX + w / 2) < W / 2;
+      if (esquerda) { s.moveTo(-ax, -by); s.lineTo(ax, -by + w); s.lineTo(ax, by - w); s.lineTo(-ax, by); }
+      else { s.moveTo(ax, -by); s.lineTo(ax, by); s.lineTo(-ax, by - w); s.lineTo(-ax, -by + w); }
+    } else {                                        // travessa (deitada)
+      if (w - 2 * h <= 0) return null;
+      const embaixo = (offY + h / 2) < H / 2;
+      if (embaixo) { s.moveTo(-ax, -by); s.lineTo(ax, -by); s.lineTo(ax - h, by); s.lineTo(-ax + h, by); }
+      else { s.moveTo(-ax, by); s.lineTo(-ax + h, -by); s.lineTo(ax - h, -by); s.lineTo(ax, by); }
+    }
+    s.closePath();
+    const g = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false, steps: 1 });
+    g.translate(0, 0, -d / 2);
+    g.userData = g.userData || {};
+    g.userData.dimsMm = { w: w * 1000, h: h * 1000, d: d * 1000 };
+    return g;
+  }
+
   const CHANFRO45_LATERAL_MM = 305;
   function buildHorizontalPanelGeometry(part, faceA, thickness, faceB) {
     const box = function () { return new THREE.BoxGeometry(faceA, thickness, faceB); };
@@ -3153,7 +3186,9 @@ const Viewer3D = (function () {
       // puxador). Repita quantas instâncias quiser com "+ Duplicar"
       // (migration 025), cada uma com sua própria posição — sem afetar as
       // outras.
-      const geometry = new THREE.BoxGeometry(w, h, d);
+      // Perfil de alumínio 45° (porta de vidro) desenha a meia-esquadria;
+      // qualquer outra peça 'free' continua a BoxGeometry de sempre.
+      const geometry = buildPerfil45Geometry(part, w, h, d, offX, offY, W, H) || new THREE.BoxGeometry(w, h, d);
       // Giro do veio da madeira (migration 024/positioning) — peça 'free' é
       // vista de FRENTE (face Z: U=largura, V=altura direto), então gira o
       // UV da PRÓPRIA geometria em vez de usar tex.rotation (ver

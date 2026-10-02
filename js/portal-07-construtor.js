@@ -2635,6 +2635,14 @@ function projectSlotDoorModel(slot) {
   return m;
 }
 
+// Frente de GAVETA nunca recebe modelo de porta (Matt, 02/10: "frente de
+// gaveta não pode receber porta de vidro"). Ela já fica de fora por ser
+// door_mechanism='frente_gaveta' (não 'porta_giro'); a trava abaixo é a 2ª
+// garantia: só peça 'front' que NÃO desliza (slide_out = frente de gaveta).
+function isPortaGiroPiece(p) {
+  return !!p && p.kind === 'front' && p.opening_type !== 'slide_out' && isPortaGiroAccKey(p.accKey);
+}
+
 function isPortaGiroAccKey(key) {
   const k = (typeof parseDoorModelKey === 'function') ? parseDoorModelKey(key) : null;
   const acc = accessoryCatalogCache && accessoryCatalogCache[k ? k.accKey : key];
@@ -2643,7 +2651,7 @@ function isPortaGiroAccKey(key) {
 
 // Slot tem porta de abrir giro? (decide se o seletor aparece no painel)
 function projectSlotHasPortaGiro(slot) {
-  return ((slot && slot._layoutGeometry) || []).some((p) => p && isPortaGiroAccKey(p.accKey));
+  return ((slot && slot._layoutGeometry) || []).some((p) => isPortaGiroPiece(p));
 }
 
 // Troca (ou destroca) o accKey das portas de abrir giro conforme o modelo do
@@ -2660,7 +2668,7 @@ function applySlotDoorModelToPieces(slot, pieces) {
     const k = parseDoorModelKey(p.accKey);
     const orig = k ? k.accKey : p.accKey;
     if (!k && !alvo) return p;                 // Flat e peça nunca trocada: intocada
-    if (!isPortaGiroAccKey(orig)) return p;
+    if (!isPortaGiroPiece(Object.assign({}, p, { accKey: orig }))) return p;
     const novo = alvo ? doorModelKey(alvo, orig) : orig;
     if (novo === p.accKey) return p;
     mudou = true;
