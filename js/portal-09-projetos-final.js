@@ -440,6 +440,25 @@ async function loadProjectFavoritesList() {
       const n = data.filter((p) => (p.client_folder || '') === nome).length;
       const sum = document.createElement('summary');
       sum.textContent = (nome ? '📁 ' + nome : I18n.t('fav.folder_none')) + ' · ' + I18n.t('fav.folder_count', { n });
+      // PROPOSTA DO CLIENTE (01/10, Matt: "quero um botão para uma proposta
+      // com todos os projetos do cliente") — só em pasta com nome e pra
+      // quem gera Proposta. Ver generateClientProposalPDF (portal-10).
+      if (nome && typeof generateClientProposalPDF === 'function' && (typeof canGenerateProposal !== 'function' || canGenerateProposal())) {
+        const pbtn = document.createElement('button');
+        pbtn.type = 'button';
+        pbtn.className = 'secondary po-myproj-folder-proposal';
+        pbtn.textContent = I18n.t('fav.folder_proposal_btn');
+        const pst = document.createElement('span');
+        pst.className = 'hint po-myproj-folder-proposal-status';
+        pbtn.addEventListener('click', async (ev) => {
+          ev.preventDefault(); ev.stopPropagation(); // não abre/fecha a pasta
+          const rowsDaPasta = data.filter((p) => (p.client_folder || '') === nome && !p.frozen_order_id);
+          pbtn.disabled = true;
+          try { await generateClientProposalPDF(nome, rowsDaPasta, pst); } finally { pbtn.disabled = false; }
+        });
+        sum.appendChild(pbtn);
+        sum.appendChild(pst);
+      }
       det.appendChild(sum);
       const grid = document.createElement('div');
       grid.className = 'po-myproj-grid';

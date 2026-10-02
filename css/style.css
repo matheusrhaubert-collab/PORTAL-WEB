@@ -5128,3 +5128,7 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-proj-ref-item img { width: 100%; height: 150px; object-fit: contain; background: #fff; border: 1px solid #e0ddd6; border-radius: 6px; cursor: zoom-in; display: block; }
 .po-proj-ref-item figcaption { font-size: 10px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .po-proj-ref-item .po-photoreal-gallery-delete { position: absolute; top: 4px; right: 4px; }
+
+/* Proposta do cliente — botão no cabeçalho da pasta (01/10) */
+.po-myproj-folder > summary .po-myproj-folder-proposal { margin-left: 12px; font-size: 12px; padding: 3px 10px; font-weight: 600; vertical-align: middle; }
+.po-myproj-folder > summary .po-myproj-folder-proposal-status { margin-left: 8px; font-weight: 400; font-size: 12px; }

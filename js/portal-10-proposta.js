@@ -510,7 +510,16 @@ function proposalNumberBadge(doc, cx, cy, r, num) {
 
 // ---------- Documento ----------
 
-async function generateOrderProposalPDF(order, items) {
+// PROPOSTA DE VÁRIOS PROJETOS (01/10, Matt: "quero um botão para uma
+// proposta com todos os projetos do cliente") — `multi` = lista
+// [{ order, items }], um por ambiente. `order` (1º argumento) vira só a
+// CAPA (título/cliente/data/nome do arquivo). Cada ambiente ganha a sua
+// seção completa (vista, referências, elevações, planta, módulos +
+// subtotal) e a faixa de total no fim soma todos. Sem `multi`, é a
+// Proposta de sempre (1 projeto).
+async function generateOrderProposalPDF(order, items, multi) {
+  const projects = Array.isArray(multi) && multi.length ? multi : [{ order, items }];
+  const isMulti = Array.isArray(multi) && multi.length > 0;
   const statusEl = document.getElementById('po-order-detail-proposal-status');
   const btn = document.getElementById('po-order-detail-proposal-btn');
   if (!order || typeof window.jspdf === 'undefined') {
@@ -535,9 +544,6 @@ async function generateOrderProposalPDF(order, items) {
     // somados 1x só no agregado.
     let y = PROPOSAL_MARGIN_MM;
 
-    // Numeração estável (lista de módulos <-> desenhos), calculada uma vez
-    // no topo pra valer em toda a Proposta.
-    (items || []).forEach((it, i) => { it._num = i + 1; });
 
     function ensureSpace(next) {
       if (y + next > pageHeight - PROPOSAL_MARGIN_MM) { doc.addPage(); y = PROPOSAL_MARGIN_MM; }
@@ -604,6 +610,46 @@ async function generateOrderProposalPDF(order, items) {
       y += 3;
     }
 
+    // ---------- Resumo dos ambientes (só na Proposta de vários) ----------
+    let factoryTotal = 0;
+    const refsJaUsadas = new Set(); // prancha geral repetida em vários ambientes entra 1x só
+    if (isMulti) {
+      proposalSectionHeader(doc, I18n.t('proposal.rooms_summary'), PROPOSAL_MARGIN_MM, y, contentWidth); y += 9;
+      doc.setFontSize(10);
+      projects.forEach((p, pi) => {
+        ensureSpace(8);
+        const sub = (p.items || []).reduce((acc, it) => acc + Number(it.total_price || 0), 0);
+        doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
+        doc.text(`${pi + 1}. ${p.order.po_name || '—'}  (${I18n.t('proposal.modules_count', { n: (p.items || []).length })})`, PROPOSAL_MARGIN_MM + 2, y);
+        doc.setTextColor.apply(doc, PROPOSAL_COLOR_ACCENT_DARK);
+        doc.text(formatMoney(getDisplayPriceRatioOnly(sub)), pageWidth - PROPOSAL_MARGIN_MM - 2, y, { align: 'right' });
+        doc.setDrawColor.apply(doc, PROPOSAL_COLOR_BORDER);
+        doc.setLineWidth(0.15);
+        doc.line(PROPOSAL_MARGIN_MM, y + 2.5, pageWidth - PROPOSAL_MARGIN_MM, y + 2.5);
+        y += 7.5;
+      });
+      doc.setTextColor(0);
+    }
+
+    for (let pi = 0; pi < projects.length; pi++) {
+    const order = projects[pi].order;
+    const items = projects[pi].items || [];
+    // Numeração estável (lista de módulos <-> desenhos), por ambiente.
+    items.forEach((it, i) => { it._num = i + 1; });
+    const projLabel = isMulti ? ((order.po_name || '—') + ' · ') : '';
+    if (isMulti) {
+      // cada ambiente começa numa folha nova, com o nome dele em destaque
+      doc.addPage();
+      y = PROPOSAL_MARGIN_MM;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor.apply(doc, PROPOSAL_COLOR_ACCENT_DARK);
+      doc.text(`${pi + 1}. ${order.po_name || '—'}`, PROPOSAL_MARGIN_MM, y + 6);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(0);
+      y += 14;
+    }
+
     // ---------- Render(es) do projeto ----------
     // GRADE inteira (2026-09-04, pedido do usuário: "quero que a proposta
     // carregue todas as imagens renderizadas do projeto") — antes só a
@@ -649,9 +695,12 @@ async function generateOrderProposalPDF(order, items) {
       const ref = refs[k];
       const refUrl = typeof ref === 'string' ? ref : (ref && ref.url);
       if (!refUrl) continue;
+      const refKey = (ref && ref.label) || refUrl;
+      if (isMulti && refsJaUsadas.has(refKey)) continue;
+      refsJaUsadas.add(refKey);
       const refMeta = await proposalImageMeta(await proposalUrlToDataUrl(refUrl));
       if (!refMeta) continue;
-      newPage(I18n.t('proposal.references_section'));
+      newPage(projLabel + I18n.t('proposal.references_section'));
       const refLabel = ref && ref.label ? String(ref.label) : '';
       if (refLabel) {
         doc.setFontSize(9);
@@ -670,7 +719,7 @@ async function generateOrderProposalPDF(order, items) {
     const walls = proposalWallList(order, items);
     const hasLayout = proposalHasLayoutData(order, items);
     if (hasLayout && walls.length > 0) {
-      newPage(I18n.t('proposal.elevations_section'));
+      newPage(projLabel + I18n.t('proposal.elevations_section'));
       walls.forEach((wall, idx) => {
         // 1 PAREDE = 1 PÁGINA (2026-09-04, bug relatado pelo usuário:
         // "muito amontuado os valores sem visibilidade, coisa passando pra
@@ -679,7 +728,7 @@ async function generateOrderProposalPDF(order, items) {
         // (ensureSpace) podia ficar curto pra parede cheia de módulos.
         // newPage() garante a folha inteira em branco pra cada parede,
         // sempre.
-        if (idx > 0) newPage(I18n.t('proposal.elevations_section'));
+        if (idx > 0) newPage(projLabel + I18n.t('proposal.elevations_section'));
         y = proposalDrawElevation(doc, wall, proposalItemsOnWall(items, wall.wallIndex), y, contentWidth, pdfUnit);
         y += 10;
       });
@@ -688,7 +737,7 @@ async function generateOrderProposalPDF(order, items) {
       // e a planta baixa em paralelo de todo ambiente") — 1 página, 1
       // desenho, paredes conectadas nos cantos de verdade (ver comentário
       // grande em proposalDrawUnifiedFloorPlan).
-      newPage(I18n.t('proposal.top_view_section'));
+      newPage(projLabel + I18n.t('proposal.top_view_section'));
       const floorPlanMaxH = pageHeight - y - PROPOSAL_MARGIN_MM - 4;
       proposalDrawUnifiedFloorPlan(doc, walls, items, PROPOSAL_MARGIN_MM, y + 4, contentWidth, floorPlanMaxH, pdfUnit);
     } else {
@@ -702,8 +751,8 @@ async function generateOrderProposalPDF(order, items) {
     }
 
     // ---------- Lista de módulos (com ícone por peça) + preço ----------
-    newPage(I18n.t('pdf.modules'));
-    let factoryTotal = 0;
+    newPage(projLabel + I18n.t('pdf.modules'));
+    let projFactory = 0;
     for (let idx = 0; idx < items.length; idx++) {
       const it = items[idx];
       const colorLine = formatColorsLine(it);
@@ -747,6 +796,7 @@ async function generateOrderProposalPDF(order, items) {
 
       const itemFactoryTotal = Number(it.total_price || 0);
       factoryTotal += itemFactoryTotal;
+      projFactory += itemFactoryTotal;
       const itemResaleTotal = getDisplayPriceRatioOnly(itemFactoryTotal);
       const qty = it.quantity || 1;
       doc.setFont('helvetica', 'bold');
@@ -769,6 +819,21 @@ async function generateOrderProposalPDF(order, items) {
       y += cardH;
     }
 
+    if (isMulti) {
+      ensureSpace(12);
+      y += 3;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
+      doc.text(I18n.t('proposal.subtotal_label', { name: order.po_name || '—' }), PROPOSAL_MARGIN_MM + 2, y);
+      doc.setTextColor.apply(doc, PROPOSAL_COLOR_ACCENT_DARK);
+      doc.text(formatMoney(getDisplayPriceRatioOnly(projFactory)), pageWidth - PROPOSAL_MARGIN_MM - 2, y, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(0);
+      y += 6;
+    }
+    } // fim do loop por ambiente
+
     // ---------- Faixa de total (com a margem de revenda) ----------
     ensureSpace(28);
     y += 4;
@@ -779,7 +844,7 @@ async function generateOrderProposalPDF(order, items) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(224, 217, 206);
-    doc.text(I18n.t('proposal.total_label'), PROPOSAL_MARGIN_MM + 6, y + bandH / 2, { baseline: 'middle' });
+    doc.text(I18n.t(isMulti ? 'proposal.total_all_label' : 'proposal.total_label'), PROPOSAL_MARGIN_MM + 6, y + bandH / 2, { baseline: 'middle' });
     doc.setFontSize(16);
     doc.setTextColor(255, 255, 255);
     doc.text(formatMoney(finalTotal), pageWidth - PROPOSAL_MARGIN_MM - 6, y + bandH / 2, { align: 'right', baseline: 'middle' });
@@ -1161,4 +1226,82 @@ async function generateProjectProposalPDF() {
 const projProposalBtnEl = document.getElementById('po-proj-proposal-btn');
 if (projProposalBtnEl) {
   projProposalBtnEl.addEventListener('click', () => generateProjectProposalPDF());
+}
+
+// ---------- Proposta do CLIENTE: todos os projetos da pasta (01/10) ----------
+// Matt: "quero um botão para uma proposta com todos os projetos do cliente"
+// — botão "📄 Proposta do cliente" no cabeçalho de cada pasta de Meus
+// projetos. Abre cada projeto da pasta no editor (sem amarrar como
+// favorito), monta os itens do MESMO jeito da prévia de 1 projeto
+// (buildProposalItemFromSlot), e gera UM PDF com todos. No fim, reabre o
+// projeto que estava aberto antes (ou deixa o editor vazio).
+// rows = linhas de user_projects (com slots), já da lista.
+let clientProposalRunning = false;
+async function generateClientProposalPDF(folderName, rows, statusEl) {
+  if (clientProposalRunning || !rows || !rows.length) return;
+  if (typeof window.jspdf === 'undefined') { alert(I18n.t('pdf.not_available')); return; }
+  if (projectSlots.length && projectDirty && !confirm(I18n.t('proposal.client_confirm_unsaved'))) return;
+  clientProposalRunning = true;
+  const say = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+  const abertoAntes = loadedProjectFavorite && loadedProjectFavorite.id ? loadedProjectFavorite.id : null;
+  const lista = rows.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
+  const projects = [];
+  try {
+    for (let i = 0; i < lista.length; i++) {
+      const row = lista[i];
+      say(I18n.t('proposal.client_progress', { i: i + 1, n: lista.length, name: row.name || '' }));
+      await restoreFavoriteProject(row, false);
+      const items = [];
+      for (const slot of projectSlots) {
+        if (slot.module && slot.module.visual_only) continue;
+        items.push(await buildProposalItemFromSlot(slot));
+      }
+      let photos = [];
+      let refs = [];
+      try {
+        const { data } = await supabaseClient.from('project_photoreal_photos').select('image_url, created_at')
+          .eq('project_id', row.id).order('created_at', { ascending: false });
+        photos = (data || []).map((p) => p.image_url).filter(Boolean);
+      } catch (e) { /* tabela ausente: segue sem */ }
+      try {
+        const { data } = await supabaseClient.from('project_reference_images').select('image_url, label, kind, sort_order, created_at')
+          .eq('project_id', row.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+        refs = (data || []).map((r) => ({ url: r.image_url, label: r.label || '', kind: r.kind || '' }));
+      } catch (e) { /* tabela ausente: segue sem */ }
+      projects.push({
+        order: {
+          po_name: row.name || null,
+          client_name: null,
+          submitted_at: null,
+          wall_shape: projectWallShape,
+          wall_widths_mm: (projectWallWidthsMm || []).slice(),
+          wall_segments: projectWallSegments.length ? JSON.parse(JSON.stringify(projectWallSegments)) : null,
+          project_photoreal_url: row.ai_preview_url || null,
+          project_photoreal_urls: photos,
+          project_reference_urls: refs,
+          project_thumbnail_data_url: row.thumbnail_data_url || null
+        },
+        items
+      });
+    }
+    say(I18n.t('proposal.generating'));
+    const capa = { po_name: folderName, client_name: folderName, submitted_at: null };
+    await generateOrderProposalPDF(capa, [], projects);
+  } catch (err) {
+    console.error('[proposta do cliente]', err);
+    alert((err && err.message) || String(err));
+  } finally {
+    // devolve o editor como estava
+    try {
+      if (abertoAntes) {
+        const { data } = await supabaseClient.from('user_projects').select('*').eq('id', abertoAntes).single();
+        if (data) await restoreFavoriteProject(data, true);
+      } else {
+        projectSlots = [];
+        resetProject();
+      }
+    } catch (e) { console.error('[proposta do cliente] reabrir:', e); }
+    clientProposalRunning = false;
+    say('');
+  }
 }
