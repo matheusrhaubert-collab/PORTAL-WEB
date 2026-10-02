@@ -1164,8 +1164,15 @@ function projectWallSegmentWorldBoxes(excludeWallIndex) {
 // referenciais diferentes.
 function projectAllOtherSlotWorldBoxes(slot) {
   const boxes = [];
+  // GRUPO SELECIONADO (01/10, Matt: "tenho um grupo selecionado mas não
+  // consigo movimentar o grupo todo com mouse nem com botões"): os OUTROS
+  // membros do grupo andam junto com este — não podem ser obstáculo dele.
+  // Antes o módulo agarrado batia no vizinho encostado do próprio grupo (ou
+  // no tampo em cima dele) e não saía do lugar com o colisor ligado.
+  const doGrupo = (typeof projectActiveGroupSelectionIds === 'function' && projectActiveGroupSelectionIds(slot)) || null;
   (projectSlots || []).forEach((s) => {
     if (s.id === slot.id) return;
+    if (doGrupo && doGrupo.has(s.id)) return;
     const b = projectSlotWorldBox3D(s);
     if (b) boxes.push(b);
   });

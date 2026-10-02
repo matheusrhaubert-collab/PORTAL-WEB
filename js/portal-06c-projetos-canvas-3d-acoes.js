@@ -240,6 +240,62 @@ function nudgeProjectWallSlot(slot, axis, deltaMm) {
   renderProjectConfigPanel(); // atualiza a leitura de posição no painel
 }
 
+// GRUPO (01/10, Matt: "quando está selecionado todo deve movimentar o jogo
+// todo") — as setas de Movimentação andam o GRUPO INTEIRO selecionado, não
+// só o módulo do painel. Cada membro anda no PRÓPRIO referencial (parede:
+// x ao longo dela / altura / afastamento fino; ilha: x/z de mundo / elevação
+// fina), e o passo é o MESMO pra todos: se algum membro bate no limite
+// (fim da parede, teto, chão, ambiente), o grupo inteiro anda só o que
+// esse membro conseguiu — o grupo nunca se desmonta. Devolve true quando
+// tratou (havia grupo), false pro caminho de 1 módulo só.
+function nudgeProjectGroup(primary, axis, deltaMm) {
+  const ids = (typeof projectActiveGroupSelectionIds === 'function') ? projectActiveGroupSelectionIds(primary) : null;
+  if (!ids || ids.size < 2) return false;
+  const membros = projectSlots.filter((s) => ids.has(s.id));
+  const campo = (s) => {
+    if (isFloorSlot(s)) return axis === 'x' ? 'floor_x_mm' : axis === 'z' ? 'floor_z_mm' : 'fineOffsetYMm';
+    return axis === 'x' ? 'x_mm' : axis === 'y' ? 'floor_height_mm' : 'fineOffsetZMm';
+  };
+  const real = (s) => !['fineOffsetYMm', 'fineOffsetZMm'].includes(campo(s));
+  // Quanto este membro anda de verdade. Parede: os LIMITES puros (fim da
+  // parede/recuo de canto, chão/teto) — NÃO clampProjectSlotPosition, que
+  // relaxa o limite quando o lugar novo encosta num vizinho (e no teste
+  // um-por-vez os vizinhos são os próprios membros ainda parados).
+  const andouDe = (s, k) => {
+    const v0 = Number(s[k] || 0);
+    if (!isFloorSlot(s)) {
+      if (k === 'x_mm') { const b = projectWallSlotXBoundsMm(s); return clamp(v0 + deltaMm, b.min, b.max) - v0; }
+      return clamp(v0 + deltaMm, 0, projectSlotMaxFloorHeightMm(s.height_mm, s.module)) - v0;
+    }
+    const antes = { floor_x_mm: s.floor_x_mm, floor_z_mm: s.floor_z_mm };
+    s[k] = v0 + deltaMm;
+    clampFloorSlotIntoRoom(s);
+    const r = Number(s[k] || 0) - v0;
+    Object.assign(s, antes);
+    return r;
+  };
+  // 1) quanto cada membro consegue andar
+  let passo = deltaMm;
+  membros.forEach((s) => {
+    if (!real(s)) return;
+    const k = campo(s);
+    const andou = andouDe(s, k);
+    if (Math.sign(andou) !== Math.sign(deltaMm)) passo = 0; // já fora do limite: não anda
+    else if (Math.abs(andou) < Math.abs(passo)) passo = andou;
+  });
+  if (Math.abs(passo) < 0.01) { renderProjectConfigPanel(); return true; }
+  // 2) todo mundo anda o mesmo passo
+  membros.forEach((s) => {
+    const k = campo(s);
+    s[k] = Number(s[k] || 0) + passo;
+    if (k === 'fineOffsetYMm') s[k] = Math.max(0, s[k]);
+  });
+  renderProjectCanvas();
+  markProjectDirty();
+  renderProjectConfigPanel();
+  return true;
+}
+
 // Módulo de PAREDE — rotação fina nos 3 eixos (nenhum é real: parede nunca
 // girava sozinha, sempre olhava pra fora dela — ver comentário acima).
 function nudgeProjectWallSlotRotation(slot, axis, deltaDeg) {
@@ -835,6 +891,7 @@ function renderProjectConfigPanel() {
       // eixo, o resto (incl. sinal) é Number() direto.
       const axis = btn.dataset.move[0];
       const deltaMm = Number(btn.dataset.move.slice(1)) * projectMoveStepMm;
+      if (nudgeProjectGroup(slot, axis, deltaMm)) return;
       if (isFloor) nudgeProjectFloorSlot(slot, axis, deltaMm);
       else nudgeProjectWallSlot(slot, axis, deltaMm);
     });
