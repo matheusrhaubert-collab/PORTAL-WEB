@@ -4011,7 +4011,11 @@ function refreshProjectPieceArrows() {
   }
   ViewerProjectEdit.setPieceOutline(frame);
   const spec = [];
+  const espessura = projectPieceThicknessAxis(frame);
   ['x', 'y', 'z'].forEach((k) => {
+    // ESPESSURA NÃO MUDA (Matt, 02/10: "não posso mudar a espessura do
+    // material") — sem seta no eixo da espessura da chapa.
+    if (k === espessura) return;
     const a = frame.axes[k];
     [1, -1].forEach((sg) => {
       const off = frame.half[k] + PROJECT_PIECE_ARROW_GAP_M;
@@ -4025,6 +4029,15 @@ function refreshProjectPieceArrows() {
   ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
   positionProjectPieceToolbar(frame);
   return true;
+}
+
+// Eixo da ESPESSURA da peça (o menor lado) — a espessura é do material
+// (chapa 18/19.5mm, vidro 4mm), não se estica. Só vale pra peça fina de
+// verdade (menor lado < 60mm); bloco/eletro (sem lado fino) estica nos 3.
+function projectPieceThicknessAxis(frame) {
+  if (!frame || !frame.half) return null;
+  const k = ['x', 'y', 'z'].reduce((m, e) => (frame.half[e] < frame.half[m] ? e : m), 'x');
+  return frame.half[k] * 2 < 0.06 ? k : null;
 }
 
 // Barrinha flutuante da peça: nome + Remover + Desfazer ajuste + Concluir.
@@ -4135,6 +4148,7 @@ function updateProjectPieceDrag(ev) {
   const DIM = { x: 'dw', y: 'dh', z: 'dd' }, OFF = { x: 'dx', y: 'dy', z: 'dz' };
   if (st.mode === 'resize') {
     const k = st.axis.charAt(6), sg = st.axis.charAt(7) === '+' ? 1 : -1;
+    if (k === projectPieceThicknessAxis(f)) return;   // espessura do material não estica
     const a = f.axes[k];
     const dir = { x: a.x * sg, y: a.y * sg, z: a.z * sg };
     const sv = projectScreenVecPerMeter(f.center, dir);
