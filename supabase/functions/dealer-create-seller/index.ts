@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
     );
     const profileCheckRows = profileCheckRes.ok ? await profileCheckRes.json() : [];
     const callerRole = Array.isArray(profileCheckRows) && profileCheckRows[0] ? profileCheckRows[0].role : null;
-    if (callerRole !== 'lojista') {
+    if (callerRole !== 'lojista' && callerRole !== 'administrador') { // admin também (01/10)
       return jsonResponse({ error: 'Só uma conta Dealer pode criar vendedores.' }, 403);
     }
 

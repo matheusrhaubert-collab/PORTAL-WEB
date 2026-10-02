@@ -274,14 +274,14 @@ let dealerFactoryDiscountPct = 0;
 let dealerPricingExtras = []; // linhas de dealer_pricing_extras já carregadas (cache)
 
 function getFactoryDiscountPct() {
-  return isDealer() ? (Number(dealerFactoryDiscountPct) || 0) : 0;
+  return hasDealerTools() ? (Number(dealerFactoryDiscountPct) || 0) : 0;
 }
 
 // Extras de um lado ('custo' = custo de fábrica, 'margem' = margem do
 // lojista) já carregados em cache — ver comentário de escopo acima (só
 // dealer, nunca vendedor).
 function resolveDealerPricingExtras(side) {
-  if (!isDealer()) return [];
+  if (!hasDealerTools()) return [];
   return dealerPricingExtras.filter((row) => row.side === side);
 }
 
@@ -293,7 +293,7 @@ function resolveDealerPricingExtras(side) {
 // salvamento no modal de Margens. Falha silenciosa — mesmo padrão do resto
 // deste arquivo (ensureOwnUserProfile etc.), não deve travar o login.
 async function loadDealerPricingConfig() {
-  if (!isDealer() || !currentUser) { dealerFactoryDiscountPct = 0; dealerPricingExtras = []; return; }
+  if (!hasDealerTools() || !currentUser) { dealerFactoryDiscountPct = 0; dealerPricingExtras = []; return; }
   try {
     dealerFactoryDiscountPct = Number(currentUserProfile && currentUserProfile.factory_discount_pct) || 0;
     const { data, error } = await supabaseClient
@@ -351,6 +351,15 @@ let portalViewMode = 'legno';
 
 function isDealer() {
   return !!currentUserProfile && currentUserProfile.role === 'lojista';
+}
+
+// Ferramentas de DEALER (Margens: desconto de fábrica, margem bruta, extras;
+// equipe de vendedores) — lojista E administrador (01/10, Matt: "deixar
+// perfil administrador com acesso total a tudo, incluindo as margens").
+// isDealer() continua só lojista onde a diferença importa (modo de
+// visualização 'dealer', que troca a marca do cabeçalho pela da loja).
+function hasDealerTools() {
+  return !!currentUserProfile && (currentUserProfile.role === 'lojista' || currentUserProfile.role === 'administrador');
 }
 
 // Quem pode gerar Proposta (PDF) + configurar a marca (logo/dados da loja)
@@ -439,7 +448,7 @@ function refreshDealerUiVisibility() {
   // configuram isso, ver comentário de escopo em getFactoryDiscountPct,
   // portal-05-cutlist.js).
   const margensBtnEl = document.getElementById('po-margins-btn');
-  const dealer = isDealer();
+  const dealer = hasDealerTools();
   const canBrand = canGenerateProposal();
   // Toggle Legno/Dealer sempre escondido (ver loadPortalViewMode acima) —
   // dealer fica travado em modo 'dealer', não precisa mais de UI pra

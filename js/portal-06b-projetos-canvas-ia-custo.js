@@ -3079,7 +3079,7 @@ function marginsSectionExtrasHtml(side) {
 function renderMarginsModal() {
   const body = document.getElementById('po-margins-body');
   if (!body) return;
-  if (!isDealer()) { body.innerHTML = ''; return; }
+  if (!hasDealerTools()) { body.innerHTML = ''; return; }
   const discountPct = getFactoryDiscountPct();
   const marginPct = getResaleMarginPct();
   body.innerHTML = ''
@@ -3105,7 +3105,7 @@ function renderMarginsModal() {
 
 function openMarginsModal() {
   const modal = document.getElementById('po-margins-modal');
-  if (!modal || !isDealer()) return;
+  if (!modal || !hasDealerTools()) return;
   modal.classList.add('open');
   renderMarginsModal();
 }
@@ -3160,7 +3160,7 @@ async function saveMarginsTopFields() {
 // do banco (nunca do valor otimista local), pra ficar sempre fiel ao que
 // realmente foi gravado.
 async function addDealerPricingExtra(side) {
-  if (!currentUser || !isDealer()) return;
+  if (!currentUser || !hasDealerTools()) return;
   try {
     const sortOrder = resolveDealerPricingExtras(side).length;
     const { data, error } = await supabaseClient
@@ -3179,7 +3179,7 @@ async function addDealerPricingExtra(side) {
 }
 
 async function updateDealerPricingExtraField(id, field, rawValue) {
-  if (!currentUser || !isDealer() || !id || !field) return;
+  if (!currentUser || !hasDealerTools() || !id || !field) return;
   const patch = {};
   if (field === 'value') {
     let v = Number(rawValue);
@@ -3211,7 +3211,7 @@ async function updateDealerPricingExtraField(id, field, rawValue) {
 }
 
 async function deleteDealerPricingExtra(id) {
-  if (!currentUser || !isDealer() || !id) return;
+  if (!currentUser || !hasDealerTools() || !id) return;
   try {
     const { error } = await supabaseClient
       .from('dealer_pricing_extras')
