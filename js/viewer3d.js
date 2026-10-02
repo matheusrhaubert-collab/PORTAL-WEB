@@ -415,10 +415,30 @@ const Viewer3D = (function () {
   // é pré-escalado direto no UV da geometria, ANTES desta função ser
   // chamada (scaleFaceUV/scaleAllFacesUV, em makeBoxMaterials/
   // buildContentGroup).
+  // Migration 187 — material de VIDRO / ALUMÍNIO pela cor (render_kind).
+  // null = chapa comum (segue o caminho de sempre).
+  function materialVidroOuMetal(T3, color) {
+    const kind = color && color.render_kind;
+    if (kind !== 'vidro' && kind !== 'metal') return null;
+    const hex = color.swatch_hex || '#cccccc';
+    if (kind === 'vidro') {
+      return new T3.MeshStandardMaterial({
+        color: hex, roughness: 0.05, metalness: 0.1,
+        transparent: true, opacity: 0.38, depthWrite: false
+      });
+    }
+    return new T3.MeshStandardMaterial({ color: hex, roughness: 0.32, metalness: 0.75 });
+  }
+
   function makeMaterial(color, rotateTexture) {
     // Modo "só cor" (ver estiloDesenho): nem chega a pedir a imagem. É o que
     // faz a cena pesar menos — textura de chapa é o item mais caro aqui, em
     // download e em memória de GPU.
+    // Porta de vidro (migration 187, colors.render_kind): vidro transparente
+    // tingido pela cor (incolor/bronze/fumê) e perfil de alumínio metálico.
+    // Antes da textura — essas "cores" são item comprado, não chapa.
+    const vidroOuMetal = materialVidroOuMetal(THREE, color);
+    if (vidroOuMetal) return vidroOuMetal;
     const textureUrl = estiloDesenho.textura ? (color && color.texture_url) : null;
     const tex = textureUrl ? loadTexture(textureUrl, rotateTexture) : null;
     if (tex) {

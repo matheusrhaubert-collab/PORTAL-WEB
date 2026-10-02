@@ -2921,7 +2921,10 @@ function renderMoneyFabrica(body, rel) {
   // Itens Comprados, igual ferMontagem acima; diferença é que esta ferragem
   // está LIGADA a um componente (origin='comprado'), não a um FURO.
   pecasCompradas.forEach((l) => {
-    const qtdLabel = l.unit === 'm' ? l.qtd.toFixed(2) + ' m' : l.qtd + ' ' + (l.unit || 'un');
+    // m² (vidro da porta de vidro, migration 187) com 2 casas, igual o metro.
+    const qtdLabel = l.unit === 'm' ? l.qtd.toFixed(2) + ' m'
+      : l.unit === 'm2' ? l.qtd.toFixed(2) + ' m²'
+        : l.qtd + ' ' + (l.unit || 'un');
     html += linha(l.name, qtdLabel, l.custo);
   });
   html += subtotal(I18n.t('money.subtotal_material'), totalMateria);
@@ -3494,9 +3497,14 @@ function collectProjectCostReport(slots) {
       });
 
       const cor = nomeCor(slot, p.color_role_id);
-      const m = rel.material[cor] || (rel.material[cor] = { m2: 0, custo: 0 });
-      m.m2 += (Number(p.area_m2) || 0) * qtd;
-      m.custo += Number(p.sheet_cost) || 0;
+      // Perfil/vidro da porta de vidro (migration 187): a "cor" é item
+      // comprado — já entra em rel.pecasCompradas logo abaixo; não abre uma
+      // linha de chapa zerada em "Board".
+      if (!p.material_item_id) {
+        const m = rel.material[cor] || (rel.material[cor] = { m2: 0, custo: 0 });
+        m.m2 += (Number(p.area_m2) || 0) * qtd;
+        m.custo += Number(p.sheet_cost) || 0;
+      }
 
       if ((Number(p.edge_band_m) || 0) > 0) {
         const f = rel.fita[cor] || (rel.fita[cor] = { m: 0, custo: 0 });

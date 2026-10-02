@@ -641,6 +641,17 @@
     if (!settings || !settings.hinge_enabled) return;
     const side = hingeSideOf(part);
     if (!side || !part.is_module || !part.child_pieces || !part.child_pieces.length) return;
+    // Porta de vidro (migration 187): perfil de alumínio + vidro, tudo
+    // origin='comprado' — não passa na furadeira de chapa. A dobradiça é
+    // contada/cobrada pelo pricing.js e desenhada no 3D, mas SEM copo no .ban
+    // (decisão do Matt). Regra geral: porta-módulo sem nenhuma chapa
+    // fabricada não recebe furo de dobradiça.
+    const temChapaFabricada = (function temFab(list) {
+      return (list || []).some(function (c) {
+        return c.is_module ? temFab(c.child_pieces) : (c.origin || 'fabricacao') !== 'comprado';
+      });
+    })(part.child_pieces);
+    if (!temChapaFabricada) return;
     const W = part.width_mm || 0, H = part.height_mm || 0, D = part.depth_mm || 0;
     const chapas = buildBoxes(part.child_pieces, W, H, D).boxes
       .concat(boxesAninhadas(part.child_pieces, W, H, D))

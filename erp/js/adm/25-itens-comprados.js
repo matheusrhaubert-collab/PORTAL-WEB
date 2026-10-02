@@ -36,6 +36,9 @@ const PURCHASED_KIND_LABELS = {
   // LED embutido (migration 183): um item deste grupo = um MODELO na janela
   // do LED do portal. Largura/profundidade do rasgo vão em Atributos (JSON).
   led_perfil: 'Perfil de LED',
+  // Porta de vidro (migration 187): matéria-prima escolhida como "cor".
+  perfil_aluminio: 'Perfil de alumínio',
+  vidro: 'Vidro',
   outro: 'Outro'
 };
 
@@ -117,7 +120,9 @@ function populatePurchasedItemSelects() {
     // Migration 129 — kit de suporte (item comprado secundário, ex: kit
     // suporte de um cabide). Mesmo formato, reaproveita esta função como
     // está.
-    { id: 'component-support-purchased-item', vazio: '— nenhum (sem kit de suporte) —' }
+    { id: 'component-support-purchased-item', vazio: '— nenhum (sem kit de suporte) —' },
+    // Migration 187 — a cor que É um item comprado (perfil/vidro).
+    { id: 'color-purchased-item', vazio: '— nenhum (chapa comum: preço por m² e fita) —' }
   ].forEach(({ id, vazio }) => {
     const sel = document.getElementById(id);
     if (!sel) return;

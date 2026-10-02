@@ -55,6 +55,8 @@ ADM_TELAS['tab-purchased-items'] = `
             <option value="puxador">Puxador</option>
             <option value="pe">Pé / sapata</option>
             <option value="acessorio">Acessório</option>
+            <option value="perfil_aluminio">Perfil de alumínio (porta de vidro) — attrs: {"comprimento_mm":2600}</option>
+            <option value="vidro">Vidro (porta de vidro)</option>
             <option value="led_perfil">Perfil de LED (rasgo) — attrs: {"largura_mm":17.5,"profundidade_mm":7.5}</option>
             <option value="outro">Outro</option>
           </select>
@@ -67,6 +69,7 @@ ADM_TELAS['tab-purchased-items'] = `
             <option value="jogo">jogo</option>
             <option value="m">m — metro linear</option>
             <option value="m2">m² — metro quadrado</option>
+            <option value="barra">barra — preço da barra; cobra o metro usado (comprimento em attrs.comprimento_mm, padrão 2600)</option>
             <option value="kg">kg</option>
           </select>
         </div>

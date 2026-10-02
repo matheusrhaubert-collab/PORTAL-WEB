@@ -236,6 +236,14 @@ window.editColor = function (id) {
   document.getElementById('color-stock-in-house').checked = !!c.stock_in_house;
   document.getElementById('color-skip-cutting-plan').checked = !!c.skip_cutting_plan;
   document.getElementById('color-has-grain').checked = !!c.has_grain;
+  // Migration 187 — porta de vidro (opcional: some sem a tela nova carregada)
+  const selItem = document.getElementById('color-purchased-item');
+  if (selItem) {
+    if (typeof populatePurchasedItemSelects === 'function') populatePurchasedItemSelects();
+    selItem.value = c.purchased_item_id || '';
+  }
+  const selRender = document.getElementById('color-render-kind');
+  if (selRender) selRender.value = c.render_kind || '';
   toggleColorSheetSizeFieldVisibility();
   const preview = document.getElementById('color-texture-preview');
   preview.innerHTML = c.texture_url ? `<img class="texture-thumb" src="${c.texture_url}" alt="preview" />` : '';
@@ -304,6 +312,12 @@ document.getElementById('color-form').addEventListener('submit', async (e) => {
     has_grain: document.getElementById('color-has-grain').checked,   // migration 083
     active: document.getElementById('color-active').checked
   };
+  // Migration 187 — só manda as colunas novas se o campo existe na tela
+  // (senão um ERP com tela antiga em cache zeraria o vínculo do vidro).
+  const selItem = document.getElementById('color-purchased-item');
+  if (selItem) payload.purchased_item_id = selItem.value || null;
+  const selRender = document.getElementById('color-render-kind');
+  if (selRender) payload.render_kind = selRender.value || null;
   if (id) {
     payload.id = id;
   } else {

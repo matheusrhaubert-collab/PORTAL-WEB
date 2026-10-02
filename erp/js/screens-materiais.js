@@ -39,7 +39,10 @@ MAT.load = async function (params) {
     LOTES.offcuts(),
     LOTES.stockMoves(80)
   ]);
-  return { colors: colors, sizes: sizes, stock: stock, tapes: tapes, offcuts: offcuts, moves: moves };
+  // Perfil de alumínio / vidro (migration 187) não são chapa — ficam em
+  // Itens comprados, não no estoque de chapas.
+  const chapas = (colors || []).filter(function (c) { return !c.purchased_item_id; });
+  return { colors: chapas, sizes: sizes, stock: stock, tapes: tapes, offcuts: offcuts, moves: moves };
 };
 
 MAT.render = function (params, d) {

@@ -102,6 +102,18 @@ ADM_TELAS['tab-colors'] = `
         <p class="hint">Cadastre os tamanhos disponíveis logo abaixo. Sem um tamanho vinculado, o Contractor escolhe manualmente ao gerar o plano de corte.</p>
         <select id="color-default-sheet-size"><option value="">— nenhum (cliente escolhe) —</option></select>
       </div>
+      <!-- PORTA DE VIDRO (migration 187): a "cor" pode SER um item comprado
+           (perfil de alumínio por barra, vidro por m²). Aí o preço sai do item
+           (Engenharia > Itens comprados) e não de chapa/fita. -->
+      <label>Matéria-prima comprada (perfil / vidro)</label>
+      <select id="color-purchased-item"><option value="">— nenhum (chapa comum: preço por m² e fita) —</option></select>
+      <p class="hint">Escolhido = a peça nessa cor cobra o item comprado (barra → metro usado; m² → área) e entra como matéria-prima comprada, não como chapa.</p>
+      <label>Desenho 3D</label>
+      <select id="color-render-kind">
+        <option value="">Chapa comum</option>
+        <option value="vidro">Vidro (transparente)</option>
+        <option value="metal">Metal (alumínio)</option>
+      </select>
       <label><input type="checkbox" id="color-active" style="width:auto;display:inline-block;" /> Ativa</label>
       <button type="submit">Salvar cor</button>
     </form>

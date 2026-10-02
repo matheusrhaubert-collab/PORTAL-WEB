@@ -1005,6 +1005,28 @@
     return cascoE || DEFAULT_THICKNESS_MM;
   }
 
+  // Migration 187 — custo de UMA unidade da peça quando a cor dela é um item
+  // comprado (perfil de alumínio / vidro). Devolve { custo, qtd, unit,
+  // barra_mm } com qtd na unidade do RELATÓRIO ('m' ou 'm2'); null quando o
+  // item não tem unidade de medida (un/par/jogo não fazem sentido como cor).
+  function materialDaCor(item, pieceDims) {
+    const lados = [pieceDims.width_mm || 0, pieceDims.height_mm || 0, pieceDims.depth_mm || 0]
+      .map(Number).sort(function (a, b) { return b - a; });
+    const preco = Number(item.purchase_price) || 0;
+    if (item.unit === 'm2') {
+      const m2 = (lados[0] * lados[1]) / 1000000;
+      return { custo: preco * m2, qtd: m2, unit: 'm2', barra_mm: null };
+    }
+    if (item.unit === 'm' || item.unit === 'barra') {
+      const m = lados[0] / 1000;
+      const barraMm = item.unit === 'barra'
+        ? (Number(item.attrs && item.attrs.comprimento_mm) || 2600) : null;
+      const precoMetro = barraMm ? preco / (barraMm / 1000) : preco;
+      return { custo: precoMetro * m, qtd: m, unit: 'm', barra_mm: barraMm };
+    }
+    return null;
+  }
+
   function calculateLeafPiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE) {
     const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
@@ -1029,8 +1051,17 @@
     if (!color && !comprado) throw new Error(tr('pricing.no_color_for_piece', { ref: piece.reference }, 'Nenhuma cor selecionada para a peça "' + piece.reference + '".'));
     const corParaChapa = color || { sheet_price_per_m2: 0, edge_price_per_linear_m: 0 };
 
-    const sheet_cost = pieceDims.area_m2 * corParaChapa.sheet_price_per_m2 * qty;
-    const edge_cost = pieceDims.edge_band_m * corParaChapa.edge_price_per_linear_m * qty;
+    // MATERIAL COMPRADO PELA COR (migration 187 — porta de vidro). A "cor"
+    // escolhida pelo cliente É um item comprado (colors.purchased_item_id):
+    // perfil de alumínio (unit 'barra' = preço da barra inteira, a porta paga
+    // o metro usado ÷ attrs.comprimento_mm; 'm' = por metro) ou vidro (unit
+    // 'm2'). Cobra o item no lugar de chapa+fita e vai pro balde de
+    // COMPRADOS (matéria-prima no $ Fábrica). Comprimento = maior lado da
+    // peça; área = os 2 maiores lados (a espessura é sempre o menor).
+    const itemDaCor = (color && color.purchased_item_id) ? (purchasedItemsById[color.purchased_item_id] || null) : null;
+    const materialCor = itemDaCor ? materialDaCor(itemDaCor, pieceDims) : null;
+    const sheet_cost = materialCor ? 0 : pieceDims.area_m2 * corParaChapa.sheet_price_per_m2 * qty;
+    const edge_cost = materialCor ? 0 : pieceDims.edge_band_m * corParaChapa.edge_price_per_linear_m * qty;
     // Mão de obra: por processo (migration 090) ou pela labor do componente,
     // NUNCA as duas. Os 62 componentes antigos apontam pra uma labor que já
     // embute cortar+fitar+furar; somar processos em cima cobraria duas vezes.
@@ -1084,7 +1115,8 @@
     const support_cost = (comprado && itemSuporte && itemSuporte.purchase_price != null)
       ? Number(itemSuporte.purchase_price) * (piece.support_purchased_item_qty || 1) * qty
       : 0;
-    const purchased_cost = comprado ? (precoComprado + support_cost) : 0;
+    const material_cor_cost = materialCor ? materialCor.custo * qty : 0;
+    const purchased_cost = (comprado ? (precoComprado + support_cost) : 0) + material_cor_cost;
     const labor_cost = comprado ? 0 : custoUnitario;
 
     // Dobradiça só se aplica a PORTAS: hinge_side definido, qualquer que
@@ -1190,7 +1222,16 @@
       // Sai separado de labor_cost pra o relatório de fábrica poder somar
       // ferragem junto com chapa e fita, e não junto com a coladeira.
       purchased_cost: purchased_cost,
-      purchased_item_id: (itemComprado && itemComprado.id) || piece.purchased_item_id || null,
+      purchased_item_id: (itemComprado && itemComprado.id) || piece.purchased_item_id || (itemDaCor && itemDaCor.id) || null,
+      // Material comprado pela cor (migration 187): qual item, quanto (na
+      // unidade do relatório: 'm' pra perfil/barra, 'm2' pra vidro) e o
+      // comprimento da barra — a lista de corte do pedido usa isto pra
+      // montar o plano de barras e a lista de compra de vidro.
+      material_item_id: itemDaCor ? itemDaCor.id : null,
+      material_item_name: itemDaCor ? itemDaCor.name : null,
+      material_unit: materialCor ? materialCor.unit : null,
+      material_qty: materialCor ? materialCor.qtd * qty : 0,
+      material_bar_mm: materialCor ? materialCor.barra_mm : null,
       // Nome/unidade do item comprado (2026-08-20) — mesmo motivo de
       // hinge_model_name/slide_model_name logo abaixo: o relatório $ Fábrica
       // precisa saber QUAL peça comprada pagou por este custo pra poder abrir
@@ -1198,10 +1239,11 @@
       // quantidade consumida NA UNIDADE do item (metros quando unit='m',
       // senão a mesma contagem de instâncias da peça) — pro relatório poder
       // mostrar "12,4 m" em vez de só "1 peça".
-      purchased_item_name: (itemComprado && itemComprado.name) || null,
-      purchased_item_unit: (itemComprado && itemComprado.unit) || null,
-      purchased_item_qty: itemComprado ? (itemComprado.unit === 'm' ? metrosComprado * qty : qty) : 0,
-      purchased_margin_profile_id: (itemComprado && itemComprado.margin_profile_id) || null,
+      purchased_item_name: (itemComprado && itemComprado.name) || (itemDaCor && itemDaCor.name) || null,
+      purchased_item_unit: (itemComprado && itemComprado.unit) || (materialCor && materialCor.unit) || null,
+      purchased_item_qty: itemComprado ? (itemComprado.unit === 'm' ? metrosComprado * qty : qty)
+        : (materialCor ? materialCor.qtd * qty : 0),
+      purchased_margin_profile_id: (itemComprado && itemComprado.margin_profile_id) || (itemDaCor && itemDaCor.margin_profile_id) || null,
       // Custo do kit de suporte (migration 129) já somado dentro de
       // purchased_cost acima — exposto separado só pro relatório $ Fábrica
       // poder abrir numa linha própria, se quiser (mesmo padrão de
@@ -1679,6 +1721,7 @@
     collectPurchasedCost,
     resolveBodyDims,
     hingeCountForDoorHeight,
+    materialDaCor,
     pickDrawerDepth,
     isBelowMinFixedDepth,
     pickNearestPreset,

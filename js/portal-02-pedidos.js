@@ -985,7 +985,7 @@ async function openOrderDetail(orderId) {
     // retroativo em pedidos antigos também (não depende de re-salvar nada).
     const colorIds = [...new Set((items || []).flatMap((it) => (it.selected_colors || []).map((c) => c.color_id)).filter(Boolean))];
     const { data: colorsData } = colorIds.length
-      ? await supabaseClient.from('colors').select('id, swatch_hex, texture_url, substrato').in('id', colorIds)
+      ? await supabaseClient.from('colors').select('*').in('id', colorIds)
       : { data: [] };
     const colorById = new Map((colorsData || []).map((c) => [c.id, c]));
 
@@ -1309,7 +1309,7 @@ async function ensureOrderDetailColorsLoaded() {
   )];
   const missingIds = colorIds.filter((id) => !colorById.has(id));
   if (!missingIds.length) return;
-  const { data } = await supabaseClient.from('colors').select('id, swatch_hex, texture_url, substrato').in('id', missingIds);
+  const { data } = await supabaseClient.from('colors').select('*').in('id', missingIds);
   (data || []).forEach((c) => colorById.set(c.id, c));
 }
 

@@ -675,11 +675,15 @@ async function loadCutlistColors() {
     // texture_url adicionado (pedido do usuário 2026-07-29: quadrado de cor
     // no lugar do <select> de texto puro) — sem ele o quadradinho cairia
     // sempre no swatch_hex genérico, mesmo pra cores com textura cadastrada.
-    .select('id, name, sheet_price_per_m2, edge_price_per_linear_m, swatch_hex, texture_url, default_sheet_size_id, stock_in_house, skip_cutting_plan')
+    // '*' (era lista de colunas) pra ler purchased_item_id sem quebrar antes
+    // da migration 187 rodar.
+    .select('*')
     .eq('active', true)
     .order('sort_order');
   if (error) return;
-  cutlistColorsCache = data || [];
+  // Perfil de alumínio / vidro (migration 187) são "cores" só da porta de
+  // vidro — não são chapa, não aparecem no Plano de Corte avulso.
+  cutlistColorsCache = (data || []).filter((c) => !c.purchased_item_id);
 }
 
 // Tamanhos de chapa (migration 063) — mesmo padrão de cache de

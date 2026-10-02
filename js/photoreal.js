@@ -324,6 +324,17 @@ const Photoreal = (() => {
     return resolveRotateTexture(part && part.positioning, fallback);
   }
   function makeMaterial(color, rotateTexture) {
+    // Porta de vidro (migration 187, colors.render_kind) — mesma regra do
+    // viewer3d.js: vidro de verdade (transmissão) tingido e alumínio metálico.
+    if (color && color.render_kind === 'vidro') {
+      return new T.MeshPhysicalMaterial({
+        color: color.swatch_hex || '#d6e6e3', roughness: 0.02, metalness: 0,
+        transmission: 0.92, ior: 1.5, thickness: 0.004, transparent: true, opacity: 1
+      });
+    }
+    if (color && color.render_kind === 'metal') {
+      return new T.MeshStandardMaterial({ color: color.swatch_hex || '#b8b29c', roughness: 0.3, metalness: 0.85 });
+    }
     const textureUrl = color && color.texture_url;
     const tex = textureUrl ? loadTexture(textureUrl, rotateTexture) : null;
     if (tex) return new T.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 });

@@ -163,7 +163,14 @@ function flattenOrderItemBreakdown(breakdown, multiplier) {
         width_mm: p.width_mm,
         height_mm: p.height_mm,
         depth_mm: p.depth_mm,
-        quantity: qty
+        quantity: qty,
+        // Material comprado pela cor (migration 187 — perfil de alumínio /
+        // vidro da porta de vidro): vira linha de CORTE (com medida) + soma
+        // na lista de compra (barras / m²), em vez de só "comprado".
+        material_item_id: p.material_item_id || null,
+        material_item_name: p.material_item_name || null,
+        material_unit: p.material_unit || null,
+        material_bar_mm: p.material_bar_mm || null
       });
     }
   });
@@ -179,6 +186,22 @@ function flattenOrderItemBreakdown(breakdown, multiplier) {
 function sortPieceCutDims(width_mm, height_mm, depth_mm) {
   const sorted = [width_mm, height_mm, depth_mm].slice().sort((a, b) => a - b);
   return { thickness_mm: sorted[0], largura_mm: sorted[1], comprimento_mm: sorted[2] };
+}
+
+// Plano de barras (migration 187 — perfil de alumínio da porta de vidro):
+// first-fit decreasing, perda de serra de 4 mm por corte. Devolve as barras
+// (cada uma = lista de cortes) e uma descrição curta "B1: 700+700+400 | ...".
+const PERDA_SERRA_PERFIL_MM = 4;
+function planoDeBarras(cortesMm, barraMm) {
+  const barras = [];
+  if (!(barraMm > 0)) return { barras, descricao: '—' };
+  cortesMm.slice().sort((a, b) => b - a).forEach((c) => {
+    const alvo = barras.find((b) => b.livre >= c);
+    if (alvo) { alvo.cortes.push(c); alvo.livre -= c + PERDA_SERRA_PERFIL_MM; }
+    else barras.push({ cortes: [c], livre: barraMm - c - PERDA_SERRA_PERFIL_MM });
+  });
+  const descricao = barras.map((b, i) => `B${i + 1}: ${b.cortes.map((c) => Math.round(c)).join('+')}`).join(' | ');
+  return { barras, descricao };
 }
 
 async function openOrderCutlist(order) {
@@ -213,10 +236,23 @@ async function openOrderCutlist(order) {
   // a origem dele dentro do pedido.
   const groupedCut = new Map();
   const groupedPurchase = new Map();
+  // Perfil de alumínio / vidro (migration 187): por item comprado, todas as
+  // medidas cortadas — no fim vira "N barras" (perfil) ou "X m²" (vidro).
+  const materiais = new Map();
   (items || []).forEach((item) => {
     const leafRows = flattenOrderItemBreakdown(item.breakdown, item.quantity || 1);
     leafRows.forEach((leaf) => {
-      if (leaf.origin === 'comprado') {
+      if (leaf.material_item_id) {
+        const d = sortPieceCutDims(leaf.width_mm, leaf.height_mm, leaf.depth_mm);
+        const mat = materiais.get(leaf.material_item_id) || {
+          name: leaf.material_item_name || leaf.reference, unit: leaf.material_unit,
+          bar_mm: leaf.material_bar_mm, cortes: [], m2: 0
+        };
+        for (let i = 0; i < leaf.quantity; i++) mat.cortes.push(d.comprimento_mm);
+        mat.m2 += (d.comprimento_mm * d.largura_mm / 1000000) * leaf.quantity;
+        materiais.set(leaf.material_item_id, mat);
+        // segue pra lista de CORTE logo abaixo (não pra de compra)
+      } else if (leaf.origin === 'comprado') {
         const key = [item.module_name, leaf.reference, leaf.description].join('|');
         if (!groupedPurchase.has(key)) {
           groupedPurchase.set(key, {
@@ -253,6 +289,25 @@ async function openOrderCutlist(order) {
   const byModuleThenReference = (a, b) => a.module_name.localeCompare(b.module_name) || a.reference.localeCompare(b.reference);
   currentOrderCutlistRows = Array.from(groupedCut.values()).sort(byModuleThenReference);
   currentPurchaseListRows = Array.from(groupedPurchase.values()).sort(byModuleThenReference);
+  materiais.forEach((mat) => {
+    if (mat.unit === 'm2') {
+      currentPurchaseListRows.push({
+        module_name: 'Matéria-prima', reference: mat.name,
+        description: `${mat.cortes.length} vidro(s) — ver medidas na lista de corte`,
+        quantity: mat.m2.toFixed(2) + ' m²'
+      });
+    } else {
+      const plano = planoDeBarras(mat.cortes, mat.bar_mm || 0);
+      const totalM = mat.cortes.reduce((s, c) => s + c, 0) / 1000;
+      currentPurchaseListRows.push({
+        module_name: 'Matéria-prima', reference: mat.name,
+        description: mat.bar_mm
+          ? `${mat.cortes.length} corte(s) 45°, ${totalM.toFixed(2)} m — plano: ${plano.descricao}`
+          : `${mat.cortes.length} corte(s), ${totalM.toFixed(2)} m`,
+        quantity: mat.bar_mm ? plano.barras.length + ' barra(s)' : totalM.toFixed(2) + ' m'
+      });
+    }
+  });
 
   tbody.innerHTML = '';
   if (currentOrderCutlistRows.length === 0) {
