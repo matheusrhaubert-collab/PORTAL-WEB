@@ -3363,14 +3363,21 @@ function createViewerComposition3D() {
       if (o.material && (o.material.visible === false)) return false;
       return o.visible !== false;
     });
+    // Só PORTA/FRENTE (userData.isFrontPiece, ver viewer3d.js
+    // tagPieceUserData). Sobe a árvore até a porta: clicar no vidro ou no
+    // perfil de uma porta-modelo pega a PORTA inteira, nunca a peça de
+    // dentro; peça de caixa (lateral, base, prateleira...) não é pega.
+    // Só o 1º hit conta — a porta que está NA FRENTE do que foi clicado.
     for (let i = 0; i < hits.length; i++) {
       let o = hits[i].object;
       while (o && o !== group) {
-        if (o.userData && o.userData.pieceId != null) {
+        if (o.userData && o.userData.pieceId != null && o.userData.isFrontPiece) {
           return { pieceId: o.userData.pieceId, reference: (o.userData.pieceInfo && o.userData.pieceInfo.reference) || null };
         }
         o = o.parent;
       }
+      // 1º hit não é porta (bateu numa lateral/prateleira na frente): nada
+      if (i === 0) return null;
     }
     return null;
   }

@@ -1616,6 +1616,18 @@ const Viewer3D = (function () {
     // GROUP do assembly, ver buildProjectAssemblies/renderFreeformWalls) —
     // não esta, que é por peça.
     obj.userData.colorRoleId = part.color_role_id || null;
+    // PORTA/FRENTE (duplo clique na peça, 2026-10-02 — Matt: "deixe só as
+    // portas e frentes com duplo clique, peças de móveis não"). Porta = abre
+    // em dobradiça (hinge_side / opening_type hinge_*) ou papel 'front';
+    // frente de gaveta = 'front' do Construtor que desliza. A vista de
+    // lateral compartilhada (também 'front' do Construtor, mas não abre)
+    // fica de fora.
+    const ot = part.opening_type || 'none';
+    obj.userData.isFrontPiece = part.position_role === 'front'
+      || ['left', 'right', 'top', 'bottom'].indexOf(part.hinge_side) >= 0
+      || ot.indexOf('hinge_') === 0
+      || (part._layoutKind === 'front' && ot !== 'none')
+      || part.slide_distance_mm != null;
   }
 
   // Resolve o lado de dobradiça efetivo de uma peça, cobrindo os dois jeitos
