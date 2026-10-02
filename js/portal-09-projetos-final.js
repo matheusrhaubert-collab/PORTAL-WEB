@@ -417,10 +417,21 @@ async function loadProjectFavoritesList() {
   const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
   const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder'];
   let optional = OPTIONAL_COLS.slice();
-  const runSelect = () => supabaseClient
-    .from('user_projects')
-    .select(BASE_COLS.concat(optional).join(', '))
-    .order('updated_at', { ascending: false });
+  // FILTRO POR DONO (02/10): "Meus Projetos" tem que mostrar SÓ os projetos
+  // da conta logada. Sem esse .eq, o RLS de SELECT deixa passar também os
+  // projetos de OUTRAS contas pro admin (migration 078, is_admin()) e pro
+  // dealer (149, vendedores dele) — o card aparecia normal, mas UPDATE é só
+  // do dono (056), então "Ver em 3D", "Compartilhar" e "Salvar" falhavam com
+  // "não consegui gerar o link" / "o servidor não encontrou o projeto nessa
+  // conta" (Matt, card "Roberta Closet 1"). Duplicar continua funcionando
+  // como jeito de trazer uma cópia pra conta própria.
+  const runSelect = () => {
+    let q = supabaseClient
+      .from('user_projects')
+      .select(BASE_COLS.concat(optional).join(', '));
+    if (currentUser && currentUser.id) q = q.eq('client_user_id', currentUser.id);
+    return q.order('updated_at', { ascending: false });
+  };
   let { data, error } = await runSelect();
   for (let i = 0; i < OPTIONAL_COLS.length; i++) {
     if (!error) break;

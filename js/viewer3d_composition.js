@@ -615,13 +615,19 @@ function createViewerComposition3D() {
   function applyBaseboardJoins(list) {
     if (!Array.isArray(list) || list.length < 2) return;
 
+    // TODOS os rodapés de cada módulo (02/10) — antes pegava só o 1º que
+    // o traverse achava. Os módulos "Toe 3" têm DOIS rodapés (frente e
+    // fundo), então só um deles (às vezes o de trás, invisível) entrava na
+    // junção. Agora cada rodapé vira uma entrada, e a junção roda por
+    // "linha" (mesmo plano de profundidade + altura) — ver agrupamento
+    // abaixo — pra frente juntar com frente e fundo com fundo.
     const entries = [];
     list.forEach((a) => {
       if (!a || !a.group) return;
       a.group.updateMatrixWorld(true);
-      let mesh = null;
-      a.group.traverse((o) => { if (!mesh && o.userData && o.userData.baseboardGeom) mesh = o; });
-      if (!mesh || mesh.visible === false) return;
+      const meshes = [];
+      a.group.traverse((o) => { if (o.userData && o.userData.baseboardGeom && o.visible !== false) meshes.push(o); });
+      meshes.forEach((mesh) => {
       const g = mesh.userData.baseboardGeom;
       const worldPos = new THREE.Vector3(); mesh.getWorldPosition(worldPos);
       const worldQuat = new THREE.Quaternion(); mesh.getWorldQuaternion(worldQuat);
@@ -635,17 +641,34 @@ function createViewerComposition3D() {
         auto_join_adjacent: g.auto_join_adjacent !== false,
         join_max_length_mm: g.join_max_length_mm || 2700
       });
+      });
     });
     if (entries.length < 2) return;
+
+    if (!autoJoinBaseboards) return; // botão "Encaixe" desligado pra sessão inteira
 
     // Ordena pela posição real ao longo do eixo local da 1ª peça — todas as
     // peças de uma mesma fileira/parede compartilham a mesma direção (mesmo
     // rotY), então projetar no eixo de qualquer uma dá a mesma ordem.
+    // Agrupa por LINHA (posição perpendicular ao eixo, no plano do chão, +
+    // altura), arredondada a 1 mm — rodapé da frente e rodapé do fundo
+    // ficam em linhas separadas e cada linha é encadeada sozinha.
     const refAxis = entries[0].axisX;
-    entries.forEach((e) => { e._t = e.worldPos.dot(refAxis); });
-    entries.sort((p, q) => p._t - q._t);
+    const perpAxis = new THREE.Vector3(-refAxis.z, 0, refAxis.x).normalize();
+    const lines = new Map();
+    entries.forEach((e) => {
+      e._t = e.worldPos.dot(refAxis);
+      const key = Math.round(e.worldPos.dot(perpAxis) * 1000) + '|' + Math.round(e.worldPos.y * 1000);
+      if (!lines.has(key)) lines.set(key, []);
+      lines.get(key).push(e);
+    });
+    lines.forEach((lineEntries) => {
+      lineEntries.sort((p, q) => p._t - q._t);
+      if (lineEntries.length >= 2) joinBaseboardLine(lineEntries);
+    });
+  }
 
-    if (!autoJoinBaseboards) return; // botão "Encaixe" desligado pra sessão inteira
+  function joinBaseboardLine(entries) {
 
     // GRUPO (não só par-a-par) — 3+ módulos em fileira encostados também
     // viram 1 peça só, desde que o comprimento total não passe do limite. Um
