@@ -628,6 +628,23 @@ async function generateOrderProposalPDF(order, items, multi) {
         doc.line(PROPOSAL_MARGIN_MM, y + 2.5, pageWidth - PROPOSAL_MARGIN_MM, y + 2.5);
         y += 7.5;
       });
+      // SOMATÓRIO na capa (01/10, Matt: "coloca somatório") — mesmo valor
+      // da faixa de total do fim (getDisplayPrice: margem + extras fixos 1x).
+      const somaFabrica = projects.reduce((acc, p) => acc + (p.items || []).reduce((a2, it) => a2 + Number(it.total_price || 0), 0), 0);
+      ensureSpace(14);
+      y += 1;
+      const capaBandH = 11;
+      doc.setFillColor.apply(doc, PROPOSAL_COLOR_TEXT);
+      doc.roundedRect(PROPOSAL_MARGIN_MM, y, contentWidth, capaBandH, 1.2, 1.2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(224, 217, 206);
+      doc.text(I18n.t('proposal.total_all_label'), PROPOSAL_MARGIN_MM + 4, y + capaBandH / 2, { baseline: 'middle' });
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text(formatMoney(getDisplayPrice(somaFabrica)), pageWidth - PROPOSAL_MARGIN_MM - 4, y + capaBandH / 2, { align: 'right', baseline: 'middle' });
+      doc.setFont('helvetica', 'normal');
+      y += capaBandH + 4;
       doc.setTextColor(0);
     }
 
