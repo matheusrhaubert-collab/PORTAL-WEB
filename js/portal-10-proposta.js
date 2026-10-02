@@ -1279,6 +1279,11 @@ async function generateClientProposalPDF(folderName, rows, statusEl) {
         if (slot.module && slot.module.visual_only) continue;
         items.push(await buildProposalItemFromSlot(slot));
       }
+      // deixa o card de Meus projetos com o MESMO valor da proposta
+      try {
+        const vivo = items.reduce((acc, it) => acc + Number(it.total_price || 0), 0);
+        if (row.id && vivo > 0) await supabaseClient.from('user_projects').update({ cached_value_usd: vivo }).eq('id', row.id);
+      } catch (e) { /* só conveniência */ }
       let photos = [];
       let refs = [];
       try {
@@ -1326,5 +1331,6 @@ async function generateClientProposalPDF(folderName, rows, statusEl) {
     } catch (e) { console.error('[proposta do cliente] reabrir:', e); }
     clientProposalRunning = false;
     say('');
+    if (typeof loadProjectFavoritesList === 'function') loadProjectFavoritesList(); // cards com o valor atualizado
   }
 }

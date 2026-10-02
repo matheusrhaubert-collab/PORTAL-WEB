@@ -192,8 +192,7 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
     const slotsPayload = serializeProjectSlots();
     let cachedValueUsd = null;
     try {
-      const r = await computeProjectSlotsTotal(slotsPayload);
-      if (r && r.skipped === 0) cachedValueUsd = r.total;
+      cachedValueUsd = await computeOpenProjectLiveTotal();
     } catch (e) { /* sem cache — card recalcula em background */ }
     const basePayload = {
       slots: slotsPayload,
@@ -310,6 +309,25 @@ if (projUpdateFavBtn) {
 // calculateModulePrice por slot) mas SEM montar os slots completos pro
 // canvas/3D — só soma result.total. Sequencial de propósito, mesmo motivo de
 // restoreFavoriteProject: loadModuleColors mexe no global moduleColorsByRole.
+// VALOR DO PROJETO ABERTO, igual ao modal $ Orçamento e à Proposta (01/10,
+// Matt: "os valores não batem") — soma o slot.result.total de cada módulo
+// (já com interno do Construtor, furação, LED…) depois de reprecificar.
+// computeProjectSlotsTotal (abaixo) recalcula a partir do JSON salvo e NÃO
+// enxerga os internos do Construtor (slot.layout) nem a furação — por isso
+// o card de Meus projetos mostrava outro número. Ele continua só pro card
+// de projeto que ainda não tem valor guardado.
+async function computeOpenProjectLiveTotal() {
+  try { if (typeof ensureProjectDrillingCatalog === 'function') await ensureProjectDrillingCatalog(); } catch (e) { /* segue */ }
+  try { if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots(); } catch (e) { /* segue */ }
+  let total = 0;
+  for (const s of projectSlots) {
+    if (s.module && s.module.visual_only) continue;
+    if (!s.result) return null; // algum módulo sem preço: não grava número parcial
+    total += Number(s.result.total) || 0;
+  }
+  return total;
+}
+
 async function computeProjectSlotsTotal(slotConfigs) {
   if (!Array.isArray(slotConfigs) || slotConfigs.length === 0) return { total: 0, skipped: 0 };
   if (!allModules.length) await loadModules();
@@ -1126,9 +1144,9 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     if (bindAsFavorite && fav.id) {
       (async () => {
         try {
-          const r = await computeProjectSlotsTotal(Array.isArray(fav.slots) ? fav.slots : []);
-          if (r && r.skipped === 0) {
-            await supabaseClient.from('user_projects').update({ cached_value_usd: r.total }).eq('id', fav.id);
+          const total = await computeOpenProjectLiveTotal();
+          if (total != null && loadedProjectFavorite && loadedProjectFavorite.id === fav.id) {
+            await supabaseClient.from('user_projects').update({ cached_value_usd: total }).eq('id', fav.id);
           }
         } catch (e) { /* silencioso — cache é só conveniência */ }
       })();
