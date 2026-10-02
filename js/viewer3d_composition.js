@@ -3186,7 +3186,11 @@ function createViewerComposition3D() {
   const RESIZE_ARROW_AXIS_COLOR = {
     'width-left': 0xd8442f, 'width-right': 0xd8442f,   // X — vermelho
     'height-top': 0x2e9e5b,                             // Y — verde
-    'depth-front': 0x2f6fd8                             // Z — azul
+    'depth-front': 0x2f6fd8,                            // Z — azul
+    // setas da PEÇA selecionada (duplo clique, 2026-10-02)
+    'piece-x+': 0xd8442f, 'piece-x-': 0xd8442f,
+    'piece-y+': 0x2e9e5b, 'piece-y-': 0x2e9e5b,
+    'piece-z+': 0x2f6fd8, 'piece-z-': 0x2f6fd8
   };
   // Qual seta está acesa agora (string do eixo) — evita repintar a cada
   // pointermove quando nada mudou.
@@ -3336,6 +3340,94 @@ function createViewerComposition3D() {
     return null;
   }
 
+  // ---------- PEÇA SELECIONADA (duplo clique na peça, 2026-10-02) ----------
+  // Matt: "dar dois cliques rápidos em qualquer peça do ambiente, tipo uma
+  // porta, e poder deletar ou esticar, mover". portal.js decide o que fazer;
+  // aqui só: achar a peça sob o ponteiro, medir a peça no referencial do
+  // MÓDULO (eixos do grupo do slot = W/H/D) e desenhar o contorno dela.
+  function pieceObjectsOf(group, pieceId) {
+    const out = [];
+    if (!group || pieceId == null) return out;
+    group.traverse((o) => { if (o.userData && o.userData.pieceId === pieceId) out.push(o); });
+    // só os de cima (um objeto marcado dentro de outro marcado com o mesmo id)
+    return out.filter((o) => { let p = o.parent; while (p && p !== group) { if (out.includes(p)) return false; p = p.parent; } return true; });
+  }
+  function pickPieceAt(clientX, clientY, slotId) {
+    if (!renderer || !camera || !_raycaster) return null;
+    const group = findGroupBySlotId(slotId);
+    if (!group) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const hits = _raycaster.intersectObject(group, true).filter((h) => {
+      const o = h.object;
+      if (!o || (o.userData && o.userData.isHitboxProxy)) return false;
+      if (o.material && (o.material.visible === false)) return false;
+      return o.visible !== false;
+    });
+    for (let i = 0; i < hits.length; i++) {
+      let o = hits[i].object;
+      while (o && o !== group) {
+        if (o.userData && o.userData.pieceId != null) {
+          return { pieceId: o.userData.pieceId, reference: (o.userData.pieceInfo && o.userData.pieceInfo.reference) || null };
+        }
+        o = o.parent;
+      }
+    }
+    return null;
+  }
+  // Caixa da peça nos eixos do MÓDULO: { center, axes:{x,y,z}, half:{x,y,z} }
+  // (metros, mundo). null se a peça não está na cena.
+  function getPieceFrame(slotId, pieceId) {
+    const group = findGroupBySlotId(slotId);
+    const objs = pieceObjectsOf(group, pieceId);
+    if (!objs.length) return null;
+    group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(group.matrixWorld).invert ? new THREE.Matrix4().copy(group.matrixWorld).invert()
+      : new THREE.Matrix4().getInverse(group.matrixWorld);
+    const box = new THREE.Box3();
+    const v = new THREE.Vector3();
+    const m = new THREE.Matrix4();
+    objs.forEach((root) => root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || o.visible === false) return;
+      if (o.material && o.material.visible === false) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const bb = o.geometry.boundingBox;
+      m.multiplyMatrices(inv, o.matrixWorld);
+      for (let i = 0; i < 8; i++) {
+        v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(m);
+        box.expandByPoint(v);
+      }
+    }));
+    if (box.isEmpty()) return null;
+    const c = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const cw = c.clone().applyMatrix4(group.matrixWorld);
+    const ex = new THREE.Vector3(), ey = new THREE.Vector3(), ez = new THREE.Vector3();
+    group.matrixWorld.extractBasis(ex, ey, ez);
+    ex.normalize(); ey.normalize(); ez.normalize();
+    const o3 = (q) => ({ x: q.x, y: q.y, z: q.z });
+    return { center: o3(cw), axes: { x: o3(ex), y: o3(ey), z: o3(ez) }, half: { x: size.x / 2, y: size.y / 2, z: size.z / 2 } };
+  }
+  let pieceOutlineObj = null;
+  function setPieceOutline(frame) {
+    if (!scene) return;
+    if (pieceOutlineObj) { scene.remove(pieceOutlineObj); disposeObject3D(pieceOutlineObj); pieceOutlineObj = null; }
+    if (!frame) return;
+    const g = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(frame.half.x * 2 + 0.004, frame.half.y * 2 + 0.004, frame.half.z * 2 + 0.004)),
+      new THREE.LineBasicMaterial({ color: 0x2f6fd8, depthTest: false })
+    );
+    g.name = 'ar-export-exclude';
+    g.renderOrder = 997;
+    const basis = new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(frame.axes.x.x, frame.axes.x.y, frame.axes.x.z),
+      new THREE.Vector3(frame.axes.y.x, frame.axes.y.y, frame.axes.y.z),
+      new THREE.Vector3(frame.axes.z.x, frame.axes.z.y, frame.axes.z.z));
+    g.quaternion.setFromRotationMatrix(basis);
+    g.position.set(frame.center.x, frame.center.y, frame.center.z);
+    pieceOutlineObj = g;
+    scene.add(g);
+  }
+
   // Devolve a THREE.Scene bruta desta instância — teste de exportação AR
   // (2026-08-01, "colocar o móvel no ambiente real"): generateArGlbForProject
   // (portal.js) usa isto pra rodar o THREE.GLTFExporter em cima da MESMA
@@ -3426,6 +3518,8 @@ function createViewerComposition3D() {
     // Projeção da câmera (2026-08-13): 'paralela' (ortográfica) x 'perspectiva'.
     setCameraProjection, getCameraProjection,
     pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,
+    // Peça selecionada por duplo clique (2026-10-02)
+    pickPieceAt, getPieceFrame, setPieceOutline,
     // Diagnóstico (ver debugScreenRects) — chamável pelo console via
     // window.__legnoViewerEdit.debugScreenRects().
     debugScreenRects,

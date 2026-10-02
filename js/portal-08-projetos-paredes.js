@@ -1821,6 +1821,16 @@ function attachProject3DEditDrag() {
     const arrowHit = ViewerProjectEdit.pickResizeArrowAt
       ? ViewerProjectEdit.pickResizeArrowAt(ev.clientX, ev.clientY)
       : null;
+    // SETA DA PEÇA selecionada por duplo clique (2026-10-02) — estica só a
+    // peça (ver startProjectPieceDrag, portal-06c).
+    if (arrowHit && String(arrowHit.axis).indexOf('piece-') === 0
+      && typeof projectSelectedPiece !== 'undefined' && projectSelectedPiece) {
+      ev.preventDefault();
+      clearHold3DTimer();
+      projectDrag3DState = null;
+      startProjectPieceDrag(ev, domEl, 'resize', arrowHit.axis);
+      return;
+    }
     if (arrowHit && selectedProjectSlotId != null) {
       const arrowSlot = projectSlots.find((s) => s.id === selectedProjectSlotId);
       if (arrowSlot) {
@@ -1996,6 +2006,29 @@ function attachProject3DEditDrag() {
     // Detectado aqui no pointerdown (não num listener 'dblclick') pelo mesmo
     // motivo das setas: o dblclick não é confiável no toque do iOS e aqui já
     // se sabe QUAL módulo foi atingido.
+    // ---------- PEÇA JÁ SELECIONADA: arrastar a peça MOVE ela ----------
+    // (duplo clique na peça, 2026-10-02 — ver portal-06c). Clicar em outra
+    // peça/módulo solta a peça e segue o fluxo normal.
+    if (typeof projectSelectedPiece !== 'undefined' && projectSelectedPiece) {
+      const pegou = (projectSelectedPiece.slotId === slot.id && ViewerProjectEdit.pickPieceAt)
+        ? ViewerProjectEdit.pickPieceAt(ev.clientX, ev.clientY, slot.id) : null;
+      if (pegou && pegou.pieceId === projectSelectedPiece.pieceId) {
+        ev.preventDefault();
+        clearHold3DTimer();
+        projectDrag3DState = null;
+        lastModuleTap = null;
+        startProjectPieceDrag(ev, domEl, 'move', null);
+        return;
+      }
+      clearProjectPieceSelection();
+    }
+
+    // ---------- DUPLO CLIQUE: SELECIONA A PEÇA ----------
+    // Até 2026-10-02 o duplo clique ENQUADRAVA o módulo de frente
+    // (frameProjectSlotFront). Pedido do Matt: "dar dois cliques rápidos em
+    // qualquer peça... e poder deletar ou esticar, mover" — e escolheu que o
+    // duplo clique passe a SÓ selecionar a peça. Sem peça sob o ponteiro
+    // (raro), fica só o módulo selecionado.
     const agora = Date.now();
     if (lastModuleTap && lastModuleTap.slotId === slot.id
       && agora - lastModuleTap.t <= ARROW_DOUBLE_TAP_MS) {
@@ -2003,7 +2036,8 @@ function attachProject3DEditDrag() {
       clearHold3DTimer();
       projectDrag3DState = null;
       selectProjectSlot(slot.id);
-      frameProjectSlotFront(slot);
+      const peca = ViewerProjectEdit.pickPieceAt ? ViewerProjectEdit.pickPieceAt(ev.clientX, ev.clientY, slot.id) : null;
+      if (peca && typeof selectProjectPiece === 'function') selectProjectPiece(slot.id, peca.pieceId, peca.reference);
       return;
     }
     lastModuleTap = { t: agora, slotId: slot.id };
@@ -2548,6 +2582,8 @@ function attachProject3DEditDrag() {
   });
 
   const endDrag3D = (ev) => {
+    // arraste de PEÇA em andamento (portal-06c) — quem fecha é ele
+    if (typeof projectPieceDragState !== 'undefined' && projectPieceDragState) return;
     if (projectMarqueeState && ev.pointerId === projectMarqueeState.pointerId) {
       const state = projectMarqueeState;
       projectMarqueeState = null;
@@ -5607,6 +5643,11 @@ async function sendProjectToOrder() {
         // LED embutido (migration 183): { piece_id: config } — o ERP aplica
         // na hora de gerar o .ban (rasgo), igual removed_piece_ids.
         led_configs: slot.ledConfigs || {},
+        // Ajuste manual de peça (migration 190) — o ERP aplica igual ao
+        // portal ao refazer a furação/3D da peça. Só vai quando existe
+        // ajuste: pedido sem ajuste nenhum continua idêntico ao de antes.
+        ...((slot.pieceAdjustments && Object.keys(slot.pieceAdjustments).length)
+          ? { piece_adjustments: slot.pieceAdjustments } : {}),
         // GEOMETRIA DO CONSTRUTOR DE VÃOS (migration 121). null quando o
         // slot não usa o construtor (a maioria). Não é o preço nem a
         // furação — é só onde cada peça do interior ficou, pra os
@@ -7114,6 +7155,8 @@ function serializeProjectSlots() {
     removed_piece_ids: slot.removedPieceIds || [],
     // LED embutido (2026-09-30) — cabe no jsonb de slots, sem migration.
     led_configs: slot.ledConfigs || {},
+    // Ajuste manual de peça (duplo clique, 2026-10-02) — cabe no jsonb.
+    piece_adjustments: slot.pieceAdjustments || {},
     // Árvore de vãos montada no construtor de armário (spec §4.5 — cabe no
     // jsonb que já existe, sem migration). null = o cliente não mexeu.
     layout: slot.layout || null,

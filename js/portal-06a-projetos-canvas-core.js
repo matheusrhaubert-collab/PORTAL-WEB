@@ -95,6 +95,9 @@ function cloneProjectSlotForUndo(slot) {
     // LED embutido (2026-09-30) — objeto por peça; cópia rasa basta (a janela
     // do LED sempre SUBSTITUI o objeto, nunca muta uma config no lugar).
     ledConfigs: Object.assign({}, slot.ledConfigs || {}),
+    // Ajuste manual de peça (2026-10-02) — objeto por peça, mutado no lugar
+    // durante o arraste: cópia funda pro desfazer não andar junto.
+    pieceAdjustments: JSON.parse(JSON.stringify(slot.pieceAdjustments || {})),
     widthPresetsMm: (slot.widthPresetsMm || []).slice(),
     heightPresetsMm: (slot.heightPresetsMm || []).slice()
   };

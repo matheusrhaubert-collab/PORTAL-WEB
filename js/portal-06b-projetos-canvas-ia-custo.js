@@ -1881,6 +1881,10 @@ function selectProjectSlot(slotId) {
   if (typeof projectSelectedRoomFace !== 'undefined' && projectSelectedRoomFace) {
     projectSelectedRoomFace = null;
   }
+  // Trocou de módulo: a peça selecionada (duplo clique) era de outro — solta.
+  if (typeof projectSelectedPiece !== 'undefined' && projectSelectedPiece && projectSelectedPiece.slotId !== slotId) {
+    clearProjectPieceSelection();
+  }
   selectedProjectSlotId = slotId;
   document.querySelectorAll('#po-proj-canvas .po-proj-slot').forEach((el) => {
     el.classList.toggle('selected', el.dataset.slotId === slotId);
@@ -1931,6 +1935,7 @@ function selectProjectSlot(slotId) {
 // contorno do módulo, bem onde a pessoa clica pra "soltar"), a tecla Esc, e o
 // clique na parede/piso da vista 2D.
 function deselectProjectSlot() {
+  if (typeof projectSelectedPiece !== 'undefined' && projectSelectedPiece) clearProjectPieceSelection();
   const hadMultiSelect = projectMultiSelectIds.size > 0;
   projectMultiSelectIds = new Set();
   // BUG (2026-09-04, relato do usuário: "mesmo com grupo criado eu clico no
@@ -2496,7 +2501,11 @@ function projectSlotEffectivePiecesWithLeds(slot, ledConfigs) {
   const removidas = slot.removedPieceIds;
   let base = projectSlotAllPiecesBeforeRemoval(slot);
   if (removidas && removidas.length) base = filterRemovedPiecesDeep(base, removidas); // recursivo: porta/prateleira aninhada (29/09)
-  return applyLedConfigsDeep(base, ledConfigs);
+  base = applyLedConfigsDeep(base, ledConfigs);
+  // Ajuste manual de peça (duplo clique na peça, 2026-10-02) — ver
+  // applyPieceAdjustmentsDeep em js/module-pieces.js.
+  return (typeof applyPieceAdjustmentsDeep === 'function')
+    ? applyPieceAdjustmentsDeep(base, slot.pieceAdjustments) : base;
 }
 
 // ==========================================================================
@@ -2535,7 +2544,9 @@ function projectHoleCountsFor(slot, parts) {
     ensureProjectDrillingCatalog();
     return null;
   }
-  const chave = [(slot.module || {}).id, slot.width_mm, slot.height_mm, slot.depth_mm].join('|');
+  // + ajuste manual de peça (mexe na geometria = mexe nos furos)
+  const chave = [(slot.module || {}).id, slot.width_mm, slot.height_mm, slot.depth_mm,
+    JSON.stringify(slot.pieceAdjustments || {})].join('|');
   if (projectHoleCountCache.has(chave)) return projectHoleCountCache.get(chave);
   let mapa = null;
   try {

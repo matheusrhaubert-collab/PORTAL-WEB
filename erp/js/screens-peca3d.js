@@ -54,7 +54,7 @@ PECA3D.load = async function (p) {
   const { data: orderItem, error: eItem } = await supabaseClient
     .from('order_items')
     .select('id, order_id, module_id, module_name, width_mm, height_mm, depth_mm, ' +
-      'selected_colors, shelf_quantities, selected_optional_component_ids, dim_overrides, piece_color_overrides, removed_piece_ids, led_configs')
+      'selected_colors, shelf_quantities, selected_optional_component_ids, dim_overrides, piece_color_overrides, removed_piece_ids, led_configs, piece_adjustments')
     .eq('id', orderItemIds[0]).maybeSingle();
   if (eItem) throw eItem;
   if (!orderItem || !orderItem.module_id) return { code: code, piece: piece, orderItemMissing: true };
@@ -73,6 +73,8 @@ PECA3D.load = async function (p) {
   /* + LED embutido (migration 183): a peça aparece com o LED no 3D da etiqueta */
   const effectivePieces = applyLedConfigsDeep(filterRemovedPiecesDeep(rawPieces
     .filter(function (pc) { return !pc.client_optional || selectedOptionalIds.includes(pc.id); }), removedIds), orderItem.led_configs || null); /* recursivo (29/09) */
+    /* ajuste manual de peça (migration 190): mesma regra do portal */
+    const effectivePiecesAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(effectivePieces, orderItem.piece_adjustments || null) : effectivePieces;
 
   const colorsByRole = {};
   (orderItem.selected_colors || []).forEach(function (sc) {
@@ -80,7 +82,7 @@ PECA3D.load = async function (p) {
   });
 
   const slot = {
-    pieces: effectivePieces,
+    pieces: effectivePiecesAj,
     width_mm: orderItem.width_mm, height_mm: orderItem.height_mm, depth_mm: orderItem.depth_mm,
     colorsByRole: colorsByRole,
     shelfQuantities: orderItem.shelf_quantities || {},

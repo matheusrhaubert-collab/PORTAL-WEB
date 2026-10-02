@@ -374,6 +374,49 @@ function applyLedConfigsDeep(piecesList, ledConfigs) {
   });
 }
 
+// ==========================================================================
+// AJUSTE MANUAL DE PEÇA (2026-10-02) — Matt: "dar dois cliques rápidos em
+// qualquer peça do ambiente, tipo uma porta, e poder deletar ou esticar,
+// mover". O ajuste é por piece.id, em mm, somado às fórmulas da peça:
+//   pieceAdjustments = { [piece_id]: { dx, dy, dz, dw, dh, dd } }
+// (slot.pieceAdjustments no projeto, order_items.piece_adjustments no pedido).
+// Mesmo desenho de applyLedConfigsDeep: aplicado UMA vez no ponto de junção
+// (projectSlotEffectivePieces no portal e as telas do ERP que reconstroem o
+// pedido), recursivo, nunca muta o original. Como mexe na FÓRMULA, a medida
+// nova vale pra tudo que vem depois: 3D, preço, lista de corte, etiqueta e
+// .ban — sem nenhum desses saber que houve ajuste.
+function adjustFormula(f, deltaMm) {
+  const n = Number(deltaMm) || 0;
+  if (!n) return f;
+  const base = (f == null || f === '') ? '0' : String(f);
+  return '(' + base + ')+(' + (Math.round(n * 10) / 10) + ')';
+}
+function applyPieceAdjustmentsDeep(piecesList, adjustments) {
+  if (!Array.isArray(piecesList)) return piecesList;
+  if (!adjustments || typeof adjustments !== 'object' || !Object.keys(adjustments).length) return piecesList;
+  return piecesList.map((p) => {
+    if (!p) return p;
+    let out = p;
+    const a = p.id != null ? adjustments[p.id] : null;
+    if (a && (a.dx || a.dy || a.dz || a.dw || a.dh || a.dd)) {
+      out = Object.assign({}, out, {
+        width_formula: adjustFormula(p.width_formula, a.dw),
+        height_formula: adjustFormula(p.height_formula, a.dh),
+        depth_formula: adjustFormula(p.depth_formula, a.dd),
+        offset_x_formula: adjustFormula(p.offset_x_formula, a.dx),
+        offset_y_formula: adjustFormula(p.offset_y_formula, a.dy),
+        offset_z_formula: adjustFormula(p.offset_z_formula, a.dz),
+        _adjusted: true
+      });
+    }
+    if (Array.isArray(p.child_pieces) && p.child_pieces.length) {
+      const kids = applyPieceAdjustmentsDeep(p.child_pieces, adjustments);
+      if (kids !== p.child_pieces) out = Object.assign({}, out, { child_pieces: kids });
+    }
+    return out;
+  });
+}
+
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
   // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.

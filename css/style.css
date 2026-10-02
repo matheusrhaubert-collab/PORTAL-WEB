@@ -5148,3 +5148,13 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-proj-door-model-card.blocked { opacity: 0.4; cursor: not-allowed; }
 .po-proj-door-model-card.blocked:hover { box-shadow: none; }
 .po-proj-door-model-hint { margin: 6px 0 0; font-size: 11px; }
+
+/* Peça selecionada por duplo clique (2026-10-02) — barrinha flutuante */
+.po-proj-piece-toolbar {
+  position: absolute; z-index: 30; transform: translate(-50%, -100%);
+  display: none; align-items: center; gap: 4px; padding: 4px 6px;
+  background: #fff; border: 1px solid #2f6fd8; border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 12px; white-space: nowrap;
+}
+.po-proj-piece-toolbar button { margin: 0; padding: 2px 8px; min-width: 0; }
+.po-proj-piece-toolbar-name { font-weight: 600; color: #2f6fd8; margin-right: 4px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }

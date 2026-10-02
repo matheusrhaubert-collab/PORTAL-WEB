@@ -189,7 +189,7 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
        ver o comentário grande no topo do arquivo e em
        FURACAO_LOTE._catalogoDeAgregados. */
     .select('id, module_id, module_name, quantity, width_mm, height_mm, depth_mm, ' +
-            'shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, led_configs, sort_order, ' +
+            'shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, led_configs, piece_adjustments, sort_order, ' +
             'selected_colors, layout, modules(is_decoration)')
     .eq('order_id', orderId)
     .order('sort_order');
@@ -236,6 +236,8 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
     const efetivas = applyLedConfigsDeep(filterRemovedPiecesDeep(todasPecas.filter(function (p) {
       return !p.client_optional || escolhidos.includes(p.id);
     }), removidos), item.led_configs || null); /* recursivo: porta/prateleira aninhada (29/09) */
+    /* ajuste manual de peça (migration 190): mesma regra do portal */
+    const efetivasAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(efetivas, item.piece_adjustments || null) : efetivas;
 
     /* colorsByRole a partir do que o cliente escolheu no pedido.
        ATENÇÃO AO FORMATO (errei isto na 1ª versão, 2026-08-16): o
@@ -263,7 +265,7 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
     });
 
     let parts = resolvePiecesForViewer(
-      efetivas,
+      efetivasAj,
       { W: item.width_mm, H: item.height_mm, D: item.depth_mm },
       colorsByRole,
       item.shelf_quantities || {},
@@ -273,7 +275,7 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
       // vão de referência dos offsets = corpo (H já sem o pé), igual a
       // resolvePiecesForViewer (Pricing.resolveBodyDims)
       let corpo = { W: item.width_mm, H: item.height_mm, D: item.depth_mm };
-      try { corpo = Pricing.resolveBodyDims(efetivas, corpo).bodyDims || corpo; } catch (e) { /* sem pé */ }
+      try { corpo = Pricing.resolveBodyDims(efetivasAj, corpo).bodyDims || corpo; } catch (e) { /* sem pé */ }
       parts = FURACAO_LOTE._aplicarEspessuraSoNoEixo(parts, corpo);
     }
 

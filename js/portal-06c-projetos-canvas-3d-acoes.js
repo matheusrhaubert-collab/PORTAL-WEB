@@ -1942,6 +1942,10 @@ function classifyProject3DGrab(slot, grabAlongMm, grabHeightMm) {
 const PROJECT_ARROW_GAP_M = 0.06; // folga entre a face do módulo e o início da seta
 function refreshProject3DResizeArrows() {
   if (!ViewerProjectEdit || !ViewerProjectEdit.setResizeArrows) return;
+  // Peça selecionada por duplo clique: as setas são DELA (ver
+  // refreshProjectPieceArrows, no fim deste arquivo).
+  if (typeof projectSelectedPiece !== 'undefined' && projectSelectedPiece
+    && !projectCameraModeOn && refreshProjectPieceArrows()) return;
   // Setas em TODO dispositivo (mudou em 2026-08-08, 2ª rodada). Nasceram só
   // pro toque, mas o pedido "nas setas, 2 cliques" veio marcado como AMBOS —
   // e no mouse a única forma de esticar era agarrar a borda invisível do
@@ -3949,3 +3953,254 @@ function removerLedDaPeca(slot) {
   const rem = document.getElementById('po-led-remove-btn');
   if (rem) rem.addEventListener('click', () => { const slot = slotAtual(); if (slot) removerLedDaPeca(slot); });
 })();
+
+// ==========================================================================
+// PEÇA SELECIONADA POR DUPLO CLIQUE (2026-10-02)
+// ==========================================================================
+// Matt: "dar dois cliques rápidos em qualquer peça/componente do ambiente,
+// tipo uma porta. e com esse clique poder deletar ou esticar, mover... nos
+// mesmos comandos que já temos hoje". Decisões dele: o duplo clique passa a
+// SÓ selecionar a peça (não enquadra mais o módulo); vale pra QUALQUER peça;
+// muda a produção (3D, preço, corte, etiqueta, .ban); comando = setas 3D na
+// peça, iguais às do módulo.
+//
+// Como: setas nos 6 sentidos dos eixos do MÓDULO (X largura, Y altura, Z
+// profundidade). Arrastar uma seta estica a peça pra aquele lado; arrastar a
+// própria peça move no plano de frente (X/Y). O ajuste vira
+// slot.pieceAdjustments[piece_id] = { dx, dy, dz, dw, dh, dd } (mm) e entra
+// nas fórmulas da peça em projectSlotEffectivePieces (applyPieceAdjustmentsDeep,
+// js/module-pieces.js) — por isso vale pra tudo. Remover = o mesmo
+// removedPieceIds do modal "Peças do móvel".
+//
+// LIMITAÇÃO (a mesma do remover): peça de catálogo com N cópias do mesmo id
+// (ex.: "3 prateleiras" de um cadastro só) mexe nas N juntas. Peça do
+// Construtor tem id próprio por vão e mexe sozinha.
+let projectSelectedPiece = null;   // { slotId, pieceId, reference }
+let projectPieceDragState = null;
+const PROJECT_PIECE_ARROW_GAP_M = 0.03;
+const PROJECT_PIECE_MIN_MM = 3;
+
+function selectProjectPiece(slotId, pieceId, reference) {
+  if (pieceId == null) return;
+  projectSelectedPiece = { slotId, pieceId, reference: reference || null };
+  refreshProject3DResizeArrows();
+  renderProjectPieceToolbar();
+}
+
+function clearProjectPieceSelection() {
+  if (!projectSelectedPiece) return;
+  projectSelectedPiece = null;
+  projectPieceDragState = null;
+  if (ViewerProjectEdit && ViewerProjectEdit.setPieceOutline) ViewerProjectEdit.setPieceOutline(null);
+  renderProjectPieceToolbar();
+  refreshProject3DResizeArrows();
+}
+
+// Chamado no começo de refreshProject3DResizeArrows: com peça selecionada,
+// as setas são DA PEÇA. Devolve true quando desenhou.
+function refreshProjectPieceArrows() {
+  if (!projectSelectedPiece || !ViewerProjectEdit || !ViewerProjectEdit.getPieceFrame) return false;
+  const slot = projectSlots.find((s) => s.id === projectSelectedPiece.slotId);
+  const frame = slot ? ViewerProjectEdit.getPieceFrame(slot.id, projectSelectedPiece.pieceId) : null;
+  if (!frame) {
+    // peça sumiu (removida, módulo trocado...) — sai do modo peça
+    projectSelectedPiece = null;
+    if (ViewerProjectEdit.setPieceOutline) ViewerProjectEdit.setPieceOutline(null);
+    renderProjectPieceToolbar();
+    return false;
+  }
+  ViewerProjectEdit.setPieceOutline(frame);
+  const spec = [];
+  ['x', 'y', 'z'].forEach((k) => {
+    const a = frame.axes[k];
+    [1, -1].forEach((sg) => {
+      const off = frame.half[k] + PROJECT_PIECE_ARROW_GAP_M;
+      spec.push({
+        axis: 'piece-' + k + (sg > 0 ? '+' : '-'),
+        dir: { x: a.x * sg, y: a.y * sg, z: a.z * sg },
+        position: { x: frame.center.x + a.x * sg * off, y: frame.center.y + a.y * sg * off, z: frame.center.z + a.z * sg * off }
+      });
+    });
+  });
+  ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
+  positionProjectPieceToolbar(frame);
+  return true;
+}
+
+// Barrinha flutuante da peça: nome + Remover + Desfazer ajuste + Concluir.
+function renderProjectPieceToolbar() {
+  let bar = document.getElementById('po-proj-piece-toolbar');
+  if (!projectSelectedPiece) { if (bar) bar.style.display = 'none'; return; }
+  const wrap = document.querySelector('#po-tab-projects .po-proj-canvas-wrap');
+  if (!wrap) return;
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'po-proj-piece-toolbar';
+    bar.className = 'po-proj-piece-toolbar';
+    // por cima do canvas: o toque no botão não pode virar seleção lá embaixo
+    bar.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    wrap.appendChild(bar);
+  }
+  const slot = projectSlots.find((s) => s.id === projectSelectedPiece.slotId);
+  const temAjuste = !!(slot && slot.pieceAdjustments && slot.pieceAdjustments[projectSelectedPiece.pieceId]);
+  bar.innerHTML = `
+    <span class="po-proj-piece-toolbar-name">${projectSelectedPiece.reference || I18n.t('project.piece_label')}</span>
+    <button type="button" class="secondary" data-acao="remover" title="${I18n.t('project.piece_remove')}">🗑</button>
+    <button type="button" class="secondary" data-acao="desfazer" title="${I18n.t('project.piece_reset')}"${temAjuste ? '' : ' disabled'}>↺</button>
+    <button type="button" class="secondary" data-acao="ok" title="${I18n.t('project.piece_done')}">✓</button>`;
+  bar.style.display = 'flex';
+  bar.querySelector('[data-acao="remover"]').addEventListener('click', () => removeSelectedProjectPiece());
+  bar.querySelector('[data-acao="desfazer"]').addEventListener('click', () => resetSelectedProjectPieceAdjustment());
+  bar.querySelector('[data-acao="ok"]').addEventListener('click', () => clearProjectPieceSelection());
+}
+
+function positionProjectPieceToolbar(frame) {
+  const bar = document.getElementById('po-proj-piece-toolbar');
+  const wrap = document.querySelector('#po-tab-projects .po-proj-canvas-wrap');
+  if (!bar || !wrap || !frame || !ViewerProjectEdit.worldToClient) return;
+  const a = frame.axes.y;
+  const topo = { x: frame.center.x - a.x * frame.half.y, y: frame.center.y - a.y * frame.half.y - 0.12, z: frame.center.z - a.z * frame.half.y };
+  const p = ViewerProjectEdit.worldToClient(topo) || ViewerProjectEdit.worldToClient(frame.center);
+  if (!p) return;
+  const r = wrap.getBoundingClientRect();
+  bar.style.left = Math.round(Math.min(Math.max(p.x - r.left, 70), r.width - 70)) + 'px';
+  bar.style.top = Math.round(Math.min(Math.max(p.y - r.top, 10), r.height - 40)) + 'px';
+}
+
+function removeSelectedProjectPiece() {
+  if (!projectSelectedPiece) return;
+  const slot = projectSlots.find((s) => s.id === projectSelectedPiece.slotId);
+  const pieceId = projectSelectedPiece.pieceId;
+  if (!slot) return;
+  pushProjectUndoState();
+  projectSelectedPiece = null;
+  if (ViewerProjectEdit.setPieceOutline) ViewerProjectEdit.setPieceOutline(null);
+  renderProjectPieceToolbar();
+  removeProjectSlotPiece(slot, pieceId);   // mesmo caminho do modal "Peças do móvel"
+  renderProjectConfigPanel();
+}
+
+function resetSelectedProjectPieceAdjustment() {
+  if (!projectSelectedPiece) return;
+  const slot = projectSlots.find((s) => s.id === projectSelectedPiece.slotId);
+  if (!slot || !slot.pieceAdjustments || !slot.pieceAdjustments[projectSelectedPiece.pieceId]) return;
+  pushProjectUndoState();
+  const copia = Object.assign({}, slot.pieceAdjustments);
+  delete copia[projectSelectedPiece.pieceId];
+  slot.pieceAdjustments = copia;
+  recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  renderProjectPieceToolbar();
+  markProjectDirty();
+}
+
+// Pixels de tela por METRO ao longo de um eixo do mundo, a partir de um ponto.
+function projectScreenVecPerMeter(origem, eixo) {
+  const p0 = ViewerProjectEdit.worldToClient(origem);
+  const p1 = ViewerProjectEdit.worldToClient({ x: origem.x + eixo.x * 0.1, y: origem.y + eixo.y * 0.1, z: origem.z + eixo.z * 0.1 });
+  if (!p0 || !p1) return null;
+  return { x: (p1.x - p0.x) / 0.1, y: (p1.y - p0.y) / 0.1 };
+}
+
+// mode 'resize' (axis = 'piece-x+' etc.) ou 'move' (plano X/Y do módulo).
+function startProjectPieceDrag(ev, domEl, mode, axis) {
+  if (!projectSelectedPiece) return false;
+  const slot = projectSlots.find((s) => s.id === projectSelectedPiece.slotId);
+  const frame = slot ? ViewerProjectEdit.getPieceFrame(slot.id, projectSelectedPiece.pieceId) : null;
+  if (!frame) return false;
+  const atual = (slot.pieceAdjustments && slot.pieceAdjustments[projectSelectedPiece.pieceId]) || {};
+  projectPieceDragState = {
+    pointerId: ev.pointerId, slotId: slot.id, pieceId: projectSelectedPiece.pieceId,
+    mode, axis, startX: ev.clientX, startY: ev.clientY, frame,
+    startAdj: { dx: atual.dx || 0, dy: atual.dy || 0, dz: atual.dz || 0, dw: atual.dw || 0, dh: atual.dh || 0, dd: atual.dd || 0 },
+    undoFeito: false, raf: null, moved: false
+  };
+  try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+  if (ViewerProjectEdit.highlightResizeArrow) ViewerProjectEdit.highlightResizeArrow(mode === 'resize' ? axis : null);
+  return true;
+}
+
+function updateProjectPieceDrag(ev) {
+  const st = projectPieceDragState;
+  if (!st || ev.pointerId !== st.pointerId) return;
+  const slot = projectSlots.find((s) => s.id === st.slotId);
+  if (!slot) return;
+  const mx = ev.clientX - st.startX, my = ev.clientY - st.startY;
+  if (!st.moved && Math.hypot(mx, my) < 3) return;
+  if (!st.undoFeito) { pushProjectUndoState(); st.undoFeito = true; }
+  st.moved = true;
+  const f = st.frame;
+  const adj = Object.assign({}, st.startAdj);
+  const DIM = { x: 'dw', y: 'dh', z: 'dd' }, OFF = { x: 'dx', y: 'dy', z: 'dz' };
+  if (st.mode === 'resize') {
+    const k = st.axis.charAt(6), sg = st.axis.charAt(7) === '+' ? 1 : -1;
+    const a = f.axes[k];
+    const dir = { x: a.x * sg, y: a.y * sg, z: a.z * sg };
+    const sv = projectScreenVecPerMeter(f.center, dir);
+    if (!sv) return;
+    const n2 = sv.x * sv.x + sv.y * sv.y;
+    if (n2 < 1) return;
+    let dMm = Math.round(((mx * sv.x + my * sv.y) / n2) * 1000);
+    const medidaMm = f.half[k] * 2000;
+    dMm = Math.max(dMm, -(medidaMm - PROJECT_PIECE_MIN_MM));
+    adj[DIM[k]] = st.startAdj[DIM[k]] + dMm;
+    if (sg < 0) adj[OFF[k]] = st.startAdj[OFF[k]] - dMm;
+  } else {
+    const sx = projectScreenVecPerMeter(f.center, f.axes.x);
+    const sy = projectScreenVecPerMeter(f.center, f.axes.y);
+    if (!sx || !sy) return;
+    const det = sx.x * sy.y - sy.x * sx.y;
+    if (Math.abs(det) < 1) return;
+    const u = (mx * sy.y - sy.x * my) / det;   // metros em X
+    const v = (sx.x * my - mx * sx.y) / det;   // metros em Y
+    adj.dx = st.startAdj.dx + Math.round(u * 1000);
+    adj.dy = st.startAdj.dy + Math.round(v * 1000);
+  }
+  const todos = Object.assign({}, slot.pieceAdjustments || {});
+  if (Object.keys(adj).every((k) => !adj[k])) delete todos[st.pieceId];
+  else todos[st.pieceId] = adj;
+  slot.pieceAdjustments = todos;
+  if (st.raf) return;
+  st.raf = requestAnimationFrame(() => {
+    st.raf = null;
+    try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço antigo continua */ }
+    renderProjectCanvas();
+    refreshProject3DResizeArrows();
+  });
+}
+
+function endProjectPieceDrag(ev) {
+  const st = projectPieceDragState;
+  if (!st || ev.pointerId !== st.pointerId) return;
+  projectPieceDragState = null;
+  if (st.raf) { cancelAnimationFrame(st.raf); st.raf = null; }
+  if (!st.moved) return;
+  const slot = projectSlots.find((s) => s.id === st.slotId);
+  if (!slot) return;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { /* ok */ }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  renderProjectPieceToolbar();
+  refreshProject3DResizeArrows();
+  markProjectDirty();
+}
+
+document.addEventListener('pointermove', (ev) => { if (projectPieceDragState) updateProjectPieceDrag(ev); });
+document.addEventListener('pointerup', (ev) => { if (projectPieceDragState) endProjectPieceDrag(ev); });
+document.addEventListener('pointercancel', (ev) => { if (projectPieceDragState) endProjectPieceDrag(ev); });
+// Delete/Backspace com peça selecionada remove a PEÇA (nunca o módulo);
+// Esc sai do modo peça. Nunca rouba tecla de quem está digitando.
+document.addEventListener('keydown', (ev) => {
+  if (!projectSelectedPiece) return;
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+  if (ev.key === 'Delete' || ev.key === 'Backspace') {
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    removeSelectedProjectPiece();
+  } else if (ev.key === 'Escape') {
+    ev.stopImmediatePropagation();
+    clearProjectPieceSelection();
+  }
+}, true);

@@ -363,6 +363,8 @@ async function computeProjectSlotsTotal(slotConfigs) {
       // + LED embutido (2026-09-30): a usinagem por metro entra no valor salvo
       const effectivePieces = applyLedConfigsDeep(filterRemovedPiecesDeep(piecesList
         .filter((p) => !p.client_optional || optionalIds.includes(p.id)), removedIds), cfg.led_configs || null);
+      const effectivePiecesAj = (typeof applyPieceAdjustmentsDeep === 'function')
+        ? applyPieceAdjustmentsDeep(effectivePieces, cfg.piece_adjustments || null) : effectivePieces;
       await loadModuleColors(module.id); // preenche moduleColorsByRole pra ESTE módulo, igual restoreFavoriteProject
       const colorsByRole = {};
       (cfg.selected_colors || []).forEach((sc) => {
@@ -389,7 +391,7 @@ async function computeProjectSlotsTotal(slotConfigs) {
       const result = module.is_decoration
         ? { total: 0 }
         : Pricing.calculateModulePrice({
-          module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+          module, pieces: effectivePiecesAj, colorsByRole, hingeModel, slideModel,
           shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
           pieceColorOverrides,
           width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
@@ -1047,6 +1049,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         // depois por projectSlotEffectivePieces junto com layoutPieces.
         removedPieceIds: cfg.removed_piece_ids || [],
         ledConfigs: cfg.led_configs || {}, // LED embutido (2026-09-30)
+        pieceAdjustments: cfg.piece_adjustments || {}, // ajuste manual de peça (2026-10-02)
         // Construtor de armário: a árvore volta como veio (o motor só a lê
         // quando a janela abre). Projeto salvo antes disso não tem a chave.
         layout: cfg.layout || null,
