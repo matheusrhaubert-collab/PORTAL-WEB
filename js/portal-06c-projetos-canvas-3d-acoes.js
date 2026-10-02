@@ -693,15 +693,31 @@ function renderProjectConfigPanel() {
       ensureProjectDoorModels().then(() => { if (selectedProjectSlotId === slot.id) renderProjectConfigPanel(); });
     } else if (projectDoorModelsCache.length > 1) {
       const efetivo = projectSlotDoorModel(slot);
+      // engenharia ainda não carregada = não dá pra saber o limite: carrega e redesenha
+      const faltando = projectDoorModelsCache.filter((dm) => dm.child_module_id && dm.slug !== 'flat' && !doorModelExtrasCache[dm.child_module_id]);
+      if (faltando.length) {
+        Promise.all(faltando.map((dm) => loadDoorModelExtras(dm.child_module_id).catch(() => null)))
+          .then(() => { if (selectedProjectSlotId === slot.id) renderProjectConfigPanel(); });
+      }
       const cards = projectDoorModelsCache.map((dm) => {
         const ehFlat = !dm.child_module_id || dm.slug === 'flat';
         const sel = efetivo ? efetivo.id === dm.id : ehFlat;
-        return `<button type="button" class="po-proj-door-model-card${sel ? ' selected' : ''}" data-door-model-id="${ehFlat ? '' : dm.id}" title="${dm.name}">
+        // bloqueado: porta do módulo maior que o limite do modelo (ex.: vidro > 2600 mm)
+        const bloq = (!ehFlat && !sel) ? slotDoorModelBlock(slot, dm) : null;
+        const titulo = bloq
+          ? I18n.t(bloq.eixo === 'h' ? 'project.door_model_blocked_h' : 'project.door_model_blocked_w', { mm: formatDimension(bloq.mm, unit) })
+          : dm.name;
+        return `<button type="button" class="po-proj-door-model-card${sel ? ' selected' : ''}${bloq ? ' blocked' : ''}" data-door-model-id="${ehFlat ? '' : dm.id}" title="${titulo}"${bloq ? ' disabled' : ''}>
           ${projectDoorModelPreviewSvg(dm.preview || (ehFlat ? 'flat' : 'shaker'))}
           <span>${dm.name}</span>
         </button>`;
       }).join('');
-      doorModelBlock = `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.door_model_label')}</span><div class="po-proj-door-model-cards">${cards}</div></div>`;
+      const limEf = efetivo ? doorModelLimits(efetivo) : null;
+      const hintTrava = (efetivo && slot._doorModelHeightLocked && limEf && isFinite(limEf.maxH))
+        ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.door_model_height_locked', { mm: formatDimension(limEf.maxH, unit) })}</p>` : '';
+      const hintBloq = projectDoorModelsCache.some((dm) => dm.child_module_id && dm.slug !== 'flat' && !(efetivo && efetivo.id === dm.id) && slotDoorModelBlock(slot, dm))
+        ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.door_model_blocked_hint')}</p>` : '';
+      doorModelBlock = `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.door_model_label')}</span><div class="po-proj-door-model-cards">${cards}</div>${hintTrava}${hintBloq}</div>`;
     }
   }
 
@@ -907,7 +923,7 @@ function renderProjectConfigPanel() {
   }
   panel.querySelectorAll('.po-proj-door-model-card').forEach((el) => {
     el.addEventListener('click', () => {
-      if (el.classList.contains('selected')) return;
+      if (el.classList.contains('selected') || el.classList.contains('blocked')) return;
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
     });
   });

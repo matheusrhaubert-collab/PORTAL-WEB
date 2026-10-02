@@ -2694,6 +2694,60 @@ function applySlotDoorModelColors(slot) {
   });
 }
 
+// LIMITE DE MEDIDA DO MODELO (Matt, 02/10: "se passar de 2600mm de altura a
+// opção de trocar para porta de vidro deve ser bloqueada, se já tiver sido
+// escolhida deve travar na altura da porta"). O limite é o do PRÓPRIO módulo
+// de engenharia (modules.height_max_mm / width_max_mm — Glass: 2600 / 700),
+// comparado com cada folha de porta de giro do slot.
+function doorModelLimits(m) {
+  const ex = m && m.child_module_id && doorModelExtrasCache[m.child_module_id];
+  if (!ex) return null;
+  const lp = ex.locked_presets || {};
+  const maxH = Number(lp.ownHeightMaxMm), maxW = Number(lp.ownWidthMaxMm);
+  return { maxH: maxH > 0 ? maxH : Infinity, maxW: maxW > 0 ? maxW : Infinity };
+}
+function slotPortaGiroMaxDims(slot) {
+  let h = 0, w = 0;
+  ((slot && slot._layoutGeometry) || []).forEach((p) => {
+    if (!isPortaGiroPiece(p)) return;
+    h = Math.max(h, Number(p.h) || 0);
+    w = Math.max(w, Number(p.w) || 0);
+  });
+  return { h, w };
+}
+// Motivo pra NÃO deixar escolher o modelo neste slot (null = pode).
+function slotDoorModelBlock(slot, m) {
+  const lim = doorModelLimits(m);
+  if (!lim) return null;
+  const d = slotPortaGiroMaxDims(slot);
+  if (d.h > lim.maxH + 0.5) return { eixo: 'h', mm: lim.maxH };
+  if (d.w > lim.maxW + 0.5) return { eixo: 'w', mm: lim.maxW };
+  return null;
+}
+// Com o modelo JÁ escolhido: a altura do módulo trava onde a porta chega no
+// limite. Roda dentro do recálculo (funil de toda mudança de medida — campo,
+// seta de esticar, SKU), logo depois do rebuild das peças.
+function enforceSlotDoorModelHeight(slot) {
+  slot._doorModelHeightLocked = false;
+  const m = projectSlotDoorModel(slot);
+  const lim = doorModelLimits(m);
+  if (!lim || !isFinite(lim.maxH)) return;
+  for (let i = 0; i < 3; i++) {
+    const d = slotPortaGiroMaxDims(slot);
+    if (!(d.h > lim.maxH + 0.5)) break;
+    const minH = Number(slot.module && slot.module.height_min_mm) || 0;
+    const novo = Math.max(Number(slot.height_mm) - (d.h - lim.maxH), minH);
+    if (!(novo < Number(slot.height_mm))) break;
+    slot.height_mm = Math.floor(novo * 10) / 10;
+    slot._doorModelHeightLocked = true;
+    rebuildProjectSlotLayoutPieces(slot);
+  }
+  if (!slot._doorModelHeightLocked) {
+    const d = slotPortaGiroMaxDims(slot);
+    slot._doorModelHeightLocked = d.h >= lim.maxH - 0.5;
+  }
+}
+
 // Clique no cartão do modelo (painel do módulo). modelId null/Flat = volta
 // pra porta original do módulo e limpa os papéis de cor que eram só do modelo.
 async function setProjectSlotDoorModel(slot, modelId) {
@@ -2704,6 +2758,7 @@ async function setProjectSlotDoorModel(slot, modelId) {
   if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
   if (m && m.child_module_id && m.slug !== 'flat') {
     try { await loadDoorModelExtras(m.child_module_id); } catch (e) { console.error('[modelo de porta]', e); return; }
+    if (slotDoorModelBlock(slot, m)) { renderProjectConfigPanel(); return; }   // porta grande demais pro modelo
     slot.doorModelId = m.id;
   } else {
     slot.doorModelId = null;

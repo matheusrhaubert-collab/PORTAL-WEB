@@ -5145,3 +5145,6 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-proj-door-model-card:hover { box-shadow: 0 0 0 1px var(--accent) inset; }
 .po-proj-door-model-card.selected { border-color: var(--accent); }
 .po-proj-door-model-card span { text-align: center; }
+.po-proj-door-model-card.blocked { opacity: 0.4; cursor: not-allowed; }
+.po-proj-door-model-card.blocked:hover { box-shadow: none; }
+.po-proj-door-model-hint { margin: 6px 0 0; font-size: 11px; }

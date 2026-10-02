@@ -2625,6 +2625,9 @@ function recomputeProjectSlotPricing(slot) {
   // elas têm que nascer de novo. Este é o funil por onde toda mudança de
   // dimensão passa, então é aqui que o recálculo mora.
   rebuildProjectSlotLayoutPieces(slot);
+  // Modelo de porta com limite de altura (porta de vidro: 2600 mm) — trava a
+  // altura do módulo onde a porta chega no limite (migration 188).
+  if (typeof enforceSlotDoorModelHeight === 'function') enforceSlotDoorModelHeight(slot);
   const effectivePieces = projectSlotEffectivePieces(slot);
   const containerDims = { W: Number(slot.width_mm) || 0, H: Number(slot.height_mm) || 0, D: Number(slot.depth_mm) || 0 };
   // `parts` sai UMA vez e serve tanto a contagem de furos (abaixo) quanto o
