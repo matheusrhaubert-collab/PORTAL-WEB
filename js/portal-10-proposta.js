@@ -517,6 +517,24 @@ function proposalNumberBadge(doc, cx, cy, r, num) {
 // seção completa (vista, referências, elevações, planta, módulos +
 // subtotal) e a faixa de total no fim soma todos. Sem `multi`, é a
 // Proposta de sempre (1 projeto).
+// VOLUME E PESO na Proposta (02/10, Matt: "nesse proposal eu preciso peso e
+// volume"). Item montado do projeto ao vivo (buildProposalItemFromSlot) já
+// traz volume_m3/weight_kg calculados com a densidade da COR de cada peça
+// (itemVolumeAndWeightKg); item de pedido salvo cai no breakdown com a
+// densidade global (mesma regra do card do pedido). Decoração = 0.
+function proposalItemVW(it) {
+  if (it && it.volume_m3 != null) return { m3: Number(it.volume_m3) || 0, kg: Number(it.weight_kg) || 0 };
+  if (!it || typeof itemVolumeM3 !== 'function') return { m3: 0, kg: 0 };
+  const m3 = itemVolumeM3(it.breakdown || [], it.quantity || 1);
+  return { m3, kg: m3 * (typeof materialDensityKgPerM3 === 'number' ? materialDensityKgPerM3 : 0) };
+}
+function proposalSumVW(items) {
+  return (items || []).reduce((acc, it) => { const v = proposalItemVW(it); acc.m3 += v.m3; acc.kg += v.kg; return acc; }, { m3: 0, kg: 0 });
+}
+function proposalVWText(vw) {
+  return formatVolumeM3(vw.m3) + ' · ' + formatWeightKg(vw.kg);
+}
+
 async function generateOrderProposalPDF(order, items, multi) {
   const projects = Array.isArray(multi) && multi.length ? multi : [{ order, items }];
   const isMulti = Array.isArray(multi) && multi.length > 0;
@@ -621,6 +639,10 @@ async function generateOrderProposalPDF(order, items, multi) {
         const sub = (p.items || []).reduce((acc, it) => acc + Number(it.total_price || 0), 0);
         doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
         doc.text(`${pi + 1}. ${p.order.po_name || '—'}  (${I18n.t('proposal.modules_count', { n: (p.items || []).length })})`, PROPOSAL_MARGIN_MM + 2, y);
+        doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED);
+        doc.setFontSize(8.5);
+        doc.text(proposalVWText(proposalSumVW(p.items)), pageWidth - PROPOSAL_MARGIN_MM - 40, y, { align: 'right' });
+        doc.setFontSize(10);
         doc.setTextColor.apply(doc, PROPOSAL_COLOR_ACCENT_DARK);
         doc.text(formatMoney(getDisplayPriceRatioOnly(sub)), pageWidth - PROPOSAL_MARGIN_MM - 2, y, { align: 'right' });
         doc.setDrawColor.apply(doc, PROPOSAL_COLOR_BORDER);
@@ -645,6 +667,12 @@ async function generateOrderProposalPDF(order, items, multi) {
       doc.text(formatMoney(getDisplayPrice(somaFabrica)), pageWidth - PROPOSAL_MARGIN_MM - 4, y + capaBandH / 2, { align: 'right', baseline: 'middle' });
       doc.setFont('helvetica', 'normal');
       y += capaBandH + 4;
+      doc.setFontSize(9.5);
+      doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
+      doc.text(I18n.t('proposal.volume_weight_total', { vw: proposalVWText(projects.reduce((acc, p) => {
+        const v = proposalSumVW(p.items); acc.m3 += v.m3; acc.kg += v.kg; return acc;
+      }, { m3: 0, kg: 0 })) }), pageWidth - PROPOSAL_MARGIN_MM - 2, y, { align: 'right' });
+      y += 6;
       doc.setTextColor(0);
     }
 
@@ -807,7 +835,9 @@ async function generateOrderProposalPDF(order, items, multi) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
       doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED);
-      doc.text(`${formatDimension(it.width_mm, pdfUnit)} x ${formatDimension(it.height_mm, pdfUnit)} x ${formatDimension(it.depth_mm, pdfUnit)}`, textX, ty);
+      const itVW = proposalItemVW(it);
+      const vwSuffix = (itVW.m3 > 0 || itVW.kg > 0) ? '   ·   ' + proposalVWText(itVW) : '';
+      doc.text(`${formatDimension(it.width_mm, pdfUnit)} x ${formatDimension(it.height_mm, pdfUnit)} x ${formatDimension(it.depth_mm, pdfUnit)}${vwSuffix}`, textX, ty);
       if (colorLine) { ty += 4.3; doc.text(colorLine, textX, ty, { maxWidth: textW }); }
       doc.setTextColor(0);
 
@@ -846,6 +876,10 @@ async function generateOrderProposalPDF(order, items, multi) {
       doc.setTextColor.apply(doc, PROPOSAL_COLOR_ACCENT_DARK);
       doc.text(formatMoney(getDisplayPriceRatioOnly(projFactory)), pageWidth - PROPOSAL_MARGIN_MM - 2, y, { align: 'right' });
       doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED);
+      y += 5;
+      doc.text(proposalVWText(proposalSumVW(items)), pageWidth - PROPOSAL_MARGIN_MM - 2, y, { align: 'right' });
       doc.setTextColor(0);
       y += 6;
     }
@@ -868,6 +902,14 @@ async function generateOrderProposalPDF(order, items, multi) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(0);
     y += bandH + 6;
+    // volume / peso total (todos os itens de todos os ambientes)
+    doc.setFontSize(10);
+    doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
+    doc.text(I18n.t('proposal.volume_weight_total', { vw: proposalVWText(projects.reduce((acc, p) => {
+      const v = proposalSumVW(p.items); acc.m3 += v.m3; acc.kg += v.kg; return acc;
+    }, { m3: 0, kg: 0 })) }), pageWidth - PROPOSAL_MARGIN_MM - 2, y, { align: 'right' });
+    doc.setTextColor(0);
+    y += 7;
     // Migration 151: hint só aparece se NADA (margem, desconto ou extra
     // dos 2 lados) mudou o total em relação ao preço de fábrica cru —
     // antes só checava a margem simples.
@@ -1165,7 +1207,15 @@ if (orderDetailProposalBtnEl) {
 // os ícones em branco, sem exceção nenhuma. Agora reaproveita o mesmo
 // fallback de render que "Enviar pro pedido" já usava.
 async function buildProposalItemFromSlot(slot) {
+  // volume/peso com a densidade da cor de cada peça (mesmo número do painel
+  // do módulo na aba Projetos); decoração não conta (igual o card).
+  const decor = !!(slot.module && slot.module.is_decoration);
+  const vw = (!decor && typeof itemVolumeAndWeightKg === 'function')
+    ? itemVolumeAndWeightKg((slot.result && slot.result.breakdown) || [], 1, slot.colorsByRole)
+    : { m3: 0, kg: 0 };
   return {
+    volume_m3: vw.m3,
+    weight_kg: vw.kg,
     module_name: slot.module.name,
     selected_colors: slot.selectedColors,
     width_mm: slot.width_mm,
