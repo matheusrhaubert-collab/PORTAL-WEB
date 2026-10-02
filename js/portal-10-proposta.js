@@ -1223,6 +1223,9 @@ async function generateProjectProposalPDF() {
     // Sequencial de propósito (não Promise.all) — renderProjectSlotThumbnailFallback
     // reaproveita o MESMO viewer escondido (singleton) pra cada módulo sem
     // thumbnail salvo; rodar em paralelo faria um render pisar no outro.
+    // mesmo preço do modal $ Orçamento: reprecifica antes (o slot.result
+    // pode estar velho — calculado antes do catálogo de furação chegar)
+    try { if (typeof ensureProjectDrillingCatalog === 'function') await ensureProjectDrillingCatalog(); if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots(); } catch (e) { /* segue com o preço que tem */ }
     const liveItems = [];
     for (const slot of projectSlots) {
       // Bloco — Cor da Parede (visual_only, migration 156): ambientação, não
@@ -1268,6 +1271,9 @@ async function generateClientProposalPDF(folderName, rows, statusEl) {
       const row = lista[i];
       say(I18n.t('proposal.client_progress', { i: i + 1, n: lista.length, name: row.name || '' }));
       await restoreFavoriteProject(row, false);
+      // mesmo preço do modal $ Orçamento: reprecifica antes (o slot.result
+      // pode estar velho — calculado antes do catálogo de furação chegar)
+      try { if (typeof ensureProjectDrillingCatalog === 'function') await ensureProjectDrillingCatalog(); if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots(); } catch (e) { /* segue com o preço que tem */ }
       const items = [];
       for (const slot of projectSlots) {
         if (slot.module && slot.module.visual_only) continue;

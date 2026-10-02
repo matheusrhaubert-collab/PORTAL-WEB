@@ -2781,41 +2781,38 @@ function renderMoneyModal() {
 // cru aqui também — nem por módulo nem no total, sempre com a margem do
 // dealer já aplicada (getDisplayPrice).
 function renderMoneyOrcamento(body, rel, slots) {
-  const seller = isSellerAccount();
+  // MESMO PREÇO DA PROPOSTA (01/10, Matt: "a proposta tem valores
+  // diferentes do pedido"). Antes esta aba mostrava o preço de TABELA da
+  // fábrica como "o que o cliente paga" (só o vendedor via com margem),
+  // enquanto a Proposta usa getDisplayPrice — tabela − desconto de fábrica
+  // + extras + margem bruta (modal Margens). Com desconto configurado e
+  // margem 0, a Proposta saía pelo CUSTO e esta aba pela tabela. Agora as
+  // duas usam a mesma conta: linha = getDisplayPriceRatioOnly (sem extra
+  // fixo), total = getDisplayPrice (extra fixo entra 1x). Sem nada
+  // configurado no modal Margens, os dois são iguais à tabela — igual antes.
   const linhas = (slots || projectSlots).filter((s) => s.result && !(s.module && s.module.visual_only)).map((s) => {
     const preco = Number(s.result.total) || 0;
     return '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + '</td>'
       + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
-      + '<td class="num">' + formatMoney(seller ? getDisplayPrice(preco) : preco) + '</td></tr>';
+      + '<td class="num">' + formatMoney(getDisplayPriceRatioOnly(preco)) + '</td></tr>';
   }).join('');
   const subKey = moneyModalScopeIds ? 'money.quote_sub_group' : 'money.quote_sub';
-  const quoteTotal = seller ? getDisplayPrice(rel.totalVenda) : rel.totalVenda;
-  // Custo final com desconto de fábrica (2026-09-03, pedido do usuário:
-  // "quero mostrar so o valor ja com desconto... valor final com as
-  // margens de fabrica carregadas. custo.") — o custo REAL do dealer
-  // depois do desconto de fábrica + extras de custo configurados no modal
-  // Margens (migration 151, computeCustoBase em portal-05-cutlist.js). Só
-  // aparece quando o dealer configurou alguma coisa lá (senão
-  // computeCustoBase(quoteTotal) === quoteTotal, mesmo padrão de "esconder
-  // quando não muda nada" já usado no resto do app — ver
-  // galleryResaleMarginHtml).
-  //
-  // INVERTIDO (2026-09-03, pedido do usuário: "quero que inverta coloque o
-  // numero maior o valor final e em baixo pequeno o valor total") — quando
-  // o custo final existe, ELE fica em cima e GRANDE (é o número que
-  // interessa pro dealer, já o custo real dele), e o "Quote total" (preço
-  // de tabela, sem desconto) vira a linha pequena embaixo, só de
-  // referência. Sem desconto configurado, continua exatamente como sempre
-  // foi: só o Quote total, grande.
-  const custoFinal = computeCustoBase(quoteTotal);
-  const hasDesconto = Math.abs(custoFinal - quoteTotal) >= 0.005;
-  const totaisHtml = hasDesconto
-    ? '<div class="po-money-total"><span>' + I18n.t('money.quote_final_cost_label') + '</span>'
-      + '<strong>' + formatMoney(custoFinal) + '</strong></div>'
-      + '<div class="po-money-total secundario"><span>' + I18n.t('money.quote_total') + '</span>'
+  const tabela = rel.totalVenda;
+  const quoteTotal = getDisplayPrice(tabela);           // o que o cliente paga (= Proposta)
+  const custoFinal = computeCustoBase(tabela);          // custo do dealer (desconto + extras de custo)
+  // Custo/tabela só pra quem tem as ferramentas de dealer — vendedor nunca
+  // vê custo nem tabela crua (migration 149).
+  const mostraCusto = !isSellerAccount() && Math.abs(custoFinal - tabela) >= 0.005;
+  const semMargem = mostraCusto && Math.abs(quoteTotal - custoFinal) < 0.005;
+  const totaisHtml = '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span>'
       + '<strong>' + formatMoney(quoteTotal) + '</strong></div>'
-    : '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span>'
-      + '<strong>' + formatMoney(quoteTotal) + '</strong></div>';
+    + (mostraCusto
+      ? '<div class="po-money-total secundario"><span>' + I18n.t('money.quote_final_cost_label') + '</span>'
+        + '<strong>' + formatMoney(custoFinal) + '</strong></div>'
+        + '<div class="po-money-total secundario"><span>' + I18n.t('money.quote_table_total') + '</span>'
+        + '<strong>' + formatMoney(tabela) + '</strong></div>'
+      : '')
+    + (semMargem ? '<p class="po-money-sub" style="color:#b45309;">' + I18n.t('money.quote_no_margin_warn') + '</p>' : '');
   body.innerHTML = '<p class="po-money-sub">' + I18n.t(subKey) + '</p>'
     + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
     + '<th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>' + linhas + '</tbody></table>'
