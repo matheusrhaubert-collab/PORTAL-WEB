@@ -1323,7 +1323,10 @@
         dists.forEach(function (dist) {
           emitLocalHole(store, lb, {
             u: (dr.bottomY + height) - lb.y0,  // uAxis da lateral = Y (altura)
-            v: lb.sz - dist,                   // vAxis = Z; frente = z0+sz
+            // vAxis = Z; frente = z0+sz. slide_recuo_extra_mm: gaveta interna
+            // sem porta (layout-engine.js emitGavetaInterna), corrediça 25mm
+            // mais pra dentro que a normal — 0 pra qualquer outra gaveta.
+            v: lb.sz - dist - (Number(dr.part.slide_recuo_extra_mm) || 0),
             edge: null,
             entersPositive: entersPositive,
             diameter: dia, depth: depth,

@@ -3000,6 +3000,19 @@ function insertProjectBuilderItem(accessoryId, nodeId, qtd) {
   if (!acc || !node) return;
   // Vão travado pela engenharia (locked): estrutura do produto, não opção.
   if (node.locked) return;
+  // Gaveta interna SEM PORTA (2026-10-04) não convive com porta na frente —
+  // nem porta em cima dela, nem ela atrás de porta. Regra em
+  // LayoutEngine.bloqueiaGavetaSemPorta (a mesma do ERP).
+  if (LayoutEngine.bloqueiaGavetaSemPorta) {
+    const faixaChk = acc.role === 'front' ? projectBuilderFaixaAtual() : null;
+    const bloqueia = faixaChk
+      ? LayoutEngine.bloqueiaGavetaSemPorta(projectBuilderRoot, faixaChk.pai, accessoryId, projectBuilderCat, faixaChk.de, faixaChk.ate)
+      : LayoutEngine.bloqueiaGavetaSemPorta(projectBuilderRoot, node, accessoryId, projectBuilderCat, null, null);
+    if (bloqueia) {
+      alert(I18n.t(acc.role === 'front' ? 'builder.gaveta_sem_porta_bloqueia_porta' : 'builder.gaveta_sem_porta_atras_de_porta'));
+      return;
+    }
+  }
   const n = Math.max(1, Math.round(Number(qtd) || 1));
   pushProjectBuilderUndo();
   if (acc.role === 'split') {

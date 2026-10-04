@@ -153,6 +153,43 @@
       to: to == null ? null : to
     });
   }
+  // GAVETA INTERNA SEM PORTA (2026-10-04, Matt: "nao pode ter porta na
+  // frente") — a UI (portal-07-construtor.js e erp/js/screens-construtor.js)
+  // pergunta aqui ANTES de inserir. true = bloqueia:
+  //   - porta/frente sobre um vão (ou faixa from..to de filhos) que tem
+  //     gaveta interna sem porta em algum lugar dentro;
+  //   - gaveta interna sem porta num vão que já está atrás de uma porta
+  //     (do próprio vão ou de um pai cobrindo ele).
+  function temGavetaSemPorta(n, cat) {
+    if (!n) return false;
+    if (n.content && modeloGavetaInterna(cat[n.content.acc], n.content.params) === 'sem_porta') return true;
+    return (n.children || []).some(function (k) { return temGavetaSemPorta(k, cat); });
+  }
+  function vaoTemPortaNaFrente(root, node) {
+    if ((node.fronts || []).length) return true;
+    var filho = node, pai = findParent(root, node.id);
+    while (pai) {
+      var idx = pai.children.indexOf(filho);
+      var cobre = (pai.fronts || []).some(function (f) {
+        return f.from == null || (idx >= f.from && idx <= f.to);
+      });
+      if (cobre) return true;
+      filho = pai; pai = findParent(root, pai.id);
+    }
+    return false;
+  }
+  function bloqueiaGavetaSemPorta(root, node, accKey, cat, from, to) {
+    var acc = cat[accKey];
+    if (!acc || !node) return false;
+    if (acc.role === 'front') {
+      var alvos = from != null ? node.children.slice(from, to + 1) : [node];
+      return alvos.some(function (k) { return temGavetaSemPorta(k, cat); });
+    }
+    if (acc.role === 'content' && modeloGavetaInterna(acc, acc.params) === 'sem_porta') {
+      return vaoTemPortaNaFrente(root, node);
+    }
+    return false;
+  }
   function removeFront(node, i) { (node.fronts || []).splice(i, 1); }
   function clearNode(node, what) {
     if (what === 'split') { node.splitAxis = null; node.splitAcc = null; node.children = []; }
@@ -341,6 +378,39 @@
   // mesmos 3mm que já separam os CAIXOTES entre si (var `gap` dentro do
   // loop) — reveal pequeno, igual um gaveteiro de verdade.
   var GAP_ENTRE_FRENTES_GAVETA_MM = 3;
+
+  // GAVETA INTERNA (2026-10-04, pedido do Matt) — 2 modelos, cada um um card
+  // próprio na biblioteca (agregado com default_params.gaveta_interna =
+  // 'sem_porta' | 'com_porta', ver migration 191). A frente NÃO é a
+  // frente_gaveta_externa sintetizada de sempre (que sobrepõe o casco): é a
+  // frente_gaveta_interna (migration 132), embutida DENTRO do vão — nunca
+  // sai pra fora dele, então não participa da lateral compartilhada.
+  //
+  //   sem_porta — "nao pode ter porta na frente" (o Construtor bloqueia).
+  //     Caixote 25mm mais pra dentro que a gaveta normal (normal = 2mm da
+  //     frente do vão -> 27mm). Frente "flat com a lateral do movel, na
+  //     verdade 2mm pra dentro": face de fora a 2mm da frente do vão.
+  //     Largura do caixote = a de sempre. Frente = vão - 4mm de cada lado,
+  //     4mm embaixo, 4mm em cima e 4mm entre frentes empilhadas.
+  //   com_porta — fica ATRÁS de uma porta, com afastador pra corrediça
+  //     passar das dobradiças (espessura do afastador: a decidir). Caixote
+  //     com a face da frente a 90mm da frente do vão; a frente encosta nele
+  //     (face de fora a 90 - espessura = ~70mm). Caixote E frente 39mm
+  //     menores de cada lado (a folga da corrediça já está dentro dos 39).
+  //     Altura das frentes: mesma regra de 4mm do sem_porta.
+  // A distância é medida da frente do vão CHEIO (node._boxFull — antes de
+  // descontar porta embutida), não do `dentro`.
+  var GAVETA_INTERNA_SEM_PORTA_RECUO_EXTRA_MM = 25;   // além dos 2mm normais
+  var GAVETA_INTERNA_SEM_PORTA_FRENTE_RECUO_MM = 2;   // face da frente
+  var GAVETA_INTERNA_SEM_PORTA_FOLGA_MM = 4;          // lados/baixo/cima/entre
+  var GAVETA_INTERNA_COM_PORTA_CAIXOTE_RECUO_MM = 90; // face do caixote
+  var GAVETA_INTERNA_COM_PORTA_LATERAL_MM = 39;       // de cada lado (caixote e frente)
+  var GAVETA_INTERNA_COM_PORTA_FOLGA_MM = 4;          // baixo/cima/entre
+  var FRENTE_GAVETA_INTERNA_ACCKEY = 'frente_gaveta_interna';
+  function modeloGavetaInterna(acc, p) {
+    var v = (p && p.gaveta_interna) || (acc && acc.params && acc.params.gaveta_interna);
+    return (v === 'sem_porta' || v === 'com_porta') ? v : null;
+  }
   // BUG achado 2026-08-20 (Matt, "a gaveta entra sem a frente", 2ª causa —
   // a 1ª foi o group_name 'Drawers' x 'Gavetas' logo acima em emitContent):
   // `catalogo`/`cat` em TODO O RESTO deste arquivo é indexado por accKey =
@@ -514,7 +584,7 @@
       }
     }
 
-    function emitContent(node, box) {
+    function emitContent(node, box, boxFull) {
       var key = node.content.acc, acc = cat[key];
       if (!acc) return;
       var p = Object.assign({}, acc.params, node.content.params || {});
@@ -604,6 +674,12 @@
       // gaveta_afast/gaveteiro simples nesse grupo em português.
       var grupoGanhaFrente = acc.group_name === 'Gavetas' || acc.group_name === 'Drawers';
       var frenteAcc = (grupoGanhaFrente && !jaTemFrenteGavetaManual) ? findAccBySlug(cat, FRENTE_GAVETA_ACCKEY) : null;
+      var modeloInt = modeloGavetaInterna(acc, p);
+      if (modeloInt) {
+        emitGavetaInterna(node, key, acc, box, boxFull || box, modeloInt,
+          qtd, hCada, gap, folgaAltura, recuoCaixote);
+        return;
+      }
       var prof = Math.max(120, box.d - recuoCaixote - 2);
       for (var j = 0; j < qtd; j++) {
         var y = box.y + j * (hCada + gap);
@@ -637,6 +713,59 @@
           boxY: box.y, boxZ: box.z, boxD: box.d, esp: esp,
           slideDistanceMm: Math.min(prof * 0.7, 400)
         };
+      }
+    }
+
+    // GAVETA INTERNA (ver constantes GAVETA_INTERNA_* lá em cima). Mesmo
+    // empilhamento de caixotes da gaveta normal (qtd/hCada/gap/folgaAltura
+    // vêm de emitContent), só muda Z/largura do caixote e a frente, que sai
+    // aqui mesmo (embutida, não precisa esperar a 2ª passada da lateral
+    // compartilhada — não colide com vizinho nenhum).
+    function emitGavetaInterna(node, key, acc, box, boxFull, modelo, qtd, hCada, gap, folgaAltura, recuoCaixote) {
+      var frenteVao = boxFull.z + boxFull.d;   // frente do vão cheio
+      var comPorta = modelo === 'com_porta';
+      var recuoCaixoteFrente = comPorta
+        ? GAVETA_INTERNA_COM_PORTA_CAIXOTE_RECUO_MM
+        : 2 + GAVETA_INTERNA_SEM_PORTA_RECUO_EXTRA_MM;
+      var zCaixote = box.z + recuoCaixote;
+      var prof = Math.max(120, (frenteVao - recuoCaixoteFrente) - zCaixote);
+      var lat = comPorta ? GAVETA_INTERNA_COM_PORTA_LATERAL_MM : 12;
+      for (var j = 0; j < qtd; j++) {
+        var y = box.y + j * (hCada + gap);
+        push(node, {
+          kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
+          x: box.x + lat, y: y + 4, z: zCaixote,
+          w: Math.max(60, box.w - lat * 2), h: Math.max(20, hCada - folgaAltura), d: prof,
+          opening_type: 'slide_out',
+          // Furação da corrediça na lateral (drilling.js collectSlideHoles):
+          // a tabela de furos é medida da FRENTE da lateral pensando na
+          // gaveta normal (2mm). O caixote sem porta está 25mm mais pra
+          // dentro — os furos têm que acompanhar. (O com porta fica a 39mm
+          // da lateral, fora do alcance de 30mm do contra-furo: a corrediça
+          // vai parafusada no AFASTADOR, que ainda não existe como peça.)
+          slide_recuo_extra_mm: comPorta ? 0 : GAVETA_INTERNA_SEM_PORTA_RECUO_EXTRA_MM
+        });
+      }
+
+      var frenteAcc = findAccBySlug(cat, FRENTE_GAVETA_INTERNA_ACCKEY);
+      if (!frenteAcc) return;   // sem o agregado cadastrado: entra sem frente
+      var espF = num(frenteAcc.espessura) || esp;
+      var folga = comPorta ? GAVETA_INTERNA_COM_PORTA_FOLGA_MM : GAVETA_INTERNA_SEM_PORTA_FOLGA_MM;
+      var fx = comPorta ? box.x + GAVETA_INTERNA_COM_PORTA_LATERAL_MM : box.x + GAVETA_INTERNA_SEM_PORTA_FOLGA_MM;
+      var fw = comPorta ? box.w - GAVETA_INTERNA_COM_PORTA_LATERAL_MM * 2 : box.w - GAVETA_INTERNA_SEM_PORTA_FOLGA_MM * 2;
+      var fz = comPorta
+        ? frenteVao - GAVETA_INTERNA_COM_PORTA_CAIXOTE_RECUO_MM          // encosta no caixote
+        : frenteVao - GAVETA_INTERNA_SEM_PORTA_FRENTE_RECUO_MM - espF;   // face a 2mm da frente
+      var hF = (box.h - folga * 2 - folga * (qtd - 1)) / qtd;
+      for (var k = 0; k < qtd; k++) {
+        push(node, {
+          kind: 'front', accKey: frenteAcc.id,
+          label: 'Frente da ' + acc.name + (qtd > 1 ? ' ' + (k + 1) : ''),
+          x: fx, y: box.y + folga + k * (hF + folga), z: fz,
+          w: Math.max(20, fw), h: Math.max(20, hF), d: espF,
+          opening_type: 'slide_out',
+          slide_distance_mm: Math.min(prof * 0.7, 400)
+        });
       }
     }
 
@@ -1063,7 +1192,7 @@
         d: Math.max(60, box.d - consumoFrente(node, null, cat, esp, folgaDob))
       });
       node._box = dentro;
-      if (node.content) emitContent(node, dentro);
+      if (node.content) emitContent(node, dentro, box);
       else voids.push({ nodeId: node.id, box: dentro, locked: !!node.locked });
       queueFronts(node, box, parent, siblingIndex);
       queueGavetaFront(node, dentro, parent, siblingIndex);
@@ -1351,6 +1480,8 @@
           // null pra qualquer peça que não seja essa frente sintetizada
           // (cai no cálculo genérico de sempre).
           slide_distance_mm: p.slide_distance_mm != null ? num(p.slide_distance_mm) : null,
+          // Gaveta interna sem porta (2026-10-04) — ver emitGavetaInterna.
+          slide_recuo_extra_mm: num(p.slide_recuo_extra_mm) || 0,
           shape_type: p.shape_type || comp.shape_type || null,
           tilt_angle_deg: num(p.tilt_deg),
           rotation_y_deg: 0,
@@ -1393,6 +1524,8 @@
         color_role_id: acc.color_role_id || null,
         opening_type: p.opening_type || 'none',
         slides_per_unit: p.opening_type === 'slide_out' ? 2 : 0,
+        // Gaveta interna sem porta (2026-10-04) — ver emitGavetaInterna.
+        slide_recuo_extra_mm: num(p.slide_recuo_extra_mm) || 0,
         tilt_angle_deg: num(p.tilt_deg),
         rotation_y_deg: 0,
         width_formula: String(p.w),
@@ -1569,6 +1702,8 @@
     applySplit: applySplit,
     applyContent: applyContent,
     applyFront: applyFront,
+    modeloGavetaInterna: modeloGavetaInterna,
+    bloqueiaGavetaSemPorta: bloqueiaGavetaSemPorta,
     removeFront: removeFront,
     clearNode: clearNode,
     clearAll: clearAll,

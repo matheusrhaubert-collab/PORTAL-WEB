@@ -696,6 +696,14 @@ CST.cabe = function (acc, box) {
 CST.insert = function (accId) {
   const S = CST.S, n = CST.selNode(), acc = S.cat[accId];
   if (!n || !acc) return;
+  // Gaveta interna sem porta não convive com porta (2026-10-04) — mesma
+  // regra do portal, LayoutEngine.bloqueiaGavetaSemPorta.
+  if (LayoutEngine.bloqueiaGavetaSemPorta && LayoutEngine.bloqueiaGavetaSemPorta(S.root, n, accId, S.cat, null, null)) {
+    CST.hint(acc.role === 'front'
+      ? 'Esse vão tem <b>gaveta interna sem porta</b> — não pode levar porta na frente.'
+      : '<b>Gaveta interna sem porta</b> não pode ficar atrás de porta. Use a gaveta interna com porta.');
+    return;
+  }
   CST.snapshot();
   if (acc.role === 'split') LayoutEngine.applySplit(n, accId, (acc.params || {}).quantidade || 1, S.cat);
   if (acc.role === 'content') LayoutEngine.applyContent(n, accId, S.cat);

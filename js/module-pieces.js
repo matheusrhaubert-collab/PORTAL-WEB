@@ -654,6 +654,10 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // pipeline (emitContent -> toPieceRows -> slot.layoutPieces) já
         // carregava o valor certo, só morria aqui.
         slide_distance_mm: piece.slide_distance_mm != null ? Number(piece.slide_distance_mm) : null,
+        // Gaveta interna sem porta (2026-10-04, layout-engine.js
+        // emitGavetaInterna): caixote 25mm mais fundo que o normal — o
+        // drilling.js desloca o furo da corrediça na lateral por isto.
+        slide_recuo_extra_mm: Number(piece.slide_recuo_extra_mm) || 0,
         positioning: piece.positioning,
         // Fita de borda (migration 088) — o 3D usa junto com positioning
         // pra decidir qual face leva fita e qual mostra o miolo da chapa
