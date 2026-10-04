@@ -407,6 +407,12 @@
   var GAVETA_INTERNA_COM_PORTA_LATERAL_MM = 39;       // de cada lado (caixote e frente)
   var GAVETA_INTERNA_COM_PORTA_FOLGA_MM = 4;          // baixo/cima/entre
   var FRENTE_GAVETA_INTERNA_ACCKEY = 'frente_gaveta_interna';
+  // 2026-10-04, 2ª rodada (Matt, com print): "as frentes nao podem ficar
+  // encostada na base da gaveta, o corpo deve subir um pouco pra ficar uns
+  // 15mm pra cima da frente na parte de baixo". O caixote de cada gaveta
+  // passa a seguir a SUA frente: base do caixote = base da frente + 15mm,
+  // topo nunca passa do topo da frente. Vale pros 2 modelos.
+  var GAVETA_INTERNA_CAIXOTE_ACIMA_FRENTE_MM = 15;
   function modeloGavetaInterna(acc, p) {
     var v = (p && p.gaveta_interna) || (acc && acc.params && acc.params.gaveta_interna);
     return (v === 'sem_porta' || v === 'com_porta') ? v : null;
@@ -730,12 +736,17 @@
       var zCaixote = box.z + recuoCaixote;
       var prof = Math.max(120, (frenteVao - recuoCaixoteFrente) - zCaixote);
       var lat = comPorta ? GAVETA_INTERNA_COM_PORTA_LATERAL_MM : 12;
+      // Frentes primeiro: o caixote de cada gaveta se ancora na frente dela.
+      var folga = comPorta ? GAVETA_INTERNA_COM_PORTA_FOLGA_MM : GAVETA_INTERNA_SEM_PORTA_FOLGA_MM;
+      var hF = (box.h - folga * 2 - folga * (qtd - 1)) / qtd;
+      var acima = GAVETA_INTERNA_CAIXOTE_ACIMA_FRENTE_MM;
       for (var j = 0; j < qtd; j++) {
-        var y = box.y + j * (hCada + gap);
+        var fy = box.y + folga + j * (hF + folga);
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + lat, y: y + 4, z: zCaixote,
-          w: Math.max(60, box.w - lat * 2), h: Math.max(20, hCada - folgaAltura), d: prof,
+          x: box.x + lat, y: fy + acima, z: zCaixote,
+          w: Math.max(60, box.w - lat * 2),
+          h: Math.max(20, Math.min(hCada - folgaAltura, hF - acima)), d: prof,
           opening_type: 'slide_out',
           // Furação da corrediça na lateral (drilling.js collectSlideHoles):
           // a tabela de furos é medida da FRENTE da lateral pensando na
@@ -750,13 +761,11 @@
       var frenteAcc = findAccBySlug(cat, FRENTE_GAVETA_INTERNA_ACCKEY);
       if (!frenteAcc) return;   // sem o agregado cadastrado: entra sem frente
       var espF = num(frenteAcc.espessura) || esp;
-      var folga = comPorta ? GAVETA_INTERNA_COM_PORTA_FOLGA_MM : GAVETA_INTERNA_SEM_PORTA_FOLGA_MM;
       var fx = comPorta ? box.x + GAVETA_INTERNA_COM_PORTA_LATERAL_MM : box.x + GAVETA_INTERNA_SEM_PORTA_FOLGA_MM;
       var fw = comPorta ? box.w - GAVETA_INTERNA_COM_PORTA_LATERAL_MM * 2 : box.w - GAVETA_INTERNA_SEM_PORTA_FOLGA_MM * 2;
       var fz = comPorta
         ? frenteVao - GAVETA_INTERNA_COM_PORTA_CAIXOTE_RECUO_MM          // encosta no caixote
         : frenteVao - GAVETA_INTERNA_SEM_PORTA_FRENTE_RECUO_MM - espF;   // face a 2mm da frente
-      var hF = (box.h - folga * 2 - folga * (qtd - 1)) / qtd;
       for (var k = 0; k < qtd; k++) {
         push(node, {
           kind: 'front', accKey: frenteAcc.id,
