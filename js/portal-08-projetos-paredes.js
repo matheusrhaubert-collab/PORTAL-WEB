@@ -3958,7 +3958,18 @@ function buildProjectAssemblies(slotsList) {
         let caixa = null;
         try {
           assembly.group.updateMatrixWorld(true);
-          const b = new THREE.Box3().setFromObject(assembly.group);
+          // Ignora peça de decoração embutida no móvel (forno da torre etc.,
+          // userData.isDecorPiece — viewer3d.tagPieceUserData): a linha
+          // vermelha acompanha só o móvel. Se SÓ sobrar decoração (módulo
+          // Decor inteiro), cai na caixa de tudo, como antes.
+          const b = new THREE.Box3();
+          const semDecor = (o) => {
+            if (o.userData && o.userData.isDecorPiece) return;
+            if (o.isMesh || o.isLine || o.isPoints) b.expandByObject(o, false);
+            (o.children || []).forEach(semDecor);
+          };
+          semDecor(assembly.group);
+          if (b.isEmpty()) b.setFromObject(assembly.group);
           if (!b.isEmpty()) caixa = b;
         } catch (e) { caixa = null; }
         // MÓDULO QUE NÃO DESENHA NADA NÃO É CLICÁVEL no 3D. Antes ele ganhava

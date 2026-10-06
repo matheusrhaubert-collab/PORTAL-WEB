@@ -1616,6 +1616,11 @@ const Viewer3D = (function () {
     // GROUP do assembly, ver buildProjectAssemblies/renderFreeformWalls) —
     // não esta, que é por peça.
     obj.userData.colorRoleId = part.color_role_id || null;
+    // Peça de DECORAÇÃO dentro de um móvel (forno da torre, cooktop...) —
+    // 2026-10-06, Matt: "a linha vermelha deve ficar 100% acompanhando os
+    // móveis, pode deixar a decoração do forno pra fora dela". A caixa de
+    // seleção (portal-08, buildProjectAssemblies) pula subárvores marcadas.
+    obj.userData.isDecorPiece = /^decor_/.test(String(part.shape_type || ''));
     // PORTA/FRENTE (duplo clique na peça, 2026-10-02 — Matt: "deixe só as
     // portas e frentes com duplo clique, peças de móveis não"). Porta = abre
     // em dobradiça (hinge_side / opening_type hinge_*) ou papel 'front';

@@ -855,6 +855,56 @@ function renderProjectConfigPanel() {
     </div>
   `;
 
+  // MEDIDAS DAS PEÇAS (2026-10-06, Matt: "como eu altero as alturas no
+  // portal? não no ERP, mas no projeto" — torre de forno). Peça com
+  // "cliente pode configurar as medidas" (client_dimension_configurable,
+  // migration 036) só tinha campo no Passo 2 do New Quote; no Projetos não
+  // havia onde mexer. Um campo por eixo que tem faixa mín/máx cadastrada;
+  // grava em slot.dimOverrides (mesmo mapa que preço/3D/pedido já leem) e o
+  // ↺ apaga o override (volta pra fórmula). Valor mostrado = medida
+  // RESOLVIDA hoje (resolvePiecesForViewer), não o padrão do cadastro.
+  let pieceDimsBlock = '';
+  try {
+    const effPieces = projectSlotEffectivePieces(slot);
+    const cfgPieces = collectDimConfigurablePieces(effPieces);
+    if (cfgPieces.length) {
+      const resolvedById = {};
+      const walk = (parts) => (parts || []).forEach((pt) => {
+        if (pt.piece_id && !resolvedById[pt.piece_id]) resolvedById[pt.piece_id] = pt;
+        walk(pt.child_pieces);
+      });
+      try {
+        walk(resolvePiecesForViewer(effPieces, { W: Number(slot.width_mm), H: Number(slot.height_mm), D: Number(slot.depth_mm) },
+          slot.colorsByRole || {}, slot.shelfQuantities || {}, slot.dimOverrides || {}, slot.pieceColorOverrides || {}));
+      } catch (e) { /* sem valor resolvido, mostra o padrão */ }
+      const axes = [['width', I18n.t('step1.filter_width')], ['height', I18n.t('step1.filter_height')], ['depth', I18n.t('step1.filter_depth')]];
+      const rows = [];
+      cfgPieces.forEach((p) => {
+        const name = p.reference || p.module_name || I18n.t('step2.piece_fallback');
+        axes.forEach(([axis, label]) => {
+          const minMm = p[`${axis}_min_mm`], maxMm = p[`${axis}_max_mm`];
+          if (minMm === null || minMm === undefined || maxMm === null || maxMm === undefined) return;
+          const ov = slot.dimOverrides && slot.dimOverrides[p.id];
+          const hasOv = !!(ov && ov[`${axis}_mm`] !== undefined && ov[`${axis}_mm`] !== null);
+          const rp = resolvedById[p.id];
+          const cur = hasOv ? ov[`${axis}_mm`] : (rp ? rp[`${axis}_mm`] : p[`${axis}_default_mm`]);
+          rows.push(`
+            <div class="po-proj-config-dim-row">
+              <label>${name} · ${label}</label>
+              <span class="po-proj-dim-value-wrap">
+                <input type="text" inputmode="decimal" class="po-proj-piece-dim-input" data-piece-id="${p.id}" data-axis="${axis}" data-min="${minMm}" data-max="${maxMm}" value="${formatDimensionNumber(cur, unit)}" />
+                <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+                ${hasOv ? `<button type="button" class="secondary po-proj-piece-dim-reset" data-piece-id="${p.id}" data-axis="${axis}" title="${I18n.t('project.piece_dims_reset')}">↺</button>` : ''}
+              </span>
+            </div>`);
+        });
+      });
+      if (rows.length) {
+        pieceDimsBlock = `<div class="po-proj-config-dims po-proj-config-piece-dims"><span class="po-proj-config-section-label">${I18n.t('project.piece_dims_label')}</span>${rows.join('')}</div>`;
+      }
+    }
+  } catch (e) { pieceDimsBlock = ''; }
+
   panel.innerHTML = `
     <h3>${slot.module.name}</h3>
     ${skuBlock}
@@ -863,6 +913,7 @@ function renderProjectConfigPanel() {
       ${dimRow('height', I18n.t('step1.filter_height'))}
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
     </div>
+    ${pieceDimsBlock}
     ${positionRow}
     ${doorModelBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
@@ -884,6 +935,29 @@ function renderProjectConfigPanel() {
       else renderProjectConfigPanel();
     });
     input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  // Medidas das peças (ver pieceDimsBlock acima).
+  const applyPieceDim = (pieceId, axis, mmOrNull) => {
+    slot.dimOverrides = { ...(slot.dimOverrides || {}) };
+    const cur = { ...(slot.dimOverrides[pieceId] || {}) };
+    if (mmOrNull === null) delete cur[`${axis}_mm`]; else cur[`${axis}_mm`] = mmOrNull;
+    if (Object.keys(cur).length) slot.dimOverrides[pieceId] = cur; else delete slot.dimOverrides[pieceId];
+    recomputeProjectSlotPricing(slot);
+    renderProjectCanvas();
+    renderProjectConfigPanel();
+    markProjectDirty();
+  };
+  panel.querySelectorAll('.po-proj-piece-dim-input').forEach((input) => {
+    input.addEventListener('change', () => {
+      const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const mm = parseDimensionInput(input.value, unit2);
+      if (mm === null || isNaN(mm)) { renderProjectConfigPanel(); return; }
+      applyPieceDim(input.dataset.pieceId, input.dataset.axis, clamp(mm, Number(input.dataset.min), Number(input.dataset.max)));
+    });
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  panel.querySelectorAll('.po-proj-piece-dim-reset').forEach((btn) => {
+    btn.addEventListener('click', () => applyPieceDim(btn.dataset.pieceId, btn.dataset.axis, null));
   });
   // "Posição no ambiente" — mesmo padrão de change/Enter dos campos de
   // medida acima, só que manda pra setProjectSlotPositionFromSide (o "lado"
