@@ -89,6 +89,10 @@ async function loadRecursivePiecesForModule(moduleId) {
         // sem isso, as instâncias colidiriam em selectedOptionalComponentIds/
         // shelfQuantities (keyed por piece.id em client.js/portal.js/pricing.js).
         id: row.id,
+        // Posição desta linha na lista do cadastro (1 = primeira, por sort_order)
+        // — vira Wn/Hn/Dn nas fórmulas das peças vizinhas (ver recordSiblingVars
+        // em pricing.js, 2026-10-06). Conta a linha mesmo se ela for pulada.
+        seq: data.indexOf(row) + 1,
         // Id do CATÁLOGO (components.id) — o spread acima o perde (id vira o
         // da linha, migration 025). A furação padrão do COMPONENTE precisa
         // dele. O portal não carregava este campo; ao unificar, passa a
@@ -190,6 +194,10 @@ async function loadRecursivePiecesForModule(moduleId) {
         // id vira o da LINHA (row.id) em vez do child_module_id — mesmo
         // motivo do branch de componente acima (migration 025).
         id: row.id,
+        // Posição desta linha na lista do cadastro (1 = primeira, por sort_order)
+        // — vira Wn/Hn/Dn nas fórmulas das peças vizinhas (ver recordSiblingVars
+        // em pricing.js, 2026-10-06). Conta a linha mesmo se ela for pulada.
+        seq: data.indexOf(row) + 1,
         is_module: true,
         // reference_override (migration 032) tem prioridade; sem ele, cai no
         // fallback module_name já existente em resolvePiecesForViewer
@@ -424,6 +432,10 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
   // sem cor. Precisa ser a MESMA conta de Pricing.calculateAssembly, senão
   // preço e desenho/plano/furação divergem na medida.
   const cascoE = Pricing.cascoThicknessMm(piecesList, colorsByRole, pieceColorOverrides);
+  // Wn/Hn/Dn das peças já resolvidas deste nível — MESMA regra de
+  // Pricing.calculateAssembly (ver recordSiblingVars), senão preço e
+  // desenho divergem numa torre de forno / pai com filhos empilhados.
+  const sibVars = {};
   const parts = [];
   (piecesList || []).forEach((piece) => {
     const pieceContainerDims = piece.position_role === 'leg' ? containerDims : bodyDims;
@@ -446,7 +458,7 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
     const pieceE = piece.is_module
       ? (cascoE || Pricing.DEFAULT_THICKNESS_MM || 19.5)
       : Pricing.thicknessForPiece(piece, effectiveColorsByRole, cascoE);
-    const dims = Pricing.calculatePiece(piece, pieceContainerDims, quantityOverride, dimOverride, { E: pieceE });
+    const dims = Pricing.calculatePiece(piece, pieceContainerDims, quantityOverride, dimOverride, Object.assign({}, sibVars, { E: pieceE }));
 
     // Visibilidade condicional (migration 031) — mesma checagem do preço
     // (Pricing.calculateAssembly), pra 3D e preço nunca divergirem: sem isso
@@ -515,6 +527,7 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
       resolvedHeightMm = Math.min(resolvedHeightMm, pieceContainerDims.H);
       resolvedDepthMm = Math.min(resolvedDepthMm, pieceContainerDims.D);
     }
+    Pricing.recordSiblingVars(sibVars, piece, resolvedWidthMm, resolvedHeightMm, resolvedDepthMm);
 
     // Deslocamento é uma fórmula — avaliada contra o MESMO container que a
     // peça usa pras próprias dimensões, MAIS as próprias dimensões
@@ -542,6 +555,7 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
     // antigas sem N/COUNT continuam se comportando exatamente como antes.
     for (let i = 0; i < qty; i++) {
       const offsetVars = {
+        ...sibVars,
         W: pieceContainerDims.W, H: pieceContainerDims.H, D: pieceContainerDims.D,
         w: resolvedWidthMm, h: resolvedHeightMm, d: resolvedDepthMm,
         N: i + 1, COUNT: qty,

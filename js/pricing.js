@@ -193,6 +193,32 @@
   // pra ele nada muda.
   const DEFAULT_THICKNESS_MM = 19.5;
   let formulaGlobals = { RODAPE: 5.5 * 25.4, RB: 5.5 * 25.4, E: DEFAULT_THICKNESS_MM };
+  // ==========================================================================
+  // VARIÁVEIS DE IRMÃO (2026-10-06, torre de forno) — Matt: "pai com 3
+  // módulos dentro... se eu precisar aumentar o forno pra mais ou menos, ou
+  // o aéreo, teria que conseguir". Antes a fórmula de uma peça só enxergava
+  // o container (W/H/D) — nunca a peça vizinha. Agora, dentro do MESMO nível
+  // (mesmo módulo pai), Wn/Hn/Dn = medida JÁ RESOLVIDA da peça nº n da lista
+  // (n = posição na lista de peças do cadastro, 1 = primeira, pela ordem de
+  // sort_order — ver `seq` em loadRecursivePiecesForModule). Vale em L/A/P e
+  // nas posições X/Y/Z. Ex. torre de forno: 1 = base (slider), 2 = forno
+  // (slider), 3 = aéreo com altura "H-H1-H2" e posição Y "H1+H2".
+  // Regras: só enxerga peça ACIMA na lista (a de baixo ainda não foi
+  // calculada = 0); peça escondida/removida/inexistente = 0. O default 0
+  // aqui também faz a validação de fórmula do ERP aceitar H1/H2/... .
+  const SIBLING_VAR_MAX = 30;
+  for (let i = 1; i <= SIBLING_VAR_MAX; i++) {
+    formulaGlobals['W' + i] = 0; formulaGlobals['H' + i] = 0; formulaGlobals['D' + i] = 0;
+  }
+  // Grava as medidas finais da peça em sibVars (Wn/Hn/Dn) — chamada por
+  // calculateAssembly e resolvePiecesForViewer, sempre DEPOIS de todas as
+  // travas, pra preço e desenho verem o mesmo número.
+  function recordSiblingVars(sibVars, piece, w, h, d) {
+    if (!sibVars || !piece || !piece.seq || piece.seq > SIBLING_VAR_MAX) return;
+    sibVars['W' + piece.seq] = Number(w) || 0;
+    sibVars['H' + piece.seq] = Number(h) || 0;
+    sibVars['D' + piece.seq] = Number(d) || 0;
+  }
   function setFormulaGlobals(vars) {
     formulaGlobals = Object.assign({}, formulaGlobals, vars || {});
   }
@@ -1027,14 +1053,14 @@
     return null;
   }
 
-  function calculateLeafPiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE) {
+  function calculateLeafPiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE, sibVars) {
     const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
     // E (espessura da chapa desta peça) entra na fórmula de L/A/P — precisa
     // ser o MESMO E que resolvePiecesForViewer usa, senão preço e desenho/
     // plano de corte divergem na medida da peça.
     const pieceE = thicknessForPiece(piece, effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides), cascoE);
-    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, { E: pieceE });
+    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, Object.assign({}, sibVars || {}, { E: pieceE }));
     const qty = pieceDims.quantity;
 
     // Peça COMPRADA (migration 119/120) não exige cor cadastrada: ferragem
@@ -1282,7 +1308,7 @@
   // obra aqui, EM CIMA do custo de mão de obra de cada peça filha, contaria a
   // mão de obra da sub-montagem DUAS vezes (esse era um risco do desenho
   // antigo do sistema de door_style/drawer_type, corrigido aqui).
-  function calculateModulePiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE) {
+  function calculateModulePiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE, sibVars) {
     const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
     // E de uma PEÇA-MÓDULO = a espessura do CASCO que a cerca, nunca a da
@@ -1296,7 +1322,7 @@
     // antes da 160; casco de plywood (18) dá o vão real. Igual em
     // resolvePiecesForViewer (js/module-pieces.js).
     const pieceE = cascoE || DEFAULT_THICKNESS_MM;
-    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, { E: pieceE });
+    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, Object.assign({}, sibVars || {}, { E: pieceE }));
     const qty = pieceDims.quantity;
 
     // Peça-módulo com dimensão TRAVADA (locked_*_presets) que não cabe nem
@@ -1472,6 +1498,8 @@
     // Espessura do casco deste nível (fallback de E pra peça sem cor) —
     // calculada uma vez por lista, mesma conta de resolvePiecesForViewer.
     const cascoE = cascoThicknessMm(pieces, colorsByRole, pieceColorOverrides);
+    // Wn/Hn/Dn das peças já calculadas deste nível (ver recordSiblingVars).
+    const sibVars = {};
     const breakdown = (pieces || []).map(function (piece) {
       const pieceContainerDims = piece.position_role === 'leg' ? dims : bodyDims;
       // Visibilidade condicional (migration 031) — checada ANTES de calcular
@@ -1480,9 +1508,11 @@
       // Aplica-se igual a peça-componente e peça-módulo, por isso fica aqui,
       // no ponto comum às duas, em vez de duplicado nas duas funções abaixo.
       if (!isPieceVisible(piece, pieceContainerDims)) return null;
-      return piece.is_module
-        ? calculateModulePiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE)
-        : calculateLeafPiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE);
+      const r = piece.is_module
+        ? calculateModulePiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE, sibVars)
+        : calculateLeafPiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE, sibVars);
+      if (r) recordSiblingVars(sibVars, piece, r.width_mm, r.height_mm, r.depth_mm);
+      return r;
     // calculateModulePiece devolve null quando a peça-módulo tem dimensão
     // travada que não cabe nem no menor valor configurado (ver
     // isBelowMinLockedPreset) — filtra fora do breakdown, ela simplesmente
@@ -1727,6 +1757,7 @@
     pickNearestPreset,
     isBelowMinLockedPreset,
     clampToOwnRange,
+    recordSiblingVars,
     isPieceVisible,
     calculateAssembly,
     calculateModulePrice,

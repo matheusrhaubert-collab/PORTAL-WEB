@@ -125,6 +125,14 @@ async function renderModuleComponentsList() {
     ? 'Peças usadas neste módulo:'
     : 'Nenhuma peça usada ainda neste módulo — use "Adicionar componente" ou "Adicionar módulo" abaixo.';
   container.appendChild(usedHeading);
+  // Variáveis de irmão (2026-10-06, ver recordSiblingVars em pricing.js).
+  if (moduleComponentLinks.length > 1) {
+    const sibHint = document.createElement('p');
+    sibHint.className = 'hint';
+    sibHint.style.marginTop = '0';
+    sibHint.textContent = 'Nas fórmulas (L/A/P e posição X/Y/Z), H1/W1/D1 = medida final da 1ª peça desta lista, H2/W2/D2 = da 2ª, e assim por diante (na ordem abaixo). Só vale pra peça que está ACIMA na lista — ex.: 3ª peça com altura "H-H1-H2" e posição Y "H1+H2" fica com o que sobra em cima.';
+    container.appendChild(sibHint);
+  }
 
   // Uma linha por INSTÂNCIA (não por componente/módulo) — se o mesmo
   // componente tiver 2 linhas gravadas (2 posições diferentes), renderiza as
