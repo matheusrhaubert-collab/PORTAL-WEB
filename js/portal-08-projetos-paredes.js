@@ -1517,7 +1517,14 @@ function detachProjectSlotFromWallForRotation(slot, group) {
 function beginProjectGroupCoDrag(state, primarySlot) {
   state.groupCoDrag = null;
   if (!state || !primarySlot || typeof projectActiveGroupSelectionIds !== 'function') return;
-  const ids = projectActiveGroupSelectionIds(primarySlot);
+  let ids = projectActiveGroupSelectionIds(primarySlot);
+  // Módulo de GRUPO SALVO agarrado direto, sem o grupo estar selecionado
+  // antes (2026-10-06, "ainda não consigo mover o bloco do grupo"): a
+  // seleção múltipla só vira o grupo DEPOIS (selectProjectSlot roda depois
+  // daqui), então o 1º arraste saía com o módulo sozinho. Usa o grupo salvo.
+  if ((!ids || ids.size < 2) && primarySlot.group_id) {
+    ids = new Set(projectSlots.filter((s) => s.group_id === primarySlot.group_id).map((s) => s.id));
+  }
   if (!ids || ids.size < 2) return;
   const startBox = projectSlotWorldBox3D(primarySlot);
   if (!startBox) return;
@@ -1936,9 +1943,18 @@ function attachProject3DEditDrag() {
     // não se aplica (ponteiro é preciso; passar sticky ali atrapalharia quem
     // quer selecionar o vizinho de propósito).
     const stickySlop = (ev.pointerType === 'touch') ? PROJECT_STICKY_PICK_PX : 0;
-    const hit = ViewerProjectEdit.pickAssemblyAtSticky(
+    let hit = ViewerProjectEdit.pickAssemblyAtSticky(
       ev.clientX, ev.clientY, projectActiveWallIndex, selectedProjectSlotId, stickySlop
     );
+    // Clique no VÃO dentro do bloco vermelho do grupo selecionado (2026-10-06)
+    // = agarrar o grupo pelo membro mais perto (ver pickMultiHighlightAt).
+    // Com Shift dentro do bloco = GIRAR o grupo; Shift FORA do bloco continua
+    // sendo a janela de seleção.
+    if ((!hit || !hit.group) && projectMultiSelectIds.size >= 2
+      && ViewerProjectEdit.pickMultiHighlightAt) {
+      const noBloco = ViewerProjectEdit.pickMultiHighlightAt(ev.clientX, ev.clientY);
+      if (noBloco && projectMultiSelectIds.has(noBloco.slotId)) hit = noBloco;
+    }
     if (!hit || !hit.group) {
       // SHIFT + clique em área vazia = começa a JANELA DE SELEÇÃO
       // (2026-09-04, pedido do usuário: "apertando shift e clicando na tela
@@ -2048,6 +2064,64 @@ function attachProject3DEditDrag() {
     // Antes de qualquer outro modo: com Shift pressionado o arraste inteiro é
     // giro, nunca mover nem esticar (ver quantizeProjectRotation e o
     // comentário grande em projectSlotCanRotate).
+    // GIRAR O GRUPO INTEIRO (2026-10-06, Matt: "mover o grupo funcionou,
+    // mas preciso shift e rotacionar"). Mesmo gesto do giro de 1 módulo, só
+    // que todo membro gira em volta do CENTRO do grupo (posição + ângulo),
+    // pra o conjunto girar como um bloco só. Membro de parede vira ilha
+    // (mesma regra do giro avulso); se algum não pode girar (aéreo
+    // pendurado), o grupo não gira.
+    if (ev.shiftKey) {
+      let gIds = (typeof projectActiveGroupSelectionIds === 'function') ? projectActiveGroupSelectionIds(slot) : null;
+      if ((!gIds || gIds.size < 2) && slot.group_id) {
+        gIds = new Set(projectSlots.filter((s) => s.group_id === slot.group_id).map((s) => s.id));
+      }
+      if (gIds && gIds.size >= 2) {
+        const membros = Array.from(gIds).map((id) => projectSlots.find((s) => s.id === id)).filter(Boolean);
+        if (membros.every((m) => projectSlotCanRotate(m))) {
+          const idsGuardados = new Set(gIds);
+          membros.forEach((m) => {
+            if (!isFloorSlot(m)) detachProjectSlotFromWallForRotation(m, ViewerProjectEdit.findGroupBySlotId(m.id));
+          });
+          selectProjectSlot(slot.id);
+          projectMultiSelectIds = idsGuardados; // seleção ad hoc (sem grupo salvo) não se perde
+          renderProjectCanvas();
+          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+          membros.forEach((m) => {
+            const x = Number(m.floor_x_mm || 0), z = Number(m.floor_z_mm || 0);
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+          });
+          const anguloInicial = Number(slot.floor_rotation_deg || 0);
+          projectDrag3DState = {
+            pointerId: ev.pointerId,
+            slotId: slot.id,
+            group: ViewerProjectEdit.findGroupBySlotId(slot.id) || hit.group,
+            isTouch: ev.pointerType === 'touch',
+            armed: true,
+            moved: false,
+            dragMode: 'rotate',
+            resizeAxis: null,
+            startClientX: ev.clientX,
+            startClientY: ev.clientY,
+            startRotationDeg: anguloInicial,
+            groupRotate: {
+              pivotXMm: (minX + maxX) / 2,
+              pivotZMm: (minZ + maxZ) / 2,
+              membros: membros.map((m) => ({
+                id: m.id,
+                startXMm: Number(m.floor_x_mm || 0),
+                startZMm: Number(m.floor_z_mm || 0),
+                startRotDeg: Number(m.floor_rotation_deg || 0),
+                group: ViewerProjectEdit.findGroupBySlotId(m.id)
+              }))
+            }
+          };
+          domEl.style.cursor = 'default';
+          if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+          showProjectRotateHud(anguloInicial, quantizeProjectRotation(anguloInicial).snapped);
+          return;
+        }
+      }
+    }
     if (ev.shiftKey && projectSlotCanRotate(slot)) {
       const anguloInicial = isFloorSlot(slot)
         ? Number(slot.floor_rotation_deg || 0)
@@ -2366,6 +2440,32 @@ function attachProject3DEditDrag() {
     if (state.dragMode === 'rotate') {
       const bruto = state.startRotationDeg + (ev.clientX - state.startClientX) * PROJECT_ROTATE_DEG_PER_PX;
       const q = quantizeProjectRotation(bruto);
+      if (state.groupRotate) {
+        // Grupo: cada membro gira em volta do pivô pelo MESMO delta (preview
+        // no Group do Three.js; grava no slot já aqui, render no soltar).
+        const deltaRad = ((q.deg - state.startRotationDeg) * Math.PI) / 180;
+        const c = Math.cos(deltaRad), sn = Math.sin(deltaRad);
+        const gr = state.groupRotate;
+        gr.membros.forEach((m) => {
+          const dx = m.startXMm - gr.pivotXMm, dz = m.startZMm - gr.pivotZMm;
+          // Mesma convenção de group.rotation.y (Three.js, eixo Y):
+          // x' = x·cos + z·sen ; z' = −x·sen + z·cos
+          const nx = gr.pivotXMm + dx * c + dz * sn;
+          const nz = gr.pivotZMm - dx * sn + dz * c;
+          const rot = (((m.startRotDeg + (q.deg - state.startRotationDeg)) % 360) + 360) % 360;
+          const mm = projectSlots.find((s) => s.id === m.id);
+          if (mm) { mm.floor_x_mm = nx; mm.floor_z_mm = nz; mm.floor_rotation_deg = rot; }
+          if (m.group) {
+            m.group.position.x = nx / 1000;
+            m.group.position.z = nz / 1000;
+            m.group.rotation.y = (rot * Math.PI) / 180;
+          }
+        });
+        if (ViewerProjectEdit.updateMultiHighlight) ViewerProjectEdit.updateMultiHighlight();
+        ViewerProjectEdit.updateHoverHighlight();
+        showProjectRotateHud(q.deg, q.snapped);
+        return;
+      }
       slot.floor_rotation_deg = q.deg;
       if (state.group) state.group.rotation.y = (q.deg * Math.PI) / 180;
       ViewerProjectEdit.updateHoverHighlight();
@@ -2648,8 +2748,15 @@ function attachProject3DEditDrag() {
       // Girar muda a PEGADA no piso (90° troca largura por profundidade), então
       // o que estava dentro do quadrado pode ter passado a borda.
       const girado = projectSlots.find((s) => s.id === state.slotId);
-      if (girado && isFloorSlot(girado)) clampFloorSlotIntoRoom(girado);
+      // Grupo girado: NÃO clampa membro por membro (empurrar um só pra dentro
+      // da sala desmontaria o desenho do grupo).
+      if (girado && isFloorSlot(girado) && !state.groupRotate) clampFloorSlotIntoRoom(girado);
+      const idsGrupo = state.groupRotate ? new Set(state.groupRotate.membros.map((m) => m.id)) : null;
       renderProjectCanvas();
+      if (idsGrupo) {
+        projectMultiSelectIds = idsGrupo;
+        if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+      }
       refreshProject3DResizeArrows();
       markProjectDirty();
       return;

@@ -593,8 +593,8 @@ MAQUINA_EXPORT._nomePasta = function (plan) {
   return sanitizeFilePart('Lote_' + codeBatch + '_v' + plan.version);
 };
 
-MAQUINA_EXPORT._escreverComFileSystemAPI = async function (files, folderName) {
-  const parent = await window.showDirectoryPicker({ mode: 'readwrite' });
+MAQUINA_EXPORT._escreverComFileSystemAPI = async function (files, folderName, parent) {
+  if (!parent) parent = await window.showDirectoryPicker({ mode: 'readwrite' });
   const dir = await parent.getDirectoryHandle(folderName, { create: true });
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
@@ -637,6 +637,22 @@ MAQUINA_EXPORT.gerar = async function (planId, btn) {
     el.textContent = msg;
   };
 
+  /* A janela de escolher pasta TEM que abrir no instante do clique (06/10,
+     Matt: "Failed to execute 'showDirectoryPicker'... Must be handling a
+     user gesture"). Antes ela abria só depois de ler plano + furação — o
+     Chrome considera o clique "vencido" depois de alguns segundos de
+     await e recusa. Agora: escolhe a pasta primeiro, depois monta tudo. */
+  let pastaDestino = null;
+  if (window.showDirectoryPicker) {
+    try {
+      pastaDestino = await window.showDirectoryPicker({ mode: 'readwrite' });
+    } catch (err) {
+      if (err && err.name === 'AbortError') { avisar('cancelado.'); return; }
+      avisar(err.message || String(err), true);
+      return;
+    }
+  }
+
   if (btn) { btn.disabled = true; btn.textContent = 'Gerando…'; }
   avisar('lendo o plano…');
   try {
@@ -662,10 +678,10 @@ MAQUINA_EXPORT.gerar = async function (planId, btn) {
     const files = MAQUINA_EXPORT._montarArquivos(plan);
     const folderName = MAQUINA_EXPORT._nomePasta(plan);
 
-    if (window.showDirectoryPicker) {
-      avisar('escolha onde criar a pasta…');
+    if (pastaDestino) {
+      avisar('gravando na pasta…');
       try {
-        await MAQUINA_EXPORT._escreverComFileSystemAPI(files, folderName);
+        await MAQUINA_EXPORT._escreverComFileSystemAPI(files, folderName, pastaDestino);
       } catch (err) {
         if (err && err.name === 'AbortError') { avisar('cancelado.'); return; }
         throw err;

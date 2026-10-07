@@ -3104,6 +3104,29 @@ function createViewerComposition3D() {
     escreveCaixaNoHelper(multiHighlightHelper, uniaoDeGrupos(multiHighlightGroups));
     multiHighlightHelper.visible = true;
   }
+  // CLICAR DENTRO DO BLOCO VERMELHO DO GRUPO (2026-10-06, Matt: "ainda não
+  // consigo mover o bloco do grupo") — o bloco é a UNIÃO dos membros, então
+  // tem vão vazio entre eles; o clique ali não acertava módulo nenhum e
+  // virava "clique no vazio". Se o raio atravessa o bloco, devolve o membro
+  // mais perto do ponto atingido ({group, slotId}, mesmo formato de
+  // pickAssemblyAt) pra quem chama tratar como se tivesse agarrado ele.
+  function pickMultiHighlightAt(clientX, clientY) {
+    if (!renderer || !camera || !_raycaster) return null;
+    if (!multiHighlightHelper || !multiHighlightHelper.visible || multiHighlightGroups.length < 2) return null;
+    const caixa = uniaoDeGrupos(multiHighlightGroups);
+    if (caixa.isEmpty()) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const ponto = _raycaster.ray.intersectBox(caixa, new THREE.Vector3());
+    if (!ponto) return null;
+    let melhor = null, melhorDist = Infinity;
+    multiHighlightGroups.forEach((g) => {
+      if (!g || !g.userData || g.userData.slotId == null) return;
+      const d = caixaSemHitbox(g).distanceToPoint(ponto);
+      if (d < melhorDist) { melhorDist = d; melhor = g; }
+    });
+    return melhor ? { group: melhor, slotId: melhor.userData.slotId } : null;
+  }
+
   // Recalcula a união SEM trocar de grupo rastreado (mesmo espírito de
   // updateHoverHighlight) — chamado a cada pointermove de um co-arraste de
   // grupo (portal-08-projetos-paredes.js), que já reposiciona os Groups ao
@@ -3515,7 +3538,7 @@ function createViewerComposition3D() {
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
     setControlsEnabled, getDomElement, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
-    setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight,
+    setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight, pickMultiHighlightAt,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.
     pickRoomSurfaceAt, frameDirection, setResizeArrows, pickResizeArrowAt,
