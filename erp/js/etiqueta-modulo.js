@@ -225,6 +225,7 @@ ETIQUETA_MODULO.coletar = async function (batchId, orderIdFiltro) {
       const c = corPorId[sc.color_id] || null;
       if (c && sc.role_id) colorsByRole[sc.role_id] = c;
       cores.push({
+        roleId: sc.role_id || null,
         papel: sc.role_name || '', cor: (c && c.name) || sc.color_name || '—',
         hex: (c && c.swatch_hex && c.swatch_hex.toLowerCase() !== '#cccccc') ? c.swatch_hex : '#d7c4a3',
         textura: (c && c.texture_url) || null,
@@ -233,6 +234,27 @@ ETIQUETA_MODULO.coletar = async function (batchId, orderIdFiltro) {
         veio: !!(c && c.has_grain)
       });
     });
+    /* Só mostra a cor de um papel se ALGUMA peça cortada do módulo usa esse
+       papel (06/10, Matt: "deletei as portas e frente, então não deveria
+       aparecer" Cashemere no Pantry Cabinet). selected_colors guarda a cor
+       escolhida pra todos os papéis do módulo, mesmo quando a peça daquele
+       papel foi removida — o breakdown congelado é que diz o que existe.
+       Pedido antigo sem color_role_id nas peças: mantém tudo como antes. */
+    const papeisUsados = {};
+    let temPapel = false;
+    const marcaPapeis = function (lista) {
+      (lista || []).forEach(function (p) {
+        if (!p || (p.origin || 'fabricacao') === 'comprado') return;
+        if (p.color_role_id) { papeisUsados[p.color_role_id] = true; temPapel = true; }
+        if (p.is_module) marcaPapeis(p.child_breakdown);
+      });
+    };
+    marcaPapeis(Array.isArray(it.breakdown) ? it.breakdown : []);
+    if (temPapel) {
+      for (let i = cores.length - 1; i >= 0; i--) {
+        if (cores[i].roleId && !papeisUsados[cores[i].roleId]) cores.splice(i, 1);
+      }
+    }
     // ordem: Caixa, Porta/Frente, Painel, resto
     const ordemPapel = function (p) { p = (p || '').toLowerCase(); return p.indexOf('caixa') >= 0 ? 0 : (p.indexOf('porta') >= 0 || p.indexOf('frente') >= 0) ? 1 : p.indexOf('painel') >= 0 ? 2 : 3; };
     cores.sort(function (a, b) { return ordemPapel(a.papel) - ordemPapel(b.papel); });
@@ -341,7 +363,7 @@ ETIQUETA_MODULO.label = function (x, lote, idx) {
   const onde = '<b>Location:</b> ' + parede + ' · ' + E.fracInTxt(pl.x_mm || 0) + ' from left · ' + E.fracInTxt(pl.floor_height_mm || 0) + ' from floor';
 
   const corHtml = function (c, papelFallback) {
-    if (!c) return '<div class="color vazio"><div class="swatch" style="background:#f6f3ee"></div><div class="txt"><div class="k">Color · ' + esc(E.en(papelFallback)) + '</div><div class="v">—</div><div class="s">loose part</div></div></div>';
+    if (!c) return '<div class="color vazio"><div class="swatch" style="background:#f6f3ee"></div><div class="txt"><div class="k">Color · ' + esc(E.en(papelFallback)) + '</div><div class="v">—</div><div class="s">' + (/porta|frente/i.test(papelFallback || '') ? 'no door / front' : 'loose part') + '</div></div></div>';
     const bg = c.textura ? 'background-image:url(' + esc(c.textura) + ')' : 'background:' + esc(c.hex);
     return '<div class="color"><div class="swatch" style="' + bg + '"></div><div class="txt"><div class="k">Color · ' + esc(E.en(c.papel)) + '</div>' +
       '<div class="v">' + esc(c.cor) + '</div><div class="s">' + esc((c.substrato || '').toUpperCase()) + ' ' + c.espessura + ' mm' + (c.veio ? ' · grain' : '') + '</div></div></div>';
