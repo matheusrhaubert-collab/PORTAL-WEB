@@ -281,9 +281,8 @@
   // Agora: a peça sai como foi cadastrada (X = faceA, Y = faceB) e só gira
   // quando faceB passa do que a furadeira consegue passar em Y
   // (FURADEIRA_LADO_MAX_MM = 1050, ver limite_furadeira_1050mm_fundo_deitado)
-  // — porta alta, painel alto. Aí ainda cai em T/B (pendente de um .ban de
-  // exemplo da máquina com furo nessas bordas), mas é raro: porta não tem
-  // furo de borda.
+  // — porta alta, painel alto. Aí cai nas bordas do Y, que desde 09/10
+  // saem com os códigos certos da spec, U/D (ver holeToXml).
   //
   // Plane com Width < Hight passa a existir no arquivo (ex.: 375.7 × 799.2).
   // Se a máquina recusar isso, o caminho alternativo é confirmar os códigos
@@ -2016,11 +2015,23 @@
       case 'borda_dir': // HoleH na borda x=Width (Face R confirmado)
         return '<HoleH Name="" Face="R" Start="' + fmt(C) + ' -' + fmt(hole.y) + ' -' + fmt(E / 2) + '" End="'
           + fmt(C - depth) + ' -' + fmt(hole.y) + ' -' + fmt(E / 2) + '" Diameter="' + dia + '" IsCuted="0"/>';
-      case 'borda_sup': // PALPITE de código de face (borda y=0)
-        return '<HoleH Name="" Face="T" Start="' + fmt(hole.x) + ' 0 -' + fmt(E / 2) + '" End="'
+      /* BORDAS DO Y = Face "U" (上面, upper) e "D" (下面, lower) — 2026-10-09.
+         Antes era "T"/"B", PALPITE nunca confirmado, e "B" é o código da FACE
+         DE BAIXO (背面B, o mesmo do 'verso' acima): a máquina lia o furo de
+         borda como furo de face. Matt, LT-26-0015 (base/topo chanfro 45°
+         573×573): "os furos horizontais da parte de trás e da frente da
+         peça foram pra máquina como furos de face". Mesmo sintoma do
+         PC-002278 de 24/09 (ver nota do machineDims). Códigos da spec do
+         MicroDraw (cnblogs.com/asuo/p/5225938 — "正面A 背面B 左面L 右面R
+         上面U 下面D"; exemplo: D em Y=0, U em Y=Hight, eixo Y pra cima).
+         Nos nossos .ban o Y é negado: a borda y=0 do cadastro fica em Y=0,
+         que é o Y MAIOR do plano (0 > -Hight) -> U; a borda y=Hight fica em
+         Y=-Hight, o Y menor -> D. Coordenadas não mudam, só o código. */
+      case 'borda_sup': // HoleH na borda Y=0 do arquivo (o Y maior) -> U
+        return '<HoleH Name="" Face="U" Start="' + fmt(hole.x) + ' 0 -' + fmt(E / 2) + '" End="'
           + fmt(hole.x) + ' -' + fmt(depth) + ' -' + fmt(E / 2) + '" Diameter="' + dia + '" IsCuted="0"/>';
-      case 'borda_inf': // PALPITE de código de face (borda y=Hight)
-        return '<HoleH Name="" Face="B" Start="' + fmt(hole.x) + ' -' + fmt(L) + ' -' + fmt(E / 2) + '" End="'
+      case 'borda_inf': // HoleH na borda Y=-Hight do arquivo (o Y menor) -> D
+        return '<HoleH Name="" Face="D" Start="' + fmt(hole.x) + ' -' + fmt(L) + ' -' + fmt(E / 2) + '" End="'
           + fmt(hole.x) + ' -' + fmt(L - depth) + ' -' + fmt(E / 2) + '" Diameter="' + dia + '" IsCuted="0"/>';
       default:
         return '';
