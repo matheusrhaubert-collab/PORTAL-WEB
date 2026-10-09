@@ -1743,6 +1743,35 @@
     lista.forEach(function (r) {
       if (!r) return;
       const h = Number(r.h) || 0, d = Number(r.d) || 0;
+      // RECORTE "C" NO MEIO DA BORDA (2026-10-08, gaveteiro gola de 2
+      // gavetas): 'frente-meio' / 'fundo-meio' com `y` (mm, de baixo da
+      // peça, já resolvido da fórmula em module-pieces.js) — o retângulo toca
+      // UMA borda só. contornoComRecortes encaixa ele no meio da aresta.
+      if (r.canto === 'frente-meio' || r.canto === 'fundo-meio') {
+        const y = Number(r.y);
+        if (!(h > 0) || !(d > 0) || !isFinite(y) || y <= 0) return;
+        const frente = r.canto === 'frente-meio';
+        let mu0, mu1, mv0, mv1;
+        if (painelZ) {
+          if (d >= t.faceA || y + h >= t.faceB) return;
+          mu0 = frente ? t.faceA - d : 0; mu1 = mu0 + d;
+          mv0 = y; mv1 = y + h;
+          if (part._viradaU) { const a = t.faceA - mu1; mu1 = t.faceA - mu0; mu0 = a; }
+        } else {
+          if (y + h >= t.faceA || d >= t.faceB) return;
+          mu0 = y; mu1 = y + h;
+          mv0 = frente ? t.faceB - d : 0; mv1 = mv0 + d;
+          if (mirrored) { const a = t.faceB - mv1; mv1 = t.faceB - mv0; mv0 = a; }
+        }
+        const q0 = localToMachine(t, mu0, mv0);
+        const q1 = localToMachine(t, mu1, mv1);
+        out.push({
+          x0: Math.min(q0.x, q1.x), x1: Math.max(q0.x, q1.x),
+          y0: Math.min(q0.y, q1.y), y1: Math.max(q0.y, q1.y),
+          depth: t.thickness, passante: true, canto: r.canto, meio: true
+        });
+        return;
+      }
       const c = CANTO_UV[r.canto];
       if (!c || h <= 0 || d <= 0) return;
       let u0, u1, v0, v1;
@@ -1837,9 +1866,30 @@
     ];
   }
 
+  // C no meio da aresta, passante: TRÊS rasgos (os dois lados e o fundo do
+  // C) dentro do retalho, e ele cai — mesma ideia do canto. Só pro DESENHO
+  // do visualizador: o que a máquina corta é o <Outline> (outlineBan).
+  function edgeNotchSlots(rect, C, L) {
+    if (!rect.passante || !rect.meio) return null;
+    const w = Math.max(USINAGEM.ferramenta_mm, 0.5), tol = 0.05;
+    if ((rect.x1 - rect.x0) < w || (rect.y1 - rect.y0) < w) return null;
+    const emY0 = rect.y0 <= tol, emYL = rect.y1 >= L - tol, emX0 = rect.x0 <= tol, emXC = rect.x1 >= C - tol;
+    const sl = function (x0, y0, x1, y1) { return { x0: x0, y0: y0, x1: x1, y1: y1, width: w, depth: rect.depth, passante: true }; };
+    const ix0 = rect.x0 + w / 2, ix1 = rect.x1 - w / 2, iy0 = rect.y0 + w / 2, iy1 = rect.y1 - w / 2;
+    if (emY0 || emYL) { // aberto pra borda y: lados em x, fundo em y
+      const fy = emY0 ? iy1 : iy0, by = emY0 ? rect.y0 : rect.y1;
+      return [sl(ix0, by, ix0, fy), sl(ix1, by, ix1, fy), sl(ix0, fy, ix1, fy)];
+    }
+    if (emX0 || emXC) {
+      const fx = emX0 ? ix1 : ix0, bx = emX0 ? rect.x0 : rect.x1;
+      return [sl(bx, iy0, fx, iy0), sl(bx, iy1, fx, iy1), sl(fx, iy0, fx, iy1)];
+    }
+    return null;
+  }
+
   function rectToSlots(rect, C, L) {
     if (USINAGEM.estrategia === 'contorno') {
-      const corte = cornerCutSlots(rect, C, L);
+      const corte = rect.meio ? edgeNotchSlots(rect, C, L) : cornerCutSlots(rect, C, L);
       if (corte) return corte;
     }
     const wMax = Math.max(USINAGEM.ferramenta_mm, 0.5);
@@ -2065,17 +2115,39 @@
     const eps = 0.05;
     const noCanto = function (cx, cy) {
       return (rects || []).find(function (r) {
+        if (r.meio) return false;
         return (cx === 0 ? r.x0 <= eps : r.x1 >= C - eps) && (cy === 0 ? r.y0 <= eps : r.y1 >= L - eps);
       }) || null;
     };
     // Chanfro (r.chanfro, aéreo de canto 45°): a quina vira UMA diagonal —
     // são os mesmos dois pontos das pontas do L, sem o ponto do meio.
+    // C no meio de uma aresta (r.meio): toca UMA borda só. Entra entre os
+    // dois cantos daquela aresta, na ordem em que o contorno anda por ela.
+    const meios = (rects || []).filter(function (m) { return m && m.meio && !m.chanfro; });
+    const naAresta = function (qual) {
+      const lista = meios.filter(function (m) {
+        if (qual === 'y0') return m.y0 <= eps && m.y1 < L - eps;
+        if (qual === 'xC') return m.x1 >= C - eps && m.x0 > eps;
+        if (qual === 'yL') return m.y1 >= L - eps && m.y0 > eps;
+        return m.x0 <= eps && m.x1 < C - eps; // 'x0'
+      });
+      const out = [];
+      if (qual === 'y0') lista.sort(function (a, b) { return a.x0 - b.x0; }).forEach(function (m) { out.push([m.x0, 0], [m.x0, m.y1], [m.x1, m.y1], [m.x1, 0]); });
+      if (qual === 'xC') lista.sort(function (a, b) { return a.y0 - b.y0; }).forEach(function (m) { out.push([C, m.y0], [m.x0, m.y0], [m.x0, m.y1], [C, m.y1]); });
+      if (qual === 'yL') lista.sort(function (a, b) { return b.x1 - a.x1; }).forEach(function (m) { out.push([m.x1, L], [m.x1, m.y0], [m.x0, m.y0], [m.x0, L]); });
+      if (qual === 'x0') lista.sort(function (a, b) { return b.y1 - a.y1; }).forEach(function (m) { out.push([0, m.y1], [m.x1, m.y1], [m.x1, m.y0], [0, m.y0]); });
+      return out;
+    };
     const pts = [];
     let r;
     r = noCanto(0, 0);   if (r) { if (r.chanfro) pts.push([0, r.y1], [r.x1, 0]); else pts.push([0, r.y1], [r.x1, r.y1], [r.x1, 0]); } else pts.push([0, 0]);
+    naAresta('y0').forEach(function (p) { pts.push(p); });
     r = noCanto(C, 0);   if (r) { if (r.chanfro) pts.push([r.x0, 0], [C, r.y1]); else pts.push([r.x0, 0], [r.x0, r.y1], [C, r.y1]); } else pts.push([C, 0]);
+    naAresta('xC').forEach(function (p) { pts.push(p); });
     r = noCanto(C, L);   if (r) { if (r.chanfro) pts.push([C, r.y0], [r.x0, L]); else pts.push([C, r.y0], [r.x0, r.y0], [r.x0, L]); } else pts.push([C, L]);
+    naAresta('yL').forEach(function (p) { pts.push(p); });
     r = noCanto(0, L);   if (r) { if (r.chanfro) pts.push([r.x1, L], [0, r.y0]); else pts.push([r.x1, L], [r.x1, r.y0], [0, r.y0]); } else pts.push([0, L]);
+    naAresta('x0').forEach(function (p) { pts.push(p); });
     return pts;
   }
   function buildCorteXml(name, C, L, E, rects) {

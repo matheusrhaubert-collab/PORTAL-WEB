@@ -425,6 +425,27 @@ function applyPieceAdjustmentsDeep(piecesList, adjustments) {
   });
 }
 
+// RECORTE "C" NO MEIO DA BORDA (2026-10-08, gaveteiro gola de 2 gavetas) —
+// {canto: 'frente-meio' | 'fundo-meio', h, d, y}: `y` é onde o C começa,
+// medido de BAIXO da própria peça, e pode ser FÓRMULA (string) com H/W/D/E
+// da PEÇA (H = altura da lateral). Resolve aqui, uma vez, pra todo mundo que
+// lê part.recortes (viewer3d, photoreal, drilling/.ban) receber número em mm
+// e não precisar saber de fórmula. Recorte de canto passa intacto.
+function resolveRecortesMeio(lista, vars) {
+  if (!Array.isArray(lista) || !lista.length) return lista || [];
+  return lista.map(function (r) {
+    if (!r || (r.canto !== 'frente-meio' && r.canto !== 'fundo-meio')) return r;
+    let y = NaN;
+    if (typeof r.y === 'number') y = r.y;
+    else if (r.y !== null && r.y !== undefined && String(r.y).trim() !== '') {
+      try { y = Pricing.evalFormula(String(r.y), Object.assign({ h: vars.H, w: vars.W, d: vars.D }, vars)); } catch (e) { y = NaN; }
+    }
+    // Sem y válido: centraliza o C na altura da peça.
+    if (!isFinite(y)) y = ((Number(vars.H) || 0) - (Number(r.h) || 0)) / 2;
+    return Object.assign({}, r, { y_formula: r.y, y: Math.round(y * 10) / 10 });
+  });
+}
+
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
   // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.
@@ -641,7 +662,9 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         rotation_y_deg: piece.rotation_y_deg || 0, // migration 067 — giro de canto (só 'free')
         // Recortes em L (migration 094) — entalhes do toe/gola na lateral,
         // ver viewer3d.js buildPanelGeometry. [] = peça inteira.
-        recortes: piece.recortes || [],
+        recortes: resolveRecortesMeio(piece.recortes || [], {
+          H: resolvedHeightMm, W: resolvedWidthMm, D: resolvedDepthMm, E: pieceE
+        }),
         abre_recorte: !!piece.abre_recorte,
         // LED embutido (2026-09-30, ver applyLedConfigsDeep) — rasgo no .ban e
         // desenho no 3D/foto. Sem esta linha o dado morreria aqui, como já

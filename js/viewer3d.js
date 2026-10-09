@@ -1973,18 +1973,29 @@ const Viewer3D = (function () {
     // Cada canto recebe no máximo um recorte. Um recorte sem altura OU sem
     // profundidade não é recorte nenhum; canto desconhecido é ignorado.
     let algum = false;
+    // RECORTE NO MEIO DA BORDA ("C", 2026-10-08, gaveteiro gola de 2
+    // gavetas): canto 'frente-meio' / 'fundo-meio' com `y` = altura (mm, a
+    // partir de baixo da peça) onde o C começa, já resolvido da fórmula em
+    // module-pieces.js. Não ocupa canto — entra no meio da aresta, entre os
+    // recortes de canto (se houver).
+    const meios = [];
     (part.recortes || []).forEach(function (r) {
       if (!r) return;
       const nh = Math.max((r.h || 0) / 1000, 0); // altura do L
       const nd = Math.max((r.d || 0) / 1000, 0); // profundidade do L
       if (nh <= 0 || nd <= 0) return;
+      if (r.canto === 'frente-meio' || r.canto === 'fundo-meio') {
+        const y0 = Number(r.y);
+        if (isFinite(y0) && y0 > 0) meios.push({ frente: r.canto === 'frente-meio', y0: y0 / 1000, nh: nh, nd: nd });
+        return;
+      }
       if (!CANTOS_RECORTE[r.canto]) return;
       const c = cantos.find(function (x) { return x.nome === r.canto; });
       if (!c || c.nh) return;
       c.nh = nh; c.nd = nd;
       algum = true;
     });
-    if (!algum) return box();
+    if (!algum && !meios.length) return box();
 
     // Dois recortes na mesma aresta não podem se encontrar, e um recorte
     // sozinho não pode comer a peça inteira — nos dois casos o contorno sai
@@ -2000,11 +2011,24 @@ const Viewer3D = (function () {
       return (cantos[a[0]][a[3]] || 0) + (cantos[a[1]][a[3]] || 0) < a[2];
     });
     if (!cabe) return box();
+    // C no meio: precisa ficar ENTRE os recortes de canto da mesma aresta,
+    // sem encostar neles nem em outro C, e não pode comer a peça inteira na
+    // profundidade. C inválido é ignorado sozinho (os cantos continuam).
+    const meiosOk = [];
+    meios.sort(function (a, b) { return a.y0 - b.y0; }).forEach(function (m) {
+      const baixo = m.frente ? cantos[1] : cantos[0], cima = m.frente ? cantos[2] : cantos[3];
+      const lo = -by + (baixo.nh || 0), hi = by - (cima.nh || 0);
+      const y0 = -by + m.y0, y1 = y0 + m.nh;
+      if (!(y0 > lo + 1e-6 && y1 < hi - 1e-6 && m.nd < faceB - 1e-6)) return;
+      if (meiosOk.some(function (o) { return o.frente === m.frente && y0 < o.y1 + 1e-6 && o.y0 < y1 + 1e-6; })) return;
+      meiosOk.push({ frente: m.frente, y0: y0, y1: y1, nd: m.nd });
+    });
+    if (!algum && !meiosOk.length) return box();
 
     // Quanto o recorte anda em cada eixo: nd na profundidade (x do shape),
     // nh na altura (y do shape).
     const pontos = [];
-    cantos.forEach(function (c) {
+    const pushCanto = function (c) {
       if (!c.nh) { pontos.push(c.p); return; }
       const ext = function (dir) { return dir[0] !== 0 ? c.nd : c.nh; };
       const ei = ext(c.din), eo = ext(c.dout);
@@ -2012,6 +2036,17 @@ const Viewer3D = (function () {
       pontos.push(recuado);
       pontos.push([recuado[0] + c.dout[0] * eo, recuado[1] + c.dout[1] * eo]);
       pontos.push([c.p[0] + c.dout[0] * eo, c.p[1] + c.dout[1] * eo]);
+    };
+    // Contorno anti-horário: a FRENTE é percorrida de baixo pra cima (depois
+    // do canto 1), o FUNDO de cima pra baixo (depois do canto 3).
+    cantos.forEach(function (c, ci) {
+      pushCanto(c);
+      if (ci === 1) meiosOk.filter(function (m) { return m.frente; }).forEach(function (m) {
+        pontos.push([bx, m.y0], [bx - m.nd, m.y0], [bx - m.nd, m.y1], [bx, m.y1]);
+      });
+      if (ci === 3) meiosOk.filter(function (m) { return !m.frente; }).reverse().forEach(function (m) {
+        pontos.push([-bx, m.y1], [-bx + m.nd, m.y1], [-bx + m.nd, m.y0], [-bx, m.y0]);
+      });
     });
 
     const shape = new THREE.Shape();
