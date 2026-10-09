@@ -333,7 +333,9 @@
   // chapa, pedido explícito pra não mexer); free/other/baseboard sem nada ->
   // eixo fino (peça deitada = deitado, em pé de canto = em pé, no plano =
   // deitado); demais papéis (lateral, base, topo, porta, prateleira) ->
-  // positioning do tipo; sem nada -> lado longo (comportamento antigo).
+  // positioning do tipo; sem positioning -> o fallback do papel no 3D
+  // (lateral = em pé; base/topo/prateleira = deitado — fix 09/10, ver
+  // abaixo); resto -> lado longo.
   function grainAxisForPiece(piece, dims) {
     const w = Number(dims && dims.width_mm) || 0;
     const h = Number(dims && dims.height_mm) || 0;
@@ -370,6 +372,21 @@
     }
     const r = pelaPos();
     if (r) return r;
+    /* PAPEL SEM POSITIONING (2026-10-09, LT-26-0015). Matt: "peças que
+       giraram 90 graus... a peça com veio nunca pode girar em hipótese
+       nenhuma". Base de 497 de largura × 590 de fundo saiu com o veio de
+       frente pra trás. Causa: os tipos de componente dessas peças não têm
+       `positioning`, então pelaPos() dava null e caía no lado longo — com
+       módulo mais LARGO que fundo o lado longo é a largura e acerta por
+       sorte; com módulo ESTREITO (≤ 590) o veio virava. O 3D nunca fez
+       isso: em viewer3d.placePart cada papel tem o seu `fallback` fixo em
+       resolveGrainRotate — lateral (left/right) = false (veio na altura),
+       base/topo/prateleira (bottom/top/shelf) = true (veio na largura).
+       Mesma regra aqui, independente do tamanho. Lateral de gaveta
+       (drawer_side) continua no lado longo — é o que o 3D mostra (a
+       profundidade é sempre a maior medida dela). */
+    if (role === 'left' || role === 'right') return eixo(false);
+    if (role === 'bottom' || role === 'top' || role === 'shelf') return eixo(true);
     return longo();
   }
 

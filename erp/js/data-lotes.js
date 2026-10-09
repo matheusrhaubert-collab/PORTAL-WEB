@@ -325,12 +325,20 @@ LOTES.explodeOrders = async function (orderIds) {
      ATUAL da peça (papel, positioning do tipo, veio do componente), pelo
      piece_id. Peça do Construtor de pedido antigo (piece_id 'lay:...', não
      existe no catálogo) fica sem — só o pedido novo cobre essas. */
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const missingPieceIds = new Set();
   const missingGrainIds = new Set();
   (itemsRes.data || []).forEach(function (item) {
     LOTES.flattenBreakdown(item.breakdown, 1).forEach(function (leaf) {
       if (typeof leaf.edge_banding !== 'number' && leaf.piece_id) missingPieceIds.add(leaf.piece_id);
-      if (!leaf.grain_axis && leaf.piece_id) missingGrainIds.add(leaf.piece_id);
+      /* 2026-10-09 (LT-26-0015): TODA peça de catálogo recalcula o eixo do
+         veio pelo cadastro, não só a que não tem snapshot — o grain_axis
+         gravado no pedido antes de hoje caía no LADO LONGO pra
+         base/topo/prateleira/lateral sem positioning (base 497 × 590 saiu
+         com o veio de frente pra trás). Ver Pricing.grainAxisForPiece. Só id
+         uuid (module_components.id); peça do Construtor ('lay:...') fica no
+         snapshot. */
+      if (leaf.piece_id && UUID_RE.test(String(leaf.piece_id))) missingGrainIds.add(leaf.piece_id);
     });
   });
   const compEdge = {}; // piece_id (module_components.id) -> components.edge_banding
@@ -340,14 +348,22 @@ LOTES.explodeOrders = async function (orderIds) {
     // piece_id do breakdown é public.module_components.id (a posição da peça
     // no módulo); a fita/veio moram em public.components (component_id) e o
     // positioning no tipo do componente.
-    const { data: mcs, error: eMc } = await sb.from('module_components')
-      .select('id, component_id, position_role').in('id', todosIds);
-    if (eMc) throw eMc;
+    // Em blocos de 120 ids: desde 09/10 entra TODA peça do lote (não só a
+    // sem snapshot), e a lista inteira num .in() estoura o tamanho da URL.
+    async function emBlocos(tabela, cols, ids) {
+      const out = [];
+      for (let i = 0; i < ids.length; i += 120) {
+        const { data, error } = await sb.from(tabela).select(cols).in('id', ids.slice(i, i + 120));
+        if (error) throw error;
+        (data || []).forEach(function (r) { out.push(r); });
+      }
+      return out;
+    }
+    const mcs = await emBlocos('module_components', 'id, component_id, position_role', todosIds);
     const compIds = Array.from(new Set((mcs || []).map(function (m) { return m.component_id; }).filter(Boolean)));
-    const { data: comps, error: eComp } = compIds.length
-      ? await sb.from('components').select('id, edge_banding, veio, position_role, component_types(positioning)').in('id', compIds)
-      : { data: [], error: null };
-    if (eComp) throw eComp;
+    const comps = compIds.length
+      ? await emBlocos('components', 'id, edge_banding, veio, position_role, component_types(positioning)', compIds)
+      : [];
     const ebByComp = {}, veioByComp = {};
     (comps || []).forEach(function (cp) {
       ebByComp[cp.id] = cp.edge_banding;
@@ -363,12 +379,16 @@ LOTES.explodeOrders = async function (orderIds) {
       if (v) compVeio[m.id] = Object.assign({}, v, { position_role: m.position_role || v.position_role || 'other' });
     });
   }
-  // Eixo do veio de um leaf: o do breakdown, senão recalculado do cadastro.
+  // Eixo do veio: recalculado do cadastro ATUAL (regra corrigida em 09/10)
+  // sempre que der; o snapshot do pedido só vale pra peça sem cadastro
+  // (Construtor) — ver nota em missingGrainIds acima.
   function grainAxisDoLeaf(leaf) {
-    if (leaf.grain_axis) return leaf.grain_axis;
     const cad = leaf.piece_id ? compVeio[leaf.piece_id] : null;
-    if (!cad || typeof Pricing === 'undefined' || !Pricing.grainAxisForPiece) return null;
-    return Pricing.grainAxisForPiece(cad, leaf);
+    if (cad && typeof Pricing !== 'undefined' && Pricing.grainAxisForPiece) {
+      const eixo = Pricing.grainAxisForPiece(cad, leaf);
+      if (eixo) return eixo;
+    }
+    return leaf.grain_axis || null;
   }
 
   const grouped = new Map();
