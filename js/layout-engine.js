@@ -580,6 +580,32 @@
           x: pos, y: box.y, z: box.z,
           w: th, h: box.h, d: Math.max(60, box.d - recuo - cons)
         });
+      } else if ((acc.params || {}).gola_l) {
+        // GOLA EM L NO MEIO (2026-10-08, Matt: caixa gola de 2 gavetas — "a
+        // gola do meio vira peça do Construtor"). Divide o vão em cima/baixo
+        // como uma prateleira fixa de espessura `th` (= altura da gola, 76),
+        // mas em vez de uma chapa entre as laterais emite o L igual ao
+        // "Gola L 3/4" do casco: VISTA (th × E) atrás e RIPA (E × E) na frente
+        // embaixo, as duas com a LARGURA CHEIA do módulo (passam por dentro
+        // do recorte em C das laterais: box.x - E até box.x + box.w + E).
+        // `recorte_casco` na vista manda o resolvedor (module-pieces.js)
+        // abrir o C de th × recorte_d na FRENTE das laterais do casco nessa
+        // altura — 3D, foto e .ban leem dali. `auto_join` = junta com a gola
+        // do módulo vizinho encostado (viewer3d_composition).
+        var E = espCasco;
+        var frente = box.z + box.d;
+        var gx = box.x - E, gw = box.w + 2 * E;
+        var recD = num((acc.params || {}).recorte_d_mm) || 40;
+        push(node, {
+          kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name + ' · vista',
+          x: gx, y: pos, z: frente - 2 * E, w: gw, h: th, d: E,
+          auto_join: true, recorte_casco: { h: th, d: recD }
+        });
+        push(node, {
+          kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name + ' · ripa',
+          x: gx, y: pos, z: frente - E, w: gw, h: E, d: E,
+          auto_join: true
+        });
       } else {
         push(node, {
           kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
@@ -1509,6 +1535,13 @@
           // campo morria aqui: a linha é montada com lista FECHADA de campos,
           // o mesmo lugar onde o programa de furação já sumiu uma vez.
           recortes: Array.isArray(p.recortes) ? p.recortes : null,
+          // Gola do meio (2026-10-08): abre o C nas laterais do casco
+          // (module-pieces.js aplicarRecorteCascoNasLaterais) e junta com o
+          // vizinho encostado no 3D.
+          recorte_casco: p.recorte_casco || null,
+          auto_join_adjacent: p.auto_join ? true : null,
+          auto_join_explicit: !!p.auto_join,
+          join_max_length_mm: 2700,
           // rastro pra interface (a árvore que gerou esta linha)
           _layoutNodeId: p.nodeId,
           _layoutKind: p.kind

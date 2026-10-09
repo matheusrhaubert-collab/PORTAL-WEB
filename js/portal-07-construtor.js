@@ -1946,6 +1946,9 @@ function clipProjectInternalsAgainstCasco(pieces, obstaculos) {
   if (!Array.isArray(pieces) || !Array.isArray(obstaculos) || !obstaculos.length) return pieces;
   pieces.forEach((p) => {
     if (!p || !isFinite(p.z) || !isFinite(p.d) || p.d <= 0) return;
+    // Gola em L do meio (2026-10-08): passa DE PROPÓSITO por dentro das
+    // laterais (recorte em C) — não é peça pra ser recolhida pro vão.
+    if (p.auto_join) return;
     const zFrente = p.z + p.d;
     let zNovo = p.z;
     obstaculos.forEach((b) => {

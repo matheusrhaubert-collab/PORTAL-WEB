@@ -452,6 +452,44 @@ function resolveRecortesMeio(lista, vars) {
   });
 }
 
+// GOLA DO MEIO DO CONSTRUTOR ABRE O C NA LATERAL DO CASCO (2026-10-08) —
+// o inverso de recortarInternosContraCasco (portal-07): lá a peça do
+// construtor é entalhada pelo casco; aqui a peça do construtor (a vista da
+// gola em L, `recorte_casco: {h, d}`) entalha as LATERAIS do casco. A
+// lateral é linha de module_components (não dá pra cadastrar o C nela, a
+// altura depende de onde o cliente pôs a gola), então o recorte entra por
+// instância, aqui no resolvedor — o único caminho por onde passam 3D, foto,
+// furação (.ban) e lote. Procura lateral no mesmo nível ou dentro de um
+// casco aninhado (somando a posição dele). y do C = altura da gola medida
+// de baixo da lateral.
+function aplicarRecorteCascoNasLaterais(parts) {
+  const golas = (parts || []).filter((p) => p && p.recorte_casco && !p.is_module);
+  if (!golas.length) return;
+  const visita = (lista, dx, dy, dz) => (lista || []).forEach((p) => {
+    if (!p) return;
+    if (p.is_module && Array.isArray(p.child_pieces)) {
+      visita(p.child_pieces, dx + (Number(p.offset_x_mm) || 0), dy + (Number(p.offset_y_mm) || 0), dz + (Number(p.offset_z_mm) || 0));
+      return;
+    }
+    if (p.position_role !== 'left' && p.position_role !== 'right') return;
+    const ly = dy + (Number(p.offset_y_mm) || 0), lh = Number(p.height_mm) || 0;
+    const lx = dx + (Number(p.offset_x_mm) || 0), lw = Number(p.width_mm) || 0;
+    golas.forEach((g) => {
+      const gy = Number(g.offset_y_mm) || 0, gx = Number(g.offset_x_mm) || 0, gw = Number(g.width_mm) || 0;
+      const h = Number(g.recorte_casco.h) || 0, d = Number(g.recorte_casco.d) || 0;
+      // a gola tem que atravessar a lateral em X e caber dentro dela em altura
+      if (!(h > 0) || !(d > 0) || gx > lx + 0.5 || gx + gw < lx + lw - 0.5) return;
+      const y = gy - ly;
+      if (!(y > 0.5) || y + h > lh - 0.5) return;
+      const lista2 = Array.isArray(p.recortes) ? p.recortes.slice() : [];
+      if (lista2.some((r) => r && r.canto === 'frente-meio' && Math.abs(Number(r.y) - y) < 0.5)) return;
+      lista2.push({ canto: 'frente-meio', h: h, d: d, y: Math.round(y * 10) / 10, origem: 'construtor' });
+      p.recortes = lista2;
+    });
+  });
+  visita(parts, 0, 0, 0);
+}
+
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
   // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.
@@ -718,10 +756,12 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // caixote") — só peça vinda de LayoutEngine.toPieceRows carrega
         // isto (marcado lá, nunca em module_components do cadastro manual).
         _layoutNodeId: piece._layoutNodeId,
-        _layoutKind: piece._layoutKind
+        _layoutKind: piece._layoutKind,
+        recorte_casco: piece.recorte_casco || null
       });
     }
   });
+  aplicarRecorteCascoNasLaterais(parts);
 
   // SINCRONIZA a distância de abertura da FRENTE de gaveta com a
   // profundidade REAL do caixote — 2ª causa do mesmo bug (Matt, 2026-08-21:
