@@ -2337,6 +2337,13 @@
           }
           const reg = fileMap.get(signature);
           reg.quantity += (item.quantity || 1);
+          // números dos módulos (MOD 016...) que caíram neste arquivo — o
+          // filtro por módulo da tela de furação (2026-10-09). Só tela: o
+          // .ban não muda.
+          if (item.moduleNumber) {
+            if (!reg.module_numbers) reg.module_numbers = [];
+            if (reg.module_numbers.indexOf(item.moduleNumber) < 0) reg.module_numbers.push(item.moduleNumber);
+          }
           if (corPeca && reg.cor && corPeca !== reg.cor) reg.cor_mista = true;
           if (!reg.cor && corPeca) reg.cor = corPeca;
         });

@@ -173,7 +173,7 @@ FURACAO_LOTE._diagnosticoPrateleiras = function (itens, settings) {
         linhas.push({
           laterais: porLateral,
           prateleira_x: sb ? Math.round(sb.x0 * 10) / 10 + '..' + Math.round((sb.x0 + sb.sx) * 10) / 10 : '',
-          modulo: it.moduleName, aninhado: nivel, peca: p.reference, papel: p.position_role,
+          modulo: (it.moduleNumber ? it.moduleNumber + ' · ' : '') + it.moduleName, aninhado: nivel, peca: p.reference, papel: p.position_role,
           suporte: !!p.drill_shelf_support, medidas: Math.round(p.width_mm) + '×' + Math.round(p.height_mm) + '×' + Math.round(p.depth_mm),
           motivo: motivo
         });
@@ -212,7 +212,15 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
   const itens = [];
   let semCadastro = 0;
 
+  let seqModulo = 0;
   for (const item of (data || [])) {
+    /* NÚMERO DO MÓDULO (2026-10-09, Matt: "tem vários wall 42... não consigo
+       selecionar o número do módulo nas furações"). Mesma conta da etiqueta
+       (LOTES.explodeOrders, moduleSeq): posição do item no pedido por
+       sort_order, contando TODO item (decorativo também), 3 algarismos. Conta
+       ANTES do `continue` do decorativo pra bater com a etiqueta. */
+    seqModulo += 1;
+    const moduleNumber = String(seqModulo).padStart(3, '0');
     /* Módulo decorativo (migration 039) não vai pra produção — nem furação. */
     if (item.modules && item.modules.is_decoration) continue;
 
@@ -299,6 +307,7 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
          de corte (cut_plan_pieces.order_item_ids, migration 158) pra o .ban
          sair com o MESMO código da etiqueta. Ver FURACAO_LOTE._arquivosPorPeca. */
       orderItemId: item.id,
+      moduleNumber: moduleNumber,
       parts: parts,
       W: item.width_mm, H: item.height_mm, D: item.depth_mm,
       quantity: item.quantity || 1

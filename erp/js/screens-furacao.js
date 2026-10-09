@@ -47,11 +47,17 @@ FURACAO_VISUAL.filtrar = function () {
   const busca = (document.getElementById('fv-busca') || {}).value || '';
   const soUsinagem = (document.getElementById('fv-so-usinagem') || {}).checked;
   const termo = busca.trim().toLowerCase();
+  // número do módulo: "16", "016" ou "16, 22" — compara sem os zeros da esquerda
+  const modTxt = ((document.getElementById('fv-modulo') || {}).value || '').trim();
+  const normMod = function (v) { return String(parseInt(v, 10)); };
+  const modsFiltro = modTxt ? modTxt.split(/[\s,;]+/).filter(function (v) { return /^\d+$/.test(v); }).map(normMod) : [];
   let visiveis = 0;
   document.querySelectorAll('.fv-card').forEach(function (card) {
     const casaTexto = !termo || (card.dataset.busca || '').indexOf(termo) >= 0;
     const casaUsinagem = !soUsinagem || card.dataset.usinagem === '1';
-    const mostrar = casaTexto && casaUsinagem;
+    const doCard = (card.dataset.mods || '').split(',').filter(Boolean).map(normMod);
+    const casaModulo = !modsFiltro.length || modsFiltro.some(function (m) { return doCard.indexOf(m) >= 0; });
+    const mostrar = casaTexto && casaUsinagem && casaModulo;
     card.style.display = mostrar ? '' : 'none';
     if (mostrar) visiveis += 1;
   });
@@ -95,12 +101,13 @@ FURACAO_VISUAL.render = function (params, d) {
     });
     const slots = rec.slots || [];
     const busca = ((rec.reference || '') + ' ' + (rec.module_name || '')).toLowerCase();
-    return '<div class="fv-card erp-card" data-busca="' + UI.esc(busca) + '" data-usinagem="' + (slots.length ? '1' : '0') + '"'
+    const mods = (rec.module_numbers || []).slice().sort();
+    return '<div class="fv-card erp-card" data-busca="' + UI.esc(busca) + '" data-mods="' + UI.esc(mods.join(',')) + '" data-usinagem="' + (slots.length ? '1' : '0') + '"'
       + ' style="padding:10px;display:flex;flex-direction:column;gap:6px">'
       + '<div><strong>' + UI.esc(rec.reference || 'peça') + '</strong> '
       + UI.pill('x' + (rec.quantity || 1), 'erp-pill-accent')
       + (slots.length ? ' ' + UI.pill('usinagem', 'erp-pill-warn') : '') + '</div>'
-      + '<div class="erp-xs erp-muted">' + UI.esc(rec.module_name || '') + '</div>'
+      + '<div class="erp-xs erp-muted">' + (mods.length ? '<strong>MOD ' + UI.esc(mods.join(', ')) + '</strong> · ' : '') + UI.esc(rec.module_name || '') + '</div>'
       + '<div class="erp-xs erp-mono">' + Math.round(m.C) + ' × ' + Math.round(m.L) + ' × ' + Math.round(m.E) + ' mm'
       + ' · ' + holes.length + ' furo(s)'
       + (slots.length ? ' · ' + slots.length + ' rasgo(s)' : '') + '</div>'
@@ -156,6 +163,8 @@ FURACAO_VISUAL.render = function (params, d) {
     '<div class="erp-card" style="padding:10px;margin:10px 0;display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
       '<input id="fv-busca" class="erp-input" type="search" placeholder="filtrar por peça ou módulo…" ' +
         'oninput="FURACAO_VISUAL.filtrar()" style="min-width:220px">' +
+      '<input id="fv-modulo" class="erp-input" type="search" inputmode="numeric" placeholder="nº do módulo (ex.: 16)" ' +
+        'oninput="FURACAO_VISUAL.filtrar()" style="width:170px">' +
       '<label class="erp-xs" style="display:flex;gap:6px;align-items:center">' +
         '<input id="fv-so-usinagem" type="checkbox" onchange="FURACAO_VISUAL.filtrar()"> só peças com usinagem</label>' +
       '<span id="fv-contador" class="erp-xs erp-muted">' + recs.length + ' peça(s) na tela</span>' +
