@@ -318,6 +318,14 @@
   // gaveta sobe pra 50mm; com uma só, continua nos 20mm de antes.
   var FOLGA_CAIXOTE_ALTURA_MULTIPLA_MM = 50;
   var FOLGA_CAIXOTE_ALTURA_UNICA_MM = 20;
+  // CORPO DA GAVETA 10mm MAIS PRA CIMA (2026-10-08, Matt: "quero que o corpo
+  // de todas gavetas fiquem 10mm mais pra cima quando inseridos no
+  // construtor. a frente permanece igual, o vão interno igual... quando mais
+  // que uma jogar todas 10mm mais pra cima"). Só o CAIXOTE sobe: frente,
+  // vão e altura do caixote não mudam. Cabe sempre na gaveta normal (sobra
+  // em cima = folga de altura - 4 = 16 ou 46mm); na interna o deslocamento é
+  // limitado pro caixote de cima não passar do topo do vão.
+  var GAVETA_CAIXOTE_SUBIR_MM = 10;
 
   // Afastamento do CABIDE (acc.forma === 'barra') em relação ao FUNDO do vão
   // (2026-08-20, Matt, 1º pedido: "quero que o rod entre sempre a 270mm
@@ -717,7 +725,7 @@
         var y = box.y + j * (hCada + gap);
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + 12, y: y + 4, z: box.z + recuoCaixote,
+          x: box.x + 12, y: y + 4 + GAVETA_CAIXOTE_SUBIR_MM, z: box.z + recuoCaixote,
           w: box.w - 24, h: Math.max(20, hCada - folgaAltura), d: prof,
           opening_type: 'slide_out'
         });
@@ -766,11 +774,14 @@
       var folga = comPorta ? GAVETA_INTERNA_COM_PORTA_FOLGA_MM : GAVETA_INTERNA_SEM_PORTA_FOLGA_MM;
       var hF = (box.h - folga * 2 - folga * (qtd - 1)) / qtd;
       var acima = GAVETA_INTERNA_CAIXOTE_ACIMA_FRENTE_MM;
+      var hCx = Math.max(20, Math.min(hCada - folgaAltura, hF - acima));
+      var topoUltimo = box.y + folga + (qtd - 1) * (hF + folga) + acima + hCx;
+      var subir = Math.max(0, Math.min(GAVETA_CAIXOTE_SUBIR_MM, box.y + box.h - topoUltimo));
       for (var j = 0; j < qtd; j++) {
         var fy = box.y + folga + j * (hF + folga);
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + lat, y: fy + acima, z: zCaixote,
+          x: box.x + lat, y: fy + acima + subir, z: zCaixote,
           w: Math.max(60, box.w - lat * 2),
           h: Math.max(20, Math.min(hCada - folgaAltura, hF - acima)), d: prof,
           opening_type: 'slide_out',
