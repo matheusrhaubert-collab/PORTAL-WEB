@@ -205,8 +205,17 @@ LOTES.cutDimsPeloVeio = function (leaf, hasGrain) {
   return { espessura_mm: dims[fino], largura_mm: dims[outro], comprimento_mm: dims[eixo] };
 };
 
-LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai) {
+LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGaveta) {
   out = out || [];
+  // PEÇA DE GAVETA COM "(drawer)" NO NOME (2026-10-08, Matt: "componentes de
+  // gaveta como stretcher e side quero ver em parênteses (drawer)... no back
+  // também"). Toda peça cortada que mora dentro de um sub-módulo de gaveta
+  // (nome com drawer/gaveta/caixote — ex. "Drawer Soft Closet Externa 2")
+  // sai como "Stretcher (drawer)", "BACK (drawer)", "LEFT SIDE (drawer)"...
+  // pra não confundir com o stretcher/back do casco na produção. A frente de
+  // gaveta (sub-módulo de 1 peça só, "Front Drawer") não entra: já sai com o
+  // nome próprio pelo nomeDoPai.
+  const RE_GAVETA = /drawer|gaveta|caixote/i;
   (breakdown || []).forEach(function (p) {
     const qty = (p.quantity || 1) * multiplier;
     if (p.is_module) {
@@ -225,11 +234,20 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai) {
       const cortadas = filhos.filter(function (c) { return !c.is_module && (c.origin || 'fabricacao') !== 'comprado'; });
       const temSubModulo = filhos.some(function (c) { return c.is_module; });
       const nomeUnico = (cortadas.length === 1 && !temSubModulo && p.reference) ? p.reference : null;
-      LOTES.flattenBreakdown(filhos, qty, out, nomeUnico);
+      // Só os filhos DIRETOS do sub-módulo de gaveta (não propaga pra baixo):
+      // "Oven Tower > Base gaveta" é um conjunto casco+gaveta — o casco dele
+      // não é peça de gaveta; a gaveta de verdade ("Gaveta rasa") é outro
+      // sub-módulo dentro, que casa com o nome sozinho.
+      const subGaveta = !nomeUnico && RE_GAVETA.test(String(p.reference || ''));
+      LOTES.flattenBreakdown(filhos, qty, out, nomeUnico, subGaveta);
       return;
     }
     out.push({
-      reference: (nomeDoPai && (p.origin || 'fabricacao') !== 'comprado') ? nomeDoPai : (p.reference || '—'),
+      reference: (function () {
+        const ref = (nomeDoPai && (p.origin || 'fabricacao') !== 'comprado') ? nomeDoPai : (p.reference || '—');
+        if (!emGaveta || nomeDoPai || (p.origin || 'fabricacao') === 'comprado') return ref;
+        return RE_GAVETA.test(ref) ? ref : ref + ' (drawer)';
+      })(),
       description: p.description || '—',
       origin: p.origin || 'fabricacao',
       color_role_id: p.color_role_id,
