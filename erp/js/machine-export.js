@@ -196,6 +196,33 @@ MAQUINA_EXPORT._montarNo = function (items, axis, layer, extentL, extentW, ctx, 
   const limit = node[c] + extentL;   // fim da faixa: nenhuma fatia pode passar daqui
   segs.forEach(function (seg) {
     let cut = seg.end - seg.start;
+    /* FAIXA "DESENCONTRADA" POR POUCOS MM (2026-10-08, Matt, foto da Samach:
+       faixa de stretchers de 76 saiu com 78 e a máquina virou peça por peça
+       pra tirar os 2mm). O packer encaixa cada sobra de coluna separada —
+       embaixo de uma peça de 307 a sobra começa 2mm mais baixo que embaixo
+       das vizinhas de 305 — e as peças da mesma fileira ficam com início
+       diferente no eixo. A projeção junta tudo numa faixa só da MAIOR
+       extensão (início do 1º até o fim do último = 78) e cada peça de 76
+       vira um corte perpendicular a mais (type=2) só pra tirar a lasca.
+       Se as peças da fatia estão LADO A LADO (nenhuma empilhada sobre a
+       outra no eixo do corte) e cabem a partir de `pos`, realinha todas no
+       início da fatia e corta só a maior medida delas: a faixa sai com 76
+       e cada peça que preenche a faixa vira folha direta, sem giro. A
+       máquina já fatia a partir de `pos` de qualquer jeito (ver nota do
+       nó acima), então é só o desenho da faixa que muda, nunca a peça. */
+    if (seg.items.length > 1 && seg.items.every(function (it) { return it.kind === 'piece'; })) {
+      let maxS = 0;
+      seg.items.forEach(function (it) { if (it[s] > maxS) maxS = it[s]; });
+      const ladoALado = seg.items.every(function (a, i) {
+        return seg.items.every(function (b, j) {
+          return i === j || a[perp] + a[ps] <= b[perp] + ctx.eps || b[perp] + b[ps] <= a[perp] + ctx.eps;
+        });
+      });
+      if (ladoALado && maxS < cut - ctx.eps && pos + maxS <= limit + 0.05) {
+        cut = maxS;
+        seg.items.forEach(function (it) { it[c] = pos; });
+      }
+    }
     /* Fatia que passa do fim da faixa: o packer deixa peça vizinha 1-2 mm
        "desencontrada" entre sub-árvores (kerf contado em ramos diferentes),
        e a posição corrente da máquina — que anda pelo MAIOR de cada
