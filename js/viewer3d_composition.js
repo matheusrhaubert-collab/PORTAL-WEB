@@ -1661,6 +1661,9 @@ function createViewerComposition3D() {
       maxHeight = Math.max(maxHeight, (a.floor_height_m || 0) + a.height_m);
       maxDepth = Math.max(maxDepth, a.depth_m + layerZ);
     });
+    // Junção (rodapé/gola) também no projeto de parede única — este caminho
+    // nunca chamava (2026-10-08).
+    applyBaseboardJoins(list);
 
     if (room && room.ceiling_m > 0) {
       // exactWidth=true: totalWidth AQUI é wallWidthM, a largura REAL da
@@ -1870,6 +1873,12 @@ function createViewerComposition3D() {
         minZ = Math.min(minZ, wz); maxZ = Math.max(maxZ, wz);
       });
     });
+
+    // Junção também entre ILHAS encostadas (2026-10-08, Matt: "rodapé não
+    // unificou quando dupliquei"). applyBaseboardJoins já trabalha em
+    // coordenada de MUNDO (posição/giro de cada peça), então serve igual
+    // pra módulo solto no chão — só nunca era chamada pra eles.
+    applyBaseboardJoins(floorList);
 
     if (!isFinite(minX)) { minX = -0.15; maxX = 0.15; minZ = 0; maxZ = 0.3; }
 

@@ -148,6 +148,9 @@ async function loadRecursivePiecesForModule(moduleId) {
         // peça-módulo aninhada que ainda não tem este campo na tela) = usa
         // o padrão (true) — só false explícito desliga esta linha.
         auto_join_adjacent: row.auto_join_adjacent !== false,
+        // Ligado EXPLICITAMENTE (true, não null) — é o que vale pra peça
+        // 'free' (gola em L, 2026-10-08): só rodapé usa o padrão "null = sim".
+        auto_join_explicit: row.auto_join_adjacent === true,
         join_max_length_mm: row.join_max_length_mm != null ? Number(row.join_max_length_mm) : 2700,
         // FUROS DE SUPORTE DE PRATELEIRA POR USO (migration 162, 2026-09-24,
         // Matt: "as prateleiras não saíram com furação, nem na prateleira nem
@@ -243,6 +246,9 @@ async function loadRecursivePiecesForModule(moduleId) {
         // como rodapé sempre cai no default (true/2700) por enquanto — sem
         // efeito nenhum até existir um caso de uso real.
         auto_join_adjacent: row.auto_join_adjacent !== false,
+        // Ligado EXPLICITAMENTE (true, não null) — é o que vale pra peça
+        // 'free' (gola em L, 2026-10-08): só rodapé usa o padrão "null = sim".
+        auto_join_explicit: row.auto_join_adjacent === true,
         join_max_length_mm: row.join_max_length_mm != null ? Number(row.join_max_length_mm) : 2700,
         width_min_mm: row.width_min_mm,
         width_default_mm: row.width_default_mm,
@@ -666,6 +672,11 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
           H: resolvedHeightMm, W: resolvedWidthMm, D: resolvedDepthMm, E: pieceE
         }),
         abre_recorte: !!piece.abre_recorte,
+        // Junção com o módulo vizinho (migration 137) — antes não passava do
+        // `piece` pro `part`, então o 3D sempre via o padrão (sim, 2700mm).
+        auto_join_adjacent: piece.auto_join_adjacent !== false,
+        auto_join_explicit: !!piece.auto_join_explicit,
+        join_max_length_mm: piece.join_max_length_mm != null ? Number(piece.join_max_length_mm) : 2700,
         // LED embutido (2026-09-30, ver applyLedConfigsDeep) — rasgo no .ban e
         // desenho no 3D/foto. Sem esta linha o dado morreria aqui, como já
         // aconteceu com drilling_pattern_id e slide_distance_mm.

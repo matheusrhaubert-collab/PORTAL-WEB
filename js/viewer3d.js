@@ -3330,6 +3330,21 @@ const Viewer3D = (function () {
       }
       const freeGroup = emit(freeContent, part.color, x, y, z, false, opening);
       if (rotFino) wrapRotatedFreePiece(freeGroup, x, y, z, rotYDeg);
+      // JUNÇÃO COM O VIZINHO PRA PEÇA LIVRE (2026-10-08, Matt: "tanto o
+      // rodapé quanto o gola em L devem virar uma só barra"). Mesma ficha
+      // que o rodapé publica (baseboardGeom, ver ramo 'baseboard'), só pra
+      // peça 'free' com junção ligada EXPLICITAMENTE no cadastro (a vista e
+      // a ripa do "Gola L 3/4") — o padrão de 'free' é não juntar (prateleira,
+      // decoração...). Sem giro e sem abertura: barra reta no eixo X.
+      if (freeGroup && part.auto_join_explicit && !rotYDeg && !opening && !freeContent.isGroup
+          && !DECOR_BUILDERS[part.shape_type]) {
+        freeGroup.userData.baseboardGeom = {
+          faceA_m: w, faceB_m: h, thickness_m: d,
+          localX_m: x, localY_m: y, localZ_m: z,
+          auto_join_adjacent: true,
+          join_max_length_mm: part.join_max_length_mm != null ? Number(part.join_max_length_mm) : 2700
+        };
+      }
       // Dobradiças visuais — mesma regra de 'front' (linha ~944): peça 'free'
       // com hingeSide resolvido é uma porta de verdade, só que posicionada
       // manualmente em vez de automaticamente. Sem isso, a porta abria/fechava
