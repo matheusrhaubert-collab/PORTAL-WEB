@@ -764,6 +764,21 @@ function buildDrillingPlaneSvg(m, holes, slots, chapa) {
   // apagar a própria furação". Daí o fill-opacity baixo e as listras finas:
   // elas informam a direção sem competir com furo nenhum. Sem `chapa`, cai no
   // bege de sempre e nada muda (é o caso da prévia do componente).
+  /* CONTORNO REAL (2026-10-09, Matt: "aqui na visualização não aparece o
+     recorte. mas ele está no programa"). `chapa.contorno` (opcional) é o
+     MESMO polígono que vai no <Outline> do .ban (Drilling._internals.
+     contornoComRecortes) — chanfro 45°, L do toe/gola, C no meio da aresta.
+     Com ele a chapa é desenhada recortada, e o quadrado da serra fica só
+     como linha tracejada clara por trás (a serra corta o retângulo, a
+     furadeira tira o recorte). Sem contorno, retângulo de sempre. */
+  const contorno = (chapa && Array.isArray(chapa.contorno) && chapa.contorno.length >= 3) ? chapa.contorno : null;
+  const forma = function (attrs) {
+    if (!contorno) {
+      return '<rect x="' + pad + '" y="' + pad + '" width="' + m.C + '" height="' + m.L + '" ' + attrs + '/>';
+    }
+    const pts = contorno.map(function (p) { return (pad + p[0]).toFixed(1) + ',' + (pad + p[1]).toFixed(1); }).join(' ');
+    return '<polygon points="' + pts + '" ' + attrs + '/>';
+  };
   const corChapa = (chapa && chapa.cor) || '#f7f3ec';
   const eixoVeio = chapa && chapa.veio_eixo;
   // Textura da chapa como fundo. É a cor REAL de um material de madeira —
@@ -798,17 +813,19 @@ function buildDrillingPlaneSvg(m, holes, slots, chapa) {
       + '<line x1="0" y1="0" x2="' + (eixoVeio === 'x' ? passo * 4 : 0) + '" y2="'
       + (eixoVeio === 'x' ? 0 : passo * 4) + '" stroke="#000" stroke-opacity="0.13" stroke-width="'
       + (sw * 1.2) + '"/></pattern></defs>');
-    svgParts.push('<rect x="' + pad + '" y="' + pad + '" width="' + m.C + '" height="' + m.L
-      + '" fill="' + fundoChapa + '" fill-opacity="' + opacidadeFundo + '"/>');
-    svgParts.push('<rect x="' + pad + '" y="' + pad + '" width="' + m.C + '" height="' + m.L
-      + '" fill="url(#' + pid + ')"/>');
-    svgParts.push('<rect x="' + pad + '" y="' + pad + '" width="' + m.C + '" height="' + m.L
-      + '" fill="none" stroke="#333" stroke-width="' + (sw * 1.5) + '"/>');
+    svgParts.push(forma('fill="' + fundoChapa + '" fill-opacity="' + opacidadeFundo + '"'));
+    svgParts.push(forma('fill="url(#' + pid + ')"'));
+    svgParts.push(forma('fill="none" stroke="#333" stroke-width="' + (sw * 1.5) + '"'));
   } else {
     // Veio LIVRE: sem listras, porque não há sentido a respeitar — e desenhar
     // listra aqui faria o operador girar peça que não precisa girar.
+    svgParts.push(forma('fill="' + fundoChapa + '" fill-opacity="' + opacidadeFundo + '" stroke="#333" stroke-width="' + (sw * 1.5) + '"'));
+  }
+  if (contorno) {
+    // o retângulo que a serra entrega, por trás do recorte
     svgParts.push('<rect x="' + pad + '" y="' + pad + '" width="' + m.C + '" height="' + m.L
-      + '" fill="' + fundoChapa + '" fill-opacity="' + opacidadeFundo + '" stroke="#333" stroke-width="' + (sw * 1.5) + '"/>');
+      + '" fill="none" stroke="#999" stroke-width="' + sw + '" stroke-dasharray="' + (6 * sw) + ' ' + (4 * sw) + '">'
+      + '<title>retângulo cortado na serra — o recorte sai na furadeira</title></rect>');
   }
   // cotas
   svgParts.push('<text x="' + (pad + m.C / 2) + '" y="' + (pad - 6 * sw) + '" text-anchor="middle" font-size="' + fontSize + '" fill="#555">C = ' + Math.round(m.C) + '</text>');

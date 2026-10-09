@@ -158,7 +158,21 @@ FURACAO_LOTE._diagnosticoPrateleiras = function (itens, settings) {
           : (!laterais.length ? 'módulo sem lateral (peça com espessura no X)'
           : (!encosta ? 'ponta não encosta em lateral (folga > ' + tol + 'mm): x ' + Math.round(sb.x0) + '..' + Math.round(sb.x0 + sb.sx) + ' vs laterais ' + laterais.map(function (l) { return Math.round(l.x0) + '..' + Math.round(l.x0 + l.sx); }).join(' | ')
           : 'OK — deve ter suporte'))));
+        /* Folga POR LATERAL (2026-10-09, Matt: Wall Cabinet 42" com marcação
+           numa lateral só). O `encosta` acima responde "alguma lateral" —
+           com uma encostando e a outra não, dizia OK. Aqui sai cada uma,
+           com a folga medida, pra ver qual ficou de fora e por quanto. */
+        const porLateral = sb ? laterais.filter(function (lb) {
+          return !(lb === sb || (sb._owner && sb._owner === lb._owner));
+        }).map(function (lb) {
+          const dL = Math.abs(sb.x0 - (lb.x0 + lb.sx)), dR = Math.abs((sb.x0 + sb.sx) - lb.x0);
+          const d = Math.min(dL, dR);
+          return (lb.part && lb.part.reference || 'lateral') + ' (x ' + Math.round(lb.x0 * 10) / 10 + '..' + Math.round((lb.x0 + lb.sx) * 10) / 10 + '): '
+            + (d <= tol ? 'encosta' : 'NÃO encosta') + ', folga ' + Math.round(d * 10) / 10 + 'mm';
+        }).join(' | ') : '';
         linhas.push({
+          laterais: porLateral,
+          prateleira_x: sb ? Math.round(sb.x0 * 10) / 10 + '..' + Math.round((sb.x0 + sb.sx) * 10) / 10 : '',
           modulo: it.moduleName, aninhado: nivel, peca: p.reference, papel: p.position_role,
           suporte: !!p.drill_shelf_support, medidas: Math.round(p.width_mm) + '×' + Math.round(p.height_mm) + '×' + Math.round(p.depth_mm),
           motivo: motivo

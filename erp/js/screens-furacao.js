@@ -30,7 +30,13 @@ FURACAO_VISUAL.load = async function (p) {
     batchId: p.id,
     lote: col.lote,
     semCadastro: col.semCadastro,
-    recs: Drilling.collectOrderPieces(col.itens, col.config)
+    recs: Drilling.collectOrderPieces(col.itens, col.config),
+    // diagnóstico de suporte de prateleira, agora NA TELA (antes só no F12
+    // ao baixar o ZIP) — 2026-10-09
+    diagPrat: (function () {
+      try { return FURACAO_LOTE._diagnosticoPrateleiras(col.itens, col.config && col.config.settings); }
+      catch (e) { console.warn('[furacao] diagnóstico de prateleiras falhou', e); return []; }
+    })()
   };
 };
 
@@ -106,7 +112,12 @@ FURACAO_VISUAL.render = function (params, d) {
           ? (rec.veio_eixo === 'x' ? 'no comprimento' : 'na largura')
             + (rec.cor_tem_veio && rec.veio === 'livre' ? ' (da chapa)' : '')
           : 'livre') + '</div>'
-      + buildDrillingPlaneSvg(m, holes, slots, { cor: rec.cor, textura: rec.textura, veio_eixo: rec.veio_eixo })
+      + buildDrillingPlaneSvg(m, holes, slots, {
+          cor: rec.cor, textura: rec.textura, veio_eixo: rec.veio_eixo,
+          // recorte/chanfro: o mesmo polígono do <Outline> do .ban
+          contorno: (rec.recortes && rec.recortes.length && Drilling._internals && Drilling._internals.contornoComRecortes)
+            ? Drilling._internals.contornoComRecortes(m.C, m.L, rec.recortes) : null
+        })
       + '</div>';
   }).join('');
 
@@ -128,6 +139,8 @@ FURACAO_VISUAL.render = function (params, d) {
           d.semCadastro + ' módulo(s) do lote não têm peças cadastradas e ficaram de fora. ' +
           'Eles não vão ser furados.')
       : '') +
+
+    FURACAO_VISUAL._cardDiagPrat(d.diagPrat || []) +
 
     /* LEGENDA — sem ela o desenho é bonito e ilegível. Cada símbolo aqui é
        uma decisão do gerador que o operador precisa saber ler. */
@@ -156,4 +169,32 @@ FURACAO_VISUAL.render = function (params, d) {
       '<span class="erp-mono">Drilling.collectOrderPieces</span>) — o que muda é só o formato de saída. ' +
       'A furação é re-resolvida contra o cadastro ATUAL do módulo, não contra o snapshot do pedido: ' +
       'furação é conhecimento de produção e pode ser corrigida depois do pedido fechado.');
+};
+
+
+/* Cartão "Prateleiras — suporte na lateral" (2026-10-09). Uma linha por
+   prateleira do lote: em quais laterais ela encosta (com a folga medida) e
+   por que não ganhou suporte, quando não ganhou. Fechado por padrão quando
+   está tudo certo; aberto quando tem problema. */
+FURACAO_VISUAL._cardDiagPrat = function (linhas) {
+  if (!linhas.length) return '';
+  const ruins = linhas.filter(function (l) {
+    return String(l.motivo).indexOf('OK') !== 0 || /NÃO encosta/.test(l.laterais || '');
+  });
+  const linha = function (l) {
+    const ruim = String(l.motivo).indexOf('OK') !== 0 || /NÃO encosta/.test(l.laterais || '');
+    return '<tr' + (ruim ? ' style="background:rgba(192,57,43,0.08)"' : '') + '>'
+      + '<td>' + UI.esc(l.modulo || '') + '</td>'
+      + '<td>' + UI.esc(l.peca || '') + (l.aninhado ? ' <span class="erp-muted">(aninhada)</span>' : '') + '</td>'
+      + '<td class="erp-mono">' + UI.esc(l.medidas || '') + '</td>'
+      + '<td class="erp-mono">' + UI.esc(l.prateleira_x || '') + '</td>'
+      + '<td>' + UI.esc(l.laterais || '—') + '</td>'
+      + '<td>' + UI.esc(l.motivo || '') + '</td></tr>';
+  };
+  return '<details class="erp-card" style="padding:10px;margin:10px 0"' + (ruins.length ? ' open' : '') + '>'
+    + '<summary><strong>Prateleiras — suporte na lateral</strong> · ' + linhas.length + ' prateleira(s)'
+    + (ruins.length ? ' · <span style="color:var(--danger)">' + ruins.length + ' com problema</span>' : ' · tudo certo') + '</summary>'
+    + '<div style="overflow-x:auto"><table class="erp-table erp-xs" style="margin-top:8px"><thead><tr>'
+    + '<th>Módulo</th><th>Peça</th><th>Medidas</th><th>Prateleira (x)</th><th>Laterais</th><th>Resultado</th>'
+    + '</tr></thead><tbody>' + linhas.map(linha).join('') + '</tbody></table></div></details>';
 };
