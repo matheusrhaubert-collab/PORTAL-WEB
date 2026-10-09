@@ -571,9 +571,13 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
     // usuário: "quando um modulo e inserido em outro, ele respeite os
     // limites de tamanho do modulo filho". Peça-folha nunca tem
     // own_*_min/max_mm setado (undefined), então isto não afeta ela.
-    resolvedWidthMm = Pricing.clampToOwnRange(resolvedWidthMm, piece.own_width_min_mm, piece.own_width_max_mm);
-    resolvedHeightMm = Pricing.clampToOwnRange(resolvedHeightMm, piece.own_height_min_mm, piece.own_height_max_mm);
-    resolvedDepthMm = Pricing.clampToOwnRange(resolvedDepthMm, piece.own_depth_min_mm, piece.own_depth_max_mm);
+    // Só o TETO (max), nunca o piso (min) — 2026-10-09, ver o mesmo ponto
+    // em Pricing.calculateModulePiece: o mínimo próprio inflava a Shelf
+    // aninhada de 193 pra 200 num Wall Cabinet de 229 (prateleira entrando
+    // 7 mm na lateral).
+    resolvedWidthMm = Pricing.clampToOwnRange(resolvedWidthMm, null, piece.own_width_max_mm);
+    resolvedHeightMm = Pricing.clampToOwnRange(resolvedHeightMm, null, piece.own_height_max_mm);
+    resolvedDepthMm = Pricing.clampToOwnRange(resolvedDepthMm, null, piece.own_depth_max_mm);
 
     // TRAVA DE SEGURANÇA: uma peça (folha ou módulo aninhado) nunca pode
     // ficar maior que o espaço disponível no container que a recebe

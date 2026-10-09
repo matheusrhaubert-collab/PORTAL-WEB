@@ -1345,7 +1345,52 @@
   // padrão do suporte, ex: Häfele ixconnect Tab 15 Ø3). Os recuos são
   // ancorados na PRATELEIRA (não na lateral) de propósito: prateleira
   // recuada do fundo/frente continua com o furo exatamente sob ela.
-  function collectShelfSupportHoles(store, boxes, settings) {
+  // FUROS Ø16 DA PRÓPRIA PRATELEIRA (2026-10-09). Matt: "todas nossas
+  // prateleiras têm 4 furos de 16mm cada nos lados. isso é padrão" — e a
+  // Prateleira A/B da Base Canto 90° saiu sem. O padrão vive no programa
+  // SHELF (face, Ø16 × 15, a 7 mm da borda que encosta na lateral, a 50 mm
+  // das pontas dessa borda), mas só a prateleira que TEM esse programa
+  // ganha os furos; prateleira de módulo especial (canto 90°, e qualquer
+  // outra que vier) nasce sem programa e sai lisa. Aqui o padrão vira regra:
+  // prateleira com suporte e SEM furação própria ganha os 4 (2 por borda)
+  // em cada borda onde os pinos Ø3 entraram na lateral — a mesma borda, o
+  // mesmo trecho de contato. Quem já tem o Ø16 no programa (SHELF, SHELF
+  // 45°) não passa por aqui, então nada sai em dobro.
+  const COPO_PRATELEIRA = { diameter: 16, depth: 15, daBorda: 7, dasPontas: 50 };
+  // "Sem copo" = a furação própria da peça (programa ou componente) não tem
+  // nenhum furo de face com o diâmetro do copo. Não basta "sem programa": a
+  // Prateleira A da Base Canto 90° tem programa (os 2 furos de borda da
+  // junta com a prateleira B) e mesmo assim nenhum Ø16.
+  function prateleiraSemFuroProprio(part, config) {
+    if (!config) return false;
+    const rows = furosDaPeca(part, config.drillingsByComponent, config.holesByPattern) || [];
+    return !rows.some(function (r) {
+      return (r.face === 'face' || r.face === 'verso') && Math.abs(Number(r.diameter_mm) - COPO_PRATELEIRA.diameter) < 0.01;
+    });
+  }
+  // contato: { eixo: 'x'|'z' (o eixo PERPENDICULAR à borda tocada), lado:
+  // 0 (borda do começo do eixo) | 1 (borda do fim), lo/hi: trecho de
+  // contato ao longo da borda, em coordenadas do módulo }
+  function emitCoposPrateleira(store, sb, contato) {
+    const C = COPO_PRATELEIRA;
+    if (!(contato.hi - contato.lo >= 2 * C.dasPontas)) return;
+    const ao = contato.eixo === 'x' ? 'z' : 'x'; // eixo ao longo da borda
+    const atravessa = contato.lado === 1
+      ? sb[contato.eixo + '0'] + sb['s' + contato.eixo] - C.daBorda
+      : sb[contato.eixo + '0'] + C.daBorda;
+    [contato.lo + C.dasPontas, contato.hi - C.dasPontas].forEach(function (pos) {
+      const p = { x: 0, y: 0, z: 0 };
+      p[contato.eixo] = atravessa;
+      p[ao] = pos;
+      emitLocalHole(store, sb, {
+        u: p[sb.uAxis] - sb[sb.uAxis + '0'], v: p[sb.vAxis] - sb[sb.vAxis + '0'],
+        edge: null, face: 'face',
+        diameter: C.diameter, depth: C.depth, tipo: 'proprio_face'
+      });
+    });
+  }
+
+  function collectShelfSupportHoles(store, boxes, settings, config) {
     if (!settings || settings.shelf_enabled === false) return;
     const dia = Number(settings.shelf_diameter_mm) || 3;
     const depth = Number(settings.shelf_depth_mm) || 10;
@@ -1364,6 +1409,7 @@
 
     boxes.forEach(function (sb) {
       if (!sb.part.drill_shelf_support) return;
+      const semFuroProprio = sb.tAxis === 'y' && prateleiraSemFuroProprio(sb.part, config);
       if (sb.tAxis === 'y' && sb.part.shape_type !== 'chanfro45') {
         lateraisZ.forEach(function (lb) {
           if (mesmaSubarvore(sb, lb)) return;
@@ -1378,6 +1424,7 @@
               diameter: dia, depth: depth, tipo: 'suporte_prateleira'
             });
           });
+          if (semFuroProprio) emitCoposPrateleira(store, sb, { eixo: 'z', lado: 1, lo: lo, hi: hi });
         });
       }
       if (sb.tAxis !== 'y') return; // prateleira = chapa deitada (espessura no Y)
@@ -1392,6 +1439,11 @@
         const dRight = Math.abs((sb.x0 + sb.sx) - lb.x0); // lateral à direita
         if (Math.min(dLeft, dRight) > tol) return;
         const entersPositive = (sb.x0 + sb.sx / 2) >= lb.x0 + lb.sx / 2;
+        if (semFuroProprio) {
+          // trecho de contato em Z (a lateral pode ser mais curta que a prateleira)
+          const lo = Math.max(sb.z0, lb.z0), hi = Math.min(sb.z0 + sb.sz, lb.z0 + lb.sz);
+          emitCoposPrateleira(store, sb, { eixo: 'x', lado: dRight <= dLeft ? 1 : 0, lo: lo, hi: hi });
+        }
         zHoles.forEach(function (z) {
           emitLocalHole(store, lb, {
             u: yHole - lb.y0,  // uAxis da lateral = Y (altura)
@@ -1563,7 +1615,7 @@
     collectHingePlates(store, parts, raiz.todas, config.settings, origemCorpo);
     collectHingePlates45(store, parts, raiz.todas, config.settings, origemCorpo);
     collectSlideHoles(store, parts, raiz.todas, W, Math.max(H - legH, 1), D, config.settings, origemCorpo);
-    collectShelfSupportHoles(store, todasLocal, config.settings);
+    collectShelfSupportHoles(store, todasLocal, config.settings, config);
     collectShelfSupportHoles45(store, todasLocal, config.settings);
     collectCabideSupportHoles(store, todasLocal);
     const caixas = caixasDasPecasModulo(parts, W, H, D);

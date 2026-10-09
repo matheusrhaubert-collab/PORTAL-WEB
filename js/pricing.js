@@ -1397,9 +1397,19 @@
     // 500mm só porque o módulo pai ficou mais alto. Aplicada ANTES da trava
     // de segurança contra o container abaixo, que continua existindo pro
     // caso do container pai ser menor que o próprio módulo filho permite.
-    pieceDims.width_mm = clampToOwnRange(pieceDims.width_mm, piece.own_width_min_mm, piece.own_width_max_mm);
-    pieceDims.height_mm = clampToOwnRange(pieceDims.height_mm, piece.own_height_min_mm, piece.own_height_max_mm);
-    pieceDims.depth_mm = clampToOwnRange(pieceDims.depth_mm, piece.own_depth_min_mm, piece.own_depth_max_mm);
+    //
+    // SÓ O TETO (max), NUNCA O PISO (min) — 2026-10-09, LT-26-0015 módulo
+    // 025 (Wall Cabinet 42" de 229 de largura): o vão interno é 193, mas a
+    // peça-módulo "Shelf" aninhada tem mínimo próprio de 200 e o min a
+    // INFLAVA pra 200 — prateleira 7 mm maior que o vão, entrando na lateral
+    // direita (cortada assim, e a lateral ficou sem o furo de suporte porque
+    // a ponta "não encostava"). O mínimo do módulo é pra quando ele é
+    // vendido/esticado sozinho; aninhado, a medida vem da fórmula contra o
+    // pai, e crescer além dela é sempre peça que não cabe. O pedido original
+    // era o teto (gaveta não passar de 200 de altura) — esse continua.
+    pieceDims.width_mm = clampToOwnRange(pieceDims.width_mm, null, piece.own_width_max_mm);
+    pieceDims.height_mm = clampToOwnRange(pieceDims.height_mm, null, piece.own_height_max_mm);
+    pieceDims.depth_mm = clampToOwnRange(pieceDims.depth_mm, null, piece.own_depth_max_mm);
 
     // TRAVA DE SEGURANÇA: uma peça-módulo NUNCA pode ficar maior que o
     // espaço disponível no container (dims) que a recebe — locked_*_presets
