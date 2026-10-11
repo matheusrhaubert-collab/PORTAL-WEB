@@ -490,6 +490,20 @@ async function loadProjectFavoritesList() {
         sum.appendChild(pbtn);
         sum.appendChild(pst);
       }
+      // COMPARTILHAR A PASTA INTEIRA (10/10, Matt: "quero enviar uma folder
+      // toda pra outro usuário"). Só pasta com nome. Ver shareProjectFolder.
+      if (nome) {
+        const sbtn = document.createElement('button');
+        sbtn.type = 'button';
+        sbtn.className = 'secondary po-myproj-folder-share';
+        sbtn.textContent = I18n.t('fav.folder_share_btn');
+        sbtn.addEventListener('click', async (ev) => {
+          ev.preventDefault(); ev.stopPropagation(); // não abre/fecha a pasta
+          sbtn.disabled = true;
+          try { await shareProjectFolder(nome); } finally { sbtn.disabled = false; }
+        });
+        sum.appendChild(sbtn);
+      }
       det.appendChild(sum);
       const grid = document.createElement('div');
       grid.className = 'po-myproj-grid';
@@ -830,6 +844,82 @@ async function view3DFavoriteProject(proj) {
   }
 }
 
+// ---------- COMPARTILHAR / IMPORTAR UMA PASTA INTEIRA (migration 195) ----------
+// Matt (10/10): "quero enviar uma folder toda pra outro usuário. hoje pode
+// dar share em cada projeto mas quero mandar uma pasta inteira". Mesma
+// filosofia do projeto (147): código curto, quem recebe ganha CÓPIAS. A
+// diferença: aqui a importação já GRAVA os projetos na conta de quem
+// recebe (dentro de uma pasta com o mesmo nome) — abrir N projetos no
+// editor um por um, cada um esperando "Salvar", não faria sentido.
+async function shareProjectFolder(folder) {
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (errorEl) errorEl.style.display = 'none';
+  try {
+    if (!currentUser) throw new Error(I18n.t('fav.need_login'));
+    // reaproveita o código se essa pasta já foi compartilhada antes
+    let code = null;
+    const { data: existente, error: selErr } = await supabaseClient.from('project_folder_shares')
+      .select('code').eq('owner_id', currentUser.id).eq('folder', folder).limit(1);
+    if (selErr) throw selErr; // ex.: migration 195 não rodou
+    if (existente && existente.length) code = existente[0].code;
+    for (let attempt = 0; attempt < 5 && !code; attempt++) {
+      const candidate = generateProjectShareCode();
+      const { data, error } = await supabaseClient.from('project_folder_shares')
+        .insert({ code: candidate, owner_id: currentUser.id, folder: folder }).select('code');
+      if (!error && data && data.length) code = candidate;
+      else if (error && !/duplicate key|unique/i.test(error.message || '')) throw error;
+    }
+    if (!code) throw new Error(I18n.t('project.share_error_retry'));
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('importFolder', code);
+    const link = url.toString();
+    try { await navigator.clipboard.writeText(link); } catch (e) { /* o alert mostra o link igual */ }
+    alert(`${I18n.t('fav.folder_share_link_label', { folder })}\n${link}\n\n${I18n.t('project.share_code_hint', { code })}`);
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+  }
+}
+
+// Importa a pasta pelo código. Devolve true se achou a pasta (mesmo que o
+// usuário cancele), false se o código não é de pasta — quem chama usa isso
+// pra cair no código de projeto.
+async function importSharedFolderByCode(code) {
+  const errorEl = document.getElementById('po-proj-fav-error');
+  const statusEl = document.getElementById('po-proj-import-status');
+  const { data, error } = await supabaseClient.rpc('get_shared_folder', { p_code: code });
+  if (error) {
+    // migration 195 não rodou: não é erro de pasta, deixa o fluxo de projeto seguir
+    if (/get_shared_folder|function|does not exist/i.test(error.message || '')) return false;
+    throw error;
+  }
+  const rows = Array.isArray(data) ? data : (data ? [data] : []);
+  if (!rows.length) return false;
+  const folder = rows[0].folder;
+  if (!confirm(I18n.t('fav.folder_import_confirm', { folder, n: rows.length }))) return true;
+  const payloads = rows.map((r) => ({
+    client_user_id: currentUser.id,
+    name: r.name,
+    slots: r.slots,
+    wall_width_mm: r.wall_width_mm,
+    wall_shape: r.wall_shape,
+    wall_widths_mm: r.wall_widths_mm,
+    ...(r.wall_segments ? { wall_segments: r.wall_segments } : {}),
+    ...(r.thumbnail_data_url ? { thumbnail_data_url: r.thumbnail_data_url } : {}),
+    ...(r.ai_preview_url ? { ai_preview_url: r.ai_preview_url } : {}),
+    client_folder: folder
+  }));
+  const { data: ins, error: insErr } = await supabaseClient.from('user_projects').insert(payloads).select('id');
+  if (insErr) throw insErr;
+  const input = document.getElementById('po-proj-import-code');
+  if (input) input.value = '';
+  if (statusEl) statusEl.textContent = I18n.t('fav.folder_import_success', { folder, n: (ins || []).length });
+  if (errorEl) errorEl.style.display = 'none';
+  if (typeof loadProjectFavoritesList === 'function') loadProjectFavoritesList();
+  return true;
+}
+
 // Busca um projeto pelo código (function SECURITY DEFINER get_shared_project,
 // migration 147 — não é uma policy de SELECT aberta, só devolve a linha
 // exata que bate com o código) e abre no editor, SEM salvar sozinho — quem
@@ -847,14 +937,25 @@ async function openSharedProjectByCode(rawCode) {
   // Aceita tanto o link inteiro colado quanto só o código.
   let code = (rawCode || '').trim();
   const fromLink = code.match(/[?&]importProject=([A-Za-z0-9]+)/i);
+  const fromFolderLink = code.match(/[?&]importFolder=([A-Za-z0-9]+)/i);
   if (fromLink) code = fromLink[1];
+  if (fromFolderLink) code = fromFolderLink[1];
   code = code.toUpperCase();
   if (!code) return;
   try {
+    // link de PASTA (migration 195): importa a pasta e para por aqui
+    if (fromFolderLink) {
+      if (!(await importSharedFolderByCode(code)) && errorEl) {
+        errorEl.textContent = I18n.t('project.import_error_notfound'); errorEl.style.display = 'block';
+      }
+      return;
+    }
     const { data, error } = await supabaseClient.rpc('get_shared_project', { p_code: code });
     if (error) throw error;
     const source = Array.isArray(data) ? data[0] : data;
     if (!source) {
+      // código solto colado na caixa: pode ser de PASTA
+      if (!fromLink && await importSharedFolderByCode(code)) return;
       if (errorEl) { errorEl.textContent = I18n.t('project.import_error_notfound'); errorEl.style.display = 'block'; }
       return;
     }
@@ -890,6 +991,13 @@ if (projImportBtn && projImportInput) {
 // da URL depois de abrir — um F5 acidental não deve reabrir por cima de
 // alterações que o cliente já tenha feito.
 async function maybeOpenSharedProjectImport() {
+  const folderCode = new URLSearchParams(window.location.search).get('importFolder');
+  if (folderCode && currentUser) {
+    await openSharedProjectByCode('?importFolder=' + folderCode);
+    const u = new URL(window.location.href);
+    u.searchParams.delete('importFolder');
+    window.history.replaceState({}, '', u);
+  }
   const code = new URLSearchParams(window.location.search).get('importProject');
   if (!code || !currentUser) return;
   await openSharedProjectByCode(code);

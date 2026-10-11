@@ -5131,6 +5131,7 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 
 /* Proposta do cliente — botão no cabeçalho da pasta (01/10) */
 .po-myproj-folder > summary .po-myproj-folder-proposal { margin-left: 12px; font-size: 12px; padding: 3px 10px; font-weight: 600; vertical-align: middle; }
+.po-myproj-folder > summary .po-myproj-folder-share { margin-left: 8px; font-size: 12px; padding: 3px 10px; font-weight: 600; vertical-align: middle; }
 .po-myproj-folder > summary .po-myproj-folder-proposal-status { margin-left: 8px; font-weight: 400; font-size: 12px; }
 
 /* MODELO DE PORTA no painel do módulo (migration 188) — cartões com desenho,
