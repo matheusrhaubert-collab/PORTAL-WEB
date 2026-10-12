@@ -242,6 +242,19 @@
     var somaFixed = fixed.reduce(function (a, b) { return a + (b || 0); }, 0);
     var fillIdx = [];
     fixed.forEach(function (v, i) { if (v === null) fillIdx.push(i); });
+    // FIXOS MAIORES QUE O VÃO (2026-10-12, Matt: Stretcher · Toe 4½ · Back
+    // baixado pra 279 de altura — o layout padrão do cadastro foi feito pra
+    // 900, com vão fixo de 280 num vão raiz de 146, e as portas/prateleira
+    // saíram boiando acima do móvel). Quando o que é cravado não cabe, cada
+    // elástico fica com uma parte igual (avail / nº de filhos) e os fixos
+    // dividem o resto NA MESMA PROPORÇÃO entre si. Com espaço sobrando, nada
+    // muda.
+    var reservaFill = fillIdx.length ? Math.floor(avail / n) * fillIdx.length : 0;
+    if (somaFixed > 0 && somaFixed > avail) {
+      var fator = Math.max(0, avail - reservaFill) / somaFixed;
+      fixed = fixed.map(function (v) { return v === null ? null : Math.max(1, Math.floor(v * fator)); });
+      somaFixed = fixed.reduce(function (a, b) { return a + (b || 0); }, 0);
+    }
     var sizes = fixed.slice();
     if (fillIdx.length) {
       var each = Math.floor((avail - somaFixed) / fillIdx.length);
