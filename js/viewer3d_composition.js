@@ -3404,7 +3404,8 @@ function createViewerComposition3D() {
       let o = hits[i].object;
       while (o && o !== group) {
         if (o.userData && o.userData.pieceId != null && o.userData.isFrontPiece) {
-          return { pieceId: o.userData.pieceId, reference: (o.userData.pieceInfo && o.userData.pieceInfo.reference) || null };
+          return { pieceId: o.userData.pieceId, reference: (o.userData.pieceInfo && o.userData.pieceInfo.reference) || null,
+            info: o.userData.pieceInfo || null };
         }
         o = o.parent;
       }
@@ -3412,6 +3413,14 @@ function createViewerComposition3D() {
       if (i === 0) return null;
     }
     return null;
+  }
+  // Medidas da peça como estão na cena AGORA (pieceInfo de viewer3d.js
+  // tagPieceUserData, já com esticar/ajuste aplicado). null quando a peça
+  // não está na cena OU quando o mesmo id tem várias cópias (aí quem chamou
+  // usa a medida guardada no clique — ver selectProjectPiece).
+  function getPieceInfo(slotId, pieceId) {
+    const objs = pieceObjectsOf(findGroupBySlotId(slotId), pieceId).filter((o) => o.userData && o.userData.pieceInfo);
+    return objs.length === 1 ? objs[0].userData.pieceInfo : null;
   }
   // Caixa da peça nos eixos do MÓDULO: { center, axes:{x,y,z}, half:{x,y,z} }
   // (metros, mundo). null se a peça não está na cena.
@@ -3558,7 +3567,7 @@ function createViewerComposition3D() {
     setCameraProjection, getCameraProjection,
     pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,
     // Peça selecionada por duplo clique (2026-10-02)
-    pickPieceAt, getPieceFrame, setPieceOutline,
+    pickPieceAt, getPieceFrame, setPieceOutline, getPieceInfo,
     // Diagnóstico (ver debugScreenRects) — chamável pelo console via
     // window.__legnoViewerEdit.debugScreenRects().
     debugScreenRects,

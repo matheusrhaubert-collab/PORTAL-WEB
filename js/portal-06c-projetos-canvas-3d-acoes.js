@@ -4054,11 +4054,14 @@ let projectPieceDragState = null;
 const PROJECT_PIECE_ARROW_GAP_M = 0.03;
 const PROJECT_PIECE_MIN_MM = 3;
 
-function selectProjectPiece(slotId, pieceId, reference) {
+function selectProjectPiece(slotId, pieceId, reference, info) {
   if (pieceId == null) return;
-  projectSelectedPiece = { slotId, pieceId, reference: reference || null };
+  // info = medidas da peça clicada (pieceInfo) — mostradas no rodapé
+  // (refreshProject3DStatusBar, portal-08)
+  projectSelectedPiece = { slotId, pieceId, reference: reference || null, info: info || null };
   refreshProject3DResizeArrows();
   renderProjectPieceToolbar();
+  if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
 }
 
 function clearProjectPieceSelection() {
@@ -4068,6 +4071,7 @@ function clearProjectPieceSelection() {
   if (ViewerProjectEdit && ViewerProjectEdit.setPieceOutline) ViewerProjectEdit.setPieceOutline(null);
   renderProjectPieceToolbar();
   refreshProject3DResizeArrows();
+  if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
 }
 
 // Chamado no começo de refreshProject3DResizeArrows: com peça selecionada,
@@ -4102,6 +4106,8 @@ function refreshProjectPieceArrows() {
   });
   ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
   positionProjectPieceToolbar(frame);
+  // medida no rodapé acompanha o esticar
+  if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
   return true;
 }
 

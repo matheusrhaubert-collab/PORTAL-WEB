@@ -190,6 +190,24 @@ function refreshProject3DStatusBar() {
   if (!bar) return;
   const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
 
+  // PORTA/FRENTE selecionada por duplo clique (2026-10-12, Matt: "quando dou
+  // dois cliques nas frentes e portas quero ver o tamanho dela embaixo").
+  // Vem antes do módulo: com a peça selecionada o módulo também está, e o
+  // que interessa é a medida da peça. Largura × altura × espessura, já com
+  // o esticar aplicado (getPieceInfo lê da cena redesenhada).
+  if (typeof projectSelectedPiece !== 'undefined' && projectSelectedPiece) {
+    const live = (ViewerProjectEdit && ViewerProjectEdit.getPieceInfo)
+      ? ViewerProjectEdit.getPieceInfo(projectSelectedPiece.slotId, projectSelectedPiece.pieceId) : null;
+    const info = live || projectSelectedPiece.info;
+    if (info && Number(info.width_mm) > 0) {
+      const nome = escapeHtmlCutlist(info.reference || projectSelectedPiece.reference || I18n.t('project.piece_label'));
+      const dims = `${formatDimension(Number(info.width_mm) || 0, unit)} × ${formatDimension(Number(info.height_mm) || 0, unit)} × ${formatDimension(Number(info.depth_mm) || 0, unit)}`;
+      bar.innerHTML = `<strong>${nome}</strong> — ${dims}`;
+      bar.style.display = 'block';
+      return;
+    }
+  }
+
   if (selectedProjectSlotId != null) {
     const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
     if (slot && slot.module) {
@@ -2053,7 +2071,7 @@ function attachProject3DEditDrag() {
       projectDrag3DState = null;
       selectProjectSlot(slot.id);
       const peca = ViewerProjectEdit.pickPieceAt ? ViewerProjectEdit.pickPieceAt(ev.clientX, ev.clientY, slot.id) : null;
-      if (peca && typeof selectProjectPiece === 'function') selectProjectPiece(slot.id, peca.pieceId, peca.reference);
+      if (peca && typeof selectProjectPiece === 'function') selectProjectPiece(slot.id, peca.pieceId, peca.reference, peca.info);
       return;
     }
     lastModuleTap = { t: agora, slotId: slot.id };
