@@ -583,6 +583,11 @@ function projectDoorModelPreviewSvg(kind) {
   if (kind === 'shaker') {
     miolo = '<rect x="10" y="10" width="24" height="42" fill="none" stroke="#6b6358" stroke-width="1.2"/>';
   }
+  // Shaker Glass (migration 198): quadro de chapa com vidro no meio
+  if (kind === 'shaker_vidro') {
+    miolo = '<rect x="9" y="9" width="26" height="44" fill="#bcd6dd" fill-opacity="0.85" stroke="#6b6358" stroke-width="1.2"/>'
+      + '<path d="M13 46 L29 14" stroke="#ffffff" stroke-opacity="0.8" stroke-width="1.6"/>';
+  }
   return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + ext + miolo + puxador + '</svg>';
 }
 

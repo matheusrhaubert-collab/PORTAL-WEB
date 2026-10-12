@@ -5909,6 +5909,8 @@ function projectBreakdownPecasFabricadas(bd) {
   return (bd || []).reduce((n, pc) => {
     if (!pc) return n;
     if (pc.is_module) return n + projectBreakdownPecasFabricadas(pc.child_breakdown) * (pc.quantity || 1);
+    // peça só de mão de obra (migration 198, "Montagem de porta") não conta
+    if (!(Number(pc.width_mm) > 0) && !(Number(pc.height_mm) > 0)) return n;
     return n + (pc.origin === 'comprado' ? 0 : (pc.quantity || 1));
   }, 0);
 }

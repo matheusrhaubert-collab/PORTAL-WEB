@@ -150,6 +150,8 @@ function flattenOrderItemBreakdown(breakdown, multiplier) {
     if (p.is_module) {
       rows.push(...flattenOrderItemBreakdown(p.child_breakdown, qty));
     } else {
+      // peça só de mão de obra (migration 198, "Montagem de porta"): sem chapa
+      if ((p.origin || 'fabricacao') !== 'comprado' && !(Number(p.width_mm) > 0) && !(Number(p.height_mm) > 0)) return;
       rows.push({
         reference: p.reference || '—',
         // description/origin só existem em pedidos calculados DEPOIS das

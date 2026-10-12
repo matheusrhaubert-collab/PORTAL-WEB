@@ -33,7 +33,7 @@ function modulePiecesReportarErro(error) {
 async function loadRecursivePiecesForModule(moduleId) {
   const { data, error } = await supabaseClient
     .from('module_components')
-    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, client_color_configurable, tilt_angle_deg, rotation_y_deg, usinagem_m, recortes, abre_recorte, drilling_pattern_id, grain_dir, auto_join_adjacent, join_max_length_mm, drill_shelf_support, drilling_patterns(furos_equivalentes, fura), components(*, labor_types(*), component_types(*))')
+    .select('id, component_id, child_module_id, quantity_override, sort_order, width_formula_override, height_formula_override, depth_formula_override, offset_x_mm, offset_y_mm, offset_z_mm, quantity_configurable, quantity_min, quantity_max, quantity_default, client_optional, client_optional_default_on, position_role, color_role_id, opening_type, slides_per_unit, visibility_dimension, visibility_min_mm, visibility_max_mm, reference_override, client_dimension_configurable, width_min_mm, width_default_mm, width_max_mm, height_min_mm, height_default_mm, height_max_mm, depth_min_mm, depth_default_mm, depth_max_mm, client_color_configurable, tilt_angle_deg, rotation_y_deg, usinagem_m, usinagem_formula, producao_extra_w_mm, producao_extra_h_mm, recortes, abre_recorte, drilling_pattern_id, grain_dir, auto_join_adjacent, join_max_length_mm, drill_shelf_support, drilling_patterns(furos_equivalentes, fura), components(*, labor_types(*), component_types(*))')
     .eq('module_id', moduleId)
     .order('sort_order');
   if (error) { modulePiecesReportarErro(error); return []; }
@@ -122,6 +122,18 @@ async function loadRecursivePiecesForModule(moduleId) {
         // entalhada numa carcaça e lisa em outra, por isso vem da linha do
         // módulo e não do componente.
         usinagem_m: row.usinagem_m || 0,
+        // USINAGEM POR FÓRMULA (migration 198, Shaker Glass Door: "uma
+        // usinagem no comprimento de cada peça") — 'h' no montante, 'w' na
+        // travessa. Avaliada em Pricing.processLaborFor; quando preenchida
+        // ganha do número fixo acima.
+        usinagem_formula: row.usinagem_formula || null,
+        // MEDIDA DE PRODUÇÃO (migration 198): mm somados à largura/altura SÓ
+        // no preço/breakdown/plano de corte (Pricing.calculatePiece com
+        // produção=true). O 3D, a furação e o Construtor ficam com a medida
+        // FINAL. Montante/travessa da Shaker: final 60, corte 76 (refile
+        // depois de montada).
+        producao_extra_w_mm: Number(row.producao_extra_w_mm) || 0,
+        producao_extra_h_mm: Number(row.producao_extra_h_mm) || 0,
         // Recortes em L DESTE uso (migration 094) — lista de {canto, h, d}.
         // Mesmo motivo de estar na linha do módulo: a mesma lateral é
         // entalhada numa carcaça e lisa em outra. Lista e não um recorte só

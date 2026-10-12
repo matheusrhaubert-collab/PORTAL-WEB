@@ -242,6 +242,9 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
       LOTES.flattenBreakdown(filhos, qty, out, nomeUnico, subGaveta);
       return;
     }
+    // PEÇA SÓ DE MÃO DE OBRA (migration 198, "Montagem de porta"): 0×0×0,
+    // sem chapa — não é folha de corte nem linha de etiqueta/pacote.
+    if ((p.origin || 'fabricacao') !== 'comprado' && !(Number(p.width_mm) > 0) && !(Number(p.height_mm) > 0)) return;
     out.push({
       reference: (function () {
         const ref = (nomeDoPai && (p.origin || 'fabricacao') !== 'comprado') ? nomeDoPai : (p.reference || '—');

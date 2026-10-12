@@ -2644,6 +2644,11 @@ const PROJECT_PANEL_THIN_MAX_MM = 25;
 function syncProjectPanelThickness(slot) {
   const m = slot && slot.module;
   if (!m || typeof Pricing === 'undefined' || !Pricing.cascoThicknessMm) return;
+  // Só quando alguma cor escolhida DECLARA espessura (plywood 18). Cor sem
+  // espessura cai no padrão 19,5 e aí o cadastro do módulo é quem manda —
+  // senão a Glass Door (perfil de 20, cor de alumínio sem espessura) seria
+  // puxada pra 19,5.
+  if (!Object.values(slot.colorsByRole || {}).some((c) => c && Number(c.thickness_mm) > 0)) return;
   let e = 0;
   try { e = Number(Pricing.cascoThicknessMm(slot.pieces || [], slot.colorsByRole || {}, slot.pieceColorOverrides)) || 0; } catch (err) { return; }
   if (!(e > 0 && e <= PROJECT_PANEL_THIN_MAX_MM)) return;

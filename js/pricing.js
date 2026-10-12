@@ -659,7 +659,7 @@
     return ledComprimentoMm(piece.led, dims) / 1000;
   }
 
-  function processLaborFor(piece, pieceDims) {
+  function processLaborFor(piece, pieceDims, containerDims) {
     const zero = { corte: 0, fita: 0, furacao: 0, usinagem: 0, total: 0 };
     // Peça COMPRADA não passa por processo nenhum: não é cortada, não é
     // fitada e não é furada — o drilling.js a pula pelo mesmo motivo
@@ -730,7 +730,21 @@
     // Sem metros não há usinagem, e aí a parte fixa também não é cobrada —
     // peça sem entalhe não passa na fresadora.
     // + o rasgo do LED embutido (2026-09-30), que é usinagem por metro igual.
-    const usinagemM = num(piece.usinagem_m) + ledMetros(piece, pieceDims);
+    // USINAGEM POR FÓRMULA (migration 198): 'h' no montante da Shaker Glass
+    // Door = o comprimento dele; 'w' na travessa. Em mm, com W/H/D do
+    // container e w/h/d da peça (já com a sobra de produção). Preenchida,
+    // ganha do número fixo usinagem_m.
+    let usinagemBase = num(piece.usinagem_m);
+    if (piece.usinagem_formula && String(piece.usinagem_formula).trim()) {
+      try {
+        const cd = containerDims || {};
+        usinagemBase = evalFormula(String(piece.usinagem_formula), {
+          W: num(cd.W), H: num(cd.H), D: num(cd.D),
+          w: num(pieceDims.width_mm), h: num(pieceDims.height_mm), d: num(pieceDims.depth_mm)
+        }) / 1000;
+      } catch (e) { usinagemBase = num(piece.usinagem_m); }
+    }
+    const usinagemM = usinagemBase + ledMetros(piece, pieceDims);
     const usinagem = usinagemM > 0
       ? processLabor.usinagem_peca + usinagemM * processLabor.usinagem_metro
       : 0;
@@ -772,7 +786,12 @@
   // extraVars (2026-09-24): variáveis a mais pra fórmula de L/A/P — hoje só
   // { E } (espessura da chapa desta peça, ver thicknessForPiece). Opcional:
   // sem ele, E cai no global (19.5) e o resultado é o mesmo de antes.
-  function calculatePiece(piece, dims, quantityOverride, dimOverride, extraVars) {
+  // producao (migration 198, 6º argumento, só o preço passa true): soma
+  // producao_extra_w_mm/producao_extra_h_mm à medida resolvida — a SOBRA
+  // DE REFILE da peça (montante/travessa da Shaker Glass Door: final 60,
+  // corte 76). Área, fita e mão de obra saem da medida de corte; o 3D e a
+  // furação (resolvePiecesForViewer) chamam sem a flag e ficam com a final.
+  function calculatePiece(piece, dims, quantityOverride, dimOverride, extraVars, producao) {
     const { W, H, D } = dims;
     const fv = Object.assign({ W, H, D }, extraVars || {});
     let w = evalFormula(piece.width_formula, fv);
@@ -782,6 +801,10 @@
       if (dimOverride.width_mm !== undefined && dimOverride.width_mm !== null && isFinite(dimOverride.width_mm)) w = dimOverride.width_mm;
       if (dimOverride.height_mm !== undefined && dimOverride.height_mm !== null && isFinite(dimOverride.height_mm)) h = dimOverride.height_mm;
       if (dimOverride.depth_mm !== undefined && dimOverride.depth_mm !== null && isFinite(dimOverride.depth_mm)) d = dimOverride.depth_mm;
+    }
+    if (producao) {
+      if (w > 0) w += num(piece.producao_extra_w_mm);
+      if (h > 0) h += num(piece.producao_extra_h_mm);
     }
     const ctx = { W, H, D, w, h, d };
     // Área: calculada quando a peça é genérica (migration 090). A fórmula
@@ -1077,8 +1100,12 @@
     // ser o MESMO E que resolvePiecesForViewer usa, senão preço e desenho/
     // plano de corte divergem na medida da peça.
     const pieceE = thicknessForPiece(piece, effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides), cascoE);
-    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, Object.assign({}, sibVars || {}, { E: pieceE }));
+    const pieceDims = calculatePiece(piece, dims, quantityOverride, dimOverride, Object.assign({}, sibVars || {}, { E: pieceE }), true);
     const qty = pieceDims.quantity;
+    // PEÇA SÓ DE MÃO DE OBRA (migration 198, "Montagem de porta (mão de
+    // obra)"): 0 × 0 × 0, área 0 — existe só pra cobrar labor_type_id por
+    // porta montada. Não tem chapa, então também não exige cor.
+    const soMaoDeObra = !(pieceDims.width_mm > 0) && !(pieceDims.height_mm > 0) && !(pieceDims.depth_mm > 0);
 
     // Peça COMPRADA (migration 119/120) não exige cor cadastrada: ferragem
     // como o pé ("Plastic feet 4 1/2") não tem papel de cor nenhum — o 3D já
@@ -1091,7 +1118,7 @@
     const comprado = piece.origin === 'comprado';
     const effectiveColors = effectiveColorsForPiece(piece, colorsByRole, pieceColorOverrides);
     const color = effectiveColors && effectiveColors[piece.color_role_id];
-    if (!color && !comprado) throw new Error(tr('pricing.no_color_for_piece', { ref: piece.reference }, 'Nenhuma cor selecionada para a peça "' + piece.reference + '".'));
+    if (!color && !comprado && !soMaoDeObra) throw new Error(tr('pricing.no_color_for_piece', { ref: piece.reference }, 'Nenhuma cor selecionada para a peça "' + piece.reference + '".'));
     const corParaChapa = color || { sheet_price_per_m2: 0, edge_price_per_linear_m: 0 };
 
     // MATERIAL COMPRADO PELA COR (migration 187 — porta de vidro). A "cor"
@@ -1114,7 +1141,7 @@
     // custo dela é o preço de compra, que mora em labor_type_id. Sem esta
     // ressalva, marcar "por processo" num pé zeraria o preço dele.
     const proc = (piece.labor_por_processo && piece.origin !== 'comprado')
-      ? processLaborFor(piece, pieceDims) : null;
+      ? processLaborFor(piece, pieceDims, dims) : null;
     // LED em peça do cadastro ANTIGO (sem mão de obra por processo): a labor
     // do componente não sabe do rasgo, então a usinagem dele entra à parte —
     // senão o LED sairia de graça justamente nas peças antigas.
