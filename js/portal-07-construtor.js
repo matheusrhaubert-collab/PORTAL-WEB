@@ -304,6 +304,16 @@ function rebuildProjectBuilder(reselecionar) {
 // por fora (canvas principal) enquanto essa sobreposição antiga ainda
 // existia; sem isso reabrir o Construtor podia mostrar um vão maior que o
 // próprio módulo.
+// O VÃO AJUSTADO ACOMPANHA O MÓDULO (2026-10-12, Matt: "quando altero
+// depois de ter colocado agregados os agregados não estão seguindo a
+// alteração de tamanhos"). O override era x/y/w/h ABSOLUTO: aumentar o
+// módulo deixava o vão (e tudo dentro dele) do tamanho antigo. Agora ele
+// guarda refW/refH (medida do módulo quando foi ajustado) e, se o módulo
+// mudou, mantém as DISTÂNCIAS até as 4 bordas do módulo — o vão estica ou
+// encolhe junto. Override antigo sem refW/refH continua absoluto.
+function projectBuilderOverrideRef(slot) {
+  return { refW: Number((slot && slot.width_mm) || 0) || null, refH: Number((slot && slot.height_mm) || 0) || null };
+}
 function projectBuilderRootZoneEfetiva(zonaAuto, root, slot) {
   const ov = root && root.params && root.params.zoneOverride;
   if (!ov || !zonaAuto) return zonaAuto;
@@ -313,6 +323,15 @@ function projectBuilderRootZoneEfetiva(zonaAuto, root, slot) {
   let y0 = Math.max(0, Number(ov.y) || 0);
   let w = Math.max(PROJECT_BUILDER_MIN_VAO, Number(ov.w) || 0);
   let h = Math.max(PROJECT_BUILDER_MIN_VAO, Number(ov.h) || 0);
+  const refW = Number(ov.refW) || 0, refH = Number(ov.refH) || 0;
+  if (refW > 0 && Math.abs(refW - W) > 0.5) {
+    const dir = Math.max(0, refW - (x0 + w));          // folga até a borda direita
+    w = Math.max(PROJECT_BUILDER_MIN_VAO, W - x0 - dir);
+  }
+  if (refH > 0 && Math.abs(refH - H) > 0.5) {
+    const topo = Math.max(0, refH - (y0 + h));         // folga até o topo
+    h = Math.max(PROJECT_BUILDER_MIN_VAO, H - y0 - topo);
+  }
   if (x0 + w > W) { if (x0 > W - PROJECT_BUILDER_MIN_VAO) x0 = Math.max(0, W - PROJECT_BUILDER_MIN_VAO); w = Math.max(PROJECT_BUILDER_MIN_VAO, W - x0); }
   if (y0 + h > H) { if (y0 > H - PROJECT_BUILDER_MIN_VAO) y0 = Math.max(0, H - PROJECT_BUILDER_MIN_VAO); h = Math.max(PROJECT_BUILDER_MIN_VAO, H - y0); }
   return Object.assign({}, zonaAuto, { x: x0, y: y0, w: w, h: h });
@@ -2189,7 +2208,7 @@ function applyProjectBuilderRootSize(node, novoMm, eixo) {
   if (eixo === 'x') atual.w = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(v, W - atual.x));
   else atual.h = Math.max(PROJECT_BUILDER_MIN_VAO, Math.min(v, H - atual.y));
   node.params = node.params || {};
-  node.params.zoneOverride = atual;
+  node.params.zoneOverride = Object.assign(atual, projectBuilderOverrideRef(slot));
   markProjectDirty();
   rebuildProjectBuilder();
   return true;
@@ -2255,7 +2274,8 @@ function startProjectBuilderRootEdgeDrag(ev, borda) {
     else if (borda === 'bottom') ny0 = Math.max(0, Math.min(passo(y0 + dy), y1 - PROJECT_BUILDER_MIN_VAO));
     else if (borda === 'top') ny1 = Math.min(H, Math.max(passo(y1 + dy), y0 + PROJECT_BUILDER_MIN_VAO));
     projectBuilderRoot.params = projectBuilderRoot.params || {};
-    projectBuilderRoot.params.zoneOverride = { x: nx0, y: ny0, w: nx1 - nx0, h: ny1 - ny0 };
+    projectBuilderRoot.params.zoneOverride = Object.assign({ x: nx0, y: ny0, w: nx1 - nx0, h: ny1 - ny0 },
+      projectBuilderOverrideRef(projectSlots.find((s) => s.id === projectBuilderSlotId)));
     rebuildProjectBuilder();
   };
   const soltar = () => {
@@ -2929,6 +2949,13 @@ function applyProjectBuilderToSlot() {
   const slot = projectSlots.find((s) => s.id === projectBuilderSlotId);
   if (!slot || !projectBuilderRoot) return null;
   const r = projectBuilderRoot;
+  // Override antigo (sem refW/refH) ganha a referência no Save: dali pra
+  // frente o vão acompanha o módulo (ver projectBuilderRootZoneEfetiva).
+  // Grava o retângulo EFETIVO de agora (o que a pessoa está vendo).
+  if (r.params && r.params.zoneOverride && !(r.params.zoneOverride.refW > 0)) {
+    const ef = projectBuilderRootZoneEfetiva(projectBuilderZone, r, slot) || {};
+    r.params.zoneOverride = Object.assign({ x: ef.x, y: ef.y, w: ef.w, h: ef.h }, projectBuilderOverrideRef(slot));
+  }
   // CAUSA RAIZ do "modifico o vao raiz e ele ignora, insere com a medida
   // antiga" (2026-09-02, relato do Matt). Um vao raiz só com zoneOverride
   // (a pessoa ajustou a abertura mas ainda não colocou peça nenhuma dentro)
