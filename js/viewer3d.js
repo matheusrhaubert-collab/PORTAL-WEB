@@ -3970,9 +3970,15 @@ const Viewer3D = (function () {
     // precisar caçar todo lugar que muda a visibilidade do container.
     onResize();
 
-    const W = Math.max(width_mm || 400, 50) / 1000;
-    const H = Math.max(height_mm || 700, 50) / 1000;
-    const D = Math.max(depth_mm || 500, 50) / 1000;
+    // Mínimo de 1 mm, NÃO 50 (2026-10-12, Matt: painel 3/4 "no Plano" de
+    // 19,5 mm de profundidade "não encosta e ao girar com shift ele
+    // atravessa"). Com piso de 50 mm o desenho montava a peça numa caixa de
+    // 50 de fundo, encostada no fundo dela: a chapa saía 15 mm atrás do
+    // centro do slot — longe do vizinho num lado e atravessando no outro
+    // depois do giro de 180°. Valia pra todo painel/filler com medida < 50.
+    const W = Math.max(width_mm || 400, 1) / 1000;
+    const H = Math.max(height_mm || 700, 1) / 1000;
+    const D = Math.max(depth_mm || 500, 1) / 1000;
     // Altura do chão (pedido do usuário, 2026-07-16: "mostrar isso no
     // desenho" — ver po-comp-floor-height-input em portal.js) — desloca o
     // moduleGroup inteiro no eixo Y a partir do chão de verdade (Y=0, onde
@@ -4242,9 +4248,15 @@ const Viewer3D = (function () {
   function buildStandaloneAssembly(parts, width_mm, height_mm, depth_mm, openState) {
     if (!available()) return null;
 
-    const W = Math.max(width_mm || 400, 50) / 1000;
-    const H = Math.max(height_mm || 700, 50) / 1000;
-    const D = Math.max(depth_mm || 500, 50) / 1000;
+    // Mínimo de 1 mm, NÃO 50 (2026-10-12, Matt: painel 3/4 "no Plano" de
+    // 19,5 mm de profundidade "não encosta e ao girar com shift ele
+    // atravessa"). Com piso de 50 mm o desenho montava a peça numa caixa de
+    // 50 de fundo, encostada no fundo dela: a chapa saía 15 mm atrás do
+    // centro do slot — longe do vizinho num lado e atravessando no outro
+    // depois do giro de 180°. Valia pra todo painel/filler com medida < 50.
+    const W = Math.max(width_mm || 400, 1) / 1000;
+    const H = Math.max(height_mm || 700, 1) / 1000;
+    const D = Math.max(depth_mm || 500, 1) / 1000;
 
     const group = new THREE.Group();
     const assemblyOpenables = [];

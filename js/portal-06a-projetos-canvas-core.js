@@ -1113,7 +1113,7 @@ function attachProjectLibrarySkuSelect(card, m, unit) {
     const sku = skuOptions.find((s) => s.reference === reference);
     if (!sku) return;
     sel.disabled = true;
-    insertProjectModuleDefault(m.id, { width_mm: sku.width_mm, height_mm: sku.height_mm })
+    insertProjectModuleDefault(m.id, { width_mm: sku.width_mm, height_mm: sku.height_mm, fromLibrary: true })
       .then((slot) => {
         // insertProjectModuleDefault só seleciona/renderiza/marca sujo
         // sozinha quando NENHUM overrides é passado (o motivo: a IA insere
@@ -2086,6 +2086,39 @@ function collectDefaultShelfQuantities(piecesList, acc) {
 // Deliberadamente NÃO aceita preço nem peças: o resultado de um módulo
 // inserido pela IA tem que ser idêntico ao mesmo módulo inserido na mão.
 // Devolve o slot criado (ou null), pra quem chamou conseguir encadear.
+// Centro (mm, mundo) de um lugar LIVRE no piso pro slot ilha (giro 0):
+// varre o piso em grade de 100 mm, do MEIO do ambiente pra fora, e devolve o
+// 1º ponto onde a pegada inteira cabe no piso e não encosta em nenhum outro
+// módulo nem parede (qualquer altura conta — embaixo de aéreo não é "livre").
+// Sem lugar livre: o meio do piso.
+function findProjectFreeFloorSpotMm(slot) {
+  const b = projectFloorRoomBoundsMm(slot);
+  const meio = { x: (b.xMin + b.xMax) / 2, z: (b.zMin + b.zMax) / 2 };
+  if (!(b.xMin <= b.xMax && b.zMin <= b.zMax)) return meio;
+  let obst = [];
+  try { obst = projectAllOtherSlotWorldBoxes(slot) || []; } catch (e) { obst = []; }
+  const altura = (o) => Object.assign({}, o, { yMin: -1e6, yMax: 1e6 });
+  obst = obst.filter(Boolean).map(altura);
+  const PASSO = 100, FOLGA = 5;
+  const cands = [];
+  for (let x = b.xMin; x <= b.xMax + 0.1; x += PASSO) {
+    for (let z = b.zMin; z <= b.zMax + 0.1; z += PASSO) {
+      cands.push({ x: Math.min(x, b.xMax), z: Math.min(z, b.zMax) });
+    }
+  }
+  cands.push({ x: b.xMax, z: b.zMax }, { x: b.xMin, z: b.zMax }, { x: b.xMax, z: b.zMin });
+  cands.sort((p, q) => (Math.hypot(p.x - meio.x, p.z - meio.z) - Math.hypot(q.x - meio.x, q.z - meio.z)));
+  for (let i = 0; i < cands.length; i++) {
+    const box = projectSlotWorldBox3D(slot, { floorXMm: cands[i].x, floorZMm: cands[i].z });
+    if (!box) continue;
+    const comFolga = Object.assign({}, altura(box), {
+      halfAlongMm: box.halfAlongMm + FOLGA, halfIntoMm: box.halfIntoMm + FOLGA
+    });
+    if (!obst.some((o) => slotsOverlap3D(comFolga, o, 0))) return cands[i];
+  }
+  return meio;
+}
+
 async function insertProjectModuleDefault(moduleId, overrides = null) {
   const m = allModules.find((mm) => mm.id === moduleId);
   if (!m) return null;
@@ -2224,6 +2257,17 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
     // ponteiro cruzou o plano y=0).
     if (overrides && overrides.placement === 'floor') {
       convertProjectSlotToFloor(slot, Number(overrides.floor_x_mm || 0), Number(overrides.floor_z_mm || 0));
+    } else if ((!overrides || overrides.fromLibrary) && typeof convertProjectSlotToFloor === 'function') {
+      // CLIQUE NA BIBLIOTECA = CHÃO, EM ÁREA LIVRE (2026-10-12, Matt:
+      // "sempre que eu agrego um módulo novo da biblioteca ele entra lá no
+      // canto... não consigo selecionar ele. quero que ele sempre entre no
+      // chão em área disponível"). Antes ia pra parede ativa, no fim da fila
+      // (computeDefaultProjectSlotX) — às vezes escondido atrás/dentro de
+      // outro móvel. A IA (overrides) continua como era.
+      convertProjectSlotToFloor(slot, 0, 0);
+      const livre = findProjectFreeFloorSpotMm(slot);
+      slot.floor_x_mm = livre.x;
+      slot.floor_z_mm = livre.z;
     } else {
       slot.x_mm = (overrides && Number.isFinite(Number(overrides.x_mm)))
         ? Number(overrides.x_mm)
