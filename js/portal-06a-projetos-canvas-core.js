@@ -181,7 +181,12 @@ function undoProjectChange() {
   refreshProjectWallShapeButtons();
   refreshProjectWallTabs();
   refreshProjectWallWidthInput();
-  project3DLastFitKey = null; // o ambiente pode ter mudado de forma — reenquadra
+  // A CÂMERA FICA ONDE ESTÁ (2026-10-12, Matt: "quando dou um voltar ele
+  // deixa a câmera na posição central. não quero que ele mude a câmera com
+  // esse botão"). Antes zerava project3DLastFitKey aqui e o render
+  // reenquadrava a cena inteira a cada desfazer. Se a FORMA do ambiente
+  // mudar de verdade (L/U/parede nova), a chave de enquadramento muda
+  // sozinha e o render reenquadra do mesmo jeito — só não força mais.
   renderProjectCanvas();
   renderProjectConfigPanel();
   refreshProjectUndoButton();
@@ -213,7 +218,7 @@ function redoProjectChange() {
   refreshProjectWallShapeButtons();
   refreshProjectWallTabs();
   refreshProjectWallWidthInput();
-  project3DLastFitKey = null; // o ambiente pode ter mudado de forma — reenquadra
+  // câmera não mexe (mesma regra do desfazer, 2026-10-12)
   renderProjectCanvas();
   renderProjectConfigPanel();
   refreshProjectUndoButton();
