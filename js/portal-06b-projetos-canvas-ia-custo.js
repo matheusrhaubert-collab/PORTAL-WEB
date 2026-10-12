@@ -2631,7 +2631,32 @@ async function ensureProjectDrillingCatalog() {
   return projectDrillingCatalogLoading;
 }
 
+// PAINEL = ESPESSURA DA CHAPA (2026-10-12, Matt: "os painéis parecem estar
+// com espessura menor do que mostram e outros objetos invadem ele... fica
+// muito ruim de alinhar os módulos"). Painel/filler solto tem a medida fina
+// cadastrada fixa (19,5), mas a peça é desenhada com a espessura REAL da cor
+// (plywood = 18, ver Pricing.thicknessForPiece). O slot ficava com 19,5 e o
+// desenho com 18: a caixa de seleção, o encaixe e o vizinho usavam 19,5, e o
+// painel aparecia mais fino / "invadido". Aqui o eixo fino do slot passa a
+// ser a espessura de verdade. Só mexe em eixo cujo MÁXIMO cadastrado é de
+// chapa (<= 25 mm) — módulo comum nunca entra.
+const PROJECT_PANEL_THIN_MAX_MM = 25;
+function syncProjectPanelThickness(slot) {
+  const m = slot && slot.module;
+  if (!m || typeof Pricing === 'undefined' || !Pricing.cascoThicknessMm) return;
+  let e = 0;
+  try { e = Number(Pricing.cascoThicknessMm(slot.pieces || [], slot.colorsByRole || {}, slot.pieceColorOverrides)) || 0; } catch (err) { return; }
+  if (!(e > 0 && e <= PROJECT_PANEL_THIN_MAX_MM)) return;
+  ['width', 'height', 'depth'].forEach((ax) => {
+    const max = Number(m[ax + '_max_mm']) || 0;
+    const atual = Number(slot[ax + '_mm']) || 0;
+    if (!(max > 0 && max <= PROJECT_PANEL_THIN_MAX_MM && atual > 0 && atual <= PROJECT_PANEL_THIN_MAX_MM)) return;
+    if (Math.abs(atual - e) > 0.05) slot[ax + '_mm'] = e;
+  });
+}
+
 function recomputeProjectSlotPricing(slot) {
+  syncProjectPanelThickness(slot);
   // As peças da árvore são geometria ABSOLUTA em mm: mudou a medida do módulo,
   // elas têm que nascer de novo. Este é o funil por onde toda mudança de
   // dimensão passa, então é aqui que o recálculo mora.
