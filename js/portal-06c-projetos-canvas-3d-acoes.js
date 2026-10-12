@@ -3441,6 +3441,24 @@ if (projSlotReplaceBtn) {
   });
 }
 
+// ORÇAMENTO DO SELECIONADO (2026-10-12): módulo clicado, ou o grupo/
+// multi-seleção inteiro quando o módulo faz parte de um — "tudo que tiver
+// selecionado". Mesmo modal $ da barra de cima, só com o escopo filtrado.
+const projSlotMoneyBtn = document.getElementById('po-proj-slot-money-btn');
+if (projSlotMoneyBtn) {
+  projSlotMoneyBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  projSlotMoneyBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (selectedProjectSlotId == null || typeof openMoneyModal !== 'function') return;
+    const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+    let ids = (slot && typeof projectActiveGroupSelectionIds === 'function') ? projectActiveGroupSelectionIds(slot) : null;
+    if ((!ids || ids.size < 2) && typeof projectMultiSelectIds !== 'undefined' && projectMultiSelectIds.size >= 2 && projectMultiSelectIds.has(selectedProjectSlotId)) {
+      ids = projectMultiSelectIds;
+    }
+    openMoneyModal(ids && ids.size ? ids : new Set([selectedProjectSlotId]));
+  });
+}
+
 const projSlotRemoveBtn = document.getElementById('po-proj-slot-remove-btn');
 if (projSlotRemoveBtn) {
   projSlotRemoveBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
@@ -4151,10 +4169,16 @@ function renderProjectPieceToolbar() {
     <span class="po-proj-piece-toolbar-name">${projectSelectedPiece.reference || I18n.t('project.piece_label')}</span>
     <button type="button" class="secondary" data-acao="remover" title="${I18n.t('project.piece_remove')}">🗑</button>
     <button type="button" class="secondary" data-acao="desfazer" title="${I18n.t('project.piece_reset')}"${temAjuste ? '' : ' disabled'}>↺</button>
+    <button type="button" class="secondary" data-acao="dinheiro" title="${I18n.t('project.piece_money_title')}">$</button>
     <button type="button" class="secondary" data-acao="ok" title="${I18n.t('project.piece_done')}">✓</button>`;
   bar.style.display = 'flex';
   bar.querySelector('[data-acao="remover"]').addEventListener('click', () => removeSelectedProjectPiece());
   bar.querySelector('[data-acao="desfazer"]').addEventListener('click', () => resetSelectedProjectPieceAdjustment());
+  // orçamento só desta peça (2026-10-12) — ver openMoneyModalForPiece (portal-06b)
+  bar.querySelector('[data-acao="dinheiro"]').addEventListener('click', () => {
+    if (!projectSelectedPiece || typeof openMoneyModalForPiece !== 'function') return;
+    openMoneyModalForPiece(projectSelectedPiece.slotId, projectSelectedPiece.pieceId, projectSelectedPiece.reference);
+  });
   bar.querySelector('[data-acao="ok"]').addEventListener('click', () => clearProjectPieceSelection());
 }
 

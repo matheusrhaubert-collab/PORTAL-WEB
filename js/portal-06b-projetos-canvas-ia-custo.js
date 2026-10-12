@@ -2752,10 +2752,69 @@ let moneyAbaAtual = 'orcamento';
 // enquanto o modal ainda está aberto (clicar fora do grupo por engano não
 // pode fazer o modal aberto trocar de escopo sozinho).
 let moneyModalScopeIds = null;
+// ESCOPO de UMA PEÇA (2026-10-12, Matt: "dois cliques em uma peça, quero
+// ver o orçamento só do que está selecionado") — { slotId, pieceId,
+// reference }. Mesmo modal; o Orçamento mostra a parte proporcional do
+// preço do módulo, a Fábrica o custo da peça aberto por natureza. null =
+// escopo normal (projeto/módulos).
+let moneyModalScopePiece = null;
+
+function openMoneyModalForPiece(slotId, pieceId, reference) {
+  if (slotId == null || pieceId == null) return;
+  openMoneyModal(new Set([slotId]));
+  moneyModalScopePiece = { slotId, pieceId: String(pieceId), reference: reference || null };
+  renderMoneyModal();
+}
+
+// Acha a linha do breakdown (folha OU peça-módulo) pelo piece_id, descendo
+// em child_breakdown. O id do 3D (userData.pieceId) é o mesmo piece_id que
+// o preço grava (Pricing.calculateLeafPiece/calculateModulePiece).
+function findMoneyBreakdownRow(rows, pieceId) {
+  for (const r of (rows || [])) {
+    if (!r) continue;
+    if (String(r.piece_id) === pieceId) return r;
+    if (r.is_module && r.child_breakdown) {
+      const f = findMoneyBreakdownRow(r.child_breakdown, pieceId);
+      if (f) return f;
+    }
+  }
+  return null;
+}
+// Custo de uma linha por natureza (folha: os campos dela; peça-módulo: soma
+// das folhas de dentro × quantidade + a ferragem de abertura da própria).
+function moneyRowCost(r) {
+  const z = { chapa: 0, fita: 0, mo: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0 }, dobradica: 0, corredica: 0, comprado: 0, total: 0 };
+  const add = (row, mult) => {
+    if (!row) return;
+    if (row.is_module) {
+      (row.child_breakdown || []).forEach((c) => add(c, mult * (row.quantity || 1)));
+      z.dobradica += (Number(row.hinge_cost) || 0) * mult;
+      z.corredica += (Number(row.slide_cost) || 0) * mult;
+      return;
+    }
+    z.chapa += (Number(row.sheet_cost) || 0) * mult;
+    z.fita += (Number(row.edge_cost) || 0) * mult;
+    if (row.labor_breakdown) {
+      z.mo.corte += (Number(row.labor_breakdown.corte) || 0) * mult;
+      z.mo.fita += (Number(row.labor_breakdown.fita) || 0) * mult;
+      z.mo.furacao += (Number(row.labor_breakdown.furacao) || 0) * mult;
+      z.mo.usinagem += (Number(row.labor_breakdown.usinagem) || 0) * mult;
+    } else {
+      z.mo.antiga += (Number(row.labor_cost) || 0) * mult;
+    }
+    z.dobradica += (Number(row.hinge_cost) || 0) * mult;
+    z.corredica += (Number(row.slide_cost) || 0) * mult;
+    z.comprado += (Number(row.purchased_cost) || 0) * mult;
+  };
+  add(r, 1);
+  z.total = z.chapa + z.fita + z.mo.corte + z.mo.fita + z.mo.furacao + z.mo.usinagem + z.mo.antiga + z.dobradica + z.corredica + z.comprado;
+  return z;
+}
 
 function openMoneyModal(scopeIds) {
   const modal = document.getElementById('po-money-modal');
   if (!modal) return;
+  moneyModalScopePiece = null;
   moneyModalScopeIds = (scopeIds && scopeIds.size) ? new Set(scopeIds) : null;
   modal.classList.add('open');
   // Vendedor (migration 149) nunca chega na aba Fábrica (custo puro + margem
@@ -2813,10 +2872,66 @@ function renderMoneyModal() {
     : projectSlots;
   const rel = collectProjectCostReport(scopedSlots);
 
+  // UMA PEÇA (ver moneyModalScopePiece)
+  if (moneyModalScopePiece) {
+    const slot = projectSlots.find((s) => s.id === moneyModalScopePiece.slotId);
+    const row = slot && slot.result ? findMoneyBreakdownRow(slot.result.breakdown, moneyModalScopePiece.pieceId) : null;
+    if (!slot || !row) { body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.piece_not_found') + '</p>'; return; }
+    if (moneyAbaAtual === 'orcamento' || isSellerAccount()) { renderMoneyPieceOrcamento(body, slot, row); return; }
+    if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
+    renderMoneyPieceFabrica(body, slot, row);
+    return;
+  }
+
   if (moneyAbaAtual === 'orcamento') { renderMoneyOrcamento(body, rel, scopedSlots); return; }
   if (isSellerAccount()) { renderMoneyOrcamento(body, rel, scopedSlots); return; }
   if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
   renderMoneyFabrica(body, rel);
+}
+
+// ---- Uma PEÇA: venda = parte proporcional do preço do módulo (custo da
+// peça ÷ custo do módulo × preço do módulo), com a mesma margem/desconto
+// que a linha do módulo usa no Orçamento (getDisplayPriceRatioOnly).
+function moneyPieceSale(slot, row) {
+  const custoPeca = moneyRowCost(row).total;
+  const custoMod = Number(slot.result && slot.result.cost_total) || 0;
+  const precoMod = Number(slot.result && slot.result.total) || 0;
+  return custoMod > 0 ? precoMod * (custoPeca / custoMod) : 0;
+}
+function renderMoneyPieceOrcamento(body, slot, row) {
+  const nome = escapeHtmlCutlist(row.reference || moneyModalScopePiece.reference || I18n.t('project.piece_label'));
+  const dims = Math.round(row.width_mm || 0) + '×' + Math.round(row.height_mm || 0) + '×' + Math.round(row.depth_mm || 0);
+  const venda = getDisplayPriceRatioOnly(moneyPieceSale(slot, row));
+  body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.quote_sub_piece') + '</p>'
+    + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_piece') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
+    + '<th class="num">' + I18n.t('money.col_qty') + '</th><th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>'
+    + '<tr><td>' + nome + '<div class="dim">' + I18n.t('money.piece_of_module') + ' ' + escapeHtmlCutlist(slot.module.name || '') + '</div></td>'
+    + '<td class="num">' + dims + '</td><td class="num">' + (row.quantity || 1) + '</td><td class="num">' + formatMoney(venda) + '</td></tr>'
+    + '</tbody></table>'
+    + '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span><strong>' + formatMoney(venda) + '</strong></div>';
+}
+function renderMoneyPieceFabrica(body, slot, row) {
+  const z = moneyRowCost(row);
+  const nome = escapeHtmlCutlist(row.reference || moneyModalScopePiece.reference || I18n.t('project.piece_label'));
+  const linha = (label, v) => (Math.abs(v) >= 0.005
+    ? '<tr><td>' + label + '</td><td class="num">' + formatMoney(v) + '</td><td class="num">' + (z.total > 0 ? (100 * v / z.total).toFixed(1) + '%' : '—') + '</td></tr>'
+    : '');
+  body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.piece_cost_sub') + ' <strong>' + nome + '</strong> · '
+    + I18n.t('money.piece_of_module') + ' ' + escapeHtmlCutlist(slot.module.name || '') + '</p>'
+    + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_nature') + '</th><th class="num">' + I18n.t('money.col_cost') + '</th><th class="num">%</th></tr></thead><tbody>'
+    + linha(I18n.t('money.col_board'), z.chapa)
+    + linha(I18n.t('money.col_edge'), z.fita)
+    + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_cut'), z.mo.corte)
+    + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_glue'), z.mo.fita)
+    + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_drill'), z.mo.furacao)
+    + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_machining'), z.mo.usinagem)
+    + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.col_legacy_labor'), z.mo.antiga)
+    + linha(I18n.t('money.row_hinges'), z.dobradica)
+    + linha(I18n.t('money.row_slides'), z.corredica)
+    + linha(I18n.t('money.col_purchased'), z.comprado)
+    + '</tbody></table>'
+    + '<div class="po-money-total"><span>' + I18n.t('money.total_cost') + '</span><strong>' + formatMoney(z.total) + '</strong></div>'
+    + '<div class="po-money-total secundario"><span>' + I18n.t('money.total_sale') + '</span><strong>' + formatMoney(moneyPieceSale(slot, row)) + '</strong></div>';
 }
 
 // ---- Aba ORÇAMENTO: o que o cliente pode ver. Preço de venda, sem custo.
