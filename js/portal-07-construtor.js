@@ -862,34 +862,48 @@ async function loadProjectBuilderCatalog(moduleId) {
   // loadRecursivePiecesForModule (module-pieces.js) monta pro branch
   // child_module_id de module_components — dedupe por módulo porque mais de
   // um agregado pode apontar pro mesmo.
-  const moduleExtras = {};
-  const moduleIds = Array.from(new Set(
-    ativos.filter((a) => a.child_module_id).map((a) => a.child_module_id)
-  ));
-  await Promise.all(moduleIds.map(async (mid) => {
-    const [fixedDepths, childPieces, lockedPresets, ownHingeSlide] = await Promise.all([
-      fetchModuleFixedDepths(mid),
-      loadRecursivePiecesForModule(mid),
-      fetchModuleLockedDimensionPresets(mid),
-      fetchModuleOwnHingeAndSlideModels(mid)
-    ]);
-    moduleExtras[mid] = {
-      // module_meta = "a linha de modules" (comentário do layout-engine.js);
-      // só o name importa lá (fallback de reference) — lockedPresets já fez
-      // a consulta em modules, reaproveita em vez de buscar de novo.
-      module_meta: { name: lockedPresets.name },
-      fixed_depths: fixedDepths,
-      locked_presets: lockedPresets,
-      own_hinge_slide: ownHingeSlide,
-      child_pieces: childPieces
-    };
-  }));
+  const moduleExtras = await loadAccessoryModuleExtras(ativos);
 
   const cat = {};
   ativos.forEach((a) => {
     cat[a.id] = projectBuilderAccessoryEntry(a, a.child_module_id ? moduleExtras[a.child_module_id] : null);
   });
   return { cat, white, root: projectBuilderTreeFromRows(nos.data || []) };
+}
+
+// Extras dos agregados que são MÓDULO INTEIRO (child_module_id): peças
+// reais, profundidades fixas, presets travados e corrediça/dobradiça
+// própria. Dedupe por módulo (mais de um agregado aponta pro mesmo, ex.
+// Drawer / Gaveta Interna com e sem porta). Compartilhado entre a janela do
+// Construtor e ensureAccessoryCatalog (ver lá o porquê, 2026-10-12).
+async function loadAccessoryModuleExtras(accessoryRows) {
+  const moduleExtras = {};
+  const moduleIds = Array.from(new Set(
+    (accessoryRows || []).filter((a) => a && a.child_module_id).map((a) => a.child_module_id)
+  ));
+  await Promise.all(moduleIds.map(async (mid) => {
+    try {
+      const [fixedDepths, childPieces, lockedPresets, ownHingeSlide] = await Promise.all([
+        fetchModuleFixedDepths(mid),
+        loadRecursivePiecesForModule(mid),
+        fetchModuleLockedDimensionPresets(mid),
+        fetchModuleOwnHingeAndSlideModels(mid)
+      ]);
+      moduleExtras[mid] = {
+        // module_meta = "a linha de modules" (comentário do layout-engine.js);
+        // só o name importa lá (fallback de reference) — lockedPresets já fez
+        // a consulta em modules, reaproveita em vez de buscar de novo.
+        module_meta: { name: lockedPresets.name },
+        fixed_depths: fixedDepths,
+        locked_presets: lockedPresets,
+        own_hinge_slide: ownHingeSlide,
+        child_pieces: childPieces
+      };
+    } catch (e) {
+      console.error('[construtor] extras do módulo ' + mid, e);
+    }
+  }));
+  return moduleExtras;
 }
 
 // Linha de accessory_types -> entrada do catálogo do motor. Espelha
@@ -2522,8 +2536,19 @@ async function ensureAccessoryCatalog() {
         .from('accessory_types')
         .select('*, components(*, labor_types(*), component_types(*))');
       if (error) throw error;
+      // COM AS PEÇAS DO MÓDULO FILHO (2026-10-12, Matt: "nem agrupando tudo
+      // não está mostrando as gavetas" no $ Fábrica). Este caminho — o do
+      // projeto RESTAURADO (hydrateProjectLayoutPieces), sem abrir o
+      // Construtor — montava o catálogo SÓ com o ponteiro child_module_id:
+      // a gaveta do Construtor nascia com child_pieces=[] e sem corrediça
+      // própria, o preço do módulo LANÇAVA ("Nenhum modelo de corrediça")
+      // e o slot ficava com o preço antigo, SEM as gavetas — silencioso,
+      // até alguém abrir o Construtor naquele módulo. A janela do
+      // Construtor sempre carregou os extras (ver loadAccessoryModuleExtras);
+      // agora os dois caminhos carregam igual.
+      const extras = await loadAccessoryModuleExtras(data || []);
       const cat = {};
-      (data || []).forEach((a) => { cat[a.id] = projectBuilderAccessoryEntry(a); });
+      (data || []).forEach((a) => { cat[a.id] = projectBuilderAccessoryEntry(a, a.child_module_id ? extras[a.child_module_id] : null); });
       accessoryCatalogCache = cat;
     } catch (e) {
       accessoryCatalogCache = {};   // migration 085 não rodou: segue sem agregado

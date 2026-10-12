@@ -2718,16 +2718,29 @@ function recomputeProjectSlotPricing(slot) {
     // não tinha como saber QUAIS itens formam aquele custo escondido no total.
     slot._hardwareConsumo = ferragem || [];
   }
-  slot.result = slot.module.is_decoration
-    ? { total: 0, breakdown: [] }
-    : Pricing.calculateModulePrice({
-      module: slot.module, pieces: effectivePieces, colorsByRole: slot.colorsByRole,
-      hingeModel: slot.hingeModel, slideModel: slot.slideModel,
-      shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides,
-      pieceColorOverrides: slot.pieceColorOverrides,
-      width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
-      markupMultiplier: resolveMarkupMultiplierForModule(slot.module)
-    });
+  // PREÇO QUE FALHOU NÃO PODE SER SILENCIOSO (2026-10-12). Quem chama
+  // engole o erro e deixa o slot com o preço ANTERIOR ("preço antigo
+  // continua valendo") — o que já escondeu gaveta inteira do orçamento. O
+  // erro continua subindo igual, mas fica anotado no slot (_priceError) pra
+  // o $ Orçamento mostrar em vermelho qual módulo está com preço velho e
+  // por quê. Sucesso limpa.
+  try {
+    slot.result = slot.module.is_decoration
+      ? { total: 0, breakdown: [] }
+      : Pricing.calculateModulePrice({
+        module: slot.module, pieces: effectivePieces, colorsByRole: slot.colorsByRole,
+        hingeModel: slot.hingeModel, slideModel: slot.slideModel,
+        shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides,
+        pieceColorOverrides: slot.pieceColorOverrides,
+        width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
+        markupMultiplier: resolveMarkupMultiplierForModule(slot.module)
+      });
+    slot._priceError = null;
+  } catch (e) {
+    slot._priceError = (e && e.message) || String(e);
+    console.warn('[preço] módulo "' + (slot.module && slot.module.name) + '" ficou com o preço anterior: ' + slot._priceError);
+    throw e;
+  }
 }
 
 // Editor inline de medida (steppers +/- e campo exato do painel da direita)
@@ -2876,7 +2889,12 @@ function renderMoneyModal() {
   if (moneyModalScopePiece) {
     const slot = projectSlots.find((s) => s.id === moneyModalScopePiece.slotId);
     const row = slot && slot.result ? findMoneyBreakdownRow(slot.result.breakdown, moneyModalScopePiece.pieceId) : null;
-    if (!slot || !row) { body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.piece_not_found') + '</p>'; return; }
+    if (!slot || !row) {
+      body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.piece_not_found')
+        + (slot && slot._priceError ? '<br><span style="color:#b45309;">⚠ ' + I18n.t('money.price_stale') + ' ' + escapeHtmlCutlist(slot._priceError) + '</span>' : '')
+        + '</p>';
+      return;
+    }
     if (moneyAbaAtual === 'orcamento' || isSellerAccount()) { renderMoneyPieceOrcamento(body, slot, row); return; }
     if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
     renderMoneyPieceFabrica(body, slot, row);
@@ -2951,7 +2969,9 @@ function renderMoneyOrcamento(body, rel, slots) {
   // configurado no modal Margens, os dois são iguais à tabela — igual antes.
   const linhas = (slots || projectSlots).filter((s) => s.result && !(s.module && s.module.visual_only)).map((s) => {
     const preco = Number(s.result.total) || 0;
-    return '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + '</td>'
+    const aviso = s._priceError
+      ? '<div class="dim" style="color:#b45309;">⚠ ' + I18n.t('money.price_stale') + ' ' + escapeHtmlCutlist(s._priceError) + '</div>' : '';
+    return '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + aviso + '</td>'
       + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
       + '<td class="num">' + formatMoney(getDisplayPriceRatioOnly(preco)) + '</td></tr>';
   }).join('');
