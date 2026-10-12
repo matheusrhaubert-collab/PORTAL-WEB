@@ -2660,6 +2660,27 @@ function syncProjectPanelThickness(slot) {
   });
 }
 
+// { [moduleId]: { hinge, slide, slides } } — fetchModuleOwnHingeAndSlideModels
+// (module-pieces.js), o mesmo que a peça-módulo aninhada usa.
+const projectOwnHingeSlideCache = {};
+const projectOwnHingeSlideLoading = {};
+function ensureProjectOwnHingeSlide(moduleId) {
+  if (!moduleId || projectOwnHingeSlideCache[moduleId] || projectOwnHingeSlideLoading[moduleId]) return;
+  if (typeof fetchModuleOwnHingeAndSlideModels !== 'function') return;
+  projectOwnHingeSlideLoading[moduleId] = fetchModuleOwnHingeAndSlideModels(moduleId).then((v) => {
+    projectOwnHingeSlideCache[moduleId] = v || { hinge: null, slide: null, slides: [] };
+    delete projectOwnHingeSlideLoading[moduleId];
+    if (!(v && v.slides && v.slides.length)) return;
+    (projectSlots || []).forEach((s) => {
+      if (!s.module || s.module.id !== moduleId) return;
+      try { recomputeProjectSlotPricing(s); } catch (e) { /* preço anterior continua valendo */ }
+    });
+    const modal = document.getElementById('po-money-modal');
+    if (modal && modal.classList.contains('open') && typeof renderMoneyModal === 'function') renderMoneyModal();
+    if (typeof renderProjectConfigPanel === 'function') renderProjectConfigPanel();
+  }).catch(() => { delete projectOwnHingeSlideLoading[moduleId]; });
+}
+
 function recomputeProjectSlotPricing(slot) {
   syncProjectPanelThickness(slot);
   // As peças da árvore são geometria ABSOLUTA em mm: mudou a medida do módulo,
@@ -2724,12 +2745,19 @@ function recomputeProjectSlotPricing(slot) {
   // erro continua subindo igual, mas fica anotado no slot (_priceError) pra
   // o $ Orçamento mostrar em vermelho qual módulo está com preço velho e
   // por quê. Sucesso limpa.
+  // CORREDIÇA PRÓPRIA DO MÓDULO RAIZ (gaveta solta, 2026-10-12 — ver
+  // Pricing.calculateModulePrice). Carrega uma vez por módulo, sem travar
+  // (o preço roda a cada pointermove); quando chega, reprecifica os slots
+  // desse módulo. Até chegar vale o slideModel do slot.
+  const ownHS = projectOwnHingeSlideCache[slot.module.id];
+  if (!ownHS) ensureProjectOwnHingeSlide(slot.module.id);
   try {
     slot.result = slot.module.is_decoration
       ? { total: 0, breakdown: [] }
       : Pricing.calculateModulePrice({
         module: slot.module, pieces: effectivePieces, colorsByRole: slot.colorsByRole,
         hingeModel: slot.hingeModel, slideModel: slot.slideModel,
+        ownSlideModels: ownHS ? ownHS.slides : null, ownSlideModel: ownHS ? ownHS.slide : null,
         shelfQuantities: slot.shelfQuantities, dimOverrides: slot.dimOverrides,
         pieceColorOverrides: slot.pieceColorOverrides,
         width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
@@ -2796,7 +2824,7 @@ function findMoneyBreakdownRow(rows, pieceId) {
 // Custo de uma linha por natureza (folha: os campos dela; peça-módulo: soma
 // das folhas de dentro × quantidade + a ferragem de abertura da própria).
 function moneyRowCost(r) {
-  const z = { chapa: 0, fita: 0, mo: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0 }, dobradica: 0, corredica: 0, comprado: 0, total: 0 };
+  const z = { chapa: 0, fita: 0, mo: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0, montagem: 0 }, dobradica: 0, corredica: 0, comprado: 0, total: 0 };
   const add = (row, mult) => {
     if (!row) return;
     if (row.is_module) {
@@ -2812,6 +2840,8 @@ function moneyRowCost(r) {
       z.mo.fita += (Number(row.labor_breakdown.fita) || 0) * mult;
       z.mo.furacao += (Number(row.labor_breakdown.furacao) || 0) * mult;
       z.mo.usinagem += (Number(row.labor_breakdown.usinagem) || 0) * mult;
+    } else if (!(Number(row.width_mm) > 0) && !(Number(row.height_mm) > 0)) {
+      z.mo.montagem += (Number(row.labor_cost) || 0) * mult;
     } else {
       z.mo.antiga += (Number(row.labor_cost) || 0) * mult;
     }
@@ -2820,7 +2850,7 @@ function moneyRowCost(r) {
     z.comprado += (Number(row.purchased_cost) || 0) * mult;
   };
   add(r, 1);
-  z.total = z.chapa + z.fita + z.mo.corte + z.mo.fita + z.mo.furacao + z.mo.usinagem + z.mo.antiga + z.dobradica + z.corredica + z.comprado;
+  z.total = z.chapa + z.fita + z.mo.corte + z.mo.fita + z.mo.furacao + z.mo.usinagem + z.mo.antiga + z.mo.montagem + z.dobradica + z.corredica + z.comprado;
   return z;
 }
 
@@ -2943,6 +2973,7 @@ function renderMoneyPieceFabrica(body, slot, row) {
     + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_glue'), z.mo.fita)
     + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_drill'), z.mo.furacao)
     + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_machining'), z.mo.usinagem)
+    + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.labor_assembly'), z.mo.montagem)
     + linha(I18n.t('money.section_labor') + ' · ' + I18n.t('money.col_legacy_labor'), z.mo.antiga)
     + linha(I18n.t('money.row_hinges'), z.dobradica)
     + linha(I18n.t('money.row_slides'), z.corredica)
@@ -3053,7 +3084,7 @@ function renderMoneyFabrica(body, rel) {
     + Object.keys(rel.fita).reduce((s, k) => s + rel.fita[k].custo, 0)
     + fer.dobradica.custo + fer['corrediça'].custo + totalFerMontagem + totalPecasCompradas;
   const totalMO = rel.labor.corte + rel.labor.fita + rel.labor.furacao
-    + rel.labor.usinagem + rel.labor.antiga;
+    + rel.labor.usinagem + rel.labor.antiga + rel.labor.montagem;
 
   const subtotal = (rot, valor) => (
     '<tr class="po-money-subtotal"><td>' + rot + '</td><td></td>'
@@ -3119,6 +3150,9 @@ function renderMoneyFabrica(body, rel) {
   // Peça fora do modelo por processo: aparece SEPARADA, nunca somada num
   // processo — senão o relatório diria que a fábrica gastou em furação um
   // dinheiro que na verdade é de uma labor antiga, indivisível.
+  if (rel.labor.montagem > 0) {
+    html += linha(I18n.t('money.labor_assembly'), '', rel.labor.montagem);
+  }
   if (rel.labor.antiga > 0) {
     html += linha(I18n.t('money.labor_legacy'), '', rel.labor.antiga);
   }
@@ -3475,7 +3509,7 @@ function collectProjectCostReport(slots) {
   const rel = {
     material: {},      // por cor: { m2, custo }
     fita: {},          // por cor: { m, custo }
-    labor: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0 },
+    labor: { corte: 0, fita: 0, furacao: 0, usinagem: 0, antiga: 0, montagem: 0 },
     ferragem: {
       dobradica: { qtd: 0, custo: 0 }, corrediça: { qtd: 0, custo: 0 },
       // POR MODELO (2026-08-19, Matt: "nao esta especificando qual corredica
@@ -3696,6 +3730,11 @@ function collectProjectCostReport(slots) {
         rel.labor.fita += Number(p.labor_breakdown.fita) || 0;
         rel.labor.furacao += Number(p.labor_breakdown.furacao) || 0;
         rel.labor.usinagem += Number(p.labor_breakdown.usinagem) || 0;
+      } else if (!(Number(p.width_mm) > 0) && !(Number(p.height_mm) > 0)) {
+        // peça SÓ de mão de obra (migration 198, "Montagem de porta") — linha
+        // própria, não "peça fora do modelo por processo" (Matt, 2026-10-12:
+        // "pode colocar special door assembly")
+        rel.labor.montagem += Number(p.labor_cost) || 0;
       } else {
         rel.labor.antiga += Number(p.labor_cost) || 0;
       }

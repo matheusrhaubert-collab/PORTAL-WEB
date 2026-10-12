@@ -1652,6 +1652,39 @@
     const moduleDims = { W: width_mm, H: height_mm, D: depth_mm };
     const result = calculateAssembly(pieces, moduleDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides);
 
+    // GAVETA SOLTA NO AMBIENTE (2026-10-12, Matt: "coloquei uma gaveta solta
+    // e não está mostrando a corrediça no custo"). A corrediça sempre foi
+    // cobrada pelo USO: slides_per_unit na linha do módulo PAI (ou no
+    // agregado do Construtor) — a gaveta como peça-módulo paga 2 trilhos
+    // (calculateModulePiece). Inserida DIRETO no ambiente ela é o módulo
+    // raiz, não tem linha de uso nenhuma, e nenhuma peça dela carrega
+    // slides_per_unit: saía sem corrediça, calada. Regra: módulo raiz que É
+    // uma caixa de gaveta (tem lateral de gaveta, 'drawer_side', e nenhum
+    // sub-módulo) paga 2 trilhos — o modelo próprio por profundidade
+    // (params.ownSlideModels = module_slide_models + module_purchased_slides,
+    // mesma escolha da peça-módulo), senão o do slot. Entra como linha
+    // própria no breakdown (sem chapa: não corta, não desenha).
+    const ehGavetaSolta = (pieces || []).some(function (p) { return p && p.position_role === 'drawer_side'; })
+      && !(pieces || []).some(function (p) { return p && p.is_module; });
+    if (ehGavetaSolta) {
+      const escolhida = pickSlideModelByDepth(params.ownSlideModels, depth_mm) || params.ownSlideModel || slideModel;
+      const trilhos = 2;
+      if (escolhida && escolhida.price_per_unit > 0) {
+        const custoCorredica = Number(escolhida.price_per_unit) * trilhos;
+        result.breakdown.push({
+          piece_id: 'corredica-raiz', reference: tr('pricing.slide_row', null, 'Corrediça'),
+          description: null, origin: 'fabricacao', is_module: false, quantity: 1,
+          width_mm: 0, height_mm: 0, depth_mm: 0, area_m2: 0, edge_band_m: 0,
+          sheet_cost: 0, edge_cost: 0, labor_cost: 0, purchased_cost: 0, hinge_cost: 0, hinge_count: 0,
+          slide_cost: custoCorredica, slides_per_unit: trilhos,
+          slide_model_id: escolhida.id, slide_model_name: escolhida.name,
+          slide_model_rail_length_mm: escolhida.rail_length_mm != null ? escolhida.rail_length_mm : null,
+          piece_total: custoCorredica, labor_breakdown: null
+        });
+        result.total += custoCorredica;
+      }
+    }
+
     // ======================================================================
     // ITENS COMPRADOS (migration 119) — margem própria, aplicada aqui no topo
     // ======================================================================
