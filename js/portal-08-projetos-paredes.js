@@ -208,6 +208,26 @@ function refreshProject3DStatusBar() {
     }
   }
 
+  // GRUPO / SELEÇÃO MÚLTIPLA (2026-10-12, Matt: "quando gero um grupo e
+  // clico nele quero ver o tamanho total dele"). Medida = o bloco vermelho
+  // (união dos membros), largura × altura × profundidade nos eixos da sala.
+  // Nome do grupo quando todos são do mesmo grupo; senão "N selecionados".
+  if (typeof projectMultiSelectIds !== 'undefined' && projectMultiSelectIds && projectMultiSelectIds.size >= 2
+    && ViewerProjectEdit && ViewerProjectEdit.getMultiHighlightSizeMm) {
+    const tam = ViewerProjectEdit.getMultiHighlightSizeMm();
+    if (tam) {
+      const membros = projectSlots.filter((s) => projectMultiSelectIds.has(s.id));
+      const g0 = membros.length && membros[0].group_id;
+      const mesmoGrupo = g0 && membros.every((s) => s.group_id === g0);
+      const nome = escapeHtmlCutlist(mesmoGrupo
+        ? (membros[0].group_name || I18n.t('project.group_default_name'))
+        : I18n.t('project.group_selected_count', { n: projectMultiSelectIds.size }));
+      bar.innerHTML = `<strong>${nome}</strong> — ${formatDimension(tam.w, unit)} × ${formatDimension(tam.h, unit)} × ${formatDimension(tam.d, unit)}`;
+      bar.style.display = 'block';
+      return;
+    }
+  }
+
   if (selectedProjectSlotId != null) {
     const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
     if (slot && slot.module) {

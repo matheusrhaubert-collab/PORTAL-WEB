@@ -3113,6 +3113,17 @@ function createViewerComposition3D() {
     escreveCaixaNoHelper(multiHighlightHelper, uniaoDeGrupos(multiHighlightGroups));
     multiHighlightHelper.visible = true;
   }
+  // Tamanho TOTAL do bloco vermelho do grupo/seleção múltipla, em mm, nos
+  // eixos do mundo (x largura, y altura, z profundidade). Rodapé da Vista de
+  // Canto 3D (2026-10-12, Matt: "quando gero um grupo e clico nele quero ver
+  // o tamanho total dele"). null sem bloco visível.
+  function getMultiHighlightSizeMm() {
+    if (!multiHighlightHelper || !multiHighlightHelper.visible || multiHighlightGroups.length < 2) return null;
+    const caixa = uniaoDeGrupos(multiHighlightGroups);
+    if (caixa.isEmpty()) return null;
+    const s = caixa.getSize(new THREE.Vector3());
+    return { w: Math.round(s.x * 1000), h: Math.round(s.y * 1000), d: Math.round(s.z * 1000) };
+  }
   // CLICAR DENTRO DO BLOCO VERMELHO DO GRUPO (2026-10-06, Matt: "ainda não
   // consigo mover o bloco do grupo") — o bloco é a UNIÃO dos membros, então
   // tem vão vazio entre eles; o clique ali não acertava módulo nenhum e
@@ -3567,7 +3578,7 @@ function createViewerComposition3D() {
     setCameraProjection, getCameraProjection,
     pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,
     // Peça selecionada por duplo clique (2026-10-02)
-    pickPieceAt, getPieceFrame, setPieceOutline, getPieceInfo,
+    pickPieceAt, getPieceFrame, setPieceOutline, getPieceInfo, getMultiHighlightSizeMm,
     // Diagnóstico (ver debugScreenRects) — chamável pelo console via
     // window.__legnoViewerEdit.debugScreenRects().
     debugScreenRects,

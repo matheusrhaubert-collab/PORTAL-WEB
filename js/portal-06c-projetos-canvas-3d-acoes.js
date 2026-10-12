@@ -1929,11 +1929,17 @@ function refreshProject3DHighlight() {
 // pelo contorno único de sempre).
 function refreshProject3DMultiHighlight() {
   if (typeof ViewerProjectEdit === 'undefined' || !ViewerProjectEdit.setMultiHighlight) return;
-  if (projectMultiSelectIds.size < 2) { ViewerProjectEdit.setMultiHighlight(null); return; }
+  if (projectMultiSelectIds.size < 2) {
+    ViewerProjectEdit.setMultiHighlight(null);
+    if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
+    return;
+  }
   const groups = Array.from(projectMultiSelectIds)
     .map((id) => ViewerProjectEdit.findGroupBySlotId(id))
     .filter(Boolean);
   ViewerProjectEdit.setMultiHighlight(groups);
+  // tamanho total do grupo no rodapé (refreshProject3DStatusBar, portal-08)
+  if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
 }
 
 // Chave da última vez que a câmera da Vista de Canto 3D foi reenquadrada
