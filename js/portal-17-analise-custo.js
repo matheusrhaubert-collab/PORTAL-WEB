@@ -27,6 +27,11 @@ function tCost(k, vars) { return I18n.t('cost_plan.' + k, vars); }
 function cpEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function cpMoney(v) { return '$' + Math.round(Number(v) || 0).toLocaleString('en-US'); }
 function cpSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+// Cor "Especial" (e similares) fora da análise (13/10, Matt: "tira a cor
+// especial porque ela não deve constar, tem outros custos variáveis que não
+// constam ali").
+const CP_EXCLUDE_COLOR_RE = /especial|special/i;
+function cpColorOk(c) { return !!c && c.active !== false && !CP_EXCLUDE_COLOR_RE.test(String(c.name || '')); }
 function cpColorRank(c) { return (Number(c.sheet_price_per_m2) || 0) * 1000 + (Number(c.edge_price_per_linear_m) || 0); }
 function cpRoleName(rid) { return ((colorRolesCache || []).find((r) => r.id === rid) || {}).name || ''; }
 function cpIsFrontRole(rid) { return COST_FRONT_ROLE_RE.test(cpRoleName(rid)); }
@@ -107,6 +112,7 @@ async function costPlanAnalyze() {
   const nums = (typeof projectSlotsOrderSequence === 'function') ? new Map(projectSlotsOrderSequence().map((e) => [e.slot.id, e.numero])) : new Map();
   const mods = [];
   const moves = []; // trocas possíveis
+  const calib = []; // por slot/papel: geometria + fator calibrado (matriz de preços)
   for (const s of slots) {
     const t0 = Number(s.result.total) || 0;
     const bd = s.result.breakdown || [];
@@ -114,7 +120,7 @@ async function costPlanAnalyze() {
     const parts = { sheet: sum('sheet_cost') + sum('edge_cost'), labor: sum('labor_cost'), hardware: sum('hinge_cost') + sum('slide_cost') + sum('purchased_cost') };
     const roles = [];
     for (const rid of Object.keys(s.colorOptionsByRole || {})) {
-      const opts = (s.colorOptionsByRole[rid] || []).slice().sort((a, b) => cpColorRank(a) - cpColorRank(b));
+      const opts = (s.colorOptionsByRole[rid] || []).filter(cpColorOk).sort((a, b) => cpColorRank(a) - cpColorRank(b));
       const cur = s.colorsByRole && s.colorsByRole[rid];
       if (!opts.length || !cur) continue;
       const cheapest = opts[0], priciest = opts[opts.length - 1];
@@ -123,6 +129,13 @@ async function costPlanAnalyze() {
       if (priciest.id !== cur.id) { applyColorToProjectSlot(s, rid, priciest); recomputeProjectSlotPricing(s); dMax = (Number(s.result.total) || 0) - t0; }
       applyColorToProjectSlot(s, rid, cur); recomputeProjectSlotPricing(s);
       const front = cpIsFrontRole(rid);
+      // fator calibrado: Δ exato (simulado) ÷ Δ analítico (área×Δpreço + fita×Δpreço)
+      const geo = roleGeo[rid] || { area: 0, edge: 0 };
+      const an = (c) => geo.area * ((Number(c.sheet_price_per_m2) || 0) - (Number(cur.sheet_price_per_m2) || 0)) + geo.edge * ((Number(c.edge_price_per_linear_m) || 0) - (Number(cur.edge_price_per_linear_m) || 0));
+      let fcal = fRaw;
+      if (Math.abs(an(cheapest)) > 1e-6 && dMin) fcal = dMin / an(cheapest);
+      else if (Math.abs(an(priciest)) > 1e-6 && dMax) fcal = dMax / an(priciest);
+      calib.push({ slot: s, rid, cur, geo, fcal, an });
       roles.push({ rid, name: cpRoleName(rid), cur: cur.name, front, cheapest: cheapest.name, priciest: priciest.name, dMin: dMin * k, dMax: dMax * k });
       if (dMin < -0.5) moves.push({ kind: 'save', slotId: s.id, rid, role: cpRoleName(rid), front, from: cur.name, to: cheapest, toName: cheapest.name, delta: dMin * k, label: cpSlotLabel(s), num: nums.get(s.id) });
       if (dMax > 0.5) moves.push({ kind: 'up', slotId: s.id, rid, role: cpRoleName(rid), front, from: cur.name, to: priciest, toName: priciest.name, delta: dMax * k, label: cpSlotLabel(s), num: nums.get(s.id) });
@@ -131,6 +144,20 @@ async function costPlanAnalyze() {
     // módulo é um fator relevante") — $ por pé/metro linear de parede que o
     // módulo ocupa. Painel/filler ficam fora do ranking (largura de 3/4" vira
     // $/ft absurdo sem significar nada).
+    // área/fita por papel (pra matriz de preços, abaixo) — recursivo
+    const roleGeo = {};
+    let rawSum = 0;
+    const walkGeo = (list, mult) => (list || []).forEach((p) => {
+      const q = (Number(p.quantity) || 1) * mult;
+      rawSum += cpPieceCost(p) * q;
+      if (p.is_module) { walkGeo(p.child_breakdown, q); return; }
+      if (!(Number(p.sheet_cost) > 0) || !p.color_role_id) return;
+      roleGeo[p.color_role_id] = roleGeo[p.color_role_id] || { area: 0, edge: 0 };
+      roleGeo[p.color_role_id].area += (Number(p.area_m2) || 0) * q;
+      roleGeo[p.color_role_id].edge += (Number(p.edge_band_m) || 0) * q;
+    });
+    walkGeo(bd, 1);
+    const fRaw = rawSum > 0 ? t0 / rawSum : 0;
     const groups = cpSlotGroups(s);
     const widthFt = Number(s.width_mm) / 304.8;
     const narrow = Number(s.width_mm) < 100;
@@ -151,6 +178,69 @@ async function costPlanAnalyze() {
   const wallRows = Object.values(walls).map((w) => Object.assign(w, { perFt: w.ft > 0 ? w.total / w.ft : 0 })).sort((a, b) => b.total - a.total);
   // "investimento alto pra parede que cobre": bem acima da média do projeto
   mods.forEach((m) => { m.hot = m.perFt != null && avgPerFt > 0 && m.perFt >= avgPerFt * 1.6; });
+  // MATRIZ DE PREÇOS CAIXA × PORTA (13/10, Matt: "uma matriz de cores pra
+  // saber os preços, separa por preço, mostra as cores de caixa e porta e
+  // monta uma tabela de preço do mais baixo até o mais caro"). As cores da
+  // linha viram FAIXAS por preço de chapa (nova faixa quando sobe >15%).
+  // Linha = faixa da CAIXA (e dos outros papéis escondidos), coluna = faixa
+  // das FRENTES; célula = total do projeto SIMULADO com cada módulo na cor
+  // mais barata da faixa que ele aceita. Projeto sem frente (closet aberto)
+  // vira uma coluna só.
+  const allColors = new Map();
+  slots.forEach((s) => Object.values(s.colorOptionsByRole || {}).forEach((l) => (l || []).forEach((c) => { if (cpColorOk(c)) allColors.set(c.id, c); })));
+  const sortedColors = Array.from(allColors.values()).sort((a, b) => cpColorRank(a) - cpColorRank(b));
+  // faixas = preço de chapa exato (até 8); com mais que isso, agrupa (+15%)
+  let tiers = [];
+  const distinctPrices = [...new Set(sortedColors.map((c) => Math.round((Number(c.sheet_price_per_m2) || 0) * 100) / 100))];
+  const chain = distinctPrices.length > 8;
+  sortedColors.forEach((c) => {
+    const p = Math.round((Number(c.sheet_price_per_m2) || 0) * 100) / 100;
+    const last = tiers[tiers.length - 1];
+    if (last && (chain ? p <= last.max * 1.15 : p === last.max)) { last.colors.push(c); last.max = Math.max(last.max, p); }
+    else tiers.push({ min: p, max: p, colors: [c] });
+  });
+  const tierOf = (c) => tiers.findIndex((t) => t.colors.some((x) => x.id === c.id));
+  const frontRids = new Set(), boxRids = new Set();
+  slots.forEach((s) => Object.keys(s.colorOptionsByRole || {}).forEach((rid) => { if (((s.colorOptionsByRole[rid] || []).filter(cpColorOk)).length) (cpIsFrontRole(rid) ? frontRids : boxRids).add(rid); }));
+  const hasFront = frontRids.size > 0;
+  const axisTiers = (rids) => tiers.map((t, i) => i).filter((i) => slots.some((s) => [...rids].some((rid) => ((s.colorOptionsByRole || {})[rid] || []).some((c) => cpColorOk(c) && tierOf(c) === i))));
+  const boxTierIdx = axisTiers(boxRids), frontTierIdx = hasFront ? axisTiers(frontRids) : [null];
+  // delta do projeto por eixo e faixa — caixa e frentes são peças
+  // diferentes, então a combinação é a SOMA dos dois deltas (exato, o
+  // preço é por peça). 1 recomputo por slot por faixa, não por papel.
+  // Δ do projeto por eixo e faixa — ANALÍTICO com fator calibrado (ver
+  // calib): exato na cor mais barata, poucos dólares de desvio nas faixas
+  // do meio, e instantâneo (a simulação faixa a faixa levava 14 s).
+  const axisDelta = async (rids, tierList) => {
+    const out = {};
+    tierList.forEach((ti) => {
+      let delta = 0;
+      calib.forEach((c) => {
+        if (!rids.has(c.rid)) return;
+        const opts = ((c.slot.colorOptionsByRole || {})[c.rid] || []).filter((x) => cpColorOk(x) && tierOf(x) === ti).sort((p, q) => cpColorRank(p) - cpColorRank(q));
+        if (!opts.length || opts[0].id === c.cur.id) return;
+        delta += c.fcal * c.an(opts[0]);
+      });
+      out[ti] = delta * k;
+    });
+    return out;
+  };
+  const dBox = await axisDelta(boxRids, boxTierIdx);
+  const dFront = hasFront ? await axisDelta(frontRids, frontTierIdx) : { null: 0 };
+  const combos = [];
+  boxTierIdx.forEach((bi) => frontTierIdx.forEach((fi) => combos.push({ box: bi, front: fi, total: display + dBox[bi] + (fi == null ? 0 : dFront[fi]) })));
+  // faixa atual de cada eixo = cor mais usada hoje
+  const curTierFor = (rids) => {
+    const freq = {};
+    slots.forEach((s) => rids.forEach((rid) => { const c = s.colorsByRole && s.colorsByRole[rid]; if (c) freq[c.id] = (freq[c.id] || 0) + 1; }));
+    const topId = Object.keys(freq).sort((p, q) => freq[q] - freq[p])[0];
+    const c = topId && allColors.get(topId);
+    return c ? tierOf(c) : -1;
+  };
+  const priceMatrix = { tiers, boxTierIdx, frontTierIdx, combos, hasFront, curBox: curTierFor(boxRids), curFront: hasFront ? curTierFor(frontRids) : null,
+    boxColorsOfTier: (ti) => tiers[ti].colors.filter((c) => slots.some((s) => [...boxRids].some((rid) => ((s.colorOptionsByRole || {})[rid] || []).some((x) => x.id === c.id)))),
+    frontColorsOfTier: (ti) => tiers[ti].colors.filter((c) => slots.some((s) => [...frontRids].some((rid) => ((s.colorOptionsByRole || {})[rid] || []).some((x) => x.id === c.id)))),
+    boxRids: [...boxRids], frontRids: [...frontRids] };
   // por espaço (projeto inteiro)
   const space = { estrutura: 0, frentes: 0, internos: 0, acabamento: 0 };
   mods.forEach((m) => { Object.keys(space).forEach((g) => { space[g] += m.groups[g]; }); });
@@ -165,7 +255,7 @@ async function costPlanAnalyze() {
   const allMin = display + moves.filter((m) => m.kind === 'save').reduce((a, m) => a + m.delta, 0);
   const allMax = display + moves.filter((m) => m.kind === 'up').reduce((a, m) => a + m.delta, 0);
   const hiddenMin = display + moves.filter((m) => m.kind === 'save' && !m.front).reduce((a, m) => a + m.delta, 0);
-  return { display, allMin, allMax, hiddenMin, mods, moves, k, avgPerFt, totFt, wallRows, space, volFt3, shell, trim, empty, avgRatio };
+  return { display, allMin, allMax, hiddenMin, mods, moves, k, avgPerFt, totFt, wallRows, space, volFt3, shell, trim, empty, avgRatio, priceMatrix };
 }
 
 // Ordem das economias: escondidas primeiro (maior economia primeiro), depois
@@ -230,8 +320,10 @@ function renderCostPlan() {
   const body = document.getElementById('po-cost-plan-body');
   if (!st || !body) return;
   const bar = (v, max, cls) => '<div class="po-cost-bar"><i class="' + (cls || '') + '" style="width:' + Math.max(2, Math.round(100 * v / (max || 1))) + '%"></i></div>';
+  let h = renderCostPriceMatrix(st);
+  h += '<details class="po-cost-more"><summary>' + tCost('more_analysis') + '</summary>';
   // 1) faixa
-  let h = '<section class="po-cost-sec"><h4>' + tCost('sec_range') + '</h4>'
+  h += '<section class="po-cost-sec"><h4>' + tCost('sec_range') + '</h4>'
     + '<div class="po-cost-range">'
     + '<div><span>' + tCost('range_min') + '</span><strong>' + cpMoney(st.allMin) + '</strong><small>' + tCost('range_min_hint') + '</small></div>'
     + '<div class="atual"><span>' + tCost('range_now') + '</span><strong>' + cpMoney(st.display) + '</strong><small>' + tCost('range_hidden_hint', { v: cpMoney(st.hiddenMin) }) + '</small></div>'
@@ -301,8 +393,59 @@ function renderCostPlan() {
   // 5) resumo pro cliente
   h += '<section class="po-cost-sec"><h4>' + tCost('sec_summary') + '</h4><textarea id="po-cost-summary" rows="5" readonly></textarea>'
     + '<div class="po-client-actions"><button type="button" class="secondary" id="po-cost-copy">' + tCost('copy') + '</button></div></section>';
+  h += '</details>';
   body.innerHTML = h;
   renderCostPlanBudget();
+}
+
+// ---------- matriz de preços caixa × porta ----------
+function cpSwatch(c, size) {
+  const px = size || 22;
+  const inner = c.texture_url ? '<img src="' + cpEsc(c.texture_url) + '" alt="" loading="lazy" />' : '<span style="background:' + cpEsc(c.swatch_hex || '#ccc') + '"></span>';
+  return '<i class="po-cost-swatch" style="width:' + px + 'px;height:' + px + 'px" title="' + cpEsc(c.name) + '">' + inner + '</i>';
+}
+function cpTierLabel(st, ti) {
+  const t = st.priceMatrix.tiers[ti];
+  const m2 = (v) => cpIsInch() ? cpMoney(v / 10.7639) + '/ft²' : cpMoney(v) + '/m²';
+  return t.min === t.max ? m2(t.min) : m2(t.min) + '–' + m2(t.max);
+}
+function renderCostPriceMatrix(st) {
+  const pm = st.priceMatrix;
+  if (!pm || !pm.combos.length) return '';
+  const totals = pm.combos.map((c) => c.total);
+  const lo = Math.min(...totals), hi = Math.max(...totals);
+  const heat = (v) => { const t = hi > lo ? (v - lo) / (hi - lo) : 0; const r = Math.round(46 + (200 - 46) * t), g = Math.round(158 + (40 - 158) * t), b = Math.round(91 + (40 - 91) * t); return 'rgba(' + r + ',' + g + ',' + b + ',0.18)'; };
+  const cell = (bi, fi) => {
+    const c = pm.combos.find((x) => x.box === bi && x.front === fi);
+    if (!c) return '<td class="na">—</td>';
+    const cur = bi === pm.curBox && (fi == null || fi === pm.curFront);
+    const d = c.total - st.display;
+    return '<td class="' + (cur ? 'cur' : '') + '" style="background:' + heat(c.total) + '"><b>' + cpMoney(c.total) + '</b><small>' + (cur ? tCost('matrix_current') : (d > 0 ? '+' : '') + cpMoney(d)) + '</small></td>';
+  };
+  let h = '<section class="po-cost-sec po-cost-pm"><h4>' + tCost('pm_title') + '</h4>'
+    + '<p class="po-cost-hint">' + tCost(pm.hasFront ? 'pm_hint' : 'pm_hint_nofront') + '</p>'
+    + '<div class="po-cost-matrix-wrap"><table class="po-cost-matrix po-cost-pm-table"><thead><tr><th class="corner">' + tCost('pm_box') + (pm.hasFront ? ' ↓ · ' + tCost('pm_front') + ' →' : '') + '</th>';
+  if (pm.hasFront) pm.frontTierIdx.forEach((fi) => { h += '<th><div class="po-cost-tier-h">' + cpTierLabel(st, fi) + '</div><div class="po-cost-swatches">' + pm.frontColorsOfTier(fi).map((c) => cpSwatch(c, 20)).join('') + '</div></th>'; });
+  else h += '<th>' + tCost('pm_total') + '</th>';
+  h += '</tr></thead><tbody>';
+  pm.boxTierIdx.forEach((bi) => {
+    h += '<tr><th class="rowh"><div class="po-cost-tier-h">' + cpTierLabel(st, bi) + '</div><div class="po-cost-swatches">' + pm.boxColorsOfTier(bi).map((c) => cpSwatch(c, 20)).join('') + '</div></th>';
+    if (pm.hasFront) pm.frontTierIdx.forEach((fi) => { h += cell(bi, fi); }); else h += cell(bi, null);
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  // tabela do mais barato ao mais caro
+  const sorted = pm.combos.slice().sort((a, b) => a.total - b.total);
+  h += '<h4 class="po-cost-pm-list-title">' + tCost('pm_list_title') + '</h4><ol class="po-cost-pm-list">';
+  sorted.forEach((c) => {
+    const cur = c.box === pm.curBox && (c.front == null || c.front === pm.curFront);
+    const d = c.total - st.display;
+    h += '<li class="' + (cur ? 'cur' : '') + '"><span class="pm-colors"><em>' + tCost('pm_box') + '</em>' + pm.boxColorsOfTier(c.box).slice(0, 5).map((x) => cpSwatch(x, 16)).join('') + '<small>' + cpTierLabel(st, c.box) + '</small>'
+      + (c.front != null ? '<em>' + tCost('pm_front') + '</em>' + pm.frontColorsOfTier(c.front).slice(0, 5).map((x) => cpSwatch(x, 16)).join('') + '<small>' + cpTierLabel(st, c.front) + '</small>' : '') + '</span>'
+      + '<b>' + cpMoney(c.total) + '</b><small class="' + (d < -0.5 ? 'menos' : d > 0.5 ? 'mais' : '') + '">' + (cur ? tCost('matrix_current') : (d > 0 ? '+' : '') + cpMoney(d)) + '</small></li>';
+  });
+  h += '</ol></section>';
+  return h;
 }
 
 function renderCostPlanBudget() {

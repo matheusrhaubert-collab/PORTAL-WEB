@@ -5341,3 +5341,25 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-cost-matrix td.cur { background: #fff4d6; outline: 2px solid #e8aa1e; outline-offset: -2px; }
 .po-cost-matrix td.menos small { color: #2e7d32; } .po-cost-matrix td.mais small { color: #b26a00; }
 .po-cost-matrix td.na { color: var(--muted); }
+/* Tabela de preços caixa × porta (13/10) */
+.po-cost-swatch { display: inline-block; border-radius: 4px; overflow: hidden; border: 1px solid rgba(0,0,0,.15); vertical-align: middle; margin: 1px; }
+.po-cost-swatch img, .po-cost-swatch span { display: block; width: 100%; height: 100%; object-fit: cover; }
+.po-cost-swatches { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; margin-top: 4px; max-width: 120px; }
+.po-cost-tier-h { font-size: 11px; font-weight: 700; white-space: nowrap; }
+.po-cost-pm-table th.rowh { text-align: left; min-width: 130px; }
+.po-cost-pm-table th.rowh .po-cost-swatches { justify-content: flex-start; }
+.po-cost-pm-table th.corner { font-size: 10px; color: var(--muted); font-weight: 600; text-align: left; }
+.po-cost-pm-table td b { font-size: 13px; }
+.po-cost-pm-list-title { margin: 14px 0 6px !important; }
+.po-cost-pm-list { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.po-cost-pm-list li { display: grid; grid-template-columns: 1fr 80px 70px; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.po-cost-pm-list li.cur { background: #fff4d6; border-color: #e8aa1e; }
+.po-cost-pm-list .pm-colors { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.po-cost-pm-list .pm-colors em { font-style: normal; font-size: 10px; color: var(--muted); margin-left: 6px; }
+.po-cost-pm-list .pm-colors small { color: var(--muted); font-size: 10px; margin-right: 4px; }
+.po-cost-pm-list li > b { text-align: right; font-size: 13px; }
+.po-cost-pm-list li > small { text-align: right; }
+.po-cost-more { border-top: 1px solid var(--border); padding-top: 10px; }
+.po-cost-more > summary { cursor: pointer; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
+.po-cost-more[open] > summary { color: var(--text); }
+.po-cost-more > section + section { margin-top: 18px; }
