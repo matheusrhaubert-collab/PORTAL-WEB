@@ -227,48 +227,95 @@ function projectPhotoMainWallIndex(room) {
   return best;
 }
 
-// Cantos: em L/U, a corrida de uma parede vai até o canto e a da próxima
-// começa depois da profundidade dela. Se a IA sobrepôs, empurra o módulo da
-// parede SEGUINTE pra fora do canto (só cantos 60–120°).
+// Cantos: em L/U, nada pode ficar no canto com móvel da outra parede NA
+// FRENTE dele (não abre, não funciona). 1ª versão só olhava um sentido —
+// módulo que CHEGAVA no fim da parede i empurrava o da parede i+1 — e
+// deixava passar o caso inverso (13/10, Matt, print: geladeira encostada
+// no canto da parede i+1 com os balcões da parede i parando um pouco antes
+// do fim, mas na frente dela: "a IA não pode colocar nada no canto com
+// móvel na frente... deve deixar espaço").
+// Agora é a sobreposição real em PLANTA (canto côncavo 60–120°, tratado
+// como 90°), na mesma faixa de altura:
+//   A (parede i)   ocupa ao longo de i: distância do canto [Li−x−w, Li−x];
+//                  e pra dentro (= ao longo de i+1): [off, off+prof]
+//   B (parede i+1) ocupa ao longo de i+1: [x, x+w]; pra dentro (= ao longo
+//                  de i, a partir do canto): [off, off+prof]
+// Bateu nos dois eixos → um sai do canto. Quem fica: o módulo de canto de
+// verdade (nunca é empurrado); senão o mais BAIXO (bancada/balcão fica, a
+// torre/geladeira/armário alto anda — é o que dá pra usar); empate → fica o
+// da parede i (regra antiga). Quem anda, anda o necessário pra sair da
+// frente, e a corrida dele vai junto em cascata.
+const PROJECT_PHOTO_TALL_MM = 1100;
 function projectPhotoFixCorners(items, walls, warnings) {
+  const faixa = (a, b) => a.floor_height_mm < b.floor_height_mm + b.height_mm && b.floor_height_mm < a.floor_height_mm + a.height_mm;
+  const sobrep = (a0, a1, b0, b1) => a0 < b1 - 1 && b0 < a1 - 1;
+  const alto = (it) => it.height_mm >= PROJECT_PHOTO_TALL_MM;
   for (let i = 0; i < walls.length - 1; i++) {
     const ang = Number(walls[i].angle_to_next_deg);
     if (!(ang >= 60 && ang <= 120)) continue;
-    const Li = walls[i].length_mm;
-    const noFim = items.filter((it) => it.layer !== 'floor' && it.wall_index === i && it.x_mm + it.width_mm >= Li - 30);
-    items.filter((it) => it.layer !== 'floor' && it.wall_index === i + 1).forEach((it) => {
-      let need = 0;
-      noFim.forEach((o) => {
-        const sobrepoeAltura = it.floor_height_mm < o.floor_height_mm + o.height_mm && o.floor_height_mm < it.floor_height_mm + it.height_mm;
-        if (sobrepoeAltura) need = Math.max(need, (o.wall_offset_mm || 0) + o.depth_mm);
-      });
-      if (need > 0 && it.x_mm < need - 1) {
-        const novo = Math.round(need);
-        if (novo + it.width_mm <= walls[i + 1].length_mm + 1) {
-          warnings.push(tPhoto('warn_corner_shift', { label: it.label, mm: novo }));
-          it.x_mm = novo;
-          it._empurrado = true;
-        } else {
-          warnings.push(tPhoto('warn_corner_conflict', { label: it.label }));
+    const Li = walls[i].length_mm, Lj = walls[i + 1].length_mm;
+    const daI = () => items.filter((it) => it.layer !== 'floor' && it.wall_index === i);
+    const daJ = () => items.filter((it) => it.layer !== 'floor' && it.wall_index === i + 1);
+    // cascata: depois de mover `mov`, quem da mesma parede/faixa ficou por
+    // cima dele anda junto (pra longe do canto)
+    const cascataJ = (mov) => {
+      let fim = mov.x_mm + mov.width_mm;
+      daJ().filter((o) => o !== mov && faixa(o, mov) && o.x_mm >= mov.x_mm - 1).sort((p, q) => p.x_mm - q.x_mm).forEach((o) => {
+        if (o.x_mm < fim - 1) {
+          if (fim + o.width_mm <= Lj + 1) o.x_mm = Math.round(fim);
+          else warnings.push(tPhoto('warn_corner_conflict', { label: o.label }));
         }
-      }
-    });
-    // Empurrar o 1º módulo da corrida não pode fazê-lo invadir o vizinho:
-    // a corrida inteira anda junto (mesma faixa de altura), em cascata.
-    const daParede = items.filter((it) => it.layer !== 'floor' && it.wall_index === i + 1).sort((a, b) => a.x_mm - b.x_mm);
-    daParede.forEach((a) => {
-      if (!a._empurrado) return;
-      daParede.forEach((b) => {
-        if (b === a || b.x_mm < a.x_mm) return;
-        const mesmaFaixa = b.floor_height_mm < a.floor_height_mm + a.height_mm && a.floor_height_mm < b.floor_height_mm + b.height_mm;
-        const fimA = a.x_mm + a.width_mm;
-        if (mesmaFaixa && b.x_mm < fimA - 1) {
-          if (fimA + b.width_mm <= walls[i + 1].length_mm + 1) { b.x_mm = Math.round(fimA); b._empurrado = true; }
-          else warnings.push(tPhoto('warn_corner_conflict', { label: b.label }));
-        }
+        fim = Math.max(fim, o.x_mm + o.width_mm);
       });
-    });
-    daParede.forEach((it) => { delete it._empurrado; });
+    };
+    const cascataI = (mov) => {
+      let ini = mov.x_mm;
+      daI().filter((o) => o !== mov && faixa(o, mov) && o.x_mm + o.width_mm <= mov.x_mm + mov.width_mm + 1).sort((p, q) => q.x_mm - p.x_mm).forEach((o) => {
+        if (o.x_mm + o.width_mm > ini + 1) {
+          const novo = Math.round(ini - o.width_mm);
+          if (novo >= 0) o.x_mm = novo;
+          else warnings.push(tPhoto('warn_corner_conflict', { label: o.label }));
+        }
+        ini = Math.min(ini, o.x_mm);
+      });
+    };
+    // repete até não sobrar conflito (cada movimento pode criar outro)
+    for (let volta = 0; volta < 6; volta++) {
+      let mexeu = false;
+      daI().forEach((A) => {
+        daJ().forEach((B) => {
+          if (!faixa(A, B)) return;
+          const aLongoI = [Li - A.x_mm - A.width_mm, Li - A.x_mm];
+          const aDentro = [A.wall_offset_mm || 0, (A.wall_offset_mm || 0) + A.depth_mm];
+          const bLongoJ = [B.x_mm, B.x_mm + B.width_mm];
+          const bDentro = [B.wall_offset_mm || 0, (B.wall_offset_mm || 0) + B.depth_mm];
+          if (!(sobrep(aLongoI[0], aLongoI[1], bDentro[0], bDentro[1]) && sobrep(aDentro[0], aDentro[1], bLongoJ[0], bLongoJ[1]))) return;
+          const cantoA = projectPhotoIsCorner(A), cantoB = projectPhotoIsCorner(B);
+          let moveB;
+          if (cantoA !== cantoB) moveB = cantoA;
+          else if (alto(A) !== alto(B)) moveB = alto(B);
+          else moveB = true;
+          if (moveB) {
+            const novo = Math.round(aDentro[1]);
+            if (novo + B.width_mm <= Lj + 1) {
+              warnings.push(tPhoto('warn_corner_shift', { label: B.label, mm: novo }));
+              B.x_mm = novo; cascataJ(B); mexeu = true;
+            } else {
+              warnings.push(tPhoto('warn_corner_conflict', { label: B.label }));
+            }
+          } else {
+            const novo = Math.round(Li - bDentro[1] - A.width_mm);
+            if (novo >= 0) {
+              warnings.push(tPhoto('warn_corner_shift', { label: A.label, mm: novo }));
+              A.x_mm = novo; cascataI(A); mexeu = true;
+            } else {
+              warnings.push(tPhoto('warn_corner_conflict', { label: A.label }));
+            }
+          }
+        });
+      });
+      if (!mexeu) break;
+    }
   }
 }
 
@@ -530,12 +577,59 @@ function projectPhotoInteriorTree(spec, cat, zona, comp, warnings, label) {
   return root;
 }
 
+// INTERIOR DE MÓDULO CASADO COM O CATÁLOGO (13/10, Matt, print de um
+// módulo alto aberto saindo vazio: "se tiver prateleiras pode colocar via
+// construtor, conforme o número na foto ou PDF. não deixar os vãos vazios
+// quando tem interno"). Mesmos internos do closet (prateleira fixa,
+// divisória, gaveta, cabide), mas SEM porta — o módulo do catálogo já traz
+// as dele.
+const PROJECT_PHOTO_INTERIOR_GENERIC = {
+  acc: {
+    split_x: 'Lateral Divisoria',
+    shelf: 'Prateleira fixa',
+    drawer: 'Drawer',
+    hanger: 'Cabide tubular'
+  }
+};
+// kinds que nunca recebem interior (não são caixa)
+const PROJECT_PHOTO_NO_INTERIOR_RE = /panel|filler|floating_shelf|appliance|fridge|range|oven|hood|dishwasher|microwave|tv|sofa|column|beam|countertop/i;
+function projectPhotoMatchedInterior(v, heightMm) {
+  if (!v || PROJECT_PHOTO_NO_INTERIOR_RE.test(String(v.kind || ''))) return null;
+  const cols = (v.interior && Array.isArray(v.interior.columns) ? v.interior.columns : [])
+    .filter((c) => c && Array.isArray(c.zones) && c.zones.some((z) => z && z.type !== 'open' || (z && Number(z.count) > 0)));
+  if (cols.length) {
+    return { columns: cols.map((c) => Object.assign({}, c, { doors: 'none', doors_cover: 'all' })) };
+  }
+  // Aberto (sem porta/gaveta) e sem descrição do interior: prateleiras a
+  // cada ~350 mm — vão vazio num nicho/estante quase nunca é o que existe.
+  const aberto = (Number(v.doors) || 0) === 0 && (Number(v.drawers) || 0) === 0
+    && (v.kind === 'open_shelf' || /abert|open/i.test(String(v.front_style || '')));
+  const h = Number(heightMm) || Number(v.height_mm) || 0;
+  if (aberto && h >= 600) {
+    const n = Math.max(1, Math.round(h / 350) - 1);
+    return { columns: [{ width_mm: v.width_mm, zones: [{ type: 'shelves', height_mm: h, count: n }], doors: 'none', doors_cover: 'all' }], _padrao: true };
+  }
+  return null;
+}
+// O módulo já tem prateleira/gaveta própria no cadastro? Aí não mexe —
+// senão dobra o interior.
+function projectPhotoSlotHasOwnInterior(slot) {
+  const bd = (slot && slot.result && slot.result.breakdown) || [];
+  const tem = (lista) => lista.some((pc) => pc && (/prateleira|shelf|gaveta|drawer|divis/i.test(String(pc.name || pc.reference || pc.component_name || ''))
+    || (pc.is_module && tem(pc.child_breakdown || []))));
+  return tem(bd);
+}
+
 // Aplica o interior no slot recém-criado (caixa crua) — o mesmo caminho do
 // botão "Salvar" do configurador (applyProjectBuilderToSlot, portal-07).
 async function projectPhotoApplyInterior(slot, it, warnings) {
   if (typeof LayoutEngine === 'undefined' || typeof loadProjectBuilderCatalog !== 'function') return;
-  const comp = PROJECT_PHOTO_COMPOSITIONS[it.composition];
+  const comp = PROJECT_PHOTO_COMPOSITIONS[it.composition] || (it.composition ? null : PROJECT_PHOTO_INTERIOR_GENERIC);
   if (!comp) return;
+  if (!it.composition) {
+    if (slot.layout) return; // módulo já veio com árvore de vãos própria
+    if (projectPhotoSlotHasOwnInterior(slot)) return;
+  }
   const carregado = await loadProjectBuilderCatalog(slot.module.id);
   const cat = (carregado && carregado.cat) || {};
   const zona = computeProjectSlotInnerZone(slot);
@@ -592,6 +686,9 @@ function projectPhotoPaintComposition(slot, it, warnings) {
   try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[foto-projeto] cor:', e); }
 }
 
+// Ripado: peça máxima de 900 mm, o resto vira emenda (ver projectPhotoBuildItems).
+const PROJECT_PHOTO_SLAT_MAX_MM = 900;
+const PROJECT_PHOTO_SLAT_RE = /ripad|slat|ripa\b/i;
 function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   const byId = new Map(catalog.map((m) => [m.id, m]));
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
@@ -613,16 +710,35 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
       if (x_mm > lim + 1) warnings.push(tPhoto('warn_moved_into_wall', { label: raw.label || m.name }));
       x_mm = clampNum(x_mm, 0, lim);
     }
-    if (Number(raw.width_mm) > (m.w[2] || Infinity) + 0.5) warnings.push(tPhoto('warn_clamped', { label: raw.label || m.name, axis: 'L', mm: m.w[2] }));
-    items.push({
-      include: true, order: idx,
-      volume_id: v.id, kind: v.kind, layer: v.layer, wall_index: v.wall_index,
-      wall_offset_mm: v.wall_offset_mm || 0, facing: v.facing,
-      module_id: m.id, module_name: m.name,
-      label: String(raw.label || v.label || m.name),
-      x_mm, width_mm, height_mm, depth_mm, floor_height_mm,
-      color_name: raw.color_name || null
-    });
+    // RIPADO EM PEDAÇOS DE ATÉ 900 mm, COM EMENDA (13/10, Matt: "quando a
+    // IA cria a partir do PDF ou foto, os ripados devem ir no máximo até
+    // 900mm e deve fazer emenda"). A largura LIDA (antes do clamp do
+    // catálogo) é dividida em N peças iguais ≤ 900 mm, encostadas uma na
+    // outra a partir do mesmo x — o comprimento total do ripado na parede
+    // continua o que a IA leu.
+    const larguraLida = Number(raw.width_mm) || width_mm;
+    const ripado = v.kind === 'slat_panel' || PROJECT_PHOTO_SLAT_RE.test(String(m.name || '')) || PROJECT_PHOTO_SLAT_RE.test(String(raw.label || ''));
+    const nPecas = ripado && larguraLida > PROJECT_PHOTO_SLAT_MAX_MM + 0.5 ? Math.ceil(larguraLida / PROJECT_PHOTO_SLAT_MAX_MM) : 1;
+    if (nPecas === 1 && Number(raw.width_mm) > (m.w[2] || Infinity) + 0.5) warnings.push(tPhoto('warn_clamped', { label: raw.label || m.name, axis: 'L', mm: m.w[2] }));
+    if (nPecas > 1) warnings.push(tPhoto('warn_slat_split', { label: raw.label || m.name, n: nPecas, mm: PROJECT_PHOTO_SLAT_MAX_MM }));
+    const largPeca = nPecas > 1 ? clampNum(Math.floor(larguraLida / nPecas), m.w[0], Math.min(m.w[2] || Infinity, PROJECT_PHOTO_SLAT_MAX_MM)) : width_mm;
+    let xBase = Number(raw.x_mm);
+    if (nPecas > 1 && v.layer !== 'floor') xBase = clampNum(xBase, 0, Math.max(wall.length_mm - largPeca * nPecas, 0));
+    for (let k = 0; k < nPecas; k++) {
+      items.push({
+        include: true, order: idx + k / 100,
+        volume_id: v.id, kind: v.kind, layer: v.layer, wall_index: v.wall_index,
+        wall_offset_mm: v.wall_offset_mm || 0, facing: v.facing,
+        module_id: m.id, module_name: m.name,
+        label: String(raw.label || v.label || m.name) + (nPecas > 1 ? ' · ' + (k + 1) + '/' + nPecas : ''),
+        x_mm: nPecas > 1 ? xBase + k * largPeca : x_mm,
+        width_mm: largPeca, height_mm, depth_mm, floor_height_mm,
+        color_name: raw.color_name || null,
+        // interior lido (prateleiras/divisórias/gavetas internas) — montado
+        // pelo construtor depois de criar o slot (ver projectPhotoApplyInterior)
+        interior: nPecas > 1 || ripado ? null : projectPhotoMatchedInterior(v, height_mm)
+      });
+    }
   });
   // Composições por caixa crua (closet…): não passaram pelo casamento —
   // só a cor (match.direct_colors: caixa + frentes).
@@ -1273,7 +1389,8 @@ async function projectPhotoApplyState(st) {
     // posição Z — é serializado, salva e recarrega).
     if (it.layer === 'front' && it.wall_offset_mm > 0) slot.fineOffsetZMm = Math.round(it.wall_offset_mm);
     // Caixa crua de composição (closet…): interior pelo configurador.
-    if (it.composition && it.interior) {
+    if (it.interior) {
+      if (!it.composition && it.interior._padrao) warnings.push(tPhoto('warn_interior_open_default', { label: it.label }));
       try { await projectPhotoApplyInterior(slot, it, warnings); }
       catch (e) { console.error('[foto-projeto] interior falhou:', e); warnings.push(tPhoto('warn_insert_failed', { label: it.label + ' (interior)' })); }
     }

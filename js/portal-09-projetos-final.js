@@ -2015,6 +2015,17 @@ async function showLoggedIn(user) {
   // preenchido pra saber se existe módulo com função cadastrada.
   await loadProjectAiConfig();
   await loadDraftOrderIfAny();
+  // Primeira tela ao entrar = Projetos (pedido do Matt, 13/10: "quando entro
+  // no portal a primeira página deve ser a de projects"). Só troca se ainda
+  // está na aba padrão do HTML (Novo Orçamento) — link compartilhado/galeria
+  // que já levou pra outra aba não é atropelado. Clique de verdade no botão
+  // pra passar pelo listener das abas (tela larga, biblioteca e canvas), e
+  // DEPOIS de loadModules, senão a biblioteca nasce vazia.
+  const abaAtiva = document.querySelector('#po-sidebar .portal-tab-btn.active');
+  if (!abaAtiva || abaAtiva.dataset.tab === 'po-tab-new-order') {
+    const projBtn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-projects"]');
+    if (projBtn && projBtn.style.display !== 'none') projBtn.click();
+  }
 }
 
 document.getElementById('po-show-signup').addEventListener('click', (e) => {
