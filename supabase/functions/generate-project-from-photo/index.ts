@@ -196,6 +196,21 @@ async function callGemini(apiKey: string, tier: "pro" | "flash", parts: any[], s
   throw new HttpError(502, `A IA não devolveu uma resposta utilizável (${lastErr}).`, "no_result");
 }
 
+// ==========================================================================
+// SKILL LEGNO — MÓVEL SUSPENSO (14/10, Matt, print de vanity suspenso do
+// Promob: "quando temos um movel que nao esta enconstado no chao, nunca usar
+// pra substituir um movel com rodape. de preferencia usar sempre um
+// stretcher em cima e base embaixo. com fundo. usar sempre o modulo do
+// construtor e criar a solucao mais semelhante a original, neste caso suas
+// gavetas"). Texto ÚNICO, injetado em todos os prompts que escolhem módulo
+// (leitura, casamento, editar, importador Promob/2020). No portal, a
+// leitura manda o suspenso pra composição 'suspenso' (caixa crua + Construtor,
+// js/portal-11-foto-projeto.js) — este texto cobre o resto.
+const SKILL_SUSPENSO = `MÓVEL SUSPENSO (regra da marcenaria — vale mais que semelhança de nome):
+- Suspenso = base/gaveteiro/pia/vanity cujo corpo NÃO encosta no chão (vão livre por baixo, o piso passa por baixo dele). Rodapé recuado (faixa fechada até o chão, recuada) NÃO é suspenso.
+- Suspenso NUNCA vira módulo com rodapé/toe/plinth/pés ("Toe", "Plastic feets", rodapé). A solução certa é caixa SEM rodapé: stretcher em cima, base embaixo, COM fundo, e o interior montado no Construtor reproduzindo o original (mesmo número de colunas e de gavetas/portas).
+- Sem módulo assim no catálogo: deixe sem módulo (unmatched / null) com o motivo — nunca troque por um módulo de rodapé.`;
+
 class HttpError extends Error {
   constructor(public status: number, message: string, public code: string) { super(message); }
 }
@@ -394,6 +409,7 @@ Cada corpo de móvel ou equipamento, um por item, em ordem: primeiro tudo que en
 - wall_index: parede em que encosta. Para volume no piso (ilha, mesa), a parede de referência paralela mais próxima.
 - x_mm: do início da parede até a borda esquerda do volume (para ilha: projeção da borda esquerda sobre essa parede).
 - floor_height_mm: do chão até a base do corpo (base no chão = 0; aéreo = altura da base do aéreo; prateleira = altura da prateleira).
+- MÓVEL SUSPENSO x RODAPÉ: se dá pra ver o piso/sombra passando POR BAIXO do corpo (vão livre, sem faixa fechada até o chão), é suspenso → floor_height_mm = altura desse vão (tipicamente 150–400). Rodapé recuado (toe kick: faixa fechada e recuada até o chão) NÃO é suspenso → floor_height_mm = 0. Em base/gaveteiro/pia/vanity SUSPENSO preencha SEMPRE "interior": uma coluna por pilha vertical de frentes (width_mm de cada uma), zones de baixo pra cima — "drawers" com count = nº de gavetas daquela coluna, ou "open"/"shelves" se for porta/nicho; doors = "hinged" quando a coluna tem porta.
 - height_mm/width_mm/depth_mm: do CORPO. Base de cozinha: altura do corpo SEM o tampo (o tampo é volume separado kind="countertop").
 - wall_offset_mm: distância da parede até as COSTAS do volume. 0 para tudo encostado. Para layer="front", quanto ele fica afastado da parede (ex.: prateleira na frente de painel ripado de 30 mm = 30). Para layer="floor", distância da parede de referência até as costas da ilha.
 - facing (só piso): "into_room" se a frente olha pro centro do ambiente (costas pra parede de referência), "toward_wall" se a frente olha pra parede.
@@ -614,6 +630,7 @@ REGRAS:
 7. COR: color_name da lista, pelo aspecto (color_description + foto). Peças iguais na foto = mesmo nome de cor.
 8. "notes": 1–3 frases. "label" e "reason" em ${langName(b.lang)}.
 9. CAIXAS CRUAS (lista própria abaixo — closet, armário montado pelo configurador): NÃO viram items. Para CADA uma, um item em "direct_colors": color_name = cor da CAIXA (laterais, prateleiras); front_color_name = cor das PORTAS/FRENTES DE GAVETA (igual à caixa se não houver diferença visível ou se for aberto). Use o acabamento escrito (color_description) e a imagem; mesmos móveis = mesmas cores. Nunca deixe vazio: na dúvida, a cor mais próxima da lista. Lista vazia → direct_colors = [].
+10. ${SKILL_SUSPENSO.replace(/\n/g, "\n    ")}
 
 VOLUMES MEDIDOS:
 ${vols || "(nenhum)"}
@@ -877,6 +894,7 @@ REGRAS:
 8. Trocar cores sem cor específica ("trocar as cores", "deixa mais claro"): escolha cores coerentes das color_options e explique no reason.
 9. O que não dá pra fazer com essas operações (ex.: mexer no interior de um módulo builder=true, mexer em parede, mudar puxador) vai em not_done com o motivo — não invente operação.
 10. A ordem das operações é a ordem de execução: primeiro resize/replace, depois move dos vizinhos, por último add.
+11. ${SKILL_SUSPENSO.replace(/\n/g, "\n    ")}
 
 PROJETO (JSON):
 ${JSON.stringify(b.project || {})}
@@ -980,6 +998,8 @@ Regras:
 - confidence: "high" = mesmo tipo e as medidas cabem; "medium" = mesmo tipo mas alguma medida fora do intervalo ou nome ambíguo; "low" = dúvida real.
 - reasoning: 1 frase curta em português dizendo por quê.
 - Devolva exatamente um item em "matches" por tipo, com o type_key igual ao recebido.
+- Tipo de base/gaveteiro/pia/vanity com "z" (altura do chão) ≥ 50 mm em "sizes" é SUSPENSO:
+${SKILL_SUSPENSO}
 
 TIPOS (um JSON por linha):
 ${tipos}

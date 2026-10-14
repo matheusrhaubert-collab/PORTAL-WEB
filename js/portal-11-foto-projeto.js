@@ -451,6 +451,31 @@ function projectPhotoCheckOpenings(items, openings, warnings) {
 // no ERP depois, esta constante vira o default de quando a tabela estiver
 // vazia.
 const PROJECT_PHOTO_COMPOSITIONS = {
+  // MÓVEL SUSPENSO (14/10, Matt, vanity suspenso do Promob: "quando temos um
+  // movel que nao esta enconstado no chao, nunca usar pra substituir um movel
+  // com rodape. de preferencia usar sempre um stretcher em cima e base
+  // embaixo. com fundo. usar sempre o modulo do construtor e criar a solucao
+  // mais semelhante a original, neste caso suas gavetas"). Base/gaveteiro/
+  // pia/vanity com o corpo fora do chão (projectPhotoIsSuspended) vai SEMPRE
+  // pela caixa crua sem rodapé + Construtor — nunca pelo casamento (que
+  // poderia escolher um módulo com Toe). A caixa é achada pelo nome exato
+  // (carcass) ou, se não existir com esse nome, pelo padrão carcassMatch
+  // (Stretcher + base + fundo, SEM Toe/pé) — ver projectPhotoCarcassModule.
+  // Sem caixa nenhuma: cai no casamento normal, onde a mesma regra está no
+  // prompt (SKILL_SUSPENSO, generate-project-from-photo).
+  suspenso: {
+    kinds: ['vanity', 'base_cabinet', 'sink_base', 'drawer_base', 'other'],
+    carcass: 'Bottom · Stretcher · Back',
+    carcassMatch: (nome) => /stretcher/i.test(nome) && /back|fundo/i.test(nome) && /bottom|base/i.test(nome)
+      && !/toe|feet|p[ée]s?\b|plinth|rodap/i.test(nome),
+    acc: {
+      split_x: 'Lateral Divisoria',
+      shelf: 'Prateleira fixa',
+      drawer: 'Drawer',
+      door: 'Porta Giro Externa',
+      flap: 'Basculante Inverso'
+    }
+  },
   closet: {
     kinds: ['closet_tower', 'closet_drawer_unit', 'wardrobe'],
     carcass: 'Bottom · Toe 3 · Back',
@@ -469,20 +494,50 @@ const PROJECT_PHOTO_COMPOSITIONS = {
 // coluna (montagem: caixa larga e alta não passa por porta/corredor).
 const PROJECT_PHOTO_SPLIT_TALL_MM = 1200;
 
+// Suspenso: corpo de base (até ~1,1 m de altura) com a base a pelo menos
+// 50 mm do chão e abaixo de 1 m (acima disso é aéreo/espelheira, outro caso).
+const PROJECT_PHOTO_SUSPENDED_MIN_MM = 50;
+function projectPhotoIsSuspended(v) {
+  const fh = Number(v && v.floor_height_mm) || 0;
+  return fh >= PROJECT_PHOTO_SUSPENDED_MIN_MM && fh < 1000 && (Number(v.height_mm) || 0) < 1100;
+}
 function projectPhotoCompositionOf(v) {
-  return Object.keys(PROJECT_PHOTO_COMPOSITIONS).find((k) => PROJECT_PHOTO_COMPOSITIONS[k].kinds.includes(v.kind)) || null;
+  if (projectPhotoIsSuspended(v) && PROJECT_PHOTO_COMPOSITIONS.suspenso.kinds.includes(v.kind)) return 'suspenso';
+  return Object.keys(PROJECT_PHOTO_COMPOSITIONS).find((k) => k !== 'suspenso' && PROJECT_PHOTO_COMPOSITIONS[k].kinds.includes(v.kind)) || null;
+}
+// Caixa crua da composição: nome exato primeiro; senão o padrão (se houver).
+function projectPhotoCarcassModule(comp, catalog) {
+  const c = PROJECT_PHOTO_COMPOSITIONS[comp];
+  if (!c) return null;
+  return catalog.find((m) => m.name === c.carcass)
+    || (c.carcassMatch ? catalog.find((m) => c.carcassMatch(String(m.name || ''))) : null)
+    || null;
 }
 // Volumes que vão pelo caminho "caixa crua + configurador" (se a caixa
 // existir no catálogo — senão caem no casamento normal, sem perder nada).
 function projectPhotoDirectVolumes(room, catalog) {
   return room.volumes.filter((v) => {
     const comp = projectPhotoCompositionOf(v);
-    return comp && v.layer !== 'floor' && catalog.some((m) => m.name === PROJECT_PHOTO_COMPOSITIONS[comp].carcass);
+    return comp && v.layer !== 'floor' && !!projectPhotoCarcassModule(comp, catalog);
   });
 }
 
 // Interior padrão quando a IA não descreveu (porta fechada, sem vista).
 function projectPhotoDefaultInterior(v) {
+  // Suspenso sem interior lido: gavetas em colunas de ~600 mm (o mais comum
+  // em vanity); porta de giro se a leitura viu porta e nenhuma gaveta.
+  if (projectPhotoCompositionOf(v) === 'suspenso') {
+    const nCols = Math.max(1, Math.round((Number(v.width_mm) || 600) / 600));
+    const gav = Number(v.drawers) || 0;
+    const porta = (Number(v.doors) || 0) > 0 && gav === 0;
+    const porCol = porta ? 0 : Math.max(1, Math.round((gav || 2 * nCols) / nCols));
+    const colW = Math.round((Number(v.width_mm) || 600) / nCols);
+    return { columns: Array.from({ length: nCols }, () => ({
+      width_mm: colW,
+      zones: porta ? [{ type: 'shelves', height_mm: v.height_mm, count: 1 }] : [{ type: 'drawers', height_mm: v.height_mm, count: porCol }],
+      doors: porta ? 'hinged' : 'none', doors_cover: 'all'
+    })) };
+  }
   if (v.kind === 'closet_drawer_unit') {
     return { columns: [{ width_mm: v.width_mm, zones: [{ type: 'drawers', height_mm: v.height_mm, count: Math.max(2, v.drawers || 3) }], doors: 'none', doors_cover: 'all' }] };
   }
@@ -745,7 +800,7 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   const corDireta = new Map((match.direct_colors || []).map((d) => [d.volume_id, d]));
   projectPhotoDirectVolumes(room, catalog).forEach((v) => {
     const comp = projectPhotoCompositionOf(v);
-    const m = catalog.find((c) => c.name === PROJECT_PHOTO_COMPOSITIONS[comp].carcass);
+    const m = projectPhotoCarcassModule(comp, catalog);
     const wall = room.walls[v.wall_index] || room.walls[0];
     const width_mm = clampNum(v.width_mm, m.w[0], m.w[2]);
     const height_mm = clampNum(v.height_mm, m.h[0], m.h[2]);
