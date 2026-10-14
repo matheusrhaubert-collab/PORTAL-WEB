@@ -1497,7 +1497,7 @@ async function runProjectPhotoBuild() {
 
 // ---------- Visibilidade: só administrador (pedido do Matt, 24/09) ----------
 async function refreshProjectAdminOnlyButtons() {
-  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn'];
+  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-ai-walls-btn'];
   let isAdmin = false;
   try {
     const { data: session } = await supabaseClient.auth.getSession();

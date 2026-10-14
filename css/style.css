@@ -5227,3 +5227,30 @@ body.po-view3d-guest #po-proj-tb-ia { display: none !important; }
    do ícone está menor do que a altura da caixa"). Com overflow-x:auto a
    barra corta o que passa da borda — o quadrinho encostava/passava 1px. */
 #po-proj-canvas-tools.po-proj-hud-tl { padding-top: 3px; padding-bottom: 5px; }
+
+/* Barras sobrepostas (13/10, Matt: "as barras se sobrepõem uma com outra,
+   fica confuso. deixa fundo opaco branco"). O topo do portal é sticky com
+   z-index 30 e a barra de ferramentas do Projetos herdou o mesmo 30 do
+   .po-proj-canvas-hud — empate, e quem vem depois no HTML (a barra) pintava
+   POR CIMA do topo ao rolar a página, e por cima do menu de configurações
+   (engrenagem), que mora dentro do topo. O topo sobe pra 500 (abaixo dos
+   modais, que são 3000+) com fundo branco sólido; a barra também fica
+   branca sólida em vez de transparente. */
+header.po-topnav { z-index: 500; background: #ffffff; }
+.po-topnav-settings-menu { background: #ffffff; z-index: 510; }
+#po-proj-canvas-tools.po-proj-hud-tl { background: #ffffff; }
+
+/* IA · Paredes (13/10) — janela reaproveita .po-dimview-modal + campos do
+   Dados do cliente (.po-client-field). */
+.po-ai-walls-card { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow-y: auto; }
+.po-ai-walls-body { display: flex; flex-direction: column; gap: 10px; }
+.po-ai-walls-intro { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.po-ai-walls-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.po-ai-walls-row select { font: inherit; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; }
+.po-ai-walls-status { font-size: 13px; color: var(--text); min-height: 1em; }
+.po-ai-walls-status.erro { color: #b3261e; }
+.po-ai-walls-svg { width: 100%; height: 280px; background: #faf9f6; border: 1px solid var(--border); border-radius: 10px; }
+.po-ai-walls-ceiling { margin: 4px 0 0; font-size: 13px; font-weight: 600; }
+.po-ai-walls-list { margin: 4px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.5; }
+.po-ai-walls-list span { color: var(--muted); font-size: 12px; }
+.po-ai-walls-notes { margin: 0; font-size: 12px; color: var(--muted); }

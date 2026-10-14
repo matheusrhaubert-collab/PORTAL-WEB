@@ -409,8 +409,24 @@ REGRAS:
 - Todas as medidas em mm, números. Coerência: a soma das larguras + vãos numa parede não pode passar do comprimento da parede; aéreo não pode passar do teto; nada fora da parede.
 - id dos volumes: "v1", "v2"… únicos.
 - label, notes, camera_notes, scale_notes e summary em ${langName(b.lang)}. "summary": 2–3 frases com a leitura do ambiente.
+${b.walls_only ? WALLS_ONLY_RULES : ""}
 Responda SOMENTE o JSON no schema pedido.`;
 }
+
+// MODO SÓ PAREDES (13/10, botão "IA · Paredes" do grupo Paredes do portal).
+// Matt: "uma IA que lê uma foto ou PDF e faz só as paredes, com janela e
+// portas. mas o foco é só paredes. lembrando que todas medições que aparecem
+// no desenho da foto devem ser consideradas por dentro, interno de uma parede
+// pra outra. então considerar a espessura da parede pra fora."
+// Vai no FIM do prompt de leitura e manda mais que os passos anteriores.
+const WALLS_ONLY_RULES = `
+MODO SÓ PAREDES (PRIORIDADE MÁXIMA — vale mais que tudo acima):
+- O usuário quer APENAS o levantamento do AMBIENTE: paredes, portas, janelas, passagens e pé-direito. "volumes" = [] (lista VAZIA). Não descreva móvel nenhum; o PASSO 4 não se aplica.
+- MEDIDAS INTERNAS: toda cota que aparece no desenho/foto é medida POR DENTRO do ambiente, da face interna de uma parede até a face interna da parede em frente/ao lado. length_mm de cada parede = essa medida interna, de canto interno a canto interno. NÃO some nem desconte espessura de parede — a espessura fica PRA FORA do ambiente.
+- Em PLANTA BAIXA: percorra o contorno interno COMPLETO do ambiente (todas as paredes, inclusive pilares, recuos e chanfros), andando encostado nelas por dentro, sempre no mesmo sentido, começando pela parede mais comprida. A soma dos lados opostos tem que fechar (num retângulo, parede 1 = parede 3 e parede 2 = parede 4); se não fechar, confie nas cotas parciais e explique em scale_notes.
+- Em FOTO: liste as paredes visíveis da esquerda pra direita, como já pedido; use as cotas escritas quando houver.
+- Aberturas: x_mm medido na face interna, do início da parede (no sentido do percurso) até a borda do VÃO; width_mm/height_mm do vão livre, sem guarnição; sill_mm = peitoril (porta/passagem = 0). Não esqueça nenhuma porta, janela ou passagem.
+- ceiling_mm: pé-direito cotado no desenho (corte/elevação) quando existir.`;
 
 const ZONE_TYPES = ["drawers", "shelves", "hanging", "open", "shoes"];
 function sanitizeInterior(raw: any, W: number, H: number) {
@@ -494,7 +510,7 @@ function sanitizeRead(raw: any, b: any) {
     camera_notes: String(raw?.camera_notes || "").slice(0, 800),
     scale_notes: String(raw?.scale_notes || "").slice(0, 800),
     ceiling_mm: Math.round(ceiling),
-    walls, openings, volumes,
+    walls, openings, volumes: b.walls_only ? [] : volumes,
     summary: String(raw?.summary || "").slice(0, 1000),
   };
 }
