@@ -1495,24 +1495,47 @@ async function runProjectPhotoBuild() {
   });
 })();
 
-// ---------- Visibilidade: só administrador (pedido do Matt, 24/09) ----------
+// ---------- Visibilidade dos botões restritos ----------
+// Antes (24/09): todos só administrador. 14/10, Matt: "libera todos
+// comandos de ia pra todos usuarios dealers" — os botões de IA passam a
+// aparecer pra administrador E dealer (user_profiles.role = 'lojista', o
+// mesmo critério de isDealer() no portal-05). Vendedor/contractor/cliente
+// continuam sem. As Edge Functions de IA não checam papel (só login), então
+// liberar aqui é o que basta.
+// Mapa de calor NÃO é IA (análise de custo) — continua só administrador.
+// 'po-proj-costplan-btn' (Análise de custo, portal-17) DESLIGADO por
+// enquanto (13/10, Matt: "desativar esse botão por enquanto, os filtros
+// ficaram realmente bons") — fica display:none no HTML. Pra religar, é só
+// devolver o id à lista de admin.
+const PROJECT_AI_BUTTON_IDS = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-importpromob-open-btn', 'po-proj-ai-walls-btn', 'po-proj-ai-edit-btn'];
+const PROJECT_ADMIN_ONLY_BUTTON_IDS = ['po-proj-heatmap-menu'];
 async function refreshProjectAdminOnlyButtons() {
-  // 'po-proj-costplan-btn' (Análise de custo, portal-17) DESLIGADO por
-  // enquanto (13/10, Matt: "desativar esse botão por enquanto, os filtros
-  // ficaram realmente bons") — fica display:none no HTML. Pra religar, é só
-  // devolver o id a esta lista.
-  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-importpromob-open-btn', 'po-proj-ai-walls-btn', 'po-proj-heatmap-menu', 'po-proj-ai-edit-btn'];
   let isAdmin = false;
+  let isDealerRole = false;
   try {
     const { data: session } = await supabaseClient.auth.getSession();
     if (session && session.session) {
       const { data, error } = await supabaseClient.rpc('is_admin');
       isAdmin = !error && data === true;
+      if (!isAdmin) {
+        // Lê o papel direto (o currentUserProfile do portal-05 pode ainda
+        // não ter carregado quando isto roda no login).
+        const uid = session.session.user && session.session.user.id;
+        if (uid) {
+          const { data: prof } = await supabaseClient.from('user_profiles').select('role').eq('user_id', uid).maybeSingle();
+          isDealerRole = !!prof && prof.role === 'lojista';
+        }
+      }
     }
   } catch (e) {
     isAdmin = false;
+    isDealerRole = false;
   }
-  ids.forEach((id) => {
+  PROJECT_AI_BUTTON_IDS.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = (isAdmin || isDealerRole) ? '' : 'none';
+  });
+  PROJECT_ADMIN_ONLY_BUTTON_IDS.forEach((id) => {
     const btn = document.getElementById(id);
     if (btn) btn.style.display = isAdmin ? '' : 'none';
   });
