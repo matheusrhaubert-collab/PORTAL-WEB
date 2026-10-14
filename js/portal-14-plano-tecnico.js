@@ -548,7 +548,7 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
     includeLoose: (o) => {
       const rel = o.position.clone().sub(P(0, 0));
       const a = rel.dot(along), n = rel.dot(into);
-      return a > -0.2 && a < W + 0.2 && n > -0.05 && n < 1.0;
+      return a > -0.2 && a < W + 0.2 && n > -0.05 && n < (wallGeo._depthM || 1.0);
     }
   });
 
@@ -572,7 +572,24 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
   const xL = Math.min(c0.x, c1.x), xR = Math.max(c0.x, c1.x);
   const yFloor = c0.y, yCeil = c1.y;
   // ilha: sem parede de fundo (não existe), só o piso
-  if (!wallGeo._island) {
+  if (wallGeo._wallRects) {
+    // VISTA GERAL (14/10): uma parede de fundo POR PAREDE do plano, cada uma
+    // com o seu pé-direito — o recorte entre elas mostra rebaixo/degrau.
+    wallGeo._wallRects.forEach((r) => {
+      const q0 = S(r.a0, 0), q1 = S(r.a1, r.ceil);
+      const rx = Math.min(q0.x, q1.x), rw = Math.abs(q1.x - q0.x), ry = q1.y, rh = q0.y - q1.y;
+      ctx.fillStyle = r.cut ? '#b9b4ac' : PT_COLOR_WALL;
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(rx, ry, rw, rh);
+      if (r.label) {
+        ctx.save(); ctx.font = ptFont(fs * 0.75, true); ctx.fillStyle = '#7a746b';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(r.label, rx + rw / 2, ry + fs * 0.35);
+        ctx.restore();
+      }
+    });
+  } else if (!wallGeo._island) {
     ctx.fillStyle = PT_COLOR_WALL;
     ctx.fillRect(xL, yCeil, xR - xL, yFloor - yCeil);
     ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5;
@@ -598,8 +615,9 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
   if (hideFronts) ptDrawPieces(ctx, ptPieceBoxesForWall(scene, wallGeo), S, fs);
   ptLine(ctx, { x: xL - fs, y: yFloor }, { x: xR + fs, y: yFloor }, '#222', 3);
 
-  // rótulos dos módulos (dentro do retângulo)
-  slots.forEach((s) => {
+  // rótulos dos módulos (dentro do retângulo) — a vista LATERAL não tem
+  // (os módulos se sobrepõem de lado e os nomes virariam um borrão)
+  if (!wallGeo._noLabels) slots.forEach((s) => {
     const a0 = Number(s.x_mm || 0) / 1000, a1 = a0 + Number(s.width_mm || 0) / 1000;
     const y0 = Number(s.floor_height_mm || 0) / 1000, y1 = y0 + Number(s.height_mm || 0) / 1000;
     const p0 = S(a0, y0), p1 = S(a1, y1);
@@ -613,26 +631,39 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
 
   // EMBAIXO 1: módulos de base + vãos
   const Wmm = W * 1000;
-  const low = chainPts(ptBounds(lowers, Wmm), 0);
+  // VISTA LATERAL (_noLabels): pontos a menos de 25 mm viram um só (painel
+  // fino de 1/16" não vira cota) e as paredes cortadas entram na corrente —
+  // o que interessa ali é frente dos móveis, rebaixo e parede.
+  const lateral = !!wallGeo._noLabels;
+  const juntar = (arr) => {
+    const v = arr.slice().sort((a, b) => a - b), out = [];
+    v.forEach((x) => { if (!out.length || x - out[out.length - 1] >= 25) out.push(x); });
+    if (v.length && out[out.length - 1] !== v[v.length - 1]) out[out.length - 1] = v[v.length - 1];
+    return out;
+  };
+  const paredesMm = lateral ? (wallGeo._wallRects || []).map((r) => Math.round(r.a0 * 1000)) : [];
+  // painel de parede (5 cm) não define plano — só módulo com fundura real
+  const fundos = (l) => l.filter((s) => Number(s.width_mm) >= 100);
+  const low = chainPts(lateral ? juntar(ptBounds(fundos(lowers), Wmm).concat(paredesMm)) : ptBounds(lowers, Wmm), 0);
   let used = ptDimChain(ctx, low.map((e) => e.p), { x: 0, y: 1 }, fs * 1.6, fs, { labels: ptChainLabels(segVals(low)) });
   // EMBAIXO 2: até o centro (℄) dos eletros/decoração apoiados no piso — ou
   // só o comprimento total da parede se não houver nenhum.
-  const centers = lowers.filter(ptIsDecor).map((s) => Math.round(Number(s.x_mm || 0) + Number(s.width_mm || 0) / 2));
+  const centers = lateral ? [] : lowers.filter(ptIsDecor).map((s) => Math.round(Number(s.x_mm || 0) + Number(s.width_mm || 0) / 2));
   const cl = chainPts(Array.from(new Set([0, Math.round(Wmm)].concat(centers))).sort((a, b) => a - b), 0);
   const centerSet = new Set(centers);
   // (pula a 2ª linha quando ela só repetiria a 1ª — um módulo só ocupando tudo)
-  if (centers.length || low.length > 2) used = ptDimChain(ctx, cl.map((e) => e.p), { x: 0, y: 1 }, used + fs * 1.3, fs, {
+  if (centers.length || (low.length > 2 && !lateral)) used = ptDimChain(ctx, cl.map((e) => e.p), { x: 0, y: 1 }, used + fs * 1.3, fs, {
     labels: ptChainLabels(segVals(cl)),
     marks: cl.map((e) => (centerSet.has(e.b) ? '℄' : null))
   });
   // EMBAIXO 3 (só se teve ℄): total da parede
-  if (centers.length) {
+  if (centers.length || lateral) {
     const tot = chainPts([0, Math.round(Wmm)], 0);
     ptDimChain(ctx, tot.map((e) => e.p), { x: 0, y: 1 }, used + fs * 1.6, fs, { labels: [ptFmt(Wmm)] });
   }
   // EM CIMA: aéreos + vãos (corrente sobre o teto)
   if (uppers.length) {
-    const up = chainPts(ptBounds(uppers, Wmm), ceil);
+    const up = chainPts(lateral ? juntar(ptBounds(fundos(uppers), Wmm).concat(paredesMm)) : ptBounds(uppers, Wmm), ceil);
     ptDimChain(ctx, up.map((e) => e.p), { x: 0, y: -1 }, fs * 1.6, fs, { labels: ptChainLabels(segVals(up)) });
   }
   // DIREITA: níveis a partir do piso (base, topo da base, base do aéreo…)
@@ -651,6 +682,188 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
   if (!wallGeo._island) ptDimChain(ctx, [S(leftA, ceil), S(leftA, 0)], { x: -1, y: 0 }, fs * 1.8, fs, { labels: [ptFmt(ceil * 1000)] });
 
   return out;
+}
+
+// ---------- VISTA GERAL (macro) — paredes no MESMO SENTIDO (14/10) ----------
+// Pedido do Matt (com o plano da SALA FABI: paredes 2, 4, 6 e 7 todas de
+// frente, em degraus, com rebaixos): "quando tem paredes no mesmo sentido e
+// o projeto continua no mesmo plano de vista, podendo ter rebaixos de
+// parede, desníveis, entende-se que a vista deve ser uma só, com todos os
+// móveis desse plano. olhar do macro, depois ir quebrando por paredes. logo
+// abaixo da planta baixa, uma vista cortada no macro, de frente e talvez de
+// lado dependendo se for interessante."
+//
+// Grupo = paredes cuja direção "pra dentro do ambiente" é a mesma (±10°),
+// com pelo menos 2 PAREDES com componente (ilha virada pro mesmo lado entra
+// junto, mas não conta) — com 1 parede só, a vista geral seria igual à
+// página da parede. Parede só com decoração (porta/janela) entra
+// no desenho quando está DENTRO do trecho do grupo (aí é contexto), nunca
+// sozinha.
+// A vista é uma "parede de mentira" (mesmo formato de getProjectWallGeometry,
+// igual às ilhas em ptIslandViews) no plano da parede mais ao fundo, com:
+//   _wallRects  um fundo cinza por parede real (cada uma no seu pé-direito)
+//   _slots      cópias dos slots com x/altura medidos no 3D no eixo comum
+//   _depthM     profundidade da vista (rodapé emendado entra no corte)
+const PT_SAME_DIR_DOT = 0.985; // cos(10°)
+function ptHasComponent(slots) { return (slots || []).some((s) => s && s.module && !ptIsDecor(s) && !ptIsVisualOnly(s)); }
+
+function ptGroupExtents(scene, ids, along, into) {
+  const corner = new THREE.Vector3();
+  const ext = [];
+  scene.children.forEach((g) => {
+    const ud = g.userData || {};
+    if (ud.slotId == null || !ids.has(ud.slotId)) return;
+    const slot = ptSlotById(ud.slotId);
+    if (!slot || ptIsVisualOnly(slot)) return;
+    let aMin = Infinity, aMax = -Infinity, yMin = Infinity, yMax = -Infinity, nMin = Infinity, nMax = -Infinity;
+    g.traverse((m) => {
+      if (!m.isMesh || !m.geometry || (m.userData && m.userData.isHitboxProxy)) return;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      const bb = m.geometry.boundingBox;
+      for (let k = 0; k < 8; k++) {
+        corner.set(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m.matrixWorld);
+        const a = corner.x * along.x + corner.z * along.z, n = corner.x * into.x + corner.z * into.z;
+        aMin = Math.min(aMin, a); aMax = Math.max(aMax, a); yMin = Math.min(yMin, corner.y); yMax = Math.max(yMax, corner.y);
+        nMin = Math.min(nMin, n); nMax = Math.max(nMax, n);
+      }
+    });
+    if (isFinite(aMin)) ext.push({ slot, aMin, aMax, yMin, yMax, nMin, nMax });
+  });
+  return ext;
+}
+
+function ptMacroViews(scene, walls, islandViews) {
+  scene.updateMatrixWorld(true);
+  const dirOf = (w) => new THREE.Vector3(w.intoDirX, 0, w.intoDirZ).normalize();
+  const unidades = []; // { kind:'wall'|'island', into, along, a0, a1, n, ids, wall?, ceil, comp }
+  walls.forEach((w) => {
+    const slots = ptWallSlots(w.wallIndex);
+    const into = dirOf(w);
+    const along = new THREE.Vector3(w.alongDirX, 0, w.alongDirZ).normalize();
+    unidades.push({ kind: 'wall', w, into, along, slots, comp: ptHasComponent(slots), ids: new Set(slots.map((s) => s.id)) });
+  });
+  (islandViews || []).forEach((v) => {
+    const slots = v._slots || [];
+    unidades.push({ kind: 'island', v, into: new THREE.Vector3(v.intoDirX, 0, v.intoDirZ).normalize(),
+      along: new THREE.Vector3(v.alongDirX, 0, v.alongDirZ).normalize(), slots, comp: ptHasComponent(slots), ids: v._ids || new Set() });
+  });
+  // agrupa por direção (só quem tem componente puxa grupo)
+  const grupos = [];
+  unidades.filter((u) => u.comp).forEach((u) => {
+    const g = grupos.find((x) => x.into.dot(u.into) > PT_SAME_DIR_DOT);
+    // eixo horizontal canônico (up × frente): esquerda→direita como quem olha de frente
+    if (g) g.membros.push(u); else grupos.push({ into: u.into.clone(), along: new THREE.Vector3(u.into.z, 0, -u.into.x), membros: [u] });
+  });
+  const views = [];
+  // vista geral só com 2+ PAREDES com móvel; ilha virada pro mesmo lado
+  // entra junto, mas sozinha (ou com 1 parede) não forma vista geral
+  grupos.filter((g) => g.membros.filter((u) => u.kind === 'wall').length >= 2).forEach((g) => {
+    const along = g.along, into = g.into;
+    // eixo comum: "along" do 1º membro; ponta de cada parede nesse eixo
+    const spanOf = (u) => {
+      if (u.kind === 'wall') {
+        const a = u.w.originX * along.x + u.w.originZ * along.z;
+        const b = a + u.w.widthM * (u.along.dot(along) >= 0 ? 1 : -1);
+        return { a0: Math.min(a, b), a1: Math.max(a, b), n: u.w.originX * into.x + u.w.originZ * into.z };
+      }
+      return null;
+    };
+    let A0 = Infinity, A1 = -Infinity;
+    const ids = new Set();
+    g.membros.forEach((u) => { u.ids.forEach((id) => ids.add(id)); const sp = spanOf(u); if (sp) { A0 = Math.min(A0, sp.a0); A1 = Math.max(A1, sp.a1); } });
+    // parede só de decoração / vazia DENTRO do trecho entra como contexto
+    const paredes = g.membros.filter((u) => u.kind === 'wall');
+    unidades.filter((u) => u.kind === 'wall' && !u.comp && u.into.dot(into) > PT_SAME_DIR_DOT).forEach((u) => {
+      const sp = spanOf(u);
+      if (sp && sp.a0 >= A0 - 0.01 && sp.a1 <= A1 + 0.01) { paredes.push(u); u.ids.forEach((id) => ids.add(id)); }
+    });
+    const ext = ptGroupExtents(scene, ids, along, into);
+    if (!ext.length) return;
+    A0 = Math.min(A0, ...ext.map((e) => e.aMin));
+    A1 = Math.max(A1, ...ext.map((e) => e.aMax));
+    const nParedes = paredes.map((u) => spanOf(u).n);
+    const N0 = Math.min(...nParedes.concat(ext.map((e) => e.nMin)));
+    const NF = Math.max(...ext.map((e) => e.nMax));
+    const ceilMax = Math.max(...paredes.map((u) => ptCeilingMm(u.w)), ...ext.map((e) => Math.round(e.yMax * 1000)));
+    const pseudo = ext.slice().sort((a, b) => a.aMin - b.aMin).map((e) => Object.assign({}, e.slot, {
+      x_mm: Math.round((e.aMin - A0) * 1000),
+      width_mm: Math.round((e.aMax - e.aMin) * 1000),
+      floor_height_mm: Math.max(0, Math.round(e.yMin * 1000)),
+      height_mm: Math.round((e.yMax - e.yMin) * 1000),
+      _frontN: e.nMax, _backN: e.nMin
+    }));
+    const openings = [];
+    paredes.forEach((u) => {
+      const sp = spanOf(u);
+      const dir = u.along.dot(along) >= 0 ? 1 : -1;
+      const base = u.w.originX * along.x + u.w.originZ * along.z;
+      (u.w.openings || []).forEach((o) => {
+        const x0 = base + dir * Number(o.x_mm || 0) / 1000, x1 = base + dir * (Number(o.x_mm || 0) + Number(o.width_mm || 0)) / 1000;
+        openings.push(Object.assign({}, o, { x_mm: Math.round((Math.min(x0, x1) - A0) * 1000) }));
+      });
+      sp.label = ptT('wall_label', { n: u.w.wallIndex + 1 });
+      sp.ceil = ptCeilingMm(u.w) / 1000;
+      u._sp = sp;
+    });
+    const wallRects = paredes.map((u) => ({ a0: u._sp.a0 - A0, a1: u._sp.a1 - A0, ceil: u._sp.ceil, label: u._sp.label, n: u._sp.n }))
+      .sort((a, b) => a.a0 - b.a0);
+    const front = {
+      wallIndex: -100 - views.length,
+      widthM: A1 - A0,
+      originX: along.x * A0 + into.x * N0,
+      originZ: along.z * A0 + into.z * N0,
+      alongDirX: along.x, alongDirZ: along.z,
+      intoDirX: into.x, intoDirZ: into.z,
+      openings,
+      _ceilMm: ceilMax,
+      _slots: pseudo,
+      _include: (gr) => ids.has(gr.userData.slotId),
+      _depthM: (NF - N0) + 0.3,
+      _wallRects: wallRects,
+      _nomes: paredes.map((u) => u.w.wallIndex + 1).sort((a, b) => a - b)
+    };
+    // VISTA LATERAL — só quando é "interessante": paredes em profundidades
+    // diferentes (rebaixo) ou frentes de móvel desalinhadas (aéreo mais raso,
+    // torre mais funda…). Câmera do lado +along, olhando o perfil.
+    const planos = (vals) => { const v = vals.slice().sort((a, b) => a - b); return v.length ? v[v.length - 1] - v[0] : 0; };
+    let lateral = null;
+    if (planos(nParedes) > 0.03 || planos(ext.map((e) => e.nMax)) > 0.03) {
+      const al2 = into.clone().multiplyScalar(-1);           // horizontal da vista = profundidade
+      const in2 = along.clone();                              // câmera no lado +along
+      const B0 = -NF;                                         // a2 = -n; menor = frente mais saliente
+      const pseudo2 = ext.map((e) => Object.assign({}, e.slot, {
+        x_mm: Math.round((-e.nMax - B0) * 1000),
+        width_mm: Math.round((e.nMax - e.nMin) * 1000),
+        floor_height_mm: Math.max(0, Math.round(e.yMin * 1000)),
+        height_mm: Math.round((e.yMax - e.yMin) * 1000)
+      }));
+      // cada parede do plano vira uma faixa de 10 cm (corte) na sua profundidade
+      const ESP = 0.1;
+      const rects2 = [];
+      paredes.forEach((u) => {
+        const x0 = -u._sp.n - B0;
+        if (!rects2.some((r) => Math.abs(r.a0 - x0) < 0.005)) rects2.push({ a0: x0, a1: x0 + ESP, ceil: u._sp.ceil, cut: true });
+      });
+      lateral = {
+        wallIndex: -200 - views.length,
+        widthM: (NF - N0) + ESP,
+        originX: al2.x * B0 + in2.x * A0,
+        originZ: al2.z * B0 + in2.z * A0,
+        alongDirX: al2.x, alongDirZ: al2.z,
+        intoDirX: in2.x, intoDirZ: in2.z,
+        openings: [],
+        _ceilMm: ceilMax,
+        _slots: pseudo2,
+        _include: (gr) => ids.has(gr.userData.slotId),
+        _depthM: (A1 - A0) + 0.3,
+        _wallRects: rects2,
+        _noLabels: true
+      };
+    }
+    views.push({ front, lateral, largura: A1 - A0 });
+  });
+  // a maior primeiro (é ela que vai embaixo da planta)
+  return views.sort((a, b) => b.largura - a.largura);
 }
 
 // ---------- PLANTA BAIXA ----------
@@ -822,7 +1035,7 @@ function ptPdfTxt(t) {
     .replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"')
     .replace(/[^\x00-\xff]/g, '');
 }
-function ptPdfPage(doc, st, canvas, title, subtitle, notes) {
+function ptPdfPage(doc, st, canvas, title, subtitle, notes, extra) {
   if (st.pages > 0) doc.addPage();
   st.pages++;
   const W = 279.4, H = 215.9, M = 10;
@@ -854,7 +1067,26 @@ function ptPdfPage(doc, st, canvas, title, subtitle, notes) {
   const noteLines = notes ? doc.splitTextToSize(notes, W - 2 * M) : [];
   const noteH = noteLines.length * 3.6;
   const boxY = 33, boxH = H - boxY - 10 - noteH - 3;
-  if (canvas) {
+  if (canvas && extra && extra.canvas) {
+    // DOIS desenhos na página (14/10): planta em cima, vista geral embaixo.
+    // Cada um cabe na largura; se a soma das alturas não couber, os dois
+    // encolhem na mesma proporção.
+    const capT = 5;
+    const r1 = Math.min((W - 2 * M) / canvas.width, 0.12);
+    const r2 = Math.min((W - 2 * M) / extra.canvas.width, 0.12);
+    let h1 = canvas.height * r1, h2 = extra.canvas.height * r2;
+    const k = Math.min(1, (boxH - capT - 3) / (h1 + h2));
+    h1 *= k; h2 *= k;
+    const w1 = canvas.width * r1 * k, w2 = extra.canvas.width * r2 * k;
+    const sobra = boxH - capT - 3 - h1 - h2;
+    const y1 = boxY + sobra / 3;
+    doc.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', (W - w1) / 2, y1, w1, h1);
+    const yCap = y1 + h1 + sobra / 3 + 3;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(43, 38, 33);
+    doc.text(extra.title || '', M, yCap);
+    doc.setTextColor(0);
+    doc.addImage(extra.canvas.toDataURL('image/jpeg', 0.9), 'JPEG', (W - w2) / 2, yCap + 2, w2, h2);
+  } else if (canvas) {
     // teto de escala: desenho pequeno (ilha de 1 módulo) não estoura a página
     // com texto gigante — mesma escala aproximada de uma parede de ~4 m
     const r = Math.min((W - 2 * M) / canvas.width, boxH / canvas.height, 0.12);
@@ -957,7 +1189,10 @@ async function generateProjectTechPlan() {
 
     const nums = ptNumberMap();
     const walls = getProjectWallGeometry();
-    const wallsWithModules = walls.filter((w) => ptWallSlots(w.wallIndex).length > 0);
+    // Só parede com COMPONENTE ganha página (14/10, Matt: "colocou uma porta,
+    // só uma porta. isso é desnecessário. quando está com outros móveis ok,
+    // mas sozinha não precisa, nem porta nem janela").
+    const wallsWithModules = walls.filter((w) => ptHasComponent(ptWallSlots(w.wallIndex)));
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
     const rawText = doc.text.bind(doc);
@@ -981,7 +1216,32 @@ async function generateProjectTechPlan() {
     await ptSleep(30);
     const islandViews = ptIslandViews(scene);
     const plan = ptRenderPlan(scene, walls, nums, islandViews);
-    if (plan) ptPdfPage(doc, st, plan, ptT('plan_title'), ptT('plan_sub'), ptT('notes_plan'));
+    // VISTA GERAL (macro): a maior vai na MESMA página, logo abaixo da planta;
+    // em seguida a mesma vista em corte (sem portas) e, se houver
+    // profundidades diferentes, a lateral. Depois, parede por parede.
+    let macros = [];
+    try { macros = ptMacroViews(scene, walls, islandViews); } catch (e) { console.warn('[plano técnico] vista geral', e); macros = []; }
+    const macroTitulo = (m) => ptT('macro_title', { walls: m.front._nomes.join(', ') });
+    let macroFront0 = null;
+    if (macros.length) {
+      ptStatus(ptT('step_macro'));
+      await ptSleep(30);
+      macroFront0 = ptRenderWall(scene, macros[0].front, nums, false);
+    }
+    if (plan) ptPdfPage(doc, st, plan, ptT('plan_title'), ptT('plan_sub'),
+      ptT('notes_plan') + (macroFront0 ? ' ' + ptT('notes_macro') : ''),
+      macroFront0 ? { canvas: macroFront0, title: macroTitulo(macros[0]) + ' — ' + ptT('with_fronts') } : null);
+    for (let i = 0; i < macros.length; i++) {
+      const m = macros[i];
+      await ptSleep(20);
+      if (i > 0) ptPdfPage(doc, st, ptRenderWall(scene, m.front, nums, false), macroTitulo(m), ptT('with_fronts'), ptT('notes_macro'));
+      await ptSleep(20);
+      ptPdfPage(doc, st, ptRenderWall(scene, m.front, nums, true), macroTitulo(m), ptT('macro_cut_sub'), ptT('notes_wall_open'));
+      if (m.lateral) {
+        await ptSleep(20);
+        ptPdfPage(doc, st, ptRenderWall(scene, m.lateral, nums, false), ptT('side_title', { walls: m.front._nomes.join(', ') }), ptT('side_sub'), ptT('notes_side'));
+      }
+    }
 
     for (let i = 0; i < wallsWithModules.length; i++) {
       const w = wallsWithModules[i];
@@ -996,9 +1256,11 @@ async function generateProjectTechPlan() {
     }
 
     // módulos do chão: 1 vista por conjunto encostado, olhando pras portas
-    for (let i = 0; i < islandViews.length; i++) {
-      const v = islandViews[i];
-      ptStatus(ptT('step_island', { n: i + 1, total: islandViews.length }));
+    // ilha só de decoração (porta/janela/eletro solto) não ganha página
+    const islandPages = islandViews.filter((v) => ptHasComponent(v._slots));
+    for (let i = 0; i < islandPages.length; i++) {
+      const v = islandPages[i];
+      ptStatus(ptT('step_island', { n: i + 1, total: islandPages.length }));
       await ptSleep(30);
       ptPdfPage(doc, st, ptRenderWall(scene, v, nums, false), ptT('island_title', { n: i + 1 }), ptT('with_fronts'), ptT('notes_island'));
       await ptSleep(20);
