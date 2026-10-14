@@ -1053,25 +1053,45 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
     const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
 
+    // ABRIR RÁPIDO (13/10, Matt: "tá demorando pra dar load nos projetos").
+    // Medido no closet de 15 módulos: 10 s, 62 requisições EM SÉRIE (4 por
+    // slot — peças, cores, presets, módulo), repetindo o mesmo módulo 11×.
+    // Agora: busca cada módulo DISTINTO uma vez só, todos em paralelo, e cada
+    // slot recebe a própria CÓPIA (peças clonadas; mapa de cores copiado) —
+    // o Construtor muda slot.colorOptionsByRole/pieces por slot, então
+    // compartilhar o objeto entre slots vazaria. O global moduleColorsByRole
+    // continua sendo setado por slot, igual loadModuleColors fazia (o
+    // fallback de cor abaixo lê dele).
+    const distinctIds = [...new Set(slotConfigs.map((c) => c.module_id).filter((id) => allModules.some((m) => m.id === id)))];
+    const moduleData = new Map();
+    await Promise.all(distinctIds.map(async (id) => {
+      const [pieces, colorsByRoleRaw, presets] = await Promise.all([
+        loadRecursivePiecesForModule(id),
+        fetchModuleColorsByRoleRaw(id),
+        fetchModuleLockedDimensionPresets(id)
+      ]);
+      moduleData.set(id, { pieces: pieces || [], colorsByRoleRaw: colorsByRoleRaw || {}, presets });
+    }));
+    const clonePieces = (list) => { try { return structuredClone(list); } catch (e) { return JSON.parse(JSON.stringify(list)); } };
+
     const restored = [];
     let skipped = 0;
-    // Sequencial (não Promise.all) de propósito: loadModuleColors mexe no
-    // global moduleColorsByRole — chamadas concorrentes se sobrescreveriam.
     for (const cfg of slotConfigs) {
       const module = allModules.find((m) => m.id === cfg.module_id);
       if (!module) { skipped += 1; continue; }
-      const piecesList = await loadRecursivePiecesForModule(module.id);
+      const md = moduleData.get(module.id);
+      const piecesList = md ? clonePieces(md.pieces) : [];
       if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
       const optionalIds = cfg.selected_optional_ids || [];
       const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
-      await loadModuleColors(module.id); // preenche o global moduleColorsByRole pra ESTE módulo — precisa vir ANTES do fallback abaixo
+      moduleColorsByRole = Object.assign({}, md.colorsByRoleRaw); // cópia por slot do mesmo global que loadModuleColors preenchia
       // Valores de largura/altura TRAVADOS (module.width_locked/height_locked)
       // — precisa buscar de novo aqui (o slot restaurado é um objeto NOVO,
       // não carrega nada do que insertProjectModuleDefault já tinha buscado
       // da 1ª vez) pras setinhas de esticar do canvas funcionarem também num
       // projeto salvo recarregado (pedido do usuário 2026-07-26, ver
       // widthPresetsMm/heightPresetsMm no slot).
-      const lockedDimensionPresets = await fetchModuleLockedDimensionPresets(module.id);
+      const lockedDimensionPresets = md.presets;
       const selectedColorsResolved = [...(cfg.selected_colors || [])];
       const colorsByRole = {};
       selectedColorsResolved.forEach((sc) => {
