@@ -390,9 +390,15 @@ CST.recalcularCasco = function () {
     // (o mesmo referencial de S.H usado em zonaDoCasco/render2D/render3D).
     // Peça 'leg' nunca aparece em cascoBoxes (pieceBox devolve null pra ela,
     // ver drilling.js), então somar legH_mm em todas é seguro.
-    const built = Drilling._internals.buildBoxes(S.cascoParts, S.W, bodyH, S.D);
+    // 14/10: drilling.js buildBoxes já trata o pé quando ele está em
+    // cascoParts (desconta do H e sobe o corpo). Fazer de novo aqui contava
+    // o pé DUAS vezes (vão 1 pé mais baixo e deslocado). Ajuste manual só
+    // quando buildBoxes não enxerga o pé.
+    const peNoTopo = (S.cascoParts || []).some(function (p) { return p && !p.is_module && p.position_role === 'leg'; });
+    const ajusteH = peNoTopo ? 0 : legH_mm;
+    const built = Drilling._internals.buildBoxes(S.cascoParts, S.W, S.H - ajusteH, S.D);
     S.cascoBoxes = (built.boxes || []).map(function (b) {
-      return legH_mm ? Object.assign({}, b, { y0: b.y0 + legH_mm }) : b;
+      return ajusteH ? Object.assign({}, b, { y0: b.y0 + ajusteH }) : b;
     });
   } catch (e) {
     console.error('[construtor] buildBoxes', e);

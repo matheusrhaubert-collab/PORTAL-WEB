@@ -439,8 +439,17 @@ function computeProjectSlotInnerZone(slot) {
   // vão continuava do tamanho do módulo.
   const deduzirCasco = (boxes) => {
     let a = 0, b0 = 0, c = 0, d1 = W, e1 = H, f1 = 0;
+    // 1º passe: só as laterais, pra saber a faixa vertical do CORPO (ver
+    // `faixa` em classifyProjectCascoBox — pé/toe por baixo).
+    let faixa = null;
     (boxes || []).forEach((b) => {
-      const lado = classifyProjectCascoBox(b, W, H, D);
+      const l = classifyProjectCascoBox(b, W, H, D);
+      if (l !== 'left' && l !== 'right') return;
+      const y0 = b.y0, y1 = b.y0 + b.sy;
+      faixa = faixa ? { y0: Math.min(faixa.y0, y0), y1: Math.max(faixa.y1, y1) } : { y0, y1 };
+    });
+    (boxes || []).forEach((b) => {
+      const lado = classifyProjectCascoBox(b, W, H, D, faixa);
       const ex = b.x0 + b.sx, ey = b.y0 + b.sy, ez = b.z0 + b.sz;
       if (lado === 'left' && ex > a) a = ex;
       else if (lado === 'right' && b.x0 < d1) d1 = b.x0;
@@ -451,6 +460,23 @@ function computeProjectSlotInnerZone(slot) {
       // construtor não passa da frente de nenhuma das duas.
       if (lado === 'left' || lado === 'right') f1 = (f1 === 0) ? ez : Math.min(f1, ez);
     });
+    // BASE ELEVADA (14/10): armário de cozinha com a lateral indo até o
+    // chão (recorte de rodapé) e a base 114mm acima — ela não encosta em
+    // face nenhuma, então nunca virava 'bottom' e o vão descia até o piso.
+    // Sem base achada: o painel horizontal MAIS BAIXO que cobre largura e
+    // profundidade, dentro do quarto inferior do corpo. O mais baixo vence,
+    // então fundo de gaveta/prateleira (sempre acima da base) não engana.
+    if (b0 === 0) {
+      const fy0 = faixa ? faixa.y0 : 0, fy1 = faixa ? faixa.y1 : H;
+      let menor = null;
+      (boxes || []).forEach((b) => {
+        if (b.role === 'front' || b.role === 'leg') return;
+        if (!(b.sy < H * 0.35 && b.sx > W * 0.45 && b.sz > D * 0.45)) return;
+        if (b.y0 <= fy0 + 8 || b.y0 > fy0 + (fy1 - fy0) * 0.25) return;
+        if (!menor || b.y0 < menor.y0) menor = b;
+      });
+      if (menor) b0 = menor.y0 + menor.sy;
+    }
     return {
       x0: a, y0: b0, z0: c, x1: d1, y1: e1, z1: f1,
       achou: !(a === 0 && b0 === 0 && c === 0 && d1 === W && e1 === H)
@@ -622,7 +648,16 @@ function computeProjectSlotInnerZone(slot) {
 // grossa de 25mm num módulo de 300mm (8%) e barra uma divisória central
 // (nunca encosta na face). Cobrir 55% aceita lateral recortada (toe kick,
 // gola — ver a coluna `recortes`) sem aceitar um rodapé baixinho como "base".
-function classifyProjectCascoBox(b, W, H, D) {
+// `faixa` (14/10, opcional): {y0, y1} = onde o CORPO do móvel começa e
+// termina na vertical (as laterais). Sem ela, 0..H como sempre. Motivo:
+// armário montado com CASCO ANINHADO (Base Cabinet Doors, Drawer, Gola,
+// Stove…) só é medido pela cena, e lá a base fica EM CIMA do pé (y=114), não
+// encostada em y=0 — nunca virava 'bottom' e o vão descia até o chão
+// ("os internos não estão marcando direito quando entra", Matt). Com a
+// faixa das laterais, "encostar embaixo" passa a ser encostar no pé do corpo.
+// TRAVESSA de cima (rasa, só na frente/fundo) também vira 'top': prateleira
+// e gaveta não passam dela, então ela é o teto real do vão.
+function classifyProjectCascoBox(b, W, H, D, faixa) {
   const r = b.role;
   if (r === 'left' || r === 'right' || r === 'top' || r === 'bottom' || r === 'back') return r;
   // Papéis que NUNCA são casco, mesmo encostando: pé fica embaixo cobrindo a
@@ -645,10 +680,13 @@ function classifyProjectCascoBox(b, W, H, D) {
     if (b.x0 <= TOL) return 'left';
     if (ex >= W - TOL) return 'right';
   }
+  const fy0 = faixa ? faixa.y0 : 0, fy1 = faixa ? faixa.y1 : H;
   if (b.sy < H * FINA && b.sx > W * COBRE && b.sz > D * COBRE) {
-    if (b.y0 <= TOL) return 'bottom';
-    if (ey >= H - TOL) return 'top';
+    if (b.y0 <= fy0 + TOL) return 'bottom';
+    if (ey >= fy1 - TOL) return 'top';
   }
+  // travessa superior: fina, larga, encostada no topo do corpo, rasa
+  if (faixa && b.sy < H * FINA && b.sx > W * COBRE && b.sz >= D * 0.06 && ey >= fy1 - TOL && b.y0 > fy0 + TOL) return 'top';
   if (b.sz < D * FINA && b.sx > W * COBRE && b.sy > H * COBRE && b.z0 <= TOL) return 'back';
   return null;
 }
@@ -731,10 +769,23 @@ function computeProjectSlotCascoBoxes(slot, medirNaCena, semFrentes) {
         // legH_mm=0 EM SILÊNCIO — o fix parecia certo no código e não fazia
         // nada na prática. `slot.pieces` é a mesma lista crua que
         // resolvePiecesForViewer usa (ver duas linhas acima).
+        //
+        // PÉ CONTADO DUAS VEZES (14/10, Matt: "os internos não estão marcando
+        // direito quando entra"). drilling.js buildBoxes passou a tratar o pé
+        // SOZINHO (legHeightMm: desconta do H e sobe o corpo — ver
+        // drilling.js) e este trecho continuava fazendo o mesmo por fora: H
+        // menos o pé DUAS vezes e +pé DUAS vezes. Num base de pé plástico
+        // 4 1/2" (114mm) as laterais "nasciam" em y=228 e o vão laranja saía
+        // 114mm mais baixo e mais em cima do que o desenho. Regra agora: se o
+        // pé está em `parts` (nível de cima), buildBoxes recebe o H TOTAL e
+        // resolve; só quando ele não enxerga o pé (pé aninhado, só no
+        // resolveBodyDims) o ajuste manual de antes entra.
+        const peNoTopo = (parts || []).some((p) => p && !p.is_module && p.position_role === 'leg');
         let legH_mm = 0;
-        try { legH_mm = Pricing.resolveBodyDims(slot.pieces || [], { W, H, D }).legH_mm || 0; } catch (e) { /* sem pé, 0 */ }
-        const bodyH = H - legH_mm;
-        const built = Drilling._internals.buildBoxes(parts || [], W, bodyH, D);
+        if (!peNoTopo) {
+          try { legH_mm = Pricing.resolveBodyDims(slot.pieces || [], { W, H, D }).legH_mm || 0; } catch (e) { /* sem pé, 0 */ }
+        }
+        const built = Drilling._internals.buildBoxes(parts || [], W, H - legH_mm, D);
         boxes = (built.boxes || []).map((b) => (legH_mm ? Object.assign({}, b, { y0: b.y0 + legH_mm }) : b));
       } catch (e) { boxes = []; }
     }
@@ -1044,33 +1095,58 @@ function projectBuilderTreeFromRows(rows) {
 // aguentar agregado cadastrado à mão no ERP, que tem slug qualquer: palavra no
 // NOME e, por último, o encaixe (split em x/y, content, front). Nunca fica sem
 // ícone.
+// REDESENHO (14/10, Matt: "os desenhos estão meio confusos, uns bem em
+// baixo outros acima... melhorar a posição e organização, imagem mais
+// clara"). Antes: traço único, sem distinguir o armário da peça, e peças
+// diferentes com o MESMO desenho (Base Divisória = Gola = Prateleira: uma
+// linha no meio). Agora todo ícone é o MESMO armário (contorno claro, 48×48)
+// com a peça destacada (traço cheio + preenchimento leve) NA POSIÇÃO REAL
+// dela: base embaixo, cabide no alto, frente sobreposta passa do contorno,
+// frente embutida fica dentro, basculante mostra pra onde abre.
 const PROJECT_BUILDER_SVG = (() => {
-  const abre = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">';
-  const caixa = '<rect x="2.5" y="2.5" width="17" height="17" rx="1.5"/>';
+  const abre = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">';
   const fecha = '</svg>';
-  const mk = (miolo, semCaixa) => abre + (semCaixa ? '' : caixa) + miolo + fecha;
+  const armario = '<rect x="8" y="5" width="32" height="38" rx="1.5" stroke-width="1.5" opacity=".38"/>';
+  const peca = (x, y, w, h, extra) => '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="0.8" fill="currentColor" fill-opacity=".16"' + (extra || '') + '/>';
+  const tracejada = (x, y, w, h) => '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="0.8" stroke-dasharray="3 2.2" fill="currentColor" fill-opacity=".08"/>';
+  const puxH = (x, y) => '<path d="M' + x + ' ' + y + 'h8" stroke-width="2.4"/>';
+  const puxV = (x, y) => '<path d="M' + x + ' ' + y + 'v8" stroke-width="2.4"/>';
+  const mk = (miolo, semArmario) => abre + (semArmario ? '' : armario) + miolo + fecha;
+  // porta sobreposta (passa 2 do contorno)
+  const portaExt = peca(6, 3, 36, 42, ' fill-opacity=".1"');
   return {
-    prateleira: mk('<line x1="2.5" y1="11" x2="19.5" y2="11"/>'),
-    prateleiras2: mk('<line x1="2.5" y1="8" x2="19.5" y2="8"/><line x1="2.5" y1="14" x2="19.5" y2="14"/>'),
-    inclinada: mk('<line x1="3.5" y1="14.5" x2="18.5" y2="8.5"/>'),
-    divisoria: mk('<line x1="11" y1="2.5" x2="11" y2="19.5"/>'),
-    // Base/base divisória = UMA horizontal no meio (2026-08-15, Matt: "esse
-    // ícone tem uma divisória vertical e deveria ser só uma horizontal no
-    // meio"). O desenho antigo tinha uma vertical saindo da base, o que fazia
-    // parecer duas peças em L — e é justamente o ícone da Base Divisoria.
-    base: mk('<line x1="2.5" y1="11" x2="19.5" y2="11"/>'),
-    gaveta: mk('<rect x="5" y="8" width="12" height="6.5" rx="1"/><line x1="9" y1="11.2" x2="13" y2="11.2"/>'),
-    gaveteiro: mk('<line x1="2.5" y1="8" x2="19.5" y2="8"/><line x1="2.5" y1="13" x2="19.5" y2="13"/>'
-      + '<line x1="9.5" y1="5.2" x2="12.5" y2="5.2"/><line x1="9.5" y1="10.4" x2="12.5" y2="10.4"/><line x1="9.5" y1="16" x2="12.5" y2="16"/>'),
-    porta: mk('<line x1="15.5" y1="2.5" x2="15.5" y2="19.5"/><circle cx="13.4" cy="11" r="0.9" fill="currentColor" stroke="none"/>'),
-    porta_int: abre + '<rect x="2.5" y="2.5" width="17" height="17" rx="1.5" stroke-dasharray="3 2.4"/>'
-      + '<line x1="15.5" y1="4.5" x2="15.5" y2="17.5"/><circle cx="13.4" cy="11" r="0.9" fill="currentColor" stroke="none"/>' + fecha,
-    porta_dupla: mk('<line x1="11" y1="2.5" x2="11" y2="19.5"/>'
-      + '<circle cx="9" cy="11" r="0.9" fill="currentColor" stroke="none"/><circle cx="13" cy="11" r="0.9" fill="currentColor" stroke="none"/>'),
-    cabide: mk('<line x1="4.5" y1="8" x2="17.5" y2="8"/><path d="M11 8v3.2a2.2 2.2 0 0 0 2.2 2.2"/>'),
-    cesto: mk('<path d="M5.5 8h11l-1.6 8h-7.8z"/><line x1="8.4" y1="8" x2="9.4" y2="16"/><line x1="13.6" y1="8" x2="12.6" y2="16"/>'),
-    ripado: mk('<line x1="7" y1="3.5" x2="7" y2="18.5"/><line x1="11" y1="3.5" x2="11" y2="18.5"/><line x1="15" y1="3.5" x2="15" y2="18.5"/>'),
-    generico: mk('')
+    prateleira: mk(peca(9.5, 22.5, 29, 3.2)),
+    prat_movel: mk(peca(9.5, 22.5, 29, 3.2) + '<circle cx="12" cy="27.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="36" cy="27.6" r="1.1" fill="currentColor" stroke="none"/>'),
+    prateleiras2: mk(peca(9.5, 16, 29, 3) + peca(9.5, 29, 29, 3)),
+    inclinada: mk('<path d="M9.5 32L38.5 22.5v3.2L9.5 35.2z" fill="currentColor" fill-opacity=".16"/><path d="M9.5 32v-3.4" stroke-width="2.2"/>'),
+    // Base divisória: painel GROSSO dividindo o armário em cima/embaixo —
+    // o espaço de baixo levemente sombreado diz "isto vira outro vão".
+    base: mk('<rect x="9.5" y="30.5" width="29" height="11.5" fill="currentColor" fill-opacity=".06" stroke="none"/>' + peca(9.5, 26.5, 29, 4.4)),
+    divisoria: mk(peca(22.4, 6.5, 3.2, 35)),
+    // Gola: canal de pegada horizontal (perfil J) no meio da frente.
+    gola: mk(peca(9.5, 20.5, 29, 7, ' fill-opacity=".3"') + '<path d="M11 24h26" stroke-width="1.2" opacity=".7"/>'),
+    gaveta: mk(peca(11, 25.5, 26, 15) + puxH(20, 33)),
+    gaveteiro: mk(peca(10, 7, 28, 10.5) + peca(10, 19, 28, 10.5) + peca(10, 31, 28, 10.5)
+      + puxH(20, 12.2) + puxH(20, 24.2) + puxH(20, 36.2)),
+    gav_int: mk(tracejada(11, 26, 26, 14.5) + '<path d="M20 30h8" stroke-width="2" opacity=".8"/>'),
+    gav_int_porta: mk(tracejada(11, 26, 26, 14.5) + portaExt + puxV(36, 10)),
+    frente_ext: mk(peca(6, 27, 36, 17) + puxH(20, 35.5)),
+    frente_int: mk(peca(10, 28, 28, 13.5) + puxH(20, 34.7)),
+    porta: mk(portaExt + puxV(36, 20) + '<path d="M7.5 10h3M7.5 38h3" stroke-width="2.2"/>'),
+    porta_int: mk(peca(10, 7, 28, 34) + puxV(34, 20)),
+    porta_dupla: mk(peca(6, 3, 17.6, 42, ' fill-opacity=".1"') + peca(24.4, 3, 17.6, 42, ' fill-opacity=".1"') + puxV(20.5, 20) + puxV(27.5, 20)),
+    // Basculante: dobradiça EM CIMA, seta mostrando que abre pra cima.
+    basculante: mk(peca(6, 8, 36, 30, ' fill-opacity=".1"') + '<path d="M10 8h4M34 8h4" stroke-width="2.6"/>' + puxH(20, 33)
+      + '<path d="M44 34c2-9 0-17-6-24" stroke-width="1.6"/><path d="M37.5 13.5L38 10l3.4 1" stroke-width="1.6"/>'),
+    // Basculante inverso: dobradiça EMBAIXO, abre pra baixo.
+    basc_inv: mk(peca(6, 10, 36, 30, ' fill-opacity=".1"') + '<path d="M10 40h4M34 40h4" stroke-width="2.6"/>' + puxH(20, 15)
+      + '<path d="M44 14c2 9 0 17-6 24" stroke-width="1.6"/><path d="M37.5 34.5L38 38l3.4-1" stroke-width="1.6"/>'),
+    filler: mk(peca(9.5, 6.5, 6, 35, ' fill-opacity=".35"') + '<path d="M18 9v30" stroke-width="1.2" stroke-dasharray="2.5 2" opacity=".6"/>'),
+    cabide: mk('<path d="M10 12.5h28" stroke-width="2.8"/><path d="M10 10v5M38 10v5" stroke-width="1.6"/>'
+      + '<path d="M24 12.5v2.2"/><path d="M15.5 23L24 15.5L32.5 23z" fill="currentColor" fill-opacity=".16"/>'),
+    cesto: mk('<path d="M11 27h26l-2 13H13z" fill="currentColor" fill-opacity=".16"/><path d="M17 27.5l.6 12M24 27.5v12M31 27.5l-.6 12M12 33.5h24" stroke-width="1.2"/>'),
+    ripado: mk(peca(11, 6.5, 3, 35) + peca(17.5, 6.5, 3, 35) + peca(24, 6.5, 3, 35) + peca(30.5, 6.5, 3, 35)),
+    generico: mk('<path d="M24 18v12M18 24h12" stroke-width="2"/>')
   };
 })();
 
@@ -1078,37 +1154,72 @@ function projectBuilderIcon(acc) {
   const S = PROJECT_BUILDER_SVG;
   const slug = String(acc.slug || '').toLowerCase();
   const porSlug = {
-    div_vert: S.divisoria, prat_fixa: S.prateleira, prat_movel: S.prateleira,
+    div_vert: S.divisoria, prat_fixa: S.prateleira, prat_movel: S.prat_movel,
     prat_inclinada: S.inclinada, gaveta: S.gaveta, gaveta_afast: S.gaveta,
     gaveteiro: S.gaveteiro, porta_ext: S.porta, porta_int: S.porta_int,
     porta_dupla: S.porta_dupla, cabide: S.cabide, cesto: S.cesto, ripado: S.ripado,
-    // Migration 132 (2026-08-20) — 6 mecanismos de porta novos. Sem ícone
-    // próprio ainda (nenhum foi desenhado): reaproveita porta/porta_int
-    // (mesmo espírito de 'base' reaproveitar o desenho de 'prateleira').
-    frente_gaveta_externa: S.porta, porta_giro_externa: S.porta,
-    basculante: S.porta, basculante_inverso: S.porta,
-    frente_gaveta_interna: S.porta_int, porta_giro_interna: S.porta_int
+    frente_gaveta_externa: S.frente_ext, frente_gaveta_interna: S.frente_int,
+    porta_giro_externa: S.porta, porta_giro_interna: S.porta_int,
+    basculante: S.basculante, basculante_inverso: S.basc_inv,
+    gaveta_interna_sem_porta: S.gav_int, gaveta_interna_com_porta: S.gav_int_porta,
+    _filler_lateral_porta: S.filler
   };
   if (porSlug[slug]) return porSlug[slug];
 
-  const n = String(acc.name || '').toLowerCase();
+  // Agregado sem slug (cadastrado à mão no ERP): pelo NOME — ordem importa
+  // (o mais específico primeiro).
+  const n = projLibNorm(acc.name);
+  if (/basculante.*invers/.test(n)) return S.basc_inv;
+  if (/basculante/.test(n)) return S.basculante;
+  if (/frente.*gaveta.*extern/.test(n)) return S.frente_ext;
+  if (/frente.*gaveta/.test(n)) return S.frente_int;
+  if (/gaveta interna.*com porta/.test(n)) return S.gav_int_porta;
+  if (/gaveta interna/.test(n)) return S.gav_int;
+  if (/filler/.test(n)) return S.filler;
+  if (/gola/.test(n)) return S.gola;
   if (/inclinad|sapateir/.test(n)) return S.inclinada;
   if (/gaveteiro/.test(n)) return S.gaveteiro;
-  if (/gaveta/.test(n)) return S.gaveta;
-  if (/cabide|tubo|vara/.test(n)) return S.cabide;
+  if (/gaveta|drawer/.test(n)) return S.gaveta;
+  if (/cabide|tubo|vara|rod/.test(n)) return S.cabide;
   if (/cesto|aramad/.test(n)) return S.cesto;
   if (/ripad|ripa/.test(n)) return S.ripado;
   if (/dupla|2 folhas|duas folhas/.test(n)) return S.porta_dupla;
   if (/porta intern|embutid/.test(n)) return S.porta_int;
-  if (/porta/.test(n)) return S.porta;
-  if (/base/.test(n)) return S.base;
+  if (/porta|door/.test(n)) return S.porta;
+  if (/^base|base divis/.test(n)) return S.base;
   if (/divis|lateral/.test(n)) return S.divisoria;
-  if (/pratele/.test(n)) return S.prateleira;
+  if (/pratele|shelf/.test(n)) return S.prateleira;
 
   if (acc.role === 'front') return S.porta;
   if (acc.role === 'split') return acc.axis === 'x' ? S.divisoria : S.prateleira;
   if (acc.role === 'content') return S.gaveta;
   return S.generico;
+}
+
+// TRADUÇÃO DOS COMPONENTES (14/10, Matt: "os componentes estão sem tradução
+// nas 3 línguas"). Nome e grupo vêm do cadastro (accessory_types), em
+// português/misturado. A tela mostra a tradução do dicionário (i18n.js,
+// builder_acc.* / builder_grp.*), chaveada pelo SLUG — ou, sem slug, pelo
+// nome normalizado ("Gola (meio)" → gola_meio). Sem tradução cadastrada,
+// mostra o nome do banco (nunca a chave). SÓ EXIBIÇÃO: o motor continua
+// recebendo acc.name/group_name crus (o layout-engine decide coisas por eles,
+// ver o comentário de group_name em projectBuilderAccessoryEntry).
+function projectBuilderI18nKey(txt) {
+  return projLibNorm(txt).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+function projectBuilderAccLabel(acc) {
+  if (!acc) return '';
+  const tenta = [];
+  if (acc.slug) tenta.push('builder_acc.' + String(acc.slug).toLowerCase());
+  tenta.push('builder_acc.' + projectBuilderI18nKey(acc.name));
+  for (const k of tenta) { const t = I18n.t(k); if (t !== k) return t; }
+  return acc.name || '';
+}
+function projectBuilderGroupLabel(g) {
+  if (!g) return g;
+  const k = 'builder_grp.' + projectBuilderI18nKey(g);
+  const t = I18n.t(k);
+  return t === k ? g : t;
 }
 
 // Quantidade só faz sentido onde ela vira VÃOS IGUAIS (divisão) ou peças
@@ -1346,7 +1457,7 @@ function fillProjectBuilderLibGrid() {
   if (barra) {
     barra.innerHTML = (grupos.length > 1
       ? [{ id: '', nome: I18n.t('project.builder_filter_all') }]
-        .concat(grupos.map((g) => ({ id: g, nome: g })))
+        .concat(grupos.map((g) => ({ id: g, nome: projectBuilderGroupLabel(g) })))
       : []
     ).map((c) => '<button type="button" class="po-proj-lib-chip'
       + (projectBuilderLibGroup === c.id ? ' active' : '')
@@ -1360,7 +1471,8 @@ function fillProjectBuilderLibGrid() {
     const acc = projectBuilderCat[k];
     if (projectBuilderLibGroup && (acc.group || I18n.t('builder.group_other')) !== projectBuilderLibGroup) return false;
     if (!q) return true;
-    return projLibNorm(acc.name).indexOf(q) >= 0 || projLibNorm(acc.group).indexOf(q) >= 0;
+    return projLibNorm(acc.name).indexOf(q) >= 0 || projLibNorm(acc.group).indexOf(q) >= 0
+      || projLibNorm(projectBuilderAccLabel(acc)).indexOf(q) >= 0 || projLibNorm(projectBuilderGroupLabel(acc.group)).indexOf(q) >= 0;
   });
 
   if (contador) {
@@ -1388,7 +1500,7 @@ function fillProjectBuilderLibGrid() {
   const mostraTitulo = ordem.length > 1;
 
   grid.innerHTML = ordem.map((g) => (
-    (mostraTitulo ? '<div class="po-proj-builder-group">' + escapeHtmlCutlist(g) + '</div>' : '')
+    (mostraTitulo ? '<div class="po-proj-builder-group">' + escapeHtmlCutlist(projectBuilderGroupLabel(g)) + '</div>' : '')
     + porGrupo[g].map((k) => {
       const acc = projectBuilderCat[k];
       // Um controle por card: quem aceita quantidade mostra a CAIXA COM SETAS
@@ -1404,9 +1516,9 @@ function fillProjectBuilderLibGrid() {
           + '</span>'
         : '<button type="button" class="po-proj-lib-add" tabindex="-1" aria-hidden="true">+</button>';
       return '<div class="po-proj-builder-item" draggable="true" data-acc-id="' + k + '"'
-        + ' title="' + escapeHtmlCutlist(acc.name || '') + '">'
+        + ' title="' + escapeHtmlCutlist(projectBuilderAccLabel(acc)) + '">'
         + '<span class="po-proj-builder-item-icon">' + projectBuilderIcon(acc) + '</span>'
-        + '<span class="po-proj-builder-item-name">' + escapeHtmlCutlist(acc.name || '') + '</span>'
+        + '<span class="po-proj-builder-item-name">' + escapeHtmlCutlist(projectBuilderAccLabel(acc)) + '</span>'
         + acao
         + '</div>';
     }).join('')
