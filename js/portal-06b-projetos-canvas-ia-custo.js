@@ -836,10 +836,20 @@ function clampProjectSlotPosition(slot) {
 // parede? Só compara o vão horizontal e a faixa vertical — é o mesmo critério
 // da colisão do arraste, sem o resolvedor de deslize (aqui a pergunta é
 // sim/não, não "pra onde escorregar").
+// Estrutura de parede (tomada, interruptor, cano, ventilação, porta/janela
+// decorativa... — modules.wall_structure, migration 200): NUNCA é obstáculo
+// nem esbarra em módulo. Tomada fica atrás de base, cano passa atrás de
+// armário — Matt, 14/10: "tudo que vai conectado na parede".
+function isProjectWallStructureSlot(slot) {
+  return !!(slot && slot.module && slot.module.wall_structure);
+}
+
 function projectSlotOverlapsNeighbor(slot, xProposto) {
+  if (isProjectWallStructureSlot(slot)) return false;
   const w = Number(slot.width_mm || 0), h = Number(slot.height_mm || 0);
   const y0 = Number(slot.floor_height_mm || 0), y1 = y0 + h;
   return projectSlotsSameWallExcluding(slot).some((o) => {
+    if (isProjectWallStructureSlot(o)) return false;
     const ox = Number(o.x_mm || 0), ow = Number(o.width_mm || 0);
     const oy0 = Number(o.floor_height_mm || 0), oy1 = oy0 + Number(o.height_mm || 0);
     const cruzaX = xProposto < ox + ow - 1 && xProposto + w > ox + 1;
@@ -1170,9 +1180,12 @@ function projectAllOtherSlotWorldBoxes(slot) {
   // Antes o módulo agarrado batia no vizinho encostado do próprio grupo (ou
   // no tampo em cima dele) e não saía do lugar com o colisor ligado.
   const doGrupo = (typeof projectActiveGroupSelectionIds === 'function' && projectActiveGroupSelectionIds(slot)) || null;
+  // Estrutura arrastada só bate em PAREDE; estrutura parada não é obstáculo.
+  const souEstrutura = isProjectWallStructureSlot(slot);
   (projectSlots || []).forEach((s) => {
     if (s.id === slot.id) return;
     if (doGrupo && doGrupo.has(s.id)) return;
+    if (souEstrutura || isProjectWallStructureSlot(s)) return;
     const b = projectSlotWorldBox3D(s);
     if (b) boxes.push(b);
   });

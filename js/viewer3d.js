@@ -2889,6 +2889,209 @@ const Viewer3D = (function () {
     return mesh;
   }
 
+  // ---------------------------------------------------------------------
+  // ESTRUTURAS DE PAREDE (migration 200, 2026-10-14). Matt: "tomadas,
+  // canos, interruptores, alarmes, exaustao, ventilacao, campainhas. tudo
+  // que vai conectado na parede, funciona como um modulo". Mesmo padrão dos
+  // outros DECOR_BUILDERS: grupo com base em y=0, centrado em X/Z, frente
+  // pra +Z — a COSTA (−D/2) encosta na parede. Cores FIXAS no código (placa
+  // branca, cano cinza PVC): os módulos não têm module_colors de propósito.
+  // CÓPIA FIEL em js/viewer3d.js (THREE) e js/photoreal.js (T) — mudou num,
+  // muda no outro.
+  // ---------------------------------------------------------------------
+  function estruturaMats() {
+    return {
+      placa: new THREE.MeshStandardMaterial({ color: 0xf4f3ef, roughness: 0.42, metalness: 0.0 }),
+      face: new THREE.MeshStandardMaterial({ color: 0xecebe5, roughness: 0.5, metalness: 0.0 }),
+      furo: new THREE.MeshStandardMaterial({ color: 0x2a2c2f, roughness: 0.7, metalness: 0.0 }),
+      cinza: new THREE.MeshStandardMaterial({ color: 0x8d9196, roughness: 0.5, metalness: 0.2 }),
+      tela: new THREE.MeshStandardMaterial({ color: 0x15301f, emissive: 0x2ecc71, emissiveIntensity: 0.35, roughness: 0.4 }),
+      luz: new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xffa21f, emissiveIntensity: 0.6, roughness: 0.4 }),
+      cromo: new THREE.MeshStandardMaterial({ color: 0xd7dadd, metalness: 0.9, roughness: 0.18 }),
+      grelha: new THREE.MeshStandardMaterial({ color: 0xeeeeea, roughness: 0.55, metalness: 0.05 }),
+      fundo: new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.8, metalness: 0.0 }),
+      pvc: new THREE.MeshStandardMaterial({ color: 0xd9dbdd, roughness: 0.45, metalness: 0.05 })
+    };
+  }
+
+  // Placa encostada na parede: espessura t, costa em z = −D/2.
+  function estruturaPlaca(g, W, H, D, t, mat) {
+    const p = decorBoxMesh(W, H, t, mat);
+    p.position.set(0, H / 2, -D / 2 + t / 2);
+    g.add(p);
+    return -D / 2 + t; // z da FRENTE da placa
+  }
+
+  function buildDecorTomada(W, H, D) {
+    const m = estruturaMats();
+    const g = new THREE.Group();
+    const zf = estruturaPlaca(g, W, H, D, Math.min(D * 0.5, 0.006), m.placa);
+    const relD = Math.max(0.002, Math.min(D * 0.5, 0.005));
+    const relW = W * 0.5, relH = H * 0.27;
+    [H * 0.69, H * 0.31].forEach((cy) => {
+      const rel = decorBoxMesh(relW, relH, relD, m.face);
+      rel.position.set(0, cy, zf + relD / 2);
+      g.add(rel);
+      const zFuro = zf + relD + 0.0004;
+      // 2 fendas verticais + furo do terra (padrão americano)
+      [-relW * 0.22, relW * 0.22].forEach((dx, i) => {
+        const fenda = decorBoxMesh(relW * 0.07, relH * (i ? 0.42 : 0.34), 0.0008, m.furo);
+        fenda.position.set(dx, cy + relH * 0.12, zFuro);
+        g.add(fenda);
+      });
+      const terra = new THREE.Mesh(new THREE.CylinderGeometry(relW * 0.075, relW * 0.075, 0.0008, 14), m.furo);
+      terra.rotation.x = Math.PI / 2;
+      terra.position.set(0, cy - relH * 0.24, zFuro);
+      g.add(terra);
+    });
+    // parafuso central
+    const par = new THREE.Mesh(new THREE.CylinderGeometry(W * 0.045, W * 0.045, 0.001, 12), m.cinza);
+    par.rotation.x = Math.PI / 2;
+    par.position.set(0, H / 2, zf + 0.0005);
+    g.add(par);
+    return g;
+  }
+
+  function buildDecorInterruptor(W, H, D) {
+    const m = estruturaMats();
+    const g = new THREE.Group();
+    const zf = estruturaPlaca(g, W, H, D, Math.min(D * 0.5, 0.006), m.placa);
+    // tecla basculante (rocker), levemente inclinada
+    const tD = Math.max(0.002, Math.min(D * 0.5, 0.006));
+    // vão cinza em volta da tecla — sem ele, tecla branca some na placa branca
+    const vao = decorBoxMesh(W * 0.54, H * 0.68, 0.001, m.cinza);
+    vao.position.set(0, H / 2, zf + 0.0005);
+    g.add(vao);
+    const tecla = decorBoxMesh(W * 0.48, H * 0.62, tD, m.face);
+    tecla.position.set(0, H / 2, zf + tD / 2);
+    tecla.rotation.x = -0.07;
+    g.add(tecla);
+    const led = decorBoxMesh(W * 0.08, H * 0.03, 0.001, m.luz);
+    led.position.set(0, H / 2 - H * 0.24, zf + tD + 0.0006);
+    g.add(led);
+    return g;
+  }
+
+  function buildDecorCampainha(W, H, D) {
+    const m = estruturaMats();
+    const g = new THREE.Group();
+    const zf = estruturaPlaca(g, W, H, D, Math.min(D * 0.45, 0.008), m.placa);
+    const r = Math.min(W, H) * 0.24;
+    const prof = Math.max(0.002, D - (zf + D / 2));
+    const aro = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.25, r * 1.25, prof * 0.5, 24), m.cromo);
+    aro.rotation.x = Math.PI / 2;
+    aro.position.set(0, H * 0.55, zf + prof * 0.25);
+    g.add(aro);
+    const botao = new THREE.Mesh(new THREE.CylinderGeometry(r, r, prof, 24), m.luz);
+    botao.rotation.x = Math.PI / 2;
+    botao.position.set(0, H * 0.55, zf + prof / 2);
+    g.add(botao);
+    return g;
+  }
+
+  function buildDecorAlarme(W, H, D) {
+    const m = estruturaMats();
+    const g = new THREE.Group();
+    const zf = estruturaPlaca(g, W, H, D, D * 0.8, m.placa);
+    const tela = decorBoxMesh(W * 0.62, H * 0.2, 0.002, m.tela);
+    tela.position.set(0, H * 0.78, zf + 0.001);
+    g.add(tela);
+    // teclado 3 × 4
+    const bw = W * 0.14, bh = H * 0.1, bd = Math.max(0.002, D * 0.15);
+    for (let lin = 0; lin < 4; lin++) {
+      for (let col = 0; col < 3; col++) {
+        const b = decorBoxMesh(bw, bh, bd, m.cinza);
+        b.position.set((col - 1) * bw * 1.45, H * 0.56 - lin * bh * 1.4, zf + bd / 2);
+        g.add(b);
+      }
+    }
+    const led = decorBoxMesh(W * 0.05, W * 0.05, 0.002, m.luz);
+    led.position.set(W * 0.38, H * 0.78, zf + 0.001);
+    g.add(led);
+    return g;
+  }
+
+  // Grelha com N aletas horizontais inclinadas dentro de uma moldura.
+  function estruturaGrelha(g, W, H, D, m, passo) {
+    const frameT = Math.max(0.012, Math.min(0.03, W * 0.08, H * 0.08));
+    const fd = Math.max(0.004, D);
+    const zc = 0;
+    const top = decorBoxMesh(W, frameT, fd, m.grelha); top.position.set(0, H - frameT / 2, zc); g.add(top);
+    const bot = decorBoxMesh(W, frameT, fd, m.grelha); bot.position.set(0, frameT / 2, zc); g.add(bot);
+    const innerH = Math.max(0.004, H - 2 * frameT);
+    const innerW = Math.max(0.004, W - 2 * frameT);
+    const l = decorBoxMesh(frameT, innerH, fd, m.grelha); l.position.set(-W / 2 + frameT / 2, H / 2, zc); g.add(l);
+    const r = decorBoxMesh(frameT, innerH, fd, m.grelha); r.position.set(W / 2 - frameT / 2, H / 2, zc); g.add(r);
+    // fundo escuro (o "buraco" atrás das aletas)
+    const fundo = decorBoxMesh(innerW, innerH, 0.002, m.fundo);
+    fundo.position.set(0, H / 2, -fd / 2 + 0.001);
+    g.add(fundo);
+    const n = Math.max(2, Math.floor(innerH / passo));
+    const esp = innerH / n;
+    for (let i = 0; i < n; i++) {
+      const aleta = decorBoxMesh(innerW, Math.max(0.002, esp * 0.18), Math.max(0.003, fd * 0.75), m.grelha);
+      aleta.position.set(0, frameT + esp * (i + 0.5), zc);
+      aleta.rotation.x = 0.6;
+      g.add(aleta);
+    }
+    return { innerW, innerH, frameT };
+  }
+
+  function buildDecorVentilacao(W, H, D) {
+    const m = estruturaMats();
+    const g = new THREE.Group();
+    estruturaGrelha(g, W, H, D, m, 0.016);
+    return g;
+  }
+
+  function buildDecorExaustao(W, H, D) {
+    const m = estruturaMats();
+    const g = new THREE.Group();
+    const info = estruturaGrelha(g, W, H, D, m, 0.022);
+    // hélice atrás da grelha (só sugestão de exaustor)
+    const raio = Math.min(info.innerW, info.innerH) * 0.4;
+    const cubo = new THREE.Mesh(new THREE.CylinderGeometry(raio * 0.18, raio * 0.18, 0.004, 16), m.cinza);
+    cubo.rotation.x = Math.PI / 2;
+    cubo.position.set(0, H / 2, -D / 2 + 0.004);
+    g.add(cubo);
+    for (let i = 0; i < 4; i++) {
+      const pa = decorBoxMesh(raio * 0.32, raio * 0.95, 0.002, m.cinza);
+      pa.position.set(0, H / 2, -D / 2 + 0.004);
+      pa.rotation.z = i * Math.PI / 2 + 0.35;
+      pa.translateY(raio * 0.5);
+      g.add(pa);
+    }
+    return g;
+  }
+
+  // Cano: em pé (H ≥ W) → diâmetro = W, comprimento = H; deitado (W > H) →
+  // diâmetro = H, comprimento = W. Fica no MEIO da profundidade D (D maior
+  // que o diâmetro = cano afastado da parede, como numa abraçadeira).
+  function buildDecorCano(W, H, D) {
+    const m = estruturaMats();
+    const g = new THREE.Group();
+    const emPe = H >= W;
+    const diam = Math.max(0.006, Math.min(emPe ? W : H, D));
+    const comp = Math.max(0.006, emPe ? H : W);
+    // a LUVA é o diâmetro externo (cabe exatamente na caixa); o tubo é ~13% mais fino
+    const rLuva = diam / 2, r = rLuva / 1.15;
+    const tubo = new THREE.Mesh(new THREE.CylinderGeometry(r, r, comp, 20), m.pvc);
+    const luvaComp = Math.min(comp * 0.08, diam * 1.2);
+    const luvas = [-1, 1].map(() => new THREE.Mesh(new THREE.CylinderGeometry(rLuva, rLuva, luvaComp, 20), m.pvc));
+    if (emPe) {
+      tubo.position.set(0, comp / 2, 0);
+      luvas[0].position.set(0, luvaComp / 2, 0);
+      luvas[1].position.set(0, comp - luvaComp / 2, 0);
+    } else {
+      [tubo].concat(luvas).forEach((o) => { o.rotation.z = Math.PI / 2; });
+      tubo.position.set(0, H / 2, 0);
+      luvas[0].position.set(-comp / 2 + luvaComp / 2, H / 2, 0);
+      luvas[1].position.set(comp / 2 - luvaComp / 2, H / 2, 0);
+    }
+    g.add(tubo); luvas.forEach((l) => g.add(l));
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
@@ -2904,6 +3107,14 @@ const Viewer3D = (function () {
     decor_porta: buildDecorPorta,
     decor_janela: buildDecorJanela,
     bloco_parede: buildDecorBlocoParede,
+    // Estruturas de parede (migration 200)
+    decor_tomada: buildDecorTomada,
+    decor_interruptor: buildDecorInterruptor,
+    decor_campainha: buildDecorCampainha,
+    decor_alarme: buildDecorAlarme,
+    decor_exaustao: buildDecorExaustao,
+    decor_ventilacao: buildDecorVentilacao,
+    decor_cano: buildDecorCano,
   };
 
   function placePieceInBox(part, W, H, D, index, count, bounds, emitRaw) {

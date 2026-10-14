@@ -5477,3 +5477,14 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-nm-ok { font: inherit; font-size: 14px; border: 1px solid; border-radius: 10px; padding: 10px 20px; cursor: pointer; }
 .po-nm-ok:hover, .po-proj-builder-save.po-nm-ok-verde:hover { background: #26864c !important; }
 @media (max-width: 720px) { .po-nm-medidas { grid-template-columns: 1fr; } .po-nm-vista { min-height: 0; } }
+
+/* Estruturas de parede (2026-10-14) — paleta do botão "Estruturas" no grupo
+   Paredes. A lista flutua via attachFloatingDropdown (portal-08), mesmo
+   componente .po-style-list/.po-style-item do menu Visual. */
+.po-structures-menu { position: relative; display: inline-flex; }
+.po-structures-list { display: none; min-width: 210px; padding: 6px; }
+.po-structures-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
+.po-structures-item svg { flex: 0 0 auto; }
+.po-structures-item.indisponivel { opacity: 0.45; }
+.po-structures-sep { height: 1px; margin: 4px 2px; background: var(--border); }
+.po-structures-hint { padding: 6px 8px 2px; font-size: 11px; color: var(--muted, #7a7a7a); line-height: 1.35; }

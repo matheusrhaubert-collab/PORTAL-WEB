@@ -58,6 +58,12 @@ function ptSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 function ptSlotById(id) { return (projectSlots || []).find((s) => s.id === id) || null; }
 function ptIsDecor(slot) { return !!(slot && slot.module && slot.module.is_decoration); }
 function ptIsVisualOnly(slot) { return !!(slot && slot.module && slot.module.visual_only); }
+// Estrutura de parede (tomada, cano... migration 200) é visual_only (fora do
+// pedido) mas TEM que aparecer no desenho — é o que o eletricista/encanador
+// usa. Só a visibilidade nas vistas muda; cotas de conjunto continuam
+// ignorando (ptIsVisualOnly nos outros pontos) e número de módulo também
+// (é decoração).
+function ptIsDrawnStructure(slot) { return !!(slot && slot.module && slot.module.wall_structure); }
 function ptIsUpper(slot) { return !isFloorSlot(slot) && Number(slot.floor_height_mm || 0) >= PT_UPPER_MIN_MM; }
 function ptRoleName(id) {
   const r = (colorRolesCache || []).find((x) => x.id === id);
@@ -109,7 +115,7 @@ function ptApplyView(scene, opts) {
     const ud = top.userData || {};
     if (ud.slotId != null) {
       const slot = ptSlotById(ud.slotId);
-      let on = !!slot && !ptIsVisualOnly(slot) && opts.include(top, slot);
+      let on = !!slot && (!ptIsVisualOnly(slot) || ptIsDrawnStructure(slot)) && opts.include(top, slot);
       if (on && opts.hideFronts && PT_PANEL_NAME_RE.test(String((slot.module && slot.module.name) || ''))) on = false;
       top.visible = on;
       if (on) ptShowPieces(top, opts.hideFronts);
