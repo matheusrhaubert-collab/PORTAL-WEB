@@ -1501,7 +1501,7 @@ async function refreshProjectAdminOnlyButtons() {
   // enquanto (13/10, Matt: "desativar esse botão por enquanto, os filtros
   // ficaram realmente bons") — fica display:none no HTML. Pra religar, é só
   // devolver o id a esta lista.
-  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-ai-walls-btn', 'po-proj-heatmap-menu', 'po-proj-ai-edit-btn'];
+  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-importpromob-open-btn', 'po-proj-ai-walls-btn', 'po-proj-heatmap-menu', 'po-proj-ai-edit-btn'];
   let isAdmin = false;
   try {
     const { data: session } = await supabaseClient.auth.getSession();
