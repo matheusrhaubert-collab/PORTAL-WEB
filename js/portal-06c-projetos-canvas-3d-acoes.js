@@ -1917,6 +1917,8 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // refreshProject3DHighlight logo acima).
   if (typeof applyProjectLayerVisibility === 'function') applyProjectLayerVisibility();
   if (typeof refreshProjectLayersMenu === 'function') refreshProjectLayersMenu();
+  // Mapa de calor de preço (13/10) — mesma razão: os Groups são novos a cada render
+  if (typeof applyProjectHeatmap === 'function') applyProjectHeatmap();
   // Vista com Cotas (2026-09-17) — mesmo motivo de Camadas acima: a cena
   // trocou de Groups, reaplica o isolamento por parede e mantém a lista de
   // paredes do painel em dia (parede pode ter sido adicionada/removida).

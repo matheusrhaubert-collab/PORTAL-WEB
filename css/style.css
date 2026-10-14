@@ -5317,3 +5317,27 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-cost-sp-ops li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .po-cost-parts-sp i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
 @media (max-width: 700px) { .po-cost-sp-tiles, .po-cost-sp-ops { grid-template-columns: 1fr 1fr; } }
+
+/* Mapa de calor de preço (13/10) — legenda flutuante no canto do 3D. */
+.po-heatmap-legend { display: none; position: absolute; left: 12px; bottom: 12px; z-index: 31; width: 230px;
+  background: rgba(255,255,255,0.96); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.14); font-size: 12px; }
+.po-heatmap-title { font-weight: 700; margin-bottom: 6px; }
+.po-heatmap-bar { height: 10px; border-radius: 5px; background: linear-gradient(90deg, #2e9e5b, #e8aa1e, #c82828); }
+.po-heatmap-ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin: 3px 0 8px; }
+.po-heatmap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.po-heatmap-list li { display: grid; grid-template-columns: 10px 1fr auto; gap: 6px; align-items: center; }
+.po-heatmap-list i { width: 10px; height: 10px; border-radius: 2px; }
+.po-heatmap-list b { white-space: nowrap; }
+.po-heatmap-sep { justify-content: center; color: var(--muted); }
+.po-heatmap-hint { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.35; }
+#po-proj-heatmap-btn.active svg { color: #c82828; }
+/* Matriz de cores (13/10) */
+.po-cost-matrix-wrap { overflow-x: auto; }
+.po-cost-matrix { border-collapse: collapse; width: 100%; font-size: 12px; }
+.po-cost-matrix th, .po-cost-matrix td { border: 1px solid var(--border); padding: 6px 8px; text-align: center; vertical-align: middle; }
+.po-cost-matrix th { background: var(--accent-light); font-size: 11px; }
+.po-cost-matrix td.tier { text-align: left; min-width: 150px; }
+.po-cost-matrix td small { display: block; font-size: 10px; color: var(--muted); }
+.po-cost-matrix td.cur { background: #fff4d6; outline: 2px solid #e8aa1e; outline-offset: -2px; }
+.po-cost-matrix td.menos small { color: #2e7d32; } .po-cost-matrix td.mais small { color: #b26a00; }
+.po-cost-matrix td.na { color: var(--muted); }

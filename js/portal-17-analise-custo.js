@@ -78,10 +78,17 @@ function cpSlotGroups(slot) {
     g[cpGroupOf(p.reference, p.is_module)] += cpPieceCost(p) * q;
   });
   walk((slot.result && slot.result.breakdown) || [], 1);
+  // O breakdown traz CUSTO cru de peça; o total do módulo já tem os
+  // multiplicadores do preço. Reparte o total REAL na proporção das peças —
+  // os % ficam certos e a soma dos grupos bate com o preço do módulo.
+  const total = Number(slot.result && slot.result.total) || 0;
+  const raw = Object.values(g).reduce((a, v) => a + v, 0);
+  const f = raw > 0 ? total / raw : 0;
+  Object.keys(g).forEach((k) => { g[k] *= f; });
+  if (raw <= 0) g.estrutura = total;
   // painel/filler como MÓDULO inteiro (Painel 3/4, Filler…) → acabamento
   if (CP_GROUP_RE.acabamento.test(String(slot.module.name || ''))) {
-    const tot = Object.values(g).reduce((a, v) => a + v, 0);
-    return { estrutura: 0, frentes: 0, internos: 0, acabamento: tot };
+    return { estrutura: 0, frentes: 0, internos: 0, acabamento: total };
   }
   return g;
 }
