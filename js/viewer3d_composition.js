@@ -46,6 +46,22 @@ function createViewerComposition3D() {
   let lastUserCameraTouchAt = 0;
   let containerEl = null;
   let currentGroups = [];
+  // Dados de cada parede do último renderFreeformWalls — ver
+  // buildProjectDimensionLines/refreshDimensionLines.
+  let lastDimWalls = [];
+  // Refaz SÓ as linhas de Cotas (seleção mudou) — tira as antigas da cena e
+  // desenha de novo com os mesmos assemblies já posicionados.
+  function refreshDimensionLines(enabled, selIds) {
+    if (!scene) return;
+    currentGroups = currentGroups.filter((g) => {
+      if (!g || !g.userData || !g.userData.isProjectDimGroup) return true;
+      scene.remove(g);
+      disposeObject3D(g);
+      return false;
+    });
+    if (!enabled) return;
+    lastDimWalls.forEach((w) => buildProjectDimensionLines(w.list, w.ax, w.az, w.ox, w.oz, w.wallW, w.room, selIds || null));
+  }
   // Contorno de destaque (hover/seleção) — pedido do usuário 2026-07-26:
   // "quero que quando o mouse passe em cima do modulo ele fique contorno
   // vermelho, pra saber qual modulo sera editado ou movimentado". Só usado
@@ -425,8 +441,19 @@ function createViewerComposition3D() {
   // (chão) e a Vista Superior (plano 2D, sistema de desenho totalmente
   // diferente, ver renderProjectCanvasTop em portal-06c) ficam de fora,
   // PENDENTE de uma 2ª rodada.
-  function buildProjectDimensionLines(list, ax, az, ox, oz, wallWidthM, room) {
+  // COTAS SÓ DO SELECIONADO (2026-10-14, Matt: "quero que esse botao
+  // funciona apenas pra item selecionado ou grupo"). selIds = Set de slot ids
+  // (módulo selecionado, ou o grupo/seleção múltipla inteira). Só os módulos
+  // selecionados GERAM linha — os outros continuam contando como vizinho
+  // (é até eles que a linha vai). Sem nada selecionado, nenhuma linha.
+  // selIds null/undefined = comportamento antigo (todos), mantido por
+  // segurança pra quem chamar sem a opção.
+  // lastDimWalls guarda os dados de cada parede do último render, pra
+  // refreshDimensionLines refazer SÓ as linhas quando a seleção muda — sem
+  // remontar a cena inteira (selecionar não chama renderProjectCanvas).
+  function buildProjectDimensionLines(list, ax, az, ox, oz, wallWidthM, room, selIds) {
     if (!Array.isArray(list) || !list.length) return;
+    if (selIds && !selIds.size) return;
     const alongDir = new THREE.Vector3(ax, 0, az);
     // Projeção escalar da ORIGEM da parede no próprio eixo dela — subtraindo
     // isto de qualquer `center.dot(alongDir)` sobra a posição "ao longo da
@@ -452,6 +479,8 @@ function createViewerComposition3D() {
       return new THREE.Vector3(ox + ax * t, y, oz + az * t);
     };
     const entries = list.filter((a) => a && a.group).map((a) => ({
+      id: a.id,
+      sel: !selIds || selIds.has(a.id),
       // Convenção do group (ver comentário grande de renderFreeformWalls):
       // X/Z local centralizados, Y do chão pro topo — a posição MUNDO do
       // group já é o CENTRO ao longo da parede e a BASE (não o centro) na
@@ -465,8 +494,10 @@ function createViewerComposition3D() {
     const DIM_MAX_GAP_M = 3; // sanity: não "enxerga" vizinho do outro lado de um vão vazio enorme
     const DIM_TICK_M = 0.04;
 
+    if (!entries.some((e) => e.sel)) return;
     const dimGroup = new THREE.Group();
     dimGroup.userData.legnoLayer = 'cotas';
+    dimGroup.userData.isProjectDimGroup = true;
     const lineMat = new THREE.LineBasicMaterial({ color: 0x2b6cb0 });
     const addLine = (p1, p2) => {
       dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2]), lineMat));
@@ -488,6 +519,7 @@ function createViewerComposition3D() {
     // Reta sempre reta (sem nada inclinado) — mesma altura yMid nas 2 pontas
     // nos dois casos. ----
     entries.forEach((e) => {
+      if (!e.sel) return;
       let best = null, bestGap = Infinity;
       entries.forEach((o) => {
         if (o === e) return;
@@ -531,6 +563,29 @@ function createViewerComposition3D() {
         if (overlap <= 0) return false;
         return (e.center.dot(alongDir) - e.halfW) - (o.center.dot(alongDir) + o.halfW) >= -DIM_MIN_GAP_M;
       });
+      // Vizinho à ESQUERDA que NÃO está selecionado: ele não desenha mais a
+      // própria linha "à direita" (só selecionado gera linha), então quem
+      // mede o vão até ele é o selecionado.
+      if (selIds && hasLeftNeighbor) {
+        let lb = null, lbGap = Infinity;
+        entries.forEach((o) => {
+          if (o === e) return;
+          const gap = e.center.dot(alongDir) - o.center.dot(alongDir) - e.halfW - o.halfW;
+          if (gap < DIM_MIN_GAP_M - 1e-6) return;
+          const overlap = Math.min(e.yTop, o.yTop) - Math.max(e.yBottom, o.yBottom);
+          if (overlap <= 0) return;
+          if (gap < lbGap) { lbGap = gap; lb = o; }
+        });
+        if (lb && !lb.sel && lbGap < DIM_MAX_GAP_M) {
+          const yMid = (Math.max(e.yBottom, lb.yBottom) + Math.min(e.yTop, lb.yTop)) / 2;
+          const p1 = wallPoint(lb.center.dot(alongDir) + lb.halfW, yMid);
+          const p2 = wallPoint(eAlongW - e.halfW, yMid);
+          addLine(p1, p2);
+          addLine(p1.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p1.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+          addLine(p2.clone().add(new THREE.Vector3(0, -DIM_TICK_M / 2, 0)), p2.clone().add(new THREE.Vector3(0, DIM_TICK_M / 2, 0)));
+          addAnchor(p1.clone().lerp(p2, 0.5), lbGap * 1000);
+        }
+      }
       if (!hasLeftNeighbor && wallW > 0) {
         const leftEdgeRel = (eAlongW - originAlong) - e.halfW;
         if (leftEdgeRel > DIM_MIN_GAP_M) {
@@ -550,6 +605,7 @@ function createViewerComposition3D() {
     // parede), mede até o CHÃO — mesmo princípio do "limite" acima, só que
     // o limite vertical é teto/chão em vez de canto de parede. ----
     entries.forEach((e) => {
+      if (!e.sel) return;
       let best = null, bestGap = Infinity;
       entries.forEach((o) => {
         if (o === e) return;
@@ -594,6 +650,31 @@ function createViewerComposition3D() {
         if (overlap <= 0) return false;
         return e.yBottom - o.yTop >= -DIM_MIN_GAP_M;
       });
+      // Vizinho EMBAIXO não selecionado — mesmo motivo do vizinho da esquerda.
+      if (selIds && hasBelowNeighbor) {
+        let bb = null, bbGap = Infinity;
+        const eAl = e.center.dot(alongDir);
+        entries.forEach((o) => {
+          if (o === e) return;
+          const gap = e.yBottom - o.yTop;
+          if (gap < DIM_MIN_GAP_M - 1e-6) return;
+          const oAl = o.center.dot(alongDir);
+          const overlap = Math.min(eAl + e.halfW, oAl + o.halfW) - Math.max(eAl - e.halfW, oAl - o.halfW);
+          if (overlap <= 0) return;
+          if (gap < bbGap) { bbGap = gap; bb = o; }
+        });
+        if (bb && !bb.sel && bbGap < DIM_MAX_GAP_M) {
+          const oAl = bb.center.dot(alongDir);
+          const alongMid = (Math.max(eAl - e.halfW, oAl - bb.halfW) + Math.min(eAl + e.halfW, oAl + bb.halfW)) / 2;
+          const p1 = wallPoint(alongMid, bb.yTop);
+          const p2 = wallPoint(alongMid, e.yBottom);
+          addLine(p1, p2);
+          const perp = new THREE.Vector3(-az, 0, ax);
+          addLine(p1.clone().addScaledVector(perp, -DIM_TICK_M / 2), p1.clone().addScaledVector(perp, DIM_TICK_M / 2));
+          addLine(p2.clone().addScaledVector(perp, -DIM_TICK_M / 2), p2.clone().addScaledVector(perp, DIM_TICK_M / 2));
+          addAnchor(p1.clone().lerp(p2, 0.5), bbGap * 1000);
+        }
+      }
       if (!hasBelowNeighbor && e.yBottom > DIM_MIN_GAP_M) {
         const eAlongF = e.center.dot(alongDir);
         const p1 = wallPoint(eAlongF, 0);
@@ -1723,6 +1804,7 @@ function createViewerComposition3D() {
     onResize();
     clearGroups();
     currentOpenables = [];
+    lastDimWalls = [];
 
     const walls = (wallsData || []).filter((w) => w && Array.isArray(w.assemblies));
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -1814,7 +1896,8 @@ function createViewerComposition3D() {
       // parecerem próximas.
       applyBaseboardJoins(list);
       const wallWidthMForDims = Number(wall.widthM) || 0;
-      if (options && options.dimensionsEnabled) buildProjectDimensionLines(list, ax, az, ox, oz, wallWidthMForDims, room);
+      lastDimWalls.push({ list, ax, az, ox, oz, wallW: wallWidthMForDims, room });
+      if (options && options.dimensionsEnabled) buildProjectDimensionLines(list, ax, az, ox, oz, wallWidthMForDims, room, options.dimensionSlotIds || null);
 
       // Inclui a PAREDE em si (não só os módulos) na caixa delimitadora —
       // pedido do usuário (2026-07-26, Vista de Canto 3D): "a cena esta
@@ -3577,6 +3660,8 @@ function createViewerComposition3D() {
     // Projeção da câmera (2026-08-13): 'paralela' (ortográfica) x 'perspectiva'.
     setCameraProjection, getCameraProjection,
     pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,
+    // Cotas só do selecionado (2026-10-14) — ver refreshDimensionLines.
+    refreshDimensionLines,
     // Peça selecionada por duplo clique (2026-10-02)
     pickPieceAt, getPieceFrame, setPieceOutline, getPieceInfo, getMultiHighlightSizeMm,
     // Diagnóstico (ver debugScreenRects) — chamável pelo console via

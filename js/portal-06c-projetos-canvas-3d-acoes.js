@@ -1884,8 +1884,12 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
     // vizinhos da MESMA parede (ver buildProjectDimensionLines,
     // viewer3d_composition.js). Só módulos de parede nesta rodada — ver
     // comentário PENDENTE lá sobre ilha/Vista Superior.
-    dimensionsEnabled: !!projectDimensionsOn
+    dimensionsEnabled: !!projectDimensionsOn,
+    // Só o módulo selecionado / grupo selecionado (14/10) — ver
+    // projectDimensionSelectionIds logo abaixo.
+    dimensionSlotIds: projectDimensionSelectionIds()
   });
+  projectDimSelKey = projectDimensionSelectionKey();
 
   // Readota o contorno de destaque (ver refreshProject3DHighlight) —
   // renderFreeformWalls troca TODOS os Groups por instâncias novas, então o
@@ -2543,6 +2547,22 @@ function openProjectGroupToolbarAt(clientX, clientY) {
 // cada frame, pra acompanhar o giro/zoom da câmera).
 let projectDimensionsOn = false;
 let projectDimLabelsRafId = null;
+// COTAS SÓ DO SELECIONADO (2026-10-14, Matt: "quero que esse botao funciona
+// apenas pra item selecionado ou grupo"). Seleção múltipla/grupo vence; senão
+// o módulo selecionado; nada selecionado = nenhuma cota.
+function projectDimensionSelectionIds() {
+  const ids = new Set();
+  try { (projectMultiSelectIds || new Set()).forEach((id) => ids.add(id)); } catch (e) { /* ok */ }
+  if (!ids.size && selectedProjectSlotId != null) ids.add(selectedProjectSlotId);
+  return ids;
+}
+function projectDimensionSelectionKey() {
+  return Array.from(projectDimensionSelectionIds()).map(String).sort().join('|');
+}
+// Chave da seleção que as linhas atuais refletem — o RAF das etiquetas
+// (abaixo) compara a cada frame e, se a seleção mudou por QUALQUER caminho
+// (clique, grupo, Ctrl+clique, caixa, Esc), refaz só as linhas.
+let projectDimSelKey = null;
 function refreshProjectDimensionLabels() {
   const wrap3d = document.getElementById('po-proj-canvas-3d-edit-wrap');
   const container = document.getElementById('po-proj-dim-labels');
@@ -2560,6 +2580,11 @@ function refreshProjectDimensionLabels() {
   const tick = () => {
     projectDimLabelsRafId = null;
     if (!projectDimensionsOn || wrap3d.offsetParent === null) { stop(); return; }
+    const selKey = projectDimensionSelectionKey();
+    if (selKey !== projectDimSelKey && ViewerProjectEdit.refreshDimensionLines) {
+      projectDimSelKey = selKey;
+      ViewerProjectEdit.refreshDimensionLines(true, projectDimensionSelectionIds());
+    }
     const scene = ViewerProjectEdit.getScene();
     const anchors = [];
     if (scene) {

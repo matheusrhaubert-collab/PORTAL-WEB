@@ -1488,6 +1488,40 @@ const Photoreal = (() => {
     return g;
   }
 
+  // Cano SAINDO da parede (2026-10-14, Matt: "quero um pipe saindo pra fora
+  // da parede. no sentido contrario desse que vem do chao") — espera de
+  // água/esgoto. Eixo na PROFUNDIDADE: comprimento = D (quanto sai da
+  // parede), diâmetro = menor entre W e H. Canopla (espelho) encostada na
+  // parede + tubo + luva/tampa na ponta. Mesma cópia em viewer3d/photoreal.
+  function buildDecorCanoSaida(W, H, D) {
+    const m = estruturaMats();
+    const g = new T.Group();
+    const diam = Math.max(0.006, Math.min(W, H));
+    const rLuva = diam / 2, r = rLuva / 1.15;
+    const comp = Math.max(0.006, D);
+    const cy = H / 2;
+    // canopla: disco fino encostado na parede (cabe na caixa W×H)
+    const espT = Math.min(0.004, comp * 0.15);
+    const esp = new T.Mesh(new T.CylinderGeometry(Math.min(W, H) / 2, Math.min(W, H) / 2, espT, 24), m.placa);
+    esp.rotation.x = Math.PI / 2;
+    esp.position.set(0, cy, -comp / 2 + espT / 2);
+    g.add(esp);
+    const tubo = new T.Mesh(new T.CylinderGeometry(r * 0.7, r * 0.7, comp, 20), m.pvc);
+    tubo.rotation.x = Math.PI / 2;
+    tubo.position.set(0, cy, 0);
+    g.add(tubo);
+    const luvaComp = Math.min(comp * 0.25, diam * 0.9);
+    const luva = new T.Mesh(new T.CylinderGeometry(rLuva * 0.85, rLuva * 0.85, luvaComp, 20), m.pvc);
+    luva.rotation.x = Math.PI / 2;
+    luva.position.set(0, cy, comp / 2 - luvaComp / 2);
+    g.add(luva);
+    const tampa = new T.Mesh(new T.CylinderGeometry(rLuva * 0.6, rLuva * 0.6, 0.002, 20), m.fundo);
+    tampa.rotation.x = Math.PI / 2;
+    tampa.position.set(0, cy, comp / 2 - 0.0012);
+    g.add(tampa);
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
@@ -1511,6 +1545,7 @@ const Photoreal = (() => {
     decor_exaustao: buildDecorExaustao,
     decor_ventilacao: buildDecorVentilacao,
     decor_cano: buildDecorCano,
+    decor_cano_saida: buildDecorCanoSaida,
   };
 
   function placePieceInBox(part, parentGroup, W, H, D, index, count, bounds) {

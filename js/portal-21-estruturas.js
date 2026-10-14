@@ -32,9 +32,23 @@ const PROJECT_WALL_STRUCTURES = [
   { key: 'ventilacao',  bottomMm: 2100 },
   { key: 'exaustao',    bottomMm: 2000 },
   { key: 'cano',        bottomMm: 0 },
+  { key: 'cano_saida',  centerMm: 500 },
   { key: 'porta',       bottomMm: 0, sep: true },
-  { key: 'janela',      bottomMm: 1000 }
+  { key: 'janela',      bottomMm: 1000 },
+  // ABERTURAS (buraco na parede) — 14/10, Matt: "quero mais uma abertura
+  // (buraco na parede) tipo porta, e tipo janela". NÃO são módulos: viram
+  // uma abertura do próprio segmento de parede (projectWallSegments[i].
+  // openings, o mesmo dado do editor de Paredes desde 01/10) — o 3D recorta
+  // a parede (makeWallPrism) e o Plano técnico desenha. Medida padrão =
+  // a mesma do editor de Paredes (adicionaAbertura, js/wall-editor.js);
+  // ajuste fino (posição/medida) é lá no editor de Paredes.
+  { key: 'abertura_porta',  opening: 'door',   sep: true },
+  { key: 'abertura_janela', opening: 'window' }
 ];
+const PROJECT_WALL_OPENING_DEFAULTS = {
+  door: { width_mm: 813, height_mm: 2032, sill_mm: 0 },
+  window: { width_mm: 1000, height_mm: 1100, sill_mm: 1050 }
+};
 
 // Ícones de traço (24×24), mesmo estilo dos outros da barra.
 const PROJECT_WALL_STRUCTURE_ICONS = {
@@ -45,6 +59,9 @@ const PROJECT_WALL_STRUCTURE_ICONS = {
   ventilacao: '<rect x="3.5" y="7" width="17" height="10" rx="1"/><path d="M6 10h12M6 12.5h12M6 15h12"/>',
   exaustao: '<rect x="4.5" y="4.5" width="15" height="15" rx="1"/><circle cx="12" cy="12" r="1.3"/><path d="M12 10.7c0-3 2.5-4 3.5-3M13.3 12c3 0 4 2.5 3 3.5M12 13.3c0 3-2.5 4-3.5 3M10.7 12c-3 0-4-2.5-3-3.5"/>',
   cano: '<path d="M10 3h4v18h-4z"/><path d="M9 5h6M9 19h6"/>',
+  cano_saida: '<path d="M4 4v16"/><path d="M4 10h14v4H4"/><path d="M16 9v6"/><circle cx="19.5" cy="12" r="1"/>',
+  abertura_porta: '<path d="M3 21h4V4h10v17h4"/><path d="M7 4v17M17 4v17" stroke-dasharray="2 2"/>',
+  abertura_janela: '<path d="M3 4h18v16H3z" stroke-dasharray="2 2"/><rect x="7" y="8" width="10" height="7"/>',
   porta: '<path d="M6 21V3h12v18"/><path d="M4 21h16"/><circle cx="15" cy="12.5" r="0.9"/>',
   janela: '<rect x="4" y="5" width="16" height="13" rx="0.8"/><path d="M12 5v13M4 11.5h16M3 20h18"/>'
 };
@@ -61,8 +78,34 @@ function showProjectStructuresMessage(msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 
+// Abertura nova no MEIO da parede ativa, igual ao "+ Porta/+ Janela" do
+// editor de Paredes. Só existe no modelo de segmentos (projectWallSegments);
+// projeto antigo sem planta desenhada pede pra abrir o editor uma vez.
+function insertProjectWallOpening(tipo) {
+  const wi = Number(projectActiveWallIndex || 0);
+  const seg = (typeof projectWallSegments !== 'undefined' && projectWallSegments) ? projectWallSegments[wi] : null;
+  if (!seg) {
+    showProjectStructuresMessage(I18n.t('project_structures.opening_no_segments'));
+    return;
+  }
+  const comp = Math.round(Math.hypot(Number(seg.bx) - Number(seg.ax), Number(seg.bz) - Number(seg.az)));
+  const pad = PROJECT_WALL_OPENING_DEFAULTS[tipo];
+  if (!pad || comp < 200) return;
+  const w = Math.max(100, Math.min(pad.width_mm, comp - 100));
+  if (!Array.isArray(seg.openings)) seg.openings = [];
+  seg.openings.push(Object.assign(
+    { id: 'op_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), type: tipo },
+    pad,
+    { width_mm: w, x_mm: Math.max(0, Math.round((comp - w) / 2)) }
+  ));
+  showProjectStructuresMessage('');
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
 async function insertProjectWallStructure(key) {
   const def = PROJECT_WALL_STRUCTURES.find((d) => d.key === key);
+  if (def && def.opening) { insertProjectWallOpening(def.opening); return; }
   const m = projectWallStructureModule(key);
   if (!def) return;
   if (!m) {
@@ -89,7 +132,7 @@ async function insertProjectWallStructure(key) {
 
 function renderProjectStructuresList(lista) {
   lista.innerHTML = PROJECT_WALL_STRUCTURES.map((d) => {
-    const disponivel = !!projectWallStructureModule(d.key);
+    const disponivel = !!d.opening || !!projectWallStructureModule(d.key);
     return (d.sep ? '<div class="po-structures-sep"></div>' : '')
       + '<button type="button" class="po-style-item po-structures-item' + (disponivel ? '' : ' indisponivel') + '" data-key="' + d.key + '"'
       + (disponivel ? '' : ' title="' + I18n.t('project_structures.missing_short') + '"') + '>'
