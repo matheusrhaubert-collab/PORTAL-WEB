@@ -5488,3 +5488,38 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-structures-item.indisponivel { opacity: 0.45; }
 .po-structures-sep { height: 1px; margin: 4px 2px; background: var(--border); }
 .po-structures-hint { padding: 6px 8px 2px; font-size: 11px; color: var(--muted, #7a7a7a); line-height: 1.35; }
+
+/* Minha conta (2026-10-14) — clicar no chip do usuário abre o modal.
+   Ver js/portal-22-minha-conta.js. */
+.po-user-chip-clickable { cursor: pointer; border-radius: 10px; }
+.po-user-chip-clickable:hover .po-user-name { text-decoration: underline; }
+#po-account-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+#po-account-modal.open { display: flex; }
+.po-account-card {
+  position: relative; width: 460px; max-width: 100%; max-height: calc(100vh - 40px); overflow: auto;
+  background: var(--panel, #fff); border-radius: 14px; padding: 22px 22px 18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+}
+.po-account-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.po-account-avatar {
+  width: 48px; height: 48px; border-radius: 50%; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: #efece6; font-weight: 700; font-size: 20px;
+}
+.po-account-name { font-weight: 700; font-size: 17px; word-break: break-word; }
+.po-account-role {
+  display: inline-block; margin-top: 4px; padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; background: #fde6f2; color: #b0005f;
+}
+.po-account-info { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 6px; font-size: 13px; }
+.po-account-info dt { color: var(--muted, #7a7a7a); }
+.po-account-info dd { margin: 0; word-break: break-word; }
+.po-account-section { margin: 16px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #7a7a7a); }
+.po-account-field { display: block; margin-bottom: 9px; font-size: 13px; }
+.po-account-field span { display: block; margin-bottom: 3px; }
+.po-account-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+#po-account-msg { margin-top: 6px; }
