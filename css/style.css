@@ -5300,3 +5300,20 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-cost-walls th:first-child, .po-cost-walls td:first-child { text-align: left; }
 .po-cost-walls th { font-size: 11px; color: var(--muted); font-weight: 600; }
 .po-cost-hot-note { margin: 0 0 8px; padding: 6px 8px; border-radius: 6px; background: #fdecea; color: #7a1b14; font-size: 12px; }
+.po-cost-stack { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: var(--accent-light); }
+.po-cost-stack i { display: block; height: 100%; }
+.sp-estrutura { background: #8a8580; } .sp-frentes { background: #8a5a34; } .sp-internos { background: #e6007e; } .sp-acabamento { background: #c9b99a; }
+.po-cost-sp-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+.po-cost-sp-tiles > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; display: grid; grid-template-columns: 10px 1fr; grid-template-rows: auto auto; column-gap: 6px; align-items: center; }
+.po-cost-sp-tiles i { width: 10px; height: 10px; border-radius: 50%; grid-row: 1 / span 2; }
+.po-cost-sp-tiles span { font-size: 11px; color: var(--muted); }
+.po-cost-sp-tiles strong { font-size: 18px; font-weight: 800; }
+.po-cost-sp-tiles small { grid-column: 2; font-size: 11px; color: var(--muted); }
+.po-cost-sp-line { margin: 10px 0 0; font-size: 13px; line-height: 1.45; }
+.po-cost-sp-ops { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.po-cost-sp-ops h5 { margin: 0 0 6px; font-size: 12px; }
+.po-cost-sp-ops ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.po-cost-sp-ops li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.po-cost-sp-ops li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-cost-parts-sp i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+@media (max-width: 700px) { .po-cost-sp-tiles, .po-cost-sp-ops { grid-template-columns: 1fr 1fr; } }

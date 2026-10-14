@@ -42,6 +42,51 @@ function cpWallName(w) { return w === 'floor' ? tCost('wall_floor') : I18n.t('pr
 function cpSlots() { return (projectSlots || []).filter((s) => s.module && !s.module.visual_only && !s.module.is_decoration && s.result); }
 function cpSumSlots(slots) { return slots.reduce((a, s) => a + (Number(s.result && s.result.total) || 0), 0); }
 
+// ---------- POR ESPAÇO (13/10, Matt: "quanto mais material por metro cúbico,
+// mais caro. o projeto mais barato é o mais vazio. quero mostrar isso não
+// por peça, mas por espaço, com poucos números") ----------
+// Cada peça do breakdown cai num de 4 grupos pelo NOME (reference) — é como
+// o cadastro já chama as peças, em qualquer catálogo:
+//   estrutura = caixa vazia (laterais, fundo, base, topo, travessas, rodapé)
+//   frentes   = portas e frentes de gaveta externas (+ dobradiça)
+//   internos  = o que preenche o espaço: prateleira, gaveta, divisória,
+//               cabide, sapateira, LED (+ corrediça)
+//   acabamento = painel, filler, tampo
+const CP_GROUP_RE = {
+  acabamento: /painel|panel|filler|tampo|countertop|moldura|crown/i,
+  internos: /prateleira|shelf|gaveta|drawer|divis|cabide|rod\b|hanger|sapateira|shoe|led|nicho|cesto|basket|bandeja|tray|calça|pant/i,
+  frentes: /porta|door|^frente|front/i
+};
+function cpGroupOf(ref, isModule) {
+  const r = String(ref || '');
+  if (CP_GROUP_RE.acabamento.test(r)) return 'acabamento';
+  if (CP_GROUP_RE.internos.test(r)) return 'internos';
+  if (CP_GROUP_RE.frentes.test(r)) return 'frentes';
+  return isModule ? 'internos' : 'estrutura';
+}
+function cpPieceCost(p) {
+  const t = Number(p.piece_total);
+  if (t) return t;
+  return ['sheet_cost', 'edge_cost', 'labor_cost', 'purchased_cost', 'hinge_cost', 'slide_cost'].reduce((a, k) => a + (Number(p[k]) || 0), 0);
+}
+// Grupos de um slot (fábrica, sem margem). Módulo-filho (gaveta pronta) conta
+// inteiro no grupo dele, sem descer — a corrediça/frente dele é "gaveta".
+function cpSlotGroups(slot) {
+  const g = { estrutura: 0, frentes: 0, internos: 0, acabamento: 0 };
+  const walk = (bd, mult) => (bd || []).forEach((p) => {
+    const q = (Number(p.quantity) || 1) * mult;
+    g[cpGroupOf(p.reference, p.is_module)] += cpPieceCost(p) * q;
+  });
+  walk((slot.result && slot.result.breakdown) || [], 1);
+  // painel/filler como MÓDULO inteiro (Painel 3/4, Filler…) → acabamento
+  if (CP_GROUP_RE.acabamento.test(String(slot.module.name || ''))) {
+    const tot = Object.values(g).reduce((a, v) => a + v, 0);
+    return { estrutura: 0, frentes: 0, internos: 0, acabamento: tot };
+  }
+  return g;
+}
+function cpSlotVolFt3(s) { return (Number(s.width_mm) * Number(s.height_mm) * Number(s.depth_mm)) / Math.pow(304.8, 3); }
+
 // ---------- simulação ----------
 // Devolve, por slot e papel, quanto o total do projeto muda trocando pra
 // cor mais barata e pra mais cara do papel — simulando de verdade e
@@ -79,11 +124,14 @@ async function costPlanAnalyze() {
     // módulo é um fator relevante") — $ por pé/metro linear de parede que o
     // módulo ocupa. Painel/filler ficam fora do ranking (largura de 3/4" vira
     // $/ft absurdo sem significar nada).
+    const groups = cpSlotGroups(s);
     const widthFt = Number(s.width_mm) / 304.8;
     const narrow = Number(s.width_mm) < 100;
     mods.push({ id: s.id, num: nums.get(s.id), label: cpSlotLabel(s), total: t0 * k, pct: base > 0 ? t0 / base : 0,
       parts: { sheet: parts.sheet * k, labor: parts.labor * k, hardware: parts.hardware * k }, roles,
       widthFt, perFt: narrow ? null : (t0 * k) / Math.max(widthFt, 0.01),
+      groups: { estrutura: groups.estrutura * k, frentes: groups.frentes * k, internos: groups.internos * k, acabamento: groups.acabamento * k },
+      volFt3: cpSlotVolFt3(s),
       wall: isFloorSlot(s) ? 'floor' : String(Number(s.wall_index) || 0) });
     await cpSleep(0); // não trava a tela
   }
@@ -96,10 +144,21 @@ async function costPlanAnalyze() {
   const wallRows = Object.values(walls).map((w) => Object.assign(w, { perFt: w.ft > 0 ? w.total / w.ft : 0 })).sort((a, b) => b.total - a.total);
   // "investimento alto pra parede que cobre": bem acima da média do projeto
   mods.forEach((m) => { m.hot = m.perFt != null && avgPerFt > 0 && m.perFt >= avgPerFt * 1.6; });
+  // por espaço (projeto inteiro)
+  const space = { estrutura: 0, frentes: 0, internos: 0, acabamento: 0 };
+  mods.forEach((m) => { Object.keys(space).forEach((g) => { space[g] += m.groups[g]; }); });
+  const volFt3 = mods.reduce((a, m) => a + m.volFt3, 0);
+  const shell = space.estrutura + space.frentes + space.acabamento; // "caixa vazia"
+  // internos por módulo: quem mais tem (enxugar) e quem está vazio (subir)
+  const withBox = mods.filter((m) => m.groups.estrutura > 0);
+  const internosRatio = withBox.map((m) => ({ m, r: m.total > 0 ? m.groups.internos / m.total : 0, v: m.groups.internos }));
+  const avgRatio = internosRatio.length ? internosRatio.reduce((a, x) => a + x.r, 0) / internosRatio.length : 0;
+  const trim = internosRatio.filter((x) => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 4);
+  const empty = internosRatio.filter((x) => x.r < Math.max(0.12, avgRatio * 0.5)).sort((a, b) => b.m.volFt3 - a.m.volFt3).slice(0, 4);
   const allMin = display + moves.filter((m) => m.kind === 'save').reduce((a, m) => a + m.delta, 0);
   const allMax = display + moves.filter((m) => m.kind === 'up').reduce((a, m) => a + m.delta, 0);
   const hiddenMin = display + moves.filter((m) => m.kind === 'save' && !m.front).reduce((a, m) => a + m.delta, 0);
-  return { display, allMin, allMax, hiddenMin, mods, moves, k, avgPerFt, totFt, wallRows };
+  return { display, allMin, allMax, hiddenMin, mods, moves, k, avgPerFt, totFt, wallRows, space, volFt3, shell, trim, empty, avgRatio };
 }
 
 // Ordem das economias: escondidas primeiro (maior economia primeiro), depois
@@ -177,6 +236,20 @@ function renderCostPlan() {
     + '<table class="po-cost-walls"><thead><tr><th>' + tCost('col_wall') + '</th><th>' + tCost('col_len') + '</th><th>' + tCost('col_modules') + '</th><th>' + tCost('col_total') + '</th><th>' + tCost('col_perlen') + '</th></tr></thead><tbody>'
     + st.wallRows.map((w) => '<tr><td>' + cpEsc(cpWallName(w.wall)) + '</td><td>' + cpLen(w.ft) + '</td><td>' + w.n + '</td><td>' + cpMoney(w.total) + '</td><td class="' + (w.perFt >= st.avgPerFt * 1.3 ? 'hot' : '') + '">' + cpPerLen(w.perFt) + '</td></tr>').join('')
     + '</tbody></table></section>';
+  // 1c) por espaço
+  const SP = ['estrutura', 'frentes', 'internos', 'acabamento'];
+  const spTot = SP.reduce((a, g) => a + st.space[g], 0) || 1;
+  const pct = (v) => Math.round(100 * v / spTot);
+  const vol = cpIsInch() ? (Math.round(st.volFt3) + ' ft³') : (Math.round(st.volFt3 * 0.0283168 * 100) / 100 + ' m³');
+  const perVol = cpIsInch() ? cpMoney(st.display / Math.max(st.volFt3, 0.01)) + '/ft³' : cpMoney(st.display / Math.max(st.volFt3 * 0.0283168, 0.001)) + '/m³';
+  h += '<section class="po-cost-sec"><h4>' + tCost('sec_space') + '</h4>'
+    + '<div class="po-cost-stack">' + SP.map((g) => '<i class="sp-' + g + '" style="width:' + pct(st.space[g]) + '%" title="' + tCost('sp_' + g) + ' ' + pct(st.space[g]) + '%"></i>').join('') + '</div>'
+    + '<div class="po-cost-sp-tiles">' + SP.map((g) => '<div><i class="sp-' + g + '"></i><span>' + tCost('sp_' + g) + '</span><strong>' + pct(st.space[g]) + '%</strong><small>' + cpMoney(st.space[g]) + '</small></div>').join('') + '</div>'
+    + '<p class="po-cost-sp-line">' + tCost('sp_line', { shell: cpMoney(st.shell), shellPct: pct(st.shell), internos: cpMoney(st.space.internos), internosPct: pct(st.space.internos), vol, perVol }) + '</p>'
+    + '<div class="po-cost-sp-ops">'
+    + '<div><h5>' + tCost('sp_trim_title') + '</h5>' + (st.trim.length ? '<ul>' + st.trim.map((x) => '<li><span>#' + x.m.num + ' ' + cpEsc(x.m.label) + '</span><b class="menos">' + cpMoney(x.v) + ' (' + Math.round(x.r * 100) + '%)</b></li>').join('') + '</ul>' : '<p class="po-cost-hint">' + tCost('sp_none') + '</p>') + '<p class="po-cost-hint">' + tCost('sp_trim_hint') + '</p></div>'
+    + '<div><h5>' + tCost('sp_up_title') + '</h5>' + (st.empty.length ? '<ul>' + st.empty.map((x) => '<li><span>#' + x.m.num + ' ' + cpEsc(x.m.label) + '</span><b class="mais">' + Math.round(x.r * 100) + '%</b></li>').join('') + '</ul>' : '<p class="po-cost-hint">' + tCost('sp_none') + '</p>') + '<p class="po-cost-hint">' + tCost('sp_up_hint') + '</p></div>'
+    + '</div></section>';
   // 2) módulos
   const maxT = Math.max(...st.mods.map((x) => x.total), 1);
   h += '<section class="po-cost-sec"><h4>' + tCost('sec_modules') + '</h4><div class="po-cost-mods">';
@@ -190,7 +263,9 @@ function renderCostPlan() {
       + bar(x.total, maxT)
       + '<div class="po-cost-mod-detail">'
       + (x.hot ? '<p class="po-cost-hot-note">' + tCost('hot_note', { v: cpPerLen(x.perFt), avg: cpPerLen(st.avgPerFt), wall: cpEsc(cpWallName(x.wall)) }) + '</p>' : '')
-      + '<div class="po-cost-parts">'
+      + '<div class="po-cost-parts po-cost-parts-sp">'
+      + ['estrutura', 'frentes', 'internos', 'acabamento'].filter((g) => x.groups[g] > 0.5).map((g) => '<span><i class="sp-' + g + '"></i>' + tCost('sp_' + g) + ' <b>' + cpMoney(x.groups[g]) + '</b> (' + Math.round(100 * x.groups[g] / Math.max(x.total, 1)) + '%)</span>').join('')
+      + '</div><div class="po-cost-parts">'
       + '<span>' + tCost('part_sheet') + ' <b>' + cpMoney(x.parts.sheet) + '</b></span>'
       + '<span>' + tCost('part_labor') + ' <b>' + cpMoney(x.parts.labor) + '</b></span>'
       + '<span>' + tCost('part_hardware') + ' <b>' + cpMoney(x.parts.hardware) + '</b></span></div>'
@@ -280,6 +355,8 @@ function costPlanSummaryText(picked, after) {
   }
   const top = st.mods[0];
   if (top) lines.push(tCost('sum_top', { m: top.label, pct: Math.round(top.pct * 100) }));
+  const spTot2 = ['estrutura', 'frentes', 'internos', 'acabamento'].reduce((a, g) => a + st.space[g], 0) || 1;
+  lines.push(tCost('sum_space', { shellPct: Math.round(100 * st.shell / spTot2), internosPct: Math.round(100 * st.space.internos / spTot2), internos: cpMoney(st.space.internos) }));
   const hot = st.mods.filter((m) => m.hot);
   if (hot.length) lines.push(tCost('sum_hot', { n: hot.length, list: hot.map((m) => '#' + m.num).join(', '), v: cpPerLen(hot[0].perFt), avg: cpPerLen(st.avgPerFt) }));
   return lines.join(' ');

@@ -474,8 +474,15 @@ function applyColorRoleToAllProjectSlots(group, color) {
   if (errorEl) errorEl.style.display = 'none';
   let firstErrorMsg = null;
   projectSlots.forEach((slot) => {
-    if (!pieceTreeHasColorRole(slot.pieces, roleId)) return;
-    const allowedIds = moduleColorIds && moduleColorIds.get(slot.module.id);
+    let allowedIds;
+    if (group._bySlot) {
+      // grupos por slot (13/10) — ver loadProjectColorRoleGroups
+      if (!group.slotIds.has(slot.id)) return;
+      allowedIds = group.slotColorIds.get(slot.id);
+    } else {
+      if (!pieceTreeHasColorRole(slot.pieces, roleId)) return;
+      allowedIds = moduleColorIds && moduleColorIds.get(slot.module.id);
+    }
     if (!allowedIds || !allowedIds.has(color.id)) return;
     try {
       applyColorToProjectSlot(slot, roleId, color);
@@ -492,8 +499,44 @@ function applyColorRoleToAllProjectSlots(group, color) {
   markProjectDirty();
 }
 
+// 13/10 (Matt, cozinha feita no Construtor: "não estou conseguindo trocar
+// só as frentes de gaveta aqui") — loadColorRoleGroupsForSlots olhava só
+// slot.pieces (catálogo) e module_colors do módulo cru. Peça que entrou pelo
+// Construtor (frente de gaveta, porta, divisória…) mora em slot.layoutPieces,
+// e o papel dela ganha opções em slot.colorOptionsByRole (emprestadas, ver
+// rebuildProjectSlotLayoutPieces em portal-07) — nenhum dos dois era lido,
+// então a aba "Porta/Frente" nem aparecia na troca rápida. Agora os grupos
+// vêm do que cada slot REALMENTE tem (peças efetivas + opções já carregadas),
+// sem consulta ao banco. Mesmo formato de grupo ({roleId, roleName, colors,
+// moduleIds, moduleColorIds}) que applyColorRoleToAllProjectSlots espera —
+// moduleColorIds continua por módulo, mas agora chaveado por SLOT (dois slots
+// do mesmo módulo podem ter opções diferentes depois do Construtor).
 async function loadProjectColorRoleGroups() {
-  return loadColorRoleGroupsForSlots(projectSlots);
+  const byRole = new Map(); // roleId -> { colors: Map(id->color), slotIds: Set }
+  projectSlots.forEach((slot) => {
+    if (!slot.module || slot.module.visual_only) return;
+    const used = collectUsedColorRoleIds(projectSlotEffectivePieces(slot));
+    used.forEach((roleId) => {
+      const opts = (slot.colorOptionsByRole && slot.colorOptionsByRole[roleId]) || [];
+      if (!opts.length) return;
+      if (!byRole.has(roleId)) byRole.set(roleId, { colors: new Map(), slotIds: new Set(), slotColorIds: new Map() });
+      const g = byRole.get(roleId);
+      g.slotIds.add(slot.id);
+      g.slotColorIds.set(slot.id, new Set(opts.map((c) => c.id)));
+      opts.forEach((c) => { if (c && c.active !== false && !g.colors.has(c.id)) g.colors.set(c.id, c); });
+    });
+  });
+  const groups = [];
+  byRole.forEach((g, roleId) => {
+    const colors = [...g.colors.values()].sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
+    if (!colors.length) return;
+    const roleName = (colorRolesCache.find((r) => r.id === roleId) || {}).name || '';
+    groups.push({ roleId, roleName, colors, slotIds: g.slotIds, slotColorIds: g.slotColorIds, moduleIds: [], moduleColorIds: new Map(), _bySlot: true });
+  });
+  // mesma ordem das abas de sempre (ordem dos papéis no cadastro)
+  const order = new Map((colorRolesCache || []).map((r, i) => [r.id, Number(r.sort_order) || i]));
+  groups.sort((a, b) => (order.get(a.roleId) || 0) - (order.get(b.roleId) || 0));
+  return groups;
 }
 
 // Monta (ou esconde) o painel de troca rápida dentro do po-proj-config-panel
