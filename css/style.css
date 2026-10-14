@@ -5185,3 +5185,11 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 }
 .po-proj-piece-toolbar button { margin: 0; padding: 2px 8px; min-width: 0; }
 .po-proj-piece-toolbar-name { font-weight: 600; color: #2f6fd8; margin-right: 4px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Plano técnico (2026-10-13) — aviso de progresso enquanto o PDF é montado
+   (ver ptStatus em js/portal-14-plano-tecnico.js). */
+.po-techplan-status {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+  z-index: 9999; background: #171613; color: #fff; padding: 10px 18px;
+  border-radius: 8px; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
