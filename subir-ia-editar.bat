@@ -1,7 +1,8 @@
 @echo off
-REM Adiciona os arquivos novos do "IA - Editar projeto" ao Git e sobe o portal.
+REM Adiciona ao Git os arquivos NOVOS do portal (IA - Editar projeto, Novo modulo) e sobe.
+REM E so dar dois cliques.
 cd /d "%~dp0"
-git add "js/portal-19-ia-editar.js" "publicar-funcao-ia.bat" "subir-ia-editar.bat"
+git add "js/portal-19-ia-editar.js" "js/portal-20-novo-modulo.js" "publicar-funcao-ia.bat" "subir-ia-editar.bat"
 if errorlevel 1 (
   echo.
   echo Nao consegui adicionar os arquivos. Mande a mensagem acima pro Claude.

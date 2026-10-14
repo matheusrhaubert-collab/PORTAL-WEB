@@ -5413,3 +5413,38 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-heatmap-legend { max-height: calc(100% - 24px); display: none; flex-direction: column; }
 .po-heatmap-list { overflow-y: auto; min-height: 0; flex: 1 1 auto; padding-right: 4px; scrollbar-width: thin; }
 .po-heatmap-hint { flex: none; }
+
+/* NOVO MÓDULO — assistente (14/10), js/portal-20-novo-modulo.js */
+.po-nm-card { width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
+.po-nm-body { overflow-y: auto; min-height: 0; flex: 1; }
+.po-nm-tabs { display: flex; gap: 6px; padding: 0 18px; }
+.po-nm-tab { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--border); background: #fff; color: var(--muted); border-radius: 999px; padding: 6px 14px 6px 6px; cursor: pointer; }
+.po-nm-tab.ativa { background: var(--text); border-color: var(--text); color: #fff; }
+.po-nm-tab-n { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; background: rgba(0,0,0,.08); }
+.po-nm-tab.ativa .po-nm-tab-n { background: rgba(255,255,255,.22); }
+.po-nm-tabs-builder { padding: 0; margin: 0 auto 0 16px; }
+.po-nm-filtros { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.po-nm-busca { font: inherit; font-size: 13px; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+.po-nm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.po-nm-grid.carregando { opacity: .5; pointer-events: none; }
+.po-nm-mod { font: inherit; font-size: 12px; text-align: center; cursor: pointer; color: var(--text) !important; background: #fff !important; border: 1px solid var(--border); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.po-nm-mod:hover { border-color: var(--accent); }
+.po-nm-mod .po-proj-library-card-name { font-size: 12px; font-weight: 600; line-height: 1.25; }
+.po-nm-mod .po-proj-library-card-dims { font-size: 11px; color: var(--muted); }
+.po-nm-medidas { display: grid; grid-template-columns: 1fr 240px; gap: 20px; align-items: center; }
+.po-nm-vista { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; justify-content: center; align-items: center; gap: 6px; background: #faf9f6; border: 1px solid var(--border); border-radius: 12px; padding: 18px; min-height: 380px; }
+.po-nm-cota-w { grid-column: 1; grid-row: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--muted); padding-bottom: 2px; justify-self: center; }
+.po-nm-vista-box { grid-column: 1; grid-row: 2; position: relative; background: #fff; border: 1px solid rgba(0,0,0,.25); }
+.po-nm-cota-h { grid-column: 2; grid-row: 2; font-size: 12px; font-weight: 600; color: var(--muted); writing-mode: vertical-rl; transform: rotate(180deg); border-right: 1px solid var(--muted); padding-right: 2px; align-self: stretch; text-align: center; }
+.po-nm-campos { display: flex; flex-direction: column; gap: 12px; }
+.po-nm-campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.po-nm-campo input { font: inherit; font-size: 16px; font-weight: 600; color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; }
+.po-nm-campo input:focus { outline: none; border-color: var(--accent); }
+.po-nm-campo small { font-weight: 400; font-size: 11px; }
+.po-nm-dica { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.po-nm-foot { padding: 12px 18px 16px; display: flex; justify-content: flex-end; }
+.po-nm-foot:empty { display: none; }
+.po-nm-ok, .po-proj-builder-save.po-nm-ok-verde { background: #2e9e5b !important; border-color: #2e9e5b !important; color: #fff !important; font-weight: 700; }
+.po-nm-ok { font: inherit; font-size: 14px; border: 1px solid; border-radius: 10px; padding: 10px 20px; cursor: pointer; }
+.po-nm-ok:hover, .po-proj-builder-save.po-nm-ok-verde:hover { background: #26864c !important; }
+@media (max-width: 720px) { .po-nm-medidas { grid-template-columns: 1fr; } .po-nm-vista { min-height: 0; } }
