@@ -830,8 +830,22 @@ function ptPdfPage(doc, st, canvas, title, subtitle, notes) {
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
   doc.text(ptT('title') + ' — ' + st.projectName, M, 10.5);
+  // Logo do dealer (perfil com logo_url — mesma fonte da Proposta): numa
+  // caixa branca no canto direito da faixa escura, pra logo escura não sumir.
+  let dateRight = W - M;
+  if (st.logo) {
+    const maxW = 42, maxH = 10.5;
+    const r = Math.min(maxW / st.logo.w, maxH / st.logo.h);
+    const lw = st.logo.w * r, lh = st.logo.h * r;
+    const boxW = lw + 4;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(W - M - boxW, 2.2, boxW, 11.6, 1.5, 1.5, 'F');
+    try { doc.addImage(st.logo.dataUrl, 'PNG', W - M - boxW + 2, 2.2 + (11.6 - lh) / 2, lw, lh); } catch (e) { /* logo inválida: segue sem */ }
+    dateRight = W - M - boxW - 4;
+  }
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-  doc.text(st.dateText + '   ·   ' + ptT('units', { u: st.unitText }), W - M, 10.5, { align: 'right' });
+  doc.setTextColor(255, 255, 255);
+  doc.text(st.dateText + '   ·   ' + ptT('units', { u: st.unitText }), dateRight, 10.5, { align: 'right' });
   doc.setTextColor(43, 38, 33);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
   doc.text(title, M, 24);
@@ -852,6 +866,11 @@ function ptPdfPage(doc, st, canvas, title, subtitle, notes) {
     doc.text(noteLines, M, H - 10 - noteH + 2.8);
   }
   doc.setDrawColor(224, 221, 214); doc.line(M, H - 8, W - M, H - 8);
+  if (st.storeText) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(118, 111, 100);
+    doc.text(st.storeText, M, H - 4);
+    doc.setTextColor(0);
+  }
   doc.setTextColor(0);
 }
 
@@ -890,6 +909,24 @@ function ptPdfModuleList(doc, st, rows) {
     doc.text(colorLines, x, y);
     y += lh;
   });
+}
+
+// Logo do dealer → PNG em data URL (o jsPDF só aceita PNG/JPEG; logo
+// cadastrada pode ser webp/svg). Sem logo, ou falhou baixar: null.
+async function ptLoadDealerLogo() {
+  try {
+    const url = (typeof currentUserProfile !== 'undefined' && currentUserProfile && currentUserProfile.logo_url) || null;
+    if (!url || typeof proposalUrlToDataUrl !== 'function') return null;
+    const src = await proposalUrlToDataUrl(url);
+    if (!src) return null;
+    const img = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+    if (!img || !img.naturalWidth) return null;
+    const k = Math.min(1, 600 / img.naturalWidth);
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return { dataUrl: c.toDataURL('image/png'), w: c.width, h: c.height };
+  } catch (e) { return null; }
 }
 
 // ---------- fluxo do botão ----------
@@ -932,7 +969,12 @@ async function generateProjectTechPlan() {
       pages: 0,
       projectName: (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.name) || ptT('untitled'),
       dateText: new Date().toLocaleDateString(),
-      unitText: unit === 'mm' ? 'mm' : (unitAbbrev(unit) || unit)
+      unitText: unit === 'mm' ? 'mm' : (unitAbbrev(unit) || unit),
+      logo: await ptLoadDealerLogo(),
+      storeText: (() => {
+        const pf = (typeof currentUserProfile !== 'undefined' && currentUserProfile) || {};
+        return [pf.store_name, pf.store_phone].filter(Boolean).join('  ·  ');
+      })()
     };
 
     ptStatus(ptT('step_plan'));
