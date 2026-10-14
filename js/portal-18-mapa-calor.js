@@ -139,6 +139,17 @@ function hmColorOk(c) { return !!c && c.active !== false && !HM_EXCLUDE_RE.test(
 function hmSheetPrice(c) { return Number(c && c.sheet_price_per_m2) || 0; }
 function applyProjectHeatmapColors(scene) {
   const slotById = new Map((projectSlots || []).map((s) => [s.id, s]));
+  // FAIXA DA LINHA = união das cores que QUALQUER módulo do projeto aceita
+  // (13/10, Matt: "por que esses módulos do canto ficaram em cor diferente?
+  // são a mesma cor dos demais" — o canto aceita menos cores, então a mesma
+  // cor caía em outro ponto da faixa DELE). Mesma cor = mesmo tom, sempre.
+  let lineMin = Infinity, lineMax = -Infinity;
+  (projectSlots || []).forEach((s) => Object.values(s.colorOptionsByRole || {}).forEach((l) => (l || []).forEach((c) => {
+    if (!hmColorOk(c)) return;
+    const p = hmSheetPrice(c);
+    lineMin = Math.min(lineMin, p); lineMax = Math.max(lineMax, p);
+  })));
+  if (!isFinite(lineMin)) { lineMin = 0; lineMax = 0; }
   const roleStats = new Map(); // roleId -> { name, uses: Map(colorId -> {color, n, t}) }
   scene.children.forEach((g) => {
     const ud = g.userData || {};
@@ -154,12 +165,10 @@ function applyProjectHeatmapColors(scene) {
         const cur = slot.colorsByRole && slot.colorsByRole[rid];
         const opts = ((slot.colorOptionsByRole || {})[rid] || []).filter(hmColorOk);
         if (cur && opts.length) {
-          const prices = opts.map(hmSheetPrice);
-          const min = Math.min(...prices), max = Math.max(...prices);
+          const min = lineMin, max = lineMax;
           const t = max > min ? (hmSheetPrice(cur) - min) / (max - min) : 0;
           hex = hmColor(Math.max(0, Math.min(1, t))).hex;
           const rs = roleStats.get(rid) || { name: ((colorRolesCache || []).find((r) => r.id === rid) || {}).name || '', uses: new Map(), min, max };
-          rs.min = Math.min(rs.min, min); rs.max = Math.max(rs.max, max);
           const u = rs.uses.get(cur.id) || { color: cur, n: 0, t };
           u.n++; rs.uses.set(cur.id, u); roleStats.set(rid, rs);
         }

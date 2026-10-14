@@ -1497,7 +1497,11 @@ async function runProjectPhotoBuild() {
 
 // ---------- Visibilidade: só administrador (pedido do Matt, 24/09) ----------
 async function refreshProjectAdminOnlyButtons() {
-  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-ai-walls-btn', 'po-proj-costplan-btn', 'po-proj-heatmap-menu'];
+  // 'po-proj-costplan-btn' (Análise de custo, portal-17) DESLIGADO por
+  // enquanto (13/10, Matt: "desativar esse botão por enquanto, os filtros
+  // ficaram realmente bons") — fica display:none no HTML. Pra religar, é só
+  // devolver o id a esta lista.
+  const ids = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-ai-walls-btn', 'po-proj-heatmap-menu'];
   let isAdmin = false;
   try {
     const { data: session } = await supabaseClient.auth.getSession();
