@@ -971,6 +971,20 @@ async function loadAccessoryModuleExtras(accessoryRows) {
 // loadProjectBuilderCatalog (precisa de await, por isso não é buscado aqui
 // dentro, que é síncrona). Ver LayoutEngine.toPieceRows (js/layout-engine.js)
 // pro formato exato que cada campo precisa ter.
+// GRUPO DE TELA (14/10, Matt: "base divisória e lateral divisória pode
+// deixar lado a lado lá em cima. pode colocar o gola nessa divisão. como
+// dividers. restante mantém"). Só muda ONDE o card aparece na biblioteca —
+// `group_name` cru continua indo pro motor (layout-engine decide coisas por
+// ele). O grupo "Divisórias" é sempre o 1º da lista (ver
+// fillProjectBuilderLibGrid); o texto sai do i18n (builder_grp.divisorias).
+const PROJECT_BUILDER_GRUPO_DIVISORIAS = 'Divisórias';
+function projectBuilderGrupoTela(a) {
+  const slug = String(a.slug || '').toLowerCase();
+  const n = projLibNorm(a.name);
+  if (slug === 'div_vert' || /^base divis|^lateral divis|^gola/.test(n)) return PROJECT_BUILDER_GRUPO_DIVISORIAS;
+  return a.group_name || I18n.t('builder.group_other');
+}
+
 function projectBuilderAccessoryEntry(a, moduleExtra) {
   const p = a.default_params || {};
   // 'forma' escolhe o desenho do conteúdo no resolvedor e NÃO é campo do
@@ -990,7 +1004,7 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     name: a.name,
     // slug: é por ele que o ícone é escolhido (os 13 da migration 087).
     slug: a.slug || null,
-    group: a.group_name || I18n.t('builder.group_other'),
+    group: projectBuilderGrupoTela(a),
     // group_name CRU (2026-08-20, bug do Matt: "a gaveta entra sem a
     // frente"): layout-engine.js/emitContent decide se sintetiza a frente
     // automática de gaveta olhando `acc.group_name === 'Gavetas'` (ver
@@ -1449,6 +1463,17 @@ function fillProjectBuilderLibGrid() {
     .filter((k) => projectBuilderCat[k].slug !== 'frente_gaveta_externa'
       && projectBuilderCat[k].slug !== 'frente_gaveta_interna')
     .filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]));
+  // Divisórias (base, lateral, gola) sempre primeiro, lado a lado; o resto
+  // mantém a ordem do cadastro (sort estável).
+  // Dentro dele: Base divisória e Lateral divisória lado a lado na 1ª linha,
+  // Gola depois.
+  const rankDiv = (k) => {
+    const acc = projectBuilderCat[k];
+    if (acc.group !== PROJECT_BUILDER_GRUPO_DIVISORIAS) return 9;
+    const n = projLibNorm(acc.name);
+    return /^base/.test(n) ? 0 : /^lateral|div_vert/.test(n + ' ' + (acc.slug || '')) ? 1 : 2;
+  };
+  cabem.sort((a, b) => rankDiv(a) - rankDiv(b));
 
   // ---- chips: "Todos" + um por grupo do que cabe AQUI ----
   const grupos = [];
