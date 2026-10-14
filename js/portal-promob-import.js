@@ -190,8 +190,12 @@ function promobReadWall(entity, nearbyItems) {
   const pl = promobReadPlacement(entity);
   const r = (pl.rot * Math.PI) / 180;
   const cosR = Math.cos(r), sinR = Math.sin(r);
+  // O espelho (NORMAL C=-1) vale só pros pontos do contorno — o PONTOBASE da
+  // região é deslocamento já no referencial da parede e NÃO espelha.
+  // (Bug do Master Bath, 14/10: a região trazia PONTOBASE 557/1333 e a
+  // parede saía deslocada dos móveis; na cozinha o PONTOBASE era zero.)
   const pts = promobChildren(promobChild(face, 'POINTS'), 'POINT').map((p) => {
-    const lx = sx * (promobNum(p, 'X') + ox);
+    const lx = sx * promobNum(p, 'X') + ox;
     const ly = promobNum(p, 'Y') + oy;
     return [pl.x + lx * cosR - ly * sinR, pl.y + lx * sinR + ly * cosR];
   });
