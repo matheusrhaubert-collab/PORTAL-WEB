@@ -28,6 +28,111 @@
 
 let projectImport2020Result = null; // { matched, unmatched, ambiguous } da última análise
 
+// ---------- IA + escolha manual pros códigos sem casamento (2026-10-14) ----------
+//
+// Matt, depois da IA no Importar do Promob: "pode colocar em todas
+// importacoes". O casamento por module_dimension_presets.reference continua
+// sendo a 1ª fonte (linhas "Encontrado" não mudam). O que sobra — sem
+// correspondência ou ambíguo — ganha:
+//   · um <select> na revisão (ambíguo: só os módulos que já têm o código);
+//   · escolha lembrada neste navegador (mesma ideia do Importar do Promob);
+//   · sugestão da IA (Edge Function generate-project-from-photo, etapa
+//     'promob_match' com source='2020'), que lê a medida do PRÓPRIO código
+//     (B30 → 762mm) e só entra sozinha com confiança alta/média — baixa vira
+//     dica. Nunca passa por cima de escolha lembrada ou feita à mão.
+// row.choice = { module_id, source: 'saved'|'manual'|'ai', confidence?,
+//                reasoning?, width_mm?, height_mm? } | null
+const IMPORT2020_MAP_STORAGE_KEY = 'legno_2020_code_map_v1';
+let projectImport2020AiRunning = false;
+
+function loadImport2020CodeMap() {
+  try {
+    const raw = window.localStorage.getItem(IMPORT2020_MAP_STORAGE_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === 'object' ? obj : {};
+  } catch (e) { return {}; }
+}
+
+function saveImport2020CodeMap(map) {
+  try { window.localStorage.setItem(IMPORT2020_MAP_STORAGE_KEY, JSON.stringify(map)); } catch (e) { /* sem storage: só não lembra */ }
+}
+
+function import2020PendingRows(result) {
+  return result ? result.unmatched.concat(result.ambiguous) : [];
+}
+
+function applySavedImport2020Choices(result) {
+  const saved = loadImport2020CodeMap();
+  import2020PendingRows(result).forEach((r) => {
+    const sv = saved[r.code.toUpperCase()];
+    if (!sv || !sv.module_id) return;
+    const m = allModules.find((mm) => mm.id === sv.module_id && mm.active !== false);
+    if (!m) return;
+    if (r.moduleIds && !r.moduleIds.includes(sv.module_id)) return;
+    r.choice = { module_id: sv.module_id, source: 'saved', width_mm: sv.width_mm || null, height_mm: sv.height_mm || null };
+  });
+}
+
+async function runProjectImport2020Ai() {
+  const result = projectImport2020Result;
+  if (!result || projectImport2020AiRunning) return;
+  const rows = import2020PendingRows(result).filter((r) => !(r.choice && r.choice.module_id));
+  if (!rows.length) return;
+  projectImport2020AiRunning = true;
+  result.aiHints = {};
+  setProjectImport2020Error('');
+  setProjectImport2020Status(I18n.t('project_importpromob.ai_running', { n: rows.length }));
+  renderProjectImport2020Review(result);
+  try {
+    const catalog = await buildProjectPhotoCatalog();
+    if (!catalog.length) throw new Error(I18n.t('project_importpromob.ai_no_catalog'));
+    const types = rows.map((r) => {
+      const t = { type_key: r.code, description: [r.manufCode, r.catalog, r.finishedSide].filter(Boolean).join(' · '), count: r.qty };
+      if (r.moduleIds && r.moduleIds.length) t.candidates = r.moduleIds;
+      return t;
+    });
+    const { data, error } = await supabaseClient.functions.invoke('generate-project-from-photo', {
+      body: { stage: 'promob_match', source: '2020', types, catalog }
+    });
+    if (error && !(data && data.matches)) {
+      console.error('[import2020] IA falhou:', error, data);
+      throw new Error(typeof describeEdgeFunctionError === 'function'
+        ? await describeEdgeFunctionError(error, data, 'generate-project-from-photo')
+        : (error.message || String(error)));
+    }
+    let applied = 0;
+    ((data && data.matches) || []).forEach((m) => {
+      if (!m || !m.module_id) return;
+      const row = rows.find((r) => r.code === m.type_key);
+      if (!row || (row.choice && row.choice.module_id)) return;
+      if (!allModules.some((mm) => mm.id === m.module_id)) return;
+      if (row.moduleIds && !row.moduleIds.includes(m.module_id)) return;
+      if (m.confidence === 'high' || m.confidence === 'medium') {
+        row.choice = { module_id: m.module_id, source: 'ai', confidence: m.confidence, reasoning: m.reasoning || '', width_mm: m.width_mm || null, height_mm: m.height_mm || null };
+        applied++;
+      } else {
+        result.aiHints[row.code] = { module_id: m.module_id, reasoning: m.reasoning || '' };
+      }
+    });
+    result.aiDone = { applied, asked: rows.length };
+  } catch (err) {
+    setProjectImport2020Error(I18n.t('project_importpromob.ai_err', { msg: err.message || String(err) }));
+  } finally {
+    projectImport2020AiRunning = false;
+    setProjectImport2020Status('');
+    renderProjectImport2020Review(result);
+  }
+}
+
+function refreshProjectImport2020CreateBtn() {
+  const createBtn = document.getElementById('po-proj-import2020-create-btn');
+  if (!createBtn || !projectImport2020Result) return;
+  const n = projectImport2020Result.matched.length
+    + import2020PendingRows(projectImport2020Result).filter((r) => r.choice && r.choice.module_id).length;
+  createBtn.style.display = n > 0 ? '' : 'none';
+  createBtn.disabled = projectImport2020AiRunning;
+}
+
 // ---------- Passo 1: parse do texto colado ----------
 //
 // Espera o texto extraído com layout preservado (ex: `pdftotext -layout` do
@@ -259,15 +364,16 @@ async function runProjectImport2020Parse() {
   try {
     const result = await matchProjectImport2020Codes(rows);
     projectImport2020Result = result;
+    applySavedImport2020Choices(result);
     renderProjectImport2020Review(result);
     setProjectImport2020Status('');
-    if (result.matched.length === 0) {
+    // "Nada casou" deixou de ser erro final: a IA/escolha manual ainda pode
+    // resolver os códigos que sobraram (ver runProjectImport2020Ai).
+    if (result.matched.length === 0 && import2020PendingRows(result).length === 0) {
       setProjectImport2020Error(I18n.t('project_import2020.err_nothing_matched'));
-      const createBtn = document.getElementById('po-proj-import2020-create-btn');
-      if (createBtn) createBtn.style.display = 'none';
-    } else {
-      const createBtn = document.getElementById('po-proj-import2020-create-btn');
-      if (createBtn) createBtn.style.display = '';
+    }
+    if (import2020PendingRows(result).some((r) => !(r.choice && r.choice.module_id))) {
+      runProjectImport2020Ai();
     }
     // Já processou — esconde a caixa de texto, o botão "Processar" e o
     // anexar/colar manual pra não confundir (evita reprocessar em cima da
@@ -297,21 +403,70 @@ function renderProjectImport2020Review(result) {
   const el = document.getElementById('po-proj-import2020-review');
   if (!el) return;
 
-  const matchedCount = result.matched.reduce((n, r) => n + r.qty, 0);
-  const unmatchedCount = result.unmatched.reduce((n, r) => n + r.qty, 0);
-  const ambiguousCount = result.ambiguous.reduce((n, r) => n + r.qty, 0);
+  const pending = import2020PendingRows(result);
+  const chosen = pending.filter((r) => r.choice && r.choice.module_id);
+  const matchedCount = result.matched.reduce((n, r) => n + r.qty, 0) + chosen.reduce((n, r) => n + r.qty, 0);
+  const openCount = pending.filter((r) => !(r.choice && r.choice.module_id)).reduce((n, r) => n + r.qty, 0);
 
-  const rowsHtml = (list, statusClass, statusLabel) => list.map((r) => `
+  const catalog = (typeof allModules !== 'undefined' ? allModules : [])
+    .filter((m) => m && m.active !== false && !m.is_invisible)
+    .slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  const optionsFor = (r) => {
+    // Ambíguo: só os módulos que JÁ têm este código cadastrado.
+    const list = r.moduleIds && r.moduleIds.length ? catalog.filter((m) => r.moduleIds.includes(m.id)) : catalog;
+    const sel = r.choice && r.choice.module_id;
+    return [`<option value="">${escapeHtmlImport2020(I18n.t('project_importpromob.opt_skip'))}</option>`]
+      .concat(list.map((m) => `<option value="${escapeHtmlImport2020(m.id)}"${m.id === sel ? ' selected' : ''}>${escapeHtmlImport2020(m.name)}</option>`))
+      .join('');
+  };
+  const pendingStatus = (r) => {
+    const c = r.choice;
+    if (c && c.module_id && c.source === 'ai') {
+      return `<span class="po-import2020-status ok po-importpromob-ai" title="${escapeHtmlImport2020(c.reasoning || '')}">${escapeHtmlImport2020(I18n.t(c.confidence === 'high' ? 'project_importpromob.src_ai_high' : 'project_importpromob.src_ai_medium'))}</span>`;
+    }
+    if (c && c.module_id) {
+      return `<span class="po-import2020-status ok">${escapeHtmlImport2020(I18n.t(c.source === 'saved' ? 'project_importpromob.src_saved' : 'project_importpromob.src_manual'))}</span>`;
+    }
+    if (projectImport2020AiRunning) return `<span class="po-import2020-status warn">${escapeHtmlImport2020(I18n.t('project_importpromob.src_ai_searching'))}</span>`;
+    return `<span class="po-import2020-status warn">${escapeHtmlImport2020(I18n.t(r.moduleIds ? 'project_import2020.status_ambiguous' : 'project_import2020.status_gap'))}</span>`;
+  };
+
+  const matchedRows = result.matched.map((r) => `
     <tr>
       <td class="mono">${escapeHtmlImport2020(r.code)}</td>
       <td>${r.qty}</td>
       <td>${escapeHtmlImport2020(r.module_name || '—')}</td>
-      <td><span class="po-import2020-status ${statusClass}">${statusLabel}</span></td>
-    </tr>
-  `).join('');
+      <td><span class="po-import2020-status ok">${escapeHtmlImport2020(I18n.t('project_import2020.status_ok'))}</span></td>
+    </tr>`).join('');
+  const pendingRows = pending.map((r, i) => `
+    <tr>
+      <td class="mono">${escapeHtmlImport2020(r.code)}</td>
+      <td>${r.qty}</td>
+      <td><select class="po-importpromob-map po-import2020-map" data-row="${i}">${optionsFor(r)}</select></td>
+      <td>${pendingStatus(r)}</td>
+    </tr>`).join('');
+
+  const hints = result.aiHints || {};
+  const hintCodes = Object.keys(hints).filter((code) => {
+    const r = pending.find((p) => p.code === code);
+    return r && !(r.choice && r.choice.module_id);
+  });
+  const hintsHtml = hintCodes.length
+    ? `<p class="hint po-importpromob-warn">${escapeHtmlImport2020(I18n.t('project_importpromob.ai_low_hint'))} ${hintCodes.map((code) => {
+        const m = catalog.find((mm) => mm.id === hints[code].module_id);
+        return `<b>${escapeHtmlImport2020(code)}</b> → ${escapeHtmlImport2020(m ? m.name : '?')}${hints[code].reasoning ? ` (${escapeHtmlImport2020(hints[code].reasoning)})` : ''}`;
+      }).join('; ')}</p>`
+    : '';
+  const missing = pending.filter((r) => !(r.choice && r.choice.module_id)).length;
+  const aiBarHtml = pending.length ? `
+    <div class="po-importpromob-aibar">
+      <button type="button" id="po-proj-import2020-ai-btn" class="secondary"${projectImport2020AiRunning || !missing ? ' disabled' : ''}>${escapeHtmlImport2020(I18n.t('project_importpromob.ai_btn', { n: missing }))}</button>
+      ${result.aiDone ? `<span class="hint">${escapeHtmlImport2020(I18n.t('project_importpromob.ai_done', { applied: result.aiDone.applied, asked: result.aiDone.asked }))}</span>` : ''}
+    </div>` : '';
 
   el.innerHTML = `
-    <p class="hint">${I18n.t('project_import2020.summary_line', { matched: matchedCount, unmatched: unmatchedCount + ambiguousCount })}</p>
+    <p class="hint">${I18n.t('project_import2020.summary_line', { matched: matchedCount, unmatched: openCount })}</p>
+    ${aiBarHtml}
     <div class="po-import2020-tablewrap">
       <table class="po-import2020-table">
         <thead>
@@ -323,14 +478,28 @@ function renderProjectImport2020Review(result) {
           </tr>
         </thead>
         <tbody>
-          ${rowsHtml(result.matched, 'ok', I18n.t('project_import2020.status_ok'))}
-          ${rowsHtml(result.ambiguous, 'warn', I18n.t('project_import2020.status_ambiguous'))}
-          ${rowsHtml(result.unmatched, 'warn', I18n.t('project_import2020.status_gap'))}
+          ${matchedRows}
+          ${pendingRows}
         </tbody>
       </table>
     </div>
+    ${hintsHtml}
   `;
   el.style.display = '';
+
+  el.querySelectorAll('select.po-import2020-map').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const r = pending[Number(sel.getAttribute('data-row'))];
+      if (!r) return;
+      // Trocar à mão descarta a medida que a IA leu do código (pode ser de
+      // outro módulo) — fica a padrão do módulo escolhido.
+      r.choice = sel.value ? { module_id: sel.value, source: 'manual', width_mm: null, height_mm: null } : null;
+      renderProjectImport2020Review(result);
+    });
+  });
+  const aiBtn = document.getElementById('po-proj-import2020-ai-btn');
+  if (aiBtn) aiBtn.addEventListener('click', runProjectImport2020Ai);
+  refreshProjectImport2020CreateBtn();
 }
 
 // ---------- Passo 3: criar os módulos no projeto atual ----------
@@ -342,7 +511,9 @@ function renderProjectImport2020Review(result) {
 // insertProjectModuleDefault — sequencial de propósito, a mesma função
 // resolve profundidade contra os slots que já estão na parede.
 async function runProjectImport2020Build() {
-  if (!projectImport2020Result || projectImport2020Result.matched.length === 0) return;
+  if (!projectImport2020Result) return;
+  const chosenRows = import2020PendingRows(projectImport2020Result).filter((r) => r.choice && r.choice.module_id);
+  if (projectImport2020Result.matched.length === 0 && chosenRows.length === 0) return;
 
   if (projectSlots.length > 0) {
     const ok = confirm(I18n.t('project_import2020.confirm_replace'));
@@ -356,8 +527,30 @@ async function runProjectImport2020Build() {
 
   try {
     // Expande quantidade em itens individuais, mantendo a ordem do relatório.
+    // Lembra as escolhas (IA confirmada pelo clique, ou feitas à mão) pra
+    // próxima importação já vir casada.
+    const saved = loadImport2020CodeMap();
+    chosenRows.forEach((r) => {
+      saved[r.code.toUpperCase()] = { module_id: r.choice.module_id, width_mm: r.choice.width_mm || null, height_mm: r.choice.height_mm || null };
+    });
+    saveImport2020CodeMap(saved);
+
+    // Linhas escolhidas (IA/à mão) entram no MESMO formato das casadas pela
+    // referência: largura = a que a IA leu do código, senão a padrão do módulo.
+    const chosenAsMatched = chosenRows.map((r) => {
+      const m = allModules.find((mm) => mm.id === r.choice.module_id) || {};
+      return {
+        ...r,
+        module_id: r.choice.module_id,
+        module_name: m.name,
+        mount_type: m.mount_type || 'floor',
+        is_decoration: !!m.is_decoration,
+        width_mm: Number(r.choice.width_mm) || Number(m.width_default_mm) || 0,
+        height_mm: Number(r.choice.height_mm) || null
+      };
+    });
     const expanded = [];
-    projectImport2020Result.matched.forEach((r) => {
+    projectImport2020Result.matched.concat(chosenAsMatched).forEach((r) => {
       for (let i = 0; i < r.qty; i++) {
         expanded.push({
           module_id: r.module_id,

@@ -2803,7 +2803,13 @@ header.po-topnav {
 }
 .po-importpromob-map { width: 100%; min-width: 180px; font-size: 12px; }
 .po-importpromob-warn { color: #93611a; }
-.po-importpromob-check { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; font-size: 13px; }
+.po-importpromob-check {
+  display: flex !important; flex-direction: row; align-items: center; justify-content: flex-start;
+  gap: 8px; margin: 10px 0 4px; font-size: 13px; text-align: left; width: 100%;
+}
+.po-importpromob-check input[type="checkbox"] { width: auto !important; margin: 0; flex: 0 0 auto; }
+.po-importpromob-aibar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 2px; }
+.po-importpromob-ai { cursor: help; }
 
 /* Modal "Duplicar módulo" (2026-09-14) — mesmo overlay/card do modal de IA
    acima (#po-proj-ai-modal), card mais estreito por ser só 2 campos. */

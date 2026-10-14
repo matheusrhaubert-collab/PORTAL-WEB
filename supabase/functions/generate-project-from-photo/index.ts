@@ -42,6 +42,9 @@
 // pedido em texto (IA · Editar projeto, js/portal-19-ia-editar.js). Ver
 // bloco "ETAPA 'edit'" mais abaixo.
 //
+// v5 (2026-10-14): stage='promob_match' — casa os tipos de módulo de um
+// .promob com o catálogo (Importar do Promob, js/portal-promob-import.js).
+//
 // Ordem das propriedades no schema (propertyOrdering) é proposital: o modelo
 // escreve as NOTAS de câmera/escala antes dos números, as PAREDES antes das
 // aberturas, e as aberturas antes dos volumes — é o raciocínio na ordem que
@@ -918,6 +921,95 @@ function sanitizeEdit(data: any, b: any) {
 }
 
 // ==========================================================================
+// ETAPA 'promob_match' (v5, 2026-10-14) — Importar do Promob
+// ==========================================================================
+// Pedido do Matt: "pode colocar a IA pra ajudar na procura pelo modulo".
+// O importador (js/portal-promob-import.js) já leu o .promob e agrupou os
+// módulos por TIPO (descrição do Promob sem $W$/$H$/$D$). Aqui a IA só
+// casa cada tipo com UM módulo do catálogo Legno — é casamento de lista,
+// sem imagem, então vai sempre no Flash. Mesma regra das outras etapas:
+// sem equivalente de verdade → module_id null (NUNCA "o mais parecido").
+// O portal só aplica sozinho confiança alta/média; baixa vira só dica.
+const PROMOB_MATCH_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    matches: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          type_key: { type: "STRING" },
+          reasoning: { type: "STRING" },
+          module_id: { type: "STRING", nullable: true },
+          confidence: { type: "STRING", enum: ["high", "medium", "low"] },
+          width_mm: { type: "NUMBER", nullable: true },
+          height_mm: { type: "NUMBER", nullable: true },
+        },
+        required: ["type_key", "reasoning", "confidence"],
+        propertyOrdering: ["type_key", "reasoning", "module_id", "confidence", "width_mm", "height_mm"],
+      },
+    },
+  },
+  required: ["matches"],
+};
+
+// v5b (mesmo dia, Matt: "pode colocar em todas importacoes") — a mesma
+// etapa serve o Importar do 2020 (js/portal-2020-import.js) com
+// source='2020': lá o "tipo" é o código do relatório Item List (B30,
+// W3030, SB36, BD09-42...), sem medida — a IA lê a medida DO CÓDIGO e
+// devolve width_mm/height_mm. Código ambíguo vem com "candidates" (ids
+// que já têm essa referência cadastrada) e a escolha fica restrita a eles.
+function buildPromobMatchPrompt(b: any): string {
+  const tipos = (b.types || []).map((t: any) => JSON.stringify(t)).join("\n");
+  const cat = (b.catalog || []).map((c: any) => JSON.stringify(c)).join("\n");
+  const intro = b.source === "2020"
+    ? `Você casa códigos de módulo vindos do relatório "Item List" do 2020 Design (software de projeto de cozinha americano) com o catálogo da marcenaria Legno.
+
+Cada TIPO abaixo é um código do 2020: "type_key" é o Usercode (padrão de cozinha americana: B = base, SB = sink base, BD/DB = drawer base, W = wall cabinet, BBC/BLB = blind base corner, WBC = blind wall corner, U/T/PC = tall/utility/pantry, F/FL = filler, TK = toekick, P/PNL/END = painel, etc.; os números costumam ser largura e altura em POLEGADAS — ex.: B30 = base 30" de largura, W3030 = aéreo 30" × 30", BD09-42 pode ser um código de fábrica), "description" traz o código do fabricante e o catálogo do 2020, "count" a quantidade. Quando o código indicar medida, converta pra mm (1" = 25,4 mm) e devolva em width_mm/height_mm; se não indicar, null. Se o tipo tiver "candidates", escolha SÓ entre esses ids (são os módulos que já têm esse código cadastrado) ou null.
+`
+    : `Você casa tipos de módulo vindos do Promob (software de projeto de móveis planejados) com o catálogo da marcenaria Legno.
+
+Cada TIPO abaixo é um módulo do Promob: "type_key" é a descrição (geralmente em inglês, padrão de cozinha americana: BASE CABINET, WALL CABINET, SINK BASE, BLIND CORNER, DRAWER, PANTRY, PANEL, FILLER, TOEKICK, SHELVES...; prefixos como XW2S, X2DB, XPB são códigos internos da biblioteca), "count" quantas vezes aparece, "sizes" as medidas reais em mm (w largura, h altura, d profundidade, z altura do chão), e "promob" atributos da biblioteca quando existem (MOD_BAS_SUP_TRA = Base/Superior/Torre, TIPO_CAIXA = Porta/Gaveta, layer = camada do Promob). Deixe width_mm/height_mm null (as medidas já vêm do arquivo).
+`;
+  return `${intro}
+Para CADA tipo, escolha o módulo do catálogo que é o MESMO tipo de móvel — mesma função (base com porta, base de pia, gaveteiro, aéreo, torre/despenseiro, painel, filler/complemento, rodapé/toekick, prateleira aberta...), mesma montagem (piso/parede) e medidas que caibam no intervalo [mín, padrão, máx] do catálogo (w/h/d). Leve em conta família/categoria/subcategoria e a dica (hint) do catálogo.
+
+Regras:
+- module_id tem que ser um "id" EXATO do catálogo, ou null.
+- Se não existir no catálogo um módulo do mesmo tipo, devolva null. NUNCA escolha um "parecido" de outra função (ex.: não troque gaveteiro por base com porta, nem painel por filler).
+- confidence: "high" = mesmo tipo e as medidas cabem; "medium" = mesmo tipo mas alguma medida fora do intervalo ou nome ambíguo; "low" = dúvida real.
+- reasoning: 1 frase curta em português dizendo por quê.
+- Devolva exatamente um item em "matches" por tipo, com o type_key igual ao recebido.
+
+TIPOS (um JSON por linha):
+${tipos}
+
+CATÁLOGO LEGNO (um JSON por linha):
+${cat}`;
+}
+
+function sanitizePromobMatch(data: any, b: any) {
+  const ids = new Set((b.catalog || []).map((c: any) => String(c.id)));
+  const keys = new Set((b.types || []).map((t: any) => String(t.type_key)));
+  const out: any[] = [];
+  const seen = new Set<string>();
+  (Array.isArray(data?.matches) ? data.matches : []).forEach((m: any) => {
+    const k = String(m?.type_key || "");
+    if (!keys.has(k) || seen.has(k)) return;
+    seen.add(k);
+    const tipo = (b.types || []).find((t: any) => String(t.type_key) === k) || {};
+    const cands = Array.isArray(tipo.candidates) && tipo.candidates.length ? new Set(tipo.candidates.map(String)) : null;
+    let mid = m?.module_id && ids.has(String(m.module_id)) ? String(m.module_id) : null;
+    if (mid && cands && !cands.has(mid)) mid = null; // ambíguo: só vale um dos candidatos
+    const conf = ["high", "medium", "low"].includes(m?.confidence) ? m.confidence : "low";
+    const mm = (v: any) => { const n = Number(v); return v === null || v === undefined || !Number.isFinite(n) || n <= 0 || n > 4000 ? null : Math.round(n); };
+    out.push({ type_key: k, module_id: mid, confidence: mid ? conf : "low", reasoning: String(m?.reasoning || "").slice(0, 300),
+      width_mm: mm(m?.width_mm), height_mm: mm(m?.height_mm) });
+  });
+  return { matches: out };
+}
+
+// ==========================================================================
 // HTTP
 // ==========================================================================
 Deno.serve(async (req) => {
@@ -929,7 +1021,7 @@ Deno.serve(async (req) => {
   let b: any;
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
 
-  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "edit" ? "edit" : "read";
+  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "edit" ? "edit" : b?.stage === "promob_match" ? "promob_match" : "read";
   const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length;
   if (tamanho > 14_000_000) return json(413, { error: "Imagens grandes demais — use menos páginas.", code: "too_big" });
 
@@ -954,6 +1046,12 @@ Deno.serve(async (req) => {
       const tier = b.quality === "pro" ? "pro" : "flash";
       const { data, model } = await callGemini(apiKey, tier, [{ text: buildEditPrompt(b) }], EDIT_SCHEMA);
       return json(200, { ...sanitizeEdit(data, b), model });
+    }
+    if (stage === "promob_match") {
+      if (!Array.isArray(b.types) || !b.types.length) return json(400, { error: "Nenhum tipo do Promob enviado.", code: "no_types" });
+      if (!Array.isArray(b.catalog) || !b.catalog.length) return json(400, { error: "Catálogo vazio.", code: "no_catalog" });
+      const { data, model } = await callGemini(apiKey, "flash", [{ text: buildPromobMatchPrompt(b) }], PROMOB_MATCH_SCHEMA);
+      return json(200, { ...sanitizePromobMatch(data, b), model });
     }
     const imgs = imageParts(b);
     if (!imgs.length) return json(400, { error: "Foto ausente (image_base64).", code: "no_image" });

@@ -93,9 +93,12 @@ function promobAttrValue(entity, id) {
 // "CP1007 RIPADO PANEL 01 19MM $H$ X $W$ X $D$ @mk_co_2@" → "CP1007 RIPADO PANEL 01 19MM"
 // "X32007 - 5 SHELVES  $W$ x $H$ x $D$"                → "X32007 - 5 SHELVES"
 function promobTypeKey(desc) {
+  // "$D.POL$"" (polegada da biblioteca) também é variável — qualquer coisa
+  // entre $...$ sai, e as aspas soltas que sobram junto.
   return String(desc || '')
     .replace(/@[^@]*@/g, ' ')
-    .replace(/\$[A-Za-z]+\$/g, ' ')
+    .replace(/\$[^$\s]*\$/g, ' ')
+    .replace(/["“”]/g, ' ')
     .replace(/(\s+[xX](?=\s|$))+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -145,6 +148,12 @@ function promobReadEntity(entity, parentKind) {
     description: desc,
     typeKey: kind === 'module' ? promobTypeKey(desc) : (desc || type),
     layer: layerEl ? layerEl.getAttribute('DESCRIPTION') : '',
+    // Atributos da biblioteca que ajudam a IA a casar o tipo (base/aéreo/
+    // torre, porta/gaveta). Ficam null quando a biblioteca não tem.
+    promobAttrs: kind === 'module' ? {
+      MOD_BAS_SUP_TRA: promobAttrValue(entity, 'MOD_BAS_SUP_TRA'),
+      TIPO_CAIXA: promobAttrValue(entity, 'TIPO_CAIXA')
+    } : null,
     inverted: String(entity.getAttribute('INVERTED') || '').toLowerCase() === 'true',
     width: w, height: h, depth: d,
     x: pl.x, y: pl.y, z: pl.z, rot: pl.rot,
@@ -344,6 +353,87 @@ function promobInitialMapping(typeKeys) {
   return mapping;
 }
 
+// ---------- IA: sugerir módulo Legno por tipo (2026-10-14) ----------
+//
+// Pedido do Matt, com print da revisão toda laranja ("0 with a Legno module
+// chosen"): "pode colocar a IA pra ajudar na procura pelo modulo".
+// Usa a MESMA Edge Function das outras IAs do Projetos
+// (generate-project-from-photo, etapa nova 'promob_match') e o MESMO
+// catálogo compacto (buildProjectPhotoCatalog, portal-11).
+//
+// Regras:
+//   · só preenche tipo que está SEM módulo — nunca passa por cima de escolha
+//     lembrada, de mesmo nome ou feita à mão;
+//   · confiança alta/média entra já escolhida (status "IA", com o porquê no
+//     tooltip); baixa NÃO entra — vira só uma dica embaixo da tabela;
+//   · nada é criado sem o clique em "Criar no projeto" (a revisão continua
+//     sendo o lugar de conferir).
+let projectImportPromobAiRunning = false;
+
+function promobAiTypesPayload(res) {
+  const modules = res.scene.items.filter((it) => it.kind === 'module');
+  return res.typeKeys.map((k) => {
+    const list = modules.filter((it) => it.typeKey === k);
+    const sizes = [];
+    list.forEach((it) => {
+      const s = { w: Math.round(it.width), h: Math.round(it.height), d: Math.round(it.depth), z: Math.round(it.z) };
+      if (!sizes.some((q) => q.w === s.w && q.h === s.h && q.d === s.d && q.z === s.z)) sizes.push(s);
+    });
+    const a = list[0].promobAttrs || {};
+    const promob = { layer: list[0].layer || null };
+    if (a.MOD_BAS_SUP_TRA) promob.MOD_BAS_SUP_TRA = a.MOD_BAS_SUP_TRA;
+    if (a.TIPO_CAIXA) promob.TIPO_CAIXA = a.TIPO_CAIXA;
+    return { type_key: k, description: list[0].description, count: list.length, sizes: sizes.slice(0, 6), promob };
+  });
+}
+
+async function runProjectImportPromobAi(onlyMissing) {
+  const res = projectImportPromobResult;
+  if (!res || projectImportPromobAiRunning) return;
+  const keys = res.typeKeys.filter((k) => !onlyMissing || !(res.mapping[k] && res.mapping[k].moduleId));
+  if (!keys.length) return;
+  projectImportPromobAiRunning = true;
+  res.aiHints = {};
+  setProjectImportPromobError('');
+  setProjectImportPromobStatus(I18n.t('project_importpromob.ai_running', { n: keys.length }));
+  renderProjectImportPromobReview();
+  try {
+    const catalog = await buildProjectPhotoCatalog();
+    if (!catalog.length) throw new Error(I18n.t('project_importpromob.ai_no_catalog'));
+    const types = promobAiTypesPayload(res).filter((t) => keys.includes(t.type_key));
+    const { data, error } = await supabaseClient.functions.invoke('generate-project-from-photo', {
+      body: { stage: 'promob_match', types, catalog }
+    });
+    if (error && !(data && data.matches)) {
+      console.error('[importPromob] IA falhou:', error, data);
+      throw new Error(typeof describeEdgeFunctionError === 'function'
+        ? await describeEdgeFunctionError(error, data, 'generate-project-from-photo')
+        : (error.message || String(error)));
+    }
+    const matches = (data && Array.isArray(data.matches)) ? data.matches : [];
+    let applied = 0;
+    matches.forEach((m) => {
+      if (!m || !m.type_key || !keys.includes(m.type_key) || !m.module_id) return;
+      if (!allModules.some((mm) => mm.id === m.module_id)) return;
+      const cur = res.mapping[m.type_key];
+      if (cur && cur.moduleId) return; // nunca passa por cima de escolha existente
+      if (m.confidence === 'high' || m.confidence === 'medium') {
+        res.mapping[m.type_key] = { moduleId: m.module_id, source: 'ai', confidence: m.confidence, reasoning: m.reasoning || '' };
+        applied++;
+      } else {
+        res.aiHints[m.type_key] = { moduleId: m.module_id, reasoning: m.reasoning || '' };
+      }
+    });
+    res.aiDone = { applied, asked: keys.length, model: data && data.model };
+  } catch (err) {
+    setProjectImportPromobError(I18n.t('project_importpromob.ai_err', { msg: err.message || String(err) }));
+  } finally {
+    projectImportPromobAiRunning = false;
+    setProjectImportPromobStatus('');
+    renderProjectImportPromobReview();
+  }
+}
+
 // ---------- Modal ----------
 
 function openProjectImportPromobModal() {
@@ -401,6 +491,11 @@ async function runProjectImportPromobAttach(file) {
     setProjectImportPromobStatus('');
     const row = document.querySelector('.po-importpromob-file-row');
     if (row) row.style.display = 'none';
+    // Sobrou tipo sem módulo? A IA já procura sozinha (um clique só pro
+    // Matt — mesmo espírito do "anexou o PDF, já processa" do 2020).
+    if (projectImportPromobResult.typeKeys.some((k) => !projectImportPromobResult.mapping[k].moduleId)) {
+      runProjectImportPromobAi(true);
+    }
   } catch (err) {
     setProjectImportPromobStatus('');
     console.error('[importPromob] falha lendo arquivo:', err);
@@ -468,9 +563,16 @@ function renderProjectImportPromobReview() {
     const sample = list[0];
     const sizes = `${ws.slice(0, 4).join(' / ')}${ws.length > 4 ? '…' : ''} × ${promobFmtMm(sample.height)} × ${promobFmtMm(sample.depth)}`;
     const mp = mapping[k] || {};
-    const status = mp.moduleId
-      ? `<span class="po-import2020-status ok">${escapeHtmlImportPromob(I18n.t(mp.source === 'saved' ? 'project_importpromob.src_saved' : (mp.source === 'name' ? 'project_importpromob.src_name' : 'project_importpromob.src_manual')))}</span>`
-      : `<span class="po-import2020-status warn">${escapeHtmlImportPromob(I18n.t('project_importpromob.src_none'))}</span>`;
+    let status;
+    if (mp.moduleId && mp.source === 'ai') {
+      status = `<span class="po-import2020-status ok po-importpromob-ai" title="${escapeHtmlImportPromob(mp.reasoning || '')}">${escapeHtmlImportPromob(I18n.t(mp.confidence === 'high' ? 'project_importpromob.src_ai_high' : 'project_importpromob.src_ai_medium'))}</span>`;
+    } else if (mp.moduleId) {
+      status = `<span class="po-import2020-status ok">${escapeHtmlImportPromob(I18n.t(mp.source === 'saved' ? 'project_importpromob.src_saved' : (mp.source === 'name' ? 'project_importpromob.src_name' : 'project_importpromob.src_manual')))}</span>`;
+    } else if (projectImportPromobAiRunning) {
+      status = `<span class="po-import2020-status warn">${escapeHtmlImportPromob(I18n.t('project_importpromob.src_ai_searching'))}</span>`;
+    } else {
+      status = `<span class="po-import2020-status warn">${escapeHtmlImportPromob(I18n.t('project_importpromob.src_none'))}</span>`;
+    }
     return `
       <tr>
         <td>${escapeHtmlImportPromob(k)}</td>
@@ -504,9 +606,29 @@ function renderProjectImportPromobReview() {
     ? `<label class="po-importpromob-check"><input type="checkbox" id="po-proj-importpromob-walls"${res.replaceWalls ? ' checked' : ''}> ${escapeHtmlImportPromob(I18n.t('project_importpromob.replace_walls', { n: scene.walls.reduce((s, w) => s + w.polyline.length - 1, 0) }))}</label>`
     : '';
 
+  // Dicas de confiança BAIXA (não aplicadas) + resumo da última rodada da IA.
+  const hints = res.aiHints || {};
+  const hintKeys = Object.keys(hints).filter((k) => !(mapping[k] && mapping[k].moduleId));
+  const hintsHtml = hintKeys.length
+    ? `<p class="hint po-importpromob-warn">${escapeHtmlImportPromob(I18n.t('project_importpromob.ai_low_hint'))} ${hintKeys.map((k) => {
+        const m = catalog.find((mm) => mm.id === hints[k].moduleId);
+        return `<b>${escapeHtmlImportPromob(k)}</b> → ${escapeHtmlImportPromob(m ? m.name : '?')}${hints[k].reasoning ? ` (${escapeHtmlImportPromob(hints[k].reasoning)})` : ''}`;
+      }).join('; ')}</p>`
+    : '';
+  const missing = typeKeys.filter((k) => !(mapping[k] && mapping[k].moduleId)).length;
+  const aiDoneHtml = res.aiDone
+    ? `<span class="hint">${escapeHtmlImportPromob(I18n.t('project_importpromob.ai_done', { applied: res.aiDone.applied, asked: res.aiDone.asked }))}</span>`
+    : '';
+  const aiBarHtml = `
+    <div class="po-importpromob-aibar">
+      <button type="button" id="po-proj-importpromob-ai-btn" class="secondary"${projectImportPromobAiRunning || !missing ? ' disabled' : ''}>${escapeHtmlImportPromob(I18n.t('project_importpromob.ai_btn', { n: missing }))}</button>
+      ${aiDoneHtml}
+    </div>`;
+
   el.innerHTML = `
     <p class="hint">${escapeHtmlImportPromob(I18n.t('project_importpromob.summary_line', { name: scene.name || '—', total: modules.length, types: typeKeys.length, mapped: nMapped }))}</p>
     ${renderPromobPlanSvg(res)}
+    ${aiBarHtml}
     <div class="po-import2020-tablewrap">
       <table class="po-import2020-table">
         <thead>
@@ -521,6 +643,7 @@ function renderProjectImportPromobReview() {
         <tbody>${rows}</tbody>
       </table>
     </div>
+    ${hintsHtml}
     ${wallsHtml}
     ${overlapHtml}
     ${extraHtml}
@@ -535,11 +658,16 @@ function renderProjectImportPromobReview() {
       renderProjectImportPromobReview();
     });
   });
+  const aiBtn = document.getElementById('po-proj-importpromob-ai-btn');
+  if (aiBtn) aiBtn.addEventListener('click', () => runProjectImportPromobAi(true));
   const wallsCb = document.getElementById('po-proj-importpromob-walls');
   if (wallsCb) wallsCb.addEventListener('change', () => { res.replaceWalls = wallsCb.checked; });
 
   const createBtn = document.getElementById('po-proj-importpromob-create-btn');
-  if (createBtn) createBtn.style.display = nMapped > 0 ? '' : 'none';
+  if (createBtn) {
+    createBtn.style.display = nMapped > 0 ? '' : 'none';
+    createBtn.disabled = projectImportPromobAiRunning;
+  }
 }
 
 // ---------- Criar no projeto ----------
