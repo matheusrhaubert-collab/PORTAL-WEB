@@ -219,11 +219,16 @@ async function openProjectModuleBuilder(slotId) {
   if (carregado) {
     projectBuilderCat = carregado.cat;
     projectBuilderWhite = carregado.white;
-    // Layout que o CLIENTE já montou ganha do layout de fábrica; sem nenhum
-    // dos dois, começa num vão só (a zona interna inteira).
+    // Layout que o CLIENTE já montou neste slot; senão, VÃO VAZIO.
+    // O layout de FÁBRICA (module_layout_nodes, carregado.root) NÃO entra
+    // mais (14/10, Matt: "cliquei no construtor e ele já colocou vários
+    // agregados sem eu pedir" — eram restos de teste salvos no catálogo pelo
+    // Construtor do ERP em agosto). Decisão dele: "nunca carregar interior
+    // de fábrica". Os dados continuam no banco; pra religar, troque
+    // LayoutEngine.newVoid() abaixo por (carregado.root || LayoutEngine.newVoid()).
     projectBuilderRoot = slot.layout
       ? LayoutEngine.deserialize(slot.layout)
-      : (carregado.root || LayoutEngine.newVoid());
+      : LayoutEngine.newVoid();
   }
   projectBuilderLoadError = erro;
   rebuildProjectBuilder(true);
