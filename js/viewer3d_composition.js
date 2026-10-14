@@ -2511,7 +2511,7 @@ function createViewerComposition3D() {
     }
     const rect = renderer.domElement.getBoundingClientRect();
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
-    const rawHits = _raycaster.intersectObjects(currentGroups, true);
+    const rawHits = visibleHitsOnly(_raycaster.intersectObjects(currentGroups, true));
     // Só a caixa invisível de clique (isHitboxProxy, ver buildProjectAssemblies
     // em portal.js) — pedido do usuário 2026-07-26 depois de eu reproduzir o
     // bug de verdade (script varrendo pickAssemblyAt num grid, "vamos tentar
@@ -2657,7 +2657,7 @@ function createViewerComposition3D() {
   function pickModuleFaceAt(clientX, clientY, excludeSlotId) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
-    const rawHits = _raycaster.intersectObjects(currentGroups, true);
+    const rawHits = visibleHitsOnly(_raycaster.intersectObjects(currentGroups, true));
     const hitboxHits = rawHits.filter((h) => h.object && h.object.userData && h.object.userData.isHitboxProxy);
     const hits = hitboxHits.length ? hitboxHits : rawHits.filter((h) => h.object && h.object.isMesh);
     for (let i = 0; i < hits.length; i++) {
@@ -2750,6 +2750,39 @@ function createViewerComposition3D() {
   // cadeia de pais checando visible em cada nível (um grupo inteiro
   // escondido, ex. Paredes/Decoração, também não pode ser achado só porque
   // o filho técnico continua com visible=true).
+  // CAMADA OCULTA = NÃO EXISTE PRO CLIQUE (2026-10-14, Matt: "ao ocultar uma
+  // camada... ele ainda seleciona os objetos do ambiente. quero que ele nao
+  // enxergue nem com cliques esses objetos... preciso ocultar e ter acesso a
+  // mexer na parede"). Filtro único aplicado em TODOS os raios de clique da
+  // cena (seleção, face de módulo, superfície da parede/piso, zoom no ponto,
+  // peça): tira o que está oculto (isEffectivelyVisible, sobe a cadeia de
+  // pais) e a CAIXA DE CLIQUE (isHitboxProxy) de módulo que não tem mais
+  // nenhuma peça visível — ela é invisível por natureza, então sem isso o
+  // módulo todo oculto continuava pegando o clique na frente da parede.
+  // Módulo parcialmente oculto (ex.: só as portas escondidas) continua
+  // clicável pelo que sobrou visível. material.visible=false (estilo de face
+  // "só arestas") NÃO conta como oculto — é desenho, não camada.
+  function visibleHitsOnly(rawHits) {
+    const cache = new Map();
+    return (rawHits || []).filter((h) => {
+      const o = h && h.object;
+      if (!o) return false;
+      if (o.userData && o.userData.isHitboxProxy) {
+        const g = o.parent;
+        if (!g || !isEffectivelyVisible(g)) return false;
+        if (cache.has(g)) return cache.get(g);
+        let algumaVisivel = false;
+        g.traverse((m) => {
+          if (algumaVisivel || m === o || !m.isMesh) return;
+          if (m.userData && m.userData.isHitboxProxy) return;
+          if (isEffectivelyVisible(m)) algumaVisivel = true;
+        });
+        cache.set(g, algumaVisivel);
+        return algumaVisivel;
+      }
+      return isEffectivelyVisible(o);
+    });
+  }
   function isEffectivelyVisible(obj) {
     let o = obj;
     while (o) {
@@ -2761,7 +2794,7 @@ function createViewerComposition3D() {
   function pickSurfacePointAt(clientX, clientY) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
-    const rawHits = _raycaster.intersectObjects(currentGroups, true);
+    const rawHits = visibleHitsOnly(_raycaster.intersectObjects(currentGroups, true));
     const hit = rawHits.find((h) => h.object && h.object.isMesh
       && !(h.object.userData && h.object.userData.isHitboxProxy)
       && isEffectivelyVisible(h.object));
@@ -2843,7 +2876,7 @@ function createViewerComposition3D() {
   function pickRoomSurfaceAt(clientX, clientY, ignoreSlotId) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
-    const hits = _raycaster.intersectObjects(currentGroups, true);
+    const hits = visibleHitsOnly(_raycaster.intersectObjects(currentGroups, true));
     for (let i = 0; i < hits.length; i++) {
       const obj = hits[i].object;
       if (obj && obj.userData && obj.userData.isRoomSurface) {
@@ -2931,7 +2964,7 @@ function createViewerComposition3D() {
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
     let point = null;
     if (currentGroups.length) {
-      const hits = _raycaster.intersectObjects(currentGroups, true);
+      const hits = visibleHitsOnly(_raycaster.intersectObjects(currentGroups, true));
       if (hits.length) point = hits[0].point;
     }
     if (!point) {
@@ -3487,7 +3520,7 @@ function createViewerComposition3D() {
       const o = h.object;
       if (!o || (o.userData && o.userData.isHitboxProxy)) return false;
       if (o.material && (o.material.visible === false)) return false;
-      return o.visible !== false;
+      return isEffectivelyVisible(o); // camada oculta (pai escondido) também não conta
     });
     // Só PORTA/FRENTE (userData.isFrontPiece, ver viewer3d.js
     // tagPieceUserData). Sobe a árvore até a porta: clicar no vidro ou no

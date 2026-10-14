@@ -5523,3 +5523,26 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-account-field span { display: block; margin-bottom: 3px; }
 .po-account-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 #po-account-msg { margin-top: 6px; }
+
+/* Tamponamento (2026-10-14) — vista frontal 2D do módulo/grupo com as 4
+   áreas clicáveis. Ver js/portal-23-tamponamento.js. */
+#po-tamp-modal {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); padding: 20px;
+}
+#po-tamp-modal.open { display: flex; }
+.po-tamp-card {
+  position: relative; width: 760px; max-width: 100%; max-height: calc(100vh - 40px); overflow: auto;
+  background: var(--panel, #fff); border-radius: 14px; padding: 20px 22px 16px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+}
+.po-tamp-svg { display: block; width: 100%; height: min(60vh, 520px); background: #fafaf8; border: 1px solid var(--border); border-radius: 10px; }
+.po-tamp-svg text { fill: #333; font-family: inherit; pointer-events: none; }
+.po-tamp-mod { fill: #efe7dc; stroke: #6b5a48; }
+.po-tamp-panel { fill: #b88a5e; stroke: #5a3f26; }
+.po-tamp-zone { cursor: pointer; }
+.po-tamp-hit { fill: rgba(230,0,126,0.04); stroke: #e6007e; }
+.po-tamp-zone:hover .po-tamp-hit { fill: rgba(230,0,126,0.14); }
+.po-tamp-zone-on .po-tamp-hit { fill: rgba(0,0,0,0); stroke: none; }
+.po-tamp-zone-on:hover .po-tamp-hit { fill: rgba(200,0,0,0.10); stroke: #c00; }
