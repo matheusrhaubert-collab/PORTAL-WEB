@@ -5221,3 +5221,9 @@ body.po-view3d-guest #po-proj-tb-ia { display: none !important; }
 .po-client-field textarea { resize: vertical; min-height: 64px; }
 .po-client-hint { margin: 0; font-size: 12px; color: var(--muted); }
 .po-client-actions { display: flex; justify-content: flex-end; }
+
+/* Barra de ferramentas: respiro em cima/embaixo pro quadrinho de hover/
+   clicado (34px) aparecer inteiro (13/10, Matt: "o quadro em branco ao redor
+   do ícone está menor do que a altura da caixa"). Com overflow-x:auto a
+   barra corta o que passa da borda — o quadrinho encostava/passava 1px. */
+#po-proj-canvas-tools.po-proj-hud-tl { padding-top: 3px; padding-bottom: 5px; }
