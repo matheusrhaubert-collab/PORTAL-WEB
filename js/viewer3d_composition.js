@@ -2323,12 +2323,120 @@ function createViewerComposition3D() {
   // (sem apertar) já vem de graça do OrbitControls (enableZoom) e não
   // depende de mouseButtons — continua funcionando igual, independente de
   // qual botão está mapeado pra ROTATE/PAN.
+  // MOUSE (2026-10-14, Matt: "mover a cena toda clicando no botao direito
+  // quero que passe pro botao do scroll e rotacionar e botao do scroll +
+  // botao direito"): MEIO arrastando = mover (pan); MEIO + DIREITO juntos
+  // arrastando = girar. O OrbitControls do r128 só entende UM botão por
+  // gesto (decide no pointerdown e não vê o 2º botão apertado depois), então
+  // o mouse sai dele (mouseButtons todos null) e quem move/gira é
+  // attachCustomMouseNav logo abaixo. TOQUE (iPad) continua 100% nativo do
+  // OrbitControls — touches não mudou. Zoom (girar a rodinha) já era próprio
+  // (handleZoomWheel) e não mudou. Direito SOZINHO não move mais a cena:
+  // fica livre pro "Reposicionar" (arrastar com o direito de um módulo pro
+  // outro) e pro menu do botão direito.
+  let customMouseNavOn = false;
   function setControlsEnabled(enabled) {
     if (!controls) return;
     controls.enabled = !!enabled;
     if (enabled && typeof THREE !== 'undefined' && THREE.MOUSE) {
-      controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
+      controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: null };
+      customMouseNavOn = true;
+      attachCustomMouseNav();
     }
+  }
+
+  let customMouseNavAttached = false;
+  let lastMouseRotateAt = 0;
+  function attachCustomMouseNav() {
+    if (customMouseNavAttached || !renderer) return;
+    customMouseNavAttached = true;
+    const el = renderer.domElement;
+    let nav = null; // { x, y, rotating }
+    const ativo = () => customMouseNavOn && controls && controls.enabled;
+    // sem o "autoscroll" do navegador no clique do meio
+    el.addEventListener('mousedown', (ev) => { if (ev.button === 1 && ativo()) ev.preventDefault(); });
+    el.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType !== 'mouse' || !ativo()) return;
+      if (ev.button !== 1) return; // o gesto sempre começa no MEIO
+      nav = { x: ev.clientX, y: ev.clientY, rotating: false };
+      try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    });
+    el.addEventListener('pointermove', (ev) => {
+      if (!nav || ev.pointerType !== 'mouse') return;
+      const meio = (ev.buttons & 4) !== 0, direito = (ev.buttons & 2) !== 0;
+      if (!meio) { nav = null; return; }
+      const dx = ev.clientX - nav.x, dy = ev.clientY - nav.y;
+      nav.x = ev.clientX; nav.y = ev.clientY;
+      if (meio && direito) {
+        if (!nav.rotating) {
+          nav.rotating = true;
+          // portal-08 recentraliza a órbita no módulo selecionado no início do giro
+          el.dispatchEvent(new CustomEvent('legno:orbitrotatestart'));
+        }
+        lastMouseRotateAt = Date.now();
+        mouseNavRotate(dx, dy);
+      } else {
+        mouseNavPan(dx, dy);
+      }
+    });
+    const fim = (ev) => {
+      if (!nav) return;
+      if (nav.rotating) lastMouseRotateAt = Date.now();
+      if (!(ev.buttons & 4)) nav = null;
+    };
+    el.addEventListener('pointerup', fim);
+    el.addEventListener('pointercancel', () => { nav = null; });
+    // Soltar o DIREITO depois de girar dispara 'contextmenu' — sem isto abriria
+    // o menu do grupo / a conexão de módulos (portal-08). Window em CAPTURA
+    // roda antes dos listeners do próprio canvas.
+    window.addEventListener('contextmenu', (ev) => {
+      if (ev.target !== el) return;
+      if (nav || Date.now() - lastMouseRotateAt < 400) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      }
+    }, true);
+  }
+
+  // Giro em volta do alvo da órbita, mesma sensibilidade do OrbitControls
+  // (volta inteira = altura do canvas) e mesmos limites (min/maxPolarAngle).
+  function mouseNavRotate(dx, dy) {
+    const cam = controls.object || camera;
+    const h = renderer.domElement.clientHeight || 1;
+    const offset = cam.position.clone().sub(controls.target);
+    const sph = new THREE.Spherical().setFromVector3(offset);
+    sph.theta -= 2 * Math.PI * dx / h * (controls.rotateSpeed || 1);
+    sph.phi -= 2 * Math.PI * dy / h * (controls.rotateSpeed || 1);
+    sph.theta = Math.max(controls.minAzimuthAngle, Math.min(controls.maxAzimuthAngle, sph.theta));
+    sph.phi = Math.max(controls.minPolarAngle, Math.min(controls.maxPolarAngle, sph.phi));
+    sph.makeSafe();
+    offset.setFromSpherical(sph);
+    cam.position.copy(controls.target).add(offset);
+    cam.lookAt(controls.target);
+    controls.update();
+  }
+
+  // Pan na tela (mesma conta do OrbitControls com screenSpacePanning): o ponto
+  // sob o cursor acompanha o mouse.
+  function mouseNavPan(dx, dy) {
+    const cam = controls.object || camera;
+    const el = renderer.domElement;
+    const w = el.clientWidth || 1, h = el.clientHeight || 1;
+    let mx, my;
+    if (cam.isOrthographicCamera) {
+      mx = dx * (cam.right - cam.left) / cam.zoom / w;
+      my = dy * (cam.top - cam.bottom) / cam.zoom / h;
+    } else {
+      const dist = cam.position.clone().sub(controls.target).length() * Math.tan((cam.fov / 2) * Math.PI / 180);
+      mx = 2 * dx * dist / h;
+      my = 2 * dy * dist / h;
+    }
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+    const move = right.multiplyScalar(-mx).add(up.multiplyScalar(my));
+    cam.position.add(move);
+    controls.target.add(move);
+    controls.update();
   }
 
   function getDomElement() {

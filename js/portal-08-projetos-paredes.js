@@ -3212,13 +3212,16 @@ function attachProject3DEditDrag() {
   // do meio, ver mouseButtons em viewer3d_composition.js), o alvo é
   // recentralizado no módulo selecionado. É um pan, não um giro: a cena não
   // salta, o móvel só desliza pro meio e o giro passa a ser em volta dele.
-  domEl.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 1) return;                    // só o botão do meio = girar
+  // 14/10: o giro passou pra MEIO + DIREITO (o meio sozinho agora move a
+  // cena) — o viewer avisa o início do giro com 'legno:orbitrotatestart'
+  // (attachCustomMouseNav, viewer3d_composition.js). Recentralizar no
+  // pointerdown do meio faria a cena pular a cada simples pan.
+  domEl.addEventListener('legno:orbitrotatestart', () => {
     if (selectedProjectSlotId == null) return;
     if (!ViewerProjectEdit.centerOrbitOnGroup) return;
     const g = ViewerProjectEdit.findGroupBySlotId(selectedProjectSlotId);
     if (g) ViewerProjectEdit.centerOrbitOnGroup(g);
-  }, true);   // captura: precisa rodar ANTES do OrbitControls começar a girar
+  });
 
   // ==========================================================================
   // REPOSICIONAR — botão direito ARRASTANDO de um módulo pro outro (RODADA 4,
