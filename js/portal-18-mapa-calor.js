@@ -35,6 +35,28 @@ function hmFmtPerArea(perFt2) { return hmIsInch() ? hmMoney(perFt2) + '/ft²' : 
 function hmFmtArea(ft2) { return hmIsInch() ? (Math.round(ft2 * 10) / 10) + ' ft²' : (Math.round(ft2 * 0.092903 * 100) / 100) + ' m²'; }
 
 // verde (0) → amarelo (0.5) → vermelho (1)
+// Material do calor: SEM luz (MeshBasic — as luzes da cena estouram cor clara
+// pra branco) e com a cor convertida pra linear (o renderer sai em sRGB e
+// clareava tudo: laranja virava bege, cinza virava branco). As arestas
+// pretas das peças continuam dando o volume.
+function hmMaterial(hex) {
+  return new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).convertSRGBToLinear() });
+}
+// papel de cor da peça: a tag mora no Object3D PAI do mesh (tagPieceUserData)
+// Mesh que NÃO deve ser pintado: a caixa invisível de clique (isHitboxProxy,
+// opacity 0, do tamanho do módulo — pintada opaca ela cobre o móvel inteiro)
+// e qualquer material totalmente transparente.
+function hmSkipMesh(o) {
+  if (o.userData && o.userData.isHitboxProxy) return true;
+  const m = (o.userData && o.userData._heatOrig) || o.material;
+  const list = Array.isArray(m) ? m : [m];
+  return list.every((x) => x && x.transparent && Number(x.opacity) === 0);
+}
+function hmRoleOf(o, top) {
+  let p = o;
+  while (p && p !== top) { if (p.userData && p.userData.colorRoleId) return p.userData.colorRoleId; p = p.parent; }
+  return null;
+}
 function hmColor(t) {
   t = Math.max(0, Math.min(1, t));
   const a = t < 0.5 ? [46, 158, 91] : [232, 170, 30];
@@ -85,6 +107,7 @@ function applyProjectHeatmap() {
   // a cena pode ter sido reconstruída: sprites antigos já não estão nela
   projectHeatmapSprites = [];
   if (!projectHeatmapOn) { clearProjectHeatmap(); return; }
+  if (projectHeatmapMode === 'colors') { applyProjectHeatmapColors(scene); return; }
   const data = projectHeatmapData();
   const byId = new Map(data.items.map((i) => [i.slot.id, i]));
   scene.children.forEach((g) => {
@@ -94,13 +117,75 @@ function applyProjectHeatmap() {
     if (!it) return;
     const col = it.t == null ? { hex: 0xb9b4ac } : hmColor(it.t);
     g.traverse((o) => {
-      if (!o.isMesh || !o.material) return;
+      if (!o.isMesh || !o.material || hmSkipMesh(o)) return;
       if (!o.userData._heatOrig) o.userData._heatOrig = o.material;
-      o.material = new THREE.MeshLambertMaterial({ color: col.hex, transparent: false });
+      o.material = hmMaterial(col.hex);
     });
     // sem rótulo em cima do módulo (13/10, Matt: "pode remover as tags, só as cores já ajudam muito")
   });
   renderProjectHeatmapLegend(data);
+}
+
+// MODO CORES × LINHA (13/10, 3ª rodada, Matt: "comparando os preços das
+// cores de fora do projeto com o projeto, do vermelho ao verde, do mais caro
+// ao mais barato. tudo mais caro = projeto todo vermelho; mais barato = todo
+// verde. separar portas, frentes e caixas"). Cada PEÇA é pintada pela
+// posição da cor escolhida pro papel dela (Caixa, Porta/Frente, Painel…)
+// dentro da faixa de preço de chapa que o módulo aceita naquele papel —
+// então a porta e a caixa do mesmo módulo saem com cores diferentes. "Especial"
+// fica fora da faixa.
+const HM_EXCLUDE_RE = /especial|special/i;
+function hmColorOk(c) { return !!c && c.active !== false && !HM_EXCLUDE_RE.test(String(c.name || '')); }
+function hmSheetPrice(c) { return Number(c && c.sheet_price_per_m2) || 0; }
+function applyProjectHeatmapColors(scene) {
+  const slotById = new Map((projectSlots || []).map((s) => [s.id, s]));
+  const roleStats = new Map(); // roleId -> { name, uses: Map(colorId -> {color, n, t}) }
+  scene.children.forEach((g) => {
+    const ud = g.userData || {};
+    if (ud.slotId == null) return;
+    const slot = slotById.get(ud.slotId);
+    if (!slot || !slot.module || slot.module.visual_only) return;
+    const decor = !!slot.module.is_decoration;
+    g.traverse((o) => {
+      if (!o.isMesh || !o.material || hmSkipMesh(o)) return;
+      let hex = 0xb9b4ac;
+      const rid = hmRoleOf(o, scene);
+      if (!decor && rid) {
+        const cur = slot.colorsByRole && slot.colorsByRole[rid];
+        const opts = ((slot.colorOptionsByRole || {})[rid] || []).filter(hmColorOk);
+        if (cur && opts.length) {
+          const prices = opts.map(hmSheetPrice);
+          const min = Math.min(...prices), max = Math.max(...prices);
+          const t = max > min ? (hmSheetPrice(cur) - min) / (max - min) : 0;
+          hex = hmColor(Math.max(0, Math.min(1, t))).hex;
+          const rs = roleStats.get(rid) || { name: ((colorRolesCache || []).find((r) => r.id === rid) || {}).name || '', uses: new Map(), min, max };
+          rs.min = Math.min(rs.min, min); rs.max = Math.max(rs.max, max);
+          const u = rs.uses.get(cur.id) || { color: cur, n: 0, t };
+          u.n++; rs.uses.set(cur.id, u); roleStats.set(rid, rs);
+        }
+      }
+      if (!o.userData._heatOrig) o.userData._heatOrig = o.material;
+      o.material = hmMaterial(hex);
+    });
+  });
+  renderProjectHeatmapColorsLegend(roleStats);
+}
+function renderProjectHeatmapColorsLegend(roleStats) {
+  const el = ensureProjectHeatmapLegend();
+  if (!el) return;
+  const t = (k, v) => I18n.t('heatmap.' + k, v);
+  const m2 = (v) => hmIsInch() ? hmMoney(v / 10.7639) + '/ft²' : hmMoney(v) + '/m²';
+  const rows = [...roleStats.values()].map((rs) => {
+    const uses = [...rs.uses.values()].sort((a, b) => b.n - a.n);
+    return '<li class="po-heatmap-role"><b>' + rs.name + '</b><span class="po-heatmap-range">' + m2(rs.min) + ' – ' + m2(rs.max) + '</span>'
+      + uses.map((u) => '<span class="po-heatmap-use"><i style="background:' + hmColor(u.t).css + '"></i>' + u.color.name + ' · ' + m2(hmSheetPrice(u.color)) + '</span>').join('') + '</li>';
+  }).join('');
+  el.innerHTML = '<div class="po-heatmap-title">' + t('title_colors') + '</div>'
+    + '<div class="po-heatmap-bar"></div>'
+    + '<div class="po-heatmap-ends"><span>' + t('colors_cheapest') + '</span><span>' + t('colors_priciest') + '</span></div>'
+    + '<ul class="po-heatmap-list po-heatmap-roles">' + rows + '</ul>'
+    + '<p class="po-heatmap-hint">' + t('hint_colors') + '</p>';
+  el.style.display = 'block';
 }
 
 function ensureProjectHeatmapLegend() {
@@ -154,7 +239,7 @@ function toggleProjectHeatmap(on) { setProjectHeatmapMode((on == null ? !project
     + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2.5 3 5 5.2 5 9a5 5 0 0 1-10 0c0-1.6.5-2.8 1.3-4 .6 1.2 1.4 1.8 2.2 2 0-2.5.5-5 1.5-7z"/><path d="M3 21h18"/></svg>'
     + '<span>' + t('btn') + '</span><i class="po-tb-dot"></i></button>'
     + '<div class="po-style-list po-layers-list" id="po-proj-heatmap-list">'
-    + [['off', 'mode_off'], ['area', 'mode_area'], ['share', 'mode_share']].map(([m, k]) =>
+    + [['off', 'mode_off'], ['area', 'mode_area'], ['share', 'mode_share'], ['colors', 'mode_colors']].map(([m, k]) =>
       '<button type="button" class="po-style-item po-heatmap-item' + (m === 'off' ? ' active' : '') + '" data-mode="' + m + '">' + t(k) + '</button>').join('')
     + '</div>';
   const btn = raiz.querySelector('#po-proj-heatmap-btn');
