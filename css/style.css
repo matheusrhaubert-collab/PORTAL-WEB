@@ -5254,3 +5254,49 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-ai-walls-list { margin: 4px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.5; }
 .po-ai-walls-list span { color: var(--muted); font-size: 12px; }
 .po-ai-walls-notes { margin: 0; font-size: 12px; color: var(--muted); }
+
+/* Análise de custo (13/10) — dashboard de fechamento. */
+.po-cost-card { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow-y: auto; }
+.po-cost-body { display: flex; flex-direction: column; gap: 18px; }
+.po-cost-sec h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.po-cost-empty { margin: 0; font-size: 14px; color: var(--muted); }
+.po-cost-empty.erro { color: #b3261e; }
+.po-cost-range { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 10px; }
+.po-cost-range > div { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; background: #fff; }
+.po-cost-range > div.atual { border-color: var(--text); background: var(--accent-light); }
+.po-cost-range span { font-size: 11px; color: var(--muted); }
+.po-cost-range strong { font-size: 22px; font-weight: 800; }
+.po-cost-range small { font-size: 11px; color: var(--muted); }
+.po-cost-mods { display: flex; flex-direction: column; gap: 6px; }
+.po-cost-mod { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: #fff; }
+.po-cost-mod-row { display: grid; grid-template-columns: 34px 1fr 44px 78px 70px; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.po-cost-num { color: #e6007e; font-weight: 700; font-size: 12px; }
+.po-cost-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-cost-pct { text-align: right; color: var(--muted); font-size: 12px; }
+.po-cost-val { text-align: right; font-weight: 700; }
+.po-cost-bar { height: 5px; background: var(--accent-light); border-radius: 3px; margin: 5px 0 0; overflow: hidden; }
+.po-cost-bar i { display: block; height: 100%; background: var(--text); border-radius: 3px; }
+.po-cost-mod-detail { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12px; }
+.po-cost-mod.aberto .po-cost-mod-detail { display: block; }
+.po-cost-parts { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); margin-bottom: 6px; }
+.po-cost-roles { margin: 0; padding-left: 18px; line-height: 1.5; }
+.menos { color: #2e7d32; font-weight: 600; } .mais { color: #b26a00; font-weight: 600; }
+.po-cost-budget-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.po-cost-budget-row label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.po-cost-budget-row input { font: inherit; font-size: 15px; width: 130px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+#po-cost-budget-msg { font-weight: 600; } #po-cost-budget-msg.ok { color: #2e7d32; } #po-cost-budget-msg.falta { color: #b3261e; }
+.po-cost-plan { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.po-cost-plan .po-cost-group { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 6px; }
+.po-cost-plan label { display: grid; grid-template-columns: 18px 1fr 70px; gap: 8px; align-items: center; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; }
+.po-cost-plan em { font-style: normal; text-align: right; }
+.po-cost-ups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.po-cost-ups li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.po-cost-hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+#po-cost-summary { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; line-height: 1.45; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; }
+.po-cost-perft { text-align: right; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.po-cost-perft.hot, .po-cost-walls td.hot { color: #b3261e; font-weight: 700; }
+.po-cost-walls { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+.po-cost-walls th, .po-cost-walls td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: right; }
+.po-cost-walls th:first-child, .po-cost-walls td:first-child { text-align: left; }
+.po-cost-walls th { font-size: 11px; color: var(--muted); font-weight: 600; }
+.po-cost-hot-note { margin: 0 0 8px; padding: 6px 8px; border-radius: 6px; background: #fdecea; color: #7a1b14; font-size: 12px; }

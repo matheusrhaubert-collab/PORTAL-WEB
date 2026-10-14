@@ -1246,7 +1246,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     selectedProjectSlotId = null;
     project3DLastFitKey = null; // projeto TROCOU inteiro — reenquadra a câmera 3D mesmo se a chave coincidir (ver comentário na declaração)
     refreshProjectWallWidthInput();
-    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name, ai_preview_url: fav.ai_preview_url || null } : null;
+    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name, ai_preview_url: fav.ai_preview_url || null, client_folder: fav.client_folder || null } : null;
     // dados do cliente vêm junto do projeto salvo; projeto importado de
     // link/galeria chega sem (não carrega dado de cliente de outra conta)
     if (typeof setProjectClientInfo === 'function') setProjectClientInfo(fav.client_info || null);
