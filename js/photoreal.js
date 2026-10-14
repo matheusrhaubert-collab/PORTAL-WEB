@@ -1522,6 +1522,25 @@ const Photoreal = (() => {
     return g;
   }
 
+  // Abertura na parede (porta/janela "buraco") — 2026-10-14, Matt: "nao
+  // consigo selecionar pra mexer nessa abertura". A abertura virou um
+  // MÓDULO de parede (wall_structure abertura_porta/abertura_janela,
+  // migration 202) e o recorte da parede segue o slot
+  // (projectWallOpeningsWithSlots, portal-08). Este desenho é só a "tela"
+  // de clique: um plano do tamanho do vão, na face da parede, com material
+  // INVISÍVEL (material.visible=false — o Raycaster olha object.visible,
+  // então continua clicável/arrastável, mesmo truque do estilo de face
+  // 'nenhum'). Nada aparece na foto realista.
+  function buildDecorAbertura(W, H, D) {
+    const g = new T.Group();
+    const mat = new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+    mat.visible = false;
+    const tela = new T.Mesh(new T.BoxGeometry(Math.max(W, 0.01), Math.max(H, 0.01), Math.max(Math.min(D, 0.01), 0.002)), mat);
+    tela.position.set(0, H / 2, -D / 2 + 0.002);
+    g.add(tela);
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
@@ -1546,6 +1565,7 @@ const Photoreal = (() => {
     decor_ventilacao: buildDecorVentilacao,
     decor_cano: buildDecorCano,
     decor_cano_saida: buildDecorCanoSaida,
+    decor_abertura: buildDecorAbertura,
   };
 
   function placePieceInBox(part, parentGroup, W, H, D, index, count, bounds) {

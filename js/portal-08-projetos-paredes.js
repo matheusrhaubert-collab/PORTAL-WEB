@@ -4316,8 +4316,36 @@ function projectWallSegmentGeometry(seg, idx) {
     // Portas/janelas/passagens desta parede (2026-10-01) — x medido da ponta
     // A ao longo da face interna. Lido por makeWallPrism (recorte no 3D) e
     // pela vista frontal 2D. Ver getProjectWallOpenings (portal-06a).
-    openings: Array.isArray(seg.openings) ? seg.openings : []
+    // + aberturas que são MÓDULOS (Abertura — Porta/Janela, migration 202,
+    // 14/10): o buraco segue o slot — ver projectWallOpeningsWithSlots.
+    openings: projectWallOpeningsWithSlots(seg, idx)
   };
+}
+
+// Aberturas da parede = as gravadas no próprio segmento (editor de Paredes)
+// + os módulos-abertura que estão nesta parede (wall_structure
+// abertura_porta/abertura_janela). Matt, 14/10: "nao consigo selecionar pra
+// mexer nessa abertura" — como módulo, ela seleciona/arrasta/estica igual a
+// qualquer outro, e o recorte vem daqui: x_mm/largura/altura do slot,
+// peitoril = altura do chão do slot. Mesmo referencial do recorte
+// (makeWallPrism mede da ponta A ao longo da face interna = x_mm do slot).
+const PROJECT_OPENING_SLOT_TYPES = { abertura_porta: 'door', abertura_janela: 'window' };
+function projectWallOpeningsWithSlots(seg, idx) {
+  const base = Array.isArray(seg.openings) ? seg.openings : [];
+  if (typeof projectSlots === 'undefined' || !Array.isArray(projectSlots)) return base;
+  const extra = projectSlots
+    .filter((s) => s && s.module && PROJECT_OPENING_SLOT_TYPES[s.module.wall_structure]
+      && s.placement !== 'floor' && Number(s.wall_index || 0) === idx)
+    .map((s) => ({
+      id: 'slot_' + s.id,
+      type: PROJECT_OPENING_SLOT_TYPES[s.module.wall_structure],
+      x_mm: Number(s.x_mm) || 0,
+      width_mm: Number(s.width_mm) || 0,
+      height_mm: Number(s.height_mm) || 0,
+      sill_mm: Number(s.floor_height_mm) || 0,
+      fromSlot: true
+    }));
+  return extra.length ? base.concat(extra) : base;
 }
 
 // Abre a planta baixa. O que volta substitui as paredes do projeto — e os

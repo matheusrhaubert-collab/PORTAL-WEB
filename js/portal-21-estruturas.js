@@ -36,20 +36,14 @@ const PROJECT_WALL_STRUCTURES = [
   { key: 'porta',       bottomMm: 0, sep: true },
   { key: 'janela',      bottomMm: 1000 },
   // ABERTURAS (buraco na parede) — 14/10, Matt: "quero mais uma abertura
-  // (buraco na parede) tipo porta, e tipo janela". NÃO são módulos: viram
-  // uma abertura do próprio segmento de parede (projectWallSegments[i].
-  // openings, o mesmo dado do editor de Paredes desde 01/10) — o 3D recorta
-  // a parede (makeWallPrism) e o Plano técnico desenha. Medida padrão =
-  // a mesma do editor de Paredes (adicionaAbertura, js/wall-editor.js);
-  // ajuste fino (posição/medida) é lá no editor de Paredes.
-  { key: 'abertura_porta',  opening: 'door',   sep: true },
-  { key: 'abertura_janela', opening: 'window' }
+  // (buraco na parede) tipo porta, e tipo janela" + "nao consigo selecionar
+  // pra mexer nessa abertura". São MÓDULOS de parede (migration 202): o
+  // slot é selecionável/arrastável/esticável como qualquer módulo, e o
+  // recorte da parede segue ele (projectWallOpeningsWithSlots, portal-08).
+  // Altura do chão = peitoril.
+  { key: 'abertura_porta',  bottomMm: 0, sep: true },
+  { key: 'abertura_janela', bottomMm: 1050 }
 ];
-const PROJECT_WALL_OPENING_DEFAULTS = {
-  door: { width_mm: 813, height_mm: 2032, sill_mm: 0 },
-  window: { width_mm: 1000, height_mm: 1100, sill_mm: 1050 }
-};
-
 // Ícones de traço (24×24), mesmo estilo dos outros da barra.
 const PROJECT_WALL_STRUCTURE_ICONS = {
   tomada: '<rect x="6" y="3" width="12" height="18" rx="1.5"/><path d="M10 7.5v2.5M14 7.5v2.5M10 14v2.5M14 14v2.5"/>',
@@ -78,34 +72,8 @@ function showProjectStructuresMessage(msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 
-// Abertura nova no MEIO da parede ativa, igual ao "+ Porta/+ Janela" do
-// editor de Paredes. Só existe no modelo de segmentos (projectWallSegments);
-// projeto antigo sem planta desenhada pede pra abrir o editor uma vez.
-function insertProjectWallOpening(tipo) {
-  const wi = Number(projectActiveWallIndex || 0);
-  const seg = (typeof projectWallSegments !== 'undefined' && projectWallSegments) ? projectWallSegments[wi] : null;
-  if (!seg) {
-    showProjectStructuresMessage(I18n.t('project_structures.opening_no_segments'));
-    return;
-  }
-  const comp = Math.round(Math.hypot(Number(seg.bx) - Number(seg.ax), Number(seg.bz) - Number(seg.az)));
-  const pad = PROJECT_WALL_OPENING_DEFAULTS[tipo];
-  if (!pad || comp < 200) return;
-  const w = Math.max(100, Math.min(pad.width_mm, comp - 100));
-  if (!Array.isArray(seg.openings)) seg.openings = [];
-  seg.openings.push(Object.assign(
-    { id: 'op_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), type: tipo },
-    pad,
-    { width_mm: w, x_mm: Math.max(0, Math.round((comp - w) / 2)) }
-  ));
-  showProjectStructuresMessage('');
-  renderProjectCanvas();
-  markProjectDirty();
-}
-
 async function insertProjectWallStructure(key) {
   const def = PROJECT_WALL_STRUCTURES.find((d) => d.key === key);
-  if (def && def.opening) { insertProjectWallOpening(def.opening); return; }
   const m = projectWallStructureModule(key);
   if (!def) return;
   if (!m) {
@@ -132,7 +100,7 @@ async function insertProjectWallStructure(key) {
 
 function renderProjectStructuresList(lista) {
   lista.innerHTML = PROJECT_WALL_STRUCTURES.map((d) => {
-    const disponivel = !!d.opening || !!projectWallStructureModule(d.key);
+    const disponivel = !!projectWallStructureModule(d.key);
     return (d.sep ? '<div class="po-structures-sep"></div>' : '')
       + '<button type="button" class="po-style-item po-structures-item' + (disponivel ? '' : ' indisponivel') + '" data-key="' + d.key + '"'
       + (disponivel ? '' : ' title="' + I18n.t('project_structures.missing_short') + '"') + '>'
