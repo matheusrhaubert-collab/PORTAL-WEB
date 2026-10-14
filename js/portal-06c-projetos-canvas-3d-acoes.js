@@ -1783,7 +1783,14 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   if (container3d) {
     const availableWidthPx = Math.max(wrap.clientWidth - 4, 320);
     const wrapTop = wrap.getBoundingClientRect().top;
-    const availableHeightPx = Math.max(window.innerHeight - wrapTop - 40, 480);
+    // Tela cheia (14/10, Matt: "o quadro do projeto venha ate o fim da tela na
+    // parte de baixo, independente do tamanho do monitor e proporcao"): vai
+    // até 10 px do rodapé da janela, medido do topo do PRÓPRIO quadro — mesma
+    // conta de ajustaAlturaTelaCheia (portal-06a). Fora dela, como sempre.
+    const telaCheia = document.body.classList.contains('proj-tela-cheia');
+    const availableHeightPx = telaCheia
+      ? Math.max(window.innerHeight - container3d.getBoundingClientRect().top - 10, 300)
+      : Math.max(window.innerHeight - wrapTop - 40, 480);
     container3d.style.width = Math.round(availableWidthPx) + 'px';
     container3d.style.height = Math.round(availableHeightPx) + 'px';
   }

@@ -464,7 +464,11 @@ const PROJECT_PHOTO_COMPOSITIONS = {
   // Sem caixa nenhuma: cai no casamento normal, onde a mesma regra está no
   // prompt (SKILL_SUSPENSO, generate-project-from-photo).
   suspenso: {
-    kinds: ['vanity', 'base_cabinet', 'sink_base', 'drawer_base', 'other'],
+    // Qualquer móvel BAIXO de caixa, em qualquer ambiente (Matt, 14/10: "essa
+    // regra serve pra qualquer modulo dessa forma, pode ser living, office,
+    // hall entrada, qualquer ambiente que aparece isso") — rack/painel de TV,
+    // aparador, gaveteiro de escritório/closet, base, pia, vanity.
+    kinds: ['vanity', 'base_cabinet', 'sink_base', 'drawer_base', 'tv_unit', 'closet_drawer_unit', 'desk', 'other'],
     carcass: 'Bottom · Stretcher · Back',
     carcassMatch: (nome) => /stretcher/i.test(nome) && /back|fundo/i.test(nome) && /bottom|base/i.test(nome)
       && !/toe|feet|p[ée]s?\b|plinth|rodap/i.test(nome),

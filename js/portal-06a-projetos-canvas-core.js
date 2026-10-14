@@ -955,6 +955,9 @@ function ajustaAlturaTelaCheia() {
     const tinha = body.style.getPropertyValue('--proj-fs-canvas-h');
     body.style.removeProperty('--proj-fs-canvas-h');
     body.style.removeProperty('--proj-fs-col-h');
+    // Saiu da tela cheia: o quadro ficou com a altura grande gravada — redesenha
+    // pra voltar ao tamanho normal da página (renderProjectCanvasFrontCorner).
+    if (tinha && typeof renderProjectCanvas === 'function') setTimeout(() => { try { renderProjectCanvas(); } catch (e) { /* ok */ } }, 80);
     return !!tinha;
   }
   window.scrollTo(0, 0);
@@ -972,6 +975,11 @@ function ajustaAlturaTelaCheia() {
   const antes = body.style.getPropertyValue('--proj-fs-canvas-h') + '|' + body.style.getPropertyValue('--proj-fs-col-h');
   body.style.setProperty('--proj-fs-canvas-h', canvasH + 'px');
   body.style.setProperty('--proj-fs-col-h', colH + 'px');
+  // O quadro 3D tem altura gravada no próprio elemento (style.height, ver
+  // renderProjectCanvasFrontCorner) — isso vence a variável CSS acima. Era o
+  // "quadro não vai até o fim da tela" (Matt, 14/10, print em tela cheia com
+  // o quadro parado em ~580 px). Grava aqui também, direto no elemento.
+  if (canvas && canvas.offsetParent) canvas.style.height = canvasH + 'px';
   return antes !== (canvasH + 'px|' + colH + 'px');
 }
 
