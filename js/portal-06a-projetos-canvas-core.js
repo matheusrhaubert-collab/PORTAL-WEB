@@ -886,6 +886,7 @@ function setProjectFullBleed(on) {
         try { sair.call(document); } catch (e) { /* o listener limpa a classe */ }
       }
       document.body.classList.remove('proj-tela-cheia'); // caso do fallback sem Fullscreen API (iPad)
+      ajustaAlturaTelaCheia();
     }
   }
   // Mesma razão do setTimeout em toggleProjectColumn: os viewers 3D leem
@@ -930,6 +931,7 @@ async function toggleProjectTelaCheia() {
       // continua aparecendo, mas o botão não pode virar um clique morto.
       // Aqui a classe é ligada na mão porque não vai existir fullscreenchange.
       document.body.classList.toggle('proj-tela-cheia');
+      ajustaAlturaTelaCheia();
       setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
       return;
     }
@@ -940,12 +942,68 @@ async function toggleProjectTelaCheia() {
   }
 }
 
+// Tela cheia SEM scroll vertical (pedido do Matt 2026-10-13). Mede onde o
+// canvas e as colunas começam na janela e manda o resto da altura pra eles
+// via variáveis CSS (--proj-fs-canvas-h / --proj-fs-col-h, ver style.css).
+// Medido em JS e não em calc() fixo porque a altura da barra de ferramentas
+// muda (quebra de linha em tela menor, iPad). Fora da tela cheia, limpa as
+// variáveis e o CSS normal (88vh) volta a valer. Devolve true se mudou algo,
+// pra quem chamou avisar os viewers 3D com um 'resize'.
+function ajustaAlturaTelaCheia() {
+  const body = document.body;
+  if (!body.classList.contains('proj-tela-cheia')) {
+    const tinha = body.style.getPropertyValue('--proj-fs-canvas-h');
+    body.style.removeProperty('--proj-fs-canvas-h');
+    body.style.removeProperty('--proj-fs-col-h');
+    return !!tinha;
+  }
+  window.scrollTo(0, 0);
+  const vh = window.innerHeight;
+  const margem = 10;
+  const layout = document.querySelector('#po-tab-projects .po-proj-layout');
+  if (!layout || !layout.offsetParent) return false;
+  const layoutTop = layout.getBoundingClientRect().top;
+  const colH = Math.max(300, Math.floor(vh - layoutTop - margem));
+  const canvas = document.getElementById('po-proj-canvas-3d-edit');
+  let canvasH = colH;
+  if (canvas && canvas.offsetParent) {
+    canvasH = Math.max(300, Math.floor(vh - canvas.getBoundingClientRect().top - margem));
+  }
+  const antes = body.style.getPropertyValue('--proj-fs-canvas-h') + '|' + body.style.getPropertyValue('--proj-fs-col-h');
+  body.style.setProperty('--proj-fs-canvas-h', canvasH + 'px');
+  body.style.setProperty('--proj-fs-col-h', colH + 'px');
+  return antes !== (canvasH + 'px|' + colH + 'px');
+}
+
+(function attachAjusteAlturaTelaCheia() {
+  let t = null;
+  const roda = () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      // Só reavisa os viewers se a altura mudou de fato — sem isso o
+      // 'resize' disparado aqui chamaria este mesmo listener em loop.
+      if (ajustaAlturaTelaCheia()) window.dispatchEvent(new Event('resize'));
+    }, 30);
+  };
+  window.addEventListener('resize', roda);
+  // O canvas 3D pode estar escondido (modo 2D) quando a tela cheia liga; quando
+  // ele aparece, o wrap muda de tamanho e a medida é refeita.
+  if (typeof ResizeObserver === 'function') {
+    const alvo = document.getElementById('po-proj-canvas-3d-edit-wrap');
+    const topo = document.querySelector('#po-tab-projects .po-proj-topbar');
+    const ro = new ResizeObserver(roda);
+    if (alvo) ro.observe(alvo);
+    if (topo) ro.observe(topo);
+  }
+})();
+
 (function attachProjectTelaCheia() {
   const btn = document.getElementById('po-proj-fullscreen-btn');
   if (btn) btn.addEventListener('click', toggleProjectTelaCheia);
   const sincroniza = () => {
     const on = projectFullscreenAtivo();
     document.body.classList.toggle('proj-tela-cheia', on);
+    ajustaAlturaTelaCheia();
     if (btn) {
       btn.classList.toggle('active', on);
       btn.title = I18n.t(on ? 'project.fullscreen_exit_title' : 'project.fullscreen_title');

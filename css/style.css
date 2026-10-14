@@ -1249,6 +1249,32 @@ body.portal-page.proj-tela-cheia main { padding-top: 8px; }
 body.portal-page.proj-tela-cheia #po-proj-fullscreen-btn .po-fs-abrir { display: none; }
 body.portal-page.proj-tela-cheia #po-proj-fullscreen-btn .po-fs-fechar { display: inline; }
 
+/* ---- Tela cheia SEM scroll vertical (pedido do Matt 2026-10-13: "ao travar
+   a tela, quero que o scroll vertical desapareça e fique sempre fixa a tela
+   pra melhor trabalhar — pode deixar só a tela que está no print") ----
+   Em tela cheia a página vira exatamente a altura da janela: some o scroll
+   da página, some tudo que ficava ABAIXO do desenho (resumo/custo, botões
+   Visualizar 3D/Foto realista, galeria, linha de salvar — salvar continua
+   na barra de ferramentas) e o canvas estica até o rodapé da janela.
+   As alturas vêm de variáveis medidas em JS (ajustaAlturaTelaCheia em
+   portal-06a), com fallback em vh se o JS ainda não mediu. Biblioteca e
+   painel da direita rolam POR DENTRO, sem empurrar a página. */
+body.portal-page.proj-tela-cheia { overflow: hidden; height: 100vh; }
+body.portal-page.proj-tela-cheia main { padding-bottom: 0; }
+body.portal-page.proj-tela-cheia #po-tab-projects .po-proj-layout ~ *,
+body.portal-page.proj-tela-cheia #po-tab-projects .po-proj-bottom,
+body.portal-page.proj-tela-cheia #po-tab-projects #po-proj-ref-wrap { display: none !important; }
+body.portal-page.proj-tela-cheia #po-proj-canvas-3d-edit {
+  height: var(--proj-fs-canvas-h, calc(100vh - 150px));
+}
+body.portal-page.proj-tela-cheia .po-proj-library {
+  max-height: var(--proj-fs-col-h, calc(100vh - 110px));
+}
+body.portal-page.proj-tela-cheia .po-proj-config-col {
+  max-height: var(--proj-fs-col-h, calc(100vh - 110px));
+  overflow-y: auto;
+}
+
 /* ---------- Nav superior ---------- */
 
 header.po-topnav {
