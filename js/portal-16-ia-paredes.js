@@ -54,7 +54,7 @@ function ensureAiWallsModal() {
     + '<div class="po-client-actions"><button type="button" class="secondary" id="po-ai-walls-read">' + tAiw('read_btn') + '</button></div>'
     + '<div class="po-ai-walls-status" id="po-ai-walls-status"></div>'
     + '<div class="po-ai-walls-result" id="po-ai-walls-result"></div>'
-    + '<div class="po-client-actions"><button type="button" class="po-btn-primary-block" id="po-ai-walls-apply" disabled>' + tAiw('apply_btn') + '</button></div>'
+    + '<div class="po-client-actions"><button type="button" class="po-btn-primary-block" id="po-ai-walls-apply">' + tAiw('apply_btn') + '</button></div>'
     + '</div></div>';
   document.body.appendChild(m);
   const fechar = () => { if (!aiWallsRunning) m.classList.remove('aberto'); };
@@ -63,6 +63,13 @@ function ensureAiWallsModal() {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && m.classList.contains('aberto')) fechar(); });
   document.getElementById('po-ai-walls-read').addEventListener('click', runAiWallsRead);
   document.getElementById('po-ai-walls-apply').addEventListener('click', applyAiWalls);
+  // Arquivo novo = leitura velha não vale mais.
+  document.getElementById('po-ai-walls-file').addEventListener('change', () => {
+    aiWallsState = null;
+    const box = document.getElementById('po-ai-walls-result');
+    if (box) box.innerHTML = '';
+    aiwStatus('');
+  });
 }
 
 function openAiWallsModal() {
@@ -150,14 +157,14 @@ async function runAiWallsRead() {
     const segs = projectPhotoWallsToSegments(room.walls, room.openings, room.ceiling_mm, main);
     aiWallsState = { room, segs, main };
     renderAiWallsResult();
-    aiwStatus(room.summary || '');
-    if (apply) apply.disabled = false;
+    aiwStatus((room.summary ? room.summary + ' ' : '') + tAiw('status_review'));
   } catch (e) {
     console.error('[ia-paredes]', e);
     aiwStatus(tAiw('err_read', { msg: (e && e.message) || String(e) }), true);
   } finally {
     aiWallsRunning = false;
     if (btn) btn.disabled = false;
+    if (apply) apply.disabled = false;
   }
 }
 
@@ -209,7 +216,12 @@ function renderAiWallsResult() {
 }
 
 function applyAiWalls() {
-  if (!aiWallsState) return;
+  // 14/10, Matt: "eu clico pra fazer parede mas nao acontece nada" — o botão
+  // grande ficava desabilitado (sem cara de desabilitado) até alguém clicar
+  // antes em "Ler paredes". Agora, sem leitura, ele mesmo lê; a planta
+  // aparece pra conferir e o 2º clique aplica.
+  if (aiWallsRunning) return;
+  if (!aiWallsState) { runAiWallsRead(); return; }
   if (projectSlots.length && !confirm(tAiw('confirm_with_modules'))) return;
   const { room, segs, main } = aiWallsState;
   projectWallSegments = segs;

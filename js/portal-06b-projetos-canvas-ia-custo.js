@@ -2495,7 +2495,11 @@ function duplicateProjectSlotGroup(ids) {
 // também (pra mostrar riscada + botão de restaurar). Preço/3D/furação
 // continuam só em projectSlotEffectivePieces (com o filtro).
 function projectSlotAllPiecesBeforeRemoval(slot) {
-  return slot.pieces
+  // MODELO DE PORTA em módulo pronto (14/10, ver portal-07
+  // applySlotDoorModelToCatalogPieces) — Flat = o mesmo array de sempre.
+  const cadastro = (typeof applySlotDoorModelToCatalogPieces === 'function')
+    ? applySlotDoorModelToCatalogPieces(slot, slot.pieces) : slot.pieces;
+  return cadastro
     .filter((p) => !p.client_optional || slot.selectedOptionalIds.includes(p.id))
     .concat(slot.layoutPieces || []);
 }

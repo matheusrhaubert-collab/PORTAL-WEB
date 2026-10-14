@@ -1713,6 +1713,7 @@ header.po-topnav {
   padding: 12px;
 }
 .po-btn-primary-block:hover { background: #000; }
+.po-btn-primary-block:disabled { opacity: .45; cursor: default; }
 
 /* ---------- Rodapé de suporte ---------- */
 

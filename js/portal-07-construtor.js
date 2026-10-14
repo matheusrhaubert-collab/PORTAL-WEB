@@ -2841,7 +2841,167 @@ function isPortaGiroAccKey(key) {
 
 // Slot tem porta de abrir giro? (decide se o seletor aparece no painel)
 function projectSlotHasPortaGiro(slot) {
-  return ((slot && slot._layoutGeometry) || []).some((p) => isPortaGiroPiece(p));
+  return ((slot && slot._layoutGeometry) || []).some((p) => isPortaGiroPiece(p))
+    || projectCatalogHingedFronts(slot && slot.pieces).length > 0;
+}
+
+// ==========================================================================
+// MODELO DE PORTA EM MÓDULO PRONTO (catálogo) — 14/10, Matt, com print do
+// "Base Floating Cabinet Doors" (BFH30): "esses modulos prontos nao estou
+// conseguindo trocar a porta, modelo de porta".
+// A troca acima só enxergava porta do CONSTRUTOR (agregado porta_giro). No
+// módulo pronto a porta é uma LINHA do cadastro (module_components) com
+// position_role 'front' e abertura de giro (hinge_left/hinge_right). Com um
+// modelo escolhido, essa linha vira uma PEÇA-MÓDULO com a engenharia do
+// modelo (door_models.child_module_id) — mesma fórmula de medida, mesma
+// posição, mesmo papel de cor, mesmo lado de dobradiça, mesmo id de linha
+// (peça removida/ajuste manual continuam valendo).
+// slot.pieces NÃO muda (é o cadastro cru): a troca entra no ponto único de
+// junção projectSlotAllPiecesBeforeRemoval (portal-06b) — preço, 3D, plano
+// de corte, furação e pedido saem dali. Flat (padrão) = nada muda.
+// Frente de gaveta (slide_out) e basculante nunca entram.
+// ==========================================================================
+function isCatalogHingedFrontRow(p) {
+  return !!p && p.position_role === 'front' && !p._doorModelSwap
+    && (p.opening_type === 'hinge_left' || p.opening_type === 'hinge_right');
+}
+// Portas de giro do cadastro: nível de cima + dentro de peça-módulo que não
+// é ela mesma uma frente (ex.: corpo aninhado com a porta dentro).
+function projectCatalogHingedFronts(list, out) {
+  out = out || [];
+  (list || []).forEach((p) => {
+    if (!p) return;
+    if (isCatalogHingedFrontRow(p)) out.push(p);
+    else if (p.is_module && p.position_role !== 'front' && Array.isArray(p.child_pieces)) projectCatalogHingedFronts(p.child_pieces, out);
+  });
+  return out;
+}
+
+function reidDoorModelChildPieces(list, prefix) {
+  return (list || []).map((cp) => {
+    const baseId = cp.id != null ? cp.id : cp.piece_id;
+    const basePieceId = cp.piece_id != null ? cp.piece_id : cp.id;
+    const clone = Object.assign({}, cp, {
+      id: baseId != null ? prefix + ':' + baseId : cp.id,
+      piece_id: basePieceId != null ? prefix + ':' + basePieceId : cp.piece_id
+    });
+    if (clone.is_module && clone.child_pieces && clone.child_pieces.length) clone.child_pieces = reidDoorModelChildPieces(clone.child_pieces, prefix);
+    return clone;
+  });
+}
+
+// Mesmo shape da peça-módulo de LayoutEngine.toPieceRows (modelo do
+// Construtor), só que com as FÓRMULAS da linha original no lugar de mm fixos.
+function catalogDoorModelRow(orig, m, ex) {
+  const lp = ex.locked_presets || {};
+  const hs = ex.own_hinge_slide || {};
+  const meta = ex.module_meta || {};
+  return {
+    id: orig.id,
+    seq: orig.seq,
+    is_module: true,
+    _doorModelSwap: m.id,
+    reference: orig.reference || meta.name || null,
+    position_role: orig.position_role,
+    color_role_id: orig.color_role_id || null,
+    opening_type: orig.opening_type,
+    hinge_side: orig.hinge_side,
+    slides_per_unit: 0,
+    tilt_angle_deg: 0,
+    rotation_y_deg: 0,
+    width_formula: orig.width_formula,
+    height_formula: orig.height_formula,
+    depth_formula: orig.depth_formula,
+    offset_x_formula: orig.offset_x_formula || '0',
+    offset_y_formula: orig.offset_y_formula || '0',
+    offset_z_formula: orig.offset_z_formula || '0',
+    quantity: (orig.quantity != null && orig.quantity !== '') ? orig.quantity : 1,
+    quantity_configurable: !!orig.quantity_configurable,
+    quantity_min: orig.quantity_min,
+    quantity_max: orig.quantity_max,
+    quantity_default: orig.quantity_default,
+    client_optional: !!orig.client_optional,
+    client_optional_default_on: !!orig.client_optional_default_on,
+    visibility_dimension: orig.visibility_dimension || null,
+    visibility_min_mm: orig.visibility_min_mm,
+    visibility_max_mm: orig.visibility_max_mm,
+    client_dimension_configurable: false,
+    client_color_configurable: !!orig.client_color_configurable,
+    auto_join_adjacent: false,
+    auto_join_explicit: false,
+    fixed_depths: ex.fixed_depths || [],
+    locked_width_presets: lp.width || [],
+    locked_height_presets: lp.height || [],
+    locked_depth_presets: lp.depth || [],
+    locked_width_preset_options: lp.widthLabeled || [],
+    locked_height_preset_options: lp.heightLabeled || [],
+    locked_depth_preset_options: lp.depthLabeled || [],
+    is_decoration: !!lp.is_decoration,
+    own_hinge_model: hs.hinge || null,
+    own_slide_model: hs.slide || null,
+    own_slide_models: hs.slides || [],
+    own_width_min_mm: lp.ownWidthMinMm != null ? lp.ownWidthMinMm : null,
+    own_width_max_mm: lp.ownWidthMaxMm != null ? lp.ownWidthMaxMm : null,
+    own_height_min_mm: lp.ownHeightMinMm != null ? lp.ownHeightMinMm : null,
+    own_height_max_mm: lp.ownHeightMaxMm != null ? lp.ownHeightMaxMm : null,
+    own_depth_min_mm: lp.ownDepthMinMm != null ? lp.ownDepthMinMm : null,
+    own_depth_max_mm: lp.ownDepthMaxMm != null ? lp.ownDepthMaxMm : null,
+    module_name: meta.name || null,
+    // id por instância (2 portas iguais não colidem na furação/preço)
+    child_pieces: reidDoorModelChildPieces(ex.child_pieces || [], 'dm:' + orig.id)
+  };
+}
+
+function swapCatalogDoorRows(list, m, ex) {
+  let mudou = false;
+  const out = (list || []).map((p) => {
+    if (!p) return p;
+    if (isCatalogHingedFrontRow(p)) { mudou = true; return catalogDoorModelRow(p, m, ex); }
+    if (p.is_module && p.position_role !== 'front' && Array.isArray(p.child_pieces)) {
+      const filhos = swapCatalogDoorRows(p.child_pieces, m, ex);
+      if (filhos !== p.child_pieces) { mudou = true; return Object.assign({}, p, { child_pieces: filhos }); }
+    }
+    return p;
+  });
+  return mudou ? out : list;
+}
+
+// Cache por array de cadastro (slot.pieces só é trocado inteiro: SKU/repoint)
+// — esta função roda em todo desenho/preço.
+const catalogDoorSwapCache = new WeakMap();
+function applySlotDoorModelToCatalogPieces(slot, pieces) {
+  if (!Array.isArray(pieces)) return pieces;
+  const m = projectSlotDoorModel(slot);
+  const ex = m && doorModelExtrasCache[m.child_module_id];
+  if (!m || !ex) return pieces;                       // Flat / engenharia carregando
+  const hit = catalogDoorSwapCache.get(pieces);
+  if (hit && hit.modelId === m.id && hit.ex === ex) return hit.out;
+  const out = swapCatalogDoorRows(pieces, m, ex);
+  catalogDoorSwapCache.set(pieces, { modelId: m.id, ex, out });
+  return out;
+}
+
+// Medida (w/h) das portas de giro do cadastro no tamanho atual do slot — pro
+// limite do modelo (vidro: 2600 de altura / 700 de largura). Só o nível de
+// cima (porta dentro de corpo aninhado fica sem trava, caso raro).
+function slotCatalogHingedFrontDims(slot) {
+  let h = 0, w = 0;
+  const raw = (slot && slot.pieces) || [];
+  const fronts = raw.filter((p) => isCatalogHingedFrontRow(p));
+  if (!fronts.length || typeof Pricing === 'undefined') return { h, w };
+  const W = Number(slot.width_mm) || 0, H = Number(slot.height_mm) || 0, D = Number(slot.depth_mm) || 0;
+  let body = { W, H, D };
+  let E = 19.5;
+  try { body = Pricing.resolveBodyDims(raw, { W, H, D }).bodyDims || body; } catch (e) { /* usa o slot */ }
+  try { E = Number(Pricing.cascoThicknessMm(raw, slot.colorsByRole || {}, slot.pieceColorOverrides)) || E; } catch (e) { /* padrão */ }
+  fronts.forEach((p) => {
+    try {
+      const d = Pricing.calculatePiece(p, body, undefined, undefined, { E });
+      h = Math.max(h, Number(d.height_mm) || 0);
+      w = Math.max(w, Number(d.width_mm) || 0);
+    } catch (e) { /* fórmula com variável de vizinho: ignora */ }
+  });
+  return { h, w };
 }
 
 // Troca (ou destroca) o accKey das portas de abrir giro conforme o modelo do
@@ -2903,7 +3063,9 @@ function slotPortaGiroMaxDims(slot) {
     h = Math.max(h, Number(p.h) || 0);
     w = Math.max(w, Number(p.w) || 0);
   });
-  return { h, w };
+  // + portas do cadastro (módulo pronto, 14/10)
+  const c = slotCatalogHingedFrontDims(slot);
+  return { h: Math.max(h, c.h), w: Math.max(w, c.w) };
 }
 // Motivo pra NÃO deixar escolher o modelo neste slot (null = pode).
 function slotDoorModelBlock(slot, m) {
@@ -2967,6 +3129,9 @@ async function setProjectSlotDoorModel(slot, modelId) {
       slot.selectedColors = (slot.selectedColors || []).filter((sc) => sc.role_id !== roleId);
     });
   }
+  // Módulo pronto não passa por projectLayoutRowsForSlot (sem Construtor):
+  // as cores próprias do modelo (perfil/vidro) entram aqui.
+  try { applySlotDoorModelColors(slot); } catch (e) { /* ok */ }
   try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[modelo de porta] preço:', e); }
   renderProjectCanvas();
   renderProjectConfigPanel();
@@ -3087,7 +3252,9 @@ function hydrateProjectLayoutPieces() {
   // O reprice agora mora DENTRO de ensureProjectDrillingCatalog (ver lá): era
   // aqui e no hydrate, e nenhum dos dois cobria o caminho real.
   ensureProjectDrillingCatalog();
-  if (!projectSlots.some((s) => s.layout)) return;
+  // + módulo pronto com modelo de porta (14/10): sem layout, mas precisa da
+  // engenharia do modelo carregada pra reabrir com a porta certa.
+  if (!projectSlots.some((s) => s.layout || s.doorModelId)) return;
   (async () => {
     await ensureAccessoryCatalog();
     // MODELO DE PORTA (migration 188): engenharia carregada antes do rebuild,
@@ -3102,8 +3269,9 @@ function hydrateProjectLayoutPieces() {
       } catch (e) { /* segue Flat */ }
     }
     projectSlots.forEach((slot) => {
-      if (!slot.layout) return;
-      rebuildProjectSlotLayoutPieces(slot);
+      if (!slot.layout && !slot.doorModelId) return;
+      if (slot.layout) rebuildProjectSlotLayoutPieces(slot);
+      if (!slot.layout && slot.doorModelId) { try { applySlotDoorModelColors(slot); } catch (e) { /* ok */ } }
       try { recomputeProjectSlotPricing(slot); } catch (e) { /* catálogo mudou; o slot fica com o preço de antes */ }
     });
     renderProjectCanvas();
