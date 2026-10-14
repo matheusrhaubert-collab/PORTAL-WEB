@@ -1085,11 +1085,21 @@ let projectSelectedCategoryId = '';
 // ao modal "Buscar"). Subcategoria continua não tendo dropdown aqui — pra
 // isso ainda existe o modal do botão "Buscar" (ver
 // renderProjectSearchModalFilterBars/po-proj-search-modal mais abaixo).
+// Biblioteca/busca de módulos da aba Projetos SEM as estruturas de parede
+// (tomada, cano, ventilação, aberturas, porta/janela decorativa —
+// modules.wall_structure, migrations 200-202). Matt, 14/10: "pode ocultar
+// todo itens que estao na ferramenta wall da biblioteca" — elas entram só
+// pelo botão Estruturas do grupo Paredes. Também some a categoria
+// "Estruturas" dos filtros (ficaria vazia).
+function projectLibraryModules() {
+  return (allModules || []).filter((m) => m && !m.wall_structure);
+}
+
 function renderProjectLibraryFilterBars() {
   const select = document.getElementById('po-proj-filter-family-select');
   const categorySelect = document.getElementById('po-proj-filter-category-select');
   if (!select) return;
-  const familiesInScope = familiesCacheList.filter((f) => allModules.some((m) => m.family_id === f.id));
+  const familiesInScope = familiesCacheList.filter((f) => projectLibraryModules().some((m) => m.family_id === f.id));
   if (projectSelectedFamilyId && !familiesInScope.some((f) => f.id === projectSelectedFamilyId)) {
     projectSelectedFamilyId = '';
   }
@@ -1107,7 +1117,7 @@ function renderProjectLibraryFilterBars() {
   select.value = projectSelectedFamilyId;
 
   if (!categorySelect) return;
-  const categoriesInScope = categoriesCacheList.filter((c) => allModules.some((m) =>
+  const categoriesInScope = categoriesCacheList.filter((c) => projectLibraryModules().some((m) =>
     m.category_id === c.id && (!projectSelectedFamilyId || m.family_id === projectSelectedFamilyId)
   ));
   if (projectSelectedCategoryId && !categoriesInScope.some((c) => c.id === projectSelectedCategoryId)) {
@@ -1200,7 +1210,7 @@ function attachProjectLibrarySkuSelect(card, m, unit) {
 function renderProjectLibrary() {
   const grid = document.getElementById('po-proj-library-grid');
   if (!grid) return;
-  const list = (allModules || []).filter((m) =>
+  const list = projectLibraryModules().filter((m) =>
     (!projectSelectedFamilyId || m.family_id === projectSelectedFamilyId) &&
     (!projectSelectedCategoryId || m.category_id === projectSelectedCategoryId)
   );
@@ -1894,7 +1904,7 @@ function renderProjectSearchModalFilterBars() {
   const categoryEl = document.getElementById('po-proj-search-filter-category');
   const subcategoryEl = document.getElementById('po-proj-search-filter-subcategory');
 
-  const familiesInScope = familiesCacheList.filter((f) => allModules.some((m) => m.family_id === f.id));
+  const familiesInScope = familiesCacheList.filter((f) => projectLibraryModules().some((m) => m.family_id === f.id));
   if (projSearchModalFamilyId && !familiesInScope.some((f) => f.id === projSearchModalFamilyId)) {
     projSearchModalFamilyId = '';
   }
@@ -1913,7 +1923,7 @@ function renderProjectSearchModalFilterBars() {
   // sem família, a fileira fica escondida em vez de mostrar a união de
   // categorias de todas as famílias.
   const categoriesInScope = projSearchModalFamilyId
-    ? categoriesCacheList.filter((c) => allModules.some((m) => m.category_id === c.id && m.family_id === projSearchModalFamilyId))
+    ? categoriesCacheList.filter((c) => projectLibraryModules().some((m) => m.category_id === c.id && m.family_id === projSearchModalFamilyId))
     : [];
   if (projSearchModalCategoryId && !categoriesInScope.some((c) => c.id === projSearchModalCategoryId)) {
     projSearchModalCategoryId = '';
@@ -1934,7 +1944,7 @@ function renderProjectSearchModalFilterBars() {
   // Subcategoria: mesma lógica, um degrau abaixo — só existe depois de
   // escolher a categoria.
   const subcategoriesInScope = projSearchModalCategoryId
-    ? subcategoriesCacheList.filter((s) => allModules.some((m) =>
+    ? subcategoriesCacheList.filter((s) => projectLibraryModules().some((m) =>
         m.subcategory_id === s.id
         && m.family_id === projSearchModalFamilyId
         && m.category_id === projSearchModalCategoryId
@@ -1959,7 +1969,7 @@ function renderProjectSearchModalFilterBars() {
 function renderProjectSearchModalGrid() {
   const grid = document.getElementById('po-proj-search-modal-grid');
   if (!grid) return;
-  const list = (allModules || []).filter((m) =>
+  const list = projectLibraryModules().filter((m) =>
     (!projSearchModalFamilyId || m.family_id === projSearchModalFamilyId) &&
     (!projSearchModalCategoryId || m.category_id === projSearchModalCategoryId) &&
     (!projSearchModalSubcategoryId || m.subcategory_id === projSearchModalSubcategoryId)
