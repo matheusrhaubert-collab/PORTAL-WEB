@@ -1255,9 +1255,12 @@ async function generateProjectProposalPDF() {
   if (btn) btn.disabled = true;
   if (labelEl) labelEl.textContent = I18n.t('proposal.generating');
   try {
+    const cliProposta = (typeof getProjectClientInfo === 'function') ? (getProjectClientInfo() || {}) : {};
     const liveOrder = {
       po_name: loadedProjectFavorite ? loadedProjectFavorite.name : null,
-      client_name: null,
+      client_name: cliProposta.name || null,
+      client_phone: cliProposta.phone || null,
+      delivery_address: cliProposta.address || null,
       submitted_at: null,
       wall_shape: projectWallShape,
       wall_widths_mm: (projectWallWidthsMm || []).slice(),

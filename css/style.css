@@ -5206,3 +5206,18 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 #po-proj-dimview-menu .po-style-caret { display: none; }
 /* IA Services (13/10): o visitante do link 3D não vê as ferramentas de IA. */
 body.po-view3d-guest #po-proj-tb-ia { display: none !important; }
+
+/* Dados do cliente (13/10) — janela reaproveita .po-dimview-modal; o ponto
+   no botão acende quando o projeto tem cliente preenchido. */
+#po-proj-client-btn { position: relative; }
+#po-proj-client-btn.po-has-client .po-tb-dot { display: block; }
+.po-client-card { width: min(440px, calc(100vw - 32px)); }
+.po-client-body { display: flex; flex-direction: column; gap: 10px; }
+.po-client-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.po-client-field input, .po-client-field textarea {
+  font: inherit; font-weight: 400; font-size: 14px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; width: 100%; box-sizing: border-box;
+}
+.po-client-field textarea { resize: vertical; min-height: 64px; }
+.po-client-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.po-client-actions { display: flex; justify-content: flex-end; }

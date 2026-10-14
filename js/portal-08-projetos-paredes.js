@@ -5579,6 +5579,7 @@ function resetProject() {
   // já chama refreshProjectPhotorealGallery(), que zera a grade quando não há
   // projeto amarrado.
   loadedProjectFavorite = null;
+  if (typeof setProjectClientInfo === 'function') setProjectClientInfo(null);
   refreshProjectFavoriteButtons();
   project3DLastFitKey = null; // força reenquadrar a câmera 3D no próximo render (ver comentário na declaração)
   renderProjectCanvas();
@@ -5740,6 +5741,14 @@ async function sendProjectToOrder() {
       source_project_id: frozenProjectId,
       ...projectRenderFields
     };
+    // Dados do cliente do projeto (portal-15) pré-preenchem o pedido. E-mail
+    // NÃO: client_email do pedido é o do dealer (ERP usa pra achar a conta).
+    const cli = (typeof getProjectClientInfo === 'function') ? getProjectClientInfo() : null;
+    if (cli) {
+      if (cli.name) orderPayload.client_name = cli.name;
+      if (cli.phone) orderPayload.client_phone = cli.phone;
+      if (cli.address) orderPayload.delivery_address = cli.address;
+    }
     let { data: order, error: orderError } = await supabaseClient
       .from('orders').insert(orderPayload).select().single();
     if (orderError && /project_reference_urls/.test(orderError.message || '')) {

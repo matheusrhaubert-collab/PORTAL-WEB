@@ -363,6 +363,7 @@ function projectPdfResetOpenProject() {
   projectWallSegments = defaultProjectWallSegments();
   projectActiveWallIndex = 0;
   loadedProjectFavorite = null;
+  if (typeof setProjectClientInfo === 'function') setProjectClientInfo(null);
   if (typeof refreshProjectFavoriteButtons === 'function') refreshProjectFavoriteButtons();
   try { project3DLastFitKey = null; } catch (e) { /* ok */ }
   if (typeof resetProjectUndo === 'function') resetProjectUndo();

@@ -218,7 +218,10 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
     // Pasta do cliente final (migration 184) — só vai no payload quando quem
     // chama manda uma; sem a migration, o fallback abaixo tira a coluna.
     if (opts && opts.clientFolder) basePayload.client_folder = String(opts.clientFolder).trim().slice(0, 80);
-    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url', 'client_folder'];
+    // Dados do cliente final (migration 199, ver portal-15-dados-cliente.js) —
+    // vai sempre (null limpa o que estava salvo).
+    if (typeof getProjectClientInfo === 'function') basePayload.client_info = getProjectClientInfo();
+    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url', 'client_folder', 'client_info'];
     const runWithCacheFallback = async (op) => {
       let payload = basePayload;
       let res = await op(payload);
@@ -417,7 +420,7 @@ async function loadProjectFavoritesList() {
   // caem no recálculo em background de antes; sem wall_segments o projeto
   // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
   const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
-  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder', 'client_info'];
   let optional = OPTIONAL_COLS.slice();
   // FILTRO POR DONO (02/10): "Meus Projetos" tem que mostrar SÓ os projetos
   // da conta logada. Sem esse .eq, o RLS de SELECT deixa passar também os
@@ -1244,6 +1247,9 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     project3DLastFitKey = null; // projeto TROCOU inteiro — reenquadra a câmera 3D mesmo se a chave coincidir (ver comentário na declaração)
     refreshProjectWallWidthInput();
     loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name, ai_preview_url: fav.ai_preview_url || null } : null;
+    // dados do cliente vêm junto do projeto salvo; projeto importado de
+    // link/galeria chega sem (não carrega dado de cliente de outra conta)
+    if (typeof setProjectClientInfo === 'function') setProjectClientInfo(fav.client_info || null);
     refreshProjectFavoriteButtons();
     renderProjectCanvas();
     projectDirty = false; // acabou de carregar do banco, nada pendente ainda
