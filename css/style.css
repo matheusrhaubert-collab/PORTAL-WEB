@@ -5363,3 +5363,18 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-cost-more > summary { cursor: pointer; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
 .po-cost-more[open] > summary { color: var(--text); }
 .po-cost-more > section + section { margin-top: 18px; }
+/* Mapa de calor: menu com modos (13/10) */
+#po-proj-heatmap-menu .po-tb-dot { display: none; }
+#po-proj-heatmap-menu .po-tb-icon-card.active .po-tb-dot { display: block; }
+.po-heatmap-item { display: block; width: 100%; text-align: left; padding: 7px 10px; font-size: 12.5px; cursor: pointer; }
+.po-heatmap-item.active { background: var(--text); color: #fff; }
+/* Mapa de calor: menu com modos (13/10) */
+#po-proj-heatmap-menu .po-tb-dot { display: none; }
+#po-proj-heatmap-menu .po-tb-icon-card.active .po-tb-dot { display: block; }
+.po-heatmap-item { display: block; width: 100%; text-align: left; padding: 7px 10px; font-size: 12.5px; cursor: pointer; }
+.po-heatmap-item.active { background: var(--text); color: #fff; }
+.po-heatmap-roles li.po-heatmap-role { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; border-top: 1px dashed var(--border); }
+.po-heatmap-role b { font-size: 12px; }
+.po-heatmap-range { font-size: 10px; color: var(--muted); }
+.po-heatmap-use { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.po-heatmap-use i { width: 10px; height: 10px; border-radius: 2px; flex: none; }

@@ -22,6 +22,9 @@
 // Botão: grupo IA Services. Só administrador (mesma lista dos outros).
 
 let projectHeatmapOn = false;
+// 'area' = $/ft² de área coberta; 'share' = % do total do projeto (13/10, 2ª
+// rodada: "outro infravermelho pra percentual do móvel e painéis")
+let projectHeatmapMode = 'area';
 let projectHeatmapSprites = [];
 const HEAT_LAYER = 'mapa-calor';
 
@@ -46,17 +49,20 @@ function projectHeatmapData() {
   const slots = (projectSlots || []).filter((s) => s.module && !s.module.visual_only && s.result);
   const base = slots.reduce((a, s) => a + (Number(s.result.total) || 0), 0);
   const k = base > 0 ? getDisplayPrice(base) / base : 1;
+  const total = base * k;
   const items = slots.map((s) => {
     const price = (Number(s.result.total) || 0) * k;
     const area = hmAreaFt2(s);
-    const skip = s.module.is_decoration || Number(s.width_mm) < 100 || area <= 0 || price <= 0;
-    return { slot: s, price, area, perFt2: skip ? null : price / area, skip };
+    // no modo % o painel/filler ENTRA (é o que o Matt quer ver: "painel 1%")
+    const skip = s.module.is_decoration || price <= 0 || (projectHeatmapMode === 'area' && (Number(s.width_mm) < 100 || area <= 0));
+    const share = total > 0 ? price / total : 0;
+    return { slot: s, price, area, share, perFt2: skip ? null : price / Math.max(area, 0.01), skip, metric: skip ? null : (projectHeatmapMode === 'share' ? share : price / Math.max(area, 0.01)) };
   });
-  const vals = items.filter((i) => !i.skip).map((i) => i.perFt2);
+  const vals = items.filter((i) => !i.skip).map((i) => i.metric);
   const min = vals.length ? Math.min(...vals) : 0, max = vals.length ? Math.max(...vals) : 0;
   const avg = base > 0 ? (base * k) / Math.max(items.reduce((a, i) => a + (i.skip ? 0 : i.area), 0), 0.01) : 0;
-  items.forEach((i) => { i.t = (i.skip || max <= min) ? null : (i.perFt2 - min) / (max - min); });
-  return { items, min, max, avg, total: base * k };
+  items.forEach((i) => { i.t = (i.skip || max <= min) ? null : (i.metric - min) / (max - min); });
+  return { items, min, max, avg, total, mode: projectHeatmapMode };
 }
 
 function clearProjectHeatmap() {
@@ -92,18 +98,7 @@ function applyProjectHeatmap() {
       if (!o.userData._heatOrig) o.userData._heatOrig = o.material;
       o.material = new THREE.MeshLambertMaterial({ color: col.hex, transparent: false });
     });
-    if (it.t != null) {
-      const box = new THREE.Box3().setFromObject(g);
-      if (!box.isEmpty()) {
-        const c = box.getCenter(new THREE.Vector3());
-        const h = Math.min(0.14, Math.max(0.07, (box.max.x - box.min.x) * 0.12));
-        const spr = makeProjectDimTextSprite(hmFmtPerArea(it.perFt2), h);
-        spr.position.copy(c);
-        spr.userData.legnoLayer = HEAT_LAYER;
-        scene.add(spr);
-        projectHeatmapSprites.push(spr);
-      }
-    }
+    // sem rótulo em cima do módulo (13/10, Matt: "pode remover as tags, só as cores já ajudam muito")
   });
   renderProjectHeatmapLegend(data);
 }
@@ -124,25 +119,46 @@ function renderProjectHeatmapLegend(data) {
   const el = ensureProjectHeatmapLegend();
   if (!el) return;
   const t = (k, v) => I18n.t('heatmap.' + k, v);
-  const ranked = data.items.filter((i) => !i.skip).sort((a, b) => b.perFt2 - a.perFt2);
+  const share = data.mode === 'share';
+  const fmt = (v) => share ? (Math.round(v * 1000) / 10) + '%' : hmFmtPerArea(v);
+  const ranked = data.items.filter((i) => !i.skip).sort((a, b) => b.metric - a.metric);
   const nums = (typeof projectSlotsOrderSequence === 'function') ? new Map(projectSlotsOrderSequence().map((e) => [e.slot.id, e.numero])) : new Map();
-  const row = (i) => '<li><i style="background:' + hmColor(i.t).css + '"></i><span>' + (nums.get(i.slot.id) != null ? '#' + nums.get(i.slot.id) + ' ' : '') + hmFmtArea(i.area) + '</span><b>' + hmFmtPerArea(i.perFt2) + '</b></li>';
-  el.innerHTML = '<div class="po-heatmap-title">' + t('title') + '</div>'
+  const row = (i) => '<li><i style="background:' + hmColor(i.t).css + '"></i><span>' + (nums.get(i.slot.id) != null ? '#' + nums.get(i.slot.id) + ' ' : '') + (share ? hmMoney(i.price) : hmFmtArea(i.area)) + '</span><b>' + fmt(i.metric) + '</b></li>';
+  const mid = share ? t('total') + ' ' + hmMoney(data.total) : t('avg') + ' ' + hmFmtPerArea(data.avg);
+  const n = share ? ranked.length : 6;
+  el.innerHTML = '<div class="po-heatmap-title">' + t(share ? 'title_share' : 'title') + '</div>'
     + '<div class="po-heatmap-bar"></div>'
-    + '<div class="po-heatmap-ends"><span>' + hmFmtPerArea(data.min) + '</span><span>' + t('avg') + ' ' + hmFmtPerArea(data.avg) + '</span><span>' + hmFmtPerArea(data.max) + '</span></div>'
-    + '<ul class="po-heatmap-list">' + ranked.slice(0, 3).map(row).join('') + (ranked.length > 6 ? '<li class="po-heatmap-sep">…</li>' : '') + ranked.slice(-3).filter((i) => ranked.indexOf(i) >= 3).map(row).join('') + '</ul>'
-    + '<p class="po-heatmap-hint">' + t('hint') + '</p>';
+    + '<div class="po-heatmap-ends"><span>' + fmt(data.min) + '</span><span>' + mid + '</span><span>' + fmt(data.max) + '</span></div>'
+    + '<ul class="po-heatmap-list">' + (share ? ranked.map(row).join('') : ranked.slice(0, 3).map(row).join('') + (ranked.length > 6 ? '<li class="po-heatmap-sep">…</li>' : '') + ranked.slice(-3).filter((i) => ranked.indexOf(i) >= 3).map(row).join('')) + '</ul>'
+    + '<p class="po-heatmap-hint">' + t(share ? 'hint_share' : 'hint') + '</p>';
   el.style.display = 'block';
 }
 
-function toggleProjectHeatmap(on) {
-  projectHeatmapOn = on == null ? !projectHeatmapOn : !!on;
+function setProjectHeatmapMode(mode) {
+  // mode: 'off' | 'area' | 'share'
+  projectHeatmapOn = mode !== 'off';
+  if (projectHeatmapOn) projectHeatmapMode = mode;
   const btn = document.getElementById('po-proj-heatmap-btn');
   if (btn) btn.classList.toggle('active', projectHeatmapOn);
+  document.querySelectorAll('#po-proj-heatmap-list .po-heatmap-item').forEach((el) => el.classList.toggle('active', el.dataset.mode === (projectHeatmapOn ? projectHeatmapMode : 'off')));
   applyProjectHeatmap();
 }
+function toggleProjectHeatmap(on) { setProjectHeatmapMode((on == null ? !projectHeatmapOn : !!on) ? projectHeatmapMode : 'off'); }
 
-(function attachProjectHeatmapBtn() {
-  const btn = document.getElementById('po-proj-heatmap-btn');
-  if (btn) btn.addEventListener('click', () => toggleProjectHeatmap());
+// Botão + lista (mesmo padrão de Camadas: montaMenuCamadas + attachFloatingDropdown)
+(function montaMenuMapaCalor() {
+  const raiz = document.getElementById('po-proj-heatmap-menu');
+  if (!raiz || typeof attachFloatingDropdown !== 'function') return;
+  const t = (k) => I18n.t('heatmap.' + k);
+  raiz.innerHTML = '<button type="button" class="po-tb-icon-card po-tb-icon-only" id="po-proj-heatmap-btn" title="' + t('btn_title') + '" aria-label="' + t('btn') + '">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2.5 3 5 5.2 5 9a5 5 0 0 1-10 0c0-1.6.5-2.8 1.3-4 .6 1.2 1.4 1.8 2.2 2 0-2.5.5-5 1.5-7z"/><path d="M3 21h18"/></svg>'
+    + '<span>' + t('btn') + '</span><i class="po-tb-dot"></i></button>'
+    + '<div class="po-style-list po-layers-list" id="po-proj-heatmap-list">'
+    + [['off', 'mode_off'], ['area', 'mode_area'], ['share', 'mode_share']].map(([m, k]) =>
+      '<button type="button" class="po-style-item po-heatmap-item' + (m === 'off' ? ' active' : '') + '" data-mode="' + m + '">' + t(k) + '</button>').join('')
+    + '</div>';
+  const btn = raiz.querySelector('#po-proj-heatmap-btn');
+  const lista = raiz.querySelector('#po-proj-heatmap-list');
+  attachFloatingDropdown(raiz, btn, lista);
+  lista.querySelectorAll('.po-heatmap-item').forEach((el) => el.addEventListener('click', () => { setProjectHeatmapMode(el.dataset.mode); raiz.classList.remove('aberto'); lista.style.display = 'none'; }));
 })();
