@@ -38,6 +38,10 @@
 // VÁRIAS imagens (images: [{base64, mime, label}]) + source='drawing' (modo
 // prancha: cota escrita vale mais que estimativa).
 //
+// v4 (2026-10-14): stage='edit' — edita o projeto ABERTO a partir de um
+// pedido em texto (IA · Editar projeto, js/portal-19-ia-editar.js). Ver
+// bloco "ETAPA 'edit'" mais abaixo.
+//
 // Ordem das propriedades no schema (propertyOrdering) é proposital: o modelo
 // escreve as NOTAS de câmera/escala antes dos números, as PAREDES antes das
 // aberturas, e as aberturas antes dos volumes — é o raciocínio na ordem que
@@ -768,6 +772,152 @@ function imageParts(b: any) {
 }
 
 // ==========================================================================
+// ETAPA 'edit' — EDITAR O PROJETO ABERTO POR TEXTO (14/10, Matt)
+// ==========================================================================
+// "quero um novo botão em IA Services que é uma caixa de texto pro
+//  projetista escrever o que quer mudar no projeto e executar. ex.: reduzir
+//  as alturas dos aéreos, aumentar prateleiras, trocar as cores, alinhar a
+//  pia do balcão com a janela, trocar as gavetas por portas, acrescentar um
+//  rack de TV abaixo do painel da TV."
+//
+// Sem imagem: o portal manda o PROJETO como texto (módulos com medidas,
+// posição, cores e opções de cor, quantidades configuráveis; paredes com
+// aberturas; catálogo compacto) + o pedido. A IA devolve uma LISTA DE
+// OPERAÇÕES — nunca o projeto inteiro de novo. Quem executa é o portal
+// (js/portal-19-ia-editar.js) pelas MESMAS funções da tela (clamp de
+// medida, preço, cor, troca de módulo), então o resultado é idêntico a uma
+// edição feita na mão. Mesma divisão do gerador por IA: IA decide O QUÊ,
+// JS decide se cabe e quanto custa.
+const EDIT_OPS = ["resize", "move", "set_color", "set_quantity", "replace_module", "add_module", "remove_module"];
+
+const EDIT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    understanding: { type: "STRING" },
+    operations: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          reason: { type: "STRING" },
+          op: { type: "STRING", enum: EDIT_OPS },
+          slot_ids: { type: "ARRAY", items: { type: "STRING" }, nullable: true },
+          module_id: { type: "STRING", nullable: true },
+          wall_index: { type: "INTEGER", nullable: true },
+          x_mm: { type: "NUMBER", nullable: true },
+          floor_height_mm: { type: "NUMBER", nullable: true },
+          width_mm: { type: "NUMBER", nullable: true },
+          height_mm: { type: "NUMBER", nullable: true },
+          depth_mm: { type: "NUMBER", nullable: true },
+          role: { type: "STRING", nullable: true },
+          color_name: { type: "STRING", nullable: true },
+          piece_id: { type: "STRING", nullable: true },
+          quantity: { type: "INTEGER", nullable: true },
+          color_from_slot_id: { type: "STRING", nullable: true },
+        },
+        required: ["reason", "op"],
+        propertyOrdering: ["reason", "op", "slot_ids", "module_id", "wall_index", "x_mm", "floor_height_mm",
+          "width_mm", "height_mm", "depth_mm", "role", "color_name", "piece_id", "quantity", "color_from_slot_id"],
+      },
+    },
+    not_done: { type: "ARRAY", items: { type: "STRING" } },
+    summary: { type: "STRING" },
+  },
+  required: ["understanding", "operations", "not_done", "summary"],
+  propertyOrdering: ["understanding", "operations", "not_done", "summary"],
+};
+
+function buildEditPrompt(b: any): string {
+  const lang = b.lang === "en" ? "inglês" : b.lang === "es" ? "espanhol" : "português do Brasil";
+  const unidade = b.unit === "in" ? "polegadas (1 in = 25,4 mm)" : "milímetros";
+  return `Você é um projetista sênior de marcenaria planejada editando um projeto JÁ MONTADO num software 3D.
+O projetista escreveu o que quer mudar. Sua tarefa: traduzir o pedido numa LISTA MÍNIMA DE OPERAÇÕES sobre o projeto abaixo.
+
+PEDIDO DO PROJETISTA:
+"""${String(b.instruction || "").slice(0, 4000)}"""
+
+O projetista trabalha em ${unidade}. TODOS os números que você devolve são em MILÍMETROS (converta se ele falou em polegadas).
+Escreva understanding, reason, not_done e summary em ${lang}, curtos e diretos.
+
+COMO LER O PROJETO (JSON no fim):
+- room.ceiling_mm = pé-direito; room.baseboard_mm = rodapé.
+- walls[i]: length_mm = comprimento interno da parede. openings = portas/janelas/passagens/nichos dessa parede:
+  x_mm = início da abertura medido a partir da MESMA origem do x_mm dos módulos daquela parede; width_mm; height_mm; sill_mm = peitoril (altura do chão até a base da janela).
+- slots[] = módulos que existem hoje. Cada um:
+  id (use EXATAMENTE este texto em slot_ids), module / family / category / mount_type / hint (o que ele é),
+  placement 'wall' (encostado na parede wall_index) ou 'floor' (ilha solta no piso — não tem x_mm nem wall_index utilizáveis),
+  x_mm = posição da borda esquerda ao longo da parede; floor_height_mm = do chão até a BASE do módulo; top_mm = floor_height_mm + height_mm;
+  width_mm/height_mm/depth_mm; limits = [mín, máx] aceitos por eixo; width_presets/height_presets (se existirem, a medida é TRAVADA: só valem esses valores);
+  colors = { papel: cor atual }; color_options = { papel: [cores permitidas] };
+  quantities = itens com quantidade configurável (prateleiras etc.): piece_id, ref, qty, min, max;
+  builder = true quando o interior foi montado no Construtor (aí as prateleiras/gavetas internas NÃO estão em quantities).
+- selected_slot_ids = módulos selecionados na tela agora ("este", "esse", "o selecionado" = esses).
+- catalog = módulos que podem ser inseridos/substituídos (id, nome, família, categoria, mount_type, hint, w/h/d = [mín, padrão, máx]).
+
+OPERAÇÕES (campo op) — preencha só os campos que a operação usa, o resto null:
+- resize: slot_ids + width_mm/height_mm/depth_mm novos (só os que mudam). Pode vir junto floor_height_mm quando a base precisa subir/descer.
+- move: slot_ids (normalmente 1) + x_mm e/ou floor_height_mm e/ou wall_index. Só pra placement 'wall'.
+- set_color: slot_ids (vazio/null = TODOS os módulos) + color_name EXATAMENTE como aparece em color_options + role = nome do papel EXATAMENTE como nas chaves de color_options, ou null = todo papel onde essa cor existir.
+- set_quantity: slot_ids (1) + piece_id + quantity (dentro de min..max).
+- replace_module: slot_ids + module_id do catálogo. Mantém posição e medidas (clampadas no novo). Ex.: trocar gaveteiro por módulo de portas → mesmo tipo de montagem e mesma função, com portas.
+- add_module: module_id do catálogo + wall_index + x_mm + floor_height_mm + width_mm/height_mm/depth_mm (dentro de w/h/d do catálogo); color_from_slot_id = id de um módulo vizinho pra copiar as cores (ou color_name). wall_index null = ilha no piso.
+- remove_module: slot_ids.
+
+REGRAS:
+1. Mínimo de operações. NÃO mexa no que não foi pedido.
+2. "Aéreos" = módulos de parede suspensos (mount_type de parede/aéreo, ou floor_height_mm alto, tipicamente ≥ 1200). "Balcão/base" = no chão (floor_height_mm ≈ 0, altura ≈ 700–900). "Torre/paneleiro" = vai do chão até perto do teto.
+3. Reduzir/aumentar altura de aéreos: MANTENHA O TOPO (top_mm) onde está — a base sobe/desce (resize com height_mm + floor_height_mm = top_mm − nova altura), a menos que o pedido diga outra coisa. Mantenha todos os aéreos de uma mesma linha com o mesmo topo e a mesma altura, a não ser que o pedido diga o contrário.
+4. Alinhar um módulo com uma abertura (ex.: pia com a janela): centro do módulo = centro da abertura → x_mm = abertura.x_mm + abertura.width_mm/2 − módulo.width_mm/2.
+5. Na mesma parede, dois módulos cujas faixas de altura se cruzam NÃO podem se sobrepor em x. Se mover/alargar um módulo invadir o vizinho, reorganize a corrida com operações move/resize nos vizinhos (mantendo a corrida contínua, encostada, e dentro de 0..length_mm). Se não couber, diga em not_done.
+6. Respeite limits/presets. Nunca invente slot_id, module_id, piece_id, papel ou nome de cor — só os que estão no JSON.
+7. Pra inserir algo "abaixo do painel da TV" etc.: ache o módulo de referência (pelo nome/hint), use a mesma parede, centralize em x com ele, floor_height_mm = 0 (ou o que fizer sentido), e escolha no catálogo o módulo cujo nome/hint/categoria corresponde (ex.: rack).
+8. Trocar cores sem cor específica ("trocar as cores", "deixa mais claro"): escolha cores coerentes das color_options e explique no reason.
+9. O que não dá pra fazer com essas operações (ex.: mexer no interior de um módulo builder=true, mexer em parede, mudar puxador) vai em not_done com o motivo — não invente operação.
+10. A ordem das operações é a ordem de execução: primeiro resize/replace, depois move dos vizinhos, por último add.
+
+PROJETO (JSON):
+${JSON.stringify(b.project || {})}
+
+CATÁLOGO (JSON):
+${JSON.stringify(b.catalog || [])}`;
+}
+
+function sanitizeEdit(data: any, b: any) {
+  const slotIds = new Set(((b.project && b.project.slots) || []).map((s: any) => String(s.id)));
+  const modIds = new Set((b.catalog || []).map((m: any) => String(m.id)));
+  const nWalls = ((b.project && b.project.walls) || []).length;
+  const num = (v: any) => { const n = Number(v); return v === null || v === undefined || v === "" || !Number.isFinite(n) ? null : Math.round(n * 10) / 10; };
+  const ops: any[] = [];
+  const notDone: string[] = Array.isArray(data?.not_done) ? data.not_done.map((x: any) => String(x)).filter(Boolean) : [];
+  (Array.isArray(data?.operations) ? data.operations : []).slice(0, 80).forEach((o: any) => {
+    if (!o || !EDIT_OPS.includes(o.op)) return;
+    const ids = (Array.isArray(o.slot_ids) ? o.slot_ids : []).map((x: any) => String(x)).filter((x: string) => slotIds.has(x));
+    const precisaSlot = o.op !== "add_module" && !(o.op === "set_color" && (!o.slot_ids || !o.slot_ids.length));
+    if (precisaSlot && !ids.length) { notDone.push(`${o.reason || o.op} (módulo não encontrado)`); return; }
+    const mid = o.module_id ? String(o.module_id) : null;
+    if ((o.op === "replace_module" || o.op === "add_module") && (!mid || !modIds.has(mid))) {
+      notDone.push(`${o.reason || o.op} (módulo de catálogo inválido)`); return;
+    }
+    const wi = o.wall_index === null || o.wall_index === undefined ? null : Number(o.wall_index);
+    if (wi !== null && !(Number.isInteger(wi) && wi >= 0 && wi < nWalls)) {
+      // parede inexistente NÃO pode virar "ilha no piso" calada
+      notDone.push(`${o.reason || o.op} (parede ${wi} não existe)`); return;
+    }
+    ops.push({
+      op: o.op, reason: String(o.reason || ""), slot_ids: ids, module_id: mid,
+      wall_index: wi,
+      x_mm: num(o.x_mm), floor_height_mm: num(o.floor_height_mm),
+      width_mm: num(o.width_mm), height_mm: num(o.height_mm), depth_mm: num(o.depth_mm),
+      role: o.role ? String(o.role) : null, color_name: o.color_name ? String(o.color_name) : null,
+      piece_id: o.piece_id ? String(o.piece_id) : null,
+      quantity: o.quantity === null || o.quantity === undefined ? null : Math.round(Number(o.quantity)),
+      color_from_slot_id: o.color_from_slot_id && slotIds.has(String(o.color_from_slot_id)) ? String(o.color_from_slot_id) : null,
+    });
+  });
+  return { understanding: String(data?.understanding || ""), summary: String(data?.summary || ""), operations: ops, not_done: notDone };
+}
+
+// ==========================================================================
 // HTTP
 // ==========================================================================
 Deno.serve(async (req) => {
@@ -779,7 +929,7 @@ Deno.serve(async (req) => {
   let b: any;
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
 
-  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : "read";
+  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "edit" ? "edit" : "read";
   const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length;
   if (tamanho > 14_000_000) return json(413, { error: "Imagens grandes demais — use menos páginas.", code: "too_big" });
 
@@ -796,6 +946,14 @@ Deno.serve(async (req) => {
       const tier = b.quality === "pro" ? "pro" : "flash";
       const { data, model } = await callGemini(apiKey, tier, parts, SPLIT_SCHEMA);
       return json(200, { ...sanitizeSplit(data, Math.max(...pages.map((p: any) => Number(p.page) || 0))), model });
+    }
+    if (stage === "edit") {
+      if (!String(b.instruction || "").trim()) return json(400, { error: "Escreva o que quer mudar.", code: "no_instruction" });
+      if (!b.project || !Array.isArray(b.project.slots)) return json(400, { error: "Projeto ausente.", code: "no_project" });
+      if (!Array.isArray(b.catalog)) b.catalog = [];
+      const tier = b.quality === "pro" ? "pro" : "flash";
+      const { data, model } = await callGemini(apiKey, tier, [{ text: buildEditPrompt(b) }], EDIT_SCHEMA);
+      return json(200, { ...sanitizeEdit(data, b), model });
     }
     const imgs = imageParts(b);
     if (!imgs.length) return json(400, { error: "Foto ausente (image_base64).", code: "no_image" });

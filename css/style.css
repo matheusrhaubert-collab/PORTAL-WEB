@@ -5254,6 +5254,27 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-ai-walls-list { margin: 4px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.5; }
 .po-ai-walls-list span { color: var(--muted); font-size: 12px; }
 .po-ai-walls-notes { margin: 0; font-size: 12px; color: var(--muted); }
+/* IA · Editar projeto (14/10) — js/portal-19-ia-editar.js. Reaproveita o
+   cartão do IA · Paredes (po-ai-walls-*); aqui só o que é dele. */
+.po-ai-edit-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.45; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; resize: vertical; min-height: 92px; }
+.po-ai-edit-text:focus { outline: 2px solid rgba(0,0,0,.15); outline-offset: 1px; }
+.po-ai-edit-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.po-ai-edit-chip { font: inherit; font-size: 12px; border: 1px solid var(--border); background: #faf9f6; border-radius: 999px; padding: 5px 10px; cursor: pointer; color: var(--text); }
+.po-ai-edit-chip:hover { background: #f0eee8; }
+.po-ai-edit-bar { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.po-ai-edit-quality { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.po-ai-edit-quality select { font: inherit; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; }
+.po-ai-edit-bar .po-ai-edit-run { flex: 1 1 160px; width: auto; }
+.po-ai-edit-result { display: flex; flex-direction: column; gap: 8px; }
+.po-ai-edit-summary { margin: 0; font-size: 13px; line-height: 1.45; }
+.po-ai-edit-ops { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.po-ai-edit-ops li { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; background: #fff; }
+.po-ai-edit-ops li span { color: var(--muted); font-size: 12px; }
+.po-ai-edit-ops li em { color: #8a5a00; font-size: 12px; font-style: normal; }
+.po-ai-edit-mark { font-weight: 700; color: #2e7d4f !important; font-size: 14px !important; }
+.po-ai-edit-ops li.falhou .po-ai-edit-mark { color: #b3261e !important; }
+.po-ai-edit-notdone { font-size: 13px; background: #fff8e6; border: 1px solid #f0d9a0; border-radius: 8px; padding: 8px 10px; }
+.po-ai-edit-notdone ul { margin: 4px 0 0; padding-left: 18px; }
 
 /* Análise de custo (13/10) — dashboard de fechamento. */
 .po-cost-card { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow-y: auto; }
