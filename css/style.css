@@ -5432,9 +5432,14 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-nm-mod .po-proj-library-card-name { font-size: 12px; font-weight: 600; line-height: 1.25; }
 .po-nm-mod .po-proj-library-card-dims { font-size: 11px; color: var(--muted); }
 .po-nm-medidas { display: grid; grid-template-columns: 1fr 240px; gap: 20px; align-items: center; }
-.po-nm-vista { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; justify-content: center; align-items: center; gap: 6px; background: #faf9f6; border: 1px solid var(--border); border-radius: 12px; padding: 18px; min-height: 380px; }
+.po-nm-vista { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; justify-content: center; align-items: center; gap: 10px; background: #faf9f6; border: 1px solid var(--border); border-radius: 12px; padding: 26px; min-height: 400px; overflow: hidden; }
 .po-nm-cota-w { grid-column: 1; grid-row: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--muted); padding-bottom: 2px; justify-self: center; }
 .po-nm-vista-box { grid-column: 1; grid-row: 2; position: relative; background: #fff; border: 1px solid rgba(0,0,0,.25); }
+.po-nm-pecas { position: absolute; inset: 0; }
+.po-nm-alca { position: absolute; z-index: 2; width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; background: var(--accent); color: #fff; font-size: 16px; line-height: 1; padding: 0; cursor: grab; box-shadow: 0 2px 8px rgba(0,0,0,.25); touch-action: none; display: flex; align-items: center; justify-content: center; }
+.po-nm-alca:hover, .po-nm-alca.arrastando { transform: scale(1.12); cursor: grabbing; }
+.po-nm-alca-w { right: -15px; top: 50%; margin-top: -15px; cursor: ew-resize; }
+.po-nm-alca-h { top: -15px; left: 50%; margin-left: -15px; cursor: ns-resize; }
 .po-nm-cota-h { grid-column: 2; grid-row: 2; font-size: 12px; font-weight: 600; color: var(--muted); writing-mode: vertical-rl; transform: rotate(180deg); border-right: 1px solid var(--muted); padding-right: 2px; align-self: stretch; text-align: center; }
 .po-nm-campos { display: flex; flex-direction: column; gap: 12px; }
 .po-nm-campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }

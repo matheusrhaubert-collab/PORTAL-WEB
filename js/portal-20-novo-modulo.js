@@ -38,11 +38,14 @@ function nmSlot() { return nmState ? projectSlots.find((s) => s.id === nmState.s
 function nmCategorias() {
   return (categoriesCacheList || []).filter((c) => NM_CATEGORIAS_RE.test(c.name || ''));
 }
+// Gaveta solta ("Drawer Soft Closet Externa") está cadastrada em Cabinets
+// WITH Back, mas não é base de módulo — fica fora da lista (14/10, Matt).
+const NM_ESCONDER_RE = /^drawer\b/i;
 function nmModulos() {
   const cats = nmCategorias().map((c) => c.id);
   const q = projLibNorm(nmBusca).trim();
   return (allModules || []).filter((m) => m && m.active !== false && !m.is_invisible && !m.project_copy_of
-    && cats.includes(m.category_id)
+    && cats.includes(m.category_id) && !NM_ESCONDER_RE.test(String(m.name || '').trim())
     && (!nmFiltroCat || m.category_id === nmFiltroCat)
     && (!q || projLibNorm(m.name).indexOf(q) >= 0));
 }
@@ -79,7 +82,9 @@ function nmAbrir() {
   // UM passo (as funções reaproveitadas marcam o projeto no meio do caminho).
   nmState = { slotId: null, etapa: 'lista', criando: false,
     undoPilha: projectUndoStack.slice(), undoFoto: projectUndoSnapshot() };
-  nmFiltroCat = '';
+  // começa em "With back" (14/10, Matt)
+  const comFundo = nmCategorias().find((c) => /with/i.test(c.name || ''));
+  nmFiltroCat = comFundo ? comFundo.id : '';
   nmBusca = '';
   nmRenderLista();
   document.getElementById('po-nm-modal').classList.add('aberto');
@@ -165,7 +170,11 @@ function nmIrMedidas() {
       + '<input type="text" inputmode="decimal" data-axis="' + axis + '" value="' + nmEsc(formatDimensionNumber(slot[axis + '_mm'], u)) + '">' + faixa + '</label>';
   };
   document.getElementById('po-nm-body').innerHTML = '<div class="po-nm-medidas">'
-    + '<div class="po-nm-vista"><div class="po-nm-cota-w" id="po-nm-cota-w"></div><div class="po-nm-vista-box" id="po-nm-vista"></div><div class="po-nm-cota-h" id="po-nm-cota-h"></div></div>'
+    + '<div class="po-nm-vista"><div class="po-nm-cota-w" id="po-nm-cota-w"></div>'
+    + '<div class="po-nm-vista-box" id="po-nm-vista"><div class="po-nm-pecas" id="po-nm-pecas"></div>'
+    + '<button type="button" class="po-nm-alca po-nm-alca-w" data-alca="width" title="' + nmEsc(tNm('drag_width')) + '">&#8596;</button>'
+    + '<button type="button" class="po-nm-alca po-nm-alca-h" data-alca="height" title="' + nmEsc(tNm('drag_height')) + '">&#8597;</button>'
+    + '</div><div class="po-nm-cota-h" id="po-nm-cota-h"></div></div>'
     + '<div class="po-nm-campos">' + campo('width') + campo('height') + campo('depth')
     + '<p class="po-nm-dica">' + nmEsc(tNm('sizes_hint')) + '</p></div>'
     + '</div>';
@@ -176,6 +185,52 @@ function nmIrMedidas() {
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); nmAplicarCampos(inp.dataset.axis); } });
   });
   nmDesenharVista();
+  document.querySelectorAll('#po-nm-vista .po-nm-alca').forEach(nmLigarAlca);
+}
+
+// ARRASTAR pelas setas (14/10, Matt: "coloca opção de setas pra arrastar o
+// móvel na primeira parte. digitar como está e arrastar também").
+// ↔ na borda direita = largura, ↕ no topo = altura (profundidade não aparece
+// de frente — fica só no campo). Mesmo clamp do arraste do canvas
+// (projectSlotClampedDimensionMm: min/máx, medida travada pula pro valor
+// cadastrado, furadeira). Durante o gesto a escala do desenho fica fixa (o
+// móvel cresce/encolhe na tela); o preço é recalculado ao soltar.
+function nmLigarAlca(alca) {
+  alca.addEventListener('pointerdown', (ev) => {
+    const slot = nmSlot();
+    if (!slot) return;
+    ev.preventDefault();
+    const axis = alca.dataset.alca;
+    const esc = nmEscalaAtual || 1;
+    const x0 = ev.clientX, y0 = ev.clientY, v0 = Number(slot[axis + '_mm']) || 0;
+    alca.setPointerCapture(ev.pointerId);
+    alca.classList.add('arrastando');
+    const mover = (e) => {
+      const deltaPx = axis === 'width' ? (e.clientX - x0) : (y0 - e.clientY);
+      const novo = projectSlotClampedDimensionMm(slot, axis, v0 + deltaPx / esc);
+      if (Math.abs(novo - Number(slot[axis + '_mm'])) < 0.01) return;
+      slot[axis + '_mm'] = novo;
+      const inp = document.querySelector('#po-nm-body input[data-axis="' + axis + '"]');
+      if (inp) inp.value = formatDimensionNumber(novo, nmUnit());
+      nmDesenharVista(esc);
+    };
+    const soltar = () => {
+      alca.removeEventListener('pointermove', mover);
+      alca.removeEventListener('pointerup', soltar);
+      alca.removeEventListener('pointercancel', soltar);
+      alca.classList.remove('arrastando');
+      if (Math.abs(Number(slot[axis + '_mm']) - v0) > 0.01) {
+        recomputeProjectSlotPricing(slot);
+        if (typeof isFloorSlot === 'function' && isFloorSlot(slot) && typeof clampFloorSlotIntoRoom === 'function') {
+          try { clampFloorSlotIntoRoom(slot); } catch (e) { /* mantém */ }
+        }
+      }
+      nmDesenharVista();
+    };
+    alca.addEventListener('pointermove', mover);
+    alca.addEventListener('pointerup', soltar);
+    alca.addEventListener('pointercancel', soltar);
+  });
 }
 
 function nmAplicarCampos(soAxis) {
@@ -202,16 +257,21 @@ function nmAplicarCampos(soAxis) {
   nmDesenharVista();
 }
 
-function nmDesenharVista() {
+let nmEscalaAtual = 1; // px por mm do desenho (fixa durante o arraste)
+function nmDesenharVista(escFixa) {
   const slot = nmSlot();
   const box = document.getElementById('po-nm-vista');
-  if (!slot || !box) return;
+  const pecas = document.getElementById('po-nm-pecas');
+  if (!slot || !box || !pecas) return;
   const W = Number(slot.width_mm) || 1, H = Number(slot.height_mm) || 1;
-  // cabe em 360×360 mantendo a proporção real
-  const esc = Math.min(360 / W, 360 / H);
-  box.style.width = Math.max(40, W * esc) + 'px';
-  box.style.height = Math.max(40, H * esc) + 'px';
-  box.innerHTML = projectSlotElevationHtml(slot, W, H) || '';
+  // cabe em 340×340 mantendo a proporção real (no arraste, escala fixa e
+  // teto de 520px pra não estourar a janela)
+  const esc = escFixa || Math.min(340 / W, 340 / H);
+  nmEscalaAtual = esc;
+  const e2 = Math.min(esc, 520 / W, 520 / H); // teto sem distorcer
+  box.style.width = Math.max(40, W * e2) + 'px';
+  box.style.height = Math.max(40, H * e2) + 'px';
+  pecas.innerHTML = projectSlotElevationHtml(slot, W, H) || '';
   const u = nmUnit();
   const cw = document.getElementById('po-nm-cota-w');
   const ch = document.getElementById('po-nm-cota-h');
