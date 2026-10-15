@@ -1549,12 +1549,17 @@ const Photoreal = (() => {
   // CÓPIA FIEL em js/viewer3d.js (THREE) e js/photoreal.js (T).
   function buildGavetaDovetail(W, H, D) {
     const g = new T.Group();
-    const birch = new T.MeshStandardMaterial({ color: 0xe8d5ae, roughness: 0.62, metalness: 0.0 });
-    const birchFundo = new T.MeshStandardMaterial({ color: 0xdcc59a, roughness: 0.7, metalness: 0.0 });
+    // Cor FIEL ao caixote de birch envernizado (Matt, 15/10: "mais cor"):
+    // mel claro nas paredes, fundo um tom abaixo, pinos do dovetail no topo
+    // de topo (end grain) mais escuros.
+    const birch = new T.MeshStandardMaterial({ color: 0xdcb177, roughness: 0.58, metalness: 0.0 });
+    const birchFundo = new T.MeshStandardMaterial({ color: 0xcf9f62, roughness: 0.66, metalness: 0.0 });
+    const pinoMat = new T.MeshStandardMaterial({ color: 0xa8773f, roughness: 0.7, metalness: 0.0 });
     const t = Math.min(0.015875, W / 4, D / 4);
     const tf = 0.00635;
     const add = (w, h, d, x, y, z, mat) => {
-      const m = decorBoxMesh(w, h, d, mat);
+      const geo = new T.BoxGeometry(Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001));
+      const m = new T.Mesh(geo, mat);
       m.position.set(x, y, z);
       g.add(m);
     };
@@ -1563,6 +1568,19 @@ const Photoreal = (() => {
     add(W - 2 * t, H, t, 0, H / 2, D / 2 - t / 2, birch);          // frente
     add(W - 2 * t, H, t, 0, H / 2, -D / 2 + t / 2, birch);         // traseira
     add(W - 2 * t, tf, D - 2 * t, 0, Math.min(0.0127, H / 4) + tf / 2, 0, birchFundo); // fundo
+    // "Rabos de andorinha" visíveis nas laterais, nos 4 cantos: pinos
+    // alternados (topo da frente/traseira aparecendo na face da lateral).
+    const nPinos = Math.max(2, Math.round(H / 0.03));
+    const passo = H / (nPinos * 2 - 1);
+    [-1, 1].forEach((lado) => {
+      [D / 2 - t / 2, -D / 2 + t / 2].forEach((zc) => {
+        for (let i = 0; i < nPinos; i++) {
+          const pm = new T.Mesh(new T.BoxGeometry(0.0006, passo, t * 0.92), pinoMat);
+          pm.position.set(lado * (W / 2 + 0.0002), passo / 2 + i * 2 * passo, zc);
+          g.add(pm);
+        }
+      });
+    });
     return g;
   }
 

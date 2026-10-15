@@ -3153,13 +3153,20 @@ const Viewer3D = (function () {
   // CÓPIA FIEL em js/viewer3d.js (THREE) e js/photoreal.js (T).
   function buildGavetaDovetail(W, H, D) {
     const g = new THREE.Group();
-    const birch = new THREE.MeshStandardMaterial({ color: 0xe8d5ae, roughness: 0.62, metalness: 0.0 });
-    const birchFundo = new THREE.MeshStandardMaterial({ color: 0xdcc59a, roughness: 0.7, metalness: 0.0 });
+    // Cor FIEL ao caixote de birch envernizado (Matt, 15/10: "mais cor"):
+    // mel claro nas paredes, fundo um tom abaixo, pinos do dovetail no topo
+    // de topo (end grain) mais escuros.
+    const birch = new THREE.MeshStandardMaterial({ color: 0xdcb177, roughness: 0.58, metalness: 0.0 });
+    const birchFundo = new THREE.MeshStandardMaterial({ color: 0xcf9f62, roughness: 0.66, metalness: 0.0 });
+    const pinoMat = new THREE.MeshStandardMaterial({ color: 0xa8773f, roughness: 0.7, metalness: 0.0 });
     const t = Math.min(0.015875, W / 4, D / 4);
     const tf = 0.00635;
     const add = (w, h, d, x, y, z, mat) => {
-      const m = decorBoxMesh(w, h, d, mat);
+      const geo = new THREE.BoxGeometry(Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001));
+      const m = new THREE.Mesh(geo, aplicaEstiloFace(mat));
       m.position.set(x, y, z);
+        const e = buildEdgesForStyle(geo);
+        if (e) m.add(e);
       g.add(m);
     };
     add(t, H, D, -W / 2 + t / 2, H / 2, 0, birch);                 // lateral esq.
@@ -3167,6 +3174,19 @@ const Viewer3D = (function () {
     add(W - 2 * t, H, t, 0, H / 2, D / 2 - t / 2, birch);          // frente
     add(W - 2 * t, H, t, 0, H / 2, -D / 2 + t / 2, birch);         // traseira
     add(W - 2 * t, tf, D - 2 * t, 0, Math.min(0.0127, H / 4) + tf / 2, 0, birchFundo); // fundo
+    // "Rabos de andorinha" visíveis nas laterais, nos 4 cantos: pinos
+    // alternados (topo da frente/traseira aparecendo na face da lateral).
+    const nPinos = Math.max(2, Math.round(H / 0.03));
+    const passo = H / (nPinos * 2 - 1);
+    [-1, 1].forEach((lado) => {
+      [D / 2 - t / 2, -D / 2 + t / 2].forEach((zc) => {
+        for (let i = 0; i < nPinos; i++) {
+          const pm = new THREE.Mesh(new THREE.BoxGeometry(0.0006, passo, t * 0.92), pinoMat);
+          pm.position.set(lado * (W / 2 + 0.0002), passo / 2 + i * 2 * passo, zc);
+          g.add(pm);
+        }
+      });
+    });
     return g;
   }
 
@@ -3175,11 +3195,17 @@ const Viewer3D = (function () {
   function buildFurosLinhaPrateleira(lf, w, h, d) {
     if (!lf || !Array.isArray(lf.dys) || !Array.isArray(lf.dzs)) return null;
     // geometria/material por grupo (a limpeza da cena faz dispose em tudo)
-    const FURO_PRATELEIRA_MAT = new THREE.MeshBasicMaterial({ color: 0x2d2924, side: THREE.DoubleSide });
+    // polygonOffset: o disco fica colado na face da lateral; vista de lado
+    // (ângulo rasante — a face da divisória no print do Matt, 15/10) o
+    // depth buffer "engolia" o disco. O offset garante que ele ganha da face.
+    const FURO_PRATELEIRA_MAT = new THREE.MeshBasicMaterial({
+      color: 0x2d2924, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
+    });
     const FURO_PRATELEIRA_GEO = new THREE.CircleGeometry(0.0025, 14);
     const g = new THREE.Group();
     const dxs = Array.isArray(lf.dxs) ? lf.dxs : [0, w * 1000];
-    const eps = 0.0004;
+    const eps = 0.0008;
     dxs.forEach((dx, lado) => {
       // lado 0 = lateral à esquerda (disco olha pra +X); 1 = à direita (-X)
       const lx = -w / 2 + dx / 1000 + (lado === 0 ? eps : -eps);
@@ -3655,7 +3681,8 @@ const Viewer3D = (function () {
       // laterais, nas bordas do vão. 2 prateleiras no mesmo vão desenham os
       // mesmos discos no mesmo lugar (inofensivo).
       if (part.prateleira_regulavel && part.linha_furos && !rotYDeg && !part.tilt_angle_deg) {
-        const furos = buildFurosLinhaPrateleira(part.linha_furos, w, h, d);
+        const lfLocal = (typeof linhaFurosLocal === 'function') ? linhaFurosLocal(part) : part.linha_furos;
+        const furos = buildFurosLinhaPrateleira(lfLocal, w, h, d);
         if (furos) emit(furos, null, x, y, z, false, null);
       }
       // JUNÇÃO COM O VIZINHO PRA PEÇA LIVRE (2026-10-08, Matt: "tanto o

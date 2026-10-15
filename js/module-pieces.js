@@ -1188,3 +1188,18 @@ async function applyOrderItemDrawerModel(pieces, drawerModelId) {
     return pieces;
   }
 }
+
+// Grade de furos da prateleira regulável -> coordenadas LOCAIS da peça (mm a
+// partir do canto chão-fundo-esquerda dela). Aceita o formato absoluto
+// (layout-engine, 2ª rodada) e o relativo antigo. Usada por drilling.js e
+// viewer3d.js.
+function linhaFurosLocal(part) {
+  const lf = part && part.linha_furos;
+  if (!lf) return null;
+  if (lf.abs) {
+    const ox = Number(part.offset_x_mm) || 0, oy = Number(part.offset_y_mm) || 0, oz = Number(part.offset_z_mm) || 0;
+    return { dxs: lf.xs.map((x) => x - ox), dys: lf.ys.map((y) => y - oy), dzs: lf.zs.map((z) => z - oz) };
+  }
+  return Array.isArray(lf.dys) && Array.isArray(lf.dzs) ? lf : null;
+}
+if (typeof window !== 'undefined') window.linhaFurosLocal = linhaFurosLocal;

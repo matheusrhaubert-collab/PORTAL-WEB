@@ -1326,15 +1326,17 @@
     // Milímetro inteiro — ver comentário no topo do arquivo.
     out.forEach(function (p) {
       ['x', 'y', 'z', 'w', 'h', 'd'].forEach(function (k) { p[k] = Math.round(p[k]); });
-      // Grade de furos do vão (prateleira regulável) RELATIVA à prateleira:
-      // dx = bordas do vão (onde estão as laterais), dys/dzs = furos.
+      // Grade de furos do vão (prateleira regulável) em coordenadas
+      // ABSOLUTAS do módulo (mesmo referencial de x/y/z da peça). ABSOLUTA de
+      // propósito (2ª rodada, 15/10): o portal recorta a profundidade da
+      // prateleira contra o casco DEPOIS do build (clipProjectInternalsAgainst
+      // Casco muda p.z) — a grade é do VÃO e não pode andar junto. Quem usa
+      // converte com a posição ATUAL da peça (furo − offset da peça). O único
+      // deslocamento do referencial inteiro (desconto do pé, portal-07
+      // projectLayoutRowsForSlot) desloca a grade junto.
       if (p._gradeVao) {
         var gv = p._gradeVao;
-        p.linha_furos = {
-          dxs: [gv.x0 - p.x, gv.x1 - p.x],
-          dys: gv.ys.map(function (y) { return Math.round((y - p.y) * 10) / 10; }),
-          dzs: gv.zs.map(function (z) { return Math.round((z - p.z) * 10) / 10; })
-        };
+        p.linha_furos = { abs: true, xs: [gv.x0, gv.x1], ys: gv.ys.slice(), zs: gv.zs.slice() };
         delete p._gradeVao;
       }
     });

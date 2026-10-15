@@ -1484,6 +1484,17 @@
   // lateral). tipo 'linha_prateleira' — nenhuma regra de ferragem por furo
   // casa com ele: os 4 pinos por prateleira vêm do kit de suporte da peça
   // (pricing.js), não da contagem de furos.
+  // grade -> local da peça (mesma conta de module-pieces.js linhaFurosLocal;
+  // repetida aqui porque drilling.js roda sem module-pieces em algumas bancadas)
+  function linhaLocal(part) {
+    const lf = part && part.linha_furos;
+    if (!lf) return null;
+    if (lf.abs) {
+      const ox = Number(part.offset_x_mm) || 0, oy = Number(part.offset_y_mm) || 0, oz = Number(part.offset_z_mm) || 0;
+      return { dxs: lf.xs.map(function (x) { return x - ox; }), dys: lf.ys.map(function (y) { return y - oy; }), dzs: lf.zs.map(function (z) { return z - oz; }) };
+    }
+    return Array.isArray(lf.dys) && Array.isArray(lf.dzs) ? lf : null;
+  }
   const LINHA_PRATELEIRA = { diametro: 5, profundidade: 10, frente: 50, tras: 30, passo: 68, margem: 32 };
   function collectAdjustableShelfLineHoles(store, boxes, settings) {
     const L = LINHA_PRATELEIRA;
@@ -1517,8 +1528,8 @@
       // layout-engine gradeFurosVao). Furos nas peças em pé que encostam nas
       // BORDAS DO VÃO. Sem grade (peça de outra origem) cai no cálculo
       // antigo logo abaixo.
-      const lf = sb.part.linha_furos;
-      if (lf && Array.isArray(lf.dys) && Array.isArray(lf.dzs)) {
+      const lf = linhaLocal(sb.part);
+      if (lf) {
         const bx = (lf.dxs || [0, sb.sx]).map(function (dx) { return sb.x0 + dx; });
         laterais.forEach(function (lb) {
           if (lb === sb) return;

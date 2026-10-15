@@ -3238,7 +3238,12 @@ function projectLayoutRowsForSlot(slot, pieces) {
   let legH_mm = 0;
   try { legH_mm = Pricing.resolveBodyDims(slot.pieces || [], { W, H, D }).legH_mm || 0; } catch (e) { /* sem pé, 0 */ }
   const pecas = legH_mm
-    ? (pieces || []).map((p) => Object.assign({}, p, { y: (Number(p.y) || 0) - legH_mm }))
+    ? (pieces || []).map((p) => {
+      const q = Object.assign({}, p, { y: (Number(p.y) || 0) - legH_mm });
+      // grade de furos da prateleira regulável (absoluta) desce junto
+      if (p.linha_furos && p.linha_furos.abs) q.linha_furos = Object.assign({}, p.linha_furos, { ys: p.linha_furos.ys.map((y) => y - legH_mm) });
+      return q;
+    })
     : (pieces || []);
   // MODELO DE PORTA (migration 188) — idempotente (rebuild já trocou; o
   // save do Construtor chega aqui com as peças cruas da janela).
