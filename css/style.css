@@ -5562,3 +5562,20 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 }
 .po-proj-topbar-fantasma { display: none; }
 .po-proj-topbar-fantasma.ativo { display: block; }
+
+/* $ FÁBRICA — tabela "por peça" EM ÁRVORE (2026-10-15, Matt: "coloca o
+   número do módulo... tipo árvore, módulo com valor e abaixo todas as
+   peças"). Linha do módulo destacada e clicável (recolhe/abre); peças
+   recuadas embaixo. Lógica em portal-06b renderMoneyFabrica. */
+.po-money-modnum {
+  display: inline-block; min-width: 34px; padding: 1px 6px; margin-right: 4px;
+  border-radius: 6px; background: var(--text, #1f1d18); color: #fff;
+  font-size: 11px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums;
+}
+.po-money-mod-linha { cursor: pointer; background: #f4efe6; }
+.po-money-mod-linha td { border-top: 2px solid var(--border, #d9d2c5); padding-top: 7px; padding-bottom: 7px; }
+.po-money-mod-linha:hover { background: #ece4d6; }
+.po-money-seta { display: inline-block; width: 12px; color: var(--muted, #777); transition: transform .15s; }
+.po-money-mod-linha.fechado .po-money-seta { transform: rotate(-90deg); }
+.po-money-mod-pecas.fechado { display: none; }
+.po-money-peca-nome { padding-left: 30px !important; }

@@ -3185,8 +3185,9 @@ function renderMoneyFabrica(body, rel) {
 
   // ---- MÓDULO × VALOR (pedido do Matt: "coloca módulo valor")
   let porMod = '';
+  const numMod = (m) => (m.numero != null ? '<span class="po-money-modnum">' + String(m.numero).padStart(3, '0') + '</span> ' : '');
   rel.porModulo.forEach((m) => {
-    porMod += '<tr><td>' + escapeHtmlCutlist(m.nome) + '</td>'
+    porMod += '<tr><td>' + numMod(m) + escapeHtmlCutlist(m.nome) + '</td>'
       + '<td class="num dim">' + m.dims + '</td>'
       + '<td class="num">' + formatMoney(m.custo) + '</td>'
       + '<td class="num pct">' + ((m.custo / T) * 100).toFixed(1) + '%</td></tr>';
@@ -3195,15 +3196,41 @@ function renderMoneyFabrica(body, rel) {
   // ---- POR PEÇA, CADA ETAPA SEPARADA. É a tabela que responde "quantos
   // pequenos processos ele está cobrando" — uma linha por peça, uma coluna
   // por etapa. Sem linha por furo, como o Matt pediu.
+  // EM ÁRVORE (2026-10-15, Matt): linha do MÓDULO (nº + nome + medidas +
+  // soma de cada coluna) e, embaixo, recuadas, as peças dele. Clicar na
+  // linha do módulo recolhe/abre as peças (todas começam abertas).
   let porPeca = '';
-  rel.detalhe.forEach((l) => {
-    const cel = (v) => '<td class="num">' + (v > 0 ? formatMoney(v) : '<span class="zero">—</span>') + '</td>';
-    porPeca += '<tr><td>' + escapeHtmlCutlist(l.peca) + (l.qtd > 1 ? ' <span class="dim">×' + l.qtd + '</span>' : '') + '</td>'
-      + '<td class="num dim">' + l.m2.toFixed(3) + '</td>'
-      + '<td class="num dim">' + (l.fitaM > 0 ? l.fitaM.toFixed(2) : '—') + '</td>'
-      + cel(l.chapa) + cel(l.fita) + cel(l.corte) + cel(l.colagem) + cel(l.furacao)
-      + cel(l.usinagem) + cel(l.laborAntiga) + cel(l.ferragem)
-      + '<td class="num"><strong>' + formatMoney(l.total) + '</strong></td></tr>';
+  const cel = (v) => '<td class="num">' + (v > 0 ? formatMoney(v) : '<span class="zero">—</span>') + '</td>';
+  const linhaPeca = (l) => '<tr class="po-money-peca-linha"><td class="po-money-peca-nome">' + escapeHtmlCutlist(l.peca) + (l.qtd > 1 ? ' <span class="dim">×' + l.qtd + '</span>' : '') + '</td>'
+    + '<td class="num dim">' + l.m2.toFixed(3) + '</td>'
+    + '<td class="num dim">' + (l.fitaM > 0 ? l.fitaM.toFixed(2) : '—') + '</td>'
+    + cel(l.chapa) + cel(l.fita) + cel(l.corte) + cel(l.colagem) + cel(l.furacao)
+    + cel(l.usinagem) + cel(l.laborAntiga) + cel(l.ferragem)
+    + '<td class="num"><strong>' + formatMoney(l.total) + '</strong></td></tr>';
+  const soma = (lista, k) => lista.reduce((a, l) => a + (Number(l[k]) || 0), 0);
+  const blocos = rel.porModulo.length && rel.porModulo.every((m) => Array.isArray(m.pecas))
+    ? rel.porModulo : [{ nome: '', pecas: rel.detalhe, ferragemMontagem: 0, semCabecalho: true }];
+  blocos.forEach((m, iBloco) => {
+    const pecas = m.pecas || [];
+    const ferr = soma(pecas, 'ferragem') + (Number(m.ferragemMontagem) || 0);
+    if (!m.semCabecalho) {
+      porPeca += '<tr class="po-money-mod-linha" data-mod-bloco="' + iBloco + '">'
+        + '<td><span class="po-money-seta">▾</span> ' + numMod(m) + '<strong>' + escapeHtmlCutlist(m.nome) + '</strong>'
+        + ' <span class="dim">' + (m.dims || '') + ' · ' + pecas.length + ' ' + I18n.t('money.lines_label') + '</span></td>'
+        + '<td class="num dim">' + soma(pecas, 'm2').toFixed(3) + '</td>'
+        + '<td class="num dim">' + soma(pecas, 'fitaM').toFixed(2) + '</td>'
+        + cel(soma(pecas, 'chapa')) + cel(soma(pecas, 'fita')) + cel(soma(pecas, 'corte')) + cel(soma(pecas, 'colagem'))
+        + cel(soma(pecas, 'furacao')) + cel(soma(pecas, 'usinagem')) + cel(soma(pecas, 'laborAntiga')) + cel(ferr)
+        + '<td class="num"><strong>' + formatMoney(Number(m.custo) || soma(pecas, 'total')) + '</strong></td></tr>';
+    }
+    porPeca += '<tbody class="po-money-mod-pecas" data-mod-bloco="' + iBloco + '">';
+    pecas.forEach((l) => { porPeca += linhaPeca(l); });
+    if (m.ferragemMontagem > 0) {
+      porPeca += '<tr class="po-money-peca-linha"><td class="po-money-peca-nome dim">' + I18n.t('money.assembly_hardware_row') + '</td>'
+        + '<td class="num dim">—</td><td class="num dim">—</td>' + cel(0) + cel(0) + cel(0) + cel(0) + cel(0) + cel(0) + cel(0)
+        + cel(m.ferragemMontagem) + '<td class="num"><strong>' + formatMoney(m.ferragemMontagem) + '</strong></td></tr>';
+    }
+    porPeca += '</tbody><tbody>';
   });
 
   const margem = rel.totalVenda - rel.totalCusto;
@@ -3232,6 +3259,15 @@ function renderMoneyFabrica(body, rel) {
     + '<span>' + formatMoney(margem)
     + (rel.totalVenda > 0 ? ' · ' + ((margem / rel.totalVenda) * 100).toFixed(1) + I18n.t('money.pct_of_price') : '')
     + '</span></div>';
+  // árvore: clicar no módulo recolhe/abre as peças dele
+  body.querySelectorAll('.po-money-mod-linha').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      const bloco = body.querySelector('.po-money-mod-pecas[data-mod-bloco="' + tr.dataset.modBloco + '"]');
+      if (!bloco) return;
+      const fechado = bloco.classList.toggle('fechado');
+      tr.classList.toggle('fechado', fechado);
+    });
+  });
 }
 
 (function ligaMoneyModal() {
@@ -3793,7 +3829,17 @@ function collectProjectCostReport(slots) {
     });
   };
 
-  (slots || []).forEach((slot) => {
+  // NÚMERO DO MÓDULO (2026-10-15, Matt: "coloca o número do módulo nessa
+  // listagem, está muito confuso — tipo árvore, módulo com valor e abaixo
+  // todas as peças"). Mesma numeração do pedido/Proposta/etiqueta
+  // (projectSlotsOrderSequence, portal-08): módulos antes de painéis.
+  const numeroDoSlot = new Map();
+  try {
+    if (typeof projectSlotsOrderSequence === 'function') {
+      projectSlotsOrderSequence().forEach((x) => numeroDoSlot.set(x.slot, x.numero));
+    }
+  } catch (e) { /* sem numeração: cai na ordem da lista */ }
+  (slots || []).forEach((slot, iSlot) => {
     // Bloco — Cor da Parede (visual_only, migration 156): sem custo por
     // definição (peça 'comprada' sem item vinculado) — fora daqui também,
     // pra não aparecer como linha "R$0,00" confusa no relatório de custo
@@ -3806,6 +3852,9 @@ function collectProjectCostReport(slots) {
     // detalhe). Sai daí, e não de outro campo, pelo mesmo motivo do total
     // geral: se alguma peça deixar de ser contada, o número denuncia.
     let custo = rel.detalhe.slice(antes).reduce((s2, l) => s2 + l.total, 0);
+    const numero = numeroDoSlot.get(slot) || (iSlot + 1);
+    const pecasDoModulo = rel.detalhe.slice(antes);
+    let ferragemModulo = 0;
     // FERRAGEM DE MONTAGEM deste módulo (cavilha/tambor/pino/suporte) — é
     // consumo do MÓDULO inteiro (o furo é da junta, não de UMA peça), então
     // não tem como entrar na travessia peça-a-peça (`anda`) acima. Guardado
@@ -3814,6 +3863,7 @@ function collectProjectCostReport(slots) {
       if (!l || !l.item_id) return;
       const c = Number(l.cost) || 0;
       custo += c;
+      ferragemModulo += c;
       const acc = rel.ferragemMontagem[l.item_id] || (rel.ferragemMontagem[l.item_id] = {
         code: l.code || null, name: l.name || '', unit: l.unit || 'un', qtd: 0, custo: 0
       });
@@ -3821,10 +3871,16 @@ function collectProjectCostReport(slots) {
       acc.custo += c;
     });
     rel.porModulo.push({
+      numero: numero,
       nome: (slot.module && slot.module.name) || '',
       dims: Math.round(slot.width_mm) + '×' + Math.round(slot.height_mm) + '×' + Math.round(slot.depth_mm),
       custo: custo,
-      venda: Number(slot.result.total) || 0
+      venda: Number(slot.result.total) || 0,
+      // árvore da tabela "por peça": as linhas DESTE módulo + a ferragem de
+      // montagem dele (minifix/cavilha/suporte — consumo do módulo inteiro,
+      // não de uma peça; antes não aparecia em linha nenhuma desta tabela)
+      pecas: pecasDoModulo,
+      ferragemMontagem: ferragemModulo
     });
     rel.totalVenda += Number(slot.result.total) || 0;
   });
@@ -3838,5 +3894,6 @@ function collectProjectCostReport(slots) {
   Object.keys(rel.fita).forEach((k) => { rel.totalCusto += rel.fita[k].custo; });
   Object.keys(rel.labor).forEach((k) => { rel.totalCusto += rel.labor[k]; });
   rel.totalCusto += rel.ferragem.dobradica.custo + rel.ferragem['corrediça'].custo;
+  rel.porModulo.sort((a, b) => (a.numero || 0) - (b.numero || 0));
   return rel;
 }
