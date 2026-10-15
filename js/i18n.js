@@ -332,6 +332,7 @@
 
       'project.title': 'Projetos',
       'project.reset_btn': 'Novo projeto',
+      'project.pin_toolbar': 'Fixar barra no topo',
       'project.reset_confirm': 'Isso vai limpar todos os módulos deste projeto. Continuar?',
       'project.unsaved_changes_confirm': 'Você tem alterações não salvas neste projeto. Sair mesmo assim e perder as alterações?',
       'project.hint': 'Arraste módulos da biblioteca pro ambiente. Eles se encaixam sozinhos nas bordas (imã) e, ao soltar um por cima de outro, o novo módulo fica na frente. Clique num módulo já colocado pra ver os detalhes dele.',
@@ -2082,6 +2083,7 @@
 
       'project.title': 'Projects',
       'project.reset_btn': 'New project',
+      'project.pin_toolbar': 'Pin toolbar to top',
       'project.reset_confirm': 'This will clear every module in this project. Continue?',
       'project.unsaved_changes_confirm': 'You have unsaved changes in this project. Leave anyway and lose them?',
       'project.hint': 'Drag modules from the library into the room. They snap to edges automatically, and dropping one on top of another brings the new one to the front. Click a placed module to see its details.',
@@ -3812,6 +3814,7 @@
 
       'project.title': 'Proyectos',
       'project.reset_btn': 'Nuevo proyecto',
+      'project.pin_toolbar': 'Fijar barra arriba',
       'project.reset_confirm': 'Esto va a borrar todos los módulos de este proyecto. ¿Continuar?',
       'project.unsaved_changes_confirm': 'Tienes cambios sin guardar en este proyecto. ¿Salir de todos modos y perderlos?',
       'project.hint': 'Arrastra módulos de la biblioteca al ambiente. Se encajan solos en los bordes (imán) y, al soltar uno encima de otro, el nuevo módulo queda al frente. Haz clic en un módulo ya colocado para ver sus detalles.',

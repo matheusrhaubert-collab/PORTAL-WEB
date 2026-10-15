@@ -893,3 +893,88 @@ function closeHelpModal() {
     });
   }
 })();
+
+
+/* BARRA DE FERRAMENTAS FIXA (2026-10-15) — Matt: "quero um botão que trave a
+ * barra de ferramentas quando rodo scroll pra baixo".
+ *
+ * Botão #po-proj-pin-toolbar-btn (alfinete, fim da barra da aba Projetos).
+ * Ligado (classe .active, igual aos outros botões de liga/desliga da barra):
+ * quando a faixa .po-proj-topbar rola pra fora da tela, ela gruda no topo da
+ * janela com a MESMA largura e posição horizontal; um fantasma com a altura
+ * dela fica no lugar original pra página não dar pulo. Desligado = comporta-
+ * mento de sempre. Escolha guardada no navegador (localStorage, tolerante).
+ * Só DOM — não toca em projeto, preço nem 3D. */
+(function () {
+  'use strict';
+  var CHAVE = 'legno.portal.barraFixa';
+  var ligado = false;
+  var barra = null, fantasma = null, botao = null;
+
+  function ler() { try { return localStorage.getItem(CHAVE) === '1'; } catch (e) { return false; } }
+  function gravar(v) { try { localStorage.setItem(CHAVE, v ? '1' : '0'); } catch (e) { /* ok */ } }
+
+  function soltar() {
+    if (!barra) return;
+    barra.classList.remove('po-tb-grudada');
+    barra.style.left = ''; barra.style.width = '';
+    if (fantasma) { fantasma.classList.remove('ativo'); fantasma.style.height = ''; }
+  }
+
+  function atualizar() {
+    if (!barra || !fantasma) return;
+    // aba escondida (barra sem tamanho) ou desligado: nada gruda
+    if (!ligado || !barra.offsetParent && !barra.classList.contains('po-tb-grudada')) { soltar(); return; }
+    // referência = onde a barra estaria (o fantasma, quando grudada)
+    var ref = barra.classList.contains('po-tb-grudada') ? fantasma : barra;
+    var r = ref.getBoundingClientRect();
+    if (!fantasma.parentNode || (ref === fantasma && !fantasma.offsetParent && !fantasma.classList.contains('ativo'))) { soltar(); return; }
+    if (r.top < 0) {
+      if (!barra.classList.contains('po-tb-grudada')) {
+        var rb = barra.getBoundingClientRect();
+        var est = getComputedStyle(barra);
+        fantasma.style.height = (rb.height + parseFloat(est.marginTop || 0) + parseFloat(est.marginBottom || 0)) + 'px';
+        fantasma.classList.add('ativo');
+        barra.style.left = rb.left + 'px';
+        barra.style.width = rb.width + 'px';
+        barra.classList.add('po-tb-grudada');
+      } else {
+        var rf = fantasma.getBoundingClientRect();
+        barra.style.left = rf.left + 'px';
+        barra.style.width = rf.width + 'px';
+      }
+    } else {
+      soltar();
+    }
+  }
+
+  function pintarBotao() {
+    if (!botao) return;
+    botao.classList.toggle('active', ligado);
+    botao.setAttribute('aria-pressed', ligado ? 'true' : 'false');
+  }
+
+  function iniciar() {
+    barra = document.querySelector('.po-proj-topbar');
+    botao = document.getElementById('po-proj-pin-toolbar-btn');
+    if (!barra || !botao) return;
+    fantasma = document.createElement('div');
+    fantasma.className = 'po-proj-topbar-fantasma';
+    barra.parentNode.insertBefore(fantasma, barra);
+    ligado = ler();
+    pintarBotao();
+    botao.addEventListener('click', function () {
+      ligado = !ligado;
+      gravar(ligado);
+      pintarBotao();
+      atualizar();
+    });
+    // capture: pega a rolagem da janela E de qualquer container que role
+    window.addEventListener('scroll', atualizar, { passive: true, capture: true });
+    window.addEventListener('resize', function () { soltar(); atualizar(); });
+    atualizar();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
+  else iniciar();
+})();

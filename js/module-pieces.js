@@ -915,7 +915,17 @@ async function fetchModuleOwnHingeAndSlideModels(moduleId) {
     .map((it) => ({
       id: it.id,
       name: it.name,
-      price_per_unit: Number(it.purchase_price) || 0,
+      // PREÇO É DO PAR (2026-10-15, Matt, $ Fábrica mostrando "5 pairs ·
+      // $150" com o par a $15 no ERP: "pelo ERP cada par está a metade do
+      // preço (já o par)"). O item comprado da corrediça é cadastrado pelo
+      // PAR, mas todo o motor (calculateModulePiece/calculateLeafPiece/
+      // gaveta solta) faz price_per_unit × slides_per_unit (= 2 trilhos por
+      // gaveta) — herança de slide_models, onde o preço era por trilho.
+      // Resultado: cada gaveta pagava 2 pares. Aqui o item vira preço POR
+      // TRILHO (par ÷ 2), e os × 2 de sempre dão exatamente 1 par por gaveta.
+      // slide_models (tabela antiga) continua por trilho, sem mudança.
+      price_per_unit: (Number(it.purchase_price) || 0) / 2,
+      purchase_price_par: Number(it.purchase_price) || 0,
       rail_length_mm: it.rail_length_mm,
       active: true
     }));

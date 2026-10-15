@@ -5547,3 +5547,18 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-tamp-zone:hover .po-tamp-hit { fill: rgba(230,0,126,0.14); }
 .po-tamp-zone-on .po-tamp-hit { fill: rgba(0,0,0,0); stroke: none; }
 .po-tamp-zone-on:hover .po-tamp-hit { fill: rgba(200,0,0,0.10); stroke: #c00; }
+
+/* ==========================================================================
+   BARRA DE FERRAMENTAS FIXA (2026-10-15, Matt: "quero um botão que trave a
+   barra de ferramentas quando rodo scroll pra baixo"). Botão de alfinete no
+   fim da barra (#po-proj-pin-toolbar-btn). Ligado: quando a barra sai da tela
+   ela gruda no topo da janela (position:fixed, mesma largura/posição em X),
+   e um "fantasma" com a altura dela segura o lugar pra página não pular.
+   Lógica no fim de js/portal-12-ajuda.js; escolha lembrada no navegador.
+   ========================================================================== */
+.po-proj-topbar.po-tb-grudada {
+  position: fixed; top: 0; z-index: 900; margin: 0;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.10);
+}
+.po-proj-topbar-fantasma { display: none; }
+.po-proj-topbar-fantasma.ativo { display: block; }
