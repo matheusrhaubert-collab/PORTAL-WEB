@@ -1040,6 +1040,11 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     drilling_pattern_id: a.drilling_pattern_id || null,
     // Suporte de prateleira por uso (migration 162) — null herda do componente.
     drill_shelf_support: a.drill_shelf_support != null ? !!a.drill_shelf_support : null,
+    // Prateleira regulável (migration 204) — sem furo próprio, linha de
+    // furos no vão e kit de pinos (support_purchased_item_*). Ver layout-engine toPieceRows.
+    prateleira_regulavel: !!a.prateleira_regulavel,
+    support_purchased_item_id: a.support_purchased_item_id || null,
+    support_purchased_item_qty: a.support_purchased_item_qty != null ? Number(a.support_purchased_item_qty) : null,
     // Variante POR PROFUNDIDADE (migration 126) — espelha
     // CONSTR.catalogoDoBanco, mesmos dois campos. Consumido por
     // LayoutEngine.resolveDepthVariant (js/layout-engine.js): troca sozinho
@@ -1173,7 +1178,7 @@ function projectBuilderIcon(acc) {
   const S = PROJECT_BUILDER_SVG;
   const slug = String(acc.slug || '').toLowerCase();
   const porSlug = {
-    div_vert: S.divisoria, prat_fixa: S.prateleira, prat_movel: S.prat_movel,
+    div_vert: S.divisoria, prat_fixa: S.prateleira, prat_movel: S.prat_movel, prat_regulavel: S.prat_movel,
     prat_inclinada: S.inclinada, gaveta: S.gaveta, gaveta_afast: S.gaveta,
     gaveteiro: S.gaveteiro, porta_ext: S.porta, porta_int: S.porta_int,
     porta_dupla: S.porta_dupla, cabide: S.cabide, cesto: S.cesto, ripado: S.ripado,

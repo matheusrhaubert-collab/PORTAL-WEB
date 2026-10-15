@@ -711,6 +711,10 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         piece_id: piece.id || null,
         origin: piece.origin || 'fabricacao',
         drill_shelf_support: !!piece.drill_shelf_support,
+        // Prateleira regulável (migration 204): sem furo próprio + furação em
+        // linha na lateral do vão (drilling.js collectAdjustableShelfLineHoles).
+        prateleira_regulavel: !!piece.prateleira_regulavel,
+        linha_furos: piece.linha_furos || null, // grade de furos do VÃO (layout-engine gradeFurosVao)
         veio: piece.veio || 'livre',
         fura: piece.fura !== false,
         lado_min_mm: piece.lado_min_mm || null,

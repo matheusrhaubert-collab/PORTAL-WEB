@@ -1192,11 +1192,15 @@
     const itemSuporte = piece.support_purchased_item_id
       ? purchasedItemsById[piece.support_purchased_item_id]
       : null;
-    const support_cost = (comprado && itemSuporte && itemSuporte.purchase_price != null)
+    // Migration 204: a PRATELEIRA REGULÁVEL é fabricada, mas leva o kit de
+    // pinos (4 por prateleira) — mesmo mecanismo do kit do cabide, liberado
+    // só pra ela (nenhuma outra peça fabricada cobra kit, como antes).
+    const levaKit = comprado || !!piece.prateleira_regulavel;
+    const support_cost = (levaKit && itemSuporte && itemSuporte.purchase_price != null)
       ? Number(itemSuporte.purchase_price) * (piece.support_purchased_item_qty || 1) * qty
       : 0;
     const material_cor_cost = materialCor ? materialCor.custo * qty : 0;
-    const purchased_cost = (comprado ? (precoComprado + support_cost) : 0) + material_cor_cost;
+    const purchased_cost = (comprado ? (precoComprado + support_cost) : support_cost) + material_cor_cost;
     const labor_cost = comprado ? 0 : custoUnitario;
 
     // Dobradiça só se aplica a PORTAS: hinge_side definido, qualquer que

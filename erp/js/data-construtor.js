@@ -374,6 +374,11 @@ CONSTR.catalogoDoBanco = function (linhas) {
       drilling_pattern_id: a.drilling_pattern_id || null,
       // Suporte de prateleira por uso (migration 162) — null herda do componente.
       drill_shelf_support: a.drill_shelf_support != null ? !!a.drill_shelf_support : null,
+      // Prateleira regulável (migration 204) — sem furo próprio, linha de
+      // furos no vão e kit de pinos (support_purchased_item_*). Ver layout-engine toPieceRows.
+      prateleira_regulavel: !!a.prateleira_regulavel,
+      support_purchased_item_id: a.support_purchased_item_id || null,
+      support_purchased_item_qty: a.support_purchased_item_qty != null ? Number(a.support_purchased_item_qty) : null,
       // Variante POR PROFUNDIDADE (migration 126) — espelha
       // js/portal-07-construtor.js projectBuilderAccessoryEntry, mesmos dois
       // campos. Consumido por LayoutEngine.resolveDepthVariant.

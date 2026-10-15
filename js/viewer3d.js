@@ -3170,6 +3170,32 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // Discos dos furos Ø5 da prateleira regulável (ver placePieceInBox 'free').
+  // Coordenadas locais ao CENTRO da prateleira (w/h/d em metros).
+  function buildFurosLinhaPrateleira(lf, w, h, d) {
+    if (!lf || !Array.isArray(lf.dys) || !Array.isArray(lf.dzs)) return null;
+    // geometria/material por grupo (a limpeza da cena faz dispose em tudo)
+    const FURO_PRATELEIRA_MAT = new THREE.MeshBasicMaterial({ color: 0x2d2924, side: THREE.DoubleSide });
+    const FURO_PRATELEIRA_GEO = new THREE.CircleGeometry(0.0025, 14);
+    const g = new THREE.Group();
+    const dxs = Array.isArray(lf.dxs) ? lf.dxs : [0, w * 1000];
+    const eps = 0.0004;
+    dxs.forEach((dx, lado) => {
+      // lado 0 = lateral à esquerda (disco olha pra +X); 1 = à direita (-X)
+      const lx = -w / 2 + dx / 1000 + (lado === 0 ? eps : -eps);
+      lf.dys.forEach((dy) => {
+        lf.dzs.forEach((dz) => {
+          const m = new THREE.Mesh(FURO_PRATELEIRA_GEO, FURO_PRATELEIRA_MAT);
+          m.rotation.y = lado === 0 ? Math.PI / 2 : -Math.PI / 2;
+          m.position.set(lx, -h / 2 + dy / 1000, -d / 2 + dz / 1000);
+          m.userData.furoPrateleira = true;
+          g.add(m);
+        });
+      });
+    });
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     gaveta_dovetail: buildGavetaDovetail, // migration 203
     decor_fogao: buildDecorFogao,
@@ -3622,6 +3648,16 @@ const Viewer3D = (function () {
       }
       const freeGroup = emit(freeContent, part.color, x, y, z, false, opening);
       if (rotFino) wrapRotatedFreePiece(freeGroup, x, y, z, rotYDeg);
+      // FUROS DA PRATELEIRA REGULÁVEL NA LATERAL (migration 204, 2026-10-15
+      // — Matt: "seria importante mostrar esses furos na lateral depois de
+      // aplicado"). A grade é do VÃO (layout-engine gradeFurosVao), relativa
+      // à prateleira: discos escuros Ø5 encostados na face interna das duas
+      // laterais, nas bordas do vão. 2 prateleiras no mesmo vão desenham os
+      // mesmos discos no mesmo lugar (inofensivo).
+      if (part.prateleira_regulavel && part.linha_furos && !rotYDeg && !part.tilt_angle_deg) {
+        const furos = buildFurosLinhaPrateleira(part.linha_furos, w, h, d);
+        if (furos) emit(furos, null, x, y, z, false, null);
+      }
       // JUNÇÃO COM O VIZINHO PRA PEÇA LIVRE (2026-10-08, Matt: "tanto o
       // rodapé quanto o gola em L devem virar uma só barra"). Mesma ficha
       // que o rodapé publica (baseboardGeom, ver ramo 'baseboard'), só pra

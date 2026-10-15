@@ -233,6 +233,64 @@
   // elástico (acontece depois de arrastar todas as divisórias à mão), o
   // ÚLTIMO absorve a diferença assim mesmo — senão aumentar o módulo deixaria
   // espaço sem dono, com as peças parando no meio e a lateral boiando.
+  // ------------------------------------------------------------------------
+  // PRATELEIRA REGULÁVEL — O VÃO GERA A FURAÇÃO (migration 204, 2026-10-15).
+  // Matt: "aqui na verdade é o vão que gera as furações e as prateleiras são
+  // o detalhe. é o vão que toca nas laterais que gera as furações, não a
+  // prateleira. ela pode ser colocada em qualquer furo das laterais que o
+  // vão gerou."
+  //   Vão dividido por prateleira regulável (split 'y' com acc
+  //   .prateleira_regulavel) -> GRADE de furos do vão inteiro:
+  //     colunas  z = 30 mm da borda de TRÁS e 50 mm da borda da FRENTE do vão
+  //     linhas   a cada 68 mm, centrada na altura do vão (mín. 32 mm do
+  //              topo/base), em mm inteiro
+  //   e cada prateleira POUSA num furo: a base dela fica em (centro do furo
+  //   + PINO_APOIO_MM). A distribuição normal (igual / tamanho fixo do
+  //   arraste) dá o alvo; a prateleira vai pro furo livre mais perto.
+  //   A grade viaja na peça (linha_furos, RELATIVA à prateleira — sobrevive
+  //   ao desconto do pé e ao congelamento no pedido) e é usada por
+  //   drilling.js (.ban das laterais) e viewer3d.js (furos no 3D).
+  // ------------------------------------------------------------------------
+  var FUROS_PRATELEIRA = { tras: 30, frente: 50, passo: 68, margem: 32, apoio: 3 };
+  function gradeFurosVao(box) {
+    var F = FUROS_PRATELEIRA;
+    var util = box.h - 2 * F.margem;
+    var zs = [box.z + F.tras, box.z + box.d - F.frente];
+    if (!(util >= 0) || !(zs[1] > zs[0])) return null;
+    var n = Math.floor(util / F.passo + 1e-6) + 1;
+    var primeiro = Math.round(box.y + (box.h - (n - 1) * F.passo) / 2);
+    var ys = [];
+    for (var i = 0; i < n; i++) ys.push(primeiro + i * F.passo);
+    return { ys: ys, zs: zs };
+  }
+  // sizes (de splitSizes) -> sizes com cada prateleira pousada num furo.
+  // Sem furo que caiba pra alguma prateleira: devolve null (fica como veio).
+  function encaixaPrateleirasNosFuros(box, sizes, th, ys) {
+    var F = FUROS_PRATELEIRA;
+    var nPrat = sizes.length - 1;
+    var cands = ys.map(function (y) { return y + F.apoio; })
+      .filter(function (b) { return b >= box.y && b + th <= box.y + box.h; });
+    var pos = [], cur = box.y, usado = -1;
+    for (var i = 0; i < nPrat; i++) {
+      cur += sizes[i];
+      var alvo = cur;
+      var minimo = i ? pos[i - 1] + th : box.y;
+      var melhor = -1;
+      for (var k = usado + 1; k < cands.length; k++) {
+        if (cands[k] < minimo) continue;
+        if (cands.length - k < nPrat - i) break;      // sobra furo pras de cima
+        if (melhor < 0 || Math.abs(cands[k] - alvo) < Math.abs(cands[melhor] - alvo)) melhor = k;
+      }
+      if (melhor < 0) return null;
+      pos.push(cands[melhor]); usado = melhor;
+      cur += th;
+    }
+    var out = [], ant = box.y;
+    pos.forEach(function (b) { out.push(b - ant); ant = b + th; });
+    out.push(box.y + box.h - ant);
+    return out;
+  }
+
   function splitSizes(total, kids, thickness) {
     var n = kids.length;
     var avail = total - thickness * (n - 1);
@@ -1228,6 +1286,9 @@
         var th = num(acc.espessura) || espCasco;
         var axis = node.splitAxis;
         var sizes = splitSizes(axis === 'x' ? box.w : box.h, node.children, th);
+        // Prateleira regulável: o VÃO gera a grade e a prateleira pousa num furo.
+        var grade = (axis === 'y' && acc.prateleira_regulavel) ? gradeFurosVao(box) : null;
+        if (grade) sizes = encaixaPrateleirasNosFuros(box, sizes, th, grade.ys) || sizes;
         var consDiv = consumoMax(node, cat, esp, folgaDob);
         node._box = box;
         var cur = axis === 'x' ? box.x : box.y;
@@ -1240,6 +1301,8 @@
           cur += sizes[i];
           if (i < node.children.length - 1) {
             emitDivider(node, acc, axis, cur, box, th, i, consDiv);
+            // grade ABSOLUTA por enquanto — vira relativa depois do arredondamento
+            if (grade) out[out.length - 1]._gradeVao = { x0: box.x, x1: box.x + box.w, ys: grade.ys, zs: grade.zs };
             cur += th;
           }
         });
@@ -1263,6 +1326,17 @@
     // Milímetro inteiro — ver comentário no topo do arquivo.
     out.forEach(function (p) {
       ['x', 'y', 'z', 'w', 'h', 'd'].forEach(function (k) { p[k] = Math.round(p[k]); });
+      // Grade de furos do vão (prateleira regulável) RELATIVA à prateleira:
+      // dx = bordas do vão (onde estão as laterais), dys/dzs = furos.
+      if (p._gradeVao) {
+        var gv = p._gradeVao;
+        p.linha_furos = {
+          dxs: [gv.x0 - p.x, gv.x1 - p.x],
+          dys: gv.ys.map(function (y) { return Math.round((y - p.y) * 10) / 10; }),
+          dzs: gv.zs.map(function (z) { return Math.round((z - p.z) * 10) / 10; })
+        };
+        delete p._gradeVao;
+      }
     });
     return { pieces: out, voids: voids, zona: zona };
   }
@@ -1457,6 +1531,16 @@
           // senão base/topo/divisória ganhariam furo de suporte também).
           // null no agregado = herda do componente, como sempre foi.
           drill_shelf_support: acc.drill_shelf_support != null ? !!acc.drill_shelf_support : !!comp.drill_shelf_support,
+          // PRATELEIRA REGULÁVEL (migration 204, por agregado): a peça não
+          // leva furo (drilling.js furosDaPeca), o vão ganha a furação em
+          // linha nas laterais, e cada prateleira leva o kit de pinos
+          // (support_purchased_item_* do agregado — 4 por prateleira),
+          // cobrado em pricing.js mesmo sendo peça fabricada.
+          prateleira_regulavel: !!acc.prateleira_regulavel,
+          // grade de furos do VÃO (ver gradeFurosVao) — relativa à peça
+          linha_furos: p.linha_furos || null,
+          support_purchased_item_id: acc.prateleira_regulavel ? (acc.support_purchased_item_id || null) : (comp.support_purchased_item_id || null),
+          support_purchased_item_qty: acc.prateleira_regulavel ? (Number(acc.support_purchased_item_qty) || 4) : comp.support_purchased_item_qty,
           reference: p.label || comp.reference,
           quantity: 1,
           labor_cost_per_unit: comp.labor_types ? comp.labor_types.price_per_unit : 0,

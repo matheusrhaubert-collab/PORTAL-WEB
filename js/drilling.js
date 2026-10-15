@@ -507,6 +507,9 @@
   // continuava perguntando ao componente, que não tem furação.
   function furosDaPeca(part, drillingsByComponent, holesByPattern) {
     if (!part) return null;
+    // Prateleira regulável (migration 204): apoia em pino, NUNCA leva furo
+    // próprio — nem do programa nem do componente (Flatbord 2C genérico).
+    if (part.prateleira_regulavel) return null;
     if (part.drilling_pattern_id && holesByPattern) {
       const doPrograma = holesByPattern[part.drilling_pattern_id];
       if (doPrograma && doPrograma.length) return doPrograma;
@@ -1461,6 +1464,119 @@
     });
   }
 
+  // 3d''. FURAÇÃO EM LINHA DA PRATELEIRA REGULÁVEL (migration 204,
+  // 2026-10-15). Matt: "prateleira regulável... uma peça sem furação, só com
+  // um flatbord 2c de base... porém o vão que ela é inserida leva furação em
+  // toda altura, furos de 5mm 50mm pra dentro na frente e 30mm pra dentro na
+  // parte de trás, a cada 68mm de cima a baixo nas duas laterais. pra colocar
+  // um pino suporte de prateleira."
+  //
+  // Pra cada prateleira com `prateleira_regulavel`, nas peças em pé (espessura
+  // em X — lateral ou divisória) em que as pontas dela encostam:
+  //   - VÃO na vertical = do topo da peça deitada logo ABAIXO até o pé da
+  //     peça deitada logo ACIMA (base/topo/prateleira fixa/divisão — outra
+  //     regulável não conta), cortado pela altura da própria lateral;
+  //   - 2 colunas: a 50 mm da borda da FRENTE e a 30 mm da borda de TRÁS da
+  //     prateleira (ancorado nela, igual ao suporte fixo);
+  //   - furos Ø5 a cada 68 mm, a coluna CENTRADA no vão (sobra igual em cima
+  //     e embaixo, nunca menos de LINHA.margem do topo/base).
+  // Várias reguláveis no mesmo vão geram a MESMA linha uma vez só (dedupe por
+  // lateral). tipo 'linha_prateleira' — nenhuma regra de ferragem por furo
+  // casa com ele: os 4 pinos por prateleira vêm do kit de suporte da peça
+  // (pricing.js), não da contagem de furos.
+  const LINHA_PRATELEIRA = { diametro: 5, profundidade: 10, frente: 50, tras: 30, passo: 68, margem: 32 };
+  function collectAdjustableShelfLineHoles(store, boxes, settings) {
+    const L = LINHA_PRATELEIRA;
+    const tol = Number(settings && settings.touch_tolerance_mm) || 5;
+    const prateleiras = boxes.filter(function (b) { return b.tAxis === 'y' && b.part && b.part.prateleira_regulavel; });
+    if (!prateleiras.length) return;
+    const laterais = boxes.filter(function (b) { return b.tAxis === 'x'; });
+    const deitadas = boxes.filter(function (b) {
+      return b.tAxis === 'y' && b.part && !b.part.prateleira_regulavel && (b.part.origin || 'fabricacao') !== 'comprado';
+    });
+    const feitos = new Map(); // lateral -> Set de furos já emitidos
+    const emite = function (lb, sb, y, z) {
+      if (y < lb.y0 + 2.5 || y > lb.y0 + lb.sy - 2.5 || z < lb.z0 - 0.01 || z > lb.z0 + lb.sz + 0.01) return;
+      const entersPositive = (sb.x0 + sb.sx / 2) >= lb.x0 + lb.sx / 2;
+      if (!feitos.has(lb)) feitos.set(lb, new Set());
+      const ja = feitos.get(lb);
+      const k = (entersPositive ? '+' : '-') + Math.round(y * 10) + '|' + Math.round(z * 10);
+      if (ja.has(k)) return;
+      ja.add(k);
+      emitLocalHole(store, lb, {
+        u: y - lb.y0, v: z - lb.z0, edge: null,
+        entersPositive: entersPositive,
+        diameter: L.diametro, depth: L.profundidade,
+        tipo: 'linha_prateleira'
+      });
+    };
+    prateleiras.forEach(function (sb) {
+      // O VÃO GERA A GRADE (Matt, 15/10 2ª rodada: "é o vão que toca nas
+      // laterais que gera as furações, não a prateleira"): a prateleira do
+      // Construtor traz a grade do vão (linha_furos, relativa a ela — ver
+      // layout-engine gradeFurosVao). Furos nas peças em pé que encostam nas
+      // BORDAS DO VÃO. Sem grade (peça de outra origem) cai no cálculo
+      // antigo logo abaixo.
+      const lf = sb.part.linha_furos;
+      if (lf && Array.isArray(lf.dys) && Array.isArray(lf.dzs)) {
+        const bx = (lf.dxs || [0, sb.sx]).map(function (dx) { return sb.x0 + dx; });
+        laterais.forEach(function (lb) {
+          if (lb === sb) return;
+          const toca = Math.abs(bx[0] - (lb.x0 + lb.sx)) <= tol || Math.abs(bx[1] - lb.x0) <= tol;
+          if (!toca) return;
+          lf.dys.forEach(function (dy) {
+            lf.dzs.forEach(function (dz) { emite(lb, sb, sb.y0 + dy, sb.z0 + dz); });
+          });
+        });
+        return;
+      }
+      // limites do vão: peças deitadas que cobrem boa parte da largura da prateleira
+      let baixo = -Infinity, cima = Infinity;
+      deitadas.forEach(function (hb) {
+        const ox = Math.min(sb.x0 + sb.sx, hb.x0 + hb.sx) - Math.max(sb.x0, hb.x0);
+        const oz = Math.min(sb.z0 + sb.sz, hb.z0 + hb.sz) - Math.max(sb.z0, hb.z0);
+        if (!(ox >= sb.sx * 0.5) || !(oz > 0)) return;
+        const topo = hb.y0 + hb.sy;
+        if (topo <= sb.y0 + tol) baixo = Math.max(baixo, topo);
+        else if (hb.y0 >= sb.y0 + sb.sy - tol) cima = Math.min(cima, hb.y0);
+      });
+      const zFrente = sb.z0 + sb.sz - L.frente;
+      const zTras = sb.z0 + L.tras;
+      if (!(zFrente > zTras)) return;
+      laterais.forEach(function (lb) {
+        if (lb === sb) return;
+        const dLeft = Math.abs(sb.x0 - (lb.x0 + lb.sx));
+        const dRight = Math.abs((sb.x0 + sb.sx) - lb.x0);
+        if (Math.min(dLeft, dRight) > tol) return;
+        // a lateral tem que cobrir a profundidade das duas colunas
+        if (zTras < lb.z0 - 0.01 || zFrente > lb.z0 + lb.sz + 0.01) return;
+        const y0 = Math.max(isFinite(baixo) ? baixo : lb.y0, lb.y0);
+        const y1 = Math.min(isFinite(cima) ? cima : lb.y0 + lb.sy, lb.y0 + lb.sy);
+        const util = y1 - y0 - 2 * L.margem;
+        if (!(util >= 0)) return;
+        const n = Math.floor(util / L.passo + 1e-6) + 1;
+        const primeiro = y0 + (y1 - y0 - (n - 1) * L.passo) / 2;
+        const entersPositive = (sb.x0 + sb.sx / 2) >= lb.x0 + lb.sx / 2;
+        if (!feitos.has(lb)) feitos.set(lb, new Set());
+        const ja = feitos.get(lb);
+        for (let i = 0; i < n; i++) {
+          const y = primeiro + i * L.passo;
+          [zFrente, zTras].forEach(function (z) {
+            const k = (entersPositive ? '+' : '-') + Math.round(y * 10) + '|' + Math.round(z * 10);
+            if (ja.has(k)) return;
+            ja.add(k);
+            emitLocalHole(store, lb, {
+              u: y - lb.y0, v: z - lb.z0, edge: null,
+              entersPositive: entersPositive,
+              diameter: L.diametro, depth: L.profundidade,
+              tipo: 'linha_prateleira'
+            });
+          });
+        }
+      });
+    });
+  }
+
   // 3d'. SUPORTE DA PRATELEIRA CHANFRADA (2026-09-29, aéreo de canto 45°).
   //
   // Matt: "prateleira interna, com furação de prateleira para apoiar nas
@@ -1617,6 +1733,7 @@
     collectSlideHoles(store, parts, raiz.todas, W, Math.max(H - legH, 1), D, config.settings, origemCorpo);
     collectShelfSupportHoles(store, todasLocal, config.settings, config);
     collectShelfSupportHoles45(store, todasLocal, config.settings);
+    collectAdjustableShelfLineHoles(store, todasLocal, config.settings); // migration 204
     collectCabideSupportHoles(store, todasLocal);
     const caixas = caixasDasPecasModulo(parts, W, H, D);
     (parts || []).forEach(function (part) {

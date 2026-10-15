@@ -175,7 +175,11 @@ function flattenOrderItemBreakdown(breakdown, multiplier) {
         material_bar_mm: p.material_bar_mm || null,
         // Modelo de gaveta (migration 203) — caixote comprado sai na lista de
         // compra com a medida.
-        drawer_model: p.drawer_model || null
+        drawer_model: p.drawer_model || null,
+        // Kit de suporte (migration 129/204 — pinos da prateleira regulável,
+        // kit do cabide): vira linha própria na lista de compra.
+        support_purchased_item_name: p.support_purchased_item_name || null,
+        support_qty: (Number(p.support_purchased_item_qty) || 0) * multiplier
       });
     }
   });
@@ -247,6 +251,15 @@ async function openOrderCutlist(order) {
   (items || []).forEach((item) => {
     const leafRows = flattenOrderItemBreakdown(item.breakdown, item.quantity || 1);
     leafRows.forEach((leaf) => {
+      // Kit de suporte (pinos da prateleira regulável etc.) — soma na lista
+      // de compra por item, independente de a peça ser cortada ou comprada.
+      if (leaf.support_purchased_item_name && leaf.support_qty > 0) {
+        const kKit = ['Ferragem', leaf.support_purchased_item_name].join('|');
+        if (!groupedPurchase.has(kKit)) {
+          groupedPurchase.set(kKit, { module_name: 'Ferragem', reference: leaf.support_purchased_item_name, description: 'kit por peça', quantity: 0 });
+        }
+        groupedPurchase.get(kKit).quantity += leaf.support_qty;
+      }
       if (leaf.material_item_id) {
         const d = sortPieceCutDims(leaf.width_mm, leaf.height_mm, leaf.depth_mm);
         const mat = materiais.get(leaf.material_item_id) || {
