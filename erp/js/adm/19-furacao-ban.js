@@ -34,7 +34,7 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
         // não por lote — ver [[quatro_copias_do_resolvedor_de_pecas]]);
         // sem este campo aqui a peça do construtor nunca chegava no .ban
         // gerado por este botão, mesmo já chegando no de furacao-lote.js.
-        .select('module_id, module_name, quantity, width_mm, height_mm, depth_mm, shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, led_configs, piece_adjustments, sort_order, layout, modules(is_decoration)')
+        .select('id, module_id, module_name, quantity, width_mm, height_mm, depth_mm, shelf_quantities, dim_overrides, selected_optional_component_ids, removed_piece_ids, led_configs, piece_adjustments, sort_order, layout, modules(is_decoration)')
         .eq('order_id', currentCutlistOrder.id)
         .order('sort_order'),
       supabaseClient.from('component_drillings').select('*').order('sort_order'),
@@ -69,6 +69,16 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
     // Resolve cada item do pedido pro formato de parts do drilling.js —
     // mesma resolução usada pela aba Imagem 3D (loadRecursivePiecesForModule
     // + resolvePiecesForViewer), com a configuração escolhida pelo cliente.
+    // Modelo de gaveta (migration 203) — consulta à parte e TOLERANTE: sem a
+    // coluna (migration não rodou) segue tudo Standard.
+    try {
+      const gm = await supabaseClient.from('order_items').select('id, drawer_model_id').eq('order_id', currentCutlistOrder.id);
+      if (!gm.error) {
+        const porId = {};
+        (gm.data || []).forEach((r) => { porId[r.id] = r.drawer_model_id; });
+        (itemsRes.data || []).forEach((it) => { it.drawer_model_id = porId[it.id] || null; });
+      }
+    } catch (e) { /* sem modelo de gaveta */ }
     const drillingItems = [];
     let skippedModules = 0;
     for (const item of (itemsRes.data || [])) {
@@ -92,7 +102,12 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
           console.error('[furacao-ban] geometria do construtor deste item não resolveu:', e);
         }
       }
-      const todasPecas = pecasDoConstrutor.length ? pieces.concat(pecasDoConstrutor) : pieces;
+      let todasPecas = pecasDoConstrutor.length ? pieces.concat(pecasDoConstrutor) : pieces;
+      // MODELO DE GAVETA (migration 203) — mesma troca do portal: gaveta
+      // Hardwood Dovetail é comprada, não gera .ban de caixote.
+      if (item.drawer_model_id && typeof applyOrderItemDrawerModel === 'function') {
+        todasPecas = await applyOrderItemDrawerModel(todasPecas, item.drawer_model_id);
+      }
 
       const selectedIds = item.selected_optional_component_ids || [];
       // removed_piece_ids (migration 134): peça removida manualmente pelo

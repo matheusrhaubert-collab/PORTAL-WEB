@@ -63,7 +63,16 @@ PECA3D.load = async function (p) {
   const colorById = {};
   colors.forEach(function (c) { colorById[c.id] = c; });
 
-  const rawPieces = await loadRecursivePiecesForModule(orderItem.module_id);
+  let rawPieces = await loadRecursivePiecesForModule(orderItem.module_id);
+  /* Modelo de gaveta (migration 203): o 3D mostra o caixote que foi vendido
+     (Hardwood Dovetail comprado), igual ao portal. Consulta tolerante — sem
+     a coluna, segue Standard. */
+  try {
+    const gm = await supabaseClient.from('order_items').select('drawer_model_id').eq('id', orderItem.id).maybeSingle();
+    if (!gm.error && gm.data && gm.data.drawer_model_id && typeof applyOrderItemDrawerModel === 'function') {
+      rawPieces = await applyOrderItemDrawerModel(rawPieces, gm.data.drawer_model_id);
+    }
+  } catch (e) { /* segue Standard */ }
 
   /* Mesmo filtro de projectSlotAllPiecesBeforeRemoval + projectSlotEffectivePieces
      (js/portal-06b-projetos-canvas-ia-custo.js): peça opcional só entra se foi

@@ -3138,6 +3138,77 @@ async function setProjectSlotDoorModel(slot, modelId) {
   markProjectDirty();
 }
 
+// ==========================================================================
+// MODELO DE GAVETA no projeto (migration 203, 2026-10-15). Matt: "preciso um
+// novo corpo de gaveta como modelo. assim como funcionam as portas
+// glass/shaker... hardwood dovetail... usar mesma corrediça. só muda corpo."
+//   slot.drawerModelId = null  -> Standard (padrão): NADA muda.
+//   slot.drawerModelId = <id>  -> toda gaveta do slot (Construtor E módulo
+//     pronto) troca o caixote fabricado pela engenharia do modelo
+//     (drawer_models.child_module_id). A troca mora em js/module-pieces.js
+//     (applyDrawerModelToPieces — o ERP usa a mesma) e entra no ponto único
+//     de junção projectSlotAllPiecesBeforeRemoval (portal-06b): preço, 3D,
+//     plano de corte, furação e pedido saem dali.
+// ==========================================================================
+let projectDrawerModelsCache = null;
+let projectDrawerModelsLoading = null;
+async function ensureProjectDrawerModels() {
+  if (projectDrawerModelsCache) return projectDrawerModelsCache;
+  if (projectDrawerModelsLoading) return projectDrawerModelsLoading;
+  projectDrawerModelsLoading = (async () => {
+    try {
+      const { data, error } = await supabaseClient.from('drawer_models').select('*')
+        .eq('active', true).order('sort_order').order('name');
+      projectDrawerModelsCache = error ? [] : (data || []);   // sem a migration 203 = sem seletor
+    } catch (e) { projectDrawerModelsCache = []; }
+    projectDrawerModelsLoading = null;
+    return projectDrawerModelsCache;
+  })();
+  return projectDrawerModelsLoading;
+}
+
+// Modelo efetivo do slot que TROCA alguma coisa (null = Standard/padrão).
+function projectSlotDrawerModel(slot) {
+  if (!slot || !slot.drawerModelId || !projectDrawerModelsCache) return null;
+  const m = projectDrawerModelsCache.find((x) => x.id === slot.drawerModelId);
+  if (!m || !m.child_module_id) return null;
+  return m;
+}
+
+// Aplica no array (cadastro OU linhas do Construtor). Engenharia ainda não
+// carregada = fica Standard por enquanto (o seletor/hydrate carrega e
+// recalcula). Standard = o MESMO array.
+function applySlotDrawerModel(slot, pieces) {
+  if (typeof applyDrawerModelToPieces !== 'function') return pieces;
+  const m = projectSlotDrawerModel(slot);
+  const ex = m && doorModelExtrasCache[m.child_module_id];
+  return (m && ex) ? applyDrawerModelToPieces(pieces, m, ex) : pieces;
+}
+
+// Slot tem gaveta trocável? (decide se o seletor aparece no painel)
+function projectSlotHasDrawerBody(slot) {
+  if (!slot || typeof piecesHaveDrawerBody !== 'function') return false;
+  return piecesHaveDrawerBody(slot.pieces) || piecesHaveDrawerBody(slot.layoutPieces);
+}
+
+// Clique no cartão do modelo de gaveta. modelId null = volta pro Standard.
+async function setProjectSlotDrawerModel(slot, modelId) {
+  if (!slot) return;
+  await ensureProjectDrawerModels();
+  const m = (projectDrawerModelsCache || []).find((x) => x.id === modelId) || null;
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  if (m && m.child_module_id) {
+    try { await loadDoorModelExtras(m.child_module_id); } catch (e) { console.error('[modelo de gaveta]', e); return; }
+    slot.drawerModelId = m.id;
+  } else {
+    slot.drawerModelId = null;
+  }
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[modelo de gaveta] preço:', e); }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+}
+
 function projectLayoutRowsForSlot(slot, pieces) {
   // PÉ PLÁSTICO (2026-08-19, Matt: "os agregados do construtor pra todos
   // modulos com pes de plastico estao ficando 114mm pra cima do ponto
@@ -3254,9 +3325,19 @@ function hydrateProjectLayoutPieces() {
   ensureProjectDrillingCatalog();
   // + módulo pronto com modelo de porta (14/10): sem layout, mas precisa da
   // engenharia do modelo carregada pra reabrir com a porta certa.
-  if (!projectSlots.some((s) => s.layout || s.doorModelId)) return;
+  if (!projectSlots.some((s) => s.layout || s.doorModelId || s.drawerModelId)) return;
   (async () => {
     await ensureAccessoryCatalog();
+    // MODELO DE GAVETA (migration 203): mesma ideia do modelo de porta abaixo.
+    if (projectSlots.some((s) => s.drawerModelId)) {
+      try {
+        await ensureProjectDrawerModels();
+        await Promise.all(projectSlots.map((s) => {
+          const m = projectSlotDrawerModel(s);
+          return m ? loadDoorModelExtras(m.child_module_id).catch(() => null) : null;
+        }));
+      } catch (e) { /* segue Standard */ }
+    }
     // MODELO DE PORTA (migration 188): engenharia carregada antes do rebuild,
     // senão o projeto reabre com a porta Flat até o próximo recálculo.
     if (projectSlots.some((s) => s.doorModelId)) {
@@ -3269,7 +3350,7 @@ function hydrateProjectLayoutPieces() {
       } catch (e) { /* segue Flat */ }
     }
     projectSlots.forEach((slot) => {
-      if (!slot.layout && !slot.doorModelId) return;
+      if (!slot.layout && !slot.doorModelId && !slot.drawerModelId) return;
       if (slot.layout) rebuildProjectSlotLayoutPieces(slot);
       if (!slot.layout && slot.doorModelId) { try { applySlotDoorModelColors(slot); } catch (e) { /* ok */ } }
       try { recomputeProjectSlotPricing(slot); } catch (e) { /* catálogo mudou; o slot fica com o preço de antes */ }

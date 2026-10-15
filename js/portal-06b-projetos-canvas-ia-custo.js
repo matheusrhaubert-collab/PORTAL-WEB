@@ -2497,11 +2497,19 @@ function duplicateProjectSlotGroup(ids) {
 function projectSlotAllPiecesBeforeRemoval(slot) {
   // MODELO DE PORTA em módulo pronto (14/10, ver portal-07
   // applySlotDoorModelToCatalogPieces) — Flat = o mesmo array de sempre.
-  const cadastro = (typeof applySlotDoorModelToCatalogPieces === 'function')
+  let cadastro = (typeof applySlotDoorModelToCatalogPieces === 'function')
     ? applySlotDoorModelToCatalogPieces(slot, slot.pieces) : slot.pieces;
+  // MODELO DE GAVETA (migration 203, portal-07 applySlotDrawerModel) — troca
+  // o caixote de toda gaveta, do cadastro E do Construtor. Standard = o
+  // mesmo array de sempre.
+  let construtor = slot.layoutPieces || [];
+  if (typeof applySlotDrawerModel === 'function') {
+    cadastro = applySlotDrawerModel(slot, cadastro);
+    construtor = applySlotDrawerModel(slot, construtor);
+  }
   return cadastro
     .filter((p) => !p.client_optional || slot.selectedOptionalIds.includes(p.id))
-    .concat(slot.layoutPieces || []);
+    .concat(construtor);
 }
 
 function projectSlotEffectivePieces(slot) {

@@ -1171,8 +1171,18 @@
     // existente (pé, puxador, corrediça...) continua exatamente como antes,
     // só entra neste ramo novo quando unit==='m'.
     const metrosComprado = pieceDims.width_mm / 1000;
+    // Migration 203 (Hardwood Dovetail, 2026-10-15): item comprado com
+    // attrs.preco_por_ft2 cobra FIXO + POR PÉ² da área largura × profundidade
+    // da peça — Matt: "valor fixo de 40 dólares + 5 dólares por pé²
+    // (largura x profundidade)". purchase_price = a parte fixa. Por unidade,
+    // × qty. Nenhum item antigo tem essa chave: nada muda pra eles.
+    const porFt2 = itemComprado && itemComprado.attrs && itemComprado.attrs.preco_por_ft2 != null
+      ? Number(itemComprado.attrs.preco_por_ft2) : null;
+    const ft2Comprado = (Number(pieceDims.width_mm) || 0) * (Number(pieceDims.depth_mm) || 0) / 92903.04;
     const precoComprado = (itemComprado && itemComprado.purchase_price != null)
-      ? Number(itemComprado.purchase_price) * (itemComprado.unit === 'm' ? metrosComprado : qty)
+      ? (porFt2 != null && isFinite(porFt2)
+        ? (Number(itemComprado.purchase_price) + porFt2 * ft2Comprado) * qty
+        : Number(itemComprado.purchase_price) * (itemComprado.unit === 'm' ? metrosComprado : qty))
       : custoUnitario;
     // Migration 129: kit de suporte — item comprado SECUNDÁRIO que "vai
     // junto" com a peça principal (ex: kit suporte de um cabide). Quantidade
@@ -1319,6 +1329,15 @@
       // poder abrir numa linha própria, se quiser (mesmo padrão de
       // hinge_cost/slide_cost, que também são subtotais dentro do total).
       support_cost: support_cost,
+      // Modelo de gaveta (migration 203) — nome do modelo quando esta peça
+      // veio da troca de corpo de gaveta (js/module-pieces.js
+      // applyDrawerModelToPieces). A etiqueta A5 do módulo (ERP) lê daqui.
+      drawer_model: piece.drawer_model_name || null,
+      // Peso de peça comprada OCA (caixote de gaveta): espessura da parede em
+      // mm (attrs.espessura_mm) — calculateWeightKg conta 4 lados + fundo em
+      // vez do volume cheio.
+      weight_shell_mm: (itemComprado && itemComprado.kind === 'gaveta' && itemComprado.attrs && Number(itemComprado.attrs.espessura_mm) > 0)
+        ? Number(itemComprado.attrs.espessura_mm) : null,
       support_purchased_item_id: (itemSuporte && itemSuporte.id) || piece.support_purchased_item_id || null,
       support_purchased_item_name: (itemSuporte && itemSuporte.name) || null,
       support_purchased_item_qty: itemSuporte ? (piece.support_purchased_item_qty || 1) * qty : 0,
@@ -1791,7 +1810,10 @@
       if (p.is_module) {
         return sum + calculateWeightKg(p.child_breakdown, colorsByRole, fallbackDensityKgPerM3) * (p.quantity || 1);
       }
-      const pieceVolumeM3 = ((p.width_mm || 0) * (p.height_mm || 0) * (p.depth_mm || 0) * (p.quantity || 1)) / 1e9;
+      const t = Number(p.weight_shell_mm) || 0;
+      const w = p.width_mm || 0, h = p.height_mm || 0, d = p.depth_mm || 0;
+      // caixote comprado oco (migration 203): 2 laterais + frente + traseira + fundo
+      const pieceVolumeM3 = (t > 0 ? (2 * h * d + 2 * h * w + w * d) * t : w * h * d) * (p.quantity || 1) / 1e9;
       const color = (colorsByRole || {})[p.color_role_id];
       const ownDensity = color ? Number(color.density_kg_per_m3) : NaN;
       const density = Number.isFinite(ownDensity) && ownDensity > 0 ? ownDensity : (Number(fallbackDensityKgPerM3) || 700);

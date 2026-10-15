@@ -172,7 +172,10 @@ function flattenOrderItemBreakdown(breakdown, multiplier) {
         material_item_id: p.material_item_id || null,
         material_item_name: p.material_item_name || null,
         material_unit: p.material_unit || null,
-        material_bar_mm: p.material_bar_mm || null
+        material_bar_mm: p.material_bar_mm || null,
+        // Modelo de gaveta (migration 203) — caixote comprado sai na lista de
+        // compra com a medida.
+        drawer_model: p.drawer_model || null
       });
     }
   });
@@ -255,12 +258,25 @@ async function openOrderCutlist(order) {
         materiais.set(leaf.material_item_id, mat);
         // segue pra lista de CORTE logo abaixo (não pra de compra)
       } else if (leaf.origin === 'comprado') {
-        const key = [item.module_name, leaf.reference, leaf.description].join('|');
+        // Caixote de gaveta comprado (migration 203, Hardwood Dovetail): cada
+        // MEDIDA é um item de compra diferente — a descrição vira
+        // "L × A × P" em polegadas (o fornecedor vende em polegada) + mm.
+        const pol = (mm) => {
+          const v = (Number(mm) || 0) / 25.4; let w = Math.floor(v); let n = Math.round((v - w) * 16);
+          if (n === 16) { w += 1; n = 0; }
+          if (!n) return w + '"';
+          let d = 16; while (n % 2 === 0 && d > 1) { n /= 2; d /= 2; }
+          return (w ? w + ' ' : '') + n + '/' + d + '"';
+        };
+        const descricao = leaf.drawer_model
+          ? `${pol(leaf.width_mm)} W × ${pol(leaf.height_mm)} H × ${pol(leaf.depth_mm)} D (${Math.round(leaf.width_mm)} × ${Math.round(leaf.height_mm)} × ${Math.round(leaf.depth_mm)} mm)`
+          : leaf.description;
+        const key = [item.module_name, leaf.reference, descricao].join('|');
         if (!groupedPurchase.has(key)) {
           groupedPurchase.set(key, {
             module_name: item.module_name,
             reference: leaf.reference,
-            description: leaf.description,
+            description: descricao,
             quantity: 0
           });
         }

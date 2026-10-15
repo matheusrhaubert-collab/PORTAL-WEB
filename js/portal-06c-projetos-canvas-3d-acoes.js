@@ -634,6 +634,26 @@ function projectDoorModelPreviewSvg(kind) {
   return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + ext + miolo + puxador + '</svg>';
 }
 
+// Desenho do cartão do MODELO DE GAVETA (migration 203, drawer_models.preview):
+// caixote visto de 3/4 — Standard (chapa lisa) x Dovetail (madeira clara com
+// os "rabos de andorinha" no canto).
+function projectDrawerModelPreviewSvg(kind) {
+  const dove = kind === 'dovetail';
+  const face = dove ? '#e9d6b0' : '#f3efe8';
+  const topo = dove ? '#f4e7cc' : '#faf7f1';
+  const traco = '#6b6358';
+  let s = '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">'
+    + '<path d="M4 30 L28 30 L40 22 L16 22 Z" fill="' + topo + '" stroke="' + traco + '" stroke-width="1.2"/>'
+    + '<path d="M8 28 L26 28 L35 23 L17 23 Z" fill="' + (dove ? '#d9c194' : '#e7e1d6') + '"/>'
+    + '<path d="M4 30 L28 30 L28 44 L4 44 Z" fill="' + face + '" stroke="' + traco + '" stroke-width="1.2"/>'
+    + '<path d="M28 30 L40 22 L40 36 L28 44 Z" fill="' + (dove ? '#dcc59a' : '#e9e4db') + '" stroke="' + traco + '" stroke-width="1.2"/>';
+  if (dove) {
+    // rabos de andorinha no canto da frente
+    s += '<path d="M28 32 l3 -1 l0 3 l-3 0 Z M28 37 l3 -1 l0 3 l-3 0 Z M28 42 l3 -1 l0 2 l-3 0.5 Z" fill="#b8955e"/>';
+  }
+  return s + '</svg>';
+}
+
 function renderProjectConfigPanel() {
   const panel = document.getElementById('po-proj-config-panel');
   if (!panel) return;
@@ -766,6 +786,29 @@ function renderProjectConfigPanel() {
       const hintBloq = projectDoorModelsCache.some((dm) => dm.child_module_id && dm.slug !== 'flat' && !(efetivo && efetivo.id === dm.id) && slotDoorModelBlock(slot, dm))
         ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.door_model_blocked_hint')}</p>` : '';
       doorModelBlock = `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.door_model_label')}</span><div class="po-proj-door-model-cards">${cards}</div>${hintTrava}${hintBloq}</div>`;
+    }
+  }
+
+  // MODELO DE GAVETA (migration 203) — logo abaixo do modelo de porta, mesmo
+  // visual de cartões. Só aparece se o slot tem gaveta com caixote fabricado
+  // (Construtor ou módulo pronto) e existe mais de um modelo cadastrado.
+  // Padrão = Standard (slot.drawerModelId null).
+  let drawerModelBlock = '';
+  if (typeof projectSlotHasDrawerBody === 'function' && projectSlotHasDrawerBody(slot)) {
+    if (!projectDrawerModelsCache) {
+      ensureProjectDrawerModels().then(() => { if (selectedProjectSlotId === slot.id) renderProjectConfigPanel(); });
+    } else if (projectDrawerModelsCache.length > 1) {
+      const efetivoG = projectSlotDrawerModel(slot);
+      const cardsG = projectDrawerModelsCache.map((gm) => {
+        const ehPadrao = !gm.child_module_id;
+        const sel = efetivoG ? efetivoG.id === gm.id : ehPadrao;
+        return `<button type="button" class="po-proj-door-model-card po-proj-drawer-model-card${sel ? ' selected' : ''}" data-drawer-model-id="${ehPadrao ? '' : gm.id}" title="${gm.name}">
+          ${projectDrawerModelPreviewSvg(gm.preview || (ehPadrao ? 'standard' : 'dovetail'))}
+          <span>${gm.name}</span>
+        </button>`;
+      }).join('');
+      const hintG = efetivoG ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.drawer_model_hint')}</p>` : '';
+      drawerModelBlock = `<div class="po-proj-config-door-models po-proj-config-drawer-models"><span class="po-proj-config-section-label">${I18n.t('project.drawer_model_label')}</span><div class="po-proj-door-model-cards">${cardsG}</div>${hintG}</div>`;
     }
   }
 
@@ -964,6 +1007,7 @@ function renderProjectConfigPanel() {
     ${pieceDimsBlock}
     ${positionRow}
     ${doorModelBlock}
+    ${drawerModelBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     ${moveBlock}
     ${positionBlock}
@@ -1043,10 +1087,17 @@ function renderProjectConfigPanel() {
       renderProjectConfigPanel();
     });
   }
-  panel.querySelectorAll('.po-proj-door-model-card').forEach((el) => {
+  panel.querySelectorAll('.po-proj-door-model-card:not(.po-proj-drawer-model-card)').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected') || el.classList.contains('blocked')) return;
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
+    });
+  });
+  // Modelo de gaveta (migration 203)
+  panel.querySelectorAll('.po-proj-drawer-model-card').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('selected')) return;
+      setProjectSlotDrawerModel(slot, el.dataset.drawerModelId || null);
     });
   });
   panel.querySelectorAll('.po-proj-color-swatch').forEach((el) => {

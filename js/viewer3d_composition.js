@@ -2347,22 +2347,78 @@ function createViewerComposition3D() {
 
   let customMouseNavAttached = false;
   let lastMouseRotateAt = 0;
+  // Atalhos do Mac (14/10) SÓ no Mac — Matt: "não muda nada de como está
+  // hoje". No Windows/Linux tudo continua exatamente como era.
+  const ehMac = (typeof navigator !== 'undefined')
+    && /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '');
   function attachCustomMouseNav() {
     if (customMouseNavAttached || !renderer) return;
     customMouseNavAttached = true;
     const el = renderer.domElement;
-    let nav = null; // { x, y, rotating }
+    let nav = null; // { x, y, rotating, modo: 'meio' | 'girar' | 'mover' }
     const ativo = () => customMouseNavOn && controls && controls.enabled;
+    // MAC (14/10 — usuário de Mac: "não está funcionando os cliques e
+    // rotação"). Trackpad e Magic Mouse não têm botão do MEIO, então o gesto
+    // acima era impossível lá. Alternativas (valem em qualquer sistema):
+    //   · Option/Alt + arrastar com o esquerdo = GIRAR
+    //   · Espaço segurado + arrastar com o esquerdo = MOVER (pan)
+    //   · trackpad: 2 dedos deslizando = MOVER, pinça = ZOOM,
+    //     Option + 2 dedos = GIRAR (ver handleZoomWheel)
+    // Capturado na janela ANTES do arraste de módulo (portal-08): com
+    // Option/Espaço o clique esquerdo nunca seleciona nem arrasta módulo.
+    let espacoApertado = false;
+    const emCampo = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+    window.addEventListener('keydown', (ev) => {
+      if (ehMac && ev.code === 'Space' && !emCampo(ev.target)) {
+        espacoApertado = true;
+        if (ativo() && el.matches(':hover')) ev.preventDefault(); // sem rolar a página
+      }
+    });
+    window.addEventListener('keyup', (ev) => { if (ev.code === 'Space') espacoApertado = false; });
+    window.addEventListener('blur', () => { espacoApertado = false; });
+    window.addEventListener('pointerdown', (ev) => {
+      if (!ehMac || ev.target !== el || ev.pointerType !== 'mouse' || ev.button !== 0 || !ativo()) return;
+      if (!ev.altKey && !espacoApertado) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: ev.altKey ? 'girar' : 'mover' };
+      try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    }, true);
+    // Soltar/clicar no fim do gesto Option/Espaço não vira clique de seleção.
+    let fimNavTeclaAt = 0;
+    window.addEventListener('pointerup', (ev) => {
+      if (!nav || nav.modo === 'meio' || ev.button !== 0) return;
+      nav = null;
+      fimNavTeclaAt = Date.now();
+      ev.stopImmediatePropagation();
+    }, true);
+    window.addEventListener('click', (ev) => {
+      if (ev.target === el && Date.now() - fimNavTeclaAt < 300) { ev.stopImmediatePropagation(); ev.preventDefault(); }
+    }, true);
     // sem o "autoscroll" do navegador no clique do meio
     el.addEventListener('mousedown', (ev) => { if (ev.button === 1 && ativo()) ev.preventDefault(); });
     el.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType !== 'mouse' || !ativo()) return;
       if (ev.button !== 1) return; // o gesto sempre começa no MEIO
-      nav = { x: ev.clientX, y: ev.clientY, rotating: false };
+      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: 'meio' };
       try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
     });
     el.addEventListener('pointermove', (ev) => {
       if (!nav || ev.pointerType !== 'mouse') return;
+      if (nav.modo !== 'meio') {
+        if (!(ev.buttons & 1)) { nav = null; return; }
+        ev.stopImmediatePropagation();
+        const ddx = ev.clientX - nav.x, ddy = ev.clientY - nav.y;
+        nav.x = ev.clientX; nav.y = ev.clientY;
+        if (nav.modo === 'girar') {
+          if (!nav.rotating) { nav.rotating = true; el.dispatchEvent(new CustomEvent('legno:orbitrotatestart')); }
+          lastMouseRotateAt = Date.now();
+          mouseNavRotate(ddx, ddy);
+        } else {
+          mouseNavPan(ddx, ddy);
+        }
+        return;
+      }
       const meio = (ev.buttons & 4) !== 0, direito = (ev.buttons & 2) !== 0;
       if (!meio) { nav = null; return; }
       const dx = ev.clientX - nav.x, dy = ev.clientY - nav.y;
@@ -2382,6 +2438,10 @@ function createViewerComposition3D() {
     const fim = (ev) => {
       if (!nav) return;
       if (nav.rotating) lastMouseRotateAt = Date.now();
+      if (nav.modo !== 'meio') {
+        if (!(ev.buttons & 1)) { nav = null; ev.stopImmediatePropagation(); }
+        return;
+      }
       if (!(ev.buttons & 4)) nav = null;
     };
     el.addEventListener('pointerup', fim);
@@ -3160,9 +3220,35 @@ function createViewerComposition3D() {
     zoomTowardClient(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
   }
 
+  // TRACKPAD (Mac, 14/10): roda do mouse continua sendo zoom; deslizar 2
+  // dedos no trackpad passa a MOVER a cena (antes dava zoom sem parar),
+  // Option + 2 dedos GIRA, e a pinça (o navegador manda wheel com ctrlKey)
+  // dá zoom proporcional. Trackpad x roda: o Chrome/Safari do Mac mandam
+  // wheelDeltaY = -3 × deltaY no trackpad (roda manda múltiplos de 120);
+  // sem wheelDeltaY (Firefox), roda vem em linhas (deltaMode 1) ou inteiro.
+  function isTrackpadWheel(event) {
+    if (event.deltaX) return true;
+    const wd = event.wheelDeltaY;
+    if (wd) return wd === -3 * event.deltaY;
+    return event.deltaMode === 0 && !Number.isInteger(event.deltaY);
+  }
   function handleZoomWheel(event) {
     event.preventDefault();
     if (!controls || !controls.enabled || !camera || !renderer) return;
+    if (ehMac && event.ctrlKey && Math.abs(event.deltaY) < 50) {
+      // pinça do trackpad: zoom proporcional ao gesto
+      const esc = Math.exp(Math.max(-0.5, Math.min(0.5, event.deltaY * 0.01)));
+      zoomTowardClient(event.clientX, event.clientY, esc);
+      return;
+    }
+    // 2 dedos no trackpad SÓ com Option (gira). Sem Option continua zoom,
+    // igual roda do mouse — mouse comum ligado no Mac não pode mudar (o
+    // Chrome do Mac às vezes manda a roda com a mesma "cara" do trackpad).
+    if (ehMac && event.altKey && !event.ctrlKey && isTrackpadWheel(event)) {
+      lastMouseRotateAt = Date.now();
+      mouseNavRotate(-event.deltaX, -event.deltaY);
+      return;
+    }
     // Mesma escala por "notch" que o OrbitControls nativo usava (getZoomScale
     // interna dele, ver OrbitControls.js) — só o PONTO de convergência muda.
     const zoomScale = Math.pow(0.95, controls.zoomSpeed || 1);

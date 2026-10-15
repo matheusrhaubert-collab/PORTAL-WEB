@@ -208,6 +208,16 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
     .eq('order_id', orderId)
     .order('sort_order');
   if (error) throw error;
+  /* Modelo de gaveta (migration 203) — consulta à parte e TOLERANTE: sem a
+     coluna (migration não rodou) segue tudo Standard, sem derrubar o lote. */
+  try {
+    const gm = await supabaseClient.from('order_items').select('id, drawer_model_id').eq('order_id', orderId);
+    if (!gm.error) {
+      const porId = {};
+      (gm.data || []).forEach(function (r) { porId[r.id] = r.drawer_model_id; });
+      (data || []).forEach(function (it) { it.drawer_model_id = porId[it.id] || null; });
+    }
+  } catch (e) { /* sem modelo de gaveta */ }
 
   const itens = [];
   let semCadastro = 0;
@@ -248,7 +258,13 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
         console.error('[furacao-lote] geometria do construtor deste item não resolveu:', e);
       }
     }
-    const todasPecas = pecasDoConstrutor.length ? pieces.concat(pecasDoConstrutor) : pieces;
+    let todasPecas = pecasDoConstrutor.length ? pieces.concat(pecasDoConstrutor) : pieces;
+    /* MODELO DE GAVETA (migration 203): gaveta Hardwood Dovetail = caixote
+       COMPRADO — a mesma troca do portal (js/module-pieces.js), senão sairia
+       .ban de lateral/fundo de gaveta que não vai ser cortada. */
+    if (item.drawer_model_id && typeof applyOrderItemDrawerModel === 'function') {
+      todasPecas = await applyOrderItemDrawerModel(todasPecas, item.drawer_model_id);
+    }
 
     const escolhidos = item.selected_optional_component_ids || [];
     /* removed_piece_ids (migration 134): peça removida manualmente pelo

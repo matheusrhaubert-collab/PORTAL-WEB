@@ -5851,6 +5851,10 @@ async function sendProjectToOrder() {
         // construtor pela primeira vez. Ver rebuildProjectSlotLayoutPieces
         // (._layoutGeometry) e [[construtor_como_motor_principal]].
         layout: slot._layoutGeometry || null,
+        // MODELO DE GAVETA (migration 203) — o ERP refaz a furação com a
+        // mesma troca de caixote (não gera .ban de gaveta comprada). Só vai
+        // quando tem modelo: pedido sem ele continua idêntico ao de antes.
+        ...(slot.drawerModelId ? { drawer_model_id: slot.drawerModelId } : {}),
         // POSIÇÃO NO AMBIENTE (migration 139) — congela onde este módulo
         // ficava na sala no momento do envio, pros mesmos 4 campos que
         // renderProjectCanvasTop/renderFreeformWalls usam pra desenhar
@@ -5896,6 +5900,11 @@ async function sendProjectToOrder() {
       if (temLed) throw new Error('Este pedido tem LED embutido, mas o banco ainda não tem a coluna order_items.led_configs — rode a migration 183 no Supabase e envie de novo.');
       payloads.forEach((pl) => { delete pl.led_configs; });
       ({ error: itemsError } = await supabaseClient.from('order_items').insert(payloads));
+    }
+    // Modelo de gaveta (migration 203): sem a coluna no banco o insert inteiro
+    // falha — mesmo tratamento do led_configs acima, com erro claro.
+    if (itemsError && /drawer_model_id/.test(String(itemsError.message || '') + String(itemsError.details || ''))) {
+      throw new Error('Este pedido tem gaveta Hardwood Dovetail, mas o banco ainda não tem a coluna order_items.drawer_model_id — rode a migration 203 no Supabase e envie de novo.');
     }
     if (itemsError) throw itemsError;
 
@@ -7360,6 +7369,8 @@ function serializeProjectSlots() {
     layout: slot.layout || null,
     // Modelo de porta (migration 188) — null = Flat (padrão). Cabe no jsonb.
     door_model_id: slot.doorModelId || null,
+    // Modelo de gaveta (migration 203) — null = Standard. Cabe no jsonb.
+    drawer_model_id: slot.drawerModelId || null,
     thumbnail_data_url: slot.thumbnail_data_url || null,
     // Grupo de módulos (2026-09-03) — null/null = avulso. Ver
     // createProjectSlotGroup/ungroupProjectSlots (portal-06b) e a

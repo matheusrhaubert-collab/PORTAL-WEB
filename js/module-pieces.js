@@ -1046,3 +1046,141 @@ async function ensureDoorModelCatalog(catalogo, pieces) {
   await Promise.all(ids.map((id) => loadDoorModelExtras(id).catch((e) => { console.error('[modelo de porta]', e); return null; })));
   return doorModelCatalogFor(catalogo, pieces);
 }
+
+// ==========================================================================
+// MODELO DE GAVETA (migration 203, 2026-10-15) — troca o CORPO (caixote) de
+// toda gaveta por outro modelo, ex.: "Hardwood Dovetail" (caixote COMPRADO
+// montado, peça única). Matt: "assim como funcionam as portas glass/shaker...
+// usar mesma corrediça. só muda corpo... qualquer gaveta tanto do construtor
+// como dos módulos prontos podem ter a opção de troca".
+//
+// Aqui (e não em portal-07) porque o ERP (.ban por pedido e por lote) refaz
+// a furação do pedido e precisa da MESMA troca (order_items.drawer_model_id)
+// — senão geraria .ban de lateral/fundo de gaveta que não vai ser cortada.
+//
+// Gaveta = peça-módulo que DESLIZA (opening_type 'slide_out' + corrediça) e
+// não é frente, com caixote FABRICADO dentro (2+ peças de chapa — cesto
+// aramado e lixeira, que são comprados, ficam de fora). A linha da gaveta
+// (envelope) fica intacta: medida, posição, corrediça própria
+// (own_slide_model/own_slide_models/slides_per_unit), profundidade fixa,
+// id (peça removida/ajuste continuam valendo). Só `child_pieces` vira a
+// engenharia do modelo (carregada pelo MESMO loadDoorModelExtras/cache dos
+// modelos de porta — é só "módulo invisível + cores"), com id próprio por
+// instância (2 gavetas iguais não colidem no preço/furação).
+// Standard (padrão, sem engenharia) = nada roda, mesmo array de sempre.
+// ==========================================================================
+function drawerModelFabLeafCount(list) {
+  let n = 0;
+  (list || []).forEach((c) => {
+    if (!c) return;
+    if (c.is_module) { n += drawerModelFabLeafCount(c.child_pieces); return; }
+    if ((c.origin || 'fabricacao') !== 'comprado') n += 1;
+  });
+  return n;
+}
+
+function isDrawerBodyRow(p) {
+  return !!p && !!p.is_module && !p._drawerModelSwap
+    && p.opening_type === 'slide_out' && Number(p.slides_per_unit) > 0
+    && p.position_role !== 'front'
+    && drawerModelFabLeafCount(p.child_pieces) >= 2;
+}
+
+// Tem alguma gaveta trocável na lista (recursivo)? — decide se o seletor
+// "Modelo de gaveta" aparece no painel do módulo.
+function piecesHaveDrawerBody(list) {
+  return (list || []).some((p) => {
+    if (!p) return false;
+    if (isDrawerBodyRow(p) || p._drawerModelSwap) return true;
+    return !!(p.is_module && Array.isArray(p.child_pieces) && piecesHaveDrawerBody(p.child_pieces));
+  });
+}
+
+// Filho da gaveta que NÃO é caixote: frente (papel 'front' ou nome
+// "Frente…/Front…", nunca contra-frente/sub-front), peça comprada (puxador)
+// e sub-módulo aninhado (ex.: "Front Drawer" — o caixote é sempre chapa solta).
+function isDrawerNonBodyChild(c) {
+  if (!c) return false;
+  if (c.is_module) return true;
+  if (c.position_role === 'front') return true;
+  if ((c.origin || 'fabricacao') === 'comprado') return true;
+  const ref = String(c.reference || '');
+  return /^\s*(frente|front)\b/i.test(ref) && !/(contra|sub|\(drawer\))/i.test(ref);
+}
+
+function reidDrawerModelChildPieces(list, prefix, modelName) {
+  return (list || []).map((cp) => {
+    const baseId = cp.id != null ? cp.id : cp.piece_id;
+    const basePieceId = cp.piece_id != null ? cp.piece_id : cp.id;
+    const clone = Object.assign({}, cp, {
+      id: baseId != null ? prefix + ':' + baseId : cp.id,
+      piece_id: basePieceId != null ? prefix + ':' + basePieceId : cp.piece_id,
+      // vai pro breakdown (pricing.js calculateLeafPiece -> drawer_model) —
+      // a etiqueta A5 do módulo (ERP) mostra o modelo a partir disto
+      drawer_model_name: modelName || null
+    });
+    if (clone.is_module && clone.child_pieces && clone.child_pieces.length) {
+      clone.child_pieces = reidDrawerModelChildPieces(clone.child_pieces, prefix, modelName);
+    }
+    return clone;
+  });
+}
+
+function swapDrawerBodyRows(list, model, extras) {
+  let mudou = false;
+  const out = (list || []).map((p) => {
+    if (!p) return p;
+    if (isDrawerBodyRow(p)) {
+      mudou = true;
+      return Object.assign({}, p, {
+        _drawerModelSwap: model.id,
+        drawer_model_name: model.name || null,
+        // frente/puxador que morem DENTRO do módulo da gaveta não são corpo:
+        // ficam. Sai só o caixote fabricado (laterais, traseira, fundo,
+        // contra-frente).
+        child_pieces: (p.child_pieces || []).filter(isDrawerNonBodyChild)
+          .concat(reidDrawerModelChildPieces(extras.child_pieces || [], 'gm:' + p.id, model.name))
+      });
+    }
+    if (p.is_module && Array.isArray(p.child_pieces)) {
+      const filhos = swapDrawerBodyRows(p.child_pieces, model, extras);
+      if (filhos !== p.child_pieces) { mudou = true; return Object.assign({}, p, { child_pieces: filhos }); }
+    }
+    return p;
+  });
+  return mudou ? out : list;
+}
+
+// model = linha de drawer_models; extras = doorModelExtrasCache[child_module_id].
+// Sem modelo/engenharia = devolve o MESMO array. Cacheado por array (roda em
+// todo desenho/preço; slot.pieces e slot.layoutPieces só são trocados inteiros).
+const drawerModelSwapCache = new WeakMap();
+function applyDrawerModelToPieces(pieces, model, extras) {
+  if (!Array.isArray(pieces) || !model || !model.child_module_id || !extras) return pieces;
+  const hit = drawerModelSwapCache.get(pieces);
+  if (hit && hit.modelId === model.id && hit.extras === extras) return hit.out;
+  const out = swapDrawerBodyRows(pieces, model, extras);
+  drawerModelSwapCache.set(pieces, { modelId: model.id, extras, out });
+  return out;
+}
+
+// ERP (.ban por pedido / por lote): resolve order_items.drawer_model_id ->
+// linha do modelo + engenharia e aplica a troca. Sem modelo = mesmo array.
+const drawerModelRowCache = {};
+async function applyOrderItemDrawerModel(pieces, drawerModelId) {
+  if (!drawerModelId || !Array.isArray(pieces)) return pieces;
+  try {
+    if (!drawerModelRowCache[drawerModelId]) {
+      const { data, error } = await supabaseClient.from('drawer_models').select('*').eq('id', drawerModelId).maybeSingle();
+      if (error) throw error;
+      drawerModelRowCache[drawerModelId] = data || { id: drawerModelId, child_module_id: null };
+    }
+    const m = drawerModelRowCache[drawerModelId];
+    if (!m.child_module_id) return pieces;
+    const ex = await loadDoorModelExtras(m.child_module_id);
+    return applyDrawerModelToPieces(pieces, m, ex);
+  } catch (e) {
+    console.error('[modelo de gaveta]', e);
+    return pieces;
+  }
+}

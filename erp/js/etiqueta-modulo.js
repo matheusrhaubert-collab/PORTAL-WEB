@@ -263,10 +263,16 @@ ETIQUETA_MODULO.coletar = async function (batchId, orderIdFiltro) {
     const folhas = LOTES.flattenBreakdown(bd, 1);
     // ferragem pelo breakdown congelado
     let portas = 0, dobradicas = 0, gavetas = 0, dobradicaNome = null, corredicaNome = null;
+    // MODELO DE GAVETA (migration 203, 2026-10-15 — Matt: "colocar esse
+    // modelo na etiqueta A5 do móvel"): a peça do caixote trocado leva o
+    // nome do modelo no breakdown (pricing.js drawer_model). Sem nenhuma =
+    // caixote fabricado (Standard).
+    let gavetaModelo = null;
     const walk = function (lista) {
       (lista || []).forEach(function (p) {
         if (!p) return;
         const q = p.quantity || 1;
+        if (p.drawer_model && !gavetaModelo) gavetaModelo = p.drawer_model;
         if (Number(p.hinge_count) > 0) { portas += q; dobradicas += Number(p.hinge_count) * q; dobradicaNome = dobradicaNome || p.hinge_model_name || null; }
         if (Number(p.slide_cost) > 0 || p.slide_model_name) { gavetas += q; corredicaNome = corredicaNome || p.slide_model_name || null; }
         if (p.is_module) walk(p.child_breakdown);
@@ -282,6 +288,7 @@ ETIQUETA_MODULO.coletar = async function (batchId, orderIdFiltro) {
       totalPedido: totalPorPedido[it.order_id] || 0,
       pedido: pedido, item: it, cores: cores, folhas: folhas,
       portas: portas, dobradicas: dobradicas, gavetas: gavetas, prateleiras: prateleiras,
+      gavetaModelo: gavetaModelo,
       dobradicaNome: dobradicaNome || (it.hinge_model_id ? null : null),
       corredicaNome: corredicaNome,
       pesoKg: pesoKg
@@ -378,7 +385,11 @@ ETIQUETA_MODULO.label = function (x, lote, idx) {
   const hw = [
     ['Door', x.portas ? '<b>' + x.portas + ' door' + (x.portas > 1 ? 's' : '') + '</b><br>hinged' : '<b>—</b><br>no door'],
     ['Hinge', x.portas ? '<b>' + esc(x.dobradicaNome || 'standard') + '</b><br>' + x.dobradicas + ' pcs · Ø35 cup' : '<b>—</b><br>—'],
-    ['Drawer', x.gavetas ? '<b>' + x.gavetas + ' drawer' + (x.gavetas > 1 ? 's' : '') + '</b><br>' + frentes + ' front' + (frentes !== 1 ? 's' : '') : (frentes ? '<b>—</b><br>' + frentes + ' fixed front(s)' : '<b>—</b><br>no drawer')],
+    // Modelo de gaveta (migration 203): "Hardwood Dovetail" quando trocado,
+    // senão "Standard box" (caixote fabricado aqui).
+    ['Drawer', x.gavetas ? '<b>' + x.gavetas + ' drawer' + (x.gavetas > 1 ? 's' : '') + ' · ' + frentes + ' front' + (frentes !== 1 ? 's' : '') + '</b><br>' +
+      (x.gavetaModelo ? '<b>' + esc(x.gavetaModelo) + '</b> (purchased)' : 'Standard box')
+      : (frentes ? '<b>—</b><br>' + frentes + ' fixed front(s)' : '<b>—</b><br>no drawer')],
     ['Slide', x.gavetas ? '<b>' + esc(x.corredicaNome || 'standard') + '</b><br>' + x.gavetas + ' pair' + (x.gavetas > 1 ? 's' : '') : '<b>—</b><br>—'],
     ['Shelves', x.prateleiras ? '<b>' + x.prateleiras + ' × adjustable</b><br>Ø3 pin' : '<b>—</b><br>—'],
     ['Back', fundo ? '<b>' + E.mm(Math.min(fundo.width_mm, fundo.height_mm, fundo.depth_mm)) + '</b><br>dadoed' : '<b>—</b><br>—'],

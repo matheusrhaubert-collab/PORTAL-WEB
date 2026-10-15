@@ -3145,7 +3145,33 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // CAIXOTE DE GAVETA COMPRADO — Hardwood Dovetail (migration 203,
+  // 2026-10-15): peça ÚNICA no cadastro (item comprado), mas desenhada OCA —
+  // 2 laterais + frente + traseira em 5/8" e fundo de 1/4" um pouco acima da
+  // base, madeira birch clara (cor FIXA: o caixote não tem papel de cor).
+  // Mesmo padrão dos DECOR_BUILDERS: base em y=0, centrado em X/Z.
+  // CÓPIA FIEL em js/viewer3d.js (THREE) e js/photoreal.js (T).
+  function buildGavetaDovetail(W, H, D) {
+    const g = new THREE.Group();
+    const birch = new THREE.MeshStandardMaterial({ color: 0xe8d5ae, roughness: 0.62, metalness: 0.0 });
+    const birchFundo = new THREE.MeshStandardMaterial({ color: 0xdcc59a, roughness: 0.7, metalness: 0.0 });
+    const t = Math.min(0.015875, W / 4, D / 4);
+    const tf = 0.00635;
+    const add = (w, h, d, x, y, z, mat) => {
+      const m = decorBoxMesh(w, h, d, mat);
+      m.position.set(x, y, z);
+      g.add(m);
+    };
+    add(t, H, D, -W / 2 + t / 2, H / 2, 0, birch);                 // lateral esq.
+    add(t, H, D, W / 2 - t / 2, H / 2, 0, birch);                  // lateral dir.
+    add(W - 2 * t, H, t, 0, H / 2, D / 2 - t / 2, birch);          // frente
+    add(W - 2 * t, H, t, 0, H / 2, -D / 2 + t / 2, birch);         // traseira
+    add(W - 2 * t, tf, D - 2 * t, 0, Math.min(0.0127, H / 4) + tf / 2, 0, birchFundo); // fundo
+    return g;
+  }
+
   const DECOR_BUILDERS = {
+    gaveta_dovetail: buildGavetaDovetail, // migration 203
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
     decor_forno_torre_duplo: buildDecorFornoTorreDuplo,
