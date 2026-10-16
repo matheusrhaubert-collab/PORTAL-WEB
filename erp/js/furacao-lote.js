@@ -323,6 +323,7 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
          de corte (cut_plan_pieces.order_item_ids, migration 158) pra o .ban
          sair com o MESMO código da etiqueta. Ver FURACAO_LOTE._arquivosPorPeca. */
       orderItemId: item.id,
+      orderId: orderId, // separação de ferragens por pedido (LOTES.ferragemMontagem)
       moduleNumber: moduleNumber,
       parts: parts,
       W: item.width_mm, H: item.height_mm, D: item.depth_mm,

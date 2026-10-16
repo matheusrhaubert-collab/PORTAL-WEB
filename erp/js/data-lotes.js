@@ -1545,6 +1545,29 @@ LOTES.processosDosItens = function (items, orderById, piById) {
   };
 
   const alu = new Map(), vid = new Map(), dov = new Map(), montagem = [];
+  /* FERRAGENS (separação, 15/10 — Matt: "corrediças, dobradiças, minifix,
+     cavilha, sistema prateleira... tudo que é comprado, menos processado").
+     Daqui (breakdown) saem: dobradiça, corrediça, peça comprada pronta e kit
+     de suporte. Minifix/cavilha/tambor/suporte de furo NÃO estão no pedido
+     (nascem da furação) — LOTES.ferragemMontagem calcula à parte. */
+  const fer = new Map();
+  const somaFer = function (cat, chave, nome, code, unit, qtd, pedido, mod, extra) {
+    if (!(qtd > 0)) return;
+    const k = cat + '|' + chave;
+    if (!fer.has(k)) fer.set(k, Object.assign({ cat: cat, nome: nome, code: code || null, unit: unit || 'un', total: 0, porMod: {} }, extra || {}));
+    const f = fer.get(k);
+    f.total += qtd;
+    const lm = (pedido ? pedido + '|' : '|') + mod;
+    f.porMod[lm] = (f.porMod[lm] || 0) + qtd;
+  };
+  const catDoItem = function (it, l) {
+    const k = it && it.kind;
+    if (k === 'dobradica') return 'dobradica';
+    if (k === 'corredica') return 'corredica';
+    if (k === 'ferragem_montagem' || k === 'suporte') return 'montagem';
+    if (/dobradi|hinge/i.test(String((it && it.name) || l.reference || ''))) return 'dobradica';
+    return 'comprado';
+  };
   const seq = {};
   (items || []).forEach(function (item) {
     seq[item.order_id] = (seq[item.order_id] || 0) + 1;
@@ -1557,6 +1580,24 @@ LOTES.processosDosItens = function (items, orderById, piById) {
     (function walk(nodes, mult, ctx) {
       (nodes || []).forEach(function (p) {
         const q = (Number(p.quantity) || 1) * mult;
+        // dobradiça/corrediça: valem pra peça-módulo E pra folha
+        if (Number(p.hinge_count) > 0) {
+          somaFer('dobradica', p.hinge_model_id || p.hinge_model_name || '?', p.hinge_model_name || 'Dobradiça (modelo não definido no pedido)',
+            null, 'un', Number(p.hinge_count) * q, pedido, mod);
+        }
+        if (Number(p.slide_cost) > 0) {
+          const spu = Number(p.slides_per_unit) > 0 ? Number(p.slides_per_unit) : 2;
+          const rail = p.slide_model_rail_length_mm ? Math.round(p.slide_model_rail_length_mm) : null;
+          somaFer('corredica', (p.slide_model_id || p.slide_model_name || '?') + '|' + (rail || ''),
+            (p.slide_model_name || 'Corrediça (modelo não definido)') + (rail && !/\d{3}/.test(String(p.slide_model_name || '')) ? ' — ' + rail + ' mm' : ''),
+            null, 'par', spu / 2 * q, pedido, mod);
+        }
+        // kit de suporte que vai junto da peça (pinos da prateleira regulável…)
+        if (Number(p.support_purchased_item_qty) > 0 && (p.support_purchased_item_id || p.support_purchased_item_name)) {
+          const its = piById[p.support_purchased_item_id];
+          somaFer('montagem', p.support_purchased_item_id || p.support_purchased_item_name, (its && its.name) || p.support_purchased_item_name,
+            its && its.code, (its && its.unit) || 'un', Number(p.support_purchased_item_qty) * mult, pedido, mod);
+        }
         if (p.is_module) {
           const filhos = p.child_breakdown || [];
           const tipo = tipoMontagem(p, filhos);
@@ -1581,6 +1622,16 @@ LOTES.processosDosItens = function (items, orderById, piById) {
             quantity: q / (ctx.porta.quantity || 1),
             classe: ehVidro(p) ? 'vidro' : (ehAluminio(p) ? 'aluminio' : (comprado(p) ? 'comprado' : 'madeira'))
           });
+        }
+        // PEÇA COMPRADA PRONTA (pé, puxador, LED avulso…) → separação de
+        // ferragens. Vidro/alumínio (processados) e caixote dovetail (seção
+        // própria) ficam de fora.
+        if (comprado(p) && !ehVidro(p) && !ehAluminio(p) && !LOTES.ehGavetaDovetail(p)) {
+          const it = itemDe(p);
+          const unit = (it && it.unit) || p.purchased_item_unit || 'un';
+          const qtd = Number(p.purchased_item_qty) > 0 ? Number(p.purchased_item_qty) * mult : q;
+          somaFer(catDoItem(it, p), (it && it.id) || p.purchased_item_name || ref, (it && it.name) || p.purchased_item_name || ref,
+            it && it.code, unit, qtd, pedido, mod);
         }
         if (LOTES.ehGavetaDovetail(p)) {
           const k = /^DOVETAIL\b/i.test(ref) ? ref : dims.join('x');
@@ -1609,7 +1660,8 @@ LOTES.processosDosItens = function (items, orderById, piById) {
           const G = alu.get(material);
           const len = Math.max.apply(null, dims);
           const angulo = /45/.test(ref) ? '45°' : '90°';
-          const k = len + '|' + angulo + '|' + ref;
+          // um por módulo (Matt, 15/10: "preciso cabide por cabide pra ser cortado")
+          const k = len + '|' + angulo + '|' + ref + '|' + pedido + '|' + mod;
           if (!G.cortes.has(k)) G.cortes.set(k, { len: len, angulo: angulo, ref: ref, quantity: 0, onde: {}, portas: new Set() });
           const c = G.cortes.get(k); c.quantity += q; (c.onde[pedido] = c.onde[pedido] || new Set()).add(mod);
           if (ondeTxt(ctx)) c.portas.add(ondeTxt(ctx));
@@ -1644,10 +1696,74 @@ LOTES.processosDosItens = function (items, orderById, piById) {
     aluminio: aluminio.reduce(function (s, g) { return s + g.totalPecas; }, 0),
     vidros: vidros.reduce(function (s, v) { return s + v.quantity; }, 0),
     montagem: montagem.reduce(function (s, m) { return s + Math.round(m.quantity); }, 0),
-    dovetail: dovetail.reduce(function (s, g) { return s + g.quantity; }, 0)
+    dovetail: dovetail.reduce(function (s, g) { return s + g.quantity; }, 0),
+    ferragens: fer.size
   };
+  const ferragens = LOTES.listaFerragens(Array.from(fer.values()));
   return { aluminio: aluminio, vidros: vidros, vidrosPorTipo: Object.keys(porTipoVidro).map(function (k) { return porTipoVidro[k]; }),
-    montagem: montagem, dovetail: dovetail, contagem: cont };
+    montagem: montagem, dovetail: dovetail, ferragens: ferragens, contagem: cont };
+};
+
+LOTES.CATS_FERRAGEM = [
+  { id: 'dobradica', label: 'Dobradiças',          icone: '🔗' },
+  { id: 'corredica', label: 'Corrediças',          icone: '↔' },
+  { id: 'montagem',  label: 'Ferragem de montagem (minifix, cavilha, suporte)', icone: '🔩' },
+  { id: 'comprado',  label: 'Outros itens comprados', icone: '📦' }
+];
+/* porMod {'pedido|mod': qtd} → [{pedido, mod, qtd}] ordenado; total arredondado. */
+LOTES.listaFerragens = function (linhas) {
+  const ordemCat = {}; LOTES.CATS_FERRAGEM.forEach(function (c, i) { ordemCat[c.id] = i; });
+  return (linhas || []).map(function (f) {
+    const pm = Object.keys(f.porMod).map(function (k) {
+      const i = k.indexOf('|');
+      return { pedido: k.slice(0, i), mod: k.slice(i + 1), qtd: Math.round(f.porMod[k] * 1000) / 1000 };
+    }).sort(function (a, b) { return a.pedido.localeCompare(b.pedido) || a.mod.localeCompare(b.mod); });
+    return Object.assign({}, f, { total: Math.round(f.total * 1000) / 1000, porMod: pm });
+  }).sort(function (a, b) { return (ordemCat[a.cat] - ordemCat[b.cat]) || a.nome.localeCompare(b.nome); });
+};
+
+/* Ferragem de MONTAGEM (minifix, tambor, cavilha, suporte de prateleira):
+   não fica gravada no pedido — o portal conta na hora a partir dos FUROS
+   (Hardware.consumoDoModulo + regras hardware_rules). Aqui faz a mesma
+   conta com as peças que a furação do lote resolve (FURACAO_LOTE.coletar),
+   módulo a módulo. Lento (resolve o cadastro de cada módulo) — a tela chama
+   depois de abrir. */
+LOTES.ferragemMontagem = async function (batchId, avisar) {
+  if (typeof Hardware === 'undefined' || typeof FURACAO_LOTE === 'undefined') throw new Error('hardware.js/furacao-lote.js não carregados no ERP');
+  if (!Hardware.isLoaded()) {
+    const sb = DATA.sb();
+    const [pi, hr] = await Promise.all([sb.from('purchased_items').select('*'), sb.from('hardware_rules').select('*')]);
+    if (pi.error) throw pi.error;
+    if (hr.error) throw hr.error;
+    Hardware.setCatalog(pi.data || [], hr.data || []);
+  }
+  const col = await FURACAO_LOTE.coletar(batchId, avisar);
+  const nomePedido = {};
+  try {
+    const bo = await LOTES.erp().from('batch_orders').select('order_id').eq('batch_id', batchId);
+    const ids = (bo.data || []).map(function (r) { return r.order_id; });
+    if (ids.length > 1) {
+      const o = await DATA.sb().from('orders').select('id, po_name, client_name').in('id', ids);
+      (o.data || []).forEach(function (x) { nomePedido[x.id] = x.po_name || x.client_name || ''; });
+    }
+  } catch (e) { /* só rótulo */ }
+  const acc = new Map();
+  (col.itens || []).forEach(function (it) {
+    let lista = [];
+    try { lista = Hardware.consumoDoModulo(it.parts, it.W, it.H, it.D, col.config) || []; }
+    catch (e) { console.warn('[ferragem] módulo', it.moduleNumber, e); }
+    lista.forEach(function (l) {
+      const q = (Number(l.qty) || 0) * (it.quantity || 1);
+      if (!(q > 0)) return;
+      if (!acc.has(l.item_id)) acc.set(l.item_id, { cat: (l.kind === 'dobradica' ? 'dobradica' : l.kind === 'corredica' ? 'corredica' : 'montagem'),
+        nome: l.name, code: l.code, unit: l.unit || 'un', total: 0, porMod: {}, daFuracao: true });
+      const f = acc.get(l.item_id);
+      f.total += q;
+      const k = (nomePedido[it.orderId] || '') + '|' + it.moduleNumber;
+      f.porMod[k] = (f.porMod[k] || 0) + q;
+    });
+  });
+  return { linhas: LOTES.listaFerragens(Array.from(acc.values())), semCadastro: col.semCadastro || 0 };
 };
 
 LOTES._procCache = {};

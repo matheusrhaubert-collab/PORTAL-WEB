@@ -1661,7 +1661,8 @@ LOTES_UI.PROC_SECOES = [
   { id: 'aluminio', icone: '🔩', label: 'Alumínio',           sub: 'cortes em outro processo' },
   { id: 'vidros',   icone: '🪟', label: 'Vidros',             sub: 'lista de compra' },
   { id: 'montagem', icone: '🚪', label: 'Montagem de portas', sub: 'shaker, glass door, ripado' },
-  { id: 'dovetail', icone: '🗄', label: 'Gavetas dovetail',   sub: 'caixotes pra comprar' }
+  { id: 'dovetail', icone: '🗄', label: 'Gavetas dovetail',   sub: 'caixotes pra comprar' },
+  { id: 'ferragens', icone: '🔧', label: 'Separação de ferragens', sub: 'dobradiças, corrediças, minifix, cavilha, suportes…' }
 ];
 
 LOTES_UI._pol = function (mm) { return LOTES_UI.mmToFraction(mm, 16); };
@@ -1689,7 +1690,8 @@ LOTES_UI.afterList = async function () {
 
 LOTES_UI.procLoad = async function (p) { return LOTES.processos(p.id, false); };
 
-LOTES_UI.procAfter = function (params) {
+LOTES_UI.procAfter = function (params, d) {
+  LOTES_UI._carregarMontagem(params && params.id, d);
   if (params && params.aba) {
     const el = document.getElementById('lp-sec-' + params.aba);
     if (el) setTimeout(function () { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('lp-sec-foco'); }, 80);
@@ -1793,9 +1795,9 @@ LOTES_UI.proc = function (params, d) {
   const aluHtml = d.aluminio.length ? d.aluminio.map(function (g) {
     txtAlu.push('', g.material + (g.barra_mm ? ' (barra ' + g.barra_mm + ' mm)' : ''));
     const linhas = g.cortes.map(function (ct) {
-      txtAlu.push(ct.quantity + 'x  ' + ct.len + ' mm (' + pol(ct.len) + ')  ' + ct.angulo + '  ' + ct.ref + '  [' + LOTES_UI._ondeTxt(ct.onde, varios) + ']');
+      txtAlu.push(ct.quantity + 'x  ' + ct.len + ' mm  ' + ct.angulo + '  ' + ct.ref + '  [' + LOTES_UI._ondeTxt(ct.onde, varios) + ']');
       return '<tr><td class="lp-qtd">' + ct.quantity + '×</td>' +
-        '<td><b class="lp-medida">' + ct.len + ' mm</b><div class="erp-muted erp-xs">' + pol(ct.len) + '</div></td>' +
+        '<td><b class="lp-medida">' + ct.len + ' mm</b></td>' +
         '<td>' + (ct.angulo === '45°' ? '<span class="lp-ang lp-ang45">◢ 45°</span>' : '<span class="lp-ang">▮ 90°</span>') + '</td>' +
         '<td>' + UI.esc(ct.ref) + (ct.portas.length ? '<div class="erp-muted erp-xs">porta: ' + UI.esc(ct.portas.join(', ')) + '</div>' : '') + '</td>' +
         '<td class="lp-mods">' + UI.esc(LOTES_UI._ondeTxt(ct.onde, varios)) + '</td></tr>';
@@ -1805,14 +1807,18 @@ LOTES_UI.proc = function (params, d) {
       barrasHtml = '<div class="lp-barras-tit">Plano de barra · <b>' + g.barras.length + ' barra(s)</b> de ' + g.barra_mm + ' mm · serra ' + LOTES.KERF_ALU_MM + ' mm por corte</div>' +
         g.barras.map(function (br, i) {
           const segs = br.cortes.map(function (ct) {
-            return '<div class="lp-seg' + (ct.angulo === '45°' ? ' lp-seg45' : '') + '" style="width:' + Math.min(100, ct.len / g.barra_mm * 100).toFixed(2) + '%" title="' + UI.esc(ct.ref + ' · ' + ct.len + ' mm') + '"><span>' + ct.len + '</span></div>';
+            return '<div class="lp-seg' + (ct.angulo === '45°' ? ' lp-seg45' : '') + '" style="width:' + Math.min(100, ct.len / g.barra_mm * 100).toFixed(2) + '%" title="' + UI.esc(ct.ref + ' · ' + ct.len + ' mm') + '"><span>' + ct.len + (ct.onde && ct.onde[0] ? ' · M' + ct.onde[0].mods.join(',') : '') + '</span></div>';
           }).join('');
           const sobra = Math.max(0, g.barra_mm - br.usado);
           return '<div class="lp-barra-row"><span class="lp-barra-n">#' + (i + 1) + '</span><div class="lp-barra' + (br.estoura ? ' lp-barra-estoura' : '') + '">' + segs + '</div>' +
             '<span class="lp-barra-sobra">' + (br.estoura ? 'maior que a barra!' : 'sobra ' + Math.round(sobra) + ' mm') + '</span></div>';
         }).join('');
     } else {
-      barrasHtml = '<div class="erp-muted erp-small lp-barras-tit">Sem comprimento de barra no cadastro do item — total linear <b>' + LOTES_UI._num(g.totalMm / 1000, 2) + ' m</b>.</div>';
+      const inId = 'lp-barra-' + Math.random().toString(36).slice(2, 8);
+      barrasHtml = '<div class="lp-barra-falta lp-noprint">Sem comprimento de barra no cadastro — informe pra gerar o plano de corte: ' +
+        '<input type="number" id="' + inId + '" class="erp-input" style="width:110px" placeholder="ex. 2440" min="100" step="1"> mm ' +
+        '<button type="button" class="erp-btn erp-btn-sm" onclick="LOTES_UI.salvarBarra(' + UI.esc(JSON.stringify(g.material)).replace(/"/g, '&quot;') + ', \'' + inId + '\', this)">Salvar e gerar plano</button>' +
+        ' <span class="erp-muted erp-xs">total linear ' + LOTES_UI._num(g.totalMm / 1000, 2) + ' m</span></div>';
     }
     return '<div class="lp-grupo"><div class="lp-grupo-tit"><span class="lp-tag lp-tag-alu">' + UI.esc(g.material) + '</span>' +
       '<span class="erp-muted erp-small">' + g.totalPecas + ' corte(s) · ' + LOTES_UI._num(g.totalMm / 1000, 2) + ' m</span></div>' +
@@ -1822,8 +1828,8 @@ LOTES_UI.proc = function (params, d) {
   LOTES_UI._procTextos.aluminio = txtAlu.join('\n');
 
   /* ---------- VIDROS ---------- */
-  const txtVid = ['VIDROS — ' + (b.code || ''), 'QTY | WIDTH x HEIGHT | mm | GLASS'];
-  d.vidros.forEach(function (v) { txtVid.push(v.quantity + ' | ' + pol(v.w) + ' x ' + pol(v.h) + ' | ' + v.w + ' x ' + v.h + ' mm | ' + v.tipo); });
+  const txtVid = ['VIDROS — ' + (b.code || ''), 'QTD | LARGURA x ALTURA (mm) | ESPESSURA | VIDRO'];
+  d.vidros.forEach(function (v) { txtVid.push(v.quantity + ' | ' + v.w + ' x ' + v.h + ' mm | esp. ' + v.esp + ' mm | ' + v.tipo); });
   d.vidrosPorTipo.forEach(function (t) { txtVid.push('Total ' + t.tipo + ': ' + t.pecas + ' pcs · ' + t.m2.toFixed(3) + ' m²'); });
   LOTES_UI._procTextos.vidros = txtVid.join('\n');
   const vidHtml = d.vidros.length
@@ -1834,8 +1840,8 @@ LOTES_UI.proc = function (params, d) {
         return '<div class="lp-card lp-card-vidro">' +
           '<div class="lp-card-draw">' + LOTES_UI._svgVidro(v) + '</div>' +
           '<div class="lp-card-info"><div class="lp-qtd-big">' + v.quantity + '×</div>' +
-            '<div class="lp-medida">' + pol(v.w) + ' × ' + pol(v.h) + '</div>' +
-            '<div class="erp-muted erp-small">' + v.w + ' × ' + v.h + ' mm · esp. ' + v.esp + ' mm</div>' +
+            '<div class="lp-medida">' + v.w + ' × ' + v.h + ' mm</div>' +
+            '<div class="erp-muted erp-small">espessura ' + v.esp + ' mm</div>' +
             '<div class="erp-small">' + UI.esc(v.tipo) + '</div>' +
             '<div class="erp-muted erp-xs">' + UI.esc(LOTES_UI._ondeTxt(v.onde, varios)) + (v.portas.length ? ' · ' + UI.esc(v.portas.join(', ')) : '') + '</div>' +
           '</div></div>';
@@ -1859,8 +1865,8 @@ LOTES_UI.proc = function (params, d) {
           '<div class="lp-card-info">' +
             '<div class="lp-card-mod">MÓD ' + m.mod + (varios ? ' · ' + UI.esc(m.pedido) : '') + (m.quantity > 1 ? ' · <b>' + Math.round(m.quantity) + '×</b>' : '') + '</div>' +
             '<div class="erp-strong">' + UI.esc(m.ref) + '</div>' +
-            '<div class="lp-medida">' + pol(m.w) + ' × ' + pol(m.h) + '</div>' +
-            '<div class="erp-muted erp-xs">' + Math.round(m.w) + ' × ' + Math.round(m.h) + ' × ' + m.t + ' mm · ' + UI.esc(m.movel) + '</div>' +
+            '<div class="lp-medida">' + m.w + ' × ' + m.h + ' × ' + m.t + ' mm</div>' +
+            '<div class="erp-muted erp-xs">' + UI.esc(m.movel) + '</div>' +
             (partes ? '<ul class="lp-partes">' + partes + '</ul>' : '') +
           '</div></div>';
       }).join('') + '</div>' : '<div class="erp-muted erp-small lp-mont-nada">nenhuma neste lote</div>') +
@@ -1868,26 +1874,28 @@ LOTES_UI.proc = function (params, d) {
   }).join('');
 
   /* ---------- DOVETAIL ---------- */
-  const txtDov = ['GAVETAS DOVETAIL — ' + (b.code || ''), 'QTY | WIDTH x HEIGHT x DEPTH'];
-  d.dovetail.forEach(function (g) { txtDov.push(g.quantity + ' | ' + pol(g.w) + ' x ' + pol(g.h) + ' x ' + pol(g.d) + '  (' + LOTES_UI._ondeTxt(g.onde, varios) + ')'); });
+  const txtDov = ['GAVETAS DOVETAIL — ' + (b.code || ''), 'QTD | ITEM | LARGURA x ALTURA x PROFUNDIDADE (mm)'];
+  d.dovetail.forEach(function (g) { txtDov.push(g.quantity + ' | ' + g.reference + ' | ' + g.w + ' x ' + g.h + ' x ' + g.d + ' mm  (' + LOTES_UI._ondeTxt(g.onde, varios) + ')'); });
   txtDov.push('Total: ' + c.dovetail);
   LOTES_UI._procTextos.dovetail = txtDov.join('\n');
   const dovHtml = d.dovetail.length
     ? '<table class="erp-table lp-tab"><thead><tr><th>Qtd</th><th>Largura</th><th>Altura</th><th>Profundidade</th><th>Descrição · módulos</th></tr></thead><tbody>' +
       d.dovetail.map(function (g) {
         return '<tr><td class="lp-qtd">' + g.quantity + '×</td>' +
-          '<td><b class="lp-medida">' + pol(g.w) + '</b><div class="erp-muted erp-xs">' + g.w + ' mm</div></td>' +
-          '<td><b class="lp-medida">' + pol(g.h) + '</b><div class="erp-muted erp-xs">' + g.h + ' mm</div></td>' +
-          '<td><b class="lp-medida">' + pol(g.d) + '</b><div class="erp-muted erp-xs">' + g.d + ' mm</div></td>' +
+          '<td><b class="lp-medida">' + g.w + ' mm</b></td>' +
+          '<td><b class="lp-medida">' + g.h + ' mm</b></td>' +
+          '<td><b class="lp-medida">' + g.d + ' mm</b></td>' +
           '<td class="erp-small">' + UI.esc(g.reference) + '<div class="erp-muted erp-xs">' + UI.esc(LOTES_UI._ondeTxt(g.onde, varios)) + '</div></td></tr>';
-      }).join('') + '</tbody><tfoot><tr><td class="lp-qtd">' + c.dovetail + '</td><td colspan="4" class="erp-muted">total de caixotes · birch 5/8", medida externa</td></tr></tfoot></table>'
+      }).join('') + '</tbody><tfoot><tr><td class="lp-qtd">' + c.dovetail + '</td><td colspan="4" class="erp-muted">total de caixotes · birch 15,9 mm, medida externa</td></tr></tfoot></table>'
     : '<div class="lp-vazio">Nenhuma gaveta dovetail neste lote.</div>';
 
+  LOTES_UI._procFerragensBase = d.ferragens;
+  LOTES_UI._procTextos.ferragens = LOTES_UI._ferragensTexto(d.ferragens, [], b.code, varios);
   const tiles = LOTES_UI.PROC_SECOES.map(function (s) {
     let pe;
     if (s.id === 'aluminio') { const m = d.aluminio.reduce(function (t, g) { return t + g.totalMm; }, 0) / 1000; pe = m ? LOTES_UI._num(m, 2) + ' m linear' : 'cortes'; }
     else if (s.id === 'vidros') { const a = d.vidrosPorTipo.reduce(function (t, x) { return t + x.m2; }, 0); pe = a ? LOTES_UI._num(a, 2) + ' m²' : 'peças'; }
-    else pe = s.id === 'montagem' ? 'portas / painéis' : 'caixotes';
+    else pe = s.id === 'montagem' ? 'portas / painéis' : s.id === 'ferragens' ? 'itens diferentes' : 'caixotes';
     return '<button type="button" class="lp-tile lp-bd-' + s.id + (c[s.id] ? '' : ' lp-tile-zero') + '" onclick="LOTES_UI.procIr(\'' + s.id + '\')">' +
       '<span class="lp-tile-ico lp-bg-' + s.id + '">' + s.icone + '</span><span class="lp-tile-lab">' + s.label + '</span>' +
       '<span class="lp-tile-num">' + c[s.id] + '</span><span class="lp-tile-pe">' + pe + '</span></button>';
@@ -1906,8 +1914,107 @@ LOTES_UI.proc = function (params, d) {
     '<div id="lp-root">' +
       '<div class="lp-tiles lp-noprint">' + tiles + '</div>' +
       sec('aluminio', aluHtml, c.aluminio ? 'Cortar na serra de alumínio — medida e ângulo de cada peça, e como aproveitar a barra' : 'vara de cabide, perfil de porta de vidro, perfil de LED', true) +
-      sec('vidros', vidHtml, c.vidros ? 'Medida de cada vidro pro fornecedor (largura × altura)' : 'vidros das portas e qualquer item comprado do tipo vidro', true) +
+      sec('vidros', vidHtml, c.vidros ? 'Medida de cada vidro pro fornecedor (largura × altura, mm)' : 'vidros das portas e qualquer item comprado do tipo vidro', true) +
       sec('montagem', montHtml, 'Portas e painéis que saem do corte e precisam ser montados', false) +
       sec('dovetail', dovHtml, 'Caixotes Hardwood Dovetail pra pedir ao fornecedor', true) +
+      sec('ferragens', LOTES_UI._ferragensHtml(d.ferragens, varios, null), 'Tudo que é comprado pronto, pra separar por módulo antes da montagem', true) +
     '</div>';
+};
+
+
+/* ---------- SEPARAÇÃO DE FERRAGENS (15/10) ---------- */
+LOTES_UI._qtdFer = function (v, unit) {
+  const n = Math.round(v * 100) / 100;
+  const u = unit === 'un' ? '' : ' ' + unit;
+  return (Number.isInteger(n) ? n : String(n).replace('.', ',')) + u;
+};
+LOTES_UI._ferragensTexto = function (base, montagem, code, varios) {
+  const todas = (base || []).concat(montagem || []);
+  const t = ['SEPARAÇÃO DE FERRAGENS — ' + (code || '')];
+  LOTES.CATS_FERRAGEM.forEach(function (c) {
+    const l = todas.filter(function (f) { return f.cat === c.id; });
+    if (!l.length) return;
+    t.push('', c.label.toUpperCase());
+    l.forEach(function (f) {
+      t.push(LOTES_UI._qtdFer(f.total, f.unit) + '  ' + f.nome + (f.code ? ' (' + f.code + ')' : '') + '   — ' +
+        f.porMod.map(function (m) { return (varios && m.pedido ? m.pedido + ' ' : '') + 'M' + m.mod + ': ' + LOTES_UI._qtdFer(m.qtd, f.unit); }).join(', '));
+    });
+  });
+  return t.join('\n');
+};
+LOTES_UI._ferragensHtml = function (base, varios, montagem) {
+  const todas = (base || []).concat(montagem || []);
+  const blocos = LOTES.CATS_FERRAGEM.map(function (c) {
+    const l = todas.filter(function (f) { return f.cat === c.id; });
+    let corpo = l.map(function (f) {
+      const chips = f.porMod.map(function (m) {
+        return '<span class="lp-chip-mod"><b>' + (varios && m.pedido ? UI.esc(m.pedido) + ' · ' : '') + 'MÓD ' + m.mod + '</b> ' + LOTES_UI._qtdFer(m.qtd, f.unit) + '</span>';
+      }).join('');
+      return '<div class="lp-fer-linha">' +
+        '<div class="lp-fer-qtd">' + LOTES_UI._qtdFer(f.total, f.unit) + '</div>' +
+        '<div class="lp-fer-nome"><div class="erp-strong">' + UI.esc(f.nome) + '</div>' +
+          (f.code ? '<div class="erp-muted erp-xs erp-mono">' + UI.esc(f.code) + '</div>' : '') +
+          (f.daFuracao ? '<div class="erp-muted erp-xs">contado pelos furos do lote</div>' : '') + '</div>' +
+        '<div class="lp-fer-mods">' + chips + '</div></div>';
+    }).join('');
+    if (c.id === 'montagem' && montagem === null) {
+      corpo += '<div class="lp-fer-linha lp-fer-carregando" id="lp-fer-montagem"><div class="lp-fer-qtd">…</div>' +
+        '<div class="lp-fer-nome erp-muted">Calculando minifix, tambor, cavilha e suportes pelos furos de cada módulo…</div></div>';
+    }
+    if (!corpo) return '';
+    return '<div class="lp-fer-cat"><div class="lp-mont-tit"><span class="lp-fer-ico">' + c.icone + '</span>' + c.label + '</div>' + corpo + '</div>';
+  }).join('');
+  return blocos || '<div class="lp-vazio">Nenhuma ferragem encontrada nos pedidos deste lote.</div>';
+};
+LOTES_UI._carregarMontagem = async function (batchId, d) {
+  const alvo = document.getElementById('lp-sec-ferragens');
+  if (!alvo || !batchId) return;
+  let r;
+  try {
+    r = await LOTES.ferragemMontagem(batchId, function (msg) {
+      const el = document.querySelector('#lp-fer-montagem .lp-fer-nome'); if (el) el.textContent = 'Calculando ferragem de montagem — ' + msg;
+    });
+  } catch (e) {
+    console.error('[ferragem de montagem]', e);
+    const el = document.getElementById('lp-fer-montagem');
+    if (el) el.innerHTML = '<div class="lp-fer-qtd">!</div><div class="lp-fer-nome erp-error">Não consegui calcular a ferragem de montagem: ' + UI.esc(e.message || e) + '</div>';
+    return;
+  }
+  if (!document.body.contains(alvo)) return;
+  const varios = d && (d.pedidos || []).length > 1;
+  const base = (d && d.ferragens) || [];
+  // corpo da seção = tudo de novo, agora com a ferragem de montagem
+  const head = alvo.querySelector('.lp-sec-head');
+  alvo.innerHTML = '';
+  if (head) alvo.appendChild(head);
+  alvo.insertAdjacentHTML('beforeend', LOTES_UI._ferragensHtml(base, varios, r.linhas) +
+    (r.semCadastro ? '<div class="erp-note">' + r.semCadastro + ' módulo(s) sem cadastro de peças — a ferragem de montagem deles não entrou.</div>' : ''));
+  LOTES_UI._procTextos.ferragens = LOTES_UI._ferragensTexto(base, r.linhas, d && d.batch && d.batch.code, varios);
+  const tile = document.querySelector('.lp-tile.lp-bd-ferragens .lp-tile-num');
+  if (tile) tile.textContent = base.length + r.linhas.length;
+};
+
+/* Comprimento da barra direto da tela de processos (cabide sem barra no
+   cadastro não tinha plano de corte). Grava em purchased_items.attrs.barra_mm. */
+LOTES_UI.salvarBarra = async function (itemNome, inputId, btn) {
+  const v = Number((document.getElementById(inputId) || {}).value);
+  if (!(v > 100)) { alert('Informe o comprimento da barra em mm (ex.: 2440).'); return; }
+  LOTES_UI.busy(btn, true, 'Salvando…');
+  try {
+    const sb = DATA.sb();
+    const { data, error } = await sb.from('purchased_items').select('id, attrs').eq('name', itemNome);
+    if (error) throw error;
+    if (!data || !data.length) throw new Error('Item "' + itemNome + '" não achado no cadastro de itens comprados.');
+    for (const it of data) {
+      const attrs = Object.assign({}, it.attrs || {}, { barra_mm: v });
+      const u = await sb.from('purchased_items').update({ attrs: attrs }).eq('id', it.id);
+      if (u.error) throw u.error;
+    }
+    LOTES._procCache = {};
+    APP.render();
+  } catch (e) {
+    console.error(e);
+    alert('Não consegui salvar: ' + (e.message || e));
+    LOTES_UI.busy(btn, false);
+  }
 };
