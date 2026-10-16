@@ -1009,6 +1009,7 @@ function renderProjectConfigPanel() {
     ${pieceDimsBlock}
     ${positionRow}
     ${doorModelBlock}
+    ${projectDoorSideBlock(slot)}
     ${drawerModelBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     ${moveBlock}
@@ -1093,6 +1094,13 @@ function renderProjectConfigPanel() {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected') || el.classList.contains('blocked')) return;
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
+    });
+  });
+  // Lado da porta (15/10)
+  panel.querySelectorAll('.po-proj-door-side-btn').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('active')) return;
+      setProjectDoorSide(slot, el.dataset.pieceId, el.dataset.side);
     });
   });
   // Modelo de gaveta (migration 203)
@@ -4437,7 +4445,9 @@ function resetSelectedProjectPieceAdjustment() {
   if (!slot || !slot.pieceAdjustments || !slot.pieceAdjustments[projectSelectedPiece.pieceId]) return;
   pushProjectUndoState();
   const copia = Object.assign({}, slot.pieceAdjustments);
+  const ladoPorta = copia[projectSelectedPiece.pieceId] && copia[projectSelectedPiece.pieceId].hinge;
   delete copia[projectSelectedPiece.pieceId];
+  if (ladoPorta) copia[projectSelectedPiece.pieceId] = { hinge: ladoPorta };   // lado da porta não é "ajuste de medida"
   slot.pieceAdjustments = copia;
   recomputeProjectSlotPricing(slot);
   renderProjectCanvas();
@@ -4464,7 +4474,8 @@ function startProjectPieceDrag(ev, domEl, mode, axis) {
   projectPieceDragState = {
     pointerId: ev.pointerId, slotId: slot.id, pieceId: projectSelectedPiece.pieceId,
     mode, axis, startX: ev.clientX, startY: ev.clientY, frame,
-    startAdj: { dx: atual.dx || 0, dy: atual.dy || 0, dz: atual.dz || 0, dw: atual.dw || 0, dh: atual.dh || 0, dd: atual.dd || 0 },
+    startAdj: Object.assign({ dx: atual.dx || 0, dy: atual.dy || 0, dz: atual.dz || 0, dw: atual.dw || 0, dh: atual.dh || 0, dd: atual.dd || 0 },
+      atual.hinge ? { hinge: atual.hinge } : {}),
     undoFeito: false, raf: null, moved: false
   };
   try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
@@ -4614,4 +4625,44 @@ async function renderProjectSideModelPanel() {
     await setAllProjectDrawerModels(el.dataset.id || null);
   }));
   void aviso;
+}
+
+
+/* LADO DA PORTA (2026-10-15) — portas de giro do módulo (já com modelo de
+   porta / Construtor / ajuste aplicados) e o lado efetivo de cada uma.
+   Peça-módulo de porta (modelo) conta como UMA porta (não desce nos filhos). */
+function projectSlotHingedDoors(slot) {
+  let pecas = [];
+  try { pecas = projectSlotEffectivePieces(slot) || []; } catch (e) { pecas = []; }
+  const out = [];
+  (function anda(lista) {
+    (lista || []).forEach((p) => {
+      if (!p) return;
+      const ot = String(p.opening_type || '');
+      if (p.is_module && /^hinge_(left|right)$/.test(ot)) { out.push({ id: p.id, nome: p.reference || p.module_name || '', lado: ot.slice(6) }); return; }
+      if (p.is_module) { anda(p.child_pieces); return; }
+      if (p.hinge_side === 'left' || p.hinge_side === 'right') out.push({ id: p.id, nome: p.reference_override || p.reference || '', lado: p.hinge_side });
+    });
+  })(pecas);
+  return out.filter((d) => d.id != null);
+}
+function projectDoorSideBlock(slot) {
+  const portas = projectSlotHingedDoors(slot);
+  if (!portas.length) return '';
+  const linhas = portas.map((d, i) => {
+    const btn = (lado) => `<button type="button" class="po-proj-door-side-btn${d.lado === lado ? ' active' : ''}" data-piece-id="${String(d.id).replace(/"/g, '&quot;')}" data-side="${lado}">${lado === 'left' ? '⟲ ' : ''}${I18n.t(lado === 'left' ? 'project.door_side_left' : 'project.door_side_right')}${lado === 'right' ? ' ⟳' : ''}</button>`;
+    return `<div class="po-proj-door-side-row">${portas.length > 1 ? `<span class="po-proj-door-side-nome">${d.nome || (I18n.t('project.door_side_door') + ' ' + (i + 1))}</span>` : ''}<div class="po-proj-door-side-btns">${btn('left')}${btn('right')}</div></div>`;
+  }).join('');
+  return `<div class="po-proj-config-door-side"><span class="po-proj-config-section-label">${I18n.t('project.door_side_label')}</span>${linhas}</div>`;
+}
+function setProjectDoorSide(slot, pieceId, lado) {
+  if (!slot || pieceId == null || (lado !== 'left' && lado !== 'right')) return;
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  const todos = Object.assign({}, slot.pieceAdjustments || {});
+  todos[pieceId] = Object.assign({}, todos[pieceId] || {}, { hinge: lado });
+  slot.pieceAdjustments = todos;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[lado da porta]', e); }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
 }

@@ -435,6 +435,20 @@ function applyPieceAdjustmentsDeep(piecesList, adjustments) {
         _adjusted: true
       });
     }
+    // LADO DA PORTA (2026-10-15, Matt: "uma opção pra quando for porta, abrir
+    // pra direita ou esquerda"). a.hinge = 'left'|'right' troca o lado da
+    // dobradiça da porta de giro: folha (hinge_side) ou peça-módulo/modelo
+    // de porta (opening_type). Mora no piece_adjustments de propósito: já é
+    // salvo no pedido e aplicado pelo ERP (.ban/3D) — copo e chapinha furam
+    // do lado certo sem coluna nova.
+    if (a && (a.hinge === 'left' || a.hinge === 'right')) {
+      if (out.is_module && /^hinge_(left|right)$/.test(String(out.opening_type || ''))) {
+        out = Object.assign({}, out, { opening_type: 'hinge_' + a.hinge });
+      } else if (out.hinge_side === 'left' || out.hinge_side === 'right') {
+        out = Object.assign({}, out, { hinge_side: a.hinge,
+          opening_type: /^hinge_/.test(String(out.opening_type || '')) ? 'hinge_' + a.hinge : out.opening_type });
+      }
+    }
     if (Array.isArray(p.child_pieces) && p.child_pieces.length) {
       const kids = applyPieceAdjustmentsDeep(p.child_pieces, adjustments);
       if (kids !== p.child_pieces) out = Object.assign({}, out, { child_pieces: kids });

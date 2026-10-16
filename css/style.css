@@ -5626,3 +5626,11 @@ body.po-barra-fixa-on .po-proj-config-col {
 .po-proj-side-model > label { font-weight: 600; display: block; margin-bottom: 2px; }
 .po-proj-side-model .po-proj-config-door-models { margin-top: 10px; }
 .po-proj-side-model-aviso { color: #9a6a00; }
+
+/* Lado da porta — painel do módulo (2026-10-15) */
+.po-proj-config-door-side { margin: 10px 0; }
+.po-proj-door-side-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.po-proj-door-side-nome { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-proj-door-side-btns { display: flex; gap: 4px; margin-left: auto; }
+.po-proj-door-side-btn { padding: 5px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); cursor: pointer; }
+.po-proj-door-side-btn.active { background: var(--accent, #8a5a34); color: #fff; border-color: transparent; }
