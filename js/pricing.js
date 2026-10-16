@@ -1093,6 +1093,18 @@
     return null;
   }
 
+  // mm -> polegada com fração de 1/16 ("33 3/4\""), pra nome de item comprado.
+  function polegadas(mm) {
+    const v = (Number(mm) || 0) / 25.4;
+    let w = Math.floor(v + 1e-9);
+    let n = Math.round((v - w) * 16);
+    if (n === 16) { w += 1; n = 0; }
+    if (!n) return w + '"';
+    let d = 16;
+    while (n % 2 === 0) { n /= 2; d /= 2; }
+    return (w ? w + ' ' : '') + n + '/' + d + '"';
+  }
+
   function calculateLeafPiece(piece, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE, sibVars) {
     const quantityOverride = piece.quantity_configurable ? shelfQuantities[piece.id] : undefined;
     const dimOverride = piece.client_dimension_configurable && dimOverrides ? dimOverrides[piece.id] : undefined;
@@ -1250,9 +1262,16 @@
 
     const piece_total = sheet_cost + edge_cost + labor_cost + purchased_cost + hinge_cost + slide_cost;
 
+    // CAIXOTE DOVETAIL COMPRADO (migration 203) — nome = o que vai pro
+    // fornecedor (Matt, 15/10: "DOVETAIL BIRCH DRAWER LARGURA X ALTURA X
+    // PROFUNDIDADE"), em polegadas, medida real desta gaveta. Vale pro
+    // $ Fábrica, lista de compra, etiqueta e pedido (tudo lê o breakdown).
+    const nomeDovetail = piece.drawer_model_name
+      ? 'DOVETAIL BIRCH DRAWER ' + polegadas(pieceDims.width_mm) + ' x ' + polegadas(pieceDims.height_mm) + ' x ' + polegadas(pieceDims.depth_mm)
+      : null;
     return {
       piece_id: piece.id,
-      reference: piece.reference,
+      reference: nomeDovetail || piece.reference,
       // Descrição do componente (campo "notes" do cadastro, ver admin.js) —
       // usada só pra listagem/lista de peças (corte), não afeta cálculo
       // nenhum. Ausente em pedidos gravados ANTES desta mudança (o

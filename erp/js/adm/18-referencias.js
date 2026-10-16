@@ -282,7 +282,8 @@ async function openOrderCutlist(order) {
           return (w ? w + ' ' : '') + n + '/' + d + '"';
         };
         const descricao = leaf.drawer_model
-          ? `${pol(leaf.width_mm)} W × ${pol(leaf.height_mm)} H × ${pol(leaf.depth_mm)} D (${Math.round(leaf.width_mm)} × ${Math.round(leaf.height_mm)} × ${Math.round(leaf.depth_mm)} mm)`
+          // o nome (reference) já é "DOVETAIL BIRCH DRAWER L x A x P" em polegadas (pricing.js)
+          ? `${Math.round(leaf.width_mm)} × ${Math.round(leaf.height_mm)} × ${Math.round(leaf.depth_mm)} mm`
           : leaf.description;
         const key = [item.module_name, leaf.reference, descricao].join('|');
         if (!groupedPurchase.has(key)) {

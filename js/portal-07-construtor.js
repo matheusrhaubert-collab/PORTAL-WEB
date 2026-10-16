@@ -339,6 +339,22 @@ function projectBuilderRootZoneEfetiva(zonaAuto, root, slot) {
   }
   if (x0 + w > W) { if (x0 > W - PROJECT_BUILDER_MIN_VAO) x0 = Math.max(0, W - PROJECT_BUILDER_MIN_VAO); w = Math.max(PROJECT_BUILDER_MIN_VAO, W - x0); }
   if (y0 + h > H) { if (y0 > H - PROJECT_BUILDER_MIN_VAO) y0 = Math.max(0, H - PROJECT_BUILDER_MIN_VAO); h = Math.max(PROJECT_BUILDER_MIN_VAO, H - y0); }
+  // BORDA ÍMÃ (2026-10-15, Matt: "parece estar menor do que o vão" — lateral
+  // divisória parando 4 mm abaixo do stretcher). Override salvo com a zona
+  // deduzida de uma versão anterior (909.5 de altura contra 913.7 de hoje)
+  // ficava alguns mm fora das peças do casco, e ninguém enxerga 4 mm no 2D
+  // do Construtor. Borda a até IMA_MM da borda deduzida do casco = é a
+  // mesma borda: gruda nela. Ajuste de verdade (maior que isso) continua
+  // valendo como sempre.
+  const IMA_MM = 6;
+  const ax0 = zonaAuto.x, ax1 = zonaAuto.x + zonaAuto.w, ay0 = zonaAuto.y, ay1 = zonaAuto.y + zonaAuto.h;
+  let x1 = x0 + w, y1 = y0 + h;
+  if (Math.abs(x0 - ax0) <= IMA_MM) x0 = ax0;
+  if (Math.abs(x1 - ax1) <= IMA_MM) x1 = ax1;
+  if (Math.abs(y0 - ay0) <= IMA_MM) y0 = ay0;
+  if (Math.abs(y1 - ay1) <= IMA_MM) y1 = ay1;
+  w = Math.max(PROJECT_BUILDER_MIN_VAO, x1 - x0);
+  h = Math.max(PROJECT_BUILDER_MIN_VAO, y1 - y0);
   return Object.assign({}, zonaAuto, { x: x0, y: y0, w: w, h: h });
 }
 

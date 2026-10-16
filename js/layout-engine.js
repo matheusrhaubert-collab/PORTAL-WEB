@@ -1325,7 +1325,23 @@
     resolveGavetaLateralSharing();
     // Milímetro inteiro — ver comentário no topo do arquivo.
     out.forEach(function (p) {
-      ['x', 'y', 'z', 'w', 'h', 'd'].forEach(function (k) { p[k] = Math.round(p[k]); });
+      // ARREDONDA AS BORDAS, NÃO posição e tamanho separados (2026-10-15,
+      // Matt: lateral divisória "deslocada pra dentro da peça de baixo").
+      // Com chapa de 19.5 e vão começando em .5 (zona 95.5), arredondar y e
+      // h cada um por si dava base divisória em 541+20 = 561 e a peça de
+      // cima começando em 560 — 1 mm enfiada uma na outra (ou 1 mm de
+      // folga, conforme o meio-milímetro caísse). Arredondando cada BORDA
+      // (início e fim), duas peças que encostam no valor exato continuam
+      // encostando no mm inteiro, que é o que a regra do topo do arquivo
+      // pede. A espessura pode sair 19 ou 20 em vez de 19.5→20 sempre — o
+      // material/E da peça vem da cor, não daqui.
+      [['x', 'w'], ['y', 'h'], ['z', 'd']].forEach(function (par) {
+        var a = p[par[0]], t = p[par[1]];
+        if (!isFinite(a) || !isFinite(t)) { p[par[0]] = Math.round(a); p[par[1]] = Math.round(t); return; }
+        var e0 = Math.round(a), e1 = Math.round(a + t);
+        p[par[0]] = e0;
+        p[par[1]] = (e1 - e0 > 0 || !(t > 0)) ? e1 - e0 : Math.max(1, Math.round(t));
+      });
       // Grade de furos do vão (prateleira regulável) em coordenadas
       // ABSOLUTAS do módulo (mesmo referencial de x/y/z da peça). ABSOLUTA de
       // propósito (2ª rodada, 15/10): o portal recorta a profundidade da
