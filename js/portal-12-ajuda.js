@@ -921,8 +921,21 @@ function closeHelpModal() {
     if (fantasma) { fantasma.classList.remove('ativo'); fantasma.style.height = ''; }
   }
 
+  /* COLUNAS JUNTO (2026-10-15, Matt: "quando o ícone de travar a barra
+     está ativo, quero que trave também as colunas da esquerda e da
+     direita"). Com o alfinete ligado, a lista de módulos (esquerda) e o
+     painel do módulo (direita) ficam sticky logo abaixo da barra — cada uma
+     com rolagem própria (CSS body.po-barra-fixa-on, fim do style.css). */
+  function colunas() {
+    document.body.classList.toggle('po-barra-fixa-on', !!ligado);
+    if (ligado && barra && barra.offsetHeight) {
+      document.documentElement.style.setProperty('--po-tb-h', (barra.offsetHeight + 8) + 'px');
+    }
+  }
+
   function atualizar() {
     if (!barra || !fantasma) return;
+    colunas();
     // aba escondida (barra sem tamanho) ou desligado: nada gruda
     if (!ligado || !barra.offsetParent && !barra.classList.contains('po-tb-grudada')) { soltar(); return; }
     // referência = onde a barra estaria (o fantasma, quando grudada)
@@ -967,6 +980,7 @@ function closeHelpModal() {
       ligado = !ligado;
       gravar(ligado);
       pintarBotao();
+      colunas();
       atualizar();
     });
     // capture: pega a rolagem da janela E de qualquer container que role

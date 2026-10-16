@@ -5604,3 +5604,19 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 /* Modelo de porta / de gaveta no item do pedido (2026-10-15) */
 .po-order-item-models { margin: 4px 0 6px; font-size: 13px; color: var(--muted, #6b665c); line-height: 1.5; }
 .po-order-item-models strong { color: var(--text, #1f1d18); font-weight: 600; }
+
+/* Barra fixa LIGADA → colunas da esquerda (módulos) e da direita (painel do
+   módulo) também travam, logo abaixo da barra, com rolagem própria
+   (2026-10-15). --po-tb-h = altura da barra, setada em portal-12-ajuda.js. */
+body.po-barra-fixa-on .po-proj-library,
+body.po-barra-fixa-on .po-proj-config-col {
+  position: sticky;
+  top: var(--po-tb-h, 90px);
+  max-height: calc(100vh - var(--po-tb-h, 90px) - 10px);
+  overflow-y: auto;
+  align-self: start;
+}
+@media (max-width: 980px) {
+  body.po-barra-fixa-on .po-proj-library,
+  body.po-barra-fixa-on .po-proj-config-col { position: static; max-height: none; }
+}
