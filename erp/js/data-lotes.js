@@ -205,6 +205,23 @@ LOTES.cutDimsPeloVeio = function (leaf, hasGrain) {
   return { espessura_mm: dims[fino], largura_mm: dims[outro], comprimento_mm: dims[eixo] };
 };
 
+/* ESPESSURA = A DA COR, SEMPRE (2026-10-15, Matt, LT-26-0016 saiu com 3
+   espessuras de White Tossini — 19, 19.5 e 20 — e virou 3 grupos de chapa).
+   A medida "fina" da peça não é confiável como espessura: peça do
+   Construtor vem em milímetro inteiro (layout-engine arredonda as bordas,
+   19.5 vira 19 ou 20). Chapa é UM material: a espessura vem do cadastro da
+   COR (colors.thickness_mm — plywood 18) e, sem valor cadastrado, 19.5
+   (Egger/MDF — mesmo padrão do E em pricing.js). Sem cor nenhuma, fica a
+   medida que veio. */
+LOTES.ESPESSURA_PADRAO_MM = 19.5;
+LOTES.espessuraDaCor = function (color, medida) {
+  if (color) {
+    const t = Number(color.thickness_mm);
+    return t > 0 ? t : LOTES.ESPESSURA_PADRAO_MM;
+  }
+  return Number(medida) || 0;
+};
+
 LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGaveta) {
   out = out || [];
   // PEÇA DE GAVETA COM "(drawer)" NO NOME (2026-10-08, Matt: "componentes de
@@ -464,7 +481,7 @@ LOTES.explodeOrders = async function (orderIds) {
         description: leaf.description,
         comprimento_mm: dims.comprimento_mm,
         largura_mm: dims.largura_mm,
-        espessura_mm: dims.espessura_mm,
+        espessura_mm: LOTES.espessuraDaCor(color, dims.espessura_mm),
         quantity: leaf.quantity,
         color_id: color ? color.id : (sc ? sc.color_id : null),
         color_name: sc ? sc.color_name : null,
@@ -514,7 +531,7 @@ LOTES.explodeOrders = async function (orderIds) {
       description: r.obs || '—',   // a coluna é 'obs' (migration 051), não 'notes'
       comprimento_mm: Number(r.comprimento_mm) || 0,
       largura_mm: Number(r.largura_mm) || 0,
-      espessura_mm: Number(r.espessura_mm) || 0,
+      espessura_mm: LOTES.espessuraDaCor(color, r.espessura_mm),
       quantity: Math.max(1, Math.round(Number(r.quantity)) || 1),
       color_id: r.color_id || null,
       color_name: color ? color.name : null,

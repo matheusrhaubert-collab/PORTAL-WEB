@@ -590,7 +590,8 @@ LOTES_UI.adicionarPeca = async function (batchId, btn) {
       description: v('np-desc') || '—',
       comprimento_mm: dims.comprimento_mm,
       largura_mm: dims.largura_mm,
-      espessura_mm: dims.espessura_mm,
+      // espessura da COR (LOTES.espessuraDaCor) — mesmo material, mesmo grupo de chapa
+      espessura_mm: LOTES.espessuraDaCor(color, dims.espessura_mm),
       quantity: Math.max(1, Math.round(Number(v('np-qtd'))) || 1),
       color_id: colorId,
       color_name: color ? color.name : null,
