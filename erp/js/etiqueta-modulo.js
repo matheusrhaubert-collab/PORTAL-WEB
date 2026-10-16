@@ -362,7 +362,9 @@ ETIQUETA_MODULO.dataUS = function (iso) {
 
 ETIQUETA_MODULO.label = function (x, lote, idx) {
   const E = ETIQUETA_MODULO, esc = UI.esc;
-  const it = x.item, ped = x.pedido;
+  // nota técnica de migration não vai pra etiqueta (migration 207, 15/10)
+  const it = Object.assign({}, x.item, /migration\s*\d+/i.test(String(x.item.module_description || '')) ? { module_description: null } : {});
+  const ped = x.pedido;
   const W = Number(it.width_mm) || 0, H = Number(it.height_mm) || 0, D = Number(it.depth_mm) || 0;
   const volM3 = W * H * D / 1e9;
   const pl = it.project_placement || {};

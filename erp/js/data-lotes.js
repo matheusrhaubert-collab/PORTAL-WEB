@@ -333,7 +333,12 @@ LOTES.explodeOrders = async function (orderIds) {
   const missingGrainIds = new Set();
   (itemsRes.data || []).forEach(function (item) {
     LOTES.flattenBreakdown(item.breakdown, 1).forEach(function (leaf) {
-      if (typeof leaf.edge_banding !== 'number' && leaf.piece_id) missingPieceIds.add(leaf.piece_id);
+      /* Só id de CADASTRO (uuid de module_components). Peça do Construtor
+         ('lay:<nó>:<i>:<id>') ou de modelo trocado ('dm:…'/'gm:…') não existe
+         no catálogo — e um id assim no .in() derrubava a consulta inteira:
+         "invalid input syntax for type uuid" ao criar o lote (Matt,
+         15/10). Essas ficam com o snapshot do pedido. */
+      if (typeof leaf.edge_banding !== 'number' && leaf.piece_id && UUID_RE.test(String(leaf.piece_id))) missingPieceIds.add(leaf.piece_id);
       /* 2026-10-09 (LT-26-0015): TODA peça de catálogo recalcula o eixo do
          veio pelo cadastro, não só a que não tem snapshot — o grain_axis
          gravado no pedido antes de hoje caía no LADO LONGO pra

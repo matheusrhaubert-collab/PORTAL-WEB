@@ -163,7 +163,7 @@ function renderCartItemRow(it, removable) {
       ${thumb}
       <div class="portal-item-info">
         <div class="portal-item-title">${it.module_name}</div>
-        ${it.module_description ? `<div class="hint">${it.module_description}</div>` : ''}
+        ${descricaoParaCliente(it.module_description) ? `<div class="hint">${descricaoParaCliente(it.module_description)}</div>` : ''}
         ${colorsLine ? `<div>${colorsLine}</div>` : ''}
         <div>${dimsLine}</div>
         ${qtyLine}
@@ -1745,7 +1745,7 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
       <div class="po-order-item-info">
         <div class="po-order-item-dims">${dimsLine}</div>
         <div class="po-order-item-reference">${it.module_name}</div>
-        ${it.module_description ? `<div class="po-order-item-description">${it.module_description}</div>` : ''}
+        ${descricaoParaCliente(it.module_description) ? `<div class="po-order-item-description">${descricaoParaCliente(it.module_description)}</div>` : ''}
         ${modelosHtml}
         ${colorsHtml}
       </div>
@@ -1758,6 +1758,16 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
       </div>
     </div>
   `;
+}
+
+// Descrição do módulo que pode ir pro cliente (2026-10-15, Matt: "tá
+// aparecendo essa mensagem no pedido... nem sei o que significa"). Nota
+// técnica de migration ("Carcaça gerada pela matriz (migration 093)...")
+// nunca aparece — a migration 207 limpa o banco; isto segura o que vier.
+function descricaoParaCliente(txt) {
+  const t = String(txt || '').trim();
+  if (!t || /migration\s*\d+/i.test(t)) return '';
+  return t;
 }
 
 // MODELO DE PORTA / MODELO DE GAVETA no item do pedido (2026-10-15, Matt:
