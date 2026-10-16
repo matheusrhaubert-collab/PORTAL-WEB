@@ -268,3 +268,85 @@
   display: flex; align-items: center; justify-content: center;
 }
 .pc3-modal-close:hover { background: #eae7e0; }
+
+/* ============================================================
+   Processos fora da chapa do lote (#/lotes/:id/processos) — 15/10
+   ============================================================ */
+.lp-card-btns { display: contents; }
+.lp-badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 17px; text-align: center; margin-left: 2px; }
+.lp-bg-aluminio { background: #5f6b73 !important; }
+.lp-bg-vidros   { background: #3b6ea5 !important; }
+.lp-bg-montagem { background: #8a5a34 !important; }
+.lp-bg-dovetail { background: #b07a2a !important; }
+.lp-bd-aluminio { border-top-color: #5f6b73 !important; }
+.lp-bd-vidros   { border-top-color: #3b6ea5 !important; }
+.lp-bd-montagem { border-top-color: #8a5a34 !important; }
+.lp-bd-dovetail { border-top-color: #b07a2a !important; }
+
+.lp-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+@media (max-width: 900px) { .lp-tiles { grid-template-columns: repeat(2, 1fr); } }
+.lp-tile { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; column-gap: 12px; align-items: center; text-align: left;
+  background: var(--panel); border: 1px solid var(--border); border-top: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px; cursor: pointer; box-shadow: var(--shadow); font: inherit; color: var(--text); }
+.lp-tile:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+.lp-tile-ico { grid-row: 1 / span 3; width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.lp-tile-lab { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.lp-tile-num { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.lp-tile-pe { font-size: 12px; color: var(--muted); }
+.lp-tile-zero { opacity: .5; }
+
+.lp-sec { margin-bottom: 18px; scroll-margin-top: 70px; }
+.lp-sec-foco { animation: lpFoco 1.6s ease-out 1; }
+@keyframes lpFoco { 0% { box-shadow: 0 0 0 4px rgba(138,90,52,.45); } 100% { box-shadow: var(--shadow); } }
+.lp-sec-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.lp-sec-tit { display: flex; align-items: center; gap: 12px; }
+.lp-sec-ico { width: 38px; height: 38px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+.lp-sec-nome { font-size: 17px; font-weight: 700; }
+.lp-vazio { padding: 18px; text-align: center; color: var(--muted); background: #faf9f6; border: 1px dashed var(--border); border-radius: 8px; }
+
+.lp-tab td { vertical-align: middle; }
+.lp-qtd { font-size: 17px; font-weight: 700; text-align: center; white-space: nowrap; }
+.lp-medida { font-size: 15px; font-weight: 700; }
+.lp-mods { font-size: 12px; color: var(--muted); }
+.lp-ang { display: inline-block; padding: 2px 8px; border-radius: 6px; background: #eef0f1; font-size: 12px; font-weight: 600; color: #444; }
+.lp-ang45 { background: #fdf0d8; color: #8a5a00; }
+
+.lp-grupo { margin-bottom: 18px; }
+.lp-grupo-tit { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.lp-tag { display: inline-block; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 13px; }
+.lp-tag-alu { background: linear-gradient(180deg, #e9ecee, #cfd5d9); color: #333; border: 1px solid #b9c1c6; }
+.lp-barras-tit { margin: 10px 0 6px; font-size: 12px; color: var(--muted); }
+.lp-barra-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.lp-barra-n { width: 28px; font-size: 11px; color: var(--muted); text-align: right; }
+.lp-barra { flex: 1; display: flex; gap: 2px; height: 26px; padding: 2px; border-radius: 5px;
+  background: repeating-linear-gradient(45deg, #f1efea, #f1efea 5px, #e6e2da 5px, #e6e2da 10px); border: 1px solid #d5d0c6; overflow: hidden; }
+.lp-barra-estoura { border-color: var(--danger); }
+.lp-seg { background: linear-gradient(180deg, #c9d0d4, #9aa5ac); border-radius: 3px; display: flex; align-items: center; justify-content: center; min-width: 16px; overflow: hidden; }
+.lp-seg span { font-size: 10px; font-weight: 700; color: #222; white-space: nowrap; }
+.lp-seg45 { clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 100%, 0 100%); }
+.lp-barra-sobra { width: 104px; font-size: 11px; color: var(--muted); }
+
+.lp-resumo-vidro { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.lp-chip-vidro { display: flex; flex-direction: column; padding: 8px 14px; border-radius: 8px; background: #eaf3fa; border: 1px solid #cfe0ef; color: #2d5680; }
+.lp-chip-vidro span { font-size: 12px; }
+
+.lp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
+.lp-card { display: flex; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.lp-card-porta { border-top: 4px solid var(--accent); }
+.lp-card-draw { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-width: 90px; }
+.lp-card-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lp-card-mod { font-size: 11px; font-weight: 700; color: var(--accent-dark); letter-spacing: .04em; }
+.lp-qtd-big { font-size: 24px; font-weight: 800; color: #2d5680; line-height: 1; }
+.lp-svg-cota { font-size: 10px; fill: #555; font-family: inherit; }
+.lp-partes { list-style: none; margin: 6px 0 0; padding: 0; font-size: 12px; }
+.lp-parte { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0 3px 8px; border-left: 3px solid #ccc; margin-bottom: 2px; }
+.lp-parte-madeira { border-left-color: #d9b48a; }
+.lp-parte-vidro { border-left-color: #7fb3d9; }
+.lp-parte-aluminio { border-left-color: #9aa5ac; }
+.lp-parte-comprado { border-left-color: #c8c2b6; }
+
+.lp-mont-tipo { margin-bottom: 16px; }
+.lp-mont-tit { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.lp-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.lp-mont-vazio { opacity: .55; }
+.lp-mont-nada { padding: 2px 0 2px 18px; }
+.lp-parte .erp-mono { white-space: nowrap; font-size: 11px; }

@@ -260,7 +260,7 @@ APP.routes = [
   /* Lotes e Plano de Corte — migration 081, schema erp. As telas vivem em
      screens-lotes.js e são as PRIMEIRAS do módulo de produção com dado real:
      tudo aqui lê e escreve no Supabase, sem mock. */
-  { re: /^#\/lotes$/,           load: LOTES_UI.listLoad,                   render: LOTES_UI.list,                 nav: '#/lotes' },
+  { re: /^#\/lotes$/,           load: LOTES_UI.listLoad,                   render: LOTES_UI.list,                 nav: '#/lotes', after: LOTES_UI.afterList },
   { re: /^#\/lotes\/novo$/,     load: LOTES_UI.novoLoad,                   render: LOTES_UI.novo,                 nav: '#/lotes' },
   { re: /^#\/lotes\/([^/]+)\/plano$/, load: LOTES_UI.planNewLoad,          render: LOTES_UI.planNew,              nav: '#/lotes', after: LOTES_UI.afterPlanNew },
   /* Visualizador de furação do lote (2026-08-16, pedido do Matt: "como eu vejo
@@ -269,6 +269,8 @@ APP.routes = [
      o plano — dá pra mandar o link pra fábrica. Precisa vir ANTES da rota
      genérica #/lotes/:id, senão o :id come o "/furacao". */
   { re: /^#\/lotes\/([^/]+)\/furacao$/, load: FURACAO_VISUAL.load,        render: FURACAO_VISUAL.render,         nav: '#/lotes' },
+  // Processos fora da chapa (alumínio, vidros, montagem de portas, dovetail) — 15/10
+  { re: /^#\/lotes\/([^/]+)\/processos$/, load: LOTES_UI.procLoad,       render: LOTES_UI.proc,                 nav: '#/lotes', after: LOTES_UI.procAfter },
   { re: /^#\/lotes\/([^/]+)$/,  load: LOTES_UI.detailLoad,                 render: LOTES_UI.detail,               nav: '#/lotes' },
   { re: /^#\/planos$/,          load: LOTES_UI.plansLoad,                  render: LOTES_UI.plansList,            nav: '#/planos' },
   { re: /^#\/planos\/([^/]+)\/etiquetas$/, load: LOTES_UI.labelsLoad,      render: LOTES_UI.labels,               nav: '#/planos' },

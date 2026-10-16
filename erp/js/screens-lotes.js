@@ -84,81 +84,7 @@ LOTES_UI.busy = function (btn, on, textOn) {
    #/lotes — listagem
    ============================================================ */
 LOTES_UI.listLoad = async function () {
-  const batches = await LOTES.batches();
-  // Lotes com gaveta dovetail (botão da lista de compra só neles)
-  let dovetail = new Set();
-  try { dovetail = await LOTES.lotesComDovetail(batches); } catch (e) { /* melhor esforço */ }
-  return { batches: batches, dovetail: dovetail };
-};
-
-/* Lista de compra das gavetas dovetail do lote (ver LOTES.gavetasDovetail).
-   Janela por cima da tela, com Copiar (cola no e-mail/WhatsApp do
-   fornecedor) e Imprimir. */
-LOTES_UI.abrirDovetail = async function (batchId, code, btn) {
-  LOTES_UI.busy(btn, true, 'Carregando…');
-  let r;
-  try { r = await LOTES.gavetasDovetail(batchId); }
-  catch (err) { console.error(err); LOTES_UI.toast(LOTES.explainError ? LOTES.explainError(err) : String(err.message || err), true); return; }
-  finally { LOTES_UI.busy(btn, false); }
-  const pol = function (mm) { return LOTES_UI.mmToFraction(mm, 16); };
-  const variosPedidos = r.pedidos > 1;
-  const modTxt = function (l) {
-    return l.modulos.map(function (m) { return (variosPedidos ? m.pedido + ': ' : '') + 'MÓD ' + m.numeros.join(', '); }).join(' · ');
-  };
-  const linhasHtml = r.linhas.map(function (l) {
-    return '<tr><td style="text-align:center;font-weight:700;font-size:16px">' + l.quantity + '</td>' +
-      '<td><b>' + pol(l.width_mm) + '</b><div class="erp-muted erp-small">' + l.width_mm + ' mm</div></td>' +
-      '<td><b>' + pol(l.height_mm) + '</b><div class="erp-muted erp-small">' + l.height_mm + ' mm</div></td>' +
-      '<td><b>' + pol(l.depth_mm) + '</b><div class="erp-muted erp-small">' + l.depth_mm + ' mm</div></td>' +
-      '<td class="erp-small">' + UI.esc(l.reference || '') + '<div class="erp-muted">' + UI.esc(modTxt(l)) + '</div></td></tr>';
-  }).join('');
-  const texto = ['Gavetas Dovetail — ' + code, 'QTY | WIDTH x HEIGHT x DEPTH']
-    .concat(r.linhas.map(function (l) {
-      return l.quantity + ' | ' + pol(l.width_mm) + ' x ' + pol(l.height_mm) + ' x ' + pol(l.depth_mm) + '  (' + modTxt(l) + ')';
-    })).concat(['Total: ' + r.total]).join('\n');
-  LOTES_UI._dovetailTexto = texto;
-  const old = document.getElementById('lotes-dovetail-modal');
-  if (old) old.remove();
-  const wrap = document.createElement('div');
-  wrap.id = 'lotes-dovetail-modal';
-  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto';
-  wrap.onclick = function (e) { if (e.target === wrap) wrap.remove(); };
-  wrap.innerHTML =
-    '<div id="lotes-dovetail-print" style="background:#fff;color:#222;border-radius:10px;max-width:820px;width:100%;padding:22px 24px;box-shadow:0 10px 40px rgba(0,0,0,.3)">' +
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px">' +
-        '<div><div class="erp-strong" style="font-size:17px">Gavetas Dovetail — ' + UI.esc(code) + '</div>' +
-          '<div class="erp-muted erp-small">Caixotes Hardwood Dovetail (birch 5/8") pra comprar · medida externa do caixote · ' + r.total + ' gaveta(s)</div></div>' +
-        '<div class="lotes-dovetail-acoes" style="display:flex;gap:6px">' +
-          '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.copiarDovetail(this)">Copiar</button>' +
-          '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.imprimirDovetail()">Imprimir</button>' +
-          '<button type="button" class="erp-btn erp-btn-ghost erp-btn-sm" onclick="document.getElementById(\'lotes-dovetail-modal\').remove()">Fechar</button>' +
-        '</div></div>' +
-      (r.linhas.length
-        ? '<table class="erp-table" style="width:100%"><thead><tr><th style="width:60px">Qtd</th><th>Largura</th><th>Altura</th><th>Profundidade</th><th>Descrição · módulos</th></tr></thead>' +
-            '<tbody>' + linhasHtml + '</tbody>' +
-            '<tfoot><tr><td style="text-align:center;font-weight:700">' + r.total + '</td><td colspan="4" class="erp-muted">total de gavetas</td></tr></tfoot></table>'
-        : '<div class="erp-empty">Nenhuma gaveta dovetail nos pedidos deste lote.</div>') +
-    '</div>';
-  document.body.appendChild(wrap);
-};
-
-LOTES_UI.copiarDovetail = function (btn) {
-  const t = LOTES_UI._dovetailTexto || '';
-  const ok = function () { if (btn) { btn.textContent = 'Copiado ✓'; setTimeout(function () { btn.textContent = 'Copiar'; }, 1800); } };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, function () { window.prompt('Copie:', t); });
-  else window.prompt('Copie:', t);
-};
-
-LOTES_UI.imprimirDovetail = function () {
-  const el = document.getElementById('lotes-dovetail-print');
-  if (!el) return;
-  const w = window.open('', '_blank');
-  if (!w) return;
-  const css = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(function (l) { return '<link rel="stylesheet" href="' + l.href + '">'; }).join('');
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Gavetas Dovetail</title>' + css +
-    '<style>body{background:#fff;padding:20px}.lotes-dovetail-acoes{display:none!important}</style></head><body>' + el.outerHTML + '</body></html>');
-  w.document.close();
-  setTimeout(function () { w.focus(); w.print(); }, 400);
+  return { batches: await LOTES.batches() };
 };
 
 LOTES_UI.list = function (params, d) {
@@ -213,11 +139,10 @@ LOTES_UI.list = function (params, d) {
         /* Volumes + pallet (27/09): a faixa fica dentro do lote; ?cfg=volumes
            abre já com "Configurar pallet e regras" expandido. */
         '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/lotes/' + b.id + '?cfg=volumes" title="Criar volumes e configurar o pallet">📦 Volumes / pallet</a>' +
-        /* Gavetas dovetail pra comprar (15/10) — só em lote que tem */
-        ((d.dovetail && d.dovetail.has(b.id))
-          ? '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" title="Lista de caixotes dovetail pra comprar (largura × altura × profundidade)" ' +
-              'onclick="LOTES_UI.abrirDovetail(\'' + b.id + '\', \'' + UI.esc(b.code).replace(/'/g, '') + '\', this)">🗄 Gavetas dovetail</button>'
-          : '') +
+        /* PROCESSOS FORA DA CHAPA (15/10): alumínio, vidros, montagem de
+           portas, gavetas dovetail — os botões só aparecem quando o lote tem
+           (preenchidos depois do render por LOTES_UI.afterList). */
+        '<span class="lp-card-btns" data-lp-batch="' + b.id + '" data-lp-code="' + UI.esc(b.code) + '"></span>' +
       '</div>');
   }).join('');
 
@@ -585,6 +510,7 @@ LOTES_UI.detail = function (params, d) {
         'title="Só pra lote cortado antes da espessura por cor: mantém as medidas do plano (19.5) e ajusta apenas a espessura da chapa na furação" ' +
         'onclick="FURACAO_LOTE.gerar(\'' + b.id + '\', this, { medidasComoCortadas: true })">.ban (lote já cortado)</button> ' +
     '<a class="erp-btn erp-btn-ghost erp-btn-sm" href="#/lotes/' + b.id + '/furacao">Ver furação</a> ' +
+    '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/lotes/' + b.id + '/processos" title="Alumínio, vidros, montagem de portas, gavetas dovetail">🔩 Processos (alumínio, vidro, portas)</a> ' +
       (atual
         ? '<a class="erp-btn" href="#/planos/' + atual.id + '">Ver plano v' + atual.version + '</a>'
         : '<a class="erp-btn" href="#/lotes/' + b.id + '/plano">Gerar plano de corte</a>')) +
@@ -1721,4 +1647,267 @@ LOTES_UI.editarLocal = async function (id) {
   if (loc === null) return;
   try { await LOTES.saveOffcut({ id: id, location: loc.trim() || null }); APP.render(); }
   catch (err) { LOTES_UI.toast(LOTES.explainError(err), true); }
+};
+
+/* ============================================================
+   #/lotes/:id/processos — PROCESSOS FORA DA CHAPA (2026-10-15)
+   ============================================================
+   Alumínio (cortes + plano de barra), Vidros (compra), Montagem de portas
+   (shaker vidro/madeira, glass door, ripado, duplada) e Gavetas dovetail.
+   Dados: LOTES.processos (data-lotes.js). Tudo numa tela, com blocos
+   clicáveis que rolam até a seção; os botões do card do lote abrem direto
+   na seção (?aba=). */
+LOTES_UI.PROC_SECOES = [
+  { id: 'aluminio', icone: '🔩', label: 'Alumínio',           sub: 'cortes em outro processo' },
+  { id: 'vidros',   icone: '🪟', label: 'Vidros',             sub: 'lista de compra' },
+  { id: 'montagem', icone: '🚪', label: 'Montagem de portas', sub: 'shaker, glass door, ripado' },
+  { id: 'dovetail', icone: '🗄', label: 'Gavetas dovetail',   sub: 'caixotes pra comprar' }
+];
+
+LOTES_UI._pol = function (mm) { return LOTES_UI.mmToFraction(mm, 16); };
+LOTES_UI._ondeTxt = function (onde, varios) {
+  return (onde || []).map(function (o) { return (varios ? o.pedido + ': ' : '') + 'MÓD ' + o.mods.join(', '); }).join(' · ');
+};
+LOTES_UI._num = function (v, casas) { return Number(v || 0).toFixed(casas).replace('.', ','); };
+
+/* Card do lote: preenche os botões dos processos que o lote tem. */
+LOTES_UI.afterList = async function () {
+  const slots = Array.from(document.querySelectorAll('.lp-card-btns[data-lp-batch]')).slice(0, 30);
+  for (const el of slots) {
+    const id = el.getAttribute('data-lp-batch');
+    try {
+      const r = await LOTES.processos(id, true);
+      if (!document.body.contains(el)) return; // saiu da tela
+      const c = r.contagem;
+      el.innerHTML = LOTES_UI.PROC_SECOES.filter(function (s) { return c[s.id] > 0; }).map(function (s) {
+        return '<a class="erp-btn erp-btn-secondary erp-btn-sm lp-card-btn" href="#/lotes/' + id + '/processos?aba=' + s.id + '" title="' + UI.esc(s.sub) + '">' +
+          s.icone + ' ' + s.label + ' <span class="lp-badge lp-bg-' + s.id + '">' + c[s.id] + '</span></a>';
+      }).join('');
+    } catch (e) { console.warn('[processos do lote]', id, e); }
+  }
+};
+
+LOTES_UI.procLoad = async function (p) { return LOTES.processos(p.id, false); };
+
+LOTES_UI.procAfter = function (params) {
+  if (params && params.aba) {
+    const el = document.getElementById('lp-sec-' + params.aba);
+    if (el) setTimeout(function () { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('lp-sec-foco'); }, 80);
+  }
+};
+
+LOTES_UI.procIr = function (id) {
+  const el = document.getElementById('lp-sec-' + id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+LOTES_UI._procTextos = {};
+LOTES_UI.procCopiar = function (sec, btn) {
+  const t = LOTES_UI._procTextos[sec] || '';
+  const ok = function () { if (btn) { const o = btn.textContent; btn.textContent = 'Copiado ✓'; setTimeout(function () { btn.textContent = o; }, 1600); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, function () { window.prompt('Copie:', t); });
+  else window.prompt('Copie:', t);
+};
+LOTES_UI.procImprimir = function (sec) {
+  const el = document.getElementById(sec ? 'lp-sec-' + sec : 'lp-root');
+  if (!el) return;
+  const w = window.open('', '_blank');
+  if (!w) return;
+  const css = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(function (l) { return '<link rel="stylesheet" href="' + l.href + '">'; }).join('');
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + UI.esc(document.title) + '</title>' + css +
+    '<style>body{background:#fff;padding:18px}.lp-noprint{display:none!important}</style></head><body>' + el.outerHTML + '</body></html>');
+  w.document.close();
+  setTimeout(function () { w.focus(); w.print(); }, 500);
+};
+
+LOTES_UI._secHead = function (s, extra, temCopiar) {
+  return '<div class="lp-sec-head">' +
+    '<div class="lp-sec-tit"><span class="lp-sec-ico lp-bg-' + s.id + '">' + s.icone + '</span>' +
+      '<div><div class="lp-sec-nome">' + s.label + '</div><div class="erp-muted erp-small">' + extra + '</div></div></div>' +
+    '<div class="lp-noprint" style="display:flex;gap:6px">' +
+      (temCopiar ? '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.procCopiar(\'' + s.id + '\', this)">Copiar lista</button>' : '') +
+      '<button type="button" class="erp-btn erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.procImprimir(\'' + s.id + '\')">Imprimir</button>' +
+    '</div></div>';
+};
+
+/* --- desenhos (SVG) --- */
+LOTES_UI._svgPorta = function (m) {
+  const W = m.w || 400, H = m.h || 700;
+  const esc = 150 / Math.max(W, H);
+  const w = W * esc, h = H * esc;
+  const pad = 20;
+  // largura do quadro = a menor medida de montante/travessa/perfil
+  const quadro = (function () {
+    const fr = (m.partes || []).filter(function (p) { return p.classe === 'aluminio' || LOTES.RE_MONTANTE.test(p.ref); });
+    if (!fr.length) return 0;
+    const v = Math.min.apply(null, fr.map(function (p) { return Math.min(p.w || 1e9, p.h || 1e9); }));
+    return isFinite(v) && v > 0 && v < Math.min(W, H) / 2 ? v : 0;
+  })();
+  const q = quadro * esc;
+  const temVidro = (m.partes || []).some(function (p) { return p.classe === 'vidro'; });
+  const corQuadro = m.tipo === 'glass_door' ? '#a9b2b8' : '#d9b48a';
+  const corMiolo = temVidro ? '#cfe6f5' : '#e8cfa8';
+  const L = function (x1, y1, x2, y2, extra) { return '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" ' + (extra || 'stroke="#555" stroke-width=".8"') + '/>'; };
+  let s = '<svg class="lp-svg-porta" viewBox="0 0 ' + (w + pad * 2) + ' ' + (h + pad * 2) + '" width="' + (w + pad * 2) + '" height="' + (h + pad * 2) + '">' +
+    '<g transform="translate(' + pad + ',' + (pad - 6) + ')">';
+  if (m.tipo === 'ripado') {
+    s += '<rect x="0" y="0" width="' + w + '" height="' + h + '" fill="#d9b48a" stroke="#6e4527"/>';
+    for (let x = 6; x < w; x += 8) s += L(x, 0, x, h, 'stroke="#8a5a34" stroke-width="1"');
+  } else if (m.tipo === 'duplada') {
+    s += '<rect x="5" y="5" width="' + w + '" height="' + h + '" fill="#cdb08c" stroke="#6e4527"/>' +
+      '<rect x="0" y="0" width="' + w + '" height="' + h + '" fill="#e2c49e" stroke="#6e4527"/>';
+  } else {
+    s += '<rect x="0" y="0" width="' + w + '" height="' + h + '" fill="' + corQuadro + '" stroke="#555"/>';
+    if (q > 0) {
+      s += '<rect x="' + q + '" y="' + q + '" width="' + (w - 2 * q) + '" height="' + (h - 2 * q) + '" fill="' + corMiolo + '" stroke="#555" stroke-width=".8"/>';
+      if (temVidro) s += L(q + 6, q + 22, q + 22, q + 6, 'stroke="#fff" stroke-width="2" opacity=".85"') + L(q + 6, q + 34, q + 34, q + 6, 'stroke="#fff" stroke-width="1.4" opacity=".75"');
+      if (m.tipo === 'glass_door') s += L(0, 0, q, q) + L(w, 0, w - q, q) + L(0, h, q, h - q) + L(w, h, w - q, h - q); // cantos 45°
+      else s += L(q, 0, q, h) + L(w - q, 0, w - q, h); // shaker: montante inteiro
+    }
+  }
+  s += '<text x="' + (w / 2) + '" y="' + (h + 14) + '" text-anchor="middle" class="lp-svg-cota">' + Math.round(W) + '</text>' +
+    '<text x="' + (w + 5) + '" y="' + (h / 2) + '" class="lp-svg-cota" transform="rotate(90 ' + (w + 5) + ' ' + (h / 2) + ')" text-anchor="middle">' + Math.round(H) + '</text>' +
+    '</g></svg>';
+  return s;
+};
+
+LOTES_UI._svgVidro = function (v) {
+  const esc = 110 / Math.max(v.w, v.h, 1);
+  const w = Math.max(14, v.w * esc), h = Math.max(14, v.h * esc);
+  return '<svg class="lp-svg-vidro" viewBox="0 0 ' + (w + 4) + ' ' + (h + 4) + '" width="' + (w + 4) + '" height="' + (h + 4) + '">' +
+    '<rect x="2" y="2" width="' + w + '" height="' + h + '" rx="2" fill="#d6ecf8" stroke="#5d8fb3"/>' +
+    '<line x1="6" y1="20" x2="20" y2="6" stroke="#fff" stroke-width="2.4"/>' +
+    '<line x1="6" y1="32" x2="32" y2="6" stroke="#fff" stroke-width="1.6"/></svg>';
+};
+
+LOTES_UI.proc = function (params, d) {
+  const b = d.batch || {};
+  const c = d.contagem;
+  const varios = (d.pedidos || []).length > 1;
+  const pol = LOTES_UI._pol;
+  const S = {};
+  LOTES_UI.PROC_SECOES.forEach(function (s) { S[s.id] = s; });
+
+  /* ---------- ALUMÍNIO ---------- */
+  const txtAlu = ['ALUMÍNIO — ' + (b.code || '')];
+  const aluHtml = d.aluminio.length ? d.aluminio.map(function (g) {
+    txtAlu.push('', g.material + (g.barra_mm ? ' (barra ' + g.barra_mm + ' mm)' : ''));
+    const linhas = g.cortes.map(function (ct) {
+      txtAlu.push(ct.quantity + 'x  ' + ct.len + ' mm (' + pol(ct.len) + ')  ' + ct.angulo + '  ' + ct.ref + '  [' + LOTES_UI._ondeTxt(ct.onde, varios) + ']');
+      return '<tr><td class="lp-qtd">' + ct.quantity + '×</td>' +
+        '<td><b class="lp-medida">' + ct.len + ' mm</b><div class="erp-muted erp-xs">' + pol(ct.len) + '</div></td>' +
+        '<td>' + (ct.angulo === '45°' ? '<span class="lp-ang lp-ang45">◢ 45°</span>' : '<span class="lp-ang">▮ 90°</span>') + '</td>' +
+        '<td>' + UI.esc(ct.ref) + (ct.portas.length ? '<div class="erp-muted erp-xs">porta: ' + UI.esc(ct.portas.join(', ')) + '</div>' : '') + '</td>' +
+        '<td class="lp-mods">' + UI.esc(LOTES_UI._ondeTxt(ct.onde, varios)) + '</td></tr>';
+    }).join('');
+    let barrasHtml;
+    if (g.barras && g.barras.length) {
+      barrasHtml = '<div class="lp-barras-tit">Plano de barra · <b>' + g.barras.length + ' barra(s)</b> de ' + g.barra_mm + ' mm · serra ' + LOTES.KERF_ALU_MM + ' mm por corte</div>' +
+        g.barras.map(function (br, i) {
+          const segs = br.cortes.map(function (ct) {
+            return '<div class="lp-seg' + (ct.angulo === '45°' ? ' lp-seg45' : '') + '" style="width:' + Math.min(100, ct.len / g.barra_mm * 100).toFixed(2) + '%" title="' + UI.esc(ct.ref + ' · ' + ct.len + ' mm') + '"><span>' + ct.len + '</span></div>';
+          }).join('');
+          const sobra = Math.max(0, g.barra_mm - br.usado);
+          return '<div class="lp-barra-row"><span class="lp-barra-n">#' + (i + 1) + '</span><div class="lp-barra' + (br.estoura ? ' lp-barra-estoura' : '') + '">' + segs + '</div>' +
+            '<span class="lp-barra-sobra">' + (br.estoura ? 'maior que a barra!' : 'sobra ' + Math.round(sobra) + ' mm') + '</span></div>';
+        }).join('');
+    } else {
+      barrasHtml = '<div class="erp-muted erp-small lp-barras-tit">Sem comprimento de barra no cadastro do item — total linear <b>' + LOTES_UI._num(g.totalMm / 1000, 2) + ' m</b>.</div>';
+    }
+    return '<div class="lp-grupo"><div class="lp-grupo-tit"><span class="lp-tag lp-tag-alu">' + UI.esc(g.material) + '</span>' +
+      '<span class="erp-muted erp-small">' + g.totalPecas + ' corte(s) · ' + LOTES_UI._num(g.totalMm / 1000, 2) + ' m</span></div>' +
+      '<table class="erp-table lp-tab"><thead><tr><th>Qtd</th><th>Comprimento</th><th>Corte</th><th>Peça</th><th>Módulos</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
+      barrasHtml + '</div>';
+  }).join('') : '<div class="lp-vazio">Nenhuma peça de alumínio neste lote.</div>';
+  LOTES_UI._procTextos.aluminio = txtAlu.join('\n');
+
+  /* ---------- VIDROS ---------- */
+  const txtVid = ['VIDROS — ' + (b.code || ''), 'QTY | WIDTH x HEIGHT | mm | GLASS'];
+  d.vidros.forEach(function (v) { txtVid.push(v.quantity + ' | ' + pol(v.w) + ' x ' + pol(v.h) + ' | ' + v.w + ' x ' + v.h + ' mm | ' + v.tipo); });
+  d.vidrosPorTipo.forEach(function (t) { txtVid.push('Total ' + t.tipo + ': ' + t.pecas + ' pcs · ' + t.m2.toFixed(3) + ' m²'); });
+  LOTES_UI._procTextos.vidros = txtVid.join('\n');
+  const vidHtml = d.vidros.length
+    ? '<div class="lp-resumo-vidro">' + d.vidrosPorTipo.map(function (t) {
+        return '<div class="lp-chip-vidro"><b>' + UI.esc(t.tipo) + '</b><span>' + t.pecas + ' peça(s) · ' + LOTES_UI._num(t.m2, 2) + ' m²</span></div>';
+      }).join('') + '</div>' +
+      '<div class="lp-cards">' + d.vidros.map(function (v) {
+        return '<div class="lp-card lp-card-vidro">' +
+          '<div class="lp-card-draw">' + LOTES_UI._svgVidro(v) + '</div>' +
+          '<div class="lp-card-info"><div class="lp-qtd-big">' + v.quantity + '×</div>' +
+            '<div class="lp-medida">' + pol(v.w) + ' × ' + pol(v.h) + '</div>' +
+            '<div class="erp-muted erp-small">' + v.w + ' × ' + v.h + ' mm · esp. ' + v.esp + ' mm</div>' +
+            '<div class="erp-small">' + UI.esc(v.tipo) + '</div>' +
+            '<div class="erp-muted erp-xs">' + UI.esc(LOTES_UI._ondeTxt(v.onde, varios)) + (v.portas.length ? ' · ' + UI.esc(v.portas.join(', ')) : '') + '</div>' +
+          '</div></div>';
+      }).join('') + '</div>'
+    : '<div class="lp-vazio">Nenhum vidro neste lote.</div>';
+
+  /* ---------- MONTAGEM ---------- */
+  const montHtml = LOTES.TIPOS_MONTAGEM.map(function (t) {
+    const lista = d.montagem.filter(function (m) { return m.tipo === t.id; });
+    const n = lista.reduce(function (s, m) { return s + Math.round(m.quantity); }, 0);
+    return '<div class="lp-mont-tipo' + (lista.length ? '' : ' lp-mont-vazio') + '">' +
+      '<div class="lp-mont-tit"><span class="lp-dot" style="background:' + t.cor + '"></span>' + t.label +
+        ' <span class="lp-badge" style="background:' + t.cor + '">' + n + '</span></div>' +
+      (lista.length ? '<div class="lp-cards">' + lista.map(function (m) {
+        const partes = (m.partes || []).map(function (p) {
+          return '<li class="lp-parte lp-parte-' + p.classe + '"><span>' + (p.quantity > 1 ? Math.round(p.quantity) + '× ' : '') + UI.esc(p.ref) + '</span>' +
+            '<span class="erp-mono">' + [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return Math.round(x * 10) / 10; }).join(' × ') + '</span></li>';
+        }).join('');
+        return '<div class="lp-card lp-card-porta" style="border-top-color:' + t.cor + '">' +
+          '<div class="lp-card-draw">' + LOTES_UI._svgPorta(m) + '</div>' +
+          '<div class="lp-card-info">' +
+            '<div class="lp-card-mod">MÓD ' + m.mod + (varios ? ' · ' + UI.esc(m.pedido) : '') + (m.quantity > 1 ? ' · <b>' + Math.round(m.quantity) + '×</b>' : '') + '</div>' +
+            '<div class="erp-strong">' + UI.esc(m.ref) + '</div>' +
+            '<div class="lp-medida">' + pol(m.w) + ' × ' + pol(m.h) + '</div>' +
+            '<div class="erp-muted erp-xs">' + Math.round(m.w) + ' × ' + Math.round(m.h) + ' × ' + m.t + ' mm · ' + UI.esc(m.movel) + '</div>' +
+            (partes ? '<ul class="lp-partes">' + partes + '</ul>' : '') +
+          '</div></div>';
+      }).join('') + '</div>' : '<div class="erp-muted erp-small lp-mont-nada">nenhuma neste lote</div>') +
+    '</div>';
+  }).join('');
+
+  /* ---------- DOVETAIL ---------- */
+  const txtDov = ['GAVETAS DOVETAIL — ' + (b.code || ''), 'QTY | WIDTH x HEIGHT x DEPTH'];
+  d.dovetail.forEach(function (g) { txtDov.push(g.quantity + ' | ' + pol(g.w) + ' x ' + pol(g.h) + ' x ' + pol(g.d) + '  (' + LOTES_UI._ondeTxt(g.onde, varios) + ')'); });
+  txtDov.push('Total: ' + c.dovetail);
+  LOTES_UI._procTextos.dovetail = txtDov.join('\n');
+  const dovHtml = d.dovetail.length
+    ? '<table class="erp-table lp-tab"><thead><tr><th>Qtd</th><th>Largura</th><th>Altura</th><th>Profundidade</th><th>Descrição · módulos</th></tr></thead><tbody>' +
+      d.dovetail.map(function (g) {
+        return '<tr><td class="lp-qtd">' + g.quantity + '×</td>' +
+          '<td><b class="lp-medida">' + pol(g.w) + '</b><div class="erp-muted erp-xs">' + g.w + ' mm</div></td>' +
+          '<td><b class="lp-medida">' + pol(g.h) + '</b><div class="erp-muted erp-xs">' + g.h + ' mm</div></td>' +
+          '<td><b class="lp-medida">' + pol(g.d) + '</b><div class="erp-muted erp-xs">' + g.d + ' mm</div></td>' +
+          '<td class="erp-small">' + UI.esc(g.reference) + '<div class="erp-muted erp-xs">' + UI.esc(LOTES_UI._ondeTxt(g.onde, varios)) + '</div></td></tr>';
+      }).join('') + '</tbody><tfoot><tr><td class="lp-qtd">' + c.dovetail + '</td><td colspan="4" class="erp-muted">total de caixotes · birch 5/8", medida externa</td></tr></tfoot></table>'
+    : '<div class="lp-vazio">Nenhuma gaveta dovetail neste lote.</div>';
+
+  const tiles = LOTES_UI.PROC_SECOES.map(function (s) {
+    let pe;
+    if (s.id === 'aluminio') { const m = d.aluminio.reduce(function (t, g) { return t + g.totalMm; }, 0) / 1000; pe = m ? LOTES_UI._num(m, 2) + ' m linear' : 'cortes'; }
+    else if (s.id === 'vidros') { const a = d.vidrosPorTipo.reduce(function (t, x) { return t + x.m2; }, 0); pe = a ? LOTES_UI._num(a, 2) + ' m²' : 'peças'; }
+    else pe = s.id === 'montagem' ? 'portas / painéis' : 'caixotes';
+    return '<button type="button" class="lp-tile lp-bd-' + s.id + (c[s.id] ? '' : ' lp-tile-zero') + '" onclick="LOTES_UI.procIr(\'' + s.id + '\')">' +
+      '<span class="lp-tile-ico lp-bg-' + s.id + '">' + s.icone + '</span><span class="lp-tile-lab">' + s.label + '</span>' +
+      '<span class="lp-tile-num">' + c[s.id] + '</span><span class="lp-tile-pe">' + pe + '</span></button>';
+  }).join('');
+
+  const sec = function (id, body, extra, copiar) {
+    return '<section class="lp-sec erp-panel" id="lp-sec-' + id + '">' + LOTES_UI._secHead(S[id], extra, copiar && c[id] > 0) + body + '</section>';
+  };
+  const nomesPedidos = (d.pedidos || []).map(function (o) { return o.po_name || o.client_name; }).filter(Boolean).join(', ');
+  return UI.crumb([{ label: 'Lotes', href: '#/lotes' }, { label: b.code || '—', href: '#/lotes/' + b.id }, { label: 'Processos' }]) +
+    UI.head((b.code || '') + ' — Processos fora da chapa',
+      'Tudo do lote que não passa pela seccionadora: alumínio pra cortar, vidro pra comprar, portas pra montar e gavetas compradas.' +
+      (nomesPedidos ? ' Pedidos: ' + UI.esc(nomesPedidos) + '.' : ''),
+      '<a class="erp-btn erp-btn-secondary" href="#/lotes/' + b.id + '">← Voltar ao lote</a> ' +
+      '<button type="button" class="erp-btn erp-btn-ghost" onclick="LOTES_UI.procImprimir()">Imprimir tudo</button>') +
+    '<div id="lp-root">' +
+      '<div class="lp-tiles lp-noprint">' + tiles + '</div>' +
+      sec('aluminio', aluHtml, c.aluminio ? 'Cortar na serra de alumínio — medida e ângulo de cada peça, e como aproveitar a barra' : 'vara de cabide, perfil de porta de vidro, perfil de LED', true) +
+      sec('vidros', vidHtml, c.vidros ? 'Medida de cada vidro pro fornecedor (largura × altura)' : 'vidros das portas e qualquer item comprado do tipo vidro', true) +
+      sec('montagem', montHtml, 'Portas e painéis que saem do corte e precisam ser montados', false) +
+      sec('dovetail', dovHtml, 'Caixotes Hardwood Dovetail pra pedir ao fornecedor', true) +
+    '</div>';
 };

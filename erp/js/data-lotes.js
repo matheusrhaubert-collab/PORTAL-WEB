@@ -291,7 +291,7 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
       // cadastro quando o snapshot do pedido é anterior ao campo acima.
       piece_id: p.piece_id || null,
       // Modelo de gaveta (migration 203) — só o caixote comprado tem. Usado
-      // pela lista de compra de gavetas dovetail (LOTES.gavetasDovetail).
+      // pela tela de processos do lote (LOTES.processos).
       drawer_model: p.drawer_model || null
     });
   });
@@ -307,72 +307,6 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
 LOTES.ehGavetaDovetail = function (leaf) {
   return !!leaf && (leaf.origin === 'comprado') &&
     (!!leaf.drawer_model || /^DOVETAIL\b/i.test(String(leaf.reference || '')));
-};
-
-/* Quais destes lotes têm gaveta dovetail — 1 consulta só, pra listagem
-   decidir onde mostrar o botão. Sem a coluna (migration 203) = nenhum. */
-LOTES.lotesComDovetail = async function (batches) {
-  const porPedido = {};
-  (batches || []).forEach(function (b) {
-    (b.batch_orders || []).forEach(function (o) { (porPedido[o.order_id] = porPedido[o.order_id] || []).push(b.id); });
-  });
-  const ids = Object.keys(porPedido);
-  const out = new Set();
-  if (!ids.length) return out;
-  try {
-    for (let i = 0; i < ids.length; i += 120) {
-      const { data, error } = await DATA.sb().from('order_items').select('order_id')
-        .in('order_id', ids.slice(i, i + 120)).not('drawer_model_id', 'is', null);
-      if (error) return out;
-      (data || []).forEach(function (r) { (porPedido[r.order_id] || []).forEach(function (bid) { out.add(bid); }); });
-    }
-  } catch (e) { /* melhor esforço */ }
-  return out;
-};
-
-LOTES.gavetasDovetail = async function (batchId) {
-  const sb = DATA.sb();
-  const bo = await LOTES.erp().from('batch_orders').select('order_id').eq('batch_id', batchId);
-  if (bo.error) throw bo.error;
-  const orderIds = (bo.data || []).map(function (r) { return r.order_id; });
-  if (!orderIds.length) return { linhas: [], total: 0, pedidos: 0 };
-  const [ordRes, itRes] = await Promise.all([
-    sb.from('orders').select('id, client_name, po_name').in('id', orderIds),
-    sb.from('order_items').select('id, order_id, module_name, quantity, breakdown, sort_order').in('order_id', orderIds).order('sort_order')
-  ]);
-  if (ordRes.error) throw ordRes.error;
-  if (itRes.error) throw itRes.error;
-  const orderById = {};
-  (ordRes.data || []).forEach(function (o) { orderById[o.id] = o; });
-  const seq = {};
-  const grupos = new Map();
-  (itRes.data || []).forEach(function (item) {
-    seq[item.order_id] = (seq[item.order_id] || 0) + 1;
-    const modNum = String(seq[item.order_id]).padStart(3, '0');
-    LOTES.flattenBreakdown(item.breakdown, item.quantity || 1).forEach(function (leaf) {
-      if (!LOTES.ehGavetaDovetail(leaf)) return;
-      const w = Math.round((Number(leaf.width_mm) || 0) * 10) / 10;
-      const h = Math.round((Number(leaf.height_mm) || 0) * 10) / 10;
-      const d = Math.round((Number(leaf.depth_mm) || 0) * 10) / 10;
-      // Agrupa pelo NOME de compra (polegada 1/16): 366 e 367 mm viram o
-      // mesmo 14 7/16" pro fornecedor — linha única. Sem nome, pela medida.
-      const key = /^DOVETAIL\b/i.test(String(leaf.reference || '')) ? String(leaf.reference) : (w + 'x' + h + 'x' + d);
-      if (!grupos.has(key)) grupos.set(key, { width_mm: w, height_mm: h, depth_mm: d, reference: leaf.reference, quantity: 0, modulos: {} });
-      const g = grupos.get(key);
-      g.quantity += Number(leaf.quantity) || 1;
-      const o = orderById[item.order_id] || {};
-      const pk = o.po_name || o.client_name || item.order_id.slice(0, 8);
-      (g.modulos[pk] = g.modulos[pk] || new Set()).add(modNum);
-    });
-  });
-  const linhas = Array.from(grupos.values()).sort(function (a, b) {
-    return (b.width_mm - a.width_mm) || (b.depth_mm - a.depth_mm) || (b.height_mm - a.height_mm);
-  }).map(function (g) {
-    return Object.assign({}, g, {
-      modulos: Object.keys(g.modulos).map(function (k) { return { pedido: k, numeros: Array.from(g.modulos[k]).sort() }; })
-    });
-  });
-  return { linhas: linhas, total: linhas.reduce(function (s, l) { return s + l.quantity; }, 0), pedidos: orderIds.length };
 };
 
 /* Peças de um conjunto de pedidos, já agrupadas (mesma peça = mesma linha com
@@ -1513,4 +1447,236 @@ LOTES.allPlans = async function () {
     .order('created_at', { ascending: false }).limit(300);
   if (error) throw error;
   return data || [];
+};
+
+/* ============================================================
+   PROCESSOS FORA DA CHAPA (2026-10-15, Matt: "além das peças de corte,
+   quero peça de alumínio... vara de cabide, portas de vidro que tem
+   alumínio pra ser cortado; outro botão com as compras de vidros; outro
+   mostrando montagem de portas shaker vidro, shaker madeira, glass door,
+   ripados, peças dupladas... bem visual, lincada ao lote").
+   ============================================================
+   batch_pieces só guarda o que vai pra seccionadora (comprado fica de
+   fora), então isto lê o breakdown dos pedidos do lote na hora:
+     - ALUMÍNIO: item comprado linear (perfil de porta, perfil de LED,
+       vara de cabide — unidade m/barra) → lista de cortes + plano de barra.
+     - VIDROS: item comprado kind 'vidro' → lista de compra (medida, m²).
+     - MONTAGEM: sub-módulo que é porta montada (montante/travessa = shaker,
+       perfil = glass door), ripado, peça duplada.
+     - GAVETAS DOVETAIL: caixote comprado (migration 203).
+   A classificação é pelo CADASTRO do item comprado (purchased_items.kind/
+   unit) e, sem cadastro, pelo nome — item novo de vidro ou alumínio entra
+   sozinho na lista certa. */
+LOTES.KERF_ALU_MM = 4;          // perda da serra por corte de alumínio
+LOTES.RE_MONTANTE = /montante|travessa|\bstile|\brail/i;
+LOTES.RE_PERFIL = /perfil|profile/i;
+LOTES.RE_RIPADO = /\bripa|ripad|\bslat/i;
+LOTES.RE_DUPLADA = /duplad|doubled|engrossad/i;
+LOTES.TIPOS_MONTAGEM = [
+  { id: 'shaker_vidro',   label: 'Shaker vidro',   cor: '#3b6ea5' },
+  { id: 'shaker_madeira', label: 'Shaker madeira', cor: '#8a5a34' },
+  { id: 'glass_door',     label: 'Glass door (alumínio)', cor: '#5f6b73' },
+  { id: 'ripado',         label: 'Ripados',        cor: '#6d7f3f' },
+  { id: 'duplada',        label: 'Peças dupladas', cor: '#8b4f8a' }
+];
+
+LOTES.barraDoItem = function (leaf, it) {
+  const b = Number(leaf && leaf.material_bar_mm);
+  if (b > 0) return b;
+  const at = (it && it.attrs) || {};
+  const a = Number(at.barra_mm || at.bar_mm || at.comprimento_barra_mm || at.comprimento_mm);
+  if (a > 0) return a;
+  const m = String((it && it.name) || '').match(/barra\s*([\d.,]+)\s*m\b/i);
+  return m ? Math.round(parseFloat(m[1].replace(',', '.')) * 1000) : null;
+};
+
+/* Plano de barra: first-fit decrescente, com perda de serra por corte. */
+LOTES.planoBarras = function (cortes, barraMm, kerf) {
+  if (!(barraMm > 0)) return null;
+  kerf = kerf == null ? LOTES.KERF_ALU_MM : kerf;
+  const pecas = [];
+  cortes.forEach(function (c) { for (let i = 0; i < c.quantity; i++) pecas.push(c); });
+  pecas.sort(function (a, b) { return b.len - a.len; });
+  const barras = [];
+  pecas.forEach(function (c) {
+    if (c.len > barraMm) { barras.push({ cortes: [c], usado: c.len, estoura: true }); return; }
+    let alvo = barras.find(function (b) { return !b.estoura && b.usado + kerf + c.len <= barraMm; });
+    if (!alvo) { alvo = { cortes: [], usado: -kerf }; barras.push(alvo); }
+    alvo.usado += kerf + c.len;
+    alvo.cortes.push(c);
+  });
+  return barras;
+};
+
+/* Puro (sem banco) — pra testar. items = order_items com breakdown. */
+LOTES.processosDosItens = function (items, orderById, piById) {
+  piById = piById || {};
+  orderById = orderById || {};
+  const itemDe = function (l) { return piById[l.purchased_item_id] || piById[l.material_item_id] || null; };
+  const comprado = function (l) { return !l.is_module && (l.origin || 'fabricacao') === 'comprado'; };
+  const ehVidro = function (l) {
+    if (!comprado(l)) return false;
+    const it = itemDe(l);
+    if (it && it.kind) return it.kind === 'vidro';
+    return /vidro|glass/i.test(String(l.reference || ''));
+  };
+  const ehAluminio = function (l) {
+    if (!comprado(l) || ehVidro(l) || LOTES.ehGavetaDovetail(l)) return false;
+    const it = itemDe(l);
+    if (it && it.kind) {
+      if (it.kind === 'perfil_aluminio' || it.kind === 'led_perfil') return true;
+      if (['vidro', 'gaveta', 'corredica', 'dobradica', 'ferragem_montagem', 'suporte'].indexOf(it.kind) >= 0) return false;
+      return it.unit === 'm' || it.unit === 'barra';
+    }
+    const u = String(l.purchased_item_unit || l.material_unit || '');
+    return u === 'm' || u === 'barra' || LOTES.RE_PERFIL.test(String(l.reference || '')) || /cabide|closet rod|alum/i.test(String(l.reference || ''));
+  };
+  const r1 = function (v) { return Math.round((Number(v) || 0) * 10) / 10; };
+  const tipoMontagem = function (mod, filhos) {
+    const folhas = (filhos || []).filter(function (c) { return !c.is_module; });
+    const temPerfil = folhas.some(function (c) { return ehAluminio(c) && LOTES.RE_PERFIL.test(String(c.reference || '')); });
+    const temMont = folhas.some(function (c) { return !comprado(c) && LOTES.RE_MONTANTE.test(String(c.reference || '')); });
+    const temVidro = folhas.some(ehVidro);
+    if (temPerfil) return 'glass_door';
+    if (temMont) return temVidro ? 'shaker_vidro' : 'shaker_madeira';
+    if (LOTES.RE_RIPADO.test(String(mod.reference || '')) || folhas.some(function (c) { return LOTES.RE_RIPADO.test(String(c.reference || '')); })) return 'ripado';
+    if (LOTES.RE_DUPLADA.test(String(mod.reference || '')) || folhas.some(function (c) { return LOTES.RE_DUPLADA.test(String(c.reference || '')); })) return 'duplada';
+    return null;
+  };
+
+  const alu = new Map(), vid = new Map(), dov = new Map(), montagem = [];
+  const seq = {};
+  (items || []).forEach(function (item) {
+    seq[item.order_id] = (seq[item.order_id] || 0) + 1;
+    const mod = String(seq[item.order_id]).padStart(3, '0');
+    const o = orderById[item.order_id] || {};
+    const pedido = o.po_name || o.client_name || String(item.order_id || '').slice(0, 8);
+    const base = { mod: mod, pedido: pedido, movel: item.module_name || '—' };
+    const ondeTxt = function (ctx) { return ctx.porta ? ctx.porta.ref : null; };
+
+    (function walk(nodes, mult, ctx) {
+      (nodes || []).forEach(function (p) {
+        const q = (Number(p.quantity) || 1) * mult;
+        if (p.is_module) {
+          const filhos = p.child_breakdown || [];
+          const tipo = tipoMontagem(p, filhos);
+          let porta = ctx.porta;
+          if (tipo) {
+            porta = Object.assign({}, base, {
+              tipo: tipo, ref: p.reference || '—', quantity: q,
+              w: r1(p.width_mm), h: r1(p.height_mm), t: r1(p.depth_mm), partes: []
+            });
+            montagem.push(porta);
+          }
+          walk(filhos, q, { porta: tipo ? porta : ctx.porta, raizPorta: !!tipo });
+          return;
+        }
+        const ref = String(p.reference || '—');
+        const dims = [r1(p.width_mm), r1(p.height_mm), r1(p.depth_mm)];
+        // peça direta da porta montada → lista de partes da montagem
+        // (peça só de mão de obra, 0×0×0 — "Montagem de porta" — não é parte física)
+        if (ctx.porta && ctx.raizPorta && (dims[0] > 0 || dims[1] > 0)) {
+          ctx.porta.partes.push({
+            ref: ref, w: dims[0], h: dims[1], d: dims[2],
+            quantity: q / (ctx.porta.quantity || 1),
+            classe: ehVidro(p) ? 'vidro' : (ehAluminio(p) ? 'aluminio' : (comprado(p) ? 'comprado' : 'madeira'))
+          });
+        }
+        if (LOTES.ehGavetaDovetail(p)) {
+          const k = /^DOVETAIL\b/i.test(ref) ? ref : dims.join('x');
+          if (!dov.has(k)) dov.set(k, { reference: ref, w: dims[0], h: dims[1], d: dims[2], quantity: 0, onde: {} });
+          const g = dov.get(k); g.quantity += q; (g.onde[pedido] = g.onde[pedido] || new Set()).add(mod);
+          return;
+        }
+        if (ehVidro(p)) {
+          const it = itemDe(p);
+          const sorted = dims.slice().sort(function (a, b) { return a - b; });
+          const esp = Math.round((Number([p.width_mm, p.height_mm, p.depth_mm].map(Number).sort(function (a, b) { return a - b; })[0]) || 0) * 100) / 100;
+          // largura × altura como a peça foi desenhada (porta em pé = altura maior)
+          const w = dims[0] === sorted[0] ? dims[2] : dims[0];
+          const h = dims[1] === sorted[0] ? dims[2] : dims[1];
+          const tipoVidro = (it && it.name) || p.material_item_name || p.purchased_item_name || ref;
+          const k = tipoVidro + '|' + w + '|' + h;
+          if (!vid.has(k)) vid.set(k, { tipo: tipoVidro, esp: esp, w: w, h: h, quantity: 0, onde: {}, portas: new Set() });
+          const g = vid.get(k); g.quantity += q; (g.onde[pedido] = g.onde[pedido] || new Set()).add(mod);
+          if (ondeTxt(ctx)) g.portas.add(ondeTxt(ctx));
+          return;
+        }
+        if (ehAluminio(p)) {
+          const it = itemDe(p);
+          const material = (it && it.name) || p.material_item_name || p.purchased_item_name || ref;
+          if (!alu.has(material)) alu.set(material, { material: material, kind: it ? it.kind : null, barra_mm: LOTES.barraDoItem(p, it), cortes: new Map() });
+          const G = alu.get(material);
+          const len = Math.max.apply(null, dims);
+          const angulo = /45/.test(ref) ? '45°' : '90°';
+          const k = len + '|' + angulo + '|' + ref;
+          if (!G.cortes.has(k)) G.cortes.set(k, { len: len, angulo: angulo, ref: ref, quantity: 0, onde: {}, portas: new Set() });
+          const c = G.cortes.get(k); c.quantity += q; (c.onde[pedido] = c.onde[pedido] || new Set()).add(mod);
+          if (ondeTxt(ctx)) c.portas.add(ondeTxt(ctx));
+        }
+      });
+    })(item.breakdown, Number(item.quantity) || 1, { porta: null });
+  });
+
+  const onde = function (o) {
+    const ks = Object.keys(o);
+    return ks.map(function (k) { return { pedido: k, mods: Array.from(o[k]).sort() }; });
+  };
+  const aluminio = Array.from(alu.values()).map(function (G) {
+    const cortes = Array.from(G.cortes.values()).map(function (c) {
+      return Object.assign({}, c, { quantity: Math.round(c.quantity), onde: onde(c.onde), portas: Array.from(c.portas) });
+    }).sort(function (a, b) { return b.len - a.len; });
+    const totalPecas = cortes.reduce(function (s, c) { return s + c.quantity; }, 0);
+    const totalMm = cortes.reduce(function (s, c) { return s + c.len * c.quantity; }, 0);
+    return { material: G.material, kind: G.kind, barra_mm: G.barra_mm, cortes: cortes, totalPecas: totalPecas, totalMm: totalMm,
+      barras: LOTES.planoBarras(cortes, G.barra_mm) };
+  }).sort(function (a, b) { return a.material.localeCompare(b.material); });
+  const vidros = Array.from(vid.values()).map(function (g) {
+    return Object.assign({}, g, { quantity: Math.round(g.quantity), onde: onde(g.onde), portas: Array.from(g.portas),
+      m2: g.w * g.h / 1e6 * Math.round(g.quantity) });
+  }).sort(function (a, b) { return a.tipo.localeCompare(b.tipo) || (b.h - a.h) || (b.w - a.w); });
+  const porTipoVidro = {};
+  vidros.forEach(function (v) { const t = (porTipoVidro[v.tipo] = porTipoVidro[v.tipo] || { tipo: v.tipo, pecas: 0, m2: 0 }); t.pecas += v.quantity; t.m2 += v.m2; });
+  const dovetail = Array.from(dov.values()).map(function (g) {
+    return Object.assign({}, g, { quantity: Math.round(g.quantity), onde: onde(g.onde) });
+  }).sort(function (a, b) { return (b.w - a.w) || (b.d - a.d) || (b.h - a.h); });
+  const cont = {
+    aluminio: aluminio.reduce(function (s, g) { return s + g.totalPecas; }, 0),
+    vidros: vidros.reduce(function (s, v) { return s + v.quantity; }, 0),
+    montagem: montagem.reduce(function (s, m) { return s + Math.round(m.quantity); }, 0),
+    dovetail: dovetail.reduce(function (s, g) { return s + g.quantity; }, 0)
+  };
+  return { aluminio: aluminio, vidros: vidros, vidrosPorTipo: Object.keys(porTipoVidro).map(function (k) { return porTipoVidro[k]; }),
+    montagem: montagem, dovetail: dovetail, contagem: cont };
+};
+
+LOTES._procCache = {};
+LOTES.processos = async function (batchId, usarCache) {
+  const c = LOTES._procCache[batchId];
+  if (usarCache && c && Date.now() - c.t < 120000) return c.v;
+  const sb = DATA.sb();
+  const [bRes, bo] = await Promise.all([
+    LOTES.erp().from('batches').select('id, code, name, status, created_at, target_date').eq('id', batchId).maybeSingle(),
+    LOTES.erp().from('batch_orders').select('order_id').eq('batch_id', batchId)
+  ]);
+  if (bRes.error) throw bRes.error;
+  if (bo.error) throw bo.error;
+  const orderIds = (bo.data || []).map(function (r) { return r.order_id; });
+  let items = [], orders = [], pis = [];
+  if (orderIds.length) {
+    const [ordRes, itRes, piRes] = await Promise.all([
+      sb.from('orders').select('id, client_name, po_name').in('id', orderIds),
+      sb.from('order_items').select('id, order_id, module_name, quantity, breakdown, sort_order').in('order_id', orderIds).order('sort_order'),
+      sb.from('purchased_items').select('id, code, name, kind, unit, attrs')
+    ]);
+    if (ordRes.error) throw ordRes.error;
+    if (itRes.error) throw itRes.error;
+    orders = ordRes.data || []; items = itRes.data || []; pis = piRes.error ? [] : (piRes.data || []);
+  }
+  const orderById = {}, piById = {};
+  orders.forEach(function (o) { orderById[o.id] = o; });
+  pis.forEach(function (p) { piById[p.id] = p; });
+  const v = Object.assign({ batch: bRes.data, pedidos: orders }, LOTES.processosDosItens(items, orderById, piById));
+  LOTES._procCache[batchId] = { t: Date.now(), v: v };
+  return v;
 };
