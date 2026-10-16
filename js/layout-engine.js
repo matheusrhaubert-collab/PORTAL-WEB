@@ -798,7 +798,11 @@
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
           x: box.x + 12, y: y + 4 + GAVETA_CAIXOTE_SUBIR_MM, z: box.z + recuoCaixote,
           w: box.w - 24, h: Math.max(20, hCada - folgaAltura), d: prof,
-          opening_type: 'slide_out'
+          opening_type: 'slide_out',
+          // folga de CADA lado entre o caixote e a lateral do vão (onde a
+          // corrediça fixa) — o modelo Hardwood Dovetail usa pra sair com
+          // vão − 12 (module-pieces.js swapDrawerBodyRows)
+          folga_corredica_mm: 12
         });
       }
       if (frenteAcc) {
@@ -856,6 +860,9 @@
           w: Math.max(60, box.w - lat * 2),
           h: Math.max(20, Math.min(hCada - folgaAltura, hF - acima)), d: prof,
           opening_type: 'slide_out',
+          // com porta: os 39 mm incluem o espaçador — superfície da corrediça
+          // desconhecida aqui, então não informa (dovetail fica na largura padrão)
+          folga_corredica_mm: comPorta ? null : lat,
           // Furação da corrediça na lateral (drilling.js collectSlideHoles):
           // a tabela de furos é medida da FRENTE da lateral pensando na
           // gaveta normal (2mm). O caixote sem porta está 25mm mais pra
@@ -1694,6 +1701,7 @@
         slides_per_unit: p.opening_type === 'slide_out' ? 2 : 0,
         // Gaveta interna sem porta (2026-10-04) — ver emitGavetaInterna.
         slide_recuo_extra_mm: num(p.slide_recuo_extra_mm) || 0,
+        folga_corredica_mm: p.folga_corredica_mm != null ? num(p.folga_corredica_mm) : null,
         tilt_angle_deg: num(p.tilt_deg),
         rotation_y_deg: 0,
         width_formula: String(p.w),

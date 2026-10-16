@@ -1144,6 +1144,31 @@ function reidDrawerModelChildPieces(list, prefix, modelName) {
   });
 }
 
+/* LARGURA DO CAIXOTE DOVETAIL = VÃO INTERNO − 12 (Matt, 15/10: "preciso
+   de 12mm menos do que o vão interno do móvel, aí já vem o corpo da
+   gaveta"). O módulo de gaveta padrão não tem sempre a mesma folga:
+     - catálogo (Drawer Soft Closet Externa): W − 2E − 12 → já é vão − 12;
+     - Construtor (gaveta / gaveta interna sem porta): vão − 24 (12 de cada
+       lado) → o caixote dovetail saía 12 mm estreito (LT-26-0016, MÓD 011:
+       622 num vão de 646,8).
+   O Construtor informa folga_corredica_mm (por lado); a engenharia do
+   modelo (W, offset 0) é alargada pra sobrar 6 mm por lado. Layout salvo
+   antes do campo: peça 'lay:' de gaveta que não é "com porta" = 12. */
+const DOVETAIL_FOLGA_LADO_MM = 6;
+function folgaCorredicaDoRow(p) {
+  if (p && p.folga_corredica_mm != null && Number(p.folga_corredica_mm) > 0) return Number(p.folga_corredica_mm);
+  if (p && String(p.id || '').indexOf('lay:') === 0 && !/com porta/i.test(String(p.reference || ''))) return 12;
+  return null;
+}
+function alargaCaixoteDovetail(filhos, folgaLado) {
+  const extra = folgaLado != null ? folgaLado - DOVETAIL_FOLGA_LADO_MM : 0;
+  if (!(extra > 0)) return filhos;
+  return filhos.map((c) => (c && !c.is_module) ? Object.assign({}, c, {
+    width_formula: '(' + (c.width_formula || 'W') + ')+' + (2 * extra),
+    offset_x_formula: '(' + (c.offset_x_formula || '0') + ')-' + extra
+  }) : c);
+}
+
 function swapDrawerBodyRows(list, model, extras) {
   let mudou = false;
   const out = (list || []).map((p) => {
@@ -1157,7 +1182,7 @@ function swapDrawerBodyRows(list, model, extras) {
         // ficam. Sai só o caixote fabricado (laterais, traseira, fundo,
         // contra-frente).
         child_pieces: (p.child_pieces || []).filter(isDrawerNonBodyChild)
-          .concat(reidDrawerModelChildPieces(extras.child_pieces || [], 'gm:' + p.id, model.name))
+          .concat(alargaCaixoteDovetail(reidDrawerModelChildPieces(extras.child_pieces || [], 'gm:' + p.id, model.name), folgaCorredicaDoRow(p)))
       });
     }
     if (p.is_module && Array.isArray(p.child_pieces)) {
