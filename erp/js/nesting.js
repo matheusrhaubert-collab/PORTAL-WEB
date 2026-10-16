@@ -791,6 +791,20 @@ NESTING._cutStatsItems = function (items, sheetWidth) {
     });
     return { cuts: cuts, turns: turns };
   }
+  /* Mesma escolha de sentido da exportação (MAQUINA_EXPORT._orientar):
+     sem corte passante em Y e com colunas em X, a chapa entra atravessada
+     — a contagem começa por X, senão conta uma virada que não existe. */
+  const seg = function (axis) {
+    const c = axis === 'y' ? 'y' : 'x', s = axis === 'y' ? 'h' : 'w';
+    const sorted = items.slice().sort(function (a, b) { return a[c] - b[c]; });
+    let n = 0, end = -Infinity;
+    sorted.forEach(function (it) { if (it[c] >= end - 0.15) n++; end = Math.max(end, it[c] + it[s]); });
+    return n;
+  };
+  if (items.length > 1 && seg('y') === 1 && seg('x') > 1) {
+    const sheetHeight = items.reduce(function (m, it) { return Math.max(m, it.y + it.h); }, 0);
+    return rec(items, 'x', sheetHeight, false);
+  }
   return rec(items, 'y', sheetWidth, false);
 };
 

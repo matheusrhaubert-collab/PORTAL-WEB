@@ -351,15 +351,43 @@ MAQUINA_EXPORT._itensDaChapa = function (sh, ctx) {
   return items;
 };
 
+/* SENTIDO DE ENTRADA DA CHAPA (Matt, 16/10, na frente da Samach: "poderia
+   começar atravessado, abrir as tiras e limpar frente e trás — ele entrando
+   deitado é só retrabalho"). A raiz do XML sempre fatiava em Y (chapa
+   entrando deitada). Quando o desenho NÃO tem nenhum corte passante no
+   comprimento (tudo é coluna), essa primeira passada só tirava o refile de
+   cima e de baixo — abre, gira, corta as colunas, gira de novo. Agora: se
+   em Y é uma faixa só e em X há mais de uma, a chapa entra ATRAVESSADA — o
+   XML sai transposto (painel l/w trocados, x<->y), a 1ª passada abre as
+   colunas com refile nas duas pontas e cada coluna depois limpa frente e
+   trás (refile de cima + sobra do fim). Peças e veio não mudam: é a mesma
+   chapa, só entra girada. */
+MAQUINA_EXPORT._orientar = function (sh, items, ctx) {
+  const W = Number(sh.width_mm), H = Number(sh.height_mm);
+  const segY = MAQUINA_EXPORT._segmentar(items, 'y', ctx.eps);
+  const segX = MAQUINA_EXPORT._segmentar(items, 'x', ctx.eps);
+  if (items.length > 1 && segY.length === 1 && segX.length > 1) {
+    return {
+      atravessada: true, panelL: H, panelW: W, rootL: W, rootW: H,
+      items: items.map(function (it) {
+        return Object.assign({}, it, { x: it.y, y: it.x, w: it.h, h: it.w, cleanW: it.cleanH, cleanH: it.cleanW });
+      })
+    };
+  }
+  return { atravessada: false, panelL: W, panelW: H, rootL: H, rootW: W, items: items };
+};
+
 MAQUINA_EXPORT._construirXML = function (group, ctx) {
   // group: { colorName, espessura, sheets:[cut_plan_sheets...] }
   const panels = group.sheets.map(function (sh, si) {
     const items = sh._exportItems || MAQUINA_EXPORT._itensDaChapa(sh, ctx);
     const panelNum = si + 1;
     let body = '';
+    const ori = MAQUINA_EXPORT._orientar(sh, items, ctx);
     if (items.length > 0) {
-      // Raiz: camada 1 fatia em Y — l = altura (Y) da chapa, w = comprimento (X).
-      const root = MAQUINA_EXPORT._montarNo(items, 'y', 1, Number(sh.height_mm), Number(sh.width_mm), ctx, false, 0, 0);
+      // Raiz: camada 1 fatia em Y (do painel) — l = extensão em Y, w = em X.
+      // Atravessada: o "Y" do painel é o X da chapa (ver _orientar).
+      const root = MAQUINA_EXPORT._montarNo(ori.items, 'y', 1, ori.rootL, ori.rootW, ctx, false, 0, 0);
       body = MAQUINA_EXPORT._serializarPainel(root);
     }
     const totalPanels = group.sheets.length;
@@ -368,7 +396,7 @@ MAQUINA_EXPORT._construirXML = function (group, ctx) {
     // num="1" SEMPRE: é a QUANTIDADE de chapas iguais a cortar deste painel,
     // não o índice — no primeiro teste (21/09-7) estava indo o índice e a
     // máquina pediu 1, 2, 3... chapas do mesmo padrão.
-    return '  <panel' + panelNum + ' l="' + fmt(sh.width_mm) + '" w="' + fmt(sh.height_mm) + '" num="1' +
+    return '  <panel' + panelNum + ' l="' + fmt(ori.panelL) + '" w="' + fmt(ori.panelW) + '" num="1' +
       '" material="' + sanitizeFilePart(group.colorName) + '" thickness="' + fmt(group.espessura) +
       '" saw="' + fmt(ctx.kerf) + '" mcode="' + mcode + '">\n' + body + '\n  </panel' + panelNum + '>';
   }).join('\n');
@@ -541,7 +569,10 @@ MAQUINA_EXPORT.ordemNaChapa = function (sh, snap) {
     };
     const items = MAQUINA_EXPORT._itensDaChapa(sh, ctx);
     if (!items.length) return [];
-    const root = MAQUINA_EXPORT._montarNo(items, 'y', 1, Number(sh.height_mm), Number(sh.width_mm), ctx, false);
+    // Mesmo sentido de entrada da exportação (atravessada ou deitada), pra
+    // numeração das etiquetas bater com a ordem em que a peça cai.
+    const ori = MAQUINA_EXPORT._orientar(sh, items, ctx);
+    const root = MAQUINA_EXPORT._montarNo(ori.items, 'y', 1, ori.rootL, ori.rootW, ctx, false, 0, 0);
     const out = [];
     (function walk(node) {
       for (let i = node.parts.length - 1; i >= 0; i--) {
