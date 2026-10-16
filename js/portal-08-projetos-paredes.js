@@ -4381,6 +4381,114 @@ function projectWallOpeningsWithSlots(seg, idx) {
   return extra.length ? base.concat(extra) : base;
 }
 
+// ==========================================================================
+// MUDAR PAREDE NÃO MEXE NO PROJETO (2026-10-16)
+// ==========================================================================
+// Relato de usuário: projeto de 3 paredes cheio de módulos, adicionou uma 4ª
+// parede e "o projeto ficou todo errado, módulos mudaram de posição". Matt:
+// "nenhuma mudança nas paredes pode alterar o projeto já feito de forma
+// nenhuma". Três causas, todas no salvar do editor de Paredes:
+//   1. ÍNDICE: o módulo guarda wall_index, e o editor devolve as paredes na
+//      ordem da cadeia — parede nova no COMEÇO (adicionar com a 1ª
+//      selecionada faz unshift) empurra o índice de todas as outras +1 → cada
+//      módulo pulava pra parede vizinha.
+//   2. SENTIDO: o importar do editor começa a cadeia pela ponta livre e pode
+//      INVERTER A↔B de uma parede (as aberturas ele espelha, o x_mm dos
+//      módulos ninguém espelhava) → módulo ia pro outro lado da parede.
+//   3. LADO DE DENTRO: vem do centro de TODAS as paredes
+//      (projectWallsCentroM); parede nova desloca o centro e pode virar o
+//      "dentro" de outra parede → módulo ia pra fora/girava 180°.
+// A correção casa cada parede nova com a antiga (pelo id; sem id, pelas
+// pontas) e, pra cada uma: congela o lado de dentro (liga/desliga
+// inverterLado, a não ser que o próprio usuário tenha virado no editor),
+// espelha o x_mm se o sentido inverteu, e renumera o wall_index. Módulo de
+// parede APAGADA vira módulo solto no chão NO MESMO LUGAR (antes ia pra
+// parede 0). Parede que o usuário de fato MOVEU continua levando os módulos
+// junto (é a regra antiga, "módulos guardam wall_index + x_mm").
+function projectWallGeometryForSegments(segs) {
+  const prev = projectWallSegments;
+  projectWallSegments = segs;
+  try { return segs.map((seg, idx) => projectWallSegmentGeometry(seg, idx)); }
+  finally { projectWallSegments = prev; }
+}
+
+function preserveProjectSlotsAcrossWallEdit(newSegs) {
+  const TOL_MM = 5;
+  const oldSegs = Array.isArray(projectWallSegments) ? projectWallSegments : [];
+  const oldGeo = getProjectWallGeometry(); // ainda com as paredes antigas
+  // Pose real (mundo) de cada módulo de parede ANTES da troca.
+  const oldFrames = new Map();
+  projectSlots.forEach((slot) => {
+    if (!isFloorSlot(slot)) oldFrames.set(slot, getSlotWorldFrame(slot));
+  });
+
+  const ends = (g) => {
+    const ax = g.originX * 1000, az = g.originZ * 1000;
+    return { ax, az, bx: ax + g.alongDirX * g.widthM * 1000, bz: az + g.alongDirZ * g.widthM * 1000 };
+  };
+  const near = (x1, z1, x2, z2) => Math.hypot(x1 - x2, z1 - z2) <= TOL_MM;
+  const oldEnds = oldGeo.map(ends);
+  const used = new Set();
+  const newToOld = newSegs.map((seg) => {
+    let i = seg && seg.id ? oldSegs.findIndex((o, k) => !used.has(k) && o && o.id === seg.id) : -1;
+    if (i < 0) {
+      i = oldEnds.findIndex((e, k) => !used.has(k) && (
+        (near(e.ax, e.az, seg.ax, seg.az) && near(e.bx, e.bz, seg.bx, seg.bz)) ||
+        (near(e.ax, e.az, seg.bx, seg.bz) && near(e.bx, e.bz, seg.ax, seg.az))));
+    }
+    if (i >= 0) used.add(i);
+    return i;
+  });
+
+  // Lado de dentro congelado (sem mexer no centro: inverterLado não muda as
+  // pontas, então dá pra calcular a geometria nova uma vez só).
+  let newGeo = projectWallGeometryForSegments(newSegs);
+  newSegs.forEach((seg, j) => {
+    const i = newToOld[j];
+    if (i < 0 || !oldGeo[i]) return;
+    const oldSeg = oldSegs[i] || {};
+    if (!!seg.inverterLado !== !!oldSeg.inverterLado) return; // usuário virou de propósito
+    const g = newGeo[j], o = oldGeo[i];
+    if (g.intoDirX * o.intoDirX + g.intoDirZ * o.intoDirZ < 0) seg.inverterLado = !seg.inverterLado;
+  });
+  newGeo = projectWallGeometryForSegments(newSegs);
+
+  const oldToNew = new Map();
+  newToOld.forEach((i, j) => { if (i >= 0) oldToNew.set(i, j); });
+
+  projectSlots.forEach((slot) => {
+    if (isFloorSlot(slot)) return;
+    const oldIdx = Number(slot.wall_index || 0);
+    const j = oldToNew.get(oldIdx);
+    if (j != null && oldGeo[oldIdx] && newGeo[j]) {
+      const o = oldGeo[oldIdx], g = newGeo[j];
+      if (g.alongDirX * o.alongDirX + g.alongDirZ * o.alongDirZ < 0) {
+        const lenMm = g.widthM * 1000;
+        slot.x_mm = Math.round((lenMm - Number(slot.x_mm || 0) - Number(slot.width_mm || 0)) * 10) / 10;
+      }
+      slot.wall_index = j;
+      return;
+    }
+    // Parede apagada: fica solto no chão, mesmo lugar e mesmo giro.
+    const f = oldFrames.get(slot);
+    if (!f) return;
+    const hMm = Number(slot.floor_height_mm || 0);
+    convertProjectSlotToFloor(slot, Math.round(f.ox * 1000), Math.round(f.oz * 1000));
+    slot.floor_height_mm = hMm;
+    slot.floor_rotation_deg = Math.round((f.rotY * 180 / Math.PI) * 100) / 100;
+    slot.wall_index = 0;
+  });
+
+  if (typeof projectActiveWallIndex !== 'undefined') {
+    const j = oldToNew.get(Number(projectActiveWallIndex || 0));
+    projectActiveWallIndex = j != null ? j : 0;
+  }
+  if (typeof projectDimViewWallIndex !== 'undefined' && projectDimViewWallIndex != null) {
+    const j = oldToNew.get(Number(projectDimViewWallIndex));
+    projectDimViewWallIndex = j != null ? j : null;
+  }
+}
+
 // Abre a planta baixa. O que volta substitui as paredes do projeto — e os
 // MÓDULOS NÃO SE MEXEM (decisão do Matt: "modulos nao mexem"). Eles guardam
 // wall_index + x_mm ao longo da parede, então continuam onde estavam mesmo se
@@ -4400,6 +4508,9 @@ function openProjectWallEditor() {
     ceilingMm: (roomSettings && roomSettings.ceiling_mm) || 2600,
     baseboardMm: (roomSettings && roomSettings.baseboard_mm) || 0,
     onSave: (segs, ambiente) => {
+      // ANTES de trocar as paredes: casa parede nova ↔ antiga e reancora os
+      // módulos (ver preserveProjectSlotsAcrossWallEdit, 16/10).
+      preserveProjectSlotsAcrossWallEdit(segs);
       projectWallSegments = segs;
       // Pé-direito e rodapé saíram da faixa e vivem aqui agora (2026-08-13).
       // Em vez de escrever em roomSettings direto, o editor ESCREVE NOS INPUTS
@@ -4417,9 +4528,9 @@ function openProjectWallEditor() {
             inp.dispatchEvent(new Event('change'));
           });
       }
-      // Módulo que ficou apontando pra uma parede que não existe mais volta
-      // pra primeira — é o mínimo pra ele não sumir do desenho. Fora isso,
-      // ninguém é movido.
+      // Rede de segurança (não deveria sobrar ninguém depois do
+      // preserveProjectSlotsAcrossWallEdit): índice fora da lista volta pra 0
+      // pra não sumir do desenho.
       projectSlots.forEach((s) => {
         if (Number(s.wall_index || 0) >= projectWallSegments.length) s.wall_index = 0;
       });

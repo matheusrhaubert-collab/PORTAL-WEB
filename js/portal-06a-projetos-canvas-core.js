@@ -108,6 +108,10 @@ function projectUndoSnapshot() {
     slots: projectSlots.map(cloneProjectSlotForUndo),
     wallShape: projectWallShape,
     wallWidthsMm: projectWallWidthsMm.slice(),
+    // Paredes no desfazer (16/10): o salvar do editor de Paredes reancora os
+    // módulos; desfazer só os módulos e deixar as paredes novas embaralhava
+    // tudo de novo.
+    wallSegments: JSON.parse(JSON.stringify(projectWallSegments || [])),
     activeWallIndex: projectActiveWallIndex,
     selectedSlotId: selectedProjectSlotId
   };
@@ -168,6 +172,7 @@ function undoProjectChange() {
   projectSlots = prev.slots.map(cloneProjectSlotForUndo);
   projectWallShape = prev.wallShape;
   projectWallWidthsMm = prev.wallWidthsMm.slice();
+  if (Array.isArray(prev.wallSegments)) projectWallSegments = JSON.parse(JSON.stringify(prev.wallSegments));
   projectActiveWallIndex = Math.min(prev.activeWallIndex, getProjectWallCount() - 1);
   selectedProjectSlotId = prev.slots.some((s) => s.id === prev.selectedSlotId) ? prev.selectedSlotId : null;
 
@@ -208,6 +213,7 @@ function redoProjectChange() {
   projectSlots = next.slots.map(cloneProjectSlotForUndo);
   projectWallShape = next.wallShape;
   projectWallWidthsMm = next.wallWidthsMm.slice();
+  if (Array.isArray(next.wallSegments)) projectWallSegments = JSON.parse(JSON.stringify(next.wallSegments));
   projectActiveWallIndex = Math.min(next.activeWallIndex, getProjectWallCount() - 1);
   selectedProjectSlotId = next.slots.some((s) => s.id === next.selectedSlotId) ? next.selectedSlotId : null;
 
