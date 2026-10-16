@@ -175,7 +175,15 @@ LOTES.deleteParams = async function (id) {
    foi montada no módulo. Toda peça de chapa é fina num dos eixos. */
 LOTES.sortCutDims = function (w, h, d) {
   const s = [Number(w) || 0, Number(h) || 0, Number(d) || 0].sort(function (a, b) { return a - b; });
-  return { espessura_mm: s[0], largura_mm: s[1], comprimento_mm: s[2] };
+  return { espessura_mm: s[0], largura_mm: LOTES.mmCorte(s[1]), comprimento_mm: LOTES.mmCorte(s[2]) };
+};
+
+/* Medida de corte inteira — regra do Matt (16/10): até ,7 pra baixo, de ,8
+   pra cima (Pricing.arredondaMm, js/pricing.js). Comprimento e largura da
+   peça NASCEM inteiros aqui, então plano, máquina, etiqueta e estoque de
+   retalho só veem milímetro inteiro. Espessura fica de fora (19,5). */
+LOTES.mmCorte = function (v) {
+  return (typeof Pricing !== 'undefined' && Pricing.arredondaMm) ? Pricing.arredondaMm(v) : Math.round(Number(v) || 0);
 };
 
 /* COMPRIMENTO NO SENTIDO DO VEIO (2026-09-24). Matt, com o LT-26-0014 já
@@ -202,7 +210,7 @@ LOTES.cutDimsPeloVeio = function (leaf, hasGrain) {
   const fino = ['w', 'h', 'd'].reduce(function (a, k) { return dims[k] < dims[a] ? k : a; }, 'w');
   if (eixo === fino) return base; // dado ruim: veio no eixo da espessura
   const outro = ['w', 'h', 'd'].find(function (k) { return k !== fino && k !== eixo; });
-  return { espessura_mm: dims[fino], largura_mm: dims[outro], comprimento_mm: dims[eixo] };
+  return { espessura_mm: dims[fino], largura_mm: LOTES.mmCorte(dims[outro]), comprimento_mm: LOTES.mmCorte(dims[eixo]) };
 };
 
 /* ESPESSURA = A DA COR, SEMPRE (2026-10-15, Matt, LT-26-0016 saiu com 3
@@ -543,8 +551,8 @@ LOTES.explodeOrders = async function (orderIds) {
       module_name: r.op || order.po_name || 'Plano de corte',
       reference: r.part_name || '—',
       description: r.obs || '—',   // a coluna é 'obs' (migration 051), não 'notes'
-      comprimento_mm: Number(r.comprimento_mm) || 0,
-      largura_mm: Number(r.largura_mm) || 0,
+      comprimento_mm: LOTES.mmCorte(Number(r.comprimento_mm) || 0),
+      largura_mm: LOTES.mmCorte(Number(r.largura_mm) || 0),
       espessura_mm: LOTES.espessuraDaCor(color, r.espessura_mm),
       quantity: Math.max(1, Math.round(Number(r.quantity)) || 1),
       color_id: r.color_id || null,
@@ -683,7 +691,11 @@ LOTES.batch = async function (id) {
   if (orders.error) throw orders.error;
 
   const batch = b.data;
-  batch._pieces = pieces.data || [];
+  // Lote antigo (antes de 16/10) ainda tem medida quebrada gravada:
+  // arredonda na leitura, pra plano/etiqueta novos já saírem inteiros.
+  batch._pieces = (pieces.data || []).map(function (p) {
+    return Object.assign({}, p, { comprimento_mm: LOTES.mmCorte(p.comprimento_mm), largura_mm: LOTES.mmCorte(p.largura_mm) });
+  });
   batch._plans = plans.data || [];
   batch._orderIds = (orders.data || []).map(function (r) { return r.order_id; });
 
@@ -756,7 +768,9 @@ LOTES.deleteBatch = async function (id) {
 
 LOTES.addPiece = async function (batchId, row) {
   const { data, error } = await LOTES.erp().from('batch_pieces')
-    .insert(Object.assign({ batch_id: batchId, source: 'manual' }, row)).select().maybeSingle();
+    .insert(Object.assign({ batch_id: batchId, source: 'manual' }, row,
+      row && row.comprimento_mm != null ? { comprimento_mm: LOTES.mmCorte(row.comprimento_mm) } : {},
+      row && row.largura_mm != null ? { largura_mm: LOTES.mmCorte(row.largura_mm) } : {})).select().maybeSingle();
   if (error) throw error;
   return data;
 };
@@ -1183,8 +1197,8 @@ LOTES.savePlan = async function (opts) {
           color_id: g.group.color_id,
           color_name: g.group.color_name,
           espessura_mm: g.group.espessura_mm,
-          width_mm: Math.round(clean.w * 10) / 10,
-          height_mm: Math.round(clean.h * 10) / 10,
+          width_mm: LOTES.mmCorte(clean.w),
+          height_mm: LOTES.mmCorte(clean.h),
           status: 'disponivel',
           origin_plan_id: plan.id,
           origin_sheet_id: sheetRow.id,

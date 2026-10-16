@@ -438,7 +438,7 @@ MAT.tabRetalhos = function (d) {
     return {
       code: '<span class="erp-mono erp-strong">' + UI.esc(o.code) + '</span>',
       cor: UI.swatch(c && c.swatch_hex, o.color_name || (c && c.name) || '—'),
-      esp: LOTES_UI.mm(o.espessura_mm) + ' mm',
+      esp: LOTES_UI.esp(o.espessura_mm) + ' mm',
       dim: '<span class="erp-strong">' + LOTES_UI.mm(o.width_mm) + ' × ' + LOTES_UI.mm(o.height_mm) + '</span> mm' +
         (c && c.has_grain ? '<div class="erp-xs erp-strong">veio no ' + LOTES_UI.mm(o.width_mm) + '</div>' : '') +
         '<div class="erp-xs erp-muted">' + ((o.width_mm / 1000) * (o.height_mm / 1000)).toFixed(2).replace('.', ',') + ' m²</div>',
@@ -480,8 +480,8 @@ MAT.tabRetalhos = function (d) {
       '<div class="erp-grid erp-grid-4">' +
         '<label class="erp-field"><span>Cor</span><select id="ret-cor">' + colorOpts + '</select></label>' +
         '<label class="erp-field"><span>Espessura (mm)</span><input type="number" id="ret-esp" value="18" step="0.1" min="1"></label>' +
-        '<label class="erp-field"><span>Comprimento — sentido do veio (mm)</span><input type="number" id="ret-w" step="0.1" min="1"></label>' +
-        '<label class="erp-field"><span>Largura (mm)</span><input type="number" id="ret-h" step="0.1" min="1"></label>' +
+        '<label class="erp-field"><span>Comprimento — sentido do veio (mm)</span><input type="number" id="ret-w" step="1" min="1"></label>' +
+        '<label class="erp-field"><span>Largura (mm)</span><input type="number" id="ret-h" step="1" min="1"></label>' +
         '<label class="erp-field"><span>Local</span><input type="text" id="ret-loc" placeholder="Cavalete 3"></label>' +
         '<label class="erp-field"><span>Quantidade iguais</span><input type="number" id="ret-qtd" value="1" step="1" min="1"></label>' +
       '</div>' +
@@ -502,7 +502,8 @@ MAT.tabRetalhos = function (d) {
 
 MAT.cadastrarRetalho = async function (btn) {
   const v = function (id) { const el = document.getElementById(id); return el ? el.value : ''; };
-  const w = Number(v('ret-w')), h = Number(v('ret-h')), esp = Number(v('ret-esp'));
+  // Medida inteira (regra de 16/10): 300,2 -> 300, 300,8 -> 301.
+  const w = LOTES.mmCorte(Number(v('ret-w'))), h = LOTES.mmCorte(Number(v('ret-h'))), esp = Number(v('ret-esp'));
   const colorId = v('ret-cor');
   const qtd = Math.max(1, Math.round(Number(v('ret-qtd'))) || 1);
   if (!colorId) { MAT.toast('Escolha a cor — o nesting procura retalho por cor e espessura.', true); return; }

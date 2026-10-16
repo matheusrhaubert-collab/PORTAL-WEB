@@ -166,9 +166,18 @@ function mmToFractionalInches(mm) {
 // Inteiro continua saindo inteiro ("761 mm", não "761.0 mm"): só quem tem
 // casa decimal a mostra, então nada do que já estava certo fica mais
 // poluído.
+// ATUALIZAÇÃO 16/10/2026 (Matt): medida em milímetro sai SEMPRE inteira —
+// "0,alguma coisa em milímetro não funciona na prática". Regra dele: até ,7
+// pra baixo, de ,8 pra cima (Pricing.arredondaMm). A ESPESSURA continua
+// aparecendo com o meio milímetro (19,5): usa formatEspessura, abaixo.
 function formatMmSemPerder(mm) {
   const n = Number(mm) || 0;
-  return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+  return String((typeof Pricing !== 'undefined' && Pricing.arredondaMm) ? Pricing.arredondaMm(n) : Math.round(n));
+}
+function formatEspessura(mm, unit) {
+  const n = Number(mm) || 0;
+  if ((unit || 'mm') !== 'mm') return formatDimension(n, unit);
+  return (Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10)) + ' mm';
 }
 function formatDimension(mm, unit) {
   switch (unit) {

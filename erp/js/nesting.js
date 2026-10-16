@@ -603,6 +603,11 @@ NESTING._separavelGuilhotina = function (items, axis, stuck, eps) {
   return segs.every(function (sg) { return sg.items.length === 1 || NESTING._separavelGuilhotina(sg.items, perp, false, eps); });
 };
 
+/* Medida que aparece no desenho: inteira pela regra do Matt (16/10). */
+NESTING._mm = function (v) {
+  return (typeof Pricing !== 'undefined' && Pricing.arredondaMm) ? Pricing.arredondaMm(v) : Math.round(v);
+};
+
 NESTING._recomputeOffcuts = function (sheet, params) {
   const kerf = Number(params.kerf_mm) || 0;
   const minW = Number(params.min_offcut_width_mm) || 0;
@@ -1800,7 +1805,7 @@ NESTING.sheetSVG = function (sheet, params, opts) {
         '" fill="url(#nest-scrap)" stroke="#a8a297" stroke-width="0.8"/>';
       if (rw > 40 && rh > 14) {
         svg += '<text x="' + (x + rw / 2).toFixed(1) + '" y="' + (y + rh / 2 + 3.5).toFixed(1) +
-          '" font-size="9" text-anchor="middle" fill="#6f6a60">' + Math.round(r.w) + '×' + Math.round(r.h) + '</text>';
+          '" font-size="9" text-anchor="middle" fill="#6f6a60">' + NESTING._mm(r.w) + '×' + NESTING._mm(r.h) + '</text>';
       }
     });
   }
@@ -1812,7 +1817,7 @@ NESTING.sheetSVG = function (sheet, params, opts) {
       '" fill="#dff2e1" stroke="#4c9a5e" stroke-width="1" stroke-dasharray="5 3"/>';
     if (rw > 46 && rh > 16) {
       svg += '<text x="' + (x + rw / 2).toFixed(1) + '" y="' + (y + rh / 2 + 4).toFixed(1) +
-        '" font-size="10" text-anchor="middle" fill="#2f6b3d">retalho ' + Math.round(r.w) + '×' + Math.round(r.h) + '</text>';
+        '" font-size="10" text-anchor="middle" fill="#2f6b3d">retalho ' + NESTING._mm(r.w) + '×' + NESTING._mm(r.h) + '</text>';
     }
   });
 
@@ -1843,10 +1848,10 @@ NESTING.sheetSVG = function (sheet, params, opts) {
       svg += '<text x="' + (x + pw / 2).toFixed(1) + '" y="' + (y + ph / 2 - 3).toFixed(1) + '" font-size="' + fs.toFixed(1) +
         '" text-anchor="middle" fill="#1e2b3a">' + esc(p.piece.label || '') + '</text>' +
         '<text x="' + (x + pw / 2).toFixed(1) + '" y="' + (y + ph / 2 + 9).toFixed(1) + '" font-size="' + fs.toFixed(1) +
-        '" text-anchor="middle" fill="#4a5a6a">' + Math.round(p.w) + ' × ' + Math.round(p.h) + (p.rotated ? ' ↻' : '') + '</text>';
+        '" text-anchor="middle" fill="#4a5a6a">' + NESTING._mm(p.w) + ' × ' + NESTING._mm(p.h) + (p.rotated ? ' ↻' : '') + '</text>';
     } else if (pw > 24 && ph > 12) {
       svg += '<text x="' + (x + pw / 2).toFixed(1) + '" y="' + (y + ph / 2 + 3).toFixed(1) + '" font-size="' + fs.toFixed(1) +
-        '" text-anchor="middle" fill="#1e2b3a">' + Math.round(p.w) + '×' + Math.round(p.h) + '</text>';
+        '" text-anchor="middle" fill="#1e2b3a">' + NESTING._mm(p.w) + '×' + NESTING._mm(p.h) + '</text>';
     }
     svg += '</g>';
   });

@@ -3443,7 +3443,7 @@ function renderProjectSlotPiecesList(slot) {
         + '<td>' + nome + '</td>'
         + '<td>' + formatDimension(d.c, unit) + '</td>'
         + '<td>' + formatDimension(d.l, unit) + '</td>'
-        + '<td>' + formatDimension(d.e, unit) + '</td>'
+        + '<td>' + formatEspessura(d.e, unit) + '</td>'
         + '<td>' + corCell + '</td>'
         + '<td>' + escapeHtmlCutlist(veio) + '</td>'
         + '<td>' + acaoCell + '</td></tr>';

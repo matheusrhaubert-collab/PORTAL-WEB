@@ -288,12 +288,19 @@
   // Se a máquina recusar isso, o caminho alternativo é confirmar os códigos
   // T/B e voltar a girar — não mexer aqui sem um .ban real na mão.
   const FURADEIRA_LADO_MAX_MM = 1050;
+  // Medida da peça no .ban = a medida CORTADA, inteira (regra do Matt,
+  // 16/10: até ,7 pra baixo, de ,8 pra cima — Pricing.arredondaMm). Os
+  // furos continuam calculados na medida exata; addHole encosta na borda o
+  // que passar dela por fração de mm.
+  function mmCorte(v) {
+    return (global.Pricing && global.Pricing.arredondaMm) ? global.Pricing.arredondaMm(v) : v;
+  }
   function machineDims(t) {
     const flip = t.faceB > t.faceA && t.faceB > FURADEIRA_LADO_MAX_MM;
     return {
       flip,
-      C: flip ? t.faceB : t.faceA, // Width do Plane
-      L: flip ? t.faceA : t.faceB, // Hight do Plane
+      C: mmCorte(flip ? t.faceB : t.faceA), // Width do Plane
+      L: mmCorte(flip ? t.faceA : t.faceB), // Hight do Plane
       E: t.thickness
     };
   }
@@ -414,7 +421,11 @@
     // descarta furo fora da chapa (fórmula ruim/peça pequena demais) — mais
     // seguro ignorar do que mandar a broca pra fora da peça
     const m = machineDims(splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning));
-    if (hole.x < -0.01 || hole.x > m.C + 0.01 || hole.y < -0.01 || hole.y > m.L + 0.01) return;
+    if (hole.x < -0.01 || hole.x > m.C + 1 || hole.y < -0.01 || hole.y > m.L + 1) return;
+    // Peça arredondada pra baixo (até 0,7mm): furo de borda/fim que caía na
+    // borda exata encosta na borda da peça cortada.
+    if (hole.x > m.C) hole = Object.assign({}, hole, { x: m.C });
+    if (hole.y > m.L) hole = Object.assign({}, hole, { y: m.L });
     if (!(hole.diameter > 0) || !(hole.depth > 0)) return;
     store.get(part).push(hole);
   }
@@ -2521,7 +2532,7 @@
             holes = holes.map(function (h) {
               return Object.assign({}, h, { x: t.faceB - h.y, y: h.x, face: trocaFace[h.face] || h.face });
             });
-            m.flip = true; m.C = t.faceB; m.L = t.faceA;
+            m.flip = true; m.C = mmCorte(t.faceB); m.L = mmCorte(t.faceA);
           }
           // ordena furos (face primeiro, depois posição) pra assinatura ser
           // estável entre instâncias idênticas

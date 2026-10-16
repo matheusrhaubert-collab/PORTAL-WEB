@@ -22,7 +22,8 @@ function cutlistFormatFieldValue(mm, unit) {
 function commitCutlistDimensionInput(row, field, rawValue) {
   const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
   const mm = parseDimensionInput(rawValue, unit);
-  if (mm !== null && !isNaN(mm)) row[field] = mm;
+  // Medida inteira (regra de 16/10: até ,7 pra baixo, de ,8 pra cima).
+  if (mm !== null && !isNaN(mm)) row[field] = (typeof Pricing !== 'undefined' && Pricing.arredondaMm) ? Pricing.arredondaMm(mm) : mm;
 }
 
 // Cabeçalho ("Comprimento (in)"/"Largura (in)") e hint de limites

@@ -194,7 +194,9 @@ function flattenOrderItemBreakdown(breakdown, multiplier) {
 // comprimento = a maior.
 function sortPieceCutDims(width_mm, height_mm, depth_mm) {
   const sorted = [width_mm, height_mm, depth_mm].slice().sort((a, b) => a - b);
-  return { thickness_mm: sorted[0], largura_mm: sorted[1], comprimento_mm: sorted[2] };
+  // Medida inteira (regra de 16/10: até ,7 pra baixo, de ,8 pra cima).
+  const r = (typeof Pricing !== 'undefined' && Pricing.arredondaMm) ? Pricing.arredondaMm : function (v) { return v; };
+  return { thickness_mm: sorted[0], largura_mm: r(sorted[1]), comprimento_mm: r(sorted[2]) };
 }
 
 // Plano de barras (migration 187 — perfil de alumínio da porta de vidro):

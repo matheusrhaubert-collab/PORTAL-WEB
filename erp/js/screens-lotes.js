@@ -43,7 +43,11 @@ LOTES_UI.OFFCUT_STATUS = {
   descartado: { label: 'Descartado', pill: 'erp-pill-danger' }
 };
 
-LOTES_UI.mm = function (v) { return Math.round(Number(v) || 0).toLocaleString('pt-BR'); };
+/* Medida de corte: inteira pela regra do Matt (16/10 — até ,7 pra baixo, de
+   ,8 pra cima, Pricing.arredondaMm). Espessura NÃO passa por aqui: usa
+   LOTES_UI.esp, que mantém o comportamento antigo. */
+LOTES_UI.mm = function (v) { return LOTES.mmCorte(Number(v) || 0).toLocaleString('pt-BR'); };
+LOTES_UI.esp = function (v) { return Math.round(Number(v) || 0).toLocaleString('pt-BR'); };
 LOTES_UI.m2 = function (v) { return (Number(v) || 0).toFixed(2).replace('.', ',') + ' m²'; };
 LOTES_UI.pct = function (v) { return (Number(v) || 0).toFixed(1).replace('.', ',') + '%'; };
 
@@ -403,7 +407,7 @@ LOTES_UI.detail = function (params, d) {
         desc: '<span class="erp-small">' + UI.esc(r.description || '—') + '</span>',
         comp: LOTES_UI.mm(r.comprimento_mm),
         larg: LOTES_UI.mm(r.largura_mm),
-        esp: LOTES_UI.mm(r.espessura_mm),
+        esp: LOTES_UI.esp(r.espessura_mm),
         veio: r.has_grain ? UI.pill('sim', 'erp-pill-warn') : '<span class="erp-muted erp-xs">não</span>',
         fita: r.edge_banding ? (r.edge_banding + ' lados')
           : (Number(r.edge_band_m) ? (Number(r.edge_band_m).toFixed(2).replace('.', ',') + ' m') : '—'),
@@ -417,7 +421,7 @@ LOTES_UI.detail = function (params, d) {
     return UI.panel(null,
       '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
         '<div><div class="erp-strong">' + UI.swatch(g.color && g.color.swatch_hex, g.color_name) +
-          ' · ' + LOTES_UI.mm(g.espessura_mm) + ' mm</div>' +
+          ' · ' + LOTES_UI.esp(g.espessura_mm) + ' mm</div>' +
           '<div class="erp-muted erp-small">' + g.qty + ' peças · ' + LOTES_UI.m2(g.area_m2) +
           ' · fita ' + g.edge_m.toFixed(2).replace('.', ',') + ' m</div></div>' +
         (semCor ? UI.pill('sem cor — não entra no nesting', 'erp-pill-danger') : '') +
@@ -667,7 +671,7 @@ LOTES_UI.planNew = function (params, d) {
     return '<tr>' +
       '<td><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" class="plano-grupo" value="' + g.key + '" checked> ' +
         UI.swatch(g.color && g.color.swatch_hex, g.color_name) + '</label></td>' +
-      '<td class="erp-num">' + LOTES_UI.mm(g.espessura_mm) + '</td>' +
+      '<td class="erp-num">' + LOTES_UI.esp(g.espessura_mm) + '</td>' +
       '<td class="erp-num">' + g.qty + '</td>' +
       '<td class="erp-num">' + LOTES_UI.m2(g.area_m2) + '</td>' +
       '<td>' + (g.offcuts.length
@@ -981,7 +985,7 @@ LOTES_UI.renderDraft = function (draft) {
                 draft.groups.map(function (g) {
                   const v2 = g.compare && g.compare[m];
                   if (!v2) return '';
-                  return '<div><span class="erp-strong">' + UI.esc(g.group.color_name) + ' ' + LOTES_UI.mm(g.group.espessura_mm) + 'mm</span>: ' +
+                  return '<div><span class="erp-strong">' + UI.esc(g.group.color_name) + ' ' + LOTES_UI.esp(g.group.espessura_mm) + 'mm</span>: ' +
                     v2.sheets + ' chapa' + (v2.sheets === 1 ? '' : 's') + (v2.offcuts_used ? ' (' + v2.offcuts_used + ' retalho' + (v2.offcuts_used === 1 ? '' : 's') + ' usado' + (v2.offcuts_used === 1 ? '' : 's') + ')' : '') + ' · ' + v2.patterns + ' plano' + (v2.patterns === 1 ? '' : 's') +
                     ' · ' + v2.turns + ' virada' + (v2.turns === 1 ? '' : 's') + (v2.stacks ? ' · ' + v2.stacks + ' pilha' + (v2.stacks === 1 ? '' : 's') : '') +
                     ' · quebra ' + LOTES_UI.pct((v2.waste_net_pct || 0) * 100) + ' · ' + (v2.offcuts || 0) + ' retalho' + (v2.offcuts === 1 ? '' : 's') + '</div>';
@@ -1031,7 +1035,7 @@ LOTES_UI.renderDraft = function (draft) {
         NESTING.sheetSVG(sh, draft.params) +
         '</div>';
     }).join('');
-    return UI.panel(UI.esc(g.group.color_name) + ' · ' + LOTES_UI.mm(g.group.espessura_mm) + ' mm',
+    return UI.panel(UI.esc(g.group.color_name) + ' · ' + LOTES_UI.esp(g.group.espessura_mm) + ' mm',
       '<div class="erp-grid erp-grid-4" style="margin-bottom:14px">' +
         UI.kpi('Chapas novas', g.result.summary.sheets_new, UI.esc(g.sheetSize.name)) +
         UI.kpi('Planos de corte', (g.result.summary.sheets_new + g.result.summary.offcuts_used - (g.result.summary.stacks || 0)),
@@ -1185,7 +1189,7 @@ LOTES_UI.planView = function (params, d) {
           ' da máquina · chapa ' + s.index_no + ' na ordem geral do plano">Chapa ' + (machineNo[s.id] ? machineNo[s.id].n + '/' + machineNo[s.id].total : s.index_no) +
           ' <span class="erp-muted" style="font-weight:400">(#' + s.index_no + ' no plano)</span> — ' +
           (s.source === 'retalho' ? UI.pill('retalho', 'erp-pill-ok') : UI.esc(s.sheet_size_name || 'Chapa')) + stackBadge + ' · ' +
-          UI.swatch(null, s.color_name) + ' ' + LOTES_UI.mm(s.espessura_mm) + 'mm · ' +
+          UI.swatch(null, s.color_name) + ' ' + LOTES_UI.esp(s.espessura_mm) + 'mm · ' +
           LOTES_UI.mm(s.width_mm) + ' × ' + LOTES_UI.mm(s.height_mm) + ' mm</div>' +
         '<div class="erp-small erp-muted">' + (s._pieces || []).length + ' peças · aproveitamento ' +
           LOTES_UI.pct(s.used_pct) + '</div>' +
@@ -1372,7 +1376,7 @@ LOTES_UI.labels = function (params, d) {
       // plywood").
       '<div class="erp-etq-dim-row">' +
         '<span class="erp-etq-dim">' + LOTES_UI.mm(p.w_mm) + ' × ' + LOTES_UI.mm(p.h_mm) +
-          ' × ' + LOTES_UI.mm(p.espessura_mm) + ' mm' + (p.rotated ? ' ↻' : '') + '</span>' +
+          ' × ' + LOTES_UI.esp(p.espessura_mm) + ' mm' + (p.rotated ? ' ↻' : '') + '</span>' +
         // Número da chapa como a máquina mostra (por material) — LOTES.sheetMachineNo.
         '<span class="erp-etq-sheet">chapa ' + (s && machineNo[s.id] ? machineNo[s.id].n : (s ? s.index_no : '?')) + '</span>' +
       '</div>' +

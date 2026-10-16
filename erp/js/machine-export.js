@@ -341,9 +341,12 @@ MAQUINA_EXPORT._itensDaChapa = function (sh, ctx) {
     let code = null;
     const rows = (ctx.offcutRows || []).filter(function (r) { return r.origin_sheet_id === sh.id && !r._used; });
     const same = function (r, a, b) { return Math.abs(Number(r.width_mm) - a) < 0.15 && Math.abs(Number(r.height_mm) - b) < 0.15; };
-    const row = rows.find(function (r) { return same(r, w, h); }) || rows.find(function (r) { return same(r, Number(o.w), Number(o.h)); });
+    // Medida inteira (regra de 16/10, LOTES.mmCorte) — é a que vai pro
+    // estoque e pra etiqueta OC; a geometria (w/h) fica exata pra árvore.
+    const cw = LOTES.mmCorte(w), ch = LOTES.mmCorte(h);
+    const row = rows.find(function (r) { return same(r, cw, ch); }) || rows.find(function (r) { return same(r, w, h); }) || rows.find(function (r) { return same(r, Number(o.w), Number(o.h)); });
     if (row) { row._used = true; code = row.code; }
-    items.push({ x: Number(o.x), y: Number(o.y), w: w, h: h, kind: 'offcut', ocNumber: ctx.offcutCounterRef.n, cleanW: w, cleanH: h, stockCode: code });
+    items.push({ x: Number(o.x), y: Number(o.y), w: w, h: h, kind: 'offcut', ocNumber: ctx.offcutCounterRef.n, cleanW: cw, cleanH: ch, stockCode: code });
   });
   return items;
 };
@@ -432,7 +435,7 @@ MAQUINA_EXPORT._buildLabelOps = function (p, labelNumber, sheetIndexNo) {
   y += barH + 0.5 + 2.65 + 0.8;
 
   // .erp-etq-dim-row: medida mm (13px bold) + "chapa N" (10px cinza) à direita
-  const dimTxt = LOTES_UI.mm(p.w_mm) + ' \u00d7 ' + LOTES_UI.mm(p.h_mm) + ' \u00d7 ' + LOTES_UI.mm(p.espessura_mm) + ' mm' + (p.rotated ? ' \u21bb' : '');
+  const dimTxt = LOTES_UI.mm(p.w_mm) + ' \u00d7 ' + LOTES_UI.mm(p.h_mm) + ' \u00d7 ' + LOTES_UI.esp(p.espessura_mm) + ' mm' + (p.rotated ? ' \u21bb' : '');
   ops.push({ type: 'text', x: left, y: y, text: dimTxt, sizeMm: 3.4, bold: true, color: INK });
   ops.push({ type: 'text', x: right, y: y + 0.7, text: 'chapa ' + (sheetIndexNo || '?'), sizeMm: 2.65, align: 'right', color: GRAY });
   y += 3.4 * 1.35;

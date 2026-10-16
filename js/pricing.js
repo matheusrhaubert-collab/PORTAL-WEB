@@ -1848,7 +1848,23 @@
     }, 0);
   }
 
+  /* MEDIDA DE CORTE INTEIRA (Matt, 16/10/2026): "0,alguma coisa em
+     milímetro não funciona na prática". Regra dele: fração até ,7 (incluso)
+     arredonda pra BAIXO, de ,8 (incluso) pra CIMA — 500,4 e 500,7 -> 500;
+     500,8 -> 501. Vale pra comprimento/largura de peça e retalho, em tela,
+     etiqueta, plano e máquina. NÃO vale pra espessura (19,5 é a chapa).
+     Arredonda primeiro em 0,1 pra 500,8 não virar 500,7999 no float. */
+  function arredondaMm(v) {
+    const n = Number(v);
+    if (!isFinite(n)) return v;
+    const t = Math.round(n * 10) / 10;
+    const base = Math.floor(t);
+    const decimo = Math.round((t - base) * 10);
+    return decimo >= 8 ? base + 1 : base;
+  }
+
   const Pricing = {
+    arredondaMm,
     evalFormula,
     setFormulaGlobals,
     calculatePiece,
@@ -1905,5 +1921,6 @@
     module.exports = Pricing;
   } else {
     global.Pricing = Pricing;
+    global.arredondaMm = arredondaMm;
   }
 })(typeof window !== 'undefined' ? window : globalThis);

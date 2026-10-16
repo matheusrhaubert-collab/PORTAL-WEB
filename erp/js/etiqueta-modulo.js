@@ -145,8 +145,9 @@ ETIQUETA_MODULO.fracInTxt = function (mm) {
   return ETIQUETA_MODULO.fracIn(mm).replace(/<\/?small>/g, '');
 };
 ETIQUETA_MODULO.mm = function (v) {
+  // Inteiro pela regra de 16/10 (até ,7 pra baixo, de ,8 pra cima).
   const n = Number(v) || 0;
-  return (Math.round(n * 10) / 10).toString() + ' mm';
+  return ((typeof Pricing !== 'undefined' && Pricing.arredondaMm) ? Pricing.arredondaMm(n) : Math.round(n)).toString() + ' mm';
 };
 
 /* Code 39 em SVG (mesmo alfabeto do BARCODE da etiqueta de peça, mas sem
