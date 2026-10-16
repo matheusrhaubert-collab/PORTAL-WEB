@@ -6242,6 +6242,13 @@ function applyProjectDrawStyle(estilo, remontar) {
   // usado pela foto realista/AR) só entende "todos" — por isso só é
   // sincronizado quando NÃO há seleção; abrir um módulo sozinho não teria
   // como refletir lá.
+  // Seleção = módulo clicado + todo o GRUPO/seleção múltipla
+  // (projectMultiSelectIds) — 15/10, ver idsSel em viewer3d_composition.js.
+  const idsSelecionados = () => {
+    const ids = new Set(typeof projectMultiSelectIds !== 'undefined' && projectMultiSelectIds ? Array.from(projectMultiSelectIds) : []);
+    if (selectedProjectSlotId != null) ids.add(selectedProjectSlotId);
+    return ids.size ? Array.from(ids) : null;
+  };
   [['po-proj-tb-doors-btn', 'po-proj-toggle-doors-btn', (slotId) => ViewerProjectEdit && ViewerProjectEdit.areDoorsOpen && ViewerProjectEdit.areDoorsOpen(slotId)],
     ['po-proj-tb-drawers-btn', 'po-proj-toggle-drawers-btn', (slotId) => ViewerProjectEdit && ViewerProjectEdit.areDrawersOpen && ViewerProjectEdit.areDrawersOpen(slotId)]]
     .forEach(([idNovo, idOrig, estaAberto]) => {
@@ -6249,7 +6256,7 @@ function applyProjectDrawStyle(estilo, remontar) {
       if (!b) return;
       b.addEventListener('click', () => {
         // A Vista de Canto é a cena que está na tela — é nela que abre.
-        const onlySlotId = selectedProjectSlotId;
+        const onlySlotId = idsSelecionados();
         if (idNovo.indexOf('doors') >= 0) {
           if (ViewerProjectEdit && ViewerProjectEdit.toggleDoors) ViewerProjectEdit.toggleDoors(onlySlotId);
         } else if (ViewerProjectEdit && ViewerProjectEdit.toggleDrawers) {

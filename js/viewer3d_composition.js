@@ -1945,7 +1945,10 @@ function createViewerComposition3D() {
       a.group.userData.isDecoration = !!a.isDecoration;
       scene.add(a.group);
       currentGroups.push(a.group);
-      if (Array.isArray(a.openables) && a.openables.length) currentOpenables.push(...a.openables);
+      if (Array.isArray(a.openables) && a.openables.length) {
+        a.openables.forEach((op) => { op.slotId = a.id; }); // abrir só o selecionado (ilha)
+        currentOpenables.push(...a.openables);
+      }
       maxHeight = Math.max(maxHeight, (a.floor_height_m || 0) + a.height_m);
       const halfW = a.width_m / 2, halfD = a.depth_m / 2;
       const cR = Math.cos(a.group.rotation.y), sR = Math.sin(a.group.rotation.y);
@@ -2142,11 +2145,22 @@ function createViewerComposition3D() {
   // aberto por um toggle "todos" anterior. Sem slotId (comportamento de
   // sempre, sem seleção): continua mexendo em TODA currentOpenables e
   // usando o booleano global doorsOpen/drawersOpen de sessão.
+  // onlySlotId pode ser 1 id OU uma lista/Set de ids (GRUPO selecionado,
+  // 2026-10-15 — Matt: "com módulo/grupo selecionado, clico pra abrir porta
+  // ou gaveta e não funciona": só o slot clicado era passado, e no grupo a
+  // porta costuma estar em OUTRO módulo do grupo). Lista vazia = todos.
+  function idsSel(only) {
+    if (only == null) return null;
+    if (only instanceof Set) return only.size ? only : null;
+    if (Array.isArray(only)) return only.length ? new Set(only) : null;
+    return new Set([only]);
+  }
   function toggleDoors(onlySlotId) {
-    if (onlySlotId != null) {
-      const nowOpen = !areDoorsOpen(onlySlotId);
+    const ids = idsSel(onlySlotId);
+    if (ids) {
+      const nowOpen = !areDoorsOpen(ids);
       currentOpenables.forEach((op) => {
-        if (op.kind === 'hinge' && op.slotId === onlySlotId) op.targetAngle = nowOpen ? openAngleFor(op.hingeSide) : 0;
+        if (op.kind === 'hinge' && ids.has(op.slotId)) op.targetAngle = nowOpen ? openAngleFor(op.hingeSide) : 0;
       });
       return nowOpen;
     }
@@ -2158,10 +2172,11 @@ function createViewerComposition3D() {
   }
 
   function toggleDrawers(onlySlotId) {
-    if (onlySlotId != null) {
-      const nowOpen = !areDrawersOpen(onlySlotId);
+    const ids = idsSel(onlySlotId);
+    if (ids) {
+      const nowOpen = !areDrawersOpen(ids);
       currentOpenables.forEach((op) => {
-        if (op.kind === 'slide' && op.slotId === onlySlotId) op.targetOffset = nowOpen ? op.distance : 0;
+        if (op.kind === 'slide' && ids.has(op.slotId)) op.targetOffset = nowOpen ? op.distance : 0;
       });
       return nowOpen;
     }
@@ -2173,14 +2188,16 @@ function createViewerComposition3D() {
   }
 
   function areDoorsOpen(onlySlotId) {
-    if (onlySlotId != null) {
-      return currentOpenables.some((op) => op.kind === 'hinge' && op.slotId === onlySlotId && op.targetAngle);
+    const ids = idsSel(onlySlotId);
+    if (ids) {
+      return currentOpenables.some((op) => op.kind === 'hinge' && ids.has(op.slotId) && op.targetAngle);
     }
     return doorsOpen;
   }
   function areDrawersOpen(onlySlotId) {
-    if (onlySlotId != null) {
-      return currentOpenables.some((op) => op.kind === 'slide' && op.slotId === onlySlotId && op.targetOffset);
+    const ids = idsSel(onlySlotId);
+    if (ids) {
+      return currentOpenables.some((op) => op.kind === 'slide' && ids.has(op.slotId) && op.targetOffset);
     }
     return drawersOpen;
   }
