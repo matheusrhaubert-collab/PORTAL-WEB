@@ -882,7 +882,10 @@ LOTES_UI.gerarPlano = async function (btn) {
           : NESTING.run({ pieces: ok, offcutBins: offcuts, newSheet: newSheet, params: Object.assign({}, params, { stack_mode: mode }) });
         compare[mode] = {
           result: r,
-          sheets: r.summary.sheets_new + r.summary.offcuts_used,
+          /* "chapas" = só chapa INTEIRA nova (pedido do Matt, 16/10: retalho
+             não é chapa, já aparece em "retalhos usados"). Os planos de corte
+             continuam contando retalho — cada retalho é 1 ciclo de máquina. */
+          sheets: r.summary.sheets_new,
           sheets_new: r.summary.sheets_new,
           stacks: r.summary.stacks,
           patterns: r.summary.sheets_new + r.summary.offcuts_used - r.summary.stacks,
