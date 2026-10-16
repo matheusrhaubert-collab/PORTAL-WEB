@@ -707,10 +707,17 @@ function updateProjectSlotWidthFromLeft(slot, newWidthMm) {
     ? Pricing.pickNearestPreset(widthPresetsMm, newWidthMm)
     : clamp(newWidthMm, Number(m.width_min_mm || 0), (Number(m.width_max_mm) > 0 ? Number(m.width_max_mm) : Infinity));
   const rightEdgeMm = Number(slot.x_mm || 0) + Number(slot.width_mm || 0);
+  // BORDA DIREITA FIXA DE VERDADE (15/10): antes, batendo no começo da parede
+  // (x<0) ou o clamp empurrando, a largura ficava e a DIREITA andava. Agora
+  // quem cede é a largura — ver updateProjectSlotDimensionAncorada.
   slot.width_mm = clamped;
-  slot.x_mm = Math.max(0, rightEdgeMm - clamped);
-  recomputeProjectSlotPricing(slot);
+  slot.x_mm = rightEdgeMm - clamped;
+  if (slot.x_mm < 0) { slot.x_mm = 0; slot.width_mm = rightEdgeMm; }
   clampProjectSlotPosition(slot);
+  if (Math.abs((Number(slot.x_mm) + Number(slot.width_mm)) - rightEdgeMm) > 0.01) {
+    slot.width_mm = Math.max(1, rightEdgeMm - Number(slot.x_mm));
+  }
+  recomputeProjectSlotPricing(slot);
   resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
   renderProjectCanvas();
   markProjectDirty();
@@ -746,7 +753,7 @@ document.addEventListener('pointermove', (ev) => {
       const dxMm = (ev.clientX - state.startX) / (projectPxPerMm || 1);
       const rawRightEdge = state.startXMm + state.startWidthMm + dxMm;
       const snappedRightEdge = snapProjectEdge(rawRightEdge, true, others);
-      updateProjectSlotDimension(slot, 'width', snappedRightEdge - Number(slot.x_mm || 0));
+      updateProjectSlotDimensionAncorada(slot, 'width', snappedRightEdge - Number(slot.x_mm || 0));
     } else if (state.axis === 'width-left') {
       const dxMm = (ev.clientX - state.startX) / (projectPxPerMm || 1);
       const rawLeftEdge = state.startXMm + dxMm;
@@ -758,7 +765,7 @@ document.addEventListener('pointermove', (ev) => {
       const dyMm = -(ev.clientY - state.startY) / (projectPxPerMm || 1);
       const rawTopEdge = Number(slot.floor_height_mm || 0) + state.startHeightMm + dyMm;
       const snappedTopEdge = snapProjectEdge(rawTopEdge, false, others);
-      updateProjectSlotDimension(slot, 'height', snappedTopEdge - Number(slot.floor_height_mm || 0));
+      updateProjectSlotDimensionAncorada(slot, 'height', snappedTopEdge - Number(slot.floor_height_mm || 0));
     }
   }
 });

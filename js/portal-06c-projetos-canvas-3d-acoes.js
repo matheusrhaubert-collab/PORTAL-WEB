@@ -141,6 +141,47 @@ function updateProjectSlotDimension(slot, axis, mm) {
   markProjectDirty();
 }
 
+/* ESTICAR PELA SETA SÓ MEXE NAQUELE LADO (2026-10-15, Matt: "quando estico
+   uma seta e ele bate em algum limite, o outro lado começa a aumentar o
+   módulo. Isso não pode: a seta é pra aumentar/diminuir só naquele
+   sentido"). Causa: updateProjectSlotDimension muda a medida e DEPOIS o
+   clampProjectSlotPosition empurra o módulo pra caber (fim da parede / teto)
+   — o lado ancorado andava. Aqui, se o clamp mexeu na posição, a posição
+   volta e quem encolhe é a MEDIDA: o lado da seta para no limite e o outro
+   não se mexe. Só pra arraste de seta/alça (largura pela direita, altura
+   por cima) de módulo de parede; digitar a medida no painel continua igual. */
+function updateProjectSlotDimensionAncorada(slot, axis, mm) {
+  if ((axis !== 'width' && axis !== 'height') || (typeof isFloorSlot === 'function' && isFloorSlot(slot))) {
+    updateProjectSlotDimension(slot, axis, mm);
+    return;
+  }
+  const posKey = axis === 'width' ? 'x_mm' : 'floor_height_mm';
+  const dimKey = axis + '_mm';
+  const p0 = Number(slot[posKey] || 0);
+  slot[dimKey] = projectSlotClampedDimensionMm(slot, axis, mm);
+  clampProjectSlotPosition(slot);
+  const p1 = Number(slot[posKey] || 0);
+  if (p1 !== p0) {
+    const empurrou = p0 - p1;              // >0: o clamp puxou pra esquerda/baixo
+    slot[posKey] = p0;
+    if (empurrou > 0) {
+      let novo = Math.max(1, Number(slot[dimKey] || 0) - empurrou);
+      const m = slot.module || {};
+      const travado = axis === 'width' ? m.width_locked : m.height_locked;
+      const pres = (axis === 'width' ? slot.widthPresetsMm : slot.heightPresetsMm) || [];
+      if (travado && pres.length) {
+        const cabem = pres.filter((v) => v <= novo + 0.5);
+        novo = cabem.length ? Math.max.apply(null, cabem) : Math.min.apply(null, pres);
+      }
+      slot[dimKey] = novo;
+    }
+  }
+  recomputeProjectSlotPricing(slot);
+  resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
+  renderProjectCanvas();
+  markProjectDirty();
+}
+
 // Extraído de updateProjectSlotColor (só a parte que MEXE no slot, sem
 // recalcular preço/re-renderizar) pra poder ser chamado em loop por
 // applyColorRoleToAllProjectSlots (troca em massa, ver logo abaixo) sem

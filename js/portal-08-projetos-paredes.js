@@ -3676,7 +3676,7 @@ function handleProject3DResizeMove(state, slot, ev) {
   if (state.resizeAxis === 'width-right') {
     const rawRightEdge = alongMm - state.grabOffsetEdgeMm;
     const snappedRightEdge = snapProjectEdge(rawRightEdge, true, others, PROJECT_SNAP_3D_MM);
-    updateProjectSlotDimension(slot, 'width', snappedRightEdge - Number(slot.x_mm || 0));
+    updateProjectSlotDimensionAncorada(slot, 'width', snappedRightEdge - Number(slot.x_mm || 0));
   } else if (state.resizeAxis === 'width-left') {
     const rawLeftEdge = alongMm - state.grabOffsetEdgeMm;
     const snappedLeftEdge = snapProjectEdge(rawLeftEdge, true, others, PROJECT_SNAP_3D_MM);
@@ -3684,7 +3684,7 @@ function handleProject3DResizeMove(state, slot, ev) {
   } else if (state.resizeAxis === 'height-top') {
     const rawTopEdge = heightMm - state.grabOffsetEdgeMm;
     const snappedTopEdge = snapProjectEdge(rawTopEdge, false, others, PROJECT_SNAP_3D_MM);
-    updateProjectSlotDimension(slot, 'height', snappedTopEdge - Number(slot.floor_height_mm || 0));
+    updateProjectSlotDimensionAncorada(slot, 'height', snappedTopEdge - Number(slot.floor_height_mm || 0));
   }
 }
 
