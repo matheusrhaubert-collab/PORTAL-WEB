@@ -43,14 +43,31 @@
 // aparece na lista. Eletros/pontos elétricos/janela (onlinemodule) e
 // geometria solta são listados como ignorados.
 //
-// TESTE — o que ainda NÃO faz (de propósito, 1ª rodada):
-//   · cor/acabamento do Promob (o módulo entra com a cor padrão do catálogo);
-//   · internos (prateleira/gaveta/porta que o Promob tem dentro do módulo);
-//   · porta/janela da parede (a janela é listada como ignorada);
-//   · o mapeamento Promob→Legno fica só neste navegador, não no banco.
+// 2ª RODADA (16/10, Matt, com o Master_Bath.promob: "não puxou os painéis
+// de cima. não configurou os internos no configurador de produto. não puxou
+// a cor"):
+//   · PAINÉIS POR ORIENTAÇÃO: "PANEL 19MM" do Promob é um tipo só pra painel
+//     vertical (19×A×P), horizontal (L×19×P) e de frente (L×A×19). Agora o
+//     tipo ganha o sufixo da orientação (ver promobSplitThinTypesByOrientation)
+//     e cada um casa com o Painel 3/4 certo do catálogo.
+//   · MÓDULO DENTRO DE GEOMETRIA: os painéis da frente da sanca vinham como
+//     filhos de um GEOMETRY solto — só eram lidos o nível de cima e os filhos
+//     de parede. Agora desce em tudo que não é MODULO (ver promobCollectItems).
+//   · INTERNOS: gaveta/prateleira/porta/prateleira de vidro lidos de dentro do
+//     módulo (promobReadInterior) e montados no configurador pelo MESMO
+//     caminho do importador de foto/PDF (projectPhotoApplyInterior,
+//     portal-11) — só quando o módulo Legno escolhido não tem interior próprio.
+//   · COR: o Promob grava só CÓDIGO de cor por peça (LEGNO_COMPONENTS_BOX /
+//     _FRONT / mk_co_2 do painel → ex. mk_co_ar_wh_2_2), sem nome. A revisão
+//     ganha a tabela "cor do Promob → cor Legno" (lembrada no navegador, igual
+//     aos tipos); caixa/painel vai pro papel Caixa/Painel e frente pro papel
+//     Porta/Frente do módulo, quando a cor é liberada pra ele.
+// Ainda NÃO faz: porta/janela da parede (a janela é listada como ignorada);
+// o mapeamento Promob→Legno fica só neste navegador, não no banco.
 
 let projectImportPromobResult = null; // última análise (ver parsePromobAmbientXml)
 const PROMOB_MAP_STORAGE_KEY = 'legno_promob_type_map_v1';
+const PROMOB_COLOR_MAP_STORAGE_KEY = 'legno_promob_color_map_v1';
 
 // ---------- Helpers de XML (só filhos DIRETOS — o arquivo é muito aninhado) ----------
 
@@ -119,6 +136,74 @@ function promobReadPlacement(entity) {
   return { x: promobNum(pb, 'X'), y: promobNum(pb, 'Y'), z: promobNum(pb, 'Z'), rot };
 }
 
+// ---------- Cor (código do Promob) ----------
+// MODELS de uma entidade: <MODEL IDMODEL="LEGNO_COMPONENTS_BOX"
+// IDMODELTYPE="mk_co_ar_wh_2_2"/> = papel BOX com a cor 2_2. Painel avulso
+// tem o próprio (IDMODEL="mk_co_2"). Har_* é vidro/ferragem — fica de fora.
+function promobOwnColorCode(entity) {
+  const ms = promobChild(entity, 'MODELS');
+  let out = null;
+  promobChildren(ms, 'MODEL').forEach((m) => {
+    if (out || m.getAttribute('ISREMOTE') === 'True') return;
+    const id = m.getAttribute('IDMODEL') || '', t = m.getAttribute('IDMODELTYPE');
+    if (t && !/^LEGNO_COMPONENTS_/i.test(id) && !/^Har_/i.test(id)) out = t;
+  });
+  return out;
+}
+function promobReadColors(entity) {
+  const box = {}, front = {};
+  const list = entity.getElementsByTagName('MODEL');
+  for (let i = 0; i < list.length; i++) {
+    const id = list[i].getAttribute('IDMODEL') || '', t = list[i].getAttribute('IDMODELTYPE');
+    if (!t) continue;
+    if (id === 'LEGNO_COMPONENTS_BOX') box[t] = (box[t] || 0) + 1;
+    else if (id === 'LEGNO_COMPONENTS_FRONT') front[t] = (front[t] || 0) + 1;
+  }
+  const top = (o) => Object.keys(o).sort((a, b) => o[b] - o[a])[0] || null;
+  const main = promobOwnColorCode(entity) || top(box) || top(front);
+  return { main, front: top(front) || main };
+}
+
+// ---------- Internos (gaveta / prateleira / porta) ----------
+// Conferido no Master Bath: gaveta = entidade cujos filhos têm "DRAWER SIDE"
+// (X70001 OUTSIDE DRAWER), prateleira = "... SHELF ..." fora da camada de
+// ferragem (C2X001 SHELF), porta = "... DOOR ..." (F01002 FLAT DOOR),
+// prateleira de vidro = "GLASS ..." com suporte "GLASS SHELF" (K08003, que o
+// Promob chama de GLASS DOOR 1/4). Rodapé/filler/painel aninhado é módulo
+// próprio — não desce.
+function promobReadInterior(entity) {
+  const r = { doors: 0, drawers: 0, drawerH: 0, shelves: 0, glass: 0 };
+  const descOf = (e) => String(promobAttrValue(e, 'DESCRIPTION') || '').toUpperCase();
+  const layerOf = (e) => { const l = promobChild(e, 'LAYER'); return l ? (l.getAttribute('DESCRIPTION') || '') : ''; };
+  const visit = (el, depth) => {
+    promobChildren(promobChild(el, 'INFORMACOESCOLECAO'), 'INFORMACOES').forEach((k) => {
+      const d = descOf(k);
+      if (/TOEKICK|FILLER|PANEL 19MM/.test(d)) return;
+      // serviço/mão de obra/peso/ferragem avulsa não é interno ("S005 -
+      // ASSEMBLY DOOR SERVICE" contaria como porta).
+      if (/SERVICE|INSTALLATION|LABOR|WEIGHT|HINGE|HANDLE|MINIFIX/.test(d)) return;
+      const kids = promobChildren(promobChild(k, 'INFORMACOESCOLECAO'), 'INFORMACOES').map(descOf);
+      if (kids.some((x) => /DRAWER SIDE/.test(x))) {
+        r.drawers++;
+        r.drawerH += promobNum(promobChild(k, 'INSERTDIMENSION'), 'HEIGHT');
+        return;
+      }
+      if (/FRONT DRAWER/.test(d)) return;
+      if (/GLASS/.test(d) && kids.some((x) => /GLASS SHELF/.test(x))) { r.glass++; return; }
+      // Peça de verdade (camada Components). Camada de gabinete ("Cabinets",
+      // "Kitchens", "Vanitys") é o contêiner — "X04005 - DOOR CABINET 4
+      // SHELVES" tem DOOR e SHELF no nome e não é nenhum dos dois.
+      const layer = layerOf(k);
+      const peca = !/hardware|ferrag|cabinet|kitchen|vanit/i.test(layer);
+      if (peca && /\bDOOR\b/.test(d) && !/GLASS|DRAWER/.test(d)) { r.doors++; return; }
+      if (peca && /\bSHELF\b/.test(d)) { r.shelves++; return; }
+      if (depth < 6) visit(k, depth + 1);
+    });
+  };
+  visit(entity, 0);
+  return (r.doors || r.drawers || r.shelves || r.glass) ? r : null;
+}
+
 function promobReadEntity(entity, parentKind) {
   const dimEl = promobChild(entity, 'INSERTDIMENSION');
   const layerEl = promobChild(entity, 'LAYER');
@@ -155,6 +240,8 @@ function promobReadEntity(entity, parentKind) {
       TIPO_CAIXA: promobAttrValue(entity, 'TIPO_CAIXA')
     } : null,
     inverted: String(entity.getAttribute('INVERTED') || '').toLowerCase() === 'true',
+    colors: kind === 'module' ? promobReadColors(entity) : null,
+    interior: kind === 'module' ? promobReadInterior(entity) : null,
     width: w, height: h, depth: d,
     x: pl.x, y: pl.y, z: pl.z, rot: pl.rot,
     cx, cy,
@@ -253,6 +340,52 @@ function promobFindOverlaps(items) {
   return out;
 }
 
+// Filhos de um contêiner que NÃO é módulo (parede, GEOMETRY, grupo): todo
+// MODULO vira item (sem descer — o que está dentro dele é peça dele); o resto
+// entra na lista de ignorados e, se não for objeto do Promob (onlinemodule:
+// porta, cuba, ponto elétrico), desce procurando módulo lá dentro. Foi o caso
+// dos painéis da frente da sanca no Master Bath (filhos de GEOMETRY).
+function promobCollectItems(container, parentKind, out) {
+  promobChildren(promobChild(container, 'INFORMACOESCOLECAO'), 'INFORMACOES').forEach((k) => {
+    const t = k.getAttribute('TYPE') || '';
+    out.push(promobReadEntity(k, parentKind));
+    if (t !== 'MODULO' && t !== 'onlinemodule' && t !== 'WALL') promobCollectItems(k, parentKind, out);
+  });
+  return out;
+}
+
+// Peça fina (≤ 40 mm num eixo): a orientação vem de QUAL eixo é o fino —
+// mesma divisão dos 4 módulos "Painel 3/4" do catálogo (memória
+// paineis_flatbord_familia_panels_categoria_34).
+const PROMOB_THIN_MM = 40;
+function promobThinOrientation(it) {
+  const t = Math.min(it.width, it.height, it.depth);
+  if (!(t > 0 && t <= PROMOB_THIN_MM)) return null;
+  if (it.width === t) return 'VERTICAL';
+  if (it.height === t) return 'HORIZONTAL';
+  return it.width >= it.height ? 'HORIZONTAL NO PLANO' : 'VERTICAL NO PLANO';
+}
+// O tipo ganha " · <orientação>" quando é painel (PANEL/PAINEL no nome) ou
+// quando o MESMO tipo aparece em mais de uma orientação — cada uma precisa
+// do seu módulo Legno.
+function promobSplitThinTypesByOrientation(items) {
+  const mods = items.filter((it) => it.kind === 'module');
+  const byType = {};
+  mods.forEach((it) => {
+    it.orientation = promobThinOrientation(it);
+    if (!it.orientation) return;
+    (byType[it.typeKey] = byType[it.typeKey] || new Set()).add(it.orientation);
+  });
+  mods.forEach((it) => {
+    if (!it.orientation) return;
+    const set = byType[it.typeKey];
+    if (/\b(PANEL|PAINEL)\b/.test(it.typeKey) || (set && set.size > 1)) {
+      it.baseTypeKey = it.typeKey;
+      it.typeKey = it.typeKey + ' · ' + it.orientation;
+    }
+  });
+}
+
 // Entrada: Document XML do .ambient3d. Saída: { name, items, walls, overlaps, bbox }.
 function parsePromobAmbientXml(doc) {
   const root = doc.documentElement;
@@ -262,14 +395,17 @@ function parsePromobAmbientXml(doc) {
   const items = [];
   const wallEntities = [];
   top.forEach((e) => {
-    if (e.getAttribute('TYPE') === 'WALL') {
-      const kids = promobChildren(promobChild(e, 'INFORMACOESCOLECAO'), 'INFORMACOES').map((k) => promobReadEntity(k, 'wall'));
+    const t = e.getAttribute('TYPE') || '';
+    if (t === 'WALL') {
+      const kids = promobCollectItems(e, 'wall', []);
       kids.forEach((k) => items.push(k));
       wallEntities.push({ e, kids });
     } else {
       items.push(promobReadEntity(e, 'ambient'));
+      if (t !== 'MODULO' && t !== 'onlinemodule') promobCollectItems(e, 'ambient', items);
     }
   });
+  promobSplitThinTypesByOrientation(items);
   const walls = wallEntities.map(({ e, kids }) => promobReadWall(e, kids.length ? kids : items)).filter(Boolean);
 
   const pts = [];
@@ -343,11 +479,53 @@ function persistPromobMappingNow(mapping) {
   savePromobTypeMap(saved);
 }
 
+// Cor do Promob (código) → cor Legno (id da tabela colors), lembrada neste
+// navegador do mesmo jeito que os tipos.
+function loadPromobColorMap() {
+  try {
+    const raw = window.localStorage.getItem(PROMOB_COLOR_MAP_STORAGE_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === 'object' ? obj : {};
+  } catch (e) { return {}; }
+}
+function savePromobColorMap(map) {
+  try { window.localStorage.setItem(PROMOB_COLOR_MAP_STORAGE_KEY, JSON.stringify(map)); } catch (e) { /* sem storage: só não lembra */ }
+}
+// Cores de chapa ativas (mesma lista do Plano de Corte — portal-05).
+async function promobEnsureLegnoColors() {
+  try { if (typeof loadCutlistColors === 'function') await loadCutlistColors(); } catch (e) { /* segue sem lista */ }
+  return (typeof cutlistColorsCache !== 'undefined' && Array.isArray(cutlistColorsCache)) ? cutlistColorsCache : [];
+}
+// Códigos de cor usados pelos módulos do arquivo: { code: { box, front } }.
+function promobColorCodesInScene(scene) {
+  const out = {};
+  scene.items.forEach((it) => {
+    if (it.kind !== 'module' || !it.colors) return;
+    const add = (code, k) => { if (!code) return; out[code] = out[code] || { box: 0, front: 0 }; out[code][k]++; };
+    add(it.colors.main, 'box');
+    if (it.colors.front && it.colors.front !== it.colors.main) add(it.colors.front, 'front');
+  });
+  return out;
+}
+
 function promobCatalogModules() {
   return (typeof allModules !== 'undefined' ? allModules : [])
     .filter((m) => m && m.active !== false && !m.is_invisible)
     .slice()
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+// Painel do Promob com orientação ("PANEL 19MM · HORIZONTAL") → módulo do
+// catálogo que é painel e termina com a MESMA orientação ("Painel 3/4 ·
+// Horizontal"). Só pra tipo com sufixo de orientação.
+function promobPanelModuleFor(typeKey, mods) {
+  const m = /^(.*) · (HORIZONTAL NO PLANO|VERTICAL NO PLANO|HORIZONTAL|VERTICAL)$/.exec(typeKey);
+  if (!m || !/\b(PANEL|PAINEL)\b/.test(m[1])) return null;
+  const ori = m[2];
+  return mods.find((mm) => {
+    const n = promobNormalizeName(mm.name);
+    return /\b(PAINEL|PANEL)\b/.test(n) && n.endsWith(' ' + ori) && (ori.includes('PLANO') || !n.endsWith('NO PLANO'));
+  }) || null;
 }
 
 // Escolha inicial por tipo: 1) o que foi escolhido da última vez neste
@@ -360,7 +538,7 @@ function promobInitialMapping(typeKeys) {
   const mapping = {};
   typeKeys.forEach((k) => {
     if (saved[k] && mods.some((m) => m.id === saved[k])) { mapping[k] = { moduleId: saved[k], source: 'saved' }; return; }
-    const hit = byName.get(promobNormalizeName(k));
+    const hit = byName.get(promobNormalizeName(k)) || promobPanelModuleFor(k, mods);
     mapping[k] = hit ? { moduleId: hit.id, source: 'name' } : { moduleId: '', source: null };
   });
   return mapping;
@@ -500,7 +678,14 @@ async function runProjectImportPromobAttach(file) {
     const modules = scene.items.filter((it) => it.kind === 'module');
     if (!modules.length) throw new Error(I18n.t('project_importpromob.err_no_modules'));
     const typeKeys = Array.from(new Set(modules.map((it) => it.typeKey)));
-    projectImportPromobResult = { scene, typeKeys, mapping: promobInitialMapping(typeKeys), replaceWalls: scene.walls.length > 0 };
+    const legnoColors = await promobEnsureLegnoColors();
+    const savedColors = loadPromobColorMap();
+    const colorMap = {};
+    Object.keys(promobColorCodesInScene(scene)).forEach((code) => {
+      const id = savedColors[code];
+      colorMap[code] = id && legnoColors.some((c) => c.id === id) ? id : '';
+    });
+    projectImportPromobResult = { scene, typeKeys, mapping: promobInitialMapping(typeKeys), replaceWalls: scene.walls.length > 0, colorMap, legnoColors };
     renderProjectImportPromobReview();
     setProjectImportPromobStatus('');
     const row = document.querySelector('.po-importpromob-file-row');
@@ -616,6 +801,30 @@ function renderProjectImportPromobReview() {
     ? `<p class="hint po-importpromob-warn">${escapeHtmlImportPromob(I18n.t('project_importpromob.extra_ambients', { n: scene.extraAmbients }))}</p>`
     : '';
 
+  const colorCodes = promobColorCodesInScene(scene);
+  const legnoColors = res.legnoColors || [];
+  const colorOpts = (sel) => [
+    `<option value="">${escapeHtmlImportPromob(I18n.t('project_importpromob.colors_keep'))}</option>`,
+    ...legnoColors.map((c) => `<option value="${escapeHtmlImportPromob(c.id)}"${c.id === sel ? ' selected' : ''}>${escapeHtmlImportPromob(c.name)}</option>`)
+  ].join('');
+  const colorsHtml = Object.keys(colorCodes).length ? `
+    <p class="hint"><b>${escapeHtmlImportPromob(I18n.t('project_importpromob.colors_title'))}</b></p>
+    <div class="po-import2020-tablewrap">
+      <table class="po-import2020-table">
+        <thead><tr>
+          <th>${escapeHtmlImportPromob(I18n.t('project_importpromob.colors_col_code'))}</th>
+          <th>${escapeHtmlImportPromob(I18n.t('project_importpromob.colors_col_used'))}</th>
+          <th>${escapeHtmlImportPromob(I18n.t('project_importpromob.colors_col_legno'))}</th>
+        </tr></thead>
+        <tbody>${Object.keys(colorCodes).sort().map((code) => {
+          const u = colorCodes[code];
+          const used = [u.box ? I18n.t('project_importpromob.colors_used_box', { n: u.box }) : '', u.front ? I18n.t('project_importpromob.colors_used_front', { n: u.front }) : ''].filter(Boolean).join(' · ');
+          return `<tr><td class="mono">${escapeHtmlImportPromob(code)}</td><td>${escapeHtmlImportPromob(used)}</td>
+            <td><select class="po-importpromob-color" data-color-code="${escapeHtmlImportPromob(code)}">${colorOpts((res.colorMap || {})[code] || '')}</select></td></tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>` : '';
+
   const wallsHtml = scene.walls.length
     ? `<label class="po-importpromob-check"><input type="checkbox" id="po-proj-importpromob-walls"${res.replaceWalls ? ' checked' : ''}> ${escapeHtmlImportPromob(I18n.t('project_importpromob.replace_walls', { n: scene.walls.reduce((s, w) => s + w.polyline.length - 1, 0) }))}</label>`
     : '';
@@ -658,6 +867,7 @@ function renderProjectImportPromobReview() {
       </table>
     </div>
     ${hintsHtml}
+    ${colorsHtml}
     ${wallsHtml}
     ${overlapHtml}
     ${extraHtml}
@@ -671,6 +881,16 @@ function renderProjectImportPromobReview() {
       res.mapping[k] = { moduleId: sel.value, source: sel.value ? 'manual' : null };
       persistPromobMappingNow(res.mapping);
       renderProjectImportPromobReview();
+    });
+  });
+  el.querySelectorAll('select.po-importpromob-color').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const code = sel.getAttribute('data-color-code');
+      res.colorMap = res.colorMap || {};
+      res.colorMap[code] = sel.value;
+      const saved = loadPromobColorMap();
+      if (sel.value) saved[code] = sel.value; else delete saved[code];
+      savePromobColorMap(saved);
     });
   });
   const aiBtn = document.getElementById('po-proj-importpromob-ai-btn');
@@ -703,6 +923,74 @@ function promobAdaptDimsToModule(it, m) {
     rot += 90;
   }
   return { width: w, height: it.height, depth: d, rot: ((rot % 360) + 360) % 360 };
+}
+
+// Cor do Promob → papéis de cor do slot. Caixa/Painel recebe a cor
+// principal (caixa do gabinete ou a do próprio painel); Porta/Frente a da
+// frente. Só aplica se a cor estiver liberada pro módulo naquele papel
+// (module_colors) — senão fica a padrão e conta como "não liberada".
+function promobApplyColorsToSlot(slot, it, colorMap) {
+  if (!it.colors || !slot.colorOptionsByRole) return { applied: 0, missing: 0 };
+  let applied = 0, missing = 0;
+  const roleName = (rid) => String(((typeof colorRolesCache !== 'undefined' ? colorRolesCache : []).find((r) => r.id === rid) || {}).name || '');
+  Object.keys(slot.colorOptionsByRole).forEach((rid) => {
+    if (!slot.colorsByRole || !(rid in slot.colorsByRole)) return; // papel que o módulo não usa
+    const n = roleName(rid);
+    let code = null;
+    if (/porta|frente|front|door/i.test(n)) code = it.colors.front;
+    else if (/caixa|painel|panel|box|carca/i.test(n)) code = it.colors.main;
+    const legnoId = code && colorMap ? colorMap[code] : '';
+    if (!legnoId) return;
+    const opt = (slot.colorOptionsByRole[rid] || []).find((c) => c.id === legnoId);
+    if (!opt) { missing++; return; }
+    slot.colorsByRole[rid] = opt;
+    applied++;
+  });
+  if (applied) {
+    slot.selectedColors = Object.keys(slot.colorsByRole).map((rid) => ({
+      role_id: rid,
+      role_name: roleName(rid) || null,
+      color_id: slot.colorsByRole[rid] ? slot.colorsByRole[rid].id : null,
+      color_name: slot.colorsByRole[rid] ? slot.colorsByRole[rid].name : null
+    }));
+  }
+  return { applied, missing };
+}
+
+// Internos do Promob → descrição no formato do importador de foto/PDF
+// ({columns:[{zones (de baixo pra cima), doors}]}). Prateleira de vidro entra
+// como prateleira (avisado no resumo).
+function promobInteriorSpec(intr, slot, withDoors) {
+  if (!intr) return null;
+  const H = Number(slot.height_mm) || 0, W = Number(slot.width_mm) || 0;
+  const nSh = intr.shelves + intr.glass;
+  const zones = [];
+  if (intr.drawers) zones.push({ type: 'drawers', height_mm: nSh ? Math.max(100, intr.drawerH || H / 2) : H, count: intr.drawers });
+  if (nSh) zones.push({ type: 'shelves', height_mm: intr.drawers ? Math.max(100, H - (intr.drawerH || H / 2)) : H, count: nSh });
+  const doors = withDoors && intr.doors > 0;
+  if (!zones.length && !doors) return null;
+  if (!zones.length) zones.push({ type: 'open', height_mm: H, count: 0 });
+  return { columns: [{ width_mm: W, zones, doors: doors ? 'hinged' : 'none', doors_cover: 'all' }] };
+}
+
+function promobSlotHasFrontRole(slot) {
+  const roles = typeof colorRolesCache !== 'undefined' ? colorRolesCache : [];
+  return Object.keys(slot.colorsByRole || {}).some((rid) => /porta|frente|front|door/i.test(String((roles.find((r) => r.id === rid) || {}).name || '')));
+}
+
+// Mesmo caminho do importador de foto/PDF. Não mexe em módulo que já tem
+// árvore de vãos ou prateleira/gaveta própria no cadastro (dobraria o
+// interior). Porta só entra pelo configurador se o módulo NÃO tem frente.
+async function promobApplyInteriorToSlot(slot, it, warnings) {
+  if (!it.interior || typeof projectPhotoApplyInterior !== 'function') return false;
+  if (slot.layout) return false;
+  if (typeof projectPhotoSlotHasOwnInterior === 'function' && projectPhotoSlotHasOwnInterior(slot)) return false;
+  const withDoors = !promobSlotHasFrontRole(slot);
+  const spec = promobInteriorSpec(it.interior, slot, withDoors);
+  if (!spec) return false;
+  const needDoor = spec.columns[0].doors !== 'none';
+  await projectPhotoApplyInterior(slot, { interior: spec, composition: needDoor ? 'suspenso' : null, label: it.typeKey }, warnings);
+  return !!slot.layout;
 }
 
 function promobBuildWallSegments(scene) {
@@ -739,6 +1027,8 @@ async function runProjectImportPromobBuild() {
 
   const failed = [];
   const adjusted = [];
+  const interiorWarnings = [];
+  let nInterior = 0, nColorMissing = 0, nGlass = 0;
   try {
     // 1) Paredes ANTES dos módulos — o pé-direito limita a altura na inserção
     // e o retângulo do piso limita onde módulo solto pode ficar.
@@ -783,6 +1073,16 @@ async function runProjectImportPromobBuild() {
       if (dims.depth > 0 && typeof projectSlotClampedDimensionMm === 'function') {
         slot.depth_mm = projectSlotClampedDimensionMm(slot, 'depth', dims.depth);
       }
+      // Internos primeiro (podem trazer papel de cor novo, ex. frente da
+      // gaveta), depois a cor, depois o preço uma vez só.
+      try {
+        if (await promobApplyInteriorToSlot(slot, it, interiorWarnings)) {
+          nInterior++;
+          if (it.interior && it.interior.glass) nGlass++;
+        }
+      } catch (e) { console.error('[importPromob] internos:', it.typeKey, e); }
+      const cr = promobApplyColorsToSlot(slot, it, res.colorMap || {});
+      nColorMissing += cr.missing;
       recomputeProjectSlotPricing(slot);
       const diff = Math.abs(slot.width_mm - dims.width) > 1 || Math.abs(slot.height_mm - dims.height) > 1 || Math.abs(slot.depth_mm - dims.depth) > 1;
       if (diff) adjusted.push({ it, slot, want: dims });
@@ -800,6 +1100,10 @@ async function runProjectImportPromobBuild() {
       const lines = [I18n.t('project_import2020.done_summary', { n: todo.length - failed.length })];
       if (adjusted.length) lines.push(I18n.t('project_importpromob.done_adjusted', { n: adjusted.length }));
       if (failed.length) lines.push(I18n.t('project_importpromob.done_failed', { n: failed.length }));
+      if (nInterior) lines.push(I18n.t('project_importpromob.done_interior', { n: nInterior }));
+      if (nGlass) lines.push(I18n.t('project_importpromob.done_glass', { n: nGlass }));
+      if (nColorMissing) lines.push(I18n.t('project_importpromob.done_colors_missing', { n: nColorMissing }));
+      if (interiorWarnings.length) lines.push(interiorWarnings.join(' '));
       const skipped = scene.items.filter((it) => it.kind === 'module').length - todo.length;
       if (skipped > 0) lines.push(I18n.t('project_importpromob.done_skipped', { n: skipped }));
       msgEl.textContent = lines.join(' — ');
