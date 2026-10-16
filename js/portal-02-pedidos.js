@@ -1693,6 +1693,7 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
         `;
       }).join('')}</div>`
     : '';
+  const modelosHtml = orderItemModelosHtml(it.breakdown);
   const detailUnit = (document.getElementById('po-unit-select') || {}).value || 'mm';
   const dimsLine = `${formatDimension(it.width_mm, detailUnit)} x ${formatDimension(it.height_mm, detailUnit)} x ${formatDimension(it.depth_mm, detailUnit)}`;
   // Módulo decorativo (migration 039): mesmo aviso do carrinho, no lugar do preço.
@@ -1745,6 +1746,7 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
         <div class="po-order-item-dims">${dimsLine}</div>
         <div class="po-order-item-reference">${it.module_name}</div>
         ${it.module_description ? `<div class="po-order-item-description">${it.module_description}</div>` : ''}
+        ${modelosHtml}
         ${colorsHtml}
       </div>
       <div class="po-order-item-actions">
@@ -1756,6 +1758,47 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
       </div>
     </div>
   `;
+}
+
+// MODELO DE PORTA / MODELO DE GAVETA no item do pedido (2026-10-15, Matt:
+// "na listagem de itens quero o modelo de porta, modelo de gaveta descritos
+// em todos que se apliquem"). Tudo do breakdown congelado: peça trocada leva
+// door_model / drawer_model (pricing.js); item com porta de dobradiça e sem
+// troca = Flat; com gaveta (corrediça) e sem troca = Standard. Item sem porta
+// nem gaveta não mostra nada. Pedido antigo (antes destes campos) cai no
+// padrão — que é o que ele era mesmo.
+function orderItemModelos(breakdown) {
+  const r = { portas: false, gavetas: false, porta: new Set(), gaveta: new Set() };
+  // pedido ANTERIOR ao campo door_model: reconhece pela engenharia do modelo
+  // (montante da Shaker / perfil de alumínio da Glass), senão fica Flat
+  const legado = new Set();
+  const anda = (lista) => (lista || []).forEach((p) => {
+    if (!p) return;
+    if (p.door_model) r.porta.add(p.door_model);
+    if (!p.is_module) {
+      const ref = String(p.reference || '');
+      if (/montante/i.test(ref)) legado.add('Shaker Glass');
+      else if (/perfil/i.test(ref) && /(alum|45)/i.test(ref + ' ' + (p.material_item_name || p.purchased_item_name || ''))) legado.add('Glass Aluminium');
+    }
+    if (p.drawer_model) r.gaveta.add(p.drawer_model);
+    if (Number(p.hinge_count) > 0) r.portas = true;
+    if (Number(p.slide_cost) > 0 || p.slide_model_name) r.gavetas = true;
+    if (p.is_module) anda(p.child_breakdown);
+  });
+  anda(breakdown);
+  if (!r.porta.size && legado.size) legado.forEach((n) => r.porta.add(n));
+  return r;
+}
+function orderItemModelosHtml(breakdown) {
+  const m = orderItemModelos(breakdown);
+  const linhas = [];
+  if (m.portas || m.porta.size) {
+    linhas.push(I18n.t('order_detail.door_model') + ': <strong>' + (m.porta.size ? Array.from(m.porta).join(', ') : 'Flat') + '</strong>');
+  }
+  if (m.gavetas || m.gaveta.size) {
+    linhas.push(I18n.t('order_detail.drawer_model') + ': <strong>' + (m.gaveta.size ? Array.from(m.gaveta).join(', ') : 'Standard') + '</strong>');
+  }
+  return linhas.length ? '<div class="po-order-item-models">' + linhas.map((l) => '<div>' + l + '</div>').join('') + '</div>' : '';
 }
 
 // Remove um item já salvo do pedido (pedido do usuário 2026-07-29: "BOTAO

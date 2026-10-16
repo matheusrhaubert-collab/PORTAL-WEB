@@ -2831,6 +2831,10 @@ async function ensureProjectDoorModels() {
       const { data, error } = await supabaseClient.from('door_models').select('*')
         .eq('active', true).order('sort_order').order('name');
       projectDoorModelsCache = error ? [] : (data || []);
+      // nome do modelo por engenharia (module-pieces.js doorModelNameByChild)
+      if (typeof doorModelNameByChild !== 'undefined') {
+        projectDoorModelsCache.forEach((m) => { if (m.child_module_id) doorModelNameByChild[m.child_module_id] = m.name; });
+      }
     } catch (e) { projectDoorModelsCache = []; }
     projectDoorModelsLoading = null;
     return projectDoorModelsCache;
@@ -2922,6 +2926,7 @@ function catalogDoorModelRow(orig, m, ex) {
     seq: orig.seq,
     is_module: true,
     _doorModelSwap: m.id,
+    door_model_name: m.name || null,
     reference: orig.reference || meta.name || null,
     position_role: orig.position_role,
     color_role_id: orig.color_role_id || null,

@@ -961,6 +961,10 @@ function collectUsedColorRoleIds(piecesList) {
 // ==========================================================================
 const DOOR_MODEL_KEY_PREFIX = 'dm:';
 const doorModelExtrasCache = {};      // { [child_module_id]: extras }
+// Nome do MODELO (door_models.name) por engenharia — publicado pelo portal ao
+// carregar os modelos (portal-07 ensureProjectDoorModels). Vai pro breakdown
+// (pricing.js door_model) e o pedido/etiqueta mostram "Modelo de porta".
+const doorModelNameByChild = {};
 const doorModelExtrasLoading = {};    // { [child_module_id]: Promise }
 
 function doorModelKey(childModuleId, accKey) {
@@ -1025,7 +1029,7 @@ function doorModelCatalogEntry(catalogo, key) {
   return Object.assign({}, orig, {
     componente: null,
     child_module_id: k.childModuleId,
-    module_meta: ex.module_meta,
+    module_meta: Object.assign({}, ex.module_meta, { door_model_name: doorModelNameByChild[k.childModuleId] || null }),
     fixed_depths: ex.fixed_depths,
     locked_presets: ex.locked_presets,
     own_hinge_slide: ex.own_hinge_slide,

@@ -5600,3 +5600,7 @@ header.po-topnav { z-index: 500; background: #ffffff; }
   50% { opacity: 0.25; transform: scale(0.92); }
 }
 @media (prefers-reduced-motion: reduce) { .po-led-alerta { animation: none; } }
+
+/* Modelo de porta / de gaveta no item do pedido (2026-10-15) */
+.po-order-item-models { margin: 4px 0 6px; font-size: 13px; color: var(--muted, #6b665c); line-height: 1.5; }
+.po-order-item-models strong { color: var(--text, #1f1d18); font-weight: 600; }
