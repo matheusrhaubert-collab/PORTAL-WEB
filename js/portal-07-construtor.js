@@ -3128,15 +3128,19 @@ function enforceSlotDoorModelHeight(slot) {
 
 // Clique no cartão do modelo (painel do módulo). modelId null/Flat = volta
 // pra porta original do módulo e limpa os papéis de cor que eram só do modelo.
-async function setProjectSlotDoorModel(slot, modelId) {
+// opts.lote (troca em massa, setAllProjectDoorModels): sem undo/redesenho
+// por slot — quem chama faz uma vez só. Devolve 'bloq' se a porta é grande
+// demais pro modelo.
+async function setProjectSlotDoorModel(slot, modelId, opts) {
   if (!slot) return;
+  const lote = !!(opts && opts.lote);
   await ensureProjectDoorModels();
   const m = (projectDoorModelsCache || []).find((x) => x.id === modelId) || null;
   const anterior = projectSlotDoorModel(slot);
-  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  if (!lote && typeof pushProjectUndoState === 'function') pushProjectUndoState();
   if (m && m.child_module_id && m.slug !== 'flat') {
     try { await loadDoorModelExtras(m.child_module_id); } catch (e) { console.error('[modelo de porta]', e); return; }
-    if (slotDoorModelBlock(slot, m)) { renderProjectConfigPanel(); return; }   // porta grande demais pro modelo
+    if (slotDoorModelBlock(slot, m)) { if (!lote) renderProjectConfigPanel(); return 'bloq'; }   // porta grande demais pro modelo
     slot.doorModelId = m.id;
   } else {
     slot.doorModelId = null;
@@ -3159,6 +3163,40 @@ async function setProjectSlotDoorModel(slot, modelId) {
   // as cores próprias do modelo (perfil/vidro) entram aqui.
   try { applySlotDoorModelColors(slot); } catch (e) { /* ok */ }
   try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[modelo de porta] preço:', e); }
+  if (lote) return 'ok';
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+}
+
+/* TROCA RÁPIDA DE MODELO (2026-10-15, Matt: "quando não tem nada clicado,
+   quero poder trocar o modelo de porta e de gaveta, assim como aparece pra
+   mudar cores"). Aplica em TODO módulo do ambiente que tem porta de giro /
+   gaveta trocável. Um undo só. Devolve quantos ficaram de fora (bloqueio). */
+async function setAllProjectDoorModels(modelId) {
+  await ensureProjectDoorModels();
+  const alvos = (projectSlots || []).filter((s) => projectSlotHasPortaGiro(s));
+  if (!alvos.length) return 0;
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  let bloq = 0;
+  for (const s of alvos) {
+    try { if ((await setProjectSlotDoorModel(s, modelId, { lote: true })) === 'bloq') bloq += 1; }
+    catch (e) { console.error('[troca de modelo de porta]', e); }
+  }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+  return bloq;
+}
+async function setAllProjectDrawerModels(modelId) {
+  await ensureProjectDrawerModels();
+  const alvos = (projectSlots || []).filter((s) => projectSlotHasDrawerBody(s));
+  if (!alvos.length) return;
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  for (const s of alvos) {
+    try { await setProjectSlotDrawerModel(s, modelId, { lote: true }); }
+    catch (e) { console.error('[troca de modelo de gaveta]', e); }
+  }
   renderProjectCanvas();
   renderProjectConfigPanel();
   markProjectDirty();
@@ -3218,11 +3256,12 @@ function projectSlotHasDrawerBody(slot) {
 }
 
 // Clique no cartão do modelo de gaveta. modelId null = volta pro Standard.
-async function setProjectSlotDrawerModel(slot, modelId) {
+async function setProjectSlotDrawerModel(slot, modelId, opts) {
   if (!slot) return;
+  const lote = !!(opts && opts.lote);
   await ensureProjectDrawerModels();
   const m = (projectDrawerModelsCache || []).find((x) => x.id === modelId) || null;
-  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  if (!lote && typeof pushProjectUndoState === 'function') pushProjectUndoState();
   if (m && m.child_module_id) {
     try { await loadDoorModelExtras(m.child_module_id); } catch (e) { console.error('[modelo de gaveta]', e); return; }
     slot.drawerModelId = m.id;
@@ -3230,6 +3269,7 @@ async function setProjectSlotDrawerModel(slot, modelId) {
     slot.drawerModelId = null;
   }
   try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[modelo de gaveta] preço:', e); }
+  if (lote) return;
   renderProjectCanvas();
   renderProjectConfigPanel();
   markProjectDirty();

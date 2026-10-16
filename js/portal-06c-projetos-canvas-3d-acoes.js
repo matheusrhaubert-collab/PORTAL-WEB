@@ -677,8 +677,10 @@ function renderProjectConfigPanel() {
         <div id="po-proj-side-color-swatches" class="color-role-swatches"></div>
         <p id="po-proj-side-color-error" class="error" style="display:none;"></p>
       </div>
+      <div id="po-proj-side-model-panel"></div>
     `;
     renderProjectSideColorPanel();
+    renderProjectSideModelPanel();
     return;
   }
   const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
@@ -4554,3 +4556,62 @@ document.addEventListener('keydown', (ev) => {
     clearProjectPieceSelection();
   }
 }, true);
+
+
+/* TROCA RÁPIDA DE MODELO — painel sem módulo selecionado (2026-10-15).
+   Mesmos cartões do painel do módulo (modelo de porta / de gaveta), mas o
+   clique vale pra TODOS os módulos do ambiente que têm porta de giro /
+   gaveta trocável (setAllProjectDoorModels / setAllProjectDrawerModels,
+   portal-07). Cartão marcado só quando todos os módulos estão naquele
+   modelo; misturado = nenhum marcado. */
+async function renderProjectSideModelPanel() {
+  const box = document.getElementById('po-proj-side-model-panel');
+  if (!box || typeof ensureProjectDoorModels !== 'function') return;
+  const comPorta = (projectSlots || []).filter((s) => projectSlotHasPortaGiro(s));
+  const comGaveta = (projectSlots || []).filter((s) => typeof projectSlotHasDrawerBody === 'function' && projectSlotHasDrawerBody(s));
+  if (!comPorta.length && !comGaveta.length) { box.innerHTML = ''; return; }
+  try { await Promise.all([ensureProjectDoorModels(), ensureProjectDrawerModels()]); } catch (e) { /* sem modelos */ }
+  if (!document.body.contains(box)) return;
+  const todosNo = (lista, idDe, id) => lista.length && lista.every((s) => (idDe(s) || null) === (id || null));
+  let html = '';
+  if (comPorta.length && (projectDoorModelsCache || []).length > 1) {
+    const cards = projectDoorModelsCache.map((dm) => {
+      const ehFlat = !dm.child_module_id || dm.slug === 'flat';
+      const id = ehFlat ? null : dm.id;
+      const sel = todosNo(comPorta, (s) => { const e = projectSlotDoorModel(s); return e ? e.id : null; }, id);
+      return `<button type="button" class="po-proj-door-model-card po-proj-all-door-model${sel ? ' selected' : ''}" data-id="${id || ''}" title="${dm.name}">
+        ${projectDoorModelPreviewSvg(dm.preview || (ehFlat ? 'flat' : 'shaker'))}<span>${dm.name}</span></button>`;
+    }).join('');
+    html += `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.door_model_label')} · ${comPorta.length}</span><div class="po-proj-door-model-cards">${cards}</div></div>`;
+  }
+  if (comGaveta.length && (projectDrawerModelsCache || []).length > 1) {
+    const cardsG = projectDrawerModelsCache.map((gm) => {
+      const ehPadrao = !gm.child_module_id;
+      const id = ehPadrao ? null : gm.id;
+      const sel = todosNo(comGaveta, (s) => { const e = projectSlotDrawerModel(s); return e ? e.id : null; }, id);
+      return `<button type="button" class="po-proj-door-model-card po-proj-drawer-model-card po-proj-all-drawer-model${sel ? ' selected' : ''}" data-id="${id || ''}" title="${gm.name}">
+        ${projectDrawerModelPreviewSvg(gm.preview || (ehPadrao ? 'standard' : 'dovetail'))}<span>${gm.name}</span></button>`;
+    }).join('');
+    html += `<div class="po-proj-config-door-models po-proj-config-drawer-models"><span class="po-proj-config-section-label">${I18n.t('project.drawer_model_label')} · ${comGaveta.length}</span><div class="po-proj-door-model-cards">${cardsG}</div></div>`;
+  }
+  if (!html) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="po-proj-side-model"><label>${I18n.t('project.side_model_label')}</label>
+    <p class="hint">${I18n.t('project.side_model_hint')}</p>${html}<p class="hint po-proj-side-model-aviso" style="display:none;"></p></div>`;
+  const aviso = box.querySelector('.po-proj-side-model-aviso');
+  box.querySelectorAll('.po-proj-all-door-model').forEach((el) => el.addEventListener('click', async () => {
+    if (el.classList.contains('selected')) return;
+    el.disabled = true;
+    const bloq = await setAllProjectDoorModels(el.dataset.id || null);
+    if (bloq) {
+      // o painel foi redesenhado — mostra o aviso no novo
+      const a = document.querySelector('#po-proj-side-model-panel .po-proj-side-model-aviso');
+      if (a) { a.textContent = I18n.t('project.side_model_blocked', { n: bloq }); a.style.display = 'block'; }
+    }
+  }));
+  box.querySelectorAll('.po-proj-all-drawer-model').forEach((el) => el.addEventListener('click', async () => {
+    if (el.classList.contains('selected')) return;
+    el.disabled = true;
+    await setAllProjectDrawerModels(el.dataset.id || null);
+  }));
+  void aviso;
+}
