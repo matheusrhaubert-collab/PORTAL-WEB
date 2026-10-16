@@ -3013,9 +3013,15 @@ function applySlotDoorModelToCatalogPieces(slot, pieces) {
 function slotCatalogHingedFrontDims(slot) {
   let h = 0, w = 0;
   const raw = (slot && slot.pieces) || [];
-  const fronts = raw.filter((p) => isCatalogHingedFrontRow(p));
-  if (!fronts.length || typeof Pricing === 'undefined') return { h, w };
   const W = Number(slot.width_mm) || 0, H = Number(slot.height_mm) || 0, D = Number(slot.depth_mm) || 0;
+  // Só a porta que EXISTE nesta medida (15/10, Matt com o BFH42: "por que
+  // essa limitação da porta de vidro?"). "Porta (1 folha)" só aparece até
+  // 600 mm (visibilidade condicional) — mas entrava na conta mesmo no módulo
+  // de 42", calculada com a largura inteira (~1060 mm > 700 do vidro), e
+  // bloqueava o modelo com 2 folhas de ~530 mm.
+  const visivel = (p) => typeof Pricing === 'undefined' || !Pricing.isPieceVisible || Pricing.isPieceVisible(p, { W, H, D });
+  const fronts = raw.filter((p) => isCatalogHingedFrontRow(p) && visivel(p));
+  if (!fronts.length || typeof Pricing === 'undefined') return { h, w };
   let body = { W, H, D };
   let E = 19.5;
   try { body = Pricing.resolveBodyDims(raw, { W, H, D }).bodyDims || body; } catch (e) { /* usa o slot */ }
@@ -3107,9 +3113,31 @@ function slotDoorModelBlock(slot, m) {
 // seta de esticar, SKU), logo depois do rebuild das peças.
 function enforceSlotDoorModelHeight(slot) {
   slot._doorModelHeightLocked = false;
+  slot._doorModelWidthLocked = false;
   const m = projectSlotDoorModel(slot);
   const lim = doorModelLimits(m);
-  if (!lim || !isFinite(lim.maxH)) return;
+  if (!lim) return;
+  // LARGURA TAMBÉM TRAVA (15/10, Matt: "se eu reduzir o móvel, colocar porta
+  // de vidro e aumentar o móvel, ele aceita — força usar a porta mesmo não
+  // podendo"). Antes só a altura travava. A folha cresce junto com o módulo
+  // (1 folha) ou com metade dele (2 folhas): encolhe o módulo até a folha
+  // caber, proporcional (o mesmo excesso por folha × nº de folhas na largura,
+  // estimado pela razão módulo/folha).
+  if (isFinite(lim.maxW)) {
+    for (let i = 0; i < 4; i++) {
+      const d = slotPortaGiroMaxDims(slot);
+      if (!(d.w > lim.maxW + 0.5) || !(d.w > 0)) break;
+      const W0 = Number(slot.width_mm) || 0;
+      const folhas = Math.max(1, Math.round(W0 / d.w));
+      const minW = Number(slot.module && slot.module.width_min_mm) || 0;
+      const novo = Math.max(W0 - (d.w - lim.maxW) * folhas, minW);
+      if (!(novo < W0)) break;
+      slot.width_mm = Math.floor(novo * 10) / 10;
+      slot._doorModelWidthLocked = true;
+      rebuildProjectSlotLayoutPieces(slot);
+    }
+  }
+  if (!isFinite(lim.maxH)) return;
   for (let i = 0; i < 3; i++) {
     const d = slotPortaGiroMaxDims(slot);
     if (!(d.h > lim.maxH + 0.5)) break;

@@ -824,8 +824,10 @@ function renderProjectConfigPanel() {
         </button>`;
       }).join('');
       const limEf = efetivo ? doorModelLimits(efetivo) : null;
-      const hintTrava = (efetivo && slot._doorModelHeightLocked && limEf && isFinite(limEf.maxH))
-        ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.door_model_height_locked', { mm: formatDimension(limEf.maxH, unit) })}</p>` : '';
+      const hintTrava = ((efetivo && slot._doorModelHeightLocked && limEf && isFinite(limEf.maxH))
+        ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.door_model_height_locked', { mm: formatDimension(limEf.maxH, unit) })}</p>` : '')
+        + ((efetivo && slot._doorModelWidthLocked && limEf && isFinite(limEf.maxW))
+        ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.door_model_width_locked', { mm: formatDimension(limEf.maxW, unit) })}</p>` : '');
       const hintBloq = projectDoorModelsCache.some((dm) => dm.child_module_id && dm.slug !== 'flat' && !(efetivo && efetivo.id === dm.id) && slotDoorModelBlock(slot, dm))
         ? `<p class="hint po-proj-door-model-hint">${I18n.t('project.door_model_blocked_hint')}</p>` : '';
       doorModelBlock = `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.door_model_label')}</span><div class="po-proj-door-model-cards">${cards}</div>${hintTrava}${hintBloq}</div>`;
