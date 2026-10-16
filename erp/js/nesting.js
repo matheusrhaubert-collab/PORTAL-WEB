@@ -693,19 +693,38 @@ NESTING._recomputeOffcuts = function (sheet, params) {
       if (chosen.some(function (ch) { return overlaps(ch.clean, cd.clean); })) return;
       chosen.push(cd);
     });
-  /* Retalho encostado na borda DIREITA ou de BAIXO da chapa não precisa
-     de refile ali (pedido do Matt, 22/09): a borda crua fica no retalho e
-     é refilada só quando ele for usado. Então o retalho cresce até a borda
-     física — e a máquina não recebe corte nenhum nessa parte (o XML só
-     manda o que está na árvore; a faixa vai até o fim da chapa). Só nos
-     lados de longe: o refile de cima/esquerda é o primeiro corte da chapa
-     e vale pra todas as peças, não dá pra pular. */
+  /* REFILE DOS DOIS LADOS, SEMPRE (Matt, 16/10 — revoga o pedido de 22/09
+     de deixar a borda crua no retalho): o primeiro corte da chapa tira o
+     refile na frente E atrás. Com o retalho indo até a borda física, as
+     fatias somavam exatamente o comprimento da faixa, a última "peça" da
+     faixa saía sem corte nenhum (sobra do empurrador) e, girando a faixa,
+     a borda não refilada podia ir pro lado da peça boa — perdeu peça na
+     chapa 14 do LT-26-0016 (retalho 2750x980). Agora o retalho termina no
+     refile, igual peça, e sempre sobra a lasca do refile pra máquina cortar. */
   sheet.offcuts = chosen.map(function (cd) {
-    const r = { x: cd.raw.x, y: cd.raw.y, w: cd.raw.w, h: cd.raw.h };
-    if (Math.abs((r.x + r.w) - usableR) < 0.15) r.w = sheet.width - r.x;
-    if (Math.abs((r.y + r.h) - usableB) < 0.15) r.h = sheet.height - r.y;
-    return r;
+    return { x: cd.raw.x, y: cd.raw.y, w: cd.raw.w, h: cd.raw.h };
   });
+};
+
+/* Medida limpa de um retângulo de retalho: o kerf só está "embutido" num
+   lado quando existe outro item (peça ou retalho) começando EXATAMENTE onde
+   ele termina — é o que o packer faz quando consome a serra junto. Sem
+   vizinho encostado (sobra ou fim da faixa depois), a medida já é limpa.
+   A regra antiga ("todo lado que não é borda útil perde 1 kerf") errava a
+   sobra de baixo de uma coluna sem vizinho à direita: o retalho saía 4,4
+   mais estreito que a coluna e a máquina fazia um CORTE FANTASMA nele — a
+   chapa 14 do LT-26-0016 recebeu o corte de acabamento no retalho
+   (376,6 na coluna de 381) em vez da peça (Matt, 16/10). */
+NESTING.kerfInside = function (r, others, kerf, eps) {
+  eps = eps == null ? 0.15 : eps;
+  const endX = r.x + r.w, endY = r.y + r.h;
+  const touchX = others.some(function (o) {
+    return o !== r && Math.abs(o.x - endX) < eps && o.y < endY - eps && o.y + o.h > r.y + eps;
+  });
+  const touchY = others.some(function (o) {
+    return o !== r && Math.abs(o.y - endY) < eps && o.x < endX - eps && o.x + o.w > r.x + eps;
+  });
+  return { w: touchX ? Math.max(1, r.w - kerf) : r.w, h: touchY ? Math.max(1, r.h - kerf) : r.h };
 };
 
 /* ============================================================
@@ -724,14 +743,11 @@ NESTING.cutStats = function (sheet, params) {
   const _t = NESTING.trims(params, isRetalho);
   const usableR = sheet.width - _t.tr;
   const usableB = sheet.height - _t.tb;
+  const all = sheet.placed.concat(sheet.offcuts || []);
   const items = sheet.placed.map(function (p) { return { x: p.x, y: p.y, w: p.w, h: p.h }; })
     .concat((sheet.offcuts || []).map(function (o) {
-      const endX = o.x + o.w, endY = o.y + o.h;
-      return {
-        x: o.x, y: o.y,
-        w: (Math.abs(endX - usableR) > 0.15 && Math.abs(endX - sheet.width) > 0.15) ? o.w - kerf : o.w,
-        h: (Math.abs(endY - usableB) > 0.15 && Math.abs(endY - sheet.height) > 0.15) ? o.h - kerf : o.h
-      };
+      const c = NESTING.kerfInside(o, all, kerf);
+      return { x: o.x, y: o.y, w: c.w, h: c.h };
     }));
   return NESTING._cutStatsItems(items, sheet.width);
 };
@@ -1656,15 +1672,8 @@ NESTING.sheetSignature = function (width, height, material, rects, offcuts) {
    (erp.offcuts) e pra etiqueta OC. */
 NESTING.offcutCleanSize = function (sheet, r, params) {
   const kerf = Number(params.kerf_mm) || 0;
-  const isRetalho = sheet.source === 'retalho';
-  const _t = NESTING.trims(params, isRetalho);
-  const usableR = sheet.width - _t.tr;
-  const usableB = sheet.height - _t.tb;
-  const endX = r.x + r.w, endY = r.y + r.h;
-  return {
-    w: (Math.abs(endX - usableR) > 0.15 && Math.abs(endX - sheet.width) > 0.15) ? Math.max(1, r.w - kerf) : r.w,
-    h: (Math.abs(endY - usableB) > 0.15 && Math.abs(endY - sheet.height) > 0.15) ? Math.max(1, r.h - kerf) : r.h
-  };
+  const all = (sheet.placed || []).concat(sheet.offcuts || []);
+  return NESTING.kerfInside(r, all, kerf);
 };
 
 /* ============================================================

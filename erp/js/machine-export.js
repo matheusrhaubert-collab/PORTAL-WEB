@@ -320,15 +320,22 @@ MAQUINA_EXPORT._itensDaChapa = function (sh, ctx) {
   const isRetalho = sh.source === 'retalho';
   const usableRight = Number(sh.width_mm) - (isRetalho ? ctx.trimRetalho : ctx.trimRight);
   const usableBottom = Number(sh.height_mm) - (isRetalho ? ctx.trimRetalho : ctx.trimBottom);
-  (sh.offcuts_json || []).forEach(function (o) {
+  /* Refile dos dois lados SEMPRE (Matt, 16/10): retalho que vinha até a
+     borda física (plano salvo antes da correção) é recortado de volta pra
+     borda útil, pra máquina tirar o refile na frente e atrás. */
+  const rects = (sh.offcuts_json || []).map(function (o) {
+    const r = { x: Number(o.x), y: Number(o.y), w: Number(o.w), h: Number(o.h) };
+    if (r.x + r.w > usableRight + ctx.eps) r.w = Math.max(1, usableRight - r.x);
+    if (r.y + r.h > usableBottom + ctx.eps) r.h = Math.max(1, usableBottom - r.y);
+    return r;
+  });
+  const vizinhos = items.map(function (it) { return { x: it.x, y: it.y, w: it.w, h: it.h }; }).concat(rects);
+  rects.forEach(function (o) {
     ctx.offcutCounterRef.n++;
-    let w = Number(o.w), h = Number(o.h);
-    // Kerf embutido no lado de dentro do retalho (ver nota do modelo acima).
-    // Borda útil OU borda física (retalho que ficou com a borda crua, sem
-    // refile — NESTING._recomputeOffcuts) = sem corte ali, sem kerf.
-    const endX = Number(o.x) + w, endY = Number(o.y) + h;
-    if (Math.abs(endX - usableRight) > ctx.eps && Math.abs(endX - Number(sh.width_mm)) > ctx.eps) w = Math.max(1, w - ctx.kerf);
-    if (Math.abs(endY - usableBottom) > ctx.eps && Math.abs(endY - Number(sh.height_mm)) > ctx.eps) h = Math.max(1, h - ctx.kerf);
+    // Kerf só sai do lado em que outro item começa encostado (NESTING.kerfInside)
+    // — sem isso, sobra no fim de coluna ganhava um corte fantasma de 1 kerf.
+    const c = NESTING.kerfInside(o, vizinhos, ctx.kerf, ctx.eps);
+    const w = c.w, h = c.h;
     // Código do estoque: linha de erp.offcuts desta chapa com a mesma medida
     // (limpa; plano antigo gravava a medida com a serra — tenta as duas).
     let code = null;
@@ -481,7 +488,8 @@ MAQUINA_EXPORT._buildOffcutLabelOps = function (colorName, w, h, stockCode, info
   ops.push({ type: 'rect', x: 0, y: 0, w: bw, h: H });
   ops.push({ type: 'rect', x: W - bw, y: 0, w: bw, h: H });
 
-  ops.push({ type: 'text', x: margin, y: 2.2, text: 'RETALHO', sizeMm: 2.4, bold: true, color: GRAY });
+  // Cor com veio: diz em qual medida corre o veio (= comprimento, 1º número).
+  ops.push({ type: 'text', x: margin, y: 2.2, text: info.hasGrain ? 'RETALHO \u00b7 VEIO NO ' + fmt(w) : 'RETALHO', sizeMm: 2.4, bold: true, color: info.hasGrain ? [0, 0, 0] : GRAY });
   ops.push({ type: 'text', x: W - margin, y: 2.2, text: String(colorName || ''), sizeMm: 2.9, align: 'right' });
 
   // Medida limpa, grande e centralizada
@@ -604,7 +612,8 @@ MAQUINA_EXPORT._montarArquivos = function (plan) {
         const ops = MAQUINA_EXPORT._buildOffcutLabelOps(sh.color_name, it.cleanW, it.cleanH, it.stockCode, {
           loteCode: (plan._batch && plan._batch.code) || '',
           planCode: plan.code || ('v' + plan.version),
-          dateText: MAQUINA_EXPORT._dataBR(plan.created_at)
+          dateText: MAQUINA_EXPORT._dataBR(plan.created_at),
+          hasGrain: !!(plan._grainColorIds && plan._grainColorIds.has(sh.color_id))
         });
         const bytes = EMF.build({ widthMm: 76.2, heightMm: 50.8, ops: ops });
         files.push({ name: 'OC' + it.ocNumber + '.emf', data: bytes });
@@ -693,6 +702,10 @@ MAQUINA_EXPORT.gerar = async function (planId, btn) {
       plan._offcutRows = ocRows || [];
     }
     if (!plan) { avisar('Plano não encontrado.', true); return; }
+    try {
+      const cores = await LOTES.colors();
+      plan._grainColorIds = new Set((cores || []).filter(function (c) { return c.has_grain; }).map(function (c) { return c.id; }));
+    } catch (err) { console.error('[maquina-export] cores:', err); }
     if (!plan._pieces.length) { avisar('Este plano não tem peça nenhuma.', true); return; }
 
     avisar('vendo quais peças vão pra furadeira…');

@@ -440,6 +440,7 @@ MAT.tabRetalhos = function (d) {
       cor: UI.swatch(c && c.swatch_hex, o.color_name || (c && c.name) || '—'),
       esp: LOTES_UI.mm(o.espessura_mm) + ' mm',
       dim: '<span class="erp-strong">' + LOTES_UI.mm(o.width_mm) + ' × ' + LOTES_UI.mm(o.height_mm) + '</span> mm' +
+        (c && c.has_grain ? '<div class="erp-xs erp-strong">veio no ' + LOTES_UI.mm(o.width_mm) + '</div>' : '') +
         '<div class="erp-xs erp-muted">' + ((o.width_mm / 1000) * (o.height_mm / 1000)).toFixed(2).replace('.', ',') + ' m²</div>',
       local: o.location ? UI.esc(o.location) : '<span class="erp-muted erp-xs">sem local</span>',
       origem: o.origin_plan_id
@@ -469,11 +470,18 @@ MAT.tabRetalhos = function (d) {
     '</div>' +
     UI.panel('Entrada manual de retalho',
       '<div class="erp-muted erp-small" style="margin-bottom:10px">Pra sobra que já está na prateleira e nunca passou por um plano daqui.</div>' +
+      /* VEIO (Matt, 16/10 — peça cortada com veio invertido): o plano trata o
+         COMPRIMENTO do retalho como o sentido do veio, igual à chapa. A tela
+         antiga gravava sempre o lado MAIOR como comprimento, e num retalho
+         com veio no lado menor o veio virava. Agora grava como digitado. */
+      '<div class="erp-small" style="margin-bottom:10px;padding:8px 10px;border-left:3px solid var(--accent);background:#fbf7ee">' +
+        '<b>Cor com veio:</b> o <b>comprimento</b> é a medida no <b>sentido do veio</b> (as linhas da madeira), mesmo que seja o lado menor. ' +
+        'O plano nunca gira peça com veio, então essa medida decide a direção do veio na peça.</div>' +
       '<div class="erp-grid erp-grid-4">' +
         '<label class="erp-field"><span>Cor</span><select id="ret-cor">' + colorOpts + '</select></label>' +
         '<label class="erp-field"><span>Espessura (mm)</span><input type="number" id="ret-esp" value="18" step="0.1" min="1"></label>' +
-        '<label class="erp-field"><span>Comprimento (mm)</span><input type="number" id="ret-w" step="1" min="1"></label>' +
-        '<label class="erp-field"><span>Largura (mm)</span><input type="number" id="ret-h" step="1" min="1"></label>' +
+        '<label class="erp-field"><span>Comprimento — sentido do veio (mm)</span><input type="number" id="ret-w" step="0.1" min="1"></label>' +
+        '<label class="erp-field"><span>Largura (mm)</span><input type="number" id="ret-h" step="0.1" min="1"></label>' +
         '<label class="erp-field"><span>Local</span><input type="text" id="ret-loc" placeholder="Cavalete 3"></label>' +
         '<label class="erp-field"><span>Quantidade iguais</span><input type="number" id="ret-qtd" value="1" step="1" min="1"></label>' +
       '</div>' +
@@ -509,7 +517,9 @@ MAT.cadastrarRetalho = async function (btn) {
       await LOTES.saveOffcut({
         color_id: colorId, color_name: color ? color.name : null,
         espessura_mm: esp,
-        width_mm: Math.max(w, h), height_mm: Math.min(w, h),
+        // Como digitado: comprimento = sentido do veio (ver aviso na tela).
+        // NUNCA reordenar por maior/menor — inverte o veio da peça.
+        width_mm: w, height_mm: h,
         location: v('ret-loc') || null, status: 'disponivel',
         notes: 'Entrada manual'
       });

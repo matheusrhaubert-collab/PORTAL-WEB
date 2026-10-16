@@ -40,9 +40,14 @@ RETALHOS_PDF._carregar = async function (planId) {
   const plan = await LOTES.plan(planId);
   if (!plan) throw new Error('Plano não encontrado.');
   const { data, error } = await LOTES.erp().from('offcuts')
-    .select('id, code, color_name, espessura_mm, width_mm, height_mm, location, status, origin_sheet_id, consumed_by_plan_id, origin_plan_id')
+    .select('id, code, color_id, color_name, espessura_mm, width_mm, height_mm, location, status, origin_sheet_id, consumed_by_plan_id, origin_plan_id')
     .or('consumed_by_plan_id.eq.' + planId + ',origin_plan_id.eq.' + planId);
   if (error) throw error;
+  /* Cores com veio: a medida do retalho sai com "veio no X" (o 1º número,
+     comprimento), pra quem separa/guarda conferir a direção da madeira
+     antes de ir pra máquina (Matt, 16/10 — peça cortada com veio invertido). */
+  const cores = await LOTES.colors();
+  plan._grainColorIds = new Set((cores || []).filter(function (c) { return c.has_grain; }).map(function (c) { return c.id; }));
   plan._ocUsados = (data || []).filter(function (o) { return o.consumed_by_plan_id === planId; });
   plan._ocGerados = (data || []).filter(function (o) { return o.origin_plan_id === planId; });
   return plan;
@@ -50,6 +55,9 @@ RETALHOS_PDF._carregar = async function (planId) {
 
 RETALHOS_PDF._mm = function (v) { return LOTES_UI.mm(v); };
 RETALHOS_PDF._medida = function (w, h) { return RETALHOS_PDF._mm(w) + ' × ' + RETALHOS_PDF._mm(h) + ' mm'; };
+RETALHOS_PDF._veio = function (plan, colorId, w) {
+  return plan._grainColorIds && plan._grainColorIds.has(colorId) ? 'veio no ' + RETALHOS_PDF._mm(w) : null;
+};
 RETALHOS_PDF._material = function (cor, esp) {
   const e = Number(esp);
   return (cor || '') + (isFinite(e) && e > 0 ? ' · ' + String(e).replace('.', ',') + ' mm' : '');
@@ -210,7 +218,7 @@ RETALHOS_PDF.pegar = async function (planId, btn) {
         { text: 'Chapa ' + (machineNo[s.id] ? machineNo[s.id].n : s.index_no), bold: true, size: 9, sub: '#' + s.index_no + ' no plano' },
         { text: codigo, bold: true, size: 10, barcode: oc ? oc.code : null },
         { text: RETALHOS_PDF._material(s.color_name, s.espessura_mm) },
-        { text: RETALHOS_PDF._medida(s.width_mm, s.height_mm), bold: true },
+        { text: RETALHOS_PDF._medida(s.width_mm, s.height_mm), bold: true, sub: RETALHOS_PDF._veio(plan, s.color_id, s.width_mm) },
         { text: local, muted: local === '—' },
         { text: String(n) },
         { box: true }
@@ -358,7 +366,7 @@ RETALHOS_PDF.conferencia = async function (planId, btn) {
       D.linha(cols, [
         { text: o.code, bold: true, size: 10, barcode: o.code },
         { text: RETALHOS_PDF._material(o.color_name, o.espessura_mm) },
-        { text: RETALHOS_PDF._medida(o.width_mm, o.height_mm), bold: true },
+        { text: RETALHOS_PDF._medida(o.width_mm, o.height_mm), bold: true, sub: RETALHOS_PDF._veio(plan, o.color_id, o.width_mm) },
         { blank: true },
         { blank: true },
         { box: true }
