@@ -4003,6 +4003,36 @@ function setProjectBaseboardJoinEnabled(on) {
   if (typeof renderProjectCanvas === 'function') renderProjectCanvas();
 }
 
+// ==========================================================================
+// FERRAGENS NO 3D (2026-10-15, Matt) — botão #po-proj-hardware3d-btn na barra
+// (Camadas). Liga Viewer3D.setHardwareView com o MESMO catálogo de furação do
+// preço (ensureProjectDrillingCatalog, portal-06b) e redesenha. As peças vêm
+// de Drilling.holesNoModulo — o que está no .ban é o que aparece. Melhor visto
+// no estilo transparente (os pinos/cavilhas ficam dentro da chapa).
+// ==========================================================================
+let projectHardware3DOn = false;
+try { projectHardware3DOn = localStorage.getItem('legno_proj_hardware3d') === '1'; } catch (e) { /* ok */ }
+function projectHardware3DConfig() {
+  if (!projectDrillingsByComponent) return null;
+  return { drillingsByComponent: projectDrillingsByComponent, holesByPattern: projectHolesByPattern, settings: projectDrillingSettings };
+}
+async function setProjectHardware3D(on) {
+  projectHardware3DOn = !!on;
+  try { localStorage.setItem('legno_proj_hardware3d', projectHardware3DOn ? '1' : '0'); } catch (e) { /* ok */ }
+  const btn = document.getElementById('po-proj-hardware3d-btn');
+  if (btn) { btn.classList.toggle('active', projectHardware3DOn); btn.setAttribute('aria-pressed', projectHardware3DOn ? 'true' : 'false'); }
+  if (projectHardware3DOn) { try { await ensureProjectDrillingCatalog(); } catch (e) { /* segue sem */ } }
+  if (typeof Viewer3D !== 'undefined' && Viewer3D.setHardwareView) Viewer3D.setHardwareView(projectHardware3DOn, projectHardware3DConfig());
+  if (typeof generateProject3D === 'function') { try { generateProject3D(); } catch (e) { /* modal fechado */ } }
+  if (typeof renderProjectCanvas === 'function') renderProjectCanvas();
+}
+(function ligaHardware3D() {
+  const btn = document.getElementById('po-proj-hardware3d-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => setProjectHardware3D(!projectHardware3DOn));
+  if (projectHardware3DOn) setTimeout(() => setProjectHardware3D(true), 0);
+})();
+
 // Monta os assemblies 3D dos módulos soltos no ambiente (mesma lógica de
 // buildCompositionAssemblies, ver comentário lá) + x_m/z_order (posição
 // livre no chão e profundidade da pilha, exclusivos do canvas 2D da

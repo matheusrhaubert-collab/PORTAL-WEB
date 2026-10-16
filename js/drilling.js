@@ -2564,6 +2564,92 @@
     });
   }
 
+  // ==========================================================================
+  // FURO NO ESPAÇO DO MÓDULO — pra desenhar a FERRAGEM no 3D (2026-10-15,
+  // Matt: "conseguimos colocar os pinos minifix, tambores e cavilhas,
+  // corrediças, dobradiças e calços, tudo que envolve ferragem, suportes de
+  // shelf fixos e reguláveis, no desenho 3D?").
+  // Roda o MESMO collectAssembly do .ban (o que está no arquivo da máquina é
+  // o que aparece no desenho) e desfaz o caminho de emitLocalHole: furo da
+  // máquina (x,y,face) -> plano local (u,v) -> caixa da peça no módulo.
+  // Devolve [{ x,y,z (mm, canto chão-fundo-esquerda do módulo, pé incluído —
+  // mesmo referencial de buildBoxes), nx,ny,nz (normal pra FORA da peça, na
+  // boca do furo), diameter, depth, tipo, borda (bool), peca }].
+  // Peça sem caixa reconstituível (frente com papel 'front', peça girada fora
+  // de 90°) fica de fora — melhor faltar um parafuso no desenho do que
+  // desenhar no lugar errado.
+  const BORDA_LOCAL_FLIP = { borda_sup: 'u0', borda_inf: 'u1', borda_dir: 'v0', borda_esq: 'v1' };
+  function holesNoModulo(parts, W, H, D, config) {
+    const store = new Map();
+    try { collectAssembly(store, parts, W, H, D, config || {}); } catch (e) { return []; }
+    const abs = new Map();
+    try {
+      buildBoxes(parts, W, H, D).boxes.forEach(function (b) { abs.set(b.part, b); });
+      boxesAninhadas(parts, W, H, D).forEach(function (b) { if (!abs.has(b.part)) abs.set(b.part, b); });
+    } catch (e) { return []; }
+    const out = [];
+    store.forEach(function (holes, part) {
+      const b = abs.get(part);
+      if (!b || !b.t) return;
+      const t = b.t;
+      const mirror = b.mirrorAxis || (b.role === 'right' ? 'v' : null);
+      const porta = !!hingeSideOf(part);
+      (holes || []).forEach(function (h) {
+        const l = machineToLocal(t, h.x, h.y);
+        let u = l.u, v = l.v;
+        if (mirror === 'v') v = t.faceB - v;
+        else if (mirror === 'u') u = t.faceA - u;
+        const P = { x: 0, y: 0, z: 0 }, N = { x: 0, y: 0, z: 0 };
+        P[b.uAxis] = b[b.uAxis + '0'] + u;
+        P[b.vAxis] = b[b.vAxis + '0'] + v;
+        const t0 = b[b.tAxis + '0'], sT = b['s' + b.tAxis];
+        const ehBorda = /^borda_/.test(h.face || '');
+        if (!ehBorda) {
+          let positivo = (h.face === 'face') !== !!mirror;
+          // copo/marcação de dobradiça: sempre na face de DENTRO da porta
+          if (porta && (h.tipo === 'copo_dobradica' || h.tipo === 'marcacao_dobradica') && b.tAxis === 'z') positivo = false;
+          P[b.tAxis] = t0 + (positivo ? sT : 0);
+          N[b.tAxis] = positivo ? 1 : -1;
+        } else {
+          const m = machineDims(t);
+          let e = m.flip ? BORDA_LOCAL_FLIP[h.face] : REAL_EDGE_OF_FACE[h.face];
+          if (mirror === 'u' && e) e = e === 'u0' ? 'u1' : (e === 'u1' ? 'u0' : e);
+          if (mirror === 'v' && e) e = e === 'v0' ? 'v1' : (e === 'v1' ? 'v0' : e);
+          P[b.tAxis] = t0 + sT / 2;
+          if (e === 'u0') { P[b.uAxis] = b[b.uAxis + '0']; N[b.uAxis] = -1; }
+          else if (e === 'u1') { P[b.uAxis] = b[b.uAxis + '0'] + t.faceA; N[b.uAxis] = 1; }
+          else if (e === 'v0') { P[b.vAxis] = b[b.vAxis + '0']; N[b.vAxis] = -1; }
+          else if (e === 'v1') { P[b.vAxis] = b[b.vAxis + '0'] + t.faceB; N[b.vAxis] = 1; }
+          else return;
+        }
+        out.push({
+          x: P.x, y: P.y, z: P.z, nx: N.x, ny: N.y, nz: N.z,
+          diameter: Number(h.diameter) || 0, depth: Number(h.depth) || 0,
+          tipo: h.tipo || null, borda: ehBorda,
+          peca: part.reference || null,
+          // prateleira regulável apoiada logo acima deste furo? (pino desenhado)
+          _part: part
+        });
+      });
+    });
+    // LINHA DA REGULÁVEL: pino só onde a prateleira pousa (base = furo + 3,
+    // ver layout-engine FUROS_PRATELEIRA.apoio); o resto fica furo vazio.
+    const regs = [];
+    abs.forEach(function (b, p) { if (p && p.prateleira_regulavel && b.tAxis === 'y') regs.push(b); });
+    out.forEach(function (o) {
+      if (o.tipo !== 'linha_prateleira') return;
+      o.comPino = regs.some(function (r) {
+        const dy = r.y0 - o.y;
+        if (dy < 0.5 || dy > 8) return false;
+        if (o.z < r.z0 - 1 || o.z > r.z0 + r.sz + 1) return false;
+        return Math.abs(o.x - r.x0) <= 8 || Math.abs(o.x - (r.x0 + r.sx)) <= 8;
+      });
+      delete o._part;
+    });
+    out.forEach(function (o) { delete o._part; });
+    return out;
+  }
+
   global.Drilling = {
     generateOrderFiles: generateOrderFiles,
     collectOrderPieces: collectOrderPieces,
@@ -2711,6 +2797,7 @@
     // Aéreo de canto 45° (2026-09-29): profundidade das laterais que fecham
     // o canto — define onde a diagonal da chapa chanfrada começa.
     CHANFRO45_LATERAL_MM: CHANFRO45_LATERAL_MM,
+    holesNoModulo: holesNoModulo,
     _internals: { ledRect, ledSlotsDaPeca, splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan, chanfroDaPeca, chanfroRect, collectAssembly }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

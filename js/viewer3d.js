@@ -4600,6 +4600,128 @@ const Viewer3D = (function () {
   // animar abrir/fechar depois (ver ViewerComposition.toggleDoors/
   // toggleDrawers em viewer3d_composition.js). Omitir openState = portas/
   // gavetas nascem fechadas, como antes.
+  // ==========================================================================
+  // FERRAGEM NO 3D (2026-10-15, Matt: "colocar os pinos minifix, tambores e
+  // cavilhas, corrediças, dobradiças e calços, tudo que envolve ferragem,
+  // suportes de shelf fixos e reguláveis, no desenho 3D... minifix e cavilha
+  // que fica dentro será melhor visto nessa visão" — a vista transparente).
+  // Entrada = Drilling.holesNoModulo (os MESMOS furos do .ban), em mm no
+  // canto chão-fundo-esquerda do módulo; saída = um THREE.Group no
+  // referencial do assembly (X/Z centrados, Y do chão). Cada furo vira a
+  // peça que vai nele, pelo tipo/diâmetro:
+  //   Ø35 copo_dobradica .... caneco da dobradiça (+ braço)
+  //   base_dobradica ........ calço da dobradiça na lateral
+  //   Ø5 de face ............ pino minifix (metade na chapa, resto pra fora)
+  //   Ø12–20 de face ........ tambor minifix
+  //   Ø8 de face ............ cavilha (30 mm, parte pra fora)
+  //   corredica ............. trilho da corrediça (furos da mesma altura)
+  //   suporte_prateleira .... pino de suporte (prateleira fixa)
+  //   linha_prateleira ...... pino só onde a regulável está apoiada
+  // Furo de BORDA não desenha nada sozinho: a cavilha/pino que entra nele já
+  // sai do furo de face do par.
+  function buildHardwareGroup(holes, width_mm, height_mm, depth_mm) {
+    if (!holes || !holes.length) return null;
+    const W = width_mm / 1000, D = depth_mm / 1000;
+    const g = new THREE.Group();
+    g.userData.ferragem3d = true;
+    const mat = {
+      aco: new THREE.MeshStandardMaterial({ color: 0xc3c7cc, metalness: 0.85, roughness: 0.3 }),
+      zamac: new THREE.MeshStandardMaterial({ color: 0x8f959c, metalness: 0.8, roughness: 0.35 }),
+      madeira: new THREE.MeshStandardMaterial({ color: 0xc9a46a, metalness: 0.0, roughness: 0.75 }),
+      escuro: new THREE.MeshStandardMaterial({ color: 0x45484c, metalness: 0.6, roughness: 0.45 }),
+      niquel: new THREE.MeshStandardMaterial({ color: 0xd9dcdf, metalness: 0.9, roughness: 0.2 })
+    };
+    const Y = new THREE.Vector3(0, 1, 0);
+    const geoCache = {};
+    const cil = (r, len) => {
+      const k = 'c' + r.toFixed(5) + '_' + len.toFixed(5);
+      return geoCache[k] || (geoCache[k] = new THREE.CylinderGeometry(r, r, Math.max(len, 0.0005), 14));
+    };
+    const cx = (h) => new THREE.Vector3(h.x / 1000 - W / 2, h.y / 1000, h.z / 1000 - D / 2);
+    // cilindro ao longo da normal: de `de` (m, negativo = pra dentro da chapa) até `ate`
+    const cilindro = (h, r, de, ate, material) => {
+      const n = new THREE.Vector3(h.nx, h.ny, h.nz).normalize();
+      const m = new THREE.Mesh(cil(r, ate - de), material);
+      m.quaternion.setFromUnitVectors(Y, n);
+      m.position.copy(cx(h)).addScaledVector(n, (de + ate) / 2);
+      g.add(m);
+      return m;
+    };
+    const bloco = (h, sx, sy, sz, desloca, material) => {
+      const n = new THREE.Vector3(h.nx, h.ny, h.nz).normalize();
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), material);
+      m.position.copy(cx(h)).addScaledVector(n, desloca);
+      g.add(m);
+      return m;
+    };
+    const trilhos = {};
+    holes.forEach((h) => {
+      const d = h.diameter, prof = (h.depth || 10) / 1000;
+      if (h.borda) return;
+      switch (h.tipo) {
+        case 'copo_dobradica': {
+          cilindro(h, d / 2000, -Math.min(prof, 0.0125), 0.001, mat.zamac);
+          return;
+        }
+        case 'marcacao_dobradica': return;
+        case 'base_dobradica': {
+          // calço: placa 14 × 14 × 3 mm colada na lateral
+          const n = new THREE.Vector3(h.nx, h.ny, h.nz);
+          const sx = Math.abs(n.x) > 0.5 ? 0.003 : 0.014, sy = Math.abs(n.y) > 0.5 ? 0.003 : 0.014, sz = Math.abs(n.z) > 0.5 ? 0.003 : 0.014;
+          bloco(h, sx, sy, sz, 0.0015, mat.escuro);
+          return;
+        }
+        case 'corredica': {
+          // agrupa por peça + altura + lado: os furos da mesma linha viram um trilho
+          const k = [h.peca, Math.round(h.y), h.nx, h.ny, h.nz, Math.round(h.x)].join('|');
+          (trilhos[k] = trilhos[k] || []).push(h);
+          return;
+        }
+        case 'suporte_prateleira': {
+          cilindro(h, 0.0025, -prof, 0.009, mat.niquel);
+          return;
+        }
+        case 'linha_prateleira': {
+          if (!h.comPino) return;
+          cilindro(h, 0.0025, -prof, 0.004, mat.niquel);
+          // "colher" do pino onde a prateleira apoia
+          const n = new THREE.Vector3(h.nx, h.ny, h.nz);
+          const m = bloco(h, Math.abs(n.x) > 0.5 ? 0.012 : 0.009, 0.002, Math.abs(n.z) > 0.5 ? 0.012 : 0.009, 0.008, mat.niquel);
+          m.position.y += 0.0015;
+          return;
+        }
+        default: break;
+      }
+      // furos de cadastro (próprio / contra-furo / tambor) pelo diâmetro
+      if (Math.abs(d - 5) < 0.6) {
+        cilindro(h, 0.0025, -prof, 0.024, mat.aco);                 // pino minifix
+      } else if (d >= 11.5 && d <= 20.5) {
+        cilindro(h, d / 2000, -Math.min(prof, 0.0135), 0.0003, mat.zamac); // tambor
+      } else if (Math.abs(d - 8) < 0.6) {
+        cilindro(h, 0.004, -prof, Math.max(0.03 - prof, 0.008), mat.madeira); // cavilha 30 mm
+      }
+    });
+    Object.keys(trilhos).forEach((k) => {
+      const lista = trilhos[k];
+      const h = lista[0];
+      const n = new THREE.Vector3(h.nx, h.ny, h.nz);
+      // trilho corre no eixo onde os furos se espalham (normalmente Z)
+      const zs = lista.map((o) => o.z), xs = lista.map((o) => o.x);
+      const ao = (Math.max(...zs) - Math.min(...zs)) >= (Math.max(...xs) - Math.min(...xs)) ? 'z' : 'x';
+      const v0 = Math.min(...lista.map((o) => o[ao])) - 30, v1 = Math.max(...lista.map((o) => o[ao])) + 30;
+      const comp = Math.max(v1 - v0, 60) / 1000;
+      const esp = 0.012, alt = 0.03;
+      const sx = ao === 'x' ? comp : (Math.abs(n.x) > 0.5 ? esp : 0.03);
+      const sz = ao === 'z' ? comp : (Math.abs(n.z) > 0.5 ? esp : 0.03);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, alt, sz), mat.aco);
+      const meio = Object.assign({}, h);
+      meio[ao] = (v0 + v1) / 2;
+      m.position.copy(cx(meio)).addScaledVector(n.normalize(), esp / 2);
+      g.add(m);
+    });
+    return g.children.length ? g : null;
+  }
+
   function buildStandaloneAssembly(parts, width_mm, height_mm, depth_mm, openState) {
     if (!available()) return null;
 
@@ -4659,10 +4781,26 @@ const Viewer3D = (function () {
         }
       });
 
+      // FERRAGEM NO 3D (2026-10-15) — ligada pelo botão "Ferragens" (portal,
+      // setHardwareView). Erro aqui nunca derruba o desenho do módulo.
+      if (ferragem3d.on && ferragem3d.config && typeof Drilling !== 'undefined' && Drilling.holesNoModulo) {
+        try {
+          const furos = Drilling.holesNoModulo(parts || [], width_mm, height_mm, depth_mm, ferragem3d.config);
+          const fg = buildHardwareGroup(furos, W * 1000, H * 1000, D * 1000);
+          if (fg) group.add(fg);
+        } catch (e) { console.warn('[ferragem 3D]', e); }
+      }
+
       return { group, width_m: W, height_m: H, depth_m: D, openables: assemblyOpenables };
     } finally {
       activeOpenCtx = null;
     }
+  }
+  // Estado do botão "Ferragens" + catálogo de furação (o mesmo do preço).
+  const ferragem3d = { on: false, config: null };
+  function setHardwareView(on, config) {
+    ferragem3d.on = !!on;
+    if (config) ferragem3d.config = config;
   }
 
   // Tira uma miniatura PNG (data URL) do que está desenhado agora — usado
@@ -4751,6 +4889,8 @@ const Viewer3D = (function () {
     // de buildStandaloneAssembly — reaproveita a mesma lógica de
     // posicionamento de update(), não duplica/reescreve nada dela.
     buildStandaloneAssembly,
+    setHardwareView,
+    buildHardwareGroup,
     // Estilo de desenho (contorno fino/grosso/suave/nenhum + textura on/off) —
     // ver estiloDesenho. Vale pra QUALQUER cena montada por este arquivo,
     // inclusive a da Composição/Projetos, porque todas passam por
