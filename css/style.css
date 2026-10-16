@@ -5634,3 +5634,12 @@ body.po-barra-fixa-on .po-proj-config-col {
 .po-proj-door-side-btns { display: flex; gap: 4px; margin-left: auto; }
 .po-proj-door-side-btn { padding: 5px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .po-proj-door-side-btn.active { background: var(--accent, #8a5a34); color: #fff; border-color: transparent; }
+
+/* Lado da porta v2 — um botão por porta, ícone + clique inverte (15/10) */
+.po-proj-door-side-toggle { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 6px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff; color: #2b2621; cursor: pointer; text-align: left; font: inherit; }
+.po-proj-door-side-toggle:hover { border-color: #c0843f; background: #fdf8f1; }
+.po-proj-door-side-txt { display: flex; flex-direction: column; flex: 1; min-width: 0; font-size: 12px; line-height: 1.25; }
+.po-proj-door-side-txt b { font-size: 13px; font-weight: 600; }
+.po-proj-door-side-txt .po-proj-door-side-nome { color: #766f64; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-proj-door-side-swap { font-size: 16px; color: #c0843f; }

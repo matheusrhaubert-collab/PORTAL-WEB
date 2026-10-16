@@ -1138,9 +1138,8 @@ function renderProjectConfigPanel() {
     });
   });
   // Lado da porta (15/10)
-  panel.querySelectorAll('.po-proj-door-side-btn').forEach((el) => {
+  panel.querySelectorAll('.po-proj-door-side-toggle').forEach((el) => {
     el.addEventListener('click', () => {
-      if (el.classList.contains('active')) return;
       setProjectDoorSide(slot, el.dataset.pieceId, el.dataset.side);
     });
   });
@@ -4675,24 +4674,50 @@ async function renderProjectSideModelPanel() {
 function projectSlotHingedDoors(slot) {
   let pecas = [];
   try { pecas = projectSlotEffectivePieces(slot) || []; } catch (e) { pecas = []; }
+  // Só as portas que EXISTEM nesta medida (v2, 15/10 — Matt: "um módulo deu
+  // 3 opções, ficou confuso"): "Porta (1 folha)" até 600 e "Porta esq./dir.
+  // (2 folhas)" acima de 600 são linhas alternativas pela visibilidade
+  // condicional (Pricing.isPieceVisible) — antes as três apareciam.
+  const dims = { W: Number(slot.width_mm) || 0, H: Number(slot.height_mm) || 0, D: Number(slot.depth_mm) || 0 };
+  const visivel = (p, nivel0) => !nivel0 || typeof Pricing === 'undefined' || !Pricing.isPieceVisible || Pricing.isPieceVisible(p, dims);
+  const escolhidos = slot.selectedOptionalIds || [];
   const out = [];
-  (function anda(lista) {
+  (function anda(lista, nivel0) {
     (lista || []).forEach((p) => {
-      if (!p) return;
+      if (!p || !visivel(p, nivel0)) return;
+      if (p.client_optional && !escolhidos.includes(p.id)) return;
       const ot = String(p.opening_type || '');
       if (p.is_module && /^hinge_(left|right)$/.test(ot)) { out.push({ id: p.id, nome: p.reference || p.module_name || '', lado: ot.slice(6) }); return; }
-      if (p.is_module) { anda(p.child_pieces); return; }
-      if (p.hinge_side === 'left' || p.hinge_side === 'right') out.push({ id: p.id, nome: p.reference_override || p.reference || '', lado: p.hinge_side });
+      if (p.is_module) { anda(p.child_pieces, false); return; }
+      const hs = (p.hinge_side === 'left' || p.hinge_side === 'right') ? p.hinge_side
+        : (/^hinge_(left|right)$/.test(ot) ? ot.slice(6) : null);
+      if (hs) out.push({ id: p.id, nome: p.reference_override || p.reference || '', lado: hs });
     });
-  })(pecas);
+  })(pecas, true);
   return out.filter((d) => d.id != null);
+}
+// Ícone: porta vista de frente, dobradiças (2 pontos) do lado escolhido e o
+// arco de abertura saindo do lado oposto.
+function projectDoorSideIcon(lado) {
+  const esq = lado === 'left';
+  const xh = esq ? 7 : 25;               // lado da dobradiça
+  const xa = esq ? 25 : 7;               // lado que abre
+  return `<svg viewBox="0 0 32 40" width="26" height="32" aria-hidden="true">
+    <rect x="7" y="4" width="18" height="32" rx="1.5" fill="#f4efe7" stroke="#5b4a3a" stroke-width="1.6"/>
+    <circle cx="${xh}" cy="10" r="1.9" fill="#5b4a3a"/><circle cx="${xh}" cy="30" r="1.9" fill="#5b4a3a"/>
+    <line x1="${esq ? 21 : 11}" y1="18" x2="${esq ? 21 : 11}" y2="23" stroke="#5b4a3a" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M ${xa} 36 Q ${esq ? 31 : 1} 22 ${xa} 4" fill="none" stroke="#c0843f" stroke-width="1.4" stroke-dasharray="2.5 2"/>
+  </svg>`;
 }
 function projectDoorSideBlock(slot) {
   const portas = projectSlotHingedDoors(slot);
   if (!portas.length) return '';
   const linhas = portas.map((d, i) => {
-    const btn = (lado) => `<button type="button" class="po-proj-door-side-btn${d.lado === lado ? ' active' : ''}" data-piece-id="${String(d.id).replace(/"/g, '&quot;')}" data-side="${lado}">${lado === 'left' ? '⟲ ' : ''}${I18n.t(lado === 'left' ? 'project.door_side_left' : 'project.door_side_right')}${lado === 'right' ? ' ⟳' : ''}</button>`;
-    return `<div class="po-proj-door-side-row">${portas.length > 1 ? `<span class="po-proj-door-side-nome">${d.nome || (I18n.t('project.door_side_door') + ' ' + (i + 1))}</span>` : ''}<div class="po-proj-door-side-btns">${btn('left')}${btn('right')}</div></div>`;
+    const outro = d.lado === 'left' ? 'right' : 'left';
+    const rotulo = I18n.t(d.lado === 'left' ? 'project.door_side_is_left' : 'project.door_side_is_right');
+    const nome = portas.length > 1 ? `<span class="po-proj-door-side-nome">${d.nome || (I18n.t('project.door_side_door') + ' ' + (i + 1))}</span>` : '';
+    return `<button type="button" class="po-proj-door-side-toggle" data-piece-id="${String(d.id).replace(/"/g, '&quot;')}" data-side="${outro}" title="${I18n.t('project.door_side_flip')}">
+      ${projectDoorSideIcon(d.lado)}<span class="po-proj-door-side-txt">${nome}<b>${rotulo}</b></span><span class="po-proj-door-side-swap">⇄</span></button>`;
   }).join('');
   return `<div class="po-proj-config-door-side"><span class="po-proj-config-section-label">${I18n.t('project.door_side_label')}</span>${linhas}</div>`;
 }
