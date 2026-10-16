@@ -334,6 +334,15 @@ function savePromobTypeMap(map) {
   try { window.localStorage.setItem(PROMOB_MAP_STORAGE_KEY, JSON.stringify(map)); } catch (e) { /* sem storage: só não lembra */ }
 }
 
+// Grava no navegador as escolhas JÁ FEITAS (IA ou manual) na hora, não só
+// no "Criar" — 16/10: um clique fora do modal fechou a tela e perdeu a rodada
+// inteira da IA. Tipo sem módulo não apaga escolha antiga.
+function persistPromobMappingNow(mapping) {
+  const saved = loadPromobTypeMap();
+  Object.entries(mapping || {}).forEach(([k, v]) => { if (v && v.moduleId) saved[k] = v.moduleId; });
+  savePromobTypeMap(saved);
+}
+
 function promobCatalogModules() {
   return (typeof allModules !== 'undefined' ? allModules : [])
     .filter((m) => m && m.active !== false && !m.is_invisible)
@@ -429,6 +438,7 @@ async function runProjectImportPromobAi(onlyMissing) {
       }
     });
     res.aiDone = { applied, asked: keys.length, model: data && data.model };
+    if (applied) persistPromobMappingNow(res.mapping);
   } catch (err) {
     setProjectImportPromobError(I18n.t('project_importpromob.ai_err', { msg: err.message || String(err) }));
   } finally {
@@ -659,6 +669,7 @@ function renderProjectImportPromobReview() {
     sel.addEventListener('change', () => {
       const k = sel.getAttribute('data-type-key');
       res.mapping[k] = { moduleId: sel.value, source: sel.value ? 'manual' : null };
+      persistPromobMappingNow(res.mapping);
       renderProjectImportPromobReview();
     });
   });
@@ -825,8 +836,6 @@ async function runProjectImportPromobBuild() {
     });
   }
   const modal = document.getElementById('po-proj-importpromob-modal');
-  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeProjectImportPromobModal(); });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal && modal.classList.contains('open')) closeProjectImportPromobModal();
-  });
+  // 16/10: clicar fora do modal e Esc NÃO fecham mais (perdia a revisão +
+  // rodada da IA). Só o X e o Cancelar fecham.
 })();

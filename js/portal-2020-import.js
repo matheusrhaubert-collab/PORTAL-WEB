@@ -643,11 +643,6 @@ async function runProjectImport2020Build() {
     });
   }
 
-  const modal = document.getElementById('po-proj-import2020-modal');
-  if (modal) {
-    modal.addEventListener('click', (e) => { if (e.target === modal) closeProjectImport2020Modal(); });
-  }
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal && modal.classList.contains('open')) closeProjectImport2020Modal();
-  });
+  // 16/10: clicar fora do modal e Esc NÃO fecham mais (mesmo problema do
+  // Promob — perdia a revisão). Só o X e o Cancelar fecham.
 })();
