@@ -3822,6 +3822,70 @@ function ledErroGeral(part) {
   return { erro: null, idx: -1 };
 }
 
+// CANAL DO LED x FERRAGEM (2026-10-15, Matt: "quando inserir os LEDs,
+// avisar quando ele pega em cima de alguma furação, por exemplo no minifix,
+// isso vai dar problema na hora de produzir... pode acontecer em outro
+// hardware também, como um calço de corrediça"). AVISO, não trava o Aplicar:
+// às vezes a pessoa quer mesmo e muda a ferragem depois. Os furos são os do
+// .ban (Drilling.holesNoModulo) e não dependem do LED — ficam em cache por
+// slot/medidas enquanto a janela está aberta (o arraste do LED na vista 2D
+// redesenha a cada movimento).
+let ledFurosCache = { chave: null, holes: null, parts: null };
+function ledFurosDoSlot(slot) {
+  if (typeof Drilling === 'undefined' || !Drilling.holesNoModulo) return null;
+  if (!projectDrillingsByComponent) {
+    const p = ensureProjectDrillingCatalog();
+    if (p && p.then) p.then(() => { try { renderProjectLedForm(slot); } catch (e) { /* janela fechou */ } });
+    return null;
+  }
+  const W = Number(slot.width_mm) || 0, H = Number(slot.height_mm) || 0, D = Number(slot.depth_mm) || 0;
+  const chave = [slot.id, W, H, D, (slot.layoutPieces || []).length, JSON.stringify(slot.pieceAdjustments || {}),
+    (slot.removedPieceIds || []).join(','), slot.drawerModelId || ''].join('|');
+  if (ledFurosCache.chave === chave) return ledFurosCache;
+  let parts = [];
+  try {
+    parts = resolvePiecesForViewer(projectSlotEffectivePiecesWithLeds(slot, {}), { W, H, D },
+      slot.colorsByRole, slot.shelfQuantities, slot.dimOverrides, slot.pieceColorOverrides) || [];
+  } catch (e) { parts = []; }
+  const holes = Drilling.holesNoModulo(parts, W, H, D, {
+    drillingsByComponent: projectDrillingsByComponent, holesByPattern: projectHolesByPattern, settings: projectDrillingSettings
+  });
+  ledFurosCache = { chave, holes, parts, W, H, D };
+  return ledFurosCache;
+}
+function ledNomeFerragem(c) {
+  const d = Number(c.diameter) || 0;
+  const k = c.tipo === 'copo_dobradica' ? 'led.hw_hinge_cup'
+    : c.tipo === 'base_dobradica' ? 'led.hw_hinge_plate'
+      : c.tipo === 'corredica' ? 'led.hw_slide_screw'
+        : c.tipo === 'placa_corredica' ? 'led.hw_slide_plate'
+          : c.tipo === 'suporte_prateleira' ? 'led.hw_shelf_pin'
+            : c.tipo === 'linha_prateleira' ? 'led.hw_shelf_line'
+              : c.tipo === 'suporte_cabide' ? 'led.hw_rod'
+                : Math.abs(d - 5) < 0.6 ? 'led.hw_minifix_pin'
+                  : (d >= 11.5 && d <= 20.5) ? 'led.hw_minifix_cam'
+                    : Math.abs(d - 8) < 0.6 ? 'led.hw_dowel' : 'led.hw_hole';
+  return I18n.t(k, { d: Math.round(d * 10) / 10 });
+}
+function renderProjectLedConflitos(slot, part) {
+  const el = document.getElementById('po-led-conflitos');
+  if (!el) return;
+  const esconde = () => { el.style.display = 'none'; el.innerHTML = ''; };
+  if (!slot || !part || !ledDraft || typeof Drilling === 'undefined' || !Drilling.conflitosLed) return esconde();
+  const f = ledFurosDoSlot(slot);
+  if (!f || !f.holes) return esconde();
+  let lista = [];
+  try { lista = Drilling.conflitosLed(f.parts, f.W, f.H, f.D, f.holes, part.piece_id, ledConfigsDoRascunho()); } catch (e) { lista = []; }
+  if (!lista.length) return esconde();
+  const varias = ledDraft.linhas.length > 1;
+  el.innerHTML = '<strong>⚠ ' + escapeHtmlCutlist(I18n.t('led.conflict_title')) + '</strong><ul>'
+    + lista.map((c) => '<li>' + (varias ? escapeHtmlCutlist(I18n.t('led.line_n', { n: c.linha + 1 })) + ': ' : '')
+      + escapeHtmlCutlist(ledNomeFerragem(c)) + (c.n > 1 ? ' ×' + c.n : '')
+      + (c.peca ? ' <span class="dim">(' + escapeHtmlCutlist(c.peca) + ')</span>' : '') + '</li>').join('')
+    + '</ul><p class="dim">' + escapeHtmlCutlist(I18n.t('led.conflict_hint')) + '</p>';
+  el.style.display = '';
+}
+
 function renderProjectLedForm(slot) {
   const part = ledPecaSelecionada(slot);
   const vi = ledVistaDaPeca(part);
@@ -3871,6 +3935,7 @@ function renderProjectLedForm(slot) {
   if (errEl) { errEl.textContent = geral.erro || ''; errEl.style.display = geral.erro ? '' : 'none'; }
   const apply = document.getElementById('po-led-apply-btn');
   if (apply) apply.disabled = !!geral.erro;
+  renderProjectLedConflitos(slot, part);
   const rem = document.getElementById('po-led-remove-btn');
   if (rem) rem.style.visibility = (part && Pricing.ledLista(slot.ledConfigs && slot.ledConfigs[part.piece_id]).length) ? 'visible' : 'hidden';
   renderProjectLed2D(part);

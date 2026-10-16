@@ -3023,11 +3023,21 @@ function renderMoneyOrcamento(body, rel, slots) {
   // duas usam a mesma conta: linha = getDisplayPriceRatioOnly (sem extra
   // fixo), total = getDisplayPrice (extra fixo entra 1x). Sem nada
   // configurado no modal Margens, os dois são iguais à tabela — igual antes.
-  const linhas = (slots || projectSlots).filter((s) => s.result && !(s.module && s.module.visual_only)).map((s) => {
+  // NÚMERO DO MÓDULO (2026-10-15, Matt: "aqui quero o número do módulo") —
+  // mesma numeração do pedido/Proposta/etiqueta (projectSlotsOrderSequence),
+  // e a lista sai NESSA ordem (módulos antes de painéis).
+  const numeroDoSlot = new Map();
+  try {
+    if (typeof projectSlotsOrderSequence === 'function') projectSlotsOrderSequence().forEach((x) => numeroDoSlot.set(x.slot, x.numero));
+  } catch (e) { /* sem numeração */ }
+  const linhas = (slots || projectSlots).filter((s) => s.result && !(s.module && s.module.visual_only))
+    .slice().sort((a, b) => (numeroDoSlot.get(a) || 9999) - (numeroDoSlot.get(b) || 9999))
+    .map((s) => {
     const preco = Number(s.result.total) || 0;
     const aviso = s._priceError
       ? '<div class="dim" style="color:#b45309;">⚠ ' + I18n.t('money.price_stale') + ' ' + escapeHtmlCutlist(s._priceError) + '</div>' : '';
-    return '<tr><td>' + escapeHtmlCutlist(s.module.name || '') + aviso + '</td>'
+    const num = numeroDoSlot.get(s);
+    return '<tr><td>' + (num ? '<span class="po-money-modnum">' + String(num).padStart(3, '0') + '</span> ' : '') + escapeHtmlCutlist(s.module.name || '') + aviso + '</td>'
       + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
       + '<td class="num">' + formatMoney(getDisplayPriceRatioOnly(preco)) + '</td></tr>';
   }).join('');

@@ -460,7 +460,9 @@
       face = (h.entersPositive !== mirrored) ? 'face' : 'verso';
     }
     const pos = localToMachine(t, u, v);
-    addHole(store, box.part, { face, x: pos.x, y: pos.y, diameter: h.diameter, depth: h.depth, tipo: h.tipo || null });
+    const furo = { face, x: pos.x, y: pos.y, diameter: h.diameter, depth: h.depth, tipo: h.tipo || null };
+    if (h.extra) furo.extra = h.extra;   // só pro desenho 3D (corrediça); o .ban ignora
+    addHole(store, box.part, furo);
   }
 
   // Avalia as linhas de furação padrão de um componente, chamando
@@ -1332,7 +1334,11 @@
             edge: null,
             entersPositive: entersPositive,
             diameter: dia, depth: depth,
-            tipo: 'corredica'
+            tipo: 'corredica',
+            // desenho 3D do trilho (Drilling.holesNoModulo/viewer3d): comprimento,
+            // distância do furo até a frente do trilho e altura do furo acima da
+            // base da gaveta
+            extra: { railLen: len, distFrente: dist + (Number(dr.part.slide_recuo_extra_mm) || 0), altura: height }
           });
         });
       });
@@ -1400,6 +1406,13 @@
     const front = Number(settings.shelf_front_setback_mm) || 37;
     const back = Number(settings.shelf_back_setback_mm) || 37;
     const vOff = Number(settings.shelf_vertical_offset_mm) || 0;
+    // ALTURA DO PINO (2026-10-15, Matt: "o pino fica 5mm pra cima de onde
+    // começa a prateleira, de cima pra baixo") — o furo da lateral fica a
+    // 5 mm da FACE DE BAIXO da prateleira (era o meio da espessura, 9 mm na
+    // chapa de 18). drilling_settings.shelf_pin_from_bottom_mm sobrescreve;
+    // shelf_vertical_offset_mm continua somando como ajuste fino.
+    const pinoBase = settings.shelf_pin_from_bottom_mm != null && settings.shelf_pin_from_bottom_mm !== ''
+      ? Number(settings.shelf_pin_from_bottom_mm) : 5;
     const tol = Number(settings.touch_tolerance_mm) || 5;
 
     const laterals = boxes.filter(function (b) { return b.tAxis === 'x'; });
@@ -1419,7 +1432,7 @@
           if (Math.abs((sb.z0 + sb.sz) - lb.z0) > tol) return;
           const lo = Math.max(sb.x0, lb.x0), hi = Math.min(sb.x0 + sb.sx, lb.x0 + lb.sx);
           if (hi - lo < front + back) return;
-          const y = sb.y0 + sb.sy / 2 + vOff;
+          const y = sb.y0 + Math.min(pinoBase, sb.sy) + vOff;
           [lo + back, hi - front].forEach(function (x) {
             emitLocalHole(store, lb, {
               u: x - lb.x0, v: y - lb.y0, edge: null,
@@ -1432,7 +1445,7 @@
       }
       if (sb.tAxis !== 'y') return; // prateleira = chapa deitada (espessura no Y)
       if (sb.part.shape_type === 'chanfro45') return; // ver collectShelfSupportHoles45
-      const yHole = sb.y0 + sb.sy / 2 + vOff;
+      const yHole = sb.y0 + Math.min(pinoBase, sb.sy) + vOff;
       const zHoles = [sb.z0 + sb.sz - front, sb.z0 + back];
       laterals.forEach(function (lb) {
         if (lb === sb) return;
@@ -1616,6 +1629,13 @@
     const front = Number(settings.shelf_front_setback_mm) || 37;
     const back = Number(settings.shelf_back_setback_mm) || 37;
     const vOff = Number(settings.shelf_vertical_offset_mm) || 0;
+    // ALTURA DO PINO (2026-10-15, Matt: "o pino fica 5mm pra cima de onde
+    // começa a prateleira, de cima pra baixo") — o furo da lateral fica a
+    // 5 mm da FACE DE BAIXO da prateleira (era o meio da espessura, 9 mm na
+    // chapa de 18). drilling_settings.shelf_pin_from_bottom_mm sobrescreve;
+    // shelf_vertical_offset_mm continua somando como ajuste fino.
+    const pinoBase = settings.shelf_pin_from_bottom_mm != null && settings.shelf_pin_from_bottom_mm !== ''
+      ? Number(settings.shelf_pin_from_bottom_mm) : 5;
     const tol = Number(settings.touch_tolerance_mm) || 5;
 
     boxes.forEach(function (sb) {
@@ -1624,7 +1644,7 @@
       if (sb.tAxis !== 'y') return;
       const ch = chanfroDaPeca(sb.part);
       if (!ch) return;
-      const yHole = sb.y0 + sb.sy / 2 + vOff;
+      const yHole = sb.y0 + Math.min(pinoBase, sb.sy) + vOff;
       // trecho reto de cada aresta chanfrada (em coordenadas do módulo)
       const retaX = { lo: sb.x0, hi: sb.x0 + sb.sx - ch.cu }; // ao longo de X, na aresta z1
       const retaZ = { lo: sb.z0, hi: sb.z0 + sb.sz - ch.cv }; // ao longo de Z, na aresta x1
@@ -2608,6 +2628,12 @@
           let positivo = (h.face === 'face') !== !!mirror;
           // copo/marcação de dobradiça: sempre na face de DENTRO da porta
           if (porta && (h.tipo === 'copo_dobradica' || h.tipo === 'marcacao_dobradica') && b.tAxis === 'z') positivo = false;
+          // COPOS Ø16 DA PRATELEIRA (conector do suporte) ficam na face de
+          // BAIXO (Matt, 15/10: "a ferragem fica na parte de baixo da
+          // prateleira"). O .ban continua furando pela Face A — o padrão dos
+          // 4 copos é simétrico, então furar com a prateleira de barriga pra
+          // cima dá a mesma peça (e a Face B nunca foi confirmada na máquina).
+          if (part.drill_shelf_support && b.tAxis === 'y' && Math.abs((Number(h.diameter) || 0) - COPO_PRATELEIRA.diameter) < 0.6) positivo = false;
           P[b.tAxis] = t0 + (positivo ? sT : 0);
           N[b.tAxis] = positivo ? 1 : -1;
         } else {
@@ -2625,7 +2651,7 @@
         out.push({
           x: P.x, y: P.y, z: P.z, nx: N.x, ny: N.y, nz: N.z,
           diameter: Number(h.diameter) || 0, depth: Number(h.depth) || 0,
-          tipo: h.tipo || null, borda: ehBorda,
+          tipo: h.tipo || null, borda: ehBorda, extra: h.extra || null,
           peca: part.reference || null,
           // prateleira regulável apoiada logo acima deste furo? (pino desenhado)
           _part: part
@@ -2647,6 +2673,111 @@
       delete o._part;
     });
     out.forEach(function (o) { delete o._part; });
+    return out;
+  }
+
+  // ==========================================================================
+  // CANAL DO LED x FERRAGEM (2026-10-15, Matt: "quando inserir os LEDs,
+  // avisar quando ele pega em cima de alguma furação, por exemplo no
+  // minifix... pode acontecer em outro hardware também, como um calço de
+  // corrediça... dar um aviso quando for colocar o LED").
+  // Tudo em caixas alinhadas no referencial do módulo (mm, o mesmo de
+  // holesNoModulo/buildBoxes):
+  //   canal = caixa da peça + Pricing.ledLayout(...).ranges (já inclui a
+  //           profundidade do lado A/B)
+  //   furo  = da boca, entrando pela normal até a profundidade, ± raio
+  //   placa da corrediça = na face da lateral, comprimento do trilho ×
+  //           (−31,5 … +45 mm) da base da gaveta (mesmo perfil do 3D)
+  // ==========================================================================
+  function caixasAbsolutas(parts, W, H, D) {
+    const abs = new Map();
+    try {
+      buildBoxes(parts, W, H, D).boxes.forEach(function (b) { abs.set(b.part, b); });
+      boxesAninhadas(parts, W, H, D).forEach(function (b) { if (!abs.has(b.part)) abs.set(b.part, b); });
+    } catch (e) { /* sem caixas */ }
+    return abs;
+  }
+  // [{ piece_id, peca, aabb:{x0,x1,y0,y1,z0,z1}, linha }] de todo LED do módulo
+  function ledVolumesNoModulo(parts, W, H, D) {
+    const out = [];
+    if (typeof Pricing === 'undefined' || !Pricing.ledLista || !Pricing.ledLayoutDaPeca) return out;
+    caixasAbsolutas(parts, W, H, D).forEach(function (b, part) {
+      if (!part || !part.led) return;
+      Pricing.ledLista(part.led).forEach(function (led, i) {
+        const a = ledAabbNaCaixa(part, b, led);
+        if (a) out.push({ piece_id: part.piece_id, peca: part.reference || null, aabb: a, linha: i });
+      });
+    });
+    return out;
+  }
+  function ledAabbNaCaixa(part, b, led) {
+    const L = Pricing.ledLayoutDaPeca(part, led);
+    if (!L || L.erro || !L.ranges) return null;
+    const r = L.ranges;
+    if (!r.x || !r.y || !r.z) return null;
+    return { x0: b.x0 + r.x[0], x1: b.x0 + r.x[1], y0: b.y0 + r.y[0], y1: b.y0 + r.y[1], z0: b.z0 + r.z[0], z1: b.z0 + r.z[1] };
+  }
+  function aabbDoFuro(h) {
+    const r = (h.diameter || 0) / 2, p = h.depth || 0;
+    const c = { x: h.x, y: h.y, z: h.z }, n = { x: h.nx, y: h.ny, z: h.nz };
+    const o = {};
+    ['x', 'y', 'z'].forEach(function (k) {
+      if (n[k]) { const fim = c[k] - n[k] * p; o[k + '0'] = Math.min(c[k], fim); o[k + '1'] = Math.max(c[k], fim); }
+      else { o[k + '0'] = c[k] - r; o[k + '1'] = c[k] + r; }
+    });
+    return o;
+  }
+  function cruza(a, b, folga) {
+    const f = folga || 0;
+    return a.x0 < b.x1 + f && a.x1 > b.x0 - f && a.y0 < b.y1 + f && a.y1 > b.y0 - f && a.z0 < b.z1 + f && a.z1 > b.z0 - f;
+  }
+  // Placas de corrediça (uma por trilho) a partir dos furos 'corredica'
+  function placasDeCorredica(holes) {
+    const grupos = {};
+    (holes || []).forEach(function (h) {
+      if (h.tipo !== 'corredica' || !h.extra) return;
+      const k = [h.peca, Math.round(h.y), h.nx, h.nz, Math.round(h.x)].join('|');
+      (grupos[k] = grupos[k] || []).push(h);
+    });
+    return Object.keys(grupos).map(function (k) {
+      const h = grupos[k][0], ex = h.extra;
+      const frente = h.z + (ex.distFrente || 0), tras = frente - (ex.railLen || 0);
+      const yb = h.y - (ex.altura != null ? ex.altura : 37);
+      // 1 mm pra dentro da lateral + 1,5 mm de placa pra fora
+      const xa = h.x - h.nx * 1, xb = h.x + h.nx * 1.5;
+      return { tipo: 'placa_corredica', peca: h.peca, diameter: 0,
+        aabb: { x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: yb - 31.5, y1: yb + 45, z0: Math.min(tras, frente), z1: Math.max(tras, frente) } };
+    });
+  }
+  // Conflitos do(s) LED(s) `ledList` na peça `pieceId` — holes = holesNoModulo
+  // já calculado (não depende do LED; quem chama guarda em cache).
+  function conflitosLed(parts, W, H, D, holes, pieceId, ledList) {
+    const out = [];
+    const abs = caixasAbsolutas(parts, W, H, D);
+    let part = null, box = null;
+    abs.forEach(function (b, p) { if (!part && p && String(p.piece_id) === String(pieceId)) { part = p; box = b; } });
+    if (!part || !box || typeof Pricing === 'undefined') return out;
+    const vistos = {};
+    const placas = placasDeCorredica(holes);
+    (Pricing.ledLista ? Pricing.ledLista(ledList) : []).forEach(function (led, linha) {
+      const canal = ledAabbNaCaixa(part, box, led);
+      if (!canal) return;
+      (holes || []).forEach(function (h) {
+        if (h.tipo === 'marcacao_dobradica') return;
+        if (!cruza(canal, aabbDoFuro(h), 0.5)) return;
+        const k = linha + '|' + h.tipo + '|' + Math.round(h.diameter) + '|' + h.peca;
+        if (vistos[k]) { vistos[k].n += 1; return; }
+        vistos[k] = { linha: linha, tipo: h.tipo, diameter: h.diameter, borda: h.borda, peca: h.peca, n: 1 };
+        out.push(vistos[k]);
+      });
+      placas.forEach(function (pl) {
+        if (!cruza(canal, pl.aabb, 0.5)) return;
+        const k = linha + '|placa|' + pl.peca;
+        if (vistos[k]) return;
+        vistos[k] = { linha: linha, tipo: 'placa_corredica', diameter: 0, peca: pl.peca, n: 1 };
+        out.push(vistos[k]);
+      });
+    });
     return out;
   }
 
@@ -2798,6 +2929,8 @@
     // o canto — define onde a diagonal da chapa chanfrada começa.
     CHANFRO45_LATERAL_MM: CHANFRO45_LATERAL_MM,
     holesNoModulo: holesNoModulo,
+    ledVolumesNoModulo: ledVolumesNoModulo,
+    conflitosLed: conflitosLed,
     _internals: { ledRect, ledSlotsDaPeca, splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan, chanfroDaPeca, chanfroRect, collectAssembly }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

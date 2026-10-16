@@ -4701,23 +4701,57 @@ const Viewer3D = (function () {
         cilindro(h, 0.004, -prof, Math.max(0.03 - prof, 0.008), mat.madeira); // cavilha 30 mm
       }
     });
+    // CORREDIÇA OCULTA (undermount) — 2ª versão (15/10, Matt: "o desenho da
+    // corrediça pega embaixo da gaveta e nas laterais, onde tem os parafusos
+    // fixando nas laterais do móvel"). Perfil, de fora pra dentro (N = da
+    // lateral pro vão), Y = 0 na base da gaveta (furo − altura do furo):
+    //   placa de fixação na lateral ... 1,5 mm, de −31,5 até +45 mm, com os
+    //                                   parafusos nos furos do .ban
+    //   aba de baixo .................. 1,5 → 21 mm, −31,5 → −29,5
+    //   corpo do trilho ............... 3 → 19 mm, −29,5 → −3,5
+    //   lábio onde a gaveta apoia ..... 6 → 21 mm, −3,5 → 0
+    // Comprimento = trilho escolhido pela profundidade (railLen), da frente
+    // do trilho pra trás. Sem esses dados (pedido antigo): barra simples.
     Object.keys(trilhos).forEach((k) => {
       const lista = trilhos[k];
       const h = lista[0];
-      const n = new THREE.Vector3(h.nx, h.ny, h.nz);
-      // trilho corre no eixo onde os furos se espalham (normalmente Z)
+      const n = new THREE.Vector3(h.nx, h.ny, h.nz).normalize();
       const zs = lista.map((o) => o.z), xs = lista.map((o) => o.x);
       const ao = (Math.max(...zs) - Math.min(...zs)) >= (Math.max(...xs) - Math.min(...xs)) ? 'z' : 'x';
-      const v0 = Math.min(...lista.map((o) => o[ao])) - 30, v1 = Math.max(...lista.map((o) => o[ao])) + 30;
+      const ex = h.extra || {};
+      let v0, v1;
+      if (ex.railLen > 0 && ex.distFrente != null && ao === 'z') {
+        const frente = h.z + ex.distFrente;
+        v1 = frente; v0 = frente - ex.railLen;
+      } else {
+        v0 = Math.min(...lista.map((o) => o[ao])) - 30; v1 = Math.max(...lista.map((o) => o[ao])) + 30;
+      }
       const comp = Math.max(v1 - v0, 60) / 1000;
-      const esp = 0.012, alt = 0.03;
-      const sx = ao === 'x' ? comp : (Math.abs(n.x) > 0.5 ? esp : 0.03);
-      const sz = ao === 'z' ? comp : (Math.abs(n.z) > 0.5 ? esp : 0.03);
-      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, alt, sz), mat.aco);
-      const meio = Object.assign({}, h);
-      meio[ao] = (v0 + v1) / 2;
-      m.position.copy(cx(meio)).addScaledVector(n.normalize(), esp / 2);
-      g.add(m);
+      const yBase = (h.y - (ex.altura != null ? ex.altura : 37)) / 1000;
+      const meio = Object.assign({}, h); meio[ao] = (v0 + v1) / 2;
+      const c = cx(meio);                     // ponto na face da lateral, meio do trilho
+      const eixoN = Math.abs(n.x) > 0.5 ? 'x' : 'z';
+      // caixa: [nA, nB] mm ao longo de N, [yA, yB] mm acima da base da gaveta
+      const peca = (nA, nB, yA, yB, material) => {
+        const tamN = (nB - nA) / 1000, tamY = (yB - yA) / 1000;
+        const geo = new THREE.BoxGeometry(
+          eixoN === 'x' ? tamN : (ao === 'x' ? comp : tamN),
+          tamY,
+          eixoN === 'z' ? tamN : (ao === 'z' ? comp : tamN));
+        const m = new THREE.Mesh(geo, material);
+        m.position.copy(c).addScaledVector(n, (nA + nB) / 2000);
+        m.position.y = yBase + (yA + yB) / 2000;
+        g.add(m);
+      };
+      // O trilho fica EMBAIXO da gaveta (a base da gaveta apoia no lábio, em
+      // y = 0) e a placa de fixação sobe pela lateral até acima dos
+      // parafusos — como na foto do Matt (placa alta com os furos em cima).
+      peca(0, 1.5, -31.5, 45, mat.aco);       // placa de fixação na lateral
+      peca(1.5, 21, -31.5, -29.5, mat.aco);   // aba de baixo
+      peca(3, 19, -29.5, -3.5, mat.zamac);    // corpo (corrediça telescópica)
+      peca(6, 21, -3.5, 0, mat.aco);          // lábio onde a gaveta apoia
+      // parafusos nos furos de verdade (cabeça Ø8 × 2 mm sobre a placa)
+      lista.forEach((o) => { cilindro(o, 0.004, 0.0015, 0.0035, mat.escuro); });
     });
     return g.children.length ? g : null;
   }
@@ -4788,6 +4822,27 @@ const Viewer3D = (function () {
           const furos = Drilling.holesNoModulo(parts || [], width_mm, height_mm, depth_mm, ferragem3d.config);
           const fg = buildHardwareGroup(furos, W * 1000, H * 1000, D * 1000);
           if (fg) group.add(fg);
+          // CANAL DO LED EM PROFUNDIDADE (15/10, Matt: "mostre nesse
+          // parafuso ativo o canal do LED na profundidade") — a caixa do
+          // rasgo (largura × profundidade × comprimento) em laranja
+          // translúcido, pra ver onde ele encontra pino/tambor/cavilha.
+          if (Drilling.ledVolumesNoModulo) {
+            const canais = Drilling.ledVolumesNoModulo(parts || [], width_mm, height_mm, depth_mm);
+            if (canais.length) {
+              const matCanal = new THREE.MeshBasicMaterial({ color: 0xff8a1f, transparent: true, opacity: 0.45, depthWrite: false });
+              const matBorda = new THREE.LineBasicMaterial({ color: 0xd9600b });
+              canais.forEach((c) => {
+                const a = c.aabb;
+                const geo = new THREE.BoxGeometry(Math.max(a.x1 - a.x0, 0.2) / 1000, Math.max(a.y1 - a.y0, 0.2) / 1000, Math.max(a.z1 - a.z0, 0.2) / 1000);
+                const m = new THREE.Mesh(geo, matCanal);
+                m.position.set((a.x0 + a.x1) / 2000 - W / 2, (a.y0 + a.y1) / 2000, (a.z0 + a.z1) / 2000 - D / 2);
+                m.renderOrder = 3;
+                m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), matBorda));
+                m.userData.canalLed = true;
+                group.add(m);
+              });
+            }
+          }
         } catch (e) { console.warn('[ferragem 3D]', e); }
       }
 

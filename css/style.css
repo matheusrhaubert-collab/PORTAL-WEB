@@ -5579,3 +5579,11 @@ header.po-topnav { z-index: 500; background: #ffffff; }
 .po-money-mod-linha.fechado .po-money-seta { transform: rotate(-90deg); }
 .po-money-mod-pecas.fechado { display: none; }
 .po-money-peca-nome { padding-left: 30px !important; }
+
+/* Aviso de LED sobre ferragem (2026-10-15) — janela do LED, abaixo do erro. */
+.po-led-conflitos {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: 8px;
+  background: #fff4e5; border: 1px solid #f0b46a; color: #7a4206; font-size: 12px; line-height: 1.4;
+}
+.po-led-conflitos ul { margin: 4px 0 4px 18px; padding: 0; }
+.po-led-conflitos .dim { color: #9a6a35; margin: 2px 0 0; }
