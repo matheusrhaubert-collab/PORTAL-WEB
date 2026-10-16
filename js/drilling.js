@@ -1420,8 +1420,15 @@
     // 5 mm da FACE DE BAIXO da prateleira (era o meio da espessura, 9 mm na
     // chapa de 18). drilling_settings.shelf_pin_from_bottom_mm sobrescreve;
     // shelf_vertical_offset_mm continua somando como ajuste fino.
+    // (2ª rodada, mesmo dia — Matt: "os furos são 5mm e de baixo pra cima,
+    // ele está ao contrário"). O "ajuste vertical" do ERP
+    // (shelf_vertical_offset_mm) JÁ ERA 5 — mas era somado a partir do MEIO
+    // da chapa: 9,75 + 5 = 14,75 = 5 mm do TOPO. Agora ele É a distância a
+    // partir da face de BAIXO (e não soma mais nada por cima).
     const pinoBase = settings.shelf_pin_from_bottom_mm != null && settings.shelf_pin_from_bottom_mm !== ''
-      ? Number(settings.shelf_pin_from_bottom_mm) : 5;
+      ? Number(settings.shelf_pin_from_bottom_mm)
+      : (settings.shelf_vertical_offset_mm != null && settings.shelf_vertical_offset_mm !== '' && Number(settings.shelf_vertical_offset_mm) > 0
+        ? Number(settings.shelf_vertical_offset_mm) : 5);
     const tol = Number(settings.touch_tolerance_mm) || 5;
 
     const laterals = boxes.filter(function (b) { return b.tAxis === 'x'; });
@@ -1441,7 +1448,7 @@
           if (Math.abs((sb.z0 + sb.sz) - lb.z0) > tol) return;
           const lo = Math.max(sb.x0, lb.x0), hi = Math.min(sb.x0 + sb.sx, lb.x0 + lb.sx);
           if (hi - lo < front + back) return;
-          const y = sb.y0 + Math.min(pinoBase, sb.sy) + vOff;
+          const y = sb.y0 + Math.min(pinoBase, sb.sy);
           [lo + back, hi - front].forEach(function (x) {
             emitLocalHole(store, lb, {
               u: x - lb.x0, v: y - lb.y0, edge: null,
@@ -1454,7 +1461,7 @@
       }
       if (sb.tAxis !== 'y') return; // prateleira = chapa deitada (espessura no Y)
       if (sb.part.shape_type === 'chanfro45') return; // ver collectShelfSupportHoles45
-      const yHole = sb.y0 + Math.min(pinoBase, sb.sy) + vOff;
+      const yHole = sb.y0 + Math.min(pinoBase, sb.sy);
       const zHoles = [sb.z0 + sb.sz - front, sb.z0 + back];
       laterals.forEach(function (lb) {
         if (lb === sb) return;
@@ -1643,8 +1650,15 @@
     // 5 mm da FACE DE BAIXO da prateleira (era o meio da espessura, 9 mm na
     // chapa de 18). drilling_settings.shelf_pin_from_bottom_mm sobrescreve;
     // shelf_vertical_offset_mm continua somando como ajuste fino.
+    // (2ª rodada, mesmo dia — Matt: "os furos são 5mm e de baixo pra cima,
+    // ele está ao contrário"). O "ajuste vertical" do ERP
+    // (shelf_vertical_offset_mm) JÁ ERA 5 — mas era somado a partir do MEIO
+    // da chapa: 9,75 + 5 = 14,75 = 5 mm do TOPO. Agora ele É a distância a
+    // partir da face de BAIXO (e não soma mais nada por cima).
     const pinoBase = settings.shelf_pin_from_bottom_mm != null && settings.shelf_pin_from_bottom_mm !== ''
-      ? Number(settings.shelf_pin_from_bottom_mm) : 5;
+      ? Number(settings.shelf_pin_from_bottom_mm)
+      : (settings.shelf_vertical_offset_mm != null && settings.shelf_vertical_offset_mm !== '' && Number(settings.shelf_vertical_offset_mm) > 0
+        ? Number(settings.shelf_vertical_offset_mm) : 5);
     const tol = Number(settings.touch_tolerance_mm) || 5;
 
     boxes.forEach(function (sb) {
@@ -1653,7 +1667,7 @@
       if (sb.tAxis !== 'y') return;
       const ch = chanfroDaPeca(sb.part);
       if (!ch) return;
-      const yHole = sb.y0 + Math.min(pinoBase, sb.sy) + vOff;
+      const yHole = sb.y0 + Math.min(pinoBase, sb.sy);
       // trecho reto de cada aresta chanfrada (em coordenadas do módulo)
       const retaX = { lo: sb.x0, hi: sb.x0 + sb.sx - ch.cu }; // ao longo de X, na aresta z1
       const retaZ = { lo: sb.z0, hi: sb.z0 + sb.sz - ch.cv }; // ao longo de Z, na aresta x1
