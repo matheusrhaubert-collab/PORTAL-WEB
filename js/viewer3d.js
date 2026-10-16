@@ -760,9 +760,17 @@ const Viewer3D = (function () {
     // informação não existe no cadastro), então a convenção é fixa: o lado
     // "+eixo" (índice 0 do par, sempre o mesmo em qualquer render) leva a
     // fita, o "-eixo" mostra o miolo.
+    // UV GIRADO NO BUFFER (peça 'free' com veio girado, rotateGeometryUV90):
+    // o atributo u passa a correr no eixo que era o v. A escala física tem
+    // que trocar junto — sem isso a peça comprida e estreita (stretcher,
+    // filler, travessa de shaker, lâmina) saía com a textura esticada no
+    // comprimento e espremida na largura: "não puxa bem a textura" (Matt,
+    // 15/10). dimensoesDaFaceMm (material único) já trocava; aqui não.
+    const uvGirado = !!(geometry.userData && geometry.userData.uvRotated90);
     const doPar = function (geoEixo) {
       const eixo = ax[geoEixo];
-      const uv = UV[geoEixo];
+      const uv0 = UV[geoEixo];
+      const uv = uvGirado ? { u: uv0.v, v: uv0.u } : uv0;
       const pairIndex = PAIR_INDEX[geoEixo];
       const core = () => makeCoreMaterial(color, mm[uv.u], mm[uv.v], uv.u === m.tKey);
       const fita = (soLado) => {
