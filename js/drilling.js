@@ -1338,7 +1338,16 @@
             // desenho 3D do trilho (Drilling.holesNoModulo/viewer3d): comprimento,
             // distância do furo até a frente do trilho e altura do furo acima da
             // base da gaveta
-            extra: { railLen: len, distFrente: dist + (Number(dr.part.slide_recuo_extra_mm) || 0), altura: height }
+            // a frente do trilho nunca passa da frente da CAIXA da gaveta
+            // (gaveta interna / frente embutida: com a lateral como
+            // referência o trilho atravessava a frente — Matt, 15/10)
+            extra: (function () {
+              const recuo = Number(dr.part.slide_recuo_extra_mm) || 0;
+              const furoZ = lb.z0 + lb.sz - dist - recuo;
+              const frenteGaveta = (dr.part.offset_z_mm || 0) + (dr.d || 0);
+              const distFrente = (dr.d > 0) ? Math.min(dist + recuo, frenteGaveta - furoZ) : dist + recuo;
+              return { railLen: len, distFrente: distFrente, altura: height };
+            })()
           });
         });
       });
@@ -2627,7 +2636,10 @@
         if (!ehBorda) {
           let positivo = (h.face === 'face') !== !!mirror;
           // copo/marcação de dobradiça: sempre na face de DENTRO da porta
-          if (porta && (h.tipo === 'copo_dobradica' || h.tipo === 'marcacao_dobradica') && b.tAxis === 'z') positivo = false;
+          // (15/10, 2ª: vale também pra peça de porta de MODELO — montante da
+          // Shaker/vidro não carrega hinge_side, quem carrega é o módulo.
+          // Peça com espessura em Z = frente: o copo é sempre na face de trás.)
+          if ((h.tipo === 'copo_dobradica' || h.tipo === 'marcacao_dobradica') && b.tAxis === 'z') positivo = false;
           // COPOS Ø16 DA PRATELEIRA (conector do suporte) ficam na face de
           // BAIXO (Matt, 15/10: "a ferragem fica na parte de baixo da
           // prateleira"). O .ban continua furando pela Face A — o padrão dos
@@ -2746,7 +2758,7 @@
       // 1 mm pra dentro da lateral + 1,5 mm de placa pra fora
       const xa = h.x - h.nx * 1, xb = h.x + h.nx * 1.5;
       return { tipo: 'placa_corredica', peca: h.peca, diameter: 0,
-        aabb: { x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: yb - 31.5, y1: yb + 45, z0: Math.min(tras, frente), z1: Math.max(tras, frente) } };
+        aabb: { x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: yb - 10, y1: yb + 45, z0: Math.min(tras, frente), z1: Math.max(tras, frente) } };
     });
   }
   // Conflitos do(s) LED(s) `ledList` na peça `pieceId` — holes = holesNoModulo

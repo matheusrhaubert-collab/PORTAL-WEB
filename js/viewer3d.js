@@ -4705,11 +4705,11 @@ const Viewer3D = (function () {
     // corrediça pega embaixo da gaveta e nas laterais, onde tem os parafusos
     // fixando nas laterais do móvel"). Perfil, de fora pra dentro (N = da
     // lateral pro vão), Y = 0 na base da gaveta (furo − altura do furo):
-    //   placa de fixação na lateral ... 1,5 mm, de −31,5 até +45 mm, com os
+    //   placa de fixação na lateral ... 1,5 mm, de −10 até +45 mm, com os
     //                                   parafusos nos furos do .ban
-    //   aba de baixo .................. 1,5 → 21 mm, −31,5 → −29,5
-    //   corpo do trilho ............... 3 → 19 mm, −29,5 → −3,5
-    //   lábio onde a gaveta apoia ..... 6 → 21 mm, −3,5 → 0
+    //   aba de baixo .................. 1,5 → 21 mm, −10 → −8,5
+    //   corpo do trilho ............... 3 → 19 mm, −8,5 → −2
+    //   lábio onde a gaveta apoia ..... 6 → 21 mm, −2 → 0  (10 mm no total)
     // Comprimento = trilho escolhido pela profundidade (railLen), da frente
     // do trilho pra trás. Sem esses dados (pedido antigo): barra simples.
     Object.keys(trilhos).forEach((k) => {
@@ -4746,10 +4746,11 @@ const Viewer3D = (function () {
       // O trilho fica EMBAIXO da gaveta (a base da gaveta apoia no lábio, em
       // y = 0) e a placa de fixação sobe pela lateral até acima dos
       // parafusos — como na foto do Matt (placa alta com os furos em cima).
-      peca(0, 1.5, -31.5, 45, mat.aco);       // placa de fixação na lateral
-      peca(1.5, 21, -31.5, -29.5, mat.aco);   // aba de baixo
-      peca(3, 19, -29.5, -3.5, mat.zamac);    // corpo (corrediça telescópica)
-      peca(6, 21, -3.5, 0, mat.aco);          // lábio onde a gaveta apoia
+      // (15/10, 2ª: "embaixo ela tem 10 mm só" — o L sob a gaveta é baixo)
+      peca(0, 1.5, -10, 45, mat.aco);         // placa de fixação na lateral
+      peca(1.5, 21, -10, -8.5, mat.aco);      // aba de baixo (o L pra dentro)
+      peca(3, 19, -8.5, -2, mat.zamac);       // corpo (corrediça telescópica)
+      peca(6, 21, -2, 0, mat.aco);            // lábio onde a gaveta apoia
       // parafusos nos furos de verdade (cabeça Ø8 × 2 mm sobre a placa)
       lista.forEach((o) => { cilindro(o, 0.004, 0.0015, 0.0035, mat.escuro); });
     });
