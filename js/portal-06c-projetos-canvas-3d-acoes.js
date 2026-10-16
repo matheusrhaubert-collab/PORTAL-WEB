@@ -3867,10 +3867,37 @@ function ledNomeFerragem(c) {
                     : Math.abs(d - 8) < 0.6 ? 'led.hw_dowel' : 'led.hw_hole';
   return I18n.t(k, { d: Math.round(d * 10) / 10 });
 }
+// TRIÂNGULO DE ATENÇÃO piscando no canto de cima à direita da vista 3D da
+// janela do LED (15/10, Matt: "um triângulo amarelo grande de atenção na
+// parte superior direita piscando quando ele pegar em algum componente, e
+// mantém a mensagem que já existe"). Fica no PAI do #po-led-3d (o viewer
+// pode refazer o conteúdo do container dele).
+function ledAlertaTriangulo(ligado, titulo) {
+  const v3 = document.getElementById('po-led-3d');
+  const pai = v3 && v3.parentElement;
+  if (!pai) return;
+  let tri = document.getElementById('po-led-alerta');
+  if (!tri) {
+    tri = document.createElement('div');
+    tri.id = 'po-led-alerta';
+    tri.className = 'po-led-alerta';
+    tri.setAttribute('role', 'alert');
+    tri.innerHTML = '<svg viewBox="0 0 64 56" aria-hidden="true"><path d="M32 3 L61 53 H3 Z" fill="#ffcc00" stroke="#1f1d18" stroke-width="3.5" stroke-linejoin="round"/>'
+      + '<rect x="29" y="18" width="6" height="20" rx="2" fill="#1f1d18"/><circle cx="32" cy="45" r="3.6" fill="#1f1d18"/></svg>';
+    if (getComputedStyle(pai).position === 'static') pai.style.position = 'relative';
+    pai.appendChild(tri);
+  }
+  // alinha no canto de cima à direita da VISTA 3D (não da coluna inteira)
+  tri.style.top = (v3.offsetTop + 10) + 'px';
+  tri.style.left = (v3.offsetLeft + v3.offsetWidth - 74) + 'px';
+  tri.title = titulo || '';
+  tri.style.display = ligado ? '' : 'none';
+}
+
 function renderProjectLedConflitos(slot, part) {
   const el = document.getElementById('po-led-conflitos');
   if (!el) return;
-  const esconde = () => { el.style.display = 'none'; el.innerHTML = ''; };
+  const esconde = () => { el.style.display = 'none'; el.innerHTML = ''; ledAlertaTriangulo(false); };
   if (!slot || !part || !ledDraft || typeof Drilling === 'undefined' || !Drilling.conflitosLed) return esconde();
   const f = ledFurosDoSlot(slot);
   if (!f || !f.holes) return esconde();
@@ -3884,6 +3911,7 @@ function renderProjectLedConflitos(slot, part) {
       + (c.peca ? ' <span class="dim">(' + escapeHtmlCutlist(c.peca) + ')</span>' : '') + '</li>').join('')
     + '</ul><p class="dim">' + escapeHtmlCutlist(I18n.t('led.conflict_hint')) + '</p>';
   el.style.display = '';
+  ledAlertaTriangulo(true, I18n.t('led.conflict_title'));
 }
 
 function renderProjectLedForm(slot) {
