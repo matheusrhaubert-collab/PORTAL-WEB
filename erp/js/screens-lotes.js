@@ -84,7 +84,81 @@ LOTES_UI.busy = function (btn, on, textOn) {
    #/lotes — listagem
    ============================================================ */
 LOTES_UI.listLoad = async function () {
-  return { batches: await LOTES.batches() };
+  const batches = await LOTES.batches();
+  // Lotes com gaveta dovetail (botão da lista de compra só neles)
+  let dovetail = new Set();
+  try { dovetail = await LOTES.lotesComDovetail(batches); } catch (e) { /* melhor esforço */ }
+  return { batches: batches, dovetail: dovetail };
+};
+
+/* Lista de compra das gavetas dovetail do lote (ver LOTES.gavetasDovetail).
+   Janela por cima da tela, com Copiar (cola no e-mail/WhatsApp do
+   fornecedor) e Imprimir. */
+LOTES_UI.abrirDovetail = async function (batchId, code, btn) {
+  LOTES_UI.busy(btn, true, 'Carregando…');
+  let r;
+  try { r = await LOTES.gavetasDovetail(batchId); }
+  catch (err) { console.error(err); LOTES_UI.toast(LOTES.explainError ? LOTES.explainError(err) : String(err.message || err), true); return; }
+  finally { LOTES_UI.busy(btn, false); }
+  const pol = function (mm) { return LOTES_UI.mmToFraction(mm, 16); };
+  const variosPedidos = r.pedidos > 1;
+  const modTxt = function (l) {
+    return l.modulos.map(function (m) { return (variosPedidos ? m.pedido + ': ' : '') + 'MÓD ' + m.numeros.join(', '); }).join(' · ');
+  };
+  const linhasHtml = r.linhas.map(function (l) {
+    return '<tr><td style="text-align:center;font-weight:700;font-size:16px">' + l.quantity + '</td>' +
+      '<td><b>' + pol(l.width_mm) + '</b><div class="erp-muted erp-small">' + l.width_mm + ' mm</div></td>' +
+      '<td><b>' + pol(l.height_mm) + '</b><div class="erp-muted erp-small">' + l.height_mm + ' mm</div></td>' +
+      '<td><b>' + pol(l.depth_mm) + '</b><div class="erp-muted erp-small">' + l.depth_mm + ' mm</div></td>' +
+      '<td class="erp-small">' + UI.esc(l.reference || '') + '<div class="erp-muted">' + UI.esc(modTxt(l)) + '</div></td></tr>';
+  }).join('');
+  const texto = ['Gavetas Dovetail — ' + code, 'QTY | WIDTH x HEIGHT x DEPTH']
+    .concat(r.linhas.map(function (l) {
+      return l.quantity + ' | ' + pol(l.width_mm) + ' x ' + pol(l.height_mm) + ' x ' + pol(l.depth_mm) + '  (' + modTxt(l) + ')';
+    })).concat(['Total: ' + r.total]).join('\n');
+  LOTES_UI._dovetailTexto = texto;
+  const old = document.getElementById('lotes-dovetail-modal');
+  if (old) old.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'lotes-dovetail-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto';
+  wrap.onclick = function (e) { if (e.target === wrap) wrap.remove(); };
+  wrap.innerHTML =
+    '<div id="lotes-dovetail-print" style="background:#fff;color:#222;border-radius:10px;max-width:820px;width:100%;padding:22px 24px;box-shadow:0 10px 40px rgba(0,0,0,.3)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px">' +
+        '<div><div class="erp-strong" style="font-size:17px">Gavetas Dovetail — ' + UI.esc(code) + '</div>' +
+          '<div class="erp-muted erp-small">Caixotes Hardwood Dovetail (birch 5/8") pra comprar · medida externa do caixote · ' + r.total + ' gaveta(s)</div></div>' +
+        '<div class="lotes-dovetail-acoes" style="display:flex;gap:6px">' +
+          '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.copiarDovetail(this)">Copiar</button>' +
+          '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.imprimirDovetail()">Imprimir</button>' +
+          '<button type="button" class="erp-btn erp-btn-ghost erp-btn-sm" onclick="document.getElementById(\'lotes-dovetail-modal\').remove()">Fechar</button>' +
+        '</div></div>' +
+      (r.linhas.length
+        ? '<table class="erp-table" style="width:100%"><thead><tr><th style="width:60px">Qtd</th><th>Largura</th><th>Altura</th><th>Profundidade</th><th>Descrição · módulos</th></tr></thead>' +
+            '<tbody>' + linhasHtml + '</tbody>' +
+            '<tfoot><tr><td style="text-align:center;font-weight:700">' + r.total + '</td><td colspan="4" class="erp-muted">total de gavetas</td></tr></tfoot></table>'
+        : '<div class="erp-empty">Nenhuma gaveta dovetail nos pedidos deste lote.</div>') +
+    '</div>';
+  document.body.appendChild(wrap);
+};
+
+LOTES_UI.copiarDovetail = function (btn) {
+  const t = LOTES_UI._dovetailTexto || '';
+  const ok = function () { if (btn) { btn.textContent = 'Copiado ✓'; setTimeout(function () { btn.textContent = 'Copiar'; }, 1800); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, function () { window.prompt('Copie:', t); });
+  else window.prompt('Copie:', t);
+};
+
+LOTES_UI.imprimirDovetail = function () {
+  const el = document.getElementById('lotes-dovetail-print');
+  if (!el) return;
+  const w = window.open('', '_blank');
+  if (!w) return;
+  const css = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(function (l) { return '<link rel="stylesheet" href="' + l.href + '">'; }).join('');
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Gavetas Dovetail</title>' + css +
+    '<style>body{background:#fff;padding:20px}.lotes-dovetail-acoes{display:none!important}</style></head><body>' + el.outerHTML + '</body></html>');
+  w.document.close();
+  setTimeout(function () { w.focus(); w.print(); }, 400);
 };
 
 LOTES_UI.list = function (params, d) {
@@ -139,6 +213,11 @@ LOTES_UI.list = function (params, d) {
         /* Volumes + pallet (27/09): a faixa fica dentro do lote; ?cfg=volumes
            abre já com "Configurar pallet e regras" expandido. */
         '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/lotes/' + b.id + '?cfg=volumes" title="Criar volumes e configurar o pallet">📦 Volumes / pallet</a>' +
+        /* Gavetas dovetail pra comprar (15/10) — só em lote que tem */
+        ((d.dovetail && d.dovetail.has(b.id))
+          ? '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" title="Lista de caixotes dovetail pra comprar (largura × altura × profundidade)" ' +
+              'onclick="LOTES_UI.abrirDovetail(\'' + b.id + '\', \'' + UI.esc(b.code).replace(/'/g, '') + '\', this)">🗄 Gavetas dovetail</button>'
+          : '') +
       '</div>');
   }).join('');
 

@@ -289,10 +289,90 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
       grain_axis: p.grain_axis || null,
       // Componente de origem (public.components.id) — pra buscar a fita no
       // cadastro quando o snapshot do pedido é anterior ao campo acima.
-      piece_id: p.piece_id || null
+      piece_id: p.piece_id || null,
+      // Modelo de gaveta (migration 203) — só o caixote comprado tem. Usado
+      // pela lista de compra de gavetas dovetail (LOTES.gavetasDovetail).
+      drawer_model: p.drawer_model || null
     });
   });
   return out;
+};
+
+/* LISTA DE COMPRA — GAVETAS DOVETAIL (2026-10-15, Matt: "quando for gaveta
+   dovetail um botão com uma lista de gavetas com largura, altura e
+   profundidade necessárias pra comprar"). O caixote é item COMPRADO, então
+   não entra em batch_pieces (o lote só guarda o que se corta): lê direto o
+   breakdown dos pedidos do lote. Agrupa por medida; cada linha diz em quais
+   módulos ela vai (mesma numeração de 3 dígitos da etiqueta). */
+LOTES.ehGavetaDovetail = function (leaf) {
+  return !!leaf && (leaf.origin === 'comprado') &&
+    (!!leaf.drawer_model || /^DOVETAIL\b/i.test(String(leaf.reference || '')));
+};
+
+/* Quais destes lotes têm gaveta dovetail — 1 consulta só, pra listagem
+   decidir onde mostrar o botão. Sem a coluna (migration 203) = nenhum. */
+LOTES.lotesComDovetail = async function (batches) {
+  const porPedido = {};
+  (batches || []).forEach(function (b) {
+    (b.batch_orders || []).forEach(function (o) { (porPedido[o.order_id] = porPedido[o.order_id] || []).push(b.id); });
+  });
+  const ids = Object.keys(porPedido);
+  const out = new Set();
+  if (!ids.length) return out;
+  try {
+    for (let i = 0; i < ids.length; i += 120) {
+      const { data, error } = await DATA.sb().from('order_items').select('order_id')
+        .in('order_id', ids.slice(i, i + 120)).not('drawer_model_id', 'is', null);
+      if (error) return out;
+      (data || []).forEach(function (r) { (porPedido[r.order_id] || []).forEach(function (bid) { out.add(bid); }); });
+    }
+  } catch (e) { /* melhor esforço */ }
+  return out;
+};
+
+LOTES.gavetasDovetail = async function (batchId) {
+  const sb = DATA.sb();
+  const bo = await LOTES.erp().from('batch_orders').select('order_id').eq('batch_id', batchId);
+  if (bo.error) throw bo.error;
+  const orderIds = (bo.data || []).map(function (r) { return r.order_id; });
+  if (!orderIds.length) return { linhas: [], total: 0, pedidos: 0 };
+  const [ordRes, itRes] = await Promise.all([
+    sb.from('orders').select('id, client_name, po_name').in('id', orderIds),
+    sb.from('order_items').select('id, order_id, module_name, quantity, breakdown, sort_order').in('order_id', orderIds).order('sort_order')
+  ]);
+  if (ordRes.error) throw ordRes.error;
+  if (itRes.error) throw itRes.error;
+  const orderById = {};
+  (ordRes.data || []).forEach(function (o) { orderById[o.id] = o; });
+  const seq = {};
+  const grupos = new Map();
+  (itRes.data || []).forEach(function (item) {
+    seq[item.order_id] = (seq[item.order_id] || 0) + 1;
+    const modNum = String(seq[item.order_id]).padStart(3, '0');
+    LOTES.flattenBreakdown(item.breakdown, item.quantity || 1).forEach(function (leaf) {
+      if (!LOTES.ehGavetaDovetail(leaf)) return;
+      const w = Math.round((Number(leaf.width_mm) || 0) * 10) / 10;
+      const h = Math.round((Number(leaf.height_mm) || 0) * 10) / 10;
+      const d = Math.round((Number(leaf.depth_mm) || 0) * 10) / 10;
+      // Agrupa pelo NOME de compra (polegada 1/16): 366 e 367 mm viram o
+      // mesmo 14 7/16" pro fornecedor — linha única. Sem nome, pela medida.
+      const key = /^DOVETAIL\b/i.test(String(leaf.reference || '')) ? String(leaf.reference) : (w + 'x' + h + 'x' + d);
+      if (!grupos.has(key)) grupos.set(key, { width_mm: w, height_mm: h, depth_mm: d, reference: leaf.reference, quantity: 0, modulos: {} });
+      const g = grupos.get(key);
+      g.quantity += Number(leaf.quantity) || 1;
+      const o = orderById[item.order_id] || {};
+      const pk = o.po_name || o.client_name || item.order_id.slice(0, 8);
+      (g.modulos[pk] = g.modulos[pk] || new Set()).add(modNum);
+    });
+  });
+  const linhas = Array.from(grupos.values()).sort(function (a, b) {
+    return (b.width_mm - a.width_mm) || (b.depth_mm - a.depth_mm) || (b.height_mm - a.height_mm);
+  }).map(function (g) {
+    return Object.assign({}, g, {
+      modulos: Object.keys(g.modulos).map(function (k) { return { pedido: k, numeros: Array.from(g.modulos[k]).sort() }; })
+    });
+  });
+  return { linhas: linhas, total: linhas.reduce(function (s, l) { return s + l.quantity; }, 0), pedidos: orderIds.length };
 };
 
 /* Peças de um conjunto de pedidos, já agrupadas (mesma peça = mesma linha com
