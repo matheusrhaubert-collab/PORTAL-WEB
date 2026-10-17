@@ -5643,3 +5643,91 @@ body.po-barra-fixa-on .po-proj-config-col {
 .po-proj-door-side-txt b { font-size: 13px; font-weight: 600; }
 .po-proj-door-side-txt .po-proj-door-side-nome { color: #766f64; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .po-proj-door-side-swap { font-size: 16px; color: #c0843f; }
+
+/* ============================================================
+   HELPER "?" — COMO FAZER (2026-10-16) — js/portal-24-helper.js
+   Janela de busca (#po-hlp-modal) + destaque do tour (.po-hlp-hl) + balão
+   (.po-hlp-pop). O destaque não bloqueia clique (pointer-events:none): a
+   pessoa clica no botão de verdade e o tour segue sozinho.
+   ============================================================ */
+#po-hlp-modal {
+  display: none; position: fixed; inset: 0; z-index: 3100;
+  align-items: flex-start; justify-content: center;
+  background: rgba(0,0,0,0.45); padding: 8vh 16px 16px;
+}
+#po-hlp-modal.open { display: flex; }
+.po-hlp-card {
+  background: var(--panel); border-radius: 12px; padding: 20px;
+  width: 620px; max-width: 100%; max-height: 84vh;
+  display: flex; flex-direction: column; gap: 12px;
+  position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.po-hlp-head { display: flex; align-items: center; justify-content: space-between; padding-right: 28px; }
+.po-hlp-head h3 { margin: 0; font-size: 18px; }
+.po-hlp-search { display: flex; gap: 8px; }
+.po-hlp-search input {
+  flex: 1; min-width: 0; font-size: 15px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text);
+}
+.po-hlp-search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+#po-hlp-ask {
+  flex: none; white-space: nowrap; padding: 0 14px; border-radius: 8px;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; font-size: 14px;
+}
+#po-hlp-ask:hover { background: var(--accent-dark); }
+.po-hlp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.po-hlp-chip {
+  border: 1px solid var(--border); background: #fff; color: var(--text);
+  border-radius: 999px; padding: 4px 11px; font-size: 13px; cursor: pointer;
+}
+.po-hlp-chip.active, .po-hlp-chip:hover { border-color: var(--accent); color: var(--accent-dark); background: #f6efe8; }
+.po-hlp-list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; min-height: 60px; }
+.po-hlp-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  text-align: left; width: 100%; padding: 10px 12px; cursor: pointer;
+  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font-size: 14px;
+}
+.po-hlp-item:hover, .po-hlp-item:focus-visible { background: #f6efe8; border-color: #ead9c8; outline: none; }
+.po-hlp-item-cat { flex: none; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.po-hlp-empty { color: var(--muted); margin: 8px 2px; font-size: 14px; }
+.po-hlp-ia { border: 1px solid #ead9c8; background: #fbf7f2; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.po-hlp-ia p { margin: 0 0 8px; line-height: 1.45; }
+.po-hlp-ia p:last-child { margin-bottom: 0; }
+.po-hlp-ia-wait { color: var(--muted); }
+.po-hlp-ia-err { color: var(--danger); }
+.po-hlp-ia-match { color: var(--accent-dark); font-weight: 600; }
+.po-hlp-ia button {
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+}
+.po-hlp-foot { border-top: 1px solid var(--border); padding-top: 10px; }
+.po-hlp-link { background: none; border: none; padding: 0; color: var(--accent-dark); cursor: pointer; font-size: 13px; text-decoration: underline; }
+
+.po-hlp-hl {
+  display: none; position: fixed; z-index: 100000; pointer-events: none;
+  border-radius: 8px; border: 2px solid #e8a33d;
+  box-shadow: 0 0 0 4px rgba(232,163,61,0.35), 0 0 0 9999px rgba(20,16,12,0.42);
+  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease;
+}
+.po-hlp-pop {
+  display: none; position: fixed; z-index: 100001;
+  background: var(--panel); color: var(--text); border-radius: 10px; padding: 12px 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35); font-size: 14px; line-height: 1.45;
+}
+.po-hlp-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.po-hlp-step { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.po-hlp-x { border: none; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: var(--muted); padding: 0 2px; }
+.po-hlp-pop-title { font-weight: 600; margin-top: 4px; font-size: 13px; color: var(--accent-dark); }
+.po-hlp-pop-text { margin: 6px 0 8px; }
+.po-hlp-pop-wait { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-style: italic; }
+.po-hlp-pop-miss { margin: 0 0 8px; font-size: 12px; color: var(--danger); }
+.po-hlp-pop-btns { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.po-hlp-pop-btns button {
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+}
+.po-hlp-pop-btns button.secondary { background: #fff; color: var(--accent-dark); border-color: var(--border); }
+@media (max-width: 600px) {
+  .po-hlp-search { flex-direction: column; }
+  #po-hlp-ask { padding: 9px 14px; }
+}
