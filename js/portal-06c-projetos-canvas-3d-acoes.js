@@ -4713,7 +4713,9 @@ function projectDoorSideIcon(lado) {
 }
 function projectDoorSideBlock(slot) {
   const portas = projectSlotHingedDoors(slot);
-  if (!portas.length) return '';
+  // Só módulo de 1 porta (17/10 — Matt): com 2 folhas o par já abre uma pra
+  // cada lado, trocar não faz sentido (mesma regra do Construtor, portal-07).
+  if (portas.length !== 1) return '';
   const linhas = portas.map((d, i) => {
     const outro = d.lado === 'left' ? 'right' : 'left';
     const rotulo = I18n.t(d.lado === 'left' ? 'project.door_side_is_left' : 'project.door_side_is_right');
