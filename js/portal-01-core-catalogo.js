@@ -1034,12 +1034,29 @@ function highlightSelectedModuleCard(id) {
 // height_mm|null }, ...] }.
 let moduleSkuPresetsByModuleId = {};
 
+// TODAS as linhas com referência, em páginas de 1000 (2026-10-18). O
+// Supabase devolve no MÁXIMO 1000 linhas por consulta sem avisar nada: com a
+// linha NEW Classic o catálogo passou disso e o menu de referência sumia de
+// módulos aleatórios (antigos inclusive). Ordenado por id pra paginação não
+// pular nem repetir linha.
+async function fetchAllSkuPresetRows(dims) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    let q = supabaseClient.from('module_dimension_presets')
+      .select('id, module_id, dimension, value_mm, reference')
+      .not('reference', 'is', null)
+      .order('id').range(from, from + 999);
+    if (dims) q = q.in('dimension', dims);
+    const { data, error } = await q;
+    if (error) return { data: null, error };
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return { data: out, error: null };
+}
+
 async function loadModuleSkuPresets() {
-  const { data, error } = await supabaseClient
-    .from('module_dimension_presets')
-    .select('module_id, dimension, value_mm, reference')
-    .in('dimension', ['width', 'height'])
-    .not('reference', 'is', null);
+  const { data, error } = await fetchAllSkuPresetRows(['width', 'height']);
   if (error) { moduleSkuPresetsByModuleId = {}; return; }
   const byModule = {};
   (data || []).forEach((row) => {

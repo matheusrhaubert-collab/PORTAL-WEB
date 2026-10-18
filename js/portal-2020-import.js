@@ -171,10 +171,9 @@ function parseProjectImport2020Text(text) {
 // presets com referência cadastrada de uma vez (catálogo não é grande) e
 // casa em memória, sem depender de maiúscula/minúscula.
 async function matchProjectImport2020Codes(rows) {
-  const { data: presetRows, error } = await supabaseClient
-    .from('module_dimension_presets')
-    .select('module_id, dimension, value_mm, reference')
-    .not('reference', 'is', null);
+  // Paginado (fetchAllSkuPresetRows, portal-01): sem isso só vinham as 1000
+  // primeiras linhas e código válido caía em "sem correspondência".
+  const { data: presetRows, error } = await fetchAllSkuPresetRows(null);
   if (error) throw new Error(error.message || String(error));
 
   // referenceUpper -> Map(module_id -> {width, height, depth})
