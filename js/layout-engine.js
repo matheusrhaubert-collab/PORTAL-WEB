@@ -258,10 +258,15 @@
   // faixa_furos_mm do vão dividido. A grade é a MESMA de sempre (passo 68,
   // centrada no vão); a faixa só deixa os furos que caem dentro dos
   // `faixa` mm centrais. Sem faixa (todo vão existente): igual a antes.
-  function gradeFurosVao(box, faixa) {
+  // `recuoFrente` (2026-10-18, Matt: "quero que a prateleira do inferior
+  // fique 100mm pra dentro... a furação da prateleira regulável deve
+  // acompanhar pra dentro também") — a coluna da FRENTE anda junto com o
+  // recuo da prateleira (fica a 50 mm da frente DA PRATELEIRA, não do vão).
+  // Só chega aqui com node.params.furos_acompanham_recuo; sem isso, 0.
+  function gradeFurosVao(box, faixa, recuoFrente) {
     var F = FUROS_PRATELEIRA;
     var util = box.h - 2 * F.margem;
-    var zs = [box.z + F.tras, box.z + box.d - F.frente];
+    var zs = [box.z + F.tras, box.z + box.d - F.frente - (recuoFrente > 0 ? recuoFrente : 0)];
     if (!(util >= 0) || !(zs[1] > zs[0])) return null;
     var n = Math.floor(util / F.passo + 1e-6) + 1;
     var primeiro = Math.round(box.y + (box.h - (n - 1) * F.passo) / 2);
@@ -657,6 +662,20 @@
       var zonaTopo = zona.y + zona.h;
       if (Math.abs(vaoTopo - zonaTopo) > 1) return null;
       return zonaTopo + espCasco - topoCascoFolga;
+    }
+    // AJUSTE DA FRENTE POR VÃO (2026-10-18, Matt: "essa frente de cima tem
+    // que ficar com 158mm" / "4mm de afastamento das portas de baixo").
+    // node.params.topo_frente_abaixo_casco_mm = topo da frente medido do
+    // TOPO DO CASCO pra baixo (vale pro vão estar onde estiver);
+    // node.params.frente_altura_mm = altura fixa da frente, contada do topo
+    // pra baixo. Medido do casco, não do vão: não depende da espessura da
+    // chapa (19,5 ou plywood 18). Sem os params: nada muda.
+    function ajustaFrentePorNo(node, y0, y1) {
+      var pr = node.params || {};
+      var topoNo = num(pr.topo_frente_abaixo_casco_mm), alt = num(pr.frente_altura_mm);
+      if (topoNo > 0 && zona) y1 = zona.y + zona.h + espCasco - topoNo;
+      if (alt > 0) y0 = y1 - alt;
+      return [y0, y1];
     }
 
     function push(node, p) {
@@ -1104,6 +1123,8 @@
           };
           var alvoTopoPorta = topoFrenteAlvo(efetiva.y + efetiva.h);
           if (alvoTopoPorta != null) geo.h = alvoTopoPorta - geo.y;
+          var ajP = ajustaFrentePorNo(node, geo.y, geo.y + geo.h);
+          geo.y = ajP[0]; geo.h = ajP[1] - ajP[0];
         } else { // 'interna'
           geo = {
             x: efetiva.x + PORTA_INTERNA_LARGURA_FOLGA_MM,
@@ -1317,6 +1338,10 @@
         if (j === rec.qtd - 1) {
           var alvoTopoGaveta = topoFrenteAlvo(box.y + box.h);
           if (alvoTopoGaveta != null) frenteY1 = alvoTopoGaveta;
+          if (rec.qtd === 1) {
+            var ajG = ajustaFrentePorNo(node, frenteY0, frenteY1);
+            frenteY0 = ajG[0]; frenteY1 = ajG[1];
+          }
         }
         push(node, {
           kind: 'front', accKey: rec.frenteAcc.id,
@@ -1340,7 +1365,10 @@
         var axis = node.splitAxis;
         var sizes = splitSizes(axis === 'x' ? box.w : box.h, node.children, th);
         // Prateleira regulável: o VÃO gera a grade e a prateleira pousa num furo.
-        var grade = (axis === 'y' && acc.prateleira_regulavel) ? gradeFurosVao(box, num((node.params || {}).faixa_furos_mm)) : null;
+        var npr = node.params || {};
+        var grade = (axis === 'y' && acc.prateleira_regulavel)
+          ? gradeFurosVao(box, num(npr.faixa_furos_mm), npr.furos_acompanham_recuo ? num(npr.recuo_mm) : 0)
+          : null;
         if (grade) sizes = encaixaPrateleirasNosFuros(box, sizes, th, grade.ys) || sizes;
         var consDiv = consumoMax(node, cat, esp, folgaDob);
         node._box = box;
