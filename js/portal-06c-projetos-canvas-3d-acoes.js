@@ -2031,6 +2031,11 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   // refreshProject3DHighlight logo acima).
   if (typeof applyProjectLayerVisibility === 'function') applyProjectLayerVisibility();
   if (typeof refreshProjectLayersMenu === 'function') refreshProjectLayersMenu();
+  // Junção de rodapé/gola → preço e pedido (2026-10-18) — a cena nova diz
+  // quais peças viraram uma só; ver syncProjectBaseboardJoinsFromViewer.
+  if (typeof syncProjectBaseboardJoinsFromViewer === 'function') {
+    try { syncProjectBaseboardJoinsFromViewer(); } catch (e) { console.warn('[junção]', e); }
+  }
   // Mapa de calor de preço (13/10) — mesma razão: os Groups são novos a cada render
   if (typeof applyProjectHeatmap === 'function') applyProjectHeatmap();
   // Vista com Cotas (2026-09-17) — mesmo motivo de Camadas acima: a cena

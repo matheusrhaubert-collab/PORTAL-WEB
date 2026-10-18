@@ -2516,6 +2516,58 @@ function projectSlotEffectivePieces(slot) {
   return projectSlotEffectivePiecesWithLeds(slot, slot.ledConfigs);
 }
 
+// ==========================================================================
+// PEÇAS DE PRODUÇÃO = efetivas + JUNÇÃO COM O VIZINHO (2026-10-18, Matt: "não
+// posso produzir e cobrar duplicado — pra dar lugar a uma peça inteira as
+// peças originais devem ser deletadas do projeto").
+// slot._joinAdj = { removed: [piece_id], adjust: { piece_id: { dw|dh|dd } } }
+// é DERIVADO (nunca salvo no projeto): sai da cena 3D depois de cada render
+// (syncProjectBaseboardJoinsFromViewer, portal-08) — o 1º módulo da fileira
+// fica com a peça esticada até o comprimento total e os vizinhos perdem a
+// deles. Por que separado de projectSlotEffectivePieces: o 3D continua
+// desenhando cada módulo com a SUA peça (a junção visual é que troca as N por
+// 1 na cena); se o 3D usasse estas, o módulo da esquerda desenharia uma peça
+// gigante e a junção sumiria no render seguinte (efeito gangorra).
+// Quem usa: preço (recomputeProjectSlotPricing → breakdown → pedido → plano
+// de corte/etiqueta/compras no ERP) e o envio do pedido (removed_piece_ids /
+// piece_adjustments mesclados → .ban e 3D da peça no ERP).
+// ==========================================================================
+function projectSlotProductionPieces(slot) {
+  const base = projectSlotEffectivePieces(slot);
+  const j = slot._joinAdj;
+  if (!j) return base;
+  let out = base;
+  if (j.removed && j.removed.length) out = filterRemovedPiecesDeep(out, j.removed);
+  if (j.adjust && Object.keys(j.adjust).length && typeof applyPieceAdjustmentsDeep === 'function') {
+    out = applyPieceAdjustmentsDeep(out, j.adjust);
+  }
+  return out;
+}
+
+// Pro pedido: remoções manuais + as da junção (sem repetir id).
+function projectSlotOrderRemovedIds(slot) {
+  const manual = slot.removedPieceIds || [];
+  const junta = (slot._joinAdj && slot._joinAdj.removed) || [];
+  return manual.concat(junta.filter((id) => !manual.includes(id)));
+}
+
+// Pro pedido: ajuste manual (duplo clique) + esticada da junção, SOMADOS por
+// eixo na mesma peça (o ERP aplica um único piece_adjustments).
+function projectSlotOrderAdjustments(slot) {
+  const out = {};
+  const soma = (src) => Object.keys(src || {}).forEach((id) => {
+    const a = src[id] || {};
+    const cur = out[id] = Object.assign({}, out[id] || {});
+    Object.keys(a).forEach((k) => {
+      if (typeof a[k] === 'number' && /^d[xyzwhd]$/.test(k)) cur[k] = (cur[k] || 0) + a[k];
+      else if (cur[k] == null) cur[k] = a[k];
+    });
+  });
+  soma(slot.pieceAdjustments);
+  soma(slot._joinAdj && slot._joinAdj.adjust);
+  return out;
+}
+
 // LED EMBUTIDO (2026-09-30): slot.ledConfigs ({piece_id: config}, ver
 // applyLedConfigsDeep em js/module-pieces.js) entra AQUI, no mesmo ponto de
 // junção do removedPieceIds — preço (usinagem por metro), 3D, foto e furação
@@ -2715,7 +2767,10 @@ function recomputeProjectSlotPricing(slot) {
   // Modelo de porta com limite de altura (porta de vidro: 2600 mm) — trava a
   // altura do módulo onde a porta chega no limite (migration 188).
   if (typeof enforceSlotDoorModelHeight === 'function') enforceSlotDoorModelHeight(slot);
-  const effectivePieces = projectSlotEffectivePieces(slot);
+  // PRODUÇÃO (com a junção de rodapé/gola aplicada) — ver
+  // projectSlotProductionPieces. O breakdown daqui é o que o pedido grava e o
+  // ERP corta/etiqueta: peça unida não pode sair duas vezes.
+  const effectivePieces = projectSlotProductionPieces(slot);
   const containerDims = { W: Number(slot.width_mm) || 0, H: Number(slot.height_mm) || 0, D: Number(slot.depth_mm) || 0 };
   // `parts` sai UMA vez e serve tanto a contagem de furos (abaixo) quanto o
   // consumo de ferragem (mais abaixo) — as duas dependem da MESMA resolução

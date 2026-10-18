@@ -788,6 +788,40 @@ function createViewerComposition3D() {
         merged.castShadow = !!L.mesh.castShadow;
         merged.receiveShadow = !!L.mesh.receiveShadow;
         merged.userData.isMergedBaseboard = true;
+        // CAMADAS / ISOLAR PAREDE (2026-10-18, Matt: "mesmo com botão de
+        // junção ativo o toekick não gera uma única peça nem o puxador gola").
+        // A peça fundida nascia sem colorRoleId/slotId, e as originais
+        // escondidas abaixo eram REACESAS por applyProjectLayerVisibility
+        // (portal-08), que roda depois de todo render e põe visible=true em
+        // toda peça com papel de cor. Resultado: fundida + 2 originais por
+        // cima, com a linha do meio aparecendo. Agora a fundida herda o papel
+        // de cor (some junto quando a camada é ocultada) e o slot/parede do
+        // 1º módulo (some junto no isolamento de parede).
+        const roleSrc = (m) => { let r = null; m.traverse((o) => { if (r == null && o.userData && o.userData.colorRoleId) r = o.userData.colorRoleId; }); return r; };
+        merged.userData.colorRoleId = roleSrc(L.mesh) || roleSrc(R.mesh) || null;
+        for (let up = L.mesh; up; up = up.parent) {
+          if (up.userData && up.userData.slotId != null) { merged.userData.slotId = up.userData.slotId; merged.userData.wallIndex = up.userData.wallIndex; break; }
+        }
+        // JUNÇÃO VALE PRA PRODUÇÃO (2026-10-18, Matt: "não posso produzir e
+        // cobrar duplicado — as peças originais devem ser deletadas"). A peça
+        // fundida leva o rastro de QUEM ela substitui (módulo + piece_id +
+        // comprimento), em ordem da esquerda pra direita. O portal lê isso
+        // (getBaseboardJoins → syncProjectBaseboardJoinsFromViewer, portal-08)
+        // e transforma em: 1º módulo com a peça esticada até o total, demais
+        // sem a peça — no preço, no breakdown do pedido e no .ban do ERP.
+        merged.userData.joinCombinedMm = combinedLength_m * 1000;
+        merged.userData.joinMembers = entries.slice(i, end + 1).map((e) => {
+          let sid = null;
+          for (let up = e.mesh; up; up = up.parent) {
+            if (up.userData && up.userData.slotId != null) { sid = up.userData.slotId; break; }
+          }
+          return {
+            slotId: sid,
+            pieceId: e.mesh.userData.pieceId != null ? e.mesh.userData.pieceId : null,
+            length_mm: e.faceA_m * 1000,
+            info: e.mesh.userData.pieceInfo || null
+          };
+        });
         // ARESTA/CONTORNO (2026-08-23, Matt: "a textura dos materiais esta
         // certa. oq ue esta errado e as arestas... o contorno") — peça
         // montada aqui direto (fora do addPartToGroup do viewer3d.js) não
@@ -806,11 +840,37 @@ function createViewerComposition3D() {
         // Esconde as peças originais do grupo inteiro — continuam existindo
         // (preço/corte/furação, se algum dia tiver, seguem a peça original),
         // só não aparecem mais desenhadas por cima da peça fundida.
-        for (let k = i; k <= end; k++) entries[k].mesh.visible = false;
+        for (let k = i; k <= end; k++) { entries[k].mesh.visible = false; entries[k].mesh.userData.hiddenByJoin = true; }
       }
 
       i = end + 1;
     }
+  }
+
+  // Junções da ÚLTIMA cena montada (ver joinMembers acima) + quantas cópias
+  // de cada peça (módulo|piece_id) existem na cena — uma linha do cadastro
+  // com quantidade 2 vira 2 meshes com o MESMO piece_id, e remover esse id
+  // tira as duas; o portal precisa saber disso pra não errar a produção.
+  function getBaseboardJoins() {
+    const joins = [];
+    const copies = {};
+    if (!scene) return { joins, copies };
+    scene.traverse((o) => {
+      const u = o.userData;
+      if (!u) return;
+      if (u.isMergedBaseboard && Array.isArray(u.joinMembers)) {
+        joins.push({ combined_mm: u.joinCombinedMm, members: u.joinMembers });
+      }
+      if (u.baseboardGeom && u.pieceId != null) {
+        let sid = null;
+        for (let up = o; up; up = up.parent) {
+          if (up.userData && up.userData.slotId != null) { sid = up.userData.slotId; break; }
+        }
+        const k = sid + '|' + u.pieceId;
+        copies[k] = (copies[k] || 0) + 1;
+      }
+    });
+    return { joins, copies };
   }
 
   function toggleAutoJoinBaseboards() {
@@ -3889,7 +3949,7 @@ function createViewerComposition3D() {
     // override de sessão do botão "Encaixe" (ver portal-08-projetos-
     // paredes.js). Estado PRÓPRIO desta instância, mesma convenção de
     // doorsOpen/drawersOpen acima.
-    toggleAutoJoinBaseboards, areBaseboardsAutoJoined,
+    toggleAutoJoinBaseboards, areBaseboardsAutoJoined, getBaseboardJoins,
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.

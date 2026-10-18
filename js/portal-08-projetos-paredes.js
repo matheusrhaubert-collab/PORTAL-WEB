@@ -3987,6 +3987,89 @@ try {
 syncBaseboardJoinToViewer(ViewerProject, projectBaseboardJoinEnabled);
 syncBaseboardJoinToViewer(typeof ViewerProjectEdit !== 'undefined' ? ViewerProjectEdit : null, projectBaseboardJoinEnabled);
 
+// ==========================================================================
+// JUNÇÃO → PRODUÇÃO (2026-10-18, Matt: "não posso produzir e cobrar
+// duplicado"). Lê da Vista de Canto quais peças viraram uma só
+// (ViewerProjectEdit.getBaseboardJoins) e grava em slot._joinAdj — o 1º
+// módulo (esquerda) estica a peça até o total, os outros perdem a deles.
+// Chamado depois de TODO render da Vista de Canto (hook em portal-06c, junto
+// de applyProjectLayerVisibility). Só reprecifica quem mudou.
+// SEGURANÇA: um piece_id pode ter N cópias no módulo (linha com quantidade
+// 2) e remover o id tira TODAS. Só aplica quando todas as cópias têm o mesmo
+// destino (todas removidas, ou todas mantidas com a mesma esticada); senão a
+// junção fica só no desenho e avisa no console — melhor produzir separado do
+// que sumir peça.
+// ==========================================================================
+function projectJoinAxisFor(member) {
+  const info = member.info || {};
+  const L = Number(member.length_mm) || 0;
+  const cand = [['dw', info.width_mm], ['dh', info.height_mm], ['dd', info.depth_mm]];
+  let best = null, bestErr = Infinity;
+  cand.forEach(([k, v]) => {
+    const err = Math.abs((Number(v) || 0) - L);
+    if (err < bestErr - 1e-6) { best = k; bestErr = err; }
+  });
+  return bestErr <= 1 ? best : null;
+}
+function syncProjectBaseboardJoinsFromViewer() {
+  const v = (typeof ViewerProjectEdit !== 'undefined') ? ViewerProjectEdit : null;
+  if (!v || !v.getBaseboardJoins || !Array.isArray(projectSlots)) return;
+  const res = projectBaseboardJoinEnabled ? v.getBaseboardJoins() : { joins: [], copies: {} };
+  const copies = res.copies || {};
+  let groups = (res.joins || []).filter((g) => {
+    const ok = (g.members || []).length >= 2 && g.members.every((m) => m.slotId != null && m.pieceId != null)
+      && !!projectJoinAxisFor(g.members[0]);
+    if (!ok) console.warn('[junção] grupo sem rastro de peça — fica só no desenho', g);
+    return ok;
+  });
+  // Itera até estabilizar: derrubar um grupo pode deixar outra peça com
+  // destino incompleto (ver SEGURANÇA acima).
+  for (let guard = 0; guard < 20; guard++) {
+    const papeis = {};
+    groups.forEach((g) => {
+      const kept = g.members[0];
+      const axis = projectJoinAxisFor(kept);
+      const delta = Math.round((Number(g.combined_mm) - Number(kept.length_mm)) * 10) / 10;
+      g.members.forEach((m, idx) => {
+        const k = m.slotId + '|' + m.pieceId;
+        (papeis[k] = papeis[k] || []).push(idx === 0 ? 'keep:' + axis + ':' + delta : 'rem');
+      });
+    });
+    const ruins = new Set(Object.keys(papeis).filter((k) => {
+      const lst = papeis[k];
+      return lst.length !== (copies[k] || 1) || lst.some((x) => x !== lst[0]);
+    }));
+    if (!ruins.size) break;
+    const antes = groups.length;
+    groups = groups.filter((g) => {
+      const bad = g.members.some((m) => ruins.has(m.slotId + '|' + m.pieceId));
+      if (bad) console.warn('[junção] peça com cópias de destino diferente — este grupo fica só no desenho', g);
+      return !bad;
+    });
+    if (groups.length === antes) break;
+  }
+  const next = {};
+  groups.forEach((g) => {
+    const kept = g.members[0];
+    const axis = projectJoinAxisFor(kept);
+    const delta = Math.round((Number(g.combined_mm) - Number(kept.length_mm)) * 10) / 10;
+    const ek = next[kept.slotId] || (next[kept.slotId] = { removed: [], adjust: {} });
+    ek.adjust[kept.pieceId] = { [axis]: delta }; // cópias iguais → mesmo valor, não soma
+    g.members.slice(1).forEach((m) => {
+      const er = next[m.slotId] || (next[m.slotId] = { removed: [], adjust: {} });
+      if (!er.removed.includes(m.pieceId)) er.removed.push(m.pieceId);
+    });
+  });
+  const mudou = [];
+  projectSlots.forEach((slot) => {
+    const n = next[slot.id] || null;
+    if (JSON.stringify(slot._joinAdj || null) !== JSON.stringify(n)) { slot._joinAdj = n; mudou.push(slot); }
+  });
+  if (!mudou.length) return;
+  mudou.forEach((slot) => { try { recomputeProjectSlotPricing(slot); } catch (e) { /* mantém o anterior */ } });
+  try { renderProjectSummary(); } catch (e) { /* tela pode não estar montada */ }
+}
+
 function setProjectBaseboardJoinEnabled(on) {
   projectBaseboardJoinEnabled = !!on;
   try { localStorage.setItem('legno_proj_baseboard_join', projectBaseboardJoinEnabled ? '1' : '0'); } catch (e) { /* ok */ }
@@ -5976,15 +6059,19 @@ async function sendProjectToOrder() {
         // removed_piece_ids (migration 134): peça removida manualmente pelo
         // cliente no modal "Peças do móvel" — o ERP (furacao-ban/
         // furacao-lote) precisa disto pra não cortar/furar peça removida.
-        removed_piece_ids: slot.removedPieceIds || [],
+        // + peças tiradas pela JUNÇÃO com o vizinho (2026-10-18) — o rodapé/
+        // gola deste módulo foi absorvido pela peça inteira do vizinho da
+        // esquerda (ver projectSlotProductionPieces, portal-06b).
+        removed_piece_ids: projectSlotOrderRemovedIds(slot),
         // LED embutido (migration 183): { piece_id: config } — o ERP aplica
         // na hora de gerar o .ban (rasgo), igual removed_piece_ids.
         led_configs: slot.ledConfigs || {},
         // Ajuste manual de peça (migration 190) — o ERP aplica igual ao
         // portal ao refazer a furação/3D da peça. Só vai quando existe
         // ajuste: pedido sem ajuste nenhum continua idêntico ao de antes.
-        ...((slot.pieceAdjustments && Object.keys(slot.pieceAdjustments).length)
-          ? { piece_adjustments: slot.pieceAdjustments } : {}),
+        // Inclui a ESTICADA da junção (peça inteira no 1º módulo).
+        ...(Object.keys(projectSlotOrderAdjustments(slot)).length
+          ? { piece_adjustments: projectSlotOrderAdjustments(slot) } : {}),
         // GEOMETRIA DO CONSTRUTOR DE VÃOS (migration 121). null quando o
         // slot não usa o construtor (a maioria). Não é o preço nem a
         // furação — é só onde cada peça do interior ficou, pra os
@@ -6575,6 +6662,11 @@ function applyProjectLayerVisibility() {
   if (!scene) return;
   walkProjectSceneObjects(scene, (obj) => {
     if (!obj.userData) return false;
+    // Peça original trocada pela peça única da junção (rodapé/gola —
+    // joinBaseboardLine, viewer3d_composition.js). Fica SEMPRE escondida:
+    // reacender aqui desenhava as 2 originais por cima da fundida (bug
+    // 2026-10-18, "toekick não gera uma única peça nem o gola").
+    if (obj.userData.hiddenByJoin) { obj.visible = false; return true; }
     if (obj.userData.legnoLayer === PROJECT_LAYER_WALLS) {
       obj.visible = !projectHiddenLayers.has(PROJECT_LAYER_WALLS);
       return true;
