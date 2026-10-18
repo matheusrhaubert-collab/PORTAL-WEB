@@ -2440,6 +2440,10 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
         : computeDefaultProjectSlotX(slot.width_mm);
       resolveProjectSlotDepth(slot, projectSlotsOnWall(slot.wall_index));
     }
+    // Interior de fábrica (NEW Classic, 2026-10-18 — ver
+    // applyProjectFactoryLayout em portal-07): módulo padrão entra já com
+    // portas/gavetas/prateleiras. Módulo sem árvore marcada: nada muda.
+    if (typeof applyProjectFactoryLayout === 'function') await applyProjectFactoryLayout(slot);
     projectSlots.push(slot);
     // A IA insere vários módulos em sequência: selecionar e re-renderizar a
     // cada um é desperdício (e faz a tela piscar). Quem chamou com overrides

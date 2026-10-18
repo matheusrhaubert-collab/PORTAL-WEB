@@ -1084,6 +1084,51 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
   };
 }
 
+// ==========================================================================
+// INTERIOR DE FÁBRICA DA LINHA NEW CLASSIC (2026-10-18)
+// ==========================================================================
+// Matt: os módulos padrão (família NEW Classic Kitchens) entram JÁ MONTADOS
+// com portas, gavetas e prateleiras REGULÁVEIS — feitos com as MESMAS peças
+// do Construtor ("pra facilitar a manutenção"), sem o cliente precisar abrir
+// o Construtor. O interior é a árvore de fábrica do módulo
+// (module_layout_nodes), a mesma que o Construtor de Módulos do ERP grava.
+//
+// Por que não religa o carregamento geral desligado em 14/10 ("nunca
+// carregar interior de fábrica" — vinham restos de teste de agosto): só
+// entra árvore cuja RAIZ tem params.fabrica === true. Essa marca só existe
+// nas árvores novas da NEW Classic; as antigas continuam ignoradas.
+const projectFactoryLayoutCache = {};
+async function loadProjectFactoryLayout(moduleId) {
+  if (!moduleId) return null;
+  if (!(moduleId in projectFactoryLayoutCache)) {
+    let val = null;
+    try {
+      const { data, error } = await supabaseClient.from('module_layout_nodes')
+        .select('*').eq('module_id', moduleId).order('sort_order');
+      if (!error && data && data.length) {
+        const raiz = projectBuilderTreeFromRows(data);
+        if (raiz && raiz.params && raiz.params.fabrica === true) val = LayoutEngine.serialize(raiz);
+      }
+    } catch (e) { val = null; }
+    projectFactoryLayoutCache[moduleId] = val;
+  }
+  const v = projectFactoryLayoutCache[moduleId];
+  return v ? JSON.parse(JSON.stringify(v)) : null;
+}
+// Pendura o interior de fábrica no slot (se o módulo tiver) e reprecifica —
+// daqui pra frente é um slot com layout igual a qualquer um montado no
+// Construtor: 3D, preço, plano de corte, .ban e pedido seguem o caminho de
+// sempre. Devolve true se aplicou.
+async function applyProjectFactoryLayout(slot) {
+  if (!slot || !slot.module) return false;
+  const lay = await loadProjectFactoryLayout(slot.module.id);
+  if (!lay) return false;
+  await ensureAccessoryCatalog();
+  slot.layout = lay;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço anterior fica */ }
+  return true;
+}
+
 // Linhas de module_layout_nodes -> raiz montada. Espelha CONSTR.loadArvore +
 // CONSTR.nodeFromRow, inclusive o detalhe das FRENTES: a coluna é singular
 // (front_accessory_id) mas o motor aceita várias por vão, e a lista completa

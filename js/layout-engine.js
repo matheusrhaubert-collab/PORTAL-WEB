@@ -252,7 +252,13 @@
   //   drilling.js (.ban das laterais) e viewer3d.js (furos no 3D).
   // ------------------------------------------------------------------------
   var FUROS_PRATELEIRA = { tras: 30, frente: 50, passo: 68, margem: 32, apoio: 3 };
-  function gradeFurosVao(box) {
+  // `faixa` (2026-10-18, Matt: "prateleira inferior de bases deve ser
+  // regulável, porém só com regulagem numa faixa central do meio em 250mm
+  // seguindo o padrão de furação") — opcional, vem de node.params.
+  // faixa_furos_mm do vão dividido. A grade é a MESMA de sempre (passo 68,
+  // centrada no vão); a faixa só deixa os furos que caem dentro dos
+  // `faixa` mm centrais. Sem faixa (todo vão existente): igual a antes.
+  function gradeFurosVao(box, faixa) {
     var F = FUROS_PRATELEIRA;
     var util = box.h - 2 * F.margem;
     var zs = [box.z + F.tras, box.z + box.d - F.frente];
@@ -261,6 +267,11 @@
     var primeiro = Math.round(box.y + (box.h - (n - 1) * F.passo) / 2);
     var ys = [];
     for (var i = 0; i < n; i++) ys.push(primeiro + i * F.passo);
+    if (faixa > 0) {
+      var meio = box.y + box.h / 2;
+      var naFaixa = ys.filter(function (y) { return Math.abs(y - meio) <= faixa / 2 + 1e-6; });
+      if (naFaixa.length) ys = naFaixa;
+    }
     return { ys: ys, zs: zs };
   }
   // sizes (de splitSizes) -> sizes com cada prateleira pousada num furo.
@@ -633,6 +644,21 @@
 
     var out = [], voids = [];
 
+    // FRENTE ABAIXO DO TOPO DO CASCO (2026-10-18, Matt: "as portas do base
+    // são 10mm pra baixo do topo pra dar espaço da pedra"). Liga pelo
+    // root.params.frente_topo_abaixo_casco_mm da árvore (só o interior de
+    // fábrica da linha NEW Classic grava isso). Vale pra porta externa e
+    // frente de gaveta externa cujo VÃO encosta no topo da zona: o topo da
+    // frente vira (topo da zona + espessura do casco − folga). Sem o param
+    // (todo layout existente): nada muda.
+    var topoCascoFolga = num(((root && root.params) || {}).frente_topo_abaixo_casco_mm);
+    function topoFrenteAlvo(vaoTopo) {
+      if (!(topoCascoFolga > 0) || !zona) return null;
+      var zonaTopo = zona.y + zona.h;
+      if (Math.abs(vaoTopo - zonaTopo) > 1) return null;
+      return zonaTopo + espCasco - topoCascoFolga;
+    }
+
     function push(node, p) {
       p.nodeId = node.id;
       p.position_role = p.position_role || 'free';
@@ -684,6 +710,20 @@
           kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name + ' · ripa',
           x: gx, y: pos, z: frente - E, w: gw, h: E, d: E,
           auto_join: true
+        });
+      } else if (num((acc.params || {}).stretcher_d_mm) > 0) {
+        // DIVISÓRIA STRETCHER (2026-10-18, Matt: "não temos um módulo padrão
+        // com um stretcher separando a gaveta de cima com a porta de baixo,
+        // temos que criar uma divisora stretcher no construtor"). Divide o vão
+        // em cima/baixo igual uma prateleira fixa, mas a peça é uma TRAVESSA
+        // na frente (profundidade stretcher_d_mm), não uma chapa inteira —
+        // mesmo desenho do stretcher de topo do casco.
+        var sd = num(acc.params.stretcher_d_mm);
+        var frenteSt = box.z + Math.max(60, box.d - recuo - cons);
+        push(node, {
+          kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
+          x: box.x, y: pos, z: frenteSt - sd,
+          w: box.w, h: th, d: sd
         });
       } else {
         push(node, {
@@ -1062,6 +1102,8 @@
             y: efetiva.y - alturaBaixo,
             h: efetiva.h + alturaBaixo + alturaCima
           };
+          var alvoTopoPorta = topoFrenteAlvo(efetiva.y + efetiva.h);
+          if (alvoTopoPorta != null) geo.h = alvoTopoPorta - geo.y;
         } else { // 'interna'
           geo = {
             x: efetiva.x + PORTA_INTERNA_LARGURA_FOLGA_MM,
@@ -1272,6 +1314,10 @@
         var frenteY1 = (j === rec.qtd - 1)
           ? y + rec.hCada + alturaCima
           : y + rec.hCada - GAP_ENTRE_FRENTES_GAVETA_MM / 2;
+        if (j === rec.qtd - 1) {
+          var alvoTopoGaveta = topoFrenteAlvo(box.y + box.h);
+          if (alvoTopoGaveta != null) frenteY1 = alvoTopoGaveta;
+        }
         push(node, {
           kind: 'front', accKey: rec.frenteAcc.id,
           label: 'Frente da ' + rec.label + (rec.qtd > 1 ? ' ' + (j + 1) : ''),
@@ -1294,7 +1340,7 @@
         var axis = node.splitAxis;
         var sizes = splitSizes(axis === 'x' ? box.w : box.h, node.children, th);
         // Prateleira regulável: o VÃO gera a grade e a prateleira pousa num furo.
-        var grade = (axis === 'y' && acc.prateleira_regulavel) ? gradeFurosVao(box) : null;
+        var grade = (axis === 'y' && acc.prateleira_regulavel) ? gradeFurosVao(box, num((node.params || {}).faixa_furos_mm)) : null;
         if (grade) sizes = encaixaPrateleirasNosFuros(box, sizes, th, grade.ys) || sizes;
         var consDiv = consumoMax(node, cat, esp, folgaDob);
         node._box = box;

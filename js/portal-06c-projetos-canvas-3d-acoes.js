@@ -3305,6 +3305,9 @@ async function replaceProjectSlotModule(slotId, novoModuleId, medidas) {
   slot.layout = null;
   slot.layoutPieces = [];
   slot.thumbnail_data_url = null;
+  // Módulo novo com interior de fábrica (NEW Classic): entra montado, igual
+  // à inserção normal (insertProjectModuleDefault).
+  if (typeof applyProjectFactoryLayout === 'function') await applyProjectFactoryLayout(slot);
 
   clampProjectSlotPosition(slot);
   resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
