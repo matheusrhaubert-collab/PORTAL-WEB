@@ -657,6 +657,7 @@
     // frente vira (topo da zona + espessura do casco − folga). Sem o param
     // (todo layout existente): nada muda.
     var topoCascoFolga = num(((root && root.params) || {}).frente_topo_abaixo_casco_mm);
+    var arvoreDeFabrica = !!(root && root.params && root.params.fabrica === true);
     function topoFrenteAlvo(vaoTopo) {
       if (!(topoCascoFolga > 0) || !zona) return null;
       var zonaTopo = zona.y + zona.h;
@@ -1254,7 +1255,12 @@
       pendingFronts.forEach(function (ctx) {
         var sharing = null;
         var node = ctx.node, parent = ctx.parent;
-        var ehFolha = !(node.splitAxis && node.children.length > 1);
+        // Árvore de FÁBRICA (NEW Classic, 2026-10-18): porta num vão que tem
+        // prateleira dentro (vão dividido) também divide a sobreposição com a
+        // porta/gaveta de cima/baixo — sem isso as duas avançam sobre a
+        // travessa (pantry com 2 portas, gaveta + porta). Árvore comum:
+        // igual a antes (só vão-folha).
+        var ehFolha = !(node.splitAxis && node.children.length > 1) || arvoreDeFabrica;
         if (ehFolha && parent && parent.children && parent.children.length > 1) {
           var meuAcc = null;
           (node.fronts || []).forEach(function (f) { if (!meuAcc) meuAcc = cat[f.acc]; });
@@ -1327,6 +1333,18 @@
         alturaBaixo = Math.min(PORTA_EXTERNA_ALTURA_BAIXO_MM, PORTA_EXTERNA_ALTURA_BAIXO_MM - reducaoBaixo / 2);
       }
 
+      // GAVETEIRO COM TOPO DEFINIDO (2026-10-18, NEW Classic): 2+ gavetas no
+      // mesmo vão com node.params.topo_frente_abaixo_casco_mm — as frentes
+      // dividem POR IGUAL o espaço entre o rodapé (como sempre) e o topo
+      // pedido, com o mesmo gap de 3 mm entre frentes. Sem o param: igual.
+      var distribGav = null;
+      if (rec.qtd > 1 && num((node.params || {}).topo_frente_abaixo_casco_mm) > 0 && zona) {
+        var yBotG = rec.boxY - alturaBaixo;
+        var yTopG = ajustaFrentePorNo({ params: { topo_frente_abaixo_casco_mm: node.params.topo_frente_abaixo_casco_mm } }, 0, 0)[1];
+        var hG = (yTopG - yBotG - GAP_ENTRE_FRENTES_GAVETA_MM * (rec.qtd - 1)) / rec.qtd;
+        if (hG > 0) distribGav = { y0: yBotG, h: hG };
+      }
+
       for (var j = 0; j < rec.qtd; j++) {
         var y = rec.boxY + j * (rec.hCada + rec.gap);
         var frenteY0 = (j === 0)
@@ -1342,6 +1360,10 @@
             var ajG = ajustaFrentePorNo(node, frenteY0, frenteY1);
             frenteY0 = ajG[0]; frenteY1 = ajG[1];
           }
+        }
+        if (distribGav) {
+          frenteY0 = distribGav.y0 + j * (distribGav.h + GAP_ENTRE_FRENTES_GAVETA_MM);
+          frenteY1 = frenteY0 + distribGav.h;
         }
         push(node, {
           kind: 'front', accKey: rec.frenteAcc.id,
