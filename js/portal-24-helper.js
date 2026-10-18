@@ -87,10 +87,10 @@
   {"id": "importar-promob-paredes", "cat": "importar", "tour": "importar-promob", "alvo": "#po-proj-importpromob-review", "artigo": null, "pt": "O Promob traz as paredes e a posição dos módulos?", "en": "Does Promob import bring the walls and positions?", "es": "¿Promob trae las paredes y posiciones?", "kw": "promob paredes posicao giro cena walls positions paredes"},
   {"id": "importar-pdf-referencias", "cat": "importar", "tour": "referencias", "alvo": "#po-proj-ref-grid", "artigo": null, "pt": "As imagens do PDF original ficam salvas no projeto?", "en": "Are the original PDF images kept in the project?", "es": "¿Las imágenes del PDF original quedan en el proyecto?", "kw": "pdf imagens originais pranchas referencia guardar images references"},
   {"id": "importar-ajustar", "cat": "importar", "tour": "modulo-mover", "alvo": "#po-proj-canvas", "artigo": null, "pt": "Importei, e agora? Como ajusto o que veio errado?", "en": "I imported — how do I fix what came in wrong?", "es": "Importé, ¿cómo ajusto lo que vino mal?", "kw": "depois importar ajustar corrigir errado fix after import ajustar"},
-  {"id": "modulo-inserir", "cat": "modulos", "tour": "modulo-arrastar", "alvo": "#po-proj-library-grid", "artigo": "inserir-mover-modulos", "pt": "Como coloco um módulo na parede?", "en": "How do I place a cabinet on the wall?", "es": "¿Cómo pongo un módulo en la pared?", "kw": "inserir colocar adicionar modulo armario arrastar biblioteca add place cabinet drag modulo mueble"},
+  {"id": "modulo-inserir", "cat": "modulos", "tour": "modulo-arrastar", "alvo": "#po-proj-library-search-btn", "artigo": "inserir-mover-modulos", "pt": "Como coloco um módulo na parede?", "en": "How do I place a cabinet on the wall?", "es": "¿Cómo pongo un módulo en la pared?", "kw": "inserir colocar adicionar modulo armario arrastar biblioteca add place cabinet drag modulo mueble"},
   {"id": "modulo-procurar", "cat": "modulos", "tour": "modulo-procurar", "alvo": "#po-proj-library-search-btn", "artigo": "buscar-modulo-projeto", "pt": "Como procuro um módulo específico?", "en": "How do I search for a specific cabinet?", "es": "¿Cómo busco un módulo específico?", "kw": "procurar buscar pesquisar search find buscar"},
-  {"id": "modulo-filtrar", "cat": "modulos", "tour": "modulo-procurar", "alvo": "#po-proj-filter-family-select", "artigo": "buscar-modulo-projeto", "pt": "Como filtro só os módulos de base ou aéreos?", "en": "How do I filter base or wall cabinets?", "es": "¿Cómo filtro módulos base o aéreos?", "kw": "filtro familia categoria base aereo filter family category filtro"},
-  {"id": "modulo-sku", "cat": "modulos", "tour": "modulo-sku", "alvo": "#po-proj-library-grid", "artigo": "sku-referencia-rapida", "pt": "Como insiro um módulo pela referência (SKU)?", "en": "How do I insert a cabinet by SKU?", "es": "¿Cómo inserto un módulo por referencia (SKU)?", "kw": "sku referencia codigo medida pronta reference code"},
+  {"id": "modulo-filtrar", "cat": "modulos", "tour": "modulo-procurar", "alvo": "#po-proj-library-search-btn", "artigo": "buscar-modulo-projeto", "pt": "Como filtro só os módulos de base ou aéreos?", "en": "How do I filter base or wall cabinets?", "es": "¿Cómo filtro módulos base o aéreos?", "kw": "filtro familia categoria base aereo filter family category filtro"},
+  {"id": "modulo-sku", "cat": "modulos", "tour": "modulo-sku", "alvo": "#po-proj-library-search-btn", "artigo": "sku-referencia-rapida", "pt": "Como insiro um módulo pela referência (SKU)?", "en": "How do I insert a cabinet by SKU?", "es": "¿Cómo inserto un módulo por referencia (SKU)?", "kw": "sku referencia codigo medida pronta reference code"},
   {"id": "modulo-mover", "cat": "modulos", "tour": "modulo-mover", "alvo": "#po-proj-canvas-3d-edit-wrap", "artigo": "inserir-mover-modulos", "pt": "Como movo um módulo de lugar?", "en": "How do I move a cabinet?", "es": "¿Cómo muevo un módulo?", "kw": "mover arrastar posicao lugar move drag position mover"},
   {"id": "modulo-posicao-exata", "cat": "modulos", "tour": "modulo-posicao", "alvo": null, "artigo": "posicao-no-ambiente", "pt": "Como coloco o módulo numa posição exata (distância da parede)?", "en": "How do I set an exact position for a cabinet?", "es": "¿Cómo pongo el módulo en una posición exacta?", "kw": "posicao exata distancia x y altura do chao exact position distance posicion"},
   {"id": "modulo-girar", "cat": "modulos", "tour": "modulo-girar", "alvo": null, "artigo": "ilha-modulos-soltos", "pt": "Como giro um módulo?", "en": "How do I rotate a cabinet?", "es": "¿Cómo giro un módulo?", "kw": "girar rotacionar virar rotate turn girar"},
@@ -104,7 +104,7 @@
   {"id": "modulo-remover", "cat": "modulos", "tour": "modulo-remover", "alvo": "#po-proj-slot-remove-btn", "artigo": "acoes-do-modulo-selecionado", "pt": "Como apago um módulo?", "en": "How do I delete a cabinet?", "es": "¿Cómo borro un módulo?", "kw": "apagar deletar remover excluir modulo delete remove borrar"},
   {"id": "modulo-selecionar-varios", "cat": "modulos", "tour": "modulo-grupo", "alvo": "#po-proj-canvas-3d-edit-wrap", "artigo": null, "pt": "Como seleciono vários módulos de uma vez?", "en": "How do I select several cabinets at once?", "es": "¿Cómo selecciono varios módulos?", "kw": "selecionar varios grupo multiplos select multiple group seleccionar"},
   {"id": "modulo-colisao", "cat": "modulos", "tour": "modulo-colisao", "alvo": "#po-proj-collision-btn", "artigo": "encaixe-colisao", "pt": "Como evito que um módulo fique em cima do outro?", "en": "How do I stop cabinets from overlapping?", "es": "¿Cómo evito que los módulos se superpongan?", "kw": "colisao sobrepor encaixe overlap collision snap colision"},
-  {"id": "modulo-canto", "cat": "modulos", "tour": "modulo-canto", "alvo": "#po-proj-library-grid", "artigo": null, "pt": "Como monto o canto entre duas paredes?", "en": "How do I build the corner between two walls?", "es": "¿Cómo armo la esquina entre dos paredes?", "kw": "canto 90 45 esquina corner"},
+  {"id": "modulo-canto", "cat": "modulos", "tour": "modulo-canto", "alvo": "#po-proj-library-search-btn", "artigo": null, "pt": "Como monto o canto entre duas paredes?", "en": "How do I build the corner between two walls?", "es": "¿Cómo armo la esquina entre dos paredes?", "kw": "canto 90 45 esquina corner"},
   {"id": "modulo-customizado", "cat": "modulos", "tour": "modulo-novo", "alvo": "#po-proj-new-module-btn", "artigo": null, "pt": "Como insiro um módulo customizado (medida livre)?", "en": "How do I add a custom cabinet?", "es": "¿Cómo inserto un módulo personalizado?", "kw": "customizado personalizado sob medida novo modulo custom new cabinet personalizado"},
   {"id": "projeto-ia-gerar", "cat": "modulos", "tour": "projeto-ia", "alvo": "#po-proj-ai-open-btn", "artigo": null, "pt": "Como a IA monta o projeto pra mim?", "en": "How do I let AI generate the project?", "es": "¿Cómo genero el proyecto con IA?", "kw": "ia gerar automatico inteligencia ai generate automatic ia"},
   {"id": "construtor-usar", "cat": "construtor", "tour": "construtor-abrir", "alvo": "#po-proj-slot-customize-btn", "artigo": "construtor-basico", "pt": "Como uso o construtor?", "en": "How do I use the builder?", "es": "¿Cómo uso el constructor?", "kw": "construtor usar montar personalizar interno internos funciona builder use customize constructor usar"},
@@ -245,12 +245,12 @@
       text: T('Abra a aba Projetos.', 'Open the Projects tab.', 'Abra la pestaña Proyectos.')
     },
     temModulo: {
-      el: '#po-proj-library-grid',
+      el: '#po-proj-library-search-btn',
       skipIf: () => nSlots() > 0,
       wait: () => nSlots() > 0,
-      text: T('Primeiro coloque um móvel no ambiente: arraste um card desta lista até a parede (ou clique nele).',
-        'First place a cabinet in the room: drag a card from this list onto the wall (or click it).',
-        'Primero coloque un mueble: arrastre una tarjeta de esta lista hasta la pared (o haga clic en ella).')
+      text: T('Primeiro coloque um móvel no ambiente: clique em + Módulo e escolha um.',
+        'First place a cabinet in the room: click + Cabinet and pick one.',
+        'Primero coloque un mueble: haga clic en + Módulo y elija uno.')
     },
     selecionar: {
       el: CANVAS,
@@ -333,7 +333,7 @@
         'New project: this button clears the current room (save first if you want to keep it).',
         'Proyecto nuevo: este botón limpia el ambiente actual (guarde antes si quiere conservarlo).') },
       { el: '#po-proj-wall-editor-btn', text: T('Depois desenhe as paredes aqui…', 'Then draw the walls here…', 'Luego dibuje las paredes aquí…') },
-      { el: '#po-proj-library-grid', text: T('…e arraste os módulos desta lista pra parede.', '…and drag cabinets from this list onto the wall.', '…y arrastre los módulos de esta lista a la pared.') }],
+      { el: '#po-proj-library-search-btn', text: T('…e coloque os módulos pelo botão + Módulo.', '…and add cabinets with the + Cabinet button.', '…y agregue los módulos con el botón + Módulo.') }],
 
     // ---------------- PAREDES ----------------
     'paredes-desenhar': [P.aba, P.paredesAbrir,
@@ -454,15 +454,16 @@
 
     // ---------------- MÓDULOS ----------------
     'modulo-arrastar': [P.aba,
-      { el: '#po-proj-library-grid', onEnter: (p) => { p._n = nSlots(); }, wait: (p) => nSlots() > p._n,
-        text: T('Arraste o card do módulo até a parede no desenho e solte (clicar no card também insere).',
-          'Drag the cabinet card onto the wall in the drawing and drop it (clicking the card also inserts it).',
-          'Arrastre la tarjeta del módulo hasta la pared del dibujo y suéltela (hacer clic también lo inserta).') },
+      abrirModal('#po-proj-library-search-btn', '#po-proj-search-modal', T('Clique em + Módulo.', 'Click + Cabinet.', 'Haga clic en + Módulo.')),
+      { el: '#po-proj-search-modal-grid', onEnter: (p) => { p._n = nSlots(); }, wait: (p) => nSlots() > p._n,
+        text: T('Clique no módulo pra inserir — ou escolha a referência no menu do card. Trena verde = medida editável.',
+          'Click the cabinet to insert it — or pick a reference in the card menu. Green tape = editable size.',
+          'Haga clic en el módulo para insertarlo — o elija la referencia en el menú de la tarjeta. Cinta verde = medida editable.') },
       { el: CANVAS, text: T('Pronto! Clique no móvel pra selecionar e ajustar medida, cor e internos.',
         'Done! Click the cabinet to select it and adjust size, color and interior.',
         '¡Listo! Haga clic en el mueble para ajustar medida, color e interiores.') }],
     'modulo-procurar': [P.aba,
-      abrirModal('#po-proj-library-search-btn', '#po-proj-search-modal', T('Clique em Buscar.', 'Click Search.', 'Haga clic en Buscar.')),
+      abrirModal('#po-proj-library-search-btn', '#po-proj-search-modal', T('Clique em + Módulo.', 'Click + Cabinet.', 'Haga clic en + Módulo.')),
       { el: '#po-proj-search-filter-family', text: T('Filtre por família, categoria e subcategoria…', 'Filter by family, category and subcategory…', 'Filtre por familia, categoría y subcategoría…') },
       { el: '#po-proj-search-modal-grid', text: T('…e clique no módulo pra inserir.', '…and click the cabinet to insert it.', '…y haga clic en el módulo para insertarlo.') }],
     'modulo-mover': [P.aba, P.temModulo,

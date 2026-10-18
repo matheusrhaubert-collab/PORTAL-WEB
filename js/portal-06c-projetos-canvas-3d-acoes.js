@@ -3271,10 +3271,16 @@ if (projSlotDuplicateBtn) {
 // (projectReplaceSlotId é declarado lá em cima, junto do resto do estado da
 // aba — ver o comentário sobre zona morta temporal em projectWallSegments.)
 
-async function replaceProjectSlotModule(slotId, novoModuleId) {
+async function replaceProjectSlotModule(slotId, novoModuleId, medidas) {
   const slot = projectSlots.find((s) => s.id === slotId);
   if (!slot || !novoModuleId) return;
-  const antes = { w: slot.width_mm, h: slot.height_mm, d: slot.depth_mm };
+  // `medidas` (2026-10-18): referência escolhida no dropdown do modal "+
+  // Cabinet" em modo Substituir — usa a medida da referência em vez da atual.
+  const antes = {
+    w: (medidas && Number(medidas.width_mm) > 0) ? Number(medidas.width_mm) : slot.width_mm,
+    h: (medidas && Number(medidas.height_mm) > 0) ? Number(medidas.height_mm) : slot.height_mm,
+    d: slot.depth_mm
+  };
   try {
     await repointProjectSlotToModule(slot, novoModuleId);
   } catch (e) {

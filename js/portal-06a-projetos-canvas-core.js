@@ -1987,6 +1987,74 @@ function renderProjectSearchModalFilterBars() {
   }
 }
 
+// ==========================================================================
+// CARDS DO MODAL "+ CABINET" (2026-10-18, Matt): "módulos que não têm edição
+// — só referências — quero um dropdown com a referência pra fácil escolha;
+// os que têm edição, uma trena verde no canto superior direito, ~20% do
+// quadro".
+// EDITÁVEL = pelo menos uma medida (largura/altura/profundidade) que NÃO é
+// travada (width_locked & cia., "Valores sugeridos" no admin) e tem faixa de
+// verdade (máx > mín). Travada = só os valores cadastrados, não conta.
+// O dropdown aparece sempre que o módulo tem referência cadastrada (inclusive
+// nos editáveis — atalho pra medida pronta).
+// ==========================================================================
+function projectModuleIsEditable(m) {
+  if (!m) return false;
+  return ['width', 'height', 'depth'].some((d) =>
+    !m[d + '_locked'] && Number(m[d + '_max_mm'] || 0) > Number(m[d + '_min_mm'] || 0));
+}
+const PROJECT_CARD_TAPE_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true">'
+  + '<rect x="2" y="5" width="27" height="27" rx="7" fill="#2f9e44"/>'
+  + '<circle cx="15.5" cy="18.5" r="6.5" fill="#fff"/><circle cx="15.5" cy="18.5" r="2.4" fill="#2f9e44"/>'
+  + '<rect x="24" y="26" width="15" height="6" rx="1" fill="#2f9e44"/>'
+  + '<path d="M28 26v3M31.5 26v2M35 26v3" stroke="#fff" stroke-width="1.2"/></svg>';
+
+// Escolher referência no dropdown = inserir (ou SUBSTITUIR, no modo ⇄) já
+// com a medida daquela referência, e fechar o modal.
+function attachProjectSearchCardSku(card, m) {
+  const skuOptions = moduleSkuPresetsByModuleId[m.id] || [];
+  if (!skuOptions.length) return;
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const wrap = document.createElement('div');
+  wrap.className = 'po-proj-library-card-sku';
+  const sel = document.createElement('select');
+  sel.className = 'po-proj-library-card-sku-select';
+  const autoOpt = document.createElement('option');
+  autoOpt.value = '';
+  autoOpt.textContent = I18n.t('step1.sku_placeholder');
+  sel.appendChild(autoOpt);
+  skuOptions.forEach((s) => {
+    const o = document.createElement('option');
+    o.value = s.reference;
+    o.textContent = skuOptionLabelForUnit(s, unit);
+    sel.appendChild(o);
+  });
+  // Sem isto o clique no <select> sobe pro card e insere o módulo padrão.
+  ['pointerdown', 'click'].forEach((evt) => sel.addEventListener(evt, (e) => e.stopPropagation()));
+  sel.addEventListener('change', () => {
+    const sku = skuOptions.find((s) => s.reference === sel.value);
+    if (!sku) return;
+    const medidas = { width_mm: sku.width_mm, height_mm: sku.height_mm };
+    if (projectReplaceSlotId != null) {
+      const alvo = projectReplaceSlotId;
+      projectReplaceSlotId = null;
+      replaceProjectSlotModule(alvo, m.id, medidas);
+    } else {
+      // insertProjectModuleDefault COM overrides não seleciona/renderiza
+      // sozinha (ver attachProjectLibrarySkuSelect) — faz aqui.
+      insertProjectModuleDefault(m.id, Object.assign({ fromLibrary: true }, medidas)).then((slot) => {
+        if (!slot) return;
+        selectedProjectSlotId = slot.id;
+        renderProjectCanvas();
+        markProjectDirty();
+      });
+    }
+    closeProjectSearchModal();
+  });
+  wrap.appendChild(sel);
+  card.appendChild(wrap);
+}
+
 function renderProjectSearchModalGrid() {
   const grid = document.getElementById('po-proj-search-modal-grid');
   if (!grid) return;
@@ -2009,11 +2077,15 @@ function renderProjectSearchModalGrid() {
     card.className = 'po-proj-library-card';
     card.title = m.name;
     const dimsLine = `${formatDimension(m.width_default_mm, unit)} x ${formatDimension(m.height_default_mm, unit)} x ${formatDimension(m.depth_default_mm, unit)}`;
+    const editavel = projectModuleIsEditable(m);
+    if (editavel) card.title = m.name + ' — ' + I18n.t('project.card_editable');
     card.innerHTML = `
       ${moduleCardImage(m)}
+      ${editavel ? '<span class="po-proj-card-tape">' + PROJECT_CARD_TAPE_SVG + '</span>' : ''}
       <div class="po-proj-library-card-name">${m.name}</div>
       <div class="po-proj-library-card-dims">${dimsLine}</div>
     `;
+    attachProjectSearchCardSku(card, m);
     // Mesmo comportamento da biblioteca lateral (insertProjectModuleDefault
     // insere já com config padrão) — só que aqui também fecha o modal em
     // seguida, pra voltar direto pro canvas com o módulo já no ambiente.
