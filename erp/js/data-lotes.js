@@ -1640,7 +1640,12 @@ LOTES.processosDosItens = function (items, orderById, piById) {
         // PEÇA COMPRADA PRONTA (pé, puxador, LED avulso…) → separação de
         // ferragens. Vidro/alumínio (processados) e caixote dovetail (seção
         // própria) ficam de fora.
-        if (comprado(p) && !ehVidro(p) && !ehAluminio(p) && !LOTES.ehGavetaDovetail(p)) {
+        // Decorativo (micro-ondas, pia, cooktop... "Decor — ...") sem item
+        // comprado cadastrado é só desenho do 3D, não vai pra separação
+        // (2026-10-18). Decorativo LIGADO a item comprado (ex: Wine Rack)
+        // continua entrando — esse a fábrica compra e separa.
+        const soDesenho = /^decor\b/i.test(ref) && !p.purchased_item_id;
+        if (comprado(p) && !soDesenho && !ehVidro(p) && !ehAluminio(p) && !LOTES.ehGavetaDovetail(p)) {
           const it = itemDe(p);
           const unit = (it && it.unit) || p.purchased_item_unit || 'un';
           const qtd = Number(p.purchased_item_qty) > 0 ? Number(p.purchased_item_qty) * mult : q;

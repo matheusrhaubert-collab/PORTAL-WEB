@@ -623,11 +623,17 @@ const Photoreal = (() => {
     return g;
   }
 
+  // PRATELEIRA 45° RECUADA E REGULÁVEL (2026-10-18, Matt: "a prateleira
+  // pode ficar um pouco recuada tipo uns 20mm pra dentro. quero colocar ela
+  // regulável também ... em todos 45 aéreos"). shape_type 'chanfro45_reg' =
+  // mesma chapa chanfrada, com a diagonal 20 mm (perpendicular) pra dentro:
+  // cada trecho reto encurta 20·√2. Base/topo continuam 'chanfro45'.
   const CHANFRO45_LATERAL_MM_PH = 305;
   function buildChanfroGeometryPh(part, faceA, thickness, faceB) {
-    if (!part || part.shape_type !== 'chanfro45') return null;
+    if (!part || (part.shape_type !== 'chanfro45' && part.shape_type !== 'chanfro45_reg')) return null;
     if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
-    const reta = (CHANFRO45_LATERAL_MM_PH / 1000) - thickness;
+    const recuo = part.shape_type === 'chanfro45_reg' ? (20 * Math.SQRT2) / 1000 : 0;
+    const reta = (CHANFRO45_LATERAL_MM_PH / 1000) - thickness - recuo;
     const cx = faceA - reta, cz = faceB - reta;
     if (!(cx > 0) || !(cz > 0) || cx >= faceA || cz >= faceB) return null;
     const ax = faceA / 2, bz = faceB / 2;

@@ -2123,12 +2123,19 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // PRATELEIRA 45° RECUADA E REGULÁVEL (2026-10-18, Matt: "a prateleira
+  // pode ficar um pouco recuada tipo uns 20mm pra dentro. quero colocar ela
+  // regulável também ... em todos 45 aéreos"). shape_type 'chanfro45_reg' =
+  // mesma chapa chanfrada, com a diagonal 20 mm (perpendicular) pra dentro:
+  // cada trecho reto encurta 20·√2. Base/topo continuam 'chanfro45'.
   const CHANFRO45_LATERAL_MM = 305;
+  const CHANFRO45_RECUO_REG_MM = 20;
   function buildHorizontalPanelGeometry(part, faceA, thickness, faceB) {
     const box = function () { return new THREE.BoxGeometry(faceA, thickness, faceB); };
-    if (!part || part.shape_type !== 'chanfro45') return box();
+    if (!part || (part.shape_type !== 'chanfro45' && part.shape_type !== 'chanfro45_reg')) return box();
     if (typeof THREE.Shape !== 'function' || typeof THREE.ExtrudeGeometry !== 'function') return box();
-    const reta = (CHANFRO45_LATERAL_MM / 1000) - thickness;
+    const recuo = part.shape_type === 'chanfro45_reg' ? (CHANFRO45_RECUO_REG_MM * Math.SQRT2) / 1000 : 0;
+    const reta = (CHANFRO45_LATERAL_MM / 1000) - thickness - recuo;
     const cx = faceA - reta, cz = faceB - reta;
     if (!(cx > 0) || !(cz > 0) || cx >= faceA || cz >= faceB) return box();
     const ax = faceA / 2, bz = faceB / 2;

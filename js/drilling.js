@@ -1453,7 +1453,7 @@
     boxes.forEach(function (sb) {
       if (!sb.part.drill_shelf_support) return;
       const semFuroProprio = sb.tAxis === 'y' && prateleiraSemFuroProprio(sb.part, config);
-      if (sb.tAxis === 'y' && sb.part.shape_type !== 'chanfro45') {
+      if (sb.tAxis === 'y' && !ehChanfro45(sb.part)) {
         lateraisZ.forEach(function (lb) {
           if (mesmaSubarvore(sb, lb)) return;
           if (Math.abs((sb.z0 + sb.sz) - lb.z0) > tol) return;
@@ -1471,7 +1471,7 @@
         });
       }
       if (sb.tAxis !== 'y') return; // prateleira = chapa deitada (espessura no Y)
-      if (sb.part.shape_type === 'chanfro45') return; // ver collectShelfSupportHoles45
+      if (ehChanfro45(sb.part)) return; // ver collectShelfSupportHoles45
       const yHole = sb.y0 + Math.min(pinoBase, sb.sy);
       const zHoles = [sb.z0 + sb.sz - front, sb.z0 + back];
       laterals.forEach(function (lb) {
@@ -1672,9 +1672,11 @@
         ? Number(settings.shelf_vertical_offset_mm) : 5);
     const tol = Number(settings.touch_tolerance_mm) || 5;
 
+    const feitos45 = new Map(); // lateral -> furos da linha já emitidos (várias reguláveis no mesmo módulo)
     boxes.forEach(function (sb) {
-      if (!sb.part || sb.part.shape_type !== 'chanfro45') return;
+      if (!sb.part || !ehChanfro45(sb.part)) return;
       if (!sb.part.drill_shelf_support) return;
+      const regulavel = sb.part.shape_type === 'chanfro45_reg';
       if (sb.tAxis !== 'y') return;
       const ch = chanfroDaPeca(sb.part);
       if (!ch) return;
@@ -1682,6 +1684,55 @@
       // trecho reto de cada aresta chanfrada (em coordenadas do módulo)
       const retaX = { lo: sb.x0, hi: sb.x0 + sb.sx - ch.cu }; // ao longo de X, na aresta z1
       const retaZ = { lo: sb.z0, hi: sb.z0 + sb.sz - ch.cv }; // ao longo de Z, na aresta x1
+
+      // REGULÁVEL ('chanfro45_reg'): em vez dos 2 pinos na altura da
+      // prateleira, a LINHA de furos da regulável (mesmo padrão do
+      // Construtor: Ø5, a cada 68, 50 da frente e 30 de trás da lateral,
+      // centrada no vão entre base e topo) nas duas laterais de 305.
+      if (regulavel) {
+        const L = LINHA_PRATELEIRA;
+        let baixo = -Infinity, cima = Infinity;
+        boxes.forEach(function (hb) {
+          if (hb === sb || hb.tAxis !== 'y' || !hb.part || hb.part.shape_type === 'chanfro45_reg') return;
+          if ((hb.part.origin || 'fabricacao') === 'comprado') return;
+          const ox = Math.min(sb.x0 + sb.sx, hb.x0 + hb.sx) - Math.max(sb.x0, hb.x0);
+          const oz = Math.min(sb.z0 + sb.sz, hb.z0 + hb.sz) - Math.max(sb.z0, hb.z0);
+          if (!(ox >= sb.sx * 0.5) || !(oz > 0)) return;
+          if (hb.y0 + hb.sy <= sb.y0 + tol) baixo = Math.max(baixo, hb.y0 + hb.sy);
+          else if (hb.y0 >= sb.y0 + sb.sy - tol) cima = Math.min(cima, hb.y0);
+        });
+        const linha = function (lb, eixo) {
+          const y0 = Math.max(isFinite(baixo) ? baixo : lb.y0, lb.y0);
+          const y1 = Math.min(isFinite(cima) ? cima : lb.y0 + lb.sy, lb.y0 + lb.sy);
+          const util = y1 - y0 - 2 * L.margem;
+          if (!(util >= 0)) return;
+          const n = Math.floor(util / L.passo + 1e-6) + 1;
+          const primeiro = y0 + (y1 - y0 - (n - 1) * L.passo) / 2;
+          const lo = eixo === 'x' ? lb.z0 : lb.x0, comp = eixo === 'x' ? lb.sz : lb.sx;
+          // coluna de trás = ponta da lateral que encosta no fundo (lo), da frente = a outra
+          const cols = [lo + L.tras, lo + comp - L.frente];
+          if (!(cols[1] > cols[0])) return;
+          if (!feitos45.has(lb)) feitos45.set(lb, new Set());
+          const ja = feitos45.get(lb);
+          for (let i = 0; i < n; i++) {
+            const y = primeiro + i * L.passo;
+            cols.forEach(function (c) {
+              const k = Math.round(y * 10) + '|' + Math.round(c * 10);
+              if (ja.has(k)) return;
+              ja.add(k);
+              emitLocalHole(store, lb, eixo === 'x'
+                ? { u: y - lb.y0, v: c - lb.z0, edge: null, entersPositive: false, diameter: L.diametro, depth: L.profundidade, tipo: 'linha_prateleira' }
+                : { u: c - lb.x0, v: y - lb.y0, edge: null, entersPositive: false, diameter: L.diametro, depth: L.profundidade, tipo: 'linha_prateleira' });
+            });
+          }
+        };
+        boxes.forEach(function (lb) {
+          if (lb === sb || mesmaSubarvore(sb, lb)) return;
+          if (lb.tAxis === 'x' && Math.abs((sb.x0 + sb.sx) - lb.x0) <= tol && lb.sz < sb.sz - tol) linha(lb, 'x');
+          else if (lb.tAxis === 'z' && Math.abs((sb.z0 + sb.sz) - lb.z0) <= tol && lb.sx < sb.sx - tol) linha(lb, 'z');
+        });
+        return;
+      }
 
       boxes.forEach(function (lb) {
         if (lb === sb) return;
@@ -1926,14 +1977,22 @@
   //
   // Mesmo número em js/viewer3d.js e js/photoreal.js (CHANFRO45_LATERAL_MM),
   // igual LEG_INSET_MM — os três desenham a mesma peça.
+  // PRATELEIRA 45° RECUADA E REGULÁVEL (2026-10-18, Matt: "a prateleira
+  // pode ficar um pouco recuada tipo uns 20mm pra dentro. quero colocar ela
+  // regulável também ... em todos 45 aéreos"). shape_type 'chanfro45_reg' =
+  // mesma chapa chanfrada, com a diagonal 20 mm (perpendicular) pra dentro:
+  // cada trecho reto encurta 20·√2. Base/topo continuam 'chanfro45'.
   const CHANFRO45_LATERAL_MM = 305;
+  const CHANFRO45_RECUO_REG_MM = 20;
+  function ehChanfro45(part) { return !!part && (part.shape_type === 'chanfro45' || part.shape_type === 'chanfro45_reg'); }
 
   // Devolve { cu, cv } (quanto o chanfro anda ao longo de faceA e de faceB,
   // em mm) ou null quando a peça não é chanfrada / o chanfro não cabe.
   function chanfroDaPeca(part) {
-    if (!part || part.shape_type !== 'chanfro45') return null;
+    if (!ehChanfro45(part)) return null;
     const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
-    const reta = CHANFRO45_LATERAL_MM - t.thickness;
+    const recuo = part.shape_type === 'chanfro45_reg' ? CHANFRO45_RECUO_REG_MM * Math.SQRT2 : 0;
+    const reta = CHANFRO45_LATERAL_MM - t.thickness - recuo;
     const cu = t.faceA - reta, cv = t.faceB - reta;
     if (!(cu > 0) || !(cv > 0) || cu >= t.faceA || cv >= t.faceB) return null;
     return { cu: cu, cv: cv, t: t };
