@@ -2613,7 +2613,18 @@ function attachProject3DEditDrag() {
     // (abaixo) — se o ímã já encostar exatamente na borda da parede, isso
     // não conta como "passar da borda" (só ultrapassar de verdade conta).
     const snapOthers = projectSlotsSameWallExcluding(slot).concat(projectGhostSnapTargets(wallGeo.wallIndex));
+    // ÍMÃ ENTRE PAREDES (2026-10-19, Matt: "quando coloco um módulo do lado
+    // do outro, porém um em uma wall e outro em outra wall, eles não se
+    // alinham facilmente. deve ter um ímã quando chegam perto"). Usa a caixa
+    // REAL (de colisão, com o Painel Fixo do blind corner) dos módulos das
+    // outras paredes projetada nesta parede — vale pra qualquer ângulo de
+    // canto, não só a aproximação do traçado fantasma. Raio maior e tem
+    // prioridade: encostar no vizinho do canto é o que se quer quase sempre.
+    const xAntesIma = xMm;
+    const xCanto = snapProjectSlotAxis(xMm, Number(slot.width_mm || 0), true,
+      projectCrossWallSnapTargets(slot, wallGeo), PROJECT_SNAP_CANTO_MM);
     xMm = snapProjectSlotAxis(xMm, Number(slot.width_mm || 0), true, snapOthers, PROJECT_SNAP_3D_MM);
+    if (xCanto !== xAntesIma) xMm = xCanto;
     yMm = snapProjectSlotAxis(yMm, Number(slot.height_mm || 0), false, snapOthers, PROJECT_SNAP_3D_MM);
     // Chão por último: ele ganha de um ímã de módulo que tenha deixado a peça
     // a poucos milímetros do piso (ver PROJECT_FLOOR_SNAP_MM).
@@ -3479,6 +3490,38 @@ function handleProjectAttachedFaceMove(state, slot, ev) {
 // projectFloorPointMm) e a posição guardada é o CENTRO do módulo, não a borda
 // esquerda. Igual ao mover de parede, o Group é reposicionado direto a cada
 // frame (sem reconstruir a cena) e só o soltar dispara um render de verdade.
+// Alvos do ímã entre paredes (ver handle de mover na parede): cada módulo de
+// OUTRA parede (ou ilha) cuja caixa de colisão fica na faixa de profundidade
+// desta parede vira um pseudo-slot {x_mm, width_mm, floor_height_mm,
+// height_mm} com o trecho que ele ocupa AO LONGO desta parede.
+const PROJECT_SNAP_CANTO_MM = 60;
+function projectCrossWallSnapTargets(slot, wallGeo) {
+  if (typeof projectSlotCollisionBox3D !== 'function') return [];
+  const ox = wallGeo.originX * 1000, oz = wallGeo.originZ * 1000;
+  const prof = Number(slot.depth_mm || 0) + 60;
+  const out = [];
+  (projectSlots || []).forEach((s) => {
+    if (s.id === slot.id) return;
+    if (!isFloorSlot(s) && Number(s.wall_index || 0) === Number(wallGeo.wallIndex)) return;
+    if (typeof isProjectWallStructureSlot === 'function' && isProjectWallStructureSlot(s)) return;
+    const b = projectSlotCollisionBox3D(s);
+    if (!b) return;
+    const ax = Math.cos(b.angleRad), az = Math.sin(b.angleRad), ix = -az, iz = ax;
+    let aMin = Infinity, aMax = -Infinity, iMin = Infinity, iMax = -Infinity;
+    [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sa, si]) => {
+      const px = b.cx + ax * b.halfAlongMm * sa + ix * b.halfIntoMm * si - ox;
+      const pz = b.cz + az * b.halfAlongMm * sa + iz * b.halfIntoMm * si - oz;
+      const al = px * wallGeo.alongDirX + pz * wallGeo.alongDirZ;
+      const it = px * wallGeo.intoDirX + pz * wallGeo.intoDirZ;
+      aMin = Math.min(aMin, al); aMax = Math.max(aMax, al);
+      iMin = Math.min(iMin, it); iMax = Math.max(iMax, it);
+    });
+    if (iMax < 1 || iMin > prof) return; // longe da faixa desta parede
+    out.push({ x_mm: aMin, width_mm: aMax - aMin, floor_height_mm: b.yMin, height_mm: b.yMax - b.yMin });
+  });
+  return out;
+}
+
 function handleProject3DFloorMove(state, slot, ev) {
   // MÓDULO ANEXADO A OUTRO MÓDULO — não deveria mais chegar aqui (RODADA 3
   // desviou pra handleProjectAttachedFaceMove logo no pointermove, ver
