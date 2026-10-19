@@ -671,11 +671,17 @@
     // node.params.frente_altura_mm = altura fixa da frente, contada do topo
     // pra baixo. Medido do casco, não do vão: não depende da espessura da
     // chapa (19,5 ou plywood 18). Sem os params: nada muda.
+    // node.params.base_frente_acima_casco_mm (2026-10-18, Matt: aéreos de
+    // 12" "descontar 5: 2 embaixo e 3 em cima") = base da frente medida da
+    // BASE DO CASCO pra cima (zona.y − espessura). Junto com o topo dá a
+    // porta exata independente da chapa.
     function ajustaFrentePorNo(node, y0, y1) {
       var pr = node.params || {};
       var topoNo = num(pr.topo_frente_abaixo_casco_mm), alt = num(pr.frente_altura_mm);
+      var baseNo = pr.base_frente_acima_casco_mm != null ? Number(pr.base_frente_acima_casco_mm) : NaN;
       if (topoNo > 0 && zona) y1 = zona.y + zona.h + espCasco - topoNo;
       if (alt > 0) y0 = y1 - alt;
+      else if (isFinite(baseNo) && zona) y0 = zona.y - espCasco + baseNo;
       return [y0, y1];
     }
 
