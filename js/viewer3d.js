@@ -2128,6 +2128,40 @@ const Viewer3D = (function () {
   // regulável também ... em todos 45 aéreos"). shape_type 'chanfro45_reg' =
   // mesma chapa chanfrada, com a diagonal 20 mm (perpendicular) pra dentro:
   // cada trecho reto encurta 20·√2. Base/topo continuam 'chanfro45'.
+  // ENTALHE NA FRENTE DE PEÇA DEITADA 'free' (2026-10-18, prateleira de
+  // largura cheia do blind corner em volta da stretcher vertical). Recorte
+  // 'frente-meio' com y = início ao longo da LARGURA (X), h = largura do
+  // entalhe, d = profundidade a partir da frente. Shape no plano XZ (+y do
+  // shape = frente), extrudado na espessura e deitado (mesma técnica do
+  // chanfro 45°). null = sem entalhe válido (caixa de sempre).
+  function buildFreeHorizontalNotchGeometry(part, w, h, d) {
+    if (!part || !Array.isArray(part.recortes) || !part.recortes.length) return null;
+    if (!(h < w && h < d)) return null;
+    if (typeof THREE.Shape !== 'function' || typeof THREE.ExtrudeGeometry !== 'function') return null;
+    const ax = w / 2, bz = d / 2;
+    const ent = part.recortes.filter(function (r) {
+      return r && r.canto === 'frente-meio' && Number(r.h) > 0 && Number(r.d) > 0 && isFinite(Number(r.y));
+    }).map(function (r) {
+      return { x0: -ax + Number(r.y) / 1000, x1: -ax + (Number(r.y) + Number(r.h)) / 1000, nd: Number(r.d) / 1000 };
+    }).filter(function (e) { return e.x0 > -ax && e.x1 < ax && e.nd < d; })
+      .sort(function (a, b) { return b.x0 - a.x0; });
+    if (!ent.length) return null;
+    const shape = new THREE.Shape();
+    shape.moveTo(-ax, -bz);
+    shape.lineTo(ax, -bz);
+    shape.lineTo(ax, bz);
+    ent.forEach(function (e) {           // frente percorrida da direita pra esquerda
+      shape.lineTo(e.x1, bz); shape.lineTo(e.x1, bz - e.nd);
+      shape.lineTo(e.x0, bz - e.nd); shape.lineTo(e.x0, bz);
+    });
+    shape.lineTo(-ax, bz);
+    shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, steps: 1 });
+    geometry.translate(0, 0, -h / 2);
+    geometry.rotateX(Math.PI / 2);
+    return geometry;
+  }
+
   const CHANFRO45_LATERAL_MM = 305;
   const CHANFRO45_RECUO_REG_MM = 20;
   function buildHorizontalPanelGeometry(part, faceA, thickness, faceB) {
@@ -3657,7 +3691,7 @@ const Viewer3D = (function () {
       // outras.
       // Perfil de alumínio 45° (porta de vidro) desenha a meia-esquadria;
       // qualquer outra peça 'free' continua a BoxGeometry de sempre.
-      const geometry = buildPerfil45Geometry(part, w, h, d, offX, offY, W, H) || new THREE.BoxGeometry(w, h, d);
+      const geometry = buildPerfil45Geometry(part, w, h, d, offX, offY, W, H) || buildFreeHorizontalNotchGeometry(part, w, h, d) || new THREE.BoxGeometry(w, h, d);
       // Giro do veio da madeira (migration 024/positioning) — peça 'free' é
       // vista de FRENTE (face Z: U=largura, V=altura direto), então gira o
       // UV da PRÓPRIA geometria em vez de usar tex.rotation (ver

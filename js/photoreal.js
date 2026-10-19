@@ -599,6 +599,37 @@ const Photoreal = (() => {
   // dentro da porta (centro à esquerda/abaixo do meio = borda externa à
   // esquerda/embaixo). Trapézio no plano XY, extrudado na espessura (Z),
   // centrado igual a BoxGeometry. null = sem corte válido (cai na caixa).
+  // Entalhe na frente de peça deitada 'free' (prateleira de largura cheia do
+  // blind corner em volta da stretcher vertical, 2026-10-18) — porta fiel de
+  // js/viewer3d.js:buildFreeHorizontalNotchGeometry.
+  function buildFreeHorizontalNotchGeometryPh(part, w, h, d) {
+    if (!part || !Array.isArray(part.recortes) || !part.recortes.length) return null;
+    if (!(h < w && h < d)) return null;
+    if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
+    const ax = w / 2, bz = d / 2;
+    const ent = part.recortes.filter(function (r) {
+      return r && r.canto === 'frente-meio' && Number(r.h) > 0 && Number(r.d) > 0 && isFinite(Number(r.y));
+    }).map(function (r) {
+      return { x0: -ax + Number(r.y) / 1000, x1: -ax + (Number(r.y) + Number(r.h)) / 1000, nd: Number(r.d) / 1000 };
+    }).filter(function (e) { return e.x0 > -ax && e.x1 < ax && e.nd < d; })
+      .sort(function (a, b) { return b.x0 - a.x0; });
+    if (!ent.length) return null;
+    const shape = new T.Shape();
+    shape.moveTo(-ax, -bz);
+    shape.lineTo(ax, -bz);
+    shape.lineTo(ax, bz);
+    ent.forEach(function (e) {
+      shape.lineTo(e.x1, bz); shape.lineTo(e.x1, bz - e.nd);
+      shape.lineTo(e.x0, bz - e.nd); shape.lineTo(e.x0, bz);
+    });
+    shape.lineTo(-ax, bz);
+    shape.closePath();
+    const geometry = new T.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, steps: 1 });
+    geometry.translate(0, 0, -h / 2);
+    geometry.rotateX(Math.PI / 2);
+    return geometry;
+  }
+
   function buildPerfil45GeometryPh(part, w, h, d, offX, offY, W, H) {
     if (!part || part.shape_type !== 'perfil45') return null;
     if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
@@ -1775,7 +1806,7 @@ const Photoreal = (() => {
       emitInto(parentGroup, decorContent, null, -W / 2 + (swapD ? d : w) / 2 + offX, offY + legH, -D / 2 + (swapD ? w : d) / 2 + offZ, false);
     } else if (role === 'free') {
       // perfil de alumínio 45° (porta de vidro) — igual viewer3d.js
-      const content = buildPerfil45GeometryPh(part, w, h, d, offX, offY, W, H) || resolveContentPh(part, w, h, d);
+      const content = buildPerfil45GeometryPh(part, w, h, d, offX, offY, W, H) || buildFreeHorizontalNotchGeometryPh(part, w, h, d) || resolveContentPh(part, w, h, d);
       // Giro de canto 90°/270° (migration 067): a POSIÇÃO troca w<->d igual
       // js/viewer3d.js ('free', swapFootprint) — o centro da peça girada é o
       // canto + meia PROFUNDIDADE em X e meia LARGURA em Z. Faltava aqui

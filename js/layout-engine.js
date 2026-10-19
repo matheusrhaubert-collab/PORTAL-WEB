@@ -694,6 +694,24 @@
     function emitDivider(node, acc, axis, pos, box, th, i, cons) {
       var recuo = num((node.params || {}).recuo_mm != null
         ? node.params.recuo_mm : (acc.params || {}).recuo_mm);
+      if (axis === 'x' && num((acc.params || {}).stretcher_d_mm) > 0) {
+        // DIVISÓRIA STRETCHER VERTICAL (2026-10-18, Matt — blind corner:
+        // "precisamos criar uma divisória stretcher, assim como separamos a
+        // gaveta das portas, agora precisamos uma vertical, pra colocar atrás
+        // do painel"). Divide o vão em esquerda/direita como a Lateral
+        // Divisória, mas a peça é uma TRAVESSA EM PÉ na frente (profundidade
+        // stretcher_d_mm), não uma chapa da profundidade inteira. Prateleira
+        // de largura cheia (node.params.prateleira_largura_total) ganha o
+        // entalhe em volta dela — ver o pós-processo no fim do build.
+        var sdv = num(acc.params.stretcher_d_mm);
+        var frenteV = box.z + Math.max(60, box.d - recuo - cons);
+        push(node, {
+          kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
+          x: pos, y: box.y, z: frenteV - sdv,
+          w: th, h: box.h, d: sdv, _stretcherV: true
+        });
+        return;
+      }
       if (axis === 'x') {
         // O RECUO VALE NOS DOIS EIXOS (2026-08-15, Matt: "divisórias fixas
         // (bases) 1mm menor e pra trás da lateral, horizontais E verticais").
@@ -1410,8 +1428,20 @@
           cur += sizes[i];
           if (i < node.children.length - 1) {
             emitDivider(node, acc, axis, cur, box, th, i, consDiv);
+            // PRATELEIRA NA LARGURA CHEIA DO MÓVEL (2026-10-18, blind corner:
+            // "deixar as prateleiras inteiras na largura do móvel") — o vão
+            // da porta divide as prateleiras, mas elas atravessam o lado cego
+            // até a outra lateral do casco (zona inteira). Entalhe em volta da
+            // stretcher vertical no pós-processo.
+            var larguraTotal = axis === 'y' && npr.prateleira_largura_total && zona;
+            if (larguraTotal) {
+              var spL = out[out.length - 1];
+              spL.x = zona.x; spL.w = zona.w; spL._larguraTotal = true;
+            }
             // grade ABSOLUTA por enquanto — vira relativa depois do arredondamento
-            if (grade) out[out.length - 1]._gradeVao = { x0: box.x, x1: box.x + box.w, ys: grade.ys, zs: grade.zs };
+            if (grade) out[out.length - 1]._gradeVao = larguraTotal
+              ? { x0: zona.x, x1: zona.x + zona.w, ys: grade.ys, zs: grade.zs }
+              : { x0: box.x, x1: box.x + box.w, ys: grade.ys, zs: grade.zs };
             cur += th;
           }
         });
@@ -1432,6 +1462,35 @@
     resolve(root, zona, null, 0);
     resolveLateralSharing();
     resolveGavetaLateralSharing();
+    // ENTALHE DA PRATELEIRA EM VOLTA DA STRETCHER VERTICAL (2026-10-18, Matt:
+    // "as prateleiras deverão receber um recorte pra encaixar nessa travessa
+    // vertical... uns 5mm de folga ao redor do stretcher de onde tocar na
+    // prateleira"). Recorte 'frente-meio' (mesmo formato do C da gola: y = de
+    // onde começa ao longo da LARGURA da prateleira, h = largura do entalhe,
+    // d = profundidade a partir da frente) — viewer3d, photoreal e o .ban
+    // (drilling.recorteRects) já leem esse formato. Prateleira recuada que
+    // nem chega na travessa (base: 100 mm pra dentro) não ganha nada.
+    var FOLGA_ENTALHE_STRETCHER_MM = 5;
+    var stretchersV = out.filter(function (p) { return p._stretcherV; });
+    out.forEach(function (p) {
+      if (!p._larguraTotal) return;
+      stretchersV.forEach(function (s) {
+        if (s.y >= p.y + p.h || s.y + s.h <= p.y) return;
+        if (s.x + s.w <= p.x || s.x >= p.x + p.w) return;
+        var F = FOLGA_ENTALHE_STRETCHER_MM;
+        var nd = (p.z + p.d) - (s.z - F);
+        if (!(nd > 0)) return;
+        nd = Math.min(nd, p.d - 1);
+        var x0 = Math.max(1, s.x - F - p.x);
+        var wN = Math.min(p.w - x0 - 1, s.w + 2 * F);
+        if (!(wN > 0)) return;
+        p.recortes = (Array.isArray(p.recortes) ? p.recortes : []).concat([{
+          canto: 'frente-meio', y: Math.round(x0 * 10) / 10, h: Math.round(wN * 10) / 10,
+          d: Math.round(nd * 10) / 10, origem: 'stretcher_vertical'
+        }]);
+      });
+    });
+    out.forEach(function (p) { delete p._larguraTotal; delete p._stretcherV; });
     // Milímetro inteiro — ver comentário no topo do arquivo.
     out.forEach(function (p) {
       // ARREDONDA AS BORDAS, NÃO posição e tamanho separados (2026-10-15,
