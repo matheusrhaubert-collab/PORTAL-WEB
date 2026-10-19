@@ -1717,16 +1717,139 @@ LOTES_UI.procCopiar = function (sec, btn) {
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, function () { window.prompt('Copie:', t); });
   else window.prompt('Copie:', t);
 };
+/* IMPRESSÃO EM FOLHA LETTER (Matt, 19/10: "está bem desconfigurado").
+   A versão antiga copiava o HTML da tela pra uma janela nova COM todo o CSS
+   do ERP — e o lotes.css tem o @page da ETIQUETA (3" × 2"), então cada
+   seção saía num cartãozinho no meio da folha, em 7 páginas. Agora cada
+   seção monta um documento PRÓPRIO a partir dos dados (LOTES_UI._procData),
+   com CSS só de impressão: Letter em pé, margem 0,5", tabela simples,
+   coluna de conferência (☐) e cabeçalho com lote/pedidos/data. Nenhuma
+   folha de estilo do ERP entra na janela. */
+LOTES_UI._printCss =
+  '@page{size:letter portrait;margin:0.5in}' +
+  '*{box-sizing:border-box}' +
+  'body{margin:0;font-family:"Segoe UI",Arial,Helvetica,sans-serif;color:#1f1d1a;font-size:11pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+  '.pr-bar{position:sticky;top:0;background:#f4f1ea;border-bottom:1px solid #ddd6c8;padding:8px 12px;display:flex;gap:10px;align-items:center;font-size:10pt}' +
+  '.pr-bar button{font:inherit;padding:6px 14px;border:1px solid #6e4527;background:#6e4527;color:#fff;border-radius:4px;cursor:pointer}' +
+  '.pr-doc{max-width:7.5in;margin:0 auto;padding:14px 0}' +
+  '.pr-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1f1d1a;padding-bottom:6px;margin-bottom:10px}' +
+  '.pr-tit{font-size:17pt;font-weight:700;line-height:1.1}.pr-sub{font-size:9.5pt;color:#555;margin-top:2px}' +
+  '.pr-meta{text-align:right;font-size:9pt;color:#444;line-height:1.35}.pr-meta b{font-size:11pt;color:#1f1d1a}' +
+  '.pr-sec{page-break-before:always;break-before:page}.pr-sec:first-of-type{page-break-before:auto;break-before:auto}' +
+  'h3{font-size:12pt;margin:14px 0 4px;padding:3px 6px;background:#efeae0;border-left:4px solid #6e4527;break-after:avoid;page-break-after:avoid}' +
+  'table{width:100%;border-collapse:collapse;font-size:10pt;margin:2px 0 6px}' +
+  'th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.03em;color:#555;border-bottom:1.5px solid #1f1d1a;padding:4px 5px}' +
+  'td{border-bottom:1px solid #cfc8b8;padding:5px;vertical-align:top}' +
+  'tr{break-inside:avoid;page-break-inside:avoid}' +
+  '.q{font-weight:700;font-size:12pt;white-space:nowrap;width:1%}.m{font-weight:700;white-space:nowrap}' +
+  '.ck{width:.32in;text-align:center;font-size:13pt;color:#777}.mu{color:#666;font-size:8.5pt}' +
+  '.mods{font-size:9pt}.mods span{display:inline-block;border:1px solid #bdb5a4;border-radius:3px;padding:0 4px;margin:1px 3px 1px 0;white-space:nowrap}' +
+  '.tot{display:flex;gap:14px;flex-wrap:wrap;font-size:10pt;margin:4px 0 8px}.tot div{border:1px solid #bdb5a4;border-radius:4px;padding:3px 8px}' +
+  '.draw svg{width:.9in;height:auto}.lp-svg-cota{font-size:9px;fill:#333}' +
+  '.barra{display:flex;height:16px;border:1px solid #555;margin:2px 0}.barra div{border-right:1px solid #555;background:#e7dcc8;font-size:7pt;overflow:hidden;white-space:nowrap;padding-left:2px}' +
+  '.vazio{color:#777;font-style:italic;padding:8px 0}.it{width:2.6in}' +
+  '@media print{.pr-bar{display:none}.pr-doc{padding:0;max-width:none}}';
+
+LOTES_UI._printSecao = function (id, d, varios) {
+  const E = UI.esc, mm = LOTES_UI.mm, onde = function (o) { return LOTES_UI._ondeTxt(o, varios); };
+  const chips = function (lista) { return '<div class="mods">' + lista.map(function (t) { return '<span>' + E(t) + '</span>'; }).join('') + '</div>'; };
+  if (id === 'aluminio') {
+    if (!d.aluminio.length) return '<div class="vazio">Nenhuma peça de alumínio neste lote.</div>';
+    return d.aluminio.map(function (g) {
+      const rows = g.cortes.map(function (ct) {
+        return '<tr><td class="ck">☐</td><td class="q">' + ct.quantity + '×</td><td class="m">' + mm(ct.len) + ' mm</td><td>' + E(ct.angulo) + '</td>' +
+          '<td>' + E(ct.ref) + (ct.portas.length ? '<div class="mu">porta: ' + E(ct.portas.join(', ')) + '</div>' : '') + '</td><td class="mods">' + E(onde(ct.onde)) + '</td></tr>';
+      }).join('');
+      const barras = (g.barras && g.barras.length) ? '<div class="mu" style="margin-top:4px">Plano de barra — ' + g.barras.length + ' barra(s) de ' + mm(g.barra_mm) + ' mm</div>' +
+        g.barras.map(function (br, i) {
+          return '<div style="display:flex;gap:6px;align-items:center;font-size:8.5pt"><b>#' + (i + 1) + '</b><div class="barra" style="flex:1">' +
+            br.cortes.map(function (ct) { return '<div style="width:' + Math.min(100, ct.len / g.barra_mm * 100).toFixed(2) + '%">' + mm(ct.len) + '</div>'; }).join('') +
+            '</div><span>sobra ' + mm(Math.max(0, g.barra_mm - br.usado)) + '</span></div>';
+        }).join('') : '';
+      return '<h3>' + E(g.material) + ' <span class="mu">· ' + g.totalPecas + ' corte(s) · ' + LOTES_UI._num(g.totalMm / 1000, 2) + ' m</span></h3>' +
+        '<table><thead><tr><th>✓</th><th>Qtd</th><th>Comprimento</th><th>Corte</th><th>Peça</th><th>Módulos</th></tr></thead><tbody>' + rows + '</tbody></table>' + barras;
+    }).join('');
+  }
+  if (id === 'vidros') {
+    if (!d.vidros.length) return '<div class="vazio">Nenhum vidro neste lote.</div>';
+    return '<div class="tot">' + d.vidrosPorTipo.map(function (t) { return '<div><b>' + E(t.tipo) + '</b> — ' + t.pecas + ' peça(s) · ' + LOTES_UI._num(t.m2, 2) + ' m²</div>'; }).join('') + '</div>' +
+      '<table><thead><tr><th>✓</th><th>Qtd</th><th>Largura × Altura</th><th>Esp.</th><th>Vidro</th><th>Módulos / porta</th></tr></thead><tbody>' +
+      d.vidros.map(function (v) {
+        return '<tr><td class="ck">☐</td><td class="q">' + v.quantity + '×</td><td class="m">' + mm(v.w) + ' × ' + mm(v.h) + ' mm</td><td>' + E(String(v.esp)) + ' mm</td>' +
+          '<td>' + E(v.tipo) + '</td><td class="mods">' + E(onde(v.onde)) + (v.portas.length ? '<div class="mu">' + E(v.portas.join(', ')) + '</div>' : '') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+  if (id === 'montagem') {
+    const blocos = LOTES.TIPOS_MONTAGEM.map(function (t) {
+      const lista = d.montagem.filter(function (m) { return m.tipo === t.id; });
+      if (!lista.length) return '';
+      const n = lista.reduce(function (s2, m) { return s2 + Math.round(m.quantity); }, 0);
+      return '<h3>' + E(t.label) + ' <span class="mu">· ' + n + '</span></h3>' +
+        '<table><thead><tr><th>✓</th><th>Desenho</th><th>Módulo</th><th>Porta / painel</th><th>Partes</th></tr></thead><tbody>' +
+        lista.map(function (m) {
+          const partes = (m.partes || []).map(function (p) {
+            return '<div>' + (p.quantity > 1 ? Math.round(p.quantity) + '× ' : '') + E(p.ref) + ' — <b>' +
+              [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return mm(x); }).join(' × ') + '</b></div>';
+          }).join('');
+          return '<tr><td class="ck">☐</td><td class="draw">' + LOTES_UI._svgPorta(m) + '</td>' +
+            '<td class="q">MÓD ' + E(String(m.mod)) + (m.quantity > 1 ? '<div>' + Math.round(m.quantity) + '×</div>' : '') + (varios ? '<div class="mu">' + E(m.pedido) + '</div>' : '') + '</td>' +
+            '<td><b>' + E(m.ref) + '</b><div class="m">' + mm(m.w) + ' × ' + mm(m.h) + ' × ' + LOTES_UI.esp(m.t) + ' mm</div><div class="mu">' + E(m.movel || '') + '</div></td>' +
+            '<td style="font-size:9pt">' + partes + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }).join('');
+    return blocos || '<div class="vazio">Nenhuma porta pra montar neste lote.</div>';
+  }
+  if (id === 'dovetail') {
+    if (!d.dovetail.length) return '<div class="vazio">Nenhuma gaveta dovetail neste lote.</div>';
+    return '<table><thead><tr><th>✓</th><th>Qtd</th><th>Largura</th><th>Altura</th><th>Profundidade</th><th>Descrição · módulos</th></tr></thead><tbody>' +
+      d.dovetail.map(function (g) {
+        return '<tr><td class="ck">☐</td><td class="q">' + g.quantity + '×</td><td class="m">' + mm(g.w) + ' mm</td><td class="m">' + mm(g.h) + ' mm</td><td class="m">' + mm(g.d) + ' mm</td>' +
+          '<td>' + E(g.reference) + '<div class="mu">' + E(onde(g.onde)) + '</div></td></tr>';
+      }).join('') + '</tbody></table><div class="mu">Total: ' + d.contagem.dovetail + ' caixote(s) · birch 15,9 mm, medida externa</div>';
+  }
+  if (id === 'ferragens') {
+    const mont = LOTES_UI._procFerragensMont;
+    const todas = (d.ferragens || []).concat(mont || []);
+    const blocos = LOTES.CATS_FERRAGEM.map(function (c) {
+      const l = todas.filter(function (f) { return f.cat === c.id; });
+      const calculando = c.id === 'montagem' && !mont;
+      if (!l.length && !calculando) return '';
+      return '<h3>' + E(c.label) + '</h3>' +
+        (l.length ? '<table><thead><tr><th>✓</th><th>Total</th><th class="it">Item</th><th>Por módulo</th></tr></thead><tbody>' +
+          l.map(function (f) {
+            return '<tr><td class="ck">☐</td><td class="q">' + E(LOTES_UI._qtdFer(f.total, f.unit)) + '</td>' +
+              '<td><b>' + E(f.nome) + '</b>' + (f.code ? '<div class="mu">' + E(f.code) + '</div>' : '') + '</td>' +
+              '<td>' + chips(f.porMod.map(function (m) { return (varios && m.pedido ? m.pedido + ' · ' : '') + 'MÓD ' + m.mod + ': ' + LOTES_UI._qtdFer(m.qtd, f.unit); })) + '</td></tr>';
+          }).join('') + '</tbody></table>' : '') +
+        (calculando ? '<div class="vazio">Ferragem de montagem ainda calculando na tela — espere terminar e gere a impressão de novo.</div>' : '');
+    }).join('');
+    return blocos || '<div class="vazio">Nenhuma ferragem encontrada nos pedidos deste lote.</div>';
+  }
+  return '';
+};
+
 LOTES_UI.procImprimir = function (sec) {
-  const el = document.getElementById(sec ? 'lp-sec-' + sec : 'lp-root');
-  if (!el) return;
+  const d = LOTES_UI._procData;
+  if (!d) return;
   const w = window.open('', '_blank');
-  if (!w) return;
-  const css = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(function (l) { return '<link rel="stylesheet" href="' + l.href + '">'; }).join('');
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + UI.esc(document.title) + '</title>' + css +
-    '<style>body{background:#fff;padding:18px}.lp-noprint{display:none!important}</style></head><body>' + el.outerHTML + '</body></html>');
+  if (!w) { LOTES_UI.toast('O navegador bloqueou a janela de impressão — libere pop-up pro ERP.', true); return; }
+  const b = d.batch || {};
+  const varios = (d.pedidos || []).length > 1;
+  const pedidos = (d.pedidos || []).map(function (o) { return o.po_name || o.client_name; }).filter(Boolean).join(', ');
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const secoes = LOTES_UI.PROC_SECOES.filter(function (s) { return sec ? s.id === sec : d.contagem[s.id] > 0; });
+  const corpo = secoes.map(function (s) {
+    return '<section class="pr-sec"><div class="pr-head"><div><div class="pr-tit">' + s.icone + ' ' + UI.esc(s.label) + '</div>' +
+      '<div class="pr-sub">' + UI.esc(s.sub) + '</div></div>' +
+      '<div class="pr-meta"><b>' + UI.esc(b.code || '') + '</b><br>' + (pedidos ? UI.esc(pedidos) + '<br>' : '') + hoje + '</div></div>' +
+      LOTES_UI._printSecao(s.id, d, varios) + '</section>';
+  }).join('');
+  const titulo = (b.code || 'Lote') + ' — ' + (sec ? (secoes[0] ? secoes[0].label : sec) : 'Processos');
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + UI.esc(titulo) + '</title><style>' + LOTES_UI._printCss + '</style></head><body>' +
+    '<div class="pr-bar"><button onclick="window.print()">Imprimir (Letter)</button><span>Folha Letter em pé · margem 0,5"</span></div>' +
+    '<div class="pr-doc">' + (corpo || '<div class="vazio">Nada pra imprimir.</div>') + '</div>' +
+    '<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>');
   w.document.close();
-  setTimeout(function () { w.focus(); w.print(); }, 500);
 };
 
 LOTES_UI._secHead = function (s, extra, temCopiar) {
@@ -1735,7 +1858,7 @@ LOTES_UI._secHead = function (s, extra, temCopiar) {
       '<div><div class="lp-sec-nome">' + s.label + '</div><div class="erp-muted erp-small">' + extra + '</div></div></div>' +
     '<div class="lp-noprint" style="display:flex;gap:6px">' +
       (temCopiar ? '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.procCopiar(\'' + s.id + '\', this)">Copiar lista</button>' : '') +
-      '<button type="button" class="erp-btn erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.procImprimir(\'' + s.id + '\')">Imprimir</button>' +
+      '<button type="button" class="erp-btn erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.procImprimir(\'' + s.id + '\')">Gerar impressão (Letter)</button>' +
     '</div></div>';
 };
 
@@ -1865,7 +1988,7 @@ LOTES_UI.proc = function (params, d) {
       (lista.length ? '<div class="lp-cards">' + lista.map(function (m) {
         const partes = (m.partes || []).map(function (p) {
           return '<li class="lp-parte lp-parte-' + p.classe + '"><span>' + (p.quantity > 1 ? Math.round(p.quantity) + '× ' : '') + UI.esc(p.ref) + '</span>' +
-            '<span class="erp-mono">' + [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return Math.round(x * 10) / 10; }).join(' × ') + '</span></li>';
+            '<span class="erp-mono">' + [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return LOTES_UI.mm(x); }).join(' × ') + '</span></li>';
         }).join('');
         return '<div class="lp-card lp-card-porta" style="border-top-color:' + t.cor + '">' +
           '<div class="lp-card-draw">' + LOTES_UI._svgPorta(m) + '</div>' +
@@ -1896,6 +2019,8 @@ LOTES_UI.proc = function (params, d) {
       }).join('') + '</tbody><tfoot><tr><td class="lp-qtd">' + c.dovetail + '</td><td colspan="4" class="erp-muted">total de caixotes · birch 15,9 mm, medida externa</td></tr></tfoot></table>'
     : '<div class="lp-vazio">Nenhuma gaveta dovetail neste lote.</div>';
 
+  LOTES_UI._procData = d;
+  LOTES_UI._procFerragensMont = null;
   LOTES_UI._procFerragensBase = d.ferragens;
   LOTES_UI._procTextos.ferragens = LOTES_UI._ferragensTexto(d.ferragens, [], b.code, varios);
   const tiles = LOTES_UI.PROC_SECOES.map(function (s) {
@@ -1917,7 +2042,7 @@ LOTES_UI.proc = function (params, d) {
       'Tudo do lote que não passa pela seccionadora: alumínio pra cortar, vidro pra comprar, portas pra montar e gavetas compradas.' +
       (nomesPedidos ? ' Pedidos: ' + UI.esc(nomesPedidos) + '.' : ''),
       '<a class="erp-btn erp-btn-secondary" href="#/lotes/' + b.id + '">← Voltar ao lote</a> ' +
-      '<button type="button" class="erp-btn erp-btn-ghost" onclick="LOTES_UI.procImprimir()">Imprimir tudo</button>') +
+      '<button type="button" class="erp-btn erp-btn-ghost" onclick="LOTES_UI.procImprimir()">Imprimir tudo (Letter)</button>') +
     '<div id="lp-root">' +
       '<div class="lp-tiles lp-noprint">' + tiles + '</div>' +
       sec('aluminio', aluHtml, c.aluminio ? 'Cortar na serra de alumínio — medida e ângulo de cada peça, e como aproveitar a barra' : 'vara de cabide, perfil de porta de vidro, perfil de LED', true) +
@@ -1997,6 +2122,7 @@ LOTES_UI._carregarMontagem = async function (batchId, d) {
   alvo.insertAdjacentHTML('beforeend', LOTES_UI._ferragensHtml(base, varios, r.linhas) +
     (r.semCadastro ? '<div class="erp-note">' + r.semCadastro + ' módulo(s) sem cadastro de peças — a ferragem de montagem deles não entrou.</div>' : ''));
   LOTES_UI._procTextos.ferragens = LOTES_UI._ferragensTexto(base, r.linhas, d && d.batch && d.batch.code, varios);
+  LOTES_UI._procFerragensMont = r.linhas;
   const tile = document.querySelector('.lp-tile.lp-bd-ferragens .lp-tile-num');
   if (tile) tile.textContent = base.length + r.linhas.length;
 };
