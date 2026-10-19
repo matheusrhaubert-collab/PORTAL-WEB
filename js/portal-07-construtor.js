@@ -1126,6 +1126,18 @@ async function applyProjectFactoryLayout(slot) {
   await ensureAccessoryCatalog();
   slot.layout = lay;
   try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço anterior fica */ }
+  // MODELO DE PORTA DE FÁBRICA (2026-10-18, Matt: os Glass Door "já entram
+  // com porta de vidro selecionada"). root.params.modelo_porta_slug na
+  // árvore = o mesmo clique no cartão do modelo (setProjectSlotDoorModel);
+  // o cliente ainda pode trocar depois. Sem o param: Flat, como sempre.
+  const slugModelo = lay.params && lay.params.modelo_porta_slug;
+  if (slugModelo && typeof setProjectSlotDoorModel === 'function') {
+    try {
+      await ensureProjectDoorModels();
+      const dm = (projectDoorModelsCache || []).find((x) => x.slug === slugModelo);
+      if (dm) await setProjectSlotDoorModel(slot, dm.id, { lote: true });
+    } catch (e) { console.warn('[interior de fábrica] modelo de porta', e); }
+  }
   return true;
 }
 
