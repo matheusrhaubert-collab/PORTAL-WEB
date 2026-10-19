@@ -1584,6 +1584,63 @@ const Photoreal = (() => {
     return g;
   }
 
+
+  // WINE RACK COMPRADO (2026-10-18, Matt: "o wine rack vamos usar um item
+  // comprado (amazon)" — foto de rack de bancada de bambu, 3 andares):
+  // 4 postes + travessas laterais, em cada andar uma ripa baixa na frente e
+  // uma mais alta atrás, garrafas deitadas com o gargalo pra frente.
+  // Mesmo padrão dos DECOR_BUILDERS: base em y=0, centrado em X/Z, frente +Z.
+  function buildDecorWineRack(W, H, D, mats) {
+    const g = new T.Group();
+    const madeira = new T.MeshStandardMaterial({ color: 0xc8935a, metalness: 0.02, roughness: 0.6 });
+    const vidro = new T.MeshStandardMaterial({ color: 0x1d2a1f, metalness: 0.2, roughness: 0.18 });
+    const lacre = new T.MeshStandardMaterial({ color: 0xb3202c, metalness: 0.1, roughness: 0.4 });
+    const p = Math.min(0.022, W * 0.08);
+    [-1, 1].forEach((sx) => [-1, 1].forEach((sz) => {
+      const poste = decorBoxMesh(p, H, p, madeira);
+      poste.position.set(sx * (W / 2 - p / 2), H / 2, sz * (D / 2 - p / 2));
+      g.add(poste);
+    }));
+    const andares = Math.max(1, Math.min(5, Math.round(H / 0.11)));
+    const passo = H / andares;
+    const innerW = Math.max(0.02, W - 2 * p);
+    const r = 0.036;
+    const nb = Math.max(1, Math.floor(innerW / (2 * r + 0.012)));
+    const corpoL = D * 0.72, gargaloL = D * 0.26;
+    for (let i = 0; i < andares; i++) {
+      const y0 = i * passo + 0.012;
+      [-1, 1].forEach((sx) => {
+        const trav = decorBoxMesh(p * 0.8, 0.014, D - 2 * p, madeira);
+        trav.position.set(sx * (W / 2 - p / 2), y0, 0);
+        g.add(trav);
+      });
+      const frente = decorBoxMesh(innerW, 0.016, 0.02, madeira);
+      frente.position.set(0, y0, D / 2 - 0.03);
+      g.add(frente);
+      const tras = decorBoxMesh(innerW, 0.016, 0.02, madeira);
+      tras.position.set(0, y0 + 0.03, -D / 2 + 0.03);
+      g.add(tras);
+      const yb = y0 + 0.008 + r + 0.012;
+      if (yb + r > (i + 1) * passo + 0.02 && i > 0) continue;
+      for (let k = 0; k < nb; k++) {
+        const x = -innerW / 2 + (innerW / nb) * (k + 0.5);
+        const corpo = new T.Mesh(new T.CylinderGeometry(r, r, corpoL, 18), vidro);
+        corpo.rotation.x = Math.PI / 2;
+        corpo.position.set(x, yb, -D / 2 + corpoL / 2 + 0.01);
+        g.add(corpo);
+        const gargalo = new T.Mesh(new T.CylinderGeometry(r * 0.36, r * 0.75, gargaloL, 14), vidro);
+        gargalo.rotation.x = Math.PI / 2;
+        gargalo.position.set(x, yb, -D / 2 + corpoL + gargaloL / 2 + 0.01);
+        g.add(gargalo);
+        const tampa = new T.Mesh(new T.CylinderGeometry(r * 0.4, r * 0.4, 0.035, 12), lacre);
+        tampa.rotation.x = Math.PI / 2;
+        tampa.position.set(x, yb, -D / 2 + corpoL + gargaloL - 0.005);
+        g.add(tampa);
+      }
+    }
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     gaveta_dovetail: buildGavetaDovetail, // migration 203
     decor_fogao: buildDecorFogao,
@@ -1596,6 +1653,7 @@ const Photoreal = (() => {
     decor_cooktop: buildDecorCooktop,
     decor_coifa: buildDecorCoifa,
     decor_spice_rack: buildDecorSpiceRack,
+    decor_wine_rack: buildDecorWineRack, // 2026-10-18 (item comprado)
     decor_lava_seca: buildDecorLavaSeca,
     decor_porta: buildDecorPorta,
     decor_janela: buildDecorJanela,
