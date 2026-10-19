@@ -1047,6 +1047,46 @@ const PROJECT_COLLISION_EPS_MM = 0.5;
 // a posição ANTERIOR, com EPS) continua igual — projeto salvo com
 // sobreposição antiga, ou colisão ligada no meio da edição, não pode travar
 // o módulo pra sempre.
+// PAINEL FIXO CONTA NA COLISÃO (2026-10-18, Matt: blind corner — "ainda
+// está entrando no painel do módulo"). A caixa de colisão é a do CASCO; as
+// frentes ficam de fora de propósito (porta abre, ninguém encosta nela). Mas
+// o Painel Fixo do blind corner é justamente onde o módulo vizinho ENCOSTA:
+// sem isto o vizinho parava na face da caixa e atravessava os ~20 mm do
+// painel. Só módulo com Painel Fixo ganha a frente na caixa (a profundidade
+// cresce pra FRENTE, o fundo continua na parede). Cache por array de peças.
+const projectPainelFixoProtrusaoCache = new WeakMap();
+function projectSlotPainelFixoProtrusaoMm(slot) {
+  if (!slot) return 0;
+  const chave = Array.isArray(slot.layoutPieces) ? slot.layoutPieces : null;
+  if (chave && projectPainelFixoProtrusaoCache.has(chave)) return projectPainelFixoProtrusaoCache.get(chave);
+  let p = 0;
+  try {
+    const pecas = (typeof projectSlotEffectivePieces === 'function') ? projectSlotEffectivePieces(slot) : (slot.layoutPieces || []);
+    const D = Number(slot.depth_mm || 0);
+    (pecas || []).forEach((pc) => {
+      if (!/^Painel Fixo/i.test(String((pc && (pc.reference || pc.label)) || ''))) return;
+      const z = Number(pc.offset_z_mm), d = Number(pc.depth_mm);
+      const frente = (isFinite(z) && isFinite(d)) ? z + d - D : 20;
+      p = Math.max(p, isFinite(frente) && frente > 0 ? Math.min(frente, 60) : 20);
+    });
+  } catch (e) { p = 0; }
+  if (chave) projectPainelFixoProtrusaoCache.set(chave, p);
+  return p;
+}
+function projectSlotCollisionBox3D(slot, overrides) {
+  const b = projectSlotWorldBox3D(slot, overrides);
+  const p = b ? projectSlotPainelFixoProtrusaoMm(slot) : 0;
+  if (!(p > 0)) return b;
+  // eixo "into" do retângulo = (-sen, cos) do angleRad (ver obbOverlapXZ);
+  // na parede ele é o intoDir, na ilha é o +Z local (frente) já girado.
+  let ux = -Math.sin(b.angleRad), uz = Math.cos(b.angleRad);
+  if (!isFloorSlot(slot)) {
+    const wg = (getProjectWallGeometry() || []).find((w) => w.wallIndex === Number(slot.wall_index || 0));
+    if (wg) { ux = wg.intoDirX; uz = wg.intoDirZ; }
+  }
+  return Object.assign({}, b, { cx: b.cx + ux * p / 2, cz: b.cz + uz * p / 2, halfIntoMm: b.halfIntoMm + p / 2 });
+}
+
 function projectSlotWorldBox3D(slot, overrides) {
   const ov = overrides || {};
   if (isFloorSlot(slot)) {
@@ -1186,7 +1226,7 @@ function projectAllOtherSlotWorldBoxes(slot) {
     if (s.id === slot.id) return;
     if (doGrupo && doGrupo.has(s.id)) return;
     if (souEstrutura || isProjectWallStructureSlot(s)) return;
-    const b = projectSlotWorldBox3D(s);
+    const b = projectSlotCollisionBox3D(s);
     if (b) boxes.push(b);
   });
   const excludeWallIndex = isFloorSlot(slot) ? null : Number(slot.wall_index || 0);
@@ -1243,7 +1283,7 @@ function maxClearParamAlongPath(boxAtT, obstacles, epsMm) {
 function clampWallSlotAgainstCollision(slot, desiredXMm, desiredYMm, prevXMm, prevYMm) {
   if (!projectCollisionEnabled) return { x: desiredXMm, y: desiredYMm };
   const EPS = PROJECT_COLLISION_EPS_MM;
-  const boxAt = (alongMm, floorHeightMm) => projectSlotWorldBox3D(slot, { xMm: alongMm, floorHeightMm: floorHeightMm });
+  const boxAt = (alongMm, floorHeightMm) => projectSlotCollisionBox3D(slot, { xMm: alongMm, floorHeightMm: floorHeightMm });
   const allObstacles = projectAllOtherSlotWorldBoxes(slot);
   const prevBox = boxAt(prevXMm, prevYMm);
   const freeObstacles = allObstacles.filter((o) => !slotsOverlap3D(prevBox, o, EPS));
@@ -1295,7 +1335,7 @@ function floorSlotFootprint(slot, centerXMm, centerZMm) {
 function clampFloorSlotAgainstCollision(slot, desiredXMm, desiredZMm, prevXMm, prevZMm) {
   if (!projectCollisionEnabled) return { x: desiredXMm, y: desiredZMm };
   const EPS = PROJECT_COLLISION_EPS_MM;
-  const boxAt = (fx, fz) => projectSlotWorldBox3D(slot, { floorXMm: fx, floorZMm: fz });
+  const boxAt = (fx, fz) => projectSlotCollisionBox3D(slot, { floorXMm: fx, floorZMm: fz });
   const allObstacles = projectAllOtherSlotWorldBoxes(slot);
   const prevBox = boxAt(prevXMm, prevZMm);
   const freeObstacles = allObstacles.filter((o) => !slotsOverlap3D(prevBox, o, EPS));
