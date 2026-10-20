@@ -2230,6 +2230,11 @@
   // POSITIVO do eixo da espessura, ou o NEGATIVO na peça espelhada (é o lado
   // que a furadeira fura por cima). Coordenadas no mesmo plano pras duas
   // faces, como o SlotL Face B do exemplo real.
+  // Prateleira com os copos Ø16 (mesma regra do desenho em holesNoModulo:
+  // drill_shelf_support + chapa deitada). Nela a Face A do .ban é a de baixo.
+  function ehPrateleiraFaceAEmbaixo(part, e) {
+    return !!(part && part.drill_shelf_support && e && e.tAxis === 'y');
+  }
   function ledRect(part, led) {
     if (!part || !led || typeof Pricing === 'undefined' || !Pricing.ledEixos) return null;
     const e = Pricing.ledEixos(part);
@@ -2237,9 +2242,21 @@
     if (!L || L.erro) return null;
     const t = { thickness: e.thickness, faceA: e.faceA, faceB: e.faceB };
     let u = L.ranges[e.uAxis].slice(), v = L.ranges[e.vAxis].slice();
-    if (e.mirror === 'v') v = [t.faceB - v[1], t.faceB - v[0]];
-    else if (e.mirror === 'u') u = [t.faceA - u[1], t.faceA - u[0]];
-    const ladoA = e.mirror ? -1 : 1;
+    // PRATELEIRA = FACE A EMBAIXO (2026-10-20, Matt: "todo furo de prateleira
+    // fica pra baixo e não pra cima"; lote com LED saiu com o rasgo Under em
+    // Face B e os copos Ø16 em Face A — faces opostas). Os copos Ø16 da
+    // prateleira são furados pela Face A e ficam na face de BAIXO da peça
+    // montada (o 3D já desenha assim, ver holesNoModulo COPO_PRATELEIRA).
+    // Ou seja: no .ban da prateleira a Face A É a face de baixo. O LED segue
+    // a mesma regra: Under -> Face A (junto dos Ø16), Top -> Face B. Virar a
+    // chapa de barriga pra cima é girar em torno do eixo frente-trás:
+    // frente/fundo ficam onde estão no arquivo, esquerda/direita trocam
+    // (u espelhado — só muda algo se as margens das pontas forem diferentes).
+    const viradaPraBaixo = !e.mirror && ehPrateleiraFaceAEmbaixo(part, e);
+    const mirror = viradaPraBaixo ? 'u' : e.mirror;
+    if (mirror === 'v') v = [t.faceB - v[1], t.faceB - v[0]];
+    else if (mirror === 'u') u = [t.faceA - u[1], t.faceA - u[0]];
+    const ladoA = mirror ? -1 : 1;
     const p0 = localToMachine(t, u[0], v[0]);
     const p1 = localToMachine(t, u[1], v[1]);
     return {
