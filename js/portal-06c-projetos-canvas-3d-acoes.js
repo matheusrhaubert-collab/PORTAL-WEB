@@ -1777,7 +1777,9 @@ function renderProjectCanvasFront(canvas, wrap, dimsLabel, unit) {
   // que alto, maior), e só em pé-direito MUITO alto a altura ainda limita
   // (com scroll vertical no wrap como saída, ver overflow:auto no CSS).
   const availableWidthPx = Math.max(wrap.clientWidth - 4, 320);
-  const wrapTop = wrap.getBoundingClientRect().top;
+  // Topo medido em coordenadas da PÁGINA (soma o scroll), não da janela —
+  // ver comentário em renderProjectCanvasFrontCorner (gap gigante, 21/10).
+  const wrapTop = wrap.getBoundingClientRect().top + (window.scrollY || window.pageYOffset || 0);
   const availableHeightPx = Math.max(window.innerHeight - wrapTop - 40, 480);
   const widthScale = availableWidthPx / wallWidthMm;
   const heightScale = availableHeightPx / ceilingMm;
@@ -1885,14 +1887,22 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
   const container3d = document.getElementById('po-proj-canvas-3d-edit');
   if (container3d) {
     const availableWidthPx = Math.max(wrap.clientWidth - 4, 320);
-    const wrapTop = wrap.getBoundingClientRect().top;
+    // GAP GIGANTE (21/10, Matt: "o projeto vai pra cima ou pra baixo e essa
+    // tela aumenta"): getBoundingClientRect().top é relativo à JANELA, então
+    // com a página rolada pra baixo ele fica pequeno/negativo e a altura
+    // calculada crescia o tanto que estava rolado. Cada redesenho (mover
+    // módulo) com a página rolada aumentava o quadro -> página mais alta ->
+    // dá pra rolar mais -> próximo redesenho aumenta mais. Soma o scroll pra
+    // medir o topo na PÁGINA: a altura passa a ser sempre a mesma.
+    const scrollY = (window.scrollY || window.pageYOffset || 0);
+    const wrapTop = wrap.getBoundingClientRect().top + scrollY;
     // Tela cheia (14/10, Matt: "o quadro do projeto venha ate o fim da tela na
     // parte de baixo, independente do tamanho do monitor e proporcao"): vai
     // até 10 px do rodapé da janela, medido do topo do PRÓPRIO quadro — mesma
     // conta de ajustaAlturaTelaCheia (portal-06a). Fora dela, como sempre.
     const telaCheia = document.body.classList.contains('proj-tela-cheia');
     const availableHeightPx = telaCheia
-      ? Math.max(window.innerHeight - container3d.getBoundingClientRect().top - 10, 300)
+      ? Math.max(window.innerHeight - (container3d.getBoundingClientRect().top + scrollY) - 10, 300)
       : Math.max(window.innerHeight - wrapTop - 40, 480);
     container3d.style.width = Math.round(availableWidthPx) + 'px';
     container3d.style.height = Math.round(availableHeightPx) + 'px';

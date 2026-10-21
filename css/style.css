@@ -5761,3 +5761,54 @@ body.po-barra-fixa-on .po-proj-config-col {
 .po-proj-card-tape svg { width: 100%; height: 100%; display: block; }
 .po-proj-search-modal-grid .po-proj-library-card-sku { margin-top: 6px; }
 .po-proj-search-modal-grid .po-proj-library-card-sku-select { width: 100%; }
+
+/* ==========================================================================
+   GRUPOS DA BARRA NUM ÍCONE SÓ (2026-10-20, Matt: "juntar as ferramentas da
+   barra IA service num único ícone... dropdown das opções abaixo... a barra
+   tá ficando muito larga" — e depois "faz isso com budget e render também",
+   "e layers", "e walls e viewer"). Paredes, Vista, Camadas, Render,
+   Orçamento e IA Services: um botão por grupo + painel. Painel com
+   position:fixed (posicionado por js/portal-25-ia-menu.js) porque a faixa de
+   ferramentas tem overflow-x:auto e cortaria um absolute. Dentro do painel
+   os botões viram linha: ícone + texto (o <span> que na barra fica
+   escondido; botão sem <span> ganha o aria-label via .po-tb-dd-rotulo).
+   ========================================================================== */
+.po-tb-dd { position: relative; }
+.po-tb-dd-btn .po-tb-dd-caret { position: absolute; right: 3px; bottom: 3px; width: 8px !important; height: 8px !important; opacity: 0.7; }
+#po-proj-canvas-tools .po-tb-dd.aberto > .po-tb-dd-btn { background: var(--accent-light); }
+.po-tb-dd-panel {
+  display: none; position: fixed; z-index: 9000; flex-direction: column; gap: 2px;
+  min-width: 240px; max-height: calc(100vh - 24px); overflow-y: auto;
+  padding: 6px; background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+}
+.po-tb-dd.aberto > .po-tb-dd-panel { display: flex; }
+/* segmentados (Vista, Render) e menus com lista (Camadas, Visual,
+   Estruturas, Mapa de calor) viram linhas do painel */
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-seg { display: flex; flex-direction: column; gap: 2px; width: 100%; background: transparent; border: none; padding: 0; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-seg + .po-tb-seg,
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-seg + .po-style-menu,
+#po-proj-canvas-tools .po-tb-dd-panel .po-style-menu + .po-tb-seg { border-top: 1px solid var(--border); padding-top: 2px; margin-top: 2px; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-style-menu,
+#po-proj-canvas-tools .po-tb-dd-panel .po-structures-menu { display: block; width: 100%; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-icon-card,
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-seg-btn,
+#po-proj-canvas-tools .po-tb-dd-panel .po-style-btn {
+  display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px;
+  width: 100%; min-width: 0; max-width: none; height: 36px; margin: 0; padding: 6px 10px;
+  border: none; border-radius: 8px; background: transparent; box-shadow: none;
+  font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap;
+}
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-icon-card:hover,
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-seg-btn:hover,
+#po-proj-canvas-tools .po-tb-dd-panel .po-style-btn:hover { background: var(--accent-light); }
+#po-proj-canvas-tools .po-tb-dd-panel .active { background: var(--accent-light); color: #e6007e; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-icon-card:disabled,
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-seg-btn:disabled { opacity: 0.4; background: transparent; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-icon-card span,
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-seg-btn span,
+#po-proj-canvas-tools .po-tb-dd-panel .po-style-btn span { display: inline; font-size: 12px; font-weight: 600; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-style-caret { display: inline; margin-left: auto; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-dd-rotulo::after { content: attr(aria-label); }
+#po-proj-canvas-tools .po-tb-dd-panel svg { flex: none; width: 18px; height: 18px; }
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-dot { top: 50%; right: 10px; left: auto; transform: translateY(-50%); }

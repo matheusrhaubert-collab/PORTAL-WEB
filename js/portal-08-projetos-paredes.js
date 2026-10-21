@@ -3889,7 +3889,9 @@ function renderProjectCanvasTop(canvas, wrap, dimsLabel, unit) {
   projectTopViewOrigin = { xMm: plan.originXMm, zMm: plan.originZMm };
 
   const availableWidthPx = Math.max(wrap.clientWidth - 4, 320);
-  const wrapTop = wrap.getBoundingClientRect().top;
+  // Topo na PÁGINA (soma o scroll) — mesmo fix do gap gigante de 21/10
+  // (renderProjectCanvasFrontCorner, portal-06c).
+  const wrapTop = wrap.getBoundingClientRect().top + (window.scrollY || window.pageYOffset || 0);
   const availableHeightPx = Math.max(window.innerHeight - wrapTop - 40, 240);
   // Mesma escala nos dois eixos (vista PARALELA/ortografica, como pedido —
   // nao "esticar" um eixo mais que o outro) — usa a menor das duas pra caber

@@ -210,6 +210,18 @@
     let lista;
     try { lista = document.querySelectorAll(sel); } catch (e) { return null; }
     for (let i = 0; i < lista.length; i++) if (visivel(lista[i])) return lista[i];
+    // Botão dentro de um menu da barra (Paredes, Vista, Camadas, Render,
+    // Orçamento, IA Services — portal-25, 20/10): fechado, ele não aparece —
+    // abre o painel e tenta de novo. Botão escondido pela regra "só
+    // administrador" (display:none nele mesmo) continua não valendo.
+    const menus = window.LegnoTbMenus;
+    if (menus) {
+      for (let i = 0; i < lista.length; i++) {
+        const el = lista[i];
+        if (el.style.display === 'none' || !menus.abrirPara(el)) continue;
+        if (visivel(el)) return el;
+      }
+    }
     return null;
   }
   const aberto = (sel) => () => !!achar(sel);
