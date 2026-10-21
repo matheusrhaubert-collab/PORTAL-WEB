@@ -143,6 +143,66 @@
     return rot !== 0 && !!hingeSideOf(part);
   }
 
+  // ==========================================================================
+  // QUIRALIDADE DO .BAN — PEÇA VERTICAL SAÍA ESPELHADA (2026-10-21)
+  // ==========================================================================
+  // Matt, pedido montado no cliente: "o sistema espelhou o móvel... o
+  // gaveteiro ficou na direita; o que está escrito como lateral direita é na
+  // prática uma esquerda e vice-versa" — e a lateral não dá pra trocar de
+  // lado (rodapé embaixo, furação do fundo atrás).
+  //
+  // Causa: o plano da máquina é (X, Y negado, Z saindo da Face A). Pra peça
+  // DEITADA (espessura em Y: base, topo, prateleira) o caminho
+  // u -> X, v -> -Y, Face A = lado +t é uma ROTAÇÃO — peça certa. Pra peça
+  // com a espessura em X (lateral, divisória vertical, lateral de gaveta) ou
+  // em Z (fundo, rodapé, painel de frente) a mesma regra dá um REFLEXO:
+  // u x v = +t em vez de -t. O .ban da lateral ESQUERDA furava uma lateral
+  // DIREITA (e vice-versa) — furos no lugar certo da chapa, mas na mão
+  // trocada. Peça simétrica não sente; peça com gaveteiro de um lado só,
+  // base de dobradiça, LED, recorte de rodapé sente.
+  //
+  // Conserto: nessas peças o comprimento (u) é invertido NA ESCRITA da
+  // máquina — furo, recorte (Outline) e rasgo de LED, os três juntos. A
+  // borda da frente (v) continua onde sempre esteve no arquivo, então o
+  // operador não muda nada na hora de colocar a chapa. Face A/B não mudam.
+  // O 3D (holesNoModulo) desfaz a inversão pela marca `_eu` do furo.
+  // Bancada: scripts/tests/teste-quiralidade-ban.js (confere, peça por peça,
+  // que mundo -> arquivo é rotação e não reflexo).
+  //
+  // EXCEÇÃO — PORTA (peça com dobradiça, ou chapa de dentro de um modelo de
+  // porta): ela é furada de COSTAS pra cima (o copo é na face de trás), e com
+  // a face de trás como Face A o caminho antigo já era rotação — porta
+  // sempre saiu certa. collectAssembly marca essas peças com _frentePorta
+  // antes de emitir qualquer furo.
+  function espelhaNaMaquina(tAxis, part) {
+    if (part && part._frentePorta) return false;
+    return tAxis === 'x' || tAxis === 'z';
+  }
+  function marcaFrentePorta(parts) {
+    const marca = function (p) {
+      if (!p) return;
+      p._frentePorta = true;
+      (p.child_pieces || []).forEach(marca);
+    };
+    (parts || []).forEach(function (p) { if (p && hingeSideOf(p)) marca(p); });
+  }
+  // Eixo da espessura da peça no módulo — a MESMA conta de pieceBox, sem os
+  // efeitos colaterais dele (pieceBox grava _viradaU). Peça sem caixa (frente,
+  // gaveta, puxador, peça girada fora de 90°) devolve null: os furos dela não
+  // passam por emitLocalHole e não são invertidos — o recorte/LED também não.
+  function eixoEspessuraDaPeca(part) {
+    if (!part || semCaixaAlinhada(part)) return null;
+    const role = part.position_role || 'other';
+    if (role === 'left' || role === 'right' || role === 'drawer_side') return 'x';
+    if (role === 'top' || role === 'bottom' || role === 'countertop' || role === 'shelf') return 'y';
+    if (role === 'back' || role === 'baseboard') return 'z';
+    if (role === 'free') {
+      const ax = splitThicknessAxes(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
+      return { w: 'x', h: 'y', d: 'z' }[ax.tKey];
+    }
+    return null;
+  }
+
   function pieceBox(part, W, H, D, index, count, bounds) {
     const role = part.position_role || 'other';
     if (semCaixaAlinhada(part)) return null;
@@ -456,6 +516,15 @@
       if (edge === 'u0') edge = 'u1';
       else if (edge === 'u1') edge = 'u0';
     }
+    // Quiralidade (2026-10-21, ver espelhaNaMaquina): peça com espessura em
+    // X/Z inverte o comprimento no arquivo. NÃO troca face — não é a peça
+    // virando, é o desenho deixando de ser um reflexo.
+    const inverteU = espelhaNaMaquina(box.tAxis, box.part);
+    if (inverteU) {
+      u = t.faceA - u;
+      if (edge === 'u0') edge = 'u1';
+      else if (edge === 'u1') edge = 'u0';
+    }
     let face;
     if (edge) {
       if (edge === 'u0') u = 0;
@@ -473,6 +542,7 @@
     const pos = localToMachine(t, u, v);
     const furo = { face, x: pos.x, y: pos.y, diameter: h.diameter, depth: h.depth, tipo: h.tipo || null };
     if (h.extra) furo.extra = h.extra;   // só pro desenho 3D (corrediça); o .ban ignora
+    if (inverteU) furo._eu = true;       // holesNoModulo desfaz; o .ban ignora
     addHole(store, box.part, furo);
   }
 
@@ -1835,6 +1905,7 @@
   // `ctx` = { origem:{x,y,z} deste nível no frame da raiz, todas } — ausente
   // na raiz; null num nível sem posição reconstituível (cai no local).
   function collectAssembly(store, parts, W, H, D, config, ctx) {
+    marcaFrentePorta(parts); // antes de qualquer furo (ver espelhaNaMaquina)
     const built = buildBoxes(parts, W, H, D);
     const todasLocal = built.boxes.concat(boxesAninhadas(parts, W, H, D));
     const raiz = ctx || { origem: { x: 0, y: 0, z: 0 }, todas: todasLocal };
@@ -2008,8 +2079,10 @@
     const ch = chanfroDaPeca(part);
     if (!ch) return null;
     const t = ch.t;
-    const p0 = localToMachine(t, t.faceA - ch.cu, t.faceB - ch.cv);
-    const p1 = localToMachine(t, t.faceA, t.faceB);
+    // quiralidade (ver espelhaNaMaquina): peça em pé inverte o comprimento
+    const inv = espelhaNaMaquina(eixoEspessuraDaPeca(part), part);
+    const p0 = localToMachine(t, inv ? ch.cu : t.faceA - ch.cu, t.faceB - ch.cv);
+    const p1 = localToMachine(t, inv ? 0 : t.faceA, t.faceB);
     return {
       x0: Math.min(p0.x, p1.x), x1: Math.max(p0.x, p1.x),
       y0: Math.min(p0.y, p1.y), y1: Math.max(p0.y, p1.y),
@@ -2031,6 +2104,10 @@
     // está virada (frente do módulo, ver pieceBox 'back'), o L espelha em u
     // igual os furos (emitLocalHole mirrorAxis 'u').
     const painelZ = (part.position_role === 'back' || part.position_role === 'baseboard');
+    // Quiralidade (2026-10-21, ver espelhaNaMaquina): o recorte inverte o
+    // comprimento JUNTO com os furos — senão o L do rodapé ficaria na ponta
+    // oposta à furação.
+    const inverteU = espelhaNaMaquina(eixoEspessuraDaPeca(part), part);
     const out = chanfro ? [chanfro] : [];
     lista.forEach(function (r) {
       if (!r) return;
@@ -2055,6 +2132,7 @@
           mv0 = frente ? t.faceB - d : 0; mv1 = mv0 + d;
           if (mirrored) { const a = t.faceB - mv1; mv1 = t.faceB - mv0; mv0 = a; }
         }
+        if (inverteU) { const a = t.faceA - mu1; mu1 = t.faceA - mu0; mu0 = a; }
         const q0 = localToMachine(t, mu0, mv0);
         const q1 = localToMachine(t, mu1, mv1);
         out.push({
@@ -2084,6 +2162,7 @@
         v1 = v0 + d;
         if (mirrored) { const a = t.faceB - v1; v1 = t.faceB - v0; v0 = a; }
       }
+      if (inverteU) { const a = t.faceA - u1; u1 = t.faceA - u0; u0 = a; }
       const p0 = localToMachine(t, u0, v0);
       const p1 = localToMachine(t, u1, v1);
       out.push({
@@ -2256,6 +2335,9 @@
     const mirror = viradaPraBaixo ? 'u' : e.mirror;
     if (mirror === 'v') v = [t.faceB - v[1], t.faceB - v[0]];
     else if (mirror === 'u') u = [t.faceA - u[1], t.faceA - u[0]];
+    // quiralidade (2026-10-21, ver espelhaNaMaquina) — mesma inversão dos
+    // furos da peça; não mexe na face (ladoA abaixo)
+    if (espelhaNaMaquina(eixoEspessuraDaPeca(part), part)) u = [t.faceA - u[1], t.faceA - u[0]];
     const ladoA = mirror ? -1 : 1;
     const p0 = localToMachine(t, u[0], v[0]);
     const p1 = localToMachine(t, u[1], v[1]);
@@ -2727,6 +2809,7 @@
       (holes || []).forEach(function (h) {
         const l = machineToLocal(t, h.x, h.y);
         let u = l.u, v = l.v;
+        if (h._eu) u = t.faceA - u;   // desfaz a inversão de quiralidade (emitLocalHole)
         if (mirror === 'v') v = t.faceB - v;
         else if (mirror === 'u') u = t.faceA - u;
         const P = { x: 0, y: 0, z: 0 }, N = { x: 0, y: 0, z: 0 };
@@ -2752,6 +2835,7 @@
         } else {
           const m = machineDims(t);
           let e = m.flip ? BORDA_LOCAL_FLIP[h.face] : REAL_EDGE_OF_FACE[h.face];
+          if (h._eu && e) e = e === 'u0' ? 'u1' : (e === 'u1' ? 'u0' : e);
           if (mirror === 'u' && e) e = e === 'u0' ? 'u1' : (e === 'u1' ? 'u0' : e);
           if (mirror === 'v' && e) e = e === 'v0' ? 'v1' : (e === 'v1' ? 'v0' : e);
           P[b.tAxis] = t0 + sT / 2;
@@ -3044,7 +3128,7 @@
     holesNoModulo: holesNoModulo,
     ledVolumesNoModulo: ledVolumesNoModulo,
     conflitosLed: conflitosLed,
-    _internals: { ledRect, ledSlotsDaPeca, splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan, chanfroDaPeca, chanfroRect, collectAssembly }
+    _internals: { espelhaNaMaquina, eixoEspessuraDaPeca, emitLocalHole, ledRect, ledSlotsDaPeca, splitThickness, machineDims, localToMachine, machineToLocal, edgeFace, edgeRealUV, resolveDrillingHoleXY, pieceBox, buildBoxes, boxesAninhadas, furosDaPeca, recorteRects, rectToSlots, cornerCutSlots, slotsDaPeca, contornoComRecortes, outlineBan, chanfroDaPeca, chanfroRect, collectAssembly }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 // migration 043 — propagação por componente + espelhamento esq/dir
