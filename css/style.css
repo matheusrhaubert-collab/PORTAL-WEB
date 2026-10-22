@@ -5174,6 +5174,9 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-led-error { color: #b0503c; font-size: 12px; margin: 0; }
 .po-led-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 8px; }
 .po-led-actions .po-led-remove { color: #b0503c; }
+/* Duplicar LED nas peças iguais (22/10) */
+.po-led-actions { flex-wrap: wrap; }
+.po-led-actions .po-led-dup { order: 3; flex-basis: 100%; }
 @media (max-width: 900px) {
   .po-led-body { flex-direction: column; }
   .po-led-list, .po-led-form { width: 100%; border: none; max-height: 34%; }

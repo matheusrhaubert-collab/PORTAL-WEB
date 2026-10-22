@@ -19,7 +19,7 @@
 // da Vista com Cotas). A cena é reconstruída a cada render
 // (renderFreeformWalls), então reaplica no mesmo hook de Camadas
 // (applyProjectHeatmap chamado em renderProjectCanvasFrontCorner, portal-06c).
-// Botão: grupo IA Services. Só administrador (mesma lista dos outros).
+// Botão: grupo Budget (Orçamento). Liberado pra todos os usuários (22/10).
 
 let projectHeatmapOn = false;
 // 'area' = $/ft² de área coberta; 'share' = % do total do projeto (13/10, 2ª

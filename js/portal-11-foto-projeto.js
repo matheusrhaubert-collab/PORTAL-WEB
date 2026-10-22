@@ -1567,7 +1567,8 @@ async function runProjectPhotoBuild() {
 // ficaram realmente bons") — fica display:none no HTML. Pra religar, é só
 // devolver o id à lista de admin.
 const PROJECT_AI_BUTTON_IDS = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-importpromob-open-btn', 'po-proj-ai-walls-btn', 'po-proj-ai-edit-btn'];
-const PROJECT_ADMIN_ONLY_BUTTON_IDS = ['po-proj-heatmap-menu'];
+// 22/10, Matt: mapa de calor liberado pra TODOS os usuários (mora no Budget).
+const PROJECT_ADMIN_ONLY_BUTTON_IDS = [];
 async function refreshProjectAdminOnlyButtons() {
   let isAdmin = false;
   let isDealerRole = false;

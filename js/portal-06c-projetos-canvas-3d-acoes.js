@@ -3710,7 +3710,35 @@ let ledDraft = null;          // { linhas: [...], idx }
 let ledViewer = null;
 let ledAssembly = null;
 let ledPreviewTimer = null;
-const LED_AFASTAMENTO_PADRAO = 50; // "continuar com 50 de afastamento do fundo"
+const LED_AFASTAMENTO_PADRAO = 50; // afastamento padrão (agora da FRENTE, 22/10)
+
+// LED MEDIDO DA FRENTE (22/10, Matt: "quero que os leds comecem na frente,
+// estão começando de trás pra frente, quero inverter de frente pro fundo").
+// O que fica GRAVADO não muda (pos_mm = distância da borda de cima/esquerda
+// da vista, que nas peças deitadas e nas laterais é o FUNDO) — .ban, 3D e
+// preço continuam lendo igual e projetos salvos não mexem. Só a TELA passa a
+// mostrar/digitar a distância da FRENTE nessas peças, e a 1ª linha nasce a
+// 50 da frente; as próximas andam da frente pro fundo.
+function ledMedeDaFrente(part, linha) {
+  const vi = ledVistaDaPeca(part);
+  if (!vi || !linha) return false;
+  const borda = linha.orientacao === 'v' ? vi.bordas.esq : vi.bordas.cima;
+  return borda === 'fundo';
+}
+function ledPosMax(part, linha) {
+  const L = (part && linha) ? Pricing.ledLayoutDaPeca(part, ledConfigDaLinha(linha)) : null;
+  return L ? L.posMax : 0;
+}
+// gravado (do fundo) -> tela (da frente) e volta; é a mesma conta nos 2 sentidos
+function ledPosTela(part, linha) {
+  const v = Number(linha && linha.pos_mm) || 0;
+  if (!ledMedeDaFrente(part, linha)) return v;
+  return Math.max(Math.round((ledPosMax(part, linha) - v) * 10) / 10, 0);
+}
+function ledPosGravar(part, linha, tela) {
+  if (!ledMedeDaFrente(part, linha)) return tela;
+  return Math.max(Math.round((ledPosMax(part, linha) - tela) * 10) / 10, 0);
+}
 
 // 2ª rodada (2026-09-30), Matt: "todas as peças devem poder receber o canal
 // do LED, se quiser colocar na lateral, ou no fundo". Entra toda peça-CHAPA
@@ -3815,14 +3843,18 @@ function ledLinhaPadrao(part, anterior) {
     const larg = Number(m.largura_mm) || 0;
     const L = Pricing.ledLayoutDaPeca(part, ledConfigDaLinha(anterior));
     const max = L ? L.posMax : Infinity;
-    return Object.assign({}, anterior, { pos_mm: Math.min(Number(anterior.pos_mm) + larg + LED_AFASTAMENTO_PADRAO, max) });
+    // da frente pro fundo (22/10): na tela a distância da frente CRESCE
+    const telaNova = Math.min(ledPosTela(part, anterior) + larg + LED_AFASTAMENTO_PADRAO, max);
+    return Object.assign({}, anterior, { pos_mm: ledPosGravar(part, anterior, telaNova) });
   }
-  return {
+  const nova = {
     modelo_id: m.id,
     face: ledFaceDoBotao(part, (vi && vi.nome === 'cima') ? 'under' : 'top'),
     orientacao: (vi && vi.nome === 'lado') ? 'v' : 'h',
-    pos_mm: LED_AFASTAMENTO_PADRAO, margem_ini_mm: 0, margem_fim_mm: 0
+    pos_mm: 0, margem_ini_mm: 0, margem_fim_mm: 0
   };
+  nova.pos_mm = ledPosGravar(part, nova, Math.min(LED_AFASTAMENTO_PADRAO, ledPosMax(part, nova)));
+  return nova;
 }
 
 function openProjectSlotLed(slotId) {
@@ -4021,13 +4053,15 @@ function renderProjectLedForm(slot) {
   // contrário
   const vert = !!linha && linha.orientacao === 'v';
   if (vi) {
-    set('po-led-pos-label', I18n.t('led.dist_' + (vert ? vi.bordas.esq : vi.bordas.cima)));
+    // borda que vira "fundo" mede da FRENTE (borda oposta) — ver ledMedeDaFrente
+    const bordaPos = vert ? vi.bordas.esq : vi.bordas.cima;
+    set('po-led-pos-label', I18n.t('led.dist_' + (bordaPos === 'fundo' ? 'frente' : bordaPos)));
     set('po-led-mini-label', I18n.t('led.margin_' + (vert ? vi.bordas.cima : vi.bordas.esq)));
     set('po-led-mfim-label', I18n.t('led.margin_' + (vert ? vi.bordas.baixo : vi.bordas.dir)));
   }
   [['po-led-pos', 'pos_mm'], ['po-led-margin-ini', 'margem_ini_mm'], ['po-led-margin-fim', 'margem_fim_mm']].forEach(([id, campo]) => {
     const inp = document.getElementById(id);
-    if (inp && linha && document.activeElement !== inp) inp.value = linha[campo];
+    if (inp && linha && document.activeElement !== inp) inp.value = campo === 'pos_mm' ? ledPosTela(part, linha) : linha[campo];
   });
   const cfg = ledConfigDaLinha(linha);
   const { layout } = ledAvaliar(cfg, part);
@@ -4042,6 +4076,7 @@ function renderProjectLedForm(slot) {
   renderProjectLedConflitos(slot, part);
   const rem = document.getElementById('po-led-remove-btn');
   if (rem) rem.style.visibility = (part && Pricing.ledLista(slot.ledConfigs && slot.ledConfigs[part.piece_id]).length) ? 'visible' : 'hidden';
+  renderProjectLedDupBtn(slot, part);
   renderProjectLed2D(part);
 }
 
@@ -4213,6 +4248,54 @@ function aplicarLedNaPeca(slot) {
   renderProjectLedPreview(slot);
 }
 
+// DUPLICAR LED NAS PEÇAS IGUAIS (22/10, Matt: "botão duplicar pras mesmas
+// peças do módulo depois de aplicado o LED em uma peça"). "Igual" = mesmo
+// tipo de peça (lateral esquerda e direita contam como o mesmo tipo) + mesma
+// largura/altura/profundidade. Copia a lista de LEDs já APLICADA na peça
+// escolhida (não o rascunho). A face é traduzida pelo botão Top/Under: na
+// lateral direita (espelhada) o Top é o lado B — copiar 'A' cru jogaria o
+// rasgo pra face de fora.
+const LED_GRUPO_PAPEL = { left: 'lateral', right: 'lateral' };
+function ledPecasIguais(slot, part) {
+  if (!part) return [];
+  const papel = (p) => LED_GRUPO_PAPEL[p.position_role] || p.position_role;
+  const med = (p) => [p.width_mm, p.height_mm, p.depth_mm].map((v) => Math.round(Number(v) || 0)).join('x');
+  const alvoPapel = papel(part), alvoMed = med(part);
+  return projectLedPecasElegiveis(slot).map(({ p }) => p)
+    .filter((p) => String(p.piece_id) !== String(part.piece_id) && papel(p) === alvoPapel && med(p) === alvoMed);
+}
+function renderProjectLedDupBtn(slot, part) {
+  const b = document.getElementById('po-led-dup-btn');
+  if (!b) return;
+  const aplicados = part ? Pricing.ledLista(slot.ledConfigs && slot.ledConfigs[part.piece_id]) : [];
+  const iguais = aplicados.length ? ledPecasIguais(slot, part) : [];
+  b.style.display = iguais.length ? '' : 'none';
+  b.textContent = I18n.t('led.dup_btn', { n: iguais.length });
+  b.title = I18n.t('led.dup_title');
+}
+function duplicarLedNasIguais(slot) {
+  const part = ledPecaSelecionada(slot);
+  const origem = part ? Pricing.ledLista(slot.ledConfigs && slot.ledConfigs[part.piece_id]) : [];
+  if (!part || !origem.length) return;
+  const iguais = ledPecasIguais(slot, part);
+  if (!iguais.length) return;
+  const novo = Object.assign({}, slot.ledConfigs || {});
+  iguais.forEach((p) => {
+    novo[p.piece_id] = origem.map((c) => {
+      const n = Pricing.ledNormaliza(c);
+      return Object.assign({}, c, { face: ledFaceDoBotao(p, ledBotaoDaFace(part, n.face)) });
+    }).filter((c) => !ledAvaliar(c, p).erro);
+    if (!novo[p.piece_id].length) delete novo[p.piece_id];
+  });
+  slot.ledConfigs = novo;
+  recomputeProjectSlotPricing(slot);
+  renderProjectCanvas();
+  markProjectDirty();
+  renderProjectLedList(slot);
+  renderProjectLedForm(slot);
+  renderProjectLedPreview(slot);
+}
+
 function removerLedDaPeca(slot) {
   const part = ledPecaSelecionada(slot);
   if (!part || !slot.ledConfigs || !slot.ledConfigs[part.piece_id]) return;
@@ -4313,7 +4396,8 @@ function removerLedDaPeca(slot) {
       const l = ledLinhaAtual();
       if (!slot || !l) return;
       const v = parseFloat(String(inp.value).replace(',', '.'));
-      l[campo] = isFinite(v) && v > 0 ? v : 0;
+      const tela = isFinite(v) && v > 0 ? v : 0;
+      l[campo] = campo === 'pos_mm' ? ledPosGravar(ledPecaSelecionada(slot), l, tela) : tela;
       redesenha(slot);
     };
     inp.addEventListener('input', muda);
@@ -4352,6 +4436,8 @@ function removerLedDaPeca(slot) {
   if (apply) apply.addEventListener('click', () => { const slot = slotAtual(); if (slot) aplicarLedNaPeca(slot); });
   const rem = document.getElementById('po-led-remove-btn');
   if (rem) rem.addEventListener('click', () => { const slot = slotAtual(); if (slot) removerLedDaPeca(slot); });
+  const dup = document.getElementById('po-led-dup-btn');
+  if (dup) dup.addEventListener('click', () => { const slot = slotAtual(); if (slot) duplicarLedNasIguais(slot); });
 })();
 
 // ==========================================================================
