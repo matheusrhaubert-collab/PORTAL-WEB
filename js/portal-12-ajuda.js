@@ -917,6 +917,7 @@ function closeHelpModal() {
   function soltar() {
     if (!barra) return;
     barra.classList.remove('po-tb-grudada');
+    barra.classList.remove('po-tb-atras');
     barra.style.left = ''; barra.style.width = '';
     if (fantasma) { fantasma.classList.remove('ativo'); fantasma.style.height = ''; }
   }
@@ -987,6 +988,55 @@ function closeHelpModal() {
     window.addEventListener('scroll', atualizar, { passive: true, capture: true });
     window.addEventListener('resize', function () { soltar(); atualizar(); });
     atualizar();
+    vigiarJanelas();
+  }
+
+  /* JANELA ABERTA = BARRA SOME (22/10, Matt: "o botão das paredes fica atrás
+     da barra fixa... o LED também... revisa tudo pra frente da barra").
+     Só subir o z-index das janelas não bastou em todas as telas, então aqui é
+     à prova de número: enquanto houver QUALQUER janela cobrindo a tela
+     (position:fixed, visível, >= 85% da largura e da altura), a barra grudada
+     fica invisível (classe .po-tb-atras, CSS no style.css). Vale pra Paredes,
+     LED, Peças, $ Fábrica, IA, Ajuda e qualquer janela nova que aparecer.
+     Fechou a janela, a barra volta. O "fantasma" segura o lugar, então a
+     página não pula. Ignora o tutorial (po-hlp-*), que aponta pra botões da
+     própria barra. */
+  var agendado = false;
+  function janelaPorCima() {
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var cands = document.querySelectorAll('body > *, main > *, .portal-tab-content > *');
+    for (var i = 0; i < cands.length; i++) {
+      var el = cands[i];
+      if (el === barra || el === fantasma || el.contains(barra)) continue;
+      var nome = (el.id || '') + ' ' + (typeof el.className === 'string' ? el.className : '');
+      if (/po-hlp-/.test(nome)) continue;
+      var cs = getComputedStyle(el);
+      if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
+      if (cs.pointerEvents === 'none' || parseFloat(cs.opacity) === 0) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width >= vw * 0.85 && r.height >= vh * 0.85) return true;
+    }
+    return false;
+  }
+  function checarJanelas() {
+    agendado = false;
+    if (!barra) return;
+    var atras = barra.classList.contains('po-tb-grudada') && janelaPorCima();
+    if (barra.classList.contains('po-tb-atras') !== atras) barra.classList.toggle('po-tb-atras', atras);
+  }
+  function agendar() {
+    if (agendado) return;
+    agendado = true;
+    (window.requestAnimationFrame || setTimeout)(checarJanelas);
+  }
+  function vigiarJanelas() {
+    try {
+      new MutationObserver(agendar).observe(document.body, {
+        childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'open', 'hidden']
+      });
+    } catch (e) { /* navegador sem MutationObserver: fica só o z-index */ }
+    window.addEventListener('scroll', agendar, { passive: true, capture: true });
+    window.addEventListener('resize', agendar);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);

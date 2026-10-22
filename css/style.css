@@ -5567,6 +5567,13 @@ header.po-topnav { z-index: 500; background: #ffffff; }
   position: fixed; top: 0; z-index: 900; margin: 0;
   box-shadow: 0 6px 18px rgba(0,0,0,0.10);
 }
+/* Janela aberta por cima (Paredes, LED, Peças, $ Fábrica...) → barra grudada
+   some enquanto ela estiver aberta (22/10). Classe ligada/desligada por
+   js/portal-12-ajuda.js (vigiarJanelas). À prova de z-index. */
+.po-proj-topbar.po-tb-grudada.po-tb-atras { visibility: hidden; z-index: 0; }
+/* margin:0 da barra grudada perdia pra regra "#po-tab-projects .po-proj-topbar"
+   (margem 4px no topo = fresta acima da barra). */
+#po-tab-projects .po-proj-topbar.po-tb-grudada { margin: 0; }
 .po-proj-topbar-fantasma { display: none; }
 .po-proj-topbar-fantasma.ativo { display: block; }
 
