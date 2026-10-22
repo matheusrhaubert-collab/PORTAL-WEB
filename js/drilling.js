@@ -2459,7 +2459,21 @@
     return pts;
   }
 
+  // SOBRECORTE DO CONTORNO (2026-10-21). Matt, peças chanfradas do aéreo de
+  // canto 45° e prateleiras com recorte em curva: "precisam ir com a fresa até
+  // o final da peça, porque estão ficando com dente da fresa". A máquina usa o
+  // Thickness do <Plane> como profundidade do corte do <Outline> — com a
+  // espessura exata (19,5) a fresa para rente ao fundo e deixa o dente. Peça
+  // com contorno recortado (chanfro, L do rodapé/gola, C no meio da borda) sai
+  // com Thickness = espessura + este valor (19,5 -> 20, o que ele validou em
+  // 21/10). Peça retangular não muda. Os furos continuam calculados na
+  // espessura REAL (Z do HoleH = E/2 etc.) — só o número do Plane muda.
+  // A peça tem que estar sobre a base de sacrifício (a fresa passa do fundo).
+  const SOBRECORTE_CONTORNO_MM = 0.5;
+
   function buildBanXml(name, C, L, E, holes, slots, recortes) {
+    const temContorno = !!(recortes && recortes.length);
+    const espessuraPlano = temContorno ? E + SOBRECORTE_CONTORNO_MM : E;
     const now = new Date();
     const pad = function (n) { return String(n).padStart(2, '0'); };
     const time = now.getFullYear() + '/' + pad(now.getMonth() + 1) + '/' + pad(now.getDate())
@@ -2467,7 +2481,7 @@
     const lines = [];
     lines.push('<MicroDrawBan_XML Version="3.0" Time="' + time + '" Source="" SourceType="BAN">');
     lines.push('<Plane Name="' + esc(name) + '" Code="' + esc(name) + '" Material="" PlaneNo=" " Width="'
-      + C.toFixed(1) + '" Hight="' + L.toFixed(1) + '" Thickness="' + fmt(E)
+      + C.toFixed(1) + '" Hight="' + L.toFixed(1) + '" Thickness="' + fmt(espessuraPlano)
       + '" Grain="DIR_NONE" EdgeFBLR="0 ,0 ,0 ,0" PlaneSize="1" MachineBase="-1">');
     lines.push('<Outline>');
     outlineBan(C, L, recortes).forEach(function (p) {

@@ -335,7 +335,7 @@ th { color: var(--muted); font-weight: 600; }
    ficava cortado pelo overflow-x:auto de #po-cutlist-table-wrap. */
 .cl-color-popup-fixed {
   position: fixed;
-  z-index: 500;
+  z-index: 970; /* era 500 — acima da barra fixa (900), 22/10 */
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -498,7 +498,7 @@ th { color: var(--muted); font-weight: 600; }
    só nome/medidas/cor, nunca preço (o breakdown de custo é interno/admin). */
 .piece-info-tooltip {
   position: fixed;
-  z-index: 500;
+  z-index: 970; /* era 500 — acima da barra fixa (900), 22/10 */
   max-width: 240px;
   background: #1f2430;
   color: #fff;
@@ -4009,7 +4009,8 @@ header.po-topnav {
    porque o editor é independente do projeto: ele recebe uma lista de
    segmentos e devolve outra. */
 #po-wall-editor-modal {
-  position: fixed; inset: 0; z-index: 300;
+  /* 950 (era 300): acima da barra fixa (.po-tb-grudada = 900), 22/10 */
+  position: fixed; inset: 0; z-index: 950;
   background: rgba(0,0,0,0.35); display: none;
   align-items: center; justify-content: center;
 }
@@ -4535,7 +4536,7 @@ header.po-topnav {
 /* ==========================================================================
    PEÇAS DO MÓVEL — lista de corte + explodida (2026-08-13)
    ========================================================================== */
-#po-pieces-modal { position: fixed; inset: 0; z-index: 320; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; }
+#po-pieces-modal { position: fixed; inset: 0; z-index: 960; /* era 320 — acima da barra fixa (900), 22/10 */ background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; }
 #po-pieces-modal.open { display: flex; }
 .po-pieces-card {
   background: var(--panel); border-radius: 14px; width: min(1180px, 95vw); height: min(780px, 92vh);
@@ -5117,7 +5118,7 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
    LED EMBUTIDO (2026-09-30) — janela aberta pelo botão da barra do módulo
    (#po-proj-slot-led-btn). Esqueleto do #po-pieces-modal: lista | 3D | form.
    ========================================================================== */
-#po-led-modal { position: fixed; inset: 0; z-index: 320; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; }
+#po-led-modal { position: fixed; inset: 0; z-index: 960; /* era 320 — acima da barra fixa (900), 22/10 */ background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; }
 #po-led-modal.open { display: flex; }
 .po-led-card {
   background: var(--panel); border-radius: 14px; width: min(1240px, 96vw); height: min(760px, 92vh);
@@ -5557,6 +5558,10 @@ header.po-topnav { z-index: 500; background: #ffffff; }
    ela gruda no topo da janela (position:fixed, mesma largura/posição em X),
    e um "fantasma" com a altura dela segura o lugar pra página não pular.
    Lógica no fim de js/portal-12-ajuda.js; escolha lembrada no navegador.
+   REGRA (22/10, Matt: "o botão das paredes fica atrás da barra fixa"):
+   toda janela/popup que abre por cima da página precisa de z-index > 900,
+   senão fica escondida atrás da barra grudada. Ajustados: Paredes (950),
+   Peças e LED (960), popup de cor e dica de peça (970).
    ========================================================================== */
 .po-proj-topbar.po-tb-grudada {
   position: fixed; top: 0; z-index: 900; margin: 0;
