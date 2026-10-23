@@ -3108,6 +3108,23 @@ function renderMoneyPieceFabrica(body, slot, row) {
 // pontos onde aparecem, so para os vendedores") nunca vê o preço de fábrica
 // cru aqui também — nem por módulo nem no total, sempre com a margem do
 // dealer já aplicada (getDisplayPrice).
+// Perfil de alumínio / vidro da porta de vidro (material pela cor, migration
+// 187) com preço ZERO no cadastro — devolve os nomes (sem repetir) pra aba
+// Orçamento avisar por módulo (23/10, Matt: "mostrar mesmo se tiver zerado
+// no orçamento e ainda colocar um aviso").
+function moneyItensSemPreco(linhas, out) {
+  out = out || [];
+  (linhas || []).forEach((p) => {
+    if (!p) return;
+    if (p.is_module) { moneyItensSemPreco(p.child_breakdown, out); return; }
+    const custo = (Number(p.purchased_cost) || 0) - (Number(p.support_cost) || 0);
+    if (p.material_item_id && !(custo > 0)) {
+      const nome = p.material_item_name || p.purchased_item_name || p.reference || '';
+      if (out.indexOf(nome) < 0) out.push(nome);
+    }
+  });
+  return out;
+}
 function renderMoneyOrcamento(body, rel, slots) {
   // MESMO PREÇO DA PROPOSTA (01/10, Matt: "a proposta tem valores
   // diferentes do pedido"). Antes esta aba mostrava o preço de TABELA da
@@ -3125,12 +3142,17 @@ function renderMoneyOrcamento(body, rel, slots) {
   try {
     if (typeof projectSlotsOrderSequence === 'function') projectSlotsOrderSequence().forEach((x) => numeroDoSlot.set(x.slot, x.numero));
   } catch (e) { /* sem numeração */ }
+  const todosSemPreco = [];
   const linhas = (slots || projectSlots).filter((s) => s.result && !(s.module && s.module.visual_only))
     .slice().sort((a, b) => (numeroDoSlot.get(a) || 9999) - (numeroDoSlot.get(b) || 9999))
     .map((s) => {
     const preco = Number(s.result.total) || 0;
-    const aviso = s._priceError
-      ? '<div class="dim" style="color:#b45309;">⚠ ' + I18n.t('money.price_stale') + ' ' + escapeHtmlCutlist(s._priceError) + '</div>' : '';
+    const semPreco = moneyItensSemPreco(s.result.breakdown);
+    semPreco.forEach((n) => { if (todosSemPreco.indexOf(n) < 0) todosSemPreco.push(n); });
+    const aviso = (s._priceError
+      ? '<div class="dim" style="color:#b45309;">⚠ ' + I18n.t('money.price_stale') + ' ' + escapeHtmlCutlist(s._priceError) + '</div>' : '')
+      + (semPreco.length
+        ? '<div class="dim" style="color:#b45309;">⚠ ' + I18n.t('money.no_price_warn') + ' ' + escapeHtmlCutlist(semPreco.join(', ')) + '</div>' : '');
     const num = numeroDoSlot.get(s);
     return '<tr><td>' + (num ? '<span class="po-money-modnum">' + String(num).padStart(3, '0') + '</span> ' : '') + escapeHtmlCutlist(s.module.name || '') + aviso + '</td>'
       + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
@@ -3153,7 +3175,11 @@ function renderMoneyOrcamento(body, rel, slots) {
         + '<strong>' + formatMoney(tabela) + '</strong></div>'
       : '')
     + (semMargem ? '<p class="po-money-sub" style="color:#b45309;">' + I18n.t('money.quote_no_margin_warn') + '</p>' : '');
-  body.innerHTML = '<p class="po-money-sub">' + I18n.t(subKey) + '</p>'
+  // Aviso geral no topo (quem é vendedor também vê — é pra ele saber que o
+  // preço está incompleto antes de mandar pro cliente).
+  const avisoTopo = todosSemPreco.length
+    ? '<p class="po-money-sub" style="color:#b45309;font-weight:600;">⚠ ' + I18n.t('money.no_price_warn') + ' ' + escapeHtmlCutlist(todosSemPreco.join(', ')) + '</p>' : '';
+  body.innerHTML = '<p class="po-money-sub">' + I18n.t(subKey) + '</p>' + avisoTopo
     + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
     + '<th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>' + linhas + '</tbody></table>'
     + totaisHtml;
@@ -3265,7 +3291,8 @@ function renderMoneyFabrica(body, rel) {
     const qtdLabel = l.unit === 'm' ? l.qtd.toFixed(2) + ' m'
       : l.unit === 'm2' ? l.qtd.toFixed(2) + ' m²'
         : l.qtd + ' ' + (l.unit || 'un');
-    html += linha(l.name, qtdLabel, l.custo);
+    html += linha(l.custo > 0 ? l.name
+      : l.name + '<div class="dim" style="color:#b45309;">⚠ ' + I18n.t('money.no_price_warn').replace(/:\s*$/, '') + '</div>', qtdLabel, l.custo);
   });
   html += subtotal(I18n.t('money.subtotal_material'), totalMateria);
 
@@ -3923,7 +3950,10 @@ function collectProjectCostReport(slots) {
       // (purchased_cost - support_cost, pra não contar o kit duas vezes) e o
       // kit soma separado, cada um na sua própria linha/nome.
       const custoComprado = (Number(p.purchased_cost) || 0) - (Number(p.support_cost) || 0);
-      if (p.purchased_item_id && custoComprado > 0) {
+      // Perfil/vidro pela cor (migration 187) entra SEMPRE, mesmo custando 0
+      // (23/10, Matt: "alumínio não está aparecendo no orçamento") — com
+      // preço zerado no cadastro a linha sumia e o perfil ficava invisível.
+      if (p.purchased_item_id && (custoComprado > 0 || p.material_item_id)) {
         registraPecaComprada(p.purchased_item_id, p.purchased_item_name, p.purchased_item_unit,
           Number(p.purchased_item_qty) || 0, custoComprado);
       }
