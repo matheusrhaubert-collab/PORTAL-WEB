@@ -1775,7 +1775,7 @@ LOTES_UI._printSecao = function (id, d, varios) {
     return '<div class="tot">' + d.vidrosPorTipo.map(function (t) { return '<div><b>' + E(t.tipo) + '</b> — ' + t.pecas + ' peça(s) · ' + LOTES_UI._num(t.m2, 2) + ' m²</div>'; }).join('') + '</div>' +
       '<table><thead><tr><th>✓</th><th>Qtd</th><th>Largura × Altura</th><th>Esp.</th><th>Vidro</th><th>Módulos / porta</th></tr></thead><tbody>' +
       d.vidros.map(function (v) {
-        return '<tr><td class="ck">☐</td><td class="q">' + v.quantity + '×</td><td class="m">' + mm(v.w) + ' × ' + mm(v.h) + ' mm</td><td>' + E(String(v.esp)) + ' mm</td>' +
+        return '<tr><td class="ck">☐</td><td class="q">' + v.quantity + '×</td><td class="m">' + LOTES_UI._pol(v.w) + ' × ' + LOTES_UI._pol(v.h) + '<div class="mu">' + mm(v.w) + ' × ' + mm(v.h) + ' mm</div></td><td>' + LOTES_UI._pol(v.esp) + '</td>' +
           '<td>' + E(v.tipo) + '</td><td class="mods">' + E(onde(v.onde)) + (v.portas.length ? '<div class="mu">' + E(v.portas.join(', ')) + '</div>' : '') + '</td></tr>';
       }).join('') + '</tbody></table>';
   }
@@ -1857,9 +1857,96 @@ LOTES_UI._secHead = function (s, extra, temCopiar) {
     '<div class="lp-sec-tit"><span class="lp-sec-ico lp-bg-' + s.id + '">' + s.icone + '</span>' +
       '<div><div class="lp-sec-nome">' + s.label + '</div><div class="erp-muted erp-small">' + extra + '</div></div></div>' +
     '<div class="lp-noprint" style="display:flex;gap:6px">' +
+      (temCopiar && s.id === 'vidros' ? '<button type="button" class="erp-btn erp-btn-sm" onclick="LOTES_UI.vidroCompra()">🛒 Fazer compra</button>' : '') +
       (temCopiar ? '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.procCopiar(\'' + s.id + '\', this)">Copiar lista</button>' : '') +
       '<button type="button" class="erp-btn erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.procImprimir(\'' + s.id + '\')">Gerar impressão (Letter)</button>' +
     '</div></div>';
+};
+
+/* ---------- COMPRA DE VIDRO (23/10) ----------
+   Botão "Fazer compra" da seção Vidros: monta o e-mail pro fornecedor com
+   lote, pedido, largura × altura e espessura em polegadas (1/16) e a cor do
+   vidro. O ERP não tem servidor de e-mail, então abre uma prévia editável e
+   manda pelo Gmail (aba nova) ou pelo app de e-mail do PC (mailto). */
+LOTES_UI.FORNECEDOR_VIDRO = { nome: 'Elegance Glass LLC', email: 'eleganceglassllc@gmail.com', telefone: '' };
+
+LOTES_UI._corVidro = function (tipo) {
+  const s = String(tipo || '').replace(/\(.*?\)/g, ' ').replace(/^\s*(vidro|glass)\s+/i, '')
+    .replace(/\d+\s*\/\s*\d+\s*("|pol\b|in\b)?/gi, ' ').replace(/\d+([.,]\d+)?\s*mm\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  const mapa = [[/extra\s*clear|low.?iron|extra\s*incolor/i, 'Low-iron (extra clear)'], [/incolor|transparente|clear/i, 'Clear'],
+    [/fum[eê]|smoke|cinza|gray|grey/i, 'Gray (smoked)'], [/bronze/i, 'Bronze'], [/espelho|mirror/i, 'Mirror'],
+    [/jatead|fosc|frost|satin|acid/i, 'Frosted'], [/verde|green/i, 'Green'], [/preto|black/i, 'Black'], [/branco|white/i, 'White']];
+  for (let i = 0; i < mapa.length; i++) {
+    if (mapa[i][0].test(s)) return mapa[i][1] + (s && mapa[i][1].toLowerCase() !== s.toLowerCase() ? ' (' + s + ')' : '');
+  }
+  return s || String(tipo || '');
+};
+
+LOTES_UI._emailVidro = function (d) {
+  const b = d.batch || {}, pol = LOTES_UI._pol;
+  const varios = (d.pedidos || []).length > 1;
+  const pedidos = (d.pedidos || []).map(function (o) { return o.po_name || o.client_name; }).filter(Boolean).join(', ');
+  const total = d.vidros.reduce(function (t, v) { return t + v.quantity; }, 0);
+  const linhas = d.vidros.map(function (v, i) {
+    const ped = varios ? ' | Order: ' + (v.onde || []).map(function (o) { return o.pedido; }).join(', ') : '';
+    return (i + 1) + ') Qty ' + v.quantity + ' | W ' + pol(v.w) + ' x H ' + pol(v.h) + ' | Thickness ' + pol(v.esp) + ' | Color: ' + LOTES_UI._corVidro(v.tipo) + ped;
+  });
+  const assunto = 'Glass order - Lot ' + (b.code || '') + (pedidos ? ' - Order ' + pedidos : '');
+  const corpo = ['Hello ' + LOTES_UI.FORNECEDOR_VIDRO.nome + ',', '',
+    'Please see the glass order below and confirm price and lead time.', '',
+    'Lot: ' + (b.code || '-'), 'Order: ' + (pedidos || '-'), '',
+    'All sizes in inches (width x height):', ''].concat(linhas, ['', 'Total: ' + total + ' piece(s)', '', 'Thank you,', 'Matt', 'Legno Home']).join('\n');
+  return { assunto: assunto, corpo: corpo };
+};
+
+LOTES_UI.vidroCompra = function () {
+  const d = LOTES_UI._procData;
+  if (!d || !d.vidros || !d.vidros.length) { LOTES_UI.toast('Nenhum vidro neste lote.', true); return; }
+  const f = LOTES_UI.FORNECEDOR_VIDRO, E = UI.esc, em = LOTES_UI._emailVidro(d);
+  const velho = document.getElementById('lp-compra-vidro'); if (velho) velho.remove();
+  const ov = document.createElement('div');
+  ov.id = 'lp-compra-vidro';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,18,15,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const tel = f.telefone
+    ? '<a href="tel:' + E(f.telefone.replace(/[^\d+]/g, '')) + '">📞 ' + E(f.telefone) + '</a>'
+    : '<span class="erp-muted">📞 telefone não cadastrado</span>';
+  ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:640px;width:100%;max-height:92vh;overflow:auto;padding:20px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25)">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">' +
+      '<div><div style="font-size:18px;font-weight:700">🛒 Compra de vidro — ' + E(f.nome) + '</div>' +
+      '<div class="erp-small" style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap"><a href="mailto:' + E(f.email) + '">✉ ' + E(f.email) + '</a>' + tel + '</div></div>' +
+      '<button type="button" class="erp-btn erp-btn-ghost erp-btn-sm" data-lpcv="fechar">✕</button></div>' +
+    '<label class="erp-small erp-muted" style="display:block;margin-top:14px">Assunto</label>' +
+    '<input id="lpcv-assunto" class="erp-input" style="width:100%" value="' + E(em.assunto) + '">' +
+    '<label class="erp-small erp-muted" style="display:block;margin-top:10px">Mensagem (pode editar antes de mandar)</label>' +
+    '<textarea id="lpcv-corpo" class="erp-input" style="width:100%;min-height:260px;font-family:Consolas,monospace;font-size:13px;line-height:1.4">' + E(em.corpo) + '</textarea>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px">' +
+      '<button type="button" class="erp-btn erp-btn-ghost" data-lpcv="copiar">Copiar texto</button>' +
+      '<button type="button" class="erp-btn erp-btn-secondary" data-lpcv="mailto">Abrir no app de e-mail</button>' +
+      '<button type="button" class="erp-btn" data-lpcv="gmail">Abrir no Gmail</button>' +
+    '</div>' +
+    '<div class="erp-muted erp-xs" style="margin-top:8px;text-align:right">O e-mail abre pronto — é só conferir e clicar em Enviar.</div></div>';
+  document.body.appendChild(ov);
+  const fechar = function () { ov.remove(); document.removeEventListener('keydown', esc); };
+  const esc = function (e) { if (e.key === 'Escape') fechar(); };
+  document.addEventListener('keydown', esc);
+  ov.addEventListener('click', function (e) {
+    if (e.target === ov) { fechar(); return; }
+    const acao = e.target.closest && e.target.closest('[data-lpcv]');
+    if (!acao) return;
+    const tipo = acao.getAttribute('data-lpcv');
+    if (tipo === 'fechar') { fechar(); return; }
+    const su = document.getElementById('lpcv-assunto').value, bo = document.getElementById('lpcv-corpo').value;
+    const enc = encodeURIComponent;
+    if (tipo === 'copiar') {
+      const t = 'To: ' + f.email + '\nSubject: ' + su + '\n\n' + bo;
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { acao.textContent = 'Copiado ✓'; }, function () { window.prompt('Copie:', t); });
+      else window.prompt('Copie:', t);
+    } else if (tipo === 'gmail') {
+      window.open('https://mail.google.com/mail/?view=cm&fs=1&to=' + enc(f.email) + '&su=' + enc(su) + '&body=' + enc(bo), '_blank');
+    } else if (tipo === 'mailto') {
+      window.location.href = 'mailto:' + f.email + '?subject=' + enc(su) + '&body=' + enc(bo);
+    }
+  });
 };
 
 /* --- desenhos (SVG) --- */
@@ -1958,8 +2045,8 @@ LOTES_UI.proc = function (params, d) {
   LOTES_UI._procTextos.aluminio = txtAlu.join('\n');
 
   /* ---------- VIDROS ---------- */
-  const txtVid = ['VIDROS — ' + (b.code || ''), 'QTD | LARGURA x ALTURA (mm) | ESPESSURA | VIDRO'];
-  d.vidros.forEach(function (v) { txtVid.push(v.quantity + ' | ' + v.w + ' x ' + v.h + ' mm | esp. ' + v.esp + ' mm | ' + v.tipo); });
+  const txtVid = ['VIDROS — ' + (b.code || ''), 'QTD | LARGURA x ALTURA (pol, 1/16) | ESPESSURA | VIDRO'];
+  d.vidros.forEach(function (v) { txtVid.push(v.quantity + ' | ' + pol(v.w) + ' x ' + pol(v.h) + ' | esp. ' + pol(v.esp) + ' | ' + v.tipo); });
   d.vidrosPorTipo.forEach(function (t) { txtVid.push('Total ' + t.tipo + ': ' + t.pecas + ' pcs · ' + t.m2.toFixed(3) + ' m²'); });
   LOTES_UI._procTextos.vidros = txtVid.join('\n');
   const vidHtml = d.vidros.length
@@ -1970,8 +2057,8 @@ LOTES_UI.proc = function (params, d) {
         return '<div class="lp-card lp-card-vidro">' +
           '<div class="lp-card-draw">' + LOTES_UI._svgVidro(v) + '</div>' +
           '<div class="lp-card-info"><div class="lp-qtd-big">' + v.quantity + '×</div>' +
-            '<div class="lp-medida">' + v.w + ' × ' + v.h + ' mm</div>' +
-            '<div class="erp-muted erp-small">espessura ' + v.esp + ' mm</div>' +
+            '<div class="lp-medida">' + pol(v.w) + ' × ' + pol(v.h) + '</div>' +
+            '<div class="erp-muted erp-small">espessura ' + pol(v.esp) + ' · ' + v.w + ' × ' + v.h + ' × ' + v.esp + ' mm</div>' +
             '<div class="erp-small">' + UI.esc(v.tipo) + '</div>' +
             '<div class="erp-muted erp-xs">' + UI.esc(LOTES_UI._ondeTxt(v.onde, varios)) + (v.portas.length ? ' · ' + UI.esc(v.portas.join(', ')) : '') + '</div>' +
           '</div></div>';
@@ -2046,7 +2133,7 @@ LOTES_UI.proc = function (params, d) {
     '<div id="lp-root">' +
       '<div class="lp-tiles lp-noprint">' + tiles + '</div>' +
       sec('aluminio', aluHtml, c.aluminio ? 'Cortar na serra de alumínio — medida e ângulo de cada peça, e como aproveitar a barra' : 'vara de cabide, perfil de porta de vidro, perfil de LED', true) +
-      sec('vidros', vidHtml, c.vidros ? 'Medida de cada vidro pro fornecedor (largura × altura, mm)' : 'vidros das portas e qualquer item comprado do tipo vidro', true) +
+      sec('vidros', vidHtml, c.vidros ? 'Medida de cada vidro pro fornecedor (largura × altura, polegadas em 1/16)' : 'vidros das portas e qualquer item comprado do tipo vidro', true) +
       sec('montagem', montHtml, 'Portas e painéis que saem do corte e precisam ser montados', false) +
       sec('dovetail', dovHtml, 'Caixotes Hardwood Dovetail pra pedir ao fornecedor', true) +
       sec('ferragens', LOTES_UI._ferragensHtml(d.ferragens, varios, null), 'Tudo que é comprado pronto, pra separar por módulo antes da montagem', true) +

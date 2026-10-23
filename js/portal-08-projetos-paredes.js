@@ -7664,3 +7664,35 @@ function serializeProjectSlots() {
     group_name: slot.group_name || null
   }));
 }
+
+// ==========================================================================
+// REBAIXAR PAREDES (2026-10-22, Matt: "um recurso que eu possa ocultar as
+// paredes quando elas ficam na frente... botão novo em Wall. rebaixar
+// paredes. clicado ele oculta paredes, deixando eu clicar no que tem atrás
+// da parede. só quando essa parede ficar na frente da vista").
+// Botão liga/desliga no menu Paredes (#po-proj-wall-cutaway-btn). Quem decide
+// QUAL parede rebaixa é o viewer, quadro a quadro, pela posição da câmera
+// (ViewerComposition.setWallCutaway, viewer3d_composition.js). Escolha
+// lembrada no navegador. Só desenho — não mexe em projeto/preço/foto.
+// ==========================================================================
+(function ligaRebaixarParedes() {
+  const CHAVE = 'legno.portal.rebaixarParedes';
+  const btn = document.getElementById('po-proj-wall-cutaway-btn');
+  if (!btn) return;
+  let ligado = false;
+  try { ligado = localStorage.getItem(CHAVE) === '1'; } catch (e) { /* ok */ }
+  const aplicar = () => {
+    btn.classList.toggle('active', ligado);
+    btn.setAttribute('aria-pressed', ligado ? 'true' : 'false');
+    [typeof ViewerProjectEdit !== 'undefined' ? ViewerProjectEdit : null,
+     typeof ViewerProject !== 'undefined' ? ViewerProject : null].forEach((v) => {
+      if (v && typeof v.setWallCutaway === 'function') v.setWallCutaway(ligado);
+    });
+  };
+  btn.addEventListener('click', () => {
+    ligado = !ligado;
+    try { localStorage.setItem(CHAVE, ligado ? '1' : '0'); } catch (e) { /* ok */ }
+    aplicar();
+  });
+  aplicar();
+})();

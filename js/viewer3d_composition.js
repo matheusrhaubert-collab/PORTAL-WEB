@@ -86,6 +86,30 @@ function createViewerComposition3D() {
   // (DOOR_OPEN_ANGLE, animate() a cada frame) — comportamento visual idêntico
   // ao configurador de módulo único.
   let currentOpenables = [];
+  // REBAIXAR PAREDES (2026-10-22, Matt: "ocultar as paredes quando elas ficam
+  // na frente... clicado ele oculta paredes, deixando eu clicar no que tem
+  // atrás da parede. só quando essa parede ficar na frente da vista").
+  // Ligado: a cada quadro, a parede cuja câmera está do lado de FORA (atrás
+  // da face interna) é rebaixada a uma mureta de PAREDE_REBAIXADA_M (escala Y
+  // da malha — a geometria nasce em y=0, então encolhe pro chão). Malha baixa
+  // = o raio do clique passa por cima e pega o módulo atrás. Girou a câmera e
+  // a parede deixou de estar na frente → volta inteira sozinha. Só desenho:
+  // não muda projeto, medida, preço nem foto realista.
+  let wallCutaway = false;
+  let cutawayItens = [];   // { obj, ix, iz, px, pz, h }
+  const PAREDE_REBAIXADA_M = 0.10;
+  function aplicarRebaixoParedes() {
+    if (!camera || !cutawayItens.length) return;
+    const cx = camera.position.x, cz = camera.position.z;
+    for (let i = 0; i < cutawayItens.length; i++) {
+      const it = cutawayItens[i];
+      const naFrente = wallCutaway && ((cx - it.px) * it.ix + (cz - it.pz) * it.iz) < 0;
+      const alvo = naFrente ? Math.min(1, PAREDE_REBAIXADA_M / Math.max(it.h, 0.01)) : 1;
+      if (it.obj.scale.y !== alvo) it.obj.scale.y = alvo;
+    }
+  }
+  function setWallCutaway(on) { wallCutaway = !!on; aplicarRebaixoParedes(); }
+  function isWallCutaway() { return wallCutaway; }
   let doorsOpen = false;
   let drawersOpen = false;
   // Junção automática de rodapé entre módulos adjacentes (migration 137,
@@ -311,6 +335,7 @@ function createViewerComposition3D() {
     if (!renderer) return;
     requestAnimationFrame(animate);
     if (controls) controls.update();
+    if (cutawayItens.length) aplicarRebaixoParedes();
     // Interpolação suave de porta/gaveta abrindo/fechando — mesma matemática
     // de viewer3d.js/animate() (mantida idêntica de propósito, mesmo "feel"
     // nos dois viewers).
@@ -381,6 +406,7 @@ function createViewerComposition3D() {
       disposeObject3D(group);
     });
     currentGroups = [];
+    cutawayItens = [];
   }
 
   // Material da peça original de rodapé, pra pintar a peça FUNDIDA igual —
@@ -1457,6 +1483,7 @@ function createViewerComposition3D() {
   // desenha o texto do pé-direito só uma vez (evita repetir o mesmo rótulo em
   // 2-3 paredes).
   function buildRoomEnvironmentMultiWall(segments, room) {
+    cutawayItens = [];
     const group = new THREE.Group();
     const ceilingH = room.ceiling_m;
     const baseH = room.baseboard_h_m || 0;
@@ -1574,15 +1601,22 @@ function createViewerComposition3D() {
         // ativar sem depender de nenhum módulo estar em cima dela.
         wallSurface.userData.wallIndex = seg.wallIndex;
         group.add(wallSurface);
+        cutawayItens.push({ obj: wallSurface, ix, iz, px: A.x, pz: A.z, h: ceilingH });
       }
 
       group.add(makeLine(p0.clone(), p1.clone()));
-      group.add(makeLine(p0.clone().setY(ceilingH), p1.clone().setY(ceilingH)));
+      // linhas de cima e de canto descem junto com a parede rebaixada (mesma
+      // escala Y — nascem em y=0..ceilingH)
+      const rebaixavel = (obj) => {
+        if (seg.intoDir) cutawayItens.push({ obj, ix: seg.intoDir.x || 0, iz: seg.intoDir.z || 0, px: p0.x, pz: p0.z, h: ceilingH });
+        return obj;
+      };
+      group.add(rebaixavel(makeLine(p0.clone().setY(ceilingH), p1.clone().setY(ceilingH))));
       // Traço vertical de canto SÓ na ponta solta (2026-08-18). Na ponta
       // encostada ele fica enterrado dentro da mitra e cruza o contorno dela —
       // era parte do risco que aparecia no vértice.
-      if (juntaIni < 0) group.add(makeLine(p0.clone(), p0.clone().setY(ceilingH)));
-      if (juntaFim < 0) group.add(makeLine(p1.clone(), p1.clone().setY(ceilingH)));
+      if (juntaIni < 0) group.add(rebaixavel(makeLine(p0.clone(), p0.clone().setY(ceilingH))));
+      if (juntaFim < 0) group.add(rebaixavel(makeLine(p1.clone(), p1.clone().setY(ceilingH))));
 
       // ==================================================================
       // RÓTULO DE TETO E TRACEJADAS DE RODAPÉ/RODAFORRO — REMOVIDOS
@@ -3963,6 +3997,8 @@ function createViewerComposition3D() {
     // pro vizinho no dedo) e worldToClient (botões DOM sobre o módulo).
     // Projeção da câmera (2026-08-13): 'paralela' (ortográfica) x 'perspectiva'.
     setCameraProjection, getCameraProjection,
+    // Rebaixar paredes que ficam na frente da vista (2026-10-22)
+    setWallCutaway, isWallCutaway,
     pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,
     // Cotas só do selecionado (2026-10-14) — ver refreshDimensionLines.
     refreshDimensionLines,
