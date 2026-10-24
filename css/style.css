@@ -5905,3 +5905,11 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 .po-sc-mouse .on { fill: var(--accent, #c0843f); }
 .po-sc-mouse .dedo { fill: var(--accent, #c0843f); opacity: .85; }
 .po-sc-mouse .seta { fill: none; stroke: var(--accent, #c0843f); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.po-sc-mouse-cfg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.po-sc-mouse-cfg label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.po-sc-mouse-cfg select { width: 100%; }
+.po-sc-mouse-cfg .po-sc-presets, .po-sc-mouse-cfg .po-sc-aviso { grid-column: 1 / -1; }
+.po-sc-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.po-sc-presets button { background: transparent; color: var(--text, #1a1a1a); border: 1px solid var(--border, #ddd); border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+.po-sc-presets button.ativo { background: var(--text, #1a1a1a); color: #fff; }
+@media (max-width: 560px) { .po-sc-mouse-cfg { grid-template-columns: 1fr; } }

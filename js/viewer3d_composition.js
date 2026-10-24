@@ -2458,6 +2458,35 @@ function createViewerComposition3D() {
 
   let customMouseNavAttached = false;
   let lastMouseRotateAt = 0;
+  // GESTOS CONFIGURÁVEIS (2026-10-24, Matt: "deixa trocar quais botões do
+  // mouse fazem cada coisa" — tela de Atalhos, js/portal-27-atalhos.js).
+  // pan/rotate = um gesto cada:
+  //   'middle'       rodinha apertada arrastando
+  //   'shift+middle' Shift + rodinha arrastando
+  //   'middle+right' rodinha + direito juntos arrastando
+  //   'right'        direito arrastando (aí o "Reposicionar" com o direito sai)
+  //   'alt+left'     Alt/Option + esquerdo arrastando
+  //   'space+left'   Espaço segurado + esquerdo arrastando
+  // Padrão = o de sempre (rodinha move, rodinha+direito gira). No Mac os
+  // atalhos Option/Espaço continuam valendo além do escolhido (trackpad não
+  // tem rodinha).
+  let mouseNavCfg = { pan: 'middle', rotate: 'middle+right' };
+  const GESTOS_MOUSE = ['middle', 'shift+middle', 'middle+right', 'right', 'alt+left', 'space+left'];
+  function setMouseNav(cfg) {
+    const pan = cfg && GESTOS_MOUSE.includes(cfg.pan) ? cfg.pan : 'middle';
+    let rotate = cfg && GESTOS_MOUSE.includes(cfg.rotate) ? cfg.rotate : 'middle+right';
+    if (rotate === pan) rotate = pan === 'middle+right' ? 'middle' : 'middle+right';
+    mouseNavCfg = { pan, rotate };
+  }
+  function acaoDoGesto(g) {
+    if (!g) return null;
+    if (mouseNavCfg.pan === g) return 'pan';
+    if (mouseNavCfg.rotate === g) return 'rotate';
+    if (ehMac && g === 'alt+left') return 'rotate';
+    if (ehMac && g === 'space+left') return 'pan';
+    return null;
+  }
+  const gestoUsado = (g) => mouseNavCfg.pan === g || mouseNavCfg.rotate === g;
   // Atalhos do Mac (14/10) SÓ no Mac — Matt: "não muda nada de como está
   // hoje". No Windows/Linux tudo continua exatamente como era.
   const ehMac = (typeof navigator !== 'undefined')
@@ -2480,7 +2509,7 @@ function createViewerComposition3D() {
     let espacoApertado = false;
     const emCampo = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
     window.addEventListener('keydown', (ev) => {
-      if (ehMac && ev.code === 'Space' && !emCampo(ev.target)) {
+      if ((ehMac || gestoUsado('space+left')) && ev.code === 'Space' && !emCampo(ev.target)) {
         espacoApertado = true;
         if (ativo() && el.matches(':hover')) ev.preventDefault(); // sem rolar a página
       }
@@ -2488,17 +2517,24 @@ function createViewerComposition3D() {
     window.addEventListener('keyup', (ev) => { if (ev.code === 'Space') espacoApertado = false; });
     window.addEventListener('blur', () => { espacoApertado = false; });
     window.addEventListener('pointerdown', (ev) => {
-      if (!ehMac || ev.target !== el || ev.pointerType !== 'mouse' || ev.button !== 0 || !ativo()) return;
-      if (!ev.altKey && !espacoApertado) return;
+      if (ev.target !== el || ev.pointerType !== 'mouse' || !ativo()) return;
+      let gesto = null, mask = 1;
+      if (ev.button === 0) gesto = ev.altKey ? 'alt+left' : (espacoApertado ? 'space+left' : null);
+      else if (ev.button === 2 && gestoUsado('right')) { gesto = 'right'; mask = 2; }
+      const acao = acaoDoGesto(gesto);
+      if (!acao) return;
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: ev.altKey ? 'girar' : 'mover' };
+      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: acao === 'rotate' ? 'girar' : 'mover', mask, btn: ev.button, moveu: false };
       try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
     }, true);
     // Soltar/clicar no fim do gesto Option/Espaço não vira clique de seleção.
     let fimNavTeclaAt = 0;
     window.addEventListener('pointerup', (ev) => {
-      if (!nav || nav.modo === 'meio' || ev.button !== 0) return;
+      if (!nav || nav.modo === 'meio' || ev.button !== nav.btn) return;
+      // direito arrastado: o 'contextmenu' que vem logo depois não abre menu
+      // (ver o listener de contextmenu no fim). Clique SEM arrastar abre.
+      if (nav.btn === 2 && nav.moveu) lastMouseRotateAt = Date.now();
       nav = null;
       fimNavTeclaAt = Date.now();
       ev.stopImmediatePropagation();
@@ -2511,16 +2547,17 @@ function createViewerComposition3D() {
     el.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType !== 'mouse' || !ativo()) return;
       if (ev.button !== 1) return; // o gesto sempre começa no MEIO
-      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: 'meio' };
+      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: 'meio', shift: !!ev.shiftKey };
       try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
     });
     el.addEventListener('pointermove', (ev) => {
       if (!nav || ev.pointerType !== 'mouse') return;
       if (nav.modo !== 'meio') {
-        if (!(ev.buttons & 1)) { nav = null; return; }
+        if (!(ev.buttons & (nav.mask || 1))) { nav = null; return; }
         ev.stopImmediatePropagation();
         const ddx = ev.clientX - nav.x, ddy = ev.clientY - nav.y;
         nav.x = ev.clientX; nav.y = ev.clientY;
+        if (ddx || ddy) nav.moveu = true;
         if (nav.modo === 'girar') {
           if (!nav.rotating) { nav.rotating = true; el.dispatchEvent(new CustomEvent('legno:orbitrotatestart')); }
           lastMouseRotateAt = Date.now();
@@ -2534,7 +2571,11 @@ function createViewerComposition3D() {
       if (!meio) { nav = null; return; }
       const dx = ev.clientX - nav.x, dy = ev.clientY - nav.y;
       nav.x = ev.clientX; nav.y = ev.clientY;
-      if (meio && direito) {
+      const gesto = (meio && direito) ? 'middle+right' : (nav.shift ? 'shift+middle' : 'middle');
+      // Shift+rodinha sem nada configurado pra ele = rodinha normal
+      const acao = acaoDoGesto(gesto) || (gesto === 'shift+middle' ? acaoDoGesto('middle') : null);
+      if (meio && direito) lastMouseRotateAt = Date.now();   // segura o menu do direito
+      if (acao === 'rotate') {
         if (!nav.rotating) {
           nav.rotating = true;
           // portal-08 recentraliza a órbita no módulo selecionado no início do giro
@@ -2542,7 +2583,7 @@ function createViewerComposition3D() {
         }
         lastMouseRotateAt = Date.now();
         mouseNavRotate(dx, dy);
-      } else {
+      } else if (acao === 'pan') {
         mouseNavPan(dx, dy);
       }
     });
@@ -2550,7 +2591,7 @@ function createViewerComposition3D() {
       if (!nav) return;
       if (nav.rotating) lastMouseRotateAt = Date.now();
       if (nav.modo !== 'meio') {
-        if (!(ev.buttons & 1)) { nav = null; ev.stopImmediatePropagation(); }
+        if (!(ev.buttons & (nav.mask || 1))) { nav = null; ev.stopImmediatePropagation(); }
         return;
       }
       if (!(ev.buttons & 4)) nav = null;
@@ -2612,6 +2653,24 @@ function createViewerComposition3D() {
 
   function getDomElement() {
     return renderer ? renderer.domElement : null;
+  }
+
+  // Atalhos de teclado (2026-10-24): mover/girar a vista sem mouse. Mesmas
+  // contas do arraste (dx/dy em pixels de tela).
+  let ultimoGiroTeclaAt = 0;
+  function navPanBy(dx, dy) {
+    if (!controls || !renderer) return false;
+    lastUserCameraTouchAt = Date.now();
+    mouseNavPan(dx, dy);
+    return true;
+  }
+  function navRotateBy(dx, dy) {
+    if (!controls || !renderer) return false;
+    lastUserCameraTouchAt = Date.now();
+    if (Date.now() - ultimoGiroTeclaAt > 1500) renderer.domElement.dispatchEvent(new CustomEvent('legno:orbitrotatestart'));
+    ultimoGiroTeclaAt = Date.now();
+    mouseNavRotate(dx, dy);
+    return true;
   }
 
   // ==========================================================================
@@ -3987,7 +4046,7 @@ function createViewerComposition3D() {
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
-    setControlsEnabled, getDomElement, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
+    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight, pickMultiHighlightAt,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.

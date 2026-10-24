@@ -36,6 +36,17 @@ const ATALHO_ACOES = [
   { g: 'view', id: 'show_all', def: 'Shift+H', btn: 'po-proj-tb-mostrar-btn' },
   { g: 'view', id: 'view3d', def: 'V', btn: 'po-proj-view3d-tb-btn' },
 
+  // Câmera pelo teclado (24/10, Matt: "deixa opção de pan e girar no teclado
+  // também, se o usuário achar melhor") — mesma conta do arraste do mouse.
+  { g: 'camera', id: 'pan_left', def: 'Mod+ArrowLeft', run: () => atalhoCamera('pan', 80, 0), rot: 'sc.pan_left' },
+  { g: 'camera', id: 'pan_right', def: 'Mod+ArrowRight', run: () => atalhoCamera('pan', -80, 0), rot: 'sc.pan_right' },
+  { g: 'camera', id: 'pan_up', def: 'Mod+ArrowUp', run: () => atalhoCamera('pan', 0, 80), rot: 'sc.pan_up' },
+  { g: 'camera', id: 'pan_down', def: 'Mod+ArrowDown', run: () => atalhoCamera('pan', 0, -80), rot: 'sc.pan_down' },
+  { g: 'camera', id: 'rot_left', def: 'Mod+Shift+ArrowLeft', run: () => atalhoCamera('rot', 40, 0), rot: 'sc.rot_left' },
+  { g: 'camera', id: 'rot_right', def: 'Mod+Shift+ArrowRight', run: () => atalhoCamera('rot', -40, 0), rot: 'sc.rot_right' },
+  { g: 'camera', id: 'rot_up', def: 'Mod+Shift+ArrowUp', run: () => atalhoCamera('rot', 0, 30), rot: 'sc.rot_up' },
+  { g: 'camera', id: 'rot_down', def: 'Mod+Shift+ArrowDown', run: () => atalhoCamera('rot', 0, -30), rot: 'sc.rot_down' },
+
   { g: 'measure', id: 'dims', def: 'D', btn: 'po-proj-dims-btn' },
   { g: 'measure', id: 'ruler', def: 'R', btn: 'po-proj-ruler-btn' },
   { g: 'measure', id: 'ruler_clear', def: 'Shift+R', btn: 'po-proj-ruler-clear-btn' },
@@ -69,7 +80,17 @@ const ATALHO_ACOES = [
   { g: 'project', id: 'render', def: '', btn: 'po-proj-render-btn' },
   { g: 'project', id: 'shortcuts', def: 'Shift+/', run: () => abrirTelaAtalhos(), rot: 'sc.title' }
 ];
-const ATALHO_GRUPOS = ['view', 'measure', 'open', 'module', 'project'];
+const ATALHO_GRUPOS = ['view', 'camera', 'measure', 'open', 'module', 'project'];
+// Gestos do mouse (mesmos nomes do viewer3d_composition.js setMouseNav).
+// Moram no MESMO objeto bindings (chaves mouse_pan / mouse_rotate).
+const ATALHO_MOUSE_PADRAO = { mouse_pan: 'middle', mouse_rotate: 'middle+right' };
+const ATALHO_GESTOS = ['middle', 'shift+middle', 'middle+right', 'right', 'alt+left', 'space+left'];
+const ATALHO_GESTO_SVG = { 'middle': 'middle', 'shift+middle': 'middle', 'middle+right': 'mid+right', 'right': 'right', 'alt+left': 'left', 'space+left': 'left' };
+const ATALHO_PRESETS_MOUSE = [
+  { id: 'legno', pan: 'middle', rotate: 'middle+right' },
+  { id: 'sketchup', pan: 'shift+middle', rotate: 'middle' },
+  { id: 'right', pan: 'middle', rotate: 'right' }
+];
 // Já usados por outras partes do portal — não dá pra reaproveitar.
 const ATALHO_FIXOS = [
   { k: 'Mod+Z', rot: 'sc.fixed_undo' }, { k: 'Mod+Y', rot: 'sc.fixed_redo' }, { k: 'Mod+Shift+Z', rot: 'sc.fixed_redo' },
@@ -85,7 +106,7 @@ let atalhoCarregado = false;
 function atalhoPadraoCodigo() {
   const o = {};
   ATALHO_ACOES.forEach((a) => { o[a.id] = a.def; });
-  return o;
+  return Object.assign(o, ATALHO_MOUSE_PADRAO);
 }
 function atalhoMapaFabrica() { return Object.assign(atalhoPadraoCodigo(), atalhoFabrica || {}); }
 function atalhoMapaEfetivo() { return Object.assign(atalhoMapaFabrica(), atalhoConta || {}); }
@@ -146,7 +167,7 @@ function atalhoIcone(a) {
   const b = atalhoBotao(a);
   const svg = b && b.querySelector('svg:not(.po-tb-dd-caret)');
   if (svg) return svg.outerHTML;
-  const glifos = { move_left: '←', move_right: '→', move_up: '↑', move_down: '↓', move_left_fast: '⇇', move_right_fast: '⇉', move_up_fast: '⇈', move_down_fast: '⇊', next_wall: '⤳', prev_wall: '⤶', shortcuts: '⌨' };
+  const glifos = { pan_left: '⇦', pan_right: '⇨', pan_up: '⇧', pan_down: '⇩', rot_left: '↺', rot_right: '↻', rot_up: '⤒', rot_down: '⤓', move_left: '←', move_right: '→', move_up: '↑', move_down: '↓', move_left_fast: '⇇', move_right_fast: '⇉', move_up_fast: '⇈', move_down_fast: '⇊', next_wall: '⤳', prev_wall: '⤶', shortcuts: '⌨' };
   return '<span class="po-sc-glyph">' + (glifos[a.id] || '•') + '</span>';
 }
 
@@ -168,6 +189,19 @@ function atalhoMover(eixo, mult) {
   if (typeof nudgeProjectGroup === 'function' && nudgeProjectGroup(s, axis, delta)) return true;
   if (chao) nudgeProjectFloorSlot(s, axis, delta); else nudgeProjectWallSlot(s, axis, delta);
   return true;
+}
+function atalhoCamera(tipo, dx, dy) {
+  const v = (typeof ViewerProjectEdit !== 'undefined') ? ViewerProjectEdit : null;
+  if (!v) return false;
+  return tipo === 'pan' ? !!(v.navPanBy && v.navPanBy(dx, dy)) : !!(v.navRotateBy && v.navRotateBy(dx, dy));
+}
+function atalhoAplicarMouse() {
+  const m = atalhoMapaEfetivo();
+  try {
+    if (typeof ViewerProjectEdit !== 'undefined' && ViewerProjectEdit && ViewerProjectEdit.setMouseNav) {
+      ViewerProjectEdit.setMouseNav({ pan: m.mouse_pan, rotate: m.mouse_rotate });
+    }
+  } catch (e) { /* ok */ }
 }
 function atalhoTrocarParede(dir) {
   const s = atalhoSlotSelecionado();
@@ -234,6 +268,7 @@ async function atalhoCarregar() {
     atalhoEhAdmin = !!(adm && !adm.error && adm.data === true);
     atalhoCarregado = !(fab && fab.error);
     atalhoAtualizarTitulos();
+    atalhoAplicarMouse();
   } catch (e) { /* sem tabela (migration 218 não rodou): fica no padrão do código */ }
 }
 // Só o que difere da base vai pro banco.
@@ -258,6 +293,7 @@ async function atalhoSalvar(rascunho, comoFabrica) {
     atalhoConta = bindings;
   }
   atalhoAtualizarTitulos();
+  atalhoAplicarMouse();
 }
 
 // Mostra o atalho no balãozinho do botão da barra: "Ajustar à tela [F]".
@@ -293,25 +329,40 @@ function atalhoTrackpadSvg(dedos) {
     : '<circle class="dedo" cx="38" cy="35" r="5"/><circle class="dedo" cx="52" cy="35" r="5"/>';
   return `<svg class="po-sc-mouse" viewBox="0 0 90 70" aria-hidden="true"><rect class="corpo" x="5" y="8" width="80" height="54" rx="8"/>${pts}</svg>`;
 }
+function atalhoGestoLinha(g, acao) {
+  return [atalhoMouseSvg(ATALHO_GESTO_SVG[g] || 'middle'), 'sc.g_' + g.replace(/\+/g, '_'), acao];
+}
+function atalhoHtmlMouseConfig() {
+  const r = atalhoRascunho || atalhoMapaEfetivo();
+  const opts = (sel, outro) => ATALHO_GESTOS.map((g) => `<option value="${g}"${g === sel ? ' selected' : ''}${g === outro ? ' disabled' : ''}>${I18n.t('sc.g_' + g.replace(/\+/g, '_'))}</option>`).join('');
+  const preset = ATALHO_PRESETS_MOUSE.find((p) => p.pan === r.mouse_pan && p.rotate === r.mouse_rotate);
+  return `<div class="po-sc-mouse-cfg">
+    <div class="po-sc-presets">${ATALHO_PRESETS_MOUSE.map((p) => `<button type="button" data-preset="${p.id}" class="${preset && preset.id === p.id ? 'ativo' : ''}">${I18n.t('sc.preset_' + p.id)}</button>`).join('')}</div>
+    <label>${I18n.t('sc.do_pan')}<select class="po-sc-sel" data-mouse="mouse_pan">${opts(r.mouse_pan, r.mouse_rotate)}</select></label>
+    <label>${I18n.t('sc.do_rotate')}<select class="po-sc-sel" data-mouse="mouse_rotate">${opts(r.mouse_rotate, r.mouse_pan)}</select></label>
+    ${(r.mouse_pan === 'right' || r.mouse_rotate === 'right') ? `<p class="po-sc-aviso">${I18n.t('sc.right_warning')}</p>` : ''}
+  </div>`;
+}
 function atalhoHtmlMouse(mac) {
-  const linhas = mac ? [
+  const r = atalhoRascunho || atalhoMapaEfetivo();
+  const config = [atalhoGestoLinha(r.mouse_pan, 'sc.do_pan'), atalhoGestoLinha(r.mouse_rotate, 'sc.do_rotate')];
+  const usaDireito = r.mouse_pan === 'right' || r.mouse_rotate === 'right';
+  const linhas = mac ? config.concat([
     [atalhoTrackpadSvg(), 'sc.mac_two_fingers', 'sc.do_pan'],
     [atalhoTrackpadSvg('pinch'), 'sc.mac_pinch', 'sc.do_zoom'],
     [atalhoTrackpadSvg(), 'sc.mac_option_two', 'sc.do_rotate'],
     [atalhoMouseSvg('left'), 'sc.mac_option_drag', 'sc.do_rotate'],
     [atalhoMouseSvg('left'), 'sc.mac_space_drag', 'sc.do_pan'],
+    [atalhoMouseSvg('wheel'), 'sc.mouse_wheel', 'sc.do_zoom'],
     [atalhoMouseSvg('left'), 'sc.mouse_left', 'sc.do_select'],
     [atalhoMouseSvg('left'), 'sc.mouse_dbl', 'sc.do_edit']
-  ] : [
-    [atalhoMouseSvg('left'), 'sc.mouse_left', 'sc.do_select'],
-    [atalhoMouseSvg('left'), 'sc.mouse_dbl', 'sc.do_edit'],
+  ]) : config.concat([
     [atalhoMouseSvg('wheel'), 'sc.mouse_wheel', 'sc.do_zoom'],
-    [atalhoMouseSvg('middle'), 'sc.mouse_middle_drag', 'sc.do_pan'],
-    [atalhoMouseSvg('mid+right'), 'sc.mouse_mid_right', 'sc.do_rotate'],
-    [atalhoMouseSvg('right'), 'sc.mouse_right_drag', 'sc.do_reposition'],
-    [atalhoMouseSvg('right'), 'sc.mouse_right_click', 'sc.do_menu']
-  ];
-  return `<div class="po-sc-mouse-grid">${linhas.map((l) => `<div class="po-sc-mouse-item">${l[0]}<div><b>${I18n.t(l[2])}</b><span>${I18n.t(l[1])}</span></div></div>`).join('')}</div>
+    [atalhoMouseSvg('left'), 'sc.mouse_left', 'sc.do_select'],
+    [atalhoMouseSvg('left'), 'sc.mouse_dbl', 'sc.do_edit']
+  ]).concat(usaDireito ? [] : [[atalhoMouseSvg('right'), 'sc.mouse_right_drag', 'sc.do_reposition']])
+    .concat([[atalhoMouseSvg('right'), 'sc.mouse_right_click', 'sc.do_menu']]);
+  return `${atalhoHtmlMouseConfig()}<div class="po-sc-mouse-grid">${linhas.map((l) => `<div class="po-sc-mouse-item">${l[0]}<div><b>${I18n.t(l[2])}</b><span>${I18n.t(l[1])}</span></div></div>`).join('')}</div>
     <p class="hint">${I18n.t('sc.mouse_note')}</p>`;
 }
 function atalhoHtmlTeclado() {
@@ -355,7 +406,7 @@ function atalhoRenderTela() {
     : `${atalhoModoFabrica ? `<p class="po-sc-aviso">${I18n.t('sc.factory_editing')}</p>` : ''}${atalhoHtmlTeclado()}`;
   corpo.scrollTop = rolagem;
   m.querySelectorAll('.po-sc-abas button').forEach((b) => b.classList.toggle('ativo', b.dataset.aba === aba));
-  m.querySelector('.po-sc-rodape').style.display = aba === 'mouse' ? 'none' : '';
+
   const fabBox = m.querySelector('.po-sc-fab-wrap');
   if (fabBox) fabBox.style.display = atalhoEhAdmin ? '' : 'none';
 }
@@ -390,6 +441,12 @@ function abrirTelaAtalhos() {
       if (ev.target === m || ev.target.closest('.po-sc-fechar')) { fechar(); return; }
       const aba = ev.target.closest('.po-sc-abas button');
       if (aba) { m.dataset.aba = aba.dataset.aba; atalhoGravando = null; atalhoRenderTela(); return; }
+      const pre = ev.target.closest('[data-preset]');
+      if (pre) {
+        const p = ATALHO_PRESETS_MOUSE.find((x) => x.id === pre.dataset.preset);
+        if (p) { atalhoRascunho.mouse_pan = p.pan; atalhoRascunho.mouse_rotate = p.rotate; atalhoMsg(''); atalhoRenderTela(); }
+        return;
+      }
       const so = ev.target.closest('.po-sc-so button');
       if (so) { m.dataset.so = so.dataset.so; atalhoRenderTela(); return; }
       const tecla = ev.target.closest('.po-sc-tecla[data-acao]');
@@ -415,6 +472,11 @@ function abrirTelaAtalhos() {
       }
     });
     m.addEventListener('change', (ev) => {
+      if (ev.target.dataset && ev.target.dataset.mouse) {
+        atalhoRascunho[ev.target.dataset.mouse] = ev.target.value;
+        atalhoRenderTela();
+        return;
+      }
       if (!ev.target.classList.contains('po-sc-fab')) return;
       atalhoModoFabrica = ev.target.checked;
       atalhoRascunho = atalhoModoFabrica ? atalhoMapaFabrica() : atalhoMapaEfetivo();
@@ -465,6 +527,8 @@ function abrirTelaAtalhos() {
   if (btn) btn.addEventListener('click', abrirTelaAtalhos);
   if (typeof supabaseClient === 'undefined' || !supabaseClient.auth) return;
   atalhoCarregar();
+  window.addEventListener('legno:projeto-3d-pronto', atalhoAplicarMouse);
+  setTimeout(atalhoAplicarMouse, 3000);
   try {
     supabaseClient.auth.onAuthStateChange((ev) => {
       if (ev === 'SIGNED_OUT') { atalhoConta = {}; atalhoEhAdmin = false; return; }

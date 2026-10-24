@@ -675,6 +675,117 @@ HELP_CONTENT.es.push(
   ] }
 );
 
+// ---- Artigos de 2026-10-24 (configurador do Novo Orçamento, atalhos,
+// Visualização 3D no Render, abertura de porta) — entram nas categorias que
+// já existem; categoria que faltar num idioma é criada.
+(function () {
+  const ARTS = {
+    pt: {
+      'novo-orcamento': [
+        { id: 'opcoes-modulo-3d', title: `Opções do módulo no 3D (prateleiras, abertura, modelos)`, html: `<p>Na etapa <strong>2. Configure as medidas e os opcionais</strong>, o desenho 3D fica fixo na tela: <strong>arraste para girar</strong>. Não tem zoom nem ambiente em volta — o foco é o módulo.</p>
+<p>No canto superior direito do 3D tem um <strong>ícone de ajustes</strong>. Ele abre as opções que o módulo tiver:</p>
+<ul>
+<li><strong>Prateleiras</strong> — botões <strong>−</strong> e <strong>+</strong> para cada vão.</li>
+<li><strong>Abertura da porta</strong> — dobradiça à esquerda ou à direita (porta sozinha no vão).</li>
+<li><strong>Modelo de porta</strong> — Flat, vidro etc.; se o modelo trouxer cor nova (vidro, perfil), ela aparece junto das cores.</li>
+<li><strong>Modelo de gaveta</strong> — Standard ou outro modelo disponível.</li>
+</ul>
+<p>Os botões <strong>Abrir portas</strong> e <strong>Abrir gavetas</strong> continuam embaixo do 3D. Tudo o que você escolher entra no preço e no pedido.</p>
+<div class="po-help-tip">Os módulos da linha <strong>NEW Classic</strong> já vêm montados de fábrica, com portas, frentes e prateleiras — é só ajustar.</div>` }
+      ],
+      'projetos-barra': [
+        { id: 'atalhos', title: `Atalhos de teclado e mouse`, html: `<p>Clique no <strong>ícone de teclado</strong> na barra do Projetos (ou aperte <strong>?</strong>) para abrir a tela de <strong>Atalhos</strong>.</p>
+<ul>
+<li><strong>Teclado</strong> — todas as ferramentas, com a tecla de cada uma. Para trocar, clique na tecla ao lado da ferramenta e aperte a nova combinação. O <strong>×</strong> tira o atalho. Se a tecla já era de outra ferramenta, ela sai de lá e a tela avisa.</li>
+<li><strong>Mouse e trackpad</strong> — os gestos do mouse (Windows) e do trackpad (Mac). Dá para escolher qual gesto <strong>move</strong> a vista e qual <strong>gira</strong>, ou usar um dos padrões prontos (Legno, estilo SketchUp, girar com o direito).</li>
+<li>Clique em <strong>Salvar</strong> — fica gravado na sua conta e vale em qualquer computador. <strong>Restaurar padrão</strong> volta ao padrão de fábrica.</li>
+</ul>
+<p>Alguns atalhos de fábrica: <strong>F</strong> enquadrar, <strong>=</strong>/<strong>−</strong> zoom, <strong>1</strong> frontal, <strong>2</strong> de cima, <strong>D</strong> cotas, <strong>R</strong> régua, <strong>O</strong> portas, <strong>G</strong> gavetas, <strong>Ctrl + setas</strong> mover a vista, <strong>Ctrl + Shift + setas</strong> girar a vista, <strong>setas</strong> mover o módulo selecionado (<strong>Shift</strong> anda 10×), <strong>W</strong> levar o módulo para a próxima parede, <strong>Ctrl+S</strong> salvar.</p>
+<div class="po-help-tip">Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+V e Esc são fixos e não podem ser trocados. O atalho de cada botão aparece entre colchetes no balãozinho quando você passa o mouse.</div>` },
+        { id: 'visualizacao-3d-render', title: `Visualização 3D (menu Render)`, html: `<p>Abra o menu <strong>Render</strong> na barra e clique em <strong>Visualização 3D</strong> (ícone de cubo). O ambiente abre em 3D numa janela por cima do projeto, com os botões de abrir portas e gavetas.</p>
+<p>Para voltar, clique em <strong>← Voltar ao ambiente 2D</strong> ou aperte <strong>Esc</strong>. O item fica apagado enquanto o projeto não tiver nenhum módulo.</p>` }
+      ],
+      'projetos-ambiente': [
+        { id: 'abertura-porta', title: `Trocar o lado de abertura da porta`, html: `<p>Selecione o módulo e, no painel da direita, use <strong>Abertura da porta</strong> para trocar entre dobradiça à esquerda e à direita.</p>
+<p>A troca aparece para cada porta que está <strong>sozinha</strong> no seu vão — inclusive em torres com uma porta embaixo e outra em cima (Porta 1, Porta 2, de cima para baixo). Portas em par, lado a lado, já abrem uma para cada lado e não mostram a troca.</p>` }
+      ]
+    },
+    en: {
+      'novo-orcamento': [
+        { id: 'opcoes-modulo-3d', title: `Cabinet options in the 3D view (shelves, door swing, models)`, html: `<p>In step <strong>2. Configure dimensions and options</strong>, the 3D drawing is fixed on screen: <strong>drag to rotate</strong>. There is no zoom and no room around it — the focus is the cabinet.</p>
+<p>In the top-right corner of the 3D view there is a <strong>settings icon</strong>. It opens whatever options the cabinet has:</p>
+<ul>
+<li><strong>Shelves</strong> — <strong>−</strong> and <strong>+</strong> buttons for each section.</li>
+<li><strong>Door swing</strong> — hinged on the left or on the right (single door in its section).</li>
+<li><strong>Door model</strong> — Flat, glass etc.; if the model brings a new color (glass, frame), it shows with the other colors.</li>
+<li><strong>Drawer box</strong> — Standard or another available model.</li>
+</ul>
+<p>The <strong>Open doors</strong> and <strong>Open drawers</strong> buttons are still below the 3D view. Everything you choose goes into the price and the order.</p>
+<div class="po-help-tip"><strong>NEW Classic</strong> cabinets come factory-assembled with doors, fronts and shelves — just adjust.</div>` }
+      ],
+      'projetos-barra': [
+        { id: 'atalhos', title: `Keyboard and mouse shortcuts`, html: `<p>Click the <strong>keyboard icon</strong> on the Projects toolbar (or press <strong>?</strong>) to open the <strong>Shortcuts</strong> screen.</p>
+<ul>
+<li><strong>Keyboard</strong> — every tool with its key. To change one, click the key next to the tool and press the new combination. The <strong>×</strong> removes the shortcut. If the key belonged to another tool, it is removed there and the screen tells you.</li>
+<li><strong>Mouse and trackpad</strong> — mouse (Windows) and trackpad (Mac) gestures. You can choose which gesture <strong>moves</strong> the view and which <strong>rotates</strong> it, or pick a preset (Legno, SketchUp style, rotate with right button).</li>
+<li>Click <strong>Save</strong> — it is stored in your account and works on any computer. <strong>Restore default</strong> goes back to the factory default.</li>
+</ul>
+<p>Some factory shortcuts: <strong>F</strong> fit, <strong>=</strong>/<strong>−</strong> zoom, <strong>1</strong> front, <strong>2</strong> top, <strong>D</strong> dimensions, <strong>R</strong> ruler, <strong>O</strong> doors, <strong>G</strong> drawers, <strong>Ctrl + arrows</strong> move the view, <strong>Ctrl + Shift + arrows</strong> rotate the view, <strong>arrows</strong> move the selected cabinet (<strong>Shift</strong> moves 10×), <strong>W</strong> send the cabinet to the next wall, <strong>Ctrl+S</strong> save.</p>
+<div class="po-help-tip">Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+V and Esc are fixed and cannot be changed. Each button's shortcut shows in brackets in its tooltip.</div>` },
+        { id: 'visualizacao-3d-render', title: `3D view (Render menu)`, html: `<p>Open the <strong>Render</strong> menu on the toolbar and click <strong>3D view</strong> (cube icon). The room opens in 3D in a window on top of the project, with the open doors and drawers buttons.</p>
+<p>To go back, click <strong>← Back to 2D room</strong> or press <strong>Esc</strong>. The item is greyed out while the project has no cabinets.</p>` }
+      ],
+      'projetos-ambiente': [
+        { id: 'abertura-porta', title: `Changing the door swing`, html: `<p>Select the cabinet and, in the right panel, use <strong>Door swing</strong> to switch between hinged on the left and on the right.</p>
+<p>The toggle shows for each door that is <strong>alone</strong> in its section — including tall units with one door at the bottom and another at the top (Door 1, Door 2, top to bottom). Paired doors side by side already open to opposite sides and do not show it.</p>` }
+      ]
+    },
+    es: {
+      'novo-orcamento': [
+        { id: 'opcoes-modulo-3d', title: `Opciones del módulo en el 3D (estantes, apertura, modelos)`, html: `<p>En el paso <strong>2. Configura medidas y opciones</strong>, el dibujo 3D queda fijo en pantalla: <strong>arrastra para girar</strong>. No hay zoom ni ambiente alrededor — el foco es el módulo.</p>
+<p>En la esquina superior derecha del 3D hay un <strong>ícono de ajustes</strong>. Abre las opciones que tenga el módulo:</p>
+<ul>
+<li><strong>Estantes</strong> — botones <strong>−</strong> y <strong>+</strong> para cada hueco.</li>
+<li><strong>Apertura de la puerta</strong> — bisagra a la izquierda o a la derecha (puerta sola en su hueco).</li>
+<li><strong>Modelo de puerta</strong> — Flat, vidrio etc.; si el modelo trae color nuevo (vidrio, perfil), aparece junto a los colores.</li>
+<li><strong>Modelo de cajón</strong> — Standard u otro modelo disponible.</li>
+</ul>
+<p>Los botones <strong>Abrir puertas</strong> y <strong>Abrir cajones</strong> siguen debajo del 3D. Todo lo que elijas entra en el precio y en el pedido.</p>
+<div class="po-help-tip">Los módulos de la línea <strong>NEW Classic</strong> ya vienen armados de fábrica, con puertas, frentes y estantes — solo ajusta.</div>` }
+      ],
+      'projetos-barra': [
+        { id: 'atalhos', title: `Atajos de teclado y ratón`, html: `<p>Haz clic en el <strong>ícono de teclado</strong> de la barra de Proyectos (o pulsa <strong>?</strong>) para abrir la pantalla de <strong>Atajos</strong>.</p>
+<ul>
+<li><strong>Teclado</strong> — todas las herramientas con su tecla. Para cambiar, haz clic en la tecla junto a la herramienta y pulsa la nueva combinación. La <strong>×</strong> quita el atajo. Si la tecla era de otra herramienta, sale de allí y la pantalla avisa.</li>
+<li><strong>Ratón y trackpad</strong> — los gestos del ratón (Windows) y del trackpad (Mac). Puedes elegir qué gesto <strong>mueve</strong> la vista y cuál la <strong>gira</strong>, o usar un estándar listo (Legno, estilo SketchUp, girar con el derecho).</li>
+<li>Haz clic en <strong>Guardar</strong> — queda en tu cuenta y vale en cualquier computadora. <strong>Restaurar estándar</strong> vuelve al estándar de fábrica.</li>
+</ul>
+<p>Algunos atajos de fábrica: <strong>F</strong> encuadrar, <strong>=</strong>/<strong>−</strong> zoom, <strong>1</strong> frontal, <strong>2</strong> superior, <strong>D</strong> cotas, <strong>R</strong> regla, <strong>O</strong> puertas, <strong>G</strong> cajones, <strong>Ctrl + flechas</strong> mover la vista, <strong>Ctrl + Shift + flechas</strong> girar la vista, <strong>flechas</strong> mover el módulo seleccionado (<strong>Shift</strong> avanza 10×), <strong>W</strong> llevar el módulo a la siguiente pared, <strong>Ctrl+S</strong> guardar.</p>
+<div class="po-help-tip">Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+V y Esc son fijos y no se pueden cambiar. El atajo de cada botón aparece entre corchetes al pasar el ratón.</div>` },
+        { id: 'visualizacao-3d-render', title: `Vista 3D (menú Render)`, html: `<p>Abre el menú <strong>Render</strong> de la barra y haz clic en <strong>Vista 3D</strong> (ícono de cubo). El ambiente se abre en 3D en una ventana encima del proyecto, con los botones de abrir puertas y cajones.</p>
+<p>Para volver, haz clic en <strong>← Volver al ambiente 2D</strong> o pulsa <strong>Esc</strong>. El ítem queda apagado mientras el proyecto no tenga módulos.</p>` }
+      ],
+      'projetos-ambiente': [
+        { id: 'abertura-porta', title: `Cambiar el lado de apertura de la puerta`, html: `<p>Selecciona el módulo y, en el panel derecho, usa <strong>Apertura de la puerta</strong> para cambiar entre bisagra a la izquierda y a la derecha.</p>
+<p>El cambio aparece para cada puerta que está <strong>sola</strong> en su hueco — incluso en torres con una puerta abajo y otra arriba (Puerta 1, Puerta 2, de arriba hacia abajo). Las puertas en par, lado a lado, ya abren cada una hacia un lado y no lo muestran.</p>` }
+      ]
+    }
+  };
+  const TITULOS_CAT = {
+    pt: { 'projetos-barra': 'Barra de ferramentas de Projetos', 'projetos-ambiente': 'Projetos: montar o ambiente', 'novo-orcamento': 'Novo Orçamento' },
+    en: { 'projetos-barra': 'Projects Toolbar', 'projetos-ambiente': 'Projects: setting up the room', 'novo-orcamento': 'New Quote' },
+    es: { 'projetos-barra': 'Barra de herramientas de Proyectos', 'projetos-ambiente': 'Proyectos: armar el ambiente', 'novo-orcamento': 'Nuevo Presupuesto' }
+  };
+  Object.keys(ARTS).forEach((lang) => {
+    if (!HELP_CONTENT[lang]) return;
+    Object.keys(ARTS[lang]).forEach((catId) => {
+      let cat = HELP_CONTENT[lang].find((c) => c.id === catId);
+      if (!cat) { cat = { id: catId, title: TITULOS_CAT[lang][catId] || catId, articles: [] }; HELP_CONTENT[lang].push(cat); }
+      ARTS[lang][catId].forEach((a) => { if (!cat.articles.some((x) => x.id === a.id)) cat.articles.push(a); });
+    });
+  });
+})();
+
 // Ordem final de exibição na barra lateral — os 4 blocos acima (escritos/
 // pesquisados em paralelo) empurram categorias em ORDENS DIFERENTES; esta
 // lista fixa reordena sem precisar tocar no conteúdo de cada categoria.
