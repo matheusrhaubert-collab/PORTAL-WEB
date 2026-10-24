@@ -147,6 +147,11 @@ function flattenOrderItemBreakdown(breakdown, multiplier) {
   const rows = [];
   (breakdown || []).forEach((p) => {
     const qty = (p.quantity || 1) * multiplier;
+    // Porta lift (2026-10-24): kit Blum HK-XS da porta (folha OU modelo) —
+    // linha só de compra, sem corte. qty do kit já inclui a quantidade da peça.
+    if (Array.isArray(p.lift_kit) && p.lift_kit.length) {
+      rows.push({ lift_kit_only: true, lift_kit: p.lift_kit.map((k) => Object.assign({}, k, { qty: (Number(k.qty) || 0) * multiplier })) });
+    }
     if (p.is_module) {
       rows.push(...flattenOrderItemBreakdown(p.child_breakdown, qty));
     } else {
@@ -253,6 +258,17 @@ async function openOrderCutlist(order) {
   (items || []).forEach((item) => {
     const leafRows = flattenOrderItemBreakdown(item.breakdown, item.quantity || 1);
     leafRows.forEach((leaf) => {
+      if (leaf.lift_kit_only) {
+        leaf.lift_kit.forEach((k) => {
+          const nome = k.purchased_item_name || k.code;
+          const kKit = ['Ferragem', nome].join('|');
+          if (!groupedPurchase.has(kKit)) {
+            groupedPurchase.set(kKit, { module_name: 'Ferragem', reference: nome, description: 'porta lift', quantity: 0 });
+          }
+          groupedPurchase.get(kKit).quantity += Number(k.qty) || 0;
+        });
+        return;
+      }
       // Kit de suporte (pinos da prateleira regulável etc.) — soma na lista
       // de compra por item, independente de a peça ser cortada ou comprada.
       if (leaf.support_purchased_item_name && leaf.support_qty > 0) {

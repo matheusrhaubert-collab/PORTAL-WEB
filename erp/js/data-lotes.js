@@ -1606,6 +1606,12 @@ LOTES.processosDosItens = function (items, orderById, piById) {
             (p.slide_model_name || 'Corrediça (modelo não definido)') + (rail && !/\d{3}/.test(String(p.slide_model_name || '')) ? ' — ' + rail + ' mm' : ''),
             null, 'par', spu / 2 * q, pedido, mod);
         }
+        // porta lift (2026-10-24): mecanismos Blum HK-XS + placas
+        (p.lift_kit || []).forEach(function (k) {
+          const its = piById[k.purchased_item_id];
+          somaFer('montagem', k.purchased_item_id || k.code, (its && its.name) || k.purchased_item_name || k.code,
+            (its && its.code) || k.code, (its && its.unit) || k.unit || 'un', (Number(k.qty) || 0) * mult, pedido, mod);
+        });
         // kit de suporte que vai junto da peça (pinos da prateleira regulável…)
         if (Number(p.support_purchased_item_qty) > 0 && (p.support_purchased_item_id || p.support_purchased_item_name)) {
           const its = piById[p.support_purchased_item_id];

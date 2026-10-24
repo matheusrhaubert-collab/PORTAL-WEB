@@ -504,23 +504,71 @@
   function setPurchasedItems(map) { purchasedItemsById = map || {}; }
 
   // PORTA LIFT (basculante, dobradiça EM CIMA — hinge_side/opening_type
-  // 'top'), 2026-10-24, Matt: "o pistão é um item comprado e deve aparecer
-  // no orçamento do móvel. Sempre serão 2 pistões por porta (só porta
-  // lift)" + "os furos são como na porta de abrir" (dobradiça de copo no
-  // topo, quantidade pela LARGURA da porta). O pistão é o item comprado de
-  // código LIFT_PISTAO_CODE (migration 219). Sai nos campos de KIT
-  // (support_purchased_item_*) da peça da porta — o mesmo caminho que o
-  // relatório $, a lista de compra do ERP (18-referencias) e a separação do
-  // lote (data-lotes) já leem, sem precisar ensinar nada novo a eles.
-  const LIFT_PISTAO_CODE = 'LIFT-PISTAO';
-  const LIFT_PISTOES_POR_PORTA = 2;
-  function liftPistaoItem() {
+  // 'top'), 2026-10-24. Matt: "os furos são como na porta de abrir"
+  // (dobradiça de copo no topo, quantidade pela LARGURA da porta) e, no
+  // mesmo dia, trocou o pistão genérico pelo Blum AVENTOS HK-XS niquelado,
+  // "hoje só com puxador" (TIP-ON fica pro futuro). Migration 220.
+  //
+  // Por porta lift: 2 mecanismos HK-XS (um de cada lado) + 2 placas de
+  // fixação no corpo (20K5101) + 2 placas na porta (20K4101). O MODELO do
+  // mecanismo sai do fator de força da Blum:
+  //   FF = altura do módulo (mm) × (peso da porta + 2 × peso do puxador) (kg)
+  // e com 2 mecanismos a faixa de cada modelo DOBRA. Escolhe o 1º modelo em
+  // que o FF fica com folga (≥ 5% acima do mínimo e ≤ 90% do máximo — a
+  // Blum pede teste perto dos limites); sem folga em nenhum, o 1º que cobre;
+  // fora de todos, o mais forte + aviso (lift_warning).
+  // Faixas: attrs.pf_min/pf_max do item comprado (ERP), senão as da Blum.
+  const LIFT_POR_PORTA = 2;
+  const LIFT_PUXADOR_KG = 0.3;
+  const LIFT_MECANISMOS = [
+    { code: 'BLUM-20K1101', min: 200, max: 1000 },
+    { code: 'BLUM-20K1301', min: 500, max: 1500 },
+    { code: 'BLUM-20K1501', min: 800, max: 1800 }
+  ];
+  const LIFT_PLACAS = ['BLUM-20K5101', 'BLUM-20K4101'];
+  let densidadePadraoKgM3 = 700;
+  function setDefaultDensity(d) { const n = Number(d); if (n > 0) densidadePadraoKgM3 = n; }
+  function itemPorCodigo(code) {
+    const alvo = String(code || '').toUpperCase();
     const ids = Object.keys(purchasedItemsById || {});
     for (let i = 0; i < ids.length; i++) {
       const it = purchasedItemsById[ids[i]];
-      if (it && String(it.code || '').toUpperCase() === LIFT_PISTAO_CODE) return it;
+      if (it && it.active !== false && String(it.code || '').toUpperCase() === alvo) return it;
     }
     return null;
+  }
+  // kh_mm = altura do módulo; pesoPortaKg = 1 porta; qty = nº de portas.
+  function liftKitFor(kh_mm, pesoPortaKg, qty) {
+    const ff = Number(kh_mm || 0) * (Number(pesoPortaKg || 0) + 2 * LIFT_PUXADOR_KG);
+    const faixas = LIFT_MECANISMOS.map((m) => {
+      const it = itemPorCodigo(m.code);
+      const a = (it && it.attrs) || {};
+      const min = Number(a.pf_min) > 0 ? Number(a.pf_min) : m.min;
+      const max = Number(a.pf_max) > 0 ? Number(a.pf_max) : m.max;
+      return { code: m.code, item: it, lo: min * LIFT_POR_PORTA, hi: max * LIFT_POR_PORTA };
+    });
+    let esc = faixas.find((f) => ff >= f.lo * 1.05 && ff <= f.hi * 0.9)
+      || faixas.find((f) => ff >= f.lo && ff <= f.hi);
+    let aviso = null;
+    if (!esc) {
+      esc = ff < faixas[0].lo ? faixas[0] : faixas[faixas.length - 1];
+      aviso = ff < faixas[0].lo ? 'lift_abaixo_da_faixa' : 'lift_acima_da_faixa';
+    }
+    const itens = [];
+    let custo = 0;
+    const poe = (it, code) => {
+      const n = LIFT_POR_PORTA * qty;
+      const c = it ? Number(it.purchase_price || 0) * n : 0;
+      custo += c;
+      itens.push({
+        purchased_item_id: it ? it.id : null, code: code,
+        purchased_item_name: it ? it.name : code, unit: (it && it.unit) || 'un',
+        kind: (it && it.kind) || 'acessorio', qty: n, cost: c
+      });
+    };
+    poe(esc.item, esc.code);
+    LIFT_PLACAS.forEach((code) => poe(itemPorCodigo(code), code));
+    return { itens, custo, ff: Math.round(ff), modelo: esc.code, aviso };
   }
   function ehPortaLift(piece) {
     return !!piece && (piece.hinge_side === 'top' || piece.opening_type === 'hinge_top');
@@ -1231,16 +1279,20 @@
     // pinos (4 por prateleira) — mesmo mecanismo do kit do cabide, liberado
     // só pra ela (nenhuma outra peça fabricada cobra kit, como antes).
     const levaKit = comprado || !!piece.prateleira_regulavel;
-    // Porta lift: o kit é o PAR DE PISTÕES (ver liftPistaoItem). Só quando a
-    // peça não tem kit próprio cadastrado.
-    const pistao = (ehPortaLift(piece) && !itemSuporte) ? liftPistaoItem() : null;
-    const support_cost = pistao
-      ? Number(pistao.purchase_price || 0) * LIFT_PISTOES_POR_PORTA * qty
-      : (levaKit && itemSuporte && itemSuporte.purchase_price != null)
-        ? Number(itemSuporte.purchase_price) * (piece.support_purchased_item_qty || 1) * qty
-        : 0;
+    const support_cost = (levaKit && itemSuporte && itemSuporte.purchase_price != null)
+      ? Number(itemSuporte.purchase_price) * (piece.support_purchased_item_qty || 1) * qty
+      : 0;
+    // Porta lift: kit Blum HK-XS (ver liftKitFor). Peso da porta = volume da
+    // chapa × densidade da cor (ou a padrão de pricing_settings).
+    let liftKit = null;
+    if (ehPortaLift(piece)) {
+      const dens = (color && Number(color.density_kg_per_m3) > 0) ? Number(color.density_kg_per_m3) : densidadePadraoKgM3;
+      const pesoPorta = (Number(pieceDims.width_mm) || 0) * (Number(pieceDims.height_mm) || 0) * (Number(pieceDims.depth_mm) || 0) / 1e9 * dens;
+      liftKit = liftKitFor(dims && dims.H, pesoPorta, qty);
+    }
+    const lift_cost = liftKit ? liftKit.custo : 0;
     const material_cor_cost = materialCor ? materialCor.custo * qty : 0;
-    const purchased_cost = (comprado ? (precoComprado + support_cost) : support_cost) + material_cor_cost;
+    const purchased_cost = (comprado ? (precoComprado + support_cost) : support_cost) + material_cor_cost + lift_cost;
     const labor_cost = comprado ? 0 : custoUnitario;
 
     // Dobradiça só se aplica a PORTAS: hinge_side definido, qualquer que
@@ -1395,9 +1447,16 @@
       // vez do volume cheio.
       weight_shell_mm: (itemComprado && itemComprado.kind === 'gaveta' && itemComprado.attrs && Number(itemComprado.attrs.espessura_mm) > 0)
         ? Number(itemComprado.attrs.espessura_mm) : null,
-      support_purchased_item_id: pistao ? pistao.id : ((itemSuporte && itemSuporte.id) || piece.support_purchased_item_id || null),
-      support_purchased_item_name: pistao ? pistao.name : ((itemSuporte && itemSuporte.name) || null),
-      support_purchased_item_qty: pistao ? LIFT_PISTOES_POR_PORTA * qty : (itemSuporte ? (piece.support_purchased_item_qty || 1) * qty : 0),
+      support_purchased_item_id: (itemSuporte && itemSuporte.id) || piece.support_purchased_item_id || null,
+      support_purchased_item_name: (itemSuporte && itemSuporte.name) || null,
+      support_purchased_item_qty: itemSuporte ? (piece.support_purchased_item_qty || 1) * qty : 0,
+      // Porta lift (HK-XS + placas) — já somado em purchased_cost; aberto
+      // aqui pro relatório $, lista de compra do ERP e separação do lote.
+      lift_kit: liftKit ? liftKit.itens : null,
+      lift_cost: lift_cost,
+      lift_power_factor: liftKit ? liftKit.ff : null,
+      lift_model: liftKit ? liftKit.modelo : null,
+      lift_warning: liftKit ? liftKit.aviso : null,
       // Aberto por processo quando a peça está em processo (migration 090);
       // null nas peças antigas, que têm uma labor só e nada a abrir.
       labor_breakdown: proc
@@ -1591,16 +1650,21 @@
 
     // Porta lift de MODELO: o par de pistões vai na peça-módulo (as filhas
     // são as chapas da porta). Mesmos campos de kit da peça-folha.
-    const pistaoMod = ehPortaLift(piece) ? liftPistaoItem() : null;
-    const support_cost_mod = pistaoMod ? Number(pistaoMod.purchase_price || 0) * LIFT_PISTOES_POR_PORTA * qty : 0;
-    const piece_total = child_total + hinge_cost + slide_cost + support_cost_mod;
+    let liftKitMod = null;
+    if (ehPortaLift(piece)) {
+      let pesoPorta = 0;
+      try { pesoPorta = calculateWeightKg(childResult.breakdown, effectiveColorsByRole, densidadePadraoKgM3); } catch (e) { pesoPorta = 0; }
+      liftKitMod = liftKitFor(dims && dims.H, pesoPorta, qty);
+    }
+    const lift_cost_mod = liftKitMod ? liftKitMod.custo : 0;
+    const piece_total = child_total + hinge_cost + slide_cost + lift_cost_mod;
 
     return {
-      support_cost: support_cost_mod,
-      purchased_cost: support_cost_mod,
-      support_purchased_item_id: pistaoMod ? pistaoMod.id : null,
-      support_purchased_item_name: pistaoMod ? pistaoMod.name : null,
-      support_purchased_item_qty: pistaoMod ? LIFT_PISTOES_POR_PORTA * qty : 0,
+      lift_kit: liftKitMod ? liftKitMod.itens : null,
+      lift_cost: lift_cost_mod,
+      lift_power_factor: liftKitMod ? liftKitMod.ff : null,
+      lift_model: liftKitMod ? liftKitMod.modelo : null,
+      lift_warning: liftKitMod ? liftKitMod.aviso : null,
       piece_id: piece.id,
       reference: piece.reference || piece.module_name,
       is_module: true,
@@ -1947,6 +2011,7 @@
     setPurchasedMarkup,
     setPurchasedMarkupByProfile,
     setPurchasedItems,
+    setDefaultDensity, liftKitFor,
     setModuleHardware,
     collectPurchasedCost,
     resolveBodyDims,

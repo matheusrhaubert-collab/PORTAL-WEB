@@ -3863,6 +3863,23 @@ function collectProjectCostReport(slots) {
               p.slide_model_rail_length_mm, qtdEfetiva, slideCost);
           }
         }
+        // Porta lift de MODELO (2026-10-24): o kit Blum HK-XS + placas mora
+        // na peça-módulo da porta (lift_kit/lift_cost, pricing.js) — linha
+        // própria no detalhe (pro total do módulo fechar) + peças compradas.
+        const liftCost = (Number(p.lift_cost) || 0) * fator;
+        if (Array.isArray(p.lift_kit) && p.lift_kit.length) {
+          p.lift_kit.forEach((k) => {
+            registraPecaComprada(k.purchased_item_id || k.code, k.purchased_item_name || k.code, k.unit || 'un',
+              (Number(k.qty) || 0) * fator, (Number(k.cost) || 0) * fator);
+          });
+          rel.detalhe.push({
+            modulo: (slot.module && slot.module.name) || '',
+            peca: (prefixo ? prefixo + ' › ' : '') + (p.reference || '') + ' — ' + (p.lift_model || 'HK-XS'),
+            qtd: (Number(p.quantity) || 1) * fator,
+            m2: 0, fitaM: 0, chapa: 0, fita: 0, corte: 0, colagem: 0, furacao: 0, usinagem: 0, laborAntiga: 0,
+            ferragem: 0, comprado: liftCost, total: liftCost
+          });
+        }
         // O nome dela vira prefixo pra a peça-folha lá dentro não aparecer
         // solta no detalhamento — "Gaveta › Fundo" diz de onde veio.
         anda(slot, p.child_breakdown, (prefixo ? prefixo + ' › ' : '') + (p.reference || ''), fator * (Number(p.quantity) || 1));
@@ -3960,7 +3977,12 @@ function collectProjectCostReport(slots) {
       // (calculateLeafPiece), então a peça principal soma só o dela
       // (purchased_cost - support_cost, pra não contar o kit duas vezes) e o
       // kit soma separado, cada um na sua própria linha/nome.
-      const custoComprado = (Number(p.purchased_cost) || 0) - (Number(p.support_cost) || 0);
+      const custoComprado = (Number(p.purchased_cost) || 0) - (Number(p.support_cost) || 0) - (Number(p.lift_cost) || 0);
+      // Porta lift (2026-10-24): mecanismos Blum HK-XS + placas, 1 linha por item.
+      (p.lift_kit || []).forEach((k) => {
+        registraPecaComprada(k.purchased_item_id || k.code, k.purchased_item_name || k.code, k.unit || 'un',
+          Number(k.qty) || 0, Number(k.cost) || 0);
+      });
       // Perfil/vidro pela cor (migration 187) entra SEMPRE, mesmo custando 0
       // (23/10, Matt: "alumínio não está aparecendo no orçamento") — com
       // preço zerado no cadastro a linha sumia e o perfil ficava invisível.

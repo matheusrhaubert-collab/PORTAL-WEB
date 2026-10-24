@@ -1487,6 +1487,8 @@ async function loadPricingMarkup() {
   // migration 061 — densidade pro cálculo de peso exibido ao cliente.
   const density = Number(data.weight_density_kg_per_m3);
   if (isFinite(density) && density > 0) materialDensityKgPerM3 = density;
+  // peso da porta lift (escolha do mecanismo Blum HK-XS, pricing.js liftKitFor)
+  if (Pricing.setDefaultDensity) Pricing.setDefaultDensity(materialDensityKgPerM3);
   // migration 070 — margens nomeadas extras (família/categoria). Tabela pode
   // não existir ainda (Matt não rodou a migration) — erro aqui não deve
   // travar o resto do login, só deixa marginProfilesCache vazio (resolver
