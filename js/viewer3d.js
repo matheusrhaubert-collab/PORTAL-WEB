@@ -911,6 +911,7 @@ const Viewer3D = (function () {
     // projeto — ver viewer3d_composition.js) — mantém o teto (nunca olhar
     // de baixo pra cima) mas deixa chegar bem mais perto do paralelo/frontal.
     controls.maxPolarAngle = Math.PI * 0.499; // não deixa olhar de baixo pra cima
+    if (lockedView) { controls.enableZoom = false; controls.enablePan = false; }
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1.15));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
@@ -4410,6 +4411,18 @@ const Viewer3D = (function () {
   // cfg = { ceiling_m, baseboard_h_m, ceilingLabel, maxHeightLabel } liga o
   // ambiente; null desliga. Se já tem módulo desenhado, redesenha na hora
   // reenquadrando (o teto precisa caber no quadro).
+  // VISTA TRAVADA (2026-10-24, Matt: "deixar o módulo 3D travado na tela
+  // sem zoom e sem ambiente ... com opção de rotação"). Só gira: scroll e
+  // pinça não aproximam, arrastar com botão direito não desloca. O scroll
+  // volta a rolar a página. Enquadramento continua automático (update).
+  let lockedView = false;
+  function setLockedView(on) {
+    lockedView = !!on;
+    if (!controls) return;
+    controls.enableZoom = !lockedView;
+    controls.enablePan = !lockedView;
+  }
+
   function setRoomEnvironment(cfg) {
     roomEnvConfig = cfg || null;
     if (scene && lastUpdateArgs) update({ ...lastUpdateArgs, refit: true });
@@ -5046,6 +5059,8 @@ const Viewer3D = (function () {
     // Linhas de chão/teto/baseboard da casa do cliente no configurador —
     // opt-in, só o portal chama (ver setRoomEnvironment acima).
     setRoomEnvironment,
+    // Só gira (sem zoom/pan) — configurador do New Quote.
+    setLockedView,
     // Monta um módulo autônomo (Group, sem tocar em nenhuma scene) — usado
     // pela aba "Composição" (js/viewer3d_composition.js) pra desenhar vários
     // módulos lado a lado numa cena própria. Ver comentário completo acima

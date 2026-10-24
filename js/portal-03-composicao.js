@@ -1377,7 +1377,9 @@ if (compAddCartBtn) {
           total_price: slot.result.total,
           breakdown: slot.result.breakdown,
           thumbnail_data_url: slot.thumbnail_data_url,
-          sort_order: cartItems.length
+          sort_order: cartItems.length,
+          // interior de fábrica / lado da porta / modelo de gaveta (portal-26)
+          ...((typeof quoteOrderItemExtras === 'function') ? quoteOrderItemExtras(slot) : {})
         };
         const { data, error } = await supabaseClient.from('order_items').insert(payload).select().single();
         if (error) throw error;

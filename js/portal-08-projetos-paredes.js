@@ -5851,8 +5851,33 @@ if (projClose3dBtn) {
   projClose3dBtn.addEventListener('click', () => {
     const wrap = document.getElementById('po-proj-3d-wrap');
     if (wrap) wrap.style.display = 'none';
+    // Janela por cima (24/10): só fecha, o projeto continua onde estava.
+    if (document.body.classList.contains('po-proj-3d-overlay')) {
+      document.body.classList.remove('po-proj-3d-overlay');
+      return;
+    }
     const canvasWrap = document.querySelector('#po-tab-projects .po-proj-canvas-outer');
     if (canvasWrap) canvasWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+// VISUALIZAÇÃO 3D NO MENU RENDER (2026-10-24, Matt: "o ambiente 3D que fica
+// abaixo do projeto... só atrapalha. Quero tirar ele dali, mas a ideia do 3D
+// é boa, então deixar lá no Render essa opção"). Mesma cena de sempre
+// (generateProject3D / ViewerProject), só que numa janela POR CIMA do
+// projeto em vez de empurrada pra baixo dele. Fecha no "Voltar" ou no Esc.
+const projView3dTbBtn = document.getElementById('po-proj-view3d-tb-btn');
+if (projView3dTbBtn) {
+  projView3dTbBtn.addEventListener('click', () => {
+    if (!projectSlots.length) return;
+    try { if (window.LegnoTbMenus) window.LegnoTbMenus.menus.forEach((m) => m.fechar()); } catch (e) { /* ok */ }
+    document.body.classList.add('po-proj-3d-overlay');
+    generateProject3D();
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape' || !document.body.classList.contains('po-proj-3d-overlay')) return;
+    if (projClose3dBtn) projClose3dBtn.click();
   });
 }
 

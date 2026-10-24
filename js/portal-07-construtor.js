@@ -994,9 +994,13 @@ async function loadAccessoryModuleExtras(accessoryRows) {
 // ele). O grupo "Divisórias" é sempre o 1º da lista (ver
 // fillProjectBuilderLibGrid); o texto sai do i18n (builder_grp.divisorias).
 const PROJECT_BUILDER_GRUPO_DIVISORIAS = 'Divisórias';
+// Painel Fixo (24/10, Matt: "deve ficar em front, não door") — no cadastro
+// ele é cópia da frente de gaveta, grupo 'Portas'. Só a TELA muda.
+const PROJECT_BUILDER_GRUPO_FRENTES = 'Frentes';
 function projectBuilderGrupoTela(a) {
   const slug = String(a.slug || '').toLowerCase();
   const n = projLibNorm(a.name);
+  if (slug === 'painel_fixo' || /^painel fixo/.test(n)) return PROJECT_BUILDER_GRUPO_FRENTES;
   if (slug === 'div_vert' || /^base divis|^lateral divis|^gola/.test(n)) return PROJECT_BUILDER_GRUPO_DIVISORIAS;
   return a.group_name || I18n.t('builder.group_other');
 }
@@ -1220,6 +1224,10 @@ const PROJECT_BUILDER_SVG = (() => {
     // o espaço de baixo levemente sombreado diz "isto vira outro vão".
     base: mk('<rect x="9.5" y="30.5" width="29" height="11.5" fill="currentColor" fill-opacity=".06" stroke="none"/>' + peca(9.5, 26.5, 29, 4.4)),
     divisoria: mk(peca(22.4, 6.5, 3.2, 35)),
+    // Divisória Stretcher (24/10, Matt: "esse ícone tem que ser horizontal"):
+    // travessa DEITADA de lateral a lateral, separando a gaveta de cima do
+    // vão de baixo (a vertical do blind corner continua com o desenho em pé).
+    stretcher: mk(peca(9.5, 17, 29, 3) + '<rect x="9.5" y="20" width="29" height="22" fill="currentColor" fill-opacity=".05" stroke="none"/>'),
     // Gola: canal de pegada horizontal (perfil J) no meio da frente.
     gola: mk(peca(9.5, 20.5, 29, 7, ' fill-opacity=".3"') + '<path d="M11 24h26" stroke-width="1.2" opacity=".7"/>'),
     gaveta: mk(peca(11, 25.5, 26, 15) + puxH(20, 33)),
@@ -1230,6 +1238,8 @@ const PROJECT_BUILDER_SVG = (() => {
     frente_ext: mk(peca(6, 27, 36, 17) + puxH(20, 35.5)),
     frente_int: mk(peca(10, 28, 28, 13.5) + puxH(20, 34.7)),
     porta: mk(portaExt + puxV(36, 20) + '<path d="M7.5 10h3M7.5 38h3" stroke-width="2.2"/>'),
+    // Painel Fixo (24/10): frente que não abre — sem puxador, sem dobradiça.
+    painel: mk(portaExt),
     porta_int: mk(peca(10, 7, 28, 34) + puxV(34, 20)),
     porta_dupla: mk(peca(6, 3, 17.6, 42, ' fill-opacity=".1"') + peca(24.4, 3, 17.6, 42, ' fill-opacity=".1"') + puxV(20.5, 20) + puxV(27.5, 20)),
     // Basculante: dobradiça EM CIMA, seta mostrando que abre pra cima.
@@ -1259,7 +1269,9 @@ function projectBuilderIcon(acc) {
     porta_giro_externa: S.porta, porta_giro_interna: S.porta_int,
     basculante: S.basculante, basculante_inverso: S.basc_inv,
     gaveta_interna_sem_porta: S.gav_int, gaveta_interna_com_porta: S.gav_int_porta,
-    _filler_lateral_porta: S.filler
+    _filler_lateral_porta: S.filler,
+    divisoria_stretcher: S.stretcher, divisoria_stretcher_vertical: S.divisoria,
+    painel_fixo: S.painel
   };
   if (porSlug[slug]) return porSlug[slug];
 
@@ -1282,6 +1294,9 @@ function projectBuilderIcon(acc) {
   if (/ripad|ripa/.test(n)) return S.ripado;
   if (/dupla|2 folhas|duas folhas/.test(n)) return S.porta_dupla;
   if (/porta intern|embutid/.test(n)) return S.porta_int;
+  if (/painel fixo/.test(n)) return S.painel;
+  if (/stretcher.*vertic/.test(n)) return S.divisoria;
+  if (/stretcher/.test(n)) return S.stretcher;
   if (/porta|door/.test(n)) return S.porta;
   if (/^base|base divis/.test(n)) return S.base;
   if (/divis|lateral/.test(n)) return S.divisoria;

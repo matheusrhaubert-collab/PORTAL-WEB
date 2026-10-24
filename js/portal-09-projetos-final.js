@@ -3007,6 +3007,8 @@ function renderView3DGuestMeasurements() {
 (async function init() {
   try {
     Viewer3D.init('po-viewer3d-canvas');
+    // Configurador: só gira, sem zoom/pan (2026-10-24, ver setLockedView).
+    if (Viewer3D.setLockedView) Viewer3D.setLockedView(true);
     Viewer3D.onPieceDoubleClick(showPieceInfoTooltip);
   } catch (err) {
     // Sem Three.js/WebGL o portal continua funcionando, só sem o 3D.

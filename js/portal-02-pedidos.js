@@ -450,6 +450,16 @@ document.getElementById('po-add-item-btn').addEventListener('click', async () =>
       dimOverrides: lastItemResult.dimOverrides,
       selectedOptionalIds: lastItemResult.selectedOptionalIds,
       result: lastItemResult.result,
+      // Interior de fábrica / opções do ícone do 3D (2026-10-24, portal-26):
+      // o slot do Projetos segue com a MESMA árvore, lado da porta e modelos.
+      layout: lastItemResult.layout || null,
+      layoutPieces: lastItemResult.layoutPieces || [],
+      _layoutGeometry: lastItemResult.layoutGeometry || null,
+      pieceAdjustments: lastItemResult.pieceAdjustments || {},
+      doorModelId: lastItemResult.doorModelId || null,
+      drawerModelId: lastItemResult.drawerModelId || null,
+      removedPieceIds: [],
+      ledConfigs: {},
       thumbnail_data_url,
       // Valores de largura/altura TRAVADOS (currentModule.width_locked/
       // height_locked) — o global `dimensionPresets` já está fresco pra
@@ -512,7 +522,12 @@ document.getElementById('po-add-item-btn').addEventListener('click', async () =>
       stack_on_id: existingSlot ? (existingSlot.stack_on_id || null) : addStackOnId,
       floor_height_mm,
       module: currentModule,
-      pieces: effectivePieces,
+      // Com o slot do configurador (portal-26): peças já com a árvore de
+      // fábrica/modelos — a Composição só desenha, não recalcula.
+      pieces: lastItemResult.viewerPieces || effectivePieces,
+      layoutGeometry: lastItemResult.layoutGeometry || null,
+      pieceAdjustments: lastItemResult.pieceAdjustments || {},
+      drawerModelId: lastItemResult.drawerModelId || null,
       colorsByRole: lastItemResult.colorsByRole,
       selectedColors: lastItemResult.selectedColors,
       pieceColorOverrides: lastItemResult.pieceColorOverrides,
@@ -577,7 +592,10 @@ document.getElementById('po-add-item-btn').addEventListener('click', async () =>
       total_price: lastItemResult.result.total,
       breakdown: lastItemResult.result.breakdown,
       thumbnail_data_url,
-      sort_order: cartItems.length
+      sort_order: cartItems.length,
+      // layout (geometria do interior de fábrica), lado da porta, modelo de
+      // gaveta — portal-26. Vazio = payload igual ao de antes.
+      ...((typeof quoteOrderItemExtras === 'function') ? quoteOrderItemExtras(lastItemResult) : {})
     };
 
     const { data, error } = await supabaseClient.from('order_items').insert(payload).select().single();
@@ -2170,7 +2188,9 @@ async function saveOrderItemEdit() {
       // módulo; sem isso, editar qualquer coisa aqui resetaria o total de
       // volta pro preço de 1 unidade só, perdendo a quantidade escolhida.
       total_price: lastItemResult.result.total * (Number((currentOrderDetail && currentOrderDetail.items.find((x) => x.id === editingOrderItemId) || {}).quantity) || 1),
-      breakdown: lastItemResult.result.breakdown
+      breakdown: lastItemResult.result.breakdown,
+      // portal-26: só entra o que existe (sem árvore = coluna layout intocada)
+      ...((typeof quoteOrderItemExtras === 'function') ? quoteOrderItemExtras(lastItemResult) : {})
     };
     if (thumbnail_data_url) payload.thumbnail_data_url = thumbnail_data_url;
 

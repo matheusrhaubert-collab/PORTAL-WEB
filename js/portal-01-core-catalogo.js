@@ -435,8 +435,13 @@ function viewerRoomEnvConfig() {
 // Liga as linhas do ambiente no viewer do configurador (aba Quote) — pedido
 // do usuário: mesma regra das linhas do chão/teto da Composição.
 function applyViewerRoomEnvironment() {
+  // SEM AMBIENTE no configurador (2026-10-24, Matt: "deixar o módulo 3D
+  // travado na tela sem zoom e sem ambiente"). As linhas de chão/teto
+  // obrigavam o quadro a caber o pé direito inteiro — o módulo virava um
+  // ponto no meio da tela. O limite de altura pelo teto continua valendo
+  // nas medidas (ceilingMaxHeightMm), só não é mais desenhado aqui.
   if (typeof Viewer3D !== 'undefined' && Viewer3D.setRoomEnvironment) {
-    Viewer3D.setRoomEnvironment(viewerRoomEnvConfig());
+    Viewer3D.setRoomEnvironment(null);
   }
 }
 applyViewerRoomEnvironment();
@@ -1187,13 +1192,26 @@ async function addModuleToCartWithSku(moduleId, reference, selectEl) {
       : clamp(Number(m.height_default_mm || 0), Number(m.height_min_mm || 0), Number(m.height_max_mm || Infinity));
     const depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
 
-    const result = m.is_decoration
+    // MESMO MOTOR DO PROJETOS (2026-10-24, portal-26): interior de fábrica
+    // da NEW Classic (portas/frentes/prateleiras) entra no preço, na
+    // miniatura e no pedido. Se o slot não montar, cai no cálculo de antes.
+    let qSlot = null;
+    if (typeof buildQuoteSlot === 'function') {
+      try {
+        qSlot = await buildQuoteSlot({
+          module: m, pieces: modulePieces, colorOptionsByRole, colorsByRole, hingeModel, slideModel,
+          width_mm, height_mm, depth_mm, shelfQuantities, selectedOptionalIds
+        });
+      } catch (e) { console.warn('[referência] slot não montou, cálculo antigo:', e); qSlot = null; }
+    }
+    if (qSlot) Object.assign(colorsByRole, qSlot.colorsByRole);
+    const result = qSlot ? qSlot.result : (m.is_decoration
       ? { total: 0, breakdown: [] }
       : Pricing.calculateModulePrice({
         module: m, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
         shelfQuantities, dimOverrides: {}, pieceColorOverrides: {},
         width_mm, height_mm, depth_mm, markupMultiplier: resolveMarkupMultiplierForModule(m)
-      });
+      }));
 
     const selectedColors = Object.keys(colorsByRole).map((roleId) => ({
       role_id: roleId,
@@ -1217,8 +1235,8 @@ async function addModuleToCartWithSku(moduleId, reference, selectEl) {
     try {
       const viewer = getSkuAddHiddenViewer();
       const syntheticSlot = {
-        pieces: effectivePieces,
-        width_mm, height_mm, depth_mm,
+        pieces: qSlot ? quoteSlotViewerPieces(qSlot) : effectivePieces,
+        width_mm: qSlot ? qSlot.width_mm : width_mm, height_mm: qSlot ? qSlot.height_mm : height_mm, depth_mm: qSlot ? qSlot.depth_mm : depth_mm,
         colorsByRole, pieceColorOverrides: {},
         shelfQuantities, dimOverrides: {}
       };
@@ -1247,7 +1265,8 @@ async function addModuleToCartWithSku(moduleId, reference, selectEl) {
       total_price: result.total,
       breakdown: result.breakdown,
       thumbnail_data_url,
-      sort_order: cartItems.length
+      sort_order: cartItems.length,
+      ...(qSlot ? quoteOrderItemExtras(quoteSlotSnapshot(qSlot)) : {})
     };
     const { data, error } = await supabaseClient.from('order_items').insert(payload).select().single();
     if (error) throw error;
@@ -1329,6 +1348,7 @@ async function loadModules() {
 // módulo continua a mesma, só a forma de escolher é que virou visual).
 async function selectModule(id) {
   if (!id) {
+    if (typeof quoteSlot !== 'undefined') quoteSlot = null;
     document.getElementById('po-config-section').style.display = 'none';
     return;
   }
@@ -1359,6 +1379,11 @@ async function selectModule(id) {
   selectedOptionalComponentIds = new Set(
     pieces.filter((p) => p.client_optional && p.client_optional_default_on).map((p) => p.id)
   );
+  // Slot sintético do Projetos (2026-10-24, js/portal-26-config-modulo.js):
+  // traz o interior de FÁBRICA (portas/frentes/prateleiras da NEW Classic)
+  // e as opções do ícone do 3D. Tem que vir ANTES dos swatches — a árvore
+  // pode trazer papel de cor novo (Porta/Frente).
+  if (typeof prepareQuoteSlotForCurrentModule === 'function') await prepareQuoteSlotForCurrentModule();
   // Precisa de loadModuleColors E loadModulePieces já prontos (os dois do
   // Promise.all acima) — por isso só monta os grupos de swatches aqui, não
   // dentro de loadModuleColors.
@@ -1582,7 +1607,8 @@ async function loadModuleColors(moduleId) {
 function renderColorRoleSwatchGroups(presetColorsByRole, presetPieceColorOverrides) {
   const container = document.getElementById('po-color-role-swatch-groups');
   container.innerHTML = '';
-  const usedRoleIds = collectUsedColorRoleIds(pieces);
+  // + papéis da árvore de fábrica / modelo de porta (quoteSlot, portal-26)
+  const usedRoleIds = (typeof quoteSlotUsedRoleIds === 'function') ? quoteSlotUsedRoleIds(pieces) : collectUsedColorRoleIds(pieces);
   selectedColorIdByRole = {};
   colorRolesCache
     .filter((role) => usedRoleIds.has(role.id))
@@ -1878,11 +1904,14 @@ function setupOptionVisibility() {
   // tiver seu PRÓPRIO modelo de dobradiça vinculado (own_hinge_model):
   // nesse caso o hardware é fixo da peça, não precisa pedir pro cliente
   // escolher aqui. Agora verifica em QUALQUER profundidade (ver treeHasHinge).
-  const usesHinges = treeHasHinge(pieces, true, false);
+  // + peças da árvore de fábrica (quoteSlot, portal-26) — porta da NEW
+  // Classic não está no cadastro, só na árvore.
+  const pecasVis = pieces.concat((typeof quoteSlot !== 'undefined' && quoteSlot && quoteSlot.layoutPieces) || []);
+  const usesHinges = treeHasHinge(pecasVis, true, false);
   // Corrediça: só existe hoje numa peça-módulo aninhada com opening_type
   // slide_out (ex: um "modelo de gaveta" usado como sub-montagem) — mesma
   // exceção acima quando a peça já tem own_slide_model próprio.
-  const usesSlides = treeHasSlide(pieces, true, false);
+  const usesSlides = treeHasSlide(pecasVis, true, false);
 
   document.getElementById('po-hinge-model-wrap').style.display = usesHinges ? 'block' : 'none';
   document.getElementById('po-slide-model-wrap').style.display = usesSlides ? 'block' : 'none';
@@ -1892,8 +1921,8 @@ function setupOptionVisibility() {
   // QUALQUER profundidade de aninhamento (ver treeHasHinge/treeHasSlide), e
   // cada um controla só o seu grupo (ver Viewer3D.toggleDoorsOnly/
   // toggleDrawersOnly) — abrir as portas não abre as gavetas, e vice-versa.
-  const hasOpenableHinge = treeHasHinge(pieces, false, false);
-  const hasOpenableSlide = treeHasSlide(pieces, false, false);
+  const hasOpenableHinge = treeHasHinge(pecasVis, false, false);
+  const hasOpenableSlide = treeHasSlide(pecasVis, false, false);
   const toggleDoorsBtnEl = document.getElementById('po-toggle-doors-btn');
   if (toggleDoorsBtnEl) {
     toggleDoorsBtnEl.style.display = hasOpenableHinge ? 'inline-block' : 'none';
@@ -2549,6 +2578,19 @@ function recalculatePreview() {
   const pieceColorOverrides = buildPieceColorOverrides();
 
   const effectivePieces = pieces.filter((p) => !p.client_optional || selectedOptionalComponentIds.has(p.id));
+
+  // CAMINHO DO SLOT (2026-10-24, js/portal-26-config-modulo.js): mesmo motor
+  // do Projetos — interior de fábrica, modelos de porta/gaveta, lado da
+  // porta, prateleiras do ícone. Sem slot (falhou ao montar) cai no caminho
+  // antigo logo abaixo, idêntico ao de sempre.
+  if (typeof quoteSlot !== 'undefined' && quoteSlot && quoteSlot.module.id === currentModule.id) {
+    recalculatePreviewFromQuoteSlot({
+      width_mm, height_mm, depth_mm, colorsByRole, hingeModel, slideModel,
+      shelfQuantities, dimOverrides, pieceColorOverrides,
+      selectedOptionalIds: Array.from(selectedOptionalComponentIds)
+    });
+    return;
+  }
 
   try {
     const moduleDims = { W: width_mm, H: height_mm, D: depth_mm };

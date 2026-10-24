@@ -929,8 +929,41 @@ function projectFullscreenAtivo() {
   return !!(document.fullscreenElement || document.webkitFullscreenElement);
 }
 
+// PORTAL INSTALADO COMO APLICATIVO (2026-10-24, Matt: "deixar a barra do
+// Windows exposta, como se fosse um programa desktop"). Aberto pelo atalho
+// do app (Chrome/Edge > Instalar), o portal já roda numa janela própria sem
+// barra de endereço. Ali a Fullscreen API esconderia também a barra do
+// Windows — então o botão só esconde o topo do portal (mesmo caminho do
+// iPad), e a janela continua uma janela normal: barra de título, barra de
+// tarefas, alt+tab.
+function portalRodandoComoApp() {
+  try {
+    return !!(window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches
+      || window.matchMedia('(display-mode: window-controls-overlay)').matches))
+      || window.navigator.standalone === true;
+  } catch (e) { return false; }
+}
+function syncProjectTelaCheiaBtn() {
+  const btn = document.getElementById('po-proj-fullscreen-btn');
+  if (!btn) return;
+  const on = document.body.classList.contains('proj-tela-cheia');
+  btn.classList.toggle('active', on);
+  const chave = on ? 'project.fullscreen_exit_title'
+    : (portalRodandoComoApp() ? 'project.fullscreen_title_app' : 'project.fullscreen_title');
+  btn.title = I18n.t(chave);
+  // troca de idioma reaplica data-i18n-title — tem que apontar pra chave certa
+  btn.setAttribute('data-i18n-title', chave);
+}
+
 async function toggleProjectTelaCheia() {
   try {
+    if (portalRodandoComoApp() && !projectFullscreenAtivo()) {
+      document.body.classList.toggle('proj-tela-cheia');
+      ajustaAlturaTelaCheia();
+      syncProjectTelaCheiaBtn();
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+      return;
+    }
     if (projectFullscreenAtivo()) {
       const sair = document.exitFullscreen || document.webkitExitFullscreen;
       if (sair) await sair.call(document);
@@ -1035,6 +1068,20 @@ function ajustaAlturaTelaCheia() {
   };
   document.addEventListener('fullscreenchange', sincroniza);
   document.addEventListener('webkitfullscreenchange', sincroniza);
+  // Modo app (sem Fullscreen API): Esc também sai, igual a tela cheia de
+  // verdade — o navegador não faz isso sozinho aqui.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || projectFullscreenAtivo() || !document.body.classList.contains('proj-tela-cheia')) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (document.querySelector('.modal.open, .po-modal.open, [role="dialog"][open]')) return;
+    document.body.classList.remove('proj-tela-cheia');
+    ajustaAlturaTelaCheia();
+    syncProjectTelaCheiaBtn();
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+  });
+  // Texto do botão já certo pra quem abriu pelo app.
+  syncProjectTelaCheiaBtn();
 })();
 
 (function attachProjectColumnToggles() {

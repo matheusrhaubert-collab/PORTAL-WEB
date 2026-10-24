@@ -5827,3 +5827,81 @@ body.po-barra-fixa-on .po-proj-config-col {
 #po-proj-canvas-tools .po-tb-dd-panel .po-tb-dd-rotulo::after { content: attr(aria-label); }
 #po-proj-canvas-tools .po-tb-dd-panel svg { flex: none; width: 18px; height: 18px; }
 #po-proj-canvas-tools .po-tb-dd-panel .po-tb-dot { top: 50%; right: 10px; left: auto; transform: translateY(-50%); }
+
+/* ===== Opções do módulo no 3D do configurador (2026-10-24) =====
+   Ícone no canto do desenho + painel lateral por cima do 3D (prateleiras,
+   giro da porta, modelo de porta/gaveta). Ver js/portal-26-config-modulo.js. */
+#po-viewer3d-stage { position: relative; }
+.po-qopt-btn {
+  position: absolute; top: 10px; right: 10px; z-index: 3;
+  width: 38px; height: 38px; padding: 0; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; color: var(--text, #1a1a1a); border: 1px solid var(--border, #ddd);
+  box-shadow: 0 2px 8px rgba(0,0,0,.08); cursor: pointer;
+}
+.po-qopt-btn:hover { border-color: var(--accent, #1a1a1a); }
+.po-qopt-panel {
+  position: absolute; top: 56px; right: 10px; z-index: 4;
+  width: min(300px, calc(100% - 20px)); max-height: calc(100% - 66px); overflow-y: auto;
+  background: #fff; border: 1px solid var(--border, #ddd); border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px 12px 12px;
+  display: none;
+}
+.po-qopt-panel.open { display: block; }
+.po-qopt-head { display: flex; align-items: center; justify-content: space-between; }
+.po-qopt-close { background: none; border: none; font-size: 20px; line-height: 1; padding: 2px 6px; cursor: pointer; color: var(--muted, #777); }
+.po-qopt-section + .po-qopt-section { border-top: 1px solid var(--border, #eee); margin-top: 8px; }
+.po-qopt-shelf-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; font-size: 13px; }
+.po-qopt-stepper { display: inline-flex; align-items: center; gap: 10px; }
+.po-qopt-stepper button { width: 30px; height: 30px; padding: 0; border-radius: 50%; }
+.po-qopt-stepper b { min-width: 16px; text-align: center; }
+.po-qopt-panel .po-proj-door-model-cards { gap: 6px; }
+
+/* Visualização 3D pelo menu Render (2026-10-24) — o painel #po-proj-3d-wrap
+   vira janela por cima do projeto em vez de faixa embaixo dele. */
+body.po-proj-3d-overlay { overflow: hidden; }
+body.po-proj-3d-overlay #po-proj-3d-wrap {
+  position: fixed; inset: 0; z-index: 2500; margin: 0 !important;
+  background: var(--panel, #fff); padding: 12px 16px; overflow-y: auto;
+}
+body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
+
+/* ===== Tela de atalhos (2026-10-24, js/portal-27-atalhos.js) ===== */
+#po-sc-modal { display: none; position: fixed; inset: 0; z-index: 3200; align-items: center; justify-content: center; background: rgba(0,0,0,.55); padding: 20px; }
+#po-sc-modal.open { display: flex; }
+.po-sc-card { background: var(--panel, #fff); border-radius: 12px; padding: 22px 24px; width: 640px; max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.po-sc-card h2 { margin: 0 0 4px; }
+.po-sc-abas { display: flex; gap: 6px; margin: 10px 0; }
+.po-sc-abas button, .po-sc-so button { background: transparent; color: var(--text, #1a1a1a); border: 1px solid var(--border, #ddd); border-radius: 999px; padding: 6px 14px; }
+.po-sc-abas button.ativo, .po-sc-so button.ativo { background: var(--text, #1a1a1a); color: #fff; border-color: var(--text, #1a1a1a); }
+.po-sc-corpo { overflow-y: auto; flex: 1 1 auto; min-height: 200px; padding-right: 4px; }
+.po-sc-grupo { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #777); }
+.po-sc-linha { display: grid; grid-template-columns: 32px 1fr auto 28px; align-items: center; gap: 10px; padding: 5px 4px; border-bottom: 1px solid var(--border, #eee); }
+.po-sc-linha.mudou .po-sc-nome em { color: var(--accent, #c0843f); font-style: normal; font-size: 12px; }
+.po-sc-ico svg { width: 22px; height: 22px; display: block; }
+.po-sc-glyph { display: inline-block; width: 22px; text-align: center; font-size: 17px; line-height: 22px; }
+.po-sc-nome { font-size: 14px; }
+.po-sc-tecla { min-width: 74px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border, #ccc); border-bottom-width: 3px; background: #fafafa; color: var(--text, #1a1a1a); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; text-align: center; }
+.po-sc-tecla.vazia { color: var(--muted, #999); }
+.po-sc-tecla.gravando { border-color: var(--accent, #c0843f); background: #fff7ec; animation: po-sc-pisca 1s ease-in-out infinite; }
+.po-sc-tecla.fixa { display: inline-block; opacity: .7; }
+@keyframes po-sc-pisca { 50% { opacity: .55; } }
+.po-sc-limpar { background: none; border: none; color: var(--muted, #888); font-size: 18px; padding: 0; cursor: pointer; }
+.po-sc-limpar:disabled { visibility: hidden; }
+.po-sc-rodape { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border, #eee); }
+.po-sc-msg { flex: 1 1 160px; font-size: 13px; color: var(--muted, #666); }
+.po-sc-msg.erro { color: #b3261e; }
+.po-sc-fab-wrap { font-size: 13px; display: flex; align-items: center; gap: 6px; width: 100%; }
+.po-sc-aviso { background: #fff7ec; border: 1px solid #f0d3a8; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.po-sc-so { display: flex; gap: 6px; margin-bottom: 10px; }
+.po-sc-mouse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.po-sc-mouse-item { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border, #eee); border-radius: 10px; padding: 8px 10px; }
+.po-sc-mouse-item b { display: block; font-size: 14px; }
+.po-sc-mouse-item span { font-size: 12px; color: var(--muted, #777); }
+.po-sc-mouse { width: 44px; height: 56px; flex: 0 0 auto; }
+.po-sc-mouse .corpo { fill: #f4f4f4; stroke: #555; stroke-width: 2; }
+.po-sc-mouse .botao { fill: transparent; stroke: #555; stroke-width: 1.5; }
+.po-sc-mouse .roda { fill: #fff; stroke: #555; stroke-width: 1.5; }
+.po-sc-mouse .on { fill: var(--accent, #c0843f); }
+.po-sc-mouse .dedo { fill: var(--accent, #c0843f); opacity: .85; }
+.po-sc-mouse .seta { fill: none; stroke: var(--accent, #c0843f); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

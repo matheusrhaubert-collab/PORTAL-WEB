@@ -1417,6 +1417,8 @@ function renderProjectCanvas() {
   const genBtn = document.getElementById('po-proj-generate-btn');
   const genHint = document.getElementById('po-proj-generate-hint');
   if (genBtn) genBtn.disabled = projectSlots.length < 1;
+  const view3dTbBtn = document.getElementById('po-proj-view3d-tb-btn'); // menu Render (24/10)
+  if (view3dTbBtn) view3dTbBtn.disabled = projectSlots.length < 1;
   if (genHint) genHint.style.display = projectSlots.length < 1 ? 'block' : 'none';
   // Foto realista segue a mesma regra do Visualizar 3D (>=1 módulo).
   const photoBtn = document.getElementById('po-proj-photoreal-btn');
@@ -1432,6 +1434,7 @@ function renderProjectCanvas() {
       generateProject3D();
     } else {
       proj3dWrap.style.display = 'none';
+      document.body.classList.remove('po-proj-3d-overlay');
     }
   }
 
@@ -4803,7 +4806,14 @@ function projectSlotHingedDoors(slot) {
       if (p.is_module) { anda(p.child_pieces, false); return; }
       const hs = (p.hinge_side === 'left' || p.hinge_side === 'right') ? p.hinge_side
         : (/^hinge_(left|right)$/.test(ot) ? ot.slice(6) : null);
-      if (hs) out.push({ id: p.id, nome: p.reference_override || p.reference || '', lado: hs });
+      // Caixa da porta quando a medida é número puro (porta do Construtor /
+      // árvore de fábrica: x/y/w/h literais em mm) — usada pra achar o PAR
+      // lado a lado (ver projectDoorSideBlock). Porta do cadastro (fórmula)
+      // fica sem caixa.
+      const num = (f) => { const n = Number(f); return (f != null && String(f).trim() !== '' && isFinite(n)) ? n : null; };
+      const cx = num(p.offset_x_formula), cy = num(p.offset_y_formula), cw = num(p.width_formula), ch = num(p.height_formula);
+      const caixa = (cx != null && cy != null && cw != null && ch != null) ? { x: cx, y: cy, w: cw, h: ch } : null;
+      if (hs) out.push({ id: p.id, nome: p.reference_override || p.reference || '', lado: hs, caixa });
     });
   })(pecas, true);
   return out.filter((d) => d.id != null);
@@ -4822,14 +4832,32 @@ function projectDoorSideIcon(lado) {
   </svg>`;
 }
 function projectDoorSideBlock(slot) {
-  const portas = projectSlotHingedDoors(slot);
-  // Só módulo de 1 porta (17/10 — Matt): com 2 folhas o par já abre uma pra
+  const todas = projectSlotHingedDoors(slot);
+  // Só porta SOZINHA (17/10 — Matt): com 2 folhas o par já abre uma pra
   // cada lado, trocar não faz sentido (mesma regra do Construtor, portal-07).
-  if (portas.length !== 1) return '';
+  // 24/10 (Matt: "porta única feita no construtor não mostra opção de troca"
+  // — torre com porta embaixo e porta em cima): a regra era "o módulo tem 1
+  // porta só". Agora é por porta: some só a que tem uma VIZINHA na mesma
+  // faixa de altura (o par lado a lado). Portas empilhadas, cada uma
+  // sozinha no seu vão, ganham a troca cada uma. Sem caixa (porta do
+  // cadastro, medida por fórmula) fica a regra antiga.
+  let portas;
+  if (todas.length === 1) portas = todas;
+  else if (todas.length > 1 && todas.every((d) => d.caixa)) {
+    const temPar = (d) => todas.some((o) => {
+      if (o === d) return false;
+      const sob = Math.min(d.caixa.y + d.caixa.h, o.caixa.y + o.caixa.h) - Math.max(d.caixa.y, o.caixa.y);
+      return sob > 0.5 * Math.min(d.caixa.h, o.caixa.h);
+    });
+    portas = todas.filter((d) => !temPar(d));
+    // de cima pra baixo, que é como o cliente lê a torre
+    portas.sort((a, b) => b.caixa.y - a.caixa.y);
+  } else portas = [];
+  if (!portas.length) return '';
   const linhas = portas.map((d, i) => {
     const outro = d.lado === 'left' ? 'right' : 'left';
     const rotulo = I18n.t(d.lado === 'left' ? 'project.door_side_is_left' : 'project.door_side_is_right');
-    const nome = portas.length > 1 ? `<span class="po-proj-door-side-nome">${d.nome || (I18n.t('project.door_side_door') + ' ' + (i + 1))}</span>` : '';
+    const nome = portas.length > 1 ? `<span class="po-proj-door-side-nome">${(portas.every((x) => x.caixa) || !d.nome) ? (I18n.t('project.door_side_door') + ' ' + (i + 1)) : d.nome}</span>` : '';
     return `<button type="button" class="po-proj-door-side-toggle" data-piece-id="${String(d.id).replace(/"/g, '&quot;')}" data-side="${outro}" title="${I18n.t('project.door_side_flip')}">
       ${projectDoorSideIcon(d.lado)}<span class="po-proj-door-side-txt">${nome}<b>${rotulo}</b></span><span class="po-proj-door-side-swap">⇄</span></button>`;
   }).join('');
