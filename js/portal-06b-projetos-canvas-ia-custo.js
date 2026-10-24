@@ -2974,6 +2974,15 @@ function moneyRowCost(r) {
   return z;
 }
 
+// $ FÁBRICA SÓ PRA ADMINISTRADOR (2026-10-24, Matt: "a proposta factory
+// quero que só o administrador tenha acesso"). Antes valia pra qualquer
+// conta que não fosse vendedor (com a senha da aba). window.LEGNO_IS_ADMIN
+// vem do rpc is_admin() no login (js/portal-26-config-modulo.js) — enquanto
+// não chegou, conta como NÃO admin (a aba aparece quando a resposta vem).
+function moneyFabricaBloqueada() {
+  return isSellerAccount() || window.LEGNO_IS_ADMIN !== true;
+}
+
 function openMoneyModal(scopeIds) {
   const modal = document.getElementById('po-money-modal');
   if (!modal) return;
@@ -2985,8 +2994,8 @@ function openMoneyModal(scopeIds) {
   // aba nem aparece, e renderMoneyModal força de volta pra Orçamento se
   // moneyAbaAtual tiver ficado em 'fabrica' de uma sessão anterior.
   const fabricaTabBtn = document.querySelector('.po-money-tab[data-money-tab="fabrica"]');
-  if (fabricaTabBtn) fabricaTabBtn.style.display = isSellerAccount() ? 'none' : '';
-  if (isSellerAccount()) moneyAbaAtual = 'orcamento';
+  if (fabricaTabBtn) fabricaTabBtn.style.display = moneyFabricaBloqueada() ? 'none' : '';
+  if (moneyFabricaBloqueada()) moneyAbaAtual = 'orcamento';
 
   // RECALCULA AO ABRIR (2026-08-15). O relatório lê slot.result, que pode ter
   // sido calculado numa condição pior do que a atual — tipicamente no
@@ -3024,7 +3033,9 @@ function renderMoneyModal() {
   // da aba já nem existir pro vendedor, ver openMoneyModal): mesmo que
   // moneyAbaAtual tivesse ficado 'fabrica' de outra sessão, vendedor nunca
   // renderiza o conteúdo da Fábrica.
-  if (isSellerAccount()) moneyAbaAtual = 'orcamento';
+  if (moneyFabricaBloqueada()) moneyAbaAtual = 'orcamento';
+  const fabricaTabBtn = document.querySelector('.po-money-tab[data-money-tab="fabrica"]');
+  if (fabricaTabBtn) fabricaTabBtn.style.display = moneyFabricaBloqueada() ? 'none' : '';
   document.querySelectorAll('.po-money-tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.moneyTab === moneyAbaAtual);
   });
@@ -3045,14 +3056,14 @@ function renderMoneyModal() {
         + '</p>';
       return;
     }
-    if (moneyAbaAtual === 'orcamento' || isSellerAccount()) { renderMoneyPieceOrcamento(body, slot, row); return; }
+    if (moneyAbaAtual === 'orcamento' || moneyFabricaBloqueada()) { renderMoneyPieceOrcamento(body, slot, row); return; }
     if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
     renderMoneyPieceFabrica(body, slot, row);
     return;
   }
 
   if (moneyAbaAtual === 'orcamento') { renderMoneyOrcamento(body, rel, scopedSlots); return; }
-  if (isSellerAccount()) { renderMoneyOrcamento(body, rel, scopedSlots); return; }
+  if (moneyFabricaBloqueada()) { renderMoneyOrcamento(body, rel, scopedSlots); return; }
   if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
   renderMoneyFabrica(body, rel);
 }

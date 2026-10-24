@@ -41,7 +41,8 @@ window.LEGNO_CHANGELOG = [
         "Novo: mover e girar a vista pelo teclado (Ctrl + setas move, Ctrl + Shift + setas gira) e mover o módulo selecionado com as setas (Shift + setas anda 10×). W leva o módulo para a próxima parede.",
         "Visualização 3D saiu de baixo do projeto e virou o item \"Visualização 3D\" no menu Render — abre por cima do projeto e fecha no Esc.",
         "Projetos: a troca de abertura da porta (esquerda/direita) agora aparece para cada porta sozinha, inclusive em torres com uma porta embaixo e outra em cima.",
-        "Construtor: ícone da Divisória Stretcher na horizontal; o Painel Fixo foi para o grupo Frentes, com ícone sem puxador e sem dobradiça."
+        "Construtor: ícone da Divisória Stretcher na horizontal; o Painel Fixo foi para o grupo Frentes, com ícone sem puxador e sem dobradiça.",
+        "Porta Lift (basculante): abre para cima, como o pistão de verdade, também no 3D do Projetos. Dobradiça de copo no topo (desenho e furação da porta e do tampo) e 2 pistões a gás por porta somados no orçamento do móvel."
       ],
       en: [
         "New Quote: NEW Classic cabinets now come complete — doors, drawer fronts and shelves — in the 3D view, the price, the thumbnail and the order. New Quote pricing now uses the same calculation as the Projects tab.",
@@ -50,7 +51,8 @@ window.LEGNO_CHANGELOG = [
         "New: move and rotate the view with the keyboard (Ctrl + arrows moves, Ctrl + Shift + arrows rotates) and move the selected cabinet with the arrows (Shift + arrows moves 10×). W sends the cabinet to the next wall.",
         "The 3D view moved from below the project to the \"3D view\" item in the Render menu — it opens on top of the project and closes with Esc.",
         "Projects: the door swing toggle (left/right) now shows for each single door, including tall units with one door at the bottom and another at the top.",
-        "Builder: the Stretcher Divider icon is now horizontal; Fixed Panel moved to the Fronts group, with an icon without handle or hinges."
+        "Builder: the Stretcher Divider icon is now horizontal; Fixed Panel moved to the Fronts group, with an icon without handle or hinges.",
+        "Lift door: opens upward like the real gas strut, in the Projects 3D view too. Cup hinges at the top (drawing and drilling on the door and the top panel) and 2 gas struts per door added to the cabinet quote."
       ],
       es: [
         "Nuevo Presupuesto: los módulos de la línea NEW Classic ahora vienen completos — con puertas, frentes de cajón y estantes — en el 3D, el precio, la miniatura y el pedido. El precio del Nuevo Presupuesto usa el mismo cálculo de la pestaña Proyectos.",
@@ -59,7 +61,8 @@ window.LEGNO_CHANGELOG = [
         "Nuevo: mover y girar la vista con el teclado (Ctrl + flechas mueve, Ctrl + Shift + flechas gira) y mover el módulo seleccionado con las flechas (Shift + flechas avanza 10×). W lleva el módulo a la siguiente pared.",
         "La vista 3D salió de debajo del proyecto y pasó al ítem \"Vista 3D\" del menú Render — abre encima del proyecto y se cierra con Esc.",
         "Proyectos: el cambio de apertura de la puerta (izquierda/derecha) ahora aparece para cada puerta sola, incluso en torres con una puerta abajo y otra arriba.",
-        "Creador: el ícono de la División Stretcher quedó horizontal; el Panel Fijo pasó al grupo Frentes, con ícono sin tirador ni bisagra."
+        "Creador: el ícono de la División Stretcher quedó horizontal; el Panel Fijo pasó al grupo Frentes, con ícono sin tirador ni bisagra.",
+        "Puerta Lift (basculante): abre hacia arriba como el pistón real, también en el 3D de Proyectos. Bisagra de cazoleta arriba (dibujo y perforación de la puerta y del techo) y 2 pistones a gas por puerta sumados al presupuesto del mueble."
       ]
     }
   },

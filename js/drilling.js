@@ -661,6 +661,11 @@
     // propositalmente não entram aqui. Ferragem deles é o pistão a gás
     // (viewer3d.js placeFlapHardware), sem furação própria cadastrada
     // ainda — PENDENTE, ver docs/modelos-de-porta-frente-spec.md.
+    // PORTA LIFT (2026-10-24, Matt: "os furos são como na porta de abrir"):
+    // basculante com dobradiça EM CIMA usa dobradiça de copo de verdade —
+    // mesmo copo/marcações da porta de abrir, só que correndo ao longo da
+    // LARGURA, encostado na borda de CIMA. Quantidade pela largura.
+    if (part.hinge_side === 'top') { collectLiftHingeHoles(store, part, settings); return; }
     if (part.hinge_side !== 'left' && part.hinge_side !== 'right') return;
     const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
     const doorW = t.faceA;
@@ -695,6 +700,44 @@
     }
   }
 
+  function collectLiftHingeHoles(store, part, settings) {
+    const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
+    const doorW = t.faceA;
+    const doorH = t.faceB;
+    const count = hingeCount(doorW || 0);
+    const margin = Number(settings.hinge_edge_margin_mm) || 100;
+    const cupFromEdge = Number(settings.hinge_cup_center_from_edge_mm) || 22;
+    const markFromEdge = Number(settings.hinge_mark_center_from_edge_mm) || 28;
+    const markOffset = Number(settings.hinge_mark_offset_mm) || 24;
+    const lowU = margin;
+    const highU = Math.max(doorW - margin, margin);
+    const v = doorH - cupFromEdge;
+    const vMark = doorH - markFromEdge;
+    for (let i = 0; i < count; i++) {
+      const u = count > 1 ? lowU + (highU - lowU) * (i / (count - 1)) : doorW / 2;
+      const cup = localToMachine(t, u, v);
+      addHole(store, part, {
+        face: 'face', x: cup.x, y: cup.y,
+        diameter: Number(settings.hinge_cup_diameter_mm) || 35,
+        depth: Number(settings.hinge_cup_depth_mm) || 13,
+        tipo: 'copo_dobradica'
+      });
+      [-markOffset, markOffset].forEach(function (dm) {
+        const mk = localToMachine(t, u + dm, vMark);
+        addHole(store, part, {
+          face: 'face', x: mk.x, y: mk.y,
+          diameter: Number(settings.hinge_mark_diameter_mm) || 3,
+          depth: Number(settings.hinge_mark_depth_mm) || 2,
+          tipo: 'marcacao_dobradica'
+        });
+      });
+    }
+  }
+  // Porta lift (basculante com dobradiça em cima) — folha ou modelo.
+  function ehPortaLift(part) {
+    return !!part && (part.hinge_side === 'top' || (part.is_module && part.opening_type === 'hinge_top'));
+  }
+
   // LADO DA DOBRADIÇA de uma peça, valendo pra PEÇA-MÓDULO também
   // (2026-09-24, Matt, 1º lote real: "nenhum módulo até agora puxou furação
   // das portas... foram construídos com o construtor de armário"). Toda
@@ -724,7 +767,8 @@
   // espessura no Z do módulo (chapa de frente) contam.
   function collectHingeHolesModulo(store, part, settings) {
     if (!settings || !settings.hinge_enabled) return;
-    const side = hingeSideOf(part);
+    const lift = ehPortaLift(part);
+    const side = hingeSideOf(part) || (lift ? 'top' : null);
     if (!side || !part.is_module || !part.child_pieces || !part.child_pieces.length) return;
     // Porta de vidro (migration 187): perfil de alumínio + vidro, tudo
     // origin='comprado' — não passa na furadeira de chapa. A dobradiça é
@@ -761,6 +805,19 @@
       if (!alvo) return;
       emitLocalHole(store, alvo, { u: x - alvo.x0, v: y - alvo.y0, edge: null, face: 'face', diameter: diameter, depth: depth, tipo: tipo });
     };
+    if (lift) {
+      // Lift: copos ao longo da LARGURA, encostados na borda de CIMA.
+      const nL = hingeCount(W);
+      const lowU = margin, highU = Math.max(W - margin, margin);
+      for (let i = 0; i < nL; i++) {
+        const x = nL > 1 ? lowU + (highU - lowU) * (i / (nL - 1)) : W / 2;
+        furar(x, H - cupFromEdge, Number(settings.hinge_cup_diameter_mm) || 35, Number(settings.hinge_cup_depth_mm) || 13, 'copo_dobradica');
+        [-markOffset, markOffset].forEach(function (dm) {
+          furar(x + dm, H - markFromEdge, Number(settings.hinge_mark_diameter_mm) || 3, Number(settings.hinge_mark_depth_mm) || 2, 'marcacao_dobradica');
+        });
+      }
+      return;
+    }
     for (let i = 0; i < count; i++) {
       const v = count > 1 ? lowV + (highV - lowV) * (i / (count - 1)) : H / 2;
       furar(u, v, Number(settings.hinge_cup_diameter_mm) || 35, Number(settings.hinge_cup_depth_mm) || 13, 'copo_dobradica');
@@ -1166,14 +1223,14 @@
         const x0 = cursorX + (part.offset_x_mm || 0);
         // 'top'/'bottom' (basculante) não usa base de dobradiça de embutir
         // — ver collectHingeHoles acima pro mesmo motivo.
-        if (hingeSideOf(part)) {
-          doors.push({ part, side: hingeSideOf(part), x0: x0 + ox, y0: (part.offset_y_mm || 0) + oy, doorW: t.faceA, doorH: t.faceB });
+        if (hingeSideOf(part) || ehPortaLift(part)) {
+          doors.push({ part, side: hingeSideOf(part) || 'top', x0: x0 + ox, y0: (part.offset_y_mm || 0) + oy, doorW: t.faceA, doorH: t.faceB });
         }
         cursorX += t.faceA + 2;
-      } else if (role === 'free' && hingeSideOf(part)) {
+      } else if (role === 'free' && (hingeSideOf(part) || ehPortaLift(part))) {
         // inclui a PORTA DE MODELO (peça-módulo do Construtor, ver hingeSideOf)
         doors.push({
-          part, side: hingeSideOf(part),
+          part, side: hingeSideOf(part) || 'top',
           x0: (part.offset_x_mm || 0) + ox, y0: (part.offset_y_mm || 0) + oy,
           doorW: part.width_mm || 0, doorH: part.height_mm || 0
         });
@@ -1181,12 +1238,47 @@
     });
     if (!doors.length) return;
 
+    // PORTA LIFT (2026-10-24): a base vai na peça DEITADA do casco logo
+    // acima da borda de cima da porta (o tampo), na face de baixo — 2 furos
+    // por dobradiça, espaçados ao longo da largura, recuados
+    // hinge_plate_from_front_mm da frente. Mesmo copo/base da porta de abrir.
+    const deitadas = boxes.filter(function (b) { return b.tAxis === 'y' && !b._abre; });
+    doors.filter(function (d) { return d.side === 'top'; }).forEach(function (door) {
+      const hingeY = door.y0 + door.doorH;
+      let best = null;
+      deitadas.forEach(function (tb) {
+        const cobre = Math.min(door.x0 + door.doorW, tb.x0 + tb.sx) - Math.max(door.x0, tb.x0);
+        if (cobre < door.doorW * 0.5) return;
+        const d = Math.min(Math.abs(hingeY - tb.y0), Math.abs(hingeY - (tb.y0 + tb.sy)));
+        if (d <= tb.sy + 25 && (!best || d < best.d)) best = { tb, d };
+      });
+      if (!best) return;
+      const tb = best.tb;
+      const entersPositive = (door.y0 + door.doorH / 2) >= tb.y0 + tb.sy / 2;
+      const count = hingeCount(door.doorW || 0);
+      const lowU = margin;
+      const highU = Math.max(door.doorW - margin, margin);
+      for (let i = 0; i < count; i++) {
+        const cupX = door.x0 + (count > 1 ? lowU + (highU - lowU) * (i / (count - 1)) : door.doorW / 2);
+        [-spacing / 2, spacing / 2].forEach(function (dm) {
+          emitLocalHole(store, tb, {
+            u: (cupX + dm) - tb.x0,        // uAxis da peça deitada = X
+            v: tb.sz - fromFront,          // vAxis = Z; frente do módulo = z0+sz
+            edge: null,
+            entersPositive: entersPositive,
+            diameter: plateDia, depth: plateDepth,
+            tipo: 'base_dobradica'
+          });
+        });
+      }
+    });
+
     // candidatas a receber a base: peças com espessura no eixo X (laterais,
     // divisórias em pé) do CASCO — nunca de dentro de porta/gaveta (_abre)
     const laterals = boxes.filter(function (b) { return b.tAxis === 'x' && !b._abre; });
     if (!laterals.length) return;
 
-    doors.forEach(function (door) {
+    doors.filter(function (d) { return d.side !== 'top'; }).forEach(function (door) {
       const hingeX = door.side === 'left' ? door.x0 : door.x0 + door.doorW;
       let best = null;
       laterals.forEach(function (lb) {

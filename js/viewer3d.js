@@ -4152,9 +4152,38 @@ const Viewer3D = (function () {
     // 3 pontos ao longo da largura — não tem copo/aba porque não é
     // dobradiça de embutir). Ficam DENTRO do doorGroup: giram junto com a
     // porta (fisicamente corretos, o corpo da dobradiça é preso na porta).
+    // PORTA LIFT ('top', 2026-10-24, Matt: "dobradiça tá mostrando errada,
+    // os furos são como na porta de abrir"): dobradiça de COPO igual a da
+    // porta de abrir — copo + aba + parafusos na face de trás, 23 mm da
+    // borda de cima, distribuídas pela LARGURA (mesma contagem/margem da
+    // furação, drilling.js collectLiftHingeHoles). O inverso continua com os
+    // "nós" simples abaixo.
+    if (hingeSide === 'top') {
+      const count = (typeof Pricing !== 'undefined' && Pricing.hingeCountForDoorHeight)
+        ? Pricing.hingeCountForDoorHeight(doorWidthM * 1000) : 2;
+      const margem = Math.min(0.1, doorWidthM * 0.3);
+      const xs = count > 1
+        ? Array.from({ length: count }, (_, i) => -doorWidthM / 2 + margem + (doorWidthM - 2 * margem) * (i / (count - 1)))
+        : [0];
+      const { screw: screwMat } = getHingeMaterials();
+      const flangeR = 0.019, flangeT = 0.0025, cupR = 0.0135;
+      const cupD = Math.min(0.013, Math.max(doorThicknessM - 0.004, 0.006));
+      const yCopo = -Math.min(0.023, doorHeightM * 0.35);
+      const backZ = -doorThicknessM / 2;
+      xs.forEach((lx) => {
+        const fg = new THREE.CylinderGeometry(flangeR, flangeR, flangeT, 20); fg.rotateX(Math.PI / 2);
+        const flange = new THREE.Mesh(fg, metal); flange.position.set(lx, yCopo, backZ - flangeT / 2); doorGroup.add(flange);
+        const cg = new THREE.CylinderGeometry(cupR, cupR, cupD, 20); cg.rotateX(Math.PI / 2);
+        const cup = new THREE.Mesh(cg, metal); cup.position.set(lx, yCopo, backZ + cupD / 2); doorGroup.add(cup);
+        [-1, 1].forEach((lado) => {
+          const sg = new THREE.CylinderGeometry(0.0018, 0.0018, 0.001, 10); sg.rotateX(Math.PI / 2);
+          const sm = new THREE.Mesh(sg, screwMat); sm.position.set(lx + lado * flangeR * 0.55, yCopo, backZ - flangeT - 0.0005); doorGroup.add(sm);
+        });
+      });
+    }
     const knuckleRadius = 0.007;
     const knuckleLen = Math.min(0.045, doorWidthM * 0.1);
-    [0.12, 0.5, 0.88].forEach((f) => {
+    (hingeSide === 'top' ? [] : [0.12, 0.5, 0.88]).forEach((f) => {
       const lx = -doorWidthM / 2 + doorWidthM * f;
       const geo = new THREE.CylinderGeometry(knuckleRadius, knuckleRadius, knuckleLen, 12);
       geo.rotateZ(Math.PI / 2); // cilindro nasce em pé (eixo Y); deita no eixo X (largura)

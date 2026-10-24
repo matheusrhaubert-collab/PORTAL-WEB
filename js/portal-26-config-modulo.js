@@ -420,10 +420,16 @@ function recalculatePreviewFromQuoteSlot(st) {
 (function attachAdminAppManifest() {
   if (typeof supabaseClient === 'undefined' || !supabaseClient.auth) return;
   let feito = false;
+  window.LEGNO_IS_ADMIN = false;
   const confere = async (session) => {
-    if (feito || !session) return;
+    if (!session) { window.LEGNO_IS_ADMIN = false; return; }
     try {
       const { data: ehAdmin, error } = await supabaseClient.rpc('is_admin');
+      // Flag global de administrador — também trava a aba $ Fábrica
+      // (portal-06b moneyFabricaBloqueada).
+      window.LEGNO_IS_ADMIN = !error && ehAdmin === true;
+      const modal = document.getElementById('po-money-modal');
+      if (modal && modal.classList.contains('open') && typeof renderMoneyModal === 'function') renderMoneyModal();
       if (error || ehAdmin !== true || feito) return;
       feito = true;
       if (document.querySelector('link[rel="manifest"]')) return;

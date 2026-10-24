@@ -503,6 +503,29 @@
   let purchasedItemsById = {};
   function setPurchasedItems(map) { purchasedItemsById = map || {}; }
 
+  // PORTA LIFT (basculante, dobradiça EM CIMA — hinge_side/opening_type
+  // 'top'), 2026-10-24, Matt: "o pistão é um item comprado e deve aparecer
+  // no orçamento do móvel. Sempre serão 2 pistões por porta (só porta
+  // lift)" + "os furos são como na porta de abrir" (dobradiça de copo no
+  // topo, quantidade pela LARGURA da porta). O pistão é o item comprado de
+  // código LIFT_PISTAO_CODE (migration 219). Sai nos campos de KIT
+  // (support_purchased_item_*) da peça da porta — o mesmo caminho que o
+  // relatório $, a lista de compra do ERP (18-referencias) e a separação do
+  // lote (data-lotes) já leem, sem precisar ensinar nada novo a eles.
+  const LIFT_PISTAO_CODE = 'LIFT-PISTAO';
+  const LIFT_PISTOES_POR_PORTA = 2;
+  function liftPistaoItem() {
+    const ids = Object.keys(purchasedItemsById || {});
+    for (let i = 0; i < ids.length; i++) {
+      const it = purchasedItemsById[ids[i]];
+      if (it && String(it.code || '').toUpperCase() === LIFT_PISTAO_CODE) return it;
+    }
+    return null;
+  }
+  function ehPortaLift(piece) {
+    return !!piece && (piece.hinge_side === 'top' || piece.opening_type === 'hinge_top');
+  }
+
   // Custo de mão de obra de UMA unidade da peça, aberto por processo. O
   // detalhe vai pro breakdown de propósito: é o que transforma "quanto custa
   // fitar" e "quantas peças passam na furadeira" em consulta, em vez de
@@ -1208,9 +1231,14 @@
     // pinos (4 por prateleira) — mesmo mecanismo do kit do cabide, liberado
     // só pra ela (nenhuma outra peça fabricada cobra kit, como antes).
     const levaKit = comprado || !!piece.prateleira_regulavel;
-    const support_cost = (levaKit && itemSuporte && itemSuporte.purchase_price != null)
-      ? Number(itemSuporte.purchase_price) * (piece.support_purchased_item_qty || 1) * qty
-      : 0;
+    // Porta lift: o kit é o PAR DE PISTÕES (ver liftPistaoItem). Só quando a
+    // peça não tem kit próprio cadastrado.
+    const pistao = (ehPortaLift(piece) && !itemSuporte) ? liftPistaoItem() : null;
+    const support_cost = pistao
+      ? Number(pistao.purchase_price || 0) * LIFT_PISTOES_POR_PORTA * qty
+      : (levaKit && itemSuporte && itemSuporte.purchase_price != null)
+        ? Number(itemSuporte.purchase_price) * (piece.support_purchased_item_qty || 1) * qty
+        : 0;
     const material_cor_cost = materialCor ? materialCor.custo * qty : 0;
     const purchased_cost = (comprado ? (precoComprado + support_cost) : support_cost) + material_cor_cost;
     const labor_cost = comprado ? 0 : custoUnitario;
@@ -1234,6 +1262,12 @@
     // placeFlapHardware). Custo do pistão ainda não tem catálogo — fica
     // hinge_cost=0 de propósito até essa peça ganhar cadastro próprio
     // (PENDENTE, ver docs/modelos-de-porta-frente-spec.md).
+    if (piece.hinge_side === 'top') {
+      // Lift: dobradiça de copo igual porta de abrir, no TOPO — quantidade
+      // pela largura (a borda da dobradiça). Ver ehPortaLift.
+      hinge_count = hingeCountForDoorHeight(pieceDims.width_mm);
+      hinge_cost = hingeModel ? (hingeModel.price_per_unit * hinge_count * qty) : 0;
+    }
     if (piece.hinge_side === 'left' || piece.hinge_side === 'right') {
       hinge_count = hingeCountForDoorHeight(pieceDims.height_mm);
       // NÃO joga mais erro (e não derruba o preço do módulo inteiro) quando
@@ -1361,9 +1395,9 @@
       // vez do volume cheio.
       weight_shell_mm: (itemComprado && itemComprado.kind === 'gaveta' && itemComprado.attrs && Number(itemComprado.attrs.espessura_mm) > 0)
         ? Number(itemComprado.attrs.espessura_mm) : null,
-      support_purchased_item_id: (itemSuporte && itemSuporte.id) || piece.support_purchased_item_id || null,
-      support_purchased_item_name: (itemSuporte && itemSuporte.name) || null,
-      support_purchased_item_qty: itemSuporte ? (piece.support_purchased_item_qty || 1) * qty : 0,
+      support_purchased_item_id: pistao ? pistao.id : ((itemSuporte && itemSuporte.id) || piece.support_purchased_item_id || null),
+      support_purchased_item_name: pistao ? pistao.name : ((itemSuporte && itemSuporte.name) || null),
+      support_purchased_item_qty: pistao ? LIFT_PISTOES_POR_PORTA * qty : (itemSuporte ? (piece.support_purchased_item_qty || 1) * qty : 0),
       // Aberto por processo quando a peça está em processo (migration 090);
       // null nas peças antigas, que têm uma labor só e nada a abrir.
       labor_breakdown: proc
@@ -1532,6 +1566,11 @@
     // gaveta comum). 'none' = não abre, sem custo de ferragem de abertura.
     let hinge_cost = 0;
     let hinge_count = 0;
+    if (piece.opening_type === 'hinge_top') {
+      // Lift (ver ehPortaLift): dobradiça de copo pela LARGURA.
+      hinge_count = hingeCountForDoorHeight(pieceDims.width_mm);
+      hinge_cost = effectiveHingeModel ? (effectiveHingeModel.price_per_unit * hinge_count * qty) : 0;
+    }
     if (piece.opening_type === 'hinge_left' || piece.opening_type === 'hinge_right') {
       hinge_count = hingeCountForDoorHeight(pieceDims.height_mm);
       // Mesma mudança de calculateLeafPiece acima (2026-08-20, Matt: "a
@@ -1550,9 +1589,18 @@
       slide_cost = effectiveSlideModel.price_per_unit * piece.slides_per_unit * qty;
     }
 
-    const piece_total = child_total + hinge_cost + slide_cost;
+    // Porta lift de MODELO: o par de pistões vai na peça-módulo (as filhas
+    // são as chapas da porta). Mesmos campos de kit da peça-folha.
+    const pistaoMod = ehPortaLift(piece) ? liftPistaoItem() : null;
+    const support_cost_mod = pistaoMod ? Number(pistaoMod.purchase_price || 0) * LIFT_PISTOES_POR_PORTA * qty : 0;
+    const piece_total = child_total + hinge_cost + slide_cost + support_cost_mod;
 
     return {
+      support_cost: support_cost_mod,
+      purchased_cost: support_cost_mod,
+      support_purchased_item_id: pistaoMod ? pistaoMod.id : null,
+      support_purchased_item_name: pistaoMod ? pistaoMod.name : null,
+      support_purchased_item_qty: pistaoMod ? LIFT_PISTOES_POR_PORTA * qty : 0,
       piece_id: piece.id,
       reference: piece.reference || piece.module_name,
       is_module: true,
