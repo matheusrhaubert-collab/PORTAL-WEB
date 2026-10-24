@@ -119,6 +119,11 @@ const Viewer3D = (function () {
   // levantar até quase encostar (o que aconteceria perto de 90°+); ~76°
   // aberto dá a leitura de "sustentada pelo pistão" da foto.
   const FLAP_OPEN_ANGLE = Math.PI * 0.42;
+  // Lift-up (basculante, dobradiça EM CIMA — 2026-10-24, Matt com foto do
+  // Wall Lift-up: "deve abrir como na foto"): a porta sobe ACIMA da
+  // horizontal (~100°), como o pistão de verdade deixa. O inverso (dobradiça
+  // embaixo, porta desce) continua nos 75° de sempre.
+  const LIFT_OPEN_ANGLE = Math.PI * 0.56;
 
   // Contexto de abertura ATIVO durante uma chamada de buildStandaloneAssembly
   // (pedido do usuário, 2026-07-16: "quero opcao abrir portas e gavetas no
@@ -171,7 +176,7 @@ const Viewer3D = (function () {
   // ângulo POSITIVO em X pelo mesmo motivo, espelhado (ver dedução completa
   // no comentário de positionWithOpening).
   function openAngleFor(hingeSide) {
-    if (hingeSide === 'top') return -FLAP_OPEN_ANGLE;
+    if (hingeSide === 'top') return -LIFT_OPEN_ANGLE;
     if (hingeSide === 'bottom') return FLAP_OPEN_ANGLE;
     return hingeSide === 'left' ? -DOOR_OPEN_ANGLE : DOOR_OPEN_ANGLE;
   }

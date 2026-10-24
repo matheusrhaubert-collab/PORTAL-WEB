@@ -143,7 +143,17 @@ function createViewerComposition3D() {
   // à Vista de Canto.
   let lastFitDir = null;
   const DOOR_OPEN_ANGLE = Math.PI * 0.55;
+  // BASCULANTE no Projetos (2026-10-24, Matt com print do Wall Lift-up
+  // abrindo de lado, como porta comum). Este viewer tinha cópia própria de
+  // openAngleFor/animate que só conhecia dobradiça vertical (giro em Y): a
+  // cena nascia certa (Viewer3D.buildStandaloneAssembly gira em X), mas o
+  // botão "abrir portas" mandava o pivô girar em Y — a porta-basculante
+  // abria de lado. Mesmos ângulos/sinais de viewer3d.js openAngleFor.
+  const FLAP_OPEN_ANGLE = Math.PI * 0.42;
+  const LIFT_OPEN_ANGLE = Math.PI * 0.56;
   function openAngleFor(hingeSide) {
+    if (hingeSide === 'top') return -LIFT_OPEN_ANGLE;
+    if (hingeSide === 'bottom') return FLAP_OPEN_ANGLE;
     return hingeSide === 'left' ? -DOOR_OPEN_ANGLE : DOOR_OPEN_ANGLE;
   }
 
@@ -344,7 +354,10 @@ function createViewerComposition3D() {
         const diff = op.targetAngle - op.currentAngle;
         if (Math.abs(diff) > 0.0005) {
           op.currentAngle += diff * 0.14;
-          op.group.rotation.y = op.currentAngle;
+          if (op.hingeSide === 'top' || op.hingeSide === 'bottom') op.group.rotation.x = op.currentAngle;
+          else op.group.rotation.y = op.currentAngle;
+          // pistão a gás acompanha a porta (ver viewer3d.js placeFlapHardware)
+          if (op.group.userData && op.group.userData.updateStruts) op.group.userData.updateStruts();
         }
       } else if (op.kind === 'slide') {
         const diff = op.targetOffset - op.currentOffset;
