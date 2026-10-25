@@ -3291,6 +3291,23 @@ function createViewerComposition3D() {
   // via "tem móvel na frente" e devolvia null a cada frame, e a conversão
   // parede→chão (que depende deste retorno) nunca disparava. Passando o slot
   // em arraste aqui, o raio enxerga o ambiente atrás dele.
+  // Geometria da parede sob o mouse (portal-29) — só quando ela é o PRIMEIRO
+  // sólido visível no raio (módulo ou parede na frente ganham).
+  function pickArchitectureAt(clientX, clientY) {
+    if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const hits = visibleHitsOnly(_raycaster.intersectObjects(currentGroups, true)).filter((h) => h.object && h.object.isMesh);
+    if (!hits.length) return null;
+    let o = hits[0].object;
+    while (o) {
+      if (o.userData && o.userData.geometriaId != null) {
+        return { id: o.userData.geometriaId, point: { x: hits[0].point.x, y: hits[0].point.y, z: hits[0].point.z } };
+      }
+      o = o.parent;
+    }
+    return null;
+  }
+
   function pickRoomSurfaceAt(clientX, clientY, ignoreSlotId) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
@@ -4126,7 +4143,7 @@ function createViewerComposition3D() {
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
-    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, setFloorTexture, getFloorTexture, setArchitectureBuilder, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
+    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, setFloorTexture, getFloorTexture, setArchitectureBuilder, pickArchitectureAt, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight, pickMultiHighlightAt,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.

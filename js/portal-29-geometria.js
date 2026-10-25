@@ -28,7 +28,7 @@ let geometriaSelId = null;
 
 const GEO_TXT = {
   pt: {
-    btn: 'Geometria', title: 'Geometria da parede', subtitle: 'Elementos da construção — mesma cor da parede, fora do orçamento. Escolha um para adicionar na parede ativa.',
+    btn: 'Geometria', title: 'Geometria da parede', subtitle: 'Elementos da construção — mesma cor da parede, fora do orçamento. Escolha um para adicionar na parede ativa. No 3D: clique para selecionar, arraste para mover (inclusive para outra parede), Delete remove.',
     add: 'Adicionar', in_project: 'No projeto', empty: 'Nenhum elemento ainda.', wall: 'Parede', pos: 'Distância da esquerda', y: 'Altura do chão',
     w: 'Largura', h: 'Altura', d: 'Profundidade', diam: 'Diâmetro', length: 'Comprimento', total_h: 'Altura total', stair_w: 'Largura da escada',
     rail_h: 'Altura do corrimão', rail_off: 'Afastamento da parede', rise: 'Subida (inclinação)', depth_niche: 'Profundidade do nicho',
@@ -38,7 +38,7 @@ const GEO_TXT = {
     t_mureta: 'Mureta', t_arco: 'Arco de passagem', t_nicho: 'Nicho', t_escada_reta: 'Escada reta', t_corrimao: 'Corrimão', t_lareira: 'Lareira'
   },
   en: {
-    btn: 'Geometry', title: 'Wall geometry', subtitle: 'Building elements — same color as the wall, not in the quote. Pick one to add on the active wall.',
+    btn: 'Geometry', title: 'Wall geometry', subtitle: 'Building elements — same color as the wall, not in the quote. Pick one to add on the active wall. In 3D: click to select, drag to move (also onto another wall), Delete removes.',
     add: 'Add', in_project: 'In this project', empty: 'No elements yet.', wall: 'Wall', pos: 'Distance from left', y: 'Height from floor',
     w: 'Width', h: 'Height', d: 'Depth', diam: 'Diameter', length: 'Length', total_h: 'Total height', stair_w: 'Stair width',
     rail_h: 'Handrail height', rail_off: 'Distance from wall', rise: 'Rise (slope)', depth_niche: 'Niche depth',
@@ -48,7 +48,7 @@ const GEO_TXT = {
     t_mureta: 'Half wall', t_arco: 'Archway', t_nicho: 'Niche', t_escada_reta: 'Straight stairs', t_corrimao: 'Handrail', t_lareira: 'Fireplace'
   },
   es: {
-    btn: 'Geometría', title: 'Geometría de la pared', subtitle: 'Elementos de la construcción — mismo color de la pared, fuera del presupuesto. Elige uno para agregar en la pared activa.',
+    btn: 'Geometría', title: 'Geometría de la pared', subtitle: 'Elementos de la construcción — mismo color de la pared, fuera del presupuesto. Elige uno para agregar en la pared activa. En el 3D: clic para seleccionar, arrastra para mover (también a otra pared), Supr elimina.',
     add: 'Agregar', in_project: 'En el proyecto', empty: 'Ningún elemento todavía.', wall: 'Pared', pos: 'Distancia desde la izquierda', y: 'Altura del piso',
     w: 'Ancho', h: 'Alto', d: 'Profundidad', diam: 'Diámetro', length: 'Largo', total_h: 'Alto total', stair_w: 'Ancho de la escalera',
     rail_h: 'Altura del pasamanos', rail_off: 'Separación de la pared', rise: 'Subida (inclinación)', depth_niche: 'Profundidad del nicho',
@@ -218,11 +218,41 @@ function geometriaMontar(THREE, ctx) {
         if (p.topo !== 'reto' && w > 0.05) {
           const r = Math.min(w / 2, h);
           const sh = new THREE.Shape();
-          sh.moveTo(0, h - r); sh.lineTo(0, h); sh.lineTo(w, h); sh.lineTo(w, h - r);
+          const m = 0.012; // tampa passa 12 mm do vão: o traço do retângulo fica por trás dela, não na borda
+          sh.moveTo(-m, h - r); sh.lineTo(-m, h + m); sh.lineTo(w + m, h + m); sh.lineTo(w + m, h - r); sh.lineTo(w, h - r);
           sh.absarc(w / 2, h - r, r, 0, Math.PI, false);
-          const geo = new THREE.ExtrudeGeometry(sh, { depth: esp, bevelEnabled: false, curveSegments: 40 });
-          geo.translate(0, 0, -esp);
-          g.add(comContorno(new THREE.Mesh(geo, matParede)));
+          sh.lineTo(-m, h - r);
+          // Tampa os cantos do vão retangular. Passa 2 mm pra fora das duas
+          // faces da parede: cobre o traço do retângulo que a parede desenha
+          // (Matt: "no arco vejo as linhas"). Contorno só da CURVA.
+          const folga = 0.001;
+          // Duas placas planas (frente e trás, sem faces laterais pra não
+          // aparecer "fresta") + a faixa curva do intradorso.
+          const mat = matParede.clone();
+          mat.polygonOffset = true; mat.polygonOffsetFactor = -1; mat.polygonOffsetUnits = -1;
+          [folga, -esp - folga].forEach((z) => {
+            const pg = new THREE.ShapeGeometry(sh, 48);
+            pg.translate(0, 0, z);
+            g.add(new THREE.Mesh(pg, mat));
+          });
+          const tira = [];
+          const N = 48;
+          for (let i = 0; i < N; i++) {
+            const a0 = Math.PI * i / N, a1 = Math.PI * (i + 1) / N;
+            const p0 = [w / 2 + r * Math.cos(a0), h - r + r * Math.sin(a0)], p1 = [w / 2 + r * Math.cos(a1), h - r + r * Math.sin(a1)];
+            const zf = folga, zt = -esp - folga;
+            tira.push(p0[0], p0[1], zf, p1[0], p1[1], zf, p1[0], p1[1], zt, p0[0], p0[1], zf, p1[0], p1[1], zt, p0[0], p0[1], zt);
+          }
+          const tg = new THREE.BufferGeometry();
+          tg.setAttribute('position', new THREE.Float32BufferAttribute(tira, 3));
+          tg.computeVertexNormals();
+          g.add(new THREE.Mesh(tg, matParede));
+          const pts = [];
+          for (let i = 0; i <= 48; i++) { const a = Math.PI * i / 48; pts.push(new THREE.Vector3(w / 2 + r * Math.cos(a), h - r + r * Math.sin(a), 0)); }
+          [folga, -esp - folga].forEach((z) => {
+            const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map((q) => new THREE.Vector3(q.x, q.y, z))), matLinha);
+            g.add(ln);
+          });
         }
         break;
       }
@@ -241,9 +271,26 @@ function geometriaMontar(THREE, ctx) {
         const n = Math.max(2, Math.round(h / 0.19));
         const espelho = h / n, piso = w / n;
         const paraDireita = p.sobe !== 'esquerda';
-        for (let i = 0; i < n; i++) {
-          const x0 = paraDireita ? i * piso : w - (i + 1) * piso;
-          caixa(g, x0, 0, 0, piso, (i + 1) * espelho, d);
+        // UM bloco só (Matt: "deixa um bloco só") — perfil dos degraus
+        // extrudado na largura da escada; contorno só nas quinas dos degraus.
+        const fx = (x) => paraDireita ? x : w - x;
+        const pts = [[0, 0], [w, 0], [w, h]];
+        for (let i = n - 1; i >= 0; i--) { pts.push([i * piso, (i + 1) * espelho]); pts.push([i * piso, i * espelho]); }
+        pts.pop();
+        const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(fx(x), y)));
+        if (d > 0.01) {
+          g.add(new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false }), matParede));
+          // Contorno feito à mão: o EdgesGeometry riscava a diagonal da
+          // triangulação (cantos internos dos degraus ficam alinhados).
+          const seg = [];
+          const P = pts.map(([x, y]) => [fx(x), y]);
+          P.forEach(([x, y], i) => {
+            const [x2, y2] = P[(i + 1) % P.length];
+            seg.push(x, y, 0, x2, y2, 0, x, y, d, x2, y2, d, x, y, 0, x, y, d);
+          });
+          const bg = new THREE.BufferGeometry();
+          bg.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
+          g.add(new THREE.LineSegments(bg, matLinha));
         }
         break;
       }
@@ -266,12 +313,11 @@ function geometriaMontar(THREE, ctx) {
         const fw = Math.min(0.9, w * 0.6), fh = Math.min(0.78, h * 0.35);
         const rec = Math.min(0.32, Math.max(d - 0.06, 0.05));
         const xl = (w - fw) / 2;
-        caixa(g, 0, 0, 0, xl, h, d);                       // esquerda
-        caixa(g, xl + fw, 0, 0, xl, h, d);                 // direita
-        caixa(g, xl, fh, 0, fw, h - fh, d);                // sobre a boca
-        caixa(g, xl, 0, 0, fw, fh, d - rec);               // fundo (atrás da boca)
-        caixa(g, xl, 0, d - rec - 0.01, fw, fh, 0.01, matEscuro);       // fundo escuro
-        caixa(g, xl, 0, d - rec, fw, 0.01, rec, matEscuro);             // chão da boca
+        // Corpo num bloco só (sem emenda entre as partes): contorno em "U
+        // invertido" com a boca da lareira, extrudado na profundidade.
+        const sh = new THREE.Shape([[0, 0], [xl, 0], [xl, fh], [xl + fw, fh], [xl + fw, 0], [w, 0], [w, h], [0, h]].map(([x, y]) => new THREE.Vector2(x, y)));
+        if (d > 0.01) g.add(comContorno(new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false }), matParede)));
+        caixa(g, xl, 0, 0, fw, fh, d - rec, matEscuro);    // fundo da boca (escuro)
         const yM = Math.min(1.37, h - 0.12);
         caixa(g, -0.08, yM, 0, w + 0.16, 0.06, d + 0.08);  // prateleira (mantel)
         caixa(g, -0.15, 0, d, w + 0.3, 0.03, 0.45, matPedra); // soleira (hearth)
@@ -279,23 +325,42 @@ function geometriaMontar(THREE, ctx) {
       }
       default: return;
     }
-    // Leva o local (x ao longo, z pra dentro) pro mundo. O giro que põe +Z no
-    // "pra dentro" pode deixar +X no CONTRA da parede (paredes do lado
-    // esquerdo) — aí espelha em X pra a esquerda do elemento continuar sendo
-    // a ponta A da parede (mesmo x_mm dos módulos).
-    const along = { x: Number(wall.alongDirX) || 0, z: Number(wall.alongDirZ) || 0 };
-    const into = { x: Number(wall.intoDirX) || 0, z: Number(wall.intoDirZ) || 0 };
-    const rot = Math.atan2(into.x, into.z);
-    const lx = { x: Math.cos(rot), z: -Math.sin(rot) };
-    const sinal = (lx.x * along.x + lx.z * along.z) < 0 ? -1 : 1;
-    const xm = (Number(el.x_mm) || 0) / 1000;
-    g.rotation.y = rot;
-    g.scale.x = sinal;
-    g.position.set(Number(wall.originX) + along.x * xm, (Number(el.y_mm) || 0) / 1000, Number(wall.originZ) + along.z * xm);
+    // Realce de seleção (contorno vermelho, igual módulo) — nasce escondido;
+    // geoMostraSelecao liga no selecionado sem refazer a cena.
+    try {
+      const bb = new THREE.Box3().setFromObject(g);
+      if (!bb.isEmpty()) {
+        const sz = bb.getSize(new THREE.Vector3()).addScalar(0.02), c = bb.getCenter(new THREE.Vector3());
+        const realce = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(sz.x, sz.y, sz.z)),
+          new THREE.LineBasicMaterial({ color: 0xe53935, depthTest: false, transparent: true }));
+        realce.position.copy(c);
+        realce.renderOrder = 20;
+        realce.visible = el.id === geometriaSelId;
+        realce.userData.geoRealce = true;
+        g.add(realce);
+      }
+    } catch (e) { /* sem realce */ }
+    geoPosiciona(g, el, wall);
     g.userData.geometriaId = el.id;
     raiz.add(g);
   });
   return raiz;
+}
+
+// Leva o local (x ao longo, z pra dentro) pro mundo. O giro que põe +Z no
+// "pra dentro" pode deixar +X no CONTRA da parede (paredes do lado esquerdo)
+// — aí espelha em X pra a esquerda do elemento continuar sendo a ponta A da
+// parede (mesmo x_mm dos módulos). Usado no render e no arrastar.
+function geoPosiciona(g, el, wall) {
+  const along = { x: Number(wall.alongDirX) || 0, z: Number(wall.alongDirZ) || 0 };
+  const into = { x: Number(wall.intoDirX) || 0, z: Number(wall.intoDirZ) || 0 };
+  const rot = Math.atan2(into.x, into.z);
+  const lx = { x: Math.cos(rot), z: -Math.sin(rot) };
+  const sinal = (lx.x * along.x + lx.z * along.z) < 0 ? -1 : 1;
+  const xm = (Number(el.x_mm) || 0) / 1000;
+  g.rotation.set(0, rot, 0);
+  g.scale.set(sinal, 1, 1);
+  g.position.set(Number(wall.originX) + along.x * xm, (Number(el.y_mm) || 0) / 1000, Number(wall.originZ) + along.z * xm);
 }
 
 (function ligaViewers() {
@@ -372,14 +437,14 @@ function abrirJanelaGeometria() {
       + '<button type="button" class="po-auth-modal-close po-geo-fechar" aria-label="×">&times;</button>'
       + '<h2></h2><p class="hint po-geo-sub"></p><div class="po-geo-corpo"></div></div>';
     document.body.appendChild(m);
-    const fechar = () => m.classList.remove('open');
+    const fechar = () => { m.classList.remove('open'); geoSelecionar(null, false); };
     const achar = (id) => projectGeometria.find((e) => e.id === id);
     m.addEventListener('click', (ev) => {
-      if (ev.target === m || ev.target.closest('.po-geo-fechar')) { fechar(); return; }
+      if (ev.target.closest('.po-geo-fechar')) { fechar(); return; }
       const add = ev.target.closest('[data-add]');
       if (add) { adicionarGeometria(add.dataset.add); renderJanelaGeometria(); return; }
       const sel = ev.target.closest('[data-sel]');
-      if (sel) { geometriaSelId = geometriaSelId === sel.dataset.sel ? null : sel.dataset.sel; renderJanelaGeometria(); return; }
+      if (sel) { geoSelecionar(geometriaSelId === sel.dataset.sel ? null : sel.dataset.sel, false); return; }
       const dup = ev.target.closest('[data-dup]');
       if (dup) {
         const el = achar(dup.dataset.dup);
@@ -442,4 +507,168 @@ function abrirJanelaGeometria() {
     try { if (window.LegnoTbMenus) window.LegnoTbMenus.menus.forEach((x) => x.fechar()); } catch (e) { /* ok */ }
     abrirJanelaGeometria();
   });
+})();
+
+// ---------------------------------------------------------------- mouse
+// CLICÁVEL COMO OBJETO (24/10, Matt: "ta bem ruim de mexer nas geometrias
+// porque não consigo mexer pelo mouse ... devem ser clicáveis como objetos").
+// No 3D do projeto (ViewerProjectEdit):
+//   · clique = seleciona (contorno vermelho) e abre o painel já no elemento;
+//   · arrastar = anda ao longo da parede (e sobe/desce nos que têm altura do
+//     chão: viga, sanca, nicho, corrimão); passando o mouse por cima de OUTRA
+//     parede, ele muda de parede;
+//   · Delete = remove; Esc = solta a seleção.
+// Escuta em window na fase de CAPTURA: roda antes do clique de módulo e do
+// OrbitControls, e só "come" o evento quando o que está sob o mouse é
+// geometria (módulo na frente ganha, igual hoje).
+function geoViewer() { return (typeof ViewerProjectEdit !== 'undefined' && ViewerProjectEdit) || null; }
+function geoMostraSelecao() {
+  const v = geoViewer();
+  const scene = v && v.getScene && v.getScene();
+  if (!scene) return;
+  scene.traverse((o) => {
+    if (o.userData && o.userData.geoRealce && o.parent) o.visible = o.parent.userData.geometriaId === geometriaSelId;
+  });
+}
+function geoSelecionar(id, abrirPainel) {
+  geometriaSelId = id;
+  geoMostraSelecao();
+  const m = document.getElementById('po-geo-modal');
+  if (id && abrirPainel) {
+    if (!m || !m.classList.contains('open')) abrirJanelaGeometria(); else renderJanelaGeometria();
+    const it = document.querySelector('#po-geo-modal .po-geo-item.aberto');
+    if (it && it.scrollIntoView) it.scrollIntoView({ block: 'nearest' });
+  } else if (m && m.classList.contains('open')) renderJanelaGeometria();
+}
+function geoGrupoNaCena(id) {
+  const v = geoViewer();
+  const scene = v && v.getScene && v.getScene();
+  let achou = null;
+  if (scene) scene.traverse((o) => { if (!achou && o.userData && o.userData.geometriaId === id) achou = o; });
+  return achou;
+}
+
+(function ligaMouseGeometria() {
+  if (window.PO_VIEW3D_READONLY) return;
+  let arraste = null;
+  const ARRASTE_PX = 4;
+  const ehCanvas = (ev) => {
+    const v = geoViewer();
+    const dom = v && v.getDomElement && v.getDomElement();
+    return dom && ev.target === dom ? dom : null;
+  };
+  // Ponto do mouse no plano da parede → {u (m ao longo, da ponta A), y}
+  const pontoNaParede = (v, wall, cx, cy) => {
+    const pt = v.intersectPlaneAtClient(cx, cy, { x: Number(wall.originX), y: 0, z: Number(wall.originZ) }, { x: Number(wall.intoDirX), y: 0, z: Number(wall.intoDirZ) });
+    if (!pt) return null;
+    return { u: (pt.x - Number(wall.originX)) * Number(wall.alongDirX) + (pt.z - Number(wall.originZ)) * Number(wall.alongDirZ), y: pt.y };
+  };
+
+  window.addEventListener('pointerdown', (ev) => {
+    const dom = ehCanvas(ev);
+    if (!dom || ev.button !== 0 || ev.shiftKey) return;
+    const v = geoViewer();
+    const hit = v.pickArchitectureAt ? v.pickArchitectureAt(ev.clientX, ev.clientY) : null;
+    if (!hit) {
+      if (geometriaSelId) geoSelecionar(null, false);
+      return;
+    }
+    const el = projectGeometria.find((e) => e.id === hit.id);
+    if (!el) return;
+    ev.stopPropagation(); ev.preventDefault();
+    // Módulo selecionado sai da seleção (senão o Delete apagaria os dois).
+    try {
+      if (typeof selectedProjectSlotId !== 'undefined' && selectedProjectSlotId != null && typeof deselectProjectSlot === 'function') deselectProjectSlot();
+    } catch (e) { /* ok */ }
+    geoSelecionar(el.id, false);
+    const wall = geoParedes().find((p) => p.wallIndex === Number(el.wall_index));
+    const p0 = wall ? pontoNaParede(v, wall, ev.clientX, ev.clientY) : null;
+    arraste = { id: el.id, pointerId: ev.pointerId, sx: ev.clientX, sy: ev.clientY, andou: false,
+      x0: Number(el.x_mm) || 0, y0: Number(el.y_mm) || 0, p0, wallIndex: Number(el.wall_index) };
+    try { dom.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+  }, true);
+
+  window.addEventListener('pointermove', (ev) => {
+    const v = geoViewer();
+    if (!arraste) {
+      // cursor de "mover" em cima de geometria
+      const dom = ehCanvas(ev);
+      if (dom && !ev.buttons && v.pickArchitectureAt) {
+        const sobre = !!v.pickArchitectureAt(ev.clientX, ev.clientY);
+        if (sobre) { dom.style.cursor = 'move'; dom.dataset.geoCursor = '1'; }
+        else if (dom.dataset.geoCursor) { dom.style.cursor = ''; delete dom.dataset.geoCursor; }
+      }
+      return;
+    }
+    if (ev.pointerId !== arraste.pointerId) return;
+    ev.stopPropagation();
+    if (!arraste.andou && Math.hypot(ev.clientX - arraste.sx, ev.clientY - arraste.sy) < ARRASTE_PX) return;
+    arraste.andou = true;
+    const el = projectGeometria.find((e) => e.id === arraste.id);
+    if (!el) return;
+    const paredes = geoParedes();
+    // trocou de parede? (parede embaixo do mouse, atravessando a própria geometria)
+    const sup = v.pickRoomSurfaceAt ? v.pickRoomSurfaceAt(ev.clientX, ev.clientY) : null;
+    if (sup && sup.kind === 'wall' && sup.wallIndex != null && Number(sup.wallIndex) !== Number(el.wall_index)
+      && paredes.some((p) => p.wallIndex === Number(sup.wallIndex))) {
+      el.wall_index = Number(sup.wallIndex);
+      const nw = paredes.find((p) => p.wallIndex === el.wall_index);
+      const pt = pontoNaParede(v, nw, ev.clientX, ev.clientY);
+      if (pt) {
+        arraste.p0 = pt;
+        arraste.x0 = pt.u * 1000 - (Number(el.w_mm) || 0) / 2;
+        arraste.y0 = Number(el.y_mm) || 0;
+      }
+    }
+    const wall = paredes.find((p) => p.wallIndex === Number(el.wall_index));
+    if (!wall || !arraste.p0) return;
+    const pt = pontoNaParede(v, wall, ev.clientX, ev.clientY);
+    if (!pt) return;
+    const L = Number(wall.widthM) * 1000, w = Number(el.w_mm) || 0;
+    let x = arraste.x0 + (pt.u - arraste.p0.u) * 1000;
+    x = Math.max(0, Math.min(Math.max(0, L - w), x));
+    if (x < 25) x = 0;
+    if (Math.abs(x - (L - w)) < 25) x = Math.max(0, L - w);
+    el.x_mm = Math.round(x);
+    const temY = GEO_TIPOS[el.tipo].campos.some(([k]) => k === 'y');
+    if (temY) {
+      const teto = geoTeto(), hEl = Number(el.h_mm) || 0;
+      let y = arraste.y0 + (pt.y - arraste.p0.y) * 1000;
+      y = Math.max(0, Math.min(Math.max(0, teto - hEl), y));
+      if (Math.abs(y - (teto - hEl)) < 25) y = Math.max(0, teto - hEl);
+      el.y_mm = Math.round(y);
+    }
+    const g = geoGrupoNaCena(el.id);
+    if (g) geoPosiciona(g, el, wall);
+  }, true);
+
+  const fim = (ev) => {
+    if (!arraste || ev.pointerId !== arraste.pointerId) return;
+    ev.stopPropagation();
+    const andou = arraste.andou;
+    const dom = ehCanvas(ev);
+    try { if (dom) dom.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    arraste = null;
+    if (andou) geometriaMudou();      // refaz a cena (recorte de arco/nicho acompanha)
+    geoSelecionar(geometriaSelId, true);
+  };
+  window.addEventListener('pointerup', fim, true);
+  window.addEventListener('pointercancel', fim, true);
+
+  window.addEventListener('keydown', (ev) => {
+    if (!geometriaSelId) return;
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (ev.key === 'Delete' || ev.key === 'Backspace') {
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      projectGeometria = projectGeometria.filter((e) => e.id !== geometriaSelId);
+      geometriaSelId = null;
+      geometriaMudou();
+      const m = document.getElementById('po-geo-modal');
+      if (m && m.classList.contains('open')) renderJanelaGeometria();
+    } else if (ev.key === 'Escape') {
+      ev.stopImmediatePropagation();
+      geoSelecionar(null, false);
+    }
+  }, true);
 })();
