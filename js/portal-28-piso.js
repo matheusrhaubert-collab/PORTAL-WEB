@@ -67,7 +67,7 @@ function pisoNome(p) {
 function pisoCfg(sel) {
   const p = sel && pisoDoCatalogo(sel.id);
   if (!p) return null;
-  return { url: 'assets/floors/' + p.id + '.jpg?v=2',  // v=2: texturas regeradas 25/10 (bloco maior, sem grade)
+  return { url: 'assets/floors/' + p.id + '.jpg?v=3',  // v=3: texturas regeradas 25/10 (bloco maior, sem grade, tom mais uniforme)
     tile_mm: p.t, roughness: p.r, rotation_deg: Number(sel.rotation_deg) === 90 ? 90 : 0 };
 }
 
@@ -119,7 +119,7 @@ function renderJanelaPiso() {
     if (!itens.length) return;
     corpo += '<h4 class="po-floor-grupo">' + I18n.t('floor.group_' + g) + '</h4><div class="po-floor-grid">'
       + itens.map((p) => '<button type="button" class="po-floor-card' + (sel === p.id ? ' selected' : '') + '" data-floor="' + p.id + '" title="' + pisoNome(p).replace(/"/g, '&quot;') + '">'
-        + '<img src="assets/floors/' + p.id + '_thumb.jpg?v=2" alt="" loading="lazy"><span>' + pisoNome(p) + '</span></button>').join('')
+        + '<img src="assets/floors/' + p.id + '_thumb.jpg?v=3" alt="" loading="lazy"><span>' + pisoNome(p) + '</span></button>').join('')
       + '</div>';
   });
   const rot = projectFloor && projectFloor.rotation_deg === 90;

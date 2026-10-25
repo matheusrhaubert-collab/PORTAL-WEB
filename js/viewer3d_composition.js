@@ -1066,7 +1066,11 @@ function createViewerComposition3D() {
     tex.anisotropy = (renderer && renderer.capabilities && renderer.capabilities.getMaxAnisotropy) ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 1;
     if (base.image) tex.needsUpdate = true; else base.userData.esperando.push(tex);
     mesh.material.map = tex;
-    mesh.material.color.set(0xffffff);
+    // 0.86 e não branco (25/10, Matt mandou print com réguas claras
+    // "estouradas" em branco puro): a luz da cena multiplica o chão em
+    // ~1,15x — com cor branca, réguas acima de ~220 passam de 255 e perdem
+    // o veio. 0.86 x 1,15 ≈ 1 → o piso sai na cor da própria textura.
+    mesh.material.color.setScalar(0.86);
     mesh.material.roughness = cfg.roughness != null ? Number(cfg.roughness) : 0.6;
     mesh.material.needsUpdate = true;
     mesh.userData.temTexturaPiso = true;

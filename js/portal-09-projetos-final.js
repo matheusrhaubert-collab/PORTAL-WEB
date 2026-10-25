@@ -2403,6 +2403,18 @@ function simplifyToolbarForGuestView() {
     const keep = KEEP_BTN_IDS.some((id) => group.querySelector('#' + id));
     if (!keep) group.style.display = 'none';
   });
+  // Tela cheia mora no grupo Projeto desde 25/10 (ao lado do pino): nesse
+  // grupo esconde todo o resto (salvar, enviar pro pedido, novo projeto...).
+  const fs = document.getElementById('po-proj-fullscreen-btn');
+  const fsRow = fs && fs.parentElement;
+  if (fsRow) {
+    Array.from(fsRow.children).forEach((el) => {
+      if (el === fs || KEEP_BTN_IDS.some((id) => el.id === id || el.querySelector('#' + id))) return;
+      el.style.display = 'none';
+    });
+    const lbl = fsRow.parentElement && fsRow.parentElement.querySelector(':scope > .po-tb-label');
+    if (lbl && !fsRow.parentElement.querySelector('#po-proj-view-front-btn')) lbl.style.display = 'none';
+  }
   tools.querySelectorAll(':scope > .po-tb-sep').forEach((sep) => { sep.style.display = 'none'; });
 }
 
