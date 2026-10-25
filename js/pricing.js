@@ -1730,6 +1730,15 @@
       // Aplica-se igual a peça-componente e peça-módulo, por isso fica aqui,
       // no ponto comum às duas, em vez de duplicado nas duas funções abaixo.
       if (!isPieceVisible(piece, pieceContainerDims)) return null;
+      // PEÇA DECORATIVA dentro de módulo de verdade (pia, cooktop, micro-ondas
+      // — shape_type decor_*, 25/10, Matt: "colocar a sink decorativa no
+      // módulo, sem mostrar no orçamento nem no pedido, como todos os
+      // decorativos"). Só desenho: fica fora do breakdown, então não entra
+      // no preço, no pedido nem na produção do ERP (que lê o breakdown). O
+      // 3D desenha pelas peças, não pelo breakdown, então continua aparecendo.
+      // Exceção: decorativo ligado a ITEM COMPRADO (ex.: Wine Rack da
+      // Amazon, migration 215) é cobrado e vai no pedido.
+      if (!piece.is_module && /^decor_/.test(String(piece.shape_type || '')) && !piece.purchased_item_id) return null;
       const r = piece.is_module
         ? calculateModulePiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE, sibVars)
         : calculateLeafPiece(piece, pieceContainerDims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides, cascoE, sibVars);
