@@ -3326,6 +3326,32 @@ function createViewerComposition3D() {
     return null;
   }
 
+  // BANCADA DE PEDRA (portal-30, 25/10): a pedra não entra no raycast normal
+  // (raycast desligado — clicar no tampo de um módulo continua achando o
+  // módulo nos outros pickers). Aqui ela é ligada só durante este teste, e só
+  // vale se for a COISA MAIS PERTO na frente do mouse (aéreo/parede na frente
+  // ganham).
+  function pickBancadaAt(clientX, clientY) {
+    if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
+    const ligadas = [];
+    currentGroups.forEach((g) => g.traverse((o) => {
+      if (o.isMesh && o.userData && o.userData.bancadaRun != null) { ligadas.push(o); o.raycast = THREE.Mesh.prototype.raycast; }
+    }));
+    if (!ligadas.length) return null;
+    let hits = [];
+    try {
+      _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+      hits = visibleHitsOnly(_raycaster.intersectObjects(currentGroups, true))
+        .filter((h) => h.object && h.object.isMesh && !(h.object.userData && h.object.userData.isHitboxProxy));
+    } finally {
+      ligadas.forEach((o) => { o.raycast = function () {}; });
+    }
+    if (!hits.length) return null;
+    const o = hits[0].object;
+    if (!o.userData || o.userData.bancadaRun == null) return null;
+    return { id: o.userData.bancadaRun, point: { x: hits[0].point.x, y: hits[0].point.y, z: hits[0].point.z } };
+  }
+
   function pickRoomSurfaceAt(clientX, clientY, ignoreSlotId) {
     if (!renderer || !camera || !_raycaster || !currentGroups.length) return null;
     _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
@@ -4161,7 +4187,7 @@ function createViewerComposition3D() {
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
-    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, setFloorTexture, getFloorTexture, setArchitectureBuilder, pickArchitectureAt, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
+    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, setFloorTexture, getFloorTexture, setArchitectureBuilder, pickArchitectureAt, pickBancadaAt, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight, pickMultiHighlightAt,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.

@@ -107,7 +107,8 @@ const BANCADA_PADRAO = {
   excluidos: [],              // ids de slot que NÃO levam pedra
   pontas: {},                 // '<slotId>|E' / '|D' -> { wf: bool, ext_mm: n }
   ilha_tras: {},              // '<slotId>' -> mm de balanço atrás (banqueta)
-  wf_ilhas: false             // waterfall nas pontas livres das ilhas
+  wf_ilhas: false,            // waterfall nas pontas livres das ilhas
+  frente_ext: {}              // '<1º slot do trecho>' -> mm a mais na frente (seta)
 };
 const BANCADA_PORTA_M = 0.020; // porta 18 mm + 2 mm de folga (viewer3d.placeFrontGroupInBox)
 const BANCADA_SPLASH_ESP_M = 0.02;
@@ -116,7 +117,7 @@ let projectBancada = null;
 
 const BAN_TXT = {
   pt: {
-    st_on: 'Pedra colocada em {n} módulo(s).', st_off: 'Bancada desligada.', turn_on: 'Colocar de novo', sp_none_s: 'Sem', sp_mirror_s: 'Baixo 4"', sp_high_s: 'Até os aéreos', wf_islands: 'Waterfall nas pontas da ilha', adjust: 'Ajustes', plan_hint: 'Clique num módulo para tirar ou pôr a pedra nele.', 
+    tip_3d: 'No 3D: clique na pedra para esticar pelas setas vermelhas, ou apagar com Delete.', st_on: 'Pedra colocada em {n} módulo(s).', st_off: 'Bancada desligada.', turn_on: 'Colocar de novo', sp_none_s: 'Sem', sp_mirror_s: 'Baixo 4"', sp_high_s: 'Até os aéreos', wf_islands: 'Waterfall na ilha', adjust: 'Ajustes', plan_hint: 'Clique num módulo para tirar ou pôr a pedra nele.', 
     btn: 'Bancada', title: 'Bancada de pedra', sub: 'A pedra já entra sozinha em todos os balcões. É só escolher a pedra. (Aparência aproximada — confirme a chapa com a marmoraria.)',
     show: 'Mostrar bancada no 3D', plan: 'Onde vai a pedra', runs: 'Trechos', none_found: 'Nenhum módulo base encontrado no projeto.',
     wall_n: 'Parede {n}', island: 'Ilha', modules: '{n} módulo(s)', excluded: 'sem pedra',
@@ -127,7 +128,7 @@ const BAN_TXT = {
     remove: 'Tirar a bancada', legend_stone: 'pedra', legend_off: 'sem pedra'
   },
   en: {
-    st_on: 'Stone placed on {n} cabinet(s).', st_off: 'Countertop is off.', turn_on: 'Put it back', sp_none_s: 'None', sp_mirror_s: 'Short 4"', sp_high_s: 'Up to uppers', wf_islands: 'Waterfall on island ends', adjust: 'Adjustments', plan_hint: 'Click a cabinet to add or remove stone on it.', 
+    tip_3d: 'In 3D: click the stone to stretch it with the red arrows, or press Delete to remove it.', st_on: 'Stone placed on {n} cabinet(s).', st_off: 'Countertop is off.', turn_on: 'Put it back', sp_none_s: 'None', sp_mirror_s: 'Short 4"', sp_high_s: 'Up to uppers', wf_islands: 'Island waterfall', adjust: 'Adjustments', plan_hint: 'Click a cabinet to add or remove stone on it.', 
     btn: 'Countertop', title: 'Stone countertop', sub: 'The stone is placed on every counter automatically — just pick the stone. (Looks are approximate — confirm the slab with the fabricator.)',
     show: 'Show countertop in 3D', plan: 'Where the stone goes', runs: 'Runs', none_found: 'No base cabinets found in this project.',
     wall_n: 'Wall {n}', island: 'Island', modules: '{n} cabinet(s)', excluded: 'no stone',
@@ -138,7 +139,7 @@ const BAN_TXT = {
     remove: 'Remove countertop', legend_stone: 'stone', legend_off: 'no stone'
   },
   es: {
-    st_on: 'Piedra puesta en {n} módulo(s).', st_off: 'Encimera apagada.', turn_on: 'Ponerla de nuevo', sp_none_s: 'Sin', sp_mirror_s: 'Bajo 4"', sp_high_s: 'Hasta los altos', wf_islands: 'Waterfall en las puntas de la isla', adjust: 'Ajustes', plan_hint: 'Haz clic en un módulo para quitar o poner la piedra.', 
+    tip_3d: 'En el 3D: haz clic en la piedra para estirarla con las flechas rojas, o bórrala con Supr.', st_on: 'Piedra puesta en {n} módulo(s).', st_off: 'Encimera apagada.', turn_on: 'Ponerla de nuevo', sp_none_s: 'Sin', sp_mirror_s: 'Bajo 4"', sp_high_s: 'Hasta los altos', wf_islands: 'Waterfall en la isla', adjust: 'Ajustes', plan_hint: 'Haz clic en un módulo para quitar o poner la piedra.', 
     btn: 'Encimera', title: 'Encimera de piedra', sub: 'La piedra se pone sola en todas las encimeras — solo elige la piedra. (Apariencia aproximada — confirma la placa con el marmolista.)',
     show: 'Mostrar encimera en el 3D', plan: 'Dónde va la piedra', runs: 'Tramos', none_found: 'Ningún módulo base en el proyecto.',
     wall_n: 'Pared {n}', island: 'Isla', modules: '{n} módulo(s)', excluded: 'sin piedra',
@@ -148,6 +149,14 @@ const BAN_TXT = {
     g_quartz: 'Cuarzo', g_granite: 'Granito', g_marble: 'Mármol', g_quartzite: 'Cuarcita', g_travertine: 'Travertino', g_other: 'Otros',
     remove: 'Quitar la encimera', legend_stone: 'piedra', legend_off: 'sin piedra'
   }
+};
+const BAN_ICONES = {
+  // vista de frente: tampo (faixa), gabinete embaixo, backsplash atrás, aéreo em cima
+  sp_nenhum: '<rect x="3" y="15" width="26" height="3" rx="0.5"/><path d="M5 18v10h22V18M16 18v10"/>',
+  sp_espelho: '<rect x="3" y="11" width="26" height="4" fill="currentColor" fill-opacity=".28"/><rect x="3" y="15" width="26" height="3" rx="0.5"/><path d="M5 18v10h22V18M16 18v10"/>',
+  sp_alto: '<rect x="4" y="2" width="24" height="5"/><rect x="3" y="7" width="26" height="8" fill="currentColor" fill-opacity=".28"/><rect x="3" y="15" width="26" height="3" rx="0.5"/><path d="M5 18v10h22V18M16 18v10"/>',
+  // ilha com a pedra descendo nas duas pontas
+  waterfall: '<path d="M3 10h26v3H3z"/><path d="M3 13v15h3V13M26 13v15h3V13" fill="currentColor" fill-opacity=".28"/><path d="M8 13v13h16V13M16 13v13"/>'
 };
 function banT(k, vars) {
   const lang = (typeof I18n !== 'undefined' && I18n.getLanguage && I18n.getLanguage()) || 'pt';
@@ -167,6 +176,7 @@ function bancadaNormaliza(v) {
   c.excluidos = Array.isArray(v.excluidos) ? v.excluidos.slice() : [];
   c.pontas = (v.pontas && typeof v.pontas === 'object') ? JSON.parse(JSON.stringify(v.pontas)) : {};
   c.ilha_tras = (v.ilha_tras && typeof v.ilha_tras === 'object') ? Object.assign({}, v.ilha_tras) : {};
+  c.frente_ext = (v.frente_ext && typeof v.frente_ext === 'object') ? Object.assign({}, v.frente_ext) : {};
   if (['nenhum', 'espelho', 'alto'].indexOf(c.splash) < 0) c.splash = 'espelho';
   if (!BANCADA_CATALOGO.some((p) => p.id === c.pedra)) c.pedra = BANCADA_PADRAO.pedra;
   return c;
@@ -314,12 +324,15 @@ function bancadaRunsCalc(cfg, paredes) {
     // do eletro fica alinhada com as portas — não é "caixa sem porta")
     const frenteGab = gabs.length ? Math.max(...gabs.map((m) => m.frente)) : null;
     if (frenteGab != null) r.membros.forEach((m) => { if (m.slot.module && m.slot.module.is_decoration) m.frente = frenteGab; });
+    const fx = Number((cfg.frente_ext || {})[r.membros[0].slot.id]) || 0;   // seta da frente
+    if (fx) r.membros.forEach((m) => { m.frente = Math.max(0.1, m.frente + fx / 1000); });
     r.tras = r.ilha ? Math.max(0, ...r.membros.map((m) => Number((cfg.ilha_tras || {})[m.slot.id]) || 0)) / 1000 : 0;
     const pE = (cfg.pontas || {})[r.membros[0].slot.id + '|E'] || {};
     const pD = (cfg.pontas || {})[r.membros[r.membros.length - 1].slot.id + '|D'] || {};
     r.wfE = pE.wf != null ? !!pE.wf : null; r.wfD = pD.wf != null ? !!pD.wf : null;
-    r.extE = r.ilha ? (Number(pE.ext_mm) || 0) / 1000 : 0;
-    r.extD = r.ilha ? (Number(pD.ext_mm) || 0) / 1000 : 0;
+    // esticar/encurtar a ponta (seta vermelha no 3D ou Ajustes) — null = automático
+    r.extE = (pE.ext_mm != null && pE.ext_mm !== '') ? Number(pE.ext_mm) / 1000 : null;
+    r.extD = (pD.ext_mm != null && pD.ext_mm !== '') ? Number(pD.ext_mm) / 1000 : null;
     // ponta encostada em algo (parede no fim, torre, fogão, outra base sem pedra...)?
     const bloq = (lado) => {
       const uP = lado === 'E' ? r.u0 : r.u1;
@@ -351,8 +364,11 @@ function bancadaRunsCalc(cfg, paredes) {
     // menos que a ponta tenha escolha própria (Ajustes).
     if (r.wfE == null) r.wfE = !!(r.ilha && cfg.wf_ilhas && !r.bloqE);
     if (r.wfD == null) r.wfD = !!(r.ilha && cfg.wf_ilhas && !r.bloqD);
-    r.uE = r.u0 - (r.wfE ? esp : (r.extE || (r.bloqE ? 0 : balPonta)));
-    r.uD = r.u1 + (r.wfD ? esp : (r.extD || (r.bloqD ? 0 : balPonta)));
+    const compr = r.u1 - r.u0;
+    const pontaE = r.extE != null ? Math.max(-(compr - 0.1), r.extE) : (r.wfE ? esp : (r.bloqE ? 0 : balPonta));
+    r.uE = r.u0 - (r.wfE ? Math.max(esp, pontaE) : pontaE);
+    const pontaD = r.extD != null ? Math.max(-(r.u1 - r.uE - 0.1), r.extD) : (r.wfD ? esp : (r.bloqD ? 0 : balPonta));
+    r.uD = r.u1 + (r.wfD ? Math.max(esp, pontaD) : pontaD);
     r.aparadoE = false; r.aparadoD = false;
     r.poli = bancadaPoligono(r);
     // CANTO EM L: aparar contra os trechos de parede anteriores
@@ -511,20 +527,49 @@ function bancadaTextura(THREE, pedra, renderer) {
   return t;
 }
 
+// Trecho selecionado no 3D (clique na pedra) — mostra contorno vermelho e
+// setas de esticar; Delete tira a pedra dele. Só visual: fora do orçamento.
+let banSelId = null;
+function banSetasDo(r) {
+  const fr = Math.max(...r.membros.map((m) => m.frente));
+  const fmin = Math.min(...r.membros.map((m) => m.frente));
+  const vb = -(r.tras || 0), um = (r.uE + r.uD) / 2, vm = (vb + fmin) / 2;
+  const l = [['esq', r.uE, vm, -1, 0], ['dir', r.uD, vm, 1, 0], ['frente', um, fr, 0, 1]];
+  if (r.ilha) l.push(['tras', um, vb, 0, -1]);
+  return l;
+}
+
 function bancadaMontar(THREE, ctx) {
   const cfg = bancadaCfg();
   if (!cfg) return null;
   const runs = bancadaRuns();
   if (!runs.length) return null;
   const pedra = bancadaPedra(cfg.pedra);
-  const mat = new THREE.MeshStandardMaterial({ map: bancadaTextura(THREE, pedra, ctx && ctx.renderer), roughness: Number(pedra.r) || 0.3, metalness: 0 });
-  mat.color.setScalar(0.88); // mesma compensação de luz do piso (portal-28)
+  // brilho contido: polido de verdade (0.2) estourava o tampo em branco
+  // na luz da cena e o veio sumia (teste 25/10) — mínimo 0.5.
+  const mat = new THREE.MeshStandardMaterial({ map: bancadaTextura(THREE, pedra, ctx && ctx.renderer), roughness: Math.max(0.5, Number(pedra.r) || 0.5), metalness: 0 });
+  mat.color.setScalar(0.84); // compensação de luz (mesma ideia do piso, portal-28)
   const matLinha = new THREE.LineBasicMaterial({ color: 0x6b655c });
+  const matSel = new THREE.LineBasicMaterial({ color: 0xe53935, depthTest: false, transparent: true });
+  const matSeta = new THREE.MeshBasicMaterial({ color: 0xe53935, depthTest: false, transparent: true });
   const raiz = new THREE.Group();
   raiz.userData.isBancada = true;
   const semClique = (o) => { o.raycast = function () {}; return o; };
   const Y = new THREE.Vector3(0, 1, 0);
-  const contorno = (mesh) => { try { mesh.add(semClique(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 25), matLinha))); } catch (e) { /* ok */ } return mesh; };
+  let runAtual = null;
+  const contorno = (mesh, sel) => {
+    try {
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 25), sel ? matSel : matLinha);
+      if (sel) e.renderOrder = 20;
+      mesh.add(semClique(e));
+    } catch (e) { /* ok */ }
+    return mesh;
+  };
+  const poe = (mesh) => {
+    mesh.userData.bancadaRun = runAtual.id;   // clique na pedra (pickBancadaAt)
+    raiz.add(semClique(contorno(mesh, runAtual.id === banSelId)));
+    return mesh;
+  };
   // caixa no referencial do trecho, com UV em METROS (a pedra sai em escala)
   const caixa = (r, u0, u1, v0, v1, y0, y1) => {
     const w = u1 - u0, h = y1 - y0, d = v1 - v0;
@@ -538,11 +583,24 @@ function bancadaMontar(THREE, ctx) {
     m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(U, Y, N));
     const c = banMundo(r, (u0 + u1) / 2, (v0 + v1) / 2);
     m.position.set(c.x, (y0 + y1) / 2, c.z);
-    raiz.add(semClique(contorno(m)));
-    return m;
+    return poe(m);
+  };
+  // placa em pé encostada na parede, contorno livre (u, altura) — o
+  // backsplash sai numa peça SÓ, com o veio contínuo (Matt, 25/10: "essas
+  // emendas ficam muito artificiais, na verdade ele não fica assim").
+  const placa = (r, pts, y0, esp) => {
+    const sh = new THREE.Shape(pts.map(([u, y]) => new THREE.Vector2(u, y)));
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: esp, bevelEnabled: false });
+    const m = new THREE.Mesh(geo, mat);
+    const m4 = new THREE.Matrix4().makeBasis(new THREE.Vector3(r.U.x, 0, r.U.z), Y, new THREE.Vector3(r.N.x, 0, r.N.z));
+    m4.setPosition(r.N.x * r.fundo, y0, r.N.z * r.fundo);
+    m.matrixAutoUpdate = false;
+    m.matrix.copy(m4);
+    return poe(m);
   };
   const paredes = getProjectWallGeometry() || [];
   runs.forEach((r) => {
+    runAtual = r;
     // ---- tampo (contorno + recorte da cuba), extrudado pra baixo
     const sh = new THREE.Shape(r.poli.map(([u, v]) => new THREE.Vector2(u, v)));
     const vMax = Math.max(...r.membros.map((m) => m.frente));
@@ -561,21 +619,36 @@ function bancadaMontar(THREE, ctx) {
     m4.setPosition(r.N.x * r.fundo, r.topo + r.esp, r.N.z * r.fundo);
     tampo.matrixAutoUpdate = false;
     tampo.matrix.copy(m4);
-    raiz.add(semClique(contorno(tampo)));
+    poe(tampo);
     // ---- waterfall nas pontas
     const vb = -(r.tras || 0);
     if (r.wfE) caixa(r, r.uE, r.uE + r.esp, vb, r.membros[0].frente, 0, r.topo);
     if (r.wfD) caixa(r, r.uD - r.esp, r.uD, vb, r.membros[r.membros.length - 1].frente, 0, r.topo);
     // ---- backsplash (só parede; ilha NUNCA tem pedra atrás)
-    if (!r.ilha && cfg.splash !== 'nenhum') bancadaSplash(r, cfg, paredes, runs, caixa);
+    if (!r.ilha && cfg.splash !== 'nenhum') bancadaSplash(r, cfg, paredes, runs, placa);
+    // ---- setas de esticar (só no selecionado)
+    if (r.id === banSelId) {
+      const yS = r.topo + r.esp + 0.012;
+      banSetasDo(r).forEach(([nome, u, v, du, dv]) => {
+        const cone = new THREE.ConeGeometry(0.035, 0.1, 18);
+        cone.translate(0, 0.05, 0);
+        const seta = new THREE.Mesh(cone, matSeta);
+        const dir = new THREE.Vector3(r.U.x * du + r.N.x * dv, 0, r.U.z * du + r.N.z * dv).normalize();
+        seta.quaternion.setFromUnitVectors(Y, dir);
+        const p = banMundo(r, u, v);
+        seta.position.set(p.x + dir.x * 0.03, yS, p.z + dir.z * 0.03);
+        seta.renderOrder = 21;
+        raiz.add(semClique(seta));
+      });
+    }
   });
   return raiz;
 }
 
-function bancadaSplash(r, cfg, paredes, runs, caixa) {
+function bancadaSplash(r, cfg, paredes, runs, placa) {
   const topoPedra = r.topo + r.esp;
   const w = paredes.find((p) => p.wallIndex === r.wallIndex);
-  let uS = r.u0, uF = r.u1; // espelho corre só sobre os módulos (não sobre o balanço da ponta)
+  let uS = Math.max(r.u0, r.uE), uF = Math.min(r.u1, r.uD); // só sobre os módulos (não sobre o balanço da ponta)
   // canto em L: o espelho corre até o canto, encostando no espelho da outra parede
   const outros = runs.filter((s) => s !== r && !s.ilha);
   const noOutro = (u) => outros.some((s) => banDentro(banMundo(r, u, 0.005), s.poli.map(([a, b]) => banMundo(s, a, b))));
@@ -608,6 +681,7 @@ function bancadaSplash(r, cfg, paredes, runs, caixa) {
   const cortes = new Set([uS, uF]);
   aereos.concat(abert).forEach((x) => { if (x.a > uS && x.a < uF) cortes.add(x.a); if (x.b > uS && x.b < uF) cortes.add(x.b); });
   const us = Array.from(cortes).sort((a, b) => a - b);
+  const segs = [];
   for (let i = 0; i < us.length - 1; i++) {
     const a = us[i], b = us[i + 1];
     if (b - a < 0.005) continue;
@@ -620,9 +694,21 @@ function bancadaSplash(r, cfg, paredes, runs, caixa) {
       h = (Number(cfg.splash_mm) || 102) / 1000;
     }
     abert.filter((x) => x.a <= meio && x.b >= meio).forEach((x) => { h = Math.min(h, x.sill - topoPedra); });
-    if (h < 0.03) continue;
-    caixa(r, a, b, 0, BANCADA_SPLASH_ESP_M, topoPedra, topoPedra + h);
+    segs.push({ a, b, h: h < 0.03 ? 0 : h });
   }
+  // junta os pedaços vizinhos numa placa só (o contorno sobe e desce)
+  let corrente = [];
+  const fecha = () => {
+    if (!corrente.length) return;
+    const pts = [[corrente[0].a, 0], [corrente[corrente.length - 1].b, 0]];
+    for (let i = corrente.length - 1; i >= 0; i--) pts.push([corrente[i].b, corrente[i].h], [corrente[i].a, corrente[i].h]);
+    const lim = [];
+    pts.forEach((p) => { const q = lim[lim.length - 1]; if (!q || Math.abs(q[0] - p[0]) > 1e-5 || Math.abs(q[1] - p[1]) > 1e-5) lim.push(p); });
+    placa(r, lim, topoPedra, BANCADA_SPLASH_ESP_M);
+    corrente = [];
+  };
+  segs.forEach((s) => { if (s.h > 0) corrente.push(s); else fecha(); });
+  fecha();
 }
 
 // área aproximada (m²): tampo + waterfall + backsplash simplificado
@@ -753,13 +839,20 @@ function renderJanelaBancada() {
     const a = bancadaAreaM2();
     h += '<p class="po-ban-status">✓ ' + banEsc(banT('st_on', { n: runs.reduce((t, r) => t + r.membros.length, 0) })) + ' · ' + (a * 10.7639).toFixed(0) + ' ft²</p>';
   }
+  // 2) backsplash e waterfall — cartões com desenho (Matt: "faz uns ícones
+  // pra facilitar o entendimento do que é cada botão")
+  const ico = (k) => '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">' + BAN_ICONES[k] + '</svg>';
+  const op = (attr, ativo, k, rot) => '<button type="button" class="po-ban-op' + (ativo ? ' ativo' : '') + '" ' + attr + '>' + ico(k) + '<span>' + banEsc(banT(rot)) + '</span></button>';
+  h += '<div class="po-ban-tit">' + banEsc(banT('splash')) + '</div><div class="po-ban-ops">'
+    + op('data-splash="nenhum"', cfg.splash === 'nenhum', 'sp_nenhum', 'sp_none_s')
+    + op('data-splash="espelho"', cfg.splash === 'espelho', 'sp_espelho', 'sp_mirror_s')
+    + op('data-splash="alto"', cfg.splash === 'alto', 'sp_alto', 'sp_high_s')
+    + (runs.some((r) => r.ilha) ? op('data-wf-ilhas-btn', !!cfg.wf_ilhas, 'waterfall', 'wf_islands') : '')
+    + '</div>';
+  if (runs.length) h += '<p class="hint po-ban-dica">' + banEsc(banT('tip_3d')) + '</p>';
   // 1) pedra (abas por tipo)
-  h += '<div class="po-ban-abas">' + BANCADA_GRUPOS.map((g) => '<button type="button" data-aba="' + g + '"' + (banAba === g ? ' class="ativo"' : '') + '>' + banEsc(banT('g_' + g)) + '</button>').join('') + '</div>';
+  h += '<div class="po-ban-tit">' + banEsc(banT('stone')) + '</div><div class="po-ban-abas">' + BANCADA_GRUPOS.map((g) => '<button type="button" data-aba="' + g + '"' + (banAba === g ? ' class="ativo"' : '') + '>' + banEsc(banT('g_' + g)) + '</button>').join('') + '</div>';
   h += '<div class="po-ban-grid">' + BANCADA_CATALOGO.filter((p) => p.g === banAba).map((p) => '<button type="button" class="po-ban-pedra-card' + (cfg.pedra === p.id ? ' selected' : '') + '" data-pedra="' + p.id + '" title="' + banEsc(bancadaNome(p)) + '"><img src="assets/stones/' + p.id + '_thumb.jpg?v=1" alt="" loading="lazy"><span>' + banEsc(bancadaNome(p)) + '</span></button>').join('') + '</div>';
-  // 2) backsplash (3 botões) + waterfall da ilha
-  const chip = (v, k) => '<button type="button" data-splash="' + v + '"' + (cfg.splash === v ? ' class="ativo"' : '') + '>' + banEsc(banT(k)) + '</button>';
-  h += '<div class="po-ban-linha"><span>' + banEsc(banT('splash')) + '</span><div class="po-ban-chips">' + chip('nenhum', 'sp_none_s') + chip('espelho', 'sp_mirror_s') + chip('alto', 'sp_high_s') + '</div></div>';
-  if (runs.some((r) => r.ilha)) h += '<label class="po-ban-check po-ban-linha"><input type="checkbox" data-wf-ilhas' + (cfg.wf_ilhas ? ' checked' : '') + '> ' + banEsc(banT('wf_islands')) + '</label>';
   // 3) ajustes (fechado)
   let aj = '';
   const svg = bancadaPlantaSvg();
@@ -826,6 +919,11 @@ function abrirJanelaBancada() {
       }
       const ab = t.closest('[data-aba]');
       if (ab) { banAba = ab.dataset.aba; renderJanelaBancada(); return; }
+      if (t.closest('[data-wf-ilhas-btn]')) {
+        const c = bancadaGaranteCfg(); c.wf_ilhas = !c.wf_ilhas; c.ativo = true;
+        Object.keys(c.pontas).forEach((k) => { if (c.pontas[k]) delete c.pontas[k].wf; });
+        bancadaMudou(); return;
+      }
       const sp = t.closest('[data-splash]');
       if (sp) { const c = bancadaGaranteCfg(); c.splash = sp.dataset.splash; c.ativo = true; bancadaMudou(); return; }
       if (t.closest('[data-ban-ligar]')) { const c = bancadaGaranteCfg(); c.ativo = true; atualizaBotaoBancada(); bancadaMudou(); return; }
@@ -875,4 +973,146 @@ function abrirJanelaBancada() {
   if (lbl) lbl.textContent = banT('btn');
   if (btn) { btn.title = banT('title'); btn.setAttribute('aria-label', banT('title')); }
   atualizaBotaoBancada();
+})();
+
+// ==========================================================================
+// PEDRA COMO PEÇA NO 3D (25/10, Matt: "preciso poder clicar na pedra e
+// esticar, remover... trabalhar como uma peça. porém não sai no orçamento,
+// é só decorativo"). Clique na pedra seleciona o TRECHO (contorno vermelho +
+// setas); seta esquerda/direita estica ou encurta a ponta, seta da frente
+// muda o balanço, seta de trás (ilha) estica pra banqueta; Delete tira a
+// pedra daquele trecho; Esc solta. Nada disso entra em preço/pedido.
+// ==========================================================================
+function banViewer() { return (typeof ViewerProjectEdit !== 'undefined' && ViewerProjectEdit) || null; }
+// Redesenha SÓ a pedra na cena de edição (rápido, pro arraste). O grupo raiz
+// continua o mesmo (é ele que está na lista da cena); trocam os filhos.
+function bancadaRedesenhaSoPedra() {
+  const v = banViewer();
+  const sc = v && v.getScene && v.getScene();
+  banCache.chave = null;
+  if (!sc || typeof THREE === 'undefined') return;
+  let raiz = null;
+  sc.traverse((o) => { if (!raiz && o.userData && o.userData.isBancada) raiz = o; });
+  if (!raiz) { bancadaRedesenha(); return; }
+  while (raiz.children.length) {
+    const c = raiz.children[0];
+    raiz.remove(c);
+    c.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+  }
+  const novo = bancadaMontar(THREE, {});
+  if (novo) novo.children.slice().forEach((c) => raiz.add(c));
+}
+function banSelecionar(id) {
+  if (banSelId === id) return;
+  banSelId = id;
+  bancadaRedesenhaSoPedra();
+}
+
+(function ligaMouseBancada() {
+  if (window.PO_VIEW3D_READONLY) return;
+  let arr = null;
+  const CURSOR = { esq: 'ew-resize', dir: 'ew-resize', frente: 'ns-resize', tras: 'ns-resize' };
+  const ehCanvas = (ev) => {
+    const v = banViewer();
+    const dom = v && v.getDomElement && v.getDomElement();
+    return dom && ev.target === dom ? dom : null;
+  };
+  const runDoId = (id) => bancadaRuns().find((r) => r.id === id) || null;
+  const setaSob = (v, cx, cy) => {
+    if (banSelId == null || !v.worldToClient) return null;
+    const r = runDoId(banSelId);
+    if (!r) return null;
+    const y = r.topo + r.esp + 0.012;
+    let melhor = null, dMin = 18;
+    banSetasDo(r).forEach(([nome, u, vv]) => {
+      const p = banMundo(r, u, vv);
+      const sc = v.worldToClient(new THREE.Vector3(p.x, y, p.z));
+      if (!sc) return;
+      const d = Math.hypot(sc.x - cx, sc.y - cy);
+      if (d < dMin) { dMin = d; melhor = nome; }
+    });
+    return melhor;
+  };
+  window.addEventListener('pointerdown', (ev) => {
+    const dom = ehCanvas(ev);
+    if (!dom || ev.button !== 0 || ev.shiftKey || !bancadaCfg()) return;
+    const v = banViewer();
+    const seta = setaSob(v, ev.clientX, ev.clientY);
+    if (seta) {
+      ev.stopPropagation(); ev.preventDefault();
+      arr = { id: banSelId, seta, pointerId: ev.pointerId, andou: false };
+      try { dom.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+      return;
+    }
+    const hit = v.pickBancadaAt ? v.pickBancadaAt(ev.clientX, ev.clientY) : null;
+    if (!hit) { if (banSelId != null) banSelecionar(null); return; }
+    ev.stopPropagation(); ev.preventDefault();
+    try { if (typeof selectedProjectSlotId !== 'undefined' && selectedProjectSlotId != null && typeof deselectProjectSlot === 'function') deselectProjectSlot(); } catch (e) { /* ok */ }
+    try { if (typeof geoSelecionar === 'function' && typeof geometriaSelId !== 'undefined' && geometriaSelId) geoSelecionar(null, false); } catch (e) { /* ok */ }
+    banSelecionar(hit.id);
+  }, true);
+
+  window.addEventListener('pointermove', (ev) => {
+    const v = banViewer();
+    if (!arr) {
+      const dom = ehCanvas(ev);
+      if (dom && !ev.buttons && bancadaCfg()) {
+        const st = setaSob(v, ev.clientX, ev.clientY);
+        if (st) { dom.style.cursor = CURSOR[st]; dom.dataset.banCursor = '1'; }
+        else if (dom.dataset.banCursor) { dom.style.cursor = ''; delete dom.dataset.banCursor; }
+      }
+      return;
+    }
+    if (ev.pointerId !== arr.pointerId) return;
+    ev.stopPropagation();
+    arr.andou = true;
+    const r = runDoId(arr.id);
+    const cfg = bancadaCfg();
+    if (!r || !cfg) return;
+    const pt = v.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: 0, y: r.topo + r.esp, z: 0 }, { x: 0, y: 1, z: 0 });
+    if (!pt) return;
+    const [u, vv] = banLocal(r, pt);
+    const mm = (m) => { const x = Math.round(m * 1000); return Math.abs(x) < 6 ? 0 : x; };
+    const ini = r.membros[0].slot.id, fim = r.membros[r.membros.length - 1].slot.id;
+    if (arr.seta === 'esq') cfg.pontas[ini + '|E'] = Object.assign({}, cfg.pontas[ini + '|E'] || {}, { ext_mm: mm(r.u0 - u) });
+    else if (arr.seta === 'dir') cfg.pontas[fim + '|D'] = Object.assign({}, cfg.pontas[fim + '|D'] || {}, { ext_mm: mm(u - r.u1) });
+    else if (arr.seta === 'frente') {
+      const atual = (Number((cfg.frente_ext || {})[ini]) || 0) / 1000;
+      const semExtra = Math.max(...r.membros.map((m) => m.frente)) - atual;
+      cfg.frente_ext = cfg.frente_ext || {};
+      cfg.frente_ext[ini] = Math.max(-(semExtra - 0.15) * 1000, mm(vv - semExtra));
+    } else if (arr.seta === 'tras') {
+      const t = Math.max(0, mm(-vv));
+      r.membros.forEach((m) => { cfg.ilha_tras[m.slot.id] = t; });
+    }
+    bancadaRedesenhaSoPedra();
+  }, true);
+
+  const fim = (ev) => {
+    if (!arr || ev.pointerId !== arr.pointerId) return;
+    ev.stopPropagation();
+    const andou = arr.andou;
+    try { const dom = ehCanvas(ev); if (dom) dom.releasePointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+    arr = null;
+    if (andou) bancadaMudou();
+  };
+  window.addEventListener('pointerup', fim, true);
+  window.addEventListener('pointercancel', fim, true);
+
+  window.addEventListener('keydown', (ev) => {
+    if (banSelId == null) return;
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (ev.key === 'Delete' || ev.key === 'Backspace') {
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      const r = runDoId(banSelId);
+      const cfg = bancadaCfg();
+      if (r && cfg) r.membros.forEach((m) => { if (!cfg.excluidos.some((x) => String(x) === String(m.slot.id))) cfg.excluidos.push(m.slot.id); });
+      banSelId = null;
+      bancadaMudou();
+    } else if (ev.key === 'Escape') {
+      ev.stopImmediatePropagation();
+      banSelecionar(null);
+    }
+  }, true);
 })();
