@@ -28,32 +28,32 @@ let geometriaSelId = null;
 
 const GEO_TXT = {
   pt: {
-    btn: 'Geometria', title: 'Geometria da parede', subtitle: 'Elementos da construção — mesma cor da parede, fora do orçamento. Escolha um para adicionar na parede ativa. No 3D: clique para selecionar, arraste para mover (inclusive para outra parede), Delete remove.',
+    btn: 'Geometria', title: 'Geometria da parede', subtitle: 'Elementos da construção — mesma cor da parede, fora do orçamento. Escolha um para adicionar na parede ativa. No 3D: clique para selecionar, arraste para mover (para outra parede ou solto no chão), setas vermelhas esticam, Delete remove.',
     add: 'Adicionar', in_project: 'No projeto', empty: 'Nenhum elemento ainda.', wall: 'Parede', pos: 'Distância da esquerda', y: 'Altura do chão',
     w: 'Largura', h: 'Altura', d: 'Profundidade', diam: 'Diâmetro', length: 'Comprimento', total_h: 'Altura total', stair_w: 'Largura da escada',
     rail_h: 'Altura do corrimão', rail_off: 'Afastamento da parede', rise: 'Subida (inclinação)', depth_niche: 'Profundidade do nicho',
     top: 'Topo', top_arch: 'Em arco', top_flat: 'Reto', goes_up: 'Sobe para', right: 'Direita', left: 'Esquerda',
-    dup: 'Duplicar', del: 'Remover', steps: 'degraus', wall_n: 'Parede {n}',
+    dup: 'Duplicar', del: 'Remover', steps: 'degraus', floor: 'Chão (solto)', rot: 'Giro', wall_n: 'Parede {n}',
     t_pilar: 'Pilar', t_coluna_redonda: 'Coluna redonda', t_viga: 'Viga', t_sanca: 'Sanca / rebaixo', t_chase: 'Caixa de tubulação',
     t_mureta: 'Mureta', t_arco: 'Arco de passagem', t_nicho: 'Nicho', t_escada_reta: 'Escada reta', t_corrimao: 'Corrimão', t_lareira: 'Lareira'
   },
   en: {
-    btn: 'Geometry', title: 'Wall geometry', subtitle: 'Building elements — same color as the wall, not in the quote. Pick one to add on the active wall. In 3D: click to select, drag to move (also onto another wall), Delete removes.',
+    btn: 'Geometry', title: 'Wall geometry', subtitle: 'Building elements — same color as the wall, not in the quote. Pick one to add on the active wall. In 3D: click to select, drag to move (onto another wall or freestanding on the floor), red arrows stretch, Delete removes.',
     add: 'Add', in_project: 'In this project', empty: 'No elements yet.', wall: 'Wall', pos: 'Distance from left', y: 'Height from floor',
     w: 'Width', h: 'Height', d: 'Depth', diam: 'Diameter', length: 'Length', total_h: 'Total height', stair_w: 'Stair width',
     rail_h: 'Handrail height', rail_off: 'Distance from wall', rise: 'Rise (slope)', depth_niche: 'Niche depth',
     top: 'Top', top_arch: 'Arched', top_flat: 'Flat', goes_up: 'Goes up to the', right: 'Right', left: 'Left',
-    dup: 'Duplicate', del: 'Remove', steps: 'steps', wall_n: 'Wall {n}',
+    dup: 'Duplicate', del: 'Remove', steps: 'steps', floor: 'Floor (freestanding)', rot: 'Rotation', wall_n: 'Wall {n}',
     t_pilar: 'Pillar', t_coluna_redonda: 'Round column', t_viga: 'Beam', t_sanca: 'Soffit / bulkhead', t_chase: 'Pipe chase',
     t_mureta: 'Half wall', t_arco: 'Archway', t_nicho: 'Niche', t_escada_reta: 'Straight stairs', t_corrimao: 'Handrail', t_lareira: 'Fireplace'
   },
   es: {
-    btn: 'Geometría', title: 'Geometría de la pared', subtitle: 'Elementos de la construcción — mismo color de la pared, fuera del presupuesto. Elige uno para agregar en la pared activa. En el 3D: clic para seleccionar, arrastra para mover (también a otra pared), Supr elimina.',
+    btn: 'Geometría', title: 'Geometría de la pared', subtitle: 'Elementos de la construcción — mismo color de la pared, fuera del presupuesto. Elige uno para agregar en la pared activa. En el 3D: clic para seleccionar, arrastra para mover (a otra pared o suelto en el piso), las flechas rojas estiran, Supr elimina.',
     add: 'Agregar', in_project: 'En el proyecto', empty: 'Ningún elemento todavía.', wall: 'Pared', pos: 'Distancia desde la izquierda', y: 'Altura del piso',
     w: 'Ancho', h: 'Alto', d: 'Profundidad', diam: 'Diámetro', length: 'Largo', total_h: 'Alto total', stair_w: 'Ancho de la escalera',
     rail_h: 'Altura del pasamanos', rail_off: 'Separación de la pared', rise: 'Subida (inclinación)', depth_niche: 'Profundidad del nicho',
     top: 'Remate', top_arch: 'En arco', top_flat: 'Recto', goes_up: 'Sube hacia la', right: 'Derecha', left: 'Izquierda',
-    dup: 'Duplicar', del: 'Quitar', steps: 'escalones', wall_n: 'Pared {n}',
+    dup: 'Duplicar', del: 'Quitar', steps: 'escalones', floor: 'Piso (suelto)', rot: 'Giro', wall_n: 'Pared {n}',
     t_pilar: 'Pilar', t_coluna_redonda: 'Columna redonda', t_viga: 'Viga', t_sanca: 'Plafón / bajada', t_chase: 'Caja de tuberías',
     t_mureta: 'Muro bajo', t_arco: 'Arco de paso', t_nicho: 'Nicho', t_escada_reta: 'Escalera recta', t_corrimao: 'Pasamanos', t_lareira: 'Chimenea'
   }
@@ -147,7 +147,7 @@ function restoreProjectGeometria(v) {
 // Recortes na parede (arco de passagem, nicho) — ver projectWallOpeningsWithSlots
 function geometriaAberturasDaParede(idx) {
   return projectGeometria
-    .filter((e) => GEO_TIPOS[e.tipo] && GEO_TIPOS[e.tipo].abertura && Number(e.wall_index) === Number(idx))
+    .filter((e) => GEO_TIPOS[e.tipo] && GEO_TIPOS[e.tipo].abertura && !e.piso && Number(e.wall_index) === Number(idx))
     .map((e) => ({
       id: 'geo_' + e.id,
       type: GEO_TIPOS[e.tipo].abertura,
@@ -171,6 +171,7 @@ function geometriaMontar(THREE, ctx) {
   const matEscuro = new THREE.MeshStandardMaterial({ color: 0x2b2a28, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
   const matPedra = new THREE.MeshStandardMaterial({ color: 0x8d8780, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
   const matLinha = new THREE.LineBasicMaterial({ color: 0x9c968b });
+  const matSeta = new THREE.MeshBasicMaterial({ color: 0xe53935, depthTest: false, transparent: true });
   const comContorno = (mesh) => {
     try {
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 30), matLinha);
@@ -195,9 +196,7 @@ function geometriaMontar(THREE, ctx) {
     return m;
   };
 
-  projectGeometria.forEach((el) => {
-    const wall = paredes.find((p) => p.wallIndex === Number(el.wall_index));
-    if (!wall) return;
+  const montaUm = (el, wall) => {
     const w = (Number(el.w_mm) || 0) / 1000, h = (Number(el.h_mm) || 0) / 1000, d = (Number(el.d_mm) || 0) / 1000;
     const g = new THREE.Group();
     const p = el.p || {};
@@ -323,7 +322,7 @@ function geometriaMontar(THREE, ctx) {
         caixa(g, -0.15, 0, d, w + 0.3, 0.03, 0.45, matPedra); // soleira (hearth)
         break;
       }
-      default: return;
+      default: return null;
     }
     // Realce de seleção (contorno vermelho, igual módulo) — nasce escondido;
     // geoMostraSelecao liga no selecionado sem refazer a cena.
@@ -340,11 +339,49 @@ function geometriaMontar(THREE, ctx) {
         g.add(realce);
       }
     } catch (e) { /* sem realce */ }
+    // SETAS DE ESTICAR (24/10, Matt: "deixa setas de esticar nos 3 sentidos")
+    // — largura (esq./dir.), altura (cima; + baixo nos que têm altura do
+    // chão) e profundidade (frente). Só aparecem no selecionado.
+    geoSetasDo(el).forEach(([nome, x, y, z]) => {
+      const cone = new THREE.ConeGeometry(0.04, 0.11, 18);
+      cone.translate(0, 0.055, 0);
+      if (nome === 'dir') cone.rotateZ(-Math.PI / 2);
+      else if (nome === 'esq') cone.rotateZ(Math.PI / 2);
+      else if (nome === 'baixo') cone.rotateZ(Math.PI);
+      else if (nome === 'frente') cone.rotateX(Math.PI / 2);
+      const seta = new THREE.Mesh(cone, matSeta);
+      const off = 0.05;
+      seta.position.set(x + (nome === 'dir' ? off : nome === 'esq' ? -off : 0), y + (nome === 'cima' ? off : nome === 'baixo' ? -off : 0), z + (nome === 'frente' ? off : 0));
+      seta.renderOrder = 21;
+      seta.visible = el.id === geometriaSelId;
+      seta.raycast = function () {};
+      seta.userData.geoRealce = true;
+      seta.userData.geoSeta = nome;
+      g.add(seta);
+    });
     geoPosiciona(g, el, wall);
     g.userData.geometriaId = el.id;
-    raiz.add(g);
+    return g;
+  };
+  geoMontaUmAtual = (el, wall) => montaUm(el, wall);
+  projectGeometria.forEach((el) => {
+    const wall = paredes.find((p) => p.wallIndex === Number(el.wall_index));
+    if (!wall && !el.piso) return;
+    const g = montaUm(el, wall);
+    if (g) raiz.add(g);
   });
   return raiz;
+}
+let geoMontaUmAtual = null;
+
+// Onde ficam as setas (coordenadas locais do elemento, em metros).
+function geoSetasDo(el) {
+  const w = (Number(el.w_mm) || 0) / 1000, h = (Number(el.h_mm) || 0) / 1000, d = (Number(el.d_mm) || 0) / 1000;
+  const zc = (el.tipo === 'arco' || el.tipo === 'nicho') ? 0.01 : d / 2;
+  const lista = [['dir', w, h / 2, zc], ['esq', 0, h / 2, zc], ['cima', w / 2, h, zc]];
+  if (GEO_TIPOS[el.tipo].campos.some(([k]) => k === 'y')) lista.push(['baixo', w / 2, 0, zc]);
+  if (el.tipo !== 'arco' && el.tipo !== 'nicho') lista.push(['frente', w / 2, h / 2, d]);
+  return lista;
 }
 
 // Leva o local (x ao longo, z pra dentro) pro mundo. O giro que põe +Z no
@@ -352,6 +389,19 @@ function geometriaMontar(THREE, ctx) {
 // — aí espelha em X pra a esquerda do elemento continuar sendo a ponta A da
 // parede (mesmo x_mm dos módulos). Usado no render e no arrastar.
 function geoPosiciona(g, el, wall) {
+  // SOLTO NO CHÃO (24/10, Matt: "não consigo colocar essa estrutura no plano
+  // do chão, só de uma parede pra outra") — fx/fz = CENTRO no piso (mm, mundo),
+  // rot_deg = giro. Ex.: pilar no meio do ambiente, escada solta.
+  if (el.piso) {
+    const rot = (Number(el.rot_deg) || 0) * Math.PI / 180;
+    const w = (Number(el.w_mm) || 0) / 1000, d = (Number(el.d_mm) || 0) / 1000;
+    const ax = { x: Math.cos(rot), z: -Math.sin(rot) }, az = { x: Math.sin(rot), z: Math.cos(rot) };
+    const cx = (Number(el.fx_mm) || 0) / 1000, cz = (Number(el.fz_mm) || 0) / 1000;
+    g.rotation.set(0, rot, 0);
+    g.scale.set(1, 1, 1);
+    g.position.set(cx - ax.x * w / 2 - az.x * d / 2, (Number(el.y_mm) || 0) / 1000, cz - ax.z * w / 2 - az.z * d / 2);
+    return;
+  }
   const along = { x: Number(wall.alongDirX) || 0, z: Number(wall.alongDirZ) || 0 };
   const into = { x: Number(wall.intoDirX) || 0, z: Number(wall.intoDirZ) || 0 };
   const rot = Math.atan2(into.x, into.z);
@@ -404,12 +454,13 @@ function renderJanelaGeometria() {
     const aberto = el.id === geometriaSelId;
     let corpo = '';
     if (aberto) {
-      const opts = paredes.map((p) => '<option value="' + p.wallIndex + '"' + (Number(el.wall_index) === p.wallIndex ? ' selected' : '') + '>' + esc(geoT('wall_n', { n: p.wallIndex + 1 })) + '</option>').join('');
-      const campos = [['x', 'pos']].concat(T.campos).map(([k, rot]) => {
+      const opts = paredes.map((p) => '<option value="' + p.wallIndex + '"' + (!el.piso && Number(el.wall_index) === p.wallIndex ? ' selected' : '') + '>' + esc(geoT('wall_n', { n: p.wallIndex + 1 })) + '</option>').join('')
+        + ((el.tipo !== 'arco' && el.tipo !== 'nicho') ? '<option value="piso"' + (el.piso ? ' selected' : '') + '>' + esc(geoT('floor')) + '</option>' : '');
+      const campos = (el.piso ? [] : [['x', 'pos']]).concat(T.campos).map(([k, rot]) => {
         const v = k === 'x' ? Number(el.x_mm) || 0 : geoValor(el, k);
         return '<label>' + esc(geoT(rot)) + '<span class="po-geo-inp"><input type="text" data-campo="' + k + '" value="' + esc(geoFmt(v)) + '"><em>' + esc(uni) + '</em></span></label>';
       }).join('');
-      let extra = '';
+      let extra = el.piso ? '<label>' + esc(geoT('rot')) + '<span class="po-geo-inp"><input type="number" step="15" data-rot value="' + (Number(el.rot_deg) || 0) + '"><em>°</em></span></label>' : '';
       if (T.extra === 'topo') {
         extra = '<label>' + esc(geoT('top')) + '<select data-p="topo"><option value="arco"' + (el.p.topo !== 'reto' ? ' selected' : '') + '>' + esc(geoT('top_arch')) + '</option><option value="reto"' + (el.p.topo === 'reto' ? ' selected' : '') + '>' + esc(geoT('top_flat')) + '</option></select></label>';
       } else if (T.extra === 'sobe') {
@@ -420,7 +471,7 @@ function renderJanelaGeometria() {
       corpo = '<div class="po-geo-campos"><label>' + esc(geoT('wall')) + '<select data-wall>' + opts + '</select></label>' + campos + extra + '</div>'
         + '<div class="po-geo-acoes"><button type="button" class="secondary" data-dup="' + el.id + '">' + esc(geoT('dup')) + '</button><button type="button" class="secondary po-geo-del" data-del="' + el.id + '">' + esc(geoT('del')) + '</button></div>';
     }
-    return '<div class="po-geo-item' + (aberto ? ' aberto' : '') + '" data-id="' + el.id + '"><button type="button" class="po-geo-item-cab" data-sel="' + el.id + '">' + svg(el.tipo) + '<span>' + esc(geoT('t_' + el.tipo)) + ' · ' + esc(geoT('wall_n', { n: Number(el.wall_index) + 1 })) + '</span><b>' + (aberto ? '▾' : '▸') + '</b></button>' + corpo + '</div>';
+    return '<div class="po-geo-item' + (aberto ? ' aberto' : '') + '" data-id="' + el.id + '"><button type="button" class="po-geo-item-cab" data-sel="' + el.id + '">' + svg(el.tipo) + '<span>' + esc(geoT('t_' + el.tipo)) + ' · ' + esc(el.piso ? geoT('floor') : geoT('wall_n', { n: Number(el.wall_index) + 1 })) + '</span><b>' + (aberto ? '▾' : '▸') + '</b></button>' + corpo + '</div>';
   }).join('');
   m.querySelector('.po-geo-corpo').innerHTML =
     '<h4 class="po-geo-grupo">' + esc(geoT('add')) + '</h4><div class="po-geo-tipos">' + cards + '</div>'
@@ -452,6 +503,7 @@ function abrirJanelaGeometria() {
         const c = JSON.parse(JSON.stringify(el));
         c.id = geoNovoId();
         c.x_mm = (Number(el.x_mm) || 0) + (Number(el.w_mm) || 0) + 100;
+        if (c.piso) c.fx_mm = (Number(el.fx_mm) || 0) + (Number(el.w_mm) || 0) + 100;
         projectGeometria.push(c);
         geometriaSelId = c.id;
         geometriaMudou(); renderJanelaGeometria();
@@ -468,7 +520,20 @@ function abrirJanelaGeometria() {
       const item = ev.target.closest('.po-geo-item');
       const el = item && achar(item.dataset.id);
       if (!el) return;
-      if (ev.target.matches('[data-wall]')) {
+      if (ev.target.matches('[data-rot]')) {
+        el.rot_deg = Number(ev.target.value) || 0;
+      } else if (ev.target.matches('[data-wall]') && ev.target.value === 'piso') {
+        // solta no chão: na frente de onde estava, 30 cm pra dentro do ambiente
+        const wa = geoParedes().find((q) => q.wallIndex === Number(el.wall_index));
+        if (wa) {
+          const u = (Number(el.x_mm) || 0) + (Number(el.w_mm) || 0) / 2, dz = (Number(el.d_mm) || 0) / 2 + 300;
+          el.fx_mm = Math.round(Number(wa.originX) * 1000 + Number(wa.alongDirX) * u + Number(wa.intoDirX) * dz);
+          el.fz_mm = Math.round(Number(wa.originZ) * 1000 + Number(wa.alongDirZ) * u + Number(wa.intoDirZ) * dz);
+          el.rot_deg = Math.round(Math.atan2(Number(wa.intoDirX), Number(wa.intoDirZ)) * 180 / Math.PI);
+        } else { el.fx_mm = 0; el.fz_mm = 0; el.rot_deg = 0; }
+        el.piso = true;
+      } else if (ev.target.matches('[data-wall]')) {
+        el.piso = false;
         el.wall_index = Number(ev.target.value) || 0;
       } else if (ev.target.dataset.p) {
         el.p = el.p || {};
@@ -564,10 +629,42 @@ function geoGrupoNaCena(id) {
     return { u: (pt.x - Number(wall.originX)) * Number(wall.alongDirX) + (pt.z - Number(wall.originZ)) * Number(wall.alongDirZ), y: pt.y };
   };
 
+  // Seta do selecionado sob o mouse (teste em pixels na tela, 16 px).
+  const setaSob = (v, cx, cy) => {
+    if (!geometriaSelId || !v.worldToClient) return null;
+    const g = geoGrupoNaCena(geometriaSelId);
+    if (!g) return null;
+    let melhor = null, dMin = 16;
+    g.children.forEach((o) => {
+      if (!o.userData.geoSeta || !o.visible) return;
+      const wp = new THREE.Vector3();
+      o.updateWorldMatrix(true, false);
+      const bb = new THREE.Box3().setFromObject(o);
+      bb.getCenter(wp);
+      const sc = v.worldToClient(wp);
+      if (!sc) return;
+      const dd = Math.hypot(sc.x - cx, sc.y - cy);
+      if (dd < dMin) { dMin = dd; melhor = { nome: o.userData.geoSeta, wy: wp.y }; }
+    });
+    return melhor;
+  };
+  const CURSOR_SETA = { dir: 'ew-resize', esq: 'ew-resize', cima: 'ns-resize', baixo: 'ns-resize', frente: 'nwse-resize' };
+
   window.addEventListener('pointerdown', (ev) => {
     const dom = ehCanvas(ev);
     if (!dom || ev.button !== 0 || ev.shiftKey) return;
     const v = geoViewer();
+    const seta = setaSob(v, ev.clientX, ev.clientY);
+    if (seta) {
+      const el = projectGeometria.find((e) => e.id === geometriaSelId);
+      if (el) {
+        ev.stopPropagation(); ev.preventDefault();
+        arraste = { id: el.id, pointerId: ev.pointerId, sx: ev.clientX, sy: ev.clientY, andou: false, seta: seta.nome, wy: seta.wy,
+          x0: Number(el.x_mm) || 0, y0: Number(el.y_mm) || 0, w0: Number(el.w_mm) || 0, h0: Number(el.h_mm) || 0 };
+        try { dom.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+        return;
+      }
+    }
     const hit = v.pickArchitectureAt ? v.pickArchitectureAt(ev.clientX, ev.clientY) : null;
     if (!hit) {
       if (geometriaSelId) geoSelecionar(null, false);
@@ -582,9 +679,14 @@ function geoGrupoNaCena(id) {
     } catch (e) { /* ok */ }
     geoSelecionar(el.id, false);
     const wall = geoParedes().find((p) => p.wallIndex === Number(el.wall_index));
-    const p0 = wall ? pontoNaParede(v, wall, ev.clientX, ev.clientY) : null;
+    const p0 = (wall && !el.piso) ? pontoNaParede(v, wall, ev.clientX, ev.clientY) : null;
     arraste = { id: el.id, pointerId: ev.pointerId, sx: ev.clientX, sy: ev.clientY, andou: false,
       x0: Number(el.x_mm) || 0, y0: Number(el.y_mm) || 0, p0, wallIndex: Number(el.wall_index) };
+    if (el.piso) {
+      arraste.py = hit.point ? hit.point.y : 0;
+      arraste.f0 = v.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: 0, y: arraste.py, z: 0 }, { x: 0, y: 1, z: 0 });
+      arraste.fx0 = Number(el.fx_mm) || 0; arraste.fz0 = Number(el.fz_mm) || 0;
+    }
     try { dom.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
   }, true);
 
@@ -594,8 +696,9 @@ function geoGrupoNaCena(id) {
       // cursor de "mover" em cima de geometria
       const dom = ehCanvas(ev);
       if (dom && !ev.buttons && v.pickArchitectureAt) {
-        const sobre = !!v.pickArchitectureAt(ev.clientX, ev.clientY);
-        if (sobre) { dom.style.cursor = 'move'; dom.dataset.geoCursor = '1'; }
+        const st = setaSob(v, ev.clientX, ev.clientY);
+        const sobre = !!st || !!v.pickArchitectureAt(ev.clientX, ev.clientY);
+        if (sobre) { dom.style.cursor = st ? CURSOR_SETA[st.nome] : 'move'; dom.dataset.geoCursor = '1'; }
         else if (dom.dataset.geoCursor) { dom.style.cursor = ''; delete dom.dataset.geoCursor; }
       }
       return;
@@ -607,8 +710,44 @@ function geoGrupoNaCena(id) {
     const el = projectGeometria.find((e) => e.id === arraste.id);
     if (!el) return;
     const paredes = geoParedes();
+    if (arraste.seta) { esticaPelaSeta(v, el, paredes, ev); return; }
     // trocou de parede? (parede embaixo do mouse, atravessando a própria geometria)
     const sup = v.pickRoomSurfaceAt ? v.pickRoomSurfaceAt(ev.clientX, ev.clientY) : null;
+    const podeChao = el.tipo !== 'arco' && el.tipo !== 'nicho';   // esses são recorte da parede
+    // parede → CHÃO: o mouse foi pro piso, longe da parede (mais que a
+    // profundidade do elemento + 25 cm) — vira elemento solto.
+    if (!el.piso && podeChao && sup && sup.kind === 'floor') {
+      const wa = paredes.find((p) => p.wallIndex === Number(el.wall_index));
+      const dist = wa ? ((sup.point.x - Number(wa.originX)) * Number(wa.intoDirX) + (sup.point.z - Number(wa.originZ)) * Number(wa.intoDirZ)) * 1000 : 1e9;
+      if (dist > (Number(el.d_mm) || 0) + 250) {
+        el.piso = true;
+        el.fx_mm = Math.round(sup.point.x * 1000); el.fz_mm = Math.round(sup.point.z * 1000);
+        el.rot_deg = wa ? Math.round(Math.atan2(Number(wa.intoDirX), Number(wa.intoDirZ)) * 180 / Math.PI) : 0;
+        if (!GEO_TIPOS[el.tipo].campos.some(([k]) => k === 'y')) el.y_mm = 0;
+        arraste.py = 0; arraste.f0 = sup.point; arraste.fx0 = el.fx_mm; arraste.fz0 = el.fz_mm;
+      }
+    }
+    if (el.piso) {
+      // CHÃO → parede: apontou pra uma parede
+      if (sup && sup.kind === 'wall' && sup.wallIndex != null && paredes.some((p) => p.wallIndex === Number(sup.wallIndex))) {
+        el.piso = false;
+        el.wall_index = Number(sup.wallIndex);
+        const nw = paredes.find((p) => p.wallIndex === el.wall_index);
+        const pt = pontoNaParede(v, nw, ev.clientX, ev.clientY);
+        el.x_mm = Math.max(0, Math.round((pt ? pt.u * 1000 : 0) - (Number(el.w_mm) || 0) / 2));
+        arraste.p0 = pt; arraste.x0 = el.x_mm; arraste.y0 = Number(el.y_mm) || 0;
+        const g0 = geoGrupoNaCena(el.id);
+        if (g0) geoPosiciona(g0, el, nw);
+        return;
+      }
+      const pt = v.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: 0, y: arraste.py || 0, z: 0 }, { x: 0, y: 1, z: 0 });
+      if (!pt || !arraste.f0) return;
+      el.fx_mm = Math.round(arraste.fx0 + (pt.x - arraste.f0.x) * 1000);
+      el.fz_mm = Math.round(arraste.fz0 + (pt.z - arraste.f0.z) * 1000);
+      const g1 = geoGrupoNaCena(el.id);
+      if (g1) geoPosiciona(g1, el, null);
+      return;
+    }
     if (sup && sup.kind === 'wall' && sup.wallIndex != null && Number(sup.wallIndex) !== Number(el.wall_index)
       && paredes.some((p) => p.wallIndex === Number(sup.wallIndex))) {
       el.wall_index = Number(sup.wallIndex);
@@ -653,6 +792,91 @@ function geoGrupoNaCena(id) {
     geoSelecionar(geometriaSelId, true);
   };
   window.addEventListener('pointerup', fim, true);
+
+  // Esticar: largura/altura no plano da parede; profundidade num plano
+  // horizontal na altura da seta, medida pra dentro do ambiente.
+  function esticaPelaSeta(v, el, paredes, ev) {
+    const s = arraste.seta;
+    if (el.piso) { esticaNoChao(v, el, ev, s); return; }
+    const wall = paredes.find((p) => p.wallIndex === Number(el.wall_index));
+    if (!wall) return;
+    const MIN = 50, L = Number(wall.widthM) * 1000, teto = geoTeto();
+    if (s === 'frente') {
+      const pt = v.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: 0, y: arraste.wy, z: 0 }, { x: 0, y: 1, z: 0 });
+      if (!pt) return;
+      const dist = ((pt.x - Number(wall.originX)) * Number(wall.intoDirX) + (pt.z - Number(wall.originZ)) * Number(wall.intoDirZ)) * 1000;
+      el.d_mm = Math.round(Math.max(20, Math.min(4000, dist)));
+      if (el.tipo === 'coluna_redonda') el.w_mm = el.d_mm;
+    } else {
+      const pt = pontoNaParede(v, wall, ev.clientX, ev.clientY);
+      if (!pt) return;
+      const u = pt.u * 1000, y = pt.y * 1000;
+      if (s === 'dir') {
+        el.w_mm = Math.round(Math.max(MIN, Math.min(L - arraste.x0, u - arraste.x0)));
+        if (Math.abs(arraste.x0 + el.w_mm - L) < 25) el.w_mm = Math.round(L - arraste.x0);
+      } else if (s === 'esq') {
+        const dirE = arraste.x0 + arraste.w0;
+        let nx = Math.max(0, Math.min(dirE - MIN, u));
+        if (nx < 25) nx = 0;
+        el.x_mm = Math.round(nx); el.w_mm = Math.round(dirE - nx);
+      } else if (s === 'cima') {
+        let nh = Math.max(MIN, Math.min(teto - arraste.y0, y - arraste.y0));
+        if (Math.abs(arraste.y0 + nh - teto) < 25) nh = teto - arraste.y0;
+        el.h_mm = Math.round(nh);
+      } else if (s === 'baixo') {
+        const topo = arraste.y0 + arraste.h0;
+        let ny = Math.max(0, Math.min(topo - MIN, y));
+        if (ny < 25) ny = 0;
+        el.y_mm = Math.round(ny); el.h_mm = Math.round(topo - ny);
+      }
+      if (el.tipo === 'coluna_redonda' && (s === 'dir' || s === 'esq')) el.d_mm = el.w_mm;
+    }
+    geoRedesenhaUm(el, wall);
+  }
+  function geoRedesenhaUm(el, wall) {
+    // redesenha só este elemento (o resto da cena fica)
+    const velho = geoGrupoNaCena(el.id);
+    if (velho && velho.parent && geoMontaUmAtual) {
+      const novo = geoMontaUmAtual(el, wall);
+      if (novo) { velho.parent.add(novo); velho.parent.remove(velho); }
+    }
+  }
+  // Esticar o elemento solto: o lado oposto fica parado, o centro anda.
+  function esticaNoChao(v, el, ev, s) {
+    const MIN = 50, teto = geoTeto();
+    const rot = (Number(el.rot_deg) || 0) * Math.PI / 180;
+    const ax = { x: Math.cos(rot), z: -Math.sin(rot) }, az = { x: Math.sin(rot), z: Math.cos(rot) };
+    if (arraste.c0 == null) arraste.c0 = { x: Number(el.fx_mm) || 0, z: Number(el.fz_mm) || 0, w: Number(el.w_mm) || 0, d: Number(el.d_mm) || 0 };
+    const c0 = arraste.c0;
+    if (s === 'cima' || s === 'baixo') {
+      const pt = v.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: c0.x / 1000, y: 0, z: c0.z / 1000 }, { x: az.x, y: 0, z: az.z });
+      if (!pt) return;
+      const y = pt.y * 1000;
+      if (s === 'cima') {
+        let nh = Math.max(MIN, Math.min(teto - arraste.y0, y - arraste.y0));
+        if (Math.abs(arraste.y0 + nh - teto) < 25) nh = teto - arraste.y0;
+        el.h_mm = Math.round(nh);
+      } else {
+        const topo = arraste.y0 + arraste.h0;
+        let ny = Math.max(0, Math.min(topo - MIN, y));
+        if (ny < 25) ny = 0;
+        el.y_mm = Math.round(ny); el.h_mm = Math.round(topo - ny);
+      }
+    } else {
+      const pt = v.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: 0, y: arraste.wy, z: 0 }, { x: 0, y: 1, z: 0 });
+      if (!pt) return;
+      const lx = (pt.x * 1000 - c0.x) * ax.x + (pt.z * 1000 - c0.z) * ax.z;
+      const lz = (pt.x * 1000 - c0.x) * az.x + (pt.z * 1000 - c0.z) * az.z;
+      let dw = 0, dd = 0;
+      if (s === 'dir') { const nw = Math.max(MIN, lx + c0.w / 2); dw = nw - c0.w; el.w_mm = Math.round(nw); }
+      if (s === 'esq') { const nw = Math.max(MIN, c0.w / 2 - lx); dw = -(nw - c0.w); el.w_mm = Math.round(nw); }
+      if (s === 'frente') { const nd = Math.max(20, lz + c0.d / 2); dd = nd - c0.d; el.d_mm = Math.round(nd); }
+      if (el.tipo === 'coluna_redonda') { if (s === 'frente') el.w_mm = el.d_mm; else el.d_mm = el.w_mm; }
+      el.fx_mm = Math.round(c0.x + ax.x * dw / 2 + az.x * dd / 2);
+      el.fz_mm = Math.round(c0.z + ax.z * dw / 2 + az.z * dd / 2);
+    }
+    geoRedesenhaUm(el, null);
+  }
   window.addEventListener('pointercancel', fim, true);
 
   window.addEventListener('keydown', (ev) => {
