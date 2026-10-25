@@ -587,7 +587,10 @@
   // portas... de 500 a 600 podera ter opcao de 2 OU 1 porta para o cliente
   // escolher". Só vale pra acc.door_mechanism === 'porta_giro' — basculante/
   // frente de gaveta não dobram por este mecanismo.
-  var PORTA_GIRO_1_FOLHA_ATE_MM = 500;   // <=500: sempre 1 folha
+  // 25/10 (Matt: "quero uma opção de 2 portas na largura de 24 polegadas
+  // até 21") — era 500; o vão de um módulo de 21" (533) dá ~497 e ficava
+  // de fora. 480 deixa 21" a 24" na faixa de escolha (padrão continua 1).
+  var PORTA_GIRO_1_FOLHA_ATE_MM = 480;   // <=480: sempre 1 folha
   var PORTA_GIRO_2_FOLHAS_DE_MM = 600;   // >600: sempre 2 folhas, automático
   // 500 < largura <= 600: front.params.folhas_escolha ('1'|'2', gravado pelo
   // toggle do Construtor) decide; sem escolha ainda, default 1 folha.
@@ -1164,6 +1167,10 @@
         // interna) — "portas de até 600mm" é sobre o vão que a porta fecha,
         // não sobre o contorno já com sobreposição somada.
         var folhas = folhasEfetivas(acc, efetiva.w, p);
+        // vão na faixa em que o cliente escolhe 1 ou 2 folhas — o painel de
+        // propriedades (projectDoorSideBlock) mostra o botão "2 portas"
+        var folhasOpcao = !!(acc && acc.door_mechanism === 'porta_giro'
+          && efetiva.w > PORTA_GIRO_1_FOLHA_ATE_MM && efetiva.w <= PORTA_GIRO_2_FOLHAS_DE_MM);
         if (folhas === 2) {
           // Folga ENTRE as 2 folhas (não é a folga externa/interna de cima,
           // que já foi aplicada no contorno geo inteiro) — cadastro
@@ -1184,7 +1191,8 @@
               label: acc.name + ' ' + (i + 1),
               x: geo.x + i * (wCadaNovo + folgaEntreFolhas), y: geo.y, z: z,
               w: wCadaNovo, h: geo.h, d: esp,
-              opening_type: openingTypeParaMecanismo(acc, lado)
+              opening_type: openingTypeParaMecanismo(acc, lado),
+              folhas: 2, folhas_opcao: folhasOpcao
             });
           });
           return;
@@ -1194,7 +1202,8 @@
           label: acc.name,
           x: geo.x, y: geo.y, z: z,
           w: geo.w, h: geo.h, d: esp,
-          opening_type: openingTypeParaMecanismo(acc, p.lado === 'right' ? 'right' : 'left')
+          opening_type: openingTypeParaMecanismo(acc, p.lado === 'right' ? 'right' : 'left'),
+          folhas: 1, folhas_opcao: folhasOpcao
         });
       });
     }
@@ -2100,6 +2109,8 @@
     // Exposta pra UI (js/portal-07-construtor.js) decidir se mostra o
     // toggle 1×2 folhas/lado sem duplicar a regra de largura da porta giro
     // (migration 132) — mesma função que o resolvedor usa internamente.
-    folhasEfetivas: folhasEfetivas
+    folhasEfetivas: folhasEfetivas,
+    PORTA_GIRO_1_FOLHA_ATE_MM: PORTA_GIRO_1_FOLHA_ATE_MM,
+    PORTA_GIRO_2_FOLHAS_DE_MM: PORTA_GIRO_2_FOLHAS_DE_MM
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -5661,6 +5661,14 @@ body.po-barra-fixa-on .po-proj-config-col {
 .po-proj-door-side-txt .po-proj-door-side-nome { color: #766f64; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .po-proj-door-side-swap { font-size: 16px; color: #c0843f; }
 
+/* 1 ou 2 portas (25/10) — dois botões lado a lado, o escolhido em destaque */
+.po-proj-door-leaves-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.po-proj-door-leaves-row .po-proj-door-side-nome { flex-basis: 100%; }
+.po-proj-door-leaves-btn { flex: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: #fff; color: #2b2621; cursor: pointer; font: inherit; font-size: 13px; }
+.po-proj-door-leaves-btn:hover { border-color: #c0843f; background: #fdf8f1; }
+.po-proj-door-leaves-btn.selected { border-color: #c0843f; background: #fdf3e6; font-weight: 600; cursor: default; }
+
 /* ============================================================
    HELPER "?" — COMO FAZER (2026-10-16) — js/portal-24-helper.js
    Janela de busca (#po-hlp-modal) + destaque do tour (.po-hlp-hl) + balão

@@ -1139,6 +1139,13 @@ function renderProjectConfigPanel() {
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
     });
   });
+  // 1 ou 2 portas (25/10)
+  panel.querySelectorAll('.po-proj-door-leaves-btn').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('selected')) return;
+      setProjectDoorLeaves(slot, el.dataset.node, Number(el.dataset.front) || 0, Number(el.dataset.n));
+    });
+  });
   // Lado da porta (15/10)
   panel.querySelectorAll('.po-proj-door-side-toggle').forEach((el) => {
     el.addEventListener('click', () => {
@@ -4853,7 +4860,8 @@ function projectDoorSideBlock(slot) {
     // de cima pra baixo, que é como o cliente lê a torre
     portas.sort((a, b) => b.caixa.y - a.caixa.y);
   } else portas = [];
-  if (!portas.length) return '';
+  const folhas = projectDoorLeavesBlock(slot);
+  if (!portas.length) return folhas;
   const linhas = portas.map((d, i) => {
     const outro = d.lado === 'left' ? 'right' : 'left';
     const rotulo = I18n.t(d.lado === 'left' ? 'project.door_side_is_left' : 'project.door_side_is_right');
@@ -4861,7 +4869,68 @@ function projectDoorSideBlock(slot) {
     return `<button type="button" class="po-proj-door-side-toggle" data-piece-id="${String(d.id).replace(/"/g, '&quot;')}" data-side="${outro}" title="${I18n.t('project.door_side_flip')}">
       ${projectDoorSideIcon(d.lado)}<span class="po-proj-door-side-txt">${nome}<b>${rotulo}</b></span><span class="po-proj-door-side-swap">⇄</span></button>`;
   }).join('');
-  return `<div class="po-proj-config-door-side"><span class="po-proj-config-section-label">${I18n.t('project.door_side_label')}</span>${linhas}</div>`;
+  return folhas + `<div class="po-proj-config-door-side"><span class="po-proj-config-section-label">${I18n.t('project.door_side_label')}</span>${linhas}</div>`;
+}
+
+/* 1 OU 2 PORTAS (2026-10-25, Matt: "quero uma opção de 2 portas na largura
+   de 24 polegadas até 21... pode deixar como padrão 1 porta, porém se
+   quiser 2 portas uma opção nas propriedades da direita, como tem porta
+   esquerda ou direita... vale pra todo configurador"). Só porta de giro da
+   árvore (interior de fábrica / Construtor) cujo vão está na faixa de
+   escolha do motor (LayoutEngine: 480 < vão <= 600) — o motor marca essas
+   frentes com folhas_opcao. A escolha fica no próprio vão da árvore
+   (fronts[i].params.folhas_escolha), igual o botão 1/2 do Construtor. */
+function projectDoorLeavesOptions(slot) {
+  const geo = (slot && slot._layoutGeometry) || [];
+  const vistos = {};
+  const out = [];
+  geo.forEach((p) => {
+    if (!p || p.kind !== 'front' || !p.folhas_opcao) return;
+    const k = p.nodeId + '|' + (p.frontIndex || 0);
+    if (vistos[k]) return;
+    vistos[k] = true;
+    out.push({ nodeId: p.nodeId, frontIndex: p.frontIndex || 0, folhas: p.folhas === 2 ? 2 : 1, y: Number(p.y) || 0 });
+  });
+  return out.sort((a, b) => b.y - a.y);
+}
+function projectDoorLeavesIcon(n) {
+  const porta = (x, w) => `<rect x="${x}" y="4" width="${w}" height="32" rx="1.5" fill="#f4efe7" stroke="#5b4a3a" stroke-width="1.6"/>`;
+  return `<svg viewBox="0 0 32 40" width="26" height="32" aria-hidden="true">${n === 2 ? porta(4, 11.5) + porta(16.5, 11.5) : porta(7, 18)}</svg>`;
+}
+function projectDoorLeavesBlock(slot) {
+  const ops = projectDoorLeavesOptions(slot);
+  if (!ops.length) return '';
+  const linhas = ops.map((o, i) => {
+    const nome = ops.length > 1 ? `<span class="po-proj-door-side-nome">${I18n.t('project.door_side_door')} ${i + 1}</span>` : '';
+    const btn = (n) => `<button type="button" class="po-proj-door-leaves-btn${o.folhas === n ? ' selected' : ''}" data-node="${String(o.nodeId).replace(/"/g, '&quot;')}" data-front="${o.frontIndex}" data-n="${n}" title="${I18n.t(n === 2 ? 'project.door_leaves_two' : 'project.door_leaves_one')}">${projectDoorLeavesIcon(n)}<span>${I18n.t(n === 2 ? 'project.door_leaves_two' : 'project.door_leaves_one')}</span></button>`;
+    return `<div class="po-proj-door-leaves-row">${nome}${btn(1)}${btn(2)}</div>`;
+  }).join('');
+  return `<div class="po-proj-config-door-side po-proj-door-leaves"><span class="po-proj-config-section-label">${I18n.t('project.door_leaves_label')}</span>${linhas}</div>`;
+}
+// Só grava a escolha na árvore do slot; quem chama recalcula e redesenha.
+function setSlotDoorLeavesChoice(slot, nodeId, frontIndex, n) {
+  if (!slot || !slot.layout) return false;
+  const no = (function acha(x) {
+    if (!x) return null;
+    if (String(x.id) === String(nodeId)) return x;
+    for (const c of (x.children || [])) { const r = acha(c); if (r) return r; }
+    return null;
+  })(slot.layout);
+  if (!no || !Array.isArray(no.fronts) || !no.fronts[frontIndex]) return false;
+  const fr = Object.assign({}, no.fronts[frontIndex]);
+  fr.params = Object.assign({}, fr.params || {}, { folhas_escolha: n === 2 ? '2' : '1' });
+  no.fronts = no.fronts.slice();
+  no.fronts[frontIndex] = fr;
+  return true;
+}
+function setProjectDoorLeaves(slot, nodeId, frontIndex, n) {
+  if (!slot) return;
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  if (!setSlotDoorLeavesChoice(slot, nodeId, frontIndex, n)) return;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[1 ou 2 portas]', e); }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
 }
 function setProjectDoorSide(slot, pieceId, lado) {
   if (!slot || pieceId == null || (lado !== 'left' && lado !== 'right')) return;

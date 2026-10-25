@@ -315,6 +315,10 @@ function renderQuoteOptionsPanel() {
     setQuoteShelfCount(quoteSlot, el.dataset.node, Number(el.dataset.qtd));
     reprocessar();
   }));
+  body.querySelectorAll('.po-proj-door-leaves-btn').forEach((el) => el.addEventListener('click', () => {
+    if (el.classList.contains('selected') || !quoteSlot) return;
+    if (setSlotDoorLeavesChoice(quoteSlot, el.dataset.node, Number(el.dataset.front) || 0, Number(el.dataset.n))) reprocessar();
+  }));
   body.querySelectorAll('.po-proj-door-side-toggle').forEach((el) => el.addEventListener('click', () => {
     const s = quoteSlot;
     if (!s) return;

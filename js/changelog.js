@@ -48,6 +48,7 @@ window.LEGNO_CHANGELOG = [
         "Base 4 Drawers (NEW Classic): 4 gavetas iguais, sem travessa, alinhadas com o módulo de 2 gavetas.",
         "Novos módulos editáveis (NEW Classic): Wall Cabinet CUSTOM (largura e altura), Base Full High Cabinet CUSTOM e Base Cabinet CUSTOM (largura).",
         "Novo Base 3 Drawer Cooktop: frente falsa em cima, 2 gavetas e cooktop decorativo, de 24\" a 42\" (com 33\"). O Base 2 Drawer Cabinet Cooktop também ganhou o cooktop decorativo.",
+        "Portas de 21\" a 24\": continuam com 1 porta, mas agora dá pra escolher 2 portas nas propriedades (e no New Quote).",
         "Construtor: portas e frentes de gaveta empilhadas não se encostam mais na divisória horizontal — ficam com 4 mm de folga entre elas, no meio da divisória. A medida digitada no desenho do Construtor agora segue a unidade escolhida (polegadas com fração).",
         "Gaveta dovetail com veio de birch de verdade (mel/âmbar), em escala real.",
         "Barra do Projetos: Tela cheia foi para o fim da barra, ao lado do pino; menu Vista com ícone de tela."
@@ -66,6 +67,7 @@ window.LEGNO_CHANGELOG = [
         "Base 4 Drawers (NEW Classic): 4 equal drawers, no rail between them, lined up with the 2-drawer cabinet.",
         "New editable cabinets (NEW Classic): Wall Cabinet CUSTOM (width and height), Base Full High Cabinet CUSTOM and Base Cabinet CUSTOM (width).",
         "New Base 3 Drawer Cooktop: false front on top, 2 drawers and a decorative cooktop, 24\" to 42\" (including 33\"). The Base 2 Drawer Cabinet Cooktop also shows the decorative cooktop.",
+        "21\" to 24\" doors: still 1 door by default, but you can now pick 2 doors in the properties panel (and in New Quote).",
         "Builder: stacked doors and drawer fronts no longer touch at a horizontal divider — they keep a 4 mm gap, centered on the divider. The size you type on the Builder drawing now follows your unit (inches with fractions).",
         "Dovetail drawer with real birch grain (honey/amber), at real scale.",
         "Projects toolbar: Full screen moved to the end of the bar, next to the pin; View menu with a screen icon."
@@ -84,6 +86,7 @@ window.LEGNO_CHANGELOG = [
         "Base 4 Drawers (NEW Classic): 4 cajones iguales, sin travesaño, alineados con el módulo de 2 cajones.",
         "Nuevos módulos editables (NEW Classic): Wall Cabinet CUSTOM (ancho y alto), Base Full High Cabinet CUSTOM y Base Cabinet CUSTOM (ancho).",
         "Nuevo Base 3 Drawer Cooktop: frente falso arriba, 2 cajones y cooktop decorativo, de 24\" a 42\" (con 33\"). El Base 2 Drawer Cabinet Cooktop también muestra el cooktop decorativo.",
+        "Puertas de 21\" a 24\": siguen con 1 puerta, pero ahora se pueden elegir 2 puertas en las propiedades (y en New Quote).",
         "Constructor: puertas y frentes de cajón apilados ya no se tocan en la división horizontal — quedan con 4 mm de holgura entre ellos, en el medio de la división. La medida escrita en el dibujo del Constructor ahora sigue tu unidad (pulgadas con fracción).",
         "Cajón dovetail con veta de abedul de verdad (miel/ámbar), a escala real.",
         "Barra de Proyectos: Pantalla completa pasó al final de la barra, junto al pin; menú Vista con ícono de pantalla."

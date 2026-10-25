@@ -2023,7 +2023,7 @@ function renderProjectBuilderStage() {
 
       // 1×2 folhas — só na faixa de indecisão (o cliente escolhe); fora
       // dela a dobra já é automática e não tem o que trocar aqui.
-      if (bSel.w > 500 && bSel.w <= 600) {
+      if (bSel.w > LayoutEngine.PORTA_GIRO_1_FOLHA_ATE_MM && bSel.w <= LayoutEngine.PORTA_GIRO_2_FOLHAS_DE_MM) {
         const gFolhas = projBuilderSvgEl('g', { style: 'cursor:pointer' }, svg);
         projBuilderSvgEl('circle', {
           cx: bx, cy: by, r: btnR, fill: folhasAtuais === 2 ? '#2f6fb8' : '#fff',
