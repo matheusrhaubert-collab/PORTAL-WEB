@@ -5979,3 +5979,19 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 .po-ban-pedra-card img { width: 70px; height: 70px; border-radius: 6px; object-fit: cover; display: block; }
 .po-ban-pedra-card:hover { box-shadow: 0 0 0 1px var(--accent, #1a1a1a) inset; }
 .po-ban-pedra-card.selected { border-color: var(--accent, #1a1a1a); }
+
+/* Bancada — janela enxuta (25/10, 2ª rodada: "muita configuração, quero poucos botões") */
+.po-ban-status { margin: 4px 0 10px; font-size: 13px; color: #2e6b3a; font-weight: 600; }
+.po-ban-status.off { color: var(--muted, #777); font-weight: 400; }
+.po-ban-link { background: none; border: 0; padding: 0; color: var(--accent, #1a1a1a); text-decoration: underline; cursor: pointer; font-size: 13px; }
+.po-ban-abas { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; }
+.po-ban-abas button, .po-ban-chips button { background: transparent; color: var(--text, #1a1a1a); border: 1px solid var(--border, #ddd); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.po-ban-abas button.ativo, .po-ban-chips button.ativo { background: var(--text, #1a1a1a); color: #fff; border-color: var(--text, #1a1a1a); }
+.po-ban-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 0; font-size: 13px; }
+.po-ban-chips { display: flex; gap: 4px; }
+.po-ban-ajustes { margin-top: 14px; border-top: 1px solid var(--border, #eee); padding-top: 8px; }
+.po-ban-ajustes summary { cursor: pointer; font-size: 13px; color: var(--muted, #666); }
+.po-ban-trecho { border: 1px solid var(--border, #eee); border-radius: 8px; padding: 8px 10px; margin: 8px 0; font-size: 12px; }
+.po-ban-trecho-op { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 6px; }
+.po-ban-trecho-op label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted, #666); }
+.po-ban-rodape { margin-top: 12px; text-align: right; }

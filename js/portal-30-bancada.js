@@ -106,7 +106,8 @@ const BANCADA_PADRAO = {
   splash_mm: 4 * IN_MM,       // espelho de 4"
   excluidos: [],              // ids de slot que NÃO levam pedra
   pontas: {},                 // '<slotId>|E' / '|D' -> { wf: bool, ext_mm: n }
-  ilha_tras: {}               // '<slotId>' -> mm de balanço atrás (banqueta)
+  ilha_tras: {},              // '<slotId>' -> mm de balanço atrás (banqueta)
+  wf_ilhas: false             // waterfall nas pontas livres das ilhas
 };
 const BANCADA_PORTA_M = 0.020; // porta 18 mm + 2 mm de folga (viewer3d.placeFrontGroupInBox)
 const BANCADA_SPLASH_ESP_M = 0.02;
@@ -115,34 +116,37 @@ let projectBancada = null;
 
 const BAN_TXT = {
   pt: {
-    btn: 'Bancada', title: 'Bancada de pedra', sub: 'A pedra entra sozinha em cima dos módulos base e das ilhas. Clique num módulo na planta para tirar/colocar a pedra nele. Aparência das pedras aproximada — confirme a chapa com a marmoraria.',
+    st_on: 'Pedra colocada em {n} módulo(s).', st_off: 'Bancada desligada.', turn_on: 'Colocar de novo', sp_none_s: 'Sem', sp_mirror_s: 'Baixo 4"', sp_high_s: 'Até os aéreos', wf_islands: 'Waterfall nas pontas da ilha', adjust: 'Ajustes', plan_hint: 'Clique num módulo para tirar ou pôr a pedra nele.', 
+    btn: 'Bancada', title: 'Bancada de pedra', sub: 'A pedra já entra sozinha em todos os balcões. É só escolher a pedra. (Aparência aproximada — confirme a chapa com a marmoraria.)',
     show: 'Mostrar bancada no 3D', plan: 'Onde vai a pedra', runs: 'Trechos', none_found: 'Nenhum módulo base encontrado no projeto.',
     wall_n: 'Parede {n}', island: 'Ilha', modules: '{n} módulo(s)', excluded: 'sem pedra',
     wf_left: 'Waterfall esquerda', wf_right: 'Waterfall direita', ext_left: 'Esticar ponta esq.', ext_right: 'Esticar ponta dir.', back: 'Esticar atrás (banquetas)',
     stone: 'Pedra', thick: 'Espessura', splash: 'Backsplash', sp_none: 'Sem (só tampo)', sp_mirror: 'Espelho atrás da pedra', sp_high: 'Alto (até os aéreos)', sp_h: 'Altura do espelho',
     ov_door: 'Balanço à frente da porta', ov_box: 'Balanço à frente da caixa (sem porta)', ov_end: 'Balanço na ponta livre', area: 'Área de pedra (aprox.)',
     g_quartz: 'Quartzo', g_granite: 'Granito', g_marble: 'Mármore', g_quartzite: 'Quartzito', g_travertine: 'Travertino', g_other: 'Outros',
-    remove: 'Tirar bancada do projeto', legend_stone: 'pedra', legend_off: 'sem pedra'
+    remove: 'Tirar a bancada', legend_stone: 'pedra', legend_off: 'sem pedra'
   },
   en: {
-    btn: 'Countertop', title: 'Stone countertop', sub: 'The stone goes on top of base cabinets and islands automatically. Click a cabinet on the plan to add/remove stone on it. Stone looks are approximate — confirm the slab with the fabricator.',
+    st_on: 'Stone placed on {n} cabinet(s).', st_off: 'Countertop is off.', turn_on: 'Put it back', sp_none_s: 'None', sp_mirror_s: 'Short 4"', sp_high_s: 'Up to uppers', wf_islands: 'Waterfall on island ends', adjust: 'Adjustments', plan_hint: 'Click a cabinet to add or remove stone on it.', 
+    btn: 'Countertop', title: 'Stone countertop', sub: 'The stone is placed on every counter automatically — just pick the stone. (Looks are approximate — confirm the slab with the fabricator.)',
     show: 'Show countertop in 3D', plan: 'Where the stone goes', runs: 'Runs', none_found: 'No base cabinets found in this project.',
     wall_n: 'Wall {n}', island: 'Island', modules: '{n} cabinet(s)', excluded: 'no stone',
     wf_left: 'Waterfall left', wf_right: 'Waterfall right', ext_left: 'Extend left end', ext_right: 'Extend right end', back: 'Extend back (seating)',
     stone: 'Stone', thick: 'Thickness', splash: 'Backsplash', sp_none: 'None (top only)', sp_mirror: 'Short splash behind the top', sp_high: 'Full height (up to the uppers)', sp_h: 'Splash height',
     ov_door: 'Overhang past the door', ov_box: 'Overhang past the box (no door)', ov_end: 'Overhang at free ends', area: 'Stone area (approx.)',
     g_quartz: 'Quartz', g_granite: 'Granite', g_marble: 'Marble', g_quartzite: 'Quartzite', g_travertine: 'Travertine', g_other: 'Other',
-    remove: 'Remove countertop from project', legend_stone: 'stone', legend_off: 'no stone'
+    remove: 'Remove countertop', legend_stone: 'stone', legend_off: 'no stone'
   },
   es: {
-    btn: 'Encimera', title: 'Encimera de piedra', sub: 'La piedra va sola sobre los módulos base y las islas. Haz clic en un módulo en la planta para quitar/poner la piedra. Apariencia aproximada — confirma la placa con el marmolista.',
+    st_on: 'Piedra puesta en {n} módulo(s).', st_off: 'Encimera apagada.', turn_on: 'Ponerla de nuevo', sp_none_s: 'Sin', sp_mirror_s: 'Bajo 4"', sp_high_s: 'Hasta los altos', wf_islands: 'Waterfall en las puntas de la isla', adjust: 'Ajustes', plan_hint: 'Haz clic en un módulo para quitar o poner la piedra.', 
+    btn: 'Encimera', title: 'Encimera de piedra', sub: 'La piedra se pone sola en todas las encimeras — solo elige la piedra. (Apariencia aproximada — confirma la placa con el marmolista.)',
     show: 'Mostrar encimera en el 3D', plan: 'Dónde va la piedra', runs: 'Tramos', none_found: 'Ningún módulo base en el proyecto.',
     wall_n: 'Pared {n}', island: 'Isla', modules: '{n} módulo(s)', excluded: 'sin piedra',
     wf_left: 'Waterfall izquierda', wf_right: 'Waterfall derecha', ext_left: 'Extender punta izq.', ext_right: 'Extender punta der.', back: 'Extender atrás (taburetes)',
     stone: 'Piedra', thick: 'Espesor', splash: 'Salpicadero', sp_none: 'Sin (solo encimera)', sp_mirror: 'Zócalo detrás de la piedra', sp_high: 'Alto (hasta los altos)', sp_h: 'Altura del zócalo',
     ov_door: 'Vuelo delante de la puerta', ov_box: 'Vuelo delante de la caja (sin puerta)', ov_end: 'Vuelo en punta libre', area: 'Área de piedra (aprox.)',
     g_quartz: 'Cuarzo', g_granite: 'Granito', g_marble: 'Mármol', g_quartzite: 'Cuarcita', g_travertine: 'Travertino', g_other: 'Otros',
-    remove: 'Quitar encimera del proyecto', legend_stone: 'piedra', legend_off: 'sin piedra'
+    remove: 'Quitar la encimera', legend_stone: 'piedra', legend_off: 'sin piedra'
   }
 };
 function banT(k, vars) {
@@ -196,8 +200,14 @@ function bancadaClassifica(slot) {
     if (sh.has('decor_porta') || sh.has('decor_janela') || sh.size === 0) return null;
     return 'alto';
   }
+  // BALCÃO = topo na altura de bancada (70..100 cm), apoiado no chão OU
+  // suspenso (gabinete de banheiro floating — Matt 25/10: "não aparecem os
+  // módulos de banheiro floating"). Painel/filler (estreito ou raso) não é.
+  const topo = baixo + H;
+  const W = Number(slot.width_mm || 0), D = Number(slot.depth_mm || 0);
   if (baixo >= 1000) return 'aereo';
-  if (baixo <= 300 && H >= 450 && H <= 1050) return 'base';
+  if (topo >= 700 && topo <= 1000 && H <= 1050 && baixo <= 600 && W >= 150 && D >= 280) return 'base';
+  if (W < 150 || D < 280) return 'outro';   // painel/filler: corta a pedra se encostar, mas não ganha pedra
   return 'alto';
 }
 
@@ -269,7 +279,12 @@ function bancadaRunsCalc(cfg, paredes) {
       if (atual) {
         const ult = atual.membros[atual.membros.length - 1];
         const gap = esq - (ult.cu + ult.f.w / 2);
-        if (gap <= 0.006 && gap > -0.05 && Math.abs(it.topo - atual.topoMax) < 0.016 && Math.abs(it.fundo - atual.fundo) < 0.03) {
+        // eletro embaixo do tampo (lava-louças) costuma ser mais baixo que o
+        // gabinete: aceita até 8 cm de diferença e a pedra passa reta por cima
+        // (Matt, 25/10: "tampo em cima dela acompanhando os cabinets").
+        const eletro = !!(it.slot.module && it.slot.module.is_decoration) || atual.membros.every((mm) => mm.slot.module && mm.slot.module.is_decoration);
+        const tolTopo = eletro ? 0.08 : 0.016;
+        if (gap <= 0.006 && gap > -0.05 && Math.abs(it.topo - atual.topoMax) < tolTopo && Math.abs(it.fundo - atual.fundo) < 0.03) {
           atual.membros.push(it); atual.topoMax = Math.max(atual.topoMax, it.topo); return;
         }
       }
@@ -286,17 +301,23 @@ function bancadaRunsCalc(cfg, paredes) {
     r.id = r.membros[0].slot.id;
     r.u0 = r.membros[0].cu - r.membros[0].f.w / 2;
     r.u1 = r.membros[r.membros.length - 1].cu + r.membros[r.membros.length - 1].f.w / 2;
-    r.topo = r.topoMax;
+    // topo da pedra = topo dos GABINETES (o eletro só fica embaixo)
+    const gabs = r.membros.filter((m) => !(m.slot.module && m.slot.module.is_decoration));
+    r.topo = gabs.length ? Math.max(...gabs.map((m) => m.topo)) : r.topoMax;
     r.esp = esp;
     r.membros.forEach((m) => {
       const temFrente = (m.slot._temFrente != null) ? !!m.slot._temFrente : !(m.slot.module && m.slot.module.is_decoration);
       m.frente = m.f.d + (temFrente ? BANCADA_PORTA_M + balPorta : balCaixa);
       m.v0 = m.fundo - r.fundo; // 0 no fundo
     });
+    // lava-louças: a frente da pedra segue a dos gabinetes vizinhos (a porta
+    // do eletro fica alinhada com as portas — não é "caixa sem porta")
+    const frenteGab = gabs.length ? Math.max(...gabs.map((m) => m.frente)) : null;
+    if (frenteGab != null) r.membros.forEach((m) => { if (m.slot.module && m.slot.module.is_decoration) m.frente = frenteGab; });
     r.tras = r.ilha ? Math.max(0, ...r.membros.map((m) => Number((cfg.ilha_tras || {})[m.slot.id]) || 0)) / 1000 : 0;
     const pE = (cfg.pontas || {})[r.membros[0].slot.id + '|E'] || {};
     const pD = (cfg.pontas || {})[r.membros[r.membros.length - 1].slot.id + '|D'] || {};
-    r.wfE = !!pE.wf; r.wfD = !!pD.wf;
+    r.wfE = pE.wf != null ? !!pE.wf : null; r.wfD = pD.wf != null ? !!pD.wf : null;
     r.extE = r.ilha ? (Number(pE.ext_mm) || 0) / 1000 : 0;
     r.extD = r.ilha ? (Number(pD.ext_mm) || 0) / 1000 : 0;
     // ponta encostada em algo (parede no fim, torre, fogão, outra base sem pedra...)?
@@ -326,6 +347,10 @@ function bancadaRunsCalc(cfg, paredes) {
       });
     };
     r.bloqE = bloq('E'); r.bloqD = bloq('D');
+    // "Waterfall nas ilhas" (um botão só, 25/10): pontas LIVRES das ilhas, a
+    // menos que a ponta tenha escolha própria (Ajustes).
+    if (r.wfE == null) r.wfE = !!(r.ilha && cfg.wf_ilhas && !r.bloqE);
+    if (r.wfD == null) r.wfD = !!(r.ilha && cfg.wf_ilhas && !r.bloqD);
     r.uE = r.u0 - (r.wfE ? esp : (r.extE || (r.bloqE ? 0 : balPonta)));
     r.uD = r.u1 + (r.wfD ? esp : (r.extD || (r.bloqD ? 0 : balPonta)));
     r.aparadoE = false; r.aparadoD = false;
@@ -709,61 +734,66 @@ function bancadaPlantaSvg() {
   return s;
 }
 
+let banAba = null;          // aba de pedras aberta
+let banAjustesAberto = false;
 function renderJanelaBancada() {
   const m = document.getElementById('po-ban-modal');
   if (!m || !m.classList.contains('open')) return;
   const cfg = projectBancada || bancadaNormaliza(BANCADA_PADRAO);
   const uni = banUnidade();
   const runs = bancadaCfg() ? bancadaRuns() : [];
+  const pedraAtual = bancadaPedra(cfg.pedra);
+  if (!banAba) banAba = pedraAtual.g;
   const inp = (campo, mm) => '<span class="po-geo-inp"><input type="text" data-ban="' + campo + '" value="' + banEsc(banFmt(mm)) + '"><em>' + banEsc(uni) + '</em></span>';
-  let h = '<label class="po-ban-check"><input type="checkbox" data-ban-ativo' + (bancadaCfg() ? ' checked' : '') + '> ' + banEsc(banT('show')) + '</label>';
-  h += '<h4 class="po-geo-grupo">' + banEsc(banT('plan')) + '</h4>';
-  const svg = bancadaPlantaSvg();
-  h += svg ? '<div class="po-ban-planta-wrap">' + svg + '<div class="po-ban-legenda"><i class="pedra"></i>' + banEsc(banT('legend_stone')) + '<i class="off"></i>' + banEsc(banT('legend_off')) + '</div></div>' : '<p class="hint">' + banEsc(banT('none_found')) + '</p>';
-  if (runs.length) {
-    h += '<h4 class="po-geo-grupo">' + banEsc(banT('runs')) + '</h4>';
-    runs.forEach((r) => {
-      const ini = r.membros[0].slot.id, fim = r.membros[r.membros.length - 1].slot.id;
-      const pE = (cfg.pontas || {})[ini + '|E'] || {}, pD = (cfg.pontas || {})[fim + '|D'] || {};
-      const titulo = (r.ilha ? banT('island') : banT('wall_n', { n: r.wallIndex + 1 })) + ' · ' + banT('modules', { n: r.membros.length }) + ' · ' + banFmt((r.uD - r.uE) * 1000) + ' ' + uni;
-      h += '<div class="po-geo-item aberto" data-run="' + banEsc(ini) + '"><div class="po-geo-item-cab"><span>' + banEsc(titulo) + '</span></div><div class="po-geo-campos">';
-      if (!r.aparadoE) h += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(ini) + '|E"' + (pE.wf ? ' checked' : '') + '> ' + banEsc(banT('wf_left')) + '</label>';
-      else h += '<span></span>';
-      if (!r.aparadoD) h += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(fim) + '|D"' + (pD.wf ? ' checked' : '') + '> ' + banEsc(banT('wf_right')) + '</label>';
-      if (r.ilha) {
-        const tras = Math.max(0, ...r.membros.map((mm) => Number((cfg.ilha_tras || {})[mm.slot.id]) || 0));
-        h += '<label>' + banEsc(banT('ext_left')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(ini) + '|E" value="' + banEsc(banFmt(Number(pE.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
-        h += '<label>' + banEsc(banT('ext_right')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(fim) + '|D" value="' + banEsc(banFmt(Number(pD.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
-        h += '<label>' + banEsc(banT('back')) + '<span class="po-geo-inp"><input type="text" data-tras="' + banEsc(r.membros.map((mm) => mm.slot.id).join(',')) + '" value="' + banEsc(banFmt(tras)) + '"><em>' + banEsc(uni) + '</em></span></label>';
-      }
-      h += '</div></div>';
-    });
+  let h = '';
+  // situação em 1 linha
+  if (!bancadaCfg()) h += '<p class="po-ban-status off">' + banEsc(banT('st_off')) + ' <button type="button" class="po-ban-link" data-ban-ligar>' + banEsc(banT('turn_on')) + '</button></p>';
+  else if (!runs.length) h += '<p class="po-ban-status off">' + banEsc(banT('none_found')) + '</p>';
+  else {
     const a = bancadaAreaM2();
-    h += '<p class="hint po-ban-area">' + banEsc(banT('area')) + ': <b>' + (a * 10.7639).toFixed(1) + ' ft²</b> (' + a.toFixed(2) + ' m²)</p>';
+    h += '<p class="po-ban-status">✓ ' + banEsc(banT('st_on', { n: runs.reduce((t, r) => t + r.membros.length, 0) })) + ' · ' + (a * 10.7639).toFixed(0) + ' ft²</p>';
   }
-  // opções
-  h += '<div class="po-geo-campos po-ban-opcoes">';
-  h += '<label>' + banEsc(banT('thick')) + '<select data-ban-sel="esp_mm"><option value="20"' + (Number(cfg.esp_mm) === 20 ? ' selected' : '') + '>2 cm (3/4")</option><option value="30"' + (Number(cfg.esp_mm) !== 20 ? ' selected' : '') + '>3 cm (1 1/4")</option></select></label>';
-  h += '<label>' + banEsc(banT('splash')) + '<select data-ban-sel="splash"><option value="nenhum"' + (cfg.splash === 'nenhum' ? ' selected' : '') + '>' + banEsc(banT('sp_none')) + '</option><option value="espelho"' + (cfg.splash === 'espelho' ? ' selected' : '') + '>' + banEsc(banT('sp_mirror')) + '</option><option value="alto"' + (cfg.splash === 'alto' ? ' selected' : '') + '>' + banEsc(banT('sp_high')) + '</option></select></label>';
-  if (cfg.splash === 'espelho') h += '<label>' + banEsc(banT('sp_h')) + inp('splash_mm', cfg.splash_mm) + '</label>';
-  h += '<label>' + banEsc(banT('ov_door')) + inp('bal_porta_mm', cfg.bal_porta_mm) + '</label>';
-  h += '<label>' + banEsc(banT('ov_box')) + inp('bal_caixa_mm', cfg.bal_caixa_mm) + '</label>';
-  h += '<label>' + banEsc(banT('ov_end')) + inp('bal_ponta_mm', cfg.bal_ponta_mm) + '</label>';
-  h += '</div>';
-  // pedras
-  h += '<h4 class="po-geo-grupo">' + banEsc(banT('stone')) + ' — ' + banEsc(bancadaNome(bancadaPedra(cfg.pedra))) + '</h4>';
-  BANCADA_GRUPOS.forEach((g) => {
-    const it = BANCADA_CATALOGO.filter((p) => p.g === g);
-    if (!it.length) return;
-    h += '<div class="po-ban-subgrupo">' + banEsc(banT('g_' + g)) + '</div><div class="po-ban-grid">'
-      + it.map((p) => '<button type="button" class="po-ban-pedra-card' + (cfg.pedra === p.id ? ' selected' : '') + '" data-pedra="' + p.id + '" title="' + banEsc(bancadaNome(p)) + '"><img src="assets/stones/' + p.id + '_thumb.jpg?v=1" alt="" loading="lazy"><span>' + banEsc(bancadaNome(p)) + '</span></button>').join('')
-      + '</div>';
+  // 1) pedra (abas por tipo)
+  h += '<div class="po-ban-abas">' + BANCADA_GRUPOS.map((g) => '<button type="button" data-aba="' + g + '"' + (banAba === g ? ' class="ativo"' : '') + '>' + banEsc(banT('g_' + g)) + '</button>').join('') + '</div>';
+  h += '<div class="po-ban-grid">' + BANCADA_CATALOGO.filter((p) => p.g === banAba).map((p) => '<button type="button" class="po-ban-pedra-card' + (cfg.pedra === p.id ? ' selected' : '') + '" data-pedra="' + p.id + '" title="' + banEsc(bancadaNome(p)) + '"><img src="assets/stones/' + p.id + '_thumb.jpg?v=1" alt="" loading="lazy"><span>' + banEsc(bancadaNome(p)) + '</span></button>').join('') + '</div>';
+  // 2) backsplash (3 botões) + waterfall da ilha
+  const chip = (v, k) => '<button type="button" data-splash="' + v + '"' + (cfg.splash === v ? ' class="ativo"' : '') + '>' + banEsc(banT(k)) + '</button>';
+  h += '<div class="po-ban-linha"><span>' + banEsc(banT('splash')) + '</span><div class="po-ban-chips">' + chip('nenhum', 'sp_none_s') + chip('espelho', 'sp_mirror_s') + chip('alto', 'sp_high_s') + '</div></div>';
+  if (runs.some((r) => r.ilha)) h += '<label class="po-ban-check po-ban-linha"><input type="checkbox" data-wf-ilhas' + (cfg.wf_ilhas ? ' checked' : '') + '> ' + banEsc(banT('wf_islands')) + '</label>';
+  // 3) ajustes (fechado)
+  let aj = '';
+  const svg = bancadaPlantaSvg();
+  if (svg) aj += '<p class="hint">' + banEsc(banT('plan_hint')) + '</p><div class="po-ban-planta-wrap">' + svg + '<div class="po-ban-legenda"><i class="pedra"></i>' + banEsc(banT('legend_stone')) + '<i class="off"></i>' + banEsc(banT('legend_off')) + '</div></div>';
+  runs.forEach((r) => {
+    const ini = r.membros[0].slot.id, fim = r.membros[r.membros.length - 1].slot.id;
+    const pE = (cfg.pontas || {})[ini + '|E'] || {}, pD = (cfg.pontas || {})[fim + '|D'] || {};
+    const titulo = (r.ilha ? banT('island') : banT('wall_n', { n: r.wallIndex + 1 })) + ' · ' + banT('modules', { n: r.membros.length }) + ' · ' + banFmt((r.uD - r.uE) * 1000) + ' ' + uni;
+    aj += '<div class="po-ban-trecho"><b>' + banEsc(titulo) + '</b><div class="po-ban-trecho-op">';
+    if (!r.aparadoE) aj += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(ini) + '|E"' + (r.wfE ? ' checked' : '') + '> ' + banEsc(banT('wf_left')) + '</label>';
+    if (!r.aparadoD) aj += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(fim) + '|D"' + (r.wfD ? ' checked' : '') + '> ' + banEsc(banT('wf_right')) + '</label>';
+    if (r.ilha) {
+      const tras = Math.max(0, ...r.membros.map((mm) => Number((cfg.ilha_tras || {})[mm.slot.id]) || 0));
+      aj += '<label>' + banEsc(banT('back')) + '<span class="po-geo-inp"><input type="text" data-tras="' + banEsc(r.membros.map((mm) => mm.slot.id).join(',')) + '" value="' + banEsc(banFmt(tras)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+      aj += '<label>' + banEsc(banT('ext_left')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(ini) + '|E" value="' + banEsc(banFmt(Number(pE.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+      aj += '<label>' + banEsc(banT('ext_right')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(fim) + '|D" value="' + banEsc(banFmt(Number(pD.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+    }
+    aj += '</div></div>';
   });
-  if (projectBancada) h += '<div class="po-geo-acoes"><button type="button" class="secondary po-geo-del" data-ban-remover>' + banEsc(banT('remove')) + '</button></div>';
+  aj += '<div class="po-geo-campos po-ban-opcoes">';
+  aj += '<label>' + banEsc(banT('thick')) + '<select data-ban-sel="esp_mm"><option value="20"' + (Number(cfg.esp_mm) === 20 ? ' selected' : '') + '>2 cm (3/4")</option><option value="30"' + (Number(cfg.esp_mm) !== 20 ? ' selected' : '') + '>3 cm (1 1/4")</option></select></label>';
+  if (cfg.splash === 'espelho') aj += '<label>' + banEsc(banT('sp_h')) + inp('splash_mm', cfg.splash_mm) + '</label>';
+  aj += '<label>' + banEsc(banT('ov_door')) + inp('bal_porta_mm', cfg.bal_porta_mm) + '</label>';
+  aj += '<label>' + banEsc(banT('ov_box')) + inp('bal_caixa_mm', cfg.bal_caixa_mm) + '</label>';
+  aj += '<label>' + banEsc(banT('ov_end')) + inp('bal_ponta_mm', cfg.bal_ponta_mm) + '</label>';
+  aj += '</div>';
+  h += '<details class="po-ban-ajustes"' + (banAjustesAberto ? ' open' : '') + '><summary>' + banEsc(banT('adjust')) + '</summary>' + aj + '</details>';
+  if (projectBancada) h += '<div class="po-ban-rodape"><button type="button" class="po-ban-link po-geo-del" data-ban-remover>' + banEsc(banT('remove')) + '</button></div>';
   const corpo = m.querySelector('.po-geo-corpo');
   const rolagem = corpo.scrollTop;
   corpo.innerHTML = h;
   corpo.scrollTop = rolagem;
+  const det = corpo.querySelector('.po-ban-ajustes');
+  if (det) det.addEventListener('toggle', () => { banAjustesAberto = det.open; });
 }
 
 function bancadaGaranteCfg() {
@@ -794,14 +824,24 @@ function abrirJanelaBancada() {
         bancadaMudou();
         return;
       }
+      const ab = t.closest('[data-aba]');
+      if (ab) { banAba = ab.dataset.aba; renderJanelaBancada(); return; }
+      const sp = t.closest('[data-splash]');
+      if (sp) { const c = bancadaGaranteCfg(); c.splash = sp.dataset.splash; c.ativo = true; bancadaMudou(); return; }
+      if (t.closest('[data-ban-ligar]')) { const c = bancadaGaranteCfg(); c.ativo = true; atualizaBotaoBancada(); bancadaMudou(); return; }
       const pd = t.closest('[data-pedra]');
       if (pd) { const c = bancadaGaranteCfg(); c.pedra = pd.dataset.pedra; c.ativo = true; bancadaMudou(); return; }
-      if (t.closest('[data-ban-remover]')) { projectBancada = null; bancadaRecortes = {}; atualizaBotaoBancada(); bancadaMudou(); }
+      if (t.closest('[data-ban-remover]')) { const c = bancadaGaranteCfg(); c.ativo = false; bancadaRecortes = {}; atualizaBotaoBancada(); bancadaMudou(); }
     });
     m.addEventListener('change', (ev) => {
       const t = ev.target;
       const c = bancadaGaranteCfg();
       if (t.matches('[data-ban-ativo]')) { c.ativo = !!t.checked; }
+      else if (t.matches('[data-wf-ilhas]')) {
+        c.wf_ilhas = !!t.checked;
+        // o botão geral manda: limpa escolhas de waterfall feitas ponta a ponta
+        Object.keys(c.pontas).forEach((k) => { if (c.pontas[k]) delete c.pontas[k].wf; });
+      }
       else if (t.matches('[data-ban-sel]')) { const k = t.dataset.banSel; c[k] = k === 'esp_mm' ? Number(t.value) : t.value; }
       else if (t.matches('[data-ban]')) { const v = banParse(t.value); if (v != null && v >= 0) c[t.dataset.ban] = v; }
       else if (t.matches('[data-wf]')) { const k = t.dataset.wf; c.pontas[k] = Object.assign({}, c.pontas[k] || {}, { wf: !!t.checked }); }
@@ -818,7 +858,8 @@ function abrirJanelaBancada() {
   m.querySelector('h2').textContent = banT('title');
   m.querySelector('.po-ban-sub').textContent = banT('sub');
   // primeira vez: já liga com o padrão — a pedra aparece no 3D na hora
-  if (!projectBancada) { bancadaGaranteCfg(); atualizaBotaoBancada(); bancadaMudou(); }
+  // Clicou em Bancada = coloca a pedra (Matt: "quero um botão que coloque pra mim")
+  if (!projectBancada || !projectBancada.ativo) { bancadaGaranteCfg().ativo = true; atualizaBotaoBancada(); bancadaMudou(); }
   try { const g = document.getElementById('po-geo-modal'); if (g) g.classList.remove('open'); } catch (e) { /* ok */ }
   m.classList.add('open');
   renderJanelaBancada();
