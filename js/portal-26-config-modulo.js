@@ -387,7 +387,11 @@ function renderQuoteOptionsPanel() {
     iconeBtn.disabled = true;
     try { await quoteSalvarIconeModulo(body.querySelector('.po-qopt-icone-status')); } finally { iconeBtn.disabled = false; }
   });
-  body.querySelectorAll('.po-proj-door-leaves-btn').forEach((el) => el.addEventListener('click', () => {
+  body.querySelectorAll('.po-proj-stretcher-btn').forEach((el) => el.addEventListener('click', () => {
+    if (el.classList.contains('selected') || !quoteSlot) return;
+    if (setSlotStretcherEmPe(quoteSlot, el.dataset.node, el.dataset.emPe === '1')) reprocessar();
+  }));
+  body.querySelectorAll('.po-proj-door-leaves-btn:not(.po-proj-stretcher-btn)').forEach((el) => el.addEventListener('click', () => {
     if (el.classList.contains('selected') || !quoteSlot) return;
     if (setSlotDoorLeavesChoice(quoteSlot, el.dataset.node, Number(el.dataset.front) || 0, Number(el.dataset.n))) reprocessar();
   }));

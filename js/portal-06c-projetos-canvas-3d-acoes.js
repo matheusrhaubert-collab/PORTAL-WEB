@@ -1139,8 +1139,15 @@ function renderProjectConfigPanel() {
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
     });
   });
+  // Travessa deitada / em pé (25/10)
+  panel.querySelectorAll('.po-proj-stretcher-btn').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('selected')) return;
+      setProjectStretcherEmPe(slot, el.dataset.node, el.dataset.emPe === '1');
+    });
+  });
   // 1 ou 2 portas (25/10)
-  panel.querySelectorAll('.po-proj-door-leaves-btn').forEach((el) => {
+  panel.querySelectorAll('.po-proj-door-leaves-btn:not(.po-proj-stretcher-btn)').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected')) return;
       setProjectDoorLeaves(slot, el.dataset.node, Number(el.dataset.front) || 0, Number(el.dataset.n));
@@ -4860,7 +4867,7 @@ function projectDoorSideBlock(slot) {
     // de cima pra baixo, que é como o cliente lê a torre
     portas.sort((a, b) => b.caixa.y - a.caixa.y);
   } else portas = [];
-  const folhas = projectDoorLeavesBlock(slot);
+  const folhas = projectStretcherBlock(slot) + projectDoorLeavesBlock(slot);
   if (!portas.length) return folhas;
   const linhas = portas.map((d, i) => {
     const outro = d.lado === 'left' ? 'right' : 'left';
@@ -4907,6 +4914,65 @@ function projectDoorLeavesBlock(slot) {
   }).join('');
   return `<div class="po-proj-config-door-side po-proj-door-leaves"><span class="po-proj-config-section-label">${I18n.t('project.door_leaves_label')}</span>${linhas}</div>`;
 }
+/* TRAVESSA DA FRENTE DEITADA OU EM PÉ (2026-10-25, Matt: "toda sink o
+   stretcher é deitado padrão... pras sinks ele deve ser vertical na frente.
+   precisamos uma nova opção de inverter o stretcher em botão na direita
+   (tipo opção de porta dir ou esq)"). Vale pra Divisória Stretcher
+   horizontal da árvore (agregado com stretcher_d_mm, eixo y). A escolha fica
+   no vão da árvore (params.stretcher_em_pe), o motor desenha (layout-engine,
+   emitDivider). Nas sinks a árvore de fábrica já nasce em pé (migration 236). */
+function projectStretcherOptions(slot) {
+  const cat = (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || null;
+  if (!slot || !slot.layout || !cat) return [];
+  const out = [];
+  (function anda(n) {
+    if (!n) return;
+    const acc = n.splitAcc ? cat[n.splitAcc] : null;
+    if (n.splitAxis === 'y' && acc && Number((acc.params || {}).stretcher_d_mm) > 0) {
+      out.push({ nodeId: n.id, emPe: !!(n.params && n.params.stretcher_em_pe) });
+    }
+    (n.children || []).forEach(anda);
+  })(slot.layout);
+  return out;
+}
+function projectStretcherIcon(emPe) {
+  return `<svg viewBox="0 0 32 40" width="26" height="32" aria-hidden="true">
+    <rect x="4" y="4" width="24" height="32" rx="1.5" fill="none" stroke="#b9ad9c" stroke-width="1.4"/>
+    ${emPe ? '<rect x="13" y="10" width="6" height="20" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'
+           : '<rect x="6" y="17" width="20" height="6" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'}</svg>`;
+}
+function projectStretcherBlock(slot) {
+  const ops = projectStretcherOptions(slot);
+  if (!ops.length) return '';
+  const linhas = ops.map((o, i) => {
+    const nome = ops.length > 1 ? `<span class="po-proj-door-side-nome">${I18n.t('project.stretcher_label')} ${i + 1}</span>` : '';
+    const btn = (emPe) => `<button type="button" class="po-proj-door-leaves-btn po-proj-stretcher-btn${o.emPe === emPe ? ' selected' : ''}" data-node="${String(o.nodeId).replace(/"/g, '&quot;')}" data-em-pe="${emPe ? '1' : '0'}">${projectStretcherIcon(emPe)}<span>${I18n.t(emPe ? 'project.stretcher_upright' : 'project.stretcher_flat')}</span></button>`;
+    return `<div class="po-proj-door-leaves-row">${nome}${btn(false)}${btn(true)}</div>`;
+  }).join('');
+  return `<div class="po-proj-config-door-side po-proj-stretcher"><span class="po-proj-config-section-label">${I18n.t('project.stretcher_label')}</span>${linhas}</div>`;
+}
+function setSlotStretcherEmPe(slot, nodeId, emPe) {
+  if (!slot || !slot.layout) return false;
+  const no = (function acha(x) {
+    if (!x) return null;
+    if (String(x.id) === String(nodeId)) return x;
+    for (const c of (x.children || [])) { const r = acha(c); if (r) return r; }
+    return null;
+  })(slot.layout);
+  if (!no) return false;
+  no.params = Object.assign({}, no.params || {}, { stretcher_em_pe: !!emPe });
+  return true;
+}
+function setProjectStretcherEmPe(slot, nodeId, emPe) {
+  if (!slot) return;
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  if (!setSlotStretcherEmPe(slot, nodeId, emPe)) return;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[travessa]', e); }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+}
+
 // Só grava a escolha na árvore do slot; quem chama recalcula e redesenha.
 function setSlotDoorLeavesChoice(slot, nodeId, frontIndex, n) {
   if (!slot || !slot.layout) return false;

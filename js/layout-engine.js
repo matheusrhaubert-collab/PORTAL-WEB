@@ -767,6 +767,20 @@
         // mesmo desenho do stretcher de topo do casco.
         var sd = num(acc.params.stretcher_d_mm);
         var frenteSt = box.z + Math.max(60, box.d - recuo - cons);
+        if ((node.params || {}).stretcher_em_pe) {
+          // TRAVESSA EM PÉ (2026-10-25, Matt: "pras sinks ele deve ser
+          // vertical na frente... posicionar ele vertical 1mm pra dentro +
+          // espessura dele"). Mesma travessa (sd de altura, th de espessura),
+          // girada: em pé, com a face da frente 1 mm pra dentro da frente do
+          // vão, subindo a partir da linha da divisão (o vão de cima da sink
+          // é a frente falsa — ela fica escondida atrás dela).
+          push(node, {
+            kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
+            x: box.x, y: pos, z: box.z + box.d - 1 - th,
+            w: box.w, h: sd, d: th, _stretcherEmPe: true
+          });
+          return;
+        }
         push(node, {
           kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
           x: box.x, y: pos, z: frenteSt - sd,
