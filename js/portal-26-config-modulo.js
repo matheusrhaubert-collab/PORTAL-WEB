@@ -317,11 +317,14 @@ async function quoteSalvarIconeModulo(statusEl) {
   };
   status(I18n.t('qopt.icon_saving'));
   const estiloAnt = (typeof Viewer3D.getDrawStyle === 'function') ? Viewer3D.getDrawStyle() : null;
+  const projAnt = (typeof Viewer3D.getProjectionMode === 'function') ? Viewer3D.getProjectionMode() : 'perspective';
   let raw = null;
   try {
     const parts = resolvePiecesForViewer(quoteSlotViewerPieces(s), { W: s.width_mm, H: s.height_mm, D: s.depth_mm },
       s.colorsByRole, s.shelfQuantities, s.dimOverrides, s.pieceColorOverrides);
     if (typeof Viewer3D.setDrawStyle === 'function') Viewer3D.setDrawStyle({ contorno: 'grosso' });
+    // visão PARALELA (Matt 25/10: "troca visão perspectiva por paralela")
+    if (typeof Viewer3D.setProjectionMode === 'function') Viewer3D.setProjectionMode('orthographic');
     Viewer3D.update({ width_mm: s.width_mm, height_mm: s.height_mm, depth_mm: s.depth_mm, parts, refit: true, tightFrame: true });
     if (typeof Viewer3D.waitForPendingTextures === 'function') await Viewer3D.waitForPendingTextures();
     raw = Viewer3D.snapshot();
@@ -329,6 +332,7 @@ async function quoteSalvarIconeModulo(statusEl) {
     console.error('[ícone do módulo]', e);
   } finally {
     if (estiloAnt && typeof Viewer3D.setDrawStyle === 'function') Viewer3D.setDrawStyle(estiloAnt);
+    if (typeof Viewer3D.setProjectionMode === 'function') Viewer3D.setProjectionMode(projAnt || 'perspective');
     viewer3dNeedsRefit = true;
     try { recalculatePreview(); } catch (e) { /* volta ao normal no próximo clique */ }
   }
