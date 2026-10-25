@@ -10,8 +10,8 @@
   "file": "assets/floors/lvp-natural-oak.jpg",
   "thumb": "assets/floors/lvp-natural-oak_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -26,8 +26,8 @@
   "file": "assets/floors/lvp-light-oak.jpg",
   "thumb": "assets/floors/lvp-light-oak_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -42,7 +42,7 @@
   "file": "assets/floors/lvp-white-oak.jpg",
   "thumb": "assets/floors/lvp-white-oak_thumb.jpg",
   "tile_mm": [
-   1144,
+   2744,
    3658
   ],
   "roughness": 0.55
@@ -58,7 +58,7 @@
   "file": "assets/floors/lvp-scandinavian-oak.jpg",
   "thumb": "assets/floors/lvp-scandinavian-oak_thumb.jpg",
   "tile_mm": [
-   1144,
+   2744,
    3658
   ],
   "roughness": 0.55
@@ -74,8 +74,8 @@
   "file": "assets/floors/lvp-park-meadow.jpg",
   "thumb": "assets/floors/lvp-park-meadow_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -90,7 +90,7 @@
   "file": "assets/floors/lvp-channel-oak.jpg",
   "thumb": "assets/floors/lvp-channel-oak_thumb.jpg",
   "tile_mm": [
-   1144,
+   2744,
    3658
   ],
   "roughness": 0.55
@@ -106,7 +106,7 @@
   "file": "assets/floors/lvp-provincial-oak.jpg",
   "thumb": "assets/floors/lvp-provincial-oak_thumb.jpg",
   "tile_mm": [
-   1144,
+   2744,
    3658
   ],
   "roughness": 0.55
@@ -122,8 +122,8 @@
   "file": "assets/floors/lvp-timberland-oak.jpg",
   "thumb": "assets/floors/lvp-timberland-oak_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -138,8 +138,8 @@
   "file": "assets/floors/lvp-greige-oak.jpg",
   "thumb": "assets/floors/lvp-greige-oak_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -154,8 +154,8 @@
   "file": "assets/floors/lvp-weathered-gray.jpg",
   "thumb": "assets/floors/lvp-weathered-gray_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -170,7 +170,7 @@
   "file": "assets/floors/lvp-driftwood.jpg",
   "thumb": "assets/floors/lvp-driftwood_thumb.jpg",
   "tile_mm": [
-   1144,
+   2744,
    3658
   ],
   "roughness": 0.55
@@ -186,8 +186,8 @@
   "file": "assets/floors/lvp-coastal-white.jpg",
   "thumb": "assets/floors/lvp-coastal-white_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -202,8 +202,8 @@
   "file": "assets/floors/lvp-honey-oak.jpg",
   "thumb": "assets/floors/lvp-honey-oak_thumb.jpg",
   "tile_mm": [
-   636,
-   2438
+   2794,
+   3658
   ],
   "roughness": 0.55
  },
@@ -218,8 +218,8 @@
   "file": "assets/floors/lvp-hickory.jpg",
   "thumb": "assets/floors/lvp-hickory_thumb.jpg",
   "tile_mm": [
-   888,
-   2438
+   2844,
+   3658
   ],
   "roughness": 0.55
  },
@@ -234,8 +234,8 @@
   "file": "assets/floors/lvp-rustic-hickory.jpg",
   "thumb": "assets/floors/lvp-rustic-hickory_thumb.jpg",
   "tile_mm": [
-   952,
-   3048
+   2858,
+   4572
   ],
   "roughness": 0.55
  },
@@ -250,8 +250,8 @@
   "file": "assets/floors/lvp-natural-maple.jpg",
   "thumb": "assets/floors/lvp-natural-maple_thumb.jpg",
   "tile_mm": [
-   636,
-   2438
+   2794,
+   3658
   ],
   "roughness": 0.55
  },
@@ -266,8 +266,8 @@
   "file": "assets/floors/lvp-walnut.jpg",
   "thumb": "assets/floors/lvp-walnut_thumb.jpg",
   "tile_mm": [
-   952,
-   3048
+   2858,
+   4572
   ],
   "roughness": 0.55
  },
@@ -282,7 +282,7 @@
   "file": "assets/floors/lvp-smoked-oak.jpg",
   "thumb": "assets/floors/lvp-smoked-oak_thumb.jpg",
   "tile_mm": [
-   1144,
+   2744,
    3658
   ],
   "roughness": 0.55
@@ -298,8 +298,8 @@
   "file": "assets/floors/lvp-espresso.jpg",
   "thumb": "assets/floors/lvp-espresso_thumb.jpg",
   "tile_mm": [
-   636,
-   2438
+   2794,
+   3658
   ],
   "roughness": 0.55
  },
@@ -314,8 +314,8 @@
   "file": "assets/floors/lvp-charcoal.jpg",
   "thumb": "assets/floors/lvp-charcoal_thumb.jpg",
   "tile_mm": [
-   952,
-   2540
+   2858,
+   3810
   ],
   "roughness": 0.55
  },
@@ -346,8 +346,8 @@
   "file": "assets/floors/tile-porcelain-light-24.jpg",
   "thumb": "assets/floors/tile-porcelain-light-24_thumb.jpg",
   "tile_mm": [
-   1220,
-   1220
+   2438,
+   2438
   ],
   "roughness": 0.3
  },
@@ -362,8 +362,8 @@
   "file": "assets/floors/tile-porcelain-gray-24x48.jpg",
   "thumb": "assets/floors/tile-porcelain-gray-24x48_thumb.jpg",
   "tile_mm": [
-   1220,
-   2438
+   2438,
+   4876
   ],
   "roughness": 0.32
  },
@@ -378,8 +378,8 @@
   "file": "assets/floors/tile-porcelain-beige-18.jpg",
   "thumb": "assets/floors/tile-porcelain-beige-18_thumb.jpg",
   "tile_mm": [
-   1372,
-   1372
+   2744,
+   2744
   ],
   "roughness": 0.35
  },
@@ -426,8 +426,8 @@
   "file": "assets/floors/tile-slate-12x24.jpg",
   "thumb": "assets/floors/tile-slate-12x24_thumb.jpg",
   "tile_mm": [
-   914,
-   1828
+   2438,
+   4876
   ],
   "roughness": 0.6
  },
@@ -442,8 +442,8 @@
   "file": "assets/floors/concrete-polished.jpg",
   "thumb": "assets/floors/concrete-polished_thumb.jpg",
   "tile_mm": [
-   1200,
-   1200
+   2400,
+   2400
   ],
   "roughness": 0.4
  },

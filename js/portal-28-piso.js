@@ -20,34 +20,34 @@
 // ==========================================================================
 
 const PISO_CATALOGO = [
-  { id: "lvp-natural-oak", g: "lvp", n: {"pt": "Carvalho natural (vinílico)", "en": "Natural Oak (LVP)", "es": "Roble natural (vinílico)"}, t: [952, 2540], r: 0.55 },
-  { id: "lvp-light-oak", g: "lvp", n: {"pt": "Carvalho claro (vinílico)", "en": "Light Oak (LVP)", "es": "Roble claro (vinílico)"}, t: [952, 2540], r: 0.55 },
-  { id: "lvp-white-oak", g: "lvp", n: {"pt": "Carvalho branco (vinílico)", "en": "White Oak (LVP)", "es": "Roble blanco (vinílico)"}, t: [1144, 3658], r: 0.55 },
-  { id: "lvp-scandinavian-oak", g: "lvp", n: {"pt": "Carvalho escandinavo (vinílico)", "en": "Scandinavian Oak (LVP)", "es": "Roble escandinavo (vinílico)"}, t: [1144, 3658], r: 0.55 },
-  { id: "lvp-park-meadow", g: "lvp", n: {"pt": "Carvalho prado (vinílico)", "en": "Meadow Oak (LVP)", "es": "Roble pradera (vinílico)"}, t: [952, 2540], r: 0.55 },
-  { id: "lvp-channel-oak", g: "lvp", n: {"pt": "Carvalho areia (vinílico)", "en": "Sand Oak (LVP)", "es": "Roble arena (vinílico)"}, t: [1144, 3658], r: 0.55 },
-  { id: "lvp-provincial-oak", g: "lvp", n: {"pt": "Carvalho provençal (vinílico)", "en": "Provincial Oak (LVP)", "es": "Roble provenzal (vinílico)"}, t: [1144, 3658], r: 0.55 },
-  { id: "lvp-timberland-oak", g: "lvp", n: {"pt": "Carvalho caramelo (vinílico)", "en": "Caramel Oak (LVP)", "es": "Roble caramelo (vinílico)"}, t: [952, 2540], r: 0.55 },
-  { id: "lvp-greige-oak", g: "lvp", n: {"pt": "Carvalho greige (vinílico)", "en": "Greige Oak (LVP)", "es": "Roble greige (vinílico)"}, t: [952, 2540], r: 0.55 },
-  { id: "lvp-weathered-gray", g: "lvp", n: {"pt": "Cinza envelhecido (vinílico)", "en": "Weathered Gray (LVP)", "es": "Gris envejecido (vinílico)"}, t: [952, 2540], r: 0.55 },
-  { id: "lvp-driftwood", g: "lvp", n: {"pt": "Driftwood (vinílico)", "en": "Driftwood (LVP)", "es": "Driftwood (vinílico)"}, t: [1144, 3658], r: 0.55 },
-  { id: "lvp-coastal-white", g: "lvp", n: {"pt": "Branco costeiro (vinílico)", "en": "Coastal Whitewash (LVP)", "es": "Blanco costero (vinílico)"}, t: [952, 2540], r: 0.55 },
-  { id: "lvp-honey-oak", g: "lvp", n: {"pt": "Carvalho mel (vinílico)", "en": "Honey Oak (LVP)", "es": "Roble miel (vinílico)"}, t: [636, 2438], r: 0.55 },
-  { id: "lvp-hickory", g: "lvp", n: {"pt": "Hickory (vinílico)", "en": "Hickory (LVP)", "es": "Nogal americano (vinílico)"}, t: [888, 2438], r: 0.55 },
-  { id: "lvp-rustic-hickory", g: "lvp", n: {"pt": "Hickory rústico (vinílico)", "en": "Rustic Hickory (LVP)", "es": "Hickory rústico (vinílico)"}, t: [952, 3048], r: 0.55 },
-  { id: "lvp-natural-maple", g: "lvp", n: {"pt": "Maple natural (vinílico)", "en": "Natural Maple (LVP)", "es": "Arce natural (vinílico)"}, t: [636, 2438], r: 0.55 },
-  { id: "lvp-walnut", g: "lvp", n: {"pt": "Nogueira (vinílico)", "en": "Walnut (LVP)", "es": "Nogal (vinílico)"}, t: [952, 3048], r: 0.55 },
-  { id: "lvp-smoked-oak", g: "lvp", n: {"pt": "Carvalho defumado (vinílico)", "en": "Smoked Oak (LVP)", "es": "Roble ahumado (vinílico)"}, t: [1144, 3658], r: 0.55 },
-  { id: "lvp-espresso", g: "lvp", n: {"pt": "Espresso (vinílico)", "en": "Dark Espresso (LVP)", "es": "Espresso (vinílico)"}, t: [636, 2438], r: 0.55 },
-  { id: "lvp-charcoal", g: "lvp", n: {"pt": "Carvão (vinílico)", "en": "Charcoal Oak (LVP)", "es": "Carbón (vinílico)"}, t: [952, 2540], r: 0.55 },
+  { id: "lvp-natural-oak", g: "lvp", n: {"pt": "Carvalho natural (vinílico)", "en": "Natural Oak (LVP)", "es": "Roble natural (vinílico)"}, t: [2858, 3810], r: 0.55 },
+  { id: "lvp-light-oak", g: "lvp", n: {"pt": "Carvalho claro (vinílico)", "en": "Light Oak (LVP)", "es": "Roble claro (vinílico)"}, t: [2858, 3810], r: 0.55 },
+  { id: "lvp-white-oak", g: "lvp", n: {"pt": "Carvalho branco (vinílico)", "en": "White Oak (LVP)", "es": "Roble blanco (vinílico)"}, t: [2744, 3658], r: 0.55 },
+  { id: "lvp-scandinavian-oak", g: "lvp", n: {"pt": "Carvalho escandinavo (vinílico)", "en": "Scandinavian Oak (LVP)", "es": "Roble escandinavo (vinílico)"}, t: [2744, 3658], r: 0.55 },
+  { id: "lvp-park-meadow", g: "lvp", n: {"pt": "Carvalho prado (vinílico)", "en": "Meadow Oak (LVP)", "es": "Roble pradera (vinílico)"}, t: [2858, 3810], r: 0.55 },
+  { id: "lvp-channel-oak", g: "lvp", n: {"pt": "Carvalho areia (vinílico)", "en": "Sand Oak (LVP)", "es": "Roble arena (vinílico)"}, t: [2744, 3658], r: 0.55 },
+  { id: "lvp-provincial-oak", g: "lvp", n: {"pt": "Carvalho provençal (vinílico)", "en": "Provincial Oak (LVP)", "es": "Roble provenzal (vinílico)"}, t: [2744, 3658], r: 0.55 },
+  { id: "lvp-timberland-oak", g: "lvp", n: {"pt": "Carvalho caramelo (vinílico)", "en": "Caramel Oak (LVP)", "es": "Roble caramelo (vinílico)"}, t: [2858, 3810], r: 0.55 },
+  { id: "lvp-greige-oak", g: "lvp", n: {"pt": "Carvalho greige (vinílico)", "en": "Greige Oak (LVP)", "es": "Roble greige (vinílico)"}, t: [2858, 3810], r: 0.55 },
+  { id: "lvp-weathered-gray", g: "lvp", n: {"pt": "Cinza envelhecido (vinílico)", "en": "Weathered Gray (LVP)", "es": "Gris envejecido (vinílico)"}, t: [2858, 3810], r: 0.55 },
+  { id: "lvp-driftwood", g: "lvp", n: {"pt": "Driftwood (vinílico)", "en": "Driftwood (LVP)", "es": "Driftwood (vinílico)"}, t: [2744, 3658], r: 0.55 },
+  { id: "lvp-coastal-white", g: "lvp", n: {"pt": "Branco costeiro (vinílico)", "en": "Coastal Whitewash (LVP)", "es": "Blanco costero (vinílico)"}, t: [2858, 3810], r: 0.55 },
+  { id: "lvp-honey-oak", g: "lvp", n: {"pt": "Carvalho mel (vinílico)", "en": "Honey Oak (LVP)", "es": "Roble miel (vinílico)"}, t: [2794, 3658], r: 0.55 },
+  { id: "lvp-hickory", g: "lvp", n: {"pt": "Hickory (vinílico)", "en": "Hickory (LVP)", "es": "Nogal americano (vinílico)"}, t: [2844, 3658], r: 0.55 },
+  { id: "lvp-rustic-hickory", g: "lvp", n: {"pt": "Hickory rústico (vinílico)", "en": "Rustic Hickory (LVP)", "es": "Hickory rústico (vinílico)"}, t: [2858, 4572], r: 0.55 },
+  { id: "lvp-natural-maple", g: "lvp", n: {"pt": "Maple natural (vinílico)", "en": "Natural Maple (LVP)", "es": "Arce natural (vinílico)"}, t: [2794, 3658], r: 0.55 },
+  { id: "lvp-walnut", g: "lvp", n: {"pt": "Nogueira (vinílico)", "en": "Walnut (LVP)", "es": "Nogal (vinílico)"}, t: [2858, 4572], r: 0.55 },
+  { id: "lvp-smoked-oak", g: "lvp", n: {"pt": "Carvalho defumado (vinílico)", "en": "Smoked Oak (LVP)", "es": "Roble ahumado (vinílico)"}, t: [2744, 3658], r: 0.55 },
+  { id: "lvp-espresso", g: "lvp", n: {"pt": "Espresso (vinílico)", "en": "Dark Espresso (LVP)", "es": "Espresso (vinílico)"}, t: [2794, 3658], r: 0.55 },
+  { id: "lvp-charcoal", g: "lvp", n: {"pt": "Carvão (vinílico)", "en": "Charcoal Oak (LVP)", "es": "Carbón (vinílico)"}, t: [2858, 3810], r: 0.55 },
   { id: "wood-herringbone-white-oak", g: "wood", n: {"pt": "Carvalho branco espinha de peixe", "en": "White Oak Herringbone", "es": "Roble blanco espiga"}, t: [900, 900], r: 0.5 },
-  { id: "tile-porcelain-light-24", g: "tile", n: {"pt": "Porcelanato claro 24\"×24\"", "en": "Light Porcelain 24\"×24\"", "es": "Porcelanato claro 24\"×24\""}, t: [1220, 1220], r: 0.3 },
-  { id: "tile-porcelain-gray-24x48", g: "tile", n: {"pt": "Porcelanato cinza 24\"×48\"", "en": "Gray Porcelain 24\"×48\"", "es": "Porcelanato gris 24\"×48\""}, t: [1220, 2438], r: 0.32 },
-  { id: "tile-porcelain-beige-18", g: "tile", n: {"pt": "Porcelanato bege 18\"×18\"", "en": "Beige Porcelain 18\"×18\"", "es": "Porcelanato beige 18\"×18\""}, t: [1372, 1372], r: 0.35 },
+  { id: "tile-porcelain-light-24", g: "tile", n: {"pt": "Porcelanato claro 24\"×24\"", "en": "Light Porcelain 24\"×24\"", "es": "Porcelanato claro 24\"×24\""}, t: [2438, 2438], r: 0.3 },
+  { id: "tile-porcelain-gray-24x48", g: "tile", n: {"pt": "Porcelanato cinza 24\"×48\"", "en": "Gray Porcelain 24\"×48\"", "es": "Porcelanato gris 24\"×48\""}, t: [2438, 4876], r: 0.32 },
+  { id: "tile-porcelain-beige-18", g: "tile", n: {"pt": "Porcelanato bege 18\"×18\"", "en": "Beige Porcelain 18\"×18\"", "es": "Porcelanato beige 18\"×18\""}, t: [2744, 2744], r: 0.35 },
   { id: "tile-marble-white-24", g: "tile", n: {"pt": "Porcelanato mármore branco 24\"×24\"", "en": "White Marble-look 24\"×24\"", "es": "Porcelanato mármol blanco 24\"×24\""}, t: [1220, 1220], r: 0.2 },
   { id: "tile-checker-bw-12", g: "tile", n: {"pt": "Xadrez preto e branco 12\"×12\"", "en": "Black & White Checker 12\"×12\"", "es": "Ajedrez blanco y negro 12\"×12\""}, t: [1220, 1220], r: 0.3 },
-  { id: "tile-slate-12x24", g: "tile", n: {"pt": "Ardósia 12\"×24\"", "en": "Slate 12\"×24\"", "es": "Pizarra 12\"×24\""}, t: [914, 1828], r: 0.6 },
-  { id: "concrete-polished", g: "other", n: {"pt": "Cimento queimado", "en": "Polished Concrete", "es": "Cemento pulido"}, t: [1200, 1200], r: 0.4 },
+  { id: "tile-slate-12x24", g: "tile", n: {"pt": "Ardósia 12\"×24\"", "en": "Slate 12\"×24\"", "es": "Pizarra 12\"×24\""}, t: [2438, 4876], r: 0.6 },
+  { id: "concrete-polished", g: "other", n: {"pt": "Cimento queimado", "en": "Polished Concrete", "es": "Cemento pulido"}, t: [2400, 2400], r: 0.4 },
   { id: "carpet-beige", g: "carpet", n: {"pt": "Carpete bege", "en": "Beige Carpet", "es": "Alfombra beige"}, t: [600, 600], r: 0.95 },
   { id: "carpet-greige", g: "carpet", n: {"pt": "Carpete greige", "en": "Greige Carpet", "es": "Alfombra greige"}, t: [600, 600], r: 0.95 },
   { id: "carpet-light-gray", g: "carpet", n: {"pt": "Carpete cinza claro", "en": "Light Gray Carpet", "es": "Alfombra gris claro"}, t: [600, 600], r: 0.95 },
@@ -67,7 +67,8 @@ function pisoNome(p) {
 function pisoCfg(sel) {
   const p = sel && pisoDoCatalogo(sel.id);
   if (!p) return null;
-  return { url: 'assets/floors/' + p.id + '.jpg', tile_mm: p.t, roughness: p.r, rotation_deg: Number(sel.rotation_deg) === 90 ? 90 : 0 };
+  return { url: 'assets/floors/' + p.id + '.jpg?v=2',  // v=2: texturas regeradas 25/10 (bloco maior, sem grade)
+    tile_mm: p.t, roughness: p.r, rotation_deg: Number(sel.rotation_deg) === 90 ? 90 : 0 };
 }
 
 // Aplica nos viewers e redesenha. Chamado ao escolher, ao abrir projeto e
@@ -118,7 +119,7 @@ function renderJanelaPiso() {
     if (!itens.length) return;
     corpo += '<h4 class="po-floor-grupo">' + I18n.t('floor.group_' + g) + '</h4><div class="po-floor-grid">'
       + itens.map((p) => '<button type="button" class="po-floor-card' + (sel === p.id ? ' selected' : '') + '" data-floor="' + p.id + '" title="' + pisoNome(p).replace(/"/g, '&quot;') + '">'
-        + '<img src="assets/floors/' + p.id + '_thumb.jpg" alt="" loading="lazy"><span>' + pisoNome(p) + '</span></button>').join('')
+        + '<img src="assets/floors/' + p.id + '_thumb.jpg?v=2" alt="" loading="lazy"><span>' + pisoNome(p) + '</span></button>').join('')
       + '</div>';
   });
   const rot = projectFloor && projectFloor.rotation_deg === 90;
