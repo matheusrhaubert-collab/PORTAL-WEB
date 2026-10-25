@@ -1160,7 +1160,10 @@ let projectSelectedCategoryId = '';
 // pelo botão Estruturas do grupo Paredes. Também some a categoria
 // "Estruturas" dos filtros (ficaria vazia).
 function projectLibraryModules() {
-  return (allModules || []).filter((m) => m && !m.wall_structure);
+  // + sem os visual_only (Bloco — Cor da Parede): 24/10, Matt: "tira tudo
+  // que tem em móveis" — geometria de parede mora no menu Paredes → Geometria
+  // (js/portal-29-geometria.js). Projeto antigo com Bloco continua abrindo.
+  return (allModules || []).filter((m) => m && !m.wall_structure && !m.visual_only);
 }
 
 function renderProjectLibraryFilterBars() {

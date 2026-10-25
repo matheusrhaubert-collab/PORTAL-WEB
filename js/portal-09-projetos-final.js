@@ -223,7 +223,9 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
     if (typeof getProjectClientInfo === 'function') basePayload.client_info = getProjectClientInfo();
     // Piso do ambiente (migration 221, js/portal-28-piso.js) — vai sempre.
     if (typeof getProjectFloorForSave === 'function') basePayload.floor_texture = getProjectFloorForSave();
-    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url', 'client_folder', 'client_info', 'floor_texture'];
+    // Geometria da parede (migration 222, js/portal-29-geometria.js).
+    if (typeof getProjectGeometriaForSave === 'function') basePayload.geometria = getProjectGeometriaForSave();
+    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url', 'client_folder', 'client_info', 'floor_texture', 'geometria'];
     const runWithCacheFallback = async (op) => {
       let payload = basePayload;
       let res = await op(payload);
@@ -422,7 +424,7 @@ async function loadProjectFavoritesList() {
   // caem no recálculo em background de antes; sem wall_segments o projeto
   // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
   const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
-  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder', 'client_info', 'floor_texture'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder', 'client_info', 'floor_texture', 'geometria'];
   let optional = OPTIONAL_COLS.slice();
   // FILTRO POR DONO (02/10): "Meus Projetos" tem que mostrar SÓ os projetos
   // da conta logada. Sem esse .eq, o RLS de SELECT deixa passar também os
@@ -657,6 +659,7 @@ async function loadProjectFavoritesList() {
         wall_widths_mm: proj.wall_widths_mm,
         ...(proj.wall_segments ? { wall_segments: proj.wall_segments } : {}),
         ...(proj.floor_texture ? { floor_texture: proj.floor_texture } : {}),
+        ...(proj.geometria ? { geometria: proj.geometria } : {}),
         ...(proj.thumbnail_data_url ? { thumbnail_data_url: proj.thumbnail_data_url } : {}),
         ...(proj.ai_preview_url ? { ai_preview_url: proj.ai_preview_url } : {}),
         ...(proj.cached_value_usd != null ? { cached_value_usd: proj.cached_value_usd } : {}),
@@ -976,6 +979,7 @@ async function openSharedProjectByCode(rawCode) {
       wall_widths_mm: source.wall_widths_mm,
       wall_segments: source.wall_segments,
       floor_texture: source.floor_texture || null,
+      geometria: source.geometria || null,
       ai_preview_url: null
     }, false);
     if (statusEl) statusEl.textContent = I18n.t('project.import_success', { name: source.name });
@@ -1235,6 +1239,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     projectWallSegments = Array.isArray(fav.wall_segments) ? fav.wall_segments : [];
     // Piso do ambiente (migration 221) — sem a chave: piso liso de sempre.
     if (typeof restoreProjectFloor === 'function') restoreProjectFloor(fav.floor_texture || null);
+    if (typeof restoreProjectGeometria === 'function') restoreProjectGeometria(fav.geometria || null);
     projectActiveWallIndex = Math.max(PROJECT_WALL_ROLES_BY_SHAPE[restoredShape].indexOf('main'), 0);
     persistProjectWallConfig();
     refreshProjectWallShapeButtons();
@@ -2335,6 +2340,7 @@ async function bootView3DGuestView(code) {
       wall_widths_mm: source.wall_widths_mm,
       wall_segments: source.wall_segments,
       floor_texture: source.floor_texture || null,
+      geometria: source.geometria || null,
       ai_preview_url: null
     }, false);
     // restoreFavoriteProject() já chama renderProjectCanvas() por dentro,

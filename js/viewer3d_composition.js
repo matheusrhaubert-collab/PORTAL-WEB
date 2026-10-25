@@ -1020,6 +1020,21 @@ function createViewerComposition3D() {
   let floorTexCfg = null;
   const FLOOR_TEX_CACHE = (typeof window !== 'undefined')
     ? (window.__legnoFloorTexCache || (window.__legnoFloorTexCache = {})) : {};
+  // GEOMETRIA DA PAREDE (2026-10-24, js/portal-29-geometria.js): coluna,
+  // viga, sanca, escada, lareira... — "mais parede do que objeto", fora do
+  // orçamento. O portal registra um construtor; a cada render (que limpa a
+  // cena) ele devolve um Group novo, montado no mundo, com a cor da parede.
+  let archBuilder = null;
+  function setArchitectureBuilder(fn) { archBuilder = (typeof fn === 'function') ? fn : null; }
+  function adicionaArquitetura() {
+    if (!archBuilder || !scene) return;
+    let g = null;
+    try { g = archBuilder(THREE, { wallColor: WALL_COLOR, wallThicknessM: WALL_THICKNESS_M }); } catch (e) { console.warn('[geometria]', e); g = null; }
+    if (!g) return;
+    scene.add(g);
+    currentGroups.push(g);
+  }
+
   function setFloorTexture(cfg) {
     floorTexCfg = (cfg && cfg.url && cfg.tile_mm) ? cfg : null;
   }
@@ -1877,6 +1892,7 @@ function createViewerComposition3D() {
     onResize();
     clearGroups();
     currentOpenables = [];
+    adicionaArquitetura();
 
     const list = (assemblies || []).filter((a) => a && a.group);
     const totalWidth = Math.max(Number(wallWidthM) || 0, 0.3);
@@ -1962,6 +1978,7 @@ function createViewerComposition3D() {
     clearGroups();
     currentOpenables = [];
     lastDimWalls = [];
+    adicionaArquitetura();
 
     const walls = (wallsData || []).filter((w) => w && Array.isArray(w.assemblies));
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -4109,7 +4126,7 @@ function createViewerComposition3D() {
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
-    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, setFloorTexture, getFloorTexture, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
+    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, setFloorTexture, getFloorTexture, setArchitectureBuilder, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight, pickMultiHighlightAt,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.

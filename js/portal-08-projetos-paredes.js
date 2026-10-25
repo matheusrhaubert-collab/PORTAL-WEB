@@ -4492,7 +4492,12 @@ function projectWallSegmentGeometry(seg, idx) {
 // (makeWallPrism mede da ponta A ao longo da face interna = x_mm do slot).
 const PROJECT_OPENING_SLOT_TYPES = { abertura_porta: 'door', abertura_janela: 'window' };
 function projectWallOpeningsWithSlots(seg, idx) {
-  const base = Array.isArray(seg.openings) ? seg.openings : [];
+  let base = Array.isArray(seg.openings) ? seg.openings : [];
+  // + arco de passagem / nicho da Geometria (portal-29) — recorte igual
+  if (typeof geometriaAberturasDaParede === 'function') {
+    const geo = geometriaAberturasDaParede(idx);
+    if (geo.length) base = base.concat(geo);
+  }
   if (typeof projectSlots === 'undefined' || !Array.isArray(projectSlots)) return base;
   const extra = projectSlots
     .filter((s) => s && s.module && PROJECT_OPENING_SLOT_TYPES[s.module.wall_structure]
@@ -5887,6 +5892,7 @@ function resetProject() {
   projectSlots = [];
   selectedProjectSlotId = null;
   if (typeof restoreProjectFloor === 'function') restoreProjectFloor(null); // piso liso (portal-28)
+  if (typeof restoreProjectGeometria === 'function') restoreProjectGeometria(null); // sem geometria (portal-29)
   // AMBIENTE PADRÃO (2026-08-13): duas paredes de 3m em L e o piso 3x3 que
   // elas delimitam — o ponto de partida que o Matt pediu. Antes o projeto novo
   // nascia com UMA parede e o resto vinha das 3 formas fixas, que saíram.
