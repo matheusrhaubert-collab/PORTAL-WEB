@@ -42,6 +42,7 @@ window.LEGNO_CHANGELOG = [
         "Visualização 3D: novo botão Apresentação — sombras suaves, luz de ambiente com reflexo e sem as linhas de contorno, para mostrar ao cliente. As teclas O (portas) e G (gavetas) também funcionam dentro da Visualização 3D.",
         "Visualização 3D: os botões Abrir portas / Abrir gavetas agora aparecem também para portas e gavetas feitas no Construtor (NEW Classic, Base 4 Drawers…).",
         "Piso: texturas refeitas, sem a repetição em faixas e com as réguas no mesmo tom; as réguas claras não estouram mais em branco no 3D.",
+        "Base Cabinet Trash (NEW Classic): agora é um trash pull-out — caixa dovetail com 2 baldes, frente de gaveta e corrediça Häfele (1 par), larguras 15\" e 18\". A caixa entra na lista de compra com preço fixo por tamanho.",
         "Gaveta dovetail com veio de birch de verdade (mel/âmbar), em escala real.",
         "Barra do Projetos: Tela cheia foi para o fim da barra, ao lado do pino; menu Vista com ícone de tela."
       ],
@@ -53,6 +54,7 @@ window.LEGNO_CHANGELOG = [
         "3D view: new Presentation button — soft shadows, ambient light with reflections and no outline lines, to show the client. The O (doors) and G (drawers) keys also work inside the 3D view.",
         "3D view: the Open doors / Open drawers buttons now also show for doors and drawers made in the Builder (NEW Classic, Base 4 Drawers…).",
         "Floor: textures redone, without the striped repetition and with planks in a more even tone; light planks no longer blow out to white in 3D.",
+        "Base Cabinet Trash (NEW Classic): now a trash pull-out — dovetail box with 2 bins, drawer front and Häfele slides (1 pair), 15\" and 18\" wide. The box goes on the purchase list at a fixed price per size.",
         "Dovetail drawer with real birch grain (honey/amber), at real scale.",
         "Projects toolbar: Full screen moved to the end of the bar, next to the pin; View menu with a screen icon."
       ],
@@ -64,6 +66,7 @@ window.LEGNO_CHANGELOG = [
         "Vista 3D: nuevo botón Presentación — sombras suaves, luz ambiente con reflejos y sin líneas de contorno, para mostrar al cliente. Las teclas O (puertas) y G (cajones) también funcionan dentro de la Vista 3D.",
         "Vista 3D: los botones Abrir puertas / Abrir cajones ahora aparecen también para puertas y cajones hechos en el Constructor (NEW Classic, Base 4 Drawers…).",
         "Piso: texturas rehechas, sin la repetición en franjas y con las tablas en un tono más parejo; las tablas claras ya no se ven blancas en el 3D.",
+        "Base Cabinet Trash (NEW Classic): ahora es un basurero extraíble — caja dovetail con 2 cubos, frente de cajón y correderas Häfele (1 par), anchos 15\" y 18\". La caja va a la lista de compra con precio fijo por tamaño.",
         "Cajón dovetail con veta de abedul de verdad (miel/ámbar), a escala real.",
         "Barra de Proyectos: Pantalla completa pasó al final de la barra, junto al pin; menú Vista con ícono de pantalla."
       ]

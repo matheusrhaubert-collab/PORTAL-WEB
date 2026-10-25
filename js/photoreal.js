@@ -1661,6 +1661,82 @@ const Photoreal = (() => {
     uv.needsUpdate = true;
   }
 
+  // TRASH PULL-OUT DOVETAIL (migration 224, 2026-10-25 — Matt mandou a foto
+  // do modelo: caixa dovetail de madeira com 2 baldes cinza, sai como gaveta).
+  // Peça comprada (caixa com os baldes); a frente e a corrediça são da gaveta.
+  // Local: base em y=0, centrado em X/Z, frente +Z (igual DECOR_BUILDERS).
+  // Caixa: laterais retas, frente e fundo com o topo rebaixado em curva (por
+  // onde o balde sai), pinos do dovetail nas quinas, fundo de compensado.
+  function buildLixeiraDovetail(W, H, D) {
+    const g = new T.Group();
+    const birchTex = birchTexture(T);
+    const birch = new T.MeshStandardMaterial({ map: birchTex, roughness: 0.55, metalness: 0.0 });
+    const fundoMat = new T.MeshStandardMaterial({ map: birchTex, color: 0xf0e2cc, roughness: 0.62, metalness: 0.0 });
+    const pinoMat = new T.MeshStandardMaterial({ color: 0x5e3a1a, roughness: 0.75, metalness: 0.0 });
+    const balde = new T.MeshStandardMaterial({ color: 0x6f7378, roughness: 0.55, metalness: 0.0 });
+    const baldeDentro = new T.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8, metalness: 0.0 });
+    const t = Math.min(0.015875, W / 6, D / 6);
+    const tf = 0.0127;
+    const hb = Math.max(0.12, Math.min(0.30, H * 0.45));        // altura da caixa
+    const add = (geo, mat, x, y, z, comFibra) => {
+      if (comFibra) birchUV(geo, geo.parameters.width, geo.parameters.height, geo.parameters.depth);
+      const m = new T.Mesh(geo, (mat));
+      m.position.set(x, y, z);
+      
+      g.add(m);
+      return m;
+    };
+    // laterais retas
+    add(new T.BoxGeometry(t, hb, D), birch, -W / 2 + t / 2, hb / 2, 0, true);
+    add(new T.BoxGeometry(t, hb, D), birch, W / 2 - t / 2, hb / 2, 0, true);
+    // frente e fundo com o rebaixo em curva no meio (extrudado na espessura)
+    const wi = W - 2 * t, baixo = hb * 0.55;
+    const perfil = new T.Shape();
+    perfil.moveTo(-wi / 2, 0); perfil.lineTo(wi / 2, 0); perfil.lineTo(wi / 2, hb);
+    perfil.bezierCurveTo(wi * 0.28, hb, wi * 0.30, baixo, wi * 0.12, baixo);
+    perfil.lineTo(-wi * 0.12, baixo);
+    perfil.bezierCurveTo(-wi * 0.30, baixo, -wi * 0.28, hb, -wi / 2, hb);
+    perfil.lineTo(-wi / 2, 0);
+    [D / 2 - t, -D / 2].forEach((z0) => {
+      const geo = new T.ExtrudeGeometry(perfil, { depth: t, bevelEnabled: false, curveSegments: 16 });
+      const m = new T.Mesh(geo, (birch));
+      m.position.set(0, 0, z0);
+      
+      g.add(m);
+    });
+    add(new T.BoxGeometry(wi, tf, D - 2 * t), fundoMat, 0, tf / 2, 0, true);
+    // pinos do dovetail nas 4 quinas (topo de fibra da frente/fundo na face da lateral)
+    const nPinos = Math.max(3, Math.round(hb / 0.03));
+    const passo = hb / (nPinos * 2 - 1);
+    [-1, 1].forEach((lado) => {
+      [D / 2 - t / 2, -D / 2 + t / 2].forEach((zc) => {
+        for (let i = 0; i < nPinos; i++) {
+          const pm = new T.Mesh(new T.BoxGeometry(0.0006, passo, t * 0.92), pinoMat);
+          pm.position.set(lado * (W / 2 + 0.0002), passo / 2 + i * 2 * passo, zc);
+          g.add(pm);
+        }
+      });
+    });
+    // 2 baldes lado a lado (largura), apoiados no fundo
+    const folga = 0.008;
+    const bw = (wi - 3 * folga) / 2, bd = Math.max(0.1, D - 2 * t - 2 * folga);
+    const bh = Math.max(hb + 0.05, Math.min(H - 0.015, 0.50));
+    [-1, 1].forEach((lado) => {
+      const cx = lado * (bw / 2 + folga / 2);
+      const corpo = new T.Mesh(new T.BoxGeometry(bw * 0.94, bh - 0.02, bd * 0.94), (balde));
+      corpo.position.set(cx, tf + (bh - 0.02) / 2, 0);
+      
+      g.add(corpo);
+      const aba = new T.Mesh(new T.BoxGeometry(bw, 0.02, bd), (balde));   // borda de cima
+      aba.position.set(cx, tf + bh - 0.01, 0);
+      g.add(aba);
+      const boca = new T.Mesh(new T.BoxGeometry(bw * 0.86, 0.002, bd * 0.86), baldeDentro); // fundo escuro visto de cima
+      boca.position.set(cx, tf + bh + 0.0005, 0);
+      g.add(boca);
+    });
+    return g;
+  }
+
   function buildGavetaDovetail(W, H, D) {
     const g = new T.Group();
     // Cor FIEL ao caixote de birch envernizado (Matt, 15/10: "mais cor"):
@@ -1758,7 +1834,7 @@ const Photoreal = (() => {
   }
 
   const DECOR_BUILDERS = {
-    gaveta_dovetail: buildGavetaDovetail, // migration 203
+    gaveta_dovetail: buildGavetaDovetail, lixeira_dovetail: buildLixeiraDovetail, // migration 224 (Trash) // migration 203
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
     decor_forno_torre_duplo: buildDecorFornoTorreDuplo,
