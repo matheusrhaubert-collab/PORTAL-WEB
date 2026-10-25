@@ -3986,7 +3986,9 @@ function collectProjectCostReport(slots) {
       // Perfil/vidro pela cor (migration 187) entra SEMPRE, mesmo custando 0
       // (23/10, Matt: "alumínio não está aparecendo no orçamento") — com
       // preço zerado no cadastro a linha sumia e o perfil ficava invisível.
-      if (p.purchased_item_id && (custoComprado > 0 || p.material_item_id)) {
+      // Item comprado entra SEMPRE, mesmo com preço 0 (25/10, Matt: a caixa
+      // do Trash não aparecia no orçamento — nasce com preço 0 e sumia).
+      if (p.purchased_item_id) {
         registraPecaComprada(p.purchased_item_id, p.purchased_item_name, p.purchased_item_unit,
           Number(p.purchased_item_qty) || 0, custoComprado);
       }

@@ -1717,21 +1717,21 @@ const Photoreal = (() => {
         }
       });
     });
-    // 2 baldes lado a lado (largura), apoiados no fundo
+    // 2 baldes UM NA FRENTE E OUTRO ATRÁS (Matt 25/10: "não um ao lado do outro"), apoiados no fundo
     const folga = 0.008;
-    const bw = (wi - 3 * folga) / 2, bd = Math.max(0.1, D - 2 * t - 2 * folga);
+    const bw = Math.max(0.1, wi - 2 * folga), bd = Math.max(0.05, (D - 2 * t - 3 * folga) / 2);
     const bh = Math.max(hb + 0.05, Math.min(H - 0.015, 0.50));
     [-1, 1].forEach((lado) => {
-      const cx = lado * (bw / 2 + folga / 2);
+      const cz = lado * (bd / 2 + folga / 2);
       const corpo = new T.Mesh(new T.BoxGeometry(bw * 0.94, bh - 0.02, bd * 0.94), (balde));
-      corpo.position.set(cx, tf + (bh - 0.02) / 2, 0);
+      corpo.position.set(0, tf + (bh - 0.02) / 2, cz);
       
       g.add(corpo);
       const aba = new T.Mesh(new T.BoxGeometry(bw, 0.02, bd), (balde));   // borda de cima
-      aba.position.set(cx, tf + bh - 0.01, 0);
+      aba.position.set(0, tf + bh - 0.01, cz);
       g.add(aba);
       const boca = new T.Mesh(new T.BoxGeometry(bw * 0.86, 0.002, bd * 0.86), baldeDentro); // fundo escuro visto de cima
-      boca.position.set(cx, tf + bh + 0.0005, 0);
+      boca.position.set(0, tf + bh + 0.0005, cz);
       g.add(boca);
     });
     return g;
