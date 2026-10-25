@@ -343,8 +343,8 @@ function geometriaMontar(THREE, ctx) {
     // — largura (esq./dir.), altura (cima; + baixo nos que têm altura do
     // chão) e profundidade (frente). Só aparecem no selecionado.
     geoSetasDo(el).forEach(([nome, x, y, z]) => {
-      const cone = new THREE.ConeGeometry(0.04, 0.11, 18);
-      cone.translate(0, 0.055, 0);
+      const cone = new THREE.ConeGeometry(0.06, 0.16, 18);
+      cone.translate(0, 0.08, 0);
       if (nome === 'dir') cone.rotateZ(-Math.PI / 2);
       else if (nome === 'esq') cone.rotateZ(Math.PI / 2);
       else if (nome === 'baixo') cone.rotateZ(Math.PI);
@@ -449,7 +449,7 @@ function renderJanelaGeometria() {
   const cards = GEO_ORDEM.map((k) => '<button type="button" class="po-geo-tipo" data-add="' + k + '">' + svg(k) + '<span>' + esc(geoT('t_' + k)) + '</span></button>').join('');
   const paredes = geoParedes();
   const uni = geoUnidade();
-  const lista = projectGeometria.map((el, i) => {
+  const lista = (geoCompacto ? projectGeometria.filter((e) => e.id === geometriaSelId) : projectGeometria).map((el, i) => {
     const T = GEO_TIPOS[el.tipo];
     const aberto = el.id === geometriaSelId;
     let corpo = '';
@@ -473,13 +473,30 @@ function renderJanelaGeometria() {
     }
     return '<div class="po-geo-item' + (aberto ? ' aberto' : '') + '" data-id="' + el.id + '"><button type="button" class="po-geo-item-cab" data-sel="' + el.id + '">' + svg(el.tipo) + '<span>' + esc(geoT('t_' + el.tipo)) + ' · ' + esc(el.piso ? geoT('floor') : geoT('wall_n', { n: Number(el.wall_index) + 1 })) + '</span><b>' + (aberto ? '▾' : '▸') + '</b></button>' + corpo + '</div>';
   }).join('');
+  // Compacto = aberto por clique na geometria no 3D: só a configuração dela.
+  const sub = m.querySelector('.po-geo-sub');
+  if (sub) sub.style.display = geoCompacto ? 'none' : '';
+  if (geoCompacto) {
+    if (!lista) { geoFecharJanela(); return; }
+    m.querySelector('.po-geo-corpo').innerHTML = lista;
+    return;
+  }
   m.querySelector('.po-geo-corpo').innerHTML =
     '<h4 class="po-geo-grupo">' + esc(geoT('add')) + '</h4><div class="po-geo-tipos">' + cards + '</div>'
     + '<h4 class="po-geo-grupo">' + esc(geoT('in_project')) + '</h4>'
     + (lista || '<p class="hint">' + esc(geoT('empty')) + '</p>');
 }
 
-function abrirJanelaGeometria() {
+let geoCompacto = false;
+function geoFecharJanela() {
+  const m = document.getElementById('po-geo-modal');
+  if (!m || !m.classList.contains('open')) return;
+  m.classList.remove('open');
+  geoCompacto = false;
+  if (geometriaSelId) { geometriaSelId = null; geoMostraSelecao(); }
+}
+function abrirJanelaGeometria(compacto) {
+  geoCompacto = !!compacto;
   let m = document.getElementById('po-geo-modal');
   if (!m) {
     m = document.createElement('div');
@@ -488,7 +505,7 @@ function abrirJanelaGeometria() {
       + '<button type="button" class="po-auth-modal-close po-geo-fechar" aria-label="×">&times;</button>'
       + '<h2></h2><p class="hint po-geo-sub"></p><div class="po-geo-corpo"></div></div>';
     document.body.appendChild(m);
-    const fechar = () => { m.classList.remove('open'); geoSelecionar(null, false); };
+    const fechar = () => geoFecharJanela();
     const achar = (id) => projectGeometria.find((e) => e.id === id);
     m.addEventListener('click', (ev) => {
       if (ev.target.closest('.po-geo-fechar')) { fechar(); return; }
@@ -570,7 +587,7 @@ function abrirJanelaGeometria() {
   if (btn) btn.addEventListener('mouseenter', rotulo);
   if (btn) btn.addEventListener('click', () => {
     try { if (window.LegnoTbMenus) window.LegnoTbMenus.menus.forEach((x) => x.fechar()); } catch (e) { /* ok */ }
-    abrirJanelaGeometria();
+    abrirJanelaGeometria(false);
   });
 })();
 
@@ -600,7 +617,7 @@ function geoSelecionar(id, abrirPainel) {
   geoMostraSelecao();
   const m = document.getElementById('po-geo-modal');
   if (id && abrirPainel) {
-    if (!m || !m.classList.contains('open')) abrirJanelaGeometria(); else renderJanelaGeometria();
+    if (!m || !m.classList.contains('open')) abrirJanelaGeometria(true); else renderJanelaGeometria();
     const it = document.querySelector('#po-geo-modal .po-geo-item.aberto');
     if (it && it.scrollIntoView) it.scrollIntoView({ block: 'nearest' });
   } else if (m && m.classList.contains('open')) renderJanelaGeometria();
@@ -612,6 +629,20 @@ function geoGrupoNaCena(id) {
   if (scene) scene.traverse((o) => { if (!achou && o.userData && o.userData.geometriaId === id) achou = o; });
   return achou;
 }
+
+// Clique em qualquer outro lugar da tela (fora da janela, fora do 3D — o 3D
+// é tratado no pointerdown de lá) fecha a janela.
+document.addEventListener('pointerdown', (ev) => {
+  const m = document.getElementById('po-geo-modal');
+  if (!m || !m.classList.contains('open')) return;
+  const t = ev.target;
+  if (!t || !t.closest) return;
+  if (t.closest('#po-geo-modal') || t.closest('#po-proj-geometry-btn')) return;
+  const v = geoViewer();
+  const dom = v && v.getDomElement && v.getDomElement();
+  if (dom && t === dom) return;
+  geoFecharJanela();
+}, true);
 
 (function ligaMouseGeometria() {
   if (window.PO_VIEW3D_READONLY) return;
@@ -667,7 +698,9 @@ function geoGrupoNaCena(id) {
     }
     const hit = v.pickArchitectureAt ? v.pickArchitectureAt(ev.clientX, ev.clientY) : null;
     if (!hit) {
+      // clique fora da geometria no 3D: solta a seleção e fecha a janela
       if (geometriaSelId) geoSelecionar(null, false);
+      geoFecharJanela();
       return;
     }
     const el = projectGeometria.find((e) => e.id === hit.id);
