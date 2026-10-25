@@ -231,8 +231,19 @@ document.addEventListener('keydown', (ev) => {
   const tab = document.getElementById('po-tab-projects');
   if (!tab || tab.style.display === 'none') return;
   if (atalhoEmCampo(ev.target) || atalhoEmCampo(document.activeElement)) return;
-  if (atalhoModalAberto() || document.body.classList.contains('po-proj-3d-overlay')) return;
+  if (atalhoModalAberto()) return;
   const combo = atalhoTeclaDoEvento(ev);
+  // Janela Visualização 3D aberta (25/10, Matt: "no 3D o O abra as portas e
+  // G as gavetas, assim como no projeto"): só portas/gavetas valem lá, e
+  // agem nos botões da PRÓPRIA janela (cena do ViewerProject).
+  if (document.body.classList.contains('po-proj-3d-overlay')) {
+    if (!combo) return;
+    const mapa3d = atalhoMapaEfetivo();
+    const alvo = mapa3d.doors === combo ? 'po-proj-toggle-doors-btn' : (mapa3d.drawers === combo ? 'po-proj-toggle-drawers-btn' : null);
+    const b3d = alvo && document.getElementById(alvo);
+    if (b3d && !b3d.disabled && b3d.offsetParent !== null) { b3d.click(); ev.preventDefault(); }
+    return;
+  }
   if (!combo || ATALHO_FIXOS.some((f) => f.k === combo)) return;
   const mapa = atalhoMapaEfetivo();
   const acao = ATALHO_ACOES.find((a) => mapa[a.id] && mapa[a.id] === combo);

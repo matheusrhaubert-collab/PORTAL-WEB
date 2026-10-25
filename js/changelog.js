@@ -31,6 +31,45 @@
 // bolinha de "tem novidade" atualizam sozinhos a partir do item [0] daqui.
 window.LEGNO_CHANGELOG = [
   {
+    version: '1.006',
+    date: '2026-10-25',
+    items: {
+      pt: [
+        "Novo: bancada de pedra (menu Paredes → Bancada). Um clique e a pedra entra sozinha em todos os balcões — bases, ilhas, gabinetes de banheiro suspensos e por cima da lava-louças — 1\" à frente da porta (2\" à frente da caixa sem porta). 57 pedras: Cambria, Silestone, Caesarstone, MSI, granitos (Verde Ubatuba, Black Galaxy…), mármores, quartzitos (Taj Mahal…) e travertinos.",
+        "Bancada: backsplash sem / baixo 4\" / até os aéreos (uma placa só, sem emenda, mais baixa embaixo da janela) e waterfall na ilha. Pia e cooktop ficam em cima da pedra, com o recorte da cuba. Só visual — não entra no orçamento.",
+        "Bancada: nos cantos em L e U a pedra cobre o canto inteiro, mesmo sem móvel embaixo, e sai numa peça só — sem emenda e com o veio contínuo.",
+        "Bancada no 3D: clique na pedra para selecionar; as setas vermelhas esticam ou encurtam as pontas, a frente e a parte de trás da ilha (banquetas). Delete tira a pedra daquele trecho.",
+        "Visualização 3D: novo botão Apresentação — sombras suaves, luz de ambiente com reflexo e sem as linhas de contorno, para mostrar ao cliente. As teclas O (portas) e G (gavetas) também funcionam dentro da Visualização 3D.",
+        "Visualização 3D: os botões Abrir portas / Abrir gavetas agora aparecem também para portas e gavetas feitas no Construtor (NEW Classic, Base 4 Drawers…).",
+        "Piso: texturas refeitas, sem a repetição em faixas e com as réguas no mesmo tom; as réguas claras não estouram mais em branco no 3D.",
+        "Gaveta dovetail com veio de birch de verdade (mel/âmbar), em escala real.",
+        "Barra do Projetos: Tela cheia foi para o fim da barra, ao lado do pino; menu Vista com ícone de tela."
+      ],
+      en: [
+        "New: stone countertop (Walls menu → Countertop). One click and the stone goes on every counter — base cabinets, islands, floating bathroom vanities and over the dishwasher — 1\" past the door (2\" past the box when there is no door). 57 stones: Cambria, Silestone, Caesarstone, MSI, granites (Verde Ubatuba, Black Galaxy…), marbles, quartzites (Taj Mahal…) and travertines.",
+        "Countertop: backsplash none / short 4\" / up to the uppers (one piece, no seams, lower under the window) and island waterfall. Sink and cooktop sit on the stone, with the sink cutout. Visual only — not in the quote.",
+        "Countertop: in L and U corners the stone covers the whole corner, even with no cabinet under it, in one piece — no seam and continuous veining.",
+        "Countertop in 3D: click the stone to select it; the red arrows stretch or shorten the ends, the front and the back of the island (seating). Delete removes the stone from that run.",
+        "3D view: new Presentation button — soft shadows, ambient light with reflections and no outline lines, to show the client. The O (doors) and G (drawers) keys also work inside the 3D view.",
+        "3D view: the Open doors / Open drawers buttons now also show for doors and drawers made in the Builder (NEW Classic, Base 4 Drawers…).",
+        "Floor: textures redone, without the striped repetition and with planks in a more even tone; light planks no longer blow out to white in 3D.",
+        "Dovetail drawer with real birch grain (honey/amber), at real scale.",
+        "Projects toolbar: Full screen moved to the end of the bar, next to the pin; View menu with a screen icon."
+      ],
+      es: [
+        "Nuevo: encimera de piedra (menú Paredes → Encimera). Un clic y la piedra va sola en todas las encimeras — bases, islas, muebles de baño suspendidos y sobre el lavavajillas — 1\" delante de la puerta (2\" delante de la caja sin puerta). 57 piedras: Cambria, Silestone, Caesarstone, MSI, granitos (Verde Ubatuba, Black Galaxy…), mármoles, cuarcitas (Taj Mahal…) y travertinos.",
+        "Encimera: salpicadero sin / bajo 4\" / hasta los altos (una sola pieza, sin juntas, más bajo bajo la ventana) y waterfall en la isla. Fregadero y placa quedan sobre la piedra, con el corte de la tarja. Solo visual — no entra en el presupuesto.",
+        "Encimera: en las esquinas en L y U la piedra cubre toda la esquina, aunque no haya mueble debajo, en una sola pieza — sin juntas y con la veta continua.",
+        "Encimera en el 3D: haz clic en la piedra para seleccionarla; las flechas rojas estiran o acortan las puntas, el frente y la parte de atrás de la isla (taburetes). Supr quita la piedra de ese tramo.",
+        "Vista 3D: nuevo botón Presentación — sombras suaves, luz ambiente con reflejos y sin líneas de contorno, para mostrar al cliente. Las teclas O (puertas) y G (cajones) también funcionan dentro de la Vista 3D.",
+        "Vista 3D: los botones Abrir puertas / Abrir cajones ahora aparecen también para puertas y cajones hechos en el Constructor (NEW Classic, Base 4 Drawers…).",
+        "Piso: texturas rehechas, sin la repetición en franjas y con las tablas en un tono más parejo; las tablas claras ya no se ven blancas en el 3D.",
+        "Cajón dovetail con veta de abedul de verdad (miel/ámbar), a escala real.",
+        "Barra de Proyectos: Pantalla completa pasó al final de la barra, junto al pin; menú Vista con ícono de pantalla."
+      ]
+    }
+  },
+  {
     version: '1.005',
     date: '2026-10-24',
     items: {
@@ -51,7 +90,6 @@ window.LEGNO_CHANGELOG = [
         "New Quote: the configuration 3D view is now fixed on screen, with no room around it and no zoom — it only rotates and opens doors and drawers. A new icon in the corner of the 3D view lets you choose the number of shelves, the door swing, the door model and the drawer box.",
         "New: Shortcuts screen (keyboard icon on the Projects toolbar, or the ? key). It lists every tool with its key and the mouse/trackpad gestures (Windows and Mac). You can change any shortcut and choose which mouse buttons move and rotate the view — saved to your account and works on any computer.",
         "New: move and rotate the view with the keyboard (Ctrl + arrows moves, Ctrl + Shift + arrows rotates) and move the selected cabinet with the arrows (Shift + arrows moves 10×). W sends the cabinet to the next wall.",
-        "New: stone countertop (Walls menu → Countertop) — goes on top of base cabinets and islands automatically, 1\" past the door (2\" past the box when there is no door), with 57 stones (Cambria, Silestone, Caesarstone, MSI, granites like Verde Ubatuba, marbles, Taj Mahal and other quartzites, travertines). Options: waterfall on the ends, backsplash (none, short or full height up to the uppers), extend the island back for seating, and click a cabinet on the plan to leave it without stone. Sink and cooktop sit on the stone, with the sink cutout. Saved with the project.",
         "New: Wall geometry (Walls menu → Geometry) — pillar, round column, beam, soffit/bulkhead, pipe chase, half wall, archway, niche, straight stairs, handrail and fireplace. They take the wall color, stay out of the quote and order, and are saved with the project. The Block was removed from the furniture library.",
         "New: room floor (Walls menu → Floor) — 34 options across vinyl plank/laminate, wood, porcelain, polished concrete and carpet, at the real plank/tile size, with adjustable plank direction. Saved with the project.",
         "The 3D view moved from below the project to the \"3D view\" item in the Render menu — it opens on top of the project and closes with Esc.",

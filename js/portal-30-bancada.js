@@ -334,18 +334,19 @@ function bancadaRunsCalc(cfg, paredes) {
     r.extE = (pE.ext_mm != null && pE.ext_mm !== '') ? Number(pE.ext_mm) / 1000 : null;
     r.extD = (pD.ext_mm != null && pD.ext_mm !== '') ? Number(pD.ext_mm) / 1000 : null;
     // ponta encostada em algo (parede no fim, torre, fogão, outra base sem pedra...)?
-    const bloq = (lado) => {
+    const bloq = (lado, ignorar) => {
       const uP = lado === 'E' ? r.u0 : r.u1;
       if (!r.ilha) {
         const w = paredes.find((p) => p.wallIndex === r.wallIndex);
         if (w) {
           const a = banDot({ x: w.originX, z: w.originZ }, r.U);
           const b = banDot({ x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }, r.U);
-          if (Math.abs(uP - a) < 0.012 || Math.abs(uP - b) < 0.012) return true;
+          if (Math.abs(uP - a) < 0.012 || Math.abs(uP - b) < 0.012) return 'parede';
         }
       }
       return itens.some((o) => {
         if (o.tipo === 'aereo' || o.tipo === 'sobre' || r.membros.some((m) => m.slot === o.slot)) return false;
+        if (ignorar && (ignorar.has(o.slot) || o.tipo === 'outro')) return false;   // canto: o par e filler não contam
         if (o.f.oy > r.topo - 0.05) return false;
         // caixa do outro no referencial do trecho
         const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => {
@@ -357,9 +358,10 @@ function bancadaRunsCalc(cfg, paredes) {
         const vmin = Math.min(...cs.map((p) => p.v)), vmax = Math.max(...cs.map((p) => p.v));
         if (vmax < 0.05 || vmin > 0.5) return false;
         return lado === 'E' ? (umax > uP - 0.012 && umax < uP + 0.05) : (umin < uP + 0.012 && umin > uP - 0.05);
-      });
+      }) ? 'item' : false;
     };
-    r.bloqE = bloq('E'); r.bloqD = bloq('D');
+    r.bloqFn = bloq;
+    r.bloqE = !!bloq('E'); r.bloqD = !!bloq('D');
     // "Waterfall nas ilhas" (um botão só, 25/10): pontas LIVRES das ilhas, a
     // menos que a ponta tenha escolha própria (Ajustes).
     if (r.wfE == null) r.wfE = !!(r.ilha && cfg.wf_ilhas && !r.bloqE);
@@ -371,28 +373,69 @@ function bancadaRunsCalc(cfg, paredes) {
     r.uD = r.u1 + (r.wfD ? Math.max(esp, pontaD) : pontaD);
     r.aparadoE = false; r.aparadoD = false;
     r.poli = bancadaPoligono(r);
-    // CANTO EM L: aparar contra os trechos de parede anteriores
-    if (!r.ilha) {
-      for (let j = 0; j < i; j++) {
-        const s = runs[j];
-        if (s.ilha || s.wallIndex === r.wallIndex) continue;
-        const sp = s.poli.map(([u, v]) => banMundo(s, u, v));
-        const vm = Math.min(...r.membros.map((m) => m.frente)) / 2;
-        const dentro = (u) => banDentro(banMundo(r, u, vm), sp);
-        if (dentro(r.uE + 0.002)) {
-          let a = r.uE, b = r.uD;
-          if (dentro(b)) continue;
-          for (let k2 = 0; k2 < 40; k2++) { const m = (a + b) / 2; if (dentro(m)) a = m; else b = m; }
-          r.uE = b; r.aparadoE = true; r.wfE = false;
-        }
-        if (dentro(r.uD - 0.002)) {
-          let a = r.uD, b = r.uE;
-          if (dentro(b)) continue;
-          for (let k2 = 0; k2 < 40; k2++) { const m = (a + b) / 2; if (dentro(m)) a = m; else b = m; }
-          r.uD = b; r.aparadoD = true; r.wfD = false;
-        }
-        r.poli = bancadaPoligono(r);
+  });
+  // ---- CANTO (25/10, Matt: "nos cantos o countertop deve cobrir mesmo sem
+  // móvel, se possível sem emendas"): duas linhas em paredes vizinhas que
+  // chegam perto do mesmo canto (até 1 m), sem torre/geladeira no caminho,
+  // vão as duas até o canto; o tampo das duas vira UMA peça (bancadaMontar).
+  runs.forEach((r) => { r.canto = { E: null, D: null }; });
+  const deParede = runs.filter((r) => !r.ilha);
+  const cruza = (p1, d1, p2, d2) => {
+    const den = d1.x * d2.z - d1.z * d2.x;
+    if (Math.abs(den) < 1e-6) return null;
+    const t = ((p2.x - p1.x) * d2.z - (p2.z - p1.z) * d2.x) / den;
+    return { x: p1.x + d1.x * t, z: p1.z + d1.z * t };
+  };
+  for (let i = 0; i < deParede.length; i++) {
+    for (let j = i + 1; j < deParede.length; j++) {
+      const A = deParede[i], B = deParede[j];
+      if (A.wallIndex === B.wallIndex) continue;
+      if (Math.abs(A.U.x * B.U.z - A.U.z * B.U.x) < 0.3) continue;   // quase paralelas
+      const C = cruza(banMundo(A, 0, 0), A.U, banMundo(B, 0, 0), B.U);
+      if (!C) continue;
+      const lado = (r) => {
+        const u = banDot(C, r.U);
+        if (u <= r.u0 + 0.02 && r.u0 - u <= 1.0) return 'E';
+        if (u >= r.u1 - 0.02 && u - r.u1 <= 1.0) return 'D';
+        return null;
+      };
+      const la = lado(A), lb = lado(B);
+      if (!la || !lb || A.canto[la] || B.canto[lb]) continue;
+      const ignA = new Set(B.membros.map((m) => m.slot)), ignB = new Set(A.membros.map((m) => m.slot));
+      if (A.bloqFn(la, ignA) === 'item' || B.bloqFn(lb, ignB) === 'item') continue;   // torre/geladeira no canto
+      A.canto[la] = { par: B, lado: lb, C, prim: true };
+      B.canto[lb] = { par: A, lado: la, C, prim: false };
+    }
+  }
+  runs.forEach((r) => {
+    ['E', 'D'].forEach((l) => {
+      const c = r.canto[l];
+      if (!c) return;
+      const uC = banDot(c.C, r.U);
+      if (l === 'E') { r.uE = uC; r.aparadoE = true; r.wfE = false; } else { r.uD = uC; r.aparadoD = true; r.wfD = false; }
+    });
+    r.poli = bancadaPoligono(r);
+  });
+  // sobreposição que sobrou (canto que não fechou): apara a que vem depois
+  runs.forEach((r, i) => {
+    if (r.ilha) return;
+    for (let j = 0; j < i; j++) {
+      const s2 = runs[j];
+      if (s2.ilha || s2.wallIndex === r.wallIndex) continue;
+      const sp = s2.poli.map(([u, v]) => banMundo(s2, u, v));
+      const vm = Math.min(...r.membros.map((m) => m.frente)) / 2;
+      const dentro = (u) => banDentro(banMundo(r, u, vm), sp);
+      if (!r.canto.E && dentro(r.uE + 0.002) && !dentro(r.uD)) {
+        let a = r.uE, b = r.uD;
+        for (let k2 = 0; k2 < 40; k2++) { const m = (a + b) / 2; if (dentro(m)) a = m; else b = m; }
+        r.uE = b; r.aparadoE = true; r.wfE = false;
       }
+      if (!r.canto.D && dentro(r.uD - 0.002) && !dentro(r.uE)) {
+        let a = r.uD, b = r.uE;
+        for (let k2 = 0; k2 < 40; k2++) { const m = (a + b) / 2; if (dentro(m)) a = m; else b = m; }
+        r.uD = b; r.aparadoD = true; r.wfD = false;
+      }
+      r.poli = bancadaPoligono(r);
     }
   });
   // pia/cooktop soltos (decoração) que estão em cima de algum trecho
@@ -427,6 +470,64 @@ function bancadaPoligono(r) {
     if (!q || Math.abs(q[0] - p[0]) > 1e-6 || Math.abs(q[1] - p[1]) > 1e-6) out.push(p);
   });
   return out;
+}
+// Cadeias de trechos ligados pelo canto: [{ r, ent, sai }] — ent = ponta que
+// vem do trecho anterior (ou ponta livre no 1º), sai = ponta pro próximo.
+function bancadaCadeias(runs) {
+  const vistos = new Set(), out = [];
+  const outro = (l) => (l === 'E' ? 'D' : 'E');
+  const anda = (ini, ent) => {
+    const cad = [];
+    let cur = ini, e = ent;
+    while (cur && !vistos.has(cur)) {
+      vistos.add(cur);
+      const sai = outro(e);
+      cad.push({ r: cur, ent: e, sai });
+      const c = cur.canto && cur.canto[sai];
+      if (!c) break;
+      e = c.lado; cur = c.par;
+    }
+    return cad;
+  };
+  runs.forEach((r) => {
+    if (vistos.has(r)) return;
+    const livre = !(r.canto && r.canto.E) ? 'E' : (!(r.canto && r.canto.D) ? 'D' : null);
+    if (livre) out.push(anda(r, livre));
+  });
+  runs.forEach((r) => { if (!vistos.has(r)) out.push(anda(r, 'E')); });   // volta fechada (raro)
+  return out.filter((c) => c.length);
+}
+// Contorno da cadeia no mundo: fundo de ponta a ponta passando pelos cantos,
+// e a frente voltando, com o encontro das frentes no canto.
+function bancadaPoligonoCadeia(cad) {
+  const uL = (r, l) => (l === 'E' ? r.uE : r.uD);
+  const frenteL = (r, l) => (l === 'E' ? r.membros[0] : r.membros[r.membros.length - 1]).frente;
+  const frentes = (r, de) => { const f = r.poli.slice(2); return de === 'D' ? f : f.slice().reverse(); };   // poli: [fundoE, fundoD, frente D→E...]
+  const cruza = (p1, d1, p2, d2) => {
+    const den = d1.x * d2.z - d1.z * d2.x;
+    if (Math.abs(den) < 1e-9) return null;
+    const t = ((p2.x - p1.x) * d2.z - (p2.z - p1.z) * d2.x) / den;
+    return { x: p1.x + d1.x * t, z: p1.z + d1.z * t };
+  };
+  const n = cad.length, pts = [];
+  pts.push(banMundo(cad[0].r, uL(cad[0].r, cad[0].ent), -(cad[0].r.tras || 0)));
+  for (let k = 0; k < n - 1; k++) pts.push(cad[k].r.canto[cad[k].sai].C);
+  pts.push(banMundo(cad[n - 1].r, uL(cad[n - 1].r, cad[n - 1].sai), -(cad[n - 1].r.tras || 0)));
+  for (let k = n - 1; k >= 0; k--) {
+    const { r, ent, sai } = cad[k];
+    let lista = frentes(r, sai).map(([u, v]) => banMundo(r, u, v));
+    if (k < n - 1) lista = lista.slice(1);       // vértice do canto (sai)
+    if (k > 0) lista = lista.slice(0, -1);       // vértice do canto (ent)
+    pts.push(...lista);
+    if (k > 0) {
+      const a = cad[k - 1];
+      const F = cruza(banMundo(r, 0, frenteL(r, ent)), r.U, banMundo(a.r, 0, frenteL(a.r, a.sai)), a.r.U);
+      if (F) pts.push(F);
+    }
+  }
+  const lim = [];
+  pts.forEach((p) => { const q = lim[lim.length - 1]; if (!q || Math.hypot(q.x - p.x, q.z - p.z) > 1e-5) lim.push(p); });
+  return lim;
 }
 function banMundo(r, u, v) {
   return { x: r.U.x * u + r.N.x * (v + r.fundo), z: r.U.z * u + r.N.z * (v + r.fundo) };
@@ -534,7 +635,9 @@ function banSetasDo(r) {
   const fr = Math.max(...r.membros.map((m) => m.frente));
   const fmin = Math.min(...r.membros.map((m) => m.frente));
   const vb = -(r.tras || 0), um = (r.uE + r.uD) / 2, vm = (vb + fmin) / 2;
-  const l = [['esq', r.uE, vm, -1, 0], ['dir', r.uD, vm, 1, 0], ['frente', um, fr, 0, 1]];
+  const l = [['frente', um, fr, 0, 1]];
+  if (!r.aparadoE) l.push(['esq', r.uE, vm, -1, 0]);
+  if (!r.aparadoD) l.push(['dir', r.uD, vm, 1, 0]);
   if (r.ilha) l.push(['tras', um, vb, 0, -1]);
   return l;
 }
@@ -599,27 +702,36 @@ function bancadaMontar(THREE, ctx) {
     return poe(m);
   };
   const paredes = getProjectWallGeometry() || [];
-  runs.forEach((r) => {
-    runAtual = r;
-    // ---- tampo (contorno + recorte da cuba), extrudado pra baixo
-    const sh = new THREE.Shape(r.poli.map(([u, v]) => new THREE.Vector2(u, v)));
-    const vMax = Math.max(...r.membros.map((m) => m.frente));
+  // ---- TAMPO: uma peça por "cadeia" (trechos ligados pelo canto — L, U),
+  // contorno no chão do mundo (x, z) e UV em metros do mundo: o veio corre
+  // contínuo de uma parede pra outra, sem emenda (Matt, 25/10).
+  bancadaCadeias(runs).forEach((cad) => {
+    const poli = bancadaPoligonoCadeia(cad);
+    if (poli.length < 3) return;
+    runAtual = cad[0].r;
+    const topo = Math.max(...cad.map((c) => c.r.topo)), esp = cad[0].r.esp;
+    const sh = new THREE.Shape(poli.map((p) => new THREE.Vector2(p.x, p.z)));
+    const dentroTodo = (pts) => pts.every((p) => banDentro(p, poli));
     Object.keys(bancadaRecortes).forEach((sid) => {
-      if (!projectSlots.some((s) => s.id === sid || String(s.id) === sid)) return;
+      if (!projectSlots.some((sl) => sl.id === sid || String(sl.id) === sid)) return;
       (bancadaRecortes[sid] || []).forEach((pts) => {
-        const loc = pts.map((p) => banLocal(r, p));
-        const ok = loc.every(([u, v]) => u > r.uE + 0.01 && u < r.uD - 0.01 && v > -(r.tras || 0) + 0.01 && v < vMax - 0.01);
-        if (!ok) return;
-        sh.holes.push(new THREE.Path(loc.map(([u, v]) => new THREE.Vector2(u, v))));
+        if (!dentroTodo(pts)) return;
+        sh.holes.push(new THREE.Path(pts.map((p) => new THREE.Vector2(p.x, p.z))));
       });
     });
-    const geo = new THREE.ExtrudeGeometry(sh, { depth: r.esp, bevelEnabled: false, curveSegments: 4 });
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: esp, bevelEnabled: false, curveSegments: 4 });
     const tampo = new THREE.Mesh(geo, mat);
-    const m4 = new THREE.Matrix4().makeBasis(new THREE.Vector3(r.U.x, 0, r.U.z), new THREE.Vector3(r.N.x, 0, r.N.z), new THREE.Vector3(0, -1, 0));
-    m4.setPosition(r.N.x * r.fundo, r.topo + r.esp, r.N.z * r.fundo);
+    const m4 = new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -1, 0));
+    m4.setPosition(0, topo + esp, 0);
     tampo.matrixAutoUpdate = false;
     tampo.matrix.copy(m4);
-    poe(tampo);
+    // selecionado: qualquer trecho da cadeia acende o contorno da peça toda
+    const selDaCadeia = cad.some((c) => c.r.id === banSelId);
+    tampo.userData.bancadaRun = cad.find((c) => c.r.id === banSelId) ? banSelId : cad[0].r.id;
+    raiz.add(semClique(contorno(tampo, selDaCadeia)));
+  });
+  runs.forEach((r) => {
+    runAtual = r;
     // ---- waterfall nas pontas
     const vb = -(r.tras || 0);
     if (r.wfE) caixa(r, r.uE, r.uE + r.esp, vb, r.membros[0].frente, 0, r.topo);
@@ -652,7 +764,10 @@ function bancadaSplash(r, cfg, paredes, runs, placa) {
   // canto em L: o espelho corre até o canto, encostando no espelho da outra parede
   const outros = runs.filter((s) => s !== r && !s.ilha);
   const noOutro = (u) => outros.some((s) => banDentro(banMundo(r, u, 0.005), s.poli.map(([a, b]) => banMundo(s, a, b))));
-  if (w) {
+  // canto ligado: vai até o canto; o 2º trecho para na espessura do espelho do 1º
+  if (r.canto && r.canto.E) uS = banDot(r.canto.E.C, r.U) + (r.canto.E.prim ? 0 : BANCADA_SPLASH_ESP_M);
+  if (r.canto && r.canto.D) uF = banDot(r.canto.D.C, r.U) - (r.canto.D.prim ? 0 : BANCADA_SPLASH_ESP_M);
+  if (w && !(r.canto && (r.canto.E || r.canto.D))) {
     const a = banDot({ x: w.originX, z: w.originZ }, r.U);
     const b = banDot({ x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }, r.U);
     const lo = Math.min(a, b), hi = Math.max(a, b);

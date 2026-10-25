@@ -705,7 +705,18 @@ HELP_CONTENT.es.push(
         { id: 'piso-ambiente', title: `Piso do ambiente`, html: `<p>No menu <strong>Paredes</strong> da barra, clique em <strong>Piso</strong>. Escolha entre vinílico/laminado, madeira, porcelanato, cimento queimado ou carpete — o piso aparece no 3D do projeto e na Visualização 3D, no tamanho real das réguas e peças.</p>
 <p>O botão <strong>Sentido</strong> gira as réguas (ao longo da parede ou da parede pra frente). <strong>Sem textura</strong> volta ao piso liso. A escolha fica salva no projeto.</p>` },
         { id: 'visualizacao-3d-render', title: `Visualização 3D (menu Render)`, html: `<p>Abra o menu <strong>Render</strong> na barra e clique em <strong>Visualização 3D</strong> (ícone de cubo). O ambiente abre em 3D numa janela por cima do projeto, com os botões de abrir portas e gavetas.</p>
-<p>Para voltar, clique em <strong>← Voltar ao ambiente 2D</strong> ou aperte <strong>Esc</strong>. O item fica apagado enquanto o projeto não tiver nenhum módulo.</p>` }
+<p>Para voltar, clique em <strong>← Voltar ao ambiente 2D</strong> ou aperte <strong>Esc</strong>. O item fica apagado enquanto o projeto não tiver nenhum módulo.</p>` },
+        { id: 'bancada', title: `Bancada de pedra (countertop)`, html: `<p>No menu <strong>Paredes</strong> da barra, clique em <strong>Bancada</strong>. A pedra entra sozinha em todos os balcões: bases, ilhas, gabinetes de banheiro suspensos e por cima da lava-louças. Fica 1" à frente da porta (2" à frente da caixa quando o módulo não tem porta).</p>
+<ul>
+<li><strong>Pedra</strong> — escolha nas abas Quartzo, Granito, Mármore, Quartzito, Travertino e Outros.</li>
+<li><strong>Backsplash</strong> — Sem, Baixo 4" ou Até os aéreos (embaixo da janela ele fica mais baixo).</li>
+<li><strong>Waterfall na ilha</strong> — a pedra desce até o chão nas pontas da ilha.</li>
+<li>Pia e cooktop ficam em cima da pedra, com o recorte da cuba.</li>
+</ul>
+<p><strong>No 3D:</strong> clique na pedra para selecionar. As <strong>setas vermelhas</strong> esticam ou encurtam as pontas, a frente e a parte de trás da ilha (banquetas). <strong>Delete</strong> tira a pedra daquele trecho; <strong>Esc</strong> solta.</p>
+<div class="po-help-tip">É só visual — a bancada não entra no orçamento nem no pedido. Para pôr a pedra de volta num módulo, abra <strong>Ajustes</strong> na janela da Bancada e clique no módulo na planta.</div>` },
+        { id: 'apresentacao-3d', title: `Modo apresentação (3D para o cliente)`, html: `<p>Abra o menu <strong>Render</strong> → <strong>Visualização 3D</strong> e clique em <strong>Apresentação</strong> (canto de baixo). O 3D ganha sombras suaves, luz de ambiente com reflexo e perde as linhas de contorno — continua girando e abrindo portas.</p>
+<p>Na Visualização 3D, <strong>O</strong> abre/fecha as portas e <strong>G</strong> as gavetas. Clique de novo em <strong>Sair da apresentação</strong> ou feche a janela para voltar ao normal.</p>` }
       ],
       'projetos-ambiente': [
         { id: 'abertura-porta', title: `Trocar o lado de abertura da porta`, html: `<p>Selecione o módulo e, no painel da direita, use <strong>Abertura da porta</strong> para trocar entre dobradiça à esquerda e à direita.</p>
@@ -737,7 +748,18 @@ HELP_CONTENT.es.push(
         { id: 'piso-ambiente', title: `Room floor`, html: `<p>Open the <strong>Walls</strong> menu on the toolbar and click <strong>Floor</strong>. Pick vinyl plank/laminate, wood, porcelain, polished concrete or carpet — the floor shows in the project 3D view and the 3D view window, at the real plank/tile size.</p>
 <p>The <strong>Direction</strong> button turns the planks (along the wall or out from the wall). <strong>No texture</strong> goes back to the plain floor. The choice is saved with the project.</p>` },
         { id: 'visualizacao-3d-render', title: `3D view (Render menu)`, html: `<p>Open the <strong>Render</strong> menu on the toolbar and click <strong>3D view</strong> (cube icon). The room opens in 3D in a window on top of the project, with the open doors and drawers buttons.</p>
-<p>To go back, click <strong>← Back to 2D room</strong> or press <strong>Esc</strong>. The item is greyed out while the project has no cabinets.</p>` }
+<p>To go back, click <strong>← Back to 2D room</strong> or press <strong>Esc</strong>. The item is greyed out while the project has no cabinets.</p>` },
+        { id: 'bancada', title: `Stone countertop`, html: `<p>Open the <strong>Walls</strong> menu on the toolbar and click <strong>Countertop</strong>. The stone goes on every counter automatically: base cabinets, islands, floating bathroom vanities and over the dishwasher. It sits 1" past the door (2" past the box when the cabinet has no door).</p>
+<ul>
+<li><strong>Stone</strong> — pick from the Quartz, Granite, Marble, Quartzite, Travertine and Other tabs.</li>
+<li><strong>Backsplash</strong> — None, Short 4" or Up to uppers (lower under a window).</li>
+<li><strong>Island waterfall</strong> — the stone runs down to the floor at the island ends.</li>
+<li>Sink and cooktop sit on the stone, with the sink cutout.</li>
+</ul>
+<p><strong>In 3D:</strong> click the stone to select it. The <strong>red arrows</strong> stretch or shorten the ends, the front and the back of the island (seating). <strong>Delete</strong> removes the stone from that run; <strong>Esc</strong> deselects.</p>
+<div class="po-help-tip">Visual only — the countertop is not in the quote or the order. To put the stone back on a cabinet, open <strong>Adjustments</strong> in the Countertop window and click the cabinet on the plan.</div>` },
+        { id: 'apresentacao-3d', title: `Presentation mode (3D for the client)`, html: `<p>Open the <strong>Render</strong> menu → <strong>3D view</strong> and click <strong>Presentation</strong> (bottom corner). The 3D gets soft shadows, ambient light with reflections and no outline lines — it still rotates and opens doors.</p>
+<p>In the 3D view, <strong>O</strong> opens/closes the doors and <strong>G</strong> the drawers. Click <strong>Exit presentation</strong> or close the window to go back to normal.</p>` }
       ],
       'projetos-ambiente': [
         { id: 'abertura-porta', title: `Changing the door swing`, html: `<p>Select the cabinet and, in the right panel, use <strong>Door swing</strong> to switch between hinged on the left and on the right.</p>
@@ -769,7 +791,18 @@ HELP_CONTENT.es.push(
         { id: 'piso-ambiente', title: `Piso del ambiente`, html: `<p>En el menú <strong>Paredes</strong> de la barra, haz clic en <strong>Piso</strong>. Elige vinílico/laminado, madera, porcelanato, cemento pulido o alfombra — el piso aparece en el 3D del proyecto y en la Vista 3D, con el tamaño real de tablas y piezas.</p>
 <p>El botón <strong>Sentido</strong> gira las tablas. <strong>Sin textura</strong> vuelve al piso liso. La elección se guarda en el proyecto.</p>` },
         { id: 'visualizacao-3d-render', title: `Vista 3D (menú Render)`, html: `<p>Abre el menú <strong>Render</strong> de la barra y haz clic en <strong>Vista 3D</strong> (ícono de cubo). El ambiente se abre en 3D en una ventana encima del proyecto, con los botones de abrir puertas y cajones.</p>
-<p>Para volver, haz clic en <strong>← Volver al ambiente 2D</strong> o pulsa <strong>Esc</strong>. El ítem queda apagado mientras el proyecto no tenga módulos.</p>` }
+<p>Para volver, haz clic en <strong>← Volver al ambiente 2D</strong> o pulsa <strong>Esc</strong>. El ítem queda apagado mientras el proyecto no tenga módulos.</p>` },
+        { id: 'bancada', title: `Encimera de piedra`, html: `<p>En el menú <strong>Paredes</strong> de la barra, haz clic en <strong>Encimera</strong>. La piedra va sola en todas las encimeras: bases, islas, muebles de baño suspendidos y sobre el lavavajillas. Queda 1" delante de la puerta (2" delante de la caja cuando el módulo no tiene puerta).</p>
+<ul>
+<li><strong>Piedra</strong> — elige en las pestañas Cuarzo, Granito, Mármol, Cuarcita, Travertino y Otros.</li>
+<li><strong>Salpicadero</strong> — Sin, Bajo 4" o Hasta los altos (más bajo bajo una ventana).</li>
+<li><strong>Waterfall en la isla</strong> — la piedra baja hasta el piso en las puntas de la isla.</li>
+<li>Fregadero y placa quedan sobre la piedra, con el corte de la tarja.</li>
+</ul>
+<p><strong>En el 3D:</strong> haz clic en la piedra para seleccionarla. Las <strong>flechas rojas</strong> estiran o acortan las puntas, el frente y la parte de atrás de la isla (taburetes). <strong>Supr</strong> quita la piedra de ese tramo; <strong>Esc</strong> la suelta.</p>
+<div class="po-help-tip">Es solo visual — la encimera no entra en el presupuesto ni en el pedido. Para volver a poner la piedra en un módulo, abre <strong>Ajustes</strong> en la ventana de Encimera y haz clic en el módulo en la planta.</div>` },
+        { id: 'apresentacao-3d', title: `Modo presentación (3D para el cliente)`, html: `<p>Abre el menú <strong>Render</strong> → <strong>Vista 3D</strong> y haz clic en <strong>Presentación</strong> (esquina de abajo). El 3D gana sombras suaves, luz ambiente con reflejos y pierde las líneas de contorno — sigue girando y abriendo puertas.</p>
+<p>En la Vista 3D, <strong>O</strong> abre/cierra las puertas y <strong>G</strong> los cajones. Haz clic en <strong>Salir de presentación</strong> o cierra la ventana para volver a lo normal.</p>` }
       ],
       'projetos-ambiente': [
         { id: 'abertura-porta', title: `Cambiar el lado de apertura de la puerta`, html: `<p>Selecciona el módulo y, en el panel derecho, usa <strong>Apertura de la puerta</strong> para cambiar entre bisagra a la izquierda y a la derecha.</p>
