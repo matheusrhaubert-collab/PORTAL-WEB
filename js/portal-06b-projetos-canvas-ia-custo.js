@@ -3128,8 +3128,10 @@ function moneyItensSemPreco(linhas, out) {
   (linhas || []).forEach((p) => {
     if (!p) return;
     if (p.is_module) { moneyItensSemPreco(p.child_breakdown, out); return; }
-    const custo = (Number(p.purchased_cost) || 0) - (Number(p.support_cost) || 0);
-    if (p.material_item_id && !(custo > 0)) {
+    const custo = (Number(p.purchased_cost) || 0) - (Number(p.support_cost) || 0) - (Number(p.lift_cost) || 0);
+    // Vale pra QUALQUER item comprado, não só perfil/vidro (25/10, Matt: a
+    // caixa do Trash com preço 0 tem que aparecer E avisar — regra fixa).
+    if ((p.material_item_id || p.purchased_item_id) && !(custo > 0)) {
       const nome = p.material_item_name || p.purchased_item_name || p.reference || '';
       if (out.indexOf(nome) < 0) out.push(nome);
     }
