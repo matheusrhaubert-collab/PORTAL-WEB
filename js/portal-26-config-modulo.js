@@ -290,7 +290,70 @@ function quoteOptionsPanelHtml(slot) {
     }).join('');
     html += `<div class="po-qopt-section"><span class="po-proj-config-section-label">${I18n.t('project.drawer_model_label')}</span><div class="po-proj-door-model-cards">${cards}</div></div>`;
   }
+  // ÍCONE DO CATÁLOGO (25/10, Matt: "o ícone dos drawers com cooktop quero
+  // que mostre o cooktop"). O "Gerar imagem 3D" do ERP só monta as peças do
+  // cadastro — não aplica o interior de fábrica (gavetas, portas, trash) da
+  // NEW Classic, e a foto saía só com a caixa. Aqui o 3D JÁ está montado com
+  // tudo, então o administrador grava este desenho como ícone do card.
+  if (quoteIconeAdmin()) {
+    html += `<div class="po-qopt-section"><span class="po-proj-config-section-label">${I18n.t('qopt.icon_label')}</span>
+      <button type="button" class="po-qopt-icone-btn">${I18n.t('qopt.icon_btn')}</button><p class="hint po-qopt-icone-status">${quoteIconeMsg && quoteIconeMsg.mod === (currentModule && currentModule.id) ? quoteIconeMsg.txt : ''}</p></div>`;
+  }
   return html;
+}
+let quoteIconeMsg = null; // última mensagem do botão (o painel é redesenhado no meio)
+function quoteIconeAdmin() {
+  return typeof currentUserProfile !== 'undefined' && currentUserProfile && currentUserProfile.role === 'administrador';
+}
+// Mesmo enquadramento do ERP (refit + tightFrame + traço grosso), PNG recortado
+// e reduzido pra no máximo 360 px — o card mostra pequeno.
+async function quoteSalvarIconeModulo(statusEl) {
+  const s = quoteSlot, mod = currentModule;
+  if (!s || !mod || !quoteIconeAdmin()) return;
+  const status = (t) => {
+    quoteIconeMsg = { mod: mod.id, txt: t };
+    const el = document.querySelector('.po-qopt-icone-status') || statusEl;
+    if (el) el.textContent = t;
+  };
+  status(I18n.t('qopt.icon_saving'));
+  const estiloAnt = (typeof Viewer3D.getDrawStyle === 'function') ? Viewer3D.getDrawStyle() : null;
+  let raw = null;
+  try {
+    const parts = resolvePiecesForViewer(quoteSlotViewerPieces(s), { W: s.width_mm, H: s.height_mm, D: s.depth_mm },
+      s.colorsByRole, s.shelfQuantities, s.dimOverrides, s.pieceColorOverrides);
+    if (typeof Viewer3D.setDrawStyle === 'function') Viewer3D.setDrawStyle({ contorno: 'grosso' });
+    Viewer3D.update({ width_mm: s.width_mm, height_mm: s.height_mm, depth_mm: s.depth_mm, parts, refit: true, tightFrame: true });
+    if (typeof Viewer3D.waitForPendingTextures === 'function') await Viewer3D.waitForPendingTextures();
+    raw = Viewer3D.snapshot();
+  } catch (e) {
+    console.error('[ícone do módulo]', e);
+  } finally {
+    if (estiloAnt && typeof Viewer3D.setDrawStyle === 'function') Viewer3D.setDrawStyle(estiloAnt);
+    viewer3dNeedsRefit = true;
+    try { recalculatePreview(); } catch (e) { /* volta ao normal no próximo clique */ }
+  }
+  if (!raw) { status(I18n.t('qopt.icon_error')); return; }
+  let png = await trimTransparentPng(raw);
+  png = await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 360 / Math.max(img.naturalWidth, img.naturalHeight));
+      if (k >= 1) { resolve(png); return; }
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(png);
+    img.src = png;
+  });
+  const { error } = await supabaseClient.from('modules').update({ thumbnail_data_url: png }).eq('id', mod.id);
+  if (error) { status(I18n.t('qopt.icon_error') + ' ' + error.message); return; }
+  mod.thumbnail_data_url = png;
+  const naLista = (typeof allModules !== 'undefined' && allModules) ? allModules.find((m) => m.id === mod.id) : null;
+  if (naLista) naLista.thumbnail_data_url = png;
+  try { if (typeof renderModuleGallery === 'function') renderModuleGallery(); } catch (e) { /* card atualiza no próximo carregamento */ }
+  status(I18n.t('qopt.icon_saved'));
 }
 
 function renderQuoteOptionsPanel() {
@@ -315,6 +378,11 @@ function renderQuoteOptionsPanel() {
     setQuoteShelfCount(quoteSlot, el.dataset.node, Number(el.dataset.qtd));
     reprocessar();
   }));
+  const iconeBtn = body.querySelector('.po-qopt-icone-btn');
+  if (iconeBtn) iconeBtn.addEventListener('click', async () => {
+    iconeBtn.disabled = true;
+    try { await quoteSalvarIconeModulo(body.querySelector('.po-qopt-icone-status')); } finally { iconeBtn.disabled = false; }
+  });
   body.querySelectorAll('.po-proj-door-leaves-btn').forEach((el) => el.addEventListener('click', () => {
     if (el.classList.contains('selected') || !quoteSlot) return;
     if (setSlotDoorLeavesChoice(quoteSlot, el.dataset.node, Number(el.dataset.front) || 0, Number(el.dataset.n))) reprocessar();

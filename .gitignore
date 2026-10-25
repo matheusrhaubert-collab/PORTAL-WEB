@@ -8,3 +8,7 @@ database/
 
 # Teste local de desenvolvimento
 scratch/debug_texture_rotation_test.html
+
+# Backup local (backup-banco.bat): senha do banco e ferramentas baixadas
+backup-config.txt
+.backup-ferramentas/
