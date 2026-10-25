@@ -1635,6 +1635,7 @@ const Viewer3D = (function () {
     // móveis, pode deixar a decoração do forno pra fora dela". A caixa de
     // seleção (portal-08, buildProjectAssemblies) pula subárvores marcadas.
     obj.userData.isDecorPiece = /^decor_/.test(String(part.shape_type || ''));
+    if (obj.userData.isDecorPiece) obj.userData.decorShape = String(part.shape_type); // bancada (portal-30): pia/cooktop sobem pra cima da pedra
     // PORTA/FRENTE (duplo clique na peça, 2026-10-02 — Matt: "deixe só as
     // portas e frentes com duplo clique, peças de móveis não"). Porta = abre
     // em dobradiça (hinge_side / opening_type hinge_*) ou papel 'front';
@@ -2493,6 +2494,9 @@ const Viewer3D = (function () {
     const right = decorBoxMesh(sideW, counterT, D, material); right.position.set((cutW / 2 + sideW / 2), -counterT / 2, 0); g.add(right);
     const front = decorBoxMesh(cutW, counterT, frontBackD, material); front.position.set(0, -counterT / 2, (cutD / 2 + frontBackD / 2)); g.add(front);
     const back = decorBoxMesh(cutW, counterT, frontBackD, material); back.position.set(0, -counterT / 2, -(cutD / 2 + frontBackD / 2)); g.add(back);
+    // Bancada de pedra do Projetos (portal-30): com pedra de verdade em cima,
+    // este tampo "falso" da cuba some e a pedra ganha o recorte.
+    g.userData.decorCounter = true;
     return g;
   }
 
@@ -2567,6 +2571,7 @@ const Viewer3D = (function () {
     const counter = decorCounterWithCutout(W, D, counterT, basinW + 0.02, basinD + 0.02, mats.counter); g.add(counter);
     const basin = decorBoxMesh(basinW, basinH, basinD, mats.main); basin.position.set(0, -basinH / 2 - 0.005, 0); g.add(basin);
     const rim = decorRoundedBox(basinW + 0.02, basinD + 0.02, 0.008, 0.01, mats.chrome); rim.position.y = -0.004; g.add(rim);
+    rim.userData.decorRim = true; // recorte da pedra (portal-30)
     const fct = decorFaucet(mats.chrome, Math.min(0.22, H * 1.05 || 0.2), 0.13);
     fct.position.set(0, 0, -D * 0.32);
     g.add(fct);
@@ -2584,6 +2589,7 @@ const Viewer3D = (function () {
     const basin = decorBoxMesh(basinW, basinH, basinD, mats.detail);
     basin.position.set(0, apronH - counterT - basinH / 2 + 0.01, -0.01);
     g.add(basin);
+    basin.userData.decorRim = true; // recorte da pedra (portal-30)
     const fct = decorFaucet(mats.chrome, Math.min(0.24, apronH * 1.1), 0.15);
     fct.position.set(0, apronH, -D * 0.28);
     g.add(fct);
@@ -3206,18 +3212,97 @@ const Viewer3D = (function () {
   // base, madeira birch clara (cor FIXA: o caixote não tem papel de cor).
   // Mesmo padrão dos DECOR_BUILDERS: base em y=0, centrado em X/Z.
   // CÓPIA FIEL em js/viewer3d.js (THREE) e js/photoreal.js (T).
+  // ---- VEIO DE BIRCH DA GAVETA DOVETAIL (2026-10-25, Matt: "textura muito
+  // fraca, deve mostrar mais o birch, mais amarela queimada" + foto real) ----
+  // Antes: cor chapada. Agora: fibra reta de birch desenhada num canvas (sem
+  // arquivo de imagem — funciona igual no portal e no ERP), repetindo sem
+  // emenda, em escala real (a imagem cobre 600 x 150 mm) e com a fibra sempre
+  // no lado comprido de cada face. Cópia IGUAL em viewer3d.js e photoreal.js.
+  const BIRCH_TILE_U = 0.60, BIRCH_TILE_V = 0.15; // metros cobertos pela imagem (comprimento x altura)
+  let birchCanvasCache = null;
+  function birchCanvas() {
+    if (birchCanvasCache) return birchCanvasCache;
+    const CW = 1024, CH = 256;
+    const cv = document.createElement('canvas');
+    cv.width = CW; cv.height = CH;
+    const g = cv.getContext('2d');
+    const img = g.createImageData(CW, CH);
+    let s = 7;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const TAU = Math.PI * 2;
+  // ondas periódicas (nº inteiro de ciclos -> repete sem emenda)
+    const ondasX = [1, 2, 3, 5].map((k) => ({ k, a: rnd() * TAU, amp: 1 / k }));
+    const faixas = [3, 5, 7, 11, 17, 29].map((k) => ({ k, a: rnd() * TAU, amp: 1 / Math.sqrt(k) }));
+    const fibra = new Float32Array(CH);
+    for (let y = 0; y < CH; y++) fibra[y] = rnd();
+    const base = [226, 182, 120], escuro = [196, 140, 76], claro = [240, 210, 160];
+    for (let x = 0; x < CW; x++) {
+      let w = 0;
+      ondasX.forEach((o) => { w += o.amp * Math.sin(TAU * o.k * x / CW + o.a); });
+      for (let y = 0; y < CH; y++) {
+        const yy = y / CH + 0.006 * w;
+        let f = 0;
+        faixas.forEach((o) => { f += o.amp * Math.sin(TAU * o.k * yy + o.a); });
+        f = f / 1.6;                                   // ~ -1..1
+        const anel = Math.pow(0.5 + 0.5 * Math.sin(TAU * 41 * yy + 3 * f), 6);   // linha fina do anel
+        let t = 0.5 + 0.20 * f;                        // faixa larga clara/escura
+        t = Math.min(1, Math.max(0, t + 0.16 * anel));
+        const fy = fibra[(y + Math.round(2 * w) + CH) % CH];
+        const poro = (fy > 0.93 ? 0.10 : 0) + (fy - 0.5) * 0.05;
+        const i = (y * CW + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          let v = t < 0.5 ? claro[c] + (base[c] - claro[c]) * (t / 0.5) : base[c] + (escuro[c] - base[c]) * ((t - 0.5) / 0.5);
+          v *= 1 - poro;
+          img.data[i + c] = Math.max(0, Math.min(255, v));
+        }
+        img.data[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    birchCanvasCache = cv;
+    return cv;
+  }
+  let birchTexCache = null;
+  function birchTexture(THREE) {
+    if (birchTexCache) return birchTexCache;
+    const t = new THREE.CanvasTexture(birchCanvas());
+    if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace; else if ('encoding' in t) t.encoding = THREE.sRGBEncoding;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1 / BIRCH_TILE_U, 1 / BIRCH_TILE_V);
+    birchTexCache = t;
+    return t;
+  }
+  // UV em METROS por face, com a fibra correndo no eixo comprido da face
+  function birchUV(geo, w, h, d) {
+    const uv = geo.attributes.uv;
+  // faces: px, nx (u=z, v=y) | py, ny (u=x, v=z) | pz, nz (u=x, v=y)
+    const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) {
+      const [a, b] = dims[f];
+      const girar = b > a; // fibra sempre no lado mais comprido
+      for (let k = 0; k < 4; k++) {
+        const i = f * 4 + k;
+        const u0 = uv.getX(i), v0 = uv.getY(i);
+        if (girar) uv.setXY(i, v0 * b, u0 * a); else uv.setXY(i, u0 * a, v0 * b);
+      }
+    }
+    uv.needsUpdate = true;
+  }
+
   function buildGavetaDovetail(W, H, D) {
     const g = new THREE.Group();
     // Cor FIEL ao caixote de birch envernizado (Matt, 15/10: "mais cor"):
     // mel claro nas paredes, fundo um tom abaixo, pinos do dovetail no topo
     // de topo (end grain) mais escuros.
-    const birch = new THREE.MeshStandardMaterial({ color: 0xdcb177, roughness: 0.58, metalness: 0.0 });
-    const birchFundo = new THREE.MeshStandardMaterial({ color: 0xcf9f62, roughness: 0.66, metalness: 0.0 });
-    const pinoMat = new THREE.MeshStandardMaterial({ color: 0xa8773f, roughness: 0.7, metalness: 0.0 });
+    const birchTex = birchTexture(THREE);
+    const birch = new THREE.MeshStandardMaterial({ map: birchTex, roughness: 0.55, metalness: 0.0 });
+    const birchFundo = new THREE.MeshStandardMaterial({ map: birchTex, color: 0xf0e2cc, roughness: 0.62, metalness: 0.0 }); // fundo de compensado, um tom abaixo
+    const pinoMat = new THREE.MeshStandardMaterial({ color: 0x5e3a1a, roughness: 0.75, metalness: 0.0 });
     const t = Math.min(0.015875, W / 4, D / 4);
     const tf = 0.00635;
     const add = (w, h, d, x, y, z, mat) => {
       const geo = new THREE.BoxGeometry(Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001));
+      birchUV(geo, Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001));
       const m = new THREE.Mesh(geo, aplicaEstiloFace(mat));
       m.position.set(x, y, z);
         const e = buildEdgesForStyle(geo);

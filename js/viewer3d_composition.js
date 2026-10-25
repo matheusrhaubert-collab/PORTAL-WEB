@@ -1024,15 +1024,22 @@ function createViewerComposition3D() {
   // viga, sanca, escada, lareira... — "mais parede do que objeto", fora do
   // orçamento. O portal registra um construtor; a cada render (que limpa a
   // cena) ele devolve um Group novo, montado no mundo, com a cor da parede.
-  let archBuilder = null;
-  function setArchitectureBuilder(fn) { archBuilder = (typeof fn === 'function') ? fn : null; }
+  // Mais de um construtor (25/10): 'geo' = Geometria (portal-29), 'bancada'
+  // = bancada de pedra (portal-30). Chamada sem chave = 'geo' (como antes).
+  const archBuilders = {};
+  function setArchitectureBuilder(fn, chave) {
+    const k = chave || 'geo';
+    if (typeof fn === 'function') archBuilders[k] = fn; else delete archBuilders[k];
+  }
   function adicionaArquitetura() {
-    if (!archBuilder || !scene) return;
-    let g = null;
-    try { g = archBuilder(THREE, { wallColor: WALL_COLOR, wallThicknessM: WALL_THICKNESS_M }); } catch (e) { console.warn('[geometria]', e); g = null; }
-    if (!g) return;
-    scene.add(g);
-    currentGroups.push(g);
+    if (!scene) return;
+    Object.keys(archBuilders).forEach((k) => {
+      let g = null;
+      try { g = archBuilders[k](THREE, { wallColor: WALL_COLOR, wallThicknessM: WALL_THICKNESS_M, renderer }); } catch (e) { console.warn('[' + k + ']', e); g = null; }
+      if (!g) return;
+      scene.add(g);
+      currentGroups.push(g);
+    });
   }
 
   function setFloorTexture(cfg) {

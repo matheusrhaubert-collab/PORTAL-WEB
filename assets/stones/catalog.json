@@ -1,0 +1,629 @@
+[
+ {
+  "id": "cambria-brittanicca",
+  "g": "quartz",
+  "n": {
+   "pt": "Cambria Brittanicca",
+   "en": "Cambria Brittanicca",
+   "es": "Cambria Brittanicca"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "cambria-brittanicca-gold",
+  "g": "quartz",
+  "n": {
+   "pt": "Cambria Brittanicca Gold",
+   "en": "Cambria Brittanicca Gold",
+   "es": "Cambria Brittanicca Gold"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "cambria-torquay",
+  "g": "quartz",
+  "n": {
+   "pt": "Cambria Torquay",
+   "en": "Cambria Torquay",
+   "es": "Cambria Torquay"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "cambria-swanbridge",
+  "g": "quartz",
+  "n": {
+   "pt": "Cambria Swanbridge",
+   "en": "Cambria Swanbridge",
+   "es": "Cambria Swanbridge"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "cambria-ella",
+  "g": "quartz",
+  "n": {
+   "pt": "Cambria Ella",
+   "en": "Cambria Ella",
+   "es": "Cambria Ella"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "cambria-skara-brae",
+  "g": "quartz",
+  "n": {
+   "pt": "Cambria Skara Brae",
+   "en": "Cambria Skara Brae",
+   "es": "Cambria Skara Brae"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "silestone-calacatta-gold",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone Calacatta Gold",
+   "en": "Silestone Calacatta Gold",
+   "es": "Silestone Calacatta Gold"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "silestone-eternal-marquina",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone Eternal Marquina",
+   "en": "Silestone Eternal Marquina",
+   "es": "Silestone Eternal Marquina"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "silestone-charcoal-soapstone",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone Charcoal Soapstone",
+   "en": "Silestone Charcoal Soapstone",
+   "es": "Silestone Charcoal Soapstone"
+  },
+  "t": 1500,
+  "r": 0.45
+ },
+ {
+  "id": "silestone-lyra",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone Lyra",
+   "en": "Silestone Lyra",
+   "es": "Silestone Lyra"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "silestone-white-storm",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone White Storm",
+   "en": "Silestone White Storm",
+   "es": "Silestone White Storm"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "silestone-miami-white",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone Miami White",
+   "en": "Silestone Miami White",
+   "es": "Silestone Miami White"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "silestone-desert-silver",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone Desert Silver",
+   "en": "Silestone Desert Silver",
+   "es": "Silestone Desert Silver"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "silestone-et-statuario",
+  "g": "quartz",
+  "n": {
+   "pt": "Silestone Et. Statuario",
+   "en": "Silestone Et. Statuario",
+   "es": "Silestone Et. Statuario"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "caesarstone-empira-white",
+  "g": "quartz",
+  "n": {
+   "pt": "Caesarstone Empira White",
+   "en": "Caesarstone Empira White",
+   "es": "Caesarstone Empira White"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "caesarstone-statuario-maximus",
+  "g": "quartz",
+  "n": {
+   "pt": "Caesarstone Statuario Maximus",
+   "en": "Caesarstone Statuario Maximus",
+   "es": "Caesarstone Statuario Maximus"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "caesarstone-raw-concrete",
+  "g": "quartz",
+  "n": {
+   "pt": "Caesarstone Raw Concrete",
+   "en": "Caesarstone Raw Concrete",
+   "es": "Caesarstone Raw Concrete"
+  },
+  "t": 1500,
+  "r": 0.55
+ },
+ {
+  "id": "caesarstone-pure-white",
+  "g": "quartz",
+  "n": {
+   "pt": "Caesarstone Pure White",
+   "en": "Caesarstone Pure White",
+   "es": "Caesarstone Pure White"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "caesarstone-frosty-carrina",
+  "g": "quartz",
+  "n": {
+   "pt": "Caesarstone Frosty Carrina",
+   "en": "Caesarstone Frosty Carrina",
+   "es": "Caesarstone Frosty Carrina"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "msi-calacatta-laza",
+  "g": "quartz",
+  "n": {
+   "pt": "MSI Calacatta Laza",
+   "en": "MSI Calacatta Laza",
+   "es": "MSI Calacatta Laza"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "msi-carrara-morro",
+  "g": "quartz",
+  "n": {
+   "pt": "MSI Carrara Morro",
+   "en": "MSI Carrara Morro",
+   "es": "MSI Carrara Morro"
+  },
+  "t": 1500,
+  "r": 0.22
+ },
+ {
+  "id": "granite-verde-ubatuba",
+  "g": "granite",
+  "n": {
+   "pt": "Verde Ubatuba",
+   "en": "Verde Ubatuba (Uba Tuba)",
+   "es": "Verde Ubatuba"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-absolute-black",
+  "g": "granite",
+  "n": {
+   "pt": "Preto Absoluto",
+   "en": "Absolute Black",
+   "es": "Negro Absoluto"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "granite-black-galaxy",
+  "g": "granite",
+  "n": {
+   "pt": "Black Galaxy",
+   "en": "Black Galaxy",
+   "es": "Black Galaxy"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "granite-santa-cecilia",
+  "g": "granite",
+  "n": {
+   "pt": "Santa Cecília",
+   "en": "Santa Cecilia",
+   "es": "Santa Cecilia"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-giallo-ornamental",
+  "g": "granite",
+  "n": {
+   "pt": "Giallo Ornamental",
+   "en": "Giallo Ornamental",
+   "es": "Giallo Ornamental"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-new-venetian-gold",
+  "g": "granite",
+  "n": {
+   "pt": "New Venetian Gold",
+   "en": "New Venetian Gold",
+   "es": "New Venetian Gold"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-baltic-brown",
+  "g": "granite",
+  "n": {
+   "pt": "Baltic Brown",
+   "en": "Baltic Brown",
+   "es": "Baltic Brown"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-colonial-white",
+  "g": "granite",
+  "n": {
+   "pt": "Colonial White",
+   "en": "Colonial White",
+   "es": "Colonial White"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-steel-grey",
+  "g": "granite",
+  "n": {
+   "pt": "Steel Grey",
+   "en": "Steel Grey",
+   "es": "Steel Grey"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-blue-pearl",
+  "g": "granite",
+  "n": {
+   "pt": "Blue Pearl",
+   "en": "Blue Pearl",
+   "es": "Blue Pearl"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "granite-tan-brown",
+  "g": "granite",
+  "n": {
+   "pt": "Tan Brown",
+   "en": "Tan Brown",
+   "es": "Tan Brown"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-kashmir-white",
+  "g": "granite",
+  "n": {
+   "pt": "Kashmir White",
+   "en": "Kashmir White",
+   "es": "Kashmir White"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-river-white",
+  "g": "granite",
+  "n": {
+   "pt": "River White",
+   "en": "River White",
+   "es": "River White"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-alaska-white",
+  "g": "granite",
+  "n": {
+   "pt": "Alaska White",
+   "en": "Alaska White",
+   "es": "Alaska White"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "granite-black-pearl",
+  "g": "granite",
+  "n": {
+   "pt": "Black Pearl",
+   "en": "Black Pearl",
+   "es": "Black Pearl"
+  },
+  "t": 1500,
+  "r": 0.2
+ },
+ {
+  "id": "granite-luna-pearl",
+  "g": "granite",
+  "n": {
+   "pt": "Luna Pearl",
+   "en": "Luna Pearl",
+   "es": "Luna Pearl"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "marble-carrara",
+  "g": "marble",
+  "n": {
+   "pt": "Mármore Carrara",
+   "en": "Carrara Marble",
+   "es": "Mármol Carrara"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "marble-calacatta-gold",
+  "g": "marble",
+  "n": {
+   "pt": "Mármore Calacatta Gold",
+   "en": "Calacatta Gold Marble",
+   "es": "Mármol Calacatta Gold"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "marble-statuario",
+  "g": "marble",
+  "n": {
+   "pt": "Mármore Statuario",
+   "en": "Statuario Marble",
+   "es": "Mármol Statuario"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "marble-nero-marquina",
+  "g": "marble",
+  "n": {
+   "pt": "Nero Marquina",
+   "en": "Nero Marquina",
+   "es": "Nero Marquina"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "marble-emperador-dark",
+  "g": "marble",
+  "n": {
+   "pt": "Emperador Dark",
+   "en": "Emperador Dark",
+   "es": "Emperador Dark"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "marble-crema-marfil",
+  "g": "marble",
+  "n": {
+   "pt": "Crema Marfil",
+   "en": "Crema Marfil",
+   "es": "Crema Marfil"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "quartzite-taj-mahal",
+  "g": "quartzite",
+  "n": {
+   "pt": "Taj Mahal",
+   "en": "Taj Mahal",
+   "es": "Taj Mahal"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "quartzite-white-macaubas",
+  "g": "quartzite",
+  "n": {
+   "pt": "White Macaúbas",
+   "en": "White Macaubas",
+   "es": "White Macaúbas"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "quartzite-fantasy-brown",
+  "g": "quartzite",
+  "n": {
+   "pt": "Fantasy Brown",
+   "en": "Fantasy Brown",
+   "es": "Fantasy Brown"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "quartzite-super-white",
+  "g": "quartzite",
+  "n": {
+   "pt": "Super White",
+   "en": "Super White",
+   "es": "Super White"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "quartzite-mont-blanc",
+  "g": "quartzite",
+  "n": {
+   "pt": "Mont Blanc",
+   "en": "Mont Blanc",
+   "es": "Mont Blanc"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "quartzite-sea-pearl",
+  "g": "quartzite",
+  "n": {
+   "pt": "Sea Pearl",
+   "en": "Sea Pearl",
+   "es": "Sea Pearl"
+  },
+  "t": 1500,
+  "r": 0.3
+ },
+ {
+  "id": "travertine-classic",
+  "g": "travertine",
+  "n": {
+   "pt": "Travertino clássico",
+   "en": "Classic Travertine",
+   "es": "Travertino clásico"
+  },
+  "t": 1500,
+  "r": 0.5
+ },
+ {
+  "id": "travertine-silver",
+  "g": "travertine",
+  "n": {
+   "pt": "Travertino silver",
+   "en": "Silver Travertine",
+   "es": "Travertino silver"
+  },
+  "t": 1500,
+  "r": 0.5
+ },
+ {
+  "id": "travertine-noce",
+  "g": "travertine",
+  "n": {
+   "pt": "Travertino noce",
+   "en": "Noce Travertine",
+   "es": "Travertino noce"
+  },
+  "t": 1500,
+  "r": 0.5
+ },
+ {
+  "id": "travertine-romano",
+  "g": "travertine",
+  "n": {
+   "pt": "Travertino romano",
+   "en": "Roman Travertine",
+   "es": "Travertino romano"
+  },
+  "t": 1500,
+  "r": 0.5
+ },
+ {
+  "id": "soapstone",
+  "g": "other",
+  "n": {
+   "pt": "Pedra-sabão",
+   "en": "Soapstone",
+   "es": "Esteatita"
+  },
+  "t": 1500,
+  "r": 0.55
+ },
+ {
+  "id": "concrete-gray",
+  "g": "other",
+  "n": {
+   "pt": "Concreto cinza",
+   "en": "Gray Concrete",
+   "es": "Concreto gris"
+  },
+  "t": 1500,
+  "r": 0.6
+ },
+ {
+  "id": "solid-white",
+  "g": "other",
+  "n": {
+   "pt": "Branco liso",
+   "en": "Solid White",
+   "es": "Blanco liso"
+  },
+  "t": 1500,
+  "r": 0.25
+ },
+ {
+  "id": "solid-black",
+  "g": "other",
+  "n": {
+   "pt": "Preto liso",
+   "en": "Solid Black",
+   "es": "Negro liso"
+  },
+  "t": 1500,
+  "r": 0.25
+ }
+]

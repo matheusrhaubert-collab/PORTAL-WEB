@@ -1,0 +1,837 @@
+// ==========================================================================
+// BANCADA DE PEDRA (countertop) do Projetos — 2026-10-25
+// ==========================================================================
+// Matt: "quero um botão novo ... para colocar o countertop. ao clicar quero
+// que abra uma janela, mostre onde será o countertop. escolha a textura da
+// pedra (umas 50 opções) cambria, silestone, quartzos, taj mahal, verde
+// ubatuba, granito, travertino ..." + "waterfall dos lados como opcional,
+// backsplash alto entre os aéreos e bases, ou só um espelho atrás da pedra,
+// ou sem nada só tampo" + "padrão 1 polegada pra frente da porta, 2 polegadas
+// pra frente do módulo caixa" + "opção de esticar a ilha e fazer bancada
+// também ... a parte de trás da ilha nunca vai pedra" + "pia e cooktop
+// reposicionados sobre a pedra" + "o botão e as cores ficam lá no Walls".
+//
+// SEPARADO dos módulos (igual Piso/Geometria): não é projectSlots, não entra
+// em preço/pedido/plano de corte. Mora em projectBancada (config) e é salvo
+// em user_projects.bancada (migration 223). Sem a coluna, salva sem ela.
+//
+// COMO A PEDRA É ACHADA (sem IA — regra fixa, sempre igual):
+//  - "base" = módulo apoiado no chão (até 30 cm) com 45..105 cm de altura,
+//    + lava-louças/lava-e-seca decorativas (a pedra passa por cima).
+//  - módulos base encostados (folga até 6 mm) na MESMA parede, ou ilhas com
+//    o mesmo giro e mesma linha de fundo, viram UMA linha de pedra (run).
+//  - fogão de piso, geladeira, torre, etc. cortam a linha.
+//  - frente: porta + 1" (bal_porta) ou caixa + 2" (bal_caixa) se não tem porta.
+//  - ponta livre (nada encostado, não é fim de parede): + 1" (bal_ponta).
+//  - canto em L: a linha da parede que vem depois é aparada onde encontra a
+//    pedra da parede anterior (sem pedra sobreposta).
+//  - pia e cooktop que estão em cima da base sobem a espessura da pedra; o
+//    tampo "falso" da cuba some e a pedra ganha o recorte (bancadaAjusta
+//    Assembly, chamado em buildProjectAssemblies — portal-08).
+//  - ilha: nunca tem backsplash nem pedra nas costas; dá pra esticar o tampo
+//    pra trás (banquetas) e nas pontas.
+// Desenho: ViewerComposition.setArchitectureBuilder(bancadaMontar, 'bancada').
+// Texturas: assets/stones/ (procedurais, scripts/gerar-texturas-pedra.py).
+// ==========================================================================
+
+const BANCADA_CATALOGO = [
+  { id: "cambria-brittanicca", g: "quartz", n: {"pt": "Cambria Brittanicca", "en": "Cambria Brittanicca", "es": "Cambria Brittanicca"}, t: 1500, r: 0.22 },
+  { id: "cambria-brittanicca-gold", g: "quartz", n: {"pt": "Cambria Brittanicca Gold", "en": "Cambria Brittanicca Gold", "es": "Cambria Brittanicca Gold"}, t: 1500, r: 0.22 },
+  { id: "cambria-torquay", g: "quartz", n: {"pt": "Cambria Torquay", "en": "Cambria Torquay", "es": "Cambria Torquay"}, t: 1500, r: 0.25 },
+  { id: "cambria-swanbridge", g: "quartz", n: {"pt": "Cambria Swanbridge", "en": "Cambria Swanbridge", "es": "Cambria Swanbridge"}, t: 1500, r: 0.22 },
+  { id: "cambria-ella", g: "quartz", n: {"pt": "Cambria Ella", "en": "Cambria Ella", "es": "Cambria Ella"}, t: 1500, r: 0.22 },
+  { id: "cambria-skara-brae", g: "quartz", n: {"pt": "Cambria Skara Brae", "en": "Cambria Skara Brae", "es": "Cambria Skara Brae"}, t: 1500, r: 0.25 },
+  { id: "silestone-calacatta-gold", g: "quartz", n: {"pt": "Silestone Calacatta Gold", "en": "Silestone Calacatta Gold", "es": "Silestone Calacatta Gold"}, t: 1500, r: 0.2 },
+  { id: "silestone-eternal-marquina", g: "quartz", n: {"pt": "Silestone Eternal Marquina", "en": "Silestone Eternal Marquina", "es": "Silestone Eternal Marquina"}, t: 1500, r: 0.2 },
+  { id: "silestone-charcoal-soapstone", g: "quartz", n: {"pt": "Silestone Charcoal Soapstone", "en": "Silestone Charcoal Soapstone", "es": "Silestone Charcoal Soapstone"}, t: 1500, r: 0.45 },
+  { id: "silestone-lyra", g: "quartz", n: {"pt": "Silestone Lyra", "en": "Silestone Lyra", "es": "Silestone Lyra"}, t: 1500, r: 0.2 },
+  { id: "silestone-white-storm", g: "quartz", n: {"pt": "Silestone White Storm", "en": "Silestone White Storm", "es": "Silestone White Storm"}, t: 1500, r: 0.22 },
+  { id: "silestone-miami-white", g: "quartz", n: {"pt": "Silestone Miami White", "en": "Silestone Miami White", "es": "Silestone Miami White"}, t: 1500, r: 0.2 },
+  { id: "silestone-desert-silver", g: "quartz", n: {"pt": "Silestone Desert Silver", "en": "Silestone Desert Silver", "es": "Silestone Desert Silver"}, t: 1500, r: 0.3 },
+  { id: "silestone-et-statuario", g: "quartz", n: {"pt": "Silestone Et. Statuario", "en": "Silestone Et. Statuario", "es": "Silestone Et. Statuario"}, t: 1500, r: 0.2 },
+  { id: "caesarstone-empira-white", g: "quartz", n: {"pt": "Caesarstone Empira White", "en": "Caesarstone Empira White", "es": "Caesarstone Empira White"}, t: 1500, r: 0.22 },
+  { id: "caesarstone-statuario-maximus", g: "quartz", n: {"pt": "Caesarstone Statuario Maximus", "en": "Caesarstone Statuario Maximus", "es": "Caesarstone Statuario Maximus"}, t: 1500, r: 0.2 },
+  { id: "caesarstone-raw-concrete", g: "quartz", n: {"pt": "Caesarstone Raw Concrete", "en": "Caesarstone Raw Concrete", "es": "Caesarstone Raw Concrete"}, t: 1500, r: 0.55 },
+  { id: "caesarstone-pure-white", g: "quartz", n: {"pt": "Caesarstone Pure White", "en": "Caesarstone Pure White", "es": "Caesarstone Pure White"}, t: 1500, r: 0.2 },
+  { id: "caesarstone-frosty-carrina", g: "quartz", n: {"pt": "Caesarstone Frosty Carrina", "en": "Caesarstone Frosty Carrina", "es": "Caesarstone Frosty Carrina"}, t: 1500, r: 0.22 },
+  { id: "msi-calacatta-laza", g: "quartz", n: {"pt": "MSI Calacatta Laza", "en": "MSI Calacatta Laza", "es": "MSI Calacatta Laza"}, t: 1500, r: 0.22 },
+  { id: "msi-carrara-morro", g: "quartz", n: {"pt": "MSI Carrara Morro", "en": "MSI Carrara Morro", "es": "MSI Carrara Morro"}, t: 1500, r: 0.22 },
+  { id: "granite-verde-ubatuba", g: "granite", n: {"pt": "Verde Ubatuba", "en": "Verde Ubatuba (Uba Tuba)", "es": "Verde Ubatuba"}, t: 1500, r: 0.25 },
+  { id: "granite-absolute-black", g: "granite", n: {"pt": "Preto Absoluto", "en": "Absolute Black", "es": "Negro Absoluto"}, t: 1500, r: 0.2 },
+  { id: "granite-black-galaxy", g: "granite", n: {"pt": "Black Galaxy", "en": "Black Galaxy", "es": "Black Galaxy"}, t: 1500, r: 0.2 },
+  { id: "granite-santa-cecilia", g: "granite", n: {"pt": "Santa Cecília", "en": "Santa Cecilia", "es": "Santa Cecilia"}, t: 1500, r: 0.25 },
+  { id: "granite-giallo-ornamental", g: "granite", n: {"pt": "Giallo Ornamental", "en": "Giallo Ornamental", "es": "Giallo Ornamental"}, t: 1500, r: 0.25 },
+  { id: "granite-new-venetian-gold", g: "granite", n: {"pt": "New Venetian Gold", "en": "New Venetian Gold", "es": "New Venetian Gold"}, t: 1500, r: 0.25 },
+  { id: "granite-baltic-brown", g: "granite", n: {"pt": "Baltic Brown", "en": "Baltic Brown", "es": "Baltic Brown"}, t: 1500, r: 0.25 },
+  { id: "granite-colonial-white", g: "granite", n: {"pt": "Colonial White", "en": "Colonial White", "es": "Colonial White"}, t: 1500, r: 0.25 },
+  { id: "granite-steel-grey", g: "granite", n: {"pt": "Steel Grey", "en": "Steel Grey", "es": "Steel Grey"}, t: 1500, r: 0.25 },
+  { id: "granite-blue-pearl", g: "granite", n: {"pt": "Blue Pearl", "en": "Blue Pearl", "es": "Blue Pearl"}, t: 1500, r: 0.2 },
+  { id: "granite-tan-brown", g: "granite", n: {"pt": "Tan Brown", "en": "Tan Brown", "es": "Tan Brown"}, t: 1500, r: 0.25 },
+  { id: "granite-kashmir-white", g: "granite", n: {"pt": "Kashmir White", "en": "Kashmir White", "es": "Kashmir White"}, t: 1500, r: 0.25 },
+  { id: "granite-river-white", g: "granite", n: {"pt": "River White", "en": "River White", "es": "River White"}, t: 1500, r: 0.25 },
+  { id: "granite-alaska-white", g: "granite", n: {"pt": "Alaska White", "en": "Alaska White", "es": "Alaska White"}, t: 1500, r: 0.25 },
+  { id: "granite-black-pearl", g: "granite", n: {"pt": "Black Pearl", "en": "Black Pearl", "es": "Black Pearl"}, t: 1500, r: 0.2 },
+  { id: "granite-luna-pearl", g: "granite", n: {"pt": "Luna Pearl", "en": "Luna Pearl", "es": "Luna Pearl"}, t: 1500, r: 0.25 },
+  { id: "marble-carrara", g: "marble", n: {"pt": "Mármore Carrara", "en": "Carrara Marble", "es": "Mármol Carrara"}, t: 1500, r: 0.3 },
+  { id: "marble-calacatta-gold", g: "marble", n: {"pt": "Mármore Calacatta Gold", "en": "Calacatta Gold Marble", "es": "Mármol Calacatta Gold"}, t: 1500, r: 0.3 },
+  { id: "marble-statuario", g: "marble", n: {"pt": "Mármore Statuario", "en": "Statuario Marble", "es": "Mármol Statuario"}, t: 1500, r: 0.3 },
+  { id: "marble-nero-marquina", g: "marble", n: {"pt": "Nero Marquina", "en": "Nero Marquina", "es": "Nero Marquina"}, t: 1500, r: 0.3 },
+  { id: "marble-emperador-dark", g: "marble", n: {"pt": "Emperador Dark", "en": "Emperador Dark", "es": "Emperador Dark"}, t: 1500, r: 0.3 },
+  { id: "marble-crema-marfil", g: "marble", n: {"pt": "Crema Marfil", "en": "Crema Marfil", "es": "Crema Marfil"}, t: 1500, r: 0.3 },
+  { id: "quartzite-taj-mahal", g: "quartzite", n: {"pt": "Taj Mahal", "en": "Taj Mahal", "es": "Taj Mahal"}, t: 1500, r: 0.3 },
+  { id: "quartzite-white-macaubas", g: "quartzite", n: {"pt": "White Macaúbas", "en": "White Macaubas", "es": "White Macaúbas"}, t: 1500, r: 0.3 },
+  { id: "quartzite-fantasy-brown", g: "quartzite", n: {"pt": "Fantasy Brown", "en": "Fantasy Brown", "es": "Fantasy Brown"}, t: 1500, r: 0.3 },
+  { id: "quartzite-super-white", g: "quartzite", n: {"pt": "Super White", "en": "Super White", "es": "Super White"}, t: 1500, r: 0.3 },
+  { id: "quartzite-mont-blanc", g: "quartzite", n: {"pt": "Mont Blanc", "en": "Mont Blanc", "es": "Mont Blanc"}, t: 1500, r: 0.3 },
+  { id: "quartzite-sea-pearl", g: "quartzite", n: {"pt": "Sea Pearl", "en": "Sea Pearl", "es": "Sea Pearl"}, t: 1500, r: 0.3 },
+  { id: "travertine-classic", g: "travertine", n: {"pt": "Travertino clássico", "en": "Classic Travertine", "es": "Travertino clásico"}, t: 1500, r: 0.5 },
+  { id: "travertine-silver", g: "travertine", n: {"pt": "Travertino silver", "en": "Silver Travertine", "es": "Travertino silver"}, t: 1500, r: 0.5 },
+  { id: "travertine-noce", g: "travertine", n: {"pt": "Travertino noce", "en": "Noce Travertine", "es": "Travertino noce"}, t: 1500, r: 0.5 },
+  { id: "travertine-romano", g: "travertine", n: {"pt": "Travertino romano", "en": "Roman Travertine", "es": "Travertino romano"}, t: 1500, r: 0.5 },
+  { id: "soapstone", g: "other", n: {"pt": "Pedra-sabão", "en": "Soapstone", "es": "Esteatita"}, t: 1500, r: 0.55 },
+  { id: "concrete-gray", g: "other", n: {"pt": "Concreto cinza", "en": "Gray Concrete", "es": "Concreto gris"}, t: 1500, r: 0.6 },
+  { id: "solid-white", g: "other", n: {"pt": "Branco liso", "en": "Solid White", "es": "Blanco liso"}, t: 1500, r: 0.25 },
+  { id: "solid-black", g: "other", n: {"pt": "Preto liso", "en": "Solid Black", "es": "Negro liso"}, t: 1500, r: 0.25 }
+];
+const BANCADA_GRUPOS = ['quartz', 'granite', 'marble', 'quartzite', 'travertine', 'other'];
+const IN_MM = 25.4;
+const BANCADA_PADRAO = {
+  ativo: true,
+  pedra: 'cambria-brittanicca',
+  esp_mm: 30,                 // 3 cm
+  bal_porta_mm: IN_MM,        // 1" à frente da porta
+  bal_caixa_mm: 2 * IN_MM,    // 2" à frente da caixa (sem porta)
+  bal_ponta_mm: IN_MM,        // 1" na ponta livre
+  splash: 'espelho',          // 'nenhum' | 'espelho' | 'alto'
+  splash_mm: 4 * IN_MM,       // espelho de 4"
+  excluidos: [],              // ids de slot que NÃO levam pedra
+  pontas: {},                 // '<slotId>|E' / '|D' -> { wf: bool, ext_mm: n }
+  ilha_tras: {}               // '<slotId>' -> mm de balanço atrás (banqueta)
+};
+const BANCADA_PORTA_M = 0.020; // porta 18 mm + 2 mm de folga (viewer3d.placeFrontGroupInBox)
+const BANCADA_SPLASH_ESP_M = 0.02;
+
+let projectBancada = null;
+
+const BAN_TXT = {
+  pt: {
+    btn: 'Bancada', title: 'Bancada de pedra', sub: 'A pedra entra sozinha em cima dos módulos base e das ilhas. Clique num módulo na planta para tirar/colocar a pedra nele. Aparência das pedras aproximada — confirme a chapa com a marmoraria.',
+    show: 'Mostrar bancada no 3D', plan: 'Onde vai a pedra', runs: 'Trechos', none_found: 'Nenhum módulo base encontrado no projeto.',
+    wall_n: 'Parede {n}', island: 'Ilha', modules: '{n} módulo(s)', excluded: 'sem pedra',
+    wf_left: 'Waterfall esquerda', wf_right: 'Waterfall direita', ext_left: 'Esticar ponta esq.', ext_right: 'Esticar ponta dir.', back: 'Esticar atrás (banquetas)',
+    stone: 'Pedra', thick: 'Espessura', splash: 'Backsplash', sp_none: 'Sem (só tampo)', sp_mirror: 'Espelho atrás da pedra', sp_high: 'Alto (até os aéreos)', sp_h: 'Altura do espelho',
+    ov_door: 'Balanço à frente da porta', ov_box: 'Balanço à frente da caixa (sem porta)', ov_end: 'Balanço na ponta livre', area: 'Área de pedra (aprox.)',
+    g_quartz: 'Quartzo', g_granite: 'Granito', g_marble: 'Mármore', g_quartzite: 'Quartzito', g_travertine: 'Travertino', g_other: 'Outros',
+    remove: 'Tirar bancada do projeto', legend_stone: 'pedra', legend_off: 'sem pedra'
+  },
+  en: {
+    btn: 'Countertop', title: 'Stone countertop', sub: 'The stone goes on top of base cabinets and islands automatically. Click a cabinet on the plan to add/remove stone on it. Stone looks are approximate — confirm the slab with the fabricator.',
+    show: 'Show countertop in 3D', plan: 'Where the stone goes', runs: 'Runs', none_found: 'No base cabinets found in this project.',
+    wall_n: 'Wall {n}', island: 'Island', modules: '{n} cabinet(s)', excluded: 'no stone',
+    wf_left: 'Waterfall left', wf_right: 'Waterfall right', ext_left: 'Extend left end', ext_right: 'Extend right end', back: 'Extend back (seating)',
+    stone: 'Stone', thick: 'Thickness', splash: 'Backsplash', sp_none: 'None (top only)', sp_mirror: 'Short splash behind the top', sp_high: 'Full height (up to the uppers)', sp_h: 'Splash height',
+    ov_door: 'Overhang past the door', ov_box: 'Overhang past the box (no door)', ov_end: 'Overhang at free ends', area: 'Stone area (approx.)',
+    g_quartz: 'Quartz', g_granite: 'Granite', g_marble: 'Marble', g_quartzite: 'Quartzite', g_travertine: 'Travertine', g_other: 'Other',
+    remove: 'Remove countertop from project', legend_stone: 'stone', legend_off: 'no stone'
+  },
+  es: {
+    btn: 'Encimera', title: 'Encimera de piedra', sub: 'La piedra va sola sobre los módulos base y las islas. Haz clic en un módulo en la planta para quitar/poner la piedra. Apariencia aproximada — confirma la placa con el marmolista.',
+    show: 'Mostrar encimera en el 3D', plan: 'Dónde va la piedra', runs: 'Tramos', none_found: 'Ningún módulo base en el proyecto.',
+    wall_n: 'Pared {n}', island: 'Isla', modules: '{n} módulo(s)', excluded: 'sin piedra',
+    wf_left: 'Waterfall izquierda', wf_right: 'Waterfall derecha', ext_left: 'Extender punta izq.', ext_right: 'Extender punta der.', back: 'Extender atrás (taburetes)',
+    stone: 'Piedra', thick: 'Espesor', splash: 'Salpicadero', sp_none: 'Sin (solo encimera)', sp_mirror: 'Zócalo detrás de la piedra', sp_high: 'Alto (hasta los altos)', sp_h: 'Altura del zócalo',
+    ov_door: 'Vuelo delante de la puerta', ov_box: 'Vuelo delante de la caja (sin puerta)', ov_end: 'Vuelo en punta libre', area: 'Área de piedra (aprox.)',
+    g_quartz: 'Cuarzo', g_granite: 'Granito', g_marble: 'Mármol', g_quartzite: 'Cuarcita', g_travertine: 'Travertino', g_other: 'Otros',
+    remove: 'Quitar encimera del proyecto', legend_stone: 'piedra', legend_off: 'sin piedra'
+  }
+};
+function banT(k, vars) {
+  const lang = (typeof I18n !== 'undefined' && I18n.getLanguage && I18n.getLanguage()) || 'pt';
+  let t = (BAN_TXT[lang] && BAN_TXT[lang][k]) || BAN_TXT.pt[k] || k;
+  if (vars) Object.keys(vars).forEach((v) => { t = t.replace('{' + v + '}', vars[v]); });
+  return t;
+}
+function bancadaPedra(id) { return BANCADA_CATALOGO.find((p) => p.id === id) || BANCADA_CATALOGO[0]; }
+function bancadaNome(p) {
+  const lang = (typeof I18n !== 'undefined' && I18n.getLanguage && I18n.getLanguage()) || 'pt';
+  return (p && p.n && (p.n[lang] || p.n.pt)) || '';
+}
+function bancadaCfg() { return projectBancada && projectBancada.ativo ? projectBancada : null; }
+function bancadaNormaliza(v) {
+  if (!v || typeof v !== 'object') return null;
+  const c = Object.assign({}, BANCADA_PADRAO, v);
+  c.excluidos = Array.isArray(v.excluidos) ? v.excluidos.slice() : [];
+  c.pontas = (v.pontas && typeof v.pontas === 'object') ? JSON.parse(JSON.stringify(v.pontas)) : {};
+  c.ilha_tras = (v.ilha_tras && typeof v.ilha_tras === 'object') ? Object.assign({}, v.ilha_tras) : {};
+  if (['nenhum', 'espelho', 'alto'].indexOf(c.splash) < 0) c.splash = 'espelho';
+  if (!BANCADA_CATALOGO.some((p) => p.id === c.pedra)) c.pedra = BANCADA_PADRAO.pedra;
+  return c;
+}
+
+// ---------------------------------------------------------------- dados
+function banShapes(pieces, set) {
+  (pieces || []).forEach((p) => {
+    if (!p) return;
+    if (p.shape_type) set.add(String(p.shape_type));
+    if (Array.isArray(p.child_pieces)) banShapes(p.child_pieces, set);
+  });
+  return set;
+}
+function banPecas(slot) {
+  try { return (typeof projectSlotEffectivePieces === 'function') ? projectSlotEffectivePieces(slot) : (slot.pieces || []); } catch (e) { return slot.pieces || []; }
+}
+// 'base' | 'sobre' (pia/cooktop em cima) | 'aereo' | 'alto' (corta a linha) | null
+function bancadaClassifica(slot) {
+  if (!slot || slot.oculto) return null;
+  const mod = slot.module || {};
+  if (mod.wall_structure) return null;
+  const ilha = (typeof isFloorSlot === 'function') && isFloorSlot(slot);
+  const baixo = Number(slot.floor_height_mm || 0) + (ilha ? Number(slot.fineOffsetYMm || 0) : 0);
+  const H = Number(slot.height_mm || 0);
+  if (mod.is_decoration || mod.visual_only) {
+    const sh = banShapes(banPecas(slot), new Set());
+    if (sh.has('decor_lava_loucas') || sh.has('decor_lava_seca')) return 'base';
+    if (sh.has('decor_pia') || sh.has('decor_farm_pia') || sh.has('decor_cooktop')) return 'sobre';
+    if (sh.has('decor_coifa') || baixo >= 1100) return 'aereo';
+    if (sh.has('decor_porta') || sh.has('decor_janela') || sh.size === 0) return null;
+    return 'alto';
+  }
+  if (baixo >= 1000) return 'aereo';
+  if (baixo <= 300 && H >= 450 && H <= 1050) return 'base';
+  return 'alto';
+}
+
+// Pose do módulo no mundo (mesma do 3D): centro do pé (ox,oz), base (oy),
+// eixos U (largura, local +X) e N (frente, local +Z).
+function banFrame(slot, paredes) {
+  const f = (typeof getSlotWorldFrame === 'function') ? getSlotWorldFrame(slot) : null;
+  if (!f) return null;
+  let ox = f.ox, oz = f.oz, oy = f.oy, rot = f.rotY;
+  const ilha = isFloorSlot(slot);
+  if (!ilha) {
+    const w = paredes.find((p) => p.wallIndex === Number(slot.wall_index || 0));
+    const fz = Number(slot.fineOffsetZMm || 0) / 1000;
+    if (w && fz) { ox += w.intoDirX * fz; oz += w.intoDirZ * fz; }
+  }
+  return {
+    ox, oz, oy, rot, w: f.widthM, h: f.heightM, d: f.depthM,
+    U: { x: Math.cos(rot), z: -Math.sin(rot) }, N: { x: Math.sin(rot), z: Math.cos(rot) }
+  };
+}
+const banDot = (p, a) => p.x * a.x + p.z * a.z;
+
+let banCache = { chave: null, res: null };
+// Monta os trechos (runs) de pedra. Só DADOS (sem cena) — usado pelo 3D,
+// pela janela (planta) e pelo ajuste de pia/cooktop.
+function bancadaRuns() {
+  const cfg = bancadaCfg();
+  if (!cfg || typeof projectSlots === 'undefined') return [];
+  const paredes = (typeof getProjectWallGeometry === 'function' ? getProjectWallGeometry() : []) || [];
+  let chave;
+  try {
+    chave = JSON.stringify([cfg, paredes.map((p) => [p.wallIndex, p.originX, p.originZ, p.alongDirX, p.alongDirZ, p.intoDirX, p.intoDirZ, p.widthM, p.oculta]),
+      projectSlots.map((s) => [s.id, s.placement, s.wall_index, s.x_mm, s.width_mm, s.height_mm, s.depth_mm, s.floor_height_mm, s.floor_x_mm, s.floor_z_mm, s.floor_rotation_deg, s.fineOffsetYMm, s.fineOffsetZMm, s.oculto, s.module && s.module.id, s._temFrente])]);
+  } catch (e) { chave = null; }
+  if (chave && banCache.chave === chave) return banCache.res;
+  const res = bancadaRunsCalc(cfg, paredes);
+  banCache = { chave, res };
+  return res;
+}
+
+function bancadaRunsCalc(cfg, paredes) {
+  const excl = new Set(cfg.excluidos || []);
+  const itens = [];
+  projectSlots.forEach((slot) => {
+    const tipo = bancadaClassifica(slot);
+    if (!tipo) return;
+    const f = banFrame(slot, paredes);
+    if (!f) return;
+    const ilha = isFloorSlot(slot);
+    if (!ilha && !paredes.some((p) => p.wallIndex === Number(slot.wall_index || 0) && !p.oculta)) return;
+    itens.push({ slot, tipo, f, ilha, cu: f.ox * f.U.x + f.oz * f.U.z, cn: f.ox * f.N.x + f.oz * f.N.z, topo: f.oy + f.h });
+  });
+  const bases = itens.filter((it) => it.tipo === 'base' && !excl.has(it.slot.id));
+  // agrupa por parede (ou por giro + linha de fundo, na ilha)
+  const grupos = {};
+  bases.forEach((it) => {
+    const fundo = it.cn - it.f.d / 2;
+    const k = it.ilha
+      ? 'f' + Math.round(((it.f.rot * 180 / Math.PI) % 360 + 360) % 360) + '|' + Math.round(fundo * 50)
+      : 'w' + Number(it.slot.wall_index || 0);
+    (grupos[k] = grupos[k] || []).push(Object.assign(it, { fundo }));
+  });
+  const runs = [];
+  Object.keys(grupos).forEach((k) => {
+    const lista = grupos[k].sort((a, b) => a.cu - b.cu);
+    let atual = null;
+    lista.forEach((it) => {
+      const esq = it.cu - it.f.w / 2;
+      if (atual) {
+        const ult = atual.membros[atual.membros.length - 1];
+        const gap = esq - (ult.cu + ult.f.w / 2);
+        if (gap <= 0.006 && gap > -0.05 && Math.abs(it.topo - atual.topoMax) < 0.016 && Math.abs(it.fundo - atual.fundo) < 0.03) {
+          atual.membros.push(it); atual.topoMax = Math.max(atual.topoMax, it.topo); return;
+        }
+      }
+      atual = { grupo: k, ilha: it.ilha, wallIndex: it.ilha ? null : Number(it.slot.wall_index || 0), U: it.f.U, N: it.f.N, fundo: it.fundo, membros: [it], topoMax: it.topo };
+      runs.push(atual);
+    });
+  });
+  const esp = Math.max(0.01, (Number(cfg.esp_mm) || 30) / 1000);
+  const balPorta = (Number(cfg.bal_porta_mm) || 0) / 1000, balCaixa = (Number(cfg.bal_caixa_mm) || 0) / 1000, balPonta = (Number(cfg.bal_ponta_mm) || 0) / 1000;
+  // ordem: paredes primeiro (por índice), ilhas depois — a ordem decide quem
+  // é aparado no canto em L.
+  runs.sort((a, b) => (a.ilha - b.ilha) || ((a.wallIndex || 0) - (b.wallIndex || 0)));
+  runs.forEach((r, i) => {
+    r.id = r.membros[0].slot.id;
+    r.u0 = r.membros[0].cu - r.membros[0].f.w / 2;
+    r.u1 = r.membros[r.membros.length - 1].cu + r.membros[r.membros.length - 1].f.w / 2;
+    r.topo = r.topoMax;
+    r.esp = esp;
+    r.membros.forEach((m) => {
+      const temFrente = (m.slot._temFrente != null) ? !!m.slot._temFrente : !(m.slot.module && m.slot.module.is_decoration);
+      m.frente = m.f.d + (temFrente ? BANCADA_PORTA_M + balPorta : balCaixa);
+      m.v0 = m.fundo - r.fundo; // 0 no fundo
+    });
+    r.tras = r.ilha ? Math.max(0, ...r.membros.map((m) => Number((cfg.ilha_tras || {})[m.slot.id]) || 0)) / 1000 : 0;
+    const pE = (cfg.pontas || {})[r.membros[0].slot.id + '|E'] || {};
+    const pD = (cfg.pontas || {})[r.membros[r.membros.length - 1].slot.id + '|D'] || {};
+    r.wfE = !!pE.wf; r.wfD = !!pD.wf;
+    r.extE = r.ilha ? (Number(pE.ext_mm) || 0) / 1000 : 0;
+    r.extD = r.ilha ? (Number(pD.ext_mm) || 0) / 1000 : 0;
+    // ponta encostada em algo (parede no fim, torre, fogão, outra base sem pedra...)?
+    const bloq = (lado) => {
+      const uP = lado === 'E' ? r.u0 : r.u1;
+      if (!r.ilha) {
+        const w = paredes.find((p) => p.wallIndex === r.wallIndex);
+        if (w) {
+          const a = banDot({ x: w.originX, z: w.originZ }, r.U);
+          const b = banDot({ x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }, r.U);
+          if (Math.abs(uP - a) < 0.012 || Math.abs(uP - b) < 0.012) return true;
+        }
+      }
+      return itens.some((o) => {
+        if (o.tipo === 'aereo' || o.tipo === 'sobre' || r.membros.some((m) => m.slot === o.slot)) return false;
+        if (o.f.oy > r.topo - 0.05) return false;
+        // caixa do outro no referencial do trecho
+        const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => {
+          const x = o.f.ox + o.f.U.x * sx * o.f.w / 2 + o.f.N.x * sz * o.f.d / 2;
+          const z = o.f.oz + o.f.U.z * sx * o.f.w / 2 + o.f.N.z * sz * o.f.d / 2;
+          return { u: banDot({ x, z }, r.U), v: banDot({ x, z }, r.N) - r.fundo };
+        });
+        const umin = Math.min(...cs.map((p) => p.u)), umax = Math.max(...cs.map((p) => p.u));
+        const vmin = Math.min(...cs.map((p) => p.v)), vmax = Math.max(...cs.map((p) => p.v));
+        if (vmax < 0.05 || vmin > 0.5) return false;
+        return lado === 'E' ? (umax > uP - 0.012 && umax < uP + 0.05) : (umin < uP + 0.012 && umin > uP - 0.05);
+      });
+    };
+    r.bloqE = bloq('E'); r.bloqD = bloq('D');
+    r.uE = r.u0 - (r.wfE ? esp : (r.extE || (r.bloqE ? 0 : balPonta)));
+    r.uD = r.u1 + (r.wfD ? esp : (r.extD || (r.bloqD ? 0 : balPonta)));
+    r.aparadoE = false; r.aparadoD = false;
+    r.poli = bancadaPoligono(r);
+    // CANTO EM L: aparar contra os trechos de parede anteriores
+    if (!r.ilha) {
+      for (let j = 0; j < i; j++) {
+        const s = runs[j];
+        if (s.ilha || s.wallIndex === r.wallIndex) continue;
+        const sp = s.poli.map(([u, v]) => banMundo(s, u, v));
+        const vm = Math.min(...r.membros.map((m) => m.frente)) / 2;
+        const dentro = (u) => banDentro(banMundo(r, u, vm), sp);
+        if (dentro(r.uE + 0.002)) {
+          let a = r.uE, b = r.uD;
+          if (dentro(b)) continue;
+          for (let k2 = 0; k2 < 40; k2++) { const m = (a + b) / 2; if (dentro(m)) a = m; else b = m; }
+          r.uE = b; r.aparadoE = true; r.wfE = false;
+        }
+        if (dentro(r.uD - 0.002)) {
+          let a = r.uD, b = r.uE;
+          if (dentro(b)) continue;
+          for (let k2 = 0; k2 < 40; k2++) { const m = (a + b) / 2; if (dentro(m)) a = m; else b = m; }
+          r.uD = b; r.aparadoD = true; r.wfD = false;
+        }
+        r.poli = bancadaPoligono(r);
+      }
+    }
+  });
+  // pia/cooktop soltos (decoração) que estão em cima de algum trecho
+  const sobre = {};
+  itens.filter((it) => it.tipo === 'sobre').forEach((it) => {
+    const r = runs.find((rr) => {
+      const u = banDot({ x: it.f.ox, z: it.f.oz }, rr.U), v = banDot({ x: it.f.ox, z: it.f.oz }, rr.N) - rr.fundo;
+      return u > rr.uE - 0.01 && u < rr.uD + 0.01 && v > -0.02 && v < Math.max(...rr.membros.map((m) => m.frente)) + 0.02
+        && Math.abs(it.f.oy - rr.topo) < 0.15;
+    });
+    if (r) sobre[it.slot.id] = r;
+  });
+  runs.sobre = sobre;
+  runs.itens = itens;
+  return runs;
+}
+
+// Contorno do tampo no referencial do trecho (u ao longo, v do fundo pra frente)
+function bancadaPoligono(r) {
+  const vb = -(r.tras || 0);
+  const M = r.membros;
+  const pts = [[r.uE, vb], [r.uD, vb]];
+  for (let i = M.length - 1; i >= 0; i--) {
+    const m = M[i];
+    const uR = i === M.length - 1 ? r.uD : m.cu + m.f.w / 2;
+    const uL = i === 0 ? r.uE : m.cu - m.f.w / 2;
+    pts.push([uR, m.frente], [uL, m.frente]);
+  }
+  const out = [];
+  pts.forEach((p) => {
+    const q = out[out.length - 1];
+    if (!q || Math.abs(q[0] - p[0]) > 1e-6 || Math.abs(q[1] - p[1]) > 1e-6) out.push(p);
+  });
+  return out;
+}
+function banMundo(r, u, v) {
+  return { x: r.U.x * u + r.N.x * (v + r.fundo), z: r.U.z * u + r.N.z * (v + r.fundo) };
+}
+function banLocal(r, p) { return [banDot(p, r.U), banDot(p, r.N) - r.fundo]; }
+function banDentro(p, poli) {
+  let d = false;
+  for (let i = 0, j = poli.length - 1; i < poli.length; j = i++) {
+    const a = poli[i], b = poli[j];
+    if (((a.z > p.z) !== (b.z > p.z)) && (p.x < (b.x - a.x) * (p.z - a.z) / ((b.z - a.z) || 1e-12) + a.x)) d = !d;
+  }
+  return d;
+}
+
+// ---------------------------------------------------- pia/cooktop sobre a pedra
+// Recortes da cuba (mundo) anotados no último build — usados pelo bancadaMontar.
+let bancadaRecortes = {};
+function bancadaAjustaAssembly(slot, assembly) {
+  if (!assembly || !assembly.group) return;
+  // tem porta/frente? (decide 1" à frente da porta x 2" à frente da caixa)
+  let temFrente = false;
+  assembly.group.traverse((o) => { if (o.userData && o.userData.isFrontPiece) temFrente = true; });
+  if (slot._temFrente !== temFrente) { slot._temFrente = temFrente; }
+  delete bancadaRecortes[slot.id];
+  const cfg = bancadaCfg();
+  if (!cfg) return;
+  const runs = bancadaRuns();
+  if (!runs.length) return;
+  const membro = runs.find((r) => r.membros.some((m) => m.slot.id === slot.id));
+  const sobre = runs.sobre && runs.sobre[slot.id];
+  const run = membro || sobre;
+  if (!run) return;
+  const topoPedra = run.topo + run.esp;
+  const paredes = getProjectWallGeometry() || [];
+  const f = banFrame(slot, paredes);
+  if (!f) return;
+  const base = Number(assembly.floor_height_m || 0) + (isFloorSlot(slot) ? Number(assembly.fineOffsetY_m || 0) : 0);
+  assembly.group.updateMatrixWorld(true);
+  const decs = [];
+  assembly.group.traverse((o) => {
+    const sh = o.userData && o.userData.decorShape;
+    if (sh === 'decor_pia' || sh === 'decor_farm_pia' || sh === 'decor_cooktop') decs.push(o);
+  });
+  if (!decs.length) return;
+  const recortes = [];
+  let deltaSlot = null;
+  decs.forEach((o) => {
+    const sh = o.userData.decorShape;
+    let ref = null;
+    if (sh === 'decor_cooktop') {
+      const b = new THREE.Box3().setFromObject(o);
+      if (b.isEmpty()) return;
+      ref = b.min.y;
+    } else {
+      let cb = null;
+      o.traverse((q) => { if (q.userData && q.userData.decorCounter) cb = q; });
+      if (cb) { const b = new THREE.Box3().setFromObject(cb); ref = b.max.y; }
+      else { const b = new THREE.Box3().setFromObject(o); ref = b.max.y; }
+    }
+    if (ref == null) return;
+    // só mexe no que está na altura do tampo (não no forno da torre etc.)
+    if (Math.abs(base + ref - run.topo) > 0.12) return;
+    const delta = topoPedra - (base + ref);
+    if (membro) o.position.y += delta; else deltaSlot = delta;
+    if (sh !== 'decor_cooktop') {
+      o.traverse((q) => { if (q.userData && q.userData.decorCounter) q.visible = false; });
+      let rim = null;
+      o.traverse((q) => { if (!rim && q.userData && q.userData.decorRim) rim = q; });
+      const b = new THREE.Box3().setFromObject(rim || o);
+      if (!b.isEmpty()) {
+        const cs = [[b.min.x, b.min.z], [b.max.x, b.min.z], [b.max.x, b.max.z], [b.min.x, b.max.z]];
+        recortes.push(cs.map(([lx, lz]) => ({ x: f.ox + lx * f.U.x + lz * f.N.x, z: f.oz + lx * f.U.z + lz * f.N.z })));
+      }
+    }
+  });
+  if (deltaSlot != null) assembly.floor_height_m = Number(assembly.floor_height_m || 0) + deltaSlot;
+  if (recortes.length) bancadaRecortes[slot.id] = recortes;
+}
+
+// ---------------------------------------------------------------- 3D
+const BAN_TEX = (typeof window !== 'undefined') ? (window.__legnoStoneTex || (window.__legnoStoneTex = {})) : {};
+let banRedesenhoPend = false;
+function bancadaTextura(THREE, pedra, renderer) {
+  const url = 'assets/stones/' + pedra.id + '.jpg?v=1';
+  let t = BAN_TEX[url];
+  if (!t) {
+    t = BAN_TEX[url] = new THREE.TextureLoader().load(url, () => {
+      if (banRedesenhoPend) return;
+      banRedesenhoPend = true;
+      setTimeout(() => { banRedesenhoPend = false; bancadaRedesenha(); }, 30);
+    });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    if (THREE.sRGBEncoding) t.encoding = THREE.sRGBEncoding;
+    const tile = (Number(pedra.t) || 1500) / 1000;
+    t.repeat.set(1 / tile, 1 / tile);
+  }
+  try { if (renderer && renderer.capabilities) t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); } catch (e) { /* ok */ }
+  return t;
+}
+
+function bancadaMontar(THREE, ctx) {
+  const cfg = bancadaCfg();
+  if (!cfg) return null;
+  const runs = bancadaRuns();
+  if (!runs.length) return null;
+  const pedra = bancadaPedra(cfg.pedra);
+  const mat = new THREE.MeshStandardMaterial({ map: bancadaTextura(THREE, pedra, ctx && ctx.renderer), roughness: Number(pedra.r) || 0.3, metalness: 0 });
+  mat.color.setScalar(0.88); // mesma compensação de luz do piso (portal-28)
+  const matLinha = new THREE.LineBasicMaterial({ color: 0x6b655c });
+  const raiz = new THREE.Group();
+  raiz.userData.isBancada = true;
+  const semClique = (o) => { o.raycast = function () {}; return o; };
+  const Y = new THREE.Vector3(0, 1, 0);
+  const contorno = (mesh) => { try { mesh.add(semClique(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 25), matLinha))); } catch (e) { /* ok */ } return mesh; };
+  // caixa no referencial do trecho, com UV em METROS (a pedra sai em escala)
+  const caixa = (r, u0, u1, v0, v1, y0, y1) => {
+    const w = u1 - u0, h = y1 - y0, d = v1 - v0;
+    if (!(w > 0.001 && h > 0.001 && d > 0.001)) return null;
+    const g = new THREE.BoxGeometry(w, h, d);
+    const uv = g.attributes.uv;
+    const esc = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * esc[f][0], uv.getY(i) * esc[f][1]); }
+    const m = new THREE.Mesh(g, mat);
+    const U = new THREE.Vector3(r.U.x, 0, r.U.z), N = new THREE.Vector3(r.N.x, 0, r.N.z);
+    m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(U, Y, N));
+    const c = banMundo(r, (u0 + u1) / 2, (v0 + v1) / 2);
+    m.position.set(c.x, (y0 + y1) / 2, c.z);
+    raiz.add(semClique(contorno(m)));
+    return m;
+  };
+  const paredes = getProjectWallGeometry() || [];
+  runs.forEach((r) => {
+    // ---- tampo (contorno + recorte da cuba), extrudado pra baixo
+    const sh = new THREE.Shape(r.poli.map(([u, v]) => new THREE.Vector2(u, v)));
+    const vMax = Math.max(...r.membros.map((m) => m.frente));
+    Object.keys(bancadaRecortes).forEach((sid) => {
+      if (!projectSlots.some((s) => s.id === sid || String(s.id) === sid)) return;
+      (bancadaRecortes[sid] || []).forEach((pts) => {
+        const loc = pts.map((p) => banLocal(r, p));
+        const ok = loc.every(([u, v]) => u > r.uE + 0.01 && u < r.uD - 0.01 && v > -(r.tras || 0) + 0.01 && v < vMax - 0.01);
+        if (!ok) return;
+        sh.holes.push(new THREE.Path(loc.map(([u, v]) => new THREE.Vector2(u, v))));
+      });
+    });
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: r.esp, bevelEnabled: false, curveSegments: 4 });
+    const tampo = new THREE.Mesh(geo, mat);
+    const m4 = new THREE.Matrix4().makeBasis(new THREE.Vector3(r.U.x, 0, r.U.z), new THREE.Vector3(r.N.x, 0, r.N.z), new THREE.Vector3(0, -1, 0));
+    m4.setPosition(r.N.x * r.fundo, r.topo + r.esp, r.N.z * r.fundo);
+    tampo.matrixAutoUpdate = false;
+    tampo.matrix.copy(m4);
+    raiz.add(semClique(contorno(tampo)));
+    // ---- waterfall nas pontas
+    const vb = -(r.tras || 0);
+    if (r.wfE) caixa(r, r.uE, r.uE + r.esp, vb, r.membros[0].frente, 0, r.topo);
+    if (r.wfD) caixa(r, r.uD - r.esp, r.uD, vb, r.membros[r.membros.length - 1].frente, 0, r.topo);
+    // ---- backsplash (só parede; ilha NUNCA tem pedra atrás)
+    if (!r.ilha && cfg.splash !== 'nenhum') bancadaSplash(r, cfg, paredes, runs, caixa);
+  });
+  return raiz;
+}
+
+function bancadaSplash(r, cfg, paredes, runs, caixa) {
+  const topoPedra = r.topo + r.esp;
+  const w = paredes.find((p) => p.wallIndex === r.wallIndex);
+  let uS = r.u0, uF = r.u1; // espelho corre só sobre os módulos (não sobre o balanço da ponta)
+  // canto em L: o espelho corre até o canto, encostando no espelho da outra parede
+  const outros = runs.filter((s) => s !== r && !s.ilha);
+  const noOutro = (u) => outros.some((s) => banDentro(banMundo(r, u, 0.005), s.poli.map(([a, b]) => banMundo(s, a, b))));
+  if (w) {
+    const a = banDot({ x: w.originX, z: w.originZ }, r.U);
+    const b = banDot({ x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }, r.U);
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    if (noOutro(uS - 0.01)) uS = lo + BANCADA_SPLASH_ESP_M;
+    if (noOutro(uF + 0.01)) uF = hi - BANCADA_SPLASH_ESP_M;
+  }
+  if (uF - uS < 0.02) return;
+  // altura em cada ponto: espelho fixo, ou "alto" até o aéreo de cima
+  const aereos = [];
+  (runs.itens || []).forEach((it) => {
+    if (it.tipo !== 'aereo' || it.ilha || Number(it.slot.wall_index || 0) !== r.wallIndex) return;
+    aereos.push({ a: it.cu - it.f.w / 2, b: it.cu + it.f.w / 2, y: it.f.oy });
+  });
+  const padraoAlto = aereos.length ? Math.min(...aereos.map((x) => x.y)) - topoPedra : 0.457;
+  // aberturas da parede (janela limita a altura, porta/passagem corta)
+  const abert = [];
+  if (w && Array.isArray(w.openings)) {
+    w.openings.forEach((o) => {
+      const x0 = (Number(o.x_mm) || 0) / 1000, x1 = x0 + (Number(o.width_mm) || 0) / 1000;
+      const ua = banDot({ x: w.originX + w.alongDirX * x0, z: w.originZ + w.alongDirZ * x0 }, r.U);
+      const ub = banDot({ x: w.originX + w.alongDirX * x1, z: w.originZ + w.alongDirZ * x1 }, r.U);
+      const sill = (Number(o.sill_mm) || 0) / 1000;
+      abert.push({ a: Math.min(ua, ub), b: Math.max(ua, ub), sill: (o.type === 'window' || o.type === 'nicho') ? sill : 0 });
+    });
+  }
+  const cortes = new Set([uS, uF]);
+  aereos.concat(abert).forEach((x) => { if (x.a > uS && x.a < uF) cortes.add(x.a); if (x.b > uS && x.b < uF) cortes.add(x.b); });
+  const us = Array.from(cortes).sort((a, b) => a - b);
+  for (let i = 0; i < us.length - 1; i++) {
+    const a = us[i], b = us[i + 1];
+    if (b - a < 0.005) continue;
+    const meio = (a + b) / 2;
+    let h;
+    if (cfg.splash === 'alto') {
+      const em = aereos.filter((x) => x.a <= meio && x.b >= meio);
+      h = em.length ? Math.min(...em.map((x) => x.y)) - topoPedra : padraoAlto;
+    } else {
+      h = (Number(cfg.splash_mm) || 102) / 1000;
+    }
+    abert.filter((x) => x.a <= meio && x.b >= meio).forEach((x) => { h = Math.min(h, x.sill - topoPedra); });
+    if (h < 0.03) continue;
+    caixa(r, a, b, 0, BANCADA_SPLASH_ESP_M, topoPedra, topoPedra + h);
+  }
+}
+
+// área aproximada (m²): tampo + waterfall + backsplash simplificado
+function bancadaAreaM2() {
+  const runs = bancadaRuns();
+  const cfg = bancadaCfg();
+  if (!cfg) return 0;
+  let a = 0;
+  runs.forEach((r) => {
+    const p = r.poli;
+    let s = 0;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) s += (p[j][0] + p[i][0]) * (p[j][1] - p[i][1]);
+    a += Math.abs(s) / 2;
+    if (r.wfE) a += r.topo * (r.membros[0].frente + (r.tras || 0));
+    if (r.wfD) a += r.topo * (r.membros[r.membros.length - 1].frente + (r.tras || 0));
+    if (!r.ilha && cfg.splash === 'espelho') a += (r.u1 - r.u0) * (Number(cfg.splash_mm) || 102) / 1000;
+    if (!r.ilha && cfg.splash === 'alto') a += (r.u1 - r.u0) * 0.457;
+  });
+  return a;
+}
+
+function bancadaRedesenha() {
+  try { if (typeof renderProjectCanvas === 'function') renderProjectCanvas(); } catch (e) { /* ok */ }
+  try {
+    const w = document.getElementById('po-proj-3d-wrap');
+    if (w && w.style.display !== 'none' && typeof generateProject3D === 'function') generateProject3D();
+  } catch (e) { /* ok */ }
+}
+function bancadaMudou() {
+  try { if (typeof markProjectDirty === 'function') markProjectDirty(); } catch (e) { /* ok */ }
+  banCache.chave = null;
+  bancadaRedesenha();
+  renderJanelaBancada();
+}
+
+// Salvar / abrir (portal-09) e projeto novo (portal-08)
+function getProjectBancadaForSave() { return projectBancada ? JSON.parse(JSON.stringify(projectBancada)) : null; }
+function restoreProjectBancada(v) {
+  projectBancada = bancadaNormaliza(v);
+  banCache.chave = null;
+  bancadaRecortes = {};
+  atualizaBotaoBancada();
+  const m = document.getElementById('po-ban-modal');
+  if (m && m.classList.contains('open')) renderJanelaBancada();
+}
+
+(function ligaViewersBancada() {
+  [typeof ViewerProjectEdit !== 'undefined' ? ViewerProjectEdit : null,
+    typeof ViewerProject !== 'undefined' ? ViewerProject : null].forEach((v) => {
+    if (v && v.setArchitectureBuilder) v.setArchitectureBuilder(bancadaMontar, 'bancada');
+  });
+})();
+
+// ---------------------------------------------------------------- janela
+function banUnidade() { return (document.getElementById('po-unit-select') || {}).value || 'mm'; }
+function banFmt(mm) {
+  try { return (typeof formatDimensionNumber === 'function') ? formatDimensionNumber(mm, banUnidade()) : String(Math.round(mm)); } catch (e) { return String(Math.round(mm)); }
+}
+function banParse(txt) {
+  try {
+    const v = (typeof parseDimensionInput === 'function') ? parseDimensionInput(txt, banUnidade()) : parseFloat(txt);
+    return (v === null || isNaN(v)) ? null : v;
+  } catch (e) { return null; }
+}
+const banEsc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+function atualizaBotaoBancada() {
+  const btn = document.getElementById('po-proj-countertop-btn');
+  if (btn) btn.classList.toggle('active', !!bancadaCfg());
+}
+
+// Planta (vista de cima) com paredes, módulos base (clicáveis) e a pedra.
+function bancadaPlantaSvg() {
+  const paredes = (getProjectWallGeometry() || []).filter((p) => !p.oculta);
+  const cfg = projectBancada || BANCADA_PADRAO;
+  const excl = new Set(cfg.excluidos || []);
+  const runs = bancadaCfg() ? bancadaRuns() : [];
+  const itens = [];
+  projectSlots.forEach((slot) => {
+    const t = bancadaClassifica(slot);
+    if (t !== 'base') return;
+    const f = banFrame(slot, getProjectWallGeometry() || []);
+    if (!f) return;
+    const cs = [[-1, 0], [1, 0], [1, 1], [-1, 1]].map(([sx, sz]) => ({
+      x: f.ox + f.U.x * sx * f.w / 2 + f.N.x * (sz - 0.5) * f.d, z: f.oz + f.U.z * sx * f.w / 2 + f.N.z * (sz - 0.5) * f.d
+    }));
+    itens.push({ id: slot.id, cs, off: excl.has(slot.id) });
+  });
+  const pts = [];
+  paredes.forEach((w) => { pts.push({ x: w.originX, z: w.originZ }, { x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }); });
+  itens.forEach((it) => pts.push(...it.cs));
+  const polis = runs.map((r) => r.poli.map(([u, v]) => banMundo(r, u, v)));
+  polis.forEach((p) => pts.push(...p));
+  if (!pts.length) return '';
+  const minX = Math.min(...pts.map((p) => p.x)) - 0.2, maxX = Math.max(...pts.map((p) => p.x)) + 0.2;
+  const minZ = Math.min(...pts.map((p) => p.z)) - 0.2, maxZ = Math.max(...pts.map((p) => p.z)) + 0.2;
+  const W = 360, esc = W / Math.max(maxX - minX, 0.5), H = Math.max(120, Math.min(320, (maxZ - minZ) * esc));
+  const e2 = Math.min(esc, H / Math.max(maxZ - minZ, 0.5));
+  const P = (p) => ((p.x - minX) * e2).toFixed(1) + ',' + ((p.z - minZ) * e2).toFixed(1);
+  let s = '<svg class="po-ban-planta" viewBox="0 0 ' + ((maxX - minX) * e2).toFixed(0) + ' ' + ((maxZ - minZ) * e2).toFixed(0) + '" xmlns="http://www.w3.org/2000/svg">';
+  paredes.forEach((w) => {
+    s += '<line x1="' + P({ x: w.originX, z: w.originZ }).split(',')[0] + '" y1="' + P({ x: w.originX, z: w.originZ }).split(',')[1]
+      + '" x2="' + P({ x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }).split(',')[0]
+      + '" y2="' + P({ x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }).split(',')[1] + '" class="po-ban-parede"/>';
+  });
+  polis.forEach((p) => { s += '<polygon points="' + p.map(P).join(' ') + '" class="po-ban-pedra"/>'; });
+  itens.forEach((it) => { s += '<polygon points="' + it.cs.map(P).join(' ') + '" class="po-ban-mod' + (it.off ? ' off' : '') + '" data-mod="' + banEsc(it.id) + '"><title>' + banEsc(it.off ? banT('excluded') : banT('legend_stone')) + '</title></polygon>'; });
+  s += '</svg>';
+  return s;
+}
+
+function renderJanelaBancada() {
+  const m = document.getElementById('po-ban-modal');
+  if (!m || !m.classList.contains('open')) return;
+  const cfg = projectBancada || bancadaNormaliza(BANCADA_PADRAO);
+  const uni = banUnidade();
+  const runs = bancadaCfg() ? bancadaRuns() : [];
+  const inp = (campo, mm) => '<span class="po-geo-inp"><input type="text" data-ban="' + campo + '" value="' + banEsc(banFmt(mm)) + '"><em>' + banEsc(uni) + '</em></span>';
+  let h = '<label class="po-ban-check"><input type="checkbox" data-ban-ativo' + (bancadaCfg() ? ' checked' : '') + '> ' + banEsc(banT('show')) + '</label>';
+  h += '<h4 class="po-geo-grupo">' + banEsc(banT('plan')) + '</h4>';
+  const svg = bancadaPlantaSvg();
+  h += svg ? '<div class="po-ban-planta-wrap">' + svg + '<div class="po-ban-legenda"><i class="pedra"></i>' + banEsc(banT('legend_stone')) + '<i class="off"></i>' + banEsc(banT('legend_off')) + '</div></div>' : '<p class="hint">' + banEsc(banT('none_found')) + '</p>';
+  if (runs.length) {
+    h += '<h4 class="po-geo-grupo">' + banEsc(banT('runs')) + '</h4>';
+    runs.forEach((r) => {
+      const ini = r.membros[0].slot.id, fim = r.membros[r.membros.length - 1].slot.id;
+      const pE = (cfg.pontas || {})[ini + '|E'] || {}, pD = (cfg.pontas || {})[fim + '|D'] || {};
+      const titulo = (r.ilha ? banT('island') : banT('wall_n', { n: r.wallIndex + 1 })) + ' · ' + banT('modules', { n: r.membros.length }) + ' · ' + banFmt((r.uD - r.uE) * 1000) + ' ' + uni;
+      h += '<div class="po-geo-item aberto" data-run="' + banEsc(ini) + '"><div class="po-geo-item-cab"><span>' + banEsc(titulo) + '</span></div><div class="po-geo-campos">';
+      if (!r.aparadoE) h += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(ini) + '|E"' + (pE.wf ? ' checked' : '') + '> ' + banEsc(banT('wf_left')) + '</label>';
+      else h += '<span></span>';
+      if (!r.aparadoD) h += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(fim) + '|D"' + (pD.wf ? ' checked' : '') + '> ' + banEsc(banT('wf_right')) + '</label>';
+      if (r.ilha) {
+        const tras = Math.max(0, ...r.membros.map((mm) => Number((cfg.ilha_tras || {})[mm.slot.id]) || 0));
+        h += '<label>' + banEsc(banT('ext_left')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(ini) + '|E" value="' + banEsc(banFmt(Number(pE.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+        h += '<label>' + banEsc(banT('ext_right')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(fim) + '|D" value="' + banEsc(banFmt(Number(pD.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+        h += '<label>' + banEsc(banT('back')) + '<span class="po-geo-inp"><input type="text" data-tras="' + banEsc(r.membros.map((mm) => mm.slot.id).join(',')) + '" value="' + banEsc(banFmt(tras)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+      }
+      h += '</div></div>';
+    });
+    const a = bancadaAreaM2();
+    h += '<p class="hint po-ban-area">' + banEsc(banT('area')) + ': <b>' + (a * 10.7639).toFixed(1) + ' ft²</b> (' + a.toFixed(2) + ' m²)</p>';
+  }
+  // opções
+  h += '<div class="po-geo-campos po-ban-opcoes">';
+  h += '<label>' + banEsc(banT('thick')) + '<select data-ban-sel="esp_mm"><option value="20"' + (Number(cfg.esp_mm) === 20 ? ' selected' : '') + '>2 cm (3/4")</option><option value="30"' + (Number(cfg.esp_mm) !== 20 ? ' selected' : '') + '>3 cm (1 1/4")</option></select></label>';
+  h += '<label>' + banEsc(banT('splash')) + '<select data-ban-sel="splash"><option value="nenhum"' + (cfg.splash === 'nenhum' ? ' selected' : '') + '>' + banEsc(banT('sp_none')) + '</option><option value="espelho"' + (cfg.splash === 'espelho' ? ' selected' : '') + '>' + banEsc(banT('sp_mirror')) + '</option><option value="alto"' + (cfg.splash === 'alto' ? ' selected' : '') + '>' + banEsc(banT('sp_high')) + '</option></select></label>';
+  if (cfg.splash === 'espelho') h += '<label>' + banEsc(banT('sp_h')) + inp('splash_mm', cfg.splash_mm) + '</label>';
+  h += '<label>' + banEsc(banT('ov_door')) + inp('bal_porta_mm', cfg.bal_porta_mm) + '</label>';
+  h += '<label>' + banEsc(banT('ov_box')) + inp('bal_caixa_mm', cfg.bal_caixa_mm) + '</label>';
+  h += '<label>' + banEsc(banT('ov_end')) + inp('bal_ponta_mm', cfg.bal_ponta_mm) + '</label>';
+  h += '</div>';
+  // pedras
+  h += '<h4 class="po-geo-grupo">' + banEsc(banT('stone')) + ' — ' + banEsc(bancadaNome(bancadaPedra(cfg.pedra))) + '</h4>';
+  BANCADA_GRUPOS.forEach((g) => {
+    const it = BANCADA_CATALOGO.filter((p) => p.g === g);
+    if (!it.length) return;
+    h += '<div class="po-ban-subgrupo">' + banEsc(banT('g_' + g)) + '</div><div class="po-ban-grid">'
+      + it.map((p) => '<button type="button" class="po-ban-pedra-card' + (cfg.pedra === p.id ? ' selected' : '') + '" data-pedra="' + p.id + '" title="' + banEsc(bancadaNome(p)) + '"><img src="assets/stones/' + p.id + '_thumb.jpg?v=1" alt="" loading="lazy"><span>' + banEsc(bancadaNome(p)) + '</span></button>').join('')
+      + '</div>';
+  });
+  if (projectBancada) h += '<div class="po-geo-acoes"><button type="button" class="secondary po-geo-del" data-ban-remover>' + banEsc(banT('remove')) + '</button></div>';
+  const corpo = m.querySelector('.po-geo-corpo');
+  const rolagem = corpo.scrollTop;
+  corpo.innerHTML = h;
+  corpo.scrollTop = rolagem;
+}
+
+function bancadaGaranteCfg() {
+  if (!projectBancada) projectBancada = bancadaNormaliza(BANCADA_PADRAO);
+  return projectBancada;
+}
+
+function abrirJanelaBancada() {
+  let m = document.getElementById('po-ban-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'po-ban-modal';
+    m.innerHTML = '<div class="po-geo-card" role="dialog" aria-modal="false">'
+      + '<button type="button" class="po-auth-modal-close po-ban-fechar" aria-label="×">&times;</button>'
+      + '<h2></h2><p class="hint po-ban-sub"></p><div class="po-geo-corpo"></div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', (ev) => {
+      const t = ev.target;
+      if (t.closest('.po-ban-fechar')) { m.classList.remove('open'); return; }
+      const mod = t.closest('[data-mod]');
+      if (mod) {
+        const c = bancadaGaranteCfg();
+        c.ativo = true;
+        const id = mod.getAttribute('data-mod');
+        const real = (projectSlots.find((s) => String(s.id) === id) || {}).id;
+        const ix = c.excluidos.findIndex((x) => String(x) === id);
+        if (ix >= 0) c.excluidos.splice(ix, 1); else c.excluidos.push(real != null ? real : id);
+        bancadaMudou();
+        return;
+      }
+      const pd = t.closest('[data-pedra]');
+      if (pd) { const c = bancadaGaranteCfg(); c.pedra = pd.dataset.pedra; c.ativo = true; bancadaMudou(); return; }
+      if (t.closest('[data-ban-remover]')) { projectBancada = null; bancadaRecortes = {}; atualizaBotaoBancada(); bancadaMudou(); }
+    });
+    m.addEventListener('change', (ev) => {
+      const t = ev.target;
+      const c = bancadaGaranteCfg();
+      if (t.matches('[data-ban-ativo]')) { c.ativo = !!t.checked; }
+      else if (t.matches('[data-ban-sel]')) { const k = t.dataset.banSel; c[k] = k === 'esp_mm' ? Number(t.value) : t.value; }
+      else if (t.matches('[data-ban]')) { const v = banParse(t.value); if (v != null && v >= 0) c[t.dataset.ban] = v; }
+      else if (t.matches('[data-wf]')) { const k = t.dataset.wf; c.pontas[k] = Object.assign({}, c.pontas[k] || {}, { wf: !!t.checked }); }
+      else if (t.matches('[data-ext]')) { const v = banParse(t.value); const k = t.dataset.ext; if (v != null && v >= 0) c.pontas[k] = Object.assign({}, c.pontas[k] || {}, { ext_mm: v }); }
+      else if (t.matches('[data-tras]')) {
+        const v = banParse(t.value);
+        if (v != null && v >= 0) t.dataset.tras.split(',').forEach((id) => { c.ilha_tras[id] = v; });
+      } else return;
+      atualizaBotaoBancada();
+      bancadaMudou();
+    });
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && m.classList.contains('open')) m.classList.remove('open'); });
+  }
+  m.querySelector('h2').textContent = banT('title');
+  m.querySelector('.po-ban-sub').textContent = banT('sub');
+  // primeira vez: já liga com o padrão — a pedra aparece no 3D na hora
+  if (!projectBancada) { bancadaGaranteCfg(); atualizaBotaoBancada(); bancadaMudou(); }
+  try { const g = document.getElementById('po-geo-modal'); if (g) g.classList.remove('open'); } catch (e) { /* ok */ }
+  m.classList.add('open');
+  renderJanelaBancada();
+}
+
+(function attachBancada() {
+  const btn = document.getElementById('po-proj-countertop-btn');
+  if (btn) btn.addEventListener('click', () => {
+    try { if (window.LegnoTbMenus) window.LegnoTbMenus.menus.forEach((x) => x.fechar()); } catch (e) { /* ok */ }
+    abrirJanelaBancada();
+  });
+  const lbl = document.getElementById('po-proj-countertop-lbl');
+  if (lbl) lbl.textContent = banT('btn');
+  if (btn) { btn.title = banT('title'); btn.setAttribute('aria-label', banT('title')); }
+  atualizaBotaoBancada();
+})();

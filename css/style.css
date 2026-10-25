@@ -5954,3 +5954,28 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 .po-geo-campos .hint { grid-column: 1 / -1; margin: 0; }
 .po-geo-acoes { display: flex; justify-content: flex-end; gap: 8px; padding: 0 12px 10px; }
 .po-geo-del { color: #b3261e; }
+
+/* BANCADA DE PEDRA (25/10, js/portal-30-bancada.js) — janela lateral, mesmo
+   visual da Geometria (deixa o 3D à vista enquanto escolhe). */
+#po-ban-modal { display: none; position: fixed; top: 84px; right: 16px; z-index: 3200; width: 430px; max-width: calc(100vw - 32px); }
+#po-ban-modal.open { display: block; }
+.po-ban-check { display: flex !important; flex-direction: row !important; align-items: center; gap: 6px; font-size: 13px; color: var(--text, #1a1a1a); cursor: pointer; }
+.po-ban-planta-wrap { background: #f7f5f1; border-radius: 10px; padding: 8px; }
+.po-ban-planta { width: 100%; height: auto; max-height: 300px; display: block; }
+.po-ban-parede { stroke: #555; stroke-width: 5; stroke-linecap: round; }
+.po-ban-pedra { fill: rgba(176, 152, 118, .55); stroke: #6f604c; stroke-width: 1.5; pointer-events: none; }
+.po-ban-mod { fill: rgba(255, 255, 255, .01); stroke: #8c877e; stroke-width: 1; cursor: pointer; }
+.po-ban-mod:hover { stroke: #111; stroke-width: 2.5; }
+.po-ban-mod.off { fill: rgba(217, 83, 79, .14); stroke: #d9534f; stroke-dasharray: 4 3; }
+.po-ban-legenda { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted, #777); margin-top: 6px; }
+.po-ban-legenda i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-left: 8px; }
+.po-ban-legenda i.pedra { background: rgba(176, 152, 118, .7); border: 1px solid #6f604c; margin-left: 0; }
+.po-ban-legenda i.off { background: rgba(217, 83, 79, .2); border: 1px dashed #d9534f; }
+.po-ban-area { margin: 6px 2px 10px; }
+.po-ban-opcoes { padding: 4px 2px 8px; }
+.po-ban-subgrupo { font-size: 11px; color: var(--muted, #888); margin: 10px 0 4px; }
+.po-ban-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.po-ban-pedra-card { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border: 2px solid transparent; border-radius: 9px; background: var(--panel, #fff); color: var(--text, #1a1a1a); cursor: pointer; font-size: 11px; line-height: 1.15; text-align: center; box-shadow: 0 0 0 1px var(--border, #e2e2e2) inset; }
+.po-ban-pedra-card img { width: 70px; height: 70px; border-radius: 6px; object-fit: cover; display: block; }
+.po-ban-pedra-card:hover { box-shadow: 0 0 0 1px var(--accent, #1a1a1a) inset; }
+.po-ban-pedra-card.selected { border-color: var(--accent, #1a1a1a); }

@@ -4367,6 +4367,9 @@ function buildProjectAssemblies(slotsList) {
         }
       }
     }
+    // BANCADA DE PEDRA (25/10, portal-30): pia/cooktop sobem pra cima da
+    // pedra, o tampo falso da cuba some, e o recorte da cuba é anotado.
+    if (typeof bancadaAjustaAssembly === 'function') { try { bancadaAjustaAssembly(slot, assembly); } catch (e) { console.warn('[bancada]', e); } }
     return assembly;
   });
 }
@@ -5893,6 +5896,7 @@ function resetProject() {
   selectedProjectSlotId = null;
   if (typeof restoreProjectFloor === 'function') restoreProjectFloor(null); // piso liso (portal-28)
   if (typeof restoreProjectGeometria === 'function') restoreProjectGeometria(null); // sem geometria (portal-29)
+  if (typeof restoreProjectBancada === 'function') restoreProjectBancada(null); // sem bancada (portal-30)
   // AMBIENTE PADRÃO (2026-08-13): duas paredes de 3m em L e o piso 3x3 que
   // elas delimitam — o ponto de partida que o Matt pediu. Antes o projeto novo
   // nascia com UMA parede e o resto vinha das 3 formas fixas, que saíram.
