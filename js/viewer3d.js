@@ -4192,6 +4192,78 @@ const Viewer3D = (function () {
       doorGroup.add(knuckle);
     });
 
+    // ---- 2'. PORTA LIFT = Blum AVENTOS HK-XS (2026-10-24, Matt: "trocar
+    // desenho" — o pistão genérico saiu do orçamento, ver pricing.js
+    // liftKitFor). Por lado: a CAIXA do mecanismo presa por dentro da
+    // lateral, no alto e rente à frente (fixa, filha do parent), a placa na
+    // porta (gira junto, filha do doorGroup) e o BRAÇO chato ligando as duas
+    // — recalculado a cada quadro igual o pistão (updateStruts).
+    // Forma pela foto do Matt (24/10): o corpo do HK-XS é uma BARRA
+    // comprida e fina parafusada em pé na face interna da lateral, rente à
+    // frente, com o topo logo abaixo do tampo — INCLINADA (~23°, a ponta de
+    // baixo vai pra trás; Matt: "ele não fica vertical, fica meio
+    // inclinado"); do topo dela sai um BRAÇO
+    // chato até a placa na porta (~20 cm da borda da dobradiça). Só visual.
+    if (hingeSide === 'top') {
+      const tampo = 0.018;                       // chapa do tampo (aprox.)
+      const lateral = 0.018;
+      const corpoH = Math.min(0.22, doorHeightM * 0.65);
+      const corpoD = 0.028, corpoT = 0.014;
+      const frenteZ = doorGroup.position.z - doorThicknessM / 2 - 0.004;
+      const bracos = [];
+      const tmpW = new THREE.Vector3(), tmpD = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+      [-1, 1].forEach((sideX) => {
+        const xLocal = sideX * Math.max(doorWidthM / 2 - lateral - 0.003 - corpoT / 2, 0.02);
+        // corpo do mecanismo (fixo na lateral, rente à frente, inclinado:
+        // o topo encosta na frente e a ponta de baixo vai pra trás)
+        const incl = 0.4;   // rad (~23°)
+        const topoY = doorGroup.position.y - tampo - 0.004;
+        const topoZ = frenteZ - corpoD / 2 - 0.008;
+        const corpo = new THREE.Mesh(new THREE.BoxGeometry(corpoT, corpoH, corpoD), metal);
+        corpo.rotation.x = incl;
+        corpo.position.set(doorGroup.position.x + xLocal,
+          topoY - (corpoH / 2) * Math.cos(incl),
+          topoZ - (corpoH / 2) * Math.sin(incl));
+        parent.add(corpo);
+        // parafuso de regulagem na ponta de baixo (a "bolinha" da foto)
+        const dBaixo = corpoH / 2 - 0.014;
+        const parafuso = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.004, 14), metal);
+        parafuso.geometry.rotateZ(Math.PI / 2);
+        parafuso.position.set(corpo.position.x - sideX * (corpoT / 2 + 0.002),
+          corpo.position.y - dBaixo * Math.cos(incl), corpo.position.z - dBaixo * Math.sin(incl));
+        parent.add(parafuso);
+        // pivô do braço: topo do corpo, na frente
+        const fixo = new THREE.Vector3(corpo.position.x - sideX * (corpoT / 2 + 0.003), topoY - 0.012, topoZ + corpoD / 2 - 0.006);
+        // placa na porta (gira com a porta)
+        const yPorta = -Math.min(0.2, doorHeightM * 0.55);
+        const placa = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.05, 0.008), metal);
+        placa.position.set(xLocal - sideX * (corpoT / 2 + 0.003), yPorta, -doorThicknessM / 2 - 0.004);
+        doorGroup.add(placa);
+        const naPorta = new THREE.Vector3(placa.position.x, placa.position.y, placa.position.z - 0.004);
+        // braço chato (comprimento/orientação refeitos a cada quadro)
+        const braco = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.1, 0.005), metal);
+        parent.add(braco);
+        bracos.push({ mesh: braco, fixo: fixo, naPorta: naPorta });
+      });
+      const atualiza = () => {
+        parent.updateMatrixWorld(true);
+        doorGroup.updateMatrixWorld(true);
+        bracos.forEach((b) => {
+          tmpW.copy(b.naPorta);
+          doorGroup.localToWorld(tmpW);
+          parent.worldToLocal(tmpW);
+          tmpD.subVectors(tmpW, b.fixo);
+          const len = Math.max(tmpD.length(), 0.02);
+          b.mesh.position.copy(b.fixo).addScaledVector(tmpD, 0.5);
+          b.mesh.scale.set(1, len / 0.1, 1);
+          b.mesh.quaternion.setFromUnitVectors(up, tmpD.normalize());
+        });
+      };
+      atualiza();
+      doorGroup.userData.updateStruts = atualiza;
+      return;
+    }
+
     // ---- 2. Pistão a gás — 1 de cada lado (esquerda/direita da porta) ----
     // sign: 'top' (basculante) a porta pendura PRA BAIXO do pivô (Y local
     // negativo); 'bottom' (basculante inverso) pendura PRA CIMA (Y local

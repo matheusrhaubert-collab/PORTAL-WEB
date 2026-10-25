@@ -526,6 +526,16 @@
     { code: 'BLUM-20K1501', min: 800, max: 1800 }
   ];
   const LIFT_PLACAS = ['BLUM-20K5101', 'BLUM-20K4101'];
+  // Nome quando o item ainda não está cadastrado no ERP (migration 220 não
+  // rodou) — sem isto o orçamento mostrava só os 3 códigos e parecia que
+  // eram 3 mecanismos (Matt, 24/10: "trouxe 6 unidades de HKX, 2 de cada").
+  const LIFT_NOMES = {
+    'BLUM-20K1101': 'Blum HK-XS 20K1101 — mecanismo lift',
+    'BLUM-20K1301': 'Blum HK-XS 20K1301 — mecanismo lift',
+    'BLUM-20K1501': 'Blum HK-XS 20K1501 — mecanismo lift',
+    'BLUM-20K5101': 'Blum HK-XS 20K5101 — placa de fixação no corpo',
+    'BLUM-20K4101': 'Blum HK-XS 20K4101 — placa de fixação na porta'
+  };
   let densidadePadraoKgM3 = 700;
   function setDefaultDensity(d) { const n = Number(d); if (n > 0) densidadePadraoKgM3 = n; }
   function itemPorCodigo(code) {
@@ -562,7 +572,7 @@
       custo += c;
       itens.push({
         purchased_item_id: it ? it.id : null, code: code,
-        purchased_item_name: it ? it.name : code, unit: (it && it.unit) || 'un',
+        purchased_item_name: it ? it.name : (LIFT_NOMES[code] || code), unit: (it && it.unit) || 'un',
         kind: (it && it.kind) || 'acessorio', qty: n, cost: c
       });
     };
