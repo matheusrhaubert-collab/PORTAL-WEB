@@ -341,9 +341,125 @@ function createViewerComposition3D() {
     return (camera && camera.isOrthographicCamera) ? 'paralela' : 'perspectiva';
   }
 
+  // ==========================================================================
+  // MODO APRESENTAÇÃO (2026-10-25, Matt: "visualizador 3D meio renderizado...
+  // bem mais realista, pra apresentação ao cliente" — escolheu SÓ o 3D, sem
+  // IA). Continua 3D de verdade (gira, abre porta), só muda a "fotografia":
+  //  - luz de ambiente de estúdio (RoomEnvironment → PMREM): reflexo suave
+  //    em pedra/metal/pintura e luz que contorna os móveis;
+  //  - um "sol" de cima com sombra suave (móvel projeta sombra no piso e na
+  //    parede; parede/piso só RECEBEM — senão a parede apagaria o ambiente);
+  //  - some o contorno preto de desenho técnico.
+  // O complemento RoomEnvironment (three r128, mesmo CDN do portal) só é
+  // baixado no primeiro clique. Desligar volta tudo como era.
+  // ==========================================================================
+  const APRES_ENV = 0.2;
+  let apresOn = false, apresGrupos = null, apresSol = null, apresEnvRT = null, apresLuzesOrig = null;
+  function apresCarregaLibs() {
+    if (THREE.RoomEnvironment) return Promise.resolve();
+    if (window.__legnoApresLibs) return window.__legnoApresLibs;
+    const base = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/';
+    const um = (p) => new Promise((ok, erro) => {
+      const s = document.createElement('script');
+      s.src = base + p; s.onload = ok; s.onerror = () => erro(new Error('falhou ' + p));
+      document.head.appendChild(s);
+    });
+    window.__legnoApresLibs = um('environments/RoomEnvironment.js').catch((e) => { window.__legnoApresLibs = null; throw e; });
+    return window.__legnoApresLibs;
+  }
+  function apresAjustaSol() {
+    if (!apresSol) return;
+    const alvo = lastFitTarget ? lastFitTarget.clone() : new THREE.Vector3(0, 1, 1);
+    const tam = Math.max(lastFitTotalWidth || 4, lastFitMaxDepth || 4, 3);
+    // de cima e um pouco da frente/direita — sombra curta e natural
+    apresSol.position.set(alvo.x + tam * 0.35, alvo.y + tam * 1.1 + 2, alvo.z + tam * 0.6);
+    apresSol.target.position.copy(alvo);
+    apresSol.target.updateMatrixWorld();
+    const sc = apresSol.shadow.camera;
+    const r = tam * 0.85 + 0.5;
+    sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r;
+    sc.near = 0.1; sc.far = tam * 4 + 10;
+    sc.updateProjectionMatrix();
+  }
+  function apresAplicaNaCena() {
+    currentGroups.forEach((g) => {
+      const ehAmbiente = !!(g.userData && g.userData.legnoLayer === 'paredes');
+      g.traverse((o) => {
+        if (o.isMesh) {
+          const proxy = o.userData && o.userData.isHitboxProxy;
+          const invisivel = o.material && !Array.isArray(o.material) && o.material.transparent && o.material.opacity < 0.05;
+          o.castShadow = !ehAmbiente && !proxy && !invisivel;
+          o.receiveShadow = !proxy;
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
+            if (!m) return;
+            // o ambiente de estúdio é forte: só reflexo/preenchimento, a luz
+            // "de verdade" (e a sombra) vem do sol
+            if ('envMapIntensity' in m && m.userData.__apresEnvOrig == null) { m.userData.__apresEnvOrig = m.envMapIntensity; m.envMapIntensity = APRES_ENV; }
+            m.needsUpdate = true;
+          });
+        } else if ((o.isLineSegments || o.isLine) && o.visible) {
+          o.userData.__apresEscondida = true;
+          o.visible = false;
+        }
+      });
+    });
+    apresGrupos = currentGroups;
+    apresAjustaSol();
+  }
+  function setPresentationMode(on) {
+    if (!renderer || !scene) return Promise.resolve(false);
+    if (!on) {
+      if (!apresOn) return Promise.resolve(false);
+      apresOn = false;
+      renderer.toneMapping = THREE.NoToneMapping;
+      renderer.toneMappingExposure = 1;
+      renderer.shadowMap.enabled = false;
+      scene.environment = null;
+      if (apresSol) { scene.remove(apresSol.target); scene.remove(apresSol); }
+      if (apresLuzesOrig) apresLuzesOrig.forEach(([l, i]) => { l.intensity = i; });
+      currentGroups.forEach((g) => g.traverse((o) => {
+        if (o.userData && o.userData.__apresEscondida) { o.visible = true; delete o.userData.__apresEscondida; }
+        if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (!m) return; if (m.userData && m.userData.__apresEnvOrig != null) { m.envMapIntensity = m.userData.__apresEnvOrig; delete m.userData.__apresEnvOrig; } m.needsUpdate = true; }); }
+      }));
+      apresGrupos = null;
+      return Promise.resolve(false);
+    }
+    return apresCarregaLibs().then(() => {
+      apresOn = true;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      // SEM tone mapping: ACES/Reinhard lavavam a cor (taupe virava branco,
+      // piso perdia o tom) — a luz total fica igual à de sempre, só
+      // redistribuída: parte vira sol (sombra), parte ambiente (reflexo).
+      renderer.toneMapping = THREE.NoToneMapping;
+      if (!apresEnvRT) {
+        const pm = new THREE.PMREMGenerator(renderer);
+        apresEnvRT = pm.fromScene(new THREE.RoomEnvironment(), 0.04);
+        pm.dispose();
+      }
+      scene.environment = apresEnvRT.texture;
+      // luzes de sempre bem mais fracas: quem ilumina agora é o ambiente
+      apresLuzesOrig = [];
+      scene.children.forEach((o) => { if (o.isLight && o !== apresSol) { apresLuzesOrig.push([o, o.intensity]); o.intensity *= o.isHemisphereLight ? 0.5 : 0.3; } });
+      if (!apresSol) {
+        apresSol = new THREE.DirectionalLight(0xfff4e6, 1.0);
+        apresSol.castShadow = true;
+        apresSol.shadow.mapSize.set(2048, 2048);
+        apresSol.shadow.bias = -0.0004;
+        apresSol.shadow.normalBias = 0.02;
+      }
+      scene.add(apresSol); scene.add(apresSol.target);
+      apresAplicaNaCena();
+      return true;
+    });
+  }
+  function isPresentationMode() { return apresOn; }
+
   function animate() {
     if (!renderer) return;
     requestAnimationFrame(animate);
+    // modo apresentação: cena refeita (arrastar, trocar cor...) ganha sombra de novo
+    if (apresOn && apresGrupos !== currentGroups && currentGroups.length) apresAplicaNaCena();
     if (controls) controls.update();
     if (cutawayItens.length) aplicarRebaixoParedes();
     // Interpolação suave de porta/gaveta abrindo/fechando — mesma matemática
@@ -4197,6 +4313,8 @@ function createViewerComposition3D() {
     // pro vizinho no dedo) e worldToClient (botões DOM sobre o módulo).
     // Projeção da câmera (2026-08-13): 'paralela' (ortográfica) x 'perspectiva'.
     setCameraProjection, getCameraProjection,
+    // Modo apresentação (2026-10-25) — sombras, luz de ambiente, sem contorno.
+    setPresentationMode, isPresentationMode,
     // Rebaixar paredes que ficam na frente da vista (2026-10-22)
     setWallCutaway, isWallCutaway,
     pickAssemblyAtSticky, worldToClient, zoomByStep, highlightResizeArrow,

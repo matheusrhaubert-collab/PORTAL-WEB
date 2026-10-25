@@ -6004,3 +6004,7 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 .po-ban-op:hover { box-shadow: 0 0 0 1px var(--accent, #1a1a1a) inset; }
 .po-ban-op.ativo { box-shadow: 0 0 0 2px var(--accent, #1a1a1a) inset; background: #f6f3ee; font-weight: 600; }
 .po-ban-dica { margin: 10px 0 0; font-size: 12px; }
+
+/* Modo apresentação na Visualização 3D (25/10) */
+.po-proj-present-btn { display: inline-flex; align-items: center; gap: 6px; }
+.po-proj-present-btn.active { background: #e6007e; border-color: #e6007e; color: #fff; }

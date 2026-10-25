@@ -4924,6 +4924,38 @@ if (projToggleDrawersBtn) {
   });
 }
 
+// MODO APRESENTAÇÃO na Visualização 3D (2026-10-25, Matt: "visualizador 3D
+// meio renderizado... pra apresentação ao cliente"). Liga/desliga sombras,
+// luz de ambiente e tira o contorno de desenho — ver setPresentationMode em
+// viewer3d_composition.js. Fica ligado enquanto a janela estiver aberta;
+// fechar a Visualização 3D desliga.
+(function ligaApresentacao() {
+  const btn = document.getElementById('po-proj-present-btn');
+  if (!btn) return;
+  const TXT = { pt: ['Apresentação', 'Sair da apresentação'], en: ['Presentation', 'Exit presentation'], es: ['Presentación', 'Salir de presentación'] };
+  const pinta = (on) => {
+    const lang = (typeof I18n !== 'undefined' && I18n.getLanguage && I18n.getLanguage()) || 'pt';
+    const t = TXT[lang] || TXT.pt;
+    const lbl = document.getElementById('po-proj-present-lbl');
+    if (lbl) lbl.textContent = on ? t[1] : t[0];
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  pinta(false);
+  btn.addEventListener('click', async () => {
+    if (!ViewerProject || !ViewerProject.setPresentationMode) return;
+    const quer = !(ViewerProject.isPresentationMode && ViewerProject.isPresentationMode());
+    btn.disabled = true;
+    try { await ViewerProject.setPresentationMode(quer); pinta(quer); }
+    catch (e) { console.warn('[apresentação]', e); pinta(false); }
+    finally { btn.disabled = false; }
+  });
+  const fechar = document.getElementById('po-proj-close-3d-btn');
+  if (fechar) fechar.addEventListener('click', () => {
+    if (ViewerProject && ViewerProject.isPresentationMode && ViewerProject.isPresentationMode()) { ViewerProject.setPresentationMode(false); pinta(false); }
+  });
+})();
+
 // Junção automática de rodapé (migration 137) — mesmo padrão do botão de
 // Colisão (portal-06b: setProjectCollisionEnabled), não do abrir-porta/
 // gaveta acima: é um toggle de sessão que fica ligado/desligado (classe
