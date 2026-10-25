@@ -1667,6 +1667,44 @@ const Photoreal = (() => {
   // Local: base em y=0, centrado em X/Z, frente +Z (igual DECOR_BUILDERS).
   // Caixa: laterais retas, frente e fundo com o topo rebaixado em curva (por
   // onde o balde sai), pinos do dovetail nas quinas, fundo de compensado.
+  // Spice Pull-out (migration 226, Matt 25/10 com foto): estrutura de
+  // madeira estreita que desliza como gaveta — montante na frente (onde a
+  // frente parafusa) e atrás, 3 bandejas com bordinha dos dois lados e a
+  // corrediça na lateral de cima. Item comprado (SPICE-PO-06/09/12).
+  function buildSpicePullout(W, H, D) {
+    const g = new T.Group();
+    const birchTex = birchTexture(T);
+    const birch = new T.MeshStandardMaterial({ map: birchTex, roughness: 0.55, metalness: 0.0 });
+    const fundoMat = new T.MeshStandardMaterial({ map: birchTex, color: 0xf0e2cc, roughness: 0.62, metalness: 0.0 });
+    const aco = new T.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.35, metalness: 0.6 });
+    const t = Math.min(0.018, W / 5, D / 8);          // montantes
+    const tb = 0.012;                                   // fundo das bandejas
+    const tl = 0.012, hl = Math.min(0.065, H / 8);      // bordinhas laterais
+    const add = (w, h, d, mat, x, y, z, comFibra) => {
+      const geo = new T.BoxGeometry(Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001));
+      if (comFibra) birchUV(geo, Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001));
+      const m = new T.Mesh(geo, (mat));
+      m.position.set(x, y, z);
+      g.add(m);
+      return m;
+    };
+    // montantes de frente e de trás, altura toda
+    add(W, H, t, birch, 0, H / 2, D / 2 - t / 2, true);
+    add(W, H, t, birch, 0, H / 2, -D / 2 + t / 2, true);
+    // 3 bandejas: embaixo, no meio e em cima
+    const dIn = D - 2 * t;
+    const alturas = [0.02, H * 0.45, Math.max(H * 0.45 + hl + 0.05, H - hl - 0.02)];
+    alturas.forEach((y0) => {
+      add(W, tb, dIn, fundoMat, 0, y0 + tb / 2, 0, true);
+      add(tl, hl, dIn, birch, -W / 2 + tl / 2, y0 + hl / 2, 0, true);
+      add(tl, hl, dIn, birch, W / 2 - tl / 2, y0 + hl / 2, 0, true);
+    });
+    // corrediça na lateral de cima (lado esquerdo), quase a profundidade toda
+    const hc = 0.035, ec = 0.013;
+    add(ec, hc, D * 0.92, aco, -W / 2 - ec / 2, H - hl / 2 - 0.02, 0, false);
+    return g;
+  }
+
   function buildLixeiraDovetail(W, H, D) {
     const g = new T.Group();
     const birchTex = birchTexture(T);
@@ -1834,7 +1872,7 @@ const Photoreal = (() => {
   }
 
   const DECOR_BUILDERS = {
-    gaveta_dovetail: buildGavetaDovetail, lixeira_dovetail: buildLixeiraDovetail, // migration 224 (Trash) // migration 203
+    gaveta_dovetail: buildGavetaDovetail, lixeira_dovetail: buildLixeiraDovetail, spice_pullout: buildSpicePullout, // migration 226 (Spice) // migration 224 (Trash) // migration 203
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
     decor_forno_torre_duplo: buildDecorFornoTorreDuplo,
