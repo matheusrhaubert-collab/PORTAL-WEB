@@ -389,7 +389,7 @@ function renderQuoteOptionsPanel() {
   });
   body.querySelectorAll('.po-proj-stretcher-btn').forEach((el) => el.addEventListener('click', () => {
     if (el.classList.contains('selected') || !quoteSlot) return;
-    if (setSlotStretcherEmPe(quoteSlot, el.dataset.node, el.dataset.emPe === '1')) reprocessar();
+    if (setSlotFrontStretcherEmPe(quoteSlot, el.dataset.emPe === '1')) reprocessar();
   }));
   body.querySelectorAll('.po-proj-door-leaves-btn:not(.po-proj-stretcher-btn)').forEach((el) => el.addEventListener('click', () => {
     if (el.classList.contains('selected') || !quoteSlot) return;

@@ -435,6 +435,26 @@ function applyPieceAdjustmentsDeep(piecesList, adjustments) {
         _adjusted: true
       });
     }
+    // TRAVESSA EM PÉ (2026-10-25, Matt: "sempre que for sink deve ser girada
+    // pra ficar com 76mm no frontal" / "1mm pra dentro + espessura dele").
+    // a.em_pe = true gira a peça 90° no eixo X: altura <-> profundidade, topo
+    // continua no mesmo lugar e a face da frente fica 1 mm pra dentro da
+    // frente original. Por FÓRMULA (não por número) pra valer em qualquer
+    // espessura de chapa. Mora no piece_adjustments: vai no pedido e o ERP
+    // aplica igual (.ban/3D/plano de corte) — mesma função, mesmo arquivo.
+    if (a && a.em_pe === true && !out.is_module) {
+      const h0 = String(out.height_formula == null || out.height_formula === '' ? '0' : out.height_formula);
+      const d0 = String(out.depth_formula == null || out.depth_formula === '' ? '0' : out.depth_formula);
+      const y0 = String(out.offset_y_formula == null || out.offset_y_formula === '' ? '0' : out.offset_y_formula);
+      const z0 = String(out.offset_z_formula == null || out.offset_z_formula === '' ? '0' : out.offset_z_formula);
+      out = Object.assign({}, out, {
+        height_formula: d0,
+        depth_formula: h0,
+        offset_y_formula: '(' + y0 + ')+(' + h0 + ')-(' + d0 + ')',
+        offset_z_formula: '(' + z0 + ')+(' + d0 + ')-1-(' + h0 + ')',
+        _adjusted: true
+      });
+    }
     // LADO DA PORTA (2026-10-15, Matt: "uma opção pra quando for porta, abrir
     // pra direita ou esquerda"). a.hinge = 'left'|'right' troca o lado da
     // dobradiça da porta de giro: folha (hinge_side) ou peça-módulo/modelo

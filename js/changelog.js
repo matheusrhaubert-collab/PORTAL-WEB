@@ -50,7 +50,7 @@ window.LEGNO_CHANGELOG = [
         "Novo Base 3 Drawer Cooktop: frente falsa em cima, 2 gavetas e cooktop decorativo, de 24\" a 42\" (com 33\"). O Base 2 Drawer Cabinet Cooktop também ganhou o cooktop decorativo.",
         "Portas de 21\" a 24\": continuam com 1 porta, mas agora dá pra escolher 2 portas nas propriedades (e no New Quote).",
         "Módulos de pia (Sink, Full High Sink, Farm Sink, Corner Sink) mostram a pia decorativa. Decorativos dentro do módulo (pia, cooktop, micro-ondas) não entram no orçamento nem no pedido.",
-        "Travessa da frente deitada ou em pé: escolha no painel da direita. Nas sinks ela já vem em pé.",
+        "Travessa de cima da frente deitada ou em pé (76 mm na frente): escolha no painel da direita. Nas sinks ela já vem em pé.",
         "Construtor: portas e frentes de gaveta empilhadas não se encostam mais na divisória horizontal — ficam com 4 mm de folga entre elas, no meio da divisória. A medida digitada no desenho do Construtor agora segue a unidade escolhida (polegadas com fração).",
         "Gaveta dovetail com veio de birch de verdade (mel/âmbar), em escala real.",
         "Barra do Projetos: Tela cheia foi para o fim da barra, ao lado do pino; menu Vista com ícone de tela."

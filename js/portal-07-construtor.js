@@ -1129,6 +1129,12 @@ async function applyProjectFactoryLayout(slot) {
   if (!lay) return false;
   await ensureAccessoryCatalog();
   slot.layout = lay;
+  // TRAVESSA DA FRENTE EM PÉ de fábrica (sinks — migration 237: raiz da
+  // árvore com params.stretcher_frente_em_pe). Vira o mesmo ajuste do botão
+  // "Em pé" do painel (setSlotFrontStretcherEmPe, portal-06c).
+  if (lay.params && lay.params.stretcher_frente_em_pe && typeof setSlotFrontStretcherEmPe === 'function') {
+    try { setSlotFrontStretcherEmPe(slot, true); } catch (e) { /* segue deitada */ }
+  }
   try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço anterior fica */ }
   // MODELO DE PORTA DE FÁBRICA (2026-10-18, Matt: os Glass Door "já entram
   // com porta de vidro selecionada"). root.params.modelo_porta_slug na

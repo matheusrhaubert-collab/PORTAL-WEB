@@ -1143,7 +1143,7 @@ function renderProjectConfigPanel() {
   panel.querySelectorAll('.po-proj-stretcher-btn').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected')) return;
-      setProjectStretcherEmPe(slot, el.dataset.node, el.dataset.emPe === '1');
+      setProjectFrontStretcherEmPe(slot, el.dataset.emPe === '1');
     });
   });
   // 1 ou 2 portas (25/10)
@@ -4917,56 +4917,52 @@ function projectDoorLeavesBlock(slot) {
 /* TRAVESSA DA FRENTE DEITADA OU EM PÉ (2026-10-25, Matt: "toda sink o
    stretcher é deitado padrão... pras sinks ele deve ser vertical na frente.
    precisamos uma nova opção de inverter o stretcher em botão na direita
-   (tipo opção de porta dir ou esq)"). Vale pra Divisória Stretcher
-   horizontal da árvore (agregado com stretcher_d_mm, eixo y). A escolha fica
-   no vão da árvore (params.stretcher_em_pe), o motor desenha (layout-engine,
-   emitDivider). Nas sinks a árvore de fábrica já nasce em pé (migration 236). */
-function projectStretcherOptions(slot) {
-  const cat = (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || null;
-  if (!slot || !slot.layout || !cat) return [];
-  const out = [];
-  (function anda(n) {
-    if (!n) return;
-    const acc = n.splitAcc ? cat[n.splitAcc] : null;
-    if (n.splitAxis === 'y' && acc && Number((acc.params || {}).stretcher_d_mm) > 0) {
-      out.push({ nodeId: n.id, emPe: !!(n.params && n.params.stretcher_em_pe) });
-    }
-    (n.children || []).forEach(anda);
-  })(slot.layout);
-  return out;
+   (tipo opção de porta dir ou esq)" + "todo módulo base tem travessa, é a
+   peça que fica na frente superior" + "sempre que for sink deve ser girada
+   pra ficar com 76mm no frontal"). É a travessa de cima do CASCO (E x 76,
+   no topo, na frente). A escolha vira piece_adjustments[id].em_pe — gira a
+   peça em applyPieceAdjustmentsDeep (module-pieces.js), que o preço, o 3D,
+   o pedido e o ERP já aplicam. Sinks nascem em pé (migration 237). */
+function projectFrontStretcherPiece(slot) {
+  const limpa = (f) => String(f == null ? '' : f).replace(/\s+/g, '');
+  let achada = null;
+  (function anda(lista) {
+    (lista || []).forEach((p) => {
+      if (achada || !p) return;
+      if (p.is_module) { anda(p.child_pieces); return; }
+      if (limpa(p.depth_formula) === '76' && limpa(p.height_formula) === 'E' && limpa(p.offset_y_formula) === 'H-E') achada = p;
+    });
+  })((slot && slot.pieces) || []);
+  return achada;
 }
 function projectStretcherIcon(emPe) {
   return `<svg viewBox="0 0 32 40" width="26" height="32" aria-hidden="true">
     <rect x="4" y="4" width="24" height="32" rx="1.5" fill="none" stroke="#b9ad9c" stroke-width="1.4"/>
-    ${emPe ? '<rect x="13" y="10" width="6" height="20" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'
-           : '<rect x="6" y="17" width="20" height="6" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'}</svg>`;
+    ${emPe ? '<rect x="22" y="6" width="5" height="14" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'
+           : '<rect x="12" y="6" width="15" height="5" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'}</svg>`;
 }
 function projectStretcherBlock(slot) {
-  const ops = projectStretcherOptions(slot);
-  if (!ops.length) return '';
-  const linhas = ops.map((o, i) => {
-    const nome = ops.length > 1 ? `<span class="po-proj-door-side-nome">${I18n.t('project.stretcher_label')} ${i + 1}</span>` : '';
-    const btn = (emPe) => `<button type="button" class="po-proj-door-leaves-btn po-proj-stretcher-btn${o.emPe === emPe ? ' selected' : ''}" data-node="${String(o.nodeId).replace(/"/g, '&quot;')}" data-em-pe="${emPe ? '1' : '0'}">${projectStretcherIcon(emPe)}<span>${I18n.t(emPe ? 'project.stretcher_upright' : 'project.stretcher_flat')}</span></button>`;
-    return `<div class="po-proj-door-leaves-row">${nome}${btn(false)}${btn(true)}</div>`;
-  }).join('');
-  return `<div class="po-proj-config-door-side po-proj-stretcher"><span class="po-proj-config-section-label">${I18n.t('project.stretcher_label')}</span>${linhas}</div>`;
+  const p = projectFrontStretcherPiece(slot);
+  if (!p) return '';
+  const emPe = !!(((slot.pieceAdjustments || {})[p.id] || {}).em_pe);
+  const btn = (v) => `<button type="button" class="po-proj-door-leaves-btn po-proj-stretcher-btn${emPe === v ? ' selected' : ''}" data-em-pe="${v ? '1' : '0'}">${projectStretcherIcon(v)}<span>${I18n.t(v ? 'project.stretcher_upright' : 'project.stretcher_flat')}</span></button>`;
+  return `<div class="po-proj-config-door-side po-proj-stretcher"><span class="po-proj-config-section-label">${I18n.t('project.stretcher_label')}</span><div class="po-proj-door-leaves-row">${btn(false)}${btn(true)}</div></div>`;
 }
-function setSlotStretcherEmPe(slot, nodeId, emPe) {
-  if (!slot || !slot.layout) return false;
-  const no = (function acha(x) {
-    if (!x) return null;
-    if (String(x.id) === String(nodeId)) return x;
-    for (const c of (x.children || [])) { const r = acha(c); if (r) return r; }
-    return null;
-  })(slot.layout);
-  if (!no) return false;
-  no.params = Object.assign({}, no.params || {}, { stretcher_em_pe: !!emPe });
+// Só grava no slot; quem chama recalcula e redesenha.
+function setSlotFrontStretcherEmPe(slot, emPe) {
+  const p = projectFrontStretcherPiece(slot);
+  if (!slot || !p) return false;
+  const todos = Object.assign({}, slot.pieceAdjustments || {});
+  const cur = Object.assign({}, todos[p.id] || {});
+  if (emPe) cur.em_pe = true; else delete cur.em_pe;
+  if (Object.keys(cur).length) todos[p.id] = cur; else delete todos[p.id];
+  slot.pieceAdjustments = todos;
   return true;
 }
-function setProjectStretcherEmPe(slot, nodeId, emPe) {
+function setProjectFrontStretcherEmPe(slot, emPe) {
   if (!slot) return;
   if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
-  if (!setSlotStretcherEmPe(slot, nodeId, emPe)) return;
+  if (!setSlotFrontStretcherEmPe(slot, emPe)) return;
   try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[travessa]', e); }
   renderProjectCanvas();
   renderProjectConfigPanel();
