@@ -58,7 +58,7 @@ async function buildProjectPhotoCatalog() {
   const F = nameOf(fam), C = nameOf(cat), S = nameOf(sub);
   const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
   return (allModules || [])
-    .filter((m) => m && m.active !== false && !m.is_invisible && !m.project_copy_of)
+    .filter((m) => m && m.active !== false && !m.is_invisible && !m.project_copy_of && !m.oculto_catalogo)
     .map((m) => ({
       id: m.id,
       name: m.name,

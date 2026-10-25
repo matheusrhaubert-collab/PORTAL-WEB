@@ -867,7 +867,10 @@ function moduleCardImage(m) {
 
 function renderModuleGallery() {
   const search = moduleSearchText.trim().toLowerCase();
-  modules = allModules.filter((m) =>
+  // oculto_catalogo (migration 238, 25/10 — Matt: "sink corner deixa
+  // oculta, pode servir só se vem algum desenho do 2020"): fora da vitrine,
+  // mas continua em allModules pra importação do 2020/Promob achar.
+  modules = allModules.filter((m) => !m.oculto_catalogo &&
     (!selectedFamilyId || m.family_id === selectedFamilyId) &&
     (!selectedCategoryId || m.category_id === selectedCategoryId) &&
     (!selectedSubcategoryId || m.subcategory_id === selectedSubcategoryId) &&

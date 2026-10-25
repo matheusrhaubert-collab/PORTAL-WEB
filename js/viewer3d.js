@@ -2578,6 +2578,48 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // PIA FARM COM AVENTAL (2026-10-25, Matt, com foto de referência: "deixa
+  // uma farm de 9 de altura que vai pra fora (novo desenho) e fica
+  // centralizada nessa frente falsa. ao colocar o countertop ele fica aberto
+  // na frente"). Cuba de cerâmica branca: o AVENTAL (h = altura toda da
+  // peça, 9") fica 45 mm à frente da caixa (passa da frente falsa), a cuba
+  // vai pra trás e a torneira fica na pedra, atrás. O aro de cima
+  // (decorRim) é o que a bancada recorta — aberto na frente (portal-30).
+  function buildDecorFarmAvental(W, H, D, mats) {
+    const g = new THREE.Group();
+    const ceram = new THREE.MeshStandardMaterial({ color: 0xf5f4f0, roughness: 0.28, metalness: 0.0 });
+    const dentro = new THREE.MeshStandardMaterial({ color: 0xe4e2dc, roughness: 0.4, metalness: 0.0 });
+    const add = (w, h, d, mat, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001)), mat);
+      m.position.set(x, y, z);
+      const e = buildEdgesForStyle(m.geometry); if (e) m.add(e);
+      g.add(m);
+      return m;
+    };
+    const t = 0.02;                                  // parede da cuba
+    const frente = D / 2 + 0.045;                    // face do avental
+    const bd = Math.min(Math.max(0.3, D * 0.72), D); // profundidade da cuba
+    const tras = frente - bd;
+    add(W, H, 0.025, ceram, 0, H / 2, frente - 0.0125);                 // avental
+    add(W, H, t, ceram, 0, H / 2, tras + t / 2);                        // parede de trás
+    add(t, H, bd - 0.025 - t, ceram, -W / 2 + t / 2, H / 2, (frente - 0.025 + tras + t) / 2);
+    add(t, H, bd - 0.025 - t, ceram, W / 2 - t / 2, H / 2, (frente - 0.025 + tras + t) / 2);
+    add(W - 2 * t, t, bd - 0.025 - t, dentro, 0, t / 2, (frente - 0.025 + tras + t) / 2);   // fundo
+    const ralo = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.003, 24), mats.chrome);
+    ralo.position.set(0, t + 0.002, (frente + tras) / 2 - 0.03);
+    g.add(ralo);
+    // aro de cima (só referência do recorte da pedra — fininho, mesma cor)
+    const aro = add(W, 0.004, bd, ceram, 0, H - 0.002, frente - bd / 2);
+    aro.visible = false;
+    aro.userData.decorRim = true;
+    // torneira atrás da cuba, na altura da pedra (frente falsa: o topo da
+    // cuba fica uns 78 mm abaixo do tampo)
+    const fct = decorFaucet(mats.chrome, 0.24, 0.17);
+    fct.position.set(0, H + 0.078, tras - 0.045);
+    g.add(fct);
+    return g;
+  }
+
   function buildDecorFarmPia(W, H, D, mats) {
     const g = new THREE.Group();
     const apronH = H * 0.75;
@@ -3541,7 +3583,7 @@ const Viewer3D = (function () {
     decor_forno_torre_duplo: buildDecorFornoTorreDuplo,
     decor_lava_loucas: buildDecorLavaLoucas,
     decor_pia: buildDecorPia,
-    decor_farm_pia: buildDecorFarmPia,
+    decor_farm_pia: buildDecorFarmPia, decor_farm_avental: buildDecorFarmAvental, // 25/10
     decor_lixeira_dupla: buildDecorLixeiraDupla,
     decor_cooktop: buildDecorCooktop,
     decor_coifa: buildDecorCoifa,

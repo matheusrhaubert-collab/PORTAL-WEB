@@ -167,6 +167,9 @@ function quoteOrderItemExtras(src) {
   if (src.layoutGeometry) out.layout = src.layoutGeometry;
   if (src.pieceAdjustments && Object.keys(src.pieceAdjustments).length) out.piece_adjustments = src.pieceAdjustments;
   if (src.drawerModelId) out.drawer_model_id = src.drawerModelId;
+  // peça do casco tirada de fábrica (ex.: travessa da frente do Farm Sink,
+  // migration 239) — mesmo campo do envio do Projetos (removed_piece_ids)
+  if (src.removedPieceIds && src.removedPieceIds.length) out.removed_piece_ids = src.removedPieceIds.slice();
   return out;
 }
 
@@ -178,6 +181,7 @@ function quoteSlotSnapshot(s) {
     layoutGeometry: s._layoutGeometry || null,
     layoutPieces: s.layoutPieces || [],
     pieceAdjustments: Object.assign({}, s.pieceAdjustments || {}),
+    removedPieceIds: (s.removedPieceIds || []).slice(),
     doorModelId: s.doorModelId || null,
     drawerModelId: s.drawerModelId || null,
     viewerPieces: quoteSlotViewerPieces(s)

@@ -529,6 +529,36 @@ function bancadaPoligonoCadeia(cad) {
   pts.forEach((p) => { const q = lim[lim.length - 1]; if (!q || Math.hypot(q.x - p.x, q.z - p.z) > 1e-5) lim.push(p); });
   return lim;
 }
+// Entalhe aberto na frente (pia farm): acha o trecho da cadeia em que a cuba
+// está, a aresta da FRENTE do contorno que passa por cima dela e troca esse
+// pedaço da aresta por um "U" que vai até o fundo da cuba. Sem aresta que
+// sirva (cuba fora da pedra), devolve o contorno como veio.
+function banEntalheFrente(poli, cad, ptsMundo) {
+  for (const c of cad) {
+    const r = c.r;
+    const loc = ptsMundo.map((p) => banLocal(r, p));
+    const u0 = Math.min(...loc.map((q) => q[0])), u1 = Math.max(...loc.map((q) => q[0]));
+    const vFundo = Math.min(...loc.map((q) => q[1]));
+    const uMin = Math.min(r.uE, r.uD), uMax = Math.max(r.uE, r.uD);
+    if (u0 < uMin - 0.001 || u1 > uMax + 0.001) continue;
+    let melhor = -1, melhorV = Infinity;
+    for (let i = 0; i < poli.length; i++) {
+      const a = banLocal(r, poli[i]), b = banLocal(r, poli[(i + 1) % poli.length]);
+      if (Math.abs(a[1] - b[1]) > 0.002) continue;               // só aresta paralela à frente
+      const v = (a[1] + b[1]) / 2;
+      if (v <= vFundo + 0.005) continue;                           // tem que estar NA FRENTE da cuba
+      if (Math.min(a[0], b[0]) > u0 + 0.001 || Math.max(a[0], b[0]) < u1 - 0.001) continue;
+      if (v < melhorV) { melhorV = v; melhor = i; }
+    }
+    if (melhor < 0) continue;
+    const a = banLocal(r, poli[melhor]), b = banLocal(r, poli[(melhor + 1) % poli.length]);
+    const ida = a[0] < b[0];                                         // sentido da aresta em u
+    const ua = ida ? u0 : u1, ub = ida ? u1 : u0;
+    const novos = [[ua, melhorV], [ua, vFundo], [ub, vFundo], [ub, melhorV]].map(([u, v]) => banMundo(r, u, v));
+    return poli.slice(0, melhor + 1).concat(novos, poli.slice(melhor + 1));
+  }
+  return poli;
+}
 function banMundo(r, u, v) {
   return { x: r.U.x * u + r.N.x * (v + r.fundo), z: r.U.z * u + r.N.z * (v + r.fundo) };
 }
@@ -569,13 +599,29 @@ function bancadaAjustaAssembly(slot, assembly) {
   const decs = [];
   assembly.group.traverse((o) => {
     const sh = o.userData && o.userData.decorShape;
-    if (sh === 'decor_pia' || sh === 'decor_farm_pia' || sh === 'decor_cooktop') decs.push(o);
+    if (sh === 'decor_pia' || sh === 'decor_farm_pia' || sh === 'decor_cooktop' || sh === 'decor_farm_avental') decs.push(o);
   });
   if (!decs.length) return;
   const recortes = [];
   let deltaSlot = null;
   decs.forEach((o) => {
     const sh = o.userData.decorShape;
+    // PIA FARM COM AVENTAL (25/10): não sobe — fica embaixo da pedra, presa
+    // na frente falsa — e a pedra abre NA FRENTE em volta da cuba (como a
+    // foto de referência do Matt): recorte "aberto" do aro até a borda.
+    if (sh === 'decor_farm_avental') {
+      let rim = null;
+      o.traverse((q) => { if (!rim && q.userData && q.userData.decorRim) rim = q; });
+      const vis = rim ? rim.visible : true;
+      if (rim) rim.visible = true;
+      const b = new THREE.Box3().setFromObject(rim || o);
+      if (rim) rim.visible = vis;
+      if (!b.isEmpty()) {
+        const cs = [[b.min.x, b.min.z], [b.max.x, b.min.z], [b.max.x, b.max.z], [b.min.x, b.max.z]];
+        recortes.push({ aberto: true, pts: cs.map(([lx, lz]) => ({ x: f.ox + lx * f.U.x + lz * f.N.x, z: f.oz + lx * f.U.z + lz * f.N.z })) });
+      }
+      return;
+    }
     let ref = null;
     if (sh === 'decor_cooktop') {
       const b = new THREE.Box3().setFromObject(o);
@@ -710,12 +756,21 @@ function bancadaMontar(THREE, ctx) {
     if (poli.length < 3) return;
     runAtual = cad[0].r;
     const topo = Math.max(...cad.map((c) => c.r.topo)), esp = cad[0].r.esp;
-    const sh = new THREE.Shape(poli.map((p) => new THREE.Vector2(p.x, p.z)));
+    // recortes ABERTOS NA FRENTE (pia farm): entram no próprio contorno,
+    // antes de virar Shape — um furo que encosta na borda não triangula.
+    let contornoP = poli;
+    Object.keys(bancadaRecortes).forEach((sid) => {
+      if (!projectSlots.some((sl) => sl.id === sid || String(sl.id) === sid)) return;
+      (bancadaRecortes[sid] || []).forEach((rc) => {
+        if (rc && rc.aberto) contornoP = banEntalheFrente(contornoP, cad, rc.pts);
+      });
+    });
+    const sh = new THREE.Shape(contornoP.map((p) => new THREE.Vector2(p.x, p.z)));
     const dentroTodo = (pts) => pts.every((p) => banDentro(p, poli));
     Object.keys(bancadaRecortes).forEach((sid) => {
       if (!projectSlots.some((sl) => sl.id === sid || String(sl.id) === sid)) return;
       (bancadaRecortes[sid] || []).forEach((pts) => {
-        if (!dentroTodo(pts)) return;
+        if (!Array.isArray(pts) || !dentroTodo(pts)) return;
         sh.holes.push(new THREE.Path(pts.map((p) => new THREE.Vector2(p.x, p.z))));
       });
     });

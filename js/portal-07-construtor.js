@@ -1143,6 +1143,20 @@ async function applyProjectFactoryLayout(slot) {
   if (lay.params && lay.params.stretcher_frente_em_pe && typeof setSlotFrontStretcherEmPe === 'function') {
     try { setSlotFrontStretcherEmPe(slot, true); } catch (e) { /* segue deitada */ }
   }
+  // SEM TRAVESSA DA FRENTE de fábrica (Farm Sink — migration 239, Matt 25/10:
+  // "nesse módulo não tem travessa na frente, porque a pia fica bem em cima
+  // dela"). Mesmo caminho do "remover peça" do cliente (removedPieceIds):
+  // some do 3D, do preço, do pedido e do ERP.
+  if (lay.params && lay.params.sem_travessa_frente && typeof projectFrontStretcherPiece === 'function') {
+    try {
+      const p = projectFrontStretcherPiece(slot);
+      if (p) {
+        const ids = (slot.removedPieceIds || []).slice();
+        if (!ids.includes(p.id)) ids.push(p.id);
+        slot.removedPieceIds = ids;
+      }
+    } catch (e) { /* segue com a travessa */ }
+  }
   try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço anterior fica */ }
   // MODELO DE PORTA DE FÁBRICA (2026-10-18, Matt: os Glass Door "já entram
   // com porta de vidro selecionada"). root.params.modelo_porta_slug na

@@ -1163,7 +1163,8 @@ function projectLibraryModules() {
   // + sem os visual_only (Bloco — Cor da Parede): 24/10, Matt: "tira tudo
   // que tem em móveis" — geometria de parede mora no menu Paredes → Geometria
   // (js/portal-29-geometria.js). Projeto antigo com Bloco continua abrindo.
-  return (allModules || []).filter((m) => m && !m.wall_structure && !m.visual_only);
+  // + sem os oculto_catalogo (migration 238): só entram pela importação do 2020.
+  return (allModules || []).filter((m) => m && !m.wall_structure && !m.visual_only && !m.oculto_catalogo);
 }
 
 function renderProjectLibraryFilterBars() {
