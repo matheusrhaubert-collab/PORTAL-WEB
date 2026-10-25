@@ -749,6 +749,14 @@ function computeProjectSlotCascoBoxes(slot, medirNaCena, semFrentes) {
     );
   } catch (e) { return []; }
 
+  // DECORATIVO NÃO É CASCO (2026-10-25, Matt: "está considerando o módulo
+  // menos a altura da pia. as portas e frente devem entrar considerando o
+  // total do móvel"). A pia/cooktop decorativa dentro do módulo (shape_type
+  // decor_*, migrations 231/235) sobra pra fora do topo e a cuba desce pra
+  // dentro do corpo — entrava na dedução do vão interno e baixava a frente
+  // e as portas. Fica fora da medida do casco.
+  parts = (parts || []).filter((p) => !(p && /^decor_/.test(String(p.shape_type || ''))));
+
   // semFrentes: tira porta/frente ANTES de medir (2026-08-15). Só o DESENHO
   // do módulo no construtor pede isso, e o motivo é de desenho mesmo: a porta
   // cobre a face inteira do módulo e o desenho pinta as caixas em ordem de
