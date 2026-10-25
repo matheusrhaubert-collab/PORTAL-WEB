@@ -4871,8 +4871,14 @@ function refreshProjectOpenButtons() {
   const drawersBtn = document.getElementById('po-proj-toggle-drawers-btn');
   if (!doorsBtn && !drawersBtn) return;
 
-  const hasHinge = projectSlots.some((slot) => treeHasHinge(slot.pieces, false, false));
-  const hasSlide = projectSlots.some((slot) => treeHasSlide(slot.pieces, false, false));
+  // 25/10 (Matt: "na visão 3D os botões de abrir porta e gaveta não
+  // funcionam"): olhava só slot.pieces — gaveta/porta que vem do Construtor
+  // (Base 4 Drawers, NEW Classic...) não está lá e o botão sumia. Agora vale
+  // o que a CENA montou (countOpenables) ou as peças efetivas do slot.
+  const efetivas = (slot) => { try { return projectSlotEffectivePieces(slot); } catch (e) { return slot.pieces; } };
+  const naCena = (kind) => { try { return ViewerProject && ViewerProject.countOpenables ? ViewerProject.countOpenables(kind) : 0; } catch (e) { return 0; } };
+  const hasHinge = naCena('hinge') > 0 || projectSlots.some((slot) => treeHasHinge(slot.pieces, false, false) || treeHasHinge(efetivas(slot), false, false));
+  const hasSlide = naCena('slide') > 0 || projectSlots.some((slot) => treeHasSlide(slot.pieces, false, false) || treeHasSlide(efetivas(slot), false, false));
 
   if (doorsBtn) {
     doorsBtn.style.display = hasHinge ? 'inline-block' : 'none';

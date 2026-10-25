@@ -2372,6 +2372,13 @@ function createViewerComposition3D() {
     return drawersOpen;
   }
 
+  // Quantas peças de cada tipo dá pra abrir NA CENA (25/10): o painel
+  // "Visualização 3D" mostrava/escondia os botões olhando só slot.pieces, e
+  // porta/gaveta que vêm do Construtor (NEW Classic, Base 4 Drawers...) não
+  // estão lá — o botão sumia. A cena já sabe o que montou.
+  function countOpenables(kind) {
+    return currentOpenables.filter((op) => !kind || op.kind === kind).length;
+  }
   function areDoorsOpen(onlySlotId) {
     const ids = idsSel(onlySlotId);
     if (ids) {
@@ -4145,7 +4152,7 @@ function createViewerComposition3D() {
     // areDrawersOpen() antes de reconstruir cada assembly (generateComposition3D),
     // pra um módulo novo/recolorido nascer já no estado atual em vez de
     // sempre fechado.
-    toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen,
+    toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen, countOpenables,
     // Junção automática de rodapé entre módulos adjacentes (migration 137) —
     // override de sessão do botão "Encaixe" (ver portal-08-projetos-
     // paredes.js). Estado PRÓPRIO desta instância, mesma convenção de
