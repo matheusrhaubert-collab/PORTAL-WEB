@@ -5886,6 +5886,7 @@ function resetProject() {
   if (typeof projectReferencePending !== 'undefined') projectReferencePending = [];
   projectSlots = [];
   selectedProjectSlotId = null;
+  if (typeof restoreProjectFloor === 'function') restoreProjectFloor(null); // piso liso (portal-28)
   // AMBIENTE PADRÃO (2026-08-13): duas paredes de 3m em L e o piso 3x3 que
   // elas delimitam — o ponto de partida que o Matt pediu. Antes o projeto novo
   // nascia com UMA parede e o resto vinha das 3 formas fixas, que saíram.

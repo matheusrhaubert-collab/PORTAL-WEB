@@ -1007,7 +1007,54 @@ function createViewerComposition3D() {
     const mesh = makeRoomSurface(Math.abs(x1 - x0), Math.abs(z1 - z0), FLOOR_COLOR, true, 'floor');
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    aplicaTexturaPiso(mesh, Math.abs(x1 - x0), Math.abs(z1 - z0));
     return mesh;
+  }
+
+  // TEXTURA DO PISO (2026-10-24, Matt: "quero colocar textura no chão, na
+  // aba paredes ... só vale pro piso"). cfg = { url, tile_mm:[larg, comp],
+  // roughness, rotation_deg } ou null (piso liso de sempre). A imagem cobre
+  // tile_mm de piso de verdade e se repete — a régua/peça sai do tamanho
+  // real em qualquer ambiente. Cache de imagem compartilhado entre as
+  // instâncias (o mesmo piso nos 2 viewers baixa 1 vez só).
+  let floorTexCfg = null;
+  const FLOOR_TEX_CACHE = (typeof window !== 'undefined')
+    ? (window.__legnoFloorTexCache || (window.__legnoFloorTexCache = {})) : {};
+  function setFloorTexture(cfg) {
+    floorTexCfg = (cfg && cfg.url && cfg.tile_mm) ? cfg : null;
+  }
+  function getFloorTexture() { return floorTexCfg; }
+  function aplicaTexturaPiso(mesh, larguraM, profM) {
+    const cfg = floorTexCfg;
+    if (!cfg || typeof THREE === 'undefined' || !THREE.TextureLoader) return;
+    let base = FLOOR_TEX_CACHE[cfg.url];
+    if (!base) {
+      base = FLOOR_TEX_CACHE[cfg.url] = new THREE.TextureLoader().load(cfg.url, () => {
+        // quem pegou um clone antes de a imagem chegar precisa redesenhar
+        (base.userData.esperando || []).forEach((t) => { t.image = base.image; t.needsUpdate = true; });
+        base.userData.esperando = [];
+      });
+      base.userData = { esperando: [] };
+    }
+    const tex = base.clone();
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+    const gira = Number(cfg.rotation_deg) === 90;
+    const tw = Number(cfg.tile_mm[0]) / 1000, th = Number(cfg.tile_mm[1]) / 1000;
+    if (gira) {
+      tex.rotation = Math.PI / 2;
+      tex.repeat.set(profM / tw, larguraM / th);
+    } else {
+      tex.repeat.set(larguraM / tw, profM / th);
+    }
+    tex.anisotropy = (renderer && renderer.capabilities && renderer.capabilities.getMaxAnisotropy) ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 1;
+    if (base.image) tex.needsUpdate = true; else base.userData.esperando.push(tex);
+    mesh.material.map = tex;
+    mesh.material.color.set(0xffffff);
+    mesh.material.roughness = cfg.roughness != null ? Number(cfg.roughness) : 0.6;
+    mesh.material.needsUpdate = true;
+    mesh.userData.temTexturaPiso = true;
   }
 
   // GRADE do piso (pedido do usuário 2026-08-08: "deixa o piso visivel, tipo um
@@ -1033,6 +1080,9 @@ function createViewerComposition3D() {
   const FLOOR_GRID_COLOR = 0xc9c2b4;
   const FLOOR_GRID_LIFT_M = 0.001;
   function makeFloorGrid(x0, x1, z0, z1) {
+    // Com textura de piso a grade de 1 m fica por cima das réguas/peças e
+    // atrapalha — o próprio desenho do piso já dá a escala.
+    if (floorTexCfg) return new THREE.Group();
     const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
     const minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
     const pts = [];
@@ -4059,7 +4109,7 @@ function createViewerComposition3D() {
     // Interatividade (ver bloco de comentário grande acima) — só usado pela
     // instância ViewerProjectEdit (portal.js); Composição/ViewerProject
     // (preview) nunca chamam nenhum destes.
-    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
+    setControlsEnabled, getDomElement, navPanBy, navRotateBy, setMouseNav, setFloorTexture, getFloorTexture, pickAssemblyAt, pickModuleFaceAt, intersectPlaneAtClient, pickSurfacePointAt,
     setHoverHighlight, updateHoverHighlight, findGroupBySlotId, setMultiHighlight, updateMultiHighlight, pickMultiHighlightAt,
     // Ambiente sólido + câmera dirigida (2026-08-08) — ver comentários de
     // pickRoomSurfaceAt / frameDirection / setResizeArrows.

@@ -1,0 +1,546 @@
+[
+ {
+  "id": "lvp-natural-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho natural (vinílico)",
+   "en": "Natural Oak (LVP)",
+   "es": "Roble natural (vinílico)"
+  },
+  "file": "assets/floors/lvp-natural-oak.jpg",
+  "thumb": "assets/floors/lvp-natural-oak_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-light-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho claro (vinílico)",
+   "en": "Light Oak (LVP)",
+   "es": "Roble claro (vinílico)"
+  },
+  "file": "assets/floors/lvp-light-oak.jpg",
+  "thumb": "assets/floors/lvp-light-oak_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-white-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho branco (vinílico)",
+   "en": "White Oak (LVP)",
+   "es": "Roble blanco (vinílico)"
+  },
+  "file": "assets/floors/lvp-white-oak.jpg",
+  "thumb": "assets/floors/lvp-white-oak_thumb.jpg",
+  "tile_mm": [
+   1144,
+   3658
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-scandinavian-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho escandinavo (vinílico)",
+   "en": "Scandinavian Oak (LVP)",
+   "es": "Roble escandinavo (vinílico)"
+  },
+  "file": "assets/floors/lvp-scandinavian-oak.jpg",
+  "thumb": "assets/floors/lvp-scandinavian-oak_thumb.jpg",
+  "tile_mm": [
+   1144,
+   3658
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-park-meadow",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho prado (vinílico)",
+   "en": "Meadow Oak (LVP)",
+   "es": "Roble pradera (vinílico)"
+  },
+  "file": "assets/floors/lvp-park-meadow.jpg",
+  "thumb": "assets/floors/lvp-park-meadow_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-channel-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho areia (vinílico)",
+   "en": "Sand Oak (LVP)",
+   "es": "Roble arena (vinílico)"
+  },
+  "file": "assets/floors/lvp-channel-oak.jpg",
+  "thumb": "assets/floors/lvp-channel-oak_thumb.jpg",
+  "tile_mm": [
+   1144,
+   3658
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-provincial-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho provençal (vinílico)",
+   "en": "Provincial Oak (LVP)",
+   "es": "Roble provenzal (vinílico)"
+  },
+  "file": "assets/floors/lvp-provincial-oak.jpg",
+  "thumb": "assets/floors/lvp-provincial-oak_thumb.jpg",
+  "tile_mm": [
+   1144,
+   3658
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-timberland-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho caramelo (vinílico)",
+   "en": "Caramel Oak (LVP)",
+   "es": "Roble caramelo (vinílico)"
+  },
+  "file": "assets/floors/lvp-timberland-oak.jpg",
+  "thumb": "assets/floors/lvp-timberland-oak_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-greige-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho greige (vinílico)",
+   "en": "Greige Oak (LVP)",
+   "es": "Roble greige (vinílico)"
+  },
+  "file": "assets/floors/lvp-greige-oak.jpg",
+  "thumb": "assets/floors/lvp-greige-oak_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-weathered-gray",
+  "group": "lvp",
+  "name": {
+   "pt": "Cinza envelhecido (vinílico)",
+   "en": "Weathered Gray (LVP)",
+   "es": "Gris envejecido (vinílico)"
+  },
+  "file": "assets/floors/lvp-weathered-gray.jpg",
+  "thumb": "assets/floors/lvp-weathered-gray_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-driftwood",
+  "group": "lvp",
+  "name": {
+   "pt": "Driftwood (vinílico)",
+   "en": "Driftwood (LVP)",
+   "es": "Driftwood (vinílico)"
+  },
+  "file": "assets/floors/lvp-driftwood.jpg",
+  "thumb": "assets/floors/lvp-driftwood_thumb.jpg",
+  "tile_mm": [
+   1144,
+   3658
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-coastal-white",
+  "group": "lvp",
+  "name": {
+   "pt": "Branco costeiro (vinílico)",
+   "en": "Coastal Whitewash (LVP)",
+   "es": "Blanco costero (vinílico)"
+  },
+  "file": "assets/floors/lvp-coastal-white.jpg",
+  "thumb": "assets/floors/lvp-coastal-white_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-honey-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho mel (vinílico)",
+   "en": "Honey Oak (LVP)",
+   "es": "Roble miel (vinílico)"
+  },
+  "file": "assets/floors/lvp-honey-oak.jpg",
+  "thumb": "assets/floors/lvp-honey-oak_thumb.jpg",
+  "tile_mm": [
+   636,
+   2438
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-hickory",
+  "group": "lvp",
+  "name": {
+   "pt": "Hickory (vinílico)",
+   "en": "Hickory (LVP)",
+   "es": "Nogal americano (vinílico)"
+  },
+  "file": "assets/floors/lvp-hickory.jpg",
+  "thumb": "assets/floors/lvp-hickory_thumb.jpg",
+  "tile_mm": [
+   888,
+   2438
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-rustic-hickory",
+  "group": "lvp",
+  "name": {
+   "pt": "Hickory rústico (vinílico)",
+   "en": "Rustic Hickory (LVP)",
+   "es": "Hickory rústico (vinílico)"
+  },
+  "file": "assets/floors/lvp-rustic-hickory.jpg",
+  "thumb": "assets/floors/lvp-rustic-hickory_thumb.jpg",
+  "tile_mm": [
+   952,
+   3048
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-natural-maple",
+  "group": "lvp",
+  "name": {
+   "pt": "Maple natural (vinílico)",
+   "en": "Natural Maple (LVP)",
+   "es": "Arce natural (vinílico)"
+  },
+  "file": "assets/floors/lvp-natural-maple.jpg",
+  "thumb": "assets/floors/lvp-natural-maple_thumb.jpg",
+  "tile_mm": [
+   636,
+   2438
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-walnut",
+  "group": "lvp",
+  "name": {
+   "pt": "Nogueira (vinílico)",
+   "en": "Walnut (LVP)",
+   "es": "Nogal (vinílico)"
+  },
+  "file": "assets/floors/lvp-walnut.jpg",
+  "thumb": "assets/floors/lvp-walnut_thumb.jpg",
+  "tile_mm": [
+   952,
+   3048
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-smoked-oak",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvalho defumado (vinílico)",
+   "en": "Smoked Oak (LVP)",
+   "es": "Roble ahumado (vinílico)"
+  },
+  "file": "assets/floors/lvp-smoked-oak.jpg",
+  "thumb": "assets/floors/lvp-smoked-oak_thumb.jpg",
+  "tile_mm": [
+   1144,
+   3658
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-espresso",
+  "group": "lvp",
+  "name": {
+   "pt": "Espresso (vinílico)",
+   "en": "Dark Espresso (LVP)",
+   "es": "Espresso (vinílico)"
+  },
+  "file": "assets/floors/lvp-espresso.jpg",
+  "thumb": "assets/floors/lvp-espresso_thumb.jpg",
+  "tile_mm": [
+   636,
+   2438
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "lvp-charcoal",
+  "group": "lvp",
+  "name": {
+   "pt": "Carvão (vinílico)",
+   "en": "Charcoal Oak (LVP)",
+   "es": "Carbón (vinílico)"
+  },
+  "file": "assets/floors/lvp-charcoal.jpg",
+  "thumb": "assets/floors/lvp-charcoal_thumb.jpg",
+  "tile_mm": [
+   952,
+   2540
+  ],
+  "roughness": 0.55
+ },
+ {
+  "id": "wood-herringbone-white-oak",
+  "group": "wood",
+  "name": {
+   "pt": "Carvalho branco espinha de peixe",
+   "en": "White Oak Herringbone",
+   "es": "Roble blanco espiga"
+  },
+  "file": "assets/floors/wood-herringbone-white-oak.jpg",
+  "thumb": "assets/floors/wood-herringbone-white-oak_thumb.jpg",
+  "tile_mm": [
+   900,
+   900
+  ],
+  "roughness": 0.5
+ },
+ {
+  "id": "tile-porcelain-light-24",
+  "group": "tile",
+  "name": {
+   "pt": "Porcelanato claro 24\"×24\"",
+   "en": "Light Porcelain 24\"×24\"",
+   "es": "Porcelanato claro 24\"×24\""
+  },
+  "file": "assets/floors/tile-porcelain-light-24.jpg",
+  "thumb": "assets/floors/tile-porcelain-light-24_thumb.jpg",
+  "tile_mm": [
+   1220,
+   1220
+  ],
+  "roughness": 0.3
+ },
+ {
+  "id": "tile-porcelain-gray-24x48",
+  "group": "tile",
+  "name": {
+   "pt": "Porcelanato cinza 24\"×48\"",
+   "en": "Gray Porcelain 24\"×48\"",
+   "es": "Porcelanato gris 24\"×48\""
+  },
+  "file": "assets/floors/tile-porcelain-gray-24x48.jpg",
+  "thumb": "assets/floors/tile-porcelain-gray-24x48_thumb.jpg",
+  "tile_mm": [
+   1220,
+   2438
+  ],
+  "roughness": 0.32
+ },
+ {
+  "id": "tile-porcelain-beige-18",
+  "group": "tile",
+  "name": {
+   "pt": "Porcelanato bege 18\"×18\"",
+   "en": "Beige Porcelain 18\"×18\"",
+   "es": "Porcelanato beige 18\"×18\""
+  },
+  "file": "assets/floors/tile-porcelain-beige-18.jpg",
+  "thumb": "assets/floors/tile-porcelain-beige-18_thumb.jpg",
+  "tile_mm": [
+   1372,
+   1372
+  ],
+  "roughness": 0.35
+ },
+ {
+  "id": "tile-marble-white-24",
+  "group": "tile",
+  "name": {
+   "pt": "Porcelanato mármore branco 24\"×24\"",
+   "en": "White Marble-look 24\"×24\"",
+   "es": "Porcelanato mármol blanco 24\"×24\""
+  },
+  "file": "assets/floors/tile-marble-white-24.jpg",
+  "thumb": "assets/floors/tile-marble-white-24_thumb.jpg",
+  "tile_mm": [
+   1220,
+   1220
+  ],
+  "roughness": 0.2
+ },
+ {
+  "id": "tile-checker-bw-12",
+  "group": "tile",
+  "name": {
+   "pt": "Xadrez preto e branco 12\"×12\"",
+   "en": "Black & White Checker 12\"×12\"",
+   "es": "Ajedrez blanco y negro 12\"×12\""
+  },
+  "file": "assets/floors/tile-checker-bw-12.jpg",
+  "thumb": "assets/floors/tile-checker-bw-12_thumb.jpg",
+  "tile_mm": [
+   1220,
+   1220
+  ],
+  "roughness": 0.3
+ },
+ {
+  "id": "tile-slate-12x24",
+  "group": "tile",
+  "name": {
+   "pt": "Ardósia 12\"×24\"",
+   "en": "Slate 12\"×24\"",
+   "es": "Pizarra 12\"×24\""
+  },
+  "file": "assets/floors/tile-slate-12x24.jpg",
+  "thumb": "assets/floors/tile-slate-12x24_thumb.jpg",
+  "tile_mm": [
+   914,
+   1828
+  ],
+  "roughness": 0.6
+ },
+ {
+  "id": "concrete-polished",
+  "group": "other",
+  "name": {
+   "pt": "Cimento queimado",
+   "en": "Polished Concrete",
+   "es": "Cemento pulido"
+  },
+  "file": "assets/floors/concrete-polished.jpg",
+  "thumb": "assets/floors/concrete-polished_thumb.jpg",
+  "tile_mm": [
+   1200,
+   1200
+  ],
+  "roughness": 0.4
+ },
+ {
+  "id": "carpet-beige",
+  "group": "carpet",
+  "name": {
+   "pt": "Carpete bege",
+   "en": "Beige Carpet",
+   "es": "Alfombra beige"
+  },
+  "file": "assets/floors/carpet-beige.jpg",
+  "thumb": "assets/floors/carpet-beige_thumb.jpg",
+  "tile_mm": [
+   600,
+   600
+  ],
+  "roughness": 0.95
+ },
+ {
+  "id": "carpet-greige",
+  "group": "carpet",
+  "name": {
+   "pt": "Carpete greige",
+   "en": "Greige Carpet",
+   "es": "Alfombra greige"
+  },
+  "file": "assets/floors/carpet-greige.jpg",
+  "thumb": "assets/floors/carpet-greige_thumb.jpg",
+  "tile_mm": [
+   600,
+   600
+  ],
+  "roughness": 0.95
+ },
+ {
+  "id": "carpet-light-gray",
+  "group": "carpet",
+  "name": {
+   "pt": "Carpete cinza claro",
+   "en": "Light Gray Carpet",
+   "es": "Alfombra gris claro"
+  },
+  "file": "assets/floors/carpet-light-gray.jpg",
+  "thumb": "assets/floors/carpet-light-gray_thumb.jpg",
+  "tile_mm": [
+   600,
+   600
+  ],
+  "roughness": 0.95
+ },
+ {
+  "id": "carpet-charcoal",
+  "group": "carpet",
+  "name": {
+   "pt": "Carpete grafite",
+   "en": "Charcoal Carpet",
+   "es": "Alfombra grafito"
+  },
+  "file": "assets/floors/carpet-charcoal.jpg",
+  "thumb": "assets/floors/carpet-charcoal_thumb.jpg",
+  "tile_mm": [
+   600,
+   600
+  ],
+  "roughness": 0.95
+ },
+ {
+  "id": "carpet-berber-oatmeal",
+  "group": "carpet",
+  "name": {
+   "pt": "Carpete berber aveia",
+   "en": "Oatmeal Berber Carpet",
+   "es": "Alfombra berber avena"
+  },
+  "file": "assets/floors/carpet-berber-oatmeal.jpg",
+  "thumb": "assets/floors/carpet-berber-oatmeal_thumb.jpg",
+  "tile_mm": [
+   600,
+   600
+  ],
+  "roughness": 0.95
+ },
+ {
+  "id": "carpet-navy",
+  "group": "carpet",
+  "name": {
+   "pt": "Carpete azul marinho",
+   "en": "Navy Carpet",
+   "es": "Alfombra azul marino"
+  },
+  "file": "assets/floors/carpet-navy.jpg",
+  "thumb": "assets/floors/carpet-navy_thumb.jpg",
+  "tile_mm": [
+   600,
+   600
+  ],
+  "roughness": 0.95
+ }
+]

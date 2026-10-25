@@ -702,6 +702,8 @@ HELP_CONTENT.es.push(
 </ul>
 <p>Alguns atalhos de fábrica: <strong>F</strong> enquadrar, <strong>=</strong>/<strong>−</strong> zoom, <strong>1</strong> frontal, <strong>2</strong> de cima, <strong>D</strong> cotas, <strong>R</strong> régua, <strong>O</strong> portas, <strong>G</strong> gavetas, <strong>Ctrl + setas</strong> mover a vista, <strong>Ctrl + Shift + setas</strong> girar a vista, <strong>setas</strong> mover o módulo selecionado (<strong>Shift</strong> anda 10×), <strong>W</strong> levar o módulo para a próxima parede, <strong>Ctrl+S</strong> salvar.</p>
 <div class="po-help-tip">Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+V e Esc são fixos e não podem ser trocados. O atalho de cada botão aparece entre colchetes no balãozinho quando você passa o mouse.</div>` },
+        { id: 'piso-ambiente', title: `Piso do ambiente`, html: `<p>No menu <strong>Paredes</strong> da barra, clique em <strong>Piso</strong>. Escolha entre vinílico/laminado, madeira, porcelanato, cimento queimado ou carpete — o piso aparece no 3D do projeto e na Visualização 3D, no tamanho real das réguas e peças.</p>
+<p>O botão <strong>Sentido</strong> gira as réguas (ao longo da parede ou da parede pra frente). <strong>Sem textura</strong> volta ao piso liso. A escolha fica salva no projeto.</p>` },
         { id: 'visualizacao-3d-render', title: `Visualização 3D (menu Render)`, html: `<p>Abra o menu <strong>Render</strong> na barra e clique em <strong>Visualização 3D</strong> (ícone de cubo). O ambiente abre em 3D numa janela por cima do projeto, com os botões de abrir portas e gavetas.</p>
 <p>Para voltar, clique em <strong>← Voltar ao ambiente 2D</strong> ou aperte <strong>Esc</strong>. O item fica apagado enquanto o projeto não tiver nenhum módulo.</p>` }
       ],
@@ -732,6 +734,8 @@ HELP_CONTENT.es.push(
 </ul>
 <p>Some factory shortcuts: <strong>F</strong> fit, <strong>=</strong>/<strong>−</strong> zoom, <strong>1</strong> front, <strong>2</strong> top, <strong>D</strong> dimensions, <strong>R</strong> ruler, <strong>O</strong> doors, <strong>G</strong> drawers, <strong>Ctrl + arrows</strong> move the view, <strong>Ctrl + Shift + arrows</strong> rotate the view, <strong>arrows</strong> move the selected cabinet (<strong>Shift</strong> moves 10×), <strong>W</strong> send the cabinet to the next wall, <strong>Ctrl+S</strong> save.</p>
 <div class="po-help-tip">Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+V and Esc are fixed and cannot be changed. Each button's shortcut shows in brackets in its tooltip.</div>` },
+        { id: 'piso-ambiente', title: `Room floor`, html: `<p>Open the <strong>Walls</strong> menu on the toolbar and click <strong>Floor</strong>. Pick vinyl plank/laminate, wood, porcelain, polished concrete or carpet — the floor shows in the project 3D view and the 3D view window, at the real plank/tile size.</p>
+<p>The <strong>Direction</strong> button turns the planks (along the wall or out from the wall). <strong>No texture</strong> goes back to the plain floor. The choice is saved with the project.</p>` },
         { id: 'visualizacao-3d-render', title: `3D view (Render menu)`, html: `<p>Open the <strong>Render</strong> menu on the toolbar and click <strong>3D view</strong> (cube icon). The room opens in 3D in a window on top of the project, with the open doors and drawers buttons.</p>
 <p>To go back, click <strong>← Back to 2D room</strong> or press <strong>Esc</strong>. The item is greyed out while the project has no cabinets.</p>` }
       ],
@@ -762,6 +766,8 @@ HELP_CONTENT.es.push(
 </ul>
 <p>Algunos atajos de fábrica: <strong>F</strong> encuadrar, <strong>=</strong>/<strong>−</strong> zoom, <strong>1</strong> frontal, <strong>2</strong> superior, <strong>D</strong> cotas, <strong>R</strong> regla, <strong>O</strong> puertas, <strong>G</strong> cajones, <strong>Ctrl + flechas</strong> mover la vista, <strong>Ctrl + Shift + flechas</strong> girar la vista, <strong>flechas</strong> mover el módulo seleccionado (<strong>Shift</strong> avanza 10×), <strong>W</strong> llevar el módulo a la siguiente pared, <strong>Ctrl+S</strong> guardar.</p>
 <div class="po-help-tip">Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+V y Esc son fijos y no se pueden cambiar. El atajo de cada botón aparece entre corchetes al pasar el ratón.</div>` },
+        { id: 'piso-ambiente', title: `Piso del ambiente`, html: `<p>En el menú <strong>Paredes</strong> de la barra, haz clic en <strong>Piso</strong>. Elige vinílico/laminado, madera, porcelanato, cemento pulido o alfombra — el piso aparece en el 3D del proyecto y en la Vista 3D, con el tamaño real de tablas y piezas.</p>
+<p>El botón <strong>Sentido</strong> gira las tablas. <strong>Sin textura</strong> vuelve al piso liso. La elección se guarda en el proyecto.</p>` },
         { id: 'visualizacao-3d-render', title: `Vista 3D (menú Render)`, html: `<p>Abre el menú <strong>Render</strong> de la barra y haz clic en <strong>Vista 3D</strong> (ícono de cubo). El ambiente se abre en 3D en una ventana encima del proyecto, con los botones de abrir puertas y cajones.</p>
 <p>Para volver, haz clic en <strong>← Volver al ambiente 2D</strong> o pulsa <strong>Esc</strong>. El ítem queda apagado mientras el proyecto no tenga módulos.</p>` }
       ],
