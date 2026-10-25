@@ -2550,10 +2550,18 @@ function openProjectBuilderSizeInput(textEl, node, eixo, aplicarFn) {
   if (antigo) antigo.remove();
   const r = textEl.getBoundingClientRect();
   const b = node._box || {};
+  // NA UNIDADE DO USUÁRIO (2026-10-25, Matt: "preciso de inches se o
+  // usuário é inches"): antes era type=number em mm fixo. Agora mostra e lê
+  // na unidade escolhida (po-unit-select) — em polegadas aceita fração
+  // ("7 1/16", "7-1/16", 7.0625). Por dentro continua tudo em mm.
+  const unidade = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const mmAtual = eixo === 'x' ? (b.w || 0) : (b.h || 0);
   const inp = document.createElement('input');
   inp.id = 'po-proj-vao-input';
-  inp.type = 'number';
-  inp.value = Math.round(eixo === 'x' ? (b.w || 0) : (b.h || 0));
+  inp.type = 'text';
+  inp.inputMode = 'decimal';
+  inp.value = (typeof formatDimensionNumber === 'function') ? formatDimensionNumber(mmAtual, unidade) : String(Math.round(mmAtual));
+  inp.title = (typeof unitAbbrev === 'function') ? unitAbbrev(unidade) : unidade;
   inp.style.cssText = 'position:fixed;z-index:10000;width:88px;padding:4px 6px;'
     + 'font-size:13px;text-align:center;border:2px solid #e0921f;border-radius:6px;'
     + 'background:#fff;color:#7a4d0d;outline:none;'
@@ -2566,9 +2574,10 @@ function openProjectBuilderSizeInput(textEl, node, eixo, aplicarFn) {
   const fechar = (aplicarAgora) => {
     if (fechado) return;
     fechado = true;
-    const v = Number(inp.value);
+    const txt = String(inp.value || '').trim().replace(/(\d)\s*-\s*(\d+\/\d+)/, '$1 $2');   // 7-1/16 -> 7 1/16
+    const v = (typeof parseDimensionInput === 'function') ? parseDimensionInput(txt, unidade) : Number(txt);
     inp.remove();
-    if (aplicarAgora && isFinite(v) && v > 0) aplicar(node, v, eixo);
+    if (aplicarAgora && v != null && isFinite(v) && v > 0) aplicar(node, v, eixo);
   };
   inp.addEventListener('keydown', (ev) => {
     ev.stopPropagation();

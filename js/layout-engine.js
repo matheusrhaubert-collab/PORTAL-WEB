@@ -1462,6 +1462,53 @@
     resolve(root, zona, null, 0);
     resolveLateralSharing();
     resolveGavetaLateralSharing();
+    // FRENTES EMPILHADAS QUE SE TOCAM NA DIVISÓRIA HORIZONTAL (2026-10-25,
+    // Matt: "quando tiver divisória horizontal em cima e embaixo ver
+    // espaçamento das portas e frentes, porque elas estão pegando umas nas
+    // outras. talvez considerar sempre na divisória cobrir só 16.5mm (só nas
+    // divisórias)"). A regra do par de portas externas (4 mm no meio, acima)
+    // só pega porta × porta de vãos vizinhos; frente de gaveta, porta que
+    // cobre faixa de vãos e combinações misturadas escapavam e se
+    // sobrepunham. Aqui é a REDE DE SEGURANÇA geral: duas frentes externas
+    // no mesmo plano, uma em cima da outra, com menos de 4 mm entre elas (ou
+    // sobrepostas), encolhem por igual até sobrar 4 mm — centrados na
+    // divisória quando ela existe (Matt corrigiu no mesmo dia: "o
+    // espaçamento deve ser de 4mm", não os 16,5 de cobertura). Quem já tem
+    // 4 mm (os pares da regra de cima) não é tocado. Só ENCOLHE.
+    (function separaFrentesEmpilhadas() {
+      var FOLGA_MM = GAP_ENTRE_PORTAS_EMPILHADAS_MM;   // 4 mm
+      var frentes = out.filter(function (p) {
+        return p.kind === 'front' && !p.embutida && p.accKey !== LATERAL_COMPARTILHADA_FILLER_ACCKEY && p.w > 20 && p.h > 20;
+      });
+      var divisorias = out.filter(function (p) {
+        return p.kind === 'split' && p.h >= 8 && p.h <= 45 && p.w > p.h * 3;
+      });
+      for (var i = 0; i < frentes.length; i++) {
+        for (var j = 0; j < frentes.length; j++) {
+          if (i === j) continue;
+          var A = frentes[i], B = frentes[j];   // A embaixo, B em cima
+          if (!(A.y < B.y)) continue;
+          if (Math.abs((A.z + A.d) - (B.z + B.d)) > 25) continue;              // planos diferentes
+          var sobreX = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x);
+          if (sobreX < 20) continue;                                          // não estão uma sobre a outra
+          var topoA = A.y + A.h;
+          if (B.y - topoA >= FOLGA_MM - 0.01) continue;                        // já tem os 4 mm
+          if (topoA - B.y > Math.min(A.h, B.h) / 2) continue;                  // sobreposição absurda: não é vizinha
+          var meio = (topoA + B.y) / 2, folga = FOLGA_MM;
+          var div = null, dMin = 1e9;
+          divisorias.forEach(function (d) {
+            var sx = Math.min(d.x + d.w, A.x + A.w, B.x + B.w) - Math.max(d.x, A.x, B.x);
+            if (sx < 20) return;
+            var c = d.y + d.h / 2, dd = Math.abs(c - meio);
+            if (dd < 40 && dd < dMin) { dMin = dd; div = d; }
+          });
+          if (div) meio = div.y + div.h / 2;                                  // folga no meio da divisória
+          var novoTopoA = meio - folga / 2, novaBaseB = meio + folga / 2;
+          if (novoTopoA < topoA && novoTopoA - A.y > 20) A.h = novoTopoA - A.y;
+          if (novaBaseB > B.y && (B.y + B.h) - novaBaseB > 20) { B.h = (B.y + B.h) - novaBaseB; B.y = novaBaseB; }
+        }
+      }
+    })();
     // ENTALHE DA PRATELEIRA EM VOLTA DA STRETCHER VERTICAL (2026-10-18, Matt:
     // "as prateleiras deverão receber um recorte pra encaixar nessa travessa
     // vertical... uns 5mm de folga ao redor do stretcher de onde tocar na
