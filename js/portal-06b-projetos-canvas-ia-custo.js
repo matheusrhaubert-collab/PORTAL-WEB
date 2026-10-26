@@ -3942,7 +3942,10 @@ function collectProjectCostReport(slots) {
         // isso não entra de novo aqui — só o fator dos pais.
         const hingeCost = (Number(p.hinge_cost) || 0) * fator;
         const slideCost = (Number(p.slide_cost) || 0) * fator;
-        if (hingeCost > 0 || slideCost > 0) {
+        // dobradiça com preço 0 também conta (25/10 — porta-módulo do canto
+        // 90°: 4 dobradiças de 165° cadastradas a $0 sumiam do relatório)
+        const temDob = hingeCost > 0 || (Number(p.hinge_count) || 0) > 0;
+        if (temDob || slideCost > 0) {
           const qtdEfetiva = (Number(p.quantity) || 1) * fator;
           const baseLabel = (prefixo ? prefixo + ' › ' : '') + (p.reference || '');
           // Entra no detalhe (linha própria na tabela "BY PART", coluna
@@ -3953,7 +3956,7 @@ function collectProjectCostReport(slots) {
           // "— Modelo NNNmm" (2026-08-19) quando o modelo é identificado.
           rel.detalhe.push({
             modulo: (slot.module && slot.module.name) || '',
-            peca: hingeCost > 0
+            peca: temDob
               ? labelComModelo(baseLabel, p.hinge_model_name, null)
               : labelComModelo(baseLabel, p.slide_model_name, p.slide_model_rail_length_mm),
             qtd: qtdEfetiva,
@@ -3961,7 +3964,7 @@ function collectProjectCostReport(slots) {
             ferragem: hingeCost + slideCost,
             total: hingeCost + slideCost
           });
-          if (hingeCost > 0) {
+          if (temDob) {
             rel.ferragem.dobradica.qtd += (Number(p.hinge_count) || 0) * qtdEfetiva;
             rel.ferragem.dobradica.custo += hingeCost;
             registraFerragemModelo(rel.ferragem.dobradicaPorModelo, p.hinge_model_id, p.hinge_model_name, null,
@@ -4071,7 +4074,9 @@ function collectProjectCostReport(slots) {
         rel.labor.antiga += Number(p.labor_cost) || 0;
       }
 
-      if ((Number(p.hinge_cost) || 0) > 0) {
+      // dobradiça com preço 0 no cadastro também aparece (25/10, mesma regra
+      // dos itens comprados: zerado aparece, pra ninguém achar que sumiu)
+      if ((Number(p.hinge_cost) || 0) > 0 || (Number(p.hinge_count) || 0) > 0) {
         rel.ferragem.dobradica.qtd += (Number(p.hinge_count) || 0) * qtd;
         rel.ferragem.dobradica.custo += Number(p.hinge_cost) || 0;
         registraFerragemModelo(rel.ferragem.dobradicaPorModelo, p.hinge_model_id, p.hinge_model_name, null,
