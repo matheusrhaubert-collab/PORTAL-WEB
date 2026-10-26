@@ -1101,6 +1101,141 @@ document.getElementById('po-order-detail-back-btn').addEventListener('click', ()
   closeOrderDetail();
 });
 
+// ---------- PREÇO NO PEDIDO: TABELA × COM DESCONTO DE FÁBRICA (2026-10-26) ----------
+// Matt: "confirmar se a ordem está considerando desconto de fábrica, talvez
+// seja bom mostrar valor tabela - valor com desconto". O que fica GRAVADO
+// (order_items.total_price) continua sendo o preço de TABELA — isto é só
+// exibição. Com desconto de fábrica configurado (Margens, dealer/admin):
+// tabela riscada + valor com desconto (só o %, sem extras/margem). Vendedor
+// continua vendo só o preço de venda loja (getDisplayPrice), como antes.
+function orderPriceHtml(tableValue) {
+  const v = Number(tableValue) || 0;
+  if (isSellerAccount()) return formatMoney(getDisplayPrice(v));
+  const pct = getFactoryDiscountPct();
+  if (!(pct > 0)) return formatMoney(v);
+  return `<span class="po-price-table">${I18n.t('order_detail.table_price')} <s>${formatMoney(v)}</s></span>`
+    + `<span class="po-price-discounted">${formatMoney(v * (1 - pct / 100))}</span>`
+    + `<span class="po-price-discount-note">${I18n.t('order_detail.with_discount', { pct: pct })}</span>`;
+}
+
+// ---------- ADICIONAR AO PEDIDO — BUSCA RÁPIDA POR REFERÊNCIA (2026-10-26) ----------
+// Matt: "no pedido preciso no final um botão adicionar ao pedido. para uma
+// busca rápida colocar com valor tabela - desconto". Busca nas referências
+// (SKU) do catálogo; o preço sai do MESMO motor do menu de referência do
+// catálogo (buildSkuOrderItemPayload, portal-01), calculado só pros
+// resultados na tela, um por vez (cache por módulo+referência).
+const orderQuickAddPriceCache = new Map();
+let orderQuickAddQueue = Promise.resolve();
+let orderQuickAddSearchToken = 0;
+
+function orderQuickAddIndex() {
+  const out = [];
+  (allModules || []).forEach((m) => {
+    if (m.is_decoration) return;
+    (moduleSkuPresetsByModuleId[m.id] || []).forEach((s) => out.push({ module: m, reference: s.reference }));
+  });
+  return out;
+}
+
+function orderQuickAddPrice(moduleId, reference) {
+  const key = moduleId + '|' + reference;
+  if (!orderQuickAddPriceCache.has(key)) {
+    const p = orderQuickAddQueue.then(() => buildSkuOrderItemPayload(moduleId, reference, { noThumbnail: true }))
+      .then((pl) => Number(pl.total_price) || 0);
+    orderQuickAddQueue = p.catch(() => {});
+    p.catch(() => orderQuickAddPriceCache.delete(key));
+    orderQuickAddPriceCache.set(key, p);
+  }
+  return orderQuickAddPriceCache.get(key);
+}
+
+function renderOrderQuickAdd(order, isLocked) {
+  const wrap = document.getElementById('po-order-detail-quick-add');
+  if (!wrap) return;
+  if (isLocked) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  if (wrap.dataset.orderId === order.id) return; // mantém o que já foi digitado
+  wrap.dataset.orderId = order.id;
+  wrap.innerHTML = `
+    <div class="po-quick-add-title">${I18n.t('order_detail.quick_add_title')}</div>
+    <input type="search" class="po-quick-add-input" autocomplete="off" placeholder="${I18n.t('order_detail.quick_add_placeholder')}" />
+    <div class="po-quick-add-results"></div>
+    <p class="hint po-quick-add-status" style="display:none;"></p>
+  `;
+  const input = wrap.querySelector('.po-quick-add-input');
+  const results = wrap.querySelector('.po-quick-add-results');
+  const statusEl = wrap.querySelector('.po-quick-add-status');
+  let timer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => runOrderQuickAddSearch(input.value, results, statusEl), 250);
+  });
+}
+
+function runOrderQuickAddSearch(raw, results, statusEl) {
+  const token = ++orderQuickAddSearchToken;
+  const norm = (x) => String(x || '').toLowerCase().replace(/[\s\-_.'"]/g, '');
+  const q = norm(raw);
+  if (!q) { results.innerHTML = ''; return; }
+  const all = orderQuickAddIndex();
+  const refStarts = all.filter((r) => norm(r.reference).startsWith(q));
+  const other = all.filter((r) => !norm(r.reference).startsWith(q)
+    && (norm(r.reference).includes(q) || norm(r.module.name).includes(q)));
+  const list = refStarts.concat(other).slice(0, 8);
+  if (!list.length) { results.innerHTML = `<p class="hint">${I18n.t('order_detail.quick_add_none')}</p>`; return; }
+  results.innerHTML = '';
+  list.forEach((r) => {
+    const row = document.createElement('div');
+    row.className = 'po-quick-add-row';
+    row.innerHTML = `
+      <div class="po-quick-add-ref"></div>
+      <div class="po-quick-add-name hint"></div>
+      <div class="po-quick-add-price hint">${I18n.t('order_detail.quick_add_calc')}</div>
+      <button type="button" class="secondary po-quick-add-btn">${I18n.t('order_detail.quick_add_btn')}</button>
+    `;
+    row.querySelector('.po-quick-add-ref').textContent = r.reference;
+    // Mesma referência pode existir em 2 famílias (ex.: B18 na Kitchens antiga
+    // e na NEW Classic, com preço diferente) — o nome da família desempata.
+    const fam = (typeof familiesCacheList !== 'undefined' && r.module.family_id)
+      ? familiesCacheList.find((f) => f.id === r.module.family_id) : null;
+    row.querySelector('.po-quick-add-name').textContent = r.module.name + (fam && fam.name ? ' · ' + fam.name : '');
+    results.appendChild(row);
+    const priceEl = row.querySelector('.po-quick-add-price');
+    orderQuickAddPrice(r.module.id, r.reference).then((v) => {
+      if (token !== orderQuickAddSearchToken) return;
+      priceEl.classList.remove('hint');
+      priceEl.innerHTML = orderPriceHtml(v);
+    }, () => { if (token === orderQuickAddSearchToken) priceEl.textContent = '—'; });
+    row.querySelector('.po-quick-add-btn').addEventListener('click', (ev) => addOrderQuickAddItem(r, ev.currentTarget, statusEl));
+  });
+}
+
+async function addOrderQuickAddItem(r, btn, statusEl) {
+  if (!currentOrderDetail) return;
+  const order = currentOrderDetail.order;
+  btn.disabled = true;
+  statusEl.style.display = 'none';
+  try {
+    const base = await buildSkuOrderItemPayload(r.module.id, r.reference, { viewer: getOrderDetailHiddenViewer() });
+    const items = currentOrderDetail.items;
+    const nextSort = items.reduce((mx, x) => Math.max(mx, Number(x.sort_order) || 0), -1) + 1;
+    const payload = Object.assign({ order_id: order.id, sort_order: nextSort }, base);
+    const { data, error } = await supabaseClient.from('order_items').insert(payload).select().single();
+    if (error) throw error;
+    if (!currentOrderDetail || currentOrderDetail.order.id !== order.id) return;
+    currentOrderDetail.items.push(data);
+    if (currentDraftOrderId === order.id && Array.isArray(cartItems)) { cartItems.push(data); renderCart(); }
+    renderOrderDetail();
+    statusEl.textContent = I18n.t('order_detail.quick_add_added', { ref: r.reference });
+    statusEl.style.display = 'block';
+  } catch (err) {
+    statusEl.textContent = I18n.t('order_detail.quick_add_error', { msg: err.message || String(err) });
+    statusEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function renderOrderDetail() {
   if (!currentOrderDetail) return;
   const { order, items } = currentOrderDetail;
@@ -1176,8 +1311,9 @@ function renderOrderDetail() {
   // detalhe/aprovação do pedido — só o "preço de venda loja" (margem do
   // dealer já aplicada). O valor gravado no banco (order_items.total_price)
   // continua sendo sempre o de fábrica — só a EXIBIÇÃO muda.
-  document.getElementById('po-order-detail-total').textContent = formatMoney(isSellerAccount() ? getDisplayPrice(total) : total);
+  document.getElementById('po-order-detail-total').innerHTML = orderPriceHtml(total);
   updateOrderDetailVolumeWeight(items);
+  renderOrderQuickAdd(order, isLocked);
 
   // "Gerar Proposta" (js/portal-10-proposta.js) — pra Dealer (lojista),
   // administrador e contractor (canGenerateProposal, pedido do usuário
@@ -1728,7 +1864,7 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
   // Módulo decorativo (migration 039): mesmo aviso do carrinho, no lugar do preço.
   const decorModule = (allModules || []).find((mm) => mm.id === it.module_id);
   const isDecor = !!(decorModule && decorModule.is_decoration);
-  const priceLine = isDecor ? I18n.t('decor.cart_note') : formatMoney(isSellerAccount() ? getDisplayPrice(it.total_price) : it.total_price);
+  const priceLine = isDecor ? I18n.t('decor.cart_note') : orderPriceHtml(it.total_price);
   // Volume (m³) + peso — migration 061. data-item-id pra updateOrderItemQuantity
   // conseguir atualizar só esta linha depois de mudar a quantidade.
   const volumeWeightLine = isDecor ? '' : formatVolumeWeight(it.breakdown || [], it.quantity);
@@ -1889,10 +2025,10 @@ async function updateOrderItemQuantity(itemId, newQtyRaw) {
     if (priceEl) {
       const decorModule = (allModules || []).find((mm) => mm.id === it.module_id);
       const isDecor = !!(decorModule && decorModule.is_decoration);
-      priceEl.textContent = isDecor ? I18n.t('decor.cart_note') : formatMoney(isSellerAccount() ? getDisplayPrice(it.total_price) : it.total_price);
+      priceEl.innerHTML = isDecor ? I18n.t('decor.cart_note') : orderPriceHtml(it.total_price);
     }
     const total = currentOrderDetail.items.reduce((sum, x) => sum + Number(x.total_price || 0), 0);
-    document.getElementById('po-order-detail-total').textContent = formatMoney(isSellerAccount() ? getDisplayPrice(total) : total);
+    document.getElementById('po-order-detail-total').innerHTML = orderPriceHtml(total);
     updateOrderDetailVolumeWeight(currentOrderDetail.items);
     const itemVwEl = document.querySelector(`.po-order-item-volume-weight[data-item-id="${itemId}"]`);
     if (itemVwEl) {

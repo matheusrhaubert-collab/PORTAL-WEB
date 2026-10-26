@@ -6016,3 +6016,22 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 /* Modo apresentação na Visualização 3D (25/10) */
 .po-proj-present-btn { display: inline-flex; align-items: center; gap: 6px; }
 .po-proj-present-btn.active { background: #e6007e; border-color: #e6007e; color: #fff; }
+
+/* Pedido: tabela x com desconto de fábrica + "Adicionar ao pedido" (2026-10-26) */
+.po-price-table { display: block; font-size: 12px; font-weight: 500; color: var(--muted, #888); }
+.po-price-table s { text-decoration: line-through; }
+.po-price-discounted { display: block; }
+.po-price-discount-note { display: block; font-size: 11px; font-weight: 500; color: var(--muted, #888); }
+.po-order-detail-total-row .po-price-table, .po-order-detail-total-row .po-price-discount-note { text-align: right; }
+.po-quick-add { border: 1px dashed var(--border, #ddd); border-radius: 10px; padding: 14px 16px; margin: 18px 0; }
+.po-quick-add-title { font-weight: 700; margin-bottom: 8px; }
+.po-quick-add-input { width: 100%; max-width: 420px; }
+.po-quick-add-results { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.po-quick-add-row { display: grid; grid-template-columns: 110px 1fr auto auto; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border, #eee); }
+.po-quick-add-ref { font-weight: 700; }
+.po-quick-add-price { text-align: right; font-weight: 700; }
+.po-quick-add-price .po-price-discounted { font-size: 15px; }
+@media (max-width: 600px) {
+  .po-quick-add-row { grid-template-columns: 1fr auto; }
+  .po-quick-add-name { grid-column: 1 / -1; order: 3; }
+}

@@ -6002,8 +6002,10 @@ if (projResetBtn) projResetBtn.addEventListener('click', resetProject);
 // o log de erro abaixo (antes era um catch mudo, "sem 3D disponível — item
 // entra sem imagem mesmo, não trava o envio") agora aparece no console pra
 // dar uma pista de verdade em vez de falhar calado.
-async function renderProjectSlotThumbnailFallback(slot) {
-  if (slot.thumbnail_data_url) return slot.thumbnail_data_url;
+async function renderProjectSlotThumbnailFallback(slot, forcar) {
+  // forcar (envio do pedido, 2026-10-26): redesenha com as peças de AGORA —
+  // a miniatura salva no slot pode ser de antes do interior de fábrica.
+  if (slot.thumbnail_data_url && !forcar) return slot.thumbnail_data_url;
   try {
     const viewer = getSkuAddHiddenViewer();
     const syntheticSlot = {
@@ -6050,6 +6052,25 @@ async function sendProjectToOrder() {
   const btn = document.getElementById('po-proj-send-to-order-btn');
   if (btn) btn.disabled = true;
   try {
+    // PREÇO RECALCULADO NA HORA DO ENVIO (2026-10-26). O preço de cada slot
+    // era o que ficou do último recálculo — e recomputeProjectSlotPricing
+    // pode falhar CALADO (preço antigo continua) ou rodar antes do catálogo
+    // de agregados carregar (interior de fábrica = 0 peças). Pedido KITCHEN:
+    // Base Cabinet foi por $239,60 (só a caixa) com o projeto valendo
+    // $480,88 (porta + prateleira + travessa). Agora: catálogo garantido,
+    // todo slot recalculado, e se algum não fechar o preço o envio PARA —
+    // ANTES de criar a linha em orders (senão sobrava pedido vazio).
+    if (typeof ensureAccessoryCatalog === 'function') await ensureAccessoryCatalog();
+    const semPreco = [];
+    projectSlots.forEach((slot) => {
+      if (slot.module && slot.module.visual_only) return;
+      try { recomputeProjectSlotPricing(slot); }
+      catch (e) { semPreco.push((slot.module && slot.module.name || '?') + ' — ' + (e && e.message || e)); }
+      const L = slot.layout;
+      const arvoreComPeca = !!(L && ((L.children || []).length || (L.fronts || []).length || L.content || L.splitAxis));
+      if (arvoreComPeca && !(slot.layoutPieces || []).length) semPreco.push((slot.module && slot.module.name || '?') + ' — interior de fábrica não montou');
+    });
+    if (semPreco.length) throw new Error(I18n.t('project.send_price_failed', { list: semPreco.join('; ') }));
     // Geometria do ambiente + render, CONGELADOS no momento do envio
     // (migration 139, pedido do usuário 2026-08-24: "gerador de proposta...
     // vista paralelo de todas as paredes e topo com cotas, isso deve gerar
@@ -6159,7 +6180,7 @@ async function sendProjectToOrder() {
       // furação/proposta do pedido nunca chegam a ver este slot, porque eles
       // partem de order_items, não de projectSlots direto.
       if (slot.module && slot.module.visual_only) continue;
-      const thumb = await renderProjectSlotThumbnailFallback(slot);
+      const thumb = await renderProjectSlotThumbnailFallback(slot, true);
       payloads.push({
         order_id: order.id,
         module_id: slot.module.id,

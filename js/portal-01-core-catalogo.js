@@ -1158,119 +1158,132 @@ function getSkuAddHiddenViewer() {
   return skuAddHiddenViewer;
 }
 
-async function addModuleToCartWithSku(moduleId, reference, selectEl) {
+// Monta o order_item de um módulo por REFERÊNCIA (SKU) — preço pelo mesmo
+// motor do Projetos + miniatura. Sem order_id/sort_order (quem grava põe).
+// Usado pelo menu de referência do catálogo (addModuleToCartWithSku) e pelo
+// "Adicionar ao pedido" da tela do pedido (portal-02, 2026-10-26).
+// opts.noThumbnail: só preço (busca rápida). opts.viewer: viewer escondido
+// visível na aba atual (o padrão só existe dentro de po-tab-new-order).
+async function buildSkuOrderItemPayload(moduleId, reference, opts) {
+  const o = opts || {};
   const sku = (moduleSkuPresetsByModuleId[moduleId] || []).find((s) => s.reference === reference);
   const m = allModules.find((mm) => mm.id === moduleId);
+  if (!sku || !m) throw new Error('referência não encontrada: ' + reference);
+  const [modulePieces, colorOptionsByRole, hingeModelOptions, slideModelOptions] = await Promise.all([
+    loadRecursivePiecesForModule(m.id),
+    fetchModuleColorsByRoleRaw(m.id),
+    fetchModuleHingeModelsRaw(m.id),
+    fetchModuleSlideModelsRaw(m.id)
+  ]);
+  const usedRoleIds = collectUsedColorRoleIds(modulePieces);
+  const colorsByRole = {};
+  usedRoleIds.forEach((roleId) => {
+    const opts = colorOptionsByRole[roleId];
+    if (opts && opts.length) colorsByRole[roleId] = opts[0];
+  });
+  const selectedOptionalIds = modulePieces.filter((p) => p.client_optional && p.client_optional_default_on).map((p) => p.id);
+  const effectivePieces = modulePieces.filter((p) => !p.client_optional || selectedOptionalIds.includes(p.id));
+  const shelfQuantities = collectDefaultShelfQuantities(modulePieces);
+  const hingeModel = hingeModelOptions[0] || null;
+  const slideModel = slideModelOptions[0] || null;
+
+  // Referência pode cobrir só uma das duas dimensões (ex: código só
+  // cadastrado na Largura) — a que não tem valor nessa referência usa o
+  // padrão do módulo, clampado (mesma conta de insertProjectModuleDefault).
+  const width_mm = sku.width_mm != null
+    ? sku.width_mm
+    : clamp(Number(m.width_default_mm || 0), Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
+  const height_mm = sku.height_mm != null
+    ? sku.height_mm
+    : clamp(Number(m.height_default_mm || 0), Number(m.height_min_mm || 0), Number(m.height_max_mm || Infinity));
+  const depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
+
+  // MESMO MOTOR DO PROJETOS (2026-10-24, portal-26): interior de fábrica
+  // da NEW Classic (portas/frentes/prateleiras) entra no preço, na
+  // miniatura e no pedido. Se o slot não montar, cai no cálculo de antes.
+  let qSlot = null;
+  if (typeof buildQuoteSlot === 'function') {
+    try {
+      qSlot = await buildQuoteSlot({
+        module: m, pieces: modulePieces, colorOptionsByRole, colorsByRole, hingeModel, slideModel,
+        width_mm, height_mm, depth_mm, shelfQuantities, selectedOptionalIds
+      });
+    } catch (e) { console.warn('[referência] slot não montou, cálculo antigo:', e); qSlot = null; }
+  }
+  if (qSlot) Object.assign(colorsByRole, qSlot.colorsByRole);
+  const result = qSlot ? qSlot.result : (m.is_decoration
+    ? { total: 0, breakdown: [] }
+    : Pricing.calculateModulePrice({
+      module: m, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+      shelfQuantities, dimOverrides: {}, pieceColorOverrides: {},
+      width_mm, height_mm, depth_mm, markupMultiplier: resolveMarkupMultiplierForModule(m)
+    }));
+
+  const selectedColors = Object.keys(colorsByRole).map((roleId) => ({
+    role_id: roleId,
+    role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null,
+    color_id: colorsByRole[roleId] ? colorsByRole[roleId].id : null,
+    color_name: colorsByRole[roleId] ? colorsByRole[roleId].name : null
+  }));
+
+  // Miniatura (pedido do usuário 2026-07-29: "quando insiro um novo direto
+  // do portal ele vem sem imagem") — este fluxo pula o configurador
+  // (Passo 2) de propósito (ver comentário logo acima da função), então
+  // nunca existia um Viewer3D "de verdade" na tela pra tirar o snapshot
+  // como o "Adicionar ao carrinho" normal faz (Viewer3D.snapshot()).
+  // Mesma solução da tela do pedido (getOrderDetailHiddenViewer/
+  // recolorOrderItem): monta o módulo isolado num canvas escondido
+  // (buildCompositionAssemblies, mesma função da Composição), tira o
+  // snapshot e recorta a margem. Best-effort — se falhar por qualquer
+  // motivo, thumbnail_data_url fica null (comportamento de antes), não
+  // trava o item de entrar no carrinho por causa só da imagem.
+  let thumbnail_data_url = null;
+  if (!o.noThumbnail) try {
+    const viewer = o.viewer || getSkuAddHiddenViewer();
+    const syntheticSlot = {
+      pieces: qSlot ? quoteSlotViewerPieces(qSlot) : effectivePieces,
+      width_mm: qSlot ? qSlot.width_mm : width_mm, height_mm: qSlot ? qSlot.height_mm : height_mm, depth_mm: qSlot ? qSlot.depth_mm : depth_mm,
+      colorsByRole, pieceColorOverrides: {},
+      shelfQuantities, dimOverrides: {}
+    };
+    viewer.render(buildCompositionAssemblies([syntheticSlot]), null, null);
+    if (typeof Viewer3D.waitForPendingTextures === 'function') await Viewer3D.waitForPendingTextures();
+    const raw = viewer.snapshot();
+    thumbnail_data_url = raw ? await trimTransparentPng(raw) : null;
+  } catch (e) { /* miniatura não gerou — item entra sem imagem, igual sempre foi até agora */ }
+
+  const payload = {
+    module_id: m.id,
+    module_name: m.name,
+    module_description: m.description || null,
+    selected_colors: selectedColors,
+    hinge_model_id: hingeModel ? hingeModel.id : null,
+    slide_model_id: slideModel ? slideModel.id : null,
+    width_mm, height_mm, depth_mm,
+    shelf_quantities: shelfQuantities,
+    dim_overrides: {},
+    piece_color_overrides: {},
+    selected_optional_component_ids: selectedOptionalIds,
+    quantity: 1,
+    unit_price: result.total,
+    total_price: result.total,
+    breakdown: result.breakdown,
+    thumbnail_data_url,
+    ...(qSlot ? quoteOrderItemExtras(quoteSlotSnapshot(qSlot)) : {})
+  };
+  return payload;
+}
+
+async function addModuleToCartWithSku(moduleId, reference, selectEl) {
   const cartError = document.getElementById('po-cart-error');
-  if (!sku || !m) return;
+  if (!(moduleSkuPresetsByModuleId[moduleId] || []).some((s) => s.reference === reference)) return;
+  if (!allModules.some((mm) => mm.id === moduleId)) return;
   if (cartError) cartError.style.display = 'none';
   if (selectEl) selectEl.disabled = true;
   try {
-    const [modulePieces, colorOptionsByRole, hingeModelOptions, slideModelOptions] = await Promise.all([
-      loadRecursivePiecesForModule(m.id),
-      fetchModuleColorsByRoleRaw(m.id),
-      fetchModuleHingeModelsRaw(m.id),
-      fetchModuleSlideModelsRaw(m.id)
-    ]);
-    const usedRoleIds = collectUsedColorRoleIds(modulePieces);
-    const colorsByRole = {};
-    usedRoleIds.forEach((roleId) => {
-      const opts = colorOptionsByRole[roleId];
-      if (opts && opts.length) colorsByRole[roleId] = opts[0];
-    });
-    const selectedOptionalIds = modulePieces.filter((p) => p.client_optional && p.client_optional_default_on).map((p) => p.id);
-    const effectivePieces = modulePieces.filter((p) => !p.client_optional || selectedOptionalIds.includes(p.id));
-    const shelfQuantities = collectDefaultShelfQuantities(modulePieces);
-    const hingeModel = hingeModelOptions[0] || null;
-    const slideModel = slideModelOptions[0] || null;
-
-    // Referência pode cobrir só uma das duas dimensões (ex: código só
-    // cadastrado na Largura) — a que não tem valor nessa referência usa o
-    // padrão do módulo, clampado (mesma conta de insertProjectModuleDefault).
-    const width_mm = sku.width_mm != null
-      ? sku.width_mm
-      : clamp(Number(m.width_default_mm || 0), Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
-    const height_mm = sku.height_mm != null
-      ? sku.height_mm
-      : clamp(Number(m.height_default_mm || 0), Number(m.height_min_mm || 0), Number(m.height_max_mm || Infinity));
-    const depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
-
-    // MESMO MOTOR DO PROJETOS (2026-10-24, portal-26): interior de fábrica
-    // da NEW Classic (portas/frentes/prateleiras) entra no preço, na
-    // miniatura e no pedido. Se o slot não montar, cai no cálculo de antes.
-    let qSlot = null;
-    if (typeof buildQuoteSlot === 'function') {
-      try {
-        qSlot = await buildQuoteSlot({
-          module: m, pieces: modulePieces, colorOptionsByRole, colorsByRole, hingeModel, slideModel,
-          width_mm, height_mm, depth_mm, shelfQuantities, selectedOptionalIds
-        });
-      } catch (e) { console.warn('[referência] slot não montou, cálculo antigo:', e); qSlot = null; }
-    }
-    if (qSlot) Object.assign(colorsByRole, qSlot.colorsByRole);
-    const result = qSlot ? qSlot.result : (m.is_decoration
-      ? { total: 0, breakdown: [] }
-      : Pricing.calculateModulePrice({
-        module: m, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
-        shelfQuantities, dimOverrides: {}, pieceColorOverrides: {},
-        width_mm, height_mm, depth_mm, markupMultiplier: resolveMarkupMultiplierForModule(m)
-      }));
-
-    const selectedColors = Object.keys(colorsByRole).map((roleId) => ({
-      role_id: roleId,
-      role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null,
-      color_id: colorsByRole[roleId] ? colorsByRole[roleId].id : null,
-      color_name: colorsByRole[roleId] ? colorsByRole[roleId].name : null
-    }));
-
-    // Miniatura (pedido do usuário 2026-07-29: "quando insiro um novo direto
-    // do portal ele vem sem imagem") — este fluxo pula o configurador
-    // (Passo 2) de propósito (ver comentário logo acima da função), então
-    // nunca existia um Viewer3D "de verdade" na tela pra tirar o snapshot
-    // como o "Adicionar ao carrinho" normal faz (Viewer3D.snapshot()).
-    // Mesma solução da tela do pedido (getOrderDetailHiddenViewer/
-    // recolorOrderItem): monta o módulo isolado num canvas escondido
-    // (buildCompositionAssemblies, mesma função da Composição), tira o
-    // snapshot e recorta a margem. Best-effort — se falhar por qualquer
-    // motivo, thumbnail_data_url fica null (comportamento de antes), não
-    // trava o item de entrar no carrinho por causa só da imagem.
-    let thumbnail_data_url = null;
-    try {
-      const viewer = getSkuAddHiddenViewer();
-      const syntheticSlot = {
-        pieces: qSlot ? quoteSlotViewerPieces(qSlot) : effectivePieces,
-        width_mm: qSlot ? qSlot.width_mm : width_mm, height_mm: qSlot ? qSlot.height_mm : height_mm, depth_mm: qSlot ? qSlot.depth_mm : depth_mm,
-        colorsByRole, pieceColorOverrides: {},
-        shelfQuantities, dimOverrides: {}
-      };
-      viewer.render(buildCompositionAssemblies([syntheticSlot]), null, null);
-      if (typeof Viewer3D.waitForPendingTextures === 'function') await Viewer3D.waitForPendingTextures();
-      const raw = viewer.snapshot();
-      thumbnail_data_url = raw ? await trimTransparentPng(raw) : null;
-    } catch (e) { /* miniatura não gerou — item entra sem imagem, igual sempre foi até agora */ }
-
+    const base = await buildSkuOrderItemPayload(moduleId, reference);
     const orderId = await ensureDraftOrder();
-    const payload = {
-      order_id: orderId,
-      module_id: m.id,
-      module_name: m.name,
-      module_description: m.description || null,
-      selected_colors: selectedColors,
-      hinge_model_id: hingeModel ? hingeModel.id : null,
-      slide_model_id: slideModel ? slideModel.id : null,
-      width_mm, height_mm, depth_mm,
-      shelf_quantities: shelfQuantities,
-      dim_overrides: {},
-      piece_color_overrides: {},
-      selected_optional_component_ids: selectedOptionalIds,
-      quantity: 1,
-      unit_price: result.total,
-      total_price: result.total,
-      breakdown: result.breakdown,
-      thumbnail_data_url,
-      sort_order: cartItems.length,
-      ...(qSlot ? quoteOrderItemExtras(quoteSlotSnapshot(qSlot)) : {})
-    };
+    const payload = Object.assign({ order_id: orderId, sort_order: cartItems.length }, base);
     const { data, error } = await supabaseClient.from('order_items').insert(payload).select().single();
     if (error) throw error;
     cartItems.push(data);
