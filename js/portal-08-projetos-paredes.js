@@ -6189,8 +6189,12 @@ async function sendProjectToOrder() {
         // portal ao refazer a furação/3D da peça. Só vai quando existe
         // ajuste: pedido sem ajuste nenhum continua idêntico ao de antes.
         // Inclui a ESTICADA da junção (peça inteira no 1º módulo).
-        ...(Object.keys(projectSlotOrderAdjustments(slot)).length
-          ? { piece_adjustments: projectSlotOrderAdjustments(slot) } : {}),
+        // SEMPRE presente (2026-10-26): o insert é em lote, e o PostgREST
+        // une as colunas de todas as linhas — linha SEM a chave vira NULL
+        // (não o default '{}'), e a coluna é NOT NULL. Pedido misturando
+        // módulo com ajuste (ex.: rodapé até o blind corner) e sem ajuste
+        // quebrava com "null value in column piece_adjustments".
+        piece_adjustments: projectSlotOrderAdjustments(slot),
         // GEOMETRIA DO CONSTRUTOR DE VÃOS (migration 121). null quando o
         // slot não usa o construtor (a maioria). Não é o preço nem a
         // furação — é só onde cada peça do interior ficou, pra os
