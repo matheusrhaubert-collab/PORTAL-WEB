@@ -2614,6 +2614,7 @@ function projectSlotOrderAdjustments(slot) {
   });
   soma(slot.pieceAdjustments);
   soma(slot._joinAdj && slot._joinAdj.adjust);
+  soma(projectSlotBlindToeAdj(slot));   // rodapé até o blind corner (25/10)
   return out;
 }
 
@@ -2629,9 +2630,95 @@ function projectSlotEffectivePiecesWithLeds(slot, ledConfigs) {
   if (removidas && removidas.length) base = filterRemovedPiecesDeep(base, removidas); // recursivo: porta/prateleira aninhada (29/09)
   base = applyLedConfigsDeep(base, ledConfigs);
   // Ajuste manual de peça (duplo clique na peça, 2026-10-02) — ver
-  // applyPieceAdjustmentsDeep em js/module-pieces.js.
+  // applyPieceAdjustmentsDeep em js/module-pieces.js. + rodapé esticado até
+  // o blind corner (derivado, ver projectSlotBlindToeAdj).
   return (typeof applyPieceAdjustmentsDeep === 'function')
-    ? applyPieceAdjustmentsDeep(base, slot.pieceAdjustments) : base;
+    ? applyPieceAdjustmentsDeep(base, somaPieceAdjustments(slot.pieceAdjustments, projectSlotBlindToeAdj(slot))) : base;
+}
+
+// Soma dois mapas de piece_adjustments (deltas numéricos somam; o resto, o
+// primeiro que tiver vale).
+function somaPieceAdjustments(a, b) {
+  if (!b || !Object.keys(b).length) return a;
+  if (!a || !Object.keys(a).length) return b;
+  const out = {};
+  [a, b].forEach((src) => Object.keys(src).forEach((id) => {
+    const cur = out[id] = Object.assign({}, out[id] || {});
+    Object.keys(src[id] || {}).forEach((k) => {
+      const v = src[id][k];
+      if (typeof v === 'number' && /^d[xyzwhd]$/.test(k)) cur[k] = (cur[k] || 0) + v;
+      else if (cur[k] == null) cur[k] = v;
+    });
+  }));
+  return out;
+}
+
+// RODAPÉ ATÉ O BLIND CORNER (2026-10-25, Matt: "quando um módulo é colocado
+// contra um blind corner, tanto direito quanto esquerdo, fazer o rodapé dele
+// ir até o rodapé do blind, fechando o espaço que fica embaixo"). Módulo de
+// parede com rodapé (peça position_role 'baseboard') cuja ponta encosta na
+// frente de um blind corner (árvore com params.blind_afastar_mm, migration
+// 241) na parede vizinha: o rodapé estica até a face do rodapé do blind.
+// DERIVADO (nunca salvo): sai das posições a cada cálculo, então segue o
+// módulo se ele for arrastado. Vai pro 3D, preço e pedido (piece_adjustments
+// em projectSlotOrderAdjustments) como um ajuste de largura (dw/dx).
+function projectSlotBlindToeAdj(slot) {
+  try {
+    if (!slot || isFloorSlot(slot) || typeof getSlotWorldFrame !== 'function') return null;
+    if (slot.layout && slot.layout.params && slot.layout.params.blind_afastar_mm) return null;
+    const blinds = (projectSlots || []).filter((o) => o !== slot && !o.oculto && !isFloorSlot(o)
+      && o.layout && o.layout.params && Number(o.layout.params.blind_afastar_mm) > 0);
+    if (!blinds.length) return null;
+    let rodape = null;
+    (function anda(lista) {
+      (lista || []).forEach((p) => {
+        if (rodape || !p) return;
+        if (p.is_module) { anda(p.child_pieces); return; }
+        if (p.position_role === 'baseboard') rodape = p;
+      });
+    })(slot.pieces || []);
+    if (!rodape || rodape.id == null) return null;
+    const fa = getSlotWorldFrame(slot);
+    if (!fa || Number(fa.oy) > 0.05) return null;            // só base no chão
+    const UA = { x: Math.cos(fa.rotY), z: -Math.sin(fa.rotY) }, NA = { x: Math.sin(fa.rotY), z: Math.cos(fa.rotY) };
+    const E = 0.018, RECUO = 0.076;
+    const dot = (p, q) => p.x * q.x + p.z * q.z;
+    // linha do rodapé do módulo (meio da espessura)
+    const vA = fa.depthM / 2 - RECUO + E / 2;
+    let dir = 0, esq = 0;
+    blinds.forEach((b) => {
+      const fb = getSlotWorldFrame(b);
+      if (!fb || Number(fb.oy) > 0.05) return;
+      const UB = { x: Math.cos(fb.rotY), z: -Math.sin(fb.rotY) }, NB = { x: Math.sin(fb.rotY), z: Math.cos(fb.rotY) };
+      const c = dot(UA, NB);
+      if (Math.abs(c) < 0.9) return;                          // tem que ser perpendicular
+      // face da frente do rodapé do blind
+      const F = { x: fb.ox + NB.x * (fb.depthM / 2 - RECUO + E), z: fb.oz + NB.z * (fb.depthM / 2 - RECUO + E) };
+      [1, -1].forEach((lado) => {
+        const P = { x: fa.ox + UA.x * lado * fa.widthM / 2 + NA.x * vA, z: fa.oz + UA.z * lado * fa.widthM / 2 + NA.z * vA };
+        const den = lado * c;
+        if (Math.abs(den) < 1e-6) return;
+        const t = dot({ x: F.x - P.x, z: F.z - P.z }, NB) / den;
+        if (!(t > 0.002 && t < 0.7)) return;
+        // o ponto de encontro tem que cair na largura do blind
+        const X = { x: P.x + UA.x * lado * t, z: P.z + UA.z * lado * t };
+        if (Math.abs(dot({ x: X.x - fb.ox, z: X.z - fb.oz }, UB)) > fb.widthM / 2 + 0.002) return;
+        // e a ponta do módulo tem que estar encostada no blind (filler/porta),
+        // não longe dele: a ponta fica a no máximo 6 cm da frente das portas
+        const frenteB = { x: fb.ox + NB.x * (fb.depthM / 2), z: fb.oz + NB.z * (fb.depthM / 2) };
+        const Pponta = { x: fa.ox + UA.x * lado * fa.widthM / 2, z: fa.oz + UA.z * lado * fa.widthM / 2 };
+        const dist = dot({ x: Pponta.x - frenteB.x, z: Pponta.z - frenteB.z }, NB);
+        if (dist < -0.01 || dist > 0.06) return;
+        if (lado === 1) dir = Math.max(dir, t); else esq = Math.max(esq, t);
+      });
+    });
+    if (!(dir > 0) && !(esq > 0)) return null;
+    const dw = Math.round((dir + esq) * 10000) / 10;            // mm, 1 casa
+    const dx = -Math.round(esq * 10000) / 10;
+    const a = { dw };
+    if (dx) a.dx = dx;
+    return { [rodape.id]: a };
+  } catch (e) { return null; }
 }
 
 // ==========================================================================
