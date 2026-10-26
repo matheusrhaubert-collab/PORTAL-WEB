@@ -6027,11 +6027,13 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 .po-quick-add-title { font-weight: 700; margin-bottom: 8px; }
 .po-quick-add-input { width: 100%; max-width: 420px; }
 .po-quick-add-results { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-.po-quick-add-row { display: grid; grid-template-columns: 110px 1fr auto auto; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border, #eee); }
+.po-quick-add-row { display: grid; grid-template-columns: 56px 110px 1fr auto auto; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border, #eee); }
 .po-quick-add-ref { font-weight: 700; }
 .po-quick-add-price { text-align: right; font-weight: 700; }
 .po-quick-add-price .po-price-discounted { font-size: 15px; }
 @media (max-width: 600px) {
-  .po-quick-add-row { grid-template-columns: 1fr auto; }
-  .po-quick-add-name { grid-column: 1 / -1; order: 3; }
+  .po-quick-add-row { grid-template-columns: 56px 1fr auto; }
+  .po-quick-add-name { grid-column: 2 / -1; order: 3; }
 }
+.po-quick-add-thumb { width: 56px; height: 56px; object-fit: contain; border: 1px solid var(--border, #eee); border-radius: 6px; background: #fff; }
+.po-quick-add-thumb-empty { display: block; }

@@ -2837,6 +2837,15 @@ async function ensureAccessoryCatalog() {
 // é hydrateProjectLayoutPieces / o próprio construtor).
 function rebuildProjectSlotLayoutPieces(slot) {
   if (!slot) return;
+  // GEOMETRIA CONGELADA DE UM PEDIDO (2026-10-26): slot remontado a partir de
+  // um order_item (troca de cor no pedido, portal-26 buildSlotFromOrderItem)
+  // não tem a árvore — só order_items.layout (= built.pieces do envio). Usa
+  // ela como está: mesma porta/prateleira/frente que o pedido já tem.
+  if (Array.isArray(slot._frozenLayoutGeometry) && slot._frozenLayoutGeometry.length) {
+    slot.layoutPieces = projectLayoutRowsForSlot(slot, slot._frozenLayoutGeometry);
+    slot._layoutGeometry = slot._frozenLayoutGeometry;
+    return;
+  }
   if (!slot.layout) { slot.layoutPieces = []; slot._layoutGeometry = null; return; }
   if (typeof LayoutEngine === 'undefined' || !accessoryCatalogCache) return;
   try {

@@ -1172,7 +1172,12 @@ function renderOrderQuickAdd(order, isLocked) {
   });
 }
 
-function runOrderQuickAddSearch(raw, results, statusEl) {
+// Só entra na lista o que TEM PREÇO (Matt 26/10: "mostra muitas opções sem
+// preço, essas não poderiam ser adicionadas") — cada candidato é calculado
+// (um por vez, com cache) e só vira linha se der > $0. Para em 8 linhas.
+// Ícone = imagem do módulo no catálogo (modules.thumbnail_data_url, a mesma
+// do card do New Quote).
+async function runOrderQuickAddSearch(raw, results, statusEl) {
   const token = ++orderQuickAddSearchToken;
   const norm = (x) => String(x || '').toLowerCase().replace(/[\s\-_.'"]/g, '');
   const q = norm(raw);
@@ -1181,33 +1186,42 @@ function runOrderQuickAddSearch(raw, results, statusEl) {
   const refStarts = all.filter((r) => norm(r.reference).startsWith(q));
   const other = all.filter((r) => !norm(r.reference).startsWith(q)
     && (norm(r.reference).includes(q) || norm(r.module.name).includes(q)));
-  const list = refStarts.concat(other).slice(0, 8);
-  if (!list.length) { results.innerHTML = `<p class="hint">${I18n.t('order_detail.quick_add_none')}</p>`; return; }
-  results.innerHTML = '';
-  list.forEach((r) => {
+  const candidatos = refStarts.concat(other).slice(0, 40);
+  results.innerHTML = `<p class="hint po-quick-add-wait">${I18n.t('order_detail.quick_add_calc')}</p>`;
+  const wait = results.querySelector('.po-quick-add-wait');
+  let mostrados = 0;
+  for (const r of candidatos) {
+    if (mostrados >= 8) break;
+    let preco = 0;
+    try { preco = await orderQuickAddPrice(r.module.id, r.reference); } catch (e) { preco = 0; }
+    if (token !== orderQuickAddSearchToken) return;   // digitou outra coisa
+    if (!(preco > 0)) continue;
+    mostrados++;
     const row = document.createElement('div');
     row.className = 'po-quick-add-row';
+    const img = r.module.thumbnail_data_url
+      ? `<img class="po-quick-add-thumb" alt="" />` : `<div class="po-quick-add-thumb po-quick-add-thumb-empty"></div>`;
     row.innerHTML = `
+      ${img}
       <div class="po-quick-add-ref"></div>
       <div class="po-quick-add-name hint"></div>
-      <div class="po-quick-add-price hint">${I18n.t('order_detail.quick_add_calc')}</div>
+      <div class="po-quick-add-price">${orderPriceHtml(preco)}</div>
       <button type="button" class="secondary po-quick-add-btn">${I18n.t('order_detail.quick_add_btn')}</button>
     `;
+    const imgEl = row.querySelector('img.po-quick-add-thumb');
+    if (imgEl) imgEl.src = r.module.thumbnail_data_url;
     row.querySelector('.po-quick-add-ref').textContent = r.reference;
     // Mesma referência pode existir em 2 famílias (ex.: B18 na Kitchens antiga
     // e na NEW Classic, com preço diferente) — o nome da família desempata.
     const fam = (typeof familiesCacheList !== 'undefined' && r.module.family_id)
       ? familiesCacheList.find((f) => f.id === r.module.family_id) : null;
     row.querySelector('.po-quick-add-name').textContent = r.module.name + (fam && fam.name ? ' · ' + fam.name : '');
-    results.appendChild(row);
-    const priceEl = row.querySelector('.po-quick-add-price');
-    orderQuickAddPrice(r.module.id, r.reference).then((v) => {
-      if (token !== orderQuickAddSearchToken) return;
-      priceEl.classList.remove('hint');
-      priceEl.innerHTML = orderPriceHtml(v);
-    }, () => { if (token === orderQuickAddSearchToken) priceEl.textContent = '—'; });
+    results.insertBefore(row, wait);
     row.querySelector('.po-quick-add-btn').addEventListener('click', (ev) => addOrderQuickAddItem(r, ev.currentTarget, statusEl));
-  });
+  }
+  if (token !== orderQuickAddSearchToken) return;
+  if (mostrados) wait.remove();
+  else wait.textContent = I18n.t('order_detail.quick_add_none');
 }
 
 async function addOrderQuickAddItem(r, btn, statusEl) {
@@ -1501,9 +1515,22 @@ async function recolorOrderItem(it, changes) {
   });
 
   const selectedOptionalIds = it.selected_optional_component_ids || [];
-  const effectivePieces = pieces.filter((p) => !p.client_optional || selectedOptionalIds.includes(p.id));
+  let effectivePieces = pieces.filter((p) => !p.client_optional || selectedOptionalIds.includes(p.id));
+  // MESMO MOTOR DO PROJETOS (2026-10-26): item com interior de fábrica/
+  // Construtor (order_items.layout) ou ajuste de peça é remontado como slot,
+  // senão a porta/prateleira/frente some do desenho E do preço ao trocar a
+  // cor. Item comum (sem nada disso) segue o cálculo de sempre.
+  let orderSlot = null;
+  const temExtras = (Array.isArray(it.layout) && it.layout.length)
+    || Object.keys(it.piece_adjustments || {}).length || (it.removed_piece_ids || []).length
+    || Object.keys(it.led_configs || {}).length || it.drawer_model_id;
+  if (!m.is_decoration && temExtras && typeof buildSlotFromOrderItem === 'function') {
+    orderSlot = await buildSlotFromOrderItem(it, { module: m, pieces, colorsByRole, pieceColorOverrides, hingeModel, slideModel });
+    effectivePieces = projectSlotEffectivePieces(orderSlot);
+  }
   const result = m.is_decoration
     ? { total: 0, breakdown: [] }
+    : orderSlot ? orderSlot.result
     : Pricing.calculateModulePrice({
       module: m, pieces: effectivePieces, colorsByRole,
       hingeModel, slideModel,

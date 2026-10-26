@@ -161,6 +161,51 @@ function quoteSlotSelectedColors(colorsByRole) {
 // Campos extras do order_item (mesmo formato do envio do Projetos, portal-08).
 // `src` = lastItemResult ou um slot da Composição. Sem nada disso = {} e o
 // payload fica idêntico ao de antes.
+// Remonta um order_item JÁ GRAVADO como slot do Projetos (2026-10-26, Matt:
+// "ao trocar a cor da porta ele some a porta do módulo"). A troca rápida de
+// cor do pedido repreçava só com module_components — interior de fábrica
+// (porta/prateleira/frente da NEW Classic, ou o que veio do Construtor no
+// Projetos) sumia do desenho E do preço. Aqui o slot leva tudo que o pedido
+// gravou: geometria do interior (layout, congelada — ver
+// _frozenLayoutGeometry em rebuildProjectSlotLayoutPieces), ajustes de peça,
+// peças removidas, LED e modelo de gaveta. Só a cor muda.
+async function buildSlotFromOrderItem(it, cfg) {
+  const m = cfg.module;
+  const slot = {
+    id: '__orderitem__' + it.id,
+    _quote: true,
+    module: m,
+    pieces: cfg.pieces || [],
+    colorOptionsByRole: {},
+    colorsByRole: Object.assign({}, cfg.colorsByRole || {}),
+    selectedColors: [],
+    pieceColorOverrides: cfg.pieceColorOverrides || {},
+    hingeModel: cfg.hingeModel || null,
+    slideModel: cfg.slideModel || null,
+    width_mm: it.width_mm, height_mm: it.height_mm, depth_mm: it.depth_mm,
+    shelfQuantities: it.shelf_quantities || {},
+    dimOverrides: it.dim_overrides || {},
+    selectedOptionalIds: it.selected_optional_component_ids || [],
+    removedPieceIds: (it.removed_piece_ids || []).slice(),
+    ledConfigs: Object.assign({}, it.led_configs || {}),
+    pieceAdjustments: JSON.parse(JSON.stringify(it.piece_adjustments || {})),
+    layout: null,
+    layoutPieces: [],
+    _frozenLayoutGeometry: Array.isArray(it.layout) && it.layout.length ? it.layout : null,
+    doorModelId: null,
+    drawerModelId: it.drawer_model_id || null
+  };
+  try { await ensureAccessoryCatalog(); } catch (e) { /* segue sem agregado */ }
+  if (typeof projectOwnHingeSlideCache !== 'undefined' && !projectOwnHingeSlideCache[m.id]
+    && typeof fetchModuleOwnHingeAndSlideModels === 'function') {
+    try { projectOwnHingeSlideCache[m.id] = (await fetchModuleOwnHingeAndSlideModels(m.id)) || { hinge: null, slide: null, slides: [] }; }
+    catch (e) { /* preço cai no slideModel do slot */ }
+  }
+  try { await Promise.all([ensureProjectDoorModels(), ensureProjectDrawerModels()]); } catch (e) { /* sem modelos */ }
+  recomputeProjectSlotPricing(slot);   // lança se o preço falhar
+  return slot;
+}
+
 function quoteOrderItemExtras(src) {
   if (!src) return {};
   const out = {};
