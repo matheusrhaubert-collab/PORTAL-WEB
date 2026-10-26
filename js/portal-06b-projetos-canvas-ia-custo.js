@@ -792,9 +792,18 @@ function projectSlotMaxFloorHeightMm(heightMm, module) {
 function projectWallSlotXBoundsMm(slot) {
   const idx = Number(slot.wall_index || 0);
   const recuo = projectWallCornerInsetMm(idx);
-  const largura = getProjectWallWidthMm(idx) - recuo.ini - recuo.fim;
+  // BLIND CORNER AFASTADO DA PAREDE (2026-10-25, Matt: "módulos de canto
+  // blind, quero deixar padrão essa distância da parede" — 4 3/4"). A raiz
+  // da árvore de fábrica diz quanto e de que lado fica o lado cego
+  // (params.blind_afastar_mm / blind_lado 'E'|'D', migration 241): a ponta
+  // do lado cego não encosta na parede vizinha, para a essa distância.
+  const lp = (slot.layout && slot.layout.params) || {};
+  const afastar = Number(lp.blind_afastar_mm) || 0;
+  const ini = recuo.ini + (afastar > 0 && lp.blind_lado !== 'D' ? afastar : 0);
+  const fim = recuo.fim + (afastar > 0 && lp.blind_lado === 'D' ? afastar : 0);
+  const largura = getProjectWallWidthMm(idx) - ini - fim;
   const maxX = Math.max(0, largura - Number(slot.width_mm || 0));
-  return { min: recuo.ini, max: recuo.ini + maxX };
+  return { min: ini, max: ini + maxX };
 }
 function clampProjectSlotPosition(slot) {
   // Ilha no chão não é limitada por largura de parede nem por pé direito ao
