@@ -1422,20 +1422,101 @@ function getOrderDetailHiddenViewer() {
   return orderDetailHiddenViewer;
 }
 
+// PAPÉIS DE COR DO PEDIDO COM "EMPRÉSTIMO" (2026-10-26, Matt: "trocou só pros
+// base, pros walls não trocou"). Porta da NEW Classic vem da ÁRVORE DE
+// FÁBRICA (order_items.layout), não de module_components — o aéreo não tem
+// peça de cadastro com Porta/Frente (o base passava só por causa do rodapé),
+// e muitas vezes nem module_colors pra esse papel. Mesma regra do Projetos
+// (portal-07, "doadora"): o papel conta se o item JÁ TEM cor nele
+// (selected_colors), e papel sem opção própria empresta a paleta de outro
+// papel do mesmo módulo.
+function orderItemRoleIds(it, pieces) {
+  const roles = new Set();
+  collectCompositionColorRoleIds(pieces || [], new Map()).forEach((_, rid) => roles.add(rid));
+  (it.selected_colors || []).forEach((c) => { if (c.role_id) roles.add(c.role_id); });
+  return roles;
+}
+
+const roleSortOrder = (rid) => (colorRolesCache.find((r) => r.id === rid) || {}).sort_order || 0;
+
+// rolesByModule: Map(moduleId -> Set(roleId)). Devolve Map(moduleId ->
+// { roleId: [cores ordenadas] }), com empréstimo pros papéis sem opção.
+async function loadOrderModuleColorOptions(rolesByModule) {
+  const moduleIds = [...rolesByModule.keys()];
+  if (!moduleIds.length) return new Map();
+  const rows = [];
+  for (let from = 0; ; from += 1000) {   // module_colors passa fácil de 1000 linhas
+    const { data, error } = await supabaseClient.from('module_colors')
+      .select('module_id, color_role_id, color_id, colors(*)')
+      .in('module_id', moduleIds)
+      .order('module_id').order('color_role_id').order('color_id')
+      .range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  const byModule = new Map(); // mid -> Map(rid -> Map(colorId -> color))
+  rows.forEach((row) => {
+    if (!row.colors || !row.colors.active) return;
+    if (!byModule.has(row.module_id)) byModule.set(row.module_id, new Map());
+    const perRole = byModule.get(row.module_id);
+    if (!perRole.has(row.color_role_id)) perRole.set(row.color_role_id, new Map());
+    perRole.get(row.color_role_id).set(row.color_id, row.colors);
+  });
+  const out = new Map();
+  moduleIds.forEach((mid) => {
+    const perRole = byModule.get(mid) || new Map();
+    const lista = (rid) => [...((perRole.get(rid) || new Map()).values())]
+      .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
+    const usados = [...rolesByModule.get(mid)].sort((a, b) => roleSortOrder(a) - roleSortOrder(b));
+    const todos = [...perRole.keys()].sort((a, b) => roleSortOrder(a) - roleSortOrder(b));
+    const res = {};
+    usados.forEach((rid) => {
+      let cores = lista(rid);
+      if (!cores.length) {
+        const doador = usados.concat(todos).find((d) => d !== rid && lista(d).length);
+        if (doador) cores = lista(doador);
+      }
+      res[rid] = cores;
+    });
+    out.set(mid, res);
+  });
+  return out;
+}
+
 async function loadOrderDetailColorRoleGroups() {
   if (!currentOrderDetail) return [];
-  const items = currentOrderDetail.items;
+  const items = currentOrderDetail.items.filter((it) => !isDecorOrderItem(it));
   const moduleIds = [...new Set(items.map((it) => it.module_id))];
   const piecesByModule = {};
   await Promise.all(moduleIds.map(async (mid) => {
     try { piecesByModule[mid] = await loadRecursivePiecesForModule(mid); } catch (e) { piecesByModule[mid] = []; }
   }));
-  // "slots" falsos só com o suficiente pra loadColorRoleGroupsForSlots
-  // funcionar (ela só lê slot.pieces e slot.module.id) — reaproveita a MESMA
-  // função genérica da Composição/Projetos, sem duplicar a lógica de
-  // interseção de cores comuns.
-  const pseudoSlots = items.map((it) => ({ module: { id: it.module_id }, pieces: piecesByModule[it.module_id] || [] }));
-  return loadColorRoleGroupsForSlots(pseudoSlots);
+  const rolesByModule = new Map();
+  items.forEach((it) => {
+    if (!rolesByModule.has(it.module_id)) rolesByModule.set(it.module_id, new Set());
+    orderItemRoleIds(it, piecesByModule[it.module_id]).forEach((rid) => rolesByModule.get(it.module_id).add(rid));
+  });
+  let optsByModule;
+  try { optsByModule = await loadOrderModuleColorOptions(rolesByModule); } catch (e) { return []; }
+  const roleIds = [...new Set([].concat(...[...rolesByModule.values()].map((st) => [...st])))]
+    .sort((a, b) => roleSortOrder(a) - roleSortOrder(b));
+  const groups = [];
+  roleIds.forEach((roleId) => {
+    const mods = moduleIds.filter((mid) => rolesByModule.get(mid).has(roleId));
+    const moduleColorIds = new Map();
+    const merged = new Map();
+    mods.forEach((mid) => {
+      const cores = (optsByModule.get(mid) || {})[roleId] || [];
+      moduleColorIds.set(mid, new Set(cores.map((c) => c.id)));
+      cores.forEach((c) => { if (!merged.has(c.id)) merged.set(c.id, c); });
+    });
+    const colors = [...merged.values()].sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
+    if (!colors.length) return;
+    const roleName = (colorRolesCache.find((r) => r.id === roleId) || {}).name || '';
+    groups.push({ roleId, roleName, colors, moduleIds: mods, moduleColorIds });
+  });
+  return groups;
 }
 
 // Resolve um order_item de volta pro formato "colorsByRole"/
@@ -1677,8 +1758,10 @@ async function applyPendingColorChangesToOrderItems() {
       // módulo com o catálogo inteiro). Pula o papel pendente que este
       // módulo não aceita — mantém a cor que ele já tinha nesse papel, só
       // aplica os papéis/cores que ele realmente pode receber.
+      // papel conta também se o item já tem cor nele (porta da árvore de
+      // fábrica — ver orderItemRoleIds)
       const changes = roleIds
-        .filter((rid) => pieceTreeHasColorRole(pieces, rid))
+        .filter((rid) => pieceTreeHasColorRole(pieces, rid) || (it.selected_colors || []).some((c) => c.role_id === rid))
         .filter((rid) => {
           const allowedIds = pending[rid].moduleColorIds && pending[rid].moduleColorIds.get(it.module_id);
           return allowedIds && allowedIds.has(pending[rid].color.id);
@@ -1752,19 +1835,14 @@ async function toggleOrderItemColorPicker(itemId, roleId, pickerId) {
   el.innerHTML = `<p class="hint">${I18n.t('order_detail.color_loading')}</p>`;
   const it = currentOrderDetail && currentOrderDetail.items.find((x) => x.id === itemId);
   if (!it) return;
-  const { data, error } = await supabaseClient
-    .from('module_colors')
-    .select('color_id, colors(*)')
-    .eq('module_id', it.module_id)
-    .eq('color_role_id', roleId);
-  if (error || !data) { el.innerHTML = ''; return; }
-  // Mesma ordem do cadastro (colors.sort_order) — mesmo motivo/pedido do
-  // usuário do fix em loadColorRoleGroupsForSlots (2026-07-29): este picker
-  // por item é um caminho separado (busca module_colors direto, não passa
-  // pela função genérica), então precisa da mesma ordenação por conta própria.
-  const colors = data.map((row) => row.colors)
-    .filter((c) => c && c.active)
-    .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
+  // Mesma regra do painel (empréstimo de paleta pra papel sem opção própria,
+  // ex.: Porta/Frente de aéreo NEW Classic) — ver loadOrderModuleColorOptions.
+  let colors = [];
+  try {
+    const papeis = new Set((it.selected_colors || []).map((c) => c.role_id).filter(Boolean).concat([roleId]));
+    const opts = await loadOrderModuleColorOptions(new Map([[it.module_id, papeis]]));
+    colors = (opts.get(it.module_id) || {})[roleId] || [];
+  } catch (e) { el.innerHTML = ''; return; }
   const currentColorId = ((it.selected_colors || []).find((c) => c.role_id === roleId) || {}).color_id || null;
   el.innerHTML = '';
   renderSwatches(el, colors, currentColorId, (colorId) => {
