@@ -74,16 +74,26 @@ function cartTotal() {
   return cartItems.reduce((sum, it) => sum + Number(it.total_price || 0), 0);
 }
 
+// Item decorativo (módulo is_decoration, migration 039 — ex.: "Decor —
+// Lava-louças") NÃO aparece na lista de produtos do carrinho/pedido/PDF
+// (Matt, 26/10). Continua gravado em order_items (ambientação 3D; o ERP já
+// pula na furação via modules(is_decoration)) — só sai da LISTA.
+function isDecorOrderItem(it) {
+  const m = (allModules || []).find((mm) => mm.id === it.module_id);
+  return !!(m && m.is_decoration);
+}
+
 function renderCart() {
   const listEl = document.getElementById('po-cart-list');
   // Reskin (2026-07-09): o carrinho agora é o painel "Seu Pedido", fixo do
   // lado — sempre visível (a antiga display:none até ter item some; em vez
   // disso mostra um estado vazio dentro da lista).
   const countBadge = document.getElementById('po-cart-count-badge');
-  if (countBadge) countBadge.textContent = String(cartItems.length);
+  const cartVisiveis = cartItems.filter((it) => !isDecorOrderItem(it));
+  if (countBadge) countBadge.textContent = String(cartVisiveis.length);
 
-  listEl.innerHTML = cartItems.length > 0
-    ? cartItems.map((it) => renderCartItemRow(it, true)).join('')
+  listEl.innerHTML = cartVisiveis.length > 0
+    ? cartVisiveis.map((it) => renderCartItemRow(it, true)).join('')
     : `<p class="hint po-cart-empty">${I18n.t('cart.empty')}</p>`;
   // Vendedor (migration 149, pedido do Matt 02/09/2026: "vendedor nao pode
   // ver preco de fabrica... la no carrinho") nunca vê o valor de fábrica cru
@@ -1127,7 +1137,8 @@ function renderOrderDetail() {
   orderItemColorPickerOpenId = null;
 
   const itemsWrap = document.getElementById('po-order-detail-items');
-  itemsWrap.innerHTML = items.map((it, idx) => renderOrderDetailItemCard(it, idx, isLocked, currentOrderDetail.colorById)).join('');
+  itemsWrap.innerHTML = items.filter((it) => !isDecorOrderItem(it))
+    .map((it, idx) => renderOrderDetailItemCard(it, idx, isLocked, currentOrderDetail.colorById)).join('');
   itemsWrap.querySelectorAll('.po-order-item-color-btn').forEach((btn) => {
     btn.addEventListener('click', () => toggleOrderItemColorPicker(btn.dataset.itemId, btn.dataset.roleId, btn.dataset.pickerId));
   });
@@ -2249,7 +2260,7 @@ function generateOrderPDF(order, items) {
   doc.text(I18n.t('pdf.modules'), 14, y); y += 7;
 
   doc.setFontSize(9);
-  items.forEach((it, idx) => {
+  items.filter((it) => !isDecorOrderItem(it)).forEach((it, idx) => {
     ensureSpace(22);
     doc.setFontSize(10);
     doc.text(`${idx + 1}. ${it.module_name}`, 14, y); y += 5;

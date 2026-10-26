@@ -425,8 +425,15 @@ async function loadProjectFavoritesList() {
   // refaz, uma por vez, até a lista carregar. Sem cached_value_usd os cards
   // caem no recálculo em background de antes; sem wall_segments o projeto
   // abre pelo caminho das paredes antigas (wall_shape/wall_widths_mm).
-  const BASE_COLS = ['id', 'name', 'slots', 'wall_width_mm', 'wall_shape', 'wall_widths_mm', 'thumbnail_data_url', 'ai_preview_url', 'updated_at'];
-  const OPTIONAL_COLS = ['cached_value_usd', 'wall_segments', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder', 'client_info', 'floor_texture', 'geometria', 'bancada'];
+  // LISTA LEVE (2026-10-26): "canceling statement due to statement timeout"
+  // — a lista puxava slots/geometria/bancada e as imagens base64
+  // (thumbnail_data_url, ai_preview_url) de TODOS os projetos numa consulta
+  // só. Agora vem só o que o card precisa pra aparecer; imagem + nº de
+  // módulos chegam depois em lotes pequenos (carregaPesadosDosCards, abaixo)
+  // e a linha completa só é buscada ao Carregar/Duplicar
+  // (fetchProjectFullRow).
+  const BASE_COLS = ['id', 'name', 'updated_at'];
+  const OPTIONAL_COLS = ['cached_value_usd', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder', 'client_info'];
   let optional = OPTIONAL_COLS.slice();
   // FILTRO POR DONO (02/10): "Meus Projetos" tem que mostrar SÓ os projetos
   // da conta logada. Sem esse .eq, o RLS de SELECT deixa passar também os
@@ -538,20 +545,13 @@ async function loadProjectFavoritesList() {
     // a foto realista (ai_preview_url) e só cai pro 3D (thumbnail_data_url)
     // se não tiver render nenhum ainda. .po-myproj-card-image já centraliza
     // via object-fit — a "imagem-split"/badge 3D-IA saiu de uso.
-    const cardImageSrc = proj.ai_preview_url || proj.thumbnail_data_url;
-    let imageHtml;
-    if (cardImageSrc) {
-      imageHtml = `
-        <img src="${cardImageSrc}" alt="" class="po-myproj-card-image" />
-        <div class="po-myproj-card-image-zoom-hint">🔍</div>`;
-    } else {
-      imageHtml = `<div class="po-myproj-card-image-empty"></div>`;
-    }
+    // imagem chega depois (carregaPesadosDosCards) — começa vazia
+    const imageHtml = `<div class="po-myproj-card-image-empty"></div>`;
     card.innerHTML = `
       <div class="po-myproj-card-image-wrap">${imageHtml}</div>
       <div class="po-myproj-card-body">
         <div class="po-myproj-card-name"></div>
-        <div class="po-myproj-card-meta hint">${I18n.t('fav.modules_label', { n: slots.length })} · ${I18n.t('project.updated_label', { date: dateStr })}</div>
+        <div class="po-myproj-card-meta hint"><span class="po-myproj-card-count">${I18n.t('fav.modules_label', { n: '…' })}</span> · ${I18n.t('project.updated_label', { date: dateStr })}</div>
         <div class="po-myproj-card-total hint">${I18n.t('fav.total_calculating')}</div>
         <div class="po-myproj-card-actions">
           <button type="button" class="po-proj-fav-load">${I18n.t('project.load_btn')}</button>
@@ -594,7 +594,11 @@ async function loadProjectFavoritesList() {
       img.addEventListener('click', () => openGalleryLightbox(img.src));
     });
     const loadBtnNormal = card.querySelector('.po-proj-fav-load');
-    if (loadBtnNormal) loadBtnNormal.addEventListener('click', () => restoreFavoriteProject(proj));
+    if (loadBtnNormal) loadBtnNormal.addEventListener('click', async () => {
+      try { await fetchProjectFullRow(proj); }
+      catch (err) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; return; }
+      restoreFavoriteProject(proj);
+    });
     card.querySelector('.po-proj-fav-share').addEventListener('click', () => shareProjectFavorite(proj));
     card.querySelector('.po-proj-fav-view3d').addEventListener('click', () => view3DFavoriteProject(proj));
     const folderBtn = card.querySelector('.po-proj-fav-folder');
@@ -652,6 +656,8 @@ async function loadProjectFavoritesList() {
       const suggested = proj.name + I18n.t('fav.duplicate_name_suffix');
       const newName = (prompt(I18n.t('fav.duplicate_name_prompt'), suggested) || '').trim();
       if (!newName) return;
+      try { await fetchProjectFullRow(proj); }
+      catch (err) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; return; }
       const dupPayload = {
         client_user_id: currentUser.id,
         name: newName,
@@ -673,7 +679,7 @@ async function loadProjectFavoritesList() {
       loadProjectFavoritesList();
     });
     (hasFolders ? folderGrids.get(proj.client_folder || '') : listEl).appendChild(card);
-    totalSpans.push({ el: card.querySelector('.po-myproj-card-total'), slots, proj });
+    totalSpans.push({ el: card.querySelector('.po-myproj-card-total'), slots, proj, card });
   });
 
   // Formata "Value: X" a partir de um total já conhecido.
@@ -717,6 +723,43 @@ async function loadProjectFavoritesList() {
       legacySpans.push({ el, slots, proj });
     }
   });
+  // Imagem + nº de módulos (+ slots pro backfill de valor abaixo) em lotes
+  // de 4 projetos — cada consulta lê poucas linhas pesadas, nunca estoura o
+  // statement timeout. Lote com erro cai pra um projeto por vez.
+  const aplicaPesados = (row) => {
+    const item = totalSpans.find((t) => t.proj.id === row.id);
+    if (!item) return;
+    const { proj, card } = item;
+    proj.slots = row.slots;
+    proj.thumbnail_data_url = row.thumbnail_data_url;
+    proj.ai_preview_url = row.ai_preview_url;
+    item.slots = Array.isArray(row.slots) ? row.slots : [];
+    const countEl = card.querySelector('.po-myproj-card-count');
+    if (countEl) countEl.textContent = I18n.t('fav.modules_label', { n: item.slots.length });
+    const src = row.ai_preview_url || row.thumbnail_data_url;
+    const wrap = card.querySelector('.po-myproj-card-image-wrap');
+    if (src && wrap) {
+      wrap.innerHTML = `<img alt="" class="po-myproj-card-image" /><div class="po-myproj-card-image-zoom-hint">🔍</div>`;
+      const img = wrap.querySelector('img');
+      img.src = src;
+      img.addEventListener('click', () => openGalleryLightbox(img.src));
+    }
+  };
+  const PESADOS = 'id, slots, thumbnail_data_url, ai_preview_url';
+  for (let i = 0; i < totalSpans.length; i += 4) {
+    const ids = totalSpans.slice(i, i + 4).map((t) => t.proj.id);
+    const { data: rows, error: e1 } = await supabaseClient.from('user_projects').select(PESADOS).in('id', ids);
+    if (!e1) { (rows || []).forEach(aplicaPesados); continue; }
+    for (const id of ids) {
+      const { data: row } = await supabaseClient.from('user_projects').select(PESADOS).eq('id', id).maybeSingle();
+      if (row) aplicaPesados(row);
+    }
+  }
+  legacySpans.forEach((l) => {
+    const t = totalSpans.find((x) => x.proj === l.proj);
+    if (t) l.slots = t.slots;
+  });
+
   // Backfill sequencial de propósito (mesmo motivo interno de
   // computeProjectSlotsTotal/restoreFavoriteProject: loadModuleColors mexe
   // no global moduleColorsByRole).
@@ -1028,6 +1071,17 @@ async function maybeOpenSharedProjectImport() {
 // colorOptionsByRole recarregado (loadModuleColors) pra alimentar o painel
 // de swatch inline (renderProjectConfigPanel) — a Composição não tem esse
 // painel inline, só o configurador completo, então não precisa disso.
+// Linha COMPLETA do projeto (slots, paredes, geometria, bancada, imagens…)
+// — a lista de "My Projects" só traz o básico (ver loadProjectFavoritesList).
+// select('*') pega as colunas opcionais que existirem no banco.
+async function fetchProjectFullRow(proj) {
+  if (!proj || !proj.id || proj._fullRow) return proj;
+  const { data, error } = await supabaseClient.from('user_projects').select('*').eq('id', proj.id).single();
+  if (error) throw error;
+  Object.assign(proj, data, { _fullRow: true });
+  return proj;
+}
+
 async function restoreFavoriteProject(fav, bindAsFavorite = true) {
   // projeto congelado (migration 179) nunca vira o projeto "em edição" —
   // se chegar aqui por algum caminho, abre como rascunho sem vínculo
