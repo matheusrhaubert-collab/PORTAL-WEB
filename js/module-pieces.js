@@ -795,7 +795,9 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         color,
         offset_x_mm, offset_y_mm, offset_z_mm,
         hinge_side: piece.hinge_side,
-        component_reference: piece.component_reference || null,
+        // nome de catálogo: componente, ou o MÓDULO filho (porta-módulo
+        // "Porta Flat · Canto 90° (dobradiça 165°)" usada como "Porta A")
+        component_reference: piece.component_reference || (piece.is_module ? piece.module_name : null) || null,
         is_module: !!piece.is_module,
         opening_type: piece.opening_type,
         slides_per_unit: piece.slides_per_unit,
