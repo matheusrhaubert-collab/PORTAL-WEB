@@ -277,7 +277,22 @@ ScreensComercial.financial = function (params, d) {
         : '<span class="erp-muted erp-xs">—</span>',
       acao: liberado
         ? '<button class="erp-btn-ghost erp-btn-sm" onclick="ScreensComercial.liberar(\'' + o.id + '\', false, this)">Desfazer</button>'
-        : '<button class="erp-btn-sm" onclick="ScreensComercial.liberar(\'' + o.id + '\', true, this)">Liberar</button>'
+        : '<button class="erp-btn-sm" onclick="ScreensComercial.liberar(\'' + o.id + '\', true, this)">Liberar</button>',
+      // INVOICE (migration 247) — PDF exportado do QuickBooks, o dealer vê
+      // no portal. Ver / trocar / tirar.
+      invoice: o.invoice_path
+        ? '<button class="erp-btn-ghost erp-btn-sm" onclick="ScreensComercial.verInvoice(\'' + o.id + '\', this)">📄 ' + UI.esc(o.invoice_number || 'Ver') + '</button>' +
+          ' <button class="erp-btn-ghost erp-btn-sm" title="Trocar o PDF" onclick="ScreensComercial.subirInvoice(\'' + o.id + '\', this)">↻</button>' +
+          ' <button class="erp-btn-ghost erp-btn-sm" title="Tirar a invoice" onclick="ScreensComercial.tirarInvoice(\'' + o.id + '\', this)">✕</button>'
+        : '<button class="erp-btn-ghost erp-btn-sm" onclick="ScreensComercial.subirInvoice(\'' + o.id + '\', this)">⬆ Invoice</button>',
+      // LIBERAÇÃO PRA COLETA (migration 247) — só depois da produção.
+      coleta: !liberado
+        ? '<span class="erp-muted erp-xs">—</span>'
+        : (o.pickup_released_at
+          ? '<span class="erp-xs">' + UI.date(o.pickup_released_at) + '</span>' +
+            (o.pickup_release_note ? '<div class="erp-xs erp-muted">' + UI.esc(o.pickup_release_note) + '</div>' : '') +
+            ' <button class="erp-btn-ghost erp-btn-sm" onclick="ScreensComercial.liberarColeta(\'' + o.id + '\', false, this)">Desfazer</button>'
+          : '<button class="erp-btn-sm" onclick="ScreensComercial.liberarColeta(\'' + o.id + '\', true, this)">Liberar coleta</button>')
     };
   };
 
@@ -289,8 +304,9 @@ ScreensComercial.financial = function (params, d) {
       { key: 'stage', label: 'Estágio' },
       { key: 'value', label: 'Valor', align: 'right' },
       { key: liberado ? 'when' : 'when', label: liberado ? 'Liberado em' : '' },
-      { key: 'acao', label: '' }
-    ];
+      { key: 'acao', label: '' },
+      { key: 'invoice', label: 'Invoice' }
+    ].concat(liberado ? [{ key: 'coleta', label: 'Liberado pra coleta' }] : []);
   };
 
   return UI.head('Liberação Financeira',
@@ -319,6 +335,82 @@ ScreensComercial.financial = function (params, d) {
       '<div class="erp-route-step"><div class="erp-route-name">Entra em lote</div><div class="erp-route-meta">só pedido liberado aparece lá</div></div>' +
       '<div class="erp-route-step"><div class="erp-route-name">Plano de corte</div><div class="erp-route-meta">chão de fábrica</div></div>' +
       '</div>');
+};
+
+/* Erro de gravação na tela Financeiro (mesmo quadro do liberar). */
+ScreensComercial._finErro = function (titulo, err) {
+  console.error(err);
+  const el = document.getElementById('fin-toast');
+  if (el) {
+    el.className = 'erp-error';
+    el.innerHTML = '<div class="erp-error-title">' + UI.esc(titulo) + '</div>' +
+      '<div class="erp-error-detail">' + UI.esc(DATA.explainError(err)) + '</div>';
+    el.style.display = 'block';
+  } else {
+    alert(DATA.explainError(err));
+  }
+};
+
+/* LIBERAÇÃO PRA COLETA (migration 247) — 2ª liberação: pedido pronto sai. */
+ScreensComercial.liberarColeta = async function (orderId, liberar, btn) {
+  let nota = null;
+  if (liberar) {
+    nota = prompt('Liberar este pedido pra COLETA?\n\nObservação (opcional), ex.: "saldo recebido 26/10":');
+    if (nota === null) return;
+  } else if (!confirm('Desfazer a liberação pra coleta?')) {
+    return;
+  }
+  btn.disabled = true;
+  try {
+    await DATA.setPickupRelease(orderId, liberar, nota ? nota.trim() : null);
+    APP.render();
+  } catch (err) {
+    ScreensComercial._finErro('Não consegui gravar a liberação pra coleta', err);
+    btn.disabled = false;
+  }
+};
+
+/* INVOICE (migration 247) — sobe o PDF exportado do QuickBooks. */
+ScreensComercial.subirInvoice = function (orderId, btn) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/pdf,.pdf';
+  input.addEventListener('change', async function () {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const numero = prompt('Número da invoice (opcional), ex.: "INV-1042":', '');
+    if (numero === null) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Enviando…';
+    try {
+      await DATA.uploadInvoice(orderId, file, numero.trim());
+      APP.render();
+    } catch (err) {
+      ScreensComercial._finErro('Não consegui subir a invoice', err);
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+  input.click();
+};
+ScreensComercial.verInvoice = async function (orderId, btn) {
+  const win = window.open('', '_blank'); // abre no clique (bloqueador de pop-up)
+  try {
+    const { data, error } = await DATA.sb().from('orders').select('invoice_path').eq('id', orderId).single();
+    if (error) throw error;
+    const url = await DATA.invoiceUrl(data.invoice_path);
+    if (win) win.location.href = url; else window.location.href = url;
+  } catch (err) {
+    if (win) win.close();
+    ScreensComercial._finErro('Não consegui abrir a invoice', err);
+  }
+};
+ScreensComercial.tirarInvoice = async function (orderId, btn) {
+  if (!confirm('Tirar a invoice deste pedido? (o dealer deixa de ver)')) return;
+  btn.disabled = true;
+  try { await DATA.clearInvoice(orderId); APP.render(); }
+  catch (err) { ScreensComercial._finErro('Não consegui tirar a invoice', err); btn.disabled = false; }
 };
 
 ScreensComercial.liberar = async function (orderId, liberar, btn) {

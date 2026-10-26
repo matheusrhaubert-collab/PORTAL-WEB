@@ -976,6 +976,10 @@ async function loadMyOrders() {
       });
     });
 
+    // Acompanhamento (etapa + prazo) no cartão — só admin por enquanto
+    // (portal-31-acompanhamento.js, migration 247). Assíncrono, não trava a lista.
+    if (typeof trkDecorateOrderList === 'function') trkDecorateOrderList(orders, container);
+
     container.querySelectorAll('.portal-order-back-project-btn').forEach((btn) => {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation(); // não abre a tela do pedido junto
@@ -1450,7 +1454,10 @@ function renderOrderDetail() {
   const markPaidBtn = document.getElementById('po-order-detail-mark-paid-btn');
   const markDeliveredBtn = document.getElementById('po-order-detail-mark-delivered-btn');
   const deliveredHint = document.getElementById('po-order-detail-delivered-hint');
-  if (markPaidBtn) markPaidBtn.style.display = isApproved ? 'block' : 'none';
+  // "Marcar como pago" saiu da tela do cliente (Matt, 26/10: "a liberação só
+  // o administrador do painel pode fazer... pode até ser removido da tela do
+  // pedido do cliente") — só o admin ainda vê aqui.
+  if (markPaidBtn) markPaidBtn.style.display = (isApproved && window.LEGNO_IS_ADMIN === true) ? 'block' : 'none';
   if (markDeliveredBtn) markDeliveredBtn.style.display = isPaid ? 'block' : 'none';
   if (deliveredHint) deliveredHint.style.display = isDelivered ? 'block' : 'none';
 
@@ -1458,6 +1465,9 @@ function renderOrderDetail() {
   // as peças de cada módulo (DB), por isso é assíncrono; roda em paralelo,
   // não trava o resto da tela que já foi montada síncrono acima.
   renderOrderDetailColorPanel();
+
+  // Acompanhamento do pedido (portal-31, migration 247) — só admin por ora.
+  if (typeof renderOrderTracking === 'function') renderOrderTracking(order, items);
 }
 
 // ---------- Troca rápida de cor na tela do pedido ----------

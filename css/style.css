@@ -6037,3 +6037,43 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 }
 .po-quick-add-thumb { width: 56px; height: 56px; object-fit: contain; border: 1px solid var(--border, #eee); border-radius: 6px; background: #fff; }
 .po-quick-add-thumb-empty { display: block; }
+
+/* ============================================================
+   Acompanhamento do pedido (26/10/2026, migration 247) —
+   js/portal-31-acompanhamento.js. Só admin por enquanto.
+   ============================================================ */
+.po-trk { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0 16px; background: var(--panel); }
+.po-trk-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.po-trk-admin-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #fff3d6; color: #7a5a12; border: 1px solid #ecd9a4; }
+.po-trk-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-bottom: 14px; position: relative; }
+.po-trk-step { text-align: center; position: relative; padding-top: 2px; }
+.po-trk-step::before { content: ''; position: absolute; top: 15px; left: -50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.po-trk-step:first-child::before { display: none; }
+.po-trk-step.done::before { background: var(--accent); }
+.po-trk-dot { position: relative; z-index: 1; width: 28px; height: 28px; margin: 0 auto 6px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; background: var(--bg); color: var(--muted); border: 2px solid var(--border); }
+.po-trk-step.done .po-trk-dot { background: var(--accent); color: #fff; border-color: var(--accent); }
+.po-trk-step.next .po-trk-dot { border-color: var(--accent); color: var(--accent); }
+.po-trk-step-name { font-size: 12px; font-weight: 600; line-height: 1.25; }
+.po-trk-step-date { font-size: 11px; color: var(--muted); min-height: 14px; }
+.po-trk-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.po-trk-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+.po-trk-card.po-trk-wide { grid-column: span 2; }
+.po-trk-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 4px; }
+.po-trk-card-value { font-size: 18px; font-weight: 700; }
+.po-trk-card-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.po-trk-counter-num { font-size: 34px; font-weight: 800; line-height: 1; color: var(--accent-dark); }
+.po-trk-squares { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; }
+.po-trk-sq { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border); background: var(--panel); }
+.po-trk-sq.on { background: var(--accent); border-color: var(--accent); }
+.po-trk-sq.late { background: var(--danger); border-color: var(--danger); }
+.po-trk-pill, .po-trk-chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+.po-trk-chip { font-size: 11px; margin-left: 6px; }
+.po-trk-st-on_time { background: #e6f2ea; border-color: #b9dcc4; color: #24603a; }
+.po-trk-st-early { background: #e3eefb; border-color: #b6d0f0; color: #1f4f8a; }
+.po-trk-st-late { background: #fbe6e2; border-color: #f0bdb3; color: #8f2f1f; }
+.po-trk-docs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+@media (max-width: 720px) {
+  .po-trk-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; }
+  .po-trk-step:nth-child(4)::before { display: none; }
+  .po-trk-card.po-trk-wide { grid-column: auto; }
+}

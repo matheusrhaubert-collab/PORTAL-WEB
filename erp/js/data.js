@@ -380,6 +380,49 @@ DATA.setFinanceRelease = async function (orderId, released, note) {
   return data[0];
 };
 
+/* LIBERAÇÃO PRA COLETA + INVOICE (migration 247, Matt 26/10/2026) —
+   a 2ª liberação do financeiro (o pedido pronto só sai da fábrica depois
+   dela) e o PDF da invoice (QuickBooks por enquanto é manual: exporta o PDF
+   e sobe aqui). Mesma checagem de "0 linhas = RLS" do setFinanceRelease. */
+DATA.setPickupRelease = async function (orderId, released, note) {
+  const patch = released
+    ? { pickup_released_at: new Date().toISOString(), pickup_released_by: DATA.user ? DATA.user.id : null, pickup_release_note: note || null }
+    : { pickup_released_at: null, pickup_released_by: null, pickup_release_note: null };
+  const { data, error } = await DATA.sb().from('orders').update(patch).eq('id', orderId).select('id');
+  if (error) throw error;
+  if (!data || !data.length) throw new Error('O banco não alterou nenhuma linha (RLS). Rodou a migration 247?');
+  return data[0];
+};
+
+DATA.INVOICE_BUCKET = 'order-invoices';
+DATA.uploadInvoice = async function (orderId, file, number) {
+  const sb = DATA.sb();
+  const nomeLimpo = String(file.name || 'invoice.pdf').replace(/[^A-Za-z0-9._-]+/g, '_');
+  const path = orderId + '/' + Date.now() + '-' + nomeLimpo;
+  const up = await sb.storage.from(DATA.INVOICE_BUCKET).upload(path, file, { contentType: file.type || 'application/pdf', upsert: false });
+  if (up.error) {
+    if (/bucket not found/i.test(up.error.message || '')) throw new Error('Bucket "order-invoices" não existe — rode a migration 247 no Supabase.');
+    throw up.error;
+  }
+  const { data, error } = await sb.from('orders')
+    .update({ invoice_path: path, invoice_number: number || null, invoice_uploaded_at: new Date().toISOString() })
+    .eq('id', orderId).select('id');
+  if (error) throw error;
+  if (!data || !data.length) throw new Error('O banco não alterou nenhuma linha (RLS). Rodou a migration 247?');
+  return path;
+};
+DATA.clearInvoice = async function (orderId) {
+  const { data, error } = await DATA.sb().from('orders')
+    .update({ invoice_path: null, invoice_number: null, invoice_uploaded_at: null }).eq('id', orderId).select('id');
+  if (error) throw error;
+  if (!data || !data.length) throw new Error('O banco não alterou nenhuma linha (RLS).');
+};
+DATA.invoiceUrl = async function (path) {
+  const { data, error } = await DATA.sb().storage.from(DATA.INVOICE_BUCKET).createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+};
+
 /* ============================================================
    Projetos — user_projects (admin lê via migration 078)
    ============================================================ */
