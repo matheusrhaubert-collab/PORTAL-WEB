@@ -1079,6 +1079,11 @@ function projectSlotPainelFixoProtrusaoMm(slot) {
       p = Math.max(p, isFinite(frente) && frente > 0 ? Math.min(frente, 60) : 20);
     });
   } catch (e) { p = 0; }
+  // FILLER DO BLIND CORNER (migration 241, 25/10 — Matt: "o filler não está
+  // colidindo, o módulo está ficando dentro do filler"): ele fica em pé na
+  // frente das portas, até D + 39,5 — a colisão conta esse avanço.
+  const lp = (slot.layout && slot.layout.params) || {};
+  if (Number(lp.blind_afastar_mm) > 0) p = Math.max(p, 39.5);
   if (chave) projectPainelFixoProtrusaoCache.set(chave, p);
   return p;
 }
@@ -2664,9 +2669,9 @@ function somaPieceAdjustments(a, b) {
 // em projectSlotOrderAdjustments) como um ajuste de largura (dw/dx).
 function projectSlotBlindToeAdj(slot) {
   try {
-    if (!slot || isFloorSlot(slot) || typeof getSlotWorldFrame !== 'function') return null;
+    if (!slot || typeof getSlotWorldFrame !== 'function') return null;
     if (slot.layout && slot.layout.params && slot.layout.params.blind_afastar_mm) return null;
-    const blinds = (projectSlots || []).filter((o) => o !== slot && !o.oculto && !isFloorSlot(o)
+    const blinds = (projectSlots || []).filter((o) => o !== slot && !o.oculto
       && o.layout && o.layout.params && Number(o.layout.params.blind_afastar_mm) > 0);
     if (!blinds.length) return null;
     let rodape = null;
