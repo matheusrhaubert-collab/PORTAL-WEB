@@ -404,8 +404,10 @@ function bancadaRunsCalc(cfg, paredes) {
       if (!C) continue;
       const lado = (r) => {
         const u = banDot(C, r.U);
-        if (u <= r.u0 + 0.02 && r.u0 - u <= 1.0) return 'E';
-        if (u >= r.u1 - 0.02 && u - r.u1 <= 1.0) return 'D';
+        // até 1,5 m do fim do trecho (era 1 m — 25/10, canto vazio de blind
+        // corner com fillers ficava de fora e a pedra saía com degrau)
+        if (u <= r.u0 + 0.02 && r.u0 - u <= 1.5) return 'E';
+        if (u >= r.u1 - 0.02 && u - r.u1 <= 1.5) return 'D';
         return null;
       };
       const la = lado(A), lb = lado(B);
@@ -467,11 +469,18 @@ function bancadaPoligono(r) {
   const vb = -(r.tras || 0);
   const M = r.membros;
   const pts = [[r.uE, vb], [r.uD, vb]];
+  // FRENTE RETA no trecho que fecha canto (25/10, Matt: "o canto precisa ter
+  // o recorte em L"): com canto, a frente do trecho inteiro é a maior dos
+  // membros — sem degrau de filler/painel/caixa sem porta perto do canto, e
+  // as duas frentes se encontram num L limpo (bancadaPoligonoCadeia).
+  const temCanto = !!(r.canto && (r.canto.E || r.canto.D));
+  const frenteMax = Math.max(...M.map((m) => m.frente));
   for (let i = M.length - 1; i >= 0; i--) {
     const m = M[i];
     const uR = i === M.length - 1 ? r.uD : m.cu + m.f.w / 2;
     const uL = i === 0 ? r.uE : m.cu - m.f.w / 2;
-    pts.push([uR, m.frente], [uL, m.frente]);
+    const fv = temCanto ? frenteMax : m.frente;
+    pts.push([uR, fv], [uL, fv]);
   }
   const out = [];
   pts.forEach((p) => {
@@ -510,7 +519,8 @@ function bancadaCadeias(runs) {
 // e a frente voltando, com o encontro das frentes no canto.
 function bancadaPoligonoCadeia(cad) {
   const uL = (r, l) => (l === 'E' ? r.uE : r.uD);
-  const frenteL = (r, l) => (l === 'E' ? r.membros[0] : r.membros[r.membros.length - 1]).frente;
+  // frente usada no encontro do canto = a reta do trecho (ver bancadaPoligono)
+  const frenteL = (r) => Math.max(...r.membros.map((m) => m.frente));
   const frentes = (r, de) => { const f = r.poli.slice(2); return de === 'D' ? f : f.slice().reverse(); };   // poli: [fundoE, fundoD, frente D→E...]
   const cruza = (p1, d1, p2, d2) => {
     const den = d1.x * d2.z - d1.z * d2.x;
