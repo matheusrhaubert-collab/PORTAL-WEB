@@ -440,18 +440,35 @@ async function trkPdfVolumes(order) {
 }
 
 // ---------- PDF: desenhos técnicos ----------
+// 26/10 (2ª rodada, Matt): "esses desenhos troca pelo que é gerado pelo
+// Technical plan... quero todas as specs do módulo, não precisa a lista de
+// peças". Pedido com projeto de origem (source_project_id, migration 179):
+// abre o projeto (congelado = só leitura, sem vínculo) na aba Projetos, gera
+// o Plano Técnico de verdade (generateProjectTechPlan, portal-14) com uma
+// FOLHA POR MÓDULO (vista com/sem portas cotada + especificação) e volta pra
+// tela do pedido. Pedido antigo sem projeto: cai no desenho vetorial da
+// Proposta + folha por módulo simples.
 function trkItemsSorted(items) { return (items || []).slice().sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)); }
-function trkModelNames(breakdown) {
-  const out = { hinge: null, slide: null };
-  (function walk(list) {
-    (list || []).forEach((p) => {
-      if (!out.hinge && p.hinge_model_name && Number(p.hinge_count) > 0) out.hinge = p.hinge_model_name;
-      if (!out.slide && p.slide_model_name && Number(p.slide_cost) > 0) out.slide = p.slide_model_name;
-      if (p.is_module) walk(p.child_breakdown);
-    });
-  })(breakdown);
-  return out;
+
+async function trkColorsFor(items) {
+  const ids = [...new Set((items || []).flatMap((it) => (it.selected_colors || []).map((c) => c.color_id)).filter(Boolean))];
+  if (!ids.length) return new Map();
+  try {
+    const { data } = await supabaseClient.from('colors').select('*').in('id', ids);
+    return new Map((data || []).map((c) => [c.id, c]));
+  } catch (e) { return new Map(); }
 }
+
+// "17 7/8" x 30" (x2)" — agrupa medidas iguais
+function trkSizesList(list) {
+  const m = new Map();
+  list.forEach(([w, h]) => {
+    const k = trkDim(w) + ' x ' + trkDim(h);
+    m.set(k, (m.get(k) || 0) + 1);
+  });
+  return Array.from(m.entries()).map(([k, n]) => (n > 1 ? `${k} (x${n})` : k)).join('; ');
+}
+
 // cota simples: linha com traço nas pontas e o valor no meio
 function trkDimH(doc, x1, x2, y, label) {
   doc.setDrawColor(27, 31, 138); doc.setLineWidth(0.25);
@@ -467,15 +484,156 @@ function trkDimV(doc, x, y1, y2, label) {
   doc.text(trkPdfTxt(label), x - 1.5, (y1 + y2) / 2, { angle: 90, align: 'center' });
   doc.setTextColor(0);
 }
+
+// Especificação completa de um item do pedido — tudo do que FOI VENDIDO
+// (breakdown congelado + layout do Construtor + cores do pedido).
+function trkModuleSpecRows(item, colorsById) {
+  const w = Number(item.width_mm) || 0, h = Number(item.height_mm) || 0, d = Number(item.depth_mm) || 0;
+  const unit = trkUnit();
+  const sp = { doors: 0, drawers: 0, hingeCount: 0, hinge: null, slide: null, rail: null, doorModels: new Set(), drawerModels: new Set(),
+    shelves: 0, shelvesAdj: 0, doorSizes: [], drawerSizes: [], handles: new Set(), lift: null };
+  (function walk(list, mult) {
+    (list || []).forEach((p) => {
+      if (!p) return;
+      const q = (Number(p.quantity) || 1) * mult;
+      const ref = String(p.reference || '');
+      if (p.door_model) sp.doorModels.add(p.door_model);
+      if (p.drawer_model) sp.drawerModels.add(p.drawer_model);
+      if (p.lift_model) sp.lift = p.lift_model;
+      if (Number(p.hinge_count) > 0) {
+        sp.doors += q; sp.hingeCount += Number(p.hinge_count) * q;
+        if (!sp.hinge && p.hinge_model_name) sp.hinge = p.hinge_model_name;
+        for (let i = 0; i < q; i++) sp.doorSizes.push([p.width_mm, p.height_mm]);
+      }
+      if (Number(p.slide_cost) > 0) {
+        sp.drawers += q;
+        if (!sp.slide && p.slide_model_name) { sp.slide = p.slide_model_name; sp.rail = p.slide_model_rail_length_mm || null; }
+      }
+      if (p.is_module) { walk(p.child_breakdown, q); return; }
+      const comprado = (p.origin || 'fabricacao') === 'comprado';
+      if (comprado && /puxador|handle|pull|knob|tirador/i.test(ref)) sp.handles.add(p.purchased_item_name || ref);
+      if (!comprado && /prateleira|shelf/i.test(ref)) {
+        sp.shelves += q;
+        if (/regul|adjust/i.test(ref) || Number(p.support_purchased_item_qty) > 0 || p.prateleira_regulavel) sp.shelvesAdj += q;
+      }
+    });
+  })(item.breakdown, 1);
+
+  // Construtor (order_items.layout = geometria congelada, coordenadas do módulo, y = do chão do módulo)
+  const L = Array.isArray(item.layout) ? item.layout : [];
+  const fronts = L.filter((p) => p && p.kind === 'front' && Number(p.w) > 50 && Number(p.h) > 50 && !/filler/i.test(String(p.accKey || '')));
+  const layoutDoors = fronts.filter((p) => p.opening_type !== 'slide_out');
+  const layoutDrawerFronts = fronts.filter((p) => p.opening_type === 'slide_out');
+  const shelfHeights = L.filter((p) => p && /prateleira|shelf/i.test(String(p.label || '')) && Number(p.h) <= 45 && Number(p.w) > 50)
+    .map((p) => Number(p.y) + Number(p.h)).sort((a, b) => a - b);
+
+  const doorSizes = layoutDoors.length ? layoutDoors.map((p) => [p.w, p.h]) : sp.doorSizes;
+  const nDoors = layoutDoors.length || sp.doors;
+  const nDrawers = Math.max(layoutDrawerFronts.length, sp.drawers);
+
+  // materiais por papel de cor: caixa / porta-frente / outros
+  const matTxt = (c) => {
+    const col = c.color_id ? colorsById.get(c.color_id) : null;
+    const extra = [col && col.substrato ? String(col.substrato).toUpperCase() : null,
+      col && Number(col.thickness_mm) > 0 ? trkDim(col.thickness_mm) : null].filter(Boolean).join(' ');
+    return (c.color_name || '—') + (extra ? ` (${extra})` : '');
+  };
+  const mats = (item.selected_colors || []).map((c) => {
+    const role = String(c.role_name || '');
+    const label = /caixa|casco|carca|box|body|estrutura/i.test(role) ? trkT('spec_mat_box')
+      : (/porta|frente|door|front/i.test(role) ? trkT('spec_mat_door') : trkT('spec_mat_other', { role: role || '?' }));
+    return [label, matTxt(c)];
+  });
+  if (!mats.some((r) => r[0] === trkT('spec_mat_box'))) mats.unshift([trkT('spec_mat_box'), '—']);
+  if (!mats.some((r) => r[0] === trkT('spec_mat_door'))) mats.splice(1, 0, [trkT('spec_mat_door'), '—']);
+
+  const rows = [
+    [trkT('spec_size'), `${trkDim(w)} x ${trkDim(h)} x ${trkDim(d)}` + (unit !== 'mm' ? ` (${Math.round(w)} x ${Math.round(h)} x ${Math.round(d)} mm)` : '')],
+    ...mats,
+    [trkT('spec_doors'), nDoors ? `${nDoors} — ${trkSizesList(doorSizes)}` : trkT('spec_none')],
+    [trkT('spec_front_model'), sp.doorModels.size ? [...sp.doorModels].join(', ') : (nDoors || nDrawers ? trkT('spec_flat_default') : '—')],
+    [trkT('spec_hinge'), sp.hinge ? `${sp.hinge} (${sp.hingeCount} ${trkT('spec_un')})` : (nDoors ? '—' : trkT('spec_none'))],
+    ...(sp.lift ? [[trkT('spec_lift'), sp.lift]] : []),
+    [trkT('spec_drawers'), nDrawers ? `${nDrawers}` + (layoutDrawerFronts.length ? ` — ${trkT('spec_fronts')} ${trkSizesList(layoutDrawerFronts.map((p) => [p.w, p.h]))}` : '') : trkT('spec_none')],
+    [trkT('spec_drawer_model'), sp.drawerModels.size ? [...sp.drawerModels].join(', ') : (nDrawers ? trkT('spec_drawer_default') : '—')],
+    [trkT('spec_slide'), sp.slide ? sp.slide + (sp.rail && !/\d{3}/.test(sp.slide) ? ` — ${trkDim(sp.rail)}` : '') : (nDrawers ? '—' : trkT('spec_none'))],
+    [trkT('spec_shelves'), sp.shelves
+      ? `${sp.shelves} — ${sp.shelvesAdj >= sp.shelves ? trkT('spec_shelf_adj') : (sp.shelvesAdj ? trkT('spec_shelf_mixed', { n: sp.shelvesAdj }) : trkT('spec_shelf_fixed'))}`
+      : trkT('spec_none')],
+    ...(shelfHeights.length ? [[trkT('spec_shelf_heights'), shelfHeights.map((y) => trkDim(y)).join(' / ')]] : []),
+    [trkT('spec_handle'), sp.handles.size ? [...sp.handles].join(', ') : '—'],
+    [trkT('spec_fixing'), trkT('spec_minifix')],
+    ...(item.led_configs && Object.keys(item.led_configs).length ? [[trkT('spec_led'), trkT('spec_yes')]] : []),
+    ...(item.module_description ? [[trkT('spec_desc'), item.module_description]] : [])
+  ];
+  return rows;
+}
+
+// espera a cena 3D do projeto recém-aberto ficar estável (interior de
+// fábrica monta em segundo plano)
+async function trkWaitProjectScene() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  if (typeof projectViewMode !== 'undefined' && projectViewMode !== 'front' && typeof setProjectViewMode === 'function') setProjectViewMode('front');
+  const expected = (projectSlots || []).filter((s) => s.module && !s.module.visual_only).length;
+  let last = -1, stable = 0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 25000) {
+    await sleep(600);
+    const sc = (typeof projectEditScene === 'function') ? projectEditScene() : null;
+    if (!sc) continue;
+    let groups = 0, pieces = 0;
+    sc.children.forEach((g) => { if (g.userData && g.userData.slotId != null) groups++; });
+    sc.traverse((o) => { if (o.userData && o.userData.pieceInfo) pieces++; });
+    if (groups >= expected && pieces > 0 && pieces === last) { if (++stable >= 3) return; } else stable = 0;
+    last = pieces;
+  }
+}
+
+async function trkBackToOrder(orderId) {
+  try {
+    const btn = document.querySelector('.portal-tab-btn[data-tab="po-tab-my-orders"]');
+    if (btn) btn.click();
+    await new Promise((r) => setTimeout(r, 150));
+    if (typeof openOrderDetail === 'function') await openOrderDetail(orderId);
+  } catch (e) { console.warn('[acompanhamento] voltar pro pedido', e); }
+}
+
 async function trkPdfDrawings(order, items) {
   await trkLoadLotes();
   const list = trkItemsSorted(items);
+  const colorsById = await trkColorsFor(list);
+  const specsByNum = new Map(list.map((it, i) => [i + 1, trkModuleSpecRows(it, colorsById)]));
+
+  // 1) caminho principal: Plano Técnico do projeto de origem
+  if (order.source_project_id && typeof generateProjectTechPlan === 'function' && typeof restoreFavoriteProject === 'function') {
+    if (!confirm(trkT('draw_confirm_open'))) return;
+    if (typeof projectDirty !== 'undefined' && projectDirty && !confirm(I18n.t('project_pdf.confirm_unsaved'))) return;
+    const { data: proj, error } = await supabaseClient.from('user_projects').select('*').eq('id', order.source_project_id).single();
+    if (error || !proj) throw new Error(trkT('draw_project_missing'));
+    proj._fullRow = true;
+    if (typeof projectDirty !== 'undefined') projectDirty = false; // já confirmado acima
+    // congelado = abre como rascunho sem vínculo (nunca grava no projeto do pedido)
+    await restoreFavoriteProject(proj, false);
+    try {
+      await trkWaitProjectScene();
+      await generateProjectTechPlan({
+        projectName: order.po_name || order.client_name || proj.name,
+        fileName: `${trkT('file_drawings')}-${trkFileBase(order)}.pdf`,
+        moduleSpecs: (numero) => specsByNum.get(Number(numero)) || null,
+        rethrow: true
+      });
+    } finally {
+      if (typeof projectDirty !== 'undefined') projectDirty = false;
+      await trkBackToOrder(order.id);
+    }
+    return;
+  }
+
+  // 2) pedido sem projeto de origem: desenho vetorial da Proposta + folha simples
   const ctx = trkPdfNew(order, trkT('pdf_drawings'), false);
   const { doc, W, H } = ctx;
   const unit = trkUnit();
   const contentW = W - TRK_M * 2;
-
-  // 1) Ambiente: vistas por parede + planta (mesmo desenho da Proposta)
   if (typeof proposalHasLayoutData === 'function' && proposalHasLayoutData(order, list)) {
     const walls = proposalWallList(order, list);
     walls.forEach((wall, i) => {
@@ -490,25 +648,17 @@ async function trkPdfDrawings(order, items) {
     trkPdfSection(ctx, trkT('draw_elevation'));
     trkPdfNote(ctx, trkT('draw_no_layout'));
   }
-
-  // 2) Uma folha por módulo (número = mesma sequência da etiqueta)
   for (let i = 0; i < list.length; i++) {
     const it = list[i];
     trkPdfNewPage(ctx);
-    const num = String(i + 1).padStart(3, '0');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-    doc.text(trkPdfTxt(`${trkT('module_short')} ${num} — ${it.module_name || ''}`), TRK_M, ctx.y);
+    doc.text(trkPdfTxt(`${trkT('module_short')} ${String(i + 1).padStart(3, '0')} — ${it.module_name || ''}`), TRK_M, ctx.y);
     doc.setFont('helvetica', 'normal');
     ctx.y += 6;
     const topY = ctx.y;
-    // imagem (esquerda)
     let imgBottom = topY;
     const meta = await proposalImageMeta(it.thumbnail_data_url || null);
-    if (meta) {
-      const fit = proposalFitImage(doc, meta, TRK_M, topY, contentW * 0.42, 70);
-      imgBottom = fit.y + fit.h;
-    }
-    // vista frontal + lateral cotadas (direita)
+    if (meta) { const fit = proposalFitImage(doc, meta, TRK_M, topY, contentW * 0.42, 70); imgBottom = fit.y + fit.h; }
     const w = Number(it.width_mm) || 0, h = Number(it.height_mm) || 0, d = Number(it.depth_mm) || 0;
     let drawBottom = topY;
     if (w > 0 && h > 0) {
@@ -518,6 +668,14 @@ async function trkPdfDrawings(order, items) {
       const fx = areaX + 8, fy = topY + 8;
       doc.setDrawColor(60); doc.setLineWidth(0.35);
       doc.rect(fx, fy, w * s, h * s);
+      // portas/frentes/prateleiras do Construtor, quando o pedido tem a geometria
+      (Array.isArray(it.layout) ? it.layout : []).forEach((p) => {
+        if (!p || !(Number(p.w) > 0) || !(Number(p.h) > 0)) return;
+        const isFront = p.kind === 'front', isShelf = /prateleira|shelf/i.test(String(p.label || '')) && Number(p.h) <= 45;
+        if (!isFront && !isShelf) return;
+        doc.setDrawColor(isFront ? 110 : 160); doc.setLineWidth(isFront ? 0.3 : 0.2);
+        doc.rect(fx + Number(p.x) * s, fy + (h - Number(p.y) - Number(p.h)) * s, Number(p.w) * s, Number(p.h) * s);
+      });
       trkDimH(doc, fx, fx + w * s, fy - 3, trkDim(w));
       trkDimV(doc, fx - 3, fy, fy + h * s, trkDim(h));
       if (d > 0) {
@@ -534,28 +692,8 @@ async function trkPdfDrawings(order, items) {
       drawBottom = fy + h * s + 8;
     }
     ctx.y = Math.max(imgBottom, drawBottom) + 5;
-
-    // dados do módulo
-    const models = trkModelNames(it.breakdown);
-    const linhas = [
-      [trkT('draw_size'), `${trkDim(w)} x ${trkDim(h)} x ${trkDim(d)}` + (unit !== 'mm' ? `  (${Math.round(w)} x ${Math.round(h)} x ${Math.round(d)} mm)` : '')],
-      ...(it.selected_colors || []).map((c) => [c.role_name || trkT('draw_color'), c.color_name || '—']),
-      ...(models.hinge ? [[trkT('draw_hinge'), models.hinge]] : []),
-      ...(models.slide ? [[trkT('draw_slide'), models.slide]] : []),
-      ...(it.module_description ? [[trkT('draw_desc'), it.module_description]] : [])
-    ];
-    trkPdfTable(ctx, [{ label: trkT('draw_info'), w: 0.3 }, { label: '', w: 0.7 }], linhas);
-
-    // peças de chapa do módulo (mesma explosão do lote)
-    const pecas = LOTES.flattenBreakdown(it.breakdown, Number(it.quantity) || 1).filter((l) => l.origin !== 'comprado');
-    if (pecas.length) {
-      trkPdfSection(ctx, trkT('draw_pieces'));
-      trkPdfTable(ctx, [
-        { label: trkT('col_piece'), w: 0.46 }, { label: trkT('col_qty'), w: 0.1, align: 'right' },
-        { label: trkT('col_dims'), w: 0.44 }
-      ], pecas.map((l) => [l.reference, String(Math.round(l.quantity * 100) / 100),
-        [l.width_mm, l.height_mm, l.depth_mm].map((v) => trkDim(v)).join(' x ')]));
-    }
+    trkPdfSection(ctx, trkT('spec_title'));
+    trkPdfTable(ctx, [{ label: '', w: 0.3 }, { label: '', w: 0.7 }], specsByNum.get(i + 1) || []);
   }
   trkPdfFooters(ctx);
   doc.save(`${trkT('file_drawings')}-${trkFileBase(order)}.pdf`);

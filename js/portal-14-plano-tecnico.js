@@ -362,7 +362,11 @@ function ptBounds(list, widthMm) {
 //   - o resto (eletro, peça volumosa) → só contorno.
 // Mesmas regras de ocultar do render (frente/painel/puxador não entram).
 const PT_THIN_MM = 45;
-function ptPieceBoxesForWall(scene, wallGeo) {
+// mode 'fronts' (26/10, folha por módulo do pedido): o contrário — SÓ as
+// portas/frentes (userData.isFrontPiece no objeto ou num pai), pra cotar
+// porta e frente de gaveta. Puxador continua fora.
+function ptPieceBoxesForWall(scene, wallGeo, mode) {
+  const onlyFronts = mode === 'fronts';
   const along = new THREE.Vector3(wallGeo.alongDirX, 0, wallGeo.alongDirZ);
   const into = new THREE.Vector3(wallGeo.intoDirX, 0, wallGeo.intoDirZ);
   const o = new THREE.Vector3(wallGeo.originX, 0, wallGeo.originZ);
@@ -376,11 +380,14 @@ function ptPieceBoxesForWall(scene, wallGeo) {
     const slot = ptSlotById(ud.slotId);
     if (!slot || ptIsVisualOnly(slot) || ptIsDecor(slot)) return;
     if (PT_PANEL_NAME_RE.test(String((slot.module && slot.module.name) || ''))) return;
-    const walk = (obj) => {
+    const walk = (obj, inFront) => {
       const u = obj.userData || {};
-      if (u.isFrontPiece || u.isDecorPiece) return;
-      if (u.colorRoleId && PT_HIDE_ROLE_RE.test(ptRoleName(u.colorRoleId))) return;
+      const front = !!inFront || !!u.isFrontPiece;
+      if (u.isDecorPiece) return;
+      if (!onlyFronts && u.isFrontPiece) return;
+      if (u.colorRoleId && (onlyFronts ? /puxador|handle|tirador/i : PT_HIDE_ROLE_RE).test(ptRoleName(u.colorRoleId))) return;
       if (u.pieceInfo) {
+        if (onlyFronts && !front) return;
         let aMin = Infinity, aMax = -Infinity, yMin = Infinity, yMax = -Infinity, nMin = Infinity, nMax = -Infinity;
         obj.traverse((m) => {
           if (!m.isMesh || !m.geometry) return;
@@ -407,9 +414,9 @@ function ptPieceBoxesForWall(scene, wallGeo) {
         }
         return; // a peça é a unidade — não desce nos filhos (arestas etc.)
       }
-      (obj.children || []).forEach(walk);
+      (obj.children || []).forEach((c) => walk(c, front));
     };
-    walk(g);
+    walk(g, false);
   });
   return out;
 }
@@ -538,7 +545,7 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
   const W = wallGeo.widthM;
   const ceil = (wallGeo._ceilMm || ptCeilingMm(wallGeo)) / 1000;
   const slots = wallGeo._slots || ptWallSlots(wallGeo.wallIndex);
-  const aMin = -0.12, aMax = W + 0.12, yMin = -0.06, yMax = ceil + 0.06;
+  const aMin = -0.12, aMax = W + 0.12, yMin = wallGeo._yMinM != null ? wallGeo._yMinM : -0.06, yMax = ceil + 0.06;
   const spanA = aMax - aMin, spanY = yMax - yMin;
   const ppm = Math.min(PT_PX_PER_M, PT_MAX_IMG_PX / Math.max(spanA, spanY));
   const wPx = Math.round(spanA * ppm), hPx = Math.round(spanY * ppm);
@@ -551,7 +558,7 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
   const img = ptRender(scene, cam, wPx, hPx, {
     hideFronts,
     include: wallGeo._include || ((g) => !g.userData.isFloorIsland && g.userData.wallIndex === wallGeo.wallIndex),
-    includeLoose: (o) => {
+    includeLoose: wallGeo._noLoose ? (() => false) : (o) => {
       const rel = o.position.clone().sub(P(0, 0));
       const a = rel.dot(along), n = rel.dot(into);
       return a > -0.2 && a < W + 0.2 && n > -0.05 && n < (wallGeo._depthM || 1.0);
@@ -564,7 +571,7 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
   const lowers = slots.filter((s) => !ptIsUpper(s));
   const padT = Math.round(fs * (uppers.length ? 8 : 2.5));
   const padB = Math.round(fs * 11);
-  const padL = Math.round(fs * 5.5);
+  const padL = Math.round(fs * (wallGeo._moduleSheet ? 9 : 5.5));
   const padR = Math.round(fs * 10);
   const out = document.createElement('canvas');
   out.width = wPx + padL + padR; out.height = hPx + padT + padB;
@@ -630,6 +637,9 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
     ptModuleLabel(ctx, { x0: Math.min(p0.x, p1.x), x1: Math.max(p0.x, p1.x), y0: Math.min(p0.y, p1.y), y1: Math.max(p0.y, p1.y) },
       s, ptIsDecor(s) ? null : nums.get(s.id), fs);
   });
+
+  // FOLHA DE UM MÓDULO SÓ (pedido, 26/10): cotas próprias e para aqui
+  if (wallGeo._moduleSheet) { ptModuleSheetDims(ctx, scene, wallGeo, S, fs, hideFronts); return out; }
 
   // ordena os pontos da corrente da ESQUERDA pra direita da tela
   const chainPts = (boundsMm, y) => boundsMm.map((b) => ({ b, p: S(b / 1000, y) })).sort((u, v) => u.p.x - v.p.x);
@@ -1167,11 +1177,158 @@ async function ptLoadDealerLogo() {
   } catch (e) { return null; }
 }
 
+// ---------- FOLHA POR MÓDULO (26/10/2026 — PDF de desenhos do pedido) ----------
+// Matt: "quero todas as specs do módulo... se tem prateleira, qual altura da
+// prateleira, as cotas das gavetas, porta e prateleiras". Uma "parede de
+// mentira" só com o módulo (mesmo truque das ilhas), renderizada 2x:
+//   com portas  → corrente embaixo/direita com a largura e altura de cada
+//                 porta / frente de gaveta (medidas no 3D);
+//   sem portas  → corrente na esquerda com a altura de cada prateleira/
+//                 divisória horizontal a partir da BASE DO MÓDULO.
+function ptModuleView(scene, slot) {
+  scene.updateMatrixWorld(true);
+  const g = scene.children.find((c) => c.userData && c.userData.slotId === slot.id);
+  if (!g) return null;
+  const front = new THREE.Vector3(); g.getWorldDirection(front); front.y = 0;
+  if (front.lengthSq() < 1e-6) front.set(0, 0, 1);
+  front.normalize();
+  const along = new THREE.Vector3(front.z, 0, -front.x); // up × front (igual ptIslandViews)
+  const corner = new THREE.Vector3();
+  let aMin = Infinity, aMax = -Infinity, yMin = Infinity, yMax = -Infinity, nMin = Infinity, nMax = -Infinity;
+  g.traverse((m) => {
+    if (!m.isMesh || !m.geometry || !m.visible) return;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    const bb = m.geometry.boundingBox;
+    for (let k = 0; k < 8; k++) {
+      corner.set(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m.matrixWorld);
+      const a = corner.x * along.x + corner.z * along.z, n = corner.x * front.x + corner.z * front.z;
+      aMin = Math.min(aMin, a); aMax = Math.max(aMax, a); yMin = Math.min(yMin, corner.y); yMax = Math.max(yMax, corner.y);
+      nMin = Math.min(nMin, n); nMax = Math.max(nMax, n);
+    }
+  });
+  if (!isFinite(aMin)) return null;
+  const pseudo = Object.assign({}, slot, {
+    x_mm: 0,
+    width_mm: Number(slot.width_mm) || Math.round((aMax - aMin) * 1000),
+    floor_height_mm: Math.max(0, Math.round(yMin * 1000)),
+    height_mm: Number(slot.height_mm) || Math.round((yMax - yMin) * 1000),
+    depth_mm: Number(slot.depth_mm) || Math.round((nMax - nMin) * 1000)
+  });
+  return {
+    wallIndex: -900,
+    widthM: aMax - aMin,
+    originX: along.x * aMin + front.x * nMin,
+    originZ: along.z * aMin + front.z * nMin,
+    alongDirX: along.x, alongDirZ: along.z,
+    intoDirX: front.x, intoDirZ: front.z,
+    openings: [],
+    _island: true,
+    _moduleSheet: true,
+    _noLoose: true,
+    _ceilMm: Math.round(yMax * 1000),
+    _yMinM: yMin - 0.06,
+    _depthM: (nMax - nMin) + 0.05,
+    _slots: [pseudo],
+    _include: (gg) => gg.userData.slotId === slot.id
+  };
+}
+
+function ptMergeMm(arr, tol) {
+  const v = arr.map((x) => Math.round(x)).sort((a, b) => a - b), out = [];
+  v.forEach((x) => { if (!out.length || x - out[out.length - 1] >= tol) out.push(x); });
+  return out;
+}
+
+function ptModuleSheetDims(ctx, scene, wallGeo, S, fs, hideFronts) {
+  const s = wallGeo._slots[0];
+  const Wmm = wallGeo.widthM * 1000;
+  const y0 = Number(s.floor_height_mm || 0), y1 = y0 + Number(s.height_mm || 0);
+  const right = (S(wallGeo.widthM, 0).x >= S(0, 0).x) ? Wmm : 0; // ponta que fica à direita na tela
+  const left = right === Wmm ? 0 : Wmm;
+  const hPts = (vals, y) => vals.map((a) => ({ a, p: S(a / 1000, y / 1000) })).sort((u, v) => u.p.x - v.p.x);
+  const vPts = (vals, a) => vals.map((y) => ({ y, p: S(a / 1000, y / 1000) })).sort((u, v) => u.p.y - v.p.y);
+  const labs = (list, key) => ptChainLabels(list.slice(1).map((e, i) => Math.abs(e[key] - list[i][key])));
+  const chainH = (vals, off) => { const l = hPts(vals, y0); return ptDimChain(ctx, l.map((e) => e.p), { x: 0, y: 1 }, off, fs, { labels: labs(l, 'a') }); };
+  const chainV = (vals, a, dir, off) => { const l = vPts(vals, a); return ptDimChain(ctx, l.map((e) => e.p), { x: dir, y: 0 }, off, fs, { labels: labs(l, 'y') }); };
+  let usedB = fs * 1.6, usedR = fs * 1.8;
+  if (!hideFronts) {
+    const fb = ptPieceBoxesForWall(scene, wallGeo, 'fronts').filter((b) => (b.aMax - b.aMin) > 0.04 && (b.yMax - b.yMin) > 0.04);
+    if (fb.length) {
+      const xs = ptMergeMm([0, Wmm].concat(...fb.map((b) => [b.aMin * 1000, b.aMax * 1000])).map((x) => Math.max(0, Math.min(Wmm, x))), 6);
+      const ys = ptMergeMm([y0, y1].concat(...fb.map((b) => [b.yMin * 1000, b.yMax * 1000])).map((y) => Math.max(y0, Math.min(y1, y))), 6);
+      if (xs.length > 2) usedB = chainH(xs, usedB) + fs * 1.2;
+      if (ys.length > 2) usedR = chainV(ys, right, right === Wmm ? 1 : -1, usedR) + fs * 1.2;
+    }
+  } else {
+    // prateleira / divisória horizontal / base / tampo: chapa fina na altura e larga
+    const hz = ptPieceBoxesForWall(scene, wallGeo).filter((b) => b.kind === 'cut'
+      && (b.yMax - b.yMin) * 1000 <= PT_THIN_MM && (b.aMax - b.aMin) * 1000 >= Wmm * 0.3);
+    // nível = face de CIMA da chapa (onde apoia), menos a do tampo (face de baixo = vão livre)
+    const lv = hz.map((b) => (b.yMax * 1000 >= y1 - 8 ? b.yMin * 1000 : b.yMax * 1000));
+    const levels = ptMergeMm([y0, y1].concat(lv).filter((y) => y >= y0 - 1 && y <= y1 + 1), 10);
+    // só o VÃO LIVRE ganha número (a espessura da chapa, < 25 mm, fica sem
+    // rótulo — senão a corrente vira um monte de 3/4")
+    if (levels.length > 2) {
+      const l = vPts(levels, left);
+      const lb = labs(l, 'y').map((t, i) => (Math.abs(l[i + 1].y - l[i].y) < 25 ? null : t));
+      ptDimChain(ctx, l.map((e) => e.p), { x: left === 0 ? -1 : 1, y: 0 }, fs * 1.8, fs, { labels: lb });
+    }
+  }
+  chainH([0, Wmm], usedB);
+  chainV([y0, y1], right, right === Wmm ? 1 : -1, usedR);
+}
+
+// Página da folha: os 2 desenhos lado a lado + tabela de especificação.
+function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows) {
+  ptPdfPage(doc, st, null, title, ptT('module_sheet_sub'), null);
+  const W = 279.4, M = 10, colW = (W - 2 * M - 8) / 2, top = 37, maxH = 92;
+  [[cWith, ptT('with_fronts')], [cWithout, ptT('without_fronts')]].forEach(([c, cap], i) => {
+    const x0 = M + i * (colW + 8);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(118, 111, 100);
+    doc.text(cap, x0, top - 1.5);
+    doc.setTextColor(0);
+    if (!c) return;
+    const r = Math.min(colW / c.width, maxH / c.height, 0.16);
+    const w = c.width * r, h = c.height * r;
+    doc.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', x0 + (colW - w) / 2, top + 1, w, h);
+  });
+  // especificação em 2 colunas de pares rótulo/valor
+  const rows = specRows || [];
+  if (!rows.length) return;
+  const half = Math.ceil(rows.length / 2);
+  const y0 = top + maxH + 6, lw = 38, vw = colW - lw - 2;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(110, 69, 39);
+  doc.text(ptT('module_spec_title').toUpperCase(), M, y0);
+  doc.setDrawColor(224, 221, 214); doc.line(M, y0 + 1.5, W - M, y0 + 1.5);
+  doc.setTextColor(0);
+  [rows.slice(0, half), rows.slice(half)].forEach((col, ci) => {
+    let y = y0 + 6.5;
+    const x0 = M + ci * (colW + 8);
+    col.forEach(([k, v], ri) => {
+      doc.setFontSize(8.3);
+      const lines = doc.splitTextToSize(String(v == null || v === '' ? '—' : v), vw);
+      const h = lines.length * 3.5 + 1.6;
+      if (ri % 2) { doc.setFillColor(250, 249, 247); doc.rect(x0, y - 3.4, colW, h, 'F'); }
+      doc.setFont('helvetica', 'bold'); doc.text(String(k), x0 + 1.2, y);
+      doc.setFont('helvetica', 'normal'); doc.text(lines, x0 + lw, y);
+      y += h;
+    });
+  });
+}
+
 // ---------- fluxo do botão ----------
-async function generateProjectTechPlan() {
-  if (ptRunning) return;
+// opts (26/10, PDF de desenhos do pedido — portal-31): projectName, fileName,
+// moduleSpecs(numero, slot) → [[rótulo, valor]] liga a FOLHA POR MÓDULO, e
+// rethrow faz o erro subir pro chamador em vez de só aparecer na aba Projetos.
+// Sem opts = botão "Technical plan" de sempre, sem mudança nenhuma.
+async function generateProjectTechPlan(opts) {
+  opts = opts || {};
+  if (ptRunning) return false;
   const errorEl = document.getElementById('po-proj-error');
-  const fail = (msg) => { if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; } else alert(msg); };
+  const fail = (msg) => {
+    if (opts.rethrow) throw new Error(msg);
+    if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; } else alert(msg);
+  };
   if (errorEl) errorEl.style.display = 'none';
   if (!projectSlots || !projectSlots.some((s) => s.module && !ptIsVisualOnly(s))) { fail(ptT('empty')); return; }
   if (typeof window.jspdf === 'undefined' || typeof THREE === 'undefined') { fail(ptT('error', { msg: 'jsPDF/THREE' })); return; }
@@ -1208,7 +1365,7 @@ async function generateProjectTechPlan() {
     const unit = ptUnit();
     const st = {
       pages: 0,
-      projectName: (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.name) || ptT('untitled'),
+      projectName: opts.projectName || (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.name) || ptT('untitled'),
       dateText: new Date().toLocaleDateString(),
       unitText: unit === 'mm' ? 'mm' : (unitAbbrev(unit) || unit),
       logo: await ptLoadDealerLogo(),
@@ -1273,9 +1430,25 @@ async function generateProjectTechPlan() {
       ptPdfPage(doc, st, ptRenderWall(scene, v, nums, true), ptT('island_title', { n: i + 1 }), ptT('without_fronts'), ptT('notes_wall_open'));
     }
 
+    const seq = (typeof projectSlotsOrderSequence === 'function') ? projectSlotsOrderSequence() : [];
+    // FOLHA POR MÓDULO (só quando o chamador pede — PDF do pedido)
+    if (typeof opts.moduleSpecs === 'function') {
+      const lista = seq.filter(({ slot }) => !ptIsDecor(slot) && !ptIsVisualOnly(slot));
+      for (let i = 0; i < lista.length; i++) {
+        const { slot, numero } = lista[i];
+        ptStatus(ptT('step_module', { n: i + 1, total: lista.length }));
+        await ptSleep(20);
+        const view = ptModuleView(scene, slot);
+        const cWith = view ? ptRenderWall(scene, view, nums, false) : null;
+        await ptSleep(10);
+        const cWithout = view ? ptRenderWall(scene, view, nums, true) : null;
+        ptPdfModuleSheet(doc, st, ptT('module_sheet_title', { n: String(numero).padStart(3, '0'), name: (slot.module && slot.module.name) || '' }),
+          cWith, cWithout, opts.moduleSpecs(numero, slot));
+      }
+    }
+
     // lista de módulos
     const rows = [];
-    const seq = (typeof projectSlotsOrderSequence === 'function') ? projectSlotsOrderSequence() : [];
     seq.forEach(({ slot, numero }) => {
       if (ptIsDecor(slot)) return;
       const colors = (slot.selectedColors || [])
@@ -1303,10 +1476,13 @@ async function generateProjectTechPlan() {
       doc.text(ptT('page', { p, t: total }), 269.4, 211.9, { align: 'right' });
     }
     const safe = String(st.projectName).replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'projeto';
-    doc.save('plano-tecnico-' + safe + '.pdf');
+    doc.save(opts.fileName || ('plano-tecnico-' + safe + '.pdf'));
+    return true;
   } catch (e) {
     console.error('[plano técnico]', e);
+    if (opts.rethrow) throw e;
     fail(ptT('error', { msg: (e && e.message) || String(e) }));
+    return false;
   } finally {
     ptDisposeRenderer();
     try {
