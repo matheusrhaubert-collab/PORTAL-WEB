@@ -1480,8 +1480,8 @@
       // Modelo REALMENTE usado (2026-08-19) — mesmo motivo do
       // calculateModulePiece logo abaixo: o relatório $ Fábrica precisa
       // saber QUAL corrediça/dobradiça pagou por este custo, não só o valor.
-      hinge_model_id: hinge_cost > 0 && hingeModel ? hingeModel.id : null,
-      hinge_model_name: hinge_cost > 0 && hingeModel ? hingeModel.name : null,
+      hinge_model_id: hinge_count > 0 && hingeModel ? hingeModel.id : null,
+      hinge_model_name: hinge_count > 0 && hingeModel ? hingeModel.name : null,
       slide_cost: slide_cost,
       slide_model_id: slide_cost > 0 && slideModel ? slideModel.id : null,
       slide_model_name: slide_cost > 0 && slideModel ? slideModel.name : null,
@@ -1698,8 +1698,8 @@
       // ele. effectiveHingeModel/effectiveSlideModel já carregam name (e
       // rail_length_mm, quando vem de own_slide_models/pickSlideModelByDepth
       // — migration 127/128) — só precisa sair no breakdown.
-      hinge_model_id: hinge_cost > 0 && effectiveHingeModel ? effectiveHingeModel.id : null,
-      hinge_model_name: hinge_cost > 0 && effectiveHingeModel ? effectiveHingeModel.name : null,
+      hinge_model_id: hinge_count > 0 && effectiveHingeModel ? effectiveHingeModel.id : null,
+      hinge_model_name: hinge_count > 0 && effectiveHingeModel ? effectiveHingeModel.name : null,
       slide_cost: slide_cost,
       slide_model_id: slide_cost > 0 && effectiveSlideModel ? effectiveSlideModel.id : null,
       slide_model_name: slide_cost > 0 && effectiveSlideModel ? effectiveSlideModel.name : null,

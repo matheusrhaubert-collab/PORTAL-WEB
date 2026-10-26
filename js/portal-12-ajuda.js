@@ -719,6 +719,12 @@ HELP_CONTENT.es.push(
 <p>Na Visualização 3D, <strong>O</strong> abre/fecha as portas e <strong>G</strong> as gavetas. Clique de novo em <strong>Sair da apresentação</strong> ou feche a janela para voltar ao normal.</p>` }
       ],
       'projetos-ambiente': [
+        { id: 'opcoes-painel-direita', title: `2 portas e travessa da frente (painel da direita)`, html: `<p>Selecione o módulo e veja o painel da direita:</p>
+<ul>
+<li><strong>Portas</strong> — em módulos de 21" a 24" de largura, escolha entre <strong>1 porta</strong> (padrão) ou <strong>2 portas</strong>. Vale também no Novo Orçamento.</li>
+<li><strong>Travessa da frente</strong> — a peça de cima, na frente do módulo base: <strong>Deitada</strong> ou <strong>Em pé</strong> (76 mm na frente). Nas sinks ela já vem em pé. Módulos de canto não têm essa opção.</li>
+</ul>
+<div class="po-help-tip">Tudo o que você escolher aqui entra no preço e no pedido.</div>` },
         { id: 'abertura-porta', title: `Trocar o lado de abertura da porta`, html: `<p>Selecione o módulo e, no painel da direita, use <strong>Abertura da porta</strong> para trocar entre dobradiça à esquerda e à direita.</p>
 <p>A troca aparece para cada porta que está <strong>sozinha</strong> no seu vão — inclusive em torres com uma porta embaixo e outra em cima (Porta 1, Porta 2, de cima para baixo). Portas em par, lado a lado, já abrem uma para cada lado e não mostram a troca.</p>` }
       ]
@@ -762,6 +768,12 @@ HELP_CONTENT.es.push(
 <p>In the 3D view, <strong>O</strong> opens/closes the doors and <strong>G</strong> the drawers. Click <strong>Exit presentation</strong> or close the window to go back to normal.</p>` }
       ],
       'projetos-ambiente': [
+        { id: 'opcoes-painel-direita', title: `2 doors and front rail (right panel)`, html: `<p>Select the cabinet and look at the right panel:</p>
+<ul>
+<li><strong>Doors</strong> — on cabinets 21" to 24" wide, pick <strong>1 door</strong> (default) or <strong>2 doors</strong>. Also works in New Quote.</li>
+<li><strong>Front rail</strong> — the top piece at the front of a base cabinet: <strong>Flat</strong> or <strong>Upright</strong> (76 mm at the front). Sink cabinets come with it upright. Corner cabinets don't have this option.</li>
+</ul>
+<div class="po-help-tip">Everything you choose here goes into the price and the order.</div>` },
         { id: 'abertura-porta', title: `Changing the door swing`, html: `<p>Select the cabinet and, in the right panel, use <strong>Door swing</strong> to switch between hinged on the left and on the right.</p>
 <p>The toggle shows for each door that is <strong>alone</strong> in its section — including tall units with one door at the bottom and another at the top (Door 1, Door 2, top to bottom). Paired doors side by side already open to opposite sides and do not show it.</p>` }
       ]
@@ -805,6 +817,12 @@ HELP_CONTENT.es.push(
 <p>En la Vista 3D, <strong>O</strong> abre/cierra las puertas y <strong>G</strong> los cajones. Haz clic en <strong>Salir de presentación</strong> o cierra la ventana para volver a lo normal.</p>` }
       ],
       'projetos-ambiente': [
+        { id: 'opcoes-painel-direita', title: `2 puertas y travesaño frontal (panel derecho)`, html: `<p>Selecciona el módulo y mira el panel derecho:</p>
+<ul>
+<li><strong>Puertas</strong> — en módulos de 21" a 24" de ancho, elige <strong>1 puerta</strong> (estándar) o <strong>2 puertas</strong>. También vale en Nuevo Presupuesto.</li>
+<li><strong>Travesaño frontal</strong> — la pieza de arriba, al frente del módulo base: <strong>Acostado</strong> o <strong>De pie</strong> (76 mm al frente). En los fregaderos ya viene de pie. Los módulos de esquina no tienen esta opción.</li>
+</ul>
+<div class="po-help-tip">Todo lo que elijas aquí entra en el precio y en el pedido.</div>` },
         { id: 'abertura-porta', title: `Cambiar el lado de apertura de la puerta`, html: `<p>Selecciona el módulo y, en el panel derecho, usa <strong>Apertura de la puerta</strong> para cambiar entre bisagra a la izquierda y a la derecha.</p>
 <p>El cambio aparece para cada puerta que está <strong>sola</strong> en su hueco — incluso en torres con una puerta abajo y otra arriba (Puerta 1, Puerta 2, de arriba hacia abajo). Las puertas en par, lado a lado, ya abren cada una hacia un lado y no lo muestran.</p>` }
       ]

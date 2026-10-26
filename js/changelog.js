@@ -31,6 +31,30 @@
 // bolinha de "tem novidade" atualizam sozinhos a partir do item [0] daqui.
 window.LEGNO_CHANGELOG = [
   {
+    version: '1.007',
+    date: '2026-10-25',
+    items: {
+      pt: [
+        "Canto 90°: a dobradiça de 165° agora aparece no orçamento e no relatório da fábrica com o nome do modelo (Dobradiça 165° soft close).",
+        "Canto 90°: prateleira no meio do vão interno (antes ficava um pouco baixa) e fita de borda da prateleira e da base do lado esquerdo corrigida.",
+        "Módulos de canto não mostram mais a opção de travessa deitada/em pé.",
+        "Blind corner: o filler agora colide — o módulo ao lado encosta nele e não entra mais por dentro."
+      ],
+      en: [
+        "90° corner: the 165° hinge now shows in the quote and in the factory report with its model name (165° soft close hinge).",
+        "90° corner: shelf centered in the inside opening (it sat a little low) and the edge banding of the left shelf and bottom fixed.",
+        "Corner cabinets no longer show the flat/upright front rail option.",
+        "Blind corner: the filler now collides — the cabinet next to it butts against it instead of going inside it."
+      ],
+      es: [
+        "Esquina 90°: la bisagra de 165° ahora aparece en el presupuesto y en el informe de fábrica con el nombre del modelo (bisagra 165° soft close).",
+        "Esquina 90°: estante en el medio del hueco interior (quedaba un poco bajo) y canto del estante y de la base del lado izquierdo corregido.",
+        "Los módulos de esquina ya no muestran la opción de travesaño acostado/de pie.",
+        "Blind corner: el filler ahora choca — el módulo de al lado se apoya en él y ya no entra por dentro."
+      ]
+    }
+  },
+  {
     version: '1.006',
     date: '2026-10-25',
     items: {
