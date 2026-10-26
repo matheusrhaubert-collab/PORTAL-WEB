@@ -789,6 +789,17 @@ function projectSlotMaxFloorHeightMm(heightMm, module) {
 // que o clamp de verdade aceita. NÃO inclui o desvio por colisão de vizinho
 // (xAtual/projectSlotOverlapsNeighbor logo abaixo) — esse é só um resgate
 // pontual do clamp em si, não faz sentido num limite pra leitura/edição.
+// É BLIND CORNER? (25/10) — pela árvore de fábrica (params.blind_afastar_mm,
+// migration 241) OU pelo nome do módulo: o módulo que já estava no projeto
+// guardou a árvore de ANTES da migration (sem os params) e precisa valer igual.
+function projectSlotBlindInfo(slot) {
+  if (!slot) return null;
+  const lp = (slot.layout && slot.layout.params) || {};
+  if (Number(lp.blind_afastar_mm) > 0) return { afastar: Number(lp.blind_afastar_mm), lado: lp.blind_lado === 'D' ? 'D' : 'E' };
+  const nome = String((slot.module && slot.module.name) || '');
+  if (/blind corner/i.test(nome)) return { afastar: 120.65, lado: /dir\b|direit|right/i.test(nome) ? 'D' : 'E' };
+  return null;
+}
 function projectWallSlotXBoundsMm(slot) {
   const idx = Number(slot.wall_index || 0);
   const recuo = projectWallCornerInsetMm(idx);
@@ -797,10 +808,9 @@ function projectWallSlotXBoundsMm(slot) {
   // da árvore de fábrica diz quanto e de que lado fica o lado cego
   // (params.blind_afastar_mm / blind_lado 'E'|'D', migration 241): a ponta
   // do lado cego não encosta na parede vizinha, para a essa distância.
-  const lp = (slot.layout && slot.layout.params) || {};
-  const afastar = Number(lp.blind_afastar_mm) || 0;
-  const ini = recuo.ini + (afastar > 0 && lp.blind_lado !== 'D' ? afastar : 0);
-  const fim = recuo.fim + (afastar > 0 && lp.blind_lado === 'D' ? afastar : 0);
+  const bi = projectSlotBlindInfo(slot);
+  const ini = recuo.ini + (bi && bi.lado !== 'D' ? bi.afastar : 0);
+  const fim = recuo.fim + (bi && bi.lado === 'D' ? bi.afastar : 0);
   const largura = getProjectWallWidthMm(idx) - ini - fim;
   const maxX = Math.max(0, largura - Number(slot.width_mm || 0));
   return { min: ini, max: ini + maxX };
@@ -1082,8 +1092,7 @@ function projectSlotPainelFixoProtrusaoMm(slot) {
   // FILLER DO BLIND CORNER (migration 241, 25/10 — Matt: "o filler não está
   // colidindo, o módulo está ficando dentro do filler"): ele fica em pé na
   // frente das portas, até D + 39,5 — a colisão conta esse avanço.
-  const lp = (slot.layout && slot.layout.params) || {};
-  if (Number(lp.blind_afastar_mm) > 0) p = Math.max(p, 39.5);
+  if (projectSlotBlindInfo(slot)) p = Math.max(p, 39.5);
   if (chave) projectPainelFixoProtrusaoCache.set(chave, p);
   return p;
 }
@@ -2670,9 +2679,8 @@ function somaPieceAdjustments(a, b) {
 function projectSlotBlindToeAdj(slot) {
   try {
     if (!slot || typeof getSlotWorldFrame !== 'function') return null;
-    if (slot.layout && slot.layout.params && slot.layout.params.blind_afastar_mm) return null;
-    const blinds = (projectSlots || []).filter((o) => o !== slot && !o.oculto
-      && o.layout && o.layout.params && Number(o.layout.params.blind_afastar_mm) > 0);
+    if (projectSlotBlindInfo(slot)) return null;
+    const blinds = (projectSlots || []).filter((o) => o !== slot && !o.oculto && projectSlotBlindInfo(o));
     if (!blinds.length) return null;
     let rodape = null;
     (function anda(lista) {
