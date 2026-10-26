@@ -184,11 +184,11 @@ const Viewer3D = (function () {
     return hingeSide === 'left' ? -a : a;
   }
   // porta cuja peça diz "165" (ex.: "Porta Flat · Canto 90 (dobradiça 165)")
-  function grausDaPortaAtiva() {
-    const p = activePart;
+  function grausDaPeca(p) {
     if (!p) return null;
     return /165/.test(String(p.reference || '') + ' ' + String(p.hinge_model_name || '')) ? 165 : null;
   }
+  function grausDaPortaAtiva() { return grausDaPeca(activePart); }
 
   function available() {
     return typeof THREE !== 'undefined' && THREE.OrbitControls;
@@ -1536,7 +1536,7 @@ const Viewer3D = (function () {
       pivot.add(content);
       pivot.position.set(hingeX, hingeY, z);
 
-      const graus = isFlap ? null : grausDaPortaAtiva();
+      const graus = isFlap ? null : (opening.graus || grausDaPortaAtiva());
       const angle = doors ? openAngleFor(opening.side, graus) : 0;
       // Giro em torno de X (basculante, horizontal) ou Y (dobradiça comum,
       // vertical) — nunca os dois pro mesmo pivô.
@@ -4000,7 +4000,7 @@ const Viewer3D = (function () {
       // errada pra frente fina de ~19.5mm) — a frente precisa abrir a MESMA
       // distância que o caixote atrás dela, senão parece travada.
       const opening = hingeSide
-        ? { type: 'hinge', side: hingeSide, width: w, height: h }
+        ? { type: 'hinge', side: hingeSide, width: w, height: h, graus: grausDaPeca(part) }
         : (part.opening_type === 'slide_out')
           ? { type: 'slide', distance: part.slide_distance_mm != null ? part.slide_distance_mm / 1000 : Math.min(d * 0.7, 0.4) }
           : null;
@@ -4224,7 +4224,7 @@ const Viewer3D = (function () {
       // acima) — assim uma frente solta desliza a mesma ordem de grandeza da
       // gaveta que ela cobre, mesmo sem slide_distance_mm cadastrado.
       const opening = hingeSide
-        ? { type: 'hinge', side: hingeSide, width: doorW, height: faceB }
+        ? { type: 'hinge', side: hingeSide, width: doorW, height: faceB, graus: grausDaPeca(part) }
         : (part.opening_type === 'slide_out')
           ? { type: 'slide', distance: part.slide_distance_mm != null ? part.slide_distance_mm / 1000 : Math.min(D * 0.7, 0.4) }
           : null;
