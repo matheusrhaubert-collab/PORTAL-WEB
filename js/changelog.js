@@ -52,7 +52,7 @@ window.LEGNO_CHANGELOG = [
         "Módulos de pia (Sink, Full High Sink, Farm Sink, Corner Sink) mostram a pia decorativa. Decorativos dentro do módulo (pia, cooktop, micro-ondas) não entram no orçamento nem no pedido.",
         "Travessa de cima da frente deitada ou em pé (76 mm na frente): escolha no painel da direita. Nas sinks ela já vem em pé.",
         "Base Farm Sink refeito: frente falsa de 12\", pia farm de cerâmica com avental de 9\" pra fora e bancada aberta na frente em volta dela. Base Corner Sink saiu do catálogo (continua na importação do 2020).",
-        "Blind corners: ficam a 4 3/4\" da parede do canto e já vêm com o filler de 3\" na frente; o rodapé do módulo encostado neles estica até o rodapé do blind. Bancada passa por cima de painel lateral e fecha o canto em L.",
+        "Blind corners: ficam a 4 3/4\" da parede do canto e já vêm com o filler de 3\" na frente; o rodapé do módulo encostado neles estica até o rodapé do blind. Canto 90°: portas abrem 165° com a dobradiça de 165 (também com outro modelo de porta). Base Lazy Susan saiu do catálogo (era igual ao Canto 90°). Bancada passa por cima de painel lateral e fecha o canto em L.",
         "Construtor: portas e frentes de gaveta empilhadas não se encostam mais na divisória horizontal — ficam com 4 mm de folga entre elas, no meio da divisória. A medida digitada no desenho do Construtor agora segue a unidade escolhida (polegadas com fração).",
         "Gaveta dovetail com veio de birch de verdade (mel/âmbar), em escala real.",
         "Barra do Projetos: Tela cheia foi para o fim da barra, ao lado do pino; menu Vista com ícone de tela."
@@ -75,7 +75,7 @@ window.LEGNO_CHANGELOG = [
         "Sink cabinets (Sink, Full High Sink, Farm Sink, Corner Sink) now show a decorative sink. Decorative items inside a cabinet (sink, cooktop, microwave) are left out of the quote and the order.",
         "Front rail flat or upright: choose it in the right panel. Sink cabinets come with it upright.",
         "Base Farm Sink redone: 12\" false front, ceramic farmhouse sink with a 9\" apron sticking out, and the countertop open at the front around it. Base Corner Sink removed from the catalog (still used by the 2020 import).",
-        "Blind corners: kept 4 3/4\" from the corner wall and come with the 3\" filler on the front; the toe kick of the cabinet against them stretches to the blind's toe kick. Countertop now covers side panels and closes the corner in a clean L.",
+        "Blind corners: kept 4 3/4\" from the corner wall and come with the 3\" filler on the front; the toe kick of the cabinet against them stretches to the blind's toe kick. 90° corner: doors open 165° with the 165° hinge (also with other door models). Base Lazy Susan removed from the catalog (same as the 90° corner). Countertop now covers side panels and closes the corner in a clean L.",
         "Builder: stacked doors and drawer fronts no longer touch at a horizontal divider — they keep a 4 mm gap, centered on the divider. The size you type on the Builder drawing now follows your unit (inches with fractions).",
         "Dovetail drawer with real birch grain (honey/amber), at real scale.",
         "Projects toolbar: Full screen moved to the end of the bar, next to the pin; View menu with a screen icon."
@@ -98,7 +98,7 @@ window.LEGNO_CHANGELOG = [
         "Los módulos de fregadero (Sink, Full High Sink, Farm Sink, Corner Sink) muestran el fregadero decorativo. Los decorativos dentro del módulo (fregadero, cooktop, microondas) no entran en el presupuesto ni en el pedido.",
         "Travesaño frontal acostado o de pie: elíjalo en el panel derecho. En los fregaderos ya viene de pie.",
         "Base Farm Sink rehecho: frente falso de 12\", fregadero farm de cerámica con faldón de 9\" hacia afuera y encimera abierta al frente alrededor. Base Corner Sink salió del catálogo (sigue en la importación del 2020).",
-        "Blind corners: quedan a 4 3/4\" de la pared de la esquina y ya vienen con el filler de 3\" al frente; el zócalo del módulo junto a ellos se estira hasta el zócalo del blind. La encimera cubre los paneles laterales y cierra la esquina en L.",
+        "Blind corners: quedan a 4 3/4\" de la pared de la esquina y ya vienen con el filler de 3\" al frente; el zócalo del módulo junto a ellos se estira hasta el zócalo del blind. Esquina 90°: las puertas abren 165° con la bisagra de 165 (también con otro modelo de puerta). Base Lazy Susan salió del catálogo (era igual a la esquina 90°). La encimera cubre los paneles laterales y cierra la esquina en L.",
         "Constructor: puertas y frentes de cajón apilados ya no se tocan en la división horizontal — quedan con 4 mm de holgura entre ellos, en el medio de la división. La medida escrita en el dibujo del Constructor ahora sigue tu unidad (pulgadas con fracción).",
         "Cajón dovetail con veta de abedul de verdad (miel/ámbar), a escala real.",
         "Barra de Proyectos: Pantalla completa pasó al final de la barra, junto al pin; menú Vista con ícono de pantalla."

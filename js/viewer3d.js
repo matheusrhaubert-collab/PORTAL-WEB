@@ -175,10 +175,19 @@ const Viewer3D = (function () {
   // pra a base da porta ir pra +Z; 'bottom' (basculante inverso) precisa de
   // ângulo POSITIVO em X pelo mesmo motivo, espelhado (ver dedução completa
   // no comentário de positionWithOpening).
-  function openAngleFor(hingeSide) {
+  // graus (opcional): abertura própria da dobradiça — porta do canto 90 com
+  // dobradiça de 165° (25/10, Matt: "as portas devem abrir 165 graus pra fora").
+  function openAngleFor(hingeSide, graus) {
     if (hingeSide === 'top') return -LIFT_OPEN_ANGLE;
     if (hingeSide === 'bottom') return FLAP_OPEN_ANGLE;
-    return hingeSide === 'left' ? -DOOR_OPEN_ANGLE : DOOR_OPEN_ANGLE;
+    const a = graus ? graus * Math.PI / 180 : DOOR_OPEN_ANGLE;
+    return hingeSide === 'left' ? -a : a;
+  }
+  // porta cuja peça diz "165" (ex.: "Porta Flat · Canto 90 (dobradiça 165)")
+  function grausDaPortaAtiva() {
+    const p = activePart;
+    if (!p) return null;
+    return /165/.test(String(p.reference || '') + ' ' + String(p.hinge_model_name || '')) ? 165 : null;
   }
 
   function available() {
@@ -1527,11 +1536,12 @@ const Viewer3D = (function () {
       pivot.add(content);
       pivot.position.set(hingeX, hingeY, z);
 
-      const angle = doors ? openAngleFor(opening.side) : 0;
+      const graus = isFlap ? null : grausDaPortaAtiva();
+      const angle = doors ? openAngleFor(opening.side, graus) : 0;
       // Giro em torno de X (basculante, horizontal) ou Y (dobradiça comum,
       // vertical) — nunca os dois pro mesmo pivô.
       if (isFlap) pivot.rotation.x = angle; else pivot.rotation.y = angle;
-      targetOpenables.push({ kind: 'hinge', group: pivot, hingeSide: opening.side, currentAngle: angle, targetAngle: angle });
+      targetOpenables.push({ kind: 'hinge', group: pivot, hingeSide: opening.side, graus, currentAngle: angle, targetAngle: angle });
       return pivot;
     }
 
@@ -1738,7 +1748,7 @@ const Viewer3D = (function () {
   function toggleDoorsOnly() {
     doorsOpen = !doorsOpen;
     openables.forEach((op) => {
-      if (op.kind === 'hinge') op.targetAngle = doorsOpen ? openAngleFor(op.hingeSide) : 0;
+      if (op.kind === 'hinge') op.targetAngle = doorsOpen ? openAngleFor(op.hingeSide, op.graus) : 0;
     });
     return doorsOpen;
   }

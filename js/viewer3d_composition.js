@@ -151,10 +151,11 @@ function createViewerComposition3D() {
   // abria de lado. Mesmos ângulos/sinais de viewer3d.js openAngleFor.
   const FLAP_OPEN_ANGLE = Math.PI * 0.42;
   const LIFT_OPEN_ANGLE = Math.PI * 0.56;
-  function openAngleFor(hingeSide) {
+  function openAngleFor(hingeSide, graus) {
     if (hingeSide === 'top') return -LIFT_OPEN_ANGLE;
     if (hingeSide === 'bottom') return FLAP_OPEN_ANGLE;
-    return hingeSide === 'left' ? -DOOR_OPEN_ANGLE : DOOR_OPEN_ANGLE;
+    const a = graus ? graus * Math.PI / 180 : DOOR_OPEN_ANGLE;   // dobradiça 165 (canto 90, 25/10)
+    return hingeSide === 'left' ? -a : a;
   }
 
   // Espaço entre módulos vizinhos — 0 (encostados) a pedido do usuário: os
@@ -2461,13 +2462,13 @@ function createViewerComposition3D() {
     if (ids) {
       const nowOpen = !areDoorsOpen(ids);
       currentOpenables.forEach((op) => {
-        if (op.kind === 'hinge' && ids.has(op.slotId)) op.targetAngle = nowOpen ? openAngleFor(op.hingeSide) : 0;
+        if (op.kind === 'hinge' && ids.has(op.slotId)) op.targetAngle = nowOpen ? openAngleFor(op.hingeSide, op.graus) : 0;
       });
       return nowOpen;
     }
     doorsOpen = !doorsOpen;
     currentOpenables.forEach((op) => {
-      if (op.kind === 'hinge') op.targetAngle = doorsOpen ? openAngleFor(op.hingeSide) : 0;
+      if (op.kind === 'hinge') op.targetAngle = doorsOpen ? openAngleFor(op.hingeSide, op.graus) : 0;
     });
     return doorsOpen;
   }

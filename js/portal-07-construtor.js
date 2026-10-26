@@ -3072,7 +3072,11 @@ function catalogDoorModelRow(orig, m, ex) {
     locked_height_preset_options: lp.heightLabeled || [],
     locked_depth_preset_options: lp.depthLabeled || [],
     is_decoration: !!lp.is_decoration,
-    own_hinge_model: hs.hinge || null,
+    // porta do CANTO 90 com dobradiça de 165 (25/10, Matt: "a dobradiça deve
+    // ser de 165 e não de 90, e outro modelo deve trocar na estrutura"):
+    // trocar o MODELO da porta não pode trazer a dobradiça de 90 do modelo —
+    // fica a do módulo (Dobradiça 165, whitelist do canto).
+    own_hinge_model: /165/.test(String(orig.reference || '')) ? null : (hs.hinge || null),
     own_slide_model: hs.slide || null,
     own_slide_models: hs.slides || [],
     own_width_min_mm: lp.ownWidthMinMm != null ? lp.ownWidthMinMm : null,
