@@ -217,7 +217,11 @@ function bancadaClassifica(slot) {
   const W = Number(slot.width_mm || 0), D = Number(slot.depth_mm || 0);
   if (baixo >= 1000) return 'aereo';
   if (topo >= 700 && topo <= 1000 && H <= 1050 && baixo <= 600 && W >= 150 && D >= 280) return 'base';
-  if (W < 150 || D < 280) return 'outro';   // painel/filler: corta a pedra se encostar, mas não ganha pedra
+  // PAINEL LATERAL / FILLER na altura da bancada (25/10, Matt: "quando tem
+  // painel lateral o countertop tem que cobrir por cima"): entra no trecho
+  // e a pedra passa por cima dele. Sozinho (sem gabinete) não ganha pedra.
+  if (W < 150 && D >= 280 && topo >= 700 && topo <= 1000 && H <= 1050 && baixo <= 600) return 'painel';
+  if (W < 150 || D < 280) return 'outro';   // painel raso/solto: corta a pedra se encostar, mas não ganha pedra
   return 'alto';
 }
 
@@ -270,7 +274,7 @@ function bancadaRunsCalc(cfg, paredes) {
     if (!ilha && !paredes.some((p) => p.wallIndex === Number(slot.wall_index || 0) && !p.oculta)) return;
     itens.push({ slot, tipo, f, ilha, cu: f.ox * f.U.x + f.oz * f.U.z, cn: f.ox * f.N.x + f.oz * f.N.z, topo: f.oy + f.h });
   });
-  const bases = itens.filter((it) => it.tipo === 'base' && !excl.has(it.slot.id));
+  const bases = itens.filter((it) => (it.tipo === 'base' || it.tipo === 'painel') && !excl.has(it.slot.id));
   // agrupa por parede (ou por giro + linha de fundo, na ilha)
   const grupos = {};
   bases.forEach((it) => {
@@ -302,6 +306,10 @@ function bancadaRunsCalc(cfg, paredes) {
       runs.push(atual);
     });
   });
+  // trecho só de painel/filler (sem gabinete) não vira pedra
+  for (let i = runs.length - 1; i >= 0; i--) {
+    if (runs[i].membros.every((m) => m.tipo === 'painel')) runs.splice(i, 1);
+  }
   const esp = Math.max(0.01, (Number(cfg.esp_mm) || 30) / 1000);
   const balPorta = (Number(cfg.bal_porta_mm) || 0) / 1000, balCaixa = (Number(cfg.bal_caixa_mm) || 0) / 1000, balPonta = (Number(cfg.bal_ponta_mm) || 0) / 1000;
   // ordem: paredes primeiro (por índice), ilhas depois — a ordem decide quem
@@ -312,7 +320,7 @@ function bancadaRunsCalc(cfg, paredes) {
     r.u0 = r.membros[0].cu - r.membros[0].f.w / 2;
     r.u1 = r.membros[r.membros.length - 1].cu + r.membros[r.membros.length - 1].f.w / 2;
     // topo da pedra = topo dos GABINETES (o eletro só fica embaixo)
-    const gabs = r.membros.filter((m) => !(m.slot.module && m.slot.module.is_decoration));
+    const gabs = r.membros.filter((m) => m.tipo !== 'painel' && !(m.slot.module && m.slot.module.is_decoration));
     r.topo = gabs.length ? Math.max(...gabs.map((m) => m.topo)) : r.topoMax;
     r.esp = esp;
     r.membros.forEach((m) => {
@@ -323,7 +331,8 @@ function bancadaRunsCalc(cfg, paredes) {
     // lava-louças: a frente da pedra segue a dos gabinetes vizinhos (a porta
     // do eletro fica alinhada com as portas — não é "caixa sem porta")
     const frenteGab = gabs.length ? Math.max(...gabs.map((m) => m.frente)) : null;
-    if (frenteGab != null) r.membros.forEach((m) => { if (m.slot.module && m.slot.module.is_decoration) m.frente = frenteGab; });
+    // painel lateral/filler: idem — a frente da pedra é a mesma dos gabinetes
+    if (frenteGab != null) r.membros.forEach((m) => { if (m.tipo === 'painel' || (m.slot.module && m.slot.module.is_decoration)) m.frente = frenteGab; });
     const fx = Number((cfg.frente_ext || {})[r.membros[0].slot.id]) || 0;   // seta da frente
     if (fx) r.membros.forEach((m) => { m.frente = Math.max(0.1, m.frente + fx / 1000); });
     r.tras = r.ilha ? Math.max(0, ...r.membros.map((m) => Number((cfg.ilha_tras || {})[m.slot.id]) || 0)) / 1000 : 0;
@@ -346,7 +355,7 @@ function bancadaRunsCalc(cfg, paredes) {
       }
       return itens.some((o) => {
         if (o.tipo === 'aereo' || o.tipo === 'sobre' || r.membros.some((m) => m.slot === o.slot)) return false;
-        if (ignorar && (ignorar.has(o.slot) || o.tipo === 'outro')) return false;   // canto: o par e filler não contam
+        if (ignorar && (ignorar.has(o.slot) || o.tipo === 'outro' || o.tipo === 'painel')) return false;   // canto: o par e filler não contam
         if (o.f.oy > r.topo - 0.05) return false;
         // caixa do outro no referencial do trecho
         const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => {
