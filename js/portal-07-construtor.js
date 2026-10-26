@@ -3037,6 +3037,7 @@ function catalogDoorModelRow(orig, m, ex) {
     _doorModelSwap: m.id,
     door_model_name: m.name || null,
     reference: orig.reference || meta.name || null,
+    component_reference: orig.component_reference || null,
     position_role: orig.position_role,
     color_role_id: orig.color_role_id || null,
     opening_type: orig.opening_type,
@@ -3076,7 +3077,7 @@ function catalogDoorModelRow(orig, m, ex) {
     // ser de 165 e não de 90, e outro modelo deve trocar na estrutura"):
     // trocar o MODELO da porta não pode trazer a dobradiça de 90 do modelo —
     // fica a do módulo (Dobradiça 165, whitelist do canto).
-    own_hinge_model: /165/.test(String(orig.reference || '')) ? null : (hs.hinge || null),
+    own_hinge_model: /165/.test(String(orig.reference || '') + ' ' + String(orig.component_reference || '')) ? null : (hs.hinge || null),
     own_slide_model: hs.slide || null,
     own_slide_models: hs.slides || [],
     own_width_min_mm: lp.ownWidthMinMm != null ? lp.ownWidthMinMm : null,

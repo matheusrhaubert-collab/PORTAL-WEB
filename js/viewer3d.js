@@ -186,7 +186,7 @@ const Viewer3D = (function () {
   // porta cuja peça diz "165" (ex.: "Porta Flat · Canto 90 (dobradiça 165)")
   function grausDaPeca(p) {
     if (!p) return null;
-    return /165/.test(String(p.reference || '') + ' ' + String(p.hinge_model_name || '')) ? 165 : null;
+    return /165/.test(String(p.reference || '') + ' ' + String(p.component_reference || '') + ' ' + String(p.hinge_model_name || '')) ? 165 : null;
   }
   function grausDaPortaAtiva() { return grausDaPeca(activePart); }
 

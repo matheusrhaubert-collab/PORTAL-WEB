@@ -102,6 +102,17 @@ async function loadRecursivePiecesForModule(moduleId) {
         // nome do catálogo só na exibição (balão do 3D). Fica DEPOIS do
         // ...row.components pra não ser apagado pelo spread.
         reference: row.reference_override || row.components.reference,
+        // nome do CATÁLOGO, mesmo com nome customizado nesta instância (ex.:
+        // "Porta A (asa em X)" é a "Porta Flat · Canto 90 (dobradiça 165)")
+        component_reference: row.components.reference || null,
+        // LADO DA DOBRADIÇA (25/10, Matt: "não está pedindo nem hinge no
+        // orçamento" — canto 90°): porta cadastrada só com a ABERTURA do uso
+        // (module_components.opening_type = hinge_left/right) e sem
+        // components.hinge_side abria no 3D mas não cobrava dobradiça (o preço
+        // conta pela hinge_side). Sem hinge_side no componente, vale a abertura.
+        hinge_side: row.components.hinge_side
+          || (/^hinge_(left|right)$/.test(String(row.opening_type || row.components.opening_type || ''))
+            ? String(row.opening_type || row.components.opening_type).slice(6) : null),
         quantity, labor_cost_per_unit, positioning,
         /* Migration 090 — POSIÇÃO E COR PASSAM A SER DO USO, não da peça.
            A peça genérica ("Flatbord 2C") é a mesma chapa em qualquer lugar
@@ -784,6 +795,7 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         color,
         offset_x_mm, offset_y_mm, offset_z_mm,
         hinge_side: piece.hinge_side,
+        component_reference: piece.component_reference || null,
         is_module: !!piece.is_module,
         opening_type: piece.opening_type,
         slides_per_unit: piece.slides_per_unit,

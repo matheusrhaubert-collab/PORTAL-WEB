@@ -4924,6 +4924,9 @@ function projectDoorLeavesBlock(slot) {
    peça em applyPieceAdjustmentsDeep (module-pieces.js), que o preço, o 3D,
    o pedido e o ERP já aplicam. Sinks nascem em pé (migration 237). */
 function projectFrontStretcherPiece(slot) {
+  // canto (90°/45°/lazy/blind) não tem essa opção (25/10, Matt: "módulo canto
+  // não pode ter opção de trocar a travessa por vertical")
+  if (/canto|corner|lazy/i.test(String((slot && slot.module && slot.module.name) || ''))) return null;
   const limpa = (f) => String(f == null ? '' : f).replace(/\s+/g, '');
   let achada = null;
   (function anda(lista) {
