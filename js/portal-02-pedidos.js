@@ -950,6 +950,7 @@ async function loadMyOrders() {
           <div class="portal-order-actions">
             <button type="button" class="secondary portal-order-view-btn" data-order-id="${o.id}">${I18n.t('my_orders.view_details')}</button>
             ${isCutlist ? '' : `<button type="button" class="secondary portal-order-pdf-btn" data-order-id="${o.id}">${I18n.t('my_orders.generate_pdf')}</button>`}
+            ${canReturnOrderToProject(o) ? `<button type="button" class="secondary portal-order-back-project-btn" data-order-id="${o.id}">${I18n.t('my_orders.back_to_project')}</button>` : ''}
           </div>
         </div>
       `;
@@ -975,11 +976,77 @@ async function loadMyOrders() {
       });
     });
 
+    container.querySelectorAll('.portal-order-back-project-btn').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation(); // não abre a tela do pedido junto
+        const order = orders.find((o) => o.id === btn.dataset.orderId);
+        returnOrderToProject(order, btn, errorEl);
+      });
+    });
+
     myOrdersLoaded = true;
   } catch (err) {
     errorEl.textContent = I18n.t('my_orders.load_error', { msg: err.message });
     errorEl.style.display = 'block';
     container.innerHTML = '';
+  }
+}
+
+// ---------- VOLTAR PEDIDO AO PROJETO (Matt, 26/10/2026) ----------
+// "enquanto ficar pendente, ou seja, sem aprovação final, quero um botão de
+// voltar pedido ao projeto. ao fazer isso ele volta pro projeto e abre opção
+// de edição novamente." Só pedido da aba Projetos ('project'), ainda
+// Pendente ('submitted') e com o projeto de origem conhecido
+// (source_project_id, migration 179).
+// Como funciona: APAGA o pedido pendente (order_items vão junto, on delete
+// cascade). user_projects.frozen_order_id é FK "on delete set null", então o
+// projeto DESCONGELA sozinho — é o único caminho que o gatilho
+// user_projects_trava_congelado aceita pra cliente (pedido sumiu). Depois
+// abre o projeto no editor, vinculado (salvar grava nele mesmo). Pra virar
+// pedido de novo é só "Enviar pro pedido" outra vez.
+// O delete filtra por status = 'submitted': se o pedido foi aprovado entre
+// a lista carregar e o clique, nada é apagado (0 linhas) e avisa.
+function canReturnOrderToProject(order) {
+  return !!(order && order.order_type === 'project' && order.status === 'submitted' && order.source_project_id);
+}
+
+async function returnOrderToProject(order, btn, errorEl) {
+  if (!canReturnOrderToProject(order)) return;
+  if (errorEl) errorEl.style.display = 'none';
+  if (!confirm(I18n.t('my_orders.back_to_project_confirm'))) return;
+  // projeto aberto no editor com alteração não salva vai ser substituído
+  if (typeof projectDirty !== 'undefined' && projectDirty && !confirm(I18n.t('project_pdf.confirm_unsaved'))) return;
+  const showErr = (msg) => {
+    if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+    else alert(msg);
+  };
+  if (btn) btn.disabled = true;
+  try {
+    const { data: apagados, error: delErr } = await supabaseClient
+      .from('orders').delete()
+      .eq('id', order.id).eq('status', 'submitted')
+      .select('id');
+    if (delErr) throw delErr;
+    if (!apagados || !apagados.length) { showErr(I18n.t('my_orders.back_to_project_not_pending')); return; }
+    myOrdersLoaded = false;
+    // linha completa do projeto, já descongelado (frozen_order_id = null)
+    const { data: proj, error: projErr } = await supabaseClient
+      .from('user_projects').select('*').eq('id', order.source_project_id).single();
+    if (projErr) throw projErr;
+    if (proj.frozen_order_id) throw new Error(I18n.t('my_orders.back_to_project_still_frozen'));
+    proj._fullRow = true;
+    // sai da tela do pedido (se veio de lá) antes de trocar de aba
+    currentOrderDetail = null;
+    const detailSec = document.getElementById('po-order-detail-section');
+    const listPanel = document.getElementById('po-orders-list-panel');
+    if (detailSec) detailSec.style.display = 'none';
+    if (listPanel) listPanel.style.display = '';
+    if (typeof projectDirty !== 'undefined') projectDirty = false; // já confirmado acima — não pergunta de novo na troca de aba
+    await restoreFavoriteProject(proj, true);
+  } catch (err) {
+    showErr(I18n.t('my_orders.back_to_project_error', { msg: err.message || String(err) }));
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1361,6 +1428,11 @@ function renderOrderDetail() {
   // já decidido.
   const continueShoppingBtn = document.getElementById('po-order-detail-continue-shopping-btn');
   if (continueShoppingBtn) continueShoppingBtn.style.display = isLocked ? 'none' : 'block';
+  // "Voltar ao projeto" (26/10) — só pedido do Projetos ainda Pendente
+  const backProjBtn = document.getElementById('po-order-detail-back-project-btn');
+  if (backProjBtn) backProjBtn.style.display = canReturnOrderToProject(order) ? 'block' : 'none';
+  const backProjErr = document.getElementById('po-order-detail-back-project-error');
+  if (backProjErr) backProjErr.style.display = 'none';
 
   // "Salvar informações" (pedido do usuário 2026-07-29: "quero um botao
   // salvar informacoes, para poder voltar e manter as informacoes salvas,
@@ -2797,3 +2869,10 @@ function newSlotId() {
   compositionSlotIdSeq += 1;
   return `slot_${Date.now()}_${compositionSlotIdSeq}`;
 }
+
+// "Voltar ao projeto" na tela do pedido (26/10) — ver returnOrderToProject
+const backProjBtnEl = document.getElementById('po-order-detail-back-project-btn');
+if (backProjBtnEl) backProjBtnEl.addEventListener('click', () => {
+  if (!currentOrderDetail) return;
+  returnOrderToProject(currentOrderDetail.order, backProjBtnEl, document.getElementById('po-order-detail-back-project-error'));
+});

@@ -265,6 +265,11 @@
       // "Salvar" (não "Aprovar") — fica só no "Meus Pedidos" dele, não
       // aparece na lista de Pedidos do admin (não vai pra fábrica).
       'my_orders.status_saved': 'Salvo',
+      'my_orders.back_to_project': 'Voltar ao projeto',
+      'my_orders.back_to_project_confirm': 'Voltar este pedido pro projeto?\n\nO pedido pendente é cancelado (sai de Meus Pedidos) e o projeto abre de novo pra editar. Depois é só enviar pro pedido outra vez.',
+      'my_orders.back_to_project_not_pending': 'Este pedido não está mais pendente (já foi aprovado) — não dá pra voltar pro projeto.',
+      'my_orders.back_to_project_still_frozen': 'O projeto continua travado. Recarregue a página e tente de novo.',
+      'my_orders.back_to_project_error': 'Erro ao voltar pro projeto: {{msg}}',
 
       // ---- Tela do pedido (migration 047, 2026-07-19) ----
       'order_detail.back_btn': '← Voltar',
@@ -2239,6 +2244,11 @@
       'my_orders.status_paid': 'Paid',
       'my_orders.status_delivered': 'Delivered',
       'my_orders.status_saved': 'Saved',
+      'my_orders.back_to_project': 'Back to project',
+      'my_orders.back_to_project_confirm': 'Send this order back to the project?\n\nThe pending order is canceled (removed from My Orders) and the project opens again for editing. Just send it to order again when ready.',
+      'my_orders.back_to_project_not_pending': 'This order is no longer pending (already approved) — it cannot go back to the project.',
+      'my_orders.back_to_project_still_frozen': 'The project is still locked. Reload the page and try again.',
+      'my_orders.back_to_project_error': 'Error sending the order back to the project: {{msg}}',
 
       'order_detail.back_btn': '← Back',
       'order_detail.client_name_label': 'Client name',
@@ -4180,6 +4190,11 @@
       'my_orders.status_paid': 'Pagada',
       'my_orders.status_delivered': 'Entregada',
       'my_orders.status_saved': 'Guardado',
+      'my_orders.back_to_project': 'Volver al proyecto',
+      'my_orders.back_to_project_confirm': '¿Volver este pedido al proyecto?\n\nEl pedido pendiente se cancela (sale de Mis pedidos) y el proyecto se abre de nuevo para editar. Luego basta con enviarlo al pedido otra vez.',
+      'my_orders.back_to_project_not_pending': 'Este pedido ya no está pendiente (ya fue aprobado) — no puede volver al proyecto.',
+      'my_orders.back_to_project_still_frozen': 'El proyecto sigue bloqueado. Recarga la página e inténtalo de nuevo.',
+      'my_orders.back_to_project_error': 'Error al volver al proyecto: {{msg}}',
 
       'order_detail.back_btn': '← Volver',
       'order_detail.client_name_label': 'Nombre del cliente',
