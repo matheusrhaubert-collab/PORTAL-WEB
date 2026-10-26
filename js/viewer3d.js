@@ -2612,10 +2612,10 @@ const Viewer3D = (function () {
     const aro = add(W, 0.004, bd, ceram, 0, H - 0.002, frente - bd / 2);
     aro.visible = false;
     aro.userData.decorRim = true;
-    // torneira atrás da cuba, na altura da pedra (frente falsa: o topo da
-    // cuba fica uns 78 mm abaixo do tampo)
+    // torneira atrás da cuba, na altura da pedra (migration 240: o topo da
+    // cuba fica 20 mm acima da frente falsa, ~20 mm abaixo do tampo)
     const fct = decorFaucet(mats.chrome, 0.24, 0.17);
-    fct.position.set(0, H + 0.078, tras - 0.045);
+    fct.position.set(0, H + 0.02, tras - 0.045);
     g.add(fct);
     return g;
   }
