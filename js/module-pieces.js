@@ -426,6 +426,7 @@ function applyPieceAdjustmentsDeep(piecesList, adjustments) {
     const a = p.id != null ? adjustments[p.id] : null;
     if (a && (a.dx || a.dy || a.dz || a.dw || a.dh || a.dd)) {
       out = Object.assign({}, out, {
+        _semTrava: !!a.sem_trava || !!out._semTrava,
         width_formula: adjustFormula(p.width_formula, a.dw),
         height_formula: adjustFormula(p.height_formula, a.dh),
         depth_formula: adjustFormula(p.depth_formula, a.dd),
@@ -637,7 +638,11 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
     // CORRIGIDO (2026-07-09): condição certa é position_role==='free', que já
     // ignora vão-interno/empilhamento automático em placePieceInBox — só
     // faltava a MEDIDA também não ser clampada aqui.
-    if (piece.position_role !== 'free') {
+    // _semTrava (25/10): peça esticada DE PROPÓSITO pra fora do módulo — o
+    // rodapé que vai até o blind corner (piece_adjustments.sem_trava). Sem
+    // isto a trava cortava de volta pra largura do módulo e o rodapé não
+    // esticava no 3D (no preço já esticava).
+    if (piece.position_role !== 'free' && !piece._semTrava) {
       resolvedWidthMm = Math.min(resolvedWidthMm, pieceContainerDims.W);
       resolvedHeightMm = Math.min(resolvedHeightMm, pieceContainerDims.H);
       resolvedDepthMm = Math.min(resolvedDepthMm, pieceContainerDims.D);

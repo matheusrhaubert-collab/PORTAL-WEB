@@ -2728,7 +2728,7 @@ function projectSlotBlindToeAdj(slot) {
     if (!(dir > 0) && !(esq > 0)) return null;
     const dw = Math.round((dir + esq) * 10000) / 10;            // mm, 1 casa
     const dx = -Math.round(esq * 10000) / 10;
-    const a = { dw };
+    const a = { dw, sem_trava: true };
     if (dx) a.dx = dx;
     return { [rodape.id]: a };
   } catch (e) { return null; }
