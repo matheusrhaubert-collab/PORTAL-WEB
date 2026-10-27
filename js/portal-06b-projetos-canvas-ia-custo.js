@@ -3232,6 +3232,11 @@ function renderMoneyPieceFabrica(body, slot, row) {
 // 187) com preço ZERO no cadastro — devolve os nomes (sem repetir) pra aba
 // Orçamento avisar por módulo (23/10, Matt: "mostrar mesmo se tiver zerado
 // no orçamento e ainda colocar um aviso").
+// Aviso ⚠ embaixo do nome quando a linha de ferragem saiu a $0 (27/10).
+function moneyAvisoZerado(custo) {
+  return (Number(custo) || 0) > 0 ? ''
+    : '<div class="dim" style="color:#b45309;">⚠ ' + I18n.t('money.no_price_warn').replace(/:\s*$/, '') + '</div>';
+}
 function moneyItensSemPreco(linhas, out) {
   out = out || [];
   (linhas || []).forEach((p) => {
@@ -3242,6 +3247,16 @@ function moneyItensSemPreco(linhas, out) {
     // caixa do Trash com preço 0 tem que aparecer E avisar — regra fixa).
     if ((p.material_item_id || p.purchased_item_id) && !(custo > 0)) {
       const nome = p.material_item_name || p.purchased_item_name || p.reference || '';
+      if (out.indexOf(nome) < 0) out.push(nome);
+    }
+    // Dobradiça/corrediça com preço 0 no cadastro (27/10, Matt: porta de
+    // vidro puxou a dobradiça 165° a $0 e não avisou) — mesma regra.
+    if ((Number(p.hinge_count) || 0) > 0 && !((Number(p.hinge_cost) || 0) > 0)) {
+      const nome = p.hinge_model_name || I18n.t('money.row_hinges');
+      if (out.indexOf(nome) < 0) out.push(nome);
+    }
+    if (p.slide_model_id && !((Number(p.slide_cost) || 0) > 0)) {
+      const nome = p.slide_model_name || I18n.t('money.row_slides');
       if (out.indexOf(nome) < 0) out.push(nome);
     }
   });
@@ -3389,13 +3404,13 @@ function renderMoneyFabrica(body, rel) {
   const dobradicaPorModelo = Object.keys(fer.dobradicaPorModelo).map((k) => fer.dobradicaPorModelo[k])
     .sort((a, b) => b.custo - a.custo || a.name.localeCompare(b.name));
   dobradicaPorModelo.forEach((l) => {
-    html += linha(I18n.t('money.row_hinges') + ' — ' + l.name, l.qtd + ' ' + I18n.t('money.unit_pieces'), l.custo);
+    html += linha(I18n.t('money.row_hinges') + ' — ' + l.name + moneyAvisoZerado(l.custo), l.qtd + ' ' + I18n.t('money.unit_pieces'), l.custo);
   });
   const corredicaPorModelo = Object.keys(fer.corredicaPorModelo).map((k) => fer.corredicaPorModelo[k])
     .sort((a, b) => b.custo - a.custo || a.name.localeCompare(b.name));
   corredicaPorModelo.forEach((l) => {
     const tam = l.rail_length_mm != null ? ' (' + Math.round(l.rail_length_mm) + 'mm)' : '';
-    html += linha(I18n.t('money.row_slides') + ' — ' + l.name + tam, l.qtd + ' ' + I18n.t('money.unit_pairs'), l.custo);
+    html += linha(I18n.t('money.row_slides') + ' — ' + l.name + tam + moneyAvisoZerado(l.custo), l.qtd + ' ' + I18n.t('money.unit_pairs'), l.custo);
   });
   // FERRAGEM DE MONTAGEM — minifix (pino+tambor), cavilha, suporte de
   // prateleira etc. (migration 119, ligada no $ Fábrica em 2026-08-18). Uma
@@ -3945,7 +3960,10 @@ function collectProjectCostReport(slots) {
         // dobradiça com preço 0 também conta (25/10 — porta-módulo do canto
         // 90°: 4 dobradiças de 165° cadastradas a $0 sumiam do relatório)
         const temDob = hingeCost > 0 || (Number(p.hinge_count) || 0) > 0;
-        if (temDob || slideCost > 0) {
+        // corrediça com preço 0 também (27/10) — slide_model_id só vem
+        // quando a peça realmente leva corrediça (pricing.js)
+        const temCorr = slideCost > 0 || !!p.slide_model_id;
+        if (temDob || temCorr) {
           const qtdEfetiva = (Number(p.quantity) || 1) * fator;
           const baseLabel = (prefixo ? prefixo + ' › ' : '') + (p.reference || '');
           // Entra no detalhe (linha própria na tabela "BY PART", coluna
@@ -3970,7 +3988,7 @@ function collectProjectCostReport(slots) {
             registraFerragemModelo(rel.ferragem.dobradicaPorModelo, p.hinge_model_id, p.hinge_model_name, null,
               (Number(p.hinge_count) || 0) * qtdEfetiva, hingeCost);
           }
-          if (slideCost > 0) {
+          if (temCorr) {
             rel.ferragem['corrediça'].qtd += qtdEfetiva;
             rel.ferragem['corrediça'].custo += slideCost;
             registraFerragemModelo(rel.ferragem.corredicaPorModelo, p.slide_model_id, p.slide_model_name,
@@ -4082,7 +4100,7 @@ function collectProjectCostReport(slots) {
         registraFerragemModelo(rel.ferragem.dobradicaPorModelo, p.hinge_model_id, p.hinge_model_name, null,
           (Number(p.hinge_count) || 0) * qtd, Number(p.hinge_cost) || 0);
       }
-      if ((Number(p.slide_cost) || 0) > 0) {
+      if ((Number(p.slide_cost) || 0) > 0 || p.slide_model_id) {
         rel.ferragem['corrediça'].qtd += qtd;
         rel.ferragem['corrediça'].custo += Number(p.slide_cost) || 0;
         registraFerragemModelo(rel.ferragem.corredicaPorModelo, p.slide_model_id, p.slide_model_name,

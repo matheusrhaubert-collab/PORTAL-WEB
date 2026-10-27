@@ -1483,9 +1483,11 @@
       hinge_model_id: hinge_count > 0 && hingeModel ? hingeModel.id : null,
       hinge_model_name: hinge_count > 0 && hingeModel ? hingeModel.name : null,
       slide_cost: slide_cost,
-      slide_model_id: slide_cost > 0 && slideModel ? slideModel.id : null,
-      slide_model_name: slide_cost > 0 && slideModel ? slideModel.name : null,
-      slide_model_rail_length_mm: slide_cost > 0 && slideModel ? slideModel.rail_length_mm : null,
+      // Modelo sai mesmo com preço 0 (27/10, Matt: corrediça/dobradiça a $0
+      // tem que aparecer COM AVISO no $ Fábrica/Orçamento, igual item comprado).
+      slide_model_id: piece.slides_per_unit > 0 && slideModel ? slideModel.id : null,
+      slide_model_name: piece.slides_per_unit > 0 && slideModel ? slideModel.name : null,
+      slide_model_rail_length_mm: piece.slides_per_unit > 0 && slideModel ? slideModel.rail_length_mm : null,
       piece_total: piece_total
     };
   }
@@ -1701,9 +1703,9 @@
       hinge_model_id: hinge_count > 0 && effectiveHingeModel ? effectiveHingeModel.id : null,
       hinge_model_name: hinge_count > 0 && effectiveHingeModel ? effectiveHingeModel.name : null,
       slide_cost: slide_cost,
-      slide_model_id: slide_cost > 0 && effectiveSlideModel ? effectiveSlideModel.id : null,
-      slide_model_name: slide_cost > 0 && effectiveSlideModel ? effectiveSlideModel.name : null,
-      slide_model_rail_length_mm: slide_cost > 0 && effectiveSlideModel ? effectiveSlideModel.rail_length_mm : null,
+      slide_model_id: piece.opening_type === 'slide_out' && piece.slides_per_unit > 0 && effectiveSlideModel ? effectiveSlideModel.id : null,
+      slide_model_name: piece.opening_type === 'slide_out' && piece.slides_per_unit > 0 && effectiveSlideModel ? effectiveSlideModel.name : null,
+      slide_model_rail_length_mm: piece.opening_type === 'slide_out' && piece.slides_per_unit > 0 && effectiveSlideModel ? effectiveSlideModel.rail_length_mm : null,
       piece_total: piece_total
     };
   }
