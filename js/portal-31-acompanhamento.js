@@ -328,7 +328,7 @@ function trkPdfNew(order, title, landscape) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format: 'letter' });
   // título do PDF = rótulo do botão sem o "(PDF)"
-  title = String(title).replace(/\s*\(PDF\)\s*$/i, '');
+  title = String(title).replace(/\s*\(PDF\)/gi, '');
   const ctx = { doc, W: doc.internal.pageSize.getWidth(), H: doc.internal.pageSize.getHeight(), y: TRK_M, title, order };
   trkPdfHeader(ctx);
   return ctx;
@@ -464,8 +464,48 @@ async function trkColorsFor(items) {
   if (!ids.length) return new Map();
   try {
     const { data } = await supabaseClient.from('colors').select('*').in('id', ids);
-    return new Map((data || []).map((c) => [c.id, c]));
+    const cols = data || [];
+    // nome do tamanho de chapa padrão ("EGGER 5X9") — ajuda a reconhecer cor EGGER
+    const sizeIds = [...new Set(cols.map((c) => c.default_sheet_size_id).filter(Boolean))];
+    if (sizeIds.length) {
+      try {
+        const { data: sz } = await supabaseClient.from('cutting_list_sheet_sizes').select('*').in('id', sizeIds);
+        const byId = new Map((sz || []).map((x) => [x.id, x]));
+        cols.forEach((c) => { const x = byId.get(c.default_sheet_size_id); if (x) c._sheetName = x.name || x.label || ''; });
+      } catch (e) { /* sem tamanho de chapa: segue só pelo nome da cor */ }
+    }
+    return new Map(cols.map((c) => [c.id, c]));
   } catch (e) { return new Map(); }
+}
+
+// SELOS DO MATERIAL (26/10, Matt: "coloca esses selos na ficha técnica,
+// embaixo, quando for EGGER. e se for plywood coloca só CARB2").
+// EGGER = nome da cor ou da chapa padrão com "EGGER", ou código de decor
+// EGGER (W1100 ST9, H1816 ST14, U961 ST9…). Fonte dos selos: fichas da
+// EGGER USA (Lexington, NC) — Eurospan PB TSCA 188 / Eurodekor TFL TSCA 187.
+function trkIsEgger(col) {
+  if (!col) return false;
+  const txt = [col.name, col._sheetName].filter(Boolean).join(' ');
+  return /egger/i.test(txt) || /\b[WHUFS]\d{3,4}\s*ST\s?\d{1,2}\b/i.test(String(col.name || ''));
+}
+function trkSealsFor(col) {
+  if (!col) return null;
+  if (trkIsEgger(col)) return String(col.substrato || 'mdp') === 'mdf' ? trkT('seal_egger_mdf') : trkT('seal_egger_pb');
+  if (String(col.substrato || '') === 'plywood') return trkT('seal_plywood');
+  return null;
+}
+// [{label, text}] por papel (caixa / porta / outros); papéis com o mesmo selo juntam
+function trkModuleSeals(item, colorsById) {
+  const byText = new Map();
+  trkColorsOf(item).forEach((c) => {
+    const col = c.color_id ? colorsById.get(c.color_id) : null;
+    const t = trkSealsFor(col);
+    if (!t) return;
+    const label = `${c.role_name || ''}${c.color_name ? ' — ' + c.color_name : ''}`;
+    if (!byText.has(t)) byText.set(t, []);
+    byText.get(t).push(label);
+  });
+  return Array.from(byText.entries()).map(([text, labels]) => ({ label: labels.join(' / '), text }));
 }
 
 // AMOSTRA DA COR (26/10, Matt: "quero ver a cor da porta e a cor da caixa em
@@ -505,7 +545,7 @@ async function trkSwatchFor(col) {
 // [{label, name, hex, dataUrl}] — caixa primeiro, depois porta/frente
 async function trkModuleSwatches(item, colorsById) {
   const out = [];
-  const roles = item.selected_colors || [];
+  const roles = trkColorsOf(item);
   const pick = (re) => roles.find((c) => re.test(String(c.role_name || '')));
   const box = pick(/caixa|casco|carca|box|body|estrutura/i);
   const door = pick(/porta|frente|door|front/i);
@@ -522,6 +562,11 @@ async function trkModuleSwatches(item, colorsById) {
     out.push({ label: c.role_name || trkT('draw_color'), name: c.color_name || '—', hex: sw ? sw.hex : null, dataUrl: sw ? sw.dataUrl : null });
   }
   return out;
+}
+
+// só os papéis de cor que o item usa (orderItemVisibleColors, portal-02)
+function trkColorsOf(it) {
+  return (typeof orderItemVisibleColors === 'function') ? orderItemVisibleColors(it) : (it.selected_colors || []);
 }
 
 // "17 7/8" x 30" (x2)" — agrupa medidas iguais
@@ -603,14 +648,18 @@ function trkModuleSpecRows(item, colorsById) {
       col && Number(col.thickness_mm) > 0 ? trkDim(col.thickness_mm) : null].filter(Boolean).join(' ');
     return (c.color_name || '—') + (extra ? ` (${extra})` : '');
   };
-  const mats = (item.selected_colors || []).map((c) => {
+  const mats = trkColorsOf(item).map((c) => {
     const role = String(c.role_name || '');
     const label = /caixa|casco|carca|box|body|estrutura/i.test(role) ? trkT('spec_mat_box')
       : (/porta|frente|door|front/i.test(role) ? trkT('spec_mat_door') : trkT('spec_mat_other', { role: role || '?' }));
     return [label, matTxt(c)];
   });
-  if (!mats.some((r) => r[0] === trkT('spec_mat_box'))) mats.unshift([trkT('spec_mat_box'), '—']);
-  if (!mats.some((r) => r[0] === trkT('spec_mat_door'))) mats.splice(1, 0, [trkT('spec_mat_door'), '—']);
+  // linha vazia de caixa/porta só quando o item tem mais de 1 papel (painel
+  // de 1 cor só não ganha "Material caixa: —")
+  if (mats.length > 1 || !mats.length) {
+    if (!mats.some((r) => r[0] === trkT('spec_mat_box'))) mats.unshift([trkT('spec_mat_box'), '—']);
+    if (!mats.some((r) => r[0] === trkT('spec_mat_door'))) mats.splice(1, 0, [trkT('spec_mat_door'), '—']);
+  }
 
   const rows = [
     [trkT('spec_size'), `${trkDim(w)} x ${trkDim(h)} x ${trkDim(d)}` + (unit !== 'mm' ? ` (${Math.round(w)} x ${Math.round(h)} x ${Math.round(d)} mm)` : '')],
@@ -669,7 +718,7 @@ async function trkPdfDrawings(order, items) {
   const colorsById = await trkColorsFor(list);
   const specsByNum = new Map();
   for (let i = 0; i < list.length; i++) {
-    specsByNum.set(i + 1, { rows: trkModuleSpecRows(list[i], colorsById), swatches: await trkModuleSwatches(list[i], colorsById) });
+    specsByNum.set(i + 1, { rows: trkModuleSpecRows(list[i], colorsById), swatches: await trkModuleSwatches(list[i], colorsById), seals: trkModuleSeals(list[i], colorsById) });
   }
 
   // 1) caminho principal: Plano Técnico do projeto de origem
@@ -764,6 +813,10 @@ async function trkPdfDrawings(order, items) {
     if (spec.swatches.length) trkPdfSwatches(ctx, spec.swatches);
     trkPdfSection(ctx, trkT('spec_title'));
     trkPdfTable(ctx, [{ label: '', w: 0.3 }, { label: '', w: 0.7 }], spec.rows);
+    if (spec.seals && spec.seals.length) {
+      trkPdfSection(ctx, trkT('seals_title'));
+      trkPdfTable(ctx, [{ label: '', w: 0.3 }, { label: '', w: 0.7 }], spec.seals.map((x) => [x.label, x.text]));
+    }
   }
   trkPdfFooters(ctx);
   doc.save(`${trkT('file_drawings')}-${trkFileBase(order)}.pdf`);
@@ -822,7 +875,7 @@ async function trkPdfModuleList(order, items, mode) {
   for (let i = 0; i < list.length; i++) {
     const it = list[i];
     const sws = [];
-    for (const c of (it.selected_colors || [])) {
+    for (const c of trkColorsOf(it)) {
       const col = c.color_id ? colorsById.get(c.color_id) : null;
       const sw = col ? await trkSwatchFor(col) : null;
       sws.push({ label: c.role_name || '', name: c.color_name || '—', hex: sw ? sw.hex : null, dataUrl: sw ? sw.dataUrl : null });

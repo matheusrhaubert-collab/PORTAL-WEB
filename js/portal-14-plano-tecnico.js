@@ -1281,7 +1281,9 @@ function ptModuleSheetDims(ctx, scene, wallGeo, S, fs, hideFronts) {
 // Página da folha: os 2 desenhos lado a lado + tabela de especificação.
 // swatches (26/10): [{label, name, hex, dataUrl}] — a IMAGEM da cor da caixa
 // e da porta (textura real do cadastro; sem textura, o swatch_hex).
-function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches) {
+// seals (26/10): [{label, text}] — selos do material (EGGER: CARB2/TSCA/ECC…;
+// plywood: CARB2), largura inteira embaixo da especificação.
+function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches, seals) {
   ptPdfPage(doc, st, null, title, ptT('module_sheet_sub'), null);
   const W = 279.4, M = 10, colW = (W - 2 * M - 8) / 2, top = 37;
   const sw = (swatches || []).filter(Boolean);
@@ -1330,6 +1332,7 @@ function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches) {
   doc.text(ptT('module_spec_title').toUpperCase(), M, y0);
   doc.setDrawColor(224, 221, 214); doc.line(M, y0 + 1.5, W - M, y0 + 1.5);
   doc.setTextColor(0);
+  let yEnd = y0 + 6.5;
   [rows.slice(0, half), rows.slice(half)].forEach((col, ci) => {
     let y = y0 + 6.5;
     const x0 = M + ci * (colW + 8);
@@ -1342,7 +1345,26 @@ function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches) {
       doc.setFont('helvetica', 'normal'); doc.text(lines, x0 + lw, y);
       y += h;
     });
+    yEnd = Math.max(yEnd, y);
   });
+  const sl = (seals || []).filter((x) => x && x.text);
+  if (sl.length) {
+    let y = yEnd + 3;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(110, 69, 39);
+    doc.text(ptT('module_seals_title').toUpperCase(), M, y);
+    doc.setDrawColor(224, 221, 214); doc.line(M, y + 1.3, W - M, y + 1.3);
+    doc.setTextColor(0);
+    y += 5.5;
+    sl.forEach((x) => {
+      // rótulo (papel — cor) numa linha, selos embaixo na largura toda
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.3);
+      doc.text(doc.splitTextToSize(String(x.label || ''), W - 2 * M - 2).slice(0, 1), M + 1.2, y);
+      doc.setFont('helvetica', 'normal');
+      const lines = doc.splitTextToSize(String(x.text), W - 2 * M - 2);
+      doc.text(lines, M + 1.2, y + 3.8);
+      y += 3.8 + lines.length * 3.5 + 2;
+    });
+  }
 }
 
 // ---------- fluxo do botão ----------
@@ -1473,7 +1495,7 @@ async function generateProjectTechPlan(opts) {
         const cWithout = view ? ptRenderWall(scene, view, nums, true) : null;
         const spec = opts.moduleSpecs(numero, slot);
         ptPdfModuleSheet(doc, st, ptT('module_sheet_title', { n: String(numero).padStart(3, '0'), name: (slot.module && slot.module.name) || '' }),
-          cWith, cWithout, Array.isArray(spec) ? spec : (spec && spec.rows), spec && spec.swatches);
+          cWith, cWithout, Array.isArray(spec) ? spec : (spec && spec.rows), spec && spec.swatches, spec && spec.seals);
       }
     }
 
@@ -1481,7 +1503,10 @@ async function generateProjectTechPlan(opts) {
     const rows = [];
     seq.forEach(({ slot, numero }) => {
       if (ptIsDecor(slot)) return;
-      const colors = (slot.selectedColors || [])
+      const usadas = (typeof orderItemVisibleColors === 'function')
+        ? orderItemVisibleColors({ selected_colors: slot.selectedColors, breakdown: slot.result && slot.result.breakdown })
+        : (slot.selectedColors || []);
+      const colors = usadas
         .filter((c) => c && c.color_name)
         .map((c) => (c.role_name || ptRoleName(c.role_id) || '') + ': ' + c.color_name)
         .join(' · ');

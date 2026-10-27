@@ -64,8 +64,34 @@ function currentLocale() {
 // partir de selected_colors (jsonb: [{ role_id, role_name, color_id,
 // color_name }]) — substitui os antigos box_color_name/door_color_name
 // fixos, já que agora o número de papéis de cor é dinâmico (migration 035).
+// SÓ OS PAPÉIS DE COR QUE O ITEM USA DE VERDADE (26/10, Matt, painel
+// "Painel 3/4 · Horizontal" mostrando "Painel" E "Caixa": "painel deve ter
+// só uma cor e não caixa... tá estranho"). selected_colors guarda a cor de
+// TODO papel que o módulo/projeto tinha escolhido, inclusive papel que
+// nenhuma peça deste item usa. Filtra pelos color_role_id do breakdown
+// congelado (peças e sub-módulos). Breakdown sem papel nenhum (pedido muito
+// antigo) = mostra tudo, como sempre.
+function orderItemUsedRoleIds(breakdown, out) {
+  out = out || new Set();
+  // mesma regra da etiqueta A5 do ERP (etiqueta-modulo.js): item COMPRADO
+  // (puxador, pé…) não conta — só peça cortada e sub-módulo
+  (breakdown || []).forEach((p) => {
+    if (!p || (p.origin || 'fabricacao') === 'comprado') return;
+    if (p.color_role_id) out.add(p.color_role_id);
+    if (p.is_module) orderItemUsedRoleIds(p.child_breakdown, out);
+  });
+  return out;
+}
+function orderItemVisibleColors(it) {
+  const colors = Array.isArray(it && it.selected_colors) ? it.selected_colors : [];
+  const used = orderItemUsedRoleIds(it && it.breakdown);
+  if (!used.size) return colors;
+  const f = colors.filter((c) => c && (!c.role_id || used.has(c.role_id)));
+  return f.length ? f : colors;
+}
+
 function formatColorsLine(it) {
-  const colors = Array.isArray(it.selected_colors) ? it.selected_colors : [];
+  const colors = orderItemVisibleColors(it);
   if (colors.length === 0) return '';
   return colors.map((c) => `${c.role_name}: ${c.color_name}`).join(' | ');
 }
@@ -2027,7 +2053,7 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
   // pra ESTE item, diferente do painel de abas no topo da tela (que troca o
   // papel em todos os itens que o usam de uma vez). Desabilitado quando o
   // pedido já foi aprovado (trava tudo, mesma regra do botão "Editar").
-  const colors = Array.isArray(it.selected_colors) ? it.selected_colors : [];
+  const colors = orderItemVisibleColors(it);
   const colorsHtml = colors.length
     ? `<div class="po-order-item-colors">${colors.map((c) => {
         const colorRec = colorById && colorById.get(c.color_id);
