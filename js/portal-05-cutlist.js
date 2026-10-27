@@ -376,6 +376,57 @@ function canGenerateProposal() {
   return role === 'lojista' || role === 'contractor' || role === 'administrador';
 }
 
+// QUEM PODE FAZER PEDIDO (27/10/2026, Matt: "pra mandar pedido deve ser
+// necessário ser dealer. pra cliente coloca um contato lá em cima,
+// sales@legnocabinets.com, WhatsApp e telefone da empresa com become a
+// dealer"). Conta 'cliente' monta orçamento e projeto à vontade, mas não
+// envia, salva nem aprova pedido — no lugar aparece o contato. Dealer
+// (lojista), vendedor dele, contractor e admin seguem como sempre. A trava
+// de verdade está no banco (migration 248); isto é só a tela.
+const BECOME_DEALER_CONTACT = {
+  email: 'sales@legnocabinets.com',
+  phone: '+1 (352) 988-8801',
+  tel: '+13529888801',
+  whatsapp: 'https://wa.me/13529888801'
+};
+function isRetailClientAccount() {
+  // perfil ainda não carregado = não bloqueia na tela (o banco segura)
+  if (!currentUserProfile) return false;
+  return !['lojista', 'vendedor', 'contractor', 'administrador'].includes(currentUserProfile.role);
+}
+function becomeDealerLinksHtml() {
+  const c = BECOME_DEALER_CONTACT;
+  return `<a href="mailto:${c.email}">✉ ${c.email}</a>`
+    + `<a href="${c.whatsapp}" target="_blank" rel="noopener">🟢 ${I18n.t('dealer_cta.whatsapp')}</a>`
+    + `<a href="tel:${c.tel}">📞 ${c.phone}</a>`;
+}
+function refreshBecomeDealerUi() {
+  const el = document.getElementById('po-become-dealer');
+  if (!el) return;
+  const show = !!currentUser && isRetailClientAccount();
+  el.style.display = show ? '' : 'none';
+  el.innerHTML = show ? `<strong>${I18n.t('dealer_cta.label')}</strong>${becomeDealerLinksHtml()}` : '';
+}
+function showBecomeDealerModal() {
+  let ov = document.getElementById('po-become-dealer-modal');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'po-become-dealer-modal';
+    ov.className = 'po-become-dealer-modal';
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.style.display = 'none'; });
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<div class="po-become-dealer-box" role="dialog" aria-modal="true">
+      <h3>${I18n.t('dealer_cta.label')}</h3>
+      <p>${I18n.t('dealer_cta.need')}</p>
+      <div class="po-become-dealer-links">${becomeDealerLinksHtml()}</div>
+      <button type="button" class="secondary" id="po-become-dealer-close">${I18n.t('dealer_cta.close')}</button>
+    </div>`;
+  ov.style.display = 'flex';
+  const btn = document.getElementById('po-become-dealer-close');
+  if (btn) btn.addEventListener('click', () => { ov.style.display = 'none'; });
+}
+
 // Toggle Legno/Dealer DESABILITADO (2026-09-03, pedido do usuário: "essa
 // troca que pedi de um pra outro nao faz mais sentido, pode desabilitar...
 // e tira opcao da legno") — dealer (isDealer()) fica SEMPRE travado em
@@ -465,6 +516,7 @@ function refreshDealerUiVisibility() {
   refreshDealerStoreInfoInputs();
   if (dealer) loadDealerTeamList();
   loadDealerPricingConfig().then(() => { if (typeof renderMarginsModal === 'function') renderMarginsModal(); });
+  refreshBecomeDealerUi();
 }
 
 // ---------- MINHA EQUIPE / VENDEDORES (migration 149, 2026-09-02) ----------

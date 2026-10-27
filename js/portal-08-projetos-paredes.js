@@ -6029,6 +6029,8 @@ async function renderProjectSlotThumbnailFallback(slot, forcar) {
 }
 
 async function sendProjectToOrder() {
+  // conta 'cliente' não faz pedido (27/10) — mostra o contato "Become a dealer"
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) { showBecomeDealerModal(); return; }
   const errorEl = document.getElementById('po-proj-error');
   if (errorEl) errorEl.style.display = 'none';
   if (!projectSlots.length) {

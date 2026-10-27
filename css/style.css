@@ -6079,3 +6079,15 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 }
 .po-trk-modlist { display: inline-flex; gap: 4px; align-items: center; }
 .po-trk-modlist select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }
+
+/* "Become a dealer" — conta 'cliente' não faz pedido (27/10/2026) */
+.po-become-dealer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); margin-right: 8px; }
+.po-become-dealer strong { color: var(--accent-dark); }
+.po-become-dealer a, .po-become-dealer-links a { color: var(--text); text-decoration: none; white-space: nowrap; }
+.po-become-dealer a:hover, .po-become-dealer-links a:hover { text-decoration: underline; }
+.po-become-dealer-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0 12px; }
+.po-become-dealer-cta { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--bg); margin-top: 8px; }
+.po-become-dealer-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 10000; padding: 16px; }
+.po-become-dealer-box { background: var(--panel); color: var(--text); border-radius: 12px; padding: 20px 22px; max-width: 440px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.po-become-dealer-box h3 { margin: 0 0 6px; }
+@media (max-width: 720px) { .po-become-dealer { display: none !important; } }

@@ -737,6 +737,7 @@ if (continueShoppingBtnEl) continueShoppingBtnEl.addEventListener('click', conti
 // tinha NENHUM jeito de sair dali sem aprovar — agora tem este botão.
 async function saveOrderAndFreeCart() {
   if (!currentOrderDetail) return;
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) { showBecomeDealerModal(); return; }
   const errorEl = document.getElementById('po-order-detail-error');
   const statusEl = document.getElementById('po-order-detail-save-order-status');
   const btn = document.getElementById('po-order-detail-save-order-btn');
@@ -1452,12 +1453,25 @@ function renderOrderDetail() {
   const saveOrderStatus = document.getElementById('po-order-detail-save-order-status');
   if (saveOrderBtn) saveOrderBtn.style.display = isLocked ? 'none' : 'block';
   if (saveOrderStatus) saveOrderStatus.style.display = 'none';
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) {
+    approveBtn.style.display = 'none';
+    approveHint.style.display = 'none';
+    if (saveOrderBtn) saveOrderBtn.style.display = 'none';
+  }
 
   // "Continuar comprando" (pedido do usuário 2026-07-29) — mesma trava do
   // "Aprovar Pedido" (isLocked): não faz sentido acrescentar item num pedido
   // já decidido.
   const continueShoppingBtn = document.getElementById('po-order-detail-continue-shopping-btn');
   if (continueShoppingBtn) continueShoppingBtn.style.display = isLocked ? 'none' : 'block';
+  // Conta 'cliente' (27/10): sem Salvar/Aprovar pedido — no lugar, o contato
+  // "Become a dealer". Orçamento continua editável normalmente.
+  const retail = typeof isRetailClientAccount === 'function' && isRetailClientAccount();
+  const ctaEl = document.getElementById('po-order-detail-dealer-cta');
+  if (ctaEl) {
+    ctaEl.style.display = (retail && !isLocked) ? 'block' : 'none';
+    if (retail && !isLocked) ctaEl.innerHTML = `<strong>${I18n.t('dealer_cta.label')}</strong><p class="hint">${I18n.t('dealer_cta.need')}</p><div class="po-become-dealer-links">${becomeDealerLinksHtml()}</div>`;
+  }
   // "Voltar ao projeto" (26/10) — só pedido do Projetos ainda Pendente
   const backProjBtn = document.getElementById('po-order-detail-back-project-btn');
   if (backProjBtn) backProjBtn.style.display = canReturnOrderToProject(order) ? 'block' : 'none';
@@ -2258,6 +2272,7 @@ async function updateOrderItemQuantity(itemId, newQtyRaw) {
 
 document.getElementById('po-order-detail-approve-btn').addEventListener('click', async () => {
   if (!currentOrderDetail) return;
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) { showBecomeDealerModal(); return; }
   const errorEl = document.getElementById('po-order-detail-error');
   errorEl.style.display = 'none';
   const client_name = document.getElementById('po-order-detail-client-name').value.trim();
