@@ -6077,3 +6077,5 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
   .po-trk-step:nth-child(4)::before { display: none; }
   .po-trk-card.po-trk-wide { grid-column: auto; }
 }
+.po-trk-modlist { display: inline-flex; gap: 4px; align-items: center; }
+.po-trk-modlist select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }

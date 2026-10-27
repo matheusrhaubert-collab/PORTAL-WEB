@@ -241,6 +241,14 @@ async function renderOrderTracking(order, items) {
       <button type="button" class="secondary" id="po-trk-vol-btn" ${temVol ? '' : 'disabled'}>${trkEsc(trkT('pdf_volumes'))}</button>
       <button type="button" class="secondary" id="po-trk-draw-btn">${trkEsc(trkT('pdf_drawings'))}</button>
       <button type="button" class="secondary" id="po-trk-pcp-btn">${trkEsc(trkT('pdf_pcp'))}</button>
+      <span class="po-trk-modlist">
+        <button type="button" class="secondary" id="po-trk-modlist-btn">${trkEsc(trkT('pdf_modlist'))}</button>
+        <select id="po-trk-modlist-mode" aria-label="${trkEsc(trkT('modlist_price_label'))}">
+          ${(typeof isSellerAccount === 'function' && isSellerAccount()) ? '' : `<option value="factory">${trkEsc(trkT('modlist_factory'))}</option>`}
+          <option value="client">${trkEsc(trkT('modlist_client'))}</option>
+          <option value="none">${trkEsc(trkT('modlist_none'))}</option>
+        </select>
+      </span>
       <span class="hint">${trkEsc(volTxt)}</span>
       <span class="hint" id="po-trk-status"></span>
     </div>
@@ -264,6 +272,7 @@ async function renderOrderTracking(order, items) {
   wire('po-trk-vol-btn', () => trkPdfVolumes(order));
   wire('po-trk-draw-btn', () => trkPdfDrawings(order, items));
   wire('po-trk-pcp-btn', () => trkPdfPcp(order, items));
+  wire('po-trk-modlist-btn', () => trkPdfModuleList(order, items, (document.getElementById('po-trk-modlist-mode') || {}).value || 'none'));
   const invBtn = document.getElementById('po-trk-invoice-btn');
   if (invBtn) invBtn.addEventListener('click', async () => {
     const win = window.open('', '_blank'); // abre no clique (bloqueador de pop-up)
@@ -783,6 +792,127 @@ function trkPdfSwatches(ctx, sws) {
   });
   doc.setTextColor(0);
   ctx.y = y + sz + 7;
+}
+
+// ---------- PDF: lista de módulos (como os cartões da tela do pedido) ----------
+// Matt, 26/10: "um botão lá em cima com os outros que mostra os módulos como
+// estão aqui, com valor de fábrica, valor do cliente ou sem valor. PDF".
+//   factory = tabela − desconto de fábrica (o que o dealer paga — igual a tela)
+//   client  = preço de revenda do dealer (getDisplayPriceRatioOnly por item,
+//             getDisplayPrice no total — extra fixo entra 1x, igual à Proposta)
+//   none    = sem preço nenhum
+// Vendedor nunca vê a opção "fábrica" (migration 149).
+async function trkPdfModuleList(order, items, mode) {
+  if (mode === 'factory' && typeof isSellerAccount === 'function' && isSellerAccount()) mode = 'client';
+  const list = trkItemsSorted(items);
+  const colorsById = await trkColorsFor(list);
+  const ctx = trkPdfNew(order, trkT('pdf_modlist') + (mode === 'none' ? '' : ' — ' + trkT('modlist_' + mode)), false);
+  const { doc, W } = ctx;
+  const unit = trkUnit();
+  const pct = (typeof getFactoryDiscountPct === 'function') ? getFactoryDiscountPct() : 0;
+  const priceOf = (table) => {
+    const v = Number(table) || 0;
+    if (mode === 'factory') return v * (1 - pct / 100);
+    if (mode === 'client') return (typeof getDisplayPriceRatioOnly === 'function') ? getDisplayPriceRatioOnly(v) : v;
+    return null;
+  };
+  const decorIds = new Set((typeof allModules !== 'undefined' ? allModules : []).filter((m) => m.is_decoration).map((m) => m.id));
+  const IMG = 34, ROW = 40;
+  let somaTabela = 0, somaItens = 0;
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i];
+    const sws = [];
+    for (const c of (it.selected_colors || [])) {
+      const col = c.color_id ? colorsById.get(c.color_id) : null;
+      const sw = col ? await trkSwatchFor(col) : null;
+      sws.push({ label: c.role_name || '', name: c.color_name || '—', hex: sw ? sw.hex : null, dataUrl: sw ? sw.dataUrl : null });
+    }
+    const modelos = (typeof orderItemModelos === 'function') ? orderItemModelos(it.breakdown) : { portas: false, gavetas: false, porta: new Set(), gaveta: new Set() };
+    const linhas = [];
+    if (modelos.portas || modelos.porta.size) linhas.push(`${I18n.t('order_detail.door_model')}: ${modelos.porta.size ? [...modelos.porta].join(', ') : 'Flat'}`);
+    if (modelos.gavetas || modelos.gaveta.size) linhas.push(`${I18n.t('order_detail.drawer_model')}: ${modelos.gaveta.size ? [...modelos.gaveta].join(', ') : 'Standard'}`);
+    const h = Math.max(ROW, 22 + linhas.length * 4.5 + Math.ceil(sws.length / 2) * 9);
+    trkPdfEnsure(ctx, h + 2);
+    const y = ctx.y;
+    // número
+    doc.setFillColor(43, 38, 33); doc.roundedRect(TRK_M, y, 9, 6, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(255);
+    doc.text(String(i + 1).padStart(2, '0'), TRK_M + 4.5, y + 4.2, { align: 'center' });
+    doc.setTextColor(0);
+    // imagem
+    const xi = TRK_M + 12;
+    doc.setDrawColor(224, 221, 214); doc.setLineWidth(0.3); doc.roundedRect(xi, y, IMG, IMG, 2, 2, 'S');
+    const meta = await proposalImageMeta(it.thumbnail_data_url || null);
+    if (meta) proposalFitImageCentered(doc, meta, xi + 1.5, y + 1.5, IMG - 3, IMG - 3);
+    // SKU grande
+    let xt = xi + IMG + 5;
+    const sku = (typeof findMatchingSkuReference === 'function') ? findMatchingSkuReference(it.module_id, it.width_mm, it.height_mm) : null;
+    if (sku) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+      doc.text(trkPdfTxt(sku), xt, y + 19);
+      xt += Math.max(34, doc.getTextWidth(trkPdfTxt(sku)) + 6);
+    }
+    // textos
+    const priceW = mode === 'none' ? 0 : 38;
+    const textW = W - TRK_M - priceW - xt - 2;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(110);
+    doc.text(trkPdfTxt(`${trkDim(it.width_mm)} x ${trkDim(it.height_mm)} x ${trkDim(it.depth_mm)}`.toUpperCase()), xt, y + 4);
+    doc.setTextColor(30); doc.setFontSize(12);
+    doc.text(doc.splitTextToSize(trkPdfTxt(it.module_name || ''), textW).slice(0, 1), xt, y + 10);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(90);
+    let yy = y + 15;
+    linhas.forEach((l) => { doc.text(trkPdfTxt(l), xt, yy); yy += 4.5; });
+    doc.setTextColor(0);
+    // cores (amostra real) em 2 colunas
+    yy += 1;
+    sws.forEach((c, k) => {
+      const cx = xt + (k % 2) * (textW / 2), cy = yy + Math.floor(k / 2) * 9;
+      let drew = false;
+      if (c.dataUrl) { try { doc.addImage(c.dataUrl, 'JPEG', cx, cy, 7, 7); drew = true; } catch (e) { /* hex */ } }
+      if (!drew) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(c.hex || ''));
+        const n = m ? parseInt(m[1], 16) : 0xdddddd;
+        doc.setFillColor((n >> 16) & 255, (n >> 8) & 255, n & 255); doc.rect(cx, cy, 7, 7, 'F');
+      }
+      doc.setDrawColor(170); doc.setLineWidth(0.2); doc.rect(cx, cy, 7, 7, 'S');
+      doc.setFontSize(8.5); doc.setTextColor(40);
+      doc.text(doc.splitTextToSize(trkPdfTxt(`${c.label}: ${c.name}`), textW / 2 - 10).slice(0, 2), cx + 9, cy + 4.6);
+      doc.setTextColor(0);
+    });
+    // quantidade + preço
+    const qty = Number(it.quantity) || 1;
+    const isDecor = decorIds.has(it.module_id);
+    const xr = W - TRK_M;
+    doc.setFontSize(8.5); doc.setTextColor(110);
+    doc.text(trkPdfTxt(`${I18n.t('order_detail.quantity_label')}: ${qty}`), xr, y + 4, { align: 'right' });
+    doc.setTextColor(0);
+    if (mode !== 'none' && !isDecor) {
+      const v = priceOf(it.total_price);
+      somaTabela += Number(it.total_price) || 0; somaItens += v;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text(formatMoney(v), xr, y + 12, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      if (qty > 1) { doc.setFontSize(7.5); doc.setTextColor(120); doc.text(trkPdfTxt(`${formatMoney(v / qty)} ${trkT('modlist_each')}`), xr, y + 16.5, { align: 'right' }); doc.setTextColor(0); }
+    }
+    ctx.y = y + h;
+    doc.setDrawColor(224, 221, 214); doc.setLineWidth(0.3); doc.line(TRK_M, ctx.y - 2, W - TRK_M, ctx.y - 2);
+    ctx.y += 2;
+  }
+  // total
+  if (mode !== 'none') {
+    const total = mode === 'client' && typeof getDisplayPrice === 'function' ? getDisplayPrice(somaTabela) : somaItens;
+    trkPdfEnsure(ctx, 14);
+    doc.setFillColor(246, 240, 232); doc.rect(TRK_M, ctx.y, W - TRK_M * 2, 11, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(trkPdfTxt(trkT('modlist_total')), TRK_M + 3, ctx.y + 7.2);
+    doc.setFontSize(13);
+    doc.text(formatMoney(total), W - TRK_M - 3, ctx.y + 7.4, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    ctx.y += 14;
+    if (mode === 'factory' && pct > 0) trkPdfNote(ctx, trkT('modlist_factory_note', { pct }));
+  }
+  trkPdfFooters(ctx);
+  doc.save(`${trkT('file_modlist')}-${trkFileBase(order)}.pdf`);
 }
 
 // ---------- PDF: lista do PCP (peças + processos + ferragens) ----------
