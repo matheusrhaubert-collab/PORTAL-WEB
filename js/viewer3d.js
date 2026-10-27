@@ -2554,6 +2554,27 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // FORNO EMBUTIDO (2026-10-27, Matt, Base Stove Cabinet and Cooktop):
+  // "tirar a frente falsa e as portas e colocar um painel cobrindo a frente
+  // com um forno no meio centralizado passando um pouco pra frente". A peça
+  // ocupa a profundidade do módulo (D), mas só a "boca" aparece: a moldura
+  // sai 40 mm à frente da caixa (~22 mm à frente do Painel Fixo) e o resto
+  // fica escondido atrás do painel. Painel de comando em cima, porta de vidro
+  // embaixo. Decorativo: fora do preço/pedido (pricing.js, /^decor_/).
+  function buildDecorForno(W, H, D, mats) {
+    const g = new THREE.Group();
+    const frente = D / 2 + 0.04;
+    const prof = Math.min(0.12, D);
+    const corpo = decorBoxMesh(W, H, prof, mats.main);
+    corpo.position.set(0, H / 2, frente - prof / 2);
+    g.add(corpo);
+    const ctrlH = Math.min(0.09, H * 0.16);
+    decorAddControlStrip(g, W * 0.84, ctrlH * 0.62, 0.012, 0, H - ctrlH / 2, frente + 0.006, mats.detail, mats.display, 4);
+    const doorH = H - ctrlH - 0.02, doorW = W - 0.03, doorD = 0.022;
+    decorAddDoorWithGlass(g, doorW, doorH, doorD, 0, 0.01 + doorH / 2, frente + doorD / 2, mats.main, mats.glass, mats.chrome, 'top');
+    return g;
+  }
+
   function buildDecorLavaLoucas(W, H, D, mats) {
     const g = new THREE.Group();
     const toeH = 0.09;
@@ -3591,6 +3612,7 @@ const Viewer3D = (function () {
     decor_fogao: buildDecorFogao,
     decor_microondas: buildDecorMicroondas,
     decor_forno_torre_duplo: buildDecorFornoTorreDuplo,
+    decor_forno: buildDecorForno, // 27/10 (Base Stove)
     decor_lava_loucas: buildDecorLavaLoucas,
     decor_pia: buildDecorPia,
     decor_farm_pia: buildDecorFarmPia, decor_farm_avental: buildDecorFarmAvental, // 25/10
