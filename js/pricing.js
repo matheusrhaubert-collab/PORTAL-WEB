@@ -893,7 +893,18 @@
     // 0,04 m² em vez de 1,12, porque pega a espessura como face. Numa peça
     // que roda conforme o uso não existe fórmula que acerte nas duas
     // orientações, e não dá pra escrever melhor: o avaliador não tem max/min.
-    const areaM2 = piece.area_auto
+    // TRAVA (2026-10-27, Matt: "isso nao pode acontecer. principalmente os
+    // flatbords"): componente FABRICADO com fórmula de área '0'/vazia e
+    // area_auto desligado saía com 0 m² — chapa e mão de obra de graça, só a
+    // fita cobrava (caso do "Flatbord 4L - Porta/Frente"). Fórmula zerada
+    // numa peça de verdade (2 medidas > 0) nunca é intencional: cai pra área
+    // automática. Peça comprada e peça só de mão de obra (0×0×0) ficam fora.
+    const formulaAreaZerada = !String(piece.area_m2_formula || '').trim() ||
+      /^0+(\.0+)?$/.test(String(piece.area_m2_formula).trim());
+    const ladosReais = [w, h, d].filter(function (v) { return v > 0; }).length >= 2;
+    const areaAutoEfetiva = piece.area_auto ||
+      (formulaAreaZerada && ladosReais && piece.origin !== 'comprado');
+    const areaM2 = areaAutoEfetiva
       ? (function () {
         const m = pecaNaMaquina(w, h, d, piece.positioning);
         return m.comprimento * m.largura / 1000000;
