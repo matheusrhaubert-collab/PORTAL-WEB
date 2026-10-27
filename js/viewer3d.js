@@ -2556,22 +2556,61 @@ const Viewer3D = (function () {
 
   // FORNO EMBUTIDO (2026-10-27, Matt, Base Stove Cabinet and Cooktop):
   // "tirar a frente falsa e as portas e colocar um painel cobrindo a frente
-  // com um forno no meio centralizado passando um pouco pra frente". A peça
-  // ocupa a profundidade do módulo (D), mas só a "boca" aparece: a moldura
-  // sai 40 mm à frente da caixa (~22 mm à frente do Painel Fixo) e o resto
-  // fica escondido atrás do painel. Painel de comando em cima, porta de vidro
-  // embaixo. Decorativo: fora do preço/pedido (pricing.js, /^decor_/).
+  // com um forno no meio centralizado passando um pouco pra frente".
+  // 2ª versão (Matt: "ta so uma box branca. usar um forno mesmo, pode
+  // colocar ele mais pra frente pra passar do painel"): cores FIXAS no
+  // código (inox + vidro preto + comando preto), não seguem a cor do
+  // componente (o componente nasceu copiado da farm, branco). A moldura sai
+  // 75 mm à frente da caixa (~55 mm à frente do Painel Fixo); o corpo que
+  // fica atrás do painel não aparece. Decorativo: fora do preço/pedido.
   function buildDecorForno(W, H, D, mats) {
     const g = new THREE.Group();
-    const frente = D / 2 + 0.04;
-    const prof = Math.min(0.12, D);
-    const corpo = decorBoxMesh(W, H, prof, mats.main);
-    corpo.position.set(0, H / 2, frente - prof / 2);
-    g.add(corpo);
-    const ctrlH = Math.min(0.09, H * 0.16);
-    decorAddControlStrip(g, W * 0.84, ctrlH * 0.62, 0.012, 0, H - ctrlH / 2, frente + 0.006, mats.detail, mats.display, 4);
-    const doorH = H - ctrlH - 0.02, doorW = W - 0.03, doorD = 0.022;
-    decorAddDoorWithGlass(g, doorW, doorH, doorD, 0, 0.01 + doorH / 2, frente + doorD / 2, mats.main, mats.glass, mats.chrome, 'top');
+    const inox = new THREE.MeshStandardMaterial({ color: 0xc4c8cc, metalness: 0.35, roughness: 0.35 });
+    const inoxEsc = new THREE.MeshStandardMaterial({ color: 0xa6abb0, metalness: 0.35, roughness: 0.4 });
+    const preto = new THREE.MeshStandardMaterial({ color: 0x141517, metalness: 0.3, roughness: 0.25 });
+    const vidro = new THREE.MeshStandardMaterial({ color: 0x08090b, metalness: 0.4, roughness: 0.06 });
+    const interno = new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.2, roughness: 0.6 });
+    const add = (w, h, d, mat, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(Math.max(w, 0.001), Math.max(h, 0.001), Math.max(d, 0.001)), mat);
+      m.position.set(x, y, z);
+      const e = buildEdgesForStyle(m.geometry); if (e) m.add(e);
+      g.add(m);
+      return m;
+    };
+    const frente = D / 2 + 0.075;              // face da moldura
+    const prof = Math.min(0.16, D);            // corpo visível (o resto fica atrás do painel)
+    const zc = frente - prof / 2;
+    // moldura / corpo de inox
+    add(W, H, prof, inox, 0, H / 2, zc);
+    // faixa de comando (preta) em cima
+    const ctrlH = Math.min(0.1, Math.max(0.06, H * 0.15));
+    const ctrlY = H - ctrlH / 2 - 0.008;
+    add(W - 0.016, ctrlH, 0.012, preto, 0, ctrlY, frente + 0.006);
+    // display no meio + 2 botões de cada lado
+    const disp = new THREE.MeshStandardMaterial({ color: 0x0c1a12, emissive: 0x2ecc71, emissiveIntensity: 0.5, roughness: 0.4 });
+    add(Math.min(0.14, W * 0.2), ctrlH * 0.42, 0.004, disp, 0, ctrlY, frente + 0.014);
+    [-0.34, -0.22, 0.22, 0.34].forEach((k) => {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.018, 0.02, 20), inox);
+      b.rotation.x = Math.PI / 2;
+      b.position.set(W * k, ctrlY, frente + 0.022);
+      g.add(b);
+    });
+    // porta: moldura de inox + vidro preto + janela
+    const portaH = H - ctrlH - 0.03, portaW = W - 0.02, portaD = 0.03;
+    const portaY = 0.01 + portaH / 2;
+    const zPorta = frente + portaD / 2;
+    add(portaW, portaH, portaD, inoxEsc, 0, portaY, zPorta);
+    add(portaW - 0.03, portaH - 0.11, 0.006, vidro, 0, portaY - 0.025, frente + portaD + 0.003);
+    add(portaW * 0.62, portaH * 0.42, 0.003, interno, 0, portaY - 0.035, frente + portaD + 0.0075);
+    // puxador em barra, afastado da porta (2 apoios)
+    const hy = portaY + portaH / 2 - 0.035, hz = frente + portaD + 0.045;
+    const barra = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, portaW * 0.82, 20), inox);
+    barra.rotation.z = Math.PI / 2;
+    barra.position.set(0, hy, hz);
+    g.add(barra);
+    [-1, 1].forEach((s) => add(0.018, 0.018, 0.045, inox, s * portaW * 0.36, hy, frente + portaD + 0.0225));
+    // fresta de ventilação embaixo
+    add(portaW * 0.9, 0.006, 0.004, preto, 0, 0.006, frente + 0.002);
     return g;
   }
 
