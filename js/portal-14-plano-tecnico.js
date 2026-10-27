@@ -1279,9 +1279,13 @@ function ptModuleSheetDims(ctx, scene, wallGeo, S, fs, hideFronts) {
 }
 
 // Página da folha: os 2 desenhos lado a lado + tabela de especificação.
-function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows) {
+// swatches (26/10): [{label, name, hex, dataUrl}] — a IMAGEM da cor da caixa
+// e da porta (textura real do cadastro; sem textura, o swatch_hex).
+function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches) {
   ptPdfPage(doc, st, null, title, ptT('module_sheet_sub'), null);
-  const W = 279.4, M = 10, colW = (W - 2 * M - 8) / 2, top = 37, maxH = 92;
+  const W = 279.4, M = 10, colW = (W - 2 * M - 8) / 2, top = 37;
+  const sw = (swatches || []).filter(Boolean);
+  const maxH = sw.length ? 80 : 92;
   [[cWith, ptT('with_fronts')], [cWithout, ptT('without_fronts')]].forEach(([c, cap], i) => {
     const x0 = M + i * (colW + 8);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(118, 111, 100);
@@ -1292,11 +1296,36 @@ function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows) {
     const w = c.width * r, h = c.height * r;
     doc.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', x0 + (colW - w) / 2, top + 1, w, h);
   });
+  // amostras de cor (caixa / porta) numa faixa entre os desenhos e a tabela
+  let yAfter = top + maxH + 6;
+  if (sw.length) {
+    const sz = 15, gap = 6, yS = top + maxH + 4;
+    let x = M;
+    sw.forEach((c) => {
+      let drew = false;
+      if (c.dataUrl) { try { doc.addImage(c.dataUrl, 'JPEG', x, yS, sz, sz); drew = true; } catch (e) { /* imagem ruim: cai pro hex */ } }
+      if (!drew) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(c.hex || ''));
+        const n = m ? parseInt(m[1], 16) : 0xdddddd;
+        doc.setFillColor((n >> 16) & 255, (n >> 8) & 255, n & 255);
+        doc.rect(x, yS, sz, sz, 'F');
+      }
+      doc.setDrawColor(150); doc.setLineWidth(0.2); doc.rect(x, yS, sz, sz, 'S');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(118, 111, 100);
+      doc.text(String(c.label || ''), x + sz + 2.5, yS + 5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(43, 38, 33);
+      const nm = doc.splitTextToSize(String(c.name || '—'), 52);
+      doc.text(nm.slice(0, 2), x + sz + 2.5, yS + 10);
+      x += sz + 2.5 + 56 + gap;
+    });
+    doc.setTextColor(0);
+    yAfter = yS + sz + 7;
+  }
   // especificação em 2 colunas de pares rótulo/valor
   const rows = specRows || [];
   if (!rows.length) return;
   const half = Math.ceil(rows.length / 2);
-  const y0 = top + maxH + 6, lw = 38, vw = colW - lw - 2;
+  const y0 = yAfter, lw = 38, vw = colW - lw - 2;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(110, 69, 39);
   doc.text(ptT('module_spec_title').toUpperCase(), M, y0);
   doc.setDrawColor(224, 221, 214); doc.line(M, y0 + 1.5, W - M, y0 + 1.5);
@@ -1442,8 +1471,9 @@ async function generateProjectTechPlan(opts) {
         const cWith = view ? ptRenderWall(scene, view, nums, false) : null;
         await ptSleep(10);
         const cWithout = view ? ptRenderWall(scene, view, nums, true) : null;
+        const spec = opts.moduleSpecs(numero, slot);
         ptPdfModuleSheet(doc, st, ptT('module_sheet_title', { n: String(numero).padStart(3, '0'), name: (slot.module && slot.module.name) || '' }),
-          cWith, cWithout, opts.moduleSpecs(numero, slot));
+          cWith, cWithout, Array.isArray(spec) ? spec : (spec && spec.rows), spec && spec.swatches);
       }
     }
 

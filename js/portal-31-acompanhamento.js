@@ -459,6 +459,62 @@ async function trkColorsFor(items) {
   } catch (e) { return new Map(); }
 }
 
+// AMOSTRA DA COR (26/10, Matt: "quero ver a cor da porta e a cor da caixa em
+// cada spec de cada módulo — a imagem mesmo da cor"). Textura real do
+// cadastro (colors.texture_url), recortada em quadrado e convertida pra JPEG
+// pequeno (o jsPDF só aceita PNG/JPEG); sem textura, fica o swatch_hex.
+const trkSwatchCache = new Map();
+function trkSquareJpeg(src, px) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        const c = document.createElement('canvas');
+        c.width = c.height = px;
+        c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, px, px);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      } catch (e) { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+async function trkSwatchFor(col) {
+  if (!col) return null;
+  if (trkSwatchCache.has(col.id)) return trkSwatchCache.get(col.id);
+  let dataUrl = null;
+  if (col.texture_url && typeof proposalUrlToDataUrl === 'function') {
+    const raw = await proposalUrlToDataUrl(col.texture_url);
+    if (raw) dataUrl = await trkSquareJpeg(raw, 240);
+  }
+  const sw = { name: col.name, hex: col.swatch_hex || null, dataUrl };
+  trkSwatchCache.set(col.id, sw);
+  return sw;
+}
+// [{label, name, hex, dataUrl}] — caixa primeiro, depois porta/frente
+async function trkModuleSwatches(item, colorsById) {
+  const out = [];
+  const roles = item.selected_colors || [];
+  const pick = (re) => roles.find((c) => re.test(String(c.role_name || '')));
+  const box = pick(/caixa|casco|carca|box|body|estrutura/i);
+  const door = pick(/porta|frente|door|front/i);
+  for (const [c, label] of [[box, trkT('spec_mat_box')], [door, trkT('spec_mat_door')]]) {
+    if (!c) continue;
+    const col = c.color_id ? colorsById.get(c.color_id) : null;
+    const sw = col ? await trkSwatchFor(col) : null;
+    out.push({ label, name: c.color_name || (col && col.name) || '—', hex: sw ? sw.hex : null, dataUrl: sw ? sw.dataUrl : null });
+  }
+  // módulo de 1 papel só (painel, peça solta): mostra o que tiver
+  if (!out.length && roles[0]) {
+    const c = roles[0], col = c.color_id ? colorsById.get(c.color_id) : null;
+    const sw = col ? await trkSwatchFor(col) : null;
+    out.push({ label: c.role_name || trkT('draw_color'), name: c.color_name || '—', hex: sw ? sw.hex : null, dataUrl: sw ? sw.dataUrl : null });
+  }
+  return out;
+}
+
 // "17 7/8" x 30" (x2)" — agrupa medidas iguais
 function trkSizesList(list) {
   const m = new Map();
@@ -602,7 +658,10 @@ async function trkPdfDrawings(order, items) {
   await trkLoadLotes();
   const list = trkItemsSorted(items);
   const colorsById = await trkColorsFor(list);
-  const specsByNum = new Map(list.map((it, i) => [i + 1, trkModuleSpecRows(it, colorsById)]));
+  const specsByNum = new Map();
+  for (let i = 0; i < list.length; i++) {
+    specsByNum.set(i + 1, { rows: trkModuleSpecRows(list[i], colorsById), swatches: await trkModuleSwatches(list[i], colorsById) });
+  }
 
   // 1) caminho principal: Plano Técnico do projeto de origem
   if (order.source_project_id && typeof generateProjectTechPlan === 'function' && typeof restoreFavoriteProject === 'function') {
@@ -692,11 +751,38 @@ async function trkPdfDrawings(order, items) {
       drawBottom = fy + h * s + 8;
     }
     ctx.y = Math.max(imgBottom, drawBottom) + 5;
+    const spec = specsByNum.get(i + 1) || { rows: [], swatches: [] };
+    if (spec.swatches.length) trkPdfSwatches(ctx, spec.swatches);
     trkPdfSection(ctx, trkT('spec_title'));
-    trkPdfTable(ctx, [{ label: '', w: 0.3 }, { label: '', w: 0.7 }], specsByNum.get(i + 1) || []);
+    trkPdfTable(ctx, [{ label: '', w: 0.3 }, { label: '', w: 0.7 }], spec.rows);
   }
   trkPdfFooters(ctx);
   doc.save(`${trkT('file_drawings')}-${trkFileBase(order)}.pdf`);
+}
+
+function trkPdfSwatches(ctx, sws) {
+  const { doc } = ctx;
+  const sz = 15;
+  trkPdfEnsure(ctx, sz + 6);
+  let x = TRK_M;
+  const y = ctx.y;
+  sws.forEach((c) => {
+    let drew = false;
+    if (c.dataUrl) { try { doc.addImage(c.dataUrl, 'JPEG', x, y, sz, sz); drew = true; } catch (e) { /* cai pro hex */ } }
+    if (!drew) {
+      const m = /^#?([0-9a-f]{6})$/i.exec(String(c.hex || ''));
+      const n = m ? parseInt(m[1], 16) : 0xdddddd;
+      doc.setFillColor((n >> 16) & 255, (n >> 8) & 255, n & 255); doc.rect(x, y, sz, sz, 'F');
+    }
+    doc.setDrawColor(150); doc.setLineWidth(0.2); doc.rect(x, y, sz, sz, 'S');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(118, 111, 100);
+    doc.text(trkPdfTxt(c.label), x + sz + 2.5, y + 5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(30);
+    doc.text(doc.splitTextToSize(trkPdfTxt(c.name), 55).slice(0, 2), x + sz + 2.5, y + 10);
+    x += sz + 64;
+  });
+  doc.setTextColor(0);
+  ctx.y = y + sz + 7;
 }
 
 // ---------- PDF: lista do PCP (peças + processos + ferragens) ----------
