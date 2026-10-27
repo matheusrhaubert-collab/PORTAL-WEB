@@ -12,3 +12,10 @@ scratch/debug_texture_rotation_test.html
 # Backup local (backup-banco.bat): senha do banco e ferramentas baixadas
 backup-config.txt
 .backup-ferramentas/
+
+# Pastas locais que NUNCA sobem (27/10): backups de sessão do Claude,
+# arquivos aposentados e saídas de teste. Já não estavam no GitHub — isto
+# só tira elas da lista de "arquivos novos" do subir.bat e evita subir sem querer.
+_backup_*/
+_to_delete/
+Claude outputs/

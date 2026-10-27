@@ -1497,7 +1497,9 @@ function renderOrderDetail() {
   // "Marcar como pago" saiu da tela do cliente (Matt, 26/10: "a liberação só
   // o administrador do painel pode fazer... pode até ser removido da tela do
   // pedido do cliente") — só o admin ainda vê aqui.
-  if (markPaidBtn) markPaidBtn.style.display = (isApproved && window.LEGNO_IS_ADMIN === true) ? 'block' : 'none';
+  // "Marcar como pago" SAIU da tela do pedido (27/10, Matt: "pode tirar,
+  // aqui vamos mudar o processo") — escondido pra todos, inclusive admin.
+  if (markPaidBtn) markPaidBtn.style.display = 'none';
   if (markDeliveredBtn) markDeliveredBtn.style.display = isPaid ? 'block' : 'none';
   if (deliveredHint) deliveredHint.style.display = isDelivered ? 'block' : 'none';
 
