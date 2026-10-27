@@ -574,20 +574,23 @@ async function generateOrderProposalPDF(order, items, multi) {
     }
 
     // ---------- Cabeçalho: logo + dados da loja ----------
-    const logoMeta = await proposalImageMeta(await proposalUrlToDataUrl(currentUserProfile && currentUserProfile.logo_url));
+    // WHITE LABEL (26/10, Matt: "coloca a logo do dealer em todos os PDF,
+    // não coloca o nome da Legno em nenhum lugar"): pedido gerado pelo admin
+    // usa a logo/loja do DEALER DONO DO PEDIDO (trkDealerProfile, portal-31);
+    // sem logo, sai sem logo — o wordmark "LEGNO" de antes saiu.
+    const brandPf = (order && order.client_user_id && typeof trkDealerProfile === 'function')
+      ? ((await trkDealerProfile(order)) || currentUserProfile) : currentUserProfile;
+    const logoMeta = await proposalImageMeta(await proposalUrlToDataUrl(brandPf && brandPf.logo_url));
     let headerBottom = PROPOSAL_MARGIN_MM;
     if (logoMeta) {
       const fit = proposalFitImage(doc, logoMeta, PROPOSAL_MARGIN_MM, y, 50, 22);
       headerBottom = Math.max(headerBottom, fit.y + fit.h);
-    } else {
-      proposalLegnoWordmark(doc, PROPOSAL_MARGIN_MM, y + 8);
-      headerBottom = Math.max(headerBottom, y + 10);
     }
-    const storeName = (currentUserProfile && currentUserProfile.store_name) || '';
-    const storePhone = (currentUserProfile && currentUserProfile.store_phone) || '';
+    const storeName = (brandPf && brandPf.store_name) || '';
+    const storePhone = (brandPf && brandPf.store_phone) || '';
     doc.setFontSize(11);
     let storeInfoY = y + 2;
-    const storeInfoX = logoMeta ? PROPOSAL_MARGIN_MM + 55 : PROPOSAL_MARGIN_MM + 42;
+    const storeInfoX = logoMeta ? PROPOSAL_MARGIN_MM + 55 : PROPOSAL_MARGIN_MM;
     if (storeName) { doc.setFont('helvetica', 'bold'); doc.text(storeName, storeInfoX, storeInfoY); doc.setFont('helvetica', 'normal'); storeInfoY += 6; }
     if (storePhone) { doc.setFontSize(9); doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED); doc.text(I18n.t('pdf.phone', { phone: storePhone }), storeInfoX, storeInfoY); doc.setTextColor(0); storeInfoY += 5; }
     headerBottom = Math.max(headerBottom, storeInfoY);

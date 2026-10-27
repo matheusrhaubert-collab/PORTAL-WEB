@@ -315,6 +315,60 @@ function trkLoadLotes() {
   return trkLotesPromise;
 }
 
+// ---------- MARCA DO DEALER (26/10, Matt: "coloca a logo do dealer em todos
+// os PDF aqui. não coloca o nome da Legno em nenhum lugar") ----------
+// White label: a logo é a do DEALER DONO DO PEDIDO (o admin gera em nome
+// dele). Vendedor sem logo própria usa a do dealer pai (migration 149). Sem
+// logo nenhuma: o PDF sai sem logo — nunca cai pra Legno.
+const trkBrandCache = new Map();
+async function trkDealerProfile(order) {
+  const uid = order && order.client_user_id;
+  if (!uid) return null;
+  if (trkBrandCache.has(uid)) return trkBrandCache.get(uid);
+  let pf = null;
+  if (typeof currentUser !== 'undefined' && currentUser && currentUser.id === uid && typeof currentUserProfile !== 'undefined') pf = currentUserProfile;
+  else {
+    try {
+      const { data } = await supabaseClient.from('user_profiles').select('*').eq('user_id', uid).maybeSingle();
+      pf = data || null;
+    } catch (e) { pf = null; }
+  }
+  if (pf && !pf.logo_url && pf.parent_dealer_user_id) {
+    try {
+      const { data: pai } = await supabaseClient.from('user_profiles').select('*').eq('user_id', pf.parent_dealer_user_id).maybeSingle();
+      if (pai) pf = Object.assign({}, pf, { logo_url: pai.logo_url || null, store_name: pf.store_name || pai.store_name, store_phone: pf.store_phone || pai.store_phone });
+    } catch (e) { /* segue sem */ }
+  }
+  trkBrandCache.set(uid, pf);
+  return pf;
+}
+async function trkBrand(order) {
+  const pf = await trkDealerProfile(order);
+  let logo = null;
+  if (pf && pf.logo_url && typeof proposalUrlToDataUrl === 'function') {
+    try {
+      const src = await proposalUrlToDataUrl(pf.logo_url);
+      if (src) {
+        logo = await new Promise((res) => {
+          const im = new Image();
+          im.onload = () => {
+            try {
+              const k = Math.min(1, 600 / (im.naturalWidth || 1));
+              const c = document.createElement('canvas');
+              c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k));
+              c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+              res({ dataUrl: c.toDataURL('image/png'), w: c.width, h: c.height });
+            } catch (e) { res(null); }
+          };
+          im.onerror = () => res(null);
+          im.src = src;
+        });
+      }
+    } catch (e) { logo = null; }
+  }
+  return { profile: pf, logo, store: pf ? [pf.store_name, pf.store_phone].filter(Boolean).join('  ·  ') : '' };
+}
+
 // ---------- PDF: base ----------
 const TRK_M = 12;
 function trkPdfTxt(s) {
@@ -323,27 +377,38 @@ function trkPdfTxt(s) {
     .replace(/≤/g, '<=').replace(/≥/g, '>=')
     .replace(/[^\x00-\xFF—–•“”‘’]/g, '');
 }
-function trkPdfNew(order, title, landscape) {
+function trkPdfNew(order, title, landscape, brand) {
   if (typeof window.jspdf === 'undefined') throw new Error(I18n.t('pdf.not_available'));
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format: 'letter' });
   // título do PDF = rótulo do botão sem o "(PDF)"
   title = String(title).replace(/\s*\(PDF\)/gi, '');
-  const ctx = { doc, W: doc.internal.pageSize.getWidth(), H: doc.internal.pageSize.getHeight(), y: TRK_M, title, order };
+  const ctx = { doc, W: doc.internal.pageSize.getWidth(), H: doc.internal.pageSize.getHeight(), y: TRK_M, title, order, brand: brand || null };
   trkPdfHeader(ctx);
   return ctx;
 }
 function trkPdfHeader(ctx) {
   const { doc, W, order } = ctx;
+  const b = ctx.brand || {};
+  // logo do dealer no canto direito (até 46 × 13 mm), data embaixo dela
+  let rightBottom = TRK_M + 4;
+  let textRight = W - TRK_M;
+  if (b.logo) {
+    const r = Math.min(46 / b.logo.w, 13 / b.logo.h);
+    const lw = b.logo.w * r, lh = b.logo.h * r;
+    try { doc.addImage(b.logo.dataUrl, 'PNG', W - TRK_M - lw, TRK_M - 2, lw, lh); rightBottom = TRK_M - 2 + lh + 3.5; } catch (e) { /* logo inválida */ }
+  }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(30);
   doc.text(trkPdfTxt(ctx.title), TRK_M, TRK_M + 4);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110);
   const who = [order.po_name, order.client_name].filter(Boolean).join(' — ') || ('#' + String(order.id).slice(0, 8));
   doc.text(trkPdfTxt(who), TRK_M, TRK_M + 9);
-  doc.text(trkPdfTxt(trkDate(new Date())), W - TRK_M, TRK_M + 4, { align: 'right' });
-  doc.setDrawColor(200); doc.setLineWidth(0.3); doc.line(TRK_M, TRK_M + 12, W - TRK_M, TRK_M + 12);
+  doc.setFontSize(8.5);
+  doc.text(trkPdfTxt([b.store, trkDate(new Date())].filter(Boolean).join('  ·  ')), textRight, rightBottom, { align: 'right' });
+  const lineY = Math.max(TRK_M + 12, rightBottom + 2);
+  doc.setDrawColor(200); doc.setLineWidth(0.3); doc.line(TRK_M, lineY, W - TRK_M, lineY);
   doc.setTextColor(0);
-  ctx.y = TRK_M + 18;
+  ctx.y = lineY + 6;
 }
 function trkPdfNewPage(ctx) { ctx.doc.addPage(); trkPdfHeader(ctx); }
 function trkPdfEnsure(ctx, h) { if (ctx.y + h > ctx.H - TRK_M - 6) trkPdfNewPage(ctx); }
@@ -420,7 +485,7 @@ async function trkPdfVolumes(order) {
   if (error) throw error;
   const vols = data || [];
   if (!vols.length) throw new Error(trkT('volumes_none'));
-  const ctx = trkPdfNew(order, trkT('pdf_volumes'), true);
+  const ctx = trkPdfNew(order, trkT('pdf_volumes'), true, await trkBrand(order));
   const peso = vols.reduce((s, v) => s + (Number(v.peso_kg) || 0), 0);
   const emb = vols.filter((v) => v.status === 'embalado').length;
   const pallets = new Set(vols.map((v) => v.pallet_n).filter((n) => n != null));
@@ -497,7 +562,7 @@ function trkSealsFor(col) {
 // [{label, text}] por papel (caixa / porta / outros); papéis com o mesmo selo juntam
 function trkModuleSeals(item, colorsById) {
   const byText = new Map();
-  trkColorsOf(item).forEach((c) => {
+  (item.selected_colors || []).forEach((c) => {
     const col = c.color_id ? colorsById.get(c.color_id) : null;
     const t = trkSealsFor(col);
     if (!t) return;
@@ -545,7 +610,7 @@ async function trkSwatchFor(col) {
 // [{label, name, hex, dataUrl}] — caixa primeiro, depois porta/frente
 async function trkModuleSwatches(item, colorsById) {
   const out = [];
-  const roles = trkColorsOf(item);
+  const roles = item.selected_colors || [];
   const pick = (re) => roles.find((c) => re.test(String(c.role_name || '')));
   const box = pick(/caixa|casco|carca|box|body|estrutura/i);
   const door = pick(/porta|frente|door|front/i);
@@ -562,11 +627,6 @@ async function trkModuleSwatches(item, colorsById) {
     out.push({ label: c.role_name || trkT('draw_color'), name: c.color_name || '—', hex: sw ? sw.hex : null, dataUrl: sw ? sw.dataUrl : null });
   }
   return out;
-}
-
-// só os papéis de cor que o item usa (orderItemVisibleColors, portal-02)
-function trkColorsOf(it) {
-  return (typeof orderItemVisibleColors === 'function') ? orderItemVisibleColors(it) : (it.selected_colors || []);
 }
 
 // "17 7/8" x 30" (x2)" — agrupa medidas iguais
@@ -648,18 +708,14 @@ function trkModuleSpecRows(item, colorsById) {
       col && Number(col.thickness_mm) > 0 ? trkDim(col.thickness_mm) : null].filter(Boolean).join(' ');
     return (c.color_name || '—') + (extra ? ` (${extra})` : '');
   };
-  const mats = trkColorsOf(item).map((c) => {
+  const mats = (item.selected_colors || []).map((c) => {
     const role = String(c.role_name || '');
     const label = /caixa|casco|carca|box|body|estrutura/i.test(role) ? trkT('spec_mat_box')
       : (/porta|frente|door|front/i.test(role) ? trkT('spec_mat_door') : trkT('spec_mat_other', { role: role || '?' }));
     return [label, matTxt(c)];
   });
-  // linha vazia de caixa/porta só quando o item tem mais de 1 papel (painel
-  // de 1 cor só não ganha "Material caixa: —")
-  if (mats.length > 1 || !mats.length) {
-    if (!mats.some((r) => r[0] === trkT('spec_mat_box'))) mats.unshift([trkT('spec_mat_box'), '—']);
-    if (!mats.some((r) => r[0] === trkT('spec_mat_door'))) mats.splice(1, 0, [trkT('spec_mat_door'), '—']);
-  }
+  if (!mats.some((r) => r[0] === trkT('spec_mat_box'))) mats.unshift([trkT('spec_mat_box'), '—']);
+  if (!mats.some((r) => r[0] === trkT('spec_mat_door'))) mats.splice(1, 0, [trkT('spec_mat_door'), '—']);
 
   const rows = [
     [trkT('spec_size'), `${trkDim(w)} x ${trkDim(h)} x ${trkDim(d)}` + (unit !== 'mm' ? ` (${Math.round(w)} x ${Math.round(h)} x ${Math.round(d)} mm)` : '')],
@@ -674,7 +730,7 @@ function trkModuleSpecRows(item, colorsById) {
     [trkT('spec_shelves'), sp.shelves
       ? `${sp.shelves} — ${sp.shelvesAdj >= sp.shelves ? trkT('spec_shelf_adj') : (sp.shelvesAdj ? trkT('spec_shelf_mixed', { n: sp.shelvesAdj }) : trkT('spec_shelf_fixed'))}`
       : trkT('spec_none')],
-    ...(shelfHeights.length ? [[trkT('spec_shelf_heights'), shelfHeights.map((y) => trkDim(y)).join(' / ')]] : []),
+    ...(shelfHeights.length ? [[trkT('spec_shelf_heights'), trkT('spec_from_bottom') + ' ' + shelfHeights.map((y) => trkDim(y)).join(' / ')]] : []),
     [trkT('spec_handle'), sp.handles.size ? [...sp.handles].join(', ') : '—'],
     [trkT('spec_fixing'), trkT('spec_minifix')],
     ...(item.led_configs && Object.keys(item.led_configs).length ? [[trkT('spec_led'), trkT('spec_yes')]] : []),
@@ -737,6 +793,7 @@ async function trkPdfDrawings(order, items) {
         projectName: order.po_name || order.client_name || proj.name,
         fileName: `${trkT('file_drawings')}-${trkFileBase(order)}.pdf`,
         moduleSpecs: (numero) => specsByNum.get(Number(numero)) || null,
+        dealerProfile: (await trkDealerProfile(order)) || {},
         rethrow: true
       });
     } finally {
@@ -747,7 +804,7 @@ async function trkPdfDrawings(order, items) {
   }
 
   // 2) pedido sem projeto de origem: desenho vetorial da Proposta + folha simples
-  const ctx = trkPdfNew(order, trkT('pdf_drawings'), false);
+  const ctx = trkPdfNew(order, trkT('pdf_drawings'), false, await trkBrand(order));
   const { doc, W, H } = ctx;
   const unit = trkUnit();
   const contentW = W - TRK_M * 2;
@@ -859,7 +916,7 @@ async function trkPdfModuleList(order, items, mode) {
   if (mode === 'factory' && typeof isSellerAccount === 'function' && isSellerAccount()) mode = 'client';
   const list = trkItemsSorted(items);
   const colorsById = await trkColorsFor(list);
-  const ctx = trkPdfNew(order, trkT('pdf_modlist') + (mode === 'none' ? '' : ' — ' + trkT('modlist_' + mode)), false);
+  const ctx = trkPdfNew(order, trkT('pdf_modlist') + (mode === 'none' ? '' : ' — ' + trkT('modlist_' + mode)), false, await trkBrand(order));
   const { doc, W } = ctx;
   const unit = trkUnit();
   const pct = (typeof getFactoryDiscountPct === 'function') ? getFactoryDiscountPct() : 0;
@@ -875,7 +932,7 @@ async function trkPdfModuleList(order, items, mode) {
   for (let i = 0; i < list.length; i++) {
     const it = list[i];
     const sws = [];
-    for (const c of trkColorsOf(it)) {
+    for (const c of (it.selected_colors || [])) {
       const col = c.color_id ? colorsById.get(c.color_id) : null;
       const sw = col ? await trkSwatchFor(col) : null;
       sws.push({ label: c.role_name || '', name: c.color_name || '—', hex: sw ? sw.hex : null, dataUrl: sw ? sw.dataUrl : null });
@@ -979,7 +1036,7 @@ async function trkPdfPcp(order, items) {
   const piById = {};
   ((piRes && !piRes.error && piRes.data) || []).forEach((p) => { piById[p.id] = p; });
   const proc = LOTES.processosDosItens(list.map((it) => Object.assign({}, it, { order_id: order.id })), { [order.id]: order }, piById);
-  const ctx = trkPdfNew(order, trkT('pdf_pcp'), true);
+  const ctx = trkPdfNew(order, trkT('pdf_pcp'), true, await trkBrand(order));
   const mods = (o) => (o || []).map((x) => (x.mods || []).join(', ')).join('; ');
 
   // 1) peças de chapa

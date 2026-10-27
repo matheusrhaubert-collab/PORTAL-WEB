@@ -1161,9 +1161,12 @@ function ptPdfModuleList(doc, st, rows) {
 
 // Logo do dealer → PNG em data URL (o jsPDF só aceita PNG/JPEG; logo
 // cadastrada pode ser webp/svg). Sem logo, ou falhou baixar: null.
-async function ptLoadDealerLogo() {
+// urlOverride (26/10): PDF de pedido gerado pelo admin usa a logo do DEALER
+// DONO DO PEDIDO, não a da conta logada (white label — nunca Legno).
+async function ptLoadDealerLogo(urlOverride) {
   try {
-    const url = (typeof currentUserProfile !== 'undefined' && currentUserProfile && currentUserProfile.logo_url) || null;
+    const url = urlOverride !== undefined ? urlOverride
+      : ((typeof currentUserProfile !== 'undefined' && currentUserProfile && currentUserProfile.logo_url) || null);
     if (!url || typeof proposalUrlToDataUrl !== 'function') return null;
     const src = await proposalUrlToDataUrl(url);
     if (!src) return null;
@@ -1228,9 +1231,50 @@ function ptModuleView(scene, slot) {
     _ceilMm: Math.round(yMax * 1000),
     _yMinM: yMin - 0.06,
     _depthM: (nMax - nMin) + 0.05,
+    _depthOnlyM: nMax - nMin,
     _slots: [pseudo],
     _include: (gg) => gg.userData.slotId === slot.id
   };
+}
+
+// PLANTA BAIXA DO MÓDULO (26/10, Matt: "coloca mais uma 3ª vista em planta
+// baixa do módulo"). Câmera de cima, frente do módulo embaixo na tela;
+// cota a largura (na frente) e a profundidade (no lado direito).
+function ptRenderModuleTop(scene, view, nums) {
+  const W = view.widthM, D = view._depthOnlyM || Math.max(0.05, (view._depthM || 0.6) - 0.05);
+  const along = new THREE.Vector3(view.alongDirX, 0, view.alongDirZ);
+  const front = new THREE.Vector3(view.intoDirX, 0, view.intoDirZ);
+  const yTop = (view._ceilMm || 0) / 1000;
+  const P = (a, n) => new THREE.Vector3(view.originX + along.x * a + front.x * n, yTop, view.originZ + along.z * a + front.z * n);
+  const pad = 0.1, spanA = W + 2 * pad, spanN = D + 2 * pad;
+  const ppm = Math.min(PT_PX_PER_M, PT_MAX_IMG_PX / Math.max(spanA, spanN));
+  const wPx = Math.round(spanA * ppm), hPx = Math.round(spanN * ppm);
+  const cam = ptMakeCamera(P(W / 2, D / 2), new THREE.Vector3(0, 1, 0), front.clone().negate(), spanA / 2, spanN / 2);
+  const img = ptRender(scene, cam, wPx, hPx, { hideFronts: false, include: view._include, includeLoose: () => false });
+  const fs = Math.max(18, Math.round(Math.max(0.058 * ppm, wPx / 85)));
+  const padL = Math.round(fs * 2.5), padR = Math.round(fs * 9), padT = Math.round(fs * 2.5), padB = Math.round(fs * 7);
+  const out = document.createElement('canvas');
+  out.width = wPx + padL + padR; out.height = hPx + padT + padB;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(img, padL, padT);
+  const pr = ptProjector(cam, wPx, hPx, padL, padT);
+  const S = (a, n) => { const v = P(a, n); return pr(v.x, v.y, v.z); };
+  // contorno da caixa envolvente
+  const c = [S(0, 0), S(W, 0), S(W, D), S(0, D)];
+  ctx.save(); ctx.strokeStyle = '#5c5246'; ctx.lineWidth = 1.4; ctx.setLineDash([fs * 0.3, fs * 0.2]);
+  ctx.beginPath(); ctx.moveTo(c[0].x, c[0].y); c.slice(1).forEach((q) => ctx.lineTo(q.x, q.y)); ctx.closePath(); ctx.stroke(); ctx.restore();
+  // frente = aresta mais baixa na tela; lado = aresta mais à direita
+  const nFront = S(0, D).y >= S(0, 0).y ? D : 0;
+  const aRight = S(W, 0).x >= S(0, 0).x ? W : 0;
+  ptDimChain(ctx, [S(0, nFront), S(W, nFront)].sort((u, v) => u.x - v.x), { x: 0, y: 1 }, fs * 1.6, fs, { labels: [ptFmt(W * 1000)] });
+  ptDimChain(ctx, [S(aRight, 0), S(aRight, D)].sort((u, v) => u.y - v.y), { x: 1, y: 0 }, fs * 1.8, fs, { labels: [ptFmt(D * 1000)] });
+  // "FRENTE" embaixo
+  ctx.save(); ctx.font = ptFont(fs * 0.75, true); ctx.fillStyle = '#7a746b'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const fm = S(W / 2, nFront);
+  ctx.fillText(ptT('front_label'), fm.x, fm.y + fs * 3.4);
+  ctx.restore();
+  return out;
 }
 
 function ptMergeMm(arr, tol) {
@@ -1283,20 +1327,22 @@ function ptModuleSheetDims(ctx, scene, wallGeo, S, fs, hideFronts) {
 // e da porta (textura real do cadastro; sem textura, o swatch_hex).
 // seals (26/10): [{label, text}] — selos do material (EGGER: CARB2/TSCA/ECC…;
 // plywood: CARB2), largura inteira embaixo da especificação.
-function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches, seals) {
+function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches, seals, cTop) {
   ptPdfPage(doc, st, null, title, ptT('module_sheet_sub'), null);
   const W = 279.4, M = 10, colW = (W - 2 * M - 8) / 2, top = 37;
   const sw = (swatches || []).filter(Boolean);
   const maxH = sw.length ? 80 : 92;
-  [[cWith, ptT('with_fronts')], [cWithout, ptT('without_fronts')]].forEach(([c, cap], i) => {
-    const x0 = M + i * (colW + 8);
+  const vistas = [[cWith, ptT('with_fronts')], [cWithout, ptT('without_fronts')]].concat(cTop ? [[cTop, ptT('module_top_view')]] : []);
+  const imgW = (W - 2 * M - 8 * (vistas.length - 1)) / vistas.length;
+  vistas.forEach(([c, cap], i) => {
+    const x0 = M + i * (imgW + 8);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(118, 111, 100);
     doc.text(cap, x0, top - 1.5);
     doc.setTextColor(0);
     if (!c) return;
-    const r = Math.min(colW / c.width, maxH / c.height, 0.16);
+    const r = Math.min(imgW / c.width, maxH / c.height, 0.16);
     const w = c.width * r, h = c.height * r;
-    doc.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', x0 + (colW - w) / 2, top + 1, w, h);
+    doc.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', x0 + (imgW - w) / 2, top + 1, w, h);
   });
   // amostras de cor (caixa / porta) numa faixa entre os desenhos e a tabela
   let yAfter = top + maxH + 6;
@@ -1338,10 +1384,15 @@ function ptPdfModuleSheet(doc, st, title, cWith, cWithout, specRows, swatches, s
     const x0 = M + ci * (colW + 8);
     col.forEach(([k, v], ri) => {
       doc.setFontSize(8.3);
+      doc.setFont('helvetica', 'normal');
       const lines = doc.splitTextToSize(String(v == null || v === '' ? '—' : v), vw);
-      const h = lines.length * 3.5 + 1.6;
+      // rótulo comprido ("Altura das prateleiras…") quebra na própria coluna
+      // em vez de escrever por cima do valor (26/10)
+      doc.setFont('helvetica', 'bold');
+      const klines = doc.splitTextToSize(String(k), lw - 3);
+      const h = Math.max(lines.length, klines.length) * 3.5 + 1.6;
       if (ri % 2) { doc.setFillColor(250, 249, 247); doc.rect(x0, y - 3.4, colW, h, 'F'); }
-      doc.setFont('helvetica', 'bold'); doc.text(String(k), x0 + 1.2, y);
+      doc.text(klines, x0 + 1.2, y);
       doc.setFont('helvetica', 'normal'); doc.text(lines, x0 + lw, y);
       y += h;
     });
@@ -1419,9 +1470,9 @@ async function generateProjectTechPlan(opts) {
       projectName: opts.projectName || (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.name) || ptT('untitled'),
       dateText: new Date().toLocaleDateString(),
       unitText: unit === 'mm' ? 'mm' : (unitAbbrev(unit) || unit),
-      logo: await ptLoadDealerLogo(),
+      logo: await ptLoadDealerLogo(opts.dealerProfile ? (opts.dealerProfile.logo_url || null) : undefined),
       storeText: (() => {
-        const pf = (typeof currentUserProfile !== 'undefined' && currentUserProfile) || {};
+        const pf = opts.dealerProfile || (typeof currentUserProfile !== 'undefined' && currentUserProfile) || {};
         return [pf.store_name, pf.store_phone].filter(Boolean).join('  ·  ');
       })()
     };
@@ -1493,9 +1544,12 @@ async function generateProjectTechPlan(opts) {
         const cWith = view ? ptRenderWall(scene, view, nums, false) : null;
         await ptSleep(10);
         const cWithout = view ? ptRenderWall(scene, view, nums, true) : null;
+        await ptSleep(10);
+        let cTop = null;
+        try { cTop = view ? ptRenderModuleTop(scene, view, nums) : null; } catch (e) { console.warn('[plano técnico] planta do módulo', e); }
         const spec = opts.moduleSpecs(numero, slot);
         ptPdfModuleSheet(doc, st, ptT('module_sheet_title', { n: String(numero).padStart(3, '0'), name: (slot.module && slot.module.name) || '' }),
-          cWith, cWithout, Array.isArray(spec) ? spec : (spec && spec.rows), spec && spec.swatches, spec && spec.seals);
+          cWith, cWithout, Array.isArray(spec) ? spec : (spec && spec.rows), spec && spec.swatches, spec && spec.seals, cTop);
       }
     }
 
