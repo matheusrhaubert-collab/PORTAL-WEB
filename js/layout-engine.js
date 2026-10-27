@@ -683,7 +683,15 @@
       var topoNo = num(pr.topo_frente_abaixo_casco_mm), alt = num(pr.frente_altura_mm);
       var baseNo = pr.base_frente_acima_casco_mm != null ? Number(pr.base_frente_acima_casco_mm) : NaN;
       if (topoNo > 0 && zona) y1 = zona.y + zona.h + espCasco - topoNo;
-      if (alt > 0) y0 = y1 - alt;
+      // ALTURA CONTADA DE BAIXO (2026-10-27, Base Microwave: "gaveta de 10
+      // de altura" embaixo do nicho aberto): base + altura SEM topo = a
+      // frente nasce na base pedida e sobe `alt`. Nenhum vão gravado antes
+      // tinha os dois sem o topo, então nada existente muda.
+      if (alt > 0 && !(topoNo > 0) && isFinite(baseNo) && zona) {
+        y0 = zona.y - espCasco + baseNo;
+        y1 = y0 + alt;
+      }
+      else if (alt > 0) y0 = y1 - alt;
       else if (isFinite(baseNo) && zona) y0 = zona.y - espCasco + baseNo;
       return [y0, y1];
     }
