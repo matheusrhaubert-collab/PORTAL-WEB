@@ -430,6 +430,8 @@
   // profundidade ao meio como antes do 1º pedido.
   var AFASTAMENTO_CABIDE_FUNDO_MM = 270;
   var LIMIAR_CABIDE_CENTRALIZA_MM = 540;
+  // Folga do cabide em cada ponta (até a lateral) — 4 mm, total -8 mm.
+  var CABIDE_FOLGA_LADO_MM = 4;
 
   // --------------------------------------------------------------------
   // PORTA — regras de inclusão/posicionamento (2026-08-20, migration 132).
@@ -823,10 +825,13 @@
         var afastamentoFundo = box.d < LIMIAR_CABIDE_CENTRALIZA_MM
           ? Math.min(num(p.afastamento_fundo_mm) || AFASTAMENTO_CABIDE_FUNDO_MM, box.d)
           : box.d / 2;
+        // Comprimento = interno do vão - 8 mm (4 mm de cada lado) — Matt,
+        // 2026-10-29: "o desconto certo é interno do móvel -8mm total". Antes
+        // era 12 mm de cada lado (-24), o corte saía curto.
         push(node, {
           kind: 'content', accKey: key, label: acc.name, shape_type: 'oval_rod',
-          x: box.x + 12, y: box.y + box.h - off, z: box.z + afastamentoFundo - 15,
-          w: box.w - 24, h: 30, d: 15
+          x: box.x + CABIDE_FOLGA_LADO_MM, y: box.y + box.h - off, z: box.z + afastamentoFundo - 15,
+          w: box.w - 2 * CABIDE_FOLGA_LADO_MM, h: 30, d: 15
         });
         return;
       }

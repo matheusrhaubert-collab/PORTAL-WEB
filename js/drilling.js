@@ -1939,8 +1939,8 @@
   //
   // TOLERÂNCIA PRÓPRIA (não usa settings.touch_tolerance_mm, que é ~5mm e é
   // pensado pra encaixe justo de painel-com-painel): o cabide nasce com uma
-  // margem FIXA de 12mm de cada lado dentro do vão (js/layout-engine.js
-  // emitContent, ramo acc.forma==='barra': "x: box.x + 12, w: box.w - 24") —
+  // margem FIXA de 4mm de cada lado dentro do vão (js/layout-engine.js
+  // emitContent, ramo acc.forma==='barra': CABIDE_FOLGA_LADO_MM; era 12 até 29/10) —
   // é ESSA a distância real entre a ponta do tubo e a lateral, não um
   // encaixe de 5mm. 15mm cobre a margem + folga de arredondamento.
   //
