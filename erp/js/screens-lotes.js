@@ -2006,6 +2006,31 @@ LOTES_UI._svgPorta = function (m) {
       else s += L(q, 0, q, h) + L(w - q, 0, w - q, h); // shaker: montante inteiro
     }
   }
+  // DOBRADIÇAS (29/10, Matt: "coloca o desenho das dobradiças na porta").
+  // Mesma regra da furação (drilling.js collectHingeHoles): 1ª e última a
+  // 100 mm da ponta, as do meio divididas por igual. Cota = centro da
+  // dobradiça medido do TOPO da porta (do lado esquerdo, a partir da esquerda).
+  const nDob = m.dobradica ? Math.round(m.dobradica.n) : 0;
+  if (nDob > 0 && m.lado) {
+    const MARGEM = 100;
+    const comp = m.lado === 'cima' ? W : H;
+    const lo = MARGEM, hi = Math.max(comp - MARGEM, MARGEM);
+    const qq = Math.max(q, 5);
+    for (let i = 0; i < nDob; i++) {
+      const v = nDob > 1 ? lo + (hi - lo) * (i / (nDob - 1)) : comp / 2;
+      const pv = v * esc;
+      let hx, hy, hw, hh, tx, ty, anc;
+      if (m.lado === 'cima') {
+        hw = 14; hh = 6; hx = pv - hw / 2; hy = -hh / 2; tx = pv; ty = qq + 10; anc = 'middle';
+      } else {
+        hw = 6; hh = 14; hy = pv - hh / 2;
+        hx = m.lado === 'esq' ? -hw / 2 : w - hw / 2;
+        tx = m.lado === 'esq' ? qq + 3 : w - qq - 3; ty = pv + 3; anc = m.lado === 'esq' ? 'start' : 'end';
+      }
+      s += '<rect x="' + hx + '" y="' + hy + '" width="' + hw + '" height="' + hh + '" rx="1.5" fill="#2b2b2b"/>' +
+        '<text x="' + tx + '" y="' + ty + '" text-anchor="' + anc + '" class="lp-svg-cota lp-svg-dob" font-weight="700">' + Math.round(v) + '</text>';
+    }
+  }
   s += '<text x="' + (w / 2) + '" y="' + (h + 14) + '" text-anchor="middle" class="lp-svg-cota">' + Math.round(W) + '</text>' +
     '<text x="' + (w + 5) + '" y="' + (h / 2) + '" class="lp-svg-cota" transform="rotate(90 ' + (w + 5) + ' ' + (h / 2) + ')" text-anchor="middle">' + Math.round(H) + '</text>' +
     '</g></svg>';
