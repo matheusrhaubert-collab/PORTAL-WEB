@@ -1825,7 +1825,31 @@ function renderProjectBuilderStage() {
   });
 
   // ---- peças geradas pela árvore
+  // GAVETA INTERNA COM PORTA (29/10, Matt: "precisa permitir colocar uma
+  // porta na frente, justamente essa gaveta fica atrás da porta"). O caixote
+  // e a frente embutida cobrem o vão inteiro no desenho e engoliam o clique
+  // (clicar = apagar a gaveta) e o soltar da biblioteca — o vão de baixo,
+  // que é quem recebe a porta, ficava inalcançável. Essas peças passam a
+  // deixar o clique/arraste atravessar pro vão; apagar a gaveta = selecionar
+  // o vão e usar o ⊗ (deleteProjectBuilderVao), como qualquer vão ocupado.
+  const vaoGavetaComPorta = (p) => {
+    const nd = p && p.nodeId ? LayoutEngine.findNode(projectBuilderRoot, p.nodeId) : null;
+    if (!nd || !nd.content || !LayoutEngine.modeloGavetaInterna) return false;
+    return LayoutEngine.modeloGavetaInterna(projectBuilderCat[nd.content.acc], nd.content.params) === 'com_porta'
+      && (p.kind === 'content' || (p.kind === 'front' && p.frontIndex == null));
+  };
   (built.pieces || []).slice().sort((a, b) => a.z - b.z).forEach((p) => {
+    if (vaoGavetaComPorta(p)) {
+      const fr = p.kind === 'front';
+      projBuilderSvgEl('rect', {
+        x: p.x, y: sy(p.y, p.h), width: p.w, height: p.h,
+        fill: fr ? '#2f6fb8' : '#c49a63', 'fill-opacity': fr ? 0.10 : 0.92,
+        stroke: fr ? '#2f6fb8' : '#8a6a3f', 'stroke-width': fr ? sw * 1.6 : sw,
+        'stroke-dasharray': fr ? (sw * 7) + ' ' + (sw * 5) : 'none',
+        'pointer-events': 'none'
+      }, gP);
+      return;
+    }
     if (p.shape_type === 'oval_rod') {
       const l = projBuilderSvgEl('line', {
         x1: p.x, y1: sy(p.y + p.h / 2), x2: p.x + p.w, y2: sy(p.y + p.h / 2),
@@ -2783,7 +2807,10 @@ function removeProjectBuilderPiece(p) {
   } else if (p.kind === 'content') {
     LayoutEngine.clearNode(node, 'content');
   } else if (p.kind === 'front') {
-    LayoutEngine.removeFront(node, p.frontIndex);
+    // Frente SINTETIZADA (gaveta/gaveta interna) não tem frontIndex — antes
+    // splice(undefined) tirava a fronts[0] do vão (a porta do cliente).
+    if (p.frontIndex == null) LayoutEngine.clearNode(node, 'content');
+    else LayoutEngine.removeFront(node, p.frontIndex);
   }
   projectBuilderSelId = node.id;
   markProjectDirty();
