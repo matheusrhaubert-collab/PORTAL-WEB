@@ -1488,6 +1488,7 @@
         : null,
       hinge_cost: hinge_cost,
       hinge_count: hinge_count, // uso interno/admin — quantas dobradiças foram cobradas nesta peça
+      hinge_side: hinge_count > 0 ? (piece.hinge_side || null) : null, // 29/10 — lado da dobradiça pro lote
       // Modelo REALMENTE usado (2026-08-19) — mesmo motivo do
       // calculateModulePiece logo abaixo: o relatório $ Fábrica precisa
       // saber QUAL corrediça/dobradiça pagou por este custo, não só o valor.
@@ -1700,6 +1701,9 @@
       // o pedido (portal-02) e a etiqueta mostram de qual modelo é.
       door_model: piece.door_model_name || null,
       drawer_model: piece.drawer_model_name || null,
+      // Lado de abertura (29/10) — a folha de montagem/alumínio do lote diz
+      // de que lado vai a dobradiça e qual perfil leva furo.
+      opening_type: piece.opening_type || null,
       child_breakdown: childResult.breakdown, // composição da sub-montagem, uso interno/admin
       child_total: childResult.total,         // preço da sub-montagem (1 unidade), uso interno/admin
       labor_cost: 0, // sempre 0 nesta peça — mão de obra já está nas peças filha (ver comentário acima)

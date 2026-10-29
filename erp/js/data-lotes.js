@@ -1559,6 +1559,38 @@ LOTES.processosDosItens = function (items, orderById, piById) {
   };
 
   const alu = new Map(), vid = new Map(), dov = new Map(), montagem = [];
+  /* PORTA: lado da dobradiça, cor do alumínio e do vidro (29/10, Matt:
+     "coloca as dobradiças, as cores do alumínio e do vidro" + no alumínio
+     "coloca o que tem furo"). Lado vem do opening_type/hinge_side gravado no
+     breakdown (pedidos novos) ou do nome "Dobradiça Esq./Dir." (antigos). */
+  const ladoDe = function (p, nomeItem) {
+    const ot = String(p.opening_type || p.hinge_side || '');
+    if (/left/.test(ot)) return 'esq';
+    if (/right/.test(ot)) return 'dir';
+    if (/top/.test(ot)) return 'cima';
+    const nomes = [p.reference, p.door_model, nomeItem].map(function (x) { return String(x || ''); }).join(' | ');
+    const m = nomes.match(/dobradi[cç]a\s*(esq|dir)|hinge\s*(left|right)/i);
+    if (!m) return null;
+    return /esq|left/i.test(m[1] || m[2]) ? 'esq' : 'dir';
+  };
+  const nomeCurto = function (n) {
+    return String(n || '').replace(/\s*[—–-]\s*barra\b.*$/i, '').replace(/\s*\((m²|m2)\)\s*$/i, '').trim();
+  };
+  const addDob = function (porta, p, q) {
+    if (!porta || !(Number(p.hinge_count) > 0)) return;
+    const d = porta.dobradica || (porta.dobradica = { n: 0, modelo: null });
+    d.n += Number(p.hinge_count) * q / (porta.quantity || 1);
+    if (!d.modelo && p.hinge_model_name) d.modelo = p.hinge_model_name;
+    if (!porta.lado) porta.lado = ladoDe(p, null);
+  };
+  const furoDoPerfil = function (porta, ref) {
+    if (!porta || !porta.lado) return false;
+    if (porta.lado === 'esq') return /esq|left/i.test(ref);
+    if (porta.lado === 'dir') return /\bdir|right/i.test(ref);
+    if (porta.lado === 'cima') return /superior|\btop/i.test(ref);
+    return false;
+  };
+  const addSet = function (arr, v) { if (v && arr.indexOf(v) < 0) arr.push(v); };
   /* FERRAGENS (separação, 15/10 — Matt: "corrediças, dobradiças, minifix,
      cavilha, sistema prateleira... tudo que é comprado, menos processado").
      Daqui (breakdown) saem: dobradiça, corrediça, peça comprada pronta e kit
@@ -1625,10 +1657,12 @@ LOTES.processosDosItens = function (items, orderById, piById) {
           if (tipo) {
             porta = Object.assign({}, base, {
               tipo: tipo, ref: p.reference || '—', quantity: q,
-              w: r1(p.width_mm), h: r1(p.height_mm), t: r1(p.depth_mm), partes: []
+              w: r1(p.width_mm), h: r1(p.height_mm), t: r1(p.depth_mm), partes: [],
+              lado: ladoDe(p, item.module_name), dobradica: null, aluminio: [], vidro: []
             });
             montagem.push(porta);
           }
+          addDob(porta, p, q);
           walk(filhos, q, { porta: tipo ? porta : ctx.porta, raizPorta: !!tipo });
           return;
         }
@@ -1636,11 +1670,18 @@ LOTES.processosDosItens = function (items, orderById, piById) {
         const dims = [r1(p.width_mm), r1(p.height_mm), r1(p.depth_mm)];
         // peça direta da porta montada → lista de partes da montagem
         // (peça só de mão de obra, 0×0×0 — "Montagem de porta" — não é parte física)
+        addDob(ctx.porta, p, q);
         if (ctx.porta && ctx.raizPorta && (dims[0] > 0 || dims[1] > 0)) {
+          const classe = ehVidro(p) ? 'vidro' : (ehAluminio(p) ? 'aluminio' : (comprado(p) ? 'comprado' : 'madeira'));
+          const itP = itemDe(p);
+          const nomeMat = nomeCurto((itP && itP.name) || p.material_item_name || p.purchased_item_name || '');
+          if (classe === 'aluminio') addSet(ctx.porta.aluminio, nomeMat);
+          if (classe === 'vidro') addSet(ctx.porta.vidro, nomeMat);
           ctx.porta.partes.push({
             ref: ref, w: dims[0], h: dims[1], d: dims[2],
             quantity: q / (ctx.porta.quantity || 1),
-            classe: ehVidro(p) ? 'vidro' : (ehAluminio(p) ? 'aluminio' : (comprado(p) ? 'comprado' : 'madeira'))
+            classe: classe,
+            furo: classe === 'aluminio' && furoDoPerfil(ctx.porta, ref)
           });
         }
         // PEÇA COMPRADA PRONTA (pé, puxador, LED avulso…) → separação de
@@ -1685,10 +1726,16 @@ LOTES.processosDosItens = function (items, orderById, piById) {
           const G = alu.get(material);
           const len = Math.max.apply(null, dims);
           const angulo = /45/.test(ref) ? '45°' : '90°';
-          // um por módulo (Matt, 15/10: "preciso cabide por cabide pra ser cortado")
-          const k = len + '|' + angulo + '|' + ref + '|' + pedido + '|' + mod;
-          if (!G.cortes.has(k)) G.cortes.set(k, { len: len, angulo: angulo, ref: ref, quantity: 0, onde: {}, portas: new Set() });
+          // Peças da MESMA medida juntas, separando só o que tem furo
+          // (perfil do lado da dobradiça) do que não tem — Matt, 29/10:
+          // "pode unificar as peças do mesmo tamanho (só separar o que tem
+          // furo do que não tem)". Antes era uma linha por módulo.
+          const furo = furoDoPerfil(ctx.porta, ref);
+          const nDob = furo && ctx.porta.dobradica ? Math.round(ctx.porta.dobradica.n) : 0;
+          const k = len + '|' + angulo + '|' + (furo ? 'F' + nDob : '-');
+          if (!G.cortes.has(k)) G.cortes.set(k, { len: len, angulo: angulo, refs: new Set(), quantity: 0, onde: {}, portas: new Set(), furo: furo, furos_dobradica: nDob });
           const c = G.cortes.get(k); c.quantity += q; (c.onde[pedido] = c.onde[pedido] || new Set()).add(mod);
+          c.refs.add(ref);
           if (ondeTxt(ctx)) c.portas.add(ondeTxt(ctx));
         }
       });
@@ -1701,8 +1748,8 @@ LOTES.processosDosItens = function (items, orderById, piById) {
   };
   const aluminio = Array.from(alu.values()).map(function (G) {
     const cortes = Array.from(G.cortes.values()).map(function (c) {
-      return Object.assign({}, c, { quantity: Math.round(c.quantity), onde: onde(c.onde), portas: Array.from(c.portas) });
-    }).sort(function (a, b) { return b.len - a.len; });
+      return Object.assign({}, c, { ref: Array.from(c.refs).join(' / '), refs: undefined, quantity: Math.round(c.quantity), onde: onde(c.onde), portas: Array.from(c.portas) });
+    }).sort(function (a, b) { return (b.len - a.len) || ((b.furo ? 1 : 0) - (a.furo ? 1 : 0)); });
     const totalPecas = cortes.reduce(function (s, c) { return s + c.quantity; }, 0);
     const totalMm = cortes.reduce(function (s, c) { return s + c.len * c.quantity; }, 0);
     return { material: G.material, kind: G.kind, barra_mm: G.barra_mm, cortes: cortes, totalPecas: totalPecas, totalMm: totalMm,

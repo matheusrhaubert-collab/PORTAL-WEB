@@ -1748,7 +1748,27 @@ LOTES_UI._printCss =
   '.draw svg{width:.9in;height:auto}.lp-svg-cota{font-size:9px;fill:#333}' +
   '.barra{display:flex;height:16px;border:1px solid #555;margin:2px 0}.barra div{border-right:1px solid #555;background:#e7dcc8;font-size:7pt;overflow:hidden;white-space:nowrap;padding-left:2px}' +
   '.vazio{color:#777;font-style:italic;padding:8px 0}.it{width:2.6in}' +
+  '.furo{display:inline-block;font-weight:700;font-size:8.5pt;border:1.5px solid #1f1d1a;border-radius:3px;padding:0 4px;margin-bottom:2px}' +
+  '.pinfo{margin-top:4px;font-size:9pt;line-height:1.35}.pinfo b{font-weight:700}' +
   '@media print{.pr-bar{display:none}.pr-doc{padding:0;max-width:none}}';
+
+/* Dobradiça / cor do alumínio / vidro da porta (29/10). Devolve linhas
+   {rot, val} — a tela e a impressão montam cada uma no seu estilo. */
+LOTES_UI._portaInfo = function (m) {
+  const out = [];
+  const lados = { esq: 'lado esquerdo', dir: 'lado direito', cima: 'em cima (basculante)' };
+  if (m.dobradica && m.dobradica.n > 0) {
+    out.push({ rot: 'Dobradiça', val: Math.round(m.dobradica.n) + '× ' + (m.dobradica.modelo || 'modelo não definido') + (m.lado ? ' · ' + lados[m.lado] : '') });
+  } else if (m.lado) {
+    out.push({ rot: 'Dobradiça', val: lados[m.lado] });
+  }
+  if (m.aluminio && m.aluminio.length) out.push({ rot: 'Alumínio', val: m.aluminio.join(', ') });
+  if (m.vidro && m.vidro.length) out.push({ rot: 'Vidro', val: m.vidro.join(', ') });
+  return out;
+};
+LOTES_UI._furoTxt = function (ct) {
+  return 'COM FURO' + (ct.furos_dobradica ? ' · ' + ct.furos_dobradica + ' dobradiça(s)' : '');
+};
 
 LOTES_UI._printSecao = function (id, d, varios) {
   const E = UI.esc, mm = LOTES_UI.mm, onde = function (o) { return LOTES_UI._ondeTxt(o, varios); };
@@ -1758,7 +1778,7 @@ LOTES_UI._printSecao = function (id, d, varios) {
     return d.aluminio.map(function (g) {
       const rows = g.cortes.map(function (ct) {
         return '<tr><td class="ck">☐</td><td class="q">' + ct.quantity + '×</td><td class="m">' + mm(ct.len) + ' mm</td><td>' + E(ct.angulo) + '</td>' +
-          '<td>' + E(ct.ref) + (ct.portas.length ? '<div class="mu">porta: ' + E(ct.portas.join(', ')) + '</div>' : '') + '</td><td class="mods">' + E(onde(ct.onde)) + '</td></tr>';
+          '<td>' + (ct.furo ? '<div class="furo">' + E(LOTES_UI._furoTxt(ct)) + '</div>' : '') + E(ct.ref) + (ct.portas.length ? '<div class="mu">porta: ' + E(ct.portas.join(', ')) + '</div>' : '') + '</td><td class="mods">' + E(onde(ct.onde)) + '</td></tr>';
       }).join('');
       const barras = (g.barras && g.barras.length) ? '<div class="mu" style="margin-top:4px">Plano de barra — ' + g.barras.length + ' barra(s) de ' + mm(g.barra_mm) + ' mm</div>' +
         g.barras.map(function (br, i) {
@@ -1789,11 +1809,13 @@ LOTES_UI._printSecao = function (id, d, varios) {
         lista.map(function (m) {
           const partes = (m.partes || []).map(function (p) {
             return '<div>' + (p.quantity > 1 ? Math.round(p.quantity) + '× ' : '') + E(p.ref) + ' — <b>' +
-              [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return mm(x); }).join(' × ') + '</b></div>';
+              [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return mm(x); }).join(' × ') + '</b>' +
+              (p.furo ? ' <span class="furo">COM FURO</span>' : '') + '</div>';
           }).join('');
           return '<tr><td class="ck">☐</td><td class="draw">' + LOTES_UI._svgPorta(m) + '</td>' +
             '<td class="q">MÓD ' + E(String(m.mod)) + (m.quantity > 1 ? '<div>' + Math.round(m.quantity) + '×</div>' : '') + (varios ? '<div class="mu">' + E(m.pedido) + '</div>' : '') + '</td>' +
-            '<td><b>' + E(m.ref) + '</b><div class="m">' + mm(m.w) + ' × ' + mm(m.h) + ' × ' + LOTES_UI.esp(m.t) + ' mm</div><div class="mu">' + E(m.movel || '') + '</div></td>' +
+            '<td><b>' + E(m.ref) + '</b><div class="m">' + mm(m.w) + ' × ' + mm(m.h) + ' × ' + LOTES_UI.esp(m.t) + ' mm</div><div class="mu">' + E(m.movel || '') + '</div>' +
+              '<div class="pinfo">' + LOTES_UI._portaInfo(m).map(function (i) { return '<div><b>' + E(i.rot) + ':</b> ' + E(i.val) + '</div>'; }).join('') + '</div></td>' +
             '<td style="font-size:9pt">' + partes + '</td></tr>';
         }).join('') + '</tbody></table>';
     }).join('');
@@ -2012,11 +2034,11 @@ LOTES_UI.proc = function (params, d) {
   const aluHtml = d.aluminio.length ? d.aluminio.map(function (g) {
     txtAlu.push('', g.material + (g.barra_mm ? ' (barra ' + g.barra_mm + ' mm)' : ''));
     const linhas = g.cortes.map(function (ct) {
-      txtAlu.push(ct.quantity + 'x  ' + ct.len + ' mm  ' + ct.angulo + '  ' + ct.ref + '  [' + LOTES_UI._ondeTxt(ct.onde, varios) + ']');
+      txtAlu.push(ct.quantity + 'x  ' + ct.len + ' mm  ' + ct.angulo + '  ' + ct.ref + (ct.furo ? '  ** ' + LOTES_UI._furoTxt(ct) + ' **' : '') + '  [' + LOTES_UI._ondeTxt(ct.onde, varios) + ']');
       return '<tr><td class="lp-qtd">' + ct.quantity + '×</td>' +
         '<td><b class="lp-medida">' + ct.len + ' mm</b></td>' +
         '<td>' + (ct.angulo === '45°' ? '<span class="lp-ang lp-ang45">◢ 45°</span>' : '<span class="lp-ang">▮ 90°</span>') + '</td>' +
-        '<td>' + UI.esc(ct.ref) + (ct.portas.length ? '<div class="erp-muted erp-xs">porta: ' + UI.esc(ct.portas.join(', ')) + '</div>' : '') + '</td>' +
+        '<td>' + (ct.furo ? '<span class="lp-furo">' + UI.esc(LOTES_UI._furoTxt(ct)) + '</span> ' : '') + UI.esc(ct.ref) + (ct.portas.length ? '<div class="erp-muted erp-xs">porta: ' + UI.esc(ct.portas.join(', ')) + '</div>' : '') + '</td>' +
         '<td class="lp-mods">' + UI.esc(LOTES_UI._ondeTxt(ct.onde, varios)) + '</td></tr>';
     }).join('');
     let barrasHtml;
@@ -2075,7 +2097,8 @@ LOTES_UI.proc = function (params, d) {
       (lista.length ? '<div class="lp-cards">' + lista.map(function (m) {
         const partes = (m.partes || []).map(function (p) {
           return '<li class="lp-parte lp-parte-' + p.classe + '"><span>' + (p.quantity > 1 ? Math.round(p.quantity) + '× ' : '') + UI.esc(p.ref) + '</span>' +
-            '<span class="erp-mono">' + [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return LOTES_UI.mm(x); }).join(' × ') + '</span></li>';
+            '<span class="erp-mono">' + [p.w, p.h, p.d].filter(function (x) { return x > 0; }).map(function (x) { return LOTES_UI.mm(x); }).join(' × ') +
+            (p.furo ? ' <span class="lp-furo">furo</span>' : '') + '</span></li>';
         }).join('');
         return '<div class="lp-card lp-card-porta" style="border-top-color:' + t.cor + '">' +
           '<div class="lp-card-draw">' + LOTES_UI._svgPorta(m) + '</div>' +
@@ -2084,6 +2107,7 @@ LOTES_UI.proc = function (params, d) {
             '<div class="erp-strong">' + UI.esc(m.ref) + '</div>' +
             '<div class="lp-medida">' + m.w + ' × ' + m.h + ' × ' + m.t + ' mm</div>' +
             '<div class="erp-muted erp-xs">' + UI.esc(m.movel) + '</div>' +
+            LOTES_UI._portaInfo(m).map(function (i) { return '<div class="erp-small"><b>' + UI.esc(i.rot) + ':</b> ' + UI.esc(i.val) + '</div>'; }).join('') +
             (partes ? '<ul class="lp-partes">' + partes + '</ul>' : '') +
           '</div></div>';
       }).join('') + '</div>' : '<div class="erp-muted erp-small lp-mont-nada">nenhuma neste lote</div>') +
