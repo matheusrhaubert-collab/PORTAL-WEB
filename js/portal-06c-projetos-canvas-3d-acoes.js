@@ -753,13 +753,32 @@ function renderProjectConfigPanel() {
       : [];
     if (isLockedAxis && labeledPresets.length) {
       const currentMm = Number(slot[`${axis}_mm`]) || 0;
+      // UMA opção por medida (29/10): a mesma altura aparece em vários SKUs
+      // (WP189624, WP219624… todos 96") e o select mostrava o 1º rótulo —
+      // "WP189624" num módulo de 21". Medida repetida em mais de um rótulo
+      // sai só com o número.
+      const porValor = new Map();
+      labeledPresets.forEach((p) => {
+        const v = Number(p.value_mm);
+        const k = Math.round(v * 10);
+        if (!porValor.has(k)) porValor.set(k, { value_mm: v, labels: [] });
+        if (p.label) porValor.get(k).labels.push(p.label);
+      });
+      const unicos = Array.from(porValor.values());
       let bestIdx = 0, bestDiff = Infinity;
-      labeledPresets.forEach((p, i) => {
-        const diff = Math.abs(Number(p.value_mm) - currentMm);
+      unicos.forEach((p, i) => {
+        const diff = Math.abs(p.value_mm - currentMm);
         if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
       });
-      const options = labeledPresets.map((p, i) => `
-        <option value="${p.value_mm}"${i === bestIdx ? ' selected' : ''}>${p.label ? `${p.label} — ${formatDimension(p.value_mm, unit)}` : formatDimension(p.value_mm, unit)}</option>
+      // Medida FORA DA LISTA (29/10, Pantry de 500 mm vindo da importação por
+      // IA): antes o select marcava a opção mais próxima e escondia a medida
+      // real — parecia 20 31/32" mas o módulo tinha 500 mm. Agora a medida
+      // real aparece selecionada e marcada; escolher uma da lista corrige.
+      const foraDaLista = bestDiff > 0.5;
+      const options = (foraDaLista
+        ? `<option value="${currentMm}" selected>⚠ ${formatDimension(currentMm, unit)} — fora da lista</option>`
+        : '') + unicos.map((p, i) => `
+        <option value="${p.value_mm}"${!foraDaLista && i === bestIdx ? ' selected' : ''}>${p.labels.length === 1 ? `${p.labels[0]} — ${formatDimension(p.value_mm, unit)}` : formatDimension(p.value_mm, unit)}</option>
       `).join('');
       return `
         <div class="po-proj-config-dim-row">

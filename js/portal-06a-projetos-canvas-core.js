@@ -2399,7 +2399,7 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
     const requestedWidthMm = overrides && Number(overrides.width_mm) > 0
       ? Number(overrides.width_mm)
       : Number(m.width_default_mm || 0);
-    const width_mm = clamp(requestedWidthMm, Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
+    let width_mm = clamp(requestedWidthMm, Number(m.width_min_mm || 0), Number(m.width_max_mm || Infinity));
     // Altura por override (2026-08-21) — mesma ideia da largura acima, só que
     // até agora só a IA tinha esse caminho. Adicionado pro dropdown de
     // referência/SKU da biblioteca (ver renderProjectLibrary/skuOptionLabelForUnit):
@@ -2409,8 +2409,22 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
     const requestedHeightMm = overrides && Number(overrides.height_mm) > 0
       ? Number(overrides.height_mm)
       : Number(m.height_default_mm || 0);
-    const height_mm = clamp(requestedHeightMm, Number(m.height_min_mm || 0), effHeightMaxMm);
-    const depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
+    let height_mm = clamp(requestedHeightMm, Number(m.height_min_mm || 0), effHeightMaxMm);
+    let depth_mm = clamp(Number(m.depth_default_mm || 0), Number(m.depth_min_mm || 0), Number(m.depth_max_mm || Infinity));
+    // MEDIDA TRAVADA SÓ ENTRA COM VALOR DA LISTA (29/10, Matt: Pantry entrou
+    // com 500 × 2700 pela importação de PDF por IA, num módulo que só tem
+    // 15"…42" de largura e 84/90/96" de altura). Toda entrada que passa
+    // medida (IA, PDF, Promob, 20-20, SKU) cai aqui: eixo travado com lista
+    // cadastrada vai pro valor MAIS PRÓXIMO da lista.
+    const naLista = (v, lista) => {
+      if (!lista || !lista.length || !(v > 0)) return v;
+      let best = lista[0];
+      lista.forEach((x) => { if (Math.abs(Number(x) - v) < Math.abs(Number(best) - v)) best = x; });
+      return Number(best);
+    };
+    width_mm = naLista(width_mm, lockedDimensionPresets.width);
+    height_mm = naLista(height_mm, lockedDimensionPresets.height);
+    depth_mm = naLista(depth_mm, lockedDimensionPresets.depth);
 
     const result = m.is_decoration
       ? { total: 0, breakdown: [] }

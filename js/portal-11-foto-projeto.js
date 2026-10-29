@@ -1441,6 +1441,9 @@ async function projectPhotoApplyState(st) {
     created++;
 
     if (Math.abs(Number(slot.depth_mm) - it.depth_mm) > 0.5) updateProjectSlotDimension(slot, 'depth', it.depth_mm);
+    if (Math.abs(Number(slot.width_mm) - it.width_mm) > 0.5) {
+      warnings.push(tPhoto('warn_width_adjusted', { label: it.label, mm: Math.round(slot.width_mm) }));
+    }
     if (Math.abs(Number(slot.height_mm) - it.height_mm) > 0.5) {
       warnings.push(tPhoto('warn_height_adjusted', { label: it.label, mm: Math.round(slot.height_mm) }));
     }
