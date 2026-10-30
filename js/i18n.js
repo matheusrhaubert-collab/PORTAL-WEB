@@ -2196,6 +2196,13 @@
       'project.reposicionar_step_label': 'Passo do teclado',
       'project.reposicionar_cancel_btn': 'Cancelar',
       'project.reposicionar_ok_btn': 'OK',
+      'project.reposicionar_field_x': 'X (largura)',
+      'project.reposicionar_field_y': 'Y (profundidade, + pra trás)',
+      'project.reposicionar_field_z': 'Z (altura)',
+      'project.reposicionar_click_hint': 'Clique perto de um lado do módulo cinza pra encostar e alinhar. Arraste o amarelo (gruda nas bordas). Roda do mouse: zoom.',
+      'project.reposicionar_undo': 'Desfazer',
+      'project.reposicionar_redo': 'Refazer',
+      'project.reposicionar_fit': 'Ajustar zoom',
     },
 
     en: {
@@ -4295,6 +4302,13 @@
       'project.reposicionar_step_label': 'Keyboard step',
       'project.reposicionar_cancel_btn': 'Cancel',
       'project.reposicionar_ok_btn': 'OK',
+      'project.reposicionar_field_x': 'X (width)',
+      'project.reposicionar_field_y': 'Y (depth, + = back)',
+      'project.reposicionar_field_z': 'Z (height)',
+      'project.reposicionar_click_hint': 'Click near a side of the gray module to butt up and align. Drag the yellow one (snaps to edges). Mouse wheel: zoom.',
+      'project.reposicionar_undo': 'Undo',
+      'project.reposicionar_redo': 'Redo',
+      'project.reposicionar_fit': 'Fit view',
     },
 
     es: {
@@ -6388,6 +6402,13 @@
       'project.reposicionar_step_label': 'Paso de teclado',
       'project.reposicionar_cancel_btn': 'Cancelar',
       'project.reposicionar_ok_btn': 'Aceptar',
+      'project.reposicionar_field_x': 'X (ancho)',
+      'project.reposicionar_field_y': 'Y (profundidad, + hacia atrás)',
+      'project.reposicionar_field_z': 'Z (altura)',
+      'project.reposicionar_click_hint': 'Haga clic cerca de un lado del módulo gris para juntar y alinear. Arrastre el amarillo (se pega a los bordes). Rueda del mouse: zoom.',
+      'project.reposicionar_undo': 'Deshacer',
+      'project.reposicionar_redo': 'Rehacer',
+      'project.reposicionar_fit': 'Ajustar zoom',
     }
   };
 

@@ -3205,6 +3205,36 @@ header.po-topnav {
   border: 1px solid var(--border); background: var(--text); color: #fff;
 }
 .po-proj-reposicionar-actions button.secondary { background: var(--panel); color: var(--text); }
+/* Reposicionar refeito no modelo do Promob (2026-10-30) — js/portal-32-reposicionar.js */
+.po-proj-reposicionar-panel { width: 320px; }
+.po-proj-reposicionar-panel .repos-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.po-proj-reposicionar-panel .repos-head h4 { margin: 0; }
+.po-proj-reposicionar-panel .repos-tools { display: flex; gap: 4px; }
+.po-proj-reposicionar-panel .repos-tool {
+  width: 28px; height: 26px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--text); font-size: 14px; cursor: pointer; padding: 0;
+}
+.po-proj-reposicionar-panel .repos-tool:disabled { opacity: 0.35; cursor: default; }
+.repos-svg { cursor: crosshair; user-select: none; }
+.repos-svg .repos-bg { fill: #ffffff; }
+.repos-svg .repos-ref { fill: #f7f7f5; stroke: #8a8a8a; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.repos-svg .repos-child { fill: rgba(242, 193, 78, 0.55); stroke: #2f6fd6; stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: move; }
+.repos-svg .repos-front-mark { fill: #8a8a8a; pointer-events: none; }
+.repos-svg .repos-front-mark.child { fill: #2f6fd6; }
+.repos-svg .repos-ref-pt { stroke: #2aa7d8; stroke-width: 1.5; fill: none; vector-effect: non-scaling-stroke; pointer-events: none; }
+.repos-svg .repos-pivot { fill: none; stroke: #e0342b; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.po-proj-reposicionar-panel .repos-field .repos-spin { display: flex; align-items: stretch; height: 28px; }
+.po-proj-reposicionar-panel .repos-field .repos-spin input { height: 28px; box-sizing: border-box; margin: 0; }
+.po-proj-reposicionar-panel .repos-field .repos-spin input { width: 84px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.po-proj-reposicionar-panel .repos-spin-btns { display: flex; flex-direction: column; }
+.po-proj-reposicionar-panel .repos-spin-btns button {
+  flex: 1 1 0; width: 20px; height: 14px; min-height: 0; padding: 0; margin: 0; font-size: 8px; line-height: 1; cursor: pointer; box-shadow: none;
+  border: 1px solid var(--border); border-left: none; background: var(--panel); color: var(--muted);
+}
+.po-proj-reposicionar-panel .repos-spin-btns button:first-child { border-top-right-radius: 6px; border-bottom: none; }
+.po-proj-reposicionar-panel .repos-spin-btns button:last-child { border-bottom-right-radius: 6px; }
+.po-proj-reposicionar-panel .repos-spin-btns button:hover { color: var(--text); }
+.po-proj-reposicionar-step-row input.repos-rot-step { width: 44px; margin-left: 8px; }
 /* Pedido do usuário (3ª rodada): "tem muita borda lá em cima só com umas
    coisas escritas que ninguém vai ler" — bem discreto, quase um detalhe. */
 .po-proj-canvas-scale-label {
