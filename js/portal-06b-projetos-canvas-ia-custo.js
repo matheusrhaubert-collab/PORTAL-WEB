@@ -286,8 +286,11 @@ function setProjectAiStatus(msg) {
 // Aqui é o cached do módulo se existir; senão, null (a IA lida bem com
 // ausência).
 function buildProjectAiCatalog() {
+  // oculto_catalogo (migration 254, 01/11 — Matt: "nao deixar nenhuma IA
+  // pegar esses modulos", Kitchens › Classic Base): fora da vitrine = fora
+  // da IA também. Mesmo filtro do catálogo da foto (portal-11).
   return allModules
-    .filter((m) => m.function_id)
+    .filter((m) => m.function_id && !m.oculto_catalogo && !m.project_copy_of)
     .map((m) => {
       const fn = projectAiFunctionById(m.function_id);
       return {
