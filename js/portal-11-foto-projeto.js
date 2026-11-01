@@ -613,6 +613,18 @@ function projectPhotoOffFloor(v) { return (Number(v && v.floor_height_mm) || 0) 
 // composição certa pra um volume fora do chão: aéreo (base e base) acima de
 // 700; abaixo disso suspenso (stretcher em cima, base embaixo). Gola etc. via aula.
 function projectPhotoOffFloorComp(v) { return (Number(v.floor_height_mm) || 0) >= PROJECT_PHOTO_AEREO_MIN_MM ? 'aereo' : 'suspenso'; }
+// REGRA SIMPLES DO MATT (01/11 10:18, prints dos cascos): fora de cozinha,
+// corpo = caixa de Componentes pela posição — no chão ou até 700 mm:
+// "Stretcher · Bottom · Back" (composição 'suspenso', mesmo casco); acima de
+// 700: "Bottom · Bottom · Back" ('aereo'). Closet (torre/guarda-roupa)
+// continua com a base de closet (Toe 3). "E aí entra o Construtor pra
+// definir prateleiras, portas ou gavetas."
+const PROJECT_PHOTO_BODY_KINDS = ['base_cabinet', 'sink_base', 'drawer_base', 'wall_cabinet', 'tall_cabinet', 'appliance_housing', 'vanity',
+  'tv_unit', 'desk', 'bench', 'bookcase', 'shelf_unit', 'nightstand', 'dresser', 'shoe_rack', 'island', 'peninsula', 'other'];
+function projectPhotoBodyComp(v) {
+  if (PROJECT_PHOTO_COMPOSITIONS.closet.kinds.includes(v.kind)) return projectPhotoOffFloor(v) ? projectPhotoOffFloorComp(v) : 'closet';
+  return projectPhotoOffFloorComp(v);
+}
 function projectPhotoCompositionOf(v) {
   // forçado pelo pipeline (módulo com rodapé escolhido pra volume fora do chão)
   if (v && v._forceComp && PROJECT_PHOTO_COMPOSITIONS[v._forceComp]) return v._forceComp;
@@ -666,6 +678,17 @@ function projectPhotoDefaultInterior(v) {
       zones: porta ? [{ type: 'shelves', height_mm: v.height_mm, count: 1 }] : [{ type: 'drawers', height_mm: v.height_mm, count: porCol }],
       doors: porta ? 'hinged' : 'none', doors_cover: 'all'
     })) };
+  }
+  // corpo genérico fora de cozinha (01/11): gavetas se leu gavetas, senão
+  // porta(s) se leu porta, senão aberto com prateleira(s) a cada ~350
+  if (v._forceComp && (v._forceComp === 'aereo' || v._forceComp === 'suspenso')) {
+    const gav = Number(v.drawers) || 0, portas = Number(v.doors) || 0;
+    const h = Number(v.height_mm) || 600;
+    const nCols = Math.max(1, Math.round((Number(v.width_mm) || 600) / 900));
+    const colW = Math.round((Number(v.width_mm) || 600) / nCols);
+    const zones = gav ? [{ type: 'drawers', height_mm: h, count: Math.max(1, Math.round(gav / nCols)) }]
+      : [{ type: 'shelves', height_mm: h, count: portas ? Math.max(0, Math.round(h / 350) - 1) : Math.max(1, Math.round(h / 350) - 1) }];
+    return { columns: Array.from({ length: nCols }, () => ({ width_mm: colW, zones: JSON.parse(JSON.stringify(zones)), doors: portas ? 'hinged' : 'none', doors_cover: 'all' })) };
   }
   if (v.kind === 'closet_drawer_unit') {
     return { columns: [{ width_mm: v.width_mm, zones: [{ type: 'drawers', height_mm: v.height_mm, count: Math.max(2, v.drawers || 3) }], doors: 'none', doors_cover: 'all' }] };
@@ -1162,6 +1185,22 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   projectPhotoNormalizeCorners(items, room.walls, warnings);
   projectPhotoFixCorners(items, room.walls, warnings);
   projectPhotoCheckOpenings(items, room.openings, warnings, room.walls);
+  // CABECEIRA NO CHÃO (01/11, Matt: "cabeceira vai sempre colada no chão, e o
+  // espaço que aparece o painel é a parede"): painel de cabeceira (kind
+  // headboard ou rótulo cabeceira/headboard) desce pra altura do chão 0,
+  // mantendo o topo onde estava (a altura cresce).
+  {
+    let n = 0;
+    items.forEach((it) => {
+      if (it.include === false || it.layer === 'floor') return;
+      const ehCab = it.kind === 'headboard' || /cabeceir|headboard|cabecera/i.test(String(it.label || ''));
+      if (!ehCab || !(it.floor_height_mm > 0)) return;
+      it.height_mm = Math.round(it.height_mm + it.floor_height_mm);
+      it.floor_height_mm = 0;
+      n++;
+    });
+    if (n) warnings.push(tPhoto('warn_headboard_floor', { n }));
+  }
   projectPhotoAlignTops(items, warnings);
   // PAINEL VERTICAL ATÉ A PAREDE (01/11, Matt: "é só colocar um painel
   // vertical e ir até a parede, o tamanho está errado"): painel de parede
@@ -1406,12 +1445,27 @@ async function projectPhotoRunPipeline(opts, status) {
       // painel/tampo/prateleira não vira caixa (é chapa) — o "painéis que
       // faltam" cuida deles; só CORPO vira composição
       if (['wall_panel', 'end_panel', 'headboard', 'floating_shelf', 'open_shelf', 'slat_panel', 'countertop'].includes(v.kind)) return;
-      const comp = projectPhotoOffFloor(v) ? projectPhotoOffFloorComp(v) : 'closet';
+      const comp = projectPhotoBodyComp(v);
       if (!projectPhotoCarcassModule(comp, catalog)) return;
       v._forceComp = comp;
       match.items = match.items.filter((it) => it.volume_id !== v.id);
       if (meus[0].color_name) { match.direct_colors = match.direct_colors || []; match.direct_colors.push({ volume_id: v.id, color_name: meus[0].color_name, front_color_name: meus[0].color_name }); }
       warnings.push(tPhoto('warn_kitchen_module_outside', { label: v.label || v.kind }));
+    });
+    // CORPO SEM MÓDULO NUNCA SOME (01/11, Matt: "descobre por que ele não
+    // colocou os módulos"): volume de corpo que a IA deixou em unmatched
+    // vira caixa de Componentes pela posição, com o interior lido
+    // (portas/gavetas/prateleiras) montado no Construtor.
+    const comItem = new Set((match.items || []).map((it) => it.volume_id));
+    room.volumes.forEach((v) => {
+      if (comItem.has(v.id) || v.layer === 'floor' || v._forceComp) return;
+      if (!PROJECT_PHOTO_BODY_KINDS.includes(v.kind)) return;
+      if (diretos.includes(v)) return; // já vai pela composição
+      const comp = projectPhotoBodyComp(v);
+      if (!projectPhotoCarcassModule(comp, catalog)) return;
+      v._forceComp = comp;
+      match.unmatched = (match.unmatched || []).filter((u) => u.volume_id !== v.id);
+      warnings.push(tPhoto('warn_body_fallback', { label: v.label || v.kind, name: projectPhotoCarcassModule(comp, catalog).name }));
     });
   }
   // PAINÉIS QUE FALTAM (01/11, Matt: "faltou painel de cabeceira,
