@@ -339,7 +339,10 @@ async function editProjectAiRun() {
   try { localStorage.setItem(EDIT_AI_QUALITY_KEY, quality); } catch (e) { /* ok */ }
 
   editProjectAiRunning = true;
-  aiBusy.show(I18n.t('ai_busy.edit'));
+  aiBusy.show(I18n.t('ai_busy.edit'), { steps: [
+    { key: 'think', label: I18n.t('ai_busy.s_think'), est: 40 },
+    { key: 'apply', label: I18n.t('ai_busy.s_apply'), est: 10 }
+  ] });
   iaeBusy(true);
   iaeStatus(tIae('status_thinking'));
   document.getElementById('po-ai-edit-result').innerHTML = '';
@@ -364,6 +367,7 @@ async function editProjectAiRun() {
       return;
     }
 
+    aiBusy.step('apply');
     iaeStatus(tIae('status_applying', { n: ops.length }));
     // UM PASSO SÓ NO DESFAZER: guarda a pilha e a foto de antes; as
     // funções reaproveitadas (repointProjectSlotToModule etc.) podem chamar

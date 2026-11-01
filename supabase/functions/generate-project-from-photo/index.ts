@@ -97,6 +97,7 @@ const FALLBACK_BY_TIER: Record<string, string[]> = {
 };
 const modelCache: Record<string, string[] | null> = { pro: null, flash: null };
 const workingModel: Record<string, string | null> = { pro: null, flash: null };
+const semThinking = new Set<string>(); // modelos que recusaram thinkingConfig
 
 function versionOf(name: string): number {
   const m = name.match(/gemini-(\d+(?:\.\d+)?)/i);
@@ -144,7 +145,28 @@ async function candidateModels(apiKey: string, tier: "pro" | "flash"): Promise<s
 // no modo rápido / com menos páginas (projectPhotoRunPipeline, portal-11).
 const SOFT_LIMIT_MS = Number(Deno.env.get("EDGE_SOFT_LIMIT_MS")) || 135_000;
 
-async function callGemini(apiKey: string, tier: "pro" | "flash", parts: any[], schema: any) {
+// RACIOCÍNIO LIMITADO (01/11, teste ao vivo do PDF "Cuarto niño"): o
+// 'read' Pro estourou os 135 s e DEPOIS o 'match' (Flash, 2 imagens) também
+// — não era peso de imagem, era o modelo pensando sem teto: Gemini 2.5/3.x
+// pensa por padrão e o orçamento de saída (64k) deixa ele pensar por
+// minutos. Agora cada etapa diz quanto pode pensar:
+//   'deep'  — leitura (read): precisa raciocinar sobre as cotas/vistas
+//   'light' — vistas, casamento, correção, split, edit, help: tarefa de
+//             lista/JSON, pensar pouco
+// Gemini 3.x usa thinkingLevel; 2.5 usa thinkingBudget (tokens).
+// VERSÃO ÚNICA (Matt: "acho que tem que ter uma só versão"): o tier Pro
+// não é mais usado por nenhuma etapa — tudo Flash. O parâmetro continua
+// aceito pra não quebrar chamador antigo.
+type Thinking = "deep" | "light";
+function thinkingConfigFor(model: string, think: Thinking) {
+  const v = versionOf(model);
+  if (v >= 3) return { thinkingLevel: think === "deep" ? "medium" : "low" };
+  // 2.5 flash: 0..24576; 2.5 pro: mínimo 128
+  return { thinkingBudget: think === "deep" ? 8192 : (/pro/i.test(model) ? 256 : 512) };
+}
+
+async function callGemini(apiKey: string, tier: "pro" | "flash", parts: any[], schema: any, think: Thinking = "light") {
+  tier = "flash";
   const deadline = Date.now() + SOFT_LIMIT_MS;
   const timeout = () => new HttpError(504, "A IA demorou demais pra responder (limite da função).", "timeout");
   const models = await candidateModels(apiKey, tier);
@@ -162,6 +184,7 @@ async function callGemini(apiKey: string, tier: "pro" | "flash", parts: any[], s
       // Gemini 3+ recomenda temperatura padrão (baixar causa laço);
       // 2.x lê melhor medida com temperatura baixa.
       if (versionOf(model) < 3) generationConfig.temperature = 0.2;
+      if (!semThinking.has(model)) generationConfig.thinkingConfig = thinkingConfigFor(model, think);
 
       let res: Response;
       try {
@@ -184,6 +207,13 @@ async function callGemini(apiKey: string, tier: "pro" | "flash", parts: any[], s
       }
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
+        // modelo que não aceita o thinkingConfig mandado: repete sem ele
+        if (res.status === 400 && /thinking/i.test(txt) && generationConfig.thinkingConfig) {
+          delete generationConfig.thinkingConfig;
+          semThinking.add(model);
+          attempt--; // não gasta a tentativa
+          continue;
+        }
         // 429/5xx: vale tentar o próximo modelo antes de desistir
         if (res.status === 429 || res.status >= 500) { lastErr = `${model}: ${res.status} ${txt.slice(0, 200)}`; break; }
         throw new HttpError(502, `Gemini (${model}) respondeu ${res.status}: ${txt.slice(0, 400)}`, "gemini_http");
@@ -818,7 +848,7 @@ async function auditAndFix(apiKey: string, b: any, imgs: any[], leitura: any, t0
   const audit: any = { before: antes, remaining: antes, corrected: false, model: null };
   if (!antes.length || b.audit === false) return { leitura, audit };
   // a leitura demorou demais: não arrisca o tempo da função numa 2ª chamada
-  if (Date.now() - t0 > 95_000) { audit.skipped = "tempo"; return { leitura, audit }; }
+  if (Date.now() - t0 > 70_000) { audit.skipped = "tempo"; return { leitura, audit }; }
   try {
     const { data, model } = await callGemini(apiKey, "flash", [...imgs, { text: buildFixPrompt(b, leitura, antes) }], READ_SCHEMA);
     const depois = auditRead(data, b.page_texts);
@@ -1274,7 +1304,7 @@ Deno.serve(async (req) => {
       const tier = b.quality === "pro" ? "pro" : "flash";
       // imagem ANTES do texto: recomendação do Gemini pra prompt de visão
       const t0 = Date.now();
-      const { data, model } = await callGemini(apiKey, tier, [...imgs, { text: buildReadPrompt(b) }], READ_SCHEMA);
+      const { data, model } = await callGemini(apiKey, tier, [...imgs, { text: buildReadPrompt(b) }], READ_SCHEMA, "deep");
       const { leitura, audit } = await auditAndFix(apiKey, b, imgs, data, t0);
       return json(200, { ...sanitizeRead(leitura, b), model, audit });
     }

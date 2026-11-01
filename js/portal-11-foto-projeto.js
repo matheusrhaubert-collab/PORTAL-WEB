@@ -922,10 +922,8 @@ function setProjectPhotoStatus(msg) {
   el.textContent = msg || '';
   el.style.display = msg ? 'block' : 'none';
 }
-function projectPhotoQuality() {
-  const r = document.querySelector('input[name="po-proj-photo-quality"]:checked');
-  return r && r.value === 'pro' ? 'pro' : 'flash';
-}
+// VERSÃO ÚNICA (01/11): sempre Flash — ver projectPdfQuality (portal-12).
+function projectPhotoQuality() { return 'flash'; }
 
 async function runProjectPhotoAttach(file) {
   setProjectPhotoError('');
@@ -983,12 +981,15 @@ async function projectPhotoRunPipeline(opts, status) {
   // pranchas): se a leitura estoura o tempo da função, tenta de novo no
   // modo rápido e depois com menos páginas — melhor um projeto um pouco
   // menos fiel do que nenhum. Quem caiu pro plano B ganha um aviso.
+  // VERSÃO ÚNICA (01/11): quality é sempre 'flash'; o plano B é só
+  // "menos imagens" (tira os recortes/pranchas do fim da lista).
   const tentativas = [{ quality: opts.quality, n: images.length }];
-  if (opts.quality === 'pro') tentativas.push({ quality: 'flash', n: images.length });
+  if (images.length > 6) tentativas.push({ quality: 'flash', n: 6 });
   if (images.length > 3) tentativas.push({ quality: 'flash', n: 3 });
   let room = null, planoB = null;
   for (let k = 0; k < tentativas.length && !room; k++) {
     const tt = tentativas[k];
+    if (typeof aiBusy !== 'undefined') aiBusy.step('read');
     say(k === 0 ? tPhoto(tt.quality === 'pro' ? 'status_step1_pro' : 'status_step1') : tPhoto('status_retry_fast', { n: tt.n }));
     try {
       room = await invokeProjectPhotoStage({
@@ -1010,6 +1011,7 @@ async function projectPhotoRunPipeline(opts, status) {
   const [catalog, colors] = await catalogP;
   if (!catalog.length) throw new Error(tPhoto('err_no_catalog'));
 
+  if (typeof aiBusy !== 'undefined') aiBusy.step('match');
   say(tPhoto('status_step2'));
   // casamento: a 1ª imagem basta pra estilo/cor (economiza payload)
   const diretos = projectPhotoDirectVolumes(room, catalog);
@@ -1060,7 +1062,10 @@ async function runProjectPhotoAnalyze() {
   try { localStorage.setItem(PROJECT_PHOTO_QUALITY_KEY, quality); } catch (e) { /* ok */ }
 
   projectPhotoRunning = true;
-  aiBusy.show(I18n.t('ai_busy.photo'));
+  aiBusy.show(I18n.t('ai_busy.photo'), { steps: [
+    { key: 'read', label: I18n.t('ai_busy.s_read'), est: 60 },
+    { key: 'match', label: I18n.t('ai_busy.s_match'), est: 40 }
+  ] });
   setProjectPhotoError('');
   const runBtn = document.getElementById('po-proj-photo-run-btn');
   if (runBtn) runBtn.disabled = true;

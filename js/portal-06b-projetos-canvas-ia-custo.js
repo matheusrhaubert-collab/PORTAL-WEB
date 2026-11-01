@@ -521,7 +521,10 @@ async function runProjectAiGeneration() {
   }
 
   projectAiRunning = true;
-  aiBusy.show(I18n.t('ai_busy.generate'));
+  aiBusy.show(I18n.t('ai_busy.generate'), { steps: [
+    { key: 'think', label: I18n.t('ai_busy.s_think'), est: 45 },
+    { key: 'apply', label: I18n.t('ai_busy.s_apply'), est: 10 }
+  ] });
   setProjectAiError('');
   setProjectAiStatus(I18n.t('project_ai.status_calling'));
   const runBtn = document.getElementById('po-proj-ai-run-btn');
@@ -568,6 +571,7 @@ async function runProjectAiGeneration() {
       throw new Error((data && data.error) || I18n.t('project_ai.err_empty_result'));
     }
 
+    aiBusy.step('apply');
     setProjectAiStatus(I18n.t('project_ai.status_building'));
     const { items: enforced, warnings: recipeWarnings } = enforceProjectAiRecipe(data.items, room, catalog);
     const { placed, warnings: layoutWarnings } = layoutProjectAiItems(enforced);

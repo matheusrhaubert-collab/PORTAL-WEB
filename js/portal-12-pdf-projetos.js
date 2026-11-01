@@ -69,10 +69,11 @@ function setProjectPdfStatus(msg) {
   el.textContent = msg || '';
   el.style.display = msg ? 'block' : 'none';
 }
-function projectPdfQuality() {
-  const r = document.querySelector('input[name="po-proj-pdf-quality"]:checked');
-  return r && r.value === 'pro' ? 'pro' : 'flash';
-}
+// VERSÃO ÚNICA (01/11, Matt: "acho que tem que ter uma só versão"): sempre
+// Flash. O Pro estourava o tempo da função com pranchas + recortes, e com as
+// cotas em texto o Flash lê o número certo do mesmo jeito. O seletor ficou
+// escondido no HTML (display:none) caso precise voltar.
+function projectPdfQuality() { return 'flash'; }
 
 // ---------- pdf.js ----------
 function ensureProjectPdfJs() {
@@ -205,6 +206,7 @@ async function projectPdfCropView(view) {
 // derruba o ambiente: volta [] e o read segue só com as pranchas inteiras.
 async function projectPdfCropsForRoom(r, pages, lang, say) {
   try {
+    aiBusy.step('views');
     say(tPdf('st_views'));
     const data = await invokeProjectPhotoStage({
       stage: 'views', lang, room_name: r.name,
@@ -212,6 +214,7 @@ async function projectPdfCropsForRoom(r, pages, lang, say) {
     });
     const vistas = projectPdfPickViews(data.views, pages);
     const out = [];
+    if (vistas.length) aiBusy.step('crops');
     for (let i = 0; i < vistas.length; i++) {
       const v = vistas[i];
       say(tPdf('st_cropping', { i: i + 1, n: vistas.length }));
@@ -317,7 +320,7 @@ async function runProjectPdfAttach(file) {
 async function runProjectPdfSplit() {
   if (projectPdfRunning || !projectPdfPages.length) return;
   projectPdfRunning = true;
-  aiBusy.show(I18n.t('ai_busy.pdf_split'));
+  aiBusy.show(I18n.t('ai_busy.pdf_split'), { steps: [{ key: 'split', label: I18n.t('ai_busy.s_split'), est: 40 }] });
   setProjectPdfError('');
   const runBtn = document.getElementById('po-proj-pdf-run-btn');
   if (runBtn) runBtn.disabled = true;
@@ -552,7 +555,16 @@ async function runProjectPdfCreate() {
   const lang = (typeof I18n !== 'undefined' && typeof I18n.getLanguage === 'function') ? (I18n.getLanguage() || 'pt') : 'pt';
 
   projectPdfRunning = true;
-  aiBusy.show(I18n.t('ai_busy.pdf_create'));
+  // etapas × ambientes (2 em paralelo): estimativa por ambiente ~ 3 min
+  const passosAmb = [
+    { key: 'views', label: I18n.t('ai_busy.s_views'), est: 15 },
+    { key: 'crops', label: I18n.t('ai_busy.s_crops'), est: 10 },
+    { key: 'read', label: I18n.t('ai_busy.s_read'), est: 75 },
+    { key: 'match', label: I18n.t('ai_busy.s_match'), est: 45 },
+    { key: 'build', label: I18n.t('ai_busy.s_build'), est: 15 }
+  ];
+  const rodadas = Math.ceil(chosen.length / PROJECT_PDF_AI_PARALLEL);
+  aiBusy.show(I18n.t('ai_busy.pdf_create'), { steps: passosAmb.map((p) => ({ ...p, est: p.est * rodadas })) });
   setProjectPdfError('');
   chosen.forEach((r) => { r.status = 'queued'; r.message = ''; r.warnings = []; });
   renderProjectPdfReview(); refreshProjectPdfCreateBtn();
@@ -593,6 +605,7 @@ async function runProjectPdfCreate() {
         continue;
       }
       try {
+        aiBusy.step('build');
         setRoom(r, 'building', tPdf('st_building'));
         projectPdfResetOpenProject();
         const { created, warnings } = await projectPhotoApplyState(st);

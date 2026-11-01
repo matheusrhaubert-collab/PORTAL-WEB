@@ -41,44 +41,90 @@ let allModules = [];
 // mensagem pra cá (aiBusy.status) — a tela de origem continua mostrando o
 // texto dela, o véu só duplica por cima, grande.
 const aiBusy = (() => {
-  let el = null, t0 = 0, timer = null;
+  let el = null, t0 = 0, timer = null, plan = null, stepIdx = 0, stepT0 = 0;
+  // Robô original (SVG inline, sem imagem externa): cabeça balança, braço
+  // martela, olhos piscam — tudo CSS (css/style.css, .po-ai-robot).
+  const ROBO = '<svg class="po-ai-robot" viewBox="0 0 120 110" aria-hidden="true">' +
+    '<g class="po-ai-robot-head"><rect x="30" y="8" width="60" height="44" rx="10" fill="#d6336c"/>' +
+    '<rect x="38" y="18" width="44" height="24" rx="6" fill="#1b1f27"/>' +
+    '<circle class="po-ai-robot-eye" cx="52" cy="30" r="5" fill="#7cf2c8"/><circle class="po-ai-robot-eye" cx="68" cy="30" r="5" fill="#7cf2c8"/>' +
+    '<rect x="57" y="0" width="6" height="10" rx="3" fill="#8a90a0"/><circle cx="60" cy="2" r="4" fill="#ffb02e"/></g>' +
+    '<rect x="40" y="54" width="40" height="34" rx="8" fill="#e3e6ec"/><rect x="50" y="62" width="20" height="8" rx="2" fill="#c3c8d2"/>' +
+    '<rect x="24" y="58" width="14" height="24" rx="6" fill="#d6336c"/>' +
+    '<g class="po-ai-robot-arm"><rect x="82" y="58" width="14" height="24" rx="6" fill="#d6336c"/><rect x="92" y="50" width="8" height="30" rx="3" fill="#8a90a0"/><rect x="86" y="44" width="22" height="10" rx="2" fill="#5b616e"/></g>' +
+    '<rect x="44" y="88" width="12" height="16" rx="4" fill="#8a90a0"/><rect x="64" y="88" width="12" height="16" rx="4" fill="#8a90a0"/>' +
+    '<rect x="20" y="104" width="80" height="4" rx="2" fill="#e3e6ec"/></svg>';
   function ensure() {
     if (el) return el;
     el = document.createElement('div');
     el.id = 'po-ai-busy';
-    el.innerHTML = '<div class="po-ai-busy-card" role="status" aria-live="polite">' +
-      '<div class="po-ai-busy-spin"></div>' +
+    el.innerHTML = '<div class="po-ai-busy-card" role="status" aria-live="polite">' + ROBO +
+      '<div class="po-ai-busy-relax"></div>' +
       '<div class="po-ai-busy-title"></div>' +
+      '<div class="po-ai-busy-bar"><div class="po-ai-busy-fill"></div></div>' +
+      '<div class="po-ai-busy-step"></div>' +
       '<div class="po-ai-busy-msg"></div>' +
       '<div class="po-ai-busy-time"></div>' +
       '<div class="po-ai-busy-hint"></div></div>';
     document.body.appendChild(el);
-    // trava teclado (Esc, atalhos do canvas) enquanto está aberto
     el.addEventListener('keydown', (e) => { e.stopPropagation(); e.preventDefault(); }, true);
     return el;
   }
+  const fmt = (s) => s >= 60 ? Math.floor(s / 60) + ' min ' + String(s % 60).padStart(2, '0') + ' s' : s + ' s';
   function tick() {
     if (!el) return;
     const s = Math.round((Date.now() - t0) / 1000);
-    el.querySelector('.po-ai-busy-time').textContent = s >= 60 ? Math.floor(s / 60) + ' min ' + (s % 60) + ' s' : s + ' s';
+    let txt = I18n.t('ai_busy.elapsed', { t: fmt(s) });
+    if (plan && plan.length) {
+      // progresso = etapas feitas + fração da atual pelo tempo estimado
+      // (nunca passa de 95% dentro da etapa — a IA decide quando acaba)
+      const feito = plan.slice(0, stepIdx).reduce((a, p) => a + p.est, 0);
+      const atual = plan[stepIdx] || { est: 30 };
+      const fr = Math.min(0.95, (Date.now() - stepT0) / 1000 / atual.est);
+      const total = plan.reduce((a, p) => a + p.est, 0);
+      const pct = Math.min(99, Math.round((feito + fr * atual.est) / total * 100));
+      el.querySelector('.po-ai-busy-fill').style.width = pct + '%';
+      const resta = Math.max(0, Math.round(total - feito - Math.min(atual.est, (Date.now() - stepT0) / 1000)));
+      txt += ' · ' + (resta > 5 ? I18n.t('ai_busy.remaining', { t: fmt(resta) }) : I18n.t('ai_busy.almost'));
+    }
+    el.querySelector('.po-ai-busy-time').textContent = txt;
   }
   return {
-    show(title, msg) {
+    // show(título, { steps: [{ key, label, est(s) }], hint })
+    show(title, opts) {
       ensure();
-      t0 = Date.now();
+      opts = opts || {};
+      t0 = Date.now(); plan = opts.steps || null; stepIdx = 0; stepT0 = t0;
+      el.querySelector('.po-ai-busy-relax').textContent = I18n.t('ai_busy.relax');
       el.querySelector('.po-ai-busy-title').textContent = title || I18n.t('ai_busy.title');
-      el.querySelector('.po-ai-busy-msg').textContent = msg || '';
-      el.querySelector('.po-ai-busy-hint').textContent = I18n.t('ai_busy.hint');
+      el.querySelector('.po-ai-busy-msg').textContent = '';
+      el.querySelector('.po-ai-busy-step').textContent = plan ? this._stepText() : '';
+      el.querySelector('.po-ai-busy-bar').style.display = plan ? '' : 'none';
+      el.querySelector('.po-ai-busy-fill').style.width = '0%';
+      el.querySelector('.po-ai-busy-hint').textContent = opts.hint || I18n.t('ai_busy.hint');
       el.classList.add('open');
       document.body.classList.add('po-ai-busy-on');
       clearInterval(timer); timer = setInterval(tick, 1000); tick();
+    },
+    _stepText() {
+      const p = plan[stepIdx];
+      return p ? I18n.t('ai_busy.step_of', { i: stepIdx + 1, n: plan.length, label: p.label }) : '';
+    },
+    // avança pra etapa `key` do plano (ignora se não tem plano ou já passou)
+    step(key) {
+      if (!el || !plan) return;
+      const i = plan.findIndex((p) => p.key === key);
+      if (i < 0 || i < stepIdx) return;
+      if (i !== stepIdx) { stepIdx = i; stepT0 = Date.now(); }
+      el.querySelector('.po-ai-busy-step').textContent = this._stepText();
+      tick();
     },
     status(msg) { if (el && el.classList.contains('open') && msg) el.querySelector('.po-ai-busy-msg').textContent = msg; },
     hide() {
       if (!el) return;
       el.classList.remove('open');
       document.body.classList.remove('po-ai-busy-on');
-      clearInterval(timer); timer = null;
+      clearInterval(timer); timer = null; plan = null;
     },
     isOpen() { return !!(el && el.classList.contains('open')); }
   };

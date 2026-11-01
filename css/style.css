@@ -6126,7 +6126,6 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 #po-ai-busy { position: fixed; inset: 0; background: rgba(15, 18, 24, .55); display: none; align-items: center; justify-content: center; z-index: 2000; padding: 16px; cursor: progress; backdrop-filter: blur(2px); }
 #po-ai-busy.open { display: flex; }
 .po-ai-busy-card { background: #fff; color: #1b1f27; border-radius: 14px; padding: 28px 32px; min-width: 300px; max-width: 460px; text-align: center; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
-.po-ai-busy-spin { width: 46px; height: 46px; margin: 0 auto 14px; border-radius: 50%; border: 5px solid #e3e6ec; border-top-color: #d6336c; animation: po-ai-busy-rot .9s linear infinite; }
 @keyframes po-ai-busy-rot { to { transform: rotate(360deg); } }
 .po-ai-busy-title { font-weight: 700; font-size: 17px; margin-bottom: 6px; }
 .po-ai-busy-msg { font-size: 14px; min-height: 20px; color: #3a404b; }
@@ -6134,3 +6133,15 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 .po-ai-busy-hint { font-size: 12px; color: #8a90a0; margin-top: 4px; }
 body.po-ai-busy-on { overflow: hidden; }
 body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: none; }
+
+.po-ai-busy-relax { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #d6336c; font-weight: 700; margin-bottom: 4px; }
+.po-ai-busy-bar { height: 8px; background: #e3e6ec; border-radius: 4px; overflow: hidden; margin: 12px 0 8px; }
+.po-ai-busy-fill { height: 100%; width: 0; background: linear-gradient(90deg, #d6336c, #ff7aa2); border-radius: 4px; transition: width .8s ease; }
+.po-ai-busy-step { font-size: 14px; font-weight: 600; color: #1b1f27; }
+.po-ai-robot { width: 96px; height: 88px; margin: 0 auto 8px; display: block; }
+.po-ai-robot-head { transform-origin: 60px 52px; animation: po-ai-robot-nod 1.6s ease-in-out infinite; }
+.po-ai-robot-arm { transform-origin: 86px 60px; animation: po-ai-robot-hammer .7s ease-in-out infinite; }
+.po-ai-robot-eye { animation: po-ai-robot-blink 3.2s infinite; transform-origin: center; }
+@keyframes po-ai-robot-nod { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes po-ai-robot-hammer { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-35deg); } }
+@keyframes po-ai-robot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
