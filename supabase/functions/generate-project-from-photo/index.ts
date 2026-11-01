@@ -268,6 +268,38 @@ function parseLooseJson(text: string): any {
 }
 
 // ==========================================================================
+// AULAS DA IA (migration 255, tela "Ensinar a IA" — 01/11, Matt: "quero
+// ensinar a IA a ler um projeto e selecionar as peças corretamente")
+// ==========================================================================
+// O portal manda as aulas ativas em b.lessons; cada uma entra no prompt da
+// etapa que ela cobre (stage). Texto curto por aula; exemplo opcional.
+function lessonsPrompt(lessons: any, stage: "read" | "match"): string {
+  const list = (Array.isArray(lessons) ? lessons : [])
+    .filter((l: any) => l && l.active !== false && (!Array.isArray(l.stage) || !l.stage.length || l.stage.includes(stage)))
+    .slice(0, 60);
+  if (!list.length) return "";
+  const linhas = list.map((l: any, i: number) => {
+    const t = l.target || {};
+    const alvo = t.mode === "composition" ? `vai pelas CAIXAS CRUAS (composição "${t.composition || "closet"}", não escolha módulo do catálogo)`
+      : t.mode === "skip" ? "NÃO reproduzir (unmatched)"
+      : t.module_name ? `módulo do catálogo "${t.module_name}"` : "";
+    const partes = [
+      `${i + 1}. [${String(l.title || "").slice(0, 80)}]`,
+      `QUANDO: ${String(l.trigger || "").slice(0, 300)}`,
+      Array.isArray(l.volume_kinds) && l.volume_kinds.length ? `kinds: ${l.volume_kinds.join(", ")}` : "",
+      Array.isArray(l.room_kinds) && l.room_kinds.length ? `ambientes: ${l.room_kinds.join(", ")}` : "",
+      `FAÇA: ${String(l.how || "").slice(0, 500)}`,
+      alvo ? `ALVO: ${alvo}` : "",
+      t.interior && Array.isArray(t.interior.columns) && t.interior.columns.length ? `interior: ${JSON.stringify(t.interior).slice(0, 400)}` : "",
+      l.example ? `exemplo: ${JSON.stringify(l.example).slice(0, 500)}` : "",
+    ].filter(Boolean);
+    return partes.join(" — ");
+  });
+  return `AULAS DO PROJETISTA (ensinadas na tela "Ensinar a IA" — VALEM MAIS que as regras genéricas; quando uma aula se aplica, siga-a e cite o título em notes/reason${stage === "read" ? "; na leitura use o kind e o interior que a aula pede" : ""}):
+${linhas.join("\n")}`;
+}
+
+// ==========================================================================
 // ETAPA 1 — LEITURA (ambiente + volumes)
 // ==========================================================================
 const OPENING_TYPES = ["door", "window", "passage", "niche"];
@@ -280,6 +312,8 @@ const VOLUME_KINDS = [
   "refrigerator", "range", "cooktop", "oven", "dishwasher", "microwave", "sink",
   "island", "peninsula", "vanity", "wardrobe", "closet_tower", "closet_drawer_unit", "tv_unit", "desk", "bed", "table",
   "sofa", "tv", "column", "beam", "other",
+  // 01/11 (aulas / Cuarto niño): tipos que viviam caindo em "other"
+  "bench", "bookcase", "shelf_unit", "headboard", "nightstand", "dresser", "shoe_rack",
 ];
 
 const READ_SCHEMA = {
@@ -423,7 +457,7 @@ ${ref}
 - Rodapé: ${Math.round(b.baseboard_mm || 0)} mm
 ${b.notes ? `- Observações: ${String(b.notes).slice(0, 800)}` : ""}
 
-REFERÊNCIAS DE ESCALA (padrão americano e brasileiro — confira umas contra as outras):
+${lessonsPrompt(b.lessons, "read") ? lessonsPrompt(b.lessons, "read") + "\n\n" : ""}REFERÊNCIAS DE ESCALA (padrão americano e brasileiro — confira umas contra as outras):
 - Balcão/base de cozinha: altura do corpo ~ 876 mm (34.5") + tampo ~ 914 mm (36") total; profundidade 610 mm (24"); rodapé recuado ~ 100 mm.
 - Gabinete de banheiro (VANITY): kind="vanity", profundidade SEMPRE 533 mm (21") — padrão da Legno; altura do corpo ~ 787–876 mm (31–34.5"). Todo gabinete de pia/gaveteiro de piso em banheiro é vanity.
 - Aéreo de cozinha: profundidade 305–330 mm (12–13"); base do aéreo ~ 1370–1450 mm do chão (18" acima do tampo); alturas comuns 762/914/1067 mm (30/36/42").
@@ -463,6 +497,7 @@ Cada corpo de móvel ou equipamento, um por item, em ordem: primeiro tudo que en
   • Sem módulo de canto: a corrida de UMA das paredes vai até o canto e a da outra começa depois da profundidade da primeira (base de 610 de profundidade → x≈610). Nunca sobreponha volumes de paredes vizinhas no canto.
 - Nunca coloque volume sobre uma porta/passagem. Embaixo de janela só base (até o peitoril).
 - Eletros (geladeira, fogão, coifa, lava-louças, micro-ondas), coluna, viga, TV, sofá também viram volume com o kind certo — eles ocupam espaço.
+- QUARTO / LIVING / ESCRITÓRIO — use o kind específico, não "other": bench (banco/baú sob janela, caixa fechada com tampo), bookcase (estante/torre de nichos aberta), shelf_unit (conjunto de prateleiras), floating_shelf (prateleira solta na parede), headboard (painel de cabeceira), nightstand (criado-mudo), dresser (cômoda), desk (escrivaninha; o gaveteiro dela é outro volume kind="drawer_base" ou "closet_drawer_unit"), tv_unit (rack), wall_panel (painel liso de parede).
 - CLOSET / GUARDA-ROUPA / DESPENSA COM TORRES: cada TORRE (caixa independente, entre duas laterais que vão do chão ao topo) é UM volume kind="closet_tower" (gaveteiro baixo/ilha de closet = "closet_drawer_unit"). Preencha "interior":
   • columns: as colunas internas da ESQUERDA pra DIREITA (divididas por divisória vertical), com width_mm interno de cada uma. Torre de 1 coluna = 1 item.
   • zones de cada coluna, de BAIXO pra CIMA, com height_mm de cada zona (a soma ≈ altura interna da torre): "drawers" (count = nº de gavetas), "shelves" (count = nº de prateleiras DENTRO da zona), "hanging" (cabideiro; zona de cabide curto ~1000–1100, longo ~1600–1700), "shoes" (sapateira, count = nº de prateleiras), "open" (nicho vazio/maleiro sem prateleira).
@@ -674,7 +709,9 @@ REGRAS:
 8. "notes": 1–3 frases. "label" e "reason" em ${langName(b.lang)}.
 9. CAIXAS CRUAS (lista própria abaixo — closet, armário montado pelo configurador): NÃO viram items. Para CADA uma, um item em "direct_colors": color_name = cor da CAIXA (laterais, prateleiras); front_color_name = cor das PORTAS/FRENTES DE GAVETA (igual à caixa se não houver diferença visível ou se for aberto). Use o acabamento escrito (color_description) e a imagem; mesmos móveis = mesmas cores. Nunca deixe vazio: na dúvida, a cor mais próxima da lista. Lista vazia → direct_colors = [].
 10. ${SKILL_SUSPENSO.replace(/\n/g, "\n    ")}
-
+11. OLHAR O MACRO (Matt): não troque cada volume por UM cabinet pronto. Leia a COMPOSIÇÃO do móvel (caixas, painéis, prateleiras, nichos, divisão das frentes) e devolva VÁRIOS items pro mesmo volume_id quando for o caso: ex. banco baixo = gaveteiros/portas lado a lado seguindo a divisão das frentes + um painel horizontal por cima; prateleira solta = painel horizontal; painel vertical/horizontal = módulo de painel. Cada item com o seu x/largura/altura/altura do chão, cobrindo o volume.
+12. MÓDULO SEM TAMPO (Floating, "Base ... Cabinet" de cozinha com stretcher em cima) só serve embaixo de pedra/bancada. Banco, aparador, rack, móvel que fica à vista por cima → módulo de caixa FECHADA (com topo) ou caixa crua + Construtor; nunca o sem tampo.
+${lessonsPrompt(b.lessons, "match") ? "\n" + lessonsPrompt(b.lessons, "match") + "\n" : ""}
 VOLUMES MEDIDOS:
 ${vols || "(nenhum)"}
 
@@ -1247,7 +1284,7 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
 
   const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "views" ? "views" : b?.stage === "edit" ? "edit" : b?.stage === "promob_match" ? "promob_match" : b?.stage === "help" ? "help" : "read";
-  const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length + JSON.stringify(b.page_texts || "").length;
+  const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length + JSON.stringify(b.page_texts || "").length + JSON.stringify(b.lessons || "").length;
   if (tamanho > 14_000_000) return json(413, { error: "Imagens grandes demais — use menos páginas.", code: "too_big" });
 
   try {

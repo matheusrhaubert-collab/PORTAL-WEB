@@ -494,6 +494,30 @@ const PROJECT_PHOTO_COMPOSITIONS = {
   }
 };
 
+// ---------- AULAS DA IA (migration 255, tela "Ensinar a IA" — portal-33) ----------
+// Cache das aulas ativas; vão pra função (read/match) e o portal ainda
+// garante o alvo aqui (volume que casa com a aula → módulo/composição dela).
+let aiLessonsCache = null;
+async function loadAiLessons(force) {
+  if (aiLessonsCache && !force) return aiLessonsCache;
+  try {
+    const { data, error } = await supabaseClient.from('ai_lessons').select('*').eq('active', true).order('sort_order').order('created_at');
+    aiLessonsCache = error ? [] : (data || []);
+  } catch (e) { aiLessonsCache = []; }
+  return aiLessonsCache;
+}
+// Aula que cobre o volume: kind na lista da aula, OU palavra-chave da aula
+// no rótulo/notas do volume (4+ letras, sem acento, sem caixa).
+function aiLessonNorm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function projectPhotoLessonFor(v, lessons) {
+  const txt = aiLessonNorm((v && v.label) + ' ' + (v && v.notes) + ' ' + (v && v.kind));
+  return (lessons || aiLessonsCache || []).find((l) => {
+    if (!l || l.active === false) return false;
+    if (Array.isArray(l.volume_kinds) && l.volume_kinds.length && l.volume_kinds.includes(v.kind)) return true;
+    return (l.keywords || []).some((k) => { const n = aiLessonNorm(k).trim(); return n.length >= 3 && txt.includes(n); });
+  }) || null;
+}
+
 // Altura a partir da qual o móvel de composição é separado em uma caixa por
 // coluna (montagem: caixa larga e alta não passa por porta/corredor).
 const PROJECT_PHOTO_SPLIT_TALL_MM = 1200;
@@ -506,6 +530,12 @@ function projectPhotoIsSuspended(v) {
   return fh >= PROJECT_PHOTO_SUSPENDED_MIN_MM && fh < 1000 && (Number(v.height_mm) || 0) < 1100;
 }
 function projectPhotoCompositionOf(v) {
+  // aula manda (01/11): composição pedida na aula, ou módulo (= não é composição)
+  const aula = projectPhotoLessonFor(v);
+  if (aula && aula.target) {
+    if (aula.target.mode === 'composition' && PROJECT_PHOTO_COMPOSITIONS[aula.target.composition || 'closet']) return aula.target.composition || 'closet';
+    if (aula.target.mode === 'module' || aula.target.mode === 'skip') return null;
+  }
   if (projectPhotoIsSuspended(v) && PROJECT_PHOTO_COMPOSITIONS.suspenso.kinds.includes(v.kind)) return 'suspenso';
   return Object.keys(PROJECT_PHOTO_COMPOSITIONS).find((k) => k !== 'suspenso' && PROJECT_PHOTO_COMPOSITIONS[k].kinds.includes(v.kind)) || null;
 }
@@ -528,6 +558,11 @@ function projectPhotoDirectVolumes(room, catalog) {
 
 // Interior padrão quando a IA não descreveu (porta fechada, sem vista).
 function projectPhotoDefaultInterior(v) {
+  // interior da aula, se ela trouxe (01/11)
+  const aula = projectPhotoLessonFor(v);
+  if (aula && aula.target && aula.target.interior && Array.isArray(aula.target.interior.columns) && aula.target.interior.columns.length) {
+    return JSON.parse(JSON.stringify(aula.target.interior));
+  }
   // Suspenso sem interior lido: gavetas em colunas de ~600 mm (o mais comum
   // em vanity); porta de giro se a leitura viu porta e nenhuma gaveta.
   if (projectPhotoCompositionOf(v) === 'suspenso') {
@@ -976,6 +1011,8 @@ async function projectPhotoRunPipeline(opts, status) {
   const images = opts.images || [];
   const catalogP = opts.catalogP || Promise.all([buildProjectPhotoCatalog(), buildProjectPhotoColorList()]);
   catalogP.catch(() => {});
+  const lessons = await loadAiLessons();
+  const lessonsPayload = lessons.map((l) => ({ title: l.title, stage: l.stage, room_kinds: l.room_kinds, volume_kinds: l.volume_kinds, trigger: l.trigger, how: l.how, target: l.target, example: l.example }));
 
   // ESCADA DE PLANO B (01/10, Indiana: "Cozinha · erro 504" com Pro + 6
   // pranchas): se a leitura estoura o tempo da função, tenta de novo no
@@ -999,7 +1036,8 @@ async function projectPhotoRunPipeline(opts, status) {
         baseboard_mm: roomSettings.baseboard_mm || 0, notes: opts.notes || '', lang,
         // fase 1 fidelidade (01/11): textos do PDF com posição (só desenho);
         // nas tentativas de plano B vão só os das páginas que ficaram
-        page_texts: (opts.pageTexts || []).slice(0, tt.n)
+        page_texts: (opts.pageTexts || []).slice(0, tt.n),
+        lessons: lessonsPayload
       });
       if (k > 0) planoB = tt;
     } catch (err) {
@@ -1012,6 +1050,7 @@ async function projectPhotoRunPipeline(opts, status) {
   if (!catalog.length) throw new Error(tPhoto('err_no_catalog'));
 
   if (typeof aiBusy !== 'undefined') aiBusy.step('match');
+  const warnings = [];
   say(tPhoto('status_step2'));
   // casamento: a 1ª imagem basta pra estilo/cor (economiza payload)
   const diretos = projectPhotoDirectVolumes(room, catalog);
@@ -1026,10 +1065,35 @@ async function projectPhotoRunPipeline(opts, status) {
       id: v.id, kind: v.kind, label: v.label, width_mm: v.width_mm, height_mm: v.height_mm,
       doors: v.doors, drawers: v.drawers, color_description: v.color_description || ''
     })),
-    catalog: catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name))
+    catalog: catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name)),
+    lessons: lessonsPayload
   });
+  // ALVO DA AULA GARANTIDO (01/11): volume coberto por aula de módulo que a
+  // IA deixou em unmatched ou casou com outro módulo → vai pro módulo da
+  // aula, com as medidas lidas. Aula 'skip' → tira do resultado.
+  const byName = new Map(catalog.map((m) => [aiLessonNorm(m.name), m]));
+  const ensinados = [];
+  room.volumes.forEach((v) => {
+    const aula = projectPhotoLessonFor(v, lessons);
+    if (!aula || !aula.target) return;
+    if (aula.target.mode === 'skip') {
+      match.items = (match.items || []).filter((it) => it.volume_id !== v.id);
+      match.unmatched = (match.unmatched || []).filter((u) => u.volume_id !== v.id);
+      return;
+    }
+    if (aula.target.mode !== 'module' || !aula.target.module_name) return;
+    const m = byName.get(aiLessonNorm(aula.target.module_name));
+    if (!m) { warnings.push(tPhoto('warn_lesson_module_missing', { title: aula.title, name: aula.target.module_name })); return; }
+    const meus = (match.items || []).filter((it) => it.volume_id === v.id);
+    if (meus.length && meus.every((it) => it.module_id === m.id)) return; // já veio certo
+    const cor = meus.length ? meus[0].color_name : null;
+    match.items = (match.items || []).filter((it) => it.volume_id !== v.id);
+    match.unmatched = (match.unmatched || []).filter((u) => u.volume_id !== v.id);
+    match.items.push({ volume_id: v.id, module_id: m.id, label: v.label, x_mm: v.x_mm, width_mm: v.width_mm, height_mm: v.height_mm, depth_mm: v.depth_mm, floor_height_mm: v.floor_height_mm, color_name: cor });
+    ensinados.push(aula.title);
+  });
+  if (ensinados.length) warnings.push(tPhoto('warn_lesson_applied', { titles: Array.from(new Set(ensinados)).join(' · ') }));
 
-  const warnings = [];
   if (planoB) warnings.push(tPhoto('warn_fallback_fast', { n: planoB.n }));
   // auditoria da leitura (01/11): o que a correção automática não resolveu
   // vira aviso; o resto fica no console pra conferir o antes/depois.
@@ -1041,6 +1105,8 @@ async function projectPhotoRunPipeline(opts, status) {
   const items = projectPhotoBuildItems(match, room, catalog, warnings, opts.roomKind || null);
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
   const unmatched = (match.unmatched || []).map((u) => ({ volume: volById.get(u.volume_id), reason: u.reason })).filter((u) => u.volume);
+  // pra tela "Ensinar a IA" (portal-33): último resultado, com o que ficou de fora
+  window.projectPhotoLastRead = { room: opts.roomName || '', roomKind: opts.roomKind || null, volumes: room.volumes, unmatched, items: match.items || [] };
   return {
     room, items, unmatched, warnings,
     notes: match.notes || '',
@@ -1589,7 +1655,7 @@ async function runProjectPhotoBuild() {
 // devolver o id à lista de admin.
 const PROJECT_AI_BUTTON_IDS = ['po-proj-photo-open-btn', 'po-proj-pdf-open-btn', 'po-proj-import2020-open-btn', 'po-proj-importpromob-open-btn', 'po-proj-ai-walls-btn', 'po-proj-ai-edit-btn'];
 // 22/10, Matt: mapa de calor liberado pra TODOS os usuários (mora no Budget).
-const PROJECT_ADMIN_ONLY_BUTTON_IDS = [];
+const PROJECT_ADMIN_ONLY_BUTTON_IDS = ['po-proj-teach-btn']; // Ensinar a IA (01/11)
 async function refreshProjectAdminOnlyButtons() {
   let isAdmin = false;
   let isDealerRole = false;

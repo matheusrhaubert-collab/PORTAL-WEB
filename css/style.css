@@ -6145,3 +6145,31 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 @keyframes po-ai-robot-nod { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
 @keyframes po-ai-robot-hammer { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-35deg); } }
 @keyframes po-ai-robot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+
+/* Ensinar a IA (2026-11-01) */
+#po-teach-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+#po-teach-modal.open { display: flex; }
+.po-teach-card { width: min(1100px, 96vw); max-height: 92vh; overflow: auto; }
+.po-teach-cols { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; }
+@media (max-width: 860px) { .po-teach-cols { grid-template-columns: 1fr; } }
+.po-teach-list { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; margin-bottom: 10px; }
+.po-teach-item { text-align: left; border: 1px solid #e3e6ec; border-radius: 8px; padding: 8px 10px; background: #fff; cursor: pointer; display: grid; gap: 2px; font: inherit; }
+.po-teach-item strong { font-size: 13px; } .po-teach-item span, .po-teach-item em { font-size: 12px; color: #5b616e; font-style: normal; }
+.po-teach-item.sel { border-color: #d6336c; box-shadow: 0 0 0 2px rgba(214,51,108,.15); }
+.po-teach-item.off { opacity: .55; } .po-teach-item.miss { border-style: dashed; background: #fff7f9; }
+.po-teach-missing h4 { margin: 0 0 6px; font-size: 13px; color: #d6336c; }
+.po-teach-form { display: grid; gap: 10px; }
+.po-teach-form label { display: grid; gap: 4px; font-size: 13px; }
+.po-teach-form input[type="text"], .po-teach-form input[type="number"], .po-teach-form textarea, .po-teach-form select { font: inherit; padding: 6px 8px; border: 1px solid #cfd4dd; border-radius: 6px; }
+.po-teach-row { display: flex; gap: 10px; flex-wrap: wrap; } .po-teach-row > label { flex: 1 1 120px; }
+.po-teach-row > label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.po-teach-kinds { display: flex; flex-wrap: wrap; gap: 4px; }
+.po-teach-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; border: 1px solid #e3e6ec; border-radius: 12px; padding: 2px 8px; }
+.po-teach-chip:has(input:checked) { background: #d6336c; color: #fff; border-color: #d6336c; }
+.po-teach-target { border: 1px solid #e3e6ec; border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.po-teach-target legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.po-teach-target > label { display: flex; align-items: center; gap: 6px; }
+.po-teach-sub { padding-left: 22px; display: grid; gap: 6px; }
+#po-teach-module { width: 100%; }
+.po-teach-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.po-teach-actions .hint { margin-right: auto; }
