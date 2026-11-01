@@ -392,7 +392,10 @@ function projectPhotoNormalizeCorners(items, walls, warnings) {
 // 60–120° sem módulo de canto houver base no FIM da parede i e base no
 // COMEÇO da parede i+1, a da parede i+1 vira Base Canto 90° 914×914 (o
 // normalize logo depois recua a corrida da parede i e empurra a da i+1).
-function projectPhotoAutoCornerBase(items, walls, catalog, warnings) {
+function projectPhotoAutoCornerBase(items, walls, catalog, warnings, roomKind) {
+  // CANTO 90° SÓ EM COZINHA (01/11, Matt: "esse módulo de canto só serve pra
+  // cozinha, ele não pode ser usado em nenhum outro ambiente")
+  if (roomKind && roomKind !== 'kitchen') return;
   const cantos = catalog.filter((m) => /base\s*canto\s*90/i.test(m.name));
   if (!cantos.length) return;
   const ehBase = (it) => it.layer !== 'floor' && it.floor_height_mm < 200 && it.height_mm < 1100 && !projectPhotoIsCorner(it);
@@ -427,21 +430,53 @@ function projectPhotoAutoCornerBase(items, walls, catalog, warnings) {
 // em volta da abertura. Painel que passa POR CIMA de uma janela (acima da
 // verga) ou fica abaixo do peitoril não cruza em altura, então fica.
 const PROJECT_PHOTO_OPENING_GAP_MM = 20;
-function projectPhotoCheckOpenings(items, openings, warnings) {
+function projectPhotoCheckOpenings(items, openings, warnings, walls) {
+  // PILHA DECIDE JUNTA (01/11, Matt, print das prateleiras: "foram jogadas no
+  // meio da parede"): prateleiras/painéis empilhados na mesma coluna (mesmo
+  // módulo, mesma largura ±20, x ±100, mesma parede) são tratados como UM
+  // bloco — se um precisa sair da frente da janela, todos vão pro mesmo lado.
+  const pilhas = [];
   items.forEach((it) => {
     if (it.layer === 'floor' || it.include === false) return;
+    const p = pilhas.find((pl) => pl[0].wall_index === it.wall_index && pl[0].module_id === it.module_id
+      && Math.abs(pl[0].width_mm - it.width_mm) <= 20 && Math.abs(pl[0].x_mm - it.x_mm) <= 100);
+    if (p) p.push(it); else pilhas.push([it]);
+  });
+  const moverPilha = (it, dx) => {
+    const p = pilhas.find((pl) => pl.includes(it));
+    (p || [it]).forEach((o) => { o.x_mm = Math.round(o.x_mm + dx); o._pilhaMovida = true; });
+  };
+  items.forEach((it) => {
+    if (it.layer === 'floor' || it.include === false || it._pilhaMovida) return;
+    const L = walls && walls[it.wall_index] ? Number(walls[it.wall_index].length_mm) || 0 : 0;
     openings.filter((o) => o.wall_index === it.wall_index).forEach((o) => {
       if (it.include === false) return;
       const g = PROJECT_PHOTO_OPENING_GAP_MM;
       const ox0 = o.x_mm - g, ox1 = o.x_mm + o.width_mm + g;
       const sobrepX = it.x_mm < ox1 - 1 && ox0 < it.x_mm + it.width_mm - 1;
-      const sobrepY = it.floor_height_mm < o.sill_mm + o.height_mm - 10 && o.sill_mm < it.floor_height_mm + it.height_mm - 10;
+      const pilha = pilhas.find((pl) => pl.includes(it)) || [it];
+      const sobrepY = pilha.some((m) => m.floor_height_mm < o.sill_mm + o.height_mm - 10 && o.sill_mm < m.floor_height_mm + m.height_mm - 10);
       if (!sobrepX || !sobrepY) return;
       const kind = tPhoto('opening_' + o.type);
       const esq = ox0 - it.x_mm;                       // sobra à esquerda da abertura
       const dir = (it.x_mm + it.width_mm) - ox1;       // sobra à direita
       const minW = 100;
-      if (Math.max(esq, dir) >= minW) {
+      // peça inteira cabe de um dos lados? EMPURRA (torre, aéreo inteiro),
+      // escolhendo o lado mais perto; conferindo que não cai em outra abertura
+      const livre = (x) => x >= 0 && (!L || x + it.width_mm <= L) && !openings.some((o2) => o2 !== o && o2.wall_index === it.wall_index
+        && x < o2.x_mm + o2.width_mm + g - 1 && o2.x_mm - g < x + it.width_mm - 1
+        && it.floor_height_mm < o2.sill_mm + o2.height_mm - 10 && o2.sill_mm < it.floor_height_mm + it.height_mm - 10);
+      const cand = [Math.round(ox0 - it.width_mm), Math.round(ox1)].filter(livre).sort((a, b) => Math.abs(a - it.x_mm) - Math.abs(b - it.x_mm));
+      const sobraCorte = Math.max(esq, dir);
+      // corta só quando sobra MAIS da metade da peça; senão empurra inteira
+      if (pilha.length === 1 && sobraCorte >= Math.max(minW, it.width_mm / 2)) {
+        if (esq >= dir) { it.width_mm = Math.round(esq); }
+        else { it.x_mm = Math.round(ox1); it.width_mm = Math.round(dir); }
+        warnings.push(tPhoto('warn_cut_for_opening', { label: it.label, kind }));
+      } else if (cand.length) {
+        moverPilha(it, cand[0] - it.x_mm);
+        warnings.push(tPhoto('warn_moved_for_opening', { label: it.label, kind }));
+      } else if (sobraCorte >= minW) {
         if (esq >= dir) { it.width_mm = Math.round(esq); }
         else { it.x_mm = Math.round(ox1); it.width_mm = Math.round(dir); }
         warnings.push(tPhoto('warn_cut_for_opening', { label: it.label, kind }));
@@ -803,6 +838,8 @@ function projectPhotoSlotHasOwnInterior(slot) {
 // botão "Salvar" do configurador (applyProjectBuilderToSlot, portal-07).
 async function projectPhotoApplyInterior(slot, it, warnings) {
   if (typeof LayoutEngine === 'undefined' || typeof loadProjectBuilderCatalog !== 'function') return;
+  // trava de segurança (01/11): painel/tampo/prateleira nunca vai pro configurador
+  if (!it.interior || PROJECT_PHOTO_PANEL_RE.test(String((slot.module && slot.module.name) || it.module_name || ''))) return;
   const comp = PROJECT_PHOTO_COMPOSITIONS[it.composition] || (it.composition ? null : PROJECT_PHOTO_INTERIOR_GENERIC);
   if (!comp) return;
   if (!it.composition) {
@@ -868,6 +905,9 @@ function projectPhotoPaintComposition(slot, it, warnings) {
 // Ripado: peça máxima de 900 mm, o resto vira emenda (ver projectPhotoBuildItems).
 const PROJECT_PHOTO_SLAT_MAX_MM = 900;
 const PROJECT_PHOTO_SLAT_RE = /ripad|slat|ripa\b/i;
+// módulos que são chapa só (painel, tampo, prateleira solta, filler): nunca
+// recebem interior do configurador
+const PROJECT_PHOTO_PANEL_RE = /painel|panel|tampo|countertop|prateleira|shelf|filler|crown|moldura/i;
 function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   const byId = new Map(catalog.map((m) => [m.id, m]));
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
@@ -913,9 +953,13 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
         x_mm: nPecas > 1 ? xBase + k * largPeca : x_mm,
         width_mm: largPeca, height_mm, depth_mm, floor_height_mm,
         color_name: raw.color_name || null,
+        color_description: v.color_description || '',
         // interior lido (prateleiras/divisórias/gavetas internas) — montado
         // pelo construtor depois de criar o slot (ver projectPhotoApplyInterior)
-        interior: nPecas > 1 || ripado ? null : projectPhotoSanitizeInterior(projectPhotoMatchedInterior(v, height_mm), height_mm)
+        // PAINEL NUNCA TEM INTERIOR (01/11, Matt: "agregou laterais
+        // divisórias no painel. isso não existe. o configurador não pode
+        // fazer nada em painéis") — tampo/painel/prateleira/ripado = null
+        interior: (nPecas > 1 || ripado || PROJECT_PHOTO_PANEL_RE.test(String(m.name || '')) || v.kind === 'countertop') ? null : projectPhotoSanitizeInterior(projectPhotoMatchedInterior(v, height_mm), height_mm)
       });
     }
   });
@@ -1011,11 +1055,77 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
     if (it.composition && !it.color_name) it.color_name = it.front_color_name || corMaisUsada;
     if (it.composition && !it.front_color_name) it.front_color_name = it.color_name;
   });
-  projectPhotoAutoCornerBase(items, room.walls, catalog, warnings);
+  // PEÇAS IGUAIS = MESMA COR (01/11, Matt, print dos criados-mudos: "esses
+  // módulos são iguais na imagem e foi colocado um de cada cor"). Grupo =
+  // mesmo tipo + mesmas medidas (±20 mm), ou mesma descrição de cor lida.
+  // Todo mundo do grupo recebe a cor mais frequente entre os que têm cor.
+  {
+    const chave = (it) => [it.kind, Math.round(it.width_mm / 20), Math.round(it.height_mm / 20), Math.round(it.depth_mm / 20)].join('|');
+    const grupos = new Map();
+    items.forEach((it) => {
+      if (it.include === false) return;
+      const k1 = 'd:' + chave(it);
+      const k2 = it.color_description ? 'c:' + aiLessonNorm(it.color_description) : null;
+      [k1, k2].filter(Boolean).forEach((k) => { if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(it); });
+    });
+    const unificados = new Set();
+    grupos.forEach((lista) => {
+      if (lista.length < 2) return;
+      const cores = {};
+      lista.forEach((it) => { if (it.color_name) cores[it.color_name] = (cores[it.color_name] || 0) + 1; });
+      const cor = Object.keys(cores).sort((a, b) => cores[b] - cores[a])[0];
+      if (!cor) return;
+      lista.forEach((it) => {
+        if (it.color_name !== cor) { it.color_name = cor; if (it.composition) it.front_color_name = it.front_color_name && cores[it.front_color_name] ? it.front_color_name : cor; unificados.add(it.label || it.module_name); }
+      });
+    });
+    if (unificados.size) warnings.push(tPhoto('warn_same_color', { labels: Array.from(unificados).slice(0, 4).join(' · ') }));
+  }
+  // SEM SOBREPOSIÇÃO DENTRO DO MESMO VOLUME (01/11, print do banco: 5 caixas
+  // com duas no mesmo x e tampo em 2 pedaços sobrepostos). Peças do mesmo
+  // volume e mesma altura do chão: ordena por x, tira duplicada exata e
+  // reencosta cada uma no fim da anterior, começando no x do volume.
+  {
+    const porVol = new Map();
+    items.forEach((it) => {
+      if (it.include === false || it.layer === 'floor') return;
+      const k = it.volume_id + '|' + it.wall_index + '|' + Math.round((it.floor_height_mm || 0) / 10) + '|' + Math.round((it.height_mm || 0) / 10);
+      if (!porVol.has(k)) porVol.set(k, []);
+      porVol.get(k).push(it);
+    });
+    let arrumados = 0;
+    porVol.forEach((lista) => {
+      if (lista.length < 2) return;
+      lista.sort((a, b) => a.x_mm - b.x_mm || a.order - b.order);
+      const v = room.volumes.find((x) => x.id === lista[0].volume_id);
+      let cursor = v ? Number(v.x_mm) || lista[0].x_mm : lista[0].x_mm;
+      let prev = null;
+      lista.forEach((it) => {
+        if (prev && Math.abs(prev.x_mm - it.x_mm) < 1 && Math.abs(prev.width_mm - it.width_mm) < 1 && prev.module_id === it.module_id) { it.include = false; arrumados++; return; }
+        if (Math.abs(it.x_mm - cursor) > 1) { it.x_mm = Math.round(cursor); arrumados++; }
+        cursor = it.x_mm + it.width_mm;
+        prev = it;
+      });
+    });
+    if (arrumados) warnings.push(tPhoto('warn_overlap_fixed', { n: arrumados }));
+  }
+  projectPhotoAutoCornerBase(items, room.walls, catalog, warnings, roomKind);
   projectPhotoNormalizeCorners(items, room.walls, warnings);
   projectPhotoFixCorners(items, room.walls, warnings);
-  projectPhotoCheckOpenings(items, room.openings, warnings);
+  projectPhotoCheckOpenings(items, room.openings, warnings, room.walls);
   projectPhotoAlignTops(items, warnings);
+  // PAINEL VERTICAL ATÉ A PAREDE (01/11, Matt: "é só colocar um painel
+  // vertical e ir até a parede, o tamanho está errado"): painel de parede
+  // em pé a até 150 mm do canto estica até o canto.
+  items.forEach((it) => {
+    if (it.include === false || it.layer === 'floor') return;
+    if (!/panel|painel/i.test(String(it.module_name || '')) || !(it.height_mm > it.width_mm)) return;
+    const wall = room.walls[it.wall_index]; if (!wall) return;
+    const L = Number(wall.length_mm) || 0;
+    if (it.x_mm > 0 && it.x_mm <= 150) { it.width_mm += it.x_mm; it.x_mm = 0; }
+    const fim = L - (it.x_mm + it.width_mm);
+    if (fim > 0 && fim <= 150) it.width_mm += fim;
+  });
   items.forEach((it, i) => { it.n = i + 1; });
   return items;
 }
@@ -1207,6 +1317,16 @@ async function projectPhotoRunPipeline(opts, status) {
   say(tPhoto('status_step2'));
   // casamento: a 1ª imagem basta pra estilo/cor (economiza payload)
   const diretos = projectPhotoDirectVolumes(room, catalog);
+  // FORA DE COZINHA = SÓ COMPONENTES (01/11, Matt: "a IA não deve usar
+  // nenhum módulo da Classic Kitchens quando não for cozinha. Ela deve usar
+  // só módulos dos componentes, módulos com fundo"). O catálogo que vai pro
+  // casamento perde as famílias de cozinha (e o canto 90°); o que a IA
+  // mesmo assim casar com módulo de cozinha vira composição (abaixo).
+  const ehCozinha = (opts.roomKind || null) === 'kitchen';
+  const RE_FAM_COZINHA = /kitchen|cozinha|cocina/i;
+  const modCozinha = (m) => RE_FAM_COZINHA.test(String(m.family || '')) || /canto\s*90|corner/i.test(String(m.name || ''));
+  const catalogoMatch = catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name))
+    .filter((m) => ehCozinha || !modCozinha(m));
   const match = await invokeProjectPhotoStage({
     stage: 'match', images: images.slice(0, 2), lang, colors,
     // closet & cia. (caixa crua + configurador) não passam pelo casamento;
@@ -1218,9 +1338,90 @@ async function projectPhotoRunPipeline(opts, status) {
       id: v.id, kind: v.kind, label: v.label, width_mm: v.width_mm, height_mm: v.height_mm,
       doors: v.doors, drawers: v.drawers, color_description: v.color_description || ''
     })),
-    catalog: catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name)),
+    catalog: catalogoMatch,
+    room_kind: opts.roomKind || null,
     lessons: lessonsPayload
   });
+  // módulo de cozinha casado fora de cozinha → caixa crua (closet no chão,
+  // suspenso/aéreo fora do chão) com o interior lido
+  if (!ehCozinha) {
+    const byIdK = new Map(catalog.map((m) => [m.id, m]));
+    room.volumes.forEach((v) => {
+      if (v.layer === 'floor') return;
+      const meus = (match.items || []).filter((it) => it.volume_id === v.id);
+      if (!meus.length || !meus.some((it) => modCozinha(byIdK.get(it.module_id) || {}))) return;
+      const comp = projectPhotoOffFloor(v) ? projectPhotoOffFloorComp(v) : 'closet';
+      if (!projectPhotoCarcassModule(comp, catalog)) return;
+      v._forceComp = comp;
+      match.items = match.items.filter((it) => it.volume_id !== v.id);
+      if (meus[0].color_name) { match.direct_colors = match.direct_colors || []; match.direct_colors.push({ volume_id: v.id, color_name: meus[0].color_name, front_color_name: meus[0].color_name }); }
+      warnings.push(tPhoto('warn_kitchen_module_outside', { label: v.label || v.kind }));
+    });
+  }
+  // PAINÉIS QUE FALTAM (01/11, Matt: "faltou painel de cabeceira,
+  // complementar onde falta"): volume de painel/prateleira que a IA deixou
+  // sem módulo ganha o módulo de painel certo pelo tipo, dividido em pedaços
+  // de até o máximo do módulo. Ripado só se o kind é slat_panel ou o rótulo
+  // diz ripado (Matt: "aqui não é um painel ripado... é só colocar um painel
+  // vertical").
+  {
+    const acha = (re) => catalog.find((m) => re.test(String(m.name || '')));
+    const PH_PAREDE = acha(/^panel horizontal wall$/i) || acha(/painel.*horizontal no plano/i);
+    const PV_PAREDE = acha(/^panel vertical wall$/i) || acha(/painel.*vertical no plano/i);
+    const P_RIPADO = acha(/slats?.*vertical|ripad/i);
+    const P_TAMPO = acha(/^painel 3\/4 · horizontal$/i) || acha(/painel.*horizontal$/i);
+    const comItem = new Set((match.items || []).map((it) => it.volume_id));
+    room.volumes.forEach((v) => {
+      if (comItem.has(v.id) || v.layer === 'floor') return;
+      const ripado = v.kind === 'slat_panel' || /ripad|slat/i.test(String(v.label || '') + ' ' + String(v.front_style || ''));
+      let m = null;
+      if (v.kind === 'floating_shelf' || v.kind === 'open_shelf') m = P_TAMPO;
+      else if (ripado) m = P_RIPADO;
+      else if (['headboard', 'wall_panel', 'end_panel'].includes(v.kind)) m = (Number(v.height_mm) > Number(v.width_mm)) ? PV_PAREDE : PH_PAREDE;
+      if (!m) return;
+      const maxW = m.w[2] || 2700;
+      const n = Math.max(1, Math.ceil((Number(v.width_mm) || 0) / maxW));
+      const w = Math.round((Number(v.width_mm) || 0) / n);
+      for (let k = 0; k < n; k++) {
+        match.items.push({ volume_id: v.id, module_id: m.id, label: (v.label || m.name) + (n > 1 ? ' · ' + (k + 1) + '/' + n : ''),
+          x_mm: (Number(v.x_mm) || 0) + k * w, width_mm: w, height_mm: v.height_mm, depth_mm: v.depth_mm, floor_height_mm: v.floor_height_mm, color_name: null });
+      }
+      match.unmatched = (match.unmatched || []).filter((u) => u.volume_id !== v.id);
+      warnings.push(tPhoto('warn_panel_filled', { label: v.label || v.kind, name: m.name }));
+    });
+    // TAMPO FORA DE COZINHA = "Painel 3/4 · Horizontal" (01/11, Matt: "o
+    // painel que sobe nele não é um painel horizontal, tem umas coisas
+    // estranhas nele. é só trocar por um painel horizontal mesmo lá da aba
+    // painéis"): volume countertop (ou rotulado tampo/top) fora de cozinha
+    // vai SEMPRE no painel de tampo, 19 mm, na profundidade lida.
+    if (P_TAMPO && (opts.roomKind || null) !== 'kitchen') {
+      room.volumes.forEach((v) => {
+        const ehTampo = v.kind === 'countertop' || /\btampo\b|\btop\b|counter/i.test(String(v.label || ''));
+        if (!ehTampo) return;
+        const meus = (match.items || []).filter((it) => it.volume_id === v.id);
+        if (!meus.length || meus.every((it) => it.module_id === P_TAMPO.id)) return;
+        match.items = match.items.filter((it) => it.volume_id !== v.id);
+        const maxW = P_TAMPO.w[2] || 2700;
+        const n = Math.max(1, Math.ceil((Number(v.width_mm) || 0) / maxW));
+        const w = Math.round((Number(v.width_mm) || 0) / n);
+        for (let k = 0; k < n; k++) {
+          match.items.push({ volume_id: v.id, module_id: P_TAMPO.id, label: (v.label || 'Tampo') + (n > 1 ? ' · ' + (k + 1) + '/' + n : ''),
+            x_mm: (Number(v.x_mm) || 0) + k * w, width_mm: w, height_mm: 19, depth_mm: v.depth_mm, floor_height_mm: v.floor_height_mm, color_name: meus[0].color_name || null });
+        }
+        warnings.push(tPhoto('warn_top_fixed', { label: v.label || 'Tampo' }));
+      });
+    }
+    // ripado escolhido pra volume que NÃO é ripado → painel vertical liso
+    if (P_RIPADO && PV_PAREDE) {
+      (match.items || []).forEach((it) => {
+        if (it.module_id !== P_RIPADO.id) return;
+        const v = room.volumes.find((x) => x.id === it.volume_id);
+        if (!v || v.kind === 'slat_panel' || /ripad|slat/i.test(String(v.label || '') + ' ' + String(v.front_style || '') + ' ' + String(v.notes || ''))) return;
+        it.module_id = PV_PAREDE.id;
+        warnings.push(tPhoto('warn_slat_to_plain', { label: v.label || v.kind }));
+      });
+    }
+  }
   // ALVO DA AULA GARANTIDO (01/11): volume coberto por aula de módulo que a
   // IA deixou em unmatched ou casou com outro módulo → vai pro módulo da
   // aula, com as medidas lidas. Aula 'skip' → tira do resultado.
