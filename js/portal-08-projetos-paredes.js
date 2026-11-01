@@ -961,9 +961,14 @@ function attachProject3DEditDrag() {
       hold3DTimer = null;
       const st = projectDrag3DState;
       if (!st || st.slotId !== slot.id || st.moved) return;
-      if (isTouch) {
+      // MOUSE com a opção "arraste livre" (Atalhos › Mouse, 01/11, Matt:
+      // "igual à do iPad, segurar o módulo e jogar na parede"): faz o mesmo
+      // que o toque longo. Padrão continua abrindo as Propriedades.
+      const mouseLivre = !isTouch && typeof atalhoHoldMouse === 'function' && atalhoHoldMouse() === 'free';
+      if (isTouch || mouseLivre) {
         st.armed = true;
         st.freeMode = true;
+        if (mouseLivre) domEl.style.cursor = 'grabbing';
         // Contorno vermelho já está aceso; o "engatou" fica evidente porque a
         // partir daqui o módulo acompanha o dedo.
         if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) { /* ok */ } }

@@ -354,6 +354,24 @@ function atalhoHtmlMouseConfig() {
     ${(r.mouse_pan === 'right' || r.mouse_rotate === 'right') ? `<p class="po-sc-aviso">${I18n.t('sc.right_warning')}</p>` : ''}
   </div>`;
 }
+// SEGURAR COM O MOUSE (01/11, Matt: "só para uso do Mac, quero uma opção
+// que é igual à do iPad: quando um módulo está no chão e quero colocar ele
+// na parede, é só segurar ele com o mouse na parede"). Preferência DESTE
+// aparelho (localStorage): 'props' (padrão — abre as Propriedades) ou
+// 'free' (arraste livre: o módulo atravessa pra outra parede ou pro chão,
+// como o toque longo do iPad). Lida em portal-08 (startProject3DHoldGesture).
+const ATALHO_HOLD_MOUSE_KEY = 'legno_hold_mouse';
+function atalhoHoldMouse() { try { return localStorage.getItem(ATALHO_HOLD_MOUSE_KEY) === 'free' ? 'free' : 'props'; } catch (e) { return 'props'; } }
+function atalhoHtmlHoldMouse() {
+  const v = atalhoHoldMouse();
+  return `<div class="po-sc-mouse-cfg po-sc-hold">
+    <label>${I18n.t('sc.hold_mouse')}<select class="po-sc-sel" data-hold-mouse="1">
+      <option value="props"${v === 'props' ? ' selected' : ''}>${I18n.t('sc.hold_props')}</option>
+      <option value="free"${v === 'free' ? ' selected' : ''}>${I18n.t('sc.hold_free')}</option>
+    </select></label>
+    <p class="hint">${I18n.t('sc.hold_note')}</p>
+  </div>`;
+}
 function atalhoHtmlMouse(mac) {
   const r = atalhoRascunho || atalhoMapaEfetivo();
   const config = [atalhoGestoLinha(r.mouse_pan, 'sc.do_pan'), atalhoGestoLinha(r.mouse_rotate, 'sc.do_rotate')];
@@ -373,7 +391,7 @@ function atalhoHtmlMouse(mac) {
     [atalhoMouseSvg('left'), 'sc.mouse_dbl', 'sc.do_edit']
   ]).concat(usaDireito ? [] : [[atalhoMouseSvg('right'), 'sc.mouse_right_drag', 'sc.do_reposition']])
     .concat([[atalhoMouseSvg('right'), 'sc.mouse_right_click', 'sc.do_menu']]);
-  return `${atalhoHtmlMouseConfig()}<div class="po-sc-mouse-grid">${linhas.map((l) => `<div class="po-sc-mouse-item">${l[0]}<div><b>${I18n.t(l[2])}</b><span>${I18n.t(l[1])}</span></div></div>`).join('')}</div>
+  return `${atalhoHtmlMouseConfig()}${atalhoHtmlHoldMouse()}<div class="po-sc-mouse-grid">${linhas.map((l) => `<div class="po-sc-mouse-item">${l[0]}<div><b>${I18n.t(l[2])}</b><span>${I18n.t(l[1])}</span></div></div>`).join('')}</div>
     <p class="hint">${I18n.t('sc.mouse_note')}</p>`;
 }
 function atalhoHtmlTeclado() {
@@ -483,6 +501,11 @@ function abrirTelaAtalhos() {
       }
     });
     m.addEventListener('change', (ev) => {
+      if (ev.target.dataset && ev.target.dataset.holdMouse) {
+        try { localStorage.setItem(ATALHO_HOLD_MOUSE_KEY, ev.target.value === 'free' ? 'free' : 'props'); } catch (e) { /* ok */ }
+        atalhoMsg(I18n.t('sc.hold_saved'));
+        return;
+      }
       if (ev.target.dataset && ev.target.dataset.mouse) {
         atalhoRascunho[ev.target.dataset.mouse] = ev.target.value;
         atalhoRenderTela();
