@@ -3916,6 +3916,77 @@ function getProjectWallGeometry() {
 // seleção/deseleção/re-render, ver portal-06c-projetos-canvas-3d-acoes.js).
 // Igual ao hoverBoxHelper, o mesh vai DIRETO na scene (não em currentGroups),
 // então não interfere no raycasting de pickRoomSurfaceAt/pickAssemblyAt.
+// ENCAIXE PERFEITO EM VERDE (01/11, Matt: "colocar um frame verde quando
+// dois módulos se conectam lado a lado ou em cima e embaixo, por cima do
+// vermelho. lado a lado: altura e profundidade iguais e se tocando
+// perfeitamente; em cima/embaixo: largura e profundidade iguais e se
+// tocando"). Só módulos de parede, na MESMA parede. Tolerância 1 mm.
+let projectJoinHighlightObjs = [];
+const PROJECT_JOIN_TOL_MM = 1;
+function limparProjectJoinHighlight() {
+  const scene = projectEditScene();
+  projectJoinHighlightObjs.forEach((o) => {
+    if (scene) scene.remove(o);
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  });
+  projectJoinHighlightObjs = [];
+}
+function projectPerfectJoins(slot) {
+  const out = [];
+  if (!slot || slot.placement !== 'wall' || !Number.isFinite(Number(slot.wall_index))) return out;
+  const t = PROJECT_JOIN_TOL_MM;
+  const eq = (a, b) => Math.abs(Number(a) - Number(b)) <= t;
+  const W = Number(slot.width_mm), H = Number(slot.height_mm), D = Number(slot.depth_mm);
+  const X = Number(slot.x_mm) || 0, Y = Number(slot.floor_height_mm) || 0;
+  projectSlots.forEach((o) => {
+    if (o === slot || o.placement !== 'wall' || Number(o.wall_index) !== Number(slot.wall_index)) return;
+    const oW = Number(o.width_mm), oH = Number(o.height_mm), oD = Number(o.depth_mm);
+    const oX = Number(o.x_mm) || 0, oY = Number(o.floor_height_mm) || 0;
+    const mesmoZ = eq(Number(slot.fineOffsetZMm || 0), Number(o.fineOffsetZMm || 0));
+    if (!mesmoZ) return;
+    // lado a lado: mesma altura, profundidade e altura do chão; x encostado
+    if (eq(H, oH) && eq(D, oD) && eq(Y, oY)) {
+      if (eq(X + W, oX)) out.push('px');
+      if (eq(oX + oW, X)) out.push('nx');
+    }
+    // em cima/embaixo: mesma largura, profundidade e x; y encostado
+    if (eq(W, oW) && eq(D, oD) && eq(X, oX)) {
+      if (eq(Y + H, oY)) out.push('py');
+      if (eq(oY + oH, Y)) out.push('ny');
+    }
+  });
+  return out;
+}
+function refreshProjectJoinHighlight() {
+  limparProjectJoinHighlight();
+  if (selectedProjectSlotId == null) return;
+  const scene = projectEditScene();
+  if (!scene || typeof THREE === 'undefined') return;
+  const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+  if (!slot) return;
+  const faces = projectPerfectJoins(slot);
+  if (!faces.length) return;
+  const frame = getSlotWorldFrame(slot);
+  if (!frame) return;
+  faces.forEach((faceKey) => {
+    const fg = getModuleFaceGeometry(frame, faceKey);
+    if (!fg) return;
+    const geom = new THREE.EdgesGeometry(new THREE.PlaneGeometry(fg.width, fg.height));
+    const mat = new THREE.LineBasicMaterial({ color: 0x1fbf5a, depthTest: false, linewidth: 3 });
+    const line = new THREE.LineSegments(geom, mat);
+    const right = new THREE.Vector3(fg.right.x, fg.right.y, fg.right.z);
+    const up = new THREE.Vector3(fg.up.x, fg.up.y, fg.up.z);
+    const normal = new THREE.Vector3().crossVectors(right, up);
+    line.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, normal));
+    line.position.set(fg.center.x, fg.center.y, fg.center.z);
+    line.renderOrder = 1000; // por cima do contorno vermelho (999)
+    line.name = 'ar-export-exclude';
+    scene.add(line);
+    projectJoinHighlightObjs.push(line);
+  });
+}
+
 let projectConnectedFaceHighlightMesh = null;
 const PROJECT_FACE_HIGHLIGHT_OFFSET_M = 0.01; // some pra dentro do ambiente, só pra não brigar (z-fighting) com a própria parede/piso
 function limparProjectConnectedFaceHighlight() {

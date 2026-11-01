@@ -2132,6 +2132,8 @@ function refreshProject3DHighlight() {
   // carregamento (portal-08 carrega DEPOIS deste arquivo, mas na prática só
   // roda por evento, com tudo já carregado).
   if (typeof refreshProjectConnectedFaceHighlight === 'function') refreshProjectConnectedFaceHighlight();
+  // Encaixe perfeito em verde (01/11, portal-08) — mesmo gatilho.
+  if (typeof refreshProjectJoinHighlight === 'function') refreshProjectJoinHighlight();
   // Rodapé "nome — medidas" (2026-09-11, portal-08-projetos-paredes.js) —
   // mesmo gatilho, mesmo motivo do typeof-guard acima.
   if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
