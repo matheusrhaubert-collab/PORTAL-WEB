@@ -200,9 +200,18 @@ async function tampInsert(side) {
   if (ex[side]) return; // já existe
   const depth = f.D + TAMP_EXTRA_DEPTH_MM;
   let a0, width, y0, height;
+  let sobraChao = 0;
   if (kind === 'vertical') {
     width = T; height = f.Y1 - f.Y0; y0 = f.Y0;
     a0 = side === 'left' ? f.A0 - T : f.A1;
+    // DESNÍVEL DO CHÃO (01/11, Matt: "quando for pra um módulo que está
+    // pegando no chão, abrir um aviso dizendo que possivelmente o chão terá
+    // desnível e pede se quer adicionar 1 polegada a mais na altura do
+    // tamponamento (pra baixo do chão) pra ter recurso de cortar na obra").
+    // A sobra fica ABAIXO do chão no 3D (fineOffsetYMm negativo) e entra na
+    // altura da peça (corte/preço).
+    if (f.Y0 <= 0.5 && await tampConfirmDesnivel()) sobraChao = TAMP_FLOOR_EXTRA_MM;
+    height += sobraChao;
   } else {
     const span = tampHorizontalSpan(f, ex);
     a0 = span.a0; width = span.width; height = T;
@@ -219,6 +228,7 @@ async function tampInsert(side) {
   if (!slot) { tampMsg(tampT('err_insert'), true); return; }
   slot.height_mm = projectSlotClampedDimensionMm(slot, 'height', height);
   tampApplyPlacement(f, slot, a0, width, y0, depth);
+  if (sobraChao > 0) { slot.fineOffsetYMm = -sobraChao; slot.tampFloorExtraMm = sobraChao; }
   tampCopyColors(slot, slots);
   recomputeProjectSlotPricing(slot);
   if (kind === 'vertical') {
@@ -229,6 +239,30 @@ async function tampInsert(side) {
   markProjectDirty();
   tampMsg('', false);
   tampRender();
+}
+
+// Pergunta Sim/Não (modal próprio, não o confirm do navegador) — 1" = 25,4 mm.
+const TAMP_FLOOR_EXTRA_MM = 25.4;
+function tampConfirmDesnivel() {
+  return new Promise((resolve) => {
+    let m = document.getElementById('po-tamp-confirm');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'po-tamp-confirm';
+      m.innerHTML = '<div class="po-tamp-confirm-card" role="dialog" aria-modal="true">'
+        + '<h3>' + tampT('floor_title') + '</h3><p>' + tampT('floor_msg') + '</p>'
+        + '<div class="po-tamp-confirm-actions"><button type="button" class="secondary" data-ans="0">' + tampT('floor_no') + '</button>'
+        + '<button type="button" class="primary" data-ans="1">' + tampT('floor_yes') + '</button></div></div>';
+      document.body.appendChild(m);
+    }
+    m.classList.add('open');
+    const fim = (ok) => { m.classList.remove('open'); m.onclick = null; resolve(ok); };
+    m.onclick = (e) => {
+      const b = e.target.closest('[data-ans]');
+      if (b) fim(b.getAttribute('data-ans') === '1');
+      else if (e.target === m) fim(false);
+    };
+  });
 }
 
 function tampRemove(side) {

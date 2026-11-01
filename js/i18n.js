@@ -1958,6 +1958,10 @@
       'tamp.err_mixed': 'O tamponamento precisa de módulos na MESMA parede (ou soltos no piso com o mesmo giro).',
       'tamp.err_no_panel': 'Módulo "{{name}}" não encontrado no catálogo (família Panels).',
       'tamp.err_no_space_below': 'Sem espaço embaixo: o móvel está no chão.',
+      'tamp.floor_title': 'Possível desnível do chão',
+      'tamp.floor_msg': 'Esse móvel está no chão. Quer adicionar 1" (25 mm) a mais na altura do tamponamento, pra baixo do chão, como recurso pra cortar na obra e cobrir um possível desnível?',
+      'tamp.floor_yes': 'Sim, adicionar 1"',
+      'tamp.floor_no': 'Não',
       'tamp.err_insert': 'Não consegui inserir o painel.',
       // Helper "?" — Como fazer? (portal-24-helper.js, 2026-10-16)
       'helper.btn': 'Como fazer?',
@@ -4169,6 +4173,10 @@
       'tamp.err_mixed': 'End panels need modules on the SAME wall (or free on the floor with the same rotation).',
       'tamp.err_no_panel': 'Module "{{name}}" not found in the catalog (Panels family).',
       'tamp.err_no_space_below': 'No room below: the cabinet sits on the floor.',
+      'tamp.floor_title': 'Possible uneven floor',
+      'tamp.floor_msg': 'This cabinet sits on the floor. Add 1" (25 mm) extra to the end panel height, below the floor, as a trim allowance on site to cover an uneven floor?',
+      'tamp.floor_yes': 'Yes, add 1"',
+      'tamp.floor_no': 'No',
       'tamp.err_insert': 'Could not insert the panel.',
       // Helper "?" — Como fazer? (portal-24-helper.js, 2026-10-16)
       'helper.btn': 'How to?',
@@ -6380,6 +6388,10 @@
       'tamp.err_mixed': 'Las tapas necesitan módulos en la MISMA pared (o sueltos en el piso con el mismo giro).',
       'tamp.err_no_panel': 'Módulo "{{name}}" no encontrado en el catálogo (familia Panels).',
       'tamp.err_no_space_below': 'Sin espacio abajo: el mueble está en el piso.',
+      'tamp.floor_title': 'Posible desnivel del piso',
+      'tamp.floor_msg': 'Este mueble está en el piso. ¿Agregar 1" (25 mm) más a la altura del panel lateral, por debajo del piso, como margen para cortar en obra y cubrir un posible desnivel?',
+      'tamp.floor_yes': 'Sí, agregar 1"',
+      'tamp.floor_no': 'No',
       'tamp.err_insert': 'No pude insertar el panel.',
       // Helper "?" — Como fazer? (portal-24-helper.js, 2026-10-16)
       'helper.btn': '¿Cómo hacer?',
