@@ -247,6 +247,11 @@ function projectPhotoMainWallIndex(room) {
 // frente, e a corrida dele vai junto em cascata.
 const PROJECT_PHOTO_TALL_MM = 1100;
 function projectPhotoFixCorners(items, walls, warnings) {
+  // 10:47 (Matt: "ele está colidindo e reposicionando por colisão de novo,
+  // não respeitou a regra fundamental"): este é o empurrão de canto — módulo
+  // da parede i batendo no da parede i+1 e um deles andando. DESLIGADO com
+  // a regra geral; posição lida é a posição.
+  if (!PROJECT_PHOTO_PUSH_ON_COLLISION) return;
   const faixa = (a, b) => a.floor_height_mm < b.floor_height_mm + b.height_mm && b.floor_height_mm < a.floor_height_mm + a.height_mm;
   const sobrep = (a0, a1, b0, b1) => a0 < b1 - 1 && b0 < a1 - 1;
   const alto = (it) => it.height_mm >= PROJECT_PHOTO_TALL_MM;
@@ -620,7 +625,7 @@ function projectPhotoOffFloorComp(v) { return (Number(v.floor_height_mm) || 0) >
 // continua com a base de closet (Toe 3). "E aí entra o Construtor pra
 // definir prateleiras, portas ou gavetas."
 const PROJECT_PHOTO_BODY_KINDS = ['base_cabinet', 'sink_base', 'drawer_base', 'wall_cabinet', 'tall_cabinet', 'appliance_housing', 'vanity',
-  'tv_unit', 'desk', 'bench', 'bookcase', 'shelf_unit', 'nightstand', 'dresser', 'shoe_rack', 'island', 'peninsula', 'other'];
+  'tv_unit', 'desk', 'bench', 'bookcase', 'shelf_unit', 'nightstand', 'dresser', 'shoe_rack', 'island', 'peninsula'];
 function projectPhotoBodyComp(v) {
   if (PROJECT_PHOTO_COMPOSITIONS.closet.kinds.includes(v.kind)) return projectPhotoOffFloor(v) ? projectPhotoOffFloorComp(v) : 'closet';
   return projectPhotoOffFloorComp(v);
@@ -1209,7 +1214,7 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
       if (it.include === false || it.layer === 'floor') return;
       const ehCab = it.kind === 'headboard' || /cabeceir|headboard|cabecera/i.test(String(it.label || ''));
       if (!ehCab || !(it.floor_height_mm > 0)) return;
-      it.height_mm = Math.round(it.height_mm + it.floor_height_mm);
+      // mantém a ALTURA lida (10:45: esticar até o teto virou bagunça) — só desce
       it.floor_height_mm = 0;
       n++;
     });

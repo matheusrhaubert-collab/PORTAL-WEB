@@ -21,7 +21,14 @@
 
 const VISUAL_CHECK_MAX_WALLS = 6;
 const VISUAL_CHECK_MAX_REFS = 6;
-const VISUAL_CHECK_MIN_CONFIDENCE = 0.4;
+// 10:45 (Matt: "ficou bem bagunçado"): a conferência mexia demais com
+// referência duvidosa. Agora só age com confiança alta, e só com operações
+// que não "chutam" posição: esticar até vizinho/canto, descer pro chão,
+// tirar/pôr porta, remover peça inexistente. Mover/redimensionar/trocar só
+// com confiança ≥ 0.85 e deslocamento pequeno (≤ 400 mm).
+const VISUAL_CHECK_MIN_CONFIDENCE = 0.7;
+const VISUAL_CHECK_MOVE_CONFIDENCE = 0.85;
+const VISUAL_CHECK_MAX_MOVE_MM = 400;
 
 function vcT(k, vars) { return I18n.t('visual_check.' + k, vars); }
 
@@ -63,23 +70,30 @@ function visualCheckWallItems(st, wallIndex) {
 }
 
 // Aplica as operações da IA nos itens (por nº). Devolve quantas aplicou.
-function visualCheckApplyOps(ops, wallItems, wall) {
+function visualCheckApplyOps(ops, wallItems, wall, confidence) {
   const byN = new Map(wallItems.map((w) => [w.n, w._it]));
   const L = Number(wall.length_mm) || 0, H = Number(wall.height_mm) || 0;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const podeMover = (confidence || 0) >= VISUAL_CHECK_MOVE_CONFIDENCE;
   let n = 0;
   (ops || []).forEach((o) => {
     const it = byN.get(o.n); if (!it) return;
     const other = o.other_n != null ? byN.get(o.other_n) : null;
     switch (o.op) {
-      case 'move':
-        if (o.x_mm != null) it.x_mm = clamp(o.x_mm, 0, Math.max(0, L - it.width_mm));
-        if (o.floor_height_mm != null) it.floor_height_mm = clamp(o.floor_height_mm, 0, Math.max(0, H - it.height_mm));
+      case 'move': {
+        // regra fundamental (10:47): nem a conferência reposiciona em x por
+        // colisão — move só altura do chão e afastamento da parede
+        if (!podeMover) return;
+        o.x_mm = null;
+        if (o.x_mm != null && Math.abs(o.x_mm - it.x_mm) <= VISUAL_CHECK_MAX_MOVE_MM) it.x_mm = clamp(o.x_mm, 0, Math.max(0, L - it.width_mm));
+        if (o.floor_height_mm != null && Math.abs(o.floor_height_mm - it.floor_height_mm) <= VISUAL_CHECK_MAX_MOVE_MM) it.floor_height_mm = clamp(o.floor_height_mm, 0, Math.max(0, H - it.height_mm));
         if (o.wall_offset_mm != null) { it.wall_offset_mm = Math.max(0, o.wall_offset_mm); if (it.wall_offset_mm === 0 && it.layer === 'front') it.layer = 'wall'; }
         n++; break;
+      }
       case 'resize':
-        if (o.width_mm != null) it.width_mm = clamp(o.width_mm, 50, L || o.width_mm);
-        if (o.height_mm != null) it.height_mm = clamp(o.height_mm, 18, H || o.height_mm);
+        if (!podeMover) return;
+        if (o.width_mm != null && Math.abs(o.width_mm - it.width_mm) <= VISUAL_CHECK_MAX_MOVE_MM) it.width_mm = clamp(o.width_mm, 50, L || o.width_mm);
+        if (o.height_mm != null && Math.abs(o.height_mm - it.height_mm) <= VISUAL_CHECK_MAX_MOVE_MM) it.height_mm = clamp(o.height_mm, 18, H || o.height_mm);
         if (o.depth_mm != null) it.depth_mm = clamp(o.depth_mm, 5, 3000);
         n++; break;
       case 'remove': it.include = false; n++; break;
@@ -103,6 +117,7 @@ function visualCheckApplyOps(ops, wallItems, wall) {
         n++; break;
       }
       case 'swap':
+        return; // desligado (10:47): trocar de lugar é reposicionar
         if (other) { const x = it.x_mm, f = it.floor_height_mm; it.x_mm = other.x_mm; it.floor_height_mm = other.floor_height_mm; other.x_mm = x; other.floor_height_mm = f; n++; }
         break;
       default: break;
@@ -144,7 +159,7 @@ async function projectPhotoVisualCheck(st, refs, opts) {
     }
     console.info('[conferência visual] parede', wi + 1, res);
     if (!res || res.confidence < VISUAL_CHECK_MIN_CONFIDENCE) { report.push(vcT('wall_no_ref', { i: wi + 1 })); continue; }
-    const n = visualCheckApplyOps(res.operations, wallItems, st.room.walls[wi]);
+    const n = visualCheckApplyOps(res.operations, wallItems, st.room.walls[wi], res.confidence);
     changed += n;
     (res.differences || []).forEach((d) => report.push(vcT('diff', { i: wi + 1, msg: d })));
     (res.operations || []).forEach((o) => report.push(vcT('op', { i: wi + 1, n: o.n, op: o.op, msg: o.reason })));

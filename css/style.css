@@ -6143,7 +6143,7 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
    escondidas (chapa só no walk; martelo, bigorna e faíscas só no work). */
 .po-ai-robot { width: 130px; height: 100px; margin: 0 auto 8px; display: block; overflow: visible; }
 .po-ai-robot-eye { animation: po-ai-robot-blink 3.2s infinite; transform-origin: center; }
-.po-ai-robot-board, .po-ai-robot-hammer, .po-ai-robot-anvil, .po-ai-robot-sparks { display: none; }
+.po-ai-robot-board, .po-ai-robot-hammer, .po-ai-robot-anvil, .po-ai-robot-sparks, .po-ai-robot-broom, .po-ai-robot-dust { display: none; }
 .po-ai-robot-body { transform-origin: 80px 90px; }
 .po-ai-robot-head { transform-origin: 80px 52px; }
 .po-ai-robot-arm-l { transform-origin: 49px 58px; }
@@ -6180,15 +6180,29 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 /* WORK — martela numa bigorna, com faíscas */
 .pose-work .po-ai-robot-hammer, .pose-work .po-ai-robot-anvil { display: block; }
 .pose-work .po-ai-robot-sparks { display: block; animation: po-ai-robot-sparks .6s steps(1) infinite; }
-.pose-work .po-ai-robot-all { transform: translateX(-14px); }
+.pose-work .po-ai-robot-all { transform: translateX(-22px); }
 .pose-work .po-ai-robot-arm-r { animation: po-ai-robot-hammer .6s ease-in infinite; }
 .pose-work .po-ai-robot-arm-l { transform: rotate(-20deg); }
 .pose-work .po-ai-robot-head { animation: po-ai-robot-nod .6s ease-in-out infinite; }
 .pose-work .po-ai-robot-body { animation: po-ai-robot-lean .6s ease-in-out infinite; }
-@keyframes po-ai-robot-hammer { 0% { transform: rotate(-95deg); } 45% { transform: rotate(-150deg); } 60%, 100% { transform: rotate(-95deg); } }
+@keyframes po-ai-robot-hammer { 0% { transform: rotate(-100deg); } 45% { transform: rotate(-165deg); } 60%, 100% { transform: rotate(-100deg); } }
 @keyframes po-ai-robot-sparks { 0%, 55% { opacity: 0; } 60%, 80% { opacity: 1; } 85%, 100% { opacity: 0; } }
 @keyframes po-ai-robot-nod { 0%, 100% { transform: rotate(6deg); } 60% { transform: rotate(-4deg); } }
 @keyframes po-ai-robot-lean { 0%, 100% { transform: rotate(4deg); } 60% { transform: rotate(-3deg); } }
+/* SWEEP — varre com a vassoura, anda devagar, poeira levantando */
+.pose-sweep .po-ai-robot-broom { display: block; }
+.pose-sweep .po-ai-robot-dust { display: block; animation: po-ai-robot-dust 1.2s ease-out infinite; }
+.pose-sweep .po-ai-robot-all { animation: po-ai-robot-sweepx 8s ease-in-out infinite; }
+.pose-sweep .po-ai-robot-arm-l { animation: po-ai-robot-sweep-arm 1.2s ease-in-out infinite; }
+.pose-sweep .po-ai-robot-arm-r { transform: rotate(-15deg); }
+.pose-sweep .po-ai-robot-body { animation: po-ai-robot-sweep-lean 1.2s ease-in-out infinite; }
+.pose-sweep .po-ai-robot-head { animation: po-ai-robot-tilt 2.4s ease-in-out infinite; }
+.pose-sweep .po-ai-robot-leg-l { animation: po-ai-robot-step-l 1.6s ease-in-out infinite; }
+.pose-sweep .po-ai-robot-leg-r { animation: po-ai-robot-step-r 1.6s ease-in-out infinite; }
+@keyframes po-ai-robot-sweepx { 0%, 100% { transform: translateX(18px); } 50% { transform: translateX(-18px); } }
+@keyframes po-ai-robot-sweep-arm { 0%, 100% { transform: rotate(28deg); } 50% { transform: rotate(-12deg); } }
+@keyframes po-ai-robot-sweep-lean { 0%, 100% { transform: rotate(3deg); } 50% { transform: rotate(-3deg); } }
+@keyframes po-ai-robot-dust { 0% { opacity: 0; transform: translate(6px, 0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(-10px, -8px); } }
 @keyframes po-ai-robot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
 @media (prefers-reduced-motion: reduce) { .po-ai-robot * { animation: none !important; } }
 
