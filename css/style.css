@@ -6138,22 +6138,57 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-ai-busy-bar { height: 8px; background: #e3e6ec; border-radius: 4px; overflow: hidden; margin: 12px 0 8px; }
 .po-ai-busy-fill { height: 100%; width: 0; background: linear-gradient(90deg, #d6336c, #ff7aa2); border-radius: 4px; transition: width .8s ease; }
 .po-ai-busy-step { font-size: 14px; font-weight: 600; color: #1b1f27; }
-/* robô dançando (01/11) — passo de zumbi: braços pra frente/cima alternando,
-   corpo balança, passinho lateral, cabeça inclina. Ritmo ~ 1,2 s por ciclo. */
-.po-ai-robot { width: 100px; height: 100px; margin: 0 auto 8px; display: block; overflow: visible; }
-.po-ai-robot-body { transform-origin: 60px 90px; animation: po-ai-robot-sway 1.2s ease-in-out infinite; }
-.po-ai-robot-head { transform-origin: 60px 52px; animation: po-ai-robot-tilt 1.2s ease-in-out infinite; }
-.po-ai-robot-arm-l { transform-origin: 29px 58px; animation: po-ai-robot-arm-l 1.2s ease-in-out infinite; }
-.po-ai-robot-arm-r { transform-origin: 91px 58px; animation: po-ai-robot-arm-r 1.2s ease-in-out infinite; }
-.po-ai-robot-leg-l { transform-origin: 50px 90px; animation: po-ai-robot-leg-l 1.2s ease-in-out infinite; }
-.po-ai-robot-leg-r { transform-origin: 70px 90px; animation: po-ai-robot-leg-r 1.2s ease-in-out infinite; }
+/* robô em 3 cenas (01/11): dance / walk / work — classe pose-* no svg,
+   trocada a cada 7 s pelo aiBusy. Peças que não fazem parte da cena ficam
+   escondidas (chapa só no walk; martelo, bigorna e faíscas só no work). */
+.po-ai-robot { width: 130px; height: 100px; margin: 0 auto 8px; display: block; overflow: visible; }
 .po-ai-robot-eye { animation: po-ai-robot-blink 3.2s infinite; transform-origin: center; }
+.po-ai-robot-board, .po-ai-robot-hammer, .po-ai-robot-anvil, .po-ai-robot-sparks { display: none; }
+.po-ai-robot-body { transform-origin: 80px 90px; }
+.po-ai-robot-head { transform-origin: 80px 52px; }
+.po-ai-robot-arm-l { transform-origin: 49px 58px; }
+.po-ai-robot-arm-r { transform-origin: 111px 58px; }
+.po-ai-robot-leg-l { transform-origin: 70px 90px; }
+.po-ai-robot-leg-r { transform-origin: 90px 90px; }
+/* DANCE */
+.pose-dance .po-ai-robot-body { animation: po-ai-robot-sway 1.2s ease-in-out infinite; }
+.pose-dance .po-ai-robot-head { animation: po-ai-robot-tilt 1.2s ease-in-out infinite; }
+.pose-dance .po-ai-robot-arm-l { animation: po-ai-robot-arm-l 1.2s ease-in-out infinite; }
+.pose-dance .po-ai-robot-arm-r { animation: po-ai-robot-arm-r 1.2s ease-in-out infinite; }
+.pose-dance .po-ai-robot-leg-l { animation: po-ai-robot-leg-l 1.2s ease-in-out infinite; }
+.pose-dance .po-ai-robot-leg-r { animation: po-ai-robot-leg-r 1.2s ease-in-out infinite; }
 @keyframes po-ai-robot-sway { 0%, 100% { transform: translateX(-6px) rotate(-6deg); } 50% { transform: translateX(6px) rotate(6deg); } }
 @keyframes po-ai-robot-tilt { 0%, 100% { transform: rotate(10deg); } 50% { transform: rotate(-10deg); } }
 @keyframes po-ai-robot-arm-l { 0%, 100% { transform: rotate(150deg); } 50% { transform: rotate(110deg); } }
 @keyframes po-ai-robot-arm-r { 0%, 100% { transform: rotate(-110deg); } 50% { transform: rotate(-150deg); } }
 @keyframes po-ai-robot-leg-l { 0%, 100% { transform: translateX(-4px) rotate(-6deg); } 50% { transform: translateX(0) rotate(0); } }
 @keyframes po-ai-robot-leg-r { 0%, 100% { transform: translateX(0) rotate(0); } 50% { transform: translateX(4px) rotate(6deg); } }
+/* WALK — anda de um lado pro outro carregando uma chapa na cabeça */
+.pose-walk .po-ai-robot-board { display: block; }
+.pose-walk .po-ai-robot-all { animation: po-ai-robot-walkx 6s ease-in-out infinite; }
+.pose-walk .po-ai-robot-body { animation: po-ai-robot-bob .5s ease-in-out infinite; }
+.pose-walk .po-ai-robot-arm-l { animation: po-ai-robot-hold-l .5s ease-in-out infinite; }
+.pose-walk .po-ai-robot-arm-r { animation: po-ai-robot-hold-r .5s ease-in-out infinite; }
+.pose-walk .po-ai-robot-leg-l { animation: po-ai-robot-step-l .5s ease-in-out infinite; }
+.pose-walk .po-ai-robot-leg-r { animation: po-ai-robot-step-r .5s ease-in-out infinite; }
+@keyframes po-ai-robot-walkx { 0%, 100% { transform: translateX(-28px); } 50% { transform: translateX(28px); } }
+@keyframes po-ai-robot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes po-ai-robot-hold-l { 0%, 100% { transform: rotate(165deg); } 50% { transform: rotate(160deg); } }
+@keyframes po-ai-robot-hold-r { 0%, 100% { transform: rotate(-165deg); } 50% { transform: rotate(-160deg); } }
+@keyframes po-ai-robot-step-l { 0%, 100% { transform: rotate(-22deg); } 50% { transform: rotate(22deg); } }
+@keyframes po-ai-robot-step-r { 0%, 100% { transform: rotate(22deg); } 50% { transform: rotate(-22deg); } }
+/* WORK — martela numa bigorna, com faíscas */
+.pose-work .po-ai-robot-hammer, .pose-work .po-ai-robot-anvil { display: block; }
+.pose-work .po-ai-robot-sparks { display: block; animation: po-ai-robot-sparks .6s steps(1) infinite; }
+.pose-work .po-ai-robot-all { transform: translateX(-14px); }
+.pose-work .po-ai-robot-arm-r { animation: po-ai-robot-hammer .6s ease-in infinite; }
+.pose-work .po-ai-robot-arm-l { transform: rotate(-20deg); }
+.pose-work .po-ai-robot-head { animation: po-ai-robot-nod .6s ease-in-out infinite; }
+.pose-work .po-ai-robot-body { animation: po-ai-robot-lean .6s ease-in-out infinite; }
+@keyframes po-ai-robot-hammer { 0% { transform: rotate(-95deg); } 45% { transform: rotate(-150deg); } 60%, 100% { transform: rotate(-95deg); } }
+@keyframes po-ai-robot-sparks { 0%, 55% { opacity: 0; } 60%, 80% { opacity: 1; } 85%, 100% { opacity: 0; } }
+@keyframes po-ai-robot-nod { 0%, 100% { transform: rotate(6deg); } 60% { transform: rotate(-4deg); } }
+@keyframes po-ai-robot-lean { 0%, 100% { transform: rotate(4deg); } 60% { transform: rotate(-3deg); } }
 @keyframes po-ai-robot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
 @media (prefers-reduced-motion: reduce) { .po-ai-robot * { animation: none !important; } }
 

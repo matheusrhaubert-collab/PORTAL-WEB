@@ -94,6 +94,14 @@ function visualCheckApplyOps(ops, wallItems, wall) {
         if (alvo > it.x_mm + it.width_mm) { it.width_mm = alvo - it.x_mm; n++; }
         break;
       }
+      case 'no_doors':
+      case 'add_doors': {
+        const doors = o.op === 'add_doors' ? 'hinged' : 'none';
+        if (it.interior && Array.isArray(it.interior.columns)) it.interior.columns.forEach((c) => { c.doors = doors; c.doors_cover = 'all'; });
+        else if (it.composition) it.interior = { columns: [{ width_mm: it.width_mm, zones: [{ type: 'shelves', height_mm: it.height_mm, count: Math.max(0, Math.round(it.height_mm / 350) - 1) }], doors, doors_cover: 'all' }] };
+        if (it._volume) { it._volume.doors = doors === 'none' ? 0 : Math.max(1, it._volume.doors || 1); }
+        n++; break;
+      }
       case 'swap':
         if (other) { const x = it.x_mm, f = it.floor_height_mm; it.x_mm = other.x_mm; it.floor_height_mm = other.floor_height_mm; other.x_mm = x; other.floor_height_mm = f; n++; }
         break;

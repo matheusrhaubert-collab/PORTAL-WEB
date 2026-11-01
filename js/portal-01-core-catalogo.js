@@ -47,19 +47,38 @@ const aiBusy = (() => {
   // Robô dançando (01/11, Matt: "o robô pode ficar dançando, bem divertido"):
   // braços de zumbi pra cima alternando, corpo balança, passinho lateral,
   // cabeça inclina — tudo CSS (css/style.css, .po-ai-robot-*).
-  const ROBO = '<svg class="po-ai-robot" viewBox="0 0 120 120" aria-hidden="true">' +
+  // Robô em 3 cenas que se revezam (01/11, Matt: "quero mais gifs de robôs
+  // trabalhando, levando, andando, revezando durante o processo"): classe
+  // pose-dance / pose-walk / pose-work no <svg>, trocada a cada 7 s (CSS em
+  // style.css: .po-ai-robot.pose-*).
+  const ROBO = '<svg class="po-ai-robot pose-dance" viewBox="0 0 160 120" aria-hidden="true">' +
+    '<g class="po-ai-robot-all">' +
     '<g class="po-ai-robot-body">' +
-    '<g class="po-ai-robot-head"><rect x="30" y="8" width="60" height="44" rx="10" fill="#d6336c"/>' +
-    '<rect x="38" y="18" width="44" height="24" rx="6" fill="#1b1f27"/>' +
-    '<circle class="po-ai-robot-eye" cx="52" cy="30" r="5" fill="#7cf2c8"/><circle class="po-ai-robot-eye" cx="68" cy="30" r="5" fill="#7cf2c8"/>' +
-    '<rect x="57" y="0" width="6" height="10" rx="3" fill="#8a90a0"/><circle cx="60" cy="2" r="4" fill="#ffb02e"/></g>' +
-    '<rect x="40" y="54" width="40" height="34" rx="8" fill="#e3e6ec"/><rect x="50" y="62" width="20" height="8" rx="2" fill="#c3c8d2"/>' +
-    '<g class="po-ai-robot-arm-l"><rect x="22" y="56" width="14" height="26" rx="6" fill="#d6336c"/><circle cx="29" cy="84" r="6" fill="#8a90a0"/></g>' +
-    '<g class="po-ai-robot-arm-r"><rect x="84" y="56" width="14" height="26" rx="6" fill="#d6336c"/><circle cx="91" cy="84" r="6" fill="#8a90a0"/></g>' +
+    '<g class="po-ai-robot-head"><rect x="50" y="8" width="60" height="44" rx="10" fill="#d6336c"/>' +
+    '<rect x="58" y="18" width="44" height="24" rx="6" fill="#1b1f27"/>' +
+    '<circle class="po-ai-robot-eye" cx="72" cy="30" r="5" fill="#7cf2c8"/><circle class="po-ai-robot-eye" cx="88" cy="30" r="5" fill="#7cf2c8"/>' +
+    '<rect x="77" y="0" width="6" height="10" rx="3" fill="#8a90a0"/><circle cx="80" cy="2" r="4" fill="#ffb02e"/></g>' +
+    '<rect x="60" y="54" width="40" height="34" rx="8" fill="#e3e6ec"/><rect x="70" y="62" width="20" height="8" rx="2" fill="#c3c8d2"/>' +
+    '<g class="po-ai-robot-arm-l"><rect x="42" y="56" width="14" height="26" rx="6" fill="#d6336c"/><circle cx="49" cy="84" r="6" fill="#8a90a0"/></g>' +
+    '<g class="po-ai-robot-arm-r"><rect x="104" y="56" width="14" height="26" rx="6" fill="#d6336c"/><circle cx="111" cy="84" r="6" fill="#8a90a0"/>' +
+    '<g class="po-ai-robot-hammer"><rect x="108" y="36" width="6" height="34" rx="2" fill="#8a90a0"/><rect x="100" y="28" width="22" height="12" rx="3" fill="#5b616e"/></g></g>' +
+    '<g class="po-ai-robot-board"><rect x="30" y="-2" width="100" height="10" rx="2" fill="#c89b5a"/><rect x="30" y="-2" width="100" height="3" fill="#a87a3f" opacity=".5"/></g>' +
     '</g>' +
-    '<g class="po-ai-robot-leg-l"><rect x="44" y="88" width="12" height="18" rx="4" fill="#8a90a0"/><rect x="40" y="104" width="18" height="6" rx="3" fill="#5b616e"/></g>' +
-    '<g class="po-ai-robot-leg-r"><rect x="64" y="88" width="12" height="18" rx="4" fill="#8a90a0"/><rect x="62" y="104" width="18" height="6" rx="3" fill="#5b616e"/></g>' +
-    '<rect x="16" y="112" width="88" height="4" rx="2" fill="#e3e6ec"/></svg>';
+    '<g class="po-ai-robot-leg-l"><rect x="64" y="88" width="12" height="18" rx="4" fill="#8a90a0"/><rect x="60" y="104" width="18" height="6" rx="3" fill="#5b616e"/></g>' +
+    '<g class="po-ai-robot-leg-r"><rect x="84" y="88" width="12" height="18" rx="4" fill="#8a90a0"/><rect x="82" y="104" width="18" height="6" rx="3" fill="#5b616e"/></g>' +
+    '</g>' +
+    '<g class="po-ai-robot-sparks"><circle cx="136" cy="98" r="2.5" fill="#ffb02e"/><circle cx="144" cy="90" r="2" fill="#ff7a2e"/><circle cx="130" cy="88" r="1.8" fill="#ffd36e"/></g>' +
+    '<rect class="po-ai-robot-anvil" x="120" y="100" width="30" height="10" rx="2" fill="#c3c8d2"/>' +
+    '<rect x="10" y="112" width="140" height="4" rx="2" fill="#e3e6ec"/></svg>';
+  const POSES = ['dance', 'walk', 'work'];
+  let poseTimer = null, poseIdx = 0;
+  function nextPose() {
+    if (!el) return;
+    const svg = el.querySelector('.po-ai-robot'); if (!svg) return;
+    poseIdx = (poseIdx + 1) % POSES.length;
+    POSES.forEach((p) => svg.classList.remove('pose-' + p));
+    svg.classList.add('pose-' + POSES[poseIdx]);
+  }
   function ensure() {
     if (el) return el;
     el = document.createElement('div');
@@ -111,6 +130,7 @@ const aiBusy = (() => {
       el.classList.add('open');
       document.body.classList.add('po-ai-busy-on');
       clearInterval(timer); timer = setInterval(tick, 1000); tick();
+      clearInterval(poseTimer); poseTimer = setInterval(nextPose, 7000);
     },
     _stepText() {
       const p = plan[stepIdx];
@@ -131,6 +151,7 @@ const aiBusy = (() => {
       el.classList.remove('open');
       document.body.classList.remove('po-ai-busy-on');
       clearInterval(timer); timer = null; plan = null;
+      clearInterval(poseTimer); poseTimer = null;
     },
     isOpen() { return !!(el && el.classList.contains('open')); }
   };

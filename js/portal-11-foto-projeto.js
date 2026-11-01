@@ -807,6 +807,13 @@ const PROJECT_PHOTO_NO_INTERIOR_RE = /panel|filler|floating_shelf|appliance|frid
 // casado): zona de gavetas com altura h cabe no máximo floor(h/100) gavetas
 // (mínimo 1). Zona sem altura lida divide a altura útil por igual.
 const PROJECT_PHOTO_DRAWER_MIN_MM = 100;
+// GAVETA LARGA DEMAIS VIRA PORTA (01/11, Matt: "quando um bloco de móvel é
+// muito grande pra colocar uma gaveta, pega o mesmo tamanho e troca para
+// portas"): coluna mais larga que isto com zona de gavetas → a zona vira
+// prateleira(s) e a coluna ganha porta de giro.
+const PROJECT_PHOTO_DRAWER_MAX_W_MM = 1200;
+// ...ou gaveta ALTA demais (Matt, 10:40): frente de gaveta acima disto → porta.
+const PROJECT_PHOTO_DRAWER_MAX_H_MM = 400;
 function projectPhotoSanitizeInterior(interior, heightMm, espessura) {
   if (!interior || !Array.isArray(interior.columns)) return interior;
   const E = Number(espessura) || 19;
@@ -814,6 +821,13 @@ function projectPhotoSanitizeInterior(interior, heightMm, espessura) {
   interior.columns.forEach((c) => {
     const zones = (c && Array.isArray(c.zones)) ? c.zones : [];
     if (!zones.length) return;
+    const alturaZona = (z) => Number(z.height_mm) > 0 ? Number(z.height_mm) : util / Math.max(1, zones.length);
+    const gavetaAlta = zones.some((z) => z && z.type === 'drawers' && alturaZona(z) / Math.max(1, Number(z.count) || 1) > PROJECT_PHOTO_DRAWER_MAX_H_MM);
+    if (((Number(c.width_mm) || 0) > PROJECT_PHOTO_DRAWER_MAX_W_MM || gavetaAlta) && zones.some((z) => z && z.type === 'drawers')) {
+      zones.forEach((z) => { if (z && z.type === 'drawers') { z.type = 'shelves'; z.count = Math.max(0, (Number(z.count) || 1) - 1); } });
+      c.doors = 'hinged'; c.doors_cover = 'all';
+      interior._gavetaVirouPorta = true;
+    }
     const semAltura = zones.filter((z) => !(Number(z.height_mm) > 0));
     const comAltura = zones.reduce((a, z) => a + (Number(z.height_mm) > 0 ? Number(z.height_mm) : 0), 0);
     const sobra = Math.max(0, util - comAltura);
@@ -1029,7 +1043,7 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
       color_name: (corDireta.get(v.id) || {}).color_name || null,
       front_color_name: (corDireta.get(v.id) || {}).front_color_name || null,
       color_description: v.color_description || '',
-      composition: comp,
+      composition: comp, _volume: v,
       interior: separa ? Object.assign({}, interior, { columns: [Object.assign({}, col, { width_mm: larg })] }) : interior
     });
     });

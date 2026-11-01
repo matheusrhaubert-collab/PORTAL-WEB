@@ -506,6 +506,7 @@ Cada corpo de móvel ou equipamento, um por item, em ordem: primeiro tudo que en
   • doors: "none" (aberto), "hinged" (porta de giro), "sliding" (porta de correr), "flap" (basculante); doors_cover: "all" ou "above_drawers" (gavetas à vista e porta só em cima).
   Leia o interior das ELEVAÇÕES internas da prancha ou de render com porta aberta. Se as portas estão fechadas e não há vista interna, use o padrão de closet: 1 coluna cabideiro longo + prateleiras em cima a cada ~350.
 - INTERIOR DOS OUTROS MÓVEIS (13/10): sempre que o INTERIOR de qualquer outro volume aparece (nicho/estante/módulo ABERTO sem porta, porta de vidro, porta aberta no render, elevação interna ou corte na prancha), preencha "interior" do mesmo jeito: colunas se houver divisória vertical, e zonas de baixo pra cima com o NÚMERO EXATO de prateleiras que aparece ("shelves", count = quantas prateleiras você conta dentro da zona; um nicho com 3 prateleiras visíveis = 1 zona shelves count=3), gavetas internas ("drawers") e cabideiro ("hanging"). Nesses volumes use doors="none" no interior (as portas do móvel vêm do catálogo). Não deixe vão vazio quando o interior é visível. Só deixe columns vazio quando o interior não aparece (porta fechada sem vista interna).
+- NICHO ABERTO: vão com objetos à vista (troféu, livros), fita de LED ou fundo iluminado e SEM puxador/frente = ABERTO → doors 0, drawers 0, front_style "aberta", interior com as prateleiras contadas. Só marque porta quando há uma frente fechada visível.
 - doors/drawers: quantas portas e gavetas aparecem na frente do volume. GAVETA MÍNIMA 100 mm: numa caixa de 150 mm de altura cabe 1 gaveta, não 2 — nunca conte mais gavetas do que cabem (frente ≥ 100 mm cada). front_style: "shaker", "lisa", "ripada", "vidro", "aberta", "almofadada"… color_description: cor e acabamento como aparecem (ex.: "cinza médio fosco", "carvalho claro com veio").
 
 REGRAS:
@@ -970,7 +971,7 @@ function sanitizeViews(raw: any, pages: any[]) {
 // + as referências do projeto (recortes das elevações do PDF / render /
 // foto) + a lista dos módulos com medidas. Devolve só diferenças GRANDES e
 // as operações pra corrigir, por número do módulo.
-const CHECK_OPS = ["move", "resize", "remove", "extend_left", "extend_right", "to_floor", "swap"];
+const CHECK_OPS = ["move", "resize", "remove", "extend_left", "extend_right", "to_floor", "swap", "no_doors", "add_doors"];
 const CHECK_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -1018,7 +1019,8 @@ Compare a montagem com a referência e liste só DIFERENÇAS GRANDES, as que se 
 - peça empilhada/atravessando outra, ou pendurada quando na referência está no chão → "to_floor" ou "move" (floor_height_mm);
 - peça que não existe na referência → "remove"; peça muito maior/menor (mais de 15%) → "resize";
 - afastada da parede sem motivo → "move" com wall_offset_mm 0;
-- dois módulos trocados de lugar → "swap" (n e other_n).
+- dois módulos trocados de lugar → "swap" (n e other_n);
+- módulo montado COM porta onde a referência mostra NICHO ABERTO (objetos à vista, LED, sem puxador) → "no_doors"; montado aberto onde a referência mostra porta fechada → "add_doors".
 NÃO mexa em: cor, puxador, detalhe fino, diferenças menores que 15% ou 60 mm, nem no que já bate. Nunca invente peça nova (não há "add"). Reason curto em ${langName(b.lang)}; differences em ${langName(b.lang)}.
 ${lessonsPrompt(b.lessons, "match") ? "\n" + lessonsPrompt(b.lessons, "match") + "\n" : ""}
 Responda SOMENTE o JSON no schema pedido.`;
