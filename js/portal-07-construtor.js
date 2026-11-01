@@ -1143,6 +1143,7 @@ async function applyProjectFactoryLayout(slot) {
   if (lay.params && lay.params.stretcher_frente_em_pe && typeof setSlotFrontStretcherEmPe === 'function') {
     try { setSlotFrontStretcherEmPe(slot, true); } catch (e) { /* segue deitada */ }
   }
+  if (typeof projectEnforceStretcherRule === 'function') { try { projectEnforceStretcherRule(slot); } catch (e) { /* segue */ } }
   // SEM TRAVESSA DA FRENTE de fábrica (Farm Sink — migration 239, Matt 25/10:
   // "nesse módulo não tem travessa na frente, porque a pia fica bem em cima
   // dela"). Mesmo caminho do "remover peça" do cliente (removedPieceIds):
@@ -3655,6 +3656,8 @@ function applyProjectBuilderToSlot() {
   const vazia = !r.splitAxis && !r.content && !(r.fronts || []).length
     && !(r.children || []).length && !(r.params && r.params.zoneOverride);
   slot.layout = vazia ? null : LayoutEngine.serialize(r);
+  // gaveta em cima ⇒ travessa deitada (01/11, ver projectEnforceStretcherRule)
+  if (typeof projectEnforceStretcherRule === 'function') { try { projectEnforceStretcherRule(slot); } catch (e) { /* segue */ } }
 
   // O catálogo da janela é o filtrado pela whitelist; o cache global é o
   // inteiro. Completa o cache com o que a janela carregou pra que o rebuild

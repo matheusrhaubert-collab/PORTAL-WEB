@@ -1226,6 +1226,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         // salvo antes disso não tem essas chaves, cai no default 0.
         fineOffsetZMm: Number(cfg.fine_offset_z_mm || 0),
         fineOffsetYMm: Number(cfg.fine_offset_y_mm || 0),
+        tampFloorExtraMm: Number(cfg.tamp_floor_extra_mm || 0),
         fineRotXDeg: Number(cfg.fine_rot_x_deg || 0),
         fineRotYDeg: Number(cfg.fine_rot_y_deg || 0),
         fineRotZDeg: Number(cfg.fine_rot_z_deg || 0),

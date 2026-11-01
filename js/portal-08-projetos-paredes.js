@@ -1,3 +1,11 @@
+
+// Y de apoio de um slot de parede no 3D (01/11): floor_height_mm menos a sobra
+// do tamponamento que fica ABAIXO do chão (slot.tampFloorExtraMm, portal-23 —
+// "deve jogar pra baixo alinhando por cima"). Campo próprio, não
+// fineOffsetYMm, porque os clamps de parede zeram/limitam esse a >= 0.
+function projectWallSlotYMm(slot) {
+  return Number(slot.floor_height_mm || 0) - Number(slot.tampFloorExtraMm || 0);
+}
 // portal-08-projetos-paredes.js — parte 8/9 de js/portal.js (ver
 // portal-01-core-catalogo.js). Girar módulo (Shift+arrastar), vista superior/
 // planta baixa, paredes por segmento (editor de paredes), estilo do desenho
@@ -397,7 +405,7 @@ function getSlotWorldFrame(slot) {
   const depthOffsetM = depthM / 2;
   return {
     ox: wallGeo.originX + wallGeo.alongDirX * alongOffsetM + wallGeo.intoDirX * depthOffsetM,
-    oy: Number(slot.floor_height_mm || 0) / 1000,
+    oy: projectWallSlotYMm(slot) / 1000,
     oz: wallGeo.originZ + wallGeo.alongDirZ * alongOffsetM + wallGeo.intoDirZ * depthOffsetM,
     rotY: wallGeo.rotationY,
     widthM, heightM, depthM
@@ -3394,7 +3402,7 @@ function buildProjectAssemblies(slotsList) {
       // dele. Lido em renderFreeformWalls (viewer3d_composition.js), que
       // repassa pro userData do group de verdade que entra na cena.
       assembly.isDecoration = !!(slot.module && slot.module.is_decoration);
-      assembly.floor_height_m = Number(slot.floor_height_mm || 0) / 1000;
+      assembly.floor_height_m = projectWallSlotYMm(slot) / 1000;
       assembly.x_m = Number(slot.x_mm || 0) / 1000;
       assembly.z_order = Number(slot.z_order || 0);
       // Módulo ILHA (2026-08-08, ver isFloorSlot): posição em coordenadas de
@@ -7005,6 +7013,8 @@ function serializeProjectSlots() {
     // no default 0 na restauração (ver portal-09-projetos-final.js).
     fine_offset_z_mm: Number(slot.fineOffsetZMm || 0),
     fine_offset_y_mm: Number(slot.fineOffsetYMm || 0),
+    // Tamponamento com 1" extra pra baixo do chão (01/11, portal-23)
+    tamp_floor_extra_mm: Number(slot.tampFloorExtraMm || 0),
     fine_rot_x_deg: Number(slot.fineRotXDeg || 0),
     fine_rot_y_deg: Number(slot.fineRotYDeg || 0),
     fine_rot_z_deg: Number(slot.fineRotZDeg || 0),

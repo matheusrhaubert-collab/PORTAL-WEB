@@ -210,8 +210,11 @@ async function tampInsert(side) {
     // tamponamento (pra baixo do chão) pra ter recurso de cortar na obra").
     // A sobra fica ABAIXO do chão no 3D (fineOffsetYMm negativo) e entra na
     // altura da peça (corte/preço).
-    if (f.Y0 <= 0.5 && await tampConfirmDesnivel()) sobraChao = TAMP_FLOOR_EXTRA_MM;
-    height += sobraChao;
+    // 01/11 (Matt: "quando clico não aparece a peça entrando; ela deve
+    // aparecer, depois no Done é que deve vir a mensagem"): a pergunta saiu
+    // daqui e vai pro Done (tampAskDesnivelOnDone). Aqui só marca o painel
+    // que encosta no chão como candidato.
+    if (f.Y0 <= 0.5) sobraChao = -1;
   } else {
     const span = tampHorizontalSpan(f, ex);
     a0 = span.a0; width = span.width; height = T;
@@ -228,7 +231,7 @@ async function tampInsert(side) {
   if (!slot) { tampMsg(tampT('err_insert'), true); return; }
   slot.height_mm = projectSlotClampedDimensionMm(slot, 'height', height);
   tampApplyPlacement(f, slot, a0, width, y0, depth);
-  if (sobraChao > 0) { slot.fineOffsetYMm = -sobraChao; slot.tampFloorExtraMm = sobraChao; }
+  if (sobraChao < 0) { slot._tampNoChao = true; tampState && (tampState.pendDesnivel = true); }
   tampCopyColors(slot, slots);
   recomputeProjectSlotPricing(slot);
   if (kind === 'vertical') {
@@ -296,9 +299,32 @@ function tampEnsureModal() {
     + '<div class="po-proj-ai-modal-actions"><button type="button" id="po-tamp-done"></button></div></div>';
   document.body.appendChild(m);
   const fecha = () => { m.classList.remove('open'); tampState = null; };
+  // Done com painel vertical novo no chão: pergunta o desnível (1" a mais
+  // PRA BAIXO, topo alinhado — slot.tampFloorExtraMm, ver projectWallSlotYMm
+  // em portal-08) e só então fecha.
+  const done = async () => {
+    const st = tampState;
+    if (st && st.pendDesnivel) {
+      const alvos = projectSlots.filter((s) => s._tampNoChao);
+      st.pendDesnivel = false;
+      if (alvos.length && await tampConfirmDesnivel()) {
+        if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+        alvos.forEach((s) => {
+          if (s.tampFloorExtraMm > 0) return;
+          s.height_mm = Number(s.height_mm) + TAMP_FLOOR_EXTRA_MM;
+          s.tampFloorExtraMm = TAMP_FLOOR_EXTRA_MM;
+          recomputeProjectSlotPricing(s);
+        });
+        renderProjectCanvas();
+        markProjectDirty();
+      }
+      alvos.forEach((s) => { delete s._tampNoChao; });
+    }
+    fecha();
+  };
   m.addEventListener('click', (e) => { if (e.target === m) fecha(); });
   m.querySelector('#po-tamp-close').addEventListener('click', fecha);
-  m.querySelector('#po-tamp-done').addEventListener('click', fecha);
+  m.querySelector('#po-tamp-done').addEventListener('click', done);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && m.classList.contains('open')) fecha(); });
   m.querySelector('#po-tamp-view').addEventListener('click', (e) => {
     const z = e.target.closest('[data-tamp]');

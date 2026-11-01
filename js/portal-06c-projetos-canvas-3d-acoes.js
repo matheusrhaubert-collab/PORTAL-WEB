@@ -4965,17 +4965,59 @@ function projectStretcherIcon(emPe) {
     ${emPe ? '<rect x="22" y="6" width="5" height="14" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'
            : '<rect x="12" y="6" width="15" height="5" fill="#c0843f" stroke="#5b4a3a" stroke-width="1.2"/>'}</svg>`;
 }
+// GAVETA EM CIMA ⇒ TRAVESSA NUNCA EM PÉ (01/11, Matt: "quando módulo tem
+// gaveta em cima, não pode ter o stretcher vertical, porque senão vai colidir
+// com a gaveta"). Olha a árvore do interior (slot.layout): o vão mais alto
+// (último filho de cada divisão em Y, que cresce de baixo pra cima) com
+// conteúdo do grupo Gavetas/Drawers, ou gaveta interna. Sem árvore = sem
+// gaveta conhecida.
+function projectSlotTopLeafIsDrawer(slot) {
+  const lay = slot && slot.layout;
+  if (!lay) return false;
+  const cat = (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || {};
+  const ehGaveta = (n) => {
+    if (!n || !n.content || !n.content.acc) return false;
+    const acc = cat[n.content.acc] || {};
+    const p = n.content.params || {};
+    return acc.group_name === 'Gavetas' || acc.group_name === 'Drawers'
+      || p.gaveta_interna === 'sem_porta' || p.gaveta_interna === 'com_porta'
+      || /gaveta|drawer/i.test(String(acc.slug || acc.name || ''));
+  };
+  // desce sempre pelo topo: em Y pega o último filho; em X olha todos os
+  // filhos (qualquer coluna com gaveta no topo já colide com a travessa)
+  const topo = (n) => {
+    if (!n) return false;
+    if (n.splitAxis && (n.children || []).length > 1) {
+      if (n.splitAxis === 'y') return topo(n.children[n.children.length - 1]);
+      return n.children.some(topo);
+    }
+    return ehGaveta(n);
+  };
+  return topo(lay);
+}
+// Garante a regra no slot (chamado depois de salvar o Construtor e de pendurar
+// o interior de fábrica). Devolve true se precisou deitar a travessa.
+function projectEnforceStretcherRule(slot) {
+  if (!slot) return false;
+  const p = projectFrontStretcherPiece(slot);
+  if (!p) return false;
+  const emPe = !!(((slot.pieceAdjustments || {})[p.id] || {}).em_pe);
+  if (emPe && projectSlotTopLeafIsDrawer(slot)) { setSlotFrontStretcherEmPe(slot, false); return true; }
+  return false;
+}
 function projectStretcherBlock(slot) {
   const p = projectFrontStretcherPiece(slot);
   if (!p) return '';
   const emPe = !!(((slot.pieceAdjustments || {})[p.id] || {}).em_pe);
-  const btn = (v) => `<button type="button" class="po-proj-door-leaves-btn po-proj-stretcher-btn${emPe === v ? ' selected' : ''}" data-em-pe="${v ? '1' : '0'}">${projectStretcherIcon(v)}<span>${I18n.t(v ? 'project.stretcher_upright' : 'project.stretcher_flat')}</span></button>`;
+  const gavetaEmCima = projectSlotTopLeafIsDrawer(slot);
+  const btn = (v) => `<button type="button" class="po-proj-door-leaves-btn po-proj-stretcher-btn${emPe === v ? ' selected' : ''}" data-em-pe="${v ? '1' : '0'}"${v && gavetaEmCima ? ` disabled title="${I18n.t('project.stretcher_upright_blocked')}"` : ''}>${projectStretcherIcon(v)}<span>${I18n.t(v ? 'project.stretcher_upright' : 'project.stretcher_flat')}</span></button>`;
   return `<div class="po-proj-config-door-side po-proj-stretcher"><span class="po-proj-config-section-label">${I18n.t('project.stretcher_label')}</span><div class="po-proj-door-leaves-row">${btn(false)}${btn(true)}</div></div>`;
 }
 // Só grava no slot; quem chama recalcula e redesenha.
 function setSlotFrontStretcherEmPe(slot, emPe) {
   const p = projectFrontStretcherPiece(slot);
   if (!slot || !p) return false;
+  if (emPe && projectSlotTopLeafIsDrawer(slot)) return false;   // gaveta em cima: nunca em pé (01/11)
   const todos = Object.assign({}, slot.pieceAdjustments || {});
   const cur = Object.assign({}, todos[p.id] || {});
   if (emPe) cur.em_pe = true; else delete cur.em_pe;

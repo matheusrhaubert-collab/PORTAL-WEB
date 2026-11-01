@@ -6286,3 +6286,20 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-tamp-confirm-card h3 { margin: 0 0 8px; font-size: 16px; }
 .po-tamp-confirm-card p { margin: 0 0 16px; font-size: 14px; color: #3a404b; }
 .po-tamp-confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* AUDITOR DO PROJETO (01/11) — js/portal-35-auditor.js */
+#po-audit-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+#po-audit-modal.open { display: flex; }
+.po-audit-card { width: min(860px, 96vw); max-height: 92vh; overflow: auto; }
+.po-audit-summary { display: flex; gap: 8px; margin: 8px 0 12px; flex-wrap: wrap; }
+.po-audit-pill { font-size: 12px; font-weight: 600; border-radius: 12px; padding: 3px 10px; background: #eef0f4; color: #1b1f27; }
+.po-audit-pill.erro { background: #fde8e8; color: #b42318; } .po-audit-pill.aviso { background: #fff4e0; color: #9a5b00; } .po-audit-pill.dica { background: #e8f3ff; color: #1b5fa8; }
+.po-audit-list { display: grid; gap: 8px; max-height: 58vh; overflow: auto; }
+.po-audit-item { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; border: 1px solid #e3e6ec; border-left-width: 4px; border-radius: 8px; padding: 8px 10px; background: #fff; }
+.po-audit-item.erro { border-left-color: #d92d20; } .po-audit-item.aviso { border-left-color: #f79009; } .po-audit-item.dica { border-left-color: #2e90fa; }
+.po-audit-badge { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #5b616e; min-width: 44px; }
+.po-audit-txt { display: grid; gap: 1px; } .po-audit-txt strong { font-size: 13px; } .po-audit-txt span { font-size: 12px; color: #5b616e; } .po-audit-txt em { font-size: 12px; color: #1b1f27; font-style: normal; }
+.po-audit-btns { display: flex; gap: 6px; } .po-audit-btns button { padding: 4px 10px; font-size: 12px; }
+.po-audit-ok { color: #1f8a4c; font-weight: 600; padding: 12px 0; }
+.po-audit-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+@media (max-width: 640px) { .po-audit-item { grid-template-columns: 1fr; } }
