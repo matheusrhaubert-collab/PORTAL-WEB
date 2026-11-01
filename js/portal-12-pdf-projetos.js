@@ -457,6 +457,7 @@ function renderProjectPdfReview() {
         ${r.status === 'done' && r._state && !projectPdfRunning ? `<button type="button" class="secondary po-proj-pdf-mirror" data-room-mirror="${i}" title="${escapeHtmlPhoto(tPdf('mirror_title'))}">↔ ${escapeHtmlPhoto(tPdf('mirror'))}</button>` : ''}
       </div>
       <div class="po-proj-pdf-room-sum hint">${escapeHtmlPhoto(r.summary || '')}${r.has_dimensions ? '' : ' · <strong>' + escapeHtmlPhoto(tPdf('no_dimensions')) + '</strong>'}</div>
+      ${(r.warnings || []).length ? `<details class="po-proj-pdf-warns"><summary>${escapeHtmlPhoto(tPdf('warns_title', { n: r.warnings.length }))}</summary><ul>${r.warnings.map((w) => `<li>${escapeHtmlPhoto(w)}</li>`).join('')}</ul></details>` : ''}
       <div class="po-proj-pdf-thumbs">${r.pages.map((n) => `<figure><img src="${thumbOf(n)}" alt="" loading="lazy" data-pdf-zoom="${n}"><figcaption>${n}</figcaption></figure>`).join('')}</div>
     </div>`).join('');
   el.innerHTML = `
@@ -585,6 +586,7 @@ async function runProjectPdfCreate() {
   const lang = (typeof I18n !== 'undefined' && typeof I18n.getLanguage === 'function') ? (I18n.getLanguage() || 'pt') : 'pt';
 
   projectPdfRunning = true;
+  projectPdfShowDone(0, []);
   // etapas × ambientes (2 em paralelo): estimativa por ambiente ~ 3 min
   const passosAmb = [
     { key: 'views', label: I18n.t('ai_busy.s_views'), est: 15 },
@@ -682,8 +684,41 @@ async function runProjectPdfCreate() {
     renderProjectPdfReview();
     refreshProjectPdfCreateBtn();
     setProjectPdfStatus(feitos ? tPdf('status_done', { n: feitos, folder: sp.client_name || '—' }) : '');
+    projectPdfShowDone(feitos, chosen);
     if (typeof loadProjectFavoritesList === 'function') loadProjectFavoritesList();
   }
+}
+
+// AVISO DE "PRONTO" (01/11, Matt: "precisa uma mensagem tipo projeto gerado,
+// ir pro projeto. porque assim parece que nada aconteceu"). Faixa verde no
+// fim do modal com o que foi criado e o botão "Ir pro projeto" (fecha o
+// modal — o último ambiente já está aberto no canvas — e enquadra o 3D).
+function projectPdfShowDone(feitos, rooms) {
+  let box = document.getElementById('po-proj-pdf-done');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'po-proj-pdf-done';
+    box.className = 'po-proj-pdf-done';
+    const st = document.getElementById('po-proj-pdf-status');
+    if (st && st.parentNode) st.parentNode.insertBefore(box, st.nextSibling); else return;
+    box.addEventListener('click', (e) => {
+      if (e.target.closest('[data-pdf-goto]')) {
+        closeProjectPdfModal();
+        try { if (typeof fitProject3DToRoom === 'function') fitProject3DToRoom(); } catch (err) { /* ok */ }
+        const cv = document.getElementById('po-proj-canvas') || document.querySelector('.po-proj-canvas');
+        if (cv && cv.scrollIntoView) cv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  }
+  if (!feitos) { box.innerHTML = ''; box.style.display = 'none'; return; }
+  const ok = (rooms || []).filter((r) => r.status === 'done');
+  const linhas = ok.map((r) => `<li><strong>${escapeHtmlPhoto(r.name)}</strong> — ${escapeHtmlPhoto(r.message || '')}</li>`).join('');
+  box.innerHTML = `<div class="po-proj-pdf-done-title">✅ ${escapeHtmlPhoto(tPdf('done_title', { n: feitos }))}</div>
+    <ul>${linhas}</ul>
+    <div class="po-proj-pdf-done-actions"><button type="button" class="primary" data-pdf-goto="1">${escapeHtmlPhoto(tPdf('done_goto'))}</button>
+    <span class="hint">${escapeHtmlPhoto(tPdf('done_hint'))}</span></div>`;
+  box.style.display = '';
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ---------- Listeners ----------

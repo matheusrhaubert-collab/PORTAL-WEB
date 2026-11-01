@@ -6138,13 +6138,24 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-ai-busy-bar { height: 8px; background: #e3e6ec; border-radius: 4px; overflow: hidden; margin: 12px 0 8px; }
 .po-ai-busy-fill { height: 100%; width: 0; background: linear-gradient(90deg, #d6336c, #ff7aa2); border-radius: 4px; transition: width .8s ease; }
 .po-ai-busy-step { font-size: 14px; font-weight: 600; color: #1b1f27; }
-.po-ai-robot { width: 96px; height: 88px; margin: 0 auto 8px; display: block; }
-.po-ai-robot-head { transform-origin: 60px 52px; animation: po-ai-robot-nod 1.6s ease-in-out infinite; }
-.po-ai-robot-arm { transform-origin: 86px 60px; animation: po-ai-robot-hammer .7s ease-in-out infinite; }
+/* robô dançando (01/11) — passo de zumbi: braços pra frente/cima alternando,
+   corpo balança, passinho lateral, cabeça inclina. Ritmo ~ 1,2 s por ciclo. */
+.po-ai-robot { width: 100px; height: 100px; margin: 0 auto 8px; display: block; overflow: visible; }
+.po-ai-robot-body { transform-origin: 60px 90px; animation: po-ai-robot-sway 1.2s ease-in-out infinite; }
+.po-ai-robot-head { transform-origin: 60px 52px; animation: po-ai-robot-tilt 1.2s ease-in-out infinite; }
+.po-ai-robot-arm-l { transform-origin: 29px 58px; animation: po-ai-robot-arm-l 1.2s ease-in-out infinite; }
+.po-ai-robot-arm-r { transform-origin: 91px 58px; animation: po-ai-robot-arm-r 1.2s ease-in-out infinite; }
+.po-ai-robot-leg-l { transform-origin: 50px 90px; animation: po-ai-robot-leg-l 1.2s ease-in-out infinite; }
+.po-ai-robot-leg-r { transform-origin: 70px 90px; animation: po-ai-robot-leg-r 1.2s ease-in-out infinite; }
 .po-ai-robot-eye { animation: po-ai-robot-blink 3.2s infinite; transform-origin: center; }
-@keyframes po-ai-robot-nod { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
-@keyframes po-ai-robot-hammer { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-35deg); } }
+@keyframes po-ai-robot-sway { 0%, 100% { transform: translateX(-6px) rotate(-6deg); } 50% { transform: translateX(6px) rotate(6deg); } }
+@keyframes po-ai-robot-tilt { 0%, 100% { transform: rotate(10deg); } 50% { transform: rotate(-10deg); } }
+@keyframes po-ai-robot-arm-l { 0%, 100% { transform: rotate(150deg); } 50% { transform: rotate(110deg); } }
+@keyframes po-ai-robot-arm-r { 0%, 100% { transform: rotate(-110deg); } 50% { transform: rotate(-150deg); } }
+@keyframes po-ai-robot-leg-l { 0%, 100% { transform: translateX(-4px) rotate(-6deg); } 50% { transform: translateX(0) rotate(0); } }
+@keyframes po-ai-robot-leg-r { 0%, 100% { transform: translateX(0) rotate(0); } 50% { transform: translateX(4px) rotate(6deg); } }
 @keyframes po-ai-robot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+@media (prefers-reduced-motion: reduce) { .po-ai-robot * { animation: none !important; } }
 
 /* Ensinar a IA (2026-11-01) */
 #po-teach-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
@@ -6174,3 +6185,12 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 #po-teach-module { width: 100%; }
 .po-teach-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
 .po-teach-actions .hint { margin-right: auto; }
+
+/* PDF: faixa de pronto + avisos (01/11) */
+.po-proj-pdf-done { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: #eefaf2; border: 1px solid #b7e4c7; }
+.po-proj-pdf-done-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.po-proj-pdf-done ul { margin: 0 0 10px 18px; padding: 0; font-size: 13px; }
+.po-proj-pdf-done-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.po-proj-pdf-warns { margin: 4px 0 6px; font-size: 12px; }
+.po-proj-pdf-warns summary { cursor: pointer; color: #b26a00; }
+.po-proj-pdf-warns ul { margin: 4px 0 0 18px; padding: 0; max-height: 160px; overflow: auto; color: #5b616e; }
