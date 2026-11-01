@@ -241,7 +241,7 @@ function refreshProject3DStatusBar() {
   if (projectSelectedRoomFace && projectSelectedRoomFace.kind === 'wall') {
     const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === projectSelectedRoomFace.wallIndex);
     if (wallGeo) {
-      const heightMm = (roomSettings && roomSettings.ceiling_mm) || 2600;
+      const heightMm = (wallGeo.ceilingMm > 0 ? wallGeo.ceilingMm : (roomSettings && roomSettings.ceiling_mm)) || 2600;
       const nome = I18n.t('project.wall_numbered', { n: projectSelectedRoomFace.wallIndex + 1 });
       const dims = `${formatDimension(Math.round(wallGeo.widthM * 1000), unit)} × ${formatDimension(heightMm, unit)}`;
       bar.innerHTML = `<strong>${nome}</strong> — ${dims}`;
@@ -4019,7 +4019,9 @@ function refreshProjectConnectedFaceHighlight() {
   if (slot.placement === 'wall' && Number.isFinite(Number(slot.wall_index))) {
     const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index));
     if (!wallGeo) { mat.dispose(); return; }
-    const heightM = ((roomSettings && roomSettings.ceiling_mm) || 2600) / 1000;
+    // altura DESTA parede (01/11, Matt: "depois que eu subi a parede, a área
+    // de conexão permaneceu na altura inferior") — própria, senão a do ambiente
+    const heightM = ((wallGeo.ceilingMm > 0 ? wallGeo.ceilingMm : (roomSettings && roomSettings.ceiling_mm)) || 2600) / 1000;
     geom = new THREE.PlaneGeometry(wallGeo.widthM, heightM);
     const right = new THREE.Vector3(wallGeo.alongDirX, 0, wallGeo.alongDirZ);
     const up = new THREE.Vector3(0, 1, 0);
