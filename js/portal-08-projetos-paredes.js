@@ -3975,8 +3975,24 @@ function refreshProjectJoinHighlight() {
   if (!slot) return;
   const faces = projectPerfectJoins(slot);
   if (!faces.length) return;
-  const frame = getSlotWorldFrame(slot);
-  if (!frame) return;
+  const baseFrame = getSlotWorldFrame(slot);
+  if (!baseFrame) return;
+  // Pose REAL do módulo na cena (01/11, Matt: "esse frame verde esta
+  // deslocado") — getSlotWorldFrame é a pose "encostada" do modelo de dados
+  // e ignora o ajuste fino só visual (fineOffsetZMm = afastar da parede,
+  // fineRotYDeg, z_order). O contorno vermelho usa o group de verdade, então
+  // o verde também: posição/giro Y do group no mundo, medidas do slot.
+  const frame = Object.assign({}, baseFrame);
+  const grp = (typeof ViewerProjectEdit !== 'undefined' && ViewerProjectEdit.findGroupBySlotId)
+    ? ViewerProjectEdit.findGroupBySlotId(slot.id) : null;
+  if (grp && grp.getWorldPosition) {
+    grp.updateMatrixWorld(true);
+    const wp = grp.getWorldPosition(new THREE.Vector3());
+    const wq = grp.getWorldQuaternion(new THREE.Quaternion());
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(wq); // local +Z (frente) no mundo
+    frame.ox = wp.x; frame.oy = wp.y; frame.oz = wp.z;
+    frame.rotY = Math.atan2(fwd.x, fwd.z); // mesma convenção de getModuleFaceGeometry (N = sin, cos)
+  }
   faces.forEach((faceKey) => {
     const fg = getModuleFaceGeometry(frame, faceKey);
     if (!fg) return;
