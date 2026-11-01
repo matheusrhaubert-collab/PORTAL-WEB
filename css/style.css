@@ -6153,8 +6153,9 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-teach-cols { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; }
 @media (max-width: 860px) { .po-teach-cols { grid-template-columns: 1fr; } }
 .po-teach-list { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; margin-bottom: 10px; }
-.po-teach-item { text-align: left; border: 1px solid #e3e6ec; border-radius: 8px; padding: 8px 10px; background: #fff; cursor: pointer; display: grid; gap: 2px; font: inherit; }
-.po-teach-item strong { font-size: 13px; } .po-teach-item span, .po-teach-item em { font-size: 12px; color: #5b616e; font-style: normal; }
+.po-teach-item, .po-teach-item:hover { text-align: left; border: 1px solid #e3e6ec; border-radius: 8px; padding: 8px 10px; background: #fff; color: #1b1f27; cursor: pointer; display: grid; gap: 2px; font: inherit; box-shadow: none; transform: none; }
+.po-teach-item:hover { background: #f6f7fa; }
+.po-teach-item strong { font-size: 13px; color: #1b1f27; } .po-teach-item span, .po-teach-item em { font-size: 12px; color: #5b616e; font-style: normal; }
 .po-teach-item.sel { border-color: #d6336c; box-shadow: 0 0 0 2px rgba(214,51,108,.15); }
 .po-teach-item.off { opacity: .55; } .po-teach-item.miss { border-style: dashed; background: #fff7f9; }
 .po-teach-missing h4 { margin: 0 0 6px; font-size: 13px; color: #d6336c; }

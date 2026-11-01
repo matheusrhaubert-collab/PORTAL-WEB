@@ -316,6 +316,34 @@ async function runProjectPdfAttach(file) {
   }
 }
 
+// Espelhar e recriar (01/11): inverte a ordem das paredes do estado lido e
+// monta de novo por cima do MESMO projeto salvo (overwrite pelo id).
+async function projectPdfRecreateMirrored(r) {
+  if (projectPdfRunning || !r._state) return;
+  projectPdfRunning = true;
+  aiBusy.show(tPdf('mirror_busy'), { steps: [{ key: 'build', label: I18n.t('ai_busy.s_build'), est: 20 }] });
+  const setRoom = (status, message) => { r.status = status; if (message != null) r.message = message; renderProjectPdfReview(); };
+  try {
+    const st = projectPhotoMirrorState(r._state);
+    projectPdfResetOpenProject();
+    const { created, warnings } = await projectPhotoApplyState(st);
+    if (!created) throw new Error(tPhoto('err_nothing_created'));
+    r._state = st;
+    r.warnings = [...st.warnings, ...warnings];
+    renderProjectCanvas();
+    await new Promise((res) => setTimeout(res, 400));
+    const id = await saveProjectFavorite(r.projectId || null, { name: r.name, clientFolder: (projectPdfSplit && projectPdfSplit.client_name) || null });
+    if (id) r.projectId = id;
+    setRoom('done', tPdf('st_done', { n: created, w: r.warnings.length }) + (st.mirrored ? ' · ' + tPdf('mirrored_tag') : ''));
+  } catch (err) {
+    setRoom('error', err.message || String(err));
+  } finally {
+    projectPdfRunning = false;
+    aiBusy.hide();
+    renderProjectPdfReview();
+  }
+}
+
 // ---------- 1. Separar por ambiente ----------
 async function runProjectPdfSplit() {
   if (projectPdfRunning || !projectPdfPages.length) return;
@@ -426,6 +454,7 @@ function renderProjectPdfReview() {
         <label class="po-proj-pdf-room-pages">${tPdf('col_pages')}
           <input type="text" data-room-pages="${i}" value="${escapeHtmlPhoto(r.pages.join(', '))}" ${projectPdfRunning ? 'disabled' : ''}></label>
         <span class="po-proj-pdf-room-status st-${r.status}" title="${escapeHtmlPhoto((r.warnings || []).join('\n'))}">${PROJECT_PDF_STATUS_ICON[r.status] || ''} ${escapeHtmlPhoto(r.message || '')}</span>
+        ${r.status === 'done' && r._state && !projectPdfRunning ? `<button type="button" class="secondary po-proj-pdf-mirror" data-room-mirror="${i}" title="${escapeHtmlPhoto(tPdf('mirror_title'))}">↔ ${escapeHtmlPhoto(tPdf('mirror'))}</button>` : ''}
       </div>
       <div class="po-proj-pdf-room-sum hint">${escapeHtmlPhoto(r.summary || '')}${r.has_dimensions ? '' : ' · <strong>' + escapeHtmlPhoto(tPdf('no_dimensions')) + '</strong>'}</div>
       <div class="po-proj-pdf-thumbs">${r.pages.map((n) => `<figure><img src="${thumbOf(n)}" alt="" loading="lazy" data-pdf-zoom="${n}"><figcaption>${n}</figcaption></figure>`).join('')}</div>
@@ -458,6 +487,7 @@ function onProjectPdfReviewChange(ev) {
   if (!sp) return;
   const t = ev.target;
   if (t.id === 'po-proj-pdf-client-input') { sp.client_name = t.value.trim(); return; }
+  if (t.dataset.roomMirror != null) { const r = sp.rooms[Number(t.dataset.roomMirror)]; if (r) projectPdfRecreateMirrored(r); return; }
   if (t.dataset.roomInc != null) { const r = sp.rooms[Number(t.dataset.roomInc)]; if (r) r.include = t.checked; renderProjectPdfReview(); refreshProjectPdfCreateBtn(); return; }
   if (t.dataset.roomName != null) { const r = sp.rooms[Number(t.dataset.roomName)]; if (r) r.name = t.value.trim() || r.name; return; }
   if (t.dataset.roomPages != null) {
@@ -607,6 +637,7 @@ async function runProjectPdfCreate() {
       try {
         aiBusy.step('build');
         setRoom(r, 'building', tPdf('st_building'));
+        r._state = st; // pra "Espelhar" recriar sem ler de novo
         projectPdfResetOpenProject();
         const { created, warnings } = await projectPhotoApplyState(st);
         r.warnings = [...st.warnings, ...warnings];
