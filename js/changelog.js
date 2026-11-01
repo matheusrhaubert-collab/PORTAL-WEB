@@ -36,7 +36,7 @@ window.LEGNO_CHANGELOG = [
     items: {
       pt: [
         "Novo Auditor (grupo Help da barra): confere o projeto antes de enviar e lista erros, avisos e dicas — peça maior que a chapa ou pequena demais, prateleira com vão grande, frente de gaveta baixa, rodapé duplicado, módulo acima do teto ou fora da parede, sobreposição, folga pequena entre vizinhos, topos e profundidades desalinhados. Ver leva ao módulo; Corrigir resolve sozinho quando dá.",
-        "Auditor também avisa: portas sobrepostas, duas portas apoiando dobradiça na mesma divisória, tamponamento fora da profundidade (caixa + 1\") e painel horizontal solto na parede (precisa de fixação reforçada, responsabilidade do projetista).",
+        "Auditor também avisa: peças uma dentro da outra (no mesmo módulo ou entre módulos vizinhos), portas sobrepostas, duas portas apoiando dobradiça na mesma divisória, tamponamento fora da profundidade (caixa + 1\") e painel horizontal solto na parede (precisa de fixação reforçada, responsabilidade do projetista).",
         "Tutorial no grupo Help da barra, com mais de 230 perguntas e respostas em português, inglês e espanhol, por categoria. O que não estiver lá, pergunte à IA pelo próprio Tutorial.",
         "Contorno verde de encaixe perfeito: aparece por cima do vermelho quando o módulo selecionado está encostado no vizinho com a mesma altura e profundidade (lado a lado) ou a mesma largura e profundidade (em cima/embaixo).",
         "Altura por parede: cada parede pode ter o seu pé-direito, e o 3D, a área amarela e o limite de altura dos módulos seguem a altura daquela parede.",
@@ -58,7 +58,7 @@ window.LEGNO_CHANGELOG = [
       ],
       en: [
         "New Auditor (Help group on the toolbar): checks the project before sending and lists errors, warnings and tips — part bigger than the sheet or too small, long shelf span, short drawer front, duplicate toe kick, cabinet above the ceiling or past the wall, overlaps, tiny gaps between neighbors, misaligned tops and depths. View takes you to the cabinet; Fix solves it automatically when possible.",
-        "The Auditor also warns about: overlapping doors, two doors hinging on the same divider, end panels at the wrong depth (box + 1\") and horizontal panels loose on the wall (they need reinforced support, the designer's responsibility).",
+        "The Auditor also warns about: parts inside each other (in the same cabinet or between neighboring cabinets), overlapping doors, two doors hinging on the same divider, end panels at the wrong depth (box + 1\") and horizontal panels loose on the wall (they need reinforced support, the designer's responsibility).",
         "Tutorial in the Help group of the toolbar, with over 230 questions and answers in Portuguese, English and Spanish, by category. If it isn't there, ask the AI from the Tutorial itself.",
         "Green perfect-join outline: shows over the red one when the selected cabinet touches its neighbor with the same height and depth (side by side) or the same width and depth (stacked).",
         "Height per wall: each wall can have its own ceiling height, and the 3D, the yellow area and the cabinet height limit follow that wall's height.",
@@ -80,7 +80,7 @@ window.LEGNO_CHANGELOG = [
       ],
       es: [
         "Nuevo Auditor (grupo Help de la barra): revisa el proyecto antes de enviarlo y lista errores, avisos y consejos — pieza mayor que la placa o demasiado pequeña, estante con mucha luz, frente de cajón bajo, zócalo duplicado, módulo sobre el techo o fuera de la pared, superposiciones, holguras pequeñas entre vecinos, topes y profundidades desalineados. Ver te lleva al módulo; Corregir lo resuelve solo cuando se puede.",
-        "El Auditor también avisa: puertas superpuestas, dos puertas con bisagra en la misma división, tamponamiento fuera de profundidad (caja + 1\") y panel horizontal suelto en la pared (necesita fijación reforzada, responsabilidad del proyectista).",
+        "El Auditor también avisa: piezas una dentro de otra (en el mismo módulo o entre módulos vecinos), puertas superpuestas, dos puertas con bisagra en la misma división, tamponamiento fuera de profundidad (caja + 1\") y panel horizontal suelto en la pared (necesita fijación reforzada, responsabilidad del proyectista).",
         "Tutorial en el grupo Help de la barra, con más de 230 preguntas y respuestas en portugués, inglés y español, por categoría. Si no está, pregunta a la IA desde el mismo Tutorial.",
         "Contorno verde de encaje perfecto: aparece sobre el rojo cuando el módulo seleccionado toca al vecino con la misma altura y profundidad (lado a lado) o el mismo ancho y profundidad (arriba/abajo).",
         "Altura por pared: cada pared puede tener su propia altura de techo, y el 3D, el área amarilla y el límite de altura de los módulos siguen la altura de esa pared.",

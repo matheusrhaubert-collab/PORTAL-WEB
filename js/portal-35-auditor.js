@@ -40,6 +40,8 @@
       c_wall_t: 'Fora da parede', c_wall_d: 'O módulo sai {{over}} além do fim da parede. Reduza a largura ou mova.',
       c_depth_t: 'Mais fundo que o vizinho', c_depth_d: 'Profundidade {{d}} contra {{od}} do módulo {{outro}} na mesma fileira. A bancada/porta não alinha.',
       c_drawerbox_t: 'Gaveta sem espaço interno', c_drawerbox_d: 'O caixote da gaveta ({{box}} de fundo) precisa de {{need}} e o módulo tem {{d}} de profundidade útil.',
+      c_pieceov_t: 'Peças uma dentro da outra', c_pieceov_d: '{{a}} e {{b}} ocupam o mesmo espaço ({{dx}} × {{dy}} × {{dz}}). Na fábrica as duas não cabem: ajuste a medida ou a posição de uma delas.',
+      c_pieceov2_t: 'Peça entrando em outro módulo', c_pieceov2_d: '{{a}} deste módulo entra em {{b}} do módulo {{outro}} ({{dx}} × {{dy}} × {{dz}}). Ajuste a posição, a medida ou a profundidade.',
       c_doorov_t: 'Portas sobrepostas', c_doorov_d: 'Duas portas ocupam o mesmo lugar ({{dx}} × {{dy}}): uma fica por cima da outra e não fecha. No Construtor, use uma porta de 2 folhas no vão inteiro, sem divisória no meio.',
       c_doorhinge_t: 'Duas portas na mesma divisória', c_doorhinge_d: 'A dobradiça de uma porta está na divisória onde a outra porta também apoia: a divisória não tem largura pras duas e a porta pega na vizinha. No Construtor, tire a divisória e use uma porta de 2 folhas (dobradiça nas laterais de fora).',
       c_floatpanel_t: 'Painel horizontal solto na parede', c_floatpanel_d: 'O painel {{nome}} está preso só na parede, sem módulo embaixo nem nas pontas. É muito difícil de fixar e pode dar problema na montagem: precisa de uma fixação reforçada (mão-francesa, suporte oculto etc.) definida pelo projetista. A fixação é responsabilidade do projetista; a fábrica não se responsabiliza.',
@@ -65,6 +67,8 @@
       c_wall_t: 'Past the wall', c_wall_d: 'The cabinet runs {{over}} past the end of the wall. Reduce width or move it.',
       c_depth_t: 'Deeper than neighbor', c_depth_d: 'Depth {{d}} vs {{od}} on cabinet {{outro}} in the same run. Countertop/doors won\'t line up.',
       c_drawerbox_t: 'Drawer without inner room', c_drawerbox_d: 'The drawer box ({{box}} deep) needs {{need}} and the cabinet has {{d}} usable depth.',
+      c_pieceov_t: 'Parts inside each other', c_pieceov_d: '{{a}} and {{b}} take the same space ({{dx}} × {{dy}} × {{dz}}). Both won\'t fit in production: adjust the size or position of one of them.',
+      c_pieceov2_t: 'Part going into another cabinet', c_pieceov2_d: '{{a}} of this cabinet runs into {{b}} of cabinet {{outro}} ({{dx}} × {{dy}} × {{dz}}). Adjust position, size or depth.',
       c_doorov_t: 'Overlapping doors', c_doorov_d: 'Two doors take the same spot ({{dx}} × {{dy}}): one sits over the other and won\'t close. In the Builder, use one 2-leaf door over the whole opening, with no divider in the middle.',
       c_doorhinge_t: 'Two doors on the same divider', c_doorhinge_d: 'One door hinges on the divider where the other door also rests: the divider is not wide enough for both and the doors hit each other. In the Builder, remove the divider and use one 2-leaf door (hinges on the outer sides).',
       c_floatpanel_t: 'Horizontal panel loose on the wall', c_floatpanel_d: 'Panel {{nome}} hangs only on the wall, with no cabinet below or at its ends. It is very hard to fix and may cause installation problems: it needs reinforced support (bracket, hidden support, etc.) defined by the designer. Fixing it is the designer\'s responsibility; the factory is not liable.',
@@ -90,6 +94,8 @@
       c_wall_t: 'Fuera de la pared', c_wall_d: 'El módulo sale {{over}} más allá del fin de la pared. Reduce el ancho o muévelo.',
       c_depth_t: 'Más profundo que el vecino', c_depth_d: 'Profundidad {{d}} contra {{od}} del módulo {{outro}} en la misma fila. La encimera/puerta no alinea.',
       c_drawerbox_t: 'Cajón sin espacio interno', c_drawerbox_d: 'El cajón ({{box}} de fondo) necesita {{need}} y el módulo tiene {{d}} de profundidad útil.',
+      c_pieceov_t: 'Piezas una dentro de otra', c_pieceov_d: '{{a}} y {{b}} ocupan el mismo espacio ({{dx}} × {{dy}} × {{dz}}). En fábrica no caben las dos: ajusta la medida o la posición de una de ellas.',
+      c_pieceov2_t: 'Pieza entrando en otro módulo', c_pieceov2_d: '{{a}} de este módulo entra en {{b}} del módulo {{outro}} ({{dx}} × {{dy}} × {{dz}}). Ajusta la posición, la medida o la profundidad.',
       c_doorov_t: 'Puertas superpuestas', c_doorov_d: 'Dos puertas ocupan el mismo lugar ({{dx}} × {{dy}}): una queda sobre la otra y no cierra. En el Constructor, usa una puerta de 2 hojas en todo el hueco, sin división en el medio.',
       c_doorhinge_t: 'Dos puertas en la misma división', c_doorhinge_d: 'La bisagra de una puerta está en la división donde también apoya la otra puerta: la división no tiene ancho para las dos y las puertas chocan. En el Constructor, quita la división y usa una puerta de 2 hojas (bisagras en los laterales de afuera).',
       c_floatpanel_t: 'Panel horizontal suelto en la pared', c_floatpanel_d: 'El panel {{nome}} está fijado solo a la pared, sin módulo debajo ni en las puntas. Es muy difícil de fijar y puede dar problemas en el armado: necesita una fijación reforzada (ménsula, soporte oculto, etc.) definida por el proyectista. La fijación es responsabilidad del proyectista; la fábrica no se responsabiliza.',
@@ -118,15 +124,31 @@
     FLUTUA_MAX_MM: 150,
     TAMP_EXTRA_MM: 25,          // tamponamento = caixa + 1" (portal-23 usa 25)
     TAMP_TOL_MM: 3,
-    DOOR_EDGE_MM: 40            // borda de porta "na mesma divisória"
+    DOOR_EDGE_MM: 40,           // borda de porta "na mesma divisória"
+    INTERF_MM: 1.5              // peça entrando em outra: penetração mínima nos 3 eixos
   };
 
   // ---- contexto por slot: peças resolvidas (w/h/d reais) ----
+  function slotResolved(slot) {
+    const eff = (typeof projectSlotEffectivePieces === 'function') ? projectSlotEffectivePieces(slot) : (slot.pieces || []);
+    return resolvePiecesForViewer(eff, { W: Number(slot.width_mm), H: Number(slot.height_mm), D: Number(slot.depth_mm) },
+      slot.colorsByRole || {}, slot.shelfQuantities || {}, slot.dimOverrides || {}, slot.pieceColorOverrides || {});
+  }
+  // Caixas reais das peças de chapa (mesma conta da furação/3D: Drilling
+  // buildBoxes + boxesAninhadas). Referencial do módulo, mm, canto mínimo.
+  function slotBoxes(slot) {
+    try {
+      const I = (typeof Drilling !== 'undefined' && Drilling._internals) || null;
+      if (!I || !I.buildBoxes) return [];
+      const parts = slotResolved(slot);
+      const W = Number(slot.width_mm), H = Number(slot.height_mm), D = Number(slot.depth_mm);
+      return I.buildBoxes(parts, W, H, D).boxes.concat(I.boxesAninhadas ? I.boxesAninhadas(parts, W, H, D) : [])
+        .filter((b) => b && b.part && ehChapa(b.part) && b.sx > 0 && b.sy > 0 && b.sz > 0);
+    } catch (e) { return []; }
+  }
   function slotParts(slot) {
     try {
-      const eff = (typeof projectSlotEffectivePieces === 'function') ? projectSlotEffectivePieces(slot) : (slot.pieces || []);
-      const parts = resolvePiecesForViewer(eff, { W: Number(slot.width_mm), H: Number(slot.height_mm), D: Number(slot.depth_mm) },
-        slot.colorsByRole || {}, slot.shelfQuantities || {}, slot.dimOverrides || {}, slot.pieceColorOverrides || {});
+      const parts = slotResolved(slot);
       const flat = [];
       (function walk(list, dx, dy, dz) {
         (list || []).forEach((p) => {
@@ -269,6 +291,67 @@
       });
       return out;
     } },
+    // PEÇA EM CIMA DA OUTRA (01/11, Matt, print de painel atravessando o
+    // fundo de uma caixa: "uma peça em cima da outra deve mostrar no
+    // auditor"). Caixas reais das peças (as mesmas da furação). Dentro do
+    // módulo e entre módulos da mesma parede (referencial: x ao longo da
+    // parede, y do chão, z da parede pra frente). Encostar (0 mm) não conta.
+    { id: 'interferencia', run(ctx) {
+      const out = [];
+      const M = LIM.INTERF_MM;
+      const ov = (a0, as, b0, bs) => Math.min(a0 + as, b0 + bs) - Math.max(a0, b0);
+      const cruza = (a, b) => {
+        const dx = ov(a.x0, a.sx, b.x0, b.sx), dy = ov(a.y0, a.sy, b.y0, b.sy), dz = ov(a.z0, a.sz, b.z0, b.sz);
+        return (dx > M && dy > M && dz > M) ? { dx, dy, dz } : null;
+      };
+      const nomeB = (b) => nomePeca(b.part);
+      // ---- dentro do módulo ----
+      ctx.slots.forEach((slot) => {
+        const bx = ctx.boxes(slot);
+        for (let i = 0; i < bx.length; i++) {
+          let achou = false;
+          for (let j = i + 1; j < bx.length && !achou; j++) {
+            if (bx[i].part === bx[j].part) continue;
+            const c = cruza(bx[i], bx[j]);
+            if (!c) continue;
+            achou = true;
+            out.push({ id: 'pieceov', nivel: 'erro', slotId: slot.id, titulo: tAud('c_pieceov_t'),
+              detalhe: tAud('c_pieceov_d', { a: nomeB(bx[i]), b: nomeB(bx[j]), dx: fmt(c.dx), dy: fmt(c.dy), dz: fmt(c.dz) }) });
+          }
+          if (achou) break; // 1 achado por módulo basta
+        }
+      });
+      // ---- entre módulos da mesma parede ----
+      const semGiro = (s) => !(Number(s.fineRotXDeg) || Number(s.fineRotYDeg) || Number(s.fineRotZDeg));
+      const paredeY = (s) => (typeof projectWallSlotYMm === 'function') ? projectWallSlotYMm(s) : (Number(s.floor_height_mm) || 0);
+      const mundo = (s) => {
+        const ox = Number(s.x_mm) || 0, oy = paredeY(s), oz = Number(s.fineOffsetZMm) || 0;
+        return ctx.boxes(s).map((b) => Object.assign({}, b, { x0: b.x0 + ox, y0: b.y0 + oy, z0: b.z0 + oz }));
+      };
+      const naParede = ctx.slots.filter((s) => !isFloorSlot(s) && semGiro(s));
+      const feitos = new Set();
+      naParede.forEach((a) => {
+        naParede.forEach((b) => {
+          if (a === b || Number(a.wall_index || 0) !== Number(b.wall_index || 0)) return;
+          const k = [a.id, b.id].sort().join('|');
+          if (feitos.has(k)) return;
+          feitos.add(k);
+          const ra = alcance(a), rb = alcance(b);
+          if (Math.min(ra.x1, rb.x1) - Math.max(ra.x0, rb.x0) <= M || Math.min(ra.y1, rb.y1) - Math.max(ra.y0, rb.y0) <= M) return;
+          const ba = mundo(a), bb = mundo(b);
+          for (let i = 0; i < ba.length; i++) {
+            for (let j = 0; j < bb.length; j++) {
+              const c = cruza(ba[i], bb[j]);
+              if (!c) continue;
+              out.push({ id: 'pieceov2', nivel: 'erro', slotId: a.id, titulo: tAud('c_pieceov2_t'),
+                detalhe: tAud('c_pieceov2_d', { a: nomeB(ba[i]), b: nomeB(bb[j]), outro: slotNome(b), dx: fmt(c.dx), dy: fmt(c.dy), dz: fmt(c.dz) }) });
+              return; // 1 achado por par de módulos
+            }
+          }
+        });
+      });
+      return out;
+    } },
     // PORTAS (01/11, Matt: "quando uma porta fica por cima da outra ou usa
     // uma lateral divisória como base de dobradiça, vai dar problema").
     // Portas = peças de giro (hinge_side left/right) finas; coordenadas no
@@ -367,7 +450,9 @@
   function runProjectAudit() {
     const slots = (typeof projectSlots !== 'undefined' && projectSlots) ? projectSlots.filter((s) => s && s.module) : [];
     const cache = new Map();
-    const ctx = { slots, parts: (s) => { if (!cache.has(s)) cache.set(s, slotParts(s)); return cache.get(s); } };
+    const cacheB = new Map();
+    const ctx = { slots, parts: (s) => { if (!cache.has(s)) cache.set(s, slotParts(s)); return cache.get(s); },
+      boxes: (s) => { if (!cacheB.has(s)) cacheB.set(s, slotBoxes(s)); return cacheB.get(s); } };
     let achados = [];
     AUDIT_CHECKS.forEach((c) => { try { achados = achados.concat(c.run(ctx) || []); } catch (e) { console.error('[auditor]', c.id, e); } });
     const ordem = { erro: 0, aviso: 1, dica: 2 };
