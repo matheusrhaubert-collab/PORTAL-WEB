@@ -1896,6 +1896,20 @@ function renderProjectBuilderStage() {
   // applyProjectBuilderVaoSize).
   const nSel = projectBuilderSelNode();
   const bSel = nSel && nSel._box;
+  // SELEÇÃO MÚLTIPLA VISÍVEL (01/11, Matt: "quando seleciono 2 vãos, não dá
+  // pra ver se estão selecionados. preciso mostrar os dois com contorno
+  // laranja"): todo vão da seleção ganha o contorno, não só o principal.
+  if (projectBuilderSelIds.length > 1) {
+    projectBuilderSelIds.forEach((id) => {
+      if (nSel && id === nSel.id) return;
+      const v = (built.voids || []).find((x) => x.nodeId === id);
+      if (!v) return;
+      projBuilderSvgEl('rect', {
+        x: v.box.x, y: sy(v.box.y, v.box.h), width: v.box.w, height: v.box.h,
+        fill: 'none', stroke: '#e0921f', 'stroke-width': sw * 3, 'pointer-events': 'none'
+      }, svg);
+    });
+  }
   if (bSel) {
     projBuilderSvgEl('rect', {
       x: bSel.x, y: sy(bSel.y, bSel.h), width: bSel.w, height: bSel.h,
