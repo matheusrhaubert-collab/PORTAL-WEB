@@ -400,6 +400,13 @@
     cadeias.forEach((c) => { delete c._ordem; });
     return cadeias;
   }
+  // Pé-direito do ambiente = parede mais alta (paredes sem altura própria
+  // seguem esse valor). Mantém o ambiente coerente com o que foi digitado.
+  function tetoDoAmbiente() {
+    let max = 0;
+    (estado.cadeias || []).forEach((c) => (c.paredes || []).forEach((p) => { if (Number(p.ceilingMm) > max) max = Number(p.ceilingMm); }));
+    return max > 0 ? max : estado.ceilingMm;
+  }
   function exportar() {
     const segs = [];
     estado.cadeias.forEach((c) => {
@@ -558,7 +565,7 @@
     const m = document.getElementById('po-wall-editor-modal');
     if (m) m.classList.remove('open');
     if (salvar && estado && typeof estado.onSave === 'function') {
-      estado.onSave(exportar(), { ceilingMm: estado.ceilingMm, baseboardMm: estado.baseboardMm });
+      estado.onSave(exportar(), { ceilingMm: tetoDoAmbiente(), baseboardMm: estado.baseboardMm });
     }
     estado = null;
   }
@@ -696,8 +703,13 @@
     if (isFinite(giro) && q('po-wall-ang').value !== '' && Math.abs(norm180(giro - giroDe(s.c, s.i))) > 1e-6) setGiro(s.c, s.i, giro);
     s.p.thicknessMm = Math.max(20, numeroParaMmWE(q('po-wall-esp').value, unidade) || ESPESSURA_PADRAO);
     // null = "segue o pé-direito do ambiente".
+    // 01/11 (Matt: "a parede tá entrando sempre com 50 de altura"): o que
+    // você digita é a altura DESTA parede, sempre (antes só virava própria
+    // se fosse diferente do ambiente, e o ambiente ficava preso num valor
+    // antigo do localStorage). O pé-direito do ambiente passa a ser a parede
+    // mais alta (ver exportarAmbiente) — parede nova nasce com ele.
     const pd = numeroParaMmWE(q('po-wall-pd').value, unidade);
-    s.p.ceilingMm = (pd > 0 && pd !== estado.ceilingMm) ? pd : null;
+    s.p.ceilingMm = pd > 0 ? pd : null;
     desenha();
   }
 

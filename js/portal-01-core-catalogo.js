@@ -512,6 +512,20 @@ try {
   if (savedRoom && Number(savedRoom.baseboard_mm) >= 0) roomSettings.baseboard_mm = Number(savedRoom.baseboard_mm);
 } catch (e) { /* localStorage indisponível/corrompido — usa padrões */ }
 
+// Teto que vale pra UM slot (01/11, Matt: "mesmo aumentando a altura da
+// parede o móvel não sobe além do que já estava antes"): módulo na parede usa
+// a altura DAQUELA parede (ceilingMm próprio do segmento), senão o pé-direito
+// do ambiente. Todo clamp de altura/elevação passa por aqui.
+function projectSlotCeilingMm(slot) {
+  try {
+    if (slot && slot.placement === 'wall' && Number.isFinite(Number(slot.wall_index)) && typeof getProjectWallGeometry === 'function') {
+      const wg = getProjectWallGeometry().find((w) => w.wallIndex === Number(slot.wall_index));
+      if (wg && Number(wg.ceilingMm) > 0) return Number(wg.ceilingMm);
+    }
+  } catch (e) { /* sem paredes ainda — cai no ambiente */ }
+  return Number(roomSettings && roomSettings.ceiling_mm) || ROOM_CEILING_DEFAULT_MM;
+}
+
 // Rodapé do cliente vira variável de fórmula (RODAPE/RB) em pricing.js —
 // admin pode escrever ex. Posição Y = "RODAPE" pra peça começar em cima do
 // baseboard da casa do cliente.

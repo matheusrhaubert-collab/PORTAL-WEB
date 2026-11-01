@@ -121,7 +121,7 @@ function projectSlotClampedDimensionMm(slot, axis, mm) {
   // (m.height_locked) não é encolhida pelo teto/rodapé, só pelo min/max do
   // próprio módulo.
   if (axis === 'height' && !m.height_locked) {
-    maxMm = Math.min(maxMm, Math.max(roomSettings.ceiling_mm - effectiveCeilingClearanceMm(m) - roomSettings.baseboard_mm - Number(slot.floor_height_mm || 0), 0));
+    maxMm = Math.min(maxMm, Math.max(projectSlotCeilingMm(slot) - effectiveCeilingClearanceMm(m) - roomSettings.baseboard_mm - Number(slot.floor_height_mm || 0), 0));
   }
   // TRAVA DA FURADEIRA — o fundo tem que caber na máquina (ver
   // projectSlotMaxDimForDrilling). Entra junto com os outros tetos, no mesmo
@@ -306,7 +306,7 @@ function nudgeProjectGroup(primary, axis, deltaMm) {
     const v0 = Number(s[k] || 0);
     if (!isFloorSlot(s)) {
       if (k === 'x_mm') { const b = projectWallSlotXBoundsMm(s); return clamp(v0 + deltaMm, b.min, b.max) - v0; }
-      return clamp(v0 + deltaMm, 0, projectSlotMaxFloorHeightMm(s.height_mm, s.module)) - v0;
+      return clamp(v0 + deltaMm, 0, projectSlotMaxFloorHeightMm(s.height_mm, s.module, s)) - v0;
     }
     const antes = { floor_x_mm: s.floor_x_mm, floor_z_mm: s.floor_z_mm };
     s[k] = v0 + deltaMm;
@@ -357,7 +357,7 @@ function nudgeProjectFloorSlot(slot, axis, deltaMm) {
     slot.floor_z_mm = Number(slot.floor_z_mm || 0) + deltaMm;
     clampFloorSlotIntoRoom(slot);
   } else {
-    const maxMm = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
+    const maxMm = Math.max(projectSlotCeilingMm(slot) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
     slot.fineOffsetYMm = clamp(Number(slot.fineOffsetYMm || 0) + deltaMm, 0, maxMm);
   }
   renderProjectCanvas();
@@ -403,7 +403,7 @@ function setProjectSlotPositionFromSide(slot, axisKey, side, mmValue) {
   const v = Number(mmValue) || 0;
   if (isFloorSlot(slot)) {
     if (axisKey === 'y') {
-      const maxY = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
+      const maxY = Math.max(projectSlotCeilingMm(slot) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
       slot.fineOffsetYMm = clamp(side === 'near' ? v : maxY - v, 0, maxY);
     } else {
       const b = projectFloorRoomBoundsMm(slot);
@@ -419,7 +419,7 @@ function setProjectSlotPositionFromSide(slot, axisKey, side, mmValue) {
     clampProjectSlotPosition(slot);
     resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
   } else if (axisKey === 'y') {
-    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
+    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module, slot);
     slot.floor_height_mm = clamp(side === 'near' ? v : maxY - v, 0, maxY);
   } else {
     // 'z' de parede — fino, sem clamp (só existe o lado 'near').
@@ -987,7 +987,7 @@ function renderProjectConfigPanel() {
     const xFar = fb.xMax - Number(slot.floor_x_mm || 0);
     const zNear = Number(slot.floor_z_mm || 0) - fb.zMin;
     const zFar = fb.zMax - Number(slot.floor_z_mm || 0);
-    const maxY = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
+    const maxY = Math.max(projectSlotCeilingMm(slot) - Number(roomSettings.baseboard_mm || 0) - Number(slot.height_mm || 0), 0);
     const yNear = Number(slot.fineOffsetYMm || 0);
     positionAxesHtml = posAxisRow('X', posField('x', 'near', xNear, I18n.t('project.position_left_label')) + posField('x', 'far', xFar, I18n.t('project.position_right_label')))
       + posAxisRow('Z', posField('z', 'near', zNear, I18n.t('project.position_front_label')) + posField('z', 'far', zFar, I18n.t('project.position_back_label')))
@@ -996,7 +996,7 @@ function renderProjectConfigPanel() {
     const xb = projectWallSlotXBoundsMm(slot);
     const xNear = Number(slot.x_mm || 0) - xb.min;
     const xFar = xb.max - Number(slot.x_mm || 0);
-    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
+    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module, slot);
     const yNear = Number(slot.floor_height_mm || 0);
     positionAxesHtml = posAxisRow('X', posField('x', 'near', xNear, I18n.t('project.position_left_label')) + posField('x', 'far', xFar, I18n.t('project.position_right_label')))
       + posAxisRow('Y', posField('y', 'near', yNear, I18n.t('project.position_floor_label')) + posField('y', 'far', maxY - yNear, I18n.t('project.position_ceiling_label')))

@@ -1807,7 +1807,7 @@ function attachProject3DEditDrag() {
     const alongMm = ((hitPoint.x - wallGeo.originX) * wallGeo.alongDirX + (hitPoint.z - wallGeo.originZ) * wallGeo.alongDirZ) * 1000;
     const heightMm = hitPoint.y * 1000;
     let xMm = alongMm - state.grabOffsetXMm;
-    let yMm = clamp(heightMm - state.grabOffsetYMm, 0, projectSlotMaxFloorHeightMm(slot.height_mm, slot.module));
+    let yMm = clamp(heightMm - state.grabOffsetYMm, 0, projectSlotMaxFloorHeightMm(slot.height_mm, slot.module, slot));
 
     // Ímã (pedido do usuário 2026-07-26: "os modulos nao tem aproximacao
     // tipo iman") — mesmas funções/candidatos da Vista Frontal 2D

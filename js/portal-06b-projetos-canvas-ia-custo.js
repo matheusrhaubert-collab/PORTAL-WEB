@@ -788,8 +788,8 @@ const PROJECT_STICKY_PICK_PX = 12;
 // o inverso: altura máxima dada uma base já fixa). `module` opcional (default
 // null = sem afastamento nenhum, 0) — passar sempre slot.module quando
 // disponível.
-function projectSlotMaxFloorHeightMm(heightMm, module) {
-  return Math.max(roomSettings.ceiling_mm - effectiveCeilingClearanceMm(module) - roomSettings.baseboard_mm - Number(heightMm || 0), 0);
+function projectSlotMaxFloorHeightMm(heightMm, module, slot) {
+  return Math.max(projectSlotCeilingMm(slot) - effectiveCeilingClearanceMm(module) - roomSettings.baseboard_mm - Number(heightMm || 0), 0);
 }
 
 // Limites de x_mm (ao longo da parede) pra este slot, em mm — extraído de
@@ -840,7 +840,7 @@ function clampProjectSlotPosition(slot) {
   // Resultado: arrastado até o fim, o módulo encosta EXATAMENTE na face
   // interna da parede vizinha — que é o que se quer num canto de marcenaria.
   const xBounds = projectWallSlotXBoundsMm(slot);
-  const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
+  const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module, slot);
   // O MÍNIMO É O RECUO — MAS SÓ QUANDO DÁ PRA SAIR SEM ATROPELAR NINGUÉM.
   //
   // Duas exigências que brigam entre si, e a solução é atender as duas:
@@ -1835,7 +1835,7 @@ function attachProjectSlotDrag(div, slot) {
     // raciocínio do imã de esticar acima).
     const others = projectSlotsSameWallExcluding(slot).concat(projectGhostSnapTargets(Number(slot.wall_index || 0)));
     const maxX = Math.max(0, getProjectWallWidthMm(Number(slot.wall_index || 0)) - Number(slot.width_mm || 0));
-    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module);
+    const maxY = projectSlotMaxFloorHeightMm(slot.height_mm, slot.module, slot);
 
     let x = clamp(projectDragState.startXMm + dxMm, 0, maxX);
     let y = clamp(projectDragState.startYMm + dyMm, 0, maxY);
@@ -2157,7 +2157,7 @@ function duplicateProjectSlotDirectional(slotId, direction, count) {
     if (isFloorSlot(copy)) {
       if (direction === 'up' || direction === 'down') {
         const stepMm = ((Number(copy.height_mm || 0) || 300) * i) * sign;
-        const maxMm = Math.max(Number(roomSettings.ceiling_mm || 0) - Number(roomSettings.baseboard_mm || 0) - Number(copy.height_mm || 0), 0);
+        const maxMm = Math.max(projectSlotCeilingMm(copy) - Number(roomSettings.baseboard_mm || 0) - Number(copy.height_mm || 0), 0);
         copy.fineOffsetYMm = clamp(Number(original.fineOffsetYMm || 0) + stepMm, 0, maxMm);
         projectSlots.push(copy);
       } else {

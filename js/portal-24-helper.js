@@ -194,7 +194,15 @@
   {"id": "orcamento-rapido", "cat": "preco", "tour": "orcamento-rapido", "alvo": ".portal-tab-btn[data-tab=\"po-tab-new-order\"]", "artigo": "novo-orcamento", "pt": "Como faço um orçamento rápido sem desenhar o ambiente?", "en": "How do I make a quick quote without drawing the room?", "es": "¿Cómo hago un presupuesto rápido sin dibujar?", "kw": "orcamento rapido new quote sem desenho quick quote presupuesto rapido"},
   ];
 
-  const CATEGORIAS = ['projeto', 'paredes', 'importar', 'modulos', 'construtor', 'led', 'pecas', 'cores', 'vista', 'render', 'preco'];
+  // BANCO EXTRA (01/11, Matt: "cria mais perguntas pra serem respondidas,
+  // abre muito mais profundamente os detalhes do sistema"): perguntas com
+  // RESPOSTA ESCRITA (campo resp {pt,en,es}) vivem em js/helper-perguntas-extra.js
+  // (window.HELPER_PERGUNTAS_EXTRA) e entram aqui. Sem tour: o balão mostra a
+  // resposta no `alvo` (ou na barra de ferramentas) — ver passosDaPergunta.
+  (window.HELPER_PERGUNTAS_EXTRA || []).forEach((q) => {
+    if (q && q.id && !HELPER_PERGUNTAS.some((x) => x.id === q.id)) HELPER_PERGUNTAS.push(q);
+  });
+  const CATEGORIAS = ['projeto', 'paredes', 'importar', 'modulos', 'construtor', 'led', 'pecas', 'cores', 'vista', 'render', 'preco', 'pedidos', 'conta', 'ia', 'erros'];
   // As que o Matt listou como "principais de iniciante" — aparecem primeiro.
   const POPULARES = ['parede-construir', 'parede-importar-desenho', 'modulo-customizado', 'construtor-portas',
     'construtor-gavetas', 'construtor-prateleira', 'tamponar-modulo', 'painel-lateral', 'construtor-trocar-porta',
@@ -925,6 +933,15 @@
   function passosDaPergunta(q) {
     const pronto = HELPER_TOURS[q.tour];
     if (pronto) return pronto;
+    // resposta escrita (banco extra): balão com o texto, no alvo ou na barra
+    if (q.resp) {
+      const alvo = (q.alvo && $(q.alvo)) ? q.alvo : '#po-proj-canvas-tools';
+      const passos = [];
+      const alvoEl = $(alvo);
+      if (alvoEl && alvoEl.closest('#po-tab-projects')) passos.push(P.aba);
+      passos.push({ el: alvo, fallback: '#po-proj-canvas-tools', text: T(q.resp.pt, q.resp.en || q.resp.pt, q.resp.es || q.resp.pt) });
+      return passos;
+    }
     if (!q.alvo) return null;
     const passos = [];
     const alvoEl = $(q.alvo);
