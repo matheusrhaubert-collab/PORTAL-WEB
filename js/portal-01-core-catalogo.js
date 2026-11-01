@@ -52,7 +52,11 @@ const aiBusy = (() => {
   // pose-dance / pose-walk / pose-work no <svg>, trocada a cada 7 s (CSS em
   // style.css: .po-ai-robot.pose-*).
   const ROBO = '<svg class="po-ai-robot pose-dance" viewBox="0 0 160 120" aria-hidden="true">' +
+    '<g class="po-ai-robot-rocket"><path class="po-ai-robot-flame" d="M126 104 L134 122 L142 104 Z" fill="#ff7a2e"/><path class="po-ai-robot-flame2" d="M130 104 L134 114 L138 104 Z" fill="#ffd36e"/>' +
+    '<rect x="126" y="60" width="16" height="44" rx="4" fill="#e3e6ec"/><path d="M126 60 L134 44 L142 60 Z" fill="#d6336c"/>' +
+    '<path d="M126 92 L118 106 L126 104 Z" fill="#d6336c"/><path d="M142 92 L150 106 L142 104 Z" fill="#d6336c"/><circle cx="134" cy="74" r="4" fill="#7cf2c8"/></g>' +
     '<g class="po-ai-robot-all">' +
+    '<line class="po-ai-robot-cable" x1="80" y1="-40" x2="80" y2="54" stroke="#8a90a0" stroke-width="2"/>' +
     '<g class="po-ai-robot-body">' +
     '<g class="po-ai-robot-head"><rect x="50" y="8" width="60" height="44" rx="10" fill="#d6336c"/>' +
     '<rect x="58" y="18" width="44" height="24" rx="6" fill="#1b1f27"/>' +
@@ -62,7 +66,8 @@ const aiBusy = (() => {
     '<g class="po-ai-robot-arm-l"><rect x="42" y="56" width="14" height="26" rx="6" fill="#d6336c"/><circle cx="49" cy="84" r="6" fill="#8a90a0"/>' +
     '<g class="po-ai-robot-broom"><rect x="46" y="84" width="5" height="34" rx="2" fill="#c89b5a"/><path d="M38 116 L62 116 L58 128 L42 128 Z" fill="#e0b24a"/><rect x="40" y="114" width="20" height="4" rx="1" fill="#a87a3f"/></g></g>' +
     '<g class="po-ai-robot-arm-r"><rect x="104" y="56" width="14" height="26" rx="6" fill="#d6336c"/><circle cx="111" cy="84" r="6" fill="#8a90a0"/>' +
-    '<g class="po-ai-robot-hammer"><rect x="75" y="81" width="36" height="6" rx="2" fill="#8a90a0"/><rect x="69" y="74" width="12" height="20" rx="3" fill="#5b616e"/></g></g>' +
+    '<g class="po-ai-robot-hammer"><rect x="75" y="81" width="36" height="6" rx="2" fill="#8a90a0"/><rect x="69" y="74" width="12" height="20" rx="3" fill="#5b616e"/></g>' +
+    '<g class="po-ai-robot-wrench"><rect x="111" y="81" width="26" height="5" rx="2" fill="#8a90a0"/><path d="M135 76 L146 76 L146 90 L135 90 L139 83 Z" fill="#8a90a0"/></g></g>' +
     '<g class="po-ai-robot-board"><rect x="30" y="-2" width="100" height="10" rx="2" fill="#c89b5a"/><rect x="30" y="-2" width="100" height="3" fill="#a87a3f" opacity=".5"/></g>' +
     '</g>' +
     '<g class="po-ai-robot-leg-l"><rect x="64" y="88" width="12" height="18" rx="4" fill="#8a90a0"/><rect x="60" y="104" width="18" height="6" rx="3" fill="#5b616e"/></g>' +
@@ -72,7 +77,7 @@ const aiBusy = (() => {
     '<g class="po-ai-robot-sparks"><circle cx="136" cy="98" r="2.5" fill="#ffb02e"/><circle cx="144" cy="90" r="2" fill="#ff7a2e"/><circle cx="130" cy="88" r="1.8" fill="#ffd36e"/></g>' +
     '<rect class="po-ai-robot-anvil" x="120" y="100" width="30" height="10" rx="2" fill="#c3c8d2"/>' +
     '<rect x="10" y="112" width="140" height="4" rx="2" fill="#e3e6ec"/></svg>';
-  const POSES = ['dance', 'walk', 'work', 'sweep'];
+  const POSES = ['dance', 'walk', 'work', 'sweep', 'swing', 'build', 'launch'];
   let poseTimer = null, poseIdx = 0;
   function nextPose() {
     if (!el) return;

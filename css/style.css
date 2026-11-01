@@ -6143,7 +6143,9 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
    escondidas (chapa só no walk; martelo, bigorna e faíscas só no work). */
 .po-ai-robot { width: 130px; height: 100px; margin: 0 auto 8px; display: block; overflow: visible; }
 .po-ai-robot-eye { animation: po-ai-robot-blink 3.2s infinite; transform-origin: center; }
-.po-ai-robot-board, .po-ai-robot-hammer, .po-ai-robot-anvil, .po-ai-robot-sparks, .po-ai-robot-broom, .po-ai-robot-dust { display: none; }
+.po-ai-robot-flame, .po-ai-robot-flame2 { transform-origin: 134px 104px; }
+.po-ai-robot { overflow: visible; }
+.po-ai-robot-board, .po-ai-robot-hammer, .po-ai-robot-anvil, .po-ai-robot-sparks, .po-ai-robot-broom, .po-ai-robot-dust, .po-ai-robot-cable, .po-ai-robot-rocket, .po-ai-robot-wrench { display: none; }
 .po-ai-robot-body { transform-origin: 80px 90px; }
 .po-ai-robot-head { transform-origin: 80px 52px; }
 .po-ai-robot-arm-l { transform-origin: 49px 58px; }
@@ -6203,6 +6205,39 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 @keyframes po-ai-robot-sweep-arm { 0%, 100% { transform: rotate(28deg); } 50% { transform: rotate(-12deg); } }
 @keyframes po-ai-robot-sweep-lean { 0%, 100% { transform: rotate(3deg); } 50% { transform: rotate(-3deg); } }
 @keyframes po-ai-robot-dust { 0% { opacity: 0; transform: translate(6px, 0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(-10px, -8px); } }
+/* SWING — pendurado num cabo, balança de um lado pro outro */
+.pose-swing .po-ai-robot-cable { display: block; }
+.pose-swing .po-ai-robot-all { transform-origin: 80px -40px; animation: po-ai-robot-swing 2.4s ease-in-out infinite; }
+.pose-swing .po-ai-robot-arm-l { transform: rotate(175deg); }
+.pose-swing .po-ai-robot-arm-r { transform: rotate(-175deg); }
+.pose-swing .po-ai-robot-leg-l { animation: po-ai-robot-dangle 2.4s ease-in-out infinite; }
+.pose-swing .po-ai-robot-leg-r { animation: po-ai-robot-dangle 2.4s ease-in-out infinite reverse; }
+.pose-swing .po-ai-robot-head { animation: po-ai-robot-tilt 2.4s ease-in-out infinite; }
+@keyframes po-ai-robot-swing { 0%, 100% { transform: rotate(-28deg); } 50% { transform: rotate(28deg); } }
+@keyframes po-ai-robot-dangle { 0%, 100% { transform: rotate(-12deg); } 50% { transform: rotate(12deg); } }
+/* BUILD — aperta o foguete com a chave; foguete no chão, sem fogo */
+.pose-build .po-ai-robot-rocket { display: block; }
+.pose-build .po-ai-robot-flame, .pose-build .po-ai-robot-flame2 { display: none; }
+.pose-build .po-ai-robot-wrench { display: block; }
+.pose-build .po-ai-robot-all { transform: translateX(-26px); }
+.pose-build .po-ai-robot-arm-r { animation: po-ai-robot-wrench .8s ease-in-out infinite; }
+.pose-build .po-ai-robot-arm-l { transform: rotate(-10deg); }
+.pose-build .po-ai-robot-head { animation: po-ai-robot-nod .8s ease-in-out infinite; }
+.pose-build .po-ai-robot-body { animation: po-ai-robot-lean .8s ease-in-out infinite; }
+@keyframes po-ai-robot-wrench { 0%, 100% { transform: rotate(-70deg); } 50% { transform: rotate(-110deg); } }
+/* LAUNCH — foguete decola com fogo, robô comemora pulando */
+.pose-launch .po-ai-robot-rocket { display: block; animation: po-ai-robot-liftoff 3.5s ease-in infinite; }
+.pose-launch .po-ai-robot-flame { animation: po-ai-robot-flame .15s steps(1) infinite; }
+.pose-launch .po-ai-robot-flame2 { animation: po-ai-robot-flame .15s steps(1) infinite reverse; }
+.pose-launch .po-ai-robot-all { transform: translateX(-30px); animation: po-ai-robot-jump .7s ease-in-out infinite; }
+.pose-launch .po-ai-robot-arm-l { animation: po-ai-robot-cheer-l .7s ease-in-out infinite; }
+.pose-launch .po-ai-robot-arm-r { animation: po-ai-robot-cheer-r .7s ease-in-out infinite; }
+.pose-launch .po-ai-robot-head { transform: rotate(-12deg); }
+@keyframes po-ai-robot-liftoff { 0%, 20% { transform: translateY(0); } 100% { transform: translateY(-170px); } }
+@keyframes po-ai-robot-flame { 0% { transform: scaleY(1); } 50% { transform: scaleY(1.5); } 100% { transform: scaleY(.8); } }
+@keyframes po-ai-robot-jump { 0%, 100% { transform: translate(-30px, 0); } 50% { transform: translate(-30px, -10px); } }
+@keyframes po-ai-robot-cheer-l { 0%, 100% { transform: rotate(150deg); } 50% { transform: rotate(175deg); } }
+@keyframes po-ai-robot-cheer-r { 0%, 100% { transform: rotate(-150deg); } 50% { transform: rotate(-175deg); } }
 @keyframes po-ai-robot-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
 @media (prefers-reduced-motion: reduce) { .po-ai-robot * { animation: none !important; } }
 
