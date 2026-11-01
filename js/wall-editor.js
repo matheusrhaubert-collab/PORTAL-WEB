@@ -468,7 +468,11 @@
       '      <p class="po-wall-hint" data-i18n-html="wall_editor.hint_disconnect"></p>',
       '      <p class="po-wall-hint" id="po-wall-resumo"></p>',
       '      <div class="po-wall-side-title" style="margin-top:6px;" data-i18n="wall_editor.section_room">Ambiente</div>',
-      '      <label><span data-i18n="wall_editor.ceiling">P&eacute;-direito</span> <span class="po-wall-un" id="po-wall-teto-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-teto"></label>',
+      // Pé-direito do ambiente ESCONDIDO aqui (01/11, Matt: "deixa só uma
+      // informação de altura, senão vai confundir") — fica só "Altura desta
+      // parede". O campo continua no DOM (o código lê/escreve nele) e o
+      // pé-direito do ambiente segue editável no formulário do projeto.
+      '      <label style="display:none"><span data-i18n="wall_editor.ceiling">P&eacute;-direito</span> <span class="po-wall-un" id="po-wall-teto-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-teto"></label>',
       '      <label><span data-i18n="wall_editor.baseboard">Rodap&eacute;</span> <span class="po-wall-un" id="po-wall-rodape-un">mm</span><input type="text" inputmode="decimal" autocomplete="off" id="po-wall-rodape"></label>',
       '    </div>',
       '  </div>',
@@ -505,6 +509,11 @@
     ['po-wall-comp', 'po-wall-ang', 'po-wall-esp', 'po-wall-pd'].forEach((id) => {
       m.querySelector('#' + id).addEventListener('change', aplicaCampos);
     });
+    // 01/11 (Matt: "ele aceita eu digitar 50 na altura mas a parede se
+    // mantém alta. quando desço o mouse aí sim"): a ALTURA aplica enquanto
+    // digita (comprimento/ângulo não — número pela metade faria a parede
+    // pular enquanto você escreve).
+    m.querySelector('#po-wall-pd').addEventListener('input', aplicaCampos);
     // Pé-direito e rodapé são do AMBIENTE, não da parede.
     ['po-wall-teto', 'po-wall-rodape'].forEach((id) => {
       m.querySelector('#' + id).addEventListener('change', () => {

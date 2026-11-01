@@ -1691,7 +1691,8 @@ function createViewerComposition3D() {
   function buildRoomEnvironmentMultiWall(segments, room) {
     cutawayItens = [];
     const group = new THREE.Group();
-    const ceilingH = room.ceiling_m;
+    const ceilingRoomH = room.ceiling_m;
+    const ceilingH = ceilingRoomH; // usos fora do loop por parede (piso etc.)
     const baseH = room.baseboard_h_m || 0;
 
     // PISO SÓLIDO do ambiente (pedido do usuário 2026-08-08, "colocar chao").
@@ -1730,6 +1731,8 @@ function createViewerComposition3D() {
         : { x: sg.originX + a * (sg.widthM + m), z: sg.originZ + b * (sg.widthM + m) };
     };
     (segments || []).forEach((seg, i) => {
+      // altura desta parede (01/11): própria ou a do ambiente
+      const ceilingH = seg.ceilingM > 0 ? seg.ceilingM : ceilingRoomH;
       const ax = seg.alongDir.x, az = seg.alongDir.z;
       const margin = seg.margin || 0;
       const p0 = new THREE.Vector3(seg.originX - ax * margin, 0, seg.originZ - az * margin);
@@ -2286,7 +2289,12 @@ function createViewerComposition3D() {
         label: wall.role === 'main',
         wallIndex: wall.wallIndex,
         // Aberturas (porta/janela/passagem, 2026-10-01) — ver makeWallPrism.
-        openings: Array.isArray(wall.openings) ? wall.openings : []
+        openings: Array.isArray(wall.openings) ? wall.openings : [],
+        // ALTURA POR PAREDE (01/11, Matt: "as paredes estão com 2 alturas, e
+        // quero colocar uma baixa ele não deixa"): o editor já gravava
+        // ceilingMm por parede, mas o 3D usava o pé-direito do ambiente pra
+        // todas. null = segue o ambiente.
+        ceilingM: wall.ceilingMm > 0 ? wall.ceilingMm / 1000 : null
       }));
       const envGroup = buildRoomEnvironmentMultiWall(segments, room);
       // Botão "Camadas" (02/09, pedido do Matt: "incluir... paredes como...
