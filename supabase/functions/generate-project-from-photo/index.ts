@@ -60,6 +60,16 @@
 //   supabase secrets set GEMINI_VISION_PRO_MODEL=nome-do-modelo
 //   supabase secrets set GEMINI_TEXT_MODEL=nome-do-modelo
 
+// v7 (2026-11-01): FIDELIDADE AO PDF, fase 1 (Matt: "a IA que faz projeto
+// por pdf ainda tem muita inconsistência do pdf original"):
+//   a) o portal manda os TEXTOS do PDF com posição (b.page_texts) e o 'read'
+//      recebe as cotas como texto exato, não lê mais número pela imagem;
+//   b) depois do 'read' roda a auditoria sem IA (audit.ts) e, se achar
+//      problema, UMA chamada de correção (Flash, buildFixPrompt). O que
+//      sobrar volta em `audit.remaining` e vira aviso na revisão.
+//   b.audit === false desliga a correção (só audita).
+import { auditRead, pageTextsPrompt } from "./audit.ts";
+
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 const corsHeaders = {
@@ -373,8 +383,9 @@ REGRAS DE PRANCHA (valem mais que tudo abaixo):
 - Tabelas de módulos/legendas (W24, B36, SB36, DB18, UC…) ajudam a identificar tipo e largura: B=base, W=aéreo, SB=base de pia, DB=gaveteiro, T/UC/P=torre, número = largura em polegadas.
 - camera_notes: diga quais pranchas/vistas você usou e para quê.`
     : `Você é um medidor/projetista de marcenaria planejada com 20 anos de obra. Vai receber a FOTO (ou render) de um ambiente e deve LEVANTAR o ambiente com o máximo de fidelidade, como se fosse fazer a medição no local. Ainda NÃO escolha produtos — só geometria.`;
+  const cotas = desenho ? pageTextsPrompt(b.page_texts) : "";
   return `${intro}
-
+${cotas ? "\n" + cotas + "\n- Com os textos acima, NENHUMA medida de parede, abertura ou volume deve ser estimada quando existe cota pra ela: copie o número da cota (convertido pra mm). Em scale_notes, diga quais cotas usou pra cada parede.\n" : ""}
 DADOS INFORMADOS PELO USUÁRIO (${desenho ? "use só se a prancha não cotar" : "são verdade; prevalecem sobre a sua estimativa"}):
 - Pé-direito: ${Math.round(b.ceiling_mm)} mm — ${desenho ? "padrão; se a prancha cotar o pé-direito, use a prancha." : "use como escala principal na vertical."}
 ${ref}
@@ -778,6 +789,48 @@ function sanitizeSplit(raw: any, nPages: number) {
   };
 }
 
+// ==========================================================================
+// CORREÇÃO PÓS-AUDITORIA (v7, 2026-11-01)
+// ==========================================================================
+function buildFixPrompt(b: any, leitura: any, problemas: string[]) {
+  const cotas = b.source === "drawing" ? pageTextsPrompt(b.page_texts) : "";
+  return `Você levantou o ambiente abaixo (mesmas imagens anexadas) e devolveu este JSON:
+${JSON.stringify(leitura)}
+
+Uma conferência automática encontrou estes problemas:
+${problemas.map((p, i) => `${i + 1}. ${p}`).join("\n")}
+${cotas ? "\n" + cotas + "\n" : ""}
+Corrija SOMENTE o necessário para resolver cada problema, mantendo todo o resto igual (mesmos ids, mesma ordem, mesmos rótulos). Regras:
+- Cota escrita na prancha vale mais que estimativa: quando o problema diz "a mais parecida é X", use X se a cota pertence mesmo a essa peça (confira a posição da cota na vista).
+- Medida que passa da parede/teto: primeiro confira o COMPRIMENTO da parede (pode ser ele que está errado), depois a posição x, por último a largura.
+- Volume sobre porta/passagem: ou a porta está em outro x, ou o volume; nunca deixe os dois no mesmo lugar.
+- Dois volumes sobrepostos: normalmente é a mesma peça lida duas vezes (remova uma) ou x errado.
+- Se um "problema" for falso (ex.: duas vistas da mesma peça, tampo sobre a base), mantenha como está e explique em scale_notes.
+Responda o JSON COMPLETO no mesmo schema, em ${langName(b.lang)} nos textos.`;
+}
+
+// Audita; se tiver problema e a correção estiver ligada (padrão), chama a
+// IA UMA vez pra corrigir e audita de novo. Devolve a leitura (corrigida ou
+// não) + resumo pro portal. `imgs` = as mesmas imagens do read.
+async function auditAndFix(apiKey: string, b: any, imgs: any[], leitura: any, t0: number) {
+  const antes = auditRead(leitura, b.page_texts);
+  const audit: any = { before: antes, remaining: antes, corrected: false, model: null };
+  if (!antes.length || b.audit === false) return { leitura, audit };
+  // a leitura demorou demais: não arrisca o tempo da função numa 2ª chamada
+  if (Date.now() - t0 > 95_000) { audit.skipped = "tempo"; return { leitura, audit }; }
+  try {
+    const { data, model } = await callGemini(apiKey, "flash", [...imgs, { text: buildFixPrompt(b, leitura, antes) }], READ_SCHEMA);
+    const depois = auditRead(data, b.page_texts);
+    audit.model = model;
+    // só aceita a correção se ela não piorou
+    if (depois.length <= antes.length) { audit.corrected = true; audit.remaining = depois; return { leitura: data, audit }; }
+    audit.rejected = depois;
+  } catch (e) {
+    audit.error = (e as Error).message || String(e);
+  }
+  return { leitura, audit };
+}
+
 // Várias imagens (pranchas) por chamada: [{ base64, mime, label }]
 function imageParts(b: any) {
   const list = Array.isArray(b.images) && b.images.length
@@ -1107,7 +1160,7 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
 
   const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "edit" ? "edit" : b?.stage === "promob_match" ? "promob_match" : b?.stage === "help" ? "help" : "read";
-  const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length;
+  const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length + JSON.stringify(b.page_texts || "").length;
   if (tamanho > 14_000_000) return json(413, { error: "Imagens grandes demais — use menos páginas.", code: "too_big" });
 
   try {
@@ -1151,8 +1204,10 @@ Deno.serve(async (req) => {
       if (!(Number(b.ceiling_mm) > 0)) return json(400, { error: "Informe o pé-direito.", code: "bad_measures" });
       const tier = b.quality === "pro" ? "pro" : "flash";
       // imagem ANTES do texto: recomendação do Gemini pra prompt de visão
+      const t0 = Date.now();
       const { data, model } = await callGemini(apiKey, tier, [...imgs, { text: buildReadPrompt(b) }], READ_SCHEMA);
-      return json(200, { ...sanitizeRead(data, b), model });
+      const { leitura, audit } = await auditAndFix(apiKey, b, imgs, data, t0);
+      return json(200, { ...sanitizeRead(leitura, b), model, audit });
     }
     if (!Array.isArray(b.catalog) || !b.catalog.length) return json(400, { error: "Catálogo vazio.", code: "no_catalog" });
     if (!Array.isArray(b.volumes)) b.volumes = [];

@@ -91,6 +91,49 @@ async function renderProjectPdfPage(pageNum, maxSidePx, quality) {
   return { dataUrl, base64: dataUrl.split(',')[1], mime: 'image/jpeg' };
 }
 
+// Itens de texto do pdf.js → [{ s, x, y }] em % da página (x pra direita,
+// y pra baixo). pdf.js devolve a posição no espaço do PDF (origem embaixo,
+// página pode estar girada): Util.transform com a matriz do viewport
+// resolve os dois. Pedaços na MESMA linha que se encostam viram um texto só
+// ("0," + "51 m" → "0,51 m"); cota vertical (girada) também vem, só que
+// cada pedaço com o seu próprio giro — a junção só olha a distância.
+// Função pura (sem DOM) pra bancada: scripts/tests/teste-pdf-texto-posicao.js.
+function projectPdfTextItems(items, vp, util) {
+  const U = util || (typeof pdfjsLib !== 'undefined' ? pdfjsLib.Util : null);
+  const W = Math.max(1, vp.width), H = Math.max(1, vp.height);
+  const raw = [];
+  (items || []).forEach((it) => {
+    const str = String(it && it.str || '').replace(/\s+/g, ' ');
+    if (!str.trim() || !Array.isArray(it.transform)) return;
+    const t = U && U.transform ? U.transform(vp.transform, it.transform) : it.transform;
+    // escala do texto (módulo do vetor x da matriz) → largura em px da página
+    const sx = Math.hypot(t[0], t[1]) || 1;
+    const wPx = (Number(it.width) || 0) * sx;
+    const hPx = (Number(it.height) || 0) * (Math.hypot(t[2], t[3]) || 1);
+    const vertical = Math.abs(t[1]) > Math.abs(t[0]); // texto girado (cota vertical)
+    raw.push({ s: str, x: t[4], y: t[5], w: wPx, h: hPx, vertical });
+  });
+  // junta pedaços encostados na mesma linha (x cresce; y igual ± 1/3 da altura)
+  const out = [];
+  raw.forEach((it) => {
+    const prev = out[out.length - 1];
+    if (prev && !it.vertical && !prev.vertical) {
+      const tol = Math.max(2, (prev.h || 8) / 3);
+      const endX = prev.x + prev.w;
+      const gap = it.x - endX;
+      if (Math.abs(it.y - prev.y) <= tol && gap >= -tol && gap <= Math.max(2, (prev.h || 8) * 0.35)) {
+        prev.s = (prev.s + (gap > (prev.h || 8) * 0.12 && !/\s$/.test(prev.s) && !/^\s/.test(it.s) ? ' ' : '') + it.s);
+        prev.w = it.x + it.w - prev.x;
+        return;
+      }
+    }
+    out.push({ s: it.s, x: it.x, y: it.y, w: it.w, h: it.h, vertical: it.vertical });
+  });
+  return out
+    .map((it) => ({ s: it.s.trim().slice(0, 60), x: Math.round(it.x / W * 1000) / 10, y: Math.round(it.y / H * 1000) / 10 }))
+    .filter((it) => it.s);
+}
+
 async function projectPdfHiRes(pageNum) {
   if (projectPdfHiResCache.has(pageNum)) return projectPdfHiResCache.get(pageNum);
   const r = await renderProjectPdfPage(pageNum, PROJECT_PDF_HIRES_PX, 0.85);
@@ -148,13 +191,18 @@ async function runProjectPdfAttach(file) {
     for (let i = 1; i <= n; i++) {
       setProjectPdfStatus(tPdf('status_rendering', { i, n }));
       const r = await renderProjectPdfPage(i, PROJECT_PDF_THUMB_PX, 0.6);
-      let text = '';
+      let text = '', textItems = [];
       try {
         const page = await projectPdfDoc.getPage(i);
         const tc = await page.getTextContent();
         text = tc.items.map((it) => it.str).join(' ').replace(/\s+/g, ' ').trim();
+        // FIDELIDADE AO PDF, fase 1 (2026-11-01): cada texto COM POSIÇÃO
+        // (% da página, origem no canto superior esquerdo) vai pro 'read' —
+        // a IA lê a cota como texto exato em vez de adivinhar pela imagem.
+        const vp = page.getViewport({ scale: 1 });
+        textItems = projectPdfTextItems(tc.items, vp);
       } catch (e) { /* PDF escaneado: sem texto, só imagem */ }
-      projectPdfPages.push({ page: i, thumb: r.dataUrl, base64: r.base64, mime: r.mime, text });
+      projectPdfPages.push({ page: i, thumb: r.dataUrl, base64: r.base64, mime: r.mime, text, textItems });
     }
     const fileLbl = document.getElementById('po-proj-pdf-file');
     if (fileLbl) {
@@ -418,13 +466,15 @@ async function runProjectPdfCreate() {
     const aiPromises = projectPdfPool(chosen.map((r) => async () => {
       setRoom(r, 'reading', tPdf('st_reading'));
       const pages = projectPdfPickPages(r.pages);
-      const images = [];
+      const images = [], pageTexts = [];
       for (const n of pages) {
         const im = await projectPdfHiRes(n);
         images.push({ base64: im.base64, mime: im.mime, label: tPdf('page_label', { n }) });
+        const pg = projectPdfPages[n - 1];
+        if (pg && pg.textItems && pg.textItems.length) pageTexts.push({ label: tPdf('page_label', { n }), items: pg.textItems });
       }
       return projectPhotoRunPipeline({
-        images, quality, ceilingMm, source: 'drawing', roomName: r.name, roomKind: r.kind, catalogP,
+        images, pageTexts, quality, ceilingMm, source: 'drawing', roomName: r.name, roomKind: r.kind, catalogP,
         notes: [sp.project_title ? 'Projeto: ' + sp.project_title : '', notes].filter(Boolean).join(' · ')
       }, (msg) => setRoom(r, 'reading', msg));
     }), PROJECT_PDF_AI_PARALLEL);

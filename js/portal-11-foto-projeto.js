@@ -994,7 +994,10 @@ async function projectPhotoRunPipeline(opts, status) {
         stage: 'read', quality: tt.quality, images: images.slice(0, tt.n),
         source: opts.source || 'photo', room_name: opts.roomName || '',
         ceiling_mm: opts.ceilingMm, ref_wall_mm: opts.refWallMm > 0 ? opts.refWallMm : null,
-        baseboard_mm: roomSettings.baseboard_mm || 0, notes: opts.notes || '', lang
+        baseboard_mm: roomSettings.baseboard_mm || 0, notes: opts.notes || '', lang,
+        // fase 1 fidelidade (01/11): textos do PDF com posição (só desenho);
+        // nas tentativas de plano B vão só os das páginas que ficaram
+        page_texts: (opts.pageTexts || []).slice(0, tt.n)
       });
       if (k > 0) planoB = tt;
     } catch (err) {
@@ -1025,6 +1028,13 @@ async function projectPhotoRunPipeline(opts, status) {
 
   const warnings = [];
   if (planoB) warnings.push(tPhoto('warn_fallback_fast', { n: planoB.n }));
+  // auditoria da leitura (01/11): o que a correção automática não resolveu
+  // vira aviso; o resto fica no console pra conferir o antes/depois.
+  if (room.audit) {
+    console.info('[foto/pdf] auditoria da leitura:', room.audit);
+    (room.audit.remaining || []).slice(0, 8).forEach((p) => warnings.push(tPhoto('warn_audit', { msg: p })));
+    if (room.audit.remaining && room.audit.remaining.length > 8) warnings.push(tPhoto('warn_audit_more', { n: room.audit.remaining.length - 8 }));
+  }
   const items = projectPhotoBuildItems(match, room, catalog, warnings, opts.roomKind || null);
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
   const unmatched = (match.unmatched || []).map((u) => ({ volume: volById.get(u.volume_id), reason: u.reason })).filter((u) => u.volume);
