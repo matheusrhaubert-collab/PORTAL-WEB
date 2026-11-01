@@ -664,6 +664,32 @@ function projectPhotoDirectVolumes(room, catalog) {
 }
 
 // Interior padrão quando a IA não descreveu (porta fechada, sem vista).
+// Interior padrão de um CORPO genérico (caixa de Componentes) quando a
+// leitura não descreveu o interior: gavetas se leu gavetas, senão porta(s)
+// se leu porta, senão aberto com prateleira(s) a cada ~350 mm.
+function projectPhotoBodyDefaultInterior(v) {
+    const gav = Number(v.drawers) || 0, portas = Number(v.doors) || 0;
+    const h = Number(v.height_mm) || 600;
+    const nCols = Math.max(1, Math.round((Number(v.width_mm) || 600) / 900));
+    const colW = Math.round((Number(v.width_mm) || 600) / nCols);
+    const zones = gav ? [{ type: 'drawers', height_mm: h, count: Math.max(1, Math.round(gav / nCols)) }]
+      : [{ type: 'shelves', height_mm: h, count: portas ? Math.max(0, Math.round(h / 350) - 1) : Math.max(1, Math.round(h / 350) - 1) }];
+    return { columns: Array.from({ length: nCols }, () => ({ width_mm: colW, zones: JSON.parse(JSON.stringify(zones)), doors: portas ? 'hinged' : 'none', doors_cover: 'all' })) };
+}
+
+// Interior de um módulo CASADO: o lido (projectPhotoMatchedInterior) ou,
+// se o módulo é um casco cru de Componentes, o padrão do corpo. Casco cru
+// não tem porta própria: se a leitura viu porta, as colunas ganham porta.
+function projectPhotoCarcassInterior(v, m, heightMm) {
+  const casco = PROJECT_PHOTO_CARCASS_RE.test(String((m && m.name) || ''));
+  let interior = projectPhotoMatchedInterior(v, heightMm);
+  if (!interior && casco) interior = projectPhotoBodyDefaultInterior(v);
+  if (interior && casco && (Number(v.doors) || 0) > 0 && (interior.columns || []).every((c) => !c.doors || c.doors === 'none')) {
+    interior.columns.forEach((c) => { c.doors = 'hinged'; c.doors_cover = 'all'; });
+  }
+  return interior;
+}
+
 function projectPhotoDefaultInterior(v) {
   // interior da aula, se ela trouxe (01/11)
   const aula = projectPhotoLessonFor(v);
@@ -686,15 +712,7 @@ function projectPhotoDefaultInterior(v) {
   }
   // corpo genérico fora de cozinha (01/11): gavetas se leu gavetas, senão
   // porta(s) se leu porta, senão aberto com prateleira(s) a cada ~350
-  if (v._forceComp && (v._forceComp === 'aereo' || v._forceComp === 'suspenso')) {
-    const gav = Number(v.drawers) || 0, portas = Number(v.doors) || 0;
-    const h = Number(v.height_mm) || 600;
-    const nCols = Math.max(1, Math.round((Number(v.width_mm) || 600) / 900));
-    const colW = Math.round((Number(v.width_mm) || 600) / nCols);
-    const zones = gav ? [{ type: 'drawers', height_mm: h, count: Math.max(1, Math.round(gav / nCols)) }]
-      : [{ type: 'shelves', height_mm: h, count: portas ? Math.max(0, Math.round(h / 350) - 1) : Math.max(1, Math.round(h / 350) - 1) }];
-    return { columns: Array.from({ length: nCols }, () => ({ width_mm: colW, zones: JSON.parse(JSON.stringify(zones)), doors: portas ? 'hinged' : 'none', doors_cover: 'all' })) };
-  }
+  if (v._forceComp && (v._forceComp === 'aereo' || v._forceComp === 'suspenso')) return projectPhotoBodyDefaultInterior(v);
   if (v.kind === 'closet_drawer_unit') {
     return { columns: [{ width_mm: v.width_mm, zones: [{ type: 'drawers', height_mm: v.height_mm, count: Math.max(2, v.drawers || 3) }], doors: 'none', doors_cover: 'all' }] };
   }
@@ -800,7 +818,10 @@ const PROJECT_PHOTO_INTERIOR_GENERIC = {
     split_x: 'Lateral Divisoria',
     shelf: 'Prateleira fixa',
     drawer: 'Drawer',
-    hanger: 'Cabide tubular'
+    hanger: 'Cabide tubular',
+    // 12:10: casco de Componentes casado pela IA também ganha porta/basculante
+    door: 'Porta Giro Externa',
+    flap: 'Basculante Inverso'
   }
 };
 // kinds que nunca recebem interior (não são caixa)
@@ -949,6 +970,8 @@ const PROJECT_PHOTO_PUSH_ON_COLLISION = false;
 // módulos que são chapa só (painel, tampo, prateleira solta, filler): nunca
 // recebem interior do configurador
 const PROJECT_PHOTO_PANEL_RE = /painel|panel|tampo|countertop|prateleira|shelf|filler|crown|moldura/i;
+// cascos de Componentes ("topo · base · fundo"): Bottom/Stretcher/Topcover/Gola/Niche · …
+const PROJECT_PHOTO_CARCASS_RE = /^(bottom|stretcher|topcover|gola|niche)\s*·/i;
 function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
   const byId = new Map(catalog.map((m) => [m.id, m]));
   const volById = new Map(room.volumes.map((v) => [v.id, v]));
@@ -1000,7 +1023,13 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
         // PAINEL NUNCA TEM INTERIOR (01/11, Matt: "agregou laterais
         // divisórias no painel. isso não existe. o configurador não pode
         // fazer nada em painéis") — tampo/painel/prateleira/ripado = null
-        interior: (nPecas > 1 || ripado || PROJECT_PHOTO_PANEL_RE.test(String(m.name || '')) || v.kind === 'countertop') ? null : projectPhotoSanitizeInterior(projectPhotoMatchedInterior(v, height_mm), height_mm)
+        // AGREGADOS DO CONSTRUTOR (01/11 12:10, Matt: "só faltou os agregados
+        // do construtor"): casco de Componentes escolhido direto pela IA
+        // ("Topcover · Topcover · Back", "Bottom · Bottom · Back"…) recebe o
+        // interior lido ou, sem leitura, o padrão por portas/gavetas — igual
+        // à composição. Painel/tampo continua sem interior.
+        interior: (nPecas > 1 || ripado || PROJECT_PHOTO_PANEL_RE.test(String(m.name || '')) || v.kind === 'countertop') ? null
+          : projectPhotoSanitizeInterior(projectPhotoCarcassInterior(v, m, height_mm), height_mm)
       });
     }
   });
