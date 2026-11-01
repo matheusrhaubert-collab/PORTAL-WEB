@@ -1919,14 +1919,19 @@ function renderProjectBuilderStage() {
       // altura edita height_mm). Desenha primeiro em x=0 e reposiciona pelas
       // larguras reais (getBBox) pra centralizar o bloco igual ao texto único
       // dos vãos internos, sem chutar largura de fonte por caractere.
-      const wStr = String(Math.round(bSel.w));
-      const hStr = String(Math.round(bSel.h));
+      // 01/11 (Matt: "não dá pra ver os números, ficam apagados nesse
+      // laranja; e ainda aparece em milímetros mesmo a configuração ser
+      // polegadas"): texto PRETO, maior, e na unidade do seletor.
+      const unidadeLbl = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const fmtLbl = (mm) => (typeof formatDimensionNumber === 'function') ? formatDimensionNumber(mm, unidadeLbl) : String(Math.round(mm));
+      const wStr = fmtLbl(bSel.w);
+      const hStr = fmtLbl(bSel.h);
       const sep = ' × ';
       const yTxt = sy(bSel.y + bSel.h) - fs * 0.35;
       const mkTxt = (str) => {
         const el = projBuilderSvgEl('text', {
-          x: 0, y: yTxt, 'text-anchor': 'start', 'font-size': fs * 0.75,
-          fill: '#e0921f', 'font-family': 'sans-serif', 'pointer-events': 'none'
+          x: 0, y: yTxt, 'text-anchor': 'start', 'font-size': fs * 0.95, 'font-weight': '700',
+          fill: '#1b1f27', 'font-family': 'sans-serif', 'pointer-events': 'none'
         }, svg);
         el.textContent = str;
         return el;
@@ -2004,14 +2009,16 @@ function renderProjectBuilderStage() {
         });
       }
     } else {
+      const unidadeLbl2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const fmtLbl2 = (mm) => (typeof formatDimensionNumber === 'function') ? formatDimensionNumber(mm, unidadeLbl2) : String(Math.round(mm));
       const t = projBuilderSvgEl('text', {
         x: bSel.x + bSel.w / 2, y: sy(bSel.y + bSel.h) - fs * 0.35,
-        'text-anchor': 'middle', 'font-size': fs * 0.75, fill: '#e0921f',
+        'text-anchor': 'middle', 'font-size': fs * 0.95, 'font-weight': '700', fill: '#1b1f27',
         'font-family': 'sans-serif',
         'pointer-events': eixoEdit ? 'auto' : 'none',
         style: eixoEdit ? 'cursor:text' : ''
       }, svg);
-      t.textContent = Math.round(bSel.w) + ' × ' + Math.round(bSel.h);
+      t.textContent = fmtLbl2(bSel.w) + ' × ' + fmtLbl2(bSel.h);
       if (eixoEdit) {
         // Sublinhado tracejado = "isto se edita". Sem texto explicativo, no
         // espírito da tela (o rodapé já carrega a dica).
