@@ -960,6 +960,88 @@ function sanitizeViews(raw: any, pages: any[]) {
   return { views, notes: raw?.notes ? String(raw.notes).slice(0, 300) : "" };
 }
 
+// ==========================================================================
+// ETAPA 'check' — CONFERÊNCIA VISUAL POR PAREDE (01/11, Matt: "são erros
+// grandes, que ao bater o olho eu vejo. como a IA não pega isso? ela deve
+// olhar parede por parede e ser mais fiel com essas incoerências")
+// ==========================================================================
+// Recebe a ELEVAÇÃO do que o portal montou numa parede (módulos numerados)
+// + as referências do projeto (recortes das elevações do PDF / render /
+// foto) + a lista dos módulos com medidas. Devolve só diferenças GRANDES e
+// as operações pra corrigir, por número do módulo.
+const CHECK_OPS = ["move", "resize", "remove", "extend_left", "extend_right", "to_floor", "swap"];
+const CHECK_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    matched_reference: { type: "STRING" },
+    differences: { type: "ARRAY", items: { type: "STRING" } },
+    operations: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          n: { type: "INTEGER" },
+          op: { type: "STRING", enum: CHECK_OPS },
+          x_mm: { type: "NUMBER" }, width_mm: { type: "NUMBER" }, height_mm: { type: "NUMBER" }, depth_mm: { type: "NUMBER" },
+          floor_height_mm: { type: "NUMBER" }, wall_offset_mm: { type: "NUMBER" },
+          other_n: { type: "INTEGER" },
+          reason: { type: "STRING" },
+        },
+        required: ["n", "op", "reason"],
+        propertyOrdering: ["n", "op", "reason", "x_mm", "width_mm", "height_mm", "depth_mm", "floor_height_mm", "wall_offset_mm", "other_n"],
+      },
+    },
+    confidence: { type: "NUMBER" },
+    notes: { type: "STRING" },
+  },
+  required: ["matched_reference", "differences", "operations", "confidence", "notes"],
+  propertyOrdering: ["matched_reference", "differences", "operations", "confidence", "notes"],
+};
+
+function buildCheckPrompt(b: any) {
+  const w = b.wall || {};
+  const itens = (b.items || []).map((it: any) =>
+    `- #${it.n} | ${it.module_name} | "${it.label}" | x ${Math.round(it.x_mm)} | L ${Math.round(it.width_mm)} × A ${Math.round(it.height_mm)} × P ${Math.round(it.depth_mm)} | chão ${Math.round(it.floor_height_mm)} | afastado da parede ${Math.round(it.wall_offset_mm || 0)}${it.kind ? ` | ${it.kind}` : ""}`
+  ).join("\n");
+  const aberturas = (w.openings || []).map((o: any) => `- ${o.type}: x ${Math.round(o.x_mm)}, L ${Math.round(o.width_mm)}, peitoril ${Math.round(o.sill_mm)}, A ${Math.round(o.height_mm)}`).join("\n") || "(nenhuma)";
+  return `Você é o projetista conferindo o próprio trabalho. A 1ª imagem é a ELEVAÇÃO do que foi MONTADO na parede ${Number(w.index) + 1} (${Math.round(w.length_mm)} × ${Math.round(w.height_mm)} mm), com cada módulo NUMERADO. As imagens seguintes são as REFERÊNCIAS do projeto original (elevações cotadas, render ou foto) — primeiro ache qual delas mostra ESTA parede (diga em matched_reference; se nenhuma mostrar, confidence 0 e nenhuma operação).
+
+MÓDULOS MONTADOS NESTA PAREDE (x = do início da parede, esquerda; mm):
+${itens || "(nenhum)"}
+
+ABERTURAS DA PAREDE:
+${aberturas}
+
+Compare a montagem com a referência e liste só DIFERENÇAS GRANDES, as que se vêem batendo o olho:
+- peça que na referência encosta na parede/no canto/no vizinho e aqui está solta ou parando antes (vão) → "move" (x_mm novo) ou "extend_left"/"extend_right" (estica até o vizinho other_n ou, sem other_n, até o canto);
+- peça empilhada/atravessando outra, ou pendurada quando na referência está no chão → "to_floor" ou "move" (floor_height_mm);
+- peça que não existe na referência → "remove"; peça muito maior/menor (mais de 15%) → "resize";
+- afastada da parede sem motivo → "move" com wall_offset_mm 0;
+- dois módulos trocados de lugar → "swap" (n e other_n).
+NÃO mexa em: cor, puxador, detalhe fino, diferenças menores que 15% ou 60 mm, nem no que já bate. Nunca invente peça nova (não há "add"). Reason curto em ${langName(b.lang)}; differences em ${langName(b.lang)}.
+${lessonsPrompt(b.lessons, "match") ? "\n" + lessonsPrompt(b.lessons, "match") + "\n" : ""}
+Responda SOMENTE o JSON no schema pedido.`;
+}
+
+function sanitizeCheck(raw: any, b: any) {
+  const ns = new Set((b.items || []).map((it: any) => Number(it.n)));
+  const operations = (Array.isArray(raw?.operations) ? raw.operations : []).map((o: any) => {
+    const n = Math.round(num(o?.n, -1));
+    if (!ns.has(n) || !CHECK_OPS.includes(o?.op)) return null;
+    const out: any = { n, op: o.op, reason: String(o?.reason || "").slice(0, 200) };
+    ["x_mm", "width_mm", "height_mm", "depth_mm", "floor_height_mm", "wall_offset_mm"].forEach((k) => { if (o?.[k] != null && Number.isFinite(Number(o[k]))) out[k] = Math.round(Number(o[k])); });
+    if (o?.other_n != null && ns.has(Math.round(num(o.other_n, -1)))) out.other_n = Math.round(num(o.other_n, -1));
+    return out;
+  }).filter(Boolean).slice(0, 30);
+  return {
+    matched_reference: String(raw?.matched_reference || "").slice(0, 120),
+    differences: (Array.isArray(raw?.differences) ? raw.differences : []).map((d: any) => String(d).slice(0, 200)).slice(0, 20),
+    operations,
+    confidence: clamp(num(raw?.confidence, 0), 0, 1),
+    notes: String(raw?.notes || "").slice(0, 300),
+  };
+}
+
 // Várias imagens (pranchas) por chamada: [{ base64, mime, label }]
 function imageParts(b: any) {
   const list = Array.isArray(b.images) && b.images.length
@@ -1289,8 +1371,8 @@ Deno.serve(async (req) => {
   let b: any;
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
 
-  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "views" ? "views" : b?.stage === "edit" ? "edit" : b?.stage === "promob_match" ? "promob_match" : b?.stage === "help" ? "help" : "read";
-  const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length + JSON.stringify(b.page_texts || "").length + JSON.stringify(b.lessons || "").length;
+  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "views" ? "views" : b?.stage === "check" ? "check" : b?.stage === "edit" ? "edit" : b?.stage === "promob_match" ? "promob_match" : b?.stage === "help" ? "help" : "read";
+  const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || b.references || "").length + JSON.stringify(b.rendered || "").length + JSON.stringify(b.page_texts || "").length + JSON.stringify(b.lessons || "").length;
   if (tamanho > 14_000_000) return json(413, { error: "Imagens grandes demais — use menos páginas.", code: "too_big" });
 
   try {
@@ -1306,6 +1388,19 @@ Deno.serve(async (req) => {
       const tier = b.quality === "pro" ? "pro" : "flash";
       const { data, model } = await callGemini(apiKey, tier, parts, SPLIT_SCHEMA);
       return json(200, { ...sanitizeSplit(data, Math.max(...pages.map((p: any) => Number(p.page) || 0))), model });
+    }
+    if (stage === "check") {
+      if (!b.rendered || !b.rendered.base64) return json(400, { error: "Elevação montada ausente.", code: "no_image" });
+      if (!Array.isArray(b.items)) b.items = [];
+      const parts: any[] = [{ text: "MONTADO (elevação da parede, módulos numerados):" }, { inlineData: { mimeType: b.rendered.mime || "image/jpeg", data: b.rendered.base64 } }];
+      (Array.isArray(b.references) ? b.references : []).slice(0, 8).forEach((im: any, i: number) => {
+        if (!im?.base64) return;
+        parts.push({ text: `REFERÊNCIA ${i + 1}: ${String(im.label || "").slice(0, 120)}` });
+        parts.push({ inlineData: { mimeType: im.mime || "image/jpeg", data: im.base64 } });
+      });
+      parts.push({ text: buildCheckPrompt(b) });
+      const { data, model } = await callGemini(apiKey, "flash", parts, CHECK_SCHEMA, "light");
+      return json(200, { ...sanitizeCheck(data, b), model });
     }
     if (stage === "views") {
       const pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 12);

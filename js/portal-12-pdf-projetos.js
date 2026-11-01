@@ -593,7 +593,8 @@ async function runProjectPdfCreate() {
     { key: 'crops', label: I18n.t('ai_busy.s_crops'), est: 10 },
     { key: 'read', label: I18n.t('ai_busy.s_read'), est: 75 },
     { key: 'match', label: I18n.t('ai_busy.s_match'), est: 45 },
-    { key: 'build', label: I18n.t('ai_busy.s_build'), est: 15 }
+    { key: 'build', label: I18n.t('ai_busy.s_build'), est: 15 },
+    { key: 'check', label: I18n.t('ai_busy.s_check'), est: 60 }
   ];
   const rodadas = Math.ceil(chosen.length / PROJECT_PDF_AI_PARALLEL);
   aiBusy.show(I18n.t('ai_busy.pdf_create'), { steps: passosAmb.map((p) => ({ ...p, est: p.est * rodadas })) });
@@ -620,6 +621,8 @@ async function runProjectPdfCreate() {
       // fase 2: recortes das vistas DEPOIS das pranchas inteiras (o plano B
       // corta pelo fim da lista, então perde recorte antes de perder prancha)
       const crops = await projectPdfCropsForRoom(r, pages, lang, (msg) => setRoom(r, 'reading', msg));
+      // referências pra conferência visual: recortes das vistas (se houver), senão as pranchas
+      r._refs = (crops.length ? crops : images).slice(0, 6);
       return projectPhotoRunPipeline({
         images: images.concat(crops), pageTexts, quality, ceilingMm, source: 'drawing', roomName: r.name, roomKind: r.kind, catalogP,
         notes: [sp.project_title ? 'Projeto: ' + sp.project_title : '', notes].filter(Boolean).join(' · ')
@@ -641,12 +644,29 @@ async function runProjectPdfCreate() {
         setRoom(r, 'building', tPdf('st_building'));
         r._state = st; // pra "Espelhar" recriar sem ler de novo
         projectPdfResetOpenProject();
-        const { created, warnings } = await projectPhotoApplyState(st);
+        let { created, warnings } = await projectPhotoApplyState(st);
         r.warnings = [...st.warnings, ...warnings];
         if (st.unmatched.length) r.warnings.push(tPhoto('skipped_title') + ' ' + st.unmatched.map((u) => u.volume.label).join(' · '));
         if (!created) throw new Error(tPhoto('err_nothing_created'));
         renderProjectCanvas();
         await new Promise((res) => setTimeout(res, 400)); // 3D desenhar antes da miniatura
+        // CONFERÊNCIA VISUAL POR PAREDE (01/11, portal-34): compara a elevação
+        // montada com as referências; se a IA pediu correções, remonta.
+        if (typeof projectPhotoVisualCheck === 'function' && r._refs && r._refs.length) {
+          aiBusy.step('check');
+          try {
+            const vc = await projectPhotoVisualCheck(st, r._refs, { status: (msg) => setRoom(r, 'building', msg) });
+            r.warnings.push(...vc.report);
+            if (vc.changed) {
+              setRoom(r, 'building', tPdf('st_rebuilding'));
+              projectPdfResetOpenProject();
+              const again = await projectPhotoApplyState(st);
+              created = again.created; r.warnings.push(...again.warnings);
+              renderProjectCanvas();
+              await new Promise((res) => setTimeout(res, 400));
+            }
+          } catch (e) { console.warn('[conferência visual]', e); }
+        }
         // Pranchas e renders do ambiente viram "Referências" do projeto
         // (migration 185, portal-13): sobem logo depois do salvar e entram
         // na Proposta. TODAS as páginas do ambiente (não só as 6 da IA),

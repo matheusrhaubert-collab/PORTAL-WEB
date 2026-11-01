@@ -473,16 +473,13 @@ function projectPhotoCheckOpenings(items, openings, warnings, walls) {
         if (esq >= dir) { it.width_mm = Math.round(esq); }
         else { it.x_mm = Math.round(ox1); it.width_mm = Math.round(dir); }
         warnings.push(tPhoto('warn_cut_for_opening', { label: it.label, kind }));
-      } else if (cand.length) {
+      } else if (PROJECT_PHOTO_PUSH_ON_COLLISION && cand.length) {
         moverPilha(it, cand[0] - it.x_mm);
         warnings.push(tPhoto('warn_moved_for_opening', { label: it.label, kind }));
-      } else if (sobraCorte >= minW) {
-        if (esq >= dir) { it.width_mm = Math.round(esq); }
-        else { it.x_mm = Math.round(ox1); it.width_mm = Math.round(dir); }
-        warnings.push(tPhoto('warn_cut_for_opening', { label: it.label, kind }));
       } else {
-        it.include = false;
-        warnings.push(tPhoto('warn_removed_for_opening', { label: it.label, kind }));
+        // 10:04 (Matt): não empurrar nem tirar — fica onde foi lido, com
+        // aviso; a conferência visual decide com a referência na mão
+        warnings.push(tPhoto('warn_over_opening', { label: it.label, kind }));
       }
     });
   });
@@ -905,6 +902,8 @@ function projectPhotoPaintComposition(slot, it, warnings) {
 // Ripado: peça máxima de 900 mm, o resto vira emenda (ver projectPhotoBuildItems).
 const PROJECT_PHOTO_SLAT_MAX_MM = 900;
 const PROJECT_PHOTO_SLAT_RE = /ripad|slat|ripa\b/i;
+// 01/11 (Matt): NÃO empurrar peça por colisão — posição lida é a posição.
+const PROJECT_PHOTO_PUSH_ON_COLLISION = false;
 // módulos que são chapa só (painel, tampo, prateleira solta, filler): nunca
 // recebem interior do configurador
 const PROJECT_PHOTO_PANEL_RE = /painel|panel|tampo|countertop|prateleira|shelf|filler|crown|moldura/i;
@@ -1102,12 +1101,62 @@ function projectPhotoBuildItems(match, room, catalog, warnings, roomKind) {
       let prev = null;
       lista.forEach((it) => {
         if (prev && Math.abs(prev.x_mm - it.x_mm) < 1 && Math.abs(prev.width_mm - it.width_mm) < 1 && prev.module_id === it.module_id) { it.include = false; arrumados++; return; }
-        if (Math.abs(it.x_mm - cursor) > 1) { it.x_mm = Math.round(cursor); arrumados++; }
+        // reencostar DESLIGADO (10:04, Matt: posição lida é a posição)
+        if (PROJECT_PHOTO_PUSH_ON_COLLISION && Math.abs(it.x_mm - cursor) > 1) { it.x_mm = Math.round(cursor); arrumados++; }
         cursor = it.x_mm + it.width_mm;
         prev = it;
       });
     });
     if (arrumados) warnings.push(tPhoto('warn_overlap_fixed', { n: arrumados }));
+  }
+  // CORPOS NÃO SE EMPILHAM NEM SE ATRAVESSAM — DESLIGADO (01/11 10:04, Matt:
+  // "as peças estão no tamanho certo mas estão deslocadas porque tinha alguma
+  // coisa batendo e jogou elas pros lados. pode desativar o colidir, pode
+  // colocar as peças exatamente onde elas devem ficar mesmo colidindo").
+  // Fica só o AVISO; a conferência visual (portal-34) é quem corrige posição.
+  if (PROJECT_PHOTO_PUSH_ON_COLLISION) {
+    const corpo = (it) => it.include !== false && it.layer !== 'floor' && !PROJECT_PHOTO_PANEL_RE.test(String(it.module_name || '')) && it.kind !== 'countertop';
+    const porParede = new Map();
+    items.filter(corpo).forEach((it) => { if (!porParede.has(it.wall_index)) porParede.set(it.wall_index, []); porParede.get(it.wall_index).push(it); });
+    let movidos = 0;
+    porParede.forEach((lista, wi) => {
+      const L = Number((room.walls[wi] || {}).length_mm) || 0;
+      lista.sort((a, b) => a.x_mm - b.x_mm || a.floor_height_mm - b.floor_height_mm);
+      for (let i = 1; i < lista.length; i++) {
+        const it = lista[i];
+        for (let j = 0; j < i; j++) {
+          const o = lista[j];
+          if (o.include === false || o.volume_id === it.volume_id) continue;
+          const dx = Math.min(o.x_mm + o.width_mm, it.x_mm + it.width_mm) - Math.max(o.x_mm, it.x_mm);
+          const dy = Math.min(o.floor_height_mm + o.height_mm, it.floor_height_mm + it.height_mm) - Math.max(o.floor_height_mm, it.floor_height_mm);
+          if (dx <= 30 || dy <= 30) continue;
+          const direita = o.x_mm + o.width_mm, esquerda = o.x_mm - it.width_mm;
+          if (!L || direita + it.width_mm <= L) it.x_mm = Math.round(direita);
+          else if (esquerda >= 0) it.x_mm = Math.round(esquerda);
+          else continue;
+          movidos++;
+        }
+      }
+    });
+    if (movidos) warnings.push(tPhoto('warn_unstacked', { n: movidos }));
+  }
+  // PAINEL ENCOSTA NO VIZINHO (01/11, Matt: "o painel de cabeceira não está
+  // encostando no módulo da esquerda, ele para antes"): painel de parede com
+  // vão de até 120 mm até um corpo vizinho na mesma faixa de altura estica
+  // até encostar (dos dois lados).
+  {
+    const ehPainel = (it) => it.include !== false && it.layer !== 'floor' && PROJECT_PHOTO_PANEL_RE.test(String(it.module_name || '')) && it.kind !== 'countertop' && it.height_mm > 60;
+    const corpo = (it) => it.include !== false && it.layer !== 'floor' && !ehPainel(it) && it.kind !== 'countertop';
+    let esticados = 0;
+    items.filter(ehPainel).forEach((p) => {
+      const vizinhos = items.filter((o) => corpo(o) && o.wall_index === p.wall_index
+        && Math.min(o.floor_height_mm + o.height_mm, p.floor_height_mm + p.height_mm) - Math.max(o.floor_height_mm, p.floor_height_mm) > 100);
+      const esq = vizinhos.map((o) => p.x_mm - (o.x_mm + o.width_mm)).filter((g) => g > 0.5 && g <= 120).sort((a, b) => a - b)[0];
+      const dir = vizinhos.map((o) => o.x_mm - (p.x_mm + p.width_mm)).filter((g) => g > 0.5 && g <= 120).sort((a, b) => a - b)[0];
+      if (esq != null) { p.x_mm = Math.round(p.x_mm - esq); p.width_mm = Math.round(p.width_mm + esq); esticados++; }
+      if (dir != null) { p.width_mm = Math.round(p.width_mm + dir); esticados++; }
+    });
+    if (esticados) warnings.push(tPhoto('warn_panel_stretched', { n: esticados }));
   }
   projectPhotoAutoCornerBase(items, room.walls, catalog, warnings, roomKind);
   projectPhotoNormalizeCorners(items, room.walls, warnings);
@@ -1323,8 +1372,12 @@ async function projectPhotoRunPipeline(opts, status) {
   // casamento perde as famílias de cozinha (e o canto 90°); o que a IA
   // mesmo assim casar com módulo de cozinha vira composição (abaixo).
   const ehCozinha = (opts.roomKind || null) === 'kitchen';
-  const RE_FAM_COZINHA = /kitchen|cozinha|cocina/i;
-  const modCozinha = (m) => RE_FAM_COZINHA.test(String(m.family || '')) || /canto\s*90|corner/i.test(String(m.name || ''));
+  // 2ª versão (Matt, 10:00: "a IA puxou módulo padrão de novo, ela não puxou
+  // do componentes. isso é um erro!"): fora de cozinha vale LISTA PERMITIDA
+  // — só família Componentes (caixas cruas) e Painéis/Panels. Qualquer outro
+  // (Closets, Living Rooms, Kitchens…) é "módulo padrão" e não entra.
+  const RE_FAM_OK = /componente|pain[eé]is|panels?\b/i;
+  const modCozinha = (m) => !RE_FAM_OK.test(String(m.family || '')) || /canto\s*90|corner/i.test(String(m.name || ''));
   const catalogoMatch = catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name))
     .filter((m) => ehCozinha || !modCozinha(m));
   const match = await invokeProjectPhotoStage({
@@ -1350,6 +1403,9 @@ async function projectPhotoRunPipeline(opts, status) {
       if (v.layer === 'floor') return;
       const meus = (match.items || []).filter((it) => it.volume_id === v.id);
       if (!meus.length || !meus.some((it) => modCozinha(byIdK.get(it.module_id) || {}))) return;
+      // painel/tampo/prateleira não vira caixa (é chapa) — o "painéis que
+      // faltam" cuida deles; só CORPO vira composição
+      if (['wall_panel', 'end_panel', 'headboard', 'floating_shelf', 'open_shelf', 'slat_panel', 'countertop'].includes(v.kind)) return;
       const comp = projectPhotoOffFloor(v) ? projectPhotoOffFloorComp(v) : 'closet';
       if (!projectPhotoCarcassModule(comp, catalog)) return;
       v._forceComp = comp;
@@ -1928,6 +1984,7 @@ async function projectPhotoApplyState(st) {
     }
     if (!slot) { warnings.push(tPhoto('warn_insert_failed', { label: it.label })); continue; }
     created++;
+    it._slotId = slot.id; // vínculo pra conferência visual (projectPhotoVisualCheck)
 
     if (Math.abs(Number(slot.depth_mm) - it.depth_mm) > 0.5) updateProjectSlotDimension(slot, 'depth', it.depth_mm);
     if (Math.abs(Number(slot.width_mm) - it.width_mm) > 0.5) {
@@ -1980,10 +2037,26 @@ async function runProjectPhotoBuild() {
   setProjectPhotoError('');
   setProjectPhotoStatus(tPhoto('status_building'));
   try {
-    const { created, warnings } = await projectPhotoApplyState(st);
+    let { created, warnings } = await projectPhotoApplyState(st);
     const room = st.room;
     if (chosen.length && created === 0) throw new Error(tPhoto('err_nothing_created'));
     renderProjectCanvas();
+    // CONFERÊNCIA VISUAL (01/11, portal-34): a própria foto é a referência.
+    if (typeof projectPhotoVisualCheck === 'function' && projectPhotoImage && created) {
+      aiBusy.show(I18n.t('ai_busy.s_check'), { steps: [{ key: 'check', label: I18n.t('ai_busy.s_check'), est: 40 }] });
+      try {
+        await new Promise((res) => setTimeout(res, 400));
+        const vc = await projectPhotoVisualCheck(st, [{ base64: projectPhotoImage.base64, mime: projectPhotoImage.mime, label: 'foto' }], { status: (m) => aiBusy.status(m) });
+        warnings.push(...vc.report);
+        if (vc.changed) {
+          projectSlots = []; selectedProjectSlotId = null;
+          const again = await projectPhotoApplyState(st);
+          created = again.created; warnings.push(...again.warnings);
+          renderProjectCanvas();
+        }
+      } catch (e) { console.warn('[conferência visual]', e); }
+      finally { aiBusy.hide(); }
+    }
     markProjectDirty();
     closeProjectPhotoModal();
 
