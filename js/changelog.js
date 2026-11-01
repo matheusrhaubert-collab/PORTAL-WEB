@@ -31,6 +31,78 @@
 // bolinha de "tem novidade" atualizam sozinhos a partir do item [0] daqui.
 window.LEGNO_CHANGELOG = [
   {
+    version: '1.008',
+    date: '2026-11-01',
+    items: {
+      pt: [
+        "Novo Auditor (grupo Help da barra): confere o projeto antes de enviar e lista erros, avisos e dicas — peça maior que a chapa ou pequena demais, prateleira com vão grande, frente de gaveta baixa, rodapé duplicado, módulo acima do teto ou fora da parede, sobreposição, folga pequena entre vizinhos, topos e profundidades desalinhados. Ver leva ao módulo; Corrigir resolve sozinho quando dá.",
+        "Auditor também avisa: portas sobrepostas, duas portas apoiando dobradiça na mesma divisória, tamponamento fora da profundidade (caixa + 1\") e painel horizontal solto na parede (precisa de fixação reforçada, responsabilidade do projetista).",
+        "Tutorial no grupo Help da barra, com mais de 230 perguntas e respostas em português, inglês e espanhol, por categoria. O que não estiver lá, pergunte à IA pelo próprio Tutorial.",
+        "Contorno verde de encaixe perfeito: aparece por cima do vermelho quando o módulo selecionado está encostado no vizinho com a mesma altura e profundidade (lado a lado) ou a mesma largura e profundidade (em cima/embaixo).",
+        "Altura por parede: cada parede pode ter o seu pé-direito, e o 3D, a área amarela e o limite de altura dos módulos seguem a altura daquela parede.",
+        "Tamponamento: o painel aparece na hora ao clicar; no Pronto, se a lateral encosta no chão, o sistema pergunta se quer 1\" a mais pra baixo para recortar na obra caso o chão tenha desnível.",
+        "Travessa da frente: com gaveta no vão de cima ela fica sempre deitada (a opção em pé fica desabilitada).",
+        "Reposicionar refeito no modelo do Promob: arraste com o botão direito de um módulo e solte em outro; posição X/Y/Z e giro em relação ao módulo de referência, encaixe nas bordas e vistas com zoom.",
+        "Projeto por PDF com IA mais fiel: as cotas são copiadas do texto do PDF, cada vista da prancha é recortada e lida em alta resolução, e uma conferência automática corrige peça passando do teto, sobre porta ou janela, sobreposta ou com medida que não bate com a cota. O que sobrar aparece como aviso na revisão.",
+        "IA na leitura: duas portas lado a lado viram uma porta de 2 folhas (sem divisória no meio); fora de cozinha usa só caixas de Componentes com fundo e painéis; peça fora do chão nunca leva rodapé; gaveta nunca abaixo de 100 mm; móvel baixo fora de cozinha ganha tampo; peças iguais saem na mesma cor; nunca cobre porta ou janela.",
+        "Espelhar ambiente lido do PDF: o botão ↔ no cartão do ambiente recria tudo invertido, se ele saiu ao contrário.",
+        "Tela de carregamento da IA mostra a etapa atual, uma barra de progresso e o tempo que falta.",
+        "Medida travada: módulo que só aceita medidas da lista (como a Pantry) entra sempre com o valor mais próximo da lista, venha da IA, do PDF, do Promob, do 2020 ou do SKU.",
+        "Oven Tower (NEW Classic) refeita com lateral inteira do chão ao topo: gaveta embaixo alinhada com o drawer de 18\", nicho do forno e portas em cima. O rodapé junta com o das bases.",
+        "Base Stove Cabinet and Cooktop (NEW Classic): painel cobrindo a frente com forno embutido no meio.",
+        "Novo Base Microwave na aba Appliances: altura normal, gaveta embaixo e micro-ondas em cima.",
+        "Kitchens › Classic Base e Kitchens › Wall saíram do catálogo — use a NEW Classic Kitchens, revisada.",
+        "Blind corner: o filler sai na mesma cor das portas.",
+        "Cabide: o tubo agora tem o interno do vão menos 8 mm (4 mm de cada lado); antes saía curto.",
+        "Pedidos: só dealers enviam pedido. Contas de cliente orçam e veem o contato de vendas (e-mail, WhatsApp e telefone) com o convite become a dealer."
+      ],
+      en: [
+        "New Auditor (Help group on the toolbar): checks the project before sending and lists errors, warnings and tips — part bigger than the sheet or too small, long shelf span, short drawer front, duplicate toe kick, cabinet above the ceiling or past the wall, overlaps, tiny gaps between neighbors, misaligned tops and depths. View takes you to the cabinet; Fix solves it automatically when possible.",
+        "The Auditor also warns about: overlapping doors, two doors hinging on the same divider, end panels at the wrong depth (box + 1\") and horizontal panels loose on the wall (they need reinforced support, the designer's responsibility).",
+        "Tutorial in the Help group of the toolbar, with over 230 questions and answers in Portuguese, English and Spanish, by category. If it isn't there, ask the AI from the Tutorial itself.",
+        "Green perfect-join outline: shows over the red one when the selected cabinet touches its neighbor with the same height and depth (side by side) or the same width and depth (stacked).",
+        "Height per wall: each wall can have its own ceiling height, and the 3D, the yellow area and the cabinet height limit follow that wall's height.",
+        "End panels: the panel appears right when you click; on Done, if the side panel reaches the floor, you're asked whether to add 1\" below so it can be scribed on site if the floor is uneven.",
+        "Front rail: with a drawer in the top opening it is always flat (the upright option is disabled).",
+        "Reposition redone on the Promob model: right-drag from one cabinet and drop on another; X/Y/Z position and rotation relative to the reference cabinet, snapping to edges and zoomable views.",
+        "AI project from PDF is more faithful: dimensions are copied from the PDF text, each view on the sheet is cropped and read in high resolution, and an automatic check fixes parts above the ceiling, over doors or windows, overlapping, or not matching a dimension. Anything left shows as a warning in the review.",
+        "AI reading: two doors side by side become one 2-leaf door (no divider in the middle); outside kitchens it uses only Components boxes with a back and panels; off-floor pieces never get a toe kick; drawers never under 100 mm; low furniture outside kitchens gets a top; matching pieces get the same color; doors and windows are never covered.",
+        "Mirror a room read from a PDF: the ↔ button on the room card recreates it flipped, if it came out reversed.",
+        "The AI loading screen shows the current step, a progress bar and the time left.",
+        "Locked sizes: cabinets that only accept sizes from a list (like the Pantry) always come in at the nearest listed value, whether from the AI, PDF, Promob, 2020 or SKU.",
+        "Oven Tower (NEW Classic) redone with full-height sides from floor to top: drawer at the bottom lined up with the 18\" drawer cabinet, oven niche and doors above. Its toe kick joins the base cabinets'.",
+        "Base Stove Cabinet and Cooktop (NEW Classic): a panel covers the front with a built-in oven in the middle.",
+        "New Base Microwave in the Appliances tab: standard height, drawer at the bottom and microwave on top.",
+        "Kitchens › Classic Base and Kitchens › Wall were removed from the catalog — use the revised NEW Classic Kitchens.",
+        "Blind corner: the filler comes in the door color.",
+        "Closet rod: the rod is now the inside opening minus 8 mm (4 mm each side); it used to come out short.",
+        "Orders: only dealers can send orders. Client accounts can quote and see the sales contact (e-mail, WhatsApp and phone) with the become a dealer invite."
+      ],
+      es: [
+        "Nuevo Auditor (grupo Help de la barra): revisa el proyecto antes de enviarlo y lista errores, avisos y consejos — pieza mayor que la placa o demasiado pequeña, estante con mucha luz, frente de cajón bajo, zócalo duplicado, módulo sobre el techo o fuera de la pared, superposiciones, holguras pequeñas entre vecinos, topes y profundidades desalineados. Ver te lleva al módulo; Corregir lo resuelve solo cuando se puede.",
+        "El Auditor también avisa: puertas superpuestas, dos puertas con bisagra en la misma división, tamponamiento fuera de profundidad (caja + 1\") y panel horizontal suelto en la pared (necesita fijación reforzada, responsabilidad del proyectista).",
+        "Tutorial en el grupo Help de la barra, con más de 230 preguntas y respuestas en portugués, inglés y español, por categoría. Si no está, pregunta a la IA desde el mismo Tutorial.",
+        "Contorno verde de encaje perfecto: aparece sobre el rojo cuando el módulo seleccionado toca al vecino con la misma altura y profundidad (lado a lado) o el mismo ancho y profundidad (arriba/abajo).",
+        "Altura por pared: cada pared puede tener su propia altura de techo, y el 3D, el área amarilla y el límite de altura de los módulos siguen la altura de esa pared.",
+        "Tamponamiento: el panel aparece al hacer clic; en Listo, si el lateral toca el piso, el sistema pregunta si quieres 1\" más hacia abajo para recortarlo en obra si el piso tiene desnivel.",
+        "Travesaño frontal: con cajón en el hueco de arriba queda siempre acostado (la opción de pie queda deshabilitada).",
+        "Reposicionar rehecho con el modelo de Promob: arrastra con el botón derecho desde un módulo y suelta en otro; posición X/Y/Z y giro respecto al módulo de referencia, encaje en los bordes y vistas con zoom.",
+        "Proyecto desde PDF con IA más fiel: las cotas se copian del texto del PDF, cada vista de la lámina se recorta y se lee en alta resolución, y una verificación automática corrige piezas que pasan del techo, sobre puertas o ventanas, superpuestas o con medidas que no coinciden con la cota. Lo que quede aparece como aviso en la revisión.",
+        "IA en la lectura: dos puertas lado a lado pasan a ser una puerta de 2 hojas (sin división en el medio); fuera de la cocina usa solo cajas de Componentes con fondo y paneles; las piezas fuera del piso nunca llevan zócalo; cajón nunca menor de 100 mm; mueble bajo fuera de la cocina lleva tapa; piezas iguales salen del mismo color; nunca cubre puertas ni ventanas.",
+        "Espejar un ambiente leído del PDF: el botón ↔ de la tarjeta del ambiente lo recrea invertido, si salió al revés.",
+        "La pantalla de carga de la IA muestra la etapa actual, una barra de progreso y el tiempo restante.",
+        "Medidas fijas: los módulos que solo aceptan medidas de una lista (como la Pantry) entran siempre con el valor más cercano de la lista, vengan de la IA, el PDF, Promob, 2020 o el SKU.",
+        "Oven Tower (NEW Classic) rehecha con lateral entero del piso al tope: cajón abajo alineado con el drawer de 18\", nicho del horno y puertas arriba. Su zócalo se une con el de las bases.",
+        "Base Stove Cabinet and Cooktop (NEW Classic): un panel cubre el frente con un horno empotrado en el medio.",
+        "Nuevo Base Microwave en la pestaña Appliances: altura normal, cajón abajo y microondas arriba.",
+        "Kitchens › Classic Base y Kitchens › Wall salieron del catálogo — usa la NEW Classic Kitchens, revisada.",
+        "Blind corner: el filler sale del color de las puertas.",
+        "Barral de colgar: ahora mide el interior del hueco menos 8 mm (4 mm de cada lado); antes salía corto.",
+        "Pedidos: solo los dealers envían pedidos. Las cuentas de cliente cotizan y ven el contacto de ventas (e-mail, WhatsApp y teléfono) con la invitación become a dealer."
+      ]
+    }
+  },
+  {
     version: '1.007',
     date: '2026-10-25',
     items: {
