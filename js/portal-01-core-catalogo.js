@@ -29,6 +29,61 @@
 // ---------- Estado: configurador do módulo atual ----------
 
 let allModules = [];
+
+// ============================================================
+// CARREGADOR DA IA (2026-11-01, Matt: "quero um carregador na tela, e
+// deixar a tela travada, hoje fica confuso se a IA tá trabalhando ou parada")
+// ============================================================
+// Véu por cima de tudo (inclusive dos modais) com rodinha, título, o passo
+// atual e o tempo correndo. Quem usa: foto (portal-11), PDF (portal-12),
+// gerador por IA (portal-06b), editar com IA (portal-19). Entra/sai junto
+// com o flag `...Running` de cada um; os status de cada tela repassam a
+// mensagem pra cá (aiBusy.status) — a tela de origem continua mostrando o
+// texto dela, o véu só duplica por cima, grande.
+const aiBusy = (() => {
+  let el = null, t0 = 0, timer = null;
+  function ensure() {
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'po-ai-busy';
+    el.innerHTML = '<div class="po-ai-busy-card" role="status" aria-live="polite">' +
+      '<div class="po-ai-busy-spin"></div>' +
+      '<div class="po-ai-busy-title"></div>' +
+      '<div class="po-ai-busy-msg"></div>' +
+      '<div class="po-ai-busy-time"></div>' +
+      '<div class="po-ai-busy-hint"></div></div>';
+    document.body.appendChild(el);
+    // trava teclado (Esc, atalhos do canvas) enquanto está aberto
+    el.addEventListener('keydown', (e) => { e.stopPropagation(); e.preventDefault(); }, true);
+    return el;
+  }
+  function tick() {
+    if (!el) return;
+    const s = Math.round((Date.now() - t0) / 1000);
+    el.querySelector('.po-ai-busy-time').textContent = s >= 60 ? Math.floor(s / 60) + ' min ' + (s % 60) + ' s' : s + ' s';
+  }
+  return {
+    show(title, msg) {
+      ensure();
+      t0 = Date.now();
+      el.querySelector('.po-ai-busy-title').textContent = title || I18n.t('ai_busy.title');
+      el.querySelector('.po-ai-busy-msg').textContent = msg || '';
+      el.querySelector('.po-ai-busy-hint').textContent = I18n.t('ai_busy.hint');
+      el.classList.add('open');
+      document.body.classList.add('po-ai-busy-on');
+      clearInterval(timer); timer = setInterval(tick, 1000); tick();
+    },
+    status(msg) { if (el && el.classList.contains('open') && msg) el.querySelector('.po-ai-busy-msg').textContent = msg; },
+    hide() {
+      if (!el) return;
+      el.classList.remove('open');
+      document.body.classList.remove('po-ai-busy-on');
+      clearInterval(timer); timer = null;
+    },
+    isOpen() { return !!(el && el.classList.contains('open')); }
+  };
+})();
+
 let modules = [];
 let familiesCacheList = [];
 let categoriesCacheList = [];

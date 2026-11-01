@@ -6121,3 +6121,16 @@ body.po-proj-3d-overlay #po-proj-3d-canvas { height: calc(100vh - 120px); }
 .po-become-dealer-box { background: var(--panel); color: var(--text); border-radius: 12px; padding: 20px 22px; max-width: 440px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
 .po-become-dealer-box h3 { margin: 0 0 6px; }
 @media (max-width: 720px) { .po-become-dealer { display: none !important; } }
+
+/* Carregador da IA (2026-11-01) — por cima dos modais (z 1000) */
+#po-ai-busy { position: fixed; inset: 0; background: rgba(15, 18, 24, .55); display: none; align-items: center; justify-content: center; z-index: 2000; padding: 16px; cursor: progress; backdrop-filter: blur(2px); }
+#po-ai-busy.open { display: flex; }
+.po-ai-busy-card { background: #fff; color: #1b1f27; border-radius: 14px; padding: 28px 32px; min-width: 300px; max-width: 460px; text-align: center; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+.po-ai-busy-spin { width: 46px; height: 46px; margin: 0 auto 14px; border-radius: 50%; border: 5px solid #e3e6ec; border-top-color: #d6336c; animation: po-ai-busy-rot .9s linear infinite; }
+@keyframes po-ai-busy-rot { to { transform: rotate(360deg); } }
+.po-ai-busy-title { font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+.po-ai-busy-msg { font-size: 14px; min-height: 20px; color: #3a404b; }
+.po-ai-busy-time { font-size: 13px; color: #8a90a0; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.po-ai-busy-hint { font-size: 12px; color: #8a90a0; margin-top: 4px; }
+body.po-ai-busy-on { overflow: hidden; }
+body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: none; }

@@ -44,6 +44,12 @@ const PROJECT_PDF_THUMB_PX = 900;
 // tem cota de "0,15 m" pequena num canto da elevação — com 1800 ficava ilegível.
 const PROJECT_PDF_HIRES_PX = 2200;
 const PROJECT_PDF_MAX_PAGES_PER_ROOM = 6;
+// FASE 2 fidelidade (2026-11-01): recorte por vista em alta resolução.
+const PROJECT_PDF_CROP_PX = 2000;          // lado maior de cada recorte
+const PROJECT_PDF_MAX_CROPS_PER_ROOM = 10;
+const PROJECT_PDF_CROP_SKIP_AREA = 0.72;   // vista que é a página quase toda: já vai inteira
+const PROJECT_PDF_CROP_KINDS = ['plan', 'elevation', 'section', 'detail', 'table'];
+const PROJECT_PDF_CANVAS_MAX_PX = 24e6;    // limite de pixels do canvas (Chrome)
 const PROJECT_PDF_AI_PARALLEL = 2;
 const PROJECT_PDF_MAX_REF_PAGES = 12;
 let projectPdfFileName = '';
@@ -57,6 +63,7 @@ function setProjectPdfError(msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 function setProjectPdfStatus(msg) {
+  if (typeof aiBusy !== 'undefined') aiBusy.status(msg);
   const el = document.getElementById('po-proj-pdf-status');
   if (!el) return;
   el.textContent = msg || '';
@@ -132,6 +139,94 @@ function projectPdfTextItems(items, vp, util) {
   return out
     .map((it) => ({ s: it.s.trim().slice(0, 60), x: Math.round(it.x / W * 1000) / 10, y: Math.round(it.y / H * 1000) / 10 }))
     .filter((it) => it.s);
+}
+
+// ---------- Fase 2: vistas → recortes em alta ----------
+// Plano do recorte (função pura, bancada em teste-pdf-recorte-vista.js):
+// bbox em % da página → escala de render e retângulo em px. A escala é a
+// que deixa o lado maior do recorte com PROJECT_PDF_CROP_PX, limitada a 4×
+// (pdf.js) e ao tamanho máximo do canvas da página inteira.
+function projectPdfCropPlan(bbox, pageW, pageH, maxPx) {
+  const max = maxPx || PROJECT_PDF_CROP_PX;
+  const bw = Math.max(1, pageW * bbox.w / 100), bh = Math.max(1, pageH * bbox.h / 100);
+  let scale = max / Math.max(bw, bh);
+  scale = Math.min(4, scale, Math.sqrt(PROJECT_PDF_CANVAS_MAX_PX / (pageW * pageH)));
+  scale = Math.max(0.5, scale);
+  return {
+    scale,
+    sx: Math.round(pageW * bbox.x / 100 * scale), sy: Math.round(pageH * bbox.y / 100 * scale),
+    sw: Math.max(1, Math.round(bw * scale)), sh: Math.max(1, Math.round(bh * scale))
+  };
+}
+
+// Quais vistas viram recorte: só desenho (não render), não a página inteira,
+// e no máximo N por ambiente — planta/elevação/corte antes de detalhe/tabela.
+function projectPdfPickViews(views, pages) {
+  const ordem = (k) => Math.max(0, PROJECT_PDF_CROP_KINDS.indexOf(k));
+  return (views || [])
+    .filter((v) => v && pages.includes(v.page) && PROJECT_PDF_CROP_KINDS.includes(v.kind))
+    .filter((v) => (v.w * v.h) / 10000 < PROJECT_PDF_CROP_SKIP_AREA)
+    .sort((a, b) => ordem(a.kind) - ordem(b.kind) || a.page - b.page || a.y - b.y || a.x - b.x)
+    .slice(0, PROJECT_PDF_MAX_CROPS_PER_ROOM);
+}
+
+const projectPdfScaledCache = new Map(); // "página@escala" → canvas
+async function projectPdfPageCanvas(pageNum, scale) {
+  const key = pageNum + '@' + scale.toFixed(3);
+  if (projectPdfScaledCache.has(key)) return projectPdfScaledCache.get(key);
+  const page = await projectPdfDoc.getPage(pageNum);
+  const vp = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(vp.width));
+  canvas.height = Math.max(1, Math.round(vp.height));
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  if (projectPdfScaledCache.size > 6) projectPdfScaledCache.delete(projectPdfScaledCache.keys().next().value);
+  projectPdfScaledCache.set(key, canvas);
+  return canvas;
+}
+
+async function projectPdfCropView(view) {
+  const page = await projectPdfDoc.getPage(view.page);
+  const v1 = page.getViewport({ scale: 1 });
+  const plan = projectPdfCropPlan(view, v1.width, v1.height);
+  const full = await projectPdfPageCanvas(view.page, plan.scale);
+  const c = document.createElement('canvas');
+  c.width = Math.min(plan.sw, full.width - plan.sx);
+  c.height = Math.min(plan.sh, full.height - plan.sy);
+  c.getContext('2d').drawImage(full, plan.sx, plan.sy, c.width, c.height, 0, 0, c.width, c.height);
+  const dataUrl = c.toDataURL('image/jpeg', 0.85);
+  return { base64: dataUrl.split(',')[1], mime: 'image/jpeg', px: Math.max(c.width, c.height) };
+}
+
+// Etapa 'views' (Flash, miniaturas) + recortes. Qualquer erro aqui NÃO
+// derruba o ambiente: volta [] e o read segue só com as pranchas inteiras.
+async function projectPdfCropsForRoom(r, pages, lang, say) {
+  try {
+    say(tPdf('st_views'));
+    const data = await invokeProjectPhotoStage({
+      stage: 'views', lang, room_name: r.name,
+      pages: pages.map((n) => { const pg = projectPdfPages[n - 1]; return { page: n, base64: pg.base64, mime: pg.mime }; })
+    });
+    const vistas = projectPdfPickViews(data.views, pages);
+    const out = [];
+    for (let i = 0; i < vistas.length; i++) {
+      const v = vistas[i];
+      say(tPdf('st_cropping', { i: i + 1, n: vistas.length }));
+      const im = await projectPdfCropView(v);
+      out.push({
+        base64: im.base64, mime: im.mime,
+        label: tPdf('crop_label', { n: v.page, label: v.label || v.kind, x1: Math.round(v.x), x2: Math.round(v.x + v.w), y1: Math.round(v.y), y2: Math.round(v.y + v.h) })
+      });
+    }
+    console.info('[pdf] vistas:', data.views, '→ recortes:', out.length);
+    return out;
+  } catch (err) {
+    console.warn('[pdf] recorte por vista falhou (segue sem):', err);
+    return [];
+  }
 }
 
 async function projectPdfHiRes(pageNum) {
@@ -222,6 +317,7 @@ async function runProjectPdfAttach(file) {
 async function runProjectPdfSplit() {
   if (projectPdfRunning || !projectPdfPages.length) return;
   projectPdfRunning = true;
+  aiBusy.show(I18n.t('ai_busy.pdf_split'));
   setProjectPdfError('');
   const runBtn = document.getElementById('po-proj-pdf-run-btn');
   if (runBtn) runBtn.disabled = true;
@@ -241,6 +337,7 @@ async function runProjectPdfSplit() {
     projectPdfCleanRoomPages(rooms);
     projectPdfSplit = { client_name: data.client_name || '', project_title: data.project_title || '', notes: data.notes || '', model: data.model || '', rooms };
     projectPdfRunning = false; // antes do render: a lista nasce editável
+    aiBusy.hide();
     renderProjectPdfReview();
     if (runBtn) runBtn.style.display = 'none';
     const createBtn = document.getElementById('po-proj-pdf-create-btn');
@@ -252,6 +349,7 @@ async function runProjectPdfSplit() {
   } finally {
     clearInterval(tick);
     projectPdfRunning = false;
+    aiBusy.hide();
     setProjectPdfStatus('');
   }
 }
@@ -451,12 +549,14 @@ async function runProjectPdfCreate() {
   if (!(ceilingMm > 0)) { setProjectPdfError(tPhoto('err_bad_measures')); return; }
   const quality = projectPdfQuality();
   const notes = (document.getElementById('po-proj-pdf-notes') || {}).value || '';
+  const lang = (typeof I18n !== 'undefined' && typeof I18n.getLanguage === 'function') ? (I18n.getLanguage() || 'pt') : 'pt';
 
   projectPdfRunning = true;
+  aiBusy.show(I18n.t('ai_busy.pdf_create'));
   setProjectPdfError('');
   chosen.forEach((r) => { r.status = 'queued'; r.message = ''; r.warnings = []; });
   renderProjectPdfReview(); refreshProjectPdfCreateBtn();
-  const setRoom = (r, status, message) => { r.status = status; if (message != null) r.message = message; renderProjectPdfReview(); };
+  const setRoom = (r, status, message) => { r.status = status; if (message != null) r.message = message; renderProjectPdfReview(); if (message) aiBusy.status(r.name + ' — ' + message); };
 
   const catalogP = Promise.all([buildProjectPhotoCatalog(), buildProjectPhotoColorList()]);
   catalogP.catch(() => {});
@@ -473,8 +573,11 @@ async function runProjectPdfCreate() {
         const pg = projectPdfPages[n - 1];
         if (pg && pg.textItems && pg.textItems.length) pageTexts.push({ label: tPdf('page_label', { n }), items: pg.textItems });
       }
+      // fase 2: recortes das vistas DEPOIS das pranchas inteiras (o plano B
+      // corta pelo fim da lista, então perde recorte antes de perder prancha)
+      const crops = await projectPdfCropsForRoom(r, pages, lang, (msg) => setRoom(r, 'reading', msg));
       return projectPhotoRunPipeline({
-        images, pageTexts, quality, ceilingMm, source: 'drawing', roomName: r.name, roomKind: r.kind, catalogP,
+        images: images.concat(crops), pageTexts, quality, ceilingMm, source: 'drawing', roomName: r.name, roomKind: r.kind, catalogP,
         notes: [sp.project_title ? 'Projeto: ' + sp.project_title : '', notes].filter(Boolean).join(' · ')
       }, (msg) => setRoom(r, 'reading', msg));
     }), PROJECT_PDF_AI_PARALLEL);
@@ -531,6 +634,7 @@ async function runProjectPdfCreate() {
     }
   } finally {
     projectPdfRunning = false;
+    aiBusy.hide();
     renderProjectPdfReview();
     refreshProjectPdfCreateBtn();
     setProjectPdfStatus(feitos ? tPdf('status_done', { n: feitos, folder: sp.client_name || '—' }) : '');

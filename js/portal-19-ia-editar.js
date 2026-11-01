@@ -339,6 +339,7 @@ async function editProjectAiRun() {
   try { localStorage.setItem(EDIT_AI_QUALITY_KEY, quality); } catch (e) { /* ok */ }
 
   editProjectAiRunning = true;
+  aiBusy.show(I18n.t('ai_busy.edit'));
   iaeBusy(true);
   iaeStatus(tIae('status_thinking'));
   document.getElementById('po-ai-edit-result').innerHTML = '';
@@ -390,12 +391,14 @@ async function editProjectAiRun() {
     iaeStatus((e && e.message) || String(e), true);
   } finally {
     editProjectAiRunning = false;
+    aiBusy.hide();
     iaeBusy(false);
   }
 }
 
 // ---------- Tela ----------
 function iaeStatus(msg, isError) {
+  if (!isError && typeof aiBusy !== 'undefined') aiBusy.status(msg);
   const el = document.getElementById('po-ai-edit-status');
   if (!el) return;
   el.textContent = msg || '';

@@ -381,6 +381,7 @@ REGRAS DE PRANCHA (valem mais que tudo abaixo):
 - Use a PLANTA para comprimento das paredes, ângulos, portas/janelas e profundidades; use as ELEVAÇÕES/VISTAS para x, larguras, alturas, altura do chão e divisão de portas/gavetas; CORTES para profundidade.
 - Se a prancha tiver outros ambientes junto, IGNORE-OS: levante só "${String(b.room_name || "").slice(0, 80)}".
 - Tabelas de módulos/legendas (W24, B36, SB36, DB18, UC…) ajudam a identificar tipo e largura: B=base, W=aéreo, SB=base de pia, DB=gaveteiro, T/UC/P=torre, número = largura em polegadas.
+- RECORTES (imagens rotuladas "recorte"): são as vistas da própria prancha em ALTA resolução, uma por vez. MEÇA pelos recortes (cotas, divisões de porta/gaveta, prateleiras); a prancha inteira serve só pra situar cada vista. O rótulo diz a página e a região (x/y em %) de onde o recorte saiu — as cotas em TEXTOS DA PRANCHA usam as mesmas coordenadas da página.
 - camera_notes: diga quais pranchas/vistas você usou e para quê.`
     : `Você é um medidor/projetista de marcenaria planejada com 20 anos de obra. Vai receber a FOTO (ou render) de um ambiente e deve LEVANTAR o ambiente com o máximo de fidelidade, como se fosse fazer a medição no local. Ainda NÃO escolha produtos — só geometria.`;
   const cotas = desenho ? pageTextsPrompt(b.page_texts) : "";
@@ -831,15 +832,71 @@ async function auditAndFix(apiKey: string, b: any, imgs: any[], leitura: any, t0
   return { leitura, audit };
 }
 
+// ==========================================================================
+// ETAPA 'views' — ONDE ESTÁ CADA VISTA NA PRANCHA (fase 2 fidelidade, 01/11)
+// ==========================================================================
+// Matt: "já podemos ir pra fase 2?". Uma prancha de apresentação tem 2-3
+// vistas pequenas na mesma página; na imagem inteira (2200 px) a elevação
+// de uma parede fica com 600 px e a IA erra. Esta etapa (Flash, com as
+// MINIATURAS) só devolve a caixa de cada vista; o portal recorta cada uma
+// em alta resolução e manda os recortes junto das pranchas pro 'read'.
+const VIEW_KINDS = ["plan", "elevation", "section", "detail", "table", "render", "other"];
+const VIEWS_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    views: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          page: { type: "INTEGER" },
+          kind: { type: "STRING", enum: VIEW_KINDS },
+          label: { type: "STRING" },
+          x: { type: "NUMBER" }, y: { type: "NUMBER" }, w: { type: "NUMBER" }, h: { type: "NUMBER" },
+        },
+        required: ["page", "kind", "label", "x", "y", "w", "h"],
+        propertyOrdering: ["page", "kind", "label", "x", "y", "w", "h"],
+      },
+    },
+    notes: { type: "STRING" },
+  },
+  required: ["views", "notes"],
+  propertyOrdering: ["views", "notes"],
+};
+
+function buildViewsPrompt(b: any, pages: any[]) {
+  return `Você recebe ${pages.length} página(s) de um PDF de projeto de marcenaria (miniaturas, cada uma precedida do número da página), todas do ambiente "${String(b.room_name || "").slice(0, 80)}". Diga ONDE está cada VISTA/DESENHO em cada página, pra ser recortada em alta resolução.
+Regras:
+- Uma vista = um desenho independente: planta baixa, elevação/vista de uma parede ou de um móvel, corte, detalhe, tabela de módulos. Uma página pode ter várias (ex.: a elevação grande + a vista lateral pequena + um corte). Uma página de render/foto é UMA vista kind="render".
+- x, y, w, h em % da largura/altura da página (0–100), origem no canto superior esquerdo. A caixa deve INCLUIR as linhas de cota, os números das cotas e o título da vista, com folga de ~2% em volta — nunca cortar cota pela metade.
+- label curto em ${langName(b.lang)}, dizendo o que é e de qual parede/móvel (ex.: "Elevação parede da janela", "Vista lateral do painel", "Planta").
+- Não liste logotipo, rodapé, legenda de iluminação, nem a página inteira como "vista" quando ela tem várias.
+- notes: 1 frase.
+Responda SOMENTE o JSON.`;
+}
+
+function sanitizeViews(raw: any, pages: any[]) {
+  const nums = new Set(pages.map((p: any) => Number(p.page) || 0));
+  const views = (Array.isArray(raw?.views) ? raw.views : []).map((v: any) => {
+    const page = Math.round(num(v?.page, 0));
+    if (!nums.has(page)) return null;
+    const x = clamp(num(v?.x, 0), 0, 100), y = clamp(num(v?.y, 0), 0, 100);
+    const w = clamp(num(v?.w, 0), 1, 100 - x), h = clamp(num(v?.h, 0), 1, 100 - y);
+    return { page, kind: VIEW_KINDS.includes(v?.kind) ? v.kind : "other", label: String(v?.label || "").slice(0, 80), x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, w: Math.round(w * 10) / 10, h: Math.round(h * 10) / 10 };
+  }).filter(Boolean).slice(0, 40);
+  return { views, notes: raw?.notes ? String(raw.notes).slice(0, 300) : "" };
+}
+
 // Várias imagens (pranchas) por chamada: [{ base64, mime, label }]
 function imageParts(b: any) {
   const list = Array.isArray(b.images) && b.images.length
     ? b.images
     : (b.image_base64 ? [{ base64: b.image_base64, mime: b.image_mime || "image/jpeg" }] : []);
   const parts: any[] = [];
-  list.slice(0, 8).forEach((im: any, i: number) => {
+  // 20 (era 8): fase 2 manda pranchas inteiras + recortes de cada vista
+  list.slice(0, 20).forEach((im: any, i: number) => {
     if (!im?.base64) return;
-    if (list.length > 1) parts.push({ text: im.label ? String(im.label).slice(0, 80) : `Imagem ${i + 1}` });
+    if (list.length > 1) parts.push({ text: im.label ? String(im.label).slice(0, 160) : `Imagem ${i + 1}` });
     parts.push({ inlineData: { mimeType: im.mime || "image/jpeg", data: im.base64 } });
   });
   return parts;
@@ -1159,7 +1216,7 @@ Deno.serve(async (req) => {
   let b: any;
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
 
-  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "edit" ? "edit" : b?.stage === "promob_match" ? "promob_match" : b?.stage === "help" ? "help" : "read";
+  const stage = b?.stage === "match" ? "match" : b?.stage === "split" ? "split" : b?.stage === "views" ? "views" : b?.stage === "edit" ? "edit" : b?.stage === "promob_match" ? "promob_match" : b?.stage === "help" ? "help" : "read";
   const tamanho = JSON.stringify(b.images || b.pages || b.image_base64 || "").length + JSON.stringify(b.page_texts || "").length;
   if (tamanho > 14_000_000) return json(413, { error: "Imagens grandes demais — use menos páginas.", code: "too_big" });
 
@@ -1176,6 +1233,18 @@ Deno.serve(async (req) => {
       const tier = b.quality === "pro" ? "pro" : "flash";
       const { data, model } = await callGemini(apiKey, tier, parts, SPLIT_SCHEMA);
       return json(200, { ...sanitizeSplit(data, Math.max(...pages.map((p: any) => Number(p.page) || 0))), model });
+    }
+    if (stage === "views") {
+      const pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 12);
+      if (!pages.length) return json(400, { error: "PDF sem páginas.", code: "no_image" });
+      const parts: any[] = [];
+      pages.forEach((p: any) => {
+        parts.push({ text: `Página ${p.page}` });
+        if (p.base64) parts.push({ inlineData: { mimeType: p.mime || "image/jpeg", data: p.base64 } });
+      });
+      parts.push({ text: buildViewsPrompt(b, pages) });
+      const { data, model } = await callGemini(apiKey, "flash", parts, VIEWS_SCHEMA);
+      return json(200, { ...sanitizeViews(data, pages), model });
     }
     if (stage === "edit") {
       if (!String(b.instruction || "").trim()) return json(400, { error: "Escreva o que quer mudar.", code: "no_instruction" });

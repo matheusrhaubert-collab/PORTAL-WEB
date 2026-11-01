@@ -916,6 +916,7 @@ function setProjectPhotoError(msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 function setProjectPhotoStatus(msg) {
+  if (typeof aiBusy !== 'undefined') aiBusy.status(msg);
   const el = document.getElementById('po-proj-photo-status');
   if (!el) return;
   el.textContent = msg || '';
@@ -1059,6 +1060,7 @@ async function runProjectPhotoAnalyze() {
   try { localStorage.setItem(PROJECT_PHOTO_QUALITY_KEY, quality); } catch (e) { /* ok */ }
 
   projectPhotoRunning = true;
+  aiBusy.show(I18n.t('ai_busy.photo'));
   setProjectPhotoError('');
   const runBtn = document.getElementById('po-proj-photo-run-btn');
   if (runBtn) runBtn.disabled = true;
@@ -1090,6 +1092,7 @@ async function runProjectPhotoAnalyze() {
   } finally {
     clearInterval(tick);
     projectPhotoRunning = false;
+    aiBusy.hide();
     setProjectPhotoStatus('');
     if (runBtn) runBtn.disabled = false;
   }

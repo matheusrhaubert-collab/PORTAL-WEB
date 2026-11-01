@@ -272,6 +272,7 @@ function setProjectAiError(msg) {
 }
 
 function setProjectAiStatus(msg) {
+  if (typeof aiBusy !== 'undefined') aiBusy.status(msg);
   const el = document.getElementById('po-proj-ai-status');
   if (!el) return;
   el.textContent = msg || '';
@@ -520,6 +521,7 @@ async function runProjectAiGeneration() {
   }
 
   projectAiRunning = true;
+  aiBusy.show(I18n.t('ai_busy.generate'));
   setProjectAiError('');
   setProjectAiStatus(I18n.t('project_ai.status_calling'));
   const runBtn = document.getElementById('po-proj-ai-run-btn');
@@ -595,6 +597,7 @@ async function runProjectAiGeneration() {
     setProjectAiError(err.message || String(err));
   } finally {
     projectAiRunning = false;
+    aiBusy.hide();
     setProjectAiStatus('');
     if (runBtn) runBtn.disabled = false;
   }
