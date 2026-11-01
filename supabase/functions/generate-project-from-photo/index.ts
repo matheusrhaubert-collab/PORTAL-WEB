@@ -719,6 +719,7 @@ REGRAS:
 15. FORA DE COZINHA (Matt): ambiente${b.room_kind ? ` "${b.room_kind}"` : ""} que NÃO é cozinha NUNCA usa módulo das famílias de cozinha (Classic Kitchens, NEW Classic Kitchens, canto 90°/45°, bases com toe de cozinha). Quarto, living, escritório, closet, banheiro: só painéis e caixas de Componentes (com fundo) montadas no Construtor — volume que não tem módulo de painel vai pra unmatched com reason "caixa de componentes" (o portal monta).
 16. RIPADO só quando o desenho MOSTRA ripas (linhas verticais finas repetidas). Painel liso, escuro ou de madeira SEM ripas = painel liso ("Panel Vertical Wall"/"Panel Horizontal Wall"), nunca "Slats". Painel vertical que vai até o canto da parede: largura até o canto.
 17. MÓDULO SEM TAMPO (Floating, "Base ... Cabinet" de cozinha com stretcher em cima) só serve embaixo de pedra/bancada. Banco, aparador, rack, móvel que fica à vista por cima → módulo de caixa FECHADA (com topo) ou caixa crua + Construtor; nunca o sem tampo.
+18. COMPONENTES SEMPRE COM FUNDO (Matt): entre os módulos da família Componentes, escolha SEMPRE os que têm fundo ("Back" no nome). Nunca caixa sem fundo.
 ${lessonsPrompt(b.lessons, "match") ? "\n" + lessonsPrompt(b.lessons, "match") + "\n" : ""}
 VOLUMES MEDIDOS:
 ${vols || "(nenhum)"}

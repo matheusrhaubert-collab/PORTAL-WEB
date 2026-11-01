@@ -39,7 +39,11 @@
       c_ceil_t: 'Passa do teto', c_ceil_d: 'O topo fica {{over}} acima da altura da parede ({{ceil}}). Abaixe ou reduza a altura.',
       c_wall_t: 'Fora da parede', c_wall_d: 'O módulo sai {{over}} além do fim da parede. Reduza a largura ou mova.',
       c_depth_t: 'Mais fundo que o vizinho', c_depth_d: 'Profundidade {{d}} contra {{od}} do módulo {{outro}} na mesma fileira. A bancada/porta não alinha.',
-      c_drawerbox_t: 'Gaveta sem espaço interno', c_drawerbox_d: 'O caixote da gaveta ({{box}} de fundo) precisa de {{need}} e o módulo tem {{d}} de profundidade útil.'
+      c_drawerbox_t: 'Gaveta sem espaço interno', c_drawerbox_d: 'O caixote da gaveta ({{box}} de fundo) precisa de {{need}} e o módulo tem {{d}} de profundidade útil.',
+      c_doorov_t: 'Portas sobrepostas', c_doorov_d: 'Duas portas ocupam o mesmo lugar ({{dx}} × {{dy}}): uma fica por cima da outra e não fecha. No Construtor, use uma porta de 2 folhas no vão inteiro, sem divisória no meio.',
+      c_doorhinge_t: 'Duas portas na mesma divisória', c_doorhinge_d: 'A dobradiça de uma porta está na divisória onde a outra porta também apoia: a divisória não tem largura pras duas e a porta pega na vizinha. No Construtor, tire a divisória e use uma porta de 2 folhas (dobradiça nas laterais de fora).',
+      c_floatpanel_t: 'Painel horizontal solto na parede', c_floatpanel_d: 'O painel {{nome}} está preso só na parede, sem módulo embaixo nem nas pontas. É muito difícil de fixar e pode dar problema na montagem: precisa de uma fixação reforçada (mão-francesa, suporte oculto etc.) definida pelo projetista. A fixação é responsabilidade do projetista; a fábrica não se responsabiliza.',
+      c_tampdepth_t: 'Tamponamento fora da profundidade', c_tampdepth_d: 'O painel {{nome}} tem {{d}} de profundidade; a regra é a caixa ({{box}}) + 1" = {{ok}}. Diferença de {{diff}}.'
     },
     en: {
       btn: 'Auditor', btn_title: 'Auditor — finds production issues in the project',
@@ -60,7 +64,11 @@
       c_ceil_t: 'Above the ceiling', c_ceil_d: 'The top is {{over}} above the wall height ({{ceil}}). Lower it or reduce the height.',
       c_wall_t: 'Past the wall', c_wall_d: 'The cabinet runs {{over}} past the end of the wall. Reduce width or move it.',
       c_depth_t: 'Deeper than neighbor', c_depth_d: 'Depth {{d}} vs {{od}} on cabinet {{outro}} in the same run. Countertop/doors won\'t line up.',
-      c_drawerbox_t: 'Drawer without inner room', c_drawerbox_d: 'The drawer box ({{box}} deep) needs {{need}} and the cabinet has {{d}} usable depth.'
+      c_drawerbox_t: 'Drawer without inner room', c_drawerbox_d: 'The drawer box ({{box}} deep) needs {{need}} and the cabinet has {{d}} usable depth.',
+      c_doorov_t: 'Overlapping doors', c_doorov_d: 'Two doors take the same spot ({{dx}} × {{dy}}): one sits over the other and won\'t close. In the Builder, use one 2-leaf door over the whole opening, with no divider in the middle.',
+      c_doorhinge_t: 'Two doors on the same divider', c_doorhinge_d: 'One door hinges on the divider where the other door also rests: the divider is not wide enough for both and the doors hit each other. In the Builder, remove the divider and use one 2-leaf door (hinges on the outer sides).',
+      c_floatpanel_t: 'Horizontal panel loose on the wall', c_floatpanel_d: 'Panel {{nome}} hangs only on the wall, with no cabinet below or at its ends. It is very hard to fix and may cause installation problems: it needs reinforced support (bracket, hidden support, etc.) defined by the designer. Fixing it is the designer\'s responsibility; the factory is not liable.',
+      c_tampdepth_t: 'End panel at the wrong depth', c_tampdepth_d: 'Panel {{nome}} is {{d}} deep; the rule is the box ({{box}}) + 1" = {{ok}}. Off by {{diff}}.'
     },
     es: {
       btn: 'Auditor', btn_title: 'Auditor — busca errores de producción en el proyecto',
@@ -81,7 +89,11 @@
       c_ceil_t: 'Pasa el techo', c_ceil_d: 'El tope queda {{over}} por encima de la altura de la pared ({{ceil}}). Bájalo o reduce el alto.',
       c_wall_t: 'Fuera de la pared', c_wall_d: 'El módulo sale {{over}} más allá del fin de la pared. Reduce el ancho o muévelo.',
       c_depth_t: 'Más profundo que el vecino', c_depth_d: 'Profundidad {{d}} contra {{od}} del módulo {{outro}} en la misma fila. La encimera/puerta no alinea.',
-      c_drawerbox_t: 'Cajón sin espacio interno', c_drawerbox_d: 'El cajón ({{box}} de fondo) necesita {{need}} y el módulo tiene {{d}} de profundidad útil.'
+      c_drawerbox_t: 'Cajón sin espacio interno', c_drawerbox_d: 'El cajón ({{box}} de fondo) necesita {{need}} y el módulo tiene {{d}} de profundidad útil.',
+      c_doorov_t: 'Puertas superpuestas', c_doorov_d: 'Dos puertas ocupan el mismo lugar ({{dx}} × {{dy}}): una queda sobre la otra y no cierra. En el Constructor, usa una puerta de 2 hojas en todo el hueco, sin división en el medio.',
+      c_doorhinge_t: 'Dos puertas en la misma división', c_doorhinge_d: 'La bisagra de una puerta está en la división donde también apoya la otra puerta: la división no tiene ancho para las dos y las puertas chocan. En el Constructor, quita la división y usa una puerta de 2 hojas (bisagras en los laterales de afuera).',
+      c_floatpanel_t: 'Panel horizontal suelto en la pared', c_floatpanel_d: 'El panel {{nome}} está fijado solo a la pared, sin módulo debajo ni en las puntas. Es muy difícil de fijar y puede dar problemas en el armado: necesita una fijación reforzada (ménsula, soporte oculto, etc.) definida por el proyectista. La fijación es responsabilidad del proyectista; la fábrica no se responsabiliza.',
+      c_tampdepth_t: 'Tamponamiento fuera de profundidad', c_tampdepth_d: 'El panel {{nome}} tiene {{d}} de profundidad; la regla es la caja ({{box}}) + 1" = {{ok}}. Diferencia de {{diff}}.'
     }
   };
   const lang = () => ((typeof I18n !== 'undefined' && I18n.getLanguage) ? I18n.getLanguage() : 'pt');
@@ -103,7 +115,10 @@
     GAVETA_FRENTE_MIN_MM: 100,
     FOLGA_AVISO_MM: 30,         // folga entre vizinhos que vale avisar
     TOPO_DIFF_MAX_MM: 25,       // topos "quase" iguais
-    FLUTUA_MAX_MM: 150
+    FLUTUA_MAX_MM: 150,
+    TAMP_EXTRA_MM: 25,          // tamponamento = caixa + 1" (portal-23 usa 25)
+    TAMP_TOL_MM: 3,
+    DOOR_EDGE_MM: 40            // borda de porta "na mesma divisória"
   };
 
   // ---- contexto por slot: peças resolvidas (w/h/d reais) ----
@@ -251,6 +266,99 @@
             }
           }
         });
+      });
+      return out;
+    } },
+    // PORTAS (01/11, Matt: "quando uma porta fica por cima da outra ou usa
+    // uma lateral divisória como base de dobradiça, vai dar problema").
+    // Portas = peças de giro (hinge_side left/right) finas; coordenadas no
+    // referencial do módulo (_x/_y/_z = canto mínimo, peças 'free' do Construtor).
+    { id: 'portas', run(ctx) {
+      const out = [];
+      ctx.slots.forEach((slot) => {
+        const W = Number(slot.width_mm) || 0;
+        const portas = ctx.parts(slot).filter((p) => (p.hinge_side === 'left' || p.hinge_side === 'right')
+          && Math.min(Number(p.width_mm) || 0, Number(p.height_mm) || 0, Number(p.depth_mm) || 0) <= 30)
+          .map((p) => {
+            const L = { x0: p._x, x1: p._x + (Number(p.width_mm) || 0), y0: p._y, y1: p._y + (Number(p.height_mm) || 0), z0: p._z, z1: p._z + (Number(p.depth_mm) || 0), lado: p.hinge_side };
+            // se a menor medida não é a profundidade, não é porta de frente
+            return (Number(p.depth_mm) || 0) <= 30 ? L : null;
+          }).filter(Boolean);
+        let sobre = false, divis = false;
+        for (let i = 0; i < portas.length; i++) {
+          for (let j = i + 1; j < portas.length; j++) {
+            const a = portas[i], b = portas[j];
+            const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+            const oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+            const oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
+            if (!sobre && ox > 1 && oy > 1 && oz > -1) {
+              sobre = true;
+              out.push({ id: 'doorov', nivel: 'erro', slotId: slot.id, titulo: tAud('c_doorov_t'), detalhe: tAud('c_doorov_d', { dx: fmt(ox), dy: fmt(oy) }) });
+            }
+            if (divis || oy <= 1) continue;
+            // dobradiça de uma na borda de DENTRO do módulo, e a outra porta
+            // encostando nessa mesma borda (mesma divisória)
+            const conflito = (h, o) => {
+              const xh = h.lado === 'left' ? h.x0 : h.x1;
+              if (xh < LIM.DOOR_EDGE_MM || xh > W - LIM.DOOR_EDGE_MM) return false; // dobradiça na lateral de fora
+              const borda = h.lado === 'left' ? o.x1 : o.x0;
+              return Math.abs(borda - xh) <= LIM.DOOR_EDGE_MM;
+            };
+            if (conflito(a, b) || conflito(b, a)) {
+              divis = true;
+              out.push({ id: 'doorhinge', nivel: 'erro', slotId: slot.id, titulo: tAud('c_doorhinge_t'), detalhe: tAud('c_doorhinge_d') });
+            }
+          }
+        }
+      });
+      return out;
+    } },
+    // PAINÉIS (01/11): horizontal solto na parede (responsabilidade do
+    // projetista) e tamponamento fora de caixa + 1".
+    { id: 'paineis', run(ctx) {
+      const out = [];
+      const ehPainel = (s) => /painel|panel/i.test(String((s.module && s.module.name) || '')) && !/slat|ripad/i.test(String((s.module && s.module.name) || ''));
+      const horiz = (s) => ehPainel(s) && (Number(s.height_mm) || 0) <= 40;
+      const vert = (s) => ehPainel(s) && (Number(s.width_mm) || 0) <= 40;
+      const naParede = ctx.slots.filter((s) => !isFloorSlot(s));
+      const mesmaParede = (a, b) => Number(a.wall_index || 0) === Number(b.wall_index || 0);
+      const cruzaX = (a, b) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 10;
+      const cruzaY = (a, b) => Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 10;
+      const T = LIM.TAMP_TOL_MM;
+      naParede.forEach((p) => {
+        if (!horiz(p) && !vert(p)) return;
+        const a = alcance(p);
+        const outros = naParede.filter((o) => o !== p && mesmaParede(o, p));
+        // ---- painel horizontal solto ----
+        if (horiz(p) && a.y0 > 0.5) {
+          const embaixo = outros.some((o) => { const b = alcance(o); return Math.abs(b.y1 - a.y0) <= T && cruzaX(a, b); });
+          const ponta = (ladoEsq) => outros.some((o) => {
+            const b = alcance(o);
+            const encosta = ladoEsq ? Math.abs(b.x1 - a.x0) <= T : Math.abs(b.x0 - a.x1) <= T;
+            return encosta && b.y0 <= a.y0 + T && b.y1 >= a.y1 - T;
+          });
+          if (!embaixo && !(ponta(true) && ponta(false))) {
+            out.push({ id: 'floatpanel', nivel: 'aviso', slotId: p.id, titulo: tAud('c_floatpanel_t'), detalhe: tAud('c_floatpanel_d', { nome: slotNome(p) }) });
+          }
+        }
+        // ---- tamponamento: profundidade = caixa + 1" ----
+        const corpos = outros.filter((o) => !ehPainel(o)).filter((o) => {
+          const b = alcance(o);
+          if (horiz(p)) return (Math.abs(b.y1 - a.y0) <= T || Math.abs(b.y0 - a.y1) <= T) && cruzaX(a, b);
+          return (Math.abs(b.x1 - a.x0) <= T || Math.abs(b.x0 - a.x1) <= T) && cruzaY(a, b);
+        });
+        if (!corpos.length) return;
+        const box = Math.max(...corpos.map((o) => Number(o.depth_mm) || 0));
+        const ok = box + LIM.TAMP_EXTRA_MM;
+        const d = Number(p.depth_mm) || 0;
+        if (Math.abs(d - ok) > T) {
+          out.push({ id: 'tampdepth', nivel: 'aviso', slotId: p.id, titulo: tAud('c_tampdepth_t'),
+            detalhe: tAud('c_tampdepth_d', { nome: slotNome(p), d: fmt(d), box: fmt(box), ok: fmt(ok), diff: fmt(Math.abs(d - ok)) }),
+            fix: () => {
+              p.depth_mm = (typeof projectSlotClampedDimensionMm === 'function') ? projectSlotClampedDimensionMm(p, 'depth', ok) : ok;
+              recomputeProjectSlotPricing(p);
+            } });
+        }
       });
       return out;
     } }

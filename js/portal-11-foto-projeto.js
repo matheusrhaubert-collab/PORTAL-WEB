@@ -722,6 +722,46 @@ function projectPhotoDefaultInterior(v) {
   ], doors: (v.doors || 0) > 0 ? 'hinged' : 'none', doors_cover: 'all' }] };
 }
 
+// PORTAS SEM DIVISÓRIA NO MEIO (01/11, Matt: "pode colocar 2 portas no
+// construtor sem usar a divisória como usou, pra evitar de dar problema nas
+// portas"). Duas colunas vizinhas que só têm porta de giro (sem gaveta)
+// viram UMA coluna com porta de 2 folhas: some a Lateral Divisoria entre
+// elas e cada folha fica com a dobradiça na lateral de fora do módulo.
+// Nunca duas portas apoiando dobradiça na mesma divisória. Coluna de porta
+// que sobra ao lado de um par fica com a dobradiça do lado de fora (lado
+// oposto ao par). Só junta se as zonas forem do mesmo tipo, na mesma ordem.
+function projectPhotoMergeDoorColumns(cols, esp) {
+  const E = Number(esp) || 19.5;
+  const soPorta = (c) => c && c.doors === 'hinged' && c.doors_cover !== 'above_drawers'
+    && (c.zones || []).every((z) => z && z.type !== 'drawers');
+  const assinatura = (c) => (c.zones || []).filter((z) => z && Number(z.height_mm) > 0).map((z) => z.type).join('|');
+  const out = [];
+  for (let i = 0; i < cols.length; i++) {
+    const a = cols[i], b = cols[i + 1];
+    if (soPorta(a) && soPorta(b) && assinatura(a) === assinatura(b)) {
+      const zonas = a.zones.map((z, zi) => {
+        const zb = b.zones[zi] || {};
+        return Object.assign({}, z, { count: Math.max(Number(z.count) || 0, Number(zb.count) || 0) });
+      });
+      out.push(Object.assign({}, a, {
+        width_mm: (Number(a.width_mm) || 0) + (Number(b.width_mm) || 0) + E,
+        zones: zonas, _folhas2: true
+      }));
+      i++;
+      continue;
+    }
+    out.push(Object.assign({}, a));
+  }
+  // porta simples encostada num par: dobradiça do lado oposto ao par
+  out.forEach((c, i) => {
+    if (!soPorta(c) || c._folhas2) return;
+    const esq = out[i - 1], dir = out[i + 1];
+    if (esq && soPorta(esq) && !(dir && soPorta(dir))) c._lado = 'right';
+    else if (dir && soPorta(dir)) c._lado = 'left';
+  });
+  return out;
+}
+
 // Árvore de vãos (LayoutEngine) a partir da descrição da IA. PURA: recebe o
 // catálogo do configurador (cat, chave = id do accessory_type) e a zona
 // interna real da caixa ({w, h}); devolve a raiz. Avisos vão em warnings.
@@ -737,6 +777,7 @@ function projectPhotoInteriorTree(spec, cat, zona, comp, warnings, label) {
 
   let cols = (spec && Array.isArray(spec.columns) ? spec.columns : []).filter((c) => c && Array.isArray(c.zones));
   if (!cols.length) return root;
+  cols = projectPhotoMergeDoorColumns(cols, ESP);
   if (cols.length > 1 && !A.split_x) { avisa('warn_interior_missing_acc', { acc: comp.acc.split_x }); cols = [cols[0]]; }
 
   // larguras: todas fixas menos a MAIOR (elástica, absorve o erro de leitura)
@@ -798,6 +839,11 @@ function projectPhotoInteriorTree(spec, cat, zona, comp, warnings, label) {
       if (!temGaveta && c.doors_cover !== 'above_drawers') {
         if (cols.length > 1) L.applyFront(root, porta, ci, ci, cat);
         else L.applyFront(root, porta, null, null, cat);
+        // 2 folhas / lado da dobradiça vindos de projectPhotoMergeDoorColumns
+        const fr = root.fronts && root.fronts[root.fronts.length - 1];
+        if (fr && (c._folhas2 || c._lado)) {
+          fr.params = Object.assign({}, fr.params || {}, c._folhas2 ? { folhas_escolha: '2' } : {}, c._lado ? { lado: c._lado } : {});
+        }
       } else if (zonas.length > 1) {
         const ini = zonas.findIndex((z, i) => z.type !== 'drawers' && zonas.slice(0, i).every((q) => q.type === 'drawers'));
         if (ini >= 0) L.applyFront(node, porta, ini, zonas.length - 1, cat);
@@ -1466,7 +1512,12 @@ async function projectPhotoRunPipeline(opts, status) {
   const RE_FAM_OK = /componente|pain[eé]is|panels?\b/i;
   const modCozinha = (m) => !RE_FAM_OK.test(String(m.family || '')) || /canto\s*90|corner/i.test(String(m.name || ''));
   const catalogoMatch = catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name))
-    .filter((m) => ehCozinha || !modCozinha(m));
+    .filter((m) => ehCozinha || !modCozinha(m))
+    // COMPONENTES SEMPRE COM FUNDO (01/11, Matt: "pede pra IA buscar
+    // prioritariamente os módulos com fundo nos componentes. sempre com
+    // fundo. with back"): caixa de Componentes sem "Back" no nome não vai
+    // pro casamento (nem em cozinha). Painéis seguem normais.
+    .filter((m) => !/componente/i.test(String(m.family || '')) || /\bback\b|fundo/i.test(String(m.name || '')));
   const match = await invokeProjectPhotoStage({
     stage: 'match', images: images.slice(0, 2), lang, colors,
     // closet & cia. (caixa crua + configurador) não passam pelo casamento;
