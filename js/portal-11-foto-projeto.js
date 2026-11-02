@@ -1510,7 +1510,11 @@ async function projectPhotoRunPipeline(opts, status) {
   // — só família Componentes (caixas cruas) e Painéis/Panels. Qualquer outro
   // (Closets, Living Rooms, Kitchens…) é "módulo padrão" e não entra.
   const RE_FAM_OK = /componente|pain[eé]is|panels?\b/i;
-  const modCozinha = (m) => !RE_FAM_OK.test(String(m.family || '')) || /canto\s*90|corner/i.test(String(m.name || ''));
+  // VANITIES (01/11, migration 256): no banheiro a família Vanities também
+  // vale (vanity, linen, knee drawer, panel cover — 21" de fundo).
+  const ehBanheiro = (opts.roomKind || null) === 'bathroom';
+  const famOk = (m) => RE_FAM_OK.test(String(m.family || '')) || (ehBanheiro && /vanit/i.test(String(m.family || '')));
+  const modCozinha = (m) => !famOk(m) || /canto\s*90|corner/i.test(String(m.name || ''));
   const catalogoMatch = catalog.filter((m) => !Object.values(PROJECT_PHOTO_COMPOSITIONS).some((c) => c.carcass === m.name))
     .filter((m) => ehCozinha || !modCozinha(m))
     // COMPONENTES SEMPRE COM FUNDO (01/11, Matt: "pede pra IA buscar
