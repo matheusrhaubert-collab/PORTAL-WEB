@@ -332,9 +332,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "What is the difference between the cabinet families?",
   "es": "¿Cuál es la diferencia entre las familias de módulos?",
   "resp": {
-   "pt": "NEW Classic Kitchens: módulos de cozinha com referência (B, W, SB…) e interior de fábrica. Componentes: caixas cruas pra montar no Construtor. Painéis: chapas soltas. Custom: módulos só editáveis.",
-   "en": "NEW Classic Kitchens: kitchen cabinets with references (B, W, SB…) and factory interiors. Components: raw boxes to build in the Builder. Panels: loose boards. Custom: fully editable cabinets.",
-   "es": "NEW Classic Kitchens: módulos de cocina con referencia (B, W, SB…) e interior de fábrica. Componentes: cajas crudas para armar en el Constructor. Paneles: tableros sueltos. Custom: módulos solo editables."
+   "pt": "Classic Kitchens: módulos de cozinha com referência (B, W, SB…) e interior de fábrica. Componentes: caixas cruas pra montar no Construtor. Painéis: chapas soltas. Custom: módulos só editáveis.",
+   "en": "Classic Kitchens: kitchen cabinets with references (B, W, SB…) and factory interiors. Components: raw boxes to build in the Builder. Panels: loose boards. Custom: fully editable cabinets.",
+   "es": "Classic Kitchens: módulos de cocina con referencia (B, W, SB…) e interior de fábrica. Componentes: cajas crudas para armar en el Constructor. Paneles: tableros sueltos. Custom: módulos solo editables."
   }
  },
  {
@@ -584,9 +584,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I add an oven tower?",
   "es": "¿Cómo pongo una torre de horno?",
   "resp": {
-   "pt": "NEW Classic Kitchens › Appliances › Oven Tower (24\" ou 27\"). Ela já vem com gaveta de 18\" embaixo, painel do forno e portas em cima; o forno é só desenho.",
-   "en": "NEW Classic Kitchens › Appliances › Oven Tower (24\" or 27\"). It comes with an 18\" drawer below, the oven panel and doors above; the oven is a drawing only.",
-   "es": "NEW Classic Kitchens › Appliances › Oven Tower (24\" o 27\"). Ya viene con cajón de 18\" abajo, panel del horno y puertas arriba; el horno es solo dibujo."
+   "pt": "Classic Kitchens › Appliances › Oven Tower (24\" ou 27\"). Ela já vem com gaveta de 18\" embaixo, painel do forno e portas em cima; o forno é só desenho.",
+   "en": "Classic Kitchens › Appliances › Oven Tower (24\" or 27\"). It comes with an 18\" drawer below, the oven panel and doors above; the oven is a drawing only.",
+   "es": "Classic Kitchens › Appliances › Oven Tower (24\" o 27\"). Ya viene con cajón de 18\" abajo, panel del horno y puertas arriba; el horno es solo dibujo."
   }
  },
  {
@@ -920,9 +920,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "What is the factory interior?",
   "es": "¿Qué es el interior de fábrica?",
   "resp": {
-   "pt": "Os módulos da NEW Classic Kitchens já nascem com portas, gavetas e prateleiras no padrão Legno (porta 10 mm abaixo do topo, travessa, regulável). Você pode mexer no Construtor ou voltar ao padrão com ↺.",
-   "en": "NEW Classic Kitchens cabinets come with doors, drawers and shelves in the Legno standard (door 10 mm below the top, stretcher, adjustable shelf). You can edit in the Builder or reset with ↺.",
-   "es": "Los módulos NEW Classic Kitchens ya nacen con puertas, cajones y estantes en el estándar Legno (puerta 10 mm bajo el tope, travesaño, regulable). Puedes editarlos en el Constructor o volver al estándar con ↺."
+   "pt": "Os módulos da Classic Kitchens já nascem com portas, gavetas e prateleiras no padrão Legno (porta 10 mm abaixo do topo, travessa, regulável). Você pode mexer no Construtor ou voltar ao padrão com ↺.",
+   "en": "Classic Kitchens cabinets come with doors, drawers and shelves in the Legno standard (door 10 mm below the top, stretcher, adjustable shelf). You can edit in the Builder or reset with ↺.",
+   "es": "Los módulos Classic Kitchens ya nacen con puertas, cajones y estantes en el estándar Legno (puerta 10 mm bajo el tope, travesaño, regulable). Puedes editarlos en el Constructor o volver al estándar con ↺."
   }
  },
  {
@@ -962,9 +962,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I add a spice pull-out?",
   "es": "¿Cómo pongo un especiero deslizante?",
   "resp": {
-   "pt": "Use o módulo Base Spice Pull-out (NEW Classic) ou arraste o acessório de pull-out num vão estreito de 6\" a 9\".",
-   "en": "Use the Base Spice Pull-out cabinet (NEW Classic) or drag the pull-out accessory into a narrow 6\" to 9\" opening.",
-   "es": "Usa el módulo Base Spice Pull-out (NEW Classic) o arrastra el accesorio pull-out en un vano angosto de 6\" a 9\"."
+   "pt": "Use o módulo Base Spice Pull-out (Classic) ou arraste o acessório de pull-out num vão estreito de 6\" a 9\".",
+   "en": "Use the Base Spice Pull-out cabinet (Classic) or drag the pull-out accessory into a narrow 6\" to 9\" opening.",
+   "es": "Usa el módulo Base Spice Pull-out (Classic) o arrastra el accesorio pull-out en un vano angosto de 6\" a 9\"."
   }
  },
  {
@@ -1326,9 +1326,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How tall is the cabinet toe kick?",
   "es": "¿Qué altura tiene el zócalo de los módulos?",
   "resp": {
-   "pt": "Linha NEW Classic: 4½\" (114 mm) recuado 3\". Componentes: rodapé de 3\" ou 4½\", ou sem rodapé (apoiado/suspenso). Rodapés de módulos vizinhos se alinham.",
-   "en": "NEW Classic line: 4½\" (114 mm) set back 3\". Components: 3\" or 4½\" toe, or none (set on floor/wall-hung). Toe kicks of neighbors line up.",
-   "es": "Línea NEW Classic: 4½\" (114 mm) retraído 3\". Componentes: zócalo de 3\" o 4½\", o sin zócalo (apoyado/suspendido). Los zócalos vecinos se alinean."
+   "pt": "Linha Classic: 4½\" (114 mm) recuado 3\". Componentes: rodapé de 3\" ou 4½\", ou sem rodapé (apoiado/suspenso). Rodapés de módulos vizinhos se alinham.",
+   "en": "Classic line: 4½\" (114 mm) set back 3\". Components: 3\" or 4½\" toe, or none (set on floor/wall-hung). Toe kicks of neighbors line up.",
+   "es": "Línea Classic: 4½\" (114 mm) retraído 3\". Componentes: zócalo de 3\" o 4½\", o sin zócalo (apoyado/suspendido). Los zócalos vecinos se alinean."
   }
  },
  {
