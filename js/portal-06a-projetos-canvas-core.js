@@ -1972,6 +1972,29 @@ let projSearchModalFamilyId = '';
 let projSearchModalCategoryId = '';
 let projSearchModalSubcategoryId = '';
 
+// ABRE SEMPRE NA 1ª ABA DA ESQUERDA (01/11, Matt: "na abertura das abas
+// começa pela primeira... deixa sempre da primeira na esquerda" — antes
+// lembrava a última família ou caía em All). Abrir o modal escolhe a 1ª
+// família; escolher família abre na 1ª categoria dela; escolher categoria
+// abre na 1ª subcategoria. "All" continua clicável em cada fileira.
+function projSearchFirstCategoryId(familyId) {
+  if (!familyId) return '';
+  const c = categoriesCacheList.find((cat) => projectLibraryModules().some((m) => m.category_id === cat.id && m.family_id === familyId));
+  return c ? c.id : '';
+}
+function projSearchFirstSubcategoryId(familyId, categoryId) {
+  if (!familyId || !categoryId) return '';
+  const s = subcategoriesCacheList.find((sub) => projectLibraryModules().some((m) =>
+    m.subcategory_id === sub.id && m.family_id === familyId && m.category_id === categoryId));
+  return s ? s.id : '';
+}
+function projSearchResetToFirstTabs() {
+  const fam = familiesCacheList.find((f) => projectLibraryModules().some((m) => m.family_id === f.id));
+  projSearchModalFamilyId = fam ? fam.id : '';
+  projSearchModalCategoryId = projSearchFirstCategoryId(projSearchModalFamilyId);
+  projSearchModalSubcategoryId = projSearchFirstSubcategoryId(projSearchModalFamilyId, projSearchModalCategoryId);
+}
+
 function renderProjectSearchModalFilterBars() {
   const categoryEl = document.getElementById('po-proj-search-filter-category');
   const subcategoryEl = document.getElementById('po-proj-search-filter-subcategory');
@@ -1985,8 +2008,9 @@ function renderProjectSearchModalFilterBars() {
     // Reset explícito (não só "se ficou inválida") — trocar de família
     // sempre fecha categoria/subcategoria, mesmo se por coincidência a
     // mesma categoria também existisse na família nova.
-    projSearchModalCategoryId = '';
-    projSearchModalSubcategoryId = '';
+    // 1ª categoria / subcategoria da família escolhida (All = '' fica '')
+    projSearchModalCategoryId = projSearchFirstCategoryId(id);
+    projSearchModalSubcategoryId = projSearchFirstSubcategoryId(id, projSearchModalCategoryId);
     renderProjectSearchModalFilterBars();
     renderProjectSearchModalGrid();
   });
@@ -2005,7 +2029,7 @@ function renderProjectSearchModalFilterBars() {
   if (showCategoryRow) {
     renderTabBar('po-proj-search-filter-category', categoriesInScope, projSearchModalCategoryId, (id) => {
       projSearchModalCategoryId = id;
-      projSearchModalSubcategoryId = '';
+      projSearchModalSubcategoryId = projSearchFirstSubcategoryId(projSearchModalFamilyId, id);
       renderProjectSearchModalFilterBars();
       renderProjectSearchModalGrid();
     });
@@ -2158,6 +2182,7 @@ function renderProjectSearchModalGrid() {
 }
 
 function openProjectSearchModal() {
+  projSearchResetToFirstTabs();
   renderProjectSearchModalFilterBars();
   renderProjectSearchModalGrid();
   document.getElementById('po-proj-search-modal').classList.add('open');
