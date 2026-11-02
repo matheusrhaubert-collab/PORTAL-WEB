@@ -98,6 +98,33 @@ function applyProjectSlotSku(slot, sku) {
 // handleProject3DResizeMove/isFloorSlot em portal-08-projetos-paredes.js: a
 // ilha precisa do tamanho já clampado pra recolocar o centro e ancorar a
 // borda oposta à seta agarrada, em vez de crescer simétrica pros dois lados).
+// PLYWOOD ATÉ 2400 (01/11, Matt: "quando fica maior do que 2440 deve usar
+// apenas EGGER. a opção de cor plywood não pode aparecer. se tiver
+// selecionado o plywood já não pode passar de 2400"). Chapa de plywood é
+// 1220 × 2440; EGGER é 2750 × 1830. Plywood = cor com "plywood" no nome ou
+// espessura 18 (é a única chapa de 18 mm).
+const PLYWOOD_MAX_MM = 2400;
+function projectColorIsPlywood(c) {
+  return !!c && (/plywood/i.test(String(c.name || '')) || Number(c.thickness_mm) === 18);
+}
+function projectSlotMaxDimMm(slot) {
+  return Math.max(Number(slot && slot.width_mm) || 0, Number(slot && slot.height_mm) || 0, Number(slot && slot.depth_mm) || 0);
+}
+function projectSlotUsesPlywood(slot) {
+  if (!slot) return false;
+  if (Object.values(slot.colorsByRole || {}).some(projectColorIsPlywood)) return true;
+  return Object.values(slot.pieceColorOverrides || {}).some((perRole) => Object.values(perRole || {}).some(projectColorIsPlywood));
+}
+// Plywood proibido neste slot (módulo passa de 2400 em alguma medida)?
+function projectPlywoodBlocked(slot, color) {
+  return projectColorIsPlywood(color) && projectSlotMaxDimMm(slot) > PLYWOOD_MAX_MM;
+}
+// Opções de cor que podem aparecer pra este slot/papel.
+function projectSlotColorOptions(slot, roleId) {
+  const opts = (slot && slot.colorOptionsByRole && slot.colorOptionsByRole[roleId]) || [];
+  return projectSlotMaxDimMm(slot) > PLYWOOD_MAX_MM ? opts.filter((c) => !projectColorIsPlywood(c)) : opts;
+}
+
 function projectSlotClampedDimensionMm(slot, axis, mm) {
   const m = slot.module;
   // Medida TRAVADA (width_locked/height_locked) — pedido do usuário
@@ -129,6 +156,8 @@ function projectSlotClampedDimensionMm(slot, axis, mm) {
   // qualquer caminho que passe por aqui. Módulo sem fundo devolve Infinity e
   // nada muda.
   maxMm = Math.min(maxMm, projectSlotMaxDimForDrilling(slot, axis));
+  // plywood escolhido: nenhuma medida passa de 2400 (chapa 1220 × 2440)
+  if (projectSlotUsesPlywood(slot)) maxMm = Math.min(maxMm, PLYWOOD_MAX_MM);
   return clamp(Number(mm) || 0, minMm, maxMm);
 }
 
@@ -205,6 +234,7 @@ function applyColorToProjectSlot(slot, roleId, color) {
 }
 
 function updateProjectSlotColor(slot, roleId, color) {
+  if (projectPlywoodBlocked(slot, color)) return; // > 2400: só EGGER
   applyColorToProjectSlot(slot, roleId, color);
   recomputeProjectSlotPricing(slot);
   renderProjectCanvas();
@@ -482,6 +512,7 @@ function restoreProjectSlotPiece(slot, pieceId) {
 // padrão de applyColorToProjectSlot acima.
 function setProjectSlotPieceColor(slot, pieceId, roleId, color) {
   if (pieceId == null || !roleId) return;
+  if (projectPlywoodBlocked(slot, color)) return; // > 2400: só EGGER
   if (!slot.pieceColorOverrides) slot.pieceColorOverrides = {};
   const perRole = { ...(slot.pieceColorOverrides[pieceId] || {}) };
   perRole[roleId] = color;
@@ -525,6 +556,7 @@ function applyColorRoleToAllProjectSlots(group, color) {
       allowedIds = moduleColorIds && moduleColorIds.get(slot.module.id);
     }
     if (!allowedIds || !allowedIds.has(color.id)) return;
+    if (projectPlywoodBlocked(slot, color)) return; // > 2400: só EGGER
     try {
       applyColorToProjectSlot(slot, roleId, color);
       recomputeProjectSlotPricing(slot);
@@ -563,7 +595,7 @@ async function loadProjectColorRoleGroups() {
       if (!byRole.has(roleId)) byRole.set(roleId, { colors: new Map(), slotIds: new Set(), slotColorIds: new Map() });
       const g = byRole.get(roleId);
       g.slotIds.add(slot.id);
-      g.slotColorIds.set(slot.id, new Set(opts.map((c) => c.id)));
+      g.slotColorIds.set(slot.id, new Set(projectSlotColorOptions(slot, roleId).map((c) => c.id)));
       opts.forEach((c) => { if (c && c.active !== false && !g.colors.has(c.id)) g.colors.set(c.id, c); });
     });
   });
@@ -802,7 +834,7 @@ function renderProjectConfigPanel() {
 
   const usedRoleIds = Array.from(collectUsedColorRoleIds(projectSlotEffectivePieces(slot)));
   const colorSections = usedRoleIds.map((roleId) => {
-    const opts = (slot.colorOptionsByRole && slot.colorOptionsByRole[roleId]) || [];
+    const opts = projectSlotColorOptions(slot, roleId);
     if (!opts.length) return '';
     const roleName = (colorRolesCache.find((r) => r.id === roleId) || {}).name || '';
     const selected = slot.colorsByRole ? slot.colorsByRole[roleId] : null;
@@ -3470,7 +3502,7 @@ function renderProjectSlotPiecesList(slot) {
       // Cor: seletor só quando o papel de cor desta peça tem mais de 1 opção
       // cadastrada (pedido original: "trocar de cor" faz sentido quando há
       // pra onde trocar) — senão mostra só o nome, igual sempre foi.
-      const opcoesCor = (p.color_role_id && colorOptionsByRole[p.color_role_id]) || [];
+      const opcoesCor = p.color_role_id ? projectSlotColorOptions(slot, p.color_role_id) : [];
       let corCell;
       if (!removida && p.color_role_id && opcoesCor.length > 1) {
         const currentId = p.color && p.color.id;

@@ -2782,9 +2782,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "What is the maximum size of a part?",
   "es": "¿Cuál es el tamaño máximo de una pieza?",
   "resp": {
-   "pt": "O da chapa: 1220 × 2440 mm (4' × 8'). O Auditor avisa quando alguma peça passa disso.",
-   "en": "The board size: 1220 × 2440 mm (4' × 8'). The Auditor warns you when any part is bigger.",
-   "es": "El de la placa: 1220 × 2440 mm (4' × 8'). El Auditor avisa cuando alguna pieza lo supera."
+   "pt": "Depende do material: EGGER vai até 2750 × 1830 mm; plywood até 2400 × 1220 mm. Módulo acima de 2400 só aceita EGGER (o plywood some da lista de cores), e com plywood escolhido nenhuma medida passa de 2400. O Auditor avisa quando alguma peça passa do limite.",
+   "en": "It depends on the material: EGGER goes up to 2750 × 1830 mm; plywood up to 2400 × 1220 mm. Cabinets over 2400 only take EGGER (plywood disappears from the color list), and with plywood selected no size can go over 2400. The Auditor warns when a part is over the limit.",
+   "es": "Depende del material: EGGER llega a 2750 × 1830 mm; plywood a 2400 × 1220 mm. Un módulo de más de 2400 solo acepta EGGER (el plywood desaparece de la lista de colores), y con plywood elegido ninguna medida pasa de 2400. El Auditor avisa cuando una pieza supera el límite."
   }
  },
  {
