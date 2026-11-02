@@ -103,7 +103,7 @@ function applyProjectSlotSku(slot, sku) {
 // selecionado o plywood já não pode passar de 2400"). Chapa de plywood é
 // 1220 × 2440; EGGER é 2750 × 1830. Plywood = cor com "plywood" no nome ou
 // espessura 18 (é a única chapa de 18 mm).
-const PLYWOOD_MAX_MM = 2400;
+const PLYWOOD_MAX_MM = 2438; // 02/11 Matt: liberar 96" (2438) em plywood, padrão do mercado (era 2400 -> 2420)
 function projectColorIsPlywood(c) {
   return !!c && (/plywood/i.test(String(c.name || '')) || Number(c.thickness_mm) === 18);
 }
