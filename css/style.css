@@ -3797,6 +3797,8 @@ header.po-topnav {
 .po-proj-void { fill: #fff; fill-opacity: 0.35; stroke: #c9c2b4; stroke-width: 1; cursor: pointer; }
 .po-proj-void:hover { fill: var(--accent-light); fill-opacity: 0.8; }
 .po-proj-void.selected { fill: #f2f0ea; fill-opacity: 0.9; }
+/* 01/11: vão da seleção (inclusive faixa de 2+) com contorno laranja já durante o arraste */
+.po-proj-void.selected { stroke: #e0921f; stroke-width: 3px; vector-effect: non-scaling-stroke; }
 .po-proj-void.drop-target { stroke: #d8442f; stroke-width: 3; fill: #fdeeea; fill-opacity: 0.9; }
 /* Peça gerada pela árvore: clicar tira. */
 .po-proj-void-item { cursor: pointer; }

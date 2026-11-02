@@ -1896,17 +1896,27 @@ function renderProjectBuilderStage() {
   // (cravar este vão e o vizinho preservando a soma, ver
   // applyProjectBuilderVaoSize).
   const nSel = projectBuilderSelNode();
-  const bSel = nSel && nSel._box;
+  // Caixa de um vão: _box gravado pelo motor; senão a lista de vãos do build
+  // (01/11, 2ª rodada — Matt: "não vejo o quadro de baixo quando seleciono
+  // esses 2 vãos"): o vão sem _box (ou fora de built.voids) ficava sem
+  // contorno.
+  const caixaDoVao = (id) => {
+    const n = id != null ? LayoutEngine.findNode(projectBuilderRoot, id) : null;
+    if (n && n._box) return n._box;
+    const v = (built.voids || []).find((x) => x.nodeId === id);
+    return v ? v.box : null;
+  };
+  const bSel = nSel && (nSel._box || caixaDoVao(nSel.id));
   // SELEÇÃO MÚLTIPLA VISÍVEL (01/11, Matt: "quando seleciono 2 vãos, não dá
   // pra ver se estão selecionados. preciso mostrar os dois com contorno
   // laranja"): todo vão da seleção ganha o contorno, não só o principal.
   if (projectBuilderSelIds.length > 1) {
     projectBuilderSelIds.forEach((id) => {
       if (nSel && id === nSel.id) return;
-      const v = (built.voids || []).find((x) => x.nodeId === id);
-      if (!v) return;
+      const b = caixaDoVao(id);
+      if (!b) return;
       projBuilderSvgEl('rect', {
-        x: v.box.x, y: sy(v.box.y, v.box.h), width: v.box.w, height: v.box.h,
+        x: b.x, y: sy(b.y, b.h), width: b.w, height: b.h,
         fill: 'none', stroke: '#e0921f', 'stroke-width': sw * 3, 'pointer-events': 'none'
       }, svg);
     });
@@ -2226,6 +2236,11 @@ function renderProjectBuilderStage() {
       // Faixa de 1 vão não é faixa — volta pro modo simples pra não confundir
       // o resto da tela (cota, ✕, quantidade).
       if (projectBuilderSelIds.length <= 1) projectBuilderSelIds = [];
+      // redesenha o palco: os contornos laranja de TODOS os vãos da faixa
+      // (e a cota) só existem depois do render — sem isso só o vão onde o
+      // gesto começou aparecia marcado (01/11, Matt). Só na faixa: no clique
+      // simples o rect precisa continuar vivo pro 'click' dele disparar.
+      if (projectBuilderSelIds.length > 1) renderProjectBuilderStage();
       renderProjectBuilderLibrary();
     };
     window.addEventListener('pointerup', fim);
