@@ -1979,11 +1979,17 @@ let projSearchModalSubcategoryId = '';
 // abre na 1ª subcategoria. "All" continua clicável em cada fileira.
 function projSearchFirstCategoryId(familyId) {
   if (!familyId) return '';
+  // módulo da família SEM categoria: fica em All, senão ele sumiria da tela
+  if (projectLibraryModules().some((m) => m.family_id === familyId && !m.category_id)) return '';
   const c = categoriesCacheList.find((cat) => projectLibraryModules().some((m) => m.category_id === cat.id && m.family_id === familyId));
   return c ? c.id : '';
 }
 function projSearchFirstSubcategoryId(familyId, categoryId) {
   if (!familyId || !categoryId) return '';
+  // (Matt, 01/11: "os módulos quero ver antes da gaveta") — categoria com
+  // módulo SEM subcategoria (as caixas de Cabinets WITH Back) abre em All,
+  // senão só aparecia a 1ª sub-aba (Drawers)
+  if (projectLibraryModules().some((m) => m.family_id === familyId && m.category_id === categoryId && !m.subcategory_id)) return '';
   const s = subcategoriesCacheList.find((sub) => projectLibraryModules().some((m) =>
     m.subcategory_id === sub.id && m.family_id === familyId && m.category_id === categoryId));
   return s ? s.id : '';
@@ -2138,6 +2144,12 @@ function renderProjectSearchModalGrid() {
     (!projSearchModalCategoryId || m.category_id === projSearchModalCategoryId) &&
     (!projSearchModalSubcategoryId || m.subcategory_id === projSearchModalSubcategoryId)
   );
+  // em All, os módulos soltos (sem subcategoria) vêm antes dos das sub-abas
+  // (ordem estável: dentro de cada grupo segue a ordem de sempre)
+  if (!projSearchModalSubcategoryId) {
+    const soltos = list.filter((m) => !m.subcategory_id), resto = list.filter((m) => m.subcategory_id);
+    list.length = 0; Array.prototype.push.apply(list, soltos.concat(resto));
+  }
   grid.innerHTML = '';
   if (!list.length) {
     const empty = document.createElement('div');
