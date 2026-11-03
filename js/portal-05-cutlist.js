@@ -275,13 +275,39 @@ let dealerFactoryDiscountPct = 0;
 let dealerPricingExtras = []; // linhas de dealer_pricing_extras já carregadas (cache)
 
 function getFactoryDiscountPct() {
+  if (isSellerAccount()) return SELLER_HERDA_DESCONTO_EXTRAS ? (Number(sellerPricingCfg.factory_discount_pct) || 0) : 0;
   return hasDealerTools() ? (Number(dealerFactoryDiscountPct) || 0) : 0;
+}
+
+// VENDEDOR HERDA DESCONTO + EXTRAS DO DEALER (migration 265, 03/11/2026).
+// Antes o vendedor só herdava a margem: preço dele = tabela × (1+margem),
+// enquanto o dealer via (tabela − desconto + extras) × (1+margem) + extras —
+// o vendedor cotava um valor diferente do dono da loja. Agora os dois veem
+// o MESMO preço de venda. O vendedor continua sem ver o %, o desconto ou o
+// botão Margens: estes 2 getters só aparecem na tela em lugares que já se
+// fecham pro vendedor (modal Margens, preço riscado do pedido, PDF fábrica).
+// false = volta ao comportamento antigo.
+const SELLER_HERDA_DESCONTO_EXTRAS = true;
+let sellerPricingCfg = { factory_discount_pct: 0, extras: [] };
+async function loadSellerPricingConfig() {
+  sellerPricingCfg = { factory_discount_pct: 0, extras: [] };
+  if (!isSellerAccount()) return;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_seller_pricing_config');
+    if (!error && data) {
+      sellerPricingCfg = {
+        factory_discount_pct: Number(data.factory_discount_pct) || 0,
+        extras: Array.isArray(data.extras) ? data.extras : []
+      };
+    }
+  } catch (err) { /* migration 265 ainda não rodou — fica só a margem */ }
 }
 
 // Extras de um lado ('custo' = custo de fábrica, 'margem' = margem do
 // lojista) já carregados em cache — ver comentário de escopo acima (só
 // dealer, nunca vendedor).
 function resolveDealerPricingExtras(side) {
+  if (isSellerAccount()) return SELLER_HERDA_DESCONTO_EXTRAS ? sellerPricingCfg.extras.filter((row) => row.side === side) : [];
   if (!hasDealerTools()) return [];
   return dealerPricingExtras.filter((row) => row.side === side);
 }
@@ -514,8 +540,9 @@ function refreshDealerUiVisibility() {
   applyPortalViewMode();
   refreshDealerLogoPreview();
   refreshDealerStoreInfoInputs();
-  if (dealer) loadDealerTeamList();
-  loadDealerPricingConfig().then(() => { if (typeof renderMarginsModal === 'function') renderMarginsModal(); });
+  if (dealer) loadDealerTeamList(); else { dealerTeamSellers = []; projectOwnerFilter = 'mine'; if (typeof refreshProjectOwnerFilter === 'function') refreshProjectOwnerFilter(); }
+  loadSellerPricingConfig()
+    .then(() => loadDealerPricingConfig()).then(() => { if (typeof renderMarginsModal === 'function') renderMarginsModal(); });
   refreshBecomeDealerUi();
 }
 
@@ -540,7 +567,7 @@ async function loadDealerTeamList() {
   try {
     const [{ data: sellers, error: sellersErr }, { data: projects, error: projErr }] = await Promise.all([
       supabaseClient.from('user_profiles')
-        .select('user_id, email, full_name, created_at, last_active_at')
+        .select('*')
         .eq('parent_dealer_user_id', currentUser.id)
         .order('created_at', { ascending: false }),
       supabaseClient.from('user_projects').select('client_user_id, cached_value_usd')
@@ -553,6 +580,11 @@ async function loadDealerTeamList() {
       statsByUser[key].count += 1;
       statsByUser[key].total += Number(row.cached_value_usd) || 0;
     });
+    dealerTeamSellers = (sellers || []).map((s) => ({
+      user_id: s.user_id, email: s.email, full_name: s.full_name,
+      active: s.seller_active !== false
+    }));
+    if (typeof refreshProjectOwnerFilter === 'function') refreshProjectOwnerFilter();
     if (!sellers || sellers.length === 0) {
       listEl.innerHTML = `<div class="hint">${I18n.t('nav.dealer_team_empty')}</div>`;
       return;
@@ -561,16 +593,77 @@ async function loadDealerTeamList() {
       const stats = statsByUser[s.user_id] || { count: 0, total: 0 };
       const lastActive = s.last_active_at ? new Date(s.last_active_at).toLocaleDateString(currentLocale()) : '—';
       const nameOrEmail = (s.full_name || s.email || '').replace(/</g, '&lt;');
-      return `<div class="po-dealer-team-item">
-        <strong>${nameOrEmail}</strong>
+      const active = s.seller_active !== false;
+      return `<div class="po-dealer-team-item${active ? '' : ' po-dealer-team-inactive'}">
+        <strong>${nameOrEmail} <span class="po-dealer-team-badge">${I18n.t(active ? 'nav.dealer_team_active' : 'nav.dealer_team_inactive')}</span></strong>
         <span class="hint">${(s.email || '').replace(/</g, '&lt;')}</span>
         <span class="hint">${I18n.t('nav.dealer_team_projects_count', { n: stats.count })} · ${formatGalleryPrice(stats.total)}</span>
         <span class="hint">${I18n.t('nav.dealer_team_last_active', { date: lastActive })}</span>
+        <span class="po-dealer-team-actions">
+          <button type="button" class="secondary" data-team-projects="${s.user_id}">${I18n.t('nav.dealer_team_see_projects')}</button>
+          <button type="button" class="secondary" data-team-toggle="${s.user_id}" data-team-active="${active ? '1' : '0'}">${I18n.t(active ? 'nav.dealer_team_deactivate' : 'nav.dealer_team_activate')}</button>
+        </span>
       </div>`;
     }).join('');
+    listEl.querySelectorAll('[data-team-projects]').forEach((b) => b.addEventListener('click', () => {
+      openSellerProjects(b.getAttribute('data-team-projects'));
+    }));
+    listEl.querySelectorAll('[data-team-toggle]').forEach((b) => b.addEventListener('click', () => {
+      setSellerActive(b.getAttribute('data-team-toggle'), b.getAttribute('data-team-active') !== '1', b);
+    }));
   } catch (err) {
     listEl.textContent = String((err && err.message) || err);
   }
+}
+
+// Vendedores do dealer logado (cache da lista acima) — usado pelo filtro
+// "Projetos de:" em Meus Projetos (portal-09).
+let dealerTeamSellers = [];
+// Filtro de dono em Meus Projetos: 'mine' | 'team' (eu + todos) | user_id de 1 vendedor.
+let projectOwnerFilter = 'mine';
+
+// Lê a mensagem de erro de uma Edge Function (mesmo tratamento do criar).
+async function dealerTeamFnError(error, data, fallback) {
+  if (error) {
+    let msg = error.message || fallback;
+    if (error.context && typeof error.context.json === 'function') {
+      try { const body = await error.context.json(); if (body && body.error) msg = body.error; } catch (_e) { /* msg genérica */ }
+    }
+    return msg;
+  }
+  return (data && data.error) || null;
+}
+
+// ATIVAR / DESATIVAR (migration 265, 03/11/2026 — Matt: "o proprio dealer
+// administra esses usuarios, ativando e desativando"). Desativar bloqueia
+// o login no auth (Edge Function); os projetos do vendedor continuam
+// aparecendo pro dealer.
+async function setSellerActive(userId, active, btn) {
+  const statusEl = document.getElementById('po-dealer-team-status');
+  const s = dealerTeamSellers.find((x) => x.user_id === userId);
+  const nome = s ? (s.full_name || s.email) : '';
+  if (!active && !confirm(I18n.t('nav.dealer_team_deactivate_confirm', { name: nome }))) return;
+  if (btn) btn.disabled = true;
+  try {
+    const { data, error } = await supabaseClient.functions.invoke('dealer-create-seller', {
+      body: { action: 'set_active', user_id: userId, active }
+    });
+    const msg = await dealerTeamFnError(error, data, 'Erro');
+    if (msg) throw new Error(msg);
+    if (statusEl) statusEl.textContent = I18n.t(active ? 'nav.dealer_team_activated' : 'nav.dealer_team_deactivated', { name: nome });
+    loadDealerTeamList();
+  } catch (err) {
+    if (statusEl) statusEl.textContent = String((err && err.message) || err);
+    if (btn) btn.disabled = false;
+  }
+}
+
+// "Ver projetos" na lista da equipe: abre Meus Projetos já filtrado.
+function openSellerProjects(userId) {
+  projectOwnerFilter = userId || 'mine';
+  const btn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-my-projects"]')
+    || document.querySelector('.portal-tab-btn[data-tab="po-tab-my-projects"]');
+  if (btn) btn.click(); else if (typeof loadProjectFavoritesList === 'function') loadProjectFavoritesList();
 }
 
 // Criação self-service — mesmo padrão de tratamento de erro do

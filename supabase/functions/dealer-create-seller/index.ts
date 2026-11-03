@@ -78,10 +78,55 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Só uma conta Dealer pode criar vendedores.' }, 403);
     }
 
+    const body = await req.json().catch(() => null);
+
+    // ---------- ATIVAR / DESATIVAR (migration 265, 03/11/2026) ----------
+    // Matt: "o proprio dealer administra esses usuarios, ativando e
+    // desativando". Só mexe em vendedor DESTE dealer (parent_dealer_user_id
+    // = quem chamou; admin pode qualquer vendedor). Desativar = ban no auth
+    // (não entra mais, nem renova a sessão) + seller_active=false (a tela e
+    // a trava de pedido da 265 leem isso). Projetos ficam onde estão — o
+    // dealer continua vendo.
+    if (body && body.action === 'set_active') {
+      const targetId = typeof body.user_id === 'string' ? body.user_id : '';
+      const active = body.active === true;
+      if (!/^[0-9a-f-]{36}$/i.test(targetId)) {
+        return jsonResponse({ error: 'Vendedor inválido.' }, 400);
+      }
+      const tRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/user_profiles?user_id=eq.${targetId}&select=role,parent_dealer_user_id`,
+        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+      );
+      const tRows = tRes.ok ? await tRes.json() : [];
+      const target = Array.isArray(tRows) ? tRows[0] : null;
+      if (!target || target.role !== 'vendedor'
+          || (callerRole !== 'administrador' && target.parent_dealer_user_id !== callerId)) {
+        return jsonResponse({ error: 'Esse vendedor não é da sua loja.' }, 403);
+      }
+      const banRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${targetId}`, {
+        method: 'PUT',
+        headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ban_duration: active ? 'none' : '876000h' })
+      });
+      if (!banRes.ok) {
+        const t = await banRes.text();
+        return jsonResponse({ error: `Não consegui ${active ? 'reativar' : 'bloquear'} o login: ${t}` }, 500);
+      }
+      const upRes = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?user_id=eq.${targetId}`, {
+        method: 'PATCH',
+        headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seller_active: active })
+      });
+      if (!upRes.ok) {
+        const t = await upRes.text();
+        return jsonResponse({ error: `Login ${active ? 'liberado' : 'bloqueado'}, mas o perfil não atualizou: ${t}` }, 500);
+      }
+      return jsonResponse({ user_id: targetId, active }, 200);
+    }
+
     // ---------- 3) Validação do corpo da requisição ----------
     // Sem campo "role" nem "parent_dealer_user_id" aceito do corpo — os
     // dois são sempre fixos aqui embaixo (vendedor / id de quem chamou).
-    const body = await req.json().catch(() => null);
     const email = body && typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = body && typeof body.password === 'string' ? body.password : '';
     const fullName = body && typeof body.full_name === 'string' ? body.full_name.trim().slice(0, 200) : '';

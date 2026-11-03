@@ -436,10 +436,33 @@ async function computeProjectSlotsTotal(slotConfigs) {
   return { total, skipped };
 }
 
+// Seletor "Projetos de:" (migration 265) — só aparece pro dealer com pelo
+// menos 1 vendedor. Repreenchido toda vez que a lista da equipe carrega.
+function refreshProjectOwnerFilter() {
+  const row = document.getElementById('po-proj-owner-filter-row');
+  const sel = document.getElementById('po-proj-owner-filter');
+  if (!row || !sel) return;
+  const sellers = (typeof hasDealerTools === 'function' && hasDealerTools() && typeof dealerTeamSellers !== 'undefined') ? dealerTeamSellers : [];
+  if (!sellers.length) { row.style.display = 'none'; sel.innerHTML = ''; return; }
+  if (projectOwnerFilter !== 'mine' && projectOwnerFilter !== 'team' && !sellers.some((x) => x.user_id === projectOwnerFilter)) projectOwnerFilter = 'mine';
+  const esc = (t) => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  sel.innerHTML = `<option value="mine">${esc(I18n.t('fav.owner_filter_mine'))}</option>`
+    + `<option value="team">${esc(I18n.t('fav.owner_filter_team'))}</option>`
+    + sellers.map((x) => `<option value="${esc(x.user_id)}">${esc(x.full_name || x.email)}${x.active ? '' : ' (' + esc(I18n.t('nav.dealer_team_inactive')) + ')'}</option>`).join('');
+  sel.value = projectOwnerFilter;
+  row.style.display = '';
+}
+(function bindProjectOwnerFilter() {
+  const sel = document.getElementById('po-proj-owner-filter');
+  if (!sel) return;
+  sel.addEventListener('change', () => { projectOwnerFilter = sel.value || 'mine'; loadProjectFavoritesList(); });
+})();
+
 async function loadProjectFavoritesList() {
   const listEl = document.getElementById('po-proj-fav-list');
   const errorEl = document.getElementById('po-proj-fav-error');
   if (!listEl) return;
+  refreshProjectOwnerFilter();
   errorEl.style.display = 'none';
   listEl.className = 'po-myproj-grid';
   listEl.innerHTML = '';
@@ -456,7 +479,7 @@ async function loadProjectFavoritesList() {
   // módulos chegam depois em lotes pequenos (carregaPesadosDosCards, abaixo)
   // e a linha completa só é buscada ao Carregar/Duplicar
   // (fetchProjectFullRow).
-  const BASE_COLS = ['id', 'name', 'updated_at'];
+  const BASE_COLS = ['id', 'name', 'updated_at', 'client_user_id'];
   const OPTIONAL_COLS = ['cached_value_usd', 'share_code', 'view3d_code', 'view3d_expires_at', 'frozen_order_id', 'client_folder', 'client_info'];
   let optional = OPTIONAL_COLS.slice();
   // FILTRO POR DONO (02/10): "Meus Projetos" tem que mostrar SÓ os projetos
@@ -471,7 +494,18 @@ async function loadProjectFavoritesList() {
     let q = supabaseClient
       .from('user_projects')
       .select(BASE_COLS.concat(optional).join(', '));
-    if (currentUser && currentUser.id) q = q.eq('client_user_id', currentUser.id);
+    // EQUIPE DO DEALER (migration 265, 03/11): o dealer escolhe em
+    // "Projetos de:" — só os dele, a equipe toda (ele + vendedores) ou 1
+    // vendedor. Sempre lista explícita de donos: admin lê tudo pelo RLS,
+    // então "sem filtro" nunca é opção. Vendedor e demais: só os próprios.
+    if (currentUser && currentUser.id) {
+      const sellers = (typeof hasDealerTools === 'function' && hasDealerTools() && typeof dealerTeamSellers !== 'undefined') ? dealerTeamSellers : [];
+      const sellerIds = sellers.map((x) => x.user_id);
+      const filtro = (typeof projectOwnerFilter !== 'undefined') ? projectOwnerFilter : 'mine';
+      if (filtro === 'team' && sellerIds.length) q = q.in('client_user_id', [currentUser.id].concat(sellerIds));
+      else if (filtro !== 'mine' && sellerIds.includes(filtro)) q = q.eq('client_user_id', filtro);
+      else q = q.eq('client_user_id', currentUser.id);
+    }
     return q.order('updated_at', { ascending: false });
   };
   let { data, error } = await runSelect();
@@ -589,6 +623,19 @@ async function loadProjectFavoritesList() {
       </div>
     `;
     card.querySelector('.po-myproj-card-name').textContent = proj.name; // textContent: nome é texto livre do cliente
+    // Projeto de vendedor (dealer vendo a equipe, migration 265): etiqueta
+    // com o nome do vendedor; Excluir some (só o dono exclui — o RLS
+    // bloquearia calado). Abrir/salvar/renomear/compartilhar funcionam.
+    if (proj.client_user_id && currentUser && proj.client_user_id !== currentUser.id) {
+      const seller = (typeof dealerTeamSellers !== 'undefined' ? dealerTeamSellers : []).find((x) => x.user_id === proj.client_user_id);
+      const tag = document.createElement('div');
+      tag.className = 'po-myproj-card-owner hint';
+      tag.textContent = I18n.t('fav.owner_seller', { name: seller ? (seller.full_name || seller.email) : '—' });
+      card.querySelector('.po-myproj-card-name').after(tag);
+      card.classList.add('po-myproj-card-seller');
+      const del = card.querySelector('.po-proj-fav-delete');
+      if (del) del.remove();
+    }
     // PROJETO CONGELADO (migration 179): já virou pedido — não abre no
     // editor nem apaga. "Ver" abre o link 3D só-leitura; pra alterar, Duplicar
     // (a cópia nasce sem frozen_order_id, editável).
@@ -612,7 +659,8 @@ async function loadProjectFavoritesList() {
           errorEl.textContent = err.message || String(err); errorEl.style.display = 'block';
         }
       });
-      card.querySelector('.po-proj-fav-delete').remove();
+      const delFrozen = card.querySelector('.po-proj-fav-delete'); // já pode ter saído (projeto de vendedor)
+      if (delFrozen) delFrozen.remove();
     }
     card.querySelectorAll('.po-myproj-card-image').forEach((img) => {
       img.addEventListener('click', () => openGalleryLightbox(img.src));
@@ -2125,9 +2173,18 @@ async function showLoggedIn(user) {
   // applyCuttingListTabVisibility, e a config de preço do plano de corte
   // pode carregar em paralelo (não bloqueia o resto do login).
   await ensureOwnUserProfile();
+  // Vendedor desativado com sessão ainda aberta (o ban do auth só barra a
+  // renovação do token) — sai na hora. Migration 265.
+  if (currentUserProfile && currentUserProfile.role === 'vendedor' && currentUserProfile.seller_active === false) {
+    alert(I18n.t('nav.dealer_team_login_blocked'));
+    try { await supabaseClient.auth.signOut(); } catch (e) { /* ok */ }
+    window.location.reload();
+    return;
+  }
   touchLastActive();
   startActivityHeartbeat();
   await resolveDisplayMarginPct();
+  if (typeof loadSellerPricingConfig === 'function') await loadSellerPricingConfig(); // migration 265: vendedor = mesmo preço do dealer
   refreshResaleMarginInput();
   refreshDealerUiVisibility();
   applyCuttingListTabVisibility();
@@ -2170,7 +2227,8 @@ document.getElementById('po-login-form').addEventListener('submit', async (e) =>
   const password = document.getElementById('po-login-password').value;
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
-    errorEl.textContent = error.message;
+    // Vendedor desativado pelo dealer (migration 265) = login banido no auth.
+    errorEl.textContent = /banned/i.test(error.message || '') ? I18n.t('nav.dealer_team_login_blocked') : error.message;
     errorEl.style.display = 'block';
     return;
   }

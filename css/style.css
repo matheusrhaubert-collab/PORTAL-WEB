@@ -1464,6 +1464,17 @@ header.po-topnav {
   font-size: 12px;
 }
 .po-dealer-team-item strong { font-size: 13px; color: var(--text); }
+/* Vendedor ativo/inativo + ações (migration 265) */
+.po-dealer-team-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 10px; background: #e3f4e6; color: #22713a; margin-left: 4px; vertical-align: middle; }
+.po-dealer-team-inactive { opacity: .7; }
+.po-dealer-team-inactive .po-dealer-team-badge { background: #f3e1e1; color: #9b2c2c; }
+.po-dealer-team-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.po-dealer-team-actions button { margin-top: 0; padding: 4px 8px; font-size: 11px; }
+/* Meus Projetos: filtro por vendedor + etiqueta do dono */
+.po-proj-owner-filter-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; flex-wrap: wrap; }
+.po-proj-owner-filter-row select { min-width: 200px; }
+.po-myproj-card-owner { font-size: 11px; margin-top: 2px; }
+.po-myproj-card-seller { border-left: 3px solid #c9a96e; }
 
 .po-user-chip {
   display: flex;
