@@ -88,7 +88,31 @@ function refreshProjectSaveIndicator(forceState) {
   }
 }
 
+// NOME DO PROJETO NA TELA (02/11, Matt: "quero que aqui na tela do projeto
+// mesmo no canto superior esquerdo mostre o nome do projeto"). Mostra
+// "pasta › nome" quando o projeto tem pasta. Chamado daqui e do começo de
+// renderProjectCanvas (portal-06c) — este segundo pega os caminhos que zeram
+// loadedProjectFavorite sem passar por refreshProjectFavoriteButtons.
+function refreshProjectCanvasName() {
+  const el = document.getElementById('po-proj-canvas-name');
+  if (!el) return;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const f = (typeof loadedProjectFavorite !== 'undefined') ? loadedProjectFavorite : null;
+  let html, title;
+  if (f && f.name) {
+    const pasta = f.client_folder ? String(f.client_folder) : '';
+    html = (pasta ? '<span class="po-proj-canvas-name-folder">' + esc(pasta) + ' ›</span> ' : '') + esc(f.name);
+    title = (pasta ? pasta + ' › ' : '') + f.name;
+  } else {
+    title = I18n.t('project.name_unsaved');
+    html = '<span class="po-proj-canvas-name-unsaved">' + esc(title) + '</span>';
+  }
+  if (el.innerHTML !== html) { el.innerHTML = html; el.title = title; }
+}
+document.addEventListener('po:lang-changed', () => { try { refreshProjectCanvasName(); } catch (e) {} });
+
 function refreshProjectFavoriteButtons() {
+  refreshProjectCanvasName();
   const updateBtn = document.getElementById('po-proj-update-fav-btn');
   // Grade de fotos realistas salvas (migration 077) segue o projeto
   // "amarrado" na tela — mesmos 3 pontos que chamam esta função (salvou
@@ -269,7 +293,7 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
         .select('id, name')
         .single());
       if (error) throw error;
-      loadedProjectFavorite = { id: data.id, name: data.name, ai_preview_url: null };
+      loadedProjectFavorite = { id: data.id, name: data.name, ai_preview_url: null, client_folder: (opts && opts.clientFolder) ? String(opts.clientFolder).trim().slice(0, 80) : null };
       statusEl.textContent = I18n.t('project.saved_status');
     }
     refreshProjectFavoriteButtons();

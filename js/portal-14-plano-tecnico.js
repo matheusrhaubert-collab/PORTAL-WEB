@@ -1562,7 +1562,7 @@ async function generateProjectTechPlan(opts) {
         : (slot.selectedColors || []);
       const colors = usadas
         .filter((c) => c && c.color_name)
-        .map((c) => (c.role_name || ptRoleName(c.role_id) || '') + ': ' + c.color_name)
+        .map((c) => (typeof I18n !== 'undefined' && I18n.role ? I18n.role(c.role_name || ptRoleName(c.role_id) || '') : (c.role_name || ptRoleName(c.role_id) || '')) + ': ' + c.color_name)
         .join(' · ');
       rows.push({
         num: numero,

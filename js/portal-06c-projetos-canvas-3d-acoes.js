@@ -642,7 +642,7 @@ async function renderProjectSideColorPanel() {
     const tabBtn = document.createElement('button');
     tabBtn.type = 'button';
     tabBtn.className = 'po-comp-color-tab-btn';
-    tabBtn.textContent = group.roleName || I18n.t('color.prefix');
+    tabBtn.textContent = (group.roleName && I18n.role ? I18n.role(group.roleName) : group.roleName) || I18n.t('color.prefix');
     if (group.roleId === projColorActiveTabRoleId) tabBtn.classList.add('active');
     tabBtn.addEventListener('click', () => {
       projColorActiveTabRoleId = group.roleId;
@@ -843,7 +843,7 @@ function renderProjectConfigPanel() {
         ${c.texture_url ? `<img src="${c.texture_url}" alt="${c.name}" />` : `<span style="background:${c.swatch_hex || '#ccc'};"></span>`}
       </div>
     `).join('');
-    return `<div class="po-proj-color-role-group"><label>${roleName}</label><div class="po-proj-color-swatches">${swatches}</div></div>`;
+    return `<div class="po-proj-color-role-group"><label>${I18n.role ? I18n.role(roleName) : roleName}</label><div class="po-proj-color-swatches">${swatches}</div></div>`;
   }).join('');
 
   // MODELO DE PORTA (migration 188) — acima das cores, cartões com desenho.
@@ -1423,6 +1423,7 @@ if (projDetailsBtn) {
 // TERMINA (pointerup) ou quando algo fora do canvas muda (unidade, largura
 // do ambiente, adicionar/editar/remover módulo).
 function renderProjectCanvas() {
+  if (typeof refreshProjectCanvasName === 'function') refreshProjectCanvasName();
   const canvas = document.getElementById('po-proj-canvas');
   const wrap = document.querySelector('#po-tab-projects .po-proj-canvas-wrap');
   const dimsLabel = document.getElementById('po-proj-canvas-dims-label');

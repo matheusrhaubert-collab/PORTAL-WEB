@@ -2898,6 +2898,18 @@ header.po-topnav {
    meio da altura. refreshProjectCanvasHud (portal-06b) decide quando aparece
    (cena 3D + dispositivo de toque, igual antes). */
 .po-proj-hud-tr { top: 8px; right: 8px; }
+/* Nome do projeto no canto superior esquerdo do palco (02/11). */
+.po-proj-canvas-name {
+  position: absolute; top: 10px; left: 12px; z-index: 30; pointer-events: none;
+  max-width: calc(100% - 120px); padding: 5px 12px; border-radius: 8px;
+  background: rgba(255,255,255,0.9); border: 1px solid var(--border);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.po-proj-canvas-name:empty { display: none; }
+.po-proj-canvas-name-folder { font-weight: 400; color: var(--muted); }
+.po-proj-canvas-name-unsaved { font-weight: 500; color: var(--muted); font-style: italic; }
 .po-proj-hud-sep { width: 1px; align-self: stretch; min-height: 20px; background: var(--border); margin: 0 2px; }
 
 /* Botão da barra: quadrado, alvo confortável pro dedo (32px), só o ícone. */

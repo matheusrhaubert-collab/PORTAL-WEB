@@ -45,7 +45,10 @@
       c_doorov_t: 'Portas sobrepostas', c_doorov_d: 'Duas portas ocupam o mesmo lugar ({{dx}} × {{dy}}): uma fica por cima da outra e não fecha. No Construtor, use uma porta de 2 folhas no vão inteiro, sem divisória no meio.',
       c_doorhinge_t: 'Duas portas na mesma divisória', c_doorhinge_d: 'A dobradiça de uma porta está na divisória onde a outra porta também apoia: a divisória não tem largura pras duas e a porta pega na vizinha. No Construtor, tire a divisória e use uma porta de 2 folhas (dobradiça nas laterais de fora).',
       c_floatpanel_t: 'Painel horizontal solto na parede', c_floatpanel_d: 'O painel {{nome}} está preso só na parede, sem módulo embaixo nem nas pontas. É muito difícil de fixar e pode dar problema na montagem: precisa de uma fixação reforçada (mão-francesa, suporte oculto etc.) definida pelo projetista. A fixação é responsabilidade do projetista; a fábrica não se responsabiliza.',
-      c_tampdepth_t: 'Tamponamento fora da profundidade', c_tampdepth_d: 'O painel {{nome}} tem {{d}} de profundidade; a regra é a caixa ({{box}}) + 1" = {{ok}}. Diferença de {{diff}}.'
+      c_tampdepth_t: 'Tamponamento fora da profundidade', c_tampdepth_d: 'O painel {{nome}} tem {{d}} de profundidade; a regra é a caixa ({{box}}) + 1" = {{ok}}. Diferença de {{diff}}.',
+      c_cornerfill_t: 'Canto sem filler de afastamento', c_cornerfill_d: '{{nome}} encosta direto na frente de {{outro}} no canto (folga de {{gap}}). As portas e os puxadores dos dois vão bater. Coloque um filler de pelo menos {{min}} entre eles.',
+      c_cornerfill_blind_d: '{{nome}} encosta direto no blind corner {{outro}} (folga de {{gap}}). O blind precisa de um filler de afastamento de pelo menos {{min}} do lado do móvel vizinho, senão a porta do blind e os puxadores batem.',
+      c_cornerdrawer_t: 'Gaveta ou pull-out no canto', c_cornerdrawer_d: '{{nome}} tem gaveta ou pull-out junto do canto com {{outro}}. Ao abrir, a frente ou o puxador pode bater no puxador do outro móvel. Prefira um módulo de porta no canto (ou um filler maior).'
     },
     en: {
       btn: 'Auditor', btn_title: 'Auditor — finds production issues in the project',
@@ -72,7 +75,10 @@
       c_doorov_t: 'Overlapping doors', c_doorov_d: 'Two doors take the same spot ({{dx}} × {{dy}}): one sits over the other and won\'t close. In the Builder, use one 2-leaf door over the whole opening, with no divider in the middle.',
       c_doorhinge_t: 'Two doors on the same divider', c_doorhinge_d: 'One door hinges on the divider where the other door also rests: the divider is not wide enough for both and the doors hit each other. In the Builder, remove the divider and use one 2-leaf door (hinges on the outer sides).',
       c_floatpanel_t: 'Horizontal panel loose on the wall', c_floatpanel_d: 'Panel {{nome}} hangs only on the wall, with no cabinet below or at its ends. It is very hard to fix and may cause installation problems: it needs reinforced support (bracket, hidden support, etc.) defined by the designer. Fixing it is the designer\'s responsibility; the factory is not liable.',
-      c_tampdepth_t: 'End panel at the wrong depth', c_tampdepth_d: 'Panel {{nome}} is {{d}} deep; the rule is the box ({{box}}) + 1" = {{ok}}. Off by {{diff}}.'
+      c_tampdepth_t: 'End panel at the wrong depth', c_tampdepth_d: 'Panel {{nome}} is {{d}} deep; the rule is the box ({{box}}) + 1" = {{ok}}. Off by {{diff}}.',
+      c_cornerfill_t: 'Inside corner without a spacer filler', c_cornerfill_d: '{{nome}} sits right against the front of {{outro}} at the corner (gap {{gap}}). Doors and handles on both will collide. Add a filler of at least {{min}} between them.',
+      c_cornerfill_blind_d: '{{nome}} sits right against the blind corner {{outro}} (gap {{gap}}). A blind corner needs a spacer filler of at least {{min}} on the neighboring cabinet side, or the blind door and the handles will collide.',
+      c_cornerdrawer_t: 'Drawer or pull-out at a corner', c_cornerdrawer_d: '{{nome}} has a drawer or pull-out right at the corner with {{outro}}. When it opens, the front or handle can hit the handle of the other cabinet. Use a door cabinet at the corner (or a wider filler).'
     },
     es: {
       btn: 'Auditor', btn_title: 'Auditor — busca errores de producción en el proyecto',
@@ -99,7 +105,10 @@
       c_doorov_t: 'Puertas superpuestas', c_doorov_d: 'Dos puertas ocupan el mismo lugar ({{dx}} × {{dy}}): una queda sobre la otra y no cierra. En el Constructor, usa una puerta de 2 hojas en todo el hueco, sin división en el medio.',
       c_doorhinge_t: 'Dos puertas en la misma división', c_doorhinge_d: 'La bisagra de una puerta está en la división donde también apoya la otra puerta: la división no tiene ancho para las dos y las puertas chocan. En el Constructor, quita la división y usa una puerta de 2 hojas (bisagras en los laterales de afuera).',
       c_floatpanel_t: 'Panel horizontal suelto en la pared', c_floatpanel_d: 'El panel {{nome}} está fijado solo a la pared, sin módulo debajo ni en las puntas. Es muy difícil de fijar y puede dar problemas en el armado: necesita una fijación reforzada (ménsula, soporte oculto, etc.) definida por el proyectista. La fijación es responsabilidad del proyectista; la fábrica no se responsabiliza.',
-      c_tampdepth_t: 'Tamponamiento fuera de profundidad', c_tampdepth_d: 'El panel {{nome}} tiene {{d}} de profundidad; la regla es la caja ({{box}}) + 1" = {{ok}}. Diferencia de {{diff}}.'
+      c_tampdepth_t: 'Tamponamiento fuera de profundidad', c_tampdepth_d: 'El panel {{nome}} tiene {{d}} de profundidad; la regla es la caja ({{box}}) + 1" = {{ok}}. Diferencia de {{diff}}.',
+      c_cornerfill_t: 'Rincón sin filler de separación', c_cornerfill_d: '{{nome}} queda pegado al frente de {{outro}} en el rincón (holgura de {{gap}}). Las puertas y tiradores de los dos van a chocar. Coloca un filler de al menos {{min}} entre ellos.',
+      c_cornerfill_blind_d: '{{nome}} queda pegado al blind corner {{outro}} (holgura de {{gap}}). El blind necesita un filler de separación de al menos {{min}} del lado del mueble vecino; si no, la puerta del blind y los tiradores chocan.',
+      c_cornerdrawer_t: 'Cajón o pull-out en el rincón', c_cornerdrawer_d: '{{nome}} tiene cajón o pull-out junto al rincón con {{outro}}. Al abrir, el frente o el tirador puede chocar con el tirador del otro mueble. Prefiere un módulo de puerta en el rincón (o un filler más ancho).'
     }
   };
   const lang = () => ((typeof I18n !== 'undefined' && I18n.getLanguage) ? I18n.getLanguage() : 'pt');
@@ -128,6 +137,9 @@
     TAMP_EXTRA_MM: 25,          // tamponamento = caixa + 1" (portal-23 usa 25)
     TAMP_TOL_MM: 3,
     DOOR_EDGE_MM: 40,           // borda de porta "na mesma divisória"
+    // cantos internos (02/11): filler de afastamento entre o móvel que morre
+    // no canto e a frente do outro (padrão 3" = 76 mm; abaixo de 2" é erro)
+    CANTO_FILLER_MIN_MM: 50, CANTO_FILLER_REC_MM: 76, CANTO_ZONA_MM: 160,
     INTERF_MM: 1.5              // peça entrando em outra: penetração mínima nos 3 eixos
   };
 
@@ -447,6 +459,73 @@
               recomputeProjectSlotPricing(p);
             } });
         }
+      });
+      return out;
+    } },
+    // CANTOS INTERNOS (02/11, Matt: "o spice rack está colado no blind onde
+    // deve dar espaço pro filler de afastamento. E evitar usar gavetas ou
+    // abertura de gaveta em cantos, porque pode bater no puxador do outro
+    // móvel"). Trabalha em planta (x/z do mundo), serve pra parede e ilha:
+    // A = móvel cuja ponta morre na frente de B (perpendicular, B de frente
+    // pra essa ponta). Folga = distância da quina da frente de A até o plano
+    // da frente de B. Filler entre os dois aumenta a folga e resolve.
+    { id: 'cantos', run(ctx) {
+      const out = [];
+      const nomeMod = (s) => String((s.module && s.module.name) || '');
+      const ehFiller = (s) => /filler|enchimento/i.test(nomeMod(s));
+      const ehPainelC = (s) => /panel|painel|toe ?kick|rodap/i.test(nomeMod(s));
+      const ehCantoMod = (s) => /blind|canto|corner|lazy/i.test(nomeMod(s));
+      const ehBlind = (s) => /blind/i.test(nomeMod(s));
+      const temGaveta = (s) => /drawer|gaveta|pull-?out|spice|trash|lixeir/i.test(nomeMod(s))
+        || ctx.parts(s).some((p) => /gaveta|drawer/i.test(nomePeca(p)) || /drawer/i.test(String(p.position_role || '')));
+      const geo = (s) => {
+        const b = (typeof projectSlotWorldBox3D === 'function') ? projectSlotWorldBox3D(s) : null;
+        if (!b) return null;
+        let fx, fz;
+        if (isFloorSlot(s)) {
+          // group.rotation.y = floor_rotation_deg: a frente local (+Z) vai pra (sen θ, cos θ)
+          const t = Number(s.floor_rotation_deg || 0) * Math.PI / 180;
+          fx = Math.sin(t); fz = Math.cos(t);
+        } else {
+          const wg = (getProjectWallGeometry() || []).find((w) => w.wallIndex === Number(s.wall_index || 0));
+          if (!wg) return null;
+          fx = wg.intoDirX; fz = wg.intoDirZ;
+        }
+        const y0 = isFloorSlot(s) ? 0 : Number(s.floor_height_mm || 0);
+        return { s, cx: b.cx, cz: b.cz, ax: Math.cos(b.angleRad), az: Math.sin(b.angleRad), fx, fz,
+          hw: b.halfAlongMm, hd: b.halfIntoMm, y0, y1: y0 + (Number(s.height_mm) || 0) };
+      };
+      const G = ctx.slots.filter((s) => !ehPainelC(s)).map(geo).filter(Boolean);
+      const feitos = new Set();
+      G.forEach((A) => {
+        if (ehFiller(A.s)) return;
+        G.forEach((B) => {
+          if (A === B || ehFiller(B.s)) return;
+          if (Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) < 100) return;   // base × aéreo
+          if (Math.abs(A.fx * B.fx + A.fz * B.fz) > 0.2) return;            // não perpendiculares
+          const sgn = ((B.cx - A.cx) * A.ax + (B.cz - A.cz) * A.az) >= 0 ? 1 : -1;
+          if ((B.fx * A.ax + B.fz * A.az) * sgn > -0.7) return;              // B não está de frente pra ponta de A
+          const px = A.cx + sgn * A.ax * A.hw + A.fx * A.hd;
+          const pz = A.cz + sgn * A.az * A.hw + A.fz * A.hd;
+          const gap = (px - (B.cx + B.fx * B.hd)) * B.fx + (pz - (B.cz + B.fz * B.hd)) * B.fz;
+          if (gap < -5 || gap > LIM.CANTO_ZONA_MM) return;
+          const tB = (px - B.cx) * B.ax + (pz - B.cz) * B.az;
+          if (Math.abs(tB) > B.hw + 50) return;                              // fora da faixa de B
+          const chave = A.s.id + '|' + B.s.id;
+          if (feitos.has(chave)) return;
+          feitos.add(chave);
+          if (gap < LIM.CANTO_FILLER_MIN_MM && !ehCantoMod(A.s)) {
+            out.push({ id: 'cornerfill', nivel: 'erro', slotId: A.s.id, titulo: tAud('c_cornerfill_t'),
+              detalhe: tAud(ehBlind(B.s) ? 'c_cornerfill_blind_d' : 'c_cornerfill_d',
+                { nome: slotNome(A.s), outro: slotNome(B.s), gap: fmt(Math.max(0, gap)), min: fmt(LIM.CANTO_FILLER_REC_MM) }) });
+          }
+          [A.s, B.s].forEach((s) => {
+            if (ehCantoMod(s) || feitos.has('g|' + s.id) || !temGaveta(s)) return;
+            feitos.add('g|' + s.id);
+            out.push({ id: 'cornerdrawer', nivel: 'aviso', slotId: s.id, titulo: tAud('c_cornerdrawer_t'),
+              detalhe: tAud('c_cornerdrawer_d', { nome: slotNome(s), outro: slotNome(s === A.s ? B.s : A.s) }) });
+          });
+        });
       });
       return out;
     } }

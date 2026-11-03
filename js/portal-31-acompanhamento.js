@@ -566,7 +566,7 @@ function trkModuleSeals(item, colorsById) {
     const col = c.color_id ? colorsById.get(c.color_id) : null;
     const t = trkSealsFor(col);
     if (!t) return;
-    const label = `${c.role_name || ''}${c.color_name ? ' — ' + c.color_name : ''}`;
+    const label = `${(typeof I18n !== 'undefined' && I18n.role ? I18n.role(c.role_name || '') : (c.role_name || ''))}${c.color_name ? ' — ' + c.color_name : ''}`;
     if (!byText.has(t)) byText.set(t, []);
     byText.get(t).push(label);
   });

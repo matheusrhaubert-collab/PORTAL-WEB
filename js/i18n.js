@@ -1329,6 +1329,7 @@
       'project.fullscreen_title': 'Tela cheia — esconde a barra do navegador e o topo do portal. Sai com Esc.',
       'project.fullscreen_exit_title': 'Sair da tela cheia',
       'project.camera_btn': 'Girar câmera',
+      'project.name_unsaved': 'Projeto novo (não salvo)',
       'project.camera_title': 'Enquanto ligado, o toque gira e dá zoom na câmera em vez de mexer nos módulos.',
       'project.drag_library_hint': 'Arraste um módulo da biblioteca e solte numa parede ou no chão.',
       'project.floor_island_label': 'No chão',
@@ -3564,6 +3565,7 @@
       'project.fullscreen_title': 'Full screen — hides the browser bar and the portal header. Press Esc to exit.',
       'project.fullscreen_exit_title': 'Exit full screen',
       'project.camera_btn': 'Rotate camera',
+      'project.name_unsaved': 'New project (not saved)',
       'project.camera_title': 'While on, touch orbits and zooms the camera instead of moving modules.',
       'project.drag_library_hint': 'Drag a module from the library and drop it on a wall or on the floor.',
       'project.floor_island_label': 'On the floor',
@@ -5785,6 +5787,7 @@
       'project.fullscreen_title': 'Pantalla completa — oculta la barra del navegador y el encabezado del portal. Sal con Esc.',
       'project.fullscreen_exit_title': 'Salir de pantalla completa',
       'project.camera_btn': 'Girar cámara',
+      'project.name_unsaved': 'Proyecto nuevo (sin guardar)',
       'project.camera_title': 'Mientras está activo, el toque gira y hace zoom en la cámara en vez de mover los módulos.',
       'project.drag_library_hint': 'Arrastra un módulo de la biblioteca y suéltalo en una pared o en el suelo.',
       'project.floor_island_label': 'En el suelo',
@@ -6897,7 +6900,25 @@
     init();
   }
 
-  const I18n = { t, getLanguage, setLanguage, applyStaticTranslations, onLanguageChange };
+  // NOMES DOS PAPÉIS DE COR (02/11, Matt: "tem coisa em português aqui...
+  // preciso mandar pra americano e ele não vai entender"). color_roles.name
+  // fica em português no banco e é congelado assim em selected_colors
+  // (role_name); a tradução é só na hora de MOSTRAR. Termo pedido pelo Matt:
+  // Caixa = Carcass, Porta/Frente = Fronts. Nome que não está aqui passa igual.
+  const ROLE_NAMES = {
+    en: { 'Caixa': 'Carcass', 'Porta/Frente': 'Fronts', 'Painel': 'Panels', 'LED': 'LED',
+          'Decor — Detalhe': 'Decor — Detail', 'Rod': 'Rod', 'Perfil alumínio': 'Aluminum profile', 'Vidro': 'Glass' },
+    es: { 'Caixa': 'Casco', 'Porta/Frente': 'Frentes', 'Painel': 'Paneles', 'LED': 'LED',
+          'Decor — Detalhe': 'Decor — Detalle', 'Rod': 'Barra', 'Perfil alumínio': 'Perfil de aluminio', 'Vidro': 'Vidrio' }
+  };
+  function role(name) {
+    if (name == null) return '';
+    const s = String(name);
+    const d = ROLE_NAMES[getLanguage()];
+    return (d && d[s.trim()]) || s;
+  }
+
+  const I18n = { t, getLanguage, setLanguage, applyStaticTranslations, onLanguageChange, role };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = I18n;
   } else {

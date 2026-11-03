@@ -33,7 +33,7 @@ function cpSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 const CP_EXCLUDE_COLOR_RE = /especial|special/i;
 function cpColorOk(c) { return !!c && c.active !== false && !CP_EXCLUDE_COLOR_RE.test(String(c.name || '')); }
 function cpColorRank(c) { return (Number(c.sheet_price_per_m2) || 0) * 1000 + (Number(c.edge_price_per_linear_m) || 0); }
-function cpRoleName(rid) { return ((colorRolesCache || []).find((r) => r.id === rid) || {}).name || ''; }
+function cpRoleName(rid) { const n = ((colorRolesCache || []).find((r) => r.id === rid) || {}).name || ''; return (typeof I18n !== 'undefined' && I18n.role) ? I18n.role(n) : n; }
 function cpIsFrontRole(rid) { return COST_FRONT_ROLE_RE.test(cpRoleName(rid)); }
 function cpSlotLabel(s) {
   const un = (document.getElementById('po-unit-select') || {}).value || 'mm';

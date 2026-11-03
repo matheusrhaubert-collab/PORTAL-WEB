@@ -93,7 +93,7 @@ function orderItemVisibleColors(it) {
 function formatColorsLine(it) {
   const colors = orderItemVisibleColors(it);
   if (colors.length === 0) return '';
-  return colors.map((c) => `${c.role_name}: ${c.color_name}`).join(' | ');
+  return colors.map((c) => `${(typeof I18n !== 'undefined' && I18n.role ? I18n.role(c.role_name) : (c.role_name))}: ${c.color_name}`).join(' | ');
 }
 
 function cartTotal() {
@@ -2007,7 +2007,7 @@ async function renderOrderDetailColorPanel() {
     const tabBtn = document.createElement('button');
     tabBtn.type = 'button';
     tabBtn.className = 'po-comp-color-tab-btn'; // mesmo visual da Composição, reaproveitado
-    tabBtn.textContent = group.roleName || I18n.t('color.prefix');
+    tabBtn.textContent = (group.roleName && I18n.role ? I18n.role(group.roleName) : group.roleName) || I18n.t('color.prefix');
     if (group.roleId === orderDetailColorActiveTabRoleId) tabBtn.classList.add('active');
     tabBtn.addEventListener('click', () => {
       orderDetailColorActiveTabRoleId = group.roleId;
@@ -2080,7 +2080,7 @@ function renderOrderDetailItemCard(it, idx, isApproved, colorById) {
         return `
           <div class="po-order-item-color-line">
             <button type="button" class="po-order-item-color-btn" data-item-id="${it.id}" data-role-id="${c.role_id}" data-picker-id="${pickerId}" ${isApproved ? 'disabled' : ''}>
-              <span class="po-order-item-color-dot" style="${dotStyle}"></span>${c.role_name}: ${c.color_name}
+              <span class="po-order-item-color-dot" style="${dotStyle}"></span>${(typeof I18n !== 'undefined' && I18n.role ? I18n.role(c.role_name) : (c.role_name))}: ${c.color_name}
             </button>
             <div id="${pickerId}" class="po-order-item-color-picker" style="display:none;"></div>
           </div>
