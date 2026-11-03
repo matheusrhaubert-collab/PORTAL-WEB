@@ -302,9 +302,16 @@ function tampEnsureModal() {
   // Done com painel vertical novo no chão: pergunta o desnível (1" a mais
   // PRA BAIXO, topo alinhado — slot.tampFloorExtraMm, ver projectWallSlotYMm
   // em portal-08) e só então fecha.
+  // 02/11 (Matt: "quando está no chão preciso dar 2 cliques no Done"): a
+  // pergunta abria atrás do modal (z-index, ver #po-tamp-confirm no CSS).
+  // Trava extra: enquanto a pergunta está aberta, outro clique no Done não
+  // fecha o modal por baixo dela.
+  let perguntando = false;
   const done = async () => {
+    if (perguntando) return;
     const st = tampState;
     if (st && st.pendDesnivel) {
+      perguntando = true;
       const alvos = projectSlots.filter((s) => s._tampNoChao);
       st.pendDesnivel = false;
       if (alvos.length && await tampConfirmDesnivel()) {
@@ -319,6 +326,7 @@ function tampEnsureModal() {
         markProjectDirty();
       }
       alvos.forEach((s) => { delete s._tampNoChao; });
+      perguntando = false;
     }
     fecha();
   };

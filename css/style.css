@@ -6294,7 +6294,9 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-proj-pdf-warns ul { margin: 4px 0 0 18px; padding: 0; max-height: 160px; overflow: auto; color: #5b616e; }
 
 /* Tamponamento: pergunta do desnível do chão (01/11) */
-#po-tamp-confirm { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1300; padding: 16px; }
+/* z-index ACIMA do #po-tamp-modal (3000): com 1300 a pergunta do desnível abria
+   escondida atrás do modal de End panels e o Done parecia precisar de 2 cliques (02/11). */
+#po-tamp-confirm { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 3100; padding: 16px; }
 #po-tamp-confirm.open { display: flex; }
 .po-tamp-confirm-card { background: #fff; border-radius: 12px; padding: 20px 22px; max-width: 460px; box-shadow: 0 14px 40px rgba(0,0,0,.3); }
 .po-tamp-confirm-card h3 { margin: 0 0 8px; font-size: 16px; }
