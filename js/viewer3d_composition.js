@@ -2748,7 +2748,7 @@ function createViewerComposition3D() {
       if (!acao) return;
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: acao === 'rotate' ? 'girar' : 'mover', mask, btn: ev.button, moveu: false };
+      nav = { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, rotating: false, modo: acao === 'rotate' ? 'girar' : 'mover', mask, btn: ev.button, moveu: false };
       try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
     }, true);
     // Soltar/clicar no fim do gesto Option/Espaço não vira clique de seleção.
@@ -2770,7 +2770,7 @@ function createViewerComposition3D() {
     el.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType !== 'mouse' || !ativo()) return;
       if (ev.button !== 1) return; // o gesto sempre começa no MEIO
-      nav = { x: ev.clientX, y: ev.clientY, rotating: false, modo: 'meio', shift: !!ev.shiftKey };
+      nav = { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, rotating: false, modo: 'meio', shift: !!ev.shiftKey };
       try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
     });
     el.addEventListener('pointermove', (ev) => {
@@ -2782,7 +2782,7 @@ function createViewerComposition3D() {
         nav.x = ev.clientX; nav.y = ev.clientY;
         if (ddx || ddy) nav.moveu = true;
         if (nav.modo === 'girar') {
-          if (!nav.rotating) { nav.rotating = true; el.dispatchEvent(new CustomEvent('legno:orbitrotatestart')); }
+          if (!nav.rotating) { nav.rotating = true; navPivot = pivotAtClient(nav.sx, nav.sy); el.dispatchEvent(new CustomEvent('legno:orbitrotatestart')); }
           lastMouseRotateAt = Date.now();
           mouseNavRotate(ddx, ddy);
         } else {
@@ -2801,7 +2801,9 @@ function createViewerComposition3D() {
       if (acao === 'rotate') {
         if (!nav.rotating) {
           nav.rotating = true;
-          // portal-08 recentraliza a órbita no módulo selecionado no início do giro
+          // GIRO EM VOLTA DO MOUSE (02/11): o pivô é o ponto da cena que
+          // estava embaixo do cursor quando o gesto começou.
+          navPivot = pivotAtClient(nav.sx, nav.sy);
           el.dispatchEvent(new CustomEvent('legno:orbitrotatestart'));
         }
         lastMouseRotateAt = Date.now();
@@ -2835,9 +2837,48 @@ function createViewerComposition3D() {
 
   // Giro em volta do alvo da órbita, mesma sensibilidade do OrbitControls
   // (volta inteira = altura do canvas) e mesmos limites (min/maxPolarAngle).
+  // GIRO EM VOLTA DO MOUSE (02/11, Matt: "temos uma regra que ao selecionar
+  // o módulo, quando rotaciono a câmera foca o módulo. isso está mais
+  // confundindo do que ajudando, pode deixar sempre a rotação com foco no
+  // mouse"). No início de cada giro com o mouse, o pivô vira o ponto da cena
+  // embaixo do cursor (módulo, parede ou chão; sem nada, o chão y=0). A câmera
+  // e o alvo giram JUNTOS em volta dele: a imagem não pula no começo, e o
+  // ponto que estava sob o mouse fica parado na tela.
+  let navPivot = null;
+  function pivotAtClient(clientX, clientY) {
+    try {
+      if (!_raycaster || !renderer || !scene) return null;
+      const cam = controls.object || camera;
+      _raycaster.setFromCamera(ndcFromClient(clientX, clientY), cam);
+      const hit = _raycaster.intersectObjects(scene.children, true)
+        .find((h) => h.object && h.object.isMesh && h.object.visible !== false);
+      if (hit) return hit.point.clone();
+      const p = new THREE.Vector3();
+      if (_raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) return p;
+    } catch (e) { /* sem pivô: gira em volta do alvo de sempre */ }
+    return null;
+  }
   function mouseNavRotate(dx, dy) {
     const cam = controls.object || camera;
     const h = renderer.domElement.clientHeight || 1;
+    if (navPivot) {
+      const speed = controls.rotateSpeed || 1;
+      const off = cam.position.clone().sub(controls.target);
+      const sph0 = new THREE.Spherical().setFromVector3(off);
+      // mesmos limites de inclinação do giro antigo (min/maxPolarAngle)
+      const phi1 = Math.max(controls.minPolarAngle, Math.min(controls.maxPolarAngle, sph0.phi - 2 * Math.PI * dy / h * speed));
+      const dPhi = phi1 - sph0.phi;
+      const dTheta = -2 * Math.PI * dx / h * speed;
+      const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).normalize();
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dTheta)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(right, dPhi));
+      const p = navPivot;
+      cam.position.sub(p).applyQuaternion(q).add(p);
+      controls.target.sub(p).applyQuaternion(q).add(p);
+      cam.lookAt(controls.target);
+      controls.update();
+      return;
+    }
     const offset = cam.position.clone().sub(controls.target);
     const sph = new THREE.Spherical().setFromVector3(offset);
     sph.theta -= 2 * Math.PI * dx / h * (controls.rotateSpeed || 1);
@@ -2890,7 +2931,7 @@ function createViewerComposition3D() {
   function navRotateBy(dx, dy) {
     if (!controls || !renderer) return false;
     lastUserCameraTouchAt = Date.now();
-    if (Date.now() - ultimoGiroTeclaAt > 1500) renderer.domElement.dispatchEvent(new CustomEvent('legno:orbitrotatestart'));
+    if (Date.now() - ultimoGiroTeclaAt > 1500) { navPivot = null; renderer.domElement.dispatchEvent(new CustomEvent('legno:orbitrotatestart')); }
     ultimoGiroTeclaAt = Date.now();
     mouseNavRotate(dx, dy);
     return true;

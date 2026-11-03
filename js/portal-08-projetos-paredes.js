@@ -2440,7 +2440,12 @@ function attachProject3DEditDrag() {
   // cena) — o viewer avisa o início do giro com 'legno:orbitrotatestart'
   // (attachCustomMouseNav, viewer3d_composition.js). Recentralizar no
   // pointerdown do meio faria a cena pular a cada simples pan.
+  // DESLIGADO 02/11 (Matt: "isso está mais confundindo do que ajudando, pode
+  // deixar sempre a rotação com foco no mouse"): o giro agora é em volta do
+  // ponto sob o cursor (navPivot, viewer3d_composition.js). Listener mantido
+  // só pra ficar fácil voltar: troque o `return;` abaixo.
   domEl.addEventListener('legno:orbitrotatestart', () => {
+    return;
     if (selectedProjectSlotId == null) return;
     if (!ViewerProjectEdit.centerOrbitOnGroup) return;
     const g = ViewerProjectEdit.findGroupBySlotId(selectedProjectSlotId);
