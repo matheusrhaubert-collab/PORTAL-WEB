@@ -1122,12 +1122,34 @@ function ptPdfPage(doc, st, canvas, title, subtitle, notes, extra) {
   doc.setTextColor(0);
 }
 
+// ÍCONE NA LISTA DE CABINETS (02/11, Matt: "quero adicionar nessa parte dos
+// cabinets um ícone do lado de cada item"). Miniatura 3D do próprio módulo,
+// com as medidas e cores do slot — mesma função que o pedido e a Proposta
+// usam (renderProjectSlotThumbnailFallback, portal-08). Reduzida pra ~240 px
+// pra o PDF não pesar. Falhou (sem WebGL etc.): linha sai sem ícone.
+async function ptIconFromSlot(slot) {
+  try {
+    if (typeof renderProjectSlotThumbnailFallback !== 'function') return null;
+    const url = await renderProjectSlotThumbnailFallback(slot, true);
+    if (!url) return null;
+    const img = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = url; });
+    if (!img || !img.naturalWidth) return null;
+    const k = Math.min(1, 240 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return { dataUrl: c.toDataURL('image/png'), w: c.width, h: c.height };
+  } catch (e) { return null; }
+}
+
 function ptPdfModuleList(doc, st, rows) {
   const W = 279.4, H = 215.9, M = 10;
+  const ICON_W = 13, ICON_H = 11; // caixa do ícone (mm), a imagem cabe dentro sem distorcer
   const cols = [
-    { k: 'num', w: 12 }, { k: 'module', w: 78 }, { k: 'place', w: 30 },
-    { k: 'dims', w: 62 }, { k: 'floor', w: 28 }, { k: 'colors', w: W - 2 * M - 210 }
+    { k: 'num', w: 10 }, { k: 'icon', w: 17 }, { k: 'module', w: 65 }, { k: 'place', w: 30 },
+    { k: 'dims', w: 62 }, { k: 'floor', w: 28 }, { k: 'colors', w: W - 2 * M - 212 }
   ];
+  const C = (k) => cols.find((c) => c.k === k);
   let y = 0;
   const header = () => {
     ptPdfPage(doc, st, null, ptT('list_title'), ptT('list_sub'), null);
@@ -1135,26 +1157,37 @@ function ptPdfModuleList(doc, st, rows) {
     doc.setFillColor(246, 240, 232); doc.rect(M, y - 4.5, W - 2 * M, 7, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
     let x = M + 1.5;
-    cols.forEach((c) => { doc.text(ptT('col_' + c.k), x, y); x += c.w; });
+    cols.forEach((c) => { if (c.k !== 'icon') doc.text(ptT('col_' + c.k), x, y); x += c.w; });
     y += 7;
   };
   header();
   doc.setFont('helvetica', 'normal');
+  const temIcone = rows.some((r) => r.icon);
   rows.forEach((r, i) => {
-    const colorLines = doc.splitTextToSize(r.colors || '—', cols[5].w - 2);
-    const nameLines = doc.splitTextToSize(r.module, cols[1].w - 2);
-    const lh = Math.max(colorLines.length, nameLines.length) * 3.7 + 2.2;
+    const colorLines = doc.splitTextToSize(r.colors || '—', C('colors').w - 2);
+    const nameLines = doc.splitTextToSize(r.module, C('module').w - 2);
+    const lhTexto = Math.max(colorLines.length, nameLines.length) * 3.7 + 2.2;
+    const lh = temIcone ? Math.max(lhTexto, ICON_H + 2.4) : lhTexto;
     if (y + lh > H - 14) { header(); doc.setFont('helvetica', 'normal'); }
-    if (i % 2) { doc.setFillColor(250, 249, 247); doc.rect(M, y - 3.6, W - 2 * M, lh, 'F'); }
+    const topo = y - 3.6;
+    if (i % 2) { doc.setFillColor(250, 249, 247); doc.rect(M, topo, W - 2 * M, lh, 'F'); }
+    // texto centralizado na altura da linha quando o ícone é mais alto que ele
+    const yTxt = y + Math.max(0, (lh - lhTexto) / 2);
     doc.setFontSize(8.5);
     let x = M + 1.5;
-    doc.setFont('helvetica', 'bold'); doc.text(String(r.num), x, y); x += cols[0].w;
+    doc.setFont('helvetica', 'bold'); doc.text(String(r.num), x, yTxt); x += C('num').w;
+    if (r.icon && r.icon.dataUrl) {
+      const k = Math.min(ICON_W / r.icon.w, ICON_H / r.icon.h);
+      const iw = r.icon.w * k, ih = r.icon.h * k;
+      try { doc.addImage(r.icon.dataUrl, 'PNG', x + (ICON_W - iw) / 2, topo + (lh - ih) / 2, iw, ih); } catch (e) { /* imagem ruim: segue sem ícone */ }
+    }
+    x += C('icon').w;
     doc.setFont('helvetica', 'normal');
-    doc.text(nameLines, x, y); x += cols[1].w;
-    doc.text(r.place, x, y); x += cols[2].w;
-    doc.text(r.dims, x, y); x += cols[3].w;
-    doc.text(r.floor, x, y); x += cols[4].w;
-    doc.text(colorLines, x, y);
+    doc.text(nameLines, x, yTxt); x += C('module').w;
+    doc.text(r.place, x, yTxt); x += C('place').w;
+    doc.text(r.dims, x, yTxt); x += C('dims').w;
+    doc.text(r.floor, x, yTxt); x += C('floor').w;
+    doc.text(colorLines, x, yTxt);
     y += lh;
   });
 }
@@ -1570,9 +1603,13 @@ async function generateProjectTechPlan(opts) {
         place: isFloorSlot(slot) ? ptT('place_island') : ptT('place_wall', { n: Number(slot.wall_index || 0) + 1 }) + (ptIsUpper(slot) ? ' · ' + ptT('upper') : ''),
         dims: ptFmt(slot.width_mm) + ' × ' + ptFmt(slot.height_mm) + ' × ' + ptFmt(slot.depth_mm),
         floor: ptFmt(slot.floor_height_mm || 0),
-        colors
+        colors,
+        slot
       });
     });
+    // ícone de cada linha (02/11) — um render por módulo, em sequência
+    // (o viewer escondido é um só e não aguenta renders em paralelo)
+    for (const r of rows) r.icon = await ptIconFromSlot(r.slot);
     if (rows.length) ptPdfModuleList(doc, st, rows);
 
     // "Página X de Y" — o total só existe no fim
