@@ -1857,7 +1857,7 @@ function renderProjectBuilderStage() {
         stroke: '#59636d', 'stroke-width': sw * 3.2, 'stroke-linecap': 'round',
         class: 'po-proj-void-item'
       }, gP);
-      l.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderPiece(p); });
+      l.addEventListener('click', (ev) => { ev.stopPropagation(); projectBuilderSelectPieceVao(p); });
       return;
     }
     const porta = p.kind === 'front';
@@ -1874,7 +1874,7 @@ function renderProjectBuilderStage() {
       // está atrás (e é lá dentro que vão a prateleira e a gaveta).
       'pointer-events': porta ? 'stroke' : 'auto'
     }, gP);
-    r.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderPiece(p); });
+    r.addEventListener('click', (ev) => { ev.stopPropagation(); projectBuilderSelectPieceVao(p); });
     if (porta) {
       // Alvo gordo pro dedo, invisível, só no contorno.
       const hit = projBuilderSvgEl('rect', {
@@ -1882,7 +1882,7 @@ function renderProjectBuilderStage() {
         fill: 'none', stroke: 'transparent', 'stroke-width': sw * 10,
         'pointer-events': 'stroke', class: 'po-proj-void-item'
       }, gP);
-      hit.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderPiece(p); });
+      hit.addEventListener('click', (ev) => { ev.stopPropagation(); projectBuilderSelectPieceVao(p); });
     }
   });
 
@@ -2152,7 +2152,7 @@ function renderProjectBuilderStage() {
     }
   }
 
-  // ---- pegadores das divisórias: arrastar pra mover, clicar pra tirar
+  // ---- pegadores das divisórias: arrastar pra mover, clicar só seleciona (03/11)
   // Por último, pra ficarem por cima. A área de pega é bem maior que a peça:
   // uma prateleira de 18mm é impossível de acertar no dedo.
   (built.pieces || []).filter((p) => p.divIndex !== undefined).forEach((p) => {
@@ -2734,7 +2734,7 @@ function deleteProjectBuilderVao(node) {
 // Mesma regra do ERP (CST.startDragDiv).
 //
 // Arrastar e CLICAR moram no mesmo alvo: se o dedo não andou (< 4px), o gesto
-// era clique e a divisória sai.
+// era clique — só seleciona (03/11: não apaga mais; apagar é só no ⊗).
 function startProjectBuilderDivDrag(ev, node, peca, eixo) {
   ev.preventDefault();
   ev.stopPropagation();
@@ -2814,7 +2814,10 @@ function startProjectBuilderDivDrag(ev, node, peca, eixo) {
     removeEventListener('pointermove', mover);
     removeEventListener('pointerup', soltar);
     if (andou) markProjectDirty();
-    else removeProjectBuilderPiece(peca);   // não andou: era clique
+    // Não andou = clique. ANTES apagava a divisória (03/11, Matt: "quando
+    // clico bem na divisoria ele deleta a peca... o deleta so deve
+    // funcionar no x"). Agora clique só seleciona; apagar é só pelo ⊗.
+    else { renderProjectBuilderStage(); renderProjectBuilderLibrary(); }
   };
   addEventListener('pointermove', mover);
   addEventListener('pointerup', soltar);
@@ -2828,6 +2831,22 @@ function startProjectBuilderDivDrag(ev, node, peca, eixo) {
 // com 2). Então: sobrando mais de 2 filhos, some só o filho seguinte e o
 // anterior volta a ser elástico — os dois vãos viram um. Com 2 filhos, aí sim
 // a divisão acaba.
+// CLICAR NUMA PEÇA = SELECIONAR O VÃO DELA (03/11, Matt: "quando clico bem
+// na divisoria ele deleta a peca. nao era pra acontecer isso o deleta so deve
+// funcionar no x"). Antes o clique em prateleira/porta/cabideiro chamava
+// removeProjectBuilderPiece direto. Agora só seleciona o vão onde a peça
+// mora; apagar é pelo ⊗ desse vão (deleteProjectBuilderVao).
+function projectBuilderSelectPieceVao(p) {
+  const node = p && p.nodeId ? LayoutEngine.findNode(projectBuilderRoot, p.nodeId) : null;
+  if (!node) return;
+  projectBuilderQtd = {};
+  projectBuilderQtdAlvo = {};
+  projectBuilderSelId = node.id;
+  projectBuilderSelIds = [];
+  renderProjectBuilderStage();
+  renderProjectBuilderLibrary();
+}
+
 function removeProjectBuilderPiece(p) {
   const node = LayoutEngine.findNode(projectBuilderRoot, p.nodeId);
   if (!node || node.locked) return;
