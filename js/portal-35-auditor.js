@@ -263,7 +263,7 @@
         const a = alcance(slot);
         // teto da parede
         const teto = (typeof projectSlotCeilingMm === 'function') ? projectSlotCeilingMm(slot) : (roomSettings.ceiling_mm || 2600);
-        if (a.y1 > teto + 0.5) out.push({ id: 'ceil', nivel: 'erro', slotId: slot.id, titulo: tAud('c_ceil_t'), detalhe: tAud('c_ceil_d', { over: fmt(a.y1 - teto), ceil: fmt(teto) }) });
+        if (a.y1 > teto + 0.5) out.push({ id: 'ceil', nivel: 'aviso', /* 03/11: passar da parede agora é permitido */ slotId: slot.id, titulo: tAud('c_ceil_t'), detalhe: tAud('c_ceil_d', { over: fmt(a.y1 - teto), ceil: fmt(teto) }) });
         // fora da parede
         try {
           const b = projectWallSlotXBoundsMm(slot);

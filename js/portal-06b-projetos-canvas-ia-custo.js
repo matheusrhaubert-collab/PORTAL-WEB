@@ -468,7 +468,7 @@ function layoutProjectAiItems(items) {
 // Altura da fileira suspensa, respeitando o pé direito real do ambiente —
 // numa sala de pé direito baixo, 1400mm fixo jogaria o aéreo pro teto.
 function projectAiUpperRowFloorMm() {
-  const usable = Math.max(roomSettings.ceiling_mm - roomSettings.baseboard_mm, 0);
+  const usable = Math.max(roomSettings.ceiling_mm, 0); // 03/11: sem desconto de rodapé
   return Math.min(PROJECT_AI_UPPER_ROW_FLOOR_MM, Math.max(usable - 600, 0));
 }
 
@@ -788,8 +788,11 @@ const PROJECT_STICKY_PICK_PX = 12;
 // o inverso: altura máxima dada uma base já fixa). `module` opcional (default
 // null = sem afastamento nenhum, 0) — passar sempre slot.module quando
 // disponível.
+// SEM DESCONTO DE RODAPÉ/RODAFORRO (03/11, Matt: "quero que elimine essa regra de rodape e rodaforro de desconto da parede. e quero que quando o movel fique mais alto que a parede ele possa ir pra cima da parede").
+// Base máxima = topo encostando no teto da parede. Módulo mais alto que a
+// parede fica no chão (0) e passa por cima dela.
 function projectSlotMaxFloorHeightMm(heightMm, module, slot) {
-  return Math.max(projectSlotCeilingMm(slot) - effectiveCeilingClearanceMm(module) - roomSettings.baseboard_mm - Number(heightMm || 0), 0);
+  return Math.max(projectSlotCeilingMm(slot) - Number(heightMm || 0), 0);
 }
 
 // Limites de x_mm (ao longo da parede) pra este slot, em mm — extraído de
@@ -2157,7 +2160,7 @@ function duplicateProjectSlotDirectional(slotId, direction, count) {
     if (isFloorSlot(copy)) {
       if (direction === 'up' || direction === 'down') {
         const stepMm = ((Number(copy.height_mm || 0) || 300) * i) * sign;
-        const maxMm = Math.max(projectSlotCeilingMm(copy) - Number(roomSettings.baseboard_mm || 0) - Number(copy.height_mm || 0), 0);
+        const maxMm = Math.max(projectSlotCeilingMm(copy) - Number(copy.height_mm || 0), 0);
         copy.fineOffsetYMm = clamp(Number(original.fineOffsetYMm || 0) + stepMm, 0, maxMm);
         projectSlots.push(copy);
       } else {

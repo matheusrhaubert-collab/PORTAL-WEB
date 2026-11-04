@@ -2428,7 +2428,8 @@ async function insertProjectModuleDefault(moduleId, overrides = null) {
     // quando a altura NÃO está travada; travada, usa o default de catálogo
     // puro (só ainda clampado pelo min/max do PRÓPRIO módulo, que numa
     // configuração correta já bate com os presets cadastrados).
-    const maxHeightMm = Math.max(roomSettings.ceiling_mm - effectiveCeilingClearanceMm(m) - roomSettings.baseboard_mm, 0);
+    // 03/11: sem desconto de rodapé/rodaforro — o default entra limitado só pela altura da parede (depois pode esticar acima dela).
+    const maxHeightMm = Math.max(roomSettings.ceiling_mm, 0);
     const effHeightMaxMm = m.height_locked ? Number(m.height_max_mm || Infinity) : Math.min(Number(m.height_max_mm || Infinity), maxHeightMm);
     // Largura pedida pela IA passa pelo MESMO clamp do default de catálogo —
     // a Edge Function já clampa, mas nunca confiar só nela (o mín/máx pode

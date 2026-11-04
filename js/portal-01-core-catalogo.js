@@ -497,9 +497,11 @@ const ROOM_BASEBOARD_DEFAULT_MM = 5.5 * MM_PER_INCH; // 5 1/2" (baseboard americ
 // descontado. Usada em todo lugar que antes lia CEILING_CLEARANCE_MM direto
 // (ver grep — ceilingMaxHeightMm/insertProjectModuleDefault/
 // projectSlotMaxFloorHeightMm/updateProjectSlotDimension/viewerRoomEnvConfig).
+// SEM DESCONTO DE RODAPÉ/RODAFORRO (03/11, Matt: "quero que elimine essa regra de rodape e rodaforro de desconto da parede. e quero que quando o movel fique mais alto que a parede ele possa ir pra cima da parede").
+// O afastamento do teto (rodaforro, migration_060) não desconta mais nada —
+// sempre 0. O cadastro no admin continua lá, só não tem efeito.
 function effectiveCeilingClearanceMm(module) {
-  if (!module || !module.ceiling_clearance_enabled) return 0;
-  return Number(module.ceiling_clearance_mm) || 0;
+  return 0;
 }
 
 let roomSettings = {
@@ -607,8 +609,11 @@ applyViewerRoomEnvironment();
 // no chão de verdade dentro dela), então esta conta continua IDÊNTICA à de
 // antes nesses casos — só muda pra quem está configurando um módulo já
 // deslocado do chão.
+// SEM DESCONTO DE RODAPÉ/RODAFORRO (03/11, Matt: "quero que elimine essa regra de rodape e rodaforro de desconto da parede. e quero que quando o movel fique mais alto que a parede ele possa ir pra cima da parede").
+// O móvel pode passar da altura do pé direito: a altura só respeita o
+// mín/máx do próprio módulo (e as travas de chapa/furadeira).
 function ceilingMaxHeightMm() {
-  return Math.max(roomSettings.ceiling_mm - effectiveCeilingClearanceMm(currentModule) - roomSettings.baseboard_mm - currentFloorHeightMm, 0);
+  return Infinity;
 }
 
 // Reescreve os campos formatados na unidade global atual (não mexe no campo
