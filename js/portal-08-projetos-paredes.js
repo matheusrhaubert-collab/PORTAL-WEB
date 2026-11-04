@@ -1659,9 +1659,27 @@ function attachProject3DEditDrag() {
       finishProject3DDrag(ev);
       return;
     }
+    // OPTION/ALT + ARRASTAR = ARRASTE LIVRE (03/11, Matt: "no mac quando
+    // clico no movel ... e puxo mouse pra parede o modulo nao vai pra
+    // parede"). No mouse os únicos caminhos eram o botão direito DURANTE o
+    // arraste (impossível no trackpad/Magic Mouse) ou segurar PARADO 500 ms
+    // com a opção "arraste livre". Segurar ⌥ (Option no Mac, Alt no Windows)
+    // a qualquer momento do arraste liga o mesmo freeMode do toque longo: o
+    // móvel vai pra parede/chão que estiver embaixo do ponteiro.
+    if (ev.altKey && !state.freeMode && !state.viaArrow
+      && state.dragMode !== 'resize' && state.dragMode !== 'rotate') {
+      state.freeMode = true;
+      state.armed = true;
+      clearHold3DTimer();
+      domEl.style.cursor = 'grabbing';
+    }
     const dPx = Math.hypot(ev.clientX - state.startClientX, ev.clientY - state.startClientY);
     if (!state.moved) {
-      if (dPx < (state.isTouch ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX)) return;
+      // Esperando o "segurar parado" do arraste livre no mouse: tolera a
+      // tremida do trackpad (12 px, igual ao dedo) em vez de 4 px.
+      const esperandoLivre = !state.isTouch && hold3DTimer
+        && typeof atalhoHoldMouse === 'function' && atalhoHoldMouse() === 'free';
+      if (dPx < ((state.isTouch || esperandoLivre) ? PROJECT_TOUCH_SLOP_PX : PROJECT_CLICK_MOVE_THRESHOLD_PX)) return;
       // Mexeu: é arraste, não "segurar" — cancela a janela de propriedades.
       clearHold3DTimer();
       state.moved = true;
