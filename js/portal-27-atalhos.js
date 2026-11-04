@@ -294,11 +294,13 @@ async function atalhoSalvar(rascunho, comoFabrica) {
   const agora = new Date().toISOString();
   if (comoFabrica) {
     const bindings = atalhoDiff(rascunho, atalhoPadraoCodigo());
+    delete bindings.__hold_mouse; // preferência pessoal, não vira padrão de fábrica
     const { error } = await supabaseClient.from('shortcut_defaults').upsert({ id: true, bindings, updated_at: agora, updated_by: uid });
     if (error) throw error;
     atalhoFabrica = bindings;
   } else {
     const bindings = atalhoDiff(rascunho, atalhoMapaFabrica());
+    if (atalhoConta && atalhoConta.__hold_mouse) bindings.__hold_mouse = atalhoConta.__hold_mouse; // não perde o "segurar com o mouse"
     const { error } = await supabaseClient.from('user_shortcuts').upsert({ user_id: uid, bindings, updated_at: agora });
     if (error) throw error;
     atalhoConta = bindings;
@@ -361,7 +363,30 @@ function atalhoHtmlMouseConfig() {
 // 'free' (arraste livre: o módulo atravessa pra outra parede ou pro chão,
 // como o toque longo do iPad). Lida em portal-08 (startProject3DHoldGesture).
 const ATALHO_HOLD_MOUSE_KEY = 'legno_hold_mouse';
-function atalhoHoldMouse() { try { return localStorage.getItem(ATALHO_HOLD_MOUSE_KEY) === 'free' ? 'free' : 'props'; } catch (e) { return 'props'; } }
+// 03/11 (Matt: "o movel nao ta indo direto pra parede ao segurar com botao
+// esquerdo. isso so no mac"): a escolha ficava só no localStorage do
+// navegador onde foi feita — no Mac estava no padrão (Propriedades). Agora:
+// 1º a escolha salva na CONTA (user_shortcuts.bindings.__hold_mouse, vale em
+// qualquer computador), 2º a deste navegador, 3º padrão = 'free' no Mac
+// (a opção nasceu pro Mac) e 'props' no resto.
+function atalhoHoldMouse() {
+  const daConta = atalhoConta && atalhoConta.__hold_mouse;
+  if (daConta === 'free' || daConta === 'props') return daConta;
+  try {
+    const local = localStorage.getItem(ATALHO_HOLD_MOUSE_KEY);
+    if (local === 'free' || local === 'props') return local;
+  } catch (e) { /* ok */ }
+  return ATALHO_EH_MAC ? 'free' : 'props';
+}
+async function atalhoSalvarHoldMouse(v) {
+  try { localStorage.setItem(ATALHO_HOLD_MOUSE_KEY, v); } catch (e) { /* ok */ }
+  atalhoConta = Object.assign({}, atalhoConta || {}, { __hold_mouse: v });
+  const uid = await atalhoUid();
+  if (!uid) return;
+  const { error } = await supabaseClient.from('user_shortcuts')
+    .upsert({ user_id: uid, bindings: atalhoConta, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
 function atalhoHtmlHoldMouse() {
   const v = atalhoHoldMouse();
   return `<div class="po-sc-mouse-cfg po-sc-hold">
@@ -502,8 +527,10 @@ function abrirTelaAtalhos() {
     });
     m.addEventListener('change', (ev) => {
       if (ev.target.dataset && ev.target.dataset.holdMouse) {
-        try { localStorage.setItem(ATALHO_HOLD_MOUSE_KEY, ev.target.value === 'free' ? 'free' : 'props'); } catch (e) { /* ok */ }
-        atalhoMsg(I18n.t('sc.hold_saved'));
+        const v = ev.target.value === 'free' ? 'free' : 'props';
+        atalhoSalvarHoldMouse(v)
+          .then(() => atalhoMsg(I18n.t('sc.hold_saved')))
+          .catch((e) => atalhoMsg(I18n.t('sc.save_error', { msg: (e && e.message) || String(e) }), true));
         return;
       }
       if (ev.target.dataset && ev.target.dataset.mouse) {
