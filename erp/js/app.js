@@ -28,6 +28,7 @@ APP.menu = [
   ] },
 
   { id: 'comercial', label: 'Comercial', items: [
+    { hash: '#/comercial',          label: 'Painel' },
     { hash: '#/eng/crm',            label: 'Clientes (CRM)' },
     { hash: '#/projetos',    label: 'Projetos' },
     { hash: '#/pedidos',     label: 'Pedidos' },
@@ -317,6 +318,8 @@ APP.routes = [
      desenho do layout (#/etiquetas, em Engenharia) de propósito — são dois
      trabalhos diferentes, feitos por pessoas diferentes. */
   { re: /^#\/etiquetas-impressao$/, load: ADMINX.printLabelsLoad,          render: ADMINX.printLabels,            nav: '#/etiquetas-impressao' },
+  /* Painel comercial BI (04/11) — erp/js/screens-dashboard-comercial.js */
+  { re: /^#\/comercial$/,       load: DASHC.load,                          render: DASHC.render,                  nav: '#/comercial', after: DASHC.after },
   { re: /^#\/projetos$/,        load: ScreensApoio.projectsLoad,           render: ScreensApoio.projects,         nav: '#/projetos' },
   { re: /^#\/projetos\/(.+)$/,  load: ScreensApoio.projectDetailLoad,      render: ScreensApoio.projectDetail,    nav: '#/projetos' },
   /* Central de Contatos — dado real desde a migration 084 (era mockup). As
