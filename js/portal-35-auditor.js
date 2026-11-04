@@ -29,6 +29,7 @@
       c_stretcher_t: 'Travessa em pé com gaveta em cima', c_stretcher_d: 'A travessa da frente está em pé e o vão de cima tem gaveta: vai colidir. Deitar a travessa.',
       c_small_t: 'Peça muito pequena', c_small_d: '{{peca}} com {{w}} × {{h}}: menor que {{min}} — difícil de cortar e colar fita. Confira o vão.',
       c_big_t: 'Peça não cabe na chapa', c_big_d: '{{peca}} com {{w}} × {{h}} passa da chapa ({{sheet}}). Divida o módulo ou a peça.', c_big_ply_d: '{{peca}} em plywood com {{w}} × {{h}}: plywood vai até {{sheet}}. Acima de 2438 só EGGER — troque a cor ou reduza a medida.',
+      c_semfundo_t: 'Prateleira sem fundo pode empenar', c_semfundo_d: 'Módulo com {{w}} de largura (acima de {{min}}) sem fundo, com {{pecas}}. Sem o fundo segurando por trás, a prateleira/base divisória empena com mais facilidade. Considere um módulo com fundo, uma divisória vertical ou uma travessa.',
       c_shelf_t: 'Prateleira pode empenar', c_shelf_d: 'Prateleira de {{w}} de vão livre (acima de {{max}}). Adicione uma divisória vertical ou use prateleira fixa com travessa.',
       c_drawer_t: 'Frente de gaveta muito baixa', c_drawer_d: 'Frente de gaveta com {{h}} de altura (mínimo {{min}}). Junte gavetas ou troque por porta.',
       c_toe_t: 'Rodapé duplicado', c_toe_d: 'O módulo tem {{n}} peças de rodapé na mesma posição. Remova uma em Peças.',
@@ -59,6 +60,7 @@
       c_stretcher_t: 'Upright rail with drawer on top', c_stretcher_d: 'The front rail is upright and the top opening has a drawer: they collide. Lay the rail flat.',
       c_small_t: 'Piece too small', c_small_d: '{{peca}} at {{w}} × {{h}}: under {{min}} — hard to cut and band. Check the opening.',
       c_big_t: 'Piece does not fit the sheet', c_big_d: '{{peca}} at {{w}} × {{h}} exceeds the sheet ({{sheet}}). Split the cabinet or the piece.', c_big_ply_d: '{{peca}} in plywood at {{w}} × {{h}}: plywood goes up to {{sheet}}. Above 2438 only EGGER — change the color or reduce the size.',
+      c_semfundo_t: 'Shelf without back may warp', c_semfundo_d: 'Cabinet {{w}} wide (over {{min}}) with no back, with {{pecas}}. Without a back holding it, the shelf/base divider warps more easily. Consider a cabinet with a back, a vertical divider or a rail.',
       c_shelf_t: 'Shelf may sag', c_shelf_d: 'Shelf with {{w}} free span (over {{max}}). Add a vertical divider or use a fixed shelf with a rail.',
       c_drawer_t: 'Drawer front too short', c_drawer_d: 'Drawer front {{h}} tall (minimum {{min}}). Merge drawers or switch to a door.',
       c_toe_t: 'Duplicate toe kick', c_toe_d: 'The cabinet has {{n}} toe-kick pieces in the same position. Remove one under Pieces.',
@@ -89,6 +91,7 @@
       c_stretcher_t: 'Travesaño de pie con cajón arriba', c_stretcher_d: 'El travesaño frontal está de pie y el vano superior tiene cajón: chocan. Acostar el travesaño.',
       c_small_t: 'Pieza muy pequeña', c_small_d: '{{peca}} con {{w}} × {{h}}: menor que {{min}} — difícil de cortar y pegar canto. Revisa el vano.',
       c_big_t: 'La pieza no cabe en el tablero', c_big_d: '{{peca}} con {{w}} × {{h}} supera el tablero ({{sheet}}). Divide el módulo o la pieza.', c_big_ply_d: '{{peca}} en plywood con {{w}} × {{h}}: el plywood llega hasta {{sheet}}. Arriba de 2438 solo EGGER — cambia el color o reduce la medida.',
+      c_semfundo_t: 'Estante sin fondo puede pandearse', c_semfundo_d: 'Módulo de {{w}} de ancho (más de {{min}}) sin fondo, con {{pecas}}. Sin el fondo sujetando por detrás, el estante/base divisoria se pandea con más facilidad. Considera un módulo con fondo, una división vertical o un travesaño.',
       c_shelf_t: 'El estante puede pandearse', c_shelf_d: 'Estante con {{w}} de luz libre (más de {{max}}). Agrega una división vertical o usa estante fijo con travesaño.',
       c_drawer_t: 'Frente de cajón muy bajo', c_drawer_d: 'Frente de cajón de {{h}} de alto (mínimo {{min}}). Une cajones o cambia por puerta.',
       c_toe_t: 'Zócalo duplicado', c_toe_d: 'El módulo tiene {{n}} piezas de zócalo en la misma posición. Quita una en Piezas.',
@@ -130,6 +133,7 @@
     CHAPA_W_MM: 1830, CHAPA_L_MM: 2750,
     PLY_W_MM: 1220, PLY_L_MM: 2438,
     PRATELEIRA_VAO_MAX_MM: 900, // prateleira 18 mm sem apoio no meio
+    SEM_FUNDO_LARG_MIN_MM: 700, // 03/11: módulo sem fundo acima disso com prateleira/base divisória = aviso
     GAVETA_FRENTE_MIN_MM: 100,
     FOLGA_AVISO_MM: 30,         // folga entre vizinhos que vale avisar
     TOPO_DIFF_MAX_MM: 25,       // topos "quase" iguais
@@ -252,6 +256,35 @@
             out.push({ id: 'drawerbox', nivel: 'erro', slotId: slot.id, titulo: tAud('c_drawerbox_t'), detalhe: tAud('c_drawerbox_d', { box: fmt(p.depth_mm), need: fmt(need), d: fmt(util) }) });
           }
         });
+      });
+      return out;
+    } },
+    // SEM FUNDO + PRATELEIRA (03/11, Matt: "quero deixar como aviso que
+    // qualquer shelf ou base divisoria sem fundo, a prateleira tem mais
+    // facilidade de empenar pra modulos acima de 70cm"). Fundo = peça do
+    // casco com position_role 'back' (mesma regra da trava da furadeira,
+    // projectSlotFundoOffsets) — olha só o nível de cima, pra o fundo de um
+    // caixote de gaveta não contar como fundo do módulo.
+    { id: 'semfundo', run(ctx) {
+      const out = [];
+      ctx.slots.forEach((slot) => {
+        if (!(Number(slot.width_mm) > LIM.SEM_FUNDO_LARG_MIN_MM)) return;
+        let topo = [];
+        try { topo = slotResolved(slot) || []; } catch (e) { return; }
+        if (slot.module && slot.module.is_decoration) return;
+        if (topo.some((p) => p.position_role === 'back')) return;
+        // só caixa de verdade (tem lateral) — painel/prateleira solta fica de fora
+        if (!topo.some((p) => p.position_role === 'left' || p.position_role === 'right')) return;
+        const parts = ctx.parts(slot);
+        const prat = parts.filter((p) => !/base\s*divis/i.test(nomePeca(p))
+          && (p.position_role === 'shelf' || p.prateleira_regulavel || /pratel|shelf/i.test(nomePeca(p))));
+        const baseDiv = parts.filter((p) => /base\s*divis/i.test(nomePeca(p)));
+        if (!prat.length && !baseDiv.length) return;
+        const itens = [];
+        if (prat.length) itens.push(prat.length + ' ' + (lang() === 'en' ? 'shelf(s)' : lang() === 'es' ? 'estante(s)' : 'prateleira(s)'));
+        if (baseDiv.length) itens.push(baseDiv.length + ' ' + (lang() === 'en' ? 'base divider(s)' : lang() === 'es' ? 'base(s) divisoria(s)' : 'base(s) divisória(s)'));
+        out.push({ id: 'semfundo', nivel: 'aviso', slotId: slot.id, titulo: tAud('c_semfundo_t'),
+          detalhe: tAud('c_semfundo_d', { w: fmt(slot.width_mm), min: fmt(LIM.SEM_FUNDO_LARG_MIN_MM), pecas: itens.join(' + ') }) });
       });
       return out;
     } },

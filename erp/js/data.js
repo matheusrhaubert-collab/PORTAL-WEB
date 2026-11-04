@@ -426,6 +426,37 @@ DATA.invoiceUrl = async function (path) {
 /* ============================================================
    Projetos — user_projects (admin lê via migration 078)
    ============================================================ */
+/* LISTA LEVE (04/11): select('*') de 200 projetos trazia slots/geometria e as
+   imagens base64 de todos de uma vez -> "canceling statement due to statement
+   timeout" (mesmo caso da lista do portal em 26/10). Agora a lista vem só com
+   o que o card precisa; miniatura + nº de módulos chegam depois em lotes
+   pequenos (DATA.projectsHeavy). Coluna opcional que faltar no banco sai e a
+   consulta é refeita. */
+DATA.projectsLight = async function () {
+  const base = ['id', 'name', 'updated_at', 'client_user_id'];
+  let optional = ['cached_value_usd', 'wall_shape', 'wall_widths_mm', 'wall_width_mm'];
+  const run = function () {
+    return DATA.sb().from('user_projects').select(base.concat(optional).join(', '))
+      .order('updated_at', { ascending: false }).limit(500);
+  };
+  let res = await run();
+  for (let i = 0; i < 4 && res.error; i++) {
+    const msg = res.error.message || '';
+    const miss = optional.find(function (c) { return msg.indexOf(c) >= 0; });
+    if (!miss) break;
+    optional = optional.filter(function (c) { return c !== miss; });
+    res = await run();
+  }
+  return res;
+};
+
+DATA.projectsHeavy = async function (ids) {
+  const { data, error } = await DATA.sb().from('user_projects')
+    .select('id, slots, thumbnail_data_url, ai_preview_url').in('id', ids);
+  if (error) throw error;
+  return data || [];
+};
+
 DATA.projects = async function () {
   // profilesRes junta client_user_id -> nome/e-mail (pedido do Matt
   // 2026-09-04: "quero ver todos os projetos salvos" — antes a Central de
@@ -434,7 +465,7 @@ DATA.projects = async function () {
   // ficam sem o nome do cliente (mesma tolerância de CT.load, que também
   // trata user_profiles como informação auxiliar, não fonte de verdade).
   const [projectsRes, profilesRes] = await Promise.all([
-    DATA.sb().from('user_projects').select('*').order('updated_at', { ascending: false }).limit(200),
+    DATA.projectsLight(),
     DATA.sb().from('user_profiles').select('user_id, email, full_name')
   ]);
   if (projectsRes.error) throw projectsRes.error;

@@ -400,6 +400,28 @@ ScreensApoio.slotCount = function (p) {
   return Array.isArray(p.slots) ? p.slots.length : 0;
 };
 
+/* Miniatura + nº de módulos em lotes de 4 depois que a lista aparece (a lista
+   vem leve — ver DATA.projectsLight). */
+ScreensApoio.loadProjectHeavy = async function () {
+  const grid = document.getElementById('ap-projetos-grid');
+  if (!grid) return;
+  const ids = Array.prototype.map.call(grid.querySelectorAll('.erp-project-card[data-id]'), function (c) { return c.getAttribute('data-id'); });
+  for (let i = 0; i < ids.length; i += 4) {
+    if (!document.getElementById('ap-projetos-grid')) return; // saiu da tela
+    let rows = [];
+    try { rows = await DATA.projectsHeavy(ids.slice(i, i + 4)); } catch (e) { continue; }
+    rows.forEach(function (r) {
+      const card = grid.querySelector('.erp-project-card[data-id="' + r.id + '"]');
+      if (!card) return;
+      const thumb = r.ai_preview_url || r.thumbnail_data_url;
+      const box = card.querySelector('.erp-thumb');
+      if (box) box.innerHTML = thumb ? '<img src="' + UI.esc(thumb) + '" style="width:100%;height:100%;object-fit:cover" alt="">' : 'sem miniatura';
+      const n = card.querySelector('.ap-proj-slots');
+      if (n) n.textContent = ScreensApoio.slotCount(r) + ' módulo(s) · ';
+    });
+  }
+};
+
 ScreensApoio.projectsLoad = function () { return DATA.projects(); };
 
 ScreensApoio.projects = function (params, projects) {
@@ -419,19 +441,16 @@ ScreensApoio.projects = function (params, projects) {
   }
 
   const cards = projects.map(function (p) {
-    const thumb = p.ai_preview_url || p.thumbnail_data_url;
     // client_name/client_email vêm de DATA.projects() (join com
     // user_profiles) — null quando o dono não tem linha lá (login antigo,
     // ou perfil ainda não criado no primeiro acesso).
     const cliente = UI.esc(p.client_name || p.client_email || '(cliente sem perfil)');
-    return '<div class="erp-panel erp-project-card" style="margin:0">' +
-      '<div class="erp-thumb" style="margin-bottom:10px">' +
-      (thumb ? '<img src="' + UI.esc(thumb) + '" style="width:100%;height:100%;object-fit:cover" alt="">' : 'sem miniatura') +
-      '</div>' +
+    return '<div class="erp-panel erp-project-card" style="margin:0" data-id="' + UI.esc(p.id) + '" data-owner="' + UI.esc(p.client_user_id || '') + '">' +
+      '<div class="erp-thumb" style="margin-bottom:10px">carregando…</div>' +
       '<div class="erp-strong erp-small">' + UI.esc(p.name) + '</div>' +
       '<div class="erp-muted erp-xs" style="margin-bottom:4px">' + cliente + '</div>' +
       '<div class="erp-muted erp-xs" style="margin-bottom:8px">' + UI.esc(ScreensApoio.wallLabel(p)) + '</div>' +
-      '<div class="erp-muted erp-xs" style="margin-bottom:10px">' + ScreensApoio.slotCount(p) + ' módulo(s) · ' +
+      '<div class="erp-muted erp-xs" style="margin-bottom:10px"><span class="ap-proj-slots"></span>' +
       (p.cached_value_usd != null ? UI.money(p.cached_value_usd) + ' · ' : '') + 'atualizado ' + UI.date(p.updated_at) + '</div>' +
       '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/projetos/' + p.id + '">Abrir</a>' +
       '</div>';
@@ -445,18 +464,39 @@ ScreensApoio.projects = function (params, projects) {
       '(<span class="erp-mono">public.user_projects</span>, policy "admin read user_projects" da migration 078). ' +
       'Se a fábrica precisa mudar algo, isso vira alteração de pedido, não edição silenciosa do projeto.') +
     '<div class="erp-toolbar" style="margin-bottom:12px">' +
-    '<input type="search" placeholder="Nome do projeto ou do cliente…" oninput="ScreensApoio.filterProjectCards(this.value)">' +
+    ScreensApoio.ownerSelect(projects) +
+    '<input type="search" id="ap-projetos-busca" placeholder="Nome do projeto ou do cliente…" oninput="ScreensApoio.filterProjectCards()">' +
     '<span class="erp-spacer"></span>' +
     '<span class="erp-muted erp-small">' + projects.length + ' projeto(s)</span></div>' +
-    '<div id="ap-projetos-grid" class="erp-grid erp-grid-4">' + cards + '</div>';
+    '<div id="ap-projetos-grid" class="erp-grid erp-grid-4">' + cards + '</div>' +
+    (setTimeout(ScreensApoio.loadProjectHeavy, 0), '');
 };
 
-ScreensApoio.filterProjectCards = function (q) {
-  const t = (q || '').toLowerCase();
+/* Seletor "Usuário" (04/11): lista os donos com o nº de projetos de cada um. */
+ScreensApoio.ownerSelect = function (projects) {
+  const by = {};
+  projects.forEach(function (p) {
+    const k = p.client_user_id || '';
+    if (!by[k]) by[k] = { nome: p.client_name || p.client_email || '(cliente sem perfil)', n: 0 };
+    by[k].n += 1;
+  });
+  const opts = Object.keys(by).sort(function (a, b) { return by[a].nome.localeCompare(by[b].nome); })
+    .map(function (k) { return '<option value="' + UI.esc(k) + '">' + UI.esc(by[k].nome) + ' (' + by[k].n + ')</option>'; }).join('');
+  return '<select id="ap-projetos-dono" onchange="ScreensApoio.filterProjectCards()">' +
+    '<option value="__all">Todos os usuários (' + projects.length + ')</option>' + opts + '</select>';
+};
+
+ScreensApoio.filterProjectCards = function () {
+  const busca = document.getElementById('ap-projetos-busca');
+  const dono = document.getElementById('ap-projetos-dono');
+  const t = ((busca && busca.value) || '').toLowerCase();
+  const d = dono ? dono.value : '__all';
   const grid = document.getElementById('ap-projetos-grid');
   if (!grid) return;
   grid.querySelectorAll('.erp-project-card').forEach(function (card) {
-    card.style.display = !t || card.textContent.toLowerCase().indexOf(t) >= 0 ? '' : 'none';
+    const okDono = d === '__all' || card.getAttribute('data-owner') === d;
+    const okBusca = !t || card.textContent.toLowerCase().indexOf(t) >= 0;
+    card.style.display = okDono && okBusca ? '' : 'none';
   });
 };
 
