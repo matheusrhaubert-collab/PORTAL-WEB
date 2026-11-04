@@ -119,15 +119,41 @@ function projectBuilderIrmaos(nodeId) {
   return i < 0 ? null : { pai, kids: pai.children, i };
 }
 
-// Pinta do vão-âncora até o vão sob o ponteiro, inclusive. Só entra na
-// seleção quem é IRMÃO da âncora — arrastar pra dentro de outra divisão não
-// seleciona nada, porque uma porta não cobre vãos de pais diferentes.
+// Caminho da raiz até o nó: [raiz, ..., nó].
+function projectBuilderCaminho(nodeId) {
+  const out = [];
+  let n = LayoutEngine.findNode(projectBuilderRoot, nodeId);
+  let guarda = 0;
+  while (n && guarda++ < 64) {
+    out.unshift(n);
+    n = projectBuilderFindParent(projectBuilderRoot, n.id);
+  }
+  return out;
+}
+
+// Pinta do vão-âncora até o vão sob o ponteiro, inclusive. Uma porta só cobre
+// vãos IRMÃOS (filhos contíguos do mesmo pai — applyFront).
+// 03/11 (Matt: "quando coloco uma divisoria no construtor ele nao deixa eu
+// selecionar todos os vaos"): antes, vãos de pais diferentes (um dentro da
+// divisória, outro fora) não selecionavam nada. Agora sobe até o ANCESTRAL
+// COMUM e seleciona os filhos dele entre os dois ramos — a parte dividida
+// entra inteira, como um vão só.
 function projectBuilderSelecionaFaixa(ancoraId, ateId) {
-  const a = projectBuilderIrmaos(ancoraId);
-  const b = projectBuilderIrmaos(ateId);
-  if (!a || !b || a.pai !== b.pai) return;
-  const ini = Math.min(a.i, b.i), fim = Math.max(a.i, b.i);
-  projectBuilderSelIds = a.kids.slice(ini, fim + 1).map((k) => k.id);
+  const pa = projectBuilderCaminho(ancoraId);
+  const pb = projectBuilderCaminho(ateId);
+  if (!pa.length || !pb.length || pa[0] !== pb[0]) return;
+  let k = 0;
+  while (k < pa.length && k < pb.length && pa[k] === pb[k]) k++;
+  if (k === 0 || k >= pa.length || k >= pb.length) return; // um contém o outro
+  const pai = pa[k - 1];
+  const kids = pai.children || [];
+  const ia = kids.indexOf(pa[k]);
+  const ib = kids.indexOf(pb[k]);
+  if (ia < 0 || ib < 0) return;
+  const ini = Math.min(ia, ib), fim = Math.max(ia, ib);
+  projectBuilderSelIds = kids.slice(ini, fim + 1).map((n) => n.id);
+  // principal continua sendo o vão (folha) onde o arraste começou — é onde
+  // prateleira/divisória cairiam; a porta usa a faixa (projectBuilderFaixaAtual)
   projectBuilderSelId = ancoraId;
   projectBuilderPintaSelecao();
 }
@@ -140,8 +166,10 @@ function projectBuilderPintaSelecao() {
   const stage = document.getElementById('po-proj-builder-stage');
   if (!stage) return;
   stage.querySelectorAll('rect[data-node-id]').forEach((r) => {
-    const dentro = projectBuilderSelIds.indexOf(r.dataset.nodeId) >= 0
-      || (!projectBuilderSelIds.length && r.dataset.nodeId === projectBuilderSelId);
+    // vão de dentro de um nó selecionado (divisória inteira na faixa) também pinta
+    const dentro = (projectBuilderSelIds.length
+      ? projectBuilderCaminho(r.dataset.nodeId).some((n) => projectBuilderSelIds.indexOf(n.id) >= 0)
+      : r.dataset.nodeId === projectBuilderSelId);
     r.classList.toggle('selected', dentro);
   });
 }
@@ -1816,7 +1844,7 @@ function renderProjectBuilderStage() {
   // ---- vãos: o alvo do clique e do solte
   (built.voids || []).forEach((v) => {
     const sel = projectBuilderSelIds.length
-      ? projectBuilderSelIds.indexOf(v.nodeId) >= 0
+      ? projectBuilderCaminho(v.nodeId).some((n) => projectBuilderSelIds.indexOf(n.id) >= 0)
       : v.nodeId === projectBuilderSelId;
     const r = projBuilderSvgEl('rect', {
       x: v.box.x, y: sy(v.box.y, v.box.h), width: v.box.w, height: v.box.h,
