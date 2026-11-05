@@ -323,7 +323,21 @@
           }
           const gap = -overlapX;
           const esq = a.x0 <= b.x0 ? slot : o, dir = esq === slot ? o : slot;
-          if (gap > 0.5 && gap <= LIM.FOLGA_AVISO_MM) {
+          // 05/11 (Matt: "disse que tinha uma folga entre os módulos mas
+          // esqueceu de ver que tinha um tamponamento entre eles"): se OUTRA
+          // peça da mesma parede (tamponamento, painel) está no vão entre os
+          // dois, eles não são vizinhos diretos — a folga de verdade, se
+          // houver, aparece no par caixa↔painel.
+          let temMeio = false;
+          if (gap > 0.5) {
+            const L = Math.min(a.x1, b.x1), R = Math.max(a.x0, b.x0);
+            temMeio = vizinhosParede(slot, ctx.slots).some((m) => {
+              if (m === o) return false;
+              const c = alcance(m);
+              return Math.min(c.y1, a.y1, b.y1) - Math.max(c.y0, a.y0, b.y0) > 2 && c.x1 > L + 0.5 && c.x0 < R - 0.5;
+            });
+          }
+          if (!temMeio && gap > 0.5 && gap <= LIM.FOLGA_AVISO_MM) {
             out.push({ id: 'gap', nivel: 'aviso', slotId: slot.id, titulo: tAud('c_gap_t'), detalhe: tAud('c_gap_d', { gap: fmt(gap), outro: slotNome(o) }),
               fix: () => { dir.x_mm = Number(esq.x_mm) + Number(esq.width_mm); } });
           }
