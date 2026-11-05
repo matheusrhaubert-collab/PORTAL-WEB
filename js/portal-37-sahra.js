@@ -52,6 +52,8 @@
       erro: 'erro', erros: 'erros', aviso: 'aviso', avisos: 'avisos', dica: 'dica', dicas: 'dicas',
       ver: 'Ver', fix: 'Corrigir', fix_all: 'Corrigir os automáticos', full: 'Abrir auditor completo', more: 'e mais {{n}}…',
       how: 'Como fazer?', how_ph: 'Pergunte, ex.: como girar um módulo', none: 'Não achei. Tente outras palavras ou abra o Tutorial.', tutorial: 'Abrir Tutorial',
+      applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Parei e voltei o projeto como estava antes.',
+      stop: 'Parar', stopped: 'Parei. Pode mandar de novo do jeito certo.',
       close: 'Fechar', no_speech: 'Este navegador não tem reconhecimento de voz. Use o Chrome ou o Edge.'
     },
     en: {
@@ -74,6 +76,8 @@
       erro: 'error', erros: 'errors', aviso: 'warning', avisos: 'warnings', dica: 'tip', dicas: 'tips',
       ver: 'View', fix: 'Fix', fix_all: 'Fix the automatic ones', full: 'Open full auditor', more: 'and {{n}} more…',
       how: 'How do I…?', how_ph: 'Ask, e.g.: how to rotate a cabinet', none: 'Nothing found. Try other words or open the Tutorial.', tutorial: 'Open Tutorial',
+      applying_n: 'Applying {{k}} of {{n}}…', apply_stopped: 'Stopped and put the project back as it was.',
+      stop: 'Stop', stopped: 'Stopped. Send it again the right way.',
       close: 'Close', no_speech: 'This browser has no speech recognition. Use Chrome or Edge.'
     },
     es: {
@@ -96,6 +100,8 @@
       erro: 'error', erros: 'errores', aviso: 'aviso', avisos: 'avisos', dica: 'consejo', dicas: 'consejos',
       ver: 'Ver', fix: 'Corregir', fix_all: 'Corregir los automáticos', full: 'Abrir auditor completo', more: 'y {{n}} más…',
       how: '¿Cómo hago…?', how_ph: 'Pregunta, ej.: cómo girar un módulo', none: 'No encontré. Prueba otras palabras o abre el Tutorial.', tutorial: 'Abrir Tutorial',
+      applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Paré y dejé el proyecto como estaba.',
+      stop: 'Detener', stopped: 'Paré. Puedes enviarlo de nuevo como quieras.',
       close: 'Cerrar', no_speech: 'Este navegador no tiene reconocimiento de voz. Usa Chrome o Edge.'
     }
   };
@@ -109,6 +115,7 @@
   let root = null, badge = null, achados = [], aberto = false, aba = 'chat';
   let conversa = [];            // [{role:'user'|'sahra', text, ops?, notDone?, actions?, applied?}]
   let pensando = false;
+  let chatSeq = 0, chatAbort = null;   // STOP (05/11, Matt: "dei um comando errado e não consigo parar")
 
   function isAdmin() { return window.LEGNO_IS_ADMIN === true; }
   function editorVisivel() {
@@ -207,6 +214,7 @@
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-2-7-8-1z"/></svg>',
     spk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>',
     mute: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
     novo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'
   };
 
@@ -259,13 +267,13 @@
 
     // teclas digitadas no painel não podem virar atalho do canvas (Delete, setas…)
     ['keydown', 'keyup', 'keypress'].forEach((t) => root.addEventListener(t, (ev) => {
-      if (ev.key === 'Escape' && t === 'keydown') { fecha(); return; }
+      if (ev.key === 'Escape' && t === 'keydown') { if (ocupada()) parar(); else fecha(); return; }
       ev.stopPropagation();
     }));
 
     root.querySelector('.sa-av').addEventListener('click', () => (aberto ? fecha() : abre()));
     root.querySelector('.sa-x').addEventListener('click', fecha);
-    root.querySelector('.sa-new').addEventListener('click', () => { pararFala(); conversa = []; renderConversa(); });
+    root.querySelector('.sa-new').addEventListener('click', () => { if (pensando) parar(); pararFala(); conversa = []; renderConversa(); });
     root.querySelector('.sa-voz').addEventListener('click', () => { setVoz(!vozLigada()); if (!vozLigada()) pararFala(); });
     root.querySelectorAll('.sa-tab').forEach((b) => b.addEventListener('click', () => mostraAba(b.dataset.aba)));
 
@@ -273,7 +281,7 @@
     const inp = root.querySelector('.sa-in');
     inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(120, inp.scrollHeight) + 'px'; });
     inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviar(); } });
-    root.querySelector('.sa-send').addEventListener('click', () => enviar());
+    root.querySelector('.sa-send').addEventListener('click', () => (ocupada() ? parar() : enviar()));
     root.querySelector('.sa-mic').addEventListener('click', alternaMic);
     root.querySelector('.sa-chips').addEventListener('click', (ev) => {
       const b = ev.target.closest('[data-chip]');
@@ -283,7 +291,8 @@
       const b = ev.target.closest('button[data-mact]');
       if (!b) return;
       const m = conversa[Number(b.dataset.idx)];
-      if (b.dataset.mact === 'apply' && m) aplicar(m);
+      if (b.dataset.mact === 'apply' && m) { m.stopped = false; aplicar(m); }
+      else if (b.dataset.mact === 'stop') parar();
       else if (b.dataset.mact === 'render') { fecha(); if (typeof window.openProjectDecoratedRender === 'function') window.openProjectDecoratedRender(); }
       else if (b.dataset.mact === 'audit') { fecha(); if (typeof window.openAuditModal === 'function') window.openAuditModal(); }
     });
@@ -376,11 +385,12 @@
       if (m.role === 'user') { html += `<div class="sa-m user">${esc(m.text)}</div>`; return; }
       let extra = '';
       const bts = [];
-      if (m.ops && m.ops.length && !m.applied) bts.push(`<button type="button" data-mact="apply" data-idx="${i}">${esc(T('apply', { n: m.ops.length }))}</button>`);
+      if (m.ops && m.ops.length && !m.applied && !m.applying) bts.push(`<button type="button" data-mact="apply" data-idx="${i}">${esc(T('apply', { n: m.ops.length }))}</button>`);
       if ((m.actions || []).includes('render')) bts.push(`<button type="button" class="secondary" data-mact="render" data-idx="${i}">${esc(T('open_render'))}</button>`);
       if ((m.actions || []).includes('audit')) bts.push(`<button type="button" class="secondary" data-mact="audit" data-idx="${i}">${esc(T('open_audit'))}</button>`);
       if (bts.length) extra += `<div class="sa-mact">${bts.join('')}</div>`;
-      if (m.applying) extra += `<div class="sa-small">${esc(T('applying'))}</div>`;
+      if (m.applying) extra += `<div class="sa-small">${esc(T('applying_n', { k: m.progress || 0, n: m.ops.length }))} <button type="button" class="secondary sa-link" data-mact="stop" data-idx="${i}">■ ${esc(T('stop'))}</button></div>`;
+      if (m.stopped) extra += `<div class="sa-small">${esc(T('apply_stopped'))}</div>`;
       if (m.applied) extra += `<div class="sa-small">✓ ${esc(T('applied'))}</div>`;
       if (m.notDone && m.notDone.length) extra += `<div class="sa-small"><strong>${esc(T('not_done'))}</strong> ${m.notDone.map(esc).join(' · ')}</div>`;
       if (m.warnings && m.warnings.length) extra += `<div class="sa-small"><strong>${esc(T('warn'))}</strong> ${m.warnings.map(esc).join(' · ')}</div>`;
@@ -389,6 +399,33 @@
     if (pensando) html += `<div class="sa-m sahra"><span class="sa-dots"><span></span><span></span><span></span></span></div>`;
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+    pintaEnviar();
+  }
+
+  function ocupada() { return pensando || !!aplicando || (root && root.classList.contains('falando')); }
+  function pintaEnviar() {
+    const b = root && root.querySelector('.sa-send');
+    if (!b) return;
+    const oc = ocupada();
+    b.innerHTML = oc ? ICO.stop : ICO.send;
+    b.title = oc ? T('stop') : T('send');
+    b.style.background = oc ? '#b3412e' : '';
+  }
+  // Para TUDO: pensamento em andamento (resposta que chegar depois é
+  // ignorada) e a fala. Operações nunca se aplicam sozinhas, então não há
+  // nada pela metade no projeto.
+  function parar() {
+    const estavaPensando = pensando;
+    if (aplicando) aplicando.cancel = true;
+    chatSeq++;
+    try { if (chatAbort) chatAbort.abort(); } catch (e) { /* */ }
+    chatAbort = null;
+    pararFala();
+    if (estavaPensando) {
+      pensando = false;
+      conversa.push({ role: 'sahra', text: T('stopped'), err: true });
+    }
+    renderConversa();
   }
 
   function precoDoProjeto() {
@@ -437,57 +474,107 @@
     pararFala();
     conversa.push({ role: 'user', text: texto });
     pensando = true; renderConversa();
+    const seq = ++chatSeq;
+    chatAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     try {
       const ctx = await montaContexto();
+      if (seq !== chatSeq) return;
       const body = {
         lang: lang(),
         unit: ((document.getElementById('po-unit-select') || {}).value || 'mm') === 'in' ? 'in' : 'mm',
         messages: conversa.filter((m) => !m.err).map((m) => ({ role: m.role, text: m.text })),
         project: ctx.project, catalog: ctx.catalog
       };
-      const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body });
+      const { data, error } = await supabaseClient.functions.invoke('sahra-chat', chatAbort ? { body, signal: chatAbort.signal } : { body });
+      if (seq !== chatSeq) return; // parado pelo usuário: ignora a resposta
       if (error || !data || data.error) throw new Error(await mensagemDeErro(error, data));
       const msg = { role: 'sahra', text: data.reply || '…', spoken: data.spoken || '', ops: Array.isArray(data.operations) ? data.operations : [],
         notDone: Array.isArray(data.not_done) ? data.not_done : [], actions: Array.isArray(data.actions) ? data.actions : [] };
       conversa.push(msg);
       falar(msg.spoken || msg.text);
     } catch (e) {
+      if (seq !== chatSeq) return;
       console.error('[sahra chat]', e);
       conversa.push({ role: 'sahra', err: true, text: T('err') + ((e && e.message) || String(e)) });
     } finally {
-      pensando = false; renderConversa();
+      if (seq === chatSeq) { pensando = false; chatAbort = null; renderConversa(); }
     }
   }
 
   // Mesma técnica do portal-19 (editProjectAiRun): UM passo no Desfazer.
+  // 2ª versão (05/11, Matt travou em "Aplicando…" com 11 mudanças): aplica
+  // UMA operação por vez (editProjectAiApply([op])), mostra o progresso e dá
+  // pra PARAR entre uma e outra — parar volta o projeto pra foto de antes
+  // (undoProjectChange). Operação que demora mais que OP_TIMEOUT_MS é
+  // abandonada (aviso) e segue a próxima; se ela terminar depois de um
+  // Parar, o módulo que ela inseriu é tirado.
+  const OP_TIMEOUT_MS = 25000;
+  let aplicando = null;   // { m, cancel }
   async function aplicar(m) {
-    if (!m || m.applied || m.applying || typeof editProjectAiApply !== 'function') return;
-    m.applying = true; renderConversa();
+    if (!m || m.applied || m.applying || aplicando || typeof editProjectAiApply !== 'function') return;
+    const job = { m, cancel: false };
+    aplicando = job;
+    m.applying = true; m.progress = 0; m.warnings = []; renderConversa();
+    const stackAntes = projectUndoStack.slice();
+    const fotoAntes = projectUndoSnapshot();
+    const idsAntes = new Set(projectSlots.map((x) => String(x.id)));
+    const falhas = [];
     try {
-      const stackAntes = projectUndoStack.slice();
-      const fotoAntes = projectUndoSnapshot();
-      const out = await editProjectAiApply(m.ops);
-      renderProjectCanvas();
-      markProjectDirty();
+      for (let k = 0; k < m.ops.length; k++) {
+        if (job.cancel) break;
+        m.progress = k + 1; renderConversa();
+        const op = m.ops[k];
+        const run = editProjectAiApply([op]);
+        let timer = null;
+        const out = await Promise.race([run, new Promise((res) => { timer = setTimeout(() => res('__timeout'), OP_TIMEOUT_MS); })]);
+        clearTimeout(timer);
+        if (out === '__timeout') {
+          falhas.push((op.reason || op.op) + ' (demorou demais)');
+          // se terminar depois de um Parar, tira o que ela inseriu
+          run.then(() => { if (job.cancel) limpaIntrusos(job.idsFinais); }).catch(() => {});
+          continue;
+        }
+        (out && out.warnings || []).forEach((w) => m.warnings.push(w));
+        ((out && out.results) || []).filter((r) => !r.ok).forEach((r) => falhas.push(r.op && r.op.reason));
+        try { renderProjectCanvas(); } catch (e) { /* */ }
+      }
+      // um passo só no Desfazer
       projectUndoStack = stackAntes.concat([fotoAntes]);
       if (projectUndoStack.length > PROJECT_UNDO_MAX) projectUndoStack.shift();
       projectRedoStack = [];
       projectUndoBaseline = projectUndoSnapshot();
       projectUndoLastPushAt = Date.now();
+      if (job.cancel) {
+        // volta pra foto de antes
+        undoProjectChange();
+        projectRedoStack = []; // refazer o "meio aplicado" não faz sentido
+        job.idsFinais = idsAntes;
+        limpaIntrusos(idsAntes);
+        m.stopped = true;
+      } else {
+        try { markProjectDirty(); } catch (e) { /* */ }
+        m.applied = true;
+      }
       try { refreshProjectUndoButton(); refreshProjectRedoButton(); } catch (e) { /* */ }
+      try { renderProjectCanvas(); } catch (e) { /* */ }
       try { if (typeof renderProjectSummary === 'function') renderProjectSummary(); } catch (e) { /* */ }
       try { if (typeof renderProjectConfigPanel === 'function') renderProjectConfigPanel(); } catch (e) { /* */ }
-      m.applied = true;
-      m.warnings = (out && out.warnings) || [];
-      const falhas = ((out && out.results) || []).filter((r) => !r.ok).map((r) => r.op && r.op.reason).filter(Boolean);
-      if (falhas.length) m.notDone = (m.notDone || []).concat(falhas);
+      if (falhas.filter(Boolean).length && !m.stopped) m.notDone = (m.notDone || []).concat(falhas.filter(Boolean));
       atualiza(false);
     } catch (e) {
       console.error('[sahra aplicar]', e);
-      m.warnings = [(e && e.message) || String(e)];
+      m.warnings.push((e && e.message) || String(e));
     } finally {
-      m.applying = false; renderConversa();
+      m.applying = false;
+      if (aplicando === job) aplicando = null;
+      renderConversa();
     }
+  }
+  function limpaIntrusos(idsOk) {
+    if (!idsOk) return;
+    const antes = projectSlots.length;
+    projectSlots = projectSlots.filter((x) => idsOk.has(String(x.id)));
+    if (projectSlots.length !== antes) { try { renderProjectCanvas(); renderProjectConfigPanel(); } catch (e) { /* */ } }
   }
 
   // ---------------------------------------------------------------- VOZ
@@ -582,13 +669,13 @@
     if (!limpo) return;
     const seq = ++falaSeq;
     try {
-      root.classList.add('falando');
+      root.classList.add('falando'); pintaEnviar();
       const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { tts: limpo.slice(0, 2500), lang: lang(), voice: VOZ_GEMINI } });
       if (seq !== falaSeq) return; // outra fala começou / foi parada
       if (error || !data || !data.audio) throw new Error((data && data.error) || (error && error.message) || 'sem áudio');
       const url = URL.createObjectURL(/^audio\/(wav|mpeg|mp3|ogg)/i.test(data.mime || '') ? new Blob([Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0))], { type: data.mime }) : pcmParaWav(data.audio, data.mime));
       audioAtual = new Audio(url);
-      audioAtual.onended = () => { root.classList.remove('falando'); URL.revokeObjectURL(url); };
+      audioAtual.onended = () => { root.classList.remove('falando'); URL.revokeObjectURL(url); pintaEnviar(); };
       await audioAtual.play();
     } catch (e) {
       if (seq !== falaSeq) return;
@@ -604,8 +691,8 @@
     partes.forEach((p, i) => {
       const u = new SpeechSynthesisUtterance(p.trim());
       u.lang = langTag(); if (voz) u.voice = voz; u.rate = 1.05;
-      if (i === 0) u.onstart = () => root.classList.add('falando');
-      if (i === partes.length - 1) { u.onend = () => root.classList.remove('falando'); u.onerror = u.onend; }
+      if (i === 0) u.onstart = () => { root.classList.add('falando'); pintaEnviar(); };
+      if (i === partes.length - 1) { u.onend = () => { root.classList.remove('falando'); pintaEnviar(); }; u.onerror = u.onend; }
       window.speechSynthesis.speak(u);
     });
   }
@@ -614,6 +701,7 @@
     try { if (audioAtual) { audioAtual.pause(); audioAtual = null; } } catch (e) { /* */ }
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* */ }
     if (root) root.classList.remove('falando');
+    pintaEnviar();
   }
   try { if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = () => {}; } catch (e) { /* carrega as vozes */ }
 
