@@ -64,6 +64,9 @@
       dup: 'Já sabia:', clash: 'Isso choca com o que eu já sei:', keep_new: 'A nova vale', keep_old: 'A antiga vale', keep_both: 'As duas valem (casos diferentes)',
       kept_new: 'Troquei: a nova substituiu a antiga.', kept_old: 'Mantive a antiga.', kept_both: 'Guardei as duas.', checking: 'Conferindo com o que eu já sei…',
       w_ouro: 'ouro', w_normal: 'normal', w_preferencia: 'preferência', w_hint: 'Clique pra mudar o peso: ouro (nunca quebrar) → normal → preferência',
+      ed_btn: 'Editar', ed_label: 'Editada:', ed_save: 'Salvar', ed_cancel: 'Cancelar', ed_checking: 'Revisão geral: comparando com todo o Codex…',
+      ed_ok: '✓ Revisado: sem choque com nenhuma regra.', ed_dup: 'Depois da edição ela ficou igual a:', ed_clash: 'Depois da edição ela choca com:',
+      ed_keep_edit: 'A editada vale', ed_keep_both: 'Manter as duas', ed_undo: 'Desfazer a edição', ed_del_this: 'Apagar esta (já existe)', ed_save_anyway: 'Salvar mesmo assim',
       no_hub: 'Sem central', hub_auto: 'Central: automática', weight_auto: 'Peso: automático', central: 'Central',
       applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Parei e voltei o projeto como estava antes.',
       stop: 'Parar', stopped: 'Parei. Pode mandar de novo do jeito certo.',
@@ -101,6 +104,9 @@
       dup: 'Already knew:', clash: 'This clashes with what I know:', keep_new: 'New one wins', keep_old: 'Old one wins', keep_both: 'Keep both (different cases)',
       kept_new: 'Replaced: the new rule took over.', kept_old: 'Kept the old one.', kept_both: 'Kept both.', checking: 'Checking against what I know…',
       w_ouro: 'gold', w_normal: 'normal', w_preferencia: 'preference', w_hint: 'Click to change weight: gold (never break) → normal → preference',
+      ed_btn: 'Edit', ed_label: 'Edited:', ed_save: 'Save', ed_cancel: 'Cancel', ed_checking: 'Full review: comparing with the whole Codex…',
+      ed_ok: '✓ Reviewed: no clash with any rule.', ed_dup: 'After editing it became the same as:', ed_clash: 'After editing it clashes with:',
+      ed_keep_edit: 'Edited one wins', ed_keep_both: 'Keep both', ed_undo: 'Undo the edit', ed_del_this: 'Delete this one (already exists)', ed_save_anyway: 'Save anyway',
       no_hub: 'No hub', hub_auto: 'Hub: automatic', weight_auto: 'Weight: automatic', central: 'Hub',
       applying_n: 'Applying {{k}} of {{n}}…', apply_stopped: 'Stopped and put the project back as it was.',
       stop: 'Stop', stopped: 'Stopped. Send it again the right way.',
@@ -138,6 +144,9 @@
       dup: 'Ya lo sabía:', clash: 'Esto choca con lo que ya sé:', keep_new: 'Vale la nueva', keep_old: 'Vale la anterior', keep_both: 'Valen las dos (casos distintos)',
       kept_new: 'Cambié: la nueva reemplazó a la anterior.', kept_old: 'Mantuve la anterior.', kept_both: 'Guardé las dos.', checking: 'Comparando con lo que ya sé…',
       w_ouro: 'oro', w_normal: 'normal', w_preferencia: 'preferencia', w_hint: 'Clic para cambiar el peso: oro (nunca romper) → normal → preferencia',
+      ed_btn: 'Editar', ed_label: 'Editada:', ed_save: 'Guardar', ed_cancel: 'Cancelar', ed_checking: 'Revisión general: comparando con todo el Codex…',
+      ed_ok: '✓ Revisado: sin choque con ninguna regla.', ed_dup: 'Después de editar quedó igual a:', ed_clash: 'Después de editar choca con:',
+      ed_keep_edit: 'Vale la editada', ed_keep_both: 'Mantener las dos', ed_undo: 'Deshacer la edición', ed_del_this: 'Borrar esta (ya existe)', ed_save_anyway: 'Guardar igual',
       no_hub: 'Sin central', hub_auto: 'Central: automática', weight_auto: 'Peso: automático', central: 'Central',
       applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Paré y dejé el proyecto como estaba.',
       stop: 'Detener', stopped: 'Paré. Puedes enviarlo de nuevo como quieras.',
@@ -238,6 +247,9 @@
 #po-sahra .sa-clash { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #fdecea; border: 1px solid #f2c4bd; }
 #po-sahra .sa-clash .sa-old { margin: 4px 0; color: #6b3a32; } #po-sahra .sa-clash .sa-mact { margin-top: 6px; }
 #po-sahra .sa-cx-opts { display: flex; gap: 6px; margin: -4px 0 8px; } #po-sahra .sa-cx-opts select { font-size: 11.5px; padding: 3px 6px; border: 1px solid #e0d5c4; border-radius: 6px; background: #fff; }
+#po-sahra .sa-cx-ed textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid #c9a46a; border-radius: 8px; resize: vertical; min-height: 54px; }
+#po-sahra .sa-cx-ed .sa-mact { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; } #po-sahra .sa-cx-ed .sa-mact button { font-size: 11.5px; padding: 4px 10px; }
+#po-sahra .sa-cx-it .sa-cx-btns { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
 #po-sahra .sa-cx-pend:empty { display: none; } #po-sahra .sa-cx-pend { margin-bottom: 8px; }
 #po-sahra .sa-cx-add { display: flex; gap: 6px; align-items: flex-end; margin: 8px 0 10px; }
 #po-sahra .sa-cx-add textarea { flex: 1; resize: vertical; font: inherit; font-size: 12.5px; padding: 7px 9px; border: 1px solid #e0d5c4; border-radius: 8px; }
@@ -426,6 +438,17 @@
       pintaPend(); carregaCodex();
     });
     root.querySelector('.sa-cx-list').addEventListener('click', async (ev) => {
+      const ed = ev.target.closest('button[data-edit]');
+      if (ed) {
+        const reg = codexData.find((x) => String(x.id) === String(ed.dataset.edit));
+        if (!reg) return;
+        cxEdit = { id: reg.id, texto: reg.rule, fase: 'edit' };
+        pintaCodex();
+        const ta = root.querySelector('.sa-cx-edin'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+        return;
+      }
+      const ec = ev.target.closest('button[data-ed]');
+      if (ec) { ec.disabled = true; await salvaEdicao(ec.dataset.ed); return; }
       const w = ev.target.closest('button[data-wt]');
       if (w) {
         const prox = { ouro: 'normal', normal: 'preferencia', preferencia: 'ouro' }[w.dataset.w] || 'normal';
@@ -625,6 +648,8 @@
         const sl = projectSlots.find((x) => String(x.id) === String(cs.id));
         if (!sl) return;
         cs.interior_atual = resumoInterior(sl);
+        const lp = pecasLed(sl);
+        if (lp.length) cs.led_pecas = lp;
         cs.casco = CASCO_RE.test(String((sl.module && sl.module.name) || ''));
         if (PAINEL_RE.test(String((sl.module && sl.module.name) || ''))) cs.painel = true;
       });
@@ -667,6 +692,83 @@
     if ((await contaFotosRealistas()) === 0) { falaNaConversa(T('need_photoreal'), ['photoreal']); return; }
     fecha();
     if (typeof window.openProjectDecoratedRender === 'function') window.openProjectDecoratedRender();
+  }
+
+  // ---------------------------------------------------------------- LED
+  // 05/11 (Matt: "a SAHRA não tem acesso ao LED. preciso colocar LED nos
+  // projetos"). Mesmas funções da tela de LED (portal-06c): quem pode
+  // receber (projectLedPecasElegiveis), linha padrão (ledLinhaPadrao: 50 da
+  // frente, margens 0), Top/Under (ledFaceDoBotao), distância da frente
+  // (ledPosGravar) e a validação de verdade (ledAvaliar — a mesma do .ban).
+  // Grava só slot.ledConfigs[piece_id] = [linhas]; preço por metro, 3D, foto
+  // e rasgo no .ban saem sozinhos do ponto de junção.
+  function ledOk() {
+    return typeof projectLedPecasElegiveis === 'function' && typeof ledLinhaPadrao === 'function'
+      && typeof ledConfigDaLinha === 'function' && typeof ledAvaliar === 'function' && typeof Pricing !== 'undefined';
+  }
+  function pecasLed(slot) {
+    if (!ledOk()) return [];
+    let lista = [];
+    try { lista = projectLedPecasElegiveis(slot) || []; } catch (e) { return []; }
+    return lista.slice(0, 16).map(({ p }) => {
+      let n = 0;
+      try { n = Pricing.ledLista(slot.ledConfigs && slot.ledConfigs[p.piece_id]).length; } catch (e) { /* */ }
+      return {
+        piece_id: String(p.piece_id), papel: p.position_role,
+        nome: String(p.reference || p.name || p.component_name || p.position_role || '').slice(0, 40),
+        LxAxP: [p.width_mm, p.height_mm, p.depth_mm].map((v) => Math.round(Number(v) || 0)).join('x'),
+        leds: n
+      };
+    });
+  }
+  async function aplicaLed(op) {
+    const warnings = [], results = [];
+    const L = op.led || {};
+    if (!ledOk()) { warnings.push('LED indisponível nesta tela'); return { results: [{ op, ok: false }], warnings }; }
+    for (const id of (op.slot_ids || [])) {
+      const slot = projectSlots.find((x) => String(x.id) === String(id));
+      const nomeMod = (slot && slot.module && slot.module.name) || '?';
+      if (!slot) { results.push({ op, ok: false }); continue; }
+      let pecas = [];
+      try { pecas = (projectLedPecasElegiveis(slot) || []).map((x) => x.p); } catch (e) { pecas = []; }
+      const ids = new Set((L.piece_ids || []).map(String));
+      const papeis = new Set(L.roles || []);
+      const alvo = pecas.filter((p) => ids.has(String(p.piece_id)) || papeis.has(p.position_role));
+      if (!alvo.length) { warnings.push(nomeMod + ': nenhuma peça desse tipo pode receber LED'); results.push({ op, ok: false }); continue; }
+      const novo = Object.assign({}, slot.ledConfigs || {});
+      let feitas = 0;
+      alvo.forEach((part) => {
+        const pid = part.piece_id;
+        if (L.action === 'remove') { if (novo[pid]) { delete novo[pid]; feitas++; } return; }
+        const linhas = [];
+        let ant = null;
+        const n = Math.max(1, Math.min(6, Number(L.lines) || 1));
+        for (let k = 0; k < n; k++) {
+          const l = ledLinhaPadrao(part, ant);
+          if (!ant) {
+            if (L.side && typeof ledFaceDoBotao === 'function') l.face = ledFaceDoBotao(part, L.side);
+            if (L.from_front_mm != null && typeof ledPosGravar === 'function') l.pos_mm = ledPosGravar(part, l, Number(L.from_front_mm));
+            if (L.margin_mm != null) { l.margem_ini_mm = Number(L.margin_mm); l.margem_fim_mm = Number(L.margin_mm); }
+          }
+          linhas.push(l); ant = l;
+        }
+        const cfgs = [];
+        linhas.forEach((l) => {
+          const c = ledConfigDaLinha(l);
+          const av = ledAvaliar(c, part);
+          if (av.erro) warnings.push(`${nomeMod} · ${part.reference || part.position_role}: ${av.erro}`);
+          else cfgs.push(c);
+        });
+        if (!cfgs.length) return;
+        const antes = L.action === 'add' ? Pricing.ledLista(novo[pid]) : [];
+        novo[pid] = antes.concat(cfgs);
+        feitas++;
+      });
+      slot.ledConfigs = novo;
+      try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[sahra led] preço', e); }
+      results.push({ op, ok: feitas > 0 });
+    }
+    return { results, warnings };
   }
 
   // ---------------------------------------------------------------- CONSTRUTOR
@@ -913,7 +1015,35 @@
         res = await supabaseClient.from('sahra_lessons').select('id,topic,rule,created_at').eq('active', true).order('created_at', { ascending: false });
       }
       if (res.error) throw res.error;
-      const data = res.data || [];
+      codexData = res.data || [];
+      pintaCodex();
+    } catch (e) {
+      box.innerHTML = `<p class="sa-hint">${esc(T('codex_load_err') + ((e && e.message) || e))}</p>`;
+    }
+  }
+  // EDITAR + REVISÃO GERAL (05/11, Matt: "coloca um botão editar, e depois
+  // de editado uma revisão geral"): a regra editada é comparada com o Codex
+  // INTEIRO (check_learn scope:'all', sem ela mesma). Sem choque = grava.
+  // Duplicada/contradiz = o Matt decide antes de gravar.
+  let codexData = [], cxEdit = null; // { id, texto, fase: 'edit'|'checando'|'resultado', L, msg }
+  function blocoEdicao(l) {
+    const e = cxEdit;
+    if (e.fase === 'checando') return `<div class="sa-cx-ed"><p class="sa-hint">${esc(T('ed_checking'))}</p></div>`;
+    if (e.fase === 'resultado' && e.L && e.L.status !== 'nova') {
+      const lista = (e.L.existing || []).map((x) => `<div class="sa-old">— ${esc(x.rule)}</div>`).join('');
+      const btns = e.L.status === 'contradiz'
+        ? `<button type="button" data-ed="vale">${esc(T('ed_keep_edit'))}</button><button type="button" class="secondary" data-ed="ambas">${esc(T('ed_keep_both'))}</button><button type="button" class="secondary" data-ed="cancel">${esc(T('ed_undo'))}</button>`
+        : `<button type="button" data-ed="apagar">${esc(T('ed_del_this'))}</button><button type="button" class="secondary" data-ed="ambas">${esc(T('ed_save_anyway'))}</button><button type="button" class="secondary" data-ed="cancel">${esc(T('ed_undo'))}</button>`;
+      return `<div class="sa-cx-ed sa-learn sa-clash"><strong>⚠ ${esc(T(e.L.status === 'contradiz' ? 'ed_clash' : 'ed_dup'))}</strong>${lista}
+        <div><strong>${esc(T('ed_label'))}</strong> ${esc(e.texto)}</div>${e.L.note ? `<div class="sa-small">${esc(e.L.note)}</div>` : ''}<div class="sa-mact">${btns}</div></div>`;
+    }
+    return `<div class="sa-cx-ed"><textarea class="sa-cx-edin">${esc(e.texto)}</textarea>
+      <div class="sa-mact"><button type="button" data-ed="save">${esc(T('ed_save'))}</button><button type="button" class="secondary" data-ed="cancel">${esc(T('ed_cancel'))}</button></div></div>`;
+  }
+  function pintaCodex() {
+    const box = root.querySelector('.sa-cx-list');
+    const data = codexData;
+    {
       if (!data.length) { box.innerHTML = `<p class="sa-hint">${esc(T('codex_empty'))}</p>`; return; }
       const ordem = { ouro: 0, normal: 1, preferencia: 2 };
       const grupos = centrais().map((h) => h.slug).concat(['']);
@@ -922,12 +1052,52 @@
         if (!ls.length) return '';
         const h = centrais().find((x) => x.slug === slug);
         const lig = h && h.related && h.related.length ? ` <small>↔ ${h.related.map(nomeCentral).map(esc).join(', ')}</small>` : '';
-        return `<div class="sa-hubh">${esc(slug ? nomeCentral(slug) : T('no_hub'))} (${ls.length})${lig}</div>` + ls.map((l) => `<div class="sa-cx-it"><div>${temCentraisNoBanco
-          ? `<button type="button" class="sa-wt ${esc(l.weight || 'normal')}" data-wt="${esc(l.id)}" data-w="${esc(l.weight || 'normal')}" title="${esc(T('w_hint'))}">${esc(T('w_' + (l.weight || 'normal')))}</button> ` : ''}${esc(l.rule)}</div><button type="button" class="secondary" data-del="${esc(l.id)}">${esc(T('codex_del'))}</button></div>`).join('');
+        return `<div class="sa-hubh">${esc(slug ? nomeCentral(slug) : T('no_hub'))} (${ls.length})${lig}</div>` + ls.map((l) => {
+          if (cxEdit && String(cxEdit.id) === String(l.id)) return blocoEdicao(l);
+          const ok = cxEdit && cxEdit.okId && String(cxEdit.okId) === String(l.id) ? `<div class="sa-small" style="color:#3f6b3a">${esc(T('ed_ok'))}</div>` : '';
+          return `<div class="sa-cx-it"><div>${temCentraisNoBanco
+          ? `<button type="button" class="sa-wt ${esc(l.weight || 'normal')}" data-wt="${esc(l.id)}" data-w="${esc(l.weight || 'normal')}" title="${esc(T('w_hint'))}">${esc(T('w_' + (l.weight || 'normal')))}</button> ` : ''}${esc(l.rule)}${ok}</div><div class="sa-cx-btns"><button type="button" class="secondary" data-edit="${esc(l.id)}">${esc(T('ed_btn'))}</button><button type="button" class="secondary" data-del="${esc(l.id)}">${esc(T('codex_del'))}</button></div></div>`;
+        }).join('');
       }).join('');
-    } catch (e) {
-      box.innerHTML = `<p class="sa-hint">${esc(T('codex_load_err') + ((e && e.message) || e))}</p>`;
     }
+  }
+  async function salvaEdicao(escolha) {
+    const e = cxEdit; if (!e) return;
+    const reg = codexData.find((x) => String(x.id) === String(e.id));
+    if (escolha === 'cancel') { cxEdit = null; pintaCodex(); return; }
+    if (escolha === 'apagar') { await esqueceRegra(e.id); cxEdit = null; carregaCodex(); return; }
+    if (escolha === 'save') {
+      const ta = root.querySelector('.sa-cx-edin');
+      e.texto = (ta && ta.value || '').trim();
+      if (!e.texto) return;
+      if (reg && e.texto === reg.rule) { cxEdit = null; pintaCodex(); return; }
+      e.fase = 'checando'; pintaCodex();
+      try {
+        const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: {
+          check_learn: [{ rule: e.texto, hub: reg && reg.hub, weight: reg && reg.weight }], exclude_id: e.id, scope: 'all', lang: lang() } });
+        if (error || !data || !Array.isArray(data.learn)) throw new Error((data && data.error) || (error && error.message) || '?');
+        e.L = data.learn[0];
+      } catch (er) {
+        console.warn('[sahra editar] revisão falhou, gravando direto', er);
+        e.L = { status: 'nova', existing: [] };
+      }
+      e.fase = 'resultado';
+      if (e.L.status !== 'nova') { pintaCodex(); return; }
+      escolha = 'ambas'; // sem choque: grava direto
+    }
+    // grava a edição (nova / ambas / vale)
+    try {
+      const { error } = await supabaseClient.from('sahra_lessons').update({ rule: e.texto.slice(0, 600) }).eq('id', e.id);
+      if (error) throw error;
+      if (escolha === 'vale') {
+        for (const x of (e.L.existing || [])) {
+          const patch = temCentraisNoBanco ? { active: false, replaced_by: e.id, replaced_at: new Date().toISOString() } : { active: false };
+          await supabaseClient.from('sahra_lessons').update(patch).eq('id', x.id);
+        }
+      }
+      cxEdit = (e.L && e.L.status === 'nova') ? { okId: e.id } : null;
+    } catch (er) { status(T('learn_err') + ((er && er.message) || er)); cxEdit = null; }
+    carregaCodex();
   }
 
   // IMAGENS DE CONCEITO (05/11, Matt: "mostrar algumas imagens antes de
@@ -984,7 +1154,7 @@
         if (job.cancel) break;
         m.progress = k + 1; renderConversa();
         const op = m.ops[k];
-        const run = op.op === 'set_interior' ? aplicaInterior(op) : editProjectAiApply([op]);
+        const run = op.op === 'set_interior' ? aplicaInterior(op) : op.op === 'set_led' ? aplicaLed(op) : editProjectAiApply([op]);
         let timer = null;
         const out = await Promise.race([run, new Promise((res) => { timer = setTimeout(() => res('__timeout'), OP_TIMEOUT_MS); })]);
         clearTimeout(timer);

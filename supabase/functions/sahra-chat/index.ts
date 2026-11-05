@@ -199,7 +199,41 @@ function parseLooseJson(text: string): any {
 // monta a árvore do Construtor com o mesmo motor da leitura por foto
 // (projectPhotoInteriorTree, portal-11). Só nesta função (cópia), a
 // generate-project-from-photo não muda.
-const EDIT_OPS = ["resize", "move", "set_color", "set_quantity", "replace_module", "add_module", "remove_module", "set_interior"];
+const EDIT_OPS = ["resize", "move", "set_color", "set_quantity", "replace_module", "add_module", "remove_module", "set_interior", "set_led"];
+// LED (05/11, Matt: "a SAHRA não tem acesso ao LED. preciso colocar LED nos
+// projetos"): op set_led — o portal aplica com as MESMAS funções da tela de
+// LED (portal-06c: projectLedPecasElegiveis, ledLinhaPadrao, ledFaceDoBotao,
+// ledPosGravar, ledAvaliar) e grava slot.ledConfigs; preço por metro, 3D,
+// foto e rasgo no .ban saem sozinhos.
+const LED_SCHEMA = {
+  type: "OBJECT",
+  nullable: true,
+  properties: {
+    action: { type: "STRING", enum: ["add", "replace", "remove"] },
+    piece_ids: { type: "ARRAY", items: { type: "STRING" } },
+    roles: { type: "ARRAY", items: { type: "STRING", enum: ["shelf", "top", "bottom", "left", "right", "back", "countertop", "front", "baseboard", "free"] } },
+    side: { type: "STRING", enum: ["top", "under"], nullable: true },
+    from_front_mm: { type: "NUMBER", nullable: true },
+    lines: { type: "INTEGER", nullable: true },
+    margin_mm: { type: "NUMBER", nullable: true },
+  },
+  required: ["action"],
+  propertyOrdering: ["action", "piece_ids", "roles", "side", "from_front_mm", "lines", "margin_mm"],
+};
+function limpaLed(l: any) {
+  if (!l || !["add", "replace", "remove"].includes(l.action)) return null;
+  const roles = ["shelf", "top", "bottom", "left", "right", "back", "countertop", "front", "baseboard", "free"];
+  const num = (v: any, min: number, max: number) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : null; };
+  return {
+    action: l.action,
+    piece_ids: (Array.isArray(l.piece_ids) ? l.piece_ids : []).map(String).slice(0, 60),
+    roles: (Array.isArray(l.roles) ? l.roles : []).filter((r: any) => roles.includes(r)),
+    side: l.side === "top" || l.side === "under" ? l.side : null,
+    from_front_mm: num(l.from_front_mm, 0, 3000),
+    lines: num(l.lines, 1, 6) === null ? null : Math.round(num(l.lines, 1, 6) as number),
+    margin_mm: num(l.margin_mm, 0, 1000),
+  };
+}
 const INTERIOR_SCHEMA = {
   type: "OBJECT",
   nullable: true,
@@ -269,10 +303,11 @@ const EDIT_SCHEMA = {
           quantity: { type: "INTEGER", nullable: true },
           color_from_slot_id: { type: "STRING", nullable: true },
           interior: INTERIOR_SCHEMA,
+          led: LED_SCHEMA,
         },
         required: ["reason", "op"],
         propertyOrdering: ["reason", "op", "slot_ids", "module_id", "wall_index", "x_mm", "floor_height_mm",
-          "width_mm", "height_mm", "depth_mm", "role", "color_name", "piece_id", "quantity", "color_from_slot_id", "interior"],
+          "width_mm", "height_mm", "depth_mm", "role", "color_name", "piece_id", "quantity", "color_from_slot_id", "interior", "led"],
       },
     },
     not_done: { type: "ARRAY", items: { type: "STRING" } },
@@ -314,6 +349,7 @@ function sanitizeEdit(data: any, b: any) {
       quantity: o.quantity === null || o.quantity === undefined ? null : Math.round(Number(o.quantity)),
       color_from_slot_id: o.color_from_slot_id && slotIds.has(String(o.color_from_slot_id)) ? String(o.color_from_slot_id) : null,
       interior: o.op === "set_interior" ? limpaInterior(o.interior) : null,
+      led: o.op === "set_led" ? limpaLed(o.led) : null,
     });
   });
   return { understanding: String(data?.understanding || ""), summary: String(data?.summary || ""), operations: ops, not_done: notDone };
@@ -388,11 +424,12 @@ const CHECK_SCHEMA_LEARN = {
   },
   required: ["items"],
 };
-async function checaRegras(apiKey: string, novas: any[], existentes: any[], hubs: any[], lang: string) {
+async function checaRegras(apiKey: string, novas: any[], existentes: any[], hubs: any[], lang: string, todas = false) {
   const rel = (slug: string) => { const h = hubs.find((x) => x.slug === slug); return new Set([slug, ...((h && h.related) || [])]); };
   const blocos = novas.map((n, i) => {
     const alvo = n.hub && HUB_SLUGS.includes(n.hub) ? rel(n.hub) : null;
-    const cands = existentes.filter((e) => e.weight === "ouro" || !alvo || alvo.has(e.hub)).slice(0, 120);
+    // todas = REVISÃO GERAL (regra editada à mão, 05/11): compara com o Codex inteiro
+    const cands = existentes.filter((e) => todas || e.weight === "ouro" || !alvo || alvo.has(e.hub)).slice(0, todas ? 400 : 120);
     return `NOVA ${i}: "${n.rule}" (central sugerida: ${n.hub || "?"}, peso sugerido: ${n.weight || "?"})\nREGRAS EXISTENTES A COMPARAR:\n` +
       (cands.length ? cands.map((e) => `  id=${e.id} [${e.hub || "-"}|${e.weight}] ${e.rule}`).join("\n") : "  (nenhuma)");
   }).join("\n\n");
@@ -505,9 +542,11 @@ OPERAÇÕES (campo op) — preencha só os campos que a operação usa, o resto 
 - remove_module: slot_ids.
 - set_interior: slot_ids (1 ou mais) + interior = o INTERIOR do Construtor (substitui o que tiver). interior.columns = colunas da esquerda pra direita (divisórias verticais entre elas), cada uma com width_mm (soma ≈ largura útil = largura do módulo − 2×19), zones = faixas de BAIXO pra CIMA (prateleira fixa entre elas), cada zona { type: drawers (gavetas; count = quantas), shelves (prateleiras; count = quantas DENTRO da faixa), hanging (cabideiro), open (vão livre), height_mm, count }, a soma dos height_mm ≈ altura útil (altura − 2×19); doors: none | hinged (porta de giro) | flap (basculante); doors_cover: all (porta cobre a coluna toda) | above_drawers (porta só acima das gavetas).
   Regras do Construtor: gaveta mínima 100 mm de frente (count ≤ altura da zona ÷ 100) e máxima 400 mm; coluna com gaveta até 1200 mm de largura; gaveta em cima de tudo ⇒ nada de porta cobrindo ela. Módulo do catálogo que já tem portas próprias (casco: false e interior_atual com frentes do cadastro) → doors none, a não ser que peçam. Caixa crua de Componentes (casco: true) precisa das portas pelo Construtor. NUNCA set_interior em painel, tampo, prateleira solta, filler ou ripado.
+- set_led: slot_ids + led = LED embutido (rasgo na peça + perfil de LED). led.action: add (acrescenta linha), replace (troca o que tem nessas peças), remove (tira). Escolha as peças por led.piece_ids (ids de led_pecas daquele módulo) OU por led.roles (shelf = prateleiras, top = tampo do módulo, bottom = base do módulo, left/right = laterais, back = fundo, front = porta/frente, free = peça solta/painel). led.side: "under" = face de baixo/de dentro (luz pra baixo, o normal sob aéreo e prateleira), "top" = face de cima. led.from_front_mm: distância da FRENTE da peça (padrão 50). led.lines: quantas linhas paralelas (padrão 1). led.margin_mm: margem nas pontas (padrão 0).
+  Onde a SAHRA põe LED (Codex seção 6): embaixo dos aéreos (bottom do aéreo, side under) iluminando a bancada; prateleiras de nicho e de vidro (shelf, under); torre de vinho/adega; dentro de closet nas laterais (left/right, vertical). Peça precisa ter espessura pro rasgo — se não der, o portal avisa.
 TODOS os números das operações em MILÍMETROS. Nunca invente slot_id, module_id, piece_id, papel ou cor. A ordem é a de execução. O que não dá pra fazer vai em not_done.
 
-COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e openings (x_mm, width_mm, height_mm, sill_mm, mesma origem do x dos módulos); slots[] = módulos atuais (id, module, family, category, mount_type, hint, placement wall/floor, wall_index, x_mm, floor_height_mm, top_mm, width/height/depth_mm, limits, colors, color_options, quantities, builder, interior_atual = como o Construtor está hoje nesse módulo (texto), casco = caixa crua de Componentes); selected_slot_ids = selecionados agora ("este", "esse"); pricing = { total_venda, por slot: venda, custo (chapa, fita, mao_obra, ferragem, comprados), area_m2, pecas } (valores em US$; só admin vê); salvo = projeto salvo em Meus Projetos; fotos_realistas = quantas fotos realistas o projeto já tem; audit = achados do Auditor de produção (erros e avisos reais do projeto — use quando criticar); catalog = módulos disponíveis (w/h/d = [mín, padrão, máx]).
+COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e openings (x_mm, width_mm, height_mm, sill_mm, mesma origem do x dos módulos); slots[] = módulos atuais (id, module, family, category, mount_type, hint, placement wall/floor, wall_index, x_mm, floor_height_mm, top_mm, width/height/depth_mm, limits, colors, color_options, quantities, builder, interior_atual = como o Construtor está hoje nesse módulo (texto), led_pecas = peças que podem receber LED [{piece_id, papel, nome, LxAxP, leds = linhas já aplicadas}], casco = caixa crua de Componentes); selected_slot_ids = selecionados agora ("este", "esse"); pricing = { total_venda, por slot: venda, custo (chapa, fita, mao_obra, ferragem, comprados), area_m2, pecas } (valores em US$; só admin vê); salvo = projeto salvo em Meus Projetos; fotos_realistas = quantas fotos realistas o projeto já tem; audit = achados do Auditor de produção (erros e avisos reais do projeto — use quando criticar); catalog = módulos disponíveis (w/h/d = [mín, padrão, máx]).
 
 ${SKILL_SUSPENSO}
 
@@ -704,8 +743,10 @@ Deno.serve(async (req) => {
       .filter((l: any) => l.rule).slice(0, 5);
     if (!novas.length) return json(400, { error: "Regra vazia.", code: "no_text" });
     try {
-      const [ex, hubs] = await Promise.all([carregaAprendizado(req), carregaCentrais(req)]);
-      return json(200, { learn: await checaRegras(apiKey, novas, ex, hubs, b.lang) });
+      let [ex, hubs] = await Promise.all([carregaAprendizado(req), carregaCentrais(req)]);
+      // edição: a própria regra não conta como duplicada de si mesma
+      if (b.exclude_id) ex = ex.filter((e: any) => String(e.id) !== String(b.exclude_id));
+      return json(200, { learn: await checaRegras(apiKey, novas, ex, hubs, b.lang, b.scope === "all") });
     } catch (e) {
       if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
       return json(500, { error: (e as Error).message || String(e), code: "internal" });
@@ -722,7 +763,7 @@ Deno.serve(async (req) => {
     // profundo só quando o pedido é montar/mexer no projeto; conversa,
     // crítica, cor, custo = raciocínio leve (bem mais rápido).
     const ultima = String(msgs[msgs.length - 1]?.text || "");
-    const pesado = /\b(faz|fa[cç]a|monta|montar|aplica|aplicar|refaz|redesenh|cria|criar|muda|mudar|troca|trocar|pode fazer|gostei|manda ver|build|design it|lay ?out|apply|make it|haz|arma|aplica|coloca|colocar|p[oõ]e|bota|adiciona|tira|interior|construtor|gaveta|prateleira)\b/i.test(ultima);
+    const pesado = /\b(faz|fa[cç]a|monta|montar|aplica|aplicar|refaz|redesenh|cria|criar|muda|mudar|troca|trocar|pode fazer|gostei|manda ver|build|design it|lay ?out|apply|make it|haz|arma|aplica|coloca|colocar|p[oõ]e|bota|adiciona|tira|interior|construtor|gaveta|prateleira|led|luz|ilumina)\b/i.test(ultima);
     const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, pesado ? "deep" : "light");
     const ops = sanitizeEdit(data, b);
     const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "photoreal" || a === "render" || a === "audit");
