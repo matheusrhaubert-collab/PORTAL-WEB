@@ -111,6 +111,14 @@
   const MAX_ITENS = 6;
   const IMG = 'assets/sahra/sahra-avatar.webp?v=202611051140';
   const VOZ_KEY = 'legno_sahra_voz';
+  // POSES (05/11, Matt: "deixa o ícone dela aqui, o gif, mas deixa ele
+  // trocando bem de vez em quando"): os 6 quadros do gif viraram webp
+  // redondos. Fica na neutra; a cada 25–50 s mostra uma pose por ~4 s. E as
+  // poses acompanham o que ela faz: abre = oi, pensando = pensando,
+  // respondeu = apresenta, aplicou = joinha.
+  const POSE_V = '202611051205';
+  const POSES = ['neutra', 'oi', 'paleta', 'pensando', 'apresenta', 'joinha'];
+  const poseUrl = (n) => 'assets/sahra/sahra-' + n + '.webp?v=' + POSE_V;
 
   let root = null, badge = null, achados = [], aberto = false, aba = 'chat';
   let conversa = [];            // [{role:'user'|'sahra', text, ops?, notDone?, actions?, applied?}]
@@ -140,8 +148,10 @@
 #po-sahra .sa-av { width: 56px; height: 56px; border-radius: 50%; padding: 0; border: 2px solid #c9a46a; background: #fff center/cover no-repeat;
   box-shadow: 0 4px 14px rgba(0,0,0,.22); cursor: pointer; position: relative; transition: transform .15s ease; }
 #po-sahra .sa-av:hover { transform: scale(1.06); background-color: #fff; }
+#po-sahra .sa-av .sa-pose { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity .6s ease; pointer-events: none; }
+#po-sahra .sa-av .sa-pose.on { opacity: 1; }
 #po-sahra.falando .sa-av { box-shadow: 0 0 0 4px rgba(201,164,106,.45), 0 4px 14px rgba(0,0,0,.22); }
-#po-sahra .sa-badge { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+#po-sahra .sa-badge { z-index: 2; position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
   font-size: 11px; font-weight: 700; line-height: 20px; color: #fff; background: #b3412e; display: none; box-shadow: 0 0 0 2px #fff; }
 #po-sahra .sa-badge.aviso { background: #c98a1a; }
 #po-sahra .sa-panel { position: absolute; left: 0; bottom: 68px; width: 400px; max-width: calc(100vw - 32px); height: min(620px, calc(100vh - 110px));
@@ -261,7 +271,7 @@
           <div class="sa-acts"><button type="button" class="secondary sa-link sa-tut"></button></div>
         </div></div>
       </div>
-      <button type="button" class="sa-av" aria-label="SAHRA" style="background-image:url('${IMG}')"><span class="sa-badge"></span></button>`;
+      <button type="button" class="sa-av" aria-label="SAHRA"><img class="sa-pose on" alt="" src="${poseUrl('neutra')}"><img class="sa-pose" alt=""><span class="sa-badge"></span></button>`;
     document.body.appendChild(root);
     badge = root.querySelector('.sa-badge');
 
@@ -421,6 +431,7 @@
     try { if (chatAbort) chatAbort.abort(); } catch (e) { /* */ }
     chatAbort = null;
     pararFala();
+    if (poseFixa) poseEnquanto(null);
     if (estavaPensando) {
       pensando = false;
       conversa.push({ role: 'sahra', text: T('stopped'), err: true });
@@ -474,6 +485,7 @@
     pararFala();
     conversa.push({ role: 'user', text: texto });
     pensando = true; renderConversa();
+    poseEnquanto('pensando');
     const seq = ++chatSeq;
     chatAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     try {
@@ -491,13 +503,15 @@
       const msg = { role: 'sahra', text: data.reply || '…', spoken: data.spoken || '', ops: Array.isArray(data.operations) ? data.operations : [],
         notDone: Array.isArray(data.not_done) ? data.not_done : [], actions: Array.isArray(data.actions) ? data.actions : [] };
       conversa.push(msg);
+      poseEnquanto(null);
+      pose(msg.ops.length ? 'paleta' : 'apresenta', 5000);
       falar(msg.spoken || msg.text);
     } catch (e) {
       if (seq !== chatSeq) return;
       console.error('[sahra chat]', e);
       conversa.push({ role: 'sahra', err: true, text: T('err') + ((e && e.message) || String(e)) });
     } finally {
-      if (seq === chatSeq) { pensando = false; chatAbort = null; renderConversa(); }
+      if (seq === chatSeq) { pensando = false; chatAbort = null; if (poseFixa === 'pensando') poseEnquanto(null); renderConversa(); }
     }
   }
 
@@ -554,6 +568,7 @@
       } else {
         try { markProjectDirty(); } catch (e) { /* */ }
         m.applied = true;
+        pose('joinha', 4500);
       }
       try { refreshProjectUndoButton(); refreshProjectRedoButton(); } catch (e) { /* */ }
       try { renderProjectCanvas(); } catch (e) { /* */ }
@@ -575,6 +590,39 @@
     const antes = projectSlots.length;
     projectSlots = projectSlots.filter((x) => idsOk.has(String(x.id)));
     if (projectSlots.length !== antes) { try { renderProjectCanvas(); renderProjectConfigPanel(); } catch (e) { /* */ } }
+  }
+
+  // ---------------------------------------------------------------- POSES
+  let poseAtual = 'neutra', poseVolta = null, poseFixa = null, proximaPose = 0;
+  POSES.forEach((n) => { const im = new Image(); im.src = poseUrl(n); }); // pré-carrega
+  function mostraPose(nome) {
+    if (!root || nome === poseAtual) return;
+    const imgs = root.querySelectorAll('.sa-av .sa-pose');
+    if (imgs.length < 2) return;
+    const atual = imgs[0].classList.contains('on') ? imgs[0] : imgs[1];
+    const outra = atual === imgs[0] ? imgs[1] : imgs[0];
+    outra.src = poseUrl(nome);
+    outra.classList.add('on'); atual.classList.remove('on');
+    poseAtual = nome;
+  }
+  // pose por um tempo e volta pra neutra (ou pra pose fixa, se houver)
+  function pose(nome, ms) {
+    clearTimeout(poseVolta);
+    mostraPose(nome);
+    poseVolta = setTimeout(() => mostraPose(poseFixa || 'neutra'), ms || 4000);
+  }
+  // pose que fica enquanto durar um estado (ex.: pensando); null solta
+  function poseEnquanto(nome) {
+    poseFixa = nome;
+    clearTimeout(poseVolta);
+    mostraPose(nome || 'neutra');
+  }
+  function sorteiaPose(agora) {
+    if (!proximaPose) { proximaPose = agora + 15000 + Math.random() * 15000; return; }
+    if (agora < proximaPose || poseFixa) return;
+    proximaPose = agora + 25000 + Math.random() * 25000;
+    const op = ['oi', 'paleta', 'pensando', 'apresenta', 'joinha'].filter((n) => n !== poseAtual);
+    pose(op[Math.floor(Math.random() * op.length)], 3500 + Math.random() * 1500);
   }
 
   // ---------------------------------------------------------------- VOZ
@@ -764,6 +812,7 @@
   // ---------------------------------------------------------------- abrir/fechar
   function abre() {
     aberto = true;
+    pose('oi', 3000);
     root.classList.add('open');
     textos();
     atualiza(false);
@@ -783,6 +832,7 @@
     const vis = editorVisivel();
     root.style.display = vis ? '' : 'none';
     if (!vis) { if (aberto) fecha(); pararFala(); return; }
+    if (!document.hidden) sorteiaPose(Date.now());
     if (document.hidden || aberto) return;
     const agora = Date.now();
     if (agora - ultimoAudit < 10000) return;
