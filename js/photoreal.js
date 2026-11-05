@@ -2237,6 +2237,15 @@ const Photoreal = (() => {
     let maxHeight = 0;
     let intoSumX = 0, intoSumZ = 0;
 
+    // PAREDE NA FRENTE DA CÂMERA (2026-11-04, Matt: "temos um problema no
+    // render por que a parede fica na frente... isso e bug no sistema"). A vista
+    // 3D faz recorte (wall cutaway) e esconde a parede que fica entre a câmera
+    // e o ambiente; aqui toda parede era sempre desenhada, então com a câmera
+    // recuada pra enquadrar a parede inteira a foto saía só com a parede de
+    // trás da câmera. Mesma regra do recorte: se a câmera está do lado de FORA
+    // da face interna da parede (produto escalar com intoDir < 0), a parede
+    // (e o rodapé dela) não entra na cena. Os módulos dessa parede continuam.
+    const camCut = (sceneData.camera && sceneData.camera.position) ? sceneData.camera.position : null;
     walls.forEach((wall) => {
       const ax = Number(wall.alongDirX) || 0, az = Number(wall.alongDirZ) || 0;
       const ix = Number(wall.intoDirX) || 0, iz = Number(wall.intoDirZ) || 0;
@@ -2245,6 +2254,8 @@ const Photoreal = (() => {
       const cosR = Math.cos(rotY), sinR = Math.sin(rotY);
       const widthM = Number(wall.widthM) || 0;
       intoSumX += ix; intoSumZ += iz;
+      const wallHiddenByCamera = !!camCut &&
+        ((Number(camCut.x) - ox) * ix + (Number(camCut.z) - oz) * iz) < 0;
 
       // Parede sólida: centrada no meio do segmento, empurrada meia
       // espessura pra FORA do ambiente (-intoDir) — a face interna coincide
@@ -2254,9 +2265,9 @@ const Photoreal = (() => {
       const wallMesh = new T.Mesh(wallGeom, wallMat);
       wallMesh.rotation.y = rotY;
       wallMesh.position.set(midX - ix * (WALL_THICK_M / 2), ceilingM / 2, midZ - iz * (WALL_THICK_M / 2));
-      sc.add(wallMesh);
+      if (!wallHiddenByCamera) sc.add(wallMesh);
 
-      if (baseH > 0) {
+      if (baseH > 0 && !wallHiddenByCamera) {
         const bbGeom = new T.BoxGeometry(widthM, baseH, BASEBOARD_DEPTH_M);
         const bb = new T.Mesh(bbGeom, baseboardMat);
         bb.rotation.y = rotY;
