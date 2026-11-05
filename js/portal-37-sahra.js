@@ -447,10 +447,10 @@
       };
       const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body });
       if (error || !data || data.error) throw new Error(await mensagemDeErro(error, data));
-      const msg = { role: 'sahra', text: data.reply || '…', ops: Array.isArray(data.operations) ? data.operations : [],
+      const msg = { role: 'sahra', text: data.reply || '…', spoken: data.spoken || '', ops: Array.isArray(data.operations) ? data.operations : [],
         notDone: Array.isArray(data.not_done) ? data.not_done : [], actions: Array.isArray(data.actions) ? data.actions : [] };
       conversa.push(msg);
-      falar(msg.text);
+      falar(msg.spoken || msg.text);
     } catch (e) {
       console.error('[sahra chat]', e);
       conversa.push({ role: 'sahra', err: true, text: T('err') + ((e && e.message) || String(e)) });
@@ -551,11 +551,53 @@
     return pool.find((v) => /natural|online|neural/i.test(v.name) && fem.test(v.name))
       || pool.find((v) => fem.test(v.name)) || pool[0] || null;
   }
-  function falar(texto) {
-    if (!vozLigada() || !window.speechSynthesis) return;
+  // VOZ NATURAL (05/11, Matt: "a voz está muito robô"): Gemini TTS pela
+  // função sahra-chat ({tts}); PCM → WAV → <audio>. Falhou = voz do navegador.
+  const VOZ_GEMINI = 'Aoede';
+  let audioAtual = null, falaSeq = 0;
+  function pcmParaWav(b64, mime) {
+    const bin = atob(b64);
+    const pcm = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
+    const m = /rate=(\d+)/i.exec(mime || '');
+    const rate = m ? Number(m[1]) : 24000;
+    const buf = new ArrayBuffer(44 + pcm.length);
+    const v = new DataView(buf);
+    const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    str(0, 'RIFF'); v.setUint32(4, 36 + pcm.length, true); str(8, 'WAVE'); str(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, 'data'); v.setUint32(40, pcm.length, true);
+    new Uint8Array(buf, 44).set(pcm);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  function limpaParaFala(texto) {
+    return String(texto || '').replace(/\*\*/g, '').replace(/^\s*[-•*]\s+/gm, '').replace(/#/g, '')
+      .replace(/(\d+)\s*["”]/g, '$1 ' + ({ en: 'inches', es: 'pulgadas' }[lang()] || 'polegadas')).replace(/\s+/g, ' ').trim();
+  }
+  async function falar(texto) {
+    if (!vozLigada()) return;
     pararFala();
-    const limpo = String(texto || '').replace(/\*\*/g, '').replace(/^\s*[-•*]\s+/gm, '').replace(/#/g, '').replace(/\s+/g, ' ').trim();
+    const limpo = limpaParaFala(texto);
     if (!limpo) return;
+    const seq = ++falaSeq;
+    try {
+      root.classList.add('falando');
+      const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { tts: limpo.slice(0, 2500), lang: lang(), voice: VOZ_GEMINI } });
+      if (seq !== falaSeq) return; // outra fala começou / foi parada
+      if (error || !data || !data.audio) throw new Error((data && data.error) || (error && error.message) || 'sem áudio');
+      const url = URL.createObjectURL(/^audio\/(wav|mpeg|mp3|ogg)/i.test(data.mime || '') ? new Blob([Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0))], { type: data.mime }) : pcmParaWav(data.audio, data.mime));
+      audioAtual = new Audio(url);
+      audioAtual.onended = () => { root.classList.remove('falando'); URL.revokeObjectURL(url); };
+      await audioAtual.play();
+    } catch (e) {
+      if (seq !== falaSeq) return;
+      console.warn('[sahra voz] Gemini falhou, usando a voz do navegador:', e);
+      falarNavegador(limpo);
+    }
+  }
+  function falarNavegador(limpo) {
+    if (!window.speechSynthesis) { root.classList.remove('falando'); return; }
     // frases curtas: o Chrome corta falas longas no meio
     const partes = limpo.match(/[^.!?…]+[.!?…]*/g) || [limpo];
     const voz = escolheVoz();
@@ -567,7 +609,12 @@
       window.speechSynthesis.speak(u);
     });
   }
-  function pararFala() { try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* */ } if (root) root.classList.remove('falando'); }
+  function pararFala() {
+    falaSeq++;
+    try { if (audioAtual) { audioAtual.pause(); audioAtual = null; } } catch (e) { /* */ }
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* */ }
+    if (root) root.classList.remove('falando');
+  }
   try { if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = () => {}; } catch (e) { /* carrega as vozes */ }
 
   // ---------------------------------------------------------------- REVISÃO

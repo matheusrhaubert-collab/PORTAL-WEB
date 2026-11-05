@@ -276,14 +276,15 @@ const CHAT_SCHEMA = {
   type: "OBJECT",
   properties: {
     reply: { type: "STRING" },
+    spoken: { type: "STRING" },
     operations: EDIT_SCHEMA.properties.operations,
     not_done: { type: "ARRAY", items: { type: "STRING" } },
     actions: { type: "ARRAY", items: { type: "STRING", enum: ["render", "audit"] } },
     understanding: { type: "STRING" },
     summary: { type: "STRING" },
   },
-  required: ["reply", "operations", "not_done", "actions"],
-  propertyOrdering: ["reply", "understanding", "operations", "not_done", "actions", "summary"],
+  required: ["reply", "spoken", "operations", "not_done", "actions"],
+  propertyOrdering: ["reply", "spoken", "understanding", "operations", "not_done", "actions", "summary"],
 };
 
 function buildChatPrompt(b: any): string {
@@ -309,6 +310,11 @@ COMO VOCÊ CONVERSA (campo reply):
 - Renders pra apresentação: o portal tem o "Render decorado" (render realista com IA). Quando pedirem render/imagens/apresentação, coloque "render" em actions (o usuário verá um botão pra abrir) e no reply dê a direção de arte: ângulo, luz, decoração e clima que valorizam o protagonista do projeto, segundo o Codex. Você NÃO gera a imagem sozinha.
 - Quando a resposta falar dos erros de produção do Auditor, coloque "audit" em actions.
 - Pergunta de cor/tendência: responda com o porquê e diga quais cores do projeto (color_options) fazem isso; ofereça aplicar.
+
+FALA (campo spoken) — o que a SAHRA diz em voz alta. NÃO é a leitura do reply:
+- É como uma pessoa de verdade falaria a mesma coisa pra um colega do lado: 2 a 5 frases curtas, tom de conversa, com expressões naturais ("olha", "sabe o que eu faria?", "ficou bonito, mas…", "hmm"), contrações e ritmo de fala.
+- Sem listas, sem asteriscos, sem números longos ou medidas exatas (arredonde: "uns trinta polegadas"), sem códigos de módulo. Se o reply é longo (descrição técnica, lista de custos), a fala só resume o principal e diz "deixei os detalhes aqui no texto".
+- Mesmo idioma do reply.
 
 QUANDO MEXER NO PROJETO (campo operations):
 - Só devolva operações quando o usuário PEDIR para mudar, aplicar, montar ou fazer ("muda", "aplica", "troca", "faz um projeto", "monta", "pode fazer"). Pergunta, opinião ou crítica = operations VAZIO; no reply, ofereça fazer.
@@ -348,6 +354,59 @@ ${hist}
 Responda à ÚLTIMA mensagem do USUÁRIO.`;
 }
 
+// ==========================================================================
+// VOZ NATURAL (05/11, Matt: "a voz está muito robô") — Gemini TTS.
+// Devolve PCM 16-bit mono (normalmente 24 kHz) em base64; o portal embrulha
+// num WAV e toca. Modelo descoberto na conta (nome com "tts"), maior versão.
+// ==========================================================================
+const TTS_FALLBACK = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"];
+let ttsModels: string[] | null = null;
+async function ttsCandidates(apiKey: string): Promise<string[]> {
+  const forced = Deno.env.get("GEMINI_TTS_MODEL");
+  if (!ttsModels) {
+    ttsModels = [];
+    try {
+      const res = await fetch(`${GEMINI_API_BASE}/models?key=${apiKey}&pageSize=200`);
+      if (res.ok) {
+        const body = await res.json();
+        ttsModels = (body?.models || [])
+          .map((m: any) => String(m.name || "").replace(/^models\//, ""))
+          .filter((n: string) => /^gemini-.*tts/i.test(n))
+          .sort((a: string, b: string) => (versionOf(b) - versionOf(a)) || (Number(/pro/i.test(a)) - Number(/pro/i.test(b))));
+      }
+    } catch { /* fica no fallback */ }
+  }
+  return [forced, ...(ttsModels || []), ...TTS_FALLBACK].filter((m, i, a) => !!m && a.indexOf(m) === i) as string[];
+}
+
+async function sintetizaVoz(apiKey: string, texto: string, lang: string, voz: string) {
+  const estilo = lang === "en" ? "Say it like a real person chatting, not reading: a warm, relaxed interior designer talking to a colleague next to her, with natural pauses, lively intonation and conversational rhythm:"
+    : lang === "es" ? "Dilo como una persona real conversando, no leyendo: una diseñadora cálida y relajada hablando con un colega a su lado, con pausas naturales y entonación viva:"
+    : "Fale em português do Brasil como uma pessoa de verdade conversando, não como quem lê um texto: tom caloroso e descontraído de uma designer brasileira falando com um colega do lado, com pausas naturais, entonação viva e ritmo de conversa:";
+  let lastErr = "";
+  for (const model of await ttsCandidates(apiKey)) {
+    const res = await fetch(`${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: `${estilo}\n${texto}` }] }],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voz } } },
+        },
+      }),
+      signal: AbortSignal.timeout(60_000),
+    }).catch((e) => { lastErr = `${model}: ${(e as Error).message}`; return null; });
+    if (!res) continue;
+    if (!res.ok) { lastErr = `${model}: ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`; continue; }
+    const payload = await res.json().catch(() => null);
+    const part = (payload?.candidates?.[0]?.content?.parts || []).find((p: any) => p.inlineData?.data);
+    if (part) return { audio: part.inlineData.data, mime: part.inlineData.mimeType || "audio/L16;rate=24000", model };
+    lastErr = `${model}: sem áudio`;
+  }
+  throw new HttpError(502, `Voz indisponível (${lastErr}).`, "tts_failed");
+}
+
 async function confereAdmin(req: Request): Promise<boolean> {
   const url = Deno.env.get("SUPABASE_URL"), anon = Deno.env.get("SUPABASE_ANON_KEY");
   const auth = req.headers.get("Authorization") || "";
@@ -373,6 +432,17 @@ Deno.serve(async (req) => {
 
   let b: any;
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
+  if (typeof b?.tts === "string") {
+    const texto = b.tts.trim().slice(0, 2500);
+    if (!texto) return json(400, { error: "Texto vazio.", code: "no_text" });
+    try {
+      const voz = /^[A-Za-z]{2,20}$/.test(String(b.voice || "")) ? String(b.voice) : "Aoede";
+      return json(200, await sintetizaVoz(apiKey, texto, b.lang, voz));
+    } catch (e) {
+      if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
+      return json(500, { error: (e as Error).message || String(e), code: "internal" });
+    }
+  }
   const msgs = Array.isArray(b?.messages) ? b.messages : [];
   if (!msgs.length || !String(msgs[msgs.length - 1]?.text || "").trim()) return json(400, { error: "Escreva uma mensagem.", code: "no_message" });
   if (!b.project || !Array.isArray(b.project.slots)) b.project = { slots: [], walls: [] };
@@ -382,7 +452,7 @@ Deno.serve(async (req) => {
     const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, "deep");
     const ops = sanitizeEdit(data, b);
     const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "render" || a === "audit");
-    return json(200, { reply: String(data?.reply || ""), operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model });
+    return json(200, { reply: String(data?.reply || ""), spoken: String(data?.spoken || ""), operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model });
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
     return json(500, { error: (e as Error).message || String(e), code: "internal" });
