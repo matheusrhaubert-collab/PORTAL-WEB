@@ -116,7 +116,7 @@
   // redondos. Fica na neutra; a cada 25–50 s mostra uma pose por ~4 s. E as
   // poses acompanham o que ela faz: abre = oi, pensando = pensando,
   // respondeu = apresenta, aplicou = joinha.
-  const POSE_V = '202611051205';
+  const POSE_V = '202611051215';
   const POSES = ['neutra', 'oi', 'paleta', 'pensando', 'apresenta', 'joinha'];
   const poseUrl = (n) => 'assets/sahra/sahra-' + n + '.webp?v=' + POSE_V;
 
@@ -145,16 +145,19 @@
     st.id = 'po-sahra-css';
     st.textContent = `
 #po-sahra { position: fixed; left: 16px; bottom: 16px; z-index: 900; font-family: inherit; }
-#po-sahra .sa-av { width: 56px; height: 56px; border-radius: 50%; padding: 0; border: 2px solid #c9a46a; background: #fff center/cover no-repeat;
-  box-shadow: 0 4px 14px rgba(0,0,0,.22); cursor: pointer; position: relative; transition: transform .15s ease; }
-#po-sahra .sa-av:hover { transform: scale(1.06); background-color: #fff; }
-#po-sahra .sa-av .sa-pose { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity .6s ease; pointer-events: none; }
+/* 05/11 (Matt: "não quero ela num círculo... um pouco maior com fundo transparente... dobro do tamanho"):
+   corpo inteiro, PNG/webp sem fundo, 120 px de altura. */
+#po-sahra .sa-av { width: 64px; height: 120px; padding: 0; border: 0; background: transparent; box-shadow: none; cursor: pointer; position: relative;
+  transition: transform .15s ease; transform-origin: 50% 100%; }
+#po-sahra .sa-av:hover { transform: scale(1.05); background: transparent; }
+#po-sahra .sa-av .sa-pose { position: absolute; left: 0; bottom: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%;
+  opacity: 0; transition: opacity .6s ease; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.18)); }
 #po-sahra .sa-av .sa-pose.on { opacity: 1; }
-#po-sahra.falando .sa-av { box-shadow: 0 0 0 4px rgba(201,164,106,.45), 0 4px 14px rgba(0,0,0,.22); }
-#po-sahra .sa-badge { z-index: 2; position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+#po-sahra.falando .sa-av .sa-pose.on { filter: drop-shadow(0 0 8px rgba(201,164,106,.9)) drop-shadow(0 3px 6px rgba(0,0,0,.18)); }
+#po-sahra .sa-badge { z-index: 2; position: absolute; top: 2px; right: -20px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
   font-size: 11px; font-weight: 700; line-height: 20px; color: #fff; background: #b3412e; display: none; box-shadow: 0 0 0 2px #fff; }
 #po-sahra .sa-badge.aviso { background: #c98a1a; }
-#po-sahra .sa-panel { position: absolute; left: 0; bottom: 68px; width: 400px; max-width: calc(100vw - 32px); height: min(620px, calc(100vh - 110px));
+#po-sahra .sa-panel { position: absolute; left: 0; bottom: 130px; width: 400px; max-width: calc(100vw - 32px); height: min(620px, calc(100vh - 170px));
   display: none; flex-direction: column; background: #fffdf9; border: 1px solid #e6dccd; border-radius: 14px; box-shadow: 0 12px 34px rgba(0,0,0,.22); overflow: hidden; }
 #po-sahra.open .sa-panel { display: flex; }
 #po-sahra .sa-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #f6efe4; border-bottom: 1px solid #e6dccd; flex-shrink: 0; }
@@ -215,7 +218,7 @@
 #po-sahra .sa-res button { display: block; width: 100%; text-align: left; background: transparent; color: #3a2a1c; border: 0; border-top: 1px solid #f0e8dc;
   padding: 7px 2px; font-size: 12.5px; border-radius: 0; cursor: pointer; }
 #po-sahra .sa-res button:hover { background: #f6efe4; }
-@media (max-width: 600px) { #po-sahra .sa-av { width: 48px; height: 48px; } #po-sahra .sa-panel { bottom: 60px; } }`;
+@media (max-width: 600px) { #po-sahra .sa-av { width: 48px; height: 90px; } #po-sahra .sa-panel { bottom: 100px; } }`;
     document.head.appendChild(st);
   }
 
