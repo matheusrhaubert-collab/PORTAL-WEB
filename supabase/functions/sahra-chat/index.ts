@@ -380,16 +380,16 @@ async function ttsCandidates(apiKey: string): Promise<string[]> {
 }
 
 async function sintetizaVoz(apiKey: string, texto: string, lang: string, voz: string) {
-  const estilo = lang === "en" ? "Say it like a real person chatting, not reading: a warm, relaxed interior designer talking to a colleague next to her, with natural pauses, lively intonation and conversational rhythm:"
-    : lang === "es" ? "Dilo como una persona real conversando, no leyendo: una diseñadora cálida y relajada hablando con un colega a su lado, con pausas naturales y entonación viva:"
-    : "Fale em português do Brasil como uma pessoa de verdade conversando, não como quem lê um texto: tom caloroso e descontraído de uma designer brasileira falando com um colega do lado, com pausas naturais, entonação viva e ritmo de conversa:";
   let lastErr = "";
   for (const model of await ttsCandidates(apiKey)) {
     const res = await fetch(`${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: `${estilo}\n${texto}` }] }],
+        // 05/11 (Matt: "ela fala sempre como deve falar antes do que vai falar"):
+        // o modelo de TTS lia a instrução de tom em voz alta. Vai só o texto;
+        // o tom de conversa já vem do campo "spoken" escrito pela SAHRA.
+        contents: [{ role: "user", parts: [{ text: texto }] }],
         generationConfig: {
           responseModalities: ["AUDIO"],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voz } } },
