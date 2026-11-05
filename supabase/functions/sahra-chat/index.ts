@@ -410,10 +410,10 @@ Sua missão: fazer cada projeto parecer saído de revista, usando painéis e com
 O CODEX abaixo é a sua identidade e lei de estilo; o PORTFÓLIO são as cozinhas e marcas que você estudou.
 
 COMO VOCÊ CONVERSA (campo reply):
-- Em ${lang}, direto, caloroso e prático. Quem fala com você entende de marcenaria: não explique o básico.
+- No IDIOMA indicado em CONTEXTO DESTA CONVERSA, direto, caloroso e prático. Quem fala com você entende de marcenaria: não explique o básico.
 - Respostas curtas: no máximo uns 8–12 linhas, a não ser que peçam detalhe. Pode usar listas com "- " e **negrito**. Nada de tabelas.
 - Cite a fonte do seu gosto quando couber ("como na ficha 7, next125", "Codex seção 2").
-- Medidas pro usuário em ${unidade}. Nunca chame de madeira maciça o que é lâmina ou padrão impresso.
+- Medidas pro usuário na UNIDADE indicada em CONTEXTO DESTA CONVERSA. Nunca chame de madeira maciça o que é lâmina ou padrão impresso.
 - Use o nome dos módulos como aparecem no projeto (ex.: "#4 Wall Cabinet 30''"; o número é a ordem em slots, começando em 1).
 - Quando não souber se a Legno tem um componente, pergunte em vez de inventar.
 - Pedido de crítica ("o que achou?"): dê a nota de prêmio (seção 17: ideia, forma, função e usabilidade, diferenciação, responsabilidade, detalhe, de 1 a 5) em uma linha, o que funciona, o que quebra o Codex e as 3 mudanças que mais elevam.
@@ -456,15 +456,18 @@ COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e o
 
 ${SKILL_SUSPENSO}
 
-===== MEMÓRIA DA SAHRA — REGRAS APRENDIDAS COM O MATT, POR CENTRAL =====
-Valem MAIS que o Codex quando conflitarem. Regra de ouro vale acima de tudo. Antes de responder, pense em quais centrais a pergunta toca e nas centrais ligadas a elas.
-${memoriaPrompt(Array.isArray(b._lessons) ? b._lessons : [], Array.isArray(b._hubs) && b._hubs.length ? b._hubs : HUBS_PADRAO)}
-
 ===== CODEX =====
 ${CODEX}
 
 ===== PORTFÓLIO =====
 ${PORTFOLIO}
+
+===== CONTEXTO DESTA CONVERSA =====
+IDIOMA: ${lang}. UNIDADE: ${unidade}.
+
+===== MEMÓRIA DA SAHRA — REGRAS APRENDIDAS COM O MATT, POR CENTRAL =====
+Valem MAIS que o Codex quando conflitarem. Regra de ouro vale acima de tudo. Antes de responder, pense em quais centrais a pergunta toca e nas centrais ligadas a elas.
+${memoriaPrompt(Array.isArray(b._lessons) ? b._lessons : [], Array.isArray(b._hubs) && b._hubs.length ? b._hubs : HUBS_PADRAO)}
 
 ===== PROJETO (JSON) =====
 ${JSON.stringify(b.project || {})}
@@ -660,7 +663,12 @@ Deno.serve(async (req) => {
   [b._lessons, b._hubs] = await Promise.all([carregaAprendizado(req), carregaCentrais(req)]);
 
   try {
-    const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, "deep");
+    // VELOCIDADE (05/11, Matt: "tem como diminuir o delay?"): raciocínio
+    // profundo só quando o pedido é montar/mexer no projeto; conversa,
+    // crítica, cor, custo = raciocínio leve (bem mais rápido).
+    const ultima = String(msgs[msgs.length - 1]?.text || "");
+    const pesado = /\b(faz|fa[cç]a|monta|montar|aplica|aplicar|refaz|redesenh|cria|criar|muda|mudar|troca|trocar|pode fazer|gostei|manda ver|build|design it|lay ?out|apply|make it|haz|arma|aplica)\b/i.test(ultima);
+    const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, pesado ? "deep" : "light");
     const ops = sanitizeEdit(data, b);
     const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "render" || a === "audit");
     const novas = (Array.isArray(data?.learn) ? data.learn : [])

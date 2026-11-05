@@ -643,16 +643,18 @@
       // áudio sair junto, quando o áudio estiver ligado"): com a voz ligada,
       // continua "pensando" até o áudio chegar; texto e voz saem juntos.
       // Áudio falhou = mostra o texto e usa a voz do navegador.
+      // VELOCIDADE (05/11): só espera a 1ª frase da voz; o resto é gerado
+      // em paralelo e entra na sequência enquanto ela já está falando.
       let audio = null;
       if (vozLigada()) {
-        audio = await preparaAudio(msg.spoken || msg.text);
-        if (seq !== chatSeq) { if (audio && audio.url) URL.revokeObjectURL(audio.url); return; }
+        audio = await preparaFala(msg.spoken || msg.text);
+        if (seq !== chatSeq) { descartaFala(audio); return; }
       }
       conversa.push(msg);
       poseEnquanto(null);
       pose(msg.ops.length || msg.concepts.length ? 'paleta' : 'apresenta', 5000);
       pensando = false; chatAbort = null; renderConversa();
-      if (vozLigada()) { if (audio && audio.url) tocaAudio(audio.url); else falarNavegador(limpaParaFala(msg.spoken || msg.text)); }
+      if (vozLigada()) { if (audio) tocaFala(audio); else falarNavegador(limpaParaFala(msg.spoken || msg.text)); }
       if (msg.concepts.length) geraConceitos(msg);
       // APRENDER (05/11, Matt: "um canal que ela aprenda nos codex dela e não
       // esqueça em nenhuma sessão futura; só administrador"): regras que ela
@@ -1030,39 +1032,73 @@
     return String(texto || '').replace(/\*\*/g, '').replace(/^\s*[-•*]\s+/gm, '').replace(/#/g, '')
       .replace(/(\d+)\s*["”]/g, '$1 ' + ({ en: 'inches', es: 'pulgadas' }[lang()] || 'polegadas')).replace(/\s+/g, ' ').trim();
   }
-  // Pede o áudio (Gemini TTS) e devolve {url} — ou null se falhou.
-  async function preparaAudio(texto) {
-    const limpo = limpaParaFala(texto);
-    if (!limpo) return null;
+  // Um pedaço de fala → url de áudio (Gemini TTS), ou null se falhou.
+  async function pedeAudio(trecho) {
     try {
-      const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { tts: limpo.slice(0, 2500), lang: lang(), voice: VOZ_GEMINI } });
+      const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { tts: trecho.slice(0, 2500), lang: lang(), voice: VOZ_GEMINI } });
       if (error || !data || !data.audio) throw new Error((data && data.error) || (error && error.message) || 'sem áudio');
       const blob = /^audio\/(wav|mpeg|mp3|ogg)/i.test(data.mime || '')
         ? new Blob([Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0))], { type: data.mime })
         : pcmParaWav(data.audio, data.mime);
-      return { url: URL.createObjectURL(blob) };
+      return URL.createObjectURL(blob);
     } catch (e) {
-      console.warn('[sahra voz] Gemini falhou, usando a voz do navegador:', e);
+      console.warn('[sahra voz] trecho falhou:', e);
       return null;
     }
   }
-  function tocaAudio(url) {
+  // VELOCIDADE (05/11, Matt: "tem como diminuir o delay da voz?"): a fala é
+  // quebrada em pedaços (1ª frase sozinha, o resto de 2 em 2 frases) e todos
+  // são pedidos AO MESMO TEMPO. Só esperamos o 1º — frase curta = áudio
+  // rápido —; os outros chegam enquanto ela já está falando.
+  // Devolve { primeiro: url, resto: [Promise<url|null>] } ou null (falhou).
+  async function preparaFala(texto) {
+    const limpo = limpaParaFala(texto);
+    if (!limpo) return null;
+    const frases = (limpo.match(/[^.!?…]+[.!?…]+["')\]]*\s*|[^.!?…]+$/g) || [limpo]).map((f) => f.trim()).filter(Boolean);
+    const pedacos = [];
+    let i = 0;
+    let primeiro = frases[i++] || limpo;
+    while (primeiro.length < 40 && i < frases.length) primeiro += ' ' + frases[i++]; // 1ª frase muito curta junta com a próxima
+    pedacos.push(primeiro);
+    while (i < frases.length) { pedacos.push(frases.slice(i, i + 2).join(' ')); i += 2; }
+    const promessas = pedacos.map(pedeAudio);
+    const url1 = await promessas[0];
+    if (!url1) { promessas.slice(1).forEach((p) => p.then((u) => u && URL.revokeObjectURL(u))); return null; }
+    return { primeiro: url1, resto: promessas.slice(1) };
+  }
+  function descartaFala(f) {
+    if (!f) return;
+    try { URL.revokeObjectURL(f.primeiro); } catch (e) { /* */ }
+    (f.resto || []).forEach((p) => p.then((u) => u && URL.revokeObjectURL(u)));
+  }
+  function tocaFala(f) {
     pararFala();
     const seq = ++falaSeq;
-    audioAtual = new Audio(url);
-    audioAtual.onended = () => { if (seq === falaSeq) root.classList.remove('falando'); URL.revokeObjectURL(url); pintaEnviar(); };
-    audioAtual.onerror = audioAtual.onended;
+    const fila = [Promise.resolve(f.primeiro)].concat(f.resto || []);
+    let k = 0;
     root.classList.add('falando'); pintaEnviar();
-    audioAtual.play().catch((e) => { console.warn('[sahra voz] play', e); root.classList.remove('falando'); pintaEnviar(); });
+    const fim = () => { if (seq === falaSeq) { root.classList.remove('falando'); audioAtual = null; pintaEnviar(); } };
+    const proximo = async () => {
+      if (seq !== falaSeq) { fila.slice(k).forEach((p) => p.then((u) => u && URL.revokeObjectURL(u))); return; }
+      if (k >= fila.length) { fim(); return; }
+      const url = await fila[k++];
+      if (seq !== falaSeq) { if (url) URL.revokeObjectURL(url); fila.slice(k).forEach((p) => p.then((u) => u && URL.revokeObjectURL(u))); return; }
+      if (!url) { proximo(); return; } // pedaço falhou: pula
+      audioAtual = new Audio(url);
+      audioAtual.onended = () => { URL.revokeObjectURL(url); proximo(); };
+      audioAtual.onerror = audioAtual.onended;
+      audioAtual.play().catch((e) => { console.warn('[sahra voz] play', e); fim(); });
+    };
+    proximo();
   }
   async function falar(texto) {
     if (!vozLigada()) return;
     pararFala();
     const seq = ++falaSeq;
     root.classList.add('falando'); pintaEnviar();
-    const a = await preparaAudio(texto);
-    if (seq !== falaSeq) { if (a) URL.revokeObjectURL(a.url); return; }
-    if (a) tocaAudio(a.url); else falarNavegador(limpaParaFala(texto));
+    const f = await preparaFala(texto);
+    if (seq !== falaSeq) { descartaFala(f); return; }
+    if (f) tocaFala(f); else falarNavegador(limpaParaFala(texto));
   }
   function falarNavegador(limpo) {
     if (!window.speechSynthesis) { root.classList.remove('falando'); return; }
