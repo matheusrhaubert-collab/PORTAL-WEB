@@ -194,7 +194,55 @@ function parseLooseJson(text: string): any {
   return null;
 }
 
-const EDIT_OPS = ["resize", "move", "set_color", "set_quantity", "replace_module", "add_module", "remove_module"];
+// CONSTRUTOR (05/11, Matt: "a SAHRA não está conseguindo acessar o
+// construtor. isso é fundamental pra ela"): op nova set_interior — o portal
+// monta a árvore do Construtor com o mesmo motor da leitura por foto
+// (projectPhotoInteriorTree, portal-11). Só nesta função (cópia), a
+// generate-project-from-photo não muda.
+const EDIT_OPS = ["resize", "move", "set_color", "set_quantity", "replace_module", "add_module", "remove_module", "set_interior"];
+const INTERIOR_SCHEMA = {
+  type: "OBJECT",
+  nullable: true,
+  properties: {
+    columns: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          width_mm: { type: "NUMBER" },
+          zones: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                type: { type: "STRING", enum: ["drawers", "shelves", "hanging", "open"] },
+                height_mm: { type: "NUMBER" },
+                count: { type: "INTEGER" },
+              },
+              required: ["type", "height_mm", "count"],
+              propertyOrdering: ["type", "height_mm", "count"],
+            },
+          },
+          doors: { type: "STRING", enum: ["none", "hinged", "flap"] },
+          doors_cover: { type: "STRING", enum: ["all", "above_drawers"] },
+        },
+        required: ["width_mm", "zones", "doors"],
+        propertyOrdering: ["width_mm", "zones", "doors", "doors_cover"],
+      },
+    },
+  },
+};
+function limpaInterior(it: any) {
+  const cols = (Array.isArray(it?.columns) ? it.columns : []).slice(0, 8).map((c: any) => ({
+    width_mm: Math.max(100, Math.round(Number(c?.width_mm) || 0)),
+    zones: (Array.isArray(c?.zones) ? c.zones : []).slice(0, 10)
+      .filter((z: any) => ["drawers", "shelves", "hanging", "open"].includes(z?.type))
+      .map((z: any) => ({ type: z.type, height_mm: Math.max(60, Math.round(Number(z.height_mm) || 0)), count: Math.max(0, Math.min(12, Math.round(Number(z.count) || 0))) })),
+    doors: ["none", "hinged", "flap"].includes(c?.doors) ? c.doors : "none",
+    doors_cover: c?.doors_cover === "above_drawers" ? "above_drawers" : "all",
+  })).filter((c: any) => c.zones.length);
+  return cols.length ? { columns: cols } : null;
+}
 
 const EDIT_SCHEMA = {
   type: "OBJECT",
@@ -220,10 +268,11 @@ const EDIT_SCHEMA = {
           piece_id: { type: "STRING", nullable: true },
           quantity: { type: "INTEGER", nullable: true },
           color_from_slot_id: { type: "STRING", nullable: true },
+          interior: INTERIOR_SCHEMA,
         },
         required: ["reason", "op"],
         propertyOrdering: ["reason", "op", "slot_ids", "module_id", "wall_index", "x_mm", "floor_height_mm",
-          "width_mm", "height_mm", "depth_mm", "role", "color_name", "piece_id", "quantity", "color_from_slot_id"],
+          "width_mm", "height_mm", "depth_mm", "role", "color_name", "piece_id", "quantity", "color_from_slot_id", "interior"],
       },
     },
     not_done: { type: "ARRAY", items: { type: "STRING" } },
@@ -264,6 +313,7 @@ function sanitizeEdit(data: any, b: any) {
       piece_id: o.piece_id ? String(o.piece_id) : null,
       quantity: o.quantity === null || o.quantity === undefined ? null : Math.round(Number(o.quantity)),
       color_from_slot_id: o.color_from_slot_id && slotIds.has(String(o.color_from_slot_id)) ? String(o.color_from_slot_id) : null,
+      interior: o.op === "set_interior" ? limpaInterior(o.interior) : null,
     });
   });
   return { understanding: String(data?.understanding || ""), summary: String(data?.summary || ""), operations: ops, not_done: notDone };
@@ -450,9 +500,11 @@ OPERAÇÕES (campo op) — preencha só os campos que a operação usa, o resto 
 - replace_module: slot_ids + module_id do catálogo.
 - add_module: module_id + wall_index + x_mm + floor_height_mm + width_mm/height_mm/depth_mm (dentro de w/h/d do catálogo); color_from_slot_id ou color_name.
 - remove_module: slot_ids.
+- set_interior: slot_ids (1 ou mais) + interior = o INTERIOR do Construtor (substitui o que tiver). interior.columns = colunas da esquerda pra direita (divisórias verticais entre elas), cada uma com width_mm (soma ≈ largura útil = largura do módulo − 2×19), zones = faixas de BAIXO pra CIMA (prateleira fixa entre elas), cada zona { type: drawers (gavetas; count = quantas), shelves (prateleiras; count = quantas DENTRO da faixa), hanging (cabideiro), open (vão livre), height_mm, count }, a soma dos height_mm ≈ altura útil (altura − 2×19); doors: none | hinged (porta de giro) | flap (basculante); doors_cover: all (porta cobre a coluna toda) | above_drawers (porta só acima das gavetas).
+  Regras do Construtor: gaveta mínima 100 mm de frente (count ≤ altura da zona ÷ 100) e máxima 400 mm; coluna com gaveta até 1200 mm de largura; gaveta em cima de tudo ⇒ nada de porta cobrindo ela. Módulo do catálogo que já tem portas próprias (casco: false e interior_atual com frentes do cadastro) → doors none, a não ser que peçam. Caixa crua de Componentes (casco: true) precisa das portas pelo Construtor. NUNCA set_interior em painel, tampo, prateleira solta, filler ou ripado.
 TODOS os números das operações em MILÍMETROS. Nunca invente slot_id, module_id, piece_id, papel ou cor. A ordem é a de execução. O que não dá pra fazer vai em not_done.
 
-COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e openings (x_mm, width_mm, height_mm, sill_mm, mesma origem do x dos módulos); slots[] = módulos atuais (id, module, family, category, mount_type, hint, placement wall/floor, wall_index, x_mm, floor_height_mm, top_mm, width/height/depth_mm, limits, colors, color_options, quantities, builder); selected_slot_ids = selecionados agora ("este", "esse"); pricing = { total_venda, por slot: venda, custo (chapa, fita, mao_obra, ferragem, comprados), area_m2, pecas } (valores em US$; só admin vê); audit = achados do Auditor de produção (erros e avisos reais do projeto — use quando criticar); catalog = módulos disponíveis (w/h/d = [mín, padrão, máx]).
+COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e openings (x_mm, width_mm, height_mm, sill_mm, mesma origem do x dos módulos); slots[] = módulos atuais (id, module, family, category, mount_type, hint, placement wall/floor, wall_index, x_mm, floor_height_mm, top_mm, width/height/depth_mm, limits, colors, color_options, quantities, builder, interior_atual = como o Construtor está hoje nesse módulo (texto), casco = caixa crua de Componentes); selected_slot_ids = selecionados agora ("este", "esse"); pricing = { total_venda, por slot: venda, custo (chapa, fita, mao_obra, ferragem, comprados), area_m2, pecas } (valores em US$; só admin vê); audit = achados do Auditor de produção (erros e avisos reais do projeto — use quando criticar); catalog = módulos disponíveis (w/h/d = [mín, padrão, máx]).
 
 ${SKILL_SUSPENSO}
 
@@ -667,7 +719,7 @@ Deno.serve(async (req) => {
     // profundo só quando o pedido é montar/mexer no projeto; conversa,
     // crítica, cor, custo = raciocínio leve (bem mais rápido).
     const ultima = String(msgs[msgs.length - 1]?.text || "");
-    const pesado = /\b(faz|fa[cç]a|monta|montar|aplica|aplicar|refaz|redesenh|cria|criar|muda|mudar|troca|trocar|pode fazer|gostei|manda ver|build|design it|lay ?out|apply|make it|haz|arma|aplica)\b/i.test(ultima);
+    const pesado = /\b(faz|fa[cç]a|monta|montar|aplica|aplicar|refaz|redesenh|cria|criar|muda|mudar|troca|trocar|pode fazer|gostei|manda ver|build|design it|lay ?out|apply|make it|haz|arma|aplica|coloca|colocar|p[oõ]e|bota|adiciona|tira|interior|construtor|gaveta|prateleira)\b/i.test(ultima);
     const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, pesado ? "deep" : "light");
     const ops = sanitizeEdit(data, b);
     const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "render" || a === "audit");

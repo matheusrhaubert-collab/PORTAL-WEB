@@ -601,7 +601,79 @@
     try {
       ctx.project.audit = rodaAuditor().slice(0, 40).map((a) => ({ nivel: a.nivel, slot_id: String(a.slotId), titulo: a.titulo, detalhe: a.detalhe }));
     } catch (e) { /* sem auditor */ }
+    // CONSTRUTOR (05/11, Matt: "a SAHRA não está conseguindo acessar o
+    // construtor. isso é fundamental pra ela"): cada módulo leva o interior
+    // atual em texto + se é caixa crua de Componentes.
+    try {
+      if (typeof ensureAccessoryCatalog === 'function') await ensureAccessoryCatalog();
+      (ctx.project.slots || []).forEach((cs) => {
+        const sl = projectSlots.find((x) => String(x.id) === String(cs.id));
+        if (!sl) return;
+        cs.interior_atual = resumoInterior(sl);
+        cs.casco = CASCO_RE.test(String((sl.module && sl.module.name) || ''));
+        if (PAINEL_RE.test(String((sl.module && sl.module.name) || ''))) cs.painel = true;
+      });
+    } catch (e) { console.warn('[sahra] interior no contexto', e); }
     return ctx;
+  }
+
+  // ---------------------------------------------------------------- CONSTRUTOR
+  const CASCO_RE = /^(bottom|stretcher|topcover|gola|niche)\s*·/i;      // = PROJECT_PHOTO_CARCASS_RE (portal-11)
+  const PAINEL_RE = /painel|panel|tampo|countertop|prateleira|shelf|filler|crown|moldura|ripad|slat/i;
+  // Árvore do Construtor (slot.layout) → texto curto. Filhos em Y vão de
+  // baixo pra cima (o último é o topo — ver projectSlotTopLeafIsDrawer).
+  function resumoInterior(slot) {
+    const cat = (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || {};
+    const nome = (id) => (cat[id] && cat[id].name) || 'agregado';
+    if (!slot.layout) {
+      let proprio = false;
+      try { proprio = typeof projectPhotoSlotHasOwnInterior === 'function' && projectPhotoSlotHasOwnInterior(slot); } catch (e) { /* */ }
+      return proprio ? 'sem Construtor — interior vem do cadastro do módulo' : 'vazio (sem nada no Construtor)';
+    }
+    const tam = (n) => n.sizeMode === 'fixed' && n.sizeValue ? Math.round(n.sizeValue) + 'mm' : 'resto';
+    const no = (n, d) => {
+      if (d > 6) return '…';
+      const partes = [];
+      if (n.splitAxis) {
+        const lado = n.splitAxis === 'x' ? 'colunas (esq→dir)' : 'faixas (baixo→cima)';
+        partes.push(`${lado} separadas por ${nome(n.splitAcc)}: [` + (n.children || []).map((c) => `(${tam(c)}) ${no(c, d + 1)}`).join(' | ') + ']');
+      } else if (n.content) {
+        const q = n.content.params && Number(n.content.params.quantidade) > 1 ? ' ×' + n.content.params.quantidade : '';
+        partes.push(nome(n.content.acc) + q);
+      } else partes.push('vão livre');
+      (n.fronts || []).forEach((f) => partes.push(`frente ${nome(f.acc)}${f.from != null ? ` (vãos ${f.from}–${f.to})` : ''}`));
+      return partes.join(' + ');
+    };
+    try { return no(slot.layout, 0).slice(0, 900) + (slot.layout.params && slot.layout.params.fabrica ? ' [interior de fábrica]' : ''); }
+    catch (e) { return 'com Construtor'; }
+  }
+  // op set_interior: mesmo motor da leitura por foto (portal-11:
+  // projectPhotoSanitizeInterior + projectPhotoInteriorTree com os agregados
+  // genéricos) e o mesmo fim do botão Salvar do Construtor (slot.layout +
+  // catálogo no cache + regra da travessa + preço/peças recalculados).
+  async function aplicaInterior(op) {
+    const warnings = [], results = [];
+    const okFn = typeof projectPhotoInteriorTree === 'function' && typeof loadProjectBuilderCatalog === 'function'
+      && typeof computeProjectSlotInnerZone === 'function' && typeof LayoutEngine !== 'undefined';
+    for (const id of (op.slot_ids || [])) {
+      const slot = projectSlots.find((x) => String(x.id) === String(id));
+      const nomeMod = (slot && slot.module && slot.module.name) || '?';
+      if (!okFn || !slot || !op.interior) { results.push({ op, ok: false }); continue; }
+      if (PAINEL_RE.test(nomeMod)) { warnings.push(nomeMod + ': painel não tem interior'); results.push({ op, ok: false }); continue; }
+      const carregado = await loadProjectBuilderCatalog(slot.module.id);
+      const cat = (carregado && carregado.cat) || {};
+      const espec = JSON.parse(JSON.stringify(op.interior));
+      const interior = typeof projectPhotoSanitizeInterior === 'function' ? projectPhotoSanitizeInterior(espec, slot.height_mm) : espec;
+      const raiz = projectPhotoInteriorTree(interior, cat, computeProjectSlotInnerZone(slot), PROJECT_PHOTO_INTERIOR_GENERIC, warnings, nomeMod);
+      const vazia = !raiz.splitAxis && !raiz.content && !(raiz.fronts || []).length;
+      slot.layout = vazia ? null : LayoutEngine.serialize(raiz);
+      accessoryCatalogCache = Object.assign({}, (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || {}, cat);
+      if (typeof projectEnforceStretcherRule === 'function') { try { projectEnforceStretcherRule(slot); } catch (e) { /* */ } }
+      try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[sahra interior] preço', e); }
+      if (interior && interior._gavetaVirouPorta) warnings.push(nomeMod + ': gaveta larga/alta demais virou porta (regra do Construtor)');
+      results.push({ op, ok: true });
+    }
+    return { results, warnings };
   }
 
   async function mensagemDeErro(error, data) {
@@ -860,7 +932,7 @@
         if (job.cancel) break;
         m.progress = k + 1; renderConversa();
         const op = m.ops[k];
-        const run = editProjectAiApply([op]);
+        const run = op.op === 'set_interior' ? aplicaInterior(op) : editProjectAiApply([op]);
         let timer = null;
         const out = await Promise.race([run, new Promise((res) => { timer = setTimeout(() => res('__timeout'), OP_TIMEOUT_MS); })]);
         clearTimeout(timer);
