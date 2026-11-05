@@ -272,12 +272,123 @@ function sanitizeEdit(data: any, b: any) {
 // ==========================================================================
 // CONVERSA DA SAHRA
 // ==========================================================================
+// ==========================================================================
+// CENTRAIS DA SAHRA (05/11, migration 269) — o "cérebro" organizado:
+// cada regra aprendida mora numa central; centrais ligadas entre si. A
+// tabela sahra_hubs manda; isto é o reserva se ela não carregar.
+// ==========================================================================
+const HUBS_PADRAO: any[] = [
+  { slug: "composicao", name_pt: "Composição", related: ["eletros", "paineis", "cores", "funcao"] },
+  { slug: "eletros", name_pt: "Eletros", related: ["composicao", "funcao", "producao"] },
+  { slug: "paineis", name_pt: "Painéis e componentes", related: ["composicao", "materiais", "producao", "custo"] },
+  { slug: "materiais", name_pt: "Materiais", related: ["cores", "paineis", "custo", "producao"] },
+  { slug: "cores", name_pt: "Cores e tendências", related: ["materiais", "composicao", "iluminacao", "cliente"] },
+  { slug: "iluminacao", name_pt: "Iluminação", related: ["cores", "composicao"] },
+  { slug: "funcao", name_pt: "Função e ergonomia", related: ["composicao", "eletros", "producao"] },
+  { slug: "cliente", name_pt: "Cliente e estilo", related: ["cores", "composicao", "conversa", "negocio"] },
+  { slug: "custo", name_pt: "Custo", related: ["materiais", "producao", "paineis", "negocio"] },
+  { slug: "producao", name_pt: "Produção", related: ["paineis", "materiais", "custo", "funcao", "eletros"] },
+  { slug: "conversa", name_pt: "Jeito de conversar", related: ["cliente", "negocio"] },
+  { slug: "negocio", name_pt: "Negócio Legno", related: ["custo", "cliente", "conversa"] },
+];
+const HUB_SLUGS = HUBS_PADRAO.map((h) => h.slug);
+const PESO_TXT: Record<string, string> = { ouro: "REGRA DE OURO", normal: "", preferencia: "preferência" };
+
+function memoriaPrompt(lessons: any[], hubs: any[]): string {
+  if (!lessons.length) return "(nenhuma ainda)";
+  const nome = (slug: string) => (hubs.find((h) => h.slug === slug) || {}).name_pt || slug || "Sem central";
+  const ouro = lessons.filter((l) => l.weight === "ouro");
+  let out = "";
+  if (ouro.length) out += "REGRAS DE OURO — nunca quebrar, valem acima de tudo:\n" + ouro.map((l) => `- [${nome(l.hub)}] ${l.rule}`).join("\n") + "\n\n";
+  const porHub = new Map<string, any[]>();
+  lessons.filter((l) => l.weight !== "ouro").forEach((l) => { const k = l.hub || ""; if (!porHub.has(k)) porHub.set(k, []); porHub.get(k)!.push(l); });
+  const ordem = [...hubs.map((h) => h.slug), ""];
+  ordem.forEach((slug) => {
+    const ls = porHub.get(slug);
+    if (!ls || !ls.length) return;
+    const h = hubs.find((x) => x.slug === slug);
+    const lig = h && h.related && h.related.length ? ` (ligada a: ${h.related.map(nome).join(", ")})` : "";
+    out += `CENTRAL ${nome(slug).toUpperCase()}${lig}:\n` + ls.map((l) => `- ${l.rule}${l.weight === "preferencia" ? " (preferência — pode flexibilizar com motivo)" : ""}`).join("\n") + "\n\n";
+  });
+  return out.trim();
+}
+
+// DETECTOR DE CHOQUE: cada regra nova contra as ativas da MESMA central, das
+// centrais LIGADAS e todas as de ouro. Devolve por regra: status nova |
+// duplicada | contradiz, os ids envolvidos e a central/peso corrigidos.
+const CHECK_SCHEMA_LEARN = {
+  type: "OBJECT",
+  properties: {
+    items: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          index: { type: "INTEGER" },
+          hub: { type: "STRING", enum: HUB_SLUGS },
+          weight: { type: "STRING", enum: ["ouro", "normal", "preferencia"] },
+          status: { type: "STRING", enum: ["nova", "duplicada", "contradiz"] },
+          existing_ids: { type: "ARRAY", items: { type: "STRING" } },
+          note: { type: "STRING" },
+        },
+        required: ["index", "hub", "weight", "status", "existing_ids", "note"],
+        propertyOrdering: ["index", "hub", "weight", "status", "existing_ids", "note"],
+      },
+    },
+  },
+  required: ["items"],
+};
+async function checaRegras(apiKey: string, novas: any[], existentes: any[], hubs: any[], lang: string) {
+  const rel = (slug: string) => { const h = hubs.find((x) => x.slug === slug); return new Set([slug, ...((h && h.related) || [])]); };
+  const blocos = novas.map((n, i) => {
+    const alvo = n.hub && HUB_SLUGS.includes(n.hub) ? rel(n.hub) : null;
+    const cands = existentes.filter((e) => e.weight === "ouro" || !alvo || alvo.has(e.hub)).slice(0, 120);
+    return `NOVA ${i}: "${n.rule}" (central sugerida: ${n.hub || "?"}, peso sugerido: ${n.weight || "?"})\nREGRAS EXISTENTES A COMPARAR:\n` +
+      (cands.length ? cands.map((e) => `  id=${e.id} [${e.hub || "-"}|${e.weight}] ${e.rule}`).join("\n") : "  (nenhuma)");
+  }).join("\n\n");
+  const idioma = lang === "en" ? "inglês" : lang === "es" ? "espanhol" : "português do Brasil";
+  const prompt = `Você organiza a memória da SAHRA, designer da Legno (móveis planejados). Regras novas vão entrar na memória.
+Para CADA regra nova:
+- hub: a central certa (${HUB_SLUGS.join(", ")}). Corrija a sugerida se estiver errada.
+- weight: "ouro" só se o texto diz que é inegociável ("nunca", "sempre", "regra de ouro", "obrigatório" com força); "preferencia" se é gosto/tendência ("prefiro", "gosto mais"); senão "normal". Mantenha a sugerida se fizer sentido.
+- status: "duplicada" se já existe regra que diz a MESMA coisa (mesmo que com outras palavras); "contradiz" se manda fazer o oposto ou algo incompatível com uma existente NA MESMA SITUAÇÃO; senão "nova". Regras sobre situações diferentes que se complementam NÃO são contradição.
+- existing_ids: ids das regras existentes duplicadas/contraditas (vazio se nova). Só ids da lista.
+- note: uma frase curta em ${idioma} explicando o choque ou a duplicata (vazio se nova).
+
+${blocos}`;
+  const { data } = await callGemini(apiKey, "flash", [{ text: prompt }], CHECK_SCHEMA_LEARN, "light");
+  const ids = new Set(existentes.map((e) => String(e.id)));
+  const porIdx = new Map<number, any>();
+  (Array.isArray(data?.items) ? data.items : []).forEach((it: any) => porIdx.set(Number(it.index), it));
+  return novas.map((n, i) => {
+    const it = porIdx.get(i) || {};
+    const exIds = (Array.isArray(it.existing_ids) ? it.existing_ids : []).map(String).filter((x: string) => ids.has(x)).slice(0, 5);
+    let status = ["nova", "duplicada", "contradiz"].includes(it.status) ? it.status : "nova";
+    if (status !== "nova" && !exIds.length) status = "nova";
+    return {
+      rule: n.rule,
+      hub: HUB_SLUGS.includes(it.hub) ? it.hub : (HUB_SLUGS.includes(n.hub) ? n.hub : null),
+      weight: ["ouro", "normal", "preferencia"].includes(it.weight) ? it.weight : (n.weight || "normal"),
+      status, note: String(it.note || ""),
+      existing: exIds.map((id: string) => { const e = existentes.find((x) => String(x.id) === id); return { id, rule: e.rule, hub: e.hub, weight: e.weight }; }),
+    };
+  });
+}
+
 const CHAT_SCHEMA = {
   type: "OBJECT",
   properties: {
     reply: { type: "STRING" },
     spoken: { type: "STRING" },
     concepts: { type: "ARRAY", items: { type: "STRING" } },
+    learn: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { hub: { type: "STRING", enum: HUB_SLUGS }, weight: { type: "STRING", enum: ["ouro", "normal", "preferencia"] }, rule: { type: "STRING" } },
+        required: ["hub", "weight", "rule"], propertyOrdering: ["hub", "weight", "rule"],
+      },
+    },
     operations: EDIT_SCHEMA.properties.operations,
     not_done: { type: "ARRAY", items: { type: "STRING" } },
     actions: { type: "ARRAY", items: { type: "STRING", enum: ["render", "audit"] } },
@@ -285,7 +396,7 @@ const CHAT_SCHEMA = {
     summary: { type: "STRING" },
   },
   required: ["reply", "spoken", "operations", "not_done", "actions"],
-  propertyOrdering: ["reply", "spoken", "concepts", "understanding", "operations", "not_done", "actions", "summary"],
+  propertyOrdering: ["reply", "spoken", "concepts", "learn", "understanding", "operations", "not_done", "actions", "summary"],
 };
 
 function buildChatPrompt(b: any): string {
@@ -311,6 +422,12 @@ COMO VOCÊ CONVERSA (campo reply):
 - Renders pra apresentação: o portal tem o "Render decorado" (render realista com IA). Quando pedirem render/imagens/apresentação, coloque "render" em actions (o usuário verá um botão pra abrir) e no reply dê a direção de arte: ângulo, luz, decoração e clima que valorizam o protagonista do projeto, segundo o Codex. Você NÃO gera a imagem sozinha.
 - Quando a resposta falar dos erros de produção do Auditor, coloque "audit" em actions.
 - Pergunta de cor/tendência: responda com o porquê e diga quais cores do projeto (color_options) fazem isso; ofereça aplicar.
+
+APRENDER (campo learn) — a sua memória cresce com o Matt, organizada em CENTRAIS:
+- Quando o usuário te ENSINAR algo que deve valer pra sempre — "aprende", "guarda", "lembra disso", "a partir de agora", "sempre…", "nunca…", "eu prefiro…", "não gosto de…", "na Legno a gente faz assim", ou quando ele DISCORDAR de uma regra sua ou do Codex — devolva em learn 1 a 3 regras curtas, diretas e gerais (ex.: { hub: "eletros", weight: "ouro", rule: "Nunca colocar aéreo acima da geladeira; usar torre de altura total." }). No reply, confirme em uma frase o que aprendeu (o sistema ainda confere se ela duplica ou contradiz outra).
+- Não guarde pedido pontual deste projeto ("muda essa cor pra cinza"), só regra que vale pros próximos projetos. Não repita regra que já está em REGRAS APRENDIDAS.
+- hub = a central: composicao (protagonista, eixo, alinhamentos), eletros, paineis (painéis e componentes), materiais, cores (e tendências), iluminacao, funcao (ergonomia, NKBA), cliente (perfil e estilo), custo, producao (o que a fábrica faz), conversa (seu jeito de responder), negocio (dealers, marca, mercado).
+- weight = "ouro" quando ele diz que é inegociável (nunca/sempre com força), "preferencia" quando é gosto, senão "normal".
 
 FALA (campo spoken) — o que a SAHRA diz em voz alta. NÃO é a leitura do reply:
 - É como uma pessoa de verdade falaria a mesma coisa pra um colega do lado: 2 a 5 frases curtas, tom de conversa, com expressões naturais ("olha", "sabe o que eu faria?", "ficou bonito, mas…", "hmm"), contrações e ritmo de fala.
@@ -338,6 +455,10 @@ TODOS os números das operações em MILÍMETROS. Nunca invente slot_id, module_
 COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e openings (x_mm, width_mm, height_mm, sill_mm, mesma origem do x dos módulos); slots[] = módulos atuais (id, module, family, category, mount_type, hint, placement wall/floor, wall_index, x_mm, floor_height_mm, top_mm, width/height/depth_mm, limits, colors, color_options, quantities, builder); selected_slot_ids = selecionados agora ("este", "esse"); pricing = { total_venda, por slot: venda, custo (chapa, fita, mao_obra, ferragem, comprados), area_m2, pecas } (valores em US$; só admin vê); audit = achados do Auditor de produção (erros e avisos reais do projeto — use quando criticar); catalog = módulos disponíveis (w/h/d = [mín, padrão, máx]).
 
 ${SKILL_SUSPENSO}
+
+===== MEMÓRIA DA SAHRA — REGRAS APRENDIDAS COM O MATT, POR CENTRAL =====
+Valem MAIS que o Codex quando conflitarem. Regra de ouro vale acima de tudo. Antes de responder, pense em quais centrais a pergunta toca e nas centrais ligadas a elas.
+${memoriaPrompt(Array.isArray(b._lessons) ? b._lessons : [], Array.isArray(b._hubs) && b._hubs.length ? b._hubs : HUBS_PADRAO)}
 
 ===== CODEX =====
 ${CODEX}
@@ -441,6 +562,39 @@ async function sintetizaVoz(apiKey: string, texto: string, lang: string, voz: st
   throw new HttpError(502, `Voz indisponível (${lastErr}).`, "tts_failed");
 }
 
+// Regras aprendidas (migration 268, sahra_lessons — RLS só admin): lidas com
+// o token de quem chamou, ativas, mais antigas primeiro.
+async function carregaAprendizado(req: Request): Promise<any[]> {
+  const url = Deno.env.get("SUPABASE_URL"), anon = Deno.env.get("SUPABASE_ANON_KEY");
+  const auth = req.headers.get("Authorization") || "";
+  if (!url || !anon || !auth) return [];
+  const pega = async (sel: string) => {
+    const r = await fetch(`${url}/rest/v1/sahra_lessons?active=eq.true&select=${sel}&order=created_at.asc&limit=1000`, {
+      headers: { apikey: anon, Authorization: auth },
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    return await r.json();
+  };
+  try {
+    let rows: any[];
+    // 269 (centrais) ainda não rodada → cai pro formato da 268
+    try { rows = await pega("id,hub,weight,topic,rule"); }
+    catch { rows = (await pega("id,topic,rule")).map((x: any) => ({ ...x, hub: null, weight: "normal" })); }
+    return Array.isArray(rows) ? rows.filter((x: any) => x && x.rule).map((x: any) => ({ ...x, weight: x.weight || "normal" })) : [];
+  } catch { return []; }
+}
+async function carregaCentrais(req: Request): Promise<any[]> {
+  const url = Deno.env.get("SUPABASE_URL"), anon = Deno.env.get("SUPABASE_ANON_KEY");
+  const auth = req.headers.get("Authorization") || "";
+  if (!url || !anon || !auth) return HUBS_PADRAO;
+  try {
+    const r = await fetch(`${url}/rest/v1/sahra_hubs?select=slug,name_pt,related&order=sort_order.asc`, { headers: { apikey: anon, Authorization: auth } });
+    if (!r.ok) return HUBS_PADRAO;
+    const rows = await r.json();
+    return Array.isArray(rows) && rows.length ? rows : HUBS_PADRAO;
+  } catch { return HUBS_PADRAO; }
+}
+
 async function confereAdmin(req: Request): Promise<boolean> {
   const url = Deno.env.get("SUPABASE_URL"), anon = Deno.env.get("SUPABASE_ANON_KEY");
   const auth = req.headers.get("Authorization") || "";
@@ -486,17 +640,39 @@ Deno.serve(async (req) => {
       return json(500, { error: (e as Error).message || String(e), code: "internal" });
     }
   }
+  // conferir regras ensinadas à mão (aba Codex) antes de gravar
+  if (Array.isArray(b?.check_learn)) {
+    const novas = b.check_learn.map((l: any) => ({ rule: String(l?.rule || "").trim().slice(0, 600), hub: l?.hub || null, weight: l?.weight || null }))
+      .filter((l: any) => l.rule).slice(0, 5);
+    if (!novas.length) return json(400, { error: "Regra vazia.", code: "no_text" });
+    try {
+      const [ex, hubs] = await Promise.all([carregaAprendizado(req), carregaCentrais(req)]);
+      return json(200, { learn: await checaRegras(apiKey, novas, ex, hubs, b.lang) });
+    } catch (e) {
+      if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
+      return json(500, { error: (e as Error).message || String(e), code: "internal" });
+    }
+  }
   const msgs = Array.isArray(b?.messages) ? b.messages : [];
   if (!msgs.length || !String(msgs[msgs.length - 1]?.text || "").trim()) return json(400, { error: "Escreva uma mensagem.", code: "no_message" });
   if (!b.project || !Array.isArray(b.project.slots)) b.project = { slots: [], walls: [] };
   if (!Array.isArray(b.catalog)) b.catalog = [];
+  [b._lessons, b._hubs] = await Promise.all([carregaAprendizado(req), carregaCentrais(req)]);
 
   try {
     const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, "deep");
     const ops = sanitizeEdit(data, b);
     const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "render" || a === "audit");
+    const novas = (Array.isArray(data?.learn) ? data.learn : [])
+      .map((l: any) => ({ hub: HUB_SLUGS.includes(l?.hub) ? l.hub : null, weight: ["ouro", "normal", "preferencia"].includes(l?.weight) ? l.weight : "normal", rule: String(l?.rule || "").trim().slice(0, 600) }))
+      .filter((l: any) => l.rule).slice(0, 3);
+    let learn: any[] = novas.map((n: any) => ({ ...n, status: "nova", note: "", existing: [] }));
+    if (novas.length && b._lessons.length) {
+      try { learn = await checaRegras(apiKey, novas, b._lessons, b._hubs, b.lang); }
+      catch (e) { console.error("[sahra] checaRegras", e); /* sem checagem: grava como nova */ }
+    }
     const concepts = (Array.isArray(data?.concepts) ? data.concepts : []).map((c: any) => String(c || "").trim()).filter(Boolean).slice(0, 2);
-    return json(200, { reply: String(data?.reply || ""), spoken: String(data?.spoken || ""), concepts, operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model });
+    return json(200, { reply: String(data?.reply || ""), spoken: String(data?.spoken || ""), concepts, learn, lessons_count: b._lessons.length, operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model });
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
     return json(500, { error: (e as Error).message || String(e), code: "internal" });

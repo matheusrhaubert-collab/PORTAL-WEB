@@ -53,6 +53,14 @@
       ver: 'Ver', fix: 'Corrigir', fix_all: 'Corrigir os automáticos', full: 'Abrir auditor completo', more: 'e mais {{n}}…',
       how: 'Como fazer?', how_ph: 'Pergunte, ex.: como girar um módulo', none: 'Não achei. Tente outras palavras ou abra o Tutorial.', tutorial: 'Abrir Tutorial',
       img_wait: 'Desenhando a ideia…', img_err: 'Não consegui gerar esta imagem.',
+      tab_codex: 'Codex', learned: 'Aprendi:', forget: 'Esquecer', forgotten: 'Esquecido.', learn_err: 'Não consegui guardar: ',
+      codex_intro: 'O que eu aprendi com você, organizado por central. Vale em todas as conversas, pra sempre, acima do Codex. Regra nova que bater de frente com outra passa por você. Só administrador vê e mexe aqui.',
+      codex_ph: 'Ensine uma regra, ex.: Nunca colocar aéreo acima da geladeira.', codex_add: 'Ensinar', codex_empty: 'Ainda não aprendi nenhuma regra. Me ensine aqui ou na conversa ("aprende isso…").',
+      codex_load_err: 'Não consegui carregar (a migration 268 já foi rodada?): ', codex_del: 'Apagar',
+      dup: 'Já sabia:', clash: 'Isso choca com o que eu já sei:', keep_new: 'A nova vale', keep_old: 'A antiga vale', keep_both: 'As duas valem (casos diferentes)',
+      kept_new: 'Troquei: a nova substituiu a antiga.', kept_old: 'Mantive a antiga.', kept_both: 'Guardei as duas.', checking: 'Conferindo com o que eu já sei…',
+      w_ouro: 'ouro', w_normal: 'normal', w_preferencia: 'preferência', w_hint: 'Clique pra mudar o peso: ouro (nunca quebrar) → normal → preferência',
+      no_hub: 'Sem central', hub_auto: 'Central: automática', weight_auto: 'Peso: automático', central: 'Central',
       applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Parei e voltei o projeto como estava antes.',
       stop: 'Parar', stopped: 'Parei. Pode mandar de novo do jeito certo.',
       close: 'Fechar', no_speech: 'Este navegador não tem reconhecimento de voz. Use o Chrome ou o Edge.'
@@ -78,6 +86,14 @@
       ver: 'View', fix: 'Fix', fix_all: 'Fix the automatic ones', full: 'Open full auditor', more: 'and {{n}} more…',
       how: 'How do I…?', how_ph: 'Ask, e.g.: how to rotate a cabinet', none: 'Nothing found. Try other words or open the Tutorial.', tutorial: 'Open Tutorial',
       img_wait: 'Sketching the idea…', img_err: "Couldn't generate this image.",
+      tab_codex: 'Codex', learned: 'Learned:', forget: 'Forget', forgotten: 'Forgotten.', learn_err: "Couldn't save: ",
+      codex_intro: 'What I learned from you. It applies to every conversation, forever, above the Codex. Only admins see and edit this.',
+      codex_ph: 'Teach a rule, e.g.: Never put a wall cabinet above the fridge.', codex_add: 'Teach', codex_empty: 'No rules learned yet. Teach me here or in the chat ("learn this…").',
+      codex_load_err: "Couldn't load (was migration 268 run?): ", codex_del: 'Delete',
+      dup: 'Already knew:', clash: 'This clashes with what I know:', keep_new: 'New one wins', keep_old: 'Old one wins', keep_both: 'Keep both (different cases)',
+      kept_new: 'Replaced: the new rule took over.', kept_old: 'Kept the old one.', kept_both: 'Kept both.', checking: 'Checking against what I know…',
+      w_ouro: 'gold', w_normal: 'normal', w_preferencia: 'preference', w_hint: 'Click to change weight: gold (never break) → normal → preference',
+      no_hub: 'No hub', hub_auto: 'Hub: automatic', weight_auto: 'Weight: automatic', central: 'Hub',
       applying_n: 'Applying {{k}} of {{n}}…', apply_stopped: 'Stopped and put the project back as it was.',
       stop: 'Stop', stopped: 'Stopped. Send it again the right way.',
       close: 'Close', no_speech: 'This browser has no speech recognition. Use Chrome or Edge.'
@@ -103,6 +119,14 @@
       ver: 'Ver', fix: 'Corregir', fix_all: 'Corregir los automáticos', full: 'Abrir auditor completo', more: 'y {{n}} más…',
       how: '¿Cómo hago…?', how_ph: 'Pregunta, ej.: cómo girar un módulo', none: 'No encontré. Prueba otras palabras o abre el Tutorial.', tutorial: 'Abrir Tutorial',
       img_wait: 'Dibujando la idea…', img_err: 'No pude generar esta imagen.',
+      tab_codex: 'Codex', learned: 'Aprendí:', forget: 'Olvidar', forgotten: 'Olvidado.', learn_err: 'No pude guardar: ',
+      codex_intro: 'Lo que aprendí contigo. Vale en todas las conversaciones, para siempre, por encima del Codex. Solo administradores ven y editan esto.',
+      codex_ph: 'Enseña una regla, ej.: Nunca poner alacena sobre el refrigerador.', codex_add: 'Enseñar', codex_empty: 'Aún no aprendí ninguna regla. Enséñame aquí o en la conversación ("aprende esto…").',
+      codex_load_err: 'No pude cargar (¿se corrió la migration 268?): ', codex_del: 'Borrar',
+      dup: 'Ya lo sabía:', clash: 'Esto choca con lo que ya sé:', keep_new: 'Vale la nueva', keep_old: 'Vale la anterior', keep_both: 'Valen las dos (casos distintos)',
+      kept_new: 'Cambié: la nueva reemplazó a la anterior.', kept_old: 'Mantuve la anterior.', kept_both: 'Guardé las dos.', checking: 'Comparando con lo que ya sé…',
+      w_ouro: 'oro', w_normal: 'normal', w_preferencia: 'preferencia', w_hint: 'Clic para cambiar el peso: oro (nunca romper) → normal → preferencia',
+      no_hub: 'Sin central', hub_auto: 'Central: automática', weight_auto: 'Peso: automático', central: 'Central',
       applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Paré y dejé el proyecto como estaba.',
       stop: 'Detener', stopped: 'Paré. Puedes enviarlo de nuevo como quieras.',
       close: 'Cerrar', no_speech: 'Este navegador no tiene reconocimiento de voz. Usa Chrome o Edge.'
@@ -191,6 +215,24 @@
 #po-sahra .sa-concepts { display: grid; gap: 6px; margin-top: 8px; }
 #po-sahra .sa-concepts img { width: 100%; border-radius: 8px; cursor: zoom-in; display: block; }
 #po-sahra .sa-cph { aspect-ratio: 16 / 9; border-radius: 8px; background: #ebe1d2; color: #7a6a58; font-size: 11.5px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+#po-sahra .sa-learn { margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: #fff7e6; border: 1px solid #f0dcb4; font-size: 12px; }
+#po-sahra .sa-learn .sa-lr { display: flex; gap: 6px; align-items: flex-start; margin-top: 3px; }
+#po-sahra .sa-learn .sa-lr span { flex: 1; } #po-sahra .sa-learn .sa-lr.gone span { text-decoration: line-through; color: #9c8b77; }
+#po-sahra .sa-learn button { font-size: 11px; padding: 2px 7px; }
+#po-sahra .sa-wt { font-size: 10px; padding: 1px 6px; border-radius: 8px; border: 0; cursor: pointer; background: #eee6da; color: #5a4632; text-transform: uppercase; letter-spacing: .03em; }
+#po-sahra .sa-wt.ouro { background: #e9c46a; color: #4a3200; } #po-sahra .sa-wt.preferencia { background: #e3ecf0; color: #3b5260; }
+#po-sahra .sa-hubh { margin: 12px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #8a5a34; font-weight: 700; }
+#po-sahra .sa-hubh small { font-weight: 400; text-transform: none; letter-spacing: 0; color: #9c8b77; }
+#po-sahra .sa-clash { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #fdecea; border: 1px solid #f2c4bd; }
+#po-sahra .sa-clash .sa-old { margin: 4px 0; color: #6b3a32; } #po-sahra .sa-clash .sa-mact { margin-top: 6px; }
+#po-sahra .sa-cx-opts { display: flex; gap: 6px; margin: -4px 0 8px; } #po-sahra .sa-cx-opts select { font-size: 11.5px; padding: 3px 6px; border: 1px solid #e0d5c4; border-radius: 6px; background: #fff; }
+#po-sahra .sa-cx-pend:empty { display: none; } #po-sahra .sa-cx-pend { margin-bottom: 8px; }
+#po-sahra .sa-cx-add { display: flex; gap: 6px; align-items: flex-end; margin: 8px 0 10px; }
+#po-sahra .sa-cx-add textarea { flex: 1; resize: vertical; font: inherit; font-size: 12.5px; padding: 7px 9px; border: 1px solid #e0d5c4; border-radius: 8px; }
+#po-sahra .sa-cx-add button { font-size: 12px; padding: 7px 12px; }
+#po-sahra .sa-cx-it { display: flex; gap: 8px; align-items: flex-start; padding: 7px 0; border-top: 1px solid #f0e8dc; font-size: 12.5px; color: #3a2a1c; }
+#po-sahra .sa-cx-it em { font-style: normal; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: #8a5a34; display: block; }
+#po-sahra .sa-cx-it div { flex: 1; } #po-sahra .sa-cx-it button { font-size: 11px; padding: 3px 8px; flex-shrink: 0; }
 #po-sahra .sa-m.err { background: #f8e3de; color: #8e2f20; }
 #po-sahra .sa-dots span { display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; background: #b39b7d; animation: saDot 1s infinite ease-in-out; }
 #po-sahra .sa-dots span:nth-child(2) { animation-delay: .15s; } #po-sahra .sa-dots span:nth-child(3) { animation-delay: .3s; }
@@ -256,6 +298,7 @@
           <button type="button" class="sa-tab" data-aba="chat" data-k="tab_chat"></button>
           <button type="button" class="sa-tab" data-aba="review" data-k="tab_review"></button>
           <button type="button" class="sa-tab" data-aba="how" data-k="tab_how"></button>
+          <button type="button" class="sa-tab" data-aba="codex" data-k="tab_codex"></button>
         </div>
         <div class="sa-view" data-view="chat">
           <div class="sa-msgs"></div>
@@ -272,6 +315,13 @@
           <div class="sa-pills"></div>
           <div class="sa-list"></div>
           <div class="sa-acts"><button type="button" class="secondary sa-link sa-fixall"></button><button type="button" class="secondary sa-link sa-full"></button></div>
+        </div></div>
+        <div class="sa-view" data-view="codex"><div class="sa-body">
+          <p class="sa-hint" data-k="codex_intro"></p>
+          <div class="sa-cx-add"><textarea rows="2" class="sa-cx-in"></textarea><button type="button" class="sa-cx-btn"></button></div>
+          <div class="sa-cx-opts"><select class="sa-cx-hub"></select><select class="sa-cx-w"></select></div>
+          <div class="sa-cx-pend"></div>
+          <div class="sa-cx-list"></div>
         </div></div>
         <div class="sa-view" data-view="how"><div class="sa-body">
           <h4 data-k="how"></h4>
@@ -310,11 +360,73 @@
       const b = ev.target.closest('[data-mact]');
       if (!b) return;
       const m = conversa[Number(b.dataset.idx)];
+      if (b.dataset.mact === 'forget') {
+        const l = m && m.learned && m.learned[Number(b.dataset.k)];
+        if (l && l.id && !l.gone) { b.disabled = true; esqueceRegra(l.id).then((ok) => { if (ok) l.gone = true; renderConversa(); }); }
+        return;
+      }
+      if (b.dataset.mact === 'decide') {
+        const l = m && m.learned && m.learned[Number(b.dataset.k)];
+        if (l) { b.disabled = true; decide(l, b.dataset.dec, m.origem || '').then(renderConversa); }
+        return;
+      }
       if (b.dataset.mact === 'img') { const c = m && m.concepts && m.concepts[Number(b.dataset.k)]; if (c && c.url) abreImagem(c.url); return; }
       if (b.dataset.mact === 'apply' && m) { m.stopped = false; aplicar(m); }
       else if (b.dataset.mact === 'stop') parar();
       else if (b.dataset.mact === 'render') { fecha(); if (typeof window.openProjectDecoratedRender === 'function') window.openProjectDecoratedRender(); }
       else if (b.dataset.mact === 'audit') { fecha(); if (typeof window.openAuditModal === 'function') window.openAuditModal(); }
+    });
+
+    // codex (aprendizado) — ensinar à mão passa pelo detector de choque
+    let cxPend = [];
+    const pintaPend = () => { root.querySelector('.sa-cx-pend').innerHTML = cxPend.map((L, k) => itemAprendido(L, `data-cx="${k}"`)).join(''); };
+    root.querySelector('.sa-cx-btn').addEventListener('click', async () => {
+      const ta = root.querySelector('.sa-cx-in');
+      const rule = ta.value.trim();
+      if (!rule) return;
+      const btn = root.querySelector('.sa-cx-btn'); btn.disabled = true;
+      root.querySelector('.sa-cx-pend').innerHTML = `<p class="sa-hint">${esc(T('checking'))}</p>`;
+      const hub = root.querySelector('.sa-cx-hub').value || null, weight = root.querySelector('.sa-cx-w').value || null;
+      let itens;
+      try {
+        const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { check_learn: [{ rule, hub, weight }], lang: lang() } });
+        if (error || !data || !Array.isArray(data.learn)) throw new Error((data && data.error) || (error && error.message) || '?');
+        itens = data.learn;
+        if (hub) itens.forEach((L) => { L.hub = hub; });
+        if (weight) itens.forEach((L) => { L.weight = weight; });
+      } catch (e) {
+        console.warn('[sahra codex] checagem falhou, gravando direto', e);
+        itens = [{ rule, hub, weight: weight || 'normal', status: 'nova', existing: [] }];
+      }
+      cxPend = itens;
+      await processaAprendizado(cxPend, 'manual');
+      btn.disabled = false; ta.value = '';
+      pintaPend(); carregaCodex();
+    });
+    root.querySelector('.sa-cx-pend').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('button[data-dec]');
+      if (!b) return;
+      const L = cxPend[Number(b.dataset.cx)];
+      if (!L) return;
+      b.disabled = true;
+      await decide(L, b.dataset.dec, 'manual');
+      pintaPend(); carregaCodex();
+    });
+    root.querySelector('.sa-cx-list').addEventListener('click', async (ev) => {
+      const w = ev.target.closest('button[data-wt]');
+      if (w) {
+        const prox = { ouro: 'normal', normal: 'preferencia', preferencia: 'ouro' }[w.dataset.w] || 'normal';
+        w.disabled = true;
+        try { const { error } = await supabaseClient.from('sahra_lessons').update({ weight: prox }).eq('id', w.dataset.wt); if (error) throw error; }
+        catch (e) { status(String((e && e.message) || e)); }
+        carregaCodex();
+        return;
+      }
+      const b = ev.target.closest('button[data-del]');
+      if (!b) return;
+      b.disabled = true;
+      await esqueceRegra(b.dataset.del);
+      carregaCodex();
     });
 
     // revisão
@@ -363,6 +475,10 @@
     root.querySelector('.sa-fixall').textContent = T('fix_all');
     root.querySelector('.sa-tut').textContent = T('tutorial');
     root.querySelector('.sa-q').placeholder = T('how_ph');
+    root.querySelector('.sa-cx-in').placeholder = T('codex_ph');
+    root.querySelector('.sa-cx-btn').textContent = T('codex_add');
+    root.querySelector('.sa-cx-hub').innerHTML = `<option value="">${esc(T('hub_auto'))}</option>` + centrais().map((h) => `<option value="${esc(h.slug)}">${esc(nomeCentral(h.slug))}</option>`).join('');
+    root.querySelector('.sa-cx-w').innerHTML = `<option value="">${esc(T('weight_auto'))}</option>` + ['ouro', 'normal', 'preferencia'].map((w) => `<option value="${w}">${esc(T('w_' + w))}</option>`).join('');
     root.querySelector('.sa-in').placeholder = T('chat_ph');
     root.querySelector('.sa-send').title = T('send');
     root.querySelector('.sa-mic').title = T('mic');
@@ -376,6 +492,7 @@
     root.querySelectorAll('.sa-tab').forEach((b) => b.classList.toggle('on', b.dataset.aba === a));
     root.querySelectorAll('.sa-view').forEach((v) => v.classList.toggle('on', v.dataset.view === a));
     if (a === 'review') atualiza(true);
+    if (a === 'codex') carregaCodex();
     if (a === 'chat') { renderConversa(); setTimeout(() => { const i = root.querySelector('.sa-in'); if (i) i.focus(); }, 30); }
     if (a === 'how') { const q = root.querySelector('.sa-q'); q.value = ''; root.querySelector('.sa-res').innerHTML = ''; setTimeout(() => q.focus(), 30); }
   }
@@ -409,6 +526,10 @@
           ? `<img src="${c.url}" alt="" data-mact="img" data-idx="${i}" data-k="${k}">`
           : `<div class="sa-cph">${c.err ? esc(T('img_err')) : '<span class="sa-dots"><span></span><span></span><span></span></span> ' + esc(T('img_wait'))}</div>`).join('') + '</div>';
       }
+      if (m.learned && m.learned.length) {
+        extra += m.learned.map((L, k) => itemAprendido(L, `data-mact="decide" data-idx="${i}" data-k="${k}"`, `data-mact="forget" data-idx="${i}" data-k="${k}"`)).join('');
+      }
+      if (m.learnErr) extra += `<div class="sa-small">${esc(T('learn_err') + m.learnErr)}</div>`;
       const bts = [];
       if (m.ops && m.ops.length && !m.applied && !m.applying) bts.push(`<button type="button" data-mact="apply" data-idx="${i}">${esc(T('apply', { n: m.ops.length }))}</button>`);
       if ((m.actions || []).includes('render')) bts.push(`<button type="button" class="secondary" data-mact="render" data-idx="${i}">${esc(T('open_render'))}</button>`);
@@ -533,12 +654,153 @@
       pensando = false; chatAbort = null; renderConversa();
       if (vozLigada()) { if (audio && audio.url) tocaAudio(audio.url); else falarNavegador(limpaParaFala(msg.spoken || msg.text)); }
       if (msg.concepts.length) geraConceitos(msg);
+      // APRENDER (05/11, Matt: "um canal que ela aprenda nos codex dela e não
+      // esqueça em nenhuma sessão futura; só administrador"): regras que ela
+      // devolveu em `learn` vão pra tabela sahra_lessons (RLS só admin).
+      if (Array.isArray(data.learn) && data.learn.length) {
+        msg.learned = data.learn.map((L) => Object.assign({ status: 'nova', existing: [] }, L));
+        msg.origem = texto;
+        processaAprendizado(msg.learned, texto).then(renderConversa);
+      }
     } catch (e) {
       if (seq !== chatSeq) return;
       console.error('[sahra chat]', e);
       conversa.push({ role: 'sahra', err: true, text: T('err') + ((e && e.message) || String(e)) });
     } finally {
       if (seq === chatSeq) { pensando = false; chatAbort = null; if (poseFixa === 'pensando') poseEnquanto(null); renderConversa(); }
+    }
+  }
+
+  // ---------------------------------------------------------------- CODEX (aprendizado + centrais)
+  // CENTRAIS (05/11, migration 269, Matt: "um cérebro que tem centrais de
+  // assuntos e elas se conectam"): cada regra mora numa central, tem peso
+  // (ouro/normal/preferência) e, ao chegar, é conferida contra a mesma
+  // central + ligadas (função sahra-chat): nova = grava; duplicada = não
+  // grava; contradiz = o Matt escolhe (nova vale / antiga vale / as duas).
+  const CENTRAIS_PADRAO = [
+    ['composicao', 'Composição', 'Composition', 'Composición'], ['eletros', 'Eletros', 'Appliances', 'Electrodomésticos'],
+    ['paineis', 'Painéis e componentes', 'Panels & components', 'Paneles y componentes'], ['materiais', 'Materiais', 'Materials', 'Materiales'],
+    ['cores', 'Cores e tendências', 'Colors & trends', 'Colores y tendencias'], ['iluminacao', 'Iluminação', 'Lighting', 'Iluminación'],
+    ['funcao', 'Função e ergonomia', 'Function & ergonomics', 'Función y ergonomía'], ['cliente', 'Cliente e estilo', 'Client & style', 'Cliente y estilo'],
+    ['custo', 'Custo', 'Cost', 'Costo'], ['producao', 'Produção', 'Production', 'Producción'],
+    ['conversa', 'Jeito de conversar', 'How to talk', 'Forma de hablar'], ['negocio', 'Negócio Legno', 'Legno business', 'Negocio Legno']
+  ].map(([slug, pt, en, es]) => ({ slug, name_pt: pt, name_en: en, name_es: es, related: [] }));
+  let centraisDb = null;
+  function centrais() { return (centraisDb && centraisDb.length) ? centraisDb : CENTRAIS_PADRAO; }
+  function nomeCentral(slug) {
+    const h = centrais().find((x) => x.slug === slug);
+    if (!h) return T('no_hub');
+    return h['name_' + lang()] || h.name_pt || slug;
+  }
+  let temCentraisNoBanco = true; // false = migration 269 ainda não rodada (grava no formato da 268)
+
+  function itemAprendido(L, attrDecide, attrForget) {
+    const wt = L.weight ? `<span class="sa-wt ${esc(L.weight)}">${esc(T('w_' + L.weight))}</span> ` : '';
+    const hub = L.hub ? `<em style="font-style:normal;color:#8a5a34">${esc(nomeCentral(L.hub))}</em> · ` : '';
+    const linha = `${hub}${wt}${esc(L.rule)}`;
+    if (L.status === 'duplicada' && !L.decided) {
+      return `<div class="sa-learn"><strong>✓ ${esc(T('dup'))}</strong><div class="sa-lr"><span>${esc((L.existing[0] || {}).rule || L.rule)}</span></div></div>`;
+    }
+    if (L.status === 'contradiz' && !L.decided) {
+      return `<div class="sa-learn sa-clash"><strong>⚠ ${esc(T('clash'))}</strong>
+        ${(L.existing || []).map((e) => `<div class="sa-old">— ${esc(e.rule)}</div>`).join('')}
+        <div><strong>${esc(T('learned'))}</strong> ${linha}</div>${L.note ? `<div class="sa-small">${esc(L.note)}</div>` : ''}
+        <div class="sa-mact">
+          <button type="button" ${attrDecide} data-dec="nova">${esc(T('keep_new'))}</button>
+          <button type="button" class="secondary" ${attrDecide} data-dec="antiga">${esc(T('keep_old'))}</button>
+          <button type="button" class="secondary" ${attrDecide} data-dec="ambas">${esc(T('keep_both'))}</button>
+        </div></div>`;
+    }
+    const fim = { nova: T('kept_new'), antiga: T('kept_old'), ambas: T('kept_both') }[L.decided] || '';
+    if (L.decided === 'antiga') return `<div class="sa-learn"><div class="sa-lr gone"><span>${esc(L.rule)}</span></div><div class="sa-small">${esc(fim)}</div></div>`;
+    return `<div class="sa-learn"><strong>📌 ${esc(T('learned'))}</strong><div class="sa-lr${L.gone ? ' gone' : ''}"><span>${linha}</span>${L.id && !L.gone && attrForget ? `<button type="button" class="secondary" ${attrForget}>${esc(T('forget'))}</button>` : ''}</div>${fim ? `<div class="sa-small">${esc(fim)}</div>` : ''}${L.erro ? `<div class="sa-small">${esc(T('learn_err') + L.erro)}</div>` : ''}</div>`;
+  }
+
+  // grava as "nova" na hora; duplicada e contradiz esperam (ou não gravam)
+  async function processaAprendizado(itens, origem) {
+    for (const L of itens) {
+      if (L.status === 'nova' || !L.status) {
+        const r = await guardaRegra(L, origem);
+        if (r.ok) L.id = r.id; else L.erro = r.erro;
+      }
+    }
+  }
+  async function decide(L, escolha, origem) {
+    if (L.decided) return;
+    if (escolha === 'antiga') { L.decided = 'antiga'; return; }
+    const r = await guardaRegra(L, origem);
+    if (!r.ok) { L.erro = r.erro; return; }
+    L.id = r.id;
+    if (escolha === 'nova') {
+      for (const e of (L.existing || [])) {
+        try {
+          const patch = temCentraisNoBanco ? { active: false, replaced_by: r.id, replaced_at: new Date().toISOString() } : { active: false };
+          const { error } = await supabaseClient.from('sahra_lessons').update(patch).eq('id', e.id);
+          if (error) throw error;
+        } catch (er) { console.error('[sahra substituir]', er); L.erro = (er && er.message) || String(er); }
+      }
+    }
+    L.decided = escolha;
+  }
+  async function guardaRegra(L, origem) {
+    const base = { rule: String(L.rule || '').slice(0, 600), source: String(origem || '').slice(0, 500), topic: L.hub ? nomeCentral(L.hub) : null };
+    const tenta = async (row) => {
+      const { data, error } = await supabaseClient.from('sahra_lessons').insert([row]).select('id');
+      if (error) throw error;
+      return (data && data[0] && data[0].id) || null;
+    };
+    try {
+      if (temCentraisNoBanco) {
+        try { return { ok: true, id: await tenta(Object.assign({}, base, { hub: L.hub || null, weight: L.weight || 'normal' })) }; }
+        catch (e) {
+          if (!/hub|weight|column|schema cache/i.test(String(e && e.message))) throw e;
+          temCentraisNoBanco = false; // 269 não rodada
+        }
+      }
+      return { ok: true, id: await tenta(base) };
+    } catch (e) {
+      console.error('[sahra aprender]', e);
+      return { ok: false, erro: (e && e.message) || String(e) };
+    }
+  }
+  async function esqueceRegra(id) {
+    try {
+      const { error } = await supabaseClient.from('sahra_lessons').delete().eq('id', id);
+      if (error) throw error;
+      return true;
+    } catch (e) { console.error('[sahra esquecer]', e); status(String((e && e.message) || e)); return false; }
+  }
+  async function carregaCodex() {
+    const box = root.querySelector('.sa-cx-list');
+    box.innerHTML = '<span class="sa-dots"><span></span><span></span><span></span></span>';
+    try {
+      if (!centraisDb) {
+        try {
+          const { data: hs, error: he } = await supabaseClient.from('sahra_hubs').select('slug,name_pt,name_en,name_es,related').order('sort_order');
+          if (!he && hs && hs.length) centraisDb = hs; else centraisDb = [];
+        } catch (e) { centraisDb = []; }
+        textos();
+      }
+      let res = await supabaseClient.from('sahra_lessons').select('id,hub,weight,topic,rule,created_at').eq('active', true).order('created_at', { ascending: false });
+      if (res.error && /hub|weight|column/i.test(res.error.message || '')) {
+        temCentraisNoBanco = false;
+        res = await supabaseClient.from('sahra_lessons').select('id,topic,rule,created_at').eq('active', true).order('created_at', { ascending: false });
+      }
+      if (res.error) throw res.error;
+      const data = res.data || [];
+      if (!data.length) { box.innerHTML = `<p class="sa-hint">${esc(T('codex_empty'))}</p>`; return; }
+      const ordem = { ouro: 0, normal: 1, preferencia: 2 };
+      const grupos = centrais().map((h) => h.slug).concat(['']);
+      box.innerHTML = grupos.map((slug) => {
+        const ls = data.filter((l) => (l.hub || '') === slug).sort((a, b) => (ordem[a.weight] || 1) - (ordem[b.weight] || 1));
+        if (!ls.length) return '';
+        const h = centrais().find((x) => x.slug === slug);
+        const lig = h && h.related && h.related.length ? ` <small>↔ ${h.related.map(nomeCentral).map(esc).join(', ')}</small>` : '';
+        return `<div class="sa-hubh">${esc(slug ? nomeCentral(slug) : T('no_hub'))} (${ls.length})${lig}</div>` + ls.map((l) => `<div class="sa-cx-it"><div>${temCentraisNoBanco
+          ? `<button type="button" class="sa-wt ${esc(l.weight || 'normal')}" data-wt="${esc(l.id)}" data-w="${esc(l.weight || 'normal')}" title="${esc(T('w_hint'))}">${esc(T('w_' + (l.weight || 'normal')))}</button> ` : ''}${esc(l.rule)}</div><button type="button" class="secondary" data-del="${esc(l.id)}">${esc(T('codex_del'))}</button></div>`).join('');
+      }).join('');
+    } catch (e) {
+      box.innerHTML = `<p class="sa-hint">${esc(T('codex_load_err') + ((e && e.message) || e))}</p>`;
     }
   }
 
