@@ -4988,11 +4988,20 @@ async function savePhotorealRenderToProject(dataUrl) {
   // ainda não existir, não trava o salvamento: cai pro comportamento antigo
   // (só ai_preview_url atualizado, sem grade de miniaturas na tela).
   try {
-    const { data: photoRow, error: insertError } = await supabaseClient
+    // camera_state (migration 266) — se a coluna ainda não existir, tenta
+    // de novo sem ela (não trava o salvamento).
+    let { data: photoRow, error: insertError } = await supabaseClient
       .from('project_photoreal_photos')
-      .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl })
+      .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl, camera_state: window.__lastPhotorealCamera || null })
       .select('id, image_url, created_at')
       .single();
+    if (insertError) {
+      ({ data: photoRow, error: insertError } = await supabaseClient
+        .from('project_photoreal_photos')
+        .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl })
+        .select('id, image_url, created_at')
+        .single());
+    }
     if (insertError) throw insertError;
     projectPhotorealPhotos = [photoRow, ...projectPhotorealPhotos];
     renderProjectPhotorealGallery();
@@ -5168,6 +5177,12 @@ if (projPhotorealBtn) {
     } else {
       cameraState = stateEdit || stateMain || null;
     }
+    // Câmera desta foto guardada junto dela (migration 266) — o Render
+    // decorado (portal-36) usa pra avisar quando a base é vista de cima.
+    window.__lastPhotorealCamera = cameraState ? {
+      position: cameraState.position, target: cameraState.target, fov: cameraState.fov,
+      ceiling_m: roomSettings.ceiling_mm / 1000
+    } : null;
     Photoreal.open({
       walls,
       floors,

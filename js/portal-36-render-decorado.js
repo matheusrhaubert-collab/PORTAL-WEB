@@ -17,8 +17,12 @@
 (function () {
   const TXT = {
     pt: {
+      pick: 'Escolha o render realista que vai ser a base (o ângulo vem dele):',
+      warnHigh: 'Atenção: este render foi feito de cima. A IA tende a reinventar o móvel nesse ângulo — refaça o render realista na altura dos olhos, de dentro do ambiente.',
+      warnUnknown: 'Não sei de que ângulo este render foi feito (render antigo). Funciona melhor com câmera na altura dos olhos, de frente.',
+      okAngle: 'Ângulo bom: altura dos olhos.',
       title: 'Render decorado (IA)',
-      base: 'Base: último render realista do projeto',
+      base: 'Base selecionada',
       noBase: 'Gere primeiro um render realista (Render > Gerar) com o projeto salvo — ele é a base fiel da marcenaria.',
       brief: 'Quem vai morar aqui? Idades, gostos, hobbies, cores, estilo, dia ou noite…',
       placeholder: 'Ex.: quarto do Lucas, 4 anos, ama caminhões e dinossauros; pais adoram viajar; foto da família na prateleira; noite com o LED aceso.',
@@ -27,8 +31,12 @@
       fail: 'Não deu pra gerar: '
     },
     en: {
+      pick: 'Choose the realistic render to use as the base (the angle comes from it):',
+      warnHigh: 'Warning: this render was taken from above. The AI tends to reinvent the cabinetry at this angle — redo the realistic render at eye level, from inside the room.',
+      warnUnknown: 'Unknown angle for this render (older render). Works best with an eye-level, frontal camera.',
+      okAngle: 'Good angle: eye level.',
       title: 'Decorated render (AI)',
-      base: 'Base: latest realistic render of this project',
+      base: 'Selected base',
       noBase: 'First generate a realistic render (Render > Generate) with the project saved — it is the faithful base of the cabinetry.',
       brief: 'Who will live here? Ages, tastes, hobbies, colors, style, day or night…',
       placeholder: 'E.g.: Lucas\'s room, 4 years old, loves trucks and dinosaurs; parents love travelling; family photo on the shelf; night with LEDs on.',
@@ -37,8 +45,12 @@
       fail: 'Could not generate: '
     },
     es: {
+      pick: 'Elija el render realista que será la base (el ángulo viene de él):',
+      warnHigh: 'Atención: este render fue hecho desde arriba. La IA tiende a reinventar el mueble en ese ángulo — rehaga el render realista a la altura de los ojos, desde dentro del ambiente.',
+      warnUnknown: 'Ángulo desconocido para este render (render antiguo). Funciona mejor con cámara a la altura de los ojos, de frente.',
+      okAngle: 'Buen ángulo: altura de los ojos.',
       title: 'Render decorado (IA)',
-      base: 'Base: último render realista del proyecto',
+      base: 'Base seleccionada',
       noBase: 'Primero genere un render realista (Render > Generar) con el proyecto guardado — es la base fiel de la carpintería.',
       brief: '¿Quién vivirá aquí? Edades, gustos, hobbies, colores, estilo, día o noche…',
       placeholder: 'Ej.: cuarto de Lucas, 4 años, ama los camiones y dinosaurios; padres viajeros; foto familiar en el estante; noche con LED encendido.',
@@ -63,14 +75,34 @@
     });
   }
 
-  function latestPhotorealUrl() {
-    try {
-      if (typeof projectPhotorealPhotos !== 'undefined' && projectPhotorealPhotos.length) return projectPhotorealPhotos[0].image_url;
-    } catch (e) { /* sem grade */ }
-    try {
-      if (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.ai_preview_url) return loadedProjectFavorite.ai_preview_url;
-    } catch (e) { /* sem projeto */ }
-    return null;
+  // Fotos realistas do projeto que podem ser BASE (exclui as já decoradas).
+  // camera_state vem da migration 266; sem a coluna, cai pro select antigo.
+  let decorPhotos = [];
+  let decorSelected = null;
+  async function loadBasePhotos() {
+    decorPhotos = [];
+    if (typeof loadedProjectFavorite === 'undefined' || !loadedProjectFavorite || !loadedProjectFavorite.id) return;
+    let res = await supabaseClient.from('project_photoreal_photos')
+      .select('id, image_url, created_at, camera_state')
+      .eq('project_id', loadedProjectFavorite.id).order('created_at', { ascending: false });
+    if (res.error) {
+      res = await supabaseClient.from('project_photoreal_photos')
+        .select('id, image_url, created_at')
+        .eq('project_id', loadedProjectFavorite.id).order('created_at', { ascending: false });
+    }
+    decorPhotos = (res.data || []).filter((p) => !(p.camera_state && p.camera_state.decorated));
+  }
+
+  // Vista de cima = câmera acima de ~2 m OU olhando pra baixo mais que ~25°.
+  function angleVerdict(cam) {
+    if (!cam || !cam.position || !cam.target) return 'unknown';
+    const p = cam.position, tg = cam.target;
+    const dx = tg.x - p.x, dy = tg.y - p.y, dz = tg.z - p.z;
+    const dist = Math.hypot(dx, dy, dz) || 1;
+    const pitchDown = Math.asin(Math.max(-1, Math.min(1, -dy / dist))) * 180 / Math.PI;
+    const ceiling = Number(cam.ceiling_m) || 2.6;
+    if (p.y > Math.min(2.0, ceiling - 0.2) || pitchDown > 25) return 'high';
+    return 'ok';
   }
 
   function ensureModal() {
@@ -90,6 +122,9 @@
             <div id="po-decor-base-label" style="font-size:12px;color:#6b6259;margin-bottom:6px;"></div>
             <img id="po-decor-base" alt="" style="width:100%;border-radius:8px;background:#f2efe9;display:none;" />
             <div id="po-decor-nobase" style="font-size:13px;color:#8a3b2e;display:none;"></div>
+            <div id="po-decor-pick-label" style="font-size:12px;color:#6b6259;margin:10px 0 6px;"></div>
+            <div id="po-decor-thumbs" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;"></div>
+            <div id="po-decor-angle" style="font-size:13px;margin-top:8px;"></div>
             <label for="po-decor-brief" id="po-decor-brief-label" style="display:block;font-size:13px;margin:12px 0 6px;"></label>
             <textarea id="po-decor-brief" rows="5" style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:10px;border:1px solid #d8d2c8;border-radius:8px;resize:vertical;"></textarea>
             <button type="button" id="po-decor-generate" class="po-btn-primary" style="margin-top:10px;padding:10px 16px;"></button>
@@ -124,17 +159,47 @@
     m.querySelector('#po-decor-brief').placeholder = t('placeholder');
     m.querySelector('#po-decor-generate').textContent = t('gen');
     m.querySelector('#po-decor-status').textContent = '';
-    const url = latestPhotorealUrl();
+    m.querySelector('#po-decor-pick-label').textContent = t('pick');
+    m.style.display = 'flex';
+    loadBasePhotos().then(() => {
+      decorSelected = decorPhotos[0] || null;
+      renderBase();
+    });
+  }
+
+  function renderBase() {
+    const m = ensureModal();
     const baseImg = m.querySelector('#po-decor-base');
     const noBase = m.querySelector('#po-decor-nobase');
-    if (url) {
-      baseImg.src = url; baseImg.style.display = 'block'; noBase.style.display = 'none';
-      m.querySelector('#po-decor-generate').disabled = false;
-    } else {
-      baseImg.style.display = 'none'; noBase.textContent = t('noBase'); noBase.style.display = 'block';
-      m.querySelector('#po-decor-generate').disabled = true;
+    const thumbs = m.querySelector('#po-decor-thumbs');
+    const angle = m.querySelector('#po-decor-angle');
+    const genBtn = m.querySelector('#po-decor-generate');
+    if (!decorSelected) {
+      baseImg.style.display = 'none'; thumbs.innerHTML = ''; angle.textContent = '';
+      noBase.textContent = t('noBase'); noBase.style.display = 'block';
+      genBtn.disabled = true;
+      return;
     }
-    m.style.display = 'flex';
+    noBase.style.display = 'none';
+    baseImg.src = decorSelected.image_url; baseImg.style.display = 'block';
+    genBtn.disabled = false;
+    thumbs.innerHTML = '';
+    decorPhotos.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      const sel = p === decorSelected;
+      b.style.cssText = 'flex:0 0 auto;padding:0;border:2px solid ' + (sel ? '#2b2621' : 'transparent') + ';border-radius:6px;background:none;cursor:pointer;';
+      b.setAttribute('aria-label', new Date(p.created_at).toLocaleString());
+      const img = document.createElement('img');
+      img.src = p.image_url; img.alt = '';
+      img.style.cssText = 'display:block;width:96px;height:72px;object-fit:cover;border-radius:4px;';
+      b.appendChild(img);
+      b.addEventListener('click', () => { decorSelected = p; renderBase(); });
+      thumbs.appendChild(b);
+    });
+    const v = angleVerdict(decorSelected.camera_state);
+    angle.style.color = v === 'high' ? '#8a3b2e' : (v === 'ok' ? '#2f6b3a' : '#6b6259');
+    angle.textContent = v === 'high' ? t('warnHigh') : (v === 'ok' ? t('okAngle') : t('warnUnknown'));
   }
 
   async function saveDecorated(dataUrl) {
@@ -142,13 +207,21 @@
     // (ver comentário do topo).
     if (!loadedProjectFavorite || !loadedProjectFavorite.id) return;
     const publicUrl = await uploadGalleryImageToStorage(dataUrl);
-    const { data: row, error } = await supabaseClient
+    let { data: row, error } = await supabaseClient
       .from('project_photoreal_photos')
-      .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl })
+      .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl, camera_state: { decorated: true } })
       .select('id, image_url, created_at')
       .single();
-    if (error) throw error;
-    projectPhotorealPhotos = [row, ...projectPhotorealPhotos];
+    let row2 = row;
+    if (error) {
+      // sem a migration 266: grava sem a marca (aparece como base, mas não trava)
+      const r2 = await supabaseClient.from('project_photoreal_photos')
+        .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl })
+        .select('id, image_url, created_at').single();
+      if (r2.error) throw r2.error;
+      row2 = r2.data;
+    }
+    projectPhotorealPhotos = [row2, ...projectPhotorealPhotos];
     if (typeof renderProjectPhotorealGallery === 'function') renderProjectPhotorealGallery();
   }
 
@@ -157,8 +230,8 @@
     const btn = m.querySelector('#po-decor-generate');
     const status = m.querySelector('#po-decor-status');
     const resultImg = m.querySelector('#po-decor-result');
-    const url = latestPhotorealUrl();
-    if (!url) return;
+    if (!decorSelected) return;
+    const url = decorSelected.image_url;
     btn.disabled = true;
     status.style.color = '#6b6259';
     status.textContent = t('working');

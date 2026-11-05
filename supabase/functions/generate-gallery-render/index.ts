@@ -367,22 +367,30 @@ async function generateGalleryImage(params: {
 // ACRESCENTAR objetos, roupa de cama, tapete, quadros, brinquedos, plantas e
 // luz. Só administrador por enquanto (botão escondido no front).
 function buildDecoratePrompt(familyBrief: string | null, colorLabel: string | null, colorRefCount: number, moduleRefCount: number): string {
-  // Cores: MESMO caminho do modo 'gallery' (Matt, 04/11: "usar a ia de imagem
-  // que ja temos, ela ja manda as cores certinho") — nome+hex em texto e foto
-  // real do acabamento (colors.texture_url) logo depois da imagem principal.
-  const colorText = (colorLabel || colorRefCount)
-    ? `\nFinishes: the cabinetry finishes are ${colorLabel ? `"${colorLabel}"` : 'as in the source'}.${colorRefCount ? ' Real swatch photos of these finishes are attached after the main image: every cabinet surface must match them exactly in color and texture (a plain/solid finish stays plain, a wood grain finish keeps that exact grain).' : ''}${moduleRefCount ? " Images labeled 'module reference' show real photos of pieces used here: use them only for material/hardware realism, never to change the shape." : ''}`
-    : '';
+  // v2 (04/11, depois do 1º teste — closet em U, vista de cima — em que o
+  // Gemini desenhou OUTRO móvel e um quarto com cama): segue a fórmula que o
+  // Matt já validou no modo 'gallery' — (1) fidelidade "desvio zero" na
+  // primeira frase, (2) proibições por elemento, (3) cor com foto real do
+  // acabamento, (4) decoração limitada por ZONA e sem móvel grande novo.
+  // A diferença pro 'gallery' é só o peso da decoração (aqui a família
+  // aparece de verdade) e que os LEDs que JÁ existem no render ficam acesos.
   const brief = familyBrief
-    ? `\nWho lives here and what they love (from the client, use it to choose every object): "${familyBrief}".`
-    : '\nNo family description was given: decorate in a warm, lived-in, tasteful way appropriate to the room shown.';
-  return `This image is a photorealistic render of custom-made cabinetry that will be manufactured exactly as shown. Turn it into a warm, lived-in interior photograph of a real home.
+    ? `\nWho lives here (from the client — let it decide every object you add, never the furniture): "${familyBrief}".`
+    : '\nNo family description was given: choose warm, tasteful, lived-in objects appropriate to the room.';
+  return `EDIT this photo — do not create a new one. The attached image is a photorealistic render of custom-made cabinetry that will be manufactured exactly as shown; treat it as a blueprint that must be followed with zero deviation. The output must be the SAME photo, same camera angle, same framing, same cabinetry, with only small objects added.
 
-ABSOLUTE RULE — the cabinetry is fixed: keep every cabinet, panel, door, drawer, shelf, niche, joint/reveal line, toe kick, LED strip, color, material, proportion, size and position EXACTLY as in the source image. Do not add, remove, move, resize, recolor or redesign any part of the cabinetry. Do not add handles if there are none. Do not change the camera angle or framing.${colorText}
+CRITICAL — the cabinetry is fixed:
+Do not add, remove, move, mirror or replace any cabinet, panel, tower, shelf, niche, drawer or door.
+Do not change the number of doors, drawers, shelves or compartments, nor their left-to-right order.
+Do not change the shape, size, depth or position of any part; do not straighten an L or U layout into a single wall.
+Do not change any finish: a part that is a smooth solid color stays that exact smooth solid color; a wood part stays that exact wood. Never turn painted/solid doors into wood or wood into paint.
+Do not add handles, legs, crown moldings or trims that are not in the source.
+Keep every reveal line, toe kick, filler and end panel exactly as shown.
+Keep the built-in LED strips that are visible in the source exactly where they are, glowing softly in warm 2700-3000K light; do not add LED anywhere else.${colorLabel ? `\nThe real finishes are "${colorLabel}" — reproduce them exactly.` : ''}${colorRefCount ? `\nThe real swatch photos attached after the main image are the definitive color AND surface-pattern reference for the cabinetry.` : ''}${moduleRefCount ? `\nImages labeled 'module reference' are real photos of pieces used here: use them only for material/hardware realism, never to change the shape.` : ''}
 
-What you may change: only ADD life to the scene — objects inside open niches and on shelves (books, toys, frames, plants, ceramics, baskets), bedding and pillows on a bed or bench, a rug, wall art on visible bare walls, a lamp, everyday personal items. Make the people who live here visible through their things.${brief}
+Decoration (zone-limited): add objects ONLY (a) inside open niches and on open shelves of the cabinetry, (b) on top of horizontal surfaces such as a bench or bed platform already built into the cabinetry, (c) on the visible floor in front of the cabinetry (a rug, a toy basket), and (d) on wall areas already visible in the photo that are not covered by cabinetry (framed art). Do NOT add any large furniture piece that is not in the source (no bed, sofa, dining table, armchair or wardrobe) and never place anything that covers, hides or overlaps the doors, drawers or fronts. Make the family visible through their things: books, toys, frames, plants, ceramics, baskets, bedding on an existing built-in bed.${brief}
 
-Light: keep the built-in LED strips and make them glow softly with warm 2700-3000K light. Natural, believable interior photography; no people in the image; no text or logos added to the image.`;
+Light: natural interior photography, soft and believable; no people; no text, letters or logos added to the image. If anything you would add conflicts with keeping the cabinetry identical, leave it out — fidelity of the cabinetry always wins over decoration.`;
 }
 
 async function generateDecoratedImage(params: {
