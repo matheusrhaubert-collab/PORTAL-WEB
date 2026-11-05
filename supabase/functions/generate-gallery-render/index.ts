@@ -355,6 +355,85 @@ async function generateGalleryImage(params: {
   return { imageDataUrl: `data:${outMime};base64,${inline.data}` };
 }
 
+// ---------- modo 'decorate' (Gemini) — RENDER DECORADO ----------
+// 2026-11-04, Matt (com a SAHRA): "podemos fazer uma skill pra renderizar e
+// gerar uma imagem realista com decoracao. e fazer um botao novo de IA
+// service pra isso". Diferente do modo 'gallery' (95% móvel / 5% decoração,
+// foto de produto), aqui a base é o RENDER REALISTA do path tracer (já fiel
+// à marcenaria) e o objetivo é o oposto na decoração: mostrar a FAMÍLIA que
+// vai morar ali ("a família aparece" — Codex da SAHRA, seção 7), descrita em
+// texto livre pelo usuário. A marcenaria continua intocável: o prompt proíbe
+// mudar qualquer móvel, porta, junta, cor, medida ou posição — só pode
+// ACRESCENTAR objetos, roupa de cama, tapete, quadros, brinquedos, plantas e
+// luz. Só administrador por enquanto (botão escondido no front).
+function buildDecoratePrompt(familyBrief: string | null, colorLabel: string | null, colorRefCount: number, moduleRefCount: number): string {
+  // Cores: MESMO caminho do modo 'gallery' (Matt, 04/11: "usar a ia de imagem
+  // que ja temos, ela ja manda as cores certinho") — nome+hex em texto e foto
+  // real do acabamento (colors.texture_url) logo depois da imagem principal.
+  const colorText = (colorLabel || colorRefCount)
+    ? `\nFinishes: the cabinetry finishes are ${colorLabel ? `"${colorLabel}"` : 'as in the source'}.${colorRefCount ? ' Real swatch photos of these finishes are attached after the main image: every cabinet surface must match them exactly in color and texture (a plain/solid finish stays plain, a wood grain finish keeps that exact grain).' : ''}${moduleRefCount ? " Images labeled 'module reference' show real photos of pieces used here: use them only for material/hardware realism, never to change the shape." : ''}`
+    : '';
+  const brief = familyBrief
+    ? `\nWho lives here and what they love (from the client, use it to choose every object): "${familyBrief}".`
+    : '\nNo family description was given: decorate in a warm, lived-in, tasteful way appropriate to the room shown.';
+  return `This image is a photorealistic render of custom-made cabinetry that will be manufactured exactly as shown. Turn it into a warm, lived-in interior photograph of a real home.
+
+ABSOLUTE RULE — the cabinetry is fixed: keep every cabinet, panel, door, drawer, shelf, niche, joint/reveal line, toe kick, LED strip, color, material, proportion, size and position EXACTLY as in the source image. Do not add, remove, move, resize, recolor or redesign any part of the cabinetry. Do not add handles if there are none. Do not change the camera angle or framing.${colorText}
+
+What you may change: only ADD life to the scene — objects inside open niches and on shelves (books, toys, frames, plants, ceramics, baskets), bedding and pillows on a bed or bench, a rug, wall art on visible bare walls, a lamp, everyday personal items. Make the people who live here visible through their things.${brief}
+
+Light: keep the built-in LED strips and make them glow softly with warm 2700-3000K light. Natural, believable interior photography; no people in the image; no text or logos added to the image.`;
+}
+
+async function generateDecoratedImage(params: {
+  mainImage: { mimeType: string; data: string };
+  familyBrief: string | null;
+  aspectRatio: string | null;
+  colorLabel: string | null;
+  colorRefImages: { mimeType: string; data: string; label: string | null }[];
+  moduleRefImages: { mimeType: string; data: string; label: string | null }[];
+}): Promise<{ imageDataUrl?: string; error?: string; status?: number }> {
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  if (!apiKey) {
+    return { error: 'GEMINI_API_KEY não configurada neste projeto (rode: supabase secrets set GEMINI_API_KEY=...).', status: 500 };
+  }
+  const { mainImage, familyBrief, aspectRatio, colorLabel, colorRefImages, moduleRefImages } = params;
+  const parts: Record<string, unknown>[] = [
+    { text: buildDecoratePrompt(familyBrief, colorLabel, colorRefImages.length, moduleRefImages.length) },
+    { inline_data: { mime_type: mainImage.mimeType, data: mainImage.data } }
+  ];
+  colorRefImages.forEach((img) => {
+    parts.push({ text: `Real swatch/finish photo — color reference for "${img.label || 'finish'}":` });
+    parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
+  });
+  moduleRefImages.forEach((img) => {
+    parts.push({ text: `Reference photo for the piece named "${img.label || 'furniture piece'}" — labeled 'module reference':` });
+    parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
+  });
+  const requestBody: Record<string, unknown> = { contents: [{ parts }] };
+  if (aspectRatio) requestBody.generationConfig = { imageConfig: { aspectRatio } };
+  const geminiRes = await fetch(GEMINI_ENDPOINT, {
+    method: 'POST',
+    headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+  if (!geminiRes.ok) {
+    const errText = await geminiRes.text();
+    console.error(`Gemini API error decorate (${geminiRes.status}):`, errText);
+    return { error: `Gemini API error (${geminiRes.status}): ${errText}`, status: 502 };
+  }
+  const geminiJson = await geminiRes.json();
+  const responseParts = geminiJson?.candidates?.[0]?.content?.parts || [];
+  const imagePart = responseParts.find((p: any) => p.inlineData || p.inline_data);
+  const inline = imagePart && (imagePart.inlineData || imagePart.inline_data);
+  if (!inline) {
+    console.error('Gemini (decorate) não devolveu imagem. Resposta completa:', JSON.stringify(geminiJson));
+    return { error: 'Gemini não devolveu nenhuma imagem (pode ter sido bloqueada por segurança/conteúdo).', status: 502 };
+  }
+  const outMime = inline.mimeType || inline.mime_type || 'image/png';
+  return { imageDataUrl: `data:${outMime};base64,${inline.data}` };
+}
+
 // ---------- modo 'catalog' (OpenAI gpt-image-1) ----------
 // /v1/images/edits — multipart/form-data, campo `image[]` (array, até 16
 // imagens), `model`, `prompt`. gpt-image-1 SEMPRE devolve base64 em
@@ -417,7 +496,11 @@ Deno.serve(async (req: Request) => {
     // (OpenAI, foto de vitrine isolada em fundo branco — ver comentário do
     // topo do arquivo).
     const rawMode = body && body.mode;
-    const mode = rawMode === 'catalog' ? 'catalog' : 'gallery';
+    const mode = rawMode === 'catalog' ? 'catalog' : (rawMode === 'decorate' ? 'decorate' : 'gallery');
+    // Texto livre da família (modo 'decorate') — sem quebra de linha e com teto,
+    // só higiene básica contra prompt injection.
+    const rawFamilyBrief = body && body.familyBrief;
+    const familyBrief = typeof rawFamilyBrief === 'string' ? rawFamilyBrief.replace(/[\r\n]+/g, ' ').replace(/"/g, "'").trim().slice(0, 800) || null : null;
     // Foto(s) REAL(is) de referência (migration 050, banco de referências do
     // admin) — pedido do usuário: "podemos criar um banco com cada
     // referencia de modulo pra gerar a imagem mais fiel?". Complementa (não
@@ -520,6 +603,8 @@ Deno.serve(async (req: Request) => {
 
     const result = mode === 'catalog'
       ? await generateCatalogImage({ mainImage, moduleRefImages: catalogRefImages, colorLabel })
+      : mode === 'decorate'
+      ? await generateDecoratedImage({ mainImage, familyBrief, aspectRatio, colorLabel, colorRefImages, moduleRefImages })
       : await generateGalleryImage({ mainImage, moduleRefImages, colorRefImages, angleRefImages, roomLabel, colorLabel, aspectRatio });
 
     if (result.error) {
