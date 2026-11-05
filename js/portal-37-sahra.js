@@ -40,7 +40,11 @@
       welcome: 'Oi, Matt! Já estou com o projeto aberto aqui. Me pergunte o que quiser: o que eu achei, o que eu mudaria, cores em tendência, custo, descrição técnica… ou peça pra eu montar o projeto nas paredes que você desenhou.',
       thinking: 'SAHRA está pensando…', err: 'Não consegui responder agora: ',
       apply: 'Aplicar {{n}} mudança(s)', applied: 'Aplicado. Se não gostar, é só Desfazer (um passo só).', applying: 'Aplicando…',
-      not_done: 'Não deu pra fazer:', warn: 'Avisos:', open_render: 'Abrir Render decorado', open_audit: 'Abrir auditor',
+      not_done: 'Não deu pra fazer:', warn: 'Avisos:', open_render: 'Abrir Render decorado', open_audit: 'Abrir auditor', open_photoreal: 'Gerar foto realista',
+      need_save: 'Pra gerar a foto realista o projeto precisa estar salvo. Salve em Meus Projetos e me peça de novo.',
+      need_module: 'Pra gerar a foto realista o projeto precisa de pelo menos um módulo.',
+      need_photoreal: 'O Render decorado parte de uma foto realista do projeto, e este ainda não tem nenhuma. Primeiro eu gero a foto realista (ajuste a câmera na altura dos olhos, de dentro do ambiente) e depois decoramos.',
+      photoreal_started: 'Gerando a foto realista com a câmera como está na tela. Quando terminar ela entra na grade de fotos do projeto; aí é só me pedir o render decorado.',
       chip_1: 'O que achou do projeto?', chip_2: 'Faz um projeto pra mim', chip_3: 'Como diminuir o custo?', chip_4: 'Descrição técnica do projeto', chip_5: 'Renders pra apresentação', chip_6: 'Que cor está em tendência?',
       chip_1q: 'O que você achou do projeto? Dá a nota e o que você mudaria.',
       chip_2q: 'Faz um projeto pra mim nas paredes que eu já construí. Primeiro me conta a ideia e já monta.',
@@ -73,7 +77,11 @@
       welcome: "Hi! I have the project open. Ask me anything: what I think, what I'd change, trending colors, cost, a technical description… or ask me to lay out the project on the walls you drew.",
       thinking: 'SAHRA is thinking…', err: "I couldn't answer right now: ",
       apply: 'Apply {{n}} change(s)', applied: "Applied. If you don't like it, just Undo (one step).", applying: 'Applying…',
-      not_done: "Couldn't do:", warn: 'Warnings:', open_render: 'Open Decorated render', open_audit: 'Open auditor',
+      not_done: "Couldn't do:", warn: 'Warnings:', open_render: 'Open Decorated render', open_audit: 'Open auditor', open_photoreal: 'Generate realistic photo',
+      need_save: 'To generate the realistic photo the project must be saved. Save it in My Projects and ask me again.',
+      need_module: 'The project needs at least one cabinet to generate the realistic photo.',
+      need_photoreal: 'The Decorated render starts from a realistic photo of the project, and this one has none yet. I will generate the realistic photo first (set the camera at eye level, inside the room) and then we decorate.',
+      photoreal_started: 'Generating the realistic photo with the camera as it is on screen. When it finishes it goes to the project photo grid; then just ask me for the decorated render.',
       chip_1: 'What do you think?', chip_2: 'Design it for me', chip_3: 'How to cut cost?', chip_4: 'Technical description', chip_5: 'Renders for a presentation', chip_6: 'Trending color?',
       chip_1q: 'What do you think of the project? Give it a score and tell me what you would change.',
       chip_2q: 'Design the project for me on the walls I already built. Tell me the idea first and then lay it out.',
@@ -106,7 +114,11 @@
       welcome: '¡Hola! Ya tengo el proyecto abierto. Pregúntame lo que quieras: qué me parece, qué cambiaría, colores en tendencia, costo, descripción técnica… o pídeme que arme el proyecto en las paredes que dibujaste.',
       thinking: 'SAHRA está pensando…', err: 'No pude responder ahora: ',
       apply: 'Aplicar {{n}} cambio(s)', applied: 'Aplicado. Si no te gusta, solo Deshacer (un paso).', applying: 'Aplicando…',
-      not_done: 'No se pudo hacer:', warn: 'Avisos:', open_render: 'Abrir Render decorado', open_audit: 'Abrir auditor',
+      not_done: 'No se pudo hacer:', warn: 'Avisos:', open_render: 'Abrir Render decorado', open_audit: 'Abrir auditor', open_photoreal: 'Generar foto realista',
+      need_save: 'Para generar la foto realista el proyecto debe estar guardado. Guárdalo en Mis Proyectos y pídemelo de nuevo.',
+      need_module: 'El proyecto necesita al menos un módulo para generar la foto realista.',
+      need_photoreal: 'El Render decorado parte de una foto realista del proyecto, y este aún no tiene ninguna. Primero genero la foto realista (cámara a la altura de los ojos, dentro del ambiente) y después decoramos.',
+      photoreal_started: 'Generando la foto realista con la cámara como está en pantalla. Cuando termine entra en la grilla de fotos del proyecto; luego pídeme el render decorado.',
       chip_1: '¿Qué te parece?', chip_2: 'Diséñalo por mí', chip_3: '¿Cómo bajar el costo?', chip_4: 'Descripción técnica', chip_5: 'Renders para presentación', chip_6: '¿Color en tendencia?',
       chip_1q: '¿Qué te parece el proyecto? Dale una nota y dime qué cambiarías.',
       chip_2q: 'Diseña el proyecto en las paredes que ya construí. Primero cuéntame la idea y luego ármalo.',
@@ -373,7 +385,8 @@
       if (b.dataset.mact === 'img') { const c = m && m.concepts && m.concepts[Number(b.dataset.k)]; if (c && c.url) abreImagem(c.url); return; }
       if (b.dataset.mact === 'apply' && m) { m.stopped = false; aplicar(m); }
       else if (b.dataset.mact === 'stop') parar();
-      else if (b.dataset.mact === 'render') { fecha(); if (typeof window.openProjectDecoratedRender === 'function') window.openProjectDecoratedRender(); }
+      else if (b.dataset.mact === 'render') abreDecorado();
+      else if (b.dataset.mact === 'photoreal') geraFotoRealista();
       else if (b.dataset.mact === 'audit') { fecha(); if (typeof window.openAuditModal === 'function') window.openAuditModal(); }
     });
 
@@ -532,6 +545,7 @@
       if (m.learnErr) extra += `<div class="sa-small">${esc(T('learn_err') + m.learnErr)}</div>`;
       const bts = [];
       if (m.ops && m.ops.length && !m.applied && !m.applying) bts.push(`<button type="button" data-mact="apply" data-idx="${i}">${esc(T('apply', { n: m.ops.length }))}</button>`);
+      if ((m.actions || []).includes('photoreal')) bts.push(`<button type="button" data-mact="photoreal" data-idx="${i}">📷 ${esc(T('open_photoreal'))}</button>`);
       if ((m.actions || []).includes('render')) bts.push(`<button type="button" class="secondary" data-mact="render" data-idx="${i}">${esc(T('open_render'))}</button>`);
       if ((m.actions || []).includes('audit')) bts.push(`<button type="button" class="secondary" data-mact="audit" data-idx="${i}">${esc(T('open_audit'))}</button>`);
       if (bts.length) extra += `<div class="sa-mact">${bts.join('')}</div>`;
@@ -601,6 +615,7 @@
     try {
       ctx.project.audit = rodaAuditor().slice(0, 40).map((a) => ({ nivel: a.nivel, slot_id: String(a.slotId), titulo: a.titulo, detalhe: a.detalhe }));
     } catch (e) { /* sem auditor */ }
+    try { ctx.project.salvo = !!projetoSalvoId(); ctx.project.fotos_realistas = await contaFotosRealistas(); } catch (e) { /* */ }
     // CONSTRUTOR (05/11, Matt: "a SAHRA não está conseguindo acessar o
     // construtor. isso é fundamental pra ela"): cada módulo leva o interior
     // atual em texto + se é caixa crua de Componentes.
@@ -615,6 +630,43 @@
       });
     } catch (e) { console.warn('[sahra] interior no contexto', e); }
     return ctx;
+  }
+
+  // ---------------------------------------------------------------- IMAGENS DO PORTAL
+  // 05/11 (Matt: "pedi uma foto realista mas abriu essa tela [Render
+  // decorado]... tem que instruir pra que ela gere um render simples do site
+  // pra poder liberar"): duas ferramentas, em ordem — 1) foto realista
+  // (Render > Gerar, path tracer, precisa projeto salvo + módulo; salva
+  // sozinho na grade) e 2) Render decorado (parte de uma foto realista).
+  function projetoSalvoId() {
+    try { return (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.id) || null; } catch (e) { return null; }
+  }
+  async function contaFotosRealistas() {
+    const id = projetoSalvoId();
+    if (!id) return 0;
+    try {
+      const { count, error } = await supabaseClient.from('project_photoreal_photos').select('id', { count: 'exact', head: true }).eq('project_id', id);
+      if (error) return 0;
+      return Number(count) || 0;
+    } catch (e) { return 0; }
+  }
+  function falaNaConversa(texto, actions) {
+    conversa.push({ role: 'sahra', text: texto, actions: actions || [], ops: [], notDone: [], concepts: [] });
+    if (!aberto) abre(); else renderConversa();
+  }
+  function geraFotoRealista() {
+    if (!projetoSalvoId()) { falaNaConversa(T('need_save')); return; }
+    const b = document.getElementById('po-proj-photoreal-btn');
+    if (!b || b.disabled) { falaNaConversa(projetoSalvoId() ? T('need_module') : T('need_save')); return; }
+    falaNaConversa(T('photoreal_started'));
+    fecha();
+    b.click(); // mesmo caminho do "Render > Gerar" (portal-08): câmera atual, salva sozinho
+  }
+  async function abreDecorado() {
+    if (!projetoSalvoId()) { falaNaConversa(T('need_save')); return; }
+    if ((await contaFotosRealistas()) === 0) { falaNaConversa(T('need_photoreal'), ['photoreal']); return; }
+    fecha();
+    if (typeof window.openProjectDecoratedRender === 'function') window.openProjectDecoratedRender();
   }
 
   // ---------------------------------------------------------------- CONSTRUTOR

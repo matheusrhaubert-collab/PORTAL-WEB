@@ -441,7 +441,7 @@ const CHAT_SCHEMA = {
     },
     operations: EDIT_SCHEMA.properties.operations,
     not_done: { type: "ARRAY", items: { type: "STRING" } },
-    actions: { type: "ARRAY", items: { type: "STRING", enum: ["render", "audit"] } },
+    actions: { type: "ARRAY", items: { type: "STRING", enum: ["photoreal", "render", "audit"] } },
     understanding: { type: "STRING" },
     summary: { type: "STRING" },
   },
@@ -469,7 +469,10 @@ COMO VOCÊ CONVERSA (campo reply):
 - Pedido de crítica ("o que achou?"): dê a nota de prêmio (seção 17: ideia, forma, função e usabilidade, diferenciação, responsabilidade, detalhe, de 1 a 5) em uma linha, o que funciona, o que quebra o Codex e as 3 mudanças que mais elevam.
 - Custo ("como diminuir o custo?"): use pricing (preço de venda e custo de fábrica por módulo, com chapa, fita, mão de obra, ferragem e comprados, e área de chapa). Aponte os módulos que mais pesam e sugestões concretas que mantêm o desenho: padronizar larguras/alturas, trocar gaveteiro por porta onde não faz falta, unificar cores (menos chapas abertas), menos peças pequenas, painel no lugar de módulo, cor mais barata no interior. Dê a economia estimada quando os números permitirem. Ofereça aplicar.
 - Descrição técnica ("descreve o projeto"): texto pronto pra mandar ao cliente ou à produção: ambiente e paredes (medidas), módulos por parede da esquerda para a direita com medidas, materiais/cores por papel, ferragens (dobradiça, corrediça), quantidades e total de venda. Organize por parede, com títulos em **negrito**.
-- Renders pra apresentação: o portal tem o "Render decorado" (render realista com IA). Quando pedirem render/imagens/apresentação, coloque "render" em actions (o usuário verá um botão pra abrir) e no reply dê a direção de arte: ângulo, luz, decoração e clima que valorizam o protagonista do projeto, segundo o Codex. Você NÃO gera a imagem sozinha.
+- Imagens do projeto — são DUAS ferramentas do portal, em ordem (05/11, Matt):
+  1) FOTO REALISTA ("Render > Gerar" da barra): render fiel da marcenaria, feito pelo próprio portal a partir do 3D, com a câmera como está na tela. Precisa do projeto SALVO (project.salvo) e de pelo menos 1 módulo. Quando pedirem "foto realista", "render", "imagem do projeto", "como vai ficar de verdade": coloque "photoreal" em actions e diga em uma frase como posicionar a câmera antes (altura dos olhos, uns 1,60 m, de dentro do ambiente, de frente pro protagonista, um pouco na diagonal). Se project.salvo for false, peça pra salvar o projeto primeiro.
+  2) RENDER DECORADO (IA): pega uma foto realista JÁ GERADA (project.fotos_realistas > 0) e acrescenta decoração, luz e vida. Quando pedirem decoração/apresentação/lifestyle: se project.fotos_realistas for 0, coloque SÓ "photoreal" e explique que primeiro sai a foto realista; se já houver, coloque "render" e sugira o texto do briefing (quem mora, estilo, dia/noite, objetos) pronto pra colar.
+  Você NÃO gera essas imagens sozinha (o que você gera são só as imagens de CONCEITO, em concepts).
 - Quando a resposta falar dos erros de produção do Auditor, coloque "audit" em actions.
 - Pergunta de cor/tendência: responda com o porquê e diga quais cores do projeto (color_options) fazem isso; ofereça aplicar.
 
@@ -504,7 +507,7 @@ OPERAÇÕES (campo op) — preencha só os campos que a operação usa, o resto 
   Regras do Construtor: gaveta mínima 100 mm de frente (count ≤ altura da zona ÷ 100) e máxima 400 mm; coluna com gaveta até 1200 mm de largura; gaveta em cima de tudo ⇒ nada de porta cobrindo ela. Módulo do catálogo que já tem portas próprias (casco: false e interior_atual com frentes do cadastro) → doors none, a não ser que peçam. Caixa crua de Componentes (casco: true) precisa das portas pelo Construtor. NUNCA set_interior em painel, tampo, prateleira solta, filler ou ripado.
 TODOS os números das operações em MILÍMETROS. Nunca invente slot_id, module_id, piece_id, papel ou cor. A ordem é a de execução. O que não dá pra fazer vai em not_done.
 
-COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e openings (x_mm, width_mm, height_mm, sill_mm, mesma origem do x dos módulos); slots[] = módulos atuais (id, module, family, category, mount_type, hint, placement wall/floor, wall_index, x_mm, floor_height_mm, top_mm, width/height/depth_mm, limits, colors, color_options, quantities, builder, interior_atual = como o Construtor está hoje nesse módulo (texto), casco = caixa crua de Componentes); selected_slot_ids = selecionados agora ("este", "esse"); pricing = { total_venda, por slot: venda, custo (chapa, fita, mao_obra, ferragem, comprados), area_m2, pecas } (valores em US$; só admin vê); audit = achados do Auditor de produção (erros e avisos reais do projeto — use quando criticar); catalog = módulos disponíveis (w/h/d = [mín, padrão, máx]).
+COMO LER O PROJETO (JSON): room.ceiling_mm = pé-direito; walls[i].length_mm e openings (x_mm, width_mm, height_mm, sill_mm, mesma origem do x dos módulos); slots[] = módulos atuais (id, module, family, category, mount_type, hint, placement wall/floor, wall_index, x_mm, floor_height_mm, top_mm, width/height/depth_mm, limits, colors, color_options, quantities, builder, interior_atual = como o Construtor está hoje nesse módulo (texto), casco = caixa crua de Componentes); selected_slot_ids = selecionados agora ("este", "esse"); pricing = { total_venda, por slot: venda, custo (chapa, fita, mao_obra, ferragem, comprados), area_m2, pecas } (valores em US$; só admin vê); salvo = projeto salvo em Meus Projetos; fotos_realistas = quantas fotos realistas o projeto já tem; audit = achados do Auditor de produção (erros e avisos reais do projeto — use quando criticar); catalog = módulos disponíveis (w/h/d = [mín, padrão, máx]).
 
 ${SKILL_SUSPENSO}
 
@@ -722,7 +725,7 @@ Deno.serve(async (req) => {
     const pesado = /\b(faz|fa[cç]a|monta|montar|aplica|aplicar|refaz|redesenh|cria|criar|muda|mudar|troca|trocar|pode fazer|gostei|manda ver|build|design it|lay ?out|apply|make it|haz|arma|aplica|coloca|colocar|p[oõ]e|bota|adiciona|tira|interior|construtor|gaveta|prateleira)\b/i.test(ultima);
     const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, pesado ? "deep" : "light");
     const ops = sanitizeEdit(data, b);
-    const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "render" || a === "audit");
+    const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "photoreal" || a === "render" || a === "audit");
     const novas = (Array.isArray(data?.learn) ? data.learn : [])
       .map((l: any) => ({ hub: HUB_SLUGS.includes(l?.hub) ? l.hub : null, weight: ["ouro", "normal", "preferencia"].includes(l?.weight) ? l.weight : "normal", rule: String(l?.rule || "").trim().slice(0, 600) }))
       .filter((l: any) => l.rule).slice(0, 3);
