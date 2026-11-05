@@ -277,6 +277,7 @@ const CHAT_SCHEMA = {
   properties: {
     reply: { type: "STRING" },
     spoken: { type: "STRING" },
+    concepts: { type: "ARRAY", items: { type: "STRING" } },
     operations: EDIT_SCHEMA.properties.operations,
     not_done: { type: "ARRAY", items: { type: "STRING" } },
     actions: { type: "ARRAY", items: { type: "STRING", enum: ["render", "audit"] } },
@@ -284,7 +285,7 @@ const CHAT_SCHEMA = {
     summary: { type: "STRING" },
   },
   required: ["reply", "spoken", "operations", "not_done", "actions"],
-  propertyOrdering: ["reply", "spoken", "understanding", "operations", "not_done", "actions", "summary"],
+  propertyOrdering: ["reply", "spoken", "concepts", "understanding", "operations", "not_done", "actions", "summary"],
 };
 
 function buildChatPrompt(b: any): string {
@@ -319,7 +320,9 @@ FALA (campo spoken) — o que a SAHRA diz em voz alta. NÃO é a leitura do repl
 QUANDO MEXER NO PROJETO (campo operations):
 - Só devolva operações quando o usuário PEDIR para mudar, aplicar, montar ou fazer ("muda", "aplica", "troca", "faz um projeto", "monta", "pode fazer"). Pergunta, opinião ou crítica = operations VAZIO; no reply, ofereça fazer.
 - As operações NÃO são aplicadas sozinhas: o usuário vê um botão "Aplicar" e decide. No reply, diga em uma frase o que as operações vão fazer.
-- "Faz um projeto" com paredes prontas e poucos ou nenhum módulo: proponha a composição primeiro (protagonista, eixo, onde ficam pia, cooktop/range, geladeira, lava-louças), depois monte com add_module usando SÓ módulos do catálogo, encostados, sem sobrepor, dentro de 0..length_mm de cada parede, desviando de portas e janelas (openings). Bases no chão (floor_height_mm 0); aéreos com o topo alinhado. Prefira torres de altura total e menos aéreos padrão, como manda o Codex. Seja completo: preencha as corridas de verdade (pode passar de 20 operações).
+- "Faz um projeto" (ou "refaz", "nova proposta"): em DUAS etapas. 1ª resposta: conte a ideia (conceito em uma frase, protagonista, eixo, onde ficam os eletros, materiais e cores) e preencha concepts; operations VAZIO; termine perguntando se pode montar assim ou o que mudar. 2ª resposta (quando o usuário confirmar: "pode", "monta", "gostei", "faz"): aí sim as operações.
+- concepts = 1 ou 2 descrições EM INGLÊS de imagem de conceito (moodboard simples), uma por imagem, 40–90 palavras cada: tipo de ambiente, layout real das paredes (ex.: "L-shaped kitchen, 12 ft and 9 ft walls, window centered on the long wall"), o protagonista, materiais e cores de verdade (nome do padrão EGGER se houver), luz natural, estilo de foto de revista de arquitetura, câmera em altura de olho. Sem pessoas, sem texto, sem logotipos. Use concepts só nessa 1ª etapa de projeto ou quando pedirem "mostra uma imagem / como ficaria"; no resto deixe vazio.
+- Montagem (2ª etapa) com paredes prontas e poucos ou nenhum módulo: proponha a composição primeiro (protagonista, eixo, onde ficam pia, cooktop/range, geladeira, lava-louças), depois monte com add_module usando SÓ módulos do catálogo, encostados, sem sobrepor, dentro de 0..length_mm de cada parede, desviando de portas e janelas (openings). Bases no chão (floor_height_mm 0); aéreos com o topo alinhado. Prefira torres de altura total e menos aéreos padrão, como manda o Codex. Seja completo: preencha as corridas de verdade (pode passar de 20 operações).
 - Formato das operações: igual ao abaixo.
 
 OPERAÇÕES (campo op) — preencha só os campos que a operação usa, o resto null:
@@ -352,6 +355,37 @@ ${JSON.stringify(b.catalog || [])}
 ${hist}
 
 Responda à ÚLTIMA mensagem do USUÁRIO.`;
+}
+
+// ==========================================================================
+// IMAGEM DE CONCEITO (05/11, Matt: "ela pode mostrar algumas imagens antes de
+// fazer o projeto, pra ter uma ideia melhor. algo simples") — Gemini imagem,
+// mesmo modelo da generate-gallery-render (GEMINI_IMAGE_MODEL força outro).
+// ==========================================================================
+const IMG_MODELS = ["gemini-2.5-flash-image", "gemini-2.5-flash-image-preview"];
+async function geraConceito(apiKey: string, descricao: string) {
+  const forced = Deno.env.get("GEMINI_IMAGE_MODEL");
+  const prompt = `Photorealistic interior design concept image, architectural magazine quality. ${descricao} No people, no text, no logos, no watermark.`;
+  let lastErr = "";
+  for (const model of [forced, ...IMG_MODELS].filter((m, i, a) => !!m && a.indexOf(m) === i) as string[]) {
+    const res = await fetch(`${GEMINI_API_BASE}/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "16:9" } },
+      }),
+      signal: AbortSignal.timeout(90_000),
+    }).catch((e) => { lastErr = `${model}: ${(e as Error).message}`; return null; });
+    if (!res) continue;
+    if (!res.ok) { lastErr = `${model}: ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`; continue; }
+    const payload = await res.json().catch(() => null);
+    const part = (payload?.candidates?.[0]?.content?.parts || []).find((p: any) => (p.inlineData || p.inline_data)?.data);
+    const inline = part && (part.inlineData || part.inline_data);
+    if (inline) return { image: inline.data, mime: inline.mimeType || inline.mime_type || "image/png", model };
+    lastErr = `${model}: sem imagem`;
+  }
+  throw new HttpError(502, `Imagem indisponível (${lastErr}).`, "image_failed");
 }
 
 // ==========================================================================
@@ -432,6 +466,15 @@ Deno.serve(async (req) => {
 
   let b: any;
   try { b = await req.json(); } catch { return json(400, { error: "Corpo inválido (JSON esperado).", code: "bad_body" }); }
+  if (typeof b?.image === "string") {
+    const d = b.image.trim().slice(0, 1500);
+    if (!d) return json(400, { error: "Descrição vazia.", code: "no_text" });
+    try { return json(200, await geraConceito(apiKey, d)); }
+    catch (e) {
+      if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
+      return json(500, { error: (e as Error).message || String(e), code: "internal" });
+    }
+  }
   if (typeof b?.tts === "string") {
     const texto = b.tts.trim().slice(0, 2500);
     if (!texto) return json(400, { error: "Texto vazio.", code: "no_text" });
@@ -452,7 +495,8 @@ Deno.serve(async (req) => {
     const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, "deep");
     const ops = sanitizeEdit(data, b);
     const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "render" || a === "audit");
-    return json(200, { reply: String(data?.reply || ""), spoken: String(data?.spoken || ""), operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model });
+    const concepts = (Array.isArray(data?.concepts) ? data.concepts : []).map((c: any) => String(c || "").trim()).filter(Boolean).slice(0, 2);
+    return json(200, { reply: String(data?.reply || ""), spoken: String(data?.spoken || ""), concepts, operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model });
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
     return json(500, { error: (e as Error).message || String(e), code: "internal" });

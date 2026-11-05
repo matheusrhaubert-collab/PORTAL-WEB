@@ -52,6 +52,7 @@
       erro: 'erro', erros: 'erros', aviso: 'aviso', avisos: 'avisos', dica: 'dica', dicas: 'dicas',
       ver: 'Ver', fix: 'Corrigir', fix_all: 'Corrigir os automáticos', full: 'Abrir auditor completo', more: 'e mais {{n}}…',
       how: 'Como fazer?', how_ph: 'Pergunte, ex.: como girar um módulo', none: 'Não achei. Tente outras palavras ou abra o Tutorial.', tutorial: 'Abrir Tutorial',
+      img_wait: 'Desenhando a ideia…', img_err: 'Não consegui gerar esta imagem.',
       applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Parei e voltei o projeto como estava antes.',
       stop: 'Parar', stopped: 'Parei. Pode mandar de novo do jeito certo.',
       close: 'Fechar', no_speech: 'Este navegador não tem reconhecimento de voz. Use o Chrome ou o Edge.'
@@ -76,6 +77,7 @@
       erro: 'error', erros: 'errors', aviso: 'warning', avisos: 'warnings', dica: 'tip', dicas: 'tips',
       ver: 'View', fix: 'Fix', fix_all: 'Fix the automatic ones', full: 'Open full auditor', more: 'and {{n}} more…',
       how: 'How do I…?', how_ph: 'Ask, e.g.: how to rotate a cabinet', none: 'Nothing found. Try other words or open the Tutorial.', tutorial: 'Open Tutorial',
+      img_wait: 'Sketching the idea…', img_err: "Couldn't generate this image.",
       applying_n: 'Applying {{k}} of {{n}}…', apply_stopped: 'Stopped and put the project back as it was.',
       stop: 'Stop', stopped: 'Stopped. Send it again the right way.',
       close: 'Close', no_speech: 'This browser has no speech recognition. Use Chrome or Edge.'
@@ -100,6 +102,7 @@
       erro: 'error', erros: 'errores', aviso: 'aviso', avisos: 'avisos', dica: 'consejo', dicas: 'consejos',
       ver: 'Ver', fix: 'Corregir', fix_all: 'Corregir los automáticos', full: 'Abrir auditor completo', more: 'y {{n}} más…',
       how: '¿Cómo hago…?', how_ph: 'Pregunta, ej.: cómo girar un módulo', none: 'No encontré. Prueba otras palabras o abre el Tutorial.', tutorial: 'Abrir Tutorial',
+      img_wait: 'Dibujando la idea…', img_err: 'No pude generar esta imagen.',
       applying_n: 'Aplicando {{k}} de {{n}}…', apply_stopped: 'Paré y dejé el proyecto como estaba.',
       stop: 'Detener', stopped: 'Paré. Puedes enviarlo de nuevo como quieras.',
       close: 'Cerrar', no_speech: 'Este navegador no tiene reconocimiento de voz. Usa Chrome o Edge.'
@@ -185,6 +188,9 @@
 #po-sahra .sa-m .sa-mact { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 #po-sahra .sa-m .sa-mact button { font-size: 12px; padding: 5px 10px; }
 #po-sahra .sa-m .sa-small { font-size: 11.5px; color: #7a6a58; margin-top: 6px; }
+#po-sahra .sa-concepts { display: grid; gap: 6px; margin-top: 8px; }
+#po-sahra .sa-concepts img { width: 100%; border-radius: 8px; cursor: zoom-in; display: block; }
+#po-sahra .sa-cph { aspect-ratio: 16 / 9; border-radius: 8px; background: #ebe1d2; color: #7a6a58; font-size: 11.5px; display: flex; align-items: center; justify-content: center; gap: 6px; }
 #po-sahra .sa-m.err { background: #f8e3de; color: #8e2f20; }
 #po-sahra .sa-dots span { display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; background: #b39b7d; animation: saDot 1s infinite ease-in-out; }
 #po-sahra .sa-dots span:nth-child(2) { animation-delay: .15s; } #po-sahra .sa-dots span:nth-child(3) { animation-delay: .3s; }
@@ -301,9 +307,10 @@
       if (b) enviar(T(b.dataset.chip + 'q'));
     });
     root.querySelector('.sa-msgs').addEventListener('click', (ev) => {
-      const b = ev.target.closest('button[data-mact]');
+      const b = ev.target.closest('[data-mact]');
       if (!b) return;
       const m = conversa[Number(b.dataset.idx)];
+      if (b.dataset.mact === 'img') { const c = m && m.concepts && m.concepts[Number(b.dataset.k)]; if (c && c.url) abreImagem(c.url); return; }
       if (b.dataset.mact === 'apply' && m) { m.stopped = false; aplicar(m); }
       else if (b.dataset.mact === 'stop') parar();
       else if (b.dataset.mact === 'render') { fecha(); if (typeof window.openProjectDecoratedRender === 'function') window.openProjectDecoratedRender(); }
@@ -397,6 +404,11 @@
     conversa.forEach((m, i) => {
       if (m.role === 'user') { html += `<div class="sa-m user">${esc(m.text)}</div>`; return; }
       let extra = '';
+      if (m.concepts && m.concepts.length) {
+        extra += '<div class="sa-concepts">' + m.concepts.map((c, k) => c.url
+          ? `<img src="${c.url}" alt="" data-mact="img" data-idx="${i}" data-k="${k}">`
+          : `<div class="sa-cph">${c.err ? esc(T('img_err')) : '<span class="sa-dots"><span></span><span></span><span></span></span> ' + esc(T('img_wait'))}</div>`).join('') + '</div>';
+      }
       const bts = [];
       if (m.ops && m.ops.length && !m.applied && !m.applying) bts.push(`<button type="button" data-mact="apply" data-idx="${i}">${esc(T('apply', { n: m.ops.length }))}</button>`);
       if ((m.actions || []).includes('render')) bts.push(`<button type="button" class="secondary" data-mact="render" data-idx="${i}">${esc(T('open_render'))}</button>`);
@@ -504,11 +516,23 @@
       if (seq !== chatSeq) return; // parado pelo usuário: ignora a resposta
       if (error || !data || data.error) throw new Error(await mensagemDeErro(error, data));
       const msg = { role: 'sahra', text: data.reply || '…', spoken: data.spoken || '', ops: Array.isArray(data.operations) ? data.operations : [],
-        notDone: Array.isArray(data.not_done) ? data.not_done : [], actions: Array.isArray(data.actions) ? data.actions : [] };
+        notDone: Array.isArray(data.not_done) ? data.not_done : [], actions: Array.isArray(data.actions) ? data.actions : [],
+        concepts: (Array.isArray(data.concepts) ? data.concepts : []).slice(0, 2).map((d) => ({ desc: d, url: null, err: null })) };
+      // VOZ JUNTO COM O TEXTO (05/11, Matt: "ela pode segurar a resposta pro
+      // áudio sair junto, quando o áudio estiver ligado"): com a voz ligada,
+      // continua "pensando" até o áudio chegar; texto e voz saem juntos.
+      // Áudio falhou = mostra o texto e usa a voz do navegador.
+      let audio = null;
+      if (vozLigada()) {
+        audio = await preparaAudio(msg.spoken || msg.text);
+        if (seq !== chatSeq) { if (audio && audio.url) URL.revokeObjectURL(audio.url); return; }
+      }
       conversa.push(msg);
       poseEnquanto(null);
-      pose(msg.ops.length ? 'paleta' : 'apresenta', 5000);
-      falar(msg.spoken || msg.text);
+      pose(msg.ops.length || msg.concepts.length ? 'paleta' : 'apresenta', 5000);
+      pensando = false; chatAbort = null; renderConversa();
+      if (vozLigada()) { if (audio && audio.url) tocaAudio(audio.url); else falarNavegador(limpaParaFala(msg.spoken || msg.text)); }
+      if (msg.concepts.length) geraConceitos(msg);
     } catch (e) {
       if (seq !== chatSeq) return;
       console.error('[sahra chat]', e);
@@ -516,6 +540,37 @@
     } finally {
       if (seq === chatSeq) { pensando = false; chatAbort = null; if (poseFixa === 'pensando') poseEnquanto(null); renderConversa(); }
     }
+  }
+
+  // IMAGENS DE CONCEITO (05/11, Matt: "mostrar algumas imagens antes de
+  // fazer o projeto, pra ter uma ideia melhor. algo simples"): a SAHRA manda
+  // 1–2 descrições em `concepts`; cada uma vira uma imagem (Gemini imagem,
+  // sahra-chat {image}) que aparece na mensagem. Clique abre grande.
+  async function geraConceitos(msg) {
+    await Promise.all(msg.concepts.map(async (c) => {
+      try {
+        const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { image: c.desc } });
+        if (error || !data || !data.image) throw new Error((data && data.error) || (error && error.message) || 'sem imagem');
+        c.url = 'data:' + (data.mime || 'image/png') + ';base64,' + data.image;
+      } catch (e) {
+        console.warn('[sahra conceito]', e);
+        c.err = (e && e.message) || String(e);
+      }
+      renderConversa();
+    }));
+  }
+  function abreImagem(url) {
+    let v = document.getElementById('po-sahra-img');
+    if (!v) {
+      v = document.createElement('div');
+      v.id = 'po-sahra-img';
+      v.style.cssText = 'position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out';
+      v.innerHTML = '<img style="max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5)">';
+      v.addEventListener('click', () => { v.style.display = 'none'; });
+      document.body.appendChild(v);
+    }
+    v.querySelector('img').src = url;
+    v.style.display = 'flex';
   }
 
   // Mesma técnica do portal-19 (editProjectAiRun): UM passo no Desfazer.
@@ -713,26 +768,39 @@
     return String(texto || '').replace(/\*\*/g, '').replace(/^\s*[-•*]\s+/gm, '').replace(/#/g, '')
       .replace(/(\d+)\s*["”]/g, '$1 ' + ({ en: 'inches', es: 'pulgadas' }[lang()] || 'polegadas')).replace(/\s+/g, ' ').trim();
   }
+  // Pede o áudio (Gemini TTS) e devolve {url} — ou null se falhou.
+  async function preparaAudio(texto) {
+    const limpo = limpaParaFala(texto);
+    if (!limpo) return null;
+    try {
+      const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { tts: limpo.slice(0, 2500), lang: lang(), voice: VOZ_GEMINI } });
+      if (error || !data || !data.audio) throw new Error((data && data.error) || (error && error.message) || 'sem áudio');
+      const blob = /^audio\/(wav|mpeg|mp3|ogg)/i.test(data.mime || '')
+        ? new Blob([Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0))], { type: data.mime })
+        : pcmParaWav(data.audio, data.mime);
+      return { url: URL.createObjectURL(blob) };
+    } catch (e) {
+      console.warn('[sahra voz] Gemini falhou, usando a voz do navegador:', e);
+      return null;
+    }
+  }
+  function tocaAudio(url) {
+    pararFala();
+    const seq = ++falaSeq;
+    audioAtual = new Audio(url);
+    audioAtual.onended = () => { if (seq === falaSeq) root.classList.remove('falando'); URL.revokeObjectURL(url); pintaEnviar(); };
+    audioAtual.onerror = audioAtual.onended;
+    root.classList.add('falando'); pintaEnviar();
+    audioAtual.play().catch((e) => { console.warn('[sahra voz] play', e); root.classList.remove('falando'); pintaEnviar(); });
+  }
   async function falar(texto) {
     if (!vozLigada()) return;
     pararFala();
-    const limpo = limpaParaFala(texto);
-    if (!limpo) return;
     const seq = ++falaSeq;
-    try {
-      root.classList.add('falando'); pintaEnviar();
-      const { data, error } = await supabaseClient.functions.invoke('sahra-chat', { body: { tts: limpo.slice(0, 2500), lang: lang(), voice: VOZ_GEMINI } });
-      if (seq !== falaSeq) return; // outra fala começou / foi parada
-      if (error || !data || !data.audio) throw new Error((data && data.error) || (error && error.message) || 'sem áudio');
-      const url = URL.createObjectURL(/^audio\/(wav|mpeg|mp3|ogg)/i.test(data.mime || '') ? new Blob([Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0))], { type: data.mime }) : pcmParaWav(data.audio, data.mime));
-      audioAtual = new Audio(url);
-      audioAtual.onended = () => { root.classList.remove('falando'); URL.revokeObjectURL(url); pintaEnviar(); };
-      await audioAtual.play();
-    } catch (e) {
-      if (seq !== falaSeq) return;
-      console.warn('[sahra voz] Gemini falhou, usando a voz do navegador:', e);
-      falarNavegador(limpo);
-    }
+    root.classList.add('falando'); pintaEnviar();
+    const a = await preparaAudio(texto);
+    if (seq !== falaSeq) { if (a) URL.revokeObjectURL(a.url); return; }
+    if (a) tocaAudio(a.url); else falarNavegador(limpaParaFala(texto));
   }
   function falarNavegador(limpo) {
     if (!window.speechSynthesis) { root.classList.remove('falando'); return; }
