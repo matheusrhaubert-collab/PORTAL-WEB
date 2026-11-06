@@ -881,6 +881,12 @@
     return (data && data.error) || (error && error.message) || String(error || '?');
   }
 
+  let enviadoPorUltimo = '';
+  // Garantia: se a caixa ainda tiver exatamente o que já foi enviado, limpa.
+  function limpaSeRepetido() {
+    const i = root && root.querySelector('.sa-in');
+    if (i && enviadoPorUltimo && i.value.trim() === enviadoPorUltimo) { i.value = ''; i.style.height = 'auto'; }
+  }
   async function enviar(textoForcado) {
     if (pensando) return;
     const inp = root.querySelector('.sa-in');
@@ -890,6 +896,7 @@
     inp.value = ''; inp.style.height = 'auto';
     pararFala();
     conversa.push({ role: 'user', text: texto });
+    enviadoPorUltimo = texto;
     pensando = true; renderConversa();
     poseEnquanto('pensando');
     const seq = ++chatSeq;
@@ -941,7 +948,7 @@
       console.error('[sahra chat]', e);
       conversa.push({ role: 'sahra', err: true, text: T('err') + ((e && e.message) || String(e)) });
     } finally {
-      if (seq === chatSeq) { pensando = false; chatAbort = null; if (poseFixa === 'pensando') poseEnquanto(null); renderConversa(); }
+      if (seq === chatSeq) { pensando = false; chatAbort = null; if (poseFixa === 'pensando') poseEnquanto(null); renderConversa(); limpaSeRepetido(); }
     }
   }
 
@@ -1339,17 +1346,22 @@
     const inp = root.querySelector('.sa-in');
     const base = inp.value ? inp.value.trim() + ' ' : '';
     let acumulado = ''; // texto final das sessões anteriores (o Chrome reinicia sozinho)
+    // 06/11 (Matt: "depois dela responder minha última conversa fica gravada no
+    // texto"): resultado atrasado do reconhecimento chegava DEPOIS do envio e
+    // escrevia a fala de volta na caixa. Encerrou = ignora tudo que chegar.
+    let encerrado = false;
     const armaSilencio = (ms) => {
       clearTimeout(timerSilencio);
       timerSilencio = setTimeout(() => { pararPedido = true; try { rec.stop(); } catch (e) { /* */ } }, ms || SILENCIO_MS);
     };
     const inicia = () => {
       let finSessao = '';
-      rec = new SR();
+      const r = rec = new SR();
       rec.lang = langTag();
       rec.interimResults = true;
       rec.continuous = true;
       rec.onresult = (ev) => {
+        if (encerrado || r !== rec) return;
         let fin = '', tmp = '';
         for (let i = 0; i < ev.results.length; i++) {
           if (ev.results[i].isFinal) fin += ev.results[i][0].transcript; else tmp += ev.results[i][0].transcript;
@@ -1364,9 +1376,11 @@
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed' || ev.error === 'audio-capture') pararPedido = true;
       };
       rec.onend = () => {
+        if (encerrado || r !== rec) return;
         if (finSessao.trim()) acumulado = (acumulado + finSessao).trim() + ' ';
         if (!pararPedido) { try { inicia(); return; } catch (e) { /* cai pro encerramento */ } }
         clearTimeout(timerSilencio);
+        encerrado = true;
         gravando = false;
         root.querySelector('.sa-mic').classList.remove('rec');
         status('');
