@@ -500,6 +500,15 @@ const CHAT_SCHEMA = {
   propertyOrdering: ["reply", "spoken", "concepts", "learn", "understanding", "operations", "not_done", "actions", "summary"],
 };
 
+// QUEM FALA (06/11, Matt: "a sahra deve saudar conforme o nome do login").
+// Matt e Natalia são os donos da Legno; os dois são administradores.
+function quemFala(b: any): string {
+  const n = String(b?.user_name || "").replace(/[\r\n`$]/g, " ").trim().slice(0, 60);
+  return n
+    ? `Quem está conversando com você agora é ${n} (administrador(a) da Legno). Chame pelo primeiro nome, nunca por outro nome.`
+    : "Você não sabe o nome de quem está conversando agora; não invente um nome.";
+}
+
 function buildChatPrompt(b: any): string {
   const lang = b.lang === "en" ? "inglês" : b.lang === "es" ? "espanhol" : "português do Brasil";
   const unidade = b.unit === "in" ? "polegadas (1 in = 25,4 mm; a Legno fabrica a cada 1/32\")" : "milímetros";
@@ -507,6 +516,7 @@ function buildChatPrompt(b: any): string {
     .map((m: any) => `${m.role === "user" ? "USUÁRIO" : "SAHRA"}: ${String(m.text || "").slice(0, 3000)}`).join("\n\n");
   return `Você é a SAHRA, designer da Legno Home (fábrica de móveis planejados nos EUA, vende white label para dealers).
 Você está DENTRO do software de projetos da Legno, conversando com o projetista sobre o projeto aberto na tela.
+${quemFala(b)}
 Sua missão: fazer cada projeto parecer saído de revista, usando painéis e componentes de forma criativa, não só empilhando módulos.
 O CODEX abaixo é a sua identidade e lei de estilo; o PORTFÓLIO são as cozinhas e marcas que você estudou.
 

@@ -37,7 +37,8 @@
       tab_chat: 'Conversa', tab_review: 'Revisão', tab_how: 'Como fazer',
       chat_ph: 'Escreva ou fale com a SAHRA…', send: 'Enviar', mic: 'Falar', mic_on: 'Ouvindo… fique 4 s em silêncio pra enviar (ou toque no mic)',
       voice_on: 'Voz da SAHRA ligada', voice_off: 'Voz da SAHRA desligada', new_chat: 'Nova conversa',
-      welcome: 'Oi, Matt! Já estou com o projeto aberto aqui. Me pergunte o que quiser: o que eu achei, o que eu mudaria, cores em tendência, custo, descrição técnica… ou peça pra eu montar o projeto nas paredes que você desenhou.',
+      ask_name: 'Oi! Eu sou a SAHRA, designer da Legno. Ainda não sei o seu nome. Como posso te chamar?', name_ph: 'Seu nome', name_save: 'Salvar', name_err: 'Não consegui salvar o nome: ',
+      welcome: 'Oi, {{nome}}! Já estou com o projeto aberto aqui. Me pergunte o que quiser: o que eu achei, o que eu mudaria, cores em tendência, custo, descrição técnica… ou peça pra eu montar o projeto nas paredes que você desenhou.',
       thinking: 'SAHRA está pensando…', err: 'Não consegui responder agora: ',
       apply: 'Aplicar {{n}} mudança(s)', applied: 'Aplicado. Se não gostar, é só Desfazer (um passo só).', applying: 'Aplicando…',
       not_done: 'Não deu pra fazer:', warn: 'Avisos:', open_render: 'Abrir Render decorado', open_audit: 'Abrir auditor', open_photoreal: 'Gerar foto realista',
@@ -77,7 +78,8 @@
       tab_chat: 'Chat', tab_review: 'Review', tab_how: 'How to',
       chat_ph: 'Type or talk to SAHRA…', send: 'Send', mic: 'Speak', mic_on: 'Listening… stay silent for 4 s to send (or tap the mic)',
       voice_on: 'SAHRA voice on', voice_off: 'SAHRA voice off', new_chat: 'New chat',
-      welcome: "Hi! I have the project open. Ask me anything: what I think, what I'd change, trending colors, cost, a technical description… or ask me to lay out the project on the walls you drew.",
+      ask_name: "Hi! I'm SAHRA, Legno's designer. I don't know your name yet. What should I call you?", name_ph: 'Your name', name_save: 'Save', name_err: "Couldn't save the name: ",
+      welcome: "Hi, {{nome}}! I have the project open. Ask me anything: what I think, what I'd change, trending colors, cost, a technical description… or ask me to lay out the project on the walls you drew.",
       thinking: 'SAHRA is thinking…', err: "I couldn't answer right now: ",
       apply: 'Apply {{n}} change(s)', applied: "Applied. If you don't like it, just Undo (one step).", applying: 'Applying…',
       not_done: "Couldn't do:", warn: 'Warnings:', open_render: 'Open Decorated render', open_audit: 'Open auditor', open_photoreal: 'Generate realistic photo',
@@ -117,7 +119,8 @@
       tab_chat: 'Conversación', tab_review: 'Revisión', tab_how: 'Cómo hacer',
       chat_ph: 'Escribe o habla con SAHRA…', send: 'Enviar', mic: 'Hablar', mic_on: 'Escuchando… quédate 4 s en silencio para enviar (o toca el mic)',
       voice_on: 'Voz de SAHRA activada', voice_off: 'Voz de SAHRA desactivada', new_chat: 'Nueva conversación',
-      welcome: '¡Hola! Ya tengo el proyecto abierto. Pregúntame lo que quieras: qué me parece, qué cambiaría, colores en tendencia, costo, descripción técnica… o pídeme que arme el proyecto en las paredes que dibujaste.',
+      ask_name: '¡Hola! Soy SAHRA, diseñadora de Legno. Todavía no sé tu nombre. ¿Cómo te llamo?', name_ph: 'Tu nombre', name_save: 'Guardar', name_err: 'No pude guardar el nombre: ',
+      welcome: '¡Hola, {{nome}}! Ya tengo el proyecto abierto. Pregúntame lo que quieras: qué me parece, qué cambiaría, colores en tendencia, costo, descripción técnica… o pídeme que arme el proyecto en las paredes que dibujaste.',
       thinking: 'SAHRA está pensando…', err: 'No pude responder ahora: ',
       apply: 'Aplicar {{n}} cambio(s)', applied: 'Aplicado. Si no te gusta, solo Deshacer (un paso).', applying: 'Aplicando…',
       not_done: 'No se pudo hacer:', warn: 'Avisos:', open_render: 'Abrir Render decorado', open_audit: 'Abrir auditor', open_photoreal: 'Generar foto realista',
@@ -174,6 +177,22 @@
   let chatSeq = 0, chatAbort = null;   // STOP (05/11, Matt: "dei um comando errado e não consigo parar")
 
   function isAdmin() { return window.LEGNO_IS_ADMIN === true; }
+  // NOME DO LOGIN (06/11, Matt: "a sahra deve saudar conforme o nome do
+  // login" + "se não tem ela deve perguntar"). Vem do user_profiles.full_name
+  // (o mesmo campo "Nome" da Minha conta). Sem nome, ela pergunta e grava lá.
+  function nomeCompleto() {
+    const p = (typeof currentUserProfile !== 'undefined') ? currentUserProfile : null;
+    return (p && p.full_name && String(p.full_name).trim()) || '';
+  }
+  function primeiroNome() { return nomeCompleto().split(/\s+/)[0] || ''; }
+  async function salvaNome(nome) {
+    const user = (typeof currentUser !== 'undefined') ? currentUser : null;
+    if (!user || typeof supabaseClient === 'undefined') throw new Error('sem login');
+    const { data, error } = await supabaseClient.from('user_profiles').update({ full_name: nome }).eq('user_id', user.id).select().single();
+    if (error) throw error;
+    if (data) { try { currentUserProfile = data; } catch (e) { /* */ } }
+    if (typeof refreshAccountChip === 'function') { try { refreshAccountChip(); } catch (e) { /* */ } }
+  }
   function editorVisivel() {
     const el = document.getElementById('po-proj-tb-help');
     return !!(el && el.offsetParent !== null);
@@ -553,7 +572,10 @@
 
   function renderConversa() {
     const box = root.querySelector('.sa-msgs');
-    let html = `<div class="sa-m sahra">${md(T('welcome'))}</div>`;
+    const nome1 = primeiroNome();
+    let html = nome1
+      ? `<div class="sa-m sahra">${md(T('welcome', { nome: esc(nome1) }))}</div>`
+      : `<div class="sa-m sahra">${md(T('ask_name'))}<div class="sa-name-form" style="display:flex;gap:6px;margin-top:8px"><input class="sa-name-in" type="text" maxlength="60" autocomplete="name" placeholder="${esc(T('name_ph'))}" style="flex:1;min-width:0;padding:6px 8px;border:1px solid rgba(0,0,0,.2);border-radius:6px;font:inherit"><button type="button" class="sa-name-ok" style="padding:6px 10px;border-radius:6px;border:0;background:#222;color:#fff;cursor:pointer;font:inherit">${esc(T('name_save'))}</button></div><div class="sa-name-msg" style="font-size:12px;color:#b00020;margin-top:4px"></div></div>`;
     conversa.forEach((m, i) => {
       if (m.role === 'user') { html += `<div class="sa-m user">${esc(m.text)}</div>`; return; }
       let extra = '';
@@ -582,6 +604,19 @@
     if (pensando) html += `<div class="sa-m sahra"><span class="sa-dots"><span></span><span></span><span></span></span></div>`;
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+    const nf = box.querySelector('.sa-name-form');
+    if (nf) {
+      const inp = nf.querySelector('.sa-name-in'), ok = nf.querySelector('.sa-name-ok'), msg = box.querySelector('.sa-name-msg');
+      const vai = async () => {
+        const v = (inp.value || '').trim().replace(/\s+/g, ' ');
+        if (!v) { inp.focus(); return; }
+        ok.disabled = true; inp.disabled = true;
+        try { await salvaNome(v); renderConversa(); }
+        catch (e) { ok.disabled = false; inp.disabled = false; if (msg) msg.textContent = T('name_err') + ((e && e.message) || e); }
+      };
+      ok.addEventListener('click', vai);
+      inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); vai(); } });
+    }
     pintaEnviar();
   }
 
@@ -867,6 +902,7 @@
         unit: ((document.getElementById('po-unit-select') || {}).value || 'mm') === 'in' ? 'in' : 'mm',
         messages: conversa.filter((m) => !m.err).map((m) => ({ role: m.role, text: m.text })),
         project: ctx.project, catalog: ctx.catalog,
+        user_name: nomeCompleto(),
         colors_available: ctx.colors_available || [], color_roles: ctx.color_roles || []
       };
       const { data, error } = await supabaseClient.functions.invoke('sahra-chat', chatAbort ? { body, signal: chatAbort.signal } : { body });
