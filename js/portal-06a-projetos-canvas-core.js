@@ -1630,7 +1630,7 @@ function pushProjectSlotClearOnDrop(slot) {
 
   const sharesRow = (s) => (y0 < Number(s.floor_height_mm || 0) + Number(s.height_mm || 0) - EPS)
     && (y0 + h > Number(s.floor_height_mm || 0) + EPS);
-  const overlapping = projectSlotsSameWallExcluding(slot).filter((s) => sharesRow(s)
+  const overlapping = projectSlotsSameWallExcluding(slot).filter((s) => projectSameWallLayer(slot, s) && sharesRow(s)
     && x0 < Number(s.x_mm || 0) + Number(s.width_mm || 0) - EPS
     && x0 + w > Number(s.x_mm || 0) + EPS);
   if (!overlapping.length) return;

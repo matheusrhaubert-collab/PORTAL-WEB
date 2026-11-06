@@ -2459,7 +2459,8 @@ function stretchProjectSlotToCollision(slot, axis) {
   // existe. Esticar ilha continua sendo arrastando a seta ou pelo painel.
   if (isFloorSlot(slot)) return false;
 
-  const others = projectSlotsSameWallExcluding(slot);
+  // painel de parede x módulo na frente: camadas diferentes, não se limitam
+  const others = projectSlotsSameWallExcluding(slot).filter((s) => projectSameWallLayer(slot, s));
   const x0 = Number(slot.x_mm || 0);
   const w = Number(slot.width_mm || 0);
   const y0 = Number(slot.floor_height_mm || 0);

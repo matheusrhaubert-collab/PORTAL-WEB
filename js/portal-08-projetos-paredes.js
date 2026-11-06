@@ -402,7 +402,9 @@ function getSlotWorldFrame(slot) {
   // roda (topo de renderProjectCanvas), o forEach de clamp já zerou o
   // z_order de todo mundo (ver renderProjectCanvas, portal-06c) — mesma
   // convenção, não precisa reler daqui.
-  const depthOffsetM = depthM / 2;
+  // Recuo automático na frente de painel de parede (05/11) faz parte da pose
+  // "encostada" — o fundo encosta na face do painel, não na parede.
+  const depthOffsetM = depthM / 2 + projectSlotWallStandoffMm(slot) / 1000;
   return {
     ox: wallGeo.originX + wallGeo.alongDirX * alongOffsetM + wallGeo.intoDirX * depthOffsetM,
     oy: projectWallSlotYMm(slot) / 1000,
@@ -1558,6 +1560,10 @@ function attachProject3DEditDrag() {
       isTouch: isTouch3D,
       armed: !isTouch3D,
       depthOffsetM,
+      // recuo de painel no início do arraste (ver projectSlotWallStandoffMm) —
+      // o preview ao vivo soma só a DIFERENÇA, então passar por cima de um
+      // painel já mostra o módulo avançando na hora
+      recuoInicialMm: projectSlotWallStandoffMm(slot),
       dragMode: grab.dragMode,
       resizeAxis: grab.resizeAxis,
       grabOffsetEdgeMm,
@@ -1941,8 +1947,10 @@ function attachProject3DEditDrag() {
     const liveWallGeo = getProjectWallGeometry().find((w) => w.wallIndex === state.liveWallIndex);
     if (liveWallGeo && state.group) {
       const alongOffsetM = xMm / 1000 + widthMm / 1000 / 2;
-      state.group.position.x = liveWallGeo.originX + liveWallGeo.alongDirX * alongOffsetM + liveWallGeo.intoDirX * state.depthOffsetM;
-      state.group.position.z = liveWallGeo.originZ + liveWallGeo.alongDirZ * alongOffsetM + liveWallGeo.intoDirZ * state.depthOffsetM;
+      const recuoAgoraMm = projectSlotWallStandoffMm(Object.assign({}, slot, { wall_index: state.liveWallIndex }));
+      const depthLiveM = state.depthOffsetM + (recuoAgoraMm - (state.recuoInicialMm || 0)) / 1000;
+      state.group.position.x = liveWallGeo.originX + liveWallGeo.alongDirX * alongOffsetM + liveWallGeo.intoDirX * depthLiveM;
+      state.group.position.z = liveWallGeo.originZ + liveWallGeo.alongDirZ * alongOffsetM + liveWallGeo.intoDirZ * depthLiveM;
       state.group.position.y = yMm / 1000;
       state.group.rotation.y = liveWallGeo.rotationY;
       // Contorno vermelho acompanha o módulo sendo arrastado ao vivo —
@@ -3449,7 +3457,8 @@ function buildProjectAssemblies(slotsList) {
       // offset_z_mm de position_role='front' (26-modulo-pecas-3d.js): não
       // participa de colisão nem aparece nas vistas 2D (planta/frontal), só
       // na cena 3D de verdade (renderFreeformWalls, viewer3d_composition.js).
-      assembly.fineOffsetZ_m = Number(slot.fineOffsetZMm || 0) / 1000; // parede: afasta da parede
+      // + recuo automático na frente de painel de parede (projectSlotWallStandoffMm)
+      assembly.fineOffsetZ_m = (Number(slot.fineOffsetZMm || 0) + projectSlotWallStandoffMm(slot)) / 1000; // parede: afasta da parede
       assembly.fineOffsetY_m = Number(slot.fineOffsetYMm || 0) / 1000; // ilha: eleva do chão
       assembly.fineRotX = (Number(slot.fineRotXDeg || 0) * Math.PI) / 180;
       assembly.fineRotY = (Number(slot.fineRotYDeg || 0) * Math.PI) / 180; // só parede — ilha usa rotationY (floor_rotation_deg) acima
@@ -3974,7 +3983,7 @@ function projectPerfectJoins(slot) {
     if (o === slot || o.placement !== 'wall' || Number(o.wall_index) !== Number(slot.wall_index)) return;
     const oW = Number(o.width_mm), oH = Number(o.height_mm), oD = Number(o.depth_mm);
     const oX = Number(o.x_mm) || 0, oY = Number(o.floor_height_mm) || 0;
-    const mesmoZ = eq(Number(slot.fineOffsetZMm || 0), Number(o.fineOffsetZMm || 0));
+    const mesmoZ = eq(Number(slot.fineOffsetZMm || 0) + projectSlotWallStandoffMm(slot), Number(o.fineOffsetZMm || 0) + projectSlotWallStandoffMm(o));
     if (!mesmoZ) return;
     // lado a lado: mesma altura, profundidade e altura do chão; x encostado
     if (eq(H, oH) && eq(D, oD) && eq(Y, oY)) {
@@ -5113,6 +5122,8 @@ if (projPhotorealBtn) {
         width_mm: slot.width_mm, height_mm: slot.height_mm, depth_mm: slot.depth_mm,
         x_mm: Number(slot.x_mm || 0),
         z_order: Number(slot.z_order || 0),
+        // afastamento da parede igual à Vista 3D: ajuste fino + recuo de painel
+        wall_offset_mm: Number(slot.fineOffsetZMm || 0) + projectSlotWallStandoffMm(slot),
         floor_height_mm: Number(slot.floor_height_mm || 0),
         parts: resolvePiecesForViewer(
           projectSlotEffectivePieces(slot),
@@ -6832,8 +6843,9 @@ function renderProjectDimViewPlanSvg(plan) {
       const x0 = Number(slot.x_mm || 0) / 1000;
       const width = Number(slot.width_mm || 0) / 1000;
       const depth = Math.max(0.05, Number(slot.depth_mm || 500) / 1000);
-      const a = { x: w.originX + w.alongDirX * x0, z: w.originZ + w.alongDirZ * x0 };
-      const b = { x: w.originX + w.alongDirX * (x0 + width), z: w.originZ + w.alongDirZ * (x0 + width) };
+      const recuo = projectSlotWallStandoffMm(slot) / 1000; // na frente de painel de parede
+      const a = { x: w.originX + w.alongDirX * x0 + w.intoDirX * recuo, z: w.originZ + w.alongDirZ * x0 + w.intoDirZ * recuo };
+      const b = { x: w.originX + w.alongDirX * (x0 + width) + w.intoDirX * recuo, z: w.originZ + w.alongDirZ * (x0 + width) + w.intoDirZ * recuo };
       const c = { x: b.x + w.intoDirX * depth, z: b.z + w.intoDirZ * depth };
       const d = { x: a.x + w.intoDirX * depth, z: a.z + w.intoDirZ * depth };
       const pts = [a, b, c, d].map((p) => toSvg(p.x, p.z)).map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');

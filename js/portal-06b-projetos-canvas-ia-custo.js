@@ -876,6 +876,57 @@ function isProjectWallStructureSlot(slot) {
   return !!(slot && slot.module && slot.module.wall_structure);
 }
 
+// PAINEL DE PAREDE x MÓDULO NA FRENTE (05/11, Matt: "quando coloco um painel
+// na parede e preciso colocar um modulo na frente do painel, o modulo invade
+// o painel pra se conectar com a parede. preciso que ele fique ligado a
+// parede mas avance pra frente do painel. deteccao automatica, respeitando a
+// colisao normalmente").
+//
+// Painel de parede = módulo de PAREDE fino (profundidade <= 40 mm: Painel
+// 3/4 "no Plano", revestimento, backsplash...). Ele mora numa CAMADA própria,
+// colada na parede. Qualquer outro módulo da MESMA parede que cruze a área do
+// painel (faixa de largura E faixa de altura) continua com o fundo "ligado à
+// parede", mas recua pela espessura do painel: o fundo encosta na FACE do
+// painel, não atravessa. É automático (não grava nada no slot) — move o
+// módulo pra fora do painel e ele volta a encostar na parede.
+//
+// Colisão: painel e módulo da mesma parede são camadas diferentes, então um
+// não é obstáculo do outro (o módulo passa NA FRENTE do painel; o painel
+// desliza ATRÁS do módulo). Painel x painel e módulo x módulo continuam
+// colidindo como sempre, e a caixa 3D do módulo já leva o recuo, então ilha
+// e módulo de outra parede batem na frente de verdade.
+const PROJECT_WALL_PANEL_MAX_DEPTH_MM = 40;
+function isProjectWallPanelSlot(slot) {
+  if (!slot || isFloorSlot(slot) || isProjectWallStructureSlot(slot)) return false;
+  const d = Number(slot.depth_mm || 0);
+  return d > 0 && d <= PROJECT_WALL_PANEL_MAX_DEPTH_MM;
+}
+// Mesma camada de parede? (painel x painel, ou módulo x módulo)
+function projectSameWallLayer(a, b) {
+  return isProjectWallPanelSlot(a) === isProjectWallPanelSlot(b);
+}
+// Quanto o módulo recua da parede por estar na frente de painel(éis).
+// `ov` = { xMm, floorHeightMm } pra testar uma posição candidata (arraste).
+function projectSlotWallStandoffMm(slot, ov) {
+  if (!slot || isFloorSlot(slot) || isProjectWallPanelSlot(slot) || isProjectWallStructureSlot(slot)) return 0;
+  const o = ov || {};
+  const EPS = 1;
+  const x0 = o.xMm != null ? Number(o.xMm) : Number(slot.x_mm || 0);
+  const y0 = o.floorHeightMm != null ? Number(o.floorHeightMm) : Number(slot.floor_height_mm || 0);
+  const w = Number(slot.width_mm || 0), h = Number(slot.height_mm || 0);
+  const wall = Number(slot.wall_index || 0);
+  let recuo = 0;
+  (projectSlots || []).forEach((p) => {
+    if (p === slot || p.oculto || !isProjectWallPanelSlot(p) || Number(p.wall_index || 0) !== wall) return;
+    const px = Number(p.x_mm || 0), py = Number(p.floor_height_mm || 0);
+    const pw = Number(p.width_mm || 0), ph = Number(p.height_mm || 0);
+    if (x0 < px + pw - EPS && x0 + w > px + EPS && y0 < py + ph - EPS && y0 + h > py + EPS) {
+      recuo = Math.max(recuo, Number(p.depth_mm || 0) + Math.max(0, Number(p.fineOffsetZMm || 0)));
+    }
+  });
+  return recuo;
+}
+
 function projectSlotOverlapsNeighbor(slot, xProposto) {
   if (isProjectWallStructureSlot(slot)) return false;
   const w = Number(slot.width_mm || 0), h = Number(slot.height_mm || 0);
@@ -1165,8 +1216,11 @@ function projectSlotWorldBox3D(slot, overrides) {
   // parede, sempre") e estica dMm pra dentro do ambiente — por isso o
   // CENTRO é origin + along*(borda + w/2) + into*(d/2), nunca into*qualquer
   // profundidade acumulada de camada.
-  const cx = wallGeo.originX * 1000 + wallGeo.alongDirX * (alongMm + wMm / 2) + wallGeo.intoDirX * (dMm / 2);
-  const cz = wallGeo.originZ * 1000 + wallGeo.alongDirZ * (alongMm + wMm / 2) + wallGeo.intoDirZ * (dMm / 2);
+  // + recuo automático quando está na frente de um painel de parede (ver
+  // projectSlotWallStandoffMm) — calculado NA posição testada, pro arraste.
+  const recuoMm = projectSlotWallStandoffMm(slot, { xMm: alongMm, floorHeightMm: yMin });
+  const cx = wallGeo.originX * 1000 + wallGeo.alongDirX * (alongMm + wMm / 2) + wallGeo.intoDirX * (dMm / 2 + recuoMm);
+  const cz = wallGeo.originZ * 1000 + wallGeo.alongDirZ * (alongMm + wMm / 2) + wallGeo.intoDirZ * (dMm / 2 + recuoMm);
   return {
     cx, cz, angleRad: Math.atan2(wallGeo.alongDirZ, wallGeo.alongDirX),
     halfAlongMm: wMm / 2, halfIntoMm: dMm / 2,
@@ -1262,6 +1316,10 @@ function projectAllOtherSlotWorldBoxes(slot) {
     if (s.id === slot.id) return;
     if (doGrupo && doGrupo.has(s.id)) return;
     if (souEstrutura || isProjectWallStructureSlot(s)) return;
+    // Painel de parede x módulo na MESMA parede: camadas diferentes, não se
+    // barram (ver projectSlotWallStandoffMm).
+    if (!isFloorSlot(slot) && !isFloorSlot(s) && Number(s.wall_index || 0) === Number(slot.wall_index || 0)
+      && !projectSameWallLayer(slot, s)) return;
     const b = projectSlotCollisionBox3D(s);
     if (b) boxes.push(b);
   });

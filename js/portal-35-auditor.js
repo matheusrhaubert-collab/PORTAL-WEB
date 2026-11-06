@@ -389,7 +389,8 @@
       const semGiro = (s) => !(Number(s.fineRotXDeg) || Number(s.fineRotYDeg) || Number(s.fineRotZDeg));
       const paredeY = (s) => (typeof projectWallSlotYMm === 'function') ? projectWallSlotYMm(s) : (Number(s.floor_height_mm) || 0);
       const mundo = (s) => {
-        const ox = Number(s.x_mm) || 0, oy = paredeY(s), oz = Number(s.fineOffsetZMm) || 0;
+        const recuo = (typeof projectSlotWallStandoffMm === 'function') ? projectSlotWallStandoffMm(s) : 0;
+        const ox = Number(s.x_mm) || 0, oy = paredeY(s), oz = (Number(s.fineOffsetZMm) || 0) + recuo;
         return ctx.boxes(s).map((b) => Object.assign({}, b, { x0: b.x0 + ox, y0: b.y0 + oy, z0: b.z0 + oz }));
       };
       const naParede = ctx.slots.filter((s) => !isFloorSlot(s) && semGiro(s));

@@ -2292,7 +2292,9 @@ const Photoreal = (() => {
         // arquivo é porta fiel de renderFreeformWalls (viewer3d_composition.js),
         // então acompanha: qualquer divergência aqui faria a foto realista sair
         // com o móvel em posição diferente da vista 3D.
-        const depthOffset = depthMod / 2 + (Number(m.z_order) || 0) * FREEFORM_DEPTH_STEP_M;
+        // wall_offset_mm = ajuste fino Z + recuo na frente de painel de parede
+        // (mesmo fineOffsetZ_m do renderFreeformWalls)
+        const depthOffset = depthMod / 2 + (Number(m.z_order) || 0) * FREEFORM_DEPTH_STEP_M + (Number(m.wall_offset_mm) || 0) / 1000;
 
         group.rotation.y = rotY;
         group.position.set(
