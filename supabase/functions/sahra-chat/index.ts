@@ -302,12 +302,21 @@ const EDIT_SCHEMA = {
           piece_id: { type: "STRING", nullable: true },
           quantity: { type: "INTEGER", nullable: true },
           color_from_slot_id: { type: "STRING", nullable: true },
+          colors: {
+            type: "ARRAY", nullable: true,
+            items: {
+              type: "OBJECT",
+              properties: { role: { type: "STRING" }, color_name: { type: "STRING" } },
+              required: ["role", "color_name"],
+              propertyOrdering: ["role", "color_name"],
+            },
+          },
           interior: INTERIOR_SCHEMA,
           led: LED_SCHEMA,
         },
         required: ["reason", "op"],
         propertyOrdering: ["reason", "op", "slot_ids", "module_id", "wall_index", "x_mm", "floor_height_mm",
-          "width_mm", "height_mm", "depth_mm", "role", "color_name", "piece_id", "quantity", "color_from_slot_id", "interior", "led"],
+          "width_mm", "height_mm", "depth_mm", "role", "color_name", "piece_id", "quantity", "color_from_slot_id", "colors", "interior", "led"],
       },
     },
     not_done: { type: "ARRAY", items: { type: "STRING" } },
@@ -348,8 +357,13 @@ function sanitizeEdit(data: any, b: any) {
       piece_id: o.piece_id ? String(o.piece_id) : null,
       quantity: o.quantity === null || o.quantity === undefined ? null : Math.round(Number(o.quantity)),
       color_from_slot_id: o.color_from_slot_id && slotIds.has(String(o.color_from_slot_id)) ? String(o.color_from_slot_id) : null,
-      interior: o.op === "set_interior" ? limpaInterior(o.interior) : null,
-      led: o.op === "set_led" ? limpaLed(o.led) : null,
+      // MONTAGEM COMPLETA (05/11): add_module já leva cores por papel,
+      // interior do Construtor e LED — o portal aplica no módulo recém-inserido.
+      colors: o.op === "add_module" && Array.isArray(o.colors)
+        ? o.colors.filter((c: any) => c && c.role && c.color_name).slice(0, 12).map((c: any) => ({ role: String(c.role), color_name: String(c.color_name) }))
+        : null,
+      interior: o.op === "set_interior" || o.op === "add_module" ? limpaInterior(o.interior) : null,
+      led: o.op === "set_led" || o.op === "add_module" ? limpaLed(o.led) : null,
     });
   });
   return { understanding: String(data?.understanding || ""), summary: String(data?.summary || ""), operations: ops, not_done: notDone };
@@ -532,6 +546,12 @@ QUANDO MEXER NO PROJETO (campo operations):
 - "Faz um projeto" (ou "refaz", "nova proposta"): em DUAS etapas. 1ª resposta: conte a ideia (conceito em uma frase, protagonista, eixo, onde ficam os eletros, materiais e cores) e preencha concepts; operations VAZIO; termine perguntando se pode montar assim ou o que mudar. 2ª resposta (quando o usuário confirmar: "pode", "monta", "gostei", "faz"): aí sim as operações.
 - concepts = 1 ou 2 descrições EM INGLÊS de imagem de conceito (moodboard simples), uma por imagem, 40–90 palavras cada: tipo de ambiente, layout real das paredes (ex.: "L-shaped kitchen, 12 ft and 9 ft walls, window centered on the long wall"), o protagonista, materiais e cores de verdade (nome do padrão EGGER se houver), luz natural, estilo de foto de revista de arquitetura, câmera em altura de olho. Sem pessoas, sem texto, sem logotipos. Use concepts só nessa 1ª etapa de projeto ou quando pedirem "mostra uma imagem / como ficaria"; no resto deixe vazio.
 - Montagem (2ª etapa) com paredes prontas e poucos ou nenhum módulo: proponha a composição primeiro (protagonista, eixo, onde ficam pia, cooktop/range, geladeira, lava-louças), depois monte com add_module usando SÓ módulos do catálogo, encostados, sem sobrepor, dentro de 0..length_mm de cada parede, desviando de portas e janelas (openings). Bases no chão (floor_height_mm 0); aéreos com o topo alinhado. Prefira torres de altura total e menos aéreos padrão, como manda o Codex. Seja completo: preencha as corridas de verdade (pode passar de 20 operações).
+- MONTAGEM COMPLETA DE PRIMEIRA (05/11, Matt: "ela faz tudo branco e sem usar o construtor; preciso o projeto bem mais completo já de primeira"). A montagem sai pronta pra apresentar, não um esqueleto:
+  1) PALETA: antes das operações, decida a paleta do conceito (Codex seção 20: valor primeiro, 60/30/10, um subtom só, no máximo 3 materiais) usando SÓ nomes da lista CORES DISPONÍVEIS. TODO add_module leva colors = uma entrada { role, color_name } para CADA papel que o módulo usa (nomes em PAPÉIS DE COR: caixa/interior, porta/frente, painel, tampo, etc.). Nunca deixe a cor padrão do cadastro: projeto todo branco só quando o conceito for branco, e mesmo assim com madeira ou textura em algum ponto. Interior de caixa numa cor neutra e barata (seção de custo).
+  2) CONSTRUTOR: TODO módulo de caixa (gaveteiro, armário, torre, closet, aéreo, casco de Componentes) leva interior no PRÓPRIO add_module, montado pelo uso real do ambiente: gavetas perto de onde se trabalha, prateleiras nos aéreos, cabideiro e gaveteiro em closet, vão aberto ou nicho no protagonista, divisória em coluna larga. Mesmas regras e formato do set_interior. Só fica sem interior painel, tampo, filler, prateleira solta, ripado ou módulo cujo hint/cadastro diga que o interior já vem pronto.
+  3) LED: aéreo sobre bancada, nicho e prateleira aberta levam led no próprio add_module (bottom do aéreo ou shelf, side under), como na seção 6.
+  4) PAINÉIS: feche as composições com painéis do catálogo (acabamento lateral, tamponamento, painel de fundo de nicho, ripado) em vez de deixar caixa crua aparecendo (seção 4 e seção 19: painel de parede fica atrás, o módulo avança sozinho).
+  5) CONFERÊNCIA antes de devolver: cada parede tem um protagonista; nenhum add_module sem colors; nenhuma caixa sem interior; topos e rodapés alinhados; nada sobreposto.
 - Formato das operações: igual ao abaixo.
 
 OPERAÇÕES (campo op) — preencha só os campos que a operação usa, o resto null:
@@ -540,7 +560,7 @@ OPERAÇÕES (campo op) — preencha só os campos que a operação usa, o resto 
 - set_color: slot_ids (vazio/null = TODOS) + color_name EXATAMENTE como em color_options + role = chave de color_options ou null.
 - set_quantity: slot_ids (1) + piece_id + quantity (dentro de min..max).
 - replace_module: slot_ids + module_id do catálogo.
-- add_module: module_id + wall_index + x_mm + floor_height_mm + width_mm/height_mm/depth_mm (dentro de w/h/d do catálogo); color_from_slot_id ou color_name.
+- add_module: module_id + wall_index + x_mm + floor_height_mm + width_mm/height_mm/depth_mm (dentro de w/h/d do catálogo) + colors [{ role, color_name }] (um por papel; ou color_from_slot_id pra copiar de um módulo que JÁ existe) + interior (igual ao set_interior, quando é caixa) + led (igual ao set_led, quando cabe).
 - remove_module: slot_ids.
 - set_interior: slot_ids (1 ou mais) + interior = o INTERIOR do Construtor (substitui o que tiver). interior.columns = colunas da esquerda pra direita (divisórias verticais entre elas), cada uma com width_mm (soma ≈ largura útil = largura do módulo − 2×19), zones = faixas de BAIXO pra CIMA (prateleira fixa entre elas), cada zona { type: drawers (gavetas; count = quantas), shelves (prateleiras; count = quantas DENTRO da faixa), hanging (cabideiro), open (vão livre), height_mm, count }, a soma dos height_mm ≈ altura útil (altura − 2×19); doors: none | hinged (porta de giro) | flap (basculante); doors_cover: all (porta cobre a coluna toda) | above_drawers (porta só acima das gavetas).
   Regras do Construtor: gaveta mínima 100 mm de frente (count ≤ altura da zona ÷ 100) e máxima 400 mm; coluna com gaveta até 1200 mm de largura; gaveta em cima de tudo ⇒ nada de porta cobrindo ela. Módulo do catálogo que já tem portas próprias (casco: false e interior_atual com frentes do cadastro) → doors none, a não ser que peçam. Caixa crua de Componentes (casco: true) precisa das portas pelo Construtor. NUNCA set_interior em painel, tampo, prateleira solta, filler ou ripado.
@@ -570,6 +590,12 @@ ${JSON.stringify(b.project || {})}
 
 ===== CATÁLOGO (JSON) =====
 ${JSON.stringify(b.catalog || [])}
+
+===== CORES DISPONÍVEIS (padrões cadastrados na fábrica: name, hex, grain = tem veio) =====
+${JSON.stringify(Array.isArray(b.colors_available) ? b.colors_available.slice(0, 200) : [])}
+
+===== PAPÉIS DE COR (role do colors / set_color) =====
+${JSON.stringify(Array.isArray(b.color_roles) ? b.color_roles.slice(0, 40) : [])}
 
 ===== CONVERSA ATÉ AGORA =====
 ${hist}

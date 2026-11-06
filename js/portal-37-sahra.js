@@ -654,8 +654,17 @@
         if (PAINEL_RE.test(String((sl.module && sl.module.name) || ''))) cs.painel = true;
       });
     } catch (e) { console.warn('[sahra] interior no contexto', e); }
+    // MONTAGEM COMPLETA (05/11): com o projeto vazio ela não tinha nenhuma
+    // cor pra escolher (color_options só vem de módulo já inserido) e tudo
+    // nascia na cor padrão. Agora vai a lista de cores e os papéis.
+    try {
+      if (!coresCache && typeof buildProjectPhotoColorList === 'function') coresCache = await buildProjectPhotoColorList();
+      ctx.colors_available = coresCache || [];
+      ctx.color_roles = ((typeof colorRolesCache !== 'undefined' && colorRolesCache) || []).map((r) => r.name).filter(Boolean);
+    } catch (e) { console.warn('[sahra] cores no contexto', e); }
     return ctx;
   }
+  let coresCache = null;
 
   // ---------------------------------------------------------------- IMAGENS DO PORTAL
   // 05/11 (Matt: "pedi uma foto realista mas abriu essa tela [Render
@@ -857,7 +866,8 @@
         lang: lang(),
         unit: ((document.getElementById('po-unit-select') || {}).value || 'mm') === 'in' ? 'in' : 'mm',
         messages: conversa.filter((m) => !m.err).map((m) => ({ role: m.role, text: m.text })),
-        project: ctx.project, catalog: ctx.catalog
+        project: ctx.project, catalog: ctx.catalog,
+        colors_available: ctx.colors_available || [], color_roles: ctx.color_roles || []
       };
       const { data, error } = await supabaseClient.functions.invoke('sahra-chat', chatAbort ? { body, signal: chatAbort.signal } : { body });
       if (seq !== chatSeq) return; // parado pelo usuário: ignora a resposta
@@ -1154,7 +1164,8 @@
         if (job.cancel) break;
         m.progress = k + 1; renderConversa();
         const op = m.ops[k];
-        const run = op.op === 'set_interior' ? aplicaInterior(op) : op.op === 'set_led' ? aplicaLed(op) : editProjectAiApply([op]);
+        const run = op.op === 'set_interior' ? aplicaInterior(op) : op.op === 'set_led' ? aplicaLed(op)
+          : op.op === 'add_module' ? aplicaModuloCompleto(op) : editProjectAiApply([op]);
         let timer = null;
         const out = await Promise.race([run, new Promise((res) => { timer = setTimeout(() => res('__timeout'), OP_TIMEOUT_MS); })]);
         clearTimeout(timer);
@@ -1200,6 +1211,37 @@
       if (aplicando === job) aplicando = null;
       renderConversa();
     }
+  }
+  // MONTAGEM COMPLETA (05/11, Matt: "faz tudo branco e sem usar o
+  // construtor"): add_module chega com cores por papel, interior e LED.
+  // Insere pelo caminho de sempre e, no módulo que acabou de nascer, aplica
+  // as cores (mesma função do set_color), o Construtor (aplicaInterior) e o
+  // LED (aplicaLed).
+  async function aplicaModuloCompleto(op) {
+    const antes = new Set(projectSlots.map((x) => String(x.id)));
+    const out = (await editProjectAiApply([op])) || {};
+    const warnings = (out.warnings || []).slice();
+    const results = (out.results || []).slice();
+    const novo = projectSlots.find((x) => !antes.has(String(x.id)));
+    if (!novo) return { results, warnings };
+    const id = String(novo.id);
+    if (Array.isArray(op.colors) && op.colors.length && typeof iaeOpSetColor === 'function') {
+      op.colors.forEach((c) => {
+        try { iaeOpSetColor({ slot_ids: [id], role: c.role, color_name: c.color_name }, warnings); } catch (e) { warnings.push(String(e.message || e)); }
+      });
+    }
+    if (op.interior) {
+      const r = await aplicaInterior({ slot_ids: [id], interior: op.interior, reason: op.reason });
+      (r.warnings || []).forEach((w) => warnings.push(w));
+    }
+    if (op.led) {
+      try {
+        const r = await aplicaLed({ slot_ids: [id], led: op.led, reason: op.reason });
+        (r.warnings || []).forEach((w) => warnings.push(w));
+      } catch (e) { warnings.push('LED: ' + (e.message || e)); }
+    }
+    try { recomputeProjectSlotPricing(novo); } catch (e) { /* */ }
+    return { results, warnings };
   }
   function limpaIntrusos(idsOk) {
     if (!idsOk) return;
