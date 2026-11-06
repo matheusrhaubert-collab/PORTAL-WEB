@@ -35,7 +35,7 @@
     pt: {
       hi: 'Oi! Eu sou a SAHRA.', sub: 'Designer da Legno · olho o projeto com você',
       tab_chat: 'Conversa', tab_review: 'Revisão', tab_how: 'Como fazer',
-      chat_ph: 'Escreva ou fale com a SAHRA…', send: 'Enviar', mic: 'Falar', mic_on: 'Ouvindo… fale e pare pra enviar',
+      chat_ph: 'Escreva ou fale com a SAHRA…', send: 'Enviar', mic: 'Falar', mic_on: 'Ouvindo… fique 4 s em silêncio pra enviar (ou toque no mic)',
       voice_on: 'Voz da SAHRA ligada', voice_off: 'Voz da SAHRA desligada', new_chat: 'Nova conversa',
       welcome: 'Oi, Matt! Já estou com o projeto aberto aqui. Me pergunte o que quiser: o que eu achei, o que eu mudaria, cores em tendência, custo, descrição técnica… ou peça pra eu montar o projeto nas paredes que você desenhou.',
       thinking: 'SAHRA está pensando…', err: 'Não consegui responder agora: ',
@@ -75,7 +75,7 @@
     en: {
       hi: "Hi! I'm SAHRA.", sub: 'Legno designer · reviewing the project with you',
       tab_chat: 'Chat', tab_review: 'Review', tab_how: 'How to',
-      chat_ph: 'Type or talk to SAHRA…', send: 'Send', mic: 'Speak', mic_on: 'Listening… speak and pause to send',
+      chat_ph: 'Type or talk to SAHRA…', send: 'Send', mic: 'Speak', mic_on: 'Listening… stay silent for 4 s to send (or tap the mic)',
       voice_on: 'SAHRA voice on', voice_off: 'SAHRA voice off', new_chat: 'New chat',
       welcome: "Hi! I have the project open. Ask me anything: what I think, what I'd change, trending colors, cost, a technical description… or ask me to lay out the project on the walls you drew.",
       thinking: 'SAHRA is thinking…', err: "I couldn't answer right now: ",
@@ -115,7 +115,7 @@
     es: {
       hi: '¡Hola! Soy SAHRA.', sub: 'Diseñadora de Legno · reviso el proyecto contigo',
       tab_chat: 'Conversación', tab_review: 'Revisión', tab_how: 'Cómo hacer',
-      chat_ph: 'Escribe o habla con SAHRA…', send: 'Enviar', mic: 'Hablar', mic_on: 'Escuchando… habla y haz una pausa para enviar',
+      chat_ph: 'Escribe o habla con SAHRA…', send: 'Enviar', mic: 'Hablar', mic_on: 'Escuchando… quédate 4 s en silencio para enviar (o toca el mic)',
       voice_on: 'Voz de SAHRA activada', voice_off: 'Voz de SAHRA desactivada', new_chat: 'Nueva conversación',
       welcome: '¡Hola! Ya tengo el proyecto abierto. Pregúntame lo que quieras: qué me parece, qué cambiaría, colores en tendencia, costo, descripción técnica… o pídeme que arme el proyecto en las paredes que dibujaste.',
       thinking: 'SAHRA está pensando…', err: 'No pude responder ahora: ',
@@ -1243,42 +1243,65 @@
 
   // ---------------------------------------------------------------- VOZ
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, gravando = false, textoFalado = '';
+  // Espera SILENCIO_MS de silêncio antes de enviar (pedido do Matt: 4 s).
+  // continuous=true + timer próprio, porque o modo padrão do navegador fecha
+  // na primeira pausa. Tocar no mic de novo envia na hora.
+  const SILENCIO_MS = 4000;
+  let rec = null, gravando = false, textoFalado = '', timerSilencio = null, pararPedido = false;
   const langTag = () => ({ pt: 'pt-BR', en: 'en-US', es: 'es-ES' }[lang()] || 'pt-BR');
 
   function status(txt) { const s = root && root.querySelector('.sa-status'); if (s) s.textContent = txt || ''; }
 
   function alternaMic() {
-    if (gravando) { try { rec.stop(); } catch (e) { /* */ } return; }
+    if (gravando) { pararPedido = true; clearTimeout(timerSilencio); try { rec.stop(); } catch (e) { /* */ } return; }
     if (!SR) { status(T('no_speech')); return; }
     pararFala();
-    rec = new SR();
-    rec.lang = langTag();
-    rec.interimResults = true;
-    rec.continuous = false;
     textoFalado = '';
+    pararPedido = false;
     const inp = root.querySelector('.sa-in');
     const base = inp.value ? inp.value.trim() + ' ' : '';
-    rec.onresult = (ev) => {
-      let fin = '', tmp = '';
-      for (let i = 0; i < ev.results.length; i++) {
-        if (ev.results[i].isFinal) fin += ev.results[i][0].transcript; else tmp += ev.results[i][0].transcript;
-      }
-      textoFalado = fin;
-      inp.value = base + fin + tmp;
+    let acumulado = ''; // texto final das sessões anteriores (o Chrome reinicia sozinho)
+    const armaSilencio = (ms) => {
+      clearTimeout(timerSilencio);
+      timerSilencio = setTimeout(() => { pararPedido = true; try { rec.stop(); } catch (e) { /* */ } }, ms || SILENCIO_MS);
     };
-    rec.onerror = (ev) => { console.warn('[sahra mic]', ev.error); };
-    rec.onend = () => {
-      gravando = false;
-      root.querySelector('.sa-mic').classList.remove('rec');
-      status('');
-      if (textoFalado.trim()) enviar(); // falou e parou = envia
+    const inicia = () => {
+      let finSessao = '';
+      rec = new SR();
+      rec.lang = langTag();
+      rec.interimResults = true;
+      rec.continuous = true;
+      rec.onresult = (ev) => {
+        let fin = '', tmp = '';
+        for (let i = 0; i < ev.results.length; i++) {
+          if (ev.results[i].isFinal) fin += ev.results[i][0].transcript; else tmp += ev.results[i][0].transcript;
+        }
+        finSessao = fin;
+        textoFalado = acumulado + fin;
+        inp.value = base + acumulado + fin + tmp;
+        armaSilencio(); // ainda falando: zera a contagem
+      };
+      rec.onerror = (ev) => {
+        console.warn('[sahra mic]', ev.error);
+        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed' || ev.error === 'audio-capture') pararPedido = true;
+      };
+      rec.onend = () => {
+        if (finSessao.trim()) acumulado = (acumulado + finSessao).trim() + ' ';
+        if (!pararPedido) { try { inicia(); return; } catch (e) { /* cai pro encerramento */ } }
+        clearTimeout(timerSilencio);
+        gravando = false;
+        root.querySelector('.sa-mic').classList.remove('rec');
+        status('');
+        if (textoFalado.trim()) { inp.value = (base + textoFalado).trim(); enviar(); } // calou 4 s = envia
+      };
+      rec.start();
     };
     try {
-      rec.start();
+      inicia();
       gravando = true;
       root.querySelector('.sa-mic').classList.add('rec');
       status(T('mic_on'));
+      armaSilencio(SILENCIO_MS * 2); // tempo maior pra começar a falar
     } catch (e) { status(String(e.message || e)); }
   }
 
