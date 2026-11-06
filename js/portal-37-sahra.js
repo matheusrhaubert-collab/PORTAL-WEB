@@ -35,7 +35,7 @@
     pt: {
       hi: 'Oi! Eu sou a SAHRA.', sub: 'Designer da Legno · olho o projeto com você',
       tab_chat: 'Conversa', tab_review: 'Revisão', tab_how: 'Como fazer',
-      chat_ph: 'Escreva ou fale com a SAHRA…', send: 'Enviar', mic: 'Falar', mic_on: 'Ouvindo… fique 4 s em silêncio pra enviar (ou toque no mic)',
+      chat_ph: 'Escreva ou fale com a SAHRA…', send: 'Enviar', mic: 'Falar', mic_on: 'Ouvindo… fique 2 s em silêncio pra enviar (ou toque no mic)',
       voice_on: 'Voz da SAHRA ligada', voice_off: 'Voz da SAHRA desligada', new_chat: 'Nova conversa',
       ask_name: 'Oi! Eu sou a SAHRA, designer da Legno. Ainda não sei o seu nome. Como posso te chamar?', name_ph: 'Seu nome', name_save: 'Salvar', name_err: 'Não consegui salvar o nome: ',
       welcome: 'Oi, {{nome}}! Já estou com o projeto aberto aqui. Me pergunte o que quiser: o que eu achei, o que eu mudaria, cores em tendência, custo, descrição técnica… ou peça pra eu montar o projeto nas paredes que você desenhou.',
@@ -76,7 +76,7 @@
     en: {
       hi: "Hi! I'm SAHRA.", sub: 'Legno designer · reviewing the project with you',
       tab_chat: 'Chat', tab_review: 'Review', tab_how: 'How to',
-      chat_ph: 'Type or talk to SAHRA…', send: 'Send', mic: 'Speak', mic_on: 'Listening… stay silent for 4 s to send (or tap the mic)',
+      chat_ph: 'Type or talk to SAHRA…', send: 'Send', mic: 'Speak', mic_on: 'Listening… stay silent for 2 s to send (or tap the mic)',
       voice_on: 'SAHRA voice on', voice_off: 'SAHRA voice off', new_chat: 'New chat',
       ask_name: "Hi! I'm SAHRA, Legno's designer. I don't know your name yet. What should I call you?", name_ph: 'Your name', name_save: 'Save', name_err: "Couldn't save the name: ",
       welcome: "Hi, {{nome}}! I have the project open. Ask me anything: what I think, what I'd change, trending colors, cost, a technical description… or ask me to lay out the project on the walls you drew.",
@@ -117,7 +117,7 @@
     es: {
       hi: '¡Hola! Soy SAHRA.', sub: 'Diseñadora de Legno · reviso el proyecto contigo',
       tab_chat: 'Conversación', tab_review: 'Revisión', tab_how: 'Cómo hacer',
-      chat_ph: 'Escribe o habla con SAHRA…', send: 'Enviar', mic: 'Hablar', mic_on: 'Escuchando… quédate 4 s en silencio para enviar (o toca el mic)',
+      chat_ph: 'Escribe o habla con SAHRA…', send: 'Enviar', mic: 'Hablar', mic_on: 'Escuchando… quédate 2 s en silencio para enviar (o toca el mic)',
       voice_on: 'Voz de SAHRA activada', voice_off: 'Voz de SAHRA desactivada', new_chat: 'Nueva conversación',
       ask_name: '¡Hola! Soy SAHRA, diseñadora de Legno. Todavía no sé tu nombre. ¿Cómo te llamo?', name_ph: 'Tu nombre', name_save: 'Guardar', name_err: 'No pude guardar el nombre: ',
       welcome: '¡Hola, {{nome}}! Ya tengo el proyecto abierto. Pregúntame lo que quieras: qué me parece, qué cambiaría, colores en tendencia, costo, descripción técnica… o pídeme que arme el proyecto en las paredes que dibujaste.',
@@ -1321,10 +1321,10 @@
 
   // ---------------------------------------------------------------- VOZ
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  // Espera SILENCIO_MS de silêncio antes de enviar (pedido do Matt: 4 s).
+  // Espera SILENCIO_MS de silêncio antes de enviar (pedido do Matt: 4 s; 06/11 baixou pra 2 s).
   // continuous=true + timer próprio, porque o modo padrão do navegador fecha
   // na primeira pausa. Tocar no mic de novo envia na hora.
-  const SILENCIO_MS = 4000;
+  const SILENCIO_MS = 2000;
   let rec = null, gravando = false, textoFalado = '', timerSilencio = null, pararPedido = false;
   const langTag = () => ({ pt: 'pt-BR', en: 'en-US', es: 'es-ES' }[lang()] || 'pt-BR');
 
@@ -1370,7 +1370,7 @@
         gravando = false;
         root.querySelector('.sa-mic').classList.remove('rec');
         status('');
-        if (textoFalado.trim()) { inp.value = (base + textoFalado).trim(); enviar(); } // calou 4 s = envia
+        if (textoFalado.trim()) { inp.value = (base + textoFalado).trim(); enviar(); } // calou 2 s = envia
       };
       rec.start();
     };
