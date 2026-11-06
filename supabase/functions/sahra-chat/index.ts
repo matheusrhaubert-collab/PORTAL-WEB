@@ -794,7 +794,11 @@ Deno.serve(async (req) => {
   if (!msgs.length || !String(msgs[msgs.length - 1]?.text || "").trim()) return json(400, { error: "Escreva uma mensagem.", code: "no_message" });
   if (!b.project || !Array.isArray(b.project.slots)) b.project = { slots: [], walls: [] };
   if (!Array.isArray(b.catalog)) b.catalog = [];
+  // CRONÔMETRO (06/11, Matt: "a SAHRA tá bem demorada hoje"): devolve quanto
+  // tempo cada etapa levou, pra saber onde está a demora.
+  const t0 = Date.now();
   [b._lessons, b._hubs] = await Promise.all([carregaAprendizado(req), carregaCentrais(req)]);
+  const tDb = Date.now();
 
   try {
     // VELOCIDADE (05/11, Matt: "tem como diminuir o delay?"): raciocínio
@@ -802,7 +806,9 @@ Deno.serve(async (req) => {
     // crítica, cor, custo = raciocínio leve (bem mais rápido).
     const ultima = String(msgs[msgs.length - 1]?.text || "");
     const pesado = /\b(faz|fa[cç]a|monta|montar|aplica|aplicar|refaz|redesenh|cria|criar|muda|mudar|troca|trocar|pode fazer|gostei|manda ver|build|design it|lay ?out|apply|make it|haz|arma|aplica|coloca|colocar|p[oõ]e|bota|adiciona|tira|interior|construtor|gaveta|prateleira|led|luz|ilumina)\b/i.test(ultima);
-    const { data, model } = await callGemini(apiKey, "flash", [{ text: buildChatPrompt(b) }], CHAT_SCHEMA, pesado ? "deep" : "light");
+    const prompt = buildChatPrompt(b);
+    const { data, model } = await callGemini(apiKey, "flash", [{ text: prompt }], CHAT_SCHEMA, pesado ? "deep" : "light");
+    const tIa = Date.now();
     const ops = sanitizeEdit(data, b);
     const actions = (Array.isArray(data?.actions) ? data.actions : []).filter((a: any) => a === "photoreal" || a === "render" || a === "audit");
     const novas = (Array.isArray(data?.learn) ? data.learn : [])
@@ -813,8 +819,10 @@ Deno.serve(async (req) => {
       try { learn = await checaRegras(apiKey, novas, b._lessons, b._hubs, b.lang); }
       catch (e) { console.error("[sahra] checaRegras", e); /* sem checagem: grava como nova */ }
     }
+    const tFim = Date.now();
+    const timing = { db_ms: tDb - t0, ia_ms: tIa - tDb, regras_ms: tFim - tIa, total_ms: tFim - t0, raciocinio: pesado ? "profundo" : "leve", prompt_chars: prompt.length, regras_codex: b._lessons.length };
     const concepts = (Array.isArray(data?.concepts) ? data.concepts : []).map((c: any) => String(c || "").trim()).filter(Boolean).slice(0, 2);
-    return json(200, { reply: String(data?.reply || ""), spoken: String(data?.spoken || ""), concepts, learn, lessons_count: b._lessons.length, operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model });
+    return json(200, { reply: String(data?.reply || ""), spoken: String(data?.spoken || ""), concepts, learn, lessons_count: b._lessons.length, operations: ops.operations, not_done: ops.not_done, summary: ops.summary, actions, model, timing });
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message, code: e.code });
     return json(500, { error: (e as Error).message || String(e), code: "internal" });

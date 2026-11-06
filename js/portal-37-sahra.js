@@ -599,6 +599,7 @@
       if (m.applied) extra += `<div class="sa-small">✓ ${esc(T('applied'))}</div>`;
       if (m.notDone && m.notDone.length) extra += `<div class="sa-small"><strong>${esc(T('not_done'))}</strong> ${m.notDone.map(esc).join(' · ')}</div>`;
       if (m.warnings && m.warnings.length) extra += `<div class="sa-small"><strong>${esc(T('warn'))}</strong> ${m.warnings.map(esc).join(' · ')}</div>`;
+      if (m.tempoTxt) extra += `<div class="sa-tempo" style="font-size:10.5px;opacity:.5;margin-top:6px">${esc(m.tempoTxt)}</div>`;
       html += `<div class="sa-m sahra${m.err ? ' err' : ''}">${md(m.text)}${extra}</div>`;
     });
     if (pensando) html += `<div class="sa-m sahra"><span class="sa-dots"><span></span><span></span><span></span></span></div>`;
@@ -902,8 +903,10 @@
     const seq = ++chatSeq;
     chatAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     try {
+      const tC0 = performance.now();
       const ctx = await montaContexto();
       if (seq !== chatSeq) return;
+      const tC1 = performance.now();
       const body = {
         lang: lang(),
         unit: ((document.getElementById('po-unit-select') || {}).value || 'mm') === 'in' ? 'in' : 'mm',
@@ -914,6 +917,7 @@
       };
       const { data, error } = await supabaseClient.functions.invoke('sahra-chat', chatAbort ? { body, signal: chatAbort.signal } : { body });
       if (seq !== chatSeq) return; // parado pelo usuário: ignora a resposta
+      const tC2 = performance.now();
       if (error || !data || data.error) throw new Error(await mensagemDeErro(error, data));
       const msg = { role: 'sahra', text: data.reply || '…', spoken: data.spoken || '', ops: Array.isArray(data.operations) ? data.operations : [],
         notDone: Array.isArray(data.not_done) ? data.not_done : [], actions: Array.isArray(data.actions) ? data.actions : [],
@@ -928,6 +932,14 @@
       if (vozLigada()) {
         audio = await preparaFala(msg.spoken || msg.text);
         if (seq !== chatSeq) { descartaFala(audio); return; }
+      }
+      // CRONÔMETRO (06/11): onde foi o tempo. Aparece no console (F12) e
+      // num rodapé discreto embaixo da resposta.
+      {
+        const tC3 = performance.now(), tm = data.timing || {}, s1 = (ms) => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+        msg.timing = { total: tC3 - tC0, contexto: tC1 - tC0, funcao: tC2 - tC1, voz: tC3 - tC2, srv: tm };
+        console.info('[sahra tempo]', { total: s1(tC3 - tC0), contexto: s1(tC1 - tC0), funcao: s1(tC2 - tC1), ia: tm.ia_ms != null ? s1(tm.ia_ms) : '?', banco: tm.db_ms != null ? s1(tm.db_ms) : '?', regras: tm.regras_ms != null ? s1(tm.regras_ms) : '?', voz: s1(tC3 - tC2), raciocinio: tm.raciocinio, modelo: data.model, prompt_chars: tm.prompt_chars, regras_codex: tm.regras_codex });
+        msg.tempoTxt = '⏱ ' + s1(tC3 - tC0) + (tm.ia_ms != null ? ' · IA ' + s1(tm.ia_ms) + ' (' + (tm.raciocinio || '') + ')' : '') + (vozLigada() ? ' · voz ' + s1(tC3 - tC2) : '') + (data.model ? ' · ' + data.model : '');
       }
       conversa.push(msg);
       poseEnquanto(null);
