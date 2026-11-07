@@ -1,0 +1,1137 @@
+﻿<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fluxo da SAHRA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js?v=202611070027"></script>
+<style>
+/* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
+:root{
+  --bg:#f3f2ee; --surface:#ffffff; --line:#dcd9d1; --ink:#1f1d1a; --muted:#6c6860;
+  --accent:#7a4a22; --accent-soft:#f1e6da; --decision:#4b4f8a; --decision-soft:#e9e9f5;
+  --ok:#2f6b4f; --danger:#a3352b; --hl:#fff4d6; --photo:#ffffff; --table:#e9e4da; --vidro:rgba(255,255,255,.72); --vidro-forte:rgba(246,243,238,.9); --vidro-borda:rgba(255,255,255,.55);
+  --f-display:"Familjen Grotesk",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#171614; --surface:#211f1c; --line:#3a3732; --ink:#ece9e2; --muted:#a29d93;
+  --accent:#d9a571; --accent-soft:#3a2b1d; --decision:#aeb2ee; --decision-soft:#2a2b42;
+  --ok:#7cc3a0; --danger:#ec8a80; --hl:#3a3220; --photo:#f4f2ee; --table:#2a2622; --vidro:rgba(28,25,22,.72); --vidro-forte:rgba(28,25,22,.9); --vidro-borda:rgba(255,255,255,.12); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#171614; --surface:#211f1c; --line:#3a3732; --ink:#ece9e2; --muted:#a29d93;
+  --accent:#d9a571; --accent-soft:#3a2b1d; --decision:#aeb2ee; --decision-soft:#2a2b42;
+  --ok:#7cc3a0; --danger:#ec8a80; --hl:#3a3220; --photo:#f4f2ee; --table:#2a2622; --vidro:rgba(28,25,22,.72); --vidro-forte:rgba(28,25,22,.9); --vidro-borda:rgba(255,255,255,.12); color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);margin:0}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 32px}
+.topbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.brand{font:600 20px/1.1 var(--f-display);margin:0}
+.tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:3px}
+.tab{border:0;background:none;padding:6px 12px;border-radius:6px;font-size:14px;color:var(--muted)}
+.tab[aria-current="page"]{background:var(--accent);color:var(--surface)}
+header.edhead{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:18px}
+h1{font:600 26px/1.1 var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--muted);font-size:14px;margin:4px 0 0;max-width:62ch}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.status{font:12px var(--f-mono);color:var(--muted)}
+button{font:inherit;color:inherit;cursor:pointer}
+button:disabled{cursor:default;opacity:.55}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:7px 12px;font-size:14px}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.danger{color:var(--danger)}
+.main{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.main.has-panel{grid-template-columns:minmax(0,1fr) minmax(320px,440px)}
+@media (max-width:860px){.main.has-panel{grid-template-columns:minmax(0,1fr)}}
+.board-scroll{overflow-x:auto;padding-bottom:8px}
+.board{display:flex;gap:14px;align-items:flex-start;min-height:200px}
+.col{flex:0 0 260px;background:color-mix(in srgb,var(--surface) 55%,var(--bg));border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.col-head{display:flex;align-items:center;gap:8px}
+.col-num{font:500 12px var(--f-mono);color:var(--accent)}
+.col-name{font:600 15px var(--f-display);flex:1;min-width:0;background:none;border:0;padding:2px 0;text-align:left;overflow-wrap:anywhere}
+.col-name-input{flex:1;min-width:0;font:600 15px var(--f-display);border:1px solid var(--line);border-radius:4px;padding:2px 6px;background:var(--surface);color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;text-align:left;display:flex;flex-direction:column;gap:6px;width:100%}
+.card:hover{border-color:var(--muted)}
+.card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.card.linked{background:var(--hl)}
+.code{font:500 11px var(--f-mono);color:var(--muted)}
+.card-title{font-weight:500;overflow-wrap:anywhere}
+.card-q{font-size:13px;color:var(--decision);background:var(--decision-soft);border-radius:4px;padding:3px 6px;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font:11px var(--f-mono);border:1px solid var(--line);border-radius:3px;padding:1px 5px;color:var(--muted);overflow-wrap:anywhere}
+.chip.to{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+.add-step{border:1px dashed var(--line);background:none;border-radius:8px;padding:8px;color:var(--muted);font-size:13px}
+.add-step:hover{color:var(--ink);border-color:var(--muted)}
+.add-col{flex:0 0 200px;border:1px dashed var(--line);border-radius:10px;background:none;padding:18px 10px;color:var(--muted)}
+.empty{border:1px dashed var(--line);border-radius:12px;padding:32px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;background:var(--surface)}
+.empty h2{font:600 19px var(--f-display);margin:0}
+.empty p{margin:0;color:var(--muted);max-width:52ch}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;align-self:start;position:sticky;top:max(12px,env(safe-area-inset-top,0px));max-height:calc(100vh - 24px);overflow:auto}
+.panel-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel-head h2{font:600 18px var(--f-display);margin:0}
+.field{display:flex;flex-direction:column;gap:4px}
+.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);display:flex;gap:6px;align-items:center}
+.lbl .tag{font:500 10px var(--f-mono);padding:0 5px;border-radius:3px;letter-spacing:0}
+.t-in{background:var(--accent-soft);color:var(--accent)}
+.t-dec{background:var(--decision-soft);color:var(--decision)}
+.t-out{background:color-mix(in srgb,var(--ok) 15%,var(--surface));color:var(--ok)}
+.hint{font-size:12px;color:var(--muted);margin:0}
+input[type=text],textarea,select{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+textarea{resize:vertical;min-height:62px}
+.saida{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;background:color-mix(in srgb,var(--surface) 60%,var(--bg))}
+.saida-head{display:flex;justify-content:space-between;align-items:center}
+.saida-head b{font:500 12px var(--f-mono);color:var(--ok)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.foot{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}
+.confirm{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--danger);flex-wrap:wrap}
+.err{color:var(--danger);font-size:13px}
+
+/* Mesa */
+.lobby{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:760px){.lobby{grid-template-columns:minmax(0,1fr)}}
+.portrait{background:var(--photo);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;justify-content:center}
+.portrait img{display:block;width:100%;max-width:320px;height:auto}
+.lobby-intro h1{font-size:30px}
+.lobby-intro p{max-width:56ch;color:var(--muted)}
+.proj-list{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+.proj{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;text-align:left;width:100%}
+.proj:hover{border-color:var(--muted)}
+.proj small{color:var(--muted);font:12px var(--f-mono)}
+.pill{font:500 11px var(--f-mono);padding:2px 7px;border-radius:99px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.pill.done{background:color-mix(in srgb,var(--ok) 15%,var(--surface));color:var(--ok)}
+
+.mesa{display:grid;grid-template-columns:240px minmax(0,1fr) 300px;gap:16px;align-items:start}
+@media (max-width:1080px){.mesa{grid-template-columns:200px minmax(0,1fr)}.ficha-col{grid-column:1 / -1}}
+@media (max-width:700px){.mesa{grid-template-columns:minmax(0,1fr)}}
+.side{display:flex;flex-direction:column;gap:12px;position:sticky;top:max(12px,env(safe-area-inset-top,0px))}
+@media (max-width:700px){.side{position:static;flex-direction:row;align-items:center}.side .portrait{width:84px;flex:0 0 84px;border-radius:50%}.side .steps{display:none}}
+.who{display:flex;flex-direction:column;gap:2px}
+.who b{font:600 17px var(--f-display)}
+.who span{font-size:13px;color:var(--muted)}
+.now{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
+.now .code{display:block}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.steps li{display:flex;gap:8px;align-items:center;color:var(--muted);padding:3px 0}
+.steps li::before{content:"";width:8px;height:8px;border-radius:50%;border:1px solid var(--muted);flex:0 0 8px}
+.steps li.past{color:var(--ink)}
+.steps li.past::before{background:var(--ok);border-color:var(--ok)}
+.steps li.cur{color:var(--accent);font-weight:500}
+.steps li.cur::before{background:var(--accent);border-color:var(--accent)}
+
+.chat{background:var(--table);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;min-height:min(70vh,640px)}
+.msgs{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;max-height:68vh}
+.msg{display:flex;gap:10px;align-items:flex-end;max-width:min(92%,620px)}
+.msg.cli{align-self:flex-end;flex-direction:row-reverse}
+.ava{width:34px;height:34px;border-radius:50%;background:var(--photo) center 30%/150% no-repeat;flex:0 0 34px;border:1px solid var(--line)}
+.bub{background:var(--surface);border:1px solid var(--line);border-radius:12px 12px 12px 4px;padding:9px 12px;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.msg.cli .bub{background:var(--accent-soft);border-color:transparent;border-radius:12px 12px 4px 12px}
+.bub .imgs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.bub .imgs img{width:96px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.trace{align-self:center;font:11px var(--f-mono);color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:6px;padding:3px 8px;max-width:100%;overflow-wrap:anywhere}
+.trace b{color:var(--decision);font-weight:500}
+.typing{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:14px}
+.typing i{display:inline-flex;gap:3px}
+.typing i::before,.typing i::after,.typing i span{content:"";width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block}
+@media (prefers-reduced-motion:no-preference){.typing i::before,.typing i::after,.typing i span{animation:blink 1.2s infinite}.typing i span{animation-delay:.2s}.typing i::after{animation-delay:.4s}}
+@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.perg{margin:8px 0 0;padding:8px 10px 8px 30px;background:var(--decision-soft);color:var(--decision);border-radius:8px;display:flex;flex-direction:column;gap:6px;font-weight:500;white-space:normal}
+.perg li::marker{font:500 12px var(--f-mono)}
+.decide{margin-top:8px;font-size:13px;padding:5px 10px;border-color:var(--decision);color:var(--decision);background:var(--surface)}
+.anel{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.anel div{display:flex;flex-direction:column}
+.anel b{font:600 22px var(--f-display);font-variant-numeric:tabular-nums}
+.anel span{font-size:13px;color:var(--muted)}
+.barra{height:4px;background:var(--line);border-radius:14px 14px 0 0;overflow:hidden}
+.barra i{display:block;height:100%;background:var(--accent)}
+@media (prefers-reduced-motion:no-preference){.barra i{transition:width .6s ease}}
+@media (min-width:701px){.barra{display:none}}
+@media (max-width:700px){.side .anel{display:none}}
+.pv{margin-top:24px;display:flex;flex-direction:column;gap:16px}
+.pv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.pv-head h2{font:600 22px var(--f-display);margin:0}
+.conceito{font-size:16px;max-width:70ch;margin:0}
+.swatches{display:flex;flex-wrap:wrap;gap:10px}
+.sw{display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px 6px 6px}
+.sw i{width:32px;height:32px;border-radius:6px;border:1px solid var(--line);flex:0 0 32px}
+.sw span{display:flex;flex-direction:column;font-size:13px}
+.sw small{color:var(--muted)}
+.parede{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.parede figcaption{font:600 15px var(--f-display);margin-bottom:6px}
+.elev-wrap{overflow-x:auto}
+.elev{width:100%;min-width:480px;height:auto;display:block}
+.legenda{margin:-6px 0 0}
+.pv-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:900px){.pv-grid{grid-template-columns:minmax(0,1fr)}}
+.tbl{overflow-x:auto}
+.tbl table{border-collapse:collapse;width:100%;font-size:13px}
+.tbl th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:6px 8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl .mono{font-family:var(--f-mono)}
+.tbl .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.conf{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.conf b{display:inline-block;width:18px;text-align:center}
+.conf .ok b{color:var(--ok)} .conf .no b{color:var(--danger)}
+.conf small{display:block;color:var(--muted);margin-left:22px}
+.pick{margin:8px 0}
+.thumb{padding:0;border:2px solid transparent;border-radius:8px;background:none;line-height:0}
+.thumb img{width:96px;height:72px;object-fit:cover;border-radius:6px}
+.thumb.sel{border-color:var(--accent)}
+.renders{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:12px;margin-top:12px}
+.renders figure{margin:0}
+.renders img{width:100%;height:auto;border-radius:10px;border:1px solid var(--line);display:block}
+.render pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 var(--f-mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;max-height:220px;overflow:auto}
+.render .row{align-items:center}
+.ajuste .row{margin-top:8px}
+.ajuste textarea{background:var(--bg)}
+.pvbox .btn{margin-top:8px;width:100%}
+
+/* Mesa imersiva: a cena da SAHRA no escritório ocupa a tela; a conversa fica sobre a mesa */
+.cena{position:relative;border-radius:16px;overflow:hidden;height:clamp(560px,calc(100vh - 140px),1000px);background:#2b2520 url("assets/sahra/fluxo/sahra-escritorio.jpg") center 18%/cover no-repeat;isolation:isolate}
+.cena::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,rgba(0,0,0,.18) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 45%,rgba(20,14,10,.45) 100%)}
+.cena-top{position:absolute;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;z-index:3}
+.chip-prog{display:flex;align-items:center;gap:10px;background:var(--vidro);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--vidro-borda);border-radius:12px;padding:8px 12px;font-size:13px;color:var(--ink)}
+.chip-prog b{font:600 17px var(--f-display);font-variant-numeric:tabular-nums}
+.chip-prog small{display:block;color:var(--muted);font-size:12px}
+.mini-anel{width:30px;height:30px;border-radius:50%;background:conic-gradient(var(--accent) calc(var(--p)*1%),var(--line) 0);-webkit-mask:radial-gradient(circle,transparent 9px,#000 10px);mask:radial-gradient(circle,transparent 9px,#000 10px);flex:0 0 30px}
+.cena-acoes{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;justify-content:flex-end}
+.cena-acoes .voz{background:var(--vidro);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--vidro-borda);border-radius:12px;padding:6px;flex-direction:row;align-items:center}
+.cena-acoes .voz .row{gap:6px}
+.cena-acoes .btn{white-space:nowrap}
+@media (min-width:901px){.cena.ficha-aberta .chat-mesa{left:14px;transform:none;width:calc(100% - 28px - 362px)}}
+.cena-acoes .voz .muted{margin:0 4px;max-width:220px}
+.cena-acoes .voz .muted:empty{display:none}
+.btn.vidro{background:var(--vidro);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-color:var(--vidro-borda)}
+.ficha-gaveta{position:absolute;top:72px;right:14px;bottom:14px;width:min(340px,calc(100% - 28px));overflow:auto;z-index:4;display:flex;flex-direction:column;gap:10px;background:var(--vidro-forte);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--vidro-borda);border-radius:14px;padding:12px}
+.ficha-gaveta .box{background:var(--surface)}
+.ficha-gaveta .steps{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.chat-mesa{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;width:min(780px,calc(100% - 28px));height:min(50%,520px);display:flex;flex-direction:column;z-index:2;background:var(--vidro);backdrop-filter:blur(14px) saturate(1.1);-webkit-backdrop-filter:blur(14px) saturate(1.1);border:1px solid var(--vidro-borda);border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.28)}
+.chat-mesa .msgs{flex:1;max-height:none;padding:14px 16px}
+.chat-mesa .bub{background:var(--surface)}
+.chat-mesa .msg.cli .bub{background:var(--accent-soft)}
+.chat-mesa .trace{background:var(--surface)}
+.chat-mesa .composer{background:transparent;border-top:1px solid var(--vidro-borda);border-radius:0 0 18px 18px}
+@media (max-width:700px){
+  .cena{height:calc(100vh - 96px);min-height:560px;background-position:center 12%;border-radius:12px}
+  .chat-mesa{height:62%;bottom:8px;width:calc(100% - 16px);border-radius:14px}
+  .cena-top{top:8px;left:8px;right:8px}
+  .chip-prog small{display:none}
+  .ficha-gaveta{top:60px;right:8px;bottom:8px;width:calc(100% - 16px)}
+}
+.done-card{align-self:stretch;background:var(--surface);border:1px solid var(--ok);border-radius:10px;padding:12px 14px;font-size:14px}
+.done-card b{color:var(--ok)}
+.composer{border-top:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;background:color-mix(in srgb,var(--surface) 70%,var(--table));border-radius:0 0 14px 14px}
+.composer .row{flex-wrap:nowrap;align-items:flex-end}
+.composer textarea{min-height:44px;max-height:160px;background:var(--surface)}
+.pending{display:flex;flex-wrap:wrap;gap:6px}
+.pending figure{margin:0;position:relative}
+.pending img{width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+.pending button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:12px;line-height:1;padding:0}
+.ficha-col{display:flex;flex-direction:column;gap:12px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.box h3{font:600 15px var(--f-display);margin:0 0 8px}
+.kv{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:0}
+.kv dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kv dd{margin:0;font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap}
+.thumbs{display:flex;flex-wrap:wrap;gap:6px}
+.thumbs img{width:72px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+.muted{color:var(--muted);font-size:13px;margin:0}
+.trail{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font:12px/1.4 var(--f-mono);color:var(--muted)}
+.trail b{color:var(--ink);font-weight:500}
+.voz{display:flex;flex-direction:column;gap:6px}
+.voz select{font-size:13px;padding:5px 7px}
+@media (max-width:700px){.side .voz{display:none}}
+.backbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+@media (prefers-reduced-motion:no-preference){.card,.btn,.proj{transition:border-color .15s,background .15s}}
+</style>
+
+</head><body>
+<div class="wrap">
+  <div class="topbar">
+    <p class="brand">SAHRA · Legno</p>
+    <nav class="tabs" aria-label="Vistas">
+      <button class="tab" id="tab-fluxo">Editor do fluxo</button>
+      <button class="tab" id="tab-mesa">Mesa da SAHRA</button>
+    </nav>
+  </div>
+
+  <section id="view-fluxo">
+    <header class="edhead">
+      <div>
+        <h1>Fluxo da SAHRA</h1>
+        <p class="sub">Cada etapa recebe uma entrada, faz um processo, toma uma decisão e manda pra uma das saídas. A Mesa da SAHRA segue exatamente este fluxo.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <div class="legend">
+          <span><i class="dot" style="background:var(--accent)"></i>Entrada / processo</span>
+          <span><i class="dot" style="background:var(--decision)"></i>Decisão</span>
+          <span><i class="dot" style="background:var(--ok)"></i>Saídas</span>
+        </div>
+        <div class="status" id="status">Carregando o fluxo…</div>
+      </div>
+    </header>
+    <div class="main" id="main">
+      <div class="board-scroll"><div class="board" id="board"></div></div>
+      <aside class="panel" id="panel" hidden></aside>
+    </div>
+  </section>
+
+  <section id="view-mesa" hidden></section>
+</div>
+
+<script>
+const SPECIAL = [
+  {id:"__cliente", nome:"Perguntar ao cliente"},
+  {id:"__revisao", nome:"Marcar pra revisão do Matt"},
+  {id:"__fim", nome:"Fim do fluxo"}
+];
+const GRUPO_PARADA = "projeto-virtual"; // o protótipo da mesa para ao chegar aqui
+const st = {db:null, grupos:[], etapas:[], sel:null, draft:null, dirty:false, editingCol:null, confirmDel:false, loaded:{g:false,e:false}};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function grupoIdx(gid){ return st.grupos.findIndex(g=>g.id===gid); }
+function grupoOrdem(gid){ const g=st.grupos.find(x=>x.id===gid); return g?g.ordem:0; }
+function etapasDo(gid){ return st.etapas.filter(e=>e.grupo===gid).sort((a,b)=>(a.ordem||0)-(b.ordem||0)); }
+function codigo(e){ const gi=grupoIdx(e.grupo); const i=etapasDo(e.grupo).findIndex(x=>x.id===e.id); return gi<0?"–":`${gi+1}.${i+1}`; }
+function nomeDestino(id){
+  const s=SPECIAL.find(x=>x.id===id); if(s) return s.nome;
+  const e=st.etapas.find(x=>x.id===id); return e ? `${codigo(e)} ${e.nome||"Sem nome"}` : "";
+}
+function setStatus(t){ $("#status").textContent=t; }
+
+/* ---------- Navegação ---------- */
+function route(){
+  const h=location.hash.replace("#","");
+  const mesa=h.startsWith("mesa");
+  $("#view-fluxo").hidden=mesa; $("#view-mesa").hidden=!mesa;
+  $("#tab-fluxo").setAttribute("aria-current", mesa?"false":"page");
+  $("#tab-mesa").setAttribute("aria-current", mesa?"page":"false");
+  M.pid = h.startsWith("mesa-") ? h.slice(5) : null;
+  if(mesa) renderMesa(); else render();
+}
+$("#tab-fluxo").onclick=()=>{ location.hash="fluxo"; };
+$("#tab-mesa").onclick=()=>{ location.hash="mesa"; };
+window.addEventListener("hashchange", route);
+
+/* ---------- Editor ---------- */
+function render(){
+  const board=$("#board");
+  if(!st.db){ return; }
+  if(!(st.loaded.g && st.loaded.e)) return;
+  if(!st.grupos.length){
+    board.innerHTML = `<div class="empty" style="flex:1">
+      <h2>Nenhuma macroetapa ainda</h2>
+      <p>Comece pelas grandes fases de um projeto, na ordem em que um projetista trabalha. Depois abra as etapas de decisão dentro de cada uma.</p>
+      <button class="btn primary" id="first">Criar a primeira macroetapa</button></div>`;
+    $("#first").onclick=addGrupo; renderPanel(); return;
+  }
+  const sel=st.sel && st.etapas.find(e=>e.id===st.sel);
+  const linked=new Set();
+  if(sel){ (sel.saidas||[]).forEach(s=>s.destino&&linked.add(s.destino));
+    st.etapas.forEach(e=>{ if((e.saidas||[]).some(s=>s.destino===sel.id)) linked.add(e.id); }); }
+  board.innerHTML = st.grupos.map((g,gi)=>`
+    <section class="col" data-g="${g.id}">
+      <div class="col-head">
+        <span class="col-num">${String(gi+1).padStart(2,"0")}</span>
+        ${st.editingCol===g.id
+          ? `<input class="col-name-input" id="colname-${g.id}" value="${esc(g.nome)}" aria-label="Nome da macroetapa">`
+          : `<button class="col-name" data-rename="${g.id}" title="Clique pra renomear">${esc(g.nome||"Sem nome")}</button>`}
+        ${etapasDo(g.id).length===0?`<button class="btn ghost" data-delg="${g.id}" aria-label="Apagar macroetapa vazia" title="Apagar macroetapa vazia">×</button>`:""}
+      </div>
+      ${etapasDo(g.id).map(e=>{
+        const ss=(e.saidas||[]);
+        return `<button class="card ${e.id===st.sel?"sel":""} ${linked.has(e.id)?"linked":""}" data-e="${e.id}">
+          <span class="code">${codigo(e)}</span>
+          <span class="card-title">${esc(e.nome||"Sem nome")}</span>
+          ${e.decisao?`<span class="card-q">${esc(e.decisao)}</span>`:""}
+          ${ss.length?`<span class="chips">${ss.map(s=>`<span class="chip ${s.destino?"to":""}">${esc(s.condicao||"saída")}${s.destino?" → "+esc(nomeDestino(s.destino).split(" ")[0]):""}</span>`).join("")}</span>`:""}
+        </button>`}).join("")}
+      <button class="add-step" data-adde="${g.id}">+ Etapa</button>
+    </section>`).join("") + `<button class="add-col" id="addcol">+ Macroetapa</button>`;
+  board.querySelectorAll("[data-e]").forEach(b=>b.onclick=()=>selecionar(b.dataset.e));
+  board.querySelectorAll("[data-adde]").forEach(b=>b.onclick=()=>addEtapa(b.dataset.adde));
+  board.querySelectorAll("[data-rename]").forEach(b=>b.onclick=()=>{st.editingCol=b.dataset.rename;render();const i=$("#colname-"+b.dataset.rename);i.focus();i.select();});
+  board.querySelectorAll("[data-delg]").forEach(b=>b.onclick=()=>st.db.doc("grupos/"+b.dataset.delg).delete());
+  if(st.editingCol){ const i=$("#colname-"+st.editingCol); if(i){
+    const done=async(save)=>{ const id=st.editingCol; st.editingCol=null;
+      if(save){ const v=i.value.trim(); const g=st.grupos.find(x=>x.id===id); if(g && v && v!==g.nome) await st.db.doc("grupos/"+id).update({nome:v}); }
+      render(); };
+    i.onkeydown=ev=>{ if(ev.key==="Enter") done(true); if(ev.key==="Escape") done(false); };
+    i.onblur=()=>done(true); } }
+  $("#addcol").onclick=addGrupo;
+  renderPanel();
+}
+function draftDe(e){ return JSON.parse(JSON.stringify({nome:e.nome||"",grupo:e.grupo,entrada:e.entrada||"",processo:e.processo||"",decisao:e.decisao||"",saidas:e.saidas||[],notas:e.notas||""})); }
+function selecionar(id){
+  if(st.dirty && st.sel!==id){ const w=$("#unsaved"); if(w) w.hidden=false; return; }
+  const e=st.etapas.find(x=>x.id===id); if(!e) return;
+  st.sel=id; st.confirmDel=false; st.dirty=false; st.draft=draftDe(e);
+  render();
+}
+function renderPanel(){
+  const p=$("#panel"), main=$("#main");
+  if(!st.sel || !st.draft){ p.hidden=true; main.classList.remove("has-panel"); return; }
+  const e=st.etapas.find(x=>x.id===st.sel); if(!e){ st.sel=null; st.draft=null; p.hidden=true; main.classList.remove("has-panel"); return; }
+  p.hidden=false; main.classList.add("has-panel");
+  const d=st.draft;
+  const destinos=[...st.etapas.filter(x=>x.id!==e.id).sort((a,b)=>grupoIdx(a.grupo)-grupoIdx(b.grupo)||(a.ordem||0)-(b.ordem||0)), ...SPECIAL];
+  p.innerHTML=`
+    <div class="panel-head"><h2><span class="code" style="font-size:13px">${codigo(e)}</span> Etapa</h2>
+      <button class="btn ghost" id="fechar" aria-label="Fechar painel">Fechar</button></div>
+    <p class="err" id="unsaved" hidden>Você tem alterações não salvas nesta etapa. Salve ou descarte antes de abrir outra.</p>
+    <div class="field"><label class="lbl" for="f-nome">Nome da etapa</label>
+      <input type="text" id="f-nome" value="${esc(d.nome)}" placeholder="Ex.: Posição da geladeira"></div>
+    <div class="field"><label class="lbl" for="f-grupo">Macroetapa</label>
+      <select id="f-grupo">${st.grupos.map((g,gi)=>`<option value="${g.id}" ${g.id===d.grupo?"selected":""}>${gi+1}. ${esc(g.nome)}</option>`).join("")}</select></div>
+    <div class="field"><label class="lbl" for="f-entrada"><span class="tag t-in">ENTRADA</span>O que chega aqui</label>
+      <textarea id="f-entrada" placeholder="Que informação ela recebe da etapa anterior?">${esc(d.entrada)}</textarea></div>
+    <div class="field"><label class="lbl" for="f-processo"><span class="tag t-in">PROCESSO</span>O que ela analisa</label>
+      <textarea id="f-processo" rows="6" placeholder="O que ela olha, mede ou compara antes de decidir?">${esc(d.processo)}</textarea></div>
+    <div class="field"><label class="lbl" for="f-decisao"><span class="tag t-dec">DECISÃO</span>Pergunta com critério</label>
+      <textarea id="f-decisao" placeholder="Uma pergunta que tenha resposta clara.">${esc(d.decisao)}</textarea></div>
+    <div class="field"><span class="lbl"><span class="tag t-out">SAÍDAS</span>Caminhos possíveis</span>
+      <p class="hint">Cada saída: quando acontece, o que fazer, por quê, e pra onde vai.</p>
+      <div id="saidas" style="display:flex;flex-direction:column;gap:8px">
+      ${d.saidas.map((s,i)=>`<div class="saida">
+        <div class="saida-head"><b>Saída ${String.fromCharCode(65+i)}</b>
+          <button class="btn ghost danger" data-rms="${i}" aria-label="Remover saída ${String.fromCharCode(65+i)}">Remover</button></div>
+        <input type="text" id="s-cond-${i}" data-s="${i}" data-k="condicao" value="${esc(s.condicao)}" placeholder="Quando… (condição)">
+        <textarea id="s-acao-${i}" data-s="${i}" data-k="acao" placeholder="Então… (o que fazer)">${esc(s.acao)}</textarea>
+        <input type="text" id="s-porque-${i}" data-s="${i}" data-k="porque" value="${esc(s.porque)}" placeholder="Porque… (o motivo)">
+        <select id="s-dest-${i}" data-s="${i}" data-k="destino" aria-label="Próxima etapa">
+          <option value="">Próxima etapa…</option>
+          ${destinos.map(x=>`<option value="${x.id}" ${x.id===s.destino?"selected":""}>${esc(SPECIAL.includes(x)?x.nome:nomeDestino(x.id))}</option>`).join("")}
+        </select></div>`).join("")}
+      </div>
+      <button class="btn" id="add-saida">+ Saída</button></div>
+    <div class="field"><label class="lbl" for="f-notas">Notas</label>
+      <textarea id="f-notas" placeholder="Exemplos, exceções, aprendizados dos testes…">${esc(d.notas)}</textarea></div>
+    <div class="foot">
+      ${st.confirmDel
+        ? `<div class="confirm">Apagar esta etapa?<button class="btn danger" id="del-yes">Apagar</button><button class="btn" id="del-no">Cancelar</button></div>`
+        : `<button class="btn ghost danger" id="del">Apagar etapa</button>`}
+      <div class="row" id="footbtns">
+        ${st.dirty?`<button class="btn" id="descartar">Descartar</button>`:""}
+        <button class="btn primary" id="salvar" ${st.dirty?"":"disabled"}>${st.dirty?"Salvar":"Salvo"}</button></div>
+    </div>`;
+  const bind=(id,k)=>{ const el=$(id); el.oninput=()=>{ d[k]=el.value; markDirty(); }; };
+  bind("#f-nome","nome"); bind("#f-entrada","entrada"); bind("#f-processo","processo"); bind("#f-decisao","decisao"); bind("#f-notas","notas");
+  $("#f-grupo").onchange=ev=>{ d.grupo=ev.target.value; markDirty(); };
+  p.querySelectorAll("[data-s]").forEach(el=>{
+    const h=()=>{ d.saidas[+el.dataset.s][el.dataset.k]=el.value; markDirty(); };
+    el.oninput=h; el.onchange=h; });
+  p.querySelectorAll("[data-rms]").forEach(b=>b.onclick=()=>{ d.saidas.splice(+b.dataset.rms,1); st.dirty=true; renderPanel(); });
+  $("#add-saida").onclick=()=>{ d.saidas.push({condicao:"",acao:"",porque:"",destino:""}); st.dirty=true; renderPanel(); $("#s-cond-"+(d.saidas.length-1)).focus(); };
+  $("#fechar").onclick=()=>{ if(st.dirty){ $("#unsaved").hidden=false; return; } st.sel=null; st.draft=null; render(); };
+  $("#salvar").onclick=salvar;
+  const desc=$("#descartar"); if(desc) desc.onclick=descartar;
+  const del=$("#del"); if(del) del.onclick=()=>{ st.confirmDel=true; renderPanel(); };
+  const dy=$("#del-yes"); if(dy) dy.onclick=apagarEtapa;
+  const dn=$("#del-no"); if(dn) dn.onclick=()=>{ st.confirmDel=false; renderPanel(); };
+}
+function descartar(){ st.dirty=false; const id=st.sel; st.sel=null; selecionar(id); }
+function markDirty(){ if(st.dirty) return; st.dirty=true; const b=$("#salvar"); if(b){ b.disabled=false; b.textContent="Salvar"; }
+  if(!$("#descartar")){ const x=document.createElement("button"); x.className="btn"; x.id="descartar"; x.textContent="Descartar"; x.onclick=descartar; $("#footbtns").prepend(x);} }
+async function salvar(){
+  const d=st.draft, id=st.sel; const b=$("#salvar"); b.disabled=true; b.textContent="Salvando…";
+  try{
+    const e=st.etapas.find(x=>x.id===id);
+    const body={nome:d.nome.trim(),grupo:d.grupo,entrada:d.entrada,processo:d.processo,decisao:d.decisao,
+      saidas:d.saidas.map(s=>({condicao:s.condicao||"",acao:s.acao||"",porque:s.porque||"",destino:s.destino||""})),
+      notas:d.notas, atualizado:new Date().toISOString()};
+    if(e && e.grupo!==d.grupo) body.ordem=Date.now();
+    await st.db.doc("etapas/"+id).update(body);
+    st.dirty=false; render(); setStatus("Salvo às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}));
+  }catch(err){ b.disabled=false; b.textContent="Salvar"; setStatus(err.code==="invalid_argument"?"Você não tem permissão pra editar este fluxo.":"Não foi possível salvar. Tente de novo."); }
+}
+async function apagarEtapa(){
+  try{ await st.db.doc("etapas/"+st.sel).delete(); st.sel=null; st.draft=null; st.dirty=false; st.confirmDel=false; render(); }
+  catch(err){ setStatus("Não foi possível apagar. Tente de novo."); }
+}
+async function addGrupo(){
+  try{ const ref=st.db.collection("grupos").doc(); await ref.set({nome:"Nova macroetapa",ordem:Date.now()}); st.editingCol=ref.id; }
+  catch(err){ setStatus(err.code==="quota_exceeded"?"O fluxo atingiu o limite de itens.":"Não foi possível criar. Tente de novo."); }
+}
+async function addEtapa(gid){
+  if(st.dirty){ const w=$("#unsaved"); if(w) w.hidden=false; return; }
+  try{ const ref=st.db.collection("etapas").doc();
+    await ref.set({nome:"Nova etapa",grupo:gid,ordem:Date.now(),entrada:"",processo:"",decisao:"",saidas:[],notas:"",atualizado:new Date().toISOString()});
+    selecionar(ref.id); setTimeout(()=>{ const i=$("#f-nome"); if(i){ i.focus(); i.select(); } },0); }
+  catch(err){ setStatus(err.code==="quota_exceeded"?"O fluxo atingiu o limite de itens.":"Não foi possível criar. Tente de novo."); }
+}
+
+/* ---------- Mesa da SAHRA ---------- */
+const M = {sample:null, assets:null, imgLimits:null, projetos:[], pid:null, proj:null, busy:false, ctl:null, files:[], blobUrls:{}, erro:""};
+const AV_ROSTO="assets/sahra/fluxo/sahra-rosto.png", AV_BUSTO="assets/sahra/fluxo/sahra-busto.png", AV_CORPO="assets/sahra/fluxo/sahra-mesa.png";
+const imgSrc = id => M.blobUrls[id] || ("/_blob/"+id);
+const fmtData = iso => { try{ return new Date(iso).toLocaleDateString("pt-BR",{day:"2-digit",month:"short"})+" "+new Date(iso).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); }catch{ return ""; } };
+
+function primeiraEtapa(){ for(const g of st.grupos){ const e=etapasDo(g.id)[0]; if(e) return e; } return null; }
+function etapaPorId(id){ return st.etapas.find(e=>e.id===id); }
+function grupoParadaOrdem(){ return grupoOrdem(GRUPO_PARADA) || Infinity; }
+function ehFinal(etapaId){ const e=etapaPorId(etapaId); return e && grupoOrdem(e.grupo) >= grupoParadaOrdem(); }
+
+function renderMesa(){
+  const v=$("#view-mesa");
+  if(!st.db){ if(!M.dbChecked){ v.innerHTML=`<p class="muted">Carregando…</p>`; return; } v.innerHTML=`<div class="empty"><h2>Sem acesso</h2><p>Abra pelo portal com uma conta de administrador.</p></div>`; return; }
+  if(!(st.loaded.g&&st.loaded.e)){ v.innerHTML=`<p class="muted">Carregando o fluxo…</p>`; return; }
+  if(!M.pid){ renderLobby(v); return; }
+  if(!M.proj || M.proj.id!==M.pid){
+    const p=M.projetos.find(x=>x.id===M.pid);
+    if(!p){ v.innerHTML=`<p class="muted">Abrindo o projeto…</p>`; return; }
+    M.proj=JSON.parse(JSON.stringify(p));
+    const ids=[...(M.proj.mensagens||[]).flatMap(m=>m.img||[]), ...(M.proj.pv?.renders||[]).map(r=>r.id)];
+    carregarFotos(ids).then(n=>{ if(n && !M.busy && !PV.busy) renderConversa($("#view-mesa")); });
+  }
+  renderConversa(v);
+}
+
+function renderLobby(v){
+  const lista=[...M.projetos].sort((a,b)=>(b.atualizado||"").localeCompare(a.atualizado||""));
+  v.innerHTML=`<div class="lobby">
+    <div class="portrait"><img src="${AV_BUSTO}" alt="SAHRA, designer da Legno"></div>
+    <div class="lobby-intro">
+      <h1>Vamos sentar à mesa com a SAHRA</h1>
+      <p>Ela conduz o briefing seguindo o fluxo do editor, etapa por etapa: conhece o cliente, pede a planta e as fotos, e monta a ficha do projeto enquanto conversa.</p>
+      ${M.sample?`<button class="btn primary" id="novo">Iniciar projeto com SAHRA</button>`:`<p class="err">A conversa com a SAHRA não está disponível agora.</p>`}
+      <p class="muted" style="margin-top:10px">Versão de teste, só administrador. A conversa vai até o fim do briefing; depois a SAHRA monta o projeto virtual e o render.</p>
+      <div class="proj-list">
+        ${lista.length?`<p class="lbl">Projetos</p>`:""}
+        ${lista.map(p=>`<button class="proj" data-p="${p.id}"><span><b>${esc(p.titulo||"Projeto")}</b><br><small>${fmtData(p.atualizado||p.criado)}</small></span>
+          <span class="pill ${p.status!=="ativo"?"done":""}">${p.status==="ativo"?esc(nomeEtapaCurta(p.etapaId)):"Briefing completo"}</span></button>`).join("")}
+      </div>
+    </div></div>`;
+  const n=$("#novo"); if(n) n.onclick=novoProjeto;
+  v.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{ location.hash="mesa-"+b.dataset.p; });
+}
+function nomeEtapaCurta(id){ const e=etapaPorId(id); return e?`${codigo(e)} ${e.nome}`:"—"; }
+
+async function novoProjeto(){
+  const e=primeiraEtapa(); if(!e) return;
+  const now=new Date().toISOString();
+  const ref=st.db.collection("projetos").doc();
+  const p={titulo:"Projeto de "+new Date().toLocaleDateString("pt-BR",{day:"2-digit",month:"short"}),criado:now,atualizado:now,
+    etapaId:e.id,fila:[],depois:"",ficha:{},trilha:[],mensagens:[],pendencias:[],status:"ativo"};
+  try{ await ref.set(p); }catch(err){ alertaMesa("Não foi possível criar o projeto."); return; }
+  M.proj={id:ref.id,...p}; location.hash="mesa-"+ref.id;
+  turno(null,[]);
+}
+
+function progresso(p){
+  if(p.status!=="ativo") return 100;
+  const e=etapaPorId(p.etapaId); if(!e) return 0;
+  const c=Math.min(95,Number(p.completude)||0)/100;
+  const gBrief=st.grupos[0]?.id;
+  if(e.grupo===gBrief){ const lista=etapasDo(gBrief); const i=Math.max(0,lista.findIndex(x=>x.id===e.id)); const w=50/lista.length; return Math.round(w*i+w*c); }
+  if(e.grupo==="ambientes") return Math.round(50+20*c);
+  if(e.grupo==="blocos"){
+    const nomes=new Set(etapasDo("blocos").map(x=>`${codigo(x)} ${x.nome}`));
+    const feitos=(p.trilha||[]).filter(t=>nomes.has(t.de)).length;
+    const total=feitos+(p.fila||[]).filter(id=>etapaPorId(id)?.grupo==="blocos").length+1;
+    return Math.round(70+28*(feitos+c)/total);
+  }
+  return 0;
+}
+function rotuloProgresso(v){ return v>=100?"Briefing completo":v>=75?"Quase lá":v>=35?"No caminho":"Começando"; }
+function anelHtml(p){
+  const v=progresso(p), r=34, C=2*Math.PI*r;
+  return `<div class="anel" role="img" aria-label="Briefing ${v}% completo">
+    <svg viewBox="0 0 84 84" width="84" height="84" aria-hidden="true"><circle cx="42" cy="42" r="${r}" fill="none" stroke="var(--line)" stroke-width="8"/>
+    <circle cx="42" cy="42" r="${r}" fill="none" stroke="${v>=100?"var(--ok)":"var(--accent)"}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(C*v/100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 42 42)"/></svg>
+    <div><b>${v}%</b><span>${rotuloProgresso(v)}</span></div></div>`;
+}
+function stepsHtml(p){
+  const cur=etapaPorId(p.etapaId); const curO=cur?grupoOrdem(cur.grupo):0;
+  return st.grupos.map(g=>{
+    const cls = p.status!=="ativo" && g.ordem<grupoParadaOrdem() ? "past" : g.id===cur?.grupo ? "cur" : g.ordem<curO ? "past" : "";
+    return `<li class="${cls}">${esc(g.nome)}</li>`; }).join("");
+}
+
+function renderConversa(v){
+  const p=M.proj; const cur=etapaPorId(p.etapaId);
+  const keepDraft = $("#txt")?.value || "";
+  const pct=progresso(p);
+  v.innerHTML=`<div class="backbar"><button class="btn ghost" id="voltar">← Projetos</button>
+      <input type="text" id="titulo" value="${esc(p.titulo)}" aria-label="Nome do projeto" style="max-width:320px"></div>
+    <section class="cena ${M.fichaAberta?"ficha-aberta":""}" aria-label="Mesa da SAHRA">
+      <div class="cena-top">
+        <div class="chip-prog" role="img" aria-label="Briefing ${pct}% completo">
+          <span class="mini-anel" style="--p:${pct}"></span>
+          <span><b>${pct}%</b> ${rotuloProgresso(pct)}${p.status==="ativo"&&cur?`<small>Etapa ${codigo(cur)} · ${esc(cur.nome)}</small>`:""}</span>
+        </div>
+        <div class="cena-acoes">
+          ${vozHtml()}
+          <button class="btn vidro" id="ficha-toggle" aria-expanded="${!!M.fichaAberta}">${M.fichaAberta?"Fechar ficha":"Ficha do projeto"}</button>
+        </div>
+      </div>
+      <aside class="ficha-gaveta" ${M.fichaAberta?"":"hidden"} aria-label="Ficha do projeto">
+        <ul class="steps">${stepsHtml(p)}</ul>
+        ${pvBotaoHtml(p)}${fichaHtml(p)}
+      </aside>
+      <div class="chat-mesa" aria-label="Conversa">
+        <div class="msgs" id="msgs">${msgsHtml(p)}</div>
+        ${p.status==="ativo"?`<div class="composer">
+          <div class="pending" id="pending"></div>
+          <div class="row">
+            <label class="btn" for="arq" title="Anexar fotos ou planta" style="flex:0 0 auto" ${M.imgLimits?"":"hidden"}>Anexar</label>
+            <input type="file" id="arq" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+            <textarea id="txt" rows="1" placeholder="Responda à SAHRA…" aria-label="Sua mensagem"></textarea>
+            ${M.busy?`<button class="btn" id="parar" style="flex:0 0 auto">Parar</button>`:`<button class="btn primary" id="enviar" style="flex:0 0 auto">Enviar</button>`}
+          </div>
+          <p class="err" id="merr" ${M.erro?"":"hidden"}>${esc(M.erro)}</p>
+        </div>`:""}
+      </div>
+    </section>
+    ${pvSecaoHtml(p)}`;
+  $("#voltar").onclick=()=>{ pararVoz(); location.hash="mesa"; };
+  $("#ficha-toggle").onclick=()=>{ M.fichaAberta=!M.fichaAberta; renderConversa(v); };
+  bindVoz();
+  const t=$("#titulo"); t.onchange=async()=>{ p.titulo=t.value.trim()||p.titulo; await salvarProj(); };
+  const msgs=$("#msgs"); msgs.scrollTop=msgs.scrollHeight;
+  bindPV();
+  if(p.status!=="ativo") return;
+  const txt=$("#txt"); txt.value=keepDraft;
+  txt.onkeydown=ev=>{ if(ev.key==="Enter"&&!ev.shiftKey){ ev.preventDefault(); enviar(); } };
+  txt.oninput=()=>{ txt.style.height="auto"; txt.style.height=Math.min(txt.scrollHeight,140)+"px"; if(M.erro){ M.erro=""; $("#merr").hidden=true; } };
+  const en=$("#enviar"); if(en) en.onclick=enviar;
+  const dc=$("#decide"); if(dc) dc.onclick=()=>{ if(M.busy) return; $("#txt").value="Pode decidir isso por mim, SAHRA."; enviar(); };
+  const pa=$("#parar"); if(pa) pa.onclick=()=>M.ctl?.abort();
+  $("#arq").onchange=ev=>{ addFiles(ev.target.files); ev.target.value=""; };
+  renderPending();
+  if(!M.busy) txt.focus({preventScroll:true});
+}
+function alertaMesa(t){ M.erro=t; const e=$("#merr"); if(e){ e.textContent=t; e.hidden=false; } }
+
+function msgsHtml(p){
+  let h="";
+  const ultimo=p.mensagens[p.mensagens.length-1];
+  for(const m of p.mensagens){
+    if(m.r==="trace"){ h+=`<div class="trace">${m.t}</div>`; continue; }
+    const cli=m.r==="cliente";
+    const imgs=(m.img||[]).length?`<div class="imgs">${m.img.map(id=>`<img src="${imgSrc(id)}" alt="Foto enviada">`).join("")}</div>`:"";
+    h+=`<div class="msg ${cli?"cli":""}">${cli?"":`<span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span>`}
+      <div class="bub">${m.t?`<div>${esc(m.t)}</div>`:""}${(m.q||[]).length?`<ol class="perg" aria-label="Perguntas da SAHRA">${m.q.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`:""}${m===ultimo&&(m.q||[]).length&&p.status==="ativo"&&!M.busy?`<button class="btn decide" id="decide">Pode decidir por mim, SAHRA</button>`:""}${imgs}</div></div>`;
+  }
+  if(M.busy) h+=`<div class="msg"><span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div class="bub typing">SAHRA está pensando <i><span></span></i></div></div>`;
+  if(p.status==="briefing_concluido") h+=`<div class="done-card"><b>Briefing completo.</b> A próxima etapa seria ${esc(nomeEtapaCurta(p.depois)||"o Projeto virtual")}, que ainda não está ligada neste protótipo. A ficha ao lado é o que a SAHRA levaria pra lá.</div>`;
+  return h;
+}
+
+function fichaHtml(p){
+  const f=p.ficha||{}; const keys=Object.keys(f);
+  const fotos=p.mensagens.flatMap(m=>m.img||[]);
+  return `<div class="box"><h3>Ficha do projeto</h3>
+    ${keys.length?`<dl class="kv">${keys.map(k=>`<div><dt>${esc(k.replace(/_/g," "))}</dt><dd>${esc(typeof f[k]==="string"?f[k]:JSON.stringify(f[k]))}</dd></div>`).join("")}</dl>`
+      :`<p class="muted">Vai se preenchendo conforme a conversa.</p>`}</div>
+    <div class="box"><h3>Fotos e planta</h3>${fotos.length?`<div class="thumbs">${fotos.map(id=>`<img src="${imgSrc(id)}" alt="Foto do projeto">`).join("")}</div>`:`<p class="muted">Nenhuma ainda.</p>`}</div>
+    ${p.pendencias?.length?`<div class="box"><h3>Pra revisão do Matt</h3><ul class="trail">${p.pendencias.map(x=>`<li><b>${esc(x.etapa)}</b> ${esc(x.motivo)}</li>`).join("")}</ul></div>`:""}
+    <div class="box"><h3>Caminho no fluxo</h3>${p.trilha.length?`<ul class="trail">${p.trilha.map(t=>`<li><b>${esc(t.de)}</b> → ${esc(t.saida)}${t.para?` → ${esc(t.para)}`:""}<br>${esc(t.motivo||"")}</li>`).join("")}</ul>`:`<p class="muted">As decisões aparecem aqui.</p>`}</div>`;
+}
+
+function addFiles(list){
+  const max=M.imgLimits?.maxCount||5;
+  for(const f of list){ if(M.files.length>=max){ alertaMesa(`No máximo ${max} imagens por mensagem.`); break; }
+    if(!(M.imgLimits?.mediaTypes||[]).includes(f.type)){ alertaMesa("Envie fotos em JPG, PNG, WebP ou GIF."); continue; }
+    M.files.push({file:f,url:URL.createObjectURL(f)}); }
+  renderPending();
+}
+function renderPending(){
+  const el=$("#pending"); if(!el) return;
+  el.innerHTML=M.files.map((x,i)=>`<figure><img src="${x.url}" alt="Imagem anexada"><button data-rm="${i}" aria-label="Remover imagem">×</button></figure>`).join("");
+  el.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{ M.files.splice(+b.dataset.rm,1); renderPending(); });
+}
+
+async function enviar(){
+  if(M.busy) return;
+  const txt=$("#txt"); const t=txt.value.trim();
+  if(!t && !M.files.length){ alertaMesa("Escreva uma resposta ou anexe uma foto."); return; }
+  const files=M.files.slice(); M.files=[]; txt.value="";
+  await turno(t||"(enviou fotos)", files);
+}
+
+async function salvarProj(){
+  const p=M.proj; p.atualizado=new Date().toISOString();
+  const {id,...body}=p;
+  try{ await st.db.doc("projetos/"+id).set(body); }catch(err){ alertaMesa(err.code==="invalid_argument"?"Este projeto ficou grande demais pra salvar.":"Não foi possível salvar a conversa."); }
+}
+
+function etapaParaPrompt(e){
+  const g=st.grupos.find(x=>x.id===e.grupo);
+  return `ETAPA ATUAL: ${codigo(e)} ${e.nome} (macroetapa: ${g?.nome||""})
+Entrada: ${e.entrada||"-"}
+Processo: ${e.processo||"-"}
+Decisão: ${e.decisao||"-"}
+Saídas possíveis:
+${(e.saidas||[]).map((s,i)=>`[${i}] Quando: ${s.condicao||"-"} | Então: ${s.acao||"-"} | Porque: ${s.porque||"-"} | Vai para: ${nomeDestino(s.destino)||"(sem destino)"}`).join("\n")||"(nenhuma saída cadastrada)"}${e.notas?`\nNotas do Matt: ${e.notas}`:""}`;
+}
+function historico(p){
+  return p.mensagens.filter(m=>m.r!=="trace").slice(-14).map(m=>`${m.r==="cliente"?"Cliente":"SAHRA"}: ${[m.t,...(m.q||[])].filter(Boolean).join(" ")}${m.img?.length?` [enviou ${m.img.length} imagem(ns)]`:""}`).join("\n")||"(conversa ainda não começou)";
+}
+function montarPrompt(e, modo, nImgs){
+  const p=M.proj;
+  const fila=p.fila.map(id=>etapaPorId(id)?.nome).filter(Boolean);
+  return `Você é a SAHRA, designer da Legno Home, fábrica de móveis planejados sob medida nos EUA. Você está numa mesa de atendimento conversando com um cliente, em português do Brasil: calorosa, direta e prática. Medidas em polegadas.
+
+REGRAS FIXAS
+- Siga SOMENTE a etapa atual abaixo. Não pule etapas e não projete: não proponha layout, cores, módulos nem preços antes da etapa que pede isso.
+- Pergunte POUCO: no máximo 2 perguntas por mensagem, de preferência 1. Só o que muda as escolhas deste projeto, na medida do tamanho dele (complemento pede muito menos que cozinha inteira).
+- Antes de perguntar, releia a ficha, o histórico e olhe as fotos: nunca pergunte o que já foi dito ou o que a foto mostra. Se o cliente disser que já respondeu, procure a resposta no histórico.
+- Aceite "não sei", "não tenho" e medidas aproximadas, anote e siga em frente. Não insista na mesma pergunta.
+- O cliente pode deixar uma decisão com você ("decide você", "pode escolher", "tanto faz"). Nesse caso anote na ficha em "decide_sahra" o que ficou com você, NÃO pergunte de novo, e siga. Não proponha a solução agora: ela será feita no Projeto virtual.
+- O budget da Legno é sempre só dos cabinets de fábrica.
+- Mensagens curtas, sem listas longas. Perguntas sempre separadas do comentário (campo "perguntas").
+
+${etapaParaPrompt(e)}
+
+FICHA DO PROJETO ATÉ AGORA (JSON): ${JSON.stringify(p.ficha)}
+${fila.length?`Ainda na fila depois desta etapa: ${fila.join(", ")}\n`:""}${nImgs?`O cliente anexou ${nImgs} imagem(ns) nesta mensagem (fotos do ambiente ou planta). Olhe com atenção e registre na ficha o que for relevante: medidas legíveis, tomadas, janelas, portas, piso, cor da parede, appliances.\n`:""}
+MOMENTO: ${modo}
+
+HISTÓRICO RECENTE:
+${historico(p)}
+
+Responda SOMENTE com um objeto JSON:
+{"ficha": {"chave": "valor"}, "saida": null, "motivo": "", "mensagem": "", "perguntas": [], "completude": 0}
+- "ficha": só o que é novo ou mudou, com chaves curtas em português sem acento (ex.: perfil, rotina, estilo, cores_gosta, cores_evitar, objetivo, ambiente, formato, appliances, budget_cabinets, planta, paredes, tomadas, fotos). Use {} se nada mudou.
+- "saida": null se ainda está coletando nesta etapa; senão o NÚMERO da saída cuja condição é verdadeira agora. Use uma LISTA de números só quando a decisão pede várias escolhas ao mesmo tempo (ex.: quais ambientes, quais blocos).
+- "motivo": uma frase dizendo por que escolheu essa saída (ou por que ainda está coletando).
+- "mensagem": comentário curto da SAHRA (1 a 2 frases: acolher, confirmar o que entendeu ou contextualizar), SEM perguntas dentro dele.
+- "perguntas": as perguntas ao cliente, separadas, de 0 a 2, cada uma curta, direta e terminando com "?". Toda pergunta vai aqui, nunca dentro da mensagem.
+- "completude": de 0 a 100, quanto do que ESTA etapa precisa já está na ficha (100 quando já dá pra decidir).
+- Se a saída escolhida leva para OUTRA etapa, deixe "mensagem" e "perguntas" vazios (a próxima etapa vai falar).`;
+}
+
+function sahraMsg(t,q,padrao){ if(!t&&!(q&&q.length)) t=padrao||""; return {r:"sahra",t:t||"",q:q||[],ts:new Date().toISOString()}; }
+async function turno(texto, files){
+  const p=M.proj; if(!p||M.busy) return;
+  M.busy=true; M.erro="";
+  let ids=[]; const blobs=files.map(x=>x.file);
+  if(texto!==null){
+    if(M.assets){ for(const x of files){ try{ const r=await M.assets.upload(x.file); ids.push(r.id); M.blobUrls[r.id]=x.url; }catch(err){ const tmp="tmp-"+Math.random().toString(36).slice(2); M.blobUrls[tmp]=x.url; ids.push(tmp); } } }
+    else { for(const x of files){ const tmp="tmp-"+Math.random().toString(36).slice(2); M.blobUrls[tmp]=x.url; ids.push(tmp); } }
+    p.mensagens.push({r:"cliente",t:texto,img:ids,ts:new Date().toISOString()});
+  }
+  const antes=p.mensagens.length;
+  pararVoz();
+  renderConversa($("#view-mesa"));
+  let modo = texto===null ? "início do atendimento: apresente-se em uma frase e comece esta etapa." : "o cliente acabou de responder (última mensagem do histórico).";
+  let primeira=true;
+  try{
+    for(let hop=0; hop<6; hop++){
+      const e=etapaPorId(p.etapaId); if(!e){ alertaMesa("A etapa atual não existe mais no fluxo."); break; }
+      M.ctl=new AbortController();
+      const opts={cache:false, signal:M.ctl.signal};
+      if(primeira && blobs.length && M.imgLimits) opts.images=blobs.slice(0,M.imgLimits.maxCount);
+      const res=await M.sample.json(montarPrompt(e,modo,primeira?blobs.length:0), opts);
+      primeira=false;
+      if(res && typeof res.ficha==="object" && res.ficha && !Array.isArray(res.ficha)) Object.assign(p.ficha,res.ficha);
+      let saida=res?.saida; const msg=String(res?.mensagem||"").trim();
+      { const c=Number(res?.completude); if(Number.isFinite(c)) p.completude=Math.max(0,Math.min(100,c)); }
+      const pergs=Array.isArray(res?.perguntas)?res.perguntas.map(x=>String(x).trim()).filter(Boolean).slice(0,2):[];
+      const idxs=(Array.isArray(saida)?saida:(saida===null||saida===undefined?[]:[saida])).map(Number).filter(i=>Number.isInteger(i)&&e.saidas?.[i]);
+      if(!idxs.length){ p.mensagens.push(sahraMsg(msg,pergs,"Pode me contar um pouco mais?")); break; }
+      const destinos=idxs.map(i=>e.saidas[i].destino).filter(Boolean);
+      const cond=idxs.map(i=>e.saidas[i].condicao||String.fromCharCode(65+i)).join(" + ");
+      const d=destinos[0]||"";
+      const paraNome = destinos.map(nomeDestino).join(", ");
+      p.trilha.push({de:`${codigo(e)} ${e.nome}`,saida:cond,para:paraNome,motivo:res.motivo||""});
+      p.mensagens.push({r:"trace",t:`<b>${esc(codigo(e))}</b> ${esc(e.nome)} → ${esc(cond)}${paraNome?" → "+esc(paraNome):""}`});
+      if(!d || d==="__cliente"){ p.mensagens.push(sahraMsg(msg,pergs,"Pode me contar um pouco mais?")); break; }
+      if(d==="__revisao"){ p.pendencias.push({etapa:`${codigo(e)} ${e.nome}`,motivo:res.motivo||cond});
+        p.mensagens.push(sahraMsg(msg,pergs,"Vou confirmar um detalhe técnico com a equipe e já volto com você sobre isso.")); break; }
+      if(d==="__fim"){ p.status="concluido"; if(msg||pergs.length) p.mensagens.push(sahraMsg(msg,pergs)); break; }
+      if(msg||pergs.length) p.mensagens.push(sahraMsg(msg,pergs));
+      const extras=destinos.slice(1).filter(x=>!x.startsWith("__")&&etapaPorId(x));
+      if(extras.length) p.fila.unshift(...extras);
+      let next=d;
+      if(ehFinal(d)){
+        p.depois=d;
+        if(p.fila.length){ next=p.fila.shift(); }
+        else { p.status="briefing_concluido"; p.etapaId=d;
+          if(!msg) p.mensagens.push({r:"sahra",t:"Perfeito, tenho tudo o que preciso pra começar a desenhar o seu projeto. Vou preparar a proposta e te mostro em seguida!",ts:new Date().toISOString()});
+          break; }
+      }
+      if(!etapaPorId(next)){ alertaMesa("Uma saída aponta pra uma etapa que não existe."); break; }
+      modo=`a conversa acabou de chegar nesta etapa, vinda de "${codigo(e)} ${e.nome}". Use a ficha: se ela já responde a decisão, decida direto; senão, comece esta etapa com o cliente.`;
+      p.etapaId=next; p.completude=0;
+    }
+  }catch(err){
+    const c=err?.code;
+    if(c==="cancelled") alertaMesa("Resposta interrompida.");
+    else if(c==="not_granted"||c==="sampling_disabled") alertaMesa("A SAHRA não tem permissão pra conversar nesta visualização.");
+    else if(c==="rate_limited") alertaMesa("Muitas mensagens seguidas. Espere um pouco e envie de novo.");
+    else if(c==="invalid_json") alertaMesa("A SAHRA respondeu fora do formato. Envie de novo.");
+    else if(c==="image_rejected") alertaMesa("Uma das imagens não foi aceita. Tente outra foto.");
+    else alertaMesa("A conversa falhou agora. Envie de novo.");
+  }
+  M.busy=false; M.ctl=null;
+  falar(p.mensagens.slice(antes).filter(m=>m.r==="sahra").map(m=>[m.t,...(m.q||[])].filter(Boolean).join(" ")).join(" "));
+  await salvarProj();
+  renderConversa($("#view-mesa"));
+  if(M.erro) alertaMesa(M.erro);
+}
+
+/* ---------- Projeto virtual (teste) ---------- */
+const PV = {busy:false, ctl:null, erro:"", rendering:false, renderErro:"", fotoRender:null};
+const MATS = [
+  {re:/nogueira|walnut|imbuia/i, cor:"#6b4a33"},
+  {re:/carvalho|oak|freij|natural|madeir|wood|amadeirad/i, cor:"#b88a5a"},
+  {re:/preto|black|grafite|graphite/i, cor:"#2f2f31"},
+  {re:/cinza|gray|grey|fendi/i, cor:"#9a978f"},
+  {re:/verde|green|sage/i, cor:"#7d8c70"},
+  {re:/azul|blue|navy/i, cor:"#3f5468"},
+  {re:/off|bege|greige|areia|sand|cream/i, cor:"#e8e0d2"},
+  {re:/branc|white/i, cor:"#f4f2ee"}
+];
+function corDe(nome, hex){ if(hex && /^#[0-9a-f]{6}$/i.test(hex)) return hex; const m=MATS.find(x=>x.re.test(nome||"")); return m?m.cor:"#d9d4ca"; }
+function ehMadeira(nome){ return /nogueira|walnut|imbuia|carvalho|oak|freij|madeir|wood|amadeirad/i.test(nome||""); }
+function pvEtapasTexto(){
+  return etapasDo(GRUPO_PARADA).filter(e=>!/render/i.test(e.nome)).map(e=>etapaParaPrompt(e).replace("ETAPA ATUAL:","ETAPA:")).join("\n\n");
+}
+function pvPrompt(p, ajuste, nImgs){
+  const falas=p.mensagens.filter(m=>m.r==="cliente").map(m=>"- "+m.t).slice(-20).join("\n");
+  return `Você é a SAHRA, designer da Legno Home (móveis planejados sob medida, EUA). O briefing terminou. Agora é o PROJETO VIRTUAL: transforme a ficha numa proposta concreta, seguindo estas etapas do fluxo, em ordem:
+
+${pvEtapasTexto()||"(etapas do Projeto virtual ainda vazias: implantação, dimensionamento, estética e conferência)"}
+
+PADRÕES DE MÓDULOS LEGNO (indústria americana, polegadas)
+- Bases: altura 34 1/2" (36" com a pedra), profundidade 24", larguras de 9" a 36" em passos de 3". SKUs: B## base porta+gaveta, DB## gaveteiro 3 gavetas, SB## sink base, BBC## blind corner (sempre com filler de afastamento), BWB## lixeira. Base usa rodapé (toe kick) contínuo.
+- Aéreos: SKU W{largura}{altura}, ex.: W3036; profundidade 12"; alturas 30", 36" ou 42"; começam a ~54" do piso. Aéreo nunca tem rodapé.
+- Torres: SKU T{largura}{altura}; profundidade 24" ou 27"; alturas 84", 90" ou 96". Torre de forno no tamanho do forno (padrão 30").
+- Painéis (PNL) em toda lateral aparente; fillers (F) de 1" a 6" pra fechar sobras.
+- Nichos (NCH) e floating shelves (FS) com LED opcional (prateleiras, base superior, laterais). Floating shelf ainda sem produto no catálogo: marcar "sob consulta".
+- Regras de projeto: um protagonista por parede; topos e rodapés alinhados; no máximo 3 materiais/cores; não encostar gaveta em canto; o que JÁ EXISTE e fica entra só como contexto (tipo "existente"), fora da lista de módulos; appliances são decorativos (tipo "appliance").
+- Medidas do briefing são aproximadas: use-as, arredonde pra polegadas inteiras e feche cada parede com fillers.
+- FOTOS EM PERSPECTIVA: o que está mais longe da câmera parece menor. Nunca meça contando pixels de ponta a ponta. Use como régua só objetos de medida padrão no mesmo plano e perto do que está medindo (fogão 30", geladeira 36", dishwasher 24", bancada a 36" do piso, porta 80" de altura); prefira alturas às larguras; conte portas e módulos de largura padrão em vez de medir; use as linhas de fuga (rodapé, bancada, topo dos aéreos) pra corrigir o encurtamento. Quando o cliente deu uma medida, ela vale mais que a estimativa pela foto.
+
+FICHA DO BRIEFING (JSON): ${JSON.stringify(p.ficha)}
+
+O QUE O CLIENTE DISSE:
+${falas||"-"}
+${nImgs?`\nForam anexadas ${nImgs} foto(s) do ambiente: use-as pra entender o que existe, posições e proporções.\n`:""}${ajuste?`\nAJUSTE PEDIDO PELO CLIENTE SOBRE A PROPOSTA ANTERIOR: ${ajuste}\nPROPOSTA ANTERIOR (JSON): ${JSON.stringify(p.pv?.proposta||{})}\nMantenha o que não foi pedido pra mudar.\n`:""}
+Desenhe só as paredes onde há intervenção (no máximo 4). Coordenadas em polegadas: "x" = distância da quina esquerda da parede até a borda esquerda do item; "y" = altura do piso até a base do item.
+
+Responda SOMENTE com JSON:
+{"conceito": "2 a 3 frases: protagonista, eixo, sensação",
+ "paredes": [{"nome": "Parede do fogão", "largura": 118, "altura": 108,
+   "itens": [{"tipo": "base|aereo|torre|painel|filler|nicho|prateleira|appliance|existente", "sku": "B30", "rotulo": "Base 30", "x": 0, "y": 0, "largura": 30, "altura": 34.5, "acabamento": "Carvalho natural", "led": false}]}],
+ "acabamentos": [{"nome": "Carvalho natural", "onde": "nichos e torre", "cor": "#b88a5a"}],
+ "modulos": [{"sku": "W3036", "descricao": "Wall 30x36, 2 portas", "qtd": 1, "largura": 30, "altura": 36, "profundidade": 12, "acabamento": "Carvalho natural"}],
+ "conferencia": [{"item": "Portas abrem sem bater", "ok": true, "obs": ""}],
+ "decide_sahra": ["o que a SAHRA decidiu sozinha e por quê"],
+ "pendencias": ["o que precisa confirmar com o cliente"],
+ "prompt_render": "prompt em INGLÊS pra um gerador de imagens editar a FOTO REAL do cliente e mostrar a proposta pronta: diga pra manter câmera, ângulo, luz, piso, paredes e tudo que já existe exatamente como na foto, e descreva onde entra cada peça nova (posição em relação ao que aparece na foto, medidas aproximadas, materiais, cores, puxadores, LED). Fotorrealista, nível revista de arquitetura, sem texto na imagem.",
+ "mensagem": "o que a SAHRA diz ao cliente ao apresentar (2 a 3 frases, sem perguntas)"}`;
+}
+async function blobsDoProjeto(p){
+  const ids=p.mensagens.flatMap(m=>m.img||[]).slice(-(M.imgLimits?.maxCount||0));
+  const out=[];
+  for(const id of ids){ try{ const r=await fetch(imgSrc(id)); if(r.ok) out.push(await r.blob()); }catch{} }
+  return out.filter(b=>(M.imgLimits?.mediaTypes||[]).includes(b.type));
+}
+function conferirGeometria(pr){
+  const avisos=[];
+  for(const w of pr.paredes||[]){
+    const it=(w.itens||[]).filter(i=>i.tipo!=="existente");
+    for(const i of it){
+      if(i.x<-0.5 || i.x+i.largura>w.largura+0.5) avisos.push(`${w.nome}: ${i.rotulo||i.sku} passa da largura da parede (${w.largura}").`);
+      if(i.y+i.altura>w.altura+0.5) avisos.push(`${w.nome}: ${i.rotulo||i.sku} passa do pé-direito (${w.altura}").`);
+    }
+    for(let a=0;a<it.length;a++) for(let b=a+1;b<it.length;b++){
+      const A=it[a],B=it[b]; if(A.tipo==="painel"||B.tipo==="painel") continue;
+      const ox=Math.min(A.x+A.largura,B.x+B.largura)-Math.max(A.x,B.x), oy=Math.min(A.y+A.altura,B.y+B.altura)-Math.max(A.y,B.y);
+      if(ox>0.5&&oy>0.5) avisos.push(`${w.nome}: ${A.rotulo||A.sku} e ${B.rotulo||B.sku} se sobrepõem.`);
+    }
+  }
+  return avisos;
+}
+async function gerarPV(ajuste){
+  const p=M.proj; if(!p||PV.busy||!M.sample) return;
+  PV.busy=true; PV.erro=""; renderConversa($("#view-mesa"));
+  document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
+  try{
+    const imgs = M.imgLimits ? await blobsDoProjeto(p) : [];
+    PV.ctl=new AbortController();
+    const opts={cache:false, signal:PV.ctl.signal, modelTier:"complex"};
+    if(imgs.length) opts.images=imgs;
+    const res=await M.sample.json(pvPrompt(p, ajuste, imgs.length), opts);
+    if(!res || !Array.isArray(res.paredes)) throw {code:"invalid_json"};
+    const hist=(p.pv?.historico||[]); if(p.pv?.proposta) hist.push({quando:p.pv.quando, ajuste:ajuste||""});
+    p.pv={proposta:res, quando:new Date().toISOString(), avisos:conferirGeometria(res), historico:hist.slice(-5), aprovado:false};
+    if(ajuste) p.mensagens.push({r:"cliente",t:"Ajuste no projeto virtual: "+ajuste,ts:new Date().toISOString()});
+    if(res.mensagem) p.mensagens.push(sahraMsg(String(res.mensagem),[]));
+    falar(String(res.mensagem||""));
+    await salvarProj();
+  }catch(err){
+    const c=err?.code;
+    PV.erro = c==="cancelled"?"Geração interrompida.": c==="invalid_json"?"A proposta veio fora do formato. Tente de novo.": c==="rate_limited"?"Muitas chamadas seguidas. Espere um pouco e tente de novo.": c==="prompt_too_large"?"A conversa ficou grande demais pra gerar. Tente num projeto novo.":"Não foi possível gerar a proposta agora. Tente de novo.";
+  }
+  PV.busy=false; PV.ctl=null;
+  renderConversa($("#view-mesa"));
+  document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
+}
+function pvBotaoHtml(p){
+  if(!M.sample || !Object.keys(p.ficha||{}).length) return "";
+  const pronto=p.status==="briefing_concluido";
+  return `<div class="box pvbox"><h3>Projeto virtual</h3>
+    <p class="muted">${p.pv?"Proposta gerada. Veja abaixo da conversa.":pronto?"O briefing está completo. A SAHRA já pode montar a proposta.":"Pra testar, dá pra gerar a proposta com o que a ficha já tem, mesmo antes do briefing terminar."}</p>
+    <button class="btn primary" id="pv-gerar" ${PV.busy?"disabled":""}>${PV.busy?"Desenhando…":p.pv?"Gerar de novo":"Gerar projeto virtual"}</button></div>`;
+}
+function elevSvg(w, acab){
+  const W=w.largura||120, H=w.altura||96, pad=28, vw=680, s=(vw-2*pad)/W, vh=H*s+2*pad+18;
+  const X=x=>pad+x*s, Y=y=>pad+18+(H-y)*s;
+  const cores={}; (acab||[]).forEach(a=>cores[a.nome]=corDe(a.nome,a.cor));
+  const itens=[...(w.itens||[])].sort((a,b)=>(a.tipo==="existente"?0:1)-(b.tipo==="existente"?0:1));
+  const uid="g"+Math.random().toString(36).slice(2,7);
+  let g="";
+  for(const i of itens){
+    const x=X(i.x||0), y=Y((i.y||0)+(i.altura||0)), ww=(i.largura||0)*s, hh=(i.altura||0)*s;
+    if(ww<=0||hh<=0) continue;
+    const exist=i.tipo==="existente", appl=i.tipo==="appliance";
+    const fill= exist?`url(#${uid}-hatch)` : appl?"#cfd2d4" : (cores[i.acabamento]||corDe(i.acabamento));
+    const wood=!exist&&!appl&&ehMadeira(i.acabamento);
+    g+=`<g><rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${ww.toFixed(1)}" height="${hh.toFixed(1)}" fill="${fill}" stroke="${exist?"#a8a49c":"#3b3631"}" stroke-width="${exist?0.8:1}" ${exist?'stroke-dasharray="3 3"':""}/>`;
+    if(wood) g+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${ww.toFixed(1)}" height="${hh.toFixed(1)}" fill="url(#${uid}-grain)"/>`;
+    if(i.tipo==="nicho"||i.tipo==="prateleira") g+=`<rect x="${(x+3).toFixed(1)}" y="${(y+3).toFixed(1)}" width="${Math.max(0,ww-6).toFixed(1)}" height="${Math.max(0,hh-6).toFixed(1)}" fill="#000" fill-opacity="${i.tipo==="nicho"?0.18:0}"/>`;
+    if(i.led) g+=`<rect x="${(x+2).toFixed(1)}" y="${(y+2).toFixed(1)}" width="${Math.max(0,ww-4).toFixed(1)}" height="3" fill="#ffd27a"/><rect x="${(x+2).toFixed(1)}" y="${(y+5).toFixed(1)}" width="${Math.max(0,ww-4).toFixed(1)}" height="${Math.min(14,hh/3).toFixed(1)}" fill="#ffd27a" fill-opacity="0.22"/>`;
+    if(i.tipo==="base"||i.tipo==="torre") g+=`<rect x="${x.toFixed(1)}" y="${(Y(0)-4.5*s).toFixed(1)}" width="${ww.toFixed(1)}" height="${(4.5*s).toFixed(1)}" fill="#000" fill-opacity="0.25"/>`;
+    const lbl=i.sku||i.rotulo||""; 
+    if(lbl && ww>26 && hh>16) g+=`<text x="${(x+ww/2).toFixed(1)}" y="${(y+hh/2+4).toFixed(1)}" text-anchor="middle" font-size="${ww>60?11:9}" font-family="IBM Plex Mono,monospace" fill="${exist?"#7a766e":(wood||/#(2|3|4|5|6)/.test(fill)?"#fff":"#2b2724")}">${esc(lbl)}</text>`;
+    g+=`</g>`;
+  }
+  return `<svg viewBox="0 0 ${vw} ${vh.toFixed(0)}" role="img" aria-label="Vista frontal: ${esc(w.nome)}" class="elev">
+    <defs><pattern id="${uid}-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ece9e3"/><line x1="0" y1="0" x2="0" y2="6" stroke="#cfcac1" stroke-width="2"/></pattern>
+    <pattern id="${uid}-grain" width="40" height="9" patternUnits="userSpaceOnUse"><path d="M0 3 Q10 1 20 3 T40 3" stroke="#000" stroke-opacity="0.12" fill="none"/><path d="M0 7 Q12 9 22 7 T40 7" stroke="#fff" stroke-opacity="0.12" fill="none"/></pattern></defs>
+    <rect x="${X(0)}" y="${Y(H)}" width="${(W*s).toFixed(1)}" height="${(H*s).toFixed(1)}" fill="#efe9df"/>
+    ${g}
+    <line x1="${X(0)-10}" y1="${Y(0)}" x2="${X(W)+10}" y2="${Y(0)}" stroke="#3b3631" stroke-width="1.5"/>
+    <line x1="${X(0)}" y1="${pad}" x2="${X(W)}" y2="${pad}" stroke="var(--muted)" stroke-width="0.8"/>
+    <line x1="${X(0)}" y1="${pad-5}" x2="${X(0)}" y2="${pad+5}" stroke="var(--muted)"/><line x1="${X(W)}" y1="${pad-5}" x2="${X(W)}" y2="${pad+5}" stroke="var(--muted)"/>
+    <text x="${(X(0)+X(W))/2}" y="${pad-6}" text-anchor="middle" font-size="12" font-family="IBM Plex Mono,monospace" fill="var(--muted)">${W}"  ·  pé-direito ${H}"</text>
+  </svg>`;
+}
+function pvSecaoHtml(p){
+  if(!PV.busy && !p.pv && !PV.erro) return "";
+  if(PV.busy) return `<section class="pv" id="pv"><div class="pv-head"><h2>Projeto virtual</h2><button class="btn" id="pv-parar">Parar</button></div>
+    <div class="typing" style="padding:24px 0"><span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span> A SAHRA está desenhando a proposta: implantação, dimensionamento, estética e conferência. Pode levar até 2 minutos <i><span></span></i></div></section>`;
+  if(!p.pv) return `<section class="pv" id="pv"><p class="err">${esc(PV.erro)}</p></section>`;
+  const pr=p.pv.proposta||{}; const acab=pr.acabamentos||[];
+  const conf=[...(pr.conferencia||[])];
+  const avisos=p.pv.avisos||[];
+  return `<section class="pv" id="pv">
+    <div class="pv-head"><div><h2>Projeto virtual</h2><p class="muted">Gerado em ${fmtData(p.pv.quando)}${p.pv.historico?.length?` · versão ${p.pv.historico.length+1}`:""}</p></div>
+      ${p.pv.aprovado?`<span class="pill done">Aprovado pelo cliente</span>`:""}</div>
+    ${PV.erro?`<p class="err">${esc(PV.erro)}</p>`:""}
+    ${pr.conceito?`<p class="conceito">${esc(pr.conceito)}</p>`:""}
+    ${acab.length?`<div class="swatches">${acab.map(a=>`<div class="sw"><i style="background:${corDe(a.nome,a.cor)}"></i><span><b>${esc(a.nome)}</b><small>${esc(a.onde||"")}</small></span></div>`).join("")}</div>`:""}
+    ${pr.prompt_render?`<div class="box render"><h3>Render realista</h3><p class="muted">A SAHRA edita a foto real do cliente e coloca os móveis novos. Escolha a foto e gere.</p>${renderFotosHtml(p)}<pre id="pv-prompt">${esc(pr.prompt_render)}</pre><div class="row"><button class="btn primary" id="pv-render" ${PV.rendering?"disabled":""}>${PV.rendering?"Gerando a imagem… (até 1 min)":"Gerar render realista"}</button><button class="btn" id="pv-copiar">Copiar prompt</button><span class="muted" id="pv-copiado" aria-live="polite"></span></div>${PV.renderErro?`<p class="err">${esc(PV.renderErro)}</p>`:""}${(p.pv.renders||[]).length?`<div class="renders">${p.pv.renders.slice().reverse().map(r=>M.blobUrls[r.id]?`<figure><img src="${M.blobUrls[r.id]}" alt="Render realista da proposta"><figcaption class="muted">${fmtData(r.quando)}</figcaption></figure>`:"").join("")}</div>`:""}</div>`:""}
+    ${(pr.paredes||[]).map(w=>`<figure class="parede"><figcaption>${esc(w.nome)}</figcaption><div class="elev-wrap">${elevSvg(w,acab)}</div></figure>`).join("")}
+    <p class="muted legenda">Vista frontal desenhada em escala a partir das medidas aproximadas do briefing. Tracejado = o que já existe e fica. Faixa amarela = LED.</p>
+    <div class="pv-grid">
+      <div class="box"><h3>Módulos da proposta</h3>${(pr.modulos||[]).length?`<div class="tbl"><table><thead><tr><th>SKU</th><th>Descrição</th><th>Qtd</th><th>L × A × P (pol)</th><th>Acabamento</th></tr></thead><tbody>${pr.modulos.map(m=>`<tr><td class="mono">${esc(m.sku)}</td><td>${esc(m.descricao)}</td><td class="num">${esc(m.qtd)}</td><td class="num">${esc(m.largura)} × ${esc(m.altura)} × ${esc(m.profundidade)}</td><td>${esc(m.acabamento||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Sem módulos listados.</p>`}</div>
+      <div class="ficha-col">
+        <div class="box"><h3>Conferência</h3><ul class="conf">${conf.map(c=>`<li class="${c.ok?"ok":"no"}"><b>${c.ok?"✓":"!"}</b> ${esc(c.item)}${c.obs?` <small>${esc(c.obs)}</small>`:""}</li>`).join("")}${avisos.map(a=>`<li class="no"><b>!</b> ${esc(a)} <small>conferido pela página</small></li>`).join("")}</ul></div>
+        ${(pr.decide_sahra||[]).length?`<div class="box"><h3>A SAHRA decidiu</h3><ul class="trail">${pr.decide_sahra.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
+        ${(pr.pendencias||[]).length?`<div class="box"><h3>Confirmar com o cliente</h3><ul class="trail">${pr.pendencias.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
+      </div>
+    </div>
+    <div class="box ajuste">
+      <h3>O cliente quer mudar algo?</h3>
+      <div class="row"><textarea id="pv-ajuste" rows="2" placeholder="Ex.: madeira mais clara, nichos sem porta, adega mais larga…" aria-label="Ajuste pedido pelo cliente"></textarea></div>
+      <div class="row"><button class="btn" id="pv-refazer">Refazer com o ajuste</button><button class="btn primary" id="pv-aprovar" ${p.pv.aprovado?"disabled":""}>${p.pv.aprovado?"Aprovado":"Cliente aprovou"}</button></div>
+      <p class="err" id="pv-aerr" hidden></p>
+    </div>
+  </section>`;
+}
+function renderFotosHtml(p){
+  const fotos=p.mensagens.flatMap(m=>m.img||[]).filter(id=>M.blobUrls[id]);
+  if(!fotos.length) return `<p class="err">Este projeto não tem foto do ambiente. Mande uma foto na conversa pra gerar o render.</p>`;
+  if(!fotos.includes(PV.fotoRender)) PV.fotoRender=fotos.at(-1);
+  return `<div class="thumbs pick">${fotos.map(id=>`<button class="thumb ${id===PV.fotoRender?"sel":""}" data-foto="${id}" aria-pressed="${id===PV.fotoRender}" aria-label="Usar esta foto"><img src="${M.blobUrls[id]}" alt=""></button>`).join("")}</div>`;
+}
+async function gerarRender(){
+  const p=M.proj, pr=p?.pv?.proposta; if(!pr?.prompt_render || PV.rendering) return;
+  const dataUrl=M.blobUrls[PV.fotoRender]; if(!dataUrl){ PV.renderErro="Escolha uma foto."; renderConversa($("#view-mesa")); return; }
+  PV.rendering=true; PV.renderErro=""; renderConversa($("#view-mesa"));
+  try{
+    const [cab,b64]=dataUrl.split(","); const mime=(cab.match(/data:([^;]+)/)||[])[1]||"image/jpeg";
+    const { data, error } = await supabaseClient.functions.invoke("sahra-fluxo",{body:{acao:"render", prompt:pr.prompt_render, image:{mime, data:b64}}});
+    if(error || !data?.image){ let corpo=null; try{ corpo=await error?.context?.json(); }catch{} throw new Error(corpo?.error||data?.error||error?.message||"sem imagem"); }
+    const url=`data:${data.mime||"image/png"};base64,${data.image}`;
+    const ins=await supabaseClient.from("sahra_fluxo_fotos").insert({projeto_id:p.id, tipo:"render", data_url:url}).select("id").single();
+    if(ins.error) throw ins.error;
+    M.blobUrls[ins.data.id]=url;
+    p.pv.renders=[...(p.pv.renders||[]), {id:ins.data.id, quando:new Date().toISOString(), foto:PV.fotoRender}];
+    await salvarProj();
+  }catch(e){ PV.renderErro="Não consegui gerar o render: "+(e?.message||e); }
+  PV.rendering=false; renderConversa($("#view-mesa"));
+  document.querySelector(".renders")?.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function bindPV(){
+  document.querySelectorAll("[data-foto]").forEach(b=>b.onclick=()=>{ PV.fotoRender=b.dataset.foto; renderConversa($("#view-mesa")); });
+  const rb=$("#pv-render"); if(rb) rb.onclick=gerarRender;
+  const g=$("#pv-gerar"); if(g) g.onclick=()=>gerarPV("");
+  const s=$("#pv-parar"); if(s) s.onclick=()=>PV.ctl?.abort();
+  const r=$("#pv-refazer"); if(r) r.onclick=()=>{ const t=$("#pv-ajuste").value.trim(); if(!t){ const e=$("#pv-aerr"); e.textContent="Escreva o ajuste que o cliente pediu."; e.hidden=false; return; } gerarPV(t); };
+  const cp=$("#pv-copiar"); if(cp) cp.onclick=async()=>{ const t=$("#pv-prompt").textContent; const ok=$("#pv-copiado"); try{ await navigator.clipboard.writeText(t); ok.textContent="Copiado."; }catch{ const r=document.createRange(); r.selectNodeContents($("#pv-prompt")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); ok.textContent="Texto selecionado: use Ctrl+C."; } };
+  const a=$("#pv-aprovar"); if(a) a.onclick=async()=>{ M.proj.pv.aprovado=true; M.proj.mensagens.push({r:"trace",t:"<b>Projeto virtual</b> → aprovado pelo cliente → Conferência pra produção"}); await salvarProj(); renderConversa($("#view-mesa")); };
+}
+
+/* ---------- Voz (Gemini TTS, a mesma voz Aoede da SAHRA do portal, via sahra-chat) ---------- */
+const VOZ = {on:true, audio:null, seq:0};
+try{ const v=JSON.parse(localStorage.getItem("sahra-fluxo-voz")||"{}"); if(typeof v.on==="boolean") VOZ.on=v.on; }catch{}
+function guardarVoz(){ try{ localStorage.setItem("sahra-fluxo-voz",JSON.stringify({on:VOZ.on})); }catch{} }
+function vozInfo(t){ const el=$("#voz-info"); if(el) el.textContent=t; }
+function vozHtml(){ return `<div class="voz"><div class="row" style="flex-wrap:nowrap"><button class="btn" id="voz-on" aria-pressed="${VOZ.on}" style="flex:1">${VOZ.on?"Voz ligada":"Voz desligada"}</button><button class="btn primary" id="voz-teste" style="flex:1">▶ Ouvir</button></div><p class="muted" id="voz-info" aria-live="polite"></p></div>`; }
+function bindVoz(){
+  const b=$("#voz-on"); if(b) b.onclick=()=>{ VOZ.on=!VOZ.on; guardarVoz(); if(!VOZ.on) pararVoz(); b.textContent=VOZ.on?"Voz ligada":"Voz desligada"; b.setAttribute("aria-pressed",VOZ.on); };
+  const t=$("#voz-teste"); if(t) t.onclick=()=>falar("Oi, eu sou a SAHRA, designer da Legno. Vamos fazer o seu projeto juntos?",true);
+}
+function pararVoz(){ VOZ.seq++; try{ VOZ.audio?.pause(); }catch{} VOZ.audio=null; }
+function pcmParaWav(b64){
+  const bin=atob(b64); const pcm=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) pcm[i]=bin.charCodeAt(i);
+  const rate=24000, buf=new ArrayBuffer(44+pcm.length), v=new DataView(buf);
+  const str=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  str(0,"RIFF"); v.setUint32(4,36+pcm.length,true); str(8,"WAVE"); str(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); str(36,"data"); v.setUint32(40,pcm.length,true);
+  new Uint8Array(buf,44).set(pcm); return new Blob([buf],{type:"audio/wav"});
+}
+async function falar(texto, forcar){
+  if(!texto || (!VOZ.on && !forcar)) return;
+  pararVoz(); const meu=++VOZ.seq;
+  if(forcar) vozInfo("Preparando a voz…");
+  try{
+    const { data, error } = await supabaseClient.functions.invoke("sahra-chat", { body:{ tts:String(texto).slice(0,2500), lang:"pt", voice:"Aoede" } });
+    if(error || !data?.audio) throw new Error(data?.error || error?.message || "sem áudio");
+    if(meu!==VOZ.seq) return;
+    const blob=/^audio\/(wav|mpeg|mp3|ogg)/i.test(data.mime||"") ? new Blob([Uint8Array.from(atob(data.audio),c=>c.charCodeAt(0))],{type:data.mime}) : pcmParaWav(data.audio);
+    const a=new Audio(URL.createObjectURL(blob)); VOZ.audio=a; await a.play();
+    if(forcar) vozInfo("");
+  }catch(e){ if(forcar) vozInfo("A voz não respondeu agora: "+(e?.message||e)); }
+}
+
+/* ---------- Adaptador Supabase (tabelas sahra_fluxo_*, migration 271) ---------- */
+const TAB = {grupos:"sahra_fluxo_grupos", etapas:"sahra_fluxo_etapas", projetos:"sahra_fluxo_projetos"};
+const ouvintes = {grupos:[], etapas:[], projetos:[]};
+function novoId(){ return (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36)+Math.random().toString(36).slice(2))); }
+function linhaParaDoc(col,r){
+  if(col==="projetos"){ const {dados, titulo, criado, atualizado}=r; return {...(dados||{}), titulo, criado, atualizado}; }
+  const {id, ...rest}=r; return rest;
+}
+function docParaLinha(col,id,obj,parcial){
+  if(col==="projetos"){
+    const {titulo, criado, atualizado, ...dados}=obj;
+    const row={dados, atualizado:new Date().toISOString()}; if(titulo!==undefined) row.titulo=titulo;
+    if(!parcial) row.id=id; return row;
+  }
+  const row={...obj}; if(!parcial) row.id=id;
+  if(col==="etapas") row.atualizado=new Date().toISOString();
+  return row;
+}
+async function recarregar(col){
+  const q=supabaseClient.from(TAB[col]).select("*");
+  const { data, error } = col==="projetos" ? await q.order("atualizado",{ascending:false}).limit(200) : await q;
+  if(error){ ouvintes[col].forEach(o=>o.err&&o.err(error)); return; }
+  let docs=(data||[]).map(r=>({id:String(r.id), data:()=>linhaParaDoc(col,r)}));
+  if(col==="grupos") docs.sort((a,b)=>(a.data().ordem||0)-(b.data().ordem||0));
+  const snap={docs, size:docs.length, metadata:{fromCache:false}};
+  ouvintes[col].forEach(o=>o.cb(snap));
+}
+function refDoc(path){
+  const [col,id]=path.split("/");
+  return {
+    id,
+    async set(obj){ const { error } = await supabaseClient.from(TAB[col]).upsert(docParaLinha(col,id,obj,false)); if(error) throw error; recarregar(col); },
+    async update(obj){
+      let row=docParaLinha(col,id,obj,true);
+      if(col==="projetos"){ const atual=(await supabaseClient.from(TAB[col]).select("dados").eq("id",id).single()).data?.dados||{}; row.dados={...atual,...row.dados}; }
+      const { error } = await supabaseClient.from(TAB[col]).update(row).eq("id",id); if(error) throw error; recarregar(col);
+    },
+    async delete(){ const { error } = await supabaseClient.from(TAB[col]).delete().eq("id",id); if(error) throw error; recarregar(col); }
+  };
+}
+const dbSupabase = {
+  doc: refDoc,
+  collection(col){
+    const api={
+      doc(){ return refDoc(col+"/"+novoId()); },
+      orderBy(){ return api; },
+      onSnapshot(cb, err){ ouvintes[col].push({cb,err}); recarregar(col); return ()=>{}; }
+    };
+    return api;
+  }
+};
+// IA: Edge Function sahra-fluxo (Gemini). Mesma "cara" do sample do protótipo.
+async function blobParaBase64(b){ return await new Promise((ok,no)=>{ const r=new FileReader(); r.onload=()=>ok(String(r.result).split(",")[1]); r.onerror=no; r.readAsDataURL(b); }); }
+const sampleSupabase = {
+  async limits(){ return {images:{maxCount:6, mediaTypes:["image/jpeg","image/png","image/webp","image/gif"]}}; },
+  async json(prompt, opts={}){
+    const images=[]; for(const b of (opts.images||[])) images.push({mime:b.type||"image/jpeg", data:await blobParaBase64(b)});
+    let resp;
+    try{ resp = await supabaseClient.functions.invoke("sahra-fluxo", {body:{acao:"json", prompt, images, modo:opts.modelTier==="complex"?"profundo":"leve"}, signal:opts.signal}); }
+    catch(e){ if(e?.name==="AbortError") throw {code:"cancelled"}; throw {code:"network", message:e?.message}; }
+    const { data, error } = resp;
+    if(opts.signal?.aborted) throw {code:"cancelled"};
+    if(error){ let corpo=null; try{ corpo=await error.context?.json(); }catch{} throw {code: corpo?.code==="forbidden"?"not_granted": corpo?.code==="timeout"?"timeout":"falhou", message: corpo?.error||error.message}; }
+    if(!data || typeof data.data!=="object") throw {code:"invalid_json"};
+    return data.data;
+  }
+};
+// Fotos: comprimidas (JPEG até 1600 px) e guardadas em sahra_fluxo_fotos.
+async function comprimir(file, max=1600){
+  const url=URL.createObjectURL(file); const img=new Image(); img.src=url; await img.decode();
+  const k=Math.min(1, max/Math.max(img.naturalWidth,img.naturalHeight));
+  const c=document.createElement("canvas"); c.width=Math.round(img.naturalWidth*k); c.height=Math.round(img.naturalHeight*k);
+  c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+  return c.toDataURL("image/jpeg",0.85);
+}
+const assetsSupabase = {
+  async upload(file){
+    const data_url=await comprimir(file);
+    const { data, error } = await supabaseClient.from("sahra_fluxo_fotos").insert({projeto_id:M.pid||null, tipo:"foto", data_url}).select("id").single();
+    if(error) throw error; M.blobUrls[data.id]=data_url; return {id:data.id};
+  }
+};
+async function carregarFotos(ids){
+  const faltam=[...new Set(ids)].filter(id=>id && !M.blobUrls[id] && !String(id).startsWith("tmp-"));
+  if(!faltam.length) return false;
+  const { data } = await supabaseClient.from("sahra_fluxo_fotos").select("id,data_url").in("id",faltam);
+  (data||[]).forEach(r=>{ M.blobUrls[r.id]=r.data_url; });
+  return !!(data||[]).length;
+}
+
+async function start(){
+  M.dbChecked=true;
+  if(typeof supabaseClient==="undefined"){ setStatus(""); $("#board").innerHTML=`<div class="empty" style="flex:1"><h2>Sem conexão com o portal</h2><p>Abra esta tela pelo botão SAHRA · Fluxo dentro do portal.</p></div>`; route(); return; }
+  const { data:{ session } } = await supabaseClient.auth.getSession();
+  let admin=false;
+  if(session){ const r=await supabaseClient.rpc("is_admin"); admin=!r.error && r.data===true; }
+  if(!admin){ setStatus(""); $("#board").innerHTML=`<div class="empty" style="flex:1"><h2>Só administrador</h2><p>Entre no portal com uma conta de administrador e abra de novo.</p></div>`; route(); return; }
+  const db=dbSupabase;
+  st.db=db;
+  const timer=setTimeout(()=>setStatus("Não foi possível alcançar o fluxo ainda. Verifique a conexão."),10000);
+  const ok=(k)=>(snap)=>{ clearTimeout(timer); setStatus("Sincronizado"); st.loaded[k]=true; };
+  const erro=(e)=>{ clearTimeout(timer); setStatus(/relation|does not exist|schema cache/i.test(e?.message||"")?"Tabelas não encontradas: rode a migration 271 no Supabase.":"Erro ao carregar o fluxo."); };
+  const rerender=()=>{ if(!$("#view-mesa").hidden){ if(!M.busy && !PV.busy && (!M.pid || !$("#txt") )) renderMesa(); } else if(!st.dirty) render(); };
+  db.collection("grupos").orderBy("ordem").onSnapshot(s=>{ st.grupos=s.docs.map(d=>({id:d.id,...d.data()})); ok("g")(s); rerender(); }, erro);
+  db.collection("etapas").onSnapshot(s=>{ st.etapas=s.docs.map(d=>({id:d.id,...d.data()})); ok("e")(s);
+      if(st.sel && !st.dirty){ const e=st.etapas.find(x=>x.id===st.sel); if(e) st.draft=draftDe(e); }
+      rerender(); }, erro);
+  db.collection("projetos").onSnapshot(s=>{ M.projetos=s.docs.map(d=>({id:d.id,...d.data()})); rerender(); }, ()=>{});
+  M.assets=assetsSupabase;
+  M.sample=sampleSupabase;
+  M.imgLimits=(await M.sample.limits()).images;
+  route();
+}
+route();
+start();
+</script>
+</body></html>
