@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611070035"></script>
+<script src="js/config.js?v=202611080808"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -218,6 +218,10 @@ textarea{resize:vertical;min-height:62px}
 .btn.icone{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border-radius:10px}
 .chat-head .btn.icone{width:32px;height:32px;background:var(--surface)}
 .chat-mesa.min{height:auto}
+.btn.mic{flex:0 0 auto;width:42px;height:42px;border-radius:12px;color:var(--accent)}
+.btn.mic.rec{background:#b3261e;border-color:#b3261e;color:#fff}
+@media (prefers-reduced-motion:no-preference){.btn.mic.rec{animation:pulsa 1.2s ease-in-out infinite}}
+@keyframes pulsa{0%,100%{box-shadow:0 0 0 0 rgba(179,38,30,.45)}50%{box-shadow:0 0 0 8px rgba(179,38,30,0)}}
 .chat-mesa.min .msgs{display:none}
 .chat-mesa.min .chat-head{padding-bottom:4px}
 .chat-mesa .bub{background:var(--surface)}
@@ -590,6 +594,7 @@ function renderConversa(v){
           <div class="row">
             <label class="btn" for="arq" title="Anexar fotos ou planta" style="flex:0 0 auto" ${M.imgLimits?"":"hidden"}>Anexar</label>
             <input type="file" id="arq" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+            ${SR?`<button class="btn icone mic ${MIC.gravando?"rec":""}" id="mic" aria-pressed="${MIC.gravando}" aria-label="${MIC.gravando?"Parar e enviar":"Falar com a SAHRA"}" title="${MIC.gravando?"Ouvindo… fique 2 s em silêncio pra enviar (ou toque de novo)":"Falar com a SAHRA"}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>`:""}
             <textarea id="txt" rows="1" placeholder="Responda à SAHRA…" aria-label="Sua mensagem"></textarea>
             ${M.busy?`<button class="btn" id="parar" style="flex:0 0 auto">Parar</button>`:`<button class="btn primary" id="enviar" style="flex:0 0 auto">Enviar</button>`}
           </div>
@@ -610,6 +615,8 @@ function renderConversa(v){
   txt.onkeydown=ev=>{ if(ev.key==="Enter"&&!ev.shiftKey){ ev.preventDefault(); enviar(); } };
   txt.oninput=()=>{ txt.style.height="auto"; txt.style.height=Math.min(txt.scrollHeight,140)+"px"; if(M.erro){ M.erro=""; $("#merr").hidden=true; } };
   const en=$("#enviar"); if(en) en.onclick=enviar;
+  const mc=$("#mic"); if(mc) mc.onclick=alternaMic;
+  if(MIC.gravando) txt.placeholder="Ouvindo… fique 2 s em silêncio pra enviar";
   const dc=$("#decide"); if(dc) dc.onclick=()=>{ if(M.busy) return; $("#txt").value="Pode decidir isso por mim, SAHRA."; enviar(); };
   const pa=$("#parar"); if(pa) pa.onclick=()=>M.ctl?.abort();
   $("#arq").onchange=ev=>{ addFiles(ev.target.files); ev.target.value=""; };
@@ -992,6 +999,51 @@ function bindPV(){
   const r=$("#pv-refazer"); if(r) r.onclick=()=>{ const t=$("#pv-ajuste").value.trim(); if(!t){ const e=$("#pv-aerr"); e.textContent="Escreva o ajuste que o cliente pediu."; e.hidden=false; return; } gerarPV(t); };
   const cp=$("#pv-copiar"); if(cp) cp.onclick=async()=>{ const t=$("#pv-prompt").textContent; const ok=$("#pv-copiado"); try{ await navigator.clipboard.writeText(t); ok.textContent="Copiado."; }catch{ const r=document.createRange(); r.selectNodeContents($("#pv-prompt")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); ok.textContent="Texto selecionado: use Ctrl+C."; } };
   const a=$("#pv-aprovar"); if(a) a.onclick=async()=>{ M.proj.pv.aprovado=true; M.proj.mensagens.push({r:"trace",t:"<b>Projeto virtual</b> → aprovado pelo cliente → Conferência pra produção"}); await salvarProj(); renderConversa($("#view-mesa")); };
+}
+
+/* ---------- Microfone (reconhecimento de voz do navegador, mesmo jeito da SAHRA do portal) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SILENCIO_MS = 2000;
+const MIC = {rec:null, gravando:false, timer:null, parar:false};
+function pintaMic(){
+  const b=$("#mic"); if(b){ b.classList.toggle("rec",MIC.gravando); b.setAttribute("aria-pressed",MIC.gravando); b.title=MIC.gravando?"Ouvindo… fique 2 s em silêncio pra enviar (ou toque de novo)":"Falar com a SAHRA"; }
+  const t=$("#txt"); if(t) t.placeholder=MIC.gravando?"Ouvindo… fique 2 s em silêncio pra enviar":"Responda à SAHRA…";
+}
+function alternaMic(){
+  if(MIC.gravando){ MIC.parar=true; clearTimeout(MIC.timer); try{ MIC.rec.stop(); }catch{} return; }
+  if(!SR || M.busy) return;
+  pararVoz();
+  const inp=$("#txt"); const base=inp && inp.value ? inp.value.trim()+" " : "";
+  let acumulado="", falado="", encerrado=false;
+  MIC.parar=false;
+  const arma=(ms)=>{ clearTimeout(MIC.timer); MIC.timer=setTimeout(()=>{ MIC.parar=true; try{ MIC.rec.stop(); }catch{} }, ms||SILENCIO_MS); };
+  const inicia=()=>{
+    let finSessao="";
+    const r=MIC.rec=new SR();
+    r.lang="pt-BR"; r.interimResults=true; r.continuous=true;
+    r.onresult=(ev)=>{
+      if(encerrado || r!==MIC.rec) return;
+      let fin="", tmp="";
+      for(let i=0;i<ev.results.length;i++){ if(ev.results[i].isFinal) fin+=ev.results[i][0].transcript; else tmp+=ev.results[i][0].transcript; }
+      finSessao=fin; falado=acumulado+fin;
+      const t=$("#txt"); if(t) t.value=base+acumulado+fin+tmp;
+      arma();
+    };
+    r.onerror=(ev)=>{
+      if(ev.error==="not-allowed"||ev.error==="service-not-allowed"||ev.error==="audio-capture"){ MIC.parar=true; alertaMesa("O navegador bloqueou o microfone. Libere o microfone pra este site (cadeado ao lado do endereço) ou abra a tela em nova aba."); }
+    };
+    r.onend=()=>{
+      if(encerrado || r!==MIC.rec) return;
+      if(finSessao.trim()) acumulado=(acumulado+finSessao).trim()+" ";
+      if(!MIC.parar){ try{ inicia(); return; }catch{} }
+      clearTimeout(MIC.timer); encerrado=true; MIC.gravando=false; pintaMic();
+      const t=$("#txt");
+      if(falado.trim() && t){ t.value=(base+falado).trim(); enviar(); }
+    };
+    r.start();
+  };
+  try{ inicia(); MIC.gravando=true; pintaMic(); arma(SILENCIO_MS*2); }
+  catch(e){ MIC.gravando=false; pintaMic(); alertaMesa("Não consegui ligar o microfone: "+(e?.message||e)); }
 }
 
 /* ---------- Voz (Gemini TTS, a mesma voz Aoede da SAHRA do portal, via sahra-chat) ---------- */

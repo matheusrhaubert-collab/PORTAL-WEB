@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611070100';
+  const VERSAO = '202611080810';
   let overlay = null;
 
   function abrir() {
@@ -40,7 +40,7 @@
     const frame = document.createElement('iframe');
     frame.src = 'sahra-fluxo.html?v=' + VERSAO;
     frame.title = 'Fluxo da SAHRA';
-    frame.allow = 'autoplay; clipboard-write';
+    frame.allow = 'autoplay; clipboard-write; microphone';
     frame.style.cssText = 'flex:1;width:100%;border:0;border-radius:12px;background:#f3f2ee;';
     overlay.append(barra, frame);
     document.body.appendChild(overlay);
