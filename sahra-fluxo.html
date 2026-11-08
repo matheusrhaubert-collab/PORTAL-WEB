@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611080855"></script>
+<script src="js/config.js?v=202611080909"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -267,6 +267,85 @@ textarea{resize:vertical;min-height:62px}
 .pending figure{margin:0;position:relative}
 .pending img{width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
 .pending button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:12px;line-height:1;padding:0}
+/* PALCO 08/11 09:00: arquivos à esquerda, fala dela apontando pra ela, fala do cliente pequena, visor no centro, briefing à direita */
+.palco{--wa:min(270px,21%);--wf:min(330px,25%)}
+.palco .arquivos{position:absolute;top:14px;left:14px;bottom:14px;width:var(--wa);z-index:4;display:flex;flex-direction:column;background:var(--vidro-forte);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--vidro-borda);border-radius:14px;overflow:hidden}
+.arq-head{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:10px 10px 8px}
+.seg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button{border:0;background:none;border-radius:6px;padding:4px 10px;font-size:13px;color:var(--muted)}
+.seg button[aria-selected="true"]{background:var(--accent);color:var(--surface)}
+.arq-head .btn.icone{width:32px;height:32px;background:var(--surface)}
+.arq-head .btn.icone svg{width:18px;height:18px}
+.arq-lista{flex:1;overflow:auto;padding:0 10px 12px;display:flex;flex-direction:column;gap:14px}
+.arq-sec h4{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:4px 0 8px}
+.arq-sec .muted{font-size:13px;margin:0}
+.arq-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.arq-tile{display:flex;flex-direction:column;gap:3px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px;min-width:0}
+.arq-tile:hover{border-color:var(--accent)}
+.arq-tile.atual{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.arq-thumb{display:flex;align-items:center;justify-content:center;aspect-ratio:4/3;border-radius:6px;overflow:hidden;background:#efe9df}
+.arq-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.arq-thumb svg.elev{min-width:0;width:100%;height:100%}
+.arq-ico{font-size:28px;color:var(--accent)}
+.arq-nome{font:600 12px/1.25 var(--f-display);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.arq-meta{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arq-meta b{font-weight:600;color:var(--accent)} .arq-meta b.ok{color:var(--ok)}
+.arq-tile.fazendo .arq-thumb{background:var(--accent-soft)}
+.palco .arquivos .msgs{flex:1;overflow:auto;max-height:none;padding:4px 12px 14px}
+.fala{position:absolute;z-index:3;background:var(--surface);color:var(--ink);box-shadow:0 12px 34px rgba(0,0,0,.22)}
+.fala-sahra{top:18px;left:calc(var(--wa) + 34px);width:clamp(240px,calc(50% - var(--wa) - 110px),440px);max-height:calc(100% - 200px);overflow:auto;border-radius:18px 18px 4px 18px;padding:14px 16px;font-size:15px;line-height:1.5}
+.fala-sahra::after{content:"";position:absolute}
+.fala-sahra .fala-txt{white-space:pre-wrap}
+.fala-sahra .perg,.visor-fala .perg{margin:10px 0 0;padding:10px 12px 10px 30px;background:var(--decision-soft);color:var(--decision);border-radius:10px;font-weight:500}
+.fala-sahra .decide{margin-top:8px}
+.fala-pensa{color:var(--muted)}
+.fala-curi{margin:10px 0 0;font-style:italic;color:var(--muted);font-size:14px;animation:curiIn .4s ease}
+.dots{display:inline-flex;gap:3px;vertical-align:middle}
+.dots span,.dots::before,.dots::after{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.4;animation:pisca 1.2s infinite}
+.dots::after{animation-delay:.3s}.dots span{animation-delay:.15s}
+@keyframes pisca{50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.dots span,.dots::before,.dots::after,.fala-curi{animation:none}}
+.fala-cli{right:calc(var(--wf) + 34px);bottom:150px;max-width:min(260px,30%);background:var(--accent-soft);border-radius:14px 14px 4px 14px;padding:8px 12px;font-size:13px;line-height:1.4;opacity:.95}
+.fala-cli span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.fala-cli small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.palco-acao{position:absolute;z-index:3;left:calc(var(--wa) + 28px);right:calc(var(--wf) + 28px);bottom:88px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;pointer-events:none}
+.palco-acao .btn{pointer-events:auto;box-shadow:0 8px 24px rgba(0,0,0,.2);padding:9px 16px}
+.palco-acao:empty{display:none}
+.palco-composer{position:absolute;z-index:5;left:calc(var(--wa) + 28px);right:calc(var(--wf) + 28px);bottom:14px;background:var(--vidro-forte);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--vidro-borda);border-radius:14px}
+.palco .ficha-gaveta{top:14px;width:var(--wf)}
+.visor{position:absolute;z-index:4;top:14px;left:calc(var(--wa) + 28px);right:calc(var(--wf) + 28px);bottom:88px;display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden}
+.visor-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px 10px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.visor-head b{font:600 16px var(--f-display)}
+.visor-acoes{display:flex;gap:6px}
+.visor-fala{display:flex;gap:10px;align-items:flex-start;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);font-size:14px;max-height:30%;overflow:auto}
+.visor-fala .ava{flex:0 0 30px;width:30px;height:30px}
+.visor-fala .fala-txt{white-space:pre-wrap}
+.visor-fala .perg{padding:6px 10px 6px 26px;margin-top:6px}
+.visor-corpo{flex:1;overflow:auto;padding:14px 16px}
+.visor-corpo .pv{margin:0;padding:0;border:0;background:none}
+.visor-img{height:100%;display:flex;align-items:center;justify-content:center}
+.visor-img img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;cursor:zoom-in}
+.visor-img.zoom{display:block;height:auto}
+.visor-img.zoom img{max-width:none;max-height:none;width:200%;cursor:zoom-out}
+.palco.com-visor .fala-sahra{display:none}
+.sw em.cartela{font-style:normal;font-size:12px;color:var(--muted);margin-top:2px}
+.sw em.cartela.ok{color:var(--ok);font-weight:500}
+@media (max-width:900px){
+  .palco{--wa:0px;--wf:0px}
+  .palco .arquivos{top:auto;left:8px;right:8px;width:auto;bottom:76px;height:132px}
+  .palco .arquivos.conv{top:60px;height:auto}
+  .palco .arq-lista{flex-direction:row;overflow-x:auto;padding-bottom:8px}
+  .palco .arq-sec{flex:0 0 auto}
+  .palco .arq-sec .muted{display:none}
+  .palco .arq-grid{display:flex;gap:6px}
+  .palco .arq-tile{width:96px}
+  .palco .arq-head{padding:6px 8px 4px}
+  .fala-sahra{top:auto;bottom:262px;left:8px;width:auto;right:8px;max-height:36%;border-radius:18px}
+  .fala-cli{display:none}
+  .palco-acao{left:8px;right:8px;bottom:216px}
+  .palco-composer{left:8px;right:8px;bottom:8px}
+  .visor{top:8px;left:8px;right:8px;bottom:76px}
+}
 .ficha-col{display:flex;flex-direction:column;gap:12px}
 .box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .box h3{font:600 15px var(--f-display);margin:0 0 8px}
@@ -535,9 +614,10 @@ function renderMesa(){
   if(!M.proj || M.proj.id!==M.pid){
     const p=M.projetos.find(x=>x.id===M.pid);
     if(!p){ v.innerHTML=`<p class="muted">Abrindo o projeto…</p>`; return; }
-    M.proj=JSON.parse(JSON.stringify(p));
+    M.proj=JSON.parse(JSON.stringify(p)); M.ver=null;
     const ids=[...(M.proj.mensagens||[]).flatMap(m=>m.img||[]), ...(M.proj.pv?.renders||[]).map(r=>r.id)];
     carregarFotos(ids).then(n=>{ if(n && !M.busy && !PV.busy) renderConversa($("#view-mesa")); });
+    if(!CARTELA.lista) carregaCartela().then(l=>{ if(l.length && M.proj && !M.busy && !PV.busy) renderConversa($("#view-mesa")); });
   }
   renderConversa(v);
 }
@@ -612,9 +692,10 @@ function renderConversa(v){
   const p=M.proj; const cur=etapaPorId(p.etapaId);
   const keepDraft = $("#txt")?.value || "";
   const pct=progresso(p);
+  const ultCli=[...p.mensagens].reverse().find(m=>m.r==="cliente");
   v.innerHTML=`<div class="backbar"><button class="btn ghost" id="voltar">← Projetos</button>
       <input type="text" id="titulo" value="${esc(p.titulo)}" aria-label="Nome do projeto" style="max-width:320px"></div>
-    <section class="cena" aria-label="Mesa da SAHRA">
+    <section class="cena palco ${M.ver?"com-visor":""}" aria-label="Mesa da SAHRA">
       <div class="cena-foto" aria-hidden="true"></div>
       <div class="cena-top">
         <div class="chip-prog" role="img" aria-label="Briefing ${pct}% completo">
@@ -625,35 +706,46 @@ function renderConversa(v){
           <button class="btn vidro" id="ficha-toggle" aria-expanded="${!!M.fichaAberta}">${M.fichaAberta?"Fechar ficha":"Ficha do projeto"}</button>
         </div>
       </div>
+      <aside class="arquivos ${M.aba==="conversa"?"conv":""}" aria-label="Arquivos e conversa">
+        <div class="arq-head">
+          <div class="seg" role="tablist" aria-label="Painel">
+            <button role="tab" id="aba-arq" aria-selected="${M.aba!=="conversa"}">Arquivos</button>
+            <button role="tab" id="aba-conv" aria-selected="${M.aba==="conversa"}">Conversa</button>
+          </div>
+          <span class="chat-head-acoes">${curiHtml()}${vozHtml()}</span>
+        </div>
+        ${M.aba==="conversa"?`<div class="msgs" id="msgs">${msgsHtml(p)}</div>`:`<div class="arq-lista">${arquivosHtml(p)}</div>`}
+      </aside>
+      <div class="fala fala-sahra" id="fala-sahra" aria-live="polite">${falaSahraHtml(p)}</div>
+      ${ultCli&&!M.ver?`<div class="fala fala-cli" title="${esc(ultCli.t)}"><span>${esc(ultCli.t)}</span>${(ultCli.img||[]).length?`<small>+ ${ultCli.img.length} foto(s)</small>`:""}</div>`:""}
+      <div class="palco-acao">${acaoPalcoHtml(p)}</div>
+      ${visorHtml(p)}
+      <div class="composer palco-composer">
+        <div class="pending" id="pending"></div>
+        <div class="row">
+          <label class="btn" for="arq" title="Anexar fotos ou planta" style="flex:0 0 auto" ${M.imgLimits?"":"hidden"}>Anexar</label>
+          <input type="file" id="arq" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+          ${SR?`<button class="btn icone mic ${MIC.gravando?"rec":""}" id="mic" aria-pressed="${MIC.gravando}" aria-label="${MIC.gravando?"Parar e enviar":"Falar com a SAHRA"}" title="${MIC.gravando?"Ouvindo… fique 2 s em silêncio pra enviar (ou toque de novo)":"Falar com a SAHRA"}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>`:""}
+          <textarea id="txt" rows="1" placeholder="${p.status==="ativo"?"Responda à SAHRA…":"Fale com a SAHRA sobre o projeto…"}" aria-label="Sua mensagem"></textarea>
+          ${M.busy?`<button class="btn" id="parar" style="flex:0 0 auto">Parar</button>`:`<button class="btn primary" id="enviar" style="flex:0 0 auto">Enviar</button>`}
+        </div>
+        <p class="err" id="merr" ${M.erro?"":"hidden"}>${esc(M.erro)}</p>
+      </div>
       <aside class="ficha-gaveta ${M.fichaAberta?"aberta":""}" aria-label="Briefing do projeto">
         <div class="brief-head"><span class="mini-anel" style="--p:${pct}"></span><div><b>Briefing · ${pct}%</b><small>${p.status==="ativo"&&cur?`Etapa ${codigo(cur)} · ${esc(cur.nome)}`:rotuloProgresso(pct)}</small></div></div>
         <ul class="steps">${stepsHtml(p)}</ul>
-        ${pvBotaoHtml(p)}${fichaHtml(p)}
+        ${fichaHtml(p)}
       </aside>
-      <div class="chat-mesa ${M.chatMin?"min":""}" aria-label="Conversa">
-        <div class="chat-head"><span>Conversa</span><span class="chat-head-acoes">${curiHtml()}${vozHtml()}<button class="btn icone" id="chat-min" aria-expanded="${!M.chatMin}" aria-label="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}" title="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${M.chatMin?'<path d="M6 15l6-6 6 6"/>':'<path d="M6 9l6 6 6-6"/>'}</svg></button></span></div>
-        <div class="msgs" id="msgs">${msgsHtml(p)}</div>
-        <div class="composer">
-          <div class="pending" id="pending"></div>
-          <div class="row">
-            <label class="btn" for="arq" title="Anexar fotos ou planta" style="flex:0 0 auto" ${M.imgLimits?"":"hidden"}>Anexar</label>
-            <input type="file" id="arq" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
-            ${SR?`<button class="btn icone mic ${MIC.gravando?"rec":""}" id="mic" aria-pressed="${MIC.gravando}" aria-label="${MIC.gravando?"Parar e enviar":"Falar com a SAHRA"}" title="${MIC.gravando?"Ouvindo… fique 2 s em silêncio pra enviar (ou toque de novo)":"Falar com a SAHRA"}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>`:""}
-            <textarea id="txt" rows="1" placeholder="${p.status==="ativo"?"Responda à SAHRA…":"Fale com a SAHRA sobre o projeto…"}" aria-label="Sua mensagem"></textarea>
-            ${M.busy?`<button class="btn" id="parar" style="flex:0 0 auto">Parar</button>`:`<button class="btn primary" id="enviar" style="flex:0 0 auto">Enviar</button>`}
-          </div>
-          <p class="err" id="merr" ${M.erro?"":"hidden"}>${esc(M.erro)}</p>
-        </div>
-      </div>
-    </section>
-    ${pvSecaoHtml(p)}`;
-  $("#voltar").onclick=()=>{ pararVoz(); location.hash="mesa"; };
-  $("#chat-min").onclick=()=>{ M.chatMin=!M.chatMin; try{ localStorage.setItem("sahra-fluxo-chatmin",M.chatMin?"1":"0"); }catch{} renderConversa(v); };
+    </section>`;
+  $("#voltar").onclick=()=>{ pararVoz(); M.ver=null; location.hash="mesa"; };
   $("#ficha-toggle").onclick=()=>{ M.fichaAberta=!M.fichaAberta; renderConversa(v); };
+  $("#aba-arq").onclick=()=>{ M.aba="arquivos"; renderConversa(v); };
+  $("#aba-conv").onclick=()=>{ M.aba="conversa"; renderConversa(v); };
   bindVoz(); bindCuri();
   const t=$("#titulo"); t.onchange=async()=>{ p.titulo=t.value.trim()||p.titulo; await salvarProj(); };
-  const msgs=$("#msgs"); msgs.scrollTop=msgs.scrollHeight;
-  bindPV();
+  const msgs=$("#msgs"); if(msgs) msgs.scrollTop=msgs.scrollHeight;
+  const fs=$("#fala-sahra"); if(fs) fs.scrollTop=0;
+  bindPV(); bindPalco(v);
   const txt=$("#txt"); txt.value=keepDraft;
   txt.onkeydown=ev=>{ if(ev.key==="Enter"&&!ev.shiftKey){ ev.preventDefault(); enviar(); } };
   txt.oninput=()=>{ txt.style.height="auto"; txt.style.height=Math.min(txt.scrollHeight,140)+"px"; if(M.erro){ M.erro=""; $("#merr").hidden=true; } };
@@ -664,9 +756,108 @@ function renderConversa(v){
   const pa=$("#parar"); if(pa) pa.onclick=()=>M.ctl?.abort();
   $("#arq").onchange=ev=>{ addFiles(ev.target.files); ev.target.value=""; };
   renderPending();
-  if(!M.busy) txt.focus({preventScroll:true});
-  document.querySelectorAll("[data-ver-pv]").forEach(b=>b.onclick=()=>document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"}));
+  if(!M.busy && !M.ver) txt.focus({preventScroll:true});
 }
+
+/* ---------- Palco (09:00, 08/11) ----------
+   Matt: "tirar o chat e colocar uma fala só dela, apontando pra ela, e uma
+   fala pequenininha do meu lado… onde está o chat, trazer os arquivos que a
+   gente subiu e os que ela gerou… clicar, abrir, ver, rever, aumentar…
+   essa aqui é a versão 1.0 da cozinha… bem clean e centralizado até o
+   approve, e depois vai pro ambiente de projetos". A conversa inteira
+   continua na aba "Conversa" do painel da esquerda. */
+function nomeAmbiente(p){
+  const a=p.ficha?.ambiente; const s=(typeof a==="string"&&a.trim())?a.trim():(p.titulo||"Projeto");
+  return (s.charAt(0).toUpperCase()+s.slice(1)).slice(0,26);
+}
+function versoesPV(p){
+  if(!p.pv) return [];
+  if(Array.isArray(p.pv.versoes)&&p.pv.versoes.length) return p.pv.versoes;
+  return p.pv.proposta?[{v:(p.pv.historico||[]).length+1, quando:p.pv.quando, proposta:p.pv.proposta}]:[];
+}
+function versaoAtual(p){ const vs=versoesPV(p); return vs.length?vs[vs.length-1].v:0; }
+function falaSahraHtml(p){
+  const fazendo = PV.busy?"Estou desenhando a proposta. Leva uns 2 minutos.": PV.rendering?"Estou gerando a imagem realista. Leva até 1 minuto.": PV.montando?"Estou montando o projeto no portal.": M.busy?"Deixa eu pensar":"";
+  if(fazendo) return `<div class="fala-pensa">${fazendo} <i class="dots"><span></span></i></div><p class="fala-curi" ${CURI.atual?"":"hidden"}>${esc(CURI.atual||"")}</p>`;
+  const m=[...p.mensagens].reverse().find(x=>x.r==="sahra");
+  if(!m) return `<div class="fala-txt">Oi! Eu sou a SAHRA. Vamos começar?</div>`;
+  const ultimo=p.mensagens[p.mensagens.length-1];
+  return `${m.t?`<div class="fala-txt">${esc(m.t)}</div>`:""}${(m.q||[]).length?`<ol class="perg" aria-label="Pergunta da SAHRA">${m.q.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`:""}${m===ultimo&&(m.q||[]).length&&p.status==="ativo"?`<button class="btn decide" id="decide">Pode decidir por mim, SAHRA</button>`:""}`;
+}
+function tileHtml(ver, thumb, nome, meta, cls){
+  return `<button class="arq-tile ${cls||""}" data-ver="${ver}" aria-label="Abrir ${esc(nome)}"><span class="arq-thumb">${thumb}</span><span class="arq-nome">${esc(nome)}</span>${meta?`<span class="arq-meta">${meta}</span>`:""}</button>`;
+}
+function arquivosHtml(p){
+  const amb=nomeAmbiente(p); const atual=versaoAtual(p);
+  let sah="";
+  if(PV.busy) sah+=`<div class="arq-tile fazendo" aria-live="polite"><span class="arq-thumb"><i class="dots"><span></span></i></span><span class="arq-nome">v${atual+1}.0 · ${esc(amb)}</span><span class="arq-meta">desenhando…</span></div>`;
+  for(const x of versoesPV(p).slice().reverse()){
+    const w=(x.proposta?.paredes||[])[0];
+    const st = x.v===atual ? (p.pv.aprovado?`<b class="ok">Aprovado</b>`:`<b>Atual</b>`) : "Anterior";
+    sah+=tileHtml(`pv:${x.v}`, w?elevSvg(w,x.proposta.acabamentos):"", `v${x.v}.0 · ${amb}`, `${st} · ${fmtData(x.quando)}`, x.v===atual?"atual":"");
+  }
+  for(const r of (p.pv?.renders||[]).slice().reverse()) if(M.blobUrls[r.id]) sah+=tileHtml(`img:${r.id}`, `<img src="${M.blobUrls[r.id]}" alt="">`, "Imagem realista", `${r.v?`v${r.v}.0 · `:""}${fmtData(r.quando)}`);
+  if((p.pv?.montagens||[]).length){ const u=p.pv.montagens.at(-1); sah+=tileHtml("montagem", `<span class="arq-ico">▦</span>`, "No portal", `${u.modulos} módulos · ${fmtData(u.quando)}`); }
+  const fotos=p.mensagens.flatMap(m=>m.img||[]);
+  const seus=fotos.map((id,i)=>tileHtml(`img:${id}`, `<img src="${imgSrc(id)}" alt="">`, `Foto ${i+1}`, "")).join("");
+  return `<section class="arq-sec"><h4>Da SAHRA</h4>${sah?`<div class="arq-grid">${sah}</div>`:`<p class="muted">O que ela gerar aparece aqui: projeto virtual, imagens, montagem.</p>`}</section>
+    <section class="arq-sec"><h4>Enviados por você</h4>${seus?`<div class="arq-grid">${seus}</div>`:`<p class="muted">Fotos e planta que você anexar.</p>`}</section>`;
+}
+function acaoPalcoHtml(p){
+  if(M.ver) return "";
+  if(PV.busy) return `<button class="btn vidro" id="palco-parar">Parar o desenho</button>`;
+  if(ocupado()) return "";
+  if(!p.pv) return p.status!=="ativo"&&M.sample?`<button class="btn primary" id="palco-gerar">Gerar projeto virtual</button>`:"";
+  const v=versaoAtual(p), amb=nomeAmbiente(p);
+  if(!p.pv.aprovado) return `<button class="btn vidro" data-ver="pv:${v}">Ver ${esc(amb)} v${v}.0</button><button class="btn primary" id="palco-aprovar">Aprovar v${v}.0</button>`;
+  return `<button class="btn vidro" data-ver="pv:${v}">Ver v${v}.0</button><button class="btn primary" id="palco-montar" ${PV.montando?"disabled":""}>Montar no portal e ver o preço</button>`;
+}
+function visorHtml(p){
+  const V=M.ver; if(!V) return "";
+  let tit="", corpo="", extra="";
+  if(V.k==="pv"){
+    const vs=versoesPV(p); const x=vs.find(y=>y.v===V.v)||vs.at(-1);
+    if(!x && !PV.busy){ M.ver=null; return ""; }
+    const atual=!x||x.v===versaoAtual(p);
+    tit=`${nomeAmbiente(p)} · v${x?x.v:versaoAtual(p)+1}.0`;
+    corpo= atual ? pvSecaoHtml(p) : pvLeituraHtml(x.proposta, x.v, versaoAtual(p));
+    if(atual && x && !PV.busy) extra = !p.pv.aprovado ? `<button class="btn primary" id="palco-aprovar">Aprovar v${x.v}.0</button>` : `<button class="btn primary" id="palco-montar" ${PV.montando?"disabled":""}>Montar no portal e ver o preço</button>`;
+  } else if(V.k==="img"){
+    const src=M.blobUrls[V.id]||imgSrc(V.id);
+    const ehRender=(p.pv?.renders||[]).some(r=>r.id===V.id);
+    tit=ehRender?"Imagem realista":"Foto enviada";
+    extra=`<button class="btn" id="visor-zoom">${M.zoom?"Ajustar à tela":"Ampliar"}</button>`;
+    corpo=`<div class="visor-img ${M.zoom?"zoom":""}"><img id="visor-img" src="${src}" alt="${tit}"></div>`;
+  } else if(V.k==="montagem"){ tit="Montagem no portal"; corpo=p.pv?montarHtml(p):""; }
+  return `<div class="visor" role="dialog" aria-label="${esc(tit)}">
+    <div class="visor-head"><b>${esc(tit)}</b><span class="visor-acoes">${extra}<button class="btn" id="visor-fechar" aria-label="Fechar">Fechar</button></span></div>
+    <div class="visor-fala"><span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div>${falaSahraHtml(p)}</div></div>
+    <div class="visor-corpo">${corpo}</div></div>`;
+}
+function pvLeituraHtml(pr, v, atual){
+  pr=pr||{}; const acab=pr.acabamentos||[];
+  return `<section class="pv"><p class="muted">Versão anterior. A atual é a v${atual}.0.</p>
+    ${pr.conceito?`<p class="conceito">${esc(pr.conceito)}</p>`:""}
+    ${acab.length?`<div class="swatches">${acab.map(swatchHtml).join("")}</div>`:""}
+    ${(pr.paredes||[]).map(w=>`<figure class="parede"><figcaption>${esc(w.nome)}</figcaption><div class="elev-wrap">${elevSvg(w,acab)}</div></figure>`).join("")}
+    ${(pr.modulos||[]).length?`<div class="box"><h3>Módulos</h3><div class="tbl"><table><thead><tr><th>SKU</th><th>Descrição</th><th>Qtd</th><th>L × A × P (pol)</th></tr></thead><tbody>${pr.modulos.map(m=>`<tr><td class="mono">${esc(m.sku)}</td><td>${esc(m.descricao)}</td><td class="num">${esc(m.qtd)}</td><td class="num">${esc(m.largura)} × ${esc(m.altura)} × ${esc(m.profundidade)}</td></tr>`).join("")}</tbody></table></div></div>`:""}
+  </section>`;
+}
+function bindPalco(v){
+  document.querySelectorAll("[data-ver]").forEach(b=>b.onclick=()=>{
+    const [k,id]=b.dataset.ver.split(":");
+    M.ver = k==="pv"?{k,v:Number(id)} : k==="img"?{k,id} : {k};
+    M.zoom=false; renderConversa(v);
+  });
+  const fe=$("#visor-fechar"); if(fe) fe.onclick=()=>{ M.ver=null; renderConversa(v); };
+  const zo=$("#visor-zoom"); if(zo) zo.onclick=()=>{ M.zoom=!M.zoom; renderConversa(v); };
+  const im=$("#visor-img"); if(im) im.onclick=()=>{ M.zoom=!M.zoom; renderConversa(v); };
+  const g=$("#palco-gerar"); if(g) g.onclick=()=>gerarPV("", {chat:true});
+  const pp=$("#palco-parar"); if(pp) pp.onclick=()=>PV.ctl?.abort();
+  const ap=$("#palco-aprovar"); if(ap) ap.onclick=async()=>{ aprovarPV(); await salvarProj(); renderConversa(v); };
+  const mo=$("#palco-montar"); if(mo) mo.onclick=montarNoPortal;
+}
+addEventListener("keydown",ev=>{ if(ev.key==="Escape" && M.ver && M.proj){ M.ver=null; renderConversa($("#view-mesa")); } });
 function alertaMesa(t){ M.erro=t; const e=$("#merr"); if(e){ e.textContent=t; e.hidden=false; } }
 
 function msgsHtml(p){
@@ -691,7 +882,6 @@ function fichaHtml(p){
   return `<div class="box"><h3>Ficha do projeto</h3>
     ${keys.length?`<dl class="kv">${keys.map(k=>`<div><dt>${esc(k.replace(/_/g," "))}</dt><dd>${esc(typeof f[k]==="string"?f[k]:JSON.stringify(f[k]))}</dd></div>`).join("")}</dl>`
       :`<p class="muted">Vai se preenchendo conforme a conversa.</p>`}</div>
-    <div class="box"><h3>Fotos e planta</h3>${fotos.length?`<div class="thumbs">${fotos.map(id=>`<img src="${imgSrc(id)}" alt="Foto do projeto">`).join("")}</div>`:`<p class="muted">Nenhuma ainda.</p>`}</div>
     ${p.pendencias?.length?`<div class="box"><h3>Pra revisão do Matt</h3><ul class="trail">${p.pendencias.map(x=>`<li><b>${esc(x.etapa)}</b> ${esc(x.motivo)}</li>`).join("")}</ul></div>`:""}
     <div class="box"><h3>Caminho no fluxo</h3>${p.trilha.length?`<ul class="trail">${p.trilha.map(t=>`<li><b>${esc(t.de)}</b> → ${esc(t.saida)}${t.para?` → ${esc(t.para)}`:""}<br>${esc(t.motivo||"")}</li>`).join("")}</ul>`:`<p class="muted">As decisões aparecem aqui.</p>`}</div>`;
 }
@@ -877,16 +1067,9 @@ function sorteiaCuri(){
   return abre+" "+f.texto;
 }
 function pintaCuri(){
-  const msgs=$("#msgs"); if(!msgs) return;
-  let el=document.getElementById("curi-bal");
-  if(!CURI.atual || !ocupado()){ if(el) el.remove(); return; }
-  if(!el){ el=document.createElement("div"); el.id="curi-bal"; el.className="msg curi"; el.innerHTML=`<span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div class="bub"></div>`; }
-  const tip=msgs.querySelector(".bub.typing")?.closest(".msg");
-  if(tip) msgs.insertBefore(el,tip); else msgs.appendChild(el);
-  el.querySelector(".bub").textContent=CURI.atual;
-  msgs.scrollTop=msgs.scrollHeight;
+  document.querySelectorAll(".fala-curi").forEach(el=>{ const t=(CURI.atual&&ocupado())?CURI.atual:""; el.textContent=t; el.hidden=!t; });
 }
-function tiraCuri(){ CURI.atual=null; document.getElementById("curi-bal")?.remove(); }
+function tiraCuri(){ CURI.atual=null; pintaCuri(); }
 setInterval(async()=>{
   if(!ocupado()){ CURI.desde=0; if(CURI.atual) tiraCuri(); return; }
   if(!CURI.desde) CURI.desde=Date.now();
@@ -999,19 +1182,39 @@ function cardChatHtml(p,m){
     return `<div class="msg">${ava}<div class="bub cartao"><b>Projeto virtual${atual>1?` · versão ${atual}`:""}</b>${p.pv.aprovado?` <span class="pill done">Aprovado</span>`:""}
       ${pr.conceito?`<p>${esc(pr.conceito)}</p>`:""}
       ${w?`<div class="mini-elev">${elevSvg(w,pr.acabamentos)}</div>`:""}
-      <button class="btn" data-ver-pv>Ver proposta completa</button></div></div>`;
+      <button class="btn" data-ver="pv:${atual}">Abrir v${atual}.0</button></div></div>`;
   }
   if(m.k==="render"){
     const src=M.blobUrls[m.id]; if(!src) return "";
-    return `<div class="msg">${ava}<div class="bub cartao"><img class="render-chat" src="${src}" alt="Imagem realista da proposta"></div></div>`;
+    return `<div class="msg">${ava}<div class="bub cartao"><img class="render-chat" src="${src}" alt="Imagem realista da proposta" data-ver="img:${m.id}"></div></div>`;
   }
   if(m.k==="montagem"){
     const u=(p.pv?.montagens||[]).at(-1); if(!u) return "";
     return `<div class="msg">${ava}<div class="bub cartao"><b>Montado no portal</b><p>${u.paredes} parede(s) · ${u.modulos} módulo(s)</p>
       ${(u.nao_virou||[]).length?`<p class="muted">Não virou: ${u.nao_virou.map(x=>esc(x.item)).join(", ")}</p>`:""}
-      <button class="btn" data-ver-pv>Ver detalhes</button></div></div>`;
+      <button class="btn" data-ver="montagem">Ver detalhes</button></div></div>`;
   }
   return "";
+}
+
+/* ---------- Cartela Legno (09:05, 08/11) ----------
+   Matt: "quero que ela continue trazendo essas referências mas já busque na
+   nossa cartela a opção selecionada". A proposta guarda o nome de referência
+   (ex.: Caxemira fosco) e, em cor_legno, o nome EXATO da cor ativa da tabela
+   colors do portal; a amostra mostra a textura real. Pedra, vidro e metal
+   não são da Legno: ficam sem cor da cartela. */
+const CARTELA={lista:null};
+async function carregaCartela(){
+  if(CARTELA.lista) return CARTELA.lista;
+  try{ const {data,error}=await supabaseClient.from("colors").select("name, swatch_hex, texture_url, has_grain, active, sort_order").eq("active",true).order("sort_order",{ascending:true});
+    CARTELA.lista=error?[]:(data||[]).filter(c=>c&&c.name); }catch{ CARTELA.lista=[]; }
+  return CARTELA.lista;
+}
+function corCartela(nome){ if(!nome||!CARTELA.lista) return null; const n=String(nome).trim().toLowerCase(); return CARTELA.lista.find(c=>String(c.name).trim().toLowerCase()===n)||null; }
+function swatchHtml(a){
+  const c=corCartela(a.cor_legno);
+  const fundo=c?(c.texture_url?`background:#ccc url("${esc(c.texture_url)}") center/cover`:`background:${esc(c.swatch_hex||corDe(a.nome,a.cor))}`):`background:${corDe(a.nome,a.cor)}`;
+  return `<div class="sw"><i style="${fundo}"></i><span><b>${esc(a.nome)}</b><small>${esc(a.onde||"")}</small>${c?`<em class="cartela ok">Cartela Legno: ${esc(c.name)}</em>`:a.cor_legno?`<em class="cartela">Cartela: "${esc(a.cor_legno)}" (não achei ativa)</em>`:`<em class="cartela">Fora da cartela Legno</em>`}</span></div>`;
 }
 
 /* ---------- Projeto virtual (teste) ---------- */
@@ -1048,6 +1251,8 @@ PADRÕES DE MÓDULOS LEGNO (indústria americana, polegadas)
 - Medidas do briefing são aproximadas: use-as, arredonde pra polegadas inteiras e feche cada parede com fillers.
 - FOTOS EM PERSPECTIVA: o que está mais longe da câmera parece menor. Nunca meça contando pixels de ponta a ponta. Use como régua só objetos de medida padrão no mesmo plano e perto do que está medindo (fogão 30", geladeira 36", dishwasher 24", bancada a 36" do piso, porta 80" de altura); prefira alturas às larguras; conte portas e módulos de largura padrão em vez de medir; use as linhas de fuga (rodapé, bancada, topo dos aéreos) pra corrigir o encurtamento. Quando o cliente deu uma medida, ela vale mais que a estimativa pela foto.
 
+CARTELA LEGNO (cores reais dos móveis; pra cada acabamento de móvel, escolha a mais parecida e copie o nome exato em "cor_legno"): ${(CARTELA.lista||[]).map(c=>c.name).join(" · ")||"(indisponível: use null)"}
+
 FICHA DO BRIEFING (JSON): ${JSON.stringify(p.ficha)}
 
 O QUE O CLIENTE DISSE:
@@ -1059,7 +1264,7 @@ Responda SOMENTE com JSON:
 {"conceito": "2 a 3 frases: protagonista, eixo, sensação",
  "paredes": [{"nome": "Parede do fogão", "largura": 118, "altura": 108,
    "itens": [{"tipo": "base|aereo|torre|painel|filler|nicho|prateleira|appliance|existente", "sku": "B30", "rotulo": "Base 30", "x": 0, "y": 0, "largura": 30, "altura": 34.5, "acabamento": "Carvalho natural", "led": false}]}],
- "acabamentos": [{"nome": "Carvalho natural", "onde": "nichos e torre", "cor": "#b88a5a"}],
+ "acabamentos": [{"nome": "Carvalho natural", "onde": "nichos e torre", "cor": "#b88a5a", "cor_legno": "nome EXATO da CARTELA LEGNO mais parecida, ou null se não é móvel da Legno (pedra, vidro, metal)"}],
  "modulos": [{"sku": "W3036", "descricao": "Wall 30x36, 2 portas", "qtd": 1, "largura": 30, "altura": 36, "profundidade": 12, "acabamento": "Carvalho natural"}],
  "conferencia": [{"item": "Portas abrem sem bater", "ok": true, "obs": ""}],
  "decide_sahra": ["o que a SAHRA decidiu sozinha e por quê"],
@@ -1091,8 +1296,8 @@ function conferirGeometria(pr){
 }
 async function gerarPV(ajuste, o={}){
   const p=M.proj; if(!p||PV.busy||!M.sample) return;
+  await carregaCartela();
   PV.busy=true; PV.erro=""; renderConversa($("#view-mesa"));
-  if(!o.chat) document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
   try{
     const imgs = M.imgLimits ? await blobsDoProjeto(p) : [];
     PV.ctl=new AbortController();
@@ -1100,10 +1305,15 @@ async function gerarPV(ajuste, o={}){
     if(imgs.length) opts.images=imgs;
     const res=await M.sample.json(pvPrompt(p, ajuste, imgs.length), opts);
     if(!res || !Array.isArray(res.paredes)) throw {code:"invalid_json"};
-    const hist=(p.pv?.historico||[]); if(p.pv?.proposta) hist.push({quando:p.pv.quando, ajuste:ajuste||""});
-    p.pv={proposta:res, quando:new Date().toISOString(), avisos:conferirGeometria(res), historico:hist.slice(-5), aprovado:false};
+    const vsAntes=versoesPV(p); const n=(vsAntes.at(-1)?.v||0)+1; const quando=new Date().toISOString();
+    const hist=[...(p.pv?.historico||[])]; if(p.pv?.proposta) hist.push({quando:p.pv.quando, ajuste:ajuste||""});
+    const vAnt=vsAntes.at(-1)?.v||0;
+    p.pv={proposta:res, quando, avisos:conferirGeometria(res), historico:hist.slice(-5), aprovado:false,
+      versoes:[...vsAntes, {v:n, quando, ajuste:ajuste||"", proposta:res}].slice(-6),
+      renders:(p.pv?.renders||[]).map(r=>({...r, v:r.v||vAnt})), montagens:p.pv?.montagens||[]};
+    M.ver={k:"pv", v:n}; M.aba="arquivos";
     if(ajuste && !o.chat) p.mensagens.push({r:"cliente",t:"Ajuste no projeto virtual: "+ajuste,ts:new Date().toISOString()});
-    const versao=(p.pv.historico||[]).length+1;
+    const versao=n;
     p.mensagens.push({r:"trace",t:`<b>Projeto virtual</b> → ${ajuste?"versão "+versao+" (ajuste)":"proposta montada"}`});
     const perg = "Quer mudar alguma coisa ou posso considerar aprovado?";
     p.mensagens.push(sahraMsg(String(res.mensagem||"Prontinho, aqui está a proposta."),[perg]));
@@ -1117,7 +1327,6 @@ async function gerarPV(ajuste, o={}){
   PV.busy=false; PV.ctl=null;
   if(o.chat && PV.erro){ p.mensagens.push(sahraMsg(PV.erro==="Geração interrompida."?"Parei de desenhar. Quando quiser, é só me pedir de novo.":"Não consegui fechar a proposta agora. Me pede de novo que eu tento outra vez.",[])); await salvarProj(); }
   renderConversa($("#view-mesa"));
-  if(!o.chat) document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
 }
 function pvBotaoHtml(p){
   if(!M.sample || !Object.keys(p.ficha||{}).length) return "";
@@ -1172,7 +1381,7 @@ function pvSecaoHtml(p){
       ${p.pv.aprovado?`<span class="pill done">Aprovado pelo cliente</span>`:""}</div>
     ${PV.erro?`<p class="err">${esc(PV.erro)}</p>`:""}
     ${pr.conceito?`<p class="conceito">${esc(pr.conceito)}</p>`:""}
-    ${acab.length?`<div class="swatches">${acab.map(a=>`<div class="sw"><i style="background:${corDe(a.nome,a.cor)}"></i><span><b>${esc(a.nome)}</b><small>${esc(a.onde||"")}</small></span></div>`).join("")}</div>`:""}
+    ${acab.length?`<div class="swatches">${acab.map(swatchHtml).join("")}</div>`:""}
     ${pr.prompt_render?`<div class="box render"><h3>Render realista</h3><p class="muted">A SAHRA edita a foto real do cliente e coloca os móveis novos. Escolha a foto e gere.</p>${renderFotosHtml(p)}<pre id="pv-prompt">${esc(pr.prompt_render)}</pre><div class="row"><button class="btn primary" id="pv-render" ${PV.rendering?"disabled":""}>${PV.rendering?"Gerando a imagem… (até 1 min)":"Gerar render realista"}</button><button class="btn" id="pv-copiar">Copiar prompt</button><span class="muted" id="pv-copiado" aria-live="polite"></span></div>${PV.renderErro?`<p class="err">${esc(PV.renderErro)}</p>`:""}${(p.pv.renders||[]).length?`<div class="renders">${p.pv.renders.slice().reverse().map(r=>M.blobUrls[r.id]?`<figure><img src="${M.blobUrls[r.id]}" alt="Render realista da proposta"><figcaption class="muted">${fmtData(r.quando)}</figcaption></figure>`:"").join("")}</div>`:""}</div>`:""}
     ${(pr.paredes||[]).map(w=>`<figure class="parede"><figcaption>${esc(w.nome)}</figcaption><div class="elev-wrap">${elevSvg(w,acab)}</div></figure>`).join("")}
     <p class="muted legenda">Vista frontal desenhada em escala a partir das medidas aproximadas do briefing. Tracejado = o que já existe e fica. Faixa amarela = LED.</p>
@@ -1259,7 +1468,8 @@ async function gerarRender(){
     const ins=await supabaseClient.from("sahra_fluxo_fotos").insert({projeto_id:p.id, tipo:"render", data_url:url}).select("id").single();
     if(ins.error) throw ins.error;
     M.blobUrls[ins.data.id]=url;
-    p.pv.renders=[...(p.pv.renders||[]), {id:ins.data.id, quando:new Date().toISOString(), foto:PV.fotoRender}];
+    p.pv.renders=[...(p.pv.renders||[]), {id:ins.data.id, quando:new Date().toISOString(), foto:PV.fotoRender, v:versaoAtual(p)}];
+    M.ver={k:"img", id:ins.data.id}; M.zoom=false;
     p.mensagens.push(sahraMsg("Olha como fica no seu espaço.",[]));
     p.mensagens.push({r:"card",k:"render",id:ins.data.id,ts:new Date().toISOString()});
     await salvarProj();
