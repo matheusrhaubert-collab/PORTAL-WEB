@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611080817"></script>
+<script src="js/config.js?v=202611080844"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -278,6 +278,9 @@ textarea{resize:vertical;min-height:62px}
 .muted{color:var(--muted);font-size:13px;margin:0}
 .trail{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font:12px/1.4 var(--f-mono);color:var(--muted)}
 .trail b{color:var(--ink);font-weight:500}
+.montar .montagem{margin-top:12px;border-top:1px solid var(--line,#e3ded5);padding-top:10px}
+.montar h4{font:600 13px var(--f-display);margin:10px 0 6px}
+.montar .montagem p{margin:4px 0}
 .voz{display:flex;flex-direction:column;gap:6px}
 .voz select{font-size:13px;padding:5px 7px}
 @media (max-width:700px){.side .voz{display:none}}
@@ -326,6 +329,7 @@ const SPECIAL = [
   {id:"__fim", nome:"Fim do fluxo"}
 ];
 const GRUPO_PARADA = "projeto-virtual"; // o protótipo da mesa para ao chegar aqui
+const GRUPO_MONTAR = "montar-portal"; // regras do Matt pra transformar o virtual em projeto do portal (migration 273)
 const st = {db:null, grupos:[], etapas:[], sel:null, draft:null, dirty:false, editingCol:null, confirmDel:false, loaded:{g:false,e:false}};
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -820,7 +824,7 @@ async function turno(texto, files){
 
 /* ---------- Projeto virtual (teste) ---------- */
 try{ M.chatMin = localStorage.getItem("sahra-fluxo-chatmin")==="1"; }catch{}
-const PV = {busy:false, ctl:null, erro:"", rendering:false, renderErro:"", fotoRender:null};
+const PV = {busy:false, ctl:null, erro:"", rendering:false, renderErro:"", fotoRender:null, montando:false, montarErro:""};
 const MATS = [
   {re:/nogueira|walnut|imbuia/i, cor:"#6b4a33"},
   {re:/carvalho|oak|freij|natural|madeir|wood|amadeirad/i, cor:"#b88a5a"},
@@ -989,7 +993,54 @@ function pvSecaoHtml(p){
       <div class="row"><button class="btn" id="pv-refazer">Refazer com o ajuste</button><button class="btn primary" id="pv-aprovar" ${p.pv.aprovado?"disabled":""}>${p.pv.aprovado?"Aprovado":"Cliente aprovou"}</button></div>
       <p class="err" id="pv-aerr" hidden></p>
     </div>
+    ${p.pv.aprovado?montarHtml(p):""}
   </section>`;
+}
+/* ---------- Montar no portal (depois do approve) ----------
+   As regras são as etapas da coluna "Montar no portal" do fluxo (o Matt escreve
+   no editor). Quem monta é o portal (js/portal-38, window.sahraFluxoMontar):
+   esta tela só entrega a proposta aprovada + ficha + regras e guarda o resultado. */
+function portalJanela(){
+  try{ if(window.parent && window.parent!==window && typeof window.parent.sahraFluxoMontar==="function") return window.parent; }catch{}
+  try{ if(window.opener && typeof window.opener.sahraFluxoMontar==="function") return window.opener; }catch{}
+  return null;
+}
+function regrasMontar(){
+  return etapasDo(GRUPO_MONTAR).map(e=>etapaParaPrompt(e).replace("ETAPA ATUAL:","ETAPA:")).join("\n\n");
+}
+function montarHtml(p){
+  const ets=etapasDo(GRUPO_MONTAR);
+  const escritas=ets.filter(e=>(e.processo||"").trim()).length;
+  const ult=(p.pv.montagens||[]).at(-1);
+  return `<div class="box montar" id="pv-montar-box"><h3>Montar no portal</h3>
+    <p class="muted">A SAHRA transforma este projeto virtual em paredes e módulos reais no canvas de Projetos, seguindo a coluna <b>Montar no portal</b> do fluxo${ets.length?` (${escritas} de ${ets.length} etapas com processo escrito)`:""}. Nada é salvo sozinho: você confere e salva.</p>
+    ${!ets.length?`<p class="err">A coluna "Montar no portal" ainda não existe no fluxo. Rode a migration 273 no Supabase.</p>`:""}
+    ${PV.montarErro?`<p class="err">${esc(PV.montarErro)}</p>`:""}
+    <div class="row"><button class="btn primary" id="pv-montar" ${PV.montando||!ets.length?"disabled":""}>${PV.montando?"Montando no portal…":ult?"Montar de novo":"Montar no portal"}</button></div>
+    ${ult?`<div class="montagem"><p class="muted">Última montagem: ${fmtData(ult.quando)} · ${ult.paredes} parede(s) · ${ult.modulos} módulo(s)</p>
+      ${ult.mensagem?`<p>${esc(ult.mensagem)}</p>`:""}
+      ${(ult.nao_virou||[]).length?`<h4>O que não virou</h4><ul class="trail">${ult.nao_virou.map(x=>`<li>${esc(x.item)} <small>${esc(x.motivo)}</small></li>`).join("")}</ul>`:""}
+      ${(ult.etapas||[]).length?`<h4>Como ela seguiu o fluxo</h4><ul class="trail">${ult.etapas.map(x=>`<li><b>${esc(x.etapa)}</b> ${esc(x.decisao)}</li>`).join("")}</ul>`:""}
+    </div>`:""}
+  </div>`;
+}
+async function montarNoPortal(){
+  const p=M.proj; if(!p?.pv?.aprovado || PV.montando) return;
+  const portal=portalJanela();
+  if(!portal){ PV.montarErro="Abra esta tela pelo botão SAHRA · Fluxo do portal (ou pelo Abrir em nova aba de lá) pra montar no canvas."; renderConversa($("#view-mesa")); return; }
+  PV.montando=true; PV.montarErro=""; renderConversa($("#view-mesa"));
+  let r=null;
+  try{
+    r=await portal.sahraFluxoMontar({titulo:p.titulo||"", projetoId:p.id, ficha:p.ficha||{}, proposta:p.pv.proposta||{}, regras:regrasMontar()});
+  }catch(e){ r={ok:false, erro:e?.message||String(e)}; }
+  PV.montando=false;
+  if(r?.ok){
+    p.pv.montagens=[...(p.pv.montagens||[]), {quando:r.quando, paredes:r.paredes, modulos:r.modulos, nao_virou:r.nao_virou||[], etapas:r.etapas||[], mensagem:r.mensagem||"", model:r.model||""}].slice(-5);
+    p.mensagens.push({r:"trace",t:`<b>Montar no portal</b> → ${r.paredes} parede(s), ${r.modulos} módulo(s)${(r.nao_virou||[]).length?`, ${r.nao_virou.length} item(ns) não viraram`:""}`});
+    await salvarProj();
+  } else PV.montarErro="Não montou: "+(r?.erro||"erro desconhecido");
+  renderConversa($("#view-mesa"));
+  document.getElementById("pv-montar-box")?.scrollIntoView({behavior:"smooth",block:"center"});
 }
 function renderFotosHtml(p){
   const fotos=p.mensagens.flatMap(m=>m.img||[]).filter(id=>M.blobUrls[id]);
@@ -1018,11 +1069,12 @@ async function gerarRender(){
 function bindPV(){
   document.querySelectorAll("[data-foto]").forEach(b=>b.onclick=()=>{ PV.fotoRender=b.dataset.foto; renderConversa($("#view-mesa")); });
   const rb=$("#pv-render"); if(rb) rb.onclick=gerarRender;
+  const mb=$("#pv-montar"); if(mb) mb.onclick=montarNoPortal;
   const g=$("#pv-gerar"); if(g) g.onclick=()=>gerarPV("");
   const s=$("#pv-parar"); if(s) s.onclick=()=>PV.ctl?.abort();
   const r=$("#pv-refazer"); if(r) r.onclick=()=>{ const t=$("#pv-ajuste").value.trim(); if(!t){ const e=$("#pv-aerr"); e.textContent="Escreva o ajuste que o cliente pediu."; e.hidden=false; return; } gerarPV(t); };
   const cp=$("#pv-copiar"); if(cp) cp.onclick=async()=>{ const t=$("#pv-prompt").textContent; const ok=$("#pv-copiado"); try{ await navigator.clipboard.writeText(t); ok.textContent="Copiado."; }catch{ const r=document.createRange(); r.selectNodeContents($("#pv-prompt")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); ok.textContent="Texto selecionado: use Ctrl+C."; } };
-  const a=$("#pv-aprovar"); if(a) a.onclick=async()=>{ M.proj.pv.aprovado=true; M.proj.mensagens.push({r:"trace",t:"<b>Projeto virtual</b> → aprovado pelo cliente → Conferência pra produção"}); await salvarProj(); renderConversa($("#view-mesa")); };
+  const a=$("#pv-aprovar"); if(a) a.onclick=async()=>{ M.proj.pv.aprovado=true; M.proj.mensagens.push({r:"trace",t:"<b>Projeto virtual</b> → aprovado pelo cliente → Montar no portal"}); await salvarProj(); renderConversa($("#view-mesa")); document.getElementById("pv-montar-box")?.scrollIntoView({behavior:"smooth",block:"center"}); };
 }
 
 /* ---------- Microfone (reconhecimento de voz do navegador, mesmo jeito da SAHRA do portal) ---------- */
