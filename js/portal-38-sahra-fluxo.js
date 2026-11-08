@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611080930';
+  const VERSAO = '202611080950';
   let overlay = null;
 
   function abrir() {

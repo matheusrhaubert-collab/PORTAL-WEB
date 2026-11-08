@@ -1,0 +1,29 @@
+{
+  "_como_usar": "Falas da SAHRA enquanto ela pensa (botão de lâmpada no chat). tipo: curiosidade | dica | novidade. 'ate' (AAAA-MM-DD, opcional) = depois dessa data a fala some. Pode editar, apagar e acrescentar à vontade.",
+  "aberturas": {
+    "curiosidade": ["Enquanto eu penso no que você falou, uma curiosidade:", "Pensando aqui… você sabia?", "Já volto com isso. Enquanto isso, uma curiosidade de design:"],
+    "dica": ["Enquanto organizo as ideias, uma dica:", "Já te respondo. Uma dica rápida enquanto isso:", "Deixa eu pensar com calma… e uma dica que eu adoro:"],
+    "novidade": ["Tenho uma novidade pra te contar enquanto penso:", "Enquanto eu desenho aqui, uma novidade do mundo do design:", "Já volto. E uma notícia boa enquanto isso:"]
+  },
+  "falas": [
+    {"tipo": "curiosidade", "texto": "a Bauhaus nasceu em 1919, em Weimar, na Alemanha, com Walter Gropius. A ideia era juntar arte e indústria, e boa parte dos móveis modernos que a gente conhece vem daí."},
+    {"tipo": "curiosidade", "texto": "em 1926 a arquiteta Margarete Schütte-Lihotzky desenhou a Cozinha de Frankfurt, uma das primeiras cozinhas planejadas da história. Foram instaladas milhares delas em conjuntos habitacionais."},
+    {"tipo": "curiosidade", "texto": "o famoso triângulo de trabalho, ligando pia, fogão e geladeira, saiu de estudos da Universidade de Illinois nos anos 1940."},
+    {"tipo": "curiosidade", "texto": "a Eames Lounge Chair, de Charles e Ray Eames, foi lançada em 1956 e hoje está no acervo do MoMA, em Nova York."},
+    {"tipo": "curiosidade", "texto": "a cadeira Barcelona, de Mies van der Rohe, foi criada em 1929 para o pavilhão da Alemanha na Exposição de Barcelona. Mies é o arquiteto do famoso less is more."},
+    {"tipo": "curiosidade", "texto": "as portas estilo Shaker, com quadro e almofada lisa, vêm de uma comunidade religiosa americana que valorizava a simplicidade e o trabalho bem feito."},
+    {"tipo": "curiosidade", "texto": "o recuo embaixo dos armários de base, o toe kick, existe pra caber a ponta do pé. É ele que deixa você chegar perto da bancada sem se curvar."},
+    {"tipo": "curiosidade", "texto": "o arquiteto finlandês Alvar Aalto curvava compensado de bétula já no começo dos anos 1930, como na poltrona Paimio, feita para um sanatório."},
+    {"tipo": "dica", "texto": "gavetas na base em vez de portas. Você vê e alcança tudo sem se abaixar, principalmente panelas."},
+    {"tipo": "dica", "texto": "uma fita de LED embaixo dos aéreos ilumina a bancada sem a sombra da sua cabeça. Faz uma diferença enorme na hora de cozinhar."},
+    {"tipo": "dica", "texto": "no máximo três materiais ou cores no ambiente. Fica calmo, elegante e não cansa com o tempo."},
+    {"tipo": "dica", "texto": "aéreos até o teto acabam com aquele espaço que só junta poeira e ainda ganham armazenamento."},
+    {"tipo": "dica", "texto": "em volta de uma ilha, o ideal é deixar uns 42 polegadas de passagem, e 48 se duas pessoas cozinham juntas."},
+    {"tipo": "dica", "texto": "puxador do mesmo acabamento em toda a cozinha deixa o conjunto com cara de projeto, não de móveis soltos."},
+    {"tipo": "dica", "texto": "a lixeira embutida fica melhor do lado da pia: você limpa e já descarta sem atravessar a cozinha."},
+    {"tipo": "dica", "texto": "aqui na Legno cada móvel é feito sob medida, com precisão de 1/32 de polegada. É isso que deixa as linhas tão alinhadas."},
+    {"tipo": "novidade", "texto": "a cor do ano de 2026 da Pantone é a Cloud Dancer, um branco suave e leve. Combina muito com madeira natural.", "ate": "2026-12-31"},
+    {"tipo": "novidade", "texto": "a KBIS, maior feira de cozinha e banheiro dos Estados Unidos, acontece de 2 a 4 de fevereiro de 2027, em Las Vegas.", "ate": "2027-02-04"},
+    {"tipo": "novidade", "texto": "o Salone del Mobile, a feira de móveis mais importante do mundo, volta a Milão de 13 a 18 de abril de 2027.", "ate": "2027-04-18"}
+  ]
+}

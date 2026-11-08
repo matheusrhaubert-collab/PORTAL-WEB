@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611080849"></script>
+<script src="js/config.js?v=202611080855"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -278,6 +278,10 @@ textarea{resize:vertical;min-height:62px}
 .muted{color:var(--muted);font-size:13px;margin:0}
 .trail{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font:12px/1.4 var(--f-mono);color:var(--muted)}
 .trail b{color:var(--ink);font-weight:500}
+.msg.curi .bub{font-style:italic;color:var(--muted);background:var(--surface);opacity:.92;animation:curiIn .4s ease}
+@keyframes curiIn{from{opacity:0;transform:translateY(4px)}to{opacity:.92;transform:none}}
+@media (prefers-reduced-motion: reduce){.msg.curi .bub{animation:none}}
+#curi-on.off{opacity:.45}
 .bub.cartao{white-space:normal;display:flex;flex-direction:column;gap:8px;max-width:100%}
 .bub.cartao p{margin:0}
 .bub.cartao{width:100%;box-sizing:border-box}
@@ -627,7 +631,7 @@ function renderConversa(v){
         ${pvBotaoHtml(p)}${fichaHtml(p)}
       </aside>
       <div class="chat-mesa ${M.chatMin?"min":""}" aria-label="Conversa">
-        <div class="chat-head"><span>Conversa</span><span class="chat-head-acoes">${vozHtml()}<button class="btn icone" id="chat-min" aria-expanded="${!M.chatMin}" aria-label="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}" title="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${M.chatMin?'<path d="M6 15l6-6 6 6"/>':'<path d="M6 9l6 6 6-6"/>'}</svg></button></span></div>
+        <div class="chat-head"><span>Conversa</span><span class="chat-head-acoes">${curiHtml()}${vozHtml()}<button class="btn icone" id="chat-min" aria-expanded="${!M.chatMin}" aria-label="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}" title="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${M.chatMin?'<path d="M6 15l6-6 6 6"/>':'<path d="M6 9l6 6 6-6"/>'}</svg></button></span></div>
         <div class="msgs" id="msgs">${msgsHtml(p)}</div>
         <div class="composer">
           <div class="pending" id="pending"></div>
@@ -646,7 +650,7 @@ function renderConversa(v){
   $("#voltar").onclick=()=>{ pararVoz(); location.hash="mesa"; };
   $("#chat-min").onclick=()=>{ M.chatMin=!M.chatMin; try{ localStorage.setItem("sahra-fluxo-chatmin",M.chatMin?"1":"0"); }catch{} renderConversa(v); };
   $("#ficha-toggle").onclick=()=>{ M.fichaAberta=!M.fichaAberta; renderConversa(v); };
-  bindVoz();
+  bindVoz(); bindCuri();
   const t=$("#titulo"); t.onchange=async()=>{ p.titulo=t.value.trim()||p.titulo; await salvarProj(); };
   const msgs=$("#msgs"); msgs.scrollTop=msgs.scrollHeight;
   bindPV();
@@ -841,6 +845,60 @@ async function turno(texto, files){
 // janela do portal reaberta (estava escondida durante a montagem): volta a conversa pro fim
 const fimConversa=()=>{ const m=document.getElementById("msgs"); if(m) m.scrollTop=m.scrollHeight; };
 addEventListener("resize",fimConversa); addEventListener("sahra-mostrar",()=>requestAnimationFrame(fimConversa));
+/* ---------- Enquanto ela pensa: curiosidades, dicas e novidades (2026-11-08) ----------
+   Matt: "enquanto ela pensa e ninguém está falando, ela contar algumas
+   curiosidades sobre design, ou as últimas novidades… com botão ativar ou
+   desativar… ela não precisa pensar, só fala o que já está escrito".
+   Textos em sahra-curiosidades.json (editável). Nada vai pra IA nem fica
+   salvo na conversa: é um balão temporário que some quando a resposta chega.
+   Fala depois de 6 s de espera, no máximo 1 a cada 30 s, sem repetir. */
+const CURI = {on:true, lista:null, aberturas:null, usados:new Set(), desde:0, ultima:0, atual:null};
+try{ CURI.on = localStorage.getItem("sahra-fluxo-curi")!=="0"; }catch{}
+const ICON_CURI='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>';
+function curiHtml(){ return `<button class="btn vidro icone ${CURI.on?"":"off"}" id="curi-on" aria-pressed="${CURI.on}" aria-label="${CURI.on?"Curiosidades enquanto ela pensa: ligadas. Clique pra desligar":"Curiosidades enquanto ela pensa: desligadas. Clique pra ligar"}" title="${CURI.on?"Curiosidades enquanto ela pensa: ligadas":"Curiosidades: desligadas"}">${ICON_CURI}</button>`; }
+function bindCuri(){ const b=$("#curi-on"); if(b) b.onclick=()=>{ CURI.on=!CURI.on; try{ localStorage.setItem("sahra-fluxo-curi",CURI.on?"1":"0"); }catch{} if(!CURI.on) tiraCuri(); b.outerHTML=curiHtml(); bindCuri(); }; }
+async function carregaCuri(){
+  if(CURI.lista) return;
+  try{ const r=await fetch("sahra-curiosidades.json?v="+Date.now()); const j=await r.json();
+    const hoje=new Date().toISOString().slice(0,10);
+    CURI.lista=(j.falas||[]).filter(f=>f && f.texto && (!f.ate || f.ate>=hoje));
+    CURI.aberturas=j.aberturas||{};
+  }catch{ CURI.lista=[]; CURI.aberturas={}; }
+}
+function ocupado(){ return !!(M.busy||PV.busy||PV.rendering||PV.montando); }
+function sorteiaCuri(){
+  let pool=CURI.lista.filter((f,i)=>!CURI.usados.has(i));
+  if(!pool.length){ CURI.usados.clear(); pool=CURI.lista.slice(); }
+  // novidade tem um pouco mais de chance (é o que mais interessa)
+  const pesos=pool.map(f=>f.tipo==="novidade"?2:1); let r=Math.random()*pesos.reduce((a,b)=>a+b,0);
+  let f=pool[0]; for(let i=0;i<pool.length;i++){ r-=pesos[i]; if(r<=0){ f=pool[i]; break; } }
+  CURI.usados.add(CURI.lista.indexOf(f));
+  const ab=(CURI.aberturas[f.tipo]||["Enquanto eu penso:"]); const abre=ab[Math.floor(Math.random()*ab.length)];
+  return abre+" "+f.texto;
+}
+function pintaCuri(){
+  const msgs=$("#msgs"); if(!msgs) return;
+  let el=document.getElementById("curi-bal");
+  if(!CURI.atual || !ocupado()){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement("div"); el.id="curi-bal"; el.className="msg curi"; el.innerHTML=`<span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div class="bub"></div>`; }
+  const tip=msgs.querySelector(".bub.typing")?.closest(".msg");
+  if(tip) msgs.insertBefore(el,tip); else msgs.appendChild(el);
+  el.querySelector(".bub").textContent=CURI.atual;
+  msgs.scrollTop=msgs.scrollHeight;
+}
+function tiraCuri(){ CURI.atual=null; document.getElementById("curi-bal")?.remove(); }
+setInterval(async()=>{
+  if(!ocupado()){ CURI.desde=0; if(CURI.atual) tiraCuri(); return; }
+  if(!CURI.desde) CURI.desde=Date.now();
+  if(CURI.atual) pintaCuri(); // a tela redesenhou: põe o balão de volta
+  if(!CURI.on || document.hidden) return;
+  const agora=Date.now();
+  if(agora-CURI.desde<6000 || agora-CURI.ultima<30000) return;
+  await carregaCuri(); if(!CURI.lista.length || !ocupado()) return;
+  CURI.ultima=agora; CURI.atual=sorteiaCuri(); pintaCuri();
+  falar(CURI.atual);
+}, 1000);
+
 /* ---------- Conversa depois do briefing (2026-11-08) ----------
    Matt: "usar o chat com ela além do briefing… aprovei o projeto, não, por
    favor muda isso… deixar um chat só e ela interagindo sempre". O chat não
