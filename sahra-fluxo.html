@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611080808"></script>
+<script src="js/config.js?v=202611080817"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -234,6 +234,29 @@ textarea{resize:vertical;min-height:62px}
   .cena-top{top:8px;left:8px;right:8px}
   .chip-prog small{display:none}
   .ficha-gaveta{top:60px;right:8px;bottom:8px;width:calc(100% - 16px)}
+}
+
+/* LAYOUT 08/11: conversa à esquerda, SAHRA e as amostras no centro, briefing sendo montado à direita */
+.cena{background:#2b2520}
+.cena::before{content:"";position:absolute;inset:-30px;z-index:-3;background:url("assets/sahra/fluxo/sahra-escritorio.jpg") center/cover no-repeat;filter:blur(22px) brightness(.85)}
+.cena-foto{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);aspect-ratio:1.6/1;z-index:-2;background:url("assets/sahra/fluxo/sahra-escritorio.jpg") center 30%/100% auto no-repeat;-webkit-mask-image:linear-gradient(to right,transparent 0,#000 10%,#000 90%,transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 10%,#000 90%,transparent 100%)}
+.cena::after{background:linear-gradient(to right,rgba(20,14,10,.35) 0,rgba(20,14,10,0) 28%,rgba(20,14,10,0) 72%,rgba(20,14,10,.35) 100%)}
+.chat-head-acoes{display:flex;gap:6px;align-items:center}
+.chat-head .btn.icone#voz-on{width:32px;height:32px;background:var(--surface)}
+.chat-head .btn.icone#voz-on svg{width:18px;height:18px}
+.ficha-gaveta{display:flex}
+.brief-head{display:flex;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.brief-head b{font:600 16px var(--f-display);display:block}
+.brief-head small{color:var(--muted);font-size:12px}
+@media (min-width:901px){
+  .cena-top{display:none}
+  .chat-mesa{left:14px;top:14px;bottom:14px;transform:none;width:min(420px,32%);height:auto}
+  .chat-mesa.min{top:auto}
+  .ficha-gaveta{top:14px;right:14px;bottom:14px;width:min(360px,28%)}
+}
+@media (max-width:900px){
+  .ficha-gaveta:not(.aberta){display:none}
+  .cena-foto{aspect-ratio:auto;left:0;right:0;transform:none;background-size:cover;background-position:center 15%;-webkit-mask-image:none;mask-image:none}
 }
 .done-card{align-self:stretch;background:var(--surface);border:1px solid var(--ok);border-radius:10px;padding:12px 14px;font-size:14px}
 .done-card b{color:var(--ok)}
@@ -571,23 +594,24 @@ function renderConversa(v){
   const pct=progresso(p);
   v.innerHTML=`<div class="backbar"><button class="btn ghost" id="voltar">← Projetos</button>
       <input type="text" id="titulo" value="${esc(p.titulo)}" aria-label="Nome do projeto" style="max-width:320px"></div>
-    <section class="cena ${M.fichaAberta?"ficha-aberta":""}" aria-label="Mesa da SAHRA">
+    <section class="cena" aria-label="Mesa da SAHRA">
+      <div class="cena-foto" aria-hidden="true"></div>
       <div class="cena-top">
         <div class="chip-prog" role="img" aria-label="Briefing ${pct}% completo">
           <span class="mini-anel" style="--p:${pct}"></span>
           <span><b>${pct}%</b> ${rotuloProgresso(pct)}${p.status==="ativo"&&cur?`<small>Etapa ${codigo(cur)} · ${esc(cur.nome)}</small>`:""}</span>
         </div>
         <div class="cena-acoes">
-          ${vozHtml()}
           <button class="btn vidro" id="ficha-toggle" aria-expanded="${!!M.fichaAberta}">${M.fichaAberta?"Fechar ficha":"Ficha do projeto"}</button>
         </div>
       </div>
-      <aside class="ficha-gaveta" ${M.fichaAberta?"":"hidden"} aria-label="Ficha do projeto">
+      <aside class="ficha-gaveta ${M.fichaAberta?"aberta":""}" aria-label="Briefing do projeto">
+        <div class="brief-head"><span class="mini-anel" style="--p:${pct}"></span><div><b>Briefing · ${pct}%</b><small>${p.status==="ativo"&&cur?`Etapa ${codigo(cur)} · ${esc(cur.nome)}`:rotuloProgresso(pct)}</small></div></div>
         <ul class="steps">${stepsHtml(p)}</ul>
         ${pvBotaoHtml(p)}${fichaHtml(p)}
       </aside>
       <div class="chat-mesa ${M.chatMin?"min":""}" aria-label="Conversa">
-        <div class="chat-head"><span>Conversa</span><button class="btn icone" id="chat-min" aria-expanded="${!M.chatMin}" aria-label="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}" title="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${M.chatMin?'<path d="M6 15l6-6 6 6"/>':'<path d="M6 9l6 6 6-6"/>'}</svg></button></div>
+        <div class="chat-head"><span>Conversa</span><span class="chat-head-acoes">${vozHtml()}<button class="btn icone" id="chat-min" aria-expanded="${!M.chatMin}" aria-label="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}" title="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${M.chatMin?'<path d="M6 15l6-6 6 6"/>':'<path d="M6 9l6 6 6-6"/>'}</svg></button></span></div>
         <div class="msgs" id="msgs">${msgsHtml(p)}</div>
         ${p.status==="ativo"?`<div class="composer">
           <div class="pending" id="pending"></div>
@@ -636,7 +660,7 @@ function msgsHtml(p){
       <div class="bub">${m.t?`<div>${esc(m.t)}</div>`:""}${(m.q||[]).length?`<ol class="perg" aria-label="Perguntas da SAHRA">${m.q.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`:""}${m===ultimo&&(m.q||[]).length&&p.status==="ativo"&&!M.busy?`<button class="btn decide" id="decide">Pode decidir por mim, SAHRA</button>`:""}${imgs}</div></div>`;
   }
   if(M.busy) h+=`<div class="msg"><span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div class="bub typing">SAHRA está pensando <i><span></span></i></div></div>`;
-  if(p.status==="briefing_concluido") h+=`<div class="done-card"><b>Briefing completo.</b> A próxima etapa seria ${esc(nomeEtapaCurta(p.depois)||"o Projeto virtual")}, que ainda não está ligada neste protótipo. A ficha ao lado é o que a SAHRA levaria pra lá.</div>`;
+  if(p.status==="briefing_concluido") h+=`<div class="done-card"><b>Briefing completo.</b> A próxima etapa é ${esc(nomeEtapaCurta(p.depois)||"o Projeto virtual")}, e a SAHRA já pode montar a proposta: clique em <b>Gerar projeto virtual</b> no briefing ao lado.</div>`;
   return h;
 }
 
