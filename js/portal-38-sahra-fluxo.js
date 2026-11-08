@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081115';
+  const VERSAO = '202611081120';
   let overlay = null;
 
   function abrir() {
@@ -192,7 +192,7 @@ COMO O PORTAL FUNCIONA (mecânica, não é regra de projeto)
 - Se a FICHA tem "planta", as paredes do portal seguem a planta: mesma sequência, comprimento em polegadas × 25,4 e os mesmos ângulos. Lado "aberto" só entra como parede se tiver móvel nele.
 - CAIXA PELO CONSTRUTOR: quando a etapa de composição mandar (ou o item não tem módulo pronto equivalente), use uma entrada com "caixa" em vez de "module_id": "aereo" = caixa de Componentes Bottom · Bottom · Back (fora do chão), "suspenso" = Bottom · Stretcher · Back. O portal cria a caixa e monta no Construtor: "prateleiras", "portas" (folhas), "gavetas", "modelo_porta" ("vidro" = Aluminium Glass), "cor_vidro" (ex.: "fumê"), "led" (fita no tampo de cima, iluminando pra baixo), "color_name" (caixa) e "front_color_name" (frentes).
 - CONJUNTO EMPILHADO: peças que formam um móvel só (ex.: base + nicho + aéreo + top covers) levam o mesmo "grupo". O portal alinha: a peça de baixo na altura das bases da parede, a de cima com o topo dos aéreos, e a do meio preenche o vão entre elas; os painéis do grupo (top covers) ficam com a altura do conjunto e a profundidade da caixa + 25,4 mm.
-- ILHA/PENÍNSULA (módulo solto no piso): use "piso": {"afastamento_mm": distância da parede de referência até a costa do módulo, "frente": "ambiente" ou "parede"}; "wall_index" e "x_mm" contam a partir dessa parede.
+- ILHA/PENÍNSULA (módulo solto no piso): use "piso": {"afastamento_mm": distância da parede de referência até a FRENTE do módulo (o corredor de trabalho), "frente": "parede"}; "wall_index" e "x_mm" contam a partir dessa parede. Os módulos da ilha ficam SEMPRE de frente pra parede de trabalho (o portal gira 180°), com o mesmo acesso da parede. Do outro lado da ilha vai, normalmente, um painel (de madeira) cobrindo as costas, com bancada e banquetas.
 - BLIND CORNER: o lado cego fica virado pro canto. Canto no FIM da parede (à direita, olhando de frente) → versão Dir/Direita; canto no COMEÇO (à esquerda) → versão Esq/Esquerda. O portal confere e troca se vier invertido.
 - CANTO DOS AÉREOS: aéreo raso (até ~15") NUNCA leva blind nem corner no canto. Deixe o canto livre; o portal afasta o aéreo de cada lado e põe os fillers da frente sozinho. Se a sobra não fechar com os aéreos padrão, use aéreo custom e ajuste a largura.
 - NUNCA troque por um módulo de outra função (pantry ≠ torre com nicho; gaveteiro ≠ base de porta). "motivo" diz por que escolheu cada peça.
@@ -396,7 +396,13 @@ Responda SOMENTE com JSON:
       width_mm: W, height_mm: +m.height_mm || undefined, floor_height_mm: Math.max(0, +m.floor_height_mm || 0)
     });
     if (!slot) throw new Error('o portal não criou o módulo no piso');
-    let deg = (g.rotationY * 180 / Math.PI) + (/parede|wall/i.test(m.piso.frente || '') ? 180 : 0);
+    // ILHA DE FRENTE PRA PAREDE (10:15, 08/11, Matt: "o bloco da ilha veio
+    // virado pra fora… tem que estar de frente pra parede, não de costas…
+    // dar um giro de 180°… vale pra todas as cozinhas"). Módulo de parede
+    // olha pro ambiente (rotationY); o da ilha olha pra parede de referência
+    // = +180°. Só o painel de trás/bancada pode pedir o contrário.
+    const praFora = /ambiente|room|fora|costas/i.test(m.piso.frente || '') && /panel|painel|cover/i.test(String(mod.name || ''));
+    let deg = (g.rotationY * 180 / Math.PI) + (praFora ? 0 : 180);
     slot.floor_rotation_deg = Math.round((((deg % 360) + 540) % 360 - 180) * 10) / 10;
     if (+m.depth_mm) slot.depth_mm = projectSlotClampedDimensionMm(slot, 'depth', D);
     if (m.color_name) iaeOpSetColor({ slot_ids: [String(slot.id)], color_name: m.color_name }, avisos);
