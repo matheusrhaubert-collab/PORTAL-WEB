@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081010';
+  const VERSAO = '202611081015';
   let overlay = null;
 
   function abrir() {
@@ -116,6 +116,52 @@
     };
   }
 
+  // CATÁLOGO ENXUTO (09:10, 08/11: "A IA demorou demais pra responder"):
+  // mandar o catálogo inteiro estourava o tempo da função. Agora o código
+  // separa, pra cada item do virtual, os módulos candidatos (referência igual
+  // ao SKU primeiro, depois tipo e largura) e só eles vão pra IA. Quem decide
+  // continua sendo a IA, seguindo as etapas do Matt.
+  function refsDo(id) {
+    const lst = (typeof moduleSkuPresetsByModuleId !== 'undefined' && moduleSkuPresetsByModuleId[id]) || [];
+    return Array.from(new Set(lst.map((x) => x && String(x.reference || '').trim().toUpperCase()).filter(Boolean)));
+  }
+  const RE_TIPO = {
+    base: /base|bottom|sink|drawer|gaveta|lixeira|trash|blind|corner|vanit/i,
+    aereo: /wall|a[ée]reo|upper|suspens/i,
+    torre: /tall|torre|pantry|oven|forno|despensa|linen/i,
+    painel: /panel|painel/i,
+    filler: /filler|enchimento/i,
+    nicho: /nicho|niche|open|aberto|componente|shelf|prateleira|bottom.*back|back/i,
+    prateleira: /shelf|prateleira|painel 3\/4|horizontal/i
+  };
+  function candidatos(h, cat, porItem) {
+    const pr = h.proposta || {};
+    const cozinha = /cozinha|kitchen/i.test(JSON.stringify(h.ficha || {}).slice(0, 2000) + ' ' + (h.titulo || ''));
+    const escolhidos = new Map();
+    const add = (m) => { if (!escolhidos.has(String(m.id))) escolhidos.set(String(m.id), m); };
+    const refsCache = new Map(cat.map((m) => [String(m.id), refsDo(m.id)]));
+    (pr.paredes || []).forEach((w) => (w.itens || []).forEach((it) => {
+      if (it.tipo === 'existente' || it.tipo === 'appliance') return;
+      const sku = String(it.sku || '').trim().toUpperCase();
+      const larg = (Number(it.largura) || 0) * MM;
+      const re = RE_TIPO[it.tipo] || null;
+      const nota = cat.map((m) => {
+        const txt = [m.name, m.family, m.category, m.subcategory].join(' ');
+        let n = 0;
+        if (sku && refsCache.get(String(m.id)).includes(sku)) n += 100;
+        if (re && re.test(txt)) n += 20;
+        if (it.tipo === 'aereo' && m.mount_type === 'wall') n += 10;
+        if (larg && m.w && m.w[0] != null && m.w[2] != null && larg >= m.w[0] - 1 && larg <= m.w[2] + 1) n += 8;
+        if (cozinha ? /classic kitchens/i.test(m.family || '') : /componente|pain[eé]is|panels?/i.test(m.family || '')) n += 6;
+        return { m, n };
+      }).filter((x) => x.n >= 20).sort((a, b) => b.n - a.n).slice(0, porItem);
+      nota.forEach((x) => add(x.m));
+    }));
+    // painéis e fillers sempre à mão pra fechar sobras
+    cat.filter((m) => /filler|panel|painel/i.test([m.name, m.category].join(' '))).slice(0, 12).forEach(add);
+    return Array.from(escolhidos.values());
+  }
+
   function catalogoTexto(cat, maxRefs) {
     const refsDe = (id) => {
       const lst = (typeof moduleSkuPresetsByModuleId !== 'undefined' && moduleSkuPresetsByModuleId[id]) || [];
@@ -164,7 +210,7 @@ Responda SOMENTE com JSON:
   }
 
   async function chamaIA(prompt) {
-    const resp = await supabaseClient.functions.invoke('sahra-fluxo', { body: { acao: 'json', prompt, modo: 'profundo' } });
+    const resp = await supabaseClient.functions.invoke('sahra-fluxo', { body: { acao: 'json', prompt, modo: 'leve' } });
     if (resp.error || !resp.data || !resp.data.data) {
       let corpo = null; try { corpo = await resp.error.context.json(); } catch (e) { /* */ }
       throw new Error((corpo && corpo.error) || (resp.data && resp.data.error) || (resp.error && resp.error.message) || 'sem resposta da IA');
@@ -244,12 +290,20 @@ Responda SOMENTE com JSON:
     irParaProjetos();
     mostraCard('<b>SAHRA · montando no portal</b><br><span>' + escH(h.titulo || 'Projeto') + '</span><br><span style="color:#6e675e">Lendo o catálogo e seguindo as etapas de "Montar no portal". Pode levar até 2 minutos.</span>');
     try {
-      const [cat, cores] = await Promise.all([buildProjectPhotoCatalog(), buildProjectPhotoColorList().catch(() => [])]);
+      let [cat, cores] = await Promise.all([buildProjectPhotoCatalog(), buildProjectPhotoColorList().catch(() => [])]);
       if (!cat.length) throw new Error('catálogo vazio');
-      let prompt = promptMontagem(h, cat, cores, 8);
-      if (prompt.length > 190000) prompt = promptMontagem(h, cat, cores, 2);
-      if (prompt.length > 199000) prompt = promptMontagem(h, cat, cores, 0);
-      const { data: r, model } = await chamaIA(prompt);
+      let sub = candidatos(h, cat, 6);
+      if (sub.length < 5) sub = cat.slice(0, 250); // virtual sem tipos reconhecíveis: vai um pedaço do catálogo
+      console.info('[sahra-fluxo] montar: ' + sub.length + ' módulos candidatos de ' + cat.length);
+      let r, model;
+      try {
+        ({ data: r, model } = await chamaIA(promptMontagem(h, sub, cores, 6)));
+      } catch (e1) {
+        if (!/demorou|timeout|504/i.test(String(e1 && e1.message))) throw e1;
+        mostraCard('<b>SAHRA · montando no portal</b><br><span style="color:#6e675e">Demorou na primeira tentativa. Tentando de novo com menos opções por item…</span>');
+        sub = candidatos(h, cat, 3);
+        ({ data: r, model } = await chamaIA(promptMontagem(h, sub, cores, 3)));
+      }
       // projeto novo, sem pedir confirmação de novo (já confirmamos acima)
       projectSlots = [];
       if (typeof resetProject === 'function') resetProject();
