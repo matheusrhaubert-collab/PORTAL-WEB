@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081200';
+  const VERSAO = '202611081205';
   let overlay = null;
 
   function abrir() {
@@ -794,6 +794,57 @@ Responda SOMENTE com JSON:
     const b = document.getElementById('po-sahra-fluxo-btn'); if (b) b.remove();
     if (overlay) { overlay.remove(); overlay = null; }
   }
+
+  // ---- BOTÃO "INVERTER" NO BLIND CORNER (11:00, 08/11) ----
+  // Matt: "blind corner coloca opção de inverter módulo, já que não está
+  // selecionando o módulo certo". Na barrinha do módulo selecionado (⧉ ✎ ×…),
+  // quando ele é blind corner, aparece ⇆: troca pela versão do outro lado
+  // (o par Esq/Dir do catálogo), mantém medidas e cor, e encosta o lado cego
+  // no canto mais perto. Desfazer (Ctrl+Z) volta.
+  function gemeoBlind(slot) {
+    const mod = slot && slot.module; if (!mod) return null;
+    const lado = ladoDoNome(mod.name);
+    return (allModules || []).find((m) => m && m.active !== false && String(m.id) !== String(mod.id) && /blind/i.test(m.name || '')
+      && semLado(m.name) === semLado(mod.name) && ladoDoNome(m.name) !== lado
+      && (!mod.family_id || !m.family_id || m.family_id === mod.family_id)) || null;
+  }
+  async function inverterBlind() {
+    const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
+    if (!slot || typeof projectSlotBlindInfo !== 'function' || !projectSlotBlindInfo(slot)) return;
+    const gem = gemeoBlind(slot);
+    if (!gem) { alert('Não achei a versão do outro lado deste blind corner no catálogo.'); return; }
+    if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+    const cores = { colorsByRole: Object.assign({}, slot.colorsByRole || {}) };
+    const L = getProjectWallWidthMm(Number(slot.wall_index) || 0);
+    const pertoDoFim = (L - fimDe(slot)) < (+slot.x_mm || 0);
+    await editProjectAiApply([{ op: 'replace_module', reason: 'Inverter blind corner', module_id: gem.id, slot_ids: [String(slot.id)] }]);
+    try { if (typeof iaeCopyColors === 'function') iaeCopyColors(cores, slot); } catch (e) { /* */ }
+    const bi = projectSlotBlindInfo(slot) || { afastar: 120.65, lado: ladoDoNome(gem.name) };
+    // lado cego no canto onde ele está
+    if (bi.lado === 'D' && pertoDoFim) slot.x_mm = Math.round(L - bi.afastar - (+slot.width_mm));
+    else if (bi.lado === 'E' && !pertoDoFim) slot.x_mm = Math.round(bi.afastar);
+    try { clampProjectSlotPosition(slot); recomputeProjectSlotPricing(slot); } catch (e) { /* */ }
+    renderProjectCanvas();
+    if (typeof renderProjectConfigPanel === 'function') renderProjectConfigPanel();
+    if (typeof markProjectDirty === 'function') markProjectDirty();
+  }
+  function botaoInverter() {
+    const bar = document.getElementById('po-proj-slot-actions'); if (!bar) return;
+    let b = document.getElementById('po-proj-slot-blind-flip-btn');
+    const slot = (typeof selectedProjectSlotId !== 'undefined' && selectedProjectSlotId != null) ? projectSlots.find((s) => s.id === selectedProjectSlotId) : null;
+    const eh = !!slot && typeof projectSlotBlindInfo === 'function' && !!projectSlotBlindInfo(slot);
+    if (!eh) { if (b) b.style.display = 'none'; return; }
+    if (!b) {
+      b = document.createElement('button');
+      b.type = 'button'; b.id = 'po-proj-slot-blind-flip-btn'; b.className = 'po-proj-slot-action-btn';
+      b.textContent = '⇆'; b.title = 'Inverter blind corner (lado cego pro outro lado)'; b.setAttribute('aria-label', b.title);
+      b.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); inverterBlind(); });
+      const rem = document.getElementById('po-proj-slot-remove-btn');
+      if (rem) bar.insertBefore(b, rem); else bar.appendChild(b);
+    }
+    b.style.display = '';
+  }
+  setInterval(() => { try { if (typeof projectSlots !== 'undefined') botaoInverter(); } catch (e) { /* tela de projetos ainda não carregou */ } }, 400);
 
   // LEGNO_IS_ADMIN é preenchido depois do login (portal-26); confere de tempos em tempos.
   setInterval(() => {
