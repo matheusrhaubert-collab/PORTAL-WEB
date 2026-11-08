@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081015';
+  const VERSAO = '202611081030';
   let overlay = null;
 
   function abrir() {
@@ -188,6 +188,8 @@ COMO O PORTAL FUNCIONA (mecânica, não é regra de projeto)
 - Cada módulo: "wall_index" (índice em walls), "x_mm" (da quina esquerda da parede, olhando de frente pra ela, até a borda esquerda do módulo), "floor_height_mm" (do piso até a base do módulo), "width_mm", "height_mm", "depth_mm". Respeite os limites w/h/d [mín-padrão-máx] do módulo no catálogo.
 - "module_id" tem que ser um id que EXISTE no CATÁLOGO abaixo (1ª coluna), copiado exatamente. "refs" = referências (SKU) cadastradas no módulo.
 - "color_name" tem que ser um nome EXATO da lista de CORES, ou null. Quando o acabamento do item tiver "cor_legno" (a cor da cartela que a SAHRA já escolheu no virtual), use exatamente ela.
+- Se a FICHA tem "planta", as paredes do portal seguem a planta: mesma sequência, comprimento em polegadas × 25,4 e os mesmos ângulos. Lado "aberto" só entra como parede se tiver móvel nele.
+- Ilha e península ficam soltas no piso: o portal ainda não recebe módulo de piso por aqui. Coloque os módulos delas em "nao_virou" com o motivo "ilha/península: montar no piso à mão".
 - Item do virtual que não tem módulo correspondente NÃO entra em modules: vai em "nao_virou" com o motivo. Nunca invente id.
 
 PROJETO VIRTUAL APROVADO (mm): ${JSON.stringify(virtualEmMm(h.proposta || {}))}

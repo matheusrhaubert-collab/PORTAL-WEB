@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611080910"></script>
+<script src="js/config.js?v=202611080924"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -346,6 +346,17 @@ textarea{resize:vertical;min-height:62px}
   .palco-composer{left:8px;right:8px;bottom:8px}
   .visor{top:8px;left:8px;right:8px;bottom:76px}
 }
+.arq-titulo{font:600 15px/1.25 var(--f-display);padding:0 12px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.planta-wrap{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:center;min-height:320px;height:calc(100% - 52px)}
+.planta-wrap .planta-svg{width:100%;height:100%;max-height:640px}
+.planta-leg{display:flex;flex-wrap:wrap;gap:12px;align-items:center;font-size:12px;color:var(--muted);margin-top:10px}
+.planta-leg .lg{display:inline-block;width:14px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.lg.ilha{background:#d9c3a5;border:1px solid #7a4a22}.lg.pen{background:#e2c9a8;border:1px solid #a3352b}
+.lg.porta{border-top:2px solid #8a8378;height:0}.lg.janela{background:#4a7fa8;height:3px}.lg.aberto{border-top:2px dashed #9a948a;height:0}
+.arq-thumb .planta-svg{width:100%;height:100%;background:#fff}
+.planta-mini{display:block;width:100%;text-align:left;font:inherit;cursor:pointer}
+.planta-mini .planta-svg{width:100%;height:150px;display:block;margin:4px 0}
+.planta-mini:hover{border-color:var(--accent)}
 .ficha-col{display:flex;flex-direction:column;gap:12px}
 .box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .box h3{font:600 15px var(--f-display);margin:0 0 8px}
@@ -714,6 +725,7 @@ function renderConversa(v){
           </div>
           <span class="chat-head-acoes">${curiHtml()}${vozHtml()}</span>
         </div>
+        <div class="arq-titulo" title="Nome do projeto">${esc(p.titulo||"Projeto sem nome")}</div>
         ${M.aba==="conversa"?`<div class="msgs" id="msgs">${msgsHtml(p)}</div>`:`<div class="arq-lista">${arquivosHtml(p)}</div>`}
       </aside>
       <div class="fala fala-sahra" id="fala-sahra" aria-live="polite">${falaSahraHtml(p)}</div>
@@ -766,6 +778,68 @@ function renderConversa(v){
    essa aqui é a versão 1.0 da cozinha… bem clean e centralizado até o
    approve, e depois vai pro ambiente de projetos". A conversa inteira
    continua na aba "Conversa" do painel da esquerda. */
+/* ---------- Nome do projeto + Planta baixa ao vivo (09:20, 08/11) ----------
+   Matt: "a primeira pergunta é o nome do projeto… antes de qualquer coisa ela
+   precisa saber a planta baixa… ir montando em conjunto com a pessoa… eu pedi
+   uma ilha, ela colocou uma península". A IA devolve ficha.planta (contrato
+   em montarPrompt) e a mesa redesenha na hora, abrindo a planta no centro. */
+function aplicaCamposEspeciais(p, novo){
+  const nome=String(novo.nome_projeto||"").trim();
+  if(nome && nome!==p.titulo){ p.titulo=nome.slice(0,80); const t=document.getElementById("titulo"); if(t) t.value=p.titulo; }
+  if(novo.planta && typeof novo.planta==="object" && (novo.planta.paredes||[]).length){ M.ver={k:"planta"}; M.aba="arquivos"; }
+}
+function temPlanta(p){ return !!(p.ficha?.planta?.paredes||[]).some(w=>Number(w.comprimento)>0); }
+function plantaSvg(pl, mini){
+  const ws=(pl?.paredes||[]).filter(w=>Number(w.comprimento)>0); if(!ws.length) return "";
+  let x=0,y=0,ang=0; const segs=[]; const pts=[[0,0]];
+  ws.forEach((w,i)=>{ const L=Number(w.comprimento); const dx=Math.cos(ang), dy=Math.sin(ang);
+    segs.push({i,x1:x,y1:y,x2:x+dx*L,y2:y+dy*L,dx,dy,L,nome:String(w.nome||""),aberto:/aberto|open/i.test(String(w.nome||""))});
+    x+=dx*L; y+=dy*L; pts.push([x,y]); ang+=(Number.isFinite(Number(w.angulo))?Number(w.angulo):90)*Math.PI/180; });
+  const ret=[]; // retângulos (ilhas, penínsulas, pontos) como polígonos
+  const naParede=(i,ini,larg,fundo)=>{ const s=segs[i]; if(!s) return null; const nx=-s.dy, ny=s.dx;
+    const ax=s.x1+s.dx*ini, ay=s.y1+s.dy*ini; return [[ax,ay],[ax+s.dx*larg,ay+s.dy*larg],[ax+s.dx*larg+nx*fundo,ay+s.dy*larg+ny*fundo],[ax+nx*fundo,ay+ny*fundo]]; };
+  (pl.ilhas||[]).forEach(il=>{ const X=Number(il.x)||0, Y=Number(il.y)||0, W=Number(il.largura)||0, D=Number(il.profundidade)||0; if(W>0&&D>0) ret.push({k:"ilha",nome:il.nome||"Ilha",pol:[[X,Y],[X+W,Y],[X+W,Y+D],[X,Y+D]]}); });
+  (pl.peninsulas||[]).forEach(pe=>{ const s=segs[Number(pe.parede)]; if(!s) return; const D=Number(pe.profundidade)||36, C=Number(pe.comprimento)||0; if(C>0){ const pol=naParede(Number(pe.parede), Number(pe.inicio)||0, D, C); if(pol) ret.push({k:"pen",nome:"Península",pol}); } });
+  (pl.pontos||[]).forEach(pt=>{ const fundo=/geladeira/i.test(pt.tipo)?30:24; const pol=naParede(Number(pt.parede), Number(pt.inicio)||0, Number(pt.largura)||24, fundo); if(pol) ret.push({k:"ponto",nome:String(pt.tipo||""),pol}); });
+  ret.forEach(r=>r.pol.forEach(q=>pts.push(q)));
+  const xs=pts.map(q=>q[0]), ys=pts.map(q=>q[1]);
+  const W=Math.max(...xs)-Math.min(...xs)||1, H=Math.max(...ys)-Math.min(...ys)||1, pad=Math.max(W,H)*(mini?0.06:0.14);
+  const vb=[Math.min(...xs)-pad, Math.min(...ys)-pad, W+2*pad, H+2*pad];
+  const fs=Math.max(W,H)/(mini?14:26);
+  const pol=a=>a.map(q=>q.map(v=>v.toFixed(1)).join(",")).join(" ");
+  let g="";
+  // piso
+  g+=`<polygon points="${pol(pts.slice(0,segs.length+1))}" fill="#f6f1e8" stroke="none"/>`;
+  // paredes
+  segs.forEach(s=>{ g+= s.aberto ? `<line x1="${s.x1}" y1="${s.y1}" x2="${s.x2}" y2="${s.y2}" stroke="#9a948a" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`
+                                  : `<line x1="${s.x1}" y1="${s.y1}" x2="${s.x2}" y2="${s.y2}" stroke="#2b2724" stroke-width="${mini?4:7}" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`; });
+  // aberturas
+  (pl.aberturas||[]).forEach(a=>{ const s=segs[Number(a.parede)]; if(!s) return; const ini=Number(a.inicio)||0, L=Number(a.largura)||30;
+    const ax=s.x1+s.dx*ini, ay=s.y1+s.dy*ini, bx=ax+s.dx*L, by=ay+s.dy*L;
+    g+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#f6f1e8" stroke-width="${mini?5:9}" vector-effect="non-scaling-stroke"/>`;
+    if(/janela|window/i.test(a.tipo)) g+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#4a7fa8" stroke-width="${mini?2:3}" vector-effect="non-scaling-stroke"/>`;
+    else if(/porta|door/i.test(a.tipo)){ const nx=-s.dy, ny=s.dx; g+=`<path d="M${ax},${ay} L${ax+nx*L},${ay+ny*L} A${L},${L} 0 0 0 ${bx},${by}" fill="none" stroke="#8a8378" stroke-width="1" vector-effect="non-scaling-stroke"/>`; }
+  });
+  // ilhas, penínsulas, pontos
+  ret.forEach(r=>{ const c = r.k==="ponto" ? ["#e7e3dc","#8a8378"] : r.k==="ilha" ? ["#d9c3a5","#7a4a22"] : ["#e2c9a8","#a3352b"];
+    g+=`<polygon points="${pol(r.pol)}" fill="${c[0]}" stroke="${c[1]}" stroke-width="${r.k==="ponto"?1:2}" vector-effect="non-scaling-stroke"/>`;
+    if(!mini || r.k!=="ponto"){ const cx=r.pol.reduce((a,q)=>a+q[0],0)/4, cy=r.pol.reduce((a,q)=>a+q[1],0)/4;
+      g+=`<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-size="${(r.k==="ponto"?fs*0.7:fs)}" font-family="IBM Plex Sans,sans-serif" fill="${r.k==="pen"?"#a3352b":"#3b3631"}" font-weight="${r.k==="ponto"?400:600}">${esc(r.nome)}</text>`; } });
+  // cotas
+  if(!mini) segs.forEach(s=>{ const nx=-s.dy, ny=s.dx; const mx=(s.x1+s.x2)/2-nx*fs*1.4, my=(s.y1+s.y2)/2-ny*fs*1.4;
+    const rot=Math.atan2(s.dy,s.dx)*180/Math.PI; const r2=(rot>90||rot<-90)?rot+180:rot;
+    g+=`<text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="middle" font-size="${fs*0.8}" font-family="IBM Plex Mono,monospace" fill="#6c6860" transform="rotate(${r2.toFixed(1)} ${mx} ${my})">${esc(s.nome&&!s.aberto?s.nome+" · ":"")}${Math.round(s.L)}"</text>`; });
+  return `<svg class="planta-svg" viewBox="${vb.map(v=>v.toFixed(1)).join(" ")}" role="img" aria-label="Planta baixa: ${segs.length} paredes${(pl.ilhas||[]).length?", com ilha":""}${(pl.peninsulas||[]).length?", com península":""}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
+}
+function plantaVisorHtml(p){
+  const pl=p.ficha?.planta||{};
+  const ilhas=(pl.ilhas||[]).length, pens=(pl.peninsulas||[]).length;
+  return `<div class="planta-wrap">${plantaSvg(pl)||`<p class="muted">Ainda sem paredes. Conte pra SAHRA como é o ambiente ou mande a planta (foto, PDF ou desenho à mão).</p>`}</div>
+    <div class="planta-leg"><span class="pill ${pl.confirmada?"done":""}">${pl.confirmada?"Confirmada pelo cliente":"Rascunho"}${pl.aproximada!==false?" · medidas aproximadas":""}</span>
+      <span>${(pl.paredes||[]).length} parede(s)</span>${ilhas?`<span><i class="lg ilha"></i>Ilha</span>`:""}${pens?`<span><i class="lg pen"></i>Península</span>`:""}
+      <span><i class="lg porta"></i>Porta</span><span><i class="lg janela"></i>Janela</span><span><i class="lg aberto"></i>Aberto</span></div>`;
+}
+
 function nomeAmbiente(p){
   const a=p.ficha?.ambiente; const s=(typeof a==="string"&&a.trim())?a.trim():(p.titulo||"Projeto");
   return (s.charAt(0).toUpperCase()+s.slice(1)).slice(0,26);
@@ -790,6 +864,7 @@ function tileHtml(ver, thumb, nome, meta, cls){
 function arquivosHtml(p){
   const amb=nomeAmbiente(p); const atual=versaoAtual(p);
   let sah="";
+  if(temPlanta(p)) sah+=tileHtml("planta", plantaSvg(p.ficha.planta,true), "Planta baixa", p.ficha.planta.confirmada?`<b class="ok">Confirmada</b>`:"Rascunho", M.ver?.k==="planta"?"atual":"");
   if(PV.busy) sah+=`<div class="arq-tile fazendo" aria-live="polite"><span class="arq-thumb"><i class="dots"><span></span></i></span><span class="arq-nome">v${atual+1}.0 · ${esc(amb)}</span><span class="arq-meta">desenhando…</span></div>`;
   for(const x of versoesPV(p).slice().reverse()){
     const w=(x.proposta?.paredes||[])[0];
@@ -806,6 +881,7 @@ function arquivosHtml(p){
 function acaoPalcoHtml(p){
   if(M.ver) return "";
   if(PV.busy) return `<button class="btn vidro" id="palco-parar">Parar o desenho</button>`;
+  if(temPlanta(p) && p.status==="ativo") return `<button class="btn vidro" data-ver="planta">Ver a planta baixa</button>`;
   if(ocupado()) return "";
   if(!p.pv) return p.status!=="ativo"&&M.sample?`<button class="btn primary" id="palco-gerar">Gerar projeto virtual</button>`:"";
   const v=versaoAtual(p), amb=nomeAmbiente(p);
@@ -829,6 +905,7 @@ function visorHtml(p){
     extra=`<button class="btn" id="visor-zoom">${M.zoom?"Ajustar à tela":"Ampliar"}</button>`;
     corpo=`<div class="visor-img ${M.zoom?"zoom":""}"><img id="visor-img" src="${src}" alt="${tit}"></div>`;
   } else if(V.k==="montagem"){ tit="Montagem no portal"; corpo=p.pv?montarHtml(p):""; }
+  else if(V.k==="planta"){ tit=`Planta baixa · ${p.titulo||""}`; corpo=plantaVisorHtml(p); }
   return `<div class="visor" role="dialog" aria-label="${esc(tit)}">
     <div class="visor-head"><b>${esc(tit)}</b><span class="visor-acoes">${extra}<button class="btn" id="visor-fechar" aria-label="Fechar">Fechar</button></span></div>
     <div class="visor-fala"><span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div>${falaSahraHtml(p)}</div></div>
@@ -877,9 +954,9 @@ function msgsHtml(p){
 }
 
 function fichaHtml(p){
-  const f=p.ficha||{}; const keys=Object.keys(f);
+  const f=p.ficha||{}; const keys=Object.keys(f).filter(k=>k!=="planta"&&k!=="nome_projeto");
   const fotos=p.mensagens.flatMap(m=>m.img||[]);
-  return `<div class="box"><h3>Ficha do projeto</h3>
+  return `${temPlanta(p)?`<button class="box planta-mini" data-ver="planta" aria-label="Abrir a planta baixa"><h3>Planta baixa</h3>${plantaSvg(f.planta,true)}<small class="muted">${f.planta.confirmada?"Confirmada pelo cliente":"Rascunho"} · clique pra abrir</small></button>`:""}<div class="box"><h3>Ficha do projeto</h3>
     ${keys.length?`<dl class="kv">${keys.map(k=>`<div><dt>${esc(k.replace(/_/g," "))}</dt><dd>${esc(typeof f[k]==="string"?f[k]:JSON.stringify(f[k]))}</dd></div>`).join("")}</dl>`
       :`<p class="muted">Vai se preenchendo conforme a conversa.</p>`}</div>
     ${p.pendencias?.length?`<div class="box"><h3>Pra revisão do Matt</h3><ul class="trail">${p.pendencias.map(x=>`<li><b>${esc(x.etapa)}</b> ${esc(x.motivo)}</li>`).join("")}</ul></div>`:""}
@@ -940,6 +1017,17 @@ REGRAS FIXAS
 - O budget da Legno é sempre só dos cabinets de fábrica.
 - Mensagens curtas, sem listas longas. Perguntas sempre separadas do comentário (campo "perguntas").
 
+CAMPOS ESPECIAIS DA FICHA (a tela usa pra desenhar)
+- "nome_projeto": o nome do projeto ou do cliente, assim que souber (vira o título).
+- "planta": a planta baixa, SEMPRE o objeto INTEIRO quando mudar (a tela redesenha na hora):
+  {"paredes": [{"nome": "Parede da pia", "comprimento": 144, "angulo": 90}],
+   "aberturas": [{"parede": 0, "tipo": "porta|janela|passagem", "inicio": 30, "largura": 36}],
+   "pontos": [{"parede": 0, "tipo": "pia|fogao|geladeira|dishwasher|forno|tomada", "inicio": 40, "largura": 36}],
+   "ilhas": [{"nome": "Ilha", "largura": 96, "profundidade": 42, "x": 48, "y": 60}],
+   "peninsulas": [{"parede": 1, "inicio": 0, "comprimento": 72, "profundidade": 36}],
+   "aproximada": true, "confirmada": false}
+  Polegadas. Paredes em sequência, no sentido horário vistas de cima; "angulo" = virada pra próxima parede (90 = canto). Lado aberto (sala integrada) = parede com "nome": "aberto". "inicio" = distância da quina onde a parede começa. Ilha: "x" ao longo da 1ª parede e "y" pra dentro do cômodo, a partir da quina inicial da 1ª parede. ILHA é solta no meio; PENÍNSULA encosta numa parede: nunca troque uma pela outra. "confirmada": true só quando o cliente confirmar o desenho.
+
 ${etapaParaPrompt(e)}
 
 FICHA DO PROJETO ATÉ AGORA (JSON): ${JSON.stringify(p.ficha)}
@@ -983,7 +1071,7 @@ async function turno(texto, files){
       if(primeira && blobs.length && M.imgLimits) opts.images=blobs.slice(0,M.imgLimits.maxCount);
       const res=await M.sample.json(montarPrompt(e,modo,primeira?blobs.length:0), opts);
       primeira=false;
-      if(res && typeof res.ficha==="object" && res.ficha && !Array.isArray(res.ficha)) Object.assign(p.ficha,res.ficha);
+      if(res && typeof res.ficha==="object" && res.ficha && !Array.isArray(res.ficha)){ Object.assign(p.ficha,res.ficha); aplicaCamposEspeciais(p,res.ficha); }
       let saida=res?.saida; const msg=String(res?.mensagem||"").trim();
       { const c=Number(res?.completude); if(Number.isFinite(c)) p.completude=Math.max(0,Math.min(100,c)); }
       const pergs=Array.isArray(res?.perguntas)?res.perguntas.map(x=>String(x).trim()).filter(Boolean).slice(0,2):[];
@@ -1153,7 +1241,7 @@ async function turnoPos(texto, files){
   }
   M.busy=false; M.ctl=null;
   if(!res){ await salvarProj(); renderConversa($("#view-mesa")); return; }
-  if(res.ficha && typeof res.ficha==="object" && !Array.isArray(res.ficha)) Object.assign(p.ficha,res.ficha);
+  if(res.ficha && typeof res.ficha==="object" && !Array.isArray(res.ficha)){ Object.assign(p.ficha,res.ficha); aplicaCamposEspeciais(p,res.ficha); }
   let acao=String(res.acao||"conversa");
   const msg=String(res.mensagem||"").trim();
   const pergs=Array.isArray(res.perguntas)?res.perguntas.map(x=>String(x).trim()).filter(Boolean).slice(0,1):[];
@@ -1248,6 +1336,7 @@ PADRÕES DE MÓDULOS LEGNO (indústria americana, polegadas)
 - Painéis (PNL) em toda lateral aparente; fillers (F) de 1" a 6" pra fechar sobras.
 - Nichos (NCH) e floating shelves (FS) com LED opcional (prateleiras, base superior, laterais). Floating shelf ainda sem produto no catálogo: marcar "sob consulta".
 - Regras de projeto: um protagonista por parede; topos e rodapés alinhados; no máximo 3 materiais/cores; não encostar gaveta em canto; o que JÁ EXISTE e fica entra só como contexto (tipo "existente"), fora da lista de módulos; appliances são decorativos (tipo "appliance").
+- PLANTA BAIXA: o campo "planta" da ficha é a verdade sobre o formato. Respeite as paredes, as aberturas, onde ficam pia, fogão e geladeira, e ILHA x PENÍNSULA (ilha é solta no meio; península encosta numa parede: nunca troque uma pela outra). Ilha e península ganham sua própria vista em "paredes" (ex.: "Ilha · frente"), com a largura da planta.
 - Medidas do briefing são aproximadas: use-as, arredonde pra polegadas inteiras e feche cada parede com fillers.
 - FOTOS EM PERSPECTIVA: o que está mais longe da câmera parece menor. Nunca meça contando pixels de ponta a ponta. Use como régua só objetos de medida padrão no mesmo plano e perto do que está medindo (fogão 30", geladeira 36", dishwasher 24", bancada a 36" do piso, porta 80" de altura); prefira alturas às larguras; conte portas e módulos de largura padrão em vez de medir; use as linhas de fuga (rodapé, bancada, topo dos aéreos) pra corrigir o encurtamento. Quando o cliente deu uma medida, ela vale mais que a estimativa pela foto.
 
@@ -1392,12 +1481,6 @@ function pvSecaoHtml(p){
         ${(pr.decide_sahra||[]).length?`<div class="box"><h3>A SAHRA decidiu</h3><ul class="trail">${pr.decide_sahra.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
         ${(pr.pendencias||[]).length?`<div class="box"><h3>Confirmar com o cliente</h3><ul class="trail">${pr.pendencias.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
       </div>
-    </div>
-    <div class="box ajuste">
-      <h3>O cliente quer mudar algo?</h3>
-      <div class="row"><textarea id="pv-ajuste" rows="2" placeholder="Ex.: madeira mais clara, nichos sem porta, adega mais larga…" aria-label="Ajuste pedido pelo cliente"></textarea></div>
-      <div class="row"><button class="btn" id="pv-refazer">Refazer com o ajuste</button><button class="btn primary" id="pv-aprovar" ${p.pv.aprovado?"disabled":""}>${p.pv.aprovado?"Aprovado":"Cliente aprovou"}</button></div>
-      <p class="err" id="pv-aerr" hidden></p>
     </div>
     ${p.pv.aprovado?montarHtml(p):""}
   </section>`;
