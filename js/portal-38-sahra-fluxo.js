@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081045';
+  const VERSAO = '202611081105';
   let overlay = null;
 
   function abrir() {
@@ -193,6 +193,7 @@ COMO O PORTAL FUNCIONA (mecânica, não é regra de projeto)
 - CAIXA PELO CONSTRUTOR: quando a etapa de composição mandar (ou o item não tem módulo pronto equivalente), use uma entrada com "caixa" em vez de "module_id": "aereo" = caixa de Componentes Bottom · Bottom · Back (fora do chão), "suspenso" = Bottom · Stretcher · Back. O portal cria a caixa e monta no Construtor: "prateleiras", "portas" (folhas), "gavetas", "modelo_porta" ("vidro" = Aluminium Glass), "cor_vidro" (ex.: "fumê"), "led" (fita no tampo de cima, iluminando pra baixo), "color_name" (caixa) e "front_color_name" (frentes).
 - CONJUNTO EMPILHADO: peças que formam um móvel só (ex.: base + nicho + aéreo + top covers) levam o mesmo "grupo". O portal alinha: a peça de baixo na altura das bases da parede, a de cima com o topo dos aéreos, e a do meio preenche o vão entre elas; os painéis do grupo (top covers) ficam com a altura do conjunto e a profundidade da caixa + 25,4 mm.
 - ILHA/PENÍNSULA (módulo solto no piso): use "piso": {"afastamento_mm": distância da parede de referência até a costa do módulo, "frente": "ambiente" ou "parede"}; "wall_index" e "x_mm" contam a partir dessa parede.
+- CANTO DOS AÉREOS: aéreo raso (até ~15") NUNCA leva blind nem corner no canto. Deixe o canto livre; o portal afasta o aéreo de cada lado e põe os fillers da frente sozinho. Se a sobra não fechar com os aéreos padrão, use aéreo custom e ajuste a largura.
 - NUNCA troque por um módulo de outra função (pantry ≠ torre com nicho; gaveteiro ≠ base de porta). "motivo" diz por que escolheu cada peça.
 - Item do virtual que não tem módulo correspondente NÃO entra em modules: vai em "nao_virou" com o motivo. Nunca invente id.
 
@@ -302,6 +303,17 @@ Responda SOMENTE com JSON:
         const ini = (+baixo.floor_height_mm || 0) + (+baixo.height_mm || 0);
         if (Math.abs((+cima.floor_height_mm || 0) - ini) < 40) cima.floor_height_mm = ini;
       }
+      // NICHO ABERTO = TAMPONAMENTO (09:51, 08/11, Matt: "sempre que é um
+      // nicho aberto conectado com algum módulo que tenha porta, ele tem que
+      // ser como um tamponamento: uma polegada a mais do que o módulo de baixo
+      // pra cobrir a porta… só pra nichos abertos"). Profundidade = a maior
+      // dos módulos com frente do conjunto + 1".
+      const aberto = (m) => m.caixa && !(+m.portas) && !(+m.gavetas);
+      const comFrente = corpo.filter((m) => !aberto(m));
+      if (comFrente.length) {
+        const dFrente = Math.max(...comFrente.map((m) => +m.depth_mm || 0));
+        if (dFrente > 0) corpo.filter(aberto).forEach((m) => { m.depth_mm = dFrente + MM; });
+      }
       // top covers: altura do conjunto, profundidade da caixa + 1"
       const y0 = Math.min(...corpo.map((m) => +m.floor_height_mm || 0));
       const y1 = Math.max(...corpo.map((m) => (+m.floor_height_mm || 0) + (+m.height_mm || 0)));
@@ -391,6 +403,65 @@ Responda SOMENTE com JSON:
     return slot;
   }
 
+  // ---- CANTO DOS AÉREOS (09:58, 08/11) ----
+  // Matt: "o canto aéreo 99% das vezes vai ter esse espacinho em branco,
+  // morto, que não vale a pena fazer um blind ou corner… coloca um filler na
+  // parte frontal da caixa, dos dois lados, e se conecta um entrelaçado no
+  // outro… se a parede está um pouquinho torta, tem jogo… todo aéreo de
+  // profundidade curta (12, 13, até 15) tem que ser feito dessa forma…
+  // se não der espaço pros aéreos padrão, troca pra aéreo custom e
+  // customiza a largura". Aqui: em cada canto de ~90° entre paredes
+  // seguidas, o aéreo raso mais perto do canto de cada lado sai do canto
+  // (profundidade do aéreo da outra parede + folga) e ganha um filler na
+  // frente; o filler da parede seguinte passa por cima da ponta do outro.
+  const CANTO_FOLGA_MM = 2 * MM;     // folga entre a caixa e a frente do aéreo da outra parede
+  const AEREO_RASO_MAX_MM = 16 * MM; // "12, 13, até 15"
+  const ehAereoRaso = (s) => s && !isFloorSlot(s) && (+s.floor_height_mm || 0) >= 900 && (+s.depth_mm || 0) > 0 && (+s.depth_mm || 0) <= AEREO_RASO_MAX_MM
+    && !/filler|panel|painel|cover|shelf|prateleira/i.test(String((s.module && s.module.name) || ''));
+  async function cantoAereos(r, cat, avisos) {
+    const n = projectWallSegments.length;
+    const filler = cat.find((m) => /filler/i.test(m.name) && /wall|a[ée]reo|upper/i.test([m.name, m.category, m.subcategory].join(' ')))
+      || cat.find((m) => /filler/i.test([m.name, m.category].join(' ')));
+    let feitos = 0;
+    for (let i = 0; i < n - 1; i++) {
+      const ang = Number(((r.walls || [])[i] || {}).angle_to_next_deg);
+      if (Number.isFinite(ang) && Math.abs(ang - 90) > 15) continue;
+      const L = getProjectWallWidthMm(i);
+      const A = projectSlots.filter((s) => Number(s.wall_index) === i && ehAereoRaso(s)).sort((a, b) => (b.x_mm + b.width_mm) - (a.x_mm + a.width_mm))[0];
+      const B = projectSlots.filter((s) => Number(s.wall_index) === i + 1 && ehAereoRaso(s)).sort((a, b) => a.x_mm - b.x_mm)[0];
+      if (!A || !B) continue;
+      const DA = +A.depth_mm, DB = +B.depth_mm;
+      // só mexe se os dois estão de fato no canto (dentro da zona do outro + 1 módulo)
+      if ((A.x_mm + A.width_mm) < L - DB - 600 || B.x_mm > DA + 600) continue;
+      const fimA = L - DB - CANTO_FOLGA_MM, iniB = DA + CANTO_FOLGA_MM;
+      const xA = Math.round(fimA - A.width_mm), xB = Math.round(iniB);
+      [[A, xA], [B, xB]].forEach(([s, x]) => {
+        s.x_mm = x;
+        if (projectSlotOverlapsNeighbor(s, x)) avisos.push('Canto dos aéreos (paredes ' + (i + 1) + '/' + (i + 2) + '): ' + ((s.module && s.module.name) || 'aéreo') + ' encostou no vizinho. Troque por aéreo custom e ajuste a largura.');
+      });
+      if (!filler) { avisos.push('Canto dos aéreos: não achei módulo de filler no catálogo; ficou sem os fillers da frente.'); feitos++; continue; }
+      // filler da parede A: da lateral do aéreo até a face do filler da parede B
+      // filler da parede B: da frente do aéreo A até a lateral do aéreo B (passa por cima da ponta do A)
+      const ponha = async (wi, x, w, s, recuo) => {
+        if (!(w > 5)) return;
+        const f = await insertProjectModuleDefault(filler.id, { wall_index: wi, x_mm: Math.round(x), width_mm: Math.round(w), height_mm: s.height_mm, floor_height_mm: s.floor_height_mm });
+        if (!f) { avisos.push('Canto dos aéreos: o portal não criou o filler.'); return null; }
+        f.x_mm = Math.round(x); f.floor_height_mm = s.floor_height_mm;
+        f.fineOffsetZMm = Math.round(recuo);
+        try { f.depth_mm = projectSlotClampedDimensionMm(f, 'depth', 19); } catch (e) { /* fica a do cadastro */ }
+        const cor = Object.values(s.colorsByRole || {})[0];
+        if (cor && cor.name) iaeOpSetColor({ slot_ids: [String(f.id)], color_name: cor.name }, avisos);
+        recomputeProjectSlotPricing(f);
+        return f;
+      };
+      const fB = await ponha(i + 1, DA, xB - DA, B, DB);
+      const tB = fB ? (+fB.depth_mm || 19) : 19;
+      await ponha(i, L - DB - tB - ((L - DB - tB) - (xA + A.width_mm)), (L - DB - tB) - (xA + A.width_mm), A, DA);
+      feitos++;
+    }
+    return feitos;
+  }
+
   async function aplicaModulos(r, cat, nParedes) {
     const porId = new Map(cat.map((m) => [String(m.id), m]));
     const falhas = [], avisos = [], relatorio = [];
@@ -463,6 +534,10 @@ Responda SOMENTE com JSON:
       if (typeof resetProject === 'function') resetProject();
       const nParedes = aplicaParedes(r);
       const mods = await aplicaModulos(r, cat, nParedes);
+      try {
+        const nCantos = await cantoAereos(r, cat, mods.avisos);
+        if (nCantos) mods.relatorio.push({ item: 'Canto dos aéreos', grupo: '', usado: nCantos + ' canto(s) com espaço morto + fillers na frente', motivo: 'Regra do canto: aéreo raso não leva blind/corner' });
+      } catch (e) { console.error('[sahra-fluxo] canto dos aéreos', e); mods.avisos.push('Canto dos aéreos: ' + ((e && e.message) || e)); }
       renderProjectCanvas();
       if (typeof markProjectDirty === 'function') markProjectDirty();
       const naoVirou = [...(r.nao_virou || []), ...mods.falhas];
