@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611081053"></script>
+<script src="js/config.js?v=202611081057"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -184,6 +184,8 @@ textarea{resize:vertical;min-height:62px}
 .thumb{padding:0;border:2px solid transparent;border-radius:8px;background:none;line-height:0}
 .thumb img{width:96px;height:72px;object-fit:cover;border-radius:6px}
 .thumb.sel{border-color:var(--accent)}
+.thumb.proj{width:100px;height:76px;display:inline-flex;align-items:center;justify-content:center;background:var(--accent-soft);border-color:var(--line);font-size:12px;line-height:1.2;text-align:center;color:var(--accent)}
+.thumb.proj small{color:var(--muted)}
 .renders{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:12px;margin-top:12px}
 .renders figure{margin:0}
 .renders img{width:100%;height:auto;border-radius:10px;border:1px solid var(--line);display:block}
@@ -1293,7 +1295,7 @@ O QUE VOCÊ PODE FAZER (escolha UMA ação pela última mensagem do cliente):
 - "gerar": montar a proposta (projeto virtual). Use se ainda não existe proposta, ou se o cliente pedir pra refazer do zero.
 - "ajustar": o cliente quer mudar algo na proposta. Preencha "ajuste" com o pedido, claro e completo (ex.: "madeira mais clara nos nichos e adega 6 polegadas mais larga").
 - "aprovar": o cliente aprovou a proposta como está (ex.: "aprovado", "gostei, pode seguir", "fechado").
-- "render": o cliente quer ver como fica de verdade / imagem realista / foto da proposta.
+- "render": o cliente quer ver como fica de verdade / imagem realista / foto da proposta. Se a casa está em construção (não existe foto do ambiente) ou o cliente pedir sem foto, mande também "sem_foto": true.
 - "montar": montar o projeto no portal (canvas de Projetos). Só depois de aprovado; se não estiver aprovado, pergunte se pode considerar aprovado.
 - "conversa": responder dúvida, comentar, ou pedir um esclarecimento. Pergunte só se for indispensável (no máximo 1 pergunta).
 Se o pedido não estiver claro entre duas ações, escolha "conversa" e pergunte qual.
@@ -1339,15 +1341,15 @@ async function turnoPos(texto, files){
   if(acao==="montar" && !p.pv) acao="gerar";
   if(acao==="aprovar" && !p.pv) acao="conversa";
   if(acao==="render" && !p.pv?.proposta?.prompt_render) acao=p.pv?"conversa":"gerar";
-  if(acao==="render" && !p.mensagens.some(m=>(m.img||[]).length)){ acao="conversa"; p.mensagens.push(sahraMsg("Pra eu mostrar como fica de verdade, me manda uma foto do ambiente aqui na conversa.",[])); }
-  else if(acao==="montar" && !p.pv?.aprovado){ acao="conversa"; p.mensagens.push(sahraMsg(msg||"Antes de montar no portal, preciso da sua aprovação.",["Posso considerar a proposta aprovada?"])); }
+  if(acao==="render" && (res.sem_foto===true || !p.mensagens.some(m=>(m.img||[]).length))) PV.fotoRender=RENDER_DO_PROJETO;
+  if(acao==="montar" && !p.pv?.aprovado){ acao="conversa"; p.mensagens.push(sahraMsg(msg||"Antes de montar no portal, preciso da sua aprovação.",["Posso considerar a proposta aprovada?"])); }
   else if(acao==="aprovar"){ aprovarPV(); }
   else if(msg || pergs.length || acao==="conversa") p.mensagens.push(sahraMsg(msg,pergs,"Pode me contar um pouco mais?"));
   falar([msg,...pergs].join(" "));
   await salvarProj(); renderConversa($("#view-mesa"));
   if(acao==="gerar") await gerarPV("", {chat:true});
   else if(acao==="ajustar") await gerarPV(String(res.ajuste||texto), {chat:true});
-  else if(acao==="render"){ if(!p.mensagens.flatMap(m=>m.img||[]).includes(PV.fotoRender)) PV.fotoRender=p.mensagens.flatMap(m=>m.img||[]).filter(id=>M.blobUrls[id]).at(-1)||null; await gerarRender(); }
+  else if(acao==="render"){ if(PV.fotoRender!==RENDER_DO_PROJETO && !p.mensagens.flatMap(m=>m.img||[]).includes(PV.fotoRender)) PV.fotoRender=p.mensagens.flatMap(m=>m.img||[]).filter(id=>M.blobUrls[id]).at(-1)||RENDER_DO_PROJETO; await gerarRender(); }
   else if(acao==="montar") await montarNoPortal();
 }
 function cardChatHtml(p,m){
@@ -1627,27 +1629,71 @@ async function montarNoPortal(){
   renderConversa($("#view-mesa"));
   document.getElementById("pv-montar-box")?.scrollIntoView({behavior:"smooth",block:"center"});
 }
+// OBRA SEM FOTO (10:55, 08/11, Matt: "ela pede uma imagem do ambiente, mas
+// se a casa estiver sendo construída não existe"). Opção "Do projeto": gera
+// do zero, com as vistas das paredes e a planta como referência de layout.
+const RENDER_DO_PROJETO="__projeto";
 function renderFotosHtml(p){
   const fotos=p.mensagens.flatMap(m=>m.img||[]).filter(id=>M.blobUrls[id]);
-  if(!fotos.length) return `<p class="err">Este projeto não tem foto do ambiente. Mande uma foto na conversa pra gerar o render.</p>`;
-  if(!fotos.includes(PV.fotoRender)) PV.fotoRender=fotos.at(-1);
-  return `<div class="thumbs pick">${fotos.map(id=>`<button class="thumb ${id===PV.fotoRender?"sel":""}" data-foto="${id}" aria-pressed="${id===PV.fotoRender}" aria-label="Usar esta foto"><img src="${M.blobUrls[id]}" alt=""></button>`).join("")}</div>`;
+  if(PV.fotoRender!==RENDER_DO_PROJETO && !fotos.includes(PV.fotoRender)) PV.fotoRender=fotos.length?fotos.at(-1):RENDER_DO_PROJETO;
+  const proj=`<button class="thumb proj ${PV.fotoRender===RENDER_DO_PROJETO?"sel":""}" data-foto="${RENDER_DO_PROJETO}" aria-pressed="${PV.fotoRender===RENDER_DO_PROJETO}" aria-label="Sem foto: gerar do zero a partir do projeto"><span>Sem foto<br><small>obra · do projeto</small></span></button>`;
+  return `<div class="thumbs pick">${proj}${fotos.map(id=>`<button class="thumb ${id===PV.fotoRender?"sel":""}" data-foto="${id}" aria-pressed="${id===PV.fotoRender}" aria-label="Usar esta foto"><img src="${M.blobUrls[id]}" alt=""></button>`).join("")}</div>`;
+}
+async function svgParaJpeg(svg, W){
+  W=W||1400;
+  let t=String(svg||""); if(!t) return null;
+  if(!/xmlns=/.test(t)) t=t.replace("<svg",'<svg xmlns="http://www.w3.org/2000/svg"');
+  t=t.replace(/var\(--muted\)/g,"#6c6860").replace(/var\(--[a-z-]+\)/g,"#3b3631");
+  const vb=((t.match(/viewBox="([^"]+)"/)||[])[1]||"").split(/[\s,]+/).map(Number);
+  const ratio=(vb.length===4&&vb[2]>0)?vb[3]/vb[2]:0.6;
+  const url=URL.createObjectURL(new Blob([t],{type:"image/svg+xml"}));
+  try{
+    const img=new Image(); await new Promise((ok,er)=>{ img.onload=ok; img.onerror=er; img.src=url; });
+    const c=document.createElement("canvas"); c.width=W; c.height=Math.max(1,Math.round(W*ratio));
+    const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
+    return c.toDataURL("image/jpeg",0.85).split(",")[1];
+  }catch{ return null; } finally{ URL.revokeObjectURL(url); }
+}
+async function referenciasDoProjeto(p){
+  const pr=p.pv?.proposta||{}; const out=[];
+  for(const w of (pr.paredes||[]).slice(0,3)){ const b=await svgParaJpeg(elevSvg(w,pr.acabamentos||[])); if(b) out.push({mime:"image/jpeg",data:b}); }
+  if(temPlanta(p)){ const b=await svgParaJpeg(plantaSvg(p.ficha.planta,false),1200); if(b) out.push({mime:"image/jpeg",data:b}); }
+  return out;
+}
+function promptSemFoto(p){
+  const pr=p.pv?.proposta||{};
+  const acab=(pr.acabamentos||[]).map(a=>`${a.nome}${a.cor_legno?` (${a.cor_legno})`:""}: ${a.onde||""}`).join("; ");
+  const paredes=(pr.paredes||[]).map(w=>`${w.nome}: ${w.largura}" wide, ${w.altura}" ceiling`).join("; ");
+  return `NEW CONSTRUCTION, NO PHOTO. Ignore any instruction about keeping an existing photo, camera or room: there is no photo.
+Design concept: ${pr.conceito||""}
+Walls: ${paredes}
+Materials: ${acab}
+Room type: ${nomeAmbiente(p)}.
+Description of the cabinetry (originally written to edit a photo; use only what it says about the furniture): ${pr.prompt_render||""}`;
 }
 async function gerarRender(){
   const p=M.proj, pr=p?.pv?.proposta; if(!pr?.prompt_render || PV.rendering) return;
-  const dataUrl=M.blobUrls[PV.fotoRender]; if(!dataUrl){ PV.renderErro="Escolha uma foto."; renderConversa($("#view-mesa")); return; }
+  const semFoto = PV.fotoRender===RENDER_DO_PROJETO || !M.blobUrls[PV.fotoRender];
+  const dataUrl = semFoto ? null : M.blobUrls[PV.fotoRender];
   PV.rendering=true; PV.renderErro=""; renderConversa($("#view-mesa"));
   try{
-    const [cab,b64]=dataUrl.split(","); const mime=(cab.match(/data:([^;]+)/)||[])[1]||"image/jpeg";
-    const { data, error } = await supabaseClient.functions.invoke("sahra-fluxo",{body:{acao:"render", prompt:pr.prompt_render, image:{mime, data:b64}}});
+    let body;
+    if(semFoto){
+      const referencias=await referenciasDoProjeto(p);
+      body={acao:"render", prompt:promptSemFoto(p), referencias, sem_foto:true};
+    } else {
+      const [cab,b64]=dataUrl.split(","); const mime=(cab.match(/data:([^;]+)/)||[])[1]||"image/jpeg";
+      body={acao:"render", prompt:pr.prompt_render, image:{mime, data:b64}};
+    }
+    const { data, error } = await supabaseClient.functions.invoke("sahra-fluxo",{body});
     if(error || !data?.image){ let corpo=null; try{ corpo=await error?.context?.json(); }catch{} throw new Error(corpo?.error||data?.error||error?.message||"sem imagem"); }
     const url=`data:${data.mime||"image/png"};base64,${data.image}`;
     const ins=await supabaseClient.from("sahra_fluxo_fotos").insert({projeto_id:p.id, tipo:"render", data_url:url}).select("id").single();
     if(ins.error) throw ins.error;
     M.blobUrls[ins.data.id]=url;
-    p.pv.renders=[...(p.pv.renders||[]), {id:ins.data.id, quando:new Date().toISOString(), foto:PV.fotoRender, v:versaoAtual(p)}];
+    p.pv.renders=[...(p.pv.renders||[]), {id:ins.data.id, quando:new Date().toISOString(), foto:semFoto?null:PV.fotoRender, v:versaoAtual(p)}];
     M.ver=null; { const k=arquivosLista(p).findIndex(f=>f.id===ins.data.id); M.luz=k>=0?k:null; LUZ.s=1; LUZ.x=0; LUZ.y=0; }
-    p.mensagens.push(sahraMsg("Olha como fica no seu espaço.",[]));
+    p.mensagens.push(sahraMsg(semFoto?"Como a casa ainda está em obra, criei a imagem a partir do projeto. Olha como vai ficar.":"Olha como fica no seu espaço.",[]));
     p.mensagens.push({r:"card",k:"render",id:ins.data.id,ts:new Date().toISOString()});
     await salvarProj();
   }catch(e){ PV.renderErro="Não consegui gerar o render: "+(e?.message||e); p.mensagens.push(sahraMsg("Não consegui gerar a imagem agora. Me pede de novo daqui a pouco.",[])); await salvarProj(); }

@@ -119,10 +119,22 @@ async function geraJson(apiKey: string, prompt: string, images: any[], profundo:
   throw new HttpError(502, `A IA não devolveu uma resposta utilizável (${lastErr}).`, "no_result");
 }
 
-async function geraRender(apiKey: string, prompt: string, image: any) {
+// OBRA SEM FOTO (2026-11-08, Matt: "ela pede uma imagem do ambiente, mas se
+// a casa estiver sendo construída não existe"). Sem foto do cliente, gera do
+// zero; as vistas do projeto (elevações) e a planta vão como REFERÊNCIA de
+// layout, não como foto a ser editada.
+async function geraRender(apiKey: string, prompt: string, image: any, referencias: any[] = []) {
   const forced = Deno.env.get("GEMINI_IMAGE_MODEL");
-  const parts: any[] = [{ text: `${prompt}\nPhotorealistic, architectural magazine quality. Keep the original photo's camera, perspective and everything not mentioned exactly as it is. No people, no text, no logos, no watermark.` }];
-  if (image && typeof image.data === "string") parts.push({ inlineData: { mimeType: image.mime || "image/jpeg", data: image.data } });
+  const temFoto = !!(image && typeof image.data === "string");
+  const refs = (Array.isArray(referencias) ? referencias : []).filter((r) => r && typeof r.data === "string").slice(0, 4);
+  const sufixo = temFoto
+    ? "Photorealistic, architectural magazine quality. Keep the original photo's camera, perspective and everything not mentioned exactly as it is. No people, no text, no logos, no watermark."
+    : "There is NO photo of the room: the house is still under construction. Create the finished room from scratch as a photorealistic interior photograph, architectural magazine quality, natural daylight, eye-level camera at a natural three-quarter angle. "
+      + (refs.length ? "The attached images are the project's technical drawings (front elevations of each wall and the floor plan). Follow them exactly for the layout, proportions, positions and number of cabinets, doors, drawers, niches, panels and appliances, and for the materials and colors described; do not copy the drawing style, labels or dimension lines. " : "")
+      + "Plain finished walls, simple finished floor and ceiling. No people, no text, no logos, no watermark.";
+  const parts: any[] = [{ text: `${prompt}\n${sufixo}` }];
+  if (temFoto) parts.push({ inlineData: { mimeType: image.mime || "image/jpeg", data: image.data } });
+  for (const r of refs) parts.push({ inlineData: { mimeType: r.mime || "image/png", data: r.data } });
   let lastErr = "";
   for (const model of [forced, ...IMG_MODELS].filter((m, i, a) => !!m && a.indexOf(m) === i) as string[]) {
     const res = await fetch(`${GEMINI_API_BASE}/models/${model}:generateContent`, {
@@ -169,8 +181,8 @@ Deno.serve(async (req) => {
   if (!prompt.trim()) return json(400, { error: "Prompt vazio.", code: "no_prompt" });
   try {
     if (b.acao === "render") {
-      if (!b.image?.data) return json(400, { error: "Mande a foto do cliente.", code: "no_image" });
-      return json(200, await geraRender(apiKey, prompt.slice(0, 6000), b.image));
+      if (!b.image?.data && !(Array.isArray(b.referencias) && b.referencias.length) && !b.sem_foto) return json(400, { error: "Mande a foto do cliente ou as vistas do projeto.", code: "no_image" });
+      return json(200, await geraRender(apiKey, prompt.slice(0, 6000), b.image?.data ? b.image : null, b.referencias || []));
     }
     return json(200, await geraJson(apiKey, prompt, Array.isArray(b.images) ? b.images : [], b.modo === "profundo"));
   } catch (e) {
