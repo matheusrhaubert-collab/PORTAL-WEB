@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081135';
+  const VERSAO = '202611081150';
   let overlay = null;
 
   function abrir() {
@@ -444,53 +444,131 @@ Responda SOMENTE com JSON:
   const vizinhoAntes = (s, lista) => lista.filter((o) => o !== s && fimDe(o) <= (+s.x_mm) + 1).sort((a, b) => fimDe(b) - fimDe(a))[0];
   const vizinhoDepois = (s, lista) => lista.filter((o) => o !== s && (+o.x_mm) >= fimDe(s) - 1).sort((a, b) => a.x_mm - b.x_mm)[0];
 
-  // CANTO DOS AÉREOS (10:24: "o canto não seguiu a regra"). Antes só agia se
-  // os DOIS aéreos já estivessem colados no canto; a IA deixou um deles longe
-  // e a regra pulou. Agora: se tem aéreo raso nas duas paredes do canto, o
-  // de cada lado vai pra posição do canto, e o vão que abrir pro vizinho é
-  // fechado com filler (até 6") ou avisado pra trocar por aéreo custom.
+  // CANTO DOS AÉREOS — 3ª versão (10:49, 08/11). Matt: "aéreo uma verdadeira
+  // bagunça… os fillers sendo colocados por afastamento da parede, no corner
+  // isso deve ser desconsiderado. Coloca os módulos primeiro, depois os
+  // fillers de fechamento. Ou melhor: um MÓDULO DE CANTO (oco com filler)
+  // pra conectar um lado no outro… ainda não está escolhendo opção
+  // customizada quando não cabe com as medidas standard."
+  // Agora, em cada canto com aéreo raso nas duas paredes:
+  //  1. o MÓDULO DE CANTO (catálogo, nome com "Corner Filler" / "Canto
+  //     aéreo") entra no fim da parede A, largura = profundidade do aéreo da
+  //     parede B + folga; sem ele no catálogo, o canto fica só com o espaço
+  //     (e um aviso pra criar o módulo) — nada de filler solto afastado;
+  //  2. os aéreos da linha de cada parede ENCOSTAM no canto (A termina no
+  //     módulo; B começa em profundidade do A + folga), na mesma ordem;
+  //  3. a ponta de longe da linha fica onde a SAHRA pôs (alinhada com o que
+  //     ela planejou): sobra até 3" vira filler de fechamento (normal, na
+  //     parede); sobra maior, ou falta, o aéreo da ponta vira AÉREO CUSTOM
+  //     com a largura que fecha.
+  const FECHA_FILLER_MAX = 3 * MM;
+  const moduloCanto = (cat) => cat.find((m) => /corner\s*filler|filler\s*corner|canto\s*a[ée]reo|filler\s*de\s*canto|wall\s*corner\s*(oco|hollow|blank)/i.test(m.name));
+  const fillerDe = (cat) => cat.find((m) => /filler/i.test(m.name) && /wall|a[ée]reo|upper/i.test([m.name, m.category, m.subcategory].join(' ')) && !moduloCanto([m]))
+    || cat.find((m) => /filler/i.test([m.name, m.category].join(' ')) && !moduloCanto([m]));
+  const corDe = (s) => { const c = Object.values(s.colorsByRole || {})[0]; return c && c.name; };
+  // linha contínua de aéreos a partir do canto (vão < 40 mm conta como encostado)
+  function linhaDoCanto(lista, doFim) {
+    const ord = lista.slice().sort((a, b) => doFim ? fimDe(b) - fimDe(a) : a.x_mm - b.x_mm);
+    const out = [ord[0]];
+    for (let k = 1; k < ord.length; k++) {
+      const ant = out[out.length - 1], cur = ord[k];
+      const vao = doFim ? (+ant.x_mm) - fimDe(cur) : (+cur.x_mm) - fimDe(ant);
+      if (vao > 40 || vao < -40) break;
+      out.push(cur);
+    }
+    return out;
+  }
+  async function aereoCustom(s, largura, cat, avisos, nome) {
+    const H = +s.height_mm || 0;
+    const opc = cat.filter((m) => /custom/i.test([m.family, m.name].join(' ')) && /wall|a[ée]reo|upper/i.test([m.name, m.category, m.subcategory].join(' '))
+      && !/filler|panel|painel|corner/i.test(m.name) && m.w && m.w[0] != null && m.w[2] != null && m.w[0] < m.w[2]
+      && largura >= m.w[0] - 1 && largura <= m.w[2] + 1 && (!m.h || m.h[0] == null || (H >= m.h[0] - 1 && H <= (m.h[2] || H) + 1)));
+    // portas parecidas com o padrão: mais de 24" → 2 portas
+    const quer2 = largura > 24 * MM;
+    const m = opc.find((x) => quer2 ? /2\s*(door|porta)|double|duas/i.test(x.name) : /1\s*(door|porta)|single|uma/i.test(x.name)) || opc[0];
+    if (!m) { avisos.push(nome + ': precisa de aéreo de ' + (largura / MM).toFixed(1) + '" e não achei aéreo custom que chegue nessa largura.'); return false; }
+    const cores = { colorsByRole: Object.assign({}, s.colorsByRole || {}) };
+    const antes = (s.module && s.module.name) || 'aéreo';
+    await editProjectAiApply([{ op: 'replace_module', reason: 'Aéreo custom pra fechar a linha', module_id: m.id, slot_ids: [String(s.id)], width_mm: Math.round(largura), height_mm: H, depth_mm: +s.depth_mm }]);
+    try { if (typeof iaeCopyColors === 'function') iaeCopyColors(cores, s); } catch (e) { /* */ }
+    return antes + ' → ' + m.name + ' ' + (largura / MM).toFixed(1) + '"';
+  }
+  async function fechaLinha(linha, doFim, ancora, pontaOriginal, wi, cat, avisos, diag, nome) {
+    // encosta a linha na âncora (canto), na mesma ordem
+    let pos = ancora;
+    linha.forEach((s) => { if (doFim) { s.x_mm = Math.round(pos - (+s.width_mm)); pos = s.x_mm; } else { s.x_mm = Math.round(pos); pos = fimDe(s); } });
+    const ponta = linha[linha.length - 1];
+    const sobra = doFim ? (+ponta.x_mm) - pontaOriginal : pontaOriginal - fimDe(ponta);
+    if (Math.abs(sobra) <= 3) return;
+    if (sobra > 0 && sobra <= FECHA_FILLER_MAX) {
+      const f = fillerDe(cat);
+      if (!f) { avisos.push(nome + ': sobra de ' + (sobra / MM).toFixed(1) + '" sem filler no catálogo.'); return; }
+      const sl = await insertProjectModuleDefault(f.id, { wall_index: wi, x_mm: Math.round(doFim ? pontaOriginal : fimDe(ponta)), width_mm: Math.round(sobra), height_mm: ponta.height_mm, floor_height_mm: ponta.floor_height_mm });
+      if (sl) { sl.x_mm = Math.round(doFim ? pontaOriginal : fimDe(ponta)); sl.floor_height_mm = ponta.floor_height_mm; if (corDe(ponta)) iaeOpSetColor({ slot_ids: [String(sl.id)], color_name: corDe(ponta) }, avisos); recomputeProjectSlotPricing(sl); }
+      diag.push(nome + ': filler de fechamento de ' + (sobra / MM).toFixed(1) + '" na ponta da linha.');
+      return;
+    }
+    // sobra grande ou falta: o aéreo da ponta vira custom com a largura que fecha
+    const nova = (+ponta.width_mm) + sobra;
+    const avisosTeste = [];
+    const r = await aereoCustom(ponta, nova, cat, avisosTeste, nome);
+    if (r) {
+      if (doFim) ponta.x_mm = Math.round(pontaOriginal); // mantém a ponta de longe onde a SAHRA pôs
+      diag.push(nome + ': ' + r + ' pra fechar a linha.');
+      return;
+    }
+    // não coube num aéreo só: entra um aéreo custom NOVO do tamanho da sobra
+    if (sobra > 0) {
+      const novo = await novoAereoCustom(ponta, sobra, doFim ? pontaOriginal : fimDe(ponta), wi, cat);
+      if (novo) { diag.push(nome + ': aéreo custom novo de ' + (sobra / MM).toFixed(1) + '" (' + novo + ') pra fechar a linha.'); return; }
+    }
+    avisos.push(...avisosTeste);
+  }
+  async function novoAereoCustom(ref, largura, x, wi, cat) {
+    const H = +ref.height_mm || 0;
+    const opc = cat.filter((m) => /custom/i.test([m.family, m.name].join(' ')) && /wall|a[ée]reo|upper/i.test([m.name, m.category, m.subcategory].join(' '))
+      && !/filler|panel|painel|corner/i.test(m.name) && m.w && m.w[0] != null && m.w[2] != null && m.w[0] < m.w[2]
+      && largura >= m.w[0] - 1 && largura <= m.w[2] + 1);
+    const m = opc.find((y) => largura > 24 * MM ? /2\s*(door|porta)|double|duas/i.test(y.name) : /1\s*(door|porta)|single|uma/i.test(y.name)) || opc[0];
+    if (!m) return null;
+    const sl = await insertProjectModuleDefault(m.id, { wall_index: wi, x_mm: Math.round(x), width_mm: Math.round(largura), height_mm: H, floor_height_mm: ref.floor_height_mm });
+    if (!sl) return null;
+    sl.x_mm = Math.round(x); sl.floor_height_mm = ref.floor_height_mm;
+    try { sl.depth_mm = projectSlotClampedDimensionMm(sl, 'depth', +ref.depth_mm); } catch (e) { /* */ }
+    if (corDe(ref)) iaeOpSetColor({ slot_ids: [String(sl.id)], color_name: corDe(ref) }, []);
+    recomputeProjectSlotPricing(sl);
+    return m.name;
+  }
   async function cantoAereos(r, cat, avisos, diag) {
-    const filler = cat.find((m) => /filler/i.test(m.name) && /wall|a[ée]reo|upper/i.test([m.name, m.category, m.subcategory].join(' ')))
-      || cat.find((m) => /filler/i.test([m.name, m.category].join(' ')));
+    const mc = moduloCanto(cat);
     let feitos = 0;
-    const corDe = (s) => { const c = Object.values(s.colorsByRole || {})[0]; return c && c.name; };
-    const ponha = async (wi, x, w, s, recuo, rot) => {
-      if (!(w > 5) || !filler) return null;
-      const f = await insertProjectModuleDefault(filler.id, { wall_index: wi, x_mm: Math.round(x), width_mm: Math.round(w), height_mm: s.height_mm, floor_height_mm: s.floor_height_mm });
-      if (!f) { avisos.push('Canto dos aéreos: o portal não criou o filler (' + rot + ').'); return null; }
-      f.x_mm = Math.round(x); f.floor_height_mm = s.floor_height_mm; f.fineOffsetZMm = Math.round(recuo || 0);
-      try { f.depth_mm = projectSlotClampedDimensionMm(f, 'depth', 19); } catch (e) { /* */ }
-      if (corDe(s)) iaeOpSetColor({ slot_ids: [String(f.id)], color_name: corDe(s) }, avisos);
-      recomputeProjectSlotPricing(f);
-      return f;
-    };
     for (const [i, j] of cantosDoAmbiente(r)) {
       const nome = 'Canto paredes ' + (i + 1) + '/' + (j + 1);
       const L = getProjectWallWidthMm(i);
       const listaA = naParede(i, ehAereoRaso), listaB = naParede(j, ehAereoRaso);
-      const A = listaA.sort((a, b) => fimDe(b) - fimDe(a))[0];
-      const B = listaB.sort((a, b) => a.x_mm - b.x_mm)[0];
-      if (!A || !B) { diag.push(nome + ' (aéreos): ' + (!A && !B ? 'sem aéreo raso nas duas paredes' : 'aéreo raso só numa das paredes') + ', nada a fazer.'); continue; }
-      const DA = +A.depth_mm, DB = +B.depth_mm;
-      const xA = Math.round(L - DB - CANTO_FOLGA_MM - A.width_mm), xB = Math.round(DA + CANTO_FOLGA_MM);
-      const vA = vizinhoAntes(A, listaA), vB = vizinhoDepois(B, listaB);
-      A.x_mm = xA; B.x_mm = xB;
-      // vão que abriu pro vizinho de dentro da parede
-      for (const [s, viz, wi, lado] of [[A, vA, i, 'antes'], [B, vB, j, 'depois']]) {
-        if (!viz) continue;
-        const vao = lado === 'antes' ? (+s.x_mm) - fimDe(viz) : (+viz.x_mm) - fimDe(s);
-        if (vao < -1) avisos.push(nome + ': ' + ((s.module && s.module.name) || 'aéreo') + ' encostou no vizinho. Troque por aéreo custom e ajuste a largura.');
-        else if (vao > 6 * MM) avisos.push(nome + ': ficou um vão de ' + Math.round(vao / MM) + '" entre os aéreos. Use aéreo custom pra fechar 100%.');
-        else if (vao > 5) await ponha(wi, lado === 'antes' ? fimDe(viz) : fimDe(s), vao, s, 0, 'vão entre aéreos');
+      if (!listaA.length || !listaB.length) { diag.push(nome + ' (aéreos): ' + (!listaA.length && !listaB.length ? 'sem aéreo raso nas duas paredes' : 'aéreo raso só numa das paredes') + ', nada a fazer.'); continue; }
+      const linhaA = linhaDoCanto(listaA, true), linhaB = linhaDoCanto(listaB, false);
+      const A0 = linhaA[0], B0 = linhaB[0];
+      const DA = +A0.depth_mm, DB = +B0.depth_mm;
+      const pontaA = +linhaA[linhaA.length - 1].x_mm, pontaB = fimDe(linhaB[linhaB.length - 1]);
+      // 1) módulo de canto (oco, com os fillers) no fim da parede A
+      const larguraCanto = Math.round(DB + CANTO_FOLGA_MM);
+      if (mc) {
+        const sl = await insertProjectModuleDefault(mc.id, { wall_index: i, x_mm: Math.round(L - larguraCanto), width_mm: larguraCanto, height_mm: A0.height_mm, floor_height_mm: A0.floor_height_mm });
+        if (sl) {
+          sl.x_mm = Math.round(L - larguraCanto); sl.floor_height_mm = A0.floor_height_mm;
+          try { sl.depth_mm = projectSlotClampedDimensionMm(sl, 'depth', DA); } catch (e) { /* */ }
+          if (corDe(A0)) iaeOpSetColor({ slot_ids: [String(sl.id)], color_name: corDe(A0) }, avisos);
+          recomputeProjectSlotPricing(sl);
+          if (Math.abs((+sl.width_mm) - larguraCanto) > 2) avisos.push(nome + ': o módulo de canto não aceitou ' + (larguraCanto / MM).toFixed(1) + '" de largura (ficou ' + ((+sl.width_mm) / MM).toFixed(1) + '"). Libere a largura no cadastro.');
+        }
+      } else {
+        avisos.push(nome + ': falta o MÓDULO DE CANTO DO AÉREO no catálogo (nome com "Corner Filler"). O canto ficou só com o espaço, sem os fillers.');
       }
-      if (!filler) { avisos.push('Canto dos aéreos: não achei módulo de filler no catálogo; ficou sem os fillers da frente.'); }
-      else {
-        // B passa por cima da ponta do A (entrelaçado)
-        const fB = await ponha(j, DA, xB - DA, B, DB, 'frente');
-        const tB = fB ? (+fB.depth_mm || 19) : 19;
-        await ponha(i, fimDe(A), (L - DB - tB) - fimDe(A), A, DA, 'frente');
-      }
-      diag.push(nome + ' (aéreos): canto livre + fillers na frente, ' + Math.round(CANTO_FOLGA_MM / MM) + '" de folga.');
+      // 2) e 3) linhas encostadas no canto + fechamento na ponta de longe
+      await fechaLinha(linhaA, true, L - larguraCanto, pontaA, i, cat, avisos, diag, nome + ' parede ' + (i + 1));
+      await fechaLinha(linhaB, false, Math.round(DA + CANTO_FOLGA_MM), pontaB, j, cat, avisos, diag, nome + ' parede ' + (j + 1));
+      diag.push(nome + ' (aéreos): ' + (mc ? mc.name + ' de ' + (larguraCanto / MM).toFixed(1) + '"' : 'canto livre') + '; aéreos encostados no canto.');
       feitos++;
     }
     return feitos;
