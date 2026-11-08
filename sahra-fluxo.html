@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611080844"></script>
+<script src="js/config.js?v=202611080849"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -278,6 +278,13 @@ textarea{resize:vertical;min-height:62px}
 .muted{color:var(--muted);font-size:13px;margin:0}
 .trail{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font:12px/1.4 var(--f-mono);color:var(--muted)}
 .trail b{color:var(--ink);font-weight:500}
+.bub.cartao{white-space:normal;display:flex;flex-direction:column;gap:8px;max-width:100%}
+.bub.cartao p{margin:0}
+.bub.cartao{width:100%;box-sizing:border-box}
+.bub.cartao .mini-elev{width:100%;overflow:hidden}
+.bub.cartao .mini-elev svg{width:100%;min-width:0;height:auto;display:block;border-radius:6px;background:#fff}
+.bub.cartao .btn{align-self:flex-start}
+.render-chat{width:100%;border-radius:8px;display:block}
 .montar .montagem{margin-top:12px;border-top:1px solid var(--line,#e3ded5);padding-top:10px}
 .montar h4{font:600 13px var(--f-display);margin:10px 0 6px}
 .montar .montagem p{margin:4px 0}
@@ -586,9 +593,14 @@ function anelHtml(p){
     <div><b>${v}%</b><span>${rotuloProgresso(v)}</span></div></div>`;
 }
 function stepsHtml(p){
-  const cur=etapaPorId(p.etapaId); const curO=cur?grupoOrdem(cur.grupo):0;
+  const cur=etapaPorId(p.etapaId); let curO=cur?grupoOrdem(cur.grupo):0; let curG=cur?.grupo;
+  // depois do briefing a fase vem do projeto virtual: aprovado → Montar no portal; montado → Projeto executivo
+  if(p.status!=="ativo"){
+    const fase = (p.pv?.montagens||[]).length ? "projeto-executivo" : p.pv?.aprovado ? GRUPO_MONTAR : GRUPO_PARADA;
+    if(grupoIdx(fase)>=0){ curG=fase; curO=grupoOrdem(fase); }
+  }
   return st.grupos.map(g=>{
-    const cls = p.status!=="ativo" && g.ordem<grupoParadaOrdem() ? "past" : g.id===cur?.grupo ? "cur" : g.ordem<curO ? "past" : "";
+    const cls = g.id===curG ? "cur" : (p.status!=="ativo" && g.ordem<grupoParadaOrdem()) || g.ordem<curO ? "past" : "";
     return `<li class="${cls}">${esc(g.nome)}</li>`; }).join("");
 }
 
@@ -617,17 +629,17 @@ function renderConversa(v){
       <div class="chat-mesa ${M.chatMin?"min":""}" aria-label="Conversa">
         <div class="chat-head"><span>Conversa</span><span class="chat-head-acoes">${vozHtml()}<button class="btn icone" id="chat-min" aria-expanded="${!M.chatMin}" aria-label="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}" title="${M.chatMin?"Mostrar a conversa":"Minimizar a conversa"}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${M.chatMin?'<path d="M6 15l6-6 6 6"/>':'<path d="M6 9l6 6 6-6"/>'}</svg></button></span></div>
         <div class="msgs" id="msgs">${msgsHtml(p)}</div>
-        ${p.status==="ativo"?`<div class="composer">
+        <div class="composer">
           <div class="pending" id="pending"></div>
           <div class="row">
             <label class="btn" for="arq" title="Anexar fotos ou planta" style="flex:0 0 auto" ${M.imgLimits?"":"hidden"}>Anexar</label>
             <input type="file" id="arq" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
             ${SR?`<button class="btn icone mic ${MIC.gravando?"rec":""}" id="mic" aria-pressed="${MIC.gravando}" aria-label="${MIC.gravando?"Parar e enviar":"Falar com a SAHRA"}" title="${MIC.gravando?"Ouvindo… fique 2 s em silêncio pra enviar (ou toque de novo)":"Falar com a SAHRA"}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>`:""}
-            <textarea id="txt" rows="1" placeholder="Responda à SAHRA…" aria-label="Sua mensagem"></textarea>
+            <textarea id="txt" rows="1" placeholder="${p.status==="ativo"?"Responda à SAHRA…":"Fale com a SAHRA sobre o projeto…"}" aria-label="Sua mensagem"></textarea>
             ${M.busy?`<button class="btn" id="parar" style="flex:0 0 auto">Parar</button>`:`<button class="btn primary" id="enviar" style="flex:0 0 auto">Enviar</button>`}
           </div>
           <p class="err" id="merr" ${M.erro?"":"hidden"}>${esc(M.erro)}</p>
-        </div>`:""}
+        </div>
       </div>
     </section>
     ${pvSecaoHtml(p)}`;
@@ -638,7 +650,6 @@ function renderConversa(v){
   const t=$("#titulo"); t.onchange=async()=>{ p.titulo=t.value.trim()||p.titulo; await salvarProj(); };
   const msgs=$("#msgs"); msgs.scrollTop=msgs.scrollHeight;
   bindPV();
-  if(p.status!=="ativo") return;
   const txt=$("#txt"); txt.value=keepDraft;
   txt.onkeydown=ev=>{ if(ev.key==="Enter"&&!ev.shiftKey){ ev.preventDefault(); enviar(); } };
   txt.oninput=()=>{ txt.style.height="auto"; txt.style.height=Math.min(txt.scrollHeight,140)+"px"; if(M.erro){ M.erro=""; $("#merr").hidden=true; } };
@@ -650,6 +661,7 @@ function renderConversa(v){
   $("#arq").onchange=ev=>{ addFiles(ev.target.files); ev.target.value=""; };
   renderPending();
   if(!M.busy) txt.focus({preventScroll:true});
+  document.querySelectorAll("[data-ver-pv]").forEach(b=>b.onclick=()=>document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"}));
 }
 function alertaMesa(t){ M.erro=t; const e=$("#merr"); if(e){ e.textContent=t; e.hidden=false; } }
 
@@ -658,13 +670,14 @@ function msgsHtml(p){
   const ultimo=p.mensagens[p.mensagens.length-1];
   for(const m of p.mensagens){
     if(m.r==="trace"){ h+=`<div class="trace">${m.t}</div>`; continue; }
+    if(m.r==="card"){ h+=cardChatHtml(p,m); continue; }
     const cli=m.r==="cliente";
     const imgs=(m.img||[]).length?`<div class="imgs">${m.img.map(id=>`<img src="${imgSrc(id)}" alt="Foto enviada">`).join("")}</div>`:"";
     h+=`<div class="msg ${cli?"cli":""}">${cli?"":`<span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span>`}
       <div class="bub">${m.t?`<div>${esc(m.t)}</div>`:""}${(m.q||[]).length?`<ol class="perg" aria-label="Perguntas da SAHRA">${m.q.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`:""}${m===ultimo&&(m.q||[]).length&&p.status==="ativo"&&!M.busy?`<button class="btn decide" id="decide">Pode decidir por mim, SAHRA</button>`:""}${imgs}</div></div>`;
   }
-  if(M.busy) h+=`<div class="msg"><span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div class="bub typing">SAHRA está pensando <i><span></span></i></div></div>`;
-  if(p.status==="briefing_concluido") h+=`<div class="done-card"><b>Briefing completo.</b> A próxima etapa é ${esc(nomeEtapaCurta(p.depois)||"o Projeto virtual")}, e a SAHRA já pode montar a proposta: clique em <b>Gerar projeto virtual</b> no briefing ao lado.</div>`;
+  const fazendo = PV.busy?"SAHRA está desenhando a proposta (até 2 min)": PV.rendering?"SAHRA está gerando a imagem realista (até 1 min)": PV.montando?"SAHRA está montando o projeto no portal": M.busy?"SAHRA está pensando":"";
+  if(fazendo) h+=`<div class="msg"><span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span><div class="bub typing">${fazendo} <i><span></span></i></div></div>`;
   return h;
 }
 
@@ -697,7 +710,8 @@ async function enviar(){
   const txt=$("#txt"); const t=txt.value.trim();
   if(!t && !M.files.length){ alertaMesa("Escreva uma resposta ou anexe uma foto."); return; }
   const files=M.files.slice(); M.files=[]; txt.value="";
-  await turno(t||"(enviou fotos)", files);
+  if(M.proj && M.proj.status!=="ativo") await turnoPos(t||"(enviou fotos)", files);
+  else await turno(t||"(enviou fotos)", files);
 }
 
 async function salvarProj(){
@@ -820,6 +834,126 @@ async function turno(texto, files){
   await salvarProj();
   renderConversa($("#view-mesa"));
   if(M.erro) alertaMesa(M.erro);
+  // briefing fechou agora → ela segue sozinha pro projeto virtual, na mesma conversa
+  if(p.status==="briefing_concluido" && !p.pv && !M.erro) gerarPV("", {chat:true});
+}
+
+// janela do portal reaberta (estava escondida durante a montagem): volta a conversa pro fim
+const fimConversa=()=>{ const m=document.getElementById("msgs"); if(m) m.scrollTop=m.scrollHeight; };
+addEventListener("resize",fimConversa); addEventListener("sahra-mostrar",()=>requestAnimationFrame(fimConversa));
+/* ---------- Conversa depois do briefing (2026-11-08) ----------
+   Matt: "usar o chat com ela além do briefing… aprovei o projeto, não, por
+   favor muda isso… deixar um chat só e ela interagindo sempre". O chat não
+   fecha mais: depois do briefing cada mensagem passa por um roteador que
+   entende o pedido (ajustar a proposta, aprovar, imagem realista, montar no
+   portal ou só conversar) e a SAHRA faz e responde ali mesmo. Os botões
+   continuam como atalho. */
+function aprovarPV(){
+  const p=M.proj; if(!p?.pv) return;
+  p.pv.aprovado=true;
+  p.mensagens.push({r:"trace",t:"<b>Projeto virtual</b> → aprovado pelo cliente → Montar no portal"});
+  p.mensagens.push(sahraMsg("Que bom que você gostou! Proposta aprovada.",["Quer que eu monte o projeto no portal agora?"]));
+}
+function estadoPos(p){
+  const pv=p.pv;
+  return {
+    proposta: pv? `existe (versão ${(pv.historico||[]).length+1})` : "ainda não existe",
+    aprovado: !!pv?.aprovado,
+    imagens_realistas: (pv?.renders||[]).length,
+    tem_foto_do_ambiente: p.mensagens.some(m=>(m.img||[]).length),
+    montagens_no_portal: (pv?.montagens||[]).length,
+    pode_montar_aqui: !!portalJanela()
+  };
+}
+function promptPos(p, nImgs){
+  const pr=p.pv?.proposta;
+  const resumo = pr ? JSON.stringify({conceito:pr.conceito, acabamentos:pr.acabamentos, modulos:pr.modulos, pendencias:pr.pendencias, decide_sahra:pr.decide_sahra}) : "(sem proposta)";
+  return `Você é a SAHRA, designer da Legno Home (móveis planejados sob medida, EUA), na mesa de atendimento, em português do Brasil: calorosa, direta e prática. O briefing já terminou. Agora você acompanha o cliente no resto do projeto, na mesma conversa.
+
+O QUE VOCÊ PODE FAZER (escolha UMA ação pela última mensagem do cliente):
+- "gerar": montar a proposta (projeto virtual). Use se ainda não existe proposta, ou se o cliente pedir pra refazer do zero.
+- "ajustar": o cliente quer mudar algo na proposta. Preencha "ajuste" com o pedido, claro e completo (ex.: "madeira mais clara nos nichos e adega 6 polegadas mais larga").
+- "aprovar": o cliente aprovou a proposta como está (ex.: "aprovado", "gostei, pode seguir", "fechado").
+- "render": o cliente quer ver como fica de verdade / imagem realista / foto da proposta.
+- "montar": montar o projeto no portal (canvas de Projetos). Só depois de aprovado; se não estiver aprovado, pergunte se pode considerar aprovado.
+- "conversa": responder dúvida, comentar, ou pedir um esclarecimento. Pergunte só se for indispensável (no máximo 1 pergunta).
+Se o pedido não estiver claro entre duas ações, escolha "conversa" e pergunte qual.
+Orçamento é sempre só dos móveis da Legno (nunca appliances, pedra ou obra).
+
+ESTADO: ${JSON.stringify(estadoPos(p))}
+FICHA: ${JSON.stringify(p.ficha||{})}
+PROPOSTA ATUAL (resumo): ${resumo}
+CONVERSA (últimas mensagens):
+${historico(p)}
+${nImgs?`\nO cliente mandou ${nImgs} foto(s) nova(s) agora.\n`:""}
+Responda SOMENTE com JSON:
+{"acao": "gerar|ajustar|aprovar|render|montar|conversa",
+ "ajuste": "só quando acao = ajustar",
+ "ficha": {"campo": "valor novo que o cliente disse, se houver"},
+ "mensagem": "o que você diz ao cliente agora, 1 a 2 frases. Se for fazer algo, diga o que vai fazer (ex.: Vou ajustar a madeira e já te mostro.). Sem pergunta aqui.",
+ "perguntas": ["no máximo 1, só em conversa"]}`;
+}
+async function turnoPos(texto, files){
+  const p=M.proj; if(!p||M.busy||PV.busy||PV.rendering||PV.montando) return;
+  M.busy=true; M.erro="";
+  const ids=[]; const blobs=files.map(x=>x.file);
+  if(M.assets){ for(const x of files){ try{ const r=await M.assets.upload(x.file); ids.push(r.id); M.blobUrls[r.id]=x.url; }catch(err){ const tmp="tmp-"+Math.random().toString(36).slice(2); M.blobUrls[tmp]=x.url; ids.push(tmp); } } }
+  else { for(const x of files){ const tmp="tmp-"+Math.random().toString(36).slice(2); M.blobUrls[tmp]=x.url; ids.push(tmp); } }
+  p.mensagens.push({r:"cliente",t:texto,img:ids,ts:new Date().toISOString()});
+  pararVoz(); renderConversa($("#view-mesa"));
+  let res=null;
+  try{
+    M.ctl=new AbortController();
+    const opts={cache:false, signal:M.ctl.signal};
+    if(blobs.length && M.imgLimits) opts.images=blobs.slice(0,M.imgLimits.maxCount);
+    res=await M.sample.json(promptPos(p, blobs.length), opts);
+  }catch(err){
+    alertaMesa(err?.code==="cancelled"?"Resposta interrompida.":"A conversa falhou agora. Envie de novo.");
+  }
+  M.busy=false; M.ctl=null;
+  if(!res){ await salvarProj(); renderConversa($("#view-mesa")); return; }
+  if(res.ficha && typeof res.ficha==="object" && !Array.isArray(res.ficha)) Object.assign(p.ficha,res.ficha);
+  let acao=String(res.acao||"conversa");
+  const msg=String(res.mensagem||"").trim();
+  const pergs=Array.isArray(res.perguntas)?res.perguntas.map(x=>String(x).trim()).filter(Boolean).slice(0,1):[];
+  if(acao==="ajustar" && !p.pv) acao="gerar";
+  if(acao==="montar" && !p.pv) acao="gerar";
+  if(acao==="aprovar" && !p.pv) acao="conversa";
+  if(acao==="render" && !p.pv?.proposta?.prompt_render) acao=p.pv?"conversa":"gerar";
+  if(acao==="render" && !p.mensagens.some(m=>(m.img||[]).length)){ acao="conversa"; p.mensagens.push(sahraMsg("Pra eu mostrar como fica de verdade, me manda uma foto do ambiente aqui na conversa.",[])); }
+  else if(acao==="montar" && !p.pv?.aprovado){ acao="conversa"; p.mensagens.push(sahraMsg(msg||"Antes de montar no portal, preciso da sua aprovação.",["Posso considerar a proposta aprovada?"])); }
+  else if(acao==="aprovar"){ aprovarPV(); }
+  else if(msg || pergs.length || acao==="conversa") p.mensagens.push(sahraMsg(msg,pergs,"Pode me contar um pouco mais?"));
+  falar([msg,...pergs].join(" "));
+  await salvarProj(); renderConversa($("#view-mesa"));
+  if(acao==="gerar") await gerarPV("", {chat:true});
+  else if(acao==="ajustar") await gerarPV(String(res.ajuste||texto), {chat:true});
+  else if(acao==="render"){ if(!p.mensagens.flatMap(m=>m.img||[]).includes(PV.fotoRender)) PV.fotoRender=p.mensagens.flatMap(m=>m.img||[]).filter(id=>M.blobUrls[id]).at(-1)||null; await gerarRender(); }
+  else if(acao==="montar") await montarNoPortal();
+}
+function cardChatHtml(p,m){
+  const ava=`<span class="ava" style="background-image:url(${AV_ROSTO})" aria-hidden="true"></span>`;
+  if(m.k==="pv"){
+    const pr=p.pv?.proposta; if(!pr) return "";
+    const atual=(p.pv.historico||[]).length+1;
+    if(m.v && m.v!==atual) return `<div class="trace">Proposta versão ${m.v} (substituída)</div>`;
+    const w=(pr.paredes||[])[0];
+    return `<div class="msg">${ava}<div class="bub cartao"><b>Projeto virtual${atual>1?` · versão ${atual}`:""}</b>${p.pv.aprovado?` <span class="pill done">Aprovado</span>`:""}
+      ${pr.conceito?`<p>${esc(pr.conceito)}</p>`:""}
+      ${w?`<div class="mini-elev">${elevSvg(w,pr.acabamentos)}</div>`:""}
+      <button class="btn" data-ver-pv>Ver proposta completa</button></div></div>`;
+  }
+  if(m.k==="render"){
+    const src=M.blobUrls[m.id]; if(!src) return "";
+    return `<div class="msg">${ava}<div class="bub cartao"><img class="render-chat" src="${src}" alt="Imagem realista da proposta"></div></div>`;
+  }
+  if(m.k==="montagem"){
+    const u=(p.pv?.montagens||[]).at(-1); if(!u) return "";
+    return `<div class="msg">${ava}<div class="bub cartao"><b>Montado no portal</b><p>${u.paredes} parede(s) · ${u.modulos} módulo(s)</p>
+      ${(u.nao_virou||[]).length?`<p class="muted">Não virou: ${u.nao_virou.map(x=>esc(x.item)).join(", ")}</p>`:""}
+      <button class="btn" data-ver-pv>Ver detalhes</button></div></div>`;
+  }
+  return "";
 }
 
 /* ---------- Projeto virtual (teste) ---------- */
@@ -897,10 +1031,10 @@ function conferirGeometria(pr){
   }
   return avisos;
 }
-async function gerarPV(ajuste){
+async function gerarPV(ajuste, o={}){
   const p=M.proj; if(!p||PV.busy||!M.sample) return;
   PV.busy=true; PV.erro=""; renderConversa($("#view-mesa"));
-  document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
+  if(!o.chat) document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
   try{
     const imgs = M.imgLimits ? await blobsDoProjeto(p) : [];
     PV.ctl=new AbortController();
@@ -910,17 +1044,22 @@ async function gerarPV(ajuste){
     if(!res || !Array.isArray(res.paredes)) throw {code:"invalid_json"};
     const hist=(p.pv?.historico||[]); if(p.pv?.proposta) hist.push({quando:p.pv.quando, ajuste:ajuste||""});
     p.pv={proposta:res, quando:new Date().toISOString(), avisos:conferirGeometria(res), historico:hist.slice(-5), aprovado:false};
-    if(ajuste) p.mensagens.push({r:"cliente",t:"Ajuste no projeto virtual: "+ajuste,ts:new Date().toISOString()});
-    if(res.mensagem) p.mensagens.push(sahraMsg(String(res.mensagem),[]));
-    falar(String(res.mensagem||""));
+    if(ajuste && !o.chat) p.mensagens.push({r:"cliente",t:"Ajuste no projeto virtual: "+ajuste,ts:new Date().toISOString()});
+    const versao=(p.pv.historico||[]).length+1;
+    p.mensagens.push({r:"trace",t:`<b>Projeto virtual</b> → ${ajuste?"versão "+versao+" (ajuste)":"proposta montada"}`});
+    const perg = "Quer mudar alguma coisa ou posso considerar aprovado?";
+    p.mensagens.push(sahraMsg(String(res.mensagem||"Prontinho, aqui está a proposta."),[perg]));
+    p.mensagens.push({r:"card",k:"pv",v:versao,ts:new Date().toISOString()});
+    falar(String(res.mensagem||"")+" "+perg);
     await salvarProj();
   }catch(err){
     const c=err?.code;
     PV.erro = c==="cancelled"?"Geração interrompida.": c==="invalid_json"?"A proposta veio fora do formato. Tente de novo.": c==="rate_limited"?"Muitas chamadas seguidas. Espere um pouco e tente de novo.": c==="prompt_too_large"?"A conversa ficou grande demais pra gerar. Tente num projeto novo.":"Não foi possível gerar a proposta agora. Tente de novo.";
   }
   PV.busy=false; PV.ctl=null;
+  if(o.chat && PV.erro){ p.mensagens.push(sahraMsg(PV.erro==="Geração interrompida."?"Parei de desenhar. Quando quiser, é só me pedir de novo.":"Não consegui fechar a proposta agora. Me pede de novo que eu tento outra vez.",[])); await salvarProj(); }
   renderConversa($("#view-mesa"));
-  document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
+  if(!o.chat) document.getElementById("pv")?.scrollIntoView({behavior:"smooth",block:"start"});
 }
 function pvBotaoHtml(p){
   if(!M.sample || !Object.keys(p.ficha||{}).length) return "";
@@ -1027,7 +1166,7 @@ function montarHtml(p){
 async function montarNoPortal(){
   const p=M.proj; if(!p?.pv?.aprovado || PV.montando) return;
   const portal=portalJanela();
-  if(!portal){ PV.montarErro="Abra esta tela pelo botão SAHRA · Fluxo do portal (ou pelo Abrir em nova aba de lá) pra montar no canvas."; renderConversa($("#view-mesa")); return; }
+  if(!portal){ PV.montarErro="Abra esta tela pelo botão SAHRA · Fluxo do portal (ou pelo Abrir em nova aba de lá) pra montar no canvas."; p.mensagens.push(sahraMsg("Daqui eu não alcanço o portal. Abra a mesa pelo botão SAHRA · Fluxo do portal que eu monto.",[])); await salvarProj(); renderConversa($("#view-mesa")); return; }
   PV.montando=true; PV.montarErro=""; renderConversa($("#view-mesa"));
   let r=null;
   try{
@@ -1037,8 +1176,10 @@ async function montarNoPortal(){
   if(r?.ok){
     p.pv.montagens=[...(p.pv.montagens||[]), {quando:r.quando, paredes:r.paredes, modulos:r.modulos, nao_virou:r.nao_virou||[], etapas:r.etapas||[], mensagem:r.mensagem||"", model:r.model||""}].slice(-5);
     p.mensagens.push({r:"trace",t:`<b>Montar no portal</b> → ${r.paredes} parede(s), ${r.modulos} módulo(s)${(r.nao_virou||[]).length?`, ${r.nao_virou.length} item(ns) não viraram`:""}`});
+    p.mensagens.push(sahraMsg(r.mensagem||"Montei o projeto no canvas de Projetos.",[]));
+    p.mensagens.push({r:"card",k:"montagem",ts:new Date().toISOString()});
     await salvarProj();
-  } else PV.montarErro="Não montou: "+(r?.erro||"erro desconhecido");
+  } else { PV.montarErro="Não montou: "+(r?.erro||"erro desconhecido"); p.mensagens.push(sahraMsg("Não consegui montar no portal: "+(r?.erro||"erro desconhecido"),[])); await salvarProj(); }
   renderConversa($("#view-mesa"));
   document.getElementById("pv-montar-box")?.scrollIntoView({behavior:"smooth",block:"center"});
 }
@@ -1061,8 +1202,10 @@ async function gerarRender(){
     if(ins.error) throw ins.error;
     M.blobUrls[ins.data.id]=url;
     p.pv.renders=[...(p.pv.renders||[]), {id:ins.data.id, quando:new Date().toISOString(), foto:PV.fotoRender}];
+    p.mensagens.push(sahraMsg("Olha como fica no seu espaço.",[]));
+    p.mensagens.push({r:"card",k:"render",id:ins.data.id,ts:new Date().toISOString()});
     await salvarProj();
-  }catch(e){ PV.renderErro="Não consegui gerar o render: "+(e?.message||e); }
+  }catch(e){ PV.renderErro="Não consegui gerar o render: "+(e?.message||e); p.mensagens.push(sahraMsg("Não consegui gerar a imagem agora. Me pede de novo daqui a pouco.",[])); await salvarProj(); }
   PV.rendering=false; renderConversa($("#view-mesa"));
   document.querySelector(".renders")?.scrollIntoView({behavior:"smooth",block:"center"});
 }
@@ -1074,7 +1217,7 @@ function bindPV(){
   const s=$("#pv-parar"); if(s) s.onclick=()=>PV.ctl?.abort();
   const r=$("#pv-refazer"); if(r) r.onclick=()=>{ const t=$("#pv-ajuste").value.trim(); if(!t){ const e=$("#pv-aerr"); e.textContent="Escreva o ajuste que o cliente pediu."; e.hidden=false; return; } gerarPV(t); };
   const cp=$("#pv-copiar"); if(cp) cp.onclick=async()=>{ const t=$("#pv-prompt").textContent; const ok=$("#pv-copiado"); try{ await navigator.clipboard.writeText(t); ok.textContent="Copiado."; }catch{ const r=document.createRange(); r.selectNodeContents($("#pv-prompt")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); ok.textContent="Texto selecionado: use Ctrl+C."; } };
-  const a=$("#pv-aprovar"); if(a) a.onclick=async()=>{ M.proj.pv.aprovado=true; M.proj.mensagens.push({r:"trace",t:"<b>Projeto virtual</b> → aprovado pelo cliente → Montar no portal"}); await salvarProj(); renderConversa($("#view-mesa")); document.getElementById("pv-montar-box")?.scrollIntoView({behavior:"smooth",block:"center"}); };
+  const a=$("#pv-aprovar"); if(a) a.onclick=async()=>{ aprovarPV(); await salvarProj(); renderConversa($("#view-mesa")); };
 }
 
 /* ---------- Microfone (reconhecimento de voz do navegador, mesmo jeito da SAHRA do portal) ---------- */

@@ -16,11 +16,16 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611080900';
+  const VERSAO = '202611080930';
   let overlay = null;
 
   function abrir() {
-    if (overlay) { overlay.style.display = 'flex'; return; }
+    if (overlay) {
+      overlay.style.display = 'flex';
+      // a conversa foi atualizada com a janela escondida: avisa a tela pra rolar pro fim
+      try { const fr = overlay.querySelector('iframe'); fr.contentWindow.dispatchEvent(new Event('sahra-mostrar')); } catch (e) { /* */ }
+      return;
+    }
     overlay = document.createElement('div');
     overlay.id = 'sahra-fluxo-overlay';
     overlay.setAttribute('role', 'dialog');
