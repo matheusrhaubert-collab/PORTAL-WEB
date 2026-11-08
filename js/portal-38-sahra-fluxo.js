@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081105';
+  const VERSAO = '202611081115';
   let overlay = null;
 
   function abrir() {
@@ -193,6 +193,7 @@ COMO O PORTAL FUNCIONA (mecânica, não é regra de projeto)
 - CAIXA PELO CONSTRUTOR: quando a etapa de composição mandar (ou o item não tem módulo pronto equivalente), use uma entrada com "caixa" em vez de "module_id": "aereo" = caixa de Componentes Bottom · Bottom · Back (fora do chão), "suspenso" = Bottom · Stretcher · Back. O portal cria a caixa e monta no Construtor: "prateleiras", "portas" (folhas), "gavetas", "modelo_porta" ("vidro" = Aluminium Glass), "cor_vidro" (ex.: "fumê"), "led" (fita no tampo de cima, iluminando pra baixo), "color_name" (caixa) e "front_color_name" (frentes).
 - CONJUNTO EMPILHADO: peças que formam um móvel só (ex.: base + nicho + aéreo + top covers) levam o mesmo "grupo". O portal alinha: a peça de baixo na altura das bases da parede, a de cima com o topo dos aéreos, e a do meio preenche o vão entre elas; os painéis do grupo (top covers) ficam com a altura do conjunto e a profundidade da caixa + 25,4 mm.
 - ILHA/PENÍNSULA (módulo solto no piso): use "piso": {"afastamento_mm": distância da parede de referência até a costa do módulo, "frente": "ambiente" ou "parede"}; "wall_index" e "x_mm" contam a partir dessa parede.
+- BLIND CORNER: o lado cego fica virado pro canto. Canto no FIM da parede (à direita, olhando de frente) → versão Dir/Direita; canto no COMEÇO (à esquerda) → versão Esq/Esquerda. O portal confere e troca se vier invertido.
 - CANTO DOS AÉREOS: aéreo raso (até ~15") NUNCA leva blind nem corner no canto. Deixe o canto livre; o portal afasta o aéreo de cada lado e põe os fillers da frente sozinho. Se a sobra não fechar com os aéreos padrão, use aéreo custom e ajuste a largura.
 - NUNCA troque por um módulo de outra função (pantry ≠ torre com nicho; gaveteiro ≠ base de porta). "motivo" diz por que escolheu cada peça.
 - Item do virtual que não tem módulo correspondente NÃO entra em modules: vai em "nao_virou" com o motivo. Nunca invente id.
@@ -462,6 +463,38 @@ Responda SOMENTE com JSON:
     return feitos;
   }
 
+  // ---- BLIND CORNER DO LADO CERTO (10:11, 08/11) ----
+  // Matt: "o blind corner de base entra invertido… ele tem o direito e o
+  // esquerdo, teria que trocar ele, espelhar ele". O lado cego tem que ficar
+  // virado pro canto: perto do FIM da parede → versão Dir; perto do COMEÇO →
+  // Esq (mesma regra de nome da migration 241: "dir" no nome = lado D).
+  const ladoDoNome = (nome) => (/dir\b|direit|right/i.test(String(nome || '')) ? 'D' : 'E');
+  const semLado = (nome) => String(nome || '').toLowerCase().replace(/\b(esq(uerd[ao])?|dir(eit[ao])?|left|right)\b\.?/g, '').replace(/[\s·()-]+/g, ' ').trim();
+  async function blindDoLadoCerto(cat, avisos) {
+    let trocas = 0;
+    for (const s of projectSlots.slice()) {
+      if (isFloorSlot(s) || typeof projectSlotBlindInfo !== 'function') continue;
+      const bi = projectSlotBlindInfo(s); if (!bi) continue;
+      const L = getProjectWallWidthMm(Number(s.wall_index) || 0);
+      const quer = (L - (+s.x_mm + +s.width_mm)) < (+s.x_mm) ? 'D' : 'E';
+      if (bi.lado === quer) continue;
+      const nome = (s.module && s.module.name) || '';
+      const gemeo = cat.find((m) => String(m.id) !== String(s.module && s.module.id) && /blind/i.test(m.name)
+        && semLado(m.name) === semLado(nome) && ladoDoNome(m.name) === quer);
+      if (!gemeo) { avisos.push(nome + ': está com o lado cego virado pro lado errado e não achei a versão ' + (quer === 'D' ? 'direita' : 'esquerda') + ' no catálogo.'); continue; }
+      const cores = { colorsByRole: Object.assign({}, s.colorsByRole || {}) };
+      await editProjectAiApply([{ op: 'replace_module', reason: 'Blind corner do lado certo', module_id: gemeo.id, slot_ids: [String(s.id)] }]);
+      try { if (typeof iaeCopyColors === 'function') iaeCopyColors(cores, s); } catch (e) { /* fica a cor padrão */ }
+      // encosta o lado cego no canto, no afastamento padrão (4 3/4")
+      const af = (projectSlotBlindInfo(s) || { afastar: 120.65 }).afastar;
+      const x = quer === 'D' ? Math.round(L - af - (+s.width_mm)) : Math.round(af);
+      if (!projectSlotOverlapsNeighbor(s, x)) s.x_mm = x;
+      try { clampProjectSlotPosition(s); recomputeProjectSlotPricing(s); } catch (e) { /* ok */ }
+      trocas++;
+    }
+    return trocas;
+  }
+
   async function aplicaModulos(r, cat, nParedes) {
     const porId = new Map(cat.map((m) => [String(m.id), m]));
     const falhas = [], avisos = [], relatorio = [];
@@ -534,6 +567,10 @@ Responda SOMENTE com JSON:
       if (typeof resetProject === 'function') resetProject();
       const nParedes = aplicaParedes(r);
       const mods = await aplicaModulos(r, cat, nParedes);
+      try {
+        const nBlind = await blindDoLadoCerto(cat, mods.avisos);
+        if (nBlind) mods.relatorio.push({ item: 'Blind corner', grupo: '', usado: nBlind + ' trocado(s) pela versão do outro lado', motivo: 'O lado cego fica virado pro canto' });
+      } catch (e) { console.error('[sahra-fluxo] blind', e); mods.avisos.push('Blind corner: ' + ((e && e.message) || e)); }
       try {
         const nCantos = await cantoAereos(r, cat, mods.avisos);
         if (nCantos) mods.relatorio.push({ item: 'Canto dos aéreos', grupo: '', usado: nCantos + ' canto(s) com espaço morto + fillers na frente', motivo: 'Regra do canto: aéreo raso não leva blind/corner' });
