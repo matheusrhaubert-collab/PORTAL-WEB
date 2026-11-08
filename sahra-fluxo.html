@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611081018"></script>
+<script src="js/config.js?v=202611081044"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -357,6 +357,27 @@ textarea{resize:vertical;min-height:62px}
 .planta-mini{display:block;width:100%;text-align:left;font:inherit;cursor:pointer}
 .planta-mini .planta-svg{width:100%;height:150px;display:block;margin:4px 0}
 .planta-mini:hover{border-color:var(--accent)}
+/* ARQUIVOS SÓ IMAGEM + visualizador (10:19) */
+.arq-tile .arq-thumb{background:#fff}
+.arq-thumb svg.elev{min-width:0;width:100%;height:100%}
+.arq-vazio{font-size:13px;margin:4px 0 0}
+.processo{margin-top:auto;border-top:1px solid var(--vidro-borda);padding-top:10px}
+.proc{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.proc li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-left:16px;position:relative}
+.proc li::before{content:"";position:absolute;left:2px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;border:1.5px solid var(--muted)}
+.proc li.ok::before{background:var(--ok);border-color:var(--ok)} .proc li.cur::before{background:var(--accent);border-color:var(--accent)}
+.proc button{border:0;background:none;padding:0;text-decoration:underline;text-underline-offset:2px;color:var(--ink);font-size:13px}
+.proc small{color:var(--muted);white-space:nowrap}
+.luz{position:fixed;inset:0;z-index:50;background:rgba(18,16,14,.94);display:flex}
+.luz-palco{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;cursor:grab}
+.luz-img{transform-origin:center center;will-change:transform;max-width:94vw;max-height:92vh;display:flex;align-items:center;justify-content:center}
+.luz-img img{max-width:94vw;max-height:92vh;object-fit:contain;display:block;user-select:none;-webkit-user-drag:none}
+.luz-img.vetor{width:min(94vw,1400px);height:88vh;background:#fff;border-radius:8px;padding:2vh 2vw}
+.luz-img.vetor svg{width:100%;height:100%;min-width:0}
+.luz-x{position:absolute;top:12px;right:14px;width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.12);color:#fff;font-size:26px;line-height:1}
+.luz-nav{position:absolute;top:50%;margin-top:-24px;width:44px;height:48px;border:0;border-radius:10px;background:rgba(255,255,255,.1);color:#fff;font-size:30px;line-height:1}
+.luz-nav.ant{left:12px}.luz-nav.prox{right:12px}
+.luz-x:hover,.luz-nav:hover{background:rgba(255,255,255,.25)}
 .ficha-col{display:flex;flex-direction:column;gap:12px}
 .box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .box h3{font:600 15px var(--f-display);margin:0 0 8px}
@@ -625,7 +646,7 @@ function renderMesa(){
   if(!M.proj || M.proj.id!==M.pid){
     const p=M.projetos.find(x=>x.id===M.pid);
     if(!p){ v.innerHTML=`<p class="muted">Abrindo o projeto…</p>`; return; }
-    M.proj=JSON.parse(JSON.stringify(p)); M.ver=null;
+    M.proj=JSON.parse(JSON.stringify(p)); M.ver=null; M.luz=null;
     const ids=[...(M.proj.mensagens||[]).flatMap(m=>m.img||[]), ...(M.proj.pv?.renders||[]).map(r=>r.id)];
     carregarFotos(ids).then(n=>{ if(n && !M.busy && !PV.busy) renderConversa($("#view-mesa")); });
     if(!CARTELA.lista) carregaCartela().then(l=>{ if(l.length && M.proj && !M.busy && !PV.busy) renderConversa($("#view-mesa")); });
@@ -732,6 +753,7 @@ function renderConversa(v){
       ${ultCli&&!M.ver?`<div class="fala fala-cli" title="${esc(ultCli.t)}"><span>${esc(ultCli.t)}</span>${(ultCli.img||[]).length?`<small>+ ${ultCli.img.length} foto(s)</small>`:""}</div>`:""}
       <div class="palco-acao">${acaoPalcoHtml(p)}</div>
       ${visorHtml(p)}
+      ${luzHtml(p)}
       <div class="composer palco-composer">
         <div class="pending" id="pending"></div>
         <div class="row">
@@ -757,7 +779,7 @@ function renderConversa(v){
   const t=$("#titulo"); t.onchange=async()=>{ p.titulo=t.value.trim()||p.titulo; await salvarProj(); };
   const msgs=$("#msgs"); if(msgs) msgs.scrollTop=msgs.scrollHeight;
   const fs=$("#fala-sahra"); if(fs) fs.scrollTop=0;
-  bindPV(); bindPalco(v);
+  bindPV(); bindPalco(v); bindLuz(v);
   const txt=$("#txt"); txt.value=keepDraft;
   txt.onkeydown=ev=>{ if(ev.key==="Enter"&&!ev.shiftKey){ ev.preventDefault(); enviar(); } };
   txt.oninput=()=>{ txt.style.height="auto"; txt.style.height=Math.min(txt.scrollHeight,140)+"px"; if(M.erro){ M.erro=""; $("#merr").hidden=true; } };
@@ -861,23 +883,91 @@ function falaSahraHtml(p){
 function tileHtml(ver, thumb, nome, meta, cls){
   return `<button class="arq-tile ${cls||""}" data-ver="${ver}" aria-label="Abrir ${esc(nome)}"><span class="arq-thumb">${thumb}</span><span class="arq-nome">${esc(nome)}</span>${meta?`<span class="arq-meta">${meta}</span>`:""}</button>`;
 }
-function arquivosHtml(p){
-  const amb=nomeAmbiente(p); const atual=versaoAtual(p);
-  let sah="";
-  if(temPlanta(p)) sah+=tileHtml("planta", plantaSvg(p.ficha.planta,true), "Planta baixa", p.ficha.planta.confirmada?`<b class="ok">Confirmada</b>`:"Rascunho", M.ver?.k==="planta"?"atual":"");
-  if(PV.busy) sah+=`<div class="arq-tile fazendo" aria-live="polite"><span class="arq-thumb"><i class="dots"><span></span></i></span><span class="arq-nome">v${atual+1}.0 · ${esc(amb)}</span><span class="arq-meta">desenhando…</span></div>`;
+/* ---------- Arquivos = só imagens (10:19, 08/11) ----------
+   Matt: "arquivos que eu possa clicar e que não venha um monte de
+   informação. Só a imagem, todas as imagens… a planta baixa, as fotos do
+   ambiente… como uma pasta de computador, que eu clique, dê zoom… sem texto,
+   sem processo, sem botão, sem chat. E num cantinho da esquerda um fluxo do
+   processo." Cada vista de parede do projeto virtual é uma imagem; o clique
+   abre o visualizador de tela cheia (zoom com a roda, arrastar, duplo clique). */
+function arquivosLista(p){
+  const amb=nomeAmbiente(p); const out=[];
+  if(temPlanta(p)) out.push({grupo:"Planta baixa", nome:"Planta baixa", thumb:()=>plantaSvg(p.ficha.planta,true), full:()=>plantaSvg(p.ficha.planta,false)});
   for(const x of versoesPV(p).slice().reverse()){
-    const w=(x.proposta?.paredes||[])[0];
-    const st = x.v===atual ? (p.pv.aprovado?`<b class="ok">Aprovado</b>`:`<b>Atual</b>`) : "Anterior";
-    sah+=tileHtml(`pv:${x.v}`, w?elevSvg(w,x.proposta.acabamentos):"", `v${x.v}.0 · ${amb}`, `${st} · ${fmtData(x.quando)}`, x.v===atual?"atual":"");
+    const acab=x.proposta?.acabamentos||[];
+    (x.proposta?.paredes||[]).forEach((w,i)=>out.push({grupo:`v${x.v}.0 · ${amb}`, nome:w.nome||`Parede ${i+1}`, thumb:()=>elevSvg(w,acab), full:()=>elevSvg(w,acab), atual:x.v===versaoAtual(p)}));
   }
-  for(const r of (p.pv?.renders||[]).slice().reverse()) if(M.blobUrls[r.id]) sah+=tileHtml(`img:${r.id}`, `<img src="${M.blobUrls[r.id]}" alt="">`, "Imagem realista", `${r.v?`v${r.v}.0 · `:""}${fmtData(r.quando)}`);
-  if((p.pv?.montagens||[]).length){ const u=p.pv.montagens.at(-1); sah+=tileHtml("montagem", `<span class="arq-ico">▦</span>`, "No portal", `${u.modulos} módulos · ${fmtData(u.quando)}`); }
-  const fotos=p.mensagens.flatMap(m=>m.img||[]);
-  const seus=fotos.map((id,i)=>tileHtml(`img:${id}`, `<img src="${imgSrc(id)}" alt="">`, `Foto ${i+1}`, "")).join("");
-  return `<section class="arq-sec"><h4>Da SAHRA</h4>${sah?`<div class="arq-grid">${sah}</div>`:`<p class="muted">O que ela gerar aparece aqui: projeto virtual, imagens, montagem.</p>`}</section>
-    <section class="arq-sec"><h4>Enviados por você</h4>${seus?`<div class="arq-grid">${seus}</div>`:`<p class="muted">Fotos e planta que você anexar.</p>`}</section>`;
+  for(const r of (p.pv?.renders||[]).slice().reverse()) if(M.blobUrls[r.id]) out.push({grupo:"Imagens realistas", nome:r.v?`v${r.v}.0`:"Imagem", id:r.id, thumb:()=>`<img src="${M.blobUrls[r.id]}" alt="">`, full:()=>`<img src="${M.blobUrls[r.id]}" alt="Imagem realista" draggable="false">`});
+  p.mensagens.flatMap(m=>m.img||[]).forEach((id,i)=>out.push({grupo:"Enviados por você", nome:`Foto ${i+1}`, id, thumb:()=>`<img src="${imgSrc(id)}" alt="">`, full:()=>`<img src="${imgSrc(id)}" alt="Foto enviada" draggable="false">`}));
+  return out;
 }
+function arquivosHtml(p){
+  const lista=arquivosLista(p); const atual=versaoAtual(p);
+  let h="", grupo=null;
+  if(PV.busy) h+=`<section class="arq-sec"><h4>v${atual+1}.0 · desenhando…</h4><div class="arq-grid"><div class="arq-tile fazendo" aria-live="polite"><span class="arq-thumb"><i class="dots"><span></span></i></span></div></div></section>`;
+  lista.forEach((f,i)=>{
+    if(f.grupo!==grupo){ if(grupo!==null) h+=`</div></section>`; grupo=f.grupo; h+=`<section class="arq-sec"><h4>${esc(grupo)}</h4><div class="arq-grid">`; }
+    h+=`<button class="arq-tile ${f.atual?"atual":""}" data-luz="${i}" aria-label="Abrir ${esc(f.nome)}"><span class="arq-thumb">${f.thumb()}</span><span class="arq-nome">${esc(f.nome)}</span></button>`;
+  });
+  if(grupo!==null) h+=`</div></section>`;
+  if(!lista.length && !PV.busy) h+=`<p class="muted arq-vazio">As imagens do projeto aparecem aqui: planta baixa, vistas do projeto virtual, imagens realistas e as fotos que você mandar.</p>`;
+  return h+processoHtml(p);
+}
+// O "fluxo do processo" no cantinho de baixo: onde está e o detalhe de cada passo
+function processoHtml(p){
+  const pct=progresso(p); const v=versaoAtual(p); const u=(p.pv?.montagens||[]).at(-1);
+  const pl=p.ficha?.planta;
+  const li=(ok,cur,rot,info,ver)=>`<li class="${ok?"ok":cur?"cur":""}">${ver?`<button data-ver="${ver}">${rot}</button>`:`<span>${rot}</span>`}<small>${info}</small></li>`;
+  return `<section class="arq-sec processo"><h4>Processo</h4><ol class="proc">
+    ${li(!!pl?.confirmada, temPlanta(p)&&!pl?.confirmada, "Planta baixa", pl?(pl.confirmada?"confirmada":"rascunho"):"—", temPlanta(p)?"planta":null)}
+    ${li(p.status!=="ativo", p.status==="ativo", "Briefing", `${pct}%`, null)}
+    ${li(!!p.pv?.aprovado, !!p.pv&&!p.pv.aprovado, "Projeto virtual", p.pv?`v${v}.0 · ${p.pv.aprovado?"aprovado":"aguardando"}`:"—", p.pv?`pv:${v}`:null)}
+    ${li(!!u, !!p.pv?.aprovado&&!u, "No portal", u?`${u.modulos} módulos`:"—", u?"montagem":null)}
+  </ol></section>`;
+}
+/* Visualizador: tela cheia, só a imagem. Roda = zoom no ponto do mouse,
+   arrastar = mover, duplo clique = 2x/voltar, ← → = outra imagem, Esc = fecha. */
+const LUZ={s:1,x:0,y:0,drag:null};
+function luzHtml(p){
+  if(M.luz==null) return "";
+  const lista=arquivosLista(p); const f=lista[M.luz]; if(!f){ M.luz=null; return ""; }
+  return `<div class="luz" role="dialog" aria-modal="true" aria-label="${esc(f.nome)}">
+    <div class="luz-palco" id="luz-palco"><div class="luz-img ${/<svg/.test(f.full())?"vetor":""}" id="luz-img">${f.full()}</div></div>
+    <button class="luz-x" id="luz-x" aria-label="Fechar">×</button>
+    ${lista.length>1?`<button class="luz-nav ant" id="luz-ant" aria-label="Imagem anterior">‹</button><button class="luz-nav prox" id="luz-prox" aria-label="Próxima imagem">›</button>`:""}
+  </div>`;
+}
+function luzAplica(){ const el=document.getElementById("luz-img"); if(el) el.style.transform=`translate(${LUZ.x}px,${LUZ.y}px) scale(${LUZ.s})`; }
+function luzReset(){ LUZ.s=1; LUZ.x=0; LUZ.y=0; luzAplica(); }
+function luzZoom(f, cx, cy){
+  const pal=document.getElementById("luz-palco"); if(!pal) return;
+  const r=pal.getBoundingClientRect(); const px=(cx??r.left+r.width/2)-r.left-r.width/2, py=(cy??r.top+r.height/2)-r.top-r.height/2;
+  const s2=Math.min(8,Math.max(1,LUZ.s*f)); const k=s2/LUZ.s;
+  LUZ.x=px-(px-LUZ.x)*k; LUZ.y=py-(py-LUZ.y)*k; LUZ.s=s2; if(s2===1){ LUZ.x=0; LUZ.y=0; } luzAplica();
+}
+function luzVai(d){ const n=arquivosLista(M.proj).length; if(!n) return; M.luz=(M.luz+d+n)%n; luzReset(); renderConversa($("#view-mesa")); }
+function bindLuz(v){
+  document.querySelectorAll("[data-luz]").forEach(b=>b.onclick=()=>{ M.luz=Number(b.dataset.luz); LUZ.s=1; LUZ.x=0; LUZ.y=0; renderConversa(v); });
+  const pal=document.getElementById("luz-palco"); if(!pal) return;
+  luzAplica();
+  $("#luz-x").onclick=()=>{ M.luz=null; renderConversa(v); };
+  const a=$("#luz-ant"), b=$("#luz-prox"); if(a) a.onclick=()=>luzVai(-1); if(b) b.onclick=()=>luzVai(1);
+  pal.addEventListener("wheel",ev=>{ ev.preventDefault(); luzZoom(ev.deltaY<0?1.2:1/1.2, ev.clientX, ev.clientY); },{passive:false});
+  pal.ondblclick=ev=>{ if(LUZ.s>1) luzReset(); else luzZoom(2.5, ev.clientX, ev.clientY); };
+  const pts=new Map(); let pinch=null;
+  pal.onpointerdown=ev=>{ pal.setPointerCapture(ev.pointerId); pts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY}); if(pts.size===1) LUZ.drag={x:ev.clientX-LUZ.x,y:ev.clientY-LUZ.y}; else if(pts.size===2){ const [p1,p2]=[...pts.values()]; pinch={d:Math.hypot(p1.x-p2.x,p1.y-p2.y), s:LUZ.s}; LUZ.drag=null; } };
+  pal.onpointermove=ev=>{ if(!pts.has(ev.pointerId)) return; pts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(pinch && pts.size===2){ const [p1,p2]=[...pts.values()]; const d=Math.hypot(p1.x-p2.x,p1.y-p2.y); luzZoom((pinch.s*d/pinch.d)/LUZ.s,(p1.x+p2.x)/2,(p1.y+p2.y)/2); return; }
+    if(LUZ.drag && LUZ.s>1){ LUZ.x=ev.clientX-LUZ.drag.x; LUZ.y=ev.clientY-LUZ.drag.y; luzAplica(); } };
+  pal.onpointerup=pal.onpointercancel=ev=>{ pts.delete(ev.pointerId); if(pts.size<2) pinch=null; if(!pts.size) LUZ.drag=null; };
+  pal.onclick=ev=>{ if(ev.target===pal && LUZ.s===1){ M.luz=null; renderConversa(v); } };
+}
+addEventListener("keydown",ev=>{
+  if(M.luz==null || !M.proj) return;
+  if(ev.key==="Escape"){ ev.stopImmediatePropagation(); M.luz=null; renderConversa($("#view-mesa")); }
+  else if(ev.key==="ArrowRight") luzVai(1); else if(ev.key==="ArrowLeft") luzVai(-1);
+  else if(ev.key==="+"||ev.key==="=") luzZoom(1.25); else if(ev.key==="-") luzZoom(1/1.25); else if(ev.key==="0") luzReset();
+}, true);
 function acaoPalcoHtml(p){
   if(M.ver) return "";
   if(PV.busy) return `<button class="btn vidro" id="palco-parar">Parar o desenho</button>`;
@@ -1274,7 +1364,7 @@ function cardChatHtml(p,m){
   }
   if(m.k==="render"){
     const src=M.blobUrls[m.id]; if(!src) return "";
-    return `<div class="msg">${ava}<div class="bub cartao"><img class="render-chat" src="${src}" alt="Imagem realista da proposta" data-ver="img:${m.id}"></div></div>`;
+    return `<div class="msg">${ava}<div class="bub cartao"><img class="render-chat" src="${src}" alt="Imagem realista da proposta"></div></div>`;
   }
   if(m.k==="montagem"){
     const u=(p.pv?.montagens||[]).at(-1); if(!u) return "";
@@ -1556,7 +1646,7 @@ async function gerarRender(){
     if(ins.error) throw ins.error;
     M.blobUrls[ins.data.id]=url;
     p.pv.renders=[...(p.pv.renders||[]), {id:ins.data.id, quando:new Date().toISOString(), foto:PV.fotoRender, v:versaoAtual(p)}];
-    M.ver={k:"img", id:ins.data.id}; M.zoom=false;
+    M.ver=null; { const k=arquivosLista(p).findIndex(f=>f.id===ins.data.id); M.luz=k>=0?k:null; LUZ.s=1; LUZ.x=0; LUZ.y=0; }
     p.mensagens.push(sahraMsg("Olha como fica no seu espaço.",[]));
     p.mensagens.push({r:"card",k:"render",id:ins.data.id,ts:new Date().toISOString()});
     await salvarProj();

@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081120';
+  const VERSAO = '202611081135';
   let overlay = null;
 
   function abrir() {
@@ -425,45 +425,135 @@ Responda SOMENTE com JSON:
   const AEREO_RASO_MAX_MM = 16 * MM; // "12, 13, até 15"
   const ehAereoRaso = (s) => s && !isFloorSlot(s) && (+s.floor_height_mm || 0) >= 900 && (+s.depth_mm || 0) > 0 && (+s.depth_mm || 0) <= AEREO_RASO_MAX_MM
     && !/filler|panel|painel|cover|shelf|prateleira/i.test(String((s.module && s.module.name) || ''));
-  async function cantoAereos(r, cat, avisos) {
-    const n = projectWallSegments.length;
+  // Cantos do ambiente: pares de paredes seguidas (i → i+1) com ~90°, e o
+  // fechamento (última → primeira) quando o contorno fecha.
+  function cantosDoAmbiente(r) {
+    const n = projectWallSegments.length; const ws = r.walls || []; const out = [];
+    const ang = (i) => { const a = Number((ws[i] || {}).angle_to_next_deg); return Number.isFinite(a) ? a : 90; };
+    for (let i = 0; i < n - 1; i++) if (Math.abs(ang(i) - 90) <= 15) out.push([i, i + 1]);
+    if (n >= 3 && Math.abs(ang(n - 1) - 90) <= 15) {
+      let x = 0, z = 0, dx = 1, dz = 0;
+      for (let i = 0; i < n; i++) { const L = getProjectWallWidthMm(i); x += dx * L; z += dz * L; const t = (180 - ang(i)) * Math.PI / 180; const c = Math.cos(t), sn = Math.sin(t); [dx, dz] = [dx * c - dz * sn, dx * sn + dz * c]; }
+      if (Math.hypot(x, z) < 80) out.push([n - 1, 0]);
+    }
+    return out;
+  }
+  const naParede = (wi, filtro) => projectSlots.filter((s) => Number(s.wall_index) === wi && !isFloorSlot(s) && filtro(s));
+  const fimDe = (s) => (+s.x_mm || 0) + (+s.width_mm || 0);
+  // vizinho imediato (mesma faixa de altura) pro lado de dentro da parede
+  const vizinhoAntes = (s, lista) => lista.filter((o) => o !== s && fimDe(o) <= (+s.x_mm) + 1).sort((a, b) => fimDe(b) - fimDe(a))[0];
+  const vizinhoDepois = (s, lista) => lista.filter((o) => o !== s && (+o.x_mm) >= fimDe(s) - 1).sort((a, b) => a.x_mm - b.x_mm)[0];
+
+  // CANTO DOS AÉREOS (10:24: "o canto não seguiu a regra"). Antes só agia se
+  // os DOIS aéreos já estivessem colados no canto; a IA deixou um deles longe
+  // e a regra pulou. Agora: se tem aéreo raso nas duas paredes do canto, o
+  // de cada lado vai pra posição do canto, e o vão que abrir pro vizinho é
+  // fechado com filler (até 6") ou avisado pra trocar por aéreo custom.
+  async function cantoAereos(r, cat, avisos, diag) {
     const filler = cat.find((m) => /filler/i.test(m.name) && /wall|a[ée]reo|upper/i.test([m.name, m.category, m.subcategory].join(' ')))
       || cat.find((m) => /filler/i.test([m.name, m.category].join(' ')));
     let feitos = 0;
-    for (let i = 0; i < n - 1; i++) {
-      const ang = Number(((r.walls || [])[i] || {}).angle_to_next_deg);
-      if (Number.isFinite(ang) && Math.abs(ang - 90) > 15) continue;
+    const corDe = (s) => { const c = Object.values(s.colorsByRole || {})[0]; return c && c.name; };
+    const ponha = async (wi, x, w, s, recuo, rot) => {
+      if (!(w > 5) || !filler) return null;
+      const f = await insertProjectModuleDefault(filler.id, { wall_index: wi, x_mm: Math.round(x), width_mm: Math.round(w), height_mm: s.height_mm, floor_height_mm: s.floor_height_mm });
+      if (!f) { avisos.push('Canto dos aéreos: o portal não criou o filler (' + rot + ').'); return null; }
+      f.x_mm = Math.round(x); f.floor_height_mm = s.floor_height_mm; f.fineOffsetZMm = Math.round(recuo || 0);
+      try { f.depth_mm = projectSlotClampedDimensionMm(f, 'depth', 19); } catch (e) { /* */ }
+      if (corDe(s)) iaeOpSetColor({ slot_ids: [String(f.id)], color_name: corDe(s) }, avisos);
+      recomputeProjectSlotPricing(f);
+      return f;
+    };
+    for (const [i, j] of cantosDoAmbiente(r)) {
+      const nome = 'Canto paredes ' + (i + 1) + '/' + (j + 1);
       const L = getProjectWallWidthMm(i);
-      const A = projectSlots.filter((s) => Number(s.wall_index) === i && ehAereoRaso(s)).sort((a, b) => (b.x_mm + b.width_mm) - (a.x_mm + a.width_mm))[0];
-      const B = projectSlots.filter((s) => Number(s.wall_index) === i + 1 && ehAereoRaso(s)).sort((a, b) => a.x_mm - b.x_mm)[0];
-      if (!A || !B) continue;
+      const listaA = naParede(i, ehAereoRaso), listaB = naParede(j, ehAereoRaso);
+      const A = listaA.sort((a, b) => fimDe(b) - fimDe(a))[0];
+      const B = listaB.sort((a, b) => a.x_mm - b.x_mm)[0];
+      if (!A || !B) { diag.push(nome + ' (aéreos): ' + (!A && !B ? 'sem aéreo raso nas duas paredes' : 'aéreo raso só numa das paredes') + ', nada a fazer.'); continue; }
       const DA = +A.depth_mm, DB = +B.depth_mm;
-      // só mexe se os dois estão de fato no canto (dentro da zona do outro + 1 módulo)
-      if ((A.x_mm + A.width_mm) < L - DB - 600 || B.x_mm > DA + 600) continue;
-      const fimA = L - DB - CANTO_FOLGA_MM, iniB = DA + CANTO_FOLGA_MM;
-      const xA = Math.round(fimA - A.width_mm), xB = Math.round(iniB);
-      [[A, xA], [B, xB]].forEach(([s, x]) => {
-        s.x_mm = x;
-        if (projectSlotOverlapsNeighbor(s, x)) avisos.push('Canto dos aéreos (paredes ' + (i + 1) + '/' + (i + 2) + '): ' + ((s.module && s.module.name) || 'aéreo') + ' encostou no vizinho. Troque por aéreo custom e ajuste a largura.');
-      });
-      if (!filler) { avisos.push('Canto dos aéreos: não achei módulo de filler no catálogo; ficou sem os fillers da frente.'); feitos++; continue; }
-      // filler da parede A: da lateral do aéreo até a face do filler da parede B
-      // filler da parede B: da frente do aéreo A até a lateral do aéreo B (passa por cima da ponta do A)
-      const ponha = async (wi, x, w, s, recuo) => {
-        if (!(w > 5)) return;
-        const f = await insertProjectModuleDefault(filler.id, { wall_index: wi, x_mm: Math.round(x), width_mm: Math.round(w), height_mm: s.height_mm, floor_height_mm: s.floor_height_mm });
-        if (!f) { avisos.push('Canto dos aéreos: o portal não criou o filler.'); return null; }
-        f.x_mm = Math.round(x); f.floor_height_mm = s.floor_height_mm;
-        f.fineOffsetZMm = Math.round(recuo);
-        try { f.depth_mm = projectSlotClampedDimensionMm(f, 'depth', 19); } catch (e) { /* fica a do cadastro */ }
-        const cor = Object.values(s.colorsByRole || {})[0];
-        if (cor && cor.name) iaeOpSetColor({ slot_ids: [String(f.id)], color_name: cor.name }, avisos);
-        recomputeProjectSlotPricing(f);
-        return f;
-      };
-      const fB = await ponha(i + 1, DA, xB - DA, B, DB);
-      const tB = fB ? (+fB.depth_mm || 19) : 19;
-      await ponha(i, L - DB - tB - ((L - DB - tB) - (xA + A.width_mm)), (L - DB - tB) - (xA + A.width_mm), A, DA);
+      const xA = Math.round(L - DB - CANTO_FOLGA_MM - A.width_mm), xB = Math.round(DA + CANTO_FOLGA_MM);
+      const vA = vizinhoAntes(A, listaA), vB = vizinhoDepois(B, listaB);
+      A.x_mm = xA; B.x_mm = xB;
+      // vão que abriu pro vizinho de dentro da parede
+      for (const [s, viz, wi, lado] of [[A, vA, i, 'antes'], [B, vB, j, 'depois']]) {
+        if (!viz) continue;
+        const vao = lado === 'antes' ? (+s.x_mm) - fimDe(viz) : (+viz.x_mm) - fimDe(s);
+        if (vao < -1) avisos.push(nome + ': ' + ((s.module && s.module.name) || 'aéreo') + ' encostou no vizinho. Troque por aéreo custom e ajuste a largura.');
+        else if (vao > 6 * MM) avisos.push(nome + ': ficou um vão de ' + Math.round(vao / MM) + '" entre os aéreos. Use aéreo custom pra fechar 100%.');
+        else if (vao > 5) await ponha(wi, lado === 'antes' ? fimDe(viz) : fimDe(s), vao, s, 0, 'vão entre aéreos');
+      }
+      if (!filler) { avisos.push('Canto dos aéreos: não achei módulo de filler no catálogo; ficou sem os fillers da frente.'); }
+      else {
+        // B passa por cima da ponta do A (entrelaçado)
+        const fB = await ponha(j, DA, xB - DA, B, DB, 'frente');
+        const tB = fB ? (+fB.depth_mm || 19) : 19;
+        await ponha(i, fimDe(A), (L - DB - tB) - fimDe(A), A, DA, 'frente');
+      }
+      diag.push(nome + ' (aéreos): canto livre + fillers na frente, ' + Math.round(CANTO_FOLGA_MM / MM) + '" de folga.');
+      feitos++;
+    }
+    return feitos;
+  }
+
+  // CANTO DAS BASES (10:24: "o blind corner de baixo também não seguiu a
+  // regra"). A IA levou as bases das duas paredes até o canto, uma entrando
+  // na outra, sem blind — e a correção antiga só virava um blind que já
+  // existisse. Agora, em cada canto com base nas duas paredes:
+  //  · se uma delas é blind corner, ela fica com o lado cego pro canto, a
+  //    4 3/4" da parede, e a da outra parede começa na frente dela
+  //    (profundidade + o filler de 3/4" do blind);
+  //  · se nenhuma é, a última base da parede A vira o blind corner do lado
+  //    certo com a largura mais parecida, e a da parede B anda pra frente.
+  const ehBaseCorpo = (s) => s && !isFloorSlot(s) && (+s.floor_height_mm || 0) < 50 && (+s.depth_mm || 0) > 450
+    && !/filler|panel|painel|cover|toe|rodap/i.test(String((s.module && s.module.name) || ''));
+  async function cantoBases(r, cat, avisos, diag) {
+    let feitos = 0;
+    const blinds = cat.filter((m) => /blind/i.test(m.name) && !/wall|a[ée]reo|upper/i.test([m.name, m.category].join(' ')));
+    for (const [i, j] of cantosDoAmbiente(r)) {
+      const nome = 'Canto paredes ' + (i + 1) + '/' + (j + 1);
+      const L = getProjectWallWidthMm(i);
+      const listaA = naParede(i, ehBaseCorpo), listaB = naParede(j, ehBaseCorpo);
+      let A = listaA.sort((a, b) => fimDe(b) - fimDe(a))[0];
+      let B = listaB.sort((a, b) => a.x_mm - b.x_mm)[0];
+      if (!A || !B) { diag.push(nome + ' (bases): ' + (!A && !B ? 'sem base nas duas paredes' : 'base só numa das paredes') + ', nada a fazer.'); continue; }
+      const DA = +A.depth_mm, DB = +B.depth_mm;
+      const choca = fimDe(A) > L - DB + 1 && (+B.x_mm) < DA - 1;
+      const biA = projectSlotBlindInfo(A), biB = projectSlotBlindInfo(B);
+      if (!choca && !biA && !biB) { diag.push(nome + ' (bases): não se cruzam no canto, nada a fazer.'); continue; }
+      let alvo = biA ? 'A' : biB ? 'B' : 'A';
+      if (!biA && !biB) {
+        // vira blind: o da parede A, lado direito (canto no fim da parede A)
+        const opc = blinds.filter((m) => ladoDoNome(m.name) === 'D');
+        const larg = +A.width_mm || 914;
+        const m = opc.sort((a, b) => Math.abs((a.w[1] || 0) - larg) - Math.abs((b.w[1] || 0) - larg))[0];
+        if (!m) { avisos.push(nome + ': as bases se cruzam no canto e não achei blind corner direito no catálogo.'); diag.push(nome + ' (bases): sem blind no catálogo.'); continue; }
+        const nomeAntes = (A.module && A.module.name) || 'base';
+        const cores = { colorsByRole: Object.assign({}, A.colorsByRole || {}) };
+        await editProjectAiApply([{ op: 'replace_module', reason: 'Canto de base vira blind corner', module_id: m.id, slot_ids: [String(A.id)] }]);
+        try { if (typeof iaeCopyColors === 'function') iaeCopyColors(cores, A); } catch (e) { /* */ }
+        diag.push(nome + ' (bases): ' + nomeAntes + ' virou ' + m.name + ' (lado cego pro canto).');
+      }
+      // posiciona o blind e afasta a base da outra parede
+      const FILLER_T = 19.5;
+      if (alvo === 'A') {
+        const bi = projectSlotBlindInfo(A) || { afastar: 120.65, lado: 'D' };
+        if (bi.lado !== 'D') { diag.push(nome + ' (bases): blind da parede ' + (i + 1) + ' com lado errado — vai pela troca de lado.'); }
+        A.x_mm = Math.round(L - bi.afastar - (+A.width_mm));
+        const novoXB = Math.round(DA + FILLER_T);
+        if ((+B.x_mm) < novoXB) { const d = novoXB - B.x_mm; listaB.filter((o) => (+o.x_mm) >= (+B.x_mm) - 1).forEach((o) => { o.x_mm = Math.round((+o.x_mm) + d); }); }
+      } else {
+        const bi = projectSlotBlindInfo(B) || { afastar: 120.65, lado: 'E' };
+        B.x_mm = Math.round(bi.afastar);
+        const novoFimA = Math.round(L - DB - FILLER_T);
+        if (fimDe(A) > novoFimA) { const d = fimDe(A) - novoFimA; listaA.filter((o) => fimDe(o) <= fimDe(A) + 1).forEach((o) => { o.x_mm = Math.round((+o.x_mm) - d); }); }
+      }
+      [A, B].forEach((s) => { try { recomputeProjectSlotPricing(s); } catch (e) { /* */ } });
+      const lista = alvo === 'A' ? listaB : listaA;
+      lista.forEach((s) => { if (projectSlotOverlapsNeighbor(s, +s.x_mm)) avisos.push(nome + ': ' + ((s.module && s.module.name) || 'base') + ' encostou no vizinho depois de abrir o canto; confira a parede ' + (Number(s.wall_index) + 1) + '.'); });
+      const fimB = Math.max(...listaB.map(fimDe)); const LB = getProjectWallWidthMm(j);
+      if (fimB > LB + 1) avisos.push(nome + ': a linha de bases da parede ' + (j + 1) + ' passou do fim da parede em ' + Math.round((fimB - LB) / MM) + '". Tire ou troque uma base.');
+      diag.push(nome + ' (bases): blind com o lado cego no canto, a 4 3/4" da parede; a base da outra parede começa na frente dele.');
       feitos++;
     }
     return feitos;
@@ -573,14 +663,17 @@ Responda SOMENTE com JSON:
       if (typeof resetProject === 'function') resetProject();
       const nParedes = aplicaParedes(r);
       const mods = await aplicaModulos(r, cat, nParedes);
+      const diag = [];
       try {
         const nBlind = await blindDoLadoCerto(cat, mods.avisos);
-        if (nBlind) mods.relatorio.push({ item: 'Blind corner', grupo: '', usado: nBlind + ' trocado(s) pela versão do outro lado', motivo: 'O lado cego fica virado pro canto' });
+        diag.push(nBlind ? 'Blind corner: ' + nBlind + ' trocado(s) pela versão do outro lado.' : 'Blind corner: nenhum veio com o lado trocado.');
       } catch (e) { console.error('[sahra-fluxo] blind', e); mods.avisos.push('Blind corner: ' + ((e && e.message) || e)); }
-      try {
-        const nCantos = await cantoAereos(r, cat, mods.avisos);
-        if (nCantos) mods.relatorio.push({ item: 'Canto dos aéreos', grupo: '', usado: nCantos + ' canto(s) com espaço morto + fillers na frente', motivo: 'Regra do canto: aéreo raso não leva blind/corner' });
-      } catch (e) { console.error('[sahra-fluxo] canto dos aéreos', e); mods.avisos.push('Canto dos aéreos: ' + ((e && e.message) || e)); }
+      try { await cantoBases(r, cat, mods.avisos, diag); } catch (e) { console.error('[sahra-fluxo] canto das bases', e); mods.avisos.push('Canto das bases: ' + ((e && e.message) || e)); }
+      try { await blindDoLadoCerto(cat, mods.avisos); } catch (e) { /* segunda passada: blind criado no canto */ }
+      try { await cantoAereos(r, cat, mods.avisos, diag); } catch (e) { console.error('[sahra-fluxo] canto dos aéreos', e); mods.avisos.push('Canto dos aéreos: ' + ((e && e.message) || e)); }
+      if (!cantosDoAmbiente(r).length) diag.push('Nenhum canto de 90° entre paredes seguidas: regras de canto não se aplicam.');
+      console.info('[sahra-fluxo] cantos:', diag);
+      diag.forEach((d) => mods.relatorio.push({ item: 'Regra de canto', grupo: '', usado: d, motivo: '' }));
       renderProjectCanvas();
       if (typeof markProjectDirty === 'function') markProjectDirty();
       const naoVirou = [...(r.nao_virou || []), ...mods.falhas];
