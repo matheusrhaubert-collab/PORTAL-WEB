@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611081101"></script>
+<script src="js/config.js?v=202611081448"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -1428,6 +1428,7 @@ PADRÕES DE MÓDULOS LEGNO (indústria americana, polegadas)
 - Painéis (PNL) em toda lateral aparente; fillers (F) de 1" a 6" pra fechar sobras.
 - Nichos (NCH) e floating shelves (FS) com LED opcional (prateleiras, base superior, laterais). Floating shelf ainda sem produto no catálogo: marcar "sob consulta".
 - Regras de projeto: um protagonista por parede; topos e rodapés alinhados; no máximo 3 materiais/cores; não encostar gaveta em canto; o que JÁ EXISTE e fica entra só como contexto (tipo "existente"), fora da lista de módulos; appliances são decorativos (tipo "appliance").
+- CANTOS PRIMEIRO: todo projeto começa pelos cantos. Em cada canto de 90° com BASES nas duas paredes, o canto inferior é um bloco de 27" × 27" (Base Corner Filler, SKU "BCF": profundidade da base 24" + 3" de folga em cada parede); com AÉREOS nas duas paredes, o canto superior é um bloco de 14" × 14" (Wall Corner Filler, SKU "WCF": 12" + 2"). Desenhe o bloco como item tipo "canto" na vista da parede que TERMINA no canto (x = largura da parede − 27, ou − 14) e comece os módulos da outra parede depois de 27" (ou 14"). Nada de blind corner nem corner de aéreo.
 - PLANTA BAIXA: o campo "planta" da ficha é a verdade sobre o formato. Respeite as paredes, as aberturas, onde ficam pia, fogão e geladeira, e ILHA x PENÍNSULA (ilha é solta no meio; península encosta numa parede: nunca troque uma pela outra). Ilha e península ganham sua própria vista em "paredes" (ex.: "Ilha · frente"), com a largura da planta.
 - Medidas do briefing são aproximadas: use-as, arredonde pra polegadas inteiras e feche cada parede com fillers.
 - FOTOS EM PERSPECTIVA: o que está mais longe da câmera parece menor. Nunca meça contando pixels de ponta a ponta. Use como régua só objetos de medida padrão no mesmo plano e perto do que está medindo (fogão 30", geladeira 36", dishwasher 24", bancada a 36" do piso, porta 80" de altura); prefira alturas às larguras; conte portas e módulos de largura padrão em vez de medir; use as linhas de fuga (rodapé, bancada, topo dos aéreos) pra corrigir o encurtamento. Quando o cliente deu uma medida, ela vale mais que a estimativa pela foto.
@@ -1444,7 +1445,7 @@ Desenhe só as paredes onde há intervenção (no máximo 4). Coordenadas em pol
 Responda SOMENTE com JSON:
 {"conceito": "2 a 3 frases: protagonista, eixo, sensação",
  "paredes": [{"nome": "Parede do fogão", "largura": 118, "altura": 108,
-   "itens": [{"tipo": "base|aereo|torre|painel|filler|nicho|prateleira|appliance|existente", "sku": "B30", "rotulo": "Base 30", "x": 0, "y": 0, "largura": 30, "altura": 34.5, "acabamento": "Carvalho natural", "led": false,
+   "itens": [{"tipo": "base|aereo|torre|painel|filler|nicho|prateleira|canto|appliance|existente", "sku": "B30", "rotulo": "Base 30", "x": 0, "y": 0, "largura": 30, "altura": 34.5, "acabamento": "Carvalho natural", "led": false,
      "grupo": "nome do conjunto quando várias peças empilhadas formam um móvel só (ex.: Torre café = base + nicho + aéreo), senão null",
      "portas": 2, "porta": "madeira|vidro", "cor_vidro": "fumê ou null", "prateleiras": 1, "gavetas": 0, "aberto": false}]}],
  "acabamentos": [{"nome": "Carvalho natural", "onde": "nichos e torre", "cor": "#b88a5a", "cor_legno": "nome EXATO da CARTELA LEGNO mais parecida, ou null se não é móvel da Legno (pedra, vidro, metal)"}],
@@ -1599,7 +1600,9 @@ function montarHtml(p){
     <p class="muted">A SAHRA transforma este projeto virtual em paredes e módulos reais no canvas de Projetos, seguindo a coluna <b>Montar no portal</b> do fluxo${ets.length?` (${escritas} de ${ets.length} etapas com processo escrito)`:""}. Nada é salvo sozinho: você confere e salva.</p>
     ${!ets.length?`<p class="err">A coluna "Montar no portal" ainda não existe no fluxo. Rode a migration 273 no Supabase.</p>`:""}
     ${PV.montarErro?`<p class="err">${esc(PV.montarErro)}</p>`:""}
-    <div class="row"><button class="btn primary" id="pv-montar" ${PV.montando||!ets.length?"disabled":""}>${PV.montando?"Montando no portal…":ult?"Montar de novo":"Montar no portal"}</button></div>
+    <div class="row"><label class="muted" for="pv-montar-ate" style="font-size:13px">Montar até</label>
+      <select id="pv-montar-ate" aria-label="Montar até a etapa">${[["paredes","A · Paredes"],["cantos","B · + Cantos (bases e aéreos)"],["bases","C · + Bases"],["torres","D · + Torres e conjuntos"],["aereos","E · + Aéreos"],["ilha","F · + Ilha"],["tudo","Tudo"]].map(([v,t])=>`<option value="${v}" ${(PV.montarAte||"tudo")===v?"selected":""}>${t}</option>`).join("")}</select>
+      <button class="btn primary" id="pv-montar" ${PV.montando||!ets.length?"disabled":""}>${PV.montando?"Montando no portal…":ult?"Montar de novo":"Montar no portal"}</button></div>
     ${ult?`<div class="montagem"><p class="muted">Última montagem: ${fmtData(ult.quando)} · ${ult.paredes} parede(s) · ${ult.modulos} módulo(s)</p>
       ${ult.mensagem?`<p>${esc(ult.mensagem)}</p>`:""}
       ${(ult.relatorio||[]).length?`<h4>O que virou o quê</h4><div class="tbl"><table><thead><tr><th>Item do virtual</th><th>No portal</th><th>Por quê</th></tr></thead><tbody>${ult.relatorio.map(x=>`<tr><td>${esc(x.item)}${x.grupo?`<br><small class="muted">${esc(x.grupo)}</small>`:""}</td><td>${esc(x.usado)}</td><td><small>${esc(x.motivo)}</small></td></tr>`).join("")}</tbody></table></div>`:""}
@@ -1616,7 +1619,7 @@ async function montarNoPortal(){
   PV.montando=true; PV.montarErro=""; renderConversa($("#view-mesa"));
   let r=null;
   try{
-    r=await portal.sahraFluxoMontar({titulo:p.titulo||"", projetoId:p.id, ficha:p.ficha||{}, proposta:p.pv.proposta||{}, regras:regrasMontar()});
+    r=await portal.sahraFluxoMontar({titulo:p.titulo||"", projetoId:p.id, ficha:p.ficha||{}, proposta:p.pv.proposta||{}, regras:regrasMontar(), etapa:PV.montarAte||"tudo"});
   }catch(e){ r={ok:false, erro:e?.message||String(e)}; }
   PV.montando=false;
   if(r?.ok){
@@ -1704,6 +1707,7 @@ function bindPV(){
   document.querySelectorAll("[data-foto]").forEach(b=>b.onclick=()=>{ PV.fotoRender=b.dataset.foto; renderConversa($("#view-mesa")); });
   const rb=$("#pv-render"); if(rb) rb.onclick=gerarRender;
   const mb=$("#pv-montar"); if(mb) mb.onclick=montarNoPortal;
+  const ma=$("#pv-montar-ate"); if(ma) ma.onchange=()=>{ PV.montarAte=ma.value; };
   const g=$("#pv-gerar"); if(g) g.onclick=()=>gerarPV("");
   const s=$("#pv-parar"); if(s) s.onclick=()=>PV.ctl?.abort();
   const r=$("#pv-refazer"); if(r) r.onclick=()=>{ const t=$("#pv-ajuste").value.trim(); if(!t){ const e=$("#pv-aerr"); e.textContent="Escreva o ajuste que o cliente pediu."; e.hidden=false; return; } gerarPV(t); };

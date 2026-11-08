@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081205';
+  const VERSAO = '202611081315';
   let overlay = null;
 
   function abrir() {
@@ -217,6 +217,235 @@ Responda SOMENTE com JSON:
  "nao_virou": [{"item": "...", "motivo": "..."}],
  "etapas": [{"etapa": "nome da etapa", "decisao": "o que decidiu e qual saída tomou"}],
  "mensagem": "1 a 2 frases pro Matt sobre a montagem"}`;
+  }
+
+  // ========================================================================
+  // MONTAGEM FIEL AO VIRTUAL (11:06, 08/11 — "completamente errado… pirou").
+  // A causa: a IA recalculava paredes e coordenadas do zero e errava a
+  // geometria (bases soltas no meio, gaveteiro pendurado). Agora:
+  //  · as POSIÇÕES vêm do projeto virtual aprovado (x, altura do chão,
+  //    largura, altura de cada item de cada vista), convertidas pra mm;
+  //  · as PAREDES vêm da planta baixa (ou, sem planta, das vistas em
+  //    sequência, com cantos de 90°);
+  //  · a IA só escolhe O QUÊ: qual parede do portal é cada vista, qual
+  //    módulo/caixa e qual cor cada item usa — sem coordenada nenhuma;
+  //  · ilha/península só se a vista for de ilha/península.
+  // Depois seguem as regras: conjuntos, canto das bases (blind), canto dos
+  // aéreos (módulo de canto) e fechamento com filler/aéreo custom.
+  // ========================================================================
+  const RE_VISTA_PISO = /\bilha\b|island|pen[ií]nsula|peninsula/i;
+  const PROF_PADRAO_POL = { base: 24, torre: 24, aereo: 12, nicho: 12, prateleira: 10, painel: 0.75, filler: 0.75 };
+  function itensDoVirtual(pr) {
+    const out = [];
+    (pr.paredes || []).forEach((w, vi) => (w.itens || []).forEach((it, ii) => {
+      if (it.tipo === 'existente' || it.tipo === 'appliance') return;
+      if (it.tipo === 'canto' || /^(WCF|BCF)\b/i.test(String(it.sku || ''))) return; // canto: etapa 1, pelo código
+      if (!(+it.largura > 0) || !(+it.altura > 0)) return;
+      out.push(Object.assign({ id: vi + '.' + ii, vista: vi }, it));
+    }));
+    return out;
+  }
+  // paredes da planta → paredes do portal (lado "aberto" só sai se estiver na ponta da sequência)
+  function paredesDaPlanta(pl) {
+    const ws = ((pl && pl.paredes) || []).map((w, i) => ({ i, nome: String(w.nome || ''), pol: +w.comprimento || 0, angulo: Number.isFinite(+w.angulo) ? +w.angulo : 90, aberto: /aberto|open/i.test(String(w.nome || '')) }))
+      .filter((w) => w.pol > 0);
+    while (ws.length && ws[0].aberto) ws.shift();
+    while (ws.length && ws[ws.length - 1].aberto) ws.pop();
+    return ws;
+  }
+  function promptEscolha(h, itens, cat, cores, maxRefs, plWalls) {
+    const pr = h.proposta || {};
+    const vistas = (pr.paredes || []).map((w, i) => ({ vista: i, nome: w.nome, largura_pol: w.largura, altura_pol: w.altura, parece_ilha: RE_VISTA_PISO.test(String(w.nome || '')) }));
+    const lin = itens.map((it) => [it.id, 'vista ' + it.vista, it.tipo, it.sku || '-', it.rotulo || '-', it.largura + 'x' + it.altura + ' pol', 'y ' + it.y, it.acabamento || '-',
+      it.grupo ? 'grupo ' + it.grupo : '', it.portas != null ? 'portas ' + it.portas : '', it.porta ? 'porta ' + it.porta : '', it.cor_vidro ? 'vidro ' + it.cor_vidro : '',
+      it.prateleiras != null ? 'prat ' + it.prateleiras : '', it.gavetas ? 'gav ' + it.gavetas : '', it.aberto ? 'aberto' : '', it.led ? 'LED' : ''].filter(Boolean).join(' | ')).join('\n');
+    return `Você é a SAHRA, designer da Legno Home. O cliente APROVOU o projeto virtual. Agora você só ESCOLHE os produtos: as posições e medidas de cada item JÁ ESTÃO DEFINIDAS pelo projeto virtual e o portal vai usá-las exatamente. NÃO invente coordenadas.
+
+ETAPAS DO FLUXO "MONTAR NO PORTAL" (regras do Matt — valem mais que tudo):
+${h.regras || '(etapas ainda vazias)'}
+
+${plWalls.length ? `PAREDES DA PLANTA BAIXA (índice = número da parede no portal):
+${plWalls.map((w, k) => k + ': ' + (w.nome || 'parede') + ' · ' + w.pol + '"').join('\n')}
+
+Para cada VISTA do projeto virtual, diga em qual parede ela está ("parede") e onde começa nela ("inicio_pol", da quina inicial da parede). Vista de ILHA/PENÍNSULA vai com "piso": true, "parede" = a parede de trabalho de frente pra ela, "inicio_pol" ao longo dessa parede e "afastamento_pol" = largura do corredor (da parede até a frente da ilha).` : `Não há planta: cada vista (que não é ilha) vira uma parede do portal, na ordem, com cantos de 90°. Vista de ILHA/PENÍNSULA vai com "piso": true, "parede" (índice da vista de parede de trabalho), "inicio_pol" e "afastamento_pol".`}
+
+VISTAS: ${JSON.stringify(vistas)}
+
+ITENS DO PROJETO VIRTUAL (id | vista | tipo | sku | rótulo | medida | altura do chão | acabamento | detalhes):
+${lin}
+
+O QUE ESCOLHER PRA CADA ITEM
+- Módulo do catálogo: "module_id" (id EXATO da 1ª coluna do catálogo; o SKU do item bate com as refs do módulo). Pode informar "profundidade_pol" se for diferente do padrão.
+- Ou caixa pelo Construtor (conjunto empilhado, nicho, item sem módulo pronto igual): "caixa": "aereo" (Bottom · Bottom · Back) ou "suspenso", com "portas", "prateleiras", "gavetas", "modelo_porta" ("vidro" = Aluminium Glass), "cor_vidro", "led", "front_color_name".
+- Ou "nao_virou": "motivo" (nunca invente; nunca troque por módulo de outra função: pantry ≠ torre com nicho).
+- "color_name": nome EXATO das CORES ATIVAS (use a cor_legno do acabamento quando houver), ou null.
+- BLIND CORNER: o lado cego fica virado pro canto. AÉREO RASO no canto: nunca blind/corner (o portal resolve o canto).
+
+CATÁLOGO (id | nome | família › categoria › sub | montagem | w | h | d | refs):
+${catalogoTexto(cat, maxRefs)}
+
+CORES ATIVAS: ${cores.map((c) => c.name).join(' · ')}
+ACABAMENTOS DO VIRTUAL: ${JSON.stringify(pr.acabamentos || [])}
+
+Responda SOMENTE com JSON:
+{"vistas": [{"vista": 0, "parede": 0, "inicio_pol": 0, "piso": false, "afastamento_pol": null}],
+ "itens": [{"id": "0.1", "module_id": "…", "color_name": "…", "motivo": "por quê"},
+           {"id": "0.2", "caixa": "aereo", "portas": 0, "prateleiras": 0, "gavetas": 0, "modelo_porta": null, "cor_vidro": null, "led": true, "color_name": "…", "front_color_name": null, "motivo": "…"},
+           {"id": "0.3", "nao_virou": "motivo"}],
+ "etapas": [{"etapa": "nome", "decisao": "o que decidiu"}],
+ "mensagem": "1 a 2 frases pro Matt"}`;
+  }
+  // junta a escolha da IA com as posições do virtual → o mesmo formato que aplicaModulos usa
+  function montaDoVirtual(h, itens, esc, cat, plWalls) {
+    const pr = h.proposta || {}; const MMp = MM;
+    const porId = new Map(cat.map((m) => [String(m.id), m]));
+    const vistas = pr.paredes || [];
+    const escV = new Map((esc.vistas || []).map((v) => [Number(v.vista), v]));
+    const escI = new Map((esc.itens || []).map((x) => [String(x.id), x]));
+    const avisos = [], naoVirou = [];
+    // paredes
+    let walls, mapaVista = new Map();
+    const teto = Math.max(...vistas.map((w) => +w.altura || 0), 0) * MMp || roomSettings.ceiling_mm;
+    if (plWalls.length) {
+      walls = plWalls.map((w) => ({ length_mm: Math.round(w.pol * MMp), height_mm: Math.round(teto), angle_to_next_deg: w.angulo, nome: w.nome }));
+      vistas.forEach((w, vi) => {
+        const e = escV.get(vi) || {};
+        const piso = e.piso === true || RE_VISTA_PISO.test(String(w.nome || ''));
+        let wi = Number(e.parede);
+        if (!(wi >= 0 && wi < walls.length)) {
+          // sem resposta: casa pelo nome, senão pela largura mais parecida
+          const n = String(w.nome || '').toLowerCase();
+          wi = plWalls.findIndex((p) => p.nome && n && (p.nome.toLowerCase().includes(n) || n.includes(p.nome.toLowerCase())));
+          if (wi < 0) wi = plWalls.map((p, k) => [Math.abs(p.pol - (+w.largura || 0)), k]).sort((a, b) => a[0] - b[0])[0][1];
+          if (!piso) avisos.push('Vista "' + w.nome + '": a SAHRA não disse a parede; usei a parede ' + (wi + 1) + ' (' + (plWalls[wi].nome || '') + ').');
+        }
+        mapaVista.set(vi, { wi, inicio: (+e.inicio_pol || 0) * MMp, piso, afast: (+e.afastamento_pol || 42) * MMp, largura: (+w.largura || 0) * MMp });
+      });
+    } else {
+      walls = []; const idxParede = new Map();
+      vistas.forEach((w, vi) => { if (!RE_VISTA_PISO.test(String(w.nome || '')) && !((escV.get(vi) || {}).piso === true)) { idxParede.set(vi, walls.length); walls.push({ length_mm: Math.round((+w.largura || 0) * MMp), height_mm: Math.round((+w.altura || 0) * MMp || teto), angle_to_next_deg: 90, nome: w.nome }); } });
+      vistas.forEach((w, vi) => {
+        const e = escV.get(vi) || {};
+        if (idxParede.has(vi)) mapaVista.set(vi, { wi: idxParede.get(vi), inicio: 0, piso: false, largura: (+w.largura || 0) * MMp });
+        else { let wi = Number(e.parede); if (!(wi >= 0 && wi < walls.length)) wi = 0; mapaVista.set(vi, { wi, inicio: (+e.inicio_pol || 0) * MMp, piso: true, afast: (+e.afastamento_pol || 42) * MMp, largura: (+w.largura || 0) * MMp }); }
+      });
+    }
+    if (!walls.length) throw new Error('o projeto virtual não tem parede pra montar');
+    // itens
+    const modules = [];
+    itens.forEach((it) => {
+      const e = escI.get(String(it.id)) || {};
+      const nome = (it.rotulo || it.sku || it.tipo) + ' (' + (vistas[it.vista] && vistas[it.vista].nome || 'vista ' + it.vista) + ')';
+      if (e.nao_virou) { naoVirou.push({ item: nome, motivo: String(e.nao_virou) }); return; }
+      const mv = mapaVista.get(it.vista); if (!mv) return;
+      const mod = e.module_id != null ? porId.get(String(e.module_id)) : null;
+      if (!mod && !e.caixa) { naoVirou.push({ item: nome, motivo: 'a SAHRA não escolheu módulo nem caixa' }); return; }
+      const W = (+it.largura) * MMp, H = (+it.altura) * MMp;
+      const profPol = +e.profundidade_pol || (mod && mod.d && mod.d[1] ? mod.d[1] / MMp : 0) || PROF_PADRAO_POL[it.tipo] || 24;
+      const x = mv.piso ? mv.inicio + (mv.largura - (+it.x) * MMp - W) : mv.inicio + (+it.x) * MMp;
+      const m = {
+        item: nome, grupo: it.grupo || null, motivo: e.motivo || '', wall_index: mv.wi,
+        x_mm: Math.round(x), floor_height_mm: Math.round((+it.y || 0) * MMp), width_mm: Math.round(W), height_mm: Math.round(H), depth_mm: Math.round(profPol * MMp),
+        color_name: e.color_name || null
+      };
+      if (mod) m.module_id = mod.id;
+      else {
+        Object.assign(m, { caixa: e.caixa === 'suspenso' ? 'suspenso' : e.caixa === 'closet' ? 'closet' : 'aereo',
+          portas: e.portas != null ? e.portas : (it.portas || 0), prateleiras: e.prateleiras != null ? e.prateleiras : (it.prateleiras || 0),
+          gavetas: e.gavetas != null ? e.gavetas : (it.gavetas || 0),
+          modelo_porta: e.modelo_porta || (/vidro|glass/i.test(it.porta || '') ? 'vidro' : null),
+          cor_vidro: e.cor_vidro || it.cor_vidro || null, led: e.led != null ? !!e.led : !!it.led, front_color_name: e.front_color_name || null });
+      }
+      if (mv.piso) m.piso = { afastamento_mm: Math.round(mv.afast), frente: 'parede' };
+      m.camada = mv.piso ? 'piso' : it.grupo ? 'torre' : (m.floor_height_mm >= 900 ? 'aereo' : (m.height_mm > 1500 ? 'torre' : 'base'));
+      // item passando da parede: avisa (não inventa posição)
+      const Lw = walls[mv.wi].length_mm;
+      if (!mv.piso && (m.x_mm < -5 || m.x_mm + m.width_mm > Lw + 5)) avisos.push(nome + ': no virtual passa da parede ' + (mv.wi + 1) + ' (' + Math.round(Lw / MMp) + '"). Confira o virtual.');
+      modules.push(m);
+    });
+    return { walls, main_index: 0, ceiling_mm: Math.round(teto), modules, nao_virou: naoVirou, etapas: esc.etapas || [], mensagem: esc.mensagem || '', _avisos: avisos };
+  }
+
+  // ========================================================================
+  // MICRO ETAPAS DA MONTAGEM (12:20, 08/11). Matt: "temos que quebrar em
+  // várias etapas pequenas (fluxos micro) e ir trabalhando um por um. Todo
+  // projeto começa nos cantos, é a maneira mais fácil de começar." E: "criar
+  // um canto (novo módulo corner) com um bloco invisível e 2 fillers na
+  // frente… um corner superior e um inferior" (migration 282).
+  //   1 cantos  · paredes + módulo de canto (inferior/superior) em cada canto
+  //   2 bases   · bases do virtual, encostadas nos cantos
+  //   3 aereos  · aéreos do virtual, encostados nos cantos
+  //   4 torres  · torres e conjuntos empilhados (torre café)
+  //   5 ilha    · ilha/península no piso
+  //   tudo      · tudo acima
+  // Dá pra montar até uma etapa e conferir no canvas antes da próxima.
+  // ========================================================================
+  // Ordem do Matt (13:12): A paredes · B cantos (bases e aéreos) · C bases ·
+  // D torres e conjuntos · E aéreos · F ilha.
+  const ETAPAS_MONTAR = ['paredes', 'cantos', 'bases', 'torres', 'aereos', 'ilha', 'tudo'];
+  const NOME_ETAPA = { paredes: 'A · Paredes', cantos: 'B · Cantos', bases: 'C · Bases', torres: 'D · Torres e conjuntos', aereos: 'E · Aéreos', ilha: 'F · Ilha', tudo: 'Tudo' };
+  const CAMADAS_ATE = { paredes: [], cantos: [], bases: ['base'], torres: ['base', 'torre'], aereos: ['base', 'torre', 'aereo'], ilha: ['base', 'torre', 'aereo', 'piso'], tudo: ['base', 'torre', 'aereo', 'piso'] };
+  const FOLGA_CANTO = { base: 3 * MM, aereo: 2 * MM };
+  const NOME_CANTO = { base: 'Base Corner Filler', aereo: 'Wall Corner Filler' };
+  // ETAPA 1: em cada canto de 90°, se as DUAS paredes têm módulos da camada
+  // perto do canto, entra o bloco de canto: largura = prof. da outra parede +
+  // folga, profundidade = prof. desta parede + folga. Devolve os trechos que
+  // ele ocupa em cada parede (pra etapa 2/3 encostar os módulos).
+  async function etapaCantos(r, cat, avisos, diag) {
+    const blocos = []; // {wi, camada, ini, fim}
+    const mods = (r.modules || []).filter((m) => !m.piso);
+    for (const [i, j] of cantosDoAmbiente(r)) {
+      const Li = getProjectWallWidthMm(i);
+      for (const camada of ['base', 'aereo']) {
+        const daCamada = (m) => camada === 'aereo' ? m.camada === 'aereo' : (m.camada === 'base' || (m.camada === 'torre' && (+m.floor_height_mm || 0) < 50));
+        const A = mods.filter((m) => m.wall_index === i && daCamada(m) && (m.x_mm + m.width_mm) > Li - 1500);
+        const B = mods.filter((m) => m.wall_index === j && daCamada(m) && m.x_mm < 1500);
+        const nome = 'Canto paredes ' + (i + 1) + '/' + (j + 1) + ' (' + (camada === 'base' ? 'inferior' : 'superior') + ')';
+        if (!A.length || !B.length) { diag.push(nome + ': ' + (!A.length && !B.length ? 'sem módulos perto do canto' : 'módulos só numa das paredes') + ' — sem bloco de canto.'); continue; }
+        const mod = cat.find((m) => m.name === NOME_CANTO[camada]);
+        const DA = Math.max(...A.map((m) => +m.depth_mm || 0)), DB = Math.max(...B.map((m) => +m.depth_mm || 0));
+        const W = Math.round(DB + FOLGA_CANTO[camada]), D = Math.round(DA + FOLGA_CANTO[camada]);
+        const ref = camada === 'aereo' ? A.concat(B).filter((m) => m.camada === 'aereo') : A.concat(B);
+        const y = camada === 'aereo' ? Math.min(...ref.map((m) => +m.floor_height_mm || 0)) : 0;
+        const hh = camada === 'aereo' ? Math.max(...ref.map((m) => (+m.floor_height_mm || 0) + (+m.height_mm || 0))) - y : Math.max(...A.concat(B).filter((m) => m.camada === 'base').map((m) => +m.height_mm || 0), 876);
+        blocos.push({ wi: i, camada, ini: Li - W, fim: Li }, { wi: j, camada, ini: 0, fim: D });
+        if (!mod) { avisos.push(nome + ': falta o módulo "' + NOME_CANTO[camada] + '" no catálogo (migration 282). O espaço do canto ficou reservado, sem os fillers.'); diag.push(nome + ': espaço reservado ' + (W / MM).toFixed(1) + '" × ' + (D / MM).toFixed(1) + '" (sem módulo).'); continue; }
+        const sl = await insertProjectModuleDefault(mod.id, { wall_index: i, x_mm: Math.round(Li - W), width_mm: W, height_mm: Math.round(hh), floor_height_mm: Math.round(y) });
+        if (!sl) { avisos.push(nome + ': o portal não criou o bloco de canto.'); continue; }
+        sl.x_mm = Math.round(Li - W); sl.floor_height_mm = Math.round(y);
+        try { sl.depth_mm = projectSlotClampedDimensionMm(sl, 'depth', D); } catch (e) { /* */ }
+        const cor = (A.concat(B).find((m) => m.color_name) || {}).color_name;
+        if (cor) iaeOpSetColor({ slot_ids: [String(sl.id)], color_name: cor }, avisos);
+        recomputeProjectSlotPricing(sl);
+        if (Math.abs((+sl.width_mm) - W) > 2 || Math.abs((+sl.depth_mm) - D) > 2) avisos.push(nome + ': o bloco não aceitou ' + (W / MM).toFixed(1) + '" × ' + (D / MM).toFixed(1) + '" (ficou ' + ((+sl.width_mm) / MM).toFixed(1) + '" × ' + ((+sl.depth_mm) / MM).toFixed(1) + '").');
+        diag.push(nome + ': ' + mod.name + ' ' + (W / MM).toFixed(1) + '" × ' + (D / MM).toFixed(1) + '".');
+      }
+    }
+    return blocos;
+  }
+  // ETAPAS 2 e 3: os módulos da camada encostam nos blocos de canto. Mantém a
+  // ordem e os vãos do virtual; quem invade o canto anda pra fora, empurrando
+  // os seguintes. O que não couber vira aviso (fechamento é uma etapa futura).
+  function encostaNosCantos(mods, blocos, avisos, diag) {
+    const grupos = new Map();
+    mods.forEach((m) => {
+      if (m.piso) return;
+      const camada = m.camada === 'aereo' ? 'aereo' : 'base';
+      const k = m.wall_index + '|' + camada; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m);
+    });
+    grupos.forEach((lista, k) => {
+      const [wi, camada] = [Number(k.split('|')[0]), k.split('|')[1]];
+      const L = getProjectWallWidthMm(wi);
+      const bs = blocos.filter((b) => b.wi === wi && b.camada === camada);
+      const ini = bs.find((b) => b.ini === 0), fim = bs.find((b) => b.fim >= L - 1 && b.ini > 0);
+      let mexeu = 0;
+      if (ini) { let cur = ini.fim; lista.slice().sort((a, b) => a.x_mm - b.x_mm).forEach((m) => { if (m.x_mm < cur - 1) { m.x_mm = Math.round(cur); mexeu++; } cur = Math.max(cur, m.x_mm + m.width_mm); }); }
+      if (fim) { let cur = fim.ini; lista.slice().sort((a, b) => (b.x_mm + b.width_mm) - (a.x_mm + a.width_mm)).forEach((m) => { if (m.x_mm + m.width_mm > cur + 1) { m.x_mm = Math.round(cur - m.width_mm); mexeu++; } cur = Math.min(cur, m.x_mm); }); }
+      const ord = lista.slice().sort((a, b) => a.x_mm - b.x_mm);
+      for (let n = 1; n < ord.length; n++) if (ord[n].x_mm < ord[n - 1].x_mm + ord[n - 1].width_mm - 1) { avisos.push('Parede ' + (wi + 1) + ' (' + (camada === 'aereo' ? 'aéreos' : 'bases') + '): não cabe tudo entre os cantos — ' + ord[n - 1].item + ' e ' + ord[n].item + ' se sobrepõem. Ajustar no virtual ou com módulo custom.'); break; }
+      if (ord.length && ord[0].x_mm < (ini ? ini.fim : 0) - 1) avisos.push('Parede ' + (wi + 1) + ': a linha passou do canto inicial.');
+      if (mexeu) diag.push('Parede ' + (wi + 1) + ' (' + (camada === 'aereo' ? 'aéreos' : 'bases') + '): ' + mexeu + ' módulo(s) encostado(s) no canto.');
+    });
   }
 
   async function chamaIA(prompt) {
@@ -727,29 +956,37 @@ Responda SOMENTE com JSON:
       let sub = candidatos(h, cat, 6);
       if (sub.length < 5) sub = cat.slice(0, 250); // virtual sem tipos reconhecíveis: vai um pedaço do catálogo
       console.info('[sahra-fluxo] montar: ' + sub.length + ' módulos candidatos de ' + cat.length);
-      let r, model;
+      const itens = itensDoVirtual(h.proposta);
+      if (!itens.length) throw new Error('o projeto virtual não tem itens pra montar');
+      const plWalls = paredesDaPlanta(h.ficha && h.ficha.planta);
+      let esc, model;
       try {
-        ({ data: r, model } = await chamaIA(promptMontagem(h, sub, cores, 6)));
+        ({ data: esc, model } = await chamaIA(promptEscolha(h, itens, sub, cores, 6, plWalls)));
       } catch (e1) {
         if (!/demorou|timeout|504/i.test(String(e1 && e1.message))) throw e1;
         mostraCard('<b>SAHRA · montando no portal</b><br><span style="color:#6e675e">Demorou na primeira tentativa. Tentando de novo com menos opções por item…</span>');
         sub = candidatos(h, cat, 3);
-        ({ data: r, model } = await chamaIA(promptMontagem(h, sub, cores, 3)));
+        ({ data: esc, model } = await chamaIA(promptEscolha(h, itens, sub, cores, 3, plWalls)));
       }
+      const r = montaDoVirtual(h, itens, esc || {}, cat, plWalls);
       // projeto novo, sem pedir confirmação de novo (já confirmamos acima)
       projectSlots = [];
       if (typeof resetProject === 'function') resetProject();
       const nParedes = aplicaParedes(r);
-      const mods = await aplicaModulos(r, cat, nParedes);
-      const diag = [];
-      try {
-        const nBlind = await blindDoLadoCerto(cat, mods.avisos);
-        diag.push(nBlind ? 'Blind corner: ' + nBlind + ' trocado(s) pela versão do outro lado.' : 'Blind corner: nenhum veio com o lado trocado.');
-      } catch (e) { console.error('[sahra-fluxo] blind', e); mods.avisos.push('Blind corner: ' + ((e && e.message) || e)); }
-      try { await cantoBases(r, cat, mods.avisos, diag); } catch (e) { console.error('[sahra-fluxo] canto das bases', e); mods.avisos.push('Canto das bases: ' + ((e && e.message) || e)); }
-      try { await blindDoLadoCerto(cat, mods.avisos); } catch (e) { /* segunda passada: blind criado no canto */ }
-      try { await cantoAereos(r, cat, mods.avisos, diag); } catch (e) { console.error('[sahra-fluxo] canto dos aéreos', e); mods.avisos.push('Canto dos aéreos: ' + ((e && e.message) || e)); }
-      if (!cantosDoAmbiente(r).length) diag.push('Nenhum canto de 90° entre paredes seguidas: regras de canto não se aplicam.');
+      const etapa = ETAPAS_MONTAR.includes(h.etapa) ? h.etapa : 'tudo';
+      const diag = [], avisosEtapa = [...(r._avisos || [])];
+      // 1 · cantos (sempre primeiro)
+      let blocos = [];
+      if (etapa !== 'paredes') try { blocos = await etapaCantos(r, cat, avisosEtapa, diag); } catch (e) { console.error('[sahra-fluxo] cantos', e); avisosEtapa.push('Cantos: ' + ((e && e.message) || e)); }
+      if (!cantosDoAmbiente(r).length) diag.push('Nenhum canto de 90° entre paredes seguidas.');
+      // 2..5 · camadas até a etapa pedida, encostadas nos cantos
+      const camadas = CAMADAS_ATE[etapa];
+      const daEtapa = (r.modules || []).filter((m) => camadas.includes(m.camada));
+      encostaNosCantos(daEtapa, blocos, avisosEtapa, diag);
+      const mods = await aplicaModulos(Object.assign({}, r, { modules: daEtapa }), cat, nParedes);
+      mods.avisos.push(...avisosEtapa);
+      if (etapa !== 'tudo') diag.push('Montado até a etapa ' + NOME_ETAPA[etapa] + '. As próximas ficaram de fora de propósito.');
+      try { const nB = await blindDoLadoCerto(cat, mods.avisos); if (nB) diag.push('Blind corner: ' + nB + ' trocado(s) pela versão do outro lado.'); } catch (e) { /* */ }
       console.info('[sahra-fluxo] cantos:', diag);
       diag.forEach((d) => mods.relatorio.push({ item: 'Regra de canto', grupo: '', usado: d, motivo: '' }));
       renderProjectCanvas();
