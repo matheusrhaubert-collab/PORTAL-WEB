@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611081030';
+  const VERSAO = '202611081045';
   let overlay = null;
 
   function abrir() {
@@ -158,6 +158,7 @@
       nota.forEach((x) => add(x.m));
     }));
     // painéis e fillers sempre à mão pra fechar sobras
+    cat.filter((m) => /cover|lateral|end ?panel|vertical/i.test([m.name, m.category].join(' ')) && /panel|painel|cover/i.test([m.name, m.family, m.category].join(' '))).slice(0, 20).forEach(add);
     cat.filter((m) => /filler|panel|painel/i.test([m.name, m.category].join(' '))).slice(0, 12).forEach(add);
     return Array.from(escolhidos.values());
   }
@@ -189,7 +190,10 @@ COMO O PORTAL FUNCIONA (mecânica, não é regra de projeto)
 - "module_id" tem que ser um id que EXISTE no CATÁLOGO abaixo (1ª coluna), copiado exatamente. "refs" = referências (SKU) cadastradas no módulo.
 - "color_name" tem que ser um nome EXATO da lista de CORES, ou null. Quando o acabamento do item tiver "cor_legno" (a cor da cartela que a SAHRA já escolheu no virtual), use exatamente ela.
 - Se a FICHA tem "planta", as paredes do portal seguem a planta: mesma sequência, comprimento em polegadas × 25,4 e os mesmos ângulos. Lado "aberto" só entra como parede se tiver móvel nele.
-- Ilha e península ficam soltas no piso: o portal ainda não recebe módulo de piso por aqui. Coloque os módulos delas em "nao_virou" com o motivo "ilha/península: montar no piso à mão".
+- CAIXA PELO CONSTRUTOR: quando a etapa de composição mandar (ou o item não tem módulo pronto equivalente), use uma entrada com "caixa" em vez de "module_id": "aereo" = caixa de Componentes Bottom · Bottom · Back (fora do chão), "suspenso" = Bottom · Stretcher · Back. O portal cria a caixa e monta no Construtor: "prateleiras", "portas" (folhas), "gavetas", "modelo_porta" ("vidro" = Aluminium Glass), "cor_vidro" (ex.: "fumê"), "led" (fita no tampo de cima, iluminando pra baixo), "color_name" (caixa) e "front_color_name" (frentes).
+- CONJUNTO EMPILHADO: peças que formam um móvel só (ex.: base + nicho + aéreo + top covers) levam o mesmo "grupo". O portal alinha: a peça de baixo na altura das bases da parede, a de cima com o topo dos aéreos, e a do meio preenche o vão entre elas; os painéis do grupo (top covers) ficam com a altura do conjunto e a profundidade da caixa + 25,4 mm.
+- ILHA/PENÍNSULA (módulo solto no piso): use "piso": {"afastamento_mm": distância da parede de referência até a costa do módulo, "frente": "ambiente" ou "parede"}; "wall_index" e "x_mm" contam a partir dessa parede.
+- NUNCA troque por um módulo de outra função (pantry ≠ torre com nicho; gaveteiro ≠ base de porta). "motivo" diz por que escolheu cada peça.
 - Item do virtual que não tem módulo correspondente NÃO entra em modules: vai em "nao_virou" com o motivo. Nunca invente id.
 
 PROJETO VIRTUAL APROVADO (mm): ${JSON.stringify(virtualEmMm(h.proposta || {}))}
@@ -205,7 +209,9 @@ Responda SOMENTE com JSON:
 {"walls": [{"name": "Parede da adega", "length_mm": 3000, "height_mm": 2743, "angle_to_next_deg": 90}],
  "main_index": 0,
  "ceiling_mm": 2743,
- "modules": [{"item": "rótulo/SKU do item do virtual", "wall_index": 0, "module_id": "id do catálogo", "x_mm": 0, "floor_height_mm": 0, "width_mm": 762, "height_mm": 876, "depth_mm": 610, "color_name": "nome exato ou null"}],
+ "modules": [
+   {"item": "rótulo/SKU do item do virtual", "grupo": "nome do conjunto ou null", "motivo": "por que este módulo", "wall_index": 0, "module_id": "id do catálogo", "x_mm": 0, "floor_height_mm": 0, "width_mm": 762, "height_mm": 876, "depth_mm": 610, "color_name": "nome exato ou null"},
+   {"item": "NCH3020", "grupo": "Torre café", "motivo": "nicho não tem módulo pronto: caixa pelo Construtor", "caixa": "aereo", "wall_index": 0, "x_mm": 762, "floor_height_mm": 914, "width_mm": 762, "height_mm": 508, "depth_mm": 330, "prateleiras": 0, "portas": 0, "gavetas": 0, "modelo_porta": null, "cor_vidro": null, "led": true, "color_name": "nome exato", "front_color_name": "nome exato ou null"}],
  "nao_virou": [{"item": "...", "motivo": "..."}],
  "etapas": [{"etapa": "nome da etapa", "decisao": "o que decidiu e qual saída tomou"}],
  "mensagem": "1 a 2 frases pro Matt sobre a montagem"}`;
@@ -255,27 +261,173 @@ Responda SOMENTE com JSON:
     return segs.length;
   }
 
+  // ---- CONJUNTOS, CAIXA PELO CONSTRUTOR E PISO (09:40, 08/11) ----
+  // Matt (torre café: base + nicho + aéreo de vidro): "tem que ser montada via
+  // construtor… top cover esquerdo… base de duas portas com rodapé… nicho
+  // nos componentes bottom back… LED no construtor… em cima mais um bottom
+  // back com cor diferente, prateleiras, duas portas trocadas por aluminium
+  // glass, vidro fumê… top cover na direita… sempre o top cover é tamanho da
+  // caixa, profundidade da caixa mais uma polegada" / "o base acompanha a
+  // altura dos bases, o aéreo a altura dos aéreos, e o nicho cabe nesse
+  // intervalo pra dar o alinhamento". A RECEITA fica na etapa do fluxo; aqui
+  // só a mecânica que executa e o alinhamento.
+  const ehPainel = (m, cat) => {
+    const mod = m.module_id != null ? cat.find((c) => String(c.id) === String(m.module_id)) : null;
+    return !!mod && /panel|painel|cover|filler/i.test([mod.name, mod.category].join(' '));
+  };
+  const moda = (lista) => {
+    const c = {}; lista.forEach((v) => { const k = Math.round(v); c[k] = (c[k] || 0) + 1; });
+    const k = Object.keys(c).sort((a, b) => c[b] - c[a])[0];
+    return k != null ? Number(k) : null;
+  };
+  function alinhaGrupos(mods, cat) {
+    const grupos = new Map();
+    mods.forEach((m) => { if (m.grupo && !m.piso) { const k = m.wall_index + '|' + m.grupo; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); } });
+    grupos.forEach((lista, k) => {
+      const wi = Number(k.split('|')[0]);
+      const fora = mods.filter((m) => !lista.includes(m) && Number(m.wall_index) === wi && !m.piso && !ehPainel(m, cat));
+      const corpo = lista.filter((m) => !ehPainel(m, cat)).sort((a, b) => (+a.floor_height_mm || 0) - (+b.floor_height_mm || 0));
+      if (!corpo.length) return;
+      const baseH = moda(fora.filter((m) => (+m.floor_height_mm || 0) < 50).map((m) => +m.height_mm || 0));
+      const topoAereo = moda(fora.filter((m) => (+m.floor_height_mm || 0) >= 1000).map((m) => (+m.floor_height_mm || 0) + (+m.height_mm || 0)));
+      const baixo = corpo[0], cima = corpo.length > 1 ? corpo[corpo.length - 1] : null;
+      if ((+baixo.floor_height_mm || 0) < 50 && baseH) { baixo.floor_height_mm = 0; baixo.height_mm = baseH; }
+      if (cima && topoAereo && topoAereo > (+baixo.height_mm || 0) + 100) cima.floor_height_mm = topoAereo - (+cima.height_mm || 0);
+      // o(s) do meio preenchem o vão entre a de baixo e a de cima
+      if (corpo.length >= 3) {
+        const ini = (+baixo.floor_height_mm || 0) + (+baixo.height_mm || 0), fim = +cima.floor_height_mm || 0;
+        const meio = corpo.slice(1, -1); const vao = fim - ini;
+        if (vao > 50) { let y = ini; meio.forEach((m, i) => { const hh = i === meio.length - 1 ? fim - y : Math.round(vao / meio.length); m.floor_height_mm = y; m.height_mm = hh; y += hh; }); }
+      } else if (cima) {
+        const ini = (+baixo.floor_height_mm || 0) + (+baixo.height_mm || 0);
+        if (Math.abs((+cima.floor_height_mm || 0) - ini) < 40) cima.floor_height_mm = ini;
+      }
+      // top covers: altura do conjunto, profundidade da caixa + 1"
+      const y0 = Math.min(...corpo.map((m) => +m.floor_height_mm || 0));
+      const y1 = Math.max(...corpo.map((m) => (+m.floor_height_mm || 0) + (+m.height_mm || 0)));
+      const dMax = Math.max(...corpo.map((m) => +m.depth_mm || 0));
+      lista.filter((m) => ehPainel(m, cat)).forEach((pn) => { pn.floor_height_mm = y0; pn.height_mm = y1 - y0; if (dMax) pn.depth_mm = dMax + MM; });
+    });
+  }
+
+  function interiorDaCaixa(m) {
+    const W = +m.width_mm || 600, H = +m.height_mm || 600;
+    const portas = Math.max(0, Math.round(+m.portas || 0)), prat = Math.max(0, Math.round(+m.prateleiras || 0)), gav = Math.max(0, Math.round(+m.gavetas || 0));
+    const zona = gav ? { type: 'drawers', height_mm: H, count: gav } : { type: 'shelves', height_mm: H, count: prat };
+    if (portas >= 2 && !gav) {
+      // 2 colunas de porta: o portal junta numa porta de 2 folhas, sem divisória (regra de 01/11)
+      return { columns: [0, 1].map(() => ({ width_mm: Math.round(W / 2), zones: [Object.assign({}, zona)], doors: 'hinged', doors_cover: 'all' })) };
+    }
+    return { columns: [{ width_mm: W, zones: [zona], doors: portas ? 'hinged' : 'none', doors_cover: 'all' }] };
+  }
+  async function modeloDePorta(slot, m, avisos) {
+    if (!m.modelo_porta || typeof setProjectSlotDoorModel !== 'function') return;
+    await ensureProjectDoorModels();
+    const lista = projectDoorModelsCache || [];
+    const txt = (x) => (String(x.name || '') + ' ' + String(x.slug || ''));
+    const querVidro = /vidro|glass/i.test(m.modelo_porta);
+    const dm = (querVidro && lista.find((x) => /alumin/i.test(txt(x)) && /glass|vidro/i.test(txt(x))))
+      || lista.find((x) => new RegExp(String(m.modelo_porta).replace(/[^\wÀ-ú ]/g, ''), 'i').test(txt(x)))
+      || (querVidro && lista.find((x) => /glass|vidro/i.test(txt(x))));
+    if (!dm) { avisos.push((m.item || 'Caixa') + ': modelo de porta "' + m.modelo_porta + '" não encontrado.'); return; }
+    const r = await setProjectSlotDoorModel(slot, dm.id, { lote: true });
+    if (r === 'bloq') { avisos.push((m.item || 'Caixa') + ': porta grande demais pro ' + dm.name + '.'); return; }
+    if (m.cor_vidro) {
+      const re = /fum|smoke|grey|gray|cinza|bronze/i.test(m.cor_vidro) ? /fum|smoke|grey|gray|cinza|bronze/i : new RegExp(String(m.cor_vidro).replace(/[^\wÀ-ú ]/g, ''), 'i');
+      const roles = (typeof colorRolesCache !== 'undefined' && colorRolesCache) || [];
+      let ok = false;
+      Object.keys(slot.colorOptionsByRole || {}).forEach((rid) => {
+        const nome = (roles.find((x) => String(x.id) === String(rid)) || {}).name || '';
+        if (!/vidro|glass/i.test(nome)) return;
+        const c = (slot.colorOptionsByRole[rid] || []).find((o) => re.test(String(o.name || '')));
+        if (c) { applyColorToProjectSlot(slot, rid, c); ok = true; }
+      });
+      if (!ok) avisos.push((m.item || 'Caixa') + ': vidro "' + m.cor_vidro + '" não encontrado; ficou o padrão.');
+    }
+  }
+  function ledNoTampo(slot, m, avisos) {
+    if (!m.led || typeof projectLedPecasElegiveis !== 'function') return;
+    try {
+      const pecas = projectLedPecasElegiveis(slot);
+      const alvo = (pecas.find(({ p }) => p.position_role === 'top') || pecas.find(({ p }) => p.position_role === 'shelf') || {}).p;
+      if (!alvo) { avisos.push((m.item || 'Caixa') + ': sem peça pra LED.'); return; }
+      const cfg = ledConfigDaLinha(ledLinhaPadrao(alvo, null));
+      slot.ledConfigs = Object.assign({}, slot.ledConfigs || {}, { [alvo.piece_id]: [cfg] });
+    } catch (e) { avisos.push((m.item || 'Caixa') + ': não consegui pôr o LED (' + ((e && e.message) || e) + ').'); }
+  }
+  async function aplicaCaixa(m, cat, wi, avisos) {
+    const comp = m.caixa === 'suspenso' ? 'suspenso' : m.caixa === 'closet' ? 'closet' : 'aereo';
+    const carc = projectPhotoCarcassModule(comp, cat);
+    if (!carc) throw new Error('caixa de Componentes "' + PROJECT_PHOTO_COMPOSITIONS[comp].carcass + '" não está no catálogo');
+    const slot = await insertProjectModuleDefault(carc.id, { wall_index: wi, x_mm: Math.max(0, +m.x_mm || 0), width_mm: +m.width_mm || undefined, height_mm: +m.height_mm || undefined, floor_height_mm: Math.max(0, +m.floor_height_mm || 0) });
+    if (!slot) throw new Error('o portal não criou a caixa');
+    if (+m.depth_mm) slot.depth_mm = projectSlotClampedDimensionMm(slot, 'depth', +m.depth_mm);
+    slot.floor_height_mm = Math.max(0, +m.floor_height_mm || 0);
+    slot.x_mm = Math.max(0, +m.x_mm || 0);
+    const it = { interior: interiorDaCaixa(m), composition: comp, label: m.item || 'Caixa', color_name: m.color_name || null, front_color_name: m.front_color_name || m.color_name || null };
+    await projectPhotoApplyInterior(slot, it, avisos);
+    if (it.color_name) projectPhotoPaintComposition(slot, it, avisos);
+    await modeloDePorta(slot, m, avisos);
+    ledNoTampo(slot, m, avisos);
+    if (typeof iaeAfterGeometry === 'function') iaeAfterGeometry(slot); else recomputeProjectSlotPricing(slot);
+    return slot;
+  }
+  async function aplicaPiso(m, mod, wi, avisos) {
+    const g = new Map((getProjectWallGeometry() || []).map((x) => [x.wallIndex, x])).get(wi);
+    if (!g) throw new Error('parede de referência da ilha não existe');
+    const W = +m.width_mm || 600, D = +m.depth_mm || 600;
+    const along = (+m.x_mm || 0) + W / 2, into = (+m.piso.afastamento_mm || 0) + D / 2;
+    const slot = await insertProjectModuleDefault(mod.id, {
+      placement: 'floor', floor_x_mm: Math.round(g.originX * 1000 + g.alongDirX * along + g.intoDirX * into),
+      floor_z_mm: Math.round(g.originZ * 1000 + g.alongDirZ * along + g.intoDirZ * into),
+      width_mm: W, height_mm: +m.height_mm || undefined, floor_height_mm: Math.max(0, +m.floor_height_mm || 0)
+    });
+    if (!slot) throw new Error('o portal não criou o módulo no piso');
+    let deg = (g.rotationY * 180 / Math.PI) + (/parede|wall/i.test(m.piso.frente || '') ? 180 : 0);
+    slot.floor_rotation_deg = Math.round((((deg % 360) + 540) % 360 - 180) * 10) / 10;
+    if (+m.depth_mm) slot.depth_mm = projectSlotClampedDimensionMm(slot, 'depth', D);
+    if (m.color_name) iaeOpSetColor({ slot_ids: [String(slot.id)], color_name: m.color_name }, avisos);
+    if (typeof iaeAfterGeometry === 'function') iaeAfterGeometry(slot);
+    return slot;
+  }
+
   async function aplicaModulos(r, cat, nParedes) {
     const porId = new Map(cat.map((m) => [String(m.id), m]));
-    const falhas = [];
-    const ops = [];
-    (r.modules || []).forEach((m) => {
-      const mod = porId.get(String(m.module_id));
-      if (!mod) { falhas.push({ item: m.item || m.module_id, motivo: 'módulo não existe no catálogo' }); return; }
+    const falhas = [], avisos = [], relatorio = [];
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined);
+    const mods = (r.modules || []).filter((m) => m && typeof m === 'object');
+    alinhaGrupos(mods, cat);
+    let ok = 0;
+    for (const m of mods) {
       const wi = Number(m.wall_index);
-      if (!(wi >= 0 && wi < nParedes)) { falhas.push({ item: m.item || mod.name, motivo: 'parede inválida' }); return; }
-      const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined);
-      ops.push({
-        op: 'add_module', reason: m.item || mod.name, module_id: mod.id, wall_index: wi,
-        x_mm: Math.max(0, num(m.x_mm) || 0), floor_height_mm: Math.max(0, num(m.floor_height_mm) || 0),
-        width_mm: num(m.width_mm), height_mm: num(m.height_mm), depth_mm: num(m.depth_mm),
-        color_name: m.color_name || null, slot_ids: []
-      });
-    });
-    const res = ops.length ? await editProjectAiApply(ops) : { results: [], warnings: [] };
-    (res.results || []).forEach((x) => { if (!x.ok) falhas.push({ item: x.op.reason, motivo: 'o portal não conseguiu inserir' }); });
-    const ok = (res.results || []).filter((x) => x.ok).length;
-    return { ok, falhas, avisos: res.warnings || [] };
+      const nome = m.item || m.module_id || 'item';
+      if (!(wi >= 0 && wi < nParedes)) { falhas.push({ item: nome, motivo: 'parede inválida' }); continue; }
+      try {
+        if (m.caixa) {
+          await aplicaCaixa(m, cat, wi, avisos);
+          relatorio.push({ item: nome, grupo: m.grupo || '', usado: 'Caixa ' + m.caixa + ' (Construtor)' + (m.portas ? ' · ' + m.portas + ' porta(s)' : '') + (m.modelo_porta ? ' ' + m.modelo_porta : '') + (m.led ? ' · LED' : ''), motivo: m.motivo || '' });
+          ok++; continue;
+        }
+        const mod = porId.get(String(m.module_id));
+        if (!mod) { falhas.push({ item: nome, motivo: 'módulo não existe no catálogo' }); continue; }
+        if (m.piso) {
+          await aplicaPiso(m, mod, wi, avisos);
+        } else {
+          const res = await editProjectAiApply([{ op: 'add_module', reason: nome, module_id: mod.id, wall_index: wi,
+            x_mm: Math.max(0, num(m.x_mm) || 0), floor_height_mm: Math.max(0, num(m.floor_height_mm) || 0),
+            width_mm: num(m.width_mm), height_mm: num(m.height_mm), depth_mm: num(m.depth_mm),
+            color_name: m.color_name || null, slot_ids: [] }]);
+          avisos.push(...(res.warnings || []));
+          if (!(res.results && res.results[0] && res.results[0].ok)) { falhas.push({ item: nome, motivo: 'o portal não conseguiu inserir' }); continue; }
+        }
+        relatorio.push({ item: nome, grupo: m.grupo || '', usado: mod.name + (m.piso ? ' (piso)' : ''), motivo: m.motivo || '' });
+        ok++;
+      } catch (e) {
+        console.error('[sahra-fluxo] montar', m, e);
+        falhas.push({ item: nome, motivo: (e && e.message) || String(e) });
+      }
+    }
+    return { ok, falhas, avisos, relatorio };
   }
 
   window.sahraFluxoMontar = async function (h) {
@@ -316,7 +468,7 @@ Responda SOMENTE com JSON:
       const naoVirou = [...(r.nao_virou || []), ...mods.falhas];
       const resultado = {
         ok: true, quando: new Date().toISOString(), model, paredes: nParedes, modulos: mods.ok,
-        nao_virou: naoVirou, avisos: mods.avisos, etapas: r.etapas || [], mensagem: r.mensagem || ''
+        nao_virou: naoVirou, avisos: mods.avisos, etapas: r.etapas || [], mensagem: r.mensagem || '', relatorio: mods.relatorio || []
       };
       const lista = (arr, f) => arr.length ? '<ul style="margin:6px 0 0 16px;padding:0">' + arr.slice(0, 12).map((x) => '<li>' + f(x) + '</li>').join('') + '</ul>' : '';
       mostraCard('<b>Projeto montado no canvas</b><br>' + nParedes + ' parede(s) · ' + mods.ok + ' módulo(s).'

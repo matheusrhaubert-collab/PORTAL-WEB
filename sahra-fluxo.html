@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611080924"></script>
+<script src="js/config.js?v=202611080946"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -1352,7 +1352,9 @@ Desenhe só as paredes onde há intervenção (no máximo 4). Coordenadas em pol
 Responda SOMENTE com JSON:
 {"conceito": "2 a 3 frases: protagonista, eixo, sensação",
  "paredes": [{"nome": "Parede do fogão", "largura": 118, "altura": 108,
-   "itens": [{"tipo": "base|aereo|torre|painel|filler|nicho|prateleira|appliance|existente", "sku": "B30", "rotulo": "Base 30", "x": 0, "y": 0, "largura": 30, "altura": 34.5, "acabamento": "Carvalho natural", "led": false}]}],
+   "itens": [{"tipo": "base|aereo|torre|painel|filler|nicho|prateleira|appliance|existente", "sku": "B30", "rotulo": "Base 30", "x": 0, "y": 0, "largura": 30, "altura": 34.5, "acabamento": "Carvalho natural", "led": false,
+     "grupo": "nome do conjunto quando várias peças empilhadas formam um móvel só (ex.: Torre café = base + nicho + aéreo), senão null",
+     "portas": 2, "porta": "madeira|vidro", "cor_vidro": "fumê ou null", "prateleiras": 1, "gavetas": 0, "aberto": false}]}],
  "acabamentos": [{"nome": "Carvalho natural", "onde": "nichos e torre", "cor": "#b88a5a", "cor_legno": "nome EXATO da CARTELA LEGNO mais parecida, ou null se não é móvel da Legno (pedra, vidro, metal)"}],
  "modulos": [{"sku": "W3036", "descricao": "Wall 30x36, 2 portas", "qtd": 1, "largura": 30, "altura": 36, "profundidade": 12, "acabamento": "Carvalho natural"}],
  "conferencia": [{"item": "Portas abrem sem bater", "ok": true, "obs": ""}],
@@ -1508,6 +1510,8 @@ function montarHtml(p){
     <div class="row"><button class="btn primary" id="pv-montar" ${PV.montando||!ets.length?"disabled":""}>${PV.montando?"Montando no portal…":ult?"Montar de novo":"Montar no portal"}</button></div>
     ${ult?`<div class="montagem"><p class="muted">Última montagem: ${fmtData(ult.quando)} · ${ult.paredes} parede(s) · ${ult.modulos} módulo(s)</p>
       ${ult.mensagem?`<p>${esc(ult.mensagem)}</p>`:""}
+      ${(ult.relatorio||[]).length?`<h4>O que virou o quê</h4><div class="tbl"><table><thead><tr><th>Item do virtual</th><th>No portal</th><th>Por quê</th></tr></thead><tbody>${ult.relatorio.map(x=>`<tr><td>${esc(x.item)}${x.grupo?`<br><small class="muted">${esc(x.grupo)}</small>`:""}</td><td>${esc(x.usado)}</td><td><small>${esc(x.motivo)}</small></td></tr>`).join("")}</tbody></table></div>`:""}
+      ${(ult.avisos||[]).length?`<h4>Avisos do portal</h4><ul class="trail">${ult.avisos.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}
       ${(ult.nao_virou||[]).length?`<h4>O que não virou</h4><ul class="trail">${ult.nao_virou.map(x=>`<li>${esc(x.item)} <small>${esc(x.motivo)}</small></li>`).join("")}</ul>`:""}
       ${(ult.etapas||[]).length?`<h4>Como ela seguiu o fluxo</h4><ul class="trail">${ult.etapas.map(x=>`<li><b>${esc(x.etapa)}</b> ${esc(x.decisao)}</li>`).join("")}</ul>`:""}
     </div>`:""}
@@ -1524,7 +1528,7 @@ async function montarNoPortal(){
   }catch(e){ r={ok:false, erro:e?.message||String(e)}; }
   PV.montando=false;
   if(r?.ok){
-    p.pv.montagens=[...(p.pv.montagens||[]), {quando:r.quando, paredes:r.paredes, modulos:r.modulos, nao_virou:r.nao_virou||[], etapas:r.etapas||[], mensagem:r.mensagem||"", model:r.model||""}].slice(-5);
+    p.pv.montagens=[...(p.pv.montagens||[]), {quando:r.quando, paredes:r.paredes, modulos:r.modulos, nao_virou:r.nao_virou||[], etapas:r.etapas||[], mensagem:r.mensagem||"", model:r.model||"", relatorio:r.relatorio||[], avisos:(r.avisos||[]).slice(0,20)}].slice(-5);
     p.mensagens.push({r:"trace",t:`<b>Montar no portal</b> → ${r.paredes} parede(s), ${r.modulos} módulo(s)${(r.nao_virou||[]).length?`, ${r.nao_virou.length} item(ns) não viraram`:""}`});
     p.mensagens.push(sahraMsg(r.mensagem||"Montei o projeto no canvas de Projetos.",[]));
     p.mensagens.push({r:"card",k:"montagem",ts:new Date().toISOString()});
