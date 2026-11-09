@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611082028"></script>
+<script src="js/config.js?v=202611082034"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -831,6 +831,23 @@ function plantaGeometria(pl){
     x+=dx*L; y+=dy*L; ang+=(Number.isFinite(Number(w.angulo))?Number(w.angulo):90)*Math.PI/180; });
   return segs;
 }
+// ILHA PELA PAREDE (20:32, 08/11 — "ela está viajando com a ilha… não
+// consegue enxergar o erro"). A SAHRA não dá mais x/y: diz de frente pra
+// qual parede a ilha fica ("parede"), o corredor ("corredor", 42" padrão) e,
+// se quiser, onde fica o centro ao longo dessa parede ("centro"; sem ele,
+// centralizada). A página calcula o retângulo: a frente da ilha fica a
+// bancada (24") + corredor da parede. x/y antigos só valem sem "parede".
+function retIlha(pl, il){
+  const W=Number(il.largura)||0, D=Number(il.profundidade)||0; if(!(W>0&&D>0)) return null;
+  const segs=plantaGeometria(pl); const sg=segs[Number(il.parede)];
+  if(il.parede==null || !sg) return {x:Number(il.x)||0, y:Number(il.y)||0, w:W, h:D, calc:false};
+  const L=Math.hypot(sg.x2-sg.x1,sg.y2-sg.y1)||1, ux=(sg.x2-sg.x1)/L, uy=(sg.y2-sg.y1)/L, nx=-uy, ny=ux;
+  const c=Number.isFinite(Number(il.centro))?Number(il.centro):L/2;
+  const off=BANCADA_POL+(Number(il.corredor)>0?Number(il.corredor):CIRC_MIN_POL);
+  const pts=[[c-W/2,off],[c+W/2,off],[c+W/2,off+D],[c-W/2,off+D]].map(([a,b])=>[sg.x1+ux*a+nx*b, sg.y1+uy*a+ny*b]);
+  const xs=pts.map(q=>q[0]), ys=pts.map(q=>q[1]);
+  return {x:Math.min(...xs), y:Math.min(...ys), w:Math.max(...xs)-Math.min(...xs), h:Math.max(...ys)-Math.min(...ys), calc:true, frente:sg.nome};
+}
 function dentroDoPoligono(px,py,segs){
   let dentro=false;
   segs.forEach(s=>{ if(((s.y1>py)!==(s.y2>py)) && (px < (s.x2-s.x1)*(py-s.y1)/((s.y2-s.y1)||1e-9)+s.x1)) dentro=!dentro; });
@@ -842,14 +859,21 @@ function distPontoSeg(px,py,s){
   return Math.hypot(px-(s.x1+t*vx), py-(s.y1+t*vy));
 }
 function plantaProblemas(pl){
-  const segs=plantaGeometria(pl); if(segs.length<3) return [];
-  const fechado=Math.hypot(segs.at(-1).x2-segs[0].x1, segs.at(-1).y2-segs[0].y1)<6;
+  const segs0=plantaGeometria(pl); if(segs0.length<3) return [];
+  const gap=Math.hypot(segs0.at(-1).x2-segs0[0].x1, segs0.at(-1).y2-segs0[0].y1);
   const out=[];
+  if(gap>=6) out.push(`As paredes não fecham o contorno: o fim da última parede fica a ${Math.round(gap)}" do começo da primeira. Lados opostos têm que ter a mesma medida (ex.: ${segs0.map(s=>s.nome+" "+Math.round(Math.hypot(s.x2-s.x1,s.y2-s.y1))+'"').join(", ")}). Lado aberto também conta como parede, com nome "aberto".`);
+  // pra conferir "dentro do ambiente" mesmo com o contorno aberto, fecha com um segmento imaginário
+  const segs=gap>=6?segs0.concat([{i:-1,nome:"fechamento",x1:segs0.at(-1).x2,y1:segs0.at(-1).y2,x2:segs0[0].x1,y2:segs0[0].y1,aberto:true}]):segs0;
+  const fechado=true;
   (pl.ilhas||[]).forEach((il,k)=>{
-    const X=Number(il.x)||0, Y=Number(il.y)||0, W=Number(il.largura)||0, D=Number(il.profundidade)||0; if(!(W>0&&D>0)) return;
+    const R=retIlha(pl,il); if(!R) return;
+    const X=R.x, Y=R.y, W=R.w, D=R.h;
     const nome=il.nome||`Ilha${(pl.ilhas||[]).length>1?" "+(k+1):""}`;
     const cantos=[[X,Y],[X+W,Y],[X+W,Y+D],[X,Y+D]];
-    if(fechado){ const fora=cantos.filter(([a,b])=>!dentroDoPoligono(a,b,segs)); if(fora.length) out.push(`${nome} está fora do ambiente (atravessa a parede): x ${X}" a ${X+W}", y ${Y}" a ${Y+D}". Lembrete: x conta ao longo da 1ª parede ("${segs[0].nome}") e y pra dentro do cômodo, a partir da quina inicial dela.`); }
+    if(fechado){ const fora=cantos.filter(([a,b])=>!dentroDoPoligono(a,b,segs)); if(fora.length) out.push(R.calc
+      ? `${nome} de frente pra ${R.frente} não cabe dentro do ambiente (bancada 24" + corredor ${Number(il.corredor)||CIRC_MIN_POL}" + ilha ${il.profundidade}" passa da parede do outro lado). Diminua a ilha, mude a parede de trabalho ou sugira península.`
+      : `${nome} está fora do ambiente (atravessa a parede). Informe a ilha por "parede" + "corredor", sem x/y.`); }
     segs.forEach(sg=>{
       if(sg.aberto) return;
       // menor distância entre a ilha e a parede
@@ -859,17 +883,18 @@ function plantaProblemas(pl){
       const temBancada=(pl.pontos||[]).some(pt=>Number(pt.parede)===sg.i) || true; // parede com móveis: assume bancada
       const livre=d-(temBancada?BANCADA_POL:0);
       if(d<1) return; // já acusado como "fora do ambiente"
-      if(livre<CIRC_MIN_POL && livre>-BANCADA_POL) out.push(`Corredor entre a ${nome.toLowerCase()} e a ${sg.nome}: ${Math.max(0,Math.round(livre))}" livres (precisa de ${CIRC_MIN_POL}", contando ${BANCADA_POL}" de bancada).`);
+      const precisa = (R.calc && sg.i!==Number(il.parede)) ? 36 : CIRC_MIN_POL; // frente da ilha 42"; pontas e costas 36" de passagem
+      if(Math.round(livre)<precisa && livre>-BANCADA_POL) out.push(`Passagem entre a ${nome.toLowerCase()} e a ${sg.nome}: ${Math.max(0,Math.round(livre))}" livres (precisa de ${precisa}", contando ${BANCADA_POL}" de bancada).`);
     });
   });
   // pontos (pia/fogão/geladeira) embaixo da ilha
   const segsI=segs; (pl.pontos||[]).forEach(pt=>{ const sg=segsI[Number(pt.parede)]; if(!sg) return;
     const L=Math.hypot(sg.x2-sg.x1,sg.y2-sg.y1)||1, ux=(sg.x2-sg.x1)/L, uy=(sg.y2-sg.y1)/L, nx=-uy, ny=ux;
     const ini=Number(pt.inicio)||0, w=Number(pt.largura)||24, cx=sg.x1+ux*(ini+w/2)+nx*12, cy=sg.y1+uy*(ini+w/2)+ny*12;
-    (pl.ilhas||[]).forEach(il=>{ const X=+il.x||0,Y=+il.y||0,W=+il.largura||0,D=+il.profundidade||0; if(cx>=X&&cx<=X+W&&cy>=Y&&cy<=Y+D) out.push(`${pt.tipo||"Ponto"} da ${sg.nome} ficou embaixo da ilha.`); }); });
+    (pl.ilhas||[]).forEach(il=>{ const R=retIlha(pl,il); if(!R) return; if(cx>=R.x&&cx<=R.x+R.w&&cy>=R.y&&cy<=R.y+R.h) out.push(`${pt.tipo||"Ponto"} da ${sg.nome} ficou embaixo da ilha.`); }); });
   // a ilha cabe em algum lugar? largura útil do cômodo contra 2 bancadas + 2 corredores
   if((pl.ilhas||[]).length && fechado){
-    const xs=segs.flatMap(s=>[s.x1,s.x2]), ys=segs.flatMap(s=>[s.y1,s.y2]);
+    const xs=segs0.flatMap(s=>[s.x1,s.x2]), ys=segs0.flatMap(s=>[s.y1,s.y2]);
     const menor=Math.min(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys));
     const il=pl.ilhas[0]; const prof=Math.min(+il.largura||0,+il.profundidade||0);
     const precisa=BANCADA_POL+CIRC_MIN_POL+prof+36;
@@ -886,7 +911,7 @@ function plantaSvg(pl, mini){
   const ret=[]; // retângulos (ilhas, penínsulas, pontos) como polígonos
   const naParede=(i,ini,larg,fundo)=>{ const s=segs[i]; if(!s) return null; const nx=-s.dy, ny=s.dx;
     const ax=s.x1+s.dx*ini, ay=s.y1+s.dy*ini; return [[ax,ay],[ax+s.dx*larg,ay+s.dy*larg],[ax+s.dx*larg+nx*fundo,ay+s.dy*larg+ny*fundo],[ax+nx*fundo,ay+ny*fundo]]; };
-  (pl.ilhas||[]).forEach(il=>{ const X=Number(il.x)||0, Y=Number(il.y)||0, W=Number(il.largura)||0, D=Number(il.profundidade)||0; if(W>0&&D>0) ret.push({k:"ilha",nome:il.nome||"Ilha",pol:[[X,Y],[X+W,Y],[X+W,Y+D],[X,Y+D]]}); });
+  (pl.ilhas||[]).forEach(il=>{ const R=retIlha(pl,il); if(R) ret.push({k:"ilha",nome:il.nome||"Ilha",pol:[[R.x,R.y],[R.x+R.w,R.y],[R.x+R.w,R.y+R.h],[R.x,R.y+R.h]]}); });
   (pl.peninsulas||[]).forEach(pe=>{ const s=segs[Number(pe.parede)]; if(!s) return; const D=Number(pe.profundidade)||36, C=Number(pe.comprimento)||0; if(C>0){ const pol=naParede(Number(pe.parede), Number(pe.inicio)||0, D, C); if(pol) ret.push({k:"pen",nome:"Península",pol}); } });
   (pl.pontos||[]).forEach(pt=>{ const fundo=/geladeira/i.test(pt.tipo)?30:24; const pol=naParede(Number(pt.parede), Number(pt.inicio)||0, Number(pt.largura)||24, fundo); if(pol) ret.push({k:"ponto",nome:String(pt.tipo||""),pol}); });
   ret.forEach(r=>r.pol.forEach(q=>pts.push(q)));
@@ -932,7 +957,7 @@ function plantaVisorHtml(p){
 }
 function textoProblemasPlanta(p){
   const pr=temPlanta(p)?plantaProblemas(p.ficha.planta):[];
-  return pr.length?`\nPROBLEMAS NA PLANTA (conferidos pela página — resolva antes de qualquer outra coisa: corrija as coordenadas se foi erro de desenho; se a ilha não cabe, explique ao cliente e sugira península ou deixar o meio livre; a planta NÃO pode ficar "confirmada" com problema):\n- ${pr.join("\n- ")}\n`:"";
+  return pr.length?`\nPROBLEMAS NA PLANTA (conferidos pela página — resolva antes de qualquer outra coisa: corrija as medidas das paredes ou a "parede"/"corredor" da ilha se foi erro de desenho; se a ilha não cabe, explique ao cliente e sugira península ou deixar o meio livre; a planta NÃO pode ficar "confirmada" com problema):\n- ${pr.join("\n- ")}\n`:"";
 }
 
 function nomeAmbiente(p){
@@ -1188,10 +1213,10 @@ CAMPOS ESPECIAIS DA FICHA (a tela usa pra desenhar)
   {"paredes": [{"nome": "Parede da pia", "comprimento": 144, "angulo": 90}],
    "aberturas": [{"parede": 0, "tipo": "porta|janela|passagem", "inicio": 30, "largura": 36}],
    "pontos": [{"parede": 0, "tipo": "pia|fogao|geladeira|dishwasher|forno|tomada", "inicio": 40, "largura": 36}],
-   "ilhas": [{"nome": "Ilha", "largura": 96, "profundidade": 42, "x": 48, "y": 60}],
+   "ilhas": [{"nome": "Ilha", "largura": 96, "profundidade": 42, "parede": 1, "corredor": 42, "centro": null}],
    "peninsulas": [{"parede": 1, "inicio": 0, "comprimento": 72, "profundidade": 36}],
    "aproximada": true, "confirmada": false}
-  Polegadas. Paredes em sequência, no sentido horário vistas de cima; "angulo" = virada pra próxima parede (90 = canto). Lado aberto (sala integrada) = parede com "nome": "aberto". "inicio" = distância da quina onde a parede começa. Ilha: "x" ao longo da 1ª parede e "y" pra dentro do cômodo, a partir da quina inicial da 1ª parede. ILHA é solta no meio; PENÍNSULA encosta numa parede: nunca troque uma pela outra. "confirmada": true só quando o cliente confirmar o desenho.
+  Polegadas. Paredes em sequência, no sentido horário vistas de cima; "angulo" = virada pra próxima parede (90 = canto). Lado aberto (sala integrada) = parede com "nome": "aberto". "inicio" = distância da quina onde a parede começa. As paredes TÊM que fechar o contorno (num retângulo, lados opostos com a mesma medida; lado aberto entra como parede "aberto"). ILHA: NÃO dê coordenadas; diga só "parede" (índice da parede de trabalho, a que fica de frente pra ilha), "corredor" (polegadas livres entre a bancada dessa parede e a ilha, 42 padrão) e, se não for centralizada, "centro" (distância ao longo dessa parede até o centro da ilha). A página calcula a posição e confere se cabe. ILHA é solta no meio; PENÍNSULA encosta numa parede: nunca troque uma pela outra. "confirmada": true só quando o cliente confirmar o desenho.
 
 ${etapaParaPrompt(e)}
 
