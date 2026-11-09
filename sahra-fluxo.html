@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611082048"></script>
+<script src="js/config.js?v=202611082128"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -912,7 +912,51 @@ function plantaProblemas(pl){
   }
   return Array.from(new Set(out));
 }
-function plantaSvg(pl, mini){
+// PLANTA DOS MÓVEIS (21:18, 08/11, Matt: "com essas imagens eu quero planta
+// baixa aqui também dos móveis"). Cada versão do virtual ganha a vista de
+// cima: as vistas de parede casam com a parede da planta (nome, senão a
+// largura mais parecida) e a vista da ilha cai no retângulo da ilha da
+// planta (espelhada, igual à montagem do portal). Fundo pelo tipo: base 24",
+// aéreo 12" (tracejado, por cima), torre 24", canto BCF 27"/WCF 14".
+const FUNDO_TIPO = {base:24, torre:24, aereo:12, painel:1, filler:24, nicho:12, prateleira:10, appliance:24, existente:24};
+function moveisDaPlanta(pl, prop){
+  const segs=plantaGeometria(pl); const vistas=prop?.paredes||[]; if(!segs.length||!vistas.length) return [];
+  const RE_ILHA=/\bilha\b|island|pen[ií]nsula|peninsula/i; const out=[];
+  const ilhas=(pl.ilhas||[]).filter(il=>retIlha(pl,il)); let kIl=0;
+  const usadas=new Set();
+  vistas.forEach(w=>{
+    const n=String(w.nome||"").toLowerCase();
+    let base; // {x0,y0,ux,uy,nx,ny,inicio,espelha,fundoMax}
+    if(RE_ILHA.test(n)){
+      const il=ilhas.find(x=>x.nome&&n.includes(String(x.nome).toLowerCase()))||ilhas[kIl]; kIl++; if(!il) return;
+      const sg=segs[Number(il.parede)]; if(!sg) return;
+      const L=Math.hypot(sg.x2-sg.x1,sg.y2-sg.y1)||1, ux=(sg.x2-sg.x1)/L, uy=(sg.y2-sg.y1)/L;
+      const c=Number.isFinite(Number(il.centro))?Number(il.centro):L/2;
+      const larg=Number(w.largura)||Number(il.largura)||0;
+      const off=BANCADA_POL+(Number(il.corredor)>0?Number(il.corredor):CIRC_MIN_POL);
+      base={x0:sg.x1+(-uy)*off, y0:sg.y1+ux*off, ux, uy, nx:-uy, ny:ux, inicio:c-larg/2, larg, espelha:true, fundoMax:Number(il.profundidade)||36};
+    } else {
+      let i=segs.findIndex((s,k)=>!usadas.has(k)&&!s.aberto&&s.nome&&n&&(s.nome.toLowerCase().includes(n)||n.includes(s.nome.toLowerCase())));
+      if(i<0) i=segs.map((s,k)=>[s.aberto||usadas.has(k)?1e9:Math.abs(Math.hypot(s.x2-s.x1,s.y2-s.y1)-(Number(w.largura)||0)),k]).sort((a,b)=>a[0]-b[0])[0][1];
+      usadas.add(i); const sg=segs[i];
+      const L=Math.hypot(sg.x2-sg.x1,sg.y2-sg.y1)||1, ux=(sg.x2-sg.x1)/L, uy=(sg.y2-sg.y1)/L;
+      base={x0:sg.x1, y0:sg.y1, ux, uy, nx:-uy, ny:ux, inicio:0, larg:Number(w.largura)||L, espelha:false, fundoMax:99};
+    }
+    (w.itens||[]).forEach(it=>{
+      const t=String(it.tipo||""); const W=Number(it.largura)||0; if(!(W>0)) return;
+      let F = t==="canto" ? (/wcf|wall/i.test(it.sku||"")?14:27) : /geladeira|fridge|refriger/i.test((it.rotulo||"")+" "+(it.sku||"")) ? 30 : (FUNDO_TIPO[t]||24);
+      F=Math.min(F, base.fundoMax);
+      const a = base.espelha ? base.inicio+(base.larg-(Number(it.x)||0)-W) : base.inicio+(Number(it.x)||0);
+      const P=(al,fd)=>[base.x0+base.ux*al+base.nx*fd, base.y0+base.uy*al+base.ny*fd];
+      const alto = (Number(it.y)||0) >= 36 && t!=="torre";
+      out.push({k: t==="appliance"||t==="existente" ? "app" : alto ? "aereo" : t==="canto" ? "canto" : t==="torre" ? "torre" : "base",
+        nome: String(it.sku||it.rotulo||t), rot:String(it.rotulo||""), pol:[P(a,0),P(a+W,0),P(a+W,F),P(a,F)]});
+    });
+  });
+  // aéreos por cima de tudo
+  return out.sort((a,b)=>(a.k==="aereo")-(b.k==="aereo"));
+}
+function plantaSvg(pl, mini, moveis){
   const ws=(pl?.paredes||[]).filter(w=>Number(w.comprimento)>0); if(!ws.length) return "";
   let x=0,y=0,ang=0; const segs=[]; const pts=[[0,0]];
   ws.forEach((w,i)=>{ const L=Number(w.comprimento); const dx=Math.cos(ang), dy=Math.sin(ang);
@@ -925,6 +969,7 @@ function plantaSvg(pl, mini){
   (pl.peninsulas||[]).forEach(pe=>{ const s=segs[Number(pe.parede)]; if(!s) return; const D=Number(pe.profundidade)||36, C=Number(pe.comprimento)||0; if(C>0){ const pol=naParede(Number(pe.parede), Number(pe.inicio)||0, D, C); if(pol) ret.push({k:"pen",nome:"Península",pol}); } });
   (pl.pontos||[]).forEach(pt=>{ const fundo=/geladeira/i.test(pt.tipo)?30:24; const pol=naParede(Number(pt.parede), Number(pt.inicio)||0, Number(pt.largura)||24, fundo); if(pol) ret.push({k:"ponto",nome:String(pt.tipo||""),pol}); });
   ret.forEach(r=>r.pol.forEach(q=>pts.push(q)));
+  (moveis||[]).forEach(r=>r.pol.forEach(q=>pts.push(q)));
   // CHÃO MAIOR QUE AS PAREDES (20:43, 08/11, Matt: "deixa o chão ficar maior
   // do que as paredes; quando clicar nele, expandir pros lados, passando das
   // paredes" / "a ilha passando um pouco do piso não é problema, o piso
@@ -954,7 +999,14 @@ function plantaSvg(pl, mini){
   });
   // ilhas, penínsulas, pontos
   const ruim = !mini && plantaProblemas(pl).some(t=>/ilha/i.test(t));
-  ret.forEach(r=>{ const c = r.k==="ponto" ? ["#e7e3dc","#8a8378"] : r.k==="ilha" ? (ruim?["#f3d4cf","#b3261e"]:["#d9c3a5","#7a4a22"]) : ["#e2c9a8","#a3352b"];
+  if(moveis) ret.forEach(r=>{ if(r.k==="ponto") return; g+=`<polygon points="${pol(r.pol)}" fill="none" stroke="#b9ad9c" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>`; });
+  if(moveis){ const COR={base:["#efe6d6","#6b5a45"],torre:["#e4d2b8","#6b5a45"],canto:["#ddd6cc","#8a8378"],aereo:["none","#7a4a22"],app:["#ffffff","#9a948a"]};
+    moveis.forEach(r=>{ const c=COR[r.k]||COR.base;
+      g+=`<polygon points="${pol(r.pol)}" fill="${c[0]}" stroke="${c[1]}" stroke-width="1" ${r.k==="aereo"?'stroke-dasharray="5 3"':""} vector-effect="non-scaling-stroke"><title>${esc(r.nome+(r.rot?" · "+r.rot:""))}</title></polygon>`;
+      if(!mini && r.k!=="aereo" && r.k!=="canto"){ const cx=r.pol.reduce((a,q)=>a+q[0],0)/4, cy=r.pol.reduce((a,q)=>a+q[1],0)/4;
+        const lado=Math.hypot(r.pol[1][0]-r.pol[0][0], r.pol[1][1]-r.pol[0][1]); const rot=Math.atan2(r.pol[1][1]-r.pol[0][1], r.pol[1][0]-r.pol[0][0])*180/Math.PI; const r2=(rot>90||rot<-90)?rot+180:rot;
+        g+=`<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.min(fs*0.5, lado/Math.max(4,r.nome.length)*1.6)}" font-family="IBM Plex Mono,monospace" fill="#3b3631" transform="rotate(${r2.toFixed(1)} ${cx} ${cy})">${esc(r.nome)}</text>`; } });
+  } else ret.forEach(r=>{ const c = r.k==="ponto" ? ["#e7e3dc","#8a8378"] : r.k==="ilha" ? (ruim?["#f3d4cf","#b3261e"]:["#d9c3a5","#7a4a22"]) : ["#e2c9a8","#a3352b"];
     g+=`<polygon points="${pol(r.pol)}" fill="${c[0]}" stroke="${c[1]}" stroke-width="${r.k==="ponto"?1:2}" vector-effect="non-scaling-stroke"/>`;
     if(!mini || r.k!=="ponto"){ const cx=r.pol.reduce((a,q)=>a+q[0],0)/4, cy=r.pol.reduce((a,q)=>a+q[1],0)/4;
       g+=`<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-size="${(r.k==="ponto"?fs*0.7:fs)}" font-family="IBM Plex Sans,sans-serif" fill="${r.k==="pen"?"#a3352b":"#3b3631"}" font-weight="${r.k==="ponto"?400:600}">${esc(r.nome)}</text>`; } });
@@ -1012,6 +1064,7 @@ function arquivosLista(p){
   if(temPlanta(p)) out.push({grupo:"Planta baixa", nome:"Planta baixa", thumb:()=>plantaSvg(p.ficha.planta,true), full:()=>plantaSvg(p.ficha.planta,false)});
   for(const x of versoesPV(p).slice().reverse()){
     const acab=x.proposta?.acabamentos||[];
+    if(temPlanta(p)){ const mv=moveisDaPlanta(p.ficha.planta, x.proposta); if(mv.length) out.push({grupo:`v${x.v}.0 · ${amb}`, nome:"Planta dos móveis", thumb:()=>plantaSvg(p.ficha.planta,true,mv), full:()=>plantaSvg(p.ficha.planta,false,mv), atual:x.v===versaoAtual(p)}); }
     (x.proposta?.paredes||[]).forEach((w,i)=>out.push({grupo:`v${x.v}.0 · ${amb}`, nome:w.nome||`Parede ${i+1}`, thumb:()=>elevSvg(w,acab), full:()=>elevSvg(w,acab), atual:x.v===versaoAtual(p)}));
   }
   for(const r of (p.pv?.renders||[]).slice().reverse()) if(M.blobUrls[r.id]) out.push({grupo:"Imagens realistas", nome:r.v?`v${r.v}.0`:"Imagem", id:r.id, thumb:()=>`<img src="${M.blobUrls[r.id]}" alt="">`, full:()=>`<img src="${M.blobUrls[r.id]}" alt="Imagem realista" draggable="false">`});

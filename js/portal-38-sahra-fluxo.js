@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611082030';
+  const VERSAO = '202611082120';
   let overlay = null;
 
   function abrir() {
@@ -267,7 +267,7 @@ ${h.regras || '(etapas ainda vazias)'}
 ${plWalls.length ? `PAREDES DA PLANTA BAIXA (índice = número da parede no portal):
 ${plWalls.map((w, k) => k + ': ' + (w.nome || 'parede') + ' · ' + w.pol + '"').join('\n')}
 
-Para cada VISTA do projeto virtual, diga em qual parede ela está ("parede") e onde começa nela ("inicio_pol", da quina inicial da parede). Vista de ILHA/PENÍNSULA vai com "piso": true, "parede" = a parede de trabalho de frente pra ela, "inicio_pol" ao longo dessa parede e "afastamento_pol" = largura do corredor (da parede até a frente da ilha).` : `Não há planta: cada vista (que não é ilha) vira uma parede do portal, na ordem, com cantos de 90°. Vista de ILHA/PENÍNSULA vai com "piso": true, "parede" (índice da vista de parede de trabalho), "inicio_pol" e "afastamento_pol".`}
+Para cada VISTA do projeto virtual, diga em qual parede ela está ("parede") e onde começa nela ("inicio_pol", da quina inicial da parede). Vista de ILHA/PENÍNSULA vai com "piso": true, "parede" = a parede de trabalho de frente pra ela, "inicio_pol" ao longo dessa parede e "afastamento_pol" = largura do CORREDOR livre (da frente da bancada da parede até a frente da ilha; a bancada de 24" o portal soma sozinho). Se a planta tem a ilha com parede/corredor/centro, a posição vem da planta.` : `Não há planta: cada vista (que não é ilha) vira uma parede do portal, na ordem, com cantos de 90°. Vista de ILHA/PENÍNSULA vai com "piso": true, "parede" (índice da vista de parede de trabalho), "inicio_pol" e "afastamento_pol".`}
 
 VISTAS: ${JSON.stringify(vistas)}
 
@@ -296,6 +296,7 @@ Responda SOMENTE com JSON:
  "mensagem": "1 a 2 frases pro Matt"}`;
   }
   // junta a escolha da IA com as posições do virtual → o mesmo formato que aplicaModulos usa
+  const BANCADA_POL = 24; // fundo da bancada de parede (mesmo número da planta)
   function montaDoVirtual(h, itens, esc, cat, plWalls) {
     const pr = h.proposta || {}; const MMp = MM;
     const porId = new Map(cat.map((m) => [String(m.id), m]));
@@ -319,7 +320,30 @@ Responda SOMENTE com JSON:
           if (wi < 0) wi = plWalls.map((p, k) => [Math.abs(p.pol - (+w.largura || 0)), k]).sort((a, b) => a[0] - b[0])[0][1];
           if (!piso) avisos.push('Vista "' + w.nome + '": a SAHRA não disse a parede; usei a parede ' + (wi + 1) + ' (' + (plWalls[wi].nome || '') + ').');
         }
-        mapaVista.set(vi, { wi, inicio: (+e.inicio_pol || 0) * MMp, piso, afast: (+e.afastamento_pol || 42) * MMp, largura: (+w.largura || 0) * MMp });
+        mapaVista.set(vi, { wi, inicio: (+e.inicio_pol || 0) * MMp, piso, afast: (BANCADA_POL + (+e.afastamento_pol || 42)) * MMp, largura: (+w.largura || 0) * MMp });
+      });
+      // ILHA NA POSIÇÃO DA PLANTA (21:17, 08/11, Matt: "a ilha entrou
+      // deslocada mais pra perto da parede… deve ter alguma referência de
+      // localização errada"). Era: afastamento = só o corredor, contado da
+      // PAREDE — faltava a bancada de 24" (a planta conta parede → bancada →
+      // corredor → ilha). Agora, se a planta tem a ilha com parede/corredor/
+      // centro, a posição vem DELA (a mesma conta que desenha a planta).
+      const ilhasPl = ((h.ficha && h.ficha.planta && h.ficha.planta.ilhas) || []).filter((il) => il && il.parede != null);
+      let kIlha = 0;
+      vistas.forEach((w, vi) => {
+        const mv = mapaVista.get(vi); if (!mv || !mv.piso) return;
+        const n = String(w.nome || '').toLowerCase();
+        const il = ilhasPl.find((x) => x.nome && n && (n.includes(String(x.nome).toLowerCase()) || String(x.nome).toLowerCase().includes(n))) || ilhasPl[kIlha];
+        kIlha++;
+        if (!il) return;
+        const wi = plWalls.findIndex((p) => p.i === Number(il.parede));
+        if (wi < 0) { avisos.push('Ilha "' + (il.nome || w.nome) + '": a parede de referência da planta é um lado aberto; usei a posição que a SAHRA deu.'); return; }
+        const Lpl = plWalls[wi].pol;
+        const c = Number.isFinite(Number(il.centro)) ? Number(il.centro) : Lpl / 2;
+        const corr = Number(il.corredor) > 0 ? Number(il.corredor) : 42;
+        const larg = mv.largura || (+il.largura || 0) * MMp;
+        Object.assign(mv, { wi, inicio: c * MMp - larg / 2, afast: (BANCADA_POL + corr) * MMp, largura: larg, dePlanta: true });
+        avisos.push('Ilha "' + (il.nome || w.nome) + '": posição da planta — parede ' + (wi + 1) + ' (' + (plWalls[wi].nome || '') + '), centro a ' + Math.round(c) + '" da quina, corredor de ' + Math.round(corr) + '" depois da bancada de ' + BANCADA_POL + '".');
       });
     } else {
       walls = []; const idxParede = new Map();
@@ -327,7 +351,7 @@ Responda SOMENTE com JSON:
       vistas.forEach((w, vi) => {
         const e = escV.get(vi) || {};
         if (idxParede.has(vi)) mapaVista.set(vi, { wi: idxParede.get(vi), inicio: 0, piso: false, largura: (+w.largura || 0) * MMp });
-        else { let wi = Number(e.parede); if (!(wi >= 0 && wi < walls.length)) wi = 0; mapaVista.set(vi, { wi, inicio: (+e.inicio_pol || 0) * MMp, piso: true, afast: (+e.afastamento_pol || 42) * MMp, largura: (+w.largura || 0) * MMp }); }
+        else { let wi = Number(e.parede); if (!(wi >= 0 && wi < walls.length)) wi = 0; mapaVista.set(vi, { wi, inicio: (+e.inicio_pol || 0) * MMp, piso: true, afast: (BANCADA_POL + (+e.afastamento_pol || 42)) * MMp, largura: (+w.largura || 0) * MMp }); }
       });
     }
     if (!walls.length) throw new Error('o projeto virtual não tem parede pra montar');
@@ -426,7 +450,18 @@ Responda SOMENTE com JSON:
   // ETAPAS 2 e 3: os módulos da camada encostam nos blocos de canto. Mantém a
   // ordem e os vãos do virtual; quem invade o canto anda pra fora, empurrando
   // os seguintes. O que não couber vira aviso (fechamento é uma etapa futura).
+  const SEM_DESLOCAR = true;
   function encostaNosCantos(mods, blocos, avisos, diag) {
+    if (SEM_DESLOCAR) {
+      // só confere: módulo que invade o bloco de canto vira aviso, ninguém anda
+      mods.forEach((m) => {
+        if (m.piso) return;
+        const camada = m.camada === 'aereo' ? 'aereo' : 'base';
+        const b = blocos.find((x) => x.wi === m.wall_index && x.camada === camada && m.x_mm < x.fim - 1 && m.x_mm + m.width_mm > x.ini + 1);
+        if (b) avisos.push(m.item + ': invade o bloco de canto da parede ' + (m.wall_index + 1) + ' (' + Math.round(b.ini / MM) + '"–' + Math.round(b.fim / MM) + '"). Ficou onde o virtual pôs.');
+      });
+      return;
+    }
     const grupos = new Map();
     mods.forEach((m) => {
       if (m.piso) return;
@@ -522,6 +557,10 @@ Responda SOMENTE com JSON:
       const baseH = moda(fora.filter((m) => (+m.floor_height_mm || 0) < 50).map((m) => +m.height_mm || 0));
       const topoAereo = moda(fora.filter((m) => (+m.floor_height_mm || 0) >= 1000).map((m) => (+m.floor_height_mm || 0) + (+m.height_mm || 0)));
       const baixo = corpo[0], cima = corpo.length > 1 ? corpo[corpo.length - 1] : null;
+      // SEM DESLOCAR (21:14, 08/11, Matt: "não desloque os módulos na
+      // construção desse projeto"): posição e altura vêm do virtual; aqui só
+      // as profundidades (nicho aberto +1", top cover +1").
+      if (!SEM_DESLOCAR) {
       if ((+baixo.floor_height_mm || 0) < 50 && baseH) { baixo.floor_height_mm = 0; baixo.height_mm = baseH; }
       if (cima && topoAereo && topoAereo > (+baixo.height_mm || 0) + 100) cima.floor_height_mm = topoAereo - (+cima.height_mm || 0);
       // o(s) do meio preenchem o vão entre a de baixo e a de cima
@@ -532,6 +571,7 @@ Responda SOMENTE com JSON:
       } else if (cima) {
         const ini = (+baixo.floor_height_mm || 0) + (+baixo.height_mm || 0);
         if (Math.abs((+cima.floor_height_mm || 0) - ini) < 40) cima.floor_height_mm = ini;
+      }
       }
       // NICHO ABERTO = TAMPONAMENTO (09:51, 08/11, Matt: "sempre que é um
       // nicho aberto conectado com algum módulo que tenha porta, ele tem que
@@ -548,7 +588,7 @@ Responda SOMENTE com JSON:
       const y0 = Math.min(...corpo.map((m) => +m.floor_height_mm || 0));
       const y1 = Math.max(...corpo.map((m) => (+m.floor_height_mm || 0) + (+m.height_mm || 0)));
       const dMax = Math.max(...corpo.map((m) => +m.depth_mm || 0));
-      lista.filter((m) => ehPainel(m, cat)).forEach((pn) => { pn.floor_height_mm = y0; pn.height_mm = y1 - y0; if (dMax) pn.depth_mm = dMax + MM; });
+      lista.filter((m) => ehPainel(m, cat)).forEach((pn) => { if (!SEM_DESLOCAR) { pn.floor_height_mm = y0; pn.height_mm = y1 - y0; } if (dMax) pn.depth_mm = dMax + MM; });
     });
   }
 
@@ -635,7 +675,7 @@ Responda SOMENTE com JSON:
     slot.floor_rotation_deg = Math.round((((deg % 360) + 540) % 360 - 180) * 10) / 10;
     if (+m.depth_mm) slot.depth_mm = projectSlotClampedDimensionMm(slot, 'depth', D);
     if (m.color_name) iaeOpSetColor({ slot_ids: [String(slot.id)], color_name: m.color_name }, avisos);
-    if (typeof iaeAfterGeometry === 'function') iaeAfterGeometry(slot);
+    recomputeProjectSlotPricing(slot); // sem clamp: a ilha pode passar do piso (o piso continua)
     return slot;
   }
 
@@ -889,10 +929,14 @@ Responda SOMENTE com JSON:
       await editProjectAiApply([{ op: 'replace_module', reason: 'Blind corner do lado certo', module_id: gemeo.id, slot_ids: [String(s.id)] }]);
       try { if (typeof iaeCopyColors === 'function') iaeCopyColors(cores, s); } catch (e) { /* fica a cor padrão */ }
       // encosta o lado cego no canto, no afastamento padrão (4 3/4")
-      const af = (projectSlotBlindInfo(s) || { afastar: 120.65 }).afastar;
-      const x = quer === 'D' ? Math.round(L - af - (+s.width_mm)) : Math.round(af);
-      if (!projectSlotOverlapsNeighbor(s, x)) s.x_mm = x;
-      try { clampProjectSlotPosition(s); recomputeProjectSlotPricing(s); } catch (e) { /* ok */ }
+      const xAntes = +s.x_mm;
+      if (!SEM_DESLOCAR) {
+        const af = (projectSlotBlindInfo(s) || { afastar: 120.65 }).afastar;
+        const x = quer === 'D' ? Math.round(L - af - (+s.width_mm)) : Math.round(af);
+        if (!projectSlotOverlapsNeighbor(s, x)) s.x_mm = x;
+        try { clampProjectSlotPosition(s); } catch (e) { /* ok */ }
+      } else s.x_mm = xAntes;
+      try { recomputeProjectSlotPricing(s); } catch (e) { /* ok */ }
       trocas++;
     }
     return trocas;
@@ -905,13 +949,16 @@ Responda SOMENTE com JSON:
     const mods = (r.modules || []).filter((m) => m && typeof m === 'object');
     alinhaGrupos(mods, cat);
     let ok = 0;
+    const criados = [];
     for (const m of mods) {
+      const antes = new Set(projectSlots.map((x) => x.id));
       const wi = Number(m.wall_index);
       const nome = m.item || m.module_id || 'item';
       if (!(wi >= 0 && wi < nParedes)) { falhas.push({ item: nome, motivo: 'parede inválida' }); continue; }
       try {
         if (m.caixa) {
           await aplicaCaixa(m, cat, wi, avisos);
+          { const novo = projectSlots.find((x) => !antes.has(x.id)); if (novo) criados.push([novo, m]); }
           relatorio.push({ item: nome, grupo: m.grupo || '', usado: 'Caixa ' + m.caixa + ' (Construtor)' + (m.portas ? ' · ' + m.portas + ' porta(s)' : '') + (m.modelo_porta ? ' ' + m.modelo_porta : '') + (m.led ? ' · LED' : ''), motivo: m.motivo || '' });
           ok++; continue;
         }
@@ -929,11 +976,21 @@ Responda SOMENTE com JSON:
         }
         relatorio.push({ item: nome, grupo: m.grupo || '', usado: mod.name + (m.piso ? ' (piso)' : ''), motivo: m.motivo || '' });
         ok++;
+        const novo = projectSlots.find((x) => !antes.has(x.id)); if (novo) criados.push([novo, m]);
       } catch (e) {
         console.error('[sahra-fluxo] montar', m, e);
         falhas.push({ item: nome, motivo: (e && e.message) || String(e) });
       }
     }
+    // POSIÇÃO DO VIRTUAL, SEM DESLOCAR: o portal clampa/encaixa ao inserir;
+    // aqui cada módulo volta exatamente pro x/altura que o virtual mandou.
+    criados.forEach(([sl, m]) => {
+      if (m.piso || isFloorSlot(sl)) return;
+      sl.wall_index = m.wall_index;
+      if (Number.isFinite(+m.x_mm)) sl.x_mm = +m.x_mm;
+      if (Number.isFinite(+m.floor_height_mm)) sl.floor_height_mm = Math.max(0, +m.floor_height_mm);
+      try { recomputeProjectSlotPricing(sl); } catch (e) { /* */ }
+    });
     return { ok, falhas, avisos, relatorio };
   }
 
@@ -947,6 +1004,7 @@ Responda SOMENTE com JSON:
       return { ok: false, erro: 'Cancelado: havia um projeto aberto no canvas.' };
     }
     montando = true;
+    let colisaoAntes = null;
     if (overlay) overlay.style.display = 'none';
     irParaProjetos();
     mostraCard('<b>SAHRA · montando no portal</b><br><span>' + escH(h.titulo || 'Projeto') + '</span><br><span style="color:#6e675e">Lendo o catálogo e seguindo as etapas de "Montar no portal". Pode levar até 2 minutos.</span>');
@@ -969,6 +1027,8 @@ Responda SOMENTE com JSON:
         ({ data: esc, model } = await chamaIA(promptEscolha(h, itens, sub, cores, 3, plWalls)));
       }
       const r = montaDoVirtual(h, itens, esc || {}, cat, plWalls);
+      // COLISÃO DESLIGADA durante a montagem (volta como estava no fim)
+      try { colisaoAntes = projectCollisionEnabled; projectCollisionEnabled = false; } catch (e) { /* */ }
       // projeto novo, sem pedir confirmação de novo (já confirmamos acima)
       projectSlots = [];
       if (typeof resetProject === 'function') resetProject();
@@ -1010,6 +1070,7 @@ Responda SOMENTE com JSON:
       return { ok: false, erro: msg };
     } finally {
       montando = false;
+      try { if (colisaoAntes !== null) projectCollisionEnabled = colisaoAntes; } catch (e) { /* */ }
     }
   };
 
