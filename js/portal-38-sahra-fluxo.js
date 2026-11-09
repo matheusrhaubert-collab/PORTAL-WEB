@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611082150';
+  const VERSAO = '202611082200';
   let overlay = null;
 
   function abrir() {
@@ -279,6 +279,7 @@ O QUE ESCOLHER PRA CADA ITEM
 - Ou caixa pelo Construtor (conjunto empilhado, nicho, item sem módulo pronto igual): "caixa": "aereo" (Bottom · Bottom · Back) ou "suspenso", com "portas", "prateleiras", "gavetas", "modelo_porta" ("vidro" = Aluminium Glass), "cor_vidro", "led", "front_color_name".
 - Ou "nao_virou": "motivo" (nunca invente; nunca troque por módulo de outra função: pantry ≠ torre com nicho).
 - "color_name": nome EXATO das CORES ATIVAS (use a cor_legno do acabamento quando houver), ou null.
+- CANTO SEM 3/4: painel/filler de ponta (3/4") só em ponta LIVRE. Num canto com móvel nas duas paredes (ou com bloco de canto), nada de painel/filler fino na ponta: o módulo encosta direto no canto/bloco.
 - AÉREO DA GELADEIRA: o aéreo em cima da geladeira SEMPRE tem 24" de fundo. Escolha um módulo que aceite 24" de profundidade (refrigerator wall cabinet) ou "caixa": "aereo" pelo Construtor; nunca um aéreo raso de 12".
 - BLIND CORNER: o lado cego fica virado pro canto. AÉREO RASO no canto: nunca blind/corner (o portal resolve o canto).
 
@@ -311,6 +312,55 @@ Responda SOMENTE com JSON:
     const x0 = +it.x || 0, x1 = x0 + (+it.largura || 0);
     return ((vista && vista.itens) || []).some((g) => g !== it && (g.tipo === 'appliance' || g.tipo === 'existente') && RE_GELADEIRA.test((g.rotulo || '') + ' ' + (g.sku || '')) &&
       Math.min(x1, (+g.x || 0) + (+g.largura || 0)) - Math.max(x0, +g.x || 0) > Math.min(+it.largura || 0, +g.largura || 0) * 0.5);
+  }
+  function semPontaNoCanto(itens, vistas, mapaVista, walls, MMp, avisos) {
+    const tirar = new Set(), puxar = new Map();
+    const n = walls.length;
+    const fechado = n > 2; // a última parede encontra a primeira só se o ambiente fecha; na dúvida, só cantos internos da sequência
+    const camadas = (it) => { const y0 = +it.y || 0, y1 = y0 + (+it.altura || 0); const c = []; if (y0 < 36) c.push('base'); if (y1 > 50) c.push('aereo'); return c; };
+    const ehFino = (it) => /^(painel|filler)$/.test(String(it.tipo || '')) && (+it.largura || 0) <= 1.5;
+    const ehCantoIt = (it) => String(it.tipo || '') === 'canto' || /^(BCF|WCF)/i.test(String(it.sku || ''));
+    // itens de parede com a posição em polegadas NA PAREDE do portal
+    const porParede = new Map();
+    itens.forEach((it) => {
+      const mv = mapaVista.get(it.vista); if (!mv || mv.piso) return;
+      const x0 = mv.inicio / MMp + (+it.x || 0);
+      if (!porParede.has(mv.wi)) porParede.set(mv.wi, []);
+      porParede.get(mv.wi).push({ it, x0, x1: x0 + (+it.largura || 0), cam: camadas(it) });
+    });
+    const temMovelPerto = (wi, lado, cam) => {
+      const L = walls[wi].length_mm / MMp;
+      return (porParede.get(wi) || []).some((o) => !ehFino(o.it) && o.cam.includes(cam) && (lado === 'ini' ? o.x0 < 30 : o.x1 > L - 30));
+    };
+    const cantoEm = (wi, lado, cam) => {
+      const ang = lado === 'fim' ? +walls[wi].angle_to_next_deg : +((walls[(wi - 1 + n) % n] || {}).angle_to_next_deg);
+      if (!(Math.abs(Math.abs(ang) - 90) < 15)) return false;
+      const viz = lado === 'fim' ? wi + 1 : wi - 1;
+      const vizOk = viz >= 0 && viz < n ? viz : (fechado ? (viz + n) % n : -1);
+      const L = walls[wi].length_mm / MMp;
+      const bloco = (porParede.get(wi) || []).some((o) => ehCantoIt(o.it) && o.cam.includes(cam) && (lado === 'ini' ? o.x0 < 1 : o.x1 > L - 1));
+      return bloco || (vizOk >= 0 && temMovelPerto(vizOk, lado === 'fim' ? 'ini' : 'fim', cam) && temMovelPerto(wi, lado, cam));
+    };
+    porParede.forEach((lista, wi) => {
+      const L = walls[wi].length_mm / MMp;
+      ['base', 'aereo'].forEach((cam) => {
+        ['ini', 'fim'].forEach((lado) => {
+          if (!cantoEm(wi, lado, cam)) return;
+          // limite do canto: a ponta da parede, ou a borda do bloco de canto
+          const blocos = lista.filter((o) => ehCantoIt(o.it) && o.cam.includes(cam));
+          const lim = lado === 'ini' ? Math.max(0, ...blocos.filter((o) => o.x0 < 1).map((o) => o.x1)) : Math.min(L, ...blocos.filter((o) => o.x1 > L - 1).map((o) => o.x0));
+          const finos = lista.filter((o) => ehFino(o.it) && o.cam.includes(cam) && !tirar.has(o.it) && (lado === 'ini' ? Math.abs(o.x0 - lim) <= 1 : Math.abs(o.x1 - lim) <= 1));
+          if (!finos.length) return;
+          const f = finos[0]; tirar.add(f.it);
+          const larg = (+f.it.largura || 0);
+          // o módulo logo depois do filler encosta no canto
+          const vizinho = lista.filter((o) => o.it !== f.it && !ehFino(o.it) && !ehCantoIt(o.it) && o.cam.includes(cam) && (lado === 'ini' ? Math.abs(o.x0 - f.x1) <= 1 : Math.abs(o.x1 - f.x0) <= 1));
+          vizinho.forEach((o) => { if (!puxar.has(o.it)) puxar.set(o.it, (lado === 'ini' ? -larg : larg) * MMp); });
+          avisos.push('Parede ' + (wi + 1) + ' (' + (cam === 'aereo' ? 'aéreos' : 'bases') + '): canto com móvel dos dois lados — tirei o ' + (f.it.sku || f.it.tipo) + ' de ' + larg + '" da ponta e encostei o vizinho no canto.');
+        });
+      });
+    });
+    return { tirar, puxar };
   }
   function montaDoVirtual(h, itens, esc, cat, plWalls) {
     const pr = h.proposta || {}; const MMp = MM;
@@ -370,12 +420,20 @@ Responda SOMENTE com JSON:
       });
     }
     if (!walls.length) throw new Error('o projeto virtual não tem parede pra montar');
+    // CANTO SEM O 3/4 DA PONTA (21:50, 08/11, Matt: "a regra que coloca 3/4
+    // afastado nas pontas com filler não pode valer quando tem um móvel de
+    // canto; deve eliminar essa regra pros cantos onde tem 2 móveis que vão
+    // se encontrar"). Ponta de parede que é CANTO com móvel nas duas paredes
+    // (ou com bloco de canto BCF/WCF): o painel/filler fino (≤ 1½") encostado
+    // ali sai, e o módulo vizinho encosta no canto (ou no bloco).
+    const { tirar: tirarPonta, puxar: puxarPonta } = semPontaNoCanto(itens, vistas, mapaVista, walls, MMp, avisos);
     // itens
     const modules = [];
     itens.forEach((it) => {
       const e = escI.get(String(it.id)) || {};
       const nome = (it.rotulo || it.sku || it.tipo) + ' (' + (vistas[it.vista] && vistas[it.vista].nome || 'vista ' + it.vista) + ')';
       if (e.nao_virou) { naoVirou.push({ item: nome, motivo: String(e.nao_virou) }); return; }
+      if (tirarPonta.has(it)) return;
       const mv = mapaVista.get(it.vista); if (!mv) return;
       const mod = e.module_id != null ? porId.get(String(e.module_id)) : null;
       if (!mod && !e.caixa) { naoVirou.push({ item: nome, motivo: 'a SAHRA não escolheu módulo nem caixa' }); return; }
@@ -383,7 +441,7 @@ Responda SOMENTE com JSON:
       let profPol = +e.profundidade_pol || (mod && mod.d && mod.d[1] ? mod.d[1] / MMp : 0) || PROF_PADRAO_POL[it.tipo] || 24;
       const sobreGeladeira = aereoDaGeladeira(it, vistas[it.vista]);
       if (sobreGeladeira) profPol = PROF_AEREO_GELADEIRA_POL;
-      const x = mv.piso ? mv.inicio + (mv.largura - (+it.x) * MMp - W) : mv.inicio + (+it.x) * MMp;
+      const x = mv.piso ? mv.inicio + (mv.largura - (+it.x) * MMp - W) : mv.inicio + (+it.x) * MMp + (puxarPonta.get(it) || 0);
       const m = {
         item: nome, grupo: it.grupo || null, motivo: e.motivo || '', wall_index: mv.wi,
         x_mm: Math.round(x), floor_height_mm: Math.round((+it.y || 0) * MMp), width_mm: Math.round(W), height_mm: Math.round(H), depth_mm: Math.round(profPol * MMp),
