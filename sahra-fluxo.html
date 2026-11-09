@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=202611082034"></script>
+<script src="js/config.js?v=202611082048"></script>
 <style>
 /* Layout: duas vistas. Editor = quadro de macroetapas em colunas + painel da etapa. Mesa = SAHRA de um lado, conversa no meio, ficha do projeto do outro. */
 :root{
@@ -848,6 +848,13 @@ function retIlha(pl, il){
   const xs=pts.map(q=>q[0]), ys=pts.map(q=>q[1]);
   return {x:Math.min(...xs), y:Math.min(...ys), w:Math.max(...xs)-Math.min(...xs), h:Math.max(...ys)-Math.min(...ys), calc:true, frente:sg.nome};
 }
+function segCruzaRet(sg,X,Y,W,D){
+  const dentro=(x,y)=>x>X+0.5&&x<X+W-0.5&&y>Y+0.5&&y<Y+D-0.5;
+  if(dentro(sg.x1,sg.y1)||dentro(sg.x2,sg.y2)) return true;
+  const cruza=(a,b,c,d)=>{ const o=(p,q,r)=>Math.sign((q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0])); return o(a,b,c)*o(a,b,d)<0 && o(c,d,a)*o(c,d,b)<0; };
+  const A=[sg.x1,sg.y1], B=[sg.x2,sg.y2], c=[[X,Y],[X+W,Y],[X+W,Y+D],[X,Y+D]];
+  return c.some((p,k)=>cruza(A,B,p,c[(k+1)%4]));
+}
 function dentroDoPoligono(px,py,segs){
   let dentro=false;
   segs.forEach(s=>{ if(((s.y1>py)!==(s.y2>py)) && (px < (s.x2-s.x1)*(py-s.y1)/((s.y2-s.y1)||1e-9)+s.x1)) dentro=!dentro; });
@@ -871,9 +878,12 @@ function plantaProblemas(pl){
     const X=R.x, Y=R.y, W=R.w, D=R.h;
     const nome=il.nome||`Ilha${(pl.ilhas||[]).length>1?" "+(k+1):""}`;
     const cantos=[[X,Y],[X+W,Y],[X+W,Y+D],[X,Y+D]];
-    if(fechado){ const fora=cantos.filter(([a,b])=>!dentroDoPoligono(a,b,segs)); if(fora.length) out.push(R.calc
+    // passa do lado ABERTO: o piso continua, não é problema. Só acusa se
+    // cruzar uma parede de verdade.
+    const cruzaParede = segs0.find(sg=>!sg.aberto && segCruzaRet(sg,X,Y,W,D));
+    if(cruzaParede){ const fora=[1]; if(fora.length) out.push(R.calc
       ? `${nome} de frente pra ${R.frente} não cabe dentro do ambiente (bancada 24" + corredor ${Number(il.corredor)||CIRC_MIN_POL}" + ilha ${il.profundidade}" passa da parede do outro lado). Diminua a ilha, mude a parede de trabalho ou sugira península.`
-      : `${nome} está fora do ambiente (atravessa a parede). Informe a ilha por "parede" + "corredor", sem x/y.`); }
+      : `${nome} atravessa a ${cruzaParede.nome}. Informe a ilha por "parede" + "corredor", sem x/y.`); }
     segs.forEach(sg=>{
       if(sg.aberto) return;
       // menor distância entre a ilha e a parede
@@ -893,7 +903,7 @@ function plantaProblemas(pl){
     const ini=Number(pt.inicio)||0, w=Number(pt.largura)||24, cx=sg.x1+ux*(ini+w/2)+nx*12, cy=sg.y1+uy*(ini+w/2)+ny*12;
     (pl.ilhas||[]).forEach(il=>{ const R=retIlha(pl,il); if(!R) return; if(cx>=R.x&&cx<=R.x+R.w&&cy>=R.y&&cy<=R.y+R.h) out.push(`${pt.tipo||"Ponto"} da ${sg.nome} ficou embaixo da ilha.`); }); });
   // a ilha cabe em algum lugar? largura útil do cômodo contra 2 bancadas + 2 corredores
-  if((pl.ilhas||[]).length && fechado){
+  if((pl.ilhas||[]).length && !segs0.some(sg=>sg.aberto)){ // com lado aberto o piso continua: largura não limita
     const xs=segs0.flatMap(s=>[s.x1,s.x2]), ys=segs0.flatMap(s=>[s.y1,s.y2]);
     const menor=Math.min(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys));
     const il=pl.ilhas[0]; const prof=Math.min(+il.largura||0,+il.profundidade||0);
@@ -915,6 +925,14 @@ function plantaSvg(pl, mini){
   (pl.peninsulas||[]).forEach(pe=>{ const s=segs[Number(pe.parede)]; if(!s) return; const D=Number(pe.profundidade)||36, C=Number(pe.comprimento)||0; if(C>0){ const pol=naParede(Number(pe.parede), Number(pe.inicio)||0, D, C); if(pol) ret.push({k:"pen",nome:"Península",pol}); } });
   (pl.pontos||[]).forEach(pt=>{ const fundo=/geladeira/i.test(pt.tipo)?30:24; const pol=naParede(Number(pt.parede), Number(pt.inicio)||0, Number(pt.largura)||24, fundo); if(pol) ret.push({k:"ponto",nome:String(pt.tipo||""),pol}); });
   ret.forEach(r=>r.pol.forEach(q=>pts.push(q)));
+  // CHÃO MAIOR QUE AS PAREDES (20:43, 08/11, Matt: "deixa o chão ficar maior
+  // do que as paredes; quando clicar nele, expandir pros lados, passando das
+  // paredes" / "a ilha passando um pouco do piso não é problema, o piso
+  // continua"). Do lado ABERTO o piso continua pra fora; clicar no chão
+  // alterna 36" ↔ 96" de piso a mais.
+  const ext = mini ? 18 : (Number(M.pisoExt)||36);
+  const extensoes = segs.filter(s=>s.aberto).map(s=>{ const nx=-s.dy, ny=s.dx; return [[s.x1,s.y1],[s.x2,s.y2],[s.x2-nx*ext,s.y2-ny*ext],[s.x1-nx*ext,s.y1-ny*ext]]; });
+  extensoes.forEach(e=>e.forEach(q=>pts.push(q)));
   const xs=pts.map(q=>q[0]), ys=pts.map(q=>q[1]);
   const W=Math.max(...xs)-Math.min(...xs)||1, H=Math.max(...ys)-Math.min(...ys)||1, pad=Math.max(W,H)*(mini?0.06:0.14);
   const vb=[Math.min(...xs)-pad, Math.min(...ys)-pad, W+2*pad, H+2*pad];
@@ -922,7 +940,8 @@ function plantaSvg(pl, mini){
   const pol=a=>a.map(q=>q.map(v=>v.toFixed(1)).join(",")).join(" ");
   let g="";
   // piso
-  g+=`<polygon points="${pol(pts.slice(0,segs.length+1))}" fill="#f6f1e8" stroke="none"/>`;
+  extensoes.forEach(e=>{ g+=`<polygon class="planta-piso" points="${pol(e)}" fill="#f9f6f0" stroke="#d9d3c8" stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>`; });
+  g+=`<polygon class="planta-piso" points="${pol(pts.slice(0,segs.length+1))}" fill="#f6f1e8" stroke="none"/>`;
   // paredes
   segs.forEach(s=>{ g+= s.aberto ? `<line x1="${s.x1}" y1="${s.y1}" x2="${s.x2}" y2="${s.y2}" stroke="#9a948a" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`
                                   : `<line x1="${s.x1}" y1="${s.y1}" x2="${s.x2}" y2="${s.y2}" stroke="#2b2724" stroke-width="${mini?4:7}" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`; });
@@ -1118,6 +1137,7 @@ function bindPalco(v){
   const zo=$("#visor-zoom"); if(zo) zo.onclick=()=>{ M.zoom=!M.zoom; renderConversa(v); };
   const im=$("#visor-img"); if(im) im.onclick=()=>{ M.zoom=!M.zoom; renderConversa(v); };
   const g=$("#palco-gerar"); if(g) g.onclick=()=>gerarPV("", {chat:true});
+  document.querySelectorAll(".planta-piso").forEach(el=>{ el.style.cursor="pointer"; el.addEventListener("click",ev=>{ ev.stopPropagation(); M.pisoExt=(Number(M.pisoExt)||36)>=96?36:96; renderConversa(v); }); });
   const pc=$("#planta-corrigir"); if(pc) pc.onclick=()=>{ if(M.busy) return; M.ver=null; $("#txt").value="A planta está com problema (veja os avisos em vermelho). Corrige, por favor."; enviar(); };
   const pp=$("#palco-parar"); if(pp) pp.onclick=()=>PV.ctl?.abort();
   const ap=$("#palco-aprovar"); if(ap) ap.onclick=async()=>{ aprovarPV(); await salvarProj(); renderConversa(v); };
@@ -1357,7 +1377,7 @@ setInterval(async()=>{
   if(agora-CURI.desde<6000 || agora-CURI.ultima<30000) return;
   await carregaCuri(); if(!CURI.lista.length || !ocupado()) return;
   CURI.ultima=agora; CURI.atual=sorteiaCuri(); pintaCuri();
-  falar(CURI.atual);
+  falar(CURI.atual, false, {curi:true});
 }, 1000);
 
 /* ---------- Conversa depois do briefing (2026-11-08) ----------
@@ -1877,16 +1897,33 @@ function pcmParaWav(b64){
   v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); str(36,"data"); v.setUint32(40,pcm.length,true);
   new Uint8Array(buf,44).set(pcm); return new Blob([buf],{type:"audio/wav"});
 }
-async function falar(texto, forcar){
+// CURIOSIDADE TERMINA ANTES DA RESPOSTA (20:45, 08/11, Matt: "quando ela tá
+// dando a dica enquanto pensa, deixa ela acabar; depois da dica ela fala o
+// que tem que falar"). A fala da curiosidade não é cortada pela resposta:
+// a resposta é preparada em paralelo e toca quando a dica termina. Se a dica
+// ainda nem começou a tocar, ela é cancelada (pra não atrasar a resposta).
+const curiTocando=()=>!!(VOZ.curiAudio && !VOZ.curiAudio.paused && !VOZ.curiAudio.ended);
+async function falar(texto, forcar, opts){
+  const curi=!!(opts&&opts.curi);
   if(!texto || (!VOZ.on && !forcar)) return;
-  pararVoz(); const meu=++VOZ.seq;
+  if(curi && VOZ.audio && !VOZ.audio.paused && !VOZ.audio.ended) return; // não interrompe nada pra contar curiosidade
+  const esperar=!curi && curiTocando();
+  if(!esperar) pararVoz();
+  const meu=++VOZ.seq;
   if(forcar) vozInfo("Preparando a voz…");
   try{
     const { data, error } = await supabaseClient.functions.invoke("sahra-chat", { body:{ tts:String(texto).slice(0,2500), lang:"pt", voice:"Aoede" } });
     if(error || !data?.audio) throw new Error(data?.error || error?.message || "sem áudio");
     if(meu!==VOZ.seq) return;
     const blob=/^audio\/(wav|mpeg|mp3|ogg)/i.test(data.mime||"") ? new Blob([Uint8Array.from(atob(data.audio),c=>c.charCodeAt(0))],{type:data.mime}) : pcmParaWav(data.audio);
-    const a=new Audio(URL.createObjectURL(blob)); VOZ.audio=a; await a.play();
+    if(!curi && curiTocando()){
+      const c=VOZ.curiAudio;
+      await new Promise(ok=>{ c.addEventListener("ended",ok,{once:true}); c.addEventListener("pause",ok,{once:true}); setTimeout(ok,45000); });
+      if(meu!==VOZ.seq) return;
+    }
+    const a=new Audio(URL.createObjectURL(blob)); VOZ.audio=a;
+    if(curi){ VOZ.curiAudio=a; a.addEventListener("ended",()=>{ if(VOZ.curiAudio===a) VOZ.curiAudio=null; },{once:true}); }
+    await a.play();
     if(forcar) vozInfo("");
   }catch(e){ if(forcar) vozInfo("A voz não respondeu agora: "+(e?.message||e)); }
 }
