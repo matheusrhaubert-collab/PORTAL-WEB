@@ -16,7 +16,7 @@
 (function () {
   try { if (localStorage.getItem('legno_sahra_fluxo_off') === '1') return; } catch (e) { /* */ }
 
-  const VERSAO = '202611082120';
+  const VERSAO = '202611082150';
   let overlay = null;
 
   function abrir() {
@@ -279,6 +279,7 @@ O QUE ESCOLHER PRA CADA ITEM
 - Ou caixa pelo Construtor (conjunto empilhado, nicho, item sem módulo pronto igual): "caixa": "aereo" (Bottom · Bottom · Back) ou "suspenso", com "portas", "prateleiras", "gavetas", "modelo_porta" ("vidro" = Aluminium Glass), "cor_vidro", "led", "front_color_name".
 - Ou "nao_virou": "motivo" (nunca invente; nunca troque por módulo de outra função: pantry ≠ torre com nicho).
 - "color_name": nome EXATO das CORES ATIVAS (use a cor_legno do acabamento quando houver), ou null.
+- AÉREO DA GELADEIRA: o aéreo em cima da geladeira SEMPRE tem 24" de fundo. Escolha um módulo que aceite 24" de profundidade (refrigerator wall cabinet) ou "caixa": "aereo" pelo Construtor; nunca um aéreo raso de 12".
 - BLIND CORNER: o lado cego fica virado pro canto. AÉREO RASO no canto: nunca blind/corner (o portal resolve o canto).
 
 CATÁLOGO (id | nome | família › categoria › sub | montagem | w | h | d | refs):
@@ -297,6 +298,20 @@ Responda SOMENTE com JSON:
   }
   // junta a escolha da IA com as posições do virtual → o mesmo formato que aplicaModulos usa
   const BANCADA_POL = 24; // fundo da bancada de parede (mesmo número da planta)
+  // AÉREO DA GELADEIRA (21:44, 08/11, Matt: "geladeira sempre deve ter o
+  // aéreo em cima com 24 de profundidade"). Aéreo em cima da geladeira (pelo
+  // rótulo/SKU ou por estar no vão de uma geladeira da mesma vista) = 24".
+  const PROF_AEREO_GELADEIRA_POL = 24;
+  const RE_GELADEIRA = /geladeira|fridge|refrig|\bREF\b/i;
+  function aereoDaGeladeira(it, vista) {
+    const t = String(it.tipo || '');
+    const alto = (+it.y || 0) >= 50;
+    if (!(t === 'aereo' || (alto && t !== 'torre' && t !== 'canto' && t !== 'appliance' && t !== 'existente'))) return false;
+    if (RE_GELADEIRA.test((it.rotulo || '') + ' ' + (it.sku || ''))) return true;
+    const x0 = +it.x || 0, x1 = x0 + (+it.largura || 0);
+    return ((vista && vista.itens) || []).some((g) => g !== it && (g.tipo === 'appliance' || g.tipo === 'existente') && RE_GELADEIRA.test((g.rotulo || '') + ' ' + (g.sku || '')) &&
+      Math.min(x1, (+g.x || 0) + (+g.largura || 0)) - Math.max(x0, +g.x || 0) > Math.min(+it.largura || 0, +g.largura || 0) * 0.5);
+  }
   function montaDoVirtual(h, itens, esc, cat, plWalls) {
     const pr = h.proposta || {}; const MMp = MM;
     const porId = new Map(cat.map((m) => [String(m.id), m]));
@@ -365,7 +380,9 @@ Responda SOMENTE com JSON:
       const mod = e.module_id != null ? porId.get(String(e.module_id)) : null;
       if (!mod && !e.caixa) { naoVirou.push({ item: nome, motivo: 'a SAHRA não escolheu módulo nem caixa' }); return; }
       const W = (+it.largura) * MMp, H = (+it.altura) * MMp;
-      const profPol = +e.profundidade_pol || (mod && mod.d && mod.d[1] ? mod.d[1] / MMp : 0) || PROF_PADRAO_POL[it.tipo] || 24;
+      let profPol = +e.profundidade_pol || (mod && mod.d && mod.d[1] ? mod.d[1] / MMp : 0) || PROF_PADRAO_POL[it.tipo] || 24;
+      const sobreGeladeira = aereoDaGeladeira(it, vistas[it.vista]);
+      if (sobreGeladeira) profPol = PROF_AEREO_GELADEIRA_POL;
       const x = mv.piso ? mv.inicio + (mv.largura - (+it.x) * MMp - W) : mv.inicio + (+it.x) * MMp;
       const m = {
         item: nome, grupo: it.grupo || null, motivo: e.motivo || '', wall_index: mv.wi,
@@ -380,6 +397,7 @@ Responda SOMENTE com JSON:
           modelo_porta: e.modelo_porta || (/vidro|glass/i.test(it.porta || '') ? 'vidro' : null),
           cor_vidro: e.cor_vidro || it.cor_vidro || null, led: e.led != null ? !!e.led : !!it.led, front_color_name: e.front_color_name || null });
       }
+      if (sobreGeladeira) m.geladeira = true;
       if (mv.piso) m.piso = { afastamento_mm: Math.round(mv.afast), frente: 'parede' };
       m.camada = mv.piso ? 'piso' : it.grupo ? 'torre' : (m.floor_height_mm >= 900 ? 'aereo' : (m.height_mm > 1500 ? 'torre' : 'base'));
       // item passando da parede: avisa (não inventa posição)
@@ -989,6 +1007,10 @@ Responda SOMENTE com JSON:
       sl.wall_index = m.wall_index;
       if (Number.isFinite(+m.x_mm)) sl.x_mm = +m.x_mm;
       if (Number.isFinite(+m.floor_height_mm)) sl.floor_height_mm = Math.max(0, +m.floor_height_mm);
+      if (m.geladeira) {
+        try { sl.depth_mm = projectSlotClampedDimensionMm(sl, 'depth', PROF_AEREO_GELADEIRA_POL * MM); } catch (e) { sl.depth_mm = Math.round(PROF_AEREO_GELADEIRA_POL * MM); }
+        if (+sl.depth_mm < PROF_AEREO_GELADEIRA_POL * MM - 2) avisos.push(m.item + ': aéreo da geladeira precisa de 24" de fundo, mas o módulo só aceita ' + (+sl.depth_mm / MM).toFixed(1) + '". Trocar por um aéreo que vá até 24" (ou caixa pelo Construtor).');
+      }
       try { recomputeProjectSlotPricing(sl); } catch (e) { /* */ }
     });
     return { ok, falhas, avisos, relatorio };
