@@ -6337,3 +6337,8 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-myorders-folder > summary { cursor: pointer; font-weight: 700; font-size: 15px; padding: 8px 4px; list-style: revert; }
 .po-myorders-folder > summary .po-myorders-folder-total { float: right; font-weight: 700; }
 .po-myorders-folder > .po-myorders-folder-list { margin-top: 6px; }
+
+.po-order-released-check { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #16a34a; color: #fff; font-size: 13px; font-weight: 700; margin-right: 6px; vertical-align: middle; }
+.po-myorders-folder > summary .po-myorders-folder-released { margin-left: 10px; color: #16a34a; font-size: 13px; font-weight: 700; }
+.po-myorders-folder > summary .po-myorders-folder-approve { margin-left: 10px; font-size: 12px; padding: 3px 10px; font-weight: 600; vertical-align: middle; }
+.po-myorders-folder > summary .po-myorders-folder-approve-status { margin-left: 8px; font-weight: 400; font-size: 12px; }

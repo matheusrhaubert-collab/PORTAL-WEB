@@ -876,6 +876,61 @@ function orderStatusLabel(status) {
   return status;
 }
 
+// LIBERAR TODOS OS PEDIDOS DA PASTA (10/11, Matt). Mesmo "Aprovar Pedido"
+// da tela do pedido (status approved + approved_at, exigindo os 5 campos),
+// um pedido por vez. O que faltar (telefone, e-mail, endereço…) é pedido
+// UMA vez pra pasta toda — é o mesmo cliente final — e só preenche onde o
+// pedido está vazio; o que já foi digitado em cada pedido é mantido.
+async function approveFolderOrders(folder, folderOrders, stEl, errorEl) {
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) { showBecomeDealerModal(); return; }
+  if (errorEl) errorEl.style.display = 'none';
+  const pend = (folderOrders || []).filter((o) => o.status === 'submitted' && o.order_type !== 'cutting_list');
+  if (!pend.length) return;
+  if (!confirm(I18n.t('my_orders.folder_approve_confirm', { folder, n: pend.length }))) return;
+  const CAMPOS = [
+    ['client_name', 'my_orders.ask_client_name'],
+    ['client_phone', 'my_orders.ask_phone'],
+    ['client_email', 'my_orders.ask_email'],
+    ['delivery_address', 'my_orders.ask_address']
+  ];
+  const comum = {};
+  for (const [campo, chave] of CAMPOS) {
+    if (!pend.some((o) => !String(o[campo] || '').trim())) continue;
+    const sugestao = (pend.find((o) => String(o[campo] || '').trim()) || {})[campo] || (campo === 'client_name' ? folder : '');
+    const resp = prompt(I18n.t(chave, { folder }), sugestao || '');
+    if (resp === null) return;
+    if (!resp.trim()) { alert(I18n.t('order_detail.approve_missing_fields_error')); return; }
+    comum[campo] = resp.trim();
+  }
+  const ok = [];
+  const falhas = [];
+  for (let i = 0; i < pend.length; i++) {
+    const o = pend[i];
+    if (stEl) stEl.textContent = I18n.t('my_orders.folder_approve_progress', { i: i + 1, n: pend.length });
+    const upd = { status: 'approved', approved_at: new Date().toISOString() };
+    CAMPOS.forEach(([campo]) => { if (!String(o[campo] || '').trim() && comum[campo]) upd[campo] = comum[campo]; });
+    // OP vazio: usa o nome do pedido (ambiente) — nunca o mesmo pra todos
+    if (!String(o.po_name || '').trim()) upd.po_name = (o.client_name || folder) + ' ' + (i + 1);
+    try {
+      const { data, error } = await supabaseClient.from('orders').update(upd)
+        .eq('id', o.id).eq('status', 'submitted').select('id');
+      if (error) throw error;
+      if (!data || !data.length) throw new Error(I18n.t('project.update_blocked'));
+      ok.push(o.id);
+    } catch (err) {
+      falhas.push((o.po_name || o.client_name || o.id) + ' — ' + (err && err.message || String(err)));
+    }
+  }
+  if (stEl) stEl.textContent = '';
+  if (typeof currentDraftOrderId !== 'undefined' && currentDraftOrderId && ok.includes(currentDraftOrderId)) {
+    currentDraftOrderId = null; currentDraftOrderStatus = null; cartItems = []; renderCart();
+  }
+  let msg = I18n.t('my_orders.folder_approve_done', { ok: ok.length, n: pend.length });
+  if (falhas.length) msg += '\n\n' + I18n.t('fav.folder_send_failed') + '\n• ' + falhas.join('\n• ');
+  alert(msg);
+  loadMyOrders();
+}
+
 async function loadMyOrders() {
   const container = document.getElementById('po-orders-list');
   const errorEl = document.getElementById('po-orders-error');
@@ -976,10 +1031,13 @@ async function loadMyOrders() {
       if (o.po_name && o.client_name) subtitleParts.push(o.client_name);
       if (date) subtitleParts.push(date);
       const subtitle = subtitleParts.join(' — ');
+      // liberado pra produção = aprovado (ou além) — check verde (10/11)
+      const liberado = ['approved', 'paid', 'delivered'].includes(o.status);
       return `
         <div class="portal-order-card portal-order-card-clickable" data-order-id="${o.id}">
           <div class="portal-order-header">
             <div class="portal-order-title">
+              ${liberado ? `<span class="po-order-released-check" title="${I18n.t('my_orders.released_tip')}">✓</span>` : ''}
               <strong>${title}</strong>
               ${subtitle ? `<span class="hint">— ${subtitle}</span>` : ''}
               <span class="badge">${orderStatusLabel(o.status)}</span>
@@ -1016,15 +1074,29 @@ async function loadMyOrders() {
         }, 0);
         const somaTela = isSellerAccount() ? getDisplayPrice(soma) : soma;
         const chave = nome || '__none__';
+        const nLib = doGrupo.filter((o) => ['approved', 'paid', 'delivered'].includes(o.status)).length;
+        const nPend = doGrupo.filter((o) => o.status === 'submitted' && o.order_type !== 'cutting_list').length;
         return `
           <details class="po-myorders-folder" data-folder-key="${esc(chave)}" ${fechadas[chave] ? '' : 'open'}>
             <summary>
               <span>${nome ? '📁 ' + esc(nome) : esc(I18n.t('fav.folder_none'))} · ${esc(I18n.t('my_orders.folder_count', { n: doGrupo.length }))}</span>
+              ${nLib ? `<span class="po-myorders-folder-released">✓ ${esc(I18n.t('my_orders.folder_released', { n: nLib, total: doGrupo.length }))}</span>` : ''}
+              ${nome && nPend ? `<button type="button" class="secondary po-myorders-folder-approve" data-folder-key="${esc(chave)}">${esc(I18n.t('my_orders.folder_approve_btn', { n: nPend }))}</button><span class="hint po-myorders-folder-approve-status"></span>` : ''}
               <span class="po-myorders-folder-total">${formatMoney(somaTela)}</span>
             </summary>
             <div class="po-myorders-folder-list">${doGrupo.map(orderCardHtml).join('')}</div>
           </details>`;
       }).join('');
+      container.querySelectorAll('.po-myorders-folder-approve').forEach((btn) => {
+        btn.addEventListener('click', async (ev) => {
+          ev.preventDefault(); ev.stopPropagation(); // não abre/fecha a pasta
+          const nome = btn.dataset.folderKey;
+          const st = btn.nextElementSibling;
+          btn.disabled = true;
+          try { await approveFolderOrders(nome, orders.filter((o) => folderOf(o) === nome), st, errorEl); }
+          finally { btn.disabled = false; }
+        });
+      });
       container.querySelectorAll('.po-myorders-folder').forEach((det) => {
         det.addEventListener('toggle', () => {
           fechadas[det.dataset.folderKey] = !det.open;
