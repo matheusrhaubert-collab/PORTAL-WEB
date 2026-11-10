@@ -935,7 +935,21 @@ async function loadMyOrders() {
     // antigo expand-inline (pedido do usuário 2026-07-19: "abre essa tela").
     // Pedido de Plano de Corte abre uma tela read-only diferente (sem PDF
     // nesta versão — ver openCutlistOrderDetail).
-    container.innerHTML = orders.map((o) => {
+    // PASTA DO PROJETO DE ORIGEM (10/11, Matt: "agrupar pedido por pasta").
+    // A pasta mora em user_projects.client_folder; o pedido só guarda
+    // source_project_id (migration 179). Falhou a busca = lista sem grupos.
+    const folderByProject = {};
+    const srcIds = [...new Set(orders.map((o) => o.source_project_id).filter(Boolean))];
+    if (srcIds.length) {
+      try {
+        const { data: srcRows, error: srcErr } = await supabaseClient
+          .from('user_projects').select('id, client_folder').in('id', srcIds);
+        if (!srcErr) (srcRows || []).forEach((r) => { if (r.client_folder) folderByProject[r.id] = r.client_folder; });
+      } catch (e) { /* migration 184 ausente — sem pastas */ }
+    }
+    const folderOf = (o) => (o.source_project_id && folderByProject[o.source_project_id]) || '';
+
+    const orderCardHtml = (o) => {
       const isCutlist = o.order_type === 'cutting_list';
       // 'project' (pedido do usuário 2026-08-02) — pedido próprio criado
       // pela aba Projetos (ver sendProjectToOrder), vive em order_items igual
@@ -981,7 +995,43 @@ async function loadMyOrders() {
           </div>
         </div>
       `;
-    }).join('');
+    };
+    const hasFolders = orders.some((o) => folderOf(o));
+    if (!hasFolders) {
+      container.innerHTML = orders.map(orderCardHtml).join('');
+    } else {
+      // pastas na ordem do pedido mais recente de cada uma (orders já vem
+      // do mais novo pro mais antigo); "Sem pasta" sempre no fim
+      const nomes = [];
+      orders.forEach((o) => { const f = folderOf(o); if (f && !nomes.includes(f)) nomes.push(f); });
+      if (orders.some((o) => !folderOf(o))) nomes.push('');
+      let fechadas = {};
+      try { fechadas = JSON.parse(localStorage.getItem('legno_myorders_folders_closed') || '{}') || {}; } catch (e) { /* ok */ }
+      const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      container.innerHTML = nomes.map((nome) => {
+        const doGrupo = orders.filter((o) => folderOf(o) === nome);
+        const soma = doGrupo.reduce((acc, o) => {
+          const its = o.order_type === 'cutting_list' ? (cutlistItemsByOrder[o.id] || []) : (itemsByOrder[o.id] || []);
+          return acc + its.reduce((x, it) => x + Number(it.total_price || 0), 0);
+        }, 0);
+        const somaTela = isSellerAccount() ? getDisplayPrice(soma) : soma;
+        const chave = nome || '__none__';
+        return `
+          <details class="po-myorders-folder" data-folder-key="${esc(chave)}" ${fechadas[chave] ? '' : 'open'}>
+            <summary>
+              <span>${nome ? '📁 ' + esc(nome) : esc(I18n.t('fav.folder_none'))} · ${esc(I18n.t('my_orders.folder_count', { n: doGrupo.length }))}</span>
+              <span class="po-myorders-folder-total">${formatMoney(somaTela)}</span>
+            </summary>
+            <div class="po-myorders-folder-list">${doGrupo.map(orderCardHtml).join('')}</div>
+          </details>`;
+      }).join('');
+      container.querySelectorAll('.po-myorders-folder').forEach((det) => {
+        det.addEventListener('toggle', () => {
+          fechadas[det.dataset.folderKey] = !det.open;
+          try { localStorage.setItem('legno_myorders_folders_closed', JSON.stringify(fechadas)); } catch (e) { /* ok */ }
+        });
+      });
+    }
 
     const openDetailFor = (orderId) => {
       const order = orders.find((o) => o.id === orderId);
