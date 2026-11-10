@@ -103,6 +103,12 @@ function refreshProjectCanvasName() {
     const pasta = f.client_folder ? String(f.client_folder) : '';
     html = (pasta ? '<span class="po-proj-canvas-name-folder">' + esc(pasta) + ' ›</span> ' : '') + esc(f.name);
     title = (pasta ? pasta + ' › ' : '') + f.name;
+  } else if (window.projectImportedName) {
+    // projeto aberto por link/código de outro usuário (10/11): mostra o nome
+    // do projeto original enquanto ainda não foi salvo
+    const nao = I18n.t('project.name_import_unsaved');
+    title = window.projectImportedName + ' ' + nao;
+    html = esc(window.projectImportedName) + ' <span class="po-proj-canvas-name-unsaved">' + esc(nao) + '</span>';
   } else {
     title = I18n.t('project.name_unsaved');
     html = '<span class="po-proj-canvas-name-unsaved">' + esc(title) + '</span>';
@@ -285,7 +291,7 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
       statusEl.textContent = I18n.t('project.updated_status', { name: loadedProjectFavorite ? loadedProjectFavorite.name : '' });
     } else {
       const name = (opts && opts.name) ? String(opts.name).trim()
-        : (prompt(I18n.t('project.name_prompt'), I18n.t('project.default_name')) || '').trim();
+        : (prompt(I18n.t('project.name_prompt'), window.projectImportedName || I18n.t('project.default_name')) || '').trim();
       if (!name) return null;
       const { data, error } = await runWithCacheFallback((payload) => supabaseClient
         .from('user_projects')
@@ -294,6 +300,7 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
         .single());
       if (error) throw error;
       loadedProjectFavorite = { id: data.id, name: data.name, ai_preview_url: null, client_folder: (opts && opts.clientFolder) ? String(opts.clientFolder).trim().slice(0, 80) : null };
+      window.projectImportedName = null;
       statusEl.textContent = I18n.t('project.saved_status');
     }
     refreshProjectFavoriteButtons();
@@ -1101,6 +1108,10 @@ async function openSharedProjectByCode(rawCode) {
       bancada: source.bancada || null,
       ai_preview_url: null
     }, false);
+    // nome do projeto original (10/11, Matt): aparece no canto da tela e já
+    // vem preenchido quando clicar em Salvar
+    window.projectImportedName = source.name || null;
+    if (typeof refreshProjectCanvasName === 'function') refreshProjectCanvasName();
     if (statusEl) statusEl.textContent = I18n.t('project.import_success', { name: source.name });
   } catch (err) {
     if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
@@ -1158,6 +1169,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
   // projeto congelado (migration 179) nunca vira o projeto "em edição" —
   // se chegar aqui por algum caminho, abre como rascunho sem vínculo
   if (fav && fav.frozen_order_id) bindAsFavorite = false;
+  window.projectImportedName = null; // outro projeto abriu: esquece o nome do importado
   const errorEl = document.getElementById('po-proj-fav-error') || document.getElementById('po-proj-error');
   if (errorEl) errorEl.style.display = 'none';
   try {

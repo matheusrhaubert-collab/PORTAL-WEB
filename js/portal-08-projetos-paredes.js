@@ -5304,6 +5304,7 @@ function resetProject() {
   // já chama refreshProjectPhotorealGallery(), que zera a grade quando não há
   // projeto amarrado.
   loadedProjectFavorite = null;
+  window.projectImportedName = null;
   if (typeof setProjectClientInfo === 'function') setProjectClientInfo(null);
   refreshProjectFavoriteButtons();
   project3DLastFitKey = null; // força reenquadrar a câmera 3D no próximo render (ver comentário na declaração)
