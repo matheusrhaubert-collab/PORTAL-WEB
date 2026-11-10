@@ -75,7 +75,10 @@ function bindProjToolbarSaveButton() {
 function refreshProjectSaveIndicator(forceState) {
   const el = document.getElementById('po-proj-save-indicator');
   if (!el) return;
-  const state = forceState || ((typeof projectDirty !== 'undefined' && projectDirty) ? 'dirty' : 'saved');
+  // "Salvo" só quando o editor está amarrado a um projeto gravado (10/11):
+  // projeto importado por link/galeria abre sem vínculo e não está salvo.
+  const amarrado = (typeof loadedProjectFavorite !== 'undefined') && loadedProjectFavorite && loadedProjectFavorite.id;
+  const state = forceState || (((typeof projectDirty !== 'undefined' && projectDirty) || !amarrado) ? 'dirty' : 'saved');
   el.classList.remove('is-saved', 'is-saving');
   if (state === 'saving') {
     el.classList.add('is-saving');
@@ -584,6 +587,45 @@ async function loadProjectFavoritesList() {
           try { await shareProjectFolder(nome); } finally { sbtn.disabled = false; }
         });
         sum.appendChild(sbtn);
+        // RENOMEAR A PASTA (10/11, Matt: "quero poder trocar o nome da pasta")
+        const rbtn = document.createElement('button');
+        rbtn.type = 'button';
+        rbtn.className = 'secondary po-myproj-folder-share';
+        rbtn.textContent = I18n.t('fav.folder_rename_btn');
+        rbtn.addEventListener('click', async (ev) => {
+          ev.preventDefault(); ev.stopPropagation();
+          rbtn.disabled = true;
+          try { await renameProjectFolder(nome, data.filter((p) => (p.client_folder || '') === nome)); } finally { rbtn.disabled = false; }
+        });
+        sum.appendChild(rbtn);
+        // ENVIAR A PASTA TODA PRA PRODUÇÃO (10/11): um pedido por ambiente,
+        // cada projeto congelado — igual ao botão de um por vez.
+        if (typeof isRetailClientAccount !== 'function' || !isRetailClientAccount()) {
+          const obtn = document.createElement('button');
+          obtn.type = 'button';
+          obtn.className = 'secondary po-myproj-folder-share';
+          obtn.textContent = I18n.t('fav.folder_send_btn');
+          const ost = document.createElement('span');
+          ost.className = 'hint po-myproj-folder-proposal-status';
+          obtn.addEventListener('click', async (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            obtn.disabled = true;
+            try { await sendProjectFolderToOrders(nome, data.filter((p) => (p.client_folder || '') === nome), ost); } finally { obtn.disabled = false; }
+          });
+          sum.appendChild(obtn);
+          sum.appendChild(ost);
+        }
+        // DELETAR A PASTA (10/11) — só se nenhum projeto dela foi pra produção
+        const dbtn = document.createElement('button');
+        dbtn.type = 'button';
+        dbtn.className = 'secondary po-myproj-folder-share po-myproj-folder-delete';
+        dbtn.textContent = I18n.t('fav.folder_delete_btn');
+        dbtn.addEventListener('click', async (ev) => {
+          ev.preventDefault(); ev.stopPropagation();
+          dbtn.disabled = true;
+          try { await deleteProjectFolder(nome, data.filter((p) => (p.client_folder || '') === nome)); } finally { dbtn.disabled = false; }
+        });
+        sum.appendChild(dbtn);
       }
       det.appendChild(sum);
       const grid = document.createElement('div');
@@ -1016,6 +1058,143 @@ async function shareProjectFolder(folder) {
   }
 }
 
+// RENOMEAR PASTA (10/11). A pasta é só o texto client_folder de cada
+// projeto: troca em todos os projetos dela (inclusive os já enviados) e no
+// link de compartilhamento da pasta, se existir.
+async function renameProjectFolder(oldName, rows) {
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (errorEl) errorEl.style.display = 'none';
+  const resp = prompt(I18n.t('fav.folder_rename_prompt'), oldName);
+  if (resp === null) return;
+  const novo = resp.trim().slice(0, 80);
+  if (!novo || novo === oldName) return;
+  const ids = (rows || []).map((p) => p.id).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    const { data, error } = await supabaseClient.from('user_projects')
+      .update({ client_folder: novo }).in('id', ids).select('id');
+    if (error) throw error;
+    if (!data || data.length < ids.length) {
+      throw new Error(I18n.t('fav.folder_rename_partial', { n: (data || []).length, total: ids.length }));
+    }
+    // link da pasta compartilhada continua valendo com o nome novo
+    try {
+      if (currentUser) await supabaseClient.from('project_folder_shares')
+        .update({ folder: novo }).eq('owner_id', currentUser.id).eq('folder', oldName);
+    } catch (e) { /* migration 195 ausente — sem link de pasta, nada a fazer */ }
+    // pasta aberta/fechada continua igual
+    try {
+      const fechadas = JSON.parse(localStorage.getItem('legno_myproj_folders_closed') || '{}') || {};
+      if (oldName in fechadas) { fechadas[novo] = fechadas[oldName]; delete fechadas[oldName]; }
+      localStorage.setItem('legno_myproj_folders_closed', JSON.stringify(fechadas));
+    } catch (e) { /* ok */ }
+    if (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && ids.includes(loadedProjectFavorite.id)) {
+      loadedProjectFavorite.client_folder = novo;
+      refreshProjectCanvasName();
+    }
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+  }
+  loadProjectFavoritesList();
+}
+
+// DELETAR PASTA (10/11, Matt: "botão de deletar pasta, caso não tenham ido
+// pra produção ainda"). Apaga TODOS os projetos da pasta — por isso recusa
+// se algum já virou pedido (congelado) ou se é projeto de vendedor (só o
+// dono exclui, igual ao Excluir do card). Confirma duas vezes.
+async function deleteProjectFolder(folder, rows) {
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (errorEl) errorEl.style.display = 'none';
+  rows = rows || [];
+  const enviados = rows.filter((p) => p.frozen_order_id);
+  if (enviados.length) { alert(I18n.t('fav.folder_delete_has_sent', { folder, n: enviados.length })); return; }
+  const deOutros = rows.filter((p) => currentUser && p.client_user_id && p.client_user_id !== currentUser.id);
+  if (deOutros.length) { alert(I18n.t('fav.folder_delete_not_owner', { folder, n: deOutros.length })); return; }
+  if (!confirm(I18n.t('fav.folder_delete_confirm', { folder, n: rows.length }))) return;
+  const resp = prompt(I18n.t('fav.folder_delete_type_name', { folder }), '');
+  if (resp === null) return;
+  if (resp.trim() !== folder) { alert(I18n.t('fav.folder_delete_name_mismatch')); return; }
+  const ids = rows.map((p) => p.id).filter(Boolean);
+  try {
+    const { data, error } = await supabaseClient.from('user_projects').delete().in('id', ids).select('id');
+    if (error) throw error;
+    const apagados = (data || []).map((r) => r.id);
+    if (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && apagados.includes(loadedProjectFavorite.id)) {
+      loadedProjectFavorite = null; refreshProjectFavoriteButtons();
+    }
+    // link de compartilhamento da pasta deixa de existir
+    try { if (currentUser) await supabaseClient.from('project_folder_shares').delete().eq('owner_id', currentUser.id).eq('folder', folder); } catch (e) { /* ok */ }
+    if (apagados.length < ids.length) throw new Error(I18n.t('fav.folder_delete_partial', { n: apagados.length, total: ids.length }));
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; }
+  }
+  loadProjectFavoritesList();
+}
+
+// Espera o interior de fábrica / modelos de porta e gaveta montarem (no
+// abrir normal isso roda em segundo plano — ver hydrateProjectLayoutPieces);
+// no envio em lote o pedido não pode sair antes.
+async function projectWaitInteriorsReady() {
+  try { if (typeof ensureProjectDrillingCatalog === 'function') await ensureProjectDrillingCatalog(); } catch (e) { /* preço cai pro furos_equivalentes */ }
+  if (!projectSlots.some((s) => s.layout || s.doorModelId || s.drawerModelId)) return;
+  if (typeof ensureAccessoryCatalog === 'function') await ensureAccessoryCatalog();
+  if (projectSlots.some((s) => s.drawerModelId) && typeof ensureProjectDrawerModels === 'function') {
+    try {
+      await ensureProjectDrawerModels();
+      await Promise.all(projectSlots.map((s) => { const m = projectSlotDrawerModel(s); return m ? loadDoorModelExtras(m.child_module_id).catch(() => null) : null; }));
+    } catch (e) { /* segue Standard */ }
+  }
+  if (projectSlots.some((s) => s.doorModelId) && typeof ensureProjectDoorModels === 'function') {
+    try {
+      await ensureProjectDoorModels();
+      await Promise.all(projectSlots.map((s) => { const m = projectSlotDoorModel(s); return m ? loadDoorModelExtras(m.child_module_id).catch(() => null) : null; }));
+    } catch (e) { /* segue Flat */ }
+  }
+  projectSlots.forEach((slot) => {
+    if (slot.layout && !(slot.layoutPieces || []).length) { try { rebuildProjectSlotLayoutPieces(slot); } catch (e) { /* o envio acusa */ } }
+    if (!slot.layout && slot.doorModelId) { try { applySlotDoorModelColors(slot); } catch (e) { /* ok */ } }
+  });
+}
+
+// ENVIAR A PASTA TODA PRA PRODUÇÃO (10/11, Matt: "um botão pra enviar todos
+// os pedidos pra produção, travando os mesmos igual ao processo fazendo um
+// por vez, deixando cada ambiente e pedido separado"). Abre cada projeto
+// ainda não enviado no editor e chama o MESMO sendProjectToOrder (modo
+// lote): um pedido por ambiente, projeto congelado. Projeto com módulo que
+// não carregou NÃO é enviado (vai pra lista de falhas).
+async function sendProjectFolderToOrders(folder, rows, stEl) {
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) { showBecomeDealerModal(); return; }
+  const pend = (rows || []).filter((p) => !p.frozen_order_id);
+  const jaEnviados = (rows || []).length - pend.length;
+  if (!pend.length) { alert(I18n.t('fav.folder_send_none', { folder })); return; }
+  if (!confirm(I18n.t('fav.folder_send_confirm', { folder, n: pend.length, sent: jaEnviados }))) return;
+  if (typeof projectDirty !== 'undefined' && projectDirty && projectSlots.length && !confirm(I18n.t('project_pdf.confirm_unsaved'))) return;
+  const ok = [];
+  const falhas = [];
+  const setSt = (txt) => { if (stEl) stEl.textContent = txt; };
+  for (let i = 0; i < pend.length; i++) {
+    const proj = pend[i];
+    setSt(I18n.t('fav.folder_send_progress', { i: i + 1, n: pend.length, name: proj.name }));
+    try {
+      await fetchProjectFullRow(proj);
+      const r = await restoreFavoriteProject(proj);
+      if (!r || !r.ok) throw (r && r.error) || new Error('load');
+      if (r.skipped > 0) throw new Error(I18n.t('fav.folder_send_skipped_mods', { n: r.skipped }));
+      await projectWaitInteriorsReady();
+      await sendProjectToOrder({ bulk: true, poName: proj.name, clientNameFallback: folder });
+      ok.push(proj.name);
+    } catch (err) {
+      falhas.push(proj.name + ' — ' + (err && err.message || String(err)));
+    }
+  }
+  setSt('');
+  myOrdersLoaded = false;
+  loadProjectFavoritesList();
+  let msg = I18n.t('fav.folder_send_done', { ok: ok.length, n: pend.length });
+  if (falhas.length) msg += '\n\n' + I18n.t('fav.folder_send_failed') + '\n• ' + falhas.join('\n• ');
+  alert(msg);
+}
+
 // Importa a pasta pelo código. Devolve true se achou a pasta (mesmo que o
 // usuário cancele), false se o código não é de pasta — quem chama usa isso
 // pra cair no código de projeto.
@@ -1111,6 +1290,8 @@ async function openSharedProjectByCode(rawCode) {
     // nome do projeto original (10/11, Matt): aparece no canto da tela e já
     // vem preenchido quando clicar em Salvar
     window.projectImportedName = source.name || null;
+    projectDirty = true; // cópia ainda não gravada na conta de quem abriu
+    refreshProjectSaveIndicator();
     if (typeof refreshProjectCanvasName === 'function') refreshProjectCanvasName();
     if (statusEl) statusEl.textContent = I18n.t('project.import_success', { name: source.name });
   } catch (err) {
@@ -1439,6 +1620,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         + (skipped > 0 ? ' ' + I18n.t('project.load_partial', { n: skipped }) : '');
       setTimeout(() => { statusEl.textContent = ''; }, 6000);
     }
+    const restoreResult = { ok: true, skipped }; // usado pelo envio da pasta inteira (10/11)
 
     // Recálculo do valor cacheado AO ABRIR (migration 076 — "só quando abre
     // ele recalcula"): atualiza cached_value_usd em background com os preços
@@ -1458,11 +1640,13 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         } catch (e) { /* silencioso — cache é só conveniência */ }
       })();
     }
+    return restoreResult;
   } catch (err) {
     if (errorEl) {
       errorEl.textContent = I18n.t('project.load_error', { msg: err.message || String(err) });
       errorEl.style.display = 'block';
     }
+    return { ok: false, error: err };
   }
 }
 

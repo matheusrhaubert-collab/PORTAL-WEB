@@ -5380,12 +5380,20 @@ async function renderProjectSlotThumbnailFallback(slot, forcar) {
   }
 }
 
-async function sendProjectToOrder() {
+// opts.bulk (10/11, "Enviar pasta pra produção"): mesmo envio, sem
+// confirmação, sem trocar de aba; erro é RELANÇADO e devolve o id do pedido.
+// opts.poName / opts.clientNameFallback preenchem o pedido quando vazios.
+async function sendProjectToOrder(opts) {
+  const bulk = !!(opts && opts.bulk);
   // conta 'cliente' não faz pedido (27/10) — mostra o contato "Become a dealer"
-  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) { showBecomeDealerModal(); return; }
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) {
+    if (bulk) throw new Error('retail account');
+    showBecomeDealerModal(); return;
+  }
   const errorEl = document.getElementById('po-proj-error');
   if (errorEl) errorEl.style.display = 'none';
   if (!projectSlots.length) {
+    if (bulk) throw new Error(I18n.t('project.send_to_order_empty'));
     if (errorEl) { errorEl.textContent = I18n.t('project.send_to_order_empty'); errorEl.style.display = 'block'; }
     return;
   }
@@ -5394,10 +5402,11 @@ async function sendProjectToOrder() {
   // alterar, deve duplicar"). Avisa antes, e exige o projeto SALVO e sem
   // alteração pendente — o pedido tem que ser exatamente o projeto que fica
   // congelado (é ele que o QR da etiqueta abre pro instalador).
-  if (!confirm(I18n.t('project.send_freeze_confirm'))) return;
+  if (!bulk && !confirm(I18n.t('project.send_freeze_confirm'))) return;
   if (!loadedProjectFavorite || !loadedProjectFavorite.id || projectDirty) {
     await saveProjectFavorite(loadedProjectFavorite && loadedProjectFavorite.id ? loadedProjectFavorite.id : undefined);
     if (!loadedProjectFavorite || !loadedProjectFavorite.id || projectDirty) {
+      if (bulk) throw new Error(I18n.t('project.send_needs_save'));
       if (errorEl) { errorEl.textContent = I18n.t('project.send_needs_save'); errorEl.style.display = 'block'; }
       return;
     }
@@ -5498,6 +5507,8 @@ async function sendProjectToOrder() {
       if (cli.phone) orderPayload.client_phone = cli.phone;
       if (cli.address) orderPayload.delivery_address = cli.address;
     }
+    if (opts && opts.poName && !orderPayload.po_name) orderPayload.po_name = String(opts.poName).slice(0, 120);
+    if (opts && opts.clientNameFallback && !orderPayload.client_name) orderPayload.client_name = String(opts.clientNameFallback).slice(0, 120);
     let { data: order, error: orderError } = await supabaseClient
       .from('orders').insert(orderPayload).select().single();
     if (orderError && /project_reference_urls/.test(orderError.message || '')) {
@@ -5651,6 +5662,7 @@ async function sendProjectToOrder() {
     if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
 
     myOrdersLoaded = false; // força "Meus Pedidos" recarregar na próxima vez que a lista aparecer
+    if (bulk) return order.id; // lote: quem chamou segue pro próximo ambiente
 
     // Troca de aba SEM passar pelo listener genérico de .portal-tab-btn —
     // aquele listener perguntaria "sair sem salvar alterações do projeto?"
@@ -5670,13 +5682,14 @@ async function sendProjectToOrder() {
 
     await openOrderDetail(order.id);
   } catch (err) {
+    if (bulk) throw err;
     if (errorEl) { errorEl.textContent = I18n.t('project.send_to_order_error', { msg: err.message || String(err) }); errorEl.style.display = 'block'; }
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 const projSendToOrderBtn = document.getElementById('po-proj-send-to-order-btn');
-if (projSendToOrderBtn) projSendToOrderBtn.addEventListener('click', sendProjectToOrder);
+if (projSendToOrderBtn) projSendToOrderBtn.addEventListener('click', () => sendProjectToOrder());
 
 // Peças FABRICADAS de um breakdown (módulo = 2+; painel/peça solta = 1) —
 // o critério de "módulos antes de painéis" do pedido (23/09).
