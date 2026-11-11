@@ -6342,3 +6342,49 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-myorders-folder > summary .po-myorders-folder-released { margin-left: 10px; color: #16a34a; font-size: 13px; font-weight: 700; }
 .po-myorders-folder > summary .po-myorders-folder-approve { margin-left: 10px; font-size: 12px; padding: 3px 10px; font-weight: 600; vertical-align: middle; }
 .po-myorders-folder > summary .po-myorders-folder-approve-status { margin-left: 8px; font-weight: 400; font-size: 12px; }
+
+/* Meus Pedidos em duas colunas: clientes (pastas) | projetos do cliente (10/11) */
+.po-mo { display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 18px; align-items: start; }
+.po-mo-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.po-mo-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.po-mo-tab { padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--panel); color: var(--text); user-select: none; }
+.po-mo-tab.is-on { background: var(--text); color: var(--panel); border-color: var(--text); }
+.po-mo-search { margin: 0; }
+.po-mo-list { display: flex; flex-direction: column; gap: 10px; max-height: 72vh; overflow: auto; padding: 2px; }
+.po-mo-card { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); cursor: pointer; }
+.po-mo-card:hover { border-color: var(--muted); }
+.po-mo-card.is-sel { border-color: #16a34a; box-shadow: 0 0 0 1px #16a34a; }
+.po-mo-card-img, .po-ord-thumb { width: 72px; height: 72px; border-radius: 8px; overflow: hidden; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.po-mo-card-img img, .po-ord-thumb img, .po-mo-head-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.po-mo-card-body { min-width: 0; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.po-mo-card-top, .po-mo-card-mid { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.po-mo-card-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.po-mo-card-mid strong { color: var(--accent-dark); white-space: nowrap; }
+.po-mo-card-prog { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.po-mo-bar { flex: 1; height: 6px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.po-mo-bar i { display: block; height: 100%; background: #16a34a; border-radius: 4px; }
+.po-mo-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.po-mo-chip.st-pending { background: #fdf0d5; color: #8a5a00; }
+.po-mo-chip.st-partial { background: #dbeafe; color: #1d4ed8; }
+.po-mo-chip.st-released { background: #dcfce7; color: #15803d; }
+.po-mo-chip.st-delivered { background: #e5e7eb; color: #374151; }
+.po-mo-right { min-width: 0; }
+.po-mo-head { display: grid; grid-template-columns: minmax(180px, 300px) 1fr; gap: 18px; padding-bottom: 16px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.po-mo-head-img { aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 44px; }
+.po-mo-head-info { min-width: 0; display: flex; flex-direction: column; gap: 12px; justify-content: center; }
+.po-mo-head-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.po-mo-head-title h3 { margin: 0; font-size: 20px; }
+.po-mo-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.po-mo-stats > div { display: flex; flex-direction: column; gap: 2px; }
+.po-mo-stats span { font-size: 12px; color: var(--muted); }
+.po-mo-stats strong { font-size: 16px; }
+.po-mo-head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.po-mo-head-actions button { margin-top: 0; }
+.portal-order-card.po-ord-has-thumb { display: grid; grid-template-columns: 72px 1fr; column-gap: 14px; }
+.portal-order-card.po-ord-has-thumb .po-ord-thumb { grid-row: 1 / span 2; }
+@media (max-width: 900px) {
+  .po-mo { grid-template-columns: 1fr; }
+  .po-mo-list { max-height: 46vh; }
+  .po-mo-head { grid-template-columns: 1fr; }
+  .po-mo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -1055,55 +1055,7 @@ async function loadMyOrders() {
       `;
     };
     const hasFolders = orders.some((o) => folderOf(o));
-    if (!hasFolders) {
-      container.innerHTML = orders.map(orderCardHtml).join('');
-    } else {
-      // pastas na ordem do pedido mais recente de cada uma (orders já vem
-      // do mais novo pro mais antigo); "Sem pasta" sempre no fim
-      const nomes = [];
-      orders.forEach((o) => { const f = folderOf(o); if (f && !nomes.includes(f)) nomes.push(f); });
-      if (orders.some((o) => !folderOf(o))) nomes.push('');
-      let fechadas = {};
-      try { fechadas = JSON.parse(localStorage.getItem('legno_myorders_folders_closed') || '{}') || {}; } catch (e) { /* ok */ }
-      const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-      container.innerHTML = nomes.map((nome) => {
-        const doGrupo = orders.filter((o) => folderOf(o) === nome);
-        const soma = doGrupo.reduce((acc, o) => {
-          const its = o.order_type === 'cutting_list' ? (cutlistItemsByOrder[o.id] || []) : (itemsByOrder[o.id] || []);
-          return acc + its.reduce((x, it) => x + Number(it.total_price || 0), 0);
-        }, 0);
-        const somaTela = isSellerAccount() ? getDisplayPrice(soma) : soma;
-        const chave = nome || '__none__';
-        const nLib = doGrupo.filter((o) => ['approved', 'paid', 'delivered'].includes(o.status)).length;
-        const nPend = doGrupo.filter((o) => o.status === 'submitted' && o.order_type !== 'cutting_list').length;
-        return `
-          <details class="po-myorders-folder" data-folder-key="${esc(chave)}" ${fechadas[chave] ? '' : 'open'}>
-            <summary>
-              <span>${nome ? '📁 ' + esc(nome) : esc(I18n.t('fav.folder_none'))} · ${esc(I18n.t('my_orders.folder_count', { n: doGrupo.length }))}</span>
-              ${nLib ? `<span class="po-myorders-folder-released">✓ ${esc(I18n.t('my_orders.folder_released', { n: nLib, total: doGrupo.length }))}</span>` : ''}
-              ${nome && nPend ? `<button type="button" class="secondary po-myorders-folder-approve" data-folder-key="${esc(chave)}">${esc(I18n.t('my_orders.folder_approve_btn', { n: nPend }))}</button><span class="hint po-myorders-folder-approve-status"></span>` : ''}
-              <span class="po-myorders-folder-total">${formatMoney(somaTela)}</span>
-            </summary>
-            <div class="po-myorders-folder-list">${doGrupo.map(orderCardHtml).join('')}</div>
-          </details>`;
-      }).join('');
-      container.querySelectorAll('.po-myorders-folder-approve').forEach((btn) => {
-        btn.addEventListener('click', async (ev) => {
-          ev.preventDefault(); ev.stopPropagation(); // não abre/fecha a pasta
-          const nome = btn.dataset.folderKey;
-          const st = btn.nextElementSibling;
-          btn.disabled = true;
-          try { await approveFolderOrders(nome, orders.filter((o) => folderOf(o) === nome), st, errorEl); }
-          finally { btn.disabled = false; }
-        });
-      });
-      container.querySelectorAll('.po-myorders-folder').forEach((det) => {
-        det.addEventListener('toggle', () => {
-          fechadas[det.dataset.folderKey] = !det.open;
-          try { localStorage.setItem('legno_myorders_folders_closed', JSON.stringify(fechadas)); } catch (e) { /* ok */ }
-        });
-      });
-    }
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
     const openDetailFor = (orderId) => {
       const order = orders.find((o) => o.id === orderId);
@@ -1111,31 +1063,158 @@ async function loadMyOrders() {
       if (order.order_type === 'cutting_list') openCutlistOrderDetail(order, cutlistItemsByOrder[order.id] || []);
       else openOrderDetail(orderId);
     };
-    container.querySelectorAll('.portal-order-card-clickable').forEach((card) => {
-      card.addEventListener('click', () => openDetailFor(card.dataset.orderId));
-    });
-    container.querySelectorAll('.portal-order-view-btn').forEach((btn) => {
-      btn.addEventListener('click', (ev) => { ev.stopPropagation(); openDetailFor(btn.dataset.orderId); });
-    });
-    container.querySelectorAll('.portal-order-pdf-btn').forEach((btn) => {
-      btn.addEventListener('click', (ev) => {
-        ev.stopPropagation(); // não deixa "vazar" pro card e abrir a tela do pedido junto
-        const order = orders.find((o) => o.id === btn.dataset.orderId);
-        generateOrderPDF(order, itemsByOrder[btn.dataset.orderId] || []);
+    // Liga os cliques dos cartões de pedido que estão dentro de `root` —
+    // chamado de novo toda vez que a coluna da direita é redesenhada.
+    const wireOrderCards = (root) => {
+      root.querySelectorAll('.portal-order-card-clickable').forEach((card) => {
+        card.addEventListener('click', () => openDetailFor(card.dataset.orderId));
       });
-    });
-
-    // Acompanhamento (etapa + prazo) no cartão — só admin por enquanto
-    // (portal-31-acompanhamento.js, migration 247). Assíncrono, não trava a lista.
-    if (typeof trkDecorateOrderList === 'function') trkDecorateOrderList(orders, container);
-
-    container.querySelectorAll('.portal-order-back-project-btn').forEach((btn) => {
-      btn.addEventListener('click', (ev) => {
-        ev.stopPropagation(); // não abre a tela do pedido junto
-        const order = orders.find((o) => o.id === btn.dataset.orderId);
-        returnOrderToProject(order, btn, errorEl);
+      root.querySelectorAll('.portal-order-view-btn').forEach((btn) => {
+        btn.addEventListener('click', (ev) => { ev.stopPropagation(); openDetailFor(btn.dataset.orderId); });
       });
-    });
+      root.querySelectorAll('.portal-order-pdf-btn').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation(); // não deixa "vazar" pro card e abrir a tela do pedido junto
+          const order = orders.find((o) => o.id === btn.dataset.orderId);
+          generateOrderPDF(order, itemsByOrder[btn.dataset.orderId] || []);
+        });
+      });
+      // Acompanhamento (etapa + prazo) no cartão — só admin por enquanto
+      // (portal-31-acompanhamento.js, migration 247). Assíncrono, não trava a lista.
+      if (typeof trkDecorateOrderList === 'function') trkDecorateOrderList(orders, root);
+      root.querySelectorAll('.portal-order-back-project-btn').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation(); // não abre a tela do pedido junto
+          const order = orders.find((o) => o.id === btn.dataset.orderId);
+          returnOrderToProject(order, btn, errorEl);
+        });
+      });
+    };
+
+    if (!hasFolders) {
+      container.innerHTML = orders.map(orderCardHtml).join('');
+      wireOrderCards(container);
+    } else {
+      /* DUAS COLUNAS (10/11, Matt, com um desenho de referência): clientes
+         (pastas) na esquerda — foto, situação, valor e barra de liberados —
+         e os projetos/pedidos do cliente escolhido na direita. Pastas na
+         ordem do pedido mais recente; "Sem pasta" sempre no fim. */
+      const LIB = ['approved', 'paid', 'delivered'];
+      const totalOf = (o) => {
+        const its = o.order_type === 'cutting_list' ? (cutlistItemsByOrder[o.id] || []) : (itemsByOrder[o.id] || []);
+        const t = its.reduce((x, it) => x + Number(it.total_price || 0), 0);
+        return isSellerAccount() ? getDisplayPrice(t) : t;
+      };
+      const thumbOf = (o) => o.project_photoreal_url || o.project_thumbnail_data_url
+        || ((itemsByOrder[o.id] || []).find((it) => it.thumbnail_data_url) || {}).thumbnail_data_url || '';
+      const nomes = [];
+      orders.forEach((o) => { const f = folderOf(o); if (f && !nomes.includes(f)) nomes.push(f); });
+      if (orders.some((o) => !folderOf(o))) nomes.push('');
+      const grupos = nomes.map((nome) => {
+        const lista = orders.filter((o) => folderOf(o) === nome);
+        const nLib = lista.filter((o) => LIB.includes(o.status)).length;
+        const nEnt = lista.filter((o) => o.status === 'delivered').length;
+        const nPend = lista.filter((o) => o.status === 'submitted' && o.order_type !== 'cutting_list').length;
+        const st = nEnt === lista.length ? 'delivered' : nLib === lista.length ? 'released' : nLib > 0 ? 'partial' : 'pending';
+        const comFoto = lista.find((o) => o.project_photoreal_url) || lista.find((o) => thumbOf(o));
+        return {
+          nome, chave: nome || '__none__', titulo: nome || I18n.t('fav.folder_none'), lista, nLib, nPend, st,
+          soma: lista.reduce((a, o) => a + totalOf(o), 0),
+          thumb: comFoto ? thumbOf(comFoto) : '',
+          data: lista[0] && lista[0].submitted_at ? new Date(lista[0].submitted_at).toLocaleDateString(currentLocale()) : ''
+        };
+      });
+      const chip = (st) => `<span class="po-mo-chip st-${st}">${esc(I18n.t('my_orders.st_' + st))}</span>`;
+      let filtro = 'all', busca = '';
+      let sel = null;
+      try { sel = localStorage.getItem('legno_myorders_folder_sel'); } catch (e) { /* ok */ }
+      if (!grupos.some((g) => g.chave === sel)) sel = grupos[0].chave;
+      const passaFiltro = (g) => {
+        if (filtro === 'pending' && !(g.st === 'pending' || g.st === 'partial')) return false;
+        if (filtro === 'released' && g.st !== 'released') return false;
+        if (filtro === 'delivered' && g.st !== 'delivered') return false;
+        if (!busca) return true;
+        const q = busca.toLowerCase();
+        return g.titulo.toLowerCase().includes(q) || g.lista.some((o) => ((o.po_name || '') + ' ' + (o.client_name || '')).toLowerCase().includes(q));
+      };
+      const conta = (f) => { const antes = filtro; filtro = f; const b = busca; busca = ''; const n = grupos.filter(passaFiltro).length; filtro = antes; busca = b; return n; };
+      container.innerHTML = `
+        <div class="po-mo">
+          <div class="po-mo-left">
+            <div class="po-mo-tabs"></div>
+            <input type="search" class="po-mo-search" placeholder="${esc(I18n.t('my_orders.search_ph'))}">
+            <div class="po-mo-list"></div>
+          </div>
+          <div class="po-mo-right"></div>
+        </div>`;
+      const tabsEl = container.querySelector('.po-mo-tabs');
+      const listEl = container.querySelector('.po-mo-list');
+      const rightEl = container.querySelector('.po-mo-right');
+      const renderRight = () => {
+        const g = grupos.find((x) => x.chave === sel);
+        if (!g) { rightEl.innerHTML = `<p class="hint">${esc(I18n.t('my_orders.pick_client'))}</p>`; return; }
+        const pct = Math.round(100 * g.nLib / g.lista.length);
+        rightEl.innerHTML = `
+          <div class="po-mo-head">
+            <div class="po-mo-head-img">${g.thumb ? `<img src="${esc(g.thumb)}" alt="">` : '<span>📁</span>'}</div>
+            <div class="po-mo-head-info">
+              <div class="po-mo-head-title"><h3>${esc(g.titulo)}</h3>${chip(g.st)}</div>
+              <div class="po-mo-stats">
+                <div><span>${esc(I18n.t('my_orders.stat_last'))}</span><strong>${esc(g.data || '—')}</strong></div>
+                <div><span>${esc(I18n.t('my_orders.stat_orders'))}</span><strong>${g.lista.length}</strong></div>
+                <div><span>${esc(I18n.t('my_orders.stat_released'))}</span><strong>${g.nLib}/${g.lista.length}</strong></div>
+                <div><span>${esc(I18n.t('my_orders.stat_value'))}</span><strong>${formatMoney(g.soma)}</strong></div>
+              </div>
+              <div class="po-mo-bar"><i style="width:${pct}%"></i></div>
+              ${g.nome && g.nPend ? `<div class="po-mo-head-actions"><button type="button" class="secondary po-mo-approve">${esc(I18n.t('my_orders.folder_approve_btn', { n: g.nPend }))}</button><span class="hint po-mo-approve-status"></span></div>` : ''}
+            </div>
+          </div>
+          <div class="po-mo-orders">${g.lista.map((o) => {
+            const t = thumbOf(o);
+            return orderCardHtml(o)
+              .replace('class="portal-order-card portal-order-card-clickable"', 'class="portal-order-card portal-order-card-clickable po-ord-has-thumb"')
+              .replace('<div class="portal-order-header">', `<div class="po-ord-thumb">${t ? `<img src="${esc(t)}" alt="" loading="lazy">` : ''}</div><div class="portal-order-header">`);
+          }).join('')}</div>`;
+        const ab = rightEl.querySelector('.po-mo-approve');
+        if (ab) ab.addEventListener('click', async () => {
+          ab.disabled = true;
+          try { await approveFolderOrders(g.nome, g.lista, rightEl.querySelector('.po-mo-approve-status'), errorEl); }
+          finally { ab.disabled = false; }
+        });
+        wireOrderCards(rightEl);
+      };
+      const renderLeft = () => {
+        tabsEl.innerHTML = ['all', 'pending', 'released', 'delivered'].map((f) =>
+          `<span class="po-mo-tab${f === filtro ? ' is-on' : ''}" data-f="${f}" role="button" tabindex="0">${esc(I18n.t('my_orders.filter_' + f))} (${conta(f)})</span>`).join('');
+        const vis = grupos.filter(passaFiltro);
+        listEl.innerHTML = vis.length ? vis.map((g) => `
+          <div class="po-mo-card${g.chave === sel ? ' is-sel' : ''}" data-k="${esc(g.chave)}" role="button" tabindex="0">
+            <div class="po-mo-card-img">${g.thumb ? `<img src="${esc(g.thumb)}" alt="" loading="lazy">` : '<span>📁</span>'}</div>
+            <div class="po-mo-card-body">
+              <div class="po-mo-card-top"><strong>${esc(g.titulo)}</strong>${chip(g.st)}</div>
+              <div class="po-mo-card-mid"><span class="hint">${esc(I18n.t('my_orders.folder_count', { n: g.lista.length }))}${g.data ? ' · ' + esc(g.data) : ''}</span><strong>${formatMoney(g.soma)}</strong></div>
+              <div class="po-mo-card-prog"><div class="po-mo-bar"><i style="width:${Math.round(100 * g.nLib / g.lista.length)}%"></i></div><span>${g.nLib}/${g.lista.length}</span></div>
+            </div>
+          </div>`).join('') : `<p class="hint">${esc(I18n.t('my_orders.no_match'))}</p>`;
+      };
+      const escolher = (k) => {
+        sel = k;
+        try { localStorage.setItem('legno_myorders_folder_sel', k); } catch (e) { /* ok */ }
+        renderLeft(); renderRight();
+        if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) rightEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      const aoAtivar = (ev) => {
+        if (ev.type === 'keydown' && ev.key !== 'Enter' && ev.key !== ' ') return;
+        const tab = ev.target.closest('.po-mo-tab');
+        if (tab) { ev.preventDefault(); filtro = tab.dataset.f; renderLeft(); return; }
+        const card = ev.target.closest('.po-mo-card');
+        if (card) { ev.preventDefault(); escolher(card.dataset.k); }
+      };
+      container.querySelector('.po-mo-left').addEventListener('click', aoAtivar);
+      container.querySelector('.po-mo-left').addEventListener('keydown', aoAtivar);
+      container.querySelector('.po-mo-search').addEventListener('input', (ev) => { busca = ev.target.value.trim(); renderLeft(); });
+      renderLeft(); renderRight();
+    }
 
     myOrdersLoaded = true;
   } catch (err) {
