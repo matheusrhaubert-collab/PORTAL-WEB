@@ -3575,7 +3575,7 @@ function renderMoneyFabrica(body, rel) {
 
   const margem = rel.totalVenda - rel.totalCusto;
   const th = (k, num) => '<th' + (num ? ' class="num"' : '') + '>' + I18n.t(k) + '</th>';
-  body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.factory_sub', { n: rel.pecas }) + '</p>'
+  body.innerHTML = '<p class="po-money-sub">' + I18n.t('money.factory_sub', { n: rel.pecasCorte }) + '</p>'
     + '<table class="po-money-table"><thead><tr>' + th('money.col_nature') + th('money.col_qty', 1)
     + th('money.col_cost', 1) + '<th class="num">%</th></tr></thead><tbody>' + html + '</tbody></table>'
 
@@ -3951,6 +3951,13 @@ function collectProjectCostReport(slots) {
     totalCusto: 0,
     totalVenda: 0,
     pecas: 0,
+    // PEÇAS CORTADAS (2026-11-11, Matt: "quantas peças cortadas esse pedido
+    // tem, o número que vai pro plano de corte"). Mesma regra do lote do ERP
+    // (LOTES.flattenBreakdown, erp/js/data-lotes.js): multiplica pela
+    // quantidade das peças-módulo de cima (3 gavetas = 3x as peças da
+    // gaveta), não conta item comprado nem peça só de mão de obra (0x0).
+    // `pecas` acima segue a regra antiga (não multiplica, conta comprado).
+    pecasCorte: 0,
     detalhe: [],       // uma linha por PEÇA, com cada etapa separada
     porModulo: []      // { nome, dims, custo, venda } — "módulo × valor"
   };
@@ -4088,8 +4095,38 @@ function collectProjectCostReport(slots) {
         anda(slot, p.child_breakdown, (prefixo ? prefixo + ' › ' : '') + (p.reference || ''), fator * (Number(p.quantity) || 1));
         return;
       }
+      // PEÇA-FOLHA DENTRO DE PEÇA-MÓDULO COM QUANTIDADE > 1 (2026-11-11):
+      // child_breakdown vem em base de 1 unidade da peça-módulo (Pricing:
+      // child_total = childResult.total * qty). Este relatório não
+      // multiplicava pelo `fator` dos pais — 3 gavetas iguais entravam com
+      // custo, m², fita, mão de obra e ferragem de 1 só, e o "$ Fábrica"
+      // ficava menor que o custo real (o preço de venda sempre esteve
+      // certo). Escala uma cópia da peça e o resto do código segue igual.
+      if (fator !== 1) {
+        const esc = (v) => (Number(v) || 0) * fator;
+        const lb0 = p.labor_breakdown;
+        let lb1 = null;
+        if (lb0) {
+          lb1 = {};
+          Object.keys(lb0).forEach((k) => { lb1[k] = (typeof lb0[k] === 'number') ? lb0[k] * fator : lb0[k]; });
+        }
+        p = Object.assign({}, p, {
+          quantity: (Number(p.quantity) || 1) * fator,
+          sheet_cost: esc(p.sheet_cost), edge_cost: esc(p.edge_cost), labor_cost: esc(p.labor_cost),
+          hinge_cost: esc(p.hinge_cost), slide_cost: esc(p.slide_cost),
+          purchased_cost: esc(p.purchased_cost), support_cost: esc(p.support_cost), lift_cost: esc(p.lift_cost),
+          purchased_item_qty: esc(p.purchased_item_qty), support_purchased_item_qty: esc(p.support_purchased_item_qty),
+          labor_breakdown: lb1,
+          lift_kit: Array.isArray(p.lift_kit)
+            ? p.lift_kit.map((k) => Object.assign({}, k, { qty: esc(k.qty), cost: esc(k.cost) }))
+            : p.lift_kit
+        });
+      }
       const qtd = Number(p.quantity) || 1;
       rel.pecas += qtd;
+      if ((p.origin || 'fabricacao') !== 'comprado' && (Number(p.width_mm) > 0 || Number(p.height_mm) > 0)) {
+        rel.pecasCorte += qtd;
+      }
 
       // DETALHE POR PEÇA (2026-08-15, Matt: "coloca o valor de cada etapa, não
       // só somatório. Quero ver quantos pequenos processos ele está cobrando,
