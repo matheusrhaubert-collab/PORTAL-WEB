@@ -6392,3 +6392,25 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
   .po-mo-head { grid-template-columns: 1fr; }
   .po-mo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Faixa de etapas da pasta em Meus Pedidos (11/11) — ver trkFolderStages. */
+.po-mo-folder-prog { display: flex; flex: 1; min-width: 0; }
+.po-mo-stages { display: flex; gap: 4px; flex: 1; min-width: 0; }
+.po-mo-stage { position: relative; flex: 1 1 0; min-width: 0; min-height: 46px; border-radius: 6px; background: var(--border); overflow: hidden; }
+.po-mo-stage-fill { position: absolute; left: 0; top: 0; bottom: 0; background: #16a34a; transition: width .5s ease; }
+.po-mo-stage.is-part .po-mo-stage-fill { background: #86cfa0; }
+.po-mo-stage-txt { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 2px; height: 100%; padding: 6px 8px; font-size: 11px; line-height: 1.2; color: var(--text); }
+.po-mo-stage-txt strong { font-weight: 600; text-transform: uppercase; letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; }
+.po-mo-stage-txt span { opacity: .8; }
+.po-mo-stage.is-done .po-mo-stage-txt { color: #fff; }
+.po-mo-stage.is-now { box-shadow: inset 0 0 0 2px #0f5f2c; }
+@media (max-width: 900px) { .po-mo-stages { flex-wrap: wrap; } .po-mo-stage { flex: 1 1 30%; } }
+
+/* Bolinha "!" na aba Central de Pedidos — atualização de fábrica (11/11). */
+.portal-tab-btn.po-tab-has-news { position: relative; }
+.portal-tab-btn.po-tab-has-news::before {
+  content: '!'; position: absolute; top: 0; right: -10px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #e0921f; color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center;
+  box-shadow: 0 0 0 2px var(--panel, #fff);
+}

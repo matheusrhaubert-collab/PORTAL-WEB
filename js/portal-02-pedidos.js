@@ -1165,7 +1165,7 @@ async function loadMyOrders() {
                 <div><span>${esc(I18n.t('my_orders.stat_released'))}</span><strong>${g.nLib}/${g.lista.length}</strong></div>
                 <div><span>${esc(I18n.t('my_orders.stat_value'))}</span><strong>${formatMoney(g.soma)}</strong></div>
               </div>
-              <div class="po-mo-bar"><i style="width:${pct}%"></i></div>
+              <div class="po-mo-folder-prog"><div class="po-mo-bar"><i style="width:${pct}%"></i></div></div>
               ${g.nome && g.nPend ? `<div class="po-mo-head-actions"><button type="button" class="secondary po-mo-approve">${esc(I18n.t('my_orders.folder_approve_btn', { n: g.nPend }))}</button><span class="hint po-mo-approve-status"></span></div>` : ''}
             </div>
           </div>
@@ -1182,6 +1182,9 @@ async function loadMyOrders() {
           finally { ab.disabled = false; }
         });
         wireOrderCards(rightEl);
+        // Faixa de etapas da pasta (11/11) — troca a barra verde pelo status
+        // andando e se atualiza sozinha. Ver trkFolderStages (portal-31).
+        if (typeof trkFolderStages === 'function') trkFolderStages(g.lista, rightEl.querySelector('.po-mo-folder-prog'));
       };
       const renderLeft = () => {
         tabsEl.innerHTML = ['all', 'pending', 'released', 'delivered'].map((f) =>

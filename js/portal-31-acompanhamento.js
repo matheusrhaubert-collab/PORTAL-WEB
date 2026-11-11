@@ -159,6 +159,132 @@ async function trkDecorateOrderList(orders, container) {
   });
 }
 
+// ---------- Meus Pedidos: FAIXA DE ETAPAS DA PASTA (2026-11-11) ----------
+// Matt: "nessa faixa verde quero mostrar o status andando: AGUARDANDO
+// PAGAMENTO - LIBERADO FINANCEIRO - EM PRODUÇÃO (entrada em lote) -
+// EMBALAGEM (quando começa a ser apontado e embalado) - PRONTO PRA COLETA
+// (quando estiver todo embalado) - COLETADO" + "quero que atualize sozinho
+// conforme o pedido anda no ERP".
+// A pasta tem vários pedidos, então cada etapa mostra QUANTOS já chegaram
+// nela (n/total) e enche na mesma proporção; a etapa "atual" da pasta é a
+// do pedido mais atrasado. De onde vem cada uma (mesmas fontes de trkState):
+//   pay       pedido aprovado/enviado pra fábrica, ainda sem liberação
+//   released  orders.finance_released_at
+//   prod      entrou num lote (erp.batch_orders)
+//   packing   1ª peça apontada num volume
+//   ready     todos os volumes embalados
+//   collected orders.status = 'delivered'
+// Plano de corte avulso não tem acompanhamento e fica fora da conta.
+// ATUALIZA SOZINHO, AVISADO PELO BANCO (migration 286, Matt: "quando o ERP
+// imputa a informação ele atualiza o mesmo banco... não seria mais fácil o
+// ERP informa"): gatilhos carimbam public.order_tracking_pulse quando o
+// pedido muda de etapa e o portal escuta essa tabela pelo Realtime — a faixa
+// redesenha na hora. A releitura a cada TRK_FOLDER_REFRESH_MS fica de
+// reserva (conexão do aviso caiu, ou migration 286 ainda não rodada).
+const TRK_FOLDER_STAGES = ['pay', 'released', 'prod', 'packing', 'ready', 'collected'];
+const TRK_FOLDER_REFRESH_MS = 60000;
+let trkFolderTimer = null;
+let trkFolderSeq = 0;
+let trkFolderChannel = null;
+function trkFolderStop() {
+  if (trkFolderTimer) { clearInterval(trkFolderTimer); trkFolderTimer = null; }
+  if (trkFolderChannel) {
+    try { supabaseClient.removeChannel(trkFolderChannel); } catch (e) { /* ok */ }
+    trkFolderChannel = null;
+  }
+}
+
+function trkFolderReached(order, t) {
+  const st = trkState(order, t);
+  const coletado = order.status === 'delivered';
+  // etapa mais adiantada vale pras anteriores (pedido já em lote passou
+  // pela liberação mesmo que o campo esteja vazio)
+  const r = {
+    pay: st.done.sent,
+    released: st.done.released,
+    prod: st.done.batch,
+    packing: st.done.packing,
+    ready: st.done.ready,
+    collected: coletado
+  };
+  let viu = false;
+  for (let i = TRK_FOLDER_STAGES.length - 1; i >= 0; i--) {
+    if (r[TRK_FOLDER_STAGES[i]]) viu = true;
+    else if (viu) r[TRK_FOLDER_STAGES[i]] = true;
+  }
+  return r;
+}
+
+function trkFolderStagesHtml(orders, map) {
+  const total = orders.length;
+  const n = {};
+  TRK_FOLDER_STAGES.forEach((k) => { n[k] = 0; });
+  orders.forEach((o) => {
+    const r = trkFolderReached(o, map[o.id]);
+    TRK_FOLDER_STAGES.forEach((k) => { if (r[k]) n[k]++; });
+  });
+  // etapa atual da pasta = a última em que TODOS os pedidos já chegaram
+  let atual = -1;
+  TRK_FOLDER_STAGES.forEach((k, i) => { if (total && n[k] === total && atual === i - 1) atual = i; });
+  return '<div class="po-mo-stages">' + TRK_FOLDER_STAGES.map((k, i) => {
+    const pct = total ? Math.round(100 * n[k] / total) : 0;
+    const cls = (pct === 100 ? ' is-done' : (pct > 0 ? ' is-part' : '')) + (i === atual ? ' is-now' : '');
+    return '<div class="po-mo-stage' + cls + '">'
+      + '<div class="po-mo-stage-fill" style="width:' + pct + '%"></div>'
+      + '<div class="po-mo-stage-txt"><strong>' + trkEsc(trkT('fb_' + k)) + '</strong>'
+      + '<span>' + n[k] + '/' + total + '</span></div></div>';
+  }).join('') + '</div>';
+}
+
+async function trkFolderStages(orders, box) {
+  trkFolderStop();
+  const seq = ++trkFolderSeq;
+  if (!box || !(await trkCanSee())) return;
+  let lista = (orders || []).filter((o) => o.order_type !== 'cutting_list');
+  if (!lista.length) return;
+  const ids = lista.map((o) => o.id);
+  let ultimo = '';
+  const desenha = async (reler) => {
+    if (seq !== trkFolderSeq || !document.body.contains(box)) {
+      if (seq === trkFolderSeq) trkFolderStop(); // a faixa saiu da tela
+      return;
+    }
+    if (reler) {
+      if (document.hidden) return;
+      try {
+        const { data, error } = await supabaseClient.from('orders').select('*').in('id', ids);
+        if (!error && data && data.length) {
+          const porId = {};
+          data.forEach((o) => { porId[o.id] = o; });
+          lista = lista.map((o) => porId[o.id] || o);
+        }
+      } catch (e) { /* mantém o que já tinha */ }
+    }
+    const map = await trkFetchTracking(ids);
+    if (seq !== trkFolderSeq || !document.body.contains(box)) return;
+    const html = trkFolderStagesHtml(lista, map);
+    if (html !== ultimo) { ultimo = html; box.innerHTML = html; }
+  };
+  await desenha(false);
+  if (seq !== trkFolderSeq) return;
+  trkFolderTimer = setInterval(() => { desenha(true); }, TRK_FOLDER_REFRESH_MS);
+  // Aviso do banco (migration 286). Vários carimbos seguidos (lote inteiro
+  // entrando) viram uma releitura só.
+  try {
+    const meus = new Set(ids);
+    let espera = null;
+    trkFolderChannel = supabaseClient
+      .channel('trk-pulso-' + seq)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_tracking_pulse' }, (payload) => {
+        const id = (payload && ((payload.new && payload.new.order_id) || (payload.old && payload.old.order_id))) || null;
+        if (id && !meus.has(id)) return;
+        if (espera) clearTimeout(espera);
+        espera = setTimeout(() => { espera = null; desenha(true); }, 500);
+      })
+      .subscribe();
+  } catch (e) { console.warn('[acompanhamento] aviso em tempo real indisponível:', e); }
+}
+
 // ---------- Tela do pedido: painel de acompanhamento ----------
 let trkRenderSeq = 0;
 async function renderOrderTracking(order, items) {
@@ -1108,3 +1234,69 @@ async function trkPdfPcp(order, items) {
 
 // pro teste de bancada (node) — no navegador não existe module
 if (typeof module !== 'undefined' && module.exports) module.exports = { trkState, trkBusinessDays, trkCalendarDays };
+
+// ---------- BOLINHA "!" NA ABA CENTRAL DE PEDIDOS (2026-11-11) ----------
+// Matt: "quando tiver uma atualização de fábrica pode deixar um aviso no
+// portal mostrando que foi alterado, só uma bolinha na central de pedidos
+// com exclamação". Escuta o mesmo pulso da migration 286
+// (public.order_tracking_pulse — o banco só entrega os pedidos que o usuário
+// enxerga). Chegou aviso com a aba fechada → bolinha; abriu a aba → some.
+// Também pega o que mudou com o portal FECHADO: guarda a data do último
+// "visto" neste navegador e, ao entrar, pergunta se tem pulso mais novo.
+// Mesma trava de quem vê o acompanhamento (TRK_SO_ADMIN).
+const TRK_NEWS_KEY = 'legno_central_pedidos_visto';
+let trkNewsChannel = null;
+function trkNewsBtn() { return document.querySelector('.portal-tab-btn[data-tab="po-tab-my-orders"]'); }
+function trkNewsTabOpen() { const b = trkNewsBtn(); return !!(b && b.classList.contains('active')); }
+function trkNewsMarkSeen() {
+  try { localStorage.setItem(TRK_NEWS_KEY, new Date().toISOString()); } catch (e) { /* ok */ }
+  const b = trkNewsBtn();
+  if (b) { b.classList.remove('po-tab-has-news'); b.removeAttribute('data-news-title'); }
+}
+function trkNewsShow() {
+  // aba aberta: a faixa já se redesenha sozinha — só anota como visto
+  if (trkNewsTabOpen()) { trkNewsMarkSeen(); return; }
+  // lista velha: ao abrir a aba, recarrega
+  try { myOrdersLoaded = false; } catch (e) { /* portal-02 ainda não carregou */ }
+  const b = trkNewsBtn();
+  if (b) b.classList.add('po-tab-has-news');
+}
+async function trkNewsInit() {
+  if (trkNewsChannel) return;
+  try {
+    const { data: sess } = await supabaseClient.auth.getSession();
+    if (!sess || !sess.session) return;
+    if (!(await trkCanSee())) return;
+    const b = trkNewsBtn();
+    if (!b) return;
+    if (!b._trkNewsWired) { b._trkNewsWired = true; b.addEventListener('click', trkNewsMarkSeen); }
+    // o que mudou enquanto o portal estava fechado
+    let visto = null;
+    try { visto = localStorage.getItem(TRK_NEWS_KEY); } catch (e) { /* ok */ }
+    if (!visto) trkNewsMarkSeen(); // 1ª vez neste navegador: começa a contar de agora
+    else {
+      const { data, error } = await supabaseClient.from('order_tracking_pulse')
+        .select('order_id').gt('changed_at', visto).limit(1);
+      if (!error && data && data.length) trkNewsShow(); // sem a migration 286 dá erro e fica quieto
+    }
+    trkNewsChannel = supabaseClient
+      .channel('trk-novidade')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_tracking_pulse' }, () => { trkNewsShow(); })
+      .subscribe();
+  } catch (e) { console.warn('[acompanhamento] bolinha de novidade:', e); }
+}
+(function trkNewsBoot() {
+  const start = () => { trkNewsInit(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else setTimeout(start, 0);
+  try {
+    supabaseClient.auth.onAuthStateChange((ev) => {
+      if (ev === 'SIGNED_IN' || ev === 'INITIAL_SESSION') setTimeout(start, 0);
+      if (ev === 'SIGNED_OUT' && trkNewsChannel) {
+        try { supabaseClient.removeChannel(trkNewsChannel); } catch (e) { /* ok */ }
+        trkNewsChannel = null;
+      }
+    });
+  } catch (e) { /* cliente ainda não criado: o start acima cobre */ }
+})();
+

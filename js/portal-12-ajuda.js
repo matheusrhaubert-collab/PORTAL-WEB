@@ -32,7 +32,7 @@ HELP_CONTENT.pt.push(
     { id: 'visao-geral', title: `Visão geral do portal`, html: `<p>O LEGNO PORTAL WEB é onde você monta orçamentos de móveis planejados, acompanha seus pedidos e organiza os projetos da sua casa ou revenda. As abas do menu superior organizam cada etapa do trabalho:</p>
 <ul>
 <li><strong>Novo Orçamento</strong> — escolha módulos no catálogo, configure medidas, cores e opcionais e veja o preço na hora.</li>
-<li><strong>Meus Pedidos</strong> — acompanhe pedidos em rascunho ou já enviados, preencha os dados de entrega e aprove o pedido final.</li>
+<li><strong>Central de Pedidos</strong> — acompanhe pedidos em rascunho ou já enviados, preencha os dados de entrega e aprove o pedido final.</li>
 <li><strong>Projetos</strong> — monte um ambiente inteiro (cozinha, quarto etc.) num canvas, posicionando vários módulos juntos.</li>
 <li><strong>Meus Projetos</strong> — lista dos projetos salvos, para retomar, renomear ou excluir depois.</li>
 <li><strong>Galeria</strong> — veja fotos e inspirações de ambientes já montados.</li>
@@ -78,7 +78,7 @@ HELP_CONTENT.pt.push(
 <div class="po-help-tip">Campos como Pé direito e Rodapé da casa também existem, mas hoje ficam escondidos aqui — quando visíveis, os mesmos valores podem ser preenchidos direto na aba Projetos.</div>` },
     { id: 'margem-logo-dealer', title: `Margem de revenda e logo da sua loja (Dealer)`, html: `<img src="assets/help/configuracoes.jpg" alt="Painel de Configurações mostrando os campos de margem de revenda e logo da loja" loading="lazy"><p>Para contas de revenda (perfis Lojista, Contractor e Administrador), o painel de <strong>Configurações</strong> (ícone ⚙) tem campos extras que não aparecem para clientes finais:</p>
 <ul>
-<li><strong>Margem geral de revenda (%)</strong> — defina sua margem sobre o preço de fábrica; ela é usada para calcular o preço de revenda mostrado na Galeria e em Meus Projetos (não afeta os valores de Meus Pedidos).</li>
+<li><strong>Margem geral de revenda (%)</strong> — defina sua margem sobre o preço de fábrica; ela é usada para calcular o preço de revenda mostrado na Galeria e em Meus Projetos (não afeta os valores de Central de Pedidos).</li>
 <li><strong>Sua logo (na Proposta)</strong> — envie a logo da sua loja para que ela apareça no cabeçalho da Proposta em PDF gerada para o cliente final.</li>
 <li><strong>Dados da loja (na Proposta)</strong> — preencha nome e telefone da loja, exibidos junto com a logo na Proposta.</li>
 </ul>
@@ -93,7 +93,7 @@ HELP_CONTENT.en.push(
     { id: 'visao-geral', title: `Portal overview`, html: `<p>LEGNO PORTAL WEB is where you build quotes for custom cabinetry, track your orders, and organize the projects for your home or resale business. The tabs in the top menu cover each part of the workflow:</p>
 <ul>
 <li><strong>New Quote</strong> — pick modules from the catalog, set their size, color and optional extras, and see the price update live.</li>
-<li><strong>My Orders</strong> — track draft and submitted orders, fill in delivery details, and approve the final order.</li>
+<li><strong>Order Center</strong> — track draft and submitted orders, fill in delivery details, and approve the final order.</li>
 <li><strong>Projects</strong> — lay out a full room (kitchen, bedroom, etc.) on a canvas, placing several modules together.</li>
 <li><strong>My Projects</strong> — a list of saved projects you can reopen, rename, or delete later.</li>
 <li><strong>Gallery</strong> — browse photos and inspiration from finished layouts.</li>
@@ -139,7 +139,7 @@ HELP_CONTENT.en.push(
 <div class="po-help-tip">Fields like Ceiling height and Baseboard also exist, but are hidden here by default — when visible, the same values can be entered directly on the Projects tab.</div>` },
     { id: 'margem-logo-dealer', title: `Resale margin and your store logo (Dealer)`, html: `<img src="assets/help/configuracoes.jpg" alt="Settings panel showing the resale margin and store logo fields" loading="lazy"><p>For resale accounts (Dealer, Contractor and Administrator roles), the <strong>Settings</strong> panel (⚙ icon) has extra fields that don't show up for regular customers:</p>
 <ul>
-<li><strong>General resale margin (%)</strong> — set your markup over the factory price; it's used to calculate the resale price shown in the Gallery and My Projects (it does not affect the values in My Orders).</li>
+<li><strong>General resale margin (%)</strong> — set your markup over the factory price; it's used to calculate the resale price shown in the Gallery and My Projects (it does not affect the values in Order Center).</li>
 <li><strong>Your logo (on the Proposal)</strong> — upload your store's logo so it appears in the header of the PDF Proposal generated for the end customer.</li>
 <li><strong>Store info (on the Proposal)</strong> — fill in your store's name and phone number, shown next to the logo on the Proposal.</li>
 </ul>
@@ -154,7 +154,7 @@ HELP_CONTENT.es.push(
     { id: 'visao-geral', title: `Descripción general del portal`, html: `<p>LEGNO PORTAL WEB es donde armas presupuestos de muebles a medida, haces seguimiento de tus pedidos y organizas los proyectos de tu casa o de tu revendería. Las pestañas del menú superior organizan cada etapa del trabajo:</p>
 <ul>
 <li><strong>Nuevo Presupuesto</strong> — elige módulos del catálogo, configura medidas, colores y opcionales y mira el precio actualizarse al instante.</li>
-<li><strong>Mis Pedidos</strong> — sigue pedidos en borrador o ya enviados, completa los datos de entrega y aprueba el pedido final.</li>
+<li><strong>Central de Pedidos</strong> — sigue pedidos en borrador o ya enviados, completa los datos de entrega y aprueba el pedido final.</li>
 <li><strong>Proyectos</strong> — arma un ambiente completo (cocina, dormitorio, etc.) en un lienzo, colocando varios módulos juntos.</li>
 <li><strong>Mis Proyectos</strong> — lista de proyectos guardados para retomar, renombrar o eliminar más tarde.</li>
 <li><strong>Galería</strong> — mira fotos e inspiración de ambientes ya armados.</li>
@@ -200,7 +200,7 @@ HELP_CONTENT.es.push(
 <div class="po-help-tip">Campos como Altura de techo y Zócalo también existen, pero hoy están ocultos aquí — cuando están visibles, los mismos valores se pueden completar directamente en la pestaña Proyectos.</div>` },
     { id: 'margem-logo-dealer', title: `Margen de reventa y logo de tu tienda (Dealer)`, html: `<img src="assets/help/configuracoes.jpg" alt="Panel de Configuración mostrando los campos de margen de reventa y logo de la tienda" loading="lazy"><p>Para cuentas de reventa (perfiles Lojista/Dealer, Contractor y Administrador), el panel de <strong>Configuración</strong> (ícono ⚙) tiene campos extra que no aparecen para los clientes finales:</p>
 <ul>
-<li><strong>Margen general de reventa (%)</strong> — define tu margen sobre el precio de fábrica; se usa para calcular el precio de reventa mostrado en la Galería y en Mis Proyectos (no afecta los valores de Mis Pedidos).</li>
+<li><strong>Margen general de reventa (%)</strong> — define tu margen sobre el precio de fábrica; se usa para calcular el precio de reventa mostrado en la Galería y en Mis Proyectos (no afecta los valores de Central de Pedidos).</li>
 <li><strong>Su logo (en la Propuesta)</strong> — sube el logo de tu tienda para que aparezca en el encabezado de la Propuesta en PDF generada para el cliente final.</li>
 <li><strong>Datos de la tienda (en la Propuesta)</strong> — completa el nombre y el teléfono de tu tienda, que se muestran junto al logo en la Propuesta.</li>
 </ul>
@@ -521,8 +521,8 @@ HELP_CONTENT.pt.push(
 <li>O link expira sozinho depois de 30 dias. Clicando em "Ver em 3D" de novo antes disso, o mesmo link é reaproveitado.</li>
 </ul>` },
   ] },
-  { id: 'pedidos', title: `Meus Pedidos`, articles: [
-    { id: 'acompanhar-pedido', title: `Acompanhar o status do seu pedido`, html: `<img src="assets/help/meus-pedidos-lista.jpg" alt="Lista de Meus Pedidos, com status, data e valor de cada pedido" loading="lazy"><p>Depois de enviar um projeto pra virar pedido, acompanhe o andamento na aba <strong>Meus Pedidos</strong>: cada pedido mostra um selo de status que avança nesta ordem:</p>
+  { id: 'pedidos', title: `Central de Pedidos`, articles: [
+    { id: 'acompanhar-pedido', title: `Acompanhar o status do seu pedido`, html: `<img src="assets/help/meus-pedidos-lista.jpg" alt="Lista de Central de Pedidos, com status, data e valor de cada pedido" loading="lazy"><p>Depois de enviar um projeto pra virar pedido, acompanhe o andamento na aba <strong>Central de Pedidos</strong>: cada pedido mostra um selo de status que avança nesta ordem:</p>
 <ul>
 <li><strong>Pendente</strong> — pedido enviado, aguardando análise.</li>
 <li><strong>Aprovada</strong> — pedido confirmado; os dados de contato e entrega ficam travados.</li>
@@ -580,8 +580,8 @@ HELP_CONTENT.en.push(
 <li>The link expires on its own after 30 days. Clicking "View in 3D" again before then reuses the same link.</li>
 </ul>` },
   ] },
-  { id: 'pedidos', title: `My Orders`, articles: [
-    { id: 'acompanhar-pedido', title: `Tracking your order's status`, html: `<img src="assets/help/meus-pedidos-lista.jpg" alt="&quot;My Orders&quot; list, with status, date and value for each order" loading="lazy"><p>After sending a project through as an order, track its progress in the <strong>My Orders</strong> tab: every order shows a status badge that moves through this sequence:</p>
+  { id: 'pedidos', title: `Order Center`, articles: [
+    { id: 'acompanhar-pedido', title: `Tracking your order's status`, html: `<img src="assets/help/meus-pedidos-lista.jpg" alt="&quot;Order Center&quot; list, with status, date and value for each order" loading="lazy"><p>After sending a project through as an order, track its progress in the <strong>Order Center</strong> tab: every order shows a status badge that moves through this sequence:</p>
 <ul>
 <li><strong>Pending</strong> — order submitted, awaiting review.</li>
 <li><strong>Approved</strong> — order confirmed; contact and delivery details are locked.</li>
@@ -639,8 +639,8 @@ HELP_CONTENT.es.push(
 <li>El enlace expira solo a los 30 días. Si haces clic en "Ver en 3D" de nuevo antes de eso, se reutiliza el mismo enlace.</li>
 </ul>` },
   ] },
-  { id: 'pedidos', title: `Mis Pedidos`, articles: [
-    { id: 'acompanhar-pedido', title: `Seguir el estado de tu pedido`, html: `<img src="assets/help/meus-pedidos-lista.jpg" alt="Lista de Mis Pedidos, con estado, fecha y valor de cada pedido" loading="lazy"><p>Después de enviar un proyecto como pedido, sigue su avance en la pestaña <strong>Mis Pedidos</strong>: cada pedido muestra una etiqueta de estado que avanza en este orden:</p>
+  { id: 'pedidos', title: `Central de Pedidos`, articles: [
+    { id: 'acompanhar-pedido', title: `Seguir el estado de tu pedido`, html: `<img src="assets/help/meus-pedidos-lista.jpg" alt="Lista de Central de Pedidos, con estado, fecha y valor de cada pedido" loading="lazy"><p>Después de enviar un proyecto como pedido, sigue su avance en la pestaña <strong>Central de Pedidos</strong>: cada pedido muestra una etiqueta de estado que avanza en este orden:</p>
 <ul>
 <li><strong>Pendiente</strong> — pedido enviado, en espera de revisión.</li>
 <li><strong>Aprobada</strong> — pedido confirmado; los datos de contacto y entrega quedan bloqueados.</li>
