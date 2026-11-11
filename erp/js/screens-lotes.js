@@ -179,7 +179,7 @@ LOTES_UI.novo = function (params, d) {
     const t = DATA.typeMap[o.order_type] || { label: o.order_type || 'Módulos', pill: 'erp-pill-neutral' };
     return {
       pick: '<input type="checkbox" class="lote-order-pick" value="' + o.id + '"' + (taken ? ' disabled' : '') + '>',
-      order: '<a href="#/pedidos/' + o.id + '" class="erp-strong">' + UI.esc(o.po_name || ('#' + o.id.slice(0, 8))) + '</a>' +
+      order: '<a href="#/pedidos/' + o.id + '" class="erp-strong">' + UI.esc(DATA.orderName(o)) + '</a>' +
         (taken ? '<div class="erp-xs erp-muted">já está em <a href="#/lotes/' + o._batch_id + '">outro lote</a></div>' : ''),
       client: UI.esc(DATA.clientLabel(o)),
       type: UI.pill(t.label, t.pill),
@@ -531,7 +531,7 @@ LOTES_UI.detail = function (params, d) {
       (b._orders.length
         ? '<div style="display:flex;gap:8px;flex-wrap:wrap">' + b._orders.map(function (o) {
             return '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/pedidos/' + o.id + '">' +
-              UI.esc(o.po_name || ('#' + o.id.slice(0, 8))) + ' · ' + UI.esc(DATA.clientLabel(o)) + '</a>';
+              UI.esc(DATA.orderName(o)) + ' · ' + UI.esc(DATA.clientLabel(o)) + '</a>';
           }).join('') + '</div>'
         : '<span class="erp-muted erp-small">Nenhum pedido vinculado.</span>') +
       '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +

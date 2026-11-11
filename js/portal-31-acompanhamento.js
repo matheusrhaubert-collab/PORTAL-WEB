@@ -212,6 +212,14 @@ function trkFolderReached(order, t) {
     if (r[TRK_FOLDER_STAGES[i]]) viu = true;
     else if (viu) r[TRK_FOLDER_STAGES[i]] = true;
   }
+  // DATA de cada etapa (11/11, Matt: "coloca a data que cada processo foi
+  // feito"). Etapa dada como feita só por dedução (a seguinte já aconteceu)
+  // pode não ter data registrada — fica sem.
+  r.at = {
+    pay: st.at.sent, released: st.at.released, prod: st.at.batch,
+    packing: st.at.packing, ready: st.at.ready,
+    collected: coletado ? (order.delivered_at || null) : null
+  };
   return r;
 }
 
@@ -219,9 +227,18 @@ function trkFolderStagesHtml(orders, map) {
   const total = orders.length;
   const n = {};
   TRK_FOLDER_STAGES.forEach((k) => { n[k] = 0; });
+  // data da etapa na pasta = a do pedido que chegou nela por ÚLTIMO (com
+  // todos lá, é o dia em que a etapa fechou; no meio do caminho, o dia do
+  // avanço mais recente)
+  const quando = {};
   orders.forEach((o) => {
     const r = trkFolderReached(o, map[o.id]);
-    TRK_FOLDER_STAGES.forEach((k) => { if (r[k]) n[k]++; });
+    TRK_FOLDER_STAGES.forEach((k) => {
+      if (!r[k]) return;
+      n[k]++;
+      const d = r.at[k] ? new Date(r.at[k]) : null;
+      if (d && !isNaN(d) && (!quando[k] || d > quando[k])) quando[k] = d;
+    });
   });
   // etapa atual da pasta = a última em que TODOS os pedidos já chegaram
   let atual = -1;
@@ -232,7 +249,7 @@ function trkFolderStagesHtml(orders, map) {
     return '<div class="po-mo-stage' + cls + '">'
       + '<div class="po-mo-stage-fill" style="width:' + pct + '%"></div>'
       + '<div class="po-mo-stage-txt"><strong>' + trkEsc(trkT('fb_' + k)) + '</strong>'
-      + '<span>' + n[k] + '/' + total + '</span></div></div>';
+      + '<span>' + n[k] + '/' + total + (quando[k] ? ' · ' + trkEsc(trkDate(quando[k])) : '') + '</span></div></div>';
   }).join('') + '</div>';
 }
 
@@ -254,7 +271,7 @@ async function trkFolderStages(orders, box) {
       try {
         // só as colunas do andamento — a linha inteira carrega a miniatura do projeto
         const { data, error } = await supabaseClient.from('orders')
-          .select('id, status, order_type, approved_at, submitted_at, finance_released_at, pickup_released_at').in('id', ids);
+          .select('id, status, order_type, approved_at, submitted_at, finance_released_at, pickup_released_at, delivered_at').in('id', ids);
         if (!error && data && data.length) {
           const porId = {};
           data.forEach((o) => { porId[o.id] = o; });

@@ -162,7 +162,7 @@ APP.dashboard = function (params, d) {
 
   const recent = live.slice(0, 8).map(function (o) {
     return {
-      num: '<a href="#/pedidos/' + o.id + '" class="erp-strong">' + UI.esc(o.po_name || ('#' + o.id.slice(0, 8))) + '</a>',
+      num: '<a href="#/pedidos/' + o.id + '" class="erp-strong">' + UI.esc(DATA.orderName(o)) + '</a>',
       client: UI.esc(DATA.clientLabel(o)),
       status: UI.statusPill(DATA.statusMap, o.status),
       items: DATA.orderQty(o) + ' módulo(s)',

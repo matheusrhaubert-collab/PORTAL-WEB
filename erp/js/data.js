@@ -495,6 +495,22 @@ DATA.project = async function (id) {
 /* Nome do cliente: orders guarda uma CÓPIA (client_name/client_email) tirada
    no momento do envio. É de propósito — o histórico do pedido não muda se o
    perfil for renomeado depois. Aqui a cópia é a fonte. */
+/* NÚMERO DO PEDIDO NA FÁBRICA (migration 287, Matt 11/11: "número contínuo
+   que nunca repita, começa no 00001"). orders.factory_number nasce no banco
+   quando o pedido vira implantado. Sem número (orçamento, ou migration ainda
+   não rodada) devolve ''. */
+DATA.orderNo = function (o) {
+  const n = o && Number(o.factory_number);
+  return n > 0 ? String(n).padStart(5, '0') : '';
+};
+/* Nome do pedido pra tela: "00012 · PO do cliente" (ou só um dos dois). */
+DATA.orderName = function (o, semNome) {
+  const no = DATA.orderNo(o);
+  const nome = (o && o.po_name) || '';
+  if (no && nome) return no + ' · ' + nome;
+  return no || nome || semNome || ('#' + String((o && o.id) || '').slice(0, 8));
+};
+
 DATA.clientLabel = function (o) {
   return o.client_name || o.client_email || '(sem identificação)';
 };

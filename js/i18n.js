@@ -279,6 +279,7 @@
       // aparece na lista de Pedidos do admin (não vai pra fábrica).
       'my_orders.status_saved': 'Salvo',
       'my_orders.back_to_project': 'Voltar ao projeto',
+      'my_orders.factory_no_tip': 'Número do pedido na fábrica',
       'my_orders.back_to_project_confirm': 'Voltar este pedido pro projeto?\n\nO pedido pendente é cancelado (sai de Central de Pedidos) e o projeto fica liberado pra editar em Meus Projetos. Depois é só enviar pro pedido outra vez.',
       'my_orders.back_to_project_not_pending': 'Este pedido não está mais pendente (já foi aprovado) — não dá pra voltar pro projeto.',
       'my_orders.back_to_project_still_frozen': 'O projeto continua travado. Recarregue a página e tente de novo.',
@@ -2597,6 +2598,7 @@
       'my_orders.status_delivered': 'Delivered',
       'my_orders.status_saved': 'Saved',
       'my_orders.back_to_project': 'Back to project',
+      'my_orders.factory_no_tip': 'Factory order number',
       'my_orders.back_to_project_confirm': 'Send this order back to the project?\n\nThe pending order is canceled (removed from Order Center) and the project is unlocked for editing in My Projects. Just send it to order again when ready.',
       'my_orders.back_to_project_not_pending': 'This order is no longer pending (already approved) — it cannot go back to the project.',
       'my_orders.back_to_project_still_frozen': 'The project is still locked. Reload the page and try again.',
@@ -4882,6 +4884,7 @@
       'my_orders.status_delivered': 'Entregada',
       'my_orders.status_saved': 'Guardado',
       'my_orders.back_to_project': 'Volver al proyecto',
+      'my_orders.factory_no_tip': 'Número del pedido en fábrica',
       'my_orders.back_to_project_confirm': '¿Volver este pedido al proyecto?\n\nEl pedido pendiente se cancela (sale de Central de Pedidos) y el proyecto queda liberado para editar en Mis proyectos. Luego basta con enviarlo al pedido otra vez.',
       'my_orders.back_to_project_not_pending': 'Este pedido ya no está pendiente (ya fue aprobado) — no puede volver al proyecto.',
       'my_orders.back_to_project_still_frozen': 'El proyecto sigue bloqueado. Recarga la página e inténtalo de nuevo.',

@@ -1057,6 +1057,7 @@ async function loadMyOrders() {
           <div class="portal-order-header">
             <div class="portal-order-title">
               ${liberado ? `<span class="po-order-released-check" title="${I18n.t('my_orders.released_tip')}">✓</span>` : ''}
+              ${Number(o.factory_number) > 0 ? `<span class="po-order-factory-no" title="${I18n.t('my_orders.factory_no_tip')}">${String(Number(o.factory_number)).padStart(5, '0')}</span>` : ''}
               <strong>${title}</strong>
               ${subtitle ? `<span class="hint">— ${subtitle}</span>` : ''}
               <span class="badge">${orderStatusLabel(o.status)}</span>

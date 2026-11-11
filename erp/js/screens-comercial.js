@@ -78,7 +78,7 @@ ScreensComercial._factoryView = function (orders, drafts) {
     const qty = DATA.orderQty(o);
     return {
       _href: '#/pedidos/' + o.id,
-      num: '<span class="erp-strong">' + UI.esc(o.po_name || ('#' + o.id.slice(0, 8))) + '</span>' +
+      num: '<span class="erp-strong">' + UI.esc(DATA.orderName(o)) + '</span>' +
         '<div class="erp-xs erp-muted erp-mono">' + UI.esc(o.id.slice(0, 8)) + '</div>',
       client: UI.esc(DATA.clientLabel(o)) +
         (o.client_email ? '<div class="erp-xs erp-muted">' + UI.esc(o.client_email) + '</div>' : ''),
@@ -135,7 +135,7 @@ ScreensComercial._clientView = function (orders) {
     }).join('');
     return UI.panel(null,
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px">' +
-      '<div><div class="erp-strong" style="font-size:16px">' + UI.esc(o.po_name || ('Pedido ' + o.id.slice(0, 8))) + '</div>' +
+      '<div><div class="erp-strong" style="font-size:16px">' + UI.esc(DATA.orderName(o, 'Pedido ' + o.id.slice(0, 8))) + '</div>' +
       '<div class="erp-muted erp-small">' + (o.order_items || []).length + ' itens · ' + UI.money(DATA.orderTotal(o)) + '</div></div>' +
       '<div>' + UI.statusPill(DATA.statusMap, o.status) + '</div></div>' +
       '<div class="erp-route">' + steps + '</div>');
@@ -227,8 +227,8 @@ ScreensComercial.orderDetail = function (params, o) {
           '<span class="erp-small">Se isso parecer errado, é sinal de que falta marcar <span class="erp-mono">origin=\'comprado\'</span> ' +
           'nos puxadores, pés e ferragens lá no admin.</span></div>'));
 
-  return UI.crumb([{ label: 'Pedidos', href: '#/pedidos' }, { label: o.po_name || o.id.slice(0, 8) }]) +
-    UI.head(o.po_name || ('Pedido ' + o.id.slice(0, 8)),
+  return UI.crumb([{ label: 'Pedidos', href: '#/pedidos' }, { label: DATA.orderName(o, o.id.slice(0, 8)) }]) +
+    UI.head(DATA.orderName(o, 'Pedido ' + o.id.slice(0, 8)),
       UI.esc(DATA.clientLabel(o)) + ' · criado em ' + UI.date(o.created_at)) +
     '<div class="erp-grid erp-grid-side">' + main + '<div>' + side + '</div></div>';
 };
@@ -265,7 +265,7 @@ ScreensComercial.financial = function (params, d) {
     const st = DATA.stageInfo(o);
     return {
       order: '<a href="#/pedidos/' + o.id + '" class="erp-strong">' +
-        UI.esc(o.po_name || ('#' + o.id.slice(0, 8))) + '</a>' +
+        UI.esc(DATA.orderName(o)) + '</a>' +
         '<div class="erp-xs erp-muted">' + UI.date(o.created_at) + '</div>',
       client: UI.esc(DATA.clientLabel(o)),
       type: UI.pill(t.label, t.pill),

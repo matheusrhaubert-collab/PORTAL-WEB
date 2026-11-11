@@ -6414,3 +6414,6 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
   background: #e0921f; color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center;
   box-shadow: 0 0 0 2px var(--panel, #fff);
 }
+
+/* Número do pedido na fábrica (migration 287) no cartão do pedido. */
+.po-order-factory-no { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--text); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
