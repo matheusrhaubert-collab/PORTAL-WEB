@@ -320,15 +320,36 @@ MAQUINA_EXPORT._itensDaChapa = function (sh, ctx) {
   const isRetalho = sh.source === 'retalho';
   const usableRight = Number(sh.width_mm) - (isRetalho ? ctx.trimRetalho : ctx.trimRight);
   const usableBottom = Number(sh.height_mm) - (isRetalho ? ctx.trimRetalho : ctx.trimBottom);
-  /* Refile dos dois lados SEMPRE (Matt, 16/10): retalho que vinha até a
-     borda física (plano salvo antes da correção) é recortado de volta pra
-     borda útil, pra máquina tirar o refile na frente e atrás. */
-  const rects = (sh.offcuts_json || []).map(function (o) {
+  /* RETALHO NÃO É REFILADO (Matt, 10/11 — ver NESTING.retalhosCrus): a
+     sobra pode ir até a borda crua, mas só onde nenhuma peça divide essa
+     borda. Aqui a regra é CONFERIDA de novo: todo retalho salvo é trazido
+     pra dentro do refile e só volta pra borda crua se a regra deixar —
+     plano antigo com retalho na borda em lugar inseguro continua refilado.
+     Plano salvo com tudo dentro do refile (16/10 a 10/11) sai como foi
+     salvo, pra medida bater com o estoque. */
+  const trimIni = isRetalho ? ctx.trimRetalho : null;
+  const tl = isRetalho ? trimIni : (ctx.trimLeft || 0), tt = isRetalho ? trimIni : (ctx.trimTop || 0);
+  let algumCru = false;
+  let rects = (sh.offcuts_json || []).map(function (o) {
     const r = { x: Number(o.x), y: Number(o.y), w: Number(o.w), h: Number(o.h) };
-    if (r.x + r.w > usableRight + ctx.eps) r.w = Math.max(1, usableRight - r.x);
-    if (r.y + r.h > usableBottom + ctx.eps) r.h = Math.max(1, usableBottom - r.y);
+    if (r.x < tl - ctx.eps) { algumCru = true; r.w -= (tl - r.x); r.x = tl; }
+    if (r.y < tt - ctx.eps) { algumCru = true; r.h -= (tt - r.y); r.y = tt; }
+    if (r.x + r.w > usableRight + ctx.eps) { algumCru = true; r.w = Math.max(1, usableRight - r.x); }
+    if (r.y + r.h > usableBottom + ctx.eps) { algumCru = true; r.h = Math.max(1, usableBottom - r.y); }
     return r;
   });
+  let atrCru = null;
+  if (algumCru && typeof NESTING.retalhosCrus === 'function') {
+    const simCru = {
+      source: sh.source, width: Number(sh.width_mm), height: Number(sh.height_mm),
+      placed: items.map(function (it) { return { x: it.x, y: it.y, w: it.w, h: it.h }; }), offcuts: rects
+    };
+    atrCru = NESTING.retalhosCrus(simCru, {
+      kerf_mm: ctx.kerf, trim_left_mm: ctx.trimLeft || 0, trim_top_mm: ctx.trimTop || 0,
+      trim_right_mm: ctx.trimRight, trim_bottom_mm: ctx.trimBottom, trim_retalho_mm: ctx.trimRetalho
+    });
+    rects = simCru.offcuts; // sobras lado a lado numa faixa só de retalho viram uma
+  }
   const vizinhos = items.map(function (it) { return { x: it.x, y: it.y, w: it.w, h: it.h }; }).concat(rects);
   rects.forEach(function (o) {
     ctx.offcutCounterRef.n++;
@@ -346,8 +367,9 @@ MAQUINA_EXPORT._itensDaChapa = function (sh, ctx) {
     const cw = LOTES.mmCorte(w), ch = LOTES.mmCorte(h);
     const row = rows.find(function (r) { return same(r, cw, ch); }) || rows.find(function (r) { return same(r, w, h); }) || rows.find(function (r) { return same(r, Number(o.w), Number(o.h)); });
     if (row) { row._used = true; code = row.code; }
-    items.push({ x: Number(o.x), y: Number(o.y), w: w, h: h, kind: 'offcut', ocNumber: ctx.offcutCounterRef.n, cleanW: cw, cleanH: ch, stockCode: code });
+    items.push({ x: o.x, y: o.y, w: w, h: h, kind: 'offcut', ocNumber: ctx.offcutCounterRef.n, cleanW: cw, cleanH: ch, stockCode: code });
   });
+  if (atrCru != null) items._atravessada = atrCru; // mesmo sentido usado pra decidir quais retalhos ficam crus
   return items;
 };
 
@@ -364,9 +386,9 @@ MAQUINA_EXPORT._itensDaChapa = function (sh, ctx) {
    chapa, só entra girada. */
 MAQUINA_EXPORT._orientar = function (sh, items, ctx) {
   const W = Number(sh.width_mm), H = Number(sh.height_mm);
-  const segY = MAQUINA_EXPORT._segmentar(items, 'y', ctx.eps);
-  const segX = MAQUINA_EXPORT._segmentar(items, 'x', ctx.eps);
-  if (items.length > 1 && segY.length === 1 && segX.length > 1) {
+  // Regra única do sentido de entrada: NESTING.entradaAtravessada (16/10 +
+  // 10/11: também quando atravessada dá menos viradas).
+  if (items._atravessada != null ? items._atravessada : NESTING.entradaAtravessada(items, W, H)) {
     return {
       atravessada: true, panelL: H, panelW: W, rootL: W, rootW: H,
       items: items.map(function (it) {
@@ -560,6 +582,7 @@ MAQUINA_EXPORT.ordemNaChapa = function (sh, snap) {
     snap = snap || {};
     const ctx = {
       kerf: Number(snap.kerf_mm) || 4,
+      trimLeft: Number(snap.trim_left_mm) || 0, trimTop: Number(snap.trim_top_mm) || 0,
       trimRight: Number(snap.trim_right_mm) || 0,
       trimBottom: Number(snap.trim_bottom_mm) || 0,
       trimRetalho: NESTING.retalhoTrim(snap),
@@ -601,6 +624,7 @@ MAQUINA_EXPORT._montarArquivos = function (plan) {
   const snap = plan.params_snapshot || {};
   const ctx = {
     kerf: kerf,
+    trimLeft: Number(snap.trim_left_mm) || 0, trimTop: Number(snap.trim_top_mm) || 0,
     trimRight: Number(snap.trim_right_mm) || 0,
     trimBottom: Number(snap.trim_bottom_mm) || 0,
     trimRetalho: NESTING.retalhoTrim(snap),

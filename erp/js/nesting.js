@@ -754,58 +754,173 @@ NESTING.cutStats = function (sheet, params) {
       const c = NESTING.kerfInside(o, all, kerf);
       return { x: o.x, y: o.y, w: c.w, h: c.h };
     }));
-  return NESTING._cutStatsItems(items, sheet.width);
+  return NESTING._cutStatsItems(items, sheet.width, sheet.height);
 };
 
 /* Mesma conta, sobre uma lista de itens já "limpos" (peça + retalho sem
    kerf), com a largura X da chapa. */
-NESTING._cutStatsItems = function (items, sheetWidth) {
-  function rec(list, axis, extentW, stuck) {
-    if (!list.length) return { cuts: 0, turns: 0 };
-    const c = axis === 'y' ? 'y' : 'x', s = axis === 'y' ? 'h' : 'w';
-    const perp = axis === 'y' ? 'x' : 'y', ps = perp === 'y' ? 'h' : 'w';
-    const sorted = list.slice().sort(function (a, b) { return a[c] - b[c]; });
-    const segs = [];
-    let cur = null;
+NESTING._recCortes = function (list, axis, extentW, stuck) {
+  if (!list.length) return { cuts: 0, turns: 0 };
+  const c = axis === 'y' ? 'y' : 'x', s = axis === 'y' ? 'h' : 'w';
+  const perp = axis === 'y' ? 'x' : 'y', ps = perp === 'y' ? 'h' : 'w';
+  const sorted = list.slice().sort(function (a, b) { return a[c] - b[c]; });
+  const segs = [];
+  let cur = null;
+  sorted.forEach(function (it) {
+    const start = it[c], end = it[c] + it[s];
+    if (cur && start >= cur.end - 0.15) { segs.push(cur); cur = null; }
+    if (!cur) cur = { start: start, end: end, items: [] };
+    cur.items.push(it);
+    if (end > cur.end) cur.end = end;
+  });
+  if (cur) segs.push(cur);
+  if (segs.length === 1 && list.length > 1) {
+    if (stuck) return { cuts: list.length, turns: list.length };
+    // uma passada só pra soltar o bloco, depois vira: a faixa passa a ter a
+    // medida do bloco (igual à exportação: nó filho com w = cut)
+    const r = NESTING._recCortes(list, perp, segs[0].end - segs[0].start, true);
+    return { cuts: r.cuts + 1, turns: r.turns + 1 };
+  }
+  let cuts = segs.length, turns = 0;
+  segs.forEach(function (sg) {
+    if (sg.items.length === 1) {
+      if (sg.items[0][ps] < extentW - 0.2) { cuts += 1; turns += 1; }
+    } else {
+      const r = NESTING._recCortes(sg.items, perp, sg.end - sg.start, false);
+      cuts += r.cuts; turns += 1 + r.turns;
+    }
+  });
+  return { cuts: cuts, turns: turns };
+};
+
+NESTING._nSegs = function (items, axis) {
+  const c = axis === 'y' ? 'y' : 'x', s = axis === 'y' ? 'h' : 'w';
+  const sorted = items.slice().sort(function (a, b) { return a[c] - b[c]; });
+  let n = 0, end = -Infinity;
+  sorted.forEach(function (it) { if (it[c] >= end - 0.15) n++; end = Math.max(end, it[c] + it[s]); });
+  return n;
+};
+
+/* SENTIDO DE ENTRADA DA CHAPA — uma regra só, usada pela contagem de
+   viradas (aqui) e pela exportação pra máquina (MAQUINA_EXPORT._orientar).
+   1. (Matt, 16/10) Sem corte passante no comprimento e com colunas: entra
+      ATRAVESSADA — abre as tiras e limpa frente e trás.
+   2. (Matt, 10/11: "pedem primeiro pra cortar horizontal e aí começa o
+      vertical... só gasta tempo e máquina") Nos outros casos, entra
+      atravessada quando isso dá MENOS VIRADAS de material (empate: menos
+      cortes). Ex.: pilha de peças compridas que não enchem o comprimento —
+      deitada, cada tira era virada pra acertar as pontas; atravessada, um
+      corte acerta todas e vira uma vez só. Empate total = deitada. */
+NESTING.entradaAtravessada = function (items, sheetWidth, sheetHeight) {
+  if (!items || items.length < 2) return false;
+  const sy = NESTING._nSegs(items, 'y'), sx = NESTING._nSegs(items, 'x');
+  if (sy === 1 && sx > 1) return true;
+  if (sy === 1 && sx === 1) return false; // não separa em nenhum sentido (não acontece em plano guilhotinado)
+  const ry = NESTING._recCortes(items, 'y', sheetWidth, false);
+  const rx = NESTING._recCortes(items, 'x', sheetHeight, false);
+  return rx.turns < ry.turns || (rx.turns === ry.turns && rx.cuts < ry.cuts);
+};
+
+NESTING._cutStatsItems = function (items, sheetWidth, sheetHeight) {
+  if (!(sheetHeight > 0)) sheetHeight = items.reduce(function (m, it) { return Math.max(m, it.y + it.h); }, 0);
+  if (NESTING.entradaAtravessada(items, sheetWidth, sheetHeight)) return NESTING._recCortes(items, 'x', sheetHeight, false);
+  return NESTING._recCortes(items, 'y', sheetWidth, false);
+};
+
+/* ============================================================
+   RETALHO NÃO É REFILADO (Matt, 10/11)
+   ============================================================
+   "Os retalhos estão sendo refilados como peças... retalho não precisa
+   refilar, só as peças — todas as peças, os 4 lados precisam ficar
+   cortados." Desde 16/10 toda sobra terminava no refile, e a máquina
+   gastava corte (e virada) só pra tirar a lasca de um retalho.
+
+   Agora a sobra vai até a BORDA CRUA da chapa, mas só onde isso não tira
+   corte de peça nenhuma (foi misturar as duas coisas que perdeu peça na
+   chapa 14 do LT-26-0016):
+     a) faixa da 1ª passada que é SÓ retalho: vira UM retalho da faixa
+        inteira, cru nas pontas e, se for a última faixa, também no fundo
+        — nenhum corte nela (sobras lado a lado na faixa viram uma só);
+     b) retalho que é a ÚLTIMA fatia de uma faixa com peças: vai até a
+        borda crua do fim da faixa (as peças antes dele continuam com
+        refile no começo e corte entre uma e outra);
+     c) retalho no meio de um bloco com peças (3ª passada em diante): NÃO
+        muda — ali a borda é compartilhada com peça, e o refile fica.
+   Peça nunca encosta em borda crua. Roda no fim do plano (NESTING.run) e
+   de novo na exportação (confere o que está salvo). `feito` evita esticar
+   duas vezes a mesma sobra em chapas empilhadas. */
+NESTING.retalhosCrus = function (sheet, params, feito) {
+  const offs = sheet.offcuts || [];
+  if (!offs.length) return null;
+  const kerf = Number(params.kerf_mm) || 0;
+  const t = NESTING.trims(params, sheet.source === 'retalho');
+  const W = Number(sheet.width), H = Number(sheet.height);
+  const EPS = 0.3;
+  const placed = (sheet.placed || []).map(function (p) { return { x: p.x, y: p.y, w: p.w, h: p.h }; });
+  const all = placed.concat(offs);
+  const items = placed.concat(offs.map(function (o) {
+    const c = NESTING.kerfInside(o, all, kerf);
+    return { x: o.x, y: o.y, w: c.w, h: c.h, ref: o };
+  }));
+  const atr = NESTING.entradaAtravessada(items, W, H);
+  const A = atr ? 'x' : 'y', B = atr ? 'y' : 'x';
+  const dim = { x: 'w', y: 'h' };
+  const fisico = { x: W, y: H };
+  const util = { x: W - t.tr, y: H - t.tb };
+  const ini = { x: t.tl, y: t.tt };
+  function segmentar(list, axis) {
+    const s = dim[axis];
+    const sorted = list.slice().sort(function (a, b) { return a[axis] - b[axis]; });
+    const segs = []; let cur = null;
     sorted.forEach(function (it) {
-      const start = it[c], end = it[c] + it[s];
-      if (cur && start >= cur.end - 0.15) { segs.push(cur); cur = null; }
-      if (!cur) cur = { start: start, end: end, items: [] };
+      if (cur && it[axis] >= cur.end - 0.15) { segs.push(cur); cur = null; }
+      if (!cur) cur = { end: it[axis] + it[s], items: [] };
       cur.items.push(it);
-      if (end > cur.end) cur.end = end;
+      if (it[axis] + it[s] > cur.end) cur.end = it[axis] + it[s];
     });
     if (cur) segs.push(cur);
-    if (segs.length === 1 && list.length > 1) {
-      if (stuck) return { cuts: list.length, turns: list.length };
-      const r = rec(list, perp, extentW, true);
-      return { cuts: r.cuts + 1, turns: r.turns + 1 };
-    }
-    let cuts = segs.length, turns = 0;
-    segs.forEach(function (sg) {
-      if (sg.items.length === 1) {
-        if (sg.items[0][ps] < extentW - 0.2) { cuts += 1; turns += 1; }
-      } else {
-        const r = rec(sg.items, perp, sg.end - sg.start, false);
-        cuts += r.cuts; turns += 1 + r.turns;
+    return segs;
+  }
+  // it = item limpo; estica o retângulo salvo (ref) e o item junto
+  function ateOFim(it, axis) {
+    const s = dim[axis];
+    if (Math.abs(it[axis] + it[s] - util[axis]) > EPS) return;
+    const add = fisico[axis] - (it[axis] + it[s]);
+    if (!(add > 0)) return;
+    it[s] += add; it.ref[s] = fisico[axis] - it.ref[axis];
+  }
+  function desdeOComeco(it, axis) {
+    const s = dim[axis];
+    if (Math.abs(it[axis] - ini[axis]) > EPS || !(ini[axis] > 0)) return;
+    it[s] += it[axis]; it.ref[s] += it.ref[axis];
+    it[axis] = 0; it.ref[axis] = 0;
+  }
+  const segs = segmentar(items, A);
+  segs.forEach(function (sg, i) {
+    const ultima = i === segs.length - 1;
+    const soRetalho = sg.items.every(function (it) { return !!it.ref; });
+    if (feito && sg.items.some(function (it) { return it.ref && feito.has(it.ref); })) return;
+    const sub = segmentar(sg.items, B);
+    if (soRetalho) {
+      // (a) faixa só de retalho: a faixa INTEIRA é uma tábua só, sem peça —
+      // vira um retalho único, de borda a borda, sem corte nenhum nela.
+      let a0 = Infinity, a1 = -Infinity;
+      sg.items.forEach(function (it) { a0 = Math.min(a0, it[A]); a1 = Math.max(a1, it[A] + it[dim[A]]); });
+      if (ultima && Math.abs(a1 - util[A]) <= EPS) a1 = fisico[A];
+      const fica = sg.items[0].ref;
+      fica[A] = a0; fica[dim[A]] = a1 - a0; fica[B] = 0; fica[dim[B]] = fisico[B];
+      if (sg.items.length > 1) {
+        const saem = sg.items.slice(1).map(function (it) { return it.ref; });
+        sheet.offcuts = sheet.offcuts.filter(function (o) { return saem.indexOf(o) < 0; });
       }
-    });
-    return { cuts: cuts, turns: turns };
-  }
-  /* Mesma escolha de sentido da exportação (MAQUINA_EXPORT._orientar):
-     sem corte passante em Y e com colunas em X, a chapa entra atravessada
-     — a contagem começa por X, senão conta uma virada que não existe. */
-  const seg = function (axis) {
-    const c = axis === 'y' ? 'y' : 'x', s = axis === 'y' ? 'h' : 'w';
-    const sorted = items.slice().sort(function (a, b) { return a[c] - b[c]; });
-    let n = 0, end = -Infinity;
-    sorted.forEach(function (it) { if (it[c] >= end - 0.15) n++; end = Math.max(end, it[c] + it[s]); });
-    return n;
-  };
-  if (items.length > 1 && seg('y') === 1 && seg('x') > 1) {
-    const sheetHeight = items.reduce(function (m, it) { return Math.max(m, it.y + it.h); }, 0);
-    return rec(items, 'x', sheetHeight, false);
-  }
-  return rec(items, 'y', sheetWidth, false);
+    } else if (sg.items.length > 1) {
+      // (b) último da faixa, sozinho na fatia
+      const fim = sub[sub.length - 1];
+      if (sub.length > 1 && fim.items.length === 1 && fim.items[0].ref) ateOFim(fim.items[0], B);
+    }
+    if (feito) sg.items.forEach(function (it) { if (it.ref) feito.add(it.ref); });
+  });
+  return atr; // sentido de entrada usado na decisão (a exportação reaproveita)
 };
 
 /* ============================================================
@@ -1625,6 +1740,9 @@ NESTING.run = function (opts) {
   basePieces.forEach(function (p) { delete p._done; });
 
   const sheets = chosen.sheets;
+  // Retalho não é refilado (10/11) — último passo, com o plano já decidido.
+  const crus = new Set();
+  sheets.forEach(function (sh) { NESTING.retalhosCrus(sh, params, crus); });
   const unplaced = chosen.unplaced;
   const totalArea = sheets.reduce(function (s, sh) { return s + sh.width * sh.height; }, 0);
   const usedArea = sheets.reduce(function (s, sh) { return s + sh.usedArea; }, 0);
