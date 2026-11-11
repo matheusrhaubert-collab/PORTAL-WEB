@@ -708,10 +708,19 @@ function updateProjectSlotWidthFromLeft(slot, newWidthMm) {
   // (widthPresetsMm) mais próximo do que o arraste pediu, em vez de aceitar
   // qualquer valor contínuo entre min/max (mesma regra de updateProjectSlotDimension,
   // ver comentário lá — pedido do usuário 2026-07-26).
+  // MESMO LIMITE DA SETA DA DIREITA (2026-11-11, Matt: "quando estico com a
+  // flecha da direita ele respeita limite de largura, com a da esquerda não
+  // respeita"). Este caminho tinha um clamp próprio, só com mín/máx do
+  // módulo — ficou pra trás quando entraram a trava da furadeira (fundo até
+  // 1050 mm) e o teto do plywood (2438) em projectSlotClampedDimensionMm,
+  // que a seta da direita usa. Agora os dois lados passam pela mesma função
+  // (ela também cuida da largura travada/presets).
   const widthPresetsMm = slot.widthPresetsMm || [];
-  const clamped = (m.width_locked && widthPresetsMm.length)
-    ? Pricing.pickNearestPreset(widthPresetsMm, newWidthMm)
-    : clamp(newWidthMm, Number(m.width_min_mm || 0), (Number(m.width_max_mm) > 0 ? Number(m.width_max_mm) : Infinity));
+  const clamped = (typeof projectSlotClampedDimensionMm === 'function')
+    ? projectSlotClampedDimensionMm(slot, 'width', newWidthMm)
+    : ((m.width_locked && widthPresetsMm.length)
+      ? Pricing.pickNearestPreset(widthPresetsMm, newWidthMm)
+      : clamp(newWidthMm, Number(m.width_min_mm || 0), (Number(m.width_max_mm) > 0 ? Number(m.width_max_mm) : Infinity)));
   const rightEdgeMm = Number(slot.x_mm || 0) + Number(slot.width_mm || 0);
   // BORDA DIREITA FIXA DE VERDADE (15/10): antes, batendo no começo da parede
   // (x<0) ou o clamp empurrando, a largura ficava e a DIREITA andava. Agora
@@ -721,7 +730,10 @@ function updateProjectSlotWidthFromLeft(slot, newWidthMm) {
   if (slot.x_mm < 0) { slot.x_mm = 0; slot.width_mm = rightEdgeMm; }
   clampProjectSlotPosition(slot);
   if (Math.abs((Number(slot.x_mm) + Number(slot.width_mm)) - rightEdgeMm) > 0.01) {
-    slot.width_mm = Math.max(1, rightEdgeMm - Number(slot.x_mm));
+    // nunca passa do limite: se o acerto pedir mais largura que o máximo,
+    // quem cede é a posição (a direita continua fixa)
+    slot.width_mm = Math.min(clamped, Math.max(1, rightEdgeMm - Number(slot.x_mm)));
+    slot.x_mm = rightEdgeMm - Number(slot.width_mm);
   }
   recomputeProjectSlotPricing(slot);
   resolveProjectSlotDepth(slot, projectSlotsSameWallExcluding(slot));
