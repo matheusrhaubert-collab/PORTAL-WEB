@@ -252,11 +252,13 @@ async function trkFolderStages(orders, box) {
     if (reler) {
       if (document.hidden) return;
       try {
-        const { data, error } = await supabaseClient.from('orders').select('*').in('id', ids);
+        // só as colunas do andamento — a linha inteira carrega a miniatura do projeto
+        const { data, error } = await supabaseClient.from('orders')
+          .select('id, status, order_type, approved_at, submitted_at, finance_released_at, pickup_released_at').in('id', ids);
         if (!error && data && data.length) {
           const porId = {};
           data.forEach((o) => { porId[o.id] = o; });
-          lista = lista.map((o) => porId[o.id] || o);
+          lista = lista.map((o) => (porId[o.id] ? Object.assign({}, o, porId[o.id]) : o));
         }
       } catch (e) { /* mantém o que já tinha */ }
     }

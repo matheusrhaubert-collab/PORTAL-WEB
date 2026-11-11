@@ -965,14 +965,33 @@ async function loadMyOrders() {
     const cutlistOrderIds = orders.filter((o) => o.order_type === 'cutting_list').map((o) => o.id);
     const [{ data: allItems, error: itemsError }, { data: allCutlistItems, error: cutlistItemsError }] = await Promise.all([
       moduleOrderIds.length
-        ? supabaseClient.from('order_items').select('*').in('order_id', moduleOrderIds).order('sort_order')
+        // LISTA LEVE (2026-11-11, "canceling statement due to statement
+        // timeout" ao abrir a Central de Pedidos): select('*') trazia o
+        // breakdown inteiro (JSON de todas as peças) + a miniatura em base64
+        // de CADA item de TODOS os pedidos, só pra somar o total. Com a
+        // conta crescendo (70+ pedidos) estourou o tempo do banco. A lista
+        // só precisa do total; a miniatura e o PDF buscam o resto na hora.
+        ? supabaseClient.from('order_items').select('id, order_id, total_price, sort_order').in('order_id', moduleOrderIds).order('sort_order')
         : Promise.resolve({ data: [] }),
       cutlistOrderIds.length
-        ? supabaseClient.from('cutting_list_items').select('*').in('order_id', cutlistOrderIds).order('sort_order')
+        ? supabaseClient.from('cutting_list_items').select('id, order_id, total_price, sort_order').in('order_id', cutlistOrderIds).order('sort_order')
         : Promise.resolve({ data: [] })
     ]);
     if (itemsError) throw itemsError;
     if (cutlistItemsError) throw cutlistItemsError;
+    // Miniatura de item só pros pedidos que não têm imagem própria (pedido
+    // do carrinho, sem projeto) — 1 por pedido, em blocos pequenos. Falhou =
+    // fica sem miniatura, a lista abre do mesmo jeito.
+    const semImagem = orders.filter((o) => o.order_type !== 'cutting_list' && !o.project_photoreal_url && !o.project_thumbnail_data_url).map((o) => o.id);
+    const thumbPorPedido = {};
+    for (let i = 0; i < semImagem.length; i += 15) {
+      try {
+        const { data: th } = await supabaseClient.from('order_items')
+          .select('order_id, thumbnail_data_url').in('order_id', semImagem.slice(i, i + 15))
+          .not('thumbnail_data_url', 'is', null).order('sort_order');
+        (th || []).forEach((r) => { if (!thumbPorPedido[r.order_id]) thumbPorPedido[r.order_id] = r.thumbnail_data_url; });
+      } catch (e) { /* sem miniatura */ }
+    }
 
     const itemsByOrder = {};
     (allItems || []).forEach((it) => {
@@ -1076,7 +1095,15 @@ async function loadMyOrders() {
         btn.addEventListener('click', (ev) => {
           ev.stopPropagation(); // não deixa "vazar" pro card e abrir a tela do pedido junto
           const order = orders.find((o) => o.id === btn.dataset.orderId);
-          generateOrderPDF(order, itemsByOrder[btn.dataset.orderId] || []);
+          // itens COMPLETOS só agora (a lista carrega só o total — ver loadMyOrders)
+          btn.disabled = true;
+          supabaseClient.from('order_items').select('*').eq('order_id', btn.dataset.orderId).order('sort_order')
+            .then(({ data, error }) => {
+              if (error) throw error;
+              generateOrderPDF(order, data || []);
+            })
+            .catch((err) => { alert(I18n.t('my_orders.load_error', { msg: err.message || String(err) })); })
+            .finally(() => { btn.disabled = false; });
         });
       });
       // Acompanhamento (etapa + prazo) no cartão — só admin por enquanto
@@ -1106,7 +1133,7 @@ async function loadMyOrders() {
         return isSellerAccount() ? getDisplayPrice(t) : t;
       };
       const thumbOf = (o) => o.project_photoreal_url || o.project_thumbnail_data_url
-        || ((itemsByOrder[o.id] || []).find((it) => it.thumbnail_data_url) || {}).thumbnail_data_url || '';
+        || thumbPorPedido[o.id] || '';
       const nomes = [];
       orders.forEach((o) => { const f = folderOf(o); if (f && !nomes.includes(f)) nomes.push(f); });
       if (orders.some((o) => !folderOf(o))) nomes.push('');
