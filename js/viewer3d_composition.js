@@ -1714,6 +1714,28 @@ function createViewerComposition3D() {
             fz0 = Math.min(fz0, pz); fz1 = Math.max(fz1, pz);
           });
       });
+      // PAREDE ÚNICA EM QUALQUER DIREÇÃO (2026-11-11, Matt: "quando deixo só
+      // uma parede preciso um piso indo pra frente dessa parede, hoje quando
+      // deixo uma só ele some"). A caixa das pontas de UMA parede é uma
+      // linha; o mínimo antigo só esticava em +Z, então uma parede correndo
+      // ao longo de Z (ou olhando pra -Z) ficava com uma tira de 30 cm, ou
+      // com o piso ATRÁS dela. Agora, quando a caixa é estreita demais em
+      // qualquer eixo, o piso avança pra FRENTE de cada parede (intoDir, o
+      // lado que a face visível olha — o mesmo de makeWallSurface).
+      if (fz1 - fz0 < ROOM_MIN_FLOOR_DEPTH_M || fx1 - fx0 < ROOM_MIN_FLOOR_DEPTH_M) {
+        (segments || []).forEach((seg) => {
+          const ix = seg.intoDir ? Number(seg.intoDir.x) || 0 : 0;
+          const iz = seg.intoDir ? Number(seg.intoDir.z) || 0 : 0;
+          if (!ix && !iz) return;
+          const ax = seg.alongDir.x, az = seg.alongDir.z;
+          [[seg.originX, seg.originZ], [seg.originX + ax * seg.widthM, seg.originZ + az * seg.widthM]]
+            .forEach(([px, pz]) => {
+              const qx = px + ix * ROOM_MIN_FLOOR_DEPTH_M, qz = pz + iz * ROOM_MIN_FLOOR_DEPTH_M;
+              fx0 = Math.min(fx0, qx); fx1 = Math.max(fx1, qx);
+              fz0 = Math.min(fz0, qz); fz1 = Math.max(fz1, qz);
+            });
+        });
+      }
       if (fz1 - fz0 < ROOM_MIN_FLOOR_DEPTH_M) fz1 = fz0 + ROOM_MIN_FLOOR_DEPTH_M;
       if (fx1 - fx0 < 0.3) fx1 = fx0 + 0.3;
       lastFloorRectM = { x0: fx0, x1: fx1, z0: fz0, z1: fz1 };
