@@ -898,11 +898,17 @@
               fill: 'none', stroke: '#4a7fa8', 'stroke-width': fino * 0.8, 'stroke-dasharray': (fino * 3) + ' ' + (fino * 2), 'pointer-events': 'none' }, svg);
           }
         });
-        // Cota do comprimento, do lado de fora.
-        const e = Number(p.thicknessMm) || ESPESSURA_PADRAO;
+        // Cota do comprimento, do lado de DENTRO (2026-11-11, Matt: "as
+        // paredes quero ver interno o valor, assim nao sei quando fica
+        // interno"). O número sempre foi a face interna (canto de dentro a
+        // canto de dentro), mas ficava escrito do lado de fora da parede e
+        // parecia medida externa. Agora fica colado na linha que ele mede.
         const t = el('text', {
-          x: (a.x + b.x) / 2 + pol.n.x * (e + K / 40), y: (a.z + b.z) / 2 + pol.n.z * (e + K / 40),
-          'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': K / 34,
+          x: (a.x + b.x) / 2 - pol.n.x * (K / 36), y: (a.z + b.z) / 2 - pol.n.z * (K / 36),
+          // parede em pé: o texto começa (ou termina) na parede, senão um
+          // número comprido ("102 5/32") cairia em cima dela
+          'text-anchor': (-pol.n.x > 0.35) ? 'start' : ((-pol.n.x < -0.35) ? 'end' : 'middle'),
+          'dominant-baseline': 'middle', 'font-size': K / 34,
           fill: sel ? '#b9761a' : '#8d8375', 'font-family': 'sans-serif', 'pointer-events': 'none'
         }, svg);
         t.textContent = mmParaNumeroWE(compDe(c, i), unidade);
