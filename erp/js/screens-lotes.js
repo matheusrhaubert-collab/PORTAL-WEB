@@ -1024,16 +1024,20 @@ LOTES_UI.renderDraft = function (draft) {
       const stackBadge = (st && st.members.length > 1)
         ? ' ' + UI.pill('empilhada: chapas ' + st.members.map(function (m) { return m + 1; }).join(' + '), 'erp-pill-ok')
         : '';
+      // Simulador de corte (10/11): clicar no desenho ou no botão
+      const simIdx = (typeof SIMCORTE !== 'undefined') ? SIMCORTE.registrar(sh, draft.params, 'Chapa ' + (i + 1) + ' — ' + g.group.color_name) : -1;
       return '<div style="margin-bottom:18px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
           '<div class="erp-strong erp-small">Chapa ' + (i + 1) + ' — ' +
             (isOff ? UI.pill('retalho ' + UI.esc(sh.offcut.code), 'erp-pill-ok') : UI.esc(sh.sheet_size_name)) + stackBadge +
             ' <span class="erp-muted">' + LOTES_UI.mm(sh.width) + ' × ' + LOTES_UI.mm(sh.height) + ' mm</span></div>' +
           '<div class="erp-small erp-muted">' + sh.placed.length + ' peças · aproveitamento ' +
-            LOTES_UI.pct(sh.usedPct * 100) + ' · ' + sh.offcuts.length + ' sobra(s) aproveitável(is)</div>' +
+            LOTES_UI.pct(sh.usedPct * 100) + ' · ' + sh.offcuts.length + ' sobra(s) aproveitável(is)' +
+            (simIdx >= 0 ? ' <button type="button" class="erp-btn-secondary erp-btn-sm" onclick="SIMCORTE.abrir(' + simIdx + ')" title="Mostra o corte passo a passo, na ordem da máquina">▶ Simular corte</button>' : '') + '</div>' +
         '</div>' +
+        '<div' + (simIdx >= 0 ? ' style="cursor:pointer" title="Clique para simular o corte" onclick="SIMCORTE.clique(event, ' + simIdx + ')"' : '') + '>' +
         NESTING.sheetSVG(sh, draft.params) +
-        '</div>';
+        '</div></div>';
     }).join('');
     return UI.panel(UI.esc(g.group.color_name) + ' · ' + LOTES_UI.esp(g.group.espessura_mm) + ' mm',
       '<div class="erp-grid erp-grid-4" style="margin-bottom:14px">' +
@@ -1182,6 +1186,10 @@ LOTES_UI.planView = function (params, d) {
         };
       })
     };
+    // Simulador de corte (10/11): clicar no desenho (fora de peça) ou no botão
+    const simIdx = (typeof SIMCORTE !== 'undefined')
+      ? SIMCORTE.registrar(Object.assign({ source: s.source }, sh), snap, 'Chapa ' + (machineNo[s.id] ? machineNo[s.id].n + '/' + machineNo[s.id].total : s.index_no) + ' — ' + (s.color_name || ''))
+      : -1;
     return '<div style="margin-bottom:20px">' +
       '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
         // Número como a máquina mostra (por material) + posição geral do plano.
@@ -1192,9 +1200,10 @@ LOTES_UI.planView = function (params, d) {
           UI.swatch(null, s.color_name) + ' ' + LOTES_UI.esp(s.espessura_mm) + 'mm · ' +
           LOTES_UI.mm(s.width_mm) + ' × ' + LOTES_UI.mm(s.height_mm) + ' mm</div>' +
         '<div class="erp-small erp-muted">' + (s._pieces || []).length + ' peças · aproveitamento ' +
-          LOTES_UI.pct(s.used_pct) + '</div>' +
+          LOTES_UI.pct(s.used_pct) + (simIdx >= 0 ? ' <button type="button" class="erp-btn-secondary erp-btn-sm" onclick="SIMCORTE.abrir(' + simIdx + ')" title="Mostra o corte passo a passo, na ordem da máquina">▶ Simular corte</button>' : '') + '</div>' +
       '</div>' +
-      NESTING.sheetSVG(sh, snap) +
+      '<div' + (simIdx >= 0 ? ' style="cursor:pointer" title="Clique fora das peças para simular o corte" onclick="SIMCORTE.clique(event, ' + simIdx + ')"' : '') + '>' +
+      NESTING.sheetSVG(sh, snap) + '</div>' +
       '<div class="erp-xs erp-muted" style="margin-top:4px">' +
         (s._pieces || []).map(function (p) { return '<span class="erp-mono">' + UI.esc(p.piece_code) + '</span> ' + UI.esc(p.reference || ''); }).join(' · ') +
       '</div></div>';
