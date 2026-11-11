@@ -6417,3 +6417,78 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 
 /* Número do pedido na fábrica (migration 287) no cartão do pedido. */
 .po-order-factory-no { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--text); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+
+/* ============================================================
+   MEUS PROJETOS — painel por pasta (11/11, só admin). Ver o fim de
+   js/portal-09-projetos-final.js (MP_SO_ADMIN).
+   ============================================================ */
+.po-myproj-v2-on > h2, .po-myproj-v2-on > p.hint, .po-myproj-v2-on #po-proj-fav-list { display: none !important; }
+#po-mp-v2 { margin-bottom: 18px; }
+.mp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.mp-head h2 { margin: 0 0 2px; font-size: 26px; }
+.mp-head .hint { margin: 0; }
+.mp-new { background: #8a4b1c; color: #fff; border: none; border-radius: 8px; padding: 11px 20px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mp-new:hover { background: #733d15; }
+.mp-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.mp-stat { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); min-width: 0; }
+.mp-stat-ico { flex: none; width: 30px; height: 30px; }
+.mp-stat-ico svg { width: 30px; height: 30px; }
+.mp-stat div { display: flex; flex-direction: column; min-width: 0; }
+.mp-stat span { font-size: 12px; color: var(--muted); }
+.mp-stat strong { font-size: 24px; line-height: 1.1; }
+.mp-stat.s-projects { background: #f3f0fa; } .mp-stat.s-projects .mp-stat-ico { color: #6b4fb3; }
+.mp-stat.s-prod { background: #fdf1e1; } .mp-stat.s-prod .mp-stat-ico { color: #b9761a; }
+.mp-stat.s-dev { background: #e8f1fb; } .mp-stat.s-dev .mp-stat-ico { color: #2f6fb5; }
+.mp-stat.s-done { background: #e6f5ea; } .mp-stat.s-done .mp-stat-ico { color: #2e8b4a; }
+.mp-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.mp-filters select { margin: 0; width: auto; min-width: 150px; height: 40px; }
+.mp-search { flex: 1 1 280px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); margin: 0; }
+.mp-search svg { flex: none; width: 18px; height: 18px; color: var(--muted); }
+.mp-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; margin: 0; padding: 0; height: 100%; box-shadow: none; }
+.mp-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.mp-tab { background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 500; cursor: pointer; margin: 0; }
+.mp-tab:hover { background: var(--bg); }
+.mp-tab.is-on { background: #8a4b1c; color: #fff; }
+.mp-table-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: visible; }
+.mp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.mp-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--text); background: var(--bg); padding: 10px 12px; white-space: nowrap; }
+.mp-table th:first-child { border-top-left-radius: 10px; padding-left: 40px; }
+.mp-table th:last-child { border-top-right-radius: 10px; }
+.mp-th-sort { cursor: pointer; user-select: none; }
+.mp-table td { padding: 9px 12px; border-top: 1px solid var(--border); vertical-align: middle; }
+.mp-row { cursor: pointer; }
+.mp-row:hover { background: var(--bg); }
+.mp-c-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mp-c-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-chev, .mp-fold, .mp-lay { flex: none; display: inline-flex; }
+.mp-chev svg { width: 14px; height: 14px; transition: transform .15s ease; }
+.mp-row.is-open .mp-chev svg { transform: rotate(90deg); }
+.mp-fold svg { width: 20px; height: 20px; color: #d08a2e; }
+.mp-c-n { white-space: nowrap; }
+.mp-lay svg { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; color: var(--muted); }
+.mp-c-date { white-space: nowrap; color: var(--muted); font-size: 13px; }
+.mp-chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.mp-chip.st-dev { background: #e3effc; color: #1f5fa8; }
+.mp-chip.st-proposal { background: #efe4fb; color: #6b3fb0; }
+.mp-chip.st-approved { background: #e2f4e6; color: #23793c; }
+.mp-chip.pr-waiting { background: #efede8; color: #5f5a52; }
+.mp-chip.pr-scheduled { background: #e3effc; color: #1f5fa8; }
+.mp-chip.pr-in_prod { background: #d9f2df; color: #1c7a36; }
+.mp-chip.pr-done { background: #1c7a36; color: #fff; }
+.mp-c-menu { position: relative; width: 44px; text-align: right; }
+.mp-dots { background: transparent; border: none; color: var(--text); font-size: 20px; line-height: 1; padding: 2px 8px; border-radius: 6px; cursor: pointer; margin: 0; }
+.mp-dots:hover { background: var(--border); }
+.mp-menu { position: absolute; right: 8px; top: 34px; z-index: 50; min-width: 200px; display: flex; flex-direction: column; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.16); text-align: left; }
+.mp-menu-item { background: transparent; border: none; color: var(--text); text-align: left; padding: 8px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; margin: 0; white-space: nowrap; }
+.mp-menu-item:hover { background: var(--bg); }
+.mp-menu-item:disabled { opacity: .45; cursor: not-allowed; }
+.mp-menu-item.is-danger { color: #c0392b; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; margin-top: 4px; }
+.mp-exp > td { background: var(--bg); padding: 14px; }
+.mp-exp-status:empty { display: none; }
+.mp-exp-status { margin-bottom: 8px; }
+.mp-empty { padding: 24px 0; text-align: center; }
+@media (max-width: 1000px) {
+  .mp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mp-table-wrap { overflow-x: auto; }
+  .mp-table { min-width: 820px; }
+}

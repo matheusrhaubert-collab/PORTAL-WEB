@@ -551,6 +551,7 @@ async function loadProjectFavoritesList() {
     nomes.forEach((nome) => {
       const det = document.createElement('details');
       det.className = 'po-myproj-folder';
+      det.dataset.folder = nome || '__none__'; // o painel novo (fim deste arquivo) acha a grade da pasta por aqui
       det.open = !fechadas[nome || '__none__'];
       const n = data.filter((p) => (p.client_folder || '') === nome).length;
       const sum = document.createElement('summary');
@@ -3405,3 +3406,439 @@ function renderView3DGuestMeasurements() {
   });
 })();
 // fim de portal.js
+
+// ============================================================
+// MEUS PROJETOS — PAINEL POR PASTA (2026-11-11) — SÓ ADMINISTRADOR
+// ============================================================
+// Matt mandou o desenho: "olha como quero transformar nossa pasta de meus
+// projetos. faz só pra administrador primeiro." Em vez da grade de cartões
+// dentro de cada pasta, uma TABELA de pastas: cliente, nº de projetos,
+// status do projeto, produção, última atualização e um menu "⋯" com as
+// ações da pasta. Em cima: totais, busca, filtros e abas (Todos / Recentes
+// / Arquivados).
+//
+// LIGAR PRA TODO MUNDO: trocar MP_SO_ADMIN pra false.
+//
+// O QUE É REAPROVEITADO (nada de lógica duplicada):
+// - As ações da pasta são as funções de sempre do portal-09/10
+//   (generateClientProposalPDF, shareProjectFolder, renameProjectFolder,
+//   sendProjectFolderToOrders, deleteProjectFolder).
+// - Os CARTÕES dos projetos também: loadProjectFavoritesList continua
+//   montando a lista antiga (escondida) e, ao abrir uma pasta aqui, a grade
+//   de cartões dela é MOVIDA pra dentro da linha — Carregar, Renomear,
+//   Duplicar, Compartilhar, Ver em 3D, Pasta e Excluir seguem funcionando
+//   sem uma linha de código nova.
+//
+// DE ONDE VEM CADA COLUNA
+//   Cliente            user_projects.client_info.name (o mais usado na pasta)
+//   Status do projeto  Aprovado          = projeto virou pedido APROVADO
+//                      Proposta enviada  = virou pedido, ainda pendente
+//                      Em desenvolvimento = o resto
+//   Produção           Aguardando  = nenhum pedido aprovado
+//                      Programado  = aprovado, ainda fora de lote
+//                      Em produção = algum pedido já em lote
+//                      Concluído   = todos entregues
+//   Arquivar           user_projects.archived_at (migration 288). Sem a
+//                      migration o item fica desligado e o resto funciona.
+//
+// Mora no fim do portal-09 de propósito: arquivo novo não sobe sozinho pelo
+// subir.ps1 (git add -u) e exigiria um git add no terminal.
+
+const MP_SO_ADMIN = true;
+const MP_RECENT_DAYS = 14;
+const MP_NONE = '__none__';
+
+const mpState = {
+  rows: [], ordersById: {}, trackByOrder: {}, archCol: true,
+  tab: 'all', status: 'all', client: 'all', sort: 'updated', dir: 'desc', q: '',
+  open: new Set(), menu: null, loadSeq: 0, loaded: false
+};
+
+function mpT(k, vars) { return I18n.t('mp.' + k, vars); }
+function mpEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function mpLocale() { return (typeof currentLocale === 'function') ? currentLocale() : undefined; }
+function mpDate(d) {
+  if (!d) return '—';
+  const x = new Date(d);
+  if (isNaN(x)) return '—';
+  return x.toLocaleDateString(mpLocale(), { day: '2-digit', month: 'short', year: 'numeric' })
+    + ' ' + x.toLocaleTimeString(mpLocale(), { hour: '2-digit', minute: '2-digit' });
+}
+
+let mpAdminCache = null;
+async function mpCanSee() {
+  if (!MP_SO_ADMIN) return true;
+  if (window.LEGNO_IS_ADMIN === true) return true;
+  if (mpAdminCache !== null) return mpAdminCache;
+  try {
+    const { data, error } = await supabaseClient.rpc('is_admin');
+    mpAdminCache = !error && data === true;
+  } catch (e) { mpAdminCache = false; }
+  return mpAdminCache;
+}
+
+function mpSection() {
+  const page = document.getElementById('po-tab-my-projects');
+  return page ? page.querySelector('section.panel') : null;
+}
+function mpBox() {
+  let box = document.getElementById('po-mp-v2');
+  if (box) return box;
+  const sec = mpSection();
+  if (!sec) return null;
+  box = document.createElement('div');
+  box.id = 'po-mp-v2';
+  sec.insertBefore(box, sec.firstChild);
+  box.addEventListener('click', mpOnClick);
+  box.addEventListener('input', mpOnInput);
+  box.addEventListener('change', mpOnInput);
+  document.addEventListener('pointerdown', (ev) => {
+    if (mpState.menu && !ev.target.closest('.mp-menu, .mp-dots')) { mpState.menu = null; mpRender(); }
+  });
+  const antigo = document.getElementById('po-proj-fav-list');
+  if (antigo && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => { mpAttachCards(); }).observe(antigo, { childList: true });
+  }
+  return box;
+}
+
+// ---------- dados ----------
+async function mpLoad() {
+  const seq = ++mpState.loadSeq;
+  const box = mpBox();
+  if (!box || !currentUser) return;
+  if (!mpState.loaded) box.innerHTML = '<p class="hint">' + mpEsc(mpT('loading')) + '</p>';
+  const BASE = ['id', 'name', 'updated_at', 'client_user_id'];
+  let opt = ['cached_value_usd', 'frozen_order_id', 'client_folder', 'client_info', 'archived_at'];
+  const run = () => supabaseClient.from('user_projects').select(BASE.concat(opt).join(', '))
+    .eq('client_user_id', currentUser.id).order('updated_at', { ascending: false });
+  let { data, error } = await run();
+  for (let i = 0; i < 5 && error; i++) {
+    const falta = opt.find((c) => (error.message || '').includes(c));
+    if (!falta) break;
+    opt = opt.filter((c) => c !== falta);
+    ({ data, error } = await run());
+  }
+  if (seq !== mpState.loadSeq) return;
+  if (error) { box.innerHTML = '<p class="error">' + mpEsc(error.message) + '</p>'; return; }
+  mpState.archCol = opt.includes('archived_at');
+  mpState.rows = data || [];
+
+  // pedidos de origem (projeto congelado) + andamento de fábrica
+  const orderIds = [...new Set(mpState.rows.map((p) => p.frozen_order_id).filter(Boolean))];
+  const ordersById = {};
+  for (let i = 0; i < orderIds.length; i += 100) {
+    try {
+      const { data: os } = await supabaseClient.from('orders')
+        .select('id, status, finance_released_at, delivered_at').in('id', orderIds.slice(i, i + 100));
+      (os || []).forEach((o) => { ordersById[o.id] = o; });
+    } catch (e) { /* sem pedidos: tudo cai em "em desenvolvimento" */ }
+  }
+  let track = {};
+  const aprovados = Object.values(ordersById).filter((o) => ['approved', 'paid', 'delivered'].includes(o.status)).map((o) => o.id);
+  if (aprovados.length) {
+    try {
+      const { data: tr, error: trErr } = await supabaseClient.rpc('portal_order_tracking', { p_order_ids: aprovados });
+      if (!trErr) (tr || []).forEach((r) => { track[r.order_id] = r; });
+    } catch (e) { /* sem a RPC: "em produção" vira "programado" */ }
+  }
+  if (seq !== mpState.loadSeq) return;
+  mpState.ordersById = ordersById;
+  mpState.trackByOrder = track;
+  mpState.loaded = true;
+  mpRender();
+}
+
+// etapa de UM projeto: dev | sent | prod | done  (+ emLote)
+function mpProjStage(p) {
+  const o = p.frozen_order_id ? mpState.ordersById[p.frozen_order_id] : null;
+  if (!o) return { st: 'dev', emLote: false };
+  if (o.status === 'delivered') return { st: 'done', emLote: true };
+  if (o.status === 'approved' || o.status === 'paid') {
+    const t = mpState.trackByOrder[o.id];
+    return { st: 'prod', emLote: !!(t && t.batch_code) };
+  }
+  return { st: 'sent', emLote: false };
+}
+
+function mpFolders() {
+  const map = new Map();
+  mpState.rows.forEach((p) => {
+    const k = p.client_folder || MP_NONE;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(p);
+  });
+  const out = [];
+  map.forEach((lista, k) => {
+    const est = lista.map(mpProjStage);
+    const nAprov = est.filter((e) => e.st === 'prod' || e.st === 'done').length;
+    const nSent = est.filter((e) => e.st === 'sent').length;
+    const nDone = est.filter((e) => e.st === 'done').length;
+    const status = nAprov > 0 ? 'approved' : (nSent > 0 ? 'proposal' : 'dev');
+    const prod = (nDone === lista.length) ? 'done'
+      : est.some((e) => e.st === 'prod' && e.emLote) ? 'in_prod'
+        : nAprov > 0 ? 'scheduled' : 'waiting';
+    // cliente: o nome mais repetido nos "Dados do cliente" dos projetos
+    const conta = {};
+    lista.forEach((p) => { const n = p.client_info && p.client_info.name ? String(p.client_info.name).trim() : ''; if (n) conta[n] = (conta[n] || 0) + 1; });
+    const cliente = Object.keys(conta).sort((a, b) => conta[b] - conta[a])[0] || '';
+    const upd = lista.reduce((m, p) => (p.updated_at && (!m || p.updated_at > m) ? p.updated_at : m), null);
+    out.push({
+      key: k, nome: k === MP_NONE ? '' : k, titulo: k === MP_NONE ? I18n.t('fav.folder_none') : k,
+      lista, n: lista.length, nAprov, status, prod, cliente, upd,
+      arquivada: mpState.archCol && lista.every((p) => p.archived_at)
+    });
+  });
+  return out;
+}
+
+function mpVisible(folders) {
+  const q = mpState.q.toLowerCase();
+  const limite = Date.now() - MP_RECENT_DAYS * 86400000;
+  let v = folders.filter((f) => {
+    if (mpState.tab === 'archived') { if (!f.arquivada) return false; }
+    else if (f.arquivada) return false;
+    if (mpState.tab === 'recent' && !(f.upd && new Date(f.upd).getTime() >= limite)) return false;
+    if (mpState.status !== 'all' && f.status !== mpState.status) return false;
+    if (mpState.client !== 'all' && f.cliente !== mpState.client) return false;
+    if (!q) return true;
+    return f.titulo.toLowerCase().includes(q) || f.cliente.toLowerCase().includes(q)
+      || f.lista.some((p) => String(p.name || '').toLowerCase().includes(q)
+        || (p.client_info && String(p.client_info.address || '').toLowerCase().includes(q)));
+  });
+  const s = mpState.dir === 'asc' ? 1 : -1;
+  v.sort((a, b) => {
+    if (a.key === MP_NONE) return 1;             // "Sem pasta" sempre no fim
+    if (b.key === MP_NONE) return -1;
+    if (mpState.sort === 'name') return s * a.titulo.localeCompare(b.titulo);
+    return s * String(a.upd || '').localeCompare(String(b.upd || ''));
+  });
+  return v;
+}
+
+// ---------- desenho ----------
+const MP_ICO = {
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+  factory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 21V10l6 4v-4l6 4V5h4v16z"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'
+};
+
+function mpRender() {
+  const box = mpBox();
+  if (!box || !mpState.loaded) return;
+  const foco = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('mp-search-input');
+  mpParkCards();
+  const folders = mpFolders();
+  const ativos = folders.filter((f) => !f.arquivada);
+  const projs = ativos.reduce((a, f) => a.concat(f.lista), []);
+  const est = projs.map(mpProjStage);
+  const nProd = est.filter((e) => e.st === 'prod').length;
+  const nDone = est.filter((e) => e.st === 'done').length;
+  const nDev = projs.length - nProd - nDone;
+  const nPastas = ativos.filter((f) => f.key !== MP_NONE).length;
+  const clientes = [...new Set(folders.map((f) => f.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const vis = mpVisible(folders);
+  const nTab = (t) => { const antes = mpState.tab; mpState.tab = t; const n = mpVisible(folders).length; mpState.tab = antes; return n; };
+  const stat = (cls, ico, rot, n) => '<div class="mp-stat ' + cls + '"><span class="mp-stat-ico">' + ico + '</span><div><span>' + mpEsc(rot) + '</span><strong>' + n + '</strong></div></div>';
+  const opt = (v, rot, sel) => '<option value="' + mpEsc(v) + '"' + (sel === v ? ' selected' : '') + '>' + mpEsc(rot) + '</option>';
+  const chip = (cls, rot) => '<span class="mp-chip ' + cls + '">' + mpEsc(rot) + '</span>';
+
+  const linhas = vis.map((f) => {
+    const aberta = mpState.open.has(f.key);
+    const stRot = mpT('st_' + f.status) + (f.status === 'approved' && f.nAprov < f.n ? ' ' + f.nAprov + '/' + f.n : '');
+    const menu = (mpState.menu === f.key) ? mpMenuHtml(f) : '';
+    return '<tr class="mp-row' + (aberta ? ' is-open' : '') + '" data-k="' + mpEsc(f.key) + '">'
+      + '<td class="mp-c-name"><span class="mp-chev">' + MP_ICO.chev + '</span><span class="mp-fold">' + MP_ICO.folder + '</span><strong>' + mpEsc(f.titulo) + '</strong></td>'
+      + '<td>' + (f.cliente ? mpEsc(f.cliente) : '—') + '</td>'
+      + '<td class="mp-c-n"><span class="mp-lay">' + MP_ICO.layers + '</span><strong>' + f.n + '</strong></td>'
+      + '<td>' + chip('st-' + f.status, stRot) + '</td>'
+      + '<td>' + chip('pr-' + f.prod, mpT('pr_' + f.prod)) + '</td>'
+      + '<td class="mp-c-date">' + mpEsc(mpDate(f.upd)) + '</td>'
+      + '<td class="mp-c-menu">' + (f.key !== MP_NONE ? '<button type="button" class="mp-dots" data-act="menu" aria-label="' + mpEsc(mpT('menu')) + '">⋯</button>' + menu : '') + '</td>'
+      + '</tr>'
+      + (aberta ? '<tr class="mp-exp"><td colspan="7"><div class="mp-exp-status hint" data-st="' + mpEsc(f.key) + '"></div><div class="mp-exp-box" data-folder="' + mpEsc(f.key) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div></td></tr>' : '');
+  }).join('');
+
+  box.innerHTML = ''
+    + '<div class="mp-head"><div><h2>' + mpEsc(I18n.t('project.my_projects_title')) + '</h2><p class="hint">' + mpEsc(mpT('subtitle')) + '</p></div>'
+    + '<button type="button" class="mp-new" data-act="new">+ ' + mpEsc(mpT('new_project')) + '</button></div>'
+    + '<div class="mp-stats">'
+    + stat('s-folders', MP_ICO.folder, mpT('stat_folders'), nPastas)
+    + stat('s-projects', MP_ICO.layers, mpT('stat_projects'), projs.length)
+    + stat('s-prod', MP_ICO.factory, mpT('stat_prod'), nProd)
+    + stat('s-dev', MP_ICO.clock, mpT('stat_dev'), nDev)
+    + stat('s-done', MP_ICO.check, mpT('stat_done'), nDone)
+    + '</div>'
+    + '<div class="mp-filters">'
+    + '<label class="mp-search">' + MP_ICO.search + '<input type="search" class="mp-search-input" placeholder="' + mpEsc(mpT('search_ph')) + '" value="' + mpEsc(mpState.q) + '"></label>'
+    + '<select data-f="status">' + opt('all', mpT('f_status_all'), mpState.status) + opt('dev', mpT('f_status') + ' ' + mpT('st_dev'), mpState.status) + opt('proposal', mpT('f_status') + ' ' + mpT('st_proposal'), mpState.status) + opt('approved', mpT('f_status') + ' ' + mpT('st_approved'), mpState.status) + '</select>'
+    + '<select data-f="client">' + opt('all', mpT('f_client_all'), mpState.client) + clientes.map((c) => opt(c, c, mpState.client)).join('') + '</select>'
+    + '<select data-f="sort">' + opt('updated', mpT('sort_updated'), mpState.sort) + opt('name', mpT('sort_name'), mpState.sort) + '</select>'
+    + '</div>'
+    + '<div class="mp-tabs">'
+    + ['all', 'recent', 'archived'].map((t) => '<button type="button" class="mp-tab' + (mpState.tab === t ? ' is-on' : '') + '" data-act="tab" data-tab="' + t + '">' + mpEsc(mpT('tab_' + t)) + ' (' + nTab(t) + ')</button>').join('')
+    + '</div>'
+    + (vis.length
+      ? '<div class="mp-table-wrap"><table class="mp-table"><thead><tr>'
+        + '<th>' + mpEsc(mpT('col_project')) + '</th><th>' + mpEsc(mpT('col_client')) + '</th><th>' + mpEsc(mpT('col_count')) + '</th>'
+        + '<th>' + mpEsc(mpT('col_status')) + '</th><th>' + mpEsc(mpT('col_prod')) + '</th>'
+        + '<th class="mp-th-sort" data-act="sortdate">' + mpEsc(mpT('col_updated')) + ' ' + (mpState.sort === 'updated' ? (mpState.dir === 'desc' ? '↓' : '↑') : '↕') + '</th><th></th>'
+        + '</tr></thead><tbody>' + linhas + '</tbody></table></div>'
+      : '<p class="hint mp-empty">' + mpEsc(mpT(mpState.rows.length ? 'none_match' : 'none_yet')) + '</p>');
+
+  if (foco) {
+    const inp = box.querySelector('.mp-search-input');
+    if (inp) { inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* ok */ } }
+  }
+  mpAttachCards();
+}
+
+function mpMenuHtml(f) {
+  const it = (act, rot, cls, off) => '<button type="button" class="mp-menu-item' + (cls ? ' ' + cls : '') + '" data-act="' + act + '"' + (off ? ' disabled title="' + mpEsc(off) + '"' : '') + '>' + mpEsc(rot) + '</button>';
+  const podeProposta = typeof generateClientProposalPDF === 'function' && (typeof canGenerateProposal !== 'function' || canGenerateProposal());
+  const podeEnviar = typeof isRetailClientAccount !== 'function' || !isRetailClientAccount();
+  return '<div class="mp-menu">'
+    + (podeProposta ? it('proposal', I18n.t('fav.folder_proposal_btn')) : '')
+    + it('share', I18n.t('fav.folder_share_btn'))
+    + it('rename', I18n.t('fav.folder_rename_btn'))
+    + (podeEnviar ? it('send', I18n.t('fav.folder_send_btn')) : '')
+    + it('archive', mpT(f.arquivada ? 'unarchive' : 'archive'), '', mpState.archCol ? '' : mpT('archive_needs_migration'))
+    + it('delete', I18n.t('fav.folder_delete_btn'), 'is-danger')
+    + '</div>';
+}
+
+// Cartões que estavam numa pasta aberta voltam pra um "estacionamento"
+// escondido antes de a tabela ser redesenhada — senão o innerHTML novo os
+// apagaria e a pasta reabriria vazia até a lista antiga recarregar.
+const mpParked = new Map(); // chave da pasta -> grade de cartões
+function mpParkCards() {
+  const box = document.getElementById('po-mp-v2');
+  if (!box) return;
+  box.querySelectorAll('.mp-exp-box').forEach((alvo) => {
+    const grid = alvo.querySelector('.po-myproj-grid');
+    if (grid && grid.querySelector('.po-myproj-card')) { mpParked.set(alvo.dataset.folder, grid); grid.remove(); }
+  });
+}
+
+// Move a grade de cartões (lista antiga ou estacionamento) pra pasta aberta.
+function mpAttachCards() {
+  const box = document.getElementById('po-mp-v2');
+  const antigo = document.getElementById('po-proj-fav-list');
+  if (!box || !antigo) return;
+  box.querySelectorAll('.mp-exp-box').forEach((alvo) => {
+    const k = alvo.dataset.folder;
+    let grid = null;
+    antigo.querySelectorAll('details.po-myproj-folder').forEach((d) => { if (d.dataset.folder === k) grid = d.querySelector('.po-myproj-grid'); });
+    if (!grid && k === MP_NONE && !antigo.querySelector('details.po-myproj-folder')) {
+      // conta sem pasta nenhuma: a lista antiga é uma grade só
+      const soltos = antigo.querySelectorAll(':scope > .po-myproj-card');
+      if (soltos.length) { grid = document.createElement('div'); grid.className = 'po-myproj-grid'; soltos.forEach((c) => grid.appendChild(c)); }
+    }
+    // a lista antiga acabou de refazer esta pasta: vale a versão nova
+    if (grid && grid.querySelector('.po-myproj-card')) { mpParked.delete(k); alvo.innerHTML = ''; alvo.appendChild(grid); return; }
+    if (alvo.querySelector('.po-myproj-card')) return; // já tem
+    const guardada = mpParked.get(k);
+    if (guardada) { mpParked.delete(k); alvo.innerHTML = ''; alvo.appendChild(guardada); }
+  });
+}
+
+// ---------- ações ----------
+function mpFolderByKey(k) { return mpFolders().find((f) => f.key === k) || null; }
+
+async function mpArchive(f) {
+  const ids = f.lista.map((p) => p.id);
+  const valor = f.arquivada ? null : new Date().toISOString();
+  const { data, error } = await supabaseClient.from('user_projects').update({ archived_at: valor }).in('id', ids).select('id');
+  const errorEl = document.getElementById('po-proj-fav-error');
+  if (error || !data || data.length < ids.length) {
+    if (errorEl) { errorEl.textContent = error ? error.message : mpT('archive_partial', { n: (data || []).length, total: ids.length }); errorEl.style.display = 'block'; }
+  }
+  mpLoad();
+}
+
+function mpStatusEl(key) {
+  let achou = null;
+  document.querySelectorAll('#po-mp-v2 .mp-exp-status').forEach((el) => { if (el.dataset.st === key) achou = el; });
+  return achou;
+}
+
+function mpOnClick(ev) {
+  const actEl = ev.target.closest('[data-act]');
+  const row = ev.target.closest('.mp-row');
+  if (actEl) {
+    const act = actEl.dataset.act;
+    if (act === 'new') {
+      const tab = document.querySelector('.portal-tab-btn[data-tab="po-tab-projects"]');
+      if (tab) tab.click();
+      if (typeof resetProject === 'function') resetProject();
+      return;
+    }
+    if (act === 'tab') { mpState.tab = actEl.dataset.tab; mpState.menu = null; mpRender(); return; }
+    if (act === 'sortdate') {
+      if (mpState.sort === 'updated') mpState.dir = mpState.dir === 'desc' ? 'asc' : 'desc';
+      else { mpState.sort = 'updated'; mpState.dir = 'desc'; }
+      mpRender(); return;
+    }
+    if (!row) return;
+    const f = mpFolderByKey(row.dataset.k);
+    if (!f) return;
+    if (act === 'menu') { mpState.menu = (mpState.menu === f.key) ? null : f.key; mpRender(); return; }
+    mpState.menu = null;
+    // o andamento das ações demoradas aparece dentro da pasta (abre na hora)
+    const comStatus = act === 'proposal' || act === 'send';
+    if (comStatus) mpState.open.add(f.key);
+    mpRender();
+    const stEl = comStatus ? mpStatusEl(f.key) : null;
+    if (act === 'proposal') generateClientProposalPDF(f.nome, f.lista.filter((p) => !p.frozen_order_id), stEl);
+    else if (act === 'share') shareProjectFolder(f.nome);
+    else if (act === 'rename') { mpState.open.delete(f.key); renameProjectFolder(f.nome, f.lista); }
+    else if (act === 'send') sendProjectFolderToOrders(f.nome, f.lista, stEl);
+    else if (act === 'archive') { if (mpState.archCol) mpArchive(f); }
+    else if (act === 'delete') deleteProjectFolder(f.nome, f.lista);
+    return;
+  }
+  if (row && !ev.target.closest('.mp-menu')) {
+    const k = row.dataset.k;
+    if (mpState.open.has(k)) mpState.open.delete(k); else mpState.open.add(k);
+    mpState.menu = null;
+    mpRender();
+  }
+}
+function mpOnInput(ev) {
+  const t = ev.target;
+  if (t.classList && t.classList.contains('mp-search-input')) { if (ev.type === 'input') { mpState.q = t.value.trim(); mpRender(); } return; }
+  if (ev.type !== 'change' || !t.dataset || !t.dataset.f) return;
+  if (t.dataset.f === 'status') mpState.status = t.value;
+  else if (t.dataset.f === 'client') mpState.client = t.value;
+  else if (t.dataset.f === 'sort') { mpState.sort = t.value; mpState.dir = t.value === 'name' ? 'asc' : 'desc'; }
+  mpRender();
+}
+
+// ---------- gancho: toda recarga da lista antiga recarrega o painel ----------
+let mpOrigLoadList = null;
+(function mpHook() {
+  if (typeof loadProjectFavoritesList !== 'function') return;
+  mpOrigLoadList = loadProjectFavoritesList;
+  loadProjectFavoritesList = async function () {
+    const sec = mpSection();
+    let admin = false;
+    try { admin = await mpCanSee(); } catch (e) { admin = false; }
+    if (sec) sec.classList.toggle('po-myproj-v2-on', admin);
+    if (!admin) {
+      const box = document.getElementById('po-mp-v2');
+      if (box) box.innerHTML = '';
+      return mpOrigLoadList.apply(this, arguments);
+    }
+    mpBox(); // garante o observador antes de a lista antiga refazer os cartões
+    const p = mpOrigLoadList.apply(this, arguments);
+    mpLoad();
+    return p;
+  };
+  document.addEventListener('po:lang-changed', () => { try { mpRender(); } catch (e) { /* ok */ } });
+})();
