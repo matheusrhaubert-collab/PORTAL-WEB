@@ -198,7 +198,8 @@ window.SIMCORTE = (function () {
       document.addEventListener('keydown', st.onKey, true);
       return;
     }
-    const btn = 'style="padding:7px 13px;border:1px solid #c9c3b6;border-radius:7px;background:#fff;cursor:pointer;font-size:14px"';
+    // cor, largura e fonte explícitas: o CSS do ERP pinta <button> de texto branco e estica <select> em 100%
+    const btn = 'type="button" style="padding:7px 13px;border:1px solid #c9c3b6;border-radius:7px;background:#fff;color:#222;cursor:pointer;font-size:14px;line-height:1.2;width:auto;min-width:0;margin:0;white-space:nowrap"';
     el.innerHTML =
       '<div style="background:#fff;border-radius:10px;width:min(1280px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #e5e0d6">' +
@@ -215,8 +216,8 @@ window.SIMCORTE = (function () {
               '<button ' + btn + ' data-a="play" id="sim-play" title="Tocar / pausar (espaço)">▶ Tocar</button>' +
               '<button ' + btn + ' data-a="prox" title="Próximo passo (→)">▶</button>' +
               '<button ' + btn + ' data-a="fim" title="Fim">⏭</button>' +
-              '<input id="sim-range" type="range" min="0" max="' + (sim.passos.length - 1) + '" value="0" style="flex:1;min-width:140px">' +
-              '<select id="sim-vel" title="Velocidade" style="padding:6px;border:1px solid #c9c3b6;border-radius:7px">' +
+              '<input id="sim-range" type="range" min="0" max="' + (sim.passos.length - 1) + '" value="0" style="flex:1 1 140px;min-width:140px;width:auto;margin:0">' +
+              '<select id="sim-vel" title="Velocidade" style="padding:6px;border:1px solid #c9c3b6;border-radius:7px;width:auto;flex:0 0 auto;margin:0;color:#222;background:#fff">' +
                 '<option value="1800">lento</option><option value="1000" selected>normal</option><option value="450">rápido</option></select>' +
             '</div>' +
             '<div style="margin-top:10px;font-size:12px;color:#6f6a60;display:flex;gap:14px;flex-wrap:wrap">' +

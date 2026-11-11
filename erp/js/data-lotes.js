@@ -389,6 +389,12 @@ LOTES.explodeOrders = async function (orderIds) {
     });
   });
   const compEdge = {}; // piece_id (module_components.id) -> components.edge_banding
+  /* Pareamento pelo cadastro ATUAL (10/11, Ripa horizontal): o breakdown do
+     pedido é uma foto do dia do envio — peça que passou a ser pareada DEPOIS
+     (pair_group_size preenchido no componente) entrava solta no lote de
+     pedido já enviado. O que está no pedido continua valendo; o cadastro só
+     completa quando o pedido não tem. */
+  const compPair = {}; // piece_id -> { n, w }
   const compVeio = {}; // piece_id -> { position_role, positioning, veio } (pro grain_axis de pedido antigo)
   const todosIds = Array.from(new Set(Array.from(missingPieceIds).concat(Array.from(missingGrainIds))));
   if (todosIds.length) {
@@ -409,11 +415,12 @@ LOTES.explodeOrders = async function (orderIds) {
     const mcs = await emBlocos('module_components', 'id, component_id, position_role', todosIds);
     const compIds = Array.from(new Set((mcs || []).map(function (m) { return m.component_id; }).filter(Boolean)));
     const comps = compIds.length
-      ? await emBlocos('components', 'id, edge_banding, veio, position_role, component_types(positioning)', compIds)
+      ? await emBlocos('components', 'id, edge_banding, veio, position_role, pair_group_size, pair_physical_width_mm, component_types(positioning)', compIds)
       : [];
-    const ebByComp = {}, veioByComp = {};
+    const ebByComp = {}, veioByComp = {}, pairByComp = {};
     (comps || []).forEach(function (cp) {
       ebByComp[cp.id] = cp.edge_banding;
+      if (cp.pair_group_size > 1 && cp.pair_physical_width_mm > 0) pairByComp[cp.id] = { n: cp.pair_group_size, w: cp.pair_physical_width_mm };
       veioByComp[cp.id] = {
         veio: cp.veio || 'livre',
         position_role: cp.position_role || null,
@@ -422,6 +429,7 @@ LOTES.explodeOrders = async function (orderIds) {
     });
     (mcs || []).forEach(function (m) {
       compEdge[m.id] = ebByComp[m.component_id];
+      if (pairByComp[m.component_id]) compPair[m.id] = pairByComp[m.component_id];
       const v = veioByComp[m.component_id];
       if (v) compVeio[m.id] = Object.assign({}, v, { position_role: m.position_role || v.position_role || 'other' });
     });
@@ -528,8 +536,8 @@ LOTES.explodeOrders = async function (orderIds) {
         // pareamento em si (virar N vendidos em ceil(N/pair_group_size)
         // peças físicas mais largas) só acontece DEPOIS, com o total já
         // fechado — ver o passo logo antes de `const rows = ...` abaixo.
-        pair_group_size: leaf.pair_group_size || null,
-        pair_physical_width_mm: leaf.pair_physical_width_mm || null,
+        pair_group_size: leaf.pair_group_size || (compPair[leaf.piece_id] ? compPair[leaf.piece_id].n : null),
+        pair_physical_width_mm: leaf.pair_physical_width_mm || (compPair[leaf.piece_id] ? compPair[leaf.piece_id].w : null),
         // Módulo/pedido (pedido do Matt, 21/09) — ver moduleSeq acima e
         // migration 157.
         module_number: moduleNumber,
