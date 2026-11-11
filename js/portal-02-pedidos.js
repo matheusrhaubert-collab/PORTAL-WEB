@@ -1246,8 +1246,6 @@ async function returnOrderToProject(order, btn, errorEl) {
   if (!canReturnOrderToProject(order)) return;
   if (errorEl) errorEl.style.display = 'none';
   if (!confirm(I18n.t('my_orders.back_to_project_confirm'))) return;
-  // projeto aberto no editor com alteração não salva vai ser substituído
-  if (typeof projectDirty !== 'undefined' && projectDirty && !confirm(I18n.t('project_pdf.confirm_unsaved'))) return;
   const showErr = (msg) => {
     if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
     else alert(msg);
@@ -1266,15 +1264,23 @@ async function returnOrderToProject(order, btn, errorEl) {
       .from('user_projects').select('*').eq('id', order.source_project_id).single();
     if (projErr) throw projErr;
     if (proj.frozen_order_id) throw new Error(I18n.t('my_orders.back_to_project_still_frozen'));
-    proj._fullRow = true;
-    // sai da tela do pedido (se veio de lá) antes de trocar de aba
+    // FICA EM MEUS PEDIDOS (2026-11-11, Matt: "quando clico em voltar ao
+    // projeto, quero que permaneça na tela" — antes abria o projeto no
+    // editor e, com vários pedidos pra voltar, tinha que ir e vir a cada
+    // um). O projeto só é destravado; ele abre por Meus Projetos quando
+    // quiser. Se veio da tela do pedido, volta pra lista.
     currentOrderDetail = null;
     const detailSec = document.getElementById('po-order-detail-section');
     const listPanel = document.getElementById('po-orders-list-panel');
     if (detailSec) detailSec.style.display = 'none';
     if (listPanel) listPanel.style.display = '';
-    if (typeof projectDirty !== 'undefined') projectDirty = false; // já confirmado acima — não pergunta de novo na troca de aba
-    await restoreFavoriteProject(proj, true);
+    // o mesmo projeto aberto no editor deixa de constar como travado
+    try {
+      if (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.id === proj.id) {
+        loadedProjectFavorite.frozen_order_id = null;
+      }
+    } catch (e) { /* editor ainda não carregado */ }
+    await loadMyOrders();
   } catch (err) {
     showErr(I18n.t('my_orders.back_to_project_error', { msg: err.message || String(err) }));
   } finally {
