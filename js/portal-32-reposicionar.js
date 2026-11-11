@@ -166,6 +166,22 @@ function openProjectReposicionarModal() {
   }
   renderProjectReposicionarModalContent();
   el.style.display = 'block';
+  // CLICAR FORA FECHA (2026-11-11, Matt: "quando clico fora dessa tela ela
+  // deve fechar"). Fecha como o OK — o que já foi reposicionado fica (pra
+  // desfazer tem o Cancelar e o Ctrl+Z); um clique solto não joga o ajuste
+  // fora. Ligado uma vez só; o `abriuEm` ignora o próprio clique/soltar que
+  // abriu o painel.
+  el._abriuEm = Date.now();
+  if (!openProjectReposicionarModal._foraLigado) {
+    openProjectReposicionarModal._foraLigado = true;
+    document.addEventListener('pointerdown', (ev) => {
+      const p = document.getElementById('po-proj-reposicionar-panel');
+      if (!p || p.style.display === 'none' || !projectReposicionarState) return;
+      if (Date.now() - (p._abriuEm || 0) < 350) return;
+      if (p.contains(ev.target)) return;
+      closeProjectReposicionarModal(true);
+    }, true);
+  }
 }
 
 function closeProjectReposicionarModal(commit) {
