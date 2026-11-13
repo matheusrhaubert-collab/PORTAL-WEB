@@ -1384,14 +1384,16 @@ LOTES_UI.labels = function (params, d) {
       // mm (pedido do Matt, 21/09-3: "a chapa1 coloca no lugar do
       // plywood").
       '<div class="erp-etq-dim-row">' +
-        '<span class="erp-etq-dim">' + LOTES_UI.mm(p.w_mm) + ' × ' + LOTES_UI.mm(p.h_mm) +
-          ' × ' + LOTES_UI.esp(p.espessura_mm) + ' mm' + (p.rotated ? ' ↻' : '') + '</span>' +
+        // Comprimento × largura do cadastro, mesmo com a peça girada na
+        // chapa (LOTES.dimsPeca — erro de 13/11, medida saía trocada).
+        '<span class="erp-etq-dim">' + LOTES_UI.mm(LOTES.dimsPeca(p).c) + ' × ' + LOTES_UI.mm(LOTES.dimsPeca(p).l) +
+          ' × ' + LOTES_UI.esp(p.espessura_mm) + ' mm</span>' +
         // Número da chapa como a máquina mostra (por material) — LOTES.sheetMachineNo.
         '<span class="erp-etq-sheet">chapa ' + (s && machineNo[s.id] ? machineNo[s.id].n : (s ? s.index_no : '?')) + '</span>' +
       '</div>' +
       // Mesma medida em polegada fracionada — pedido do Matt (21/09):
       // comprimento/largura em 1/16", espessura em 1/4".
-      '<div class="erp-etq-in">' + LOTES_UI.mmToFraction(p.w_mm, 16) + ' × ' + LOTES_UI.mmToFraction(p.h_mm, 16) +
+      '<div class="erp-etq-in">' + LOTES_UI.mmToFraction(LOTES.dimsPeca(p).c, 16) + ' × ' + LOTES_UI.mmToFraction(LOTES.dimsPeca(p).l, 16) +
         ' × ' + LOTES_UI.mmToFraction(p.espessura_mm, 4) + '</div>' +
       '<div class="erp-etq-badges">' + modBadge + edgeBadge + '</div>' +
       '<div class="erp-etq-line">' + UI.esc(p.module_name || '') + '</div>' +

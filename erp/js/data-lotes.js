@@ -182,6 +182,18 @@ LOTES.sortCutDims = function (w, h, d) {
    pra cima (Pricing.arredondaMm, js/pricing.js). Comprimento e largura da
    peça NASCEM inteiros aqui, então plano, máquina, etiqueta e estoque de
    retalho só veem milímetro inteiro. Espessura fica de fora (19,5). */
+/* Comprimento × largura REAIS da peça gravada no plano (erp.cut_plan_pieces).
+   w_mm/h_mm são as medidas COMO A PEÇA FICOU NA CHAPA: quando o nesting gira
+   a peça (rotated = true), w vira a largura e h o comprimento. Etiqueta,
+   CSV e qualquer material pro operador têm que mostrar sempre comprimento ×
+   largura do cadastro — senão sai trocado (erro visto 13/11: Stretcher
+   (drawer) 508 × 162 saiu "162 × 508" na etiqueta). Posição na chapa
+   (padrões de corte, XML, desenho) continua usando w/h como estão. */
+LOTES.dimsPeca = function (p) {
+  const w = Number(p.w_mm) || 0, h = Number(p.h_mm) || 0;
+  return p.rotated ? { c: h, l: w } : { c: w, l: h };
+};
+
 LOTES.mmCorte = function (v) {
   return (typeof Pricing !== 'undefined' && Pricing.arredondaMm) ? Pricing.arredondaMm(v) : Math.round(Number(v) || 0);
 };

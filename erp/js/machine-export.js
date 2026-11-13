@@ -485,13 +485,17 @@ MAQUINA_EXPORT._buildLabelOps = function (p, labelNumber, sheetIndexNo) {
   y += barH + 0.5 + 2.65 + 0.8;
 
   // .erp-etq-dim-row: medida mm (13px bold) + "chapa N" (10px cinza) à direita
-  const dimTxt = LOTES_UI.mm(p.w_mm) + ' \u00d7 ' + LOTES_UI.mm(p.h_mm) + ' \u00d7 ' + LOTES_UI.esp(p.espessura_mm) + ' mm' + (p.rotated ? ' \u21bb' : '');
+  // Sempre comprimento × largura do cadastro (LOTES.dimsPeca), mesmo com a
+  // peça girada na chapa. O "↻" saía como quadradinho (a fonte do EMF não
+  // tem o glifo) — tirado: a medida já sai na ordem certa.
+  const dm = LOTES.dimsPeca(p);
+  const dimTxt = LOTES_UI.mm(dm.c) + ' \u00d7 ' + LOTES_UI.mm(dm.l) + ' \u00d7 ' + LOTES_UI.esp(p.espessura_mm) + ' mm';
   ops.push({ type: 'text', x: left, y: y, text: dimTxt, sizeMm: 3.4, bold: true, color: INK });
   ops.push({ type: 'text', x: right, y: y + 0.7, text: 'chapa ' + (sheetIndexNo || '?'), sizeMm: 2.65, align: 'right', color: GRAY });
   y += 3.4 * 1.35;
 
   // .erp-etq-in: polegada fracionada (10px cinza)
-  const inTxt = LOTES_UI.mmToFraction(p.w_mm, 16) + ' \u00d7 ' + LOTES_UI.mmToFraction(p.h_mm, 16) + ' \u00d7 ' + LOTES_UI.mmToFraction(p.espessura_mm, 4);
+  const inTxt = LOTES_UI.mmToFraction(dm.c, 16) + ' \u00d7 ' + LOTES_UI.mmToFraction(dm.l, 16) + ' \u00d7 ' + LOTES_UI.mmToFraction(p.espessura_mm, 4);
   ops.push({ type: 'text', x: left, y: y, text: inTxt, sizeMm: 2.65, color: GRAY });
   y += 2.65 * 1.35 + 0.8;
 

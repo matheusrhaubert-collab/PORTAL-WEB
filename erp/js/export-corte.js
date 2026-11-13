@@ -54,7 +54,7 @@ EXPORTC.formats = [
          (é o que a etiqueta e o apontamento usam pra rastrear). */
       plan._pieces.forEach(function (p) {
         rows.push([p.piece_code, p.po_name || '', p.client_name || '', p.module_name || '', p.module_number || '',
-          p.reference || '', Math.round(p.w_mm), Math.round(p.h_mm), p.espessura_mm || '', p.color_name || '',
+          p.reference || '', Math.round(LOTES.dimsPeca(p).c), Math.round(LOTES.dimsPeca(p).l), p.espessura_mm || '', p.color_name || '',
           p.has_grain ? 'SIM' : 'NAO', p.edge_banding || 0,
           (Number(p.edge_band_m) || 0).toFixed(3), 1]);
       });
@@ -108,7 +108,7 @@ EXPORTC.formats = [
           (p.po_name ? p.po_name + ' · ' : '') + (p.client_name || ''),
           (p.module_name || '') + (p.module_number ? ' (Mód. ' + p.module_number + ')' : '') +
             (p.reference ? ' · ' + p.reference : ''),
-          Math.round(p.w_mm) + ' x ' + Math.round(p.h_mm) + ' x ' + (p.espessura_mm || '?') + ' mm',
+          Math.round(LOTES.dimsPeca(p).c) + ' x ' + Math.round(LOTES.dimsPeca(p).l) + ' x ' + (p.espessura_mm || '?') + ' mm',
           (p.color_name || '') + (p.edge_banding ? ' · fita ' + p.edge_banding + ' lados' : ''),
           s ? s.index_no : ''
         ]);
