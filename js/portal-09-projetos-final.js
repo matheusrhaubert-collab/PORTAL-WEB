@@ -3804,6 +3804,14 @@ async function mpFolderBudget(f, stEl) {
           enviado: !!row.frozen_order_id,
           modulos: slots.length,
           pecas: rel.pecasCorte,
+          // mesma divisão da aba $ Fábrica (renderMoneyFabrica): ferragem e
+          // peça comprada contam como matéria-prima
+          materia: Object.keys(rel.material).reduce((a, k) => a + rel.material[k].custo, 0)
+            + Object.keys(rel.fita).reduce((a, k) => a + rel.fita[k].custo, 0)
+            + rel.ferragem.dobradica.custo + rel.ferragem['corrediça'].custo
+            + Object.keys(rel.ferragemMontagem).reduce((a, k) => a + rel.ferragemMontagem[k].custo, 0)
+            + Object.keys(rel.pecasCompradas).reduce((a, k) => a + rel.pecasCompradas[k].custo, 0),
+          mo: Object.keys(rel.labor).reduce((a, k) => a + (Number(rel.labor[k]) || 0), 0),
           custo: rel.totalCusto,
           venda: rel.totalVenda,
           faltou: r.skipped || 0
@@ -3831,7 +3839,7 @@ async function mpFolderBudget(f, stEl) {
 function mpBudgetModal(pasta, linhas, falhas) {
   const old = document.getElementById('po-mp-budget');
   if (old) old.remove();
-  const tot = linhas.reduce((a, l) => ({ modulos: a.modulos + l.modulos, pecas: a.pecas + l.pecas, custo: a.custo + l.custo, venda: a.venda + l.venda }), { modulos: 0, pecas: 0, custo: 0, venda: 0 });
+  const tot = linhas.reduce((a, l) => ({ modulos: a.modulos + l.modulos, pecas: a.pecas + l.pecas, materia: a.materia + l.materia, mo: a.mo + l.mo, custo: a.custo + l.custo, venda: a.venda + l.venda }), { modulos: 0, pecas: 0, materia: 0, mo: 0, custo: 0, venda: 0 });
   const money = (v) => (typeof formatMoney === 'function' ? formatMoney(v) : '$' + Number(v || 0).toFixed(2));
   const td = 'padding:6px 10px;border-bottom:1px solid #eee;';
   const num = td + 'text-align:right;white-space:nowrap;';
@@ -3839,24 +3847,25 @@ function mpBudgetModal(pasta, linhas, falhas) {
     + (l.enviado ? ' <span style="color:#15803d;font-size:11px;">' + mpEsc(mpT('budget_sent')) + '</span>' : '')
     + (l.faltou ? ' <span style="color:#b45309;font-size:11px;">⚠ ' + mpEsc(mpT('budget_missing', { n: l.faltou })) + '</span>' : '')
     + '</td><td style="' + num + '">' + l.modulos + '</td><td style="' + num + '">' + l.pecas
+    + '</td><td style="' + num + '">' + money(l.materia) + '</td><td style="' + num + '">' + money(l.mo)
     + '</td><td style="' + num + '">' + money(l.custo) + '</td><td style="' + num + '">' + money(l.venda)
     + '</td><td style="' + num + '">' + (l.venda > 0 ? (((l.venda - l.custo) / l.venda) * 100).toFixed(1) + '%' : '—') + '</td></tr>').join('');
   const th = 'padding:6px 10px;border-bottom:2px solid #ddd;text-align:right;font-weight:600;';
   const ov = document.createElement('div');
   ov.id = 'po-mp-budget';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1500;display:flex;align-items:center;justify-content:center;';
-  ov.innerHTML = '<div style="background:#fff;border-radius:10px;max-width:900px;width:94%;max-height:86vh;overflow:auto;padding:20px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:14px;">'
+  ov.innerHTML = '<div style="background:#fff;border-radius:10px;max-width:1100px;width:94%;max-height:86vh;overflow:auto;padding:20px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:14px;">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">'
     + '<h3 style="margin:0;">' + mpEsc(mpT('budget_title', { folder: pasta })) + '</h3>'
     + '<button type="button" class="secondary" data-x="1">✕</button></div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">'
-    + [['budget_projects', linhas.length], ['budget_modules', tot.modulos], ['budget_pieces', tot.pecas], ['budget_cost', money(tot.custo)], ['budget_price', money(tot.venda)]]
-      .map(([k, v]) => '<div style="flex:1;min-width:120px;background:#f7f4ef;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">' + mpEsc(mpT(k)) + '</div><div style="font-size:20px;font-weight:700;">' + mpEsc(String(v)) + '</div></div>').join('')
+    + [['budget_projects', linhas.length], ['budget_modules', tot.modulos], ['budget_pieces', tot.pecas], ['budget_material', money(tot.materia)], ['budget_labor', money(tot.mo)], ['budget_cost', money(tot.custo)], ['budget_price', money(tot.venda)]]
+      .map(([k, v]) => '<div style="flex:1;min-width:110px;background:#f7f4ef;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">' + mpEsc(mpT(k)) + '</div><div style="font-size:20px;font-weight:700;">' + mpEsc(String(v)) + '</div></div>').join('')
     + '</div>'
     + '<table style="width:100%;border-collapse:collapse;"><thead><tr>'
-    + '<th style="' + th + 'text-align:left;">' + mpEsc(mpT('budget_col_project')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_modules')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_pieces')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_cost')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_price')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_margin')) + '</th>'
+    + '<th style="' + th + 'text-align:left;">' + mpEsc(mpT('budget_col_project')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_modules')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_pieces')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_material')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_labor')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_cost')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_price')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_margin')) + '</th>'
     + '</tr></thead><tbody>' + corpo
-    + '<tr style="font-weight:700;"><td style="' + td + '">' + mpEsc(mpT('budget_total')) + '</td><td style="' + num + '">' + tot.modulos + '</td><td style="' + num + '">' + tot.pecas + '</td><td style="' + num + '">' + money(tot.custo) + '</td><td style="' + num + '">' + money(tot.venda) + '</td><td style="' + num + '">' + (tot.venda > 0 ? (((tot.venda - tot.custo) / tot.venda) * 100).toFixed(1) + '%' : '—') + '</td></tr>'
+    + '<tr style="font-weight:700;"><td style="' + td + '">' + mpEsc(mpT('budget_total')) + '</td><td style="' + num + '">' + tot.modulos + '</td><td style="' + num + '">' + tot.pecas + '</td><td style="' + num + '">' + money(tot.materia) + '</td><td style="' + num + '">' + money(tot.mo) + '</td><td style="' + num + '">' + money(tot.custo) + '</td><td style="' + num + '">' + money(tot.venda) + '</td><td style="' + num + '">' + (tot.venda > 0 ? (((tot.venda - tot.custo) / tot.venda) * 100).toFixed(1) + '%' : '—') + '</td></tr>'
     + '</tbody></table>'
     + '<p class="hint" style="margin-top:10px;">' + mpEsc(mpT('budget_note')) + '</p>'
     + (falhas.length ? '<p class="error" style="white-space:pre-line;">' + mpEsc(mpT('budget_failed') + '\n• ' + falhas.join('\n• ')) + '</p>' : '')
