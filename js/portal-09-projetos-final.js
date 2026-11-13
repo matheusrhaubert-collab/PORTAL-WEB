@@ -3708,6 +3708,7 @@ function mpMenuHtml(f) {
     + it('share', I18n.t('fav.folder_share_btn'))
     + it('rename', I18n.t('fav.folder_rename_btn'))
     + (podeEnviar ? it('send', I18n.t('fav.folder_send_btn')) : '')
+    + (window.LEGNO_IS_ADMIN === true || mpAdminCache === true ? it('budget', mpT('budget_btn')) : '')
     + it('archive', mpT(f.arquivada ? 'unarchive' : 'archive'), '', mpState.archCol ? '' : mpT('archive_needs_migration'))
     + it('delete', I18n.t('fav.folder_delete_btn'), 'is-danger')
     + '</div>';
@@ -3762,6 +3763,108 @@ async function mpArchive(f) {
   mpLoad();
 }
 
+// ORÇAMENTO DA PASTA (12/11, Matt: "quero um orçamento pra ver número de
+// peças e valor fábrica da pasta toda (só admin)"). Abre cada projeto da
+// pasta no editor (mesmo caminho da Proposta do cliente / Enviar pasta),
+// reprecifica e roda o MESMO collectProjectCostReport do "$ Fábrica" — os
+// números batem com o que a aba Fábrica mostra projeto a projeto.
+// Peças = pecasCorte (regra do plano de corte / lote do ERP). No fim
+// devolve o editor como estava. Só admin, mesmo se MP_SO_ADMIN virar false.
+let mpBudgetRunning = false;
+async function mpFolderBudget(f, stEl) {
+  if (mpBudgetRunning || !f || !f.lista.length) return;
+  if (window.LEGNO_IS_ADMIN !== true) {
+    let admin = false;
+    try { const { data, error } = await supabaseClient.rpc('is_admin'); admin = !error && data === true; } catch (e) { /* não */ }
+    if (!admin) return;
+  }
+  if (typeof collectProjectCostReport !== 'function') return;
+  if (projectSlots.length && projectDirty && !confirm(I18n.t('proposal.client_confirm_unsaved'))) return;
+  mpBudgetRunning = true;
+  const say = (msg) => { if (stEl) stEl.textContent = msg || ''; };
+  const abertoAntes = loadedProjectFavorite && loadedProjectFavorite.id ? loadedProjectFavorite.id : null;
+  const lista = f.lista.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
+  const linhas = [];
+  const falhas = [];
+  try {
+    for (let i = 0; i < lista.length; i++) {
+      const row = lista[i];
+      say(mpT('budget_progress', { i: i + 1, n: lista.length, name: row.name || '' }));
+      try {
+        await fetchProjectFullRow(row);
+        const r = await restoreFavoriteProject(row, false);
+        if (!r || !r.ok) throw (r && r.error) || new Error('load');
+        await projectWaitInteriorsReady();
+        if (typeof ensureAccessoryCatalog === 'function') await ensureAccessoryCatalog();
+        if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots();
+        const slots = projectSlots.filter((s) => !(s.module && s.module.visual_only));
+        const rel = collectProjectCostReport(projectSlots);
+        linhas.push({
+          nome: row.name || '—',
+          enviado: !!row.frozen_order_id,
+          modulos: slots.length,
+          pecas: rel.pecasCorte,
+          custo: rel.totalCusto,
+          venda: rel.totalVenda,
+          faltou: r.skipped || 0
+        });
+      } catch (err) {
+        falhas.push((row.name || row.id) + ' — ' + ((err && err.message) || String(err)));
+      }
+    }
+  } finally {
+    try {
+      if (abertoAntes) {
+        const { data } = await supabaseClient.from('user_projects').select('*').eq('id', abertoAntes).single();
+        if (data) await restoreFavoriteProject(data, true);
+      } else {
+        projectSlots = [];
+        resetProject();
+      }
+    } catch (e) { console.error('[orçamento da pasta] reabrir:', e); }
+    mpBudgetRunning = false;
+    say('');
+  }
+  mpBudgetModal(f.nome || I18n.t('fav.folder_none'), linhas, falhas);
+}
+
+function mpBudgetModal(pasta, linhas, falhas) {
+  const old = document.getElementById('po-mp-budget');
+  if (old) old.remove();
+  const tot = linhas.reduce((a, l) => ({ modulos: a.modulos + l.modulos, pecas: a.pecas + l.pecas, custo: a.custo + l.custo, venda: a.venda + l.venda }), { modulos: 0, pecas: 0, custo: 0, venda: 0 });
+  const money = (v) => (typeof formatMoney === 'function' ? formatMoney(v) : '$' + Number(v || 0).toFixed(2));
+  const td = 'padding:6px 10px;border-bottom:1px solid #eee;';
+  const num = td + 'text-align:right;white-space:nowrap;';
+  const corpo = linhas.map((l) => '<tr><td style="' + td + '">' + mpEsc(l.nome)
+    + (l.enviado ? ' <span style="color:#15803d;font-size:11px;">' + mpEsc(mpT('budget_sent')) + '</span>' : '')
+    + (l.faltou ? ' <span style="color:#b45309;font-size:11px;">⚠ ' + mpEsc(mpT('budget_missing', { n: l.faltou })) + '</span>' : '')
+    + '</td><td style="' + num + '">' + l.modulos + '</td><td style="' + num + '">' + l.pecas
+    + '</td><td style="' + num + '">' + money(l.custo) + '</td><td style="' + num + '">' + money(l.venda)
+    + '</td><td style="' + num + '">' + (l.venda > 0 ? (((l.venda - l.custo) / l.venda) * 100).toFixed(1) + '%' : '—') + '</td></tr>').join('');
+  const th = 'padding:6px 10px;border-bottom:2px solid #ddd;text-align:right;font-weight:600;';
+  const ov = document.createElement('div');
+  ov.id = 'po-mp-budget';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1500;display:flex;align-items:center;justify-content:center;';
+  ov.innerHTML = '<div style="background:#fff;border-radius:10px;max-width:900px;width:94%;max-height:86vh;overflow:auto;padding:20px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:14px;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">'
+    + '<h3 style="margin:0;">' + mpEsc(mpT('budget_title', { folder: pasta })) + '</h3>'
+    + '<button type="button" class="secondary" data-x="1">✕</button></div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">'
+    + [['budget_projects', linhas.length], ['budget_modules', tot.modulos], ['budget_pieces', tot.pecas], ['budget_cost', money(tot.custo)], ['budget_price', money(tot.venda)]]
+      .map(([k, v]) => '<div style="flex:1;min-width:120px;background:#f7f4ef;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">' + mpEsc(mpT(k)) + '</div><div style="font-size:20px;font-weight:700;">' + mpEsc(String(v)) + '</div></div>').join('')
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;"><thead><tr>'
+    + '<th style="' + th + 'text-align:left;">' + mpEsc(mpT('budget_col_project')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_modules')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_pieces')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_cost')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_price')) + '</th><th style="' + th + '">' + mpEsc(mpT('budget_margin')) + '</th>'
+    + '</tr></thead><tbody>' + corpo
+    + '<tr style="font-weight:700;"><td style="' + td + '">' + mpEsc(mpT('budget_total')) + '</td><td style="' + num + '">' + tot.modulos + '</td><td style="' + num + '">' + tot.pecas + '</td><td style="' + num + '">' + money(tot.custo) + '</td><td style="' + num + '">' + money(tot.venda) + '</td><td style="' + num + '">' + (tot.venda > 0 ? (((tot.venda - tot.custo) / tot.venda) * 100).toFixed(1) + '%' : '—') + '</td></tr>'
+    + '</tbody></table>'
+    + '<p class="hint" style="margin-top:10px;">' + mpEsc(mpT('budget_note')) + '</p>'
+    + (falhas.length ? '<p class="error" style="white-space:pre-line;">' + mpEsc(mpT('budget_failed') + '\n• ' + falhas.join('\n• ')) + '</p>' : '')
+    + '</div>';
+  ov.addEventListener('click', (ev) => { if (ev.target === ov || ev.target.closest('[data-x]')) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
 function mpStatusEl(key) {
   let achou = null;
   document.querySelectorAll('#po-mp-v2 .mp-exp-status').forEach((el) => { if (el.dataset.st === key) achou = el; });
@@ -3791,7 +3894,7 @@ function mpOnClick(ev) {
     if (act === 'menu') { mpState.menu = (mpState.menu === f.key) ? null : f.key; mpRender(); return; }
     mpState.menu = null;
     // o andamento das ações demoradas aparece dentro da pasta (abre na hora)
-    const comStatus = act === 'proposal' || act === 'send';
+    const comStatus = act === 'proposal' || act === 'send' || act === 'budget';
     if (comStatus) mpState.open.add(f.key);
     mpRender();
     const stEl = comStatus ? mpStatusEl(f.key) : null;
@@ -3799,6 +3902,7 @@ function mpOnClick(ev) {
     else if (act === 'share') shareProjectFolder(f.nome);
     else if (act === 'rename') { mpState.open.delete(f.key); renameProjectFolder(f.nome, f.lista); }
     else if (act === 'send') sendProjectFolderToOrders(f.nome, f.lista, stEl);
+    else if (act === 'budget') mpFolderBudget(f, stEl);
     else if (act === 'archive') { if (mpState.archCol) mpArchive(f); }
     else if (act === 'delete') deleteProjectFolder(f.nome, f.lista);
     return;
