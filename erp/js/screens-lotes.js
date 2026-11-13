@@ -1138,7 +1138,9 @@ LOTES_UI.salvarPlano = async function (btn) {
    #/planos/:id — plano salvo
    ============================================================ */
 LOTES_UI.planLoad = async function (p) {
-  return { plan: await LOTES.plan(p.id) };
+  // cores (swatch_hex/texture_url) pro resumo de chapas por material
+  const [plan, colors] = await Promise.all([LOTES.plan(p.id), LOTES.colors().catch(function () { return []; })]);
+  return { plan: plan, colors: colors };
 };
 
 /* Perda REAL do plano salvo: bruta menos a sobra guardada como retalho
@@ -1154,6 +1156,16 @@ LOTES_UI.planNetWastePct = function (plan) {
   return Math.max(0, (total - Number(plan.used_area_mm2) - offc) / total) * 100;
 };
 
+LOTES_UI.chapasToggle = function (el) {
+  let m = {};
+  try { m = JSON.parse(localStorage.getItem('erp_plano_chapas_abertas') || '{}') || {}; } catch (e) { /* ok */ }
+  if (el.open) m[el.dataset.k] = true; else delete m[el.dataset.k];
+  try { localStorage.setItem('erp_plano_chapas_abertas', JSON.stringify(m)); } catch (e) { /* ok */ }
+};
+LOTES_UI.chapasTodas = function (abrir) {
+  document.querySelectorAll('details.erp-chapas-grupo').forEach(function (el) { el.open = !!abrir; LOTES_UI.chapasToggle(el); });
+};
+
 LOTES_UI.planView = function (params, d) {
   if (!d.plan) return UI.errorBox('Plano não encontrado', '');
   const plan = d.plan;
@@ -1167,7 +1179,7 @@ LOTES_UI.planView = function (params, d) {
   const machineNo = LOTES.sheetMachineNo(plan);
   const indexById = {};
   plan._sheets.forEach(function (s) { indexById[s.id] = s.index_no; });
-  const sheetsHtml = plan._sheets.map(function (s) {
+  const sheetsArr = plan._sheets.map(function (s) {
     const st = stacks.byId[s.id];
     const stackBadge = (st && st.members.length > 1)
       ? ' ' + UI.pill('empilhada: chapas ' + st.members.map(function (m) { return indexById[m]; }).join(' + '), 'erp-pill-ok')
@@ -1207,7 +1219,64 @@ LOTES_UI.planView = function (params, d) {
       '<div class="erp-xs erp-muted" style="margin-top:4px">' +
         (s._pieces || []).map(function (p) { return '<span class="erp-mono">' + UI.esc(p.piece_code) + '</span> ' + UI.esc(p.reference || ''); }).join(' · ') +
       '</div></div>';
-  }).join('');
+  });
+
+  /* RESUMO POR MATERIAL (13/11, Matt: "ver só o somatório das quantidades
+     com a cor do lado, expandir pra ver os planos ou diminuir e ver só o
+     somatório"). Uma linha por cor+espessura, recolhida por padrão; abrir
+     mostra os desenhos das chapas como sempre foram. O estado aberto/fechado
+     fica no navegador (localStorage), por material. */
+  const colorById = {};
+  (d.colors || []).forEach(function (c) { colorById[c.id] = c; });
+  let chapasAbertas = {};
+  try { chapasAbertas = JSON.parse(localStorage.getItem('erp_plano_chapas_abertas') || '{}') || {}; } catch (e) { /* ok */ }
+  const grupos = [];
+  const grupoPorChave = {};
+  plan._sheets.forEach(function (s, i) {
+    const k = (s.color_id || s.color_name || '—') + '|' + Number(s.espessura_mm);
+    let g = grupoPorChave[k];
+    if (!g) {
+      g = grupoPorChave[k] = { key: k, color: s.color_id ? colorById[s.color_id] : null, name: s.color_name || 'Sem cor definida',
+        esp: s.espessura_mm, novas: 0, retalhos: 0, pecas: 0, area: 0, usada: 0, pilhas: {}, html: [] };
+      grupos.push(g);
+    }
+    if (s.source === 'retalho') g.retalhos++; else g.novas++;
+    g.pecas += (s._pieces || []).length;
+    const a = Number(s.width_mm) * Number(s.height_mm);
+    g.area += a; g.usada += a * (Number(s.used_pct) || 0) / 100;
+    const st = stacks.byId[s.id];
+    if (st && st.members.length > 1) g.pilhas[st.members.slice().sort().join('+')] = true;
+    g.html.push(sheetsArr[i]);
+  });
+  const sw = function (g, px) {
+    const c = g.color || {};
+    return '<span style="display:inline-block;flex:none;width:' + px + 'px;height:' + px + 'px;border-radius:6px;border:1px solid rgba(0,0,0,.2);' +
+      'background:' + UI.esc(c.swatch_hex || '#ccc') + (c.texture_url ? ' url(\'' + UI.esc(c.texture_url) + '\') center/cover' : '') + '"></span>';
+  };
+  const sheetsHtml =
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
+      '<span class="erp-muted erp-small">' + grupos.length + ' material(is) · ' + plan._sheets.length + ' chapa(s) · ' +
+        plan._sheets.reduce(function (t, s) { return t + (s._pieces || []).length; }, 0) + ' peças</span>' +
+      '<button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.chapasTodas(true)">Expandir tudo</button>' +
+      '<button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.chapasTodas(false)">Recolher tudo</button>' +
+    '</div>' +
+    grupos.map(function (g) {
+      const nPilhas = Object.keys(g.pilhas).length;
+      const total = g.novas + g.retalhos;
+      return '<details class="erp-chapas-grupo" data-k="' + UI.esc(g.key) + '"' + (chapasAbertas[g.key] ? ' open' : '') +
+        ' ontoggle="LOTES_UI.chapasToggle(this)" style="border:1px solid var(--border,#ddd);border-radius:10px;background:#fff;margin-bottom:10px">' +
+        '<summary style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+          sw(g, 44) +
+          '<div style="flex:1;min-width:180px"><div class="erp-strong">' + UI.esc(g.name) + ' · ' + LOTES_UI.esp(g.esp) + ' mm</div>' +
+            '<div class="erp-xs erp-muted">' + g.novas + ' chapa(s) nova(s)' + (g.retalhos ? ' · ' + g.retalhos + ' retalho(s)' : '') +
+              (nPilhas ? ' · ' + nPilhas + ' pilha(s) de 2' : '') + '</div></div>' +
+          '<div style="text-align:right"><div style="font-size:22px;font-weight:700;line-height:1">' + total + '</div><div class="erp-xs erp-muted">chapas</div></div>' +
+          '<div style="text-align:right"><div style="font-size:22px;font-weight:700;line-height:1">' + g.pecas + '</div><div class="erp-xs erp-muted">peças</div></div>' +
+          '<div style="text-align:right"><div style="font-size:22px;font-weight:700;line-height:1">' + LOTES_UI.pct(g.area > 0 ? g.usada / g.area * 100 : 0) + '</div><div class="erp-xs erp-muted">aproveitamento</div></div>' +
+        '</summary>' +
+        '<div style="padding:6px 14px 4px;border-top:1px solid var(--border,#eee)">' + g.html.join('') + '</div>' +
+      '</details>';
+    }).join('');
 
   const exportBtns = EXPORTC.formats.map(function (f) {
     return '<button class="erp-btn-secondary erp-btn-sm" title="' + UI.esc(f.hint) +
