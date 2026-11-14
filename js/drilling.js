@@ -2190,6 +2190,7 @@
   // mesma chapa chanfrada, com a diagonal 20 mm (perpendicular) pra dentro:
   // cada trecho reto encurta 20·√2. Base/topo continuam 'chanfro45'.
   const CHANFRO45_LATERAL_MM = 305;
+  const CHANFRO45_CORTE_MM = 304;   // perna do canto cortado (609 − 305)
   const CHANFRO45_RECUO_REG_MM = 20;
   function ehChanfro45(part) { return !!part && (part.shape_type === 'chanfro45' || part.shape_type === 'chanfro45_reg'); }
 
@@ -2199,8 +2200,15 @@
     if (!ehChanfro45(part)) return null;
     const t = splitThickness(part.width_mm || 0, part.height_mm || 0, part.depth_mm || 0, part.positioning);
     const recuo = part.shape_type === 'chanfro45_reg' ? CHANFRO45_RECUO_REG_MM * Math.SQRT2 : 0;
-    const reta = CHANFRO45_LATERAL_MM - t.thickness - recuo;
-    const cu = t.faceA - reta, cv = t.faceB - reta;
+    // CHANFRO PELA PERNA DO CORTE (2026-11-14, base de canto 45° com laterais
+    // de tamanhos diferentes): o canto cortado tem SEMPRE 304 mm de perna em
+    // cada parede (W − lateral = 609 − 305 no aéreo), então o chanfro anda
+    // 304 − E em cada eixo, seja qual for W e D. No aéreo (609 × 609, chapa de
+    // W − 2E) dá exatamente o mesmo número de antes (faceA − (305 − E)); num
+    // módulo maior ou com W ≠ D a diagonal continua a 45° e cada lateral fica
+    // com (W − 304) / (D − 304).
+    const perna = CHANFRO45_CORTE_MM - t.thickness + recuo;
+    const cu = perna, cv = perna;
     if (!(cu > 0) || !(cv > 0) || cu >= t.faceA || cv >= t.faceB) return null;
     return { cu: cu, cv: cv, t: t };
   }

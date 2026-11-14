@@ -668,8 +668,9 @@ const Photoreal = (() => {
     if (!part || (part.shape_type !== 'chanfro45' && part.shape_type !== 'chanfro45_reg')) return null;
     if (typeof T.Shape !== 'function' || typeof T.ExtrudeGeometry !== 'function') return null;
     const recuo = part.shape_type === 'chanfro45_reg' ? (20 * Math.SQRT2) / 1000 : 0;
-    const reta = (CHANFRO45_LATERAL_MM_PH / 1000) - thickness - recuo;
-    const cx = faceA - reta, cz = faceB - reta;
+    // perna do corte fixa (304 − E), ver js/drilling.js chanfroDaPeca
+    const perna = (CHANFRO45_LATERAL_MM_PH - 1) / 1000 - thickness + recuo;
+    const cx = perna, cz = perna;
     if (!(cx > 0) || !(cz > 0) || cx >= faceA || cz >= faceB) return null;
     const ax = faceA / 2, bz = faceB / 2;
     const shape = new T.Shape();

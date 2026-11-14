@@ -2196,8 +2196,10 @@ const Viewer3D = (function () {
     if (!part || (part.shape_type !== 'chanfro45' && part.shape_type !== 'chanfro45_reg')) return box();
     if (typeof THREE.Shape !== 'function' || typeof THREE.ExtrudeGeometry !== 'function') return box();
     const recuo = part.shape_type === 'chanfro45_reg' ? (CHANFRO45_RECUO_REG_MM * Math.SQRT2) / 1000 : 0;
-    const reta = (CHANFRO45_LATERAL_MM / 1000) - thickness - recuo;
-    const cx = faceA - reta, cz = faceB - reta;
+    // perna do corte fixa (304 − E), ver js/drilling.js chanfroDaPeca — igual
+    // ao número antigo no aéreo de 609, e vale pra base com W ≠ D.
+    const perna = (CHANFRO45_LATERAL_MM - 1) / 1000 - thickness + recuo;
+    const cx = perna, cz = perna;
     if (!(cx > 0) || !(cz > 0) || cx >= faceA || cz >= faceB) return box();
     const ax = faceA / 2, bz = faceB / 2;
     const shape = new THREE.Shape();
