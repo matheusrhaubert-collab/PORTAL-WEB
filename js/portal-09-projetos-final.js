@@ -1521,6 +1521,8 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
         doorModelId: cfg.door_model_id || null,
         // Modelo de gaveta (migration 203) — sem a chave = Standard.
         drawerModelId: cfg.drawer_model_id || null,
+        // Puxador (2026-11-13) — sem a chave = sem puxador.
+        handle: cfg.handle || null,
         // Grupo de módulos (2026-09-03) — projeto salvo antes disso não tem
         // essas chaves, cai em null/null (avulso), igual sempre foi. Ver
         // serializeProjectSlots (portal-08-projetos-paredes.js).

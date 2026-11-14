@@ -1563,6 +1563,7 @@ const Viewer3D = (function () {
   function addPart(contentOrGeometry, color, x, y, z, rotateTexture, opening) {
     const content = buildContentGroup(contentOrGeometry, color, rotateTexture);
     const placed = positionWithOpening(content, opening, x, y, z);
+    anexaPuxador(content);
     (moduleGroup || scene).add(placed);
     partMeshes.push(placed);
     return placed;
@@ -1600,8 +1601,17 @@ const Viewer3D = (function () {
   function addPartToGroup(parentGroup, contentOrGeometry, color, x, y, z, rotateTexture, opening) {
     const content = buildContentGroup(contentOrGeometry, color, rotateTexture);
     const placed = positionWithOpening(content, opening, x, y, z);
+    anexaPuxador(content);
     parentGroup.add(placed);
     return placed;
+  }
+
+  // PUXADOR (2026-11-13): a peça ativa (comPeca) é uma porta/frente com
+  // `handle` -> pendura o desenho no conteúdo dela (anda junto quando a porta
+  // abre ou a gaveta desliza). Conta e desenho em js/module-pieces.js.
+  function anexaPuxador(content) {
+    if (!activePart || !activePart.handle || typeof attachHandleToObject3D !== 'function') return;
+    try { attachHandleToObject3D(THREE, content, activePart, 0.35); } catch (e) { /* desenho ilustrativo: nunca derruba o 3D */ }
   }
 
   // Info da peça pro balão de duplo-clique (client.js/portal.js) — nome

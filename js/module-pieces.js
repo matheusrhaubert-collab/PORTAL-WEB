@@ -789,6 +789,8 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // desenho no 3D/foto. Sem esta linha o dado morreria aqui, como já
         // aconteceu com drilling_pattern_id e slide_distance_mm.
         led: piece.led || null,
+        // Puxador (2026-11-13, ver applyHandleConfigDeep) — 3D, foto e marcação no .ban.
+        handle: piece.handle || null,
         width_mm: resolvedWidthMm,
         height_mm: resolvedHeightMm,
         depth_mm: resolvedDepthMm,
@@ -1279,6 +1281,248 @@ async function applyOrderItemDrawerModel(pieces, drawerModelId) {
     console.error('[modelo de gaveta]', e);
     return pieces;
   }
+}
+
+// ==========================================================================
+// PUXADORES (2026-11-13) — Matt: "na aba direita, assim como a escolha do
+// modelo de gaveta, escolha do puxador e posição do puxador... marcação da
+// furação na parte de trás da porta/frente, conforme a furação do puxador".
+//
+// CATÁLOGO = itens comprados com kind 'puxador' (ERP > Itens comprados). Cada
+// item é UMA escolha, com a cor junto ("Knob oval — dourado"). attrs:
+//   { tipo: 'knob'|'barra', furos: 1|2, entre_furos_mm, comprimento_mm,
+//     largura_mm, altura_mm (quanto sai da porta), cor_hex }
+//
+// cfg (slot.handle resolvido no projeto, order_items.handle_config no pedido)
+//   = { item_id, name, tipo, furos, entre_furos_mm, comprimento_mm,
+//       largura_mm, altura_mm, cor_hex, door_pos, drawer_pos }
+//
+// Mesmo desenho do LED (applyLedConfigsDeep): aplicado UMA vez no ponto de
+// junção, recursivo, nunca muta o original. Cada porta/frente de gaveta:
+//   - ganha `handle` (posição + medidas) -> 3D, foto e marcação no .ban;
+//   - ganha uma linha IRMÃ comprada "Puxador ..." (papel 'other' = sem
+//     desenho, medida 0) -> preço, $ Fábrica e lista de compra, sem nenhum
+//     deles saber que puxador existe.
+// POSIÇÕES PADRÃO: tudo em HANDLE_POS, num lugar só.
+// ==========================================================================
+const HANDLE_POS = {
+  borda_lateral_mm: 45,   // centro do puxador até a borda da porta (lado oposto à dobradiça)
+  borda_ponta_mm: 60,     // ponta do puxador até a borda de cima/baixo da porta
+  borda_gaveta_mm: 45,    // gaveta "no alto": centro até a borda de cima
+  gaveta_min_alto_mm: 110, // frente mais baixa que isto: sempre no centro
+  marca_diametro_mm: 3,
+  marca_profundidade_mm: 2
+};
+
+function handleHingeSideOfRow(p) {
+  if (!p) return null;
+  if (['left', 'right', 'top', 'bottom'].includes(p.hinge_side)) return p.hinge_side;
+  const m = /^hinge_(left|right|top|bottom)$/.exec(String(p.opening_type || ''));
+  return m ? m[1] : null;
+}
+
+// Que tipo de frente é esta linha? 'door' | 'lift' | 'flap' | 'drawer' | null
+// (painel fixo, frente falsa e qualquer peça que não é frente = null).
+function handleFrontKind(p, insideDrawer) {
+  if (!p || p._handleRow) return null;
+  if ((p.origin || 'fabricacao') === 'comprado' && !p.is_module) return null;
+  const ehFrente = p._layoutKind === 'front' || p.position_role === 'front';
+  if (!ehFrente) return null;
+  const hs = handleHingeSideOfRow(p);
+  if (hs === 'left' || hs === 'right') return 'door';
+  if (hs === 'top') return 'lift';
+  if (hs === 'bottom') return 'flap';
+  if (p.slide_distance_mm != null || p.opening_type === 'slide_out' || insideDrawer) return 'drawer';
+  return null;
+}
+
+function piecesHaveHandleFront(list, insideDrawer) {
+  return (list || []).some((p) => {
+    if (!p) return false;
+    if (handleFrontKind(p, insideDrawer)) return true;
+    return !!(p.is_module && Array.isArray(p.child_pieces)
+      && piecesHaveHandleFront(p.child_pieces, insideDrawer || p.opening_type === 'slide_out'));
+  });
+}
+
+// Linha de purchased_items (kind 'puxador') -> modelo com números prontos.
+function handleModelFromItem(it) {
+  if (!it) return null;
+  const a = it.attrs || {};
+  const tipo = a.tipo === 'barra' ? 'barra' : 'knob';
+  const furos = Number(a.furos) === 2 || (tipo === 'barra' && a.furos == null) ? 2 : 1;
+  return {
+    item_id: it.id, name: it.name || '', code: it.code || null, tipo, furos,
+    entre_furos_mm: furos === 2 ? (Number(a.entre_furos_mm) || 160) : 0,
+    comprimento_mm: Number(a.comprimento_mm) || (tipo === 'barra' ? 182 : 37.6),
+    largura_mm: Number(a.largura_mm) || (tipo === 'barra' ? 11 : 18),
+    altura_mm: Number(a.altura_mm) || 23,
+    cor_hex: a.cor_hex || '#c9a45c'
+  };
+}
+
+function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
+  let mudou = false;
+  const out = [];
+  (list || []).forEach((p) => {
+    if (!p) { out.push(p); return; }
+    const kind = handleFrontKind(p, insideDrawer);
+    if (kind) {
+      mudou = true;
+      const hs = handleHingeSideOfRow(p);
+      out.push(Object.assign({}, p, {
+        handle: {
+          item_id: cfg.item_id, name: cfg.name, tipo: cfg.tipo, furos: cfg.furos,
+          entre_furos_mm: cfg.entre_furos_mm, comprimento_mm: cfg.comprimento_mm,
+          largura_mm: cfg.largura_mm, altura_mm: cfg.altura_mm, cor_hex: cfg.cor_hex,
+          kind, hinge: hs, pos: kind === 'drawer' ? (cfg.drawer_pos || 'center') : (cfg.door_pos || 'top')
+        }
+      }));
+      out.push({
+        id: 'hdl:' + p.id, piece_id: 'hdl:' + p.id, _handleRow: true,
+        is_module: false, origin: 'comprado', purchased_item_id: cfg.item_id,
+        reference: 'Puxador ' + (cfg.name || ''), position_role: 'other',
+        color_role_id: null, labor_cost_per_unit: 0, fura: false,
+        width_formula: '0', height_formula: '0', depth_formula: '0',
+        offset_x_formula: '0', offset_y_formula: '0', offset_z_formula: '0',
+        quantity: (typeof p.quantity === 'number' && p.quantity > 0) ? p.quantity : 1,
+        quantity_configurable: false, client_optional: false, client_optional_default_on: false,
+        client_color_configurable: false, client_dimension_configurable: false,
+        // some junto com a porta que só existe numa faixa de medida
+        visibility_dimension: p.visibility_dimension || null,
+        visibility_min_mm: p.visibility_min_mm != null ? p.visibility_min_mm : null,
+        visibility_max_mm: p.visibility_max_mm != null ? p.visibility_max_mm : null
+      });
+      return;
+    }
+    if (p.is_module && Array.isArray(p.child_pieces) && p.child_pieces.length) {
+      const filhos = applyHandleConfigDeepInner(p.child_pieces, cfg, insideDrawer || p.opening_type === 'slide_out');
+      if (filhos !== p.child_pieces) { mudou = true; out.push(Object.assign({}, p, { child_pieces: filhos })); return; }
+    }
+    out.push(p);
+  });
+  return mudou ? out : list;
+}
+
+const handleApplyCache = new WeakMap();
+function applyHandleConfigDeep(piecesList, cfg) {
+  if (!Array.isArray(piecesList) || !cfg || !cfg.item_id) return piecesList;
+  const chave = JSON.stringify(cfg);
+  const hit = handleApplyCache.get(piecesList);
+  if (hit && hit.chave === chave) return hit.out;
+  const out = applyHandleConfigDeepInner(piecesList, cfg, false);
+  handleApplyCache.set(piecesList, { chave, out });
+  return out;
+}
+
+// ONDE o puxador fica numa frente de wMm × hMm, vista DE FRENTE (u = da
+// esquerda, v = de baixo). points = centro de cada parafuso (é o que a
+// furadeira marca atrás). Única conta — 3D, foto e .ban leem daqui.
+function handlePlacement(handle, wMm, hMm) {
+  if (!handle || !(wMm > 0) || !(hMm > 0)) return null;
+  const P = HANDLE_POS;
+  const s = handle.furos === 2 ? (Number(handle.entre_furos_mm) || 0) : 0;
+  const L = Number(handle.comprimento_mm) || 0;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  let cu, cv, vertical;
+  if (handle.kind === 'door') {
+    vertical = true;
+    const lado = Math.min(P.borda_lateral_mm, wMm / 2);
+    cu = handle.hinge === 'left' ? wMm - lado : lado;   // lado oposto à dobradiça
+    const meio = L / 2 + P.borda_ponta_mm;
+    if (handle.pos === 'middle' || hMm < L + 2 * P.borda_ponta_mm) cv = hMm / 2;
+    else cv = handle.pos === 'bottom' ? meio : hMm - meio;
+  } else {
+    vertical = false;
+    cu = wMm / 2;
+    if (handle.kind === 'lift') cv = Math.min(P.borda_gaveta_mm, hMm / 2);
+    else if (handle.kind === 'flap') cv = hMm - Math.min(P.borda_gaveta_mm, hMm / 2);
+    else cv = (handle.pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - P.borda_gaveta_mm : hMm / 2;
+  }
+  cu = clamp(cu, 0, wMm); cv = clamp(cv, 0, hMm);
+  const points = s > 0
+    ? (vertical ? [{ u: cu, v: cv - s / 2 }, { u: cu, v: cv + s / 2 }] : [{ u: cu - s / 2, v: cv }, { u: cu + s / 2, v: cv }])
+    : [{ u: cu, v: cv }];
+  return { cu, cv, vertical, points: points.filter((p) => p.u >= 0 && p.u <= wMm && p.v >= 0 && p.v <= hMm) };
+}
+
+// Desenho do puxador (viewer3d.js e photoreal.js — cada um passa a SUA
+// instância do three). Grupo em METROS com a origem no CENTRO do puxador,
+// encostado na face da porta, +Z pra fora. `metal` = brilho (a foto usa mais).
+function buildHandleObject3D(T, handle, vertical, metal) {
+  const g = new T.Group();
+  const mat = new T.MeshStandardMaterial({ color: new T.Color(handle.cor_hex || '#c9a45c'), metalness: metal != null ? metal : 0.35, roughness: 0.38 });
+  const L = (Number(handle.comprimento_mm) || 40) / 1000;
+  const Wd = (Number(handle.largura_mm) || 12) / 1000;
+  const Hh = (Number(handle.altura_mm) || 23) / 1000;
+  const caixa = (sx, sy, sz, x, y, z) => { const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), mat); m.position.set(x, y, z); g.add(m); };
+  if (handle.tipo === 'barra') {
+    const s = (Number(handle.entre_furos_mm) || 160) / 1000;
+    const esp = Math.min(0.008, Hh * 0.4);
+    caixa(L, Wd, esp, 0, 0, Hh - esp / 2);                 // barra
+    [-s / 2, s / 2].forEach((x) => caixa(Wd, Wd, Hh - esp, x, 0, (Hh - esp) / 2)); // pés
+  } else {
+    const esp = Math.min(0.007, Hh * 0.35);
+    const reto = Math.max(L - Wd, 0.0005);
+    caixa(reto, Wd, esp, 0, 0, Hh - esp / 2);              // cabeça oval = caixa + 2 meias-luas
+    [-reto / 2, reto / 2].forEach((x) => {
+      const c = new T.Mesh(new T.CylinderGeometry(Wd / 2, Wd / 2, esp, 20), mat);
+      c.rotation.x = Math.PI / 2; c.position.set(x, 0, Hh - esp / 2); g.add(c);
+    });
+    caixa(Math.min(0.0084, reto), Math.min(0.008, Wd * 0.6), Hh - esp, 0, 0, (Hh - esp) / 2); // haste
+  }
+  if (vertical) g.rotation.z = Math.PI / 2;
+  g.userData.puxador = true;
+  return g;
+}
+
+// Pendura o puxador num objeto do 3D que É a porta/frente (folha ou modelo):
+// mede a caixa do objeto no referencial DELE (independe de a porta estar
+// aberta) e põe o puxador na face da frente (+Z). Só age se a caixa bate com
+// a medida da peça (evita pendurar numa chapa de dentro do modelo).
+function attachHandleToObject3D(T, obj, part, metal) {
+  const h = part && part.handle;
+  if (!h || !obj || (obj.userData && obj.userData.puxadorFeito)) return;
+  const box = new T.Box3();
+  const tmp = new T.Box3();
+  const m4 = new T.Matrix4();
+  let achou = false;
+  obj.traverse((n) => {
+    if (!n.isMesh || !n.geometry || (n.userData && n.userData.puxador)) return;
+    let p = n, dentroDePuxador = false;
+    m4.identity();
+    while (p && p !== obj) { if (p.userData && p.userData.puxador) dentroDePuxador = true; p.updateMatrix(); m4.premultiply(p.matrix); p = p.parent; }
+    if (dentroDePuxador || !p) return;
+    if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
+    tmp.copy(n.geometry.boundingBox).applyMatrix4(m4);
+    box.union(tmp); achou = true;
+  });
+  if (!achou) return;
+  const wMm = (box.max.x - box.min.x) * 1000, hMm = (box.max.y - box.min.y) * 1000;
+  if (Math.abs(wMm - (Number(part.width_mm) || 0)) > 6 || Math.abs(hMm - (Number(part.height_mm) || 0)) > 6) return;
+  const pl = handlePlacement(h, wMm, hMm);
+  if (!pl) return;
+  const g = buildHandleObject3D(T, h, pl.vertical, metal);
+  g.position.set(box.min.x + pl.cu / 1000, box.min.y + pl.cv / 1000, box.max.z);
+  obj.add(g);
+  obj.userData.puxadorFeito = true;
+}
+
+// ERP (.ban por pedido / por lote, 3D da peça): order_items.handle_config já
+// vem resolvido do portal. Sem puxador = o mesmo array.
+function applyOrderItemHandle(pieces, item) {
+  const cfg = item && item.handle_config;
+  return (cfg && cfg.item_id) ? applyHandleConfigDeep(pieces, cfg) : pieces;
+}
+
+if (typeof window !== 'undefined') {
+  window.applyOrderItemHandle = applyOrderItemHandle;
+  window.HANDLE_POS = HANDLE_POS;
+  window.applyHandleConfigDeep = applyHandleConfigDeep;
+  window.handlePlacement = handlePlacement;
+  window.handleModelFromItem = handleModelFromItem;
+  window.piecesHaveHandleFront = piecesHaveHandleFront;
+  window.attachHandleToObject3D = attachHandleToObject3D;
 }
 
 // Grade de furos da prateleira regulável -> coordenadas LOCAIS da peça (mm a

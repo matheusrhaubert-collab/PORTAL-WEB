@@ -78,6 +78,13 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
         (gm.data || []).forEach((r) => { porId[r.id] = r.drawer_model_id; });
         (itemsRes.data || []).forEach((it) => { it.drawer_model_id = porId[it.id] || null; });
       }
+      // Puxador (migration 289) — consulta à parte e tolerante, igual acima.
+      const hc = await supabaseClient.from('order_items').select('id, handle_config').eq('order_id', currentCutlistOrder.id);
+      if (!hc.error) {
+        const hPorId = {};
+        (hc.data || []).forEach((r) => { hPorId[r.id] = r.handle_config; });
+        (itemsRes.data || []).forEach((it) => { it.handle_config = hPorId[it.id] || null; });
+      }
     } catch (e) { /* sem modelo de gaveta */ }
     const drillingItems = [];
     let skippedModules = 0;
@@ -109,6 +116,8 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
         todasPecas = await applyOrderItemDrawerModel(todasPecas, item.drawer_model_id);
       }
 
+      // PUXADOR (migration 289): marcação atrás da porta/frente no .ban.
+      const comPuxadorDoItem = (lista) => (typeof applyOrderItemHandle === 'function') ? applyOrderItemHandle(lista, item) : lista;
       const selectedIds = item.selected_optional_component_ids || [];
       // removed_piece_ids (migration 134): peça removida manualmente pelo
       // cliente no modal "Peças do móvel" não pode ser cortada/furada aqui.
@@ -117,7 +126,7 @@ document.getElementById('order-drilling-zip-btn').addEventListener('click', asyn
       const effectivePieces = applyLedConfigsDeep(filterRemovedPiecesDeep(todasPecas
         .filter((p) => !p.client_optional || selectedIds.includes(p.id)), removedIds), item.led_configs || null); // recursivo (29/09)
     /* ajuste manual de peça (migration 190): mesma regra do portal */
-    const effectivePiecesAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(effectivePieces, item.piece_adjustments || null) : effectivePieces;
+    const effectivePiecesAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(comPuxadorDoItem(effectivePieces), item.piece_adjustments || null) : comPuxadorDoItem(effectivePieces);
       const containerDims = { W: item.width_mm, H: item.height_mm, D: item.depth_mm };
       const parts = resolvePiecesForViewer(
         effectivePiecesAj, containerDims, {}, item.shelf_quantities || {}, item.dim_overrides || {}

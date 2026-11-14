@@ -2020,6 +2020,7 @@
         // Porta de MODELO (Construtor): copo + marcações caem na chapa do
         // modelo — ver collectHingeHolesModulo.
         collectHingeHolesModulo(store, part, config.settings);
+        collectHandleMarks(store, part);
         const box = caixas.get(part);
         const sub = box ? {
           origem: { x: raiz.origem.x + box.x0, y: raiz.origem.y + box.y0, z: raiz.origem.z + box.z0 },
@@ -2031,6 +2032,49 @@
       if (part.is_module) return;
       collectStandardHoles(store, part, built.byPart.get(part) || null, config.drillingsByComponent, config.holesByPattern);
       collectHingeHoles(store, part, config.settings);
+      collectHandleMarks(store, part);
+    });
+  }
+
+  // PUXADOR (2026-11-13) — MARCAÇÃO na parte de trás da porta/frente, um
+  // ponto raso (Ø3 × 2, igual à marcação de dobradiça) no centro de cada
+  // parafuso do puxador. A posição é a MESMA conta do desenho 3D
+  // (handlePlacement, js/module-pieces.js): u da esquerda e v de baixo, com
+  // a frente vista de frente — o mesmo referencial do copo da dobradiça
+  // (collectHingeHoles / collectHingeHolesModulo), e a mesma face dele.
+  // Folha: marca direto na peça. Modelo (Shaker etc.): marca na chapa do
+  // modelo que está naquele ponto (a mais grossa; empate = a da frente).
+  function collectHandleMarks(store, part) {
+    if (!part || !part.handle) return;
+    const hp = (typeof handlePlacement === 'function') ? handlePlacement : (global && global.handlePlacement);
+    if (!hp) return;
+    const P = (typeof HANDLE_POS !== 'undefined' && HANDLE_POS) || (global && global.HANDLE_POS) || {};
+    const diam = Number(P.marca_diametro_mm) || 3, prof = Number(P.marca_profundidade_mm) || 2;
+    if (part.is_module && part.child_pieces && part.child_pieces.length) {
+      const W = part.width_mm || 0, H = part.height_mm || 0, D = part.depth_mm || 0;
+      const pl = hp(part.handle, W, H);
+      if (!pl) return;
+      const chapas = buildBoxes(part.child_pieces, W, H, D).boxes
+        .concat(boxesAninhadas(part.child_pieces, W, H, D))
+        .filter(function (b) { return b.tAxis === 'z' && (!b.part || (b.part.origin || 'fabricacao') !== 'comprado'); });
+      pl.points.forEach(function (pt) {
+        let alvo = null;
+        chapas.forEach(function (b) {
+          if (pt.u < b.x0 - 0.01 || pt.u > b.x0 + b.sx + 0.01 || pt.v < b.y0 - 0.01 || pt.v > b.y0 + b.sy + 0.01) return;
+          if (!alvo || b.sz > alvo.sz + 0.01 || (Math.abs(b.sz - alvo.sz) <= 0.01 && b.z0 > alvo.z0)) alvo = b;
+        });
+        if (!alvo) return;
+        emitLocalHole(store, alvo, { u: pt.u - alvo.x0, v: pt.v - alvo.y0, edge: null, face: 'face', diameter: diam, depth: prof, tipo: 'marcacao_puxador' });
+      });
+      return;
+    }
+    if (part.is_module || (part.origin || 'fabricacao') === 'comprado') return;
+    const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
+    const pl = hp(part.handle, t.faceA, t.faceB);
+    if (!pl) return;
+    pl.points.forEach(function (pt) {
+      const mk = localToMachine(t, pt.u, pt.v);
+      addHole(store, part, { face: 'face', x: mk.x, y: mk.y, diameter: diam, depth: prof, tipo: 'marcacao_puxador' });
     });
   }
 

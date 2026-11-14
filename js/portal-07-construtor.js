@@ -3538,6 +3538,77 @@ async function setProjectSlotDrawerModel(slot, modelId, opts) {
   markProjectDirty();
 }
 
+// ==========================================================================
+// PUXADORES (2026-11-13) — slot.handle = { itemId, doorPos, drawerPos }.
+// Catálogo = itens comprados kind 'puxador' (window.__legnoHandleModels,
+// portal-01). Entra no MESMO ponto de junção do LED (portal-06b
+// projectSlotEffectivePiecesWithLeds) via applySlotHandle; a conta e o
+// desenho moram em js/module-pieces.js (applyHandleConfigDeep).
+//   doorPos: 'auto' | 'top' | 'bottom' | 'middle'   (auto = pela altura do
+//     módulo no ambiente: aéreo embaixo, torre no meio, base em cima)
+//   drawerPos: 'center' | 'top'
+// ==========================================================================
+function projectHandleModels() { return (typeof window !== 'undefined' && window.__legnoHandleModels) || []; }
+function projectSlotHandleCfg(slot) {
+  const h = slot && slot.handle;
+  if (!h || !h.itemId) return null;
+  const m = projectHandleModels().find((x) => x.item_id === h.itemId);
+  if (!m) return null;
+  let door = h.doorPos || 'auto';
+  if (door === 'auto') {
+    const chao = Number(slot.floor_height_mm) || 0, H = Number(slot.height_mm) || 0;
+    door = chao >= 900 ? 'bottom' : (H >= 1500 ? 'middle' : 'top');
+  }
+  return Object.assign({}, m, { door_pos: door, drawer_pos: h.drawerPos || 'center' });
+}
+function applySlotHandle(slot, pieces) {
+  if (typeof applyHandleConfigDeep !== 'function') return pieces;
+  const cfg = projectSlotHandleCfg(slot);
+  return cfg ? applyHandleConfigDeep(pieces, cfg) : pieces;
+}
+function projectSlotHasHandleFront(slot) {
+  if (!slot || typeof piecesHaveHandleFront !== 'function') return false;
+  return piecesHaveHandleFront(slot.pieces) || piecesHaveHandleFront(slot.layoutPieces);
+}
+// patch = { itemId?, doorPos?, drawerPos? }. itemId '' = sem puxador.
+function setProjectSlotHandle(slot, patch, opts) {
+  if (!slot) return;
+  const lote = !!(opts && opts.lote);
+  if (!lote && typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  const atual = Object.assign({ itemId: null, doorPos: 'auto', drawerPos: 'center' }, slot.handle || {}, patch || {});
+  slot.handle = atual.itemId ? atual : null;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[puxador] preço:', e); }
+  if (lote) return;
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+}
+// "Aplicar em todos": copia o puxador deste módulo pra todo módulo do projeto
+// que tem porta ou gaveta (posição da porta volta pro automático de cada um).
+function applyProjectSlotHandleToAll(slot) {
+  if (!slot) return;
+  if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
+  const base = slot.handle || null;
+  projectSlots.forEach((s) => {
+    if (s === slot || !projectSlotHasHandleFront(s)) return;
+    setProjectSlotHandle(s, base ? { itemId: base.itemId, doorPos: 'auto', drawerPos: base.drawerPos || 'center' } : { itemId: null }, { lote: true });
+  });
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+  try { renderProjectSummary(); } catch (e) { /* ok */ }
+}
+// Miniatura do cartão: o puxador na cor dele (ou o "sem puxador").
+function projectHandlePreviewSvg(m) {
+  const fundo = '<rect x="1" y="1" width="42" height="60" rx="3" fill="#f4f1ea" stroke="#cfc8ba"/>';
+  if (!m) return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + fundo + '<line x1="12" y1="20" x2="32" y2="42" stroke="#b5ada0" stroke-width="2"/><line x1="32" y1="20" x2="12" y2="42" stroke="#b5ada0" stroke-width="2"/></svg>';
+  const cor = m.cor_hex || '#c9a45c';
+  const corpo = m.tipo === 'barra'
+    ? '<rect x="19" y="9" width="6" height="44" rx="3" fill="' + cor + '" stroke="rgba(0,0,0,.35)" stroke-width=".6"/>'
+    : '<rect x="15" y="20" width="14" height="22" rx="7" fill="' + cor + '" stroke="rgba(0,0,0,.35)" stroke-width=".6"/><rect x="18.5" y="23.5" width="7" height="15" rx="3.5" fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".8"/>';
+  return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + fundo + corpo + '</svg>';
+}
+
 function projectLayoutRowsForSlot(slot, pieces) {
   // PÉ PLÁSTICO (2026-08-19, Matt: "os agregados do construtor pra todos
   // modulos com pes de plastico estao ficando 114mm pra cima do ponto

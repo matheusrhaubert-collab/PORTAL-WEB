@@ -373,6 +373,10 @@ const Photoreal = (() => {
       : new T.Mesh(contentOrGeometry, makeMaterial(color, rotateTexture));
     content.position.set(x, y, z);
     if (ehGeometria && ledPecaAtualPh && ledPecaAtualPh.led) ledMeshesPh(content, contentOrGeometry, ledPecaAtualPh); // LED embutido
+    // Puxador (2026-11-13) — mesmo desenho do viewer3d (js/module-pieces.js)
+    if (ledPecaAtualPh && ledPecaAtualPh.handle && typeof attachHandleToObject3D === 'function') {
+      try { attachHandleToObject3D(T, content, ledPecaAtualPh, 0.85); } catch (e) { /* ilustrativo */ }
+    }
     parentGroup.add(content);
     return content;
   }

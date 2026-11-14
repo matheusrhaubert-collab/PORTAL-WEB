@@ -2713,6 +2713,9 @@ function projectSlotEffectivePiecesWithLeds(slot, ledConfigs) {
   const removidas = slot.removedPieceIds;
   let base = projectSlotAllPiecesBeforeRemoval(slot);
   if (removidas && removidas.length) base = filterRemovedPiecesDeep(base, removidas); // recursivo: porta/prateleira aninhada (29/09)
+  // PUXADOR (2026-11-13, portal-07 applySlotHandle): depois da remoção
+  // (porta removida não leva puxador). Sem puxador = o mesmo array.
+  if (typeof applySlotHandle === 'function') base = applySlotHandle(slot, base);
   base = applyLedConfigsDeep(base, ledConfigs);
   // Ajuste manual de peça (duplo clique na peça, 2026-10-02) — ver
   // applyPieceAdjustmentsDeep em js/module-pieces.js. + rodapé esticado até

@@ -908,6 +908,28 @@ function renderProjectConfigPanel() {
     }
   }
 
+  // PUXADOR (2026-11-13) — abaixo do modelo de gaveta, mesmos cartões. Uma
+  // escolha por puxador (a cor já vem junto) + posição padrão na porta e na
+  // gaveta. Só aparece em módulo com porta/gaveta e com puxador cadastrado
+  // (ERP > Itens comprados, grupo 'puxador').
+  let handleBlock = '';
+  if (typeof projectSlotHasHandleFront === 'function' && projectHandleModels().length && projectSlotHasHandleFront(slot)) {
+    const hSel = (slot.handle && slot.handle.itemId) || '';
+    const cardH = (m) => `<button type="button" class="po-proj-door-model-card po-proj-handle-card${(m ? m.item_id : '') === hSel ? ' selected' : ''}" data-handle-id="${m ? m.item_id : ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}">
+          ${projectHandlePreviewSvg(m)}
+          <span>${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}</span>
+        </button>`;
+    const optH = (v, rot, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${rot}</option>`;
+    const dp = (slot.handle && slot.handle.doorPos) || 'auto', gp = (slot.handle && slot.handle.drawerPos) || 'center';
+    const posH = hSel ? `<div class="po-proj-handle-pos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_pos')}
+          <select class="po-proj-handle-pos-select" data-handle-pos="doorPos">${optH('auto', I18n.t('project.handle_pos_auto'), dp)}${optH('top', I18n.t('project.handle_pos_top'), dp)}${optH('middle', I18n.t('project.handle_pos_middle'), dp)}${optH('bottom', I18n.t('project.handle_pos_bottom'), dp)}</select></label>
+        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_pos')}
+          <select class="po-proj-handle-pos-select" data-handle-pos="drawerPos">${optH('center', I18n.t('project.handle_pos_center'), gp)}${optH('top', I18n.t('project.handle_pos_top'), gp)}</select></label>
+      </div>` : '';
+    handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span><div class="po-proj-door-model-cards">${cardH(null)}${projectHandleModels().map(cardH).join('')}</div>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
+  }
+
   const depthLabel = Number(slot.z_order || 0) > 0
     ? I18n.t('project.config_depth_value_front', { n: slot.z_order })
     : I18n.t('project.config_depth_value_back');
@@ -1105,6 +1127,7 @@ function renderProjectConfigPanel() {
     ${doorModelBlock}
     ${projectDoorSideBlock(slot)}
     ${drawerModelBlock}
+    ${handleBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     ${moveBlock}
     ${positionBlock}
@@ -1216,6 +1239,19 @@ function renderProjectConfigPanel() {
       if (el.classList.contains('selected')) return;
       setProjectSlotDrawerModel(slot, el.dataset.drawerModelId || null);
     });
+  });
+  // Puxador (2026-11-13)
+  panel.querySelectorAll('.po-proj-handle-card').forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('selected')) return;
+      setProjectSlotHandle(slot, { itemId: el.dataset.handleId || null });
+    });
+  });
+  panel.querySelectorAll('.po-proj-handle-pos-select').forEach((el) => {
+    el.addEventListener('change', () => { setProjectSlotHandle(slot, { [el.dataset.handlePos]: el.value }); });
+  });
+  panel.querySelectorAll('.po-proj-handle-all').forEach((el) => {
+    el.addEventListener('click', () => { applyProjectSlotHandleToAll(slot); });
   });
   panel.querySelectorAll('.po-proj-color-swatch').forEach((el) => {
     el.addEventListener('click', () => {
@@ -4020,7 +4056,7 @@ function ledFurosDoSlot(slot) {
   }
   const W = Number(slot.width_mm) || 0, H = Number(slot.height_mm) || 0, D = Number(slot.depth_mm) || 0;
   const chave = [slot.id, W, H, D, (slot.layoutPieces || []).length, JSON.stringify(slot.pieceAdjustments || {}),
-    (slot.removedPieceIds || []).join(','), slot.drawerModelId || ''].join('|');
+    (slot.removedPieceIds || []).join(','), slot.drawerModelId || '', JSON.stringify(slot.handle || '')].join('|');
   if (ledFurosCache.chave === chave) return ledFurosCache;
   let parts = [];
   try {

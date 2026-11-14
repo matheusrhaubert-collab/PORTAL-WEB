@@ -218,6 +218,15 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
       (data || []).forEach(function (it) { it.drawer_model_id = porId[it.id] || null; });
     }
   } catch (e) { /* sem modelo de gaveta */ }
+  /* Puxador (migration 289) — mesma consulta tolerante. */
+  try {
+    const hc = await supabaseClient.from('order_items').select('id, handle_config').eq('order_id', orderId);
+    if (!hc.error) {
+      const hPorId = {};
+      (hc.data || []).forEach(function (r) { hPorId[r.id] = r.handle_config; });
+      (data || []).forEach(function (it) { it.handle_config = hPorId[it.id] || null; });
+    }
+  } catch (e) { /* sem puxador */ }
 
   const itens = [];
   let semCadastro = 0;
@@ -266,6 +275,8 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
       todasPecas = await applyOrderItemDrawerModel(todasPecas, item.drawer_model_id);
     }
 
+    /* PUXADOR (migration 289): marcação atrás da porta/frente no .ban. */
+    const comPuxadorDoItem = function (lista) { return (typeof applyOrderItemHandle === 'function') ? applyOrderItemHandle(lista, item) : lista; };
     const escolhidos = item.selected_optional_component_ids || [];
     /* removed_piece_ids (migration 134): peça removida manualmente pelo
        cliente no modal "Peças do móvel" não pode ser cortada/furada aqui. */
@@ -275,7 +286,7 @@ FURACAO_LOTE._itensDoPedido = async function (orderId, coresPorId, catAgregados,
       return !p.client_optional || escolhidos.includes(p.id);
     }), removidos), item.led_configs || null); /* recursivo: porta/prateleira aninhada (29/09) */
     /* ajuste manual de peça (migration 190): mesma regra do portal */
-    const efetivasAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(efetivas, item.piece_adjustments || null) : efetivas;
+    const efetivasAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(comPuxadorDoItem(efetivas), item.piece_adjustments || null) : comPuxadorDoItem(efetivas);
 
     /* colorsByRole a partir do que o cliente escolheu no pedido.
        ATENÇÃO AO FORMATO (errei isto na 1ª versão, 2026-08-16): o

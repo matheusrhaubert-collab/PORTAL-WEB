@@ -5592,6 +5592,10 @@ async function sendProjectToOrder(opts) {
         // mesma troca de caixote (não gera .ban de gaveta comprada). Só vai
         // quando tem modelo: pedido sem ele continua idêntico ao de antes.
         ...(slot.drawerModelId ? { drawer_model_id: slot.drawerModelId } : {}),
+        // PUXADOR (migration 289) — configuração JÁ RESOLVIDA (medidas do
+        // puxador + posição), pro ERP marcar a furação atrás da porta/frente
+        // sem consultar nada. Só vai quando tem puxador.
+        ...((typeof projectSlotHandleCfg === 'function' && projectSlotHandleCfg(slot)) ? { handle_config: projectSlotHandleCfg(slot) } : {}),
         // POSIÇÃO NO AMBIENTE (migration 139) — congela onde este módulo
         // ficava na sala no momento do envio, pros mesmos 4 campos que
         // renderProjectCanvasTop/renderFreeformWalls usam pra desenhar
@@ -5642,6 +5646,11 @@ async function sendProjectToOrder(opts) {
     // falha — mesmo tratamento do led_configs acima, com erro claro.
     if (itemsError && /drawer_model_id/.test(String(itemsError.message || '') + String(itemsError.details || ''))) {
       throw new Error('Este pedido tem gaveta Hardwood Dovetail, mas o banco ainda não tem a coluna order_items.drawer_model_id — rode a migration 203 no Supabase e envie de novo.');
+    }
+    // Puxador (migration 289): sem a coluna, para com erro claro — mandar pra
+    // fábrica sem a marcação do puxador seria pior que não mandar.
+    if (itemsError && /handle_config/.test(String(itemsError.message || '') + String(itemsError.details || ''))) {
+      throw new Error('Este pedido tem puxador, mas o banco ainda não tem a coluna order_items.handle_config — rode a migration 289 no Supabase e envie de novo.');
     }
     if (itemsError) throw itemsError;
 
@@ -7125,6 +7134,8 @@ function serializeProjectSlots() {
     door_model_id: slot.doorModelId || null,
     // Modelo de gaveta (migration 203) — null = Standard. Cabe no jsonb.
     drawer_model_id: slot.drawerModelId || null,
+    // Puxador (2026-11-13) — { itemId, doorPos, drawerPos } ou null. Cabe no jsonb.
+    handle: slot.handle || null,
     thumbnail_data_url: slot.thumbnail_data_url || null,
     // Grupo de módulos (2026-09-03) — null/null = avulso. Ver
     // createProjectSlotGroup/ungroupProjectSlots (portal-06b) e a

@@ -77,13 +77,20 @@ PECA3D.load = async function (p) {
   /* Mesmo filtro de projectSlotAllPiecesBeforeRemoval + projectSlotEffectivePieces
      (js/portal-06b-projetos-canvas-ia-custo.js): peça opcional só entra se foi
      selecionada, peça removida manualmente pelo cliente/vendedor não entra. */
+  /* Puxador (migration 289): consulta tolerante; a peça aparece com a marcação. */
+  let handleCfgDoItem = null;
+  try {
+    const hc = await supabaseClient.from('order_items').select('handle_config').eq('id', orderItem.id).maybeSingle();
+    if (!hc.error && hc.data) handleCfgDoItem = hc.data.handle_config || null;
+  } catch (e) { /* sem puxador */ }
+  const comPuxadorDoItem = function (lista) { return (typeof applyOrderItemHandle === 'function') ? applyOrderItemHandle(lista, { handle_config: handleCfgDoItem }) : lista; };
   const selectedOptionalIds = orderItem.selected_optional_component_ids || [];
   const removedIds = orderItem.removed_piece_ids || [];
   /* + LED embutido (migration 183): a peça aparece com o LED no 3D da etiqueta */
   const effectivePieces = applyLedConfigsDeep(filterRemovedPiecesDeep(rawPieces
     .filter(function (pc) { return !pc.client_optional || selectedOptionalIds.includes(pc.id); }), removedIds), orderItem.led_configs || null); /* recursivo (29/09) */
     /* ajuste manual de peça (migration 190): mesma regra do portal */
-    const effectivePiecesAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(effectivePieces, orderItem.piece_adjustments || null) : effectivePieces;
+    const effectivePiecesAj = (typeof applyPieceAdjustmentsDeep === 'function') ? applyPieceAdjustmentsDeep(comPuxadorDoItem(effectivePieces), orderItem.piece_adjustments || null) : comPuxadorDoItem(effectivePieces);
 
   const colorsByRole = {};
   (orderItem.selected_colors || []).forEach(function (sc) {

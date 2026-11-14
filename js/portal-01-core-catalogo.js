@@ -1695,6 +1695,13 @@ async function loadPricingMarkup() {
       // grupo 'led_perfil' (migration 183), largura/profundidade do rasgo em
       // attrs. A janela do LED (portal-06c, projectLedModels) lê daqui; sem
       // nenhum cadastrado ela usa o perfil de hoje (17,5 × 7,5).
+      // PUXADORES (2026-11-13): cada item comprado kind 'puxador' ativo é uma
+      // escolha no painel do módulo (cor junto). Ver portal-07 / module-pieces.
+      window.__legnoHandleModels = (typeof handleModelFromItem === 'function')
+        ? purchasedItems.filter((it) => it && it.kind === 'puxador' && it.active !== false)
+          .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) || String(a.name || '').localeCompare(String(b.name || '')))
+          .map(handleModelFromItem)
+        : [];
       window.__legnoLedModels = purchasedItems
         .filter((it) => it && it.kind === 'led_perfil' && it.active !== false)
         .map((it) => ({
