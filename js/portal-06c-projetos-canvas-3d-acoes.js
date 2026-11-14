@@ -915,8 +915,8 @@ function renderProjectConfigPanel() {
   let handleBlock = '';
   if (typeof projectSlotHasHandleFront === 'function' && projectHandleModels().length && projectSlotHasHandleFront(slot)) {
     const hSel = (slot.handle && slot.handle.itemId) || '';
-    const cardH = (m) => `<button type="button" class="po-proj-door-model-card po-proj-handle-card${(m ? m.item_id : '') === hSel ? ' selected' : ''}" data-handle-id="${m ? m.item_id : ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}" style="width:104px;background:#fff;color:#222;${(m ? m.item_id : '') === hSel ? 'border-color:var(--accent,#8a5a2b);box-shadow:0 0 0 2px var(--accent,#8a5a2b) inset;' : ''}">
-          ${projectHandleCardVisual(m)}
+    const cardH = (m) => `<button type="button" class="po-proj-door-model-card po-proj-handle-card${(m ? m.item_id : '') === hSel ? ' selected' : ''}" data-handle-id="${m ? m.item_id : ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}" style="width:124px;background:#fff;color:#222;${(m ? m.item_id : '') === hSel ? 'border-color:var(--accent,#8a5a2b);box-shadow:0 0 0 2px var(--accent,#8a5a2b) inset;' : ''}">
+          ${projectHandleCardVisual(m, 112)}
           <span>${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}</span>
         </button>`;
     const optH = (v, rot, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${rot}</option>`;
@@ -932,7 +932,16 @@ function renderProjectConfigPanel() {
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_orient')}
           <select class="po-proj-handle-pos-select" data-handle-pos="drawerOrient">${optH('auto', I18n.t('project.handle_orient_horizontal'), gor)}${optH('vertical', I18n.t('project.handle_orient_vertical'), gor)}</select></label>
       </div>` : '';
-    handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span><div class="po-proj-door-model-cards">${cardH(null)}${projectHandleModels().map(cardH).join('')}</div>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
+    // RECOLHIDO (14/11, Matt: "quero os modelos de puxador ocultos e ao clicar
+    // abrem as opções"): fechado mostra só o escolhido (foto + nome); clicar
+    // abre os cartões com as fotos reais. Escolher fecha de novo.
+    const mSel = projectHandleModels().find((m) => m.item_id === hSel) || null;
+    const resumoH = `<summary class="po-proj-handle-summary" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:6px 8px;border:2px solid var(--border,#ddd);border-radius:6px;background:#fff;list-style:none">
+        ${mSel ? projectHandleCardVisual(mSel, 44) : ''}
+        <span style="flex:1;font-size:12px">${mSel ? escapeHtmlCutlist(mSel.name) : I18n.t('project.handle_none')}</span>
+        <span class="hint" style="white-space:nowrap">${I18n.t('project.handle_change')} ▾</span>
+      </summary>`;
+    handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span><details class="po-proj-handle-details" style="margin-top:6px">${resumoH}<div class="po-proj-door-model-cards">${cardH(null)}${projectHandleModels().map(cardH).join('')}</div></details>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
   }
 
   const depthLabel = Number(slot.z_order || 0) > 0
@@ -1212,7 +1221,7 @@ function renderProjectConfigPanel() {
       renderProjectConfigPanel();
     });
   }
-  panel.querySelectorAll('.po-proj-door-model-card:not(.po-proj-drawer-model-card)').forEach((el) => {
+  panel.querySelectorAll('.po-proj-door-model-card:not(.po-proj-drawer-model-card):not(.po-proj-handle-card)').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected') || el.classList.contains('blocked')) return;
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);

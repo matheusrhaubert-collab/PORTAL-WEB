@@ -1306,13 +1306,49 @@ async function applyOrderItemDrawerModel(pieces, drawerModelId) {
 // POSIÇÕES PADRÃO: tudo em HANDLE_POS, num lugar só.
 // ==========================================================================
 const HANDLE_POS = {
-  borda_lateral_mm: 45,   // centro do puxador até a borda da porta (lado oposto à dobradiça)
-  borda_ponta_mm: 60,     // ponta do puxador até a borda de cima/baixo da porta
-  borda_gaveta_mm: 45,    // gaveta "no alto": centro até a borda de cima
-  gaveta_min_alto_mm: 110, // frente mais baixa que isto: sempre no centro
+  // Matt, 13/11: "distância do primeiro furo a 30 e 30 das pontas, em cima e
+  // embaixo" — a medida é do FURO (parafuso) até as duas bordas da porta.
+  furo_borda_lateral_mm: 30,  // 1º furo até a borda lateral (lado oposto à dobradiça)
+  furo_borda_ponta_mm: 30,    // 1º furo até a borda de cima / de baixo
+  gaveta_min_alto_mm: 110,    // frente mais baixa que isto: sempre no centro
   marca_diametro_mm: 3,
   marca_profundidade_mm: 2
 };
+
+// PORTA DE VIDRO SEM MADEIRA não leva puxador que parafusa pela frente (Matt,
+// 13/11) — é a porta de perfil de alumínio + vidro (nenhuma chapa fabricada).
+// A Shaker Glass TEM moldura de madeira de 60 mm: leva puxador, no meio da
+// moldura (14/11: "na porta shaker o puxador não fica no meio do frame").
+function handleFrontIsGlass(p) {
+  if (!p || !p.is_module || !(p.child_pieces || []).length) return false;
+  let temChapa = false;
+  (function anda(list) {
+    (list || []).forEach((c) => {
+      if (!c) return;
+      if (c.is_module) anda(c.child_pieces);
+      else if ((c.origin || 'fabricacao') !== 'comprado') temChapa = true;
+    });
+  })(p.child_pieces);
+  return !temChapa;
+}
+
+// Largura do MONTANTE (moldura em pé) de uma porta de modelo — peça em pé na
+// borda, com largura fixa em mm e altura que acompanha a porta. null = porta
+// lisa. O puxador vai no MEIO dele.
+function handleStileWidthMm(p) {
+  if (!p || !p.is_module) return null;
+  let achou = null;
+  (function anda(list) {
+    (list || []).forEach((c) => {
+      if (!c || achou) return;
+      if (c.is_module) { anda(c.child_pieces); return; }
+      if ((c.origin || 'fabricacao') === 'comprado') return;
+      const w = Number(c.width_formula);
+      if (isFinite(w) && w >= 30 && w <= 150 && /h/i.test(String(c.height_formula || ''))) achou = w;
+    });
+  })(p.child_pieces);
+  return achou;
+}
 
 function handleHingeSideOfRow(p) {
   if (!p) return null;
@@ -1328,6 +1364,7 @@ function handleFrontKind(p, insideDrawer) {
   if ((p.origin || 'fabricacao') === 'comprado' && !p.is_module) return null;
   const ehFrente = p._layoutKind === 'front' || p.position_role === 'front';
   if (!ehFrente) return null;
+  if (handleFrontIsGlass(p)) return null;
   const hs = handleHingeSideOfRow(p);
   if (hs === 'left' || hs === 'right') return 'door';
   if (hs === 'top') return 'lift';
@@ -1368,7 +1405,10 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
   const out = [];
   (list || []).forEach((p) => {
     if (!p) { out.push(p); return; }
-    const kind = handleFrontKind(p, insideDrawer);
+    let kind = handleFrontKind(p, insideDrawer);
+    // cfg.sem_porta: o modelo de porta do módulo é de vidro (portal-07) — só
+    // as gavetas levam puxador.
+    if (kind && kind !== 'drawer' && cfg.sem_porta) { out.push(p); return; }
     if (kind) {
       mudou = true;
       const hs = handleHingeSideOfRow(p);
@@ -1378,7 +1418,9 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
           entre_furos_mm: cfg.entre_furos_mm, comprimento_mm: cfg.comprimento_mm,
           largura_mm: cfg.largura_mm, altura_mm: cfg.altura_mm, cor_hex: cfg.cor_hex,
           kind, hinge: hs, pos: kind === 'drawer' ? (cfg.drawer_pos || 'center') : (cfg.door_pos || 'top'),
-          orient: (kind === 'drawer' ? cfg.drawer_orient : cfg.door_orient) || 'auto'
+          orient: (kind === 'drawer' ? cfg.drawer_orient : cfg.door_orient) || 'auto',
+          // porta com moldura: furo no meio do montante (senão vale o padrão)
+          lateral_mm: (kind === 'door' && handleStileWidthMm(p)) ? handleStileWidthMm(p) / 2 : null
         }
       }));
       out.push({
@@ -1432,24 +1474,29 @@ function handlePlacement(handle, wMm, hMm) {
   // (porta = em pé, gaveta/basculante = deitado).
   const ehPorta = handle.kind === 'door';
   const vertical = handle.orient === 'vertical' ? true : handle.orient === 'horizontal' ? false : ehPorta;
-  const ponta = L / 2 + P.borda_ponta_mm;          // centro -> borda, no sentido do comprimento
+  // Medida sempre do FURO: `fl` até a borda lateral, `fp` até a borda de
+  // cima/baixo. No sentido do comprimento o centro fica a (entre-furos / 2)
+  // do 1º furo; knob (1 furo) = o próprio centro.
+  const fl = Number(handle.lateral_mm) || Number(P.furo_borda_lateral_mm) || 30, fp = Number(P.furo_borda_ponta_mm) || 30;
+  const ponta = s / 2 + fp;       // centro -> borda, ao longo do puxador, pela ponta
+  const pontaLado = s / 2 + fl;   // idem, quando o comprimento corre na largura da porta
   let cu, cv;
   if (ehPorta) {
     const ladoDir = handle.hinge === 'left';       // puxador do lado oposto à dobradiça
     if (vertical) {
-      const lado = Math.min(P.borda_lateral_mm, wMm / 2);
+      const lado = Math.min(fl, wMm / 2);
       cu = ladoDir ? wMm - lado : lado;
       if (handle.pos === 'middle' || hMm < 2 * ponta) cv = hMm / 2;
       else cv = handle.pos === 'bottom' ? ponta : hMm - ponta;
     } else {
-      const lado = wMm < 2 * ponta ? wMm / 2 : ponta;
+      const lado = wMm < 2 * pontaLado ? wMm / 2 : pontaLado;
       cu = ladoDir ? wMm - lado : lado;
-      const borda = Math.min(P.borda_lateral_mm, hMm / 2);
+      const borda = Math.min(fp, hMm / 2);
       cv = handle.pos === 'middle' ? hMm / 2 : (handle.pos === 'bottom' ? borda : hMm - borda);
     }
   } else {
     cu = wMm / 2;
-    const borda = vertical ? Math.min(ponta, hMm / 2) : Math.min(P.borda_gaveta_mm, hMm / 2);
+    const borda = vertical ? Math.min(ponta, hMm / 2) : Math.min(fp, hMm / 2);
     if (handle.kind === 'lift') cv = borda;
     else if (handle.kind === 'flap') cv = hMm - borda;
     else cv = (handle.pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - borda : hMm / 2;
