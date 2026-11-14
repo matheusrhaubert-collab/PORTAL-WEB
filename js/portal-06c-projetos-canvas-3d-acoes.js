@@ -1086,6 +1086,27 @@ function renderProjectConfigPanel() {
   // grava em slot.dimOverrides (mesmo mapa que preço/3D/pedido já leem) e o
   // ↺ apaga o override (volta pra fórmula). Valor mostrado = medida
   // RESOLVIDA hoje (resolvePiecesForViewer), não o padrão do cadastro.
+  // CANTO 45° (2026-11-14, Matt: "coloca só quando selecionado o módulo a
+  // cota de cada lateral na unidade de medida selecionada"): módulo com chapa
+  // chanfrada mostra, no painel do selecionado, quanto mede cada lateral (é
+  // o que encosta nos gabinetes vizinhos) e a porta. Lidas das peças já
+  // resolvidas — o mesmo número que vai pro corte.
+  let canto45Block = '';
+  try {
+    const pcs45 = resolvePiecesForViewer(projectSlotEffectivePieces(slot), { W: Number(slot.width_mm), H: Number(slot.height_mm), D: Number(slot.depth_mm) },
+      slot.colorsByRole || {}, slot.shelfQuantities || {}, slot.dimOverrides || {}, slot.pieceColorOverrides || {});
+    if ((pcs45 || []).some((p) => p && (p.shape_type === 'chanfro45' || p.shape_type === 'chanfro45_reg'))) {
+      const latDir = pcs45.find((p) => p && !p.is_module && p.position_role === 'right');
+      const latFre = pcs45.find((p) => p && !p.is_module && p.position_role === 'back' && Number(p.offset_z_mm) > 1);
+      const porta45 = pcs45.find((p) => p && p.is_module && Number(p.rotation_y_deg) === 45);
+      const linha45 = (rot, mm) => (mm > 0 ? `<div class="po-proj-config-dim-row"><label>${rot}</label><span class="po-proj-dim-value-wrap"><strong>${formatDimensionNumber(mm, unit)}</strong><span class="po-proj-dim-unit">${unitAbbrev(unit)}</span></span></div>` : '');
+      const linhas45 = linha45(I18n.t('project.canto45_lat_direita'), latDir ? Number(latDir.depth_mm) : 0)
+        + linha45(I18n.t('project.canto45_lat_frente'), latFre ? Number(latFre.width_mm) : 0)
+        + linha45(I18n.t('project.canto45_porta'), porta45 ? Number(porta45.width_mm) : 0);
+      if (linhas45) canto45Block = `<div class="po-proj-config-dims po-proj-config-canto45"><span class="po-proj-config-section-label">${I18n.t('project.canto45_label')}</span>${linhas45}<p class="hint" style="margin:4px 0 0">${I18n.t('project.canto45_hint')}</p></div>`;
+    }
+  } catch (e) { canto45Block = ''; }
+
   let pieceDimsBlock = '';
   try {
     const effPieces = projectSlotEffectivePieces(slot);
@@ -1136,6 +1157,7 @@ function renderProjectConfigPanel() {
       ${dimRow('height', I18n.t('step1.filter_height'))}
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
     </div>
+    ${canto45Block}
     ${pieceDimsBlock}
     ${positionRow}
     ${doorModelBlock}
