@@ -3559,7 +3559,10 @@ function projectSlotHandleCfg(slot) {
     const chao = Number(slot.floor_height_mm) || 0, H = Number(slot.height_mm) || 0;
     door = chao >= 900 ? 'bottom' : (H >= 1500 ? 'middle' : 'top');
   }
-  return Object.assign({}, m, { door_pos: door, drawer_pos: h.drawerPos || 'center' });
+  const cfg = Object.assign({}, m, { door_pos: door, drawer_pos: h.drawerPos || 'center',
+    door_orient: h.doorOrient || 'auto', drawer_orient: h.drawerOrient || 'auto' });
+  delete cfg.foto_url; // só da interface — não vai pro pedido
+  return cfg;
 }
 function applySlotHandle(slot, pieces) {
   if (typeof applyHandleConfigDeep !== 'function') return pieces;
@@ -3591,7 +3594,7 @@ function applyProjectSlotHandleToAll(slot) {
   const base = slot.handle || null;
   projectSlots.forEach((s) => {
     if (s === slot || !projectSlotHasHandleFront(s)) return;
-    setProjectSlotHandle(s, base ? { itemId: base.itemId, doorPos: 'auto', drawerPos: base.drawerPos || 'center' } : { itemId: null }, { lote: true });
+    setProjectSlotHandle(s, base ? { itemId: base.itemId, doorPos: 'auto', drawerPos: base.drawerPos || 'center', doorOrient: base.doorOrient || 'auto', drawerOrient: base.drawerOrient || 'auto' } : { itemId: null }, { lote: true });
   });
   renderProjectCanvas();
   renderProjectConfigPanel();
@@ -3599,6 +3602,16 @@ function applyProjectSlotHandleToAll(slot) {
   try { renderProjectSummary(); } catch (e) { /* ok */ }
 }
 // Miniatura do cartão: o puxador na cor dele (ou o "sem puxador").
+// Cartão com a FOTO REAL do puxador (Matt, 13/11); sem foto (ou se o arquivo
+// não carregar) cai no desenho.
+function projectHandleCardVisual(m) {
+  const svg = projectHandlePreviewSvg(m);
+  if (!m || !m.foto_url) return svg;
+  return '<span class="po-proj-handle-foto" style="display:block">'
+    + '<img src="' + escapeHtmlCutlist(m.foto_url) + '" alt="" loading="lazy" style="width:92px;height:92px;object-fit:cover;display:block;border-radius:4px" '
+    + 'onerror="this.style.display=&quot;none&quot;;this.nextElementSibling.style.display=&quot;block&quot;">'
+    + '<span style="display:none">' + svg + '</span></span>';
+}
 function projectHandlePreviewSvg(m) {
   const fundo = '<rect x="1" y="1" width="42" height="60" rx="3" fill="#f4f1ea" stroke="#cfc8ba"/>';
   if (!m) return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + fundo + '<line x1="12" y1="20" x2="32" y2="42" stroke="#b5ada0" stroke-width="2"/><line x1="32" y1="20" x2="12" y2="42" stroke="#b5ada0" stroke-width="2"/></svg>';

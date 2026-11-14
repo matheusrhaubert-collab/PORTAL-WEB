@@ -1357,7 +1357,9 @@ function handleModelFromItem(it) {
     comprimento_mm: Number(a.comprimento_mm) || (tipo === 'barra' ? 182 : 37.6),
     largura_mm: Number(a.largura_mm) || (tipo === 'barra' ? 11 : 18),
     altura_mm: Number(a.altura_mm) || 23,
-    cor_hex: a.cor_hex || '#c9a45c'
+    cor_hex: a.cor_hex || '#c9a45c',
+    // foto real do cartão: attrs.foto_url, senão assets/handles/<código>.jpg
+    foto_url: a.foto_url || (it.code ? 'assets/handles/' + it.code + '.jpg' : null)
   };
 }
 
@@ -1375,7 +1377,8 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
           item_id: cfg.item_id, name: cfg.name, tipo: cfg.tipo, furos: cfg.furos,
           entre_furos_mm: cfg.entre_furos_mm, comprimento_mm: cfg.comprimento_mm,
           largura_mm: cfg.largura_mm, altura_mm: cfg.altura_mm, cor_hex: cfg.cor_hex,
-          kind, hinge: hs, pos: kind === 'drawer' ? (cfg.drawer_pos || 'center') : (cfg.door_pos || 'top')
+          kind, hinge: hs, pos: kind === 'drawer' ? (cfg.drawer_pos || 'center') : (cfg.door_pos || 'top'),
+          orient: (kind === 'drawer' ? cfg.drawer_orient : cfg.door_orient) || 'auto'
         }
       }));
       out.push({
@@ -1424,20 +1427,32 @@ function handlePlacement(handle, wMm, hMm) {
   const s = handle.furos === 2 ? (Number(handle.entre_furos_mm) || 0) : 0;
   const L = Number(handle.comprimento_mm) || 0;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  let cu, cv, vertical;
-  if (handle.kind === 'door') {
-    vertical = true;
-    const lado = Math.min(P.borda_lateral_mm, wMm / 2);
-    cu = handle.hinge === 'left' ? wMm - lado : lado;   // lado oposto à dobradiça
-    const meio = L / 2 + P.borda_ponta_mm;
-    if (handle.pos === 'middle' || hMm < L + 2 * P.borda_ponta_mm) cv = hMm / 2;
-    else cv = handle.pos === 'bottom' ? meio : hMm - meio;
+  // SENTIDO (Matt, 13/11: "pode colocar ele deitado ou em pé também"):
+  // orient 'vertical' | 'horizontal' vence; sem ele vale o padrão do tipo
+  // (porta = em pé, gaveta/basculante = deitado).
+  const ehPorta = handle.kind === 'door';
+  const vertical = handle.orient === 'vertical' ? true : handle.orient === 'horizontal' ? false : ehPorta;
+  const ponta = L / 2 + P.borda_ponta_mm;          // centro -> borda, no sentido do comprimento
+  let cu, cv;
+  if (ehPorta) {
+    const ladoDir = handle.hinge === 'left';       // puxador do lado oposto à dobradiça
+    if (vertical) {
+      const lado = Math.min(P.borda_lateral_mm, wMm / 2);
+      cu = ladoDir ? wMm - lado : lado;
+      if (handle.pos === 'middle' || hMm < 2 * ponta) cv = hMm / 2;
+      else cv = handle.pos === 'bottom' ? ponta : hMm - ponta;
+    } else {
+      const lado = wMm < 2 * ponta ? wMm / 2 : ponta;
+      cu = ladoDir ? wMm - lado : lado;
+      const borda = Math.min(P.borda_lateral_mm, hMm / 2);
+      cv = handle.pos === 'middle' ? hMm / 2 : (handle.pos === 'bottom' ? borda : hMm - borda);
+    }
   } else {
-    vertical = false;
     cu = wMm / 2;
-    if (handle.kind === 'lift') cv = Math.min(P.borda_gaveta_mm, hMm / 2);
-    else if (handle.kind === 'flap') cv = hMm - Math.min(P.borda_gaveta_mm, hMm / 2);
-    else cv = (handle.pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - P.borda_gaveta_mm : hMm / 2;
+    const borda = vertical ? Math.min(ponta, hMm / 2) : Math.min(P.borda_gaveta_mm, hMm / 2);
+    if (handle.kind === 'lift') cv = borda;
+    else if (handle.kind === 'flap') cv = hMm - borda;
+    else cv = (handle.pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - borda : hMm / 2;
   }
   cu = clamp(cu, 0, wMm); cv = clamp(cv, 0, hMm);
   const points = s > 0
@@ -1459,8 +1474,16 @@ function buildHandleObject3D(T, handle, vertical, metal) {
   if (handle.tipo === 'barra') {
     const s = (Number(handle.entre_furos_mm) || 160) / 1000;
     const esp = Math.min(0.008, Hh * 0.4);
-    caixa(L, Wd, esp, 0, 0, Hh - esp / 2);                 // barra
-    [-s / 2, s / 2].forEach((x) => caixa(Wd, Wd, Hh - esp, x, 0, (Hh - esp) / 2)); // pés
+    // Barra com as PONTAS OVAIS (Matt, 13/11: "ele tem um formato oval nas
+    // pontas"): trecho reto + meia-lua em cada ponta; pés redondos.
+    const cil = (raio, alt, x, z) => {
+      const c = new T.Mesh(new T.CylinderGeometry(raio, raio, alt, 24), mat);
+      c.rotation.x = Math.PI / 2; c.position.set(x, 0, z); g.add(c);
+    };
+    const reto = Math.max(L - Wd, 0.0005);
+    caixa(reto, Wd, esp, 0, 0, Hh - esp / 2);
+    [-reto / 2, reto / 2].forEach((x) => cil(Wd / 2, esp, x, Hh - esp / 2));
+    [-s / 2, s / 2].forEach((x) => cil(Wd / 2, Hh - esp, x, (Hh - esp) / 2));
   } else {
     const esp = Math.min(0.007, Hh * 0.35);
     const reto = Math.max(L - Wd, 0.0005);

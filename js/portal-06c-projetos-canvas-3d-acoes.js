@@ -915,17 +915,22 @@ function renderProjectConfigPanel() {
   let handleBlock = '';
   if (typeof projectSlotHasHandleFront === 'function' && projectHandleModels().length && projectSlotHasHandleFront(slot)) {
     const hSel = (slot.handle && slot.handle.itemId) || '';
-    const cardH = (m) => `<button type="button" class="po-proj-door-model-card po-proj-handle-card${(m ? m.item_id : '') === hSel ? ' selected' : ''}" data-handle-id="${m ? m.item_id : ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}">
-          ${projectHandlePreviewSvg(m)}
+    const cardH = (m) => `<button type="button" class="po-proj-door-model-card po-proj-handle-card${(m ? m.item_id : '') === hSel ? ' selected' : ''}" data-handle-id="${m ? m.item_id : ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}" style="width:104px;background:#fff;color:#222;${(m ? m.item_id : '') === hSel ? 'border-color:var(--accent,#8a5a2b);box-shadow:0 0 0 2px var(--accent,#8a5a2b) inset;' : ''}">
+          ${projectHandleCardVisual(m)}
           <span>${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}</span>
         </button>`;
     const optH = (v, rot, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${rot}</option>`;
     const dp = (slot.handle && slot.handle.doorPos) || 'auto', gp = (slot.handle && slot.handle.drawerPos) || 'center';
+    const dor = (slot.handle && slot.handle.doorOrient) || 'auto', gor = (slot.handle && slot.handle.drawerOrient) || 'auto';
     const posH = hSel ? `<div class="po-proj-handle-pos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_pos')}
           <select class="po-proj-handle-pos-select" data-handle-pos="doorPos">${optH('auto', I18n.t('project.handle_pos_auto'), dp)}${optH('top', I18n.t('project.handle_pos_top'), dp)}${optH('middle', I18n.t('project.handle_pos_middle'), dp)}${optH('bottom', I18n.t('project.handle_pos_bottom'), dp)}</select></label>
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_pos')}
           <select class="po-proj-handle-pos-select" data-handle-pos="drawerPos">${optH('center', I18n.t('project.handle_pos_center'), gp)}${optH('top', I18n.t('project.handle_pos_top'), gp)}</select></label>
+        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_orient')}
+          <select class="po-proj-handle-pos-select" data-handle-pos="doorOrient">${optH('auto', I18n.t('project.handle_orient_vertical'), dor)}${optH('horizontal', I18n.t('project.handle_orient_horizontal'), dor)}</select></label>
+        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_orient')}
+          <select class="po-proj-handle-pos-select" data-handle-pos="drawerOrient">${optH('auto', I18n.t('project.handle_orient_horizontal'), gor)}${optH('vertical', I18n.t('project.handle_orient_vertical'), gor)}</select></label>
       </div>` : '';
     handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span><div class="po-proj-door-model-cards">${cardH(null)}${projectHandleModels().map(cardH).join('')}</div>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
   }
