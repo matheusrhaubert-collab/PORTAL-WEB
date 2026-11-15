@@ -2861,7 +2861,11 @@ function projectGroupToolbarContentHtml(members) {
   return '<span class="po-proj-group-toolbar-label">' + nomePrefix + escapeHtmlCutlist(countLabel) + '</span>'
     + groupButtons
     + '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="duplicate">' + I18n.t('project.group_duplicate_btn') + '</button>'
-    + '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="budget">' + I18n.t('project.group_budget_btn') + '</button>';
+    + '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="budget">' + I18n.t('project.group_budget_btn') + '</button>'
+    // Favoritos (15/11, portal-39): guarda o grupo/seleção na galeria da conta.
+    + (typeof window.openSaveFavoriteDialog === 'function'
+      ? '<button type="button" class="po-proj-group-toolbar-btn" data-group-action="favorite">★ ' + ((window.LegnoFavoritos && window.LegnoFavoritos.t('fav_btn')) || 'Favoritar') + '</button>'
+      : '');
 }
 
 // BARRA DO GRUPO — VIROU MENU DE BOTÃO DIREITO (2026-09-04, bug relatado
@@ -2926,6 +2930,8 @@ function openProjectGroupToolbarAt(clientX, clientY) {
       duplicateProjectSlotGroup(ids);
     } else if (action === 'budget') {
       if (typeof openMoneyModal === 'function') openMoneyModal(ids);
+    } else if (action === 'favorite') {
+      if (typeof window.openSaveFavoriteDialog === 'function') window.openSaveFavoriteDialog(ids);
     }
     if (typeof refreshProjectGroupToolbar === 'function') refreshProjectGroupToolbar();
   });

@@ -1714,12 +1714,39 @@ function buildHandleObject3D(T, handle, vertical, metal, espessuraM) {
     const chapa = (Number(handle.largura_mm) || 42) / 1000;
     const esp = espessuraM > 0 ? espessuraM : 0.0195;
     const t = (Number(HANDLE_POS.borda_recuo_mm) || 1) / 1000;
-    const sai = 0.010, dobra = 0.006, e = 0.0015;
+    // PERFIL (2ª rodada, 15/11 — Matt, com a foto do perfil: "menos atrás e
+    // mais robusto na frente"): atrás só uma aba curta (altura_mm, ~18) onde
+    // vão os parafusos; por cima da borda 1 mm; na FRENTE uma asa curva que
+    // sai da borda e desce, engrossando até a ponta (largura_mm = borda +
+    // asa). Um contorno só, extrudado no comprimento.
+    const aba = Math.min(Math.max((Number(handle.altura_mm) || 18) / 1000, 0.008), 0.03);
+    const e = 0.0015;
+    const F = Math.min(Math.max(chapa - esp, 0.016), 0.03);   // quanto a asa sai pra frente
+    const desce = F * 0.55, ponta = 0.0035;
     const dentro = new T.Group();
-    const cx = (sx, sy, sz, y, z) => { const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), matB); m.position.set(0, y, z); dentro.add(m); };
-    cx(Lb, t, esp + sai, t / 2, (sai - esp) / 2);            // aba por cima da borda
-    cx(Lb, dobra, e, t - dobra / 2, sai - e / 2);            // dobra da frente (pega)
-    cx(Lb, chapa, e, t - chapa / 2, -esp - e / 2);           // chapa de trás (parafusos)
+    if (T.Shape && T.ExtrudeGeometry) {
+      // contorno em (u = pra frente, v = pra cima); (0,0) = quina da frente da porta
+      const sh = new T.Shape();
+      sh.moveTo(-esp - e, t);
+      sh.lineTo(0, t);
+      sh.quadraticCurveTo(F * 0.7, t, F, -desce);                      // costas da asa
+      sh.lineTo(F - ponta * 0.75, -desce - ponta * 0.7);                // ponta grossa
+      sh.quadraticCurveTo(F * 0.5, -0.0015, 0.0006, 0);                 // barriga da asa
+      sh.lineTo(-esp, 0);
+      sh.lineTo(-esp, -aba);                                            // aba de trás (parafusos)
+      sh.lineTo(-esp - e, -aba);
+      sh.lineTo(-esp - e, t);
+      const geo = new T.ExtrudeGeometry(sh, { depth: Lb, bevelEnabled: false, curveSegments: 14 });
+      const perfil = new T.Mesh(geo, matB);
+      perfil.rotation.y = -Math.PI / 2;      // u -> +Z (pra fora da porta), extrusão -> X
+      perfil.position.x = Lb / 2;
+      dentro.add(perfil);
+    } else {
+      const cx = (sx, sy, sz, y, z) => { const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), matB); m.position.set(0, y, z); dentro.add(m); };
+      cx(Lb, t, esp + F, t / 2, (F - esp) / 2);
+      cx(Lb, desce, ponta, t - desce / 2, F - ponta / 2);
+      cx(Lb, aba, e, t - aba / 2, -esp - e / 2);
+    }
     dentro.rotation.z = handle.borda === 'right' ? -Math.PI / 2 : handle.borda === 'left' ? Math.PI / 2 : handle.borda === 'bottom' ? Math.PI : 0;
     g.add(dentro);
     g.userData.puxador = true;
