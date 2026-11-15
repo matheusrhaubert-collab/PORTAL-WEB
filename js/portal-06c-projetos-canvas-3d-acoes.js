@@ -948,7 +948,9 @@ function renderProjectConfigPanel() {
     const pxPorta = portaEmPe ? 22 : 19;
     const yPorta = { top: portaEmPe ? 10 : 7, middle: 21, bottom: portaEmPe ? 32 : 35 };
     const posPorta = btnH('doorPos', 'auto', dp === 'auto', I18n.t('project.handle_pos_auto'), svgPorta(`<text x="15" y="25" text-anchor="middle" font-size="9" font-weight="700" fill="${corH}">auto</text>`))
-      + ['top', 'middle', 'bottom'].map((v) => btnH('doorPos', v, dp === v, I18n.t('project.handle_pos_' + v), svgPorta(marcaH(pxPorta, yPorta[v], portaEmPe)))).join('');
+      + ['top', 'middle', 'bottom'].map((v) => btnH('doorPos', v, dp === v, I18n.t('project.handle_pos_' + v), svgPorta(marcaH(pxPorta, yPorta[v], portaEmPe)))).join('')
+      // CENTRAL (15/11): mesma altura, no meio da largura da porta
+      + ['top', 'middle', 'bottom'].map((v) => btnH('doorPos', 'center_' + v, dp === 'center_' + v, I18n.t('project.handle_pos_center_' + v), svgPorta(marcaH(15, yPorta[v], portaEmPe)))).join('');
     const sentPorta = btnH('doorOrient', hAro ? 'vertical' : 'auto', portaEmPe, I18n.t('project.handle_orient_vertical'), svgPorta(marcaH(15, 21, true)))
       + btnH('doorOrient', hAro ? 'auto' : 'horizontal', !portaEmPe, I18n.t('project.handle_orient_horizontal'), svgPorta(marcaH(15, 21, false)));
     const yGav = { center: 12, top: gavetaEmPe ? 9 : 6 };

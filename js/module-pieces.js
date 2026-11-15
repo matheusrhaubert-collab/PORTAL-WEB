@@ -1525,6 +1525,12 @@ function handlePlacement(handle, wMm, hMm) {
   // orient 'vertical' | 'horizontal' vence; sem ele vale o padrão do tipo
   // (porta = em pé, gaveta/basculante = deitado).
   const ehPorta = handle.kind === 'door';
+  // CENTRAL na porta (2026-11-15, Matt: "mais uma opção central cima, central
+  // meio, central baixo"): 'center_top' | 'center_middle' | 'center_bottom' =
+  // mesma altura de top/middle/bottom, mas no MEIO da largura da porta (em vez
+  // de encostado no lado oposto à dobradiça).
+  const centroLargura = ehPorta && /^center_/.test(String(handle.pos || ''));
+  const pos = String(handle.pos || '').replace(/^center_/, '');
   // TURIM (aro): aplicado ele vai DEITADO também na porta (foto do Matt,
   // 15/11) — o padrão do aro é deitado em qualquer frente.
   const vertical = handle.orient === 'vertical' ? true : handle.orient === 'horizontal' ? false : (ehPorta && handle.formato !== 'aro');
@@ -1540,25 +1546,27 @@ function handlePlacement(handle, wMm, hMm) {
     if (vertical) {
       const lado = Math.min(fl, wMm / 2);
       cu = ladoDir ? wMm - lado : lado;
-      if (handle.pos === 'middle' || hMm < 2 * ponta) cv = hMm / 2;
-      else cv = handle.pos === 'bottom' ? ponta : hMm - ponta;
+      if (pos === 'middle' || hMm < 2 * ponta) cv = hMm / 2;
+      else cv = pos === 'bottom' ? ponta : hMm - ponta;
     } else {
       const lado = wMm < 2 * pontaLado ? wMm / 2 : pontaLado;
       cu = ladoDir ? wMm - lado : lado;
       const borda = Math.min(fp, hMm / 2);
-      cv = handle.pos === 'middle' ? hMm / 2 : (handle.pos === 'bottom' ? borda : hMm - borda);
+      cv = pos === 'middle' ? hMm / 2 : (pos === 'bottom' ? borda : hMm - borda);
     }
-  } else {
+  }
+  if (centroLargura) cu = wMm / 2;
+  if (!ehPorta) {
     cu = wMm / 2;
     const borda = vertical ? Math.min(ponta, hMm / 2) : Math.min(fp, hMm / 2);
     if (handle.kind === 'lift') cv = borda;
     else if (handle.kind === 'flap') cv = hMm - borda;
-    else cv = (handle.pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - borda : hMm / 2;
+    else cv = (pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - borda : hMm / 2;
   }
   // TURIM (aro) deitado perto da borda de BAIXO (porta de aéreo, basculante):
   // o suporte fica em cima e o aro desce a partir dos furos, então os furos
   // sobem o tamanho do aro — a ponta de baixo do aro é que fica a 30 da borda.
-  if (handle.formato === 'aro' && !vertical && ((ehPorta && handle.pos === 'bottom') || handle.kind === 'lift')) {
+  if (handle.formato === 'aro' && !vertical && ((ehPorta && pos === 'bottom') || handle.kind === 'lift')) {
     cv = Math.min(fp + (Number(handle.largura_mm) || 0), hMm / 2);
   }
   cu = clamp(cu, 0, wMm); cv = clamp(cv, 0, hMm);
@@ -1577,6 +1585,41 @@ function handlePlacement(handle, wMm, hMm) {
 // Desenho do puxador (viewer3d.js e photoreal.js — cada um passa a SUA
 // instância do three). Grupo em METROS com a origem no CENTRO do puxador,
 // encostado na face da porta, +Z pra fora. `metal` = brilho (a foto usa mais).
+// RECARTILHADO (2026-11-15, Matt: "pode colocar algum detalhe nesse desenho
+// do Rovero pra mostrar esse puxador melhor"). O Rovero tem o miolo
+// recartilhado (losangos) e as pontas lisas. Aqui o recartilhado é uma
+// textura desenhada num canvas (losangos escuros/claros sobre a cor do metal),
+// repetida pelo tamanho real: voltas = perímetro / 5 mm, comprimento / 5 mm.
+// Só no 3D do portal (metal < 0.6); na foto realista o miolo sai só mais
+// fosco. Sem canvas (bancada node) ou sem CanvasTexture: devolve null.
+const handleKnurlCache = {};
+function handleKnurlMaterial(T, corHex, metal, perimetroM, comprimentoM) {
+  if (metal != null && metal >= 0.6) return new T.MeshStandardMaterial({ color: new T.Color(corHex), metalness: metal, roughness: 0.62 });
+  if (typeof document === 'undefined' || typeof T.CanvasTexture !== 'function') return null;
+  try {
+    let base = handleKnurlCache[corHex];
+    if (!base) {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+      const x = c.getContext('2d');
+      x.fillStyle = corHex; x.fillRect(0, 0, 64, 64);
+      const risca = (cor, desloc) => {
+        x.strokeStyle = cor; x.lineWidth = 3;
+        for (let k = -64; k <= 128; k += 16) {
+          x.beginPath(); x.moveTo(k + desloc, 0); x.lineTo(k + desloc + 64, 64); x.stroke();
+          x.beginPath(); x.moveTo(k + desloc + 64, 0); x.lineTo(k + desloc, 64); x.stroke();
+        }
+      };
+      risca('rgba(0,0,0,0.34)', 0);
+      risca('rgba(255,255,255,0.30)', 4);
+      base = handleKnurlCache[corHex] = c;
+    }
+    const tex = new T.CanvasTexture(base);
+    tex.wrapS = tex.wrapT = T.RepeatWrapping;
+    tex.repeat.set(Math.max(2, Math.round(perimetroM / 0.005)), Math.max(1, Math.round(comprimentoM / 0.005)));
+    return new T.MeshStandardMaterial({ color: 0xffffff, map: tex, metalness: metal != null ? metal : 0.35, roughness: 0.6 });
+  } catch (e) { return null; }
+}
+
 function buildHandleObject3D(T, handle, vertical, metal) {
   const g = new T.Group();
   const mat = new T.MeshStandardMaterial({ color: new T.Color(handle.cor_hex || '#c9a45c'), metalness: metal != null ? metal : 0.35, roughness: 0.38 });
@@ -1591,18 +1634,46 @@ function buildHandleObject3D(T, handle, vertical, metal) {
     const matBase = handle.base_hex ? new T.MeshStandardMaterial({ color: new T.Color(handle.base_hex), metalness: 0.2, roughness: 0.55 }) : mat;
     const cilZ = (r0, r1, alt, z, m) => { const c = new T.Mesh(new T.CylinderGeometry(r1, r0, alt, 36), m); c.rotation.x = Math.PI / 2; c.position.set(0, 0, z + alt / 2); g.add(c); };
     const pesc = Hh * 0.16, anel = Hh * 0.24;
+    // lateral recartilhada (corpo e anel de baixo); tampa e base lisas
+    const per = 2 * Math.PI * raio;
+    const corCorpo = handle.cor_hex || '#c9a45c';
+    const knCorpo = handleKnurlMaterial(T, corCorpo, metal, per, Hh - pesc - anel);
+    const knBase = handleKnurlMaterial(T, handle.base_hex || corCorpo, metal, per, anel);
+    // material ÚNICO por malha (nada de array): o portal mexe em mesh.material
+    // direto (piscar peça, camadas, transparência) e um array quebraria isso.
+    const lados = (kn, liso) => (kn || liso);
     cilZ(raio * 0.8, raio * 0.8, pesc, 0, matBase);   // base Ø 20 num knob de Ø 25
-    cilZ(raio, raio, anel, pesc, matBase);
-    cilZ(raio, raio, Hh - pesc - anel - 0.002, pesc + anel, mat);
-    cilZ(raio * 0.86, raio * 0.86, 0.002, Hh - 0.002, mat);
+    cilZ(raio, raio, anel, pesc, lados(knBase, matBase));
+    cilZ(raio, raio, Hh - pesc - anel - 0.002, pesc + anel, lados(knCorpo, mat));
+    // tampa: degrau + disco polido um pouco menor (como na foto)
+    const matPolido = new T.MeshStandardMaterial({ color: new T.Color(corCorpo), metalness: metal != null ? Math.max(metal, 0.5) : 0.5, roughness: 0.2 });
+    cilZ(raio * 0.9, raio * 0.9, 0.0012, Hh - 0.002, mat);
+    cilZ(raio * 0.84, raio * 0.84, 0.0012, Hh - 0.0008, matPolido);
   } else if (handle.formato === 'tubo') {
     // ROVERO alça (2026-11-15): barra REDONDA sobre dois pés redondos.
+    // Detalhe (2ª rodada, pela foto): miolo RECARTILHADO entre os pés, pontas
+    // lisas e polidas, e um friso fino perto de cada ponta.
     const s = (Number(handle.entre_furos_mm) || 160) / 1000;
     const r = Wd / 2;
-    const barra = new T.Mesh(new T.CylinderGeometry(r, r, L, 28), mat);
-    barra.rotation.z = Math.PI / 2; barra.position.set(0, 0, Hh - r); g.add(barra);
+    const cor = handle.cor_hex || '#c9a45c';
+    const zB = Hh - r;
+    const matLiso = new T.MeshStandardMaterial({ color: new T.Color(cor), metalness: metal != null ? Math.max(metal, 0.5) : 0.5, roughness: 0.24 });
+    const trecho = (x0, x1, raio, m) => {
+      const c = new T.Mesh(new T.CylinderGeometry(raio, raio, x1 - x0, 32), m);
+      c.rotation.z = Math.PI / 2; c.position.set((x0 + x1) / 2, 0, zB); g.add(c);
+    };
+    const meio = Math.max(s / 2 - 0.018, L * 0.15);           // onde o recartilhado acaba, de cada lado
+    const kn = handleKnurlMaterial(T, cor, metal, 2 * Math.PI * r, 2 * meio);
+    if (kn && meio < L / 2 - 0.004) {
+      trecho(-meio, meio, r * 1.03, kn);                      // miolo recartilhado, um fio mais grosso
+      trecho(-L / 2, -meio, r, matLiso);
+      trecho(meio, L / 2, r, matLiso);
+    } else trecho(-L / 2, L / 2, r, matLiso);
+    // friso perto de cada ponta
+    const matFriso = new T.MeshStandardMaterial({ color: new T.Color(cor).multiplyScalar(0.55), metalness: 0.3, roughness: 0.6 });
+    [-1, 1].forEach((sg) => { const xf = sg * (L / 2 - 0.004); trecho(xf - 0.0004, xf + 0.0004, r * 1.004, matFriso); });
     [-s / 2, s / 2].forEach((x) => {
-      const pe = new T.Mesh(new T.CylinderGeometry(r * 0.85, r * 0.85, Hh - r, 24), mat);
+      const pe = new T.Mesh(new T.CylinderGeometry(r * 0.85, r * 0.85, Hh - r, 24), matLiso);
       pe.rotation.x = Math.PI / 2; pe.position.set(x, 0, (Hh - r) / 2); g.add(pe);
     });
   } else if (handle.formato === 'aro') {

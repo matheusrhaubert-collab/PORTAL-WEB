@@ -102,6 +102,18 @@ console.log('\n— Turim (aro): barra 128 e knob de 2 furos');
   ok('knob Turim: 2 por gaveta = 4 marcações (2 furos cada, a 16 mm)', fk.handle.qty === 2 && pk.points.length === 4 && pk.points[1].u - pk.points[0].u === 16 && pk.centers[0].cu === 150 && pk.centers[1].cu === 450, JSON.stringify(pk.points));
 }
 
+console.log('\n— porta: posição CENTRAL (meio da largura)');
+{
+  const base = Object.assign({}, knob, { kind: 'door', hinge: 'left', orient: 'auto' });
+  const pt = (pos, m) => g.handlePlacement(Object.assign({}, m || base, { pos }), 400, 700).points;
+  ok('central em cima: meio da largura, 30 do topo', pt('center_top')[0].u === 200 && pt('center_top')[0].v === 670, JSON.stringify(pt('center_top')));
+  ok('central no meio: centro da porta', pt('center_middle')[0].u === 200 && pt('center_middle')[0].v === 350);
+  ok('central embaixo: meio da largura, 30 da base', pt('center_bottom')[0].u === 200 && pt('center_bottom')[0].v === 30);
+  ok('"em cima" normal continua no lado oposto à dobradiça', pt('top')[0].u === 370 && pt('top')[0].v === 670);
+  const b = pt('center_top', Object.assign({}, barra, { kind: 'door', hinge: 'right', orient: 'auto' }));
+  ok('barra central em cima: 2 furos no meio da largura', b.length === 2 && b.every((q) => q.u === 200) && Math.max(b[0].v, b[1].v) === 670, JSON.stringify(b));
+}
+
 console.log('\n— posição (u da esquerda, v de baixo)');
 const hp = g.handlePlacement;
 let pl = hp(com[1].handle, 400, 700);
