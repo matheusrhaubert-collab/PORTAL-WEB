@@ -1662,7 +1662,10 @@ function buildHandleObject3D(T, handle, vertical, metal) {
       const c = new T.Mesh(new T.CylinderGeometry(raio, raio, x1 - x0, 32), m);
       c.rotation.z = Math.PI / 2; c.position.set((x0 + x1) / 2, 0, zB); g.add(c);
     };
-    const meio = Math.max(s / 2 - 0.018, L * 0.15);           // onde o recartilhado acaba, de cada lado
+    // KNOB T (2026-11-15, Rovero knob T): 1 furo só = UM pé no meio, com a
+    // base mais larga encostada na porta, e o recartilhado quase até as pontas.
+    const umPe = Number(handle.furos) !== 2;
+    const meio = umPe ? Math.max(L / 2 - 0.008, L * 0.15) : Math.max(s / 2 - 0.018, L * 0.15);   // onde o recartilhado acaba, de cada lado
     const kn = handleKnurlMaterial(T, cor, metal, 2 * Math.PI * r, 2 * meio);
     if (kn && meio < L / 2 - 0.004) {
       trecho(-meio, meio, r * 1.03, kn);                      // miolo recartilhado, um fio mais grosso
@@ -1671,8 +1674,12 @@ function buildHandleObject3D(T, handle, vertical, metal) {
     } else trecho(-L / 2, L / 2, r, matLiso);
     // friso perto de cada ponta
     const matFriso = new T.MeshStandardMaterial({ color: new T.Color(cor).multiplyScalar(0.55), metalness: 0.3, roughness: 0.6 });
-    [-1, 1].forEach((sg) => { const xf = sg * (L / 2 - 0.004); trecho(xf - 0.0004, xf + 0.0004, r * 1.004, matFriso); });
-    [-s / 2, s / 2].forEach((x) => {
+    if (!umPe) [-1, 1].forEach((sg) => { const xf = sg * (L / 2 - 0.004); trecho(xf - 0.0004, xf + 0.0004, r * 1.004, matFriso); });
+    if (umPe) {
+      const base = new T.Mesh(new T.CylinderGeometry(r * 1.05, r * 1.05, 0.007, 28), matLiso);
+      base.rotation.x = Math.PI / 2; base.position.set(0, 0, 0.0035); g.add(base);
+    }
+    (umPe ? [0] : [-s / 2, s / 2]).forEach((x) => {
       const pe = new T.Mesh(new T.CylinderGeometry(r * 0.85, r * 0.85, Hh - r, 24), matLiso);
       pe.rotation.x = Math.PI / 2; pe.position.set(x, 0, (Hh - r) / 2); g.add(pe);
     });
