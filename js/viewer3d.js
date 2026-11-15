@@ -2198,7 +2198,7 @@ const Viewer3D = (function () {
     const recuo = part.shape_type === 'chanfro45_reg' ? (CHANFRO45_RECUO_REG_MM * Math.SQRT2) / 1000 : 0;
     // perna do corte fixa (304 − E), ver js/drilling.js chanfroDaPeca — igual
     // ao número antigo no aéreo de 609, e vale pra base com W ≠ D.
-    const perna = (CHANFRO45_LATERAL_MM - 1) / 1000 - thickness + recuo;
+    const perna = (Number(part.chanfro_corte_mm) || (CHANFRO45_LATERAL_MM - 1)) / 1000 - thickness + recuo;
     const cx = perna, cz = perna;
     if (!(cx > 0) || !(cz > 0) || cx >= faceA || cz >= faceB) return box();
     const ax = faceA / 2, bz = faceB / 2;

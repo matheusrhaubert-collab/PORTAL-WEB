@@ -1732,7 +1732,73 @@
   // (piece.is_module=true, piece.child_pieces=[...] na mesma forma
   // recursiva). dims = { W, H, D } do container desta lista (módulo raiz, ou
   // já as dimensões locais de uma peça-módulo pai, se estivermos recursando).
+  // ==========================================================================
+  // CANTO 45° — CORTE DO CANTO POR MÓDULO (2026-11-15)
+  // ==========================================================================
+  // Matt: "as setas laterais mudariam o fundo e lateral, mas quando a porta
+  // entrar ou sair muda as laterais e não muda o fundo. Um resolve o tamanho
+  // total do móvel e o outro interfere na profundidade da lateral."
+  //
+  // O canto cortado tinha perna FIXA de 304 mm (migration 291: laterais
+  // D−304 / W−304, porta (304−E)·√2 − 2, pés em −304). Agora a perna é uma
+  // medida do módulo: dimOverrides.__canto45 = { corte_mm: K }. Mora no MESMO
+  // mapa dos ajustes de medida de peça de propósito — ele já é salvo no
+  // projeto, copiado no desfazer, mandado pro pedido (order_items.
+  // dim_overrides) e lido pelo ERP (.ban), então nada novo pra encanar.
+  //
+  // Como aplica: na lista de peças que TEM chapa chanfrada (o nível do
+  // módulo de canto — nunca os filhos, a porta não tem chanfro), todo "304"
+  // solto nas fórmulas vira K e a chapa chanfrada ganha chanfro_corte_mm = K
+  // (lido por drilling.js / viewer3d.js / photoreal.js). Sem a chave, ou com
+  // K = 304, devolve a MESMA lista — nada muda em módulo nenhum.
+  // Chamado no começo de calculateAssembly (preço/pedido/plano de corte) e de
+  // resolvePiecesForViewer (3D/furação) — as duas portas de entrada.
+  const CANTO45_CORTE_PADRAO_MM = 304;
+  const CANTO45_PORTA_MIN_MM = 300;     // largura mínima da porta
+  const CANTO45_PORTA_MAX_MM = 600;     // Matt: porta até 600
+  const CANTO45_LATERAL_MIN_MM = 150;   // o que sobra de cada lateral
+  function canto45TemChanfro(pieces) {
+    return (pieces || []).some(function (p) {
+      return p && !p.is_module && (p.shape_type === 'chanfro45' || p.shape_type === 'chanfro45_reg');
+    });
+  }
+  function canto45CorteDe(dimOverrides) {
+    const c = dimOverrides && dimOverrides.__canto45;
+    const k = c ? Number(c.corte_mm) : NaN;
+    return (isFinite(k) && k > 0) ? k : CANTO45_CORTE_PADRAO_MM;
+  }
+  // porta = (K − E)·√2 − 2  <->  K = (porta + 2)/√2 + E
+  function canto45PortaDoCorte(k, e) { return (k - (Number(e) || DEFAULT_THICKNESS_MM || 19.5)) * 1.41421 - 2; }
+  function canto45CorteDaPorta(porta, e) { return (porta + 2) / 1.41421 + (Number(e) || DEFAULT_THICKNESS_MM || 19.5); }
+  // Faixa do corte pra um módulo W × D: porta entre 300 e 600 e cada lateral
+  // (W − K, D − K) com pelo menos 150 mm.
+  function canto45FaixaCorte(W, D, e) {
+    const min = canto45CorteDaPorta(CANTO45_PORTA_MIN_MM, e);
+    let max = canto45CorteDaPorta(CANTO45_PORTA_MAX_MM, e);
+    const menor = Math.min(Number(W) || 0, Number(D) || 0);
+    if (menor > 0) max = Math.min(max, menor - CANTO45_LATERAL_MIN_MM);
+    return { min: Math.min(min, max), max: max };
+  }
+  const CANTO45_RE_304 = /(^|[^0-9.A-Za-z_])304(?![0-9.A-Za-z_])/g;
+  function applyCanto45Corte(pieces, dimOverrides) {
+    if (!dimOverrides || !dimOverrides.__canto45) return pieces;
+    const k = canto45CorteDe(dimOverrides);
+    if (Math.abs(k - CANTO45_CORTE_PADRAO_MM) < 0.01 || !canto45TemChanfro(pieces)) return pieces;
+    const kTxt = String(Math.round(k * 100) / 100);
+    return pieces.map(function (p) {
+      if (!p) return p;
+      const novo = Object.assign({}, p);
+      Object.keys(novo).forEach(function (chave) {
+        if (!/_formula$/.test(chave) || typeof novo[chave] !== 'string' || novo[chave].indexOf('304') < 0) return;
+        novo[chave] = novo[chave].replace(CANTO45_RE_304, function (m, antes) { return antes + kTxt; });
+      });
+      if (!novo.is_module && (novo.shape_type === 'chanfro45' || novo.shape_type === 'chanfro45_reg')) novo.chanfro_corte_mm = k;
+      return novo;
+    });
+  }
+
   function calculateAssembly(pieces, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides) {
+    pieces = applyCanto45Corte(pieces, dimOverrides);
     const { bodyDims } = resolveBodyDims(pieces, dims);
     // Espessura do casco deste nível (fallback de E pra peça sem cor) —
     // calculada uma vez por lista, mesma conta de resolvePiecesForViewer.
@@ -2015,6 +2081,8 @@
     arredondaMm,
     evalFormula,
     setFormulaGlobals,
+    applyCanto45Corte, canto45CorteDe, canto45TemChanfro, canto45FaixaCorte, canto45PortaDoCorte, canto45CorteDaPorta,
+    CANTO45_CORTE_PADRAO_MM, CANTO45_PORTA_MIN_MM, CANTO45_PORTA_MAX_MM, CANTO45_LATERAL_MIN_MM,
     calculatePiece,
     // Espessura da chapa (2026-09-24, plywood 18mm) — E das fórmulas.
     // resolvePiecesForViewer (module-pieces.js) usa os três pra chegar no

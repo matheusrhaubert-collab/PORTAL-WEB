@@ -1091,6 +1091,17 @@ function attachProject3DEditDrag() {
       startProjectPieceDrag(ev, domEl, 'resize', arrowHit.axis);
       return;
     }
+    // SETA DA PORTA do canto 45° (2026-11-15) — muda só o corte do canto
+    // (ver startProjectCanto45Drag, portal-06c).
+    if (arrowHit && arrowHit.axis === 'canto45-porta' && selectedProjectSlotId != null
+      && typeof startProjectCanto45Drag === 'function') {
+      const slot45 = projectSlots.find((s) => s.id === selectedProjectSlotId);
+      ev.preventDefault();
+      clearHold3DTimer();
+      projectDrag3DState = null;
+      if (slot45) startProjectCanto45Drag(ev, domEl, slot45);
+      return;
+    }
     if (arrowHit && selectedProjectSlotId != null) {
       const arrowSlot = projectSlots.find((s) => s.id === selectedProjectSlotId);
       if (arrowSlot) {

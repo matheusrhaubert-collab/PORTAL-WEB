@@ -549,6 +549,8 @@ function aplicarRecorteCascoNasLaterais(parts) {
 }
 
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
+  // canto 45°: corte do canto por módulo (ver Pricing.applyCanto45Corte)
+  if (Pricing.applyCanto45Corte) piecesList = Pricing.applyCanto45Corte(piecesList, dimOverrides);
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
   // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.
   // thicknessForPiece. Espessura do casco deste nível = fallback pra peça
@@ -772,6 +774,7 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         reference: piece.reference || piece.module_name || null,
         position_role: piece.position_role,
         shape_type: piece.shape_type, // migration 062 — desenho 3D (caixa/cabide tubular oval)
+        chanfro_corte_mm: piece.chanfro_corte_mm || null, // canto 45°: perna do corte (null = 304)
         tilt_angle_deg: piece.tilt_angle_deg || 0, // migration 065 — inclinação (só 'shelf')
         rotation_y_deg: piece.rotation_y_deg || 0, // migration 067 — giro de canto (só 'free')
         // Recortes em L (migration 094) — entalhes do toe/gola na lateral,

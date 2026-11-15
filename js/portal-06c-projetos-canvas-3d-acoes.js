@@ -1093,16 +1093,20 @@ function renderProjectConfigPanel() {
   // resolvidas — o mesmo número que vai pro corte.
   let canto45Block = '';
   try {
-    const pcs45 = resolvePiecesForViewer(projectSlotEffectivePieces(slot), { W: Number(slot.width_mm), H: Number(slot.height_mm), D: Number(slot.depth_mm) },
-      slot.colorsByRole || {}, slot.shelfQuantities || {}, slot.dimOverrides || {}, slot.pieceColorOverrides || {});
-    if ((pcs45 || []).some((p) => p && (p.shape_type === 'chanfro45' || p.shape_type === 'chanfro45_reg'))) {
-      const latDir = pcs45.find((p) => p && !p.is_module && p.position_role === 'right');
-      const latFre = pcs45.find((p) => p && !p.is_module && p.position_role === 'back' && Number(p.offset_z_mm) > 1);
-      const porta45 = pcs45.find((p) => p && p.is_module && Number(p.rotation_y_deg) === 45);
+    const c45 = projectCanto45Info(slot);
+    if (c45) {
       const linha45 = (rot, mm) => (mm > 0 ? `<div class="po-proj-config-dim-row"><label>${rot}</label><span class="po-proj-dim-value-wrap"><strong>${formatDimensionNumber(mm, unit)}</strong><span class="po-proj-dim-unit">${unitAbbrev(unit)}</span></span></div>` : '');
-      const linhas45 = linha45(I18n.t('project.canto45_lat_direita'), latDir ? Number(latDir.depth_mm) : 0)
-        + linha45(I18n.t('project.canto45_lat_frente'), latFre ? Number(latFre.width_mm) : 0)
-        + linha45(I18n.t('project.canto45_porta'), porta45 ? Number(porta45.width_mm) : 0);
+      // PORTA editável (2026-11-15): digitar aqui = mesma coisa que arrastar a
+      // seta da porta no 3D. Muda o corte do canto: as laterais encurtam ou
+      // alongam, o tamanho do módulo e os fundos ficam.
+      const linhaPorta = c45.portaMm > 0 ? `<div class="po-proj-config-dim-row"><label>${I18n.t('project.canto45_porta')}</label><span class="po-proj-dim-value-wrap">
+          <input type="text" inputmode="decimal" class="po-proj-canto45-porta-input" value="${formatDimensionNumber(c45.portaMm, unit)}" title="${formatDimensionNumber(c45.portaMinMm, unit)} – ${formatDimensionNumber(c45.portaMaxMm, unit)} ${unitAbbrev(unit)}" />
+          <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span>
+          ${c45.temAjuste ? `<button type="button" class="secondary po-proj-canto45-reset" title="${I18n.t('project.canto45_reset')}">↺</button>` : ''}
+        </span></div>` : '';
+      const linhas45 = linha45(I18n.t('project.canto45_lat_direita'), c45.latDirMm)
+        + linha45(I18n.t('project.canto45_lat_frente'), c45.latFreMm)
+        + linhaPorta;
       if (linhas45) canto45Block = `<div class="po-proj-config-dims po-proj-config-canto45"><span class="po-proj-config-section-label">${I18n.t('project.canto45_label')}</span>${linhas45}<p class="hint" style="margin:4px 0 0">${I18n.t('project.canto45_hint')}</p></div>`;
     }
   } catch (e) { canto45Block = ''; }
@@ -1183,6 +1187,22 @@ function renderProjectConfigPanel() {
       else renderProjectConfigPanel();
     });
     input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  // Canto 45°: porta digitada / voltar ao padrão (ver canto45Block acima).
+  panel.querySelectorAll('.po-proj-canto45-porta-input').forEach((input) => {
+    input.addEventListener('change', () => {
+      const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const mm = parseDimensionInput(input.value, unit2);
+      const c45 = projectCanto45Info(slot);
+      if (c45 && mm !== null && !isNaN(mm) && mm > 0) {
+        pushProjectUndoState();
+        setProjectSlotCanto45Corte(slot, Pricing.canto45CorteDaPorta(mm, c45.eMm));
+      } else renderProjectConfigPanel();
+    });
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  panel.querySelectorAll('.po-proj-canto45-reset').forEach((btn) => {
+    btn.addEventListener('click', () => { pushProjectUndoState(); setProjectSlotCanto45Corte(slot, null); });
   });
   // Medidas das peças (ver pieceDimsBlock acima).
   const applyPieceDim = (pieceId, axis, mmOrNull) => {
@@ -2344,6 +2364,7 @@ function classifyProject3DGrab(slot, grabAlongMm, grabHeightMm) {
 const PROJECT_ARROW_GAP_M = 0.06; // folga entre a face do módulo e o início da seta
 function refreshProject3DResizeArrows() {
   if (!ViewerProjectEdit || !ViewerProjectEdit.setResizeArrows) return;
+  projectCanto45Marcas = null;   // cotas do canto 45° no 3D: só voltam se a seta da porta for desenhada
   // Peça selecionada por duplo clique: as setas são DELA (ver
   // refreshProjectPieceArrows, no fim deste arquivo).
   if (typeof projectSelectedPiece !== 'undefined' && projectSelectedPiece
@@ -2420,6 +2441,7 @@ function refreshProject3DResizeArrows() {
       const offD = Number(slot.depth_mm || 0) / 2000 + PROJECT_ARROW_GAP_M;
       spec.push({ axis: 'depth-front', dir: az, position: { x: cx + az.x * offD, y: midY, z: cz + az.z * offD } });
     }
+    projectCanto45PushArrow(slot, spec);
     ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
     return;
   }
@@ -2470,6 +2492,7 @@ function refreshProject3DResizeArrows() {
       }
     });
   }
+  projectCanto45PushArrow(slot, spec);
   // Alvo generoso só no dedo — no mouse, área grande vira imprecisão.
   ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
 }
@@ -5177,3 +5200,197 @@ function setProjectDoorSide(slot, pieceId, lado) {
   renderProjectConfigPanel();
   markProjectDirty();
 }
+
+
+// ============================================================================
+// CANTO 45° — SETA DA PORTA + COTAS NO 3D (2026-11-15)
+// ============================================================================
+// Matt: "tem como colocar uma seta de puxar na porta, como se fosse empurrar
+// a porta pra dentro, e ela vai aumentando ou diminuindo? ... as setas
+// laterais mudariam o fundo e lateral, mas quando a porta entrar ou sair
+// muda as laterais e não muda o fundo."
+//
+// A seta da porta mexe SÓ no corte do canto (slot.dimOverrides.__canto45.
+// corte_mm, ver Pricing.applyCanto45Corte): empurrar pra dentro aumenta o
+// corte — a porta cresce e as duas laterais encurtam; puxar pra fora faz o
+// contrário. Largura/profundidade/altura do módulo e os fundos não mudam
+// (isso é das setas de sempre). Porta entre 300 e 600 mm, lateral ≥ 150.
+// Com o módulo selecionado aparecem também 3 etiquetas no 3D: a medida de
+// cada lateral e da porta, na unidade escolhida.
+let projectCanto45Marcas = null;   // { slotId, itens: [{ pieceId, texto }] } — etiquetas no 3D
+let projectCanto45Drag = null;
+let projectCanto45Raf = null;
+
+function projectCanto45Info(slot) {
+  if (!slot || !slot.module || typeof Pricing === 'undefined' || !Pricing.canto45TemChanfro) return null;
+  let parts;
+  try {
+    const efetivas = projectSlotEffectivePieces(slot);
+    if (!Pricing.canto45TemChanfro(efetivas)) return null;
+    parts = resolvePiecesForViewer(efetivas, { W: Number(slot.width_mm), H: Number(slot.height_mm), D: Number(slot.depth_mm) },
+      slot.colorsByRole || {}, slot.shelfQuantities || {}, slot.dimOverrides || {}, slot.pieceColorOverrides || {}) || [];
+  } catch (e) { return null; }
+  const latDir = parts.find((p) => p && !p.is_module && p.position_role === 'right');
+  const latFre = parts.find((p) => p && !p.is_module && p.position_role === 'back' && Number(p.offset_z_mm) > 1);
+  const porta = parts.find((p) => p && Number(p.rotation_y_deg) === 45);
+  const base = parts.find((p) => p && (p.shape_type === 'chanfro45' || p.shape_type === 'chanfro45_reg'));
+  if (!porta) return null;
+  const eMm = Number(porta.depth_mm) > 0 && Number(porta.depth_mm) < 40 ? Number(porta.depth_mm) : (Pricing.DEFAULT_THICKNESS_MM || 19.5);
+  const faixa = Pricing.canto45FaixaCorte(Number(slot.width_mm), Number(slot.depth_mm), eMm);
+  return {
+    latDirMm: latDir ? Number(latDir.depth_mm) : 0, latFreMm: latFre ? Number(latFre.width_mm) : 0, portaMm: Number(porta.width_mm) || 0,
+    latDirId: latDir ? latDir.piece_id : null, latFreId: latFre ? latFre.piece_id : null, portaId: porta.piece_id, baseId: base ? base.piece_id : null,
+    portaIds: [porta.piece_id].concat((porta.child_pieces || []).map((c) => c && c.piece_id)).filter((id) => id != null),
+    eMm, corteMm: Pricing.canto45CorteDe(slot.dimOverrides), corteMinMm: faixa.min, corteMaxMm: faixa.max,
+    portaMinMm: Pricing.canto45PortaDoCorte(faixa.min, eMm), portaMaxMm: Pricing.canto45PortaDoCorte(faixa.max, eMm),
+    temAjuste: !!(slot.dimOverrides && slot.dimOverrides.__canto45)
+  };
+}
+
+// corteMm null = volta pro padrão (304). opts.aoVivo = durante o arraste
+// (não refaz o painel nem marca sujo a cada quadro).
+function setProjectSlotCanto45Corte(slot, corteMm, opts) {
+  if (!slot) return;
+  const o = opts || {};
+  const novo = { ...(slot.dimOverrides || {}) };
+  if (corteMm === null || corteMm === undefined || !isFinite(corteMm)) delete novo.__canto45;
+  else {
+    const eMm = o.eMm || (projectCanto45Info(slot) || {}).eMm || 19.5;
+    const faixa = Pricing.canto45FaixaCorte(Number(slot.width_mm), Number(slot.depth_mm), eMm);
+    const k = Math.round(Math.min(Math.max(corteMm, faixa.min), faixa.max) * 10) / 10;
+    if (Math.abs(k - Pricing.CANTO45_CORTE_PADRAO_MM) < 0.05) delete novo.__canto45;
+    else novo.__canto45 = { corte_mm: k };
+  }
+  slot.dimOverrides = novo;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço antigo continua */ }
+  renderProjectCanvas();
+  if (o.aoVivo) { refreshProject3DResizeArrows(); return; }
+  renderProjectConfigPanel();
+  refreshProject3DResizeArrows();
+  markProjectDirty();
+}
+
+// Direção "pra dentro" da porta (da quina cortada pro canto das paredes) e o
+// centro dela, no mundo. null se o 3D não tem a porta desenhada.
+function projectCanto45PortaFrame(slot, info) {
+  if (!ViewerProjectEdit || !ViewerProjectEdit.getPieceFrame || !info) return null;
+  let f = null;
+  (info.portaIds || [info.portaId]).some((id) => { f = ViewerProjectEdit.getPieceFrame(slot.id, id); return !!f; });
+  if (!f) return null;
+  const R = Math.SQRT1_2;
+  const dir = { x: -(f.axes.x.x + f.axes.z.x) * R, y: 0, z: -(f.axes.x.z + f.axes.z.z) * R };
+  const n = Math.hypot(dir.x, dir.z) || 1;
+  dir.x /= n; dir.z /= n;
+  return { center: f.center, dir, frame: f };
+}
+
+function projectCanto45PushArrow(slot, spec) {
+  if (typeof projectCameraModeOn !== 'undefined' && projectCameraModeOn) return;
+  const info = projectCanto45Info(slot);
+  if (!info) return;
+  const pf = projectCanto45PortaFrame(slot, info);
+  if (pf) {
+    // a seta nasce na frente da porta e aponta pra dentro ("empurrar a porta")
+    const recuo = 0.24;
+    spec.push({
+      axis: 'canto45-porta', dir: pf.dir,
+      position: { x: pf.center.x - pf.dir.x * recuo, y: pf.center.y, z: pf.center.z - pf.dir.z * recuo }
+    });
+  }
+  const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const txt = (mm) => formatDimensionNumber(mm, unit) + ' ' + unitAbbrev(unit);
+  const itens = [];
+  if (info.latDirId && info.latDirMm > 0) itens.push({ pieceId: info.latDirId, texto: txt(info.latDirMm) });
+  if (info.latFreId && info.latFreMm > 0) itens.push({ pieceId: info.latFreId, texto: txt(info.latFreMm) });
+  if (info.portaMm > 0) itens.push({ pieceId: info.portaId, pieceIds: info.portaIds, texto: txt(info.portaMm), porta: true });
+  projectCanto45Marcas = { slotId: slot.id, itens };
+  projectCanto45LoopMarcas();
+}
+
+// Etiquetas DOM por cima do 3D, reposicionadas a cada quadro enquanto o
+// canto 45° está selecionado (a câmera gira sem avisar ninguém).
+function projectCanto45LoopMarcas() {
+  if (projectCanto45Raf) return;
+  const passo = () => {
+    projectCanto45Raf = null;
+    const wrap = document.querySelector('#po-tab-projects .po-proj-canvas-wrap');
+    let caixa = document.getElementById('po-proj-canto45-marcas');
+    const m = projectCanto45Marcas;
+    const visivel = m && wrap && wrap.offsetParent !== null && ViewerProjectEdit && ViewerProjectEdit.worldToClient
+      && selectedProjectSlotId === m.slotId;
+    if (!visivel) { if (caixa) caixa.style.display = 'none'; if (!m) return; projectCanto45Raf = requestAnimationFrame(passo); return; }
+    if (!caixa) {
+      caixa = document.createElement('div');
+      caixa.id = 'po-proj-canto45-marcas';
+      caixa.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;z-index:29;pointer-events:none;';
+      wrap.appendChild(caixa);
+    }
+    caixa.style.display = 'block';
+    while (caixa.children.length > m.itens.length) caixa.removeChild(caixa.lastChild);
+    const r = wrap.getBoundingClientRect();
+    m.itens.forEach((it, i) => {
+      let el = caixa.children[i];
+      if (!el) { el = document.createElement('span'); el.className = 'po-proj-canto45-marca'; caixa.appendChild(el); }
+      let f = null;
+      (it.pieceIds || [it.pieceId]).some((id) => { f = ViewerProjectEdit.getPieceFrame(m.slotId, id); return !!f; });
+      const p = f ? ViewerProjectEdit.worldToClient({ x: f.center.x, y: f.center.y + f.half.y + 0.07, z: f.center.z }) : null;
+      if (!p || p.x < r.left || p.x > r.right || p.y < r.top || p.y > r.bottom) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      if (el.textContent !== it.texto) el.textContent = it.texto;
+      el.classList.toggle('porta', !!it.porta);
+      el.style.left = Math.round(p.x - r.left) + 'px';
+      el.style.top = Math.round(p.y - r.top) + 'px';
+    });
+    projectCanto45Raf = requestAnimationFrame(passo);
+  };
+  projectCanto45Raf = requestAnimationFrame(passo);
+}
+
+// Chamado pelo pointerdown do 3D (portal-08) quando a seta tocada é a da porta.
+function startProjectCanto45Drag(ev, domEl, slot) {
+  const info = projectCanto45Info(slot);
+  const pf = info ? projectCanto45PortaFrame(slot, info) : null;
+  if (!pf) return false;
+  projectCanto45Drag = {
+    pointerId: ev.pointerId, slotId: slot.id, startX: ev.clientX, startY: ev.clientY,
+    startK: info.corteMm, eMm: info.eMm, origem: pf.center, dir: pf.dir, undoFeito: false, moved: false, raf: null, alvoK: info.corteMm
+  };
+  try { domEl.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+  if (ViewerProjectEdit.highlightResizeArrow) ViewerProjectEdit.highlightResizeArrow('canto45-porta');
+  return true;
+}
+function updateProjectCanto45Drag(ev) {
+  const st = projectCanto45Drag;
+  if (!st || ev.pointerId !== st.pointerId) return;
+  const slot = projectSlots.find((s) => s.id === st.slotId);
+  if (!slot) return;
+  const mx = ev.clientX - st.startX, my = ev.clientY - st.startY;
+  if (!st.moved && Math.hypot(mx, my) < 3) return;
+  const sv = projectScreenVecPerMeter(st.origem, st.dir);
+  if (!sv) return;
+  const n2 = sv.x * sv.x + sv.y * sv.y;
+  if (n2 < 1) return;
+  if (!st.undoFeito) { pushProjectUndoState(); st.undoFeito = true; }
+  st.moved = true;
+  // a porta anda δ pra dentro (perpendicular a ela) = corte cresce δ·√2
+  const deltaMm = ((mx * sv.x + my * sv.y) / n2) * 1000;
+  st.alvoK = Math.round(st.startK + deltaMm * Math.SQRT2);
+  if (st.raf) return;
+  st.raf = requestAnimationFrame(() => {
+    st.raf = null;
+    setProjectSlotCanto45Corte(slot, st.alvoK, { aoVivo: true, eMm: st.eMm });
+    if (ViewerProjectEdit.highlightResizeArrow) ViewerProjectEdit.highlightResizeArrow('canto45-porta');
+  });
+}
+function endProjectCanto45Drag(ev) {
+  const st = projectCanto45Drag;
+  if (!st || ev.pointerId !== st.pointerId) return;
+  projectCanto45Drag = null;
+  if (st.raf) { cancelAnimationFrame(st.raf); st.raf = null; }
+  const slot = projectSlots.find((s) => s.id === st.slotId);
+  if (!st.moved || !slot) { refreshProject3DResizeArrows(); return; }
+  setProjectSlotCanto45Corte(slot, st.alvoK, { eMm: st.eMm });
+}
+document.addEventListener('pointermove', (ev) => { if (projectCanto45Drag) updateProjectCanto45Drag(ev); });
+document.addEventListener('pointerup', (ev) => { if (projectCanto45Drag) endProjectCanto45Drag(ev); });
+document.addEventListener('pointercancel', (ev) => { if (projectCanto45Drag) endProjectCanto45Drag(ev); });

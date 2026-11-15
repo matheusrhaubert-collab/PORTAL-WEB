@@ -4042,7 +4042,8 @@ function createViewerComposition3D() {
     // setas da PEÇA selecionada (duplo clique, 2026-10-02)
     'piece-x+': 0xd8442f, 'piece-x-': 0xd8442f,
     'piece-y+': 0x2e9e5b, 'piece-y-': 0x2e9e5b,
-    'piece-z+': 0x2f6fd8, 'piece-z-': 0x2f6fd8
+    'piece-z+': 0x2f6fd8, 'piece-z-': 0x2f6fd8,
+    'canto45-porta': 0xe08a00                           // seta da porta do canto 45° (2026-11-15)
   };
   // Qual seta está acesa agora (string do eixo) — evita repintar a cada
   // pointermove quando nada mudou.

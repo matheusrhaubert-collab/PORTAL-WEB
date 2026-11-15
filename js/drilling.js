@@ -558,13 +558,22 @@
   // peça girada). W/H seguem expostas: largura/altura REAIS da peça
   // (part.width_mm/height_mm), pra fórmula poder medir a partir da
   // dimensão cadastrada (ex: "H-50").
+  // CANTO 45° (2026-11-15): os programas da chapa chanfrada têm a perna do
+  // corte escrita como 304 ("C-304+E", migration 291). Quando o módulo tem
+  // outro corte (vars.CORTE45, vindo de part.chanfro_corte_mm), o 304 solto
+  // da fórmula vira esse número — só pra essa peça.
+  const RE_304_FURO = /(^|[^0-9.A-Za-z_])304(?![0-9.A-Za-z_])/g;
   function eachDrillingInstance(rows, vars, fn) {
     if (!rows || !rows.length) return;
+    const k45 = vars && Number(vars.CORTE45);
+    const f45 = (k45 > 0 && Math.abs(k45 - CHANFRO45_CORTE_MM) > 0.01)
+      ? function (f) { return String(f).replace(RE_304_FURO, function (m, a) { return a + String(Math.round(k45 * 100) / 100); }); }
+      : function (f) { return f; };
     rows.forEach(function (row) {
       let x, y, depth, count;
       try {
-        x = Pricing.evalFormula(row.x_formula || '0', vars);
-        y = Pricing.evalFormula(row.y_formula || '0', vars);
+        x = Pricing.evalFormula(f45(row.x_formula || '0'), vars);
+        y = Pricing.evalFormula(f45(row.y_formula || '0'), vars);
         depth = Pricing.evalFormula(row.depth_formula || '0', vars);
         count = Math.max(Math.floor(Pricing.evalFormula(row.repeat_count_formula || '1', vars)), 0);
       } catch (e) { return; } // fórmula inválida: pula o furo, não o export
@@ -608,7 +617,7 @@
     const rows = furosDaPeca(part, drillingsByComponent, holesByPattern);
     if (!rows || !rows.length) return;
     const t = splitThickness(part.width_mm, part.height_mm, part.depth_mm, part.positioning);
-    const vars = { C: t.faceA, L: t.faceB, E: t.thickness, W: part.width_mm || 0, H: part.height_mm || 0 };
+    const vars = { C: t.faceA, L: t.faceB, E: t.thickness, W: part.width_mm || 0, H: part.height_mm || 0, CORTE45: Number(part.chanfro_corte_mm) || 0 };
     eachDrillingInstance(rows, vars, function (row, x, y, depth) {
       const isEdge = /^borda_/.test(row.face || '');
       // Furo do cadastro da PRÓPRIA peça.
@@ -1003,7 +1012,7 @@
       });
       if (!counterRows.length) return;
       const t = src.t;
-      const vars = { C: t.faceA, L: t.faceB, E: t.thickness, W: src.part.width_mm || 0, H: src.part.height_mm || 0 };
+      const vars = { C: t.faceA, L: t.faceB, E: t.thickness, W: src.part.width_mm || 0, H: src.part.height_mm || 0, CORTE45: Number(src.part.chanfro_corte_mm) || 0 };
 
       eachDrillingInstance(counterRows, vars, function (row, x, y) {
         if (!/^borda_/.test(row.face || '')) {
@@ -2207,7 +2216,8 @@
     // W − 2E) dá exatamente o mesmo número de antes (faceA − (305 − E)); num
     // módulo maior ou com W ≠ D a diagonal continua a 45° e cada lateral fica
     // com (W − 304) / (D − 304).
-    const perna = CHANFRO45_CORTE_MM - t.thickness + recuo;
+    // corte por módulo (2026-11-15, seta da porta): part.chanfro_corte_mm
+    const perna = (Number(part.chanfro_corte_mm) || CHANFRO45_CORTE_MM) - t.thickness + recuo;
     const cu = perna, cv = perna;
     if (!(cu > 0) || !(cv > 0) || cu >= t.faceA || cv >= t.faceB) return null;
     return { cu: cu, cv: cv, t: t };
