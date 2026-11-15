@@ -3549,6 +3549,33 @@ async function setProjectSlotDrawerModel(slot, modelId, opts) {
 //   drawerPos: 'center' | 'top'
 // ==========================================================================
 function projectHandleModels() { return (typeof window !== 'undefined' && window.__legnoHandleModels) || []; }
+// PUXADORES SEPARADOS POR TIPO E TAMANHO (2026-11-15, Matt: "separar os
+// puxadores por knob, e tamanhos... pra visualizar melhor"). Grupos na ordem:
+// Knobs (tudo que não é barra), depois as alças por entre-furos crescente
+// (128, 160, 320...). Dentro do grupo fica a ordem do cadastro.
+function projectHandleGroups() {
+  const todos = projectHandleModels();
+  const knobs = todos.filter((m) => m.tipo !== 'barra');
+  const porMm = {};
+  todos.filter((m) => m.tipo === 'barra').forEach((m) => {
+    const mm = Math.round(Number(m.entre_furos_mm) || 0);
+    (porMm[mm] = porMm[mm] || []).push(m);
+  });
+  const grupos = [];
+  if (knobs.length) grupos.push({ titulo: I18n.t('project.handle_group_knobs'), modelos: knobs });
+  Object.keys(porMm).map(Number).sort((a, b) => a - b).forEach((mm) => {
+    grupos.push({ titulo: I18n.t('project.handle_group_pull', { mm }), modelos: porMm[mm] });
+  });
+  return grupos;
+}
+// HTML dos grupos: um título por grupo e os cartões embaixo. `cartao(m)` = HTML
+// de um modelo; `antes` = HTML que entra na frente do 1º grupo (ex.: "Sem puxador").
+function projectHandleGroupsHtml(cartao, antes) {
+  const grupos = projectHandleGroups();
+  return (antes ? '<div class="po-proj-door-model-cards">' + antes + '</div>' : '')
+    + grupos.map((gr) => '<div class="po-proj-handle-grupo"><span class="po-proj-handle-grupo-titulo">' + escapeHtmlCutlist(gr.titulo) + ' · ' + gr.modelos.length + '</span>'
+      + '<div class="po-proj-door-model-cards">' + gr.modelos.map(cartao).join('') + '</div></div>').join('');
+}
 function projectSlotHandleCfg(slot) {
   const h = slot && slot.handle;
   if (!h) return null;

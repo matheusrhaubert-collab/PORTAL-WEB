@@ -114,6 +114,21 @@ console.log('\n— porta: posição CENTRAL (meio da largura)');
   ok('barra central em cima: 2 furos no meio da largura', b.length === 2 && b.every((q) => q.u === 200) && Math.max(b[0].v, b[1].v) === 670, JSON.stringify(b));
 }
 
+console.log('\n— knob T: alinhado pela PONTA (só ele)');
+{
+  const t = g.handleModelFromItem({ id: 't', code: 'PUX-ROVERO-T-BK', name: 'Knob T', attrs: { tipo: 'knob', formato: 'tubo', furos: 1, comprimento_mm: 55, largura_mm: 14, altura_mm: 34.5 } });
+  const pt = (m, extra) => g.handlePlacement(Object.assign({}, m, { kind: 'door', hinge: 'left', orient: 'auto' }, extra), 400, 700).points[0];
+  const emb = pt(t, { pos: 'bottom' }), cima = pt(t, { pos: 'top' });
+  ok('porta embaixo, em pé: furo a 57,5 (ponta a 30 da base)', emb.v === 57.5 && emb.u === 370, JSON.stringify(emb));
+  ok('porta em cima, em pé: ponta a 30 do topo', cima.v === 700 - 57.5, JSON.stringify(cima));
+  const deit = pt(t, { pos: 'top', orient: 'horizontal' });
+  ok('porta, deitado: ponta a 30 da lateral, furo a 30 do topo', deit.u === 400 - 57.5 && deit.v === 670, JSON.stringify(deit));
+  ok('knob comum não mudou (furo a 30)', pt(knob, { pos: 'bottom' }).v === 30);
+  const al = g.handleModelFromItem({ id: 'a', attrs: { tipo: 'barra', formato: 'tubo', furos: 2, entre_furos_mm: 160, comprimento_mm: 190, largura_mm: 12, altura_mm: 34 } });
+  const pa = g.handlePlacement(Object.assign({}, al, { kind: 'door', hinge: 'left', orient: 'auto', pos: 'bottom' }), 400, 700).points;
+  ok('alça Rovero (2 furos) não mudou: 1º furo a 30', Math.min(pa[0].v, pa[1].v) === 30, JSON.stringify(pa));
+}
+
 console.log('\n— posição (u da esquerda, v de baixo)');
 const hp = g.handlePlacement;
 let pl = hp(com[1].handle, 400, 700);
@@ -171,5 +186,43 @@ const portaMod = { id: 'pm', is_module: true, reference: 'Porta Shaker', positio
 const comM = g.applyHandleConfigDeep([lateral, portaMod], Object.assign({}, barra, { door_pos: 'bottom', drawer_pos: 'center' }));
 m = marcasDe(comM);
 ok('porta de modelo: 2 marcas na chapa de dentro, 1ª a 30 × 30', m.out.length === 2 && m.out.every((h) => h.ref === 'Painel porta') && m.out[0].x === 30 && m.out[0].y === 30, JSON.stringify(m.out.map((h) => [h.ref, h.x, h.y])));
+
+console.log('\n— puxador de BORDA (fixado por trás, porta encolhe 1 mm)');
+const itemBd = { id: 'e1', code: 'PUX-EDGE-152-BK', name: 'Edge 152', kind: 'puxador', unit: 'un', purchase_price: 5,
+  attrs: { tipo: 'barra', formato: 'borda', furos: 2, entre_furos_mm: 127, comprimento_mm: 152, largura_mm: 42, altura_mm: 18, cor_hex: '#1a1a1a' } };
+const itemBd3 = { id: 'e3', code: 'PUX-EDGE-300-BK', name: 'Edge 300', kind: 'puxador', unit: 'un', purchase_price: 8,
+  attrs: { tipo: 'barra', formato: 'borda', furos: 3, entre_furos_mm: 127, comprimento_mm: 300, largura_mm: 42, altura_mm: 18, cor_hex: '#1a1a1a' } };
+const bd = g.handleModelFromItem(itemBd), bd3 = g.handleModelFromItem(itemBd3);
+ok('modelo: formato borda, 2 e 3 furos a 127', bd.formato === 'borda' && bd.furos === 2 && bd3.furos === 3 && bd3.entre_furos_mm === 127);
+let eb = g.applyHandleConfigDeep(lista, Object.assign({}, bd, { door_pos: 'middle', drawer_pos: 'center' }));
+let pe = eb.find((x) => x.id === 'p1'), fe = eb.find((x) => x.id === 'f1');
+ok('porta (dobradiça esq.), em pé: entra pela borda direita', pe.handle.borda === 'right');
+let rp = g.resolvePiecesForViewer(eb, { W: 600, H: 720, D: 580 }, cores, {}, {}, {});
+let rPorta = rp.find((x) => x.reference === 'Porta'), rFrente = rp.find((x) => x.reference === 'Frente gaveta');
+ok('porta 400 -> 399 de largura, altura igual', Math.abs(rPorta.width_mm - 399) < 0.01 && Math.abs(rPorta.height_mm - 700) < 0.01, rPorta.width_mm + ' x ' + rPorta.height_mm);
+ok('gaveta: borda de cima, 180 -> 179 de altura, largura igual', fe.handle.borda === 'top' && Math.abs(rFrente.height_mm - 179) < 0.01 && Math.abs(rFrente.width_mm - 600) < 0.01, rFrente.height_mm);
+let ple = hp(pe.handle, 399, 700);
+ok('porta: centro na borda, no meio da altura', ple.cu === 399 && ple.cv === 350 && ple.edge === 'right');
+ok('porta: 2 parafusos atrás, a 10 da borda e 127 um do outro', ple.points.length === 2 && ple.points.every((q) => q.u === 389) && Math.abs(ple.points[1].v - ple.points[0].v - 127) < 0.01, JSON.stringify(ple.points));
+let plf = hp(fe.handle, 600, 179);
+ok('gaveta: centro no meio da borda de cima, parafusos a 10 dela', plf.cu === 300 && plf.cv === 179 && plf.points.every((q) => q.v === 169));
+// dobradiça à direita -> entra pela esquerda: encolhe E anda 1 mm
+const portaDir = Object.assign({}, porta, { id: 'p2', piece_id: 'p2', opening_type: 'hinge_right', hinge_side: 'right', offset_x_formula: '100' });
+eb = g.applyHandleConfigDeep([lateral, portaDir], Object.assign({}, bd, { door_pos: 'top', drawer_pos: 'center' }));
+rp = g.resolvePiecesForViewer(eb, { W: 600, H: 720, D: 580 }, cores, {}, {}, {});
+rPorta = rp.find((x) => x.reference === 'Porta');
+ok('dobradiça dir.: borda esquerda, 399 de largura', eb[1].handle.borda === 'left' && Math.abs(rPorta.width_mm - 399) < 0.01);
+ok('porta em pé "em cima": ponta do puxador a 30 do topo', hp(eb[1].handle, 399, 700).cv === 700 - 30 - 76 && hp(eb[1].handle, 399, 700).cu === 0);
+// deitado na porta
+eb = g.applyHandleConfigDeep([lateral, porta], Object.assign({}, bd3, { door_pos: 'bottom', door_orient: 'horizontal', drawer_pos: 'center' }));
+rp = g.resolvePiecesForViewer(eb, { W: 600, H: 720, D: 580 }, cores, {}, {}, {});
+rPorta = rp.find((x) => x.reference === 'Porta');
+ok('porta deitado + embaixo: borda de baixo, altura 699, largura 400', eb[1].handle.borda === 'bottom' && Math.abs(rPorta.height_mm - 699) < 0.01 && Math.abs(rPorta.width_mm - 400) < 0.01);
+ple = hp(eb[1].handle, 400, 699);
+ok('300 mm: 3 parafusos a 127, a 10 da borda de baixo', ple.points.length === 3 && ple.points.every((q) => q.v === 10) && Math.abs(ple.points[2].u - ple.points[0].u - 254) < 0.01, JSON.stringify(ple.points));
+ok('linha comprada do puxador de borda (1 por frente)', eb.filter((x) => x._handleRow).length === 1 && eb.find((x) => x._handleRow).purchased_item_id === 'e3');
+m = marcasDe(g.applyHandleConfigDeep(lista, Object.assign({}, bd, { door_pos: 'middle', drawer_pos: 'center' })));
+ok('.ban: 2 marcas na porta + 2 na frente', m.out.length === 4, m.out.length);
+ok('puxador comum NÃO encolhe a porta', Math.abs(g.resolvePiecesForViewer(comB, { W: 600, H: 720, D: 580 }, cores, {}, {}, {}).find((x) => x.reference === 'Porta').width_mm - 400) < 0.01);
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\nTudo OK');
 process.exit(falhas ? 1 : 0);

@@ -1315,7 +1315,11 @@ const HANDLE_POS = {
   furo_borda_ponta_mm: 30,    // 1º furo até a borda de cima / de baixo
   gaveta_min_alto_mm: 110,    // frente mais baixa que isto: sempre no centro
   marca_diametro_mm: 3,
-  marca_profundidade_mm: 2
+  marca_profundidade_mm: 2,
+  // PUXADOR DE BORDA (2026-11-15): a aba dele passa por cima da borda da
+  // porta, então a porta encolhe isto do lado em que ele entra.
+  borda_recuo_mm: 1,
+  borda_furo_mm: 10           // furo (atrás) até a borda onde o puxador entra
 };
 
 // PORTA DE VIDRO SEM MADEIRA não leva puxador que parafusa pela frente (Matt,
@@ -1390,16 +1394,20 @@ function handleModelFromItem(it) {
   if (!it) return null;
   const a = it.attrs || {};
   const tipo = a.tipo === 'barra' ? 'barra' : 'knob';
-  const furos = Number(a.furos) === 2 || (tipo === 'barra' && a.furos == null) ? 2 : 1;
+  // PUXADOR DE BORDA (formato 'borda'): parafusado por TRÁS, pode ter 3 furos.
+  const borda = a.formato === 'borda';
+  const furos = borda ? Math.max(2, Math.round(Number(a.furos) || 2))
+    : (Number(a.furos) === 2 || (tipo === 'barra' && a.furos == null) ? 2 : 1);
   return {
     item_id: it.id, name: it.name || '', code: it.code || null, tipo, furos,
-    entre_furos_mm: furos === 2 ? (Number(a.entre_furos_mm) || 160) : 0,
+    entre_furos_mm: furos >= 2 ? (Number(a.entre_furos_mm) || 160) : 0,
+    furo_borda_mm: borda ? (Number(a.furo_borda_mm) || HANDLE_POS.borda_furo_mm) : null,
     comprimento_mm: Number(a.comprimento_mm) || (tipo === 'barra' ? 182 : 37.6),
     largura_mm: Number(a.largura_mm) || (tipo === 'barra' ? 11 : 18),
     altura_mm: Number(a.altura_mm) || 23,
     cor_hex: a.cor_hex || '#c9a45c',
     // PEARL (2026-11-15): knob REDONDO com tampo de outra cor (madrepérola)
-    formato: ['redondo', 'aro', 'cilindro', 'tubo'].indexOf(a.formato) >= 0 ? a.formato : null, tampo_hex: a.tampo_hex || null,
+    formato: ['redondo', 'aro', 'cilindro', 'tubo', 'borda'].indexOf(a.formato) >= 0 ? a.formato : null, tampo_hex: a.tampo_hex || null,
     base_hex: a.base_hex || null, // ROVERO knob: anel de baixo em outra cor
     // foto real do cartão: attrs.foto_url, senão assets/handles/<código>.jpg
     foto_url: a.foto_url || (it.code ? 'assets/handles/' + it.code + '.jpg' : null)
@@ -1418,6 +1426,36 @@ function handleFrontKindById(pieces, pieceId, insideDrawer) {
     return !!achou;
   });
   return achou;
+}
+
+// PUXADOR DE BORDA (2026-11-15, Matt: "esse não é pela frente, ele é fixado por
+// trás e fica na borda da porta, pode ficar vertical ou horizontal. Quando ele
+// é selecionado a porta deve diminuir 1mm no sentido que ele entra").
+// Em que borda da frente ele entra: 'left' | 'right' | 'top' | 'bottom'.
+//   porta      em pé (padrão) = borda do lado oposto à dobradiça
+//              deitado        = borda de cima (posição "embaixo" = de baixo)
+//   gaveta     deitado (padrão) = borda de cima; em pé = borda direita
+//   basculante (abre pra cima)  = borda de baixo;  flap = borda de cima
+function handleEdgeSide(kind, hinge, orient, pos) {
+  const emPe = orient === 'vertical' ? true : orient === 'horizontal' ? false : kind === 'door';
+  if (kind === 'door') {
+    if (emPe) return hinge === 'left' ? 'right' : 'left';
+    return String(pos || '').replace(/^center_/, '') === 'bottom' ? 'bottom' : 'top';
+  }
+  if (emPe) return 'right';
+  return kind === 'lift' ? 'bottom' : 'top';
+}
+// A frente encolhe `mm` na borda onde o puxador entra (mesma conta por fórmula
+// do ajuste manual de peça: vale pro 3D, preço, corte, etiqueta e .ban).
+function handleEdgeShrink(p, edge, mm) {
+  const n = Number(mm) || 0;
+  if (!n || !edge) return p;
+  if (edge === 'left' || edge === 'right') {
+    return Object.assign({}, p, { width_formula: adjustFormula(p.width_formula, -n),
+      offset_x_formula: edge === 'left' ? adjustFormula(p.offset_x_formula, n) : p.offset_x_formula });
+  }
+  return Object.assign({}, p, { height_formula: adjustFormula(p.height_formula, -n),
+    offset_y_formula: edge === 'bottom' ? adjustFormula(p.offset_y_formula, n) : p.offset_y_formula });
 }
 
 // Quantos puxadores vão nesta frente: 2 só em frente de GAVETA, com knob
@@ -1459,8 +1497,13 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
       p = Object.assign({}, p); delete p._handleCfg;
       mudou = true;
       const hs = handleHingeSideOfRow(p);
+      const posDaFrente = kind === 'drawer' ? (cfg.drawer_pos || 'center') : (cfg.door_pos || 'top');
+      const orientDaFrente = (kind === 'drawer' ? cfg.drawer_orient : cfg.door_orient) || 'auto';
+      const bordaLado = cfg.formato === 'borda' ? handleEdgeSide(kind, hs, orientDaFrente, posDaFrente) : null;
+      if (bordaLado) p = handleEdgeShrink(p, bordaLado, HANDLE_POS.borda_recuo_mm);
       out.push(Object.assign({}, p, {
         handle: {
+          borda: bordaLado, furo_borda_mm: bordaLado ? (Number(cfg.furo_borda_mm) || HANDLE_POS.borda_furo_mm) : null,
           item_id: cfg.item_id, name: cfg.name, tipo: cfg.tipo, furos: cfg.furos,
           entre_furos_mm: cfg.entre_furos_mm, comprimento_mm: cfg.comprimento_mm,
           largura_mm: cfg.largura_mm, altura_mm: cfg.altura_mm, cor_hex: cfg.cor_hex,
@@ -1521,6 +1564,36 @@ function handlePlacement(handle, wMm, hMm) {
   const s = handle.furos === 2 ? (Number(handle.entre_furos_mm) || 0) : 0;
   const L = Number(handle.comprimento_mm) || 0;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // PUXADOR DE BORDA: o centro fica NA borda (cu/cv na linha da borda) e os
+  // parafusos atrás, a `furo_borda_mm` dela. Ao longo da borda: porta em pé
+  // segue em cima / meio / embaixo (ponta a 30 da ponta da porta); deitado na
+  // porta fica do lado oposto à dobradiça (ou no meio, nas posições centrais);
+  // gaveta e basculante = no meio.
+  if (handle.formato === 'borda' && handle.borda) {
+    const edge = handle.borda, emPe = edge === 'left' || edge === 'right';
+    const n = Math.max(2, Math.round(Number(handle.furos) || 2));
+    const sp = Number(handle.entre_furos_mm) || 0;
+    const fb = Number(handle.furo_borda_mm) || P.borda_furo_mm;
+    const fim = Number(P.furo_borda_ponta_mm) || 30;
+    const pb = String(handle.pos || '').replace(/^center_/, '');
+    let cu, cv;
+    if (emPe) {
+      cu = edge === 'right' ? wMm : 0;
+      if (handle.kind !== 'door' || pb === 'middle' || hMm < L + 2 * fim) cv = hMm / 2;
+      else cv = pb === 'bottom' ? fim + L / 2 : hMm - fim - L / 2;
+    } else {
+      cv = edge === 'top' ? hMm : 0;
+      if (handle.kind !== 'door' || /^center_/.test(String(handle.pos || '')) || wMm < L + 2 * fim) cu = wMm / 2;
+      else cu = handle.hinge === 'left' ? wMm - fim - L / 2 : fim + L / 2;
+    }
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const off = (i - (n - 1) / 2) * sp;
+      pts.push(emPe ? { u: edge === 'right' ? wMm - fb : fb, v: cv + off } : { u: cu + off, v: edge === 'top' ? hMm - fb : fb });
+    }
+    return { cu, cv, vertical: emPe, edge, centers: [{ cu, cv }],
+      points: pts.filter((p) => p.u >= 0 && p.u <= wMm && p.v >= 0 && p.v <= hMm) };
+  }
   // SENTIDO (Matt, 13/11: "pode colocar ele deitado ou em pé também"):
   // orient 'vertical' | 'horizontal' vence; sem ele vale o padrão do tipo
   // (porta = em pé, gaveta/basculante = deitado).
@@ -1538,8 +1611,14 @@ function handlePlacement(handle, wMm, hMm) {
   // cima/baixo. No sentido do comprimento o centro fica a (entre-furos / 2)
   // do 1º furo; knob (1 furo) = o próprio centro.
   const fl = Number(handle.lateral_mm) || Number(P.furo_borda_lateral_mm) || 30, fp = Number(P.furo_borda_ponta_mm) || 30;
-  const ponta = s / 2 + fp;       // centro -> borda, ao longo do puxador, pela ponta
-  const pontaLado = s / 2 + fl;   // idem, quando o comprimento corre na largura da porta
+  // KNOB T (Rovero knob T: barrinha de 55 mm num pé só — formato 'tubo' com 1
+  // furo). Matt, 15/11: "considerar o knob T para alinhar ele pela PONTA, não
+  // pelo furo. Ele ficou passando da porta" (furo a 30 + meia barra de 27,5 =
+  // ponta a 2,5 da borda). Só nele: no sentido do comprimento os 30 mm contam
+  // da ponta da barrinha, então o furo fica a 30 + metade do comprimento.
+  const meiaBarra = (handle.formato === 'tubo' && !(s > 0)) ? L / 2 : 0;
+  const ponta = s / 2 + fp + meiaBarra;       // centro -> borda, ao longo do puxador, pela ponta
+  const pontaLado = s / 2 + fl + meiaBarra;   // idem, quando o comprimento corre na largura da porta
   let cu, cv;
   if (ehPorta) {
     const ladoDir = handle.hinge === 'left';       // puxador do lado oposto à dobradiça
@@ -1620,8 +1699,30 @@ function handleKnurlMaterial(T, corHex, metal, perimetroM, comprimentoM) {
   } catch (e) { return null; }
 }
 
-function buildHandleObject3D(T, handle, vertical, metal) {
+function buildHandleObject3D(T, handle, vertical, metal, espessuraM) {
   const g = new T.Group();
+  if (handle.formato === 'borda') {
+    // PUXADOR DE BORDA (2026-11-15): chapa parafusada ATRÁS da porta, aba de
+    // 1 mm por cima da borda (no espaço que a porta encolheu) saindo ~10 mm
+    // pra frente, com uma dobra curta pra pegar com o dedo. Origem = centro do
+    // puxador na borda, no plano da frente da porta. Desenhado pra borda de
+    // CIMA (comprimento em X) e girado pras outras.
+    const matB = new T.MeshStandardMaterial({ color: new T.Color(handle.cor_hex || '#1a1a1a'), metalness: metal != null ? metal : 0.35, roughness: 0.42 });
+    const Lb = (Number(handle.comprimento_mm) || 152) / 1000;
+    const chapa = (Number(handle.largura_mm) || 42) / 1000;
+    const esp = espessuraM > 0 ? espessuraM : 0.0195;
+    const t = (Number(HANDLE_POS.borda_recuo_mm) || 1) / 1000;
+    const sai = 0.010, dobra = 0.006, e = 0.0015;
+    const dentro = new T.Group();
+    const cx = (sx, sy, sz, y, z) => { const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), matB); m.position.set(0, y, z); dentro.add(m); };
+    cx(Lb, t, esp + sai, t / 2, (sai - esp) / 2);            // aba por cima da borda
+    cx(Lb, dobra, e, t - dobra / 2, sai - e / 2);            // dobra da frente (pega)
+    cx(Lb, chapa, e, t - chapa / 2, -esp - e / 2);           // chapa de trás (parafusos)
+    dentro.rotation.z = handle.borda === 'right' ? -Math.PI / 2 : handle.borda === 'left' ? Math.PI / 2 : handle.borda === 'bottom' ? Math.PI : 0;
+    g.add(dentro);
+    g.userData.puxador = true;
+    return g;
+  }
   const mat = new T.MeshStandardMaterial({ color: new T.Color(handle.cor_hex || '#c9a45c'), metalness: metal != null ? metal : 0.35, roughness: 0.38 });
   const L = (Number(handle.comprimento_mm) || 40) / 1000;
   const Wd = (Number(handle.largura_mm) || 12) / 1000;
@@ -1771,7 +1872,7 @@ function attachHandleToObject3D(T, obj, part, metal) {
   const pl = handlePlacement(h, wMm, hMm);
   if (!pl) return;
   (pl.centers || [{ cu: pl.cu, cv: pl.cv }]).forEach((c) => {
-    const g = buildHandleObject3D(T, h, pl.vertical, metal);
+    const g = buildHandleObject3D(T, h, pl.vertical, metal, box.max.z - box.min.z);
     g.position.set(box.min.x + c.cu / 1000, box.min.y + c.cv / 1000, box.max.z);
     obj.add(g);
   });
@@ -1790,6 +1891,7 @@ if (typeof window !== 'undefined') {
   window.HANDLE_POS = HANDLE_POS;
   window.applyHandleConfigDeep = applyHandleConfigDeep;
   window.handlePlacement = handlePlacement;
+  window.handleEdgeSide = handleEdgeSide;
   window.handleModelFromItem = handleModelFromItem;
   window.piecesHaveHandleFront = piecesHaveHandleFront;
   window.attachHandleToObject3D = attachHandleToObject3D;

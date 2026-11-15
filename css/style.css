@@ -5300,6 +5300,14 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-proj-handle-opt:hover { border-color: #d9cfc0; background: #fff; }
 .po-proj-handle-opt.selected { border-color: var(--accent, #8a5a2b); box-shadow: 0 0 0 1px var(--accent, #8a5a2b); }
 
+/* Puxadores separados por tipo e tamanho (2026-11-15) */
+.po-proj-handle-grupo { margin-top: 10px; }
+.po-proj-handle-grupo-titulo {
+  display: block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted, #777); border-bottom: 1px solid var(--border, #e3ddd0); padding-bottom: 2px;
+}
+.po-proj-piece-handle-menu .po-proj-handle-grupo-titulo { margin: 6px 4px 2px; }
+
 /* Quantidade de prateleiras no painel do módulo (2026-11-15) */
 .po-proj-qty-stepper { display: inline-flex; align-items: center; gap: 4px; }
 .po-proj-qty-stepper .po-proj-qty-btn { margin: 0; padding: 0 9px; min-width: 0; line-height: 22px; }

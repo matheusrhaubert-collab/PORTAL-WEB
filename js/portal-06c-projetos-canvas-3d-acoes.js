@@ -981,7 +981,7 @@ function renderProjectConfigPanel() {
         <span style="flex:1;font-size:12px">${mSel ? escapeHtmlCutlist(mSel.name) : I18n.t('project.handle_none')}</span>
         <span class="hint" style="white-space:nowrap">${I18n.t('project.handle_change')} ▾</span>
       </summary>`;
-    handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span><details class="po-proj-handle-details" style="margin-top:6px">${resumoH}<div class="po-proj-door-model-cards">${cardH(null)}${projectHandleModels().map(cardH).join('')}</div></details>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
+    handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span><details class="po-proj-handle-details" style="margin-top:6px">${resumoH}<div class="po-proj-handle-grupos">${projectHandleGroupsHtml(cardH, cardH(null))}</div></details>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
   }
 
   const depthLabel = Number(slot.z_order || 0) > 0
@@ -5018,7 +5018,7 @@ async function renderProjectSideModelPanel() {
       return `<button type="button" class="po-proj-door-model-card po-proj-handle-card po-proj-all-handle${sel ? ' selected' : ''}" data-id="${id || ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}" style="width:88px;background:#fff;color:#222;">
         ${projectHandleCardVisual(m, 72)}<span>${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}</span></button>`;
     };
-    html += `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')} · ${comPux.length}</span><div class="po-proj-door-model-cards">${cardP(null)}${modelosPux.map(cardP).join('')}</div></div>`;
+    html += `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')} · ${comPux.length}</span><div class="po-proj-handle-grupos">${projectHandleGroupsHtml(cardP, cardP(null))}</div></div>`;
   }
   if (!html) { box.innerHTML = ''; return; }
   box.innerHTML = `<div class="po-proj-side-model"><label>${I18n.t('project.side_model_label')}</label>
@@ -5513,7 +5513,8 @@ function toggleProjectPieceHandleMenu(bar, slot) {
   const item = (valor, rotulo, visual, marcado) => `<button type="button" class="po-proj-piece-handle-opt${marcado ? ' selected' : ''}" data-v="${valor}">${visual || ''}<span>${rotulo}</span></button>`;
   menu.innerHTML = item('__modulo', I18n.t('project.piece_handle_same'), '', atual === null)
     + item('', I18n.t('project.handle_none'), '', atual === '')
-    + projectHandleModels().map((m) => item(m.item_id, escapeHtmlCutlist(m.name), projectHandleCardVisual(m, 36), atual === m.item_id)).join('');
+    + projectHandleGroups().map((gr) => `<span class="po-proj-handle-grupo-titulo">${escapeHtmlCutlist(gr.titulo)}</span>`
+      + gr.modelos.map((m) => item(m.item_id, escapeHtmlCutlist(m.name), projectHandleCardVisual(m, 36), atual === m.item_id)).join('')).join('');
   menu.style.display = 'flex';
   menu.querySelectorAll('.po-proj-piece-handle-opt').forEach((el) => el.addEventListener('click', () => {
     const v = el.dataset.v;
