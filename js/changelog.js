@@ -31,6 +31,75 @@
 // bolinha de "tem novidade" atualizam sozinhos a partir do item [0] daqui.
 window.LEGNO_CHANGELOG = [
   {
+    version: '1.009',
+    date: '2026-11-15',
+    items: {
+      pt: [
+        "Favoritos: selecione um módulo (com o que você montou no Construtor) ou um grupo e clique na ★ da barrinha, ou no ★ Favoritar do menu do grupo (botão direito). Dê um nome e escolha a pasta. Fica salvo na sua conta.",
+        "Os favoritos aparecem na aba ★ Favoritos dentro do + Módulo, separados por pasta. Um clique insere no projeto aberto, já com cores, puxador, LED e interior. Em Gerenciar pastas você cria, renomeia, move (arrastando o card pra pasta) e exclui; o ↻ refaz o ícone.",
+        "Grupo agora funciona como um objeto único: ao arrastar, trocar de parede ou chegar no fim da parede, todos os módulos andam e giram juntos, sem desmontar. Os módulos do próprio grupo não travam nem puxam uns aos outros.",
+        "Puxadores com fotos reais e separados por tipo (knobs e alças por entre-furos): linhas Oslo, Pearl (madrepérola), Turim (aro), Rovero (recartilhado em black, gold e rose — knob, knob T e alças de 160 e 320) e Edge (de borda, preso por trás da porta; a porta diminui 1 mm desse lado). Duplo clique na foto amplia.",
+        "Posição e sentido do puxador escolhidos por desenhos: na porta em cima, no meio, embaixo ou centralizado; na gaveta no centro ou no topo; em pé ou deitado. Opção de 2 knobs por gaveta.",
+        "Puxador em todos os módulos de uma vez (painel sem nada selecionado) ou só numa porta: dê duplo clique na porta e use Puxador ▾. Porta de vidro sem chapa não leva puxador; na Shaker Glass ele fica no meio do montante.",
+        "Base Canto 45° editável (Custom Kitchens › Bases › Corners), com pés plásticos: largura e profundidade livres e porta sempre a 45°. A seta laranja na porta aumenta ou diminui o corte do canto sem mudar o tamanho do móvel; o painel mostra as medidas das laterais e da porta.",
+        "Aéreo Canto 45° também editável. Cantos 45° e 90° podem ir até a altura máxima das Pantry e têm quantidade de prateleiras ajustável (− n +, de 1 a 8).",
+        "Novo Base Blind Corner · Right (lado cego à direita) e Base Canto 90° disponível em Custom Kitchens › Bases › Corners.",
+        "Plywood: peça e módulo de plywood nunca passam de 2400 mm — a cor plywood some quando o módulo é maior. O Auditor confere o tamanho da chapa pela cor de cada peça (EGGER 2750 × 1830, plywood 1220 × 2440).",
+        "Pastas de cliente: enviar a pasta inteira pra produção (um pedido por ambiente), renomear e apagar a pasta. Na Central de Pedidos os pedidos aparecem agrupados por pasta, com as etapas e o botão de liberar todos.",
+        "Vendedores do dealer: ativar e desativar cada vendedor, ver os projetos da equipe em Meus Projetos (Projetos de:) e o vendedor vê o mesmo preço de venda do dealer.",
+        "Altura do módulo não é mais limitada pela altura da parede: um módulo mais alto fica no chão e passa por cima (o Auditor avisa).",
+        "Módulo na frente de um painel de parede recua sozinho pela espessura do painel, continuando ligado à parede.",
+        "No Mac: segure Option durante o arraste pra soltar o módulo livre na parede ou no chão.",
+        "Construtor: as divisórias se movem arrastando pelos pegadores; um clique só seleciona.",
+        "A câmera do 3D gira em volta do ponto onde está o mouse.",
+        "Plano Técnico com o ícone de cada módulo na lista.",
+        "Enquanto o catálogo carrega aparece Carregando módulos… em vez de Nenhum módulo encontrado."
+      ],
+      en: [
+        "Favorites: select a cabinet (with whatever you built in the Builder) or a group and click the ★ on the small toolbar, or ★ Favorite in the group menu (right click). Give it a name and pick a folder. It is saved to your account.",
+        "Favorites show up in the ★ Favorites tab inside + Cabinet, split by folder. One click inserts it into the open project, already with colors, handles, LED and interior. In Manage folders you create, rename, move (drag the card onto a folder) and delete; ↻ redoes the icon.",
+        "A group now works as a single object: when you drag it, move it to another wall or reach the end of the wall, all its cabinets move and turn together without coming apart. Cabinets in the same group no longer block or snap to each other.",
+        "Handles with real photos, grouped by type (knobs and pulls by hole spacing): Oslo, Pearl (mother-of-pearl), Turim (loop), Rovero (knurled in black, gold and rose — knob, T knob and 160 and 320 pulls) and Edge (edge pull fixed behind the door; the door gets 1 mm shorter on that side). Double-click the photo to enlarge.",
+        "Handle position and direction picked from drawings: on doors at the top, middle, bottom or centered; on drawers centered or at the top; vertical or horizontal. Option for 2 knobs per drawer.",
+        "Handle on every cabinet at once (panel with nothing selected) or on a single door: double-click the door and use Handle ▾. Glass doors without a panel get no handle; on Shaker Glass it sits in the middle of the stile.",
+        "Editable Base Corner 45° (Custom Kitchens › Bases › Corners), with plastic legs: free width and depth, door always at 45°. The orange arrow on the door makes the corner cut bigger or smaller without changing the cabinet size; the panel shows the side and door sizes.",
+        "Wall Corner 45° is editable too. 45° and 90° corners can go up to the Pantry's maximum height and have an adjustable shelf count (− n +, 1 to 8).",
+        "New Base Blind Corner · Right (blind side on the right), and Base Corner 90° available in Custom Kitchens › Bases › Corners.",
+        "Plywood: plywood parts and cabinets never go over 2400 mm — the plywood color disappears when the cabinet is bigger. The Auditor checks the sheet size by each part's color (EGGER 2750 × 1830, plywood 1220 × 2440).",
+        "Client folders: send the whole folder to production (one order per room), rename and delete the folder. In the Order Center, orders are grouped by folder, with their stages and a release-all button.",
+        "Dealer sellers: activate and deactivate each seller, see the team's projects in My Projects (Projects of:), and sellers see the same selling price as the dealer.",
+        "Cabinet height is no longer limited by the wall height: a taller cabinet stays on the floor and goes past the top (the Auditor warns).",
+        "A cabinet in front of a wall panel steps forward by the panel thickness on its own, still attached to the wall.",
+        "On Mac: hold Option while dragging to drop the cabinet freely on a wall or the floor.",
+        "Builder: dividers move by dragging their handles; a click only selects.",
+        "The 3D camera orbits around the point under the mouse.",
+        "Technical Plan with an icon for each cabinet in the list.",
+        "While the catalog loads you see Loading cabinets… instead of No cabinets found."
+      ],
+      es: [
+        "Favoritos: selecciona un módulo (con lo que armaste en el Constructor) o un grupo y haz clic en la ★ de la barrita, o en ★ Favorito del menú del grupo (clic derecho). Dale un nombre y elige la carpeta. Queda guardado en tu cuenta.",
+        "Los favoritos aparecen en la pestaña ★ Favoritos dentro de + Módulo, separados por carpeta. Un clic lo inserta en el proyecto abierto, ya con colores, tirador, LED e interior. En Gestionar carpetas creas, renombras, mueves (arrastrando la tarjeta a la carpeta) y eliminas; ↻ rehace el ícono.",
+        "El grupo ahora funciona como un solo objeto: al arrastrarlo, cambiarlo de pared o llegar al final de la pared, todos los módulos se mueven y giran juntos, sin desarmarse. Los módulos del mismo grupo ya no se traban ni se atraen entre sí.",
+        "Tiradores con fotos reales y separados por tipo (pomos y tiradores por distancia entre agujeros): líneas Oslo, Pearl (nácar), Turim (aro), Rovero (moleteado en black, gold y rose — pomo, pomo T y tiradores de 160 y 320) y Edge (de canto, fijado por detrás de la puerta; la puerta se reduce 1 mm de ese lado). Doble clic en la foto la amplía.",
+        "Posición y sentido del tirador elegidos con dibujos: en la puerta arriba, en el medio, abajo o centrado; en el cajón en el centro o arriba; vertical u horizontal. Opción de 2 pomos por cajón.",
+        "Tirador en todos los módulos a la vez (panel sin nada seleccionado) o solo en una puerta: doble clic en la puerta y usa Tirador ▾. La puerta de vidrio sin placa no lleva tirador; en la Shaker Glass queda en el medio del larguero.",
+        "Base Esquina 45° editable (Custom Kitchens › Bases › Corners), con patas plásticas: ancho y profundidad libres y puerta siempre a 45°. La flecha naranja en la puerta agranda o achica el corte de la esquina sin cambiar el tamaño del mueble; el panel muestra las medidas de los laterales y de la puerta.",
+        "Alto Esquina 45° también editable. Las esquinas de 45° y 90° pueden llegar a la altura máxima de las Pantry y tienen cantidad de estantes ajustable (− n +, de 1 a 8).",
+        "Nuevo Base Blind Corner · Right (lado ciego a la derecha) y Base Esquina 90° disponible en Custom Kitchens › Bases › Corners.",
+        "Plywood: pieza y módulo de plywood nunca pasan de 2400 mm — el color plywood desaparece cuando el módulo es mayor. El Auditor revisa el tamaño de la placa por el color de cada pieza (EGGER 2750 × 1830, plywood 1220 × 2440).",
+        "Carpetas de cliente: enviar la carpeta entera a producción (un pedido por ambiente), renombrar y borrar la carpeta. En la Central de Pedidos los pedidos aparecen agrupados por carpeta, con las etapas y el botón de liberar todos.",
+        "Vendedores del dealer: activar y desactivar cada vendedor, ver los proyectos del equipo en Mis Proyectos (Proyectos de:) y el vendedor ve el mismo precio de venta del dealer.",
+        "La altura del módulo ya no está limitada por la altura de la pared: un módulo más alto queda en el piso y sobrepasa (el Auditor avisa).",
+        "Un módulo delante de un panel de pared se adelanta solo por el espesor del panel, sin dejar de estar unido a la pared.",
+        "En Mac: mantén Option durante el arrastre para soltar el módulo libre en la pared o en el piso.",
+        "Constructor: las divisiones se mueven arrastrando por sus tiradores; un clic solo selecciona.",
+        "La cámara 3D gira alrededor del punto donde está el mouse.",
+        "Plano Técnico con el ícono de cada módulo en la lista.",
+        "Mientras el catálogo carga aparece Cargando módulos… en vez de No se encontraron módulos."
+      ]
+    }
+  },
+  {
     version: '1.008',
     date: '2026-11-01',
     items: {

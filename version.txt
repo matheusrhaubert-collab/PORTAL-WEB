@@ -1,3 +1,3 @@
-﻿data: 2026-11-15 19:51:49
-cache: 202611151951
-mensagem: galeria de favoritos + grupo move como objeto unico
+﻿data: 2026-11-15 19:59:10
+cache: 202611151959
+mensagem: Portal: ajustes de 2026-11-15 19:59:10

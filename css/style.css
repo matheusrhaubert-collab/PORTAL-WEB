@@ -6541,3 +6541,21 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
   .mp-table-wrap { overflow-x: auto; }
   .mp-table { min-width: 820px; }
 }
+
+/* Central de Pedidos unificada (15/11, teste só admin — portal-09 CU_) */
+.cu-on > h2, .cu-on #po-proj-fav-list { display: none !important; }
+.cu-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 12px; }
+.cu-bar .cu-tabs { margin: 0; }
+.cu-bar .mp-search { flex: 1; min-width: 180px; }
+.cu-tab { font-size: 14px; padding: 8px 16px; }
+.cu-tab .cu-n { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 10px; background: rgba(0,0,0,.08); font-size: 12px; }
+.cu-tab.is-on .cu-n { background: rgba(255,255,255,.25); }
+.cu-arch { background: none; border: 0; color: var(--text-muted, #666); font-size: 12px; text-decoration: underline; cursor: pointer; padding: 4px; margin: 0; }
+.cu-arch.is-on { color: #8a4b1c; font-weight: 600; }
+.cu-sub { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #888; margin: 10px 0 6px; }
+.cu-orders { display: grid; gap: 6px; }
+.cu-order { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid #eee; border-radius: 8px; background: #fff; }
+.cu-order strong { flex: 1; min-width: 140px; }
+.cu-order button { margin: 0; padding: 5px 12px; font-size: 12px; }
+.cu-old-orders { margin-top: 22px; }
+.cu-old-orders > summary { cursor: pointer; font-weight: 600; color: #666; padding: 8px 0; }

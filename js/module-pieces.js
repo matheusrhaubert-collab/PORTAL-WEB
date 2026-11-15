@@ -1828,12 +1828,50 @@ function buildHandleObject3D(T, handle, vertical, metal, espessuraM) {
     // porta, não pra borda.
     let sg = -1;
     if (vertical && handle.hinge === 'left') sg = 1;
-    caixa(L, t, esp, 0, sg * t / 2, zc);                      // lado dos parafusos
-    caixa(L, t, esp, 0, sg * (Wd - t / 2), zc);               // lado da pega
-    [-(L - t) / 2, (L - t) / 2].forEach((x) => caixa(t, Wd, esp, x, sg * Wd / 2, zc));
     const sf = (Number(handle.entre_furos_mm) || 0) / 1000;
     const pes = sf > 0.03 ? [-sf / 2, sf / 2] : [0];          // knob: um pé só no meio
-    pes.forEach((x) => caixa(sf > 0.03 ? t * 1.4 : Math.max(sf + t, t * 2), t, Hh - esp, x, sg * t / 2, (Hh - esp) / 2));
+    if (T.Shape && T.Path && T.ExtrudeGeometry) {
+      // DESENHO MAIS PRÓXIMO DO REAL (2026-11-15, Matt com a foto do Turim:
+      // "deixar o desenho do portal mais próximo do verdadeiro"): aro de
+      // cantos ARREDONDADOS (por fora e no vão), com as quinas quebradas, e o
+      // suporte como um PESCOÇO curvo que nasce largo na porta e sobe até o
+      // lado dos parafusos — em vez de caixas retas.
+      const cantos = (p, x0, y0, x1, y1, r) => {
+        p.moveTo(x0 + r, y0); p.lineTo(x1 - r, y0); p.quadraticCurveTo(x1, y0, x1, y0 + r);
+        p.lineTo(x1, y1 - r); p.quadraticCurveTo(x1, y1, x1 - r, y1);
+        p.lineTo(x0 + r, y1); p.quadraticCurveTo(x0, y1, x0, y1 - r);
+        p.lineTo(x0, y0 + r); p.quadraticCurveTo(x0, y0, x0 + r, y0);
+      };
+      const ya = Math.min(0, sg * Wd), yb = Math.max(0, sg * Wd);
+      const rFora = Math.min(L, Wd) * 0.24, rVao = Math.max(rFora - t * 0.7, 0.0015);
+      const bis = Math.min(0.0009, esp * 0.2);                // quina quebrada
+      const aro = new T.Shape(); cantos(aro, -L / 2 + bis, ya + bis, L / 2 - bis, yb - bis, rFora);
+      const vao = new T.Path(); cantos(vao, -L / 2 + t, ya + t, L / 2 - t, yb - t, rVao);
+      aro.holes.push(vao);
+      const mAro = new T.Mesh(new T.ExtrudeGeometry(aro, { depth: esp - 2 * bis, bevelEnabled: true, bevelThickness: bis, bevelSize: bis, bevelSegments: 2, curveSegments: 10 }), mat);
+      mAro.position.z = Hh - esp + bis;
+      g.add(mAro);
+      // pescoço: contorno em (altura, pra onde o aro vai), extrudado na largura
+      const zTopo = Hh - esp * 0.5;
+      const pesc = new T.Shape();
+      pesc.moveTo(0, sg * -0.25 * t);
+      pesc.lineTo(0, sg * 1.7 * t);
+      pesc.quadraticCurveTo(zTopo * 0.45, sg * 1.05 * t, zTopo, sg * t);
+      pesc.lineTo(zTopo, sg * bis);
+      pesc.quadraticCurveTo(zTopo * 0.55, sg * -0.05 * t, 0, sg * -0.25 * t);
+      pes.forEach((x) => {
+        const larg = sf > 0.03 ? Math.max(t * 1.8, 0.012) : Math.max(L - 2 * rFora * 0.55, sf + t);
+        const m = new T.Mesh(new T.ExtrudeGeometry(pesc, { depth: larg, bevelEnabled: false, curveSegments: 10 }), mat);
+        m.rotation.y = -Math.PI / 2;           // contorno: x -> +Z (altura), y -> Y; extrusão -> X
+        m.position.x = x + larg / 2;
+        g.add(m);
+      });
+    } else {
+      caixa(L, t, esp, 0, sg * t / 2, zc);                      // lado dos parafusos
+      caixa(L, t, esp, 0, sg * (Wd - t / 2), zc);               // lado da pega
+      [-(L - t) / 2, (L - t) / 2].forEach((x) => caixa(t, Wd, esp, x, sg * Wd / 2, zc));
+      pes.forEach((x) => caixa(sf > 0.03 ? t * 1.4 : Math.max(sf + t, t * 2), t, Hh - esp, x, sg * t / 2, (Hh - esp) / 2));
+    }
   } else if (handle.tipo === 'barra') {
     const s = (Number(handle.entre_furos_mm) || 160) / 1000;
     const esp = Math.min(0.008, Hh * 0.4);

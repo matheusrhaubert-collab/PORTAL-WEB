@@ -1,4 +1,4 @@
-// Banco extra de perguntas do Tutorial (Help). Gerado em lotes (lote 1 = 156, lote 2 = 79); cada item tem resposta escrita (resp) em pt/en/es.
+// Banco extra de perguntas do Tutorial (Help). Gerado em lotes (lote 1 = 156, lote 2 = 79, lote 3 = 30 em 15/11); cada item tem resposta escrita (resp) em pt/en/es.
 // Formato: {id, cat, alvo, kw, pt, en, es, resp:{pt,en,es}}. Carregado antes do portal-24, que funde em HELPER_PERGUNTAS.
 window.HELPER_PERGUNTAS_EXTRA = [
  {
@@ -494,15 +494,15 @@ window.HELPER_PERGUNTAS_EXTRA = [
  {
   "id": "x-modulo-grupo",
   "cat": "modulos",
-  "alvo": "#po-proj-group-btn",
+  "alvo": "#po-proj-canvas-tools",
   "kw": "agrupar grupo salvar conjunto group save set agrupar",
   "pt": "Como agrupo módulos pra mover juntos?",
   "en": "How do I group cabinets to move them together?",
   "es": "¿Cómo agrupo módulos para moverlos juntos?",
   "resp": {
-   "pt": "Selecione vários (Ctrl+clique) e clique em Agrupar. O grupo se move e duplica como um só; Desagrupar separa de novo.",
-   "en": "Select several (Ctrl+click) and click Group. The group moves and duplicates as one; Ungroup splits it again.",
-   "es": "Selecciona varios (Ctrl+clic) y pulsa Agrupar. El grupo se mueve y duplica como uno; Desagrupar los separa."
+   "pt": "Selecione vários com Ctrl+clique (ou Shift+arrastar uma janela), clique com o botão direito e escolha Criar grupo. O grupo se move, gira e troca de parede como um objeto só; no mesmo menu dá pra Renomear, Duplicar, ver o orçamento, Favoritar ou Desagrupar.",
+   "en": "Select several with Ctrl+click (or Shift+drag a window), right-click and choose Create group. The group moves, turns and changes walls as a single object; the same menu lets you Rename, Duplicate, see the quote, Favorite or Ungroup.",
+   "es": "Selecciona varios con Ctrl+clic (o Shift+arrastrar una ventana), haz clic derecho y elige Crear grupo. El grupo se mueve, gira y cambia de pared como un solo objeto; en el mismo menú puedes Renombrar, Duplicar, ver el presupuesto, Favorito o Desagrupar."
   }
  },
  {
@@ -606,15 +606,15 @@ window.HELPER_PERGUNTAS_EXTRA = [
  {
   "id": "x-modulo-canto",
   "cat": "modulos",
-  "alvo": "#po-proj-add-cabinet-btn",
+  "alvo": "#po-proj-library-search-btn",
   "kw": "canto 90 45 lazy susan blind corner esquina",
   "pt": "Quais módulos de canto existem?",
   "en": "Which corner cabinets exist?",
   "es": "¿Qué módulos de esquina existen?",
   "resp": {
-   "pt": "Base Canto 90° (duas portas em L), Lazy Susan, Blind Corner (base e aéreo) e Aéreo Canto 45°. São só pra cozinha; em outros ambientes use Componentes.",
-   "en": "Base Corner 90° (two doors in L), Lazy Susan, Blind Corner (base and wall) and Wall Corner 45°. Kitchen only; in other rooms use Components.",
-   "es": "Base Esquina 90° (dos puertas en L), Lazy Susan, Blind Corner (base y aéreo) y Aéreo Esquina 45°. Solo para cocina; en otros ambientes usa Componentes."
+   "pt": "Em + Módulo: Base Canto 90°, Lazy Susan, Blind Corner (esquerdo e Right), Base Canto 45° editável com pés e Aéreo Canto 45°. Os de Custom Kitchens ficam em Bases › Corners. Fora de cozinha use Componentes.",
+   "en": "In + Cabinet: Base Corner 90°, Lazy Susan, Blind Corner (left and Right), editable Base Corner 45° with legs and Wall Corner 45°. The Custom Kitchens ones are in Bases › Corners. Outside kitchens use Components.",
+   "es": "En + Módulo: Base Esquina 90°, Lazy Susan, Blind Corner (izquierdo y Right), Base Esquina 45° editable con patas y Alto Esquina 45°. Los de Custom Kitchens están en Bases › Corners. Fuera de cocina usa Componentes."
   }
  },
  {
@@ -1432,15 +1432,15 @@ window.HELPER_PERGUNTAS_EXTRA = [
  {
   "id": "x-cores-puxador",
   "cat": "cores",
-  "alvo": "#po-proj-handles-btn",
+  "alvo": "#po-proj-config-panel",
   "kw": "puxador modelo perfil gola handle pull tirador",
   "pt": "Como escolho o puxador?",
   "en": "How do I choose the handle?",
   "es": "¿Cómo elijo el tirador?",
   "resp": {
-   "pt": "Menu Puxadores: modelo (barra, concha, perfil J/gola, sem puxador push), acabamento e posição. Vale pro ambiente; por módulo no painel da direita.",
-   "en": "Handles menu: model (bar, cup, J-profile, push-to-open), finish and position. Room-wide; per cabinet in the right panel.",
-   "es": "Menú Tiradores: modelo (barra, concha, perfil J, push), acabado y posición. Para el ambiente; por módulo en el panel derecho."
+   "pt": "Com o módulo selecionado, abra Puxador no painel da direita e escolha pela foto (knobs primeiro, depois alças por entre-furos). Embaixo escolha posição e sentido na porta e na gaveta. Sem nada selecionado, o mesmo painel aplica o puxador em todos os módulos.",
+   "en": "With the cabinet selected, open Handle in the right panel and pick by photo (knobs first, then pulls by hole spacing). Below, choose position and direction for doors and drawers. With nothing selected, the same panel applies the handle to every cabinet.",
+   "es": "Con el módulo seleccionado, abre Tirador en el panel derecho y elige por la foto (pomos primero, luego tiradores por distancia entre agujeros). Abajo elige posición y sentido en la puerta y en el cajón. Sin nada seleccionado, el mismo panel aplica el tirador a todos los módulos."
   }
  },
  {
@@ -3289,6 +3289,426 @@ window.HELPER_PERGUNTAS_EXTRA = [
    "pt": "Com Colisão ligada ele para encostado no vizinho. Também pode estar no limite da parede ou do teto. Desligue Colisão pra mover livre ou ajuste pela posição no painel.",
    "en": "With Collision on, it stops against the neighbor. It may also be at the wall or ceiling limit. Turn Collision off to move freely, or set the position in the panel.",
    "es": "Con Colisión activada se detiene junto al vecino. También puede estar en el límite de la pared o del techo. Desactiva Colisión para moverlo libre o ajusta la posición en el panel."
+  }
+ },
+ {
+  "id": "x-modulos-favoritar",
+  "cat": "modulos",
+  "alvo": "#po-proj-canvas-tools",
+  "kw": "favorito favoritar salvar modulo guardar estrela star favorite save cabinet guardar favorito",
+  "pt": "Como salvo um módulo nos favoritos?",
+  "en": "How do I save a cabinet to favorites?",
+  "es": "¿Cómo guardo un módulo en favoritos?",
+  "resp": {
+   "pt": "Selecione o módulo e clique na ★ da barrinha embaixo dele. Dê um nome, escolha a pasta (ou crie uma) e Salvar. Ele vai com tudo: interior do Construtor, cores, puxador, LED e ajustes.",
+   "en": "Select the cabinet and click the ★ on the small bar under it. Give it a name, pick a folder (or create one) and Save. Everything goes with it: Builder interior, colors, handle, LED and adjustments.",
+   "es": "Selecciona el módulo y haz clic en la ★ de la barrita debajo de él. Dale un nombre, elige la carpeta (o crea una) y Guardar. Va con todo: interior del Constructor, colores, tirador, LED y ajustes."
+  }
+ },
+ {
+  "id": "x-modulos-favoritar-grupo",
+  "cat": "modulos",
+  "alvo": "#po-proj-canvas-tools",
+  "kw": "favoritar grupo salvar conjunto favorito group favorite guardar grupo",
+  "pt": "Dá pra favoritar um grupo inteiro?",
+  "en": "Can I favorite a whole group?",
+  "es": "¿Puedo guardar un grupo entero en favoritos?",
+  "resp": {
+   "pt": "Sim. Selecione o grupo (ou vários módulos com Ctrl+clique), clique com o botão direito e escolha ★ Favoritar. Ao inserir, ele volta como grupo, com as mesmas posições entre os módulos.",
+   "en": "Yes. Select the group (or several cabinets with Ctrl+click), right-click and choose ★ Favorite. When inserted it comes back as a group, with the same positions between cabinets.",
+   "es": "Sí. Selecciona el grupo (o varios módulos con Ctrl+clic), haz clic derecho y elige ★ Favorito. Al insertarlo vuelve como grupo, con las mismas posiciones entre los módulos."
+  }
+ },
+ {
+  "id": "x-modulos-favoritos-onde",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "onde ficam favoritos usar favorito inserir favorito where favorites insert donde favoritos",
+  "pt": "Onde encontro meus favoritos pra usar em outro projeto?",
+  "en": "Where do I find my favorites to use in another project?",
+  "es": "¿Dónde encuentro mis favoritos para usarlos en otro proyecto?",
+  "resp": {
+   "pt": "Clique em + Módulo e abra a primeira aba, ★ Favoritos. Escolha a pasta na linha de baixo e clique no card: ele entra na parede ativa, logo depois do último módulo dela.",
+   "en": "Click + Cabinet and open the first tab, ★ Favorites. Pick the folder on the row below and click the card: it goes onto the active wall, right after its last cabinet.",
+   "es": "Haz clic en + Módulo y abre la primera pestaña, ★ Favoritos. Elige la carpeta en la fila de abajo y haz clic en la tarjeta: entra en la pared activa, justo después de su último módulo."
+  }
+ },
+ {
+  "id": "x-modulos-favoritos-pastas",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "pasta favoritos criar pasta mover renomear excluir folder favorites carpeta",
+  "pt": "Como organizo os favoritos em pastas?",
+  "en": "How do I organize favorites into folders?",
+  "es": "¿Cómo organizo los favoritos en carpetas?",
+  "resp": {
+   "pt": "Em + Módulo › ★ Favoritos clique em Gerenciar pastas…. Lá você cria, renomeia e apaga pastas, arrasta o card até a pasta (ou usa Mover para…), renomeia ou exclui favoritos. Apagar uma pasta não apaga os favoritos: eles vão pra Sem pasta.",
+   "en": "In + Cabinet › ★ Favorites click Manage folders…. There you create, rename and delete folders, drag a card onto a folder (or use Move to…), and rename or delete favorites. Deleting a folder doesn't delete its favorites: they go to No folder.",
+   "es": "En + Módulo › ★ Favoritos haz clic en Gestionar carpetas…. Ahí creas, renombras y borras carpetas, arrastras la tarjeta a la carpeta (o usas Mover a…), y renombras o eliminas favoritos. Borrar una carpeta no borra los favoritos: van a Sin carpeta."
+  }
+ },
+ {
+  "id": "x-modulos-favoritos-icone",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "icone favorito imagem errada refazer foto favorito icon redo imagen",
+  "pt": "O ícone do favorito ficou errado. Como refaço?",
+  "en": "The favorite's icon looks wrong. How do I redo it?",
+  "es": "El ícono del favorito quedó mal. ¿Cómo lo rehago?",
+  "resp": {
+   "pt": "Em Gerenciar pastas…, clique no ↻ do card. O ícone é refeito só com os módulos do favorito, sem parede.",
+   "en": "In Manage folders…, click ↻ on the card. The icon is redone with only the favorite's cabinets, no walls.",
+   "es": "En Gestionar carpetas…, haz clic en ↻ de la tarjeta. El ícono se rehace solo con los módulos del favorito, sin paredes."
+  }
+ },
+ {
+  "id": "x-modulos-favoritos-conta",
+  "cat": "modulos",
+  "alvo": null,
+  "kw": "favoritos outra conta compartilhar vendedor equipe share favorites account compartir",
+  "pt": "Meus favoritos aparecem pra outras pessoas?",
+  "en": "Do other people see my favorites?",
+  "es": "¿Otras personas ven mis favoritos?",
+  "resp": {
+   "pt": "Não. Cada conta tem os seus favoritos e pastas, inclusive vendedores da mesma equipe.",
+   "en": "No. Each account has its own favorites and folders, including sellers on the same team.",
+   "es": "No. Cada cuenta tiene sus propios favoritos y carpetas, incluidos los vendedores del mismo equipo."
+  }
+ },
+ {
+  "id": "x-modulos-grupo-mover",
+  "cat": "modulos",
+  "alvo": "#po-proj-canvas-tools",
+  "kw": "mover grupo trocar parede grupo desmonta desconfigura move group wall mover grupo pared",
+  "pt": "Como mudo um grupo de parede sem desmontar?",
+  "en": "How do I move a group to another wall without breaking it?",
+  "es": "¿Cómo cambio un grupo de pared sin desarmarlo?",
+  "resp": {
+   "pt": "Arraste qualquer módulo do grupo até a outra parede: o grupo inteiro vai junto, girado pra nova parede e com as mesmas distâncias. Se passar do fim da parede, o bloco todo recua junto.",
+   "en": "Drag any cabinet in the group to the other wall: the whole group goes with it, turned to the new wall and with the same spacing. If it goes past the end of the wall, the whole block steps back together.",
+   "es": "Arrastra cualquier módulo del grupo a la otra pared: todo el grupo va junto, girado hacia la nueva pared y con las mismas distancias. Si pasa del final de la pared, todo el bloque retrocede junto."
+  }
+ },
+ {
+  "id": "x-modulos-grupo-girar",
+  "cat": "modulos",
+  "alvo": "#po-proj-canvas-tools",
+  "kw": "girar grupo rotacionar grupo shift rotate group girar grupo",
+  "pt": "Como giro um grupo inteiro?",
+  "en": "How do I rotate a whole group?",
+  "es": "¿Cómo giro un grupo entero?",
+  "resp": {
+   "pt": "Segure Shift e arraste em cima do grupo selecionado: todos giram em volta do centro do grupo. Módulos de parede viram ilha ao girar.",
+   "en": "Hold Shift and drag over the selected group: everything turns around the group's center. Wall cabinets become islands when rotated.",
+   "es": "Mantén Shift y arrastra sobre el grupo seleccionado: todos giran alrededor del centro del grupo. Los módulos de pared pasan a ser isla al girar."
+  }
+ },
+ {
+  "id": "x-cores-puxador-todos",
+  "cat": "cores",
+  "alvo": "#po-proj-config-panel",
+  "kw": "puxador todos modulos aplicar todos handle all cabinets tirador todos",
+  "pt": "Como coloco o mesmo puxador em todos os módulos?",
+  "en": "How do I put the same handle on every cabinet?",
+  "es": "¿Cómo pongo el mismo tirador en todos los módulos?",
+  "resp": {
+   "pt": "Clique num espaço vazio pra não ter nada selecionado. No painel da direita aparece a fileira Puxador: escolha o modelo e ele vai pra todos os módulos do projeto.",
+   "en": "Click an empty spot so nothing is selected. The right panel shows the Handle row: pick the model and it goes to every cabinet in the project.",
+   "es": "Haz clic en un espacio vacío para no tener nada seleccionado. En el panel derecho aparece la fila Tirador: elige el modelo y va a todos los módulos del proyecto."
+  }
+ },
+ {
+  "id": "x-cores-puxador-uma-porta",
+  "cat": "cores",
+  "alvo": "#po-proj-config-panel",
+  "kw": "puxador so uma porta diferente porta especifica handle one door tirador una puerta",
+  "pt": "Dá pra trocar o puxador de uma porta só?",
+  "en": "Can I change the handle on just one door?",
+  "es": "¿Puedo cambiar el tirador de una sola puerta?",
+  "resp": {
+   "pt": "Sim. Dê duplo clique na porta ou frente de gaveta e use Puxador ▾ na barrinha da peça. Escolha outro modelo ou nenhum; o resto do módulo continua como estava.",
+   "en": "Yes. Double-click the door or drawer front and use Handle ▾ on the part's small bar. Pick another model or none; the rest of the cabinet stays as it was.",
+   "es": "Sí. Haz doble clic en la puerta o frente de cajón y usa Tirador ▾ en la barrita de la pieza. Elige otro modelo o ninguno; el resto del módulo queda igual."
+  }
+ },
+ {
+  "id": "x-cores-puxador-posicao",
+  "cat": "cores",
+  "alvo": "#po-proj-config-panel",
+  "kw": "posicao puxador altura em cima embaixo meio centro sentido deitado em pe handle position tirador posicion",
+  "pt": "Como escolho a posição e o sentido do puxador?",
+  "en": "How do I choose the handle position and direction?",
+  "es": "¿Cómo elijo la posición y el sentido del tirador?",
+  "resp": {
+   "pt": "No painel do puxador há desenhos pra porta (em cima, no meio, embaixo ou centralizado na largura) e pra gaveta (centro ou topo), e o sentido (em pé ou deitado). Automático escolhe pela altura do módulo: aéreo embaixo, torre no meio, base em cima. O furo fica a 30 mm da borda.",
+   "en": "The handle panel has drawings for doors (top, middle, bottom or centered across the width) and drawers (center or top), plus direction (vertical or horizontal). Auto picks by cabinet height: wall cabinets at the bottom, tall in the middle, base at the top. The hole sits 30 mm from the edge.",
+   "es": "En el panel del tirador hay dibujos para la puerta (arriba, en el medio, abajo o centrado en el ancho) y para el cajón (centro o arriba), y el sentido (vertical u horizontal). Automático elige por la altura del módulo: alto abajo, torre en el medio, base arriba. El agujero queda a 30 mm del borde."
+  }
+ },
+ {
+  "id": "x-cores-puxador-2-knobs",
+  "cat": "cores",
+  "alvo": "#po-proj-config-panel",
+  "kw": "dois knobs gaveta 2 puxadores gaveta larga two knobs drawer dos pomos cajon",
+  "pt": "Como coloco 2 knobs numa gaveta?",
+  "en": "How do I put 2 knobs on a drawer?",
+  "es": "¿Cómo pongo 2 pomos en un cajón?",
+  "resp": {
+   "pt": "Com um knob escolhido, use a opção Knobs por gaveta = 2 no painel do puxador. Eles ficam a 1/4 e 3/4 da largura e entram 2 no preço.",
+   "en": "With a knob selected, set Knobs per drawer = 2 in the handle panel. They sit at 1/4 and 3/4 of the width and 2 go into the price.",
+   "es": "Con un pomo elegido, usa la opción Pomos por cajón = 2 en el panel del tirador. Quedan a 1/4 y 3/4 del ancho y entran 2 en el precio."
+  }
+ },
+ {
+  "id": "x-cores-puxador-edge",
+  "cat": "cores",
+  "alvo": "#po-proj-config-panel",
+  "kw": "puxador de borda edge perfil porta menor 1mm edge pull tirador de canto",
+  "pt": "O que é o puxador Edge (de borda)?",
+  "en": "What is the Edge handle?",
+  "es": "¿Qué es el tirador Edge (de canto)?",
+  "resp": {
+   "pt": "É preso por trás, na borda da porta, aparecendo só a aba. A porta diminui 1 mm do lado onde ele entra. Na porta em pé fica do lado oposto à dobradiça; na gaveta, em cima.",
+   "en": "It's fixed from behind on the door edge, showing only the lip. The door gets 1 mm smaller on the side where it goes. On vertical doors it's on the side opposite the hinge; on drawers, at the top.",
+   "es": "Se fija por detrás, en el canto de la puerta, y solo se ve la pestaña. La puerta se reduce 1 mm del lado donde entra. En la puerta vertical queda del lado opuesto a la bisagra; en el cajón, arriba."
+  }
+ },
+ {
+  "id": "x-cores-puxador-foto",
+  "cat": "cores",
+  "alvo": "#po-proj-config-panel",
+  "kw": "foto puxador ampliar ver maior zoom handle photo enlarge foto tirador",
+  "pt": "Como vejo a foto do puxador maior?",
+  "en": "How do I see the handle photo bigger?",
+  "es": "¿Cómo veo la foto del tirador más grande?",
+  "resp": {
+   "pt": "Dê duplo clique no card do puxador: a foto abre ampliada.",
+   "en": "Double-click the handle card: the photo opens enlarged.",
+   "es": "Haz doble clic en la tarjeta del tirador: la foto se abre ampliada."
+  }
+ },
+ {
+  "id": "x-cores-puxador-vidro",
+  "cat": "cores",
+  "alvo": "#po-proj-config-panel",
+  "kw": "porta vidro sem puxador glass door handle puerta vidrio tirador",
+  "pt": "Por que a porta de vidro ficou sem puxador?",
+  "en": "Why doesn't the glass door have a handle?",
+  "es": "¿Por qué la puerta de vidrio quedó sin tirador?",
+  "resp": {
+   "pt": "Porta só de vidro, sem chapa (como a Glass Aluminium), não leva puxador. A Shaker Glass leva, com o furo no meio do montante.",
+   "en": "An all-glass door without a panel (like Glass Aluminium) gets no handle. Shaker Glass does, with the hole in the middle of the stile.",
+   "es": "La puerta solo de vidrio, sin placa (como la Glass Aluminium), no lleva tirador. La Shaker Glass sí, con el agujero en el medio del larguero."
+  }
+ },
+ {
+  "id": "x-modulo-canto45-corte",
+  "cat": "modulos",
+  "alvo": "#po-proj-config-panel",
+  "kw": "canto 45 corte porta maior seta laranja chanfro corner 45 cut esquina 45 corte",
+  "pt": "Como aumento a porta do Canto 45°?",
+  "en": "How do I make the 45° corner door bigger?",
+  "es": "¿Cómo agrando la puerta de la Esquina 45°?",
+  "resp": {
+   "pt": "Selecione o módulo e arraste a seta laranja da porta: o corte do canto aumenta ou diminui, as duas laterais encurtam e o tamanho do móvel não muda. Também dá pra digitar a medida da porta no painel (↺ volta ao padrão). As setas de sempre mudam o tamanho do móvel.",
+   "en": "Select the cabinet and drag the orange arrow on the door: the corner cut grows or shrinks, both sides get shorter and the cabinet size stays the same. You can also type the door size in the panel (↺ resets). The usual arrows change the cabinet size.",
+   "es": "Selecciona el módulo y arrastra la flecha naranja de la puerta: el corte de la esquina aumenta o disminuye, los dos laterales se acortan y el tamaño del mueble no cambia. También puedes escribir la medida de la puerta en el panel (↺ vuelve al estándar). Las flechas de siempre cambian el tamaño del mueble."
+  }
+ },
+ {
+  "id": "x-modulo-canto-prateleiras",
+  "cat": "modulos",
+  "alvo": "#po-proj-config-panel",
+  "kw": "quantidade prateleiras canto mais prateleiras shelves corner quantity estantes esquina",
+  "pt": "Como mudo a quantidade de prateleiras de um canto?",
+  "en": "How do I change the shelf count in a corner cabinet?",
+  "es": "¿Cómo cambio la cantidad de estantes de una esquina?",
+  "resp": {
+   "pt": "No painel do módulo use − n + em Prateleiras (de 1 a 8). Os cantos 45° e 90° podem ir até a altura máxima das Pantry.",
+   "en": "In the cabinet panel use − n + under Shelves (1 to 8). 45° and 90° corners can go up to the Pantry's maximum height.",
+   "es": "En el panel del módulo usa − n + en Estantes (de 1 a 8). Las esquinas de 45° y 90° pueden llegar a la altura máxima de las Pantry."
+  }
+ },
+ {
+  "id": "x-modulo-blind-right",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "blind corner direito right lado cego direita canto cego esquina ciega derecha",
+  "pt": "Tem Blind Corner com o lado cego à direita?",
+  "en": "Is there a Blind Corner with the blind side on the right?",
+  "es": "¿Hay Blind Corner con el lado ciego a la derecha?",
+  "resp": {
+   "pt": "Sim: Base Blind Corner · Right. A porta fica à esquerda e o vão cego à direita. Num blind já colocado, o botão ⇆ da barrinha também inverte o lado.",
+   "en": "Yes: Base Blind Corner · Right. The door is on the left and the blind space on the right. On a blind already placed, the ⇆ button on the small bar also flips the side.",
+   "es": "Sí: Base Blind Corner · Right. La puerta queda a la izquierda y el hueco ciego a la derecha. En un blind ya colocado, el botón ⇆ de la barrita también invierte el lado."
+  }
+ },
+ {
+  "id": "x-pecas-plywood-2400",
+  "cat": "pecas",
+  "alvo": "#po-proj-config-panel",
+  "kw": "plywood 2400 sumiu cor plywood maior chapa plywood limite plywood size limit",
+  "pt": "Por que a cor plywood sumiu do módulo?",
+  "en": "Why did the plywood color disappear from the cabinet?",
+  "es": "¿Por qué desapareció el color plywood del módulo?",
+  "resp": {
+   "pt": "Peça e módulo de plywood nunca passam de 2400 mm (a chapa é 1220 × 2440). Se o módulo é maior, o plywood sai da lista; diminua a medida pra ele voltar.",
+   "en": "Plywood parts and cabinets never go over 2400 mm (the sheet is 1220 × 2440). If the cabinet is bigger, plywood leaves the list; reduce the size to bring it back.",
+   "es": "Pieza y módulo de plywood nunca pasan de 2400 mm (la placa es 1220 × 2440). Si el módulo es mayor, el plywood sale de la lista; reduce la medida para que vuelva."
+  }
+ },
+ {
+  "id": "x-paredes-altura-sem-limite",
+  "cat": "paredes",
+  "alvo": "#po-proj-config-panel",
+  "kw": "modulo mais alto que parede passa teto altura limite height above ceiling altura techo",
+  "pt": "Posso colocar um módulo mais alto que a parede?",
+  "en": "Can a cabinet be taller than the wall?",
+  "es": "¿Puedo poner un módulo más alto que la pared?",
+  "resp": {
+   "pt": "Pode. A altura não é mais limitada pela parede: o módulo fica no chão e passa por cima. O Auditor avisa pra você conferir.",
+   "en": "Yes. Height is no longer limited by the wall: the cabinet stays on the floor and goes past the top. The Auditor warns so you can check.",
+   "es": "Sí. La altura ya no está limitada por la pared: el módulo queda en el piso y sobrepasa. El Auditor avisa para que lo revises."
+  }
+ },
+ {
+  "id": "x-modulos-painel-parede",
+  "cat": "modulos",
+  "alvo": null,
+  "kw": "modulo frente painel parede invade painel recua wall panel in front panel pared",
+  "pt": "Coloquei um módulo na frente de um painel de parede. Ele invade o painel?",
+  "en": "I put a cabinet in front of a wall panel. Does it go into the panel?",
+  "es": "Puse un módulo delante de un panel de pared. ¿Invade el panel?",
+  "resp": {
+   "pt": "Não. Ele recua sozinho pela espessura do painel e continua ligado à parede. Saindo da frente do painel, volta a encostar na parede.",
+   "en": "No. It steps forward by the panel thickness on its own and stays attached to the wall. Once it's off the panel, it goes back against the wall.",
+   "es": "No. Se adelanta solo por el espesor del panel y sigue unido a la pared. Al salir de delante del panel, vuelve a apoyarse en la pared."
+  }
+ },
+ {
+  "id": "x-modulos-mac-livre",
+  "cat": "modulos",
+  "alvo": null,
+  "kw": "mac arrastar livre option alt botao direito chao parede mac free drag arrastre libre",
+  "pt": "No Mac, como solto o módulo livre no chão ou em outra parede?",
+  "en": "On a Mac, how do I drop a cabinet freely on the floor or another wall?",
+  "es": "En Mac, ¿cómo suelto el módulo libre en el piso o en otra pared?",
+  "resp": {
+   "pt": "Segure Option (Alt) enquanto arrasta: o módulo vai pra parede ou chão que está embaixo do ponteiro.",
+   "en": "Hold Option (Alt) while dragging: the cabinet goes to the wall or floor under the pointer.",
+   "es": "Mantén Option (Alt) mientras arrastras: el módulo va a la pared o al piso que está debajo del puntero."
+  }
+ },
+ {
+  "id": "x-construtor-divisoria-arrastar",
+  "cat": "construtor",
+  "alvo": null,
+  "kw": "mover divisoria arrastar pegador construtor divider drag mover division",
+  "pt": "Como movo uma divisória no Construtor?",
+  "en": "How do I move a divider in the Builder?",
+  "es": "¿Cómo muevo una división en el Constructor?",
+  "resp": {
+   "pt": "Arraste pelo pegador da divisória. Um clique só seleciona, sem mover.",
+   "en": "Drag it by the divider's handle. A single click only selects, without moving.",
+   "es": "Arrástrala por el agarrador de la división. Un clic solo selecciona, sin mover."
+  }
+ },
+ {
+  "id": "x-vista-giro-mouse",
+  "cat": "vista",
+  "alvo": null,
+  "kw": "girar camera ponto mouse orbitar 3d rotate camera around mouse girar camara",
+  "pt": "Em volta de que ponto a câmera do 3D gira?",
+  "en": "What point does the 3D camera orbit around?",
+  "es": "¿Alrededor de qué punto gira la cámara 3D?",
+  "resp": {
+   "pt": "Em volta do ponto da cena que está embaixo do mouse quando você começa a girar. Aponte pro móvel que quer olhar e gire.",
+   "en": "Around the point in the scene under the mouse when you start rotating. Point at the cabinet you want to look at and rotate.",
+   "es": "Alrededor del punto de la escena que está debajo del mouse cuando empiezas a girar. Apunta al mueble que quieres ver y gira."
+  }
+ },
+ {
+  "id": "x-pedidos-enviar-pasta",
+  "cat": "pedidos",
+  "alvo": "#po-proj-fav-list",
+  "kw": "enviar pasta producao todos ambientes de uma vez send folder production enviar carpeta produccion",
+  "pt": "Como envio todos os ambientes de um cliente de uma vez?",
+  "en": "How do I send all of a client's rooms at once?",
+  "es": "¿Cómo envío todos los ambientes de un cliente a la vez?",
+  "resp": {
+   "pt": "Em Meus Projetos, na pasta do cliente, use 🏭 Enviar pasta pra produção. Cada ambiente vira um pedido separado e fica congelado; os que já foram enviados ficam de fora.",
+   "en": "In My Projects, on the client's folder, use 🏭 Send folder to production. Each room becomes a separate order and is frozen; rooms already sent are skipped.",
+   "es": "En Mis Proyectos, en la carpeta del cliente, usa 🏭 Enviar carpeta a producción. Cada ambiente se vuelve un pedido separado y queda congelado; los ya enviados quedan fuera."
+  }
+ },
+ {
+  "id": "x-projeto-renomear-pasta",
+  "cat": "projeto",
+  "alvo": "#po-proj-fav-list",
+  "kw": "renomear pasta cliente apagar pasta trocar nome pasta rename folder carpeta",
+  "pt": "Como renomeio ou apago a pasta de um cliente?",
+  "en": "How do I rename or delete a client folder?",
+  "es": "¿Cómo renombro o borro la carpeta de un cliente?",
+  "resp": {
+   "pt": "Em Meus Projetos, use os botões da pasta pra renomear (todos os projetos dela mudam juntos) ou apagar. Só dá pra apagar se nenhum projeto da pasta foi pra produção.",
+   "en": "In My Projects, use the folder buttons to rename (all its projects change together) or delete it. You can only delete it if none of its projects went to production.",
+   "es": "En Mis Proyectos, usa los botones de la carpeta para renombrar (todos sus proyectos cambian juntos) o borrar. Solo se puede borrar si ningún proyecto de la carpeta fue a producción."
+  }
+ },
+ {
+  "id": "x-pedidos-por-pasta",
+  "cat": "pedidos",
+  "alvo": null,
+  "kw": "central pedidos pasta agrupado cliente liberar todos orders by folder pedidos carpeta",
+  "pt": "Por que os pedidos aparecem agrupados por pasta?",
+  "en": "Why are orders grouped by folder?",
+  "es": "¿Por qué los pedidos aparecen agrupados por carpeta?",
+  "resp": {
+   "pt": "A Central de Pedidos junta os pedidos pela pasta do projeto de origem (o cliente). Cada pasta mostra o total, as etapas e um check verde quando foi liberada pra produção.",
+   "en": "The Order Center groups orders by the source project's folder (the client). Each folder shows the total, the stages and a green check once released to production.",
+   "es": "La Central de Pedidos agrupa los pedidos por la carpeta del proyecto de origen (el cliente). Cada carpeta muestra el total, las etapas y un check verde cuando fue liberada a producción."
+  }
+ },
+ {
+  "id": "x-conta-vendedor-ativar",
+  "cat": "conta",
+  "alvo": null,
+  "kw": "vendedor desativar ativar equipe bloquear vendedor seller deactivate equipo vendedor",
+  "pt": "Como desativo um vendedor da minha equipe?",
+  "en": "How do I deactivate a seller on my team?",
+  "es": "¿Cómo desactivo a un vendedor de mi equipo?",
+  "resp": {
+   "pt": "Em Minha Conta, na lista da equipe, use Desativar (ou Ativar pra liberar de novo). Vendedor desativado não entra no portal nem envia pedido; os projetos dele continuam com você.",
+   "en": "In My Account, on the team list, use Deactivate (or Activate to allow again). A deactivated seller can't sign in or send orders; their projects stay with you.",
+   "es": "En Mi Cuenta, en la lista del equipo, usa Desactivar (o Activar para habilitar de nuevo). El vendedor desactivado no entra al portal ni envía pedidos; sus proyectos siguen contigo."
+  }
+ },
+ {
+  "id": "x-conta-projetos-equipe",
+  "cat": "conta",
+  "alvo": "#po-proj-owner-filter",
+  "kw": "projetos equipe vendedor ver projetos do vendedor team projects proyectos equipo",
+  "pt": "Como vejo os projetos dos meus vendedores?",
+  "en": "How do I see my sellers' projects?",
+  "es": "¿Cómo veo los proyectos de mis vendedores?",
+  "resp": {
+   "pt": "Em Meus Projetos, use Projetos de: pra ver os seus, os da equipe toda ou de um vendedor. Você pode abrir e editar; excluir só o dono.",
+   "en": "In My Projects, use Projects of: to see yours, the whole team's or one seller's. You can open and edit them; only the owner can delete.",
+   "es": "En Mis Proyectos, usa Proyectos de: para ver los tuyos, los de todo el equipo o de un vendedor. Puedes abrirlos y editarlos; solo el dueño puede borrarlos."
+  }
+ },
+ {
+  "id": "x-erros-carregando-modulos",
+  "cat": "erros",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "carregando modulos nenhum modulo encontrado lista vazia loading cabinets cargando modulos",
+  "pt": "A lista de módulos mostra Carregando módulos…. Está travado?",
+  "en": "The cabinet list says Loading cabinets…. Is it stuck?",
+  "es": "La lista de módulos dice Cargando módulos…. ¿Se trabó?",
+  "resp": {
+   "pt": "Não, o catálogo ainda está chegando. Em poucos segundos a lista aparece sozinha, sem precisar fechar a janela.",
+   "en": "No, the catalog is still arriving. In a few seconds the list shows up on its own, no need to close the window.",
+   "es": "No, el catálogo todavía está llegando. En unos segundos la lista aparece sola, sin cerrar la ventana."
   }
  }
 ];

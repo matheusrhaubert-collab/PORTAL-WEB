@@ -3464,7 +3464,8 @@ const MP_NONE = '__none__';
 const mpState = {
   rows: [], ordersById: {}, trackByOrder: {}, archCol: true,
   tab: 'all', status: 'all', client: 'all', sort: 'updated', dir: 'desc', q: '',
-  open: new Set(), menu: null, loadSeq: 0, loaded: false
+  open: new Set(), menu: null, loadSeq: 0, loaded: false,
+  central: false, ctab: 'build' // modo Central de Pedidos (15/11, ver CU_ no fim do arquivo)
 };
 
 function mpT(k, vars) { return I18n.t('mp.' + k, vars); }
@@ -3545,7 +3546,7 @@ async function mpLoad() {
   for (let i = 0; i < orderIds.length; i += 100) {
     try {
       const { data: os } = await supabaseClient.from('orders')
-        .select('id, status, finance_released_at, delivered_at').in('id', orderIds.slice(i, i + 100));
+        .select('id, status, finance_released_at, delivered_at, factory_number, po_name, submitted_at').in('id', orderIds.slice(i, i + 100));
       (os || []).forEach((o) => { ordersById[o.id] = o; });
     } catch (e) { /* sem pedidos: tudo cai em "em desenvolvimento" */ }
   }
@@ -3611,9 +3612,16 @@ function mpVisible(folders) {
   const q = mpState.q.toLowerCase();
   const limite = Date.now() - MP_RECENT_DAYS * 86400000;
   let v = folders.filter((f) => {
+    if (mpState.central) {
+      // Central de Pedidos: Em construção | Em produção | Entregues | Arquivados
+      if (mpState.ctab === 'archived') { if (!f.arquivada) return false; }
+      else if (f.arquivada) return false;
+      else if (mpFolderPhase(f) !== mpState.ctab) return false;
+    } else {
     if (mpState.tab === 'archived') { if (!f.arquivada) return false; }
     else if (f.arquivada) return false;
     if (mpState.tab === 'recent' && !(f.upd && new Date(f.upd).getTime() >= limite)) return false;
+    }
     if (mpState.status !== 'all' && f.status !== mpState.status) return false;
     if (mpState.client !== 'all' && f.cliente !== mpState.client) return false;
     if (!q) return true;
@@ -3629,6 +3637,33 @@ function mpVisible(folders) {
     return s * String(a.upd || '').localeCompare(String(b.upd || ''));
   });
   return v;
+}
+
+// Fase da pasta na Central (15/11): nada aprovado ainda = em construção;
+// algo aprovado = em produção; tudo entregue = entregues.
+function mpFolderPhase(f) {
+  if (f.prod === 'done') return 'done';
+  if (f.status === 'approved') return 'prod';
+  return 'build';
+}
+
+// Pedidos da pasta, uma linha por ambiente enviado (só na Central).
+function mpOrdersHtml(f) {
+  const enviados = f.lista.filter((p) => p.frozen_order_id && mpState.ordersById[p.frozen_order_id]);
+  if (!enviados.length) return '';
+  const linha = (p) => {
+    const o = mpState.ordersById[p.frozen_order_id];
+    const est = mpProjStage(p);
+    const prodRot = est.st === 'done' ? mpT('pr_done') : est.st === 'prod' ? mpT(est.emLote ? 'pr_in_prod' : 'pr_scheduled') : '';
+    const num = Number(o.factory_number) > 0 ? '<span class="po-order-factory-no">' + String(Number(o.factory_number)).padStart(5, '0') + '</span>' : '';
+    return '<div class="cu-order">' + num
+      + '<strong>' + mpEsc(p.name || o.po_name || '—') + '</strong>'
+      + '<span class="mp-chip">' + mpEsc(typeof orderStatusLabel === 'function' ? orderStatusLabel(o.status) : o.status) + '</span>'
+      + (prodRot ? '<span class="mp-chip pr-' + (est.st === 'done' ? 'done' : est.emLote ? 'in_prod' : 'scheduled') + '">' + mpEsc(prodRot) + '</span>' : '')
+      + '<button type="button" class="secondary" data-act="order" data-order="' + mpEsc(o.id) + '">' + mpEsc(I18n.t('cu.view_order')) + '</button></div>';
+  };
+  return '<div class="cu-orders"><div class="cu-sub">' + mpEsc(I18n.t('cu.orders')) + '</div>' + enviados.map(linha).join('') + '</div>'
+    + '<div class="cu-sub">' + mpEsc(I18n.t('cu.projects')) + '</div>';
 }
 
 // ---------- desenho ----------
@@ -3675,9 +3710,36 @@ function mpRender() {
       + '<td class="mp-c-date">' + mpEsc(mpDate(f.upd)) + '</td>'
       + '<td class="mp-c-menu">' + (f.key !== MP_NONE ? '<button type="button" class="mp-dots" data-act="menu" aria-label="' + mpEsc(mpT('menu')) + '">⋯</button>' + menu : '') + '</td>'
       + '</tr>'
-      + (aberta ? '<tr class="mp-exp"><td colspan="7"><div class="mp-exp-status hint" data-st="' + mpEsc(f.key) + '"></div><div class="mp-exp-box" data-folder="' + mpEsc(f.key) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div></td></tr>' : '');
+      + (aberta ? '<tr class="mp-exp"><td colspan="7">' + (mpState.central ? mpOrdersHtml(f) : '') + '<div class="mp-exp-status hint" data-st="' + mpEsc(f.key) + '"></div><div class="mp-exp-box" data-folder="' + mpEsc(f.key) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div></td></tr>' : '');
   }).join('');
 
+  if (mpState.central) {
+    // CENTRAL DE PEDIDOS (15/11, Matt: "tudo num só lugar... bem claro e
+    // intuitivo, sem muita coisa na tela"): só busca + 4 abas + a tabela.
+    const nC = (t) => { const a = mpState.ctab; mpState.ctab = t; const n = mpVisible(folders).length; mpState.ctab = a; return n; };
+    box.innerHTML = ''
+      + '<div class="mp-head"><div><h2>' + mpEsc(I18n.t('my_orders.title')) + '</h2><p class="hint">' + mpEsc(I18n.t('cu.subtitle')) + '</p></div>'
+      + '<button type="button" class="mp-new" data-act="new">+ ' + mpEsc(mpT('new_project')) + '</button></div>'
+      + '<div class="cu-bar"><div class="mp-tabs cu-tabs">'
+      + ['build', 'prod', 'done'].map((t) => '<button type="button" class="mp-tab cu-tab cu-' + t + (mpState.ctab === t ? ' is-on' : '') + '" data-act="ctab" data-tab="' + t + '">' + mpEsc(I18n.t('cu.tab_' + t)) + ' <span class="cu-n">' + nC(t) + '</span></button>').join('')
+      + '</div>'
+      + '<label class="mp-search">' + MP_ICO.search + '<input type="search" class="mp-search-input" placeholder="' + mpEsc(mpT('search_ph')) + '" value="' + mpEsc(mpState.q) + '"></label>'
+      + (mpState.archCol ? '<button type="button" class="cu-arch' + (mpState.ctab === 'archived' ? ' is-on' : '') + '" data-act="ctab" data-tab="archived">' + mpEsc(mpT('tab_archived')) + ' (' + nC('archived') + ')</button>' : '')
+      + '</div>'
+      + (vis.length
+        ? '<div class="mp-table-wrap"><table class="mp-table"><thead><tr>'
+          + '<th>' + mpEsc(mpT('col_project')) + '</th><th>' + mpEsc(mpT('col_client')) + '</th><th>' + mpEsc(mpT('col_count')) + '</th>'
+          + '<th>' + mpEsc(mpT('col_status')) + '</th><th>' + mpEsc(mpT('col_prod')) + '</th>'
+          + '<th class="mp-th-sort" data-act="sortdate">' + mpEsc(mpT('col_updated')) + ' ' + (mpState.sort === 'updated' ? (mpState.dir === 'desc' ? '↓' : '↑') : '↕') + '</th><th></th>'
+          + '</tr></thead><tbody>' + linhas + '</tbody></table></div>'
+        : '<p class="hint mp-empty">' + mpEsc(I18n.t(mpState.rows.length ? 'cu.empty_tab' : 'cu.none_yet')) + '</p>');
+    if (foco) {
+      const inp = box.querySelector('.mp-search-input');
+      if (inp) { inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* ok */ } }
+    }
+    mpAttachCards();
+    return;
+  }
   box.innerHTML = ''
     + '<div class="mp-head"><div><h2>' + mpEsc(I18n.t('project.my_projects_title')) + '</h2><p class="hint">' + mpEsc(mpT('subtitle')) + '</p></div>'
     + '<button type="button" class="mp-new" data-act="new">+ ' + mpEsc(mpT('new_project')) + '</button></div>'
@@ -3905,6 +3967,8 @@ function mpOnClick(ev) {
       return;
     }
     if (act === 'tab') { mpState.tab = actEl.dataset.tab; mpState.menu = null; mpRender(); return; }
+    if (act === 'ctab') { mpState.ctab = actEl.dataset.tab; mpState.menu = null; mpRender(); return; }
+    if (act === 'order') { if (typeof openOrderDetail === 'function') openOrderDetail(actEl.dataset.order); return; }
     if (act === 'sortdate') {
       if (mpState.sort === 'updated') mpState.dir = mpState.dir === 'desc' ? 'asc' : 'desc';
       else { mpState.sort = 'updated'; mpState.dir = 'desc'; }
@@ -3967,4 +4031,91 @@ let mpOrigLoadList = null;
     return p;
   };
   document.addEventListener('po:lang-changed', () => { try { mpRender(); } catch (e) { /* ok */ } });
+})();
+
+
+// ============================================================
+// CENTRAL DE PEDIDOS UNIFICADA (2026-11-15) — TESTE, SÓ ADMINISTRADOR
+// ============================================================
+// Matt: "colocar meus projetos na central de pedidos. pra ficar tudo num só
+// lugar... bem claro e intuitivo, sem muita coisa na tela" / "gosto mais da
+// versão meus projetos, com as pastas status" / "separar o que já está em
+// produção, fechado, entregue, e o que está sendo construído" / "ao clicar
+// puxa as informações completas e projetos" / "antes de rodar isso quero
+// testar".
+// Ao abrir a Central, o MESMO painel por pasta de cima (#po-mp-v2, mpState)
+// é MOVIDO pra lá em modo central (mpState.central): abas Em construção /
+// Em produção / Entregues (+ Arquivados), busca, e ao abrir a pasta os
+// pedidos dela (Ver pedido -> openOrderDetail) + os cartões dos projetos. A
+// lista antiga de pedidos continua embaixo, recolhida ("Todos os pedidos"),
+// pra conferir durante o teste e pros pedidos sem projeto (New Quote).
+// Voltar pra Meus Projetos devolve o painel pra lá, no modo de sempre.
+// LIGAR PRA TODO MUNDO: CU_SO_ADMIN = false (e MP_SO_ADMIN = false, que é
+// quem decide se o painel por pasta existe pra conta).
+const CU_SO_ADMIN = true;
+
+async function cuCanSee() {
+  if (!(await mpCanSee())) return false;
+  if (!CU_SO_ADMIN) return true;
+  return window.LEGNO_IS_ADMIN === true || mpAdminCache === true;
+}
+
+function cuMoveTo(central) {
+  const box = mpBox();
+  const lista = document.getElementById('po-proj-fav-list');
+  if (!box || !lista) return;
+  const ordersPanel = document.getElementById('po-orders-list-panel');
+  const mpSec = mpSection();
+  if (central && ordersPanel) {
+    ordersPanel.classList.add('cu-on');
+    if (box.parentNode !== ordersPanel) ordersPanel.insertBefore(box, ordersPanel.firstChild);
+    if (lista.parentNode !== ordersPanel) ordersPanel.appendChild(lista);
+    // lista antiga de pedidos recolhida embaixo
+    const antiga = document.getElementById('po-orders-list');
+    if (antiga && !document.getElementById('cu-old-orders')) {
+      const det = document.createElement('details');
+      det.id = 'cu-old-orders';
+      det.className = 'cu-old-orders';
+      const sum = document.createElement('summary');
+      sum.textContent = I18n.t('cu.all_orders');
+      det.appendChild(sum);
+      antiga.parentNode.insertBefore(det, antiga);
+      det.appendChild(antiga);
+    }
+  } else if (mpSec) {
+    if (ordersPanel) ordersPanel.classList.remove('cu-on');
+    if (box.parentNode !== mpSec) mpSec.insertBefore(box, mpSec.firstChild);
+    if (lista.parentNode !== mpSec) mpSec.appendChild(lista);
+  }
+  mpState.central = !!central;
+  mpState.menu = null;
+}
+
+async function cuShow(tab) {
+  let ok = false;
+  try { ok = await cuCanSee(); } catch (e) { ok = false; }
+  if (!ok) return;
+  if (tab === 'po-tab-my-orders') {
+    cuMoveTo(true);
+    if (!mpState.loaded) loadProjectFavoritesList(); else { mpRender(); mpLoad(); }
+  } else if (tab === 'po-tab-my-projects') {
+    cuMoveTo(false);
+    if (mpState.loaded) mpRender();
+  }
+}
+
+(function cuHook() {
+  const side = document.getElementById('po-sidebar');
+  if (!side) return;
+  side.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.portal-tab-btn');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    if (tab !== 'po-tab-my-orders' && tab !== 'po-tab-my-projects') return;
+    setTimeout(() => cuShow(tab), 0); // depois da troca de aba de sempre
+  });
+  document.addEventListener('po:lang-changed', () => {
+    const sum = document.querySelector('#cu-old-orders > summary');
+    if (sum) sum.textContent = I18n.t('cu.all_orders');
+  });
 })();
