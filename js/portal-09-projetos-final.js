@@ -1347,6 +1347,190 @@ async function fetchProjectFullRow(proj) {
   return proj;
 }
 
+// Monta slots de projeto a partir de configs salvas (formato de
+// serializeProjectSlots). Extraído de restoreFavoriteProject em 15/11 pra
+// Galeria de Favoritos (portal-39) inserir módulos/grupos salvos no projeto
+// aberto com o MESMO motor da abertura de projeto. Não mexe em projectSlots.
+async function buildProjectSlotsFromConfigs(slotConfigs) {
+  slotConfigs = Array.isArray(slotConfigs) ? slotConfigs : [];
+  if (!allModules.length) await loadModules();
+  // (slotConfigs vem do parâmetro)
+
+  const pieceColorOverrideColorIds = slotConfigs.flatMap((s) =>
+    Object.values(s.piece_color_overrides || {}).flatMap((perRole) => Object.values(perRole).map((e) => e.color_id))
+  );
+  const colorIds = [...new Set(
+    slotConfigs.flatMap((s) => (s.selected_colors || []).map((c) => c.color_id))
+      .concat(pieceColorOverrideColorIds)
+      .filter(Boolean)
+  )];
+  const hingeIds = [...new Set(slotConfigs.map((s) => s.hinge_model_id).filter(Boolean))];
+  const slideIds = [...new Set(slotConfigs.map((s) => s.slide_model_id).filter(Boolean))];
+  const [colorsRes, hingeRes, slideRes] = await Promise.all([
+    colorIds.length ? supabaseClient.from('colors').select('*').in('id', colorIds) : { data: [] },
+    hingeIds.length ? supabaseClient.from('hinge_models').select('*').in('id', hingeIds) : { data: [] },
+    slideIds.length ? supabaseClient.from('slide_models').select('*').in('id', slideIds) : { data: [] }
+  ]);
+  const colorById = new Map((colorsRes.data || []).map((c) => [c.id, c]));
+  const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
+  const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
+
+  // ABRIR RÁPIDO (13/10, Matt: "tá demorando pra dar load nos projetos").
+  // Medido no closet de 15 módulos: 10 s, 62 requisições EM SÉRIE (4 por
+  // slot — peças, cores, presets, módulo), repetindo o mesmo módulo 11×.
+  // Agora: busca cada módulo DISTINTO uma vez só, todos em paralelo, e cada
+  // slot recebe a própria CÓPIA (peças clonadas; mapa de cores copiado) —
+  // o Construtor muda slot.colorOptionsByRole/pieces por slot, então
+  // compartilhar o objeto entre slots vazaria. O global moduleColorsByRole
+  // continua sendo setado por slot, igual loadModuleColors fazia (o
+  // fallback de cor abaixo lê dele).
+  const distinctIds = [...new Set(slotConfigs.map((c) => c.module_id).filter((id) => allModules.some((m) => m.id === id)))];
+  const moduleData = new Map();
+  await Promise.all(distinctIds.map(async (id) => {
+    const [pieces, colorsByRoleRaw, presets] = await Promise.all([
+      loadRecursivePiecesForModule(id),
+      fetchModuleColorsByRoleRaw(id),
+      fetchModuleLockedDimensionPresets(id)
+    ]);
+    moduleData.set(id, { pieces: pieces || [], colorsByRoleRaw: colorsByRoleRaw || {}, presets });
+  }));
+  const clonePieces = (list) => { try { return structuredClone(list); } catch (e) { return JSON.parse(JSON.stringify(list)); } };
+
+  const restored = [];
+  let skipped = 0;
+  for (const cfg of slotConfigs) {
+    const module = allModules.find((m) => m.id === cfg.module_id);
+    if (!module) { skipped += 1; continue; }
+    const md = moduleData.get(module.id);
+    const piecesList = md ? clonePieces(md.pieces) : [];
+    if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
+    const optionalIds = cfg.selected_optional_ids || [];
+    const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
+    moduleColorsByRole = Object.assign({}, md.colorsByRoleRaw); // cópia por slot do mesmo global que loadModuleColors preenchia
+    // Valores de largura/altura TRAVADOS (module.width_locked/height_locked)
+    // — precisa buscar de novo aqui (o slot restaurado é um objeto NOVO,
+    // não carrega nada do que insertProjectModuleDefault já tinha buscado
+    // da 1ª vez) pras setinhas de esticar do canvas funcionarem também num
+    // projeto salvo recarregado (pedido do usuário 2026-07-26, ver
+    // widthPresetsMm/heightPresetsMm no slot).
+    const lockedDimensionPresets = md.presets;
+    const selectedColorsResolved = [...(cfg.selected_colors || [])];
+    const colorsByRole = {};
+    selectedColorsResolved.forEach((sc) => {
+      const color = colorById.get(sc.color_id);
+      if (color) colorsByRole[sc.role_id] = color;
+    });
+    // Autocura (2026-07-21) — projetos salvos ANTES do fix de
+    // insertProjectModuleDefault (clicar na biblioteca insere direto)
+    // gravaram selected_colors VAZIO mesmo com peça exigindo cor, e o
+    // slot inteiro era pulado no restore ("Nenhuma cor selecionada para a
+    // peça X", relatado pelo usuário — projeto "bed3"). Em vez de só
+    // corrigir daqui pra frente, preenche aqui também qualquer papel de
+    // cor que as peças REALMENTE usam (recursivo, ver
+    // collectUsedColorRoleIds) mas que ficou faltando — com a 1ª opção
+    // disponível do catálogo, mesmo critério de "cor padrão" que
+    // insertProjectModuleDefault já usa pra módulo novo. Atualiza
+    // selectedColorsResolved junto, pra "Salvar alterações" gravar o
+    // preenchimento de volta e o projeto parar de precisar disso a cada load.
+    collectUsedColorRoleIds(effectivePieces).forEach((roleId) => {
+      if (colorsByRole[roleId]) return;
+      const fallback = (moduleColorsByRole[roleId] || [])[0];
+      if (!fallback) return;
+      colorsByRole[roleId] = fallback;
+      const idx = selectedColorsResolved.findIndex((sc) => sc.role_id === roleId);
+      const entry = { role_id: roleId, role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null, color_id: fallback.id, color_name: fallback.name };
+      if (idx >= 0) selectedColorsResolved[idx] = entry; else selectedColorsResolved.push(entry);
+    });
+    const hingeModel = cfg.hinge_model_id ? (hingeById.get(cfg.hinge_model_id) || null) : null;
+    const slideModel = cfg.slide_model_id ? (slideById.get(cfg.slide_model_id) || null) : null;
+    const pieceColorOverrides = {};
+    Object.keys(cfg.piece_color_overrides || {}).forEach((pieceId) => {
+      const perRole = cfg.piece_color_overrides[pieceId];
+      const resolved = {};
+      Object.keys(perRole).forEach((roleId) => {
+        const color = colorById.get(perRole[roleId].color_id);
+        if (color) resolved[roleId] = color;
+      });
+      if (Object.keys(resolved).length) pieceColorOverrides[pieceId] = resolved;
+    });
+    let result;
+    try {
+      result = module.is_decoration
+        ? { total: 0, breakdown: [] }
+        : Pricing.calculateModulePrice({
+          module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
+          shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
+          pieceColorOverrides,
+          width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+          markupMultiplier: resolveMarkupMultiplierForModule(module)
+        });
+    } catch (calcErr) { skipped += 1; continue; } // catálogo mudou e a config não fecha mais
+    restored.push({
+      id: cfg.id || newProjectSlotId(),
+      wall_index: Number(cfg.wall_index || 0), // clampado mais abaixo, depois que a forma/parede é restaurada
+      x_mm: Number(cfg.x_mm || 0),
+      floor_height_mm: Number(cfg.floor_height_mm || 0),
+      z_order: Number(cfg.z_order || 0),
+      // Módulo ILHA (2026-08-08, ver isFloorSlot) — projeto salvo antes
+      // disso não tem `placement` nenhum e cai em 'wall', idêntico a antes.
+      placement: cfg.placement === 'floor' ? 'floor' : 'wall',
+      floor_x_mm: Number(cfg.floor_x_mm || 0),
+      floor_z_mm: Number(cfg.floor_z_mm || 0),
+      floor_rotation_deg: Number(cfg.floor_rotation_deg || 0),
+      // Movimentação/Rotação fina 3 eixos (2026-08-23) — ver
+      // serializeProjectSlots (portal-08-projetos-paredes.js). Projeto
+      // salvo antes disso não tem essas chaves, cai no default 0.
+      fineOffsetZMm: Number(cfg.fine_offset_z_mm || 0),
+      fineOffsetYMm: Number(cfg.fine_offset_y_mm || 0),
+      tampFloorExtraMm: Number(cfg.tamp_floor_extra_mm || 0),
+      fineRotXDeg: Number(cfg.fine_rot_x_deg || 0),
+      fineRotYDeg: Number(cfg.fine_rot_y_deg || 0),
+      fineRotZDeg: Number(cfg.fine_rot_z_deg || 0),
+      module,
+      pieces: effectivePieces,
+      colorOptionsByRole: moduleColorsByRole,
+      colorsByRole,
+      selectedColors: selectedColorsResolved,
+      pieceColorOverrides,
+      hingeModel, slideModel,
+      width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
+      shelfQuantities: cfg.shelf_quantities || {},
+      dimOverrides: cfg.dim_overrides || {},
+      selectedOptionalIds: optionalIds,
+      // removedPieceIds (2026-08-20): peça removida manualmente pelo
+      // cliente ("Peças do móvel") — fica de fora de `pieces` acima (que
+      // guarda a árvore INTEIRA, igual selectedOptionalIds) e é filtrada
+      // depois por projectSlotEffectivePieces junto com layoutPieces.
+      removedPieceIds: cfg.removed_piece_ids || [],
+      ledConfigs: cfg.led_configs || {}, // LED embutido (2026-09-30)
+      pieceAdjustments: cfg.piece_adjustments || {}, // ajuste manual de peça (2026-10-02)
+      // Construtor de armário: a árvore volta como veio (o motor só a lê
+      // quando a janela abre). Projeto salvo antes disso não tem a chave.
+      layout: cfg.layout || null,
+      // Modelo de porta (migration 188) — sem a chave = Flat (padrão).
+      doorModelId: cfg.door_model_id || null,
+      // Modelo de gaveta (migration 203) — sem a chave = Standard.
+      drawerModelId: cfg.drawer_model_id || null,
+      // Puxador (2026-11-13) — sem a chave = sem puxador.
+      handle: cfg.handle || null,
+      // Grupo de módulos (2026-09-03) — projeto salvo antes disso não tem
+      // essas chaves, cai em null/null (avulso), igual sempre foi. Ver
+      // serializeProjectSlots (portal-08-projetos-paredes.js).
+      group_id: cfg.group_id || null,
+      group_name: cfg.group_name || null,
+      result,
+      thumbnail_data_url: cfg.thumbnail_data_url || null,
+      widthPresetsMm: lockedDimensionPresets.width,
+      heightPresetsMm: lockedDimensionPresets.height,
+      // Ver mesmo comentário em insertProjectModuleDefault — dropdown de
+      // SKU no painel da direita precisa do rótulo, não só do mm.
+      widthPresetsLabeled: lockedDimensionPresets.widthLabeled,
+      heightPresetsLabeled: lockedDimensionPresets.heightLabeled
+    });
+  }
+  return { restored, skipped };
+}
+
 async function restoreFavoriteProject(fav, bindAsFavorite = true) {
   // projeto congelado (migration 179) nunca vira o projeto "em edição" —
   // se chegar aqui por algum caminho, abre como rascunho sem vínculo
@@ -1363,181 +1547,8 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     // array vazio), mesmo o módulo existindo de verdade no catálogo. Isso
     // bate exatamente com o relato do usuário: "6 de 6" pulados, 100% —
     // sinal de allModules vazio, não de módulo realmente apagado.
-    if (!allModules.length) await loadModules();
-    const slotConfigs = Array.isArray(fav.slots) ? fav.slots : [];
+    const { restored, skipped } = await buildProjectSlotsFromConfigs(Array.isArray(fav.slots) ? fav.slots : []);
 
-    const pieceColorOverrideColorIds = slotConfigs.flatMap((s) =>
-      Object.values(s.piece_color_overrides || {}).flatMap((perRole) => Object.values(perRole).map((e) => e.color_id))
-    );
-    const colorIds = [...new Set(
-      slotConfigs.flatMap((s) => (s.selected_colors || []).map((c) => c.color_id))
-        .concat(pieceColorOverrideColorIds)
-        .filter(Boolean)
-    )];
-    const hingeIds = [...new Set(slotConfigs.map((s) => s.hinge_model_id).filter(Boolean))];
-    const slideIds = [...new Set(slotConfigs.map((s) => s.slide_model_id).filter(Boolean))];
-    const [colorsRes, hingeRes, slideRes] = await Promise.all([
-      colorIds.length ? supabaseClient.from('colors').select('*').in('id', colorIds) : { data: [] },
-      hingeIds.length ? supabaseClient.from('hinge_models').select('*').in('id', hingeIds) : { data: [] },
-      slideIds.length ? supabaseClient.from('slide_models').select('*').in('id', slideIds) : { data: [] }
-    ]);
-    const colorById = new Map((colorsRes.data || []).map((c) => [c.id, c]));
-    const hingeById = new Map((hingeRes.data || []).map((h) => [h.id, h]));
-    const slideById = new Map((slideRes.data || []).map((s) => [s.id, s]));
-
-    // ABRIR RÁPIDO (13/10, Matt: "tá demorando pra dar load nos projetos").
-    // Medido no closet de 15 módulos: 10 s, 62 requisições EM SÉRIE (4 por
-    // slot — peças, cores, presets, módulo), repetindo o mesmo módulo 11×.
-    // Agora: busca cada módulo DISTINTO uma vez só, todos em paralelo, e cada
-    // slot recebe a própria CÓPIA (peças clonadas; mapa de cores copiado) —
-    // o Construtor muda slot.colorOptionsByRole/pieces por slot, então
-    // compartilhar o objeto entre slots vazaria. O global moduleColorsByRole
-    // continua sendo setado por slot, igual loadModuleColors fazia (o
-    // fallback de cor abaixo lê dele).
-    const distinctIds = [...new Set(slotConfigs.map((c) => c.module_id).filter((id) => allModules.some((m) => m.id === id)))];
-    const moduleData = new Map();
-    await Promise.all(distinctIds.map(async (id) => {
-      const [pieces, colorsByRoleRaw, presets] = await Promise.all([
-        loadRecursivePiecesForModule(id),
-        fetchModuleColorsByRoleRaw(id),
-        fetchModuleLockedDimensionPresets(id)
-      ]);
-      moduleData.set(id, { pieces: pieces || [], colorsByRoleRaw: colorsByRoleRaw || {}, presets });
-    }));
-    const clonePieces = (list) => { try { return structuredClone(list); } catch (e) { return JSON.parse(JSON.stringify(list)); } };
-
-    const restored = [];
-    let skipped = 0;
-    for (const cfg of slotConfigs) {
-      const module = allModules.find((m) => m.id === cfg.module_id);
-      if (!module) { skipped += 1; continue; }
-      const md = moduleData.get(module.id);
-      const piecesList = md ? clonePieces(md.pieces) : [];
-      if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
-      const optionalIds = cfg.selected_optional_ids || [];
-      const effectivePieces = piecesList.filter((p) => !p.client_optional || optionalIds.includes(p.id));
-      moduleColorsByRole = Object.assign({}, md.colorsByRoleRaw); // cópia por slot do mesmo global que loadModuleColors preenchia
-      // Valores de largura/altura TRAVADOS (module.width_locked/height_locked)
-      // — precisa buscar de novo aqui (o slot restaurado é um objeto NOVO,
-      // não carrega nada do que insertProjectModuleDefault já tinha buscado
-      // da 1ª vez) pras setinhas de esticar do canvas funcionarem também num
-      // projeto salvo recarregado (pedido do usuário 2026-07-26, ver
-      // widthPresetsMm/heightPresetsMm no slot).
-      const lockedDimensionPresets = md.presets;
-      const selectedColorsResolved = [...(cfg.selected_colors || [])];
-      const colorsByRole = {};
-      selectedColorsResolved.forEach((sc) => {
-        const color = colorById.get(sc.color_id);
-        if (color) colorsByRole[sc.role_id] = color;
-      });
-      // Autocura (2026-07-21) — projetos salvos ANTES do fix de
-      // insertProjectModuleDefault (clicar na biblioteca insere direto)
-      // gravaram selected_colors VAZIO mesmo com peça exigindo cor, e o
-      // slot inteiro era pulado no restore ("Nenhuma cor selecionada para a
-      // peça X", relatado pelo usuário — projeto "bed3"). Em vez de só
-      // corrigir daqui pra frente, preenche aqui também qualquer papel de
-      // cor que as peças REALMENTE usam (recursivo, ver
-      // collectUsedColorRoleIds) mas que ficou faltando — com a 1ª opção
-      // disponível do catálogo, mesmo critério de "cor padrão" que
-      // insertProjectModuleDefault já usa pra módulo novo. Atualiza
-      // selectedColorsResolved junto, pra "Salvar alterações" gravar o
-      // preenchimento de volta e o projeto parar de precisar disso a cada load.
-      collectUsedColorRoleIds(effectivePieces).forEach((roleId) => {
-        if (colorsByRole[roleId]) return;
-        const fallback = (moduleColorsByRole[roleId] || [])[0];
-        if (!fallback) return;
-        colorsByRole[roleId] = fallback;
-        const idx = selectedColorsResolved.findIndex((sc) => sc.role_id === roleId);
-        const entry = { role_id: roleId, role_name: (colorRolesCache.find((r) => r.id === roleId) || {}).name || null, color_id: fallback.id, color_name: fallback.name };
-        if (idx >= 0) selectedColorsResolved[idx] = entry; else selectedColorsResolved.push(entry);
-      });
-      const hingeModel = cfg.hinge_model_id ? (hingeById.get(cfg.hinge_model_id) || null) : null;
-      const slideModel = cfg.slide_model_id ? (slideById.get(cfg.slide_model_id) || null) : null;
-      const pieceColorOverrides = {};
-      Object.keys(cfg.piece_color_overrides || {}).forEach((pieceId) => {
-        const perRole = cfg.piece_color_overrides[pieceId];
-        const resolved = {};
-        Object.keys(perRole).forEach((roleId) => {
-          const color = colorById.get(perRole[roleId].color_id);
-          if (color) resolved[roleId] = color;
-        });
-        if (Object.keys(resolved).length) pieceColorOverrides[pieceId] = resolved;
-      });
-      let result;
-      try {
-        result = module.is_decoration
-          ? { total: 0, breakdown: [] }
-          : Pricing.calculateModulePrice({
-            module, pieces: effectivePieces, colorsByRole, hingeModel, slideModel,
-            shelfQuantities: cfg.shelf_quantities || {}, dimOverrides: cfg.dim_overrides || {},
-            pieceColorOverrides,
-            width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
-            markupMultiplier: resolveMarkupMultiplierForModule(module)
-          });
-      } catch (calcErr) { skipped += 1; continue; } // catálogo mudou e a config não fecha mais
-      restored.push({
-        id: cfg.id || newProjectSlotId(),
-        wall_index: Number(cfg.wall_index || 0), // clampado mais abaixo, depois que a forma/parede é restaurada
-        x_mm: Number(cfg.x_mm || 0),
-        floor_height_mm: Number(cfg.floor_height_mm || 0),
-        z_order: Number(cfg.z_order || 0),
-        // Módulo ILHA (2026-08-08, ver isFloorSlot) — projeto salvo antes
-        // disso não tem `placement` nenhum e cai em 'wall', idêntico a antes.
-        placement: cfg.placement === 'floor' ? 'floor' : 'wall',
-        floor_x_mm: Number(cfg.floor_x_mm || 0),
-        floor_z_mm: Number(cfg.floor_z_mm || 0),
-        floor_rotation_deg: Number(cfg.floor_rotation_deg || 0),
-        // Movimentação/Rotação fina 3 eixos (2026-08-23) — ver
-        // serializeProjectSlots (portal-08-projetos-paredes.js). Projeto
-        // salvo antes disso não tem essas chaves, cai no default 0.
-        fineOffsetZMm: Number(cfg.fine_offset_z_mm || 0),
-        fineOffsetYMm: Number(cfg.fine_offset_y_mm || 0),
-        tampFloorExtraMm: Number(cfg.tamp_floor_extra_mm || 0),
-        fineRotXDeg: Number(cfg.fine_rot_x_deg || 0),
-        fineRotYDeg: Number(cfg.fine_rot_y_deg || 0),
-        fineRotZDeg: Number(cfg.fine_rot_z_deg || 0),
-        module,
-        pieces: effectivePieces,
-        colorOptionsByRole: moduleColorsByRole,
-        colorsByRole,
-        selectedColors: selectedColorsResolved,
-        pieceColorOverrides,
-        hingeModel, slideModel,
-        width_mm: cfg.width_mm, height_mm: cfg.height_mm, depth_mm: cfg.depth_mm,
-        shelfQuantities: cfg.shelf_quantities || {},
-        dimOverrides: cfg.dim_overrides || {},
-        selectedOptionalIds: optionalIds,
-        // removedPieceIds (2026-08-20): peça removida manualmente pelo
-        // cliente ("Peças do móvel") — fica de fora de `pieces` acima (que
-        // guarda a árvore INTEIRA, igual selectedOptionalIds) e é filtrada
-        // depois por projectSlotEffectivePieces junto com layoutPieces.
-        removedPieceIds: cfg.removed_piece_ids || [],
-        ledConfigs: cfg.led_configs || {}, // LED embutido (2026-09-30)
-        pieceAdjustments: cfg.piece_adjustments || {}, // ajuste manual de peça (2026-10-02)
-        // Construtor de armário: a árvore volta como veio (o motor só a lê
-        // quando a janela abre). Projeto salvo antes disso não tem a chave.
-        layout: cfg.layout || null,
-        // Modelo de porta (migration 188) — sem a chave = Flat (padrão).
-        doorModelId: cfg.door_model_id || null,
-        // Modelo de gaveta (migration 203) — sem a chave = Standard.
-        drawerModelId: cfg.drawer_model_id || null,
-        // Puxador (2026-11-13) — sem a chave = sem puxador.
-        handle: cfg.handle || null,
-        // Grupo de módulos (2026-09-03) — projeto salvo antes disso não tem
-        // essas chaves, cai em null/null (avulso), igual sempre foi. Ver
-        // serializeProjectSlots (portal-08-projetos-paredes.js).
-        group_id: cfg.group_id || null,
-        group_name: cfg.group_name || null,
-        result,
-        thumbnail_data_url: cfg.thumbnail_data_url || null,
-        widthPresetsMm: lockedDimensionPresets.width,
-        heightPresetsMm: lockedDimensionPresets.height,
-        // Ver mesmo comentário em insertProjectModuleDefault — dropdown de
-        // SKU no painel da direita precisa do rótulo, não só do mm.
-        widthPresetsLabeled: lockedDimensionPresets.widthLabeled,
-        heightPresetsLabeled: lockedDimensionPresets.heightLabeled
-      });
-    }
 
     // Vai pra aba Projetos ANTES de atribuir os dados novos — o canvas
     // (renderProjectCanvas) mede o clientWidth do wrap pra calcular a escala

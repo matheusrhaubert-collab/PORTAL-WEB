@@ -551,6 +551,8 @@ function aplicarRecorteCascoNasLaterais(parts) {
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   // canto 45°: corte do canto por módulo (ver Pricing.applyCanto45Corte)
   if (Pricing.applyCanto45Corte) piecesList = Pricing.applyCanto45Corte(piecesList, dimOverrides);
+  // canto 90°: profundidade de cada asa por módulo (ver Pricing.applyCanto90Asas)
+  if (Pricing.applyCanto90Asas) piecesList = Pricing.applyCanto90Asas(piecesList, dimOverrides);
   const { bodyDims } = Pricing.resolveBodyDims(piecesList, containerDims);
   // E — ESPESSURA DA CHAPA (2026-09-24, plywood 18mm). Ver Pricing.
   // thicknessForPiece. Espessura do casco deste nível = fallback pra peça

@@ -1150,6 +1150,22 @@ function renderProjectConfigPanel() {
       if (linhas45) canto45Block = `<div class="po-proj-config-dims po-proj-config-canto45"><span class="po-proj-config-section-label">${I18n.t('project.canto45_label')}</span>${linhas45}<p class="hint" style="margin:4px 0 0">${I18n.t('project.canto45_hint')}</p></div>`;
     }
   } catch (e) { canto45Block = ''; }
+  // CANTO 90° (2026-11-15, Matt: "quero poder editar a profundidade de cada
+  // lateral também"): profundidade de cada asa, digitada aqui.
+  let canto90Block = '';
+  try {
+    const c90 = projectCanto90Info(slot);
+    if (c90) {
+      const linha90 = (lado, rot, mm, faixa) => `<div class="po-proj-config-dim-row"><label>${rot}</label><span class="po-proj-dim-value-wrap">
+          <input type="text" inputmode="decimal" class="po-proj-canto45-porta-input po-proj-canto90-asa-input" data-asa="${lado}" value="${formatDimensionNumber(mm, unit)}" title="${formatDimensionNumber(faixa.min, unit)} – ${formatDimensionNumber(faixa.max, unit)} ${unitAbbrev(unit)}" />
+          <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span></span></div>`;
+      canto90Block = `<div class="po-proj-config-dims po-proj-config-canto45"><span class="po-proj-config-section-label">${I18n.t('project.canto90_label')}</span>`
+        + linha90('a', I18n.t('project.canto90_lat_direita'), c90.asaAMm, c90.faixaA)
+        + linha90('b', I18n.t('project.canto90_lat_frente'), c90.asaBMm, c90.faixaB)
+        + (c90.temAjuste ? `<button type="button" class="secondary po-proj-canto90-reset" style="margin-top:4px">↺ ${I18n.t('project.canto90_reset')}</button>` : '')
+        + `<p class="hint" style="margin:4px 0 0">${I18n.t('project.canto90_hint')}</p></div>`;
+    }
+  } catch (e) { canto90Block = ''; }
 
   // QUANTIDADE DE PRATELEIRAS do cadastro (2026-11-15, Matt, cantos 45°/90°:
   // "com opções de mais prateleiras"). Peça de catálogo com "cliente escolhe a
@@ -1222,6 +1238,7 @@ function renderProjectConfigPanel() {
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
     </div>
     ${canto45Block}
+    ${canto90Block}
     ${shelfQtyBlock}
     ${pieceDimsBlock}
     ${positionRow}
@@ -1257,7 +1274,21 @@ function renderProjectConfigPanel() {
     }));
   });
   // Canto 45°: porta digitada / voltar ao padrão (ver canto45Block acima).
-  panel.querySelectorAll('.po-proj-canto45-porta-input').forEach((input) => {
+  panel.querySelectorAll('.po-proj-canto90-asa-input').forEach((input) => {
+    input.addEventListener('change', () => {
+      const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const mm = parseDimensionInput(input.value, unit2);
+      if (mm !== null && !isNaN(mm) && mm > 0) {
+        pushProjectUndoState();
+        setProjectSlotCanto90Asa(slot, input.dataset.asa, mm);
+      } else renderProjectConfigPanel();
+    });
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  panel.querySelectorAll('.po-proj-canto90-reset').forEach((btn) => {
+    btn.addEventListener('click', () => { pushProjectUndoState(); setProjectSlotCanto90Asa(slot, null, null); });
+  });
+  panel.querySelectorAll('.po-proj-canto45-porta-input:not(.po-proj-canto90-asa-input)').forEach((input) => {
     input.addEventListener('change', () => {
       const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
       const mm = parseDimensionInput(input.value, unit2);
@@ -5321,6 +5352,38 @@ function setProjectDoorSide(slot, pieceId, lado) {
 let projectCanto45Marcas = null;   // { slotId, itens: [{ pieceId, texto }] } — etiquetas no 3D
 let projectCanto45Drag = null;
 let projectCanto45Raf = null;
+
+// CANTO 90° — profundidade de cada asa (slot.dimOverrides.__canto90, ver
+// Pricing.applyCanto90Asas). Asa A = lateral direita (corre na profundidade
+// do módulo); asa B = lateral da frente (corre na largura).
+function projectCanto90Info(slot) {
+  if (!slot || !slot.module || typeof Pricing === 'undefined' || !Pricing.canto90TemAsas) return null;
+  try { if (!Pricing.canto90TemAsas(projectSlotEffectivePieces(slot))) return null; } catch (e) { return null; }
+  const asas = Pricing.canto90AsasDe(slot.dimOverrides);
+  return { asaAMm: asas.a, asaBMm: asas.b,
+    faixaA: Pricing.canto90FaixaAsa(Number(slot.depth_mm)), faixaB: Pricing.canto90FaixaAsa(Number(slot.width_mm)),
+    temAjuste: !!(slot.dimOverrides && slot.dimOverrides.__canto90) };
+}
+// lado 'a' | 'b'; lado null = as duas voltam pro padrão (609).
+function setProjectSlotCanto90Asa(slot, lado, mm) {
+  if (!slot) return;
+  const novo = { ...(slot.dimOverrides || {}) };
+  if (lado !== 'a' && lado !== 'b') delete novo.__canto90;
+  else {
+    const asas = Pricing.canto90AsasDe(slot.dimOverrides);
+    const faixa = Pricing.canto90FaixaAsa(Number(lado === 'a' ? slot.depth_mm : slot.width_mm));
+    asas[lado] = Math.round(Math.min(Math.max(Number(mm), faixa.min), faixa.max) * 10) / 10;
+    const P0 = Pricing.CANTO90_ASA_PADRAO_MM;
+    if (Math.abs(asas.a - P0) < 0.05 && Math.abs(asas.b - P0) < 0.05) delete novo.__canto90;
+    else novo.__canto90 = { asa_a_mm: asas.a, asa_b_mm: asas.b };
+  }
+  slot.dimOverrides = novo;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço antigo continua */ }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  refreshProject3DResizeArrows();
+  markProjectDirty();
+}
 
 function projectCanto45Info(slot) {
   if (!slot || !slot.module || typeof Pricing === 'undefined' || !Pricing.canto45TemChanfro) return null;

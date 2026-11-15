@@ -1797,8 +1797,77 @@
     });
   }
 
+  // ==========================================================================
+  // CANTO 90° — PROFUNDIDADE DE CADA ASA POR MÓDULO (2026-11-15)
+  // ==========================================================================
+  // Matt (Base Canto 90° selecionado): "quero poder editar a profundidade de
+  // cada lateral também". As duas asas tinham 609 FIXO (o `P` da migration
+  // 182, cravado em todas as fórmulas: 609, 589 = P−20, 533 = P−76,
+  // 611 / 611.5 / 613.5 = P + folga das portas). Agora cada asa tem a sua:
+  //   dimOverrides.__canto90 = { asa_a_mm, asa_b_mm }
+  //     asa_a_mm = profundidade da LATERAL A (direita; corre em Z)
+  //     asa_b_mm = profundidade da LATERAL B (da frente; corre em X)
+  // Mesmo transporte do canto 45° (dimOverrides já é salvo no projeto, vai no
+  // desfazer, no pedido e no ERP). Só age na lista que TEM as peças do canto
+  // 90° (referência "... (asa em X)" / "... (asa em Z)"). Qual asa cada número
+  // segue sai do EIXO do campo: largura / offset X = eixo X = asa B;
+  // profundidade / offset Z = eixo Z = asa A; fórmula de largura que usa D
+  // (a porta B, girada 90°) segue a asa A, e de profundidade que usa W, a B.
+  // Sem a chave, ou com as duas em 609, devolve a MESMA lista.
+  const CANTO90_ASA_PADRAO_MM = 609;
+  const CANTO90_ASA_MIN_MM = 250;
+  const CANTO90_ASA_MAX_MM = 700;
+  const CANTO90_PORTA_MIN_MM = 100;
+  const CANTO90_PORTA_MAX_MM = 600;
+  const CANTO90_RE_ASA = /\(asa em [XZ]\)/i;
+  function canto90TemAsas(pieces) {
+    let n = 0;
+    (pieces || []).forEach(function (p) { if (p && CANTO90_RE_ASA.test(String(p.reference || ''))) n++; });
+    return n >= 4;
+  }
+  function canto90AsasDe(dimOverrides) {
+    const c = (dimOverrides && dimOverrides.__canto90) || {};
+    const a = Number(c.asa_a_mm), b = Number(c.asa_b_mm);
+    return { a: (isFinite(a) && a > 0) ? a : CANTO90_ASA_PADRAO_MM, b: (isFinite(b) && b > 0) ? b : CANTO90_ASA_PADRAO_MM };
+  }
+  // Faixa da profundidade de uma asa. `medida` = a medida do módulo que cruza
+  // a asa (asa B: largura W; asa A: profundidade D) — a porta daquele lado
+  // (medida − asa) tem que ficar entre 100 e 600.
+  function canto90FaixaAsa(medida) {
+    const m = Number(medida) || 0;
+    let min = CANTO90_ASA_MIN_MM, max = CANTO90_ASA_MAX_MM;
+    if (m > 0) { min = Math.max(min, m - CANTO90_PORTA_MAX_MM); max = Math.min(max, m - CANTO90_PORTA_MIN_MM); }
+    return { min: Math.min(min, max), max: max };
+  }
+  const CANTO90_RE_NUM = /(^|[^0-9.A-Za-z_])(613\.5|611\.5|609|611|589|533)(?![0-9.A-Za-z_])/g;
+  const CANTO90_RE_W = /(^|[^A-Za-z_0-9])W(?![A-Za-z_0-9])/, CANTO90_RE_D = /(^|[^A-Za-z_0-9])D(?![A-Za-z_0-9])/;
+  function applyCanto90Asas(pieces, dimOverrides) {
+    if (!dimOverrides || !dimOverrides.__canto90) return pieces;
+    const asas = canto90AsasDe(dimOverrides);
+    if ((Math.abs(asas.a - CANTO90_ASA_PADRAO_MM) < 0.01 && Math.abs(asas.b - CANTO90_ASA_PADRAO_MM) < 0.01) || !canto90TemAsas(pieces)) return pieces;
+    const troca = function (txt, asa) {
+      return txt.replace(CANTO90_RE_NUM, function (m, antes, num) {
+        return antes + String(Math.round((asa + (Number(num) - CANTO90_ASA_PADRAO_MM)) * 100) / 100);
+      });
+    };
+    return pieces.map(function (p) {
+      if (!p) return p;
+      const novo = Object.assign({}, p);
+      ['width_formula', 'depth_formula', 'offset_x_formula', 'offset_z_formula'].forEach(function (chave) {
+        const v = novo[chave];
+        if (typeof v !== 'string' || !/\d{3}/.test(v)) return;
+        let eixoX = chave === 'width_formula' || chave === 'offset_x_formula';
+        if (chave === 'width_formula' && CANTO90_RE_D.test(v) && !CANTO90_RE_W.test(v)) eixoX = false;
+        if (chave === 'depth_formula' && CANTO90_RE_W.test(v) && !CANTO90_RE_D.test(v)) eixoX = true;
+        novo[chave] = troca(v, eixoX ? asas.b : asas.a);
+      });
+      return novo;
+    });
+  }
+
   function calculateAssembly(pieces, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides) {
     pieces = applyCanto45Corte(pieces, dimOverrides);
+    pieces = applyCanto90Asas(pieces, dimOverrides);
     const { bodyDims } = resolveBodyDims(pieces, dims);
     // Espessura do casco deste nível (fallback de E pra peça sem cor) —
     // calculada uma vez por lista, mesma conta de resolvePiecesForViewer.
@@ -2081,6 +2150,7 @@
     arredondaMm,
     evalFormula,
     setFormulaGlobals,
+    applyCanto90Asas, canto90AsasDe, canto90TemAsas, canto90FaixaAsa, CANTO90_ASA_PADRAO_MM,
     applyCanto45Corte, canto45CorteDe, canto45TemChanfro, canto45FaixaCorte, canto45PortaDoCorte, canto45CorteDaPorta,
     CANTO45_CORTE_PADRAO_MM, CANTO45_PORTA_MIN_MM, CANTO45_PORTA_MAX_MM, CANTO45_LATERAL_MIN_MM,
     calculatePiece,
