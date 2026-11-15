@@ -72,6 +72,19 @@ ok('barra ignora o "2" (sempre 1)', comB2.find((p) => p.id === 'f1').handle.qty 
   ok('.ban: 2 marcações atrás da frente de gaveta', marcasFrente === 2, marcasFrente);
 }
 
+console.log('\n— puxador só de uma frente (por_peca)');
+{
+  const cfgPP = Object.assign({}, knob, { door_pos: 'top', drawer_pos: 'center', por_peca: { p1: barra, f1: null } });
+  const r = g.applyHandleConfigDeep(lista, cfgPP);
+  const pp = r.find((x) => x.id === 'p1'), ff = r.find((x) => x.id === 'f1');
+  ok('porta p1 com a BARRA, gaveta f1 SEM puxador', pp.handle && pp.handle.tipo === 'barra' && pp.handle.item_id === 'b1' && !ff.handle);
+  ok('linha comprada só da porta, com o item da barra', r.filter((x) => x._handleRow).length === 1 && r.find((x) => x._handleRow).purchased_item_id === 'b1');
+  const soPeca = g.applyHandleConfigDeep(lista, { item_id: null, door_pos: 'top', drawer_pos: 'center', por_peca: { p1: knob } });
+  ok('módulo sem puxador + só a porta com knob', soPeca.find((x) => x.id === 'p1').handle && !soPeca.find((x) => x.id === 'f1').handle && soPeca.filter((x) => x._handleRow).length === 1);
+  ok('handleFrontKindById acha a porta e ignora a lateral', g.handleFrontKindById(lista, 'p1') === 'door' && g.handleFrontKindById(lista, 'le') === null);
+  ok('pedido (applyOrderItemHandle) aceita só por_peca', g.applyOrderItemHandle(lista, { handle_config: { item_id: null, por_peca: { p1: knob } } }).some((x) => x._handleRow));
+}
+
 console.log('\n— posição (u da esquerda, v de baixo)');
 const hp = g.handlePlacement;
 let pl = hp(com[1].handle, 400, 700);

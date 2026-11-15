@@ -5285,6 +5285,19 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-proj-piece-toolbar button { margin: 0; padding: 2px 8px; min-width: 0; }
 .po-proj-piece-toolbar-name { font-weight: 600; color: #2f6fd8; margin-right: 4px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 
+/* Puxador só da porta selecionada (2026-11-15) — menu da barrinha da peça */
+.po-proj-piece-handle-menu {
+  position: absolute; left: 0; top: 100%; margin-top: 4px; z-index: 31;
+  flex-direction: column; gap: 2px; padding: 4px; min-width: 200px; max-height: 300px; overflow: auto;
+  background: #fff; border: 1px solid #2f6fd8; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+}
+.po-proj-piece-toolbar .po-proj-piece-handle-opt {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin: 0; padding: 4px 8px;
+  background: #fff; color: #222; border: 1px solid transparent; border-radius: 6px; text-align: left; font-size: 12px;
+}
+.po-proj-piece-toolbar .po-proj-piece-handle-opt:hover { background: #f1f5fb; }
+.po-proj-piece-toolbar .po-proj-piece-handle-opt.selected { border-color: #2f6fd8; font-weight: 600; }
+
 /* Canto 45° (2026-11-15) — medida de cada lateral e da porta por cima do 3D */
 .po-proj-canto45-marca {
   position: absolute; transform: translate(-50%, -100%);

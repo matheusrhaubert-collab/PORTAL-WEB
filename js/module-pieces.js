@@ -1405,6 +1405,20 @@ function handleModelFromItem(it) {
   };
 }
 
+// A peça `pieceId` (id da linha ou piece_id) é uma frente que leva puxador?
+// Devolve 'door' | 'drawer' | 'lift' | 'flap' | null. Desce nos módulos.
+function handleFrontKindById(pieces, pieceId, insideDrawer) {
+  let achou = null;
+  (pieces || []).some((p) => {
+    if (!p) return false;
+    const kind = handleFrontKind(p, insideDrawer);
+    if (kind) { if (p.id === pieceId || p.piece_id === pieceId) achou = kind; return !!achou; }
+    if (p.is_module && Array.isArray(p.child_pieces)) achou = handleFrontKindById(p.child_pieces, pieceId, insideDrawer || p.opening_type === 'slide_out');
+    return !!achou;
+  });
+  return achou;
+}
+
 // Quantos puxadores vão nesta frente: 2 só em frente de GAVETA, com knob
 // (1 furo) e cfg.drawer_qty = 2. Barra e porta são sempre 1.
 function handleQtyOnFront(cfg, kind) {
@@ -1420,7 +1434,27 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
     // cfg.sem_porta: o modelo de porta do módulo é de vidro (portal-07) — só
     // as gavetas levam puxador.
     if (kind && kind !== 'drawer' && cfg.sem_porta) { out.push(p); return; }
+    // PUXADOR SÓ DESTA FRENTE (2026-11-15, Matt: "quando dou dois cliques na
+    // porta quero poder trocar o puxador só daquela porta"): cfg.por_peca =
+    // { <id da frente>: modelo | null }. null = esta frente fica sem puxador.
+    // Sem entrada vale o puxador do módulo (cfg.item_id; sem ele, nenhum).
     if (kind) {
+      const cfgMod = cfg;
+      const pp = cfgMod.por_peca || null;
+      const chave = pp ? (Object.prototype.hasOwnProperty.call(pp, p.id) ? p.id
+        : (p.piece_id != null && Object.prototype.hasOwnProperty.call(pp, p.piece_id) ? p.piece_id : null)) : null;
+      if (chave !== null) {
+        if (!pp[chave] || !pp[chave].item_id) { out.push(p); return; }
+        cfg = Object.assign({}, cfgMod, pp[chave]);
+      } else if (!cfgMod.item_id) { out.push(p); return; }
+      const cfgDaPeca = cfg;
+      cfg = cfgMod;
+      p = Object.assign({}, p, { _handleCfg: cfgDaPeca });
+    }
+    if (kind) {
+      const cfgMod2 = cfg;
+      cfg = p._handleCfg;
+      p = Object.assign({}, p); delete p._handleCfg;
       mudou = true;
       const hs = handleHingeSideOfRow(p);
       out.push(Object.assign({}, p, {
@@ -1453,6 +1487,7 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
         visibility_min_mm: p.visibility_min_mm != null ? p.visibility_min_mm : null,
         visibility_max_mm: p.visibility_max_mm != null ? p.visibility_max_mm : null
       });
+      cfg = cfgMod2;
       return;
     }
     if (p.is_module && Array.isArray(p.child_pieces) && p.child_pieces.length) {
@@ -1466,7 +1501,7 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
 
 const handleApplyCache = new WeakMap();
 function applyHandleConfigDeep(piecesList, cfg) {
-  if (!Array.isArray(piecesList) || !cfg || !cfg.item_id) return piecesList;
+  if (!Array.isArray(piecesList) || !cfg || (!cfg.item_id && !(cfg.por_peca && Object.keys(cfg.por_peca).length))) return piecesList;
   const chave = JSON.stringify(cfg);
   const hit = handleApplyCache.get(piecesList);
   if (hit && hit.chave === chave) return hit.out;
@@ -1617,7 +1652,7 @@ function attachHandleToObject3D(T, obj, part, metal) {
 // vem resolvido do portal. Sem puxador = o mesmo array.
 function applyOrderItemHandle(pieces, item) {
   const cfg = item && item.handle_config;
-  return (cfg && cfg.item_id) ? applyHandleConfigDeep(pieces, cfg) : pieces;
+  return (cfg && (cfg.item_id || cfg.por_peca)) ? applyHandleConfigDeep(pieces, cfg) : pieces;
 }
 
 if (typeof window !== 'undefined') {

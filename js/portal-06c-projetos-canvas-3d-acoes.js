@@ -4721,13 +4721,23 @@ function renderProjectPieceToolbar() {
   }
   const slot = projectSlots.find((s) => s.id === projectSelectedPiece.slotId);
   const temAjuste = !!(slot && slot.pieceAdjustments && slot.pieceAdjustments[projectSelectedPiece.pieceId]);
+  // PUXADOR SÓ DESTA PORTA/FRENTE (2026-11-15) — ver toggleProjectPieceHandleMenu
+  let levaPuxador = false;
+  try {
+    levaPuxador = !!(slot && typeof handleFrontKindById === 'function' && typeof projectHandleModels === 'function' && projectHandleModels().length
+      && handleFrontKindById(projectSlotAllPiecesBeforeRemoval(slot), projectSelectedPiece.pieceId));
+  } catch (e) { levaPuxador = false; }
   bar.innerHTML = `
     <span class="po-proj-piece-toolbar-name">${projectSelectedPiece.reference || I18n.t('project.piece_label')}</span>
     <button type="button" class="secondary" data-acao="remover" title="${I18n.t('project.piece_remove')}">🗑</button>
     <button type="button" class="secondary" data-acao="desfazer" title="${I18n.t('project.piece_reset')}"${temAjuste ? '' : ' disabled'}>↺</button>
     <button type="button" class="secondary" data-acao="dinheiro" title="${I18n.t('project.piece_money_title')}">$</button>
-    <button type="button" class="secondary" data-acao="ok" title="${I18n.t('project.piece_done')}">✓</button>`;
+    ${levaPuxador ? `<button type="button" class="secondary" data-acao="puxador" title="${I18n.t('project.piece_handle_title')}">${I18n.t('project.handle_label')} ▾</button>` : ''}
+    <button type="button" class="secondary" data-acao="ok" title="${I18n.t('project.piece_done')}">✓</button>
+    <div class="po-proj-piece-handle-menu" style="display:none"></div>`;
   bar.style.display = 'flex';
+  const btnPux = bar.querySelector('[data-acao="puxador"]');
+  if (btnPux) btnPux.addEventListener('click', () => toggleProjectPieceHandleMenu(bar, slot));
   bar.querySelector('[data-acao="remover"]').addEventListener('click', () => removeSelectedProjectPiece());
   bar.querySelector('[data-acao="desfazer"]').addEventListener('click', () => resetSelectedProjectPieceAdjustment());
   // orçamento só desta peça (2026-10-12) — ver openMoneyModalForPiece (portal-06b)
@@ -4905,7 +4915,11 @@ async function renderProjectSideModelPanel() {
   if (!box || typeof ensureProjectDoorModels !== 'function') return;
   const comPorta = (projectSlots || []).filter((s) => projectSlotHasPortaGiro(s));
   const comGaveta = (projectSlots || []).filter((s) => typeof projectSlotHasDrawerBody === 'function' && projectSlotHasDrawerBody(s));
-  if (!comPorta.length && !comGaveta.length) { box.innerHTML = ''; return; }
+  // PUXADOR EM TODOS (2026-11-15, Matt: "quando não seleciono nada quero poder
+  // decidir os puxadores pra habilitarem em todos os módulos").
+  const modelosPux = (typeof projectHandleModels === 'function') ? projectHandleModels() : [];
+  const comPux = modelosPux.length ? (projectSlots || []).filter((s) => typeof projectSlotHasHandleFront === 'function' && projectSlotHasHandleFront(s)) : [];
+  if (!comPorta.length && !comGaveta.length && !comPux.length) { box.innerHTML = ''; return; }
   try { await Promise.all([ensureProjectDoorModels(), ensureProjectDrawerModels()]); } catch (e) { /* sem modelos */ }
   if (!document.body.contains(box)) return;
   const todosNo = (lista, idDe, id) => lista.length && lista.every((s) => (idDe(s) || null) === (id || null));
@@ -4930,11 +4944,21 @@ async function renderProjectSideModelPanel() {
     }).join('');
     html += `<div class="po-proj-config-door-models po-proj-config-drawer-models"><span class="po-proj-config-section-label">${I18n.t('project.drawer_model_label')} · ${comGaveta.length}</span><div class="po-proj-door-model-cards">${cardsG}</div></div>`;
   }
+  if (comPux.length) {
+    const idDe = (sl) => (sl.handle && sl.handle.itemId) || null;
+    const cardP = (m) => {
+      const id = m ? m.item_id : null;
+      const sel = todosNo(comPux, idDe, id);
+      return `<button type="button" class="po-proj-door-model-card po-proj-handle-card po-proj-all-handle${sel ? ' selected' : ''}" data-id="${id || ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}" style="width:88px;background:#fff;color:#222;">
+        ${projectHandleCardVisual(m, 72)}<span>${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}</span></button>`;
+    };
+    html += `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')} · ${comPux.length}</span><div class="po-proj-door-model-cards">${cardP(null)}${modelosPux.map(cardP).join('')}</div></div>`;
+  }
   if (!html) { box.innerHTML = ''; return; }
   box.innerHTML = `<div class="po-proj-side-model"><label>${I18n.t('project.side_model_label')}</label>
     <p class="hint">${I18n.t('project.side_model_hint')}</p>${html}<p class="hint po-proj-side-model-aviso" style="display:none;"></p></div>`;
   const aviso = box.querySelector('.po-proj-side-model-aviso');
-  box.querySelectorAll('.po-proj-all-door-model').forEach((el) => el.addEventListener('click', async () => {
+  box.querySelectorAll('.po-proj-all-door-model:not(.po-proj-handle-card)').forEach((el) => el.addEventListener('click', async () => {
     if (el.classList.contains('selected')) return;
     el.disabled = true;
     const bloq = await setAllProjectDoorModels(el.dataset.id || null);
@@ -4943,6 +4967,11 @@ async function renderProjectSideModelPanel() {
       const a = document.querySelector('#po-proj-side-model-panel .po-proj-side-model-aviso');
       if (a) { a.textContent = I18n.t('project.side_model_blocked', { n: bloq }); a.style.display = 'block'; }
     }
+  }));
+  box.querySelectorAll('.po-proj-all-handle').forEach((el) => el.addEventListener('click', () => {
+    if (el.classList.contains('selected')) return;
+    setAllProjectHandles(el.dataset.id || null);
+    renderProjectSideModelPanel();
   }));
   box.querySelectorAll('.po-proj-all-drawer-model').forEach((el) => el.addEventListener('click', async () => {
     if (el.classList.contains('selected')) return;
@@ -5400,3 +5429,30 @@ function endProjectCanto45Drag(ev) {
 document.addEventListener('pointermove', (ev) => { if (projectCanto45Drag) updateProjectCanto45Drag(ev); });
 document.addEventListener('pointerup', (ev) => { if (projectCanto45Drag) endProjectCanto45Drag(ev); });
 document.addEventListener('pointercancel', (ev) => { if (projectCanto45Drag) endProjectCanto45Drag(ev); });
+
+
+// PUXADOR SÓ DA PORTA/FRENTE SELECIONADA (2026-11-15, Matt: "quando dou dois
+// cliques na porta quero poder trocar o puxador só daquela porta"). Menu que
+// abre embaixo da barrinha da peça: "Igual ao módulo", "Sem puxador" e os
+// modelos. Grava em slot.handle.porPeca[pieceId] (setProjectSlotPieceHandle,
+// portal-07); posição/sentido continuam os do módulo.
+function toggleProjectPieceHandleMenu(bar, slot) {
+  const menu = bar.querySelector('.po-proj-piece-handle-menu');
+  if (!menu || !slot || !projectSelectedPiece) return;
+  if (menu.style.display !== 'none') { menu.style.display = 'none'; return; }
+  const pid = projectSelectedPiece.pieceId;
+  const mapa = (slot.handle && slot.handle.porPeca) || {};
+  const temProprio = Object.prototype.hasOwnProperty.call(mapa, pid);
+  const atual = temProprio ? (mapa[pid] || '') : null;   // null = segue o módulo
+  const item = (valor, rotulo, visual, marcado) => `<button type="button" class="po-proj-piece-handle-opt${marcado ? ' selected' : ''}" data-v="${valor}">${visual || ''}<span>${rotulo}</span></button>`;
+  menu.innerHTML = item('__modulo', I18n.t('project.piece_handle_same'), '', atual === null)
+    + item('', I18n.t('project.handle_none'), '', atual === '')
+    + projectHandleModels().map((m) => item(m.item_id, escapeHtmlCutlist(m.name), projectHandleCardVisual(m, 36), atual === m.item_id)).join('');
+  menu.style.display = 'flex';
+  menu.querySelectorAll('.po-proj-piece-handle-opt').forEach((el) => el.addEventListener('click', () => {
+    const v = el.dataset.v;
+    setProjectSlotPieceHandle(slot, pid, v === '__modulo' ? undefined : v);
+    renderProjectPieceToolbar();
+    refreshProject3DResizeArrows();
+  }));
+}
