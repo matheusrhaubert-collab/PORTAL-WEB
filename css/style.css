@@ -5285,6 +5285,21 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-proj-piece-toolbar button { margin: 0; padding: 2px 8px; min-width: 0; }
 .po-proj-piece-toolbar-name { font-weight: 600; color: #2f6fd8; margin-right: 4px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 
+/* Puxador: posição / sentido / quantidade em desenhos (2026-11-15) */
+.po-proj-handle-quadro { display: flex; gap: 10px; margin-top: 8px; padding: 8px; border: 1px solid var(--border, #ddd); border-radius: 8px; background: #fff; }
+.po-proj-handle-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.po-proj-handle-col + .po-proj-handle-col { border-left: 1px solid var(--border, #eee); padding-left: 10px; }
+.po-proj-handle-col > strong { font-size: 12px; }
+.po-proj-handle-linha { display: flex; flex-direction: column; gap: 3px; }
+.po-proj-handle-linha > .hint { font-size: 11px; margin: 0; }
+.po-proj-handle-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.po-proj-handle-opt {
+  margin: 0; padding: 3px; min-width: 0; width: auto; line-height: 0;
+  background: #fff; border: 2px solid transparent; border-radius: 6px; cursor: pointer;
+}
+.po-proj-handle-opt:hover { border-color: #d9cfc0; background: #fff; }
+.po-proj-handle-opt.selected { border-color: var(--accent, #8a5a2b); box-shadow: 0 0 0 1px var(--accent, #8a5a2b); }
+
 /* Puxador só da porta selecionada (2026-11-15) — menu da barrinha da peça */
 .po-proj-piece-handle-menu {
   position: absolute; left: 0; top: 100%; margin-top: 4px; z-index: 31;

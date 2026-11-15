@@ -927,19 +927,48 @@ function renderProjectConfigPanel() {
     const hKnob = !!(hModSel && hModSel.tipo !== 'barra');
     const hAro = !!(hModSel && hModSel.formato === 'aro');   // Turim: na porta o padrão é deitado
     const gq = String((slot.handle && slot.handle.drawerQty) || '1');
-    const posH = hSel ? `<div class="po-proj-handle-pos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_pos')}
-          <select class="po-proj-handle-pos-select" data-handle-pos="doorPos">${optH('auto', I18n.t('project.handle_pos_auto'), dp)}${optH('top', I18n.t('project.handle_pos_top'), dp)}${optH('middle', I18n.t('project.handle_pos_middle'), dp)}${optH('bottom', I18n.t('project.handle_pos_bottom'), dp)}</select></label>
-        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_pos')}
-          <select class="po-proj-handle-pos-select" data-handle-pos="drawerPos">${optH('center', I18n.t('project.handle_pos_center'), gp)}${optH('top', I18n.t('project.handle_pos_top'), gp)}</select></label>
-        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_orient')}
-          <select class="po-proj-handle-pos-select" data-handle-pos="doorOrient">${hAro
-            ? optH('auto', I18n.t('project.handle_orient_horizontal'), dor === 'horizontal' ? 'auto' : dor) + optH('vertical', I18n.t('project.handle_orient_vertical'), dor)
-            : optH('auto', I18n.t('project.handle_orient_vertical'), dor === 'vertical' ? 'auto' : dor) + optH('horizontal', I18n.t('project.handle_orient_horizontal'), dor)}</select></label>
-        <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_orient')}
-          <select class="po-proj-handle-pos-select" data-handle-pos="drawerOrient">${optH('auto', I18n.t('project.handle_orient_horizontal'), gor)}${optH('vertical', I18n.t('project.handle_orient_vertical'), gor)}</select></label>
-        ${hKnob ? `<label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_qty')}
-          <select class="po-proj-handle-pos-select" data-handle-pos="drawerQty">${optH('1', I18n.t('project.handle_qty_1'), gq)}${optH('2', I18n.t('project.handle_qty_2'), gq)}</select></label>` : ''}
+    // POSIÇÃO / SENTIDO / QUANTIDADE EM DESENHOS (2026-11-15, Matt: "aqui
+    // quero desenhos, bem intuitivo, talvez numa só tela"). Cada opção é um
+    // botão com a portinha (ou a frente de gaveta) e o puxador desenhado onde
+    // ele vai ficar. Um quadro só: porta à esquerda, gaveta à direita.
+    const hBarra = !!(hModSel && hModSel.tipo === 'barra');
+    const corH = '#8a5a2b';
+    const portaEmPe = dor === 'vertical' || (dor !== 'horizontal' && !hAro);
+    const gavetaEmPe = gor === 'vertical';
+    // puxador num ponto (cx, cy) do desenho: barra = tracinho, knob = bolinha
+    const marcaH = (cx, cy, emPe) => (hBarra
+      ? (emPe ? `<line x1="${cx}" y1="${cy - 5}" x2="${cx}" y2="${cy + 5}" stroke="${corH}" stroke-width="2.6" stroke-linecap="round"/>`
+        : `<line x1="${cx - 5}" y1="${cy}" x2="${cx + 5}" y2="${cy}" stroke="${corH}" stroke-width="2.6" stroke-linecap="round"/>`)
+      : (hAro ? (emPe ? `<rect x="${cx - 2.5}" y="${cy - 4}" width="5" height="8" rx="1" fill="none" stroke="${corH}" stroke-width="1.6"/>`
+        : `<rect x="${cx - 4}" y="${cy - 2.5}" width="8" height="5" rx="1" fill="none" stroke="${corH}" stroke-width="1.6"/>`)
+        : `<circle cx="${cx}" cy="${cy}" r="2.6" fill="${corH}"/>`));
+    const svgPorta = (dentro) => `<svg viewBox="0 0 30 42" width="30" height="42" aria-hidden="true"><rect x="1.5" y="1.5" width="27" height="39" rx="2" fill="#f7f4ee" stroke="#b9b1a3"/>${dentro}</svg>`;
+    const svgGaveta = (dentro) => `<svg viewBox="0 0 48 24" width="48" height="24" aria-hidden="true"><rect x="1.5" y="1.5" width="45" height="21" rx="2" fill="#f7f4ee" stroke="#b9b1a3"/>${dentro}</svg>`;
+    const btnH = (chave, valor, marcado, rotulo, desenho) => `<button type="button" class="po-proj-handle-opt${marcado ? ' selected' : ''}" data-handle-pos="${chave}" data-v="${valor}" title="${rotulo}" aria-label="${rotulo}" aria-pressed="${marcado ? 'true' : 'false'}">${desenho}</button>`;
+    const pxPorta = portaEmPe ? 22 : 19;
+    const yPorta = { top: portaEmPe ? 10 : 7, middle: 21, bottom: portaEmPe ? 32 : 35 };
+    const posPorta = btnH('doorPos', 'auto', dp === 'auto', I18n.t('project.handle_pos_auto'), svgPorta(`<text x="15" y="25" text-anchor="middle" font-size="9" font-weight="700" fill="${corH}">auto</text>`))
+      + ['top', 'middle', 'bottom'].map((v) => btnH('doorPos', v, dp === v, I18n.t('project.handle_pos_' + v), svgPorta(marcaH(pxPorta, yPorta[v], portaEmPe)))).join('');
+    const sentPorta = btnH('doorOrient', hAro ? 'vertical' : 'auto', portaEmPe, I18n.t('project.handle_orient_vertical'), svgPorta(marcaH(15, 21, true)))
+      + btnH('doorOrient', hAro ? 'auto' : 'horizontal', !portaEmPe, I18n.t('project.handle_orient_horizontal'), svgPorta(marcaH(15, 21, false)));
+    const yGav = { center: 12, top: gavetaEmPe ? 9 : 6 };
+    const xsGav = (gq === '2' && hKnob) ? [13, 35] : [24];
+    const posGaveta = ['center', 'top'].map((v) => btnH('drawerPos', v, gp === v, I18n.t('project.handle_pos_' + v), svgGaveta(xsGav.map((x) => marcaH(x, yGav[v], gavetaEmPe)).join('')))).join('');
+    const sentGaveta = btnH('drawerOrient', 'auto', !gavetaEmPe, I18n.t('project.handle_orient_horizontal'), svgGaveta(marcaH(24, 12, false)))
+      + btnH('drawerOrient', 'vertical', gavetaEmPe, I18n.t('project.handle_orient_vertical'), svgGaveta(marcaH(24, 12, true)));
+    const qtdGaveta = hKnob ? btnH('drawerQty', '1', gq !== '2', I18n.t('project.handle_qty_1'), svgGaveta(marcaH(24, 12, gavetaEmPe)))
+      + btnH('drawerQty', '2', gq === '2', I18n.t('project.handle_qty_2'), svgGaveta(marcaH(13, 12, gavetaEmPe) + marcaH(35, 12, gavetaEmPe))) : '';
+    const linhaH = (rot, botoes) => `<div class="po-proj-handle-linha"><span class="hint">${rot}</span><div class="po-proj-handle-opts">${botoes}</div></div>`;
+    const posH = hSel ? `<div class="po-proj-handle-quadro">
+        <div class="po-proj-handle-col"><strong>${I18n.t('project.handle_group_door')}</strong>
+          ${linhaH(I18n.t('project.handle_row_pos'), posPorta)}
+          ${linhaH(I18n.t('project.handle_row_orient'), sentPorta)}
+        </div>
+        <div class="po-proj-handle-col"><strong>${I18n.t('project.handle_group_drawer')}</strong>
+          ${linhaH(I18n.t('project.handle_row_pos'), posGaveta)}
+          ${linhaH(I18n.t('project.handle_row_orient'), sentGaveta)}
+          ${qtdGaveta ? linhaH(I18n.t('project.handle_row_qty'), qtdGaveta) : ''}
+        </div>
       </div>` : '';
     // RECOLHIDO (14/11, Matt: "quero os modelos de puxador ocultos e ao clicar
     // abrem as opções"): fechado mostra só o escolhido (foto + nome); clicar
@@ -1314,6 +1343,10 @@ function renderProjectConfigPanel() {
   });
   panel.querySelectorAll('.po-proj-handle-pos-select').forEach((el) => {
     el.addEventListener('change', () => { setProjectSlotHandle(slot, { [el.dataset.handlePos]: el.value }); });
+  });
+  // opções em desenho (ver posH)
+  panel.querySelectorAll('.po-proj-handle-opt').forEach((el) => {
+    el.addEventListener('click', () => { if (!el.classList.contains('selected')) setProjectSlotHandle(slot, { [el.dataset.handlePos]: el.dataset.v }); });
   });
   panel.querySelectorAll('.po-proj-handle-all').forEach((el) => {
     el.addEventListener('click', () => { applyProjectSlotHandleToAll(slot); });
