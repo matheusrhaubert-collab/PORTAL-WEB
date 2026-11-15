@@ -39,6 +39,7 @@
       rename_prompt: 'Novo nome:', inserted: '"{{n}}" inserido no projeto.', inserted_partial: '"{{n}}" inserido — {{k}} módulo(s) não existem mais no catálogo e ficaram de fora.',
       insert_fail: 'Não deu pra inserir: nenhum módulo deste favorito existe mais no catálogo.',
       open_project_first: 'Abra a tela de Projetos pra inserir.', loading: 'Carregando…', error: 'Erro: {{m}}',
+      icon_title: 'Refazer o ícone', icon_fail: 'Não deu pra gerar o ícone.',
       drag_hint: 'Dica: arraste um card até uma pasta pra mover.'
     },
     en: {
@@ -57,6 +58,7 @@
       rename_prompt: 'New name:', inserted: '"{{n}}" inserted into the project.', inserted_partial: '"{{n}}" inserted — {{k}} module(s) no longer exist in the catalog and were left out.',
       insert_fail: 'Could not insert: none of this favorite\'s modules exist in the catalog anymore.',
       open_project_first: 'Open the Projects screen to insert.', loading: 'Loading…', error: 'Error: {{m}}',
+      icon_title: 'Redo the icon', icon_fail: 'Could not generate the icon.',
       drag_hint: 'Tip: drag a card onto a folder to move it.'
     },
     es: {
@@ -75,6 +77,7 @@
       rename_prompt: 'Nuevo nombre:', inserted: '"{{n}}" insertado en el proyecto.', inserted_partial: '"{{n}}" insertado — {{k}} módulo(s) ya no existen en el catálogo y quedaron fuera.',
       insert_fail: 'No se pudo insertar: ningún módulo de este favorito existe ya en el catálogo.',
       open_project_first: 'Abra la pantalla de Proyectos para insertar.', loading: 'Cargando…', error: 'Error: {{m}}',
+      icon_title: 'Rehacer el ícono', icon_fail: 'No se pudo generar el ícono.',
       drag_hint: 'Consejo: arrastre una tarjeta a una carpeta para moverla.'
     }
   };
@@ -206,25 +209,104 @@
     });
   }
 
-  // Miniatura só dos módulos escolhidos: troca projectSlots por um instante,
-  // tira a foto limpa (mesma de captureProjectThumbnail) e devolve tudo.
-  async function captureMembersThumb(members) {
-    if (typeof renderProjectForAiSnapshot !== 'function' || typeof ViewerProject === 'undefined' || !ViewerProject || !ViewerProject.snapshot) return null;
-    const saved = projectSlots;
-    let raw = null; let used = false;
-    try {
-      projectSlots = members;
-      used = renderProjectForAiSnapshot();
-      if (used) raw = ViewerProject.snapshot({ angle: 'corner' });
-    } catch (e) { raw = null; } finally {
-      projectSlots = saved;
-      if (used && typeof generateProject3D === 'function') { try { generateProject3D(); } catch (e) { /* ok */ } }
+  // Ícone do produto (15/11, Matt: "colocar o icone do produto criado
+  // independente se for unico ou agrupado"): SÓ os módulos escolhidos, sem
+  // parede/chão/teto, enquadrado neles. Usa um viewer ESCONDIDO próprio
+  // (ViewerComposition.createInstance, mesmo truque da miniatura por SKU em
+  // portal-01) — a cena do projeto não é tocada.
+  let favViewer = null;
+  function getFavViewer() {
+    if (favViewer) return favViewer;
+    if (typeof ViewerComposition === 'undefined' || !ViewerComposition.createInstance) return null;
+    let host = document.getElementById('po-fav-hidden-viewer');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'po-fav-hidden-viewer';
+      host.style.cssText = 'position:absolute; left:-9999px; top:0; width:480px; height:400px;';
+      document.body.appendChild(host);
     }
-    if (!raw) return null;
+    favViewer = ViewerComposition.createInstance();
+    favViewer.init('po-fav-hidden-viewer');
+    return favViewer;
+  }
+  async function captureMembersThumb(members) {
     try {
+      const viewer = getFavViewer();
+      if (!viewer || typeof buildProjectAssemblies !== 'function') return null;
+      const visiveis = members.filter((s) => !s.oculto);
+      if (!visiveis.length) return null;
+      const wallMembers = visiveis.filter((s) => !isFloorSlot(s));
+      const floorMembers = visiveis.filter((s) => isFloorSlot(s));
+      const walls = [...new Set(wallMembers.map((s) => Number(s.wall_index || 0)))];
+      let angle = null;
+      if (walls.length <= 1 && !floorMembers.length) {
+        // Uma parede só: parede "neutra" (de frente, x a partir do 1º módulo)
+        // e foto 3/4 de catálogo.
+        const minX = Math.min(...wallMembers.map((s) => Number(s.x_mm || 0)));
+        const maxX = Math.max(...wallMembers.map((s) => Number(s.x_mm || 0) + Number(s.width_mm || 0)));
+        const asm = buildProjectAssemblies(wallMembers);
+        asm.forEach((a) => { a.x_m = Number(a.x_m || 0) - minX / 1000; });
+        viewer.renderFreeformWalls([{
+          wallIndex: 0, role: 'main', widthM: Math.max((maxX - minX) / 1000, 0.05),
+          originX: 0, originZ: 0, alongDirX: 1, alongDirZ: 0, intoDirX: 0, intoDirZ: 1, rotationY: 0,
+          assemblies: asm
+        }], null, null, { floorAssemblies: [] });
+        angle = 'three_quarter';
+      } else {
+        // Canto / ilha: geometria real, mas cada parede encolhida pro trecho
+        // que tem módulo (senão a parede inteira entra no enquadramento).
+        const geo = getProjectWallGeometry();
+        const wallsData = walls.map((wi) => {
+          const g = geo.find((w) => w.wallIndex === wi); if (!g) return null;
+          const list = wallMembers.filter((s) => Number(s.wall_index || 0) === wi);
+          const minX = Math.min(...list.map((s) => Number(s.x_mm || 0)));
+          const maxX = Math.max(...list.map((s) => Number(s.x_mm || 0) + Number(s.width_mm || 0)));
+          const asm = buildProjectAssemblies(list);
+          asm.forEach((a) => { a.x_m = Number(a.x_m || 0) - minX / 1000; });
+          return Object.assign({}, g, {
+            widthM: Math.max((maxX - minX) / 1000, 0.05),
+            originX: g.originX + g.alongDirX * minX / 1000,
+            originZ: g.originZ + g.alongDirZ * minX / 1000,
+            assemblies: asm
+          });
+        }).filter(Boolean);
+        viewer.renderFreeformWalls(wallsData, null, null, { floorAssemblies: buildProjectAssemblies(floorMembers) });
+        angle = 'corner';
+      }
+      if (typeof Viewer3D !== 'undefined' && Viewer3D.waitForPendingTextures) {
+        try { await Viewer3D.waitForPendingTextures(); } catch (e) { /* ok */ }
+      }
+      const raw = viewer.snapshot({ angle });
+      if (!raw) return null;
       const trimmed = (typeof trimTransparentPng === 'function') ? await trimTransparentPng(raw) : raw;
       return await shrink(trimmed || raw, 360);
-    } catch (e) { return null; }
+    } catch (e) {
+      console.warn('[favoritos] ícone não gerou', e);
+      return null;
+    }
+  }
+  // Mesma ideia de hydrateProjectLayoutPieces (portal-07), mas pra uma lista
+  // solta (slots que ainda NÃO estão no projeto): carrega catálogo de
+  // agregados/modelos e refaz as peças do Construtor antes da foto.
+  async function hydrateLayoutOf(list) {
+    if (!list.some((s) => s.layout || s.doorModelId || s.drawerModelId)) return;
+    try { if (typeof ensureAccessoryCatalog === 'function') await ensureAccessoryCatalog(); } catch (e) { /* ok */ }
+    try {
+      if (list.some((s) => s.drawerModelId) && typeof ensureProjectDrawerModels === 'function') {
+        await ensureProjectDrawerModels();
+        await Promise.all(list.map((s) => { const m = projectSlotDrawerModel(s); return m ? loadDoorModelExtras(m.child_module_id).catch(() => null) : null; }));
+      }
+      if (list.some((s) => s.doorModelId) && typeof ensureProjectDoorModels === 'function') {
+        await ensureProjectDoorModels();
+        await Promise.all(list.map((s) => { const m = projectSlotDoorModel(s); return m ? loadDoorModelExtras(m.child_module_id).catch(() => null) : null; }));
+      }
+    } catch (e) { /* segue com o padrão */ }
+    list.forEach((slot) => {
+      try {
+        if (slot.layout && typeof rebuildProjectSlotLayoutPieces === 'function') rebuildProjectSlotLayoutPieces(slot);
+        else if (slot.doorModelId && typeof applySlotDoorModelColors === 'function') applySlotDoorModelColors(slot);
+      } catch (e) { /* ok */ }
+    });
   }
   function shrink(dataUrl, max) {
     return new Promise((resolve) => {
@@ -408,6 +490,7 @@
         + '<div class="po-fav-info"><strong title="' + esc(v.name) + '">' + esc(v.name) + '</strong><span>' + esc(sub) + '</span></div>'
         + '<div class="po-fav-btns"><button type="button" class="pri" data-act="insert">' + esc(t('insert')) + '</button>'
         + '<select data-act="move">' + moveOpts(v) + '</select>'
+        + '<button type="button" data-act="icon-fav" title="' + esc(t('icon_title')) + '">↻</button>'
         + '<button type="button" data-act="ren-fav">' + esc(t('rename')) + '</button>'
         + '<button type="button" class="dg" data-act="del-fav">' + esc(t('del')) + '</button></div></div>';
     }).join('');
@@ -447,6 +530,19 @@
         a.disabled = true; a.textContent = t('loading');
         try { const ok = await insertFavorite(v); if (ok) ov.classList.remove('open'); }
         finally { a.disabled = false; a.textContent = t('insert'); }
+      } else if (a.dataset.act === 'icon-fav') {
+        a.disabled = true;
+        try {
+          const { data, error } = await sb().from('user_favorites').select('slots').eq('id', v.id).single();
+          if (error) throw error;
+          const { restored } = await buildProjectSlotsFromConfigs((data && data.slots) || []);
+          await hydrateLayoutOf(restored);
+          const thumb = restored.length ? await captureMembersThumb(restored) : null;
+          if (!thumb) throw new Error(t('icon_fail'));
+          const up = await sb().from('user_favorites').update({ thumbnail_data_url: thumb, updated_at: new Date().toISOString() }).eq('id', v.id);
+          if (up.error) throw up.error;
+          v.thumbnail_data_url = thumb; renderGrid();
+        } finally { a.disabled = false; }
       } else if (a.dataset.act === 'ren-fav') {
         const nm = (prompt(t('rename_prompt'), v.name) || '').trim(); if (!nm || nm === v.name) return;
         const { error } = await sb().from('user_favorites').update({ name: nm, updated_at: new Date().toISOString() }).eq('id', v.id);
