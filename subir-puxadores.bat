@@ -1,0 +1,10 @@
+@echo off
+cd /d "%~dp0"
+echo Adicionando os arquivos novos dos puxadores (fotos)...
+git add "assets/handles/PUX-KNOB-OVAL-GD.jpg" "assets/handles/PUX-KNOB-OVAL-BK.jpg" "assets/handles/PUX-BARRA-160-GD.jpg" "assets/handles/PUX-BARRA-160-BK.jpg" "assets/handles/PUX-PEARL-KNOB-GD.jpg" "scripts/tests/teste-canto45-corte.js" "scripts/tests/teste-puxador.js" "subir-puxadores.bat"
+if errorlevel 1 (
+  echo Falhou o git add.
+  pause
+  exit /b 1
+)
+call subir.bat

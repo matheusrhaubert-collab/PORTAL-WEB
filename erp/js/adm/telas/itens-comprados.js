@@ -109,6 +109,9 @@ ADM_TELAS['tab-purchased-items'] = `
         <textarea id="purchased-item-attrs" rows="3" placeholder='{"angulo":110,"copo_mm":35}'></textarea>
       </div>
 
+      <label>Link de compra <span class="hint">(onde comprar — Amazon, site do fornecedor)</span></label>
+      <input id="purchased-item-link" type="url" placeholder="https://..." />
+
       <label>Observações</label>
       <textarea id="purchased-item-notes" rows="2"></textarea>
       <label><input type="checkbox" id="purchased-item-active" checked style="width:auto;display:inline-block;" /> Ativo</label>

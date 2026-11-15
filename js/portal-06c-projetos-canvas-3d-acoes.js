@@ -922,6 +922,10 @@ function renderProjectConfigPanel() {
     const optH = (v, rot, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${rot}</option>`;
     const dp = (slot.handle && slot.handle.doorPos) || 'auto', gp = (slot.handle && slot.handle.drawerPos) || 'center';
     const dor = (slot.handle && slot.handle.doorOrient) || 'auto', gor = (slot.handle && slot.handle.drawerOrient) || 'auto';
+    // 2 knobs na mesma frente de gaveta (15/11) — só aparece pra knob
+    const hModSel = projectHandleModels().find((m) => m.item_id === hSel) || null;
+    const hKnob = !!(hModSel && hModSel.furos !== 2);
+    const gq = String((slot.handle && slot.handle.drawerQty) || '1');
     const posH = hSel ? `<div class="po-proj-handle-pos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_pos')}
           <select class="po-proj-handle-pos-select" data-handle-pos="doorPos">${optH('auto', I18n.t('project.handle_pos_auto'), dp)}${optH('top', I18n.t('project.handle_pos_top'), dp)}${optH('middle', I18n.t('project.handle_pos_middle'), dp)}${optH('bottom', I18n.t('project.handle_pos_bottom'), dp)}</select></label>
@@ -931,6 +935,8 @@ function renderProjectConfigPanel() {
           <select class="po-proj-handle-pos-select" data-handle-pos="doorOrient">${optH('auto', I18n.t('project.handle_orient_vertical'), dor)}${optH('horizontal', I18n.t('project.handle_orient_horizontal'), dor)}</select></label>
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_orient')}
           <select class="po-proj-handle-pos-select" data-handle-pos="drawerOrient">${optH('auto', I18n.t('project.handle_orient_horizontal'), gor)}${optH('vertical', I18n.t('project.handle_orient_vertical'), gor)}</select></label>
+        ${hKnob ? `<label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_qty')}
+          <select class="po-proj-handle-pos-select" data-handle-pos="drawerQty">${optH('1', I18n.t('project.handle_qty_1'), gq)}${optH('2', I18n.t('project.handle_qty_2'), gq)}</select></label>` : ''}
       </div>` : '';
     // RECOLHIDO (14/11, Matt: "quero os modelos de puxador ocultos e ao clicar
     // abrem as opções"): fechado mostra só o escolhido (foto + nome); clicar

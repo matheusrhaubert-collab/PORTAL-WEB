@@ -82,6 +82,16 @@ async function loadPurchasedItems() {
   if (hardwareRulesCache.length) renderHardwareRules();
 }
 
+// LINK DE COMPRA (2026-11-15, Matt: "lá no ERP pra eu saber onde comprar").
+// Mora em attrs.link_compra (sem coluna nova); o campo "Link de compra" do
+// formulário lê e grava ali. Na lista vira o atalho "comprar ↗" ao lado do nome.
+function purchasedItemLinkHtml(it) {
+  const url = it && it.attrs && typeof it.attrs.link_compra === 'string' ? it.attrs.link_compra.trim() : '';
+  if (!/^https?:\/\//i.test(url)) return '';
+  const seguro = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return ` <a href="${seguro}" target="_blank" rel="noopener noreferrer" title="${seguro}" style="font-size:12px;white-space:nowrap;">comprar ↗</a>`;
+}
+
 function renderPurchasedItems() {
   const tbody = document.getElementById('purchased-items-tbody');
   if (!tbody) return;
@@ -91,7 +101,7 @@ function renderPurchasedItems() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${it.code || '—'}</td>
-      <td>${it.name}</td>
+      <td>${it.name}${purchasedItemLinkHtml(it)}</td>
       <td>${PURCHASED_KIND_LABELS[it.kind] || it.kind || '—'}</td>
       <td>${it.unit || 'un'}</td>
       <td>${it.rail_length_mm != null ? Math.round(it.rail_length_mm) + 'mm' : '<span class="hint">—</span>'}</td>
@@ -178,6 +188,8 @@ window.purchasedItemEdit = function (id) {
   document.getElementById('purchased-item-active').checked = it.active !== false;
   const attrs = document.getElementById('purchased-item-attrs');
   if (attrs) attrs.value = it.attrs ? JSON.stringify(it.attrs) : '';
+  const linkEl = document.getElementById('purchased-item-link');
+  if (linkEl) linkEl.value = (it.attrs && it.attrs.link_compra) || '';
 };
 
 window.purchasedItemDelete = async function (id) {
@@ -211,6 +223,14 @@ if (purchasedItemForm) {
         showError('purchased-items-error', new Error('Atributos: JSON inválido. ' + err.message));
         return;
       }
+    }
+
+    // link de compra: o campo próprio manda (vazio apaga)
+    const linkEl = document.getElementById('purchased-item-link');
+    if (linkEl) {
+      const link = linkEl.value.trim();
+      attrs = Object.assign({}, attrs);
+      if (link) attrs.link_compra = link; else delete attrs.link_compra;
     }
 
     const payload = {

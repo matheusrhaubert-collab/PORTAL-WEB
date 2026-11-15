@@ -1398,9 +1398,17 @@ function handleModelFromItem(it) {
     largura_mm: Number(a.largura_mm) || (tipo === 'barra' ? 11 : 18),
     altura_mm: Number(a.altura_mm) || 23,
     cor_hex: a.cor_hex || '#c9a45c',
+    // PEARL (2026-11-15): knob REDONDO com tampo de outra cor (madrepérola)
+    formato: a.formato === 'redondo' ? 'redondo' : null, tampo_hex: a.tampo_hex || null,
     // foto real do cartão: attrs.foto_url, senão assets/handles/<código>.jpg
     foto_url: a.foto_url || (it.code ? 'assets/handles/' + it.code + '.jpg' : null)
   };
+}
+
+// Quantos puxadores vão nesta frente: 2 só em frente de GAVETA, com knob
+// (1 furo) e cfg.drawer_qty = 2. Barra e porta são sempre 1.
+function handleQtyOnFront(cfg, kind) {
+  return (kind === 'drawer' && cfg && Number(cfg.drawer_qty) === 2 && Number(cfg.furos) !== 2 && cfg.tipo !== 'barra') ? 2 : 1;
 }
 
 function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
@@ -1420,8 +1428,12 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
           item_id: cfg.item_id, name: cfg.name, tipo: cfg.tipo, furos: cfg.furos,
           entre_furos_mm: cfg.entre_furos_mm, comprimento_mm: cfg.comprimento_mm,
           largura_mm: cfg.largura_mm, altura_mm: cfg.altura_mm, cor_hex: cfg.cor_hex,
+          formato: cfg.formato || null, tampo_hex: cfg.tampo_hex || null,
           kind, hinge: hs, pos: kind === 'drawer' ? (cfg.drawer_pos || 'center') : (cfg.door_pos || 'top'),
           orient: (kind === 'drawer' ? cfg.drawer_orient : cfg.door_orient) || 'auto',
+          // 2 KNOBS NA MESMA FRENTE DE GAVETA (2026-11-15, Matt, foto das
+          // gavetas com dois knobs): só gaveta + puxador de 1 furo.
+          qty: handleQtyOnFront(cfg, kind),
           // porta com moldura: furo no meio do montante (senão vale o padrão)
           lateral_mm: (kind === 'door' && handleStileWidthMm(p)) ? handleStileWidthMm(p) / 2 : null
         }
@@ -1433,7 +1445,7 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
         color_role_id: null, labor_cost_per_unit: 0, fura: false,
         width_formula: '0', height_formula: '0', depth_formula: '0',
         offset_x_formula: '0', offset_y_formula: '0', offset_z_formula: '0',
-        quantity: (typeof p.quantity === 'number' && p.quantity > 0) ? p.quantity : 1,
+        quantity: ((typeof p.quantity === 'number' && p.quantity > 0) ? p.quantity : 1) * handleQtyOnFront(cfg, kind),
         quantity_configurable: false, client_optional: false, client_optional_default_on: false,
         client_color_configurable: false, client_dimension_configurable: false,
         // some junto com a porta que só existe numa faixa de medida
@@ -1505,10 +1517,16 @@ function handlePlacement(handle, wMm, hMm) {
     else cv = (handle.pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - borda : hMm / 2;
   }
   cu = clamp(cu, 0, wMm); cv = clamp(cv, 0, hMm);
-  const points = s > 0
-    ? (vertical ? [{ u: cu, v: cv - s / 2 }, { u: cu, v: cv + s / 2 }] : [{ u: cu - s / 2, v: cv }, { u: cu + s / 2, v: cv }])
-    : [{ u: cu, v: cv }];
-  return { cu, cv, vertical, points: points.filter((p) => p.u >= 0 && p.u <= wMm && p.v >= 0 && p.v <= hMm) };
+  // 2 knobs na frente de gaveta: a 1/4 e a 3/4 da largura, na mesma altura.
+  const dois = Number(handle.qty) === 2 && handle.kind === 'drawer' && !(s > 0);
+  const centers = dois ? [{ cu: wMm / 4, cv }, { cu: (wMm * 3) / 4, cv }] : [{ cu, cv }];
+  let points = [];
+  centers.forEach((c) => {
+    points = points.concat(s > 0
+      ? (vertical ? [{ u: c.cu, v: c.cv - s / 2 }, { u: c.cu, v: c.cv + s / 2 }] : [{ u: c.cu - s / 2, v: c.cv }, { u: c.cu + s / 2, v: c.cv }])
+      : [{ u: c.cu, v: c.cv }]);
+  });
+  return { cu, cv, vertical, centers, points: points.filter((p) => p.u >= 0 && p.u <= wMm && p.v >= 0 && p.v <= hMm) };
 }
 
 // Desenho do puxador (viewer3d.js e photoreal.js — cada um passa a SUA
@@ -1534,6 +1552,18 @@ function buildHandleObject3D(T, handle, vertical, metal) {
     caixa(reto, Wd, esp, 0, 0, Hh - esp / 2);
     [-reto / 2, reto / 2].forEach((x) => cil(Wd / 2, esp, x, Hh - esp / 2));
     [-s / 2, s / 2].forEach((x) => cil(Wd / 2, Hh - esp, x, (Hh - esp) / 2));
+  } else if (handle.formato === 'redondo') {
+    // PEARL (2026-11-15): knob redondo — pé em cone, cabeça em disco com
+    // aro de metal e tampo claro (madrepérola) por cima.
+    const raio = Math.max(L, Wd) / 2;
+    const cab = Math.min(0.011, Hh * 0.42);
+    const pe = new T.Mesh(new T.CylinderGeometry(raio * 0.30, raio * 0.48, Hh - cab, 24), mat);
+    pe.rotation.x = Math.PI / 2; pe.position.set(0, 0, (Hh - cab) / 2); g.add(pe);
+    const cabeca = new T.Mesh(new T.CylinderGeometry(raio, raio * 0.92, cab, 40), mat);
+    cabeca.rotation.x = Math.PI / 2; cabeca.position.set(0, 0, Hh - cab / 2); g.add(cabeca);
+    const matTampo = new T.MeshStandardMaterial({ color: new T.Color(handle.tampo_hex || '#f3ead8'), metalness: 0.05, roughness: 0.3 });
+    const tampo = new T.Mesh(new T.CylinderGeometry(raio * 0.88, raio * 0.88, 0.0006, 40), matTampo);
+    tampo.rotation.x = Math.PI / 2; tampo.position.set(0, 0, Hh + 0.0002); g.add(tampo);
   } else {
     const esp = Math.min(0.007, Hh * 0.35);
     const reto = Math.max(L - Wd, 0.0005);
@@ -1575,9 +1605,11 @@ function attachHandleToObject3D(T, obj, part, metal) {
   if (Math.abs(wMm - (Number(part.width_mm) || 0)) > 6 || Math.abs(hMm - (Number(part.height_mm) || 0)) > 6) return;
   const pl = handlePlacement(h, wMm, hMm);
   if (!pl) return;
-  const g = buildHandleObject3D(T, h, pl.vertical, metal);
-  g.position.set(box.min.x + pl.cu / 1000, box.min.y + pl.cv / 1000, box.max.z);
-  obj.add(g);
+  (pl.centers || [{ cu: pl.cu, cv: pl.cv }]).forEach((c) => {
+    const g = buildHandleObject3D(T, h, pl.vertical, metal);
+    g.position.set(box.min.x + c.cu / 1000, box.min.y + c.cv / 1000, box.max.z);
+    obj.add(g);
+  });
   obj.userData.puxadorFeito = true;
 }
 
