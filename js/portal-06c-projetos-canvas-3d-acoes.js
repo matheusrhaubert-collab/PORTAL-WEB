@@ -1151,6 +1151,26 @@ function renderProjectConfigPanel() {
     }
   } catch (e) { canto45Block = ''; }
 
+  // QUANTIDADE DE PRATELEIRAS do cadastro (2026-11-15, Matt, cantos 45°/90°:
+  // "com opções de mais prateleiras"). Peça de catálogo com "cliente escolhe a
+  // quantidade" (quantity_configurable) só tinha campo no New Quote; aqui vira
+  // um − n + no painel do módulo. Todas as linhas de PRATELEIRA do módulo
+  // andam juntas num botão só (no canto 90° são duas, uma por asa, e têm que
+  // ter a mesma quantidade pra se encaixarem); o resto ganha um botão por peça.
+  let shelfQtyBlock = '';
+  try {
+    const grupos = projectSlotQtyGroups(slot);
+    if (grupos.length) {
+      const linhasQ = grupos.map((gq, i) => `<div class="po-proj-config-dim-row"><label>${gq.prateleira ? I18n.t('project.shelf_qty_label') : escapeHtmlCutlist(gq.nome)}</label>
+          <span class="po-proj-dim-value-wrap po-proj-qty-stepper" data-qty-grupo="${i}">
+            <button type="button" class="secondary po-proj-qty-btn" data-d="-1"${gq.valor <= gq.min ? ' disabled' : ''}>−</button>
+            <strong style="min-width:22px;text-align:center;display:inline-block">${gq.valor}</strong>
+            <button type="button" class="secondary po-proj-qty-btn" data-d="1"${gq.valor >= gq.max ? ' disabled' : ''}>+</button>
+          </span></div>`).join('');
+      shelfQtyBlock = `<div class="po-proj-config-dims po-proj-config-qty">${linhasQ}</div>`;
+    }
+  } catch (e) { shelfQtyBlock = ''; }
+
   let pieceDimsBlock = '';
   try {
     const effPieces = projectSlotEffectivePieces(slot);
@@ -1202,6 +1222,7 @@ function renderProjectConfigPanel() {
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
     </div>
     ${canto45Block}
+    ${shelfQtyBlock}
     ${pieceDimsBlock}
     ${positionRow}
     ${doorModelBlock}
@@ -1227,6 +1248,13 @@ function renderProjectConfigPanel() {
       else renderProjectConfigPanel();
     });
     input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } });
+  });
+  // Quantidade de prateleiras / peças do cadastro (ver shelfQtyBlock acima).
+  panel.querySelectorAll('.po-proj-qty-stepper').forEach((wrapQ) => {
+    wrapQ.querySelectorAll('.po-proj-qty-btn').forEach((btn) => btn.addEventListener('click', () => {
+      const gq = projectSlotQtyGroups(slot)[Number(wrapQ.dataset.qtyGrupo)];
+      if (gq) setProjectSlotPieceQty(slot, gq.ids, Math.min(gq.max, Math.max(gq.min, gq.valor + Number(btn.dataset.d))));
+    }));
   });
   // Canto 45°: porta digitada / voltar ao padrão (ver canto45Block acima).
   panel.querySelectorAll('.po-proj-canto45-porta-input').forEach((input) => {
@@ -5493,4 +5521,48 @@ function toggleProjectPieceHandleMenu(bar, slot) {
     renderProjectPieceToolbar();
     refreshProject3DResizeArrows();
   }));
+}
+
+
+// QUANTIDADE DE PEÇAS DO CADASTRO no painel do módulo (2026-11-15) — ver
+// shelfQtyBlock em renderProjectConfigPanel. Grupos: { ids, nome, prateleira,
+// valor, min, max }. Só peça de catálogo (as do Construtor têm tela própria).
+function projectSlotQtyGroups(slot) {
+  const pecas = [];
+  (function anda(lista) {
+    (lista || []).forEach((p) => {
+      if (!p) return;
+      if (p.quantity_configurable && !p._layoutKind && p.id != null) pecas.push(p);
+      if (p.child_pieces && p.child_pieces.length) anda(p.child_pieces);
+    });
+  })(slot && slot.pieces);
+  const sq = (slot && slot.shelfQuantities) || {};
+  const valorDe = (p) => {
+    const v = sq[p.id];
+    if (v !== undefined && v !== null && isFinite(v)) return Number(v);
+    return Number((p.quantity_default !== null && p.quantity_default !== undefined) ? p.quantity_default : p.quantity) || 0;
+  };
+  const minDe = (p) => (p.quantity_min !== null && p.quantity_min !== undefined ? Number(p.quantity_min) : 0);
+  const maxDe = (p) => (p.quantity_max !== null && p.quantity_max !== undefined ? Number(p.quantity_max) : 20);
+  const ehPrat = (p) => p.position_role === 'shelf' || /prateleira|shelf/i.test(String(p.reference || p.component_reference || ''));
+  const prats = pecas.filter(ehPrat), outras = pecas.filter((p) => !ehPrat(p));
+  const grupos = [];
+  if (prats.length) {
+    grupos.push({ ids: prats.map((p) => p.id), nome: '', prateleira: true, valor: valorDe(prats[0]),
+      min: Math.max.apply(null, prats.map(minDe)), max: Math.min.apply(null, prats.map(maxDe)) });
+  }
+  outras.forEach((p) => grupos.push({ ids: [p.id], nome: p.reference || p.component_reference || p.module_name || '', prateleira: false,
+    valor: valorDe(p), min: minDe(p), max: maxDe(p) }));
+  return grupos;
+}
+function setProjectSlotPieceQty(slot, ids, qtd) {
+  if (!slot || !ids || !ids.length || !isFinite(qtd)) return;
+  pushProjectUndoState();
+  const novo = { ...(slot.shelfQuantities || {}) };
+  ids.forEach((id) => { novo[id] = qtd; });
+  slot.shelfQuantities = novo;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[quantidade] preço:', e); }
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
 }

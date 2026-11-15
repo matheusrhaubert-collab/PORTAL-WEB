@@ -5300,6 +5300,10 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-proj-handle-opt:hover { border-color: #d9cfc0; background: #fff; }
 .po-proj-handle-opt.selected { border-color: var(--accent, #8a5a2b); box-shadow: 0 0 0 1px var(--accent, #8a5a2b); }
 
+/* Quantidade de prateleiras no painel do módulo (2026-11-15) */
+.po-proj-qty-stepper { display: inline-flex; align-items: center; gap: 4px; }
+.po-proj-qty-stepper .po-proj-qty-btn { margin: 0; padding: 0 9px; min-width: 0; line-height: 22px; }
+
 /* Puxador só da porta selecionada (2026-11-15) — menu da barrinha da peça */
 .po-proj-piece-handle-menu {
   position: absolute; left: 0; top: 100%; margin-top: 4px; z-index: 31;
