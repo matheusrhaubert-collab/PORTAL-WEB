@@ -92,6 +92,8 @@ console.log('\n— Turim (aro): barra 128 e knob de 2 furos');
   ok('modelos: aro, 2 furos, 128 e 16', tb.formato === 'aro' && tb.entre_furos_mm === 128 && tk.tipo === 'knob' && tk.furos === 2 && tk.entre_furos_mm === 16);
   const pb = g.handlePlacement(Object.assign({}, tb, { kind: 'door', hinge: 'left', pos: 'top', orient: 'auto' }), 400, 700);
   ok('barra Turim na porta: DEITADA por padrão, furos a 128, a 30 do topo e 30 da lateral', !pb.vertical && pb.points.length === 2 && pb.points[1].u - pb.points[0].u === 128 && pb.points.every((q) => q.v === 670) && pb.points[1].u === 370, JSON.stringify(pb.points));
+  const pbx = g.handlePlacement(Object.assign({}, tb, { kind: 'door', hinge: 'left', pos: 'bottom', orient: 'auto' }), 400, 700);
+  ok('Turim no aéreo (embaixo): furos sobem o aro (30 + 38 = 68 da base), suporte em cima', pbx.points.every((q) => q.v === 68), JSON.stringify(pbx.points));
   const pv = g.handlePlacement(Object.assign({}, tb, { kind: 'door', hinge: 'left', pos: 'top', orient: 'vertical' }), 400, 700);
   ok('barra Turim em pé quando escolhido', pv.vertical && Math.abs(pv.points[1].v - pv.points[0].v) === 128);
   const r2 = g.applyHandleConfigDeep(lista, Object.assign({}, tk, { door_pos: 'top', drawer_pos: 'center', drawer_qty: 2 }));

@@ -1554,6 +1554,12 @@ function handlePlacement(handle, wMm, hMm) {
     else if (handle.kind === 'flap') cv = hMm - borda;
     else cv = (handle.pos === 'top' && hMm >= P.gaveta_min_alto_mm) ? hMm - borda : hMm / 2;
   }
+  // TURIM (aro) deitado perto da borda de BAIXO (porta de aéreo, basculante):
+  // o suporte fica em cima e o aro desce a partir dos furos, então os furos
+  // sobem o tamanho do aro — a ponta de baixo do aro é que fica a 30 da borda.
+  if (handle.formato === 'aro' && !vertical && ((ehPorta && handle.pos === 'bottom') || handle.kind === 'lift')) {
+    cv = Math.min(fp + (Number(handle.largura_mm) || 0), hMm / 2);
+  }
   cu = clamp(cu, 0, wMm); cv = clamp(cv, 0, hMm);
   // 2 knobs na frente de gaveta: a 1/4 e a 3/4 da largura, na mesma altura.
   const dois = Number(handle.qty) === 2 && handle.kind === 'drawer' && handle.tipo !== 'barra';
@@ -1585,11 +1591,13 @@ function buildHandleObject3D(T, handle, vertical, metal) {
     const t = Math.min(0.008, Wd * 0.22, L * 0.22);          // parede do aro
     const esp = Math.min(0.007, Hh * 0.4);                   // espessura do aro
     const zc = Hh - esp / 2;
-    // pra onde o aro vai (antes do giro): -Y = pra baixo numa gaveta. Em pé,
-    // o giro leva -Y pra +X; o aro tem que ir pro MEIO da porta, não pra borda.
+    // pra onde o aro vai (antes do giro): -Y = pra baixo. Deitado é SEMPRE
+    // suporte em cima e aro pra baixo, também no aéreo (Matt, 15/11: "deve
+    // girar ele com o suporte pra cima, igual da base") — quem sobe é o furo
+    // (handlePlacement). Em pé, o giro leva -Y pra +X; o aro vai pro MEIO da
+    // porta, não pra borda.
     let sg = -1;
     if (vertical && handle.hinge === 'left') sg = 1;
-    if (!vertical && (handle.pos === 'bottom' || handle.kind === 'lift')) sg = 1;
     caixa(L, t, esp, 0, sg * t / 2, zc);                      // lado dos parafusos
     caixa(L, t, esp, 0, sg * (Wd - t / 2), zc);               // lado da pega
     [-(L - t) / 2, (L - t) / 2].forEach((x) => caixa(t, Wd, esp, x, sg * Wd / 2, zc));
