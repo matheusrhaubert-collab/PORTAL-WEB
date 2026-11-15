@@ -1399,7 +1399,8 @@ function handleModelFromItem(it) {
     altura_mm: Number(a.altura_mm) || 23,
     cor_hex: a.cor_hex || '#c9a45c',
     // PEARL (2026-11-15): knob REDONDO com tampo de outra cor (madrepérola)
-    formato: (a.formato === 'redondo' || a.formato === 'aro') ? a.formato : null, tampo_hex: a.tampo_hex || null,
+    formato: ['redondo', 'aro', 'cilindro', 'tubo'].indexOf(a.formato) >= 0 ? a.formato : null, tampo_hex: a.tampo_hex || null,
+    base_hex: a.base_hex || null, // ROVERO knob: anel de baixo em outra cor
     // foto real do cartão: attrs.foto_url, senão assets/handles/<código>.jpg
     foto_url: a.foto_url || (it.code ? 'assets/handles/' + it.code + '.jpg' : null)
   };
@@ -1463,7 +1464,7 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
           item_id: cfg.item_id, name: cfg.name, tipo: cfg.tipo, furos: cfg.furos,
           entre_furos_mm: cfg.entre_furos_mm, comprimento_mm: cfg.comprimento_mm,
           largura_mm: cfg.largura_mm, altura_mm: cfg.altura_mm, cor_hex: cfg.cor_hex,
-          formato: cfg.formato || null, tampo_hex: cfg.tampo_hex || null,
+          formato: cfg.formato || null, tampo_hex: cfg.tampo_hex || null, base_hex: cfg.base_hex || null,
           kind, hinge: hs, pos: kind === 'drawer' ? (cfg.drawer_pos || 'center') : (cfg.door_pos || 'top'),
           orient: (kind === 'drawer' ? cfg.drawer_orient : cfg.door_orient) || 'auto',
           // 2 KNOBS NA MESMA FRENTE DE GAVETA (2026-11-15, Matt, foto das
@@ -1583,7 +1584,28 @@ function buildHandleObject3D(T, handle, vertical, metal) {
   const Wd = (Number(handle.largura_mm) || 12) / 1000;
   const Hh = (Number(handle.altura_mm) || 23) / 1000;
   const caixa = (sx, sy, sz, x, y, z) => { const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), mat); m.position.set(x, y, z); g.add(m); };
-  if (handle.formato === 'aro') {
+  if (handle.formato === 'cilindro') {
+    // ROVERO knob (2026-11-15): cilindro recartilhado — pescoço e anel de
+    // baixo na cor da base (preto no "blackrose"), corpo e tampa no metal.
+    const raio = Math.max(L, Wd) / 2;
+    const matBase = handle.base_hex ? new T.MeshStandardMaterial({ color: new T.Color(handle.base_hex), metalness: 0.2, roughness: 0.55 }) : mat;
+    const cilZ = (r0, r1, alt, z, m) => { const c = new T.Mesh(new T.CylinderGeometry(r1, r0, alt, 36), m); c.rotation.x = Math.PI / 2; c.position.set(0, 0, z + alt / 2); g.add(c); };
+    const pesc = Hh * 0.16, anel = Hh * 0.24;
+    cilZ(raio * 0.8, raio * 0.8, pesc, 0, matBase);   // base Ø 20 num knob de Ø 25
+    cilZ(raio, raio, anel, pesc, matBase);
+    cilZ(raio, raio, Hh - pesc - anel - 0.002, pesc + anel, mat);
+    cilZ(raio * 0.86, raio * 0.86, 0.002, Hh - 0.002, mat);
+  } else if (handle.formato === 'tubo') {
+    // ROVERO alça (2026-11-15): barra REDONDA sobre dois pés redondos.
+    const s = (Number(handle.entre_furos_mm) || 160) / 1000;
+    const r = Wd / 2;
+    const barra = new T.Mesh(new T.CylinderGeometry(r, r, L, 28), mat);
+    barra.rotation.z = Math.PI / 2; barra.position.set(0, 0, Hh - r); g.add(barra);
+    [-s / 2, s / 2].forEach((x) => {
+      const pe = new T.Mesh(new T.CylinderGeometry(r * 0.85, r * 0.85, Hh - r, 24), mat);
+      pe.rotation.x = Math.PI / 2; pe.position.set(x, 0, (Hh - r) / 2); g.add(pe);
+    });
+  } else if (handle.formato === 'aro') {
     // TURIM (2026-11-15, pelas fotos do Matt): ARO retangular PARALELO à
     // porta, afastado dela por dois pés no lado onde vão os parafusos; o aro
     // se estende pro outro lado (largura_mm = quanto). comprimento_mm = lado
