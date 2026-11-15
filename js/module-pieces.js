@@ -1399,7 +1399,7 @@ function handleModelFromItem(it) {
     altura_mm: Number(a.altura_mm) || 23,
     cor_hex: a.cor_hex || '#c9a45c',
     // PEARL (2026-11-15): knob REDONDO com tampo de outra cor (madrepérola)
-    formato: a.formato === 'redondo' ? 'redondo' : null, tampo_hex: a.tampo_hex || null,
+    formato: (a.formato === 'redondo' || a.formato === 'aro') ? a.formato : null, tampo_hex: a.tampo_hex || null,
     // foto real do cartão: attrs.foto_url, senão assets/handles/<código>.jpg
     foto_url: a.foto_url || (it.code ? 'assets/handles/' + it.code + '.jpg' : null)
   };
@@ -1422,7 +1422,8 @@ function handleFrontKindById(pieces, pieceId, insideDrawer) {
 // Quantos puxadores vão nesta frente: 2 só em frente de GAVETA, com knob
 // (1 furo) e cfg.drawer_qty = 2. Barra e porta são sempre 1.
 function handleQtyOnFront(cfg, kind) {
-  return (kind === 'drawer' && cfg && Number(cfg.drawer_qty) === 2 && Number(cfg.furos) !== 2 && cfg.tipo !== 'barra') ? 2 : 1;
+  // knob = tudo que não é barra (o knob Turim tem 2 parafusos a 16 mm e conta como knob)
+  return (kind === 'drawer' && cfg && Number(cfg.drawer_qty) === 2 && cfg.tipo !== 'barra') ? 2 : 1;
 }
 
 function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
@@ -1523,7 +1524,9 @@ function handlePlacement(handle, wMm, hMm) {
   // orient 'vertical' | 'horizontal' vence; sem ele vale o padrão do tipo
   // (porta = em pé, gaveta/basculante = deitado).
   const ehPorta = handle.kind === 'door';
-  const vertical = handle.orient === 'vertical' ? true : handle.orient === 'horizontal' ? false : ehPorta;
+  // TURIM (aro): aplicado ele vai DEITADO também na porta (foto do Matt,
+  // 15/11) — o padrão do aro é deitado em qualquer frente.
+  const vertical = handle.orient === 'vertical' ? true : handle.orient === 'horizontal' ? false : (ehPorta && handle.formato !== 'aro');
   // Medida sempre do FURO: `fl` até a borda lateral, `fp` até a borda de
   // cima/baixo. No sentido do comprimento o centro fica a (entre-furos / 2)
   // do 1º furo; knob (1 furo) = o próprio centro.
@@ -1553,7 +1556,7 @@ function handlePlacement(handle, wMm, hMm) {
   }
   cu = clamp(cu, 0, wMm); cv = clamp(cv, 0, hMm);
   // 2 knobs na frente de gaveta: a 1/4 e a 3/4 da largura, na mesma altura.
-  const dois = Number(handle.qty) === 2 && handle.kind === 'drawer' && !(s > 0);
+  const dois = Number(handle.qty) === 2 && handle.kind === 'drawer' && handle.tipo !== 'barra';
   const centers = dois ? [{ cu: wMm / 4, cv }, { cu: (wMm * 3) / 4, cv }] : [{ cu, cv }];
   let points = [];
   centers.forEach((c) => {
@@ -1574,7 +1577,26 @@ function buildHandleObject3D(T, handle, vertical, metal) {
   const Wd = (Number(handle.largura_mm) || 12) / 1000;
   const Hh = (Number(handle.altura_mm) || 23) / 1000;
   const caixa = (sx, sy, sz, x, y, z) => { const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), mat); m.position.set(x, y, z); g.add(m); };
-  if (handle.tipo === 'barra') {
+  if (handle.formato === 'aro') {
+    // TURIM (2026-11-15, pelas fotos do Matt): ARO retangular PARALELO à
+    // porta, afastado dela por dois pés no lado onde vão os parafusos; o aro
+    // se estende pro outro lado (largura_mm = quanto). comprimento_mm = lado
+    // dos parafusos; altura_mm = afastamento da porta.
+    const t = Math.min(0.008, Wd * 0.22, L * 0.22);          // parede do aro
+    const esp = Math.min(0.007, Hh * 0.4);                   // espessura do aro
+    const zc = Hh - esp / 2;
+    // pra onde o aro vai (antes do giro): -Y = pra baixo numa gaveta. Em pé,
+    // o giro leva -Y pra +X; o aro tem que ir pro MEIO da porta, não pra borda.
+    let sg = -1;
+    if (vertical && handle.hinge === 'left') sg = 1;
+    if (!vertical && (handle.pos === 'bottom' || handle.kind === 'lift')) sg = 1;
+    caixa(L, t, esp, 0, sg * t / 2, zc);                      // lado dos parafusos
+    caixa(L, t, esp, 0, sg * (Wd - t / 2), zc);               // lado da pega
+    [-(L - t) / 2, (L - t) / 2].forEach((x) => caixa(t, Wd, esp, x, sg * Wd / 2, zc));
+    const sf = (Number(handle.entre_furos_mm) || 0) / 1000;
+    const pes = sf > 0.03 ? [-sf / 2, sf / 2] : [0];          // knob: um pé só no meio
+    pes.forEach((x) => caixa(sf > 0.03 ? t * 1.4 : Math.max(sf + t, t * 2), t, Hh - esp, x, sg * t / 2, (Hh - esp) / 2));
+  } else if (handle.tipo === 'barra') {
     const s = (Number(handle.entre_furos_mm) || 160) / 1000;
     const esp = Math.min(0.008, Hh * 0.4);
     // Barra com as PONTAS OVAIS (Matt, 13/11: "ele tem um formato oval nas

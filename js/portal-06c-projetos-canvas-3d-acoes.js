@@ -924,7 +924,8 @@ function renderProjectConfigPanel() {
     const dor = (slot.handle && slot.handle.doorOrient) || 'auto', gor = (slot.handle && slot.handle.drawerOrient) || 'auto';
     // 2 knobs na mesma frente de gaveta (15/11) — só aparece pra knob
     const hModSel = projectHandleModels().find((m) => m.item_id === hSel) || null;
-    const hKnob = !!(hModSel && hModSel.furos !== 2);
+    const hKnob = !!(hModSel && hModSel.tipo !== 'barra');
+    const hAro = !!(hModSel && hModSel.formato === 'aro');   // Turim: na porta o padrão é deitado
     const gq = String((slot.handle && slot.handle.drawerQty) || '1');
     const posH = hSel ? `<div class="po-proj-handle-pos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_pos')}
@@ -932,7 +933,9 @@ function renderProjectConfigPanel() {
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_pos')}
           <select class="po-proj-handle-pos-select" data-handle-pos="drawerPos">${optH('center', I18n.t('project.handle_pos_center'), gp)}${optH('top', I18n.t('project.handle_pos_top'), gp)}</select></label>
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_door_orient')}
-          <select class="po-proj-handle-pos-select" data-handle-pos="doorOrient">${optH('auto', I18n.t('project.handle_orient_vertical'), dor)}${optH('horizontal', I18n.t('project.handle_orient_horizontal'), dor)}</select></label>
+          <select class="po-proj-handle-pos-select" data-handle-pos="doorOrient">${hAro
+            ? optH('auto', I18n.t('project.handle_orient_horizontal'), dor === 'horizontal' ? 'auto' : dor) + optH('vertical', I18n.t('project.handle_orient_vertical'), dor)
+            : optH('auto', I18n.t('project.handle_orient_vertical'), dor === 'vertical' ? 'auto' : dor) + optH('horizontal', I18n.t('project.handle_orient_horizontal'), dor)}</select></label>
         <label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_orient')}
           <select class="po-proj-handle-pos-select" data-handle-pos="drawerOrient">${optH('auto', I18n.t('project.handle_orient_horizontal'), gor)}${optH('vertical', I18n.t('project.handle_orient_vertical'), gor)}</select></label>
         ${hKnob ? `<label class="hint" style="display:flex;flex-direction:column;gap:2px">${I18n.t('project.handle_drawer_qty')}
