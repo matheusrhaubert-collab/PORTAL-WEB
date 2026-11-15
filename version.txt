@@ -1,3 +1,3 @@
-﻿data: 2026-11-15 19:01:38
+﻿data: 2026-11-15 19:01:43
 cache: 202611151901
-mensagem: galeria de favoritos (modulos e grupos por conta, com pastas)
+mensagem: Portal: ajustes de 2026-11-15 19:01:43
