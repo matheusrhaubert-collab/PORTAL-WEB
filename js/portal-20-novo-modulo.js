@@ -120,7 +120,7 @@ function nmRenderGrid() {
   if (!grid) return;
   const lista = nmModulos();
   if (!nmCategorias().length) { grid.innerHTML = '<div class="po-proj-library-empty">' + nmEsc(tNm('no_categories')) + '</div>'; return; }
-  if (!lista.length) { grid.innerHTML = '<div class="po-proj-library-empty">' + nmEsc(I18n.t('step1.no_modules_found')) + '</div>'; return; }
+  if (!lista.length) { grid.innerHTML = '<div class="po-proj-library-empty">' + nmEsc(typeof modulesEmptyText === 'function' ? modulesEmptyText() : I18n.t('step1.no_modules_found')) + '</div>'; return; }
   const u = nmUnit();
   grid.innerHTML = lista.map((m) => '<button type="button" class="po-proj-library-card po-nm-mod" data-mod="' + m.id + '" title="' + nmEsc(m.name) + '">'
     + moduleCardImage(m)

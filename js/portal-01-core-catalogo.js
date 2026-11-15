@@ -29,6 +29,12 @@
 // ---------- Estado: configurador do módulo atual ----------
 
 let allModules = [];
+// CATÁLOGO AINDA CARREGANDO (2026-11-15, Matt: "enquanto não carrega quero uma
+// mensagem carregando, e sobe quando tiver carregado o Supabase"). false até o
+// loadModules() responder; as telas de módulo mostram "Carregando módulos…" em
+// vez de "Nenhum módulo encontrado" e se redesenham sozinhas quando ele chega.
+let modulesCatalogLoaded = false;
+function modulesEmptyText() { return I18n.t(modulesCatalogLoaded ? 'step1.no_modules_found' : 'step1.loading_modules'); }
 
 // ============================================================
 // CARREGADOR DA IA (2026-11-01, Matt: "quero um carregador na tela, e
@@ -1040,7 +1046,7 @@ function renderModuleGallery() {
   if (modules.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'po-module-gallery-empty';
-    empty.textContent = I18n.t('step1.no_modules_found');
+    empty.textContent = modulesEmptyText();
     gallery.appendChild(empty);
   }
 
@@ -1472,8 +1478,16 @@ async function loadModules() {
   if (error) {
     ({ data, error } = await supabaseClient.from('modules').select('*').eq('active', true).eq('is_invisible', false).order('name'));
   }
-  if (error) { showError(I18n.t('loaderr.modules', { msg: error.message })); return; }
+  if (error) {
+    modulesCatalogLoaded = true;   // respondeu (com erro): não fica "carregando" pra sempre
+    showError(I18n.t('loaderr.modules', { msg: error.message }));
+    try { renderModuleGallery(); if (typeof refreshProjectModuleLists === 'function') refreshProjectModuleLists(); } catch (e) { /* ok */ }
+    return;
+  }
   allModules = data;
+  modulesCatalogLoaded = true;
+  // janela "Adicionar módulo" aberta enquanto carregava: preenche sozinha
+  try { if (typeof refreshProjectModuleLists === 'function') refreshProjectModuleLists(); } catch (e) { /* ok */ }
   // Dropdown de referência (SKU) do card do catálogo — pedido do usuário
   // (2026-07-29): "abaixo do quadro de cada modulo... um dropdown pra
   // seleção do modulo, só quero mostrar quando tiverem referência

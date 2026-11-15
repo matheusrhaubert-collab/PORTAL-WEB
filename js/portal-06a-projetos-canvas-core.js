@@ -1302,7 +1302,7 @@ function renderProjectLibrary() {
   if (!list.length) {
     const empty = document.createElement('div');
     empty.className = 'po-proj-library-empty';
-    empty.textContent = I18n.t('step1.no_modules_found');
+    empty.textContent = modulesEmptyText();
     grid.appendChild(empty);
     return;
   }
@@ -2166,7 +2166,7 @@ function renderProjectSearchModalGrid() {
   if (!list.length) {
     const empty = document.createElement('div');
     empty.className = 'po-proj-library-empty';
-    empty.textContent = I18n.t('step1.no_modules_found');
+    empty.textContent = modulesEmptyText();
     grid.appendChild(empty);
     return;
   }
@@ -2210,6 +2210,19 @@ function openProjectSearchModal() {
   renderProjectSearchModalFilterBars();
   renderProjectSearchModalGrid();
   document.getElementById('po-proj-search-modal').classList.add('open');
+}
+
+// Chamado pelo loadModules() (portal-01) quando o catálogo chega do Supabase:
+// refaz a biblioteca da esquerda e, se a janela "Adicionar módulo" estiver
+// aberta, as abas e a grade dela (que estavam em "Carregando módulos…").
+function refreshProjectModuleLists() {
+  try { renderProjectLibraryFilterBars(); renderProjectLibrary(); } catch (e) { /* aba Projetos ainda não montada */ }
+  const modal = document.getElementById('po-proj-search-modal');
+  if (modal && modal.classList.contains('open')) {
+    projSearchResetToFirstTabs();
+    renderProjectSearchModalFilterBars();
+    renderProjectSearchModalGrid();
+  }
 }
 
 function closeProjectSearchModal() {
