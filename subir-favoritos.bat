@@ -7,4 +7,4 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-call subir.bat "galeria de favoritos (modulos e grupos por conta, com pastas)"
+call subir.bat "galeria de favoritos + grupo move como objeto unico"

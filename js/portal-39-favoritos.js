@@ -40,6 +40,7 @@
       insert_fail: 'Não deu pra inserir: nenhum módulo deste favorito existe mais no catálogo.',
       open_project_first: 'Abra a tela de Projetos pra inserir.', loading: 'Carregando…', error: 'Erro: {{m}}',
       icon_title: 'Refazer o ícone', icon_fail: 'Não deu pra gerar o ícone.',
+      tab: '★ Favoritos', manage: 'Gerenciar pastas…',
       drag_hint: 'Dica: arraste um card até uma pasta pra mover.'
     },
     en: {
@@ -59,6 +60,7 @@
       insert_fail: 'Could not insert: none of this favorite\'s modules exist in the catalog anymore.',
       open_project_first: 'Open the Projects screen to insert.', loading: 'Loading…', error: 'Error: {{m}}',
       icon_title: 'Redo the icon', icon_fail: 'Could not generate the icon.',
+      tab: '★ Favorites', manage: 'Manage folders…',
       drag_hint: 'Tip: drag a card onto a folder to move it.'
     },
     es: {
@@ -78,6 +80,7 @@
       insert_fail: 'No se pudo insertar: ningún módulo de este favorito existe ya en el catálogo.',
       open_project_first: 'Abra la pantalla de Proyectos para insertar.', loading: 'Cargando…', error: 'Error: {{m}}',
       icon_title: 'Rehacer el ícono', icon_fail: 'No se pudo generar el ícono.',
+      tab: '★ Favoritos', manage: 'Gestionar carpetas…',
       drag_hint: 'Consejo: arrastre una tarjeta a una carpeta para moverla.'
     }
   };
@@ -408,6 +411,7 @@
       lastFolderId = folderId || '';
       closeSave();
       toast(t('saved', { n: name }));
+      tabLoaded = false;
       if (galleryOpen()) { await loadAll(); renderGallery(); }
     } catch (e) { setSaveMsg(errMsg(e)); }
     finally { btn.disabled = false; btn.textContent = t('save'); }
@@ -639,8 +643,143 @@
     return true;
   }
 
+
+  // ---------------- aba "★ Favoritos" dentro do "+ Módulo" ----------------
+  // (15/11, Matt: "esses favoritos pode colocar dentro dos cabinets" / "aba
+  // separada"). Primeira pílula da fileira de famílias do modal de busca
+  // (#po-proj-search-modal). Embrulha as funções do portal-06a sem mexer
+  // nelas: com a aba ligada, a 2ª fileira vira as PASTAS e a grade mostra os
+  // favoritos; clicar num card insere e fecha o modal.
+  let tabOn = false;
+  let tabFolder = 'all';
+  let tabLoaded = false;
+  function favPill(label, active, onClick, extraCls) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'po-tab-pill' + (active ? ' active' : '') + (extraCls ? ' ' + extraCls : '');
+    btn.textContent = label;
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+  function decorateFamilyBar() {
+    const fam = document.getElementById('po-proj-search-filter-family');
+    if (!fam) return;
+    const old = fam.querySelector('.po-fav-tabpill'); if (old) old.remove();
+    if (!fam._favCapture) {
+      fam._favCapture = true;
+      // clicar numa família de verdade desliga a aba de favoritos (captura:
+      // roda antes do clique original da pílula)
+      fam.addEventListener('click', (e) => {
+        const pill = e.target.closest('.po-tab-pill');
+        if (pill && !pill.classList.contains('po-fav-tabpill')) tabOn = false;
+      }, true);
+    }
+    const star = favPill(t('tab'), tabOn, () => {
+      tabOn = true;
+      if (typeof renderProjectSearchModalFilterBars === 'function') renderProjectSearchModalFilterBars();
+      if (typeof renderProjectSearchModalGrid === 'function') renderProjectSearchModalGrid();
+    }, 'po-fav-tabpill');
+    fam.insertBefore(star, fam.firstChild);
+    if (tabOn) fam.querySelectorAll('.po-tab-pill:not(.po-fav-tabpill)').forEach((b) => b.classList.remove('active'));
+  }
+  function renderTabFolders() {
+    const cat = document.getElementById('po-proj-search-filter-category');
+    const sub = document.getElementById('po-proj-search-filter-subcategory');
+    if (sub) { sub.innerHTML = ''; sub.style.display = 'none'; }
+    if (!cat) return;
+    cat.style.display = '';
+    cat.innerHTML = '';
+    if (tabFolder !== 'all' && tabFolder !== 'none' && !folders.some((f) => f.id === tabFolder)) tabFolder = 'all';
+    const go = (id) => () => { tabFolder = id; renderTabFolders(); renderTabGrid(); };
+    cat.appendChild(favPill(t('all'), tabFolder === 'all', go('all')));
+    if (favs.some((v) => !v.folder_id)) cat.appendChild(favPill(t('no_folder'), tabFolder === 'none', go('none')));
+    folders.forEach((f) => cat.appendChild(favPill('📁 ' + f.name, tabFolder === f.id, go(f.id))));
+    cat.appendChild(favPill(t('manage'), false, () => {
+      const m = document.getElementById('po-proj-search-modal'); if (m) m.classList.remove('open');
+      openFavoritesGallery();
+    }, 'po-fav-manage'));
+  }
+  function renderTabGrid() {
+    const grid = document.getElementById('po-proj-search-modal-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    if (!user()) { grid.innerHTML = '<div class="po-proj-library-empty">' + esc(t('need_login')) + '</div>'; return; }
+    if (!tabLoaded) { grid.innerHTML = '<div class="po-proj-library-empty">' + esc(t('loading')) + '</div>'; return; }
+    const list = favs.filter((v) => tabFolder === 'all' ? true : tabFolder === 'none' ? !v.folder_id : v.folder_id === tabFolder);
+    if (!list.length) { grid.innerHTML = '<div class="po-proj-library-empty">' + esc(t('empty')) + '</div>'; return; }
+    list.forEach((v) => {
+      const card = document.createElement('div');
+      card.className = 'po-proj-library-card po-fav-libcard';
+      card.title = v.name;
+      const n = Number(v.module_count || 1);
+      const sub = n > 1 ? t('group_kind') + ' · ' + t('modules', { n }) : t('module');
+      card.innerHTML = (v.thumbnail_data_url
+        ? '<img src="' + esc(v.thumbnail_data_url) + '" alt="" class="po-module-card-image" />'
+        : '<div class="po-fav-libcard-noimg">' + STAR + '</div>')
+        + '<span class="po-fav-libcard-star">★</span>'
+        + '<div class="po-proj-library-card-name">' + esc(v.name) + '</div>'
+        + '<div class="po-proj-library-card-dims">' + esc(sub) + '</div>';
+      card.addEventListener('click', async () => {
+        if (card._busy) return; card._busy = true; card.style.opacity = '.5';
+        try {
+          if (typeof projectReplaceSlotId !== 'undefined') projectReplaceSlotId = null;
+          const ok = await insertFavorite(v);
+          if (ok && typeof closeProjectSearchModal === 'function') closeProjectSearchModal();
+        } catch (e) { toast(errMsg(e)); }
+        finally { card._busy = false; card.style.opacity = ''; }
+      });
+      grid.appendChild(card);
+    });
+  }
+  async function reloadTab() {
+    tabLoaded = false;
+    try { await loadAll(); } catch (e) { /* fica a lista vazia */ }
+    tabLoaded = true;
+    if (tabOn) { renderTabFolders(); renderTabGrid(); }
+  }
+  function hookSearchModal() {
+    if (typeof renderProjectSearchModalFilterBars !== 'function' || typeof renderProjectSearchModalGrid !== 'function') return;
+    if (window.__favHooked) return;
+    window.__favHooked = true;
+    const origBars = renderProjectSearchModalFilterBars;
+    const origGrid = renderProjectSearchModalGrid;
+    const origOpen = (typeof openProjectSearchModal === 'function') ? openProjectSearchModal : null;
+    renderProjectSearchModalFilterBars = function () {
+      origBars.apply(this, arguments);
+      decorateFamilyBar();
+      if (tabOn) renderTabFolders();
+    };
+    renderProjectSearchModalGrid = function () {
+      if (tabOn) return renderTabGrid();
+      return origGrid.apply(this, arguments);
+    };
+    if (origOpen) {
+      openProjectSearchModal = function () {
+        if (user()) reloadTab();
+        return origOpen.apply(this, arguments);
+      };
+      // o botão "+ Módulo" guardou a função ANTIGA no addEventListener
+      const btn = document.getElementById('po-proj-library-search-btn');
+      if (btn) {
+        btn.removeEventListener('click', origOpen);
+        btn.addEventListener('click', openProjectSearchModal);
+      }
+    }
+  }
+  const css2 = `
+  #po-proj-search-filter-family .po-fav-tabpill { border-color: #d4a017; color: #8a6400; font-weight: 700; margin-right: 6px; }
+  #po-proj-search-filter-family .po-fav-tabpill.active { background: #d4a017; color: #fff; border-color: #d4a017; }
+  .po-fav-manage { border-style: dashed !important; }
+  .po-fav-libcard { position: relative; }
+  .po-fav-libcard-star { position: absolute; top: 6px; right: 8px; color: #d4a017; font-size: 15px; }
+  .po-fav-libcard-noimg { height: 90px; display: flex; align-items: center; justify-content: center; color: #b9bfca; }
+  .po-fav-libcard-noimg svg { width: 34px; height: 34px; }
+  `;
+  const st2 = document.createElement('style'); st2.textContent = css2; document.head.appendChild(st2);
+
   // ---------------- botões ----------------
   function bind() {
+    hookSearchModal();
     const btn = document.getElementById('po-proj-favs-btn');
     if (btn && !btn._favBound) {
       btn._favBound = true;

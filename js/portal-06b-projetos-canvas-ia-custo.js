@@ -1315,6 +1315,8 @@ function projectAllOtherSlotWorldBoxes(slot) {
   (projectSlots || []).forEach((s) => {
     if (s.id === slot.id) return;
     if (doGrupo && doGrupo.has(s.id)) return;
+    // Grupo salvo agarrado sem estar selecionado (15/11): mesmo grupo nunca é obstáculo.
+    if (slot.group_id && s.group_id === slot.group_id) return;
     if (souEstrutura || isProjectWallStructureSlot(s)) return;
     // Painel de parede x módulo na MESMA parede: camadas diferentes, não se
     // barram (ver projectSlotWallStandoffMm).
