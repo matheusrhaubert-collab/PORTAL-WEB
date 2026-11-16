@@ -491,6 +491,24 @@ function ptFillersEncostados(scene, wallIndex) {
   }
   return ids;
 }
+// Vista de Canto (perspectiva, com paredes e piso) como canvas, fundo branco.
+// Sem setas de esticar nem contorno de seleção na imagem.
+async function ptPerspectiveCanvas() {
+  if (typeof ViewerProjectEdit === 'undefined' || !ViewerProjectEdit || typeof ViewerProjectEdit.snapshot !== 'function') return null;
+  try { if (ViewerProjectEdit.setResizeArrows) ViewerProjectEdit.setResizeArrows(null); } catch (e) { /* ok */ }
+  let dataUrl = null;
+  try { dataUrl = ViewerProjectEdit.snapshot({ angle: 'corner' }); }
+  finally { try { if (typeof refreshProject3DResizeArrows === 'function') refreshProject3DResizeArrows(); } catch (e) { /* ok */ } }
+  if (!dataUrl) return null;
+  const img = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = dataUrl; });
+  if (!img || !img.width || !img.height) return null;
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(img, 0, 0);
+  return c;
+}
 function ptEhFillerOuPainel(slot) {
   const m = (slot && slot.module) || {};
   return /filler|painel|panel/i.test(String(m.name || '')) || /pain[eé]|panel/i.test(String(m.family || ''));
@@ -1562,6 +1580,16 @@ async function generateProjectTechPlan(opts) {
         return [pf.store_name, pf.store_phone].filter(Boolean).join('  ·  ');
       })()
     };
+
+    // PERSPECTIVA DO AMBIENTE na 1ª página (2026-11-16, Matt, com um print da
+    // Vista de Canto: "no plano técnico preciso uma imagem em perspectiva do
+    // ambiente como essa foto"). É a própria Vista de Canto, enquadrada no
+    // ângulo padrão do projeto (snapshot 'corner' reposiciona a câmera, tira a
+    // imagem e devolve a câmera pra onde o usuário estava).
+    try {
+      const persp = await ptPerspectiveCanvas();
+      if (persp) ptPdfPage(doc, st, persp, ptT('persp_title'), ptT('persp_sub'), ptT('notes_persp'));
+    } catch (e) { console.warn('[plano técnico] perspectiva', e); }
 
     ptStatus(ptT('step_plan'));
     await ptSleep(30);
