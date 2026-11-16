@@ -509,6 +509,88 @@ async function ptPerspectiveCanvas() {
   ctx.drawImage(img, 0, 0);
   return c;
 }
+// PERSPECTIVAS INTERNAS — câmera grande-angular DENTRO do ambiente, 2 vistas
+// de cantos opostos (a 1ª do canto mais longe dos móveis; a 2ª do canto
+// diagonalmente oposto). Mostra paredes, piso e todos os móveis; esconde
+// cotas, setas e contornos de seleção. Devolve [canvas, canvas].
+function ptInteriorViews(scene, walls) {
+  scene.updateMatrixWorld(true);
+  // caixas dos móveis (pra achar o centro deles e não pôr a câmera dentro de um)
+  const caixas = [];
+  scene.children.forEach((g) => {
+    const ud = g.userData || {};
+    if (ud.slotId == null) return;
+    const slot = ptSlotById(ud.slotId);
+    if (!slot || !slot.module || ptIsVisualOnly(slot)) return;
+    const b = new THREE.Box3().setFromObject(g);
+    if (!b.isEmpty()) caixas.push(b);
+  });
+  if (!caixas.length) return [];
+  // retângulo do ambiente: pontas das paredes (+ os móveis)
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const pt = (x, z) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); };
+  (walls || []).forEach((w) => {
+    pt(w.originX, w.originZ);
+    pt(w.originX + w.alongDirX * w.widthM, w.originZ + w.alongDirZ * w.widthM);
+  });
+  caixas.forEach((b) => { pt(b.min.x, b.min.z); pt(b.max.x, b.max.z); });
+  // ambiente de 1 parede só (ou paredes em linha): abre 2,8 m pra dentro
+  if ((x1 - x0) < 1.5 || (z1 - z0) < 1.5) {
+    (walls || []).forEach((w) => {
+      const mx = w.originX + w.alongDirX * w.widthM / 2, mz = w.originZ + w.alongDirZ * w.widthM / 2;
+      pt(mx + w.intoDirX * 2.8, mz + w.intoDirZ * 2.8);
+    });
+  }
+  if (!isFinite(x0) || !isFinite(z0)) return [];
+  const tetoM = Math.max(2.2, ...((walls || []).map((w) => (Number(w.ceilingMm) || 0) / 1000)),
+    (((typeof roomSettings !== 'undefined' && roomSettings && roomSettings.ceiling_mm) || 2600) / 1000));
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const mcx = caixas.reduce((a, b) => a + (b.min.x + b.max.x) / 2, 0) / caixas.length;
+  const mcz = caixas.reduce((a, b) => a + (b.min.z + b.max.z) / 2, 0) / caixas.length;
+  const cantos = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+  let longe = 0, dMax = -1;
+  cantos.forEach((c, i) => { const d = Math.hypot(c[0] - mcx, c[1] - mcz); if (d > dMax) { dMax = d; longe = i; } });
+  const escolhidos = [cantos[longe], cantos[(longe + 2) % 4]];
+  const olhoY = Math.min(1.65, tetoM * 0.62), alvoY = Math.min(1.15, tetoM * 0.45);
+  const dentroDeMovel = (x, z) => caixas.some((b) => x > b.min.x - 0.12 && x < b.max.x + 0.12 && z > b.min.z - 0.12 && z < b.max.z + 0.12 && olhoY < b.max.y + 0.05);
+  const wPx = 2000, hPx = 1250;
+  const r = ptGetRenderer();
+  const out = [];
+  escolhidos.forEach((c) => {
+    // entra 22 cm do canto e, se cair dentro de um móvel, anda pro centro até sair
+    let t = Math.min(0.5, 0.22 / Math.max(Math.hypot(cx - c[0], cz - c[1]), 0.01));
+    let px = c[0] + (cx - c[0]) * t, pz = c[1] + (cz - c[1]) * t;
+    for (let k = 0; k < 20 && dentroDeMovel(px, pz) && t < 0.9; k++) { t += 0.05; px = c[0] + (cx - c[0]) * t; pz = c[1] + (cz - c[1]) * t; }
+    const cam = new THREE.PerspectiveCamera(78, wPx / hPx, 0.03, 80);   // ≈ 104° na horizontal
+    cam.position.set(px, olhoY, pz);
+    cam.lookAt(cx + (cx - px) * 0.15, alvoY, cz + (cz - pz) * 0.15);
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+    const restore = ptSaveVisibility(scene);
+    let canvas = null;
+    try {
+      scene.children.forEach((top) => {
+        if (top.isLight) return;
+        const ud = top.userData || {};
+        if (ud.slotId != null || ud.isMergedBaseboard) return;   // móveis/rodapé: como estão na tela
+        let ambiente = false;
+        top.traverse((o) => { if (o.userData && o.userData.isRoomSurface) ambiente = true; });
+        if (ambiente) { top.visible = true; top.traverse((o) => { if (o.userData && o.userData.isRoomSurface) o.visible = true; }); return; }
+        top.visible = false;   // cotas, setas, contorno de seleção, ajudantes
+      });
+      scene.background = null;
+      r.setSize(wPx, hPx, false);
+      r.setClearColor(0xffffff, 1);
+      r.render(scene, cam);
+      canvas = document.createElement('canvas');
+      canvas.width = wPx; canvas.height = hPx;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, wPx, hPx);
+      ctx.drawImage(r.domElement, 0, 0);
+    } finally { restore(); }
+    if (canvas) out.push(canvas);
+  });
+  return out;
+}
 function ptEhFillerOuPainel(slot) {
   const m = (slot && slot.module) || {};
   return /filler|painel|panel/i.test(String(m.name || '')) || /pain[eé]|panel/i.test(String(m.family || ''));
@@ -1586,9 +1668,25 @@ async function generateProjectTechPlan(opts) {
     // ambiente como essa foto"). É a própria Vista de Canto, enquadrada no
     // ângulo padrão do projeto (snapshot 'corner' reposiciona a câmera, tira a
     // imagem e devolve a câmera pra onde o usuário estava).
+    // 2ª RODADA (mesmo dia, Matt com a 1ª página de um closet FECHADO por 4
+    // paredes — a câmera de fora só via a parede: "tem como colocarmos uma
+    // câmera com grande abertura de ângulo pra pegar todos os cabinets, aí
+    // fazendo de um lado e de outro lado... em perspectiva"). Agora são 2
+    // imagens de DENTRO do ambiente, grande-angular, de cantos opostos
+    // (ptInteriorViews). Se não der pra montar, cai na vista de fora de antes.
     try {
-      const persp = await ptPerspectiveCanvas();
-      if (persp) ptPdfPage(doc, st, persp, ptT('persp_title'), ptT('persp_sub'), ptT('notes_persp'));
+      let feitas = 0;
+      let internas = [];
+      try { internas = ptInteriorViews(scene, walls); } catch (e) { console.warn('[plano técnico] perspectiva interna', e); internas = []; }
+      internas.forEach((c, i) => {
+        if (!c) return;
+        ptPdfPage(doc, st, c, ptT('persp_title'), ptT('persp_view', { n: i + 1, total: internas.length }), ptT('notes_persp'));
+        feitas++;
+      });
+      if (!feitas) {
+        const persp = await ptPerspectiveCanvas();
+        if (persp) ptPdfPage(doc, st, persp, ptT('persp_title'), ptT('persp_sub'), ptT('notes_persp'));
+      }
     } catch (e) { console.warn('[plano técnico] perspectiva', e); }
 
     ptStatus(ptT('step_plan'));
