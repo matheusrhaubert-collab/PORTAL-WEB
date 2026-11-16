@@ -269,7 +269,7 @@
 @media (max-width:700px){#po-mont-modal .po-mont-card{border-radius:0;width:100vw;height:100dvh}}
 #po-mont-modal .po-mont-head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #e6e6e6}
 #po-mont-modal .po-mont-head h3{margin:0;font-size:16px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#po-mont-modal .po-mont-x{border:0;background:#f1f1f1;border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer}
+#po-mont-modal .po-mont-x{border:0;background:#f1f1f1;color:#1f1f1f;padding:0;line-height:1;border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer}
 #po-mont-modal .po-mont-3d{flex:1;min-height:180px;position:relative;background:linear-gradient(#fafafa,#efefef);touch-action:none}
 #po-mont-modal .po-mont-dica{position:absolute;left:10px;bottom:6px;font-size:11px;color:#8a8a8a;pointer-events:none}
 #po-mont-modal .po-mont-txt{padding:12px 16px 6px;max-height:42%;overflow:auto}
@@ -280,14 +280,17 @@
 #po-mont-modal .po-mont-chip{background:#fff1e8;color:#b8430a;border:1px solid #f6c9ad;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600}
 #po-mont-modal .po-mont-tool{font-size:12px;color:#777;margin:0 0 4px}
 #po-mont-modal .po-mont-nav{display:flex;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid #e6e6e6}
-#po-mont-modal .po-mont-nav button{flex:1;padding:12px;font-size:15px;border-radius:10px;border:1px solid #cfcfcf;background:#fff;cursor:pointer}
+#po-mont-modal .po-mont-nav button{flex:1;padding:12px;font-size:15px;border-radius:10px;border:1px solid #cfcfcf;background:#fff;color:#1f1f1f;cursor:pointer}
 #po-mont-modal .po-mont-nav button.pri{background:#1f1f1f;color:#fff;border-color:#1f1f1f}
 #po-mont-modal .po-mont-nav button:disabled{opacity:.35;cursor:default}
 #po-mont-modal .po-mont-pontos{display:flex;gap:5px;justify-content:center;padding:6px 0 0}
 #po-mont-modal .po-mont-pontos i{width:7px;height:7px;border-radius:50%;background:#d6d6d6}
 #po-mont-modal .po-mont-pontos i.on{background:#e8590c}
 #po-mont-modal .po-mont-lista{padding:10px 14px;overflow:auto;flex:1}
-#po-mont-modal .po-mont-lista button{display:block;width:100%;text-align:left;padding:12px;margin:0 0 8px;border:1px solid #ddd;border-radius:10px;background:#fff;font-size:15px;cursor:pointer}
+#po-mont-modal .po-mont-lista button{display:block;width:100%;text-align:left;padding:12px;margin:0 0 8px;border:1px solid #ddd;border-radius:10px;background:#fff;color:#1f1f1f;font-size:15px;cursor:pointer}
+#po-mont-modal .po-mont-lista button:hover{background:#f6f3ee}
+#po-mont-modal .po-mont-head h3{color:#1f1f1f}
+#po-mont-modal .po-mont-t{color:#1f1f1f}
 #po-mont-modal .po-mont-msg{padding:30px 18px;text-align:center;color:#555;flex:1}`;
     document.head.appendChild(st);
   }
@@ -401,8 +404,34 @@
     header.appendChild(b);
     return true;
   }
+  // ---- botão na barra do editor (grupo HELP), SÓ ADMIN enquanto é piloto ----
+  // Matt, 16/11: "como vejo o passo a passo pelo portal? tem como?". Abre o
+  // módulo SELECIONADO; sem seleção, a lista pra escolher.
+  function poeBotaoEditor() {
+    if (window.LEGNO_IS_ADMIN !== true) return false;
+    const linha = document.querySelector('#po-proj-tb-help .po-tb-icons-row');
+    if (!linha) return false;
+    if (document.getElementById('po-proj-montagem-btn')) return true;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'po-proj-montagem-btn';
+    b.className = 'po-tb-icon-card po-tb-icon-only';
+    b.title = T('titulo'); b.setAttribute('aria-label', T('titulo'));
+    b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.2 5.2L4 17l3 3 5.5-5.5a4 4 0 0 0 5.2-5.2l-2.6 2.6-2.1-.6-.6-2.1z"/></svg><span></span>';
+    b.querySelector('span').textContent = T('titulo');
+    b.addEventListener('click', () => {
+      let sel = null;
+      try { if (typeof selectedProjectSlotId !== 'undefined' && selectedProjectSlotId != null) sel = projectSlots.find((x) => x.id === selectedProjectSlotId) || null; } catch (e) { sel = null; }
+      if (sel && sel.module) abre(sel); else escolhe();
+    });
+    linha.appendChild(b);
+    return true;
+  }
   if (new URLSearchParams(window.location.search).get('view3d')) {
     let tentativas = 0;
     const tm = setInterval(() => { if (poeBotao() || ++tentativas > 120) clearInterval(tm); }, 500);
+  } else {
+    let tentativas2 = 0;
+    const tm2 = setInterval(() => { if (poeBotaoEditor() || ++tentativas2 > 240) clearInterval(tm2); }, 500);
   }
 })();
