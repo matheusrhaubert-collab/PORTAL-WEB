@@ -47,7 +47,7 @@ const L = (ref, role, w, h, d, x, y, z, prog, extra) => Object.assign({ referenc
 // aresta = a COMPRIDA DE TRÁS de cada base (asa em Z: borda_esq; asa em X: borda_sup)
 const semMinifixFundo = (id, aresta) => dump.programas[id].filter((r) => {
   const y = String(r.y_formula || '').replace(/ /g, ''), x = String(r.x_formula || '').replace(/ /g, '');
-  if (r.face === aresta && Number(r.counter_diameter_mm || 0) === 5) return false;
+  if (r.face === aresta) return false;   // minifix e cavilha
   if (!/^borda_/.test(r.face) && Number(r.diameter_mm) >= 10 && ((aresta === 'borda_sup' && y === '24') || (aresta === 'borda_esq' && x === '24'))) return false;
   return true;
 });
@@ -178,8 +178,8 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
     ok(conta(f['Lateral B (asa em Z)'], 'contrafuro_face') >= 8, 'lateral B recebe os contra-furos das 4 bases B (deu ' + conta(f['Lateral B (asa em Z)'], 'contrafuro_face') + ')');
     const d5 = (n) => (f[n] || []).filter((h) => h.tipo === 'contrafuro_face' && h.diameter === 5).length;
     const d8 = (n) => (f[n] || []).filter((h) => h.tipo === 'contrafuro_face' && h.diameter === 8).length;
-    ok(d5('Fundo A (asa em X)') === 0 && d8('Fundo A (asa em X)') >= 8, 'fundo A: nenhum minifix das bases (aresta comprida), só cavilha (' + d5('Fundo A (asa em X)') + ' / ' + d8('Fundo A (asa em X)') + ')');
-    ok(d5('Fundo B (asa em Z)') === 0 && d8('Fundo B (asa em Z)') >= 8, 'fundo B: nenhum minifix das bases (aresta comprida), só cavilha (' + d5('Fundo B (asa em Z)') + ' / ' + d8('Fundo B (asa em Z)') + ')');
+    ok(d5('Fundo A (asa em X)') === 0 && d8('Fundo A (asa em X)') === 0, 'fundo A: nenhum furo vindo das bases (minifix / cavilha: ' + d5('Fundo A (asa em X)') + ' / ' + d8('Fundo A (asa em X)') + ')');
+    ok(d5('Fundo B (asa em Z)') === 0 && d8('Fundo B (asa em Z)') === 0, 'fundo B: nenhum furo vindo das bases (minifix / cavilha: ' + d5('Fundo B (asa em Z)') + ' / ' + d8('Fundo B (asa em Z)') + ')');
     ok(d5('Lateral B de trás (asa em Z)') >= 10, 'lateral B de trás: minifix da ponta das 4 bases B (8) + do fundo B (2) — deu ' + d5('Lateral B de trás (asa em Z)'));
     const fundoNaBorda = (f['Lateral B de trás (asa em Z)'] || []).filter((h) => h.tipo === 'contrafuro_borda');
     ok(fundoNaBorda.length === 4, 'fundo A entra na BORDA da lateral de trás da caixa completa (2 minifix + 2 cavilhas) — deu ' + fundoNaBorda.length);
