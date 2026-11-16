@@ -359,7 +359,7 @@ const AGREGADOS_BASE = [
   { name: 'Divisória vertical',   group_name: 'Divisórias',  icon: '▯▯', role: 'split',   split_axis: 'x', veio: 'vertical', fura: true,  min_void_w_mm: 156, default_params: { quantidade: 1 } },
   { name: 'Gaveta',               group_name: 'Gavetas',     icon: '▭',  role: 'content', veio: 'vertical', fura: true,  min_void_w_mm: 180, min_void_h_mm: 90, min_void_d_mm: 250, opening_type: 'slide_out', slides_per_unit: 2, default_params: { quantidade: 1, recuo_mm: 0 } },
   { name: 'Porta externa',        group_name: 'Portas',      icon: '▮',  role: 'front',   veio: 'vertical', fura: true,  min_void_w_mm: 120, min_void_h_mm: 180, default_params: { lado: 'left', folgas_mm: 3, sobrepoe: true } },
-  { name: 'Cabide tubular',       group_name: 'Acessórios',  icon: '⌒',  role: 'content', veio: 'livre',   fura: false, min_void_w_mm: 300, min_void_h_mm: 420, min_void_d_mm: 400, shape_type: 'oval_rod', default_params: { altura_do_topo_mm: 60 } }
+  { name: 'Cabide tubular',       group_name: 'Acessórios',  icon: '⌒',  role: 'content', veio: 'livre',   fura: false, min_void_w_mm: 300, min_void_h_mm: 420, min_void_d_mm: 400, shape_type: 'oval_rod', default_params: { altura_do_topo_mm: 100 } }
 ];
 
 async function semearAgregados() {

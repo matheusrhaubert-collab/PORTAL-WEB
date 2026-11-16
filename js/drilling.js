@@ -186,6 +186,27 @@
     };
     (parts || []).forEach(function (p) { if (p && hingeSideOf(p)) marca(p); });
   }
+  // PEÇA DEITADA MONTADA VIRADA (2026-11-16, closet canto 90°). Matt: "na base
+  // de cabide inferior os furos do tambor ficam pra cima, eles devem ficar pra
+  // baixo, pra não aparecerem". Tambor embaixo = furo no "verso" (Face B), e o
+  // código da Face B nunca foi confirmado na máquina. Mesma saída do painel
+  // 'back' virado (ver pieceBox, _viradaU): a peça é marcada como ESPELHADA —
+  // a máquina fura pela Face A, como sempre, e o montador vira a chapa. Vale
+  // pra peça cujo PROGRAMA tem todos os furos de face no verso: é o cadastro
+  // dizendo "esta chapa é montada de barriga pra baixo".
+  function marcaViradas(parts, holesByPattern) {
+    if (!holesByPattern) return;
+    const visita = function (lista) {
+      (lista || []).forEach(function (p) {
+        if (!p) return;
+        if (p.is_module) { visita(p.child_pieces); return; }
+        const rows = p.drilling_pattern_id ? holesByPattern[p.drilling_pattern_id] : null;
+        const deFace = (rows || []).filter(function (r) { return !/^borda_/.test(r.face || ''); });
+        p._viradaV = deFace.length > 0 && deFace.every(function (r) { return r.face === 'verso'; });
+      });
+    };
+    visita(parts);
+  }
   // Eixo da espessura da peça no módulo — a MESMA conta de pieceBox, sem os
   // efeitos colaterais dele (pieceBox grava _viradaU). Peça sem caixa (frente,
   // gaveta, puxador, peça girada fora de 90°) devolve null: os furos dela não
@@ -332,7 +353,9 @@
         x0: offX, sx: part.width_mm || 0,
         y0: offY, sy: part.height_mm || 0,
         z0: offZ, sz: part.depth_mm || 0,
-        uAxis: axisOf[ax.aKey], vAxis: axisOf[ax.bKey], tAxis: axisOf[ax.tKey]
+        uAxis: axisOf[ax.aKey], vAxis: axisOf[ax.bKey], tAxis: axisOf[ax.tKey],
+        // chapa deitada com o programa todo no verso = montada virada (marcaViradas)
+        mirrorAxis: (part._viradaV && axisOf[ax.tKey] === 'y') ? 'v' : null
       };
     }
     return null;
@@ -2053,6 +2076,7 @@
   // na raiz; null num nível sem posição reconstituível (cai no local).
   function collectAssembly(store, parts, W, H, D, config, ctx) {
     marcaFrentePorta(parts); // antes de qualquer furo (ver espelhaNaMaquina)
+    marcaViradas(parts, config && config.holesByPattern); // idem: pieceBox lê a marca
     const built = buildBoxes(parts, W, H, D);
     const todasLocal = built.boxes.concat(boxesAninhadas(parts, W, H, D));
     const raiz = ctx || { origem: { x: 0, y: 0, z: 0 }, todas: todasLocal };

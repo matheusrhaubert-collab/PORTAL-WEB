@@ -61,8 +61,10 @@ const fundoLateral = dump.programas[pat('Fundo (trás)')].map((r) => {
   if (!/^borda_/.test(r.face)) return Object.assign({}, r, { x_formula: fx, y_formula: trocaVar(r.x_formula, 'C', 'L') });
   return null;
 }).filter(Boolean);
+const noVerso = (rows) => rows.map((r) => /^borda_/.test(r.face) ? r : Object.assign({}, r, { face: 'verso' }));
 const programas = Object.assign({}, dump.programas, { 'fundo-b': fundoLateral,
   'closet-esq': semMinifixFundo(pat('Base B (asa em Z)'), 'borda_esq'), 'closet-dir': semMinifixFundo(pat('Base A (asa em X)'), 'borda_sup') });
+programas['closet-esq-v'] = noVerso(programas['closet-esq']); programas['closet-dir-v'] = noVerso(programas['closet-dir']);
 const linhas = [
   L('Fundo A (asa em X)', 'back', 'W-E-533', 'H', 'E', '533', '0', '0', pat('Fundo (trás)')),
   L('Fundo B (asa em Z)', 'left', 'E', 'H', 'D-2*E', '0', '0', 'E', 'fundo-b'),
@@ -71,8 +73,8 @@ const linhas = [
   L('Lateral B (asa em Z)', 'back', '533', 'H', 'E', '0', '0', 'D-E', null),
   L('Base B (asa em Z)', 'bottom', '513-E', 'E', 'D-2*E', 'E', '76', 'E', TB_E),
   L('Base A (asa em X)', 'bottom', 'W-E-513', 'E', '513-E', '513', '76', 'E', TB_D),
-  L('Prateleira do meio B (asa em Z)', 'free', '533-E', 'E', 'D-2*E', 'E', Y_MEIO, 'E', TB_E),
-  L('Prateleira do meio A (asa em X)', 'free', 'W-E-533', 'E', '533-E', '533', Y_MEIO, 'E', TB_D),
+  L('Prateleira do meio B (asa em Z)', 'free', '533-E', 'E', 'D-2*E', 'E', Y_MEIO, 'E', 'closet-esq-v'),
+  L('Prateleira do meio A (asa em X)', 'free', 'W-E-533', 'E', '533-E', '533', Y_MEIO, 'E', 'closet-dir-v'),
   L('Prateleira do cabide B (asa em Z)', 'free', '533-E', 'E', 'D-2*E', 'E', Y_CAB, 'E', TB_E),
   L('Prateleira do cabide A (asa em X)', 'free', 'W-E-533', 'E', '533-E', '533', Y_CAB, 'E', TB_D),
   L('Base superior B (asa em Z)', 'top', '533-E', 'E', 'D-2*E', 'E', 'H-E', 'E', TB_E),
@@ -188,6 +190,13 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
     ok(tamb.every((t) => t === '4/4'), 'tambores por base: B 4 (fundo de trás + lateral B), A 4 (junção + lateral A) — ' + tamb.join(' '));
     const jun = (f['Base B (asa em Z)'] || []).filter((h) => h.tipo === 'contrafuro_borda').map((h) => h.diameter).sort().join(',');
     ok(jun === '5,5,8,8', 'junção base com base: 2 pinos de minifix (Ø5) + 2 cavilhas (Ø8) na borda da B — ' + jun);
+    // tambor da prateleira do meio: embaixo no desenho, Face A na máquina
+    const h3 = g.Drilling.holesNoModulo(parts, W, H, D, { holesByPattern: programas, settings }).filter((h) => h.diameter === 12 && !h.borda);
+    const lado = (n) => [...new Set(h3.filter((h) => h.peca === n).map((h) => h.ny))].join('/');
+    ok(lado('Prateleira do meio A (asa em X)') === '-1' && lado('Prateleira do meio B (asa em Z)') === '-1', 'prateleira do meio: tambores na face de BAIXO (' + lado('Prateleira do meio A (asa em X)') + ' / ' + lado('Prateleira do meio B (asa em Z)') + ')');
+    ok(lado('Prateleira do cabide A (asa em X)') === '1' && lado('Base A (asa em X)') === '1' && lado('Base superior B (asa em Z)') === '1', 'as outras bases continuam com o tambor em cima');
+    const faces = ['A', 'B'].map((k) => [...new Set((f['Prateleira do meio ' + k + (k === 'A' ? ' (asa em X)' : ' (asa em Z)')] || []).filter((h) => h.diameter === 12).map((h) => h.face))].join('/'));
+    ok(faces.every((x) => x === 'face'), 'na máquina a prateleira do meio é furada pela Face A (' + faces.join(' , ') + ') — nada de Face B');
     ok(!f['Suporte em L do cabide (asa em X)'] && !f['Cabide A (asa em X)'] && !f['Cabide B (asa em Z)'], 'item comprado (cabide/suporte) não recebe furo');
   });
 

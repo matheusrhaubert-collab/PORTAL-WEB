@@ -816,7 +816,12 @@
       voids.push({ nodeId: node.id, box: box, locked: !!node.locked, occupied: true });
 
       if (acc.forma === 'barra') {
-        var off = num(p.altura_do_topo_mm) || 60;
+        // Fundo do cabide a 100 mm do topo do vão (era 60): alinhado com o
+        // suporte em L do closet canto 90°, que tem 100 mm de altura (Matt,
+        // 16/11: "alinha todos os demais cabides com o 100mm também pra ficar
+        // tudo alinhado"). O cadastro do agregado manda (migration 300 troca
+        // o 60 por 100 lá); este é só o padrão de quem não tem o campo.
+        var off = num(p.altura_do_topo_mm) || 100;
         // Vão raso (< 540mm): fixo a 270mm do FUNDO — ver
         // AFASTAMENTO_CABIDE_FUNDO_MM/LIMIAR_CABIDE_CENTRALIZA_MM acima.
         // Vão fundo (>= 540mm): CENTRALIZA (box.d/2), senão sobra vão vazio
