@@ -250,26 +250,25 @@ function reposSnapToClick(px, pv, axisV) {
     const lenH = box.h1 - box.h0, lenV = box.v1 - box.v0;
     const outH = px < box.r0h ? 'before' : (px > box.r1h ? 'after' : null);
     const outV = pv < box.r0v ? 'before' : (pv > box.r1v ? 'after' : null);
-    const align = (p0, r0, r1, len) => (p0 < (r0 + r1) / 2 ? r0 : r1 - len);
+    // CENTRALIZAR (15/11, Matt: "quando eu clico no meio do painel ele deve
+    // centralizar"): clique na faixa do meio (15% de cada lado do centro) da
+    // referência centraliza; fora dela alinha pela borda mais próxima.
+    const noMeio = (p0, r0, r1) => Math.abs(p0 - (r0 + r1) / 2) <= Math.max((r1 - r0) * 0.15, 15);
+    const align = (p0, r0, r1, len) => (noMeio(p0, r0, r1) ? r0 + (r1 - r0 - len) / 2 : (p0 < (r0 + r1) / 2 ? r0 : r1 - len));
     const adj = (side, r0, r1, len) => (side === 'before' ? r0 - len : r1);
     let newH, newV;
     if (outH || outV) {
       newH = outH ? adj(outH, box.r0h, box.r1h, lenH) : align(px, box.r0h, box.r1h, lenH);
       newV = outV ? adj(outV, box.r0v, box.r1v, lenV) : align(pv, box.r0v, box.r1v, lenV);
     } else {
-      // Clicou DENTRO da referência: vai pro lado mais perto do clique.
-      const dists = [
-        { k: 'h', side: 'before', dist: px - box.r0h }, { k: 'h', side: 'after', dist: box.r1h - px },
-        { k: 'v', side: 'before', dist: pv - box.r0v }, { k: 'v', side: 'after', dist: box.r1v - pv }
-      ].sort((a, b) => a.dist - b.dist);
-      const best = dists[0];
-      if (best.k === 'h') {
-        newH = adj(best.side, box.r0h, box.r1h, lenH);
-        newV = align(pv, box.r0v, box.r1v, lenV);
-      } else {
-        newV = adj(best.side, box.r0v, box.r1v, lenV);
-        newH = align(px, box.r0h, box.r1h, lenH);
-      }
+      // Clicou DENTRO da referência (15/11, Matt: "e colocar por dentro
+      // também"): o módulo fica POR DENTRO dela — encostado por dentro na
+      // borda mais perto do clique, ou centralizado se clicou no meio, nos
+      // dois sentidos. Por FORA continua sendo clicar fora da referência.
+      // Se o módulo é maior que a referência naquele sentido (ex.: painel
+      // fino na planta), não cabe por dentro: fica onde está nesse sentido.
+      newH = lenH > box.r1h - box.r0h + 0.5 ? box.h0 : align(px, box.r0h, box.r1h, lenH);
+      newV = lenV > box.r1v - box.r0v + 0.5 ? box.v0 : align(pv, box.r0v, box.r1v, lenV);
     }
     p.x += newH - box.h0;
     if (axisV === 'y') p.y += newV - box.v0; else p.z += newV - box.v0;
