@@ -303,6 +303,24 @@
       };
     }
     if (role === 'free') {
+      // Suporte em L do cabide de canto (closet canto 90°, 2026-11-16): item
+      // comprado, parafusado embaixo da prateleira — não é chapa, não entra
+      // em contato nenhum.
+      if (part.shape_type === 'suporte_cabide_canto') return null;
+      // Cabide GIRADO 90°/270° (asa em Z do closet canto 90°): o tubo corre
+      // em Z. Mesma troca de pegada do viewer3d (swapFootprint): w vai pra Z,
+      // d pra X. Só pro cabide — o resto das peças 'free' giradas segue como
+      // sempre (ver semCaixaAlinhada).
+      const rotRod = (((part.rotation_y_deg || 0) % 360) + 360) % 360;
+      if (part.shape_type === 'oval_rod' && (rotRod === 90 || rotRod === 270)) {
+        return {
+          part, role, t: { thickness: part.width_mm || 0, faceA: part.height_mm || 0, faceB: part.depth_mm || 0 },
+          x0: offX, sx: part.depth_mm || 0,
+          y0: offY, sy: part.height_mm || 0,
+          z0: offZ, sz: part.width_mm || 0,
+          uAxis: 'y', vAxis: 'x', tAxis: 'z'
+        };
+      }
       // Posição livre (migration 027): medidas mapeadas DIRETO pros eixos
       // (w->X, h->Y, d->Z) e posição 100% pelos offsets — é assim que
       // travessas/divisórias custom são cadastradas, e elas AGORA participam
@@ -1962,10 +1980,34 @@
     const CABIDE_SUPPORT_TOUCH_TOLERANCE_MM = 15;
 
     const laterals = boxes.filter(function (b) { return b.tAxis === 'x'; });
-    if (!laterals.length) return;
+
+    // Cabide que corre em Z (asa em Z do closet canto 90°, 2026-11-16): o
+    // suporte da ponta vai na peça com espessura em Z que a ponta encosta
+    // (a "Lateral B" do canto, papel 'back'). Furo no centro do tubo.
+    const paineisZ = boxes.filter(function (b) { return b.tAxis === 'z' && (!b.part || (b.part.origin || 'fabricacao') !== 'comprado'); });
+    boxes.forEach(function (rod) {
+      if (!rod.part || rod.part.shape_type !== 'oval_rod' || !(rod.sz > rod.sx)) return;
+      const c = { x: rod.x0 + rod.sx / 2, y: rod.y0 + rod.sy / 2, z: rod.z0 + rod.sz / 2 };
+      paineisZ.forEach(function (pb) {
+        if (pb === rod || mesmaSubarvore(rod, pb)) return;
+        if (c.x < pb.x0 || c.x > pb.x0 + pb.sx || c.y < pb.y0 || c.y > pb.y0 + pb.sy) return;
+        const dTras = Math.abs(rod.z0 - (pb.z0 + pb.sz));
+        const dFrente = Math.abs((rod.z0 + rod.sz) - pb.z0);
+        if (Math.min(dTras, dFrente) > CABIDE_SUPPORT_TOUCH_TOLERANCE_MM) return;
+        emitLocalHole(store, pb, {
+          u: c[pb.uAxis] - pb[pb.uAxis + '0'],
+          v: c[pb.vAxis] - pb[pb.vAxis + '0'],
+          edge: null,
+          entersPositive: c.z >= pb.z0 + pb.sz / 2,
+          diameter: CABIDE_SUPPORT_DIAMETER_MM, depth: CABIDE_SUPPORT_DEPTH_MM,
+          tipo: 'suporte_cabide'
+        });
+      });
+    });
 
     boxes.forEach(function (rod) {
       if (!rod.part || rod.part.shape_type !== 'oval_rod') return;
+      if (rod.sz > rod.sx) return; // cabide em Z: tratado acima
       const yHole = rod.y0 + rod.sy / 2;
       const zHole = rod.z0 + rod.sz / 2;
       laterals.forEach(function (lb) {

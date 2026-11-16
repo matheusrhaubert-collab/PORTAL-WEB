@@ -1819,53 +1819,117 @@
   // profundidade / offset Z = eixo Z = asa A; fórmula de largura que usa D
   // (a porta B, girada 90°) segue a asa A, e de profundidade que usa W, a B.
   // Sem a chave, ou com as duas em 609, devolve a MESMA lista.
+  //
+  // CLOSET CANTO 90° (2026-11-16): a mesma ideia serve pro canto de closet
+  // (sem porta, 533 de asa). O PADRÃO da asa não é mais fixo em 609: é lido
+  // da própria lista (profundidade da "Lateral A (asa em X)", número puro na
+  // fórmula) — base = 609, closet = 533. Os números trocados são sempre
+  // padrão + {0, −20, −76, +2, +2,5, +4,5} (na base: 609/589/533/611/611,5/
+  // 613,5, os de sempre). Módulo SEM porta: a faixa da asa é a do closet
+  // (vão aberto do outro lado de 300 a 1050).
+  // ALTURA DO CABIDE (closet): dimOverrides.__canto90.cabide_mm = centro do
+  // cabide a partir do chão. Nas fórmulas de posição Y das peças do canto o
+  // número 1910 (padrão) é trocado por ele — prateleira do cabide, cabides,
+  // suporte em L e a prateleira do meio acompanham.
   const CANTO90_ASA_PADRAO_MM = 609;
   const CANTO90_ASA_MIN_MM = 250;
   const CANTO90_ASA_MAX_MM = 700;
   const CANTO90_PORTA_MIN_MM = 100;
   const CANTO90_PORTA_MAX_MM = 600;
+  const CANTO90_CLOSET_ASA_MIN_MM = 300;
+  const CANTO90_CLOSET_ASA_MAX_MM = 800;
+  const CANTO90_CLOSET_VAO_MIN_MM = 300;
+  const CANTO90_CLOSET_VAO_MAX_MM = 1050;
+  const CANTO90_CABIDE_PADRAO_MM = 1910;
+  const CANTO90_CABIDE_MIN_MM = 1300;
+  const CANTO90_DELTAS = [0, -20, -76, 2, 2.5, 4.5];
   const CANTO90_RE_ASA = /\(asa em [XZ]\)/i;
+  const CANTO90_RE_CABIDE = /(^|[^0-9.A-Za-z_])1910(?![0-9.A-Za-z_])/g;
   function canto90TemAsas(pieces) {
     let n = 0;
     (pieces || []).forEach(function (p) { if (p && CANTO90_RE_ASA.test(String(p.reference || ''))) n++; });
     return n >= 4;
   }
-  function canto90AsasDe(dimOverrides) {
+  // Padrão da asa desta lista (profundidade da Lateral A); 609 se não achar.
+  function canto90PadraoDe(pieces) {
+    const lat = (pieces || []).find(function (p) { return p && /^Lateral A \(asa em X\)/i.test(String(p.reference || '')); });
+    const v = lat ? Number(String(lat.depth_formula == null ? '' : lat.depth_formula).trim()) : NaN;
+    return (isFinite(v) && v > 0) ? v : CANTO90_ASA_PADRAO_MM;
+  }
+  function canto90TemPorta(pieces) {
+    return (pieces || []).some(function (p) { return p && /^Porta /i.test(String(p.reference || '')) && CANTO90_RE_ASA.test(String(p.reference || '')); });
+  }
+  function canto90TemCabide(pieces) {
+    return (pieces || []).some(function (p) {
+      if (!p || !CANTO90_RE_ASA.test(String(p.reference || ''))) return false;
+      CANTO90_RE_CABIDE.lastIndex = 0;
+      return CANTO90_RE_CABIDE.test(String(p.offset_y_formula || ''));
+    });
+  }
+  // padrao: o da lista (canto90PadraoDe); sem ele, 609 (base, como sempre).
+  function canto90AsasDe(dimOverrides, padrao) {
+    const P0 = Number(padrao) > 0 ? Number(padrao) : CANTO90_ASA_PADRAO_MM;
     const c = (dimOverrides && dimOverrides.__canto90) || {};
-    const a = Number(c.asa_a_mm), b = Number(c.asa_b_mm);
-    return { a: (isFinite(a) && a > 0) ? a : CANTO90_ASA_PADRAO_MM, b: (isFinite(b) && b > 0) ? b : CANTO90_ASA_PADRAO_MM };
+    const a = Number(c.asa_a_mm), b = Number(c.asa_b_mm), k = Number(c.cabide_mm);
+    return { a: (isFinite(a) && a > 0) ? a : P0, b: (isFinite(b) && b > 0) ? b : P0,
+      cab: (isFinite(k) && k > 0) ? k : CANTO90_CABIDE_PADRAO_MM };
   }
   // Faixa da profundidade de uma asa. `medida` = a medida do módulo que cruza
   // a asa (asa B: largura W; asa A: profundidade D) — a porta daquele lado
-  // (medida − asa) tem que ficar entre 100 e 600.
-  function canto90FaixaAsa(medida) {
+  // (medida − asa) tem que ficar entre 100 e 600. opts.semPorta (closet): o
+  // vão aberto daquele lado fica entre 300 e 1050 e a asa entre 300 e 800.
+  function canto90FaixaAsa(medida, opts) {
     const m = Number(medida) || 0;
-    let min = CANTO90_ASA_MIN_MM, max = CANTO90_ASA_MAX_MM;
-    if (m > 0) { min = Math.max(min, m - CANTO90_PORTA_MAX_MM); max = Math.min(max, m - CANTO90_PORTA_MIN_MM); }
+    const sem = !!(opts && opts.semPorta);
+    let min = sem ? CANTO90_CLOSET_ASA_MIN_MM : CANTO90_ASA_MIN_MM, max = sem ? CANTO90_CLOSET_ASA_MAX_MM : CANTO90_ASA_MAX_MM;
+    const vMin = sem ? CANTO90_CLOSET_VAO_MIN_MM : CANTO90_PORTA_MIN_MM, vMax = sem ? CANTO90_CLOSET_VAO_MAX_MM : CANTO90_PORTA_MAX_MM;
+    if (m > 0) { min = Math.max(min, m - vMax); max = Math.min(max, m - vMin); }
     return { min: Math.min(min, max), max: max };
   }
-  const CANTO90_RE_NUM = /(^|[^0-9.A-Za-z_])(613\.5|611\.5|609|611|589|533)(?![0-9.A-Za-z_])/g;
+  // Faixa da altura do cabide (centro, do chão) pra um módulo de altura H.
+  function canto90FaixaCabide(H, E) {
+    const e = Number(E) > 0 ? Number(E) : DEFAULT_THICKNESS_MM;
+    const max = (Number(H) || 0) - 2 * e - 150 - 45;
+    return { min: Math.min(CANTO90_CABIDE_MIN_MM, max), max: max };
+  }
+  function canto90RegexNums(P0) {
+    const nums = CANTO90_DELTAS.map(function (dl) { return String(Math.round((P0 + dl) * 100) / 100).replace('.', '\\.'); })
+      .sort(function (x, y) { return y.length - x.length; });
+    return new RegExp('(^|[^0-9.A-Za-z_])(' + nums.join('|') + ')(?![0-9.A-Za-z_])', 'g');
+  }
   const CANTO90_RE_W = /(^|[^A-Za-z_0-9])W(?![A-Za-z_0-9])/, CANTO90_RE_D = /(^|[^A-Za-z_0-9])D(?![A-Za-z_0-9])/;
   function applyCanto90Asas(pieces, dimOverrides) {
     if (!dimOverrides || !dimOverrides.__canto90) return pieces;
-    const asas = canto90AsasDe(dimOverrides);
-    if ((Math.abs(asas.a - CANTO90_ASA_PADRAO_MM) < 0.01 && Math.abs(asas.b - CANTO90_ASA_PADRAO_MM) < 0.01) || !canto90TemAsas(pieces)) return pieces;
+    if (!canto90TemAsas(pieces)) return pieces;
+    const P0 = canto90PadraoDe(pieces);
+    const asas = canto90AsasDe(dimOverrides, P0);
+    const mudaAsas = !(Math.abs(asas.a - P0) < 0.01 && Math.abs(asas.b - P0) < 0.01);
+    const mudaCabide = Math.abs(asas.cab - CANTO90_CABIDE_PADRAO_MM) >= 0.01;
+    if (!mudaAsas && !mudaCabide) return pieces;
+    const reNum = canto90RegexNums(P0);
     const troca = function (txt, asa) {
-      return txt.replace(CANTO90_RE_NUM, function (m, antes, num) {
-        return antes + String(Math.round((asa + (Number(num) - CANTO90_ASA_PADRAO_MM)) * 100) / 100);
+      return txt.replace(reNum, function (m, antes, num) {
+        return antes + String(Math.round((asa + (Number(num) - P0)) * 100) / 100);
       });
     };
     return pieces.map(function (p) {
       if (!p) return p;
       const novo = Object.assign({}, p);
-      ['width_formula', 'depth_formula', 'offset_x_formula', 'offset_z_formula'].forEach(function (chave) {
-        const v = novo[chave];
-        if (typeof v !== 'string' || !/\d{3}/.test(v)) return;
-        let eixoX = chave === 'width_formula' || chave === 'offset_x_formula';
-        if (chave === 'width_formula' && CANTO90_RE_D.test(v) && !CANTO90_RE_W.test(v)) eixoX = false;
-        if (chave === 'depth_formula' && CANTO90_RE_W.test(v) && !CANTO90_RE_D.test(v)) eixoX = true;
-        novo[chave] = troca(v, eixoX ? asas.b : asas.a);
-      });
+      if (mudaAsas) {
+        ['width_formula', 'depth_formula', 'offset_x_formula', 'offset_z_formula'].forEach(function (chave) {
+          const v = novo[chave];
+          if (typeof v !== 'string' || !/\d{3}/.test(v)) return;
+          let eixoX = chave === 'width_formula' || chave === 'offset_x_formula';
+          if (chave === 'width_formula' && CANTO90_RE_D.test(v) && !CANTO90_RE_W.test(v)) eixoX = false;
+          if (chave === 'depth_formula' && CANTO90_RE_W.test(v) && !CANTO90_RE_D.test(v)) eixoX = true;
+          novo[chave] = troca(v, eixoX ? asas.b : asas.a);
+        });
+      }
+      if (mudaCabide && typeof novo.offset_y_formula === 'string' && CANTO90_RE_ASA.test(String(p.reference || ''))) {
+        novo.offset_y_formula = novo.offset_y_formula.replace(CANTO90_RE_CABIDE, function (m, antes) {
+          return antes + String(Math.round(asas.cab * 100) / 100);
+        });
+      }
       return novo;
     });
   }
@@ -2200,6 +2264,7 @@
     setFormulaGlobals,
     applyVeioFrentes, veioFrentesDe,
     applyCanto90Asas, canto90AsasDe, canto90TemAsas, canto90FaixaAsa, CANTO90_ASA_PADRAO_MM,
+    canto90PadraoDe, canto90TemPorta, canto90TemCabide, canto90FaixaCabide, CANTO90_CABIDE_PADRAO_MM,
     applyCanto45Corte, canto45CorteDe, canto45TemChanfro, canto45FaixaCorte, canto45PortaDoCorte, canto45CorteDaPorta,
     CANTO45_CORTE_PADRAO_MM, CANTO45_PORTA_MIN_MM, CANTO45_PORTA_MAX_MM, CANTO45_LATERAL_MIN_MM,
     calculatePiece,

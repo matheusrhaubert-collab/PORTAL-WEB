@@ -3661,6 +3661,39 @@ const Viewer3D = (function () {
     return g;
   }
 
+  // SUPORTE EM L DO CABIDE DE CANTO (2026-11-16, closet canto 90°): item
+  // comprado (foto do Matt) — chapinha de 2 furos parafusada embaixo da
+  // prateleira, haste descendo e 2 encaixes ovais a 90° (um pra cada
+  // cabide: +X e +Z). Sempre preto, igual ao cabide. Mesmo padrão dos
+  // DECOR_BUILDERS: base em y=0, centrado em X/Z.
+  function buildSuporteCabideCanto(W, H, D, mats) {
+    const g = new THREE.Group();
+    const preto = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.35, roughness: 0.45 });
+    const chapa = decorBoxMesh(0.07, 0.005, 0.024, preto);
+    chapa.rotation.y = Math.PI / 4;
+    chapa.position.set(0, H - 0.0025, 0);
+    g.add(chapa);
+    const yC = H - 0.045;                       // centro dos encaixes = centro do cabide
+    const haste = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, Math.max(H - 0.005 - yC, 0.005), 16), preto);
+    haste.position.set(0, (H - 0.005 + yC) / 2, 0);
+    g.add(haste);
+    const cubo = decorBoxMesh(0.024, 0.038, 0.024, preto);
+    cubo.position.set(0, yC, 0);
+    g.add(cubo);
+    // encaixes ovais (tubo 30 × 15 por dentro): eixo em X e eixo em Z
+    [0, 1].forEach((k) => {
+      const enc = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.028, 20, 1, true), preto);
+      const grupo = new THREE.Group();
+      enc.rotation.z = Math.PI / 2;             // deita o eixo em X
+      enc.scale.set(0.019, 1, 0.0115);          // oval: alto (Y) × estreito
+      grupo.add(enc);
+      grupo.position.set(k === 0 ? 0.014 + 0.012 : 0, yC, k === 0 ? 0 : 0.014 + 0.012);
+      if (k === 1) grupo.rotation.y = -Math.PI / 2;  // eixo em Z, abrindo pra +Z
+      g.add(grupo);
+    });
+    return g;
+  }
+
   const DECOR_BUILDERS = {
     gaveta_dovetail: buildGavetaDovetail, lixeira_dovetail: buildLixeiraDovetail, spice_pullout: buildSpicePullout, // migration 226 (Spice) // migration 224 (Trash) // migration 203
     decor_fogao: buildDecorFogao,
@@ -3675,6 +3708,7 @@ const Viewer3D = (function () {
     decor_coifa: buildDecorCoifa,
     decor_spice_rack: buildDecorSpiceRack,
     decor_wine_rack: buildDecorWineRack, // 2026-10-18 (item comprado)
+    suporte_cabide_canto: buildSuporteCabideCanto, // 2026-11-16 (closet canto 90°, item comprado)
     decor_lava_seca: buildDecorLavaSeca,
     decor_porta: buildDecorPorta,
     decor_janela: buildDecorJanela,

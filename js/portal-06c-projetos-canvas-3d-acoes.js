@@ -1180,8 +1180,9 @@ function renderProjectConfigPanel() {
       canto90Block = `<div class="po-proj-config-dims po-proj-config-canto45"><span class="po-proj-config-section-label">${I18n.t('project.canto90_label')}</span>`
         + linha90('a', I18n.t('project.canto90_lat_direita'), c90.asaAMm, c90.faixaA)
         + linha90('b', I18n.t('project.canto90_lat_frente'), c90.asaBMm, c90.faixaB)
+        + (c90.temCabide && c90.faixaCab ? linha90('cab', I18n.t('project.canto90_cabide'), c90.cabideMm, c90.faixaCab) : '')
         + (c90.temAjuste ? `<button type="button" class="secondary po-proj-canto90-reset" style="margin-top:4px">↺ ${I18n.t('project.canto90_reset')}</button>` : '')
-        + `<p class="hint" style="margin:4px 0 0">${I18n.t('project.canto90_hint')}</p></div>`;
+        + `<p class="hint" style="margin:4px 0 0">${I18n.t(c90.semPorta ? 'project.canto90_hint_closet' : 'project.canto90_hint')}</p></div>`;
     }
   } catch (e) { canto90Block = ''; }
 
@@ -5417,24 +5418,33 @@ let projectCanto45Raf = null;
 // do módulo); asa B = lateral da frente (corre na largura).
 function projectCanto90Info(slot) {
   if (!slot || !slot.module || typeof Pricing === 'undefined' || !Pricing.canto90TemAsas) return null;
-  try { if (!Pricing.canto90TemAsas(projectSlotEffectivePieces(slot))) return null; } catch (e) { return null; }
-  const asas = Pricing.canto90AsasDe(slot.dimOverrides);
-  return { asaAMm: asas.a, asaBMm: asas.b,
-    faixaA: Pricing.canto90FaixaAsa(Number(slot.depth_mm)), faixaB: Pricing.canto90FaixaAsa(Number(slot.width_mm)),
+  let pecas;
+  try { pecas = projectSlotEffectivePieces(slot); if (!Pricing.canto90TemAsas(pecas)) return null; } catch (e) { return null; }
+  // padrão da asa vem do próprio módulo (base 609, closet 533 — 16/11)
+  const P0 = Pricing.canto90PadraoDe ? Pricing.canto90PadraoDe(pecas) : Pricing.CANTO90_ASA_PADRAO_MM;
+  const semPorta = Pricing.canto90TemPorta ? !Pricing.canto90TemPorta(pecas) : false;
+  const temCabide = Pricing.canto90TemCabide ? Pricing.canto90TemCabide(pecas) : false;
+  const asas = Pricing.canto90AsasDe(slot.dimOverrides, P0);
+  return { asaAMm: asas.a, asaBMm: asas.b, cabideMm: asas.cab, padraoMm: P0, semPorta, temCabide,
+    faixaA: Pricing.canto90FaixaAsa(Number(slot.depth_mm), { semPorta }), faixaB: Pricing.canto90FaixaAsa(Number(slot.width_mm), { semPorta }),
+    faixaCab: temCabide && Pricing.canto90FaixaCabide ? Pricing.canto90FaixaCabide(Number(slot.height_mm)) : null,
     temAjuste: !!(slot.dimOverrides && slot.dimOverrides.__canto90) };
 }
-// lado 'a' | 'b'; lado null = as duas voltam pro padrão (609).
+// lado 'a' | 'b' | 'cab' (altura do cabide, closet); lado null = tudo volta
+// pro padrão do módulo.
 function setProjectSlotCanto90Asa(slot, lado, mm) {
   if (!slot) return;
   const novo = { ...(slot.dimOverrides || {}) };
-  if (lado !== 'a' && lado !== 'b') delete novo.__canto90;
+  const info = projectCanto90Info(slot);
+  if (!info || (lado !== 'a' && lado !== 'b' && lado !== 'cab')) delete novo.__canto90;
   else {
-    const asas = Pricing.canto90AsasDe(slot.dimOverrides);
-    const faixa = Pricing.canto90FaixaAsa(Number(lado === 'a' ? slot.depth_mm : slot.width_mm));
-    asas[lado] = Math.round(Math.min(Math.max(Number(mm), faixa.min), faixa.max) * 10) / 10;
-    const P0 = Pricing.CANTO90_ASA_PADRAO_MM;
-    if (Math.abs(asas.a - P0) < 0.05 && Math.abs(asas.b - P0) < 0.05) delete novo.__canto90;
-    else novo.__canto90 = { asa_a_mm: asas.a, asa_b_mm: asas.b };
+    const cur = { a: info.asaAMm, b: info.asaBMm, cab: info.cabideMm };
+    const faixa = lado === 'a' ? info.faixaA : lado === 'b' ? info.faixaB : info.faixaCab;
+    if (faixa) cur[lado] = Math.round(Math.min(Math.max(Number(mm), faixa.min), faixa.max) * 10) / 10;
+    const o = {};
+    if (Math.abs(cur.a - info.padraoMm) >= 0.05 || Math.abs(cur.b - info.padraoMm) >= 0.05) { o.asa_a_mm = cur.a; o.asa_b_mm = cur.b; }
+    if (info.temCabide && Math.abs(cur.cab - Pricing.CANTO90_CABIDE_PADRAO_MM) >= 0.05) o.cabide_mm = cur.cab;
+    if (Object.keys(o).length) novo.__canto90 = o; else delete novo.__canto90;
   }
   slot.dimOverrides = novo;
   try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço antigo continua */ }
