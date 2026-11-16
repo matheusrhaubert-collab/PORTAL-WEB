@@ -901,9 +901,25 @@ function isProjectWallPanelSlot(slot) {
   const d = Number(slot.depth_mm || 0);
   return d > 0 && d <= PROJECT_WALL_PANEL_MAX_DEPTH_MM;
 }
-// Mesma camada de parede? (painel x painel, ou módulo x módulo)
+// PAINEL "DE FUNDO" x PAINEL OBSTÁCULO (15/11, Matt: "quando vou colocar
+// esse módulo colado no painel perto do chão ele joga pra frente... quero
+// encostar no painel, ele não pode ir pra frente sozinho"). O módulo só passa
+// NA FRENTE do painel (camada de fundo, regra de 05/11) quando o painel cobre
+// a ALTURA INTEIRA do módulo — ripado, cabeceira, revestimento atrás do
+// móvel. Painel mais baixo/curto que o módulo (faixa perto do chão, etc.) é
+// obstáculo normal: o módulo encosta nele e para, sem recuar da parede.
+function projectWallPanelIsBackdrop(panel, mod, y0Mod) {
+  const y0 = y0Mod != null ? Number(y0Mod) : Number(mod.floor_height_mm || 0);
+  const h = Number(mod.height_mm || 0);
+  const py = Number(panel.floor_height_mm || 0), ph = Number(panel.height_mm || 0);
+  return py <= y0 + 2 && py + ph >= y0 + h - 2;
+}
+// Mesma camada de parede? (painel x painel, módulo x módulo, ou painel que
+// NÃO é fundo pro módulo — aí os dois se barram)
 function projectSameWallLayer(a, b) {
-  return isProjectWallPanelSlot(a) === isProjectWallPanelSlot(b);
+  const pa = isProjectWallPanelSlot(a), pb = isProjectWallPanelSlot(b);
+  if (pa === pb) return true;
+  return !projectWallPanelIsBackdrop(pa ? a : b, pa ? b : a);
 }
 // Quanto o módulo recua da parede por estar na frente de painel(éis).
 // `ov` = { xMm, floorHeightMm } pra testar uma posição candidata (arraste).
@@ -918,6 +934,7 @@ function projectSlotWallStandoffMm(slot, ov) {
   let recuo = 0;
   (projectSlots || []).forEach((p) => {
     if (p === slot || p.oculto || !isProjectWallPanelSlot(p) || Number(p.wall_index || 0) !== wall) return;
+    if (!projectWallPanelIsBackdrop(p, slot, y0)) return; // painel baixo = obstáculo, não recua (15/11)
     const px = Number(p.x_mm || 0), py = Number(p.floor_height_mm || 0);
     const pw = Number(p.width_mm || 0), ph = Number(p.height_mm || 0);
     if (x0 < px + pw - EPS && x0 + w > px + EPS && y0 < py + ph - EPS && y0 + h > py + EPS) {
