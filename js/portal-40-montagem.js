@@ -106,7 +106,7 @@
     if (t === 'corredica' || t === 'placa_corredica') return 'corredica';
     if (t === 'suporte_prateleira') return 'suporte';
     if (t === 'linha_prateleira') return h.comPino ? 'suporte' : null;
-    if (t === 'marcacao_dobradica' || t === 'marcacao_puxador' || t === 'suporte_cabide') return null;
+    if (t === 'marcacao_dobradica' || t === 'marcacao_puxador' || t === 'suporte_cabide' || t === 'marcacao_suporte_canto') return null;
     if (Math.abs(d - 5) < 0.6) return 'pino';
     if (Math.abs(d - 8) < 0.6) return 'cavilha';
     if (Math.abs(d - 16) < 0.6 && h.naPrateleira) return null;   // copo do conector da prateleira

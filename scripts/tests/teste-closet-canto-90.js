@@ -197,6 +197,18 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
     ok(lado('Prateleira do cabide A (asa em X)') === '1' && lado('Base A (asa em X)') === '1' && lado('Base superior B (asa em Z)') === '1', 'as outras bases continuam com o tambor em cima');
     const faces = ['A', 'B'].map((k) => [...new Set((f['Prateleira do meio ' + k + (k === 'A' ? ' (asa em X)' : ' (asa em Z)')] || []).filter((h) => h.diameter === 12).map((h) => h.face))].join('/'));
     ok(faces.every((x) => x === 'face'), 'na máquina a prateleira do meio é furada pela Face A (' + faces.join(' , ') + ') — nada de Face B');
+    // marcação do suporte em L: 3 furos Ø3 × 2, raio 15, por baixo da prateleira B
+    const hs = g.Drilling.holesNoModulo(parts, W, H, D, { holesByPattern: programas, settings }).filter((h) => h.tipo === 'marcacao_suporte_canto');
+    const kBx = E + ((asaB - E) < 540 ? 270 : (asaB - E) / 2), kAz = E + ((asaA - E) < 540 ? 270 : (asaA - E) / 2);
+    ['Prateleira do cabide B (asa em Z)', 'Prateleira do meio B (asa em Z)'].forEach((n) => {
+      const m3 = hs.filter((h) => h.peca === n);
+      const raios = m3.map((h) => Math.hypot(h.x - kBx, h.z - kAz)), lados = m3.map((h, i) => Math.hypot(h.x - m3[(i + 1) % 3].x, h.z - m3[(i + 1) % 3].z));
+      ok(m3.length === 3 && raios.every((r) => perto(r, 15, 0.2)) && lados.every((l) => perto(l, 15 * Math.sqrt(3), 0.3)) && m3.every((h) => h.ny === -1 && h.diameter === 3 && h.depth === 2),
+        n + ': 3 marcas Ø3 × 2 por baixo, raio 15 do centro do suporte, triângulo equilátero (lado ' + (lados[0] || 0).toFixed(1) + ')');
+    });
+    ok(hs.length === 6, 'só as 2 prateleiras da caixa completa levam a marcação (deu ' + hs.length + ' furos)');
+    const faceMarca = (n) => [...new Set((f[n] || []).filter((h) => h.tipo === 'marcacao_suporte_canto').map((h) => h.face))].join('/');
+    console.log('       na máquina: prateleira do meio = ' + faceMarca('Prateleira do meio B (asa em Z)') + ' | prateleira do cabide = ' + faceMarca('Prateleira do cabide B (asa em Z)'));
     ok(!f['Suporte em L do cabide (asa em X)'] && !f['Cabide A (asa em X)'] && !f['Cabide B (asa em Z)'], 'item comprado (cabide/suporte) não recebe furo');
   });
 

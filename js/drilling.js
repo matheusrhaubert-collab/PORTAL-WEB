@@ -2056,6 +2056,49 @@
     });
   }
 
+  // 3f. MARCAÇÃO DO SUPORTE EM L DO CABIDE DE CANTO (2026-11-16, closet canto
+  // 90°). Matt, com a foto do suporte (flange redonda com 3 parafusos presa
+  // embaixo da prateleira): "preciso que faça marcação do suporte por baixo
+  // das prateleiras desse closet... a marcação deve ficar no raio de 15mm do
+  // centro. são 3 furos separados igualmente formando um triângulo perfeito.
+  // 3mm, 2mm profundidade". Pra cada peça shape_type 'suporte_cabide_canto'
+  // (item comprado, sem caixa — ver pieceBox): 3 furos Ø3 × 2 na chapa
+  // DEITADA em que o topo dele encosta, entrando por BAIXO, a 15 mm do centro
+  // do suporte, a 120° um do outro (um apontando pra frente).
+  // Face: prateleira montada virada (marcaViradas) -> sai na Face A junto dos
+  // tambores; prateleira normal -> face de baixo ('verso').
+  function collectSuporteCantoMarks(store, parts, boxes) {
+    const RAIO_MM = 15, DIAM_MM = 3, PROF_MM = 2, TOL_MM = 3;
+    const legH = legHeightMm(parts);
+    const deitadas = boxes.filter(function (b) { return b.tAxis === 'y' && b.part && (b.part.origin || 'fabricacao') !== 'comprado'; });
+    if (!deitadas.length) return;
+    (parts || []).forEach(function (s) {
+      if (!s || s.is_module || s.shape_type !== 'suporte_cabide_canto') return;
+      const rot = (((s.rotation_y_deg || 0) % 360) + 360) % 360;
+      const fw = (rot === 90 || rot === 270) ? (s.depth_mm || 0) : (s.width_mm || 0);
+      const fd = (rot === 90 || rot === 270) ? (s.width_mm || 0) : (s.depth_mm || 0);
+      const cx = (Number(s.offset_x_mm) || 0) + fw / 2, cz = (Number(s.offset_z_mm) || 0) + fd / 2;
+      const topo = (Number(s.offset_y_mm) || 0) + (s.height_mm || 0) + legH;
+      const alvo = deitadas.find(function (b) {
+        return Math.abs(b.y0 - topo) <= TOL_MM
+          && cx - RAIO_MM >= b.x0 && cx + RAIO_MM <= b.x0 + b.sx && cz - RAIO_MM >= b.z0 && cz + RAIO_MM <= b.z0 + b.sz;
+      });
+      if (!alvo) return;
+      [90, 210, 330].forEach(function (graus) {
+        const a = graus * Math.PI / 180;
+        const p = { x: cx + RAIO_MM * Math.cos(a), z: cz + RAIO_MM * Math.sin(a) };
+        emitLocalHole(store, alvo, {
+          u: p[alvo.uAxis] - alvo[alvo.uAxis + '0'],
+          v: p[alvo.vAxis] - alvo[alvo.vAxis + '0'],
+          edge: null,
+          entersPositive: false,   // por baixo
+          diameter: DIAM_MM, depth: PROF_MM,
+          tipo: 'marcacao_suporte_canto'
+        });
+      });
+    });
+  }
+
   // ---- percurso recursivo do módulo ------------------------------------
   // parts = saída de resolvePiecesForViewer (admin.js); container = {W,H,D}
   // em mm. Coleta furos de TODAS as peças-folha (recursão em child_pieces
@@ -2093,6 +2136,7 @@
     collectShelfSupportHoles45(store, todasLocal, config.settings);
     collectAdjustableShelfLineHoles(store, todasLocal, config.settings); // migration 204
     collectCabideSupportHoles(store, todasLocal);
+    collectSuporteCantoMarks(store, parts, todasLocal);
     const caixas = caixasDasPecasModulo(parts, W, H, D);
     (parts || []).forEach(function (part) {
       if (part.is_module && part.child_pieces && part.child_pieces.length) {
