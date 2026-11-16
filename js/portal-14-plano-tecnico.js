@@ -409,7 +409,7 @@ function ptPieceBoxesForWall(scene, wallGeo, mode) {
             let kind = 'solid';
             if (d <= PT_THIN_MM && w > PT_THIN_MM && h > PT_THIN_MM) kind = 'face';
             else if (w <= PT_THIN_MM || h <= PT_THIN_MM) kind = 'cut';
-            out.push({ aMin, aMax, yMin, yMax, nMin, kind });
+            out.push({ aMin, aMax, yMin, yMax, nMin, nMax, kind, slotId: ud.slotId });
           }
         }
         return; // a peça é a unidade — não desce nos filhos (arestas etc.)
@@ -447,6 +447,118 @@ function ptDrawPieces(ctx, boxes, S, fs) {
       ctx.strokeRect(r.x, r.y, r.w, r.h);
     }
     ctx.restore();
+  });
+}
+
+// ---------- COTAS INTERNAS na vista sem portas (16/11) ----------
+// Pedido do Matt: "nessa vista 'sem porta' pode colocar as medidas internas,
+// distância entre as peças". Por módulo, a partir das mesmas caixas do corte:
+//   - VERTICAL: vão livre entre chapas horizontais seguidas (base, prateleira,
+//     tampo) — face de cima de uma até a face de baixo da outra;
+//   - HORIZONTAL: vão livre entre chapas verticais (laterais, divisórias).
+// Só chapa de verdade conta: fina num sentido, ≥ 150 mm no outro e ≥ 100 mm
+// de fundura (cabide, rodapé e fundo ficam de fora). Uma coluna de cotas por
+// "baia" (conjunto diferente de chapas atravessadas), desenhada perto da
+// lateral esquerda da baia pra não brigar com o nome do módulo no centro.
+// Cor própria (verde) pra não confundir com as cotas externas (azul).
+const PT_COLOR_DIM_IN = '#0b6e5a';
+const PT_IN_MIN_GAP_MM = 40;
+function ptDrawInternalDims(ctx, boxes, slots, S, fs) {
+  const fi = fs * 0.72, tick = fi * 0.32, col = PT_COLOR_DIM_IN;
+  const porSlot = new Map();
+  boxes.forEach((b) => {
+    if (b.kind !== 'cut' || b.slotId == null) return;
+    if ((b.nMax - b.nMin) * 1000 < 100) return;
+    const w = (b.aMax - b.aMin) * 1000, h = (b.yMax - b.yMin) * 1000;
+    let tipo = null;
+    if (h <= PT_THIN_MM && w >= 150) tipo = 'h';
+    else if (w <= PT_THIN_MM && h >= 150) tipo = 'v';
+    if (!tipo) return;
+    if (!porSlot.has(b.slotId)) porSlot.set(b.slotId, { h: [], v: [] });
+    porSlot.get(b.slotId)[tipo].push(b);
+  });
+  const cotaV = (a, y0, y1, evitaY) => {
+    const p0 = S(a, y0), p1 = S(a, y1);
+    const top = p0.y < p1.y ? p0 : p1, bot = p0.y < p1.y ? p1 : p0;
+    const len = bot.y - top.y;
+    if (len < fi * 1.1) return;
+    ptLine(ctx, top, bot, col, 1.3);
+    [top, bot].forEach((q) => ptLine(ctx, { x: q.x - tick, y: q.y + tick }, { x: q.x + tick, y: q.y - tick }, col, 1.8));
+    const text = ptFmt((y1 - y0) * 1000);
+    ctx.font = ptFont(fi);
+    const tw = ctx.measureText(text).width;
+    let t = 0.5;
+    if (evitaY != null && Math.abs((top.y + bot.y) / 2 - evitaY) < fs * 2.6 && len > fs * 7) t = 0.2;
+    const ty = top.y + len * t;
+    if (tw + fi * 0.6 <= len) ptTextOnLine(ctx, text, top.x, ty, -Math.PI / 2, fi, col);
+    else {
+      ctx.save(); ctx.font = ptFont(fi * 0.92);
+      const w2 = ctx.measureText(text).width;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(top.x + fi * 0.35, ty - fi * 0.6, w2 + fi * 0.4, fi * 1.2);
+      ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, top.x + fi * 0.55, ty + 1);
+      ctx.restore();
+    }
+  };
+  const cotaH = (y, a0, a1) => {
+    const p0 = S(a0, y), p1 = S(a1, y);
+    const l = p0.x < p1.x ? p0 : p1, r = p0.x < p1.x ? p1 : p0;
+    const len = r.x - l.x;
+    const text = ptFmt((a1 - a0) * 1000);
+    ctx.font = ptFont(fi);
+    if (ctx.measureText(text).width + fi * 0.6 > len) return;
+    ptLine(ctx, l, r, col, 1.3);
+    [l, r].forEach((q) => ptLine(ctx, { x: q.x - tick, y: q.y + tick }, { x: q.x + tick, y: q.y - tick }, col, 1.8));
+    ptTextOnLine(ctx, text, (l.x + r.x) / 2, l.y, 0, fi, col);
+  };
+  // vãos livres (m) entre chapas horizontais que atravessam a posição `a`,
+  // dentro da faixa de altura [yLo, yHi]
+  const vaosEm = (hz, a, yLo, yHi) => {
+    const l = hz.filter((b) => b.aMin < a && b.aMax > a && b.yMax > yLo - 0.001 && b.yMin < yHi + 0.001)
+      .sort((u, v) => u.yMin - v.yMin);
+    const out = [];
+    for (let i = 0; i < l.length - 1; i++) {
+      const g0 = l[i].yMax, g1 = l[i + 1].yMin;
+      if ((g1 - g0) * 1000 >= PT_IN_MIN_GAP_MM) out.push([g0, g1]);
+    }
+    return out;
+  };
+  porSlot.forEach((grp, slotId) => {
+    const slot = (slots || []).find((s) => s.id === slotId);
+    let evitaY = null;
+    if (slot) {
+      const a0 = Number(slot.x_mm || 0) / 1000, y0 = Number(slot.floor_height_mm || 0) / 1000;
+      evitaY = (S(a0, y0).y + S(a0, y0 + Number(slot.height_mm || 0) / 1000).y) / 2;
+    }
+    // --- verticais: uma coluna por baia ---
+    const vistos = new Set();
+    grp.h.slice().sort((u, v) => (u.aMax - u.aMin) - (v.aMax - v.aMin)).forEach((b) => {
+      const a = b.aMin + (b.aMax - b.aMin) * 0.16;
+      const cruz = grp.h.map((x, i) => ((x.aMin < a && x.aMax > a) ? i : -1)).filter((i) => i >= 0);
+      const sig = cruz.join(',');
+      if (cruz.length < 2 || vistos.has(sig)) return;
+      vistos.add(sig);
+      vaosEm(grp.h, a, -Infinity, Infinity).forEach((g) => cotaV(a, g[0], g[1], evitaY));
+    });
+    // --- horizontais: vão entre laterais/divisórias ---
+    const vistosH = new Set();
+    grp.v.slice().sort((u, v) => (u.yMax - u.yMin) - (v.yMax - v.yMin)).forEach((b) => {
+      const yRef = (b.yMin + b.yMax) / 2;
+      const l = grp.v.filter((x) => x.yMin < yRef && x.yMax > yRef).sort((u, v) => u.aMin - v.aMin);
+      for (let i = 0; i < l.length - 1; i++) {
+        const g0 = l[i].aMax, g1 = l[i + 1].aMin;
+        if ((g1 - g0) * 1000 < PT_IN_MIN_GAP_MM) continue;
+        const yLo = Math.max(l[i].yMin, l[i + 1].yMin), yHi = Math.min(l[i].yMax, l[i + 1].yMax);
+        const sig = Math.round(g0 * 1000) + ':' + Math.round(g1 * 1000);
+        if (vistosH.has(sig)) continue;
+        vistosH.add(sig);
+        // dentro do vão livre mais alto que tenha altura pra cota
+        const vs = vaosEm(grp.h, (g0 + g1) / 2, yLo, yHi).filter((g) => (g[1] - g[0]) * 1000 >= 120).sort((u, v) => v[1] - u[1]);
+        const y = vs.length ? vs[0][1] - Math.min((vs[0][1] - vs[0][0]) * 0.3, 0.09) : yHi - 0.08;
+        cotaH(y, g0, g1);
+      }
+    });
   });
 }
 
@@ -847,7 +959,15 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
     ctx.restore();
   });
   ctx.drawImage(img, padL, padT);
-  if (hideFronts) ptDrawPieces(ctx, ptPieceBoxesForWall(scene, wallGeo), S, fs);
+  if (hideFronts) {
+    const caixas = ptPieceBoxesForWall(scene, wallGeo);
+    ptDrawPieces(ctx, caixas, S, fs);
+    // cotas internas (vão livre entre as peças) — a folha de um módulo só já
+    // tem a corrente dela e a vista lateral sobrepõe os módulos
+    if (!wallGeo._moduleSheet && !wallGeo._noLabels) {
+      try { ptDrawInternalDims(ctx, caixas, slots, S, fs); } catch (e) { console.warn('[plano técnico] cotas internas', e); }
+    }
+  }
   ptLine(ctx, { x: xL - fs, y: yFloor }, { x: xR + fs, y: yFloor }, '#222', 3);
 
   // rótulos dos módulos (dentro do retângulo) — a vista LATERAL não tem
