@@ -821,7 +821,15 @@
         // 16/11: "alinha todos os demais cabides com o 100mm também pra ficar
         // tudo alinhado"). O cadastro do agregado manda (migration 300 troca
         // o 60 por 100 lá); este é só o padrão de quem não tem o campo.
-        var off = num(p.altura_do_topo_mm) || 100;
+        // O 60 ANTIGO FICA GRAVADO NO VÃO: ao inserir o cabide, o Construtor
+        // copia os parâmetros padrão pra dentro do vão (setContent, acima) —
+        // então módulo de catálogo salvo no Construtor e projeto já montado
+        // carregam "60" escrito, e trocar o padrão do agregado não chegava
+        // neles (Matt, mesmo dia: "atualizei, troquei o módulo e ainda os
+        // cabides não estão alinhados"). 60 = padrão antigo = vai pra 100.
+        // Qualquer OUTRO valor digitado continua valendo.
+        var offCad = num(p.altura_do_topo_mm);
+        var off = (!offCad || offCad === 60) ? 100 : offCad;
         // Vão raso (< 540mm): fixo a 270mm do FUNDO — ver
         // AFASTAMENTO_CABIDE_FUNDO_MM/LIMIAR_CABIDE_CENTRALIZA_MM acima.
         // Vão fundo (>= 540mm): CENTRALIZA (box.d/2), senão sobra vão vazio

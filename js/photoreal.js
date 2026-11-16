@@ -1988,10 +1988,14 @@ const Photoreal = (() => {
   function buildSuporteCabideCanto(W, H, D, mats) {
     const g = new T.Group();
     const preto = new T.MeshStandardMaterial({ color: 0x111111, metalness: 0.35, roughness: 0.45 });
-    const chapa = decorBoxMesh(0.07, 0.005, 0.024, preto);
-    chapa.rotation.y = Math.PI / 4;
-    chapa.position.set(0, H - 0.0025, 0);
+    // flange REDONDA de 3 parafusos (foto do Matt, 16/11) — os parafusos ficam
+    // a 15 mm do centro (drilling.js collectSuporteCantoMarks), então Ø45
+    const chapa = new T.Mesh(new T.CylinderGeometry(0.0225, 0.0225, 0.004, 28), preto);
+    chapa.position.set(0, H - 0.002, 0);
     g.add(chapa);
+    const colar = new T.Mesh(new T.CylinderGeometry(0.011, 0.011, 0.008, 20), preto);
+    colar.position.set(0, H - 0.008, 0);
+    g.add(colar);
     // suporte real tem 100 mm de altura (Matt, 16/11): o cabide (30 de altura) fica dos 100 pra cima,
     // então o centro do encaixe está 15 mm acima da ponta de baixo
     const yC = Math.min(0.015, H / 2);          // centro dos encaixes = centro do cabide
