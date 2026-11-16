@@ -95,7 +95,7 @@ ok(P.applyCanto90Asas(linhas, {}) === linhas && P.applyCanto90Asas(linhas, { __c
 const fx = P.canto90FaixaAsa(1067, { semPorta: true });
 ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + JSON.stringify(fx) + ')');
 
-[[1067, 2400, 1067, null, null, null], [1200, 2400, 1000, 450, 650, 1700], [1067, 2000, 1067, null, null, null], [1583, 2700, 900, 700, 600, null]]
+[[1000, 2400, 1000, null, null, null], [1039, 2400, 1000, 450, 650, 1700], [1000, 2000, 1000, null, null, null], [1039, 2700, 900, 600, 700, null], [1039, 2700, 1019, null, null, null]]
   .forEach(([W, H, D, A, B, CAB]) => {
     const asaA = A || 533, asaB = B || 533;
     const ov = (A || CAB) ? { __canto90: Object.assign({}, A ? { asa_a_mm: A, asa_b_mm: B } : {}, CAB ? { cabide_mm: CAB } : {}) } : {};
@@ -110,6 +110,7 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
       return q.offset_x_mm < -0.01 || q.offset_z_mm < -0.01 || q.offset_y_mm < -0.01 || q.offset_x_mm + sx > W + 0.01 || q.offset_z_mm + sz > D + 0.01 || q.offset_y_mm + q.height_mm > H + 0.01;
     });
     ok(!fora.length, 'nada passa do módulo' + (fora.length ? ' (' + fora.map((q) => q.reference).join(', ') + ')' : ''));
+    ok(p('Fundo (trás)').width_mm <= 1000 && p('Fundo (esquerda)').depth_mm <= 1000, 'fundos cabem na máquina (≤ 1000): ' + p('Fundo (trás)').width_mm + ' / ' + p('Fundo (esquerda)').depth_mm);
     // 2. bases
     ['Base', 'Prateleira do meio', 'Prateleira do cabide', 'Base superior'].forEach((n) => {
       const bb = p(n + ' B (asa em Z)'), ba = p(n + ' A (asa em X)');
