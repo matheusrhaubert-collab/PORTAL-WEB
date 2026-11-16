@@ -287,6 +287,14 @@ function refreshProject3DStatusBar() {
 // senão resolveModuleFaceAttachments ia reescrever a posição por cima do
 // que a pessoa acabou de arrastar, no próximo render.
 function convertProjectSlotToFloor(slot, xMm, zMm) {
+  // Saindo de uma PAREDE: fica virado pro mesmo lado em que estava (15/11).
+  // Antes o giro ficava com o que sobrou da última vez que foi ilha (ou 0):
+  // tirar um módulo de uma parede lateral pro chão o virava — e, num grupo,
+  // o bloco inteiro virava junto ("cada vez que clico ele vira os módulos").
+  if (slot.placement !== 'floor' && typeof getProjectWallGeometry === 'function') {
+    const wg = (getProjectWallGeometry() || []).find((w) => w.wallIndex === Number(slot.wall_index || 0));
+    if (wg) slot.floor_rotation_deg = ((((wg.rotationY * 180) / Math.PI) % 360) + 360) % 360;
+  }
   slot.placement = 'floor';
   slot.floor_x_mm = Number(xMm || 0);
   slot.floor_z_mm = Number(zMm || 0);
@@ -777,20 +785,34 @@ function detachProjectSlotFromWallForRotation(slot, group) {
 // No soltar, membro cujo ângulo novo bate com uma parede e que fica colado
 // nela vira módulo daquela parede; senão vira ilha com o giro certo. Depois,
 // UM deslocamento só pro bloco caber na parede (nunca clamp por membro).
+// POSE de um módulo no mundo, do jeito que ele é DESENHADO: centro (com o
+// recuo de painel e o afastamento fino da parede), ângulo e altura da base
+// (floor_height + ajuste fino). É a única "régua" do grupo (4ª rodada, 15/11).
 function projectGroupBox(slot) {
   const b = projectSlotWorldBox3D(slot);
-  return b ? { cx: b.cx, cz: b.cz, ang: b.angleRad, y: Number(slot.floor_height_mm || 0) } : null;
+  if (!b) return null;
+  const fz = isFloorSlot(slot) ? 0 : Number(slot.fineOffsetZMm || 0);
+  return {
+    cx: b.cx - Math.sin(b.angleRad) * fz,
+    cz: b.cz + Math.cos(b.angleRad) * fz,
+    ang: b.angleRad,
+    y: Number(slot.floor_height_mm || 0) + Number(slot.fineOffsetYMm || 0)
+  };
 }
 function beginProjectGroupCoDrag(state, primarySlot) {
   state.groupCoDrag = null;
   if (!state || !primarySlot || typeof projectActiveGroupSelectionIds !== 'function') return;
   let ids = projectActiveGroupSelectionIds(primarySlot);
-  // Módulo de GRUPO SALVO agarrado direto, sem o grupo estar selecionado
-  // antes (2026-10-06): usa o grupo salvo.
   if ((!ids || ids.size < 2) && primarySlot.group_id) {
     ids = new Set(projectSlots.filter((s) => s.group_id === primarySlot.group_id).map((s) => s.id));
   }
   if (!ids || ids.size < 2) return;
+  // Principal ANEXADO a um módulo do próprio grupo: solta (senão cada render
+  // recalcula a posição dele pelo "pai" e o bloco anda sozinho).
+  if (primarySlot.attached_to_slot_id != null && ids.has(primarySlot.attached_to_slot_id)) {
+    primarySlot.attached_to_slot_id = null;
+    primarySlot.attached_face = null;
+  }
   const startBox = projectGroupBox(primarySlot);
   if (!startBox) return;
   state.groupStart = startBox;
@@ -813,7 +835,9 @@ function beginProjectGroupCoDrag(state, primarySlot) {
       startWorldXMm: box.cx,
       startWorldZMm: box.cz,
       startXMm: Number(m.x_mm || 0),
+      startFloorH: Number(m.floor_height_mm || 0),
       startWall: isFloorSlot(m) ? null : Number(m.wall_index || 0),
+      fineZ: isFloorSlot(m) ? 0 : Number(m.fineOffsetZMm || 0),
       obj: g ? { x: g.position.x, y: g.position.y, z: g.position.z, ry: g.rotation.y } : null,
       group: g
     });
@@ -833,16 +857,7 @@ function refreshProjectGroupCoDragRefs(state) {
 function applyProjectGroupCoDragPreview(state) {
   if (!state || !state.groupCoDrag || !state.groupCoDrag.length || !state.group) return;
   const p0 = state.groupStartObj;
-  if (!p0) {
-    const deltaXMm = state.group.position.x * 1000 - state.groupStartWorldXMm;
-    const deltaZMm = state.group.position.z * 1000 - state.groupStartWorldZMm;
-    state.groupCoDrag.forEach((m) => {
-      if (!m.group) return;
-      m.group.position.x = (m.startWorldXMm + deltaXMm) / 1000;
-      m.group.position.z = (m.startWorldZMm + deltaZMm) / 1000;
-    });
-    return;
-  }
+  if (!p0) return;
   const p1 = state.group.position;
   const d = state.group.rotation.y - p0.ry;
   const c = Math.cos(d), sn = Math.sin(d);
@@ -866,25 +881,46 @@ function projectAngleClose(a, b, tolRad) {
   return Math.abs(d) <= tolRad;
 }
 
-// Commit no soltar: transformação rígida (no referencial de
-// projectSlotWorldBox3D: ângulo = direção do eixo X local em (x,z)).
+// COMMIT DO GRUPO (4ª rodada, 15/11 — Matt: "depois de umas mexidas ele
+// começa e não para mais de bagunçar, cada clique bagunça mais"). Regras,
+// todas pensadas pra NÃO acumular erro de um arraste pro outro:
+//   1. Cada membro recebe a pose dele de ANTES do arraste levada pela mesma
+//      transformação rígida do principal (posição + giro + altura). A pose
+//      nova é gravada ABSOLUTA (nunca "+= delta" em cima do que já estava).
+//   2. Altura: o bloco sobe/desce junto. Se alguém fosse pra baixo do chão,
+//      o BLOCO INTEIRO sobe (principal incluído) — nunca um membro sozinho.
+//   3. Parede ou chão: o membro vira módulo de parede quando a pose nova fica
+//      de costas pra uma parede (mesmo ângulo) e encostada nela — folga de
+//      200 mm na parede do principal (encaixa junto), 45 mm nas outras e só
+//      se couber no comprimento. Senão vira ilha na pose exata. Nada de
+//      convertProjectSlotToFloor (ele zera altura/ajuste).
+//   4. Anexos módulo-a-módulo dos membros são soltos (um anexo reescreve a
+//      posição a cada render e o bloco "andava sozinho").
+//   5. Um deslocamento só pro bloco caber na parede do principal.
 function commitProjectGroupCoDrag(state, primarySlot) {
   if (!state || !state.groupCoDrag || !state.groupCoDrag.length || !primarySlot) return;
   const p0 = state.groupStart;
   const p1 = projectGroupBox(primarySlot);
   if (!p0 || !p1) return;
   const dAng = p1.ang - p0.ang;
-  let dy = p1.y - p0.y;
+  const dy = p1.y - p0.y;
   const moved = Math.abs(p1.cx - p0.cx) > 0.01 || Math.abs(p1.cz - p0.cz) > 0.01
     || Math.abs(dAng) > 1e-6 || Math.abs(dy) > 0.01;
   if (!moved) return;
-  // altura: o bloco inteiro sobe/desce junto, ninguém abaixo do chão
-  const minY = Math.min(...state.groupCoDrag.map((m) => m.box.y));
-  if (minY + dy < 0) dy = -minY;
+  // (2) ninguém abaixo do chão: sobe o bloco inteiro
+  const minNovo = Math.min(p1.y, ...state.groupCoDrag.map((m) => m.box.y + dy));
+  const sobe = minNovo < 0 ? -minNovo : 0;
+  if (sobe) primarySlot.floor_height_mm = Number(primarySlot.floor_height_mm || 0) + sobe;
+  const dyEf = dy + sobe;
   const c = Math.cos(dAng), sn = Math.sin(dAng);
   const walls = getProjectWallGeometry() || [];
+  const paredeDoPrincipal = isFloorSlot(primarySlot) ? null : Number(primarySlot.wall_index || 0);
   const TOL_ANG = (3 * Math.PI) / 180;
-  const TOL_INTO_MM = 200;
+  const soltaAnexo = (s) => {
+    s.attached_to_slot_id = null; s.attached_face = null;
+    s.attached_slide_right_mm = 0; s.attached_slide_up_mm = 0; s.attached_slide_normal_mm = 0;
+    s.attached_rotation_offset_deg = 0; s.attached_free_position = false;
+  };
   state.groupCoDrag.forEach((m) => {
     const member = projectSlots.find((s) => s.id === m.id);
     if (!member) return;
@@ -892,69 +928,47 @@ function commitProjectGroupCoDrag(state, primarySlot) {
     const ncx = p1.cx + rx * c - rz * sn;
     const ncz = p1.cz + rx * sn + rz * c;
     const nAng = m.box.ang + dAng;
-    const ny = Math.max(0, m.box.y + dy);
     const wMm = Number(member.width_mm || 0), dMm = Number(member.depth_mm || 0);
-    // parede onde ele "encosta" com o ângulo novo
-    // Parede de destino: a de mesmo ângulo mais perto (pela distância até a
-    // face). NÃO exige caber no comprimento: o bloco é empurrado inteiro pra
-    // dentro logo abaixo — antes, o membro que passava do fim de uma parede
-    // mais curta virava ilha e o grupo desmontava (15/11).
-    // Se o principal está numa parede, os membros que estavam na MESMA
-    // parede dele vão pra parede NOVA dele, sempre.
-    // ILHA CONTINUA ILHA (15/11, 3ª rodada — Matt: "cada vez que clico na
-    // parede ele vira os módulos e vai bagunçando"). Antes a ilha do grupo
-    // podia virar módulo de parede (se o ângulo batesse) e, ficando ilha,
-    // passava por convertProjectSlotToFloor de novo — que zera altura,
-    // ajuste fino e anexos. Agora a ilha só anda e gira junto, mais nada.
-    if (m.startWall == null) {
-      member.floor_x_mm = ncx;
-      member.floor_z_mm = ncz;
-      if (Math.abs(dAng) > 1e-6) {
-        member.floor_rotation_deg = (((Number(member.floor_rotation_deg || 0) - (dAng * 180) / Math.PI) % 360) + 360) % 360;
-      }
-      if (Math.abs(dy) > 0.01) member.fineOffsetYMm = Math.max(0, Number(member.fineOffsetYMm || 0) + dy);
-      return;
-    }
-    let alvo = null;
-    const mesmaParedeDoPrincipal = !isFloorSlot(primarySlot) && m.startWall != null && m.startWall === state.groupStartWall;
-    if (mesmaParedeDoPrincipal) {
-      const w = walls.find((x) => x.wallIndex === Number(primarySlot.wall_index || 0));
-      if (w) {
-        const vx = ncx - w.originX * 1000, vz = ncz - w.originZ * 1000;
-        alvo = { w, x: (vx * w.alongDirX + vz * w.alongDirZ) - wMm / 2 };
-      }
-    }
-    let melhor = Infinity;
-    if (!alvo) walls.forEach((w) => {
+    // (1)+(2) altura absoluta
+    let fh = m.startFloorH + dyEf;
+    if (fh < 0) { member.fineOffsetYMm = Math.max(0, Number(member.fineOffsetYMm || 0) + fh); fh = 0; }
+    member.floor_height_mm = fh;
+    soltaAnexo(member);
+    // (3) parede ou chão
+    let alvo = null, melhor = Infinity;
+    walls.forEach((w) => {
+      if (w.oculta) return;
       if (!projectAngleClose(Math.atan2(w.alongDirZ, w.alongDirX), nAng, TOL_ANG)) return;
       const vx = ncx - w.originX * 1000, vz = ncz - w.originZ * 1000;
       const into = vx * w.intoDirX + vz * w.intoDirZ;
       const along = vx * w.alongDirX + vz * w.alongDirZ;
-      const dist = Math.abs(into - dMm / 2);
-      if (dist > TOL_INTO_MM || dist >= melhor) return;
-      melhor = dist;
-      alvo = { w, x: along - wMm / 2 };
+      const desvio = Math.abs(into - dMm / 2 - m.fineZ);
+      const daPrincipal = w.wallIndex === paredeDoPrincipal;
+      if (desvio > (daPrincipal ? 200 : 45) || desvio >= melhor) return;
+      const x = along - wMm / 2;
+      if (!daPrincipal && (x < -1 || x + wMm > (Number(w.widthM) || 0) * 1000 + 1)) return;
+      melhor = desvio;
+      alvo = { w, x };
     });
     if (alvo) {
       member.placement = 'wall';
       member.wall_index = alvo.w.wallIndex;
       member.x_mm = alvo.x;
-      member.floor_height_mm = ny;
-      member.attached_to_slot_id = null;
-      member.attached_face = null;
+      if (m.startWall == null) member.fineOffsetZMm = 0;
     } else {
-      convertProjectSlotToFloor(member, ncx, ncz);
-      member.floor_height_mm = ny;
+      member.placement = 'floor';
+      member.floor_x_mm = ncx;
+      member.floor_z_mm = ncz;
       member.floor_rotation_deg = ((((-nAng * 180) / Math.PI) % 360) + 360) % 360;
+      member.z_order = 0;
+      if (m.startWall != null) member.fineOffsetZMm = 0; // já está dentro da pose
     }
   });
-  // Encaixe do BLOCO na parede do principal: um deslocamento só, comum a
-  // todos os membros que estão nela (o desenho do grupo não muda).
-  if (!isFloorSlot(primarySlot)) {
-    const wi = Number(primarySlot.wall_index || 0);
+  // (5) encaixe do BLOCO na parede do principal
+  if (paredeDoPrincipal != null) {
     const ids = new Set(state.groupCoDrag.map((m) => m.id));
     const naParede = projectSlots.filter((s) => (s.id === primarySlot.id || ids.has(s.id))
-      && !isFloorSlot(s) && Number(s.wall_index || 0) === wi);
+      && !isFloorSlot(s) && Number(s.wall_index || 0) === paredeDoPrincipal);
     let lo = -Infinity, hi = Infinity;
     naParede.forEach((s) => {
       const b = projectWallSlotXBoundsMm(s);
@@ -963,15 +977,16 @@ function commitProjectGroupCoDrag(state, primarySlot) {
       hi = Math.min(hi, b.max - x);
     });
     let shift = 0;
-    if (lo > 0) shift = lo; else if (hi < 0) shift = Math.max(hi, lo);
-    if (shift) naParede.forEach((s) => { s.x_mm = Number(s.x_mm || 0) + shift; });
-  }
-  state.groupCoDrag.forEach((m) => {
-    const member = projectSlots.find((s) => s.id === m.id);
-    if (member && !isFloorSlot(member) && typeof resolveProjectSlotDepth === 'function') {
-      try { resolveProjectSlotDepth(member, projectSlotsSameWallExcluding(member)); } catch (e) { /* ok */ }
+    if (lo <= hi) { if (lo > 0) shift = lo; else if (hi < 0) shift = hi; } // bloco maior que a parede: não mexe
+    if (shift) {
+      naParede.forEach((s) => { s.x_mm = Number(s.x_mm || 0) + shift; });
+      // ilhas do grupo acompanham o mesmo empurrão
+      const w = walls.find((x) => x.wallIndex === paredeDoPrincipal);
+      if (w) projectSlots.forEach((s) => {
+        if (ids.has(s.id) && isFloorSlot(s)) { s.floor_x_mm += w.alongDirX * shift; s.floor_z_mm += w.alongDirZ * shift; }
+      });
     }
-  });
+  }
 }
 
 function convertProjectSlotToWall(slot, wallIndex, xMm, floorHeightMm) {
