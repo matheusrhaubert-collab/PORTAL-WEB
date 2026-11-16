@@ -3465,7 +3465,7 @@ const mpState = {
   rows: [], ordersById: {}, trackByOrder: {}, archCol: true,
   tab: 'all', status: 'all', client: 'all', sort: 'updated', dir: 'desc', q: '',
   open: new Set(), menu: null, loadSeq: 0, loaded: false,
-  central: false, ctab: 'all' // modo Central de Pedidos (15/11, ver CU_ no fim do arquivo)
+  central: false, ctab: 'all', projOpen: new Set(), totals: {} // modo Central de Pedidos (15/11, ver CU_ no fim do arquivo)
 };
 
 function mpT(k, vars) { return I18n.t('mp.' + k, vars); }
@@ -3508,6 +3508,14 @@ function mpBox() {
   box.addEventListener('click', mpOnClick);
   box.addEventListener('input', mpOnInput);
   box.addEventListener('change', mpOnInput);
+  box.addEventListener('keydown', (ev) => {
+    const r = ev.target.closest && ev.target.closest('.cu-order');
+    if (r && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); if (typeof openOrderDetail === 'function') openOrderDetail(r.dataset.order); }
+  });
+  box.addEventListener('toggle', (ev) => {
+    const d = ev.target;
+    if (d && d.classList && d.classList.contains('cu-projs')) { if (d.open) mpState.projOpen.add(d.dataset.k); else mpState.projOpen.delete(d.dataset.k); }
+  }, true);
   document.addEventListener('pointerdown', (ev) => {
     if (mpState.menu && !ev.target.closest('.mp-menu, .mp-dots')) { mpState.menu = null; mpRender(); }
   });
@@ -3543,12 +3551,24 @@ async function mpLoad() {
   // pedidos de origem (projeto congelado) + andamento de fábrica
   const orderIds = [...new Set(mpState.rows.map((p) => p.frozen_order_id).filter(Boolean))];
   const ordersById = {};
-  for (let i = 0; i < orderIds.length; i += 100) {
-    try {
-      const { data: os } = await supabaseClient.from('orders')
-        .select('id, status, finance_released_at, delivered_at, factory_number, po_name, submitted_at').in('id', orderIds.slice(i, i + 100));
-      (os || []).forEach((o) => { ordersById[o.id] = o; });
-    } catch (e) { /* sem pedidos: tudo cai em "em desenvolvimento" */ }
+  // Central (15/11): TODOS os pedidos da conta — os sem projeto (New Quote)
+  // viram a pasta "Pedidos sem projeto" — com os campos que o "Liberar
+  // todos" e a faixa de etapas usam.
+  const OCOLS = 'id, status, order_type, source_project_id, finance_released_at, pickup_released_at, delivered_at, approved_at, submitted_at, factory_number, po_name, client_name, client_phone, client_email, delivery_address';
+  try {
+    const { data: os, error: oErr } = await supabaseClient.from('orders').select(OCOLS)
+      .eq('client_user_id', currentUser.id).in('status', ['submitted', 'saved', 'approved', 'paid', 'delivered'])
+      .order('submitted_at', { ascending: false });
+    if (oErr) throw oErr;
+    (os || []).forEach((o) => { ordersById[o.id] = o; });
+  } catch (e) {
+    for (let i = 0; i < orderIds.length; i += 100) {
+      try {
+        const { data: os } = await supabaseClient.from('orders')
+          .select('id, status, finance_released_at, delivered_at, factory_number, po_name, submitted_at').in('id', orderIds.slice(i, i + 100));
+        (os || []).forEach((o) => { ordersById[o.id] = o; });
+      } catch (e2) { /* sem pedidos: tudo cai em "em desenvolvimento" */ }
+    }
   }
   let track = {};
   const aprovados = Object.values(ordersById).filter((o) => ['approved', 'paid', 'delivered'].includes(o.status)).map((o) => o.id);
@@ -3602,11 +3622,29 @@ function mpFolders() {
     out.push({
       key: k, nome: k === MP_NONE ? '' : k, titulo: k === MP_NONE ? I18n.t('fav.folder_none') : k,
       lista, n: lista.length, nAprov, status, prod, cliente, upd,
-      arquivada: mpState.archCol && lista.every((p) => p.archived_at)
+      arquivada: mpState.archCol && lista.every((p) => p.archived_at),
+      orders: lista.map((p) => p.frozen_order_id && mpState.ordersById[p.frozen_order_id]).filter(Boolean)
     });
   });
+  if (mpState.central) {
+    const ligados = new Set(mpState.rows.map((p) => p.frozen_order_id).filter(Boolean));
+    const soltos = Object.values(mpState.ordersById).filter((o) => !ligados.has(o.id));
+    if (soltos.length) {
+      const LIB = ['approved', 'paid', 'delivered'];
+      const nLib = soltos.filter((o) => LIB.includes(o.status)).length;
+      const nEnt = soltos.filter((o) => o.status === 'delivered').length;
+      const emLote = soltos.some((o) => { const t = mpState.trackByOrder[o.id]; return t && t.batch_code; });
+      out.push({
+        key: CU_LOOSE, nome: '', titulo: I18n.t('cu.loose'), lista: [], n: soltos.length, nAprov: nLib,
+        status: nLib ? 'approved' : 'proposal',
+        prod: nEnt === soltos.length ? 'done' : emLote ? 'in_prod' : nLib ? 'scheduled' : 'waiting',
+        cliente: '', upd: soltos[0].submitted_at || null, arquivada: false, orders: soltos
+      });
+    }
+  }
   return out;
 }
+const CU_LOOSE = '__loose__';
 
 function mpVisible(folders) {
   const q = mpState.q.toLowerCase();
@@ -3631,6 +3669,8 @@ function mpVisible(folders) {
   });
   const s = mpState.dir === 'asc' ? 1 : -1;
   v.sort((a, b) => {
+    if (a.key === CU_LOOSE) return 1;            // "Pedidos sem projeto" no fim de tudo
+    if (b.key === CU_LOOSE) return -1;
     if (a.key === MP_NONE) return 1;             // "Sem pasta" sempre no fim
     if (b.key === MP_NONE) return -1;
     if (mpState.sort === 'name') return s * a.titulo.localeCompare(b.titulo);
@@ -3683,6 +3723,79 @@ function mpHeadCells() {
     + col('status', mpT('col_status')) + col('prod', mpT('col_prod')) + col('updated', mpT('col_updated'));
 }
 
+// PASTA ABERTA NA CENTRAL (15/11, 2ª rodada — Matt: "quero colocar todas
+// informações dentro dos pedidos, numa só tela, na pasta com status. quando
+// clica em cada um abre as informações. pra ficar a tela mais limpa
+// possível"). Resumo (último pedido / pedidos / liberados / valor), faixa de
+// etapas da fábrica (trkFolderStages, portal-31), Liberar todos, e uma linha
+// por pedido (clique = tela do pedido). Projetos ficam recolhidos embaixo.
+function cuMoney(v) { return typeof formatMoney === 'function' ? formatMoney(v) : '$' + Number(v || 0).toFixed(2); }
+function cuOrderTotal(o) {
+  const t = mpState.totals[o.id];
+  if (t == null) return null;
+  return (typeof isSellerAccount === 'function' && isSellerAccount() && typeof getDisplayPrice === 'function') ? getDisplayPrice(t) : t;
+}
+let cuTotalsBusy = false;
+async function cuEnsureTotals(orders) {
+  const falta = orders.filter((o) => mpState.totals[o.id] == null).map((o) => o.id);
+  if (!falta.length || cuTotalsBusy) return;
+  cuTotalsBusy = true;
+  try {
+    falta.forEach((id) => { mpState.totals[id] = 0; });
+    for (let i = 0; i < falta.length; i += 100) {
+      const parte = falta.slice(i, i + 100);
+      const { data } = await supabaseClient.from('order_items').select('order_id, total_price').in('order_id', parte);
+      (data || []).forEach((it) => { mpState.totals[it.order_id] = (mpState.totals[it.order_id] || 0) + Number(it.total_price || 0); });
+    }
+  } catch (e) { /* sem valor: fica 0 */ }
+  cuTotalsBusy = false;
+  mpRender();
+}
+function cuFolderHtml(f) {
+  const ords = (f.orders || []).slice().sort((a, b) => String(b.submitted_at || '').localeCompare(String(a.submitted_at || '')));
+  if (!ords.length) return '<p class="hint cu-noorders">' + mpEsc(I18n.t('cu.no_orders')) + '</p>';
+  const LIB = ['approved', 'paid', 'delivered'];
+  const nLib = ords.filter((o) => LIB.includes(o.status)).length;
+  const nPend = ords.filter((o) => o.status === 'submitted' && o.order_type !== 'cutting_list').length;
+  const vals = ords.map(cuOrderTotal);
+  const soma = vals.every((v) => v == null) ? null : vals.reduce((a, v) => a + (v || 0), 0);
+  const ult = ords[0].submitted_at ? new Date(ords[0].submitted_at).toLocaleDateString(mpLocale()) : '—';
+  const projNome = {};
+  f.lista.forEach((p) => { if (p.frozen_order_id) projNome[p.frozen_order_id] = p.name; });
+  const stat = (k, v) => '<div><span>' + mpEsc(I18n.t('my_orders.' + k)) + '</span><strong>' + v + '</strong></div>';
+  const linha = (o) => {
+    const t = mpState.trackByOrder[o.id];
+    const prodSt = o.status === 'delivered' ? 'done' : LIB.includes(o.status) ? ((t && t.batch_code) ? 'in_prod' : 'scheduled') : null;
+    const v = cuOrderTotal(o);
+    const num = Number(o.factory_number) > 0 ? '<span class="po-order-factory-no">' + String(Number(o.factory_number)).padStart(5, '0') + '</span>' : '';
+    return '<div class="cu-order" data-act="order" data-order="' + mpEsc(o.id) + '" role="button" tabindex="0">' + num
+      + '<strong>' + mpEsc(projNome[o.id] || o.po_name || o.client_name || '—') + '</strong>'
+      + '<span class="cu-o-val">' + (v == null ? '' : mpEsc(cuMoney(v))) + '</span>'
+      + '<span class="mp-chip' + (LIB.includes(o.status) ? ' st-approved' : ' st-proposal') + '">' + mpEsc(typeof orderStatusLabel === 'function' ? orderStatusLabel(o.status) : o.status) + '</span>'
+      + (prodSt ? '<span class="mp-chip pr-' + prodSt + '">' + mpEsc(mpT('pr_' + prodSt)) + '</span>' : '')
+      + '<span class="cu-o-go">›</span></div>';
+  };
+  return '<div class="cu-sum">'
+    + '<div class="cu-stats">' + stat('stat_last', mpEsc(ult)) + stat('stat_orders', ords.length) + stat('stat_released', nLib + '/' + ords.length)
+    + stat('stat_value', soma == null ? '…' : mpEsc(cuMoney(soma))) + '</div>'
+    + (nPend && f.key !== CU_LOOSE ? '<div class="cu-approve"><button type="button" class="secondary" data-act="approve">' + mpEsc(I18n.t('my_orders.folder_approve_btn', { n: nPend })) + '</button><span class="hint cu-approve-st"></span></div>' : '')
+    + '</div>'
+    + '<div class="cu-stages" data-stages="' + mpEsc(f.key) + '"></div>'
+    + '<div class="cu-orders">' + ords.map(linha).join('') + '</div>';
+}
+// depois de desenhar: valores e faixa de etapas das pastas abertas
+function cuAfterRender(folders) {
+  if (!mpState.central) return;
+  const abertas = folders.filter((f) => mpState.open.has(f.key) && (f.orders || []).length);
+  const todos = abertas.reduce((a, f) => a.concat(f.orders), []);
+  if (todos.length) cuEnsureTotals(todos);
+  abertas.forEach((f) => {
+    let el = null;
+    document.querySelectorAll('#po-mp-v2 .cu-stages').forEach((x) => { if (x.dataset.stages === f.key) el = x; });
+    if (el && typeof trkFolderStages === 'function') trkFolderStages(f.orders, el);
+  });
+}
+
 // ---------- desenho ----------
 const MP_ICO = {
   folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
@@ -3725,9 +3838,15 @@ function mpRender() {
       + '<td>' + chip('st-' + f.status, stRot) + '</td>'
       + '<td>' + chip('pr-' + f.prod, mpT('pr_' + f.prod)) + '</td>'
       + '<td class="mp-c-date">' + mpEsc(mpDate(f.upd)) + '</td>'
-      + '<td class="mp-c-menu">' + (f.key !== MP_NONE ? '<button type="button" class="mp-dots" data-act="menu" aria-label="' + mpEsc(mpT('menu')) + '">⋯</button>' + menu : '') + '</td>'
+      + '<td class="mp-c-menu">' + (f.key !== MP_NONE && f.key !== CU_LOOSE ? '<button type="button" class="mp-dots" data-act="menu" aria-label="' + mpEsc(mpT('menu')) + '">⋯</button>' + menu : '') + '</td>'
       + '</tr>'
-      + (aberta ? '<tr class="mp-exp"><td colspan="7">' + (mpState.central ? mpOrdersHtml(f) : '') + '<div class="mp-exp-status hint" data-st="' + mpEsc(f.key) + '"></div><div class="mp-exp-box" data-folder="' + mpEsc(f.key) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div></td></tr>' : '');
+      + (aberta ? '<tr class="mp-exp"><td colspan="7">' + (mpState.central ? cuFolderHtml(f) : '') + '<div class="mp-exp-status hint" data-st="' + mpEsc(f.key) + '"></div>'
+        + (f.key === CU_LOOSE ? '' : (mpState.central
+          ? '<details class="cu-projs"' + (mpState.projOpen.has(f.key) ? ' open' : '') + ' data-k="' + mpEsc(f.key) + '"><summary>' + mpEsc(I18n.t('cu.projects')) + ' (' + f.n + ')</summary>'
+          : '')
+          + '<div class="mp-exp-box" data-folder="' + mpEsc(f.key) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div>'
+          + (mpState.central ? '</details>' : ''))
+        + '</td></tr>' : '');
   }).join('');
 
   if (mpState.central) {
@@ -3753,6 +3872,7 @@ function mpRender() {
       if (inp) { inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* ok */ } }
     }
     mpAttachCards();
+    cuAfterRender(folders);
     return;
   }
   box.innerHTML = ''
@@ -3992,6 +4112,17 @@ function mpOnClick(ev) {
       if (mpState.sort === 'updated') mpState.dir = mpState.dir === 'desc' ? 'asc' : 'desc';
       else { mpState.sort = 'updated'; mpState.dir = 'desc'; }
       mpRender(); return;
+    }
+    if (act === 'approve') {
+      const exp = actEl.closest('tr.mp-exp');
+      const prev = exp ? exp.previousElementSibling : null;
+      const fa = prev ? mpFolderByKey(prev.dataset.k) : null;
+      if (!fa) return;
+      const stEl = exp.querySelector('.cu-approve-st');
+      const errEl = document.getElementById('po-orders-error');
+      actEl.disabled = true;
+      approveFolderOrders(fa.nome || fa.titulo, fa.orders, stEl, errEl).finally(() => { mpLoad(); });
+      return;
     }
     if (!row) return;
     const f = mpFolderByKey(row.dataset.k);

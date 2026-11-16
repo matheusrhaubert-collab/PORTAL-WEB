@@ -283,6 +283,8 @@
       'my_orders.factory_no_tip': 'Número do pedido na fábrica',
       // ---- Meus Projetos: painel por pasta (fim do portal-09, 11/11) ----
       'mp.loading': 'Carregando…',
+      'cu.loose': 'Pedidos sem projeto',
+      'cu.no_orders': 'Nenhum pedido enviado desta pasta ainda.',
       'cu.subtitle': 'Seus projetos e pedidos num só lugar — clique na pasta pra ver tudo.',
       'cu.tab_build': 'Em construção',
       'cu.tab_prod': 'Em produção',
@@ -2712,6 +2714,8 @@
       'my_orders.factory_no_tip': 'Factory order number',
       // ---- Meus Projetos: painel por pasta (fim do portal-09, 11/11) ----
       'mp.loading': 'Loading…',
+      'cu.loose': 'Orders without a project',
+      'cu.no_orders': 'No orders sent from this folder yet.',
       'cu.subtitle': 'Your projects and orders in one place — click a folder to see everything.',
       'cu.tab_build': 'In design',
       'cu.tab_prod': 'In production',
@@ -5108,6 +5112,8 @@
       'my_orders.factory_no_tip': 'Número del pedido en fábrica',
       // ---- Meus Projetos: painel por pasta (fim do portal-09, 11/11) ----
       'mp.loading': 'Cargando…',
+      'cu.loose': 'Pedidos sin proyecto',
+      'cu.no_orders': 'Aún no hay pedidos enviados de esta carpeta.',
       'cu.subtitle': 'Tus proyectos y pedidos en un solo lugar — haz clic en la carpeta para ver todo.',
       'cu.tab_build': 'En diseño',
       'cu.tab_prod': 'En producción',

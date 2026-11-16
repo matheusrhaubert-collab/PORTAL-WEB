@@ -6560,3 +6560,21 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .cu-old-orders { margin-top: 22px; }
 .cu-old-orders > summary { cursor: pointer; font-weight: 600; color: #666; padding: 8px 0; }
 .mp-th-sort:hover, .mp-th-sort.is-sorted { color: #8a4b1c; }
+
+/* Central: pasta aberta com tudo (15/11, 2ª rodada) */
+.cu-on #cu-old-orders { display: none !important; }
+.cu-sum { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 4px 0 10px; }
+.cu-stats { display: flex; gap: 28px; flex-wrap: wrap; }
+.cu-stats div { display: grid; gap: 2px; }
+.cu-stats span { font-size: 12px; color: #777; }
+.cu-stats strong { font-size: 16px; }
+.cu-approve { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.cu-approve button { margin: 0; }
+.cu-stages { margin-bottom: 10px; }
+.cu-order { cursor: pointer; }
+.cu-order:hover { border-color: #c9a27e; background: #fdfaf6; }
+.cu-o-val { font-weight: 600; min-width: 90px; text-align: right; }
+.cu-o-go { font-size: 20px; color: #aaa; line-height: 1; }
+.cu-projs { margin-top: 12px; }
+.cu-projs > summary { cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #888; padding: 6px 0; }
+.cu-noorders { margin: 4px 0 6px; }
