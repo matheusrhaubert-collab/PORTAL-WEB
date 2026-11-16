@@ -6559,3 +6559,4 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .cu-order button { margin: 0; padding: 5px 12px; font-size: 12px; }
 .cu-old-orders { margin-top: 22px; }
 .cu-old-orders > summary { cursor: pointer; font-weight: 600; color: #666; padding: 8px 0; }
+.mp-th-sort:hover, .mp-th-sort.is-sorted { color: #8a4b1c; }

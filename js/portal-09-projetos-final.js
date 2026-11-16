@@ -3634,6 +3634,13 @@ function mpVisible(folders) {
     if (a.key === MP_NONE) return 1;             // "Sem pasta" sempre no fim
     if (b.key === MP_NONE) return -1;
     if (mpState.sort === 'name') return s * a.titulo.localeCompare(b.titulo);
+    // ORDENAR POR COLUNA (15/11, Matt: "quero que esse filtro quando clique
+    // classifique e ordene por status ou coluna, assim como última
+    // atualização faz"). Status/produção seguem a ordem do andamento.
+    if (mpState.sort === 'client') return s * (a.cliente || '\uffff').localeCompare(b.cliente || '\uffff') || a.titulo.localeCompare(b.titulo);
+    if (mpState.sort === 'count') return s * (a.n - b.n) || a.titulo.localeCompare(b.titulo);
+    if (mpState.sort === 'status') return s * (MP_ORD_STATUS.indexOf(a.status) - MP_ORD_STATUS.indexOf(b.status)) || String(b.upd || '').localeCompare(String(a.upd || ''));
+    if (mpState.sort === 'prod') return s * (MP_ORD_PROD.indexOf(a.prod) - MP_ORD_PROD.indexOf(b.prod)) || String(b.upd || '').localeCompare(String(a.upd || ''));
     return s * String(a.upd || '').localeCompare(String(b.upd || ''));
   });
   return v;
@@ -3664,6 +3671,16 @@ function mpOrdersHtml(f) {
   };
   return '<div class="cu-orders"><div class="cu-sub">' + mpEsc(I18n.t('cu.orders')) + '</div>' + enviados.map(linha).join('') + '</div>'
     + '<div class="cu-sub">' + mpEsc(I18n.t('cu.projects')) + '</div>';
+}
+
+const MP_ORD_STATUS = ['dev', 'proposal', 'approved'];
+const MP_ORD_PROD = ['waiting', 'scheduled', 'in_prod', 'done'];
+// Cabeçalho da tabela: toda coluna ordena ao clicar (de novo = inverte).
+function mpHeadCells() {
+  const col = (key, rot) => '<th class="mp-th-sort' + (mpState.sort === key ? ' is-sorted' : '') + '" data-act="sortcol" data-col="' + key + '">'
+    + mpEsc(rot) + ' ' + (mpState.sort === key ? (mpState.dir === 'desc' ? '↓' : '↑') : '↕') + '</th>';
+  return col('name', mpT('col_project')) + col('client', mpT('col_client')) + col('count', mpT('col_count'))
+    + col('status', mpT('col_status')) + col('prod', mpT('col_prod')) + col('updated', mpT('col_updated'));
 }
 
 // ---------- desenho ----------
@@ -3728,9 +3745,7 @@ function mpRender() {
       + '</div>'
       + (vis.length
         ? '<div class="mp-table-wrap"><table class="mp-table"><thead><tr>'
-          + '<th>' + mpEsc(mpT('col_project')) + '</th><th>' + mpEsc(mpT('col_client')) + '</th><th>' + mpEsc(mpT('col_count')) + '</th>'
-          + '<th>' + mpEsc(mpT('col_status')) + '</th><th>' + mpEsc(mpT('col_prod')) + '</th>'
-          + '<th class="mp-th-sort" data-act="sortdate">' + mpEsc(mpT('col_updated')) + ' ' + (mpState.sort === 'updated' ? (mpState.dir === 'desc' ? '↓' : '↑') : '↕') + '</th><th></th>'
+          + mpHeadCells() + '<th></th>'
           + '</tr></thead><tbody>' + linhas + '</tbody></table></div>'
         : '<p class="hint mp-empty">' + mpEsc(I18n.t(mpState.rows.length ? 'cu.empty_tab' : 'cu.none_yet')) + '</p>');
     if (foco) {
@@ -3761,9 +3776,7 @@ function mpRender() {
     + '</div>'
     + (vis.length
       ? '<div class="mp-table-wrap"><table class="mp-table"><thead><tr>'
-        + '<th>' + mpEsc(mpT('col_project')) + '</th><th>' + mpEsc(mpT('col_client')) + '</th><th>' + mpEsc(mpT('col_count')) + '</th>'
-        + '<th>' + mpEsc(mpT('col_status')) + '</th><th>' + mpEsc(mpT('col_prod')) + '</th>'
-        + '<th class="mp-th-sort" data-act="sortdate">' + mpEsc(mpT('col_updated')) + ' ' + (mpState.sort === 'updated' ? (mpState.dir === 'desc' ? '↓' : '↑') : '↕') + '</th><th></th>'
+        + mpHeadCells() + '<th></th>'
         + '</tr></thead><tbody>' + linhas + '</tbody></table></div>'
       : '<p class="hint mp-empty">' + mpEsc(mpT(mpState.rows.length ? 'none_match' : 'none_yet')) + '</p>');
 
@@ -3969,6 +3982,12 @@ function mpOnClick(ev) {
     if (act === 'tab') { mpState.tab = actEl.dataset.tab; mpState.menu = null; mpRender(); return; }
     if (act === 'ctab') { mpState.ctab = actEl.dataset.tab; mpState.menu = null; mpRender(); return; }
     if (act === 'order') { if (typeof openOrderDetail === 'function') openOrderDetail(actEl.dataset.order); return; }
+    if (act === 'sortcol') {
+      const c = actEl.dataset.col;
+      if (mpState.sort === c) mpState.dir = mpState.dir === 'desc' ? 'asc' : 'desc';
+      else { mpState.sort = c; mpState.dir = (c === 'name' || c === 'client') ? 'asc' : 'desc'; }
+      mpRender(); return;
+    }
     if (act === 'sortdate') {
       if (mpState.sort === 'updated') mpState.dir = mpState.dir === 'desc' ? 'asc' : 'desc';
       else { mpState.sort = 'updated'; mpState.dir = 'desc'; }
