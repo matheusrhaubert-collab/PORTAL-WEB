@@ -307,6 +307,7 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
       // Eixo do veio (2026-09-24, ver LOTES.cutDimsPeloVeio) — null em
       // pedido gravado antes.
       grain_axis: p.grain_axis || null,
+      grain_forced: !!p.grain_forced, // veio escolhido no projeto (15/11) — grainAxisDoLeaf não recalcula
       // Componente de origem (public.components.id) — pra buscar a fita no
       // cadastro quando o snapshot do pedido é anterior ao campo acima.
       piece_id: p.piece_id || null,

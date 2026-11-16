@@ -874,6 +874,19 @@ function renderProjectConfigPanel() {
         const titulo = bloq
           ? I18n.t(bloq.eixo === 'h' ? 'project.door_model_blocked_h' : 'project.door_model_blocked_w', { mm: formatDimension(bloq.mm, unit) })
           : dm.name;
+        // FLAT = dois cartões (15/11, Matt: "coloca direto flat vertical e flat
+        // horizontal. mais fácil"): mesmo modelo, muda só o veio das frentes
+        // do módulo (Pricing.applyVeioFrentes — vale pras frentes de gaveta).
+        if (ehFlat) {
+          const veioAtual = projectSlotFrontGrain(slot);
+          return ['vertical', 'horizontal'].map((dir) => {
+            const rot = I18n.t('project.door_flat_' + dir);
+            return `<button type="button" class="po-proj-door-model-card${sel && veioAtual === dir ? ' selected' : ''}" data-door-model-id="" data-grain="${dir}" title="${rot}">
+          ${frontGrainSvg(dir === 'horizontal')}
+          <span>${rot}</span>
+        </button>`;
+          }).join('');
+        }
         return `<button type="button" class="po-proj-door-model-card${sel ? ' selected' : ''}${bloq ? ' blocked' : ''}" data-door-model-id="${ehFlat ? '' : dm.id}" title="${titulo}"${bloq ? ' disabled' : ''}>
           ${projectDoorModelPreviewSvg(dm.preview || (ehFlat ? 'flat' : 'shaker'))}
           <span>${dm.name}</span>
@@ -1250,7 +1263,7 @@ function renderProjectConfigPanel() {
     ${doorModelBlock}
     ${projectDoorSideBlock(slot)}
     ${drawerModelBlock}
-    ${frontGrainBlock(slot)}
+    ${doorModelBlock ? '' : frontGrainBlock(slot)}
     ${handleBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     ${moveBlock}
@@ -1371,6 +1384,14 @@ function renderProjectConfigPanel() {
   panel.querySelectorAll('.po-proj-door-model-card:not(.po-proj-drawer-model-card):not(.po-proj-handle-card):not(.po-proj-front-grain-card)').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected') || el.classList.contains('blocked')) return;
+      if (el.dataset.grain) {
+        // Flat vertical / Flat horizontal: grava o veio e, se o módulo estava
+        // com outro modelo de porta, volta pra Flat.
+        pushProjectUndoState();
+        if (projectSlotDoorModel(slot)) { setProjectSlotFrontGrain(slot, el.dataset.grain, true); setProjectSlotDoorModel(slot, null); }
+        else setProjectSlotFrontGrain(slot, el.dataset.grain);
+        return;
+      }
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
     });
   });
@@ -5049,6 +5070,14 @@ async function renderProjectSideModelPanel() {
       const ehFlat = !dm.child_module_id || dm.slug === 'flat';
       const id = ehFlat ? null : dm.id;
       const sel = todosNo(comPorta, (s) => { const e = projectSlotDoorModel(s); return e ? e.id : null; }, id);
+      if (ehFlat) {
+        return ['vertical', 'horizontal'].map((dir) => {
+          const rot = I18n.t('project.door_flat_' + dir);
+          const selG = sel && comPorta.every((x) => projectSlotFrontGrain(x) === dir);
+          return `<button type="button" class="po-proj-door-model-card po-proj-all-door-model${selG ? ' selected' : ''}" data-id="" data-grain="${dir}" title="${rot}">
+        ${frontGrainSvg(dir === 'horizontal')}<span>${rot}</span></button>`;
+        }).join('');
+      }
       return `<button type="button" class="po-proj-door-model-card po-proj-all-door-model${sel ? ' selected' : ''}" data-id="${id || ''}" title="${dm.name}">
         ${projectDoorModelPreviewSvg(dm.preview || (ehFlat ? 'flat' : 'shaker'))}<span>${dm.name}</span></button>`;
     }).join('');
@@ -5081,7 +5110,14 @@ async function renderProjectSideModelPanel() {
   box.querySelectorAll('.po-proj-all-door-model:not(.po-proj-handle-card)').forEach((el) => el.addEventListener('click', async () => {
     if (el.classList.contains('selected')) return;
     el.disabled = true;
+    if (el.dataset.grain) {
+      // Flat vertical / horizontal em TODOS: veio em todo módulo com frente
+      pushProjectUndoState();
+      projectSlots.forEach((x) => { if (projectSlotHasFronts(x)) setProjectSlotFrontGrain(x, el.dataset.grain, true); });
+      markProjectDirty();
+    }
     const bloq = await setAllProjectDoorModels(el.dataset.id || null);
+    if (el.dataset.grain) { renderProjectCanvas(); renderProjectSideModelPanel(); }
     if (bloq) {
       // o painel foi redesenhado — mostra o aviso no novo
       const a = document.querySelector('#po-proj-side-model-panel .po-proj-side-model-aviso');
@@ -5812,13 +5848,18 @@ function setProjectSlotFrontGrain(slot, dir, semRender) {
 function frontGrainBlock(slot) {
   if (!projectSlotHasFronts(slot)) return '';
   const atual = projectSlotFrontGrain(slot);
-  const svg = (h) => '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true"><rect x="9" y="6" width="26" height="50" rx="2" fill="#efe6d6" stroke="#6b6358" stroke-width="1.4"/>'
-    + (h ? [14, 21, 28, 35, 42, 49].map((y) => '<path d="M12 ' + y + ' q5 -2 10 0 t10 0" fill="none" stroke="#b39a74" stroke-width="1"/>').join('')
-      : [14, 19, 24, 29].map((x) => '<path d="M' + x + ' 9 q-2 11 0 22 t0 22" fill="none" stroke="#b39a74" stroke-width="1"/>').join(''))
-    + '</svg>';
+  const svg = frontGrainSvg;
   const card = (dir, rot) => `<button type="button" class="po-proj-door-model-card po-proj-front-grain-card${atual === dir ? ' selected' : ''}" data-dir="${dir}" title="${rot}">${svg(dir === 'horizontal')}<span>${rot}</span></button>`;
   const outros = projectSlots.some((x) => x !== slot && projectSlotHasFronts(x));
   return `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.front_grain_label')}</span>
     <div class="po-proj-door-model-cards">${card('vertical', I18n.t('project.front_grain_vertical'))}${card('horizontal', I18n.t('project.front_grain_horizontal'))}</div>
     ${outros ? `<button type="button" class="secondary po-proj-front-grain-all" style="margin-top:6px">${I18n.t('project.front_grain_all')}</button>` : ''}</div>`;
+}
+
+// Porta lisa com o veio desenhado (em pé ou deitado) + puxador.
+function frontGrainSvg(h) {
+  return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true"><rect x="3" y="3" width="38" height="56" rx="1.5" fill="#efe6d6" stroke="#6b6358" stroke-width="1.5"/>'
+    + (h ? [11, 19, 27, 35, 43, 51].map((y) => '<path d="M6 ' + y + ' q8 -2.5 16 0 t16 0" fill="none" stroke="#b39a74" stroke-width="1"/>').join('')
+      : [10, 17, 24, 31].map((x) => '<path d="M' + x + ' 6 q-2.5 12.5 0 25 t0 25" fill="none" stroke="#b39a74" stroke-width="1"/>').join(''))
+    + '<rect x="35" y="24" width="2.5" height="14" rx="1" fill="#6b6358"/></svg>';
 }
