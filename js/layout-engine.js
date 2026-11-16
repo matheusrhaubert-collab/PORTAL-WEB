@@ -826,10 +826,14 @@
         // então módulo de catálogo salvo no Construtor e projeto já montado
         // carregam "60" escrito, e trocar o padrão do agregado não chegava
         // neles (Matt, mesmo dia: "atualizei, troquei o módulo e ainda os
-        // cabides não estão alinhados"). 60 = padrão antigo = vai pra 100.
-        // Qualquer OUTRO valor digitado continua valendo.
+        // cabides não estão alinhados").
+        // CONFERIDO NO BANCO (16/11, 3ª rodada, Matt: "confere 100% dos
+        // cabides"): o agregado estava com 80, não 60 — por isso a regra "só o
+        // 60 vira 100" não pegou. Regra final: 100 é o MÍNIMO (é a altura do
+        // suporte em L; cabide mais perto da prateleira que isso desalinha do
+        // canto). Valor MAIOR que 100 digitado no vão continua valendo.
         var offCad = num(p.altura_do_topo_mm);
-        var off = (!offCad || offCad === 60) ? 100 : offCad;
+        var off = Math.max(offCad || 100, 100);
         // Vão raso (< 540mm): fixo a 270mm do FUNDO — ver
         // AFASTAMENTO_CABIDE_FUNDO_MM/LIMIAR_CABIDE_CENTRALIZA_MM acima.
         // Vão fundo (>= 540mm): CENTRALIZA (box.d/2), senão sobra vão vazio
