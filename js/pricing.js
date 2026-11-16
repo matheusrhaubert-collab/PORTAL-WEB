@@ -1839,7 +1839,8 @@
   const CANTO90_CLOSET_ASA_MIN_MM = 300;
   const CANTO90_CLOSET_ASA_MAX_MM = 800;
   const CANTO90_CLOSET_VAO_MIN_MM = 300;
-  const CANTO90_CLOSET_VAO_MAX_MM = 1050;
+  // 1019: o fundo da asa em X (W − E − asa B) tem que caber na máquina (≤ 1000)
+  const CANTO90_CLOSET_VAO_MAX_MM = 1019;
   const CANTO90_CABIDE_PADRAO_MM = 1910;
   const CANTO90_CABIDE_MIN_MM = 1300;
   const CANTO90_DELTAS = [0, -20, -76, 2, 2.5, 4.5];

@@ -44,18 +44,29 @@ const L = (ref, role, w, h, d, x, y, z, prog, extra) => Object.assign({ referenc
   drilling_pattern_id: prog, rotation_y_deg: 0, shape_type: 'box', origin: 'fabricacao' }, extra || {});
 // Programas do closet = os do Base Canto 90° SEM o minifix (pino Ø5 + tambor
 // Ø12) nas arestas dos fundos — mesmo filtro do bloco 0-B da migration 300.
-const semMinifixFundo = (id, tiraEsq) => dump.programas[id].filter((r) => {
+// aresta = a COMPRIDA DE TRÁS de cada base (asa em Z: borda_esq; asa em X: borda_sup)
+const semMinifixFundo = (id, aresta) => dump.programas[id].filter((r) => {
   const y = String(r.y_formula || '').replace(/ /g, ''), x = String(r.x_formula || '').replace(/ /g, '');
-  if ((r.face === 'borda_sup' || (tiraEsq && r.face === 'borda_esq')) && Number(r.counter_diameter_mm || 0) === 5) return false;
-  if (!/^borda_/.test(r.face) && Number(r.diameter_mm) >= 10 && (y === '24' || (tiraEsq && x === '24'))) return false;
+  if (r.face === aresta && Number(r.counter_diameter_mm || 0) === 5) return false;
+  if (!/^borda_/.test(r.face) && Number(r.diameter_mm) >= 10 && ((aresta === 'borda_sup' && y === '24') || (aresta === 'borda_esq' && x === '24'))) return false;
   return true;
 });
 const TB_E = 'closet-esq', TB_D = 'closet-dir';
-const programas = Object.assign({}, dump.programas, {
-  'closet-esq': semMinifixFundo(pat('Base B (asa em Z)'), true), 'closet-dir': semMinifixFundo(pat('Base A (asa em X)'), false) });
+// "Back" transposto pra fundo que corre na profundidade, 2 pontas (bloco 0-A da migration)
+const trocaVar = (f, de, para) => String(f).replace(new RegExp('\\b' + de + '\\b', 'g'), para);
+const fundoLateral = dump.programas[pat('Fundo (trás)')].map((r) => {
+  const fx = trocaVar(r.y_formula, 'L', 'C');
+  if (r.face === 'borda_esq') return Object.assign({}, r, { face: 'borda_sup', x_formula: fx, y_formula: '0' });
+  if (r.face === 'borda_dir') return Object.assign({}, r, { face: 'borda_inf', x_formula: fx, y_formula: 'L' });
+  if (!/^borda_/.test(r.face)) return Object.assign({}, r, { x_formula: fx, y_formula: trocaVar(r.x_formula, 'C', 'L') });
+  return null;
+}).filter(Boolean);
+const programas = Object.assign({}, dump.programas, { 'fundo-b': fundoLateral,
+  'closet-esq': semMinifixFundo(pat('Base B (asa em Z)'), 'borda_esq'), 'closet-dir': semMinifixFundo(pat('Base A (asa em X)'), 'borda_sup') });
 const linhas = [
-  L('Fundo (trás)', 'back', 'W-2*E', 'H', 'E', 'E', '0', '0', pat('Fundo (trás)')),
-  L('Fundo (esquerda)', 'left', 'E', 'H', 'D-E', '0', '0', '0', pat('Fundo (esquerda)')),
+  L('Fundo A (asa em X)', 'back', 'W-E-533', 'H', 'E', '533', '0', '0', pat('Fundo (trás)')),
+  L('Fundo B (asa em Z)', 'left', 'E', 'H', 'D-2*E', '0', '0', 'E', 'fundo-b'),
+  L('Lateral B de trás (asa em Z)', 'back', '533', 'H', 'E', '0', '0', '0', null),
   L('Lateral A (asa em X)', 'right', 'E', 'H', '533', 'W-E', '0', '0', null),
   L('Lateral B (asa em Z)', 'back', '533', 'H', 'E', '0', '0', 'D-E', null),
   L('Base B (asa em Z)', 'bottom', '513-E', 'E', 'D-2*E', 'E', '76', 'E', TB_E),
@@ -108,7 +119,7 @@ ok(P.applyCanto90Asas(linhas, {}) === linhas && P.applyCanto90Asas(linhas, { __c
 const fx = P.canto90FaixaAsa(1067, { semPorta: true });
 ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + JSON.stringify(fx) + ')');
 
-[[1000, 2400, 1000, null, null, null], [1039, 2400, 1000, 450, 650, 1700], [1000, 2000, 1000, null, null, null], [1039, 2700, 900, 600, 700, null], [1039, 2700, 1019, null, null, null]]
+[[1067, 2400, 1000, null, null, null], [1039, 2400, 1000, 450, 650, 1700], [1000, 2000, 1000, null, null, null], [1552, 2700, 900, 600, 700, null], [1552, 2700, 1039, null, null, null]]
   .forEach(([W, H, D, A, B, CAB]) => {
     const asaA = A || 533, asaB = B || 533;
     const ov = (A || CAB) ? { __canto90: Object.assign({}, A ? { asa_a_mm: A, asa_b_mm: B } : {}, CAB ? { cabide_mm: CAB } : {}) } : {};
@@ -123,7 +134,10 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
       return q.offset_x_mm < -0.01 || q.offset_z_mm < -0.01 || q.offset_y_mm < -0.01 || q.offset_x_mm + sx > W + 0.01 || q.offset_z_mm + sz > D + 0.01 || q.offset_y_mm + q.height_mm > H + 0.01;
     });
     ok(!fora.length, 'nada passa do módulo' + (fora.length ? ' (' + fora.map((q) => q.reference).join(', ') + ')' : ''));
-    ok(p('Fundo (trás)').width_mm <= 1000 && p('Fundo (esquerda)').depth_mm <= 1000, 'fundos cabem na máquina (≤ 1000): ' + p('Fundo (trás)').width_mm + ' / ' + p('Fundo (esquerda)').depth_mm);
+    const fA = p('Fundo A (asa em X)'), fB = p('Fundo B (asa em Z)'), lT = p('Lateral B de trás (asa em Z)');
+    ok(fA.width_mm <= 1000 && fB.depth_mm <= 1000, 'fundos cabem na máquina (≤ 1000): A ' + fA.width_mm + ' / B ' + fB.depth_mm);
+    ok(perto(lT.width_mm, asaB) && perto(fA.offset_x_mm, asaB) && perto(fA.offset_x_mm + fA.width_mm, W - E) && perto(fB.offset_z_mm, E) && perto(fB.offset_z_mm + fB.depth_mm, D - E),
+      'caixa completa: fundo B entre as 2 laterais de ' + asaB + '; "C": fundo A começa na borda da lateral de trás (x ' + fA.offset_x_mm + ') e vai até a lateral A');
     // 2. bases
     ['Base', 'Prateleira do meio', 'Prateleira do cabide', 'Base superior'].forEach((n) => {
       const bb = p(n + ' B (asa em Z)'), ba = p(n + ' A (asa em X)');
@@ -155,18 +169,25 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
     const sB = (f['Lateral B (asa em Z)'] || []).find((h) => h.tipo === 'suporte_cabide');
     const sA = (f['Lateral A (asa em X)'] || []).find((h) => h.tipo === 'suporte_cabide');
     if (sB && sA) ok(sB.face === sA.face && sB.diameter === 3, '  ...mesma face do furo da lateral A (' + sB.face + '), Ø' + sB.diameter + ', y ' + Math.round(sB.y) + ' x ' + Math.round(sB.x));
-    ok(['Fundo (trás)', 'Fundo (esquerda)'].every((n) => conta(f[n], 'suporte_cabide') === 0), 'nenhum furo de cabide nos fundos');
+    ok(['Fundo A (asa em X)', 'Fundo B (asa em Z)'].every((n) => conta(f[n], 'suporte_cabide') === 0), 'nenhum furo de cabide nos fundos');
     ['Base', 'Prateleira do meio', 'Prateleira do cabide', 'Base superior'].forEach((n) => {
       const jb = conta(f[n + ' B (asa em Z)'], 'contrafuro_borda');
       ok(jb >= 2, n + ' B recebe contra-furo na BORDA vindo da A (deu ' + jb + ')');
     });
     ok(conta(f['Lateral A (asa em X)'], 'contrafuro_face') >= 8, 'lateral A recebe os contra-furos das 4 bases A (deu ' + conta(f['Lateral A (asa em X)'], 'contrafuro_face') + ')');
     ok(conta(f['Lateral B (asa em Z)'], 'contrafuro_face') >= 8, 'lateral B recebe os contra-furos das 4 bases B (deu ' + conta(f['Lateral B (asa em Z)'], 'contrafuro_face') + ')');
-    const mfTras = (f['Fundo (trás)'] || []).filter((h) => h.tipo === 'contrafuro_face' && h.diameter === 5).length;
-    const cvTras = (f['Fundo (trás)'] || []).filter((h) => h.tipo === 'contrafuro_face' && h.diameter === 8).length;
-    ok(mfTras === 0 && cvTras >= 8, 'fundo de trás: nenhum minifix vindo das bases, só cavilha (minifix ' + mfTras + ', cavilhas ' + cvTras + ')');
+    const d5 = (n) => (f[n] || []).filter((h) => h.tipo === 'contrafuro_face' && h.diameter === 5).length;
+    const d8 = (n) => (f[n] || []).filter((h) => h.tipo === 'contrafuro_face' && h.diameter === 8).length;
+    ok(d5('Fundo A (asa em X)') === 0 && d8('Fundo A (asa em X)') >= 8, 'fundo A: nenhum minifix das bases (aresta comprida), só cavilha (' + d5('Fundo A (asa em X)') + ' / ' + d8('Fundo A (asa em X)') + ')');
+    ok(d5('Fundo B (asa em Z)') === 0 && d8('Fundo B (asa em Z)') >= 8, 'fundo B: nenhum minifix das bases (aresta comprida), só cavilha (' + d5('Fundo B (asa em Z)') + ' / ' + d8('Fundo B (asa em Z)') + ')');
+    ok(d5('Lateral B de trás (asa em Z)') >= 10, 'lateral B de trás: minifix da ponta das 4 bases B (8) + do fundo B (2) — deu ' + d5('Lateral B de trás (asa em Z)'));
+    const fundoNaBorda = (f['Lateral B de trás (asa em Z)'] || []).filter((h) => h.tipo === 'contrafuro_borda');
+    ok(fundoNaBorda.length === 4, 'fundo A entra na BORDA da lateral de trás da caixa completa (2 minifix + 2 cavilhas) — deu ' + fundoNaBorda.length);
+    ok((f['Fundo B (asa em Z)'] || []).filter((h) => h.tipo === 'proprio_borda').length === 8, 'fundo B: pinos próprios nas DUAS pontas (4 + 4) — deu ' + (f['Fundo B (asa em Z)'] || []).filter((h) => h.tipo === 'proprio_borda').length);
     const tamb = ['Base', 'Prateleira do meio', 'Prateleira do cabide', 'Base superior'].map((n) => (f[n + ' B (asa em Z)'] || []).filter((h) => h.diameter === 12).length + '/' + (f[n + ' A (asa em X)'] || []).filter((h) => h.diameter === 12).length);
-    ok(tamb.every((t) => t === '2/4'), 'tambores por base: B 2 (só lateral B), A 4 (junção + lateral A) — ' + tamb.join(' '));
+    ok(tamb.every((t) => t === '4/4'), 'tambores por base: B 4 (fundo de trás + lateral B), A 4 (junção + lateral A) — ' + tamb.join(' '));
+    const jun = (f['Base B (asa em Z)'] || []).filter((h) => h.tipo === 'contrafuro_borda').map((h) => h.diameter).sort().join(',');
+    ok(jun === '5,5,8,8', 'junção base com base: 2 pinos de minifix (Ø5) + 2 cavilhas (Ø8) na borda da B — ' + jun);
     ok(!f['Suporte em L do cabide (asa em X)'] && !f['Cabide A (asa em X)'] && !f['Cabide B (asa em Z)'], 'item comprado (cabide/suporte) não recebe furo');
   });
 

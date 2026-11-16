@@ -5245,7 +5245,12 @@ const Viewer3D = (function () {
     const trilhos = {};
     holes.forEach((h) => {
       const d = h.diameter, prof = (h.depth || 10) / 1000;
-      if (h.borda) return;
+      // Furo de borda não desenha nada — MENOS o contra-furo de BORDA da
+      // junção borda com borda (bases em L do canto 90°: uma base encosta na
+      // borda da outra). Ali não existe furo de face do par, então o pino /
+      // a cavilha saem deste furo (Matt, 16/11: "faltando esse pino... e
+      // cavilha nessa parte também").
+      if (h.borda && !(h.tipo === 'contrafuro_borda' && h.extra && h.extra.bordaComBorda)) return;
       switch (h.tipo) {
         case 'copo_dobradica': {
           cilindro(h, d / 2000, -Math.min(prof, 0.0125), 0.001, mat.zamac);

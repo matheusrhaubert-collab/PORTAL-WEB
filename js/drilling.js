@@ -1082,7 +1082,11 @@
               edge: edge,
               diameter: Number(row.counter_diameter_mm),
               depth: Number(row.counter_depth_mm),
-              tipo: 'contrafuro_borda'
+              tipo: 'contrafuro_borda',
+              // junção BORDA COM BORDA: não existe furo de face do par, então
+              // é este furo que carrega o pino/cavilha (desenho 3D e lista de
+              // ferragem — ver holesBySignature). O .ban ignora `extra`.
+              extra: { bordaComBorda: true }
             });
             return;
           }
@@ -3302,8 +3306,17 @@
       const acc = {};
       store.forEach(function (holes) {
         holes.forEach(function (h) {
-          const tipo = h.tipo || 'desconhecido';
-          const faceKind = /^borda_/.test(h.face || '') ? 'borda' : 'face';
+          let tipo = h.tipo || 'desconhecido';
+          let faceKind = /^borda_/.test(h.face || '') ? 'borda' : 'face';
+          // JUNÇÃO BORDA COM BORDA (2026-11-16, Matt, bases em L do canto 90°:
+          // "faltando esse pino... e cavilha nessa parte também"). A regra da
+          // ferragem é "só furo de FACE conta", porque numa junta comum a
+          // borda é o outro lado do mesmo pino que já contou na face. Quando
+          // uma base encosta na BORDA da outra não há furo de face: o
+          // contra-furo de borda dessa junção conta como o contra-furo de
+          // face que ele substitui (Ø5 = pino, Ø8 = cavilha), uma vez por
+          // junta. Os outros furos de borda continuam fora da conta.
+          if (tipo === 'contrafuro_borda' && h.extra && h.extra.bordaComBorda) { tipo = 'contrafuro_face'; faceKind = 'face'; }
           // Ø arredondado a 2 casas: o cadastro é numeric(6,2) e comparar
           // float cru com o que veio do banco erra por 0.0000001.
           const d = Math.round((Number(h.diameter) || 0) * 100) / 100;
