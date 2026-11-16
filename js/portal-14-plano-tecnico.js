@@ -282,7 +282,7 @@ function ptChainLabels(valuesMm) {
 // Rótulo do módulo dentro do retângulo dele (tela): código/nome azul
 // sublinhado + número oficial pequeno + medidas. Encolhe a fonte pra caber.
 function ptModuleLabel(ctx, rect, slot, num, fs) {
-  const name = String((slot.module && slot.module.name) || '').trim() || '—';
+  const name = ptNomeDoSlot(slot).trim() || '—';
   const cx = (rect.x0 + rect.x1) / 2, cy = (rect.y0 + rect.y1) / 2;
   const maxW = Math.max(10, (rect.x1 - rect.x0) - fs * 0.5);
   const maxH = rect.y1 - rect.y0;
@@ -551,7 +551,15 @@ function ptInteriorViews(scene, walls) {
   let longe = 0, dMax = -1;
   cantos.forEach((c, i) => { const d = Math.hypot(c[0] - mcx, c[1] - mcz); if (d > dMax) { dMax = d; longe = i; } });
   const escolhidos = [cantos[longe], cantos[(longe + 2) % 4]];
-  const olhoY = Math.min(1.65, tetoM * 0.62), alvoY = Math.min(1.15, tetoM * 0.45);
+  // CÂMERA NIVELADA, NA MEIA ALTURA DOS MÓVEIS (3ª rodada, Matt com a imagem:
+  // "ficou pra baixo, não consigo ver a parte de cima dos cabinets"). Antes o
+  // olho ficava a 1,65 m mirando 1,15 m — olhava pra baixo e cortava o topo.
+  // Agora olha RETO (alvo na mesma altura do olho), com o olho no meio da
+  // altura do móvel mais alto: sobra o mesmo tanto pra cima e pra baixo, e as
+  // linhas verticais ficam em pé. A abertura se ajusta pra caber do chão ao
+  // topo na distância até o centro do ambiente.
+  const topoM = Math.max(...caixas.map((b) => b.max.y));
+  const olhoY = Math.min(Math.max(topoM / 2, 1.1), 1.6), alvoY = olhoY;
   const dentroDeMovel = (x, z) => caixas.some((b) => x > b.min.x - 0.12 && x < b.max.x + 0.12 && z > b.min.z - 0.12 && z < b.max.z + 0.12 && olhoY < b.max.y + 0.05);
   const wPx = 2000, hPx = 1250;
   const r = ptGetRenderer();
@@ -561,7 +569,10 @@ function ptInteriorViews(scene, walls) {
     let t = Math.min(0.5, 0.22 / Math.max(Math.hypot(cx - c[0], cz - c[1]), 0.01));
     let px = c[0] + (cx - c[0]) * t, pz = c[1] + (cz - c[1]) * t;
     for (let k = 0; k < 20 && dentroDeMovel(px, pz) && t < 0.9; k++) { t += 0.05; px = c[0] + (cx - c[0]) * t; pz = c[1] + (cz - c[1]) * t; }
-    const cam = new THREE.PerspectiveCamera(78, wPx / hPx, 0.03, 80);   // ≈ 104° na horizontal
+    const distM = Math.max(Math.hypot(cx - px, cz - pz) * 0.85, 0.5);
+    const meiaAltura = Math.max(topoM - olhoY, olhoY) + 0.2;
+    const fovY = Math.min(96, Math.max(70, 2 * Math.atan(meiaAltura / distM) * 180 / Math.PI));
+    const cam = new THREE.PerspectiveCamera(fovY, wPx / hPx, 0.03, 80);
     cam.position.set(px, olhoY, pz);
     cam.lookAt(cx + (cx - px) * 0.15, alvoY, cz + (cz - pz) * 0.15);
     cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
@@ -590,6 +601,64 @@ function ptInteriorViews(scene, walls) {
     if (canvas) out.push(canvas);
   });
   return out;
+}
+// NOME DO MÓDULO NO PLANO QUANDO O INTERIOR FOI MUDADO NO CONSTRUTOR
+// (2026-11-16, Matt: "copiei o double hanging e modifiquei pelo construtor,
+// mas no plano técnico ele tá chamando de double hanging e na listagem de
+// módulos também, isso pode confundir"). O módulo continua sendo o do
+// catálogo; o que muda é o RÓTULO: se o interior do slot não bate mais com o
+// interior de fábrica, o nome passa a descrever o que tem dentro
+// ("Custom Closet · 12 shelves", "… · 1 hanging rod + 4 drawers"). Interior
+// igual ao de fábrica (ou módulo sem interior) = nome do catálogo, como sempre.
+const ptNomes = new Map();   // slot.id -> nome pra mostrar (preenchido em ptPreparaNomes)
+function ptNomeDoSlot(slot) {
+  if (slot && ptNomes.has(slot.id)) return ptNomes.get(slot.id);
+  return String((slot && slot.module && slot.module.name) || '');
+}
+function ptAssinaturaInterior(layout, cat) {
+  const a = { rods: 0, drawers: 0, shelves: 0, fronts: 0 };
+  const walk = (n) => {
+    if (!n) return;
+    a.fronts += (n.fronts || []).length;
+    if (n.content && n.content.acc) {
+      const acc = cat[n.content.acc] || {};
+      const p = Object.assign({}, acc.params, n.content.params || {});
+      if (acc.forma === 'barra' || acc.shape_type === 'oval_rod') a.rods += 1;
+      else if (/gavet|drawer/i.test(String(acc.group_name || acc.group || acc.name || ''))) a.drawers += Math.max(1, Math.round(Number(p.quantidade) || 1));
+    }
+    const kids = n.children || [];
+    if (kids.length > 1 && n.splitAxis === 'y') a.shelves += kids.length - 1;
+    kids.forEach(walk);
+  };
+  walk(layout);
+  return a;
+}
+async function ptPreparaNomes() {
+  ptNomes.clear();
+  if (typeof loadProjectFactoryLayout !== 'function') return;
+  try { if (typeof ensureAccessoryCatalog === 'function') await ensureAccessoryCatalog(); } catch (e) { /* segue */ }
+  const cat = (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || (typeof projectBuilderCat !== 'undefined' && projectBuilderCat) || {};
+  const plural = (n, um, varios) => n + ' ' + (n === 1 ? um : varios);
+  for (const slot of (projectSlots || [])) {
+    if (!slot || !slot.module || !slot.layout) continue;
+    let fab = null;
+    try { fab = await loadProjectFactoryLayout(slot.module.id); } catch (e) { fab = null; }
+    const atual = ptAssinaturaInterior(slot.layout, cat);
+    const base = fab ? ptAssinaturaInterior(fab, cat) : null;
+    const igual = base && ['rods', 'drawers', 'shelves', 'fronts'].every((k) => base[k] === atual[k]);
+    const vazio = !atual.rods && !atual.drawers && !atual.shelves && !atual.fronts;
+    if (igual || vazio) continue;
+    if (!base && !/custom closet/i.test(String(slot.module.name || ''))) continue;   // caixa montada do zero fora do closet: nome do catálogo
+    const partes = [];
+    if (atual.rods) partes.push(plural(atual.rods, 'hanging rod', 'hanging rods'));
+    if (atual.drawers) partes.push(plural(atual.drawers, 'drawer', 'drawers'));
+    if (atual.shelves && (!atual.rods || atual.shelves > atual.rods + 1)) partes.push(plural(atual.shelves, 'shelf', 'shelves'));
+    if (atual.fronts) partes.push(plural(atual.fronts, 'door', 'doors'));
+    if (!partes.length) continue;
+    const nome = String(slot.module.name || '');
+    const raiz = nome.replace(/\s*(Double Hanging|Hanging \+ Drawers|Long Hanging|Shelves|Open)\s*$/i, '').trim() || nome;
+    ptNomes.set(slot.id, raiz + ' · ' + partes.join(' + '));
+  }
 }
 function ptEhFillerOuPainel(slot) {
   const m = (slot && slot.module) || {};
@@ -1639,6 +1708,7 @@ async function generateProjectTechPlan(opts) {
     if (doorsWereOpen || drawersWereOpen) { ptStatus(ptT('closing_doors')); await ptSleep(1100); }
 
     const nums = ptNumberMap();
+    try { await ptPreparaNomes(); } catch (e) { console.warn('[plano técnico] nomes dos módulos', e); ptNomes.clear(); }
     const walls = getProjectWallGeometry();
     // Só parede com COMPONENTE ganha página (14/10, Matt: "colocou uma porta,
     // só uma porta. isso é desnecessário. quando está com outros móveis ok,
@@ -1760,7 +1830,7 @@ async function generateProjectTechPlan(opts) {
         let cTop = null;
         try { cTop = view ? ptRenderModuleTop(scene, view, nums) : null; } catch (e) { console.warn('[plano técnico] planta do módulo', e); }
         const spec = opts.moduleSpecs(numero, slot);
-        ptPdfModuleSheet(doc, st, ptT('module_sheet_title', { n: String(numero).padStart(3, '0'), name: (slot.module && slot.module.name) || '' }),
+        ptPdfModuleSheet(doc, st, ptT('module_sheet_title', { n: String(numero).padStart(3, '0'), name: ptNomeDoSlot(slot) }),
           cWith, cWithout, Array.isArray(spec) ? spec : (spec && spec.rows), spec && spec.swatches, spec && spec.seals, cTop);
       }
     }
@@ -1778,7 +1848,7 @@ async function generateProjectTechPlan(opts) {
         .join(' · ');
       rows.push({
         num: numero,
-        module: String((slot.module && slot.module.name) || '—'),
+        module: ptNomeDoSlot(slot) || '—',
         place: isFloorSlot(slot) ? ptT('place_island') : ptT('place_wall', { n: Number(slot.wall_index || 0) + 1 }) + (ptIsUpper(slot) ? ' · ' + ptT('upper') : ''),
         dims: ptFmt(slot.width_mm) + ' × ' + ptFmt(slot.height_mm) + ' × ' + ptFmt(slot.depth_mm),
         floor: ptFmt(slot.floor_height_mm || 0),
