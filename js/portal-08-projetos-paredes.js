@@ -6111,14 +6111,41 @@ function applyProjectDrawStyle(estilo, remontar) {
   // recuperar pela interface.
   const bOcultar = document.getElementById('po-proj-tb-ocultar-btn');
   if (bOcultar) {
+    // OCULTA E DESOCULTA (15/11, Matt: "quando estiver selecionado o que for,
+    // ao clicar em ocultar, quando clicar novamente (com teclado) ele aparece
+    // novamente. ou seleção, ou parede toda"). Mesmo botão / mesma tecla:
+    //   · com seleção (módulo, vários, grupo inteiro): oculta e guarda;
+    //   · sem seleção e com algo guardado: mostra de novo o que ocultou;
+    //   · sem seleção e nada guardado: oculta a PAREDE ativa inteira (parede +
+    //     módulos dela) — a próxima vez traz de volta.
+    let ultimoOculto = null; // { slots: [ids], wall: idx|null }
     bOcultar.addEventListener('click', () => {
-      const slot = projectSlots.find((s) => s.id === selectedProjectSlotId);
-      if (!slot) {
-        alert(I18n.t('project.hide_needs_selection'));
-        return;
+      const ids = new Set(typeof projectMultiSelectIds !== 'undefined' && projectMultiSelectIds ? Array.from(projectMultiSelectIds) : []);
+      if (selectedProjectSlotId != null) {
+        ids.add(selectedProjectSlotId);
+        const sel = projectSlots.find((x) => x.id === selectedProjectSlotId);
+        if (sel && sel.group_id) projectSlots.filter((x) => x.group_id === sel.group_id).forEach((x) => ids.add(x.id));
       }
-      slot.oculto = true;
-      deselectProjectSlot();
+      const escolhidos = projectSlots.filter((x) => ids.has(x.id) && !x.oculto);
+      if (escolhidos.length) {
+        escolhidos.forEach((x) => { x.oculto = true; });
+        ultimoOculto = { slots: escolhidos.map((x) => x.id), wall: null };
+        deselectProjectSlot();
+        if (typeof projectMultiSelectIds !== 'undefined') projectMultiSelectIds = new Set();
+        if (typeof refreshProject3DMultiHighlight === 'function') refreshProject3DMultiHighlight();
+      } else if (ultimoOculto) {
+        projectSlots.forEach((x) => { if (ultimoOculto.slots.includes(x.id)) x.oculto = false; });
+        if (ultimoOculto.wall != null && projectWallSegments[ultimoOculto.wall]) projectWallSegments[ultimoOculto.wall].oculta = false;
+        ultimoOculto = null;
+      } else {
+        const wi = Number(projectActiveWallIndex || 0);
+        const seg = projectWallSegments[wi];
+        const daParede = projectSlots.filter((x) => !isFloorSlot(x) && Number(x.wall_index || 0) === wi && !x.oculto);
+        if (!seg && !daParede.length) { alert(I18n.t('project.hide_needs_selection')); return; }
+        daParede.forEach((x) => { x.oculto = true; });
+        if (seg && !seg.oculta) seg.oculta = true;
+        ultimoOculto = { slots: daParede.map((x) => x.id), wall: seg ? wi : null };
+      }
       renderProjectCanvas();
       markProjectDirty();
     });
