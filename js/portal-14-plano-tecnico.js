@@ -1991,7 +1991,16 @@ async function generateProjectTechPlan(opts) {
       doc.text(ptT('page', { p, t: total }), 269.4, 211.9, { align: 'right' });
     }
     const safe = String(st.projectName).replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'projeto';
-    doc.save(opts.fileName || ('plano-tecnico-' + safe + '.pdf'));
+    const nomeArq = opts.fileName || ('plano-tecnico-' + safe + '.pdf');
+    doc.save(nomeArq);
+    // guarda nos Documentos do projeto (portal-41) — o novo troca o anterior.
+    // Só o plano gerado do PROJETO salvo; o do pedido (opts.fileName) não.
+    try {
+      const fav = (typeof loadedProjectFavorite !== 'undefined') ? loadedProjectFavorite : null;
+      if (!opts.fileName && fav && fav.id && typeof docGuardarPdf === 'function') {
+        docGuardarPdf(doc, { kind: 'tech_plan', name: nomeArq, project_id: fav.id, folder: fav.client_folder || null });
+      }
+    } catch (e) { /* só conveniência */ }
     return true;
   } catch (e) {
     console.error('[plano técnico]', e);

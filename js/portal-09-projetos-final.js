@@ -1084,6 +1084,8 @@ async function renameProjectFolder(oldName, rows) {
       if (currentUser) await supabaseClient.from('project_folder_shares')
         .update({ folder: novo }).eq('owner_id', currentUser.id).eq('folder', oldName);
     } catch (e) { /* migration 195 ausente — sem link de pasta, nada a fazer */ }
+    // documentos presos ao nome da pasta vão junto (portal-41)
+    try { if (typeof docRenameFolder === 'function') await docRenameFolder(oldName, novo); } catch (e) { /* ok */ }
     // pasta aberta/fechada continua igual
     try {
       const fechadas = JSON.parse(localStorage.getItem('legno_myproj_folders_closed') || '{}') || {};
@@ -3594,6 +3596,8 @@ async function mpLoad() {
   mpState.trackByOrder = track;
   mpState.loaded = true;
   mpRender();
+  // documentos de cada pasta/projeto (portal-41, migration 301)
+  if (typeof docLoad === 'function') docLoad().then(() => { if (seq === mpState.loadSeq) mpRender(); });
 }
 
 // etapa de UM projeto: dev | sent | prod | done  (+ emLote)
@@ -3944,6 +3948,7 @@ function mpRender() {
           : f.single
             ? '<div class="mp-exp-box cu-build cu-single" data-proj="' + mpEsc(f.single.id) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div>'
             : '<div class="mp-exp-box' + (f.kind === 'build' ? ' cu-build' : '') + '" data-folder="' + mpEsc(f.kind === 'build' ? f.nome : f.key) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div>')
+        + (typeof docFolderHtml === 'function' ? docFolderHtml(f) : '')
         + '</td></tr>' : '');
   }).join('');
 

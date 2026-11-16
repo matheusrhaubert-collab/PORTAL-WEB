@@ -932,7 +932,20 @@ async function generateOrderProposalPDF(order, items, multi) {
 
     const filenameBase = (order.po_name || order.client_name || I18n.t('proposal.filename_fallback'))
       .toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || I18n.t('proposal.filename_fallback');
-    doc.save(`${I18n.t('proposal.filename_fallback')}-${filenameBase}.pdf`);
+    const nomeArq = `${I18n.t('proposal.filename_fallback')}-${filenameBase}.pdf`;
+    doc.save(nomeArq);
+    // guarda nos Documentos (portal-41) — o novo troca o anterior. Proposta
+    // da PASTA (multi) fica na pasta; de pedido, no pedido/projeto de origem;
+    // prévia do projeto, no projeto salvo.
+    try {
+      if (typeof docGuardarPdf === 'function') {
+        const fav = (typeof loadedProjectFavorite !== 'undefined') ? loadedProjectFavorite : null;
+        const info = multi ? { folder: order.po_name || null }
+          : order.id ? { order_id: order.id, project_id: order.source_project_id || null }
+            : (fav && fav.id) ? { project_id: fav.id, folder: fav.client_folder || null } : null;
+        if (info && (info.folder || info.order_id || info.project_id)) docGuardarPdf(doc, Object.assign({ kind: 'proposal', name: nomeArq }, info));
+      }
+    } catch (e) { /* só conveniência */ }
     if (statusEl) { statusEl.textContent = ''; statusEl.style.display = 'none'; }
   } catch (err) {
     if (statusEl) { statusEl.textContent = (err && err.message) || String(err); }
