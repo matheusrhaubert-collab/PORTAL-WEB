@@ -7,4 +7,4 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-call subir.bat "galeria de favoritos + grupo move como objeto unico"
+call subir.bat "v1.009: favoritos, grupo objeto unico, tutorial, central de pedidos (teste admin)"

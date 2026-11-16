@@ -552,6 +552,47 @@ function createViewerComposition3D() {
     return found;
   }
 
+  // Geometria-caixa (24 vértices) da peça original de um rodapé — é dela que
+  // sai o UV já na escala física (ver copyBoxUVStretchedX).
+  function pickBaseboardBoxGeometry(obj) {
+    let found = null;
+    if (!obj) return null;
+    obj.traverse((o) => {
+      if (found || !o.isMesh || !o.geometry || o.geometry.type !== 'BoxGeometry') return;
+      const uv = o.geometry.attributes && o.geometry.attributes.uv;
+      if (uv && uv.count === 24) found = o.geometry;
+    });
+    return found;
+  }
+  // Copia o UV de uma caixa `src` pra outra caixa `dst` que só difere no
+  // COMPRIMENTO (eixo X), continuando a textura na mesma escala: em cada face
+  // o UV é uma reta ao longo de X, então o vértice novo recebe o UV do antigo
+  // mais (variação de UV por metro) × (quanto ele andou em X). Faces das
+  // pontas (X constante) copiam igual. Funciona com o UV escalado a partir da
+  // origem, em torno do centro (textura girada) e girado no buffer — não
+  // precisa saber qual dos três foi usado. Sem `src` compatível não mexe.
+  function copyBoxUVStretchedX(src, dst) {
+    if (!src || !dst) return false;
+    const ps = src.attributes && src.attributes.position, us = src.attributes && src.attributes.uv;
+    const pd = dst.attributes && dst.attributes.position, ud = dst.attributes && dst.attributes.uv;
+    if (!ps || !us || !pd || !ud || ps.count !== 24 || us.count !== 24 || pd.count !== 24 || ud.count !== 24) return false;
+    for (let f = 0; f < 6; f++) {
+      const i0 = f * 4;
+      let du = 0, dv = 0;
+      for (let k = 1; k < 4; k++) {
+        const dx = ps.getX(i0 + k) - ps.getX(i0);
+        if (Math.abs(dx) > 1e-9) { du = (us.getX(i0 + k) - us.getX(i0)) / dx; dv = (us.getY(i0 + k) - us.getY(i0)) / dx; break; }
+      }
+      for (let k = 0; k < 4; k++) {
+        const i = i0 + k, anda = pd.getX(i) - ps.getX(i);
+        ud.setXY(i, us.getX(i) + du * anda, us.getY(i) + dv * anda);
+      }
+    }
+    ud.needsUpdate = true;
+    if (src.userData && src.userData.uvRotated90) { dst.userData = dst.userData || {}; dst.userData.uvRotated90 = true; }
+    return true;
+  }
+
   // JUNÇÃO AUTOMÁTICA DE RODAPÉ ENTRE MÓDULOS VIZINHOS (migration 137,
   // pedido do Matt 2026-08-23): "o rodape toekick fica separado por modulo,
   // porem na pratica ele precisa se unir ate no maximo 2.7metros... substitui
@@ -938,6 +979,24 @@ function createViewerComposition3D() {
         const combinedLength_m = L.leftEdge.distanceTo(R.rightEdge);
         const material = pickBaseboardMaterial(L.mesh) || pickBaseboardMaterial(R.mesh);
         const geometry = new THREE.BoxGeometry(combinedLength_m, L.faceB_m, L.thickness_m);
+        // TEXTURA NA ESCALA DA CHAPA (2026-11-15, Matt, print do rodapé juntado:
+        // "a textura do toekick está errada"). A caixa nova nascia com UV 0..1,
+        // e desde 27/08 a escala física mora no UV de cada peça (viewer3d.js
+        // scaleFaceUV) e não mais na textura — então a imagem INTEIRA da chapa
+        // era esticada no comprimento do rodapé juntado e espremida nos 114 mm.
+        // Agora o UV sai do rodapé original, continuado no comprimento novo.
+        if (!copyBoxUVStretchedX(pickBaseboardBoxGeometry(L.mesh) || pickBaseboardBoxGeometry(R.mesh), geometry)) {
+          // original não é caixa simples (rodapé do Construtor, peça com recorte):
+          // escala física direta — 1 imagem = 1 m de chapa (TEXTURE_TILE_MM do viewer3d.js)
+          const tile = (Number(typeof window !== 'undefined' ? window.LEGNO_TEXTURE_TILE_MM : 0) || 1000) / 1000;
+          const uvM = geometry.attributes.uv;
+          const dimsFace = [[L.thickness_m, L.faceB_m], [combinedLength_m, L.thickness_m], [combinedLength_m, L.faceB_m]];
+          for (let vi = 0; vi < uvM.count; vi++) {
+            const par = dimsFace[Math.floor(vi / 8)] || dimsFace[2];
+            uvM.setXY(vi, 0.5 + (uvM.getX(vi) - 0.5) * (par[0] / tile), 0.5 + (uvM.getY(vi) - 0.5) * (par[1] / tile));
+          }
+          uvM.needsUpdate = true;
+        }
         const merged = material ? new THREE.Mesh(geometry, material) : new THREE.Mesh(geometry);
         merged.position.copy(L.leftEdge.clone().add(R.rightEdge).multiplyScalar(0.5));
         merged.quaternion.copy(L.worldQuat);
