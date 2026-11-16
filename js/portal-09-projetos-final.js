@@ -3465,7 +3465,7 @@ const mpState = {
   rows: [], ordersById: {}, trackByOrder: {}, archCol: true,
   tab: 'all', status: 'all', client: 'all', sort: 'updated', dir: 'desc', q: '',
   open: new Set(), menu: null, loadSeq: 0, loaded: false,
-  central: false, ctab: 'build' // modo Central de Pedidos (15/11, ver CU_ no fim do arquivo)
+  central: false, ctab: 'all' // modo Central de Pedidos (15/11, ver CU_ no fim do arquivo)
 };
 
 function mpT(k, vars) { return I18n.t('mp.' + k, vars); }
@@ -3616,7 +3616,7 @@ function mpVisible(folders) {
       // Central de Pedidos: Em construção | Em produção | Entregues | Arquivados
       if (mpState.ctab === 'archived') { if (!f.arquivada) return false; }
       else if (f.arquivada) return false;
-      else if (mpFolderPhase(f) !== mpState.ctab) return false;
+      else if (mpState.ctab !== 'all' && mpFolderPhase(f) !== mpState.ctab) return false;
     } else {
     if (mpState.tab === 'archived') { if (!f.arquivada) return false; }
     else if (f.arquivada) return false;
@@ -3721,7 +3721,7 @@ function mpRender() {
       + '<div class="mp-head"><div><h2>' + mpEsc(I18n.t('my_orders.title')) + '</h2><p class="hint">' + mpEsc(I18n.t('cu.subtitle')) + '</p></div>'
       + '<button type="button" class="mp-new" data-act="new">+ ' + mpEsc(mpT('new_project')) + '</button></div>'
       + '<div class="cu-bar"><div class="mp-tabs cu-tabs">'
-      + ['build', 'prod', 'done'].map((t) => '<button type="button" class="mp-tab cu-tab cu-' + t + (mpState.ctab === t ? ' is-on' : '') + '" data-act="ctab" data-tab="' + t + '">' + mpEsc(I18n.t('cu.tab_' + t)) + ' <span class="cu-n">' + nC(t) + '</span></button>').join('')
+      + ['all', 'build', 'prod', 'done'].map((t) => '<button type="button" class="mp-tab cu-tab cu-' + t + (mpState.ctab === t ? ' is-on' : '') + '" data-act="ctab" data-tab="' + t + '">' + mpEsc((t === 'all' ? mpT('tab_all') : I18n.t('cu.tab_' + t))) + ' <span class="cu-n">' + nC(t) + '</span></button>').join('')
       + '</div>'
       + '<label class="mp-search">' + MP_ICO.search + '<input type="search" class="mp-search-input" placeholder="' + mpEsc(mpT('search_ph')) + '" value="' + mpEsc(mpState.q) + '"></label>'
       + (mpState.archCol ? '<button type="button" class="cu-arch' + (mpState.ctab === 'archived' ? ' is-on' : '') + '" data-act="ctab" data-tab="archived">' + mpEsc(mpT('tab_archived')) + ' (' + nC('archived') + ')</button>' : '')
