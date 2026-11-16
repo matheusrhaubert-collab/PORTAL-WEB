@@ -211,7 +211,7 @@
     const st = document.createElement('style');
     st.id = 'po-sahra-css';
     st.textContent = `
-#po-sahra { position: fixed; left: 16px; bottom: 16px; z-index: 900; font-family: inherit; }
+#po-sahra { position: fixed; left: 16px; bottom: 96px; z-index: 900; font-family: inherit; } /* 96 (15/11, Matt: "jogar mais pra cima pra ver o que tem atrás dela") — era 16 e cobria a barra de baixo */
 /* 05/11 (Matt: "não quero ela num círculo... um pouco maior com fundo transparente... dobro do tamanho"):
    corpo inteiro, PNG/webp sem fundo, 120 px de altura. */
 #po-sahra .sa-av { width: 96px; height: 180px; padding: 0; border: 0; background: transparent; box-shadow: none; cursor: pointer; position: relative;
@@ -224,7 +224,7 @@
 #po-sahra .sa-badge { z-index: 2; position: absolute; top: 6px; right: -10px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
   font-size: 11px; font-weight: 700; line-height: 20px; color: #fff; background: #b3412e; display: none; box-shadow: 0 0 0 2px #fff; }
 #po-sahra .sa-badge.aviso { background: #c98a1a; }
-#po-sahra .sa-panel { position: absolute; left: 0; bottom: 190px; width: 400px; max-width: calc(100vw - 32px); height: min(620px, calc(100vh - 230px));
+#po-sahra .sa-panel { position: absolute; left: 0; bottom: 190px; width: 400px; max-width: calc(100vw - 32px); height: min(620px, calc(100vh - 310px));
   display: none; flex-direction: column; background: #fffdf9; border: 1px solid #e6dccd; border-radius: 14px; box-shadow: 0 12px 34px rgba(0,0,0,.22); overflow: hidden; }
 #po-sahra.open .sa-panel { display: flex; }
 #po-sahra .sa-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #f6efe4; border-bottom: 1px solid #e6dccd; flex-shrink: 0; }

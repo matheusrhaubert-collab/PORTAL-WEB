@@ -37,7 +37,12 @@ let projectSelectedRoomFace = null;
 let projectWallResize3DState = null;
 
 function selectProjectRoomFace(face) {
-  const hadModule = selectedProjectSlotId != null;
+  // + seleção múltipla/grupo (15/11, Matt: "depois que crio o grupo, ao
+  // clicar fora dele, em qualquer lugar ele permanece selecionado") — com
+  // grupo/Ctrl+clique o selectedProjectSlotId pode estar vazio e só o
+  // projectMultiSelectIds cheio; aí a parede/piso selecionava sem soltar.
+  const hadModule = selectedProjectSlotId != null
+    || (typeof projectMultiSelectIds !== 'undefined' && projectMultiSelectIds && projectMultiSelectIds.size > 0);
   projectSelectedRoomFace = face;
   if (hadModule) {
     // deselectProjectSlot já dispara refreshProject3DHighlight/
@@ -896,6 +901,20 @@ function commitProjectGroupCoDrag(state, primarySlot) {
     // mais curta virava ilha e o grupo desmontava (15/11).
     // Se o principal está numa parede, os membros que estavam na MESMA
     // parede dele vão pra parede NOVA dele, sempre.
+    // ILHA CONTINUA ILHA (15/11, 3ª rodada — Matt: "cada vez que clico na
+    // parede ele vira os módulos e vai bagunçando"). Antes a ilha do grupo
+    // podia virar módulo de parede (se o ângulo batesse) e, ficando ilha,
+    // passava por convertProjectSlotToFloor de novo — que zera altura,
+    // ajuste fino e anexos. Agora a ilha só anda e gira junto, mais nada.
+    if (m.startWall == null) {
+      member.floor_x_mm = ncx;
+      member.floor_z_mm = ncz;
+      if (Math.abs(dAng) > 1e-6) {
+        member.floor_rotation_deg = (((Number(member.floor_rotation_deg || 0) - (dAng * 180) / Math.PI) % 360) + 360) % 360;
+      }
+      if (Math.abs(dy) > 0.01) member.fineOffsetYMm = Math.max(0, Number(member.fineOffsetYMm || 0) + dy);
+      return;
+    }
     let alvo = null;
     const mesmaParedeDoPrincipal = !isFloorSlot(primarySlot) && m.startWall != null && m.startWall === state.groupStartWall;
     if (mesmaParedeDoPrincipal) {
@@ -2369,7 +2388,12 @@ function attachProject3DEditDrag() {
       ? ViewerProjectEdit.pickModuleFaceAt(clientX, clientY, state.slotId)
       : null;
     console.log('[legno conectarFace] resultado do pickModuleFaceAt', moduleFaceHit);
-    if (moduleFaceHit && convertProjectSlotToModuleFace(slot, moduleFaceHit.slotId, moduleFaceHit.faceKey)) {
+    // GRUPO (15/11): os outros módulos do grupo andam junto — nunca são alvo
+    // de conexão (conectar o principal na face de um membro do próprio grupo
+    // girava e desmontava tudo) e não tapam a parede/piso atrás deles.
+    const idsDoGrupo = [state.slotId].concat((state.groupCoDrag || []).map((m) => m.id));
+    const alvoEhDoGrupo = !!(moduleFaceHit && idsDoGrupo.includes(moduleFaceHit.slotId));
+    if (moduleFaceHit && !alvoEhDoGrupo && !(state.groupCoDrag && state.groupCoDrag.length) && convertProjectSlotToModuleFace(slot, moduleFaceHit.slotId, moduleFaceHit.faceKey)) {
       state.onFloor = true;
       state.dragMode = 'move';
       state.grabOffsetFloorXMm = 0;
@@ -2386,7 +2410,7 @@ function attachProject3DEditDrag() {
     }
 
     const surface = ViewerProjectEdit.pickRoomSurfaceAt
-      ? ViewerProjectEdit.pickRoomSurfaceAt(clientX, clientY, state.slotId)
+      ? ViewerProjectEdit.pickRoomSurfaceAt(clientX, clientY, idsDoGrupo)
       : null;
     console.log('[legno conectarFace] resultado do pickRoomSurfaceAt', surface);
     if (!surface) return false; // não achou parede nem piso embaixo do clique — não faz nada

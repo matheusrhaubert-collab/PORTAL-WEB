@@ -3617,7 +3617,8 @@ function createViewerComposition3D() {
       let p = obj;
       while (p) {
         if (p.userData && p.userData.slotId != null) {
-          if (ignoreSlotId != null && p.userData.slotId === ignoreSlotId) break; // atravessa este
+          // ignoreSlotId aceita um id ou uma LISTA (grupo arrastado, 15/11)
+          if (ignoreSlotId != null && (Array.isArray(ignoreSlotId) ? ignoreSlotId.includes(p.userData.slotId) : p.userData.slotId === ignoreSlotId)) break; // atravessa este
           return null;
         }
         p = p.parent;

@@ -6588,3 +6588,8 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-group-panel-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .po-group-panel-actions button { margin: 0; }
 .po-group-panel-danger { color: #b42318; }
+
+/* Central: projetos x pedidos (15/11, 4ª rodada) */
+.cu-build .po-myproj-card-frozen { display: none !important; }
+.cu-kind { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #8a7a68; background: #f1ebe2; border-radius: 6px; padding: 1px 6px; vertical-align: middle; }
+.cu-ico-orders { color: #8a4b1c; }
