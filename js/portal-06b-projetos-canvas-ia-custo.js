@@ -2563,51 +2563,63 @@ function renameProjectSlotGroup(ids) {
 // mecanismo idêntico ao "mover em grupo" (ver commitProjectGroupCoDrag,
 // portal-08), só que calculado uma vez em vez de a cada frame de arraste.
 function duplicateProjectSlotGroup(ids) {
+  // GRUPO = BLOCO (15/11, Matt: "acabei de duplicar um grupo e virou uma
+  // bagunça"). Antes a âncora andava só a largura DELA e cada cópia era
+  // encaixada sozinha na parede (clampProjectSlotPosition) — as cópias caíam
+  // umas por cima das outras e do original. Agora o bloco inteiro anda junto
+  // pela largura TOTAL do grupo: à direita se couber, senão à esquerda, senão
+  // um pouco pra frente no mesmo lugar (aí é só arrastar — o grupo anda como
+  // objeto único). Nenhum clamp por membro.
   const members = Array.from(ids || []).map((id) => projectSlots.find((s) => s.id === id)).filter(Boolean);
   if (members.length < 2) {
     return members.length ? duplicateProjectSlot(members[0].id) : null;
   }
-  const anchor = members[0];
-  const anchorBoxBefore = projectSlotWorldBox3D(anchor);
-  const anchorClone = duplicateProjectSlot(anchor.id);
-  if (!anchorClone || !anchorBoxBefore) return null;
-  const anchorBoxAfter = projectSlotWorldBox3D(anchorClone);
-  if (!anchorBoxAfter) return null;
-  const deltaXMm = anchorBoxAfter.cx - anchorBoxBefore.cx;
-  const deltaZMm = anchorBoxAfter.cz - anchorBoxBefore.cz;
-
+  const naParede = members.filter((s) => !isFloorSlot(s));
+  const paredes = [...new Set(naParede.map((s) => Number(s.wall_index || 0)))];
+  let dx = 0;          // deslocamento ao longo da parede (grupo de UMA parede)
+  let dFloorX = 0, dFloorZ = 0;
+  if (paredes.length === 1) {
+    const wi = paredes[0];
+    const x0 = Math.min(...naParede.map((s) => Number(s.x_mm || 0)));
+    const x1 = Math.max(...naParede.map((s) => Number(s.x_mm || 0) + Number(s.width_mm || 0)));
+    const largura = x1 - x0;
+    const wallW = getProjectWallWidthMm(wi);
+    if (x1 + largura <= wallW + 0.5) dx = largura;
+    else if (x0 - largura >= -0.5) dx = -largura;
+    else dx = 0;
+    if (dx) {
+      // ilhas do grupo andam o mesmo tanto, na direção da parede
+      const g = getProjectWallGeometry().find((w) => w.wallIndex === wi);
+      if (g) { dFloorX = g.alongDirX * dx; dFloorZ = g.alongDirZ * dx; }
+    }
+  }
+  if (!dx && !dFloorX && !dFloorZ) {
+    // sem espaço (ou grupo de canto/ilha): ilhas vão 600 mm pra frente; os de
+    // parede ficam no lugar (sobrepostos) e o usuário arrasta o bloco.
+    if (!naParede.length) { dFloorX = 600; }
+  }
   const newGroupId = newProjectSlotId();
-  const baseName = anchor.group_name || I18n.t('project.group_default_name');
+  const baseName = members[0].group_name || I18n.t('project.group_default_name');
   const newGroupName = baseName + ' ' + I18n.t('project.group_copy_suffix');
-  anchorClone.group_id = newGroupId;
-  anchorClone.group_name = newGroupName;
-
-  const newIds = [anchorClone.id];
-  for (let i = 1; i < members.length; i++) {
-    const original = members[i];
+  const newIds = [];
+  members.forEach((original) => {
     const copy = cloneProjectSlotForUndo(original);
     copy.id = newProjectSlotId();
     copy.thumbnail_data_url = null;
     copy.group_id = newGroupId;
     copy.group_name = newGroupName;
+    copy.attached_to_slot_id = null;
     if (isFloorSlot(copy)) {
-      const box = projectSlotWorldBox3D(original);
-      copy.floor_x_mm = box.cx + deltaXMm;
-      copy.floor_z_mm = box.cz + deltaZMm;
-      projectSlots.push(copy);
-      clampFloorSlotIntoRoom(copy);
+      copy.floor_x_mm = Number(copy.floor_x_mm || 0) + dFloorX;
+      copy.floor_z_mm = Number(copy.floor_z_mm || 0) + dFloorZ;
     } else {
-      const wallGeo = getProjectWallGeometry().find((w) => w.wallIndex === Number(original.wall_index || 0));
-      if (wallGeo) {
-        const alongDeltaMm = deltaXMm * wallGeo.alongDirX + deltaZMm * wallGeo.alongDirZ;
-        copy.x_mm = Number(original.x_mm || 0) + alongDeltaMm;
-      }
-      projectSlots.push(copy);
-      clampProjectSlotPosition(copy);
+      copy.x_mm = Number(copy.x_mm || 0) + dx;
     }
+    projectSlots.push(copy);
     newIds.push(copy.id);
-  }
+  });
 
+  selectedProjectSlotId = null;
   projectMultiSelectIds = new Set(newIds);
   renderProjectCanvas();
   renderProjectConfigPanel();

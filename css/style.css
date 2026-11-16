@@ -2683,7 +2683,7 @@ header.po-topnav {
    (título/filtros ficam sempre visíveis, fixos no topo). */
 .po-proj-search-modal-card {
   background: var(--panel); border-radius: 12px; padding: 24px;
-  width: 960px; max-width: 100%; height: 85vh; max-height: 85vh;
+  width: 1260px; max-width: 100%; height: 85vh; max-height: 85vh; /* 1260 (15/11): abas de família numa linha só, com ★ Favoritos */
   display: flex; flex-direction: column;
   position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
 }

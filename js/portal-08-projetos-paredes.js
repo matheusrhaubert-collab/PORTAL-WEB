@@ -789,6 +789,7 @@ function beginProjectGroupCoDrag(state, primarySlot) {
   const startBox = projectGroupBox(primarySlot);
   if (!startBox) return;
   state.groupStart = startBox;
+  state.groupStartWall = isFloorSlot(primarySlot) ? null : Number(primarySlot.wall_index || 0);
   state.groupStartWorldXMm = startBox.cx;
   state.groupStartWorldZMm = startBox.cz;
   const pg = ViewerProjectEdit.findGroupBySlotId(primarySlot.id);
@@ -807,6 +808,7 @@ function beginProjectGroupCoDrag(state, primarySlot) {
       startWorldXMm: box.cx,
       startWorldZMm: box.cz,
       startXMm: Number(m.x_mm || 0),
+      startWall: isFloorSlot(m) ? null : Number(m.wall_index || 0),
       obj: g ? { x: g.position.x, y: g.position.y, z: g.position.z, ry: g.rotation.y } : null,
       group: g
     });
@@ -888,16 +890,30 @@ function commitProjectGroupCoDrag(state, primarySlot) {
     const ny = Math.max(0, m.box.y + dy);
     const wMm = Number(member.width_mm || 0), dMm = Number(member.depth_mm || 0);
     // parede onde ele "encosta" com o ângulo novo
+    // Parede de destino: a de mesmo ângulo mais perto (pela distância até a
+    // face). NÃO exige caber no comprimento: o bloco é empurrado inteiro pra
+    // dentro logo abaixo — antes, o membro que passava do fim de uma parede
+    // mais curta virava ilha e o grupo desmontava (15/11).
+    // Se o principal está numa parede, os membros que estavam na MESMA
+    // parede dele vão pra parede NOVA dele, sempre.
     let alvo = null;
-    walls.forEach((w) => {
-      if (alvo) return;
+    const mesmaParedeDoPrincipal = !isFloorSlot(primarySlot) && m.startWall != null && m.startWall === state.groupStartWall;
+    if (mesmaParedeDoPrincipal) {
+      const w = walls.find((x) => x.wallIndex === Number(primarySlot.wall_index || 0));
+      if (w) {
+        const vx = ncx - w.originX * 1000, vz = ncz - w.originZ * 1000;
+        alvo = { w, x: (vx * w.alongDirX + vz * w.alongDirZ) - wMm / 2 };
+      }
+    }
+    let melhor = Infinity;
+    if (!alvo) walls.forEach((w) => {
       if (!projectAngleClose(Math.atan2(w.alongDirZ, w.alongDirX), nAng, TOL_ANG)) return;
       const vx = ncx - w.originX * 1000, vz = ncz - w.originZ * 1000;
       const into = vx * w.intoDirX + vz * w.intoDirZ;
       const along = vx * w.alongDirX + vz * w.alongDirZ;
-      const largura = (Number(w.widthM) || 0) * 1000;
-      if (Math.abs(into - dMm / 2) > TOL_INTO_MM) return;
-      if (along < -wMm || along > largura + wMm) return;
+      const dist = Math.abs(into - dMm / 2);
+      if (dist > TOL_INTO_MM || dist >= melhor) return;
+      melhor = dist;
       alvo = { w, x: along - wMm / 2 };
     });
     if (alvo) {
