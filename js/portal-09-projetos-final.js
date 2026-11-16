@@ -4099,10 +4099,48 @@ async function cuShow(tab) {
     cuMoveTo(true);
     if (!mpState.loaded) loadProjectFavoritesList(); else { mpRender(); mpLoad(); }
   } else if (tab === 'po-tab-my-projects') {
+    // UMA TELA SÓ (15/11, Matt: "deixa só em uma tela as duas, só central
+    // de pedidos"): com a Central unificada ligada, Meus Projetos não existe
+    // mais como aba — quem cair nela (ex.: "Ver projetos" da equipe) vai pra
+    // Central.
+    const central = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-my-orders"]');
+    if (central) { central.click(); return; }
     cuMoveTo(false);
     if (mpState.loaded) mpRender();
   }
 }
+
+// Esconde o botão Meus Projetos e traz "Recebeu um projeto?" pra Central
+// (recolhido, embaixo) assim que se sabe que a conta vê a Central unificada.
+function cuApplySidebar() {
+  const btn = document.querySelector('#po-sidebar .portal-tab-btn[data-tab="po-tab-my-projects"]');
+  if (btn) btn.style.display = 'none';
+  const ordersPanel = document.getElementById('po-orders-list-panel');
+  const imp = document.querySelector('#po-tab-my-projects .po-proj-import-box');
+  if (ordersPanel && imp && !document.getElementById('cu-import')) {
+    const det = document.createElement('details');
+    det.id = 'cu-import';
+    det.className = 'cu-old-orders';
+    const sum = document.createElement('summary');
+    sum.textContent = I18n.t('project.import_title');
+    det.appendChild(sum);
+    det.appendChild(imp);
+    ordersPanel.appendChild(det);
+  }
+}
+(function cuWatchAdmin() {
+  let feito = false;
+  const tick = async () => {
+    if (feito || typeof currentUser === 'undefined' || !currentUser) return;
+    if (window.LEGNO_IS_ADMIN !== true && CU_SO_ADMIN) return;
+    let ok = false;
+    try { ok = await cuCanSee(); } catch (e) { ok = false; }
+    if (!ok) return;
+    feito = true;
+    cuApplySidebar();
+  };
+  setInterval(tick, 1500);
+})();
 
 (function cuHook() {
   const side = document.getElementById('po-sidebar');

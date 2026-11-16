@@ -1409,7 +1409,7 @@ function handleModelFromItem(it) {
     altura_mm: Number(a.altura_mm) || 23,
     cor_hex: a.cor_hex || '#c9a45c',
     // PEARL (2026-11-15): knob REDONDO com tampo de outra cor (madrepérola)
-    formato: ['redondo', 'aro', 'cilindro', 'tubo', 'borda'].indexOf(a.formato) >= 0 ? a.formato : null, tampo_hex: a.tampo_hex || null,
+    formato: ['redondo', 'aro', 'cilindro', 'tubo', 'borda', 'quadrado'].indexOf(a.formato) >= 0 ? a.formato : null, tampo_hex: a.tampo_hex || null,
     base_hex: a.base_hex || null, // ROVERO knob: anel de baixo em outra cor
     // foto real do cartão: attrs.foto_url, senão assets/handles/<código>.jpg
     foto_url: a.foto_url || (it.code ? 'assets/handles/' + it.code + '.jpg' : null)
@@ -1872,6 +1872,15 @@ function buildHandleObject3D(T, handle, vertical, metal, espessuraM) {
       [-(L - t) / 2, (L - t) / 2].forEach((x) => caixa(t, Wd, esp, x, sg * Wd / 2, zc));
       pes.forEach((x) => caixa(sf > 0.03 ? t * 1.4 : Math.max(sf + t, t * 2), t, Hh - esp, x, sg * t / 2, (Hh - esp) / 2));
     }
+  } else if (handle.formato === 'quadrado') {
+    // ASTI (2026-11-15, migration 299): barra de seção QUADRADA (largura_mm)
+    // dobrada em U — dois pés quadrados nas pontas, não nos furos: os pés
+    // ficam nas extremidades (comprimento_mm) e os parafusos entram neles.
+    const lado = Math.min(Wd, Hh * 0.6);
+    const s = (Number(handle.entre_furos_mm) || 128) / 1000;
+    const vao = Math.max(L, s + lado);
+    caixa(vao, lado, lado, 0, 0, Hh - lado / 2);                                  // barra
+    [-(vao - lado) / 2, (vao - lado) / 2].forEach((x) => caixa(lado, lado, Hh - lado, x, 0, (Hh - lado) / 2)); // pés
   } else if (handle.tipo === 'barra') {
     const s = (Number(handle.entre_furos_mm) || 160) / 1000;
     const esp = Math.min(0.008, Hh * 0.4);
