@@ -463,6 +463,34 @@ function ptDrawPieces(ctx, boxes, S, fs) {
 // A vista é montada como uma parede de mentira (mesmos campos de
 // getProjectWallGeometry) posta atrás dos módulos, e os "slots" passados pro
 // desenho são cópias com x_mm/altura/profundidade medidos no próprio 3D.
+// Fillers/painéis do CHÃO encostados (≤ 2 cm) em algum móvel desta parede —
+// entram no desenho da elevação dela (só a imagem; número e medida continuam
+// na planta e na lista).
+function ptFillersEncostados(scene, wallIndex) {
+  const ids = new Set();
+  const daParede = [], soltos = [];
+  scene.updateMatrixWorld(true);
+  scene.children.forEach((g) => {
+    const ud = g.userData || {};
+    if (ud.slotId == null) return;
+    const slot = ptSlotById(ud.slotId);
+    if (!slot || !slot.module || ptIsVisualOnly(slot)) return;
+    const box = new THREE.Box3().setFromObject(g);
+    if (box.isEmpty()) return;
+    if (ud.isFloorIsland) { if (ptEhFillerOuPainel(slot)) soltos.push({ id: ud.slotId, box: box.expandByScalar(0.02) }); }
+    else if (ud.wallIndex === wallIndex) daParede.push(box);
+  });
+  // encostado no móvel, ou num filler que já entrou (fillers em fila)
+  let mudou = true;
+  while (mudou) {
+    mudou = false;
+    soltos.forEach((f) => {
+      if (ids.has(f.id)) return;
+      if (daParede.some((b) => b.intersectsBox(f.box)) || soltos.some((o) => ids.has(o.id) && o.box.intersectsBox(f.box))) { ids.add(f.id); mudou = true; }
+    });
+  }
+  return ids;
+}
 function ptEhFillerOuPainel(slot) {
   const m = (slot && slot.module) || {};
   return /filler|painel|panel/i.test(String(m.name || '')) || /pain[eé]|panel/i.test(String(m.family || ''));
@@ -500,16 +528,13 @@ function ptIslandViews(scene) {
   // Filler preso na parede é módulo de parede — sai na elevação dela, como
   // sempre. Filler do chão encostado num móvel (mesmo virado pra outro lado)
   // conta como conectado e mantém a vista.
-  const moveis = [];
-  scene.children.forEach((g) => {
-    if (!g.userData || g.userData.slotId == null) return;
-    const s2 = ptSlotById(g.userData.slotId);
-    if (!s2 || !s2.module || ptIsVisualOnly(s2) || ptIsDecor(s2) || ptEhFillerOuPainel(s2)) return;
-    const b = new THREE.Box3().setFromObject(g);
-    if (!b.isEmpty()) moveis.push(b.expandByScalar(0.02));
-  });
-  const soltoSoFiller = (list) => list.every((it) => ptEhFillerOuPainel(it.slot))
-    && !list.some((it) => moveis.some((b) => b.intersectsBox(it.box)));
+  // 2ª RODADA (mesmo dia, Matt com o PDF: "ainda aparecem os fillers no plano
+  // técnico" — os 3 fillers e o painel estavam ENCOSTADOS nos closets, então a
+  // 1ª regra, "só some se estiver solto", mantinha uma página pra cada um).
+  // Regra final: conjunto do chão só de filler/painel NUNCA ganha página
+  // própria. Encostado num móvel de parede, ele aparece na elevação DAQUELA
+  // parede, junto do móvel (ptFillersEncostados, usado em ptRenderWall).
+  const soltoSoFiller = (list) => list.every((it) => ptEhFillerOuPainel(it.slot));
   const views = [];
   const corner = new THREE.Vector3();
   Array.from(clusters.values()).forEach((list) => {
@@ -580,9 +605,12 @@ function ptRenderWall(scene, wallGeo, nums, hideFronts) {
   const center = P((aMin + aMax) / 2, (yMin + yMax) / 2);
   const cam = ptMakeCamera(center, into, new THREE.Vector3(0, 1, 0), spanA / 2, spanY / 2);
 
+  const fillersJunto = wallGeo._include ? null : ptFillersEncostados(scene, wallGeo.wallIndex);
   const img = ptRender(scene, cam, wPx, hPx, {
     hideFronts,
-    include: wallGeo._include || ((g) => !g.userData.isFloorIsland && g.userData.wallIndex === wallGeo.wallIndex),
+    include: wallGeo._include || ((g) => g.userData.isFloorIsland
+      ? fillersJunto.has(g.userData.slotId)
+      : g.userData.wallIndex === wallGeo.wallIndex),
     includeLoose: wallGeo._noLoose ? (() => false) : (o) => {
       const rel = o.position.clone().sub(P(0, 0));
       const a = rel.dot(along), n = rel.dot(into);
