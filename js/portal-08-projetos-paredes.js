@@ -3030,6 +3030,18 @@ function handleProject3DFloorMove(state, slot, ev) {
   }
 }
 
+// Seta de BAIXO do painel (2026-11-16): o TOPO fica parado; a base acompanha
+// o ponteiro. A base nunca passa do chão (altura máxima = altura do topo).
+function projectResizeSlotFromBottom(state, slot, ponteiroYMm) {
+  if (state.startTopMm == null) state.startTopMm = Number(slot.floor_height_mm || 0) + Number(slot.height_mm || 0);
+  const topo = state.startTopMm;
+  let nova = projectSlotClampedDimensionMm(slot, 'height', topo - ponteiroYMm);
+  if (nova > topo) nova = projectSlotClampedDimensionMm(slot, 'height', topo);
+  if (!(nova > 0) || nova > topo + 0.01) return;
+  slot.floor_height_mm = Math.max(0, topo - nova);
+  updateProjectSlotDimension(slot, 'height', nova);
+}
+
 function handleProject3DResizeMove(state, slot, ev) {
   // ---------- Ilha no chão ----------
   // Sem parede de referência, a matemática de "coordenada ao longo da parede"
@@ -3040,13 +3052,14 @@ function handleProject3DResizeMove(state, slot, ev) {
     const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
     const axX = Math.cos(rot), axZ = -Math.sin(rot); // eixo local +X no mundo
     const azX = Math.sin(rot), azZ = Math.cos(rot);  // eixo local +Z no mundo
-    if (state.resizeAxis === 'height-top') {
+    if (state.resizeAxis === 'height-top' || state.resizeAxis === 'height-bottom') {
       const cx = Number(slot.floor_x_mm || 0) / 1000;
       const cz = Number(slot.floor_z_mm || 0) / 1000;
       const p = ViewerProjectEdit.intersectPlaneAtClient(
         ev.clientX, ev.clientY, { x: cx, y: 0, z: cz }, { x: axX, y: 0, z: axZ }
       );
       if (!p) return;
+      if (state.resizeAxis === 'height-bottom') { projectResizeSlotFromBottom(state, slot, p.y * 1000); return; }
       updateProjectSlotDimension(slot, 'height', p.y * 1000 - Number(slot.floor_height_mm || 0));
       return;
     }
@@ -3070,8 +3083,9 @@ function handleProject3DResizeMove(state, slot, ev) {
     // sai na posição certa, sem precisar redesenhar duas vezes.
     const dir = (state.resizeAxis === 'width-left') ? { x: -axX, z: -axZ }
       : (state.resizeAxis === 'depth-front') ? { x: azX, z: azZ }
+      : (state.resizeAxis === 'depth-back') ? { x: -azX, z: -azZ }   // painel: seta de trás (16/11)
       : { x: axX, z: axZ }; // width-right
-    const axisName = (state.resizeAxis === 'depth-front') ? 'depth' : 'width';
+    const axisName = (state.resizeAxis === 'depth-front' || state.resizeAxis === 'depth-back') ? 'depth' : 'width';
     const startSizeMm = (axisName === 'depth') ? state.startDepthMm : state.startWidthMm;
     const anchorXMm = state.startFloorXMm - dir.x * (startSizeMm / 2);
     const anchorZMm = state.startFloorZMm - dir.z * (startSizeMm / 2);
@@ -3122,6 +3136,9 @@ function handleProject3DResizeMove(state, slot, ev) {
     const rawLeftEdge = alongMm - state.grabOffsetEdgeMm;
     const snappedLeftEdge = snapProjectEdge(rawLeftEdge, true, others, PROJECT_SNAP_3D_MM);
     updateProjectSlotWidthFromLeft(slot, (state.startXMm + state.startWidthMm) - snappedLeftEdge);
+  } else if (state.resizeAxis === 'height-bottom') {
+    const rawBottomEdge = heightMm - state.grabOffsetEdgeMm;
+    projectResizeSlotFromBottom(state, slot, snapProjectEdge(rawBottomEdge, false, others, PROJECT_SNAP_3D_MM));
   } else if (state.resizeAxis === 'height-top') {
     const rawTopEdge = heightMm - state.grabOffsetEdgeMm;
     const snappedTopEdge = snapProjectEdge(rawTopEdge, false, others, PROJECT_SNAP_3D_MM);

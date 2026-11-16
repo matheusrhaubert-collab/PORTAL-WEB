@@ -2504,6 +2504,16 @@ function classifyProject3DGrab(slot, grabAlongMm, grabHeightMm) {
 // desenha e devolve qual seta foi tocada (setResizeArrows/pickResizeArrowAt em
 // viewer3d_composition.js).
 const PROJECT_ARROW_GAP_M = 0.06; // folga entre a face do módulo e o início da seta
+// PAINÉIS COM SETA DOS DOIS LADOS E NAS DUAS ALTURAS (2026-11-16, Matt, com um
+// painel lateral selecionado: "todos painéis devem ter setas nos dois lados, e
+// nas duas alturas, pra controlar melhor"). Painel ganha a seta de BAIXO
+// ('height-bottom': o topo fica parado, a base sobe/desce) e, solto no piso,
+// a seta de TRÁS ('depth-back': a frente fica parada). Só painel — num módulo
+// de chão a seta de baixo tiraria o móvel do piso sem querer.
+function projectSlotEhPainel(slot) {
+  const m = (slot && slot.module) || {};
+  return /pain[eé]|panel/i.test(String(m.family || '')) || /painel|panel/i.test(String(m.name || ''));
+}
 function refreshProject3DResizeArrows() {
   if (!ViewerProjectEdit || !ViewerProjectEdit.setResizeArrows) return;
   projectCanto45Marcas = null;   // cotas do canto 45° no 3D: só voltam se a seta da porta for desenhada
@@ -2576,12 +2586,14 @@ function refreshProject3DResizeArrows() {
     }
     if (axes.height) {
       spec.push({ axis: 'height-top', dir: { x: 0, y: 1, z: 0 }, position: { x: cx, y: baseY + heightM + PROJECT_ARROW_GAP_M, z: cz } });
+      if (projectSlotEhPainel(slot)) spec.push({ axis: 'height-bottom', dir: { x: 0, y: -1, z: 0 }, position: { x: cx, y: baseY - PROJECT_ARROW_GAP_M, z: cz } });
     }
     if (axes.depth) {
       // Eixo local +Z da ilha (perpendicular ao +X já calculado acima).
       const az = { x: Math.sin(rot), y: 0, z: Math.cos(rot) };
       const offD = Number(slot.depth_mm || 0) / 2000 + PROJECT_ARROW_GAP_M;
       spec.push({ axis: 'depth-front', dir: az, position: { x: cx + az.x * offD, y: midY, z: cz + az.z * offD } });
+      if (projectSlotEhPainel(slot)) spec.push({ axis: 'depth-back', dir: { x: -az.x, y: 0, z: -az.z }, position: { x: cx - az.x * offD, y: midY, z: cz - az.z * offD } });
     }
     projectCanto45PushArrow(slot, spec);
     ViewerProjectEdit.setResizeArrows(spec, projectIsTouchDevice());
@@ -2619,6 +2631,9 @@ function refreshProject3DResizeArrows() {
       dir: { x: 0, y: 1, z: 0 },
       position: worldAt(x0M + widthM / 2, baseY + heightM + PROJECT_ARROW_GAP_M)
     });
+    if (projectSlotEhPainel(slot)) {
+      spec.push({ axis: 'height-bottom', dir: { x: 0, y: -1, z: 0 }, position: worldAt(x0M + widthM / 2, baseY - PROJECT_ARROW_GAP_M) });
+    }
   }
   if (axes.depth) {
     // Aponta pra DENTRO do ambiente (intoDir da parede), saindo da face da
@@ -2755,6 +2770,23 @@ function stretchProjectSlotToCollision(slot, axis) {
       : limit - y0;
     if (!(target > 0)) return false;
     updateProjectSlotDimension(slot, 'height', target);
+    return true;
+  }
+
+  if (axis === 'height-bottom') {
+    // Painel (16/11): desce a base até o vizinho de baixo ou até o chão; o
+    // topo fica onde está.
+    let limit = 0;
+    others.forEach((s) => {
+      if (!sharesColumn(s)) return;
+      const top = Number(s.floor_height_mm || 0) + Number(s.height_mm || 0);
+      if (top <= y0 + PROJECT_TOUCH_GAP_EPS_MM) limit = Math.max(limit, top);
+    });
+    const topo = y0 + h;
+    const nova = projectSlotClampedDimensionMm(slot, 'height', topo - limit);
+    if (!(nova > 0) || nova > topo + 0.01) return false;
+    slot.floor_height_mm = Math.max(0, topo - nova);
+    updateProjectSlotDimension(slot, 'height', nova);
     return true;
   }
 

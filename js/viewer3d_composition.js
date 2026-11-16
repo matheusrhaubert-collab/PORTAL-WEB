@@ -4097,8 +4097,8 @@ function createViewerComposition3D() {
   const RESIZE_ARROW_COLOR = 0x8a8580;
   const RESIZE_ARROW_AXIS_COLOR = {
     'width-left': 0xd8442f, 'width-right': 0xd8442f,   // X — vermelho
-    'height-top': 0x2e9e5b,                             // Y — verde
-    'depth-front': 0x2f6fd8,                            // Z — azul
+    'height-top': 0x2e9e5b, 'height-bottom': 0x2e9e5b,  // Y — verde (a de baixo: só painéis, 16/11)
+    'depth-front': 0x2f6fd8, 'depth-back': 0x2f6fd8,    // Z — azul (a de trás: só painel solto no piso, 16/11)
     // setas da PEÇA selecionada (duplo clique, 2026-10-02)
     'piece-x+': 0xd8442f, 'piece-x-': 0xd8442f,
     'piece-y+': 0x2e9e5b, 'piece-y-': 0x2e9e5b,
