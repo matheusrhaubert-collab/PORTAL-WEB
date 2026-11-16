@@ -463,6 +463,10 @@ function ptDrawPieces(ctx, boxes, S, fs) {
 // A vista é montada como uma parede de mentira (mesmos campos de
 // getProjectWallGeometry) posta atrás dos módulos, e os "slots" passados pro
 // desenho são cópias com x_mm/altura/profundidade medidos no próprio 3D.
+function ptEhFillerOuPainel(slot) {
+  const m = (slot && slot.module) || {};
+  return /filler|painel|panel/i.test(String(m.name || '')) || /pain[eé]|panel/i.test(String(m.family || ''));
+}
 function ptIslandViews(scene) {
   scene.updateMatrixWorld(true);
   const items = [];
@@ -486,9 +490,30 @@ function ptIslandViews(scene) {
   }
   const clusters = new Map();
   items.forEach((it, i) => { const r = find(i); if (!clusters.has(r)) clusters.set(r, []); clusters.get(r).push(it); });
+  // FILLER / PAINEL SOLTO NÃO GANHA VISTA (2026-11-16, Matt, com uma página
+  // inteira "Ilha 4" só pra um filler em pé: "esses fillers ficam sempre
+  // aparecendo e tomando muito espaço... eliminar filler dos planos técnicos
+  // se eles estiverem soltos; aparecem se estiverem conectados ao móvel ou à
+  // parede"). Conjunto do chão só de filler/painel que NÃO encosta em nenhum
+  // móvel de verdade fica sem página de vista (e sem o rótulo "Ilha N"). Ele
+  // continua na planta baixa, com número e medida, e na listagem final.
+  // Filler preso na parede é módulo de parede — sai na elevação dela, como
+  // sempre. Filler do chão encostado num móvel (mesmo virado pra outro lado)
+  // conta como conectado e mantém a vista.
+  const moveis = [];
+  scene.children.forEach((g) => {
+    if (!g.userData || g.userData.slotId == null) return;
+    const s2 = ptSlotById(g.userData.slotId);
+    if (!s2 || !s2.module || ptIsVisualOnly(s2) || ptIsDecor(s2) || ptEhFillerOuPainel(s2)) return;
+    const b = new THREE.Box3().setFromObject(g);
+    if (!b.isEmpty()) moveis.push(b.expandByScalar(0.02));
+  });
+  const soltoSoFiller = (list) => list.every((it) => ptEhFillerOuPainel(it.slot))
+    && !list.some((it) => moveis.some((b) => b.intersectsBox(it.box)));
   const views = [];
   const corner = new THREE.Vector3();
   Array.from(clusters.values()).forEach((list) => {
+    if (soltoSoFiller(list)) return;
     // frente = média das frentes (todas parecidas por construção)
     const front = list.reduce((acc, it) => acc.add(it.front), new THREE.Vector3()).normalize();
     const along = new THREE.Vector3(front.z, 0, -front.x); // up × front
