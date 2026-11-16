@@ -350,6 +350,10 @@
       if (rotate === false) return tKey === 'h' ? 'd' : 'h';
       return tKey === 'w' ? 'd' : 'w';
     };
+    // VEIO FORÇADO (15/11, veio das frentes por módulo — ver applyVeioFrentes):
+    // vence cadastro, positioning e formato.
+    if (piece && piece.veio_forcado === 'horizontal') return eixo(true);
+    if (piece && piece.veio_forcado === 'vertical') return eixo(false);
     const pelaPos = function () {
       if (positioning === 'horizontal' || positioning === 'horizontal_no_plano') return eixo(true);
       if (positioning === 'vertical' || positioning === 'vertical_no_plano') return eixo(false);
@@ -1422,6 +1426,7 @@
       // (LOTES.explodeOrders) pôr o comprimento no sentido do veio em vez de
       // no lado longo. Ausente em pedido gravado antes de 2026-09-24.
       grain_axis: grainAxisForPiece(piece, pieceDims),
+      grain_forced: piece.veio_forcado ? true : undefined, // lote não recalcula pelo cadastro (data-lotes)
       positioning: piece.positioning || null,
       area_m2: pieceDims.area_m2,
       edge_band_m: pieceDims.edge_band_m,
@@ -1865,7 +1870,50 @@
     });
   }
 
+  // ==========================================================================
+  // VEIO DAS FRENTES POR MÓDULO (2026-11-15)
+  // ==========================================================================
+  // Matt: "todas nossas portas flat são veio vertical, quero criar uma de
+  // veio horizontal (serve pra todas as portas e frentes de gaveta)".
+  // Mora em dimOverrides.__veio_frentes = { dir: 'horizontal' } (sem a chave =
+  // como sempre foi) — mesmo motivo do __canto45: já é salvo no projeto,
+  // copiado no desfazer, vai em order_items.dim_overrides e o ERP passa pro
+  // resolvedor, sem coluna nova. Marca `veio_forcado` em toda FRENTE fabricada
+  // (porta, basculante, frente de gaveta — papel 'front' ou frente do
+  // Construtor), em qualquer nível. Quem lê: grainAxisForPiece (corte/lote),
+  // viewer3d e photoreal (resolveGrainRotate).
+  function veioFrentesDe(dimOverrides) {
+    const c = dimOverrides && dimOverrides.__veio_frentes;
+    const d = c && (c.dir || c);
+    return (d === 'horizontal' || d === 'vertical') ? d : null;
+  }
+  function applyVeioFrentes(pieces, dimOverrides) {
+    const dir = veioFrentesDe(dimOverrides);
+    if (!dir) return pieces;
+    const fabricada = function (p) { return p && !p._handleRow && (p.origin || 'fabricacao') !== 'comprado'; };
+    // dentroDeFrente: a frente é um MÓDULO ("Porta (1 folha)" → peça "Porta").
+    // Só vale quando ele tem UMA chapa fabricada (porta lisa); porta de
+    // moldura (Shaker: montantes + travessas + almofada) fica como é.
+    const visita = function (lista, dentroDeFrente) {
+      return (lista || []).map(function (p) {
+        if (!p) return p;
+        const ehFrente = (p._layoutKind === 'front' || p.position_role === 'front') && !p._handleRow
+          && !((p.origin || 'fabricacao') === 'comprado' && !p.is_module);
+        const temFilhos = p.is_module && Array.isArray(p.child_pieces);
+        if (temFilhos) {
+          const folhas = p.child_pieces.filter(function (c) { return c && !(c.is_module && Array.isArray(c.child_pieces)) && fabricada(c); });
+          const lisa = ehFrente && folhas.length === 1;
+          return Object.assign({}, p, { child_pieces: visita(p.child_pieces, lisa) });
+        }
+        if ((ehFrente || dentroDeFrente) && fabricada(p)) return Object.assign({}, p, { veio_forcado: dir });
+        return p;
+      });
+    };
+    return visita(pieces, false);
+  }
+
   function calculateAssembly(pieces, dims, colorsByRole, hingeModel, slideModel, shelfQuantities, dimOverrides, pieceColorOverrides) {
+    pieces = applyVeioFrentes(pieces, dimOverrides);
     pieces = applyCanto45Corte(pieces, dimOverrides);
     pieces = applyCanto90Asas(pieces, dimOverrides);
     const { bodyDims } = resolveBodyDims(pieces, dims);
@@ -2150,6 +2198,7 @@
     arredondaMm,
     evalFormula,
     setFormulaGlobals,
+    applyVeioFrentes, veioFrentesDe,
     applyCanto90Asas, canto90AsasDe, canto90TemAsas, canto90FaixaAsa, CANTO90_ASA_PADRAO_MM,
     applyCanto45Corte, canto45CorteDe, canto45TemChanfro, canto45FaixaCorte, canto45PortaDoCorte, canto45CorteDaPorta,
     CANTO45_CORTE_PADRAO_MM, CANTO45_PORTA_MIN_MM, CANTO45_PORTA_MAX_MM, CANTO45_LATERAL_MIN_MM,

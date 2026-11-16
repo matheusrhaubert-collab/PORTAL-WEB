@@ -450,6 +450,8 @@ LOTES.explodeOrders = async function (orderIds) {
   // sempre que der; o snapshot do pedido só vale pra peça sem cadastro
   // (Construtor) — ver nota em missingGrainIds acima.
   function grainAxisDoLeaf(leaf) {
+    // veio escolhido no projeto (frentes na horizontal, 15/11): vale o do pedido
+    if (leaf.grain_forced && leaf.grain_axis) return leaf.grain_axis;
     const cad = leaf.piece_id ? compVeio[leaf.piece_id] : null;
     if (cad && typeof Pricing !== 'undefined' && Pricing.grainAxisForPiece) {
       const eixo = Pricing.grainAxisForPiece(cad, leaf);

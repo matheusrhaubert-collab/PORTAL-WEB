@@ -1,3 +1,3 @@
-﻿data: 2026-11-15 23:20:33
-cache: 202611152320
+﻿data: 2026-11-15 23:34:21
+cache: 202611152334
 mensagem: v1.009: favoritos, grupo objeto unico, tutorial, central de pedidos (teste admin)

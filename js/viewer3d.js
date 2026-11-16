@@ -1273,6 +1273,9 @@ const Viewer3D = (function () {
     // sozinha ao ser redimensionada — o mesmo sintoma, por outro caminho.
     // Quem não passa pelo validar (o portal inteiro) não tem o campo e lê
     // `part.veio` de sempre.
+    // Veio forçado por módulo (15/11, Pricing.applyVeioFrentes) vence tudo.
+    if (part && part.veio_forcado === 'horizontal') return true;
+    if (part && part.veio_forcado === 'vertical') return false;
     const veio = part && (part.veio_declarado != null ? part.veio_declarado : part.veio);
     const papel = (part && part.position_role) || 'other';
     // DIAGNÓSTICO (2026-09-11, mesmo padrão de window.__legnoDebugPick/

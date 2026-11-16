@@ -550,6 +550,7 @@ function aplicarRecorteCascoNasLaterais(parts) {
 
 function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQuantities, dimOverrides, pieceColorOverrides) {
   // canto 45°: corte do canto por módulo (ver Pricing.applyCanto45Corte)
+  if (Pricing.applyVeioFrentes) piecesList = Pricing.applyVeioFrentes(piecesList, dimOverrides); // veio das frentes (15/11)
   if (Pricing.applyCanto45Corte) piecesList = Pricing.applyCanto45Corte(piecesList, dimOverrides);
   // canto 90°: profundidade de cada asa por módulo (ver Pricing.applyCanto90Asas)
   if (Pricing.applyCanto90Asas) piecesList = Pricing.applyCanto90Asas(piecesList, dimOverrides);
@@ -770,6 +771,7 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         prateleira_regulavel: !!piece.prateleira_regulavel,
         linha_furos: piece.linha_furos || null, // grade de furos do VÃO (layout-engine gradeFurosVao)
         veio: piece.veio || 'livre',
+        veio_forcado: piece.veio_forcado || null,
         fura: piece.fura !== false,
         lado_min_mm: piece.lado_min_mm || null,
         lado_max_mm: piece.lado_max_mm || null,

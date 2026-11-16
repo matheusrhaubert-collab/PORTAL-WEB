@@ -1250,6 +1250,7 @@ function renderProjectConfigPanel() {
     ${doorModelBlock}
     ${projectDoorSideBlock(slot)}
     ${drawerModelBlock}
+    ${frontGrainBlock(slot)}
     ${handleBlock}
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     ${moveBlock}
@@ -1367,7 +1368,7 @@ function renderProjectConfigPanel() {
       renderProjectConfigPanel();
     });
   }
-  panel.querySelectorAll('.po-proj-door-model-card:not(.po-proj-drawer-model-card):not(.po-proj-handle-card)').forEach((el) => {
+  panel.querySelectorAll('.po-proj-door-model-card:not(.po-proj-drawer-model-card):not(.po-proj-handle-card):not(.po-proj-front-grain-card)').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected') || el.classList.contains('blocked')) return;
       setProjectSlotDoorModel(slot, el.dataset.doorModelId || null);
@@ -1394,6 +1395,17 @@ function renderProjectConfigPanel() {
     });
   });
   // Modelo de gaveta (migration 203)
+  panel.querySelectorAll('.po-proj-front-grain-card').forEach((el) => {
+    el.addEventListener('click', () => { pushProjectUndoState(); setProjectSlotFrontGrain(slot, el.dataset.dir); });
+  });
+  panel.querySelectorAll('.po-proj-front-grain-all').forEach((el) => {
+    el.addEventListener('click', () => {
+      pushProjectUndoState();
+      const dir = projectSlotFrontGrain(slot);
+      projectSlots.forEach((x) => { if (x !== slot && projectSlotHasFronts(x)) setProjectSlotFrontGrain(x, dir, true); });
+      renderProjectCanvas(); renderProjectConfigPanel(); markProjectDirty();
+    });
+  });
   panel.querySelectorAll('.po-proj-drawer-model-card').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected')) return;
@@ -5771,3 +5783,42 @@ function projectLockedGroupMembers() {
     }));
   };
 })();
+
+
+// ==========================================================================
+// VEIO DAS FRENTES (2026-11-15) — ver Pricing.applyVeioFrentes
+// ==========================================================================
+// Matt: "todas nossas portas flat são veio vertical, quero criar uma de veio
+// horizontal (serve pra todas as portas e frentes de gaveta) nova opção".
+// Por módulo: slot.dimOverrides.__veio_frentes = { dir: 'horizontal' }. Sem a
+// chave = veio do cadastro (porta em pé), como sempre.
+function projectSlotHasFronts(slot) {
+  try { return typeof piecesHaveHandleFront === 'function' && piecesHaveHandleFront(projectSlotEffectivePieces(slot)); } catch (e) { return false; }
+}
+function projectSlotFrontGrain(slot) {
+  return (typeof Pricing !== 'undefined' && Pricing.veioFrentesDe && Pricing.veioFrentesDe(slot && slot.dimOverrides)) === 'horizontal' ? 'horizontal' : 'vertical';
+}
+function setProjectSlotFrontGrain(slot, dir, semRender) {
+  if (!slot) return;
+  const novo = { ...(slot.dimOverrides || {}) };
+  if (dir === 'horizontal') novo.__veio_frentes = { dir: 'horizontal' }; else delete novo.__veio_frentes;
+  slot.dimOverrides = novo;
+  try { recomputeProjectSlotPricing(slot); } catch (e) { /* preço antigo continua */ }
+  if (semRender) return;
+  renderProjectCanvas();
+  renderProjectConfigPanel();
+  markProjectDirty();
+}
+function frontGrainBlock(slot) {
+  if (!projectSlotHasFronts(slot)) return '';
+  const atual = projectSlotFrontGrain(slot);
+  const svg = (h) => '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true"><rect x="9" y="6" width="26" height="50" rx="2" fill="#efe6d6" stroke="#6b6358" stroke-width="1.4"/>'
+    + (h ? [14, 21, 28, 35, 42, 49].map((y) => '<path d="M12 ' + y + ' q5 -2 10 0 t10 0" fill="none" stroke="#b39a74" stroke-width="1"/>').join('')
+      : [14, 19, 24, 29].map((x) => '<path d="M' + x + ' 9 q-2 11 0 22 t0 22" fill="none" stroke="#b39a74" stroke-width="1"/>').join(''))
+    + '</svg>';
+  const card = (dir, rot) => `<button type="button" class="po-proj-door-model-card po-proj-front-grain-card${atual === dir ? ' selected' : ''}" data-dir="${dir}" title="${rot}">${svg(dir === 'horizontal')}<span>${rot}</span></button>`;
+  const outros = projectSlots.some((x) => x !== slot && projectSlotHasFronts(x));
+  return `<div class="po-proj-config-door-models"><span class="po-proj-config-section-label">${I18n.t('project.front_grain_label')}</span>
+    <div class="po-proj-door-model-cards">${card('vertical', I18n.t('project.front_grain_vertical'))}${card('horizontal', I18n.t('project.front_grain_horizontal'))}</div>
+    ${outros ? `<button type="button" class="secondary po-proj-front-grain-all" style="margin-top:6px">${I18n.t('project.front_grain_all')}</button>` : ''}</div>`;
+}
