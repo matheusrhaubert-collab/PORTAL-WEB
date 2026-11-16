@@ -3673,7 +3673,9 @@ const Viewer3D = (function () {
     chapa.rotation.y = Math.PI / 4;
     chapa.position.set(0, H - 0.0025, 0);
     g.add(chapa);
-    const yC = H - 0.045;                       // centro dos encaixes = centro do cabide
+    // suporte real tem 100 mm de altura (Matt, 16/11): o cabide (30 de altura) fica dos 100 pra cima,
+    // então o centro do encaixe está 15 mm acima da ponta de baixo
+    const yC = Math.min(0.015, H / 2);          // centro dos encaixes = centro do cabide
     const haste = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, Math.max(H - 0.005 - yC, 0.005), 16), preto);
     haste.position.set(0, (H - 0.005 + yC) / 2, 0);
     g.add(haste);

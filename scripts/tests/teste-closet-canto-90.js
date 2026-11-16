@@ -38,7 +38,7 @@ const E = 19.5;
 
 // ---- as linhas da migration 300 (copiadas) --------------------------------
 const K = 'se(menor(533-E,540),270,(533-E)/2)';
-const Y_CAB = 'min(1910+45,H-2*E-150)', Y_MEIO = 'max(min(1910+45,H-2*E-150)-1000-E,76+E+150)';
+const Y_CAB = 'min(1870+85,H-2*E-150)', Y_MEIO = 'max(min(1870+85,H-2*E-150)-1000-E,76+E+150)';
 const L = (ref, role, w, h, d, x, y, z, prog, extra) => Object.assign({ reference: ref, position_role: role,
   width_formula: w, height_formula: h, depth_formula: d, offset_x_formula: x, offset_y_formula: y, offset_z_formula: z,
   drilling_pattern_id: prog, rotation_y_deg: 0, shape_type: 'box', origin: 'fabricacao' }, extra || {});
@@ -81,12 +81,12 @@ const linhas = [
   L('Toe 3 · frente B (asa em Z)', 'free', 'E', '76', 'D-3*E', '513-E', '0', '2*E', null),
   L('Toe 3 · fundo (asa em X)', 'baseboard', 'W-3*E', '76', 'E', '2*E', '0', 'E', null),
   L('Toe 3 · fundo (asa em Z)', 'free', 'E', '76', 'D-2*E', 'E', '0', 'E', null),
-  L('Cabide A (asa em X)', 'free', 'W-2*E-19-' + K, '30', '15', 'E+' + K + '+15', Y_CAB + '-60', 'E+' + K + '-7.5', null, { shape_type: 'oval_rod', origin: 'comprado' }),
-  L('Cabide B (asa em Z)', 'free', 'D-2*E-19-' + K, '30', '15', 'E+' + K + '-7.5', Y_CAB + '-60', 'E+' + K + '+15', null, { shape_type: 'oval_rod', origin: 'comprado', rotation_y_deg: 90 }),
-  L('Suporte em L do cabide (asa em X)', 'free', '60', '75', '60', 'E+' + K + '-30', Y_CAB + '-75', 'E+' + K + '-30', null, { shape_type: 'suporte_cabide_canto', origin: 'comprado' }),
-  L('Cabide de baixo A (asa em X)', 'free', 'W-2*E-19-' + K, '30', '15', 'E+' + K + '+15', Y_MEIO + '-60', 'E+' + K + '-7.5', null, { shape_type: 'oval_rod', origin: 'comprado' }),
-  L('Cabide de baixo B (asa em Z)', 'free', 'D-2*E-19-' + K, '30', '15', 'E+' + K + '-7.5', Y_MEIO + '-60', 'E+' + K + '+15', null, { shape_type: 'oval_rod', origin: 'comprado', rotation_y_deg: 90 }),
-  L('Suporte em L de baixo (asa em X)', 'free', '60', '75', '60', 'E+' + K + '-30', Y_MEIO + '-75', 'E+' + K + '-30', null, { shape_type: 'suporte_cabide_canto', origin: 'comprado' })
+  L('Cabide A (asa em X)', 'free', 'W-2*E-19-' + K, '30', '15', 'E+' + K + '+15', Y_CAB + '-100', 'E+' + K + '-7.5', null, { shape_type: 'oval_rod', origin: 'comprado' }),
+  L('Cabide B (asa em Z)', 'free', 'D-2*E-19-' + K, '30', '15', 'E+' + K + '-7.5', Y_CAB + '-100', 'E+' + K + '+15', null, { shape_type: 'oval_rod', origin: 'comprado', rotation_y_deg: 90 }),
+  L('Suporte em L do cabide (asa em X)', 'free', '60', '100', '60', 'E+' + K + '-30', Y_CAB + '-100', 'E+' + K + '-30', null, { shape_type: 'suporte_cabide_canto', origin: 'comprado' }),
+  L('Cabide de baixo A (asa em X)', 'free', 'W-2*E-19-' + K, '30', '15', 'E+' + K + '+15', Y_MEIO + '-100', 'E+' + K + '-7.5', null, { shape_type: 'oval_rod', origin: 'comprado' }),
+  L('Cabide de baixo B (asa em Z)', 'free', 'D-2*E-19-' + K, '30', '15', 'E+' + K + '-7.5', Y_MEIO + '-100', 'E+' + K + '+15', null, { shape_type: 'oval_rod', origin: 'comprado', rotation_y_deg: 90 }),
+  L('Suporte em L de baixo (asa em X)', 'free', '60', '100', '60', 'E+' + K + '-30', Y_MEIO + '-100', 'E+' + K + '-30', null, { shape_type: 'suporte_cabide_canto', origin: 'comprado' })
 ];
 
 function resolve(lista, W, H, D) {
@@ -150,17 +150,17 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
     ok(perto(ca.offset_z_mm + 7.5, E + kA) && perto(cb.offset_x_mm + 7.5, E + kB), 'cabides a ' + kA + ' / ' + kB + ' do fundo (centro)');
     ok(perto(ca.offset_x_mm + ca.width_mm, W - E - 4) && perto(cb.offset_z_mm + cb.width_mm, D - E - 4), 'cabides param 4 mm antes da lateral A e da lateral B');
     ok(perto(ca.offset_x_mm, E + kB + 15) && perto(cb.offset_z_mm, E + kA + 15), 'ponta de dentro de cada cabide entra no suporte (15 do centro)');
-    ok(perto(ca.offset_y_mm, cb.offset_y_mm) && perto(ca.offset_y_mm + 60, pc.offset_y_mm), 'os 2 cabides na mesma altura, 60 abaixo da prateleira do cabide');
+    ok(perto(ca.offset_y_mm, cb.offset_y_mm) && perto(ca.offset_y_mm + 100, pc.offset_y_mm), 'os 2 cabides na mesma altura, de 100 a 70 abaixo da prateleira do cabide');
     const centro = ca.offset_y_mm + 15;
     if (CAB) ok(perto(centro, CAB), 'altura do cabide editada: centro a ' + centro);
-    else if (H >= 2400) ok(perto(centro, 1910), 'cabide no padrão: centro a 1910 do chão (deu ' + centro + ')');
-    else ok(centro <= H - 2 * E - 150 - 45 + 0.01, 'altura mínima: cabide desce pra caber (centro ' + centro + ', maleiro ' + (H - E - pc.offset_y_mm - E) + ')');
-    ok(perto(su.offset_y_mm + su.height_mm, pc.offset_y_mm) && perto(su.offset_x_mm + 30, E + kB) && perto(su.offset_z_mm + 30, E + kA), 'suporte em L encostado embaixo da prateleira, no encontro dos cabides');
+    else if (H >= 2400) ok(perto(centro, 1870), 'cabide no padrão: centro a 1870 do chão (deu ' + centro + ')');
+    else ok(centro <= H - 2 * E - 150 - 85 + 0.01, 'altura mínima: cabide desce pra caber (centro ' + centro + ', maleiro ' + (H - E - pc.offset_y_mm - E) + ')');
+    ok(perto(su.height_mm, 100) && perto(su.offset_y_mm + su.height_mm, pc.offset_y_mm) && perto(su.offset_x_mm + 30, E + kB) && perto(su.offset_z_mm + 30, E + kA), 'suporte em L encostado embaixo da prateleira, no encontro dos cabides');
     const pm = p('Prateleira do meio A (asa em X)');
     ok(perto(pc.offset_y_mm - (pm.offset_y_mm + E), 1000) || pm.offset_y_mm === 76 + E + 150, 'prateleira do meio 1000 abaixo da do cabide (vão ' + (pc.offset_y_mm - pm.offset_y_mm - E) + ')');
     ok(perto(p('Base superior A (asa em X)').offset_y_mm, H - E), 'base de cima no topo');
     const ba2 = p('Cabide de baixo A (asa em X)'), bb2 = p('Cabide de baixo B (asa em Z)'), su2 = p('Suporte em L de baixo (asa em X)');
-    ok(perto(ba2.offset_y_mm + 60, pm.offset_y_mm) && perto(bb2.offset_y_mm, ba2.offset_y_mm) && perto(su2.offset_y_mm + 75, pm.offset_y_mm), 'cabides de baixo 60 abaixo da prateleira do meio, suporte encostado nela (centro a ' + (ba2.offset_y_mm + 15) + ' do chão, ' + (ba2.offset_y_mm - 76 - E) + ' livres embaixo)');
+    ok(perto(ba2.offset_y_mm + 100, pm.offset_y_mm) && perto(bb2.offset_y_mm, ba2.offset_y_mm) && perto(su2.offset_y_mm + 100, pm.offset_y_mm), 'cabides de baixo de 100 a 70 abaixo da prateleira do meio, suporte encostado nela (centro a ' + (ba2.offset_y_mm + 15) + ' do chão, ' + (ba2.offset_y_mm - 76 - E) + ' livres embaixo)');
     ok(perto(ba2.width_mm, ca.width_mm) && perto(bb2.width_mm, cb.width_mm) && perto(ba2.offset_x_mm, ca.offset_x_mm) && perto(bb2.offset_z_mm, cb.offset_z_mm), 'cabides de baixo no mesmo prumo dos de cima');
     // 5. furação
     const f = furar(parts, W, H, D);
@@ -190,6 +190,24 @@ ok(fx.min === 300 && fx.max === 767, 'faixa da asa com 1067: 300 a 767 (deu ' + 
     ok(jun === '5,5,8,8', 'junção base com base: 2 pinos de minifix (Ø5) + 2 cavilhas (Ø8) na borda da B — ' + jun);
     ok(!f['Suporte em L do cabide (asa em X)'] && !f['Cabide A (asa em X)'] && !f['Cabide B (asa em Z)'], 'item comprado (cabide/suporte) não recebe furo');
   });
+
+// ---- DIREITO (· Right): espelho do Left, mesma transformação do fim da migration ----
+const espelha = (lista) => lista.map((r) => Object.assign({}, r, {
+  position_role: r.position_role === 'left' ? 'right' : (r.position_role === 'right' ? 'left' : r.position_role),
+  offset_x_formula: 'W-(' + r.offset_x_formula + ')-(' + (r.rotation_y_deg === 90 || r.rotation_y_deg === 270 ? r.depth_formula : r.width_formula) + ')' }));
+const linhasR = espelha(linhas);
+console.log('\n== DIREITO (espelho) ==');
+ok(P.canto90TemAsas(linhasR) && P.canto90PadraoDe(linhasR) === 533 && P.canto90Espelhado(linhasR) && !P.canto90Espelhado(linhas), 'portal reconhece o Right como canto 90° espelhado (e o Left como normal)');
+[[1067, 2400, 1000, null], [1300, 2400, 950, { __canto90: { asa_a_mm: 450, asa_b_mm: 650, cabide_mm: 1700 } }]].forEach(([W, H, D, ov]) => {
+  const pl = resolve(P.applyCanto90Asas(linhas, ov || {}), W, H, D), pr = resolve(P.applyCanto90Asas(linhasR, ov || {}), W, H, D);
+  const sx = (q) => (q.rotation_y_deg ? q.depth_mm : q.width_mm);
+  const tortas = pl.filter((q, i) => !perto(pr[i].offset_x_mm, W - q.offset_x_mm - sx(q)) || !perto(pr[i].offset_z_mm, q.offset_z_mm) || !perto(pr[i].offset_y_mm, q.offset_y_mm) || !perto(pr[i].width_mm, q.width_mm) || !perto(pr[i].depth_mm, q.depth_mm));
+  ok(!tortas.length, W + ' × ' + D + (ov ? ' com asas/cabide editados' : '') + ': toda peça do Right é o espelho da do Left' + (tortas.length ? ' — ' + tortas.map((q) => q.reference).join(', ') : ''));
+  const fl = furar(pl, W, H, D), fr = furar(pr, W, H, D);
+  const resumo = (f) => Object.keys(f).sort().map((n) => n + ':' + f[n].map((h) => h.tipo + h.diameter).sort().join('/')).join(' | ');
+  ok(resumo(fl) === resumo(fr), '  ...e a furação tem os mesmos furos, peça por peça (' + Object.keys(fr).length + ' peças furadas)');
+  ok(conta(fr['Lateral A (asa em X)'], 'suporte_cabide') === 2 && conta(fr['Lateral B (asa em Z)'], 'suporte_cabide') === 2, '  ...cabides do Right furam o suporte na lateral A e na lateral B');
+});
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\nTudo OK');
 process.exit(falhas ? 1 : 0);

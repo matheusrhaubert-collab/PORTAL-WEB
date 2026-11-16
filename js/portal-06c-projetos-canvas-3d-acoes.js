@@ -1178,8 +1178,8 @@ function renderProjectConfigPanel() {
           <input type="text" inputmode="decimal" class="po-proj-canto45-porta-input po-proj-canto90-asa-input" data-asa="${lado}" value="${formatDimensionNumber(mm, unit)}" title="${formatDimensionNumber(faixa.min, unit)} – ${formatDimensionNumber(faixa.max, unit)} ${unitAbbrev(unit)}" />
           <span class="po-proj-dim-unit">${unitAbbrev(unit)}</span></span></div>`;
       canto90Block = `<div class="po-proj-config-dims po-proj-config-canto45"><span class="po-proj-config-section-label">${I18n.t('project.canto90_label')}</span>`
-        + linha90('a', I18n.t('project.canto90_lat_direita'), c90.asaAMm, c90.faixaA)
-        + linha90('b', I18n.t('project.canto90_lat_frente'), c90.asaBMm, c90.faixaB)
+        + linha90('a', I18n.t(c90.espelhado ? 'project.canto90_lat_esquerda' : 'project.canto90_lat_direita'), c90.asaAMm, c90.faixaA)
+        + linha90('b', I18n.t(c90.espelhado ? 'project.canto90_lat_frente_dir' : 'project.canto90_lat_frente'), c90.asaBMm, c90.faixaB)
         + (c90.temCabide && c90.faixaCab ? linha90('cab', I18n.t('project.canto90_cabide'), c90.cabideMm, c90.faixaCab) : '')
         + (c90.temAjuste ? `<button type="button" class="secondary po-proj-canto90-reset" style="margin-top:4px">↺ ${I18n.t('project.canto90_reset')}</button>` : '')
         + `<p class="hint" style="margin:4px 0 0">${I18n.t(c90.semPorta ? 'project.canto90_hint_closet' : 'project.canto90_hint')}</p></div>`;
@@ -5425,7 +5425,8 @@ function projectCanto90Info(slot) {
   const semPorta = Pricing.canto90TemPorta ? !Pricing.canto90TemPorta(pecas) : false;
   const temCabide = Pricing.canto90TemCabide ? Pricing.canto90TemCabide(pecas) : false;
   const asas = Pricing.canto90AsasDe(slot.dimOverrides, P0);
-  return { asaAMm: asas.a, asaBMm: asas.b, cabideMm: asas.cab, padraoMm: P0, semPorta, temCabide,
+  const espelhado = Pricing.canto90Espelhado ? Pricing.canto90Espelhado(pecas) : false;   // closet canto 90° · Right
+  return { asaAMm: asas.a, asaBMm: asas.b, cabideMm: asas.cab, padraoMm: P0, semPorta, temCabide, espelhado,
     faixaA: Pricing.canto90FaixaAsa(Number(slot.depth_mm), { semPorta }), faixaB: Pricing.canto90FaixaAsa(Number(slot.width_mm), { semPorta }),
     faixaCab: temCabide && Pricing.canto90FaixaCabide ? Pricing.canto90FaixaCabide(Number(slot.height_mm)) : null,
     temAjuste: !!(slot.dimOverrides && slot.dimOverrides.__canto90) };

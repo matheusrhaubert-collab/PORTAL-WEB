@@ -3064,6 +3064,9 @@
           diameter: Number(h.diameter) || 0, depth: Number(h.depth) || 0,
           tipo: h.tipo || null, borda: ehBorda, extra: h.extra || null,
           peca: part.reference || null,
+          // caixa da peça dona do furo (mm, mesmo referencial) — o passo a passo
+          // de montagem (portal-40) usa pra saber em qual chapa cada ferragem vai
+          cx: [b.x0, b.y0, b.z0, b.sx, b.sy, b.sz].map(function (v) { return Math.round(v * 10) / 10; }).join(','),
           // prateleira regulável apoiada logo acima deste furo? (pino desenhado)
           _part: part
         });

@@ -1829,7 +1829,7 @@
   // (vão aberto do outro lado de 300 a 1050).
   // ALTURA DO CABIDE (closet): dimOverrides.__canto90.cabide_mm = centro do
   // cabide a partir do chão. Nas fórmulas de posição Y das peças do canto o
-  // número 1910 (padrão) é trocado por ele — prateleira do cabide, cabides,
+  // número 1870 (padrão; era 1910 até o suporte em L ser medido: 100 mm de altura) é trocado por ele — prateleira do cabide, cabides,
   // suporte em L e a prateleira do meio acompanham.
   const CANTO90_ASA_PADRAO_MM = 609;
   const CANTO90_ASA_MIN_MM = 250;
@@ -1841,11 +1841,11 @@
   const CANTO90_CLOSET_VAO_MIN_MM = 300;
   // 1019: o fundo da asa em X (W − E − asa B) tem que caber na máquina (≤ 1000)
   const CANTO90_CLOSET_VAO_MAX_MM = 1019;
-  const CANTO90_CABIDE_PADRAO_MM = 1910;
+  const CANTO90_CABIDE_PADRAO_MM = 1870;
   const CANTO90_CABIDE_MIN_MM = 1300;
   const CANTO90_DELTAS = [0, -20, -76, 2, 2.5, 4.5];
   const CANTO90_RE_ASA = /\(asa em [XZ]\)/i;
-  const CANTO90_RE_CABIDE = /(^|[^0-9.A-Za-z_])1910(?![0-9.A-Za-z_])/g;
+  const CANTO90_RE_CABIDE = /(^|[^0-9.A-Za-z_])1870(?![0-9.A-Za-z_])/g;
   function canto90TemAsas(pieces) {
     let n = 0;
     (pieces || []).forEach(function (p) { if (p && CANTO90_RE_ASA.test(String(p.reference || ''))) n++; });
@@ -1856,6 +1856,14 @@
     const lat = (pieces || []).find(function (p) { return p && /^Lateral A \(asa em X\)/i.test(String(p.reference || '')); });
     const v = lat ? Number(String(lat.depth_formula == null ? '' : lat.depth_formula).trim()) : NaN;
     return (isFinite(v) && v > 0) ? v : CANTO90_ASA_PADRAO_MM;
+  }
+  // Módulo ESPELHADO (closet canto 90° · Right, 16/11): a Lateral A fica em
+  // x = 0 (no normal fica em x = W−E). Só muda o rótulo no painel.
+  function canto90Espelhado(pieces) {
+    const lat = (pieces || []).find(function (p) { return p && /^Lateral A \(asa em X\)/i.test(String(p.reference || '')); });
+    if (!lat) return false;
+    try { return evalFormula(lat.offset_x_formula == null ? '0' : lat.offset_x_formula, { W: 1000, H: 1000, D: 1000, E: 20, w: 20, h: 1000, d: 500, N: 1, COUNT: 1 }) < 500; }
+    catch (e) { return false; }
   }
   function canto90TemPorta(pieces) {
     return (pieces || []).some(function (p) { return p && /^Porta /i.test(String(p.reference || '')) && CANTO90_RE_ASA.test(String(p.reference || '')); });
@@ -1890,7 +1898,7 @@
   // Faixa da altura do cabide (centro, do chão) pra um módulo de altura H.
   function canto90FaixaCabide(H, E) {
     const e = Number(E) > 0 ? Number(E) : DEFAULT_THICKNESS_MM;
-    const max = (Number(H) || 0) - 2 * e - 150 - 45;
+    const max = (Number(H) || 0) - 2 * e - 150 - 85;   // 85 = prateleira até o centro do cabide (suporte de 100, cabide de 30 apoiado na ponta de baixo)
     return { min: Math.min(CANTO90_CABIDE_MIN_MM, max), max: max };
   }
   function canto90RegexNums(P0) {
@@ -2265,7 +2273,7 @@
     setFormulaGlobals,
     applyVeioFrentes, veioFrentesDe,
     applyCanto90Asas, canto90AsasDe, canto90TemAsas, canto90FaixaAsa, CANTO90_ASA_PADRAO_MM,
-    canto90PadraoDe, canto90TemPorta, canto90TemCabide, canto90FaixaCabide, CANTO90_CABIDE_PADRAO_MM,
+    canto90PadraoDe, canto90Espelhado, canto90TemPorta, canto90TemCabide, canto90FaixaCabide, CANTO90_CABIDE_PADRAO_MM,
     applyCanto45Corte, canto45CorteDe, canto45TemChanfro, canto45FaixaCorte, canto45PortaDoCorte, canto45CorteDaPorta,
     CANTO45_CORTE_PADRAO_MM, CANTO45_PORTA_MIN_MM, CANTO45_PORTA_MAX_MM, CANTO45_LATERAL_MIN_MM,
     calculatePiece,
