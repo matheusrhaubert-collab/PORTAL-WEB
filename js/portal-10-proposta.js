@@ -1219,7 +1219,9 @@ async function buildProposalItemFromSlot(slot) {
   return {
     volume_m3: vw.m3,
     weight_kg: vw.kg,
-    module_name: slot.module.name,
+    // nome descritivo quando o interior foi mudado no Construtor (portal-14,
+    // ptPreparaNomes — chamado no começo de generateProjectProposalPDF)
+    module_name: (typeof ptNomeDoSlot === 'function' && ptNomeDoSlot(slot)) || slot.module.name,
     selected_colors: slot.selectedColors,
     width_mm: slot.width_mm,
     height_mm: slot.height_mm,
@@ -1243,6 +1245,7 @@ async function generateProjectProposalPDF() {
     if (errorEl) { errorEl.textContent = I18n.t('proposal.empty_error'); errorEl.style.display = 'block'; }
     return;
   }
+  try { if (typeof ptPreparaNomes === 'function') await ptPreparaNomes(); } catch (e) { /* nome do catálogo */ }
   // (2026-09-07, Matt: "uma vez que ue gere a proposal ele fica aparecendo
   // a escrita proposal e escolnde o icone") -- btn.textContent = ... aqui
   // embaixo reescrevia TODO o conteúdo do <button> (SVG do ícone + <span>

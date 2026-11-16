@@ -5705,6 +5705,16 @@ async function sendProjectToOrder(opts) {
     // logo abaixo (extraída daqui em 2026-08-26 pra ser reaproveitada
     // também pela prévia de Proposta). Sequencial de propósito — o viewer
     // escondido é reaproveitado (singleton), não dá pra rodar em paralelo.
+    // NOME DO ITEM = O QUE O MÓDULO É DE VERDADE (2026-11-16, Matt: módulo
+    // copiado e mudado no Construtor continuava saindo com o nome do catálogo
+    // — "pra quem vai montar vai confundir sim, deve seguir isso pros pedidos
+    // e pros produtos"). Interior diferente do de fábrica -> o nome descreve o
+    // interior (ptPreparaNomes/ptNomeDoSlot, portal-14: "Custom Closet · 12
+    // shelves"). Fica gravado em order_items.module_name, que é de onde o
+    // ERP, a etiqueta, o lote e o acompanhamento leem o nome. module_id não
+    // muda. Pedido já enviado continua com o nome que tinha.
+    try { if (typeof ptPreparaNomes === 'function') await ptPreparaNomes(); } catch (e) { /* segue com o nome do catálogo */ }
+    const nomeDoItem = (s) => ((typeof ptNomeDoSlot === 'function' && ptNomeDoSlot(s)) || s.module.name);
     const payloads = [];
     let sortOrder = 0;
     for (let idx = 0; idx < projectSlots.length; idx++) {
@@ -5720,7 +5730,7 @@ async function sendProjectToOrder(opts) {
       payloads.push({
         order_id: order.id,
         module_id: slot.module.id,
-        module_name: slot.module.name,
+        module_name: nomeDoItem(slot),
         module_description: slot.module.description || null,
         selected_colors: slot.selectedColors,
         hinge_model_id: slot.hingeModel ? slot.hingeModel.id : null,
