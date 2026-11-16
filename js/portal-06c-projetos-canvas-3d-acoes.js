@@ -5636,3 +5636,133 @@ function setProjectSlotPieceQty(slot, ids, qtd) {
   renderProjectConfigPanel();
   markProjectDirty();
 }
+
+// ==========================================================================
+// GRUPO TRAVADO = UM OBJETO SÓ NA TELA (2026-11-15)
+// ==========================================================================
+// Matt: "o grupo ainda não trabalha como bloco inteiro... uma vez agrupado
+// não quero ver nada separado". Clicar em qualquer módulo de um grupo salvo
+// já seleciona o grupo inteiro (selectProjectSlot, portal-06b), mas a tela
+// continuava mostrando o MÓDULO clicado: contorno próprio, setas de esticar,
+// barrinha de ações dele e o painel de configuração dele. Agora, com o grupo
+// inteiro selecionado:
+//   · só o bloco vermelho do grupo (sem contorno do módulo);
+//   · sem setas de esticar (arrastar qualquer parte move o bloco);
+//   · a barrinha fica embaixo do CENTRO do grupo e só com ações de grupo
+//     (duplicar o grupo, favoritar, orçamento, tamponamento, excluir o grupo);
+//   · o painel da direita mostra o GRUPO (nome, nº de módulos, medida,
+//     total) com Renomear / Duplicar / Favoritar / Orçamento / Desagrupar.
+// Pra mexer num módulo só: Desagrupar.
+function projectLockedGroupMembers() {
+  if (selectedProjectSlotId == null) return null;
+  const s = projectSlots.find((x) => x.id === selectedProjectSlotId);
+  if (!s || !s.group_id) return null;
+  const membros = projectSlots.filter((x) => x.group_id === s.group_id);
+  if (membros.length < 2) return null;
+  if (!membros.every((m) => projectMultiSelectIds.has(m.id))) return null;
+  return membros;
+}
+
+(function travaGrupoComoBloco() {
+  const origHighlight = refreshProject3DHighlight;
+  refreshProject3DHighlight = function () {
+    origHighlight.apply(this, arguments);
+    if (projectLockedGroupMembers() && ViewerProjectEdit && ViewerProjectEdit.setHoverHighlight) ViewerProjectEdit.setHoverHighlight(null);
+  };
+  const origArrows = refreshProject3DResizeArrows;
+  refreshProject3DResizeArrows = function () {
+    if (projectLockedGroupMembers() && ViewerProjectEdit && ViewerProjectEdit.setResizeArrows) {
+      projectCanto45Marcas = null;
+      ViewerProjectEdit.setResizeArrows(null);
+      return;
+    }
+    return origArrows.apply(this, arguments);
+  };
+  const origAnchor = projectSlotActionsAnchorWorld;
+  projectSlotActionsAnchorWorld = function (slot) {
+    const membros = projectLockedGroupMembers();
+    if (membros && typeof projectGroupToolbarAnchorWorld === 'function') return projectGroupToolbarAnchorWorld(membros);
+    return origAnchor.apply(this, arguments);
+  };
+  const origActions = refreshProjectSlotActions;
+  refreshProjectSlotActions = function () {
+    const bar = document.getElementById('po-proj-slot-actions');
+    if (bar) bar.classList.toggle('po-group-locked', !!projectLockedGroupMembers());
+    return origActions.apply(this, arguments);
+  };
+  // Duplicar / Excluir da barrinha: com o grupo travado, agem no GRUPO.
+  const ids = () => new Set((projectLockedGroupMembers() || []).map((m) => m.id));
+  const intercepta = (id, fn) => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.addEventListener('click', (ev) => {
+      if (!projectLockedGroupMembers()) return;
+      ev.stopImmediatePropagation(); ev.preventDefault();
+      fn(ids());
+    }, true);
+  };
+  intercepta('po-proj-slot-duplicate-btn', (set) => { pushProjectUndoState(); duplicateProjectSlotGroup(set); });
+  intercepta('po-proj-slot-remove-btn', (set) => {
+    const membros = projectLockedGroupMembers() || [];
+    const nome = (membros[0] && membros[0].group_name) || I18n.t('project.group_default_name');
+    if (!confirm(I18n.t('project.group_delete_confirm', { name: nome, n: set.size }))) return;
+    pushProjectUndoState();
+    projectSlots = projectSlots.filter((s) => !set.has(s.id));
+    projectSlots.forEach((s) => { if (set.has(s.attached_to_slot_id)) { s.attached_to_slot_id = null; s.attached_face = null; } });
+    deselectProjectSlot();
+    renderProjectCanvas();
+    renderProjectConfigPanel();
+    markProjectDirty();
+  });
+  // Painel da direita = o GRUPO.
+  const origPanel = renderProjectConfigPanel;
+  renderProjectConfigPanel = function () {
+    const membros = projectLockedGroupMembers();
+    const panel = document.getElementById('po-proj-config-panel');
+    if (!membros || !panel) return origPanel.apply(this, arguments);
+    const unit = (document.getElementById('po-unit-select') || {}).value || 'mm';
+    const nome = membros[0].group_name || I18n.t('project.group_default_name');
+    let total = 0;
+    try {
+      const rel = collectProjectCostReport(membros);
+      const seller = (typeof isSellerAccount === 'function') && isSellerAccount();
+      total = rel ? ((seller && typeof getDisplayPrice === 'function') ? getDisplayPrice(rel.totalVenda) : rel.totalVenda) : 0;
+    } catch (e) { total = 0; }
+    let tam = null;
+    try { tam = ViewerProjectEdit && ViewerProjectEdit.getMultiHighlightSizeMm ? ViewerProjectEdit.getMultiHighlightSizeMm() : null; } catch (e) { tam = null; }
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const btn = (act, rot, cls) => `<button type="button" class="${cls || 'secondary'} po-group-panel-btn" data-gact="${act}">${esc(rot)}</button>`;
+    panel.innerHTML = `
+      <div class="po-group-panel">
+        <h3 class="po-group-panel-title">▣ ${esc(nome)}</h3>
+        <p class="hint">${esc(I18n.t('project.group_selected_count', { n: membros.length }))}${tam ? ' · ' + esc(formatDimension(tam.w, unit) + ' × ' + formatDimension(tam.h, unit) + ' × ' + formatDimension(tam.d, unit)) : ''}</p>
+        <p class="po-group-panel-total">${esc(I18n.t('project.group_total_label'))} <strong>${esc(formatMoney(total))}</strong></p>
+        <div class="po-group-panel-actions">
+          ${btn('rename', I18n.t('project.group_rename_btn'))}
+          ${btn('duplicate', I18n.t('project.group_duplicate_btn'))}
+          ${typeof window.openSaveFavoriteDialog === 'function' ? btn('favorite', '★ ' + ((window.LegnoFavoritos && window.LegnoFavoritos.t('fav_btn')) || 'Favoritar')) : ''}
+          ${btn('budget', I18n.t('project.group_budget_btn'))}
+          ${btn('ungroup', I18n.t('project.group_ungroup_btn'), 'secondary po-group-panel-danger')}
+        </div>
+        <p class="hint">${esc(I18n.t('project.group_locked_hint'))}</p>
+      </div>`;
+    panel.querySelectorAll('[data-gact]').forEach((b) => b.addEventListener('click', () => {
+      const set = new Set(membros.map((m) => m.id));
+      const a = b.dataset.gact;
+      if (a === 'rename') renameProjectSlotGroup(set);
+      else if (a === 'duplicate') { pushProjectUndoState(); duplicateProjectSlotGroup(set); }
+      else if (a === 'favorite') window.openSaveFavoriteDialog(set);
+      else if (a === 'budget') { if (typeof openMoneyModal === 'function') openMoneyModal(set); }
+      else if (a === 'ungroup') {
+        if (!confirm(I18n.t('project.group_ungroup_confirm', { name: nome }))) return;
+        ungroupProjectSlots(set);
+        renderProjectConfigPanel();
+        refreshProject3DHighlight();
+        refreshProject3DResizeArrows();
+        refreshProjectSlotActions();
+        return;
+      }
+      if (a === 'rename') renderProjectConfigPanel();
+    }));
+  };
+})();

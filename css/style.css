@@ -6578,3 +6578,13 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .cu-projs { margin-top: 12px; }
 .cu-projs > summary { cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #888; padding: 6px 0; }
 .cu-noorders { margin: 4px 0 6px; }
+
+/* Grupo travado (15/11): barrinha só com ações de grupo; painel do grupo */
+.po-group-locked #po-proj-slot-customize-btn, .po-group-locked #po-proj-slot-pieces-btn,
+.po-group-locked #po-proj-slot-replace-btn, .po-group-locked #po-proj-slot-led-btn,
+.po-group-locked #po-proj-slot-blind-flip-btn { display: none !important; }
+.po-group-panel-title { margin: 0 0 4px; font-size: 16px; }
+.po-group-panel-total { margin: 8px 0 12px; }
+.po-group-panel-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.po-group-panel-actions button { margin: 0; }
+.po-group-panel-danger { color: #b42318; }

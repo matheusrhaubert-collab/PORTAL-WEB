@@ -2593,10 +2593,16 @@ function duplicateProjectSlotGroup(ids) {
       if (g) { dFloorX = g.alongDirX * dx; dFloorZ = g.alongDirZ * dx; }
     }
   }
+  // SEM ESPAÇO NA PAREDE (ou grupo de canto/ilha) — 15/11, Matt: "colocou
+  // ele um dentro do outro, preciso ele fora pra poder ver e mexer". A cópia
+  // sai PRA FRENTE, solta no chão (ilha), na frente do original, com o mesmo
+  // giro e a mesma altura de cada peça — nunca sobreposta.
+  let praFrente = null; // { ix, iz, passo }
   if (!dx && !dFloorX && !dFloorZ) {
-    // sem espaço (ou grupo de canto/ilha): ilhas vão 600 mm pra frente; os de
-    // parede ficam no lugar (sobrepostos) e o usuário arrasta o bloco.
-    if (!naParede.length) { dFloorX = 600; }
+    const fundoMax = Math.max(...members.map((m) => Number(m.depth_mm || 0)));
+    const passo = fundoMax + 300;
+    const g0 = naParede.length ? getProjectWallGeometry().find((w) => w.wallIndex === Number(naParede[0].wall_index || 0)) : null;
+    praFrente = g0 ? { ix: g0.intoDirX, iz: g0.intoDirZ, passo } : { ix: 0, iz: 1, passo };
   }
   const newGroupId = newProjectSlotId();
   const baseName = members[0].group_name || I18n.t('project.group_default_name');
@@ -2609,7 +2615,19 @@ function duplicateProjectSlotGroup(ids) {
     copy.group_id = newGroupId;
     copy.group_name = newGroupName;
     copy.attached_to_slot_id = null;
-    if (isFloorSlot(copy)) {
+    if (praFrente) {
+      const box = projectSlotWorldBox3D(original);
+      const altura = Number(original.floor_height_mm || 0);
+      const giroDeg = box ? ((((-box.angleRad * 180) / Math.PI) % 360) + 360) % 360 : Number(copy.floor_rotation_deg || 0);
+      const cx = (box ? box.cx : Number(copy.floor_x_mm || 0)) + praFrente.ix * praFrente.passo;
+      const cz = (box ? box.cz : Number(copy.floor_z_mm || 0)) + praFrente.iz * praFrente.passo;
+      copy.placement = 'floor';
+      copy.floor_x_mm = cx;
+      copy.floor_z_mm = cz;
+      copy.floor_rotation_deg = giroDeg;
+      copy.floor_height_mm = altura;
+      copy.fineOffsetYMm = 0;
+    } else if (isFloorSlot(copy)) {
       copy.floor_x_mm = Number(copy.floor_x_mm || 0) + dFloorX;
       copy.floor_z_mm = Number(copy.floor_z_mm || 0) + dFloorZ;
     } else {
