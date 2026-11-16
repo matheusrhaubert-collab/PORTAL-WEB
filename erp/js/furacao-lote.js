@@ -501,7 +501,7 @@ FURACAO_LOTE._pecasDoPlano = async function (batchId) {
 FURACAO_LOTE._assumirMedidaCortada = function (itens, pecasPlano) {
   const ord = function (a, b, c) { return [Number(a) || 0, Number(b) || 0, Number(c) || 0].sort(function (x, y) { return y - x; }); };
   const igual = function (d1, d2) { return Math.abs(d1[0] - d2[0]) <= 1 && Math.abs(d1[1] - d2[1]) <= 1 && Math.abs(d1[2] - d2[2]) <= 2; };
-  const norm = function (t) { return String(t || '').trim().toLowerCase(); };
+  const norm = function (t) { return String(t || '').replace(/\s+INVERTIDA$/, '').trim().toLowerCase(); }; // 'INVERTIDA' = só aviso de veio na etiqueta (data-lotes)
   const EIXOS = [['width_mm', 'offset_x_mm'], ['height_mm', 'offset_y_mm'], ['depth_mm', 'offset_z_mm']];
   let ajustadas = 0;
   (itens || []).forEach(function (item) {
@@ -562,7 +562,7 @@ FURACAO_LOTE._arquivosPorPeca = function (itens, config, pecasPlano) {
   const mesmaMedida = function (d1, d2) {
     return Math.abs(d1[0] - d2[0]) <= 1 && Math.abs(d1[1] - d2[1]) <= 1 && Math.abs(d1[2] - d2[2]) <= 2;
   };
-  const norm = function (t) { return String(t || '').trim().toLowerCase(); };
+  const norm = function (t) { return String(t || '').replace(/\s+INVERTIDA$/, '').trim().toLowerCase(); }; // 'INVERTIDA' = só aviso de veio na etiqueta (data-lotes)
   const sanitize = function (t) {
     return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'peca';

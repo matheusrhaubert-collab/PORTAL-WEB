@@ -284,9 +284,15 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
     if ((p.origin || 'fabricacao') !== 'comprado' && !(Number(p.width_mm) > 0) && !(Number(p.height_mm) > 0)) return;
     out.push({
       reference: (function () {
-        const ref = (nomeDoPai && (p.origin || 'fabricacao') !== 'comprado') ? nomeDoPai : (p.reference || '—');
-        if (!emGaveta || nomeDoPai || (p.origin || 'fabricacao') === 'comprado') return ref;
-        return RE_GAVETA.test(ref) ? ref : ref + ' (drawer)';
+        const ref0 = (nomeDoPai && (p.origin || 'fabricacao') !== 'comprado') ? nomeDoPai : (p.reference || '—');
+        // VEIO INVERTIDO (15/11, Matt: "coloca em letra maiúscula INVERTIDA na
+        // descrição da peça pra sair na etiqueta e o operador saber"). Frente
+        // com veio horizontal escolhido no projeto (grain_forced). Sempre no
+        // FIM do nome — furacao-lote.js tira o sufixo pra casar peça × furo.
+        const inv = (p.grain_forced && (p.origin || 'fabricacao') !== 'comprado') ? ' INVERTIDA' : '';
+        const ref = ref0;
+        if (!emGaveta || nomeDoPai || (p.origin || 'fabricacao') === 'comprado') return ref + inv;
+        return (RE_GAVETA.test(ref) ? ref : ref + ' (drawer)') + inv;
       })(),
       description: p.description || '—',
       origin: p.origin || 'fabricacao',
