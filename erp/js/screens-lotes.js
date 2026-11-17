@@ -1028,7 +1028,11 @@ LOTES_UI.renderDraft = function (draft) {
       const simIdx = (typeof SIMCORTE !== 'undefined') ? SIMCORTE.registrar(sh, draft.params, 'Chapa ' + (i + 1) + ' — ' + g.group.color_name) : -1;
       return '<div style="margin-bottom:18px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
+          // nome do material na frente (17/11, Matt: "coloca o nome da chapa
+          // nessa descrição porque ainda me perco quando tem muitos")
           '<div class="erp-strong erp-small">Chapa ' + (i + 1) + ' — ' +
+            UI.swatch(null, g.group.color_name) + ' ' + UI.esc(g.group.color_name || '') +
+            ' · ' +
             (isOff ? UI.pill('retalho ' + UI.esc(sh.offcut.code), 'erp-pill-ok') : UI.esc(sh.sheet_size_name)) + stackBadge +
             ' <span class="erp-muted">' + LOTES_UI.mm(sh.width) + ' × ' + LOTES_UI.mm(sh.height) + ' mm</span></div>' +
           '<div class="erp-small erp-muted">' + sh.placed.length + ' peças · aproveitamento ' +

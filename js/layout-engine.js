@@ -413,6 +413,20 @@
   // em cima = folga de altura - 4 = 16 ou 46mm); na interna o deslocamento é
   // limitado pro caixote de cima não passar do topo do vão.
   var GAVETA_CAIXOTE_SUBIR_MM = 10;
+  // CORREÇÃO 2026-11-17 (protótipo B12 SAMPLE / Rocco Stones, pedido 40:
+  // "a corrediça ficou muito pra cima e ela não encaixa na altura"). A
+  // subida acima moveu junto o furo da corrediça (drilling.js fura a
+  // slide_height_mm acima da BASE do caixote) — corrediça 10 mm mais alta
+  // que antes de 08/10, e a gaveta de verdade (que assenta na corrediça)
+  // batia no stretcher de cima. Correção em drilling.js (regra única pra
+  // toda gaveta): corrediça 14 mm abaixo da base do caixote — com o caixote
+  // a 4 + 10 mm do piso, a corrediça assenta no piso do vão.
+  //
+  // LARGURA DO CAIXOTE = VÃO INTERNO − 12 (6 mm de cada lado) — regra do
+  // Matt pra corrediça undermount Häfele (17/11: "descontar 6 mm de cada
+  // lado"). Antes o Construtor tirava 12 de cada lado (vão − 24): no B12
+  // (vão 269 em plywood) o caixote saiu 245 em vez de 257 e não engatou.
+  var GAVETA_FOLGA_LADO_MM = 6;
 
   // Afastamento do CABIDE (acc.forma === 'barra') em relação ao FUNDO do vão
   // (2026-08-20, Matt, 1º pedido: "quero que o rod entre sempre a 270mm
@@ -927,13 +941,13 @@
         var y = box.y + j * (hCada + gap);
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + 12, y: y + 4 + GAVETA_CAIXOTE_SUBIR_MM, z: box.z + recuoCaixote,
-          w: box.w - 24, h: Math.max(20, hCada - folgaAltura), d: prof,
+          x: box.x + GAVETA_FOLGA_LADO_MM, y: y + 4 + GAVETA_CAIXOTE_SUBIR_MM, z: box.z + recuoCaixote,
+          w: box.w - 2 * GAVETA_FOLGA_LADO_MM, h: Math.max(20, hCada - folgaAltura), d: prof,
           opening_type: 'slide_out',
           // folga de CADA lado entre o caixote e a lateral do vão (onde a
           // corrediça fixa) — o modelo Hardwood Dovetail usa pra sair com
           // vão − 12 (module-pieces.js swapDrawerBodyRows)
-          folga_corredica_mm: 12
+          folga_corredica_mm: GAVETA_FOLGA_LADO_MM
         });
       }
       if (frenteAcc) {
@@ -975,7 +989,7 @@
         : 2 + GAVETA_INTERNA_SEM_PORTA_RECUO_EXTRA_MM;
       var zCaixote = box.z + recuoCaixote;
       var prof = Math.max(120, (frenteVao - recuoCaixoteFrente) - zCaixote);
-      var lat = comPorta ? GAVETA_INTERNA_COM_PORTA_LATERAL_MM : 12;
+      var lat = comPorta ? GAVETA_INTERNA_COM_PORTA_LATERAL_MM : GAVETA_FOLGA_LADO_MM;
       // Frentes primeiro: o caixote de cada gaveta se ancora na frente dela.
       var folga = comPorta ? GAVETA_INTERNA_COM_PORTA_FOLGA_MM : GAVETA_INTERNA_SEM_PORTA_FOLGA_MM;
       var hF = (box.h - folga * 2 - folga * (qtd - 1)) / qtd;

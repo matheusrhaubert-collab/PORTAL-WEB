@@ -1493,6 +1493,7 @@
     } catch (e) { return def; }
   }
 
+  var SLIDE_ABAIXO_CAIXOTE_MM = 14;
   function collectSlideHoles(store, parts, boxes, W, H, D, settings, origem) {
     if (!settings || settings.slide_enabled === false) return;
     const ox = origem ? origem.x : 0, oy = origem ? origem.y : 0; // ver collectHingePlates
@@ -1553,7 +1554,14 @@
         const entersPositive = drCenter >= lb.x0 + lb.sx / 2;
         dists.forEach(function (dist) {
           emitLocalHole(store, lb, {
-            u: (dr.bottomY + height) - lb.y0,  // uAxis da lateral = Y (altura)
+            // REGRA ÚNICA (17/11, protótipo B12 SAMPLE: corrediça alta,
+            // gaveta não entrava): a corrediça undermount fica 14 mm ABAIXO
+            // da base do caixote (folga de baixo do manual — Blum/Häfele:
+            // 14 embaixo, 6 em cima) e o furo fica a slide_height_mm (37)
+            // da base da CORREDIÇA. Antes o furo era medido da base do
+            // caixote: a gaveta de verdade assentava 14 mm acima do desenho.
+            // Vale pra toda gaveta (Construtor, catálogo, dovetail).
+            u: (dr.bottomY - SLIDE_ABAIXO_CAIXOTE_MM + height) - lb.y0,  // uAxis da lateral = Y (altura)
             // vAxis = Z; frente = z0+sz. slide_recuo_extra_mm: gaveta interna
             // sem porta (layout-engine.js emitGavetaInterna), corrediça 25mm
             // mais pra dentro que a normal — 0 pra qualquer outra gaveta.
