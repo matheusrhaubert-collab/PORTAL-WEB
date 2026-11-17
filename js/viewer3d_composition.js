@@ -180,7 +180,7 @@ function createViewerComposition3D() {
     const width = containerEl.clientWidth || 300;
     const height = containerEl.clientHeight || 420;
 
-    camera = new THREE.PerspectiveCamera(35, width / height, 0.01, 200);
+    camera = new THREE.PerspectiveCamera(camFov, width / height, 0.01, 200);
 
     // MODO LEVE (link público view3d, Matt 24/09: "deixa o mais fluido
     // possível pra rodar leve"): pixel ratio 1 (num celular retina é 4× menos
@@ -314,6 +314,23 @@ function createViewerComposition3D() {
   }
 
   const CAM_FOV = 35;
+  // ABERTURA DA CÂMERA (17/11, Matt: "tem como colocar uma vista lá em cima
+  // pra aumentar o ângulo de abertura da câmera? preciso enquadrar minha
+  // visão num espaço pequeno e não cabe tudo") — closet pequeno: a câmera
+  // não tem pra onde recuar, então quem abre o quadro é a lente. camFov é o
+  // ângulo vertical em graus; CAM_FOV (35) continua sendo o padrão.
+  let camFov = CAM_FOV;
+  function setCameraFov(deg) {
+    const v = Math.max(20, Math.min(110, Number(deg) || CAM_FOV));
+    camFov = v;
+    if (camera && camera.isPerspectiveCamera) {
+      camera.fov = v;
+      camera.updateProjectionMatrix();
+      if (controls) controls.update();
+    }
+    return v;
+  }
+  function getCameraFov() { return camFov; }
   function setCameraProjection(tipo) {
     if (!camera || !controls || !renderer) return;
     const querOrto = tipo === 'paralela';
@@ -325,10 +342,10 @@ function createViewerComposition3D() {
     const d = pos.distanceTo(alvo) || 3;
     let nova;
     if (querOrto) {
-      const alturaVis = 2 * d * Math.tan((CAM_FOV * Math.PI / 180) / 2);
+      const alturaVis = 2 * d * Math.tan((camFov * Math.PI / 180) / 2);
       nova = new THREE.OrthographicCamera(-alturaVis * a / 2, alturaVis * a / 2, alturaVis / 2, -alturaVis / 2, 0.01, 400);
     } else {
-      nova = new THREE.PerspectiveCamera(CAM_FOV, a, 0.01, 200);
+      nova = new THREE.PerspectiveCamera(camFov, a, 0.01, 200);
     }
     nova.position.copy(pos);
     nova.up.copy(camera.up);
@@ -4446,6 +4463,8 @@ function createViewerComposition3D() {
     // pro vizinho no dedo) e worldToClient (botões DOM sobre o módulo).
     // Projeção da câmera (2026-08-13): 'paralela' (ortográfica) x 'perspectiva'.
     setCameraProjection, getCameraProjection,
+    // Abertura da câmera (2026-11-17)
+    setCameraFov, getCameraFov,
     // Modo apresentação (2026-10-25) — sombras, luz de ambiente, sem contorno.
     setPresentationMode, isPresentationMode,
     // Rebaixar paredes que ficam na frente da vista (2026-10-22)

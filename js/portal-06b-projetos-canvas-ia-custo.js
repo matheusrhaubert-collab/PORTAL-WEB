@@ -1574,6 +1574,44 @@ if (projZoomOutBtn) {
     if (ViewerProjectEdit && ViewerProjectEdit.zoomByStep) ViewerProjectEdit.zoomByStep(1 / PROJECT_ZOOM_STEP);
   });
 }
+// ABERTURA DA CÂMERA (17/11, Matt: "preciso enquadrar minha visão num
+// espaço pequeno e não cabe tudo") — botão ∠ na barra de zoom abre um
+// controle deslizante: puxar pra cima abre a lente (grande-angular), pra
+// baixo fecha. Fica guardado neste navegador pros próximos projetos.
+const PROJECT_FOV_DEFAULT = 35;
+const PROJECT_FOV_KEY = 'po_proj_fov';
+(function attachProjectFov() {
+  const btn = document.getElementById('po-proj-fov-btn');
+  const pop = document.getElementById('po-proj-fov-pop');
+  const range = document.getElementById('po-proj-fov-range');
+  const val = document.getElementById('po-proj-fov-val');
+  const reset = document.getElementById('po-proj-fov-reset');
+  if (!btn || !pop || !range) return;
+  const aplica = (deg, salvar) => {
+    const v = (ViewerProjectEdit && ViewerProjectEdit.setCameraFov) ? ViewerProjectEdit.setCameraFov(deg) : Number(deg);
+    range.value = String(v);
+    if (val) val.textContent = Math.round(v) + '°';
+    btn.classList.toggle('active', Math.round(v) !== PROJECT_FOV_DEFAULT);
+    if (salvar) { try { localStorage.setItem(PROJECT_FOV_KEY, String(v)); } catch (e) { /* ok */ } }
+  };
+  let salvo = PROJECT_FOV_DEFAULT;
+  try { salvo = Number(localStorage.getItem(PROJECT_FOV_KEY)) || PROJECT_FOV_DEFAULT; } catch (e) { /* ok */ }
+  // o viewer pode ainda não existir no boot — tenta de novo até pegar
+  const tenta = (n) => {
+    if (typeof ViewerProjectEdit !== 'undefined' && ViewerProjectEdit && ViewerProjectEdit.setCameraFov) aplica(salvo, false);
+    else if (n > 0) setTimeout(() => tenta(n - 1), 500);
+  };
+  tenta(20);
+  btn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    pop.style.display = pop.style.display === 'none' ? 'flex' : 'none';
+  });
+  range.addEventListener('input', () => aplica(range.value, true));
+  if (reset) reset.addEventListener('click', () => aplica(PROJECT_FOV_DEFAULT, true));
+  document.addEventListener('pointerdown', (ev) => {
+    if (pop.style.display !== 'none' && !pop.contains(ev.target) && ev.target !== btn) pop.style.display = 'none';
+  });
+})();
 const projUndoBtn = document.getElementById('po-proj-undo-btn');
 if (projUndoBtn) projUndoBtn.addEventListener('click', () => undoProjectChange());
 // Prosseguir/Refazer (2026-09-07, pedido do usuário: "quero um prosseguir se
