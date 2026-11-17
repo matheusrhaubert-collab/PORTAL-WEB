@@ -2019,6 +2019,69 @@ async function generateProjectTechPlan(opts) {
   }
 }
 
+// DESENHOS PRA PROPOSTA (17/11, Matt: "na proposta quero tirar essas cotas
+// todas aqui com esses quadrados estranhos e colocar o mesmo do plano
+// técnico"). Mesmos desenhos do plano técnico, só a parte que o cliente
+// final precisa: planta (+ vista geral) e cada parede/ilha COM portas. Não
+// gera PDF — devolve as imagens pra Proposta (portal-10) montar as páginas.
+// Precisa da cena 3D do projeto aberto; sem ela devolve [] e a Proposta cai
+// no desenho antigo.
+async function ptProposalDrawings() {
+  if (ptRunning) return [];
+  if (typeof THREE === 'undefined' || !projectSlots || !projectSlots.some((s) => s.module && !ptIsVisualOnly(s))) return [];
+  ptRunning = true;
+  let doorsWereOpen = false, drawersWereOpen = false;
+  const out = [];
+  const add = (canvas, title, sub) => {
+    if (!canvas || !canvas.width || !canvas.height) return;
+    out.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.9), w: canvas.width, h: canvas.height, title, sub: sub || '' });
+  };
+  try {
+    if (typeof projectViewMode !== 'undefined' && projectViewMode !== 'front' && typeof setProjectViewMode === 'function') {
+      setProjectViewMode('front');
+      await ptSleep(400);
+    }
+    const scene = projectEditScene();
+    if (!scene) return [];
+    if (ViewerProjectEdit.areDoorsOpen && ViewerProjectEdit.areDoorsOpen()) { doorsWereOpen = true; ViewerProjectEdit.toggleDoors(); }
+    if (ViewerProjectEdit.areDrawersOpen && ViewerProjectEdit.areDrawersOpen()) { drawersWereOpen = true; ViewerProjectEdit.toggleDrawers(); }
+    if (doorsWereOpen || drawersWereOpen) await ptSleep(1100);
+    const nums = ptNumberMap();
+    try { await ptPreparaNomes(); } catch (e) { ptNomes.clear(); }
+    const walls = getProjectWallGeometry();
+    const islandViews = ptIslandViews(scene);
+    await ptSleep(20);
+    add(ptRenderPlan(scene, walls, nums, islandViews), ptT('plan_title'), ptT('plan_sub'));
+    let macros = [];
+    try { macros = ptMacroViews(scene, walls, islandViews); } catch (e) { macros = []; }
+    for (const m of macros) {
+      await ptSleep(20);
+      add(ptRenderWall(scene, m.front, nums, false), ptT('macro_title', { walls: m.front._nomes.join(', ') }), ptT('with_fronts'));
+    }
+    const wallsWithModules = walls.filter((w) => ptHasComponent(ptWallSlots(w.wallIndex)));
+    for (const w of wallsWithModules) {
+      await ptSleep(20);
+      add(ptRenderWall(scene, w, nums, false), ptT('wall_title', { n: w.wallIndex + 1 }), ptT('with_fronts'));
+    }
+    const islandPages = islandViews.filter((v) => ptHasComponent(v._slots));
+    for (let i = 0; i < islandPages.length; i++) {
+      await ptSleep(20);
+      add(ptRenderWall(scene, islandPages[i], nums, false), ptT('island_title', { n: i + 1 }), ptT('with_fronts'));
+    }
+    return out;
+  } catch (e) {
+    console.warn('[proposta] desenhos do plano técnico', e);
+    return [];
+  } finally {
+    ptDisposeRenderer();
+    try {
+      if (doorsWereOpen) ViewerProjectEdit.toggleDoors();
+      if (drawersWereOpen) ViewerProjectEdit.toggleDrawers();
+    } catch (e) { /* ok */ }
+    ptRunning = false;
+  }
+}
+
 (function attachProjectTechPlanBtn() {
   const btn = document.getElementById('po-proj-techplan-btn');
   if (btn) btn.addEventListener('click', () => generateProjectTechPlan());

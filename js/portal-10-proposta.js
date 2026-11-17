@@ -75,6 +75,7 @@
 // proposal.layout_missing e o resto (logo/render/lista/preço) segue normal.
 
 const PROPOSAL_MARGIN_MM = 14;
+const PROPOSAL_VALIDITY_DAYS = 25;
 const PROPOSAL_WALL_ROLES_BY_SHAPE = { single: ['main'], double: ['main', 'right'], u: ['left', 'main', 'right'] };
 
 // Paleta — mesma do css/style.css (--accent/--accent-dark/--text/--muted/
@@ -564,10 +565,10 @@ async function generateOrderProposalPDF(order, items, multi) {
 
 
     function ensureSpace(next) {
-      if (y + next > pageHeight - PROPOSAL_MARGIN_MM) { doc.addPage(); y = PROPOSAL_MARGIN_MM; }
+      if (y + next > pageHeight - PROPOSAL_MARGIN_MM) { doc.addPage('a4', 'portrait'); y = PROPOSAL_MARGIN_MM; }
     }
     function newPage(sectionTitle) {
-      doc.addPage();
+      doc.addPage('a4', 'portrait');
       y = PROPOSAL_MARGIN_MM;
       proposalSectionHeader(doc, sectionTitle, PROPOSAL_MARGIN_MM, y + 4, contentWidth);
       y += 13;
@@ -612,10 +613,20 @@ async function generateOrderProposalPDF(order, items, multi) {
     doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED);
     const title = order.po_name || order.client_name || I18n.t('pdf.order_fallback');
     doc.text(I18n.t('pdf.reference', { title }), PROPOSAL_MARGIN_MM, y);
-    const date = order.submitted_at ? new Date(order.submitted_at).toLocaleDateString(currentLocale()) : new Date().toLocaleDateString(currentLocale());
+    // DATA + VALIDADE (17/11, Matt: "coloca validade da proposta em 25 dias
+    // corridos do dia que foi gerada") — a data é a do dia em que o PDF foi
+    // gerado (não a do envio do pedido), e a validade conta 25 dias corridos
+    // a partir dela.
+    const geradaEm = new Date();
+    const validaAte = new Date(geradaEm.getFullYear(), geradaEm.getMonth(), geradaEm.getDate() + PROPOSAL_VALIDITY_DAYS);
+    const date = geradaEm.toLocaleDateString(currentLocale());
     doc.text(I18n.t('pdf.date', { date }), pageWidth - PROPOSAL_MARGIN_MM, y, { align: 'right' });
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor.apply(doc, PROPOSAL_COLOR_ACCENT_DARK);
+    doc.text(I18n.t('proposal.valid_until', { date: validaAte.toLocaleDateString(currentLocale()) }), pageWidth - PROPOSAL_MARGIN_MM, y + 4.5, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(0);
-    y += 7;
+    y += 9;
 
     if (order.client_name) {
       doc.setFont('helvetica', 'bold');
@@ -687,7 +698,7 @@ async function generateOrderProposalPDF(order, items, multi) {
     const projLabel = isMulti ? ((order.po_name || '—') + ' · ') : '';
     if (isMulti) {
       // cada ambiente começa numa folha nova, com o nome dele em destaque
-      doc.addPage();
+      doc.addPage('a4', 'portrait');
       y = PROPOSAL_MARGIN_MM;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(16);
@@ -766,7 +777,39 @@ async function generateOrderProposalPDF(order, items, multi) {
 
     const walls = proposalWallList(order, items);
     const hasLayout = proposalHasLayoutData(order, items);
-    if (hasLayout && walls.length > 0) {
+    const techDrawings = Array.isArray(order.tech_drawings) ? order.tech_drawings : [];
+    if (techDrawings.length) {
+      // MESMOS DESENHOS DO PLANO TÉCNICO (17/11, Matt: "tirar essas cotas
+      // todas aqui com esses quadrados estranhos e colocar o mesmo do plano
+      // técnico") — planta e paredes com portas, renderizadas do 3D pelo
+      // portal-14 (ptProposalDrawings), cada uma numa folha deitada pra
+      // caber grande. Sem a cena 3D (pedido sem projeto de origem) cai no
+      // desenho antigo, logo abaixo.
+      for (const d of techDrawings) {
+        doc.addPage('a4', 'landscape');
+        const lw = doc.internal.pageSize.getWidth(), lh = doc.internal.pageSize.getHeight();
+        const lcw = lw - PROPOSAL_MARGIN_MM * 2;
+        proposalSectionHeader(doc, projLabel + I18n.t('proposal.elevations_section'), PROPOSAL_MARGIN_MM, PROPOSAL_MARGIN_MM + 4, lcw);
+        let ly = PROPOSAL_MARGIN_MM + 13;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.setTextColor.apply(doc, PROPOSAL_COLOR_TEXT);
+        doc.text(String(d.title || ''), PROPOSAL_MARGIN_MM, ly);
+        const titleW = doc.getTextWidth(String(d.title || ''));
+        if (d.sub) {
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+          doc.setTextColor.apply(doc, PROPOSAL_COLOR_MUTED);
+          doc.text('—  ' + String(d.sub), PROPOSAL_MARGIN_MM + titleW + 3, ly);
+        }
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(0);
+        ly += 4;
+        const boxH = lh - ly - PROPOSAL_MARGIN_MM - 6;
+        // mesmo teto de escala do plano técnico (0.12 mm/px) — desenho pequeno
+        // não estoura com texto gigante
+        const r = Math.min(lcw / d.w, boxH / d.h, 0.12);
+        const iw = d.w * r, ih = d.h * r;
+        try { doc.addImage(d.dataUrl, 'JPEG', PROPOSAL_MARGIN_MM + (lcw - iw) / 2, ly + (boxH - ih) / 2, iw, ih); } catch (e) { console.warn('[proposta] desenho', e); }
+      }
+    } else if (hasLayout && walls.length > 0) {
       newPage(projLabel + I18n.t('proposal.elevations_section'));
       walls.forEach((wall, idx) => {
         // 1 PAREDE = 1 PÁGINA (2026-09-04, bug relatado pelo usuário:
@@ -927,7 +970,7 @@ async function generateOrderProposalPDF(order, items, multi) {
     const totalPages = doc.internal.getNumberOfPages();
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
-      proposalFooter(doc, pageWidth, pageHeight, p, totalPages, storeName);
+      proposalFooter(doc, doc.internal.pageSize.getWidth(), doc.internal.pageSize.getHeight(), p, totalPages, storeName);
     }
 
     const filenameBase = (order.po_name || order.client_name || I18n.t('proposal.filename_fallback'))
@@ -1201,9 +1244,34 @@ function proposalDrawUnifiedFloorPlan(doc, walls, items, originPageX, originPage
 
 const orderDetailProposalBtnEl = document.getElementById('po-order-detail-proposal-btn');
 if (orderDetailProposalBtnEl) {
-  orderDetailProposalBtnEl.addEventListener('click', () => {
+  orderDetailProposalBtnEl.addEventListener('click', async () => {
     if (!currentOrderDetail) return;
-    generateOrderProposalPDF(currentOrderDetail.order, currentOrderDetail.items);
+    const order = currentOrderDetail.order, items = currentOrderDetail.items;
+    // desenhos do plano técnico vêm do PROJETO de origem (cena 3D) — mesmo
+    // caminho do botão "Technical drawings" (portal-31): abre uma cópia só
+    // leitura na aba Projetos, tira os desenhos e volta pro pedido.
+    if (order.source_project_id && typeof restoreFavoriteProject === 'function' && typeof ptProposalDrawings === 'function'
+      && confirm(I18n.t('proposal.confirm_open_project'))
+      && !(typeof projectDirty !== 'undefined' && projectDirty && !confirm(I18n.t('project_pdf.confirm_unsaved')))) {
+      let drawings = [];
+      try {
+        const { data: proj } = await supabaseClient.from('user_projects').select('*').eq('id', order.source_project_id).single();
+        if (proj) {
+          proj._fullRow = true;
+          if (typeof projectDirty !== 'undefined') projectDirty = false;
+          await restoreFavoriteProject(proj, false);
+          if (typeof trkWaitProjectScene === 'function') await trkWaitProjectScene();
+          drawings = await proposalTechDrawingsSafe();
+        }
+      } catch (e) { console.warn('[proposta] projeto de origem', e); }
+      finally {
+        if (typeof projectDirty !== 'undefined') projectDirty = false;
+        if (typeof trkBackToOrder === 'function') await trkBackToOrder(order.id);
+      }
+      await generateOrderProposalPDF(Object.assign({}, order, { tech_drawings: drawings }), items);
+      return;
+    }
+    generateOrderProposalPDF(order, items);
   });
 }
 
@@ -1249,6 +1317,18 @@ async function buildProposalItemFromSlot(slot) {
       z_order: Number(slot.z_order || 0)
     }
   };
+}
+
+// Mesma ordem do pedido/etiqueta/plano técnico (projectSlotsOrderSequence,
+// portal-08) — assim o número do módulo na lista bate com o número do
+// desenho do plano técnico.
+function proposalSlotsInOrder() {
+  if (typeof projectSlotsOrderSequence === 'function') return projectSlotsOrderSequence().map((x) => x.slot);
+  return (projectSlots || []).filter((s) => !(s.module && s.module.visual_only));
+}
+
+async function proposalTechDrawingsSafe() {
+  try { return (typeof ptProposalDrawings === 'function') ? await ptProposalDrawings() : []; } catch (e) { return []; }
 }
 
 async function generateProjectProposalPDF() {
@@ -1299,7 +1379,7 @@ async function generateProjectProposalPDF() {
     // pode estar velho — calculado antes do catálogo de furação chegar)
     try { if (typeof ensureProjectDrillingCatalog === 'function') await ensureProjectDrillingCatalog(); if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots(); } catch (e) { /* segue com o preço que tem */ }
     const liveItems = [];
-    for (const slot of projectSlots) {
+    for (const slot of proposalSlotsInOrder()) {
       // Bloco — Cor da Parede (visual_only, migration 156): ambientação, não
       // um item pra cotar — fora da prévia de Proposta pelo mesmo motivo de
       // sendProjectToOrder (a Proposta de um PEDIDO já enviado nunca vê isto,
@@ -1308,6 +1388,7 @@ async function generateProjectProposalPDF() {
       if (slot.module && slot.module.visual_only) continue;
       liveItems.push(await buildProposalItemFromSlot(slot));
     }
+    liveOrder.tech_drawings = await proposalTechDrawingsSafe();
     await generateOrderProposalPDF(liveOrder, liveItems);
   } finally {
     if (btn) btn.disabled = false;
@@ -1346,8 +1427,11 @@ async function generateClientProposalPDF(folderName, rows, statusEl) {
       // mesmo preço do modal $ Orçamento: reprecifica antes (o slot.result
       // pode estar velho — calculado antes do catálogo de furação chegar)
       try { if (typeof ensureProjectDrillingCatalog === 'function') await ensureProjectDrillingCatalog(); if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots(); } catch (e) { /* segue com o preço que tem */ }
+      // desenhos do plano técnico: espera a cena 3D do projeto recém-aberto
+      try { if (typeof trkWaitProjectScene === 'function') await trkWaitProjectScene(); } catch (e) { /* ok */ }
+      const techDrawings = await proposalTechDrawingsSafe();
       const items = [];
-      for (const slot of projectSlots) {
+      for (const slot of proposalSlotsInOrder()) {
         if (slot.module && slot.module.visual_only) continue;
         items.push(await buildProposalItemFromSlot(slot));
       }
@@ -1379,7 +1463,8 @@ async function generateClientProposalPDF(folderName, rows, statusEl) {
           project_photoreal_url: row.ai_preview_url || null,
           project_photoreal_urls: photos,
           project_reference_urls: refs,
-          project_thumbnail_data_url: row.thumbnail_data_url || null
+          project_thumbnail_data_url: row.thumbnail_data_url || null,
+          tech_drawings: techDrawings
         },
         items
       });
