@@ -147,6 +147,14 @@ LOTES_UI.list = function (params, d) {
            portas, gavetas dovetail — os botões só aparecem quando o lote tem
            (preenchidos depois do render por LOTES_UI.afterList). */
         '<span class="lp-card-btns" data-lp-batch="' + b.id + '" data-lp-code="' + UI.esc(b.code) + '"></span>' +
+        /* MONTAGEM DE MÓDULOS (18/11, Matt: "quero colocar essas etiquetas lá
+           no lote de forma como aparece as portas"): mesma etiqueta ½ Letter
+           por módulo da Embalagem (ETIQUETA_MODULO, etiqueta-modulo.js), lote
+           inteiro, direto do card. */
+        (typeof ETIQUETA_MODULO !== 'undefined'
+          ? '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm lp-card-btn" title="Etiqueta ½ Letter de cada módulo do lote (todos os pedidos)" ' +
+            'onclick="ETIQUETA_MODULO.gerar(\'' + b.id + '\', null, this)">🏷️ Montagem de módulos</button>'
+          : '') +
       '</div>');
   }).join('');
 
