@@ -343,15 +343,27 @@ APONTAR._aviso = function (txt, tipo, som) {
   if (el) { el.className = 'ap-msg ' + (tipo || ''); el.textContent = txt; }
   if (som) APONTAR._bip(tipo === 'ok' ? 880 : 220);
 };
+// BIP ALTO (18/11, Matt: "ao apontar uma peça dê um barulho de ok bem alto
+// pra saber que deu ok"). Era seno a 0.08 por 120 ms — não se ouvia na
+// fábrica. Agora onda quadrada (corta o barulho de máquina), volume no
+// máximo e mais longo; erro/aviso continua grave (220 Hz) e dura mais.
 APONTAR._bip = function (hz) {
   try {
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) return;
-    APONTAR._ac = APONTAR._ac || new C();
-    const o = APONTAR._ac.createOscillator(), g = APONTAR._ac.createGain();
-    o.frequency.value = hz; g.gain.value = 0.08;
-    o.connect(g); g.connect(APONTAR._ac.destination);
-    o.start(); o.stop(APONTAR._ac.currentTime + 0.12);
+    const ac = APONTAR._ac = APONTAR._ac || new C();
+    if (ac.state === 'suspended' && ac.resume) ac.resume();
+    const ok = hz >= 440;
+    const dur = ok ? 0.25 : 0.5;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'square';
+    o.frequency.value = ok ? 1000 : hz;
+    const t = ac.currentTime;
+    g.gain.setValueAtTime(1, t);
+    g.gain.setValueAtTime(1, t + dur - 0.02);
+    g.gain.linearRampToValueAtTime(0, t + dur); // sem estalo no fim
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + dur);
   } catch (e) { /* sem som */ }
 };
 
