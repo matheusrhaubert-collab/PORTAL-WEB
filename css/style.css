@@ -6612,3 +6612,10 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
   font-size: 11px; padding: 3px 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer;
 }
+
+/* Central: projetos congelados dentro da pasta de pedidos (18/11) */
+.cu-ordprojs { margin: 14px 0 4px; }
+.cu-ordprojs h4 { margin: 0 0 8px; font-size: 13px; color: #555; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.cu-ordprojs { display: block; }
+.cu-ordprojs .cu-ordproj { display: inline-block; vertical-align: top; margin: 0 10px 10px 0; max-width: 340px; }
+.cu-ordprojs .cu-ordproj .po-myproj-grid { display: block; }

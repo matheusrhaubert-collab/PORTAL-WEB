@@ -815,7 +815,9 @@
           kind: 'split', accKey: node.splitAcc, divIndex: i, label: acc.name,
           x: box.x, y: pos, z: box.z,
           w: box.w, h: th, d: Math.max(60, box.d - recuo - cons),
-          tilt_deg: num((node.params || {}).angulo_deg)
+          // Ângulo do vão; sem ele, o padrão do agregado (Prateleira
+          // inclinada, 18/11 — o vão nem sempre recebe cópia do default).
+          tilt_deg: num((node.params || {}).angulo_deg != null ? node.params.angulo_deg : (acc.params || {}).angulo_deg)
         });
       }
     }

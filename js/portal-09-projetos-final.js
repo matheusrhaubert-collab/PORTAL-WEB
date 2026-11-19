@@ -3943,6 +3943,16 @@ function mpRender() {
       + '</tr>'
       + (aberta ? '<tr class="mp-exp"><td colspan="7">'
         + (f.kind === 'orders' ? cuFolderHtml(f) : '')
+        // PROJETOS DO PEDIDO (18/11, Matt: "preciso enviar o 3D pro montador,
+        // mas não aparece mais o compartilhamento depois de ir pra produção,
+        // também não consigo mais duplicar ou dar share"). Pasta de pedidos
+        // mostra o cartão do projeto congelado (Ver 3D / Duplicar /
+        // Compartilhar) — mesmo cartão da lista antiga, via mpAttachCards.
+        + (f.kind === 'orders' && (f.lista || []).length
+          ? '<div class="cu-ordprojs"><h4>' + mpEsc(I18n.t('cu.order_projects')) + '</h4>'
+            + f.lista.map((p) => '<div class="mp-exp-box cu-ordproj" data-proj="' + mpEsc(p.id) + '"><p class="hint">' + mpEsc(mpT('loading')) + '</p></div>').join('')
+            + '</div>'
+          : '')
         + '<div class="mp-exp-status hint" data-st="' + mpEsc(f.key) + '"></div>'
         + (f.kind === 'orders' || f.key === CU_LOOSE ? ''
           : f.single

@@ -1427,6 +1427,9 @@
       // no lado longo. Ausente em pedido gravado antes de 2026-09-24.
       grain_axis: grainAxisForPiece(piece, pieceDims),
       grain_forced: piece.veio_forcado ? true : undefined, // lote não recalcula pelo cadastro (data-lotes)
+      // Inclinação (18/11, Matt: prateleira inclinada tem que sair com o nome
+      // na etiqueta) — o lote (data-lotes) põe ' INCLINADA' no nome da peça.
+      tilt_angle_deg: Number(piece.tilt_angle_deg) || undefined,
       positioning: piece.positioning || null,
       area_m2: pieceDims.area_m2,
       edge_band_m: pieceDims.edge_band_m,
@@ -1709,6 +1712,7 @@
       // Lado de abertura (29/10) — a folha de montagem/alumínio do lote diz
       // de que lado vai a dobradiça e qual perfil leva furo.
       opening_type: piece.opening_type || null,
+      tilt_angle_deg: Number(piece.tilt_angle_deg) || undefined, // conjunto inclinado (migration 066) — filhos herdam no lote
       child_breakdown: childResult.breakdown, // composição da sub-montagem, uso interno/admin
       child_total: childResult.total,         // preço da sub-montagem (1 unidade), uso interno/admin
       labor_cost: 0, // sempre 0 nesta peça — mão de obra já está nas peças filha (ver comentário acima)

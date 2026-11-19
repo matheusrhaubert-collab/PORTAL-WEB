@@ -242,8 +242,13 @@ LOTES.espessuraDaCor = function (color, medida) {
   return Number(medida) || 0;
 };
 
-LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGaveta) {
+LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGaveta, herdado) {
   out = out || [];
+  // INCLINAÇÃO HERDADA (18/11): sub-módulo inclinado (migration 066) inclina
+  // as peças de dentro. `herdado.tilt` = ângulo do conjunto pai;
+  // `herdado.ids` = piece_id dos sub-módulos acima (pra pedido antigo buscar
+  // a inclinação no cadastro — ver explodeOrders).
+  herdado = herdado || { tilt: 0, ids: [] };
   // PEÇA DE GAVETA COM "(drawer)" NO NOME (2026-10-08, Matt: "componentes de
   // gaveta como stretcher e side quero ver em parênteses (drawer)... no back
   // também"). Toda peça cortada que mora dentro de um sub-módulo de gaveta
@@ -276,7 +281,10 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
       // não é peça de gaveta; a gaveta de verdade ("Gaveta rasa") é outro
       // sub-módulo dentro, que casa com o nome sozinho.
       const subGaveta = !nomeUnico && RE_GAVETA.test(String(p.reference || ''));
-      LOTES.flattenBreakdown(filhos, qty, out, nomeUnico, subGaveta);
+      LOTES.flattenBreakdown(filhos, qty, out, nomeUnico, subGaveta, {
+        tilt: (Number(p.tilt_angle_deg) || 0) || herdado.tilt,
+        ids: p.piece_id ? herdado.ids.concat([p.piece_id]) : herdado.ids
+      });
       return;
     }
     // PEÇA SÓ DE MÃO DE OBRA (migration 198, "Montagem de porta"): 0×0×0,
@@ -319,7 +327,11 @@ LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGave
       piece_id: p.piece_id || null,
       // Modelo de gaveta (migration 203) — só o caixote comprado tem. Usado
       // pela tela de processos do lote (LOTES.processos).
-      drawer_model: p.drawer_model || null
+      drawer_model: p.drawer_model || null,
+      // Inclinação da peça (ou do conjunto pai) — vira ' INCLINADA' no nome
+      // em explodeOrders. tilt_parent_ids: fallback pro pedido antigo.
+      tilt_angle_deg: (Number(p.tilt_angle_deg) || 0) || herdado.tilt || 0,
+      tilt_parent_ids: herdado.ids
     });
   });
   return out;
@@ -405,6 +417,9 @@ LOTES.explodeOrders = async function (orderIds) {
          uuid (module_components.id); peça do Construtor ('lay:...') fica no
          snapshot. */
       if (leaf.piece_id && UUID_RE.test(String(leaf.piece_id))) missingGrainIds.add(leaf.piece_id);
+      // Inclinação (18/11): sub-módulos acima da peça também entram — o
+      // conjunto inclinado (migration 066) mora no link do sub-módulo.
+      (leaf.tilt_parent_ids || []).forEach(function (id) { if (UUID_RE.test(String(id))) missingGrainIds.add(id); });
     });
   });
   const compEdge = {}; // piece_id (module_components.id) -> components.edge_banding
@@ -415,6 +430,7 @@ LOTES.explodeOrders = async function (orderIds) {
      completa quando o pedido não tem. */
   const compPair = {}; // piece_id -> { n, w }
   const compVeio = {}; // piece_id -> { position_role, positioning, veio } (pro grain_axis de pedido antigo)
+  const compTilt = {}; // piece_id -> ângulo de inclinação (peça ou sub-módulo) pelo cadastro atual
   const todosIds = Array.from(new Set(Array.from(missingPieceIds).concat(Array.from(missingGrainIds))));
   if (todosIds.length) {
     // piece_id do breakdown é public.module_components.id (a posição da peça
@@ -431,14 +447,20 @@ LOTES.explodeOrders = async function (orderIds) {
       }
       return out;
     }
-    const mcs = await emBlocos('module_components', 'id, component_id, position_role', todosIds);
+    let mcs;
+    try {
+      mcs = await emBlocos('module_components', 'id, component_id, position_role, tilt_angle_deg', todosIds);
+    } catch (e) { // banco sem a coluna (anterior à migration 066): segue sem inclinação do conjunto
+      mcs = await emBlocos('module_components', 'id, component_id, position_role', todosIds);
+    }
     const compIds = Array.from(new Set((mcs || []).map(function (m) { return m.component_id; }).filter(Boolean)));
     const comps = compIds.length
-      ? await emBlocos('components', 'id, edge_banding, veio, position_role, pair_group_size, pair_physical_width_mm, component_types(positioning)', compIds)
+      ? await emBlocos('components', 'id, edge_banding, veio, position_role, pair_group_size, pair_physical_width_mm, tilt_angle_deg, component_types(positioning)', compIds)
       : [];
-    const ebByComp = {}, veioByComp = {}, pairByComp = {};
+    const ebByComp = {}, veioByComp = {}, pairByComp = {}, tiltByComp = {};
     (comps || []).forEach(function (cp) {
       ebByComp[cp.id] = cp.edge_banding;
+      if (Number(cp.tilt_angle_deg)) tiltByComp[cp.id] = Number(cp.tilt_angle_deg);
       if (cp.pair_group_size > 1 && cp.pair_physical_width_mm > 0) pairByComp[cp.id] = { n: cp.pair_group_size, w: cp.pair_physical_width_mm };
       veioByComp[cp.id] = {
         veio: cp.veio || 'livre',
@@ -448,6 +470,8 @@ LOTES.explodeOrders = async function (orderIds) {
     });
     (mcs || []).forEach(function (m) {
       compEdge[m.id] = ebByComp[m.component_id];
+      const tl = Number(m.tilt_angle_deg) || tiltByComp[m.component_id] || 0;
+      if (tl) compTilt[m.id] = tl;
       if (pairByComp[m.component_id]) compPair[m.id] = pairByComp[m.component_id];
       const v = veioByComp[m.component_id];
       if (v) compVeio[m.id] = Object.assign({}, v, { position_role: m.position_role || v.position_role || 'other' });
@@ -456,6 +480,23 @@ LOTES.explodeOrders = async function (orderIds) {
   // Eixo do veio: recalculado do cadastro ATUAL (regra corrigida em 09/10)
   // sempre que der; o snapshot do pedido só vale pra peça sem cadastro
   // (Construtor) — ver nota em missingGrainIds acima.
+  /* PRATELEIRA INCLINADA (18/11, Matt, foto da etiqueta do FAST CLOSET 9
+     INCLINED SHELF que saiu só "FAST SHELF": "quando a prateleira for
+     inclinada deve mostrar no nome da peça"). Inclinada = a peça ou algum
+     sub-módulo acima dela tem tilt_angle_deg ≠ 0 — no snapshot do pedido
+     (pedido novo) ou no cadastro atual (pedido antigo). Sufixo no FIM do
+     nome, igual ao INVERTIDA; furacao-lote.js tira os dois pra casar furo. */
+  function nomeComInclinacao(leaf) {
+    const ref = leaf.reference || '—';
+    if (/\bINCLINADA\b/.test(ref)) return ref;
+    // Ripa da prateleira inclinada (Ripa horizontal, pareada 2×76) não leva
+    // o aviso: é peça pareada — o nome tem que bater pra juntar no par.
+    if (leaf.pair_group_size > 1 || (leaf.piece_id && compPair[leaf.piece_id])) return ref;
+    let incl = !!Number(leaf.tilt_angle_deg);
+    if (!incl && leaf.piece_id && compTilt[leaf.piece_id]) incl = true;
+    if (!incl) incl = (leaf.tilt_parent_ids || []).some(function (id) { return !!compTilt[id]; });
+    return incl ? ref + ' INCLINADA' : ref;
+  }
   function grainAxisDoLeaf(leaf) {
     // veio escolhido no projeto (frentes na horizontal, 15/11): vale o do pedido
     if (leaf.grain_forced && leaf.grain_axis) return leaf.grain_axis;
@@ -528,7 +569,7 @@ LOTES.explodeOrders = async function (orderIds) {
         source: 'order_item',
         client_name: order.client_name || null,
         module_name: item.module_name || '—',
-        reference: leaf.reference,
+        reference: nomeComInclinacao(leaf),
         description: leaf.description,
         comprimento_mm: dims.comprimento_mm,
         largura_mm: dims.largura_mm,
