@@ -6524,6 +6524,8 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .mp-chip.pr-scheduled { background: #e3effc; color: #1f5fa8; }
 .mp-chip.pr-in_prod { background: #d9f2df; color: #1c7a36; }
 .mp-chip.pr-done { background: #1c7a36; color: #fff; }
+.mp-chip.pr-packed { background: #fdecc8; color: #8a5a00; }
+.mp-chip.pr-ready { background: #22a447; color: #fff; }
 .mp-c-menu { position: relative; width: 44px; text-align: right; }
 .mp-dots { background: transparent; border: none; color: var(--text); font-size: 20px; line-height: 1; padding: 2px 8px; border-radius: 6px; cursor: pointer; margin: 0; }
 .mp-dots:hover { background: var(--border); }

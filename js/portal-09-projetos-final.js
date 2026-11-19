@@ -3612,6 +3612,25 @@ function mpProjStage(p) {
   return { st: 'sent', emLote: false };
 }
 
+// TUDO EMBALADO (18/11, Matt, coluna Production: "trocar quando tiver tudo
+// embalado pra liberar pickup"). Se todo pedido ainda não coletado já está
+// aprovado e com TODOS os volumes embalados (portal_order_tracking), a coluna
+// sai de "Em produção" pra:
+//   packed  embalado, falta liberar a coleta (liberação financeira final)
+//   ready   embalado e coleta liberada (orders.pickup_released_at)
+// Devolve null quando não é o caso (segue a regra de antes).
+function mpProdEmbalagem(ords) {
+  const LIB = ['approved', 'paid'];
+  const abertos = (ords || []).filter((o) => o && o.status !== 'delivered');
+  if (!abertos.length) return null;
+  const embalado = (o) => {
+    const t = mpState.trackByOrder[o.id];
+    return LIB.includes(o.status) && t && Number(t.n_volumes) > 0 && Number(t.n_embalados) === Number(t.n_volumes);
+  };
+  if (!abertos.every(embalado)) return null;
+  return abertos.every((o) => !!o.pickup_released_at) ? 'ready' : 'packed';
+}
+
 function mpFolders() {
   if (mpState.central) return cuRows();
   const map = new Map();
@@ -3627,7 +3646,9 @@ function mpFolders() {
     const nSent = est.filter((e) => e.st === 'sent').length;
     const nDone = est.filter((e) => e.st === 'done').length;
     const status = nAprov > 0 ? 'approved' : (nSent > 0 ? 'proposal' : 'dev');
+    const ordsDaPasta = lista.map((p) => p.frozen_order_id && mpState.ordersById[p.frozen_order_id]).filter(Boolean);
     const prod = (nDone === lista.length) ? 'done'
+      : (ordsDaPasta.length === lista.length && mpProdEmbalagem(ordsDaPasta)) ? mpProdEmbalagem(ordsDaPasta)
       : est.some((e) => e.st === 'prod' && e.emLote) ? 'in_prod'
         : nAprov > 0 ? 'scheduled' : 'waiting';
     // cliente: o nome mais repetido nos "Dados do cliente" dos projetos
@@ -3653,7 +3674,7 @@ function mpFolders() {
       out.push({
         key: CU_LOOSE, nome: '', titulo: I18n.t('cu.loose'), lista: [], n: soltos.length, nAprov: nLib,
         status: nLib ? 'approved' : 'proposal',
-        prod: nEnt === soltos.length ? 'done' : emLote ? 'in_prod' : nLib ? 'scheduled' : 'waiting',
+        prod: nEnt === soltos.length ? 'done' : mpProdEmbalagem(soltos) || (emLote ? 'in_prod' : nLib ? 'scheduled' : 'waiting'),
         cliente: '', upd: soltos[0].submitted_at || null, arquivada: false, orders: soltos
       });
     }
@@ -3733,7 +3754,7 @@ function cuRows() {
     out.push({
       kind: 'orders', key: k, nome: g.pasta, titulo: g.pasta || tituloSolto, lista: g.projs, todos: g.projs,
       n: ords.length, nAprov: nLib, status: nLib ? 'approved' : 'proposal',
-      prod: (nEnt === ords.length) ? 'done' : emLote ? 'in_prod' : nLib ? 'scheduled' : 'waiting',
+      prod: (nEnt === ords.length) ? 'done' : mpProdEmbalagem(ords) || (emLote ? 'in_prod' : nLib ? 'scheduled' : 'waiting'),
       cliente: clienteDe(g.projs) || (um.client_name || ''),
       upd: maxData(ords.map((o) => maxData([o.submitted_at, o.approved_at, o.finance_released_at, o.delivered_at]))),
       arquivada: false, orders: ords,
@@ -3814,7 +3835,7 @@ function mpOrdersHtml(f) {
 }
 
 const MP_ORD_STATUS = ['dev', 'proposal', 'approved'];
-const MP_ORD_PROD = ['waiting', 'scheduled', 'in_prod', 'done'];
+const MP_ORD_PROD = ['waiting', 'scheduled', 'in_prod', 'packed', 'ready', 'done'];
 // Cabeçalho da tabela: toda coluna ordena ao clicar (de novo = inverte).
 function mpHeadCells() {
   const col = (key, rot) => '<th class="mp-th-sort' + (mpState.sort === key ? ' is-sorted' : '') + '" data-act="sortcol" data-col="' + key + '">'
