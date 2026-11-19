@@ -217,7 +217,15 @@ LOTES.mmCorte = function (v) {
 LOTES.cutDimsPeloVeio = function (leaf, hasGrain) {
   const base = LOTES.sortCutDims(leaf.width_mm, leaf.height_mm, leaf.depth_mm);
   const eixo = leaf && leaf.grain_axis;
-  if (!hasGrain || (eixo !== 'w' && eixo !== 'h' && eixo !== 'd')) return base;
+  /* SEM VEIO TAMBÉM (2026-11-19, Matt, LT-26-0025 já cortado: Bottom Inf do
+     módulo 8 — 502 de largura × 533 de fundo, Beige Textile sem veio — saiu
+     "532 × 502" com EDGEBAND 2: a fita ia nas laterais da base, não na
+     frente). A regra de 09/10 (comprimento no sentido do desenho: base/topo
+     pela largura do módulo, lateral pela altura) só valia pra material com
+     veio; sem veio caía no lado longo e invertia em módulo mais fundo que
+     largo. Agora vale pra todo material. `hasGrain` só decide se o nesting
+     pode girar (isso é no NESTING, não aqui). */
+  if (eixo !== 'w' && eixo !== 'h' && eixo !== 'd') return base;
   const dims = { w: Number(leaf.width_mm) || 0, h: Number(leaf.height_mm) || 0, d: Number(leaf.depth_mm) || 0 };
   const fino = ['w', 'h', 'd'].reduce(function (a, k) { return dims[k] < dims[a] ? k : a; }, 'w');
   if (eixo === fino) return base; // dado ruim: veio no eixo da espessura
@@ -906,9 +914,10 @@ LOTES.groupPieces = function (pieces, colors) {
     /* Fita: quem veio da planilha fala em lados, quem veio de módulo já vem em
        metro calculado. Os dois somam no mesmo total. */
     if (p.edge_banding === 4) g.edge_m += 2 * ((p.comprimento_mm + p.largura_mm) / 1000) * p.quantity;
-    // 2C = os dois lados LONGOS (comprimento pode ser o lado curto quando o
-    // veio manda, ver cutDimsPeloVeio — a fita continua no lado longo)
-    else if (p.edge_banding === 2) g.edge_m += 2 * (Math.max(p.comprimento_mm, p.largura_mm) / 1000) * p.quantity;
+    // 2C = os dois lados do COMPRIMENTO (1ª medida da etiqueta) — é o que o
+    // operador lê. Desde 19/11 o comprimento segue o desenho (base: largura
+    // do módulo = frente/trás), então nem sempre é o lado maior.
+    else if (p.edge_banding === 2) g.edge_m += 2 * (p.comprimento_mm / 1000) * p.quantity;
     g.edge_m += Number(p.edge_band_m) || 0;
   });
   return Array.from(map.values()).sort(function (a, b) {

@@ -596,9 +596,10 @@ LOTES_UI.adicionarPeca = async function (batchId, btn) {
   if (!colorId) { LOTES_UI.toast('Escolha a cor — sem ela a peça não entra no nesting.', true); return; }
   const colors = await LOTES.colors();
   const color = colors.find(function (c) { return c.id === colorId; });
-  /* Normaliza igual às peças que vêm do pedido: comprimento é sempre o maior
-     lado. Se o usuário digitar trocado, a peça não vira um caso diferente. */
-  const dims = LOTES.sortCutDims(comp, larg, esp);
+  /* COMPRIMENTO = SENTIDO DO VEIO, SEMPRE (Matt, 19/11: "regra pra 100% das
+     peças, nunca pode mudar"). O que foi digitado em Comprimento fica como
+     comprimento — antes trocava pro lado maior e invertia o veio. */
+  const dims = { comprimento_mm: LOTES.mmCorte(comp), largura_mm: LOTES.mmCorte(larg), espessura_mm: esp };
   LOTES_UI.busy(btn, true, 'Salvando…');
   try {
     await LOTES.addPiece(batchId, {
