@@ -721,7 +721,7 @@
     const doorW = t.faceA;
     const doorH = t.faceB;
     const count = hingeCount(part.height_mm || 0);
-    const margin = Number(settings.hinge_edge_margin_mm) || 100;
+    const margin = hingeMargin(settings, doorH, doorW);
     const cupFromEdge = Number(settings.hinge_cup_center_from_edge_mm) || 22;
     const markFromEdge = Number(settings.hinge_mark_center_from_edge_mm) || 28;
     const markOffset = Number(settings.hinge_mark_offset_mm) || 24;
@@ -837,12 +837,13 @@
       .filter(function (b) { return b.tAxis === 'z'; });
     if (!chapas.length) return;
     const count = hingeCount(H);
-    const margin = Number(settings.hinge_edge_margin_mm) || 100;
+    const margin = Number(settings.hinge_edge_margin_mm) || 100; // lift (borda de cima) segue a margem normal
+    const marginLado = hingeMargin(settings, H, W);
     const cupFromEdge = Number(settings.hinge_cup_center_from_edge_mm) || 22;
     const markFromEdge = Number(settings.hinge_mark_center_from_edge_mm) || 28;
     const markOffset = Number(settings.hinge_mark_offset_mm) || 24;
-    const lowV = margin;
-    const highV = Math.max(H - margin, margin);
+    const lowV = marginLado;
+    const highV = Math.max(H - marginLado, marginLado);
     const u = side === 'left' ? cupFromEdge : W - cupFromEdge;
     const uMark = side === 'left' ? markFromEdge : W - markFromEdge;
     const furar = function (x, y, diameter, depth, tipo) {
@@ -875,6 +876,13 @@
         furar(uMark, v + dm, Number(settings.hinge_mark_diameter_mm) || 3, Number(settings.hinge_mark_depth_mm) || 2, 'marcacao_dobradica');
       });
     }
+  }
+
+  // margem do copo até a ponta (porta baixa e comprida = 50, ver
+  // Pricing.hingeEdgeMarginMm)
+  function hingeMargin(settings, alongMm, acrossMm) {
+    const base = Number(settings.hinge_edge_margin_mm) || 100;
+    return (typeof Pricing !== 'undefined' && Pricing.hingeEdgeMarginMm) ? Pricing.hingeEdgeMarginMm(alongMm, acrossMm, base) : base;
   }
 
   function hingeCount(doorHeightMm) {
@@ -1347,8 +1355,9 @@
       const entersPositive = doorCenter >= lb.x0 + lb.sx / 2;
 
       const count = hingeCount(door.part.height_mm || 0);
-      const lowV = margin;
-      const highV = Math.max(door.doorH - margin, margin);
+      const mDoor = hingeMargin(settings, door.doorH, door.doorW);
+      const lowV = mDoor;
+      const highV = Math.max(door.doorH - mDoor, mDoor);
       for (let i = 0; i < count; i++) {
         const cupY = door.y0 + (count > 1 ? lowV + (highV - lowV) * (i / (count - 1)) : door.doorH / 2);
         [-spacing / 2, spacing / 2].forEach(function (dm) {
@@ -1454,8 +1463,9 @@
       const entersPositive = lbMid <= centro[lb.tAxis];
 
       const count = hingeCount(h);
-      const lowV = margin;
-      const highV = Math.max(h - margin, margin);
+      const mDoor = hingeMargin(settings, h, w);
+      const lowV = mDoor;
+      const highV = Math.max(h - mDoor, mDoor);
       for (let i = 0; i < count; i++) {
         const cupY = y0 + (count > 1 ? lowV + (highV - lowV) * (i / (count - 1)) : h / 2);
         [-spacing / 2, spacing / 2].forEach(function (dm) {

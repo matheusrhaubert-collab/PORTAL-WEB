@@ -4427,7 +4427,8 @@ const Viewer3D = (function () {
   function placeDoorHinges(doorGroup, doorWidthM, doorHeightM, doorThicknessM, height_mm, hingeSide) {
     if (!doorGroup || typeof Pricing === 'undefined' || !Pricing.hingeCountForDoorHeight) return;
     const count = Pricing.hingeCountForDoorHeight(height_mm || 0);
-    const margin = 0.1; // 10cm das extremidades
+    // 10 cm das pontas; porta baixa e comprida = 5 cm (Pricing.hingeEdgeMarginMm, 19/11)
+    const margin = (Pricing.hingeEdgeMarginMm ? Pricing.hingeEdgeMarginMm(doorHeightM * 1000, doorWidthM * 1000, 100) : 100) / 1000;
     const bottomY = -doorHeightM / 2 + margin;
     const topY = doorHeightM / 2 - margin;
 

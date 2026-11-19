@@ -955,6 +955,24 @@
     return 5;
   }
 
+  // DOBRADIÇA EM PORTA BAIXA E COMPRIDA (19/11, Matt: "essas portas quando
+  // são baixas e compridas, a regra da dobradiça de 100mm afastada da ponta
+  // deve mudar, pra dar mais sustentação. 50mm das pontas, mas só nesses
+  // casos"). Porta de abrir (dobradiça na lateral) com a altura MENOR que a
+  // largura e altura até PORTA_BAIXA_MAX_MM: copo a 50 mm das pontas. Resto
+  // segue a margem da configuração (hinge_edge_margin_mm, padrão 100).
+  // alongMm = medida ao longo da borda da dobradiça (altura da porta),
+  // acrossMm = a outra (largura). Fonte única: drilling.js (copo, marcação,
+  // base na lateral) e viewer3d.js (desenho).
+  const PORTA_BAIXA_MAX_MM = 400;
+  const PORTA_BAIXA_MARGEM_MM = 50;
+  function hingeEdgeMarginMm(alongMm, acrossMm, baseMarginMm) {
+    const base = Number(baseMarginMm) || 100;
+    const a = Number(alongMm) || 0, c = Number(acrossMm) || 0;
+    if (a > 0 && c > a && a <= PORTA_BAIXA_MAX_MM) return Math.min(base, PORTA_BAIXA_MARGEM_MM);
+    return base;
+  }
+
   // Folga fixa descontada da profundidade disponível antes de escolher qual
   // profundidade FIXA cabe no espaço (usado tanto por peça-módulo com
   // fixed_depths quanto, no futuro, por qualquer peça-componente que precise
@@ -2317,6 +2335,7 @@
     collectPurchasedCost,
     resolveBodyDims,
     hingeCountForDoorHeight,
+    hingeEdgeMarginMm,
     materialDaCor,
     pickDrawerDepth,
     isBelowMinFixedDepth,
