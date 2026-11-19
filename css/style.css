@@ -6619,3 +6619,13 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .cu-ordprojs { display: block; }
 .cu-ordprojs .cu-ordproj { display: inline-block; vertical-align: top; margin: 0 10px 10px 0; max-width: 340px; }
 .cu-ordprojs .cu-ordproj .po-myproj-grid { display: block; }
+
+/* Peças produzidas (apontamento peça a peça, migration 304 — 18/11) */
+.po-pc-prog { width: 100%; margin: 8px 0 4px; }
+.po-pc-prog-txt { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin: 0 0 4px; color: #333; }
+.po-pc-prog-txt b { font-size: 15px; color: #178a3a; }
+.po-pc-bar { height: 12px; border-radius: 6px; background: #e7e3dc; overflow: hidden; }
+.po-pc-bar > div { height: 100%; background: #22a447; border-radius: 6px; transition: width .4s; }
+.po-pc-prog.is-done .po-pc-bar > div { background: #178a3a; }
+.po-pc-chip { background: #e9f7ee !important; color: #178a3a !important; }
+.po-mo-folder-prog:has(.po-pc-prog), .cu-stages:has(.po-pc-prog) { flex-wrap: wrap; }

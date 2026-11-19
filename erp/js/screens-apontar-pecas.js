@@ -1,0 +1,349 @@
+/* Legno ERP — Produção → Apontar peças (#/apontar-pecas)
+ *
+ * Matt (2026-11-18): "preciso uma tela que eu possa apontar peça a peça, eu
+ * escolho o lote, e aparece uma lista de peças do lote, eu vou apontando uma
+ * a uma, o sistema vai dando como ok, grava data e hora do apontamento. Essa
+ * informação deve aparecer lá no portal pro cliente ver o andamento, pode
+ * colocar 1/100, 2/100 e a barra verde ficando completa."
+ *
+ * Peças = erp.batch_pieces do lote (as peças FÍSICAS congeladas no lote),
+ * uma linha por UNIDADE (quantity 3 = 3 linhas). Apontar = insert em
+ * erp.piece_scans (migration 304), com data e hora; clicar de novo numa
+ * apontada pergunta e desfaz (delete). O gatilho da 304 avisa o portal
+ * (order_tracking_pulse) e a barra do cliente anda sozinha.
+ *
+ * Leitor de código de barras: o campo de cima aceita o código da etiqueta da
+ * peça (PC-000123, cut_plan_pieces do plano mais novo do lote) + Enter. Sem
+ * código, o mesmo campo filtra a lista (peça, módulo, pedido).
+ */
+
+const APONTAR = {};
+APONTAR._d = null;   // { lote, unidades: [], porKey: {}, porCodigo: {}, scans: {} }
+
+APONTAR.load = async function (p) {
+  const batches = (await LOTES.batches()).filter(function (b) { return b.status !== 'cancelado'; });
+  return { batches: batches, batchId: p && p.id };
+};
+
+APONTAR.render = function (params, d) {
+  const sel = d.batchId || '';
+  const ops = '<option value="">— escolha o lote —</option>' + d.batches.map(function (b) {
+    const n = (b.batch_pieces || []).reduce(function (s, x) { return s + (Number(x.quantity) || 0); }, 0);
+    const st = (LOTES_UI.BATCH_STATUS && LOTES_UI.BATCH_STATUS[b.status] || {}).label || b.status || '';
+    return '<option value="' + UI.esc(b.id) + '"' + (b.id === sel ? ' selected' : '') + '>' + UI.esc(b.code) +
+      (b.name ? ' · ' + UI.esc(b.name) : '') + ' — ' + n + ' peças' + (st ? ' (' + UI.esc(st) + ')' : '') + '</option>';
+  }).join('');
+  return UI.head('Apontar peças',
+    'Escolha o lote e vá apontando peça por peça (clique na linha ou bipe a etiqueta). Cada apontamento grava data e hora e aparece no portal do cliente como andamento do pedido.') +
+    '<div class="ap-top">' +
+      '<label class="ap-lbl">Lote<select id="ap-lote" class="erp-input">' + ops + '</select></label>' +
+      '<label class="ap-lbl ap-grow">Bipar etiqueta ou buscar<input id="ap-busca" class="erp-input" type="search" autocomplete="off" placeholder="PC-000123 + Enter, ou nome da peça / módulo / pedido"></label>' +
+      '<label class="ap-lbl">Pedido<select id="ap-pedido" class="erp-input"><option value="">Todos</option></select></label>' +
+      '<label class="ap-chk"><input type="checkbox" id="ap-esconde"> Esconder apontadas</label>' +
+    '</div>' +
+    '<div id="ap-prog" class="ap-prog" style="display:none"></div>' +
+    '<div id="ap-msg" class="ap-msg"></div>' +
+    '<div id="ap-lista" class="ap-lista"><div class="erp-muted">Escolha um lote.</div></div>' +
+    APONTAR._css();
+};
+
+APONTAR._css = function () {
+  return '<style>' +
+    '.ap-top{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px}' +
+    '.ap-lbl{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.03em}' +
+    '.ap-lbl .erp-input{min-width:220px;font-size:15px;padding:9px 10px}' +
+    '.ap-grow{flex:1;min-width:260px}.ap-grow .erp-input{width:100%}' +
+    '.ap-chk{display:flex;gap:6px;align-items:center;font-size:14px;padding-bottom:10px}' +
+    '.ap-prog{background:#fff;border:1px solid #e6e1d8;border-radius:12px;padding:14px 16px;margin:0 0 12px}' +
+    '.ap-prog-txt{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 8px;font-size:15px}' +
+    '.ap-prog-txt strong{font-size:26px}' +
+    '.ap-bar{height:14px;border-radius:7px;background:#ece8e1;overflow:hidden}' +
+    '.ap-bar > div{height:100%;background:#22a447;transition:width .3s}' +
+    '.ap-msg{min-height:22px;margin:0 0 8px;font-size:15px;font-weight:600}' +
+    '.ap-msg.ok{color:#178a3a}.ap-msg.err{color:#b42318}.ap-msg.warn{color:#a15c07}' +
+    '.ap-ped{margin:16px 0 4px;font-size:15px;font-weight:700}' +
+    '.ap-mod{background:#fff;border:1px solid #e6e1d8;border-radius:10px;margin:0 0 10px;overflow:hidden}' +
+    '.ap-mod-h{display:flex;justify-content:space-between;gap:10px;padding:8px 12px;background:#f6f3ee;font-size:14px;font-weight:600}' +
+    '.ap-mod-h .ap-mini{flex:0 0 120px;height:8px;border-radius:4px;background:#e2ddd4;overflow:hidden;align-self:center}' +
+    '.ap-mod-h .ap-mini > div{height:100%;background:#22a447}' +
+    '.ap-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid #f0ece6;cursor:pointer;user-select:none;font-size:15px}' +
+    '.ap-row:hover{background:#faf8f4}' +
+    '.ap-ck{flex:0 0 30px;height:30px;border-radius:50%;border:2px solid #c9c2b6;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}' +
+    '.ap-row.on .ap-ck{background:#22a447;border-color:#22a447}' +
+    '.ap-row.on{background:#f1faf3}' +
+    '.ap-ref{flex:1;min-width:0}.ap-ref b{font-weight:600}.ap-ref small{display:block;color:#888;font-size:12px}' +
+    '.ap-quando{flex:0 0 auto;font-size:12px;color:#178a3a;text-align:right;white-space:nowrap}' +
+    '.ap-row.flash{animation:apflash .9s}' +
+    '@keyframes apflash{0%{background:#b8ecc6}100%{background:#f1faf3}}' +
+    '.ap-row.hide{display:none}' +
+    '</style>';
+};
+
+APONTAR.after = function (params, d) {
+  const sel = document.getElementById('ap-lote');
+  const busca = document.getElementById('ap-busca');
+  sel.addEventListener('change', function () {
+    if (sel.value) location.hash = '#/apontar-pecas/' + sel.value;
+  });
+  document.getElementById('ap-pedido').addEventListener('change', APONTAR._filtra);
+  document.getElementById('ap-esconde').addEventListener('change', APONTAR._filtra);
+  busca.addEventListener('input', APONTAR._filtra);
+  busca.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    const cod = String(busca.value || '').trim().toUpperCase();
+    if (!cod || !APONTAR._d) return;
+    const u = APONTAR._d.porCodigo[cod];
+    if (!u) { if (/^PC-?\d+$/.test(cod)) APONTAR._aviso('Código ' + cod + ' não é deste lote.', 'err', true); return; }
+    busca.value = '';
+    APONTAR._filtra();
+    if (APONTAR._d.scans[u.key]) { APONTAR._aviso('⚠ ' + cod + ' já estava apontada (' + APONTAR._hora(APONTAR._d.scans[u.key].scanned_at) + ').', 'warn', true); APONTAR._mostra(u.key); return; }
+    APONTAR.aponta(u.key, cod);
+  });
+  document.getElementById('ap-lista').addEventListener('click', function (ev) {
+    const row = ev.target.closest('.ap-row');
+    if (!row || !APONTAR._d) return;
+    const k = row.getAttribute('data-k');
+    if (APONTAR._d.scans[k]) {
+      const u = APONTAR._d.porKey[k];
+      if (confirm('Desfazer o apontamento de "' + (u.p.reference || 'peça') + '" (' + APONTAR._hora(APONTAR._d.scans[k].scanned_at) + ')?')) APONTAR.desfaz(k);
+    } else {
+      APONTAR.aponta(k, null);
+    }
+  });
+  if (d.batchId) APONTAR.carrega(d.batchId); else setTimeout(function () { sel.focus(); }, 50);
+};
+
+/* select paginado (o PostgREST corta em 1000 linhas) */
+APONTAR._todas = async function (mk) {
+  const out = [];
+  for (let de = 0; de < 50000; de += 1000) {
+    const r = await mk().range(de, de + 999);
+    if (r.error) throw r.error;
+    out.push.apply(out, r.data || []);
+    if (!r.data || r.data.length < 1000) break;
+  }
+  return out;
+};
+
+APONTAR.carrega = async function (batchId) {
+  const lista = document.getElementById('ap-lista');
+  lista.innerHTML = '<div class="erp-muted">Carregando peças do lote…</div>';
+  try {
+    const erp = LOTES.erp();
+    const lote = await LOTES.batch(batchId);
+    if (!lote) { lista.innerHTML = '<div class="erp-muted">Lote não encontrado.</div>'; return; }
+    const scans = await APONTAR._todas(function () { return erp.from('piece_scans').select('*').eq('batch_id', batchId); });
+    let codigos = [];
+    if (lote._plans && lote._plans.length) {
+      const planoId = lote._plans[0].id;
+      codigos = await APONTAR._todas(function () { return erp.from('cut_plan_pieces').select('piece_code, batch_piece_id').eq('plan_id', planoId); });
+    }
+    const pedNome = {};
+    (lote._orders || []).forEach(function (o) {
+      const n = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') + ' · ' : '';
+      pedNome[o.id] = n + (o.po_name || o.client_name || 'Pedido');
+    });
+    const pecas = (lote._pieces || []).slice().sort(function (a, b) {
+      const pa = pedNome[a.order_id] || a.po_name || '', pb = pedNome[b.order_id] || b.po_name || '';
+      return pa.localeCompare(pb) || String(a.module_number || '').localeCompare(String(b.module_number || ''), undefined, { numeric: true }) ||
+        (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0);
+    });
+    const d = { lote: lote, unidades: [], porKey: {}, porCodigo: {}, scans: {}, pedNome: pedNome };
+    pecas.forEach(function (p) {
+      const q = Math.max(1, Number(p.quantity) || 1);
+      for (let i = 1; i <= q; i++) {
+        const u = { key: p.id + '|' + i, p: p, idx: i, q: q };
+        d.unidades.push(u); d.porKey[u.key] = u;
+      }
+    });
+    // código da etiqueta → unidade (as N etiquetas da mesma linha, em ordem de código)
+    const porPeca = {};
+    codigos.forEach(function (c) { if (c.batch_piece_id) (porPeca[c.batch_piece_id] = porPeca[c.batch_piece_id] || []).push(c.piece_code); });
+    Object.keys(porPeca).forEach(function (bp) {
+      porPeca[bp].sort().forEach(function (code, i) {
+        const u = d.porKey[bp + '|' + (i + 1)];
+        if (u) { d.porCodigo[String(code).toUpperCase()] = u; u.code = code; }
+      });
+    });
+    scans.forEach(function (s) { d.scans[s.batch_piece_id + '|' + s.unit_idx] = s; });
+    APONTAR._d = d;
+    // filtro de pedido
+    const ps = document.getElementById('ap-pedido');
+    const ids = []; d.unidades.forEach(function (u) { if (u.p.order_id && ids.indexOf(u.p.order_id) === -1) ids.push(u.p.order_id); });
+    ps.innerHTML = '<option value="">Todos (' + ids.length + ')</option>' + ids.map(function (id) { return '<option value="' + UI.esc(id) + '">' + UI.esc(pedNome[id] || id) + '</option>'; }).join('');
+    APONTAR._desenha();
+    setTimeout(function () { const b = document.getElementById('ap-busca'); if (b) b.focus(); }, 50);
+  } catch (err) {
+    console.error('[apontar]', err);
+    const msg = (err && /piece_scans/.test(String(err.message || ''))) ? 'Falta rodar a migration 304 (database/migration_304_apontamento_pecas.sql) no Supabase.' : LOTES.explainError ? LOTES.explainError(err) : (err.message || err);
+    lista.innerHTML = UI.errorBox ? UI.errorBox('Não consegui carregar o lote', UI.esc(msg)) : '<div class="erp-muted">' + UI.esc(msg) + '</div>';
+  }
+};
+
+APONTAR._hora = function (iso) {
+  if (!iso) return '';
+  const t = new Date(iso);
+  return t.toLocaleDateString('pt-BR') + ' ' + t.toLocaleTimeString('pt-BR');
+};
+APONTAR._med = function (p) {
+  const r = function (v) { return Math.round(Number(v) || 0); };
+  return r(p.comprimento_mm) + ' × ' + r(p.largura_mm) + ' × ' + (Number(p.espessura_mm) || 0);
+};
+
+APONTAR._rowHtml = function (u) {
+  const s = APONTAR._d.scans[u.key];
+  const p = u.p;
+  return '<div class="ap-row' + (s ? ' on' : '') + '" data-k="' + UI.esc(u.key) + '" data-o="' + UI.esc(p.order_id || '') + '" data-t="' +
+    UI.esc(((p.reference || '') + ' ' + (p.module_name || '') + ' ' + (p.module_number || '') + ' ' + (APONTAR._d.pedNome[p.order_id] || '') + ' ' + (u.code || '')).toLowerCase()) + '">' +
+    '<div class="ap-ck">' + (s ? '✓' : '') + '</div>' +
+    '<div class="ap-ref"><b>' + UI.esc(p.reference || p.description || 'Peça') + '</b>' + (u.q > 1 ? ' <span class="erp-muted">(' + u.idx + '/' + u.q + ')</span>' : '') +
+      '<small>' + UI.esc(APONTAR._med(p)) + ' mm · ' + UI.esc(p.color_name || '') + (u.code ? ' · ' + UI.esc(u.code) : '') + '</small></div>' +
+    '<div class="ap-quando">' + (s ? '✓ ' + UI.esc(APONTAR._hora(s.scanned_at)) : '') + '</div>' +
+  '</div>';
+};
+
+APONTAR._desenha = function () {
+  const d = APONTAR._d;
+  const lista = document.getElementById('ap-lista');
+  if (!d.unidades.length) { lista.innerHTML = '<div class="erp-muted">Este lote não tem peças.</div>'; APONTAR._progresso(); return; }
+  let html = '', pedAtual = null, modAtual = null;
+  d.unidades.forEach(function (u) {
+    const ped = u.p.order_id || '';
+    const mod = ped + '§' + (u.p.module_number || '') + '§' + (u.p.module_name || '');
+    if (ped !== pedAtual) {
+      if (modAtual !== null) html += '</div>';
+      modAtual = null;
+      html += '<div class="ap-ped" data-ped="' + UI.esc(ped) + '">' + UI.esc(d.pedNome[ped] || u.p.po_name || u.p.client_name || 'Sem pedido') + '</div>';
+      pedAtual = ped;
+    }
+    if (mod !== modAtual) {
+      if (modAtual !== null) html += '</div>';
+      html += '<div class="ap-mod" data-mod="' + UI.esc(mod) + '" data-o="' + UI.esc(ped) + '"><div class="ap-mod-h"><span>' +
+        UI.esc((u.p.module_number ? u.p.module_number + ' · ' : '') + (u.p.module_name || 'Peças avulsas')) +
+        '</span><span class="ap-mod-n"></span><span class="ap-mini"><div></div></span></div>';
+      modAtual = mod;
+    }
+    html += APONTAR._rowHtml(u);
+  });
+  html += '</div>';
+  lista.innerHTML = html;
+  APONTAR._filtra();
+  APONTAR._progresso();
+};
+
+APONTAR._progresso = function () {
+  const d = APONTAR._d;
+  const total = d.unidades.length;
+  const feitas = d.unidades.filter(function (u) { return d.scans[u.key]; }).length;
+  const pct = total ? Math.round(100 * feitas / total) : 0;
+  const el = document.getElementById('ap-prog');
+  el.style.display = '';
+  el.innerHTML = '<div class="ap-prog-txt"><span><strong>' + feitas + '/' + total + '</strong> peças apontadas · ' + UI.esc(d.lote.code || '') + '</span><span>' + pct + '%</span></div>' +
+    '<div class="ap-bar"><div style="width:' + pct + '%"></div></div>';
+  // contagem por módulo
+  const porMod = {};
+  d.unidades.forEach(function (u) {
+    const mod = (u.p.order_id || '') + '§' + (u.p.module_number || '') + '§' + (u.p.module_name || '');
+    const m = porMod[mod] = porMod[mod] || { t: 0, f: 0 };
+    m.t++; if (d.scans[u.key]) m.f++;
+  });
+  document.querySelectorAll('#ap-lista .ap-mod').forEach(function (box) {
+    const m = porMod[box.getAttribute('data-mod')];
+    if (!m) return;
+    box.querySelector('.ap-mod-n').textContent = m.f + '/' + m.t;
+    box.querySelector('.ap-mini > div').style.width = Math.round(100 * m.f / m.t) + '%';
+  });
+};
+
+APONTAR._filtra = function () {
+  if (!APONTAR._d) return;
+  const q = String((document.getElementById('ap-busca') || {}).value || '').trim().toLowerCase();
+  const ped = (document.getElementById('ap-pedido') || {}).value || '';
+  const esconde = !!(document.getElementById('ap-esconde') || {}).checked;
+  document.querySelectorAll('#ap-lista .ap-row').forEach(function (r) {
+    const k = r.getAttribute('data-k');
+    const ok = (!ped || r.getAttribute('data-o') === ped) && (!q || r.getAttribute('data-t').indexOf(q) !== -1) && !(esconde && APONTAR._d.scans[k]);
+    r.classList.toggle('hide', !ok);
+  });
+  document.querySelectorAll('#ap-lista .ap-mod').forEach(function (m) {
+    m.style.display = m.querySelector('.ap-row:not(.hide)') ? '' : 'none';
+  });
+  document.querySelectorAll('#ap-lista .ap-ped').forEach(function (h) {
+    const id = h.getAttribute('data-ped');
+    let vis = false;
+    document.querySelectorAll('#ap-lista .ap-mod').forEach(function (m) { if (m.getAttribute('data-o') === id && m.style.display !== 'none') vis = true; });
+    h.style.display = vis ? '' : 'none';
+  });
+};
+
+APONTAR._atualizaLinha = function (k, flash) {
+  const u = APONTAR._d.porKey[k];
+  let row = null;
+  document.querySelectorAll('#ap-lista .ap-row').forEach(function (r) { if (r.getAttribute('data-k') === k) row = r; });
+  if (!row || !u) return;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = APONTAR._rowHtml(u);
+  const novo = tmp.firstChild;
+  row.replaceWith(novo);
+  if (flash) novo.classList.add('flash');
+  APONTAR._progresso();
+  APONTAR._filtra();
+};
+APONTAR._mostra = function (k) {
+  document.querySelectorAll('#ap-lista .ap-row').forEach(function (r) {
+    if (r.getAttribute('data-k') === k) { r.scrollIntoView({ block: 'center', behavior: 'smooth' }); r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash'); }
+  });
+};
+APONTAR._aviso = function (txt, tipo, som) {
+  const el = document.getElementById('ap-msg');
+  if (el) { el.className = 'ap-msg ' + (tipo || ''); el.textContent = txt; }
+  if (som) APONTAR._bip(tipo === 'ok' ? 880 : 220);
+};
+APONTAR._bip = function (hz) {
+  try {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return;
+    APONTAR._ac = APONTAR._ac || new C();
+    const o = APONTAR._ac.createOscillator(), g = APONTAR._ac.createGain();
+    o.frequency.value = hz; g.gain.value = 0.08;
+    o.connect(g); g.connect(APONTAR._ac.destination);
+    o.start(); o.stop(APONTAR._ac.currentTime + 0.12);
+  } catch (e) { /* sem som */ }
+};
+
+APONTAR.aponta = async function (k, codigo) {
+  const d = APONTAR._d;
+  const u = d.porKey[k];
+  if (!u || d.scans[k]) return;
+  const agora = new Date().toISOString();
+  // otimista: marca na hora, desfaz se o banco recusar
+  d.scans[k] = { batch_piece_id: u.p.id, unit_idx: u.idx, scanned_at: agora, _pend: true };
+  APONTAR._atualizaLinha(k, true);
+  APONTAR._aviso('✓ ' + (codigo ? codigo + ' · ' : '') + (u.p.reference || 'Peça') + (u.p.module_name ? ' — ' + u.p.module_name : '') + ' · ' + APONTAR._hora(agora), 'ok', true);
+  const user = (typeof DATA !== 'undefined' && DATA.user) || null;
+  const { data, error } = await LOTES.erp().from('piece_scans').insert({
+    batch_id: d.lote.id, batch_piece_id: u.p.id, unit_idx: u.idx, order_id: u.p.order_id || null,
+    piece_code: codigo || u.code || null, scanned_at: agora, scanned_by_name: user ? (user.email || null) : null
+  }).select().maybeSingle();
+  if (error) {
+    delete d.scans[k];
+    APONTAR._atualizaLinha(k, false);
+    if (error.code === '23505') { APONTAR._aviso('⚠ Essa peça já tinha sido apontada por outra pessoa — recarregando.', 'warn', true); APONTAR.carrega(d.lote.id); return; }
+    APONTAR._aviso('Não gravou: ' + (error.message || error), 'err', true);
+    return;
+  }
+  d.scans[k] = data;
+  APONTAR._atualizaLinha(k, false);
+};
+
+APONTAR.desfaz = async function (k) {
+  const d = APONTAR._d;
+  const s = d.scans[k];
+  if (!s || !s.id) return;
+  const { error } = await LOTES.erp().from('piece_scans').delete().eq('id', s.id);
+  if (error) { APONTAR._aviso('Não desfez: ' + (error.message || error), 'err', true); return; }
+  delete d.scans[k];
+  APONTAR._atualizaLinha(k, false);
+  APONTAR._aviso('Apontamento desfeito.', 'warn', false);
+};

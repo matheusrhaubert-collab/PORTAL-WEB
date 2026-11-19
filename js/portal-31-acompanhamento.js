@@ -94,6 +94,42 @@ async function trkFetchTracking(orderIds) {
   return out;
 }
 
+// ---------- PEÇAS PRODUZIDAS (2026-11-18, migration 304) ----------
+// Matt: "essa informação deve aparecer lá no portal pro cliente ver o
+// andamento, pode colocar 1/100, 2/100 e a barra verde ficando completa".
+// Vem do apontamento peça a peça do ERP (Produção › Apontar peças,
+// erp.piece_scans) pela RPC portal_order_pieces_progress. Trava PRÓPRIA
+// (não a TRK_SO_ADMIN): com false, o dealer/cliente já vê a barra mesmo com
+// o resto do acompanhamento ainda só pra admin.
+const PECAS_SO_ADMIN = false;
+async function trkPecasPodeVer() { return !PECAS_SO_ADMIN || trkCanSee(); }
+async function trkFetchPieces(orderIds) {
+  const out = {};
+  if (!orderIds.length) return out;
+  try {
+    const { data, error } = await supabaseClient.rpc('portal_order_pieces_progress', { p_order_ids: orderIds });
+    if (error) { console.warn('[acompanhamento] portal_order_pieces_progress:', error.message); return out; }
+    (data || []).forEach((r) => { out[r.order_id] = r; });
+  } catch (e) { console.warn('[acompanhamento]', e); }
+  return out;
+}
+// soma de vários pedidos (pasta) ou 1 pedido; '' quando nada entrou em lote
+function trkPiecesHtml(rows) {
+  let total = 0, feitas = 0, last = null;
+  (rows || []).forEach((r) => {
+    if (!r) return;
+    total += Number(r.total) || 0; feitas += Number(r.feitas) || 0;
+    if (r.last_at && (!last || r.last_at > last)) last = r.last_at;
+  });
+  if (!total) return '';
+  feitas = Math.min(feitas, total);
+  const pct = Math.round(100 * feitas / total);
+  return '<div class="po-pc-prog' + (pct === 100 ? ' is-done' : '') + '">'
+    + '<div class="po-pc-prog-txt"><strong>' + trkEsc(trkT('pieces_label')) + '</strong>'
+    + '<span><b>' + feitas + '/' + total + '</b> · ' + pct + '%' + (last ? ' · ' + trkEsc(trkT('pieces_last', { date: trkDate(last) })) : '') + '</span></div>'
+    + '<div class="po-pc-bar"><div style="width:' + pct + '%"></div></div></div>';
+}
+
 // Estado completo de um pedido: etapas, prazo, status de entrega.
 // `agora` só existe pro teste (scripts/tests/teste-acompanhamento-prazo.js).
 function trkState(order, t, agora) {
@@ -136,9 +172,23 @@ function trkState(order, t, agora) {
 
 // ---------- Lista "Meus Pedidos": chip com a etapa + prazo ----------
 async function trkDecorateOrderList(orders, container) {
-  if (!container || !(await trkCanSee())) return;
+  if (!container) return;
+  const ve = await trkCanSee();
+  if (!ve && PECAS_SO_ADMIN) return;
   const relevant = (orders || []).filter((o) => o.order_type !== 'cutting_list' && ['approved', 'paid', 'delivered'].includes(o.status));
   if (!relevant.length) return;
+  const pc = await trkFetchPieces(relevant.map((o) => o.id));
+  relevant.forEach((o) => {
+    const r = pc[o.id];
+    const title = container.querySelector(`.portal-order-card[data-order-id="${o.id}"] .portal-order-title`);
+    if (!r || !(Number(r.total) > 0) || !title || title.querySelector('.po-pc-chip')) return;
+    const f = Math.min(Number(r.feitas) || 0, Number(r.total));
+    const span = document.createElement('span');
+    span.className = 'po-trk-chip po-pc-chip' + (f === Number(r.total) ? ' is-done' : '');
+    span.textContent = trkT('pieces_chip', { n: f, t: r.total });
+    title.appendChild(span);
+  });
+  if (!ve) return;
   const map = await trkFetchTracking(relevant.map((o) => o.id));
   relevant.forEach((o) => {
     const title = container.querySelector(`.portal-order-card[data-order-id="${o.id}"] .portal-order-title`);
@@ -256,7 +306,8 @@ function trkFolderStagesHtml(orders, map) {
 async function trkFolderStages(orders, box) {
   trkFolderStop();
   const seq = ++trkFolderSeq;
-  if (!box || !(await trkCanSee())) return;
+  const ve = await trkCanSee();
+  if (!box || !(ve || !PECAS_SO_ADMIN)) return;
   let lista = (orders || []).filter((o) => o.order_type !== 'cutting_list');
   if (!lista.length) return;
   const ids = lista.map((o) => o.id);
@@ -279,9 +330,10 @@ async function trkFolderStages(orders, box) {
         }
       } catch (e) { /* mantém o que já tinha */ }
     }
-    const map = await trkFetchTracking(ids);
+    const [map, pc] = await Promise.all([ve ? trkFetchTracking(ids) : Promise.resolve({}), trkFetchPieces(ids)]);
     if (seq !== trkFolderSeq || !document.body.contains(box)) return;
-    const html = trkFolderStagesHtml(lista, map);
+    const pecas = trkPiecesHtml(ids.map((id) => pc[id]));
+    const html = (ve ? trkFolderStagesHtml(lista, map) : '') + pecas;
     if (html !== ultimo) { ultimo = html; box.innerHTML = html; }
   };
   await desenha(false);
@@ -310,11 +362,21 @@ async function renderOrderTracking(order, items) {
   const box = document.getElementById('po-order-track');
   if (!box) return;
   const seq = ++trkRenderSeq;
-  if (!order || order.order_type === 'cutting_list' || !(await trkCanSee())) {
+  const ve = order && order.order_type !== 'cutting_list' ? await trkCanSee() : false;
+  const vePecas = order && order.order_type !== 'cutting_list' && (ve || !PECAS_SO_ADMIN);
+  if (!vePecas) {
     box.style.display = 'none'; box.innerHTML = ''; return;
   }
-  const map = await trkFetchTracking([order.id]);
+  const [map, pcMap] = await Promise.all([ve ? trkFetchTracking([order.id]) : Promise.resolve({}), trkFetchPieces([order.id])]);
   if (seq !== trkRenderSeq) return; // trocou de pedido (ou re-renderizou) no meio
+  const pecasHtml = trkPiecesHtml([pcMap[order.id]]);
+  if (!ve) {
+    // cliente/dealer (acompanhamento completo ainda só admin): só a barra de peças
+    if (!pecasHtml) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="po-trk-head"><strong>${trkEsc(trkT('title'))}</strong></div>${pecasHtml}`;
+    box.style.display = 'block';
+    return;
+  }
   const st = trkState(order, map[order.id]);
   const t = st.t;
 
@@ -381,6 +443,7 @@ async function renderOrderTracking(order, items) {
       ${t.batch_code ? `<span class="hint">${trkEsc(trkT('batch_label', { code: t.batch_code }))}</span>` : ''}
     </div>
     <div class="po-trk-steps">${stepsHtml}</div>
+    ${pecasHtml}
     <div class="po-trk-cards">${releaseCard}${prazoHtml}${invoiceCard}</div>
     <div class="po-trk-docs">
       <button type="button" class="secondary" id="po-trk-vol-btn" ${temVol ? '' : 'disabled'}>${trkEsc(trkT('pdf_volumes'))}</button>
