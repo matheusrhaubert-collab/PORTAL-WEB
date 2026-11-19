@@ -3591,9 +3591,19 @@ async function mpLoad() {
       if (!trErr) (tr || []).forEach((r) => { track[r.order_id] = r; });
     } catch (e) { /* sem a RPC: "em produção" vira "programado" */ }
   }
+  // peças apontadas por pedido (migration 305) — 100% apontado conta como
+  // embalado na coluna Production (mpProdEmbalagem)
+  let pecas = {};
+  if (aprovados.length) {
+    try {
+      const { data: pc, error: pcErr } = await supabaseClient.rpc('portal_order_pieces_progress', { p_order_ids: aprovados });
+      if (!pcErr) (pc || []).forEach((r) => { pecas[r.order_id] = r; });
+    } catch (e) { /* sem a RPC: só os volumes contam */ }
+  }
   if (seq !== mpState.loadSeq) return;
   mpState.ordersById = ordersById;
   mpState.trackByOrder = track;
+  mpState.piecesByOrder = pecas;
   mpState.loaded = true;
   mpRender();
   // documentos de cada pasta/projeto (portal-41, migration 301)
@@ -3623,9 +3633,15 @@ function mpProdEmbalagem(ords) {
   const LIB = ['approved', 'paid'];
   const abertos = (ords || []).filter((o) => o && o.status !== 'delivered');
   if (!abertos.length) return null;
+  // embalado = todos os volumes fechados OU 100% das peças apontadas
+  // (18/11, 2ª rodada: o pedido 00020 com 104/104 apontadas continuava "In
+  // Production" porque os volumes ainda não estavam fechados)
   const embalado = (o) => {
+    if (!LIB.includes(o.status)) return false;
     const t = mpState.trackByOrder[o.id];
-    return LIB.includes(o.status) && t && Number(t.n_volumes) > 0 && Number(t.n_embalados) === Number(t.n_volumes);
+    if (t && Number(t.n_volumes) > 0 && Number(t.n_embalados) === Number(t.n_volumes)) return true;
+    const pc = (mpState.piecesByOrder || {})[o.id];
+    return !!(pc && Number(pc.total) > 0 && Number(pc.feitas) >= Number(pc.total));
   };
   if (!abertos.every(embalado)) return null;
   return abertos.every((o) => !!o.pickup_released_at) ? 'ready' : 'packed';
@@ -3822,12 +3838,14 @@ function mpOrdersHtml(f) {
   const linha = (p) => {
     const o = mpState.ordersById[p.frozen_order_id];
     const est = mpProjStage(p);
-    const prodRot = est.st === 'done' ? mpT('pr_done') : est.st === 'prod' ? mpT(est.emLote ? 'pr_in_prod' : 'pr_scheduled') : '';
+    const emb = est.st === 'prod' ? mpProdEmbalagem([o]) : null; // packed | ready
+    const prodSt = est.st === 'done' ? 'done' : est.st === 'prod' ? (emb || (est.emLote ? 'in_prod' : 'scheduled')) : '';
+    const prodRot = prodSt ? mpT('pr_' + prodSt) : '';
     const num = Number(o.factory_number) > 0 ? '<span class="po-order-factory-no">' + String(Number(o.factory_number)).padStart(5, '0') + '</span>' : '';
     return '<div class="cu-order">' + num
       + '<strong>' + mpEsc(p.name || o.po_name || '—') + '</strong>'
       + '<span class="mp-chip">' + mpEsc(typeof orderStatusLabel === 'function' ? orderStatusLabel(o.status) : o.status) + '</span>'
-      + (prodRot ? '<span class="mp-chip pr-' + (est.st === 'done' ? 'done' : est.emLote ? 'in_prod' : 'scheduled') + '">' + mpEsc(prodRot) + '</span>' : '')
+      + (prodRot ? '<span class="mp-chip pr-' + prodSt + '">' + mpEsc(prodRot) + '</span>' : '')
       + '<button type="button" class="secondary" data-act="order" data-order="' + mpEsc(o.id) + '">' + mpEsc(I18n.t('cu.view_order')) + '</button></div>';
   };
   return '<div class="cu-orders"><div class="cu-sub">' + mpEsc(I18n.t('cu.orders')) + '</div>' + enviados.map(linha).join('') + '</div>'
@@ -3886,7 +3904,7 @@ function cuFolderHtml(f) {
   const stat = (k, v) => '<div><span>' + mpEsc(I18n.t('my_orders.' + k)) + '</span><strong>' + v + '</strong></div>';
   const linha = (o) => {
     const t = mpState.trackByOrder[o.id];
-    const prodSt = o.status === 'delivered' ? 'done' : LIB.includes(o.status) ? ((t && t.batch_code) ? 'in_prod' : 'scheduled') : null;
+    const prodSt = o.status === 'delivered' ? 'done' : LIB.includes(o.status) ? (mpProdEmbalagem([o]) || ((t && t.batch_code) ? 'in_prod' : 'scheduled')) : null;
     const v = cuOrderTotal(o);
     const num = Number(o.factory_number) > 0 ? '<span class="po-order-factory-no">' + String(Number(o.factory_number)).padStart(5, '0') + '</span>' : '';
     return '<div class="cu-order" data-act="order" data-order="' + mpEsc(o.id) + '" role="button" tabindex="0">' + num
