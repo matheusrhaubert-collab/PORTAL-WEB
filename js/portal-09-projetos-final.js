@@ -3647,6 +3647,31 @@ function mpProdEmbalagem(ords) {
   return abertos.every((o) => !!o.pickup_released_at) ? 'ready' : 'packed';
 }
 
+// EMBALAGEM EM ANDAMENTO (19/11, Matt: "quando packing começar eu quero
+// mostrar do lado do status In Production o packing com o progresso andando.
+// mas só quando começar"). Soma dos pedidos da linha: peças apontadas
+// (portal_order_pieces_progress, migration 305) — senão volumes embalados
+// (portal_order_tracking). Nada apontado/embalado = '' (fica como estava).
+// Só aparece com o status In Production (packed/ready já dizem que acabou).
+function mpPackingChip(ords) {
+  const LIB = ['approved', 'paid'];
+  let feitas = 0, total = 0, vEmb = 0, vTot = 0;
+  (ords || []).forEach((o) => {
+    if (!o || !LIB.includes(o.status)) return;
+    const pc = (mpState.piecesByOrder || {})[o.id];
+    if (pc && Number(pc.total) > 0) { feitas += Math.min(Number(pc.feitas) || 0, Number(pc.total)); total += Number(pc.total); }
+    const t = mpState.trackByOrder[o.id];
+    if (t && Number(t.n_volumes) > 0) { vEmb += Number(t.n_embalados) || 0; vTot += Number(t.n_volumes); }
+  });
+  let pct = null;
+  if (total > 0 && feitas > 0) pct = feitas / total;
+  else if (vTot > 0 && vEmb > 0) pct = vEmb / vTot;
+  if (pct == null) return '';
+  const n = Math.max(1, Math.min(100, Math.round(pct * 100)));
+  return '<span class="mp-chip pr-packing" title="' + mpEsc(total > 0 ? feitas + '/' + total : vEmb + '/' + vTot) + '">'
+    + mpEsc(mpT('pr_packing')) + ' <span class="mp-pack-bar"><i style="width:' + n + '%"></i></span> ' + n + '%</span>';
+}
+
 function mpFolders() {
   if (mpState.central) return cuRows();
   const map = new Map();
@@ -3846,6 +3871,7 @@ function mpOrdersHtml(f) {
       + '<strong>' + mpEsc(p.name || o.po_name || '—') + '</strong>'
       + '<span class="mp-chip">' + mpEsc(typeof orderStatusLabel === 'function' ? orderStatusLabel(o.status) : o.status) + '</span>'
       + (prodRot ? '<span class="mp-chip pr-' + prodSt + '">' + mpEsc(prodRot) + '</span>' : '')
+      + (prodSt === 'in_prod' ? mpPackingChip([o]) : '')
       + '<button type="button" class="secondary" data-act="order" data-order="' + mpEsc(o.id) + '">' + mpEsc(I18n.t('cu.view_order')) + '</button></div>';
   };
   return '<div class="cu-orders"><div class="cu-sub">' + mpEsc(I18n.t('cu.orders')) + '</div>' + enviados.map(linha).join('') + '</div>'
@@ -3912,6 +3938,7 @@ function cuFolderHtml(f) {
       + '<span class="cu-o-val">' + (v == null ? '' : mpEsc(cuMoney(v))) + '</span>'
       + '<span class="mp-chip' + (LIB.includes(o.status) ? ' st-approved' : ' st-proposal') + '">' + mpEsc(typeof orderStatusLabel === 'function' ? orderStatusLabel(o.status) : o.status) + '</span>'
       + (prodSt ? '<span class="mp-chip pr-' + prodSt + '">' + mpEsc(mpT('pr_' + prodSt)) + '</span>' : '')
+      + (prodSt === 'in_prod' ? mpPackingChip([o]) : '')
       + '<span class="cu-o-go">›</span></div>';
   };
   return '<div class="cu-sum">'
@@ -3976,7 +4003,7 @@ function mpRender() {
       + '<td>' + (f.cliente ? mpEsc(f.cliente) : '—') + '</td>'
       + '<td class="mp-c-n"><span class="mp-lay">' + MP_ICO.layers + '</span><strong>' + f.n + '</strong></td>'
       + '<td>' + chip('st-' + f.status, stRot) + '</td>'
-      + '<td>' + (f.kind === 'build' ? '—' : chip('pr-' + f.prod, mpT('pr_' + f.prod))) + '</td>'
+      + '<td>' + (f.kind === 'build' ? '—' : chip('pr-' + f.prod, mpT('pr_' + f.prod)) + (f.prod === 'in_prod' ? ' ' + mpPackingChip(f.orders) : '')) + '</td>'
       + '<td class="mp-c-date">' + mpEsc(mpDate(f.upd)) + '</td>'
       + '<td class="mp-c-menu">' + (f.key !== MP_NONE && f.key !== CU_LOOSE && f.kind !== 'orders' && !f.single ? '<button type="button" class="mp-dots" data-act="menu" aria-label="' + mpEsc(mpT('menu')) + '">⋯</button>' + menu : '') + '</td>'
       + '</tr>'

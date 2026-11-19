@@ -6526,6 +6526,13 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .mp-chip.pr-done { background: #1c7a36; color: #fff; }
 .mp-chip.pr-packed { background: #fdecc8; color: #8a5a00; }
 .mp-chip.pr-ready { background: #22a447; color: #fff; }
+/* Embalando com progresso (19/11) — barra com listras andando */
+.mp-chip.pr-packing { background: #fdecc8; color: #8a5a00; margin-left: 6px; display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.mp-pack-bar { width: 54px; height: 6px; border-radius: 3px; background: rgba(138,90,0,.18); overflow: hidden; display: inline-block; }
+.mp-pack-bar i { display: block; height: 100%; border-radius: 3px; background-color: #d08a2e;
+  background-image: linear-gradient(45deg, rgba(255,255,255,.35) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.35) 50%, rgba(255,255,255,.35) 75%, transparent 75%, transparent);
+  background-size: 10px 10px; animation: mp-pack-anda 1s linear infinite; transition: width .4s ease; }
+@keyframes mp-pack-anda { from { background-position: 0 0; } to { background-position: 10px 0; } }
 .mp-c-menu { position: relative; width: 44px; text-align: right; }
 .mp-dots { background: transparent; border: none; color: var(--text); font-size: 20px; line-height: 1; padding: 2px 8px; border-radius: 6px; cursor: pointer; margin: 0; }
 .mp-dots:hover { background: var(--border); }
