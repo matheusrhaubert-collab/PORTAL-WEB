@@ -38,6 +38,7 @@ APP.menu = [
 
   { id: 'producao', label: 'Produção', items: [
     { hash: '#/producao',    label: 'Controle de produção' },
+    { hash: '#/corte-ao-vivo', label: 'Corte ao vivo (teste)' },
     { hash: '#/apontar-pecas', label: 'Apontar peças' },
     { hash: '#/apontamento', label: 'Apontamentos' },
     { hash: '#/processos',   label: 'Processos' },
@@ -297,6 +298,9 @@ APP.routes = [
   { re: /^#\/parametros-corte$/, load: LOTES_UI.paramsScreenLoad,          render: LOTES_UI.paramsScreen,         nav: '#/planos' },
   { re: /^#\/producao$/,                                                   render: ScreensProducao.ops,           nav: '#/producao' },
   { re: /^#\/producao\/(.+)$/,                                             render: ScreensProducao.opDetail,      nav: '#/producao' },
+  /* Corte ao vivo (TESTE, 18/11) — simulador pra TV na frente da seccionadora: onde vai a peça e onde vai a etiqueta. Só leitura. erp/js/screens-corte-ao-vivo.js */
+  { re: /^#\/corte-ao-vivo$/,          load: CAV.load, render: CAV.render, nav: '#/corte-ao-vivo', after: CAV.after },
+  { re: /^#\/corte-ao-vivo\/([^/]+)$/, load: CAV.load, render: CAV.render, nav: '#/corte-ao-vivo', after: CAV.after },
   /* Apontar peças (18/11, migration 305) — peça a peça por lote, vai pro portal. erp/js/screens-apontar-pecas.js */
   { re: /^#\/apontar-pecas$/,          load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
   { re: /^#\/apontar-pecas\/([^/]+)$/, load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
