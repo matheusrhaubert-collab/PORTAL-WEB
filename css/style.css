@@ -6641,3 +6641,11 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 @keyframes poPcBlink { from { opacity: 1; } to { opacity: .25; } }
 .po-pc-chip { background: #e9f7ee !important; color: #178a3a !important; }
 .po-mo-folder-prog:has(.po-pc-prog), .cu-stages:has(.po-pc-prog) { flex-wrap: wrap; }
+
+/* Projeto do pedido em só leitura (19/11) */
+#po-proj-readonly-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 8px; padding: 8px 12px; border-radius: 8px; background: #e3effc; color: #1f5fa8; font-size: 13px; font-weight: 600; }
+#po-proj-readonly-bar button { margin: 0; padding: 4px 12px; }
+body.po-proj-readonly #po-proj-toolbar-save-btn,
+body.po-proj-readonly #po-proj-save-fav-btn,
+body.po-proj-readonly #po-proj-save-indicator,
+body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }

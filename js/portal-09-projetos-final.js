@@ -712,6 +712,13 @@ async function loadProjectFavoritesList() {
       });
       const delFrozen = card.querySelector('.po-proj-fav-delete'); // já pode ter saído (projeto de vendedor)
       if (delFrozen) delFrozen.remove();
+      // ABRIR SÓ LEITURA (19/11) — ver openFrozenProjectReadOnly no fim do arquivo
+      const roBtn = document.createElement('button');
+      roBtn.type = 'button';
+      roBtn.className = 'secondary po-proj-fav-readonly';
+      roBtn.textContent = I18n.t('fav.frozen_open_btn');
+      roBtn.addEventListener('click', () => openFrozenProjectReadOnly(proj, errorEl));
+      loadBtn.after(roBtn);
     }
     card.querySelectorAll('.po-myproj-card-image').forEach((img) => {
       img.addEventListener('click', () => openGalleryLightbox(img.src));
@@ -4501,4 +4508,111 @@ function cuApplySidebar() {
     const sum = document.querySelector('#cu-old-orders > summary');
     if (sum) sum.textContent = I18n.t('cu.all_orders');
   });
+})();
+
+// ==========================================================================
+// PROJETO DO PEDIDO EM SÓ LEITURA (2026-11-19)
+// ==========================================================================
+// Matt (pedido 00044 pra embarcar): "não consigo gerar plano técnico, ele não
+// deixa mais eu abrir, conferir uma medida, dar um clique no móvel. Deve
+// travar qualquer alteração de cor, tamanho, modelo — isso está certo — mas
+// deveria deixar abrir e analisar, emitir plano técnico, pegar uma cota".
+//
+// Abre o projeto congelado no editor SEM vínculo (restoreFavoriteProject com
+// bindAsFavorite=false — o mesmo caminho do Plano Técnico do pedido) e liga
+// projectReadOnly. Toda alteração de verdade passa por markProjectDirty (regra
+// do 06a), então lá é o ponto único da trava: com o modo ligado, a alteração
+// é desfeita na hora (volta pra foto de antes) e aparece o aviso. Seleção,
+// câmera, vistas, cotas, abrir portas, Plano Técnico e 3D ficam livres (não
+// chamam markProjectDirty). Salvar e "+ Módulo" ficam escondidos. Carregar
+// outro projeto, "Novo" ou Fechar no aviso desliga o modo.
+let projectReadOnly = null; // { orderId, label, name } quando ligado
+let projectReadOnlyAvisoEm = 0;
+
+async function openFrozenProjectReadOnly(proj, errorEl) {
+  try { await fetchProjectFullRow(proj); }
+  catch (err) { if (errorEl) { errorEl.textContent = err.message || String(err); errorEl.style.display = 'block'; } return; }
+  let label = '';
+  try {
+    const { data } = await supabaseClient.from('orders').select('factory_number').eq('id', proj.frozen_order_id).maybeSingle();
+    if (data && Number(data.factory_number) > 0) label = String(Number(data.factory_number)).padStart(5, '0');
+  } catch (e) { /* sem número: o aviso usa o nome */ }
+  await restoreFavoriteProject(proj, false);
+  projectReadOnly = { orderId: proj.frozen_order_id, label: label, name: proj.name };
+  projectDirty = false;
+  resetProjectUndo();
+  projectReadOnlyRefresh();
+}
+
+function projectReadOnlyRefresh() {
+  document.body.classList.toggle('po-proj-readonly', !!projectReadOnly);
+  let bar = document.getElementById('po-proj-readonly-bar');
+  if (!projectReadOnly) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    const ref = document.getElementById('po-proj-error');
+    if (!ref || !ref.parentNode) return;
+    bar = document.createElement('div');
+    bar.id = 'po-proj-readonly-bar';
+    ref.parentNode.insertBefore(bar, ref);
+  }
+  bar.innerHTML = '';
+  const txt = document.createElement('span');
+  txt.textContent = I18n.t('project.readonly_banner', { n: projectReadOnly.label || projectReadOnly.name || '' });
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'secondary';
+  close.textContent = I18n.t('project.readonly_close');
+  close.addEventListener('click', () => { projectReadOnly = null; projectReadOnlyRefresh(); if (typeof resetProject === 'function') resetProject(); });
+  bar.append(txt, close);
+}
+
+(function projectReadOnlyHooks() {
+  const origDirty = markProjectDirty;
+  markProjectDirty = function () {
+    if (!projectReadOnly) return origDirty.apply(this, arguments);
+    // a foto de ANTES da alteração ainda é a baseline (origDirty não rodou):
+    // empilha e desfaz = volta exatamente pro que estava
+    if (projectUndoBaseline) {
+      projectUndoStack.push(projectUndoBaseline);
+      try { undoProjectChange(); } catch (e) { console.warn('[só leitura] desfazer', e); }
+      projectRedoStack = [];
+      refreshProjectRedoButton();
+      refreshProjectUndoButton();
+    }
+    projectDirty = false;
+    if (typeof refreshProjectSaveIndicator === 'function') refreshProjectSaveIndicator();
+    const agora = Date.now();
+    if (agora - projectReadOnlyAvisoEm > 2500) {
+      projectReadOnlyAvisoEm = agora;
+      const el = document.getElementById('po-proj-error');
+      const msg = I18n.t('project.readonly_blocked');
+      if (el) {
+        el.textContent = msg;
+        el.style.display = 'block';
+        setTimeout(() => { if (el.textContent === msg) el.style.display = 'none'; }, 3500);
+      }
+    }
+  };
+  const origRestore = restoreFavoriteProject;
+  restoreFavoriteProject = function () {
+    if (projectReadOnly) { projectReadOnly = null; projectReadOnlyRefresh(); }
+    return origRestore.apply(this, arguments);
+  };
+  if (typeof resetProject === 'function') {
+    const origReset = resetProject;
+    resetProject = function () {
+      if (projectReadOnly) { projectReadOnly = null; projectReadOnlyRefresh(); }
+      return origReset.apply(this, arguments);
+    };
+  }
+  // Plano Técnico com o nome do projeto (sem vínculo, loadedProjectFavorite é
+  // null e o PDF sairia "sem título")
+  if (typeof generateProjectTechPlan === 'function') {
+    const origPlan = generateProjectTechPlan;
+    generateProjectTechPlan = function (opts) {
+      if (projectReadOnly && !(opts && opts.projectName)) opts = Object.assign({}, opts || {}, { projectName: projectReadOnly.name });
+      return origPlan.call(this, opts);
+    };
+  }
+  document.addEventListener('po:lang-changed', projectReadOnlyRefresh);
 })();
