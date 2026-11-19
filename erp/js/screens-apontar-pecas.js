@@ -8,8 +8,8 @@
  *
  * Peças = erp.batch_pieces do lote (as peças FÍSICAS congeladas no lote),
  * uma linha por UNIDADE (quantity 3 = 3 linhas). Apontar = insert em
- * erp.piece_scans (migration 304), com data e hora; clicar de novo numa
- * apontada pergunta e desfaz (delete). O gatilho da 304 avisa o portal
+ * erp.piece_scans (migration 305), com data e hora; clicar de novo numa
+ * apontada pergunta e desfaz (delete). O gatilho da 305 avisa o portal
  * (order_tracking_pulse) e a barra do cliente anda sozinha.
  *
  * Leitor de código de barras: o campo de cima aceita o código da etiqueta da
@@ -91,14 +91,19 @@ APONTAR.after = function (params, d) {
   busca.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Enter') return;
     ev.preventDefault();
-    const cod = String(busca.value || '').trim().toUpperCase();
-    if (!cod || !APONTAR._d) return;
-    const u = APONTAR._d.porCodigo[cod];
-    if (!u) { if (/^PC-?\d+$/.test(cod)) APONTAR._aviso('Código ' + cod + ' não é deste lote.', 'err', true); return; }
+    const lido = String(busca.value || '').trim();
+    if (!lido || !APONTAR._d) return;
+    const num = APONTAR._numCodigo(lido);
+    if (num == null) return;   // texto de busca: Enter não faz nada, o filtro já está aplicado
+    // leitor: limpa SEMPRE e o campo continua com o foco, pronto pro próximo bipe
     busca.value = '';
     APONTAR._filtra();
+    const cod = 'PC-' + String(num).padStart(6, '0');
+    const u = APONTAR._d.porCodigo[num];
+    if (!u) { APONTAR._aviso('✗ ' + cod + ' não é deste lote.', 'err', true); return; }
     if (APONTAR._d.scans[u.key]) { APONTAR._aviso('⚠ ' + cod + ' já estava apontada (' + APONTAR._hora(APONTAR._d.scans[u.key].scanned_at) + ').', 'warn', true); APONTAR._mostra(u.key); return; }
     APONTAR.aponta(u.key, cod);
+    APONTAR._mostra(u.key);
   });
   document.getElementById('ap-lista').addEventListener('click', function (ev) {
     const row = ev.target.closest('.ap-row');
@@ -110,7 +115,26 @@ APONTAR.after = function (params, d) {
     } else {
       APONTAR.aponta(k, null);
     }
+    APONTAR._foco();
   });
+  ['ap-pedido', 'ap-esconde'].forEach(function (id) { document.getElementById(id).addEventListener('change', APONTAR._foco); });
+  // LEITOR SEM CLICAR EM NADA (18/11, Matt: "quero rodar só no leitor de
+  // código de barras, então depois de lido deve ficar pronto pro próximo
+  // bipe sem ter que clicar em nada"): qualquer tecla digitada fora de um
+  // campo (o leitor "digita" o código + Enter) volta o foco pro campo do
+  // bipe antes do caractere cair — nada se perde se alguém clicou na tela.
+  if (!APONTAR._teclaLigada) {
+    APONTAR._teclaLigada = true;
+    document.addEventListener('keydown', function (ev) {
+      if (!/^#\/apontar-pecas/.test(location.hash)) return;
+      const b = document.getElementById('ap-busca');
+      if (!b || document.activeElement === b) return;
+      const t = document.activeElement;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && t.type !== 'checkbox') return;
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (ev.key.length === 1) b.focus();
+    }, true);
+  }
   if (d.batchId) APONTAR.carrega(d.batchId); else setTimeout(function () { sel.focus(); }, 50);
 };
 
@@ -135,9 +159,11 @@ APONTAR.carrega = async function (batchId) {
     if (!lote) { lista.innerHTML = '<div class="erp-muted">Lote não encontrado.</div>'; return; }
     const scans = await APONTAR._todas(function () { return erp.from('piece_scans').select('*').eq('batch_id', batchId); });
     let codigos = [];
-    if (lote._plans && lote._plans.length) {
-      const planoId = lote._plans[0].id;
-      codigos = await APONTAR._todas(function () { return erp.from('cut_plan_pieces').select('piece_code, batch_piece_id').eq('plan_id', planoId); });
+    const planos = (lote._plans || []).map(function (p) { return p.id; });
+    for (const planoId of planos) {
+      const c = await APONTAR._todas(function () { return erp.from('cut_plan_pieces').select('piece_code, batch_piece_id').eq('plan_id', planoId); });
+      c.forEach(function (x) { x._plano = planoId; });
+      codigos = codigos.concat(c);
     }
     const pedNome = {};
     (lote._orders || []).forEach(function (o) {
@@ -158,12 +184,15 @@ APONTAR.carrega = async function (batchId) {
       }
     });
     // código da etiqueta → unidade (as N etiquetas da mesma linha, em ordem de código)
+    // por plano: as N etiquetas da mesma linha viram as unidades 1..N (em ordem de código)
     const porPeca = {};
-    codigos.forEach(function (c) { if (c.batch_piece_id) (porPeca[c.batch_piece_id] = porPeca[c.batch_piece_id] || []).push(c.piece_code); });
-    Object.keys(porPeca).forEach(function (bp) {
-      porPeca[bp].sort().forEach(function (code, i) {
+    codigos.forEach(function (c) { if (c.batch_piece_id) { const k = c._plano + '§' + c.batch_piece_id; (porPeca[k] = porPeca[k] || []).push(c.piece_code); } });
+    Object.keys(porPeca).forEach(function (k) {
+      const bp = k.split('§')[1];
+      porPeca[k].sort().forEach(function (code, i) {
         const u = d.porKey[bp + '|' + (i + 1)];
-        if (u) { d.porCodigo[String(code).toUpperCase()] = u; u.code = code; }
+        const n = APONTAR._numCodigo(code);
+        if (u && n != null) { d.porCodigo[n] = u; if (!u.code || k.indexOf(planos[0] + '§') === 0) u.code = code; }
       });
     });
     scans.forEach(function (s) { d.scans[s.batch_piece_id + '|' + s.unit_idx] = s; });
@@ -176,9 +205,23 @@ APONTAR.carrega = async function (batchId) {
     setTimeout(function () { const b = document.getElementById('ap-busca'); if (b) b.focus(); }, 50);
   } catch (err) {
     console.error('[apontar]', err);
-    const msg = (err && /piece_scans/.test(String(err.message || ''))) ? 'Falta rodar a migration 304 (database/migration_304_apontamento_pecas.sql) no Supabase.' : LOTES.explainError ? LOTES.explainError(err) : (err.message || err);
+    const bruto = String((err && (err.message || err.details || err.hint)) || err) + (err && err.code ? ' [' + err.code + ']' : '');
+    const msg = (err && /piece_scans/.test(bruto))
+      ? 'O banco respondeu: ' + bruto + ' — se a migration 305 já rodou, rode no SQL Editor: notify pgrst, \'reload schema\'; e recarregue (F5).'
+      : (LOTES.explainError ? LOTES.explainError(err) : bruto);
     lista.innerHTML = UI.errorBox ? UI.errorBox('Não consegui carregar o lote', UI.esc(msg)) : '<div class="erp-muted">' + UI.esc(msg) + '</div>';
   }
+};
+
+/* "PC-000123", "pc000123", "PC'000123" (teclado ABNT troca o hífen), "000123"
+   → 123. Texto que não é código → null (vira busca). */
+APONTAR._numCodigo = function (txt) {
+  const t = String(txt || '').trim().toUpperCase();
+  const m = t.match(/^(?:PC\W?)?(\d{3,})$/);
+  return m ? parseInt(m[1], 10) : null;
+};
+APONTAR._foco = function () {
+  setTimeout(function () { const b = document.getElementById('ap-busca'); if (b && !document.querySelector('.ap-confirm')) b.focus(); }, 0);
 };
 
 APONTAR._hora = function (iso) {
@@ -346,4 +389,5 @@ APONTAR.desfaz = async function (k) {
   delete d.scans[k];
   APONTAR._atualizaLinha(k, false);
   APONTAR._aviso('Apontamento desfeito.', 'warn', false);
+  APONTAR._foco();
 };

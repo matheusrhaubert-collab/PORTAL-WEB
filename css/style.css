@@ -6620,7 +6620,7 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .cu-ordprojs .cu-ordproj { display: inline-block; vertical-align: top; margin: 0 10px 10px 0; max-width: 340px; }
 .cu-ordprojs .cu-ordproj .po-myproj-grid { display: block; }
 
-/* Peças produzidas (apontamento peça a peça, migration 304 — 18/11) */
+/* Peças produzidas (apontamento peça a peça, migration 305 — 18/11) */
 .po-pc-prog { width: 100%; margin: 8px 0 4px; }
 .po-pc-prog-txt { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin: 0 0 4px; color: #333; }
 .po-pc-prog-txt b { font-size: 15px; color: #178a3a; }

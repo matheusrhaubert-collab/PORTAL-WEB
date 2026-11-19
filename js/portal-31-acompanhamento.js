@@ -94,7 +94,7 @@ async function trkFetchTracking(orderIds) {
   return out;
 }
 
-// ---------- PEÇAS PRODUZIDAS (2026-11-18, migration 304) ----------
+// ---------- PEÇAS PRODUZIDAS (2026-11-18, migration 305) ----------
 // Matt: "essa informação deve aparecer lá no portal pro cliente ver o
 // andamento, pode colocar 1/100, 2/100 e a barra verde ficando completa".
 // Vem do apontamento peça a peça do ERP (Produção › Apontar peças,

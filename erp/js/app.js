@@ -297,7 +297,7 @@ APP.routes = [
   { re: /^#\/parametros-corte$/, load: LOTES_UI.paramsScreenLoad,          render: LOTES_UI.paramsScreen,         nav: '#/planos' },
   { re: /^#\/producao$/,                                                   render: ScreensProducao.ops,           nav: '#/producao' },
   { re: /^#\/producao\/(.+)$/,                                             render: ScreensProducao.opDetail,      nav: '#/producao' },
-  /* Apontar peças (18/11, migration 304) — peça a peça por lote, vai pro portal. erp/js/screens-apontar-pecas.js */
+  /* Apontar peças (18/11, migration 305) — peça a peça por lote, vai pro portal. erp/js/screens-apontar-pecas.js */
   { re: /^#\/apontar-pecas$/,          load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
   { re: /^#\/apontar-pecas\/([^/]+)$/, load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
   { re: /^#\/apontamento$/,                                                render: ScreensProducao.apontamento,   nav: '#/apontamento' },
