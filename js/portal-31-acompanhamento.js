@@ -231,7 +231,10 @@ async function trkDecorateOrderList(orders, container) {
 // pedido muda de etapa e o portal escuta essa tabela pelo Realtime — a faixa
 // redesenha na hora. A releitura a cada TRK_FOLDER_REFRESH_MS fica de
 // reserva (conexão do aviso caiu, ou migration 286 ainda não rodada).
-const TRK_FOLDER_STAGES = ['pay', 'released', 'prod', 'packing', 'ready', 'collected'];
+// 'final' (18/11, Matt: "antes do ready to pickup tem liberação financeira
+// final") = orders.pickup_released_at (pago integral, migration 247). Pronto
+// pra coleta passa a exigir as duas coisas: tudo embalado E a final liberada.
+const TRK_FOLDER_STAGES = ['pay', 'released', 'prod', 'packing', 'final', 'ready', 'collected'];
 const TRK_FOLDER_REFRESH_MS = 60000;
 let trkFolderTimer = null;
 let trkFolderSeq = 0;
@@ -254,12 +257,15 @@ function trkFolderReached(order, t) {
     released: st.done.released,
     prod: st.done.batch,
     packing: st.done.packing,
-    ready: st.done.ready,
+    final: !!order.pickup_released_at,
+    ready: st.done.ready && !!order.pickup_released_at,
     collected: coletado
   };
   let viu = false;
   for (let i = TRK_FOLDER_STAGES.length - 1; i >= 0; i--) {
-    if (r[TRK_FOLDER_STAGES[i]]) viu = true;
+    // a final pode ser paga a qualquer momento (até antes da embalagem):
+    // ela não prova que as etapas anteriores aconteceram
+    if (r[TRK_FOLDER_STAGES[i]] && TRK_FOLDER_STAGES[i] !== 'final') viu = true;
     else if (viu) r[TRK_FOLDER_STAGES[i]] = true;
   }
   // DATA de cada etapa (11/11, Matt: "coloca a data que cada processo foi
@@ -267,13 +273,31 @@ function trkFolderReached(order, t) {
   // pode não ter data registrada — fica sem.
   r.at = {
     pay: st.at.sent, released: st.at.released, prod: st.at.batch,
-    packing: st.at.packing, ready: st.at.ready,
+    packing: st.at.packing, final: order.pickup_released_at || null,
+    ready: (st.done.ready && order.pickup_released_at)
+      ? (st.at.ready && st.at.ready > order.pickup_released_at ? st.at.ready : order.pickup_released_at) : null,
     collected: coletado ? (order.delivered_at || null) : null
   };
   return r;
 }
 
-function trkFolderStagesHtml(orders, map) {
+// EMBALAGEM COM AS PEÇAS (18/11, Matt: "troca essa barra de partes de
+// baixo e coloca ela no packing, aí dá pra ver certinho ele avançando
+// conforme fica empacotado"). `pecasRows` = linhas de
+// portal_order_pieces_progress dos pedidos da pasta: quando tem peça em lote,
+// o card EMBALAGEM enche pelas peças apontadas (9/104) em vez de pedidos
+// (0/1), e a barra solta de baixo sai.
+function trkFolderPecas(rows) {
+  let total = 0, feitas = 0, last = null;
+  (rows || []).forEach((r) => {
+    if (!r) return;
+    total += Number(r.total) || 0; feitas += Number(r.feitas) || 0;
+    if (r.last_at && (!last || r.last_at > last)) last = r.last_at;
+  });
+  return total ? { total, feitas: Math.min(feitas, total), last } : null;
+}
+function trkFolderStagesHtml(orders, map, pecasRows) {
+  const pecas = trkFolderPecas(pecasRows);
   const total = orders.length;
   const n = {};
   TRK_FOLDER_STAGES.forEach((k) => { n[k] = 0; });
@@ -294,12 +318,20 @@ function trkFolderStagesHtml(orders, map) {
   let atual = -1;
   TRK_FOLDER_STAGES.forEach((k, i) => { if (total && n[k] === total && atual === i - 1) atual = i; });
   return '<div class="po-mo-stages">' + TRK_FOLDER_STAGES.map((k, i) => {
-    const pct = total ? Math.round(100 * n[k] / total) : 0;
+    let pct = total ? Math.round(100 * n[k] / total) : 0;
+    let txt = n[k] + '/' + total + (quando[k] ? ' · ' + trkEsc(trkDate(quando[k])) : '');
+    if (k === 'packing' && pecas) {
+      // pedido já pronto (todos os volumes embalados) conta como 100%
+      const pp = (n.ready === total && total) ? 100 : Math.round(100 * pecas.feitas / pecas.total);
+      pct = pp;
+      txt = pecas.feitas + '/' + pecas.total + ' · ' + pct + '%'
+        + (pecas.last ? ' · ' + trkEsc(trkDate(pecas.last)) : (quando[k] ? ' · ' + trkEsc(trkDate(quando[k])) : ''));
+    }
     const cls = (pct === 100 ? ' is-done' : (pct > 0 ? ' is-part' : '')) + (i === atual ? ' is-now' : '');
     return '<div class="po-mo-stage' + cls + '">'
       + '<div class="po-mo-stage-fill" style="width:' + pct + '%"></div>'
       + '<div class="po-mo-stage-txt"><strong>' + trkEsc(trkT('fb_' + k)) + '</strong>'
-      + '<span>' + n[k] + '/' + total + (quando[k] ? ' · ' + trkEsc(trkDate(quando[k])) : '') + '</span></div></div>';
+      + '<span>' + txt + '</span></div></div>';
   }).join('') + '</div>';
 }
 
@@ -332,8 +364,10 @@ async function trkFolderStages(orders, box) {
     }
     const [map, pc] = await Promise.all([ve ? trkFetchTracking(ids) : Promise.resolve({}), trkFetchPieces(ids)]);
     if (seq !== trkFolderSeq || !document.body.contains(box)) return;
-    const pecas = trkPiecesHtml(ids.map((id) => pc[id]));
-    const html = (ve ? trkFolderStagesHtml(lista, map) : '') + pecas;
+    const linhasPecas = ids.map((id) => pc[id]);
+    // com a faixa de etapas, as peças vão dentro do card Embalagem; quem não
+    // vê a faixa (acompanhamento só admin) continua com a barra solta
+    const html = ve ? trkFolderStagesHtml(lista, map, linhasPecas) : trkPiecesHtml(linhasPecas);
     if (html !== ultimo) { ultimo = html; box.innerHTML = html; }
   };
   await desenha(false);
