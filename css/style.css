@@ -6627,5 +6627,8 @@ body.po-ai-busy-on > *:not(#po-ai-busy) { pointer-events: none; user-select: non
 .po-pc-bar { height: 12px; border-radius: 6px; background: #e7e3dc; overflow: hidden; }
 .po-pc-bar > div { height: 100%; background: #22a447; border-radius: 6px; transition: width .4s; }
 .po-pc-prog.is-done .po-pc-bar > div { background: #178a3a; }
+.po-pc-alert { width: 100%; margin: 6px 0; padding: 8px 12px; border-radius: 8px; background: #178a3a; color: #fff; font-weight: 700; font-size: 14px; animation: poPcBlink .6s ease-in-out 10 alternate; }
+.po-pc-blink { animation: poPcBlink .6s ease-in-out 10 alternate; }
+@keyframes poPcBlink { from { opacity: 1; } to { opacity: .25; } }
 .po-pc-chip { background: #e9f7ee !important; color: #178a3a !important; }
 .po-mo-folder-prog:has(.po-pc-prog), .cu-stages:has(.po-pc-prog) { flex-wrap: wrap; }

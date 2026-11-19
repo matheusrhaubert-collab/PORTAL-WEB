@@ -113,6 +113,13 @@ async function trkFetchPieces(orderIds) {
   } catch (e) { console.warn('[acompanhamento]', e); }
   return out;
 }
+// ALERTA 100% (18/11, Matt: "quando ficar 100% quero que um alerta pisque
+// lá no portal do cliente falando que está 100% pronto (apontado) no
+// pedido"). Pisca algumas vezes ao abrir a tela e fica fixo (CSS
+// .po-pc-alert) — piscar pra sempre cansa.
+function trkPecasProntasHtml() {
+  return '<div class="po-pc-alert">✓ ' + trkEsc(trkT('pieces_all_done')) + '</div>';
+}
 // soma de vários pedidos (pasta) ou 1 pedido; '' quando nada entrou em lote
 function trkPiecesHtml(rows) {
   let total = 0, feitas = 0, last = null;
@@ -124,7 +131,7 @@ function trkPiecesHtml(rows) {
   if (!total) return '';
   feitas = Math.min(feitas, total);
   const pct = Math.round(100 * feitas / total);
-  return '<div class="po-pc-prog' + (pct === 100 ? ' is-done' : '') + '">'
+  return (pct === 100 ? trkPecasProntasHtml() : '') + '<div class="po-pc-prog' + (pct === 100 ? ' is-done' : '') + '">'
     + '<div class="po-pc-prog-txt"><strong>' + trkEsc(trkT('pieces_label')) + '</strong>'
     + '<span><b>' + feitas + '/' + total + '</b> · ' + pct + '%' + (last ? ' · ' + trkEsc(trkT('pieces_last', { date: trkDate(last) })) : '') + '</span></div>'
     + '<div class="po-pc-bar"><div style="width:' + pct + '%"></div></div></div>';
@@ -184,8 +191,9 @@ async function trkDecorateOrderList(orders, container) {
     if (!r || !(Number(r.total) > 0) || !title || title.querySelector('.po-pc-chip')) return;
     const f = Math.min(Number(r.feitas) || 0, Number(r.total));
     const span = document.createElement('span');
-    span.className = 'po-trk-chip po-pc-chip' + (f === Number(r.total) ? ' is-done' : '');
-    span.textContent = trkT('pieces_chip', { n: f, t: r.total });
+    const pronto = f === Number(r.total);
+    span.className = 'po-trk-chip po-pc-chip' + (pronto ? ' is-done po-pc-blink' : '');
+    span.textContent = pronto ? '✓ ' + trkT('pieces_chip_done') : trkT('pieces_chip', { n: f, t: r.total });
     title.appendChild(span);
   });
   if (!ve) return;
@@ -317,7 +325,8 @@ function trkFolderStagesHtml(orders, map, pecasRows) {
   // etapa atual da pasta = a última em que TODOS os pedidos já chegaram
   let atual = -1;
   TRK_FOLDER_STAGES.forEach((k, i) => { if (total && n[k] === total && atual === i - 1) atual = i; });
-  return '<div class="po-mo-stages">' + TRK_FOLDER_STAGES.map((k, i) => {
+  const alerta = (pecas && pecas.feitas === pecas.total && n.collected < total) ? trkPecasProntasHtml() : '';
+  return alerta + '<div class="po-mo-stages">' + TRK_FOLDER_STAGES.map((k, i) => {
     let pct = total ? Math.round(100 * n[k] / total) : 0;
     let txt = n[k] + '/' + total + (quando[k] ? ' · ' + trkEsc(trkDate(quando[k])) : '');
     if (k === 'packing' && pecas) {
