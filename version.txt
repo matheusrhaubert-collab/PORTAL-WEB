@@ -1,3 +1,3 @@
-﻿data: 2026-11-18 22:17:46
-cache: 202611182217
-mensagem: faixa de etapas: pecas dentro do Packing e etapa Liberacao financeira final
+﻿data: 2026-11-18 22:33:25
+cache: 202611182233
+mensagem: apontar pecas: alarme de outro lote, som de repetida, desfazer so com clique

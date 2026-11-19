@@ -1,5 +1,5 @@
 @echo off
 cd /d "%~dp0"
-echo Subindo: bip alto no apontamento de pecas...
+echo Subindo: sons do apontamento (ok, repetida, outro lote) e desfazer so no mouse...
 git add "subir-bip-apontamento.bat"
-call subir.bat "apontar pecas: bip alto ao apontar"
+call subir.bat "apontar pecas: alarme de outro lote, som de repetida, desfazer so com clique"

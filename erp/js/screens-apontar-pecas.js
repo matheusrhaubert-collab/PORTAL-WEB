@@ -76,6 +76,14 @@ APONTAR._css = function () {
     '.ap-row.flash{animation:apflash .9s}' +
     '@keyframes apflash{0%{background:#b8ecc6}100%{background:#f1faf3}}' +
     '.ap-row.hide{display:none}' +
+    '.ap-msg.alarm{color:#fff;background:#b42318;padding:10px 12px;border-radius:8px;font-size:18px;animation:apalarm .35s 6 alternate}' +
+    '@keyframes apalarm{0%{background:#b42318}100%{background:#f04438}}' +
+    '.ap-confirm{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999}' +
+    '.ap-confirm-box{background:#fff;border-radius:12px;padding:20px 22px;max-width:440px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)}' +
+    '.ap-confirm-box p{margin:0 0 6px;font-size:16px;font-weight:600}.ap-confirm-box small{color:#777}' +
+    '.ap-confirm-bt{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}' +
+    '.ap-confirm-bt button{font-size:15px;padding:9px 18px;border-radius:8px;border:1px solid #ccc;background:#fff;cursor:pointer}' +
+    '.ap-confirm-bt .ap-ok{background:#b42318;border-color:#b42318;color:#fff}' +
     '</style>';
 };
 
@@ -100,8 +108,12 @@ APONTAR.after = function (params, d) {
     APONTAR._filtra();
     const cod = 'PC-' + String(num).padStart(6, '0');
     const u = APONTAR._d.porCodigo[num];
-    if (!u) { APONTAR._aviso('✗ ' + cod + ' não é deste lote.', 'err', true); return; }
-    if (APONTAR._d.scans[u.key]) { APONTAR._aviso('⚠ ' + cod + ' já estava apontada (' + APONTAR._hora(APONTAR._d.scans[u.key].scanned_at) + ').', 'warn', true); APONTAR._mostra(u.key); return; }
+    // OUTRO LOTE (18/11, Matt: "se apontar peça de outro lote quero que dê um
+    // alarme"): sirene + faixa vermelha piscando; diz de qual lote é.
+    if (!u) { APONTAR._outroLote(cod); return; }
+    // REPETIDA (18/11, Matt: "se apontar 2x a mesma peça não faz nada, só dá
+    // um som diferente mas mantém a peça apontada"). Desapontar só no mouse.
+    if (APONTAR._d.scans[u.key]) { APONTAR._aviso('↺ ' + cod + ' já estava apontada (' + APONTAR._hora(APONTAR._d.scans[u.key].scanned_at) + ') — continua apontada.', 'warn', true); APONTAR._mostra(u.key); return; }
     APONTAR.aponta(u.key, cod);
     APONTAR._mostra(u.key);
   });
@@ -111,7 +123,10 @@ APONTAR.after = function (params, d) {
     const k = row.getAttribute('data-k');
     if (APONTAR._d.scans[k]) {
       const u = APONTAR._d.porKey[k];
-      if (confirm('Desfazer o apontamento de "' + (u.p.reference || 'peça') + '" (' + APONTAR._hora(APONTAR._d.scans[k].scanned_at) + ')?')) APONTAR.desfaz(k);
+      // DESAPONTAR SÓ COM MOUSE (18/11): janela própria no lugar do
+      // confirm() — o Enter do leitor confirmava o confirm() sozinho.
+      APONTAR._confirmaDesfazer(k, u);
+      return;
     } else {
       APONTAR.aponta(k, null);
     }
@@ -341,30 +356,87 @@ APONTAR._mostra = function (k) {
 APONTAR._aviso = function (txt, tipo, som) {
   const el = document.getElementById('ap-msg');
   if (el) { el.className = 'ap-msg ' + (tipo || ''); el.textContent = txt; }
-  if (som) APONTAR._bip(tipo === 'ok' ? 880 : 220);
+  if (som) APONTAR._som(tipo);
 };
-// BIP ALTO (18/11, Matt: "ao apontar uma peça dê um barulho de ok bem alto
-// pra saber que deu ok"). Era seno a 0.08 por 120 ms — não se ouvia na
-// fábrica. Agora onda quadrada (corta o barulho de máquina), volume no
-// máximo e mais longo; erro/aviso continua grave (220 Hz) e dura mais.
-APONTAR._bip = function (hz) {
+// SONS (18/11, Matt): cada situação com um som que dá pra reconhecer sem
+// olhar a tela, todos no volume máximo (onda quadrada, corta barulho de
+// máquina).
+//   ok     1 bip agudo curto
+//   warn   2 bips médios (peça repetida — continua apontada)
+//   err    1 bip grave longo (não gravou)
+//   alarm  sirene grave/agudo ~1,6 s (peça de OUTRO lote)
+APONTAR._tom = function (hz, ini, dur) {
+  const ac = APONTAR._ac;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'square'; o.frequency.value = hz;
+  const t = ac.currentTime + ini;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(1, t + 0.005);
+  g.gain.setValueAtTime(1, t + dur - 0.02);
+  g.gain.linearRampToValueAtTime(0, t + dur); // sem estalo
+  o.connect(g); g.connect(ac.destination);
+  o.start(t); o.stop(t + dur);
+};
+APONTAR._som = function (tipo) {
   try {
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) return;
-    const ac = APONTAR._ac = APONTAR._ac || new C();
-    if (ac.state === 'suspended' && ac.resume) ac.resume();
-    const ok = hz >= 440;
-    const dur = ok ? 0.25 : 0.5;
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.type = 'square';
-    o.frequency.value = ok ? 1000 : hz;
-    const t = ac.currentTime;
-    g.gain.setValueAtTime(1, t);
-    g.gain.setValueAtTime(1, t + dur - 0.02);
-    g.gain.linearRampToValueAtTime(0, t + dur); // sem estalo no fim
-    o.connect(g); g.connect(ac.destination);
-    o.start(t); o.stop(t + dur);
+    APONTAR._ac = APONTAR._ac || new C();
+    if (APONTAR._ac.state === 'suspended' && APONTAR._ac.resume) APONTAR._ac.resume();
+    const tom = APONTAR._tom;
+    if (tipo === 'ok') tom(1000, 0, 0.25);
+    else if (tipo === 'warn') { tom(620, 0, 0.12); tom(620, 0.2, 0.12); }
+    else if (tipo === 'alarm') { for (let i = 0; i < 8; i++) tom(i % 2 ? 1400 : 700, i * 0.2, 0.2); }
+    else tom(220, 0, 0.5);
   } catch (e) { /* sem som */ }
+};
+APONTAR._bip = function (hz) { APONTAR._som(hz >= 440 ? 'ok' : 'err'); }; // compatibilidade
+
+APONTAR._outroLote = async function (cod) {
+  APONTAR._aviso('⛔ ' + cod + ' NÃO É DESTE LOTE — separe a peça.', 'alarm', true);
+  try { // de qual lote é (só pra informar; se falhar, fica o aviso acima)
+    const erp = LOTES.erp();
+    const { data: pc } = await erp.from('cut_plan_pieces').select('plan_id').eq('piece_code', cod).limit(1).maybeSingle();
+    if (!pc || !pc.plan_id) return;
+    const { data: pl } = await erp.from('cut_plans').select('batch_id').eq('id', pc.plan_id).maybeSingle();
+    if (!pl || !pl.batch_id) return;
+    const { data: b } = await erp.from('batches').select('code').eq('id', pl.batch_id).maybeSingle();
+    const el = document.getElementById('ap-msg');
+    if (b && b.code && el && el.textContent.indexOf(cod) !== -1) el.textContent = '⛔ ' + cod + ' NÃO É DESTE LOTE — é do ' + b.code + '. Separe a peça.';
+  } catch (e) { /* ok */ }
+};
+
+// Janela de desfazer: só fecha/confirma com CLIQUE. Enquanto aberta, engole
+// as teclas (o leitor manda código + Enter) e avisa com o som de erro — o
+// bipe feito com ela aberta não conta; Esc cancela.
+APONTAR._confirmaDesfazer = function (k, u) {
+  if (document.querySelector('.ap-confirm')) return;
+  const div = document.createElement('div');
+  div.className = 'ap-confirm';
+  div.innerHTML = '<div class="ap-confirm-box"><p>Desfazer o apontamento de "' + UI.esc(u.p.reference || 'peça') + '"?</p>'
+    + '<small>' + UI.esc((u.code ? u.code + ' · ' : '') + 'apontada ' + APONTAR._hora(APONTAR._d.scans[k].scanned_at)) + '</small>'
+    + '<div class="ap-confirm-bt"><button type="button" class="ap-cancel">Cancelar</button><button type="button" class="ap-ok">OK, desfazer</button></div></div>';
+  let fechou = false;
+  const tecla = function (ev) {
+    ev.preventDefault(); ev.stopPropagation();
+    if (ev.key === 'Escape') { fecha(); return; }
+    if (ev.key === 'Enter') APONTAR._aviso('Feche a janela de desfazer antes de bipar (bipe não contou).', 'err', true);
+  };
+  const fecha = function () {
+    if (fechou) return; fechou = true;
+    document.removeEventListener('keydown', tecla, true);
+    div.remove();
+    APONTAR._foco();
+  };
+  // só clique de verdade (mouse/toque) — ev.detail 0 = "clique" gerado por teclado
+  div.addEventListener('click', function (ev) {
+    if (ev.detail === 0) return;
+    if (ev.target.closest('.ap-ok')) { fecha(); APONTAR.desfaz(k); }
+    else if (ev.target.closest('.ap-cancel') || ev.target === div) fecha();
+  });
+  document.addEventListener('keydown', tecla, true);
+  document.body.appendChild(div);
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 };
 
 APONTAR.aponta = async function (k, codigo) {
