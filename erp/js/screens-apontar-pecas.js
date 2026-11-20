@@ -37,6 +37,7 @@ APONTAR.render = function (params, d) {
     'Escolha o lote e vá apontando peça por peça (clique na linha ou bipe a etiqueta). Cada apontamento grava data e hora e aparece no portal do cliente como andamento do pedido.') +
     '<div class="ap-top">' +
       '<label class="ap-lbl">Lote<select id="ap-lote" class="erp-input">' + ops + '</select></label>' +
+      '<label class="ap-lbl">Juntar com lote<select id="ap-junta" class="erp-input"' + (sel ? '' : ' disabled') + '>' + APONTAR._juntaOps(d.batches, sel) + '</select></label>' +
       '<label class="ap-lbl ap-grow">Bipar etiqueta ou buscar<input id="ap-busca" class="erp-input" type="search" autocomplete="off" placeholder="PC-000123 + Enter, ou nome da peça / módulo / pedido"></label>' +
       '<label class="ap-lbl">Pedido<select id="ap-pedido" class="erp-input"><option value="">Todos</option></select></label>' +
       '<label class="ap-chk"><input type="checkbox" id="ap-esconde"> Esconder apontadas</label>' +
@@ -45,6 +46,30 @@ APONTAR.render = function (params, d) {
     '<div id="ap-msg" class="ap-msg"></div>' +
     '<div id="ap-lista" class="ap-lista"><div class="erp-muted">Escolha um lote.</div></div>' +
     APONTAR._css();
+};
+
+/* JUNTAR LOTES (20/11, Matt: lote complemento com as gavetas/etiquetas certas;
+   "deixar o apontamento pegar as peças novas no lote antigo pra unificar").
+   O lote principal guarda UM lote junto (localStorage legno_ap_junta =
+   { principal: complemento }). As peças do complemento entram na mesma lista
+   e cada apontamento é gravado no lote DONO da peça (batch_id certo), então
+   o portal e os relatórios seguem corretos. */
+APONTAR._juntaMapa = function () {
+  try { return JSON.parse(localStorage.getItem('legno_ap_junta') || '{}') || {}; } catch (e) { return {}; }
+};
+APONTAR._juntaDe = function (id) { return id ? (APONTAR._juntaMapa()[id] || '') : ''; };
+APONTAR._juntaGrava = function (id, extra) {
+  const m = APONTAR._juntaMapa();
+  if (extra) m[id] = extra; else delete m[id];
+  try { localStorage.setItem('legno_ap_junta', JSON.stringify(m)); } catch (e) { /* ok */ }
+};
+APONTAR._juntaOps = function (batches, sel) {
+  const atual = APONTAR._juntaDe(sel);
+  return '<option value="">— nenhum —</option>' + batches.filter(function (b) { return b.id !== sel; }).map(function (b) {
+    const n = (b.batch_pieces || []).reduce(function (s, x) { return s + (Number(x.quantity) || 0); }, 0);
+    return '<option value="' + UI.esc(b.id) + '"' + (b.id === atual ? ' selected' : '') + '>' + UI.esc(b.code) +
+      (b.name ? ' · ' + UI.esc(b.name) : '') + ' — ' + n + ' peças</option>';
+  }).join('');
 };
 
 APONTAR._css = function () {
@@ -93,6 +118,11 @@ APONTAR.after = function (params, d) {
   sel.addEventListener('change', function () {
     if (sel.value) location.hash = '#/apontar-pecas/' + sel.value;
   });
+  document.getElementById('ap-junta').addEventListener('change', function () {
+    if (!d.batchId) return;
+    APONTAR._juntaGrava(d.batchId, this.value);
+    APONTAR.carrega(d.batchId);
+  });
   document.getElementById('ap-pedido').addEventListener('change', APONTAR._filtra);
   document.getElementById('ap-esconde').addEventListener('change', APONTAR._filtra);
   busca.addEventListener('input', APONTAR._filtra);
@@ -111,6 +141,14 @@ APONTAR.after = function (params, d) {
     // OUTRO LOTE (18/11, Matt: "se apontar peça de outro lote quero que dê um
     // alarme"): sirene + faixa vermelha piscando; diz de qual lote é.
     if (!u) { APONTAR._outroLote(cod); return; }
+    // peça do lote original que o complemento substitui (ver _marcaSubstituidas)
+    if (u.fora && !APONTAR._d.scans[u.key]) {
+      const outro = (APONTAR._d.lotes || []).filter(function (l) { return l.id !== APONTAR._d.lote.id; }).map(function (l) { return l.code; }).join(', ');
+      APONTAR._aviso(u.fora === 'gaveta'
+        ? '⛔ ' + cod + ' · ' + (u.p.reference || 'peça') + ' — GAVETA ERRADA do lote original. NÃO APONTA, separe a peça. A certa é do ' + outro + '.'
+        : '⛔ ' + cod + ' · ' + (u.p.reference || 'peça') + ' — essa peça passou pro ' + outro + '. Use a peça com a etiqueta nova.', 'alarm', true);
+      return;
+    }
     // REPETIDA (18/11, Matt: "se apontar 2x a mesma peça não faz nada, só dá
     // um som diferente mas mantém a peça apontada"). Desapontar só no mouse.
     if (APONTAR._d.scans[u.key]) { APONTAR._aviso('↺ ' + cod + ' já estava apontada (' + APONTAR._hora(APONTAR._d.scans[u.key].scanned_at) + ') — continua apontada.', 'warn', true); APONTAR._mostra(u.key); return; }
@@ -165,6 +203,51 @@ APONTAR._todas = async function (mk) {
   return out;
 };
 
+/* PEÇAS DO LOTE ORIGINAL QUE O COMPLEMENTO SUBSTITUI (20/11, Matt: "coloca um
+   erro ao apontar as gavetas erradas cortadas do lote original. E não quero
+   ver as peças que não foram cortadas do primeiro lote").
+   Só com lote junto. Cada unidade do ORIGINAL recebe `u.fora`:
+   - 'complemento': o complemento tem a MESMA peça (pedido + nº do módulo +
+     nome + medidas + cor) — ela vai ser cortada lá, com a etiqueta nova. As
+     unidades do complemento "cancelam" as do original uma a uma, começando
+     pelas ainda não apontadas.
+   - 'gaveta': peça de gaveta do original num módulo em que o complemento traz
+     gaveta (a certa), sem peça igual — é a gaveta errada.
+   Não apontada + `fora` = some da lista e da contagem; bipar dá erro e não
+   grava. Já apontada continua na lista (dá pra desfazer no mouse). */
+APONTAR._RE_GAVETA = /drawer|gaveta|caixote/i;
+APONTAR._chavePeca = function (p) {
+  const r = function (v) { return Math.round(Number(v) || 0); };
+  const ref = String(p.reference || p.description || '').replace(/\s+(INVERTIDA|INCLINADA)\b/g, '').trim().toLowerCase();
+  return [p.order_id || '', p.module_number || '', ref, r(p.comprimento_mm), r(p.largura_mm), Number(p.espessura_mm) || 0, p.color_name || ''].join('§');
+};
+APONTAR._marcaSubstituidas = function (d, principalId) {
+  const comp = {}, modGaveta = {};
+  d.unidades.forEach(function (u) {
+    if (u.p._batchId === principalId) return;
+    const k = APONTAR._chavePeca(u.p);
+    comp[k] = (comp[k] || 0) + 1;
+    if (APONTAR._RE_GAVETA.test(String(u.p.reference || ''))) modGaveta[(u.p.order_id || '') + '§' + (u.p.module_number || '')] = true;
+  });
+  const orig = d.unidades.filter(function (u) { return u.p._batchId === principalId; });
+  // não apontadas primeiro: é delas que o complemento "toma o lugar"
+  orig.slice().sort(function (a, b) { return (d.scans[a.key] ? 1 : 0) - (d.scans[b.key] ? 1 : 0); }).forEach(function (u) {
+    const k = APONTAR._chavePeca(u.p);
+    if (comp[k] > 0) { comp[k]--; u.fora = 'complemento'; return; }
+    if (APONTAR._RE_GAVETA.test(String(u.p.reference || '')) && modGaveta[(u.p.order_id || '') + '§' + (u.p.module_number || '')]) u.fora = 'gaveta';
+  });
+  d.ocultas = 0;
+  d.unidades = d.unidades.filter(function (u) {
+    if (u.fora && !d.scans[u.key]) { d.ocultas++; return false; }
+    return true;
+  });
+};
+
+APONTAR._planoPrincipal = function (lotes, batchId) {
+  const lt = lotes.filter(function (l) { return l.id === batchId; })[0];
+  return lt && lt._plans && lt._plans[0] ? lt._plans[0].id : null;
+};
+
 APONTAR.carrega = async function (batchId) {
   const lista = document.getElementById('ap-lista');
   lista.innerHTML = '<div class="erp-muted">Carregando peças do lote…</div>';
@@ -172,25 +255,38 @@ APONTAR.carrega = async function (batchId) {
     const erp = LOTES.erp();
     const lote = await LOTES.batch(batchId);
     if (!lote) { lista.innerHTML = '<div class="erp-muted">Lote não encontrado.</div>'; return; }
-    const scans = await APONTAR._todas(function () { return erp.from('piece_scans').select('*').eq('batch_id', batchId); });
-    let codigos = [];
-    const planos = (lote._plans || []).map(function (p) { return p.id; });
-    for (const planoId of planos) {
-      const c = await APONTAR._todas(function () { return erp.from('cut_plan_pieces').select('piece_code, batch_piece_id').eq('plan_id', planoId); });
-      c.forEach(function (x) { x._plano = planoId; });
-      codigos = codigos.concat(c);
+    // lote principal + lote junto (complemento), se tiver
+    const lotes = [lote];
+    const extraId = APONTAR._juntaDe(batchId);
+    if (extraId && extraId !== batchId) {
+      const ex = await LOTES.batch(extraId);
+      if (ex) lotes.push(ex); else APONTAR._juntaGrava(batchId, '');
     }
+    let scans = [], codigos = [], todasPecas = [];
+    const planos = [];
     const pedNome = {};
-    (lote._orders || []).forEach(function (o) {
-      const n = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') + ' · ' : '';
-      pedNome[o.id] = n + (o.po_name || o.client_name || 'Pedido');
-    });
-    const pecas = (lote._pieces || []).slice().sort(function (a, b) {
+    for (const lt of lotes) {
+      const sc = await APONTAR._todas(function () { return erp.from('piece_scans').select('*').eq('batch_id', lt.id); });
+      scans = scans.concat(sc);
+      const pl = (lt._plans || []).map(function (p) { return p.id; });
+      planos.push.apply(planos, pl);
+      for (const planoId of pl) {
+        const c = await APONTAR._todas(function () { return erp.from('cut_plan_pieces').select('piece_code, batch_piece_id').eq('plan_id', planoId); });
+        c.forEach(function (x) { x._plano = planoId; });
+        codigos = codigos.concat(c);
+      }
+      (lt._orders || []).forEach(function (o) {
+        const n = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') + ' · ' : '';
+        pedNome[o.id] = n + (o.po_name || o.client_name || 'Pedido');
+      });
+      (lt._pieces || []).forEach(function (p) { p._batchId = lt.id; p._batchCode = lt.code; todasPecas.push(p); });
+    }
+    const pecas = todasPecas.slice().sort(function (a, b) {
       const pa = pedNome[a.order_id] || a.po_name || '', pb = pedNome[b.order_id] || b.po_name || '';
       return pa.localeCompare(pb) || String(a.module_number || '').localeCompare(String(b.module_number || ''), undefined, { numeric: true }) ||
         (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0);
     });
-    const d = { lote: lote, unidades: [], porKey: {}, porCodigo: {}, scans: {}, pedNome: pedNome };
+    const d = { lote: lote, lotes: lotes, unidades: [], porKey: {}, porCodigo: {}, scans: {}, pedNome: pedNome };
     pecas.forEach(function (p) {
       const q = Math.max(1, Number(p.quantity) || 1);
       for (let i = 1; i <= q; i++) {
@@ -207,10 +303,11 @@ APONTAR.carrega = async function (batchId) {
       porPeca[k].sort().forEach(function (code, i) {
         const u = d.porKey[bp + '|' + (i + 1)];
         const n = APONTAR._numCodigo(code);
-        if (u && n != null) { d.porCodigo[n] = u; if (!u.code || k.indexOf(planos[0] + '§') === 0) u.code = code; }
+        if (u && n != null) { d.porCodigo[n] = u; if (!u.code || APONTAR._planoPrincipal(lotes, u.p._batchId) === k.split('§')[0]) u.code = code; }
       });
     });
     scans.forEach(function (s) { d.scans[s.batch_piece_id + '|' + s.unit_idx] = s; });
+    if (lotes.length > 1) APONTAR._marcaSubstituidas(d, lote.id);
     APONTAR._d = d;
     // filtro de pedido
     const ps = document.getElementById('ap-pedido');
@@ -256,7 +353,8 @@ APONTAR._rowHtml = function (u) {
     UI.esc(((p.reference || '') + ' ' + (p.module_name || '') + ' ' + (p.module_number || '') + ' ' + (APONTAR._d.pedNome[p.order_id] || '') + ' ' + (u.code || '')).toLowerCase()) + '">' +
     '<div class="ap-ck">' + (s ? '✓' : '') + '</div>' +
     '<div class="ap-ref"><b>' + UI.esc(p.reference || p.description || 'Peça') + '</b>' + (u.q > 1 ? ' <span class="erp-muted">(' + u.idx + '/' + u.q + ')</span>' : '') +
-      '<small>' + UI.esc(APONTAR._med(p)) + ' mm · ' + UI.esc(p.color_name || '') + (u.code ? ' · ' + UI.esc(u.code) : '') + '</small></div>' +
+      '<small>' + UI.esc(APONTAR._med(p)) + ' mm · ' + UI.esc(p.color_name || '') + (u.code ? ' · ' + UI.esc(u.code) : '') + ((APONTAR._d.lotes || []).length > 1 && p._batchCode ? ' · ' + UI.esc(p._batchCode) : '') + '</small>' +
+      (u.fora === 'gaveta' ? '<small style="color:#b42318;font-weight:700">GAVETA ERRADA (lote original)</small>' : u.fora ? '<small style="color:#a15c07;font-weight:700">Substituída pelo complemento</small>' : '') + '</div>' +
     '<div class="ap-quando">' + (s ? '✓ ' + UI.esc(APONTAR._hora(s.scanned_at)) : '') + '</div>' +
   '</div>';
 };
@@ -297,7 +395,7 @@ APONTAR._progresso = function () {
   const pct = total ? Math.round(100 * feitas / total) : 0;
   const el = document.getElementById('ap-prog');
   el.style.display = '';
-  el.innerHTML = '<div class="ap-prog-txt"><span><strong>' + feitas + '/' + total + '</strong> peças apontadas · ' + UI.esc(d.lote.code || '') + '</span><span>' + pct + '%</span></div>' +
+  el.innerHTML = '<div class="ap-prog-txt"><span><strong>' + feitas + '/' + total + '</strong> peças apontadas · ' + UI.esc((d.lotes || [d.lote]).map(function (l) { return l.code || ''; }).join(' + ')) + (d.ocultas ? ' <span class="erp-muted">(' + d.ocultas + ' do original escondidas: substituídas pelo complemento)</span>' : '') + '</span><span>' + pct + '%</span></div>' +
     '<div class="ap-bar"><div style="width:' + pct + '%"></div></div>';
   // contagem por módulo
   const porMod = {};
@@ -393,7 +491,7 @@ APONTAR._som = function (tipo) {
 APONTAR._bip = function (hz) { APONTAR._som(hz >= 440 ? 'ok' : 'err'); }; // compatibilidade
 
 APONTAR._outroLote = async function (cod) {
-  APONTAR._aviso('⛔ ' + cod + ' NÃO É DESTE LOTE — separe a peça.', 'alarm', true);
+  APONTAR._aviso('⛔ ' + cod + ' NÃO É DESTE LOTE — separe a peça.' + (APONTAR._d && APONTAR._d.lotes && APONTAR._d.lotes.length > 1 ? '' : ' (É do complemento? Escolha em "Juntar com lote".)'), 'alarm', true);
   try { // de qual lote é (só pra informar; se falhar, fica o aviso acima)
     const erp = LOTES.erp();
     const { data: pc } = await erp.from('cut_plan_pieces').select('plan_id').eq('piece_code', cod).limit(1).maybeSingle();
@@ -450,7 +548,7 @@ APONTAR.aponta = async function (k, codigo) {
   APONTAR._aviso('✓ ' + (codigo ? codigo + ' · ' : '') + (u.p.reference || 'Peça') + (u.p.module_name ? ' — ' + u.p.module_name : '') + ' · ' + APONTAR._hora(agora), 'ok', true);
   const user = (typeof DATA !== 'undefined' && DATA.user) || null;
   const { data, error } = await LOTES.erp().from('piece_scans').insert({
-    batch_id: d.lote.id, batch_piece_id: u.p.id, unit_idx: u.idx, order_id: u.p.order_id || null,
+    batch_id: u.p._batchId || d.lote.id, batch_piece_id: u.p.id, unit_idx: u.idx, order_id: u.p.order_id || null,
     piece_code: codigo || u.code || null, scanned_at: agora, scanned_by_name: user ? (user.email || null) : null
   }).select().maybeSingle();
   if (error) {
