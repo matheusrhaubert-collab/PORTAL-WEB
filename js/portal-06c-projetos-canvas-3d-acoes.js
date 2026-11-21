@@ -125,8 +125,47 @@ function projectSlotColorOptions(slot, roleId) {
   return projectSlotMaxDimMm(slot) > PLYWOOD_MAX_MM ? opts.filter((c) => !projectColorIsPlywood(c)) : opts;
 }
 
+// AGREGADO DE LARGURA FIXA NO INTERIOR (21/11, Matt: "quando coloco o trash e
+// estico, ele deixa"). Trash / Spice Pull-out são peças compradas: com um
+// deles no interior (slot.layout) a LARGURA do módulo não é mais livre.
+//  · agregado ocupando a largura toda (nenhuma divisão em X acima dele): a
+//    largura só anda entre as larguras de gabinete dele (15"/18", 9"/12");
+//  · agregado num vão ao lado de outro (divisão em X): a largura fica travada
+//    na atual — pra mudar, tire o agregado no Construtor.
+// Devolve null quando não há agregado de largura fixa (ou o catálogo de
+// agregados ainda não carregou — aí nada trava).
+function projectSlotLarguraFixa(slot) {
+  const lay = slot && slot.layout;
+  if (!lay || typeof LayoutEngine === 'undefined' || !LayoutEngine.largurasFixasDoVao) return null;
+  const cat = (typeof accessoryCatalogCache !== 'undefined' && accessoryCatalogCache) || {};
+  const TAB = { trash_dovetail: [381, 457], spice_pullout: [229, 305] };
+  let achado = null;
+  (function anda(n, dentroDeX) {
+    if (!n) return;
+    if (n.content && n.content.acc) {
+      const acc = cat[n.content.acc];
+      const par = acc ? (acc.default_params || acc.params || {}) : {};
+      const lista = acc ? (par.larguras_gabinete_mm || TAB[acc.slug] || null) : null;
+      if (lista && lista.length) {
+        if (dentroDeX || (achado && achado.gabinetes.join() !== lista.join())) achado = { travada: true, gabinetes: [] };
+        else if (!achado) achado = { travada: false, gabinetes: lista.map(Number) };
+      }
+    }
+    const divideX = n.splitAxis === 'x' && (n.children || []).length > 1;
+    (n.children || []).forEach((k) => anda(k, dentroDeX || divideX));
+  })(lay, false);
+  return achado;
+}
+
 function projectSlotClampedDimensionMm(slot, axis, mm) {
   const m = slot.module;
+  if (axis === 'width') {
+    const fixa = projectSlotLarguraFixa(slot);
+    if (fixa) {
+      if (fixa.travada || !fixa.gabinetes.length) return Number(slot.width_mm) || Number(mm) || 0;
+      return Pricing.pickNearestPreset(fixa.gabinetes, Number(mm) || 0);
+    }
+  }
   // Medida TRAVADA (width_locked/height_locked) — pedido do usuário
   // (2026-07-26): "quero usar o mesmo sistema de arrastar com as flechas so
   // com as medidas fixas". Em vez de clampar contínuo no min/max do módulo,
