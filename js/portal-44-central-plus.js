@@ -47,7 +47,7 @@ const CX_COLORS = { build: '#a8a29a', wait: '#c58a2b', pay: '#7b6fd0', prod: '#2
 const cxState = {
   off: false, view: '', extra: {}, extraFor: '', extraBusy: false, lost: {}, lostLoaded: false, lostBusy: false,
   acc: null, accLoaded: false, sug: {}, sugTimer: null, saving: {}, msg: {}, scope: null, scopeBusy: false,
-  net: { fab: false, own: false, hoje: false, loja: '', user: '', cliente: '', etapa: '', q: '' }, netInit: false, colScroll: {}, accNames: {}, totalsFor: -1, colQ: { loja: '', user: '', cliente: '' }, draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
+  net: { fab: false, own: false, hoje: false, loja: '', user: '', cliente: '', etapa: '', q: '' }, netInit: false, colScroll: {}, accNames: {}, totalsFor: -1, colQ: { loja: '', user: '', cliente: '' }, colOpen: '', draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
 };
 
 function cxOn() {
@@ -469,16 +469,26 @@ function cxTreeCols() {
   const val = (l) => l.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
   const item = (c, v, nome, sub, lista, on) => '<button type="button" class="cx-ci' + (on ? ' on' : '') + '" data-cx="col" data-c="' + c + '" data-v="' + cEsc(v) + '">'
     + '<span class="cx-ci-n">' + cEsc(nome) + (sub ? '<small>' + cEsc(sub) + '</small>' : '') + '</span><span class="cx-ci-q"><b>' + lista.length + '</b>' + (cxSeller() ? '' : '<small>' + cEsc(cMoney(val(lista))) + '</small>') + '</span></button>';
-  // lupa por coluna (20/11, Matt: "coloca uma lupa em cima pra buscar o dealer
-  // ou vendedor ou cliente mais fácil") — filtra as linhas da própria coluna
-  const col = (tit, corpo, n, busca) => '<div class="cx-col"><h5>' + cEsc(tit) + (n != null ? ' <span>' + n + '</span>' : '') + '</h5>'
-    + (busca ? '<label class="cx-col-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
-      + '<input type="search" data-cx-colq="' + busca + '" placeholder="' + cEsc(cT('col_find')) + '" value="' + cEsc(cxState.colQ[busca] || '') + '" autocomplete="off"></label>' : '')
-    + '<div class="cx-col-b" data-cx-colb="' + (busca || '') + '">' + corpo + '</div></div>';
+  // ÁRVORE COMPACTA (20/11, Matt: "troca toda essa altura só pela altura do
+  // preto, e ao clicar no dealer aí abre a dropbox"): cada nível é UMA linha
+  // com o que está escolhido; clicar abre a lista (com a lupa) por cima da tela.
+  const col = (tit, corpo, n, busca, sel) => {
+    const aberto = busca && cxState.colOpen === busca;
+    const txt = sel ? sel.nome : (n ? cT('col_all') + ' (' + n + ')' : '—');
+    return '<div class="cx-col cx-dd' + (aberto ? ' open' : '') + (sel ? ' has' : '') + '" data-cx-dd="' + (busca || '') + '">'
+      + '<button type="button" class="cx-dd-btn" data-cx="ddopen" data-c="' + (busca || '') + '"' + (n ? '' : ' disabled') + '><span class="cx-dd-l">' + cEsc(tit) + '</span>'
+      + '<span class="cx-dd-v">' + cEsc(txt) + '</span>' + (sel && sel.q ? '<span class="cx-dd-q">' + sel.q + '</span>' : '') + '<i class="cx-dd-a">▾</i></button>'
+      + '<div class="cx-dd-pop"><label class="cx-col-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
+      + '<input type="search" data-cx-colq="' + busca + '" placeholder="' + cEsc(cT('col_find')) + '" value="' + cEsc(cxState.colQ[busca] || '') + '" autocomplete="off"></label>'
+      + '<div class="cx-col-b" data-cx-colb="' + (busca || '') + '">' + corpo + '</div></div></div>';
+  };
+  const qtd = (lista) => '<b>' + lista.length + '</b>' + (cxSeller() ? '' : ' <small>' + cEsc(cMoney(val(lista))) + '</small>');
+  let selLoja = null, selUser = null, selCli = null;
   const vazio = '<p class="hint cx-col-e">← ' + cEsc(cT('col_pick')) + '</p>';
 
   // 1) fábrica (matriz; as centrais entram aqui quando existirem)
   const fabricas = s.accounts.filter((a) => a.kind === 'factory');
+  const fabNome = (fabricas[0] && (fabricas[0].trade_name || fabricas[0].legal_name)) || 'Legno';
   const c1 = (fabricas.length ? fabricas : [{ id: 'f', trade_name: 'Legno' }]).map((a) => item('fab', a.id, a.trade_name || a.legal_name || 'Legno', cT('matriz'), s.orders, cxState.net.fab && !f.loja)).join('');
 
   // 2) dealers (lojista e distribuidor são o mesmo nível)
@@ -491,6 +501,7 @@ function cxTreeCols() {
   const lojaSel = f.loja || unico;
   let c2 = dealers.map((a) => item('loja', a.id, a.trade_name || a.legal_name || '—', [a.billing_city, a.billing_state].filter(Boolean).join(', '), porLoja[a.id] || [], lojaSel === a.id)).join('');
   if (porLoja._) c2 += item('loja', '_', cT('no_store'), '', porLoja._, f.loja === '_');
+  if (lojaSel) { const a = dealers.find((x) => x.id === lojaSel); selLoja = { nome: a ? (a.trade_name || a.legal_name || '—') : cT('no_store'), q: qtd(porLoja[lojaSel] || []) }; }
 
   // 3) vendedores do dealer escolhido (quem fez pedido + a equipe cadastrada)
   let c3 = vazio, nV = null;
@@ -503,6 +514,7 @@ function cxTreeCols() {
     const PAPEL = { pt: { owner: 'dono', manager: 'gerente', seller: 'vendedor', finance: 'financeiro' }, en: { owner: 'owner', manager: 'manager', seller: 'salesperson', finance: 'finance' }, es: { owner: 'dueño', manager: 'gerente', seller: 'vendedor', finance: 'finanzas' } }[cxLang()];
     const papel = (uid) => { const m = s.team[uid]; if (m) return PAPEL[m.role] || ''; const pf = (s.emails || {})[uid]; return pf ? (pf.role || '') : ''; };
     c3 = uids.map((uid) => item('user', uid, cxUserLabel(uid, daLoja), papel(uid), porUser[uid], f.user === uid)).join('') || vazio;
+    if (f.user) selUser = { nome: cxUserLabel(f.user, daLoja), q: qtd(porUser[f.user] || []) };
   }
 
   // 4) cliente final (nome do cliente no pedido) do dealer / vendedor escolhido
@@ -514,8 +526,14 @@ function cxTreeCols() {
     const ks = Object.keys(porCli).sort((a, b) => porCli[b].length - porCli[a].length || nomeCli[a].localeCompare(nomeCli[b]));
     nC = ks.length;
     c4 = ks.map((k) => item('cliente', k, nomeCli[k], '', porCli[k], f.cliente === k)).join('') || vazio;
+    if (f.cliente && porCli[f.cliente]) selCli = { nome: nomeCli[f.cliente], q: qtd(porCli[f.cliente]) };
   }
-  return '<div class="cx-cols">' + col(cT('col_factory'), c1, null) + col(cT('col_dealer'), c2 || vazio, dealers.length + (porLoja._ ? 1 : 0), 'loja') + col(cT('col_seller'), c3, nV, 'user') + col(cT('col_client'), c4, nC, 'cliente') + '</div>';
+  const fabOn = cxState.net.fab && !f.loja;
+  return '<div class="cx-cols">'
+    + '<div class="cx-col cx-dd cx-dd-fab' + (fabOn ? ' on' : '') + '"><button type="button" class="cx-dd-btn" data-cx="col" data-c="fab" data-v="f"><span class="cx-dd-l">' + cEsc(cT('col_factory')) + '</span>'
+      + '<span class="cx-dd-v">' + cEsc(fabNome) + '</span><span class="cx-dd-q">' + qtd(s.orders) + '</span></button></div>'
+    + col(cT('col_dealer'), c2 || vazio, dealers.length + (porLoja._ ? 1 : 0), 'loja', selLoja)
+    + col(cT('col_seller'), c3, nV, 'user', selUser) + col(cT('col_client'), c4, nC, 'cliente', selCli) + '</div>';
 }
 // esconde as linhas da coluna que não batem com a lupa (sem redesenhar: o foco fica no campo)
 function cxColFilter(chave) {
@@ -897,7 +915,15 @@ document.addEventListener('click', (e) => {
       .catch((err) => { b.disabled = false; alert((err && err.message) || String(err)); });
     return;
   }
+  if (a === 'ddopen') {
+    const c = b.getAttribute('data-c');
+    cxState.colOpen = cxState.colOpen === c ? '' : c;
+    document.querySelectorAll('.cx-dd').forEach((el) => el.classList.toggle('open', !!cxState.colOpen && el.getAttribute('data-cx-dd') === cxState.colOpen));
+    const inp = document.querySelector('.cx-dd.open [data-cx-colq]'); if (inp) inp.focus();
+    return;
+  }
   if (a === 'col') {
+    cxState.colOpen = '';
     const c = b.getAttribute('data-c'), v = b.getAttribute('data-v'), f = cxState.net;
     f.own = false;
     if (c === 'fab') { f.fab = !(f.fab && !f.loja); f.loja = ''; f.user = ''; f.cliente = ''; if (!f.fab) f.own = true; }
@@ -922,6 +948,11 @@ document.addEventListener('click', (e) => {
     if (o && o.client_user_id === cxMe() && typeof openOrderDetail === 'function') return openOrderDetail(id);
     if (cxAdmin()) window.open('erp/index.html#/pedidos/' + id, '_blank', 'noopener');
   }
+}, true);
+document.addEventListener('click', (e) => {
+  if (!cxState.colOpen || (e.target.closest && e.target.closest('.cx-dd'))) return;
+  cxState.colOpen = '';
+  document.querySelectorAll('.cx-dd.open').forEach((el) => el.classList.remove('open'));
 }, true);
 // aba normal clicada: sai do modo perdidos/mapa/lojas
 document.addEventListener('click', (e) => {
@@ -1024,11 +1055,16 @@ function cxCss() {
     '.cx-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border,#e0ddd6);background:#fff;color:var(--text,#2b2621);border-radius:20px;padding:5px 12px;font-size:13px;margin:0;cursor:pointer}.cx-chip i{width:11px;height:11px;border-radius:50%;display:inline-block}.cx-chip.on{border-color:var(--accent,#8a5a34);box-shadow:0 0 0 1px var(--accent,#8a5a34)}.cx-chip.off{opacity:.45}',
     '#cx-panel .cx-chips .cx-chip:not(.on):not(.off){opacity:1}',
     '.cx-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.cx-filters input{padding:7px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;width:320px;max-width:100%;flex:0 1 320px;margin:0;display:inline-block}.cx-filters button{margin:0}',
-    '.cx-cols{display:grid;grid-template-columns:.8fr 1.2fr 1.2fr 1.2fr;gap:10px;margin-bottom:12px}',
+    '.cx-cols{display:grid;grid-template-columns:.9fr 1.2fr 1.2fr 1.2fr;gap:14px;margin-bottom:12px}',
     '.cx-col{border:1px solid var(--border,#e0ddd6);border-radius:12px;background:#fff;display:flex;flex-direction:column;min-width:0;position:relative}',
     '.cx-col:not(:last-child)::after{content:"›";position:absolute;right:-9px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--muted,#766f64);background:var(--panel,#fff);line-height:1;z-index:1}',
     '.cx-col h5{margin:0;padding:9px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#766f64);border-bottom:1px solid var(--border,#e0ddd6);display:flex;justify-content:space-between}.cx-col h5 span{font-weight:400}',
-    '.cx-col-b{max-height:230px;overflow:auto;padding:4px}.cx-col-e{margin:10px 8px;font-size:12px}',
+    '.cx-dd{min-height:0}.cx-dd-btn{display:flex;align-items:center;gap:10px;width:100%;margin:0;padding:9px 12px;border:0;background:none;border-radius:12px;color:var(--text,#2b2621);cursor:pointer;text-align:left;font-size:13px;min-width:0}',
+    '.cx-dd-btn:disabled{cursor:default;opacity:.55}.cx-dd-l{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#766f64);flex:none}',
+    '.cx-dd-v{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}.cx-dd-q{flex:none;white-space:nowrap}.cx-dd-q small{font-size:11px;color:var(--muted,#766f64)}.cx-dd-a{font-style:normal;color:var(--muted,#766f64);flex:none}',
+    '.cx-dd.has,.cx-dd-fab.on{background:var(--accent,#8a5a34);border-color:var(--accent,#8a5a34)}.cx-dd.has .cx-dd-btn,.cx-dd-fab.on .cx-dd-btn{color:#fff}.cx-dd.has .cx-dd-l,.cx-dd.has .cx-dd-a,.cx-dd.has .cx-dd-q small,.cx-dd-fab.on .cx-dd-l,.cx-dd-fab.on .cx-dd-q small{color:rgba(255,255,255,.8)}',
+    '.cx-dd-pop{display:none;position:absolute;left:-1px;right:-1px;top:calc(100% + 4px);z-index:40;background:#fff;border:1px solid var(--border,#e0ddd6);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.18);min-width:260px}.cx-dd.open .cx-dd-pop{display:block}',
+    '.cx-col-b{max-height:300px;overflow:auto;padding:4px}.cx-col-e{margin:10px 8px;font-size:12px}',
     '.cx-col-s{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--border,#e0ddd6);color:var(--muted,#766f64)}.cx-col-s svg{width:14px;height:14px;flex:none}',
     '.cx-col-s input{border:0;outline:0;background:none;font-size:13px;padding:2px 0;margin:0;width:100%;min-width:0;color:var(--text,#2b2621)}',
     '.cx-ci{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin:0;padding:7px 9px;border:0;border-radius:8px;background:none;color:var(--text,#2b2621);text-align:left;cursor:pointer;font-size:13px}.cx-ci:hover{background:var(--bg,#f7f6f3)}',
