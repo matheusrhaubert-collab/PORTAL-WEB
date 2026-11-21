@@ -644,7 +644,9 @@ function cxFlatTable(rows, principal) {
         : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
       const num = o._proj ? (cxPnum(o.project_number) || '—')
         : ((Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + (o.project_number ? '<br><span class="cx-pref">' + cxPnum(o.project_number) + '</span>' : ''));
-      return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '">' + num + '</td>'
+      const ehFab = !o._proj && Number(o.factory_number) > 0;
+      const icoN = (typeof MP_ICO !== 'undefined') ? '<span class="cx-nico' + (ehFab ? ' cx-nico-f' : '') + '" title="' + (ehFab ? 'Factory order' : 'Project') + '">' + (ehFab ? MP_ICO.factory : MP_ICO.layers) + '</span>' : '';
+      return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
         + '<td' + (cxAdmin() ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
         + '<td class="cx-quem">' + cEsc(quem || '—') + '</td>'
         + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td>'
@@ -1200,6 +1202,7 @@ function cxCss() {
     '.cx-storecell{cursor:pointer}.cx-storecell:hover b{text-decoration:underline}.cx-swap{color:var(--muted,#766f64);font-size:12px}.cx-storesel,.cx-moveall{padding:6px 8px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;max-width:260px;width:auto;margin:0}.cx-moveall{margin-left:auto}',
     '.cx-gtable>thead th{cursor:pointer;white-space:nowrap}.cx-gtable>tbody>tr.cx-grow>td{white-space:normal}.cx-loja2{max-width:220px;overflow:hidden;text-overflow:ellipsis}.cx-loja2 .hint{font-size:11px}.cx-gexp>td{padding:0 0 10px 34px;background:rgba(0,0,0,.015)}.cx-inner{overflow:auto}.cx-inner .cx-table{margin:0}.cx-inner .cx-table thead th{font-size:11px}',
     '.cx-hmenu{max-height:70vh;overflow:auto}.cx-quem{font-size:12px;color:var(--muted,#766f64)}',
+    '.cx-nwrap{display:inline-flex;align-items:center;gap:7px}.cx-nico{display:inline-flex;flex:none;color:var(--muted,#766f64)}.cx-nico svg{width:15px;height:15px}.cx-nico-f{color:inherit}',
     '.cx-num{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}.cx-num-p{color:var(--muted,#766f64)}.cx-pref{font-size:10px;font-weight:400;color:var(--muted,#766f64)}.cx-main>thead th{cursor:pointer}',
     '.cx-foot{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12px}.cx-foot .cx-moveall{margin-left:auto;font-size:12px;padding:4px 8px;color:var(--muted,#766f64)}.cx-link{background:none!important;border:0;padding:0;margin:0;color:var(--accent-dark,#6e4527);text-decoration:underline;cursor:pointer;font-size:12px;box-shadow:none!important}',
     '.cx-th-on{color:var(--accent-dark,#6e4527)}.cx-th-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent,#8a5a34);margin-right:5px;vertical-align:middle}',
