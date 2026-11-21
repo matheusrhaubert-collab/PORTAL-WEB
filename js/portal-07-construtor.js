@@ -1612,7 +1612,16 @@ function fillProjectBuilderLibGrid() {
     // "Frente de Gaveta" solta na biblioteca pra arrastar num vão vazio.
     .filter((k) => projectBuilderCat[k].slug !== 'frente_gaveta_externa'
       && projectBuilderCat[k].slug !== 'frente_gaveta_interna')
-    .filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]));
+    .filter((k) => LayoutEngine.cabeNoVao(projectBuilderCat[k], box, projectBuilderWhite[k]))
+    // Trash / Spice: largura fixa — só no vão com a largura do gabinete padrão (21/11)
+    .filter((k) => !(LayoutEngine.bloqueiaLarguraFixa && LayoutEngine.bloqueiaLarguraFixa(projectBuilderCat[k], box,
+      projectBuilderEspessuraCasco(projectSlots.find((sl) => sl.id === projectBuilderSlotId)))))
+    // vão ao lado de Divisória Stretcher Vertical: só frentes e travessas (21/11)
+    .filter((k) => {
+      const nSel = projectBuilderSelNode();
+      return !(nSel && LayoutEngine.bloqueiaStretcherVertical
+        && LayoutEngine.bloqueiaStretcherVertical(projectBuilderRoot, nSel, k, projectBuilderCat));
+    });
   // Divisórias (base, lateral, gola) sempre primeiro, lado a lado; o resto
   // mantém a ordem do cadastro (sort estável).
   // Dentro dele: Base divisória e Lateral divisória lado a lado na 1ª linha,
@@ -4059,6 +4068,25 @@ function insertProjectBuilderItem(accessoryId, nodeId, qtd) {
       alert(I18n.t(acc.role === 'front' ? 'builder.gaveta_sem_porta_bloqueia_porta' : 'builder.gaveta_sem_porta_atras_de_porta'));
       return;
     }
+  }
+  // Trash / Spice Pull-out: peça comprada de largura fixa — só no vão com a
+  // largura interna de um gabinete padrão (LayoutEngine.bloqueiaLarguraFixa).
+  if (LayoutEngine.bloqueiaLarguraFixa) {
+    const eCasco = projectBuilderEspessuraCasco(projectSlots.find((sl) => sl.id === projectBuilderSlotId));
+    const boxVao = node._box || node._boxFull || null;
+    if (boxVao && LayoutEngine.bloqueiaLarguraFixa(acc, boxVao, eCasco)) {
+      const uni = (document.getElementById('po-unit-select') || {}).value || 'mm';
+      const lista = (LayoutEngine.largurasFixasDoVao(acc, eCasco) || []).map((w) => formatDimension(w, uni)).join(' / ');
+      alert(I18n.t('builder.largura_fixa_bloqueia', { nome: acc.name || '', larguras: lista }));
+      return;
+    }
+  }
+  // Ao lado de Divisória Stretcher Vertical não entra nada que precise ir até
+  // o fundo (gaveta, prateleira, cabide...) — LayoutEngine.bloqueiaStretcherVertical.
+  if (LayoutEngine.bloqueiaStretcherVertical
+    && LayoutEngine.bloqueiaStretcherVertical(projectBuilderRoot, node, accessoryId, projectBuilderCat)) {
+    alert(I18n.t('builder.stretcher_v_bloqueia'));
+    return;
   }
   const n = Math.max(1, Math.round(Number(qtd) || 1));
   pushProjectBuilderUndo();

@@ -190,6 +190,65 @@
     }
     return false;
   }
+  // DIVISÓRIA STRETCHER VERTICAL (2026-11-21, Matt: "quando colocarmos uma
+  // divisória stretcher vertical, não podemos colocar gavetas, nem prateleiras
+  // nem nada que precise ir até o fundo do móvel"). Ela é só uma travessa em
+  // pé na FRENTE (stretcher_d_mm de profundidade): atrás dela não existe
+  // lateral pra segurar corrediça, suporte de prateleira, cabide, base...
+  // Num vão ao lado dela (em qualquer nível abaixo) só entram: portas/frentes,
+  // Painel Fixo e outras travessas de frente (stretcher em pé ou deitada).
+  // Exceção de fábrica: vão com `prateleira_largura_total` (blind corner) —
+  // ali a prateleira vai de lateral a lateral do casco, com entalhe na travessa.
+  // Regra de TELA (portal); a árvore de fábrica e o ERP não passam por aqui.
+  function vaoAoLadoDeStretcherVertical(root, node, cat) {
+    var n = node;
+    while (n) {
+      var pai = findParent(root, n.id);
+      if (!pai) return false;
+      var a = pai.splitAcc && cat ? cat[pai.splitAcc] : null;
+      if (a && pai.splitAxis === 'x' && num((a.params || {}).stretcher_d_mm) > 0) return true;
+      n = pai;
+    }
+    return false;
+  }
+  function bloqueiaStretcherVertical(root, node, accKey, cat) {
+    var acc = cat ? cat[accKey] : null;
+    if (!acc || !node) return false;
+    if (acc.role === 'front' || acc.slug === 'painel_fixo') return false;
+    if (!vaoAoLadoDeStretcherVertical(root, node, cat)) return false;
+    if (acc.role === 'split') {
+      if (num((acc.params || {}).stretcher_d_mm) > 0) return false;
+      if (acc.axis === 'y' && (node.params || {}).prateleira_largura_total) return false;
+    }
+    return true;
+  }
+  // AGREGADO DE LARGURA FIXA (2026-11-21, Matt: "trash e spice só têm medidas
+  // fixas, então não podem entrar em qualquer módulo, só quando tiver as
+  // medidas exatas igual ao que se encontra em kitchens padrão... largura
+  // exata, altura mínima e profundidade mínima"). A peça é comprada pronta:
+  // só entra em vão com a largura INTERNA de um gabinete padrão (largura do
+  // gabinete − 2 laterais). Altura e profundidade mínimas continuam vindo do
+  // cadastro do agregado (min_void_h_mm / min_void_d_mm — cabeNoVao).
+  // Larguras de GABINETE por agregado; `default_params.larguras_gabinete_mm`
+  // no cadastro (lista) vence esta tabela.
+  var LARGURA_FIXA_GABINETE_MM = {
+    trash_dovetail: [381, 457],   // 15" e 18" (Base Cabinet Trash, BWB15/BWB18)
+    spice_pullout: [229, 305]     // 9" e 12" (Spice Pull-out, BPO9/BPO12)
+  };
+  var LARGURA_FIXA_TOL_MM = 2;
+  function largurasFixasDoVao(acc, espessuraCasco) {
+    if (!acc) return null;
+    var lista = (acc.params && acc.params.larguras_gabinete_mm) || LARGURA_FIXA_GABINETE_MM[acc.slug];
+    if (!lista || !lista.length) return null;
+    var e = num(espessuraCasco) > 0 ? num(espessuraCasco) : 19.5;
+    return lista.map(function (w) { return num(w) - 2 * e; });
+  }
+  // true = agregado de largura fixa e o vão NÃO tem nenhuma das larguras
+  function bloqueiaLarguraFixa(acc, box, espessuraCasco) {
+    var ok = largurasFixasDoVao(acc, espessuraCasco);
+    if (!ok || !box) return false;
+    return !ok.some(function (w) { return Math.abs(num(box.w) - w) <= LARGURA_FIXA_TOL_MM; });
+  }
   function removeFront(node, i) { (node.fronts || []).splice(i, 1); }
   function clearNode(node, what) {
     if (what === 'split') { node.splitAxis = null; node.splitAcc = null; node.children = []; }
@@ -2157,6 +2216,10 @@
     applyFront: applyFront,
     modeloGavetaInterna: modeloGavetaInterna,
     bloqueiaGavetaSemPorta: bloqueiaGavetaSemPorta,
+    bloqueiaStretcherVertical: bloqueiaStretcherVertical,
+    bloqueiaLarguraFixa: bloqueiaLarguraFixa,
+    largurasFixasDoVao: largurasFixasDoVao,
+    vaoAoLadoDeStretcherVertical: vaoAoLadoDeStretcherVertical,
     removeFront: removeFront,
     clearNode: clearNode,
     clearAll: clearAll,

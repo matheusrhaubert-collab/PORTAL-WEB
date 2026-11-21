@@ -1294,6 +1294,22 @@ body.portal-page.proj-tela-cheia .po-proj-config-col {
     overflow-y: auto;
   }
 }
+/* ---- Aba Projetos COMPACTA na altura (21/11, Matt: "diminuir ainda mais os
+   espaços que ocupam a altura pra usarmos mais espaço pro projeto"). Só com a
+   aba Projetos aberta (.proj-fullbleed): topo do portal de 72 -> 46 px e as
+   folgas de cima do <main> e do painel quase a zero. A altura do desenho é
+   medida em JS (ajustaAlturaTelaCheia), então o que sobra vai sozinho pra ele.
+   As outras abas ficam com o topo de sempre. ---- */
+body.portal-page.proj-fullbleed header.po-topnav { height: 46px; padding: 0 16px; }
+body.portal-page.proj-fullbleed .po-logo-main { font-size: 16px; }
+body.portal-page.proj-fullbleed .po-logo-sub { font-size: 7px; letter-spacing: 2.5px; margin-top: 2px; }
+body.portal-page.proj-fullbleed .po-logo-dealer-img { max-height: 28px; }
+body.portal-page.proj-fullbleed .po-topnav-tabs .portal-tab-btn { padding: 6px 4px; font-size: 13px; }
+body.portal-page.proj-fullbleed .po-user-avatar { width: 28px; height: 28px; font-size: 12px; }
+body.portal-page.proj-fullbleed main { padding: 4px 8px 0; }
+body.portal-page.proj-fullbleed #po-tab-projects > section.panel { padding: 6px 8px; }
+body.portal-page.proj-fullbleed #po-tab-projects .po-proj-layout { margin-top: 4px; }
+
 /* Referências e fotos realistas dentro da coluna da direita (ver
    projectMoveExtrasPraColuna): somem com a coluna recolhida. */
 .po-proj-config-col > #po-proj-ref-wrap,
