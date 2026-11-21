@@ -236,6 +236,11 @@ const base = `
   const linhas = box().querySelectorAll('.cx-table tbody tr');
   ok(linhas.length === 3 && /Loja Teste/.test(linhas[0].textContent), 'aba Lojas: 3 pedidos com a coluna LOJA');
   ok(!!box().querySelector('[data-cx="relprod"]'), 'admin vê "Liberar produção" na linha');
+  ok(box().querySelectorAll('.cx-col').length === 4 && box().querySelectorAll('.cx-ci[data-c="loja"]').length === 1, 'árvore lado a lado: 4 colunas, 1 dealer');
+  box().querySelector('.cx-ci[data-c="loja"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
+  ok(box().querySelectorAll('.cx-ci[data-c="user"]').length === 2 && box().querySelectorAll('.cx-ci[data-c="cliente"]').length >= 1, 'clicar no dealer abre vendedores (2) e clientes finais');
+  box().querySelectorAll('.cx-ci[data-c="user"]')[1].dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
+  ok(box().querySelectorAll('.cx-table tbody tr').length === 1, 'clicar no vendedor filtra a lista (1 pedido)');
 
   console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\nTUDO CERTO');
   process.exit(falhas ? 1 : 0);

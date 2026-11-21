@@ -46,7 +46,7 @@ const CX_COLORS = { wait: '#c58a2b', pay: '#7b6fd0', prod: '#2d7fc1', ready: '#1
 const cxState = {
   off: false, view: '', extra: {}, extraFor: '', extraBusy: false, lost: {}, lostLoaded: false, lostBusy: false,
   acc: null, accLoaded: false, sug: {}, sugTimer: null, saving: {}, msg: {}, scope: null, scopeBusy: false,
-  net: { loja: '', etapa: '', q: '' }, draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
+  net: { loja: '', user: '', cliente: '', etapa: '', q: '' }, draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
 };
 
 function cxOn() {
@@ -68,7 +68,7 @@ const CX_TXT = {
     map_none: 'Nenhuma obra com endereço localizado ainda.', map_locate: 'Localizar {n} endereço(s) no mapa', map_locating: 'Localizando… {i}/{n}', map_missing: '{n} pedido(s) sem endereço', loading: 'Carregando…',
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
-    f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
     rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}'
   },
   en: {
@@ -82,7 +82,7 @@ const CX_TXT = {
     map_none: 'No job site located yet.', map_locate: 'Locate {n} address(es) on the map', map_locating: 'Locating… {i}/{n}', map_missing: '{n} order(s) with no address', loading: 'Loading…',
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
-    f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
+    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
     rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}'
   },
   es: {
@@ -96,7 +96,7 @@ const CX_TXT = {
     map_none: 'Ninguna obra ubicada todavía.', map_locate: 'Ubicar {n} dirección(es) en el mapa', map_locating: 'Ubicando… {i}/{n}', map_missing: '{n} pedido(s) sin dirección', loading: 'Cargando…',
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
-    f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
     rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}'
   }
 };
@@ -285,7 +285,7 @@ async function cxLoadScope(force) {
   try {
     const sb = supabaseClient;
     const od = await sb.from('orders')
-      .select('id, client_user_id, account_id, status, order_type, po_name, client_name, room_name, delivery_address, jobsite_lat, jobsite_lng, price_list_total, price_discount_pct, price_net_total, factory_number, submitted_at, approved_at, finance_released_at, pickup_released_at, delivered_at')
+      .select('id, client_user_id, account_id, status, order_type, po_name, client_name, client_email, room_name, delivery_address, jobsite_lat, jobsite_lng, price_list_total, price_discount_pct, price_net_total, factory_number, submitted_at, approved_at, finance_released_at, pickup_released_at, delivered_at')
       .in('status', ['submitted', 'approved', 'paid', 'delivered']).order('submitted_at', { ascending: false }).limit(3000);
     if (od.error) throw od.error;
     s.orders = (od.data || []).filter((o) => o.order_type !== 'cutting_list');
@@ -318,41 +318,101 @@ function cxNetRows() {
   const s = cxState.scope; const f = cxState.net; const q = f.q.trim().toLowerCase();
   return s.orders.filter((o) => {
     if (f.loja && (o.account_id || '_') !== f.loja) return false;
+    if (f.user && o.client_user_id !== f.user) return false;
+    if (f.cliente && cxClienteKey(o) !== f.cliente) return false;
     if (f.etapa && o._s !== f.etapa) return false;
     if (!q) return true;
     return [o.po_name, o.room_name, o.delivery_address, o.client_name, cxStoreName(o), o.factory_number].some((v) => String(v || '').toLowerCase().includes(q));
   });
 }
+function cxClienteKey(o) { return String(o.client_name || '').trim().toLowerCase() || '_'; }
+function cxUserLabel(uid, orders) {
+  const m = cxState.scope.team[uid];
+  if (m && m.email) return m.email;
+  const o = (orders || []).find((x) => x.client_user_id === uid && x.client_email);
+  return o ? o.client_email : String(uid || '').slice(0, 8);
+}
+// ÁRVORE LADO A LADO (20/11, Matt: "mostrar a árvore lado a lado: FÁBRICA
+// MATRIZ (depois pode haver centrais) — DEALER (mesma coisa que distribuidor)
+// — VENDEDOR (contractor, arquiteto ou vendedor do dealer) — e cliente
+// final"). Quatro colunas; clicar numa linha filtra as colunas à direita e a
+// lista de pedidos de baixo. Clicar de novo solta o filtro.
+function cxTreeCols() {
+  const s = cxState.scope; const f = cxState.net;
+  const val = (l) => l.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
+  const item = (c, v, nome, sub, lista, on) => '<button type="button" class="cx-ci' + (on ? ' on' : '') + '" data-cx="col" data-c="' + c + '" data-v="' + cEsc(v) + '">'
+    + '<span class="cx-ci-n">' + cEsc(nome) + (sub ? '<small>' + cEsc(sub) + '</small>' : '') + '</span><span class="cx-ci-q"><b>' + lista.length + '</b>' + (cxSeller() ? '' : '<small>' + cEsc(cMoney(val(lista))) + '</small>') + '</span></button>';
+  const col = (tit, corpo, n) => '<div class="cx-col"><h5>' + cEsc(tit) + (n != null ? ' <span>' + n + '</span>' : '') + '</h5><div class="cx-col-b">' + corpo + '</div></div>';
+  const vazio = '<p class="hint cx-col-e">← ' + cEsc(cT('col_pick')) + '</p>';
+
+  // 1) fábrica (matriz; as centrais entram aqui quando existirem)
+  const fabricas = s.accounts.filter((a) => a.kind === 'factory');
+  const c1 = (fabricas.length ? fabricas : [{ id: 'f', trade_name: 'Legno' }]).map((a) => item('fab', a.id, a.trade_name || a.legal_name || 'Legno', cT('matriz'), s.orders, true)).join('');
+
+  // 2) dealers (lojista e distribuidor são o mesmo nível)
+  const porLoja = {}; s.orders.forEach((o) => { const k = o.account_id || '_'; (porLoja[k] = porLoja[k] || []).push(o); });
+  const dealers = s.accounts.filter((a) => a.kind !== 'factory' && a.status !== 'draft')
+    .sort((a, b) => (porLoja[b.id] || []).length - (porLoja[a.id] || []).length || String(a.trade_name || a.legal_name || '').localeCompare(String(b.trade_name || b.legal_name || '')));
+  // quem só enxerga UM dealer (o próprio lojista): ele já vem aberto, mostrando
+  // tudo; clicar num vendedor afunila, clicar no dealer de novo volta pra tudo
+  const unico = dealers.length === 1 && !porLoja._ ? dealers[0].id : '';
+  const lojaSel = f.loja || unico;
+  let c2 = dealers.map((a) => item('loja', a.id, a.trade_name || a.legal_name || '—', [a.billing_city, a.billing_state].filter(Boolean).join(', '), porLoja[a.id] || [], lojaSel === a.id)).join('');
+  if (porLoja._) c2 += item('loja', '_', cT('no_store'), '', porLoja._, f.loja === '_');
+
+  // 3) vendedores do dealer escolhido (quem fez pedido + a equipe cadastrada)
+  let c3 = vazio, nV = null;
+  if (lojaSel) {
+    const daLoja = porLoja[lojaSel] || [];
+    const porUser = {}; daLoja.forEach((o) => { (porUser[o.client_user_id] = porUser[o.client_user_id] || []).push(o); });
+    if (lojaSel !== '_') Object.keys(s.team).forEach((uid) => { if (s.team[uid].account_id === lojaSel && s.team[uid].active && !porUser[uid]) porUser[uid] = []; });
+    const uids = Object.keys(porUser).sort((a, b) => porUser[b].length - porUser[a].length);
+    nV = uids.length;
+    const papel = (uid) => { const m = s.team[uid]; return m && window.LegnoMinhaEmpresa ? ({ owner: 'owner', manager: 'manager', seller: 'seller', finance: 'finance' }[m.role] || '') : ''; };
+    c3 = uids.map((uid) => item('user', uid, cxUserLabel(uid, daLoja), papel(uid), porUser[uid], f.user === uid)).join('') || vazio;
+  }
+
+  // 4) cliente final (nome do cliente no pedido) do dealer / vendedor escolhido
+  let c4 = vazio, nC = null;
+  if (lojaSel) {
+    const base = s.orders.filter((o) => (o.account_id || '_') === lojaSel && (!f.user || o.client_user_id === f.user));
+    const porCli = {}; const nomeCli = {};
+    base.forEach((o) => { const k = cxClienteKey(o); (porCli[k] = porCli[k] || []).push(o); if (!nomeCli[k]) nomeCli[k] = String(o.client_name || '').trim() || cT('no_client'); });
+    const ks = Object.keys(porCli).sort((a, b) => porCli[b].length - porCli[a].length || nomeCli[a].localeCompare(nomeCli[b]));
+    nC = ks.length;
+    c4 = ks.map((k) => item('cliente', k, nomeCli[k], '', porCli[k], f.cliente === k)).join('') || vazio;
+  }
+  return '<div class="cx-cols">' + col(cT('col_factory'), c1, null) + col(cT('col_dealer'), c2 || vazio, dealers.length + (porLoja._ ? 1 : 0)) + col(cT('col_seller'), c3, nV) + col(cT('col_client'), c4, nC) + '</div>';
+}
 function cxRenderNet(p) {
   const s = cxState.scope;
   if (!s) { p.innerHTML = '<p class="hint">' + cEsc(cT('loading')) + '</p>'; return; }
   const f = cxState.net;
-  const lojas = s.accounts.filter((a) => a.kind !== 'factory').sort((a, b) => String(a.trade_name || a.legal_name || '').localeCompare(String(b.trade_name || b.legal_name || '')));
-  const semLoja = s.orders.some((o) => !o.account_id);
   const rows = cxNetRows();
   const cont = {}; CX_STAGES.forEach((k) => { cont[k] = 0; });
-  s.orders.filter((o) => !f.loja || (o.account_id || '_') === f.loja).forEach((o) => { cont[o._s]++; });
+  const semEtapa = Object.assign({}, f, { etapa: '' });
+  cxState.net = semEtapa; cxNetRows().forEach((o) => { cont[o._s]++; }); cxState.net = f;
   const totL = rows.reduce((a, o) => a + (o._l || 0), 0), totN = rows.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
   const foco = document.activeElement && document.activeElement.id === 'cx-net-q';
-  p.innerHTML = '<div class="cx-chips">' + CX_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
-    + '<div class="cx-filters"><select id="cx-net-loja"><option value="">' + cEsc(cT('f_all_stores')) + '</option>'
-    + lojas.map((a) => '<option value="' + cEsc(a.id) + '"' + (f.loja === a.id ? ' selected' : '') + '>' + cEsc(a.trade_name || a.legal_name || '—') + '</option>').join('')
-    + (semLoja ? '<option value="_"' + (f.loja === '_' ? ' selected' : '') + '>' + cEsc(cT('no_store')) + '</option>' : '') + '</select>'
-    + '<input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
+  const rolagem = {}; p.querySelectorAll('.cx-col-b').forEach((el, i) => { rolagem[i] = el.scrollTop; });
+  p.innerHTML = cxTreeCols()
+    + '<div class="cx-chips">' + CX_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
+    + '<div class="cx-filters"><input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
     + '<span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span></div>'
     + (rows.length ? '<div class="mp-table-wrap cx-wrap"><table class="mp-table cx-table"><thead><tr><th>' + cEsc(cT('c_no')) + '</th><th>' + cEsc(cT('c_store')) + '</th><th>' + cEsc(cT('c_po')) + '</th><th>' + cEsc(cT('c_room'))
         + '</th><th>' + cEsc(cT('c_city')) + '</th><th class="r">' + cEsc(cT('list')) + '</th><th class="r">' + cEsc(cT('disc')) + '</th><th class="r">' + cEsc(cT('net')) + '</th><th>' + cEsc(cT('c_stage')) + '</th><th>' + cEsc(cT('c_date')) + '</th><th></th></tr></thead><tbody>'
         + rows.slice(0, 400).map((o) => {
-          const quem = (s.team[o.client_user_id] || {}).email || '';
+          const quem = cxUserLabel(o.client_user_id, [o]);
           const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
             : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
           return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td>' + (Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + '</td>'
             + '<td><b>' + cEsc(cxStoreName(o)) + '</b>' + (quem ? '<br><span class="hint">' + cEsc(quem) + '</span>' : '') + '</td>'
-            + '<td>' + cEsc(o.po_name || o.client_name || '—') + '</td><td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
+            + '<td>' + cEsc(o.po_name || '—') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td><td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
             + '<td class="r">' + cEsc(cMoney(o._l)) + '</td><td class="r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>'
             + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cEsc(cDate(o.approved_at || o.submitted_at)) + '</td><td>' + acao + '</td></tr>';
         }).join('') + '</tbody></table></div>'
       : '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>');
+  p.querySelectorAll('.cx-col-b').forEach((el, i) => { if (rolagem[i]) el.scrollTop = rolagem[i]; });
   if (foco) { const i = document.getElementById('cx-net-q'); if (i) { i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch (e) { /* ok */ } } }
 }
 
@@ -563,6 +623,14 @@ document.addEventListener('click', (e) => {
       .catch((err) => { b.disabled = false; alert((err && err.message) || String(err)); });
     return;
   }
+  if (a === 'col') {
+    const c = b.getAttribute('data-c'), v = b.getAttribute('data-v'), f = cxState.net;
+    if (c === 'fab') { f.loja = ''; f.user = ''; f.cliente = ''; }
+    else if (c === 'loja') { f.loja = (f.loja === v && !f.user && !f.cliente) ? '' : v; f.user = ''; f.cliente = ''; }
+    else if (c === 'user') { f.user = f.user === v ? '' : v; f.cliente = ''; }
+    else if (c === 'cliente') { f.cliente = f.cliente === v ? '' : v; }
+    return mpRender();
+  }
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
   if (a === 'geocode') return cxGeocodeMissing();
@@ -583,7 +651,6 @@ document.addEventListener('change', (e) => {
   const t = e.target;
   if (!t || !t.getAttribute) return;
   if (t.getAttribute('data-cx-f')) { e.stopPropagation(); cxSaveField(t); return; }
-  if (t.id === 'cx-net-loja') { cxState.net.loja = t.value; mpRender(); }
 }, true);
 document.addEventListener('input', (e) => {
   const t = e.target;
@@ -654,7 +721,17 @@ function cxCss() {
     '#cx-panel{margin-top:12px}.cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
     '.cx-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border,#e0ddd6);background:#fff;color:var(--text,#2b2621);border-radius:20px;padding:5px 12px;font-size:13px;margin:0;cursor:pointer}.cx-chip i{width:11px;height:11px;border-radius:50%;display:inline-block}.cx-chip.on{border-color:var(--accent,#8a5a34);box-shadow:0 0 0 1px var(--accent,#8a5a34)}.cx-chip.off{opacity:.45}',
     '#cx-panel .cx-chips .cx-chip:not(.on):not(.off){opacity:1}',
-    '.cx-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.cx-filters select,.cx-filters input{padding:7px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff}.cx-filters input{min-width:240px}.cx-filters button{margin:0}',
+    '.cx-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.cx-filters input{padding:7px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;width:320px;max-width:100%;flex:0 1 320px;margin:0;display:inline-block}.cx-filters button{margin:0}',
+    '.cx-cols{display:grid;grid-template-columns:.8fr 1.2fr 1.2fr 1.2fr;gap:10px;margin-bottom:12px}',
+    '.cx-col{border:1px solid var(--border,#e0ddd6);border-radius:12px;background:#fff;display:flex;flex-direction:column;min-width:0;position:relative}',
+    '.cx-col:not(:last-child)::after{content:"›";position:absolute;right:-9px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--muted,#766f64);background:var(--panel,#fff);line-height:1;z-index:1}',
+    '.cx-col h5{margin:0;padding:9px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#766f64);border-bottom:1px solid var(--border,#e0ddd6);display:flex;justify-content:space-between}.cx-col h5 span{font-weight:400}',
+    '.cx-col-b{max-height:230px;overflow:auto;padding:4px}.cx-col-e{margin:10px 8px;font-size:12px}',
+    '.cx-ci{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin:0;padding:7px 9px;border:0;border-radius:8px;background:none;color:var(--text,#2b2621);text-align:left;cursor:pointer;font-size:13px}.cx-ci:hover{background:var(--bg,#f7f6f3)}',
+    '.cx-ci.on{background:var(--accent,#8a5a34);color:#fff}.cx-ci.on small{color:rgba(255,255,255,.8)}',
+    '.cx-ci-n{min-width:0;display:flex;flex-direction:column;overflow:hidden}.cx-ci-n,.cx-ci-n small{white-space:nowrap;text-overflow:ellipsis}.cx-ci-n small,.cx-ci-q small{font-size:11px;color:var(--muted,#766f64);overflow:hidden}',
+    '.cx-ci-q{display:flex;flex-direction:column;align-items:flex-end;flex:none}',
+    '@media (max-width:900px){.cx-cols{grid-template-columns:1fr 1fr}.cx-col::after{display:none}}',
     '.cx-table td,.cx-table th{white-space:nowrap}.cx-table .r{text-align:right}.cx-table .cx-addr{white-space:normal;max-width:260px;font-size:12px;color:var(--muted,#766f64)}.cx-table tbody tr{cursor:pointer}.cx-table button{margin:0;padding:3px 10px;font-size:12px}',
     '.cx-stage{display:inline-flex;align-items:center;gap:6px}.cx-stage i{width:10px;height:10px;border-radius:50%;display:inline-block}',
     '.cx-map{height:560px;border-radius:12px;border:1px solid var(--border,#e0ddd6);overflow:hidden;z-index:0}',
