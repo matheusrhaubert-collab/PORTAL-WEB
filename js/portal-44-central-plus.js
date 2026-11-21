@@ -47,7 +47,7 @@ const CX_COLORS = { build: '#a8a29a', wait: '#c58a2b', pay: '#7b6fd0', prod: '#2
 const cxState = {
   off: false, view: '', extra: {}, extraFor: '', extraBusy: false, lost: {}, lostLoaded: false, lostBusy: false,
   acc: null, accLoaded: false, sug: {}, sugTimer: null, saving: {}, msg: {}, scope: null, scopeBusy: false,
-  net: { fab: false, own: false, hoje: false, loja: '', user: '', cliente: '', etapa: '', q: '' }, netInit: false, colScroll: {}, accNames: {}, totalsFor: -1, colQ: { loja: '', user: '', cliente: '' }, colOpen: '', draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
+  net: { fab: false, own: false, hoje: false, periodo: '', gstatus: '', loja: '', user: '', cliente: '', etapa: '', q: '' }, netInit: false, colScroll: {}, accNames: {}, totalsFor: -1, colQ: { loja: '', user: '', cliente: '' }, colOpen: '', draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
 };
 
 function cxOn() {
@@ -69,7 +69,7 @@ const CX_TXT = {
     map_none: 'Nenhuma obra com endereço localizado ainda.', map_locate: 'Localizar {n} endereço(s) no mapa', map_locating: 'Localizando… {i}/{n}', map_missing: '{n} pedido(s) sem endereço', loading: 'Carregando…',
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Minhas pastas', today: 'Atualizados hoje', today_at: 'hoje', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Minhas pastas', today: 'Atualizados hoje', today_at: 'hoje', fl_all: 'Todos', fl_7: 'Últimos 7 dias', fl_30: 'Últimos 30 dias', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpar filtros', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
     rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}'
   },
   en: {
@@ -83,7 +83,7 @@ const CX_TXT = {
     map_none: 'No job site located yet.', map_locate: 'Locate {n} address(es) on the map', map_locating: 'Locating… {i}/{n}', map_missing: '{n} order(s) with no address', loading: 'Loading…',
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
-    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_find: 'search…', back_folders: '‹ My folders', today: 'Updated today', today_at: 'today', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
+    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_find: 'search…', back_folders: '‹ My folders', today: 'Updated today', today_at: 'today', fl_all: 'All', fl_7: 'Last 7 days', fl_30: 'Last 30 days', fl_asc: 'Sort ↑', fl_desc: 'Sort ↓', fl_clear: 'Clear filters', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
     rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}'
   },
   es: {
@@ -97,7 +97,7 @@ const CX_TXT = {
     map_none: 'Ninguna obra ubicada todavía.', map_locate: 'Ubicar {n} dirección(es) en el mapa', map_locating: 'Ubicando… {i}/{n}', map_missing: '{n} pedido(s) sin dirección', loading: 'Cargando…',
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Mis carpetas', today: 'Actualizados hoy', today_at: 'hoy', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Mis carpetas', today: 'Actualizados hoy', today_at: 'hoy', fl_all: 'Todos', fl_7: 'Últimos 7 días', fl_30: 'Últimos 30 días', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpiar filtros', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
     rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}'
   }
 };
@@ -445,14 +445,15 @@ function cxQuando(d) {
   return '<b class="cx-hoje">' + cEsc(cT('today_at')) + ' ' + new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</b>';
 }
 function cxNetRows() {
-  const s = cxState.scope; const f = cxState.net; const q = f.q.trim().toLowerCase();
+  const s = cxState.scope; const f = cxState.net; const q = String((typeof mpState !== 'undefined' && mpState.q) || '').trim().toLowerCase();
   return s.orders.filter((o) => {
     if (f.loja && (o.account_id || '_') !== f.loja) return false;
     if (f.user && o.client_user_id !== f.user) return false;
     if (f.cliente && cxClienteKey(o) !== f.cliente) return false;
     if (f.etapa === '_orders') { if (!['wait', 'pay', 'prod', 'ready'].includes(o._s)) return false; }
     else if (f.etapa && o._s !== f.etapa) return false;
-    if (f.hoje && !cxHoje(o._t)) return false;
+    if (f.periodo === 'hoje' && !cxHoje(o._t)) return false;
+    if ((f.periodo === '7' || f.periodo === '30') && !(o._t && new Date(o._t).getTime() >= Date.now() - Number(f.periodo) * 86400000)) return false;
     if (!q) return true;
     return [o.po_name, o.room_name, o.delivery_address, o.client_name, cxStoreName(o), o.factory_number].some((v) => String(v || '').toLowerCase().includes(q));
   });
@@ -609,7 +610,7 @@ async function cxMoveOrders(ids, destino) {
 function cxFlatTable(rows) {
   const s = cxState.scope;
   return '<div class="cx-inner"><table class="mp-table cx-table"><thead><tr><th>' + cEsc(cT('c_no')) + '</th><th>' + cEsc(cT('c_store')) + '</th><th>' + cEsc(cT('c_po')) + '</th><th>' + cEsc(cT('c_room'))
-        + '</th><th>' + cEsc(cT('c_city')) + '</th><th class="r">' + cEsc(cT('list')) + '</th><th class="r">' + cEsc(cT('disc')) + '</th><th class="r">' + cEsc(cT('net')) + '</th><th>' + cEsc(cT('c_stage')) + '</th><th>' + cEsc(cT('c_date')) + '</th><th></th></tr></thead><tbody>'
+        + '</th><th>' + cEsc(cT('c_city')) + '</th><th class="r">' + cEsc(cT('list')) + '</th><th class="r">' + cEsc(cT('disc')) + '</th><th class="r">' + cEsc(cT('net')) + '</th><th class="mp-th-sort" data-cx="hmenu" data-col="etapa">' + cEsc(cT('c_stage')) + ' ▾</th><th class="mp-th-sort" data-cx="hmenu" data-col="upd">' + cEsc(cT('c_date')) + ' ▾</th><th></th></tr></thead><tbody>'
         + rows.slice(0, 400).map((o) => {
           const quem = cxUserLabel(o.client_user_id, [o]);
           const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
@@ -658,17 +659,18 @@ function cxGroupTable(rows) {
   const s = cxState.scope;
   if (!rows.length) return '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>';
   const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
-  const val = { nome: (g) => g.titulo.toLowerCase(), cliente: (g) => g.cliente.toLowerCase(), loja: (g) => g.loja.toLowerCase(), n: (g) => g.n, status: (g) => g.status, etapa: (g) => CX_NET_STAGES.indexOf(g.etapa), l: (g) => g.l, net: (g) => (g.net == null ? -1 : g.net), upd: (g) => String(g.upd || '') }[st.col];
-  const grupos = cxGroups(rows).sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b.upd || '').localeCompare(String(a.upd || '')); });
-  const th = (col, rot, r) => '<th class="mp-th-sort' + (st.col === col ? ' is-sorted' : '') + (r ? ' cx-r' : '') + '" data-cx="gsort" data-col="' + col + '">' + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : '↕') + '</th>';
+  const val = { nome: (g) => g.titulo.toLowerCase(), cliente: (g) => g.cliente.toLowerCase(), loja: (g) => g.loja.toLowerCase(), quem: (g) => String(g.quem || '').toLowerCase(), n: (g) => g.n, status: (g) => g.status, etapa: (g) => CX_NET_STAGES.indexOf(g.etapa), l: (g) => g.l, net: (g) => (g.net == null ? -1 : g.net), upd: (g) => String(g.upd || '') }[st.col];
+  const grupos = cxGroups(rows).filter((g) => !cxState.net.gstatus || g.status === cxState.net.gstatus).sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b.upd || '').localeCompare(String(a.upd || '')); });
+  const comFiltro = { quem: !!cxState.net.user, status: !!cxState.net.gstatus, etapa: !!cxState.net.etapa && cxState.net.etapa !== '_orders', upd: !!cxState.net.periodo };
+  const th = (col, rot, r) => '<th class="mp-th-sort' + (st.col === col ? ' is-sorted' : '') + (r ? ' cx-r' : '') + (comFiltro[col] ? ' cx-th-on' : '') + '" data-cx="' + (col in comFiltro ? 'hmenu' : 'gsort') + '" data-col="' + col + '">' + (comFiltro[col] ? '<i class="cx-th-dot"></i>' : '') + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : '↕') + '</th>';
   const T = (k, alt) => { try { const v = (typeof mpT === 'function') ? mpT(k) : ''; return v && v !== 'mp.' + k ? v : alt; } catch (e) { return alt; } };
   const ICO = (typeof MP_ICO !== 'undefined') ? MP_ICO : { chev: '›', folder: '', layers: '', factory: '' };
   const aberto = cxState.netOpen || (cxState.netOpen = new Set());
   const preco = !cxSeller();
-  const nCols = preco ? 10 : 7;
+  const nCols = preco ? 11 : 8;
   const max = 300;
   return '<div class="mp-table-wrap cx-wrap"><table class="mp-table cx-table cx-gtable"><thead><tr>'
-    + th('nome', T('col_project', 'Project')) + th('cliente', T('col_client', 'Client')) + th('loja', cT('c_store')) + th('n', T('col_count', 'Projects'))
+    + th('nome', T('col_project', 'Project')) + th('cliente', T('col_client', 'Client')) + th('loja', cT('c_store')) + th('quem', cT('col_seller')) + th('n', T('col_count', 'Projects'))
     + th('status', T('col_status', 'Status')) + th('etapa', T('col_prod', cT('c_stage')))
     + (preco ? th('l', cT('list'), 1) + '<th class="cx-r">' + cEsc(cT('disc')) + '</th>' + th('net', cT('net'), 1) : '') + th('upd', T('col_updated', cT('c_date')))
     + '</tr></thead><tbody>'
@@ -679,7 +681,7 @@ function cxGroupTable(rows) {
         + '<td class="mp-c-name"><span class="mp-chev">' + (ICO.chev || '›') + '</span><span class="mp-fold' + (g.proj ? '' : ' cu-ico-orders') + '">' + (g.proj ? (g.folder ? ICO.folder : ICO.layers) : ICO.factory) + '</span>'
         + '<strong>' + cEsc(g.titulo) + '</strong> <span class="cu-kind">' + cEsc(typeof I18n !== 'undefined' ? I18n.t(g.proj ? 'cu.kind_project' : 'cu.kind_orders') : '') + '</span></td>'
         + '<td>' + (g.cliente ? cEsc(g.cliente) : '—') + '</td>'
-        + '<td class="cx-loja2"><b>' + cEsc(g.loja) + '</b>' + (g.quem ? '<br><span class="hint">' + cEsc(g.quem) + '</span>' : '') + '</td>'
+        + '<td class="cx-loja2"><b>' + cEsc(g.loja) + '</b></td><td class="cx-loja2 cx-quem">' + (g.quem ? cEsc(g.quem) : '—') + '</td>'
         + '<td class="mp-c-n"><strong>' + g.n + '</strong></td>'
         + '<td><span class="mp-chip st-' + g.status + '">' + cEsc(stRot) + '</span></td>'
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[g.etapa] + '"></i>' + cEsc(cT('s_' + g.etapa)) + '</span></td>'
@@ -695,27 +697,54 @@ function cxRenderNet(p) {
   if (!s) { p.innerHTML = '<p class="hint">' + cEsc(cT('loading')) + '</p>'; return; }
   const f = cxState.net;
   const rows = cxNetRows();
-  const cont = {}; CX_NET_STAGES.forEach((k) => { cont[k] = 0; });
-  const semEtapa = Object.assign({}, f, { etapa: '' });
-  cxState.net = semEtapa; cxNetRows().forEach((o) => { cont[o._s]++; }); cxState.net = f;
-  cxState.net = Object.assign({}, f, { hoje: true }); const nHoje = cxNetRows().length; cxState.net = f;
   const totL = rows.reduce((a, o) => a + (o._l || 0), 0), totN = rows.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
-  const foco = document.activeElement && document.activeElement.id === 'cx-net-q';
-  p.innerHTML = '<div class="cx-chips">' + (cxAdmin() ? '' : '<button type="button" class="cx-chip cx-back" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>')
-     + '<button type="button" class="cx-chip cx-chip-hoje' + (f.hoje ? ' on' : '') + '" data-cx="hoje">' + cEsc(cT('today')) + ' <b>' + nHoje + '</b></button>'
-    + CX_NET_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
-    + '<div class="cx-filters"><input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
-    + '<span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span>'
-    + (cxAdmin() && rows.length ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.length })) + '</select>' : '') + '</div>'
+  const filtrando = f.gstatus || f.periodo || f.user || (f.etapa && f.etapa !== '_orders' && f.etapa !== 'build');
+  // VISUAL LIMPO (20/11, Matt: "tá muito poluído esse visual, quero algo bem mais
+  // minimalista, prefiro deixar os filtros ao clicar na coluna"): sem faixa de
+  // etapas nem segunda busca. Filtra-se clicando no título da coluna (Status,
+  // Etapa, Última atualização) e pela busca de cima; embaixo, uma linha discreta
+  // com o total e as ações.
+  p.innerHTML = ''
     // aba Orders = lista corrida, o NÚMERO DO PEDIDO como primeira referência
     // (20/11, Matt: "aqui eu acho legal mostrar o número do pedido como primeira
     // referência, aí loja, preços, PO, data, status"); as outras abas = pastas.
     + (f.etapa === '_orders'
       ? (rows.length ? '<div class="mp-table-wrap cx-wrap">' + cxFlatTable(rows.slice().sort((a, b) => (Number(b.factory_number) || 0) - (Number(a.factory_number) || 0) || String(b._t || '').localeCompare(String(a._t || '')))) + '</div>'
                      : '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>')
-      : cxGroupTable(rows));
-  if (foco) { const i = document.getElementById('cx-net-q'); if (i) { i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch (e) { /* ok */ } } }
+      : cxGroupTable(rows))
+    + '<div class="cx-foot"><span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span>'
+    + (filtrando ? '<button type="button" class="cx-link" data-cx="fclear">' + cEsc(cT('fl_clear')) + '</button>' : '')
+    + (cxAdmin() ? '' : '<button type="button" class="cx-link" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>')
+    + (cxAdmin() && rows.length ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.length })) + '</select>' : '') + '</div>';
 }
+// MENU DO TÍTULO DA COLUNA: ordenar + filtrar (Status / Etapa / Última atualização).
+function cxHeadMenu(col, th) {
+  cxCloseHeadMenu();
+  const f = cxState.net; const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
+  const T = (k, alt) => { try { const v = (typeof mpT === 'function') ? mpT(k) : ''; return v && v !== 'mp.' + k ? v : alt; } catch (e) { return alt; } };
+  const op = (grupo, v, rot, on, cor) => '<button type="button" class="cx-hm-i' + (on ? ' on' : '') + '" data-cx="hpick" data-g="' + grupo + '" data-v="' + cEsc(v) + '">' + (cor ? '<i style="background:' + cor + '"></i>' : '') + cEsc(rot) + '</button>';
+  let h = '';
+  if (th.closest('.cx-gtable')) h += op('sort', col + ':1', cT('fl_asc'), st.col === col && st.dir > 0) + op('sort', col + ':-1', cT('fl_desc'), st.col === col && st.dir < 0) + '<hr>';
+  if (col === 'etapa') {
+    const base = Object.assign({}, f); cxState.net = Object.assign({}, f, { etapa: '' }); const cont = {}; cxNetRows().forEach((o) => { cont[o._s] = (cont[o._s] || 0) + 1; }); cxState.net = base;
+    h += op('etapa', '', cT('fl_all'), !f.etapa) + CX_NET_STAGES.map((k) => op('etapa', k, cT('s_' + k) + ' (' + (cont[k] || 0) + ')', f.etapa === k, CX_COLORS[k])).join('');
+  } else if (col === 'quem') {
+    const base = Object.assign({}, f); cxState.net = Object.assign({}, f, { user: '' }); const por = {}; cxNetRows().forEach((o) => { por[o.client_user_id] = (por[o.client_user_id] || 0) + 1; }); cxState.net = base;
+    const uids = Object.keys(por).sort((a, b) => por[b] - por[a]).slice(0, 40);
+    h += op('user', '', cT('fl_all'), !f.user) + uids.map((u) => op('user', u, cxUserLabel(u, cxState.scope.orders) + ' (' + por[u] + ')', f.user === u)).join('');
+  } else if (col === 'status') {
+    h += op('gstatus', '', cT('fl_all'), !f.gstatus) + ['dev', 'proposal', 'approved'].map((k) => op('gstatus', k, T('st_' + k, k), f.gstatus === k)).join('');
+  } else if (col === 'upd') {
+    h += op('periodo', '', cT('fl_all'), !f.periodo) + op('periodo', 'hoje', cT('today'), f.periodo === 'hoje') + op('periodo', '7', cT('fl_7'), f.periodo === '7') + op('periodo', '30', cT('fl_30'), f.periodo === '30');
+  }
+  const r = th.getBoundingClientRect();
+  const m = document.createElement('div');
+  m.id = 'cx-hmenu'; m.className = 'cx-hmenu'; m.innerHTML = h;
+  m.style.top = Math.round(r.bottom + 4) + 'px';
+  m.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 240))) + 'px';
+  document.body.appendChild(m);
+}
+function cxCloseHeadMenu() { const m = document.getElementById('cx-hmenu'); if (m) m.remove(); }
 
 // ---------- MAPA ----------
 function cxLoadLeaflet() {
@@ -956,7 +985,15 @@ document.addEventListener('click', (e) => {
   if (a === 'folders') { const f = cxState.net; f.fab = false; f.own = true; f.hoje = false; f.loja = ''; f.user = ''; f.cliente = ''; f.etapa = ''; f.q = ''; return mpRender(); }
   if (a === 'grow') { const k = b.getAttribute('data-k'); const ab = cxState.netOpen || (cxState.netOpen = new Set()); if (ab.has(k)) ab.delete(k); else ab.add(k); return mpRender(); }
   if (a === 'gsort') { const c = b.getAttribute('data-col'); const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 }); if (st.col === c) st.dir = -st.dir; else { st.col = c; st.dir = (c === 'nome' || c === 'cliente' || c === 'loja') ? 1 : -1; } return mpRender(); }
-  if (a === 'hoje') { cxState.net.hoje = !cxState.net.hoje; return mpRender(); }
+  if (a === 'hmenu') { const jaAberto = document.getElementById('cx-hmenu') && cxState.hmenuCol === b.getAttribute('data-col'); cxCloseHeadMenu(); if (jaAberto) { cxState.hmenuCol = ''; return; } cxState.hmenuCol = b.getAttribute('data-col'); return cxHeadMenu(cxState.hmenuCol, b); }
+  if (a === 'hpick') {
+    const g = b.getAttribute('data-g'), v = b.getAttribute('data-v'), f = cxState.net;
+    if (g === 'sort') { const x = v.split(':'); cxState.netSort = { col: x[0], dir: Number(x[1]) }; }
+    else if (g === 'etapa') f.etapa = v; else if (g === 'user') { f.user = v; f.cliente = ''; } else if (g === 'gstatus') f.gstatus = v; else if (g === 'periodo') f.periodo = v;
+    cxCloseHeadMenu(); cxState.hmenuCol = '';
+    return mpRender();
+  }
+  if (a === 'fclear') { const f = cxState.net; f.gstatus = ''; f.periodo = ''; f.user = ''; f.cliente = ''; if (f.etapa !== '_orders' && f.etapa !== 'build') f.etapa = ''; return mpRender(); }
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
   if (a === 'geocode') return cxGeocodeMissing();
@@ -975,6 +1012,12 @@ document.addEventListener('click', (e) => {
   cxState.colOpen = '';
   document.querySelectorAll('.cx-dd.open').forEach((el) => el.classList.remove('open'));
 }, true);
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('cx-hmenu')) return;
+  if (e.target.closest && (e.target.closest('#cx-hmenu') || e.target.closest('[data-cx="hmenu"]'))) return;
+  cxCloseHeadMenu(); cxState.hmenuCol = '';
+}, true);
+window.addEventListener('scroll', () => { if (document.getElementById('cx-hmenu')) { cxCloseHeadMenu(); cxState.hmenuCol = ''; } }, true);
 // aba normal clicada: sai do modo perdidos/mapa/lojas
 document.addEventListener('click', (e) => {
   if (e.target.closest && e.target.closest('#po-mp-v2 [data-act="ctab"]')) {
@@ -1125,6 +1168,11 @@ function cxCss() {
     '.cx-save-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px}.cx-save-box{background:var(--panel,#fff);color:var(--text,#2b2621);border-radius:12px;padding:20px 22px;max-width:440px;width:100%;display:flex;flex-direction:column;gap:10px}.cx-save-box h3,.cx-save-box p{margin:0}.cx-save-box label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted,#766f64)}.cx-save-box select,.cx-save-box input{padding:9px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;background:#fff;color:var(--text,#2b2621);width:100%;margin:0}.cx-save-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.cx-save-foot button{margin:0}',
     '.cx-storecell{cursor:pointer}.cx-storecell:hover b{text-decoration:underline}.cx-swap{color:var(--muted,#766f64);font-size:12px}.cx-storesel,.cx-moveall{padding:6px 8px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;max-width:260px;width:auto;margin:0}.cx-moveall{margin-left:auto}',
     '.cx-gtable>thead th{cursor:pointer;white-space:nowrap}.cx-gtable>tbody>tr.cx-grow>td{white-space:normal}.cx-loja2{max-width:220px;overflow:hidden;text-overflow:ellipsis}.cx-loja2 .hint{font-size:11px}.cx-gexp>td{padding:0 0 10px 34px;background:rgba(0,0,0,.015)}.cx-inner{overflow:auto}.cx-inner .cx-table{margin:0}.cx-inner .cx-table thead th{font-size:11px}',
+    '.cx-hmenu{max-height:70vh;overflow:auto}.cx-quem{font-size:12px;color:var(--muted,#766f64)}',
+    '.cx-foot{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12px}.cx-foot .cx-moveall{margin-left:auto;font-size:12px;padding:4px 8px;color:var(--muted,#766f64)}.cx-link{background:none!important;border:0;padding:0;margin:0;color:var(--accent-dark,#6e4527);text-decoration:underline;cursor:pointer;font-size:12px;box-shadow:none!important}',
+    '.cx-th-on{color:var(--accent-dark,#6e4527)}.cx-th-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent,#8a5a34);margin-right:5px;vertical-align:middle}',
+    '.cx-hmenu{position:fixed;z-index:10004;background:#fff;border:1px solid var(--border,#e0ddd6);border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.18);padding:6px;min-width:210px;max-width:260px}.cx-hmenu hr{border:0;border-top:1px solid var(--border,#e0ddd6);margin:4px 0}',
+    '.cx-hm-i{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:7px 10px;border:0;border-radius:7px;background:none!important;color:var(--text,#2b2621);font-size:13px;text-align:left;cursor:pointer;box-shadow:none!important}.cx-hm-i:hover{background:var(--bg,#f7f6f3)!important}.cx-hm-i.on{font-weight:700;color:var(--accent-dark,#6e4527)}.cx-hm-i i{width:9px;height:9px;border-radius:50%;flex:none}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
     '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',

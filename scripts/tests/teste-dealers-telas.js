@@ -237,9 +237,9 @@ const base = `
   ok(box().querySelectorAll('.mp-row:not(.cx-grow)').length === 1 && !!box().querySelector('[data-cx="reopen"]'), 'aba Perdidos: só o perdido, com Reabrir');
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   await espera(80);
-  ok(!!box().querySelector('.cx-table') && !!box().querySelector('[data-cx="hoje"]'), 'admin (fábrica) já abre vendo a lista de todo mundo, com o filtro "Atualizados hoje"');
+  ok(!!box().querySelector('.cx-table') && !box().querySelector('.cx-chips') && !!box().querySelector('.cx-foot'), 'admin (fábrica) já abre vendo a lista de todo mundo, limpa (sem faixa de etapas), com o total no rodapé');
   const abreTudo = async () => { for (let i = 0; i < 12; i++) { const f = box().querySelector('.cx-grow:not(.is-open)'); if (!f) break; f.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(10); } };
-  ok(box().querySelectorAll('.cx-gtable > tbody > tr.cx-grow').length === 4 && box().querySelectorAll('.cx-gtable > thead th[data-cx="gsort"]').length >= 8 && /Loja Teste/.test(box().querySelector('.cx-gtable').textContent),
+  ok(box().querySelectorAll('.cx-gtable > tbody > tr.cx-grow').length === 4 && box().querySelectorAll('.cx-gtable > thead th.mp-th-sort').length >= 9 && /Loja Teste/.test(box().querySelector('.cx-gtable').textContent),
     'lista no formato de pastas: 4 linhas (pasta de pedidos, 2 pedidos soltos, pasta de projeto), colunas que ordenam, com a LOJA');
   await abreTudo();
   ok(box().querySelectorAll('.cx-gexp .cx-table tbody tr').length === 4 && box().querySelectorAll('.cx-tagp').length === 1, 'abrir as pastas mostra os itens: 3 pedidos (com número) + 1 projeto');
@@ -267,6 +267,17 @@ const base = `
   const corrida = box().querySelectorAll('#cx-panel .cx-wrap > .cx-inner .cx-table tbody tr');
   ok(!box().querySelector('.cx-gtable') && corrida.length === 2 && /00012/.test(corrida[0].textContent), 'aba Orders: lista corrida, número do pedido primeiro (00012 em cima)');
   box().querySelector('.cx-ci[data-c="loja"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
+  box().querySelector('[data-act="ctab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
+  const thEt = box().querySelector('.cx-gtable th[data-col="etapa"]');
+  thEt.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(5);
+  const menu = win.document.getElementById('cx-hmenu');
+  ok(!!menu && menu.querySelectorAll('[data-g="etapa"]').length === 7 && menu.querySelectorAll('[data-g="sort"]').length === 2, 'clicar no título "Etapa" abre o menu: ordenar + filtrar por etapa');
+  menu.querySelector('[data-g="etapa"][data-v="done"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
+  ok(!win.document.getElementById('cx-hmenu') && !!box().querySelector('.cx-gtable th.cx-th-on') && box().querySelectorAll('.cx-grow').length === 1 && !!box().querySelector('[data-cx="fclear"]'), 'filtro pela coluna: só o entregue, coluna marcada, "Limpar filtros" no rodapé');
+  box().querySelector('[data-cx="fclear"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
+  box().querySelector('.cx-gtable th[data-col="quem"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(5);
+  ok(win.document.querySelectorAll('#cx-hmenu [data-g="user"]').length === 3, 'coluna Vendedor: menu com Todos + 2 vendedores');
+  win.document.querySelectorAll('#cx-hmenu [data-g="user"]')[0].dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
   const lupa = box().querySelector('[data-cx-colq="user"]');
   lupa.value = 'colega'; lupa.dispatchEvent(new win.Event('input', { bubbles: true }));
   const vis = Array.from(box().querySelectorAll('.cx-ci[data-c="user"]')).filter((el) => el.style.display !== 'none');
