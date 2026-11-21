@@ -656,7 +656,17 @@ async function cxLoadPricing(s, descConta) {
   const aplica = (base, tab, lista) => (typeof applyPricingExtras === 'function') ? applyPricingExtras(base, tab, lista) : base;
   const r2 = (v) => Math.round(v * 100) / 100;
   s.orders.forEach((o) => {
-    if (!o._proj) return;
+    if (!o._proj) {
+      // PEDIDO: líquido de fábrica já congelado; venda = líquido × (1+margem) + extras de margem da loja
+      const tab = Number(o._l) || 0;
+      const liq = o._n != null ? Number(o._n) : tab;
+      const d = dono(o.client_user_id);
+      const meu = meuId && (d === meuId || o.client_user_id === meuId);
+      const mg = meu && typeof getResaleMarginPct === 'function' ? (Number(getResaleMarginPct()) || 0) : (Number((prof[d] || {}).resale_margin_pct) || 0);
+      const exM = meu && typeof resolveDealerPricingExtras === 'function' ? resolveDealerPricingExtras('margem') : (extras[d] || []).filter((x) => x.side === 'margem');
+      o._v = r2(aplica(mg > 0 ? liq * (1 + mg / 100) : liq, tab, exM));
+      return;
+    }
     const tab = Number(o._l) || 0;
     const d = dono(o.client_user_id);
     const meu = meuId && (d === meuId || o.client_user_id === meuId);
@@ -675,7 +685,8 @@ async function cxLoadPricing(s, descConta) {
   });
 }
 // colunas de preço: aba Projetos = fábrica c/ desconto + venda; resto = tabela/desconto/líquido
-function cxSoProj() { return cxState.net && cxState.net.etapa === 'build'; }
+// 21/11 (2ª): Matt quer as DUAS colunas em todas as abas — fábrica com desconto à esquerda, venda ao cliente (markup do lojista) ao lado.
+function cxSoProj() { return true; }
 function cxPrecoThs(th, soProj) {
   return soProj ? th('net', cT('fab_net'), 1) + th('v', cT('sale'), 1)
     : th('l', cT('list'), 1) + '<th class="cx-r">' + cEsc(cT('disc')) + '</th>' + th('net', cT('net'), 1);
@@ -684,7 +695,7 @@ function cxPrecoThs(th, soProj) {
 function cxTotalRow(itens, antes, depois, soProj) {
   const soma = (k) => itens.reduce((t, o) => t + (Number(o[k]) || 0), 0);
   const precos = soProj
-    ? '<td class="cx-r">' + cEsc(cMoney(soma('_n'))) + '</td><td class="cx-r">' + cEsc(cMoney(soma('_v'))) + '</td>'
+    ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (o._n != null ? o._n : (o._l || 0)), 0))) + '</td><td class="cx-r">' + cEsc(cMoney(soma('_v'))) + '</td>'
     : '<td class="cx-r">' + cEsc(cMoney(soma('_l'))) + '</td><td></td><td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (o._n != null ? o._n : (o._l || 0)), 0))) + '</td>';
   return '<tfoot><tr class="cx-tot"><td colspan="' + antes + '">' + cEsc(cT('sum', { n: itens.length })) + '</td>' + precos + (depois ? '<td colspan="' + depois + '"></td>' : '') + '</tr></tfoot>';
 }
@@ -725,7 +736,7 @@ function cxFlatTable(rows, principal) {
         + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td>'
         + '<td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
         + (!preco ? '' : soProj
-          ? '<td class="cx-r">' + (o._n != null ? cEsc(cMoney(o._n)) + (o._d ? ' <small class="cx-est">−' + o._d + '%</small>' : '') : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
+          ? '<td class="cx-r">' + (o._n != null ? cEsc(cMoney(o._n)) + (o._d ? '<br><small class="cx-est"><s>' + cEsc(cMoney(o._l)) + '</s> −' + o._d + '%</small>' : '') : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
           : '<td class="cx-r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td>'
           + '<td class="cx-r">' + (o._d != null && !o._proj ? o._d + '%' : '—') + '</td><td class="cx-r"><b>' + (o._n != null && !o._proj ? cEsc(cMoney(o._n)) : '—') + '</b></td>')
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
@@ -753,7 +764,7 @@ function cxGroups(rows) {
     g.loja = cxStoreName(a); g.quem = cxUserLabel(a.client_user_id, g.itens);
     g.n = g.itens.length;
     g.l = g.itens.reduce((t, o) => t + (o._l || 0), 0);
-    g.pn = g.itens.reduce((t, o) => t + (o._n || 0), 0); g.v = g.itens.reduce((t, o) => t + (o._v || 0), 0);
+    g.pn = g.itens.reduce((t, o) => t + (o._n != null ? o._n : (o._l || 0)), 0); g.v = g.itens.reduce((t, o) => t + (o._v || 0), 0);
     const comN = g.itens.filter((o) => o._n != null);
     g.net = !g.proj && comN.length === g.itens.length ? comN.reduce((t, o) => t + o._n, 0) : null;
     g.d = g.net != null && g.l > 0 ? Math.round((1 - g.net / g.l) * 1000) / 10 : (g.net != null ? 0 : null);
