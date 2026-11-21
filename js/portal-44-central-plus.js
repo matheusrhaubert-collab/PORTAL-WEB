@@ -722,12 +722,57 @@ function cxPrecoThs(th, soProj) {
       + th('it', ivT('inv_total'), 1);
 }
 // linha de TOTAL embaixo, em negrito, nas mesmas colunas (21/11, Matt)
-function cxTotalRow(itens, antes, depois, soProj) {
+function cxSomaTds(itens, soProj) {
   const soma = (k) => itens.reduce((t, o) => t + (Number(o[k]) || 0), 0);
-  const precos = soProj
+  return soProj
     ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (o._n != null ? o._n : (o._l || 0)), 0))) + '</td><td class="cx-r">' + cEsc(cMoney(soma('_v'))) + '</td>'
     : '<td class="cx-r">' + cEsc(cMoney(soma('_l'))) + '</td><td></td><td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (o._n != null ? o._n : (o._l || 0)), 0))) + '</td>'
       + '<td class="cx-r">' + cEsc(cMoney(soma('_tx'))) + '</td><td class="cx-r">' + cEsc(cMoney(soma('_it'))) + '</td>';
+}
+// PASTA NA LISTA (21/11, Matt: "antes eu tinha funções da pasta dos projetos...
+// a pasta deveria existir com os projetos dentro, uma linha a mais, com
+// somatório só da pasta, e lá embaixo somatório de tudo (cuidar pra não
+// duplicar)"). Na lista corrida da tela, os itens da MESMA pasta do MESMO
+// usuário ficam juntos embaixo de uma linha da pasta: nome, quantidade,
+// somatório só dela e o menu ⋯ com as funções da pasta. A linha da pasta NÃO
+// entra no total de baixo (ele soma só os itens). Clique na linha recolhe/abre.
+function cxFolderKey(o) { return o && o._folder ? String(o.client_user_id) + '|' + o._folder : ''; }
+function cxFolderClosed() { return cxState.foldClosed || (cxState.foldClosed = new Set()); }
+function cxFolderRowHtml(k, itens, soProj, preco, comCk) {
+  const nome = itens[0]._folder;
+  const fechada = cxFolderClosed().has(k);
+  const meus = itens[0].client_user_id === cxMe();
+  const T = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
+  const it = (v, rot, cls) => '<button type="button" class="cx-fmi' + (cls ? ' ' + cls : '') + '" data-cx="fact" data-v="' + v + '" data-k="' + cEsc(k) + '">' + cEsc(rot) + '</button>';
+  const podeProposta = meus && typeof generateClientProposalPDF === 'function' && (typeof canGenerateProposal !== 'function' || canGenerateProposal());
+  const menu = cxState.fmenu !== k ? '' : '<div class="cx-fmenu">'
+    + (podeProposta ? it('proposal', T('fav.folder_proposal_btn')) : '')
+    + (meus ? it('share', T('fav.folder_share_btn')) : '')
+    + it('rename', T('fav.folder_rename_btn'))
+    + (meus ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
+  return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">' + (comCk ? '<td class="cx-ck"></td>' : '')
+    + '<td colspan="4" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
+    + '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button><span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
+    + (preco ? cxSomaTds(itens, soProj) : '') + '<td colspan="3"></td></tr>';
+}
+function cxFolderAction(v, k) {
+  const itens = cxNetRows().filter((o) => cxFolderKey(o) === k);
+  if (!itens.length) return;
+  const nome = itens[0]._folder;
+  const idsProj = Array.from(new Set(itens.map((o) => o._pid).filter(Boolean)));
+  // projetos completos (lista antiga) — só existem pros MEUS projetos
+  const meus = (typeof mpState !== 'undefined' && mpState.rows ? mpState.rows : []).filter((p) => p.client_folder === nome);
+  if (v === 'rename') return renameProjectFolder(nome, meus.length ? meus : idsProj.map((id) => ({ id, client_user_id: itens[0].client_user_id })));
+  if (v === 'share') return shareProjectFolder(nome);
+  if (v === 'delete') return deleteProjectFolder(nome, meus);
+  if (v === 'proposal') {
+    let stEl = null;
+    document.querySelectorAll('.cx-fstatus').forEach((el) => { if (el.getAttribute('data-fst') === k) stEl = el; });
+    return generateClientProposalPDF(nome, meus.filter((p) => !p.frozen_order_id), stEl);
+  }
+}
+function cxTotalRow(itens, antes, depois, soProj) {
+  const precos = cxSomaTds(itens, soProj);
   return '<tfoot><tr class="cx-tot"><td colspan="' + antes + '">' + cEsc(cT('sum', { n: itens.length })) + '</td>' + precos + (depois ? '<td colspan="' + depois + '"></td>' : '') + '</tr></tfoot>';
 }
 // 21/11: clicar na linha do projeto abre o cartão dele EMBAIXO (como era nas
@@ -825,7 +870,23 @@ function cxFlatTable(rows, principal) {
     + th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item'))
     + (preco ? cxPrecoThs(th, soProj) : '')
     + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
-    + rows.slice(0, max).map((o) => {
+    + (() => {
+      // sequência da tela: linha da pasta + os itens dela (na ordem escolhida);
+      // quem não tem pasta fica como sempre. Só na lista principal.
+      const seq = []; const visto = new Set();
+      rows.forEach((o) => {
+        const k = principal ? cxFolderKey(o) : '';
+        if (!k) { seq.push({ o }); return; }
+        if (visto.has(k)) return;
+        visto.add(k);
+        const itens = rows.filter((x) => cxFolderKey(x) === k);
+        seq.push({ pasta: k, itens });
+        if (!cxFolderClosed().has(k)) itens.forEach((x) => seq.push({ o: x, dentro: true }));
+      });
+      return seq;
+    })().slice(0, max).map((lin) => {
+      if (lin.pasta) return cxFolderRowHtml(lin.pasta, lin.itens, soProj, preco, principal && !soProj);
+      const o = lin.o; const dentro = !!lin.dentro;
       const quem = cxUserLabel(o.client_user_id, [o]);
       // botão DENTRO da célula de etapa (21/11: "na própria barra de status"; a última coluna some em tela estreita)
       const envia = o._proj && (cxAdmin() || (o.client_user_id === cxMe() && !cxSeller()))
@@ -837,10 +898,10 @@ function cxFlatTable(rows, principal) {
       const ehFab = !o._proj && Number(o.factory_number) > 0;
       const icoN = (typeof MP_ICO !== 'undefined') ? '<span class="cx-nico' + (ehFab ? ' cx-nico-f' : '') + '" title="' + (ehFab ? 'Factory order' : 'Project') + '">' + (ehFab ? MP_ICO.factory : MP_ICO.layers) + '</span>' : '';
       const ck = principal && !soProj ? '<td class="cx-ck">' + (!o._proj && o.status !== 'submitted' ? '<input type="checkbox" data-cx="sel" data-id="' + cEsc(o.id) + '"' + (cxSel().has(o.id) ? ' checked' : '') + '>' : '') + '</td>' : '';
-      return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '">' + ck + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
+      return '<tr' + (dentro ? ' class="cx-in"' : '') + ' data-cx="openorder" data-id="' + cEsc(o.id) + '">' + ck + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
         + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
         + '<td class="cx-quem" title="' + cEsc(quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
-        + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '" title="' + cEsc(ivT('folder_tip')) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
+        + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '" title="' + cEsc(ivT('folder_tip')) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
         + (!preco ? '' : soProj
           ? '<td class="cx-r">' + (o._n != null ? (o._d ? '<small class="cx-est" title="' + cEsc(cT('list') + ' ' + cMoney(o._l)) + '">−' + o._d + '%</small> ' : '') + cEsc(cMoney(o._n)) : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
           : '<td class="cx-r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td>'
@@ -1493,6 +1554,18 @@ document.addEventListener('click', (e) => {
     return mpRender();
   }
   if (a === 'selclear') { cxSel().clear(); return mpRender(); }
+  if (a === 'fmenu') { e.stopPropagation(); e.preventDefault(); const k = b.getAttribute('data-k'); cxState.fmenu = cxState.fmenu === k ? null : k; return mpRender(); }
+  if (a === 'fact') {
+    e.stopPropagation(); e.preventDefault();
+    cxState.fmenu = null; mpRender();
+    return cxFolderAction(b.getAttribute('data-v'), b.getAttribute('data-k'));
+  }
+  if (a === 'ftoggle') {
+    const k = b.getAttribute('data-k'); const fc = cxFolderClosed();
+    if (fc.has(k)) fc.delete(k); else fc.add(k);
+    cxState.fmenu = null;
+    return mpRender();
+  }
   if (a === 'folderq') {
     e.stopPropagation(); e.preventDefault();
     cxState.net.q = b.getAttribute('data-v') || ''; const inp = document.getElementById('cx-net-q'); if (inp) inp.value = cxState.net.q;
@@ -1706,6 +1779,12 @@ function cxCss() {
     '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}',
     '.cx-sf-terms{background:#fbf4ec;border:1px solid #e8cfb4;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13px;line-height:1.45}.cx-sf-terms p{margin:6px 0}',
     '.cx-sf-box label.cx-sf-ok{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;color:#2a251e}.cx-sf-msg{min-height:18px;font-size:13px;margin:8px 0}.cx-sf-msg.err{color:#b42318}.cx-sf-acts{display:flex;justify-content:flex-end;gap:8px}.cx-sf-acts .cx-sendfab{padding:10px 16px;font-size:13px}',
+    '.cx-table tr.cx-frow td{background:#f6f1e8;border-top:1px solid #e1d8c8;font-weight:600;cursor:pointer}.cx-table tr.cx-frow td.cx-fname{position:relative;white-space:nowrap}'
+    + '.cx-fchev{display:inline-block;width:12px;color:#8a7f70}.cx-fn{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#e6dccb;color:#5b5145;font-size:11px;text-align:center}'
+    + '.cx-fdots{border:0;background:transparent;color:#5b5145;font-size:16px;line-height:1;padding:0 8px;margin:0 0 0 6px;cursor:pointer;border-radius:5px}.cx-fdots:hover{background:#e6dccb}'
+    + '.cx-fmenu{position:absolute;left:180px;top:100%;z-index:30;background:#fff;border:1px solid #d9d3c8;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;min-width:170px}'
+    + '.cx-fmi{border:0;background:transparent;color:#2f2a24;text-align:left;padding:7px 10px;margin:0;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer}.cx-fmi:hover{background:#f3ece0}.cx-fmi.is-danger{color:#a3352b}'
+    + '.cx-table tr.cx-in td.cx-num{padding-left:22px}.cx-fstatus{margin-left:8px;font-weight:400}',
     '.cx-table tfoot .cx-tot td{font-weight:700;border-top:2px solid var(--line,#d9d3c8);padding-top:10px;padding-bottom:10px;background:var(--panel-2,#faf8f4)}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
     '#cx-tree{margin:4px 0 12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',

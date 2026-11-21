@@ -238,7 +238,8 @@ const base = `
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   await espera(80);
   const clica = async (el, ms) => { el.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(ms || 20); };
-  const linhasP = () => box().querySelectorAll('.cx-main > tbody > tr');
+  // 21/11: a pasta ganhou linha própria (.cx-frow) — não é item, não entra na conta
+  const linhasP = () => box().querySelectorAll('.cx-main > tbody > tr:not(.cx-frow)');
   ok(!!box().querySelector('.cx-main') && !box().querySelector('.cx-chips') && !!box().querySelector('.cx-foot'), 'admin (fábrica) já abre na lista numerada de todo mundo, limpa, com o total no rodapé');
   ok(linhasP().length === 4 && box().querySelectorAll('.cx-tagp').length === 1 && /Loja Teste/.test(box().querySelector('.cx-main').textContent) && /00012/.test(box().querySelector('.cx-main').textContent),
     'lista: 3 pedidos (número de fábrica) + 1 projeto, com LOJA e vendedor em colunas');
