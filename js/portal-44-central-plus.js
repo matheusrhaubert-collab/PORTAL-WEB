@@ -368,7 +368,7 @@ async function cxLoadScope(force) {
   try {
     const sb = supabaseClient;
     const od = await sb.from('orders')
-      .select('id, client_user_id, account_id, status, order_type, po_name, client_name, client_email, room_name, delivery_address, jobsite_lat, jobsite_lng, price_list_total, price_discount_pct, price_net_total, factory_number, submitted_at, approved_at, finance_released_at, pickup_released_at, delivered_at')
+      .select('id, client_user_id, account_id, status, order_type, po_name, client_name, client_email, room_name, delivery_address, jobsite_lat, jobsite_lng, price_list_total, price_discount_pct, price_net_total, factory_number, source_project_id, submitted_at, approved_at, finance_released_at, pickup_released_at, delivered_at')
       .in('status', ['submitted', 'approved', 'paid', 'delivered']).order('submitted_at', { ascending: false }).limit(3000);
     if (od.error) throw od.error;
     s.orders = (od.data || []).filter((o) => o.order_type !== 'cutting_list');
@@ -396,11 +396,14 @@ async function cxLoadScope(force) {
       const PB = 'id, client_user_id, name, client_folder, client_info, cached_value_usd, frozen_order_id, archived_at, updated_at';
       let pr = await sb.from('user_projects').select(PB + ', lost_at').order('updated_at', { ascending: false }).limit(5000);
       if (pr.error) pr = await sb.from('user_projects').select(PB).order('updated_at', { ascending: false }).limit(5000);
+      const porId = {}, porPedido = {};
+      (pr.data || []).forEach((p) => { porId[p.id] = p; if (p.frozen_order_id) porPedido[p.frozen_order_id] = p; });
+      s.orders.forEach((o) => { const pj = porPedido[o.id] || porId[o.source_project_id]; o._folder = pj && pj.client_folder ? pj.client_folder : ''; o._pname = pj ? (pj.name || '') : ''; });
       (pr.data || []).forEach((p) => {
         if (p.frozen_order_id || p.archived_at || p.lost_at) return;
         const m = s.team[p.client_user_id];
         s.orders.push({
-          _proj: true, id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: m ? m.account_id : null, status: 'project',
+          _proj: true, _folder: p.client_folder || '', _pname: p.name || '', id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: m ? m.account_id : null, status: 'project',
           po_name: p.name, client_name: (p.client_info && p.client_info.name) || p.client_folder || '', room_name: '',
           delivery_address: (p.client_info && p.client_info.address) || '', jobsite_lat: null, jobsite_lng: null,
           submitted_at: p.updated_at, _l: Number(p.cached_value_usd) || 0, _d: null, _n: null, _s: 'build'
@@ -565,6 +568,92 @@ async function cxMoveOrders(ids, destino) {
   } catch (e) { alert((e && e.message) || String(e)); }
   mpRender();
 }
+// Linhas de DENTRO de uma pasta: um pedido/projeto por linha, com o número do
+// pedido, a loja (admin troca), os 3 preços, a etapa e as liberações.
+function cxFlatTable(rows) {
+  const s = cxState.scope;
+  return '<div class="cx-inner"><table class="mp-table cx-table"><thead><tr><th>' + cEsc(cT('c_no')) + '</th><th>' + cEsc(cT('c_store')) + '</th><th>' + cEsc(cT('c_po')) + '</th><th>' + cEsc(cT('c_room'))
+        + '</th><th>' + cEsc(cT('c_city')) + '</th><th class="r">' + cEsc(cT('list')) + '</th><th class="r">' + cEsc(cT('disc')) + '</th><th class="r">' + cEsc(cT('net')) + '</th><th>' + cEsc(cT('c_stage')) + '</th><th>' + cEsc(cT('c_date')) + '</th><th></th></tr></thead><tbody>'
+        + rows.slice(0, 400).map((o) => {
+          const quem = cxUserLabel(o.client_user_id, [o]);
+          const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
+            : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
+          return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td>' + (Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + '</td>'
+            + '<td' + (cxAdmin() && !o._proj ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>'
+              + (cxAdmin() && !o._proj ? ' <span class="cx-swap">⇄</span>' : '') + (quem ? '<br><span class="hint">' + cEsc(quem) + '</span>' : '') + '</td>'
+            + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td><td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
+            + '<td class="r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td><td class="r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>'
+            + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+}
+
+// LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
+// layout muda e não quero isso... deixa no formato antigo porque os filtros
+// das colunas estão funcionando e as pastas são mais visuais"). Mesma cara da
+// lista de pastas da Central: uma linha por pasta/projeto/pedido solto, de
+// cada usuário, colunas que ordenam, e abre pra ver os itens (cxFlatTable).
+function cxGroups(rows) {
+  const map = new Map();
+  rows.forEach((o) => {
+    const k = (o._proj ? 'b' : 'o') + '|' + o.client_user_id + '|' + (o._folder ? 'f:' + o._folder : 'i:' + o.id);
+    if (!map.has(k)) map.set(k, { key: k, proj: !!o._proj, folder: o._folder || '', itens: [] });
+    map.get(k).itens.push(o);
+  });
+  const ORD = ['build', 'wait', 'pay', 'prod', 'ready', 'done'];
+  return Array.from(map.values()).map((g) => {
+    const a = g.itens[0];
+    const cli = {}; g.itens.forEach((o) => { const n = String(o.client_name || '').trim(); if (n) cli[n] = (cli[n] || 0) + 1; });
+    g.titulo = g.folder || a._pname || a.po_name || a.client_name || '—';
+    g.cliente = Object.keys(cli).sort((x, y) => cli[y] - cli[x])[0] || '';
+    g.loja = cxStoreName(a); g.quem = cxUserLabel(a.client_user_id, g.itens);
+    g.n = g.itens.length;
+    g.l = g.itens.reduce((t, o) => t + (o._l || 0), 0);
+    const comN = g.itens.filter((o) => o._n != null);
+    g.net = !g.proj && comN.length === g.itens.length ? comN.reduce((t, o) => t + o._n, 0) : null;
+    g.d = g.net != null && g.l > 0 ? Math.round((1 - g.net / g.l) * 1000) / 10 : (g.net != null ? 0 : null);
+    g.etapa = g.itens.map((o) => o._s).sort((x, y) => ORD.indexOf(x) - ORD.indexOf(y))[0]; // a menos adiantada
+    g.aprov = g.itens.filter((o) => !o._proj && o._s !== 'wait').length;
+    g.status = g.proj ? 'dev' : (g.aprov > 0 ? 'approved' : 'proposal');
+    g.upd = g.itens.reduce((m, o) => (o._t && (!m || o._t > m) ? o._t : m), null);
+    return g;
+  });
+}
+function cxGroupTable(rows) {
+  const s = cxState.scope;
+  if (!rows.length) return '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>';
+  const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
+  const val = { nome: (g) => g.titulo.toLowerCase(), cliente: (g) => g.cliente.toLowerCase(), loja: (g) => g.loja.toLowerCase(), n: (g) => g.n, status: (g) => g.status, etapa: (g) => CX_NET_STAGES.indexOf(g.etapa), l: (g) => g.l, net: (g) => (g.net == null ? -1 : g.net), upd: (g) => String(g.upd || '') }[st.col];
+  const grupos = cxGroups(rows).sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b.upd || '').localeCompare(String(a.upd || '')); });
+  const th = (col, rot, r) => '<th class="mp-th-sort' + (st.col === col ? ' is-sorted' : '') + (r ? ' cx-r' : '') + '" data-cx="gsort" data-col="' + col + '">' + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : '↕') + '</th>';
+  const T = (k, alt) => { try { const v = (typeof mpT === 'function') ? mpT(k) : ''; return v && v !== 'mp.' + k ? v : alt; } catch (e) { return alt; } };
+  const ICO = (typeof MP_ICO !== 'undefined') ? MP_ICO : { chev: '›', folder: '', layers: '', factory: '' };
+  const aberto = cxState.netOpen || (cxState.netOpen = new Set());
+  const preco = !cxSeller();
+  const nCols = preco ? 10 : 7;
+  const max = 300;
+  return '<div class="mp-table-wrap cx-wrap"><table class="mp-table cx-table cx-gtable"><thead><tr>'
+    + th('nome', T('col_project', 'Project')) + th('cliente', T('col_client', 'Client')) + th('loja', cT('c_store')) + th('n', T('col_count', 'Projects'))
+    + th('status', T('col_status', 'Status')) + th('etapa', T('col_prod', cT('c_stage')))
+    + (preco ? th('l', cT('list'), 1) + '<th class="cx-r">' + cEsc(cT('disc')) + '</th>' + th('net', cT('net'), 1) : '') + th('upd', T('col_updated', cT('c_date')))
+    + '</tr></thead><tbody>'
+    + grupos.slice(0, max).map((g) => {
+      const ab = aberto.has(g.key);
+      const stRot = T('st_' + g.status, g.status) + (g.status === 'approved' && g.aprov < g.n ? ' ' + g.aprov + '/' + g.n : '');
+      return '<tr class="mp-row cx-grow' + (ab ? ' is-open' : '') + '" data-cx="grow" data-k="' + cEsc(g.key) + '">'
+        + '<td class="mp-c-name"><span class="mp-chev">' + (ICO.chev || '›') + '</span><span class="mp-fold' + (g.proj ? '' : ' cu-ico-orders') + '">' + (g.proj ? (g.folder ? ICO.folder : ICO.layers) : ICO.factory) + '</span>'
+        + '<strong>' + cEsc(g.titulo) + '</strong> <span class="cu-kind">' + cEsc(typeof I18n !== 'undefined' ? I18n.t(g.proj ? 'cu.kind_project' : 'cu.kind_orders') : '') + '</span></td>'
+        + '<td>' + (g.cliente ? cEsc(g.cliente) : '—') + '</td>'
+        + '<td class="cx-loja2"><b>' + cEsc(g.loja) + '</b>' + (g.quem ? '<br><span class="hint">' + cEsc(g.quem) + '</span>' : '') + '</td>'
+        + '<td class="mp-c-n"><strong>' + g.n + '</strong></td>'
+        + '<td><span class="mp-chip st-' + g.status + '">' + cEsc(stRot) + '</span></td>'
+        + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[g.etapa] + '"></i>' + cEsc(cT('s_' + g.etapa)) + '</span></td>'
+        + (preco ? '<td class="cx-r">' + (g.proj ? (g.l ? '<span class="cx-est">' + cEsc(cMoney(g.l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(g.l))) + '</td>'
+          + '<td class="cx-r">' + (g.d != null ? g.d + '%' : '—') + '</td><td class="cx-r"><b>' + (g.net != null ? cEsc(cMoney(g.net)) : '—') + '</b></td>' : '')
+        + '<td class="mp-c-date">' + cxQuando(g.upd) + '</td></tr>'
+        + (ab ? '<tr class="mp-exp cx-gexp"><td colspan="' + nCols + '">' + cxFlatTable(g.itens) + '</td></tr>' : '');
+    }).join('')
+    + '</tbody></table></div>' + (grupos.length > max ? '<p class="hint">+' + (grupos.length - max) + '…</p>' : '');
+}
 function cxRenderNet(p) {
   const s = cxState.scope;
   if (!s) { p.innerHTML = '<p class="hint">' + cEsc(cT('loading')) + '</p>'; return; }
@@ -582,20 +671,13 @@ function cxRenderNet(p) {
     + '<div class="cx-filters"><input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
     + '<span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span>'
     + (cxAdmin() && rows.some((o) => !o._proj) ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.filter((o) => !o._proj).length })) + '</select>' : '') + '</div>'
-    + (rows.length ? '<div class="mp-table-wrap cx-wrap"><table class="mp-table cx-table"><thead><tr><th>' + cEsc(cT('c_no')) + '</th><th>' + cEsc(cT('c_store')) + '</th><th>' + cEsc(cT('c_po')) + '</th><th>' + cEsc(cT('c_room'))
-        + '</th><th>' + cEsc(cT('c_city')) + '</th><th class="r">' + cEsc(cT('list')) + '</th><th class="r">' + cEsc(cT('disc')) + '</th><th class="r">' + cEsc(cT('net')) + '</th><th>' + cEsc(cT('c_stage')) + '</th><th>' + cEsc(cT('c_date')) + '</th><th></th></tr></thead><tbody>'
-        + rows.slice(0, 400).map((o) => {
-          const quem = cxUserLabel(o.client_user_id, [o]);
-          const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
-            : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
-          return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td>' + (Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + '</td>'
-            + '<td' + (cxAdmin() && !o._proj ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>'
-              + (cxAdmin() && !o._proj ? ' <span class="cx-swap">⇄</span>' : '') + (quem ? '<br><span class="hint">' + cEsc(quem) + '</span>' : '') + '</td>'
-            + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td><td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
-            + '<td class="r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td><td class="r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>'
-            + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
-        }).join('') + '</tbody></table></div>'
-      : '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>');
+    // aba Orders = lista corrida, o NÚMERO DO PEDIDO como primeira referência
+    // (20/11, Matt: "aqui eu acho legal mostrar o número do pedido como primeira
+    // referência, aí loja, preços, PO, data, status"); as outras abas = pastas.
+    + (f.etapa === '_orders'
+      ? (rows.length ? '<div class="mp-table-wrap cx-wrap">' + cxFlatTable(rows.slice().sort((a, b) => (Number(b.factory_number) || 0) - (Number(a.factory_number) || 0) || String(b._t || '').localeCompare(String(a._t || '')))) + '</div>'
+                     : '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>')
+      : cxGroupTable(rows));
   if (foco) { const i = document.getElementById('cx-net-q'); if (i) { i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch (e) { /* ok */ } } }
 }
 
@@ -825,6 +907,8 @@ document.addEventListener('click', (e) => {
     return mpRender();
   }
   if (a === 'folders') { const f = cxState.net; f.fab = false; f.own = true; f.hoje = false; f.loja = ''; f.user = ''; f.cliente = ''; f.etapa = ''; f.q = ''; return mpRender(); }
+  if (a === 'grow') { const k = b.getAttribute('data-k'); const ab = cxState.netOpen || (cxState.netOpen = new Set()); if (ab.has(k)) ab.delete(k); else ab.add(k); return mpRender(); }
+  if (a === 'gsort') { const c = b.getAttribute('data-col'); const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 }); if (st.col === c) st.dir = -st.dir; else { st.col = c; st.dir = (c === 'nome' || c === 'cliente' || c === 'loja') ? 1 : -1; } return mpRender(); }
   if (a === 'hoje') { cxState.net.hoje = !cxState.net.hoje; return mpRender(); }
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
@@ -931,6 +1015,7 @@ function cxCss() {
     '.cx-go{display:flex;gap:10px;align-items:center;flex-basis:100%}.cx-go button{margin:0;padding:7px 16px}.cx-st{font-size:12px}.cx-st.ok{color:#2e7d4f}.cx-st.err{color:var(--danger,#b3432f)}',
     '.cx-lostbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin:6px 0 2px}.cx-lostbar button{margin:0;padding:4px 12px;font-size:12px}',
     '.cx-storecell{cursor:pointer}.cx-storecell:hover b{text-decoration:underline}.cx-swap{color:var(--muted,#766f64);font-size:12px}.cx-storesel,.cx-moveall{padding:6px 8px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;max-width:260px;width:auto;margin:0}.cx-moveall{margin-left:auto}',
+    '.cx-gtable>thead th{cursor:pointer;white-space:nowrap}.cx-gtable>tbody>tr.cx-grow>td{white-space:normal}.cx-loja2{max-width:220px;overflow:hidden;text-overflow:ellipsis}.cx-loja2 .hint{font-size:11px}.cx-gexp>td{padding:0 0 10px 34px;background:rgba(0,0,0,.015)}.cx-inner{overflow:auto}.cx-inner .cx-table{margin:0}.cx-inner .cx-table thead th{font-size:11px}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
     '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
