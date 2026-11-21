@@ -47,7 +47,7 @@ const CX_COLORS = { build: '#a8a29a', wait: '#c58a2b', pay: '#7b6fd0', prod: '#2
 const cxState = {
   off: false, view: '', extra: {}, extraFor: '', extraBusy: false, lost: {}, lostLoaded: false, lostBusy: false,
   acc: null, accLoaded: false, sug: {}, sugTimer: null, saving: {}, msg: {}, scope: null, scopeBusy: false,
-  net: { fab: false, loja: '', user: '', cliente: '', etapa: '', q: '' }, colScroll: {}, accNames: {}, totalsFor: -1, colQ: { loja: '', user: '', cliente: '' }, draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
+  net: { fab: false, own: false, hoje: false, loja: '', user: '', cliente: '', etapa: '', q: '' }, netInit: false, colScroll: {}, accNames: {}, totalsFor: -1, colQ: { loja: '', user: '', cliente: '' }, draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
 };
 
 function cxOn() {
@@ -65,11 +65,11 @@ const CX_TXT = {
     saved: 'salvo', released: 'Pedido liberado pra fábrica.', frozen: 'preço congelado na aprovação',
     t_lost: 'Perdidos', t_map: 'Mapa', t_net: 'Lojas',
     lost_mark: 'Marcar como perdido', lost_reopen: 'Reabrir projeto', lost_info: 'Perdido em {d} — {r}', lost_empty: 'Nenhum projeto perdido.',
-    mv_change: 'trocar loja', mv_all: 'Passar os {n} pedidos desta lista pra…', mv_new: '+ Nova loja…', mv_new_q: 'Nome da nova loja (ex.: Legno Distribuição Orlando):', mv_confirm: 'Passar {n} pedido(s) pra "{loja}"?', s_build: 'Projeto em construção', tag_proj: 'projeto', s_wait: 'Aguardando aprovação', s_pay: 'Aguardando liberação', s_prod: 'Em produção', s_ready: 'Liberado pra coleta', s_done: 'Entregue',
+    mv_change: 'trocar loja', mv_all: 'Passar os {n} pedidos desta lista pra…', mv_new: '+ Nova loja…', mv_new_q: 'Nome da nova loja (ex.: Legno Distribuição Orlando):', mv_confirm: 'Passar {n} pedido(s) pra "{loja}"?', s_build: 'Projeto em construção', tag_proj: 'projeto', est: 'est.', est_tip: 'Valor estimado do projeto (ainda não é pedido)', s_wait: 'Aguardando aprovação', s_pay: 'Aguardando liberação', s_prod: 'Em produção', s_ready: 'Liberado pra coleta', s_done: 'Entregue',
     map_none: 'Nenhuma obra com endereço localizado ainda.', map_locate: 'Localizar {n} endereço(s) no mapa', map_locating: 'Localizando… {i}/{n}', map_missing: '{n} pedido(s) sem endereço', loading: 'Carregando…',
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Voltar pras minhas pastas', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Minhas pastas', today: 'Atualizados hoje', today_at: 'hoje', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
     rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}'
   },
   en: {
@@ -79,11 +79,11 @@ const CX_TXT = {
     saved: 'saved', released: 'Order released to the factory.', frozen: 'price frozen at approval',
     t_lost: 'Lost', t_map: 'Map', t_net: 'Stores',
     lost_mark: 'Mark as lost', lost_reopen: 'Reopen project', lost_info: 'Lost on {d} — {r}', lost_empty: 'No lost projects.',
-    mv_change: 'change store', mv_all: 'Move the {n} orders in this list to…', mv_new: '+ New store…', mv_new_q: 'Name of the new store (e.g. Legno Distribution Orlando):', mv_confirm: 'Move {n} order(s) to "{loja}"?', s_build: 'Project in design', tag_proj: 'project', s_wait: 'Waiting approval', s_pay: 'Waiting release', s_prod: 'In production', s_ready: 'Ready for pickup', s_done: 'Delivered',
+    mv_change: 'change store', mv_all: 'Move the {n} orders in this list to…', mv_new: '+ New store…', mv_new_q: 'Name of the new store (e.g. Legno Distribution Orlando):', mv_confirm: 'Move {n} order(s) to "{loja}"?', s_build: 'Project in design', tag_proj: 'project', est: 'est.', est_tip: 'Estimated project value (not an order yet)', s_wait: 'Waiting approval', s_pay: 'Waiting release', s_prod: 'In production', s_ready: 'Ready for pickup', s_done: 'Delivered',
     map_none: 'No job site located yet.', map_locate: 'Locate {n} address(es) on the map', map_locating: 'Locating… {i}/{n}', map_missing: '{n} order(s) with no address', loading: 'Loading…',
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
-    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_find: 'search…', back_folders: '‹ Back to my folders', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
+    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_find: 'search…', back_folders: '‹ My folders', today: 'Updated today', today_at: 'today', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
     rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}'
   },
   es: {
@@ -93,11 +93,11 @@ const CX_TXT = {
     saved: 'guardado', released: 'Pedido liberado a la fábrica.', frozen: 'precio congelado en la aprobación',
     t_lost: 'Perdidos', t_map: 'Mapa', t_net: 'Tiendas',
     lost_mark: 'Marcar como perdido', lost_reopen: 'Reabrir proyecto', lost_info: 'Perdido el {d} — {r}', lost_empty: 'Ningún proyecto perdido.',
-    mv_change: 'cambiar tienda', mv_all: 'Pasar los {n} pedidos de esta lista a…', mv_new: '+ Nueva tienda…', mv_new_q: 'Nombre de la nueva tienda:', mv_confirm: '¿Pasar {n} pedido(s) a "{loja}"?', s_build: 'Proyecto en desarrollo', tag_proj: 'proyecto', s_wait: 'Esperando aprobación', s_pay: 'Esperando liberación', s_prod: 'En producción', s_ready: 'Listo para retiro', s_done: 'Entregado',
+    mv_change: 'cambiar tienda', mv_all: 'Pasar los {n} pedidos de esta lista a…', mv_new: '+ Nueva tienda…', mv_new_q: 'Nombre de la nueva tienda:', mv_confirm: '¿Pasar {n} pedido(s) a "{loja}"?', s_build: 'Proyecto en desarrollo', tag_proj: 'proyecto', est: 'est.', est_tip: 'Valor estimado del proyecto (aún no es pedido)', s_wait: 'Esperando aprobación', s_pay: 'Esperando liberación', s_prod: 'En producción', s_ready: 'Listo para retiro', s_done: 'Entregado',
     map_none: 'Ninguna obra ubicada todavía.', map_locate: 'Ubicar {n} dirección(es) en el mapa', map_locating: 'Ubicando… {i}/{n}', map_missing: '{n} pedido(s) sin dirección', loading: 'Cargando…',
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Volver a mis carpetas', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Mis carpetas', today: 'Actualizados hoy', today_at: 'hoy', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
     rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}'
   }
 };
@@ -274,6 +274,11 @@ function cxDecorate(folders) {
   // Vendedor › Cliente final. Nada escolhido = as MINHAS pastas (com as
   // colunas Loja/Tabela/Desconto/Com desconto); escolheu um nível = a lista de
   // pedidos daquele nível pra baixo, no lugar das pastas.
+  // ADMIN = FÁBRICA: abre vendo TUDO de todas as lojas, o mais recente em cima
+  // (20/11, Matt: "eu como administrador quero ver os projetos atualizados hoje
+  // por todos os lojistas, porque como eu sou fábrica eu enxergo tudo"). As
+  // pastas da conta dele ficam em "‹ Minhas pastas".
+  if (cxAdmin() && !cxState.netInit) { cxState.netInit = true; cxState.net.fab = true; }
   const comArvore = cxHasNetwork() && cxState.view !== 'map' && cxState.view !== 'lost';
   const lista = comArvore && cxNetSel();
   if (comArvore) {
@@ -284,7 +289,17 @@ function cxDecorate(folders) {
       ['loja', 'user', 'cliente'].forEach(cxColFilter);
       box.querySelectorAll('#cx-tree .cx-col-b').forEach((el) => { const k = el.getAttribute('data-cx-colb') || 'fab'; if (cxState.colScroll[k]) el.scrollTop = cxState.colScroll[k]; });
     }
-    if (lista) box.querySelectorAll('[data-act="ctab"]').forEach((el) => el.classList.remove('is-on'));
+    if (lista) {
+      // abas normais acompanham a lista: marcada a que bate com o filtro e, pro admin, com a contagem de todo mundo
+      const f = cxState.net; const marcada = { '': 'all', build: 'build', _orders: 'prod', done: 'done' }[f.etapa];
+      const base = cxState.scope ? cxState.scope.orders : null;
+      const conta = { all: (o) => true, build: (o) => o._s === 'build', prod: (o) => ['wait', 'pay', 'prod', 'ready'].includes(o._s), done: (o) => o._s === 'done' };
+      box.querySelectorAll('[data-act="ctab"]').forEach((el) => {
+        const t = el.dataset.tab;
+        el.classList.toggle('is-on', cxAdmin() && !f.loja && !f.user && !f.cliente && marcada === t);
+        if (cxAdmin() && base && conta[t]) { const n = el.querySelector('.cu-n'); if (n) n.textContent = base.filter(conta[t]).length; }
+      });
+    }
   }
   try { cxAddCols(box, folders); } catch (e) { console.warn('[central+] colunas', e); }
 
@@ -397,6 +412,8 @@ async function cxLoadScope(force) {
         (data || []).forEach((r) => { s.emails[r.user_id] = r; });
       }
     } catch (e3) { /* fica o começo do id */ }
+    s.orders.forEach((o) => { o._t = o._proj ? o.submitted_at : (o.delivered_at || o.pickup_released_at || o.finance_released_at || o.approved_at || o.submitted_at); });
+    s.orders.sort((a, b) => String(b._t || '').localeCompare(String(a._t || '')));
     s.users = new Set(s.orders.map((o) => o.client_user_id)).size;
     cxState.scope = s;
   } catch (e) { cxState.scope = { orders: [], accounts: [], team: {}, users: 0, err: (e && e.message) || String(e) }; }
@@ -407,13 +424,21 @@ function cxStoreName(o) {
   const a = (cxState.scope.accounts || []).find((x) => x.id === o.account_id);
   return a ? (a.trade_name || a.legal_name || '—') : cT('no_store');
 }
+function cxHoje(d) { if (!d) return false; const x = new Date(d), h = new Date(); return x.getFullYear() === h.getFullYear() && x.getMonth() === h.getMonth() && x.getDate() === h.getDate(); }
+function cxQuando(d) {
+  if (!d) return '—';
+  if (!cxHoje(d)) return cEsc(cDate(d));
+  return '<b class="cx-hoje">' + cEsc(cT('today_at')) + ' ' + new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</b>';
+}
 function cxNetRows() {
   const s = cxState.scope; const f = cxState.net; const q = f.q.trim().toLowerCase();
   return s.orders.filter((o) => {
     if (f.loja && (o.account_id || '_') !== f.loja) return false;
     if (f.user && o.client_user_id !== f.user) return false;
     if (f.cliente && cxClienteKey(o) !== f.cliente) return false;
-    if (f.etapa && o._s !== f.etapa) return false;
+    if (f.etapa === '_orders') { if (!['wait', 'pay', 'prod', 'ready'].includes(o._s)) return false; }
+    else if (f.etapa && o._s !== f.etapa) return false;
+    if (f.hoje && !cxHoje(o._t)) return false;
     if (!q) return true;
     return [o.po_name, o.room_name, o.delivery_address, o.client_name, cxStoreName(o), o.factory_number].some((v) => String(v || '').toLowerCase().includes(q));
   });
@@ -544,10 +569,12 @@ function cxRenderNet(p) {
   const cont = {}; CX_NET_STAGES.forEach((k) => { cont[k] = 0; });
   const semEtapa = Object.assign({}, f, { etapa: '' });
   cxState.net = semEtapa; cxNetRows().forEach((o) => { cont[o._s]++; }); cxState.net = f;
+  cxState.net = Object.assign({}, f, { hoje: true }); const nHoje = cxNetRows().length; cxState.net = f;
   const totL = rows.reduce((a, o) => a + (o._l || 0), 0), totN = rows.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
   const foco = document.activeElement && document.activeElement.id === 'cx-net-q';
   p.innerHTML = '<div class="cx-chips"><button type="button" class="cx-chip cx-back" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>'
-     + CX_NET_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
+     + '<button type="button" class="cx-chip cx-chip-hoje' + (f.hoje ? ' on' : '') + '" data-cx="hoje">' + cEsc(cT('today')) + ' <b>' + nHoje + '</b></button>'
+    + CX_NET_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
     + '<div class="cx-filters"><input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
     + '<span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span>'
     + (cxAdmin() && rows.some((o) => !o._proj) ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.filter((o) => !o._proj).length })) + '</select>' : '') + '</div>'
@@ -561,8 +588,8 @@ function cxRenderNet(p) {
             + '<td' + (cxAdmin() && !o._proj ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>'
               + (cxAdmin() && !o._proj ? ' <span class="cx-swap">⇄</span>' : '') + (quem ? '<br><span class="hint">' + cEsc(quem) + '</span>' : '') + '</td>'
             + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td><td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
-            + '<td class="r">' + (o._proj ? (o._l ? '~' + cEsc(cMoney(o._l)) : '—') : cEsc(cMoney(o._l))) + '</td><td class="r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>'
-            + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cEsc(cDate(o.approved_at || o.submitted_at)) + '</td><td>' + acao + '</td></tr>';
+            + '<td class="r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td><td class="r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>'
+            + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
         }).join('') + '</tbody></table></div>'
       : '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>');
   if (foco) { const i = document.getElementById('cx-net-q'); if (i) { i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch (e) { /* ok */ } } }
@@ -786,13 +813,15 @@ document.addEventListener('click', (e) => {
   }
   if (a === 'col') {
     const c = b.getAttribute('data-c'), v = b.getAttribute('data-v'), f = cxState.net;
-    if (c === 'fab') { f.fab = !(f.fab && !f.loja); f.loja = ''; f.user = ''; f.cliente = ''; }
+    f.own = false;
+    if (c === 'fab') { f.fab = !(f.fab && !f.loja); f.loja = ''; f.user = ''; f.cliente = ''; if (!f.fab) f.own = true; }
     else if (c === 'loja') { f.loja = (f.loja === v && !f.user && !f.cliente) ? '' : v; f.user = ''; f.cliente = ''; cxState.colQ.user = ''; cxState.colQ.cliente = ''; }
     else if (c === 'user') { f.user = f.user === v ? '' : v; f.cliente = ''; }
     else if (c === 'cliente') { f.cliente = f.cliente === v ? '' : v; }
     return mpRender();
   }
-  if (a === 'folders') { const f = cxState.net; f.fab = false; f.loja = ''; f.user = ''; f.cliente = ''; f.etapa = ''; f.q = ''; return mpRender(); }
+  if (a === 'folders') { const f = cxState.net; f.fab = false; f.own = true; f.hoje = false; f.loja = ''; f.user = ''; f.cliente = ''; f.etapa = ''; f.q = ''; return mpRender(); }
+  if (a === 'hoje') { cxState.net.hoje = !cxState.net.hoje; return mpRender(); }
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
   if (a === 'geocode') return cxGeocodeMissing();
@@ -810,7 +839,13 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (e.target.closest && e.target.closest('#po-mp-v2 [data-act="ctab"]')) {
     cxState.view = '';
-    const f = cxState.net; f.fab = false; f.loja = ''; f.user = ''; f.cliente = ''; // aba normal = volta pras pastas
+    const f = cxState.net; f.loja = ''; f.user = ''; f.cliente = '';
+    if (cxAdmin() && !f.own && cxOn()) {
+      // fábrica: as abas normais filtram a lista de TODO MUNDO (não as pastas dela)
+      const t = e.target.closest('[data-act="ctab"]').dataset.tab;
+      if (t !== 'archived') { f.fab = true; f.etapa = { all: '', build: 'build', prod: '_orders', done: 'done' }[t] || ''; e.stopPropagation(); e.preventDefault(); mpRender(); return; }
+    }
+    f.fab = false; // aba normal = pastas
   }
 }, true);
 document.addEventListener('change', (e) => {
@@ -892,6 +927,8 @@ function cxCss() {
     '.cx-go{display:flex;gap:10px;align-items:center;flex-basis:100%}.cx-go button{margin:0;padding:7px 16px}.cx-st{font-size:12px}.cx-st.ok{color:#2e7d4f}.cx-st.err{color:var(--danger,#b3432f)}',
     '.cx-lostbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin:6px 0 2px}.cx-lostbar button{margin:0;padding:4px 12px;font-size:12px}',
     '.cx-storecell{cursor:pointer}.cx-storecell:hover b{text-decoration:underline}.cx-swap{color:var(--muted,#766f64);font-size:12px}.cx-storesel,.cx-moveall{padding:6px 8px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;max-width:260px;width:auto;margin:0}.cx-moveall{margin-left:auto}',
+    '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
+    '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
     '#cx-tree{margin-top:12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',
     '#cx-panel{margin-top:12px}.cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',

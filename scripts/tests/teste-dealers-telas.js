@@ -236,7 +236,8 @@ const base = `
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   ok(box().querySelectorAll('.mp-row').length === 1 && !!box().querySelector('[data-cx="reopen"]'), 'aba Perdidos: só o perdido, com Reabrir');
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
-  box().querySelector('.cx-ci[data-c="fab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80);
+  await espera(80);
+  ok(!!box().querySelector('.cx-table') && !!box().querySelector('[data-cx="hoje"]'), 'admin (fábrica) já abre vendo a lista de todo mundo, com o filtro "Atualizados hoje"');
   const linhas = box().querySelectorAll('.cx-table tbody tr');
   ok(linhas.length === 4 && box().querySelectorAll('.cx-tagp').length === 1 && /Loja Teste/.test(box().querySelector('.cx-table').textContent), 'clicar na Fábrica: 3 pedidos + 1 projeto em construção, com a coluna LOJA');
   const cel = box().querySelector('.cx-storecell');
@@ -247,8 +248,7 @@ const base = `
   selLoja.value = '_'; selLoja.dispatchEvent(new win.Event('change', { bubbles: true })); await espera(40);
   ok(banco.orders.find((o) => o.id === idMov).account_id === null, 'trocar a loja grava no pedido (sem loja)');
   banco.orders.find((o) => o.id === idMov).account_id = ACC; win.LegnoCentralPlus.recarregar(); await espera(80);
-  box().querySelector('.cx-ci[data-c="fab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80);
-  if (!box().querySelector('.cx-table')) { box().querySelector('.cx-ci[data-c="fab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80); }
+  await espera(80);
   ok(!!box().querySelector('[data-cx="relprod"]'), 'admin vê "Liberar produção" na linha');
   ok(box().querySelectorAll('.cx-col').length === 4 && box().querySelectorAll('.cx-ci[data-c="loja"]').length === 1, 'árvore lado a lado: 4 colunas, 1 dealer');
   box().querySelector('.cx-ci[data-c="loja"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
