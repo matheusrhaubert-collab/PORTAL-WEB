@@ -908,6 +908,30 @@
     return leg ? Math.max(Number(leg.height_mm) || 0, 0) : 0;
   }
 
+  // ---- PEÇA / CONJUNTO INCLINADO (2026-11-21) ----------------------------
+  // Matt: "a furação das prateleiras inclinadas não está acompanhando a
+  // inclinação delas, está como se estivesse reto". O 3D gira a peça (ou o
+  // sub-módulo inteiro) em torno do eixo X, pelo CENTRO da caixa dela
+  // (viewer3d resolveContent: positivo = frente mais baixa); a furação
+  // ignorava o `tilt_angle_deg` e marcava o suporte/contra-furo na lateral
+  // como se a prateleira estivesse deitada. A caixa da peça continua a de
+  // sempre (reta — é ela que decide QUEM encosta em quem); só o PONTO do
+  // furo que ela gera na peça vizinha é girado junto (giraTilt). Os furos da
+  // própria peça inclinada não mudam (são no referencial dela). Sem
+  // inclinação, `_tilt` não existe e nada muda.
+  function tiltDaCaixa(part, box) {
+    const deg = Number(part && part.tilt_angle_deg) || 0;
+    if (!deg || !box) return null;
+    return { deg: deg, cy: box.y0 + box.sy / 2, cz: box.z0 + box.sz / 2 };
+  }
+  function giraTilt(box, y, z) {
+    const t = box && box._tilt;
+    if (!t) return { y: y, z: z };
+    const a = t.deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+    const dy = y - t.cy, dz = z - t.cz;
+    return { y: t.cy + dy * c - dz * sn, z: t.cz + dy * sn + dz * c };
+  }
+
   function buildBoxes(parts, W, H, D) {
     const groups = {};
     (parts || []).forEach(function (p) {
@@ -928,7 +952,12 @@
       if (role === 'leg') return; // o pé é comprado, não fura e não é corpo
       groups[role].forEach(function (part, index) {
         const box = pieceBox(part, W, boxH, D, index, groups[role].length, bounds);
-        if (box) { box.y0 += legH; boxes.push(box); byPart.set(part, box); }
+        if (box) {
+          box.y0 += legH;
+          const tl = tiltDaCaixa(part, box);
+          if (tl) box._tilt = tl;
+          boxes.push(box); byPart.set(part, box);
+        }
       });
     });
     return { boxes, byPart };
@@ -1003,11 +1032,17 @@
       const inner = buildBoxes(part.child_pieces, cw, ch, cd).boxes
         .concat(boxesAninhadas(part.child_pieces, cw, ch, cd));
       const abre = ehAbertura(part);
+      // conjunto inclinado: gira em volta do centro da caixa DELE (ver giraTilt).
+      // Peça já inclinada lá dentro mantém o giro dela, só trazido pro frame daqui.
+      const tiltDoConjunto = tiltDaCaixa(part, box);
       inner.forEach(function (b) {
-        out.push(Object.assign({}, b, {
+        const nb = Object.assign({}, b, {
           x0: b.x0 + box.x0, y0: b.y0 + box.y0, z0: b.z0 + box.z0, _owner: part,
           _abre: !!(b._abre || abre)
-        }));
+        });
+        if (b._tilt) nb._tilt = { deg: b._tilt.deg, cy: b._tilt.cy + box.y0, cz: b._tilt.cz + box.z0 };
+        else if (tiltDoConjunto) nb._tilt = tiltDoConjunto;
+        out.push(nb);
       });
     });
     return out;
@@ -1083,6 +1118,7 @@
         p[src.uAxis] = src[ORIG[src.uAxis]] + u;
         p[src.vAxis] = src[ORIG[src.vAxis]] + v;
         p[src.tAxis] = src[ORIG[src.tAxis]] + t.thickness / 2;
+        if (src._tilt) { const g = giraTilt(src, p.y, p.z); p.y = g.y; p.z = g.z; } // peça inclinada: o ponto gira junto
 
         boxes.forEach(function (tgt) {
           if (tgt === src) return;
@@ -1722,9 +1758,10 @@
           emitCoposPrateleira(store, sb, { eixo: 'x', lado: dRight <= dLeft ? 1 : 0, lo: lo, hi: hi });
         }
         zHoles.forEach(function (z) {
+          const g = giraTilt(sb, yHole, z); // prateleira inclinada: o suporte acompanha
           emitLocalHole(store, lb, {
-            u: yHole - lb.y0,  // uAxis da lateral = Y (altura)
-            v: z - lb.z0,      // vAxis = Z (profundidade)
+            u: g.y - lb.y0,    // uAxis da lateral = Y (altura)
+            v: g.z - lb.z0,    // vAxis = Z (profundidade)
             edge: null,
             entersPositive: entersPositive,
             diameter: dia, depth: depth,
@@ -3144,6 +3181,12 @@
           else if (e === 'v0') { P[b.vAxis] = b[b.vAxis + '0']; N[b.vAxis] = -1; }
           else if (e === 'v1') { P[b.vAxis] = b[b.vAxis + '0'] + t.faceB; N[b.vAxis] = 1; }
           else return;
+        }
+        // furo da PRÓPRIA peça inclinada: no 3D ele gira junto com ela
+        if (b._tilt) {
+          const g = giraTilt(b, P.y, P.z); P.y = g.y; P.z = g.z;
+          const a = b._tilt.deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+          const ny = N.y * c - N.z * sn, nz = N.y * sn + N.z * c; N.y = ny; N.z = nz;
         }
         out.push({
           x: P.x, y: P.y, z: P.z, nx: N.x, ny: N.y, nz: N.z,

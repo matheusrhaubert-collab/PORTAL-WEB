@@ -1290,6 +1290,18 @@ function attachProject3DEditDrag() {
           startClientY: ev.clientY,
           liveWallIndex: Number(arrowSlot.wall_index || 0)
         };
+        // ILHA (21/11 — Matt: módulo colado no chão, "ao clicar nas setas
+        // parece que estão gravadas com as coordenadas do antigo"): a seta fica
+        // no MEIO da altura, mas o arraste media o ponteiro no plano do CHÃO —
+        // num móvel alto o ponto do chão embaixo do ponteiro fica bem atrás da
+        // seta e a medida pulava no 1º movimento. Agora mede num plano
+        // horizontal na altura da seta e conta só o quanto o ponteiro ANDOU
+        // desde o clique (ver handleProject3DResizeMove).
+        if (isFloorSlot(arrowSlot) && ViewerProjectEdit.intersectPlaneAtClient) {
+          const yM = (Number(arrowSlot.floor_height_mm || 0) + Number(arrowSlot.height_mm || 0) / 2) / 1000;
+          const p0 = ViewerProjectEdit.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: 0, y: yM, z: 0 }, { x: 0, y: 1, z: 0 });
+          if (p0) { projectDrag3DState.ilhaPlanoY = yM; projectDrag3DState.ilhaP0 = { x: p0.x, z: p0.z }; }
+        }
         return;
       }
     }
@@ -3069,8 +3081,14 @@ function handleProject3DResizeMove(state, slot, ev) {
       updateProjectSlotDimension(slot, 'height', p.y * 1000 - Number(slot.floor_height_mm || 0));
       return;
     }
-    const fp = projectFloorPointMm(ev.clientX, ev.clientY);
-    if (!fp) return;
+    // Arraste pela SETA: plano na altura da seta + deslocamento desde o
+    // clique (state.ilhaP0, ver o pointerdown). Sem isso (alça antiga/toque
+    // sem ponto inicial) continua pelo ponto do chão, como sempre foi.
+    const pIlha = (state.ilhaP0 && ViewerProjectEdit.intersectPlaneAtClient)
+      ? ViewerProjectEdit.intersectPlaneAtClient(ev.clientX, ev.clientY, { x: 0, y: state.ilhaPlanoY, z: 0 }, { x: 0, y: 1, z: 0 })
+      : null;
+    const fp = pIlha ? null : projectFloorPointMm(ev.clientX, ev.clientY);
+    if (!pIlha && !fp) return;
 
     // ANCORAR NA BORDA OPOSTA À SETA (2026-09-02) — Matt: "os paineis estao
     // esticando em ambos os lados, quero que eles estiquem so no sentido da
@@ -3095,7 +3113,9 @@ function handleProject3DResizeMove(state, slot, ev) {
     const startSizeMm = (axisName === 'depth') ? state.startDepthMm : state.startWidthMm;
     const anchorXMm = state.startFloorXMm - dir.x * (startSizeMm / 2);
     const anchorZMm = state.startFloorZMm - dir.z * (startSizeMm / 2);
-    const rawSizeMm = (fp.xMm - anchorXMm) * dir.x + (fp.zMm - anchorZMm) * dir.z;
+    const rawSizeMm = pIlha
+      ? startSizeMm + ((pIlha.x - state.ilhaP0.x) * dir.x + (pIlha.z - state.ilhaP0.z) * dir.z) * 1000
+      : (fp.xMm - anchorXMm) * dir.x + (fp.zMm - anchorZMm) * dir.z;
     const newSizeMm = projectSlotClampedDimensionMm(slot, axisName, rawSizeMm);
     slot.floor_x_mm = anchorXMm + dir.x * (newSizeMm / 2);
     slot.floor_z_mm = anchorZMm + dir.z * (newSizeMm / 2);
