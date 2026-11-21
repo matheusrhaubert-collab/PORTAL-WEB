@@ -278,7 +278,11 @@ function cxDecorate(folders) {
   // (20/11, Matt: "eu como administrador quero ver os projetos atualizados hoje
   // por todos os lojistas, porque como eu sou fábrica eu enxergo tudo"). As
   // pastas da conta dele ficam em "‹ Minhas pastas".
-  if (cxAdmin() && !cxState.netInit) { cxState.netInit = true; cxState.net.fab = true; }
+  // Vale pra QUALQUER nível que tenha algo abaixo (20/11, Matt: "essa regra serve
+  // pra qualquer nível, desde que o nível só enxergue dele pra baixo"): o
+  // distribuidor abre vendo as lojas dele, o dono da loja vê a equipe. O corte
+  // é do banco (visible_user_ids / account_tree), não desta tela.
+  if (cxHasNetwork() && !cxState.netInit) { cxState.netInit = true; cxState.net.fab = true; }
   const comArvore = cxHasNetwork() && cxState.view !== 'map' && cxState.view !== 'lost';
   const lista = comArvore && cxNetSel();
   if (comArvore) {
@@ -296,8 +300,8 @@ function cxDecorate(folders) {
       const conta = { all: (o) => true, build: (o) => o._s === 'build', prod: (o) => ['wait', 'pay', 'prod', 'ready'].includes(o._s), done: (o) => o._s === 'done' };
       box.querySelectorAll('[data-act="ctab"]').forEach((el) => {
         const t = el.dataset.tab;
-        el.classList.toggle('is-on', cxAdmin() && !f.loja && !f.user && !f.cliente && marcada === t);
-        if (cxAdmin() && base && conta[t]) { const n = el.querySelector('.cu-n'); if (n) n.textContent = base.filter(conta[t]).length; }
+        el.classList.toggle('is-on', !f.loja && !f.user && !f.cliente && marcada === t);
+        if (base && conta[t]) { const n = el.querySelector('.cu-n'); if (n) n.textContent = base.filter(conta[t]).length; }
       });
     }
   }
@@ -840,7 +844,7 @@ document.addEventListener('click', (e) => {
   if (e.target.closest && e.target.closest('#po-mp-v2 [data-act="ctab"]')) {
     cxState.view = '';
     const f = cxState.net; f.loja = ''; f.user = ''; f.cliente = '';
-    if (cxAdmin() && !f.own && cxOn()) {
+    if (cxHasNetwork() && !f.own && cxOn()) {
       // fábrica: as abas normais filtram a lista de TODO MUNDO (não as pastas dela)
       const t = e.target.closest('[data-act="ctab"]').dataset.tab;
       if (t !== 'archived') { f.fab = true; f.etapa = { all: '', build: 'build', prod: '_orders', done: 'done' }[t] || ''; e.stopPropagation(); e.preventDefault(); mpRender(); return; }
