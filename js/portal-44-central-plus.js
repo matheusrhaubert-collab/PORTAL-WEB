@@ -69,7 +69,7 @@ const CX_TXT = {
     map_none: 'Nenhuma obra com endereço localizado ainda.', map_locate: 'Localizar {n} endereço(s) no mapa', map_locating: 'Localizando… {i}/{n}', map_missing: '{n} pedido(s) sem endereço', loading: 'Carregando…',
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Minhas pastas', today: 'Atualizados hoje', today_at: 'hoje', fl_all: 'Todos', fl_7: 'Últimos 7 dias', fl_30: 'Últimos 30 dias', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpar filtros', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Minhas pastas', today: 'Atualizados hoje', today_at: 'hoje', fl_all: 'Todos', fl_7: 'Últimos 7 dias', fl_30: 'Últimos 30 dias', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpar filtros', lay_pastas: 'Ver por pastas', lay_lista: 'Ver lista numerada', c_item: 'Projeto / PO', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
     rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}'
   },
   en: {
@@ -83,7 +83,7 @@ const CX_TXT = {
     map_none: 'No job site located yet.', map_locate: 'Locate {n} address(es) on the map', map_locating: 'Locating… {i}/{n}', map_missing: '{n} order(s) with no address', loading: 'Loading…',
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
-    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_find: 'search…', back_folders: '‹ My folders', today: 'Updated today', today_at: 'today', fl_all: 'All', fl_7: 'Last 7 days', fl_30: 'Last 30 days', fl_asc: 'Sort ↑', fl_desc: 'Sort ↓', fl_clear: 'Clear filters', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
+    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_find: 'search…', back_folders: '‹ My folders', today: 'Updated today', today_at: 'today', fl_all: 'All', fl_7: 'Last 7 days', fl_30: 'Last 30 days', fl_asc: 'Sort ↑', fl_desc: 'Sort ↓', fl_clear: 'Clear filters', lay_pastas: 'View as folders', lay_lista: 'View numbered list', c_item: 'Project / PO', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
     rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}'
   },
   es: {
@@ -97,7 +97,7 @@ const CX_TXT = {
     map_none: 'Ninguna obra ubicada todavía.', map_locate: 'Ubicar {n} dirección(es) en el mapa', map_locating: 'Ubicando… {i}/{n}', map_missing: '{n} pedido(s) sin dirección', loading: 'Cargando…',
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Mis carpetas', today: 'Actualizados hoy', today_at: 'hoy', fl_all: 'Todos', fl_7: 'Últimos 7 días', fl_30: 'Últimos 30 días', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpiar filtros', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Mis carpetas', today: 'Actualizados hoy', today_at: 'hoy', fl_all: 'Todos', fl_7: 'Últimos 7 días', fl_30: 'Últimos 30 días', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpiar filtros', lay_pastas: 'Ver por carpetas', lay_lista: 'Ver lista numerada', c_item: 'Proyecto / PO', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
     rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}'
   }
 };
@@ -373,9 +373,14 @@ async function cxLoadScope(force) {
   const s = { orders: [], accounts: [], team: {}, users: 0 };
   try {
     const sb = supabaseClient;
-    const od = await sb.from('orders')
+    let od = await sb.from('orders')
+      .select('id, client_user_id, account_id, status, order_type, po_name, client_name, client_email, room_name, delivery_address, jobsite_lat, jobsite_lng, price_list_total, price_discount_pct, price_net_total, factory_number, project_number, source_project_id, submitted_at, approved_at, finance_released_at, pickup_released_at, delivered_at')
+      .in('status', ['submitted', 'approved', 'paid', 'delivered']).order('submitted_at', { ascending: false }).limit(3000);
+    if (od.error) { // sem a migration 313 (project_number): mesma consulta sem a coluna
+      od = await sb.from('orders')
       .select('id, client_user_id, account_id, status, order_type, po_name, client_name, client_email, room_name, delivery_address, jobsite_lat, jobsite_lng, price_list_total, price_discount_pct, price_net_total, factory_number, source_project_id, submitted_at, approved_at, finance_released_at, pickup_released_at, delivered_at')
       .in('status', ['submitted', 'approved', 'paid', 'delivered']).order('submitted_at', { ascending: false }).limit(3000);
+    }
     if (od.error) throw od.error;
     s.orders = (od.data || []).filter((o) => o.order_type !== 'cutting_list');
     const tr = await sb.rpc('account_tree'); s.accounts = tr.error ? [] : (tr.data || []);
@@ -400,7 +405,8 @@ async function cxLoadScope(force) {
     // fora: projeto que já virou pedido, arquivado e perdido.
     try {
       const PB = 'id, client_user_id, name, client_folder, client_info, cached_value_usd, frozen_order_id, archived_at, updated_at';
-      let pr = await sb.from('user_projects').select(PB + ', lost_at, account_id, po_name').order('updated_at', { ascending: false }).limit(5000);
+      let pr = await sb.from('user_projects').select(PB + ', lost_at, account_id, po_name, project_number').order('updated_at', { ascending: false }).limit(5000);
+      if (pr.error) pr = await sb.from('user_projects').select(PB + ', lost_at, account_id, po_name').order('updated_at', { ascending: false }).limit(5000);
       if (pr.error) pr = await sb.from('user_projects').select(PB + ', lost_at').order('updated_at', { ascending: false }).limit(5000);
       if (pr.error) pr = await sb.from('user_projects').select(PB).order('updated_at', { ascending: false }).limit(5000);
       const porId = {}, porPedido = {};
@@ -410,7 +416,7 @@ async function cxLoadScope(force) {
         if (p.frozen_order_id || p.archived_at || p.lost_at) return;
         const m = s.team[p.client_user_id];
         s.orders.push({
-          _proj: true, _folder: p.client_folder || '', _pname: p.name || '', id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: p.account_id || (m ? m.account_id : null), _pid: p.id, _po: p.po_name || '', status: 'project',
+          _proj: true, _folder: p.client_folder || '', _pname: p.name || '', id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: p.account_id || (m ? m.account_id : null), _pid: p.id, _po: p.po_name || '', project_number: p.project_number || null, status: 'project',
           po_name: p.name, client_name: (p.client_info && p.client_info.name) || p.client_folder || '', room_name: '',
           delivery_address: (p.client_info && p.client_info.address) || '', jobsite_lat: null, jobsite_lng: null,
           submitted_at: p.updated_at, _l: Number(p.cached_value_usd) || 0, _d: null, _n: null, _s: 'build'
@@ -605,23 +611,48 @@ async function cxMoveOrders(ids, destino) {
   } catch (e) { alert((e && e.message) || String(e)); }
   mpRender();
 }
-// Linhas de DENTRO de uma pasta: um pedido/projeto por linha, com o número do
-// pedido, a loja (admin troca), os 3 preços, a etapa e as liberações.
-function cxFlatTable(rows) {
-  const s = cxState.scope;
-  return '<div class="cx-inner"><table class="mp-table cx-table"><thead><tr><th>' + cEsc(cT('c_no')) + '</th><th>' + cEsc(cT('c_store')) + '</th><th>' + cEsc(cT('c_po')) + '</th><th>' + cEsc(cT('c_room'))
-        + '</th><th>' + cEsc(cT('c_city')) + '</th><th class="r">' + cEsc(cT('list')) + '</th><th class="r">' + cEsc(cT('disc')) + '</th><th class="r">' + cEsc(cT('net')) + '</th><th class="mp-th-sort" data-cx="hmenu" data-col="etapa">' + cEsc(cT('c_stage')) + ' ▾</th><th class="mp-th-sort" data-cx="hmenu" data-col="upd">' + cEsc(cT('c_date')) + ' ▾</th><th></th></tr></thead><tbody>'
-        + rows.slice(0, 400).map((o) => {
-          const quem = cxUserLabel(o.client_user_id, [o]);
-          const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
-            : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
-          return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td>' + (Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + '</td>'
-            + '<td' + (cxAdmin() ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>'
-              + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + (quem ? '<br><span class="hint">' + cEsc(quem) + '</span>' : '') + '</td>'
-            + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td><td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
-            + '<td class="r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td><td class="r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>'
-            + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
-        }).join('') + '</tbody></table></div>';
+// LISTA NUMERADA: um pedido/projeto por linha, o NÚMERO como primeira
+// referência — projeto em construção = P0000123 (migration 313); pedido =
+// número de fábrica, com o P de origem pequeno embaixo. 20/11, Matt: "por que
+// não criar uma numeração com projetos de design, com P0000001... quando vira
+// pedido aprovado ele ganha o número do pedido de fábrica" + "fica mais limpo
+// e organizado". principal = true: é a lista da tela (títulos ordenam/filtram);
+// false: itens de dentro de uma pasta.
+function cxPnum(n) { return n ? 'P' + String(Number(n)).padStart(7, '0') : ''; }
+function cxNumVal(o) { return o._proj ? (Number(o.project_number) || 0) : (Number(o.factory_number) || 0); }
+function cxFlatTable(rows, principal) {
+  const s = cxState.scope; const f = cxState.net;
+  const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
+  const preco = !cxSeller();
+  if (principal) {
+    const val = { num: cxNumVal, loja: (o) => cxStoreName(o).toLowerCase(), quem: (o) => cxUserLabel(o.client_user_id, [o]).toLowerCase(), nome: (o) => String(o.po_name || '').toLowerCase(),
+      cliente: (o) => String(o.client_name || '').toLowerCase(), l: (o) => o._l || 0, net: (o) => (o._n == null ? -1 : o._n), etapa: (o) => CX_NET_STAGES.indexOf(o._s), upd: (o) => String(o._t || '') }[st.col] || ((o) => String(o._t || ''));
+    rows = rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b._t || '').localeCompare(String(a._t || '')); });
+  }
+  const comFiltro = { quem: !!f.user, etapa: !!f.etapa && f.etapa !== '_orders' && f.etapa !== 'build', upd: !!f.periodo };
+  const th = (col, rot, r, menu) => !principal ? '<th' + (r ? ' class="cx-r"' : '') + '>' + cEsc(rot) + '</th>'
+    : '<th class="mp-th-sort' + (st.col === col ? ' is-sorted' : '') + (r ? ' cx-r' : '') + (comFiltro[col] ? ' cx-th-on' : '') + '" data-cx="' + (menu ? 'hmenu' : 'gsort') + '" data-col="' + col + '">'
+      + (comFiltro[col] ? '<i class="cx-th-dot"></i>' : '') + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : (menu ? '▾' : '↕')) + '</th>';
+  const max = principal ? 400 : 200;
+  return '<div class="cx-inner"><table class="mp-table cx-table' + (principal ? ' cx-main' : '') + '"><thead><tr>'
+    + th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item')) + '<th>' + cEsc(cT('c_room')) + '</th><th>' + cEsc(cT('c_city')) + '</th>'
+    + (preco ? th('l', cT('list'), 1) + '<th class="cx-r">' + cEsc(cT('disc')) + '</th>' + th('net', cT('net'), 1) : '')
+    + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
+    + rows.slice(0, max).map((o) => {
+      const quem = cxUserLabel(o.client_user_id, [o]);
+      const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
+        : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
+      const num = o._proj ? (cxPnum(o.project_number) || '—')
+        : ((Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + (o.project_number ? '<br><span class="cx-pref">' + cxPnum(o.project_number) + '</span>' : ''));
+      return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '">' + num + '</td>'
+        + '<td' + (cxAdmin() ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
+        + '<td class="cx-quem">' + cEsc(quem || '—') + '</td>'
+        + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td>'
+        + '<td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
+        + (preco ? '<td class="cx-r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td>'
+          + '<td class="cx-r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="cx-r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>' : '')
+        + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
+    }).join('') + '</tbody></table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
@@ -708,12 +739,11 @@ function cxRenderNet(p) {
     // aba Orders = lista corrida, o NÚMERO DO PEDIDO como primeira referência
     // (20/11, Matt: "aqui eu acho legal mostrar o número do pedido como primeira
     // referência, aí loja, preços, PO, data, status"); as outras abas = pastas.
-    + (f.etapa === '_orders'
-      ? (rows.length ? '<div class="mp-table-wrap cx-wrap">' + cxFlatTable(rows.slice().sort((a, b) => (Number(b.factory_number) || 0) - (Number(a.factory_number) || 0) || String(b._t || '').localeCompare(String(a._t || '')))) + '</div>'
-                     : '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>')
-      : cxGroupTable(rows))
+    + (!rows.length ? '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>'
+      : (cxState.netLayout === 'pastas' && f.etapa !== '_orders' ? cxGroupTable(rows) : '<div class="mp-table-wrap cx-wrap">' + cxFlatTable(rows, true) + '</div>'))
     + '<div class="cx-foot"><span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span>'
     + (filtrando ? '<button type="button" class="cx-link" data-cx="fclear">' + cEsc(cT('fl_clear')) + '</button>' : '')
+    + (f.etapa === '_orders' ? '' : '<button type="button" class="cx-link" data-cx="layout">' + cEsc(cT(cxState.netLayout === 'pastas' ? 'lay_lista' : 'lay_pastas')) + '</button>')
     + (cxAdmin() ? '' : '<button type="button" class="cx-link" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>')
     + (cxAdmin() && rows.length ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.length })) + '</select>' : '') + '</div>';
 }
@@ -724,7 +754,7 @@ function cxHeadMenu(col, th) {
   const T = (k, alt) => { try { const v = (typeof mpT === 'function') ? mpT(k) : ''; return v && v !== 'mp.' + k ? v : alt; } catch (e) { return alt; } };
   const op = (grupo, v, rot, on, cor) => '<button type="button" class="cx-hm-i' + (on ? ' on' : '') + '" data-cx="hpick" data-g="' + grupo + '" data-v="' + cEsc(v) + '">' + (cor ? '<i style="background:' + cor + '"></i>' : '') + cEsc(rot) + '</button>';
   let h = '';
-  if (th.closest('.cx-gtable')) h += op('sort', col + ':1', cT('fl_asc'), st.col === col && st.dir > 0) + op('sort', col + ':-1', cT('fl_desc'), st.col === col && st.dir < 0) + '<hr>';
+  if (th.closest('.cx-gtable, .cx-main')) h += op('sort', col + ':1', cT('fl_asc'), st.col === col && st.dir > 0) + op('sort', col + ':-1', cT('fl_desc'), st.col === col && st.dir < 0) + '<hr>';
   if (col === 'etapa') {
     const base = Object.assign({}, f); cxState.net = Object.assign({}, f, { etapa: '' }); const cont = {}; cxNetRows().forEach((o) => { cont[o._s] = (cont[o._s] || 0) + 1; }); cxState.net = base;
     h += op('etapa', '', cT('fl_all'), !f.etapa) + CX_NET_STAGES.map((k) => op('etapa', k, cT('s_' + k) + ' (' + (cont[k] || 0) + ')', f.etapa === k, CX_COLORS[k])).join('');
@@ -993,6 +1023,7 @@ document.addEventListener('click', (e) => {
     cxCloseHeadMenu(); cxState.hmenuCol = '';
     return mpRender();
   }
+  if (a === 'layout') { cxState.netLayout = cxState.netLayout === 'pastas' ? 'lista' : 'pastas'; if (cxState.netLayout === 'pastas' && cxState.netSort && ['num', 'quem'].indexOf(cxState.netSort.col) < 0) { /* mesma ordem */ } else if (cxState.netLayout === 'pastas') cxState.netSort = { col: 'upd', dir: -1 }; return mpRender(); }
   if (a === 'fclear') { const f = cxState.net; f.gstatus = ''; f.periodo = ''; f.user = ''; f.cliente = ''; if (f.etapa !== '_orders' && f.etapa !== 'build') f.etapa = ''; return mpRender(); }
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
@@ -1026,7 +1057,7 @@ document.addEventListener('click', (e) => {
     if (cxHasNetwork() && !f.own && cxOn()) {
       // fábrica: as abas normais filtram a lista de TODO MUNDO (não as pastas dela)
       const t = e.target.closest('[data-act="ctab"]').dataset.tab;
-      if (t !== 'archived') { f.fab = true; f.etapa = { all: '', build: 'build', prod: '_orders', done: 'done' }[t] || ''; e.stopPropagation(); e.preventDefault(); mpRender(); return; }
+      if (t !== 'archived') { f.fab = true; f.etapa = { all: '', build: 'build', prod: '_orders', done: 'done' }[t] || ''; cxState.netSort = (t === 'build' || t === 'prod') ? { col: 'num', dir: -1 } : { col: 'upd', dir: -1 }; e.stopPropagation(); e.preventDefault(); mpRender(); return; }
     }
     f.fab = false; // aba normal = pastas
   }
@@ -1169,6 +1200,7 @@ function cxCss() {
     '.cx-storecell{cursor:pointer}.cx-storecell:hover b{text-decoration:underline}.cx-swap{color:var(--muted,#766f64);font-size:12px}.cx-storesel,.cx-moveall{padding:6px 8px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;max-width:260px;width:auto;margin:0}.cx-moveall{margin-left:auto}',
     '.cx-gtable>thead th{cursor:pointer;white-space:nowrap}.cx-gtable>tbody>tr.cx-grow>td{white-space:normal}.cx-loja2{max-width:220px;overflow:hidden;text-overflow:ellipsis}.cx-loja2 .hint{font-size:11px}.cx-gexp>td{padding:0 0 10px 34px;background:rgba(0,0,0,.015)}.cx-inner{overflow:auto}.cx-inner .cx-table{margin:0}.cx-inner .cx-table thead th{font-size:11px}',
     '.cx-hmenu{max-height:70vh;overflow:auto}.cx-quem{font-size:12px;color:var(--muted,#766f64)}',
+    '.cx-num{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}.cx-num-p{color:var(--muted,#766f64)}.cx-pref{font-size:10px;font-weight:400;color:var(--muted,#766f64)}.cx-main>thead th{cursor:pointer}',
     '.cx-foot{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12px}.cx-foot .cx-moveall{margin-left:auto;font-size:12px;padding:4px 8px;color:var(--muted,#766f64)}.cx-link{background:none!important;border:0;padding:0;margin:0;color:var(--accent-dark,#6e4527);text-decoration:underline;cursor:pointer;font-size:12px;box-shadow:none!important}',
     '.cx-th-on{color:var(--accent-dark,#6e4527)}.cx-th-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent,#8a5a34);margin-right:5px;vertical-align:middle}',
     '.cx-hmenu{position:fixed;z-index:10004;background:#fff;border:1px solid var(--border,#e0ddd6);border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.18);padding:6px;min-width:210px;max-width:260px}.cx-hmenu hr{border:0;border-top:1px solid var(--border,#e0ddd6);margin:4px 0}',
