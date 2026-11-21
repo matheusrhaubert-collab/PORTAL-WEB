@@ -24,6 +24,7 @@ APP.menu = [
     { hash: '#/contatos',           label: 'Contatos' },
     { hash: '#/perfis',             label: 'Perfis de acesso' },
     { hash: '#/financeiro',         label: 'Financeiro' },
+    { hash: '#/dealers',            label: 'Dealers (teste)' },
     { hash: '#/eng/controladoria',  label: 'Controladoria' }
   ] },
 
@@ -301,6 +302,9 @@ APP.routes = [
   /* Corte ao vivo (TESTE, 18/11) — simulador pra TV na frente da seccionadora: onde vai a peça e onde vai a etiqueta. Só leitura. erp/js/screens-corte-ao-vivo.js */
   { re: /^#\/corte-ao-vivo$/,          load: CAV.load, render: CAV.render, nav: '#/corte-ao-vivo', after: CAV.after },
   { re: /^#\/corte-ao-vivo\/([^/]+)$/, load: CAV.load, render: CAV.render, nav: '#/corte-ao-vivo', after: CAV.after },
+  /* Dealers (TESTE, 20/11, migrations 306-308) — solicitações, tax exemption, desconto, árvore e ficha. erp/js/screens-dealers.js */
+  { re: /^#\/dealers$/,          load: DEALERS.load, render: DEALERS.render, nav: '#/dealers', after: DEALERS.after },
+  { re: /^#\/dealers\/([^/]+)$/, load: DEALERS.load, render: DEALERS.render, nav: '#/dealers', after: DEALERS.after },
   /* Apontar peças (18/11, migration 305) — peça a peça por lote, vai pro portal. erp/js/screens-apontar-pecas.js */
   { re: /^#\/apontar-pecas$/,          load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
   { re: /^#\/apontar-pecas\/([^/]+)$/, load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
