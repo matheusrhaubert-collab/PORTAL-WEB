@@ -105,6 +105,7 @@ const BANCADA_PADRAO = {
   splash: 'espelho',          // 'nenhum' | 'espelho' | 'alto'
   splash_mm: 4 * IN_MM,       // espelho de 4"
   excluidos: [],              // ids de slot que NÃO levam pedra
+  incluidos: [],              // ids de slot que levam pedra por escolha (suspenso/baixo que não entra sozinho)
   pontas: {},                 // '<slotId>|E' / '|D' -> { wf: bool, ext_mm: n }
   ilha_tras: {},              // '<slotId>' -> mm de balanço atrás (banqueta)
   wf_ilhas: false,            // waterfall nas pontas livres das ilhas
@@ -117,7 +118,7 @@ let projectBancada = null;
 
 const BAN_TXT = {
   pt: {
-    tip_3d: 'No 3D: clique na pedra para esticar pelas setas vermelhas, ou apagar com Delete.', st_on: 'Pedra colocada em {n} módulo(s).', st_off: 'Bancada desligada.', turn_on: 'Colocar de novo', sp_none_s: 'Sem', sp_mirror_s: 'Baixo 4"', sp_high_s: 'Até os aéreos', wf_islands: 'Waterfall na ilha', adjust: 'Ajustes', plan_hint: 'Clique num módulo para tirar ou pôr a pedra nele.', 
+    tip_3d: 'No 3D: clique na pedra para esticar pelas setas vermelhas, ou apagar com Delete.', st_on: 'Pedra colocada em {n} módulo(s).', st_off: 'Bancada desligada.', turn_on: 'Colocar de novo', sp_none_s: 'Sem', sp_mirror_s: 'Baixo 4"', sp_high_s: 'Até os aéreos', wf_islands: 'Waterfall na ilha', adjust: 'Ajustes', plan_hint: 'Clique num módulo para tirar ou pôr a pedra nele. Móvel suspenso ou baixo começa sem pedra — clique nele para agregar.', 
     btn: 'Bancada', title: 'Bancada de pedra', sub: 'A pedra já entra sozinha em todos os balcões. É só escolher a pedra. (Aparência aproximada — confirme a chapa com a marmoraria.)',
     show: 'Mostrar bancada no 3D', plan: 'Onde vai a pedra', runs: 'Trechos', none_found: 'Nenhum módulo base encontrado no projeto.',
     wall_n: 'Parede {n}', island: 'Ilha', modules: '{n} módulo(s)', excluded: 'sem pedra',
@@ -128,7 +129,7 @@ const BAN_TXT = {
     remove: 'Tirar a bancada', legend_stone: 'pedra', legend_off: 'sem pedra'
   },
   en: {
-    tip_3d: 'In 3D: click the stone to stretch it with the red arrows, or press Delete to remove it.', st_on: 'Stone placed on {n} cabinet(s).', st_off: 'Countertop is off.', turn_on: 'Put it back', sp_none_s: 'None', sp_mirror_s: 'Short 4"', sp_high_s: 'Up to uppers', wf_islands: 'Island waterfall', adjust: 'Adjustments', plan_hint: 'Click a cabinet to add or remove stone on it.', 
+    tip_3d: 'In 3D: click the stone to stretch it with the red arrows, or press Delete to remove it.', st_on: 'Stone placed on {n} cabinet(s).', st_off: 'Countertop is off.', turn_on: 'Put it back', sp_none_s: 'None', sp_mirror_s: 'Short 4"', sp_high_s: 'Up to uppers', wf_islands: 'Island waterfall', adjust: 'Adjustments', plan_hint: 'Click a cabinet to add or remove stone on it. Floating or low cabinets start without stone — click one to add it.', 
     btn: 'Countertop', title: 'Stone countertop', sub: 'The stone is placed on every counter automatically — just pick the stone. (Looks are approximate — confirm the slab with the fabricator.)',
     show: 'Show countertop in 3D', plan: 'Where the stone goes', runs: 'Runs', none_found: 'No base cabinets found in this project.',
     wall_n: 'Wall {n}', island: 'Island', modules: '{n} cabinet(s)', excluded: 'no stone',
@@ -139,7 +140,7 @@ const BAN_TXT = {
     remove: 'Remove countertop', legend_stone: 'stone', legend_off: 'no stone'
   },
   es: {
-    tip_3d: 'En el 3D: haz clic en la piedra para estirarla con las flechas rojas, o bórrala con Supr.', st_on: 'Piedra puesta en {n} módulo(s).', st_off: 'Encimera apagada.', turn_on: 'Ponerla de nuevo', sp_none_s: 'Sin', sp_mirror_s: 'Bajo 4"', sp_high_s: 'Hasta los altos', wf_islands: 'Waterfall en la isla', adjust: 'Ajustes', plan_hint: 'Haz clic en un módulo para quitar o poner la piedra.', 
+    tip_3d: 'En el 3D: haz clic en la piedra para estirarla con las flechas rojas, o bórrala con Supr.', st_on: 'Piedra puesta en {n} módulo(s).', st_off: 'Encimera apagada.', turn_on: 'Ponerla de nuevo', sp_none_s: 'Sin', sp_mirror_s: 'Bajo 4"', sp_high_s: 'Hasta los altos', wf_islands: 'Waterfall en la isla', adjust: 'Ajustes', plan_hint: 'Haz clic en un módulo para quitar o poner la piedra. Un mueble suspendido o bajo empieza sin piedra — haz clic en él para agregarla.', 
     btn: 'Encimera', title: 'Encimera de piedra', sub: 'La piedra se pone sola en todas las encimeras — solo elige la piedra. (Apariencia aproximada — confirma la placa con el marmolista.)',
     show: 'Mostrar encimera en el 3D', plan: 'Dónde va la piedra', runs: 'Tramos', none_found: 'Ningún módulo base en el proyecto.',
     wall_n: 'Pared {n}', island: 'Isla', modules: '{n} módulo(s)', excluded: 'sin piedra',
@@ -174,6 +175,7 @@ function bancadaNormaliza(v) {
   if (!v || typeof v !== 'object') return null;
   const c = Object.assign({}, BANCADA_PADRAO, v);
   c.excluidos = Array.isArray(v.excluidos) ? v.excluidos.slice() : [];
+  c.incluidos = Array.isArray(v.incluidos) ? v.incluidos.slice() : [];
   c.pontas = (v.pontas && typeof v.pontas === 'object') ? JSON.parse(JSON.stringify(v.pontas)) : {};
   c.ilha_tras = (v.ilha_tras && typeof v.ilha_tras === 'object') ? Object.assign({}, v.ilha_tras) : {};
   c.frente_ext = (v.frente_ext && typeof v.frente_ext === 'object') ? Object.assign({}, v.frente_ext) : {};
@@ -225,6 +227,25 @@ function bancadaClassifica(slot) {
   return 'alto';
 }
 
+// Móvel que NÃO ganha pedra sozinho mas pode ganhar no clique (Matt 21/11:
+// "tem casos que preciso colocar em alguns que estão floating também, então
+// pensei em clicar neles e agregar"): gabinete suspenso ou baixo, fora da
+// altura de bancada. Torre alta e aéreo ficam de fora (topo até 1,5 m).
+function banCandidato(slot) {
+  if (bancadaClassifica(slot) !== 'alto') return false;
+  const mod = slot.module || {};
+  if (mod.is_decoration || mod.visual_only) return false;
+  const ilha = (typeof isFloorSlot === 'function') && isFloorSlot(slot);
+  const topo = Number(slot.floor_height_mm || 0) + (ilha ? Number(slot.fineOffsetYMm || 0) : 0) + Number(slot.height_mm || 0);
+  return topo <= 1500;
+}
+// Classificação já com a escolha do usuário (incluidos).
+function bancadaTipo(slot, cfg) {
+  const t = bancadaClassifica(slot);
+  if (t === 'alto' && cfg && (cfg.incluidos || []).some((x) => String(x) === String(slot.id)) && banCandidato(slot)) return 'base';
+  return t;
+}
+
 // Pose do módulo no mundo (mesma do 3D): centro do pé (ox,oz), base (oy),
 // eixos U (largura, local +X) e N (frente, local +Z).
 function banFrame(slot, paredes) {
@@ -266,7 +287,7 @@ function bancadaRunsCalc(cfg, paredes) {
   const excl = new Set(cfg.excluidos || []);
   const itens = [];
   projectSlots.forEach((slot) => {
-    const tipo = bancadaClassifica(slot);
+    const tipo = bancadaTipo(slot, cfg);
     if (!tipo) return;
     const f = banFrame(slot, paredes);
     if (!f) return;
@@ -977,14 +998,15 @@ function bancadaPlantaSvg() {
   const runs = bancadaCfg() ? bancadaRuns() : [];
   const itens = [];
   projectSlots.forEach((slot) => {
-    const t = bancadaClassifica(slot);
-    if (t !== 'base') return;
+    const t = bancadaTipo(slot, cfg);
+    const cand = t !== 'base' && banCandidato(slot);
+    if (t !== 'base' && !cand) return;
     const f = banFrame(slot, getProjectWallGeometry() || []);
     if (!f) return;
     const cs = [[-1, 0], [1, 0], [1, 1], [-1, 1]].map(([sx, sz]) => ({
       x: f.ox + f.U.x * sx * f.w / 2 + f.N.x * (sz - 0.5) * f.d, z: f.oz + f.U.z * sx * f.w / 2 + f.N.z * (sz - 0.5) * f.d
     }));
-    itens.push({ id: slot.id, cs, off: excl.has(slot.id) });
+    itens.push({ id: slot.id, cs, off: cand || excl.has(slot.id) });
   });
   const pts = [];
   paredes.forEach((w) => { pts.push({ x: w.originX, z: w.originZ }, { x: w.originX + w.alongDirX * w.widthM, z: w.originZ + w.alongDirZ * w.widthM }); });
@@ -1101,8 +1123,14 @@ function abrirJanelaBancada() {
         c.ativo = true;
         const id = mod.getAttribute('data-mod');
         const real = (projectSlots.find((s) => String(s.id) === id) || {}).id;
+        const slotAlvo = projectSlots.find((s) => String(s.id) === id);
+        if (!Array.isArray(c.incluidos)) c.incluidos = [];
         const ix = c.excluidos.findIndex((x) => String(x) === id);
-        if (ix >= 0) c.excluidos.splice(ix, 1); else c.excluidos.push(real != null ? real : id);
+        const ii = c.incluidos.findIndex((x) => String(x) === id);
+        if (ix >= 0) c.excluidos.splice(ix, 1);                       // estava tirado: volta
+        else if (ii >= 0) c.incluidos.splice(ii, 1);                  // estava agregado: tira
+        else if (slotAlvo && banCandidato(slotAlvo)) c.incluidos.push(real != null ? real : id);   // suspenso: agrega
+        else c.excluidos.push(real != null ? real : id);
         bancadaMudou();
         return;
       }
@@ -1141,6 +1169,14 @@ function abrirJanelaBancada() {
       bancadaMudou();
     });
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && m.classList.contains('open')) m.classList.remove('open'); });
+    // Clicar fora fecha a janela (Matt 21/11: "quando clicar fora, fecha a
+    // tela"). O botão Bancada fica de fora (ele mesmo abre a janela).
+    document.addEventListener('pointerdown', (ev) => {
+      if (!m.classList.contains('open')) return;
+      const t = ev.target;
+      if (!t || m.contains(t) || (t.closest && t.closest('#po-proj-countertop-btn'))) return;
+      m.classList.remove('open');
+    }, true);
   }
   m.querySelector('h2').textContent = banT('title');
   m.querySelector('.po-ban-sub').textContent = banT('sub');

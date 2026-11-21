@@ -35,6 +35,10 @@ window.LEGNO_CHANGELOG = [
     date: '2026-11-15',
     items: {
       pt: [
+        "Bancada: móvel suspenso ou baixo (fora da altura de bancada) aparece na planta dos Ajustes como sem pedra — clique nele para agregar a pedra; clique de novo para tirar.",
+        "LED: distâncias, margens, comprimento e as cotas da vista 2D aparecem na unidade escolhida (polegadas, cm…), não só em milímetros. A vista 2D ganhou zoom: botões − / +, roda do mouse e arrastar o fundo para mover.",
+        "Módulo dentro de outro: duplo clique no módulo de fora (onde não tem porta na frente) seleciona o de dentro, que então pode ser movido, esticado ou apagado.",
+        "No Mac: o Espaço do gesto de mover a vista não aciona mais o último botão clicado da barra (as portas abriam sozinhas).",
         "Favoritos: selecione um módulo (com o que você montou no Construtor) ou um grupo e clique na ★ da barrinha, ou no ★ Favoritar do menu do grupo (botão direito). Dê um nome e escolha a pasta. Fica salvo na sua conta.",
         "Os favoritos aparecem na aba ★ Favoritos dentro do + Módulo, separados por pasta. Um clique insere no projeto aberto, já com cores, puxador, LED e interior. Em Gerenciar pastas você cria, renomeia, move (arrastando o card pra pasta) e exclui; o ↻ refaz o ícone.",
         "Grupo agora funciona como um objeto único: ao arrastar, trocar de parede ou chegar no fim da parede, todos os módulos andam e giram juntos, sem desmontar. Os módulos do próprio grupo não travam nem puxam uns aos outros.",
@@ -56,6 +60,10 @@ window.LEGNO_CHANGELOG = [
         "Enquanto o catálogo carrega aparece Carregando módulos… em vez de Nenhum módulo encontrado."
       ],
       en: [
+        "Countertop: a floating or low cabinet (outside counter height) shows on the Adjustments plan as no stone — click it to add the stone; click again to remove it.",
+        "LED: distances, margins, length and the 2D view dimensions follow the chosen unit (inches, cm…), not only millimeters. The 2D view has zoom: − / + buttons, mouse wheel, and drag the background to pan.",
+        "Cabinet inside another: double-click the outer cabinet (where there is no door in front) to select the inner one, which can then be moved, stretched or deleted.",
+        "On Mac: the Space key of the pan gesture no longer triggers the last toolbar button clicked (doors were opening by themselves).",
         "Favorites: select a cabinet (with whatever you built in the Builder) or a group and click the ★ on the small toolbar, or ★ Favorite in the group menu (right click). Give it a name and pick a folder. It is saved to your account.",
         "Favorites show up in the ★ Favorites tab inside + Cabinet, split by folder. One click inserts it into the open project, already with colors, handles, LED and interior. In Manage folders you create, rename, move (drag the card onto a folder) and delete; ↻ redoes the icon.",
         "A group now works as a single object: when you drag it, move it to another wall or reach the end of the wall, all its cabinets move and turn together without coming apart. Cabinets in the same group no longer block or snap to each other.",
@@ -77,6 +85,10 @@ window.LEGNO_CHANGELOG = [
         "While the catalog loads you see Loading cabinets… instead of No cabinets found."
       ],
       es: [
+        "Encimera: un mueble suspendido o bajo (fuera de la altura de encimera) aparece en la planta de Ajustes como sin piedra — haz clic en él para agregar la piedra; otro clic la quita.",
+        "LED: distancias, márgenes, largo y las cotas de la vista 2D salen en la unidad elegida (pulgadas, cm…), no solo en milímetros. La vista 2D tiene zoom: botones − / +, rueda del mouse y arrastrar el fondo para mover.",
+        "Módulo dentro de otro: doble clic en el módulo de afuera (donde no hay puerta delante) selecciona el de adentro, que luego se puede mover, estirar o borrar.",
+        "En Mac: la tecla Espacio del gesto de mover la vista ya no acciona el último botón de la barra (las puertas se abrían solas).",
         "Favoritos: selecciona un módulo (con lo que armaste en el Constructor) o un grupo y haz clic en la ★ de la barrita, o en ★ Favorito del menú del grupo (clic derecho). Dale un nombre y elige la carpeta. Queda guardado en tu cuenta.",
         "Los favoritos aparecen en la pestaña ★ Favoritos dentro de + Módulo, separados por carpeta. Un clic lo inserta en el proyecto abierto, ya con colores, tirador, LED e interior. En Gestionar carpetas creas, renombras, mueves (arrastrando la tarjeta a la carpeta) y eliminas; ↻ rehace el ícono.",
         "El grupo ahora funciona como un solo objeto: al arrastrarlo, cambiarlo de pared o llegar al final de la pared, todos los módulos se mueven y giran juntos, sin desarmarse. Los módulos del mismo grupo ya no se traban ni se atraen entre sí.",

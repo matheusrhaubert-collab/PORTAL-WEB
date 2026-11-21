@@ -5191,6 +5191,10 @@ body.po-view3d-guest #po-proj-canvas-3d-edit canvas { touch-action: none; }
 .po-led-2d-wrap { flex: none; height: 260px; border-top: 1px solid var(--border); padding: 8px 12px; display: flex; flex-direction: column; background: #fff; }
 .po-led-2d-wrap #po-led-2d-view { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .po-led-2d { flex: 1; min-height: 0; }
+.po-led-2d-wrap { position: relative; }
+.po-led-zoom { position: absolute; top: 6px; right: 12px; display: flex; gap: 4px; }
+.po-led-zoom button { width: 26px; height: 26px; padding: 0; margin: 0; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: #333; font-size: 15px; line-height: 1; cursor: pointer; }
+.po-led-zoom button:hover { background: #f4efe6; }
 .po-led-2d svg { width: 100%; height: 100%; display: block; }
 .po-led-2d .peca { fill: #f4efe6; stroke: #3a3a3a; }
 .po-led-2d .led { fill: rgba(224, 164, 75, 0.22); stroke: #d08a1e; stroke-dasharray: 6 4; }

@@ -4238,6 +4238,24 @@ function ledSelecionarPeca(slot, pieceId) {
   renderProjectLedForm(slot);
 }
 
+// Medidas do LED na unidade do usuário (Matt 21/11: "preciso que apareçam as
+// medidas na unidade do usuário, hoje está só em milímetros"). Em mm mantém
+// 1 casa (como era); nas outras usa o formato padrão do portal.
+function ledUni() { return (document.getElementById('po-unit-select') || {}).value || 'mm'; }
+function ledFmtNum(mm) {
+  const u = ledUni();
+  const v = Number(mm) || 0;
+  if (u === 'mm' || typeof formatDimensionNumber !== 'function') return String(Math.round(v * 10) / 10);
+  return formatDimensionNumber(v, u);
+}
+function ledFmt(mm) { return ledFmtNum(mm) + ' ' + ((typeof unitAbbrev === 'function') ? unitAbbrev(ledUni()) : 'mm'); }
+function ledRotuloUni(txt) { return String(txt).replace('(mm)', '(' + ((typeof unitAbbrev === 'function') ? unitAbbrev(ledUni()) : 'mm') + ')'); }
+function ledLerCampo(txt) {
+  const u = ledUni();
+  const v = (typeof parseDimensionInput === 'function') ? parseDimensionInput(txt, u) : parseFloat(String(txt).replace(',', '.'));
+  return (v != null && isFinite(v) && v > 0) ? Math.round(v * 10) / 10 : 0;
+}
+
 function ledNomeFace(vi, face) {
   return vi ? I18n.t('led.side_' + vi.faces[face]) : face;
 }
@@ -4402,17 +4420,17 @@ function renderProjectLedForm(slot) {
   if (vi) {
     // borda que vira "fundo" mede da FRENTE (borda oposta) — ver ledMedeDaFrente
     const bordaPos = vert ? vi.bordas.esq : vi.bordas.cima;
-    set('po-led-pos-label', I18n.t('led.dist_' + (bordaPos === 'fundo' ? 'frente' : bordaPos)));
-    set('po-led-mini-label', I18n.t('led.margin_' + (vert ? vi.bordas.cima : vi.bordas.esq)));
-    set('po-led-mfim-label', I18n.t('led.margin_' + (vert ? vi.bordas.baixo : vi.bordas.dir)));
+    set('po-led-pos-label', ledRotuloUni(I18n.t('led.dist_' + (bordaPos === 'fundo' ? 'frente' : bordaPos))));
+    set('po-led-mini-label', ledRotuloUni(I18n.t('led.margin_' + (vert ? vi.bordas.cima : vi.bordas.esq))));
+    set('po-led-mfim-label', ledRotuloUni(I18n.t('led.margin_' + (vert ? vi.bordas.baixo : vi.bordas.dir))));
   }
   [['po-led-pos', 'pos_mm'], ['po-led-margin-ini', 'margem_ini_mm'], ['po-led-margin-fim', 'margem_fim_mm']].forEach(([id, campo]) => {
     const inp = document.getElementById(id);
-    if (inp && linha && document.activeElement !== inp) inp.value = campo === 'pos_mm' ? ledPosTela(part, linha) : linha[campo];
+    if (inp && linha && document.activeElement !== inp) inp.value = ledFmtNum(campo === 'pos_mm' ? ledPosTela(part, linha) : linha[campo]);
   });
   const cfg = ledConfigDaLinha(linha);
   const { layout } = ledAvaliar(cfg, part);
-  set('po-led-length', (layout && !layout.erro) ? (Math.round(layout.comprimento_mm * 10) / 10) + ' mm' : '—');
+  set('po-led-length', (layout && !layout.erro) ? ledFmt(layout.comprimento_mm) : '—');
   set('po-led-groove', cfg ? I18n.t('led.groove_fmt', { w: cfg.largura_mm, p: cfg.profundidade_mm,
     f: I18n.t(botao === 'top' ? 'led.face_top_btn' : 'led.face_under_btn') + ' (' + ledNomeFace(vi, cfg.face) + ')' }) : '—');
   const geral = ledErroGeral(part);
@@ -4453,11 +4471,22 @@ function renderProjectLed2D(part) {
     + '" class="cota" vector-effect="non-scaling-stroke" stroke-width="1"/>';
   const tick = fs * 0.35;
   const cotaH = (x1, x2, y) => (Math.abs(x2 - x1) < 0.05) ? '' : linha(x1, y, x2, y) + linha(x1, y - tick, x1, y + tick) + linha(x2, y - tick, x2, y + tick)
-    + t((x1 + x2) / 2, y - fs * 0.75, r(Math.abs(x2 - x1)), 'cota-txt');
+    + t((x1 + x2) / 2, y - fs * 0.75, ledFmtNum(Math.abs(x2 - x1)), 'cota-txt');
   const cotaV = (y1, y2, x) => (Math.abs(y2 - y1) < 0.05) ? '' : linha(x, y1, x, y2) + linha(x - tick, y1, x + tick, y1) + linha(x - tick, y2, x + tick, y2)
-    + t(x - fs * 0.75, (y1 + y2) / 2, r(Math.abs(y2 - y1)), 'cota-txt', ' transform="rotate(-90 ' + r(x - fs * 0.75) + ' ' + r((y1 + y2) / 2) + ')"');
-  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + r(-pad) + ' ' + r(-pad) + ' ' + r(W + 2 * pad) + ' ' + r(H + 2 * pad)
-    + '" preserveAspectRatio="xMidYMid meet">';
+    + t(x - fs * 0.75, (y1 + y2) / 2, ledFmtNum(Math.abs(y2 - y1)), 'cota-txt', ' transform="rotate(-90 ' + r(x - fs * 0.75) + ' ' + r((y1 + y2) / 2) + ')"');
+  // ZOOM (21/11, Matt: "dá uma opção de zoom nessa tela"): botões − / + /
+  // ajustar, roda do mouse (aproxima onde o ponteiro está) e, com zoom,
+  // arrastar o fundo move a vista. Trocar de peça volta ao desenho inteiro.
+  const chaveZoom = String(part.piece_id) + '|' + vi.nome;
+  if (ledZoom.chave !== chaveZoom) ledZoom = { k: 1, cx: 0, cy: 0, chave: chaveZoom };
+  const caixa = { x: -pad, y: -pad, w: W + 2 * pad, h: H + 2 * pad };
+  ledZoom.caixa = caixa;
+  const vw = caixa.w / ledZoom.k, vh = caixa.h / ledZoom.k;
+  if (ledZoom.k <= 1) { ledZoom.cx = caixa.x + caixa.w / 2; ledZoom.cy = caixa.y + caixa.h / 2; }
+  ledZoom.cx = Math.min(Math.max(ledZoom.cx, caixa.x + vw / 2), caixa.x + caixa.w - vw / 2);
+  ledZoom.cy = Math.min(Math.max(ledZoom.cy, caixa.y + vh / 2), caixa.y + caixa.h - vh / 2);
+  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + r(ledZoom.cx - vw / 2) + ' ' + r(ledZoom.cy - vh / 2) + ' ' + r(vw) + ' ' + r(vh)
+    + '" preserveAspectRatio="xMidYMid meet"' + (ledZoom.k > 1 ? ' style="cursor:grab"' : '') + '>';
   svg += '<rect x="0" y="0" width="' + r(W) + '" height="' + r(H) + '" class="peca" vector-effect="non-scaling-stroke" stroke-width="1.5"/>';
   svg += t(W / 2, -pad + fs * 0.9, I18n.t('led.edge_' + vi.bordas.cima), 'borda-txt');
   svg += t(W / 2, H + pad - fs * 0.9, I18n.t('led.edge_' + vi.bordas.baixo), 'borda-txt');
@@ -4510,6 +4539,18 @@ function renderProjectLed2D(part) {
 // Arrastar na vista 2D. Coordenada do mouse -> mm do desenho pela matriz do
 // próprio SVG (getScreenCTM), então funciona em qualquer tamanho da janela.
 let ledArraste = null;
+let ledZoom = { k: 1, cx: 0, cy: 0, chave: null };
+const LED_ZOOM_MAX = 12;
+// muda o zoom mantendo fixo o ponto 'em' (mm do desenho); sem 'em', o centro
+function ledZoomPara(k, em) {
+  const k0 = ledZoom.k;
+  const k1 = Math.min(Math.max(k, 1), LED_ZOOM_MAX);
+  if (em && k1 !== k0) {
+    ledZoom.cx = em.x + (ledZoom.cx - em.x) * (k0 / k1);
+    ledZoom.cy = em.y + (ledZoom.cy - em.y) * (k0 / k1);
+  }
+  ledZoom.k = k1;
+}
 function ledPontoSvg(ev) {
   const svg = document.querySelector('#po-led-2d svg');
   if (!svg || !svg.getScreenCTM || !svg.createSVGPoint) return null;
@@ -4742,13 +4783,18 @@ function removerLedDaPeca(slot) {
       const slot = slotAtual();
       const l = ledLinhaAtual();
       if (!slot || !l) return;
-      const v = parseFloat(String(inp.value).replace(',', '.'));
-      const tela = isFinite(v) && v > 0 ? v : 0;
+      const tela = ledLerCampo(inp.value);
       l[campo] = campo === 'pos_mm' ? ledPosGravar(ledPecaSelecionada(slot), l, tela) : tela;
       redesenha(slot);
     };
     inp.addEventListener('input', muda);
     inp.addEventListener('change', muda);
+  });
+  // trocou a unidade com a janela do LED aberta: reescreve campos e cotas
+  const uniSel = document.getElementById('po-unit-select');
+  if (uniSel) uniSel.addEventListener('change', () => {
+    const slot = slotAtual();
+    if (slot && ledDraft) { try { renderProjectLedForm(slot); } catch (e) { /* janela fechada */ } }
   });
   // ARRASTE na vista 2D (3ª rodada — Matt: "tem como arrastar com mouse essa
   // linha, seja vertical ou horizontal"). Meio da linha = distância; bolinha
@@ -4769,12 +4815,46 @@ function removerLedDaPeca(slot) {
       ledArraste = { idx, modo: alvo.getAttribute('data-led-drag'), inicio: ponto, pos0: Number(l.pos_mm) || 0 };
       renderProjectLedForm(slot);
     });
+    // ---- zoom: roda do mouse, botões e arrastar o fundo (ver ledZoom) ----
+    const redesenha2D = () => { const slot = slotAtual(); if (slot) renderProjectLed2D(ledPecaSelecionada(slot)); };
+    let ledPan = null;
+    area.addEventListener('wheel', (ev) => {
+      if (!ledDraft || !area.querySelector('svg')) return;
+      ev.preventDefault();
+      ledZoomPara(ledZoom.k * (ev.deltaY < 0 ? 1.25 : 0.8), ledPontoSvg(ev));
+      redesenha2D();
+    }, { passive: false });
+    area.addEventListener('pointerdown', (ev) => {
+      if (ledZoom.k <= 1 || (ev.target.closest && ev.target.closest('[data-led-drag]'))) return;
+      const svgEl = area.querySelector('svg');
+      if (!svgEl) return;
+      const rc = svgEl.getBoundingClientRect();
+      const cx = ledZoom.caixa || { w: 1, h: 1 };
+      // mm do desenho por pixel da tela (o SVG encaixa inteiro: "meet")
+      const mmPx = Math.max((cx.w / ledZoom.k) / Math.max(rc.width, 1), (cx.h / ledZoom.k) / Math.max(rc.height, 1));
+      ledPan = { x: ev.clientX, y: ev.clientY, cx: ledZoom.cx, cy: ledZoom.cy, mmPx };
+      ev.preventDefault();
+    });
+    const wrapZoom = area.parentElement;
+    if (wrapZoom) wrapZoom.addEventListener('click', (ev) => {
+      const b = ev.target.closest && ev.target.closest('[data-led-zoom]');
+      if (!b) return;
+      const q = b.getAttribute('data-led-zoom');
+      ledZoomPara(q === 'in' ? ledZoom.k * 1.5 : (q === 'out' ? ledZoom.k / 1.5 : 1));
+      redesenha2D();
+    });
     const move = (ev) => {
+      if (ledPan) {
+        ledZoom.cx = ledPan.cx - (ev.clientX - ledPan.x) * ledPan.mmPx;
+        ledZoom.cy = ledPan.cy - (ev.clientY - ledPan.y) * ledPan.mmPx;
+        redesenha2D();
+        return;
+      }
       if (!ledArraste) return;
       const slot = slotAtual();
       if (slot) ledAplicarArraste(slot, ledPontoSvg(ev), ledArraste);
     };
-    const solta = () => { if (ledArraste) fimArraste = Date.now(); ledArraste = null; };
+    const solta = () => { ledPan = null; if (ledArraste) fimArraste = Date.now(); ledArraste = null; };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', solta);
     window.addEventListener('pointercancel', solta);

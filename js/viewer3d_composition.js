@@ -2833,6 +2833,14 @@ function createViewerComposition3D() {
       if ((ehMac || gestoUsado('space+left')) && ev.code === 'Space' && !emCampo(ev.target)) {
         espacoApertado = true;
         if (ativo() && el.matches(':hover')) ev.preventDefault(); // sem rolar a página
+        // Mac (21/11 — "as portas ficam abrindo ao mover, como se clicasse O"):
+        // o último botão clicado na barra (ex.: Abrir portas) fica com o foco,
+        // e o Espaço do gesto de mover "aperta" esse botão de novo. Solta o
+        // foco do botão pra o Espaço servir só pro gesto. Com janela aberta
+        // não mexe (lá o Espaço no botão é de propósito).
+        const foco = document.activeElement;
+        const janela = (typeof atalhoModalAberto === 'function') && atalhoModalAberto();
+        if (ativo() && !janela && foco && foco.tagName === 'BUTTON' && typeof foco.blur === 'function') { foco.blur(); ev.preventDefault(); }
       }
     });
     window.addEventListener('keyup', (ev) => { if (ev.code === 'Space') espacoApertado = false; });
@@ -3189,8 +3197,57 @@ function createViewerComposition3D() {
   // alcançando o selecionado) troca. Sem nada selecionado, ou no mouse (que é
   // preciso e não passa stickySlotId), o comportamento é o de sempre.
   const STICKY_RING_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+  // MÓDULO DENTRO DE OUTRO (21/11, Matt: "quando coloco um componente dentro
+  // do outro ele fica perdido lá dentro e não tenho acesso... dois cliques?").
+  // O clique sempre pega a caixa de fora (está na frente). Duas peças:
+  //  · pickInnerAssemblyAt: o módulo de DENTRO sob o ponteiro (duplo clique
+  //    em portal-08 seleciona ele);
+  //  · em pickAssemblyAtSticky: com o de dentro já selecionado, clicar em
+  //    cima dele continua sendo ELE (pra arrastar/esticar), não o de fora.
+  // "Dentro" = centro da caixa de clique dele cai dentro da caixa do outro.
+  function caixaDeClique(group) {
+    if (!group) return null;
+    let hb = null;
+    group.traverse((o) => { if (!hb && o.userData && o.userData.isHitboxProxy) hb = o; });
+    if (!hb) return null;
+    group.updateMatrixWorld(true);
+    return { obj: hb, box: new THREE.Box3().setFromObject(hb) };
+  }
+  function estaDentro(caixaDentro, caixaFora) {
+    if (!caixaDentro || !caixaFora) return false;
+    const c = caixaDentro.box.getCenter(new THREE.Vector3());
+    return caixaFora.box.clone().expandByScalar(0.02).containsPoint(c);
+  }
+  function hitNaCaixa(clientX, clientY, caixa) {
+    if (!caixa || !renderer || !camera || !_raycaster) return null;
+    _raycaster.setFromCamera(ndcFromClient(clientX, clientY), camera);
+    const h = _raycaster.intersectObject(caixa.obj, false);
+    return h.length ? h[0] : null;
+  }
+  function pickInnerAssemblyAt(clientX, clientY, outerSlotId) {
+    const fora = caixaDeClique(findGroupBySlotId(outerSlotId));
+    if (!fora) return null;
+    let melhor = null;
+    currentGroups.forEach((g) => {
+      const id = g.userData && g.userData.slotId;
+      if (id == null || id === outerSlotId || !isEffectivelyVisible(g)) return;
+      const cx = caixaDeClique(g);
+      if (!estaDentro(cx, fora)) return;
+      const h = hitNaCaixa(clientX, clientY, cx);
+      if (h && (!melhor || h.distance < melhor.dist)) melhor = { slotId: id, wallIndex: g.userData.wallIndex, group: g, point: h.point.clone(), dist: h.distance };
+    });
+    return melhor;
+  }
   function pickAssemblyAtSticky(clientX, clientY, preferredWallIndex, stickySlotId, slopPx) {
     const direct = pickAssemblyAt(clientX, clientY, preferredWallIndex);
+    if (stickySlotId != null && direct && direct.slotId !== stickySlotId) {
+      const gSel = findGroupBySlotId(stickySlotId);
+      const cSel = caixaDeClique(gSel);
+      if (cSel && estaDentro(cSel, caixaDeClique(direct.group))) {
+        const h = hitNaCaixa(clientX, clientY, cSel);
+        if (h) return { slotId: stickySlotId, wallIndex: gSel.userData && gSel.userData.wallIndex, group: gSel, point: h.point.clone() };
+      }
+    }
     if (stickySlotId == null || !slopPx) return direct;
     if (direct && direct.slotId === stickySlotId) return direct;
     for (let i = 0; i < STICKY_RING_DIRS.length; i++) {
@@ -4444,7 +4501,7 @@ function createViewerComposition3D() {
     // areDrawersOpen() antes de reconstruir cada assembly (generateComposition3D),
     // pra um módulo novo/recolorido nascer já no estado atual em vez de
     // sempre fechado.
-    toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen, countOpenables,
+    toggleDoors, toggleDrawers, areDoorsOpen, areDrawersOpen, countOpenables, pickInnerAssemblyAt,
     // Junção automática de rodapé entre módulos adjacentes (migration 137) —
     // override de sessão do botão "Encaixe" (ver portal-08-projetos-
     // paredes.js). Estado PRÓPRIO desta instância, mesma convenção de

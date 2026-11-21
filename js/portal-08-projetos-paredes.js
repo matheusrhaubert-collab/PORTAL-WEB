@@ -1451,6 +1451,12 @@ function attachProject3DEditDrag() {
       selectProjectSlot(slot.id);
       const peca = ViewerProjectEdit.pickPieceAt ? ViewerProjectEdit.pickPieceAt(ev.clientX, ev.clientY, slot.id) : null;
       if (peca && typeof selectProjectPiece === 'function') selectProjectPiece(slot.id, peca.pieceId, peca.reference, peca.info);
+      else {
+        // sem porta na frente: se tem um módulo DENTRO deste sob o ponteiro,
+        // o duplo clique entra nele (21/11 — ver pickInnerAssemblyAt).
+        const dentro = ViewerProjectEdit.pickInnerAssemblyAt ? ViewerProjectEdit.pickInnerAssemblyAt(ev.clientX, ev.clientY, slot.id) : null;
+        if (dentro && projectSlots.some((s) => s.id === dentro.slotId)) selectProjectSlot(dentro.slotId);
+      }
       return;
     }
     lastModuleTap = { t: agora, slotId: slot.id };
