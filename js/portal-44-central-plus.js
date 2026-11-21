@@ -70,7 +70,7 @@ const CX_TXT = {
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
     col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'PO', no_po: '— sem PO —', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Minhas pastas', today: 'Atualizados hoje', today_at: 'hoje', fl_all: 'Todos', fl_7: 'Últimos 7 dias', fl_30: 'Últimos 30 dias', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpar filtros', lay_pastas: 'Ver por pastas', lay_lista: 'Ver lista numerada', c_item: 'Projeto / PO', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
-    rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}'
+    rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}', fab_net: 'Fábrica c/ desc.', sale: 'Venda ao cliente', sum: 'Total ({n})'
   },
   en: {
     po: 'Label name (PO)', po_ph: 'how you will find it on site', room: 'Room', room_ph: 'Kitchen, Master bath…', addr: 'Job site address', addr_ph: 'street, number, city, state',
@@ -84,7 +84,7 @@ const CX_TXT = {
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
     col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'PO', no_po: '— no PO —', col_all: 'All', col_find: 'search…', back_folders: '‹ My folders', today: 'Updated today', today_at: 'today', fl_all: 'All', fl_7: 'Last 7 days', fl_30: 'Last 30 days', fl_asc: 'Sort ↑', fl_desc: 'Sort ↓', fl_clear: 'Clear filters', lay_pastas: 'View as folders', lay_lista: 'View numbered list', c_item: 'Project / PO', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
-    rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}'
+    rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}', fab_net: 'Factory net', sale: 'Client price', sum: 'Total ({n})'
   },
   es: {
     po: 'Nombre de etiqueta (PO)', po_ph: 'cómo lo encontrará en la obra', room: 'Ambiente', room_ph: 'Cocina, baño principal…', addr: 'Dirección de la obra', addr_ph: 'calle, número, ciudad, estado',
@@ -98,7 +98,7 @@ const CX_TXT = {
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
     col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'PO', no_po: '— sin PO —', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Mis carpetas', today: 'Actualizados hoy', today_at: 'hoy', fl_all: 'Todos', fl_7: 'Últimos 7 días', fl_30: 'Últimos 30 días', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpiar filtros', lay_pastas: 'Ver por carpetas', lay_lista: 'Ver lista numerada', c_item: 'Proyecto / PO', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
-    rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}'
+    rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}', fab_net: 'Fábrica c/ desc.', sale: 'Venta al cliente', sum: 'Total ({n})'
   }
 };
 function cxLang() { try { const l = (typeof I18n !== 'undefined' && I18n.getLanguage) ? I18n.getLanguage() : 'en'; return CX_TXT[l] ? l : 'en'; } catch (e) { return 'en'; } }
@@ -423,6 +423,7 @@ async function cxLoadScope(force) {
         });
       });
     } catch (e2) { /* sem projetos: só pedidos */ }
+    try { await cxLoadPricing(s, desc); } catch (e4) { /* fica só a tabela */ }
     // e-mail de quem não está em nenhuma empresa (cliente, contractor)
     s.emails = {};
     try {
@@ -621,15 +622,82 @@ async function cxMoveOrders(ids, destino) {
 // pedido aprovado ele ganha o número do pedido de fábrica" + "fica mais limpo
 // e organizado". principal = true: é a lista da tela (títulos ordenam/filtram);
 // false: itens de dentro de uma pasta.
+
+// VALOR DE FÁBRICA COM DESCONTO + VENDA AO CLIENTE dos PROJETOS (21/11, Matt:
+// "na aba projetos eu quero ver o valor fábrica já com desconto e valor de
+// venda do cliente, pra ele ter mais controle dos pedidos dele e de seus
+// vendedores"). Mesma conta do getDisplayPrice (portal-05), mas com a
+// configuração do DEALER dono de cada linha (vendedor herda do dealer):
+// custo = tabela − desconto + extras de custo; venda = custo × (1+margem) +
+// extras de margem. Linha do próprio usuário usa getDisplayPrice direto.
+// Extras de outro dealer só aparecem se o RLS deixar ler (migration 314 = admin).
+async function cxLoadPricing(s, descConta) {
+  const sb = supabaseClient;
+  const meuId = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+  const prof = {};
+  const busca = async (ids) => {
+    ids = ids.filter((u) => u && !prof[u]);
+    for (let i = 0; i < ids.length; i += 150) {
+      const { data, error } = await sb.from('user_profiles').select('user_id, role, parent_dealer_user_id, resale_margin_pct, factory_discount_pct').in('user_id', ids.slice(i, i + 150));
+      if (error) break;
+      (data || []).forEach((r) => { prof[r.user_id] = r; });
+    }
+  };
+  await busca(Array.from(new Set(s.orders.map((o) => o.client_user_id))));
+  await busca(Array.from(new Set(Object.values(prof).map((r) => r.parent_dealer_user_id).filter(Boolean))));
+  const dono = (uid) => { const r = prof[uid]; return r && r.role === 'vendedor' && r.parent_dealer_user_id ? r.parent_dealer_user_id : uid; };
+  const donos = Array.from(new Set(s.orders.map((o) => dono(o.client_user_id)).filter(Boolean)));
+  const extras = {};
+  for (let i = 0; i < donos.length; i += 150) {
+    const { data, error } = await sb.from('dealer_pricing_extras').select('*').in('dealer_user_id', donos.slice(i, i + 150));
+    if (error) break;
+    (data || []).forEach((x) => { (extras[x.dealer_user_id] = extras[x.dealer_user_id] || []).push(x); });
+  }
+  const aplica = (base, tab, lista) => (typeof applyPricingExtras === 'function') ? applyPricingExtras(base, tab, lista) : base;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  s.orders.forEach((o) => {
+    if (!o._proj) return;
+    const tab = Number(o._l) || 0;
+    const d = dono(o.client_user_id);
+    const meu = meuId && (d === meuId || o.client_user_id === meuId);
+    if (meu && typeof computeCustoBase === 'function' && typeof getDisplayPrice === 'function') {
+      o._n = r2(computeCustoBase(tab)); o._v = r2(getDisplayPrice(tab));
+      o._d = tab > 0 ? Math.round((1 - o._n / tab) * 1000) / 10 : 0;
+      return;
+    }
+    const pd = prof[d] || {};
+    const pct = pd.factory_discount_pct != null ? Number(pd.factory_discount_pct) : (descConta[o.account_id] != null ? descConta[o.account_id] : 0);
+    const ex = extras[d] || [];
+    const custo = aplica(tab * (1 - pct / 100), tab, ex.filter((x) => x.side === 'custo'));
+    const mg = Number(pd.resale_margin_pct) || 0;
+    const venda = aplica(mg > 0 ? custo * (1 + mg / 100) : custo, tab, ex.filter((x) => x.side === 'margem'));
+    o._d = pct; o._n = r2(custo); o._v = r2(venda);
+  });
+}
+// colunas de preço: aba Projetos = fábrica c/ desconto + venda; resto = tabela/desconto/líquido
+function cxSoProj() { return cxState.net && cxState.net.etapa === 'build'; }
+function cxPrecoThs(th, soProj) {
+  return soProj ? th('net', cT('fab_net'), 1) + th('v', cT('sale'), 1)
+    : th('l', cT('list'), 1) + '<th class="cx-r">' + cEsc(cT('disc')) + '</th>' + th('net', cT('net'), 1);
+}
+// linha de TOTAL embaixo, em negrito, nas mesmas colunas (21/11, Matt)
+function cxTotalRow(itens, antes, depois, soProj) {
+  const soma = (k) => itens.reduce((t, o) => t + (Number(o[k]) || 0), 0);
+  const precos = soProj
+    ? '<td class="cx-r">' + cEsc(cMoney(soma('_n'))) + '</td><td class="cx-r">' + cEsc(cMoney(soma('_v'))) + '</td>'
+    : '<td class="cx-r">' + cEsc(cMoney(soma('_l'))) + '</td><td></td><td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (o._n != null ? o._n : (o._l || 0)), 0))) + '</td>';
+  return '<tfoot><tr class="cx-tot"><td colspan="' + antes + '">' + cEsc(cT('sum', { n: itens.length })) + '</td>' + precos + (depois ? '<td colspan="' + depois + '"></td>' : '') + '</tr></tfoot>';
+}
 function cxPnum(n) { return n ? 'P' + String(Number(n)).padStart(7, '0') : ''; }
 function cxNumVal(o) { return o._proj ? (Number(o.project_number) || 0) : (Number(o.factory_number) || 0); }
 function cxFlatTable(rows, principal) {
   const s = cxState.scope; const f = cxState.net;
   const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
   const preco = !cxSeller();
+  const soProj = cxSoProj();
   if (principal) {
     const val = { num: cxNumVal, loja: (o) => cxStoreName(o).toLowerCase(), quem: (o) => cxUserLabel(o.client_user_id, [o]).toLowerCase(), nome: (o) => String(o.po_name || '').toLowerCase(),
-      cliente: (o) => String(o.client_name || '').toLowerCase(), l: (o) => o._l || 0, net: (o) => (o._n == null ? -1 : o._n), etapa: (o) => CX_NET_STAGES.indexOf(o._s), upd: (o) => String(o._t || '') }[st.col] || ((o) => String(o._t || ''));
+      cliente: (o) => String(o.client_name || '').toLowerCase(), l: (o) => o._l || 0, net: (o) => (o._n == null ? -1 : o._n), v: (o) => (o._v == null ? -1 : o._v), etapa: (o) => CX_NET_STAGES.indexOf(o._s), upd: (o) => String(o._t || '') }[st.col] || ((o) => String(o._t || ''));
     rows = rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b._t || '').localeCompare(String(a._t || '')); });
   }
   const comFiltro = { quem: !!f.user, etapa: !!f.etapa && f.etapa !== '_orders' && f.etapa !== 'build', upd: !!f.periodo };
@@ -639,7 +707,7 @@ function cxFlatTable(rows, principal) {
   const max = principal ? 400 : 200;
   return '<div class="cx-inner"><table class="mp-table cx-table' + (principal ? ' cx-main' : '') + '"><thead><tr>'
     + th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item')) + '<th>' + cEsc(cT('c_room')) + '</th><th>' + cEsc(cT('c_city')) + '</th>'
-    + (preco ? th('l', cT('list'), 1) + '<th class="cx-r">' + cEsc(cT('disc')) + '</th>' + th('net', cT('net'), 1) : '')
+    + (preco ? cxPrecoThs(th, soProj) : '')
     + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
     + rows.slice(0, max).map((o) => {
       const quem = cxUserLabel(o.client_user_id, [o]);
@@ -654,10 +722,12 @@ function cxFlatTable(rows, principal) {
         + '<td class="cx-quem">' + cEsc(quem || '—') + '</td>'
         + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td>'
         + '<td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
-        + (preco ? '<td class="cx-r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td>'
-          + '<td class="cx-r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="cx-r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>' : '')
+        + (!preco ? '' : soProj
+          ? '<td class="cx-r">' + (o._n != null ? cEsc(cMoney(o._n)) + (o._d ? ' <small class="cx-est">−' + o._d + '%</small>' : '') : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
+          : '<td class="cx-r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td>'
+          + '<td class="cx-r">' + (o._d != null && !o._proj ? o._d + '%' : '—') + '</td><td class="cx-r"><b>' + (o._n != null && !o._proj ? cEsc(cMoney(o._n)) : '—') + '</b></td>')
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
-    }).join('') + '</tbody></table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
+    }).join('') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, 6, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
@@ -681,6 +751,7 @@ function cxGroups(rows) {
     g.loja = cxStoreName(a); g.quem = cxUserLabel(a.client_user_id, g.itens);
     g.n = g.itens.length;
     g.l = g.itens.reduce((t, o) => t + (o._l || 0), 0);
+    g.pn = g.itens.reduce((t, o) => t + (o._n || 0), 0); g.v = g.itens.reduce((t, o) => t + (o._v || 0), 0);
     const comN = g.itens.filter((o) => o._n != null);
     g.net = !g.proj && comN.length === g.itens.length ? comN.reduce((t, o) => t + o._n, 0) : null;
     g.d = g.net != null && g.l > 0 ? Math.round((1 - g.net / g.l) * 1000) / 10 : (g.net != null ? 0 : null);
@@ -695,7 +766,7 @@ function cxGroupTable(rows) {
   const s = cxState.scope;
   if (!rows.length) return '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>';
   const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
-  const val = { nome: (g) => g.titulo.toLowerCase(), cliente: (g) => g.cliente.toLowerCase(), loja: (g) => g.loja.toLowerCase(), quem: (g) => String(g.quem || '').toLowerCase(), n: (g) => g.n, status: (g) => g.status, etapa: (g) => CX_NET_STAGES.indexOf(g.etapa), l: (g) => g.l, net: (g) => (g.net == null ? -1 : g.net), upd: (g) => String(g.upd || '') }[st.col];
+  const val = { nome: (g) => g.titulo.toLowerCase(), cliente: (g) => g.cliente.toLowerCase(), loja: (g) => g.loja.toLowerCase(), quem: (g) => String(g.quem || '').toLowerCase(), n: (g) => g.n, status: (g) => g.status, etapa: (g) => CX_NET_STAGES.indexOf(g.etapa), l: (g) => g.l, net: (g) => (cxSoProj() ? g.pn : (g.net == null ? -1 : g.net)), v: (g) => g.v || 0, upd: (g) => String(g.upd || '') }[st.col];
   const grupos = cxGroups(rows).filter((g) => !cxState.net.gstatus || g.status === cxState.net.gstatus).sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b.upd || '').localeCompare(String(a.upd || '')); });
   const comFiltro = { quem: !!cxState.net.user, status: !!cxState.net.gstatus, etapa: !!cxState.net.etapa && cxState.net.etapa !== '_orders', upd: !!cxState.net.periodo };
   const th = (col, rot, r) => '<th class="mp-th-sort' + (st.col === col ? ' is-sorted' : '') + (r ? ' cx-r' : '') + (comFiltro[col] ? ' cx-th-on' : '') + '" data-cx="' + (col in comFiltro ? 'hmenu' : 'gsort') + '" data-col="' + col + '">' + (comFiltro[col] ? '<i class="cx-th-dot"></i>' : '') + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : '↕') + '</th>';
@@ -703,12 +774,13 @@ function cxGroupTable(rows) {
   const ICO = (typeof MP_ICO !== 'undefined') ? MP_ICO : { chev: '›', folder: '', layers: '', factory: '' };
   const aberto = cxState.netOpen || (cxState.netOpen = new Set());
   const preco = !cxSeller();
-  const nCols = preco ? 11 : 8;
+  const soProj = cxSoProj();
+  const nCols = preco ? (soProj ? 10 : 11) : 8;
   const max = 300;
   return '<div class="mp-table-wrap cx-wrap"><table class="mp-table cx-table cx-gtable"><thead><tr>'
     + th('nome', T('col_project', 'Project')) + th('cliente', T('col_client', 'Client')) + th('loja', cT('c_store')) + th('quem', cT('col_seller')) + th('n', T('col_count', 'Projects'))
     + th('status', T('col_status', 'Status')) + th('etapa', T('col_prod', cT('c_stage')))
-    + (preco ? th('l', cT('list'), 1) + '<th class="cx-r">' + cEsc(cT('disc')) + '</th>' + th('net', cT('net'), 1) : '') + th('upd', T('col_updated', cT('c_date')))
+    + (preco ? cxPrecoThs(th, soProj) : '') + th('upd', T('col_updated', cT('c_date')))
     + '</tr></thead><tbody>'
     + grupos.slice(0, max).map((g) => {
       const ab = aberto.has(g.key);
@@ -721,12 +793,14 @@ function cxGroupTable(rows) {
         + '<td class="mp-c-n"><strong>' + g.n + '</strong></td>'
         + '<td><span class="mp-chip st-' + g.status + '">' + cEsc(stRot) + '</span></td>'
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[g.etapa] + '"></i>' + cEsc(cT('s_' + g.etapa)) + '</span></td>'
-        + (preco ? '<td class="cx-r">' + (g.proj ? (g.l ? '<span class="cx-est">' + cEsc(cMoney(g.l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(g.l))) + '</td>'
-          + '<td class="cx-r">' + (g.d != null ? g.d + '%' : '—') + '</td><td class="cx-r"><b>' + (g.net != null ? cEsc(cMoney(g.net)) : '—') + '</b></td>' : '')
+        + (!preco ? '' : soProj
+          ? '<td class="cx-r">' + cEsc(cMoney(g.pn)) + '</td><td class="cx-r"><b>' + cEsc(cMoney(g.v)) + '</b></td>'
+          : '<td class="cx-r">' + (g.proj ? (g.l ? '<span class="cx-est">' + cEsc(cMoney(g.l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(g.l))) + '</td>'
+          + '<td class="cx-r">' + (g.d != null ? g.d + '%' : '—') + '</td><td class="cx-r"><b>' + (g.net != null ? cEsc(cMoney(g.net)) : '—') + '</b></td>')
         + '<td class="mp-c-date">' + cxQuando(g.upd) + '</td></tr>'
         + (ab ? '<tr class="mp-exp cx-gexp"><td colspan="' + nCols + '">' + cxFlatTable(g.itens) + '</td></tr>' : '');
     }).join('')
-    + '</tbody></table></div>' + (grupos.length > max ? '<p class="hint">+' + (grupos.length - max) + '…</p>' : '');
+    + '</tbody>' + (preco && grupos.length ? cxTotalRow(grupos.reduce((a, g) => a.concat(g.itens), []), 7, 1, soProj) : '') + '</table></div>' + (grupos.length > max ? '<p class="hint">+' + (grupos.length - max) + '…</p>' : '');
 }
 function cxRenderNet(p) {
   const s = cxState.scope;
@@ -1213,6 +1287,7 @@ function cxCss() {
     '.cx-hm-i{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:7px 10px;border:0;border-radius:7px;background:none!important;color:var(--text,#2b2621);font-size:13px;text-align:left;cursor:pointer;box-shadow:none!important}.cx-hm-i:hover{background:var(--bg,#f7f6f3)!important}.cx-hm-i.on{font-weight:700;color:var(--accent-dark,#6e4527)}.cx-hm-i i{width:9px;height:9px;border-radius:50%;flex:none}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
     '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
+    '.cx-table tfoot .cx-tot td{font-weight:700;border-top:2px solid var(--line,#d9d3c8);padding-top:10px;padding-bottom:10px;background:var(--panel-2,#faf8f4)}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
     '#cx-tree{margin-top:12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',
     '#cx-panel{margin-top:12px}.cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
