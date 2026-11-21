@@ -157,6 +157,9 @@ const BAN_ICONES = {
   sp_espelho: '<rect x="3" y="11" width="26" height="4" fill="currentColor" fill-opacity=".28"/><rect x="3" y="15" width="26" height="3" rx="0.5"/><path d="M5 18v10h22V18M16 18v10"/>',
   sp_alto: '<rect x="4" y="2" width="24" height="5"/><rect x="3" y="7" width="26" height="8" fill="currentColor" fill-opacity=".28"/><rect x="3" y="15" width="26" height="3" rx="0.5"/><path d="M5 18v10h22V18M16 18v10"/>',
   // ilha com a pedra descendo nas duas pontas
+  // waterfall só numa ponta do trecho (a perna pintada é a que desce)
+  wf_esq: '<path d="M3 10h26v3H3z"/><path d="M3 13v15h3V13z" fill="currentColor" fill-opacity=".45"/><path d="M8 13v13h19V13M17 13v13"/>',
+  wf_dir: '<path d="M3 10h26v3H3z"/><path d="M26 13v15h3V13z" fill="currentColor" fill-opacity=".45"/><path d="M5 13v13h19V13M15 13v13"/>',
   waterfall: '<path d="M3 10h26v3H3z"/><path d="M3 13v15h3V13M26 13v15h3V13" fill="currentColor" fill-opacity=".28"/><path d="M8 13v13h16V13M16 13v13"/>'
 };
 function banT(k, vars) {
@@ -1050,10 +1053,32 @@ function renderJanelaBancada() {
     const a = bancadaAreaM2();
     h += '<p class="po-ban-status">✓ ' + banEsc(banT('st_on', { n: runs.reduce((t, r) => t + r.membros.length, 0) })) + ' · ' + (a * 10.7639).toFixed(0) + ' ft²</p>';
   }
-  // 2) backsplash e waterfall — cartões com desenho (Matt: "faz uns ícones
-  // pra facilitar o entendimento do que é cada botão")
   const ico = (k) => '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">' + BAN_ICONES[k] + '</svg>';
   const op = (attr, ativo, k, rot) => '<button type="button" class="po-ban-op' + (ativo ? ' ativo' : '') + '" ' + attr + '>' + ico(k) + '<span>' + banEsc(banT(rot)) + '</span></button>';
+  // 0) ONDE VAI A PEDRA — planta clicável + waterfall de cada trecho, sempre
+  // aberto e ANTES das pedras (Matt 21/11: "quero colocar essa parte já aberta
+  // na parte de cima antes das cores do countertop, com ícone dos waterfalls").
+  let onde = '';
+  const svg = bancadaPlantaSvg();
+  if (svg) onde += '<div class="po-ban-tit">' + banEsc(banT('plan')) + '</div><p class="hint">' + banEsc(banT('plan_hint')) + '</p><div class="po-ban-planta-wrap">' + svg + '<div class="po-ban-legenda"><i class="pedra"></i>' + banEsc(banT('legend_stone')) + '<i class="off"></i>' + banEsc(banT('legend_off')) + '</div></div>';
+  runs.forEach((r) => {
+    const ini = r.membros[0].slot.id, fim = r.membros[r.membros.length - 1].slot.id;
+    const pE = (cfg.pontas || {})[ini + '|E'] || {}, pD = (cfg.pontas || {})[fim + '|D'] || {};
+    const titulo = (r.ilha ? banT('island') : banT('wall_n', { n: r.wallIndex + 1 })) + ' · ' + banT('modules', { n: r.membros.length }) + ' · ' + banFmt((r.uD - r.uE) * 1000) + ' ' + uni;
+    onde += '<div class="po-ban-trecho"><b>' + banEsc(titulo) + '</b><div class="po-ban-trecho-op">';
+    if (!r.aparadoE) onde += op('data-wf-btn="' + banEsc(ini) + '|E"', !!r.wfE, 'wf_esq', 'wf_left');
+    if (!r.aparadoD) onde += op('data-wf-btn="' + banEsc(fim) + '|D"', !!r.wfD, 'wf_dir', 'wf_right');
+    if (r.ilha) {
+      const tras = Math.max(0, ...r.membros.map((mm) => Number((cfg.ilha_tras || {})[mm.slot.id]) || 0));
+      onde += '<label>' + banEsc(banT('back')) + '<span class="po-geo-inp"><input type="text" data-tras="' + banEsc(r.membros.map((mm) => mm.slot.id).join(',')) + '" value="' + banEsc(banFmt(tras)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+      onde += '<label>' + banEsc(banT('ext_left')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(ini) + '|E" value="' + banEsc(banFmt(Number(pE.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+      onde += '<label>' + banEsc(banT('ext_right')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(fim) + '|D" value="' + banEsc(banFmt(Number(pD.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
+    }
+    onde += '</div></div>';
+  });
+  h += onde;
+  // 2) backsplash e waterfall — cartões com desenho (Matt: "faz uns ícones
+  // pra facilitar o entendimento do que é cada botão")
   h += '<div class="po-ban-tit">' + banEsc(banT('splash')) + '</div><div class="po-ban-ops">'
     + op('data-splash="nenhum"', cfg.splash === 'nenhum', 'sp_nenhum', 'sp_none_s')
     + op('data-splash="espelho"', cfg.splash === 'espelho', 'sp_espelho', 'sp_mirror_s')
@@ -1064,25 +1089,8 @@ function renderJanelaBancada() {
   // 1) pedra (abas por tipo)
   h += '<div class="po-ban-tit">' + banEsc(banT('stone')) + '</div><div class="po-ban-abas">' + BANCADA_GRUPOS.map((g) => '<button type="button" data-aba="' + g + '"' + (banAba === g ? ' class="ativo"' : '') + '>' + banEsc(banT('g_' + g)) + '</button>').join('') + '</div>';
   h += '<div class="po-ban-grid">' + BANCADA_CATALOGO.filter((p) => p.g === banAba).map((p) => '<button type="button" class="po-ban-pedra-card' + (cfg.pedra === p.id ? ' selected' : '') + '" data-pedra="' + p.id + '" title="' + banEsc(bancadaNome(p)) + '"><img src="assets/stones/' + p.id + '_thumb.jpg?v=1" alt="" loading="lazy"><span>' + banEsc(bancadaNome(p)) + '</span></button>').join('') + '</div>';
-  // 3) ajustes (fechado)
+  // 3) ajustes (fechado): só espessura e balanços
   let aj = '';
-  const svg = bancadaPlantaSvg();
-  if (svg) aj += '<p class="hint">' + banEsc(banT('plan_hint')) + '</p><div class="po-ban-planta-wrap">' + svg + '<div class="po-ban-legenda"><i class="pedra"></i>' + banEsc(banT('legend_stone')) + '<i class="off"></i>' + banEsc(banT('legend_off')) + '</div></div>';
-  runs.forEach((r) => {
-    const ini = r.membros[0].slot.id, fim = r.membros[r.membros.length - 1].slot.id;
-    const pE = (cfg.pontas || {})[ini + '|E'] || {}, pD = (cfg.pontas || {})[fim + '|D'] || {};
-    const titulo = (r.ilha ? banT('island') : banT('wall_n', { n: r.wallIndex + 1 })) + ' · ' + banT('modules', { n: r.membros.length }) + ' · ' + banFmt((r.uD - r.uE) * 1000) + ' ' + uni;
-    aj += '<div class="po-ban-trecho"><b>' + banEsc(titulo) + '</b><div class="po-ban-trecho-op">';
-    if (!r.aparadoE) aj += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(ini) + '|E"' + (r.wfE ? ' checked' : '') + '> ' + banEsc(banT('wf_left')) + '</label>';
-    if (!r.aparadoD) aj += '<label class="po-ban-check"><input type="checkbox" data-wf="' + banEsc(fim) + '|D"' + (r.wfD ? ' checked' : '') + '> ' + banEsc(banT('wf_right')) + '</label>';
-    if (r.ilha) {
-      const tras = Math.max(0, ...r.membros.map((mm) => Number((cfg.ilha_tras || {})[mm.slot.id]) || 0));
-      aj += '<label>' + banEsc(banT('back')) + '<span class="po-geo-inp"><input type="text" data-tras="' + banEsc(r.membros.map((mm) => mm.slot.id).join(',')) + '" value="' + banEsc(banFmt(tras)) + '"><em>' + banEsc(uni) + '</em></span></label>';
-      aj += '<label>' + banEsc(banT('ext_left')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(ini) + '|E" value="' + banEsc(banFmt(Number(pE.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
-      aj += '<label>' + banEsc(banT('ext_right')) + '<span class="po-geo-inp"><input type="text" data-ext="' + banEsc(fim) + '|D" value="' + banEsc(banFmt(Number(pD.ext_mm) || 0)) + '"><em>' + banEsc(uni) + '</em></span></label>';
-    }
-    aj += '</div></div>';
-  });
   aj += '<div class="po-geo-campos po-ban-opcoes">';
   aj += '<label>' + banEsc(banT('thick')) + '<select data-ban-sel="esp_mm"><option value="20"' + (Number(cfg.esp_mm) === 20 ? ' selected' : '') + '>2 cm (3/4")</option><option value="30"' + (Number(cfg.esp_mm) !== 20 ? ' selected' : '') + '>3 cm (1 1/4")</option></select></label>';
   if (cfg.splash === 'espelho') aj += '<label>' + banEsc(banT('sp_h')) + inp('splash_mm', cfg.splash_mm) + '</label>';
@@ -1136,6 +1144,14 @@ function abrirJanelaBancada() {
       }
       const ab = t.closest('[data-aba]');
       if (ab) { banAba = ab.dataset.aba; renderJanelaBancada(); return; }
+      const wfb = t.closest('[data-wf-btn]');
+      if (wfb) {
+        const c = bancadaGaranteCfg(); c.ativo = true;
+        const k = wfb.getAttribute('data-wf-btn');
+        c.pontas[k] = Object.assign({}, c.pontas[k] || {}, { wf: !wfb.classList.contains('ativo') });
+        bancadaMudou();
+        return;
+      }
       if (t.closest('[data-wf-ilhas-btn]')) {
         const c = bancadaGaranteCfg(); c.wf_ilhas = !c.wf_ilhas; c.ativo = true;
         Object.keys(c.pontas).forEach((k) => { if (c.pontas[k]) delete c.pontas[k].wf; });
