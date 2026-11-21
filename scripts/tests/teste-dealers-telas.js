@@ -136,8 +136,8 @@ const base = `
   function mpRender() {
     var box = mpBox(); var rows = cuRows();
     box.innerHTML = '<div class="cu-bar"><div class="mp-tabs cu-tabs"><button class="mp-tab cu-tab is-on" data-act="ctab" data-tab="all">Todos</button></div></div>'
-      + '<div class="mp-table-wrap"><table><tbody>' + rows.map(function (f) {
-        return '<tr class="mp-row" data-k="' + f.key + '"><td>' + f.titulo + '</td></tr><tr class="mp-exp"><td>'
+      + '<div class="mp-table-wrap"><table class="mp-table"><thead><tr><th>Projeto</th><th>Cliente</th><th>N</th><th>Status</th><th>Prod</th><th>Data</th><th></th></tr></thead><tbody>' + rows.map(function (f) {
+        return '<tr class="mp-row" data-k="' + f.key + '"><td>' + f.titulo + '</td><td>c</td><td>1</td><td>s</td><td>p</td><td>d</td><td></td></tr><tr class="mp-exp"><td colspan="7">'
           + (f.kind === 'orders' ? f.orders.map(function (o) { return '<div class="cu-order" data-act="order" data-order="' + o.id + '"></div>'; }).join('') : '<div class="mp-exp-box cu-build" data-folder="' + f.nome + '"></div>')
           + '</td></tr>'; }).join('') + '</tbody></table></div>';
     cuAfterRender(rows);
@@ -214,13 +214,16 @@ const base = `
   win.mpLoad(); await espera(60);
   const box = () => win.document.getElementById('po-mp-v2');
   ok(box().querySelectorAll('.cx-tab').length >= 2 && /\(1\)/.test(box().querySelector('.cx-tab[data-v="lost"]').textContent), 'abas Perdidos (1) e Mapa entram');
-  ok(!!box().querySelector('.cx-tab[data-v="net"]'), 'aba Lojas (admin)');
+  ok(!box().querySelector('.cx-tab[data-v="net"]') && box().querySelectorAll('#cx-tree .cx-col').length === 4, 'árvore em cima da lista principal (sem aba Lojas separada)');
+  const cab = Array.from(box().querySelectorAll('.mp-table-wrap thead th')).map((x) => x.textContent);
   const s2 = box().querySelector('.cx-strip[data-cx-order="o2"]');
   ok(s2 && s2.querySelectorAll('input[data-cx-f]').length === 3 && !!s2.querySelector('[data-cx="release"]'), 'pedido pendente: 3 campos + Liberar');
   ok(s2 && /\$3,000\.00/.test(s2.textContent) && /10%/.test(s2.textContent) && /\$2,700\.00/.test(s2.textContent), 'preço: tabela 3.000 · 10% · 2.700');
   const s1 = box().querySelector('.cx-strip[data-cx-order="o1"]');
   ok(s1 && s1.classList.contains('ro') && /SILVA-KIT/.test(s1.textContent) && /\$9,000\.00/.test(s1.textContent), 'pedido aprovado: só leitura com o preço congelado');
   ok(box().querySelectorAll('.mp-row').length === 2, 'projeto perdido saiu da lista (2 linhas: pasta Silva + pedidos)');
+  const linhaPed = box().querySelector('.mp-row[data-k="o:Silva"]');
+  ok(linhaPed && /Loja Teste/.test(linhaPed.querySelector('.cx-loja').textContent) && /\$13,000\.00/.test(linhaPed.textContent) && /10%/.test(linhaPed.textContent) && /\$11,700\.00/.test(linhaPed.textContent), 'linha da pasta: loja + tabela 13.000 · 10% · 11.700');
   s2.querySelector('[data-cx="release"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   ok(banco.orders[1].status === 'submitted' && /cx-st err/.test(box().innerHTML), 'liberar sem etiqueta/endereço é recusado');
   const s2b = box().querySelector('.cx-strip[data-cx-order="o2"]');
@@ -232,15 +235,20 @@ const base = `
   ok(o2.jobsite_lat === 29.2 && o2.jobsite_lng === -82.1, 'endereço virou coordenada');
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   ok(box().querySelectorAll('.mp-row').length === 1 && !!box().querySelector('[data-cx="reopen"]'), 'aba Perdidos: só o perdido, com Reabrir');
-  box().querySelector('.cx-tab[data-v="net"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80);
+  box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
+  box().querySelector('.cx-ci[data-c="fab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80);
   const linhas = box().querySelectorAll('.cx-table tbody tr');
-  ok(linhas.length === 3 && /Loja Teste/.test(linhas[0].textContent), 'aba Lojas: 3 pedidos com a coluna LOJA');
+  ok(linhas.length === 3 && /Loja Teste/.test(linhas[0].textContent), 'clicar na Fábrica: lista com os 3 pedidos e a coluna LOJA');
   ok(!!box().querySelector('[data-cx="relprod"]'), 'admin vê "Liberar produção" na linha');
   ok(box().querySelectorAll('.cx-col').length === 4 && box().querySelectorAll('.cx-ci[data-c="loja"]').length === 1, 'árvore lado a lado: 4 colunas, 1 dealer');
   box().querySelector('.cx-ci[data-c="loja"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
   ok(box().querySelectorAll('.cx-ci[data-c="user"]').length === 2 && box().querySelectorAll('.cx-ci[data-c="cliente"]').length >= 1, 'clicar no dealer abre vendedores (2) e clientes finais');
   box().querySelectorAll('.cx-ci[data-c="user"]')[1].dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
   ok(box().querySelectorAll('.cx-table tbody tr').length === 1, 'clicar no vendedor filtra a lista (1 pedido)');
+  const lupa = box().querySelector('[data-cx-colq="user"]');
+  lupa.value = 'colega'; lupa.dispatchEvent(new win.Event('input', { bubbles: true }));
+  const vis = Array.from(box().querySelectorAll('.cx-ci[data-c="user"]')).filter((el) => el.style.display !== 'none');
+  ok(box().querySelectorAll('[data-cx-colq]').length === 3 && vis.length === 1 && /colega/.test(vis[0].textContent), 'lupa da coluna: 3 campos, "colega" deixa 1 vendedor');
 
   console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\nTUDO CERTO');
   process.exit(falhas ? 1 : 0);

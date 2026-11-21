@@ -46,7 +46,7 @@ const CX_COLORS = { wait: '#c58a2b', pay: '#7b6fd0', prod: '#2d7fc1', ready: '#1
 const cxState = {
   off: false, view: '', extra: {}, extraFor: '', extraBusy: false, lost: {}, lostLoaded: false, lostBusy: false,
   acc: null, accLoaded: false, sug: {}, sugTimer: null, saving: {}, msg: {}, scope: null, scopeBusy: false,
-  net: { loja: '', user: '', cliente: '', etapa: '', q: '' }, draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
+  net: { fab: false, loja: '', user: '', cliente: '', etapa: '', q: '' }, colScroll: {}, accNames: {}, totalsFor: -1, colQ: { loja: '', user: '', cliente: '' }, draft: {}, hasNet: null, mapEl: null, map: null, mapLayer: null, mapHide: {}, geoBusy: false
 };
 
 function cxOn() {
@@ -68,7 +68,7 @@ const CX_TXT = {
     map_none: 'Nenhuma obra com endereço localizado ainda.', map_locate: 'Localizar {n} endereço(s) no mapa', map_locating: 'Localizando… {i}/{n}', map_missing: '{n} pedido(s) sem endereço', loading: 'Carregando…',
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Voltar pras minhas pastas', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
     rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}'
   },
   en: {
@@ -82,7 +82,7 @@ const CX_TXT = {
     map_none: 'No job site located yet.', map_locate: 'Locate {n} address(es) on the map', map_locating: 'Locating… {i}/{n}', map_missing: '{n} order(s) with no address', loading: 'Loading…',
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
-    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
+    col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'End client', col_all: 'All', col_find: 'search…', back_folders: '‹ Back to my folders', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
     rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}'
   },
   es: {
@@ -96,7 +96,7 @@ const CX_TXT = {
     map_none: 'Ninguna obra ubicada todavía.', map_locate: 'Ubicar {n} dirección(es) en el mapa', map_locating: 'Ubicando… {i}/{n}', map_missing: '{n} pedido(s) sin dirección', loading: 'Cargando…',
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
-    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
+    col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'Cliente final', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Volver a mis carpetas', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
     rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}'
   }
 };
@@ -215,26 +215,28 @@ async function cxLoadNetFlag() {
   try {
     const tr = await supabaseClient.rpc('account_tree');
     const tm = await supabaseClient.rpc('account_team');
+    (tr.data || []).forEach((a) => { cxState.accNames[a.id] = a.trade_name || a.legal_name || ''; });
     const lojas = (tr.data || []).filter((a) => a.kind !== 'factory').length;
     cxState.hasNet = lojas > 1 || (tm.data || []).length > 1;
   } catch (e) { cxState.hasNet = false; }
-  if (cxState.hasNet && typeof mpRender === 'function' && typeof mpState !== 'undefined' && mpState.central) mpRender();
+  if (typeof mpRender === 'function' && typeof mpState !== 'undefined' && mpState.central) mpRender();
 }
-function cxDecorate() {
+function cxNetSel() { const f = cxState.net; return !!(f.fab || f.loja || f.user || f.cliente); }
+function cxDecorate(folders) {
   if (!cxOn() || typeof mpState === 'undefined' || !mpState.central) return;
   const box = (typeof mpBox === 'function') ? mpBox() : document.getElementById('po-mp-v2');
   if (!box) return;
   cxCss();
   if (cxState.extraFor === '' || Object.keys(mpState.ordersById || {}).some((id) => !(id in cxState.extra))) cxLoadExtra();
   if (!cxState.lostLoaded) cxLoadLost();
-  if (cxState.hasNet === null && !cxAdmin()) cxLoadNetFlag();
+  if (cxState.hasNet === null) cxLoadNetFlag();
 
   // abas
   const tabs = box.querySelector('.cu-tabs');
   if (tabs && !tabs.querySelector('[data-cx="view"]')) {
     const nLost = Object.keys(cxState.lost).length;
     const b = (v, rot) => '<button type="button" class="mp-tab cu-tab cx-tab' + (cxState.view === v ? ' is-on' : '') + '" data-cx="view" data-v="' + v + '">' + cEsc(rot) + '</button>';
-    tabs.insertAdjacentHTML('beforeend', b('lost', cT('t_lost') + ' (' + nLost + ')') + b('map', cT('t_map')) + (cxHasNetwork() ? b('net', cT('t_net')) : ''));
+    tabs.insertAdjacentHTML('beforeend', b('lost', cT('t_lost') + ' (' + nLost + ')') + b('map', cT('t_map')));
     if (cxState.view) tabs.querySelectorAll('[data-act="ctab"]').forEach((el) => el.classList.remove('is-on'));
   }
 
@@ -265,9 +267,29 @@ function cxDecorate() {
       + cEsc(cT(perdido ? 'lost_reopen' : 'lost_mark')) + '</button></div>');
   });
 
-  // painel do mapa / lojas no lugar da tabela
-  const painel = cxState.view === 'map' || cxState.view === 'net';
-  box.querySelectorAll('.mp-table-wrap, .mp-empty').forEach((el) => { el.style.display = painel ? 'none' : ''; });
+  // ÁRVORE NA PRÓPRIA CENTRAL (20/11, Matt: "quero colocar a aba store na
+  // própria aba central. subir os 2 preços, desconto e nome da loja. a árvore
+  // só enxerga do seu nível pra baixo"). Em cima da lista: Fábrica › Dealer ›
+  // Vendedor › Cliente final. Nada escolhido = as MINHAS pastas (com as
+  // colunas Loja/Tabela/Desconto/Com desconto); escolheu um nível = a lista de
+  // pedidos daquele nível pra baixo, no lugar das pastas.
+  const comArvore = cxHasNetwork() && cxState.view !== 'map' && cxState.view !== 'lost';
+  const lista = comArvore && cxNetSel();
+  if (comArvore) {
+    if (!cxState.scope && !cxState.scopeBusy) cxLoadScope(false);
+    const bar = box.querySelector('.cu-bar');
+    if (bar && !box.querySelector('#cx-tree')) {
+      bar.insertAdjacentHTML('afterend', '<div id="cx-tree">' + (cxState.scope ? cxTreeCols() : '<p class="hint">' + cEsc(cT('loading')) + '</p>') + '</div>');
+      ['loja', 'user', 'cliente'].forEach(cxColFilter);
+      box.querySelectorAll('#cx-tree .cx-col-b').forEach((el) => { const k = el.getAttribute('data-cx-colb') || 'fab'; if (cxState.colScroll[k]) el.scrollTop = cxState.colScroll[k]; });
+    }
+    if (lista) box.querySelectorAll('[data-act="ctab"]').forEach((el) => el.classList.remove('is-on'));
+  }
+  try { cxAddCols(box, folders); } catch (e) { console.warn('[central+] colunas', e); }
+
+  // painel do mapa / lista da árvore no lugar da tabela
+  const painel = cxState.view === 'map' || lista;
+  box.querySelectorAll('.mp-table-wrap, .mp-empty').forEach((el) => { if (!el.closest('#cx-panel')) el.style.display = painel ? 'none' : ''; });
   if (cxState.view === 'lost' && !box.querySelector('.mp-table-wrap')) { const e = box.querySelector('.mp-empty'); if (e) e.textContent = cT('lost_empty'); }
   if (painel) {
     if (!cxState.scope && !cxState.scopeBusy) cxLoadScope(false);
@@ -275,6 +297,47 @@ function cxDecorate() {
     if (!p) { p = document.createElement('div'); p.id = 'cx-panel'; box.appendChild(p); }
     if (cxState.view === 'map') cxRenderMap(p); else cxRenderNet(p);
   }
+}
+// Colunas LOJA | TABELA | DESCONTO | COM DESCONTO na lista de pastas.
+function cxAddCols(box, folders) {
+  const tabela = box.querySelector('.mp-table-wrap > table.mp-table:not(.cx-table)');
+  if (!tabela || tabela.dataset.cxCols) return;
+  tabela.dataset.cxCols = '1';
+  const preco = !cxSeller();
+  // valores dos pedidos ainda sem a foto do preço (uma busca por carga)
+  if (preco && cxState.totalsFor !== mpState.loadSeq && typeof cuEnsureTotals === 'function') {
+    cxState.totalsFor = mpState.loadSeq;
+    const falta = Object.values(mpState.ordersById || {}).filter((o) => o.order_type !== 'cutting_list' && mpState.totals[o.id] == null);
+    if (falta.length) cuEnsureTotals(falta);
+  }
+  const hr = tabela.querySelector('thead tr');
+  if (!hr || hr.children.length < 6) return;
+  const th = (t, r) => '<th' + (r ? ' class="cx-r"' : '') + '>' + cEsc(t) + '</th>';
+  hr.children[1].insertAdjacentHTML('afterend', th(cT('c_store')));
+  if (preco) hr.children[5].insertAdjacentHTML('afterend', th(cT('list'), 1) + th(cT('disc'), 1) + th(cT('net'), 1));
+  const porChave = {}; (folders || []).forEach((f) => { porChave[f.key] = f; });
+  const minha = cxState.acc ? (cxState.acc.trade_name || cxState.acc.legal_name || '') : '';
+  tabela.querySelectorAll('tbody > tr.mp-row').forEach((tr) => {
+    const f = porChave[tr.dataset.k];
+    let loja = minha, l = null, n = null, d = null;
+    if (f && f.kind === 'orders') {
+      let sl = 0, sn = 0, tem = false, falta = false;
+      (f.orders || []).forEach((o) => {
+        const x = cxState.extra[o.id] || {};
+        if (x.account_id && cxState.accNames[x.account_id]) loja = cxState.accNames[x.account_id];
+        if (o.order_type === 'cutting_list') return;
+        const p = cxPrice(o);
+        if (!p) { falta = true; return; }
+        tem = true; sl += p.list; sn += p.net;
+      });
+      if (tem && !falta) { l = sl; n = sn; d = sl > 0 ? Math.round((1 - sn / sl) * 1000) / 10 : 0; }
+    }
+    if (tr.children[1]) tr.children[1].insertAdjacentHTML('afterend', '<td class="cx-loja">' + (loja ? cEsc(loja) : '—') + '</td>');
+    if (preco && tr.children[5]) tr.children[5].insertAdjacentHTML('afterend',
+      '<td class="cx-r">' + (l != null ? cEsc(cMoney(l)) : '—') + '</td><td class="cx-r">' + (d != null ? d + '%' : '—') + '</td><td class="cx-r"><b>' + (n != null ? cEsc(cMoney(n)) : '—') + '</b></td>');
+  });
+  const nCols = hr.children.length;
+  tabela.querySelectorAll('tbody > tr.mp-exp > td[colspan]').forEach((td) => { td.setAttribute('colspan', nCols); });
 }
 
 // ---------- REDE / MAPA: todos os pedidos que eu enxergo ----------
@@ -342,12 +405,17 @@ function cxTreeCols() {
   const val = (l) => l.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
   const item = (c, v, nome, sub, lista, on) => '<button type="button" class="cx-ci' + (on ? ' on' : '') + '" data-cx="col" data-c="' + c + '" data-v="' + cEsc(v) + '">'
     + '<span class="cx-ci-n">' + cEsc(nome) + (sub ? '<small>' + cEsc(sub) + '</small>' : '') + '</span><span class="cx-ci-q"><b>' + lista.length + '</b>' + (cxSeller() ? '' : '<small>' + cEsc(cMoney(val(lista))) + '</small>') + '</span></button>';
-  const col = (tit, corpo, n) => '<div class="cx-col"><h5>' + cEsc(tit) + (n != null ? ' <span>' + n + '</span>' : '') + '</h5><div class="cx-col-b">' + corpo + '</div></div>';
+  // lupa por coluna (20/11, Matt: "coloca uma lupa em cima pra buscar o dealer
+  // ou vendedor ou cliente mais fácil") — filtra as linhas da própria coluna
+  const col = (tit, corpo, n, busca) => '<div class="cx-col"><h5>' + cEsc(tit) + (n != null ? ' <span>' + n + '</span>' : '') + '</h5>'
+    + (busca ? '<label class="cx-col-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
+      + '<input type="search" data-cx-colq="' + busca + '" placeholder="' + cEsc(cT('col_find')) + '" value="' + cEsc(cxState.colQ[busca] || '') + '" autocomplete="off"></label>' : '')
+    + '<div class="cx-col-b" data-cx-colb="' + (busca || '') + '">' + corpo + '</div></div>';
   const vazio = '<p class="hint cx-col-e">← ' + cEsc(cT('col_pick')) + '</p>';
 
   // 1) fábrica (matriz; as centrais entram aqui quando existirem)
   const fabricas = s.accounts.filter((a) => a.kind === 'factory');
-  const c1 = (fabricas.length ? fabricas : [{ id: 'f', trade_name: 'Legno' }]).map((a) => item('fab', a.id, a.trade_name || a.legal_name || 'Legno', cT('matriz'), s.orders, true)).join('');
+  const c1 = (fabricas.length ? fabricas : [{ id: 'f', trade_name: 'Legno' }]).map((a) => item('fab', a.id, a.trade_name || a.legal_name || 'Legno', cT('matriz'), s.orders, cxState.net.fab && !f.loja)).join('');
 
   // 2) dealers (lojista e distribuidor são o mesmo nível)
   const porLoja = {}; s.orders.forEach((o) => { const k = o.account_id || '_'; (porLoja[k] = porLoja[k] || []).push(o); });
@@ -382,7 +450,14 @@ function cxTreeCols() {
     nC = ks.length;
     c4 = ks.map((k) => item('cliente', k, nomeCli[k], '', porCli[k], f.cliente === k)).join('') || vazio;
   }
-  return '<div class="cx-cols">' + col(cT('col_factory'), c1, null) + col(cT('col_dealer'), c2 || vazio, dealers.length + (porLoja._ ? 1 : 0)) + col(cT('col_seller'), c3, nV) + col(cT('col_client'), c4, nC) + '</div>';
+  return '<div class="cx-cols">' + col(cT('col_factory'), c1, null) + col(cT('col_dealer'), c2 || vazio, dealers.length + (porLoja._ ? 1 : 0), 'loja') + col(cT('col_seller'), c3, nV, 'user') + col(cT('col_client'), c4, nC, 'cliente') + '</div>';
+}
+// esconde as linhas da coluna que não batem com a lupa (sem redesenhar: o foco fica no campo)
+function cxColFilter(chave) {
+  const q = String(cxState.colQ[chave] || '').trim().toLowerCase();
+  document.querySelectorAll('.cx-cols .cx-col-b[data-cx-colb="' + chave + '"] .cx-ci').forEach((el) => {
+    el.style.display = (!q || el.classList.contains('on') || el.querySelector('.cx-ci-n').textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
 }
 function cxRenderNet(p) {
   const s = cxState.scope;
@@ -394,9 +469,8 @@ function cxRenderNet(p) {
   cxState.net = semEtapa; cxNetRows().forEach((o) => { cont[o._s]++; }); cxState.net = f;
   const totL = rows.reduce((a, o) => a + (o._l || 0), 0), totN = rows.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
   const foco = document.activeElement && document.activeElement.id === 'cx-net-q';
-  const rolagem = {}; p.querySelectorAll('.cx-col-b').forEach((el, i) => { rolagem[i] = el.scrollTop; });
-  p.innerHTML = cxTreeCols()
-    + '<div class="cx-chips">' + CX_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
+  p.innerHTML = '<div class="cx-chips"><button type="button" class="cx-chip cx-back" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>'
+     + CX_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
     + '<div class="cx-filters"><input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
     + '<span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span></div>'
     + (rows.length ? '<div class="mp-table-wrap cx-wrap"><table class="mp-table cx-table"><thead><tr><th>' + cEsc(cT('c_no')) + '</th><th>' + cEsc(cT('c_store')) + '</th><th>' + cEsc(cT('c_po')) + '</th><th>' + cEsc(cT('c_room'))
@@ -412,7 +486,6 @@ function cxRenderNet(p) {
             + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cEsc(cDate(o.approved_at || o.submitted_at)) + '</td><td>' + acao + '</td></tr>';
         }).join('') + '</tbody></table></div>'
       : '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>');
-  p.querySelectorAll('.cx-col-b').forEach((el, i) => { if (rolagem[i]) el.scrollTop = rolagem[i]; });
   if (foco) { const i = document.getElementById('cx-net-q'); if (i) { i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch (e) { /* ok */ } } }
 }
 
@@ -609,7 +682,7 @@ document.addEventListener('click', (e) => {
     const v = b.getAttribute('data-v');
     cxState.view = cxState.view === v ? '' : v;
     if (cxState.view === 'lost') { mpState.ctab = 'all'; mpState.open = new Set(); }
-    if (cxState.view === 'map' || cxState.view === 'net') cxLoadScope(!cxState.scope);
+    if (cxState.view === 'map') cxLoadScope(!cxState.scope);
     return mpRender();
   }
   if (a === 'release') return cxRelease(b.getAttribute('data-id'));
@@ -625,12 +698,13 @@ document.addEventListener('click', (e) => {
   }
   if (a === 'col') {
     const c = b.getAttribute('data-c'), v = b.getAttribute('data-v'), f = cxState.net;
-    if (c === 'fab') { f.loja = ''; f.user = ''; f.cliente = ''; }
-    else if (c === 'loja') { f.loja = (f.loja === v && !f.user && !f.cliente) ? '' : v; f.user = ''; f.cliente = ''; }
+    if (c === 'fab') { f.fab = !(f.fab && !f.loja); f.loja = ''; f.user = ''; f.cliente = ''; }
+    else if (c === 'loja') { f.loja = (f.loja === v && !f.user && !f.cliente) ? '' : v; f.user = ''; f.cliente = ''; cxState.colQ.user = ''; cxState.colQ.cliente = ''; }
     else if (c === 'user') { f.user = f.user === v ? '' : v; f.cliente = ''; }
     else if (c === 'cliente') { f.cliente = f.cliente === v ? '' : v; }
     return mpRender();
   }
+  if (a === 'folders') { const f = cxState.net; f.fab = false; f.loja = ''; f.user = ''; f.cliente = ''; f.etapa = ''; f.q = ''; return mpRender(); }
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
   if (a === 'geocode') return cxGeocodeMissing();
@@ -645,7 +719,10 @@ document.addEventListener('click', (e) => {
 }, true);
 // aba normal clicada: sai do modo perdidos/mapa/lojas
 document.addEventListener('click', (e) => {
-  if (cxState.view && e.target.closest && e.target.closest('#po-mp-v2 [data-act="ctab"]')) cxState.view = '';
+  if (e.target.closest && e.target.closest('#po-mp-v2 [data-act="ctab"]')) {
+    cxState.view = '';
+    const f = cxState.net; f.fab = false; f.loja = ''; f.user = ''; f.cliente = ''; // aba normal = volta pras pastas
+  }
 }, true);
 document.addEventListener('change', (e) => {
   const t = e.target;
@@ -660,7 +737,12 @@ document.addEventListener('input', (e) => {
     if (st) { const id = st.getAttribute('data-cx-order'); (cxState.draft[id] = cxState.draft[id] || {})[t.getAttribute('data-cx-f')] = t.value; }
   }
   if (t.getAttribute('data-cx-f') === 'delivery_address') cxSuggest(t);
+  if (t.getAttribute('data-cx-colq')) { const k = t.getAttribute('data-cx-colq'); cxState.colQ[k] = t.value; cxColFilter(k); return; }
   if (t.id === 'cx-net-q') { cxState.net.q = t.value; clearTimeout(cxState.qTimer); cxState.qTimer = setTimeout(() => mpRender(), 250); }
+}, true);
+document.addEventListener('scroll', (e) => {
+  const t = e.target;
+  if (t && t.getAttribute && t.classList && t.classList.contains('cx-col-b')) cxState.colScroll[t.getAttribute('data-cx-colb') || 'fab'] = t.scrollTop;
 }, true);
 document.addEventListener('keydown', (e) => {
   const t = e.target;
@@ -673,7 +755,7 @@ document.addEventListener('keydown', (e) => {
     const orig = window.cuAfterRender;
     window.cuAfterRender = function () {
       const r = orig.apply(this, arguments);
-      try { cxDecorate(); } catch (e) { console.warn('[central+]', e); }
+      try { cxDecorate(arguments[0]); } catch (e) { console.warn('[central+]', e); }
       return r;
     };
   }
@@ -718,6 +800,7 @@ function cxCss() {
     '.cx-ro{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted,#766f64)}.cx-ro .cx-po{color:var(--text,#2b2621);font-weight:600}.cx-ro i{font-style:normal;opacity:.5}',
     '.cx-go{display:flex;gap:10px;align-items:center;flex-basis:100%}.cx-go button{margin:0;padding:7px 16px}.cx-st{font-size:12px}.cx-st.ok{color:#2e7d4f}.cx-st.err{color:var(--danger,#b3432f)}',
     '.cx-lostbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin:6px 0 2px}.cx-lostbar button{margin:0;padding:4px 12px;font-size:12px}',
+    '#cx-tree{margin-top:12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',
     '#cx-panel{margin-top:12px}.cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
     '.cx-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border,#e0ddd6);background:#fff;color:var(--text,#2b2621);border-radius:20px;padding:5px 12px;font-size:13px;margin:0;cursor:pointer}.cx-chip i{width:11px;height:11px;border-radius:50%;display:inline-block}.cx-chip.on{border-color:var(--accent,#8a5a34);box-shadow:0 0 0 1px var(--accent,#8a5a34)}.cx-chip.off{opacity:.45}',
     '#cx-panel .cx-chips .cx-chip:not(.on):not(.off){opacity:1}',
@@ -727,6 +810,8 @@ function cxCss() {
     '.cx-col:not(:last-child)::after{content:"›";position:absolute;right:-9px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--muted,#766f64);background:var(--panel,#fff);line-height:1;z-index:1}',
     '.cx-col h5{margin:0;padding:9px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#766f64);border-bottom:1px solid var(--border,#e0ddd6);display:flex;justify-content:space-between}.cx-col h5 span{font-weight:400}',
     '.cx-col-b{max-height:230px;overflow:auto;padding:4px}.cx-col-e{margin:10px 8px;font-size:12px}',
+    '.cx-col-s{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--border,#e0ddd6);color:var(--muted,#766f64)}.cx-col-s svg{width:14px;height:14px;flex:none}',
+    '.cx-col-s input{border:0;outline:0;background:none;font-size:13px;padding:2px 0;margin:0;width:100%;min-width:0;color:var(--text,#2b2621)}',
     '.cx-ci{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin:0;padding:7px 9px;border:0;border-radius:8px;background:none;color:var(--text,#2b2621);text-align:left;cursor:pointer;font-size:13px}.cx-ci:hover{background:var(--bg,#f7f6f3)}',
     '.cx-ci.on{background:var(--accent,#8a5a34);color:#fff}.cx-ci.on small{color:rgba(255,255,255,.8)}',
     '.cx-ci-n{min-width:0;display:flex;flex-direction:column;overflow:hidden}.cx-ci-n,.cx-ci-n small{white-space:nowrap;text-overflow:ellipsis}.cx-ci-n small,.cx-ci-q small{font-size:11px;color:var(--muted,#766f64);overflow:hidden}',
