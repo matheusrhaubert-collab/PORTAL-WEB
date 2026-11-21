@@ -65,7 +65,7 @@ const CX_TXT = {
     saved: 'salvo', released: 'Pedido liberado pra fábrica.', frozen: 'preço congelado na aprovação',
     t_lost: 'Perdidos', t_map: 'Mapa', t_net: 'Lojas',
     lost_mark: 'Marcar como perdido', lost_reopen: 'Reabrir projeto', lost_info: 'Perdido em {d} — {r}', lost_empty: 'Nenhum projeto perdido.',
-    mv_change: 'trocar loja', mv_all: 'Passar os {n} pedidos desta lista pra…', mv_new: '+ Nova loja…', mv_new_q: 'Nome da nova loja (ex.: Legno Distribuição Orlando):', mv_confirm: 'Passar {n} pedido(s) pra "{loja}"?', s_build: 'Projeto em construção', tag_proj: 'projeto', est: 'est.', est_tip: 'Valor estimado do projeto (ainda não é pedido)', s_wait: 'Aguardando aprovação', s_pay: 'Aguardando liberação', s_prod: 'Em produção', s_ready: 'Liberado pra coleta', s_done: 'Entregue',
+    sv_title: 'Loja e PO do projeto', sv_hint: 'Projeto feito pela fábrica precisa ficar numa loja.', sv_store: 'Loja', sv_pick: '— escolha a loja —', sv_po: 'Nome da PO (sai na etiqueta)', sv_ok: 'Salvar', sv_cancel: 'Cancelar', sv_need: 'Escolha a loja e digite o nome da PO.', mv_change: 'trocar loja', mv_all: 'Passar os {n} pedidos desta lista pra…', mv_new: '+ Nova loja…', mv_new_q: 'Nome da nova loja (ex.: Legno Distribuição Orlando):', mv_confirm: 'Passar {n} pedido(s) pra "{loja}"?', s_build: 'Projeto em construção', tag_proj: 'projeto', est: 'est.', est_tip: 'Valor estimado do projeto (ainda não é pedido)', s_wait: 'Aguardando aprovação', s_pay: 'Aguardando liberação', s_prod: 'Em produção', s_ready: 'Liberado pra coleta', s_done: 'Entregue',
     map_none: 'Nenhuma obra com endereço localizado ainda.', map_locate: 'Localizar {n} endereço(s) no mapa', map_locating: 'Localizando… {i}/{n}', map_missing: '{n} pedido(s) sem endereço', loading: 'Carregando…',
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
@@ -79,7 +79,7 @@ const CX_TXT = {
     saved: 'saved', released: 'Order released to the factory.', frozen: 'price frozen at approval',
     t_lost: 'Lost', t_map: 'Map', t_net: 'Stores',
     lost_mark: 'Mark as lost', lost_reopen: 'Reopen project', lost_info: 'Lost on {d} — {r}', lost_empty: 'No lost projects.',
-    mv_change: 'change store', mv_all: 'Move the {n} orders in this list to…', mv_new: '+ New store…', mv_new_q: 'Name of the new store (e.g. Legno Distribution Orlando):', mv_confirm: 'Move {n} order(s) to "{loja}"?', s_build: 'Project in design', tag_proj: 'project', est: 'est.', est_tip: 'Estimated project value (not an order yet)', s_wait: 'Waiting approval', s_pay: 'Waiting release', s_prod: 'In production', s_ready: 'Ready for pickup', s_done: 'Delivered',
+    sv_title: 'Project store and PO', sv_hint: 'A project made by the factory must belong to a store.', sv_store: 'Store', sv_pick: '— choose the store —', sv_po: 'PO name (goes on the label)', sv_ok: 'Save', sv_cancel: 'Cancel', sv_need: 'Choose the store and type the PO name.', mv_change: 'change store', mv_all: 'Move the {n} orders in this list to…', mv_new: '+ New store…', mv_new_q: 'Name of the new store (e.g. Legno Distribution Orlando):', mv_confirm: 'Move {n} order(s) to "{loja}"?', s_build: 'Project in design', tag_proj: 'project', est: 'est.', est_tip: 'Estimated project value (not an order yet)', s_wait: 'Waiting approval', s_pay: 'Waiting release', s_prod: 'In production', s_ready: 'Ready for pickup', s_done: 'Delivered',
     map_none: 'No job site located yet.', map_locate: 'Locate {n} address(es) on the map', map_locating: 'Locating… {i}/{n}', map_missing: '{n} order(s) with no address', loading: 'Loading…',
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
@@ -93,7 +93,7 @@ const CX_TXT = {
     saved: 'guardado', released: 'Pedido liberado a la fábrica.', frozen: 'precio congelado en la aprobación',
     t_lost: 'Perdidos', t_map: 'Mapa', t_net: 'Tiendas',
     lost_mark: 'Marcar como perdido', lost_reopen: 'Reabrir proyecto', lost_info: 'Perdido el {d} — {r}', lost_empty: 'Ningún proyecto perdido.',
-    mv_change: 'cambiar tienda', mv_all: 'Pasar los {n} pedidos de esta lista a…', mv_new: '+ Nueva tienda…', mv_new_q: 'Nombre de la nueva tienda:', mv_confirm: '¿Pasar {n} pedido(s) a "{loja}"?', s_build: 'Proyecto en desarrollo', tag_proj: 'proyecto', est: 'est.', est_tip: 'Valor estimado del proyecto (aún no es pedido)', s_wait: 'Esperando aprobación', s_pay: 'Esperando liberación', s_prod: 'En producción', s_ready: 'Listo para retiro', s_done: 'Entregado',
+    sv_title: 'Tienda y PO del proyecto', sv_hint: 'Un proyecto hecho por la fábrica debe pertenecer a una tienda.', sv_store: 'Tienda', sv_pick: '— elija la tienda —', sv_po: 'Nombre de la PO (va en la etiqueta)', sv_ok: 'Guardar', sv_cancel: 'Cancelar', sv_need: 'Elija la tienda y escriba el nombre de la PO.', mv_change: 'cambiar tienda', mv_all: 'Pasar los {n} pedidos de esta lista a…', mv_new: '+ Nueva tienda…', mv_new_q: 'Nombre de la nueva tienda:', mv_confirm: '¿Pasar {n} pedido(s) a "{loja}"?', s_build: 'Proyecto en desarrollo', tag_proj: 'proyecto', est: 'est.', est_tip: 'Valor estimado del proyecto (aún no es pedido)', s_wait: 'Esperando aprobación', s_pay: 'Esperando liberación', s_prod: 'En producción', s_ready: 'Listo para retiro', s_done: 'Entregado',
     map_none: 'Ninguna obra ubicada todavía.', map_locate: 'Ubicar {n} dirección(es) en el mapa', map_locating: 'Ubicando… {i}/{n}', map_missing: '{n} pedido(s) sin dirección', loading: 'Cargando…',
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
@@ -394,7 +394,8 @@ async function cxLoadScope(force) {
     // fora: projeto que já virou pedido, arquivado e perdido.
     try {
       const PB = 'id, client_user_id, name, client_folder, client_info, cached_value_usd, frozen_order_id, archived_at, updated_at';
-      let pr = await sb.from('user_projects').select(PB + ', lost_at').order('updated_at', { ascending: false }).limit(5000);
+      let pr = await sb.from('user_projects').select(PB + ', lost_at, account_id, po_name').order('updated_at', { ascending: false }).limit(5000);
+      if (pr.error) pr = await sb.from('user_projects').select(PB + ', lost_at').order('updated_at', { ascending: false }).limit(5000);
       if (pr.error) pr = await sb.from('user_projects').select(PB).order('updated_at', { ascending: false }).limit(5000);
       const porId = {}, porPedido = {};
       (pr.data || []).forEach((p) => { porId[p.id] = p; if (p.frozen_order_id) porPedido[p.frozen_order_id] = p; });
@@ -403,7 +404,7 @@ async function cxLoadScope(force) {
         if (p.frozen_order_id || p.archived_at || p.lost_at) return;
         const m = s.team[p.client_user_id];
         s.orders.push({
-          _proj: true, _folder: p.client_folder || '', _pname: p.name || '', id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: m ? m.account_id : null, status: 'project',
+          _proj: true, _folder: p.client_folder || '', _pname: p.name || '', id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: p.account_id || (m ? m.account_id : null), _pid: p.id, _po: p.po_name || '', status: 'project',
           po_name: p.name, client_name: (p.client_info && p.client_info.name) || p.client_folder || '', room_name: '',
           delivery_address: (p.client_info && p.client_info.address) || '', jobsite_lat: null, jobsite_lng: null,
           submitted_at: p.updated_at, _l: Number(p.cached_value_usd) || 0, _d: null, _n: null, _s: 'build'
@@ -574,12 +575,23 @@ async function cxMoveOrders(ids, destino) {
       s.accounts.push(Object.assign({ members: 0, factory_discount_pct: 0 }, data));
       cxState.accNames[accId] = nome;
     } else if (ids.length > 1 && !confirm(cT('mv_confirm', { n: ids.length, loja: nome }))) return mpRender();
-    for (let i = 0; i < ids.length; i += 100) {
-      const parte = ids.slice(i, i + 100);
+    const pedidos = ids.filter((x) => !String(x).startsWith('proj:'));
+    const projetos = ids.filter((x) => String(x).startsWith('proj:')).map((x) => String(x).slice(5));
+    for (let i = 0; i < pedidos.length; i += 100) {
+      const parte = pedidos.slice(i, i + 100);
       const { data, error } = await supabaseClient.from('orders').update({ account_id: accId }).in('id', parte).select('id');
       if (error) throw error;
       const ok = new Set((data || []).map((r) => r.id));
       s.orders.forEach((o) => { if (ok.has(o.id)) { o.account_id = accId; if (cxState.extra[o.id]) cxState.extra[o.id].account_id = accId; } });
+    }
+    // projeto (migration 310): a loja fica no próprio projeto e o pedido criado dele herda
+    for (let i = 0; i < projetos.length; i += 100) {
+      const parte = projetos.slice(i, i + 100);
+      const { data, error } = await supabaseClient.from('user_projects').update({ account_id: accId }).in('id', parte).select('id');
+      if (error) throw error;
+      const ok = new Set((data || []).map((r) => 'proj:' + r.id));
+      if (ok.size < parte.length && !ok.size) throw new Error(typeof I18n !== 'undefined' ? I18n.t('project.update_blocked') : 'blocked');
+      s.orders.forEach((o) => { if (ok.has(o.id)) o.account_id = accId; });
     }
     const f = cxState.net; // a lista segue o pedido: fica na loja de destino
     if (f.loja) { f.loja = accId || '_'; f.user = ''; f.cliente = ''; }
@@ -597,8 +609,8 @@ function cxFlatTable(rows) {
           const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
             : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
           return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td>' + (Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + '</td>'
-            + '<td' + (cxAdmin() && !o._proj ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>'
-              + (cxAdmin() && !o._proj ? ' <span class="cx-swap">⇄</span>' : '') + (quem ? '<br><span class="hint">' + cEsc(quem) + '</span>' : '') + '</td>'
+            + '<td' + (cxAdmin() ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>'
+              + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + (quem ? '<br><span class="hint">' + cEsc(quem) + '</span>' : '') + '</td>'
             + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td><td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
             + '<td class="r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td><td class="r">' + (o._d != null ? o._d + '%' : '—') + '</td><td class="r"><b>' + (o._n != null ? cEsc(cMoney(o._n)) : '—') + '</b></td>'
             + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
@@ -688,7 +700,7 @@ function cxRenderNet(p) {
     + CX_NET_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
     + '<div class="cx-filters"><input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
     + '<span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span>'
-    + (cxAdmin() && rows.some((o) => !o._proj) ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.filter((o) => !o._proj).length })) + '</select>' : '') + '</div>'
+    + (cxAdmin() && rows.length ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.length })) + '</select>' : '') + '</div>'
     // aba Orders = lista corrida, o NÚMERO DO PEDIDO como primeira referência
     // (20/11, Matt: "aqui eu acho legal mostrar o número do pedido como primeira
     // referência, aí loja, preços, PO, data, status"); as outras abas = pastas.
@@ -972,7 +984,7 @@ document.addEventListener('change', (e) => {
   if (!t || !t.getAttribute) return;
   if (t.getAttribute('data-cx-f')) { e.stopPropagation(); cxSaveField(t); return; }
   if (t.getAttribute('data-cx-store')) { e.stopPropagation(); cxMoveOrders([t.getAttribute('data-cx-store')], t.value); return; }
-  if (t.id === 'cx-move-all') { e.stopPropagation(); if (t.value) cxMoveOrders(cxNetRows().filter((o) => !o._proj).map((o) => o.id), t.value); return; }
+  if (t.id === 'cx-move-all') { e.stopPropagation(); if (t.value) cxMoveOrders(cxNetRows().map((o) => o.id), t.value); return; }
 }, true);
 document.addEventListener('input', (e) => {
   const t = e.target;
@@ -993,6 +1005,62 @@ document.addEventListener('keydown', (e) => {
   const t = e.target;
   if (t && t.getAttribute && t.getAttribute('data-cx-f')) { e.stopPropagation(); if (e.key === 'Enter') t.blur(); }
 }, true);
+
+// ---------- SALVAR PROJETO: loja + PO (admin) ----------
+// Chamado pelo salvar do portal-09. Devolve null (não é admin / projeto já tem
+// loja: nada a perguntar), { account_id, po_name } ou false (cancelou).
+async function getProjectStoreForSave(opts) {
+  if (!cxOn() || !cxAdmin()) return null;
+  let poAtual = '';
+  try {
+    if (opts && opts.projectId) {
+      const { data, error } = await supabaseClient.from('user_projects').select('account_id, po_name').eq('id', opts.projectId).maybeSingle();
+      if (error) return null;                 // sem a migration 310: salva como sempre
+      if (data && data.account_id) return null; // já tem loja
+      poAtual = (data && data.po_name) || '';
+    } else {
+      const probe = await supabaseClient.from('user_projects').select('id, account_id').limit(1);
+      if (probe.error) return null;
+    }
+    const tr = await supabaseClient.rpc('account_tree');
+    if (tr.error) return null;
+    const lojas = (tr.data || []).filter((a) => a.kind !== 'factory' && a.status !== 'draft' && a.status !== 'rejected')
+      .sort((a, b) => String(a.trade_name || a.legal_name || '').localeCompare(String(b.trade_name || b.legal_name || '')));
+    const fab = (tr.data || []).find((a) => a.kind === 'factory');
+    cxCss();
+    return await new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.className = 'cx-save-ov';
+      ov.innerHTML = '<div class="cx-save-box"><h3>' + cEsc(cT('sv_title')) + '</h3><p class="hint">' + cEsc(cT('sv_hint')) + '</p>'
+        + '<label><span>' + cEsc(cT('sv_store')) + '</span><select class="cx-save-store"><option value="">' + cEsc(cT('sv_pick')) + '</option>'
+        + lojas.map((a) => '<option value="' + cEsc(a.id) + '">' + cEsc(a.trade_name || a.legal_name || '—') + '</option>').join('') + '<option value="__new">' + cEsc(cT('mv_new')) + '</option></select></label>'
+        + '<label><span>' + cEsc(cT('sv_po')) + '</span><input type="text" class="cx-save-po" maxlength="60" autocomplete="off" value="' + cEsc(poAtual) + '"></label>'
+        + '<p class="error cx-save-err" style="display:none"></p>'
+        + '<div class="cx-save-foot"><button type="button" class="secondary" data-x="0">' + cEsc(cT('sv_cancel')) + '</button><button type="button" data-x="1">' + cEsc(cT('sv_ok')) + '</button></div></div>';
+      const sel = ov.querySelector('.cx-save-store'), po = ov.querySelector('.cx-save-po'), err = ov.querySelector('.cx-save-err');
+      sel.addEventListener('change', async () => {
+        if (sel.value !== '__new') return;
+        const nome = (prompt(cT('mv_new_q')) || '').trim();
+        if (!nome) { sel.value = ''; return; }
+        const { data, error } = await supabaseClient.from('accounts').insert({ kind: 'dealer', status: 'active', parent_account_id: fab ? fab.id : null, trade_name: nome }).select('id').single();
+        if (error) { err.textContent = error.message; err.style.display = ''; sel.value = ''; return; }
+        const o = document.createElement('option'); o.value = data.id; o.textContent = nome;
+        sel.insertBefore(o, sel.querySelector('option[value="__new"]')); sel.value = data.id;
+        cxState.accNames[data.id] = nome; cxState.scope = null;
+      });
+      ov.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-x]');
+        if (!b) return;
+        if (b.getAttribute('data-x') === '0') { ov.remove(); return resolve(false); }
+        if (!sel.value || sel.value === '__new' || !po.value.trim()) { err.textContent = cT('sv_need'); err.style.display = ''; return; }
+        const r = { account_id: sel.value, po_name: po.value.trim() };
+        ov.remove(); cxState.scope = null; resolve(r);
+      });
+      document.body.appendChild(ov);
+      sel.focus();
+    });
+  } catch (e) { return null; }
+}
 
 // ---------- embrulhos ----------
 (function cxWrap() {
@@ -1045,6 +1113,7 @@ function cxCss() {
     '.cx-ro{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted,#766f64)}.cx-ro .cx-po{color:var(--text,#2b2621);font-weight:600}.cx-ro i{font-style:normal;opacity:.5}',
     '.cx-go{display:flex;gap:10px;align-items:center;flex-basis:100%}.cx-go button{margin:0;padding:7px 16px}.cx-st{font-size:12px}.cx-st.ok{color:#2e7d4f}.cx-st.err{color:var(--danger,#b3432f)}',
     '.cx-lostbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin:6px 0 2px}.cx-lostbar button{margin:0;padding:4px 12px;font-size:12px}',
+    '.cx-save-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px}.cx-save-box{background:var(--panel,#fff);color:var(--text,#2b2621);border-radius:12px;padding:20px 22px;max-width:440px;width:100%;display:flex;flex-direction:column;gap:10px}.cx-save-box h3,.cx-save-box p{margin:0}.cx-save-box label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted,#766f64)}.cx-save-box select,.cx-save-box input{padding:9px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;background:#fff;color:var(--text,#2b2621);width:100%;margin:0}.cx-save-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.cx-save-foot button{margin:0}',
     '.cx-storecell{cursor:pointer}.cx-storecell:hover b{text-decoration:underline}.cx-swap{color:var(--muted,#766f64);font-size:12px}.cx-storesel,.cx-moveall{padding:6px 8px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;max-width:260px;width:auto;margin:0}.cx-moveall{margin-left:auto}',
     '.cx-gtable>thead th{cursor:pointer;white-space:nowrap}.cx-gtable>tbody>tr.cx-grow>td{white-space:normal}.cx-loja2{max-width:220px;overflow:hidden;text-overflow:ellipsis}.cx-loja2 .hint{font-size:11px}.cx-gexp>td{padding:0 0 10px 34px;background:rgba(0,0,0,.015)}.cx-inner{overflow:auto}.cx-inner .cx-table{margin:0}.cx-inner .cx-table thead th{font-size:11px}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',

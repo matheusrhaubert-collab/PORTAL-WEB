@@ -260,7 +260,18 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
     if (typeof getProjectGeometriaForSave === 'function') basePayload.geometria = getProjectGeometriaForSave();
     // Bancada de pedra (migration 223, js/portal-30-bancada.js).
     if (typeof getProjectBancadaForSave === 'function') basePayload.bancada = getProjectBancadaForSave();
-    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url', 'client_folder', 'client_info', 'floor_texture', 'geometria', 'bancada'];
+    // Loja + PO do projeto (migration 310, js/portal-44-central-plus.js) — 20/11,
+    // Matt: "administrador não pode fazer projeto, sempre que eu fizer preciso
+    // ligar esse projeto a uma loja... já no salvar, selecionar a loja e colocar
+    // Nome da PO". Só pergunta pro admin e só enquanto o projeto não tem loja;
+    // pros outros devolve null (o banco põe a empresa de quem criou). false =
+    // cancelou: não salva.
+    if (typeof getProjectStoreForSave === 'function') {
+      const lojaPo = await getProjectStoreForSave({ projectId: overwriteId || null });
+      if (lojaPo === false) return null;
+      if (lojaPo) Object.assign(basePayload, lojaPo);
+    }
+    const OPTIONAL_COLUMNS = ['wall_segments', 'cached_value_usd', 'thumbnail_data_url', 'client_folder', 'client_info', 'floor_texture', 'geometria', 'bancada', 'account_id', 'po_name'];
     const runWithCacheFallback = async (op) => {
       let payload = basePayload;
       let res = await op(payload);

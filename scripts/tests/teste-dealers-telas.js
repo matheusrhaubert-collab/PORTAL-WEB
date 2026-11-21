@@ -272,6 +272,20 @@ const base = `
   const vis = Array.from(box().querySelectorAll('.cx-ci[data-c="user"]')).filter((el) => el.style.display !== 'none');
   ok(box().querySelectorAll('[data-cx-colq]').length === 3 && vis.length === 1 && /colega/.test(vis[0].textContent), 'lupa da coluna: 3 campos, "colega" deixa 1 vendedor');
 
+  console.log('Salvar projeto (admin): loja + PO');
+  const pedido = win.getProjectStoreForSave({ projectId: null }); await espera(30);
+  const dlg = win.document.querySelector('.cx-save-box');
+  ok(!!dlg && dlg.querySelectorAll('.cx-save-store option').length >= 3, 'salvar abre a janela com a lista de lojas');
+  dlg.querySelector('[data-x="1"]').click(); await espera(5);
+  ok(!!win.document.querySelector('.cx-save-box') && dlg.querySelector('.cx-save-err').style.display !== 'none', 'sem loja ou sem PO não deixa salvar');
+  dlg.querySelector('.cx-save-store').value = ACC; dlg.querySelector('.cx-save-po').value = 'PO-123';
+  dlg.querySelector('[data-x="1"]').click();
+  const resp = await pedido;
+  ok(resp && resp.account_id === ACC && resp.po_name === 'PO-123' && !win.document.querySelector('.cx-save-box'), 'devolve a loja e o PO pro salvar');
+  const p2 = win.getProjectStoreForSave({ projectId: null }); await espera(30);
+  win.document.querySelector('.cx-save-box [data-x="0"]').click();
+  ok((await p2) === false, 'cancelar não salva');
+
   console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\nTUDO CERTO');
   process.exit(falhas ? 1 : 0);
 })().catch((e) => { console.error('ERRO NA BANCADA:', e); process.exit(1); });
