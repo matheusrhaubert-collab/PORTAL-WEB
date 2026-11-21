@@ -717,30 +717,30 @@ function cxFlatTable(rows, principal) {
       + (comFiltro[col] ? '<i class="cx-th-dot"></i>' : '') + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : (menu ? '▾' : '↕')) + '</th>';
   const max = principal ? 400 : 200;
   return '<div class="cx-inner"><table class="mp-table cx-table' + (principal ? ' cx-main' : '') + '"><thead><tr>'
-    + th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item')) + '<th>' + cEsc(cT('c_room')) + '</th><th>' + cEsc(cT('c_city')) + '</th>'
+    + th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item'))
     + (preco ? cxPrecoThs(th, soProj) : '')
     + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
     + rows.slice(0, max).map((o) => {
       const quem = cxUserLabel(o.client_user_id, [o]);
-      const envia = o._proj && o.client_user_id === cxMe() && !cxSeller()
-        ? '<button type="button" class="cx-sendfab" data-cx="sendfab" data-id="' + cEsc(o.id) + '">' + cEsc(sfT('btn')) + '</button>' : '';
-      const acao = envia || (!cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
+      // botão DENTRO da célula de etapa (21/11: "na própria barra de status"; a última coluna some em tela estreita)
+      const envia = o._proj && (cxAdmin() || (o.client_user_id === cxMe() && !cxSeller()))
+        ? ' <button type="button" class="cx-sendfab" data-cx="sendfab" data-id="' + cEsc(o.id) + '">' + cEsc(sfT('btn')) + '</button>' : '';
+      const acao = (!cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
         : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : ''));
       const num = o._proj ? (cxPnum(o.project_number) || '—')
-        : ((Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + (o.project_number ? '<br><span class="cx-pref">' + cxPnum(o.project_number) + '</span>' : ''));
+        : ((Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + (o.project_number ? ' <span class="cx-pref">' + cxPnum(o.project_number) + '</span>' : ''));
       const ehFab = !o._proj && Number(o.factory_number) > 0;
       const icoN = (typeof MP_ICO !== 'undefined') ? '<span class="cx-nico' + (ehFab ? ' cx-nico-f' : '') + '" title="' + (ehFab ? 'Factory order' : 'Project') + '">' + (ehFab ? MP_ICO.factory : MP_ICO.layers) + '</span>' : '';
       return '<tr data-cx="openorder" data-id="' + cEsc(o.id) + '"><td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
         + '<td' + (cxAdmin() ? ' class="cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) + '" title="' + cEsc(cT('mv_change')) + '"' : '') + '><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
-        + '<td class="cx-quem">' + cEsc(quem || '—') + '</td>'
-        + '<td>' + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name ? '<br><span class="hint">' + cEsc(o.client_name) + '</span>' : '') + '</td>'
-        + '<td>' + cEsc(o.room_name || '') + '</td><td class="cx-addr">' + cEsc(o.delivery_address || '') + '</td>'
+        + '<td class="cx-quem" title="' + cEsc(quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
+        + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + cEsc(o.po_name || '—') + (o.client_name ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
         + (!preco ? '' : soProj
-          ? '<td class="cx-r">' + (o._n != null ? cEsc(cMoney(o._n)) + (o._d ? '<br><small class="cx-est"><s>' + cEsc(cMoney(o._l)) + '</s> −' + o._d + '%</small>' : '') : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
+          ? '<td class="cx-r">' + (o._n != null ? (o._d ? '<small class="cx-est" title="' + cEsc(cT('list') + ' ' + cMoney(o._l)) + '">−' + o._d + '%</small> ' : '') + cEsc(cMoney(o._n)) : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
           : '<td class="cx-r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td>'
           + '<td class="cx-r">' + (o._d != null && !o._proj ? o._d + '%' : '—') + '</td><td class="cx-r"><b>' + (o._n != null && !o._proj ? cEsc(cMoney(o._n)) : '—') + '</b></td>')
-        + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span></td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
-    }).join('') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, 6, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
+        + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span>' + envia + '</td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>';
+    }).join('') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, 4, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
@@ -1066,7 +1066,7 @@ async function cxAdminRelease(id, qual) {
 // de quem envia); vendedor envia se o banco deixar (permissão send_orders).
 const SF_TERMS_VERSION = '2026-11-21';
 const SF_TXT = {
-  pt: { btn: 'ENVIAR PRA FÁBRICA', title: 'Enviar pra fábrica', proj: 'Projeto', val: 'Valor de fábrica', po: 'PO (vai na etiqueta) *', room: 'Ambiente', addr: 'Endereço da obra *',
+  pt: { btn: 'ENVIAR FÁBRICA', title: 'Enviar pra fábrica', proj: 'Projeto', val: 'Valor de fábrica', po: 'PO (vai na etiqueta) *', room: 'Ambiente', addr: 'Endereço da obra *',
     t1: 'Ao enviar, este projeto fica CONGELADO: módulos, cores, peças, medidas e posições não podem mais ser alterados. É exatamente isto que vai ser produzido.',
     t2: 'Depois de enviado, NÃO é possível pedir alteração do pedido. Pra mudar alguma coisa, duplique o projeto e envie um pedido novo.',
     t3: 'Medidas, conferência no local, desenho e compatibilidade com o ambiente (eletrodomésticos, bancada, hidráulica, elétrica, instalação) são de responsabilidade de quem envia o pedido.',
@@ -1080,7 +1080,7 @@ const SF_TXT = {
     t4: 'The order covers factory cabinets only: no appliances, stone/countertop or construction work.',
     ok: 'I have read and accept. I checked the project and take responsibility for it.', send: 'SEND TO FACTORY', cancel: 'Cancel', need: 'Fill in the PO and job site address and check the acceptance box.',
     s_open: 'Opening the project…', s_send: 'Creating the order…', s_rel: 'Releasing to the factory…', done: 'Order {n} sent to the factory.', unsaved: 'The project open in the editor has unsaved changes that will be lost. Continue?', skipped: '{n} module(s) of the project did not load. Open the project, check it and save before sending.' },
-  es: { btn: 'ENVIAR A FÁBRICA', title: 'Enviar a fábrica', proj: 'Proyecto', val: 'Valor de fábrica', po: 'PO (va en la etiqueta) *', room: 'Ambiente', addr: 'Dirección de la obra *',
+  es: { btn: 'ENVIAR FÁBRICA', title: 'Enviar a fábrica', proj: 'Proyecto', val: 'Valor de fábrica', po: 'PO (va en la etiqueta) *', room: 'Ambiente', addr: 'Dirección de la obra *',
     t1: 'Al enviar, este proyecto queda CONGELADO: módulos, colores, piezas, medidas y posiciones ya no se pueden cambiar. Es exactamente lo que se va a producir.',
     t2: 'Después de enviado, NO se pueden pedir cambios al pedido. Para cambiar algo, duplique el proyecto y envíe un pedido nuevo.',
     t3: 'Medidas, verificación en obra, diseño y compatibilidad con el ambiente (electrodomésticos, encimera, plomería, electricidad, instalación) son responsabilidad de quien envía el pedido.',
@@ -1143,6 +1143,14 @@ async function cxSendFactoryRun(o, w, f) {
     if (a.phone) upd.client_phone = upd.client_phone || a.phone;
     try { const g = await cxGeocode(f.addr); if (g) { upd.jobsite_lat = g.lat; upd.jobsite_lng = g.lng; upd.jobsite_geocoded_at = agora; } } catch (e) { /* sem mapa */ }
     const aceite = { terms_accepted_at: agora, terms_accepted_by: cxMe(), terms_version: SF_TERMS_VERSION };
+    if (o.client_user_id && o.client_user_id !== cxMe()) {
+      // ADMIN enviando projeto de outra conta: o pedido é do DONO do projeto (e da loja dele)
+      const sc = cxState.scope || {};
+      const tm = (sc.team || {})[o.client_user_id] || {}; const em = (sc.emails || {})[o.client_user_id] || {};
+      upd.client_user_id = o.client_user_id;
+      if (tm.email || em.email) upd.client_email = tm.email || em.email;
+      if (o.account_id) upd.account_id = o.account_id;
+    }
     let res = await supabaseClient.from('orders').update(Object.assign({}, upd, aceite)).eq('id', orderId).eq('status', 'submitted').select('id, factory_number');
     if (res.error && /terms_accepted|terms_version|jobsite/.test(res.error.message || '')) {
       // migration 315 (ou 306) ainda não rodou: libera sem o registro do aceite
@@ -1415,7 +1423,7 @@ function cxCss() {
     '.cx-hm-i{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:7px 10px;border:0;border-radius:7px;background:none!important;color:var(--text,#2b2621);font-size:13px;text-align:left;cursor:pointer;box-shadow:none!important}.cx-hm-i:hover{background:var(--bg,#f7f6f3)!important}.cx-hm-i.on{font-weight:700;color:var(--accent-dark,#6e4527)}.cx-hm-i i{width:9px;height:9px;border-radius:50%;flex:none}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
     '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
-    '.cx-sendfab{background:#8a4b1c;color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
+    '.cx-main td,.cx-main th{white-space:nowrap}.cx-main td.cx-item{max-width:300px;overflow:hidden;text-overflow:ellipsis}.cx-main td.cx-quem{max-width:140px;overflow:hidden;text-overflow:ellipsis}.cx-stage + .cx-sendfab{margin-left:8px}.cx-sendfab{background:#8a4b1c;color:#fff;border:0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
     '#cx-sf{position:fixed;inset:0;background:rgba(20,16,10,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px}',
     '.cx-sf-box{background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.cx-sf-box h3{margin:0 0 8px}',
     '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}',
