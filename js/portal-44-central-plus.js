@@ -284,7 +284,11 @@ function cxDecorate(folders) {
   // é do banco (visible_user_ids / account_tree), não desta tela.
   if (cxHasNetwork() && !cxState.netInit) { cxState.netInit = true; cxState.net.fab = true; }
   const comArvore = cxHasNetwork() && cxState.view !== 'map' && cxState.view !== 'lost';
-  const lista = comArvore && cxNetSel();
+  // ADMIN nunca vê "as pastas dele": só o total de todos (20/11, Matt: "só com 144
+  // projetos do matheus, eles precisam zerar e pro administrador só deve aparecer
+  // o total de todos"). O que ainda está no login dele aparece em Dealer › sem loja.
+  if (cxAdmin()) { cxState.net.own = false; cxState.net.fab = true; }
+  const lista = comArvore && (cxNetSel() || cxAdmin());
   if (comArvore) {
     if (!cxState.scope && !cxState.scopeBusy) cxLoadScope(false);
     const bar = box.querySelector('.cu-bar');
@@ -301,7 +305,8 @@ function cxDecorate(folders) {
       box.querySelectorAll('[data-act="ctab"]').forEach((el) => {
         const t = el.dataset.tab;
         el.classList.toggle('is-on', !f.loja && !f.user && !f.cliente && marcada === t);
-        if (base && conta[t]) { const n = el.querySelector('.cu-n'); if (n) n.textContent = base.filter(conta[t]).length; }
+        const n = el.querySelector('.cu-n');
+        if (n && conta[t]) n.textContent = base ? base.filter(conta[t]).length : '…'; // nunca a contagem só da conta de quem olha
       });
     }
   }
@@ -529,7 +534,7 @@ function cxTreeCols() {
     c4 = ks.map((k) => item('cliente', k, nomeCli[k], '', porCli[k], f.cliente === k)).join('') || vazio;
     if (f.cliente && porCli[f.cliente]) selCli = { nome: nomeCli[f.cliente], q: qtd(porCli[f.cliente]) };
   }
-  const fabOn = cxState.net.fab && !f.loja;
+  const fabOn = !f.own && !f.loja;
   return '<div class="cx-cols">'
     + '<div class="cx-col cx-dd cx-dd-fab' + (fabOn ? ' on' : '') + '"><button type="button" class="cx-dd-btn" data-cx="col" data-c="fab" data-v="f"><span class="cx-dd-l">' + cEsc(cT('col_factory')) + '</span>'
       + '<span class="cx-dd-v">' + cEsc(fabNome) + '</span><span class="cx-dd-q">' + qtd(s.orders) + '</span></button></div>'
@@ -695,7 +700,7 @@ function cxRenderNet(p) {
   cxState.net = Object.assign({}, f, { hoje: true }); const nHoje = cxNetRows().length; cxState.net = f;
   const totL = rows.reduce((a, o) => a + (o._l || 0), 0), totN = rows.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
   const foco = document.activeElement && document.activeElement.id === 'cx-net-q';
-  p.innerHTML = '<div class="cx-chips"><button type="button" class="cx-chip cx-back" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>'
+  p.innerHTML = '<div class="cx-chips">' + (cxAdmin() ? '' : '<button type="button" class="cx-chip cx-back" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>')
      + '<button type="button" class="cx-chip cx-chip-hoje' + (f.hoje ? ' on' : '') + '" data-cx="hoje">' + cEsc(cT('today')) + ' <b>' + nHoje + '</b></button>'
     + CX_NET_STAGES.map((k) => '<button type="button" class="cx-chip' + (f.etapa === k ? ' on' : '') + '" data-cx="etapa" data-v="' + k + '"><i style="background:' + CX_COLORS[k] + '"></i>' + cEsc(cT('s_' + k)) + ' <b>' + cont[k] + '</b></button>').join('') + '</div>'
     + '<div class="cx-filters"><input type="search" id="cx-net-q" placeholder="' + cEsc(cT('f_search')) + '" value="' + cEsc(f.q) + '">'
@@ -938,7 +943,10 @@ document.addEventListener('click', (e) => {
     cxState.colOpen = '';
     const c = b.getAttribute('data-c'), v = b.getAttribute('data-v'), f = cxState.net;
     f.own = false;
-    if (c === 'fab') { f.fab = !(f.fab && !f.loja); f.loja = ''; f.user = ''; f.cliente = ''; if (!f.fab) f.own = true; }
+    // Fábrica = SEMPRE tudo (20/11, Matt: "ainda mostra opção errada, sem tudo"): clicar
+    // nela nunca desliga; só limpa dealer/vendedor/cliente. As pastas da própria
+    // conta ficam só no botão "‹ Minhas pastas".
+    if (c === 'fab') { f.fab = true; f.loja = ''; f.user = ''; f.cliente = ''; }
     else if (c === 'loja') { f.loja = (f.loja === v && !f.user && !f.cliente) ? '' : v; f.user = ''; f.cliente = ''; cxState.colQ.user = ''; cxState.colQ.cliente = ''; }
     else if (c === 'user') { f.user = f.user === v ? '' : v; f.cliente = ''; }
     else if (c === 'cliente') { f.cliente = f.cliente === v ? '' : v; }
@@ -1128,6 +1136,7 @@ function cxCss() {
     '.cx-col{border:1px solid var(--border,#e0ddd6);border-radius:12px;background:#fff;display:flex;flex-direction:column;min-width:0;position:relative}',
     '.cx-col:not(:last-child)::after{content:"›";position:absolute;right:-9px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--muted,#766f64);background:var(--panel,#fff);line-height:1;z-index:1}',
     '.cx-col h5{margin:0;padding:9px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#766f64);border-bottom:1px solid var(--border,#e0ddd6);display:flex;justify-content:space-between}.cx-col h5 span{font-weight:400}',
+    '.cx-dd-btn,.cx-dd-btn:hover,.cx-dd-btn:focus,.cx-dd-btn:active{background:none!important;box-shadow:none!important;transform:none!important}.cx-dd:not(.has):not(.on):hover{background:var(--bg,#f7f6f3)}',
     '.cx-dd{min-height:0}.cx-dd-btn{display:flex;align-items:center;gap:10px;width:100%;margin:0;padding:9px 12px;border:0;background:none;border-radius:12px;color:var(--text,#2b2621);cursor:pointer;text-align:left;font-size:13px;min-width:0}',
     '.cx-dd-btn:disabled{cursor:default;opacity:.55}.cx-dd-l{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#766f64);flex:none}',
     '.cx-dd-v{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}.cx-dd-q{flex:none;white-space:nowrap}.cx-dd-q small{font-size:11px;color:var(--muted,#766f64)}.cx-dd-a{font-style:normal;color:var(--muted,#766f64);flex:none}',
