@@ -294,18 +294,18 @@ function cxDecorate(folders) {
     if (!cxState.scope && !cxState.scopeBusy) cxLoadScope(false);
     const bar = box.querySelector('.cu-bar');
     if (bar && !box.querySelector('#cx-tree')) {
-      bar.insertAdjacentHTML('afterend', '<div id="cx-tree">' + (cxState.scope ? cxTreeCols() : '<p class="hint">' + cEsc(cT('loading')) + '</p>') + '</div>');
+      bar.insertAdjacentHTML('beforebegin', '<div id="cx-tree">' + (cxState.scope ? cxTreeCols() : '<p class="hint">' + cEsc(cT('loading')) + '</p>') + '</div>');
       ['loja', 'user', 'cliente'].forEach(cxColFilter);
       box.querySelectorAll('#cx-tree .cx-col-b').forEach((el) => { const k = el.getAttribute('data-cx-colb') || 'fab'; if (cxState.colScroll[k]) el.scrollTop = cxState.colScroll[k]; });
     }
     if (lista) {
       // abas normais acompanham a lista: marcada a que bate com o filtro e, pro admin, com a contagem de todo mundo
       const f = cxState.net; const marcada = { '': 'all', build: 'build', _orders: 'prod', done: 'done' }[f.etapa];
-      const base = cxState.scope ? cxState.scope.orders : null;
+      const base = cxState.scope ? cxState.scope.orders.filter((o) => (!f.loja || (o.account_id || '_') === f.loja) && (!f.user || o.client_user_id === f.user) && (!f.cliente || cxClienteKey(o) === f.cliente)) : null;
       const conta = { all: (o) => true, build: (o) => o._s === 'build', prod: (o) => ['wait', 'pay', 'prod', 'ready'].includes(o._s), done: (o) => o._s === 'done' };
       box.querySelectorAll('[data-act="ctab"]').forEach((el) => {
         const t = el.dataset.tab;
-        el.classList.toggle('is-on', !f.loja && !f.user && !f.cliente && marcada === t);
+        el.classList.toggle('is-on', marcada === t);
         const n = el.querySelector('.cu-n');
         if (n && conta[t]) n.textContent = base ? base.filter(conta[t]).length : '…'; // nunca a contagem só da conta de quem olha
       });
@@ -735,6 +735,74 @@ function cxTotalRow(itens, antes, depois, soProj) {
 // da lista antiga (mpAttachCards, portal-09) — só existe pros MEUS projetos;
 // projeto de outra conta (admin/dealer vendo a equipe) mostra só "Abrir no editor".
 function cxProjOpen() { return cxState.projOpen || (cxState.projOpen = new Set()); }
+// CARTÃO DO PROJETO na linha aberta (21/11, Matt: "antes tinha vários botões,
+// além da telinha do projeto, pode colocar isso novamente"). Projeto MEU usa o
+// cartão de sempre (mpAttachCards troca este pelo da lista antiga). Projeto de
+// OUTRA conta (admin / dealer vendo a equipe) não tem cartão na lista antiga,
+// então monta um aqui com a imagem e os mesmos botões: abrir, renomear,
+// duplicar (a cópia nasce na MINHA conta, mesma loja), compartilhar, 3D, pasta.
+// Excluir fica só com o dono. Gravar no projeto dos outros depende do RLS
+// (admin: migration 315; dealer: vendedores dele, migration 265).
+function cxProjCardHtml(o) {
+  const c = (cxState.projCard || (cxState.projCard = {}))[o._pid];
+  const T = (k, v) => (typeof I18n !== 'undefined' ? I18n.t(k, v) : k);
+  const src = c && (c.ai_preview_url || c.thumbnail_data_url);
+  const bt = (a, rot, prim) => '<button type="button"' + (prim ? '' : ' class="secondary"') + ' data-cx="pj" data-a="' + a + '" data-id="' + cEsc(o.id) + '">' + cEsc(rot) + '</button>';
+  return '<div class="cx-pcard">'
+    + (src ? '<img class="cx-pimg" alt="" src="' + cEsc(src) + '" data-cx="pj" data-a="zoom" data-id="' + cEsc(o.id) + '">' : '<div class="cx-pimg cx-pimg-0">' + (c ? '' : '…') + '</div>')
+    + '<div class="cx-pbody"><b>' + cEsc(o._pname || o.po_name || '') + '</b>'
+    + '<div class="hint">' + cEsc([cxPnum(o.project_number), o._folder ? '📁 ' + o._folder : '', cxUserLabel(o.client_user_id, [o])].filter(Boolean).join(' · ')) + '</div>'
+    + '<div class="cx-pacts">' + bt('open', T('project.load_btn'), 1) + bt('rename', T('fav.rename_btn')) + bt('dup', T('fav.duplicate_btn')) + bt('share', T('project.share_btn')) + bt('v3d', T('fav.view3d_btn')) + bt('folder', T('fav.folder_btn')) + '</div>'
+    + '</div></div>';
+}
+async function cxProjCardLoad(pid) {
+  const cache = cxState.projCard || (cxState.projCard = {});
+  if (cache[pid]) return;
+  cache[pid] = { loading: true };
+  try {
+    const { data } = await supabaseClient.from('user_projects').select('id, thumbnail_data_url, ai_preview_url').eq('id', pid).maybeSingle();
+    cache[pid] = data || {};
+  } catch (e) { cache[pid] = {}; }
+  if (cxProjOpen().has(pid)) { mpRender(); if (typeof mpAttachCards === 'function') mpAttachCards(); }
+}
+async function cxProjAction(a, o) {
+  const T = (k, v) => (typeof I18n !== 'undefined' ? I18n.t(k, v) : k);
+  const proj = o._row || (o._row = { id: o._pid, name: o._pname, client_folder: o._folder || null, client_user_id: o.client_user_id });
+  const full = async () => { if (!proj._fullRow) await fetchProjectFullRow(proj); return proj; };
+  try {
+    if (a === 'zoom') { const c = (cxState.projCard || {})[o._pid]; const src = c && (c.ai_preview_url || c.thumbnail_data_url); if (src && typeof openGalleryLightbox === 'function') openGalleryLightbox(src); return; }
+    if (a === 'open') { await full(); return restoreFavoriteProject(proj); }
+    if (a === 'share') { await full(); await shareProjectFavorite(proj); return; }
+    if (a === 'v3d') { await full(); await view3DFavoriteProject(proj); return; }
+    if (a === 'rename' || a === 'folder') {
+      const atual = a === 'rename' ? (o._pname || '') : (o._folder || '');
+      const resp = prompt(T(a === 'rename' ? 'project.name_prompt' : 'fav.folder_prompt'), atual);
+      if (resp === null) return;
+      const novo = resp.trim().slice(0, a === 'rename' ? 120 : 80);
+      if (novo === atual || (a === 'rename' && !novo)) return;
+      const upd = a === 'rename' ? { name: novo, updated_at: new Date().toISOString() } : { client_folder: novo || null };
+      const { data, error } = await supabaseClient.from('user_projects').update(upd).eq('id', o._pid).select('id');
+      if (error) throw error;
+      if (!data || !data.length) throw new Error(T('project.update_blocked'));
+      if (a === 'rename') { o._pname = novo; o.po_name = novo; proj.name = novo; } else { o._folder = novo; proj.client_folder = novo || null; }
+      return mpRender();
+    }
+    if (a === 'dup') {
+      const novoNome = (prompt(T('fav.duplicate_name_prompt'), (o._pname || '') + T('fav.duplicate_name_suffix')) || '').trim();
+      if (!novoNome) return;
+      await full();
+      const p = proj; const dup = { client_user_id: cxMe(), name: novoNome, slots: p.slots, wall_width_mm: p.wall_width_mm, wall_shape: p.wall_shape, wall_widths_mm: p.wall_widths_mm };
+      ['wall_segments', 'floor_texture', 'geometria', 'bancada', 'thumbnail_data_url', 'ai_preview_url', 'cached_value_usd', 'client_folder', 'client_info', 'account_id'].forEach((k) => { if (p[k] != null) dup[k] = p[k]; });
+      let r = await supabaseClient.from('user_projects').insert(dup).select('id');
+      if (r.error && /account_id|client_info|bancada|geometria|floor_texture/.test(r.error.message || '')) { ['account_id', 'client_info', 'bancada', 'geometria', 'floor_texture'].forEach((k) => delete dup[k]); r = await supabaseClient.from('user_projects').insert(dup).select('id'); }
+      if (r.error) throw r.error;
+      cxState.scope = null;
+      if (typeof loadProjectFavoritesList === 'function') loadProjectFavoritesList();
+      if (typeof mpLoad === 'function') mpLoad();
+      return;
+    }
+  } catch (e) { alert((e && e.message) || String(e)); }
+}
 function cxPnum(n) { return n ? 'P' + String(Number(n)).padStart(7, '0') : ''; }
 function cxNumVal(o) { return o._proj ? (Number(o.project_number) || 0) : (Number(o.factory_number) || 0); }
 function cxFlatTable(rows, principal) {
@@ -781,7 +849,7 @@ function cxFlatTable(rows, principal) {
           + '<td class="cx-r"><b>' + (o._proj || o._it == null ? '—' : cEsc(cMoney(o._it))) + '</b>' + (o.invoice_number ? ' <small class="cx-est">' + cEsc(o.invoice_number) + '</small>' : '') + '</td>')
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span>' + envia + '</td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>'
         + (o._proj && cxProjOpen().has(o._pid) ? '<tr class="cx-projexp"><td colspan="20"><div class="mp-exp-box" data-proj="' + cEsc(o._pid) + '">'
-          + '<div class="cx-projbox"><b>' + cEsc(o._pname || o.po_name || '') + '</b> <button type="button" class="secondary" data-cx="openproj" data-id="' + cEsc(o.id) + '">' + cEsc(sfT('open')) + '</button></div></div></td></tr>' : '');
+          + cxProjCardHtml(o) + '</div></td></tr>' : '');
     }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, principal && !soProj ? 5 : 4, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
@@ -1431,6 +1499,12 @@ document.addEventListener('click', (e) => {
     return mpRender();
   }
   if (['inv', 'invgroup', 'paylink', 'setlink', 'rcpt', 'rcptview', 'taxrate'].includes(a)) { e.stopPropagation(); e.preventDefault(); return cxIvAction(a, b); }
+  if (a === 'pj') {
+    e.stopPropagation(); e.preventDefault();
+    const o = cxState.scope && cxState.scope.orders.find((x) => x.id === b.getAttribute('data-id'));
+    if (o) cxProjAction(b.getAttribute('data-a'), o);
+    return;
+  }
   if (a === 'openproj') {
     e.stopPropagation();
     const o = cxState.scope && cxState.scope.orders.find((x) => x.id === b.getAttribute('data-id'));
@@ -1446,7 +1520,7 @@ document.addEventListener('click', (e) => {
     const o = cxState.scope && cxState.scope.orders.find((x) => x.id === id);
     if (o && o._proj) {
       if (e.target.closest && e.target.closest('.cx-projexp')) return;
-      const set = cxProjOpen(); if (set.has(o._pid)) set.delete(o._pid); else set.add(o._pid);
+      const set = cxProjOpen(); if (set.has(o._pid)) set.delete(o._pid); else { set.add(o._pid); cxProjCardLoad(o._pid); }
       mpRender(); if (typeof mpAttachCards === 'function') mpAttachCards();
       return;
     }
@@ -1470,12 +1544,13 @@ window.addEventListener('scroll', () => { if (document.getElementById('cx-hmenu'
 document.addEventListener('click', (e) => {
   if (e.target.closest && e.target.closest('#po-mp-v2 [data-act="ctab"]')) {
     cxState.view = '';
-    const f = cxState.net; f.loja = ''; f.user = ''; f.cliente = '';
+    const f = cxState.net;
     if (cxHasNetwork() && !f.own && cxOn()) {
       // fábrica: as abas normais filtram a lista de TODO MUNDO (não as pastas dela)
       const t = e.target.closest('[data-act="ctab"]').dataset.tab;
       if (t !== 'archived') { f.fab = true; f.etapa = { all: '', build: 'build', prod: '_orders', done: 'done' }[t] || ''; cxState.netSort = (t === 'build' || t === 'prod') ? { col: 'num', dir: -1 } : { col: 'upd', dir: -1 }; e.stopPropagation(); e.preventDefault(); mpRender(); return; }
     }
+    f.loja = ''; f.user = ''; f.cliente = '';
     f.fab = false; // aba normal = pastas
   }
 }, true);
@@ -1625,7 +1700,7 @@ function cxCss() {
     '.cx-hm-i{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:7px 10px;border:0;border-radius:7px;background:none!important;color:var(--text,#2b2621);font-size:13px;text-align:left;cursor:pointer;box-shadow:none!important}.cx-hm-i:hover{background:var(--bg,#f7f6f3)!important}.cx-hm-i.on{font-weight:700;color:var(--accent-dark,#6e4527)}.cx-hm-i i{width:9px;height:9px;border-radius:50%;flex:none}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
     '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
-    '.cx-table .cx-mini{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:5px;padding:2px 6px;font-size:10.5px;font-weight:600;cursor:pointer;margin:0 3px 0 0;white-space:nowrap;line-height:1.5}.cx-table .cx-mini:hover{background:#f3ece2}.cx-table .cx-mini-pay,.cx-table .cx-mini-pay:hover{background:#1f7a4d;color:#fff;border-color:#1f7a4d}.cx-table .cx-mini-ok{color:#1f7a4d;border-color:#9fd3b6}.cx-main td,.cx-main th{padding-left:7px;padding-right:7px}.cx-main th:first-child,.cx-main td:first-child{padding-left:12px}.cx-main td.cx-store{max-width:118px;overflow:hidden;text-overflow:ellipsis}.cx-main td:last-child{text-align:right}.cx-main td:last-child button.secondary{padding:2px 7px;font-size:10.5px;line-height:1.5}.cx-main td.cx-item{max-width:240px}.cx-main td.cx-quem{max-width:105px}.cx-wrap{overflow-x:auto}.cx-ck{width:26px;text-align:center}.cx-taxh{cursor:pointer;text-decoration:underline dotted}.cx-fold{display:inline-block;font-size:11px;background:#f3ece2;border-radius:4px;padding:1px 6px;margin-right:4px;cursor:pointer;color:#6b4a2a}.cx-selbar{display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:10px 4px;font-weight:600}.cx-selbar .cx-sendfab{padding:7px 12px;font-size:12px}.cx-vazio td{text-align:center;color:var(--muted,#766f64);padding:22px 8px!important}.cx-projexp > td{background:#faf8f4;white-space:normal!important}.cx-projbox{display:flex;gap:12px;align-items:center;padding:6px 0}.mp-exp-box .po-myproj-card ~ .cx-projbox,.mp-exp-box .po-myproj-grid + .cx-projbox{display:none}.cx-main td,.cx-main th{white-space:nowrap}.cx-main td.cx-item{overflow:hidden;text-overflow:ellipsis}.cx-main td.cx-quem{overflow:hidden;text-overflow:ellipsis}.cx-stage + .cx-sendfab{margin-left:8px}.cx-sendfab{background:#8a4b1c;color:#fff;border:0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
+    '.cx-table .cx-mini{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:5px;padding:2px 6px;font-size:10.5px;font-weight:600;cursor:pointer;margin:0 3px 0 0;white-space:nowrap;line-height:1.5}.cx-table .cx-mini:hover{background:#f3ece2}.cx-table .cx-mini-pay,.cx-table .cx-mini-pay:hover{background:#1f7a4d;color:#fff;border-color:#1f7a4d}.cx-table .cx-mini-ok{color:#1f7a4d;border-color:#9fd3b6}.cx-main td,.cx-main th{padding-left:7px;padding-right:7px}.cx-main th:first-child,.cx-main td:first-child{padding-left:12px}.cx-main td.cx-store{max-width:118px;overflow:hidden;text-overflow:ellipsis}.cx-main td:last-child{text-align:right}.cx-main td:last-child button.secondary{padding:2px 7px;font-size:10.5px;line-height:1.5}.cx-main td.cx-item{max-width:240px}.cx-main td.cx-quem{max-width:105px}.cx-wrap{overflow-x:auto}.cx-ck{width:26px;text-align:center}.cx-taxh{cursor:pointer;text-decoration:underline dotted}.cx-fold{display:inline-block;font-size:11px;background:#f3ece2;border-radius:4px;padding:1px 6px;margin-right:4px;cursor:pointer;color:#6b4a2a}.cx-selbar{display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:10px 4px;font-weight:600}.cx-selbar .cx-sendfab{padding:7px 12px;font-size:12px}.cx-vazio td{text-align:center;color:var(--muted,#766f64);padding:22px 8px!important}.cx-pcard{display:flex;gap:16px;align-items:flex-start;padding:8px 0}.cx-pimg{width:210px;height:136px;border-radius:8px;background:#efe9df;object-fit:cover;flex:none;cursor:zoom-in;display:flex;align-items:center;justify-content:center;color:#a39a8c}.cx-pimg-0{cursor:default}.cx-pbody b{font-size:15px}.cx-pacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.cx-projexp > td{background:#faf8f4;white-space:normal!important}.cx-projbox{display:flex;gap:12px;align-items:center;padding:6px 0}.mp-exp-box .po-myproj-card ~ .cx-projbox,.mp-exp-box .po-myproj-grid + .cx-projbox{display:none}.cx-main td,.cx-main th{white-space:nowrap}.cx-main td.cx-item{overflow:hidden;text-overflow:ellipsis}.cx-main td.cx-quem{overflow:hidden;text-overflow:ellipsis}.cx-stage + .cx-sendfab{margin-left:8px}.cx-sendfab{background:#8a4b1c;color:#fff;border:0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
     '#cx-sf{position:fixed;inset:0;background:rgba(20,16,10,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px}',
     '.cx-sf-box{background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.cx-sf-box h3{margin:0 0 8px}',
     '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}',
@@ -1633,7 +1708,7 @@ function cxCss() {
     '.cx-sf-box label.cx-sf-ok{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;color:#2a251e}.cx-sf-msg{min-height:18px;font-size:13px;margin:8px 0}.cx-sf-msg.err{color:#b42318}.cx-sf-acts{display:flex;justify-content:flex-end;gap:8px}.cx-sf-acts .cx-sendfab{padding:10px 16px;font-size:13px}',
     '.cx-table tfoot .cx-tot td{font-weight:700;border-top:2px solid var(--line,#d9d3c8);padding-top:10px;padding-bottom:10px;background:var(--panel-2,#faf8f4)}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
-    '#cx-tree{margin-top:12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',
+    '#cx-tree{margin:4px 0 12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',
     '#cx-panel{margin-top:12px}.cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
     '.cx-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border,#e0ddd6);background:#fff;color:var(--text,#2b2621);border-radius:20px;padding:5px 12px;font-size:13px;margin:0;cursor:pointer}.cx-chip i{width:11px;height:11px;border-radius:50%;display:inline-block}.cx-chip.on{border-color:var(--accent,#8a5a34);box-shadow:0 0 0 1px var(--accent,#8a5a34)}.cx-chip.off{opacity:.45}',
     '#cx-panel .cx-chips .cx-chip:not(.on):not(.off){opacity:1}',
