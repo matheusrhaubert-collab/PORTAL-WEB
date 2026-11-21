@@ -711,8 +711,10 @@ function cxFlatTable(rows, principal) {
     + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
     + rows.slice(0, max).map((o) => {
       const quem = cxUserLabel(o.client_user_id, [o]);
-      const acao = !cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
-        : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : '');
+      const envia = o._proj && o.client_user_id === cxMe() && !cxSeller()
+        ? '<button type="button" class="cx-sendfab" data-cx="sendfab" data-id="' + cEsc(o.id) + '">' + cEsc(sfT('btn')) + '</button>' : '';
+      const acao = envia || (!cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
+        : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : ''));
       const num = o._proj ? (cxPnum(o.project_number) || '—')
         : ((Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + (o.project_number ? '<br><span class="cx-pref">' + cxPnum(o.project_number) + '</span>' : ''));
       const ehFab = !o._proj && Number(o.factory_number) > 0;
@@ -1038,6 +1040,120 @@ async function cxAdminRelease(id, qual) {
   mpRender();
 }
 
+
+// ---------- ENVIAR PRA FÁBRICA direto da lista (21/11) ----------
+// Matt: "depois que ele salvar o projeto ele já sobe na listagem de pedidos
+// em projeto, com os preços certos, quero um botão na própria barra de status
+// com ENVIAR FÁBRICA. Ao clicar, mensagem dizendo da trava como é hoje, dando
+// aceite do que o cliente vai comprar e não pode pedir alteração,
+// responsabilidade do projeto é dele". Um passo só: abre o projeto por baixo
+// (mesmo motor do envio da pasta: restoreFavoriteProject + sendProjectToOrder
+// em modo lote), cria o pedido e já libera pra fábrica (status approved, igual
+// ao "Liberar pra fábrica") com PO, ambiente, endereço e o ACEITE gravado
+// (migration 315: terms_accepted_at/_by/_version — sem ela o pedido sai sem
+// o registro do aceite). Só o DONO do projeto envia (o pedido nasce na conta
+// de quem envia); vendedor envia se o banco deixar (permissão send_orders).
+const SF_TERMS_VERSION = '2026-11-21';
+const SF_TXT = {
+  pt: { btn: 'ENVIAR PRA FÁBRICA', title: 'Enviar pra fábrica', proj: 'Projeto', val: 'Valor de fábrica', po: 'PO (vai na etiqueta) *', room: 'Ambiente', addr: 'Endereço da obra *',
+    t1: 'Ao enviar, este projeto fica CONGELADO: módulos, cores, peças, medidas e posições não podem mais ser alterados. É exatamente isto que vai ser produzido.',
+    t2: 'Depois de enviado, NÃO é possível pedir alteração do pedido. Pra mudar alguma coisa, duplique o projeto e envie um pedido novo.',
+    t3: 'Medidas, conferência no local, desenho e compatibilidade com o ambiente (eletrodomésticos, bancada, hidráulica, elétrica, instalação) são de responsabilidade de quem envia o pedido.',
+    t4: 'O pedido cobre só os gabinetes de fábrica: não inclui eletrodomésticos, pedra/bancada nem obra.',
+    ok: 'Li e aceito. Conferi o projeto e assumo a responsabilidade por ele.', send: 'ENVIAR PRA FÁBRICA', cancel: 'Cancelar', need: 'Preencha o PO e o endereço da obra e marque o aceite.',
+    s_open: 'Abrindo o projeto…', s_send: 'Criando o pedido…', s_rel: 'Liberando pra fábrica…', done: 'Pedido {n} enviado pra fábrica.', unsaved: 'O projeto aberto no editor tem alterações não salvas, que serão perdidas. Continuar?', skipped: '{n} módulo(s) do projeto não carregaram. Abra o projeto, confira e salve antes de enviar.' },
+  en: { btn: 'SEND TO FACTORY', title: 'Send to factory', proj: 'Project', val: 'Factory value', po: 'PO (goes on the label) *', room: 'Room', addr: 'Job site address *',
+    t1: 'Once sent, this project is LOCKED: modules, colors, parts, sizes and positions can no longer be changed. This is exactly what will be produced.',
+    t2: 'After sending, changes to the order CANNOT be requested. To change anything, duplicate the project and send a new order.',
+    t3: 'Measurements, site verification, design and fit with the space (appliances, countertop, plumbing, electrical, installation) are the responsibility of whoever sends the order.',
+    t4: 'The order covers factory cabinets only: no appliances, stone/countertop or construction work.',
+    ok: 'I have read and accept. I checked the project and take responsibility for it.', send: 'SEND TO FACTORY', cancel: 'Cancel', need: 'Fill in the PO and job site address and check the acceptance box.',
+    s_open: 'Opening the project…', s_send: 'Creating the order…', s_rel: 'Releasing to the factory…', done: 'Order {n} sent to the factory.', unsaved: 'The project open in the editor has unsaved changes that will be lost. Continue?', skipped: '{n} module(s) of the project did not load. Open the project, check it and save before sending.' },
+  es: { btn: 'ENVIAR A FÁBRICA', title: 'Enviar a fábrica', proj: 'Proyecto', val: 'Valor de fábrica', po: 'PO (va en la etiqueta) *', room: 'Ambiente', addr: 'Dirección de la obra *',
+    t1: 'Al enviar, este proyecto queda CONGELADO: módulos, colores, piezas, medidas y posiciones ya no se pueden cambiar. Es exactamente lo que se va a producir.',
+    t2: 'Después de enviado, NO se pueden pedir cambios al pedido. Para cambiar algo, duplique el proyecto y envíe un pedido nuevo.',
+    t3: 'Medidas, verificación en obra, diseño y compatibilidad con el ambiente (electrodomésticos, encimera, plomería, electricidad, instalación) son responsabilidad de quien envía el pedido.',
+    t4: 'El pedido cubre solo los gabinetes de fábrica: no incluye electrodomésticos, piedra/encimera ni obra.',
+    ok: 'Leí y acepto. Revisé el proyecto y asumo la responsabilidad.', send: 'ENVIAR A FÁBRICA', cancel: 'Cancelar', need: 'Complete el PO y la dirección de la obra y marque la aceptación.',
+    s_open: 'Abriendo el proyecto…', s_send: 'Creando el pedido…', s_rel: 'Liberando a fábrica…', done: 'Pedido {n} enviado a fábrica.', unsaved: 'El proyecto abierto en el editor tiene cambios sin guardar que se perderán. ¿Continuar?', skipped: '{n} módulo(s) del proyecto no cargaron. Abra el proyecto, revíselo y guárdelo antes de enviar.' }
+};
+function sfT(k, v) { const L = SF_TXT[cxLang()] || SF_TXT.en; let t = L[k] != null ? L[k] : (SF_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x]); }); return t; }
+function cxSendFactoryOpen(id) {
+  const o = cxState.scope && cxState.scope.orders.find((x) => x.id === id);
+  if (!o || !o._proj) return;
+  if (typeof isRetailClientAccount === 'function' && isRetailClientAccount()) { if (typeof showBecomeDealerModal === 'function') showBecomeDealerModal(); return; }
+  document.getElementById('cx-sf') && document.getElementById('cx-sf').remove();
+  const w = document.createElement('div');
+  w.id = 'cx-sf';
+  const valor = o._n != null ? o._n : o._l;
+  w.innerHTML = '<div class="cx-sf-box" role="dialog" aria-modal="true"><h3>' + cEsc(sfT('title')) + '</h3>'
+    + '<p class="cx-sf-sum"><span>' + cEsc(sfT('proj')) + ': <b>' + cEsc(o._pname || o.po_name || '—') + '</b>' + (o._folder ? ' · ' + cEsc(o._folder) : '') + '</span>'
+    + (valor && !cxSeller() ? '<span>' + cEsc(sfT('val')) + ': <b>' + cEsc(cMoney(valor)) + '</b></span>' : '') + '</p>'
+    + '<label>' + cEsc(sfT('po')) + '<input id="cx-sf-po" maxlength="60" value="' + cEsc(o._po || '') + '"></label>'
+    + '<label>' + cEsc(sfT('room')) + '<input id="cx-sf-room" maxlength="60" value="' + cEsc(o._pname || '') + '"></label>'
+    + '<label>' + cEsc(sfT('addr')) + '<input id="cx-sf-addr" maxlength="200" value="' + cEsc(o.delivery_address || '') + '"></label>'
+    + '<div class="cx-sf-terms"><p>🔒 ' + cEsc(sfT('t1')) + '</p><p>⛔ ' + cEsc(sfT('t2')) + '</p><p>📐 ' + cEsc(sfT('t3')) + '</p><p>🧾 ' + cEsc(sfT('t4')) + '</p></div>'
+    + '<label class="cx-sf-ok"><input type="checkbox" id="cx-sf-chk"> <span>' + cEsc(sfT('ok')) + '</span></label>'
+    + '<p class="cx-sf-msg" id="cx-sf-msg"></p>'
+    + '<div class="cx-sf-acts"><button type="button" class="secondary" id="cx-sf-cancel">' + cEsc(sfT('cancel')) + '</button>'
+    + '<button type="button" class="cx-sendfab" id="cx-sf-go" disabled>' + cEsc(sfT('send')) + '</button></div></div>';
+  document.body.appendChild(w);
+  const $ = (q) => w.querySelector(q);
+  const pronto = () => { $('#cx-sf-go').disabled = !($('#cx-sf-chk').checked && $('#cx-sf-po').value.trim() && $('#cx-sf-addr').value.trim()); };
+  ['#cx-sf-chk', '#cx-sf-po', '#cx-sf-addr'].forEach((q) => { $(q).addEventListener('input', pronto); $(q).addEventListener('change', pronto); });
+  const fecha = () => { if (!w.dataset.busy) w.remove(); };
+  $('#cx-sf-cancel').addEventListener('click', fecha);
+  w.addEventListener('click', (e) => { if (e.target === w) fecha(); });
+  $('#cx-sf-go').addEventListener('click', () => cxSendFactoryRun(o, w, { po: $('#cx-sf-po').value.trim(), room: $('#cx-sf-room').value.trim(), addr: $('#cx-sf-addr').value.trim() }));
+  setTimeout(() => $('#cx-sf-po').focus(), 30);
+}
+async function cxSendFactoryRun(o, w, f) {
+  const msg = w.querySelector('#cx-sf-msg');
+  const setMsg = (t, err) => { msg.textContent = t; msg.classList.toggle('err', !!err); };
+  if (!f.po || !f.addr || !w.querySelector('#cx-sf-chk').checked) return setMsg(sfT('need'), true);
+  if (typeof projectDirty !== 'undefined' && projectDirty && typeof projectSlots !== 'undefined' && projectSlots.length && !confirm(sfT('unsaved'))) return;
+  w.dataset.busy = '1';
+  w.querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
+  try {
+    setMsg(sfT('s_open'));
+    const proj = { id: o._pid, name: o._pname };
+    await fetchProjectFullRow(proj);
+    const r = await restoreFavoriteProject(proj);
+    if (!r || !r.ok) throw (r && r.error) || new Error('load');
+    if (r.skipped > 0) throw new Error(sfT('skipped', { n: r.skipped }));
+    await projectWaitInteriorsReady();
+    setMsg(sfT('s_send'));
+    const orderId = await sendProjectToOrder({ bulk: true, poName: f.po, clientNameFallback: o._folder || f.po });
+    if (!orderId) throw new Error('order');
+    setMsg(sfT('s_rel'));
+    const agora = new Date().toISOString();
+    const upd = { status: 'approved', approved_at: agora, po_name: f.po, room_name: f.room || null, delivery_address: f.addr };
+    const a = cxState.acc || {};
+    if (a.phone) upd.client_phone = upd.client_phone || a.phone;
+    try { const g = await cxGeocode(f.addr); if (g) { upd.jobsite_lat = g.lat; upd.jobsite_lng = g.lng; upd.jobsite_geocoded_at = agora; } } catch (e) { /* sem mapa */ }
+    const aceite = { terms_accepted_at: agora, terms_accepted_by: cxMe(), terms_version: SF_TERMS_VERSION };
+    let res = await supabaseClient.from('orders').update(Object.assign({}, upd, aceite)).eq('id', orderId).eq('status', 'submitted').select('id, factory_number');
+    if (res.error && /terms_accepted|terms_version|jobsite/.test(res.error.message || '')) {
+      // migration 315 (ou 306) ainda não rodou: libera sem o registro do aceite
+      ['jobsite_lat', 'jobsite_lng', 'jobsite_geocoded_at'].forEach((k) => { if (/jobsite/.test(res.error.message)) delete upd[k]; });
+      res = await supabaseClient.from('orders').update(upd).eq('id', orderId).eq('status', 'submitted').select('id, factory_number');
+    }
+    if (res.error) throw res.error;
+    const fn = res.data && res.data[0] && Number(res.data[0].factory_number) > 0 ? String(Number(res.data[0].factory_number)).padStart(5, '0') : f.po;
+    delete w.dataset.busy; w.remove();
+    alert(sfT('done', { n: fn }));
+  } catch (e) {
+    delete w.dataset.busy;
+    w.querySelectorAll('button, input').forEach((el) => { el.disabled = false; });
+    setMsg((e && e.message) || String(e), true);
+    return;
+  } finally {
+    cxState.scope = null;
+    if (typeof myOrdersLoaded !== 'undefined') myOrdersLoaded = false;
+    if (!document.getElementById('cx-sf') && typeof mpLoad === 'function') mpLoad();
+  }
+}
+
 // ---------- eventos (captura no documento: o portal-09 nem fica sabendo) ----------
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('[data-cx]');
@@ -1107,6 +1223,7 @@ document.addEventListener('click', (e) => {
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
   if (a === 'geocode') return cxGeocodeMissing();
+  if (a === 'sendfab') { e.stopPropagation(); e.preventDefault(); return cxSendFactoryOpen(b.getAttribute('data-id')); }
   if (a === 'relprod') return cxAdminRelease(b.getAttribute('data-id'), 'prod');
   if (a === 'relpick') return cxAdminRelease(b.getAttribute('data-id'), 'pick');
   if (a === 'openorder') {
@@ -1287,6 +1404,12 @@ function cxCss() {
     '.cx-hm-i{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:7px 10px;border:0;border-radius:7px;background:none!important;color:var(--text,#2b2621);font-size:13px;text-align:left;cursor:pointer;box-shadow:none!important}.cx-hm-i:hover{background:var(--bg,#f7f6f3)!important}.cx-hm-i.on{font-weight:700;color:var(--accent-dark,#6e4527)}.cx-hm-i i{width:9px;height:9px;border-radius:50%;flex:none}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
     '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
+    '.cx-sendfab{background:#8a4b1c;color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
+    '#cx-sf{position:fixed;inset:0;background:rgba(20,16,10,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px}',
+    '.cx-sf-box{background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.cx-sf-box h3{margin:0 0 8px}',
+    '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}',
+    '.cx-sf-terms{background:#fbf4ec;border:1px solid #e8cfb4;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13px;line-height:1.45}.cx-sf-terms p{margin:6px 0}',
+    '.cx-sf-box label.cx-sf-ok{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;color:#2a251e}.cx-sf-msg{min-height:18px;font-size:13px;margin:8px 0}.cx-sf-msg.err{color:#b42318}.cx-sf-acts{display:flex;justify-content:flex-end;gap:8px}.cx-sf-acts .cx-sendfab{padding:10px 16px;font-size:13px}',
     '.cx-table tfoot .cx-tot td{font-weight:700;border-top:2px solid var(--line,#d9d3c8);padding-top:10px;padding-bottom:10px;background:var(--panel-2,#faf8f4)}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
     '#cx-tree{margin-top:12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',
