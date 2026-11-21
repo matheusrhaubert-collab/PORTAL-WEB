@@ -412,3 +412,13 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# QuickBooks (21/11/2026, migration 318): estas duas recebem chamadas de FORA
+# (a volta da tela de autorizacao da Intuit e o aviso de pagamento), que chegam
+# sem login do portal. A qbo-auth confere admin por dentro nas acoes; a
+# qbo-webhook confere a assinatura da Intuit (QBO_WEBHOOK_VERIFIER).
+[functions.qbo-auth]
+verify_jwt = false
+
+[functions.qbo-webhook]
+verify_jwt = false

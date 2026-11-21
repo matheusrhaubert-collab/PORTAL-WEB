@@ -697,6 +697,20 @@ async function cxLoadPricing(s, descConta) {
     }
   }
   s.orders.forEach((o) => { if (!o._proj) cxCalcTax(o, s); });
+  // QUICKBOOKS (migration 318): s.qbo = undefined (318 não rodou) | null (não é
+  // admin) | { connected, environment, company_name, … }. As colunas qbo_* dos
+  // pedidos vêm numa consulta separada pra não derrubar a de cima sem a 318.
+  s.qbo = undefined;
+  try { const r = await sb.rpc('qbo_status'); if (!r.error) s.qbo = r.data || null; } catch (e) { /* 318 não rodou */ }
+  if (s.qbo !== undefined && s.invOk) {
+    const ids = s.orders.filter((o) => !o._proj).map((o) => o.id);
+    const porId = {}; s.orders.forEach((o) => { porId[o.id] = o; });
+    for (let i = 0; i < ids.length; i += 150) {
+      const { data, error } = await sb.from('orders').select('id, qbo_invoice_id, qbo_doc_number, qbo_balance, qbo_paid_at').in('id', ids.slice(i, i + 150));
+      if (error) break;
+      (data || []).forEach((r) => { Object.assign(porId[r.id], r); });
+    }
+  }
 }
 // tax do pedido: congelado na invoice; senão isento (tax exemption válido) = 0; senão alíquota da fábrica
 function cxIsento(o, s) {
@@ -738,7 +752,17 @@ function cxSomaTds(itens, soProj) {
 // entra no total de baixo (ele soma só os itens). Clique na linha recolhe/abre.
 function cxFolderKey(o) { return o && o._folder ? String(o.client_user_id) + '|' + o._folder : ''; }
 function cxFolderClosed() { return cxState.foldClosed || (cxState.foldClosed = new Set()); }
-function cxFolderRowHtml(k, itens, soProj, preco, comCk) {
+// 21/11 (Matt: "não gostei da seleção... prefiro colocar esse botão na pasta e
+// com a pasta ele funciona com tudo que tiver dentro"): as caixinhas saíram;
+// na aba Orders a linha da pasta tem Invoice (n) e QB (n) = todos os pedidos
+// da pasta que estão na lista (os ainda "submitted" ficam de fora).
+function cxFolderOrders(k) { return cxNetRows().filter((o) => cxFolderKey(o) === k && !o._proj && o.status !== 'submitted'); }
+function cxFolderRowHtml(k, itens, soProj, preco) {
+  const s0 = cxState.scope || {};
+  const ped = soProj || !s0.invOk ? [] : itens.filter((o) => !o._proj && o.status !== 'submitted');
+  const fb = (a, rot, ok) => '<button type="button" class="cx-mini' + (ok ? ' cx-mini-ok' : '') + '" data-cx="' + a + '" data-k="' + cEsc(k) + '" title="' + cEsc(ivT('folder_tip', { n: ped.length })) + '">' + cEsc(rot) + ' (' + ped.length + ')</button>';
+  const fbtns = !ped.length ? '' : fb('finv', ivT('inv') + (ped.every((o) => o.invoice_number) ? ' ✓' : ''), ped.every((o) => o.invoice_number))
+    + (cxAdmin() && s0.qbo && s0.qbo.connected ? fb('fqb', 'QB' + (ped.every((o) => o.qbo_invoice_id) ? ' ✓' : ''), ped.every((o) => o.qbo_invoice_id)) : '');
   const nome = itens[0]._folder;
   const fechada = cxFolderClosed().has(k);
   const meus = itens[0].client_user_id === cxMe();
@@ -755,12 +779,12 @@ function cxFolderRowHtml(k, itens, soProj, preco, comCk) {
     + (cxAdmin() && temProj && typeof mpFolderBudget === 'function' ? it('budget', T('mp.budget_btn')) : '')
     + (meus && temProj && typeof mpArchive === 'function' ? it('archive', T('mp.archive')) : '')
     + (meus ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
-  return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">' + (comCk ? '<td class="cx-ck"></td>' : '')
+  return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">'
     + '<td colspan="4" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
     + ' <span class="cx-fquem">' + cEsc(String(cxUserLabel(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
     + '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button><span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
-    + (preco ? cxSomaTds(itens, soProj) : '') + '<td colspan="3"></td></tr>';
+    + (preco ? cxSomaTds(itens, soProj) : '') + '<td colspan="3" class="cx-facts">' + fbtns + '</td></tr>';
 }
 // textos só desta parte (pasta na lista)
 const FD_TXT = {
@@ -950,7 +974,6 @@ function cxFlatTable(rows, principal) {
       + (comFiltro[col] ? '<i class="cx-th-dot"></i>' : '') + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : (menu ? '▾' : '↕')) + '</th>';
   const max = principal ? 400 : 200;
   return '<div class="cx-inner"><table class="mp-table cx-table' + (principal ? ' cx-main' : '') + '"><thead><tr>'
-    + (principal && !soProj ? '<th class="cx-ck"><input type="checkbox" data-cx="selall"></th>' : '')
     + th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item'))
     + (preco ? cxPrecoThs(th, soProj) : '')
     + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
@@ -969,7 +992,7 @@ function cxFlatTable(rows, principal) {
       });
       return seq;
     })().slice(0, max).map((lin) => {
-      if (lin.pasta) return cxFolderRowHtml(lin.pasta, lin.itens, soProj, preco, principal && !soProj);
+      if (lin.pasta) return cxFolderRowHtml(lin.pasta, lin.itens, soProj, preco);
       const o = lin.o; const dentro = !!lin.dentro;
       const quem = cxUserLabel(o.client_user_id, [o]);
       // botão DENTRO da célula de etapa (21/11: "na própria barra de status"; a última coluna some em tela estreita)
@@ -981,7 +1004,7 @@ function cxFlatTable(rows, principal) {
         : ((Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + (o.project_number ? ' <span class="cx-pref">' + cxPnum(o.project_number) + '</span>' : ''));
       const ehFab = !o._proj && Number(o.factory_number) > 0;
       const icoN = (typeof MP_ICO !== 'undefined') ? '<span class="cx-nico' + (ehFab ? ' cx-nico-f' : '') + '" title="' + (ehFab ? 'Factory order' : 'Project') + '">' + (ehFab ? MP_ICO.factory : MP_ICO.layers) + '</span>' : '';
-      const ck = principal && !soProj ? '<td class="cx-ck">' + (!o._proj && o.status !== 'submitted' ? '<input type="checkbox" data-cx="sel" data-id="' + cEsc(o.id) + '"' + (cxSel().has(o.id) ? ' checked' : '') + '>' : '') + '</td>' : '';
+      const ck = ''; // 21/11: sem caixinha de seleção — invoice de vários = botão na linha da PASTA
       return '<tr' + (dentro ? ' class="cx-in' + (lin.ultimo ? ' cx-in-last' : '') + '"' : '') + ' data-cx="openorder" data-id="' + cEsc(o.id) + '">' + ck + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
         + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
         + '<td class="cx-quem" title="' + cEsc(quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
@@ -995,7 +1018,7 @@ function cxFlatTable(rows, principal) {
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span>' + envia + '</td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>'
         + (o._proj && cxProjOpen().has(o._pid) ? '<tr class="cx-projexp"><td colspan="20"><div class="mp-exp-box" data-proj="' + cEsc(o._pid) + '">'
           + cxProjCardHtml(o) + '</div></td></tr>' : '');
-    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, principal && !soProj ? 5 : 4, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
+    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, 4, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
@@ -1093,6 +1116,7 @@ function cxRenderNet(p) {
     + (filtrando ? '<button type="button" class="cx-link" data-cx="fclear">' + cEsc(cT('fl_clear')) + '</button>' : '')
     + (f.etapa === '_orders' ? '' : '<button type="button" class="cx-link" data-cx="layout">' + cEsc(cT(cxState.netLayout === 'pastas' ? 'lay_lista' : 'lay_pastas')) + '</button>')
     + (cxAdmin() ? '' : '<button type="button" class="cx-link" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>')
+    + cxQbFoot()
     + (cxAdmin() && rows.length ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.length })) + '</select>' : '') + '</div>';
   if (cxState.projOpen && cxState.projOpen.size && typeof mpAttachCards === 'function') setTimeout(mpAttachCards, 0);
 }
@@ -1439,9 +1463,9 @@ async function cxSendFactoryRun(o, w, f) {
 // ERP, o botão abre esse); link de pagamento é COLADO pela fábrica (admin) no
 // pedido; comprovante fica no pedido e a fábrica confere e libera produção.
 const IV_TXT = {
-  pt: { tax: 'Tax', inv_total: 'Total invoice', exempt: 'isento', set_rate: 'Clique pra definir a alíquota de sales tax da fábrica', rate_q: 'Alíquota de sales tax da fábrica (%). Vazio = sem tax:', inv: 'Invoice', pay: 'Pagar', link: '+ Link', link_q: 'Link de pagamento deste pedido (vazio = tirar):', rcpt: 'Comprov.', rcpt_ok: '✓ Comprov.', rcpt_sent: 'Comprovante enviado. A fábrica vai conferir e liberar.', sel: '{n} pedido(s) selecionado(s) · total {v}', group: 'Gerar invoice agrupada', clear: 'Limpar seleção', folder_tip: 'Mostrar só os pedidos desta pasta', title: 'INVOICE', bill: 'Faturar para', date: 'Data', po: 'PO', order: 'Pedido', item: 'Item', qty: 'Qtd', amount: 'Valor', sub: 'Subtotal (tabela)', disc: 'Desconto', net: 'Líquido', taxl: 'Sales tax', total: 'TOTAL', pay_online: 'Pagar online', print: 'Imprimir / salvar PDF', need316: 'Rode a migration 316 no Supabase pra usar invoice, link e comprovante.', terms: 'Somente gabinetes de fábrica. Não inclui eletrodomésticos, pedra/bancada nem instalação.' },
-  en: { tax: 'Tax', inv_total: 'Invoice total', exempt: 'exempt', set_rate: "Click to set the factory's sales tax rate", rate_q: 'Factory sales tax rate (%). Empty = no tax:', inv: 'Invoice', pay: 'Pay', link: '+ Link', link_q: 'Payment link for this order (empty = remove):', rcpt: 'Receipt', rcpt_ok: '✓ Receipt', rcpt_sent: 'Receipt sent. The factory will check it and release the order.', sel: '{n} order(s) selected · total {v}', group: 'Create grouped invoice', clear: 'Clear selection', folder_tip: 'Show only orders in this folder', title: 'INVOICE', bill: 'Bill to', date: 'Date', po: 'PO', order: 'Order', item: 'Item', qty: 'Qty', amount: 'Amount', sub: 'Subtotal (list)', disc: 'Discount', net: 'Net', taxl: 'Sales tax', total: 'TOTAL', pay_online: 'Pay online', print: 'Print / save PDF', need316: 'Run migration 316 in Supabase to use invoice, link and receipt.', terms: 'Factory cabinets only. Appliances, stone/countertop and installation not included.' },
-  es: { tax: 'Tax', inv_total: 'Total factura', exempt: 'exento', set_rate: 'Clic para definir la tasa de sales tax de la fábrica', rate_q: 'Tasa de sales tax de la fábrica (%). Vacío = sin tax:', inv: 'Factura', pay: 'Pagar', link: '+ Link', link_q: 'Link de pago de este pedido (vacío = quitar):', rcpt: 'Comprob.', rcpt_ok: '✓ Comprob.', rcpt_sent: 'Comprobante enviado. La fábrica lo revisará y liberará.', sel: '{n} pedido(s) seleccionado(s) · total {v}', group: 'Generar factura agrupada', clear: 'Limpiar selección', folder_tip: 'Mostrar solo los pedidos de esta carpeta', title: 'INVOICE', bill: 'Facturar a', date: 'Fecha', po: 'PO', order: 'Pedido', item: 'Ítem', qty: 'Cant', amount: 'Valor', sub: 'Subtotal (lista)', disc: 'Descuento', net: 'Neto', taxl: 'Sales tax', total: 'TOTAL', pay_online: 'Pagar en línea', print: 'Imprimir / guardar PDF', need316: 'Ejecute la migration 316 en Supabase para usar factura, link y comprobante.', terms: 'Solo gabinetes de fábrica. No incluye electrodomésticos, piedra/encimera ni instalación.' }
+  pt: { folder_tip: 'Todos os {n} pedido(s) desta pasta numa invoice só', tax: 'Tax', inv_total: 'Total invoice', exempt: 'isento', set_rate: 'Clique pra definir a alíquota de sales tax da fábrica', rate_q: 'Alíquota de sales tax da fábrica (%). Vazio = sem tax:', inv: 'Invoice', pay: 'Pagar', link: '+ Link', link_q: 'Link de pagamento deste pedido (vazio = tirar):', rcpt: 'Comprov.', rcpt_ok: '✓ Comprov.', rcpt_sent: 'Comprovante enviado. A fábrica vai conferir e liberar.', sel: '{n} pedido(s) selecionado(s) · total {v}', group: 'Gerar invoice agrupada', clear: 'Limpar seleção', folder_tip: 'Mostrar só os pedidos desta pasta', title: 'INVOICE', bill: 'Faturar para', date: 'Data', po: 'PO', order: 'Pedido', item: 'Item', qty: 'Qtd', amount: 'Valor', sub: 'Subtotal (tabela)', disc: 'Desconto', net: 'Líquido', taxl: 'Sales tax', total: 'TOTAL', pay_online: 'Pagar online', print: 'Imprimir / salvar PDF', need316: 'Rode a migration 316 no Supabase pra usar invoice, link e comprovante.', terms: 'Somente gabinetes de fábrica. Não inclui eletrodomésticos, pedra/bancada nem instalação.' },
+  en: { folder_tip: 'All {n} order(s) in this folder on a single invoice', tax: 'Tax', inv_total: 'Invoice total', exempt: 'exempt', set_rate: "Click to set the factory's sales tax rate", rate_q: 'Factory sales tax rate (%). Empty = no tax:', inv: 'Invoice', pay: 'Pay', link: '+ Link', link_q: 'Payment link for this order (empty = remove):', rcpt: 'Receipt', rcpt_ok: '✓ Receipt', rcpt_sent: 'Receipt sent. The factory will check it and release the order.', sel: '{n} order(s) selected · total {v}', group: 'Create grouped invoice', clear: 'Clear selection', folder_tip: 'Show only orders in this folder', title: 'INVOICE', bill: 'Bill to', date: 'Date', po: 'PO', order: 'Order', item: 'Item', qty: 'Qty', amount: 'Amount', sub: 'Subtotal (list)', disc: 'Discount', net: 'Net', taxl: 'Sales tax', total: 'TOTAL', pay_online: 'Pay online', print: 'Print / save PDF', need316: 'Run migration 316 in Supabase to use invoice, link and receipt.', terms: 'Factory cabinets only. Appliances, stone/countertop and installation not included.' },
+  es: { folder_tip: 'Los {n} pedido(s) de esta carpeta en una sola factura', tax: 'Tax', inv_total: 'Total factura', exempt: 'exento', set_rate: 'Clic para definir la tasa de sales tax de la fábrica', rate_q: 'Tasa de sales tax de la fábrica (%). Vacío = sin tax:', inv: 'Factura', pay: 'Pagar', link: '+ Link', link_q: 'Link de pago de este pedido (vacío = quitar):', rcpt: 'Comprob.', rcpt_ok: '✓ Comprob.', rcpt_sent: 'Comprobante enviado. La fábrica lo revisará y liberará.', sel: '{n} pedido(s) seleccionado(s) · total {v}', group: 'Generar factura agrupada', clear: 'Limpiar selección', folder_tip: 'Mostrar solo los pedidos de esta carpeta', title: 'INVOICE', bill: 'Facturar a', date: 'Fecha', po: 'PO', order: 'Pedido', item: 'Ítem', qty: 'Cant', amount: 'Valor', sub: 'Subtotal (lista)', disc: 'Descuento', net: 'Neto', taxl: 'Sales tax', total: 'TOTAL', pay_online: 'Pagar en línea', print: 'Imprimir / guardar PDF', need316: 'Ejecute la migration 316 en Supabase para usar factura, link y comprobante.', terms: 'Solo gabinetes de fábrica. No incluye electrodomésticos, piedra/encimera ni instalación.' }
 };
 function ivT(k, v) { const L = IV_TXT[cxLang()] || IV_TXT.en; let t = L[k] != null ? L[k] : (IV_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x]); }); return t; }
 function cxInvBtns(o) {
@@ -1451,17 +1475,124 @@ function cxInvBtns(o) {
   return '<span class="cx-ivb">' + b('inv', ivT('inv'))
     + (o.payment_link ? b('paylink', ivT('pay'), ' cx-mini-pay') : '') + (cxAdmin() ? b('setlink', o.payment_link ? '✎ Link' : ivT('link')) : '')
     + (o.receipt_path ? b('rcptview', ivT('rcpt_ok'), ' cx-mini-ok') : '') + (!o.paid_at && !cxSeller() ? b('rcpt', o.receipt_path ? '↻' : ivT('rcpt')) : '')
+    // QuickBooks: admin cria a invoice lá e o link volta pro botão Pagar; pago = selo
+    + (cxAdmin() && s.qbo && s.qbo.connected ? b('qbinv', o.qbo_invoice_id ? 'QB ✓' : 'QB', o.qbo_invoice_id ? ' cx-mini-ok' : '') : '')
+    + (o.qbo_paid_at ? '<span class="cx-paid" title="QuickBooks">' + cEsc(qbT('paid')) + '</span>'
+      : (o.qbo_invoice_id && o.qbo_balance != null && o._it != null && Number(o.qbo_balance) > 0 && Number(o.qbo_balance) < Number(o._it) - 0.005
+        ? '<span class="cx-paid cx-paid-p" title="QuickBooks">' + cEsc(qbT('partial', { v: cMoney(o.qbo_balance) })) + '</span>' : ''))
     + '</span> ';
 }
-function cxSelBar() {
-  const s = cxState.scope; const sel = cxSel();
-  if (!s || !sel.size || cxSoProj()) return '';
-  const ped = s.orders.filter((o) => sel.has(o.id));
-  const tot = ped.reduce((t, o) => t + (o._it || 0), 0);
-  return '<div class="cx-selbar"><span>' + cEsc(ivT('sel', { n: ped.length, v: cMoney(tot) })) + '</span>'
-    + '<button type="button" class="cx-sendfab" data-cx="invgroup">' + cEsc(ivT('group')) + '</button>'
-    + '<button type="button" class="cx-link" data-cx="selclear">' + cEsc(ivT('clear')) + '</button></div>';
+// ---------- QUICKBOOKS ONLINE (21/11, migration 318 + funções qbo-*) ----------
+// Matt: "vamos fazer 1 e 2 então" — 1) invoice e link de pagamento do
+// QuickBooks saindo daqui; 2) baixa automática quando o QuickBooks avisa que
+// foi pago. Só admin aciona. Rodapé da aba Orders: "Connect QuickBooks" /
+// situação; botão QB na linha (ou na barra de selecionados = invoice agrupada).
+const QB_TXT = {
+  pt: { connect: 'Conectar QuickBooks', conn_ok: 'QuickBooks: {c} ({e}) ✓', sync: '↻ Pagamentos do QuickBooks', group: 'Invoice no QuickBooks', paid: 'Pago ✓', partial: 'falta {v}',
+    disc_q: 'O portal está conectado ao QuickBooks "{c}" ({e}).\n\nDesconectar? As invoices já criadas ficam lá; o portal só para de criar novas e de receber a baixa.', inv_q: 'Criar a invoice no QuickBooks para {n} pedido(s) de "{loja}", total {v}?\n\nO link de pagamento volta pro botão Pagar.', busy: 'Aguarde, o QuickBooks está respondendo…',
+    done_new: 'Invoice {d} criada no QuickBooks. Total lá: {t}.', done_old: 'Esses pedidos já tinham a invoice {d} no QuickBooks. Total lá: {t}.', link_ok: 'Link de pagamento gravado no botão Pagar.', mismatch: 'ATENÇÃO: o total do QuickBooks ({t}) é diferente do total do portal ({p}). Normalmente é o tax calculado pelo QuickBooks — confira a invoice lá antes de mandar o link.',
+    sync_done: '{n} invoice(s) conferida(s); {p} paga(s).', sync_none: 'Nenhum pedido com invoice do QuickBooks em aberto nesta lista.', back_ok: 'QuickBooks conectado.', back_err: 'Não conectou o QuickBooks: {m}', one_store: 'Os pedidos da pasta precisam ser da mesma loja (e nenhum sem loja). Troque a loja na coluna Store e tente de novo.' },
+  en: { connect: 'Connect QuickBooks', conn_ok: 'QuickBooks: {c} ({e}) ✓', sync: '↻ QuickBooks payments', group: 'QuickBooks invoice', paid: 'Paid ✓', partial: '{v} due',
+    disc_q: 'The portal is connected to QuickBooks "{c}" ({e}).\n\nDisconnect? Invoices already created stay there; the portal just stops creating new ones and receiving payments.', inv_q: 'Create the QuickBooks invoice for {n} order(s) of "{loja}", total {v}?\n\nThe payment link comes back to the Pay button.', busy: 'Please wait, QuickBooks is responding…',
+    done_new: 'Invoice {d} created in QuickBooks. Total there: {t}.', done_old: 'These orders already had invoice {d} in QuickBooks. Total there: {t}.', link_ok: 'Payment link saved on the Pay button.', mismatch: 'WARNING: the QuickBooks total ({t}) differs from the portal total ({p}). Usually it is the tax computed by QuickBooks — check the invoice there before sending the link.',
+    sync_done: '{n} invoice(s) checked; {p} paid.', sync_none: 'No order with an open QuickBooks invoice in this list.', back_ok: 'QuickBooks connected.', back_err: 'QuickBooks did not connect: {m}', one_store: 'The orders in the folder must belong to the same store (none without a store). Change the store in the Store column and try again.' },
+  es: { connect: 'Conectar QuickBooks', conn_ok: 'QuickBooks: {c} ({e}) ✓', sync: '↻ Pagos de QuickBooks', group: 'Factura en QuickBooks', paid: 'Pagado ✓', partial: 'falta {v}',
+    disc_q: 'El portal está conectado a QuickBooks "{c}" ({e}).\n\n¿Desconectar? Las facturas ya creadas quedan allí; el portal solo deja de crear nuevas y de recibir los pagos.', inv_q: '¿Crear la factura en QuickBooks para {n} pedido(s) de "{loja}", total {v}?\n\nEl link de pago vuelve al botón Pagar.', busy: 'Espere, QuickBooks está respondiendo…',
+    done_new: 'Factura {d} creada en QuickBooks. Total allí: {t}.', done_old: 'Estos pedidos ya tenían la factura {d} en QuickBooks. Total allí: {t}.', link_ok: 'Link de pago guardado en el botón Pagar.', mismatch: 'ATENCIÓN: el total de QuickBooks ({t}) es distinto del total del portal ({p}). Normalmente es el tax calculado por QuickBooks — revise la factura allí antes de enviar el link.',
+    sync_done: '{n} factura(s) revisada(s); {p} pagada(s).', sync_none: 'Ningún pedido con factura de QuickBooks abierta en esta lista.', back_ok: 'QuickBooks conectado.', back_err: 'No se conectó QuickBooks: {m}', one_store: 'Los pedidos de la carpeta deben ser de la misma tienda (ninguno sin tienda). Cambie la tienda en la columna Store e intente de nuevo.' }
+};
+function qbT(k, v) { const L = QB_TXT[cxLang()] || QB_TXT.en; let t = L[k] != null ? L[k] : (QB_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x] == null ? '' : v[x]); }); return t; }
+async function cxQbCall(fn, body) {
+  const { data, error } = await supabaseClient.functions.invoke(fn, { body });
+  if (error) {
+    let msg = error.message || 'QuickBooks';
+    if (error.context && typeof error.context.json === 'function') { try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { /* genérica */ } }
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data || {};
 }
+function cxQbFoot() {
+  const s = cxState.scope;
+  if (!s || !cxAdmin() || s.qbo === undefined || !s.qbo || cxSoProj()) return '';
+  return s.qbo.connected
+    ? '<button type="button" class="cx-link" data-cx="qbconn">' + cEsc(qbT('conn_ok', { c: s.qbo.company_name || '—', e: s.qbo.environment || '' })) + '</button>'
+      + '<button type="button" class="cx-link" data-cx="qbsync">' + cEsc(qbT('sync')) + '</button>'
+    : '<button type="button" class="cx-link" data-cx="qbconn">' + cEsc(qbT('connect')) + '</button>';
+}
+async function cxQbAction(a, b) {
+  const s = cxState.scope;
+  if (!s || !cxAdmin()) return;
+  if (cxState.qbBusy) return alert(qbT('busy'));
+  cxState.qbBusy = true;
+  try {
+    if (a === 'qbconn') {
+      if (s.qbo && s.qbo.connected) {
+        if (!confirm(qbT('disc_q', { c: s.qbo.company_name || '—', e: s.qbo.environment || '' }))) return;
+        await cxQbCall('qbo-auth', { action: 'disconnect' });
+        s.qbo = Object.assign({}, s.qbo, { connected: false, company_name: null });
+        return mpRender();
+      }
+      const r = await cxQbCall('qbo-auth', { action: 'start' });
+      if (r.url) window.location.href = r.url;
+      return;
+    }
+    if (a === 'qbsync') {
+      const ids = s.orders.filter((o) => !o._proj && o.qbo_invoice_id && !o.qbo_paid_at).map((o) => o.id);
+      if (!ids.length) return alert(qbT('sync_none'));
+      let n = 0, pagos = 0;
+      for (let i = 0; i < ids.length; i += 60) {
+        const r = await cxQbCall('qbo-invoice', { action: 'sync', order_ids: ids.slice(i, i + 60) });
+        (r.invoices || []).forEach((inv) => {
+          n++; if (!(Number(inv.balance) > 0)) pagos++;
+          s.orders.forEach((o) => {
+            if (o.qbo_invoice_id !== inv.invoice_id) return;
+            o.qbo_balance = inv.balance;
+            if (!(Number(inv.balance) > 0)) { o.qbo_paid_at = o.qbo_paid_at || new Date().toISOString(); o.paid_at = o.paid_at || o.qbo_paid_at; }
+          });
+        });
+      }
+      alert(qbT('sync_done', { n, p: pagos }));
+      return mpRender();
+    }
+    // qbinv (um pedido) / qbgroup (b = lista de ids: os pedidos da pasta)
+    const ids = Array.isArray(b) ? b : [b.getAttribute('data-id')];
+    const ped = ids.map((id) => s.orders.find((o) => o.id === id)).filter(Boolean);
+    if (!ped.length) return;
+    const lojas = Array.from(new Set(ped.map((o) => o.account_id || '')));
+    if (lojas.length !== 1 || !lojas[0]) return alert(qbT('one_store'));
+    // a invoice do portal primeiro (congela tax/total e dá o número INV-…)
+    const st = await supabaseClient.rpc('order_stamp_invoice', { p_orders: ped.map((o) => o.id) });
+    if (st.error) throw st.error;
+    ((st.data && st.data.orders) || []).forEach((r) => { const o = s.orders.find((x) => x.id === r.id); if (o) { Object.assign(o, r, { invoice_number: st.data.invoice_number }); cxCalcTax(o, s); } });
+    const total = ped.reduce((t, o) => t + (Number(o.invoice_total != null ? o.invoice_total : o._it) || 0), 0);
+    if (!ped.every((o) => o.qbo_invoice_id) && !confirm(qbT('inv_q', { n: ped.length, loja: cxStoreName(ped[0]), v: cMoney(total) }))) return mpRender();
+    const r = await cxQbCall('qbo-invoice', { order_ids: ped.map((o) => o.id) });
+    ped.forEach((o) => { o.qbo_invoice_id = r.invoice_id; o.qbo_doc_number = r.doc_number; o.qbo_balance = r.balance; if (r.link) o.payment_link = r.link; if (!(Number(r.balance) > 0) && r.existing) { o.qbo_paid_at = o.qbo_paid_at || new Date().toISOString(); } });
+    cxSel().clear();
+    mpRender();
+    const linhas = [qbT(r.existing ? 'done_old' : 'done_new', { d: r.doc_number || r.invoice_id, t: cMoney(r.total) })];
+    if (r.link) linhas.push(qbT('link_ok')); else if (r.link_warning) linhas.push(r.link_warning);
+    if (Math.abs((Number(r.total) || 0) - (Number(r.expected) || 0)) > 0.01) linhas.push('', qbT('mismatch', { t: cMoney(r.total), p: cMoney(r.expected) }));
+    alert(linhas.join('\n'));
+  } catch (e) {
+    alert((e && e.message) || String(e));
+  } finally {
+    cxState.qbBusy = false;
+  }
+}
+// volta da tela de autorização da Intuit: portal.html?qbo=connected | ?qbo=error&msg=…
+(function cxQbVolta() {
+  try {
+    const u = new URL(location.href); const q = u.searchParams.get('qbo');
+    if (!q) return;
+    const msg = u.searchParams.get('msg') || '';
+    u.searchParams.delete('qbo'); u.searchParams.delete('msg');
+    history.replaceState(null, '', u.pathname + (u.searchParams.toString() ? '?' + u.searchParams.toString() : '') + u.hash);
+    setTimeout(() => alert(q === 'connected' ? qbT('back_ok') : qbT('back_err', { m: msg })), 1500);
+  } catch (e) { /* sem aviso */ }
+})();
+function cxSelBar() { return ''; } // 21/11: seleção por caixinha saiu (botões na linha da pasta)
 async function cxSignedOpen(bucket, path) {
   const w = window.open('', '_blank');
   const { data, error } = await supabaseClient.storage.from(bucket).createSignedUrl(path, 600);
@@ -1644,6 +1775,12 @@ document.addEventListener('click', (e) => {
     cxState.fmenu = null; mpRender();
     return cxFolderAction(b.getAttribute('data-v'), b.getAttribute('data-k'));
   }
+  if (a === 'finv' || a === 'fqb') {
+    e.stopPropagation(); e.preventDefault();
+    const ids = cxFolderOrders(b.getAttribute('data-k')).map((o) => o.id);
+    if (!ids.length) return;
+    return a === 'finv' ? cxInvoice(ids) : cxQbAction('qbgroup', ids);
+  }
   if (a === 'ftoggle') {
     const k = b.getAttribute('data-k'); const fc = cxFolderClosed();
     if (fc.has(k)) fc.delete(k); else fc.add(k);
@@ -1656,6 +1793,7 @@ document.addEventListener('click', (e) => {
     return mpRender();
   }
   if (['inv', 'invgroup', 'paylink', 'setlink', 'rcpt', 'rcptview', 'taxrate'].includes(a)) { e.stopPropagation(); e.preventDefault(); return cxIvAction(a, b); }
+  if (['qbinv', 'qbgroup', 'qbconn', 'qbsync'].includes(a)) { e.stopPropagation(); e.preventDefault(); return cxQbAction(a, b); }
   if (a === 'pj') {
     e.stopPropagation(); e.preventDefault();
     const o = cxState.scope && cxState.scope.orders.find((x) => x.id === b.getAttribute('data-id'));
@@ -1876,6 +2014,8 @@ function cxCss() {
     + '.cx-fdots{border:0;background:transparent;color:#4a3d2b;font-size:16px;line-height:1;padding:0 8px;margin:0 0 0 6px;cursor:pointer;border-radius:5px}.cx-fdots:hover{background:#d9c7a6}'
     + '.cx-fmenu{position:absolute;left:180px;top:100%;z-index:30;background:#fff;border:1px solid #d9d3c8;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;min-width:170px}'
     + '.cx-fmi{border:0;background:transparent;color:#2f2a24;text-align:left;padding:7px 10px;margin:0;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer}.cx-fmi:hover{background:#f3ece0}.cx-fmi.is-danger{color:#a3352b}'
+    + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
+    + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}'
     + '.cx-fstatus{margin-left:8px;font-weight:400}.cx-fquem{margin-left:8px;font-weight:400;font-size:11.5px;color:#7a6b55}',
     '.cx-table tfoot .cx-tot td{font-weight:700;border-top:2px solid var(--line,#d9d3c8);padding-top:10px;padding-bottom:10px;background:var(--panel-2,#faf8f4)}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
