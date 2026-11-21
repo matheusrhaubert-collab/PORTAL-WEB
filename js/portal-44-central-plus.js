@@ -757,7 +757,7 @@ function cxFolderClosed() { return cxState.foldClosed || (cxState.foldClosed = n
 // na aba Orders a linha da pasta tem Invoice (n) e QB (n) = todos os pedidos
 // da pasta que estão na lista (os ainda "submitted" ficam de fora).
 function cxFolderOrders(k) { return cxNetRows().filter((o) => cxFolderKey(o) === k && !o._proj && o.status !== 'submitted'); }
-function cxFolderRowHtml(k, itens, soProj, preco) {
+function cxFolderRowHtml(k, itens, soProj, preco, enx) {
   const s0 = cxState.scope || {};
   const ped = soProj || !s0.invOk ? [] : itens.filter((o) => !o._proj && o.status !== 'submitted');
   const fb = (a, rot, ok) => '<button type="button" class="cx-mini' + (ok ? ' cx-mini-ok' : '') + '" data-cx="' + a + '" data-k="' + cEsc(k) + '" title="' + cEsc(ivT('folder_tip', { n: ped.length })) + '">' + cEsc(rot) + ' (' + ped.length + ')</button>';
@@ -784,7 +784,8 @@ function cxFolderRowHtml(k, itens, soProj, preco) {
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
     + ' <span class="cx-fquem">' + cEsc(String(cxUserLabel(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
     + '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button><span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
-    + (preco ? cxSomaTds(itens, soProj) : '') + '<td colspan="3" class="cx-facts">' + fbtns + '</td></tr>';
+    + (enx ? '<td class="cx-facts cx-facts-l">' + fbtns + '</td>' + (preco ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td>' : '') + '<td colspan="3"></td></tr>'
+      : (preco ? cxSomaTds(itens, soProj) : '') + '<td colspan="3" class="cx-facts">' + fbtns + '</td></tr>');
 }
 // textos só desta parte (pasta na lista)
 const FD_TXT = {
@@ -958,11 +959,64 @@ async function cxProjAction(a, o) {
 }
 function cxPnum(n) { return n ? 'P' + String(Number(n)).padStart(7, '0') : ''; }
 function cxNumVal(o) { return o._proj ? (Number(o.project_number) || 0) : (Number(o.factory_number) || 0); }
+const OD_TXT = {
+  pt: { pay_col: 'Pagamento', more: 'Mais informações', less: 'Recolher', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Endereço da obra', prices: 'Valores', tools: 'Invoice e pagamento', open: 'Abrir pedido', paid: 'Pago ✓', rcpt_sent: 'Comprovante enviado', no_link: 'sem link' },
+  en: { pay_col: 'Payment', more: 'More information', less: 'Collapse', seller: 'Salesperson', client: 'Client', room: 'Room', addr: 'Job site address', prices: 'Amounts', tools: 'Invoice and payment', open: 'Open order', paid: 'Paid ✓', rcpt_sent: 'Receipt sent', no_link: 'no link' },
+  es: { pay_col: 'Pago', more: 'Más información', less: 'Contraer', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Dirección de la obra', prices: 'Valores', tools: 'Factura y pago', open: 'Abrir pedido', paid: 'Pagado ✓', rcpt_sent: 'Comprobante enviado', no_link: 'sin link' }
+};
+function odT(k) { const L = OD_TXT[cxLang()] || OD_TXT.en; return L[k] != null ? L[k] : (OD_TXT.en[k] || k); }
+function cxOrdOpen() { return cxState.ordOpen || (cxState.ordOpen = new Set()); }
+// linha da aba Orders: só o que decide (etapa, invoice, total, pagamento)
+function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
+  const s = cxState.scope || {};
+  const dentro = !!lin.dentro; const aberto = cxOrdOpen().has(o.id);
+  const id = cEsc(o.id);
+  const mini = (cx, rot, extra, tip) => '<button type="button" class="cx-mini' + (extra || '') + '" data-cx="' + cx + '" data-id="' + id + '"' + (tip ? ' title="' + cEsc(tip) + '"' : '') + '>' + cEsc(rot) + '</button>';
+  const temInv = s.invOk && !o._proj && o.status !== 'submitted';
+  const libera = !cxAdmin() ? '' : (o._s === 'pay' ? ' ' + mini('relprod', cT('rel_prod'), ' cx-mini-go') : o._s === 'prod' ? ' ' + mini('relpick', cT('rel_pick'), ' cx-mini-go') : '');
+  const inv = !temInv ? '—' : mini('inv', o.invoice_number || ivT('inv'), o.invoice_number ? ' cx-mini-ok' : '') + (o.qbo_invoice_id ? '<small class="cx-est" title="QuickBooks">QB</small>' : '');
+  const pago = !!(o.paid_at || o.qbo_paid_at);
+  const parcial = !pago && o.qbo_invoice_id && o.qbo_balance != null && o._it != null && Number(o.qbo_balance) > 0 && Number(o.qbo_balance) < Number(o._it) - 0.005;
+  const pag = !temInv ? '—'
+    : pago ? '<span class="cx-paid">' + cEsc(odT('paid')) + '</span>'
+      : (o.payment_link ? mini('paylink', ivT('pay'), ' cx-mini-pay') : '')
+        + (parcial ? '<span class="cx-paid cx-paid-p">' + cEsc(qbT('partial', { v: cMoney(o.qbo_balance) })) + '</span>' : '')
+        + (o.receipt_path ? mini('rcptview', ivT('rcpt_ok'), ' cx-mini-ok', odT('rcpt_sent')) : (!cxAdmin() && !cxSeller() ? mini('rcpt', ivT('rcpt')) : ''))
+        + (!o.payment_link && !o.receipt_path && cxAdmin() ? '<small class="cx-est">' + cEsc(odT('no_link')) + '</small>' : '');
+  const linha = '<tr class="' + (dentro ? 'cx-in' + (lin.ultimo ? ' cx-in-last' : '') : '') + (aberto ? ' cx-ord-on' : '') + '" data-cx="openorder" data-id="' + id + '">'
+    + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
+    + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + id : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
+    + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
+    + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span>' + (envia || '') + libera + '</td>'
+    + '<td>' + inv + '</td>'
+    + (preco ? '<td class="cx-r"><b>' + (o._proj || o._it == null ? '—' : cEsc(cMoney(o._it))) + '</b></td>' : '')
+    + '<td>' + pag + '</td><td>' + cxQuando(o._t) + '</td>'
+    + '<td class="cx-r"><button type="button" class="cx-more' + (aberto ? ' is-on' : '') + '" data-cx="ordmore" data-id="' + id + '" title="' + cEsc(odT(aberto ? 'less' : 'more')) + '" aria-label="' + cEsc(odT('more')) + '">' + (aberto ? '▴' : '▾') + '</button></td></tr>';
+  if (!aberto) return linha;
+  const quem = cxUserLabel(o.client_user_id, [o]);
+  const kv = (k, v) => (v == null || v === '' ? '' : '<div class="cx-okv"><span>' + cEsc(k) + '</span><b>' + v + '</b></div>');
+  const info = kv(odT('seller'), cEsc(quem || '—')) + kv(odT('client'), cEsc(o.client_name || '')) + kv(odT('room'), cEsc(o.room_name || '')) + kv(odT('addr'), cEsc(o.delivery_address || ''))
+    + (o._folder ? kv('📁', cEsc(o._folder)) : '');
+  const val = !preco || o._proj ? '' : kv(cT('list'), cEsc(cMoney(o._l))) + kv(cT('disc'), o._d != null ? o._d + '%' : '—') + kv(cT('net'), o._n != null ? cEsc(cMoney(o._n)) : '—')
+    + kv(ivT('tax'), o._ex ? cEsc(ivT('exempt')) : o._tx != null ? cEsc(cMoney(o._tx)) : '—') + kv(ivT('inv_total'), o._it != null ? cEsc(cMoney(o._it)) : '—');
+  return linha + '<tr class="cx-ordexp' + (dentro ? ' cx-in' : '') + '"><td colspan="20"><div class="cx-obox">'
+    + '<div class="cx-ocol"><h5>' + cEsc(odT('more')) + '</h5>' + info + '</div>'
+    + (val ? '<div class="cx-ocol"><h5>' + cEsc(odT('prices')) + '</h5>' + val + '</div>' : '')
+    + '<div class="cx-ocol cx-otools"><h5>' + cEsc(odT('tools')) + '</h5><div>' + (cxInvBtns(o) || '—') + '</div>'
+    + '<div><button type="button" class="cx-mini" data-cx="openorder" data-id="' + id + '">' + cEsc(odT('open')) + ' →</button></div></div>'
+    + '</div></td></tr>';
+}
 function cxFlatTable(rows, principal) {
   const s = cxState.scope; const f = cxState.net;
   const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
   const preco = !cxSeller();
   const soProj = cxSoProj();
+  // ABA ORDERS ENXUTA (21/11, Matt: "prioridade status, invoice, valor final,
+  // link de pagamento... um botão e abrir mais informações"): na aba Orders a
+  // linha fica com Nº · Loja · Projeto/PO · Etapa · Invoice · Total · Pagamento ·
+  // Data · ▾. O resto (vendedor, tabela/desconto/líquido/tax, endereço e as
+  // ferramentas de link/comprovante/QuickBooks) abre embaixo no ▾.
+  const enx = principal && !soProj;
   if (principal) {
     const val = { num: cxNumVal, loja: (o) => cxStoreName(o).toLowerCase(), quem: (o) => cxUserLabel(o.client_user_id, [o]).toLowerCase(), nome: (o) => String(o.po_name || '').toLowerCase(),
       cliente: (o) => String(o.client_name || '').toLowerCase(), l: (o) => o._l || 0, net: (o) => (o._n == null ? -1 : o._n), v: (o) => (o._v == null ? -1 : o._v), it: (o) => (o._it == null ? -1 : o._it), etapa: (o) => CX_NET_STAGES.indexOf(o._s), upd: (o) => String(o._t || '') }[st.col] || ((o) => String(o._t || ''));
@@ -974,9 +1028,12 @@ function cxFlatTable(rows, principal) {
       + (comFiltro[col] ? '<i class="cx-th-dot"></i>' : '') + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : (menu ? '▾' : '↕')) + '</th>';
   const max = principal ? 400 : 200;
   return '<div class="cx-inner"><table class="mp-table cx-table' + (principal ? ' cx-main' : '') + '"><thead><tr>'
-    + th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item'))
-    + (preco ? cxPrecoThs(th, soProj) : '')
-    + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
+    + (enx
+      ? th('num', cT('c_no')) + th('loja', cT('c_store')) + th('nome', cT('c_item')) + th('etapa', cT('c_stage'), 0, 1)
+        + '<th>' + cEsc(ivT('inv')) + '</th>' + (preco ? th('it', ivT('inv_total'), 1) : '') + '<th>' + cEsc(odT('pay_col')) + '</th>' + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
+      : th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item'))
+        + (preco ? cxPrecoThs(th, soProj) : '')
+        + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>')
     + (() => {
       // sequência da tela: linha da pasta + os itens dela (na ordem escolhida);
       // quem não tem pasta fica como sempre. Só na lista principal.
@@ -992,7 +1049,7 @@ function cxFlatTable(rows, principal) {
       });
       return seq;
     })().slice(0, max).map((lin) => {
-      if (lin.pasta) return cxFolderRowHtml(lin.pasta, lin.itens, soProj, preco);
+      if (lin.pasta) return cxFolderRowHtml(lin.pasta, lin.itens, soProj, preco, enx);
       const o = lin.o; const dentro = !!lin.dentro;
       const quem = cxUserLabel(o.client_user_id, [o]);
       // botão DENTRO da célula de etapa (21/11: "na própria barra de status"; a última coluna some em tela estreita)
@@ -1005,6 +1062,7 @@ function cxFlatTable(rows, principal) {
       const ehFab = !o._proj && Number(o.factory_number) > 0;
       const icoN = (typeof MP_ICO !== 'undefined') ? '<span class="cx-nico' + (ehFab ? ' cx-nico-f' : '') + '" title="' + (ehFab ? 'Factory order' : 'Project') + '">' + (ehFab ? MP_ICO.factory : MP_ICO.layers) + '</span>' : '';
       const ck = ''; // 21/11: sem caixinha de seleção — invoice de vários = botão na linha da PASTA
+      if (enx) return cxOrdRowHtml(o, lin, num, icoN, preco, envia);
       return '<tr' + (dentro ? ' class="cx-in' + (lin.ultimo ? ' cx-in-last' : '') + '"' : '') + ' data-cx="openorder" data-id="' + cEsc(o.id) + '">' + ck + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
         + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
         + '<td class="cx-quem" title="' + cEsc(quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
@@ -1018,7 +1076,7 @@ function cxFlatTable(rows, principal) {
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span>' + envia + '</td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>'
         + (o._proj && cxProjOpen().has(o._pid) ? '<tr class="cx-projexp"><td colspan="20"><div class="mp-exp-box" data-proj="' + cEsc(o._pid) + '">'
           + cxProjCardHtml(o) + '</div></td></tr>' : '');
-    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, 4, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
+    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? (enx ? '<tfoot><tr class="cx-tot"><td colspan="5">' + cEsc(cT('sum', { n: rows.length })) + '</td><td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td><td colspan="3"></td></tr></tfoot>' : cxTotalRow(rows, 4, 3, soProj)) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
@@ -1514,7 +1572,7 @@ async function cxQbCall(fn, body) {
 }
 function cxQbFoot() {
   const s = cxState.scope;
-  if (!s || !cxAdmin() || s.qbo === undefined || !s.qbo || cxSoProj()) return '';
+  if (!s || !cxAdmin() || s.qbo === undefined || !s.qbo) return ''; // em todas as abas (21/11: Matt não achou na aba All)
   return s.qbo.connected
     ? '<button type="button" class="cx-link" data-cx="qbconn">' + cEsc(qbT('conn_ok', { c: s.qbo.company_name || '—', e: s.qbo.environment || '' })) + '</button>'
       + '<button type="button" class="cx-link" data-cx="qbsync">' + cEsc(qbT('sync')) + '</button>'
@@ -1781,6 +1839,12 @@ document.addEventListener('click', (e) => {
     if (!ids.length) return;
     return a === 'finv' ? cxInvoice(ids) : cxQbAction('qbgroup', ids);
   }
+  if (a === 'ordmore') {
+    e.stopPropagation(); e.preventDefault();
+    const id = b.getAttribute('data-id'); const ab = cxOrdOpen();
+    if (ab.has(id)) ab.delete(id); else ab.add(id);
+    return mpRender();
+  }
   if (a === 'ftoggle') {
     const k = b.getAttribute('data-k'); const fc = cxFolderClosed();
     if (fc.has(k)) fc.delete(k); else fc.add(k);
@@ -2015,7 +2079,13 @@ function cxCss() {
     + '.cx-fmenu{position:absolute;left:180px;top:100%;z-index:30;background:#fff;border:1px solid #d9d3c8;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;min-width:170px}'
     + '.cx-fmi{border:0;background:transparent;color:#2f2a24;text-align:left;padding:7px 10px;margin:0;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer}.cx-fmi:hover{background:#f3ece0}.cx-fmi.is-danger{color:#a3352b}'
     + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
-    + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}'
+    + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}.cx-table td.cx-facts.cx-facts-l{text-align:left}'
+    + '.cx-table .cx-more{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0}.cx-table .cx-more:hover,.cx-table .cx-more.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
+    + '.cx-table .cx-mini.cx-mini-go{background:#7a4a1e;border-color:#7a4a1e;color:#fff}.cx-table .cx-mini.cx-mini-go:hover{background:#5f3915}'
+    + '.cx-table tr.cx-ord-on td{background:#faf6ee;border-bottom-color:transparent}'
+    + '.cx-table tr.cx-ordexp td{background:#faf6ee;white-space:normal;padding:4px 14px 14px}'
+    + '.cx-obox{display:flex;flex-wrap:wrap;gap:10px 40px}.cx-ocol{min-width:200px}.cx-ocol h5{margin:0 0 6px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#8a8073;font-weight:700}'
+    + '.cx-okv{display:flex;gap:10px;font-size:12.5px;line-height:1.7}.cx-okv span{color:#8a8073;min-width:110px}.cx-okv b{font-weight:600;color:#2b251d}.cx-otools>div{margin-bottom:8px}'
     + '.cx-fstatus{margin-left:8px;font-weight:400}.cx-fquem{margin-left:8px;font-weight:400;font-size:11.5px;color:#7a6b55}',
     '.cx-table tfoot .cx-tot td{font-weight:700;border-top:2px solid var(--line,#d9d3c8);padding-top:10px;padding-bottom:10px;background:var(--panel-2,#faf8f4)}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
