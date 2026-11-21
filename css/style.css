@@ -1296,16 +1296,29 @@ body.portal-page.proj-tela-cheia .po-proj-config-col {
 }
 /* ---- Aba Projetos COMPACTA na altura (21/11, Matt: "diminuir ainda mais os
    espaços que ocupam a altura pra usarmos mais espaço pro projeto"). Só com a
-   aba Projetos aberta (.proj-fullbleed): topo do portal de 72 -> 46 px e as
+   aba Projetos aberta (.proj-fullbleed): topo do portal de 72 -> 52 px e as
    folgas de cima do <main> e do painel quase a zero. A altura do desenho é
    medida em JS (ajustaAlturaTelaCheia), então o que sobra vai sozinho pra ele.
    As outras abas ficam com o topo de sempre. ---- */
-body.portal-page.proj-fullbleed header.po-topnav { height: 46px; padding: 0 16px; }
-body.portal-page.proj-fullbleed .po-logo-main { font-size: 16px; }
-body.portal-page.proj-fullbleed .po-logo-sub { font-size: 7px; letter-spacing: 2.5px; margin-top: 2px; }
-body.portal-page.proj-fullbleed .po-logo-dealer-img { max-height: 28px; }
-body.portal-page.proj-fullbleed .po-topnav-tabs .portal-tab-btn { padding: 6px 4px; font-size: 13px; }
-body.portal-page.proj-fullbleed .po-user-avatar { width: 28px; height: 28px; font-size: 12px; }
+body.portal-page.proj-fullbleed header.po-topnav { height: 52px; padding: 0 16px; }
+body.portal-page.proj-fullbleed .po-logo-main { font-size: 17px; }
+body.portal-page.proj-fullbleed .po-logo-sub { font-size: 7.5px; letter-spacing: 2.5px; margin-top: 2px; }
+body.portal-page.proj-fullbleed .po-logo-dealer-img { max-height: 30px; }
+body.portal-page.proj-fullbleed .po-topnav-tabs .portal-tab-btn { padding: 8px 4px; font-size: 14px; }
+/* lado direito (engrenagem, Minha empresa, Ajuda, usuário): tudo na MESMA
+   linha de centro — os botões herdavam margem de cima do estilo geral de
+   botão e cada um caía numa altura (Matt 21/11: "dá uma alinhada nesses
+   ícones também, talvez aumente um pouquinho mais"). */
+body.portal-page.proj-fullbleed .po-topnav-right { gap: 16px; align-items: center; }
+body.portal-page.proj-fullbleed .po-topnav-right button { margin-top: 0; margin-bottom: 0; }
+body.portal-page.proj-fullbleed .po-topnav-settings { display: flex; align-items: center; }
+body.portal-page.proj-fullbleed .po-topnav-settings-toggle { width: 32px; height: 32px; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; }
+body.portal-page.proj-fullbleed .po-help-link { font-size: 14px; line-height: 32px; padding: 0 4px; }
+body.portal-page.proj-fullbleed .po-user-chip { padding-left: 16px; gap: 8px; height: 32px; }
+body.portal-page.proj-fullbleed .po-user-avatar { width: 32px; height: 32px; font-size: 13px; }
+body.portal-page.proj-fullbleed .po-user-meta { line-height: 1.2; justify-content: center; }
+body.portal-page.proj-fullbleed .po-user-name { font-size: 13px; }
+body.portal-page.proj-fullbleed .po-logout-link { margin: 0; line-height: 1.2; }
 body.portal-page.proj-fullbleed main { padding: 4px 8px 0; }
 body.portal-page.proj-fullbleed #po-tab-projects > section.panel { padding: 6px 8px; }
 body.portal-page.proj-fullbleed #po-tab-projects .po-proj-layout { margin-top: 4px; }
