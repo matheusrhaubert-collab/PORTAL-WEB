@@ -247,7 +247,15 @@
   function bloqueiaLarguraFixa(acc, box, espessuraCasco) {
     var ok = largurasFixasDoVao(acc, espessuraCasco);
     if (!ok || !box) return false;
-    return !ok.some(function (w) { return Math.abs(num(box.w) - w) <= LARGURA_FIXA_TOL_MM; });
+    if (ok.some(function (w) { return Math.abs(num(box.w) - w) <= LARGURA_FIXA_TOL_MM; })) return false;
+    // A espessura informada pode não ser a das laterais DESTE casco (21/11,
+    // Matt: nicho de 18" não mostrou o Trash). Aceita o vão de qualquer casco
+    // de 15 a 20 mm de lateral: gabinete − 40 .. gabinete − 30 (± tolerância).
+    var lista = (acc.params && acc.params.larguras_gabinete_mm) || LARGURA_FIXA_GABINETE_MM[acc.slug] || [];
+    var bw = num(box.w);
+    return !lista.some(function (g) {
+      return bw >= num(g) - 40 - LARGURA_FIXA_TOL_MM && bw <= num(g) - 30 + LARGURA_FIXA_TOL_MM;
+    });
   }
   function removeFront(node, i) { (node.fronts || []).splice(i, 1); }
   function clearNode(node, what) {
