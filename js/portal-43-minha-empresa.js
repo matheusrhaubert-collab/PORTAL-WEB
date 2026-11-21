@@ -57,7 +57,7 @@ function meIsAdmin() { return window.LEGNO_IS_ADMIN === true; }
 const ME_TXT = {
   pt: {
     btn: 'Minha empresa', title: 'Minha empresa', title_factory: 'Rede de dealers',
-    t_painel: 'Painel', t_arvore: 'Árvore', t_equipe: 'Equipe', t_margens: 'Margens e desconto', t_empresa: 'Empresa',
+    t_painel: 'Painel', t_arvore: 'Árvore', t_equipe: 'Equipe', t_margens: 'Margens', t_empresa: 'Empresa',
     close: 'Fechar', loading: 'Carregando…', none: 'Nada por aqui ainda.',
     k_build: 'Em construção', k_prod: 'Em produção', k_done: 'Entregues', k_lost: 'Perdidos', k_wait: 'Aguardando aprovação',
     projects: 'projeto(s)', orders: 'pedido(s)', est: 'valor estimado', fab: 'valor de fábrica',
@@ -86,7 +86,7 @@ const ME_TXT = {
   },
   en: {
     btn: 'My company', title: 'My company', title_factory: 'Dealer network',
-    t_painel: 'Dashboard', t_arvore: 'Tree', t_equipe: 'Team', t_margens: 'Margins & discount', t_empresa: 'Company',
+    t_painel: 'Dashboard', t_arvore: 'Tree', t_equipe: 'Team', t_margens: 'Margins', t_empresa: 'Company',
     close: 'Close', loading: 'Loading…', none: 'Nothing here yet.',
     k_build: 'In progress', k_prod: 'In production', k_done: 'Delivered', k_lost: 'Lost', k_wait: 'Waiting approval',
     projects: 'project(s)', orders: 'order(s)', est: 'estimated value', fab: 'factory value',
@@ -115,7 +115,7 @@ const ME_TXT = {
   },
   es: {
     btn: 'Mi empresa', title: 'Mi empresa', title_factory: 'Red de dealers',
-    t_painel: 'Panel', t_arvore: 'Árbol', t_equipe: 'Equipo', t_margens: 'Márgenes y descuento', t_empresa: 'Empresa',
+    t_painel: 'Panel', t_arvore: 'Árbol', t_equipe: 'Equipo', t_margens: 'Márgenes', t_empresa: 'Empresa',
     close: 'Cerrar', loading: 'Cargando…', none: 'Nada por aquí todavía.',
     k_build: 'En desarrollo', k_prod: 'En producción', k_done: 'Entregados', k_lost: 'Perdidos', k_wait: 'Esperando aprobación',
     projects: 'proyecto(s)', orders: 'pedido(s)', est: 'valor estimado', fab: 'valor de fábrica',
@@ -238,7 +238,30 @@ function meEl() {
   }
   return ov;
 }
-function meClose() { const ov = document.getElementById('po-me'); if (ov) ov.style.display = 'none'; }
+// MARGENS DENTRO DESTA TELA (21/11, Matt: "coloca margens como nova aba no My
+// company"). O conteúdo é o MESMO do modal Margens (#po-margins-body, desenhado
+// por renderMarginsModal, portal-06b): na aba ele é trazido pra cá e os
+// cliques/alterações são repassados pras mesmas funções (meClick/meChange).
+// Antes de redesenhar ou fechar, volta pro modal de origem — que continua
+// funcionando sozinho (tutorial, atalhos antigos).
+function meTemMargens() {
+  return typeof renderMarginsModal === 'function' && typeof hasDealerTools === 'function' && hasDealerTools();
+}
+function meMargensVoltar() {
+  const body = document.getElementById('po-margins-body');
+  const ov = document.getElementById('po-me');
+  if (!body || !ov || !ov.contains(body)) return;
+  const card = document.querySelector('#po-margins-modal .po-margins-card');
+  if (card) card.appendChild(body);
+}
+function meMargensTrazer() {
+  const slot = document.getElementById('me-margins-slot');
+  const body = document.getElementById('po-margins-body');
+  if (!slot || !body || !meTemMargens()) return;
+  slot.appendChild(body);
+  try { renderMarginsModal(); } catch (e) { /* fica o que tinha */ }
+}
+function meClose() { meMargensVoltar(); const ov = document.getElementById('po-me'); if (ov) ov.style.display = 'none'; }
 async function openMyCompany(tab) {
   const ov = meEl();
   ov.style.display = 'flex';
@@ -253,7 +276,8 @@ function meTabs() {
   const manda = temEmpresa && ['owner', 'manager'].includes(meState.card.role);
   const t = ['painel', 'arvore'];
   if (manda) t.push('equipe');
-  if (temEmpresa && ['owner', 'manager', 'finance'].includes(meState.card.role)) t.push('margens');
+  // Margens: quem cuida da empresa, ou quem já tinha o botão Margens (admin sem empresa)
+  if ((temEmpresa && ['owner', 'manager', 'finance'].includes(meState.card.role)) || meTemMargens()) t.push('margens');
   if (manda) t.push('empresa');
   return t;
 }
@@ -271,7 +295,9 @@ function meFrame(inner) {
 function meRender() {
   const ov = meEl();
   const t = meState.tab;
+  meMargensVoltar();   // o conteúdo das Margens não pode morrer junto com o innerHTML
   ov.innerHTML = meFrame(t === 'arvore' ? meViewTree() : t === 'equipe' ? meViewTeam() : t === 'margens' ? meViewMargins() : t === 'empresa' ? meViewCompany() : meViewPainel());
+  if (meState.tab === 'margens') meMargensTrazer();
 }
 
 // ---------- PAINEL ----------
@@ -390,7 +416,9 @@ function meViewMargins() {
   const manda = meState.card && ['owner', 'manager'].includes(meState.card.role);
   const pend = meState.reqs.find((r) => r.status === 'pending');
   const hist = meState.reqs.filter((r) => r.status !== 'pending');
-  let h = '<div class="me-card"><h4>' + mEsc(mT('disc_title')) + '</h4>'
+  let h = '';
+  // desconto de fábrica (só leitura + solicitar): só pra quem TEM empresa
+  if (meState.card) h += '<div class="me-card"><h4>' + mEsc(mT('disc_title')) + '</h4>'
     + '<p class="me-big">' + Number(a ? a.factory_discount_pct : 0) + '% <span class="hint">' + mEsc(mT('disc_by')) + '</span></p>';
   if (pend) h += '<p class="me-warn">' + mEsc(mT('disc_pending', { p: Number(pend.requested_pct), d: mDate(pend.created_at) })) + '</p>';
   if (manda && a && a.status === 'active') {
@@ -399,12 +427,12 @@ function meViewMargins() {
       + '<button type="button" data-a="pedir"' + (meState.busy ? ' disabled' : '') + '>' + mEsc(mT(pend ? 'disc_send' : 'disc_ask')) + '</button></div>';
   }
   if (hist.length) h += '<p class="hint">' + mEsc(mT('disc_hist')) + ': ' + hist.map((r) => Number(r.requested_pct) + '% — ' + mEsc(mT('ds_' + r.status)) + (r.status === 'approved' && r.decided_pct != null ? ' (' + Number(r.decided_pct) + '%)' : '') + (r.decision_note ? ' “' + mEsc(r.decision_note) + '”' : '') + ' · ' + mEsc(mDate(r.created_at))).join('; ') + '</p>';
-  h += '</div>';
-  const temMargens = typeof openMarginsModal === 'function' && typeof hasDealerTools === 'function' && hasDealerTools();
+  if (meState.card) h += '</div>';
+  const temMargens = meTemMargens();
   if (temMargens) {
-    const m = typeof getResaleMarginPct === 'function' ? Number(getResaleMarginPct() || 0) : 0;
-    h += '<div class="me-card"><h4>' + mEsc(mT('margin_title')) + '</h4><p>' + mEsc(mT('margin_now', { m })) + '</p><p class="hint">' + mEsc(mT('margin_hint')) + '</p>'
-      + '<button type="button" data-a="margens">' + mEsc(mT('margin_open')) + '</button></div>';
+    // o conteúdo do modal Margens entra aqui (meMargensTrazer, depois do render)
+    h += '<div class="me-card"><h4>' + mEsc(mT('margin_title')) + '</h4><p class="hint">' + mEsc(mT('margin_hint')) + '</p>'
+      + '<div id="me-margins-slot"></div></div>';
     h += '<div class="me-card"><h4>' + mEsc(mT('brand_title')) + '</h4>' + (a && a.logo_url ? '<img class="me-logo" src="' + mEsc(a.logo_url) + '" alt="">' : '')
       + '<p class="hint">' + mEsc(mT('brand_hint')) + '</p><button type="button" class="secondary" data-a="marca">' + mEsc(mT('brand_open')) + '</button></div>';
   }
@@ -437,6 +465,11 @@ async function meFnError(error, data) {
 }
 function meChange(e) {
   const t = e.target;
+  // aba Margens: mesma regra do modal de origem (portal-06b ligaMarginsModal)
+  const extra = t.closest && t.closest('#me-margins-slot .po-margins-extra-row');
+  if (extra && t.dataset && t.dataset.field && typeof updateDealerPricingExtraField === 'function') {
+    return updateDealerPricingExtraField(extra.dataset.extraId, t.dataset.field, t.value);
+  }
   const linha = t.closest && t.closest('.me-member');
   if (!linha || !t.getAttribute('data-a2')) return;
   const id = linha.getAttribute('data-m');
@@ -461,6 +494,16 @@ function meChange(e) {
 }
 function meClick(e) {
   if (e.target.id === 'po-me') return meClose();
+  // aba Margens: botões do conteúdo trazido do modal Margens
+  if (e.target.closest('#me-margins-slot')) {
+    const salvar = e.target.closest('#po-margins-save-btn');
+    if (salvar && typeof saveMarginsTopFields === 'function') return saveMarginsTopFields();
+    const add = e.target.closest('[data-add-extra-side]');
+    if (add && typeof addDealerPricingExtra === 'function') return addDealerPricingExtra(add.dataset.addExtraSide);
+    const rem = e.target.closest('[data-remove-extra]');
+    if (rem && typeof deleteDealerPricingExtra === 'function') return deleteDealerPricingExtra(rem.dataset.removeExtra);
+    return;
+  }
   const b = e.target.closest('[data-a]');
   if (!b) return;
   const a = b.getAttribute('data-a');
@@ -563,6 +606,11 @@ async function meRefreshButton() {
   }
   btn.textContent = mT('btn');
   btn.style.display = pode ? '' : 'none';
+  // Margens passou pra dentro desta tela (aba Margens): o botão solto da barra
+  // some pra quem tem o Minha empresa (classe no body — o portal-05 religa o
+  // display do botão a cada atualização do perfil).
+  meCssMargens();
+  document.body.classList.toggle('me-margens-dentro', !!pode);
   // liberado: Margens sai da barra e passa a morar dentro desta tela
   if (!ME_SO_ADMIN && pode) { const ref = document.getElementById('po-margins-btn'); if (ref) ref.style.display = 'none'; }
 }
@@ -594,7 +642,16 @@ async function meRefreshButton() {
   setTimeout(() => { try { meRefreshButton(); } catch (e) { /* ok */ } }, 2500);
 })();
 
+function meCssMargens() {
+  if (document.getElementById('me-css-margens')) return;
+  const st = document.createElement('style');
+  st.id = 'me-css-margens';
+  st.textContent = 'body.me-margens-dentro #po-margins-btn{display:none !important}'
+    + '#me-margins-slot .po-margins-body{padding:6px 0 0;overflow:visible}';
+  document.head.appendChild(st);
+}
 function meCss() {
+  meCssMargens();
   if (document.getElementById('me-css')) return;
   const st = document.createElement('style');
   st.id = 'me-css';
