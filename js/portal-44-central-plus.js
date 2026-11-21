@@ -745,31 +745,115 @@ function cxFolderRowHtml(k, itens, soProj, preco, comCk) {
   const T = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
   const it = (v, rot, cls) => '<button type="button" class="cx-fmi' + (cls ? ' ' + cls : '') + '" data-cx="fact" data-v="' + v + '" data-k="' + cEsc(k) + '">' + cEsc(rot) + '</button>';
   const podeProposta = meus && typeof generateClientProposalPDF === 'function' && (typeof canGenerateProposal !== 'function' || canGenerateProposal());
+  const temProj = itens.some((o) => o._pid);
+  // as opções de antes (menu da pasta do Meus Projetos) + Plano técnico da pasta toda
   const menu = cxState.fmenu !== k ? '' : '<div class="cx-fmenu">'
     + (podeProposta ? it('proposal', T('fav.folder_proposal_btn')) : '')
+    + (temProj && typeof generateProjectTechPlan === 'function' ? it('techplan', fdT('techplan')) : '')
     + (meus ? it('share', T('fav.folder_share_btn')) : '')
     + it('rename', T('fav.folder_rename_btn'))
+    + (cxAdmin() && temProj && typeof mpFolderBudget === 'function' ? it('budget', T('mp.budget_btn')) : '')
+    + (meus && temProj && typeof mpArchive === 'function' ? it('archive', T('mp.archive')) : '')
     + (meus ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
   return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">' + (comCk ? '<td class="cx-ck"></td>' : '')
     + '<td colspan="4" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
+    // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
+    + ' <span class="cx-fquem">' + cEsc(String(cxUserLabel(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
     + '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button><span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
     + (preco ? cxSomaTds(itens, soProj) : '') + '<td colspan="3"></td></tr>';
 }
-function cxFolderAction(v, k) {
+// textos só desta parte (pasta na lista)
+const FD_TXT = {
+  pt: { techplan: 'Plano técnico (todos os projetos)', tp_confirm: 'Gerar o plano técnico dos {n} projeto(s) da pasta "{pasta}"?\n\nCada projeto é aberto no editor, o PDF é baixado (um por projeto) e no fim você volta pra cá. O navegador pode pedir permissão pra baixar vários arquivos.', tp_prog: 'Plano técnico {i}/{n} — {nome}', tp_done: 'Plano técnico: {ok} de {n} gerado(s).', tp_fail: 'Não saiu:', tp_none: 'Esta pasta não tem projeto pra gerar o plano técnico.', busy: 'Já tem uma geração em andamento.' },
+  en: { techplan: 'Technical plan (all projects)', tp_confirm: 'Generate the technical plan for the {n} project(s) in folder "{pasta}"?\n\nEach project opens in the editor, its PDF is downloaded (one per project) and you come back here at the end. The browser may ask permission to download multiple files.', tp_prog: 'Technical plan {i}/{n} — {nome}', tp_done: 'Technical plan: {ok} of {n} generated.', tp_fail: 'Not generated:', tp_none: 'This folder has no project to generate the technical plan.', busy: 'A generation is already running.' },
+  es: { techplan: 'Plano técnico (todos los proyectos)', tp_confirm: '¿Generar el plano técnico de los {n} proyecto(s) de la carpeta "{pasta}"?\n\nCada proyecto se abre en el editor, se descarga su PDF (uno por proyecto) y al final vuelves aquí. El navegador puede pedir permiso para descargar varios archivos.', tp_prog: 'Plano técnico {i}/{n} — {nome}', tp_done: 'Plano técnico: {ok} de {n} generado(s).', tp_fail: 'No salió:', tp_none: 'Esta carpeta no tiene proyecto para generar el plano técnico.', busy: 'Ya hay una generación en curso.' }
+};
+function fdT(k, vars) {
+  let lang = 'en';
+  try { lang = cxLang(); } catch (e) { /* en */ }
+  let t = (FD_TXT[String(lang).slice(0, 2)] || FD_TXT.en)[k] || FD_TXT.en[k] || k;
+  Object.keys(vars || {}).forEach((v) => { t = t.split('{' + v + '}').join(String(vars[v])); });
+  return t;
+}
+// projetos COMPLETOS da pasta (linha inteira do banco) — serve pra pasta minha
+// e pra de outro login que eu enxergo (admin / dealer vendo a equipe)
+async function cxFolderProjects(itens) {
+  const ids = Array.from(new Set(itens.map((o) => o._pid).filter(Boolean)));
+  const out = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data, error } = await supabaseClient.from('user_projects').select('*').in('id', ids.slice(i, i + 50));
+    if (error) throw error;
+    (data || []).forEach((r) => { r._fullRow = true; out.push(r); });
+  }
+  return out.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
+}
+// PLANO TÉCNICO DA PASTA TODA (21/11, Matt: "proposta, plano técnico, aí pega
+// todos os projetos"). O plano técnico precisa da cena 3D do projeto, então
+// cada projeto é aberto no editor (mesmo caminho do Orçamento da pasta e do
+// PDF de desenhos do pedido), gera o PDF de sempre (um por projeto) e no fim o
+// editor volta como estava e a tela volta pra Central. Projeto enviado abre
+// como rascunho sem vínculo (não grava nada nele).
+let cxFolderTpRunning = false;
+async function cxFolderTechPlans(nome, lista) {
+  if (cxFolderTpRunning) { alert(fdT('busy')); return; }
+  if (!lista.length) { alert(fdT('tp_none')); return; }
+  if (!confirm(fdT('tp_confirm', { n: lista.length, pasta: nome }))) return;
+  if (typeof projectSlots !== 'undefined' && projectSlots.length && typeof projectDirty !== 'undefined' && projectDirty
+    && !confirm(typeof I18n !== 'undefined' ? I18n.t('proposal.client_confirm_unsaved') : 'Unsaved changes — continue?')) return;
+  cxFolderTpRunning = true;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let aviso = document.getElementById('cx-ftoast');
+  if (!aviso) { aviso = document.createElement('div'); aviso.id = 'cx-ftoast'; document.body.appendChild(aviso); }
+  aviso.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:5000;background:#2f2a24;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+  const abertoAntes = (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.id) ? loadedProjectFavorite.id : null;
+  const falhas = []; let ok = 0;
+  try {
+    for (let i = 0; i < lista.length; i++) {
+      const row = lista[i];
+      aviso.textContent = fdT('tp_prog', { i: i + 1, n: lista.length, nome: row.name || '' });
+      try {
+        if (typeof projectDirty !== 'undefined') projectDirty = false;
+        const r = await restoreFavoriteProject(row, !row.frozen_order_id);
+        if (!r || !r.ok) throw (r && r.error) || new Error('load');
+        if (typeof projectWaitInteriorsReady === 'function') await projectWaitInteriorsReady();
+        if (typeof trkWaitProjectScene === 'function') await trkWaitProjectScene(); else await sleep(3500);
+        const saiu = await generateProjectTechPlan({ projectName: row.name || nome, rethrow: true });
+        if (saiu === false) throw new Error(fdT('busy'));
+        ok++;
+        await sleep(700);   // deixa o navegador terminar o download antes do próximo
+      } catch (err) {
+        falhas.push((row.name || row.id) + ' — ' + ((err && err.message) || String(err)));
+      }
+    }
+  } finally {
+    try {
+      if (typeof projectDirty !== 'undefined') projectDirty = false;
+      if (abertoAntes) {
+        const { data } = await supabaseClient.from('user_projects').select('*').eq('id', abertoAntes).single();
+        if (data) await restoreFavoriteProject(data, true);
+      } else if (typeof resetProject === 'function') { projectSlots = []; resetProject(); }
+    } catch (e) { console.error('[plano técnico da pasta] reabrir:', e); }
+    try { const btn = document.querySelector('.portal-tab-btn[data-tab="po-tab-my-orders"]'); if (btn) btn.click(); } catch (e) { /* fica no editor */ }
+    cxFolderTpRunning = false;
+    aviso.remove();
+  }
+  alert(fdT('tp_done', { ok, n: lista.length }) + (falhas.length ? '\n\n' + fdT('tp_fail') + '\n' + falhas.join('\n') : ''));
+}
+async function cxFolderAction(v, k) {
   const itens = cxNetRows().filter((o) => cxFolderKey(o) === k);
   if (!itens.length) return;
   const nome = itens[0]._folder;
-  const idsProj = Array.from(new Set(itens.map((o) => o._pid).filter(Boolean)));
-  // projetos completos (lista antiga) — só existem pros MEUS projetos
-  const meus = (typeof mpState !== 'undefined' && mpState.rows ? mpState.rows : []).filter((p) => p.client_folder === nome);
-  if (v === 'rename') return renameProjectFolder(nome, meus.length ? meus : idsProj.map((id) => ({ id, client_user_id: itens[0].client_user_id })));
+  let stEl = null;
+  document.querySelectorAll('.cx-fstatus').forEach((el) => { if (el.getAttribute('data-fst') === k) stEl = el; });
   if (v === 'share') return shareProjectFolder(nome);
-  if (v === 'delete') return deleteProjectFolder(nome, meus);
-  if (v === 'proposal') {
-    let stEl = null;
-    document.querySelectorAll('.cx-fstatus').forEach((el) => { if (el.getAttribute('data-fst') === k) stEl = el; });
-    return generateClientProposalPDF(nome, meus.filter((p) => !p.frozen_order_id), stEl);
-  }
+  let lista;
+  try { lista = await cxFolderProjects(itens); } catch (e) { alert((e && e.message) || String(e)); return; }
+  if (v === 'rename') return renameProjectFolder(nome, lista);
+  if (v === 'delete') return deleteProjectFolder(nome, lista);
+  if (v === 'proposal') return generateClientProposalPDF(nome, lista.filter((p) => !p.frozen_order_id), stEl);
+  if (v === 'techplan') return cxFolderTechPlans(nome, lista);
+  if (v === 'budget') return mpFolderBudget({ nome, lista }, stEl);
+  if (v === 'archive') return mpArchive({ nome, lista, arquivada: lista.length > 0 && lista.every((p) => p.archived_at) });
 }
 function cxTotalRow(itens, antes, depois, soProj) {
   const precos = cxSomaTds(itens, soProj);
@@ -881,7 +965,7 @@ function cxFlatTable(rows, principal) {
         visto.add(k);
         const itens = rows.filter((x) => cxFolderKey(x) === k);
         seq.push({ pasta: k, itens });
-        if (!cxFolderClosed().has(k)) itens.forEach((x) => seq.push({ o: x, dentro: true }));
+        if (!cxFolderClosed().has(k)) itens.forEach((x, i) => seq.push({ o: x, dentro: true, ultimo: i === itens.length - 1 }));
       });
       return seq;
     })().slice(0, max).map((lin) => {
@@ -898,7 +982,7 @@ function cxFlatTable(rows, principal) {
       const ehFab = !o._proj && Number(o.factory_number) > 0;
       const icoN = (typeof MP_ICO !== 'undefined') ? '<span class="cx-nico' + (ehFab ? ' cx-nico-f' : '') + '" title="' + (ehFab ? 'Factory order' : 'Project') + '">' + (ehFab ? MP_ICO.factory : MP_ICO.layers) + '</span>' : '';
       const ck = principal && !soProj ? '<td class="cx-ck">' + (!o._proj && o.status !== 'submitted' ? '<input type="checkbox" data-cx="sel" data-id="' + cEsc(o.id) + '"' + (cxSel().has(o.id) ? ' checked' : '') + '>' : '') + '</td>' : '';
-      return '<tr' + (dentro ? ' class="cx-in"' : '') + ' data-cx="openorder" data-id="' + cEsc(o.id) + '">' + ck + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
+      return '<tr' + (dentro ? ' class="cx-in' + (lin.ultimo ? ' cx-in-last' : '') + '"' : '') + ' data-cx="openorder" data-id="' + cEsc(o.id) + '">' + ck + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
         + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
         + '<td class="cx-quem" title="' + cEsc(quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
         + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '" title="' + cEsc(ivT('folder_tip')) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
@@ -1779,12 +1863,20 @@ function cxCss() {
     '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}',
     '.cx-sf-terms{background:#fbf4ec;border:1px solid #e8cfb4;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13px;line-height:1.45}.cx-sf-terms p{margin:6px 0}',
     '.cx-sf-box label.cx-sf-ok{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;color:#2a251e}.cx-sf-msg{min-height:18px;font-size:13px;margin:8px 0}.cx-sf-msg.err{color:#b42318}.cx-sf-acts{display:flex;justify-content:flex-end;gap:8px}.cx-sf-acts .cx-sendfab{padding:10px 16px;font-size:13px}',
-    '.cx-table tr.cx-frow td{background:#f6f1e8;border-top:1px solid #e1d8c8;font-weight:600;cursor:pointer}.cx-table tr.cx-frow td.cx-fname{position:relative;white-space:nowrap}'
-    + '.cx-fchev{display:inline-block;width:12px;color:#8a7f70}.cx-fn{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#e6dccb;color:#5b5145;font-size:11px;text-align:center}'
-    + '.cx-fdots{border:0;background:transparent;color:#5b5145;font-size:16px;line-height:1;padding:0 8px;margin:0 0 0 6px;cursor:pointer;border-radius:5px}.cx-fdots:hover{background:#e6dccb}'
+    // PASTA BEM MARCADA (21/11, 2ª rodada — Matt: "esse último pedido parece que
+    // faz parte da pasta, tem como deixar a pasta mais evidente"): faixa marrom
+    // na esquerda da pasta E dos itens dela, itens recuados com fundo claro, e
+    // uma linha grossa fechando a pasta. Item solto não tem faixa nem recuo.
+    '.cx-table tr.cx-frow td{background:#ece2d0;border-top:2px solid #c9b592;font-weight:700;cursor:pointer;padding-top:9px;padding-bottom:9px}.cx-table tr.cx-frow td.cx-fname{position:relative;white-space:nowrap}'
+    + '.cx-table tr.cx-frow td:first-child{box-shadow:inset 5px 0 0 #8b5a2b}'
+    + '.cx-table tr.cx-in td{background:#fbf7ef}.cx-table tr.cx-in td:first-child{box-shadow:inset 5px 0 0 #c9a877}'
+    + '.cx-table tr.cx-in.cx-in-last td{border-bottom:3px solid #c9b592}.cx-table tr.cx-frow.is-closed td{border-bottom:3px solid #c9b592}'
+    + '.cx-table tr.cx-in td.cx-num,.cx-table tr.cx-in td.cx-ck + td.cx-num{padding-left:38px}'
+    + '.cx-fchev{display:inline-block;width:12px;color:#6d5a3f}.cx-fn{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#d9c7a6;color:#4a3d2b;font-size:11px;text-align:center}'
+    + '.cx-fdots{border:0;background:transparent;color:#4a3d2b;font-size:16px;line-height:1;padding:0 8px;margin:0 0 0 6px;cursor:pointer;border-radius:5px}.cx-fdots:hover{background:#d9c7a6}'
     + '.cx-fmenu{position:absolute;left:180px;top:100%;z-index:30;background:#fff;border:1px solid #d9d3c8;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;min-width:170px}'
     + '.cx-fmi{border:0;background:transparent;color:#2f2a24;text-align:left;padding:7px 10px;margin:0;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer}.cx-fmi:hover{background:#f3ece0}.cx-fmi.is-danger{color:#a3352b}'
-    + '.cx-table tr.cx-in td.cx-num{padding-left:22px}.cx-fstatus{margin-left:8px;font-weight:400}',
+    + '.cx-fstatus{margin-left:8px;font-weight:400}.cx-fquem{margin-left:8px;font-weight:400;font-size:11.5px;color:#7a6b55}',
     '.cx-table tfoot .cx-tot td{font-weight:700;border-top:2px solid var(--line,#d9d3c8);padding-top:10px;padding-bottom:10px;background:var(--panel-2,#faf8f4)}',
     '.cx-tagp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border,#e0ddd6);border-radius:10px;padding:1px 6px;color:var(--muted,#766f64)}',
     '#cx-tree{margin:4px 0 12px}.cx-r{text-align:right;white-space:nowrap}.cx-loja{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}.cx-chip.cx-back{border-style:dashed}',
