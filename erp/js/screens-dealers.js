@@ -110,9 +110,12 @@ DEALERS._reload = async function () {
   if (!sb || !root) return;
   try {
     try { await sb.rpc('accounts_tax_exempt_sweep'); } catch (e) { /* sem a 307: segue */ }
+    /* 30 dias sem entrar (migration 312): bloqueia quem passou do prazo e lista os bloqueados */
+    let bloqueados = [];
+    try { await sb.rpc('access_inactivity_sweep'); const bl = await sb.rpc('admin_blocked_users'); bloqueados = bl.error ? [] : (bl.data || []); } catch (e) { bloqueados = []; }
     const { data: accounts, error } = await sb.from('accounts').select('*').order('created_at', { ascending: true });
     if (error) throw error;
-    const d = { accounts: accounts || [], members: [], docsPend: [], reqs: [], profiles: {} };
+    const d = { accounts: accounts || [], members: [], docsPend: [], reqs: [], profiles: {}, bloqueados: bloqueados };
     const m = await sb.from('account_members').select('id, account_id, user_id, role, permissions, active, created_at');
     d.members = m.data || [];
     const dp = await sb.from('account_documents').select('id, account_id, kind, name, status, created_at')
@@ -166,6 +169,17 @@ DEALERS._lista = function () {
     UI.kpi('Tax exemption pra conferir', String(d.docsPend.length), d.docsPend.length ? 'certificados enviados' : 'nenhum') +
     UI.kpi('Pedidos de desconto', String(d.reqs.length), d.reqs.length ? 'aguardando você' : 'nenhum') + '</div>';
 
+  if ((d.bloqueados || []).length) {
+    const tentou = d.bloqueados.filter(function (b) { return b.tentativas > 0; }).length;
+    h += '<h3 class="dl-h">Acesso bloqueado — mais de 30 dias sem entrar <span class="erp-muted erp-small">— ' + d.bloqueados.length + ' conta(s)' + (tentou ? ', ' + tentou + ' tentou entrar de novo' : '') + '</span></h3>' +
+      '<table class="erp-table"><thead><tr><th>Usuário</th><th>Loja</th><th>Papel</th><th>Última entrada</th><th>Bloqueado em</th><th>Tentou entrar</th><th></th></tr></thead><tbody>' +
+      d.bloqueados.map(function (b) {
+        return '<tr' + (b.tentativas > 0 ? ' class="dl-tentou"' : '') + '><td class="erp-strong">' + UI.esc(b.email || b.user_id) + (b.novos > 0 ? ' ' + UI.pill('novo', 'erp-pill-warn') : '') + '</td><td>' + UI.esc(b.loja || '—') + '</td><td>' + UI.esc(b.role || '') + '</td>' +
+          '<td>' + UI.esc(DEALERS._dt(b.last_active_at)) + '</td><td>' + UI.esc(DEALERS._dt(b.blocked_at)) + '</td>' +
+          '<td>' + (b.tentativas > 0 ? '<b>' + b.tentativas + '×</b> — última ' + UI.esc(DEALERS._dt(b.ultima_tentativa)) : '<span class="erp-muted">não</span>') + '</td>' +
+          '<td><button class="erp-btn" data-a="liberar-acesso" data-id="' + b.user_id + '" data-nome="' + UI.esc(b.email || '') + '">Liberar acesso</button></td></tr>';
+      }).join('') + '</tbody></table>';
+  }
   if (pend.length) {
     h += '<h3 class="dl-h">Solicitações de dealer</h3><table class="erp-table"><thead><tr><th>Empresa</th><th>Cidade</th><th>Tipo de negócio</th><th>Faturamento</th><th>Enviada em</th><th></th></tr></thead><tbody>' +
       pend.map(function (a) {
@@ -272,7 +286,11 @@ DEALERS._ficha = function () {
   }
 
   /* cadastro */
-  h += '<div class="erp-grid erp-grid-2"><div class="dl-card"><h3>Dados pra invoice</h3><div class="dl-campos">' +
+  /* nome da loja editável pela fábrica (20/11, Matt: "não quero ver por email mas por nome") */
+  h += '<div class="erp-grid erp-grid-2"><div class="dl-card"><h3>Dados pra invoice</h3>' +
+    '<div class="dl-form dl-nome"><label class="dl-grow">Nome da loja (aparece na Central, na árvore e nas propostas dela)<input id="dl-trade" class="erp-input" type="text" maxlength="80" value="' + UI.esc(a.trade_name || '') + '"></label>' +
+    '<label class="dl-grow">Razão social<input id="dl-legal" class="erp-input" type="text" maxlength="120" value="' + UI.esc(a.legal_name || '') + '"></label>' +
+    '<button class="erp-btn" data-a="nome">Salvar nome</button></div><div class="dl-campos">' +
     DEALERS._campo('Razão social', a.legal_name) + DEALERS._campo('Nome fantasia', a.trade_name) + DEALERS._campo('EIN', a.ein) +
     DEALERS._campo('Responsável', a.contact_name) + DEALERS._campo('E-mail de cobrança', a.billing_email) + DEALERS._campo('Telefone', a.phone) +
     DEALERS._campo('Site', a.website) + DEALERS._campo('Endereço de cobrança', end('billing')) +
@@ -386,6 +404,13 @@ DEALERS._click = function (ev) {
   const id = b.getAttribute('data-id');
   const d = DEALERS._d;
   if (acao === 'abrir') { location.hash = '#/dealers/' + id; return; }
+  if (acao === 'liberar-acesso') {
+    if (!window.confirm('Liberar o acesso de ' + (b.getAttribute('data-nome') || 'este usuário') + '? O prazo de 30 dias recomeça agora.')) return;
+    return DEALERS._run(async function () {
+      const r = await sb.rpc('admin_unblock_access', { p_user: id });
+      if (r.error) throw r.error;
+    }, 'Acesso liberado.');
+  }
   if (acao === 'rascunhos') { DEALERS._verRascunhos = !DEALERS._verRascunhos; DEALERS._draw(); return; }
 
   if (acao === 'doc') {
@@ -421,6 +446,16 @@ DEALERS._click = function (ev) {
       });
       if (r.error) throw r.error;
     }, { approve: 'Dealer aprovado.', reject: 'Solicitação recusada.', suspend: 'Dealer suspenso.', reactivate: 'Dealer reativado.' }[v]);
+  }
+
+  if (acao === 'nome') {
+    const nome = (DEALERS._val('dl-trade') || '').trim();
+    if (!nome) { DEALERS._err = 'Digite o nome da loja.'; DEALERS._draw(); return; }
+    return DEALERS._run(async function () {
+      const r = await sb.from('accounts').update({ trade_name: nome, legal_name: (DEALERS._val('dl-legal') || '').trim() || null }).eq('id', a.id).select('id');
+      if (r.error) throw r.error;
+      if (!r.data || !r.data.length) throw new Error('O banco não alterou nenhuma linha (RLS).');
+    }, 'Nome salvo.');
   }
 
   if (acao === 'salvar') {
@@ -477,7 +512,7 @@ DEALERS._css = function () {
     '.dl-tree .dl-row{cursor:pointer}.dl-tree .dl-row:hover td{background:rgba(0,0,0,.035)}.dl-tree .dl-factory td{background:rgba(138,90,52,.08)}' +
     '.dl-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.dl-top h2{margin:0 6px 0 0;font-size:22px}' +
     '.dl-card{background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:12px;padding:14px 18px;margin-bottom:16px}.dl-card h3{margin:0 0 10px;font-size:15px}.dl-card h3:not(:first-child){margin-top:18px}' +
-    '.dl-decide{border-color:#8a5a34}' +
+    '.dl-tentou td{background:#fdf3d7}.dl-decide{border-color:#8a5a34}.dl-nome{margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(0,0,0,.08)}' +
     '.dl-form{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}.dl-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#766f64}.dl-form .dl-grow{flex:1;min-width:220px}' +
     '.dl-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:flex-end}.dl-acoes label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#766f64}' +
     '.dl-campos{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}.dl-campo{display:flex;flex-direction:column;font-size:13px}.dl-campo span{color:#766f64;font-size:12px}.dl-campo b{font-weight:600;word-break:break-word}' +

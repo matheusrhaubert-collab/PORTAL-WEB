@@ -1,3 +1,3 @@
-﻿data: 2026-11-21 00:05:51
-cache: 202611210005
+﻿data: 2026-11-21 00:22:32
+cache: 202611210022
 mensagem: dealers: virar dealer pelo portal, empresas e arvore, minha empresa, central com etiqueta/obra/mapa/lojas (em teste, so admin)

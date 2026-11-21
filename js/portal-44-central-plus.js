@@ -232,7 +232,8 @@ function cxDecorate(folders) {
   if (!cxState.lostLoaded) cxLoadLost();
   if (cxState.hasNet === null) cxLoadNetFlag();
 
-  // abas
+  // abas (20/11, Matt: "esse do primeiro filtro pode tirar" = Delivered; a etapa Entregue fica nos filtros de baixo)
+  box.querySelectorAll('.cu-tabs [data-act="ctab"][data-tab="done"]').forEach((el) => { el.style.display = 'none'; });
   const tabs = box.querySelector('.cu-tabs');
   if (tabs && !tabs.querySelector('[data-cx="view"]')) {
     const nLost = Object.keys(cxState.lost).length;
