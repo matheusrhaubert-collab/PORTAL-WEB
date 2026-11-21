@@ -238,7 +238,17 @@ const base = `
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   box().querySelector('.cx-ci[data-c="fab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80);
   const linhas = box().querySelectorAll('.cx-table tbody tr');
-  ok(linhas.length === 3 && /Loja Teste/.test(linhas[0].textContent), 'clicar na Fábrica: lista com os 3 pedidos e a coluna LOJA');
+  ok(linhas.length === 4 && box().querySelectorAll('.cx-tagp').length === 1 && /Loja Teste/.test(box().querySelector('.cx-table').textContent), 'clicar na Fábrica: 3 pedidos + 1 projeto em construção, com a coluna LOJA');
+  const cel = box().querySelector('.cx-storecell');
+  cel.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(10);
+  const selLoja = box().querySelector('select[data-cx-store]');
+  ok(!!selLoja && !!box().querySelector('#cx-move-all'), 'admin: clicar na loja abre a troca; "passar todos" na barra');
+  const idMov = selLoja.getAttribute('data-cx-store');
+  selLoja.value = '_'; selLoja.dispatchEvent(new win.Event('change', { bubbles: true })); await espera(40);
+  ok(banco.orders.find((o) => o.id === idMov).account_id === null, 'trocar a loja grava no pedido (sem loja)');
+  banco.orders.find((o) => o.id === idMov).account_id = ACC; win.LegnoCentralPlus.recarregar(); await espera(80);
+  box().querySelector('.cx-ci[data-c="fab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80);
+  if (!box().querySelector('.cx-table')) { box().querySelector('.cx-ci[data-c="fab"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(80); }
   ok(!!box().querySelector('[data-cx="relprod"]'), 'admin vê "Liberar produção" na linha');
   ok(box().querySelectorAll('.cx-col').length === 4 && box().querySelectorAll('.cx-ci[data-c="loja"]').length === 1, 'árvore lado a lado: 4 colunas, 1 dealer');
   box().querySelector('.cx-ci[data-c="loja"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(20);
