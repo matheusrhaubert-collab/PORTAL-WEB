@@ -897,7 +897,35 @@ function toggleProjectColumn(isLeftColumn) {
 // Chamada de dois lugares: o listener genérico de troca de aba e o
 // sendProjectToOrder (que troca de aba na mão, sem passar pelo listener) —
 // esquecer o segundo deixaria "Meus Pedidos" esticado até a próxima troca.
+// TELA FIXA (21/11, Matt: "deixa a tela fixa no monitor de maneira que a tela
+// não pode descer... deixa só a coluna com scroll se precisar, mas não desce
+// o ambiente, ele deve ficar travado no tamanho da tela"). Com a aba Projetos
+// aberta em tela larga (> 980 px, onde desenho e coluna ficam lado a lado), a
+// página não rola: some o que ficava embaixo do desenho (resumo, salvar,
+// rodapé — tudo já está na barra), o desenho vai até o fim da janela e a
+// coluna da direita rola por dentro. Mesmas variáveis da tela cheia
+// (ajustaAlturaTelaCheia); o CSS mora em style.css (.proj-fixa).
+// Referências do projeto e fotos realistas salvas moravam embaixo do desenho:
+// vão pro fim da coluna da direita pra não ficarem sem acesso.
+function projectTelaFixaCabe() {
+  try { return !window.matchMedia || window.matchMedia('(min-width: 981px)').matches; } catch (e) { return true; }
+}
+function projectTelaTravada() {
+  const b = document.body;
+  if (b.classList.contains('proj-tela-cheia')) return true;
+  return b.classList.contains('proj-fixa') && !b.classList.contains('po-view3d-guest') && projectTelaFixaCabe();
+}
+function projectMoveExtrasPraColuna() {
+  const col = document.getElementById('po-proj-config-col');
+  if (!col) return;
+  ['po-proj-ref-wrap', 'po-proj-photoreal-gallery-wrap'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== col) col.appendChild(el);
+  });
+}
 function setProjectFullBleed(on) {
+  document.body.classList.toggle('proj-fixa', !!on);
+  if (on) projectMoveExtrasPraColuna();
   const jaEstava = document.body.classList.contains('proj-fullbleed');
   if (jaEstava === !!on) return;
   document.body.classList.toggle('proj-fullbleed', !!on);
@@ -1009,7 +1037,7 @@ async function toggleProjectTelaCheia() {
 // pra quem chamou avisar os viewers 3D com um 'resize'.
 function ajustaAlturaTelaCheia() {
   const body = document.body;
-  if (!body.classList.contains('proj-tela-cheia')) {
+  if (!projectTelaTravada()) {
     const tinha = body.style.getPropertyValue('--proj-fs-canvas-h');
     body.style.removeProperty('--proj-fs-canvas-h');
     body.style.removeProperty('--proj-fs-col-h');

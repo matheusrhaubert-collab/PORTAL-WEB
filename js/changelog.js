@@ -35,6 +35,7 @@ window.LEGNO_CHANGELOG = [
     date: '2026-11-15',
     items: {
       pt: [
+        "Projetos: a tela fica travada no tamanho do monitor — o ambiente não desce mais; só a coluna da direita rola. O resumo, o salvar e o rodapé saíram de baixo do desenho (estão na barra); referências e fotos realistas ficam no fim da coluna da direita.",
         "Bancada: móvel suspenso ou baixo (fora da altura de bancada) aparece na planta dos Ajustes como sem pedra — clique nele para agregar a pedra; clique de novo para tirar.",
         "LED: distâncias, margens, comprimento e as cotas da vista 2D aparecem na unidade escolhida (polegadas, cm…), não só em milímetros. A vista 2D ganhou zoom: botões − / +, roda do mouse e arrastar o fundo para mover.",
         "Módulo dentro de outro: duplo clique no módulo de fora (onde não tem porta na frente) seleciona o de dentro, que então pode ser movido, esticado ou apagado.",
@@ -60,6 +61,7 @@ window.LEGNO_CHANGELOG = [
         "Enquanto o catálogo carrega aparece Carregando módulos… em vez de Nenhum módulo encontrado."
       ],
       en: [
+        "Projects: the screen is locked to the monitor size — the room no longer scrolls down; only the right column scrolls. The summary, save and footer left the area under the drawing (they are on the toolbar); references and realistic photos sit at the end of the right column.",
         "Countertop: a floating or low cabinet (outside counter height) shows on the Adjustments plan as no stone — click it to add the stone; click again to remove it.",
         "LED: distances, margins, length and the 2D view dimensions follow the chosen unit (inches, cm…), not only millimeters. The 2D view has zoom: − / + buttons, mouse wheel, and drag the background to pan.",
         "Cabinet inside another: double-click the outer cabinet (where there is no door in front) to select the inner one, which can then be moved, stretched or deleted.",
@@ -85,6 +87,7 @@ window.LEGNO_CHANGELOG = [
         "While the catalog loads you see Loading cabinets… instead of No cabinets found."
       ],
       es: [
+        "Proyectos: la pantalla queda fija al tamaño del monitor — el ambiente ya no baja; solo la columna derecha se desplaza. El resumen, guardar y el pie salieron de debajo del dibujo (están en la barra); referencias y fotos realistas quedan al final de la columna derecha.",
         "Encimera: un mueble suspendido o bajo (fuera de la altura de encimera) aparece en la planta de Ajustes como sin piedra — haz clic en él para agregar la piedra; otro clic la quita.",
         "LED: distancias, márgenes, largo y las cotas de la vista 2D salen en la unidad elegida (pulgadas, cm…), no solo en milímetros. La vista 2D tiene zoom: botones − / +, rueda del mouse y arrastrar el fondo para mover.",
         "Módulo dentro de otro: doble clic en el módulo de afuera (donde no hay puerta delante) selecciona el de adentro, que luego se puede mover, estirar o borrar.",

@@ -1275,6 +1275,34 @@ body.portal-page.proj-tela-cheia .po-proj-config-col {
   overflow-y: auto;
 }
 
+/* ---- TELA FIXA da aba Projetos (21/11, Matt: "a tela não pode descer...
+   deixa só a coluna com scroll"). Igual à tela cheia acima, mas com o topo do
+   portal no lugar. Só em tela larga (desenho e coluna lado a lado); a classe
+   entra/sai em setProjectFullBleed (portal-06a) e as alturas vêm das mesmas
+   variáveis. Visitante do 3D público (po-view3d-guest) fica de fora. ---- */
+@media (min-width: 981px) {
+  body.portal-page.proj-fixa:not(.po-view3d-guest) { overflow: hidden; height: 100vh; }
+  body.portal-page.proj-fixa:not(.po-view3d-guest) main { padding-bottom: 0; }
+  body.portal-page.proj-fixa:not(.po-view3d-guest) .po-support-footer { display: none; }
+  body.portal-page.proj-fixa:not(.po-view3d-guest) #po-tab-projects .po-proj-layout ~ *,
+  body.portal-page.proj-fixa:not(.po-view3d-guest) #po-tab-projects .po-proj-bottom { display: none !important; }
+  body.portal-page.proj-fixa:not(.po-view3d-guest) #po-proj-canvas-3d-edit {
+    height: var(--proj-fs-canvas-h, calc(100vh - 220px));
+  }
+  body.portal-page.proj-fixa:not(.po-view3d-guest) .po-proj-config-col {
+    max-height: var(--proj-fs-col-h, calc(100vh - 180px));
+    overflow-y: auto;
+  }
+}
+/* Referências e fotos realistas dentro da coluna da direita (ver
+   projectMoveExtrasPraColuna): somem com a coluna recolhida. */
+.po-proj-config-col > #po-proj-ref-wrap,
+.po-proj-config-col > #po-proj-photoreal-gallery-wrap { margin: 10px 0 0; padding: 0 2px 8px; }
+.po-proj-config-col > #po-proj-ref-wrap .po-proj-ref-item { width: 100%; }
+.po-proj-config-col > #po-proj-photoreal-gallery-wrap .po-photoreal-gallery { grid-template-columns: 1fr; }
+.po-proj-layout.cfg-collapsed .po-proj-config-col > #po-proj-ref-wrap,
+.po-proj-layout.cfg-collapsed .po-proj-config-col > #po-proj-photoreal-gallery-wrap { display: none !important; }
+
 /* ---------- Nav superior ---------- */
 
 header.po-topnav {

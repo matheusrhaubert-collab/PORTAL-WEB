@@ -2203,7 +2203,8 @@ function renderProjectCanvasFrontCorner(canvas, wrap, dimsLabel, unit) {
     // parte de baixo, independente do tamanho do monitor e proporcao"): vai
     // até 10 px do rodapé da janela, medido do topo do PRÓPRIO quadro — mesma
     // conta de ajustaAlturaTelaCheia (portal-06a). Fora dela, como sempre.
-    const telaCheia = document.body.classList.contains('proj-tela-cheia');
+    // tela fixa (21/11) usa a mesma conta da tela cheia — ver projectTelaTravada, portal-06a
+    const telaCheia = (typeof projectTelaTravada === 'function') ? projectTelaTravada() : document.body.classList.contains('proj-tela-cheia');
     const availableHeightPx = telaCheia
       ? Math.max(window.innerHeight - (container3d.getBoundingClientRect().top + scrollY) - 10, 300)
       : Math.max(window.innerHeight - wrapTop - 40, 480);
