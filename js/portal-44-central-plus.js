@@ -782,7 +782,7 @@ function cxFlatTable(rows, principal) {
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span>' + envia + '</td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>'
         + (o._proj && cxProjOpen().has(o._pid) ? '<tr class="cx-projexp"><td colspan="20"><div class="mp-exp-box" data-proj="' + cEsc(o._pid) + '">'
           + '<div class="cx-projbox"><b>' + cEsc(o._pname || o.po_name || '') + '</b> <button type="button" class="secondary" data-cx="openproj" data-id="' + cEsc(o.id) + '">' + cEsc(sfT('open')) + '</button></div></div></td></tr>' : '');
-    }).join('') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, principal && !soProj ? 5 : 4, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
+    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? cxTotalRow(rows, principal && !soProj ? 5 : 4, 3, soProj) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
@@ -819,7 +819,7 @@ function cxGroups(rows) {
 }
 function cxGroupTable(rows) {
   const s = cxState.scope;
-  if (!rows.length) return '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>';
+  if (!rows.length && (s.err || !(s.orders || []).length)) return '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>';
   const st = cxState.netSort || (cxState.netSort = { col: 'upd', dir: -1 });
   const val = { nome: (g) => g.titulo.toLowerCase(), cliente: (g) => g.cliente.toLowerCase(), loja: (g) => g.loja.toLowerCase(), quem: (g) => String(g.quem || '').toLowerCase(), n: (g) => g.n, status: (g) => g.status, etapa: (g) => CX_NET_STAGES.indexOf(g.etapa), l: (g) => g.l, net: (g) => (cxSoProj() ? g.pn : (g.net == null ? -1 : g.net)), v: (g) => g.v || 0, upd: (g) => String(g.upd || '') }[st.col];
   const grupos = cxGroups(rows).filter((g) => !cxState.net.gstatus || g.status === cxState.net.gstatus).sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b.upd || '').localeCompare(String(a.upd || '')); });
@@ -855,7 +855,7 @@ function cxGroupTable(rows) {
         + '<td class="mp-c-date">' + cxQuando(g.upd) + '</td></tr>'
         + (ab ? '<tr class="mp-exp cx-gexp"><td colspan="' + nCols + '">' + cxFlatTable(g.itens) + '</td></tr>' : '');
     }).join('')
-    + '</tbody>' + (preco && grupos.length ? cxTotalRow(grupos.reduce((a, g) => a.concat(g.itens), []), 7, 1, soProj) : '') + '</table></div>' + (grupos.length > max ? '<p class="hint">+' + (grupos.length - max) + '…</p>' : '');
+    + (grupos.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && grupos.length ? cxTotalRow(grupos.reduce((a, g) => a.concat(g.itens), []), 7, 1, soProj) : '') + '</table></div>' + (grupos.length > max ? '<p class="hint">+' + (grupos.length - max) + '…</p>' : '');
 }
 function cxRenderNet(p) {
   const s = cxState.scope;
@@ -873,7 +873,7 @@ function cxRenderNet(p) {
     // aba Orders = lista corrida, o NÚMERO DO PEDIDO como primeira referência
     // (20/11, Matt: "aqui eu acho legal mostrar o número do pedido como primeira
     // referência, aí loja, preços, PO, data, status"); as outras abas = pastas.
-    + (!rows.length ? '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>'
+    + (!rows.length && (s.err || !(s.orders || []).length) ? '<p class="hint">' + cEsc(s.err || cT('net_none')) + '</p>'
       : (cxState.netLayout === 'pastas' && f.etapa !== '_orders' ? cxGroupTable(rows) : '<div class="mp-table-wrap cx-wrap">' + cxFlatTable(rows, true) + '</div>'))
     + cxSelBar()
     + '<div class="cx-foot"><span class="hint">' + cEsc(cT('totals', { n: rows.length, l: cMoney(totL), v: cMoney(totN) })) + '</span>'
@@ -1625,7 +1625,7 @@ function cxCss() {
     '.cx-hm-i{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:7px 10px;border:0;border-radius:7px;background:none!important;color:var(--text,#2b2621);font-size:13px;text-align:left;cursor:pointer;box-shadow:none!important}.cx-hm-i:hover{background:var(--bg,#f7f6f3)!important}.cx-hm-i.on{font-weight:700;color:var(--accent-dark,#6e4527)}.cx-hm-i i{width:9px;height:9px;border-radius:50%;flex:none}',
     '.cx-hoje{color:#1e6b3c}.cx-chip-hoje{border-color:#2e7d4f}',
     '.cx-est{color:var(--muted,#766f64)}.cx-est small{font-size:10px}',
-    '.cx-mini{border:1px solid #d9d3c8;background:#fff;border-radius:5px;padding:2px 7px;font-size:10.5px;font-weight:600;cursor:pointer;margin-right:3px;white-space:nowrap}.cx-mini-pay{background:#1f7a4d;color:#fff;border-color:#1f7a4d}.cx-mini-ok{color:#1f7a4d;border-color:#9fd3b6}.cx-ck{width:26px;text-align:center}.cx-taxh{cursor:pointer;text-decoration:underline dotted}.cx-fold{display:inline-block;font-size:11px;background:#f3ece2;border-radius:4px;padding:1px 6px;margin-right:4px;cursor:pointer;color:#6b4a2a}.cx-selbar{display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:10px 4px;font-weight:600}.cx-selbar .cx-sendfab{padding:7px 12px;font-size:12px}.cx-projexp > td{background:#faf8f4;white-space:normal!important}.cx-projbox{display:flex;gap:12px;align-items:center;padding:6px 0}.mp-exp-box .po-myproj-card ~ .cx-projbox,.mp-exp-box .po-myproj-grid + .cx-projbox{display:none}.cx-main td,.cx-main th{white-space:nowrap}.cx-main td.cx-item{max-width:300px;overflow:hidden;text-overflow:ellipsis}.cx-main td.cx-quem{max-width:140px;overflow:hidden;text-overflow:ellipsis}.cx-stage + .cx-sendfab{margin-left:8px}.cx-sendfab{background:#8a4b1c;color:#fff;border:0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
+    '.cx-mini{border:1px solid #d9d3c8;background:#fff;border-radius:5px;padding:2px 7px;font-size:10.5px;font-weight:600;cursor:pointer;margin-right:3px;white-space:nowrap}.cx-mini-pay{background:#1f7a4d;color:#fff;border-color:#1f7a4d}.cx-mini-ok{color:#1f7a4d;border-color:#9fd3b6}.cx-ck{width:26px;text-align:center}.cx-taxh{cursor:pointer;text-decoration:underline dotted}.cx-fold{display:inline-block;font-size:11px;background:#f3ece2;border-radius:4px;padding:1px 6px;margin-right:4px;cursor:pointer;color:#6b4a2a}.cx-selbar{display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:10px 4px;font-weight:600}.cx-selbar .cx-sendfab{padding:7px 12px;font-size:12px}.cx-vazio td{text-align:center;color:var(--muted,#766f64);padding:22px 8px!important}.cx-projexp > td{background:#faf8f4;white-space:normal!important}.cx-projbox{display:flex;gap:12px;align-items:center;padding:6px 0}.mp-exp-box .po-myproj-card ~ .cx-projbox,.mp-exp-box .po-myproj-grid + .cx-projbox{display:none}.cx-main td,.cx-main th{white-space:nowrap}.cx-main td.cx-item{max-width:300px;overflow:hidden;text-overflow:ellipsis}.cx-main td.cx-quem{max-width:140px;overflow:hidden;text-overflow:ellipsis}.cx-stage + .cx-sendfab{margin-left:8px}.cx-sendfab{background:#8a4b1c;color:#fff;border:0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
     '#cx-sf{position:fixed;inset:0;background:rgba(20,16,10,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px}',
     '.cx-sf-box{background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.cx-sf-box h3{margin:0 0 8px}',
     '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}',
