@@ -1744,7 +1744,7 @@ async function cxAdminRelease(id, qual) {
   const o = cxState.scope && cxState.scope.orders.find((x) => x.id === id);
   if (!o || !cxAdmin()) return;
   const n = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : (o.po_name || '');
-  const perdeCedo = qual === 'prod' && o.pay_early && o.pay_method && !o.paid_at && !o.qbo_paid_at;
+  const perdeCedo = false; // 22/11: o desconto de pagamento total não cai mais ao liberar a produção
   // plano 50/50: a entrada deveria estar paga antes da produção (só avisa, quem decide é a fábrica)
   if (qual === 'prod' && o.pay_plan === 'split' && !o.pay_deposit_at && !o.paid_at && !o.qbo_paid_at && !confirm(pyT('rel_dep_q'))) return;
   if (perdeCedo && !confirm(pyT('rel_warn', { p: cxPayTerms().e }))) return;
@@ -2193,9 +2193,9 @@ const PY_TXT = {
 Object.assign(PY_TXT.pt, {
   list: 'Valor de tabela', d_fab: 'Desconto de fábrica ({p}%)',
   plan_h: '1. Quanto você paga agora?', how: '2. Como você vai pagar?',
-  frisa: 'ATENÇÃO: o desconto de {p}% é só pra quem paga o pedido INTEIRO ANTES de a fábrica liberar a produção. Pagou depois, ou pagou só a entrada, não tem esse desconto.',
+  frisa: 'ATENÇÃO: o desconto de {p}% é só pra quem paga o pedido INTEIRO, de uma vez, ANTES de receber. No plano 50% + 50% NÃO tem esse desconto.',
   frisa_tarde: 'A produção deste pedido já foi liberada: o desconto de {p}% de pagamento total antecipado não vale mais.',
-  plan_full: 'Pagamento total antecipado', plan_full_sub: '100% agora, antes da produção', plan_full_late: '100% agora · sem o desconto (produção já liberada)',
+  plan_full: 'Pagamento total antecipado', plan_full_sub: '100% agora, de uma vez', plan_full_late: '100% agora · sem o desconto (produção já liberada)',
   plan_split: '50% de entrada + 50% antes de carregar', plan_split_sub: 'sem o desconto de pagamento total',
   zelle_sub: 'direto na conta, sem intermediário · envie o comprovante',
   wire: 'Wire (transferência bancária)', wire_sub: 'envie o comprovante · pode levar alguns dias úteis pra entrar na conta da fábrica',
@@ -2213,9 +2213,9 @@ Object.assign(PY_TXT.pt, {
 Object.assign(PY_TXT.en, {
   list: 'List price', d_fab: 'Factory discount ({p}%)',
   plan_h: '1. How much do you pay now?', how: '2. How will you pay?',
-  frisa: 'IMPORTANT: the {p}% discount is only for paying the FULL order BEFORE the factory releases production. Paying later, or paying only the deposit, does not get this discount.',
+  frisa: 'IMPORTANT: the {p}% discount is only for paying the FULL order at once, IN ADVANCE. The 50% + 50% plan does NOT get this discount.',
   frisa_tarde: 'Production of this order has already been released: the {p}% full-payment discount no longer applies.',
-  plan_full: 'Full payment in advance', plan_full_sub: '100% now, before production', plan_full_late: '100% now · no discount (production already released)',
+  plan_full: 'Full payment in advance', plan_full_sub: '100% now, in a single payment', plan_full_late: '100% now · no discount (production already released)',
   plan_split: '50% deposit + 50% before loading', plan_split_sub: 'no full-payment discount',
   zelle_sub: 'straight to the account, no intermediary · send the receipt',
   wire: 'Wire transfer', wire_sub: 'send the receipt · may take a few business days to reach the factory account',
@@ -2233,9 +2233,9 @@ Object.assign(PY_TXT.en, {
 Object.assign(PY_TXT.es, {
   list: 'Precio de lista', d_fab: 'Descuento de fábrica ({p}%)',
   plan_h: '1. ¿Cuánto paga ahora?', how: '2. ¿Cómo va a pagar?',
-  frisa: 'ATENCIÓN: el descuento de {p}% es solo para quien paga el pedido COMPLETO ANTES de que la fábrica libere la producción. Si paga después, o paga solo el anticipo, no tiene ese descuento.',
+  frisa: 'ATENCIÓN: el descuento de {p}% es solo para quien paga el pedido COMPLETO, de una vez, POR ANTICIPADO. En el plan 50% + 50% NO hay ese descuento.',
   frisa_tarde: 'La producción de este pedido ya fue liberada: el descuento de {p}% por pago total anticipado ya no aplica.',
-  plan_full: 'Pago total anticipado', plan_full_sub: '100% ahora, antes de la producción', plan_full_late: '100% ahora · sin descuento (producción ya liberada)',
+  plan_full: 'Pago total anticipado', plan_full_sub: '100% ahora, en un solo pago', plan_full_late: '100% ahora · sin descuento (producción ya liberada)',
   plan_split: '50% de anticipo + 50% antes de cargar', plan_split_sub: 'sin el descuento de pago total',
   zelle_sub: 'directo a la cuenta, sin intermediario · envíe el comprobante',
   wire: 'Wire (transferencia bancaria)', wire_sub: 'envíe el comprobante · puede tardar algunos días hábiles en llegar a la cuenta de la fábrica',
@@ -2272,7 +2272,7 @@ function cxPayPrevia(grupo, metodo, plano) {
   let net = 0, dz = 0, de = 0, tax = 0, lista = 0, algumCedo = false, todosIsentos = true;
   grupo.forEach((o) => {
     const n = cxPayNet(o); const cedo = !o.finance_released_at;
-    const pz = metodo === 'zelle' || metodo === 'wire' ? T.z : 0; const pe = plano === 'full' && cedo ? T.e : 0;
+    const pz = metodo === 'zelle' || metodo === 'wire' ? T.z : 0; const pe = plano === 'full' ? T.e : 0; // 22/11: vale sempre no plano total (antes: só com a produção não liberada)
     const desc = Math.round(n * (pz + pe)) / 100;
     const taxPct = o.tax_pct != null ? Number(o.tax_pct) : (cxIsento(o, s) ? 0 : Number(s.taxPct) || 0);
     if (taxPct > 0) todosIsentos = false;
@@ -2333,8 +2333,8 @@ function cxPayRender() {
     + (pago ? '<p class="py-ok">' + E(pyT('paid')) + '</p>' : '')
     // 1) PLANO — o desconto é de quem paga TUDO ANTES da produção
     + '<h5>' + E(pyT('plan_h')) + '</h5>'
-    + '<p class="py-frisa">' + E(pyT(p.cedo ? 'frisa' : 'frisa_tarde', { p: T.e })) + '</p>'
-    + op('cx-pay-p', 'full', st.plano, pyT('plan_full'), pyT(p.cedo ? 'plan_full_sub' : 'plan_full_late'), p.cedo ? '−' + T.e + '%' : '')
+    + '<p class="py-frisa">' + E(pyT('frisa', { p: T.e })) + '</p>'
+    + op('cx-pay-p', 'full', st.plano, pyT('plan_full'), pyT('plan_full_sub'), '−' + T.e + '%')
     + op('cx-pay-p', 'split', st.plano, pyT('plan_split'), pyT('plan_split_sub'))
     // 2) FORMA
     + '<h5>' + E(pyT('how')) + '</h5>'

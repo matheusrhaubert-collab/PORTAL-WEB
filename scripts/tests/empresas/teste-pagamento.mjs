@@ -54,7 +54,7 @@ ok(/fábrica/.test(await falha('dA', `select order_choose_payment($1::uuid[], 'n
 await as('admin', () => q(`update orders set finance_released_at = now() where id = $1`, [o1]));
 await as('dA', () => q(`select order_choose_payment($1::uuid[], 'zelle')`, [[o1]]));
 r = (await q(`select * from orders where id=$1`, [o1]))[0];
-ok(Number(r.pay_discount_pct) === 3 && r.pay_early === false && Number(r.invoice_total) === 1037.9, 'depois de liberada a produção: Zelle só 3%');
+ok(Number(r.pay_discount_pct) === 6 && r.pay_early === true && Number(r.invoice_total) === 1005.8, 'produção já liberada: pagamento total continua com os 6% (regra de 22/11, 2ª rodada)');
 await as('admin', () => q(`select order_choose_payment($1::uuid[], 'none')`, [[o1]]));
 r = (await q(`select * from orders where id=$1`, [o1]))[0];
 ok(r.pay_method === null && Number(r.pay_discount_amount) === 0 && Number(r.invoice_total) === 1070, 'admin tira a forma: invoice volta a 1070');
