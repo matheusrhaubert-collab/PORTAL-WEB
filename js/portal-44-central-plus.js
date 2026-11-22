@@ -775,6 +775,22 @@ async function cxLoadPricing(s, descConta) {
       (data || []).forEach((r) => { Object.assign(porId[r.id], r); });
     }
   }
+  // PAGAMENTO (migration 330): condições da fábrica + escolha de cada pedido. Sem a 330, s.payOk = false.
+  s.payOk = false; s.payTerms = null;
+  if (s.invOk) {
+    try {
+      const rt = await sb.rpc('factory_payment_terms');
+      if (!rt.error) {
+        s.payTerms = rt.data || {}; s.payOk = true;
+        const ids2 = s.orders.filter((o) => !o._proj).map((o) => o.id); const porId2 = {}; s.orders.forEach((o) => { porId2[o.id] = o; });
+        for (let i = 0; i < ids2.length; i += 150) {
+          const { data, error } = await sb.from('orders').select('id, pay_method, pay_discount_pct, pay_discount_amount, pay_early').in('id', ids2.slice(i, i + 150));
+          if (error) { s.payOk = false; break; }
+          (data || []).forEach((r) => { Object.assign(porId2[r.id], r); });
+        }
+      }
+    } catch (e) { /* 330 não rodou */ }
+  }
   s.orders.forEach((o) => { if (!o._proj) cxCalcTax(o, s); });
   // QUICKBOOKS (migration 318): s.qbo = undefined (318 não rodou) | null (não é
   // admin) | { connected, environment, company_name, … }. As colunas qbo_* dos
@@ -1276,10 +1292,10 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
   const parcial = !pago && o.qbo_invoice_id && o.qbo_balance != null && o._it != null && Number(o.qbo_balance) > 0 && Number(o.qbo_balance) < Number(o._it) - 0.005;
   const pag = !temInv ? '—'
     : pago ? '<span class="cx-paid">' + cEsc(odT('paid')) + '</span>'
-      : (o.payment_link ? mini('paylink', ivT('pay'), ' cx-mini-pay') : '')
+      : (cxPodePagar(o) ? mini('payopen', pyT('btn') + (o.pay_method ? ' · ' + pyT(o.pay_method) : ''), ' cx-mini-pay') : o.payment_link ? mini('paylink', ivT('pay'), ' cx-mini-pay') : '')
         + (parcial ? '<span class="cx-paid cx-paid-p">' + cEsc(qbT('partial', { v: cMoney(o.qbo_balance) })) + '</span>' : '')
         + (o.receipt_path ? mini('rcptview', ivT('rcpt_ok'), ' cx-mini-ok', odT('rcpt_sent')) : (!cxAdmin() && !cxSeller() ? mini('rcpt', ivT('rcpt')) : ''))
-        + (!o.payment_link && !o.receipt_path && cxAdmin() ? '<small class="cx-est">' + cEsc(odT('no_link')) + '</small>' : '');
+        + (!o.payment_link && !o.receipt_path && cxAdmin() && !cxPodePagar(o) ? '<small class="cx-est">' + cEsc(odT('no_link')) + '</small>' : '');
   const linha = '<tr class="' + (dentro ? 'cx-in' + (lin.ultimo ? ' cx-in-last' : '') : '') + (aberto ? ' cx-ord-on' : '') + '" data-cx="openorder" data-id="' + id + '">'
     + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
     + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + id : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
@@ -1698,6 +1714,8 @@ async function cxAdminRelease(id, qual) {
   const o = cxState.scope && cxState.scope.orders.find((x) => x.id === id);
   if (!o || !cxAdmin()) return;
   const n = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : (o.po_name || '');
+  const perdeCedo = qual === 'prod' && o.pay_early && o.pay_method && !o.paid_at && !o.qbo_paid_at;
+  if (perdeCedo && !confirm(pyT('rel_warn', { p: cxPayTerms().e }))) return;
   if (!confirm(cT(qual === 'prod' ? 'rel_prod_q' : qual === 'done' ? 'rel_done_q' : 'rel_pick_q', { n }))) return;
   const agora = new Date().toISOString();
   // 'done' (22/11, Matt: "como faço pra mudar status do pedido de pronto pra coleta para entregue"):
@@ -1709,6 +1727,8 @@ async function cxAdminRelease(id, qual) {
   const { data, error } = await supabaseClient.from('orders').update(patch).eq('id', id).select('id');
   if (error || !data || !data.length) { alert((error && error.message) || 'RLS'); return; }
   Object.assign(o, patch); o._s = cxStage(o);
+  // produção liberada sem pagamento: refaz a conta sem o desconto de antecipado (a RPC olha finance_released_at)
+  if (perdeCedo) { try { const r = await supabaseClient.rpc('order_choose_payment', { p_orders: [id], p_method: o.pay_method }); if (!r.error) (r.data || []).forEach((row) => { if (row.id === id) { Object.assign(o, row); cxCalcTax(o, cxState.scope); } }); } catch (e2) { console.warn('[pagamento] recalcular sem antecipado', e2); } }
   mpRender();
 }
 
@@ -1853,7 +1873,7 @@ function cxInvBtns(o) {
   if (!s.invOk || o.status === 'submitted') return '';
   const b = (cx, rot, extra) => '<button type="button" class="cx-mini' + (extra || '') + '" data-cx="' + cx + '" data-id="' + cEsc(o.id) + '">' + cEsc(rot) + '</button>';
   return '<span class="cx-ivb">' + b('inv', ivT('inv'))
-    + (o.payment_link ? b('paylink', ivT('pay'), ' cx-mini-pay') : '') + (cxAdmin() ? b('setlink', o.payment_link ? '✎ Link' : ivT('link')) : '')
+    + (cxPodePagar(o) && !o.paid_at ? b('payopen', pyT('btn'), ' cx-mini-pay') : o.payment_link ? b('paylink', ivT('pay'), ' cx-mini-pay') : '') + (cxAdmin() ? b('setlink', o.payment_link ? '✎ Link' : ivT('link')) : '')
     + (o.receipt_path ? b('rcptview', ivT('rcpt_ok'), ' cx-mini-ok') : '') + (!o.paid_at && !cxSeller() ? b('rcpt', o.receipt_path ? '↻' : ivT('rcpt')) : '')
     // QuickBooks: admin cria a invoice lá e o link volta pro botão Pagar; pago = selo
     + (cxAdmin() && s.qbo && s.qbo.connected ? b('qbinv', o.qbo_invoice_id ? 'QB ✓' : 'QB', o.qbo_invoice_id ? ' cx-mini-ok' : '') : '')
@@ -2014,9 +2034,12 @@ async function cxInvoice(ids) {
       + '<table class="tot" style="width:320px;margin-left:auto"><tr><td>' + E(ivT('sub')) + '</td><td class="r">' + E(cMoney(sum('_l'))) + '</td></tr>'
       + '<tr><td>' + E(ivT('disc')) + '</td><td class="r">−' + E(cMoney(sum('_l') - net)) + '</td></tr>'
       + '<tr><td>' + E(ivT('net')) + '</td><td class="r">' + E(cMoney(net)) + '</td></tr>'
+      // desconto de pagamento (Zelle / antecipado — migration 330): linha própria, antes do tax
+      + (sum('pay_discount_amount') > 0 ? '<tr><td>' + E(pyT('inv_line', { p: ped.every((o) => Number(o.pay_discount_pct) === Number(ped[0].pay_discount_pct)) ? Number(ped[0].pay_discount_pct) : '…' })) + '</td><td class="r">−' + E(cMoney(sum('pay_discount_amount'))) + '</td></tr>' : '')
       + '<tr><td>' + E(ivT('taxl')) + (ped.every((o) => Number(o.tax_pct) === 0) ? ' (' + E(ivT('exempt')) + ')' : ped[0].tax_pct != null ? ' (' + ped[0].tax_pct + '%)' : '') + '</td><td class="r">' + E(cMoney(sum('tax_amount'))) + '</td></tr>'
       + '<tr class="g"><td>' + E(ivT('total')) + '</td><td class="r">' + E(cMoney(sum('invoice_total'))) + '</td></tr></table>'
-      + links.map((l) => '<a class="pay np" href="' + E(l) + '" target="_blank" rel="noopener">' + E(ivT('pay_online')) + '</a> ').join('')
+      + (ped.some((o) => o.pay_method === 'zelle') && cxPayTerms().to ? '<p style="margin-top:16px"><b>Zelle:</b> ' + E(cxPayTerms().to) + (cxPayTerms().name ? ' (' + E(cxPayTerms().name) + ')' : '') + ' · memo <b>' + E(data.invoice_number) + '</b></p>' : '')
+      + (ped.some((o) => o.pay_method === 'zelle') ? '' : links.map((l) => '<a class="pay np" href="' + E(l) + '" target="_blank" rel="noopener">' + E(ivT('pay_online')) + '</a> ').join(''))
       + '<p class="muted" style="margin-top:28px">' + E(ivT('terms')) + '</p></body></html>';
     if (w) { w.document.open(); w.document.write(html); w.document.close(); }
     cxSel().clear();
@@ -2045,6 +2068,199 @@ async function cxUploadReceipt(id) {
     } catch (e) { alert((e && e.message) || String(e)); }
   };
   inp.click();
+}
+// ============================================================
+// PAGAMENTO DO PEDIDO — Zelle / link, com desconto na invoice (22/11/2026, migration 330)
+// ============================================================
+// Matt: "ativar botão fazer pagamento — zelle 3% desconto, pagamento antecipado
+// mais 3%. aí dar desconto na invoice e seguir com pagamento... vou precisar um
+// link de pagamento, hoje mais da metade paga dessa forma, deixa preparado, mas
+// já tive problema com quickbooks em conta nova" (o QuickBooks segurou um
+// pagamento por 6 meses). Por isso: o dinheiro NÃO passa por intermediário
+// nenhum por padrão (Zelle direto na conta), e o link de pagamento é só um
+// endereço que a fábrica cola no pedido (qualquer provedor) — nada aqui depende
+// do QuickBooks nem de Stripe.
+//
+// Botão "Pay" (data-cx="payopen") na coluna Pagamento e no ▾ → janela #cx-pay:
+//   * escolha Zelle (−z%) ou Link de pagamento (sem o desconto do Zelle);
+//   * antecipado (+e%) entra sozinho enquanto a produção NÃO foi liberada;
+//   * a tela mostra a prévia; a CONTA QUE VALE é a da RPC order_choose_payment
+//     (desconto sobre o líquido, tax recalculado, total da invoice corrigido);
+//   * Zelle: mostra pra onde mandar + "Anexar comprovante" (o de sempre); a
+//     FÁBRICA confere e marca como pago (admin: "Marcar como pago" aqui).
+// Invoice com vários pedidos: a escolha vale pra todos os pedidos da invoice.
+// Vendedor não vê (valores de fábrica). Sem a 330: s.payOk = false e tudo fica
+// como antes (botão Pay abre o link direto).
+// Liberar produção de pedido NÃO pago que tinha o desconto de antecipado: o
+// portal avisa e refaz a conta sem os e% (cxAdminRelease).
+const PY_TXT = {
+  pt: { btn: 'Pagar', title: 'Pagamento', order: 'Pedido', how: 'Como você vai pagar?', zelle: 'Zelle', zelle_sub: '{p}% de desconto · cai direto na conta, sem intermediário', link: 'Link de pagamento', link_sub: 'cartão ou banco, pelo link enviado pela fábrica · sem o desconto do Zelle', link_none: 'A fábrica ainda não colocou um link de pagamento neste pedido.',
+    net: 'Líquido de fábrica', d_zelle: 'Desconto Zelle ({p}%)', d_early: 'Desconto pagamento antecipado ({p}%)', early_no: 'Pagamento antecipado: não vale mais — a produção já foi liberada.', early_yes: 'Vale enquanto a produção não for liberada: pague e envie o comprovante antes.', tax: 'Sales tax', exempt: 'isento', total: 'Total a pagar',
+    confirm: 'Confirmar forma de pagamento', saving: 'Calculando…', chosen: 'Forma escolhida: {m}. Total da invoice: {t}.', close: 'Fechar', zto: 'Envie o Zelle para', zmemo: 'Na mensagem do Zelle escreva', zto_none: 'A fábrica ainda não cadastrou os dados do Zelle. Fale com a fábrica antes de enviar.', attach: 'Anexar comprovante', attached: 'Comprovante enviado ✓ — a fábrica confere e dá a baixa.', open_link: 'Abrir o link de pagamento ↗', see_inv: 'Ver invoice',
+    paid: 'Este pedido já consta como PAGO.', mark_paid: 'Marcar como pago', unmark: 'Desfazer pago', mark_q: 'Marcar o pedido {n} como PAGO?\n\nConfira antes se o dinheiro entrou na conta.', unmark_q: 'Tirar a marca de PAGO do pedido {n}?', terms: '✎ Condições', t_z: 'Desconto do Zelle (%):', t_e: 'Desconto do pagamento antecipado (%):', t_to: 'Zelle da fábrica (e-mail ou telefone):', t_name: 'Nome que aparece no Zelle:', clear: 'Tirar forma de pagamento e desconto', clear_q: 'Tirar a forma de pagamento e o desconto deste pedido? A invoice volta ao valor cheio.',
+    qbo_warn: 'Este pedido já tem invoice no QuickBooks: o desconto NÃO foi pra lá. Ajuste a invoice no QuickBooks à mão.', need330: 'Falta rodar a migration 330 no Supabase pra usar o pagamento com desconto.', rel_warn: 'ATENÇÃO: este pedido tem desconto de pagamento antecipado ({p}%) e ainda NÃO consta como pago. Liberando a produção agora, esse desconto sai da invoice.\n\nSe o pagamento já entrou, cancele e marque como pago primeiro (botão Pagar).', inv_line: 'Desconto de pagamento ({p}%)', several: '{n} pedidos nesta invoice' },
+  en: { btn: 'Pay', title: 'Payment', order: 'Order', how: 'How will you pay?', zelle: 'Zelle', zelle_sub: '{p}% discount · goes straight to the bank account, no intermediary', link: 'Payment link', link_sub: 'card or bank, through the link sent by the factory · no Zelle discount', link_none: 'The factory has not added a payment link to this order yet.',
+    net: 'Factory net', d_zelle: 'Zelle discount ({p}%)', d_early: 'Early payment discount ({p}%)', early_no: 'Early payment: no longer available — production was already released.', early_yes: 'Valid while production is not released: pay and send the receipt first.', tax: 'Sales tax', exempt: 'exempt', total: 'Total to pay',
+    confirm: 'Confirm payment method', saving: 'Calculating…', chosen: 'Method chosen: {m}. Invoice total: {t}.', close: 'Close', zto: 'Send the Zelle to', zmemo: 'In the Zelle memo write', zto_none: 'The factory has not registered its Zelle details yet. Contact the factory before sending.', attach: 'Attach receipt', attached: 'Receipt sent ✓ — the factory checks it and marks the order as paid.', open_link: 'Open the payment link ↗', see_inv: 'View invoice',
+    paid: 'This order is already marked as PAID.', mark_paid: 'Mark as paid', unmark: 'Undo paid', mark_q: 'Mark order {n} as PAID?\n\nCheck first that the money reached the account.', unmark_q: 'Remove the PAID mark from order {n}?', terms: '✎ Terms', t_z: 'Zelle discount (%):', t_e: 'Early payment discount (%):', t_to: 'Factory Zelle (e-mail or phone):', t_name: 'Name shown on Zelle:', clear: 'Remove payment method and discount', clear_q: 'Remove the payment method and discount from this order? The invoice goes back to the full amount.',
+    qbo_warn: 'This order already has a QuickBooks invoice: the discount did NOT go there. Adjust the QuickBooks invoice by hand.', need330: 'Migration 330 must be run in Supabase to use payment with discount.', rel_warn: 'WARNING: this order has the early payment discount ({p}%) and is NOT marked as paid yet. Releasing production now removes that discount from the invoice.\n\nIf the payment already arrived, cancel and mark it as paid first (Pay button).', inv_line: 'Payment discount ({p}%)', several: '{n} orders on this invoice' },
+  es: { btn: 'Pagar', title: 'Pago', order: 'Pedido', how: '¿Cómo va a pagar?', zelle: 'Zelle', zelle_sub: '{p}% de descuento · llega directo a la cuenta, sin intermediario', link: 'Link de pago', link_sub: 'tarjeta o banco, por el link enviado por la fábrica · sin el descuento de Zelle', link_none: 'La fábrica aún no puso un link de pago en este pedido.',
+    net: 'Neto de fábrica', d_zelle: 'Descuento Zelle ({p}%)', d_early: 'Descuento pago anticipado ({p}%)', early_no: 'Pago anticipado: ya no aplica — la producción ya fue liberada.', early_yes: 'Vale mientras la producción no sea liberada: pague y envíe el comprobante antes.', tax: 'Sales tax', exempt: 'exento', total: 'Total a pagar',
+    confirm: 'Confirmar forma de pago', saving: 'Calculando…', chosen: 'Forma elegida: {m}. Total de la factura: {t}.', close: 'Cerrar', zto: 'Envíe el Zelle a', zmemo: 'En el mensaje del Zelle escriba', zto_none: 'La fábrica aún no registró los datos de Zelle. Contacte a la fábrica antes de enviar.', attach: 'Adjuntar comprobante', attached: 'Comprobante enviado ✓ — la fábrica lo verifica y registra el pago.', open_link: 'Abrir el link de pago ↗', see_inv: 'Ver factura',
+    paid: 'Este pedido ya figura como PAGADO.', mark_paid: 'Marcar como pagado', unmark: 'Deshacer pagado', mark_q: '¿Marcar el pedido {n} como PAGADO?\n\nVerifique antes que el dinero llegó a la cuenta.', unmark_q: '¿Quitar la marca de PAGADO del pedido {n}?', terms: '✎ Condiciones', t_z: 'Descuento de Zelle (%):', t_e: 'Descuento de pago anticipado (%):', t_to: 'Zelle de la fábrica (e-mail o teléfono):', t_name: 'Nombre que aparece en Zelle:', clear: 'Quitar forma de pago y descuento', clear_q: '¿Quitar la forma de pago y el descuento de este pedido? La factura vuelve al valor completo.',
+    qbo_warn: 'Este pedido ya tiene factura en QuickBooks: el descuento NO fue allí. Ajuste la factura en QuickBooks a mano.', need330: 'Falta ejecutar la migration 330 en Supabase para usar el pago con descuento.', rel_warn: 'ATENCIÓN: este pedido tiene el descuento de pago anticipado ({p}%) y aún NO figura como pagado. Al liberar la producción ahora, ese descuento sale de la factura.\n\nSi el pago ya llegó, cancele y márquelo como pagado primero (botón Pagar).', inv_line: 'Descuento de pago ({p}%)', several: '{n} pedidos en esta factura' }
+};
+function pyT(k, v) { const L = PY_TXT[cxLang()] || PY_TXT.en; let t = L[k] != null ? L[k] : (PY_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x] == null ? '' : String(v[x])); }); return t; }
+function cxPayTerms() { const t = (cxState.scope || {}).payTerms || {}; return { z: t.zelle_pct != null ? Number(t.zelle_pct) : 3, e: t.early_pct != null ? Number(t.early_pct) : 3, to: t.zelle_to || '', name: t.zelle_name || '' }; }
+function cxPodePagar(o) { const s = cxState.scope || {}; return !!(o && !o._proj && s.invOk && s.payOk && o.status !== 'submitted' && !cxSeller() && (cxAdmin() || o.client_user_id === cxMe() || (s.team && s.team[o.client_user_id]))); }
+// todos os pedidos da mesma invoice (a escolha vale pra invoice inteira)
+function cxPayGrupo(o) { const s = cxState.scope; return o.invoice_number ? s.orders.filter((x) => !x._proj && x.invoice_number === o.invoice_number) : [o]; }
+function cxPayNet(o) { return o._n != null ? Number(o._n) : (Number(o._l) || 0); }
+// prévia na tela (mesma conta da RPC order_choose_payment)
+function cxPayPrevia(grupo, metodo) {
+  const s = cxState.scope; const T = cxPayTerms();
+  let net = 0, dz = 0, de = 0, tax = 0, algumCedo = false, todosIsentos = true;
+  grupo.forEach((o) => {
+    const n = cxPayNet(o); const cedo = !o.finance_released_at;
+    const pz = metodo === 'zelle' ? T.z : 0; const pe = cedo ? T.e : 0;
+    const desc = Math.round(n * (pz + pe)) / 100;
+    const taxPct = o.tax_pct != null ? Number(o.tax_pct) : (cxIsento(o, s) ? 0 : Number(s.taxPct) || 0);
+    if (taxPct > 0) todosIsentos = false;
+    net += n; dz += Math.round(n * pz) / 100; de += Math.round(n * pe) / 100; if (cedo) algumCedo = true;
+    tax += Math.round((n - desc) * taxPct) / 100;
+  });
+  const r2 = (v) => Math.round(v * 100) / 100;
+  return { net: r2(net), dz: r2(dz), de: r2(de), tax: r2(tax), total: r2(net - dz - de + tax), cedo: algumCedo, isento: todosIsentos };
+}
+function cxPayEl() {
+  let ov = document.getElementById('cx-pay');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'cx-pay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10005;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto';
+    // clicar fora NÃO fecha (regra de formulário)
+    ov.addEventListener('click', (e) => { const b = e.target.closest('[data-py]'); if (b) { e.stopPropagation(); cxPayClick(b.getAttribute('data-py'), b); } });
+    ov.addEventListener('change', (e) => { if (e.target && e.target.name === 'cx-pay-m') { cxState.pay.metodo = e.target.value; cxPayRender(); } });
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
+function cxPayOpen(id) {
+  const s = cxState.scope; const o = s && s.orders.find((x) => x.id === id);
+  if (!o) return;
+  if (!s.payOk) { if (o.payment_link) window.open(o.payment_link, '_blank', 'noopener'); else alert(pyT('need330')); return; }
+  if (!cxPodePagar(o)) return;
+  cxState.pay = { id, metodo: o.pay_method || 'zelle', msg: '', err: '', busy: false };
+  cxPayRender();
+}
+function cxPayRender() {
+  const s = cxState.scope; const st = cxState.pay; if (!st) return;
+  const o = s.orders.find((x) => x.id === st.id); if (!o) return;
+  const ov = cxPayEl(); const T = cxPayTerms(); const E = cEsc;
+  const grupo = cxPayGrupo(o); const pago = grupo.some((x) => x.paid_at || x.qbo_paid_at);
+  const no = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : (o.po_name || '');
+  const link = (grupo.find((x) => x.payment_link) || {}).payment_link || '';
+  if (st.metodo === 'link' && !link && !o.pay_method) st.metodo = 'zelle';
+  const p = cxPayPrevia(grupo, st.metodo);
+  const escolhido = !!o.pay_method && o.pay_method === st.metodo && grupo.every((x) => x.pay_method === o.pay_method);
+  const totalGravado = grupo.reduce((t, x) => t + (Number(x.invoice_total) || 0), 0);
+  const lin = (rot, val, cls) => '<div class="py-l' + (cls ? ' ' + cls : '') + '"><span>' + E(rot) + '</span><b>' + val + '</b></div>';
+  const op = (v, tit, sub, dis) => '<label class="py-op' + (st.metodo === v ? ' on' : '') + (dis ? ' off' : '') + '"><input type="radio" name="cx-pay-m" value="' + v + '"' + (st.metodo === v ? ' checked' : '') + (dis || pago ? ' disabled' : '') + '><span><b>' + E(tit) + '</b><small>' + E(sub) + '</small></span></label>';
+  ov.innerHTML = '<div class="py-box" role="dialog" aria-modal="true">'
+    + '<div class="py-head"><div><h3>' + E(pyT('title')) + ' — ' + E(pyT('order')) + ' ' + E(no) + '</h3><span class="hint">' + E([o.invoice_number, o.po_name, grupo.length > 1 ? pyT('several', { n: grupo.length }) : ''].filter(Boolean).join(' · ')) + '</span></div>'
+    + '<button type="button" class="secondary py-x" data-py="close">×</button></div>'
+    + (st.err ? '<p class="error">' + E(st.err) + '</p>' : '') + (st.msg ? '<p class="py-ok">' + E(st.msg) + '</p>' : '')
+    + (pago ? '<p class="py-ok">' + E(pyT('paid')) + '</p>' : '<h5>' + E(pyT('how')) + '</h5>'
+      + op('zelle', pyT('zelle'), pyT('zelle_sub', { p: T.z }))
+      + op('link', pyT('link'), link ? pyT('link_sub') : pyT('link_none'), !link))
+    + '<div class="py-sum">' + lin(pyT('net'), E(cMoney(p.net)))
+    + (p.dz ? lin(pyT('d_zelle', { p: T.z }), '−' + E(cMoney(p.dz)), 'd') : '')
+    + (p.de ? lin(pyT('d_early', { p: T.e }), '−' + E(cMoney(p.de)), 'd') : '')
+    + lin(pyT('tax') + (p.isento ? ' (' + pyT('exempt') + ')' : ''), E(cMoney(p.tax)))
+    + lin(pyT('total'), E(cMoney(pago || escolhido ? totalGravado : p.total)), 'g') + '</div>'
+    + (pago ? '' : '<p class="hint">' + E(pyT(p.cedo ? 'early_yes' : 'early_no')) + '</p>')
+    + (!pago && !escolhido ? '<button type="button" class="py-go" data-py="confirm"' + (st.busy ? ' disabled' : '') + '>' + E(st.busy ? pyT('saving') : pyT('confirm')) + '</button>' : '')
+    + (!pago && escolhido && st.metodo === 'zelle' ? '<div class="py-how">' + (T.to
+        ? '<div>' + E(pyT('zto')) + ': <b>' + E(T.to) + '</b>' + (T.name ? ' (' + E(T.name) + ')' : '') + '</div><div>' + E(pyT('zmemo')) + ': <b>' + E(o.invoice_number || no) + '</b></div>'
+        : '<div class="error">' + E(pyT('zto_none')) + '</div>')
+      + (o.receipt_path ? '<p class="py-ok">' + E(pyT('attached')) + '</p>' : '')
+      + '<button type="button" class="py-go" data-py="attach">' + E(o.receipt_path ? '↻ ' + pyT('attach') : pyT('attach')) + '</button></div>' : '')
+    + (!pago && escolhido && st.metodo === 'link' && link ? '<div class="py-how"><button type="button" class="py-go" data-py="openlink">' + E(pyT('open_link')) + '</button></div>' : '')
+    + (cxAdmin() && grupo.some((x) => x.qbo_invoice_id) && grupo.some((x) => Number(x.pay_discount_amount) > 0) ? '<p class="error">' + E(pyT('qbo_warn')) + '</p>' : '')
+    + '<div class="py-foot"><button type="button" class="secondary" data-py="inv">' + E(pyT('see_inv')) + '</button>'
+    + (cxAdmin() ? '<button type="button" class="secondary" data-py="' + (pago ? 'unmark' : 'markpaid') + '">' + E(pyT(pago ? 'unmark' : 'mark_paid')) + '</button>'
+      + (!pago && o.pay_method ? '<button type="button" class="secondary" data-py="clear">' + E(pyT('clear')) + '</button>' : '')
+      + '<button type="button" class="secondary" data-py="terms">' + E(pyT('terms')) + '</button>' : '')
+    + '<span style="flex:1"></span><button type="button" class="secondary" data-py="close">' + E(pyT('close')) + '</button></div></div>';
+}
+async function cxPayEscolher(grupo, metodo) {
+  const s = cxState.scope;
+  // sem invoice ainda: emite (mesmo número pra todos os pedidos do grupo)
+  if (grupo.some((x) => !x.invoice_issued_at)) {
+    const r0 = await supabaseClient.rpc('order_stamp_invoice', { p_orders: grupo.map((x) => x.id) });
+    if (r0.error) throw r0.error;
+    (r0.data && r0.data.orders || []).forEach((r) => { const x = s.orders.find((y) => y.id === r.id); if (x) Object.assign(x, r, { invoice_number: r0.data.invoice_number }); });
+  }
+  const r = await supabaseClient.rpc('order_choose_payment', { p_orders: grupo.map((x) => x.id), p_method: metodo });
+  if (r.error) throw r.error;
+  (r.data || []).forEach((row) => { const x = s.orders.find((y) => y.id === row.id); if (x) { Object.assign(x, row); cxCalcTax(x, s); } });
+}
+async function cxPayClick(a, b) {
+  const s = cxState.scope; const st = cxState.pay; if (!st || !s) return;
+  const o = s.orders.find((x) => x.id === st.id); if (!o) return;
+  const grupo = cxPayGrupo(o);
+  const no = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : (o.po_name || '');
+  const fecha = () => { const ov = document.getElementById('cx-pay'); if (ov) ov.remove(); cxState.pay = null; mpRender(); };
+  if (a === 'close') return fecha();
+  if (a === 'inv') return cxInvoice(grupo.map((x) => x.id));
+  if (a === 'openlink') { const l = (grupo.find((x) => x.payment_link) || {}).payment_link; if (l) window.open(l, '_blank', 'noopener'); return; }
+  if (a === 'attach') { const t0 = o.receipt_path; cxUploadReceipt(o.id); const iv = setInterval(() => { if (!cxState.pay) return clearInterval(iv); if (o.receipt_path !== t0) { clearInterval(iv); cxPayRender(); } }, 700); setTimeout(() => clearInterval(iv), 180000); return; }
+  if (st.busy) return;
+  const roda = async (fn) => { st.busy = true; st.err = ''; st.msg = ''; cxPayRender(); try { await fn(); } catch (e) { st.err = (e && e.message) || String(e); } st.busy = false; if (cxState.pay) cxPayRender(); };
+  if (a === 'confirm') return roda(async () => {
+    await cxPayEscolher(grupo, st.metodo);
+    st.msg = pyT('chosen', { m: pyT(st.metodo), t: cMoney(grupo.reduce((t, x) => t + (Number(x.invoice_total) || 0), 0)) });
+  });
+  if (!cxAdmin()) return;
+  if (a === 'clear') { if (!confirm(pyT('clear_q'))) return; return roda(async () => { await cxPayEscolher(grupo, 'none'); st.metodo = 'zelle'; }); }
+  if (a === 'markpaid' || a === 'unmark') {
+    const pagar = a === 'markpaid';
+    if (!confirm(pyT(pagar ? 'mark_q' : 'unmark_q', { n: no }))) return;
+    return roda(async () => {
+      const agora = pagar ? new Date().toISOString() : null;
+      const r = await supabaseClient.from('orders').update({ paid_at: agora }).in('id', grupo.map((x) => x.id)).select('id');
+      if (r.error) throw r.error;
+      grupo.forEach((x) => { x.paid_at = agora; });
+    });
+  }
+  if (a === 'terms') {
+    const T = cxPayTerms();
+    const z = prompt(pyT('t_z'), String(T.z)); if (z === null) return;
+    const e = prompt(pyT('t_e'), String(T.e)); if (e === null) return;
+    const to = prompt(pyT('t_to'), T.to); if (to === null) return;
+    const nm = prompt(pyT('t_name'), T.name); if (nm === null) return;
+    const nz = Number(String(z).replace(',', '.')); const ne = Number(String(e).replace(',', '.'));
+    if (!(nz >= 0 && nz <= 20) || !(ne >= 0 && ne <= 20)) return alert('0–20');
+    return roda(async () => {
+      const r = await supabaseClient.rpc('admin_set_payment_terms', { p_zelle_pct: nz, p_early_pct: ne, p_zelle_to: to, p_zelle_name: nm });
+      if (r.error) throw r.error;
+      s.payTerms = r.data || s.payTerms;
+    });
+  }
+}
+function cxPayCss() {
+  if (document.getElementById('cx-pay-css')) return;
+  const st = document.createElement('style'); st.id = 'cx-pay-css';
+  st.textContent = '.py-box{background:#fff;color:#2b2621;border-radius:14px;width:100%;max-width:520px;padding:20px 22px 16px;box-shadow:0 16px 50px rgba(0,0,0,.35);font-size:14px}'
+    + '.py-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.py-head h3{margin:0;font-size:18px}.py-box h5{margin:16px 0 8px;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:#8a8073}'
+    + '.py-box button{margin:0;width:auto}.py-x{padding:2px 10px}'
+    + '.py-op{display:flex;gap:10px;align-items:flex-start;border:1px solid #e0ddd6;border-radius:10px;padding:10px 12px;margin:0 0 8px;cursor:pointer;text-align:left;font-weight:400;color:#2b2621}.py-op.on{border-color:#2f6f4f;background:#f2f8f4}.py-op.off{opacity:.55;cursor:default}'
+    + '.py-op input{width:16px;height:16px;min-width:16px;margin:2px 0 0;padding:0;flex:none}.py-op span{display:flex;flex-direction:column;gap:2px}.py-op small{color:#766f64;font-size:12px}'
+    + '.py-sum{margin:14px 0 6px;border-top:1px solid #eee9e0;padding-top:10px}.py-l{display:flex;justify-content:space-between;gap:12px;padding:3px 0}.py-l b{font-weight:600;font-variant-numeric:tabular-nums}.py-l.d,.py-l.d b{color:#2f6f4f}'
+    + '.py-l.g{border-top:2px solid #2b2621;margin-top:6px;padding-top:8px;font-size:17px}.py-l.g b{font-weight:800}'
+    + '.py-go{background:#2f6f4f;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer;margin-top:10px!important}.py-go:disabled{opacity:.5}'
+    + '.py-how{background:#f7f5f1;border-radius:10px;padding:12px 14px;margin-top:12px;line-height:1.7}.py-ok{color:#1f6b33;font-weight:600;margin:8px 0}'
+    + '.py-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px;border-top:1px solid #eee9e0;padding-top:12px}.py-foot button{font-size:12.5px;padding:6px 10px}';
+  document.head.appendChild(st);
 }
 async function cxIvAction(a, b) {
   const s = cxState.scope; const id = b.getAttribute('data-id');
@@ -2201,6 +2417,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (a === 'sendfab') { e.stopPropagation(); e.preventDefault(); return cxSendFactoryOpen(b.getAttribute('data-id')); }
+  if (a === 'payopen') { e.stopPropagation(); e.preventDefault(); cxPayCss(); return cxPayOpen(b.getAttribute('data-id')); }
   if (a === 'rcpdf') { e.stopPropagation(); e.preventDefault(); return cxPickupReceipt(b.getAttribute('data-id'), b); }
   if (a === 'backproj') { e.stopPropagation(); e.preventDefault(); return cxBackToProject(b.getAttribute('data-id')); }
   if (a === 'delorder') { e.stopPropagation(); e.preventDefault(); return cxDeleteOrders([b.getAttribute('data-id')]); }

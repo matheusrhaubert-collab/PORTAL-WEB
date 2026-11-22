@@ -3303,9 +3303,17 @@ function renderMoneyModal() {
   // da aba já nem existir pro vendedor, ver openMoneyModal): mesmo que
   // moneyAbaAtual tivesse ficado 'fabrica' de outra sessão, vendedor nunca
   // renderiza o conteúdo da Fábrica.
-  if (moneyFabricaBloqueada()) moneyAbaAtual = 'orcamento';
+  if (moneyFabricaBloqueada()) moneyAbaAtual = moneyAbaAtual === 'pedido' ? 'pedido' : 'orcamento';
   const fabricaTabBtn = document.querySelector('.po-money-tab[data-money-tab="fabrica"]');
   if (fabricaTabBtn) fabricaTabBtn.style.display = moneyFabricaBloqueada() ? 'none' : '';
+  // $ ORDER QUOTE (22/11, Matt: "aqui agora só pode aparecer quote total. podemos criar um
+  // order quote e um client quote, pra mostrar quanto vai pagar e quanto vai vender"):
+  // Client quote = preço de venda (só o total); Order quote = o que o dealer paga à fábrica.
+  // Vendedor NUNCA vê custo/desconto: a aba nem aparece pra ele e o conteúdo não desenha.
+  const pedidoTabBtn = document.querySelector('.po-money-tab[data-money-tab="pedido"]');
+  const semPedido = (typeof isSellerAccount === 'function') && isSellerAccount();
+  if (pedidoTabBtn) pedidoTabBtn.style.display = semPedido ? 'none' : '';
+  if (semPedido && moneyAbaAtual === 'pedido') moneyAbaAtual = 'orcamento';
   document.querySelectorAll('.po-money-tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.moneyTab === moneyAbaAtual);
   });
@@ -3326,13 +3334,13 @@ function renderMoneyModal() {
         + '</p>';
       return;
     }
-    if (moneyAbaAtual === 'orcamento' || moneyFabricaBloqueada()) { renderMoneyPieceOrcamento(body, slot, row); return; }
+    if (moneyAbaAtual === 'orcamento' || moneyAbaAtual === 'pedido' || moneyFabricaBloqueada()) { renderMoneyPieceOrcamento(body, slot, row); return; }
     if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
     renderMoneyPieceFabrica(body, slot, row);
     return;
   }
 
-  if (moneyAbaAtual === 'orcamento') { renderMoneyOrcamento(body, rel, scopedSlots); return; }
+  if (moneyAbaAtual === 'orcamento' || moneyAbaAtual === 'pedido') { renderMoneyOrcamento(body, rel, scopedSlots); return; }
   if (moneyFabricaBloqueada()) { renderMoneyOrcamento(body, rel, scopedSlots); return; }
   if (!moneyFabricaLiberada) { renderMoneySenha(body); return; }
   renderMoneyFabrica(body, rel);
@@ -3457,6 +3465,9 @@ function renderMoneyOrcamento(body, rel, slots) {
       + '<td class="num">' + formatMoney(getDisplayPriceRatioOnly(preco)) + '</td></tr>';
   }).join('');
   const subKey = moneyModalScopeIds ? 'money.quote_sub_group' : 'money.quote_sub';
+  // aviso geral no topo (item sem preço) — usado nas duas abas
+  const avisoTopoHtml = () => (todosSemPreco.length
+    ? '<p class="po-money-sub" style="color:#b45309;font-weight:600;">⚠ ' + I18n.t('money.no_price_warn') + ' ' + escapeHtmlCutlist(todosSemPreco.join(', ')) + '</p>' : '');
   const tabela = rel.totalVenda;
   const quoteTotal = getDisplayPrice(tabela);           // o que o cliente paga (= Proposta)
   const custoFinal = computeCustoBase(tabela);          // custo do dealer (desconto + extras de custo)
@@ -3464,19 +3475,37 @@ function renderMoneyOrcamento(body, rel, slots) {
   // vê custo nem tabela crua (migration 149).
   const mostraCusto = !isSellerAccount() && Math.abs(custoFinal - tabela) >= 0.005;
   const semMargem = mostraCusto && Math.abs(quoteTotal - custoFinal) < 0.005;
+  // CLIENT QUOTE: só o total de venda (22/11). Custo e tabela foram pra aba Order quote.
   const totaisHtml = '<div class="po-money-total"><span>' + I18n.t('money.quote_total') + '</span>'
       + '<strong>' + formatMoney(quoteTotal) + '</strong></div>'
-    + (mostraCusto
-      ? '<div class="po-money-total secundario"><span>' + I18n.t('money.quote_final_cost_label') + '</span>'
-        + '<strong>' + formatMoney(custoFinal) + '</strong></div>'
-        + '<div class="po-money-total secundario"><span>' + I18n.t('money.quote_table_total') + '</span>'
-        + '<strong>' + formatMoney(tabela) + '</strong></div>'
-      : '')
     + (semMargem ? '<p class="po-money-sub" style="color:#b45309;">' + I18n.t('money.quote_no_margin_warn') + '</p>' : '');
+  // ORDER QUOTE: tabela → desconto de fábrica → o que o dealer paga (por módulo e no total).
+  if (moneyAbaAtual === 'pedido' && !isSellerAccount()) {
+    const descPct = Number(getFactoryDiscountPct()) || 0;
+    const fator = 1 - descPct / 100;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const linhasPed = (slots || projectSlots).filter((s) => s.result && !(s.module && s.module.visual_only))
+      .slice().sort((a, b) => (numeroDoSlot.get(a) || 9999) - (numeroDoSlot.get(b) || 9999))
+      .map((s) => {
+        const preco = Number(s.result.total) || 0; const num = numeroDoSlot.get(s);
+        return '<tr><td>' + (num ? '<span class="po-money-modnum">' + String(num).padStart(3, '0') + '</span> ' : '') + escapeHtmlCutlist(s.module.name || '') + '</td>'
+          + '<td class="num">' + Math.round(s.width_mm) + '×' + Math.round(s.height_mm) + '×' + Math.round(s.depth_mm) + '</td>'
+          + '<td class="num">' + formatMoney(preco) + '</td><td class="num">' + formatMoney(r2(preco * fator)) + '</td></tr>';
+      }).join('');
+    const totalPedido = r2(tabela * fator);
+    body.innerHTML = '<p class="po-money-sub">' + I18n.t(moneyModalScopeIds ? 'money.order_sub_group' : 'money.order_sub') + '</p>' + avisoTopoHtml()
+      + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
+      + '<th class="num">' + I18n.t('money.col_list') + '</th><th class="num">' + I18n.t('money.col_order_price') + '</th></tr></thead><tbody>' + linhasPed + '</tbody></table>'
+      + '<div class="po-money-total"><span>' + I18n.t('money.order_total') + '</span><strong>' + formatMoney(totalPedido) + '</strong></div>'
+      + '<div class="po-money-total secundario"><span>' + I18n.t('money.quote_table_total') + '</span><strong>' + formatMoney(tabela) + '</strong></div>'
+      + '<div class="po-money-total secundario"><span>' + I18n.t('money.order_discount') + '</span><strong>' + (descPct ? '−' + descPct + '% · −' + formatMoney(r2(tabela - totalPedido)) : '—') + '</strong></div>'
+      + (Math.abs(custoFinal - totalPedido) >= 0.005 ? '<div class="po-money-total secundario"><span>' + I18n.t('money.order_extras') + '</span><strong>' + formatMoney(custoFinal) + '</strong></div>' : '')
+      + '<div class="po-money-total secundario"><span>' + I18n.t('money.order_margin') + '</span><strong>' + formatMoney(r2(quoteTotal - custoFinal)) + '</strong></div>';
+    return;
+  }
   // Aviso geral no topo (quem é vendedor também vê — é pra ele saber que o
   // preço está incompleto antes de mandar pro cliente).
-  const avisoTopo = todosSemPreco.length
-    ? '<p class="po-money-sub" style="color:#b45309;font-weight:600;">⚠ ' + I18n.t('money.no_price_warn') + ' ' + escapeHtmlCutlist(todosSemPreco.join(', ')) + '</p>' : '';
+  const avisoTopo = avisoTopoHtml();
   body.innerHTML = '<p class="po-money-sub">' + I18n.t(subKey) + '</p>' + avisoTopo
     + '<table class="po-money-table"><thead><tr><th>' + I18n.t('money.col_module') + '</th><th class="num">' + I18n.t('money.col_dims_mm') + '</th>'
     + '<th class="num">' + I18n.t('money.col_price') + '</th></tr></thead><tbody>' + linhas + '</tbody></table>'
