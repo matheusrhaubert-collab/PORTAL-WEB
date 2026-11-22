@@ -110,8 +110,22 @@ Deno.serve(async (req: Request) => {
       );
       const tRows = tRes.ok ? await tRes.json() : [];
       const target = Array.isArray(tRows) ? tRows[0] : null;
-      if (!target || target.role !== 'vendedor'
-          || (callerRole !== 'administrador' && target.parent_dealer_user_id !== callerId)) {
+      if (callerRole === 'administrador') {
+        // 21/11 (Matt: "esse cadastro não achei na árvore... pode bloquear ele"):
+        // a FÁBRICA bloqueia/libera QUALQUER login (cliente sem loja, vendedor,
+        // dealer, até quem não tem perfil) — menos outro administrador e ela mesma.
+        if (targetId === callerId) {
+          return jsonResponse({ error: 'Você não bloqueia o próprio login.' }, 400);
+        }
+        const tAdm = await fetch(
+          `${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${targetId}&select=user_id`,
+          { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+        );
+        const tAdmRows = tAdm.ok ? await tAdm.json() : [];
+        if (Array.isArray(tAdmRows) && tAdmRows.length) {
+          return jsonResponse({ error: 'Este login é administrador da fábrica e não é bloqueado por aqui.' }, 403);
+        }
+      } else if (!target || target.role !== 'vendedor' || target.parent_dealer_user_id !== callerId) {
         return jsonResponse({ error: 'Esse vendedor não é da sua loja.' }, 403);
       }
       const banRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${targetId}`, {
