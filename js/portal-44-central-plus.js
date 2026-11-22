@@ -830,7 +830,12 @@ function cxSomaTds(itens, soProj) {
 // usuário ficam juntos embaixo de uma linha da pasta: nome, quantidade,
 // somatório só dela e o menu ⋯ com as funções da pasta. A linha da pasta NÃO
 // entra no total de baixo (ele soma só os itens). Clique na linha recolhe/abre.
-function cxFolderKey(o) { return o && o._folder ? String(o.client_user_id) + '|' + o._folder : ''; }
+// 22/11 (Matt: "quem não tem pasta cria um 'sem pasta' pra manter tudo igual,
+// vale pra todas as abas"): item sem pasta entra na pasta "Sem pasta" do
+// próprio login — chave "<user>|" (nome vazio). É só agrupamento de TELA: nada
+// é gravado, e ela não tem o menu ⋯ (renomear/compartilhar não fazem sentido).
+function cxFolderKey(o) { return o ? String(o.client_user_id) + '|' + (o._folder || '') : ''; }
+function cxSemPasta(k) { return String(k || '').slice(-1) === '|'; }
 function cxFolderClosed() { return cxState.foldClosed || (cxState.foldClosed = new Set()); }
 // 21/11 (Matt: "não gostei da seleção... prefiro colocar esse botão na pasta e
 // com a pasta ele funciona com tudo que tiver dentro"): as caixinhas saíram;
@@ -843,7 +848,8 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
   const fb = (a, rot, ok) => '<button type="button" class="cx-mini' + (ok ? ' cx-mini-ok' : '') + '" data-cx="' + a + '" data-k="' + cEsc(k) + '" title="' + cEsc(ivT('folder_tip', { n: ped.length })) + '">' + cEsc(rot) + ' (' + ped.length + ')</button>';
   const fbtns = !ped.length ? '' : fb('finv', ivT('inv') + (ped.every((o) => o.invoice_number) ? ' ✓' : ''), ped.every((o) => o.invoice_number))
     + (cxAdmin() && s0.qbo && s0.qbo.connected ? fb('fqb', 'QB' + (ped.every((o) => o.qbo_invoice_id) ? ' ✓' : ''), ped.every((o) => o.qbo_invoice_id)) : '');
-  const nome = itens[0]._folder;
+  const semPasta = cxSemPasta(k);
+  const nome = semPasta ? (typeof I18n !== 'undefined' ? I18n.t('fav.folder_none') : 'No folder') : itens[0]._folder;
   const fechada = cxFolderClosed().has(k);
   const meus = itens[0].client_user_id === cxMe();
   const T = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
@@ -859,11 +865,11 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
     + (cxAdmin() && temProj && typeof mpFolderBudget === 'function' ? it('budget', T('mp.budget_btn')) : '')
     + (meus && temProj && typeof mpArchive === 'function' ? it('archive', T('mp.archive')) : '')
     + (meus ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
-  return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">'
+  return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + (semPasta ? ' cx-frow-0' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">'
     + '<td colspan="' + (enx ? 5 : 4) + '" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
     + ' <span class="cx-fquem">' + cEsc(String(cxUserLabel(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
-    + '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button><span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
+    + (semPasta ? '' : '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button>') + '<span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
     + (enx ? '<td class="cx-facts cx-facts-l">' + fbtns + '</td>' + (preco ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td>' : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="3"></td></tr>'
       : (preco ? cxSomaTds(itens, soProj) : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="3" class="cx-facts">' + fbtns + '</td></tr>');
 }
@@ -946,7 +952,7 @@ async function cxFolderTechPlans(nome, lista) {
 }
 async function cxFolderAction(v, k) {
   const itens = cxNetRows().filter((o) => cxFolderKey(o) === k);
-  if (!itens.length) return;
+  if (!itens.length || cxSemPasta(k)) return;
   const nome = itens[0]._folder;
   let stEl = null;
   document.querySelectorAll('.cx-fstatus').forEach((el) => { if (el.getAttribute('data-fst') === k) stEl = el; });
@@ -2287,13 +2293,13 @@ function cxCss() {
     // faz parte da pasta, tem como deixar a pasta mais evidente"): faixa marrom
     // na esquerda da pasta E dos itens dela, itens recuados com fundo claro, e
     // uma linha grossa fechando a pasta. Item solto não tem faixa nem recuo.
-    '.cx-table tr.cx-frow td{background:#ece2d0;border-top:2px solid #c9b592;font-weight:700;cursor:pointer;padding-top:9px;padding-bottom:9px}.cx-table tr.cx-frow td.cx-fname{position:relative;white-space:nowrap}'
-    + '.cx-table tr.cx-frow td:first-child{box-shadow:inset 5px 0 0 #8b5a2b}'
-    + '.cx-table tr.cx-in td{background:#fbf7ef}.cx-table tr.cx-in td:first-child{box-shadow:inset 5px 0 0 #c9a877}'
-    + '.cx-table tr.cx-in.cx-in-last td{border-bottom:3px solid #c9b592}.cx-table tr.cx-frow.is-closed td{border-bottom:3px solid #c9b592}'
+    '.cx-table tr.cx-frow td{background:rgba(120,116,108,.09);border-top:1px solid #dddad4;font-weight:600;color:#6b665e;cursor:pointer;padding-top:6px;padding-bottom:6px}.cx-table tr.cx-frow td b{font-weight:600}.cx-table tr.cx-frow.cx-frow-0 td.cx-fname b{font-weight:500;font-style:italic}.cx-table tr.cx-frow td.cx-fname{position:relative;white-space:nowrap}'
+    + '.cx-table tr.cx-frow td:first-child{box-shadow:inset 3px 0 0 #bdb9b1}'
+    + '.cx-table tr.cx-in td{background:transparent}.cx-table tr.cx-in td:first-child{box-shadow:inset 3px 0 0 #dedbd5}'
+    + '.cx-table tr.cx-in.cx-in-last td{border-bottom:1px solid #d3cfc8}.cx-table tr.cx-frow.is-closed td{border-bottom:1px solid #d3cfc8}'
     + '.cx-table tr.cx-in td.cx-num,.cx-table tr.cx-in td.cx-ck + td.cx-num{padding-left:38px}'
-    + '.cx-fchev{display:inline-block;width:12px;color:#6d5a3f}.cx-fn{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#d9c7a6;color:#4a3d2b;font-size:11px;text-align:center}'
-    + '.cx-fdots{border:0;background:transparent;color:#4a3d2b;font-size:16px;line-height:1;padding:0 8px;margin:0 0 0 6px;cursor:pointer;border-radius:5px}.cx-fdots:hover{background:#d9c7a6}'
+    + '.cx-fchev{display:inline-block;width:12px;color:#8a857c}.cx-fn{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#e4e1db;color:#6b665e;font-size:11px;text-align:center}'
+    + '.cx-fdots{border:0;background:transparent;color:#8a857c;font-size:16px;line-height:1;padding:0 8px;margin:0 0 0 6px;cursor:pointer;border-radius:5px}.cx-fdots:hover{background:#e4e1db}'
     + '.cx-fmenu{position:absolute;left:180px;top:100%;z-index:30;background:#fff;border:1px solid #d9d3c8;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;min-width:170px}'
     + '.cx-fmi{border:0;background:transparent;color:#2f2a24;text-align:left;padding:7px 10px;margin:0;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer}.cx-fmi:hover{background:#f3ece0}.cx-fmi.is-danger{color:#a3352b}'
     + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
