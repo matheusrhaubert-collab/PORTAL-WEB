@@ -1869,13 +1869,22 @@ async function generateProjectTechPlan(opts) {
     // mas sozinha não precisa, nem porta nem janela").
     const wallsWithModules = walls.filter((w) => ptHasComponent(ptWallSlots(w.wallIndex)));
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
-    const rawText = doc.text.bind(doc);
-    doc.text = (t, ...rest) => rawText(ptPdfTxt(t), ...rest);
-    const rawSplit = doc.splitTextToSize.bind(doc);
-    doc.splitTextToSize = (t, ...rest) => rawSplit(ptPdfTxt(t), ...rest);
+    // PDF ÚNICO DA PASTA (22/11, Matt: "quando pego plano da pasta ele deve dar
+    // um pdf com todos ambientes, fazendo um índice pra não confundir"):
+    // opts.combine = { sections: [] } passado de projeto em projeto. O 1º cria o
+    // documento e RESERVA a página 1 pro índice; os seguintes continuam no mesmo
+    // documento. Aqui não salva nem numera — quem fecha é ptFinishCombined.
+    const comb = opts.combine || null;
+    const reusa = !!(comb && comb.doc);
+    const doc = reusa ? comb.doc : new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+    if (!reusa) {
+      const rawText = doc.text.bind(doc);
+      doc.text = (t, ...rest) => rawText(ptPdfTxt(t), ...rest);
+      const rawSplit = doc.splitTextToSize.bind(doc);
+      doc.splitTextToSize = (t, ...rest) => rawSplit(ptPdfTxt(t), ...rest);
+    }
     const unit = ptUnit();
-    const st = {
+    const st = reusa ? comb.st : {
       pages: 0,
       projectName: opts.projectName || (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.name) || ptT('untitled'),
       dateText: new Date().toLocaleDateString(),
@@ -1886,6 +1895,9 @@ async function generateProjectTechPlan(opts) {
         return [pf.store_name, pf.store_phone].filter(Boolean).join('  ·  ');
       })()
     };
+    if (reusa) st.projectName = opts.projectName || (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.name) || ptT('untitled');
+    else if (comb) { comb.doc = doc; comb.st = st; st.pages = 1; }   // página 1 = índice
+    const combIni = st.pages + 1;
 
     // PERSPECTIVA DO AMBIENTE na 1ª página (2026-11-16, Matt, com um print da
     // Vista de Canto: "no plano técnico preciso uma imagem em perspectiva do
@@ -2015,6 +2027,11 @@ async function generateProjectTechPlan(opts) {
     for (const r of rows) r.icon = await ptIconFromSlot(r.slot);
     if (rows.length) ptPdfModuleList(doc, st, rows);
 
+    if (comb) {
+      if (st.pages >= combIni) comb.sections.push({ name: st.projectName, from: combIni, to: st.pages, modules: rows.length });
+      return true;
+    }
+
     // "Página X de Y" — o total só existe no fim
     const total = st.pages;
     for (let p = 1; p <= total; p++) {
@@ -2051,6 +2068,70 @@ async function generateProjectTechPlan(opts) {
     ptRunning = false;
     if (btn) btn.disabled = false;
   }
+}
+
+// FECHA O PDF ÚNICO DA PASTA: desenha o ÍNDICE na página 1 (reservada pelo 1º
+// projeto), numera todas as páginas, baixa e guarda nos Documentos da pasta.
+// comb = o mesmo objeto passado em opts.combine; info = { folder, fileName }.
+function ptFinishCombined(comb, info) {
+  if (!comb || !comb.doc || !comb.sections || !comb.sections.length) return false;
+  info = info || {};
+  const doc = comb.doc, st = comb.st;
+  const W = 279.4, H = 215.9, M = 10;
+  const idx = { pt: ['Índice', 'Ambiente / projeto', 'Módulos', 'Páginas', 'Pasta'], en: ['Index', 'Room / project', 'Modules', 'Pages', 'Folder'], es: ['Índice', 'Ambiente / proyecto', 'Módulos', 'Páginas', 'Carpeta'] };
+  let lang = 'en';
+  try { lang = (typeof I18n !== 'undefined' && I18n.getLanguage) ? I18n.getLanguage() : 'en'; } catch (e) { /* en */ }
+  const L = idx[lang] || idx.en;
+  doc.setPage(1);
+  doc.setFillColor(43, 38, 33); doc.rect(0, 0, W, 16, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+  doc.text(ptT('title') + (info.folder ? ' — ' + info.folder : ''), M, 10.5);
+  let dateRight = W - M;
+  if (st.logo) {
+    const r = Math.min(42 / st.logo.w, 10.5 / st.logo.h); const lw = st.logo.w * r, lh = st.logo.h * r; const boxW = lw + 4;
+    doc.setFillColor(255, 255, 255); doc.roundedRect(W - M - boxW, 2.2, boxW, 11.6, 1.5, 1.5, 'F');
+    try { doc.addImage(st.logo.dataUrl, 'PNG', W - M - boxW + 2, 2.2 + (11.6 - lh) / 2, lw, lh); } catch (e) { /* segue sem */ }
+    dateRight = W - M - boxW - 4;
+  }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(255, 255, 255);
+  doc.text(st.dateText + '   ·   ' + ptT('units', { u: st.unitText }), dateRight, 10.5, { align: 'right' });
+  doc.setTextColor(43, 38, 33); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  doc.text(L[0], M, 28);
+  if (info.folder) { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(118, 111, 100); doc.text(L[4] + ': ' + info.folder, M, 34); }
+  const n = comb.sections.length;
+  const passo = Math.max(4.6, Math.min(9, (H - 62) / Math.max(1, n)));   // cabe até ~33 ambientes numa página
+  const fsz = Math.max(8, Math.min(12, passo * 1.35));
+  let y = 46;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(118, 111, 100);
+  doc.text('#', M, y); doc.text(L[1], M + 12, y); doc.text(L[2], W - M - 52, y, { align: 'right' }); doc.text(L[3], W - M, y, { align: 'right' });
+  doc.setDrawColor(200, 195, 186); doc.setLineWidth(0.3); doc.line(M, y + 2, W - M, y + 2);
+  y += passo + 1;
+  comb.sections.forEach((sec, i) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(fsz); doc.setTextColor(43, 38, 33);
+    doc.text(String(i + 1).padStart(2, '0'), M, y);
+    const nome = doc.splitTextToSize(String(sec.name || '—'), W - 2 * M - 80)[0] || '—';
+    doc.text(nome, M + 12, y);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(90, 84, 75);
+    doc.text(String(sec.modules || 0), W - M - 52, y, { align: 'right' });
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(43, 38, 33);
+    doc.text(sec.from === sec.to ? String(sec.from) : sec.from + ' – ' + sec.to, W - M, y, { align: 'right' });
+    doc.setDrawColor(232, 228, 221); doc.setLineWidth(0.2); doc.line(M, y + passo * 0.32, W - M, y + passo * 0.32);
+    try { doc.link(M, y - passo * 0.7, W - 2 * M, passo, { pageNumber: sec.from }); } catch (e) { /* sem link: só o número */ }
+    y += passo;
+  });
+  if (st.storeText) { doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(118, 111, 100); doc.text(st.storeText, M, 211.9); }
+  const total = st.pages;
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    doc.setFillColor(255, 255, 255); doc.rect(200, 209, 70, 5, 'F');
+    doc.setFontSize(7.5); doc.setTextColor(118, 111, 100); doc.setFont('helvetica', 'normal');
+    doc.text(ptT('page', { p, t: total }), 269.4, 211.9, { align: 'right' });
+  }
+  const safe = String(info.folder || 'pasta').replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'pasta';
+  const nomeArq = info.fileName || ('plano-tecnico-' + safe + '.pdf');
+  doc.save(nomeArq);
+  try { if (info.folder && typeof docGuardarPdf === 'function') docGuardarPdf(doc, { kind: 'tech_plan', name: nomeArq, folder: info.folder }); } catch (e) { /* só conveniência */ }
+  return true;
 }
 
 // DESENHOS PRA PROPOSTA (17/11, Matt: "na proposta quero tirar essas cotas

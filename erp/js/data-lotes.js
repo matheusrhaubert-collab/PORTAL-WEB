@@ -904,11 +904,14 @@ LOTES.batchOrdersStatus = async function (batchId) {
     todas(function () { return erp.from('batch_pieces').select('order_id, quantity').eq('batch_id', batchId); }),
     todas(function () { return erp.from('piece_scans').select('order_id').eq('batch_id', batchId); }),
     todas(function () { return erp.from('packages').select('id, order_id, status').eq('batch_id', batchId); }),
-    todas(function () { return erp.from('package_pieces').select('package_id, apontado_at').eq('batch_id', batchId).not('apontado_at', 'is', null); })
+    todas(function () { return erp.from('package_pieces').select('package_id, apontado_at').eq('batch_id', batchId).not('apontado_at', 'is', null); }),
+    todas(function () { return erp.from('cut_plans').select('status').eq('batch_id', batchId); })
   ]);
   if (res[0].error) throw res[0].error;
   const ords = res[0].data || [];
-  const z = {}; ids.forEach(function (id) { z[id] = { pecas: 0, cortadas: 0, volumes: 0, completos: 0, embalados: 0, pecasEmbaladas: 0 }; });
+  /* plano marcado como CORTADO (botão do plano de corte) = lote cortado */
+  const loteCortado = res[5].some(function (p) { return p.status === 'cortado'; });
+  const z = {}; ids.forEach(function (id) { z[id] = { pecas: 0, cortadas: 0, volumes: 0, completos: 0, embalados: 0, pecasEmbaladas: 0, loteCortado: loteCortado }; });
   res[1].forEach(function (p) { if (z[p.order_id]) z[p.order_id].pecas += Number(p.quantity) || 0; });
   res[2].forEach(function (p) { if (z[p.order_id]) z[p.order_id].cortadas += 1; });
   const donoDoVolume = {};
@@ -1286,7 +1289,7 @@ LOTES.savePlan = async function (opts) {
   const { data: plan, error: ePlan } = await erp.from('cut_plans').insert({
     batch_id: batchId,
     version: version,
-    code: (opts.batchCode || 'LT') + '-P' + version,
+    code: (opts.batchCode || 'L') + '-P' + version,
     params_id: params.id || null,
     params_snapshot: params,
     total_pieces: totalPieces,

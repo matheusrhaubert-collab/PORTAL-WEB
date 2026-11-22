@@ -874,9 +874,9 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
 }
 // textos só desta parte (pasta na lista)
 const FD_TXT = {
-  pt: { techplan: 'Plano técnico (todos os projetos)', tp_confirm: 'Gerar o plano técnico dos {n} projeto(s) da pasta "{pasta}"?\n\nCada projeto é aberto no editor, o PDF é baixado (um por projeto) e no fim você volta pra cá. O navegador pode pedir permissão pra baixar vários arquivos.', tp_prog: 'Plano técnico {i}/{n} — {nome}', tp_done: 'Plano técnico: {ok} de {n} gerado(s).', tp_fail: 'Não saiu:', tp_none: 'Esta pasta não tem projeto pra gerar o plano técnico.', busy: 'Já tem uma geração em andamento.' },
-  en: { techplan: 'Technical plan (all projects)', tp_confirm: 'Generate the technical plan for the {n} project(s) in folder "{pasta}"?\n\nEach project opens in the editor, its PDF is downloaded (one per project) and you come back here at the end. The browser may ask permission to download multiple files.', tp_prog: 'Technical plan {i}/{n} — {nome}', tp_done: 'Technical plan: {ok} of {n} generated.', tp_fail: 'Not generated:', tp_none: 'This folder has no project to generate the technical plan.', busy: 'A generation is already running.' },
-  es: { techplan: 'Plano técnico (todos los proyectos)', tp_confirm: '¿Generar el plano técnico de los {n} proyecto(s) de la carpeta "{pasta}"?\n\nCada proyecto se abre en el editor, se descarga su PDF (uno por proyecto) y al final vuelves aquí. El navegador puede pedir permiso para descargar varios archivos.', tp_prog: 'Plano técnico {i}/{n} — {nome}', tp_done: 'Plano técnico: {ok} de {n} generado(s).', tp_fail: 'No salió:', tp_none: 'Esta carpeta no tiene proyecto para generar el plano técnico.', busy: 'Ya hay una generación en curso.' }
+  pt: { techplan: 'Plano técnico (todos os projetos)', tp_confirm: 'Gerar o plano técnico dos {n} projeto(s) da pasta "{pasta}"?\n\nCada projeto é aberto no editor e no fim sai UM PDF só, com índice na primeira página. Depois você volta pra cá.', tp_prog: 'Plano técnico {i}/{n} — {nome}', tp_done: 'Plano técnico: {ok} de {n} gerado(s).', tp_fail: 'Não saiu:', tp_none: 'Esta pasta não tem projeto pra gerar o plano técnico.', busy: 'Já tem uma geração em andamento.' },
+  en: { techplan: 'Technical plan (all projects)', tp_confirm: 'Generate the technical plan for the {n} project(s) in folder "{pasta}"?\n\nEach project opens in the editor and at the end you get ONE PDF with an index on the first page. Then you come back here.', tp_prog: 'Technical plan {i}/{n} — {nome}', tp_done: 'Technical plan: {ok} of {n} generated.', tp_fail: 'Not generated:', tp_none: 'This folder has no project to generate the technical plan.', busy: 'A generation is already running.' },
+  es: { techplan: 'Plano técnico (todos los proyectos)', tp_confirm: '¿Generar el plano técnico de los {n} proyecto(s) de la carpeta "{pasta}"?\n\nCada proyecto se abre en el editor y al final sale UN solo PDF, con índice en la primera página. Luego vuelves aquí.', tp_prog: 'Plano técnico {i}/{n} — {nome}', tp_done: 'Plano técnico: {ok} de {n} generado(s).', tp_fail: 'No salió:', tp_none: 'Esta carpeta no tiene proyecto para generar el plano técnico.', busy: 'Ya hay una generación en curso.' }
 };
 function fdT(k, vars) {
   let lang = 'en';
@@ -917,6 +917,8 @@ async function cxFolderTechPlans(nome, lista) {
   aviso.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:5000;background:#2f2a24;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.3)';
   const abertoAntes = (typeof loadedProjectFavorite !== 'undefined' && loadedProjectFavorite && loadedProjectFavorite.id) ? loadedProjectFavorite.id : null;
   const falhas = []; let ok = 0;
+  // UM PDF só, com índice na 1ª página (22/11) — ver ptFinishCombined (portal-14)
+  const comb = typeof ptFinishCombined === 'function' ? { sections: [] } : null;
   try {
     for (let i = 0; i < lista.length; i++) {
       const row = lista[i];
@@ -927,10 +929,10 @@ async function cxFolderTechPlans(nome, lista) {
         if (!r || !r.ok) throw (r && r.error) || new Error('load');
         if (typeof projectWaitInteriorsReady === 'function') await projectWaitInteriorsReady();
         if (typeof trkWaitProjectScene === 'function') await trkWaitProjectScene(); else await sleep(3500);
-        const saiu = await generateProjectTechPlan({ projectName: row.name || nome, rethrow: true });
+        const saiu = await generateProjectTechPlan(Object.assign({ projectName: row.name || nome, rethrow: true }, comb ? { combine: comb } : {}));
         if (saiu === false) throw new Error(fdT('busy'));
         ok++;
-        await sleep(700);   // deixa o navegador terminar o download antes do próximo
+        if (!comb) await sleep(700);   // modo antigo (um PDF por projeto): deixa o download terminar
       } catch (err) {
         falhas.push((row.name || row.id) + ' — ' + ((err && err.message) || String(err)));
       }
@@ -943,6 +945,7 @@ async function cxFolderTechPlans(nome, lista) {
         if (data) await restoreFavoriteProject(data, true);
       } else if (typeof resetProject === 'function') { projectSlots = []; resetProject(); }
     } catch (e) { console.error('[plano técnico da pasta] reabrir:', e); }
+    try { if (comb && comb.sections.length) ptFinishCombined(comb, { folder: nome }); } catch (e) { console.error('[plano técnico da pasta] índice:', e); falhas.push('PDF — ' + ((e && e.message) || String(e))); }
     try { const btn = document.querySelector('.portal-tab-btn[data-tab="po-tab-my-orders"]'); if (btn) btn.click(); } catch (e) { /* fica no editor */ }
     cxFolderTpRunning = false;
     aviso.remove();
@@ -2126,6 +2129,12 @@ document.addEventListener('click', (e) => {
       return;
     }
     if (!o) return;
+    // "Open order →" do ▾ abre em OUTRA ABA do navegador (22/11, Matt: "deve abrir
+    // uma tela nova, porque ele confunde indo pra mesma tela"): portal.html?order=<id>,
+    // tratado no fim deste arquivo (cxAbrePedidoDoLink). Clique na LINHA continua
+    // abrindo aqui mesmo.
+    const doBotao = !!(e.target.closest && e.target.closest('.cx-ordexp'));
+    if (o && o.client_user_id === cxMe() && doBotao) { e.stopPropagation(); e.preventDefault(); window.open(location.pathname + '?order=' + encodeURIComponent(id), '_blank'); return; }
     if (o && o.client_user_id === cxMe() && typeof openOrderDetail === 'function') return openOrderDetail(id);
     if (cxAdmin()) window.open('erp/index.html#/pedidos/' + id, '_blank', 'noopener');
   }
@@ -2317,7 +2326,7 @@ function cxCss() {
     + '.cx-table tr.cx-in.cx-in-last td{border-bottom:1px solid #d3cfc8}.cx-table tr.cx-frow.is-closed td{border-bottom:1px solid #d3cfc8}'
     + '.cx-table tr.cx-in td.cx-num,.cx-table tr.cx-in td.cx-ck + td.cx-num{padding-left:38px}'
     + '.cx-fchev{display:inline-block;width:12px;color:#8a857c}.cx-fn{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#e4e1db;color:#6b665e;font-size:11px;text-align:center}'
-    + '.cx-fdots{border:0;background:transparent;color:#8a857c;font-size:16px;line-height:1;padding:0 8px;margin:0 0 0 6px;cursor:pointer;border-radius:5px}.cx-fdots:hover{background:#e4e1db}'
+    + '.cx-fdots{border:1px solid #cfcbc4;background:#fff;color:#4a463f;font-size:20px;font-weight:700;line-height:1;padding:1px 12px 5px;margin:0 0 0 8px;cursor:pointer;border-radius:6px}.cx-fdots:hover{background:#e4e1db}'
     + '.cx-fmenu{position:absolute;left:180px;top:100%;z-index:30;background:#fff;border:1px solid #d9d3c8;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;min-width:170px}'
     + '.cx-fmi{border:0;background:transparent;color:#2f2a24;text-align:left;padding:7px 10px;margin:0;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer}.cx-fmi:hover{background:#f3ece0}.cx-fmi.is-danger{color:#a3352b}'
     + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
@@ -2363,5 +2372,24 @@ function cxCss() {
   ].join('\n');
   document.head.appendChild(st);
 }
+
+// portal.html?order=<id> (aberto pelo "Open order →" numa aba nova): espera o
+// login, vai pra Central e abre a tela do pedido. Tira o parâmetro do endereço
+// pra um F5 não reabrir à força.
+(function cxAbrePedidoDoLink() {
+  let id = null;
+  try { id = new URLSearchParams(window.location.search).get('order'); } catch (e) { /* sem link */ }
+  if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
+  let tent = 0;
+  const tenta = () => {
+    tent++;
+    const pronto = typeof currentUser !== 'undefined' && currentUser && typeof openOrderDetail === 'function';
+    if (!pronto) { if (tent < 60) setTimeout(tenta, 500); return; }
+    try { const u = new URL(window.location.href); u.searchParams.delete('order'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch (e) { /* fica */ }
+    const tab = document.querySelector('.portal-tab-btn[data-tab="po-tab-my-orders"]'); if (tab) tab.click();
+    setTimeout(() => { try { openOrderDetail(id); } catch (e) { console.error('[abrir pedido do link]', e); } }, 600);
+  };
+  setTimeout(tenta, 800);
+})();
 
 window.LegnoCentralPlus = { ligado: cxOn, recarregar: () => { cxState.scope = null; cxState.extraFor = ''; cxState.lostLoaded = false; if (typeof mpLoad === 'function') mpLoad(); } };

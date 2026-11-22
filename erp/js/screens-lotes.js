@@ -1840,8 +1840,12 @@ LOTES_UI.abreLinha = function (batchId) {
 };
 
 /* Etapa do pedido DENTRO do lote, pela ordem do chão de fábrica.
-   cortado  = peças apontadas (Produção › Apontar peças, erp.piece_scans)
-   embalado = volumes (erp.packages.status)
+   CORRIGIDO em 22/11 (Matt: pedido dos ripados 151/151 apontado aparecia só
+   "Cortado"): o apontamento de peças É a embalagem — mesma regra do portal
+   (portal-31/44: "Packing n%" = peças apontadas; todas = Packed).
+   cortado    = plano de corte do lote marcado como Cortado
+   embalando  = peça apontada (Produção › Apontar peças) OU volume em andamento
+   embalado   = todas as peças apontadas OU todos os volumes embalados
    finalizado = coleta liberada / entregue (orders) */
 LOTES_UI.etapaDoPedido = function (r) {
   const o = r.order || {};
@@ -1849,9 +1853,10 @@ LOTES_UI.etapaDoPedido = function (r) {
   if (o.delivered_at) return UI.pill('Finalizado · entregue', 'erp-pill-ok');
   if (o.pickup_released_at) return UI.pill('Finalizado · liberado pra coleta', 'erp-pill-ok');
   if (r.volumes > 0 && r.embalados >= r.volumes) return UI.pill('Embalado', 'erp-pill-ok') + ' <span class="erp-muted erp-small">' + r.volumes + ' vol.</span>';
+  if (r.pecas > 0 && r.cortadas >= r.pecas) return UI.pill('Embalado', 'erp-pill-ok') + ' <span class="erp-muted erp-small">' + r.pecas + '/' + r.pecas + ' peças</span>';
+  if (r.cortadas > 0) return UI.pill('Embalando', 'erp-pill-accent') + ' <span class="erp-muted erp-small">' + r.cortadas + '/' + r.pecas + ' peças</span>' + barra(r.cortadas, r.pecas);
   if (r.volumes > 0 && (r.embalados > 0 || r.completos > 0 || r.pecasEmbaladas > 0)) return UI.pill('Embalando', 'erp-pill-accent') + ' <span class="erp-muted erp-small">' + r.embalados + '/' + r.volumes + ' vol.</span>' + barra(r.embalados, r.volumes);
-  if (r.pecas > 0 && r.cortadas >= r.pecas) return UI.pill('Cortado', 'erp-pill-info') + ' <span class="erp-muted erp-small">' + r.pecas + ' peças</span>';
-  if (r.cortadas > 0) return UI.pill('Cortando', 'erp-pill-info') + ' <span class="erp-muted erp-small">' + r.cortadas + '/' + r.pecas + '</span>' + barra(r.cortadas, r.pecas);
+  if (r.loteCortado) return UI.pill('Cortado', 'erp-pill-info');
   return UI.pill('Aguardando corte', 'erp-pill-neutral');
 };
 
