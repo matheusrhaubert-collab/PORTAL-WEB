@@ -571,7 +571,11 @@ function cxTreeCols() {
 
   // 2) dealers (lojista e distribuidor são o mesmo nível)
   const porLoja = {}; s.orders.forEach((o) => { const k = o.account_id || '_'; (porLoja[k] = porLoja[k] || []).push(o); });
-  const dealers = s.accounts.filter((a) => a.kind !== 'factory' && a.status !== 'draft')
+  // 21/11 (Matt: "tá mostrando dealers que estão dentro dos dealers conforme a
+  // árvore"): loja SUSPENSA (o dono virou vendedor de outra loja em My company ›
+  // People) ou recusada só aparece se ainda tiver algum projeto/pedido nela.
+  const lojaViva = (a) => !['suspended', 'rejected'].includes(a.status) || (porLoja[a.id] || []).length > 0;
+  const dealers = s.accounts.filter((a) => a.kind !== 'factory' && a.status !== 'draft' && lojaViva(a))
     .sort((a, b) => (porLoja[b.id] || []).length - (porLoja[a.id] || []).length || String(a.trade_name || a.legal_name || '').localeCompare(String(b.trade_name || b.legal_name || '')));
   // quem só enxerga UM dealer (o próprio lojista): ele já vem aberto, mostrando
   // tudo; clicar num vendedor afunila, clicar no dealer de novo volta pra tudo
@@ -629,7 +633,7 @@ function cxColFilter(chave) {
 // do usuário. O preço já congelado de pedido aprovado não muda.
 function cxStoreOptions(atual, titulo) {
   const s = cxState.scope;
-  const lojas = s.accounts.filter((a) => a.kind !== 'factory' && a.status !== 'draft' && a.status !== 'rejected')
+  const lojas = s.accounts.filter((a) => a.kind !== 'factory' && a.status !== 'draft' && a.status !== 'rejected' && (a.status !== 'suspended' || a.id === atual))
     .sort((a, b) => String(a.trade_name || a.legal_name || '').localeCompare(String(b.trade_name || b.legal_name || '')));
   return (titulo ? '<option value="">' + cEsc(titulo) + '</option>' : '')
     + lojas.map((a) => '<option value="' + cEsc(a.id) + '"' + (atual === a.id ? ' selected' : '') + '>' + cEsc(a.trade_name || a.legal_name || '—') + '</option>').join('')

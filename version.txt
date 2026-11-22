@@ -1,3 +1,3 @@
-﻿data: 2026-11-22 00:18:59
-cache: 202611220018
-mensagem: Portal: ajustes de 2026-11-22 00:18:59
+﻿data: 2026-11-22 00:36:53
+cache: 202611220036
+mensagem: Portal: ajustes de 2026-11-22 00:36:53
