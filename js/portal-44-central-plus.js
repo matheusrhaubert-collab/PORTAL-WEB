@@ -1322,6 +1322,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + (val ? '<div class="cx-ocol"><h5>' + cEsc(odT('prices')) + '</h5>' + val + '</div>' : '')
     + '<div class="cx-ocol cx-otools"><h5>' + cEsc(odT('tools')) + '</h5><div>' + (cxInvBtns(o) || '—') + '</div>'
     + '<div><button type="button" class="cx-mini" data-cx="openorder" data-id="' + id + '">' + cEsc(odT('open')) + ' →</button>'
+    + (window.LegnoOrderTerms && o.status !== 'submitted' && !cxSeller() ? ' <button type="button" class="cx-mini" data-cx="termsview" data-id="' + id + '">' + cEsc(LegnoOrderTerms.label()) + '</button>' : '')
     + (cxPodeRecibo(o) ? ' <button type="button" class="cx-mini cx-mini-ok" data-cx="rcpdf" data-id="' + id + '">' + cEsc(odT('rc_btn')) + '</button>' : '')
     + (cxPodeVoltar(o) ? ' <button type="button" class="cx-mini" data-cx="backproj" data-id="' + id + '">↩ ' + cEsc(typeof I18n !== 'undefined' ? I18n.t('my_orders.back_to_project') : 'Back to project') + '</button>' : '')
     + (cxPodeExcluir(o) ? ' <button type="button" class="cx-mini cx-mini-lost" data-cx="delorder" data-id="' + id + '">' + cEsc(odT('del_btn')) + '</button>' : '') + '</div>'
@@ -1680,6 +1681,12 @@ async function cxRelease(id) {
   cxState.draft[id] = { po_name: po, room_name: room, delivery_address: addr };
   if (!po || !addr) { cxState.msg[id] = { err: true, t: cT('need') }; return mpRender(); }
   if (!confirm(cT('confirm', { po }))) return;
+  // TERMOS E CONDIÇÕES (22/11, migration 332): aceite registrado ANTES de aprovar
+  if (window.LegnoOrderTerms) {
+    const ac = await LegnoOrderTerms.ask({ ref: po });
+    if (!ac) return;
+    try { await LegnoOrderTerms.record([id], ac); } catch (e) { cxState.msg[id] = { err: true, t: (e && e.message) || String(e) }; return mpRender(); }
+  }
   cxState.saving[id] = 'rel'; mpRender();
   try {
     const a = cxState.acc || {};
@@ -1804,6 +1811,11 @@ async function cxSendFactoryRun(o, w, f) {
   const setMsg = (t, err) => { msg.textContent = t; msg.classList.toggle('err', !!err); };
   if (!f.po || !f.addr || !w.querySelector('#cx-sf-chk').checked) return setMsg(sfT('need'), true);
   if (typeof projectDirty !== 'undefined' && projectDirty && typeof projectSlots !== 'undefined' && projectSlots.length && !confirm(sfT('unsaved'))) return;
+  // TERMOS E CONDIÇÕES completos (22/11, migration 332): o resumo desta janela continua,
+  // mas o que vale é o texto inteiro, aceito com o nome digitado. O registro é gravado
+  // logo depois que o pedido existe, ANTES de aprovar.
+  let termos = null;
+  if (window.LegnoOrderTerms) { termos = await LegnoOrderTerms.ask({ ref: f.po }); if (!termos) return; }
   w.dataset.busy = '1';
   w.querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
   try {
@@ -1823,7 +1835,7 @@ async function cxSendFactoryRun(o, w, f) {
     const a = cxState.acc || {};
     if (a.phone) upd.client_phone = upd.client_phone || a.phone;
     try { const g = await cxGeocode(f.addr); if (g) { upd.jobsite_lat = g.lat; upd.jobsite_lng = g.lng; upd.jobsite_geocoded_at = agora; } } catch (e) { /* sem mapa */ }
-    const aceite = { terms_accepted_at: agora, terms_accepted_by: cxMe(), terms_version: SF_TERMS_VERSION };
+    const aceite = { terms_accepted_at: agora, terms_accepted_by: cxMe(), terms_version: (window.LegnoOrderTerms && LegnoOrderTerms.version) || SF_TERMS_VERSION };
     if (o.client_user_id && o.client_user_id !== cxMe()) {
       // ADMIN enviando projeto de outra conta: o pedido é do DONO do projeto (e da loja dele)
       const sc = cxState.scope || {};
@@ -1831,7 +1843,16 @@ async function cxSendFactoryRun(o, w, f) {
       upd.client_user_id = o.client_user_id;
       if (tm.email || em.email) upd.client_email = tm.email || em.email;
       if (o.account_id) upd.account_id = o.account_id;
+      // passa o pedido pro dono ANTES do aceite, pra o registro sair como "aceite da fábrica em nome do cliente"
+      if (termos) {
+        const dono = { client_user_id: upd.client_user_id, po_name: f.po };
+        if (upd.client_email) dono.client_email = upd.client_email; if (upd.account_id) dono.account_id = upd.account_id;
+        const r0 = await supabaseClient.from('orders').update(dono).eq('id', orderId).eq('status', 'submitted').select('id');
+        if (r0.error) throw r0.error;
+      }
     }
+    // registro completo do aceite (migration 332) — antes de aprovar; se falhar, o pedido fica pendente
+    if (termos) await LegnoOrderTerms.record([orderId], termos);
     let res = await supabaseClient.from('orders').update(Object.assign({}, upd, aceite)).eq('id', orderId).eq('status', 'submitted').select('id, factory_number');
     if (res.error && /terms_accepted|terms_version|jobsite/.test(res.error.message || '')) {
       // migration 315 (ou 306) ainda não rodou: libera sem o registro do aceite
@@ -2417,6 +2438,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (a === 'sendfab') { e.stopPropagation(); e.preventDefault(); return cxSendFactoryOpen(b.getAttribute('data-id')); }
+  if (a === 'termsview') { e.stopPropagation(); e.preventDefault(); return LegnoOrderTerms.view(b.getAttribute('data-id')); }
   if (a === 'payopen') { e.stopPropagation(); e.preventDefault(); cxPayCss(); return cxPayOpen(b.getAttribute('data-id')); }
   if (a === 'rcpdf') { e.stopPropagation(); e.preventDefault(); return cxPickupReceipt(b.getAttribute('data-id'), b); }
   if (a === 'backproj') { e.stopPropagation(); e.preventDefault(); return cxBackToProject(b.getAttribute('data-id')); }

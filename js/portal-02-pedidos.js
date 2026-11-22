@@ -902,6 +902,14 @@ async function approveFolderOrders(folder, folderOrders, stEl, errorEl) {
     if (!resp.trim()) { alert(I18n.t('order_detail.approve_missing_fields_error')); return; }
     comum[campo] = resp.trim();
   }
+  // TERMOS E CONDIÇÕES (22/11, migration 332): aprovar = comprar. Sem o aceite
+  // registrado (um registro por pedido) nada é aprovado.
+  if (window.LegnoOrderTerms) {
+    const ac = await LegnoOrderTerms.ask({ ref: folder + ' (' + pend.length + ')' });
+    if (!ac) return;
+    try { await LegnoOrderTerms.record(pend.map((o) => o.id), ac); }
+    catch (e) { alert((e && e.message) || String(e)); return; }
+  }
   const ok = [];
   const falhas = [];
   for (let i = 0; i < pend.length; i++) {
@@ -2538,6 +2546,13 @@ document.getElementById('po-order-detail-approve-btn').addEventListener('click',
     return;
   }
   const approveBtn = document.getElementById('po-order-detail-approve-btn');
+  // TERMOS E CONDIÇÕES (22/11, migration 332): aceite registrado ANTES de aprovar
+  if (window.LegnoOrderTerms) {
+    const ac = await LegnoOrderTerms.ask({ ref: po_name });
+    if (!ac) return;
+    try { await LegnoOrderTerms.record([currentOrderDetail.order.id], ac); }
+    catch (e) { errorEl.textContent = (e && e.message) || String(e); errorEl.style.display = 'block'; return; }
+  }
   approveBtn.disabled = true;
   try {
     const { data, error } = await supabaseClient
