@@ -970,7 +970,7 @@ function cxProjOpen() { return cxState.projOpen || (cxState.projOpen = new Set()
 // duplicar (a cópia nasce na MINHA conta, mesma loja), compartilhar, 3D, pasta.
 // Excluir fica só com o dono. Gravar no projeto dos outros depende do RLS
 // (admin: migration 315; dealer: vendedores dele, migration 265).
-function cxProjCardHtml(o) {
+function cxProjCardHtml(o, doPedido) {
   const c = (cxState.projCard || (cxState.projCard = {}))[o._pid];
   const T = (k, v) => (typeof I18n !== 'undefined' ? I18n.t(k, v) : k);
   const src = c && (c.ai_preview_url || c.thumbnail_data_url);
@@ -979,7 +979,7 @@ function cxProjCardHtml(o) {
     + (src ? '<img class="cx-pimg" alt="" src="' + cEsc(src) + '" data-cx="pj" data-a="zoom" data-id="' + cEsc(o.id) + '">' : '<div class="cx-pimg cx-pimg-0">' + (c ? '' : '…') + '</div>')
     + '<div class="cx-pbody"><b>' + cEsc(o._pname || o.po_name || '') + '</b>'
     + '<div class="hint">' + cEsc([cxPnum(o.project_number), o._folder ? '📁 ' + o._folder : '', cxUserLabel(o.client_user_id, [o])].filter(Boolean).join(' · ')) + '</div>'
-    + '<div class="cx-pacts">' + bt('open', T('project.load_btn'), 1) + bt('rename', T('fav.rename_btn')) + bt('dup', T('fav.duplicate_btn')) + bt('share', T('project.share_btn')) + bt('v3d', T('fav.view3d_btn')) + bt('folder', T('fav.folder_btn')) + '</div>'
+    + '<div class="cx-pacts">' + bt('open', T('project.load_btn'), 1) + (doPedido ? '' : bt('rename', T('fav.rename_btn'))) + bt('dup', T('fav.duplicate_btn')) + bt('share', T('project.share_btn')) + bt('v3d', T('fav.view3d_btn')) + (doPedido ? '' : bt('folder', T('fav.folder_btn'))) + '</div>'
     + '</div></div>';
 }
 async function cxProjCardLoad(pid) {
@@ -987,10 +987,26 @@ async function cxProjCardLoad(pid) {
   if (cache[pid]) return;
   cache[pid] = { loading: true };
   try {
-    const { data } = await supabaseClient.from('user_projects').select('id, thumbnail_data_url, ai_preview_url').eq('id', pid).maybeSingle();
-    cache[pid] = data || {};
-  } catch (e) { cache[pid] = {}; }
-  if (cxProjOpen().has(pid)) { mpRender(); if (typeof mpAttachCards === 'function') mpAttachCards(); }
+    const { data } = await supabaseClient.from('user_projects').select('id, name, thumbnail_data_url, ai_preview_url').eq('id', pid).maybeSingle();
+    cache[pid] = data || { sumiu: true };
+  } catch (e) { cache[pid] = { sumiu: true }; }
+  const noPedido = cxState.scope && (cxState.scope.orders || []).some((o) => !o._proj && o.source_project_id === pid && cxOrdOpen().has(o.id));
+  if (cxProjOpen().has(pid) || noPedido) { mpRender(); if (typeof mpAttachCards === 'function') mpAttachCards(); }
+}
+// PROJETO DE ORIGEM NA LINHA DO PEDIDO (22/11, Matt: "preciso dessa tela no
+// orders, como eu abro o projeto pra visualização?"): o ▾ do pedido mostra o
+// mesmo cartão do projeto (imagem + abrir / duplicar / compartilhar / 3D) do
+// projeto que virou o pedido (orders.source_project_id). O projeto está
+// congelado pelo pedido: abrir é pra VER; pra mexer, Duplicar. Renomear e Pasta
+// ficam de fora. Pedido sem projeto de origem (New Quote) ou com o projeto
+// apagado não mostra nada.
+function cxOrdProj(o) {
+  if (!o || o._proj || !o.source_project_id) return null;
+  const c = (cxState.projCard || {})[o.source_project_id];
+  if (c && c.sumiu) return null;
+  const px = o._pproxy || (o._pproxy = { id: o.id, _pid: o.source_project_id, client_user_id: o.client_user_id });
+  px._pname = (c && c.name) || o._pname || o.po_name || ''; px.po_name = o.po_name; px.project_number = o.project_number; px._folder = o._folder; px.account_id = o.account_id;
+  return px;
 }
 async function cxProjAction(a, o) {
   const T = (k, v) => (typeof I18n !== 'undefined' ? I18n.t(k, v) : k);
@@ -1148,7 +1164,8 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + (o._folder ? kv('📁', cEsc(o._folder)) : '');
   const val = !preco || o._proj ? '' : kv(cT('list'), cEsc(cMoney(o._l))) + kv(cT('disc'), o._d != null ? o._d + '%' : '—') + kv(cT('net'), o._n != null ? cEsc(cMoney(o._n)) : '—')
     + kv(ivT('tax'), o._ex ? cEsc(ivT('exempt')) : o._tx != null ? cEsc(cMoney(o._tx)) : '—') + kv(ivT('inv_total'), o._it != null ? cEsc(cMoney(o._it)) : '—');
-  return linha + '<tr class="cx-ordexp' + (dentro ? ' cx-in' : '') + '"><td colspan="20"><div class="cx-obox">'
+  const px = cxOrdProj(o);
+  return linha + '<tr class="cx-ordexp' + (dentro ? ' cx-in' : '') + '"><td colspan="20">' + (px ? '<div class="cx-oproj">' + cxProjCardHtml(px, true) + '</div>' : '') + '<div class="cx-obox">'
     + '<div class="cx-ocol"><h5>' + cEsc(odT('more')) + '</h5>' + info + '</div>'
     + (val ? '<div class="cx-ocol"><h5>' + cEsc(odT('prices')) + '</h5>' + val + '</div>' : '')
     + '<div class="cx-ocol cx-otools"><h5>' + cEsc(odT('tools')) + '</h5><div>' + (cxInvBtns(o) || '—') + '</div>'
@@ -2005,7 +2022,7 @@ document.addEventListener('click', (e) => {
   if (a === 'ordmore') {
     e.stopPropagation(); e.preventDefault();
     const id = b.getAttribute('data-id'); const ab = cxOrdOpen();
-    if (ab.has(id)) ab.delete(id); else ab.add(id);
+    if (ab.has(id)) ab.delete(id); else { ab.add(id); const oo = cxState.scope && cxState.scope.orders.find((x) => x.id === id); if (oo && !oo._proj && oo.source_project_id) cxProjCardLoad(oo.source_project_id); }
     return mpRender();
   }
   if (a === 'ftoggle') {
@@ -2024,7 +2041,7 @@ document.addEventListener('click', (e) => {
   if (a === 'pj') {
     e.stopPropagation(); e.preventDefault();
     const o = cxState.scope && cxState.scope.orders.find((x) => x.id === b.getAttribute('data-id'));
-    if (o) cxProjAction(b.getAttribute('data-a'), o);
+    if (o) cxProjAction(b.getAttribute('data-a'), o._proj ? o : (cxOrdProj(o) || o));
     return;
   }
   if (a === 'openproj') {
@@ -2246,7 +2263,7 @@ function cxCss() {
     + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
     + '.cx-table .mp-chip{font-size:11.5px;padding:2px 9px}.cx-table .mp-chip.cx-ch-pay{background:#ece8fb;color:#5546b8}.cx-table td.cx-stcell .cx-mini{margin-left:6px}'
     + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}.cx-table td.cx-facts.cx-facts-l{text-align:left}'
-    + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}.cx-link.cx-link-del{color:#9a2b1e}'
+    + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}.cx-link.cx-link-del{color:#9a2b1e}.cx-oproj{padding:8px 4px 2px;white-space:normal}'
     + '.cx-table .cx-more{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0}.cx-table .cx-more:hover,.cx-table .cx-more.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
     + '.cx-table .cx-mini.cx-mini-go{background:#7a4a1e;border-color:#7a4a1e;color:#fff}.cx-table .cx-mini.cx-mini-go:hover{background:#5f3915}'
     + '.cx-table tr.cx-ord-on td{background:#faf6ee;border-bottom-color:transparent}'
