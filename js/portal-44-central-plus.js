@@ -70,7 +70,7 @@ const CX_TXT = {
     map_fail: 'Não deu pra carregar o mapa (sem internet pro mapa?).', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Loja', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Data', c_who: 'Quem',
     col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'PO', no_po: '— sem PO —', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Minhas pastas', today: 'Atualizados hoje', today_at: 'hoje', fl_all: 'Todos', fl_7: 'Últimos 7 dias', fl_30: 'Últimos 30 dias', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpar filtros', lay_pastas: 'Ver por pastas', lay_lista: 'Ver lista numerada', c_item: 'Projeto / PO', col_pick: 'escolha à esquerda', matriz: 'Matriz', no_client: '— sem cliente —', f_all_stores: 'Todas as lojas', f_all_stages: 'Todas as etapas', f_search: 'Buscar PO, ambiente, endereço…', no_store: '— sem loja —', net_none: 'Nenhum pedido.',
-    rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', totals: '{n} pedido(s) · tabela {l} · com desconto {v}', fab_net: 'Fábrica c/ desc.', sale: 'Venda ao cliente', sum: 'Total ({n})'
+    rel_prod: 'Liberar produção', rel_pick: 'Liberar coleta', rel_prod_q: 'Liberar o pedido {n} pra PRODUÇÃO?', rel_pick_q: 'Liberar o pedido {n} pra COLETA?', rel_done: 'Marcar entregue', rel_done_q: 'Marcar o pedido {n} como ENTREGUE (coletado)?\n\nEle sai de "Pronto pra coleta" e vai pra Entregue.', totals: '{n} pedido(s) · tabela {l} · com desconto {v}', fab_net: 'Fábrica c/ desc.', sale: 'Venda ao cliente', sum: 'Total ({n})'
   },
   en: {
     po: 'Label name (PO)', po_ph: 'how you will find it on site', room: 'Room', room_ph: 'Kitchen, Master bath…', addr: 'Job site address', addr_ph: 'street, number, city, state',
@@ -84,7 +84,7 @@ const CX_TXT = {
     map_fail: 'Could not load the map.', open: 'Open order',
     c_no: 'No.', c_store: 'Store', c_po: 'Label (PO)', c_room: 'Room', c_city: 'Job site', c_stage: 'Stage', c_date: 'Date', c_who: 'Who',
     col_factory: 'Factory', col_dealer: 'Dealer', col_seller: 'Salesperson', col_client: 'PO', no_po: '— no PO —', col_all: 'All', col_find: 'search…', back_folders: '‹ My folders', today: 'Updated today', today_at: 'today', fl_all: 'All', fl_7: 'Last 7 days', fl_30: 'Last 30 days', fl_asc: 'Sort ↑', fl_desc: 'Sort ↓', fl_clear: 'Clear filters', lay_pastas: 'View as folders', lay_lista: 'View numbered list', c_item: 'Project / PO', col_pick: 'pick on the left', matriz: 'Headquarters', no_client: '— no client —', f_all_stores: 'All stores', f_all_stages: 'All stages', f_search: 'Search PO, room, address…', no_store: '— no store —', net_none: 'No orders.',
-    rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', totals: '{n} order(s) · list {l} · net {v}', fab_net: 'Factory net', sale: 'Client price', sum: 'Total ({n})'
+    rel_prod: 'Release production', rel_pick: 'Release pickup', rel_prod_q: 'Release order {n} to PRODUCTION?', rel_pick_q: 'Release order {n} for PICKUP?', rel_done: 'Mark delivered', rel_done_q: 'Mark order {n} as DELIVERED (picked up)?\n\nIt leaves "Ready for pickup" and goes to Delivered.', totals: '{n} order(s) · list {l} · net {v}', fab_net: 'Factory net', sale: 'Client price', sum: 'Total ({n})'
   },
   es: {
     po: 'Nombre de etiqueta (PO)', po_ph: 'cómo lo encontrará en la obra', room: 'Ambiente', room_ph: 'Cocina, baño principal…', addr: 'Dirección de la obra', addr_ph: 'calle, número, ciudad, estado',
@@ -98,7 +98,7 @@ const CX_TXT = {
     map_fail: 'No se pudo cargar el mapa.', open: 'Abrir pedido',
     c_no: 'Nº', c_store: 'Tienda', c_po: 'Etiqueta (PO)', c_room: 'Ambiente', c_city: 'Obra', c_stage: 'Etapa', c_date: 'Fecha', c_who: 'Quién',
     col_factory: 'Fábrica', col_dealer: 'Dealer', col_seller: 'Vendedor', col_client: 'PO', no_po: '— sin PO —', col_all: 'Todos', col_find: 'buscar…', back_folders: '‹ Mis carpetas', today: 'Actualizados hoy', today_at: 'hoy', fl_all: 'Todos', fl_7: 'Últimos 7 días', fl_30: 'Últimos 30 días', fl_asc: 'Ordenar ↑', fl_desc: 'Ordenar ↓', fl_clear: 'Limpiar filtros', lay_pastas: 'Ver por carpetas', lay_lista: 'Ver lista numerada', c_item: 'Proyecto / PO', col_pick: 'elija a la izquierda', matriz: 'Matriz', no_client: '— sin cliente —', f_all_stores: 'Todas las tiendas', f_all_stages: 'Todas las etapas', f_search: 'Buscar PO, ambiente, dirección…', no_store: '— sin tienda —', net_none: 'Ningún pedido.',
-    rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', totals: '{n} pedido(s) · lista {l} · con descuento {v}', fab_net: 'Fábrica c/ desc.', sale: 'Venta al cliente', sum: 'Total ({n})'
+    rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', rel_done: 'Marcar entregado', rel_done_q: '¿Marcar el pedido {n} como ENTREGADO (retirado)?\n\nSale de "Listo para retiro" y pasa a Entregado.', totals: '{n} pedido(s) · lista {l} · con descuento {v}', fab_net: 'Fábrica c/ desc.', sale: 'Venta al cliente', sum: 'Total ({n})'
   }
 };
 function cxLang() { try { const l = (typeof I18n !== 'undefined' && I18n.getLanguage) ? I18n.getLanguage() : 'en'; return CX_TXT[l] ? l : 'en'; } catch (e) { return 'en'; } }
@@ -1270,7 +1270,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
   const id = cEsc(o.id);
   const mini = (cx, rot, extra, tip) => '<button type="button" class="cx-mini' + (extra || '') + '" data-cx="' + cx + '" data-id="' + id + '"' + (tip ? ' title="' + cEsc(tip) + '"' : '') + '>' + cEsc(rot) + '</button>';
   const temInv = s.invOk && !o._proj && o.status !== 'submitted' && !cxSeller();   // invoice = valores de fábrica: vendedor não abre
-  const libera = !cxAdmin() ? '' : (o._s === 'pay' ? ' ' + mini('relprod', cT('rel_prod'), ' cx-mini-go') : o._s === 'prod' ? ' ' + mini('relpick', cT('rel_pick'), cxProdInfo(o).embalado ? ' cx-mini-go' : '') : '');   // 21/11: marrom só quando já está tudo embalado; antes disso fica discreto
+  const libera = !cxAdmin() ? '' : (o._s === 'pay' ? ' ' + mini('relprod', cT('rel_prod'), ' cx-mini-go') : o._s === 'prod' ? ' ' + mini('relpick', cT('rel_pick'), cxProdInfo(o).embalado ? ' cx-mini-go' : '') : o._s === 'ready' ? ' ' + mini('reldone', cT('rel_done'), ' cx-mini-go') : '');   // 21/11: marrom só quando já está tudo embalado; antes disso fica discreto
   const inv = !temInv ? '—' : mini('inv', o.invoice_number || ivT('inv'), o.invoice_number ? ' cx-mini-ok' : '') + (o.qbo_invoice_id ? '<small class="cx-est" title="QuickBooks">QB</small>' : '');
   const pago = !!(o.paid_at || o.qbo_paid_at);
   const parcial = !pago && o.qbo_invoice_id && o.qbo_balance != null && o._it != null && Number(o.qbo_balance) > 0 && Number(o.qbo_balance) < Number(o._it) - 0.005;
@@ -1362,7 +1362,8 @@ function cxFlatTable(rows, principal) {
       const envia = o._proj && (cxAdmin() || (o.client_user_id === cxMe() && !cxSeller()))
         ? ' <button type="button" class="cx-sendfab" data-cx="sendfab" data-id="' + cEsc(o.id) + '">' + cEsc(sfT('btn')) + '</button>' : '';
       const acao = (!soProj && !o._proj ? cxInvBtns(o) : '') + (!cxAdmin() ? '' : (o._s === 'pay' ? '<button type="button" class="secondary" data-cx="relprod" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_prod')) + '</button>'
-        : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>' : ''));
+        : o._s === 'prod' ? '<button type="button" class="secondary" data-cx="relpick" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_pick')) + '</button>'
+          : o._s === 'ready' ? '<button type="button" class="secondary" data-cx="reldone" data-id="' + cEsc(o.id) + '">' + cEsc(cT('rel_done')) + '</button>' : ''));
       const num = o._proj ? (cxPnum(o.project_number) || '—')
         : ((Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : '—') + (o.project_number ? ' <span class="cx-pref">' + cxPnum(o.project_number) + '</span>' : ''));
       const ehFab = !o._proj && Number(o.factory_number) > 0;
@@ -1697,9 +1698,14 @@ async function cxAdminRelease(id, qual) {
   const o = cxState.scope && cxState.scope.orders.find((x) => x.id === id);
   if (!o || !cxAdmin()) return;
   const n = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : (o.po_name || '');
-  if (!confirm(cT(qual === 'prod' ? 'rel_prod_q' : 'rel_pick_q', { n }))) return;
+  if (!confirm(cT(qual === 'prod' ? 'rel_prod_q' : qual === 'done' ? 'rel_done_q' : 'rel_pick_q', { n }))) return;
   const agora = new Date().toISOString();
-  const patch = qual === 'prod' ? { finance_released_at: agora, finance_released_by: cxMe() } : { pickup_released_at: agora, pickup_released_by: cxMe() };
+  // 'done' (22/11, Matt: "como faço pra mudar status do pedido de pronto pra coleta para entregue"):
+  // o botão "Marcar como entregue" da tela do pedido só aparecia com status 'paid', que não é mais
+  // usado — então não havia caminho. Agora a fábrica marca aqui: status 'delivered' + delivered_at.
+  const patch = qual === 'prod' ? { finance_released_at: agora, finance_released_by: cxMe() }
+    : qual === 'done' ? { status: 'delivered', delivered_at: agora }
+      : { pickup_released_at: agora, pickup_released_by: cxMe() };
   const { data, error } = await supabaseClient.from('orders').update(patch).eq('id', id).select('id');
   if (error || !data || !data.length) { alert((error && error.message) || 'RLS'); return; }
   Object.assign(o, patch); o._s = cxStage(o);
@@ -2201,6 +2207,7 @@ document.addEventListener('click', (e) => {
   if (a === 'delall') { e.stopPropagation(); e.preventDefault(); return cxDeleteOrders(cxExcluiveis().map((o) => o.id)); }
   if (a === 'relprod') return cxAdminRelease(b.getAttribute('data-id'), 'prod');
   if (a === 'relpick') return cxAdminRelease(b.getAttribute('data-id'), 'pick');
+  if (a === 'reldone') return cxAdminRelease(b.getAttribute('data-id'), 'done');
   if (a === 'openorder') {
     const id = b.getAttribute('data-id');
     const o = cxState.scope && cxState.scope.orders.find((x) => x.id === id);
