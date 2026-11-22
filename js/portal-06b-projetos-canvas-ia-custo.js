@@ -3249,6 +3249,13 @@ function moneyRowCost(r) {
 // conta que não fosse vendedor (com a senha da aba). window.LEGNO_IS_ADMIN
 // vem do rpc is_admin() no login (js/portal-26-config-modulo.js) — enquanto
 // não chegou, conta como NÃO admin (a aba aparece quando a resposta vem).
+// $ ORDER QUOTE = só DEALER (22/11, Matt: "aqui só pro dealer, os vendedores não podem
+// ter acesso a esse botão"). Lista de quem PODE (dealer e fábrica), não de quem não pode:
+// vendedor, contractor, cliente e visitante ficam de fora — inclusive qualquer papel novo.
+function moneyPodeOrderQuote() {
+  if (typeof isSellerAccount === 'function' && isSellerAccount()) return false;
+  return (typeof hasDealerTools === 'function' && hasDealerTools()) || window.LEGNO_IS_ADMIN === true;
+}
 function moneyFabricaBloqueada() {
   return isSellerAccount() || window.LEGNO_IS_ADMIN !== true;
 }
@@ -3311,7 +3318,7 @@ function renderMoneyModal() {
   // Client quote = preço de venda (só o total); Order quote = o que o dealer paga à fábrica.
   // Vendedor NUNCA vê custo/desconto: a aba nem aparece pra ele e o conteúdo não desenha.
   const pedidoTabBtn = document.querySelector('.po-money-tab[data-money-tab="pedido"]');
-  const semPedido = (typeof isSellerAccount === 'function') && isSellerAccount();
+  const semPedido = !moneyPodeOrderQuote();
   if (pedidoTabBtn) pedidoTabBtn.style.display = semPedido ? 'none' : '';
   if (semPedido && moneyAbaAtual === 'pedido') moneyAbaAtual = 'orcamento';
   document.querySelectorAll('.po-money-tab').forEach((b) => {
@@ -3480,7 +3487,7 @@ function renderMoneyOrcamento(body, rel, slots) {
       + '<strong>' + formatMoney(quoteTotal) + '</strong></div>'
     + (semMargem ? '<p class="po-money-sub" style="color:#b45309;">' + I18n.t('money.quote_no_margin_warn') + '</p>' : '');
   // ORDER QUOTE: tabela → desconto de fábrica → o que o dealer paga (por módulo e no total).
-  if (moneyAbaAtual === 'pedido' && !isSellerAccount()) {
+  if (moneyAbaAtual === 'pedido' && moneyPodeOrderQuote()) {
     const descPct = Number(getFactoryDiscountPct()) || 0;
     const fator = 1 - descPct / 100;
     const r2 = (v) => Math.round(v * 100) / 100;

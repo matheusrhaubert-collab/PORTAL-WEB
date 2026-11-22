@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-// Bancada da migration 330 (pagamento: Zelle / link, desconto na invoice). PGlite.
+// Bancada das migrations 330 + 331 (pagamento: Zelle / link, desconto na invoice; líquido com desconto de fábrica). PGlite.
 // Rodar (terminal, nesta pasta): node teste-pagamento.mjs   — precisa de `npm i @electric-sql/pglite` aqui, uma vez.
 import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url';
 const R = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -17,6 +17,8 @@ for (const f of ['migration_306_empresas_arvore_base.sql', 'migration_307_virar_
 }
 const sql = fs.readFileSync(path.join(DB, 'migration_330_pagamento_zelle_e_descontos.sql'), 'utf8');
 await ex(sql); await ex(sql);
+const sql2 = fs.readFileSync(path.join(DB, 'migration_331_liquido_da_invoice_com_desconto_de_fabrica.sql'), 'utf8');
+await ex(sql2); await ex(sql2);
 let fails = 0; const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails++; };
 const U = {};
 for (const [k, role] of [['admin', 'administrador'], ['dA', 'lojista'], ['dX', 'lojista']]) {
@@ -68,4 +70,26 @@ r = (await q(`select * from orders where id=$1`, [o2]))[0];
 ok(Number(r.pay_discount_pct) === 3.5 && Number(r.pay_discount_amount) === 11.67 && Number(r.tax_amount) === 22.52 && Number(r.invoice_total) === 344.18, 'condições 2% + 1,5% com centavos: 333,33 → −11,67 → tax 22,52 → 344,18');
 const t = (await as('dA', () => q(`select factory_payment_terms() t`)))[0].t;
 ok(t.zelle_to === 'pay@f.com' && Number(t.zelle_pct) === 2, 'dealer lê o Zelle da fábrica');
+// PEDIDO ANTIGO sem a foto do preço (caso do Matt): tabela 149.57, loja com 60% → líquido 59.83
+const acc = (await q(`insert into accounts(kind,status,trade_name,factory_discount_pct) values ('dealer','active','L',60) returning id`))[0].id;
+await as('admin', () => q(`select admin_set_payment_terms(3, 3, null, null)`));
+await as('admin', () => q(`select admin_set_sales_tax(0)`));
+const o3 = (await q(`insert into orders(client_user_id,status,account_id) values ($1,'draft',$2) returning id`, [U.dA, acc]))[0].id;
+await q(`insert into order_items(order_id,total_price) values ($1, 149.57)`, [o3]);
+await q(`update orders set status='approved' where id=$1`, [o3]);
+await q(`update orders set price_net_total=null, price_list_total=null, price_stamped_at=now() where id=$1`, [o3]);   // simula pedido de antes da 306
+await as('dA', () => q(`select order_stamp_invoice($1::uuid[])`, [[o3]]));
+r = (await q(`select * from orders where id=$1`, [o3]))[0];
+ok(Number(r.invoice_total) === 59.83, 'pedido sem foto: invoice = 149.57 − 60% = 59.83 (era 149.57)');
+await as('dA', () => q(`select order_choose_payment($1::uuid[], 'zelle')`, [[o3]]));
+r = (await q(`select * from orders where id=$1`, [o3]))[0];
+ok(Number(r.pay_discount_amount) === 3.59 && Number(r.invoice_total) === 56.24, 'Zelle + antecipado sobre 59.83: −3.59 → total 56.24');
+await as('admin', () => q(`select order_stamp_invoice($1::uuid[], true)`, [[o3]]));
+r = (await q(`select * from orders where id=$1`, [o3]))[0];
+ok(Number(r.invoice_total) === 56.24 && r.pay_method === 'zelle', 'emitir a invoice de novo (admin) mantém o desconto de pagamento');
+// conserto: estraga na mão e roda a 331 de novo
+await ex(`select set_config('legno.invoice_rpc','1',false); update orders set invoice_total = 140.60, pay_discount_amount = 8.97 where id = '${o3}'; select set_config('legno.invoice_rpc','',false);`);
+await ex(sql2);
+r = (await q(`select * from orders where id=$1`, [o3]))[0];
+ok(Number(r.invoice_total) === 56.24 && Number(r.pay_discount_amount) === 3.59, 'a 331 conserta invoice gravada errada (140.60 → 56.24)');
 console.log(fails ? `\n${fails} FALHA(S)` : '\nTUDO CERTO'); process.exit(fails ? 1 : 0);
