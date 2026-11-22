@@ -1600,6 +1600,16 @@ function renderOrderDetail() {
   const isLocked = isApproved || isPaid || isDelivered;
 
   document.getElementById('po-order-detail-title').textContent = order.po_name || order.client_name || I18n.t('pdf.order_fallback');
+  // Número do pedido na fábrica ao lado do título (22/11, Matt: "preciso número do
+  // pedido aqui"). Mesmo número/etiqueta da lista (factory_number, 5 dígitos);
+  // pedido que ainda não foi enviado/aprovado não tem número e a etiqueta some.
+  (function () {
+    const h = document.getElementById('po-order-detail-title'); if (!h || !h.parentNode) return;
+    let n = document.getElementById('po-order-detail-no');
+    if (!n) { n = document.createElement('span'); n.id = 'po-order-detail-no'; n.className = 'po-order-factory-no'; n.style.cssText = 'font-size:16px;padding:3px 10px;margin-right:10px;vertical-align:middle;'; h.parentNode.insertBefore(n, h); }
+    const num = Number(order.factory_number) > 0 ? String(Number(order.factory_number)).padStart(5, '0') : '';
+    n.textContent = num; n.title = num ? I18n.t('my_orders.factory_no_tip') : ''; n.style.display = num ? '' : 'none';
+  })();
   document.getElementById('po-order-detail-status-badge').textContent = orderStatusLabel(order.status);
 
   const fieldsWrap = document.getElementById('po-order-detail-fields');
