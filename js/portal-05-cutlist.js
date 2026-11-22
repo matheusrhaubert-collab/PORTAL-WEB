@@ -599,14 +599,24 @@ async function loadDealerTeamList() {
         <span class="hint">${(s.email || '').replace(/</g, '&lt;')}</span>
         <span class="hint">${I18n.t('nav.dealer_team_projects_count', { n: stats.count })} · ${formatGalleryPrice(stats.total)}</span>
         <span class="hint">${I18n.t('nav.dealer_team_last_active', { date: lastActive })}</span>
+        ${'seller_margin_pct' in s ? `<label class="po-dealer-team-margin" title="${I18n.t('nav.dealer_team_margin_tip')}">${I18n.t('nav.dealer_team_margin')} +<input type="text" inputmode="decimal" data-team-margin="${s.user_id}" value="${s.seller_margin_pct == null ? '' : Number(s.seller_margin_pct)}" placeholder="${Number(getResaleMarginPct()) || 0}">%</label>` : ''}
         <span class="po-dealer-team-actions">
-          <button type="button" class="secondary" data-team-projects="${s.user_id}">${I18n.t('nav.dealer_team_see_projects')}</button>
+          <button type="button" class="secondary" data-team-projects=""${s.user_id}">${I18n.t('nav.dealer_team_see_projects')}</button>
           <button type="button" class="secondary" data-team-toggle="${s.user_id}" data-team-active="${active ? '1' : '0'}">${I18n.t(active ? 'nav.dealer_team_deactivate' : 'nav.dealer_team_activate')}</button>
         </span>
       </div>`;
     }).join('');
     listEl.querySelectorAll('[data-team-projects]').forEach((b) => b.addEventListener('click', () => {
       openSellerProjects(b.getAttribute('data-team-projects'));
+    }));
+    // MARGEM POR VENDEDOR (migration 320): vazio = segue a margem geral da loja
+    listEl.querySelectorAll('[data-team-margin]').forEach((inp) => inp.addEventListener('change', async () => {
+      const txt = String(inp.value).trim().replace(',', '.');
+      const pct = txt === '' ? null : Number(txt);
+      if (pct !== null && (!Number.isFinite(pct) || pct < 0 || pct > 1000)) { inp.style.borderColor = '#c0392b'; return; }
+      const { error } = await supabaseClient.rpc('set_seller_margin', { p_user: inp.getAttribute('data-team-margin'), p_pct: pct });
+      inp.style.borderColor = error ? '#c0392b' : '#2e8b47';
+      if (error) inp.title = error.message || '';
     }));
     listEl.querySelectorAll('[data-team-toggle]').forEach((b) => b.addEventListener('click', () => {
       setSellerActive(b.getAttribute('data-team-toggle'), b.getAttribute('data-team-active') !== '1', b);

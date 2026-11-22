@@ -6710,3 +6710,7 @@ body.po-proj-readonly #po-proj-toolbar-save-btn,
 body.po-proj-readonly #po-proj-save-fav-btn,
 body.po-proj-readonly #po-proj-save-indicator,
 body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }
+
+/* Margem por vendedor na lista da equipe (21/11, migration 320) */
+.po-dealer-team-margin { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; margin: 2px 0; }
+.po-dealer-team-margin input { width: 58px; padding: 3px 6px; margin: 0; text-align: right; border: 1px solid var(--border, #d9d3c7); border-radius: 6px; font-size: 13px; }
