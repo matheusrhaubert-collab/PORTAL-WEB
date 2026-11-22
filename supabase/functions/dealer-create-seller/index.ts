@@ -73,7 +73,18 @@ Deno.serve(async (req: Request) => {
       { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
     );
     const profileCheckRows = profileCheckRes.ok ? await profileCheckRes.json() : [];
-    const callerRole = Array.isArray(profileCheckRows) && profileCheckRows[0] ? profileCheckRows[0].role : null;
+    let callerRole = Array.isArray(profileCheckRows) && profileCheckRows[0] ? profileCheckRows[0].role : null;
+    // 21/11: administrador de verdade é quem está em admin_users (é o que o
+    // is_admin() do banco confere) — o role do perfil pode ser outro. Sem isso
+    // o admin recebia "Esse vendedor não é da sua loja" ao bloquear na árvore.
+    try {
+      const admRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${callerId}&select=user_id`,
+        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+      );
+      const admRows = admRes.ok ? await admRes.json() : [];
+      if (Array.isArray(admRows) && admRows.length) callerRole = 'administrador';
+    } catch (_e) { /* fica o role do perfil */ }
     if (callerRole !== 'lojista' && callerRole !== 'administrador') { // admin também (01/10)
       return jsonResponse({ error: 'Só uma conta Dealer pode criar vendedores.' }, 403);
     }
