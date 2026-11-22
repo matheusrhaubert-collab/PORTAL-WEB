@@ -561,6 +561,7 @@ function meClick(e) {
   // "quero poder bloquear algum vendedor também, ou liberar acesso"). Mesma
   // função da aba Equipe (dealer-create-seller set_active): bloqueado não
   // entra no portal; projetos e pedidos dele continuam na loja.
+  if (a === 'ppadd') { e.stopPropagation(); return mePpAddOpen(b.getAttribute('data-acc')); }
   if (a === 'pplock') {
     const u = b.getAttribute('data-u'); const liberar = b.getAttribute('data-v') === '1';
     const p = ppUser(u); if (!p || meState.busy) return;
@@ -763,6 +764,7 @@ function meCss() {
     '.pp-tree>li.pp-newli{margin:8px 0 0 14px;padding-left:22px}.pp-tree>li.pp-newli::before{content:"";position:absolute;left:0;top:-8px;height:29px;border-left:2px solid #d3c6ae}.pp-tree>li.pp-newli::after{content:"";position:absolute;left:0;top:20px;width:18px;border-top:2px solid #d3c6ae}',
     '.pp-node{display:flex;align-items:center;gap:8px;background:#efe8db;border:1px solid #e0d6c3;border-radius:9px;padding:5px 8px;font-size:13.5px;min-height:36px}.pp-node>strong{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pp-node .pp-p{flex:1;min-width:0}.pp-node .pp-n{margin-left:auto}',
     '.pp-store.is-fab>.pp-node{background:#2b2621;color:#fff;border-color:#2b2621}.pp-store.is-fab>.pp-node .me-pill{background:#fff;color:#2b2621}.pp-p{color:#2b2621}.pp-store.is-fab>.pp-node .pp-p.is-fixo{opacity:1}.pp-store.is-fab>.pp-node .pp-n{color:#cfc7ba}.pp-ico{font-size:15px}',
+    '.pp-addbtn{margin:0 0 0 6px;width:auto;padding:2px 9px;font-size:11.5px;font-weight:700;border-radius:6px;border:1px solid #b9a888;background:#fff;color:#5a4526;cursor:pointer;white-space:nowrap;box-shadow:none}.pp-addbtn:hover{background:#f6efe2}',
     '.pp-store.is-semdono>.pp-node{border-style:dashed;border-color:#c9a36b;background:#fdf8ef}.pp-need{flex:1;font-size:12.5px;color:#7a4a1e;font-style:italic}',
     '.pp-node.pp-new{border:2px dashed #c9a36b;background:#fdf8ef;color:#7a4a1e;font-size:13px;min-width:0;flex:none}',
     '.pp-tree ul.pp-kids>li>.pp-p{max-width:520px}',
@@ -979,6 +981,8 @@ function meViewPeople() {
       + (a.status === 'suspended' ? '<span class="me-pill st-suspended">' + mEsc(ppT('susp')) + '</span>' : '')
       + (!dono.length && !fab ? '<span class="pp-need">' + mEsc(ppT('drop_owner')) + '</span>' : '')
       + (q ? visD : dono).map(chip).join('')
+      // + PESSOA (22/11): cria o login e já põe nesta loja — ver mePpAddOpen
+      + (fab ? '' : '<button type="button" class="pp-addbtn" data-a="ppadd" data-acc="' + mEsc(a.id) + '" title="' + mEsc(paT('tip', { loja: nome })) + '">+ ' + mEsc(paT('btn')) + '</button>')
       + '<span class="pp-n">' + l.length + '</span></div>'
       + ((q ? visR : resto).length || sub ? '<ul class="pp-kids">' + (q ? visR : resto).map((p) => '<li>' + chip(p) + '</li>').join('') + sub + '</ul>' : '')
       + '</li>';
@@ -1264,6 +1268,122 @@ function mePpInput(e) {
   const pos = e.target.selectionStart;
   meRender();
   const n = document.getElementById('pp-q'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (er) { /* ok */ } }
+}
+
+// ============================================================
+// + PESSOA NA LOJA (22/11/2026) — SÓ ADMIN (aba Pessoas)
+// ============================================================
+// Matt: "na árvore quero poder adicionar uma pessoa no meu time, deve preencher
+// o cadastro dos dados básicos e criar um e-mail e senha pra essa pessoa...
+// de cada loja". Botão "+ Pessoa" em cada loja da árvore → janela #pp-add.
+// Passos do salvar (para no 1º erro e diz em qual ficou):
+//   1. Edge Function dealer-create-seller { place_later:true } = cria o login
+//      (e-mail + senha, já confirmado) com perfil 'cliente', sem loja;
+//   2. RPC admin_place_user = põe na loja (vendedor; loja sem dealer = vira o
+//      dealer dela — mesma regra de arrastar);
+//   3. RPC set_member_kind = o tipo (salesperson, contractor…);
+//   4. person_records = dados básicos (empresa, contato, telefone, cidade…).
+// A senha aparece UMA vez no aviso final, pra você passar pra pessoa; o portal
+// não guarda nem mostra de novo. Precisa da função publicada
+// (publicar-funcao-vendedores.bat): a versão antiga ignora place_later e a
+// pessoa nasceria como vendedor de quem criou — o passo 2 corrige do mesmo jeito.
+// Regra de formulário: clicar fora NÃO fecha.
+const PA_TXT = {
+  pt: { btn: 'Pessoa', tip: 'Adicionar uma pessoa na loja {loja}', title: 'Nova pessoa em {loja}', sub_owner: 'Esta loja ainda não tem dealer: a pessoa criada vira o DEALER (dono) dela.', sub_seller: 'A pessoa entra na equipe desta loja e responde ao dealer dela.',
+    h_login: 'Acesso ao portal', h_dados: 'Dados básicos', name: 'Nome completo *', email: 'E-mail (login) *', pass: 'Senha * (mín. 6)', gen: 'Gerar', kind: 'Tipo', phone: 'Telefone', company: 'Empresa', city: 'Cidade', state: 'Estado', notes: 'Observações',
+    save: 'Criar pessoa', cancel: 'Cancelar', saving: 'Criando…', need: 'Preencha nome, e-mail e uma senha de pelo menos 6 caracteres.', q_discard: 'Fechar sem criar a pessoa?',
+    done: 'Pessoa criada em {loja}.\n\nLogin: {email}\nSenha: {senha}\n\nAnote agora: a senha não aparece de novo. A pessoa pode trocar depois em "Esqueci a senha".',
+    part: 'O login {email} FOI CRIADO, mas um passo seguinte falhou ({passo}):\n\n{erro}\n\nA pessoa aparece na árvore (em "Sem loja" se o passo foi o da loja) — complete por lá. Senha: {senha}', p2: 'pôr na loja', p3: 'tipo', p4: 'dados básicos' },
+  en: { btn: 'Person', tip: 'Add a person to store {loja}', title: 'New person in {loja}', sub_owner: 'This store has no dealer yet: the person created becomes its DEALER (owner).', sub_seller: 'The person joins this store team and reports to its dealer.',
+    h_login: 'Portal access', h_dados: 'Basic information', name: 'Full name *', email: 'E-mail (login) *', pass: 'Password * (min. 6)', gen: 'Generate', kind: 'Type', phone: 'Phone', company: 'Company', city: 'City', state: 'State', notes: 'Notes',
+    save: 'Create person', cancel: 'Cancel', saving: 'Creating…', need: 'Fill in name, e-mail and a password with at least 6 characters.', q_discard: 'Close without creating the person?',
+    done: 'Person created in {loja}.\n\nLogin: {email}\nPassword: {senha}\n\nWrite it down now: the password is not shown again. The person can change it later with "Forgot password".',
+    part: 'The login {email} WAS CREATED, but a following step failed ({passo}):\n\n{erro}\n\nThe person shows in the tree (under "No store" if the store step failed) — finish it there. Password: {senha}', p2: 'place in store', p3: 'type', p4: 'basic information' },
+  es: { btn: 'Persona', tip: 'Agregar una persona a la tienda {loja}', title: 'Nueva persona en {loja}', sub_owner: 'Esta tienda aún no tiene dealer: la persona creada será su DEALER (dueño).', sub_seller: 'La persona entra al equipo de esta tienda y responde a su dealer.',
+    h_login: 'Acceso al portal', h_dados: 'Datos básicos', name: 'Nombre completo *', email: 'E-mail (login) *', pass: 'Contraseña * (mín. 6)', gen: 'Generar', kind: 'Tipo', phone: 'Teléfono', company: 'Empresa', city: 'Ciudad', state: 'Estado', notes: 'Observaciones',
+    save: 'Crear persona', cancel: 'Cancelar', saving: 'Creando…', need: 'Complete nombre, e-mail y una contraseña de al menos 6 caracteres.', q_discard: '¿Cerrar sin crear la persona?',
+    done: 'Persona creada en {loja}.\n\nLogin: {email}\nContraseña: {senha}\n\nAnótela ahora: la contraseña no se muestra de nuevo.',
+    part: 'El login {email} FUE CREADO, pero un paso siguiente falló ({passo}):\n\n{erro}\n\nLa persona aparece en el árbol — complete allí. Contraseña: {senha}', p2: 'poner en la tienda', p3: 'tipo', p4: 'datos básicos' }
+};
+function paT(k, v) { const L = PA_TXT[String(meLang()).slice(0, 2)] || PA_TXT.en; let t = L[k] != null ? L[k] : (PA_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x] == null ? '' : String(v[x])); }); return t; }
+function paSenha() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; const buf = new Uint32Array(10);
+  (window.crypto || window.msCrypto).getRandomValues(buf);
+  return Array.from(buf).map((n) => abc[n % abc.length]).join('');
+}
+function mePpAddOpen(accId) {
+  if (!meIsAdmin() || !accId) return;
+  meCss();
+  const loja = ppAccName(accId); const modo = ppModo(accId);
+  let ov = document.getElementById('pp-add');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'pp-add';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10002;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto';
+    ov.addEventListener('click', (e) => {
+      if (e.target.closest('[data-pa="close"]')) { if (ov.dataset.sujo === '1' && !confirm(paT('q_discard'))) return; ov.remove(); return; }
+      if (e.target.closest('[data-pa="gen"]')) { const i = ov.querySelector('#pa-pass'); if (i) { i.value = paSenha(); ov.dataset.sujo = '1'; } return; }
+      if (e.target.closest('[data-pa="save"]')) return mePpAddSave(ov);
+    });
+    ov.addEventListener('input', () => { ov.dataset.sujo = '1'; });
+    document.body.appendChild(ov);
+  }
+  ov.dataset.acc = accId; ov.dataset.sujo = '';
+  const f = (id, rot, extra, cls) => '<label class="pc-f' + (cls ? ' ' + cls : '') + '">' + mEsc(rot) + '<input id="' + id + '" ' + (extra || 'type="text"') + ' autocomplete="off"></label>';
+  ov.innerHTML = '<div class="pc-box" role="dialog" aria-modal="true" style="max-width:720px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div><h3 style="margin:0">' + mEsc(paT('title', { loja })) + '</h3>'
+    + '<p class="hint" style="margin:4px 0 0">' + mEsc(paT(modo === 'owner' ? 'sub_owner' : 'sub_seller')) + '</p></div>'
+    + '<button type="button" class="secondary" data-pa="close" style="margin:0;width:auto">×</button></div>'
+    + '<p class="error pa-err" style="display:none"></p>'
+    + '<h4>' + mEsc(paT('h_login')) + '</h4><div class="pc-grid">'
+    + f('pa-name', paT('name'), '', 'w2') + f('pa-email', paT('email'), 'type="email"', 'w2')
+    + '<label class="pc-f w2">' + mEsc(paT('pass')) + '<span style="display:flex;gap:6px"><input id="pa-pass" type="text" autocomplete="off" value="' + mEsc(paSenha()) + '"><button type="button" class="secondary" data-pa="gen" style="margin:0;width:auto;white-space:nowrap">' + mEsc(paT('gen')) + '</button></span></label>'
+    + '<label class="pc-f w2">' + mEsc(paT('kind')) + '<select id="pa-kind">' + PP_KINDS.map((k) => '<option value="' + k + '">' + mEsc(ppT('k_' + k) !== 'k_' + k ? ppT('k_' + k) : k) + '</option>').join('') + '</select></label>'
+    + '</div><h4>' + mEsc(paT('h_dados')) + '</h4><div class="pc-grid">'
+    + f('pa-phone', paT('phone'), 'type="tel"', 'w2') + f('pa-company', paT('company'), '', 'w2')
+    + f('pa-city', paT('city'), '', 'w2') + f('pa-state', paT('state')) + '<span></span>'
+    + '<label class="pc-f" style="grid-column:1/-1">' + mEsc(paT('notes')) + '<input id="pa-notes" type="text" autocomplete="off"></label>'
+    + '</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'
+    + '<button type="button" class="secondary" data-pa="close" style="margin:0;width:auto">' + mEsc(paT('cancel')) + '</button>'
+    + '<button type="button" data-pa="save" style="margin:0;width:auto">' + mEsc(paT('save')) + '</button></div></div>';
+  const n = ov.querySelector('#pa-name'); if (n) n.focus();
+}
+async function mePpAddSave(ov) {
+  if (ov.dataset.busy === '1') return;
+  const v = (id) => ((ov.querySelector('#' + id) || {}).value || '').trim();
+  const accId = ov.dataset.acc; const loja = ppAccName(accId);
+  const full_name = v('pa-name'); const email = v('pa-email').toLowerCase(); const password = (ov.querySelector('#pa-pass') || {}).value || '';
+  const errEl = ov.querySelector('.pa-err'); const btn = ov.querySelector('[data-pa="save"]');
+  const erro = (m) => { if (errEl) { errEl.textContent = m; errEl.style.display = 'block'; } };   // NÃO redesenha: o digitado fica
+  if (!full_name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 6) return erro(paT('need'));
+  ov.dataset.busy = '1'; if (errEl) errEl.style.display = 'none'; if (btn) { btn.disabled = true; btn.textContent = paT('saving'); }
+  let userId = null; let passo = '';
+  try {
+    const { data, error } = await supabaseClient.functions.invoke('dealer-create-seller', { body: { full_name, email, password, place_later: true } });
+    const msg = await meFnError(error, data);
+    if (msg) throw new Error(msg);
+    userId = data && data.user_id;
+    if (!userId) throw new Error('user_id');
+    passo = 'p2';
+    const r2 = await supabaseClient.rpc('admin_place_user', { p_user: userId, p_account: accId, p_mode: ppModo(accId), p_move_data: false });
+    if (r2.error) throw r2.error;
+    passo = 'p3';
+    const kind = v('pa-kind');
+    if (kind && kind !== 'salesperson') { const r3 = await supabaseClient.rpc('set_member_kind', { p_user: userId, p_kind: kind }); if (r3.error) throw r3.error; }
+    passo = 'p4';
+    const dados = { contact_name: full_name, phone: v('pa-phone') || null, company_name: v('pa-company') || null, city: v('pa-city') || null, state: v('pa-state') || null, notes: v('pa-notes') || null, billing_email: email };
+    const r4 = await supabaseClient.from('person_records').upsert(Object.assign({ user_id: userId }, dados), { onConflict: 'user_id' });
+    if (r4.error) throw r4.error;
+    ov.remove();
+    alert(paT('done', { loja, email, senha: password }));
+  } catch (er) {
+    const m = (er && er.message) || String(er);
+    if (!userId) { erro(m); ov.dataset.busy = ''; if (btn) { btn.disabled = false; btn.textContent = paT('save'); } return; }
+    ov.remove();
+    alert(paT('part', { email, passo: paT(passo), erro: m, senha: password }));
+  }
+  meState.loaded = false;
+  try { await mePeopleLoad(); } catch (e2) { /* a árvore recarrega no próximo abrir */ }
+  meRender();
 }
 
 window.LegnoMinhaEmpresa = { cadastro: mePersonOpen, tipoHtml: (uid, k) => { meCss(); return meKindSelect(uid, k); }, abrir: openMyCompany, ligado: meOn, marcarPerdido: markProjectsLost, reabrir: reopenLostProjects, motivo: (r) => mT('r_' + (r || 'null')) };

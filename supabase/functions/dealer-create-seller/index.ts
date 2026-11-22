@@ -161,6 +161,13 @@ Deno.serve(async (req: Request) => {
     if (!password || password.length < 6) {
       return jsonResponse({ error: 'Senha precisa ter ao menos 6 caracteres.' }, 400);
     }
+    // 22/11 (Matt: "na árvore quero poder adicionar uma pessoa... de cada loja"):
+    // a FÁBRICA cria o login SEM vínculo (role 'cliente', sem dealer pai) quando
+    // manda place_later=true — quem põe a pessoa na loja certa é a RPC
+    // admin_place_user, chamada pelo portal logo em seguida (é ela que sabe se a
+    // pessoa entra como vendedor ou como dona da loja). Só administrador: de um
+    // dealer o campo é ignorado e o vendedor nasce na loja dele, como sempre.
+    const placeLater = callerRole === 'administrador' && body && body.place_later === true;
 
     // ---------- 4) Cria o usuário de verdade (auth.users) ----------
     const createRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -204,8 +211,8 @@ Deno.serve(async (req: Request) => {
         user_id: newUserId,
         email,
         full_name: fullName || null,
-        role: 'vendedor',
-        parent_dealer_user_id: callerId
+        role: placeLater ? 'cliente' : 'vendedor',
+        parent_dealer_user_id: placeLater ? null : callerId
       })
     });
     if (!profileRes.ok) {
@@ -214,7 +221,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: `Usuário criado, mas o perfil não foi salvo: ${errText}` }, 500);
     }
 
-    return jsonResponse({ user_id: newUserId, email, full_name: fullName || null, role: 'vendedor' }, 200);
+    return jsonResponse({ user_id: newUserId, email, full_name: fullName || null, role: placeLater ? 'cliente' : 'vendedor' }, 200);
   } catch (err) {
     console.error('Erro inesperado em dealer-create-seller:', err);
     return jsonResponse({ error: String(err && (err as Error).message ? (err as Error).message : err) }, 500);
