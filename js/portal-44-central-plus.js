@@ -1033,11 +1033,50 @@ async function cxProjAction(a, o) {
 function cxPnum(n) { return n ? 'P' + String(Number(n)).padStart(7, '0') : ''; }
 function cxNumVal(o) { return o._proj ? (Number(o.project_number) || 0) : (Number(o.factory_number) || 0); }
 const OD_TXT = {
-  pt: { pay_col: 'Pagamento', more: 'Mais informações', less: 'Recolher', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Endereço da obra', prices: 'Valores', tools: 'Invoice e pagamento', open: 'Abrir pedido', paid: 'Pago ✓', rcpt_sent: 'Comprovante enviado', no_link: 'sem link', lost_btn: '✕ Projeto perdido — motivo', old_link: 'Arquivados por inatividade ({n})', old_back: '← Voltar aos ativos ({n} arquivados)', old_hint: 'Arquivado: {n} dias sem alteração. Abrir e salvar o projeto traz ele de volta.' },
-  en: { pay_col: 'Payment', more: 'More information', less: 'Collapse', seller: 'Salesperson', client: 'Client', room: 'Room', addr: 'Job site address', prices: 'Amounts', tools: 'Invoice and payment', open: 'Open order', paid: 'Paid ✓', rcpt_sent: 'Receipt sent', no_link: 'no link', lost_btn: '✕ Lost project — reason', old_link: 'Archived for inactivity ({n})', old_back: '← Back to active ({n} archived)', old_hint: 'Archived: {n} days without changes. Opening and saving the project brings it back.' },
-  es: { pay_col: 'Pago', more: 'Más información', less: 'Contraer', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Dirección de la obra', prices: 'Valores', tools: 'Factura y pago', open: 'Abrir pedido', paid: 'Pagado ✓', rcpt_sent: 'Comprobante enviado', no_link: 'sin link', lost_btn: '✕ Proyecto perdido — motivo', old_link: 'Archivados por inactividad ({n})', old_back: '← Volver a los activos ({n} archivados)', old_hint: 'Archivado: {n} días sin cambios. Abrir y guardar el proyecto lo trae de vuelta.' }
+  pt: { pay_col: 'Pagamento', more: 'Mais informações', less: 'Recolher', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Endereço da obra', prices: 'Valores', tools: 'Invoice e pagamento', open: 'Abrir pedido', paid: 'Pago ✓', rcpt_sent: 'Comprovante enviado', no_link: 'sem link', lost_btn: '✕ Projeto perdido — motivo', old_link: 'Arquivados por inatividade ({n})', old_back: '← Voltar aos ativos ({n} arquivados)', old_hint: 'Arquivado: {n} dias sem alteração. Abrir e salvar o projeto traz ele de volta.', del_btn: '✕ Excluir pedido', del_all: 'Excluir meus pedidos aguardando aprovação desta lista ({n})', del_q: 'Excluir o pedido {no}{po} de {v}?\n\nNão dá pra desfazer. O projeto de origem (se existir) volta a ficar editável.', del_all_q: 'Excluir {n} pedido(s) AGUARDANDO APROVAÇÃO desta lista, total {v}?\n\nNão dá pra desfazer. Os projetos de origem voltam a ficar editáveis.\n\nPra confirmar, digite {n}:', del_none: 'Nenhum pedido foi excluído — ele já foi aprovado ou não é seu.', del_done: '{n} pedido(s) excluído(s).' },
+  en: { pay_col: 'Payment', more: 'More information', less: 'Collapse', seller: 'Salesperson', client: 'Client', room: 'Room', addr: 'Job site address', prices: 'Amounts', tools: 'Invoice and payment', open: 'Open order', paid: 'Paid ✓', rcpt_sent: 'Receipt sent', no_link: 'no link', lost_btn: '✕ Lost project — reason', old_link: 'Archived for inactivity ({n})', old_back: '← Back to active ({n} archived)', old_hint: 'Archived: {n} days without changes. Opening and saving the project brings it back.', del_btn: '✕ Delete order', del_all: 'Delete my orders waiting approval in this list ({n})', del_q: 'Delete order {no}{po} of {v}?\n\nThis cannot be undone. The source project (if any) becomes editable again.', del_all_q: 'Delete {n} order(s) WAITING APPROVAL in this list, total {v}?\n\nThis cannot be undone. The source projects become editable again.\n\nTo confirm, type {n}:', del_none: 'No order was deleted — it was already approved or is not yours.', del_done: '{n} order(s) deleted.' },
+  es: { pay_col: 'Pago', more: 'Más información', less: 'Contraer', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Dirección de la obra', prices: 'Valores', tools: 'Factura y pago', open: 'Abrir pedido', paid: 'Pagado ✓', rcpt_sent: 'Comprobante enviado', no_link: 'sin link', lost_btn: '✕ Proyecto perdido — motivo', old_link: 'Archivados por inactividad ({n})', old_back: '← Volver a los activos ({n} archivados)', old_hint: 'Archivado: {n} días sin cambios. Abrir y guardar el proyecto lo trae de vuelta.', del_btn: '✕ Eliminar pedido', del_all: 'Eliminar mis pedidos esperando aprobación de esta lista ({n})', del_q: '¿Eliminar el pedido {no}{po} de {v}?\n\nNo se puede deshacer. El proyecto de origen (si existe) vuelve a ser editable.', del_all_q: '¿Eliminar {n} pedido(s) ESPERANDO APROBACIÓN de esta lista, total {v}?\n\nNo se puede deshacer. Los proyectos de origen vuelven a ser editables.\n\nPara confirmar, escriba {n}:', del_none: 'No se eliminó ningún pedido — ya fue aprobado o no es suyo.', del_done: '{n} pedido(s) eliminado(s).' }
 };
 function odT(k) { const L = OD_TXT[cxLang()] || OD_TXT.en; return L[k] != null ? L[k] : (OD_TXT.en[k] || k); }
+// EXCLUIR PEDIDO (22/11, Matt: "muitos pedidos que criei de teste e quero deletar").
+// Só pedido AGUARDANDO APROVAÇÃO (status 'submitted') e só do PRÓPRIO login —
+// é o que o banco deixa (policy "client manage own orders"); o delete repete
+// os dois filtros, então pedido aprovado no meio do caminho não é apagado.
+// order_items some junto (cascade) e o projeto de origem descongela
+// (frozen_order_id on delete set null), igual ao "Voltar ao projeto".
+function cxPodeExcluir(o) { return !!(o && !o._proj && o.status === 'submitted' && o.client_user_id === cxMe()); }
+function cxExcluiveis() { return cxNetRows().filter(cxPodeExcluir); }
+async function cxDeleteOrders(ids) {
+  const s = cxState.scope; const me = cxMe();
+  if (!s || !me || !ids.length) return;
+  const lista = s.orders.filter((o) => ids.includes(o.id) && cxPodeExcluir(o));
+  if (!lista.length) return alert(odT('del_none'));
+  const valor = (o) => Number(o._it != null ? o._it : o._n != null ? o._n : o._v != null ? o._v : 0) || 0;
+  const total = cMoney(lista.reduce((t, o) => t + valor(o), 0));
+  if (lista.length === 1) {
+    const o = lista[0]; const no = cxNumVal(o);
+    if (!confirm(odT('del_q').replace('{no}', no ? no + ' ' : '').replace('{po}', o.po_name ? '"' + o.po_name + '" ' : '').replace('{v}', total))) return;
+  } else {
+    const dig = prompt(odT('del_all_q').replace(/\{n\}/g, lista.length).replace('{v}', total));
+    if (dig == null || String(dig).trim() !== String(lista.length)) return;
+  }
+  let feitos = 0; let erro = null;
+  try {
+    const todos = lista.map((o) => o.id);
+    for (let i = 0; i < todos.length; i += 50) {
+      const { data, error } = await supabaseClient.from('orders').delete()
+        .in('id', todos.slice(i, i + 50)).eq('status', 'submitted').eq('client_user_id', me).select('id');
+      if (error) throw error;
+      feitos += (data || []).length;
+    }
+  } catch (e) { erro = e; }
+  cxState.scope = null;
+  if (typeof myOrdersLoaded !== 'undefined') myOrdersLoaded = false;
+  if (typeof mpLoad === 'function') mpLoad();
+  if (erro) return alert((feitos ? odT('del_done').replace('{n}', feitos) + '\n\n' : '') + ((erro && erro.message) || String(erro)));
+  if (!feitos) return alert(odT('del_none'));
+  if (lista.length > 1 || feitos !== lista.length) alert(odT('del_done').replace('{n}', feitos));
+}
 function cxOrdOpen() { return cxState.ordOpen || (cxState.ordOpen = new Set()); }
 // linha da aba Orders: só o que decide (etapa, invoice, total, pagamento)
 function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
@@ -1078,7 +1117,8 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + '<div class="cx-ocol"><h5>' + cEsc(odT('more')) + '</h5>' + info + '</div>'
     + (val ? '<div class="cx-ocol"><h5>' + cEsc(odT('prices')) + '</h5>' + val + '</div>' : '')
     + '<div class="cx-ocol cx-otools"><h5>' + cEsc(odT('tools')) + '</h5><div>' + (cxInvBtns(o) || '—') + '</div>'
-    + '<div><button type="button" class="cx-mini" data-cx="openorder" data-id="' + id + '">' + cEsc(odT('open')) + ' →</button></div></div>'
+    + '<div><button type="button" class="cx-mini" data-cx="openorder" data-id="' + id + '">' + cEsc(odT('open')) + ' →</button>'
+    + (cxPodeExcluir(o) ? ' <button type="button" class="cx-mini cx-mini-lost" data-cx="delorder" data-id="' + id + '">' + cEsc(odT('del_btn')) + '</button>' : '') + '</div></div>'
     + '</div></td></tr>';
 }
 function cxFlatTable(rows, principal) {
@@ -1254,6 +1294,7 @@ function cxRenderNet(p) {
     + (cxAdmin() ? '' : '<button type="button" class="cx-link" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>')
     + (s.old && s.old.length ? '<button type="button" class="cx-link" data-cx="inativos">' + cEsc(odT(cxState.verInativos ? 'old_back' : 'old_link').replace('{n}', s.old.length)) + '</button>' : '')
     + cxQbFoot()
+    + (cxExcluiveis().length ? '<button type="button" class="cx-link cx-link-del" data-cx="delall">' + cEsc(odT('del_all').replace('{n}', cxExcluiveis().length)) + '</button>' : '')
     + (cxAdmin() && rows.length ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.length })) + '</select>' : '') + '</div>';
   if (cxState.projOpen && cxState.projOpen.size && typeof mpAttachCards === 'function') setTimeout(mpAttachCards, 0);
 }
@@ -1958,6 +1999,8 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (a === 'sendfab') { e.stopPropagation(); e.preventDefault(); return cxSendFactoryOpen(b.getAttribute('data-id')); }
+  if (a === 'delorder') { e.stopPropagation(); e.preventDefault(); return cxDeleteOrders([b.getAttribute('data-id')]); }
+  if (a === 'delall') { e.stopPropagation(); e.preventDefault(); return cxDeleteOrders(cxExcluiveis().map((o) => o.id)); }
   if (a === 'relprod') return cxAdminRelease(b.getAttribute('data-id'), 'prod');
   if (a === 'relpick') return cxAdminRelease(b.getAttribute('data-id'), 'pick');
   if (a === 'openorder') {
@@ -2167,7 +2210,7 @@ function cxCss() {
     + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
     + '.cx-table .mp-chip{font-size:11.5px;padding:2px 9px}.cx-table .mp-chip.cx-ch-pay{background:#ece8fb;color:#5546b8}.cx-table td.cx-stcell .cx-mini{margin-left:6px}'
     + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}.cx-table td.cx-facts.cx-facts-l{text-align:left}'
-    + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}'
+    + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}.cx-link.cx-link-del{color:#9a2b1e}'
     + '.cx-table .cx-more{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0}.cx-table .cx-more:hover,.cx-table .cx-more.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
     + '.cx-table .cx-mini.cx-mini-go{background:#7a4a1e;border-color:#7a4a1e;color:#fff}.cx-table .cx-mini.cx-mini-go:hover{background:#5f3915}'
     + '.cx-table tr.cx-ord-on td{background:#faf6ee;border-bottom-color:transparent}'
