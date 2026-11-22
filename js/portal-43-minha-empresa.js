@@ -234,6 +234,12 @@ function meEl() {
     ov.id = 'po-me';
     ov.addEventListener('click', meClick);
     ov.addEventListener('change', meChange);
+    ov.addEventListener('dragstart', mePpDragStart);
+    ov.addEventListener('dragover', mePpDragOver);
+    ov.addEventListener('dragleave', mePpDragLeave);
+    ov.addEventListener('drop', mePpDrop);
+    ov.addEventListener('dragend', mePpDragEnd);
+    ov.addEventListener('input', mePpInput);
     document.body.appendChild(ov);
   }
   return ov;
@@ -279,6 +285,7 @@ function meTabs() {
   // Margens: quem cuida da empresa, ou quem já tinha o botão Margens (admin sem empresa)
   if ((temEmpresa && ['owner', 'manager', 'finance'].includes(meState.card.role)) || meTemMargens()) t.push('margens');
   if (manda) t.push('empresa');
+  if (meIsAdmin()) t.push('pessoas');
   return t;
 }
 function meFrame(inner) {
@@ -288,7 +295,7 @@ function meFrame(inner) {
   return '<div class="me-box" role="dialog" aria-modal="true"><div class="me-head"><div><h3>' + mEsc(nome) + '</h3>'
     + (meState.card ? '<span class="me-sub">' + mEsc(mT('kind_' + meState.card.kind)) + ' · ' + mEsc(mT('role_' + meState.card.role)) + '</span>' : '') + '</div>'
     + '<button type="button" class="me-x" data-a="close" aria-label="' + mEsc(mT('close')) + '">×</button></div>'
-    + '<div class="me-tabs">' + tabs.map((t) => '<button type="button" class="me-tab' + (t === meState.tab ? ' on' : '') + '" data-a="tab" data-t="' + t + '">' + mEsc(mT('t_' + t)) + '</button>').join('') + '</div>'
+    + '<div class="me-tabs">' + tabs.map((t) => '<button type="button" class="me-tab' + (t === meState.tab ? ' on' : '') + '" data-a="tab" data-t="' + t + '">' + mEsc(t === 'pessoas' ? ppT('tab') : mT('t_' + t)) + '</button>').join('') + '</div>'
     + (meState.err ? '<p class="error me-msg">' + mEsc(meState.err) + '</p>' : '') + (meState.msg ? '<p class="me-msg ok">' + mEsc(meState.msg) + '</p>' : '')
     + '<div class="me-body">' + inner + '</div></div>';
 }
@@ -296,8 +303,9 @@ function meRender() {
   const ov = meEl();
   const t = meState.tab;
   meMargensVoltar();   // o conteúdo das Margens não pode morrer junto com o innerHTML
-  ov.innerHTML = meFrame(t === 'arvore' ? meViewTree() : t === 'equipe' ? meViewTeam() : t === 'margens' ? meViewMargins() : t === 'empresa' ? meViewCompany() : meViewPainel());
+  ov.innerHTML = meFrame(t === 'arvore' ? meViewTree() : t === 'equipe' ? meViewTeam() : t === 'margens' ? meViewMargins() : t === 'empresa' ? meViewCompany() : t === 'pessoas' ? meViewPeople() : meViewPainel());
   if (meState.tab === 'margens') meMargensTrazer();
+  if (meState.tab === 'pessoas' && !meState.people && !meState.peopleBusy) mePeopleLoad();
 }
 
 // ---------- PAINEL ----------
@@ -465,6 +473,11 @@ async function meFnError(error, data) {
 }
 function meChange(e) {
   const t = e.target;
+  if (t.matches && t.matches('select.pp-mv')) {
+    const u = t.getAttribute('data-u'); const v = t.value; t.value = '';
+    if (v) mePlace(u, v === '_dealer' ? null : v, v === '_dealer' ? 'dealer' : 'seller');
+    return;
+  }
   // aba Margens: mesma regra do modal de origem (portal-06b ligaMarginsModal)
   const extra = t.closest && t.closest('#me-margins-slot .po-margins-extra-row');
   if (extra && t.dataset && t.dataset.field && typeof updateDealerPricingExtraField === 'function') {
@@ -679,9 +692,182 @@ function meCss() {
     '.me-big{font-size:30px;font-weight:700;margin:2px 0 8px}.me-big .hint{font-size:13px;font-weight:400}.me-warn{background:#fdf3d7;border:1px solid #ecd58b;border-radius:8px;padding:8px 12px;font-size:13px}.me-logo{max-height:56px;max-width:220px;display:block;margin:6px 0}',
     '.me-lost-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px}.me-lost-box{background:var(--panel,#fff);color:var(--text,#2b2621);border-radius:12px;padding:20px 22px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:8px}.me-lost-box h3{margin:0}.me-lost-box p{margin:0}',
     '.me-lost-note{padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin-top:4px}.me-lost-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.me-lost-foot button{margin:0}',
+    '.pp-top{display:flex;gap:10px;align-items:stretch;margin:6px 0 12px;flex-wrap:wrap}.pp-top input{flex:0 0 240px;padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin:0}',
+    '.pp-new{flex:1;min-width:260px;border:2px dashed #c9a36b;border-radius:10px;padding:10px 14px;font-size:13.5px;color:#7a4a1e;background:#fdf8ef;display:flex;align-items:center}',
+    '.pp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;align-items:start}',
+    '.pp-acc{border:1px solid var(--border,#e0ddd6);border-radius:10px;background:var(--panel-2,#faf8f4);overflow:hidden}.pp-acc.pp-sem{border-style:dashed}',
+    '.pp-acc-h{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#efe8db;font-size:13.5px}.pp-acc-h strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pp-n{font-size:12px;color:var(--muted,#766f64);font-weight:700}',
+    '.pp-acc-b{padding:6px;display:flex;flex-direction:column;gap:4px;max-height:340px;overflow:auto;min-height:44px}.pp-vazio{font-size:12.5px;color:var(--muted,#766f64);text-align:center;padding:10px}',
+    '.pp-p{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border,#e0ddd6);border-radius:8px;padding:5px 6px;font-size:12.5px;cursor:grab}.pp-p.is-fixo{cursor:default;opacity:.75}.pp-p.is-owner{border-color:#c9a36b;background:#fffaf0}.pp-p.is-off{opacity:.6}.pp-p.is-drag{opacity:.4}',
+    '.pp-grip{color:#b9b0a2;font-size:11px;letter-spacing:-2px;width:10px}.pp-mail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pp-mail small{color:var(--muted,#766f64)}',
+    '.pp-role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:9px;padding:1px 6px;background:#eee9df;color:#5c5346;white-space:nowrap}.pp-role.r-dealer{background:#7a4a1e;color:#fff}.pp-role.r-admin{background:#2b2621;color:#fff}.pp-role.r-off{background:#f3d9d5;color:#9a2b1e}',
+    '.pp-cnt{font-size:10.5px;color:var(--muted,#766f64);white-space:nowrap}.pp-mv{width:22px;padding:0;margin:0;border:1px solid var(--border,#e0ddd6);border-radius:5px;height:22px;font-size:11px;background:#fff;color:#3a332a;cursor:pointer}',
+    '#po-me.pp-dragging .pp-drop{outline:2px dashed #c9a36b;outline-offset:-2px}#po-me .pp-drop.is-over{outline:3px solid #7a4a1e;background:#fbf1de}',
     '@media (max-width:900px){.me-kpis{grid-template-columns:repeat(2,1fr)}.me-bar{grid-template-columns:110px 1fr 28px 70px}}'
   ].join('\n');
   document.head.appendChild(st);
+}
+
+// ==========================================================================
+// PESSOAS (21/11, migration 319) — SÓ ADMIN
+// ==========================================================================
+// Matt: "quero uma tela em que eu possa arrastar o usuário e colocar dentro de
+// um dealer, ou trocar a função de vendedor pra dealer, bem intuitivo, só
+// arrastar pra baixo do dealer. quero colocar vários usuários que hoje estão
+// como dealer na função vendedor e deixar só poucos dealers".
+// Um quadro por loja com as pessoas dentro. Arrastar a pessoa pra um quadro =
+// vira VENDEDOR daquela loja; arrastar pra faixa de cima = vira DEALER (loja
+// própria). Sem arrastar: o seletor "Mover…" de cada pessoa faz o mesmo.
+// Quem grava é a RPC admin_place_user (regras e o que vem junto: ver a 319).
+const PP_TXT = {
+  pt: { tab: 'Pessoas', hint: 'Arraste a pessoa pra dentro de uma loja: ela vira vendedor daquela loja. Arraste pra faixa "Tornar dealer" pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos dele.',
+    need319: 'Falta rodar a migration 319 (database/migration_319_pessoas_arrastar.sql) no SQL Editor do Supabase.', loading: 'Carregando pessoas…', search: 'Buscar pessoa ou loja…',
+    new_dealer: 'Tornar dealer — solte aqui pra pessoa ter a própria loja', no_store: 'Sem loja', dealer: 'Dealer', seller: 'Vendedor', manager: 'Gerente', finance: 'Financeiro', admin: 'Admin da fábrica', off: 'inativo', susp: 'suspensa', no_owner: 'sem dealer',
+    cnt: '{p} proj · {o} ped', move: 'Mover…', mv_dealer: '★ Tornar dealer (loja própria)', empty: 'Solte uma pessoa aqui', people: '{n} pessoa(s)',
+    q_seller: 'Colocar {u} como VENDEDOR de "{loja}"?', q_owner: '{u} hoje é o DEALER de "{de}".\n\nAo virar vendedor de "{loja}":\n• a equipe de "{de}" ({n} pessoa(s)) vai junto, como vendedores;\n• os projetos e pedidos de "{de}" passam pra "{loja}";\n• a loja "{de}" fica suspensa (não é apagada).\n\nO preço dele passa a seguir o desconto de "{loja}". Continuar?',
+    q_dealer: 'Tornar {u} um DEALER, com a própria loja?\n\nOs projetos e pedidos dele vão pra loja dele. O desconto da loja nova começa em 0% (ajuste depois).', done_seller: '{u} agora é vendedor de "{loja}".', done_dealer: '{u} agora é dealer.', same: 'Essa pessoa já está nessa loja.' },
+  en: { tab: 'People', hint: 'Drag a person into a store: they become a salesperson of that store. Drag to the "Make dealer" strip to give them their own store. A dealer dragged into another store brings their team, projects and orders along.',
+    need319: 'Migration 319 (database/migration_319_pessoas_arrastar.sql) still has to be run in the Supabase SQL Editor.', loading: 'Loading people…', search: 'Search person or store…',
+    new_dealer: 'Make dealer — drop here to give the person their own store', no_store: 'No store', dealer: 'Dealer', seller: 'Salesperson', manager: 'Manager', finance: 'Finance', admin: 'Factory admin', off: 'inactive', susp: 'suspended', no_owner: 'no dealer',
+    cnt: '{p} proj · {o} ord', move: 'Move…', mv_dealer: '★ Make dealer (own store)', empty: 'Drop a person here', people: '{n} people',
+    q_seller: 'Make {u} a SALESPERSON of "{loja}"?', q_owner: '{u} is currently the DEALER of "{de}".\n\nBecoming a salesperson of "{loja}":\n• the team of "{de}" ({n} people) comes along, as salespeople;\n• projects and orders of "{de}" move to "{loja}";\n• the store "{de}" is suspended (not deleted).\n\nTheir price will follow the discount of "{loja}". Continue?',
+    q_dealer: 'Make {u} a DEALER with their own store?\n\nTheir projects and orders move to their store. The new store starts at 0% discount (adjust later).', done_seller: '{u} is now a salesperson of "{loja}".', done_dealer: '{u} is now a dealer.', same: 'This person is already in this store.' },
+  es: { tab: 'Personas', hint: 'Arrastre la persona dentro de una tienda: pasa a ser vendedor de esa tienda. Arrástrela a la franja "Hacer dealer" para que tenga su propia tienda. Un dealer arrastrado a otra tienda lleva consigo su equipo, proyectos y pedidos.',
+    need319: 'Falta ejecutar la migration 319 (database/migration_319_pessoas_arrastar.sql) en el SQL Editor de Supabase.', loading: 'Cargando personas…', search: 'Buscar persona o tienda…',
+    new_dealer: 'Hacer dealer — suelte aquí para que la persona tenga su propia tienda', no_store: 'Sin tienda', dealer: 'Dealer', seller: 'Vendedor', manager: 'Gerente', finance: 'Finanzas', admin: 'Admin de fábrica', off: 'inactivo', susp: 'suspendida', no_owner: 'sin dealer',
+    cnt: '{p} proy · {o} ped', move: 'Mover…', mv_dealer: '★ Hacer dealer (tienda propia)', empty: 'Suelte una persona aquí', people: '{n} persona(s)',
+    q_seller: '¿Poner a {u} como VENDEDOR de "{loja}"?', q_owner: '{u} hoy es el DEALER de "{de}".\n\nAl pasar a vendedor de "{loja}":\n• el equipo de "{de}" ({n} persona(s)) va con él, como vendedores;\n• los proyectos y pedidos de "{de}" pasan a "{loja}";\n• la tienda "{de}" queda suspendida (no se borra).\n\nSu precio seguirá el descuento de "{loja}". ¿Continuar?',
+    q_dealer: '¿Hacer de {u} un DEALER con tienda propia?\n\nSus proyectos y pedidos van a su tienda. La tienda nueva empieza con 0% de descuento (ajuste después).', done_seller: '{u} ahora es vendedor de "{loja}".', done_dealer: '{u} ahora es dealer.', same: 'Esa persona ya está en esa tienda.' }
+};
+function ppT(k, v) { const L = PP_TXT[String(meLang()).slice(0, 2)] || PP_TXT.en; let t = L[k] != null ? L[k] : (PP_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x] == null ? '' : String(v[x])); }); return t; }
+async function mePeopleLoad() {
+  meState.peopleBusy = true;
+  try {
+    const r = await supabaseClient.rpc('admin_people');
+    if (r.error) { meState.people = []; meState.peopleErr = /admin_people|function|schema cache|PGRST202/i.test(r.error.message || '') ? ppT('need319') : (r.error.message || 'Erro'); }
+    else { meState.people = r.data || []; meState.peopleErr = ''; }
+    const tree = await supabaseClient.rpc('account_tree');
+    if (!tree.error) meState.tree = tree.data || [];
+  } catch (e) { meState.people = []; meState.peopleErr = (e && e.message) || String(e); }
+  meState.peopleBusy = false;
+  if (meState.tab === 'pessoas') meRender();
+}
+function ppAccName(id) { const a = (meState.tree || []).find((x) => x.id === id); return a ? (a.trade_name || a.legal_name || '—') : '—'; }
+function ppUser(id) { return (meState.people || []).find((x) => x.user_id === id); }
+function meViewPeople() {
+  if (meState.peopleErr) return '<p class="error">' + mEsc(meState.peopleErr) + '</p>';
+  if (!meState.people) return '<p class="hint">' + mEsc(ppT('loading')) + '</p>';
+  const q = String(meState.peopleQ || '').trim().toLowerCase();
+  const pessoas = meState.people;
+  const porLoja = {}; pessoas.forEach((p) => { (porLoja[p.account_id || '_'] = porLoja[p.account_id || '_'] || []).push(p); });
+  const peso = { owner: 0, manager: 1, finance: 2, seller: 3 };
+  const lojas = (meState.tree || []).filter((a) => (porLoja[a.id] || []).length || a.status === 'active' || a.kind === 'factory')
+    .sort((x, y) => (x.kind === 'factory' ? -1 : y.kind === 'factory' ? 1 : 0) || String(x.trade_name || x.legal_name || '').localeCompare(String(y.trade_name || y.legal_name || '')));
+  const opts = '<option value="">' + mEsc(ppT('move')) + '</option><option value="_dealer">' + mEsc(ppT('mv_dealer')) + '</option>'
+    + lojas.map((a) => '<option value="' + mEsc(a.id) + '">→ ' + mEsc(a.trade_name || a.legal_name || '—') + '</option>').join('');
+  const chip = (p) => {
+    const mail = String(p.email || '—'); const i = mail.indexOf('@');
+    const papel = p.is_admin ? 'admin' : p.member_role === 'owner' ? 'dealer' : p.member_role || '';
+    return '<div class="pp-p' + (p.is_admin ? ' is-fixo' : '') + (p.member_role === 'owner' ? ' is-owner' : '') + (p.active === false ? ' is-off' : '') + '"' + (p.is_admin ? '' : ' draggable="true"') + ' data-u="' + mEsc(p.user_id) + '" title="' + mEsc(mail) + '">'
+      + '<span class="pp-grip">' + (p.is_admin ? '' : '⋮⋮') + '</span>'
+      + '<span class="pp-mail"><b>' + mEsc(i > 0 ? mail.slice(0, i) : mail) + '</b><small>' + mEsc(i > 0 ? mail.slice(i) : '') + '</small></span>'
+      + (papel ? '<span class="pp-role r-' + papel + '">' + mEsc(ppT(papel)) + '</span>' : '')
+      + (p.active === false ? '<span class="pp-role r-off">' + mEsc(ppT('off')) + '</span>' : '')
+      + '<span class="pp-cnt">' + mEsc(ppT('cnt', { p: Number(p.n_projects) || 0, o: Number(p.n_orders) || 0 })) + '</span>'
+      + (p.is_admin ? '' : '<select class="pp-mv" data-u="' + mEsc(p.user_id) + '" aria-label="' + mEsc(ppT('move')) + '">' + opts + '</select>')
+      + '</div>';
+  };
+  const casa = (p, nomeLoja) => !q || String(p.email || '').toLowerCase().includes(q) || String(nomeLoja || '').toLowerCase().includes(q);
+  const quadro = (id, nome, lista, extra, solta) => {
+    const vis = lista.filter((p) => casa(p, nome)).sort((x, y) => ((peso[x.member_role] != null ? peso[x.member_role] : 9) - (peso[y.member_role] != null ? peso[y.member_role] : 9)) || String(x.email || '').localeCompare(String(y.email || '')));
+    if (q && !vis.length) return '';
+    return '<div class="pp-acc' + (solta ? ' pp-drop' : '') + (extra && extra.cls ? ' ' + extra.cls : '') + '"' + (solta ? ' data-acc="' + mEsc(id) + '"' : '') + '>'
+      + '<div class="pp-acc-h"><strong>' + mEsc(nome) + '</strong>' + ((extra && extra.pill) || '') + '<span class="pp-n">' + lista.length + '</span></div>'
+      + '<div class="pp-acc-b">' + (vis.length ? vis.map(chip).join('') : '<div class="pp-vazio">' + mEsc(ppT('empty')) + '</div>') + '</div></div>';
+  };
+  return '<p class="hint">' + mEsc(ppT('hint')) + '</p>'
+    + '<div class="pp-top"><input type="search" id="pp-q" placeholder="' + mEsc(ppT('search')) + '" value="' + mEsc(meState.peopleQ || '') + '">'
+    + '<div class="pp-new pp-drop" data-acc="_dealer">★ ' + mEsc(ppT('new_dealer')) + '</div></div>'
+    + '<div class="pp-grid">'
+    + quadro('_', ppT('no_store'), porLoja._ || [], { cls: 'pp-sem' }, false)
+    + lojas.map((a) => {
+      const l = porLoja[a.id] || [];
+      const semDono = !l.some((p) => p.member_role === 'owner');
+      const pill = (a.kind === 'factory' ? '<span class="me-pill">' + mEsc(mT('kind_factory')) + '</span>' : '')
+        + (a.status === 'suspended' ? '<span class="me-pill st-suspended">' + mEsc(ppT('susp')) + '</span>' : '')
+        + (semDono ? '<span class="me-pill st-suspended">' + mEsc(ppT('no_owner')) + '</span>' : '');
+      return quadro(a.id, a.trade_name || a.legal_name || '—', l, { pill }, !semDono);
+    }).join('')
+    + '</div>';
+}
+async function mePlace(userId, accountId, mode) {
+  const p = ppUser(userId);
+  if (!p || p.is_admin || meState.busy) return;
+  const nome = String(p.email || '').split('@')[0];
+  if (mode === 'seller') {
+    if (p.account_id === accountId && p.member_role !== 'owner') { meState.msg = ppT('same'); meState.err = ''; return meRender(); }
+    if (p.account_id === accountId) return;
+    const loja = ppAccName(accountId);
+    const equipe = p.member_role === 'owner' ? meState.people.filter((x) => x.account_id === p.account_id && x.user_id !== p.user_id).length : 0;
+    const perg = p.member_role === 'owner' ? ppT('q_owner', { u: nome, de: ppAccName(p.account_id), loja, n: equipe }) : ppT('q_seller', { u: nome, loja });
+    if (!confirm(perg)) return;
+  } else {
+    if (p.member_role === 'owner') return;
+    if (!confirm(ppT('q_dealer', { u: nome }))) return;
+  }
+  meState.busy = true; meState.err = ''; meState.msg = '';
+  try {
+    const r = await supabaseClient.rpc('admin_place_user', { p_user: userId, p_account: mode === 'seller' ? accountId : null, p_mode: mode, p_move_data: true });
+    if (r.error) throw r.error;
+    meState.msg = mode === 'seller' ? ppT('done_seller', { u: nome, loja: ppAccName(accountId) }) : ppT('done_dealer', { u: nome });
+  } catch (e) { meState.err = (e && e.message) || String(e); }
+  meState.busy = false;
+  meState.loaded = false;                       // Painel/Árvore releem na próxima abertura
+  try { if (window.LegnoCentralPlus && typeof window.LegnoCentralPlus.recarregar === 'function') window.LegnoCentralPlus.recarregar(); } catch (e2) { /* a Central relê depois */ }
+  await mePeopleLoad();
+  meRender();
+}
+// arrastar e soltar
+function mePpDragStart(e) {
+  const c = e.target.closest && e.target.closest('.pp-p[draggable="true"]');
+  if (!c) return;
+  meState.ppDrag = c.getAttribute('data-u');
+  try { e.dataTransfer.setData('text/plain', meState.ppDrag); e.dataTransfer.effectAllowed = 'move'; } catch (er) { /* navegador antigo */ }
+  c.classList.add('is-drag');
+  const ov = document.getElementById('po-me'); if (ov) ov.classList.add('pp-dragging');
+}
+function mePpZona(e) { return meState.ppDrag && e.target.closest ? e.target.closest('.pp-drop') : null; }
+function mePpDragOver(e) {
+  const z = mePpZona(e);
+  if (!z) return;
+  e.preventDefault();
+  try { e.dataTransfer.dropEffect = 'move'; } catch (er) { /* ok */ }
+  if (!z.classList.contains('is-over')) { document.querySelectorAll('#po-me .pp-drop.is-over').forEach((x) => x.classList.remove('is-over')); z.classList.add('is-over'); }
+}
+function mePpDragLeave(e) {
+  const z = e.target.closest && e.target.closest('.pp-drop');
+  if (z && !z.contains(e.relatedTarget)) z.classList.remove('is-over');
+}
+function mePpDragEnd() {
+  meState.ppDrag = null;
+  const ov = document.getElementById('po-me'); if (ov) ov.classList.remove('pp-dragging');
+  document.querySelectorAll('#po-me .pp-drop.is-over, #po-me .pp-p.is-drag').forEach((x) => x.classList.remove('is-over', 'is-drag'));
+}
+function mePpDrop(e) {
+  const z = mePpZona(e);
+  if (!z) return;
+  e.preventDefault();
+  const u = meState.ppDrag; const acc = z.getAttribute('data-acc');
+  mePpDragEnd();
+  if (!u || !acc) return;
+  mePlace(u, acc === '_dealer' ? null : acc, acc === '_dealer' ? 'dealer' : 'seller');
+}
+function mePpInput(e) {
+  if (e.target.id !== 'pp-q') return;
+  meState.peopleQ = e.target.value;
+  const pos = e.target.selectionStart;
+  meRender();
+  const n = document.getElementById('pp-q'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (er) { /* ok */ } }
 }
 
 window.LegnoMinhaEmpresa = { abrir: openMyCompany, ligado: meOn, marcarPerdido: markProjectsLost, reabrir: reopenLostProjects, motivo: (r) => mT('r_' + (r || 'null')) };

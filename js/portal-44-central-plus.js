@@ -419,7 +419,8 @@ async function cxLoadScope(force) {
           _proj: true, _folder: p.client_folder || '', _pname: p.name || '', id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: p.account_id || (m ? m.account_id : null), _pid: p.id, _po: p.po_name || '', project_number: p.project_number || null, status: 'project',
           po_name: p.name, client_name: (p.client_info && p.client_info.name) || p.client_folder || '', room_name: '',
           delivery_address: (p.client_info && p.client_info.address) || '', jobsite_lat: null, jobsite_lng: null,
-          submitted_at: p.updated_at, _l: Number(p.cached_value_usd) || 0, _d: null, _n: null, _s: 'build'
+          submitted_at: p.updated_at, _l: Number(p.cached_value_usd) || 0, _d: null, _n: null, _s: 'build',
+          _old: !!(p.updated_at && new Date(p.updated_at).getTime() < Date.now() - CX_INATIVO_DIAS * 86400000)
         });
       });
     } catch (e2) { /* sem projetos: só pedidos */ }
@@ -435,6 +436,14 @@ async function cxLoadScope(force) {
     } catch (e3) { /* fica o começo do id */ }
     s.orders.forEach((o) => { o._t = o._proj ? o.submitted_at : (o.delivered_at || o.pickup_released_at || o.finance_released_at || o.approved_at || o.submitted_at); });
     s.orders.sort((a, b) => String(b._t || '').localeCompare(String(a._t || '')));
+    // ARQUIVADO POR INATIVIDADE (21/11, Matt: "30 dias sem mexer qualquer
+    // usuário, coloca como arquivado"): projeto em construção sem salvar há
+    // CX_INATIVO_DIAS sai da lista (e das contagens da árvore). Nada é gravado
+    // no banco: salvar o projeto de novo traz ele de volta sozinho. O link
+    // "Arquivados por inatividade (n)" no rodapé troca a lista pra eles.
+    s.live = s.orders.filter((o) => !o._old); s.old = s.orders.filter((o) => o._old);
+    s.orders = cxState.verInativos && s.old.length ? s.old : s.live;
+    if (!s.old.length) cxState.verInativos = false;
     s.users = new Set(s.orders.map((o) => o.client_user_id)).size;
     cxState.scope = s;
   } catch (e) { cxState.scope = { orders: [], accounts: [], team: {}, users: 0, err: (e && e.message) || String(e) }; }
@@ -451,6 +460,7 @@ function cxQuando(d) {
   if (!cxHoje(d)) return cEsc(cDate(d));
   return '<b class="cx-hoje">' + cEsc(cT('today_at')) + ' ' + new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</b>';
 }
+const CX_INATIVO_DIAS = 30;
 function cxNetRows() {
   const s = cxState.scope; const f = cxState.net; const q = String((typeof mpState !== 'undefined' && mpState.q) || '').trim().toLowerCase();
   return s.orders.filter((o) => {
@@ -960,9 +970,9 @@ async function cxProjAction(a, o) {
 function cxPnum(n) { return n ? 'P' + String(Number(n)).padStart(7, '0') : ''; }
 function cxNumVal(o) { return o._proj ? (Number(o.project_number) || 0) : (Number(o.factory_number) || 0); }
 const OD_TXT = {
-  pt: { pay_col: 'Pagamento', more: 'Mais informações', less: 'Recolher', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Endereço da obra', prices: 'Valores', tools: 'Invoice e pagamento', open: 'Abrir pedido', paid: 'Pago ✓', rcpt_sent: 'Comprovante enviado', no_link: 'sem link' },
-  en: { pay_col: 'Payment', more: 'More information', less: 'Collapse', seller: 'Salesperson', client: 'Client', room: 'Room', addr: 'Job site address', prices: 'Amounts', tools: 'Invoice and payment', open: 'Open order', paid: 'Paid ✓', rcpt_sent: 'Receipt sent', no_link: 'no link' },
-  es: { pay_col: 'Pago', more: 'Más información', less: 'Contraer', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Dirección de la obra', prices: 'Valores', tools: 'Factura y pago', open: 'Abrir pedido', paid: 'Pagado ✓', rcpt_sent: 'Comprobante enviado', no_link: 'sin link' }
+  pt: { pay_col: 'Pagamento', more: 'Mais informações', less: 'Recolher', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Endereço da obra', prices: 'Valores', tools: 'Invoice e pagamento', open: 'Abrir pedido', paid: 'Pago ✓', rcpt_sent: 'Comprovante enviado', no_link: 'sem link', lost_btn: '✕ Projeto perdido — motivo', old_link: 'Arquivados por inatividade ({n})', old_back: '← Voltar aos ativos ({n} arquivados)', old_hint: 'Arquivado: {n} dias sem alteração. Abrir e salvar o projeto traz ele de volta.' },
+  en: { pay_col: 'Payment', more: 'More information', less: 'Collapse', seller: 'Salesperson', client: 'Client', room: 'Room', addr: 'Job site address', prices: 'Amounts', tools: 'Invoice and payment', open: 'Open order', paid: 'Paid ✓', rcpt_sent: 'Receipt sent', no_link: 'no link', lost_btn: '✕ Lost project — reason', old_link: 'Archived for inactivity ({n})', old_back: '← Back to active ({n} archived)', old_hint: 'Archived: {n} days without changes. Opening and saving the project brings it back.' },
+  es: { pay_col: 'Pago', more: 'Más información', less: 'Contraer', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Dirección de la obra', prices: 'Valores', tools: 'Factura y pago', open: 'Abrir pedido', paid: 'Pagado ✓', rcpt_sent: 'Comprobante enviado', no_link: 'sin link', lost_btn: '✕ Proyecto perdido — motivo', old_link: 'Archivados por inactividad ({n})', old_back: '← Volver a los activos ({n} archivados)', old_hint: 'Archivado: {n} días sin cambios. Abrir y guardar el proyecto lo trae de vuelta.' }
 };
 function odT(k) { const L = OD_TXT[cxLang()] || OD_TXT.en; return L[k] != null ? L[k] : (OD_TXT.en[k] || k); }
 function cxOrdOpen() { return cxState.ordOpen || (cxState.ordOpen = new Set()); }
@@ -1075,7 +1085,10 @@ function cxFlatTable(rows, principal) {
           + '<td class="cx-r"><b>' + (o._proj || o._it == null ? '—' : cEsc(cMoney(o._it))) + '</b>' + (o.invoice_number ? ' <small class="cx-est">' + cEsc(o.invoice_number) + '</small>' : '') + '</td>')
         + '<td><span class="cx-stage"><i style="background:' + CX_COLORS[o._s] + '"></i>' + cEsc(cT('s_' + o._s)) + '</span>' + envia + '</td><td>' + cxQuando(o._t) + '</td><td>' + acao + '</td></tr>'
         + (o._proj && cxProjOpen().has(o._pid) ? '<tr class="cx-projexp"><td colspan="20"><div class="mp-exp-box" data-proj="' + cEsc(o._pid) + '">'
-          + cxProjCardHtml(o) + '</div></td></tr>' : '');
+          + cxProjCardHtml(o) + '</div>'
+          + (window.LegnoMinhaEmpresa && (cxAdmin() || o.client_user_id === cxMe()) ? '<div class="cx-plost"><button type="button" class="cx-mini cx-mini-lost" data-cx="lost" data-ids="' + cEsc(o._pid) + '" data-nome="' + cEsc(o._pname || o.po_name || '') + '">' + cEsc(odT('lost_btn')) + '</button>'
+            + (o._old ? ' <span class="hint">' + cEsc(odT('old_hint').replace('{n}', CX_INATIVO_DIAS)) + '</span>' : '') + '</div>' : '')
+          + '</td></tr>' : '');
     }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? (enx ? '<tfoot><tr class="cx-tot"><td colspan="5">' + cEsc(cT('sum', { n: rows.length })) + '</td><td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td><td colspan="3"></td></tr></tfoot>' : cxTotalRow(rows, 4, 3, soProj)) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
@@ -1174,6 +1187,7 @@ function cxRenderNet(p) {
     + (filtrando ? '<button type="button" class="cx-link" data-cx="fclear">' + cEsc(cT('fl_clear')) + '</button>' : '')
     + (f.etapa === '_orders' ? '' : '<button type="button" class="cx-link" data-cx="layout">' + cEsc(cT(cxState.netLayout === 'pastas' ? 'lay_lista' : 'lay_pastas')) + '</button>')
     + (cxAdmin() ? '' : '<button type="button" class="cx-link" data-cx="folders">' + cEsc(cT('back_folders')) + '</button>')
+    + (s.old && s.old.length ? '<button type="button" class="cx-link" data-cx="inativos">' + cEsc(odT(cxState.verInativos ? 'old_back' : 'old_link').replace('{n}', s.old.length)) + '</button>' : '')
     + cxQbFoot()
     + (cxAdmin() && rows.length ? '<select id="cx-move-all" class="cx-moveall">' + cxStoreOptions(null, cT('mv_all', { n: rows.length })) + '</select>' : '') + '</div>';
   if (cxState.projOpen && cxState.projOpen.size && typeof mpAttachCards === 'function') setTimeout(mpAttachCards, 0);
@@ -1839,6 +1853,13 @@ document.addEventListener('click', (e) => {
     if (!ids.length) return;
     return a === 'finv' ? cxInvoice(ids) : cxQbAction('qbgroup', ids);
   }
+  if (a === 'inativos') {
+    const sc = cxState.scope; if (!sc || !sc.old) return;
+    cxState.verInativos = !cxState.verInativos;
+    sc.orders = cxState.verInativos ? sc.old : sc.live;
+    sc.users = new Set(sc.orders.map((o) => o.client_user_id)).size;
+    return mpRender();
+  }
   if (a === 'ordmore') {
     e.stopPropagation(); e.preventDefault();
     const id = b.getAttribute('data-id'); const ab = cxOrdOpen();
@@ -2080,6 +2101,7 @@ function cxCss() {
     + '.cx-fmi{border:0;background:transparent;color:#2f2a24;text-align:left;padding:7px 10px;margin:0;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer}.cx-fmi:hover{background:#f3ece0}.cx-fmi.is-danger{color:#a3352b}'
     + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
     + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}.cx-table td.cx-facts.cx-facts-l{text-align:left}'
+    + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}'
     + '.cx-table .cx-more{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0}.cx-table .cx-more:hover,.cx-table .cx-more.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
     + '.cx-table .cx-mini.cx-mini-go{background:#7a4a1e;border-color:#7a4a1e;color:#fff}.cx-table .cx-mini.cx-mini-go:hover{background:#5f3915}'
     + '.cx-table tr.cx-ord-on td{background:#faf6ee;border-bottom-color:transparent}'
