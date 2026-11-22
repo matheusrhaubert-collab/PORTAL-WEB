@@ -133,10 +133,9 @@ function cxProdInfo(o) {
 // Nº DO LOTE (22/11, Matt: "eu quero saber número do lote quando entrar em
 // lote"): etiqueta LT-… ao lado do status e na ficha do ▾. Só pra fábrica.
 function cxLoteDe(o) { const t = ((cxState.scope || {}).track || {})[o.id]; return (t && t.batch_code) || ''; }
-function cxStatusHtml(o) {
-  const lote = !o._proj && cxAdmin() ? cxLoteDe(o) : '';
-  return cxStatusHtml0(o) + (lote ? '<span class="cx-lote" title="' + cEsc(odT('lote')) + '">' + cEsc(lote) + '</span>' : '');
-}
+// 22/11 (Matt: "deixa o lote só quando abrir a tela pra baixo"): o nº do lote
+// NÃO vai mais ao lado do status — fica só na linha "Lote" do ▾.
+function cxStatusHtml(o) { return cxStatusHtml0(o); }
 function cxStatusHtml0(o) {
   const L = (k, alt) => { try { if (typeof mpT === 'function') { const v = mpT(k); if (v && v !== 'mp.' + k) return v; } } catch (e) { /* cai no texto local */ } return alt; };
   const chip = (cls, rot, tip) => '<span class="mp-chip ' + cls + '"' + (tip ? ' title="' + cEsc(tip) + '"' : '') + '>' + cEsc(rot) + '</span>';
@@ -1096,7 +1095,7 @@ function cxMotivoNaoExclui(o) {
   const s = cxState.scope || {};
   if (!o || o._proj || !cxAdmin() || o.client_user_id !== cxMe() || o.status === 'submitted' || cxPodeExcluir(o)) return '';
   const t = s.track && s.track[o.id];
-  if (t && t.batch_code) return odT('del_lote').replace('{lote}', t.batch_code);
+  if (t && t.batch_code) return odT('del_lote').replace(/\{lote\}/g, t.batch_code);
   if (o.invoice_number || o.qbo_invoice_id || o.payment_link || o.receipt_path || o.qbo_paid_at) return odT('del_inv');
   if (o.pickup_released_at || o.delivered_at) return odT('del_fim');
   return '';
@@ -1132,7 +1131,7 @@ async function cxDeleteOrders(ids) {
       if (tr.error) throw tr.error;
       const linha = (tr.data || []).find((r) => r.order_id === o.id);
       if (!linha) throw new Error(odT('del_none'));
-      if (linha.batch_code) throw new Error(odT('del_lote').replace('{lote}', linha.batch_code));
+      if (linha.batch_code) throw new Error(odT('del_lote').replace(/\{lote\}/g, linha.batch_code));
       const { data, error } = await supabaseClient.from('orders').delete()
         .eq('id', o.id).eq('client_user_id', me).is('pickup_released_at', null).select('id');
       if (error) throw error;
@@ -1212,7 +1211,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + '<div><button type="button" class="cx-mini" data-cx="openorder" data-id="' + id + '">' + cEsc(odT('open')) + ' →</button>'
     + (cxPodeVoltar(o) ? ' <button type="button" class="cx-mini" data-cx="backproj" data-id="' + id + '">↩ ' + cEsc(typeof I18n !== 'undefined' ? I18n.t('my_orders.back_to_project') : 'Back to project') + '</button>' : '')
     + (cxPodeExcluir(o) ? ' <button type="button" class="cx-mini cx-mini-lost" data-cx="delorder" data-id="' + id + '">' + cEsc(odT('del_btn')) + '</button>' : '') + '</div>'
-    + (cxMotivoNaoExclui(o) ? '<div class="hint" style="white-space:normal;max-width:340px;margin-top:6px">' + cEsc(cxMotivoNaoExclui(o)) + '</div>' : '') + '</div>'
+    + (cxMotivoNaoExclui(o) ? '<div class="hint" style="white-space:normal;max-width:340px;margin-top:6px;text-align:left">' + cEsc(cxMotivoNaoExclui(o)) + '</div>' : '') + '</div>'
     + '</div></td></tr>';
 }
 function cxFlatTable(rows, principal) {
