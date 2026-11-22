@@ -130,7 +130,14 @@ function cxProdInfo(o) {
   const embalado = (t && Number(t.n_volumes) > 0 && Number(t.n_embalados) === Number(t.n_volumes)) || (pc && Number(pc.total) > 0 && Number(pc.feitas) >= Number(pc.total));
   return { lote: !!(t && t.batch_code), pct, tip, embalado: !!embalado };
 }
+// Nº DO LOTE (22/11, Matt: "eu quero saber número do lote quando entrar em
+// lote"): etiqueta LT-… ao lado do status e na ficha do ▾. Só pra fábrica.
+function cxLoteDe(o) { const t = ((cxState.scope || {}).track || {})[o.id]; return (t && t.batch_code) || ''; }
 function cxStatusHtml(o) {
+  const lote = !o._proj && cxAdmin() ? cxLoteDe(o) : '';
+  return cxStatusHtml0(o) + (lote ? '<span class="cx-lote" title="' + cEsc(odT('lote')) + '">' + cEsc(lote) + '</span>' : '');
+}
+function cxStatusHtml0(o) {
   const L = (k, alt) => { try { if (typeof mpT === 'function') { const v = mpT(k); if (v && v !== 'mp.' + k) return v; } } catch (e) { /* cai no texto local */ } return alt; };
   const chip = (cls, rot, tip) => '<span class="mp-chip ' + cls + '"' + (tip ? ' title="' + cEsc(tip) + '"' : '') + '>' + cEsc(rot) + '</span>';
   if (o._s === 'wait') return chip('st-proposal', cT('s_wait'));
@@ -1049,9 +1056,9 @@ async function cxProjAction(a, o) {
 function cxPnum(n) { return n ? 'P' + String(Number(n)).padStart(7, '0') : ''; }
 function cxNumVal(o) { return o._proj ? (Number(o.project_number) || 0) : (Number(o.factory_number) || 0); }
 const OD_TXT = {
-  pt: { pay_col: 'Pagamento', more: 'Mais informações', less: 'Recolher', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Endereço da obra', prices: 'Valores', tools: 'Invoice e pagamento', open: 'Abrir pedido', paid: 'Pago ✓', rcpt_sent: 'Comprovante enviado', no_link: 'sem link', lost_btn: '✕ Projeto perdido — motivo', old_link: 'Arquivados por inatividade ({n})', old_back: '← Voltar aos ativos ({n} arquivados)', old_hint: 'Arquivado: {n} dias sem alteração. Abrir e salvar o projeto traz ele de volta.', del_btn: '✕ Excluir pedido', del_all: 'Excluir meus pedidos aguardando aprovação desta lista ({n})', del_q: 'Excluir o pedido {no}{po} de {v}?\n\nNão dá pra desfazer. O projeto de origem (se existir) volta a ficar editável.', del_all_q: 'Excluir {n} pedido(s) AGUARDANDO APROVAÇÃO desta lista, total {v}?\n\nNão dá pra desfazer. Os projetos de origem voltam a ficar editáveis.\n\nPra confirmar, digite {n}:', del_none: 'Nenhum pedido foi excluído — ele já foi aprovado ou não é seu.', del_done: '{n} pedido(s) excluído(s).', del_lote: 'Pra excluir: tire o pedido do lote {lote} no ERP (Lotes › {lote} › ✕ ao lado do pedido). Depois o botão Excluir aparece aqui.', del_inv: 'Este pedido tem invoice, link de pagamento ou comprovante — não pode ser excluído por aqui.' },
-  en: { pay_col: 'Payment', more: 'More information', less: 'Collapse', seller: 'Salesperson', client: 'Client', room: 'Room', addr: 'Job site address', prices: 'Amounts', tools: 'Invoice and payment', open: 'Open order', paid: 'Paid ✓', rcpt_sent: 'Receipt sent', no_link: 'no link', lost_btn: '✕ Lost project — reason', old_link: 'Archived for inactivity ({n})', old_back: '← Back to active ({n} archived)', old_hint: 'Archived: {n} days without changes. Opening and saving the project brings it back.', del_btn: '✕ Delete order', del_all: 'Delete my orders waiting approval in this list ({n})', del_q: 'Delete order {no}{po} of {v}?\n\nThis cannot be undone. The source project (if any) becomes editable again.', del_all_q: 'Delete {n} order(s) WAITING APPROVAL in this list, total {v}?\n\nThis cannot be undone. The source projects become editable again.\n\nTo confirm, type {n}:', del_none: 'No order was deleted — it was already approved or is not yours.', del_done: '{n} order(s) deleted.', del_lote: 'To delete: remove the order from batch {lote} in the ERP (Batches › {lote} › ✕ next to the order). Then the Delete button shows up here.', del_inv: 'This order has an invoice, payment link or receipt — it cannot be deleted here.' },
-  es: { pay_col: 'Pago', more: 'Más información', less: 'Contraer', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Dirección de la obra', prices: 'Valores', tools: 'Factura y pago', open: 'Abrir pedido', paid: 'Pagado ✓', rcpt_sent: 'Comprobante enviado', no_link: 'sin link', lost_btn: '✕ Proyecto perdido — motivo', old_link: 'Archivados por inactividad ({n})', old_back: '← Volver a los activos ({n} archivados)', old_hint: 'Archivado: {n} días sin cambios. Abrir y guardar el proyecto lo trae de vuelta.', del_btn: '✕ Eliminar pedido', del_all: 'Eliminar mis pedidos esperando aprobación de esta lista ({n})', del_q: '¿Eliminar el pedido {no}{po} de {v}?\n\nNo se puede deshacer. El proyecto de origen (si existe) vuelve a ser editable.', del_all_q: '¿Eliminar {n} pedido(s) ESPERANDO APROBACIÓN de esta lista, total {v}?\n\nNo se puede deshacer. Los proyectos de origen vuelven a ser editables.\n\nPara confirmar, escriba {n}:', del_none: 'No se eliminó ningún pedido — ya fue aprobado o no es suyo.', del_done: '{n} pedido(s) eliminado(s).', del_lote: 'Para eliminar: quite el pedido del lote {lote} en el ERP (Lotes › {lote} › ✕ junto al pedido). Luego el botón Eliminar aparece aquí.', del_inv: 'Este pedido tiene factura, link de pago o comprobante — no se puede eliminar aquí.' }
+  pt: { pay_col: 'Pagamento', more: 'Mais informações', less: 'Recolher', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Endereço da obra', prices: 'Valores', tools: 'Invoice e pagamento', open: 'Abrir pedido', paid: 'Pago ✓', rcpt_sent: 'Comprovante enviado', no_link: 'sem link', lost_btn: '✕ Projeto perdido — motivo', old_link: 'Arquivados por inatividade ({n})', old_back: '← Voltar aos ativos ({n} arquivados)', old_hint: 'Arquivado: {n} dias sem alteração. Abrir e salvar o projeto traz ele de volta.', del_btn: '✕ Excluir pedido', del_all: 'Excluir meus pedidos aguardando aprovação desta lista ({n})', del_q: 'Excluir o pedido {no}{po} de {v}?\n\nNão dá pra desfazer. O projeto de origem (se existir) volta a ficar editável.', del_all_q: 'Excluir {n} pedido(s) AGUARDANDO APROVAÇÃO desta lista, total {v}?\n\nNão dá pra desfazer. Os projetos de origem voltam a ficar editáveis.\n\nPra confirmar, digite {n}:', del_none: 'Nenhum pedido foi excluído — ele já foi aprovado ou não é seu.', del_done: '{n} pedido(s) excluído(s).', del_lote: 'Pra excluir: tire o pedido do lote {lote} no ERP (Lotes › {lote} › ✕ ao lado do pedido). Depois o botão Excluir aparece aqui.', del_inv: 'Este pedido tem invoice, link de pagamento ou comprovante — não pode ser excluído por aqui.', del_fim: 'Pedido com coleta liberada ou entregue não pode ser excluído por aqui.', del_aprov: 'ATENÇÃO: este pedido JÁ FOI APROVADO.', del_pago: 'Está marcado como PAGO.', lote: 'Lote', back_326: 'O banco não deixou: o pedido é de outra conta (ou já foi aprovado). Pra fábrica poder voltar pedido de outra conta, rode a migration 326 no Supabase.' },
+  en: { pay_col: 'Payment', more: 'More information', less: 'Collapse', seller: 'Salesperson', client: 'Client', room: 'Room', addr: 'Job site address', prices: 'Amounts', tools: 'Invoice and payment', open: 'Open order', paid: 'Paid ✓', rcpt_sent: 'Receipt sent', no_link: 'no link', lost_btn: '✕ Lost project — reason', old_link: 'Archived for inactivity ({n})', old_back: '← Back to active ({n} archived)', old_hint: 'Archived: {n} days without changes. Opening and saving the project brings it back.', del_btn: '✕ Delete order', del_all: 'Delete my orders waiting approval in this list ({n})', del_q: 'Delete order {no}{po} of {v}?\n\nThis cannot be undone. The source project (if any) becomes editable again.', del_all_q: 'Delete {n} order(s) WAITING APPROVAL in this list, total {v}?\n\nThis cannot be undone. The source projects become editable again.\n\nTo confirm, type {n}:', del_none: 'No order was deleted — it was already approved or is not yours.', del_done: '{n} order(s) deleted.', del_lote: 'To delete: remove the order from batch {lote} in the ERP (Batches › {lote} › ✕ next to the order). Then the Delete button shows up here.', del_inv: 'This order has an invoice, payment link or receipt — it cannot be deleted here.', del_fim: 'An order released for pickup or delivered cannot be deleted here.', del_aprov: 'WARNING: this order WAS ALREADY APPROVED.', del_pago: 'It is marked as PAID.', lote: 'Batch', back_326: 'The database refused: the order belongs to another account (or was already approved). For the factory to return another account\'s order, run migration 326 in Supabase.' },
+  es: { pay_col: 'Pago', more: 'Más información', less: 'Contraer', seller: 'Vendedor', client: 'Cliente', room: 'Ambiente', addr: 'Dirección de la obra', prices: 'Valores', tools: 'Factura y pago', open: 'Abrir pedido', paid: 'Pagado ✓', rcpt_sent: 'Comprobante enviado', no_link: 'sin link', lost_btn: '✕ Proyecto perdido — motivo', old_link: 'Archivados por inactividad ({n})', old_back: '← Volver a los activos ({n} archivados)', old_hint: 'Archivado: {n} días sin cambios. Abrir y guardar el proyecto lo trae de vuelta.', del_btn: '✕ Eliminar pedido', del_all: 'Eliminar mis pedidos esperando aprobación de esta lista ({n})', del_q: '¿Eliminar el pedido {no}{po} de {v}?\n\nNo se puede deshacer. El proyecto de origen (si existe) vuelve a ser editable.', del_all_q: '¿Eliminar {n} pedido(s) ESPERANDO APROBACIÓN de esta lista, total {v}?\n\nNo se puede deshacer. Los proyectos de origen vuelven a ser editables.\n\nPara confirmar, escriba {n}:', del_none: 'No se eliminó ningún pedido — ya fue aprobado o no es suyo.', del_done: '{n} pedido(s) eliminado(s).', del_lote: 'Para eliminar: quite el pedido del lote {lote} en el ERP (Lotes › {lote} › ✕ junto al pedido). Luego el botón Eliminar aparece aquí.', del_inv: 'Este pedido tiene factura, link de pago o comprobante — no se puede eliminar aquí.', del_fim: 'Un pedido liberado para retiro o entregado no se puede eliminar aquí.', del_aprov: 'ATENCIÓN: este pedido YA FUE APROBADO.', del_pago: 'Está marcado como PAGADO.', lote: 'Lote', back_326: 'La base no lo permitió: el pedido es de otra cuenta (o ya fue aprobado). Ejecute la migration 326 en Supabase.' }
 };
 function odT(k) { const L = OD_TXT[cxLang()] || OD_TXT.en; return L[k] != null ? L[k] : (OD_TXT.en[k] || k); }
 // EXCLUIR PEDIDO (22/11, Matt: "muitos pedidos que criei de teste e quero deletar").
@@ -1069,7 +1076,10 @@ function odT(k) { const L = OD_TXT[cxLang()] || OD_TXT.en; return L[k] != null ?
 function cxPodeExcluirAprovado(o) {
   const s = cxState.scope || {};
   if (!o || o._proj || !cxAdmin() || o.client_user_id !== cxMe() || o.status === 'submitted') return false;
-  if (o.pickup_released_at || o.delivered_at || o.paid_at || o.qbo_paid_at || o.invoice_number || o.qbo_invoice_id || o.payment_link || o.receipt_path) return false;
+  // paid_at SOZINHO não trava (22/11, 3ª rodada): é o "Marcar como pago" manual dos pedidos de
+  // teste de antes do ERP (Matt: "são beeem antigos... quero deletá-los"). Trava o que é
+  // documento de verdade: invoice emitida, QuickBooks, link de pagamento, comprovante.
+  if (o.pickup_released_at || o.delivered_at || o.qbo_paid_at || o.invoice_number || o.qbo_invoice_id || o.payment_link || o.receipt_path) return false;
   const t = s.track && s.track[o.id];
   if (!t || t.batch_code) return false;
   const pc = s.pieces && s.pieces[o.id];
@@ -1081,7 +1091,8 @@ function cxMotivoNaoExclui(o) {
   if (!o || o._proj || !cxAdmin() || o.client_user_id !== cxMe() || o.status === 'submitted' || cxPodeExcluir(o)) return '';
   const t = s.track && s.track[o.id];
   if (t && t.batch_code) return odT('del_lote').replace('{lote}', t.batch_code);
-  if (o.invoice_number || o.qbo_invoice_id || o.payment_link || o.receipt_path || o.paid_at || o.qbo_paid_at) return odT('del_inv');
+  if (o.invoice_number || o.qbo_invoice_id || o.payment_link || o.receipt_path || o.qbo_paid_at) return odT('del_inv');
+  if (o.pickup_released_at || o.delivered_at) return odT('del_fim');
   return '';
 }
 function cxExcluiveis() { return cxNetRows().filter((o) => cxPodeExcluir(o) && o.status === 'submitted'); }   // em massa: só os aguardando aprovação
@@ -1094,7 +1105,8 @@ async function cxDeleteOrders(ids) {
   const total = cMoney(lista.reduce((t, o) => t + valor(o), 0));
   if (lista.length === 1) {
     const o = lista[0]; const no = cxNumVal(o);
-    if (!confirm(odT('del_q').replace('{no}', no ? no + ' ' : '').replace('{po}', o.po_name ? '"' + o.po_name + '" ' : '').replace('{v}', total))) return;
+    const noTxt = no ? String(no).padStart(5, '0') + ' ' : '';
+    if (!confirm((o.status !== 'submitted' ? odT('del_aprov') + (o.paid_at ? ' ' + odT('del_pago') : '') + '\n\n' : '') + odT('del_q').replace('{no}', noTxt).replace('{po}', o.po_name ? '"' + o.po_name + '" ' : '').replace('{v}', total))) return;
   } else {
     const dig = prompt(odT('del_all_q').replace(/\{n\}/g, lista.length).replace('{v}', total));
     if (dig == null || String(dig).trim() !== String(lista.length)) return;
@@ -1127,6 +1139,27 @@ async function cxDeleteOrders(ids) {
   if (erro) return alert((feitos ? odT('del_done').replace('{n}', feitos) + '\n\n' : '') + ((erro && erro.message) || String(erro)));
   if (!feitos) return alert(odT('del_none'));
   if (lista.length > 1 || feitos !== lista.length) alert(odT('del_done').replace('{n}', feitos));
+}
+// VOLTAR AO PROJETO (22/11, Matt: "como faço pra voltar essa ordem pra
+// projetos? tinha um botão antes"): o botão da lista antiga (portal-02
+// returnOrderToProject) dentro do ▾. Pedido PENDENTE que veio de um projeto:
+// apaga o pedido e o projeto descongela (nada do projeto se perde). Dono
+// sempre pode; admin em pedido de OUTRA conta precisa da migration 326 (sem
+// ela o banco devolve 0 linhas e a tela avisa).
+function cxPodeVoltar(o) { return !!(o && !o._proj && o.status === 'submitted' && o.source_project_id && (o.client_user_id === cxMe() || cxAdmin())); }
+async function cxBackToProject(id) {
+  const s = cxState.scope; const o = s && s.orders.find((x) => x.id === id);
+  if (!cxPodeVoltar(o)) return;
+  const T = (k) => (typeof I18n !== 'undefined' ? I18n.t(k) : k);
+  if (!confirm(T('my_orders.back_to_project_confirm'))) return;
+  try {
+    const { data, error } = await supabaseClient.from('orders').delete().eq('id', id).eq('status', 'submitted').select('id');
+    if (error) throw error;
+    if (!data || !data.length) return alert(o.client_user_id === cxMe() ? T('my_orders.back_to_project_not_pending') : odT('back_326'));
+  } catch (e) { return alert((e && e.message) || String(e)); }
+  cxState.scope = null;
+  if (typeof myOrdersLoaded !== 'undefined') myOrdersLoaded = false;
+  if (typeof mpLoad === 'function') mpLoad();
 }
 function cxOrdOpen() { return cxState.ordOpen || (cxState.ordOpen = new Set()); }
 // linha da aba Orders: só o que decide (etapa, invoice, total, pagamento)
@@ -1161,7 +1194,8 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
   const quem = cxUserLabel(o.client_user_id, [o]);
   const kv = (k, v) => (v == null || v === '' ? '' : '<div class="cx-okv"><span>' + cEsc(k) + '</span><b>' + v + '</b></div>');
   const info = kv(odT('seller'), cEsc(quem || '—')) + kv(odT('client'), cEsc(o.client_name || '')) + kv(odT('room'), cEsc(o.room_name || '')) + kv(odT('addr'), cEsc(o.delivery_address || ''))
-    + (o._folder ? kv('📁', cEsc(o._folder)) : '');
+    + (o._folder ? kv('📁', cEsc(o._folder)) : '')
+    + (cxAdmin() && cxLoteDe(o) ? kv(odT('lote'), cEsc(cxLoteDe(o))) : '');
   const val = !preco || o._proj ? '' : kv(cT('list'), cEsc(cMoney(o._l))) + kv(cT('disc'), o._d != null ? o._d + '%' : '—') + kv(cT('net'), o._n != null ? cEsc(cMoney(o._n)) : '—')
     + kv(ivT('tax'), o._ex ? cEsc(ivT('exempt')) : o._tx != null ? cEsc(cMoney(o._tx)) : '—') + kv(ivT('inv_total'), o._it != null ? cEsc(cMoney(o._it)) : '—');
   const px = cxOrdProj(o);
@@ -1170,6 +1204,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + (val ? '<div class="cx-ocol"><h5>' + cEsc(odT('prices')) + '</h5>' + val + '</div>' : '')
     + '<div class="cx-ocol cx-otools"><h5>' + cEsc(odT('tools')) + '</h5><div>' + (cxInvBtns(o) || '—') + '</div>'
     + '<div><button type="button" class="cx-mini" data-cx="openorder" data-id="' + id + '">' + cEsc(odT('open')) + ' →</button>'
+    + (cxPodeVoltar(o) ? ' <button type="button" class="cx-mini" data-cx="backproj" data-id="' + id + '">↩ ' + cEsc(typeof I18n !== 'undefined' ? I18n.t('my_orders.back_to_project') : 'Back to project') + '</button>' : '')
     + (cxPodeExcluir(o) ? ' <button type="button" class="cx-mini cx-mini-lost" data-cx="delorder" data-id="' + id + '">' + cEsc(odT('del_btn')) + '</button>' : '') + '</div>'
     + (cxMotivoNaoExclui(o) ? '<div class="hint" style="white-space:normal;max-width:340px;margin-top:6px">' + cEsc(cxMotivoNaoExclui(o)) + '</div>' : '') + '</div>'
     + '</div></td></tr>';
@@ -2052,6 +2087,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (a === 'sendfab') { e.stopPropagation(); e.preventDefault(); return cxSendFactoryOpen(b.getAttribute('data-id')); }
+  if (a === 'backproj') { e.stopPropagation(); e.preventDefault(); return cxBackToProject(b.getAttribute('data-id')); }
   if (a === 'delorder') { e.stopPropagation(); e.preventDefault(); return cxDeleteOrders([b.getAttribute('data-id')]); }
   if (a === 'delall') { e.stopPropagation(); e.preventDefault(); return cxDeleteOrders(cxExcluiveis().map((o) => o.id)); }
   if (a === 'relprod') return cxAdminRelease(b.getAttribute('data-id'), 'prod');
@@ -2263,7 +2299,7 @@ function cxCss() {
     + '.cx-paid{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:9px;background:#dff1e2;color:#1f6b33;font-size:10.5px;font-weight:700;white-space:nowrap}.cx-paid.cx-paid-p{background:#fbeccc;color:#8a5a0a}'
     + '.cx-table .mp-chip{font-size:11.5px;padding:2px 9px}.cx-table .mp-chip.cx-ch-pay{background:#ece8fb;color:#5546b8}.cx-table td.cx-stcell .cx-mini{margin-left:6px}'
     + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}.cx-table td.cx-facts.cx-facts-l{text-align:left}'
-    + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}.cx-link.cx-link-del{color:#9a2b1e}.cx-oproj{padding:8px 4px 2px;white-space:normal}'
+    + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}.cx-link.cx-link-del{color:#9a2b1e}.cx-oproj{padding:8px 4px 2px;white-space:normal}.cx-lote{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;background:#2b2621;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.02em;vertical-align:middle}'
     + '.cx-table .cx-more{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0}.cx-table .cx-more:hover,.cx-table .cx-more.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
     + '.cx-table .cx-mini.cx-mini-go{background:#7a4a1e;border-color:#7a4a1e;color:#fff}.cx-table .cx-mini.cx-mini-go:hover{background:#5f3915}'
     + '.cx-table tr.cx-ord-on td{background:#faf6ee;border-bottom-color:transparent}'

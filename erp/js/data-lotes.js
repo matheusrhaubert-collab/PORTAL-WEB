@@ -877,6 +877,58 @@ LOTES.removeOrderFromBatch = async function (batchId, orderId) {
   return { pecas: (pecas.data || []).length };
 };
 
+/* Andamento de cada pedido DENTRO de um lote (lista de lotes, ▾ — 22/11).
+   Só leitura. Por pedido: peças do lote (soma de batch_pieces.quantity),
+   quantas já foram apontadas (piece_scans), volumes e quantos estão
+   completos/embalados (packages), peças já postas em volume (package_pieces).
+   Tabela de migration que ainda não rodou conta como zero. */
+LOTES.batchOrdersStatus = async function (batchId) {
+  const erp = LOTES.erp();
+  const falta = function (e) { return /does not exist|schema cache|relation|Could not find/i.test((e && e.message) || ''); };
+  const todas = async function (monta) {            // pagina de 1000 em 1000 (teto do Supabase)
+    const out = [];
+    for (let de = 0; de < 20000; de += 1000) {
+      const r = await monta().range(de, de + 999);
+      if (r.error) { if (falta(r.error)) return []; throw r.error; }
+      out.push.apply(out, r.data || []);
+      if ((r.data || []).length < 1000) break;
+    }
+    return out;
+  };
+  const vinc = await erp.from('batch_orders').select('order_id, added_at').eq('batch_id', batchId);
+  if (vinc.error) throw vinc.error;
+  const ids = (vinc.data || []).map(function (r) { return r.order_id; });
+  if (!ids.length) return [];
+  const res = await Promise.all([
+    DATA.sb().from('orders').select('*').in('id', ids),
+    todas(function () { return erp.from('batch_pieces').select('order_id, quantity').eq('batch_id', batchId); }),
+    todas(function () { return erp.from('piece_scans').select('order_id').eq('batch_id', batchId); }),
+    todas(function () { return erp.from('packages').select('id, order_id, status').eq('batch_id', batchId); }),
+    todas(function () { return erp.from('package_pieces').select('package_id, apontado_at').eq('batch_id', batchId).not('apontado_at', 'is', null); })
+  ]);
+  if (res[0].error) throw res[0].error;
+  const ords = res[0].data || [];
+  const z = {}; ids.forEach(function (id) { z[id] = { pecas: 0, cortadas: 0, volumes: 0, completos: 0, embalados: 0, pecasEmbaladas: 0 }; });
+  res[1].forEach(function (p) { if (z[p.order_id]) z[p.order_id].pecas += Number(p.quantity) || 0; });
+  res[2].forEach(function (p) { if (z[p.order_id]) z[p.order_id].cortadas += 1; });
+  const donoDoVolume = {};
+  res[3].forEach(function (p) {
+    donoDoVolume[p.id] = p.order_id; const a = z[p.order_id]; if (!a) return;
+    a.volumes += 1; if (p.status === 'completo' || p.status === 'embalado') a.completos += 1; if (p.status === 'embalado') a.embalados += 1;
+  });
+  res[4].forEach(function (p) { const a = z[donoDoVolume[p.package_id]]; if (a) a.pecasEmbaladas += 1; });
+  const loja = {};
+  const accIds = ords.map(function (o) { return o.account_id; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+  if (accIds.length) {
+    try {
+      const r = await DATA.sb().from('accounts').select('id, trade_name, legal_name').in('id', accIds);
+      (r.data || []).forEach(function (a) { loja[a.id] = a.trade_name || a.legal_name || ''; });
+    } catch (e) { /* sem a 306 */ }
+  }
+  return ords.sort(function (a, b) { return (Number(a.factory_number) || 0) - (Number(b.factory_number) || 0); })
+    .map(function (o) { return Object.assign({ order: o, store: loja[o.account_id] || '' }, z[o.id]); });
+};
+
 LOTES.updateBatch = async function (id, patch) {
   const { error } = await LOTES.erp().from('batches')
     .update(Object.assign({}, patch, { updated_at: new Date().toISOString() })).eq('id', id);

@@ -92,40 +92,37 @@ LOTES_UI.listLoad = async function () {
 };
 
 LOTES_UI.list = function (params, d) {
+  /* LISTA EM LINHAS (22/11, Matt: "quero só uma linha embaixo da outra, e um
+     botão lá no final abrindo pra baixo mostrando os pedidos do lote... status
+     do pedido, cortado, embalando, embalado, finalizado. mostra os ícones pra
+     eu clicar e abrir os relatórios como é hoje"). Cada lote = UMA linha; o ▾
+     abre embaixo os MESMOS botões de antes + uma linha por pedido com o
+     andamento (carregado só ao abrir — LOTES.batchOrdersStatus). Os lotes
+     abertos ficam em LOTES_UI._abertos e reabrem sozinhos no afterList. */
+  LOTES_UI._cssLista();
+  const abertos = LOTES_UI._abertos || (LOTES_UI._abertos = {});
   const cards = d.batches.map(function (b) {
     const pieces = (b.batch_pieces || []).reduce(function (s, p) { return s + (p.quantity || 0); }, 0);
     const plans = (b.cut_plans || []).slice().sort(function (a, c) { return c.version - a.version; });
     const last = plans[0];
     const st = LOTES_UI.BATCH_STATUS[b.status] || LOTES_UI.BATCH_STATUS.planejado;
-    return UI.panel(null,
-      '<div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px">' +
-        '<div><div class="erp-strong" style="font-size:15px">' +
-          '<a href="#/lotes/' + b.id + '">' + UI.esc(b.code) + '</a>' +
-          (b.name ? ' <span class="erp-muted">· ' + UI.esc(b.name) + '</span>' : '') + '</div>' +
-        '<div class="erp-muted erp-small">aberto ' + UI.date(b.created_at) +
-          (b.target_date ? ' · meta ' + UI.date(b.target_date) : '') + '</div></div>' +
-        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
-          /* Plano feito é a informação que o Matt procura no card: sem ela,
-             pra saber se o lote já foi cortado tinha que abrir um por um. */
-          (last
-            ? UI.pill('✓ plano v' + last.version, 'erp-pill-ok')
-            : UI.pill('sem plano', 'erp-pill-warn')) +
+    const aberto = !!abertos[b.id];
+    const num = function (v, rot) { return '<span class="ll-n"><b>' + v + '</b> ' + rot + '</span>'; };
+    return '<div class="ll-lote' + (aberto ? ' is-on' : '') + '" data-ll="' + b.id + '">' +
+      '<div class="ll-row" onclick="LOTES_UI.abreLinha(\'' + b.id + '\')">' +
+        '<span class="ll-code"><a href="#/lotes/' + b.id + '" onclick="event.stopPropagation()">' + UI.esc(b.code) + '</a></span>' +
+        '<span class="ll-name" title="' + UI.esc(b.name || '') + '">' + (b.name ? UI.esc(b.name) : '<span class="erp-muted">—</span>') + '</span>' +
+        '<span class="ll-date erp-muted">' + UI.date(b.created_at) + '</span>' +
+        num((b.batch_orders || []).length, 'ped.') +
+        num(pieces, 'peças') +
+        num(last ? last.total_sheets : '—', 'chapas') +
+        '<span class="ll-pills">' +
+          (last ? UI.pill('✓ plano v' + last.version, 'erp-pill-ok') : UI.pill('sem plano', 'erp-pill-warn')) +
           UI.pill(st.label, st.pill) +
-        '</div>' +
+        '</span>' +
+        '<button type="button" class="ll-more" title="Pedidos e relatórios do lote" aria-label="Abrir">' + (aberto ? '▴' : '▾') + '</button>' +
       '</div>' +
-      '<div class="erp-grid erp-grid-4" style="margin-bottom:12px">' +
-        UI.kpi('Pedidos', (b.batch_orders || []).length, 'no lote') +
-        UI.kpi('Peças', pieces, (b.batch_pieces || []).length + ' linhas') +
-        (last
-          ? UI.kpi('Chapas', last.total_sheets,
-              (last.total_offcuts_used ? '+ ' + last.total_offcuts_used + ' retalho(s) · ' : '') +
-              'perda ' + LOTES_UI.pct(last.waste_pct))
-          : UI.kpi('Chapas', '—', 'depende do plano')) +
-        (last
-          ? UI.kpi('Plano', 'v' + last.version,
-              plans.length > 1 ? plans.length + ' versões · ' + UI.date(last.created_at) : UI.date(last.created_at))
-          : UI.kpi('Plano', 'nenhum', 'o lote ainda não foi otimizado')) +
-      '</div>' +
+      '<div class="ll-det"' + (aberto ? '' : ' style="display:none"') + '>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/lotes/' + b.id + '">Abrir lote</a>' +
         (last
@@ -155,7 +152,10 @@ LOTES_UI.list = function (params, d) {
           ? '<button type="button" class="erp-btn erp-btn-secondary erp-btn-sm lp-card-btn" title="Etiqueta ½ Letter de cada módulo do lote (todos os pedidos)" ' +
             'onclick="ETIQUETA_MODULO.gerar(\'' + b.id + '\', null, this)">🏷️ Montagem de módulos</button>'
           : '') +
-      '</div>');
+      '</div>' +
+        '<div class="ll-peds" data-ll-peds="' + b.id + '"><span class="erp-muted erp-small">Carregando pedidos…</span></div>' +
+      '</div>' +
+    '</div>';
   }).join('');
 
   return UI.head('Lotes de Produção',
@@ -1813,7 +1813,69 @@ LOTES_UI._ondeTxt = function (onde, varios) {
 LOTES_UI._num = function (v, casas) { return Number(v || 0).toFixed(casas).replace('.', ','); };
 
 /* Card do lote: preenche os botões dos processos que o lote tem. */
+/* estilo da lista em linhas — injetado uma vez */
+LOTES_UI._cssLista = function () {
+  if (document.getElementById('ll-css')) return;
+  const st = document.createElement('style'); st.id = 'll-css';
+  st.textContent = '.ll-lote{background:#fff;border:1px solid #e6e1d8;border-radius:10px;margin-bottom:6px}.ll-lote.is-on{border-color:#cdbfae;box-shadow:0 2px 10px rgba(0,0,0,.05)}' +
+    '.ll-row{display:flex;align-items:center;gap:14px;padding:8px 12px;cursor:pointer;white-space:nowrap}.ll-row:hover{background:#faf7f2;border-radius:10px}' +
+    '.ll-code{font-weight:700;width:96px;flex:none}.ll-name{flex:1;min-width:80px;overflow:hidden;text-overflow:ellipsis;font-size:13px}.ll-date{width:84px;flex:none;font-size:12px}' +
+    '.ll-n{width:86px;flex:none;font-size:12px;color:#766f64;text-align:right}.ll-n b{color:#2b2621;font-size:14px}.ll-pills{display:flex;gap:6px;flex:none;width:210px;justify-content:flex-end}' +
+    '.ll-more{flex:none;width:30px;height:26px;border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;cursor:pointer;padding:0;font-size:12px;line-height:1}.ll-lote.is-on .ll-more{background:#3a332a;color:#fff}' +
+    '.ll-det{padding:10px 12px 12px;border-top:1px solid #f0ebe3}.ll-peds{margin-top:12px}.ll-peds .erp-table td,.ll-peds .erp-table th{padding:6px 8px;font-size:12.5px}' +
+    '.ll-bar{display:inline-block;width:70px;height:6px;border-radius:3px;background:#ece7de;vertical-align:middle;margin-left:6px;overflow:hidden}.ll-bar i{display:block;height:100%;background:#2c6440}' +
+    '@media(max-width:1100px){.ll-date,.ll-name{display:none}}';
+  document.head.appendChild(st);
+};
+
+/* ▾ da linha do lote: abre/fecha e carrega os pedidos na 1ª vez */
+LOTES_UI.abreLinha = function (batchId) {
+  const ab = LOTES_UI._abertos || (LOTES_UI._abertos = {});
+  const box = document.querySelector('.ll-lote[data-ll="' + batchId + '"]'); if (!box) return;
+  const det = box.querySelector('.ll-det'); const bt = box.querySelector('.ll-more');
+  const abrir = !ab[batchId];
+  if (abrir) ab[batchId] = true; else delete ab[batchId];
+  box.classList.toggle('is-on', abrir); det.style.display = abrir ? '' : 'none'; if (bt) bt.textContent = abrir ? '▴' : '▾';
+  if (abrir) LOTES_UI.carregaPedidosDaLinha(batchId);
+};
+
+/* Etapa do pedido DENTRO do lote, pela ordem do chão de fábrica.
+   cortado  = peças apontadas (Produção › Apontar peças, erp.piece_scans)
+   embalado = volumes (erp.packages.status)
+   finalizado = coleta liberada / entregue (orders) */
+LOTES_UI.etapaDoPedido = function (r) {
+  const o = r.order || {};
+  const barra = function (a, t) { return t > 0 ? '<span class="ll-bar"><i style="width:' + Math.round(Math.min(1, a / t) * 100) + '%"></i></span>' : ''; };
+  if (o.delivered_at) return UI.pill('Finalizado · entregue', 'erp-pill-ok');
+  if (o.pickup_released_at) return UI.pill('Finalizado · liberado pra coleta', 'erp-pill-ok');
+  if (r.volumes > 0 && r.embalados >= r.volumes) return UI.pill('Embalado', 'erp-pill-ok') + ' <span class="erp-muted erp-small">' + r.volumes + ' vol.</span>';
+  if (r.volumes > 0 && (r.embalados > 0 || r.completos > 0 || r.pecasEmbaladas > 0)) return UI.pill('Embalando', 'erp-pill-accent') + ' <span class="erp-muted erp-small">' + r.embalados + '/' + r.volumes + ' vol.</span>' + barra(r.embalados, r.volumes);
+  if (r.pecas > 0 && r.cortadas >= r.pecas) return UI.pill('Cortado', 'erp-pill-info') + ' <span class="erp-muted erp-small">' + r.pecas + ' peças</span>';
+  if (r.cortadas > 0) return UI.pill('Cortando', 'erp-pill-info') + ' <span class="erp-muted erp-small">' + r.cortadas + '/' + r.pecas + '</span>' + barra(r.cortadas, r.pecas);
+  return UI.pill('Aguardando corte', 'erp-pill-neutral');
+};
+
+LOTES_UI.carregaPedidosDaLinha = async function (batchId) {
+  const el = document.querySelector('[data-ll-peds="' + batchId + '"]'); if (!el) return;
+  try {
+    const rows = await LOTES.batchOrdersStatus(batchId);
+    if (!document.body.contains(el)) return;
+    const dt = function (v) { return v ? UI.date(v) : null; };
+    el.innerHTML = !rows.length ? '<span class="erp-muted erp-small">Nenhum pedido vinculado.</span>' : UI.table([
+      { key: 'no', label: 'Nº' }, { key: 'store', label: 'Loja' }, { key: 'po', label: 'PO' }, { key: 'client', label: 'Cliente' },
+      { key: 'etapa', label: 'Situação' }, { key: 'rel', label: 'Liberado produção' }, { key: 'due', label: 'Prazo' }, { key: 'pecas', label: 'Peças', align: 'right' }
+    ], rows.map(function (r) {
+      const o = r.order;
+      const due = o.finance_released_at ? new Date(new Date(o.finance_released_at).getTime() + 15 * 86400000).toISOString() : null;
+      return { _href: '#/pedidos/' + o.id, no: '<span class="erp-strong">' + UI.esc(DATA.orderNo(o) || '—') + '</span>', store: r.store ? UI.esc(r.store) : null,
+        po: o.po_name ? UI.esc(o.po_name) : null, client: UI.esc(DATA.clientLabel(o)), etapa: LOTES_UI.etapaDoPedido(r), rel: dt(o.finance_released_at), due: dt(due), pecas: r.pecas || null };
+    }));
+  } catch (err) { console.error(err); el.innerHTML = '<span class="erp-error erp-small">' + UI.esc(LOTES.explainError(err)) + '</span>'; }
+};
+
 LOTES_UI.afterList = async function () {
+  LOTES_UI._cssLista();
+  Object.keys(LOTES_UI._abertos || {}).forEach(function (id) { LOTES_UI.carregaPedidosDaLinha(id); });
   const slots = Array.from(document.querySelectorAll('.lp-card-btns[data-lp-batch]')).slice(0, 30);
   for (const el of slots) {
     const id = el.getAttribute('data-lp-batch');
