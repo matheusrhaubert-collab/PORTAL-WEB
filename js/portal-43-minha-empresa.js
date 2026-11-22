@@ -292,7 +292,7 @@ function meFrame(inner) {
   const tabs = meTabs();
   if (!tabs.includes(meState.tab)) meState.tab = 'painel';
   const nome = meState.card ? (meState.card.trade_name || meState.card.legal_name || mT('title')) : (meIsAdmin() ? mT('title_factory') : mT('title'));
-  return '<div class="me-box" role="dialog" aria-modal="true"><div class="me-head"><div><h3>' + mEsc(nome) + '</h3>'
+  return '<div class="me-box' + (meState.tab === 'pessoas' ? ' me-wide' : '') + '" role="dialog" aria-modal="true"><div class="me-head"><div><h3>' + mEsc(nome) + '</h3>'
     + (meState.card ? '<span class="me-sub">' + mEsc(mT('kind_' + meState.card.kind)) + ' · ' + mEsc(mT('role_' + meState.card.role)) + '</span>' : '') + '</div>'
     + '<button type="button" class="me-x" data-a="close" aria-label="' + mEsc(mT('close')) + '">×</button></div>'
     + '<div class="me-tabs">' + tabs.map((t) => '<button type="button" class="me-tab' + (t === meState.tab ? ' on' : '') + '" data-a="tab" data-t="' + t + '">' + mEsc(t === 'pessoas' ? ppT('tab') : mT('t_' + t)) + '</button>').join('') + '</div>'
@@ -517,6 +517,8 @@ function meClick(e) {
     if (rem && typeof deleteDealerPricingExtra === 'function') return deleteDealerPricingExtra(rem.dataset.removeExtra);
     return;
   }
+  const chipP = e.target.closest('.pp-p');
+  if (chipP && !e.target.closest('select')) return mePersonOpen(chipP.getAttribute('data-u'));
   const b = e.target.closest('[data-a]');
   if (!b) return;
   const a = b.getAttribute('data-a');
@@ -694,6 +696,17 @@ function meCss() {
     '.me-lost-note{padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin-top:4px}.me-lost-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.me-lost-foot button{margin:0}',
     '.pp-top{display:flex;gap:10px;align-items:stretch;margin:6px 0 12px;flex-wrap:wrap}.pp-top input{flex:0 0 240px;padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin:0}',
     '.pp-new{flex:1;min-width:260px;border:2px dashed #c9a36b;border-radius:10px;padding:10px 14px;font-size:13.5px;color:#7a4a1e;background:#fdf8ef;display:flex;align-items:center}',
+    '.me-box.me-wide{max-width:1560px}.me-wide .pp-side .pp-acc-b{max-height:72vh}.pp-p{cursor:pointer}',
+    '#pp-card{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;display:none;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto}',
+    '.pc-box{background:var(--panel,#fff);color:var(--text,#2b2621);border-radius:14px;width:100%;max-width:860px;padding:20px 24px 18px;box-shadow:0 14px 50px rgba(0,0,0,.35)}',
+    '.pc-head{display:flex;gap:14px;align-items:center;margin-bottom:6px}.pc-tit{flex:1;min-width:0}.pc-tit h3{margin:0;font-size:20px}.pc-tit span{font-size:13px;color:var(--muted,#766f64)}',
+    '.pc-logo{width:84px;height:56px;border:1px solid var(--border,#e0ddd6);border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden;flex:none}.pc-logo img{max-width:100%;max-height:100%}.pc-logo span{font-size:10.5px;color:var(--muted,#766f64);text-align:center}',
+    '.pc-box h4{margin:16px 0 8px;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:#8a8073}.pc-erp{float:right;text-transform:none;letter-spacing:0;font-size:12.5px;font-weight:400}',
+    '.pc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px}.pc-f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#766f64);margin:0}.pc-f.w2{grid-column:span 2}',
+    '.pc-f input,.pc-f select{padding:7px 9px;border:1px solid var(--border,#e0ddd6);border-radius:7px;font-size:14px;margin:0;width:100%;box-sizing:border-box;color:var(--text,#2b2621);background:#fff}',
+    '.pc-ro{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#766f64)}.pc-ro b{font-size:14px;color:var(--text,#2b2621);font-weight:600;padding:7px 0;overflow:hidden;text-overflow:ellipsis}',
+    '.pc-dest{margin-top:12px;padding:10px 12px;background:#fdf8ef;border:1px solid #ead9b8;border-radius:9px}.pc-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}',
+    '@media (max-width:700px){.pc-grid{grid-template-columns:repeat(2,1fr)}}',
     '.pp-cols{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}.pp-side{border:1px dashed var(--border,#e0ddd6);border-radius:10px;background:var(--panel-2,#faf8f4);overflow:hidden;position:sticky;top:0}.pp-side .pp-acc-b{max-height:62vh}',
     '.pp-tree,.pp-tree ul{list-style:none;margin:0;padding:0}.pp-tree ul.pp-kids{margin-left:22px}.pp-tree>li.is-fab>ul.pp-kids{margin-left:14px}',
     '.pp-tree li{position:relative;padding:3px 0 3px 22px}.pp-tree>li{padding-left:0}',
@@ -827,6 +840,132 @@ function meViewPeople() {
     + '<div class="pp-arv"><ul class="pp-tree">' + (filhas._raiz || []).map(galho).join('')
     + '<li class="pp-store pp-drop pp-newli" data-acc="_dealer"><div class="pp-node pp-new">★ ' + mEsc(ppT('new_dealer')) + '</div></li>'
     + '</ul></div></div>';
+}
+// ---------- CADASTRO DA PESSOA / LOJA (21/11) ----------
+// Matt: "quero poder clicar no usuário e abrir o cadastro dele, com desconto,
+// endereço, nome da empresa, tax exemption, validade, status, último acesso,
+// número de projetos, telefone, e-mail, logotipo... tudo numa tela do próprio
+// portal, mas que altera e está conectada com a do ERP".
+// Lê e grava nas MESMAS tabelas do ERP › Dealers (accounts) e do perfil
+// (user_profiles) — não tem cópia: o que salva aqui aparece lá e vice-versa.
+// Os dados da empresa são da LOJA: valem pro dealer e pra equipe inteira.
+const PC_TXT = {
+  pt: { title: 'Cadastro', person: 'Pessoa', store: 'Empresa (loja)', email: 'E-mail', role: 'Função', last: 'Último acesso', never: 'nunca', projs: 'Projetos', orders: 'Pedidos', active: 'Acesso', on: 'ativo', offv: 'inativo',
+    trade: 'Nome da empresa', legal: 'Razão social', contact: 'Contato', bemail: 'E-mail de cobrança', phone: 'Telefone', site: 'Site', l1: 'Endereço', l2: 'Complemento', city: 'Cidade', state: 'Estado', zip: 'ZIP',
+    disc: 'Desconto de fábrica (%)', tax: 'Tax exemption', tstatus: 'Status', tuntil: 'Validade', tstate: 'Estado do certificado', tnum: 'Número', ts_none: 'Não tem', ts_pending: 'Em análise', ts_valid: 'Válido', ts_expired: 'Vencido', ts_rejected: 'Recusado',
+    logo: 'Logotipo', nologo: 'sem logotipo', save: 'Salvar', close: 'Fechar', saved: 'Salvo.', erp: 'Abrir no ERP ↗', shared: 'Estes dados são da loja "{loja}" — valem pro dealer e pra toda a equipe dela.', nostore: 'Esta pessoa não está em nenhuma loja. Arraste ela pra uma loja (ou pra "Tornar dealer") pra ter cadastro de empresa. Abaixo, os dados do perfil dela.',
+    pstore: 'Nome da loja (perfil)', need_until: 'Tax exemption válido precisa da validade.', loading: 'Carregando…', store_st: 'Situação da loja' },
+  en: { title: 'Record', person: 'Person', store: 'Company (store)', email: 'E-mail', role: 'Role', last: 'Last access', never: 'never', projs: 'Projects', orders: 'Orders', active: 'Access', on: 'active', offv: 'inactive',
+    trade: 'Company name', legal: 'Legal name', contact: 'Contact', bemail: 'Billing e-mail', phone: 'Phone', site: 'Website', l1: 'Address', l2: 'Address line 2', city: 'City', state: 'State', zip: 'ZIP',
+    disc: 'Factory discount (%)', tax: 'Tax exemption', tstatus: 'Status', tuntil: 'Valid until', tstate: 'Certificate state', tnum: 'Number', ts_none: 'None', ts_pending: 'Under review', ts_valid: 'Valid', ts_expired: 'Expired', ts_rejected: 'Rejected',
+    logo: 'Logo', nologo: 'no logo', save: 'Save', close: 'Close', saved: 'Saved.', erp: 'Open in ERP ↗', shared: 'This is the record of the store "{loja}" — it applies to the dealer and the whole team.', nostore: 'This person is not in any store. Drag them into a store (or to "Make dealer") to have a company record. Below, their profile data.',
+    pstore: 'Store name (profile)', need_until: 'A valid tax exemption needs the expiry date.', loading: 'Loading…', store_st: 'Store status' },
+  es: { title: 'Ficha', person: 'Persona', store: 'Empresa (tienda)', email: 'E-mail', role: 'Función', last: 'Último acceso', never: 'nunca', projs: 'Proyectos', orders: 'Pedidos', active: 'Acceso', on: 'activo', offv: 'inactivo',
+    trade: 'Nombre de la empresa', legal: 'Razón social', contact: 'Contacto', bemail: 'E-mail de cobro', phone: 'Teléfono', site: 'Sitio web', l1: 'Dirección', l2: 'Complemento', city: 'Ciudad', state: 'Estado', zip: 'ZIP',
+    disc: 'Descuento de fábrica (%)', tax: 'Tax exemption', tstatus: 'Estado', tuntil: 'Validez', tstate: 'Estado del certificado', tnum: 'Número', ts_none: 'No tiene', ts_pending: 'En análisis', ts_valid: 'Válido', ts_expired: 'Vencido', ts_rejected: 'Rechazado',
+    logo: 'Logotipo', nologo: 'sin logotipo', save: 'Guardar', close: 'Cerrar', saved: 'Guardado.', erp: 'Abrir en el ERP ↗', shared: 'Estos datos son de la tienda "{loja}" — valen para el dealer y todo su equipo.', nostore: 'Esta persona no está en ninguna tienda. Arrástrela a una tienda (o a "Hacer dealer") para tener ficha de empresa. Abajo, los datos de su perfil.',
+    pstore: 'Nombre de la tienda (perfil)', need_until: 'Un tax exemption válido necesita la validez.', loading: 'Cargando…', store_st: 'Situación de la tienda' }
+};
+function pcT(k, v) { const L = PC_TXT[String(meLang()).slice(0, 2)] || PC_TXT.en; let t = L[k] != null ? L[k] : (PC_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x] == null ? '' : String(v[x])); }); return t; }
+const PC_ACC = ['trade_name', 'legal_name', 'contact_name', 'billing_email', 'phone', 'website', 'billing_line1', 'billing_line2', 'billing_city', 'billing_state', 'billing_zip', 'tax_exempt_state', 'tax_exempt_number'];
+function pcEl() {
+  let ov = document.getElementById('pp-card');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'pp-card';
+    ov.addEventListener('click', (e) => {
+      if (e.target.id === 'pp-card' || e.target.closest('[data-pc="close"]')) { ov.style.display = 'none'; return; }
+      if (e.target.closest('[data-pc="save"]')) mePersonSave();
+    });
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
+async function mePersonOpen(userId) {
+  const p = ppUser(userId);
+  if (!p) return;
+  const ov = pcEl(); ov.style.display = 'flex';
+  ov.innerHTML = '<div class="pc-box"><p class="hint">' + mEsc(pcT('loading')) + '</p></div>';
+  const c = { p, prof: null, acc: null, msg: '', err: '' };
+  meState.pc = c;
+  try {
+    const pr = await supabaseClient.from('user_profiles').select('*').eq('user_id', userId).maybeSingle();
+    c.prof = pr.error ? null : pr.data;
+    if (p.account_id) {
+      const a = await supabaseClient.from('accounts').select('*').eq('id', p.account_id).maybeSingle();
+      if (a.error) c.err = a.error.message; else c.acc = a.data;
+    }
+  } catch (e) { c.err = (e && e.message) || String(e); }
+  if (meState.pc === c) mePersonRender();
+}
+function mePersonRender() {
+  const c = meState.pc; if (!c) return;
+  const p = c.p; const a = c.acc; const pf = c.prof || {};
+  const inp = (id, rot, val, tipo, extra) => '<label class="pc-f' + (extra && extra.w ? ' ' + extra.w : '') + '"><span>' + mEsc(rot) + '</span><input id="pc-' + id + '" type="' + (tipo || 'text') + '" value="' + mEsc(val == null ? '' : val) + '"' + ((extra && extra.attr) || '') + '></label>';
+  const ro = (rot, val) => '<div class="pc-ro"><span>' + mEsc(rot) + '</span><b>' + val + '</b></div>';
+  const papel = p.is_admin ? ppT('admin') : p.member_role === 'owner' ? ppT('dealer') : p.member_role ? ppT(p.member_role) : (pf.role || '—');
+  const ultimo = p.last_active_at ? new Date(p.last_active_at).toLocaleString() : pcT('never');
+  const logo = (a && a.logo_url) || pf.logo_url || '';
+  let h = '<div class="pc-box" role="dialog" aria-modal="true"><div class="pc-head"><div class="pc-logo">' + (logo ? '<img src="' + mEsc(logo) + '" alt="">' : '<span>' + mEsc(pcT('nologo')) + '</span>') + '</div>'
+    + '<div class="pc-tit"><h3>' + mEsc(a ? (a.trade_name || a.legal_name || '—') : String(p.email || '').split('@')[0]) + '</h3><span>' + mEsc(p.email || '') + '</span></div>'
+    + '<button type="button" class="me-x" data-pc="close" aria-label="' + mEsc(pcT('close')) + '">×</button></div>'
+    + (c.err ? '<p class="error">' + mEsc(c.err) + '</p>' : '') + (c.msg ? '<p class="me-msg ok">' + mEsc(c.msg) + '</p>' : '')
+    + '<h4>' + mEsc(pcT('person')) + '</h4><div class="pc-grid">'
+    + ro(pcT('email'), mEsc(p.email || '—')) + ro(pcT('role'), mEsc(papel)) + ro(pcT('last'), mEsc(ultimo))
+    + ro(pcT('projs'), Number(p.n_projects) || 0) + ro(pcT('orders'), Number(p.n_orders) || 0) + ro(pcT('active'), mEsc(p.active === false ? pcT('offv') : pcT('on'))) + '</div>';
+  if (a) {
+    const tx = a.tax_exempt_status || 'none';
+    h += '<h4>' + mEsc(pcT('store')) + (a.kind !== 'factory' ? ' <a class="pc-erp" href="erp/index.html#/dealers/' + mEsc(a.id) + '" target="_blank" rel="noopener">' + mEsc(pcT('erp')) + '</a>' : '') + '</h4>'
+      + (p.member_role !== 'owner' ? '<p class="hint">' + mEsc(pcT('shared', { loja: a.trade_name || a.legal_name || '—' })) + '</p>' : '')
+      + '<div class="pc-grid">'
+      + inp('trade_name', pcT('trade'), a.trade_name, 'text', { w: 'w2' }) + inp('legal_name', pcT('legal'), a.legal_name, 'text', { w: 'w2' })
+      + inp('contact_name', pcT('contact'), a.contact_name) + inp('phone', pcT('phone'), a.phone, 'tel') + inp('billing_email', pcT('bemail'), a.billing_email, 'email') + inp('website', pcT('site'), a.website)
+      + inp('billing_line1', pcT('l1'), a.billing_line1, 'text', { w: 'w2' }) + inp('billing_line2', pcT('l2'), a.billing_line2, 'text', { w: 'w2' })
+      + inp('billing_city', pcT('city'), a.billing_city, 'text', { w: 'w2' }) + inp('billing_state', pcT('state'), a.billing_state) + inp('billing_zip', pcT('zip'), a.billing_zip)
+      + '</div><div class="pc-grid pc-dest">'
+      + inp('factory_discount_pct', pcT('disc'), Number(a.factory_discount_pct || 0), 'number', { attr: ' min="0" max="100" step="0.5"' })
+      + ro(pcT('store_st'), mEsc(mT('st_' + a.status)))
+      + '</div><h4>' + mEsc(pcT('tax')) + '</h4><div class="pc-grid">'
+      + '<label class="pc-f"><span>' + mEsc(pcT('tstatus')) + '</span><select id="pc-tax_exempt_status">' + ['none', 'pending', 'valid', 'expired', 'rejected'].map((v) => '<option value="' + v + '"' + (v === tx ? ' selected' : '') + '>' + mEsc(pcT('ts_' + v)) + '</option>').join('') + '</select></label>'
+      + inp('tax_exempt_valid_until', pcT('tuntil'), a.tax_exempt_valid_until || '', 'date') + inp('tax_exempt_state', pcT('tstate'), a.tax_exempt_state) + inp('tax_exempt_number', pcT('tnum'), a.tax_exempt_number)
+      + '</div>';
+  } else {
+    h += '<p class="hint">' + mEsc(pcT('nostore')) + '</p><div class="pc-grid">'
+      + inp('p_store_name', pcT('pstore'), pf.store_name, 'text', { w: 'w2' }) + inp('p_store_phone', pcT('phone'), pf.store_phone, 'tel')
+      + inp('p_factory_discount_pct', pcT('disc'), Number(pf.factory_discount_pct || 0), 'number', { attr: ' min="0" max="100" step="0.5"' }) + '</div>';
+  }
+  h += '<div class="pc-foot"><button type="button" class="secondary" data-pc="close">' + mEsc(pcT('close')) + '</button><button type="button" data-pc="save">' + mEsc(pcT('save')) + '</button></div></div>';
+  pcEl().innerHTML = h;
+}
+async function mePersonSave() {
+  const c = meState.pc; if (!c || c.busy) return;
+  const v = (id) => { const e = document.getElementById('pc-' + id); return e ? String(e.value).trim() : null; };
+  const num = (id) => Math.max(0, Math.min(100, Number(v(id)) || 0));
+  c.busy = true; c.err = ''; c.msg = '';
+  try {
+    if (c.acc) {
+      const up = {};
+      PC_ACC.forEach((k) => { const x = v(k); if (x !== null) up[k] = x || null; });
+      if (!up.trade_name) up.trade_name = c.acc.trade_name;        // nome da loja nunca fica vazio
+      up.factory_discount_pct = num('factory_discount_pct');
+      up.tax_exempt_status = v('tax_exempt_status') || 'none';
+      up.tax_exempt_valid_until = v('tax_exempt_valid_until') || null;
+      if (up.tax_exempt_status === 'valid' && !up.tax_exempt_valid_until) throw new Error(pcT('need_until'));
+      const r = await supabaseClient.from('accounts').update(up).eq('id', c.acc.id).select('*').maybeSingle();
+      if (r.error) throw r.error;
+      if (r.data) c.acc = r.data;
+      const t = (meState.tree || []).find((x) => x.id === c.acc.id);
+      if (t) Object.assign(t, { trade_name: c.acc.trade_name, legal_name: c.acc.legal_name, factory_discount_pct: c.acc.factory_discount_pct });
+    } else {
+      const r = await supabaseClient.from('user_profiles').update({ store_name: v('p_store_name') || null, store_phone: v('p_store_phone') || null, factory_discount_pct: num('p_factory_discount_pct') }).eq('user_id', c.p.user_id).select('*').maybeSingle();
+      if (r.error) throw r.error;
+      if (r.data) c.prof = r.data;
+    }
+    c.msg = pcT('saved');
+    meState.loaded = false;
+  } catch (e) { c.err = (e && e.message) || String(e); }
+  c.busy = false;
+  mePersonRender();
+  if (meState.tab === 'pessoas') meRender();
 }
 function ppTemDono(accId) { return (meState.people || []).some((x) => x.account_id === accId && x.member_role === 'owner'); }
 // loja com dealer = entra como vendedor; loja sem dealer = vira o dealer dela
