@@ -1246,9 +1246,43 @@ function ptRenderPlan(scene, walls, nums, islandViews) {
     islandBoxes.push({ slot, box });
     add(box.min.x, box.min.z); add(box.max.x, box.max.z);
   });
+  // MÓDULOS DE PAREDE ENTRAM NO ENQUADRAMENTO (22/11, Matt: "no plano técnico de
+  // uma parede só, ele não mostra a planta direito porque corta o chão"). Antes a
+  // área da planta saía só das paredes (+ ilhas): com várias paredes elas cercam
+  // os móveis, mas com UMA parede sobrava só a faixa da parede e os módulos eram
+  // cortados. Agora cada módulo de parede soma a própria pegada — pela caixa real
+  // do 3D (pega recuo/afastamento) e, de garantia, pela conta x/largura/profundidade.
+  let temModuloDeParede = false;
+  wallSlotsAll.forEach(({ s, w }) => {
+    if (ptIsVisualOnly(s)) return;
+    const a0 = Number(s.x_mm || 0) / 1000, a1 = a0 + Number(s.width_mm || 0) / 1000, d = Number(s.depth_mm || 0) / 1000;
+    if (!(d > 0) || !(a1 > a0)) return;
+    temModuloDeParede = true;
+    [[a0, 0], [a1, 0], [a0, d], [a1, d]].forEach(([al, n]) => add(w.originX + w.alongDirX * al + w.intoDirX * n, w.originZ + w.alongDirZ * al + w.intoDirZ * n));
+  });
+  scene.children.forEach((g) => {
+    if (!g.userData || !g.userData.slotId || g.userData.isFloorIsland) return;
+    const slot = ptSlotById(g.userData.slotId);
+    if (!slot || ptIsVisualOnly(slot) || isFloorSlot(slot)) return;
+    const box = new THREE.Box3().setFromObject(g);
+    if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.x)) return;
+    temModuloDeParede = true;
+    add(box.min.x, box.min.z); add(box.max.x, box.max.z);
+  });
   if (!isFinite(minX)) return null;
   const m = 0.1;
   minX -= m; maxX += m; minZ -= m; maxZ += m;
+  // parede única (ou paredes em linha): um pouco de chão na frente dos móveis,
+  // pra planta não terminar rente à frente do módulo
+  if (temModuloDeParede && walls.length) {
+    const w0 = walls[0];
+    const emLinha = walls.every((w) => Math.abs(w.alongDirX * w0.alongDirX + w.alongDirZ * w0.alongDirZ) > 0.985);
+    if (emLinha) {
+      const f = 0.3;
+      if (w0.intoDirX > 0.5) maxX += f; else if (w0.intoDirX < -0.5) minX -= f;
+      if (w0.intoDirZ > 0.5) maxZ += f; else if (w0.intoDirZ < -0.5) minZ -= f;
+    }
+  }
   const spanX = maxX - minX, spanZ = maxZ - minZ;
   const ppm = Math.min(PT_PX_PER_M * 0.75, PT_MAX_IMG_PX / Math.max(spanX, spanZ));
   const wPx = Math.round(spanX * ppm), hPx = Math.round(spanZ * ppm);
