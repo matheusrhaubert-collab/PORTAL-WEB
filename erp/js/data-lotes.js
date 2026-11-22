@@ -833,6 +833,35 @@ LOTES.reloadPieces = async function (batchId, orderIds) {
   return data || [];
 };
 
+/* TIRAR UM PEDIDO DO LOTE (22/11/2026, Matt: pedido substituído por um
+   revisado "ficou no limbo, nunca foi cortado... quero voltar da forma certa").
+   Tira o vínculo (batch_orders) e SÓ as peças daquele pedido (batch_pieces com
+   o order_id dele, menos as manuais) — as peças dos outros pedidos do lote não
+   são reexplodidas. O pedido volta a "liberado, sem lote" (Scheduled no portal)
+   e pode entrar em outro lote ou ser excluído na Central.
+   Recusa (mesma regra do "Recarregar peças") quando o lote já tem plano salvo,
+   e também quando o pedido já tem peça apontada ou volume criado: aí a fábrica
+   já trabalhou em cima dele. */
+LOTES.removeOrderFromBatch = async function (batchId, orderId) {
+  const erp = LOTES.erp();
+  const conta = async function (tabela) {
+    const r = await erp.from(tabela).select('id', { count: 'exact', head: true }).eq('batch_id', batchId).eq('order_id', orderId);
+    if (r.error) { if (/does not exist|schema cache|relation/i.test(r.error.message || '')) return 0; throw r.error; }   // tabela de migration ainda não rodada
+    return r.count || 0;
+  };
+  const planos = await erp.from('cut_plans').select('id', { count: 'exact', head: true }).eq('batch_id', batchId);
+  if (planos.error) throw planos.error;
+  if (planos.count) throw new Error('Este lote já tem plano de corte salvo. Apague o plano antes (Histórico de planos) — senão o plano do chão de fábrica deixa de bater com a lista de peças.');
+  if (await conta('piece_scans')) throw new Error('Este pedido já tem peça apontada neste lote. Desfaça os apontamentos em Produção › Apontar peças antes de tirar.');
+  if (await conta('packages')) throw new Error('Este pedido já tem volumes criados neste lote. Apague os volumes do lote antes de tirar.');
+  const pecas = await erp.from('batch_pieces').delete().eq('batch_id', batchId).eq('order_id', orderId).neq('source', 'manual').select('id');
+  if (pecas.error) throw pecas.error;
+  const vinc = await erp.from('batch_orders').delete().eq('batch_id', batchId).eq('order_id', orderId).select('id');
+  if (vinc.error) throw vinc.error;
+  if (!(vinc.data || []).length) throw new Error('O pedido não estava mais neste lote.');
+  return { pecas: (pecas.data || []).length };
+};
+
 LOTES.updateBatch = async function (id, patch) {
   const { error } = await LOTES.erp().from('batches')
     .update(Object.assign({}, patch, { updated_at: new Date().toISOString() })).eq('id', id);

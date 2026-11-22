@@ -538,13 +538,19 @@ LOTES_UI.detail = function (params, d) {
     UI.panel('Pedidos do lote',
       (b._orders.length
         ? '<div style="display:flex;gap:8px;flex-wrap:wrap">' + b._orders.map(function (o) {
-            return '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/pedidos/' + o.id + '">' +
-              UI.esc(DATA.orderName(o)) + ' · ' + UI.esc(DATA.clientLabel(o)) + '</a>';
+            /* ✕ = tirar o pedido do lote (22/11). Só sem plano salvo, igual ao
+               "Recarregar peças". */
+            return '<span style="display:inline-flex;gap:2px;align-items:center">' +
+              '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/pedidos/' + o.id + '">' +
+              UI.esc(DATA.orderName(o)) + ' · ' + UI.esc(DATA.clientLabel(o)) + '</a>' +
+              (hasPlan ? '' : '<button type="button" class="erp-btn-danger erp-btn-sm" title="Tirar este pedido do lote" ' +
+                'onclick="LOTES_UI.tirarPedido(\'' + b.id + '\', \'' + o.id + '\', this)">✕</button>') +
+              '</span>';
           }).join('') + '</div>'
         : '<span class="erp-muted erp-small">Nenhum pedido vinculado.</span>') +
       '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
         (hasPlan
-          ? '<span class="erp-muted erp-small">Recarregar peças está bloqueado: existe plano salvo.</span>'
+          ? '<span class="erp-muted erp-small">Recarregar peças e tirar pedido estão bloqueados: existe plano salvo.</span>'
           : '<button class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.recarregarPecas(\'' + b.id + '\', this)">Recarregar peças dos pedidos</button>') +
         '<button class="erp-btn-danger erp-btn-sm" onclick="LOTES_UI.apagarLote(\'' + b.id + '\')">Apagar lote</button>' +
       '</div>') +
@@ -635,6 +641,17 @@ LOTES_UI.recarregarPecas = async function (batchId, btn) {
   LOTES_UI.busy(btn, true, 'Recarregando…');
   try { await LOTES.reloadPieces(batchId); APP.render(); }
   catch (err) { console.error(err); LOTES_UI.toast(LOTES.explainError(err), true); LOTES_UI.busy(btn, false); }
+};
+
+LOTES_UI.tirarPedido = async function (batchId, orderId, btn) {
+  const nome = btn && btn.previousElementSibling ? btn.previousElementSibling.textContent.trim() : 'este pedido';
+  if (!confirm('Tirar "' + nome + '" deste lote?\n\nAs peças DELE saem da lista do lote; as dos outros pedidos não mudam. O pedido volta pra "liberado, sem lote" e pode entrar em outro lote ou ser excluído na Central de Pedidos do portal.')) return;
+  LOTES_UI.busy(btn, true, '…');
+  try {
+    const r = await LOTES.removeOrderFromBatch(batchId, orderId);
+    APP.render();
+    setTimeout(function () { LOTES_UI.toast('Pedido tirado do lote (' + r.pecas + ' linha(s) de peça removida(s)).'); }, 50);
+  } catch (err) { console.error(err); LOTES_UI.toast(LOTES.explainError(err), true); LOTES_UI.busy(btn, false); }
 };
 
 LOTES_UI.apagarLote = async function (batchId) {
