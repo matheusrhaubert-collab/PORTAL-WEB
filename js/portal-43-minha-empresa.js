@@ -475,7 +475,7 @@ function meChange(e) {
   const t = e.target;
   if (t.matches && t.matches('select.pp-mv')) {
     const u = t.getAttribute('data-u'); const v = t.value; t.value = '';
-    if (v) mePlace(u, v === '_dealer' ? null : v, v === '_dealer' ? 'dealer' : 'seller');
+    if (v) mePlace(u, v === '_dealer' ? null : v, ppModo(v));
     return;
   }
   // aba Margens: mesma regra do modal de origem (portal-06b ligaMarginsModal)
@@ -694,6 +694,19 @@ function meCss() {
     '.me-lost-note{padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin-top:4px}.me-lost-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.me-lost-foot button{margin:0}',
     '.pp-top{display:flex;gap:10px;align-items:stretch;margin:6px 0 12px;flex-wrap:wrap}.pp-top input{flex:0 0 240px;padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin:0}',
     '.pp-new{flex:1;min-width:260px;border:2px dashed #c9a36b;border-radius:10px;padding:10px 14px;font-size:13.5px;color:#7a4a1e;background:#fdf8ef;display:flex;align-items:center}',
+    '.pp-cols{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}.pp-side{border:1px dashed var(--border,#e0ddd6);border-radius:10px;background:var(--panel-2,#faf8f4);overflow:hidden;position:sticky;top:0}.pp-side .pp-acc-b{max-height:62vh}',
+    '.pp-tree,.pp-tree ul{list-style:none;margin:0;padding:0}.pp-tree ul.pp-kids{margin-left:22px}.pp-tree>li.is-fab>ul.pp-kids{margin-left:14px}',
+    '.pp-tree li{position:relative;padding:3px 0 3px 22px}.pp-tree>li{padding-left:0}',
+    '.pp-tree ul.pp-kids>li::before{content:"";position:absolute;left:0;top:0;bottom:0;border-left:2px solid #d3c6ae}.pp-tree ul.pp-kids>li:last-child::before{bottom:auto;height:21px}',
+    '.pp-tree ul.pp-kids>li::after{content:"";position:absolute;left:0;top:20px;width:18px;border-top:2px solid #d3c6ae}',
+    '.pp-tree>li.pp-newli{margin:8px 0 0 14px;padding-left:22px}.pp-tree>li.pp-newli::before{content:"";position:absolute;left:0;top:-8px;height:29px;border-left:2px solid #d3c6ae}.pp-tree>li.pp-newli::after{content:"";position:absolute;left:0;top:20px;width:18px;border-top:2px solid #d3c6ae}',
+    '.pp-node{display:flex;align-items:center;gap:8px;background:#efe8db;border:1px solid #e0d6c3;border-radius:9px;padding:5px 8px;font-size:13.5px;min-height:36px}.pp-node>strong{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pp-node .pp-p{flex:1;min-width:0}.pp-node .pp-n{margin-left:auto}',
+    '.pp-store.is-fab>.pp-node{background:#2b2621;color:#fff;border-color:#2b2621}.pp-store.is-fab>.pp-node .me-pill{background:#fff;color:#2b2621}.pp-p{color:#2b2621}.pp-store.is-fab>.pp-node .pp-p.is-fixo{opacity:1}.pp-store.is-fab>.pp-node .pp-n{color:#cfc7ba}.pp-ico{font-size:15px}',
+    '.pp-store.is-semdono>.pp-node{border-style:dashed;border-color:#c9a36b;background:#fdf8ef}.pp-need{flex:1;font-size:12.5px;color:#7a4a1e;font-style:italic}',
+    '.pp-node.pp-new{border:2px dashed #c9a36b;background:#fdf8ef;color:#7a4a1e;font-size:13px;min-width:0;flex:none}',
+    '.pp-tree ul.pp-kids>li>.pp-p{max-width:520px}',
+    '#po-me .pp-store.pp-drop.is-over>.pp-node{outline:3px solid #7a4a1e;background:#fbf1de;color:#2b2621}#po-me .pp-store.pp-drop.is-over{outline:none;background:none}#po-me.pp-dragging .pp-store.pp-drop{outline:none}#po-me.pp-dragging .pp-store.pp-drop>.pp-node{outline:2px dashed #c9a36b;outline-offset:-2px}',
+    '@media (max-width:820px){.pp-cols{grid-template-columns:1fr}.pp-side{position:static}}',
     '.pp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;align-items:start}',
     '.pp-acc{border:1px solid var(--border,#e0ddd6);border-radius:10px;background:var(--panel-2,#faf8f4);overflow:hidden}.pp-acc.pp-sem{border-style:dashed}',
     '.pp-acc-h{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#efe8db;font-size:13.5px}.pp-acc-h strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pp-n{font-size:12px;color:var(--muted,#766f64);font-weight:700}',
@@ -720,19 +733,19 @@ function meCss() {
 // própria). Sem arrastar: o seletor "Mover…" de cada pessoa faz o mesmo.
 // Quem grava é a RPC admin_place_user (regras e o que vem junto: ver a 319).
 const PP_TXT = {
-  pt: { tab: 'Pessoas', hint: 'Arraste a pessoa pra dentro de uma loja: ela vira vendedor daquela loja. Arraste pra faixa "Tornar dealer" pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos dele.',
+  pt: { drop_owner: 'solte aqui o dealer desta loja', q_take: 'Tornar {u} o DEALER (dono) de "{loja}"?\n\nOs projetos e pedidos dele passam pra "{loja}" e quem já é vendedor dela passa a responder a ele.', q_take_owner: '{u} hoje é o DEALER de "{de}".\n\nAo virar o dealer de "{loja}":\n• a equipe de "{de}" ({n} pessoa(s)) vai junto;\n• os projetos e pedidos de "{de}" passam pra "{loja}";\n• a loja "{de}" fica suspensa (não é apagada).\n\nContinuar?', done_owner: '{u} agora é o dealer de "{loja}".', hint2: 'Arraste a pessoa pra baixo de uma loja: ela vira vendedor daquela loja. Loja sem dealer: quem cair nela vira o dealer. Solte em "Tornar dealer", no fim da árvore, pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos.', tab: 'Pessoas', hint: 'Arraste a pessoa pra dentro de uma loja: ela vira vendedor daquela loja. Arraste pra faixa "Tornar dealer" pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos dele.',
     need319: 'Falta rodar a migration 319 (database/migration_319_pessoas_arrastar.sql) no SQL Editor do Supabase.', loading: 'Carregando pessoas…', search: 'Buscar pessoa ou loja…',
     new_dealer: 'Tornar dealer — solte aqui pra pessoa ter a própria loja', no_store: 'Sem loja', dealer: 'Dealer', seller: 'Vendedor', manager: 'Gerente', finance: 'Financeiro', admin: 'Admin da fábrica', off: 'inativo', susp: 'suspensa', no_owner: 'sem dealer',
     cnt: '{p} proj · {o} ped', move: 'Mover…', mv_dealer: '★ Tornar dealer (loja própria)', empty: 'Solte uma pessoa aqui', people: '{n} pessoa(s)',
     q_seller: 'Colocar {u} como VENDEDOR de "{loja}"?', q_owner: '{u} hoje é o DEALER de "{de}".\n\nAo virar vendedor de "{loja}":\n• a equipe de "{de}" ({n} pessoa(s)) vai junto, como vendedores;\n• os projetos e pedidos de "{de}" passam pra "{loja}";\n• a loja "{de}" fica suspensa (não é apagada).\n\nO preço dele passa a seguir o desconto de "{loja}". Continuar?',
     q_dealer: 'Tornar {u} um DEALER, com a própria loja?\n\nOs projetos e pedidos dele vão pra loja dele. O desconto da loja nova começa em 0% (ajuste depois).', done_seller: '{u} agora é vendedor de "{loja}".', done_dealer: '{u} agora é dealer.', same: 'Essa pessoa já está nessa loja.' },
-  en: { tab: 'People', hint: 'Drag a person into a store: they become a salesperson of that store. Drag to the "Make dealer" strip to give them their own store. A dealer dragged into another store brings their team, projects and orders along.',
+  en: { drop_owner: 'drop this store\'s dealer here', q_take: 'Make {u} the DEALER (owner) of "{loja}"?\n\nTheir projects and orders move to "{loja}" and its current salespeople will report to them.', q_take_owner: '{u} is currently the DEALER of "{de}".\n\nBecoming the dealer of "{loja}":\n• the team of "{de}" ({n} people) comes along;\n• projects and orders of "{de}" move to "{loja}";\n• the store "{de}" is suspended (not deleted).\n\nContinue?', done_owner: '{u} is now the dealer of "{loja}".', hint2: 'Drag a person under a store: they become a salesperson of that store. Store without a dealer: whoever lands on it becomes its dealer. Drop on "Make dealer", at the end of the tree, to give them their own store. A dealer dragged into another store brings the team, projects and orders along.', tab: 'People', hint: 'Drag a person into a store: they become a salesperson of that store. Drag to the "Make dealer" strip to give them their own store. A dealer dragged into another store brings their team, projects and orders along.',
     need319: 'Migration 319 (database/migration_319_pessoas_arrastar.sql) still has to be run in the Supabase SQL Editor.', loading: 'Loading people…', search: 'Search person or store…',
     new_dealer: 'Make dealer — drop here to give the person their own store', no_store: 'No store', dealer: 'Dealer', seller: 'Salesperson', manager: 'Manager', finance: 'Finance', admin: 'Factory admin', off: 'inactive', susp: 'suspended', no_owner: 'no dealer',
     cnt: '{p} proj · {o} ord', move: 'Move…', mv_dealer: '★ Make dealer (own store)', empty: 'Drop a person here', people: '{n} people',
     q_seller: 'Make {u} a SALESPERSON of "{loja}"?', q_owner: '{u} is currently the DEALER of "{de}".\n\nBecoming a salesperson of "{loja}":\n• the team of "{de}" ({n} people) comes along, as salespeople;\n• projects and orders of "{de}" move to "{loja}";\n• the store "{de}" is suspended (not deleted).\n\nTheir price will follow the discount of "{loja}". Continue?',
     q_dealer: 'Make {u} a DEALER with their own store?\n\nTheir projects and orders move to their store. The new store starts at 0% discount (adjust later).', done_seller: '{u} is now a salesperson of "{loja}".', done_dealer: '{u} is now a dealer.', same: 'This person is already in this store.' },
-  es: { tab: 'Personas', hint: 'Arrastre la persona dentro de una tienda: pasa a ser vendedor de esa tienda. Arrástrela a la franja "Hacer dealer" para que tenga su propia tienda. Un dealer arrastrado a otra tienda lleva consigo su equipo, proyectos y pedidos.',
+  es: { drop_owner: 'suelte aquí el dealer de esta tienda', q_take: '¿Hacer de {u} el DEALER (dueño) de "{loja}"?\n\nSus proyectos y pedidos pasan a "{loja}" y los vendedores actuales pasan a responderle.', q_take_owner: '{u} hoy es el DEALER de "{de}".\n\nAl pasar a dealer de "{loja}":\n• el equipo de "{de}" ({n} persona(s)) va con él;\n• los proyectos y pedidos de "{de}" pasan a "{loja}";\n• la tienda "{de}" queda suspendida (no se borra).\n\n¿Continuar?', done_owner: '{u} ahora es el dealer de "{loja}".', hint2: 'Arrastre la persona debajo de una tienda: pasa a ser vendedor de esa tienda. Tienda sin dealer: quien caiga en ella pasa a ser su dealer. Suelte en "Hacer dealer", al final del árbol, para que tenga tienda propia. Un dealer arrastrado a otra tienda lleva su equipo, proyectos y pedidos.', tab: 'Personas', hint: 'Arrastre la persona dentro de una tienda: pasa a ser vendedor de esa tienda. Arrástrela a la franja "Hacer dealer" para que tenga su propia tienda. Un dealer arrastrado a otra tienda lleva consigo su equipo, proyectos y pedidos.',
     need319: 'Falta ejecutar la migration 319 (database/migration_319_pessoas_arrastar.sql) en el SQL Editor de Supabase.', loading: 'Cargando personas…', search: 'Buscar persona o tienda…',
     new_dealer: 'Hacer dealer — suelte aquí para que la persona tenga su propia tienda', no_store: 'Sin tienda', dealer: 'Dealer', seller: 'Vendedor', manager: 'Gerente', finance: 'Finanzas', admin: 'Admin de fábrica', off: 'inactivo', susp: 'suspendida', no_owner: 'sin dealer',
     cnt: '{p} proy · {o} ped', move: 'Mover…', mv_dealer: '★ Hacer dealer (tienda propia)', empty: 'Suelte una persona aquí', people: '{n} persona(s)',
@@ -764,7 +777,7 @@ function meViewPeople() {
   const lojas = (meState.tree || []).filter((a) => (porLoja[a.id] || []).length || a.status === 'active' || a.kind === 'factory')
     .sort((x, y) => (x.kind === 'factory' ? -1 : y.kind === 'factory' ? 1 : 0) || String(x.trade_name || x.legal_name || '').localeCompare(String(y.trade_name || y.legal_name || '')));
   const opts = '<option value="">' + mEsc(ppT('move')) + '</option><option value="_dealer">' + mEsc(ppT('mv_dealer')) + '</option>'
-    + lojas.map((a) => '<option value="' + mEsc(a.id) + '">→ ' + mEsc(a.trade_name || a.legal_name || '—') + '</option>').join('');
+    + lojas.filter((a) => a.kind !== 'factory').map((a) => '<option value="' + mEsc(a.id) + '">→ ' + mEsc(a.trade_name || a.legal_name || '—') + '</option>').join('');
   const chip = (p) => {
     const mail = String(p.email || '—'); const i = mail.indexOf('@');
     const papel = p.is_admin ? 'admin' : p.member_role === 'owner' ? 'dealer' : p.member_role || '';
@@ -778,28 +791,46 @@ function meViewPeople() {
       + '</div>';
   };
   const casa = (p, nomeLoja) => !q || String(p.email || '').toLowerCase().includes(q) || String(nomeLoja || '').toLowerCase().includes(q);
-  const quadro = (id, nome, lista, extra, solta) => {
-    const vis = lista.filter((p) => casa(p, nome)).sort((x, y) => ((peso[x.member_role] != null ? peso[x.member_role] : 9) - (peso[y.member_role] != null ? peso[y.member_role] : 9)) || String(x.email || '').localeCompare(String(y.email || '')));
-    if (q && !vis.length) return '';
-    return '<div class="pp-acc' + (solta ? ' pp-drop' : '') + (extra && extra.cls ? ' ' + extra.cls : '') + '"' + (solta ? ' data-acc="' + mEsc(id) + '"' : '') + '>'
-      + '<div class="pp-acc-h"><strong>' + mEsc(nome) + '</strong>' + ((extra && extra.pill) || '') + '<span class="pp-n">' + lista.length + '</span></div>'
-      + '<div class="pp-acc-b">' + (vis.length ? vis.map(chip).join('') : '<div class="pp-vazio">' + mEsc(ppT('empty')) + '</div>') + '</div></div>';
+  const ordP = (l) => l.slice().sort((x, y) => ((peso[x.member_role] != null ? peso[x.member_role] : 9) - (peso[y.member_role] != null ? peso[y.member_role] : 9)) || String(x.email || '').localeCompare(String(y.email || '')));
+  // ÁRVORE (21/11, Matt: "gostaria de ver em forma de árvore mesmo, bem visual"):
+  // fábrica em cima; cada loja é um galho (nome + o dealer na mesma linha) e os
+  // vendedores pendurados embaixo. O galho inteiro é a área de soltar. Loja SEM
+  // dealer também aceita: quem cair nela vira o dealer (dono) dela.
+  const ids = new Set(lojas.map((a) => a.id));
+  const filhas = {}; lojas.forEach((a) => { const k = a.parent_account_id && ids.has(a.parent_account_id) ? a.parent_account_id : '_raiz'; (filhas[k] = filhas[k] || []).push(a); });
+  const galho = (a) => {
+    const nome = a.trade_name || a.legal_name || '—';
+    const l = porLoja[a.id] || [];
+    const dono = l.filter((p) => p.member_role === 'owner');
+    const resto = ordP(l.filter((p) => p.member_role !== 'owner'));
+    const sub = (filhas[a.id] || []).map(galho).join('');
+    const visD = dono.filter((p) => casa(p, nome)); const visR = resto.filter((p) => casa(p, nome));
+    if (q && !visD.length && !visR.length && !sub) return '';
+    const fab = a.kind === 'factory';
+    const solta = !fab;                       // fábrica não recebe gente por aqui
+    return '<li class="pp-store' + (fab ? ' is-fab' : '') + (solta ? ' pp-drop' : '') + (!dono.length && !fab ? ' is-semdono' : '') + '"' + (solta ? ' data-acc="' + mEsc(a.id) + '"' : '') + '>'
+      + '<div class="pp-node"><span class="pp-ico">' + (fab ? '🏭' : '🏬') + '</span><strong title="' + mEsc(nome) + '">' + mEsc(nome) + '</strong>'
+      + (fab ? '<span class="me-pill">' + mEsc(mT('kind_factory')) + '</span>' : '')
+      + (a.status === 'suspended' ? '<span class="me-pill st-suspended">' + mEsc(ppT('susp')) + '</span>' : '')
+      + (!dono.length && !fab ? '<span class="pp-need">' + mEsc(ppT('drop_owner')) + '</span>' : '')
+      + (q ? visD : dono).map(chip).join('')
+      + '<span class="pp-n">' + l.length + '</span></div>'
+      + ((q ? visR : resto).length || sub ? '<ul class="pp-kids">' + (q ? visR : resto).map((p) => '<li>' + chip(p) + '</li>').join('') + sub + '</ul>' : '')
+      + '</li>';
   };
-  return '<p class="hint">' + mEsc(ppT('hint')) + '</p>'
-    + '<div class="pp-top"><input type="search" id="pp-q" placeholder="' + mEsc(ppT('search')) + '" value="' + mEsc(meState.peopleQ || '') + '">'
-    + '<div class="pp-new pp-drop" data-acc="_dealer">★ ' + mEsc(ppT('new_dealer')) + '</div></div>'
-    + '<div class="pp-grid">'
-    + quadro('_', ppT('no_store'), porLoja._ || [], { cls: 'pp-sem' }, false)
-    + lojas.map((a) => {
-      const l = porLoja[a.id] || [];
-      const semDono = !l.some((p) => p.member_role === 'owner');
-      const pill = (a.kind === 'factory' ? '<span class="me-pill">' + mEsc(mT('kind_factory')) + '</span>' : '')
-        + (a.status === 'suspended' ? '<span class="me-pill st-suspended">' + mEsc(ppT('susp')) + '</span>' : '')
-        + (semDono ? '<span class="me-pill st-suspended">' + mEsc(ppT('no_owner')) + '</span>' : '');
-      return quadro(a.id, a.trade_name || a.legal_name || '—', l, { pill }, !semDono);
-    }).join('')
-    + '</div>';
+  const sem = ordP(porLoja._ || []).filter((p) => casa(p, ''));
+  return '<p class="hint">' + mEsc(ppT('hint2')) + '</p>'
+    + '<div class="pp-top"><input type="search" id="pp-q" placeholder="' + mEsc(ppT('search')) + '" value="' + mEsc(meState.peopleQ || '') + '"></div>'
+    + '<div class="pp-cols">'
+    + '<div class="pp-side"><div class="pp-acc-h"><strong>' + mEsc(ppT('no_store')) + '</strong><span class="pp-n">' + (porLoja._ || []).length + '</span></div>'
+    + '<div class="pp-acc-b">' + (sem.length ? sem.map(chip).join('') : '<div class="pp-vazio">—</div>') + '</div></div>'
+    + '<div class="pp-arv"><ul class="pp-tree">' + (filhas._raiz || []).map(galho).join('')
+    + '<li class="pp-store pp-drop pp-newli" data-acc="_dealer"><div class="pp-node pp-new">★ ' + mEsc(ppT('new_dealer')) + '</div></li>'
+    + '</ul></div></div>';
 }
+function ppTemDono(accId) { return (meState.people || []).some((x) => x.account_id === accId && x.member_role === 'owner'); }
+// loja com dealer = entra como vendedor; loja sem dealer = vira o dealer dela
+function ppModo(acc) { return acc === '_dealer' ? 'dealer' : ppTemDono(acc) ? 'seller' : 'owner'; }
 async function mePlace(userId, accountId, mode) {
   const p = ppUser(userId);
   if (!p || p.is_admin || meState.busy) return;
@@ -811,15 +842,21 @@ async function mePlace(userId, accountId, mode) {
     const equipe = p.member_role === 'owner' ? meState.people.filter((x) => x.account_id === p.account_id && x.user_id !== p.user_id).length : 0;
     const perg = p.member_role === 'owner' ? ppT('q_owner', { u: nome, de: ppAccName(p.account_id), loja, n: equipe }) : ppT('q_seller', { u: nome, loja });
     if (!confirm(perg)) return;
+  } else if (mode === 'owner') {
+    if (p.account_id === accountId && p.member_role === 'owner') return;
+    const loja = ppAccName(accountId);
+    const eraDono = p.member_role === 'owner';
+    const equipe = eraDono ? meState.people.filter((x) => x.account_id === p.account_id && x.user_id !== p.user_id).length : 0;
+    if (!confirm(ppT(eraDono ? 'q_take_owner' : 'q_take', { u: nome, de: eraDono ? ppAccName(p.account_id) : '', loja, n: equipe }))) return;
   } else {
     if (p.member_role === 'owner') return;
     if (!confirm(ppT('q_dealer', { u: nome }))) return;
   }
   meState.busy = true; meState.err = ''; meState.msg = '';
   try {
-    const r = await supabaseClient.rpc('admin_place_user', { p_user: userId, p_account: mode === 'seller' ? accountId : null, p_mode: mode, p_move_data: true });
+    const r = await supabaseClient.rpc('admin_place_user', { p_user: userId, p_account: mode === 'dealer' ? null : accountId, p_mode: mode, p_move_data: true });
     if (r.error) throw r.error;
-    meState.msg = mode === 'seller' ? ppT('done_seller', { u: nome, loja: ppAccName(accountId) }) : ppT('done_dealer', { u: nome });
+    meState.msg = mode === 'seller' ? ppT('done_seller', { u: nome, loja: ppAccName(accountId) }) : mode === 'owner' ? ppT('done_owner', { u: nome, loja: ppAccName(accountId) }) : ppT('done_dealer', { u: nome });
   } catch (e) { meState.err = (e && e.message) || String(e); }
   meState.busy = false;
   meState.loaded = false;                       // Painel/Árvore releem na próxima abertura
@@ -860,7 +897,7 @@ function mePpDrop(e) {
   const u = meState.ppDrag; const acc = z.getAttribute('data-acc');
   mePpDragEnd();
   if (!u || !acc) return;
-  mePlace(u, acc === '_dealer' ? null : acc, acc === '_dealer' ? 'dealer' : 'seller');
+  mePlace(u, acc === '_dealer' ? null : acc, ppModo(acc));
 }
 function mePpInput(e) {
   if (e.target.id !== 'pp-q') return;
