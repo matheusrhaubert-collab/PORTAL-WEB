@@ -194,14 +194,14 @@ const base = `
   ok(/\$3,000/.test(me().querySelector('.me-kpi.k-wait').textContent), 'pedido sem foto do preço usa a soma dos itens ($3,000)');
   ok(me().querySelectorAll('.me-bar').length === 1 && /r_price|Preço/.test(me().querySelector('.me-bar').textContent) && /2/.test(me().querySelector('.me-bar b').textContent), 'perdidos por motivo: Preço = 2');
   ok(me().querySelectorAll('.me-table tbody tr').length === 2, 'quebra por pessoa: 2 linhas');
-  for (const t of ['arvore', 'equipe', 'margens', 'empresa']) {
+  // 22/11: admin não tem mais a aba Árvore (ficou a Pessoas); entrou a aba Minha conta
+  ok(!me().querySelector('[data-t="arvore"]') && !!me().querySelector('[data-t="conta"]'), 'admin: sem aba Árvore, com aba Minha conta');
+  for (const t of ['equipe', 'margens', 'empresa', 'conta']) {
     const b = me().querySelector('[data-t="' + t + '"]');
     if (!b) { ok(false, 'aba ' + t + ' não existe'); continue; }
     b.click(); await espera(5);
     ok(me().querySelector('.me-body').textContent.trim().length > 20, 'aba ' + t + ' desenha');
   }
-  me().querySelector('[data-t="arvore"]').click();
-  ok(me().querySelectorAll('.me-node').length === 2 && !!me().querySelector('.me-node.k-factory'), 'árvore: fábrica + loja');
   me().querySelector('[data-t="equipe"]').click();
   ok(me().querySelectorAll('.me-member').length === 2 && me().querySelectorAll('.me-member input[type="checkbox"]').length === 3, 'equipe: 2 pessoas, 3 caixinhas no vendedor');
   me().querySelector('[data-t="margens"]').click();

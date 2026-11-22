@@ -57,7 +57,7 @@ function meIsAdmin() { return window.LEGNO_IS_ADMIN === true; }
 const ME_TXT = {
   pt: {
     btn: 'Minha empresa', title: 'Minha empresa', title_factory: 'Rede de dealers',
-    t_painel: 'Painel', t_arvore: 'Árvore', t_equipe: 'Equipe', t_margens: 'Margens', t_empresa: 'Empresa',
+    t_conta: 'Minha conta', conta_hint: 'Logo e dados da loja (saem na Proposta), sua equipe e a sua senha. Unidade de medida, peso e idioma continuam no ⚙ da barra de cima.', t_painel: 'Painel', t_arvore: 'Árvore', t_equipe: 'Equipe', t_margens: 'Margens', t_empresa: 'Empresa',
     close: 'Fechar', loading: 'Carregando…', none: 'Nada por aqui ainda.',
     k_build: 'Em construção', k_prod: 'Em produção', k_done: 'Entregues', k_lost: 'Perdidos', k_wait: 'Aguardando aprovação',
     projects: 'projeto(s)', orders: 'pedido(s)', est: 'valor estimado', fab: 'valor de fábrica',
@@ -86,7 +86,7 @@ const ME_TXT = {
   },
   en: {
     btn: 'My company', title: 'My company', title_factory: 'Dealer network',
-    t_painel: 'Dashboard', t_arvore: 'Tree', t_equipe: 'Team', t_margens: 'Margins', t_empresa: 'Company',
+    t_conta: 'My account', conta_hint: 'Logo and store info (shown on the Proposal), your team and your password. Units, weight and language stay in the ⚙ on the top bar.', t_painel: 'Dashboard', t_arvore: 'Tree', t_equipe: 'Team', t_margens: 'Margins', t_empresa: 'Company',
     close: 'Close', loading: 'Loading…', none: 'Nothing here yet.',
     k_build: 'In progress', k_prod: 'In production', k_done: 'Delivered', k_lost: 'Lost', k_wait: 'Waiting approval',
     projects: 'project(s)', orders: 'order(s)', est: 'estimated value', fab: 'factory value',
@@ -115,7 +115,7 @@ const ME_TXT = {
   },
   es: {
     btn: 'Mi empresa', title: 'Mi empresa', title_factory: 'Red de dealers',
-    t_painel: 'Panel', t_arvore: 'Árbol', t_equipe: 'Equipo', t_margens: 'Márgenes', t_empresa: 'Empresa',
+    t_conta: 'Mi cuenta', conta_hint: 'Logo y datos de la tienda (salen en la Propuesta), su equipo y su contraseña. Unidades, peso e idioma siguen en el ⚙ de la barra superior.', t_painel: 'Panel', t_arvore: 'Árbol', t_equipe: 'Equipo', t_margens: 'Márgenes', t_empresa: 'Empresa',
     close: 'Cerrar', loading: 'Cargando…', none: 'Nada por aquí todavía.',
     k_build: 'En desarrollo', k_prod: 'En producción', k_done: 'Entregados', k_lost: 'Perdidos', k_wait: 'Esperando aprobación',
     projects: 'proyecto(s)', orders: 'pedido(s)', est: 'valor estimado', fab: 'valor de fábrica',
@@ -261,6 +261,37 @@ function meMargensVoltar() {
   const card = document.querySelector('#po-margins-modal .po-margins-card');
   if (card) card.appendChild(body);
 }
+// MINHA CONTA DENTRO DO MY COMPANY (22/11, Matt: "tira essa parte da barra
+// superior e concentra no my company tudo... deixa só unidade de medida, língua
+// e pounds ou kg"). Logo, dados da loja, Minha Equipe, o Salvar e Trocar senha
+// saem do menu ⚙ e moram na aba "Minha conta". São os MESMOS elementos (mesmos
+// ids e listeners do portal-01/05) — só mudam de lugar, como o corpo das Margens:
+//   - My company fechado ou em outra aba → guardados num cofre invisível
+//     (#me-conta-cofre), fora do menu ⚙;
+//   - aba Minha conta → dentro de #me-conta-slot.
+// Só pra quem TEM o botão My company (meContaAtiva, ligado no meRefreshButton).
+// Quem não tem (hoje: todo mundo que não é admin, enquanto ME_SO_ADMIN) continua
+// com tudo no ⚙ — senão o dealer ficaria sem logo/equipe e o vendedor sem senha.
+const ME_CONTA_IDS = ['po-dealer-logo-settings-row', 'po-dealer-store-info-row', 'po-dealer-team-row', 'po-room-settings-save-btn', 'po-change-password-row'];
+function meContaCofre() {
+  let c = document.getElementById('me-conta-cofre');
+  if (!c) { c = document.createElement('div'); c.id = 'me-conta-cofre'; c.style.display = 'none'; document.body.appendChild(c); }
+  return c;
+}
+function meContaGuardar() {
+  if (!meState.contaAtiva) return;
+  const c = meContaCofre();
+  ME_CONTA_IDS.forEach((id) => { const el = document.getElementById(id); if (el && el.parentNode !== c) c.appendChild(el); });
+}
+function meContaDevolver() {   // volta tudo pro menu ⚙ (quem perdeu o My company, ex.: saiu da conta)
+  const menu = document.getElementById('po-topnav-settings-menu'); if (!menu) return;
+  ME_CONTA_IDS.forEach((id) => { const el = document.getElementById(id); if (el && el.parentNode !== menu) menu.appendChild(el); });
+}
+function meContaTrazer() {
+  const slot = document.getElementById('me-conta-slot'); if (!slot) return;
+  ME_CONTA_IDS.forEach((id) => { const el = document.getElementById(id); if (el) slot.appendChild(el); });
+}
+function meViewConta() { return '<p class="hint">' + mEsc(mT('conta_hint')) + '</p><div id="me-conta-slot" class="me-conta"></div>'; }
 function meMargensTrazer() {
   const slot = document.getElementById('me-margins-slot');
   const body = document.getElementById('po-margins-body');
@@ -268,7 +299,7 @@ function meMargensTrazer() {
   slot.appendChild(body);
   try { renderMarginsModal(); } catch (e) { /* fica o que tinha */ }
 }
-function meClose() { meMargensVoltar(); const ov = document.getElementById('po-me'); if (ov) ov.style.display = 'none'; }
+function meClose() { meMargensVoltar(); meContaGuardar(); const ov = document.getElementById('po-me'); if (ov) ov.style.display = 'none'; }
 async function openMyCompany(tab) {
   const ov = meEl();
   ov.style.display = 'flex';
@@ -281,12 +312,16 @@ async function openMyCompany(tab) {
 function meTabs() {
   const temEmpresa = !!meState.card;
   const manda = temEmpresa && ['owner', 'manager'].includes(meState.card.role);
-  const t = ['painel', 'arvore'];
+  // 22/11 (Matt: "essa tree não faz mais sentido, porque isso está melhor no people"):
+  // o admin não tem mais a aba Árvore (ele tem a Pessoas, que mostra o mesmo e deixa
+  // mexer). Quem não é admin continua com ela — é a única visão do que está abaixo.
+  const t = meIsAdmin() ? ['painel'] : ['painel', 'arvore'];
   if (manda) t.push('equipe');
   // Margens: quem cuida da empresa, ou quem já tinha o botão Margens (admin sem empresa)
   if ((temEmpresa && ['owner', 'manager', 'finance'].includes(meState.card.role)) || meTemMargens()) t.push('margens');
   if (manda) t.push('empresa');
   if (meIsAdmin()) t.push('pessoas');
+  t.push('conta');   // logo, dados da loja, equipe e senha — vieram do menu ⚙ (22/11)
   return t;
 }
 function meFrame(inner) {
@@ -304,8 +339,10 @@ function meRender() {
   const ov = meEl();
   const t = meState.tab;
   meMargensVoltar();   // o conteúdo das Margens não pode morrer junto com o innerHTML
-  ov.innerHTML = meFrame(t === 'arvore' ? meViewTree() : t === 'equipe' ? meViewTeam() : t === 'margens' ? meViewMargins() : t === 'empresa' ? meViewCompany() : t === 'pessoas' ? meViewPeople() : meViewPainel());
+  meContaGuardar();    // idem pros campos da conta (logo, loja, equipe, senha)
+  ov.innerHTML = meFrame(t === 'conta' ? meViewConta() : t === 'arvore' ? meViewTree() : t === 'equipe' ? meViewTeam() : t === 'margens' ? meViewMargins() : t === 'empresa' ? meViewCompany() : t === 'pessoas' ? meViewPeople() : meViewPainel());
   if (meState.tab === 'margens') meMargensTrazer();
+  if (meState.tab === 'conta') meContaTrazer();
   if (meState.tab === 'pessoas' && !meState.people && !meState.peopleBusy) mePeopleLoad();
 }
 
@@ -662,6 +699,9 @@ async function meRefreshButton() {
   }
   btn.textContent = mT('btn');
   btn.style.display = pode ? '' : 'none';
+  // campos da conta: saem do ⚙ pra quem tem o My company; voltam pra quem não tem
+  if (pode) { meState.contaAtiva = true; const ov = document.getElementById('po-me'); if (!(ov && ov.style.display !== 'none' && meState.tab === 'conta')) meContaGuardar(); }
+  else if (meState.contaAtiva) { meState.contaAtiva = false; meContaDevolver(); }
   // Margens passou pra dentro desta tela (aba Margens): o botão solto da barra
   // some pra quem tem o Minha empresa (classe no body — o portal-05 religa o
   // display do botão a cada atualização do perfil).
@@ -705,7 +745,8 @@ function meCssMargens() {
   const st = document.createElement('style');
   st.id = 'me-css-margens';
   st.textContent = 'body.me-margens-dentro #po-margins-btn{display:none !important}'
-    + '#me-margins-slot .po-margins-body{padding:6px 0 0;overflow:visible}';
+    + '#me-margins-slot .po-margins-body{padding:6px 0 0;overflow:visible}'
+    + '.me-conta{display:flex;flex-direction:column;gap:18px;max-width:440px;padding-top:6px}.me-conta .po-topnav-settings-row{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin:0;padding:0;border:0}.me-conta .po-topnav-settings-row>span:first-child{font-weight:700;font-size:12.5px;color:var(--text,#2b2621)}.me-conta input,.me-conta button{margin:0}.me-conta #po-room-settings-save-btn{align-self:flex-start;width:auto}';
   document.head.appendChild(st);
 }
 function meCss() {
