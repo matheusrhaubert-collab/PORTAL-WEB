@@ -2191,6 +2191,7 @@ const PY_TXT = {
 };
 // 22/11 (migration 333): plano TOTAL × 50/50, wire, "link" passa a se chamar QuickBooks
 Object.assign(PY_TXT.pt, {
+  list: 'Valor de tabela', d_fab: 'Desconto de fábrica ({p}%)',
   plan_h: '1. Quanto você paga agora?', how: '2. Como você vai pagar?',
   frisa: 'ATENÇÃO: o desconto de {p}% é só pra quem paga o pedido INTEIRO ANTES de a fábrica liberar a produção. Pagou depois, ou pagou só a entrada, não tem esse desconto.',
   frisa_tarde: 'A produção deste pedido já foi liberada: o desconto de {p}% de pagamento total antecipado não vale mais.',
@@ -2210,6 +2211,7 @@ Object.assign(PY_TXT.pt, {
   inv_split: 'Plano: 50% de entrada ({a}) + 50% antes de carregar ({b}).'
 });
 Object.assign(PY_TXT.en, {
+  list: 'List price', d_fab: 'Factory discount ({p}%)',
   plan_h: '1. How much do you pay now?', how: '2. How will you pay?',
   frisa: 'IMPORTANT: the {p}% discount is only for paying the FULL order BEFORE the factory releases production. Paying later, or paying only the deposit, does not get this discount.',
   frisa_tarde: 'Production of this order has already been released: the {p}% full-payment discount no longer applies.',
@@ -2229,6 +2231,7 @@ Object.assign(PY_TXT.en, {
   inv_split: 'Plan: 50% deposit ({a}) + 50% before loading ({b}).'
 });
 Object.assign(PY_TXT.es, {
+  list: 'Precio de lista', d_fab: 'Descuento de fábrica ({p}%)',
   plan_h: '1. ¿Cuánto paga ahora?', how: '2. ¿Cómo va a pagar?',
   frisa: 'ATENCIÓN: el descuento de {p}% es solo para quien paga el pedido COMPLETO ANTES de que la fábrica libere la producción. Si paga después, o paga solo el anticipo, no tiene ese descuento.',
   frisa_tarde: 'La producción de este pedido ya fue liberada: el descuento de {p}% por pago total anticipado ya no aplica.',
@@ -2266,18 +2269,18 @@ function cxPayNet(o) {
 // metodo: 'zelle' | 'wire' | 'link' (QuickBooks). plano: 'full' (tudo antes da produção) | 'split' (50% + 50%).
 function cxPayPrevia(grupo, metodo, plano) {
   const s = cxState.scope; const T = cxPayTerms();
-  let net = 0, dz = 0, de = 0, tax = 0, algumCedo = false, todosIsentos = true;
+  let net = 0, dz = 0, de = 0, tax = 0, lista = 0, algumCedo = false, todosIsentos = true;
   grupo.forEach((o) => {
     const n = cxPayNet(o); const cedo = !o.finance_released_at;
     const pz = metodo === 'zelle' || metodo === 'wire' ? T.z : 0; const pe = plano === 'full' && cedo ? T.e : 0;
     const desc = Math.round(n * (pz + pe)) / 100;
     const taxPct = o.tax_pct != null ? Number(o.tax_pct) : (cxIsento(o, s) ? 0 : Number(s.taxPct) || 0);
     if (taxPct > 0) todosIsentos = false;
-    net += n; dz += Math.round(n * pz) / 100; de += Math.round(n * pe) / 100; if (cedo) algumCedo = true;
+    lista += Number(o._l) || 0; net += n; dz += Math.round(n * pz) / 100; de += Math.round(n * pe) / 100; if (cedo) algumCedo = true;
     tax += Math.round((n - desc) * taxPct) / 100;
   });
   const r2 = (v) => Math.round(v * 100) / 100;
-  return { net: r2(net), dz: r2(dz), de: r2(de), tax: r2(tax), total: r2(net - dz - de + tax), cedo: algumCedo, isento: todosIsentos };
+  return { lista: r2(lista), net: r2(net), dz: r2(dz), de: r2(de), tax: r2(tax), total: r2(net - dz - de + tax), cedo: algumCedo, isento: todosIsentos };
 }
 function cxPayEl() {
   let ov = document.getElementById('cx-pay');
@@ -2338,7 +2341,9 @@ function cxPayRender() {
     + op('cx-pay-m', 'zelle', st.metodo, pyT('zelle'), pyT('zelle_sub'), '−' + T.z + '%')
     + op('cx-pay-m', 'wire', st.metodo, pyT('wire'), pyT('wire_sub'), '−' + T.z + '%')
     + op('cx-pay-m', 'link', st.metodo, pyT('link'), link ? pyT('link_sub') : pyT('link_none'))
-    + '<div class="py-sum">' + lin(pyT('net'), E(cMoney(p.net)))
+    // tabela → desconto de fábrica → líquido (22/11, Matt: "quero ver valor de tabela no pedido e valor do desconto")
+    + '<div class="py-sum">' + (p.lista > p.net + 0.005 ? lin(pyT('list'), E(cMoney(p.lista))) + lin(pyT('d_fab', { p: Math.round((1 - p.net / p.lista) * 1000) / 10 }), '−' + E(cMoney(Math.round((p.lista - p.net) * 100) / 100))) : '')
+    + lin(pyT('net'), E(cMoney(p.net)))
     + (p.dz ? lin(pyT('d_zelle', { p: T.z }), '−' + E(cMoney(p.dz)), 'd') : '')
     + (p.de ? lin(pyT('d_early', { p: T.e }), '−' + E(cMoney(p.de)), 'd') : '')
     + lin(pyT('tax') + (p.isento ? ' (' + pyT('exempt') + ')' : ''), E(cMoney(p.tax)))
