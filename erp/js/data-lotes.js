@@ -760,7 +760,7 @@ LOTES.batch = async function (id) {
     erp.from('batches').select('*').eq('id', id).maybeSingle(),
     erp.from('batch_pieces').select('*').eq('batch_id', id).order('sort_order'),
     erp.from('cut_plans').select('*').eq('batch_id', id).order('version', { ascending: false }),
-    erp.from('batch_orders').select('order_id').eq('batch_id', id)
+    erp.from('batch_orders').select('order_id, added_at').eq('batch_id', id)
   ]);
   if (b.error) throw b.error;
   if (!b.data) return null;
@@ -783,6 +783,21 @@ LOTES.batch = async function (id) {
       .from('orders').select('*')   // mesmo motivo de availableOrders: coluna pendente derruba a consulta toda
       .in('id', batch._orderIds);
     batch._orders = ords || [];
+    /* Tabela "Pedidos do lote" (22/11): quando entrou no lote e o nome da LOJA
+       (accounts, migration 306 — sem ela a coluna fica vazia, sem derrubar). */
+    const entrou = {};
+    (orders.data || []).forEach(function (r) { entrou[r.order_id] = r.added_at; });
+    batch._orders.forEach(function (o) { o._added_at = entrou[o.id] || null; });
+    const accIds = batch._orders.map(function (o) { return o.account_id; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    if (accIds.length) {
+      try {
+        const r = await DATA.sb().from('accounts').select('id, trade_name, legal_name').in('id', accIds);
+        const nome = {};
+        (r.data || []).forEach(function (a) { nome[a.id] = a.trade_name || a.legal_name || ''; });
+        batch._orders.forEach(function (o) { o._store = nome[o.account_id] || ''; });
+      } catch (e) { /* sem a 306: sem loja */ }
+    }
+    batch._orders.sort(function (a, b) { return (Number(a.factory_number) || 0) - (Number(b.factory_number) || 0); });
   } else {
     batch._orders = [];
   }

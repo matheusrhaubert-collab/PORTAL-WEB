@@ -537,16 +537,40 @@ LOTES_UI.detail = function (params, d) {
     '</div>' +
     UI.panel('Pedidos do lote',
       (b._orders.length
-        ? '<div style="display:flex;gap:8px;flex-wrap:wrap">' + b._orders.map(function (o) {
-            /* ✕ = tirar o pedido do lote (22/11). Só sem plano salvo, igual ao
-               "Recarregar peças". */
-            return '<span style="display:inline-flex;gap:2px;align-items:center">' +
-              '<a class="erp-btn erp-btn-secondary erp-btn-sm" href="#/pedidos/' + o.id + '">' +
-              UI.esc(DATA.orderName(o)) + ' · ' + UI.esc(DATA.clientLabel(o)) + '</a>' +
-              (hasPlan ? '' : '<button type="button" class="erp-btn-danger erp-btn-sm" title="Tirar este pedido do lote" ' +
-                'onclick="LOTES_UI.tirarPedido(\'' + b.id + '\', \'' + o.id + '\', this)">✕</button>') +
-              '</span>';
-          }).join('') + '</div>'
+        /* Uma linha por pedido (22/11, Matt: "quero ver o número do pedido,
+           loja, datas... uma linha pra cada pedido"). Clique na linha abre o
+           pedido; ✕ = tirar do lote (só sem plano salvo, igual ao "Recarregar
+           peças"). Prazo = liberação + 15 dias corridos (mesma regra do portal). */
+        ? UI.table([
+            { key: 'no', label: 'Nº' },
+            { key: 'store', label: 'Loja' },
+            { key: 'po', label: 'PO' },
+            { key: 'client', label: 'Cliente' },
+            { key: 'sent', label: 'Enviado' },
+            { key: 'rel', label: 'Liberado produção' },
+            { key: 'lote', label: 'Entrou no lote' },
+            { key: 'due', label: 'Prazo' },
+            { key: 'pecas', label: 'Peças', align: 'right' },
+            { key: 'x', label: '' }
+          ], b._orders.map(function (o) {
+            const dt = function (v) { return v ? UI.date(v) : null; };
+            const due = o.finance_released_at ? new Date(new Date(o.finance_released_at).getTime() + 15 * 86400000).toISOString() : null;
+            const nPecas = b._pieces.filter(function (p) { return p.order_id === o.id; }).reduce(function (s, p) { return s + (Number(p.quantity) || 0); }, 0);
+            return {
+              _href: '#/pedidos/' + o.id,
+              no: '<span class="erp-strong">' + UI.esc(DATA.orderNo(o) || '—') + '</span>',
+              store: o._store ? UI.esc(o._store) : null,
+              po: o.po_name ? UI.esc(o.po_name) : null,
+              client: UI.esc(DATA.clientLabel(o)),
+              sent: dt(o.submitted_at || o.created_at),
+              rel: dt(o.finance_released_at),
+              lote: dt(o._added_at),
+              due: dt(due),
+              pecas: nPecas || null,
+              x: hasPlan ? '' : '<button type="button" class="erp-btn-danger erp-btn-sm" title="Tirar este pedido do lote" data-nome="' + UI.esc(DATA.orderName(o)) + '" ' +
+                'onclick="event.stopPropagation();LOTES_UI.tirarPedido(\'' + b.id + '\', \'' + o.id + '\', this)">✕</button>'
+            };
+          }))
         : '<span class="erp-muted erp-small">Nenhum pedido vinculado.</span>') +
       '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
         (hasPlan
@@ -644,7 +668,7 @@ LOTES_UI.recarregarPecas = async function (batchId, btn) {
 };
 
 LOTES_UI.tirarPedido = async function (batchId, orderId, btn) {
-  const nome = btn && btn.previousElementSibling ? btn.previousElementSibling.textContent.trim() : 'este pedido';
+  const nome = (btn && btn.getAttribute('data-nome')) || 'este pedido';
   if (!confirm('Tirar "' + nome + '" deste lote?\n\nAs peças DELE saem da lista do lote; as dos outros pedidos não mudam. O pedido volta pra "liberado, sem lote" e pode entrar em outro lote ou ser excluído na Central de Pedidos do portal.')) return;
   LOTES_UI.busy(btn, true, '…');
   try {
