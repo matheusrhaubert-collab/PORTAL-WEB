@@ -1759,21 +1759,21 @@ const SF_TXT = {
     t2: 'Depois de enviado, NÃO é possível pedir alteração do pedido. Pra mudar alguma coisa, duplique o projeto e envie um pedido novo.',
     t3: 'Medidas, conferência no local, desenho e compatibilidade com o ambiente (eletrodomésticos, bancada, hidráulica, elétrica, instalação) são de responsabilidade de quem envia o pedido.',
     t4: 'O pedido cobre só os gabinetes de fábrica: não inclui eletrodomésticos, pedra/bancada nem obra.',
-    ok: 'Li e aceito. Conferi o projeto e assumo a responsabilidade por ele.', send: 'ENVIAR PRA FÁBRICA', cancel: 'Cancelar', need: 'Preencha o PO e o endereço da obra e marque o aceite.',
+    ok: 'Li e aceito. Conferi o projeto e assumo a responsabilidade por ele.', next: 'No próximo passo você lê e aceita os Termos e Condições do Pedido.', room_other: 'Outro…', send: 'ENVIAR PRA FÁBRICA', send_next: 'CONTINUAR →', cancel: 'Cancelar', need: 'Preencha o PO e o endereço da obra e marque o aceite.',
     s_open: 'Abrindo o projeto…', s_send: 'Criando o pedido…', s_rel: 'Liberando pra fábrica…', done: 'Pedido {n} enviado pra fábrica.', unsaved: 'O projeto aberto no editor tem alterações não salvas, que serão perdidas. Continuar?', skipped: '{n} módulo(s) do projeto não carregaram. Abra o projeto, confira e salve antes de enviar.' },
   en: { open: 'Open in editor', btn: 'SEND TO FACTORY', title: 'Send to factory', proj: 'Project', val: 'Factory value', po: 'PO (goes on the label) *', room: 'Room', addr: 'Job site address *',
     t1: 'Once sent, this project is LOCKED: modules, colors, parts, sizes and positions can no longer be changed. This is exactly what will be produced.',
     t2: 'After sending, changes to the order CANNOT be requested. To change anything, duplicate the project and send a new order.',
     t3: 'Measurements, site verification, design and fit with the space (appliances, countertop, plumbing, electrical, installation) are the responsibility of whoever sends the order.',
     t4: 'The order covers factory cabinets only: no appliances, stone/countertop or construction work.',
-    ok: 'I have read and accept. I checked the project and take responsibility for it.', send: 'SEND TO FACTORY', cancel: 'Cancel', need: 'Fill in the PO and job site address and check the acceptance box.',
+    ok: 'I have read and accept. I checked the project and take responsibility for it.', next: 'On the next step you read and accept the Order Terms and Conditions.', room_other: 'Other…', send: 'SEND TO FACTORY', send_next: 'CONTINUE →', cancel: 'Cancel', need: 'Fill in the PO and job site address and check the acceptance box.',
     s_open: 'Opening the project…', s_send: 'Creating the order…', s_rel: 'Releasing to the factory…', done: 'Order {n} sent to the factory.', unsaved: 'The project open in the editor has unsaved changes that will be lost. Continue?', skipped: '{n} module(s) of the project did not load. Open the project, check it and save before sending.' },
   es: { open: 'Abrir en el editor', btn: 'ENVIAR FÁBRICA', title: 'Enviar a fábrica', proj: 'Proyecto', val: 'Valor de fábrica', po: 'PO (va en la etiqueta) *', room: 'Ambiente', addr: 'Dirección de la obra *',
     t1: 'Al enviar, este proyecto queda CONGELADO: módulos, colores, piezas, medidas y posiciones ya no se pueden cambiar. Es exactamente lo que se va a producir.',
     t2: 'Después de enviado, NO se pueden pedir cambios al pedido. Para cambiar algo, duplique el proyecto y envíe un pedido nuevo.',
     t3: 'Medidas, verificación en obra, diseño y compatibilidad con el ambiente (electrodomésticos, encimera, plomería, electricidad, instalación) son responsabilidad de quien envía el pedido.',
     t4: 'El pedido cubre solo los gabinetes de fábrica: no incluye electrodomésticos, piedra/encimera ni obra.',
-    ok: 'Leí y acepto. Revisé el proyecto y asumo la responsabilidad.', send: 'ENVIAR A FÁBRICA', cancel: 'Cancelar', need: 'Complete el PO y la dirección de la obra y marque la aceptación.',
+    ok: 'Leí y acepto. Revisé el proyecto y asumo la responsabilidad.', next: 'En el siguiente paso usted lee y acepta los Términos y Condiciones del Pedido.', room_other: 'Otro…', send: 'ENVIAR A FÁBRICA', send_next: 'CONTINUAR →', cancel: 'Cancelar', need: 'Complete el PO y la dirección de la obra y marque la aceptación.',
     s_open: 'Abriendo el proyecto…', s_send: 'Creando el pedido…', s_rel: 'Liberando a fábrica…', done: 'Pedido {n} enviado a fábrica.', unsaved: 'El proyecto abierto en el editor tiene cambios sin guardar que se perderán. ¿Continuar?', skipped: '{n} módulo(s) del proyecto no cargaron. Abra el proyecto, revíselo y guárdelo antes de enviar.' }
 };
 function sfT(k, v) { const L = SF_TXT[cxLang()] || SF_TXT.en; let t = L[k] != null ? L[k] : (SF_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x]); }); return t; }
@@ -1789,27 +1789,58 @@ function cxSendFactoryOpen(id) {
     + '<p class="cx-sf-sum"><span>' + cEsc(sfT('proj')) + ': <b>' + cEsc(o._pname || o.po_name || '—') + '</b>' + (o._folder ? ' · ' + cEsc(o._folder) : '') + '</span>'
     + (valor && !cxSeller() ? '<span>' + cEsc(sfT('val')) + ': <b>' + cEsc(cMoney(valor)) + '</b></span>' : '') + '</p>'
     + '<label>' + cEsc(sfT('po')) + '<input id="cx-sf-po" maxlength="60" value="' + cEsc(o._po || '') + '"></label>'
-    + '<label>' + cEsc(sfT('room')) + '<input id="cx-sf-room" maxlength="60" value="' + cEsc(o._pname || '') + '"></label>'
+    // AMBIENTE em lista (22/11, Matt: "coloca um dropdown com todos rooms possíveis, já tínhamos essa
+    // informação em algum lugar") — a mesma lista de ambientes da leitura por IA (função
+    // generate-project-from-photo: kitchen, bathroom, closet, bedroom, living, laundry, office, pantry,
+    // garage, bar, other). Grava o nome em inglês em orders.room_name; "Other" abre o campo livre.
+    + '<label>' + cEsc(sfT('room')) + '<select id="cx-sf-room-sel">' + cxRoomOptions(o._pname || '') + '</select>'
+    + '<input id="cx-sf-room" maxlength="60" style="display:none;margin-top:6px" placeholder="' + cEsc(sfT('room_other')) + '"></label>'
     + '<label>' + cEsc(sfT('addr')) + '<input id="cx-sf-addr" maxlength="200" value="' + cEsc(o.delivery_address || '') + '"></label>'
     + '<div class="cx-sf-terms"><p>🔒 ' + cEsc(sfT('t1')) + '</p><p>⛔ ' + cEsc(sfT('t2')) + '</p><p>📐 ' + cEsc(sfT('t3')) + '</p><p>🧾 ' + cEsc(sfT('t4')) + '</p></div>'
-    + '<label class="cx-sf-ok"><input type="checkbox" id="cx-sf-chk"> <span>' + cEsc(sfT('ok')) + '</span></label>'
+    // 22/11: com os Termos e Condições completos (order-terms.js) o aceite de verdade é na PRÓXIMA janela
+    // (texto inteiro + nome digitado). Aqui a caixinha some — ficava "um quadradinho no meio do nada" e
+    // pedia o aceite duas vezes. Sem o order-terms.js carregado, a caixinha continua valendo.
+    + (window.LegnoOrderTerms ? '<p class="cx-sf-next">' + cEsc(sfT('next')) + '</p>'
+      : '<label class="cx-sf-ok"><input type="checkbox" id="cx-sf-chk"> <span>' + cEsc(sfT('ok')) + '</span></label>')
     + '<p class="cx-sf-msg" id="cx-sf-msg"></p>'
     + '<div class="cx-sf-acts"><button type="button" class="secondary" id="cx-sf-cancel">' + cEsc(sfT('cancel')) + '</button>'
-    + '<button type="button" class="cx-sendfab" id="cx-sf-go" disabled>' + cEsc(sfT('send')) + '</button></div></div>';
+    + '<button type="button" class="cx-sendfab" id="cx-sf-go" disabled>' + cEsc(sfT(window.LegnoOrderTerms ? 'send_next' : 'send')) + '</button></div></div>';
   document.body.appendChild(w);
   const $ = (q) => w.querySelector(q);
-  const pronto = () => { $('#cx-sf-go').disabled = !($('#cx-sf-chk').checked && $('#cx-sf-po').value.trim() && $('#cx-sf-addr').value.trim()); };
-  ['#cx-sf-chk', '#cx-sf-po', '#cx-sf-addr'].forEach((q) => { $(q).addEventListener('input', pronto); $(q).addEventListener('change', pronto); });
+  const chkOk = () => { const c = $('#cx-sf-chk'); return !c || c.checked; };
+  const pronto = () => { $('#cx-sf-go').disabled = !(chkOk() && $('#cx-sf-po').value.trim() && $('#cx-sf-addr').value.trim()); };
+  ['#cx-sf-chk', '#cx-sf-po', '#cx-sf-addr'].forEach((q) => { const el = $(q); if (!el) return; el.addEventListener('input', pronto); el.addEventListener('change', pronto); });
+  pronto();
   const fecha = () => { if (!w.dataset.busy) w.remove(); };
   $('#cx-sf-cancel').addEventListener('click', fecha);
   w.addEventListener('click', (e) => { if (e.target === w) fecha(); });
-  $('#cx-sf-go').addEventListener('click', () => cxSendFactoryRun(o, w, { po: $('#cx-sf-po').value.trim(), room: $('#cx-sf-room').value.trim(), addr: $('#cx-sf-addr').value.trim() }));
+  const salaSel = $('#cx-sf-room-sel');
+  const salaTroca = () => { const outro = salaSel.value === '_other'; $('#cx-sf-room').style.display = outro ? '' : 'none'; if (outro) $('#cx-sf-room').focus(); };
+  salaSel.addEventListener('change', salaTroca); if (salaSel.value === '_other') $('#cx-sf-room').style.display = '';
+  const sala = () => (salaSel.value === '_other' ? $('#cx-sf-room').value.trim() : salaSel.value);
+  $('#cx-sf-go').addEventListener('click', () => cxSendFactoryRun(o, w, { po: $('#cx-sf-po').value.trim(), room: sala(), addr: $('#cx-sf-addr').value.trim() }));
   setTimeout(() => $('#cx-sf-po').focus(), 30);
+}
+// lista de ambientes (valor gravado = nome em inglês; rótulo = idioma da tela). `palpite` = nome do
+// projeto: se bater com alguma palavra-chave, a opção já vem escolhida.
+const CX_ROOMS = [
+  ['Kitchen', 'Cozinha', 'Cocina', /kitchen|cozinha|cocina/i], ['Bathroom', 'Banheiro', 'Baño', /bath|banheiro|ba[nñ]o|vanit|lavabo/i],
+  ['Closet', 'Closet', 'Clóset', /closet|wardrobe|guarda/i], ['Bedroom', 'Quarto', 'Dormitorio', /bed|quarto|dormitor|cuarto|suite|su[ií]te/i],
+  ['Living room', 'Sala', 'Sala', /living|sala|family|tv/i], ['Laundry', 'Lavanderia', 'Lavandería', /laundry|lavand/i],
+  ['Office', 'Escritório', 'Oficina', /office|escrit|oficina/i], ['Pantry', 'Despensa', 'Despensa', /pantry|despensa/i],
+  ['Garage', 'Garagem', 'Garaje', /garage|garagem|garaje/i], ['Bar', 'Bar', 'Bar', /\bbar\b/i]
+];
+function cxRoomOptions(palpite) {
+  const i = { pt: 1, es: 2 }[cxLang()] || 0;
+  const achou = CX_ROOMS.find((r) => r[3].test(String(palpite || '')));
+  return '<option value="">—</option>' + CX_ROOMS.map((r) => '<option value="' + cEsc(r[0]) + '"' + (achou === r ? ' selected' : '') + '>' + cEsc(r[i]) + '</option>').join('')
+    + '<option value="_other">' + cEsc(sfT('room_other')) + '</option>';
 }
 async function cxSendFactoryRun(o, w, f) {
   const msg = w.querySelector('#cx-sf-msg');
   const setMsg = (t, err) => { msg.textContent = t; msg.classList.toggle('err', !!err); };
-  if (!f.po || !f.addr || !w.querySelector('#cx-sf-chk').checked) return setMsg(sfT('need'), true);
+  const chk = w.querySelector('#cx-sf-chk');
+  if (!f.po || !f.addr || (chk && !chk.checked)) return setMsg(sfT('need'), true);
   if (typeof projectDirty !== 'undefined' && projectDirty && typeof projectSlots !== 'undefined' && projectSlots.length && !confirm(sfT('unsaved'))) return;
   // TERMOS E CONDIÇÕES completos (22/11, migration 332): o resumo desta janela continua,
   // mas o que vale é o texto inteiro, aceito com o nome digitado. O registro é gravado
@@ -2641,9 +2672,9 @@ function cxCss() {
     '.cx-table .cx-mini{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:5px;padding:2px 6px;font-size:10.5px;font-weight:600;cursor:pointer;margin:0 3px 0 0;white-space:nowrap;line-height:1.5}.cx-table .cx-mini:hover{background:#f3ece2}.cx-table .cx-mini-pay,.cx-table .cx-mini-pay:hover{background:#1f7a4d;color:#fff;border-color:#1f7a4d}.cx-table .cx-mini-ok{color:#1f7a4d;border-color:#9fd3b6}.cx-main td,.cx-main th{padding-left:7px;padding-right:7px}.cx-main th:first-child,.cx-main td:first-child{padding-left:12px}.cx-main td.cx-store{max-width:118px;overflow:hidden;text-overflow:ellipsis}.cx-main td:last-child{text-align:right}.cx-main td:last-child button.secondary{padding:2px 7px;font-size:10.5px;line-height:1.5}.cx-main td.cx-item{max-width:240px}.cx-main td.cx-quem{max-width:105px}.cx-wrap{overflow-x:auto}.cx-ck{width:26px;text-align:center}.cx-taxh{cursor:pointer;text-decoration:underline dotted}.cx-fold{display:inline-block;font-size:11px;background:#f3ece2;border-radius:4px;padding:1px 6px;margin-right:4px;cursor:pointer;color:#6b4a2a}.cx-selbar{display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:10px 4px;font-weight:600}.cx-selbar .cx-sendfab{padding:7px 12px;font-size:12px}.cx-vazio td{text-align:center;color:var(--muted,#766f64);padding:22px 8px!important}.cx-pcard{display:flex;gap:16px;align-items:flex-start;padding:8px 0}.cx-pimg{width:210px;height:136px;border-radius:8px;background:#efe9df;object-fit:cover;flex:none;cursor:zoom-in;display:flex;align-items:center;justify-content:center;color:#a39a8c}.cx-pimg-0{cursor:default}.cx-pbody b{font-size:15px}.cx-pacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.cx-projexp > td{background:#faf8f4;white-space:normal!important}.cx-projbox{display:flex;gap:12px;align-items:center;padding:6px 0}.mp-exp-box .po-myproj-card ~ .cx-projbox,.mp-exp-box .po-myproj-grid + .cx-projbox{display:none}.cx-main td,.cx-main th{white-space:nowrap}.cx-main td.cx-item{overflow:hidden;text-overflow:ellipsis}.cx-main td.cx-quem{overflow:hidden;text-overflow:ellipsis}.cx-stage + .cx-sendfab{margin-left:8px}.cx-sendfab{background:#2f6f4f;color:#fff;border:0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;letter-spacing:.02em;cursor:pointer;white-space:nowrap}.cx-sendfab:disabled{opacity:.45;cursor:default}',
     '#cx-sf{position:fixed;inset:0;background:rgba(20,16,10,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px}',
     '.cx-sf-box{background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.cx-sf-box h3{margin:0 0 8px}',
-    '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}',
+    '.cx-sf-sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 12px}.cx-sf-box label{display:block;font-size:12px;margin:8px 0;color:#5c554b}.cx-sf-box label input:not([type=checkbox]){display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px}.cx-sf-box label select{display:block;width:100%;margin:4px 0 0;padding:8px;border:1px solid #d9d3c8;border-radius:6px;font-size:14px;background:#fff;color:#2a251e;box-sizing:border-box}',
     '.cx-sf-terms{background:#fbf4ec;border:1px solid #e8cfb4;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13px;line-height:1.45}.cx-sf-terms p{margin:6px 0}',
-    '.cx-sf-box label.cx-sf-ok{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;color:#2a251e}.cx-sf-msg{min-height:18px;font-size:13px;margin:8px 0}.cx-sf-msg.err{color:#b42318}.cx-sf-acts{display:flex;justify-content:flex-end;gap:8px}.cx-sf-acts .cx-sendfab{padding:10px 16px;font-size:13px}',
+    '.cx-sf-box label.cx-sf-ok{display:flex;gap:10px;align-items:flex-start;justify-content:flex-start;text-align:left;font-size:13px;font-weight:600;color:#2a251e;margin:0;cursor:pointer}.cx-sf-ok input[type=checkbox]{width:16px;height:16px;min-width:16px;margin:2px 0 0;padding:0;flex:none}.cx-sf-ok span{flex:1}.cx-sf-next{font-size:13px;color:#5c554b;margin:0 0 4px}.cx-sf-msg{min-height:18px;font-size:13px;margin:8px 0}.cx-sf-msg.err{color:#b42318}.cx-sf-acts{display:flex;justify-content:flex-end;gap:8px}.cx-sf-acts .cx-sendfab{padding:10px 16px;font-size:13px}',
     // PASTA BEM MARCADA (21/11, 2ª rodada — Matt: "esse último pedido parece que
     // faz parte da pasta, tem como deixar a pasta mais evidente"): faixa marrom
     // na esquerda da pasta E dos itens dela, itens recuados com fundo claro, e
