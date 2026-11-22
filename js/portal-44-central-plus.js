@@ -1705,7 +1705,8 @@ async function cxRelease(id) {
   if (!confirm(cT('confirm', { po }))) return;
   // TERMOS E CONDIÇÕES (22/11, migration 332): aceite registrado ANTES de aprovar
   if (window.LegnoOrderTerms) {
-    const ac = await LegnoOrderTerms.ask({ ref: po });
+    if (cxSeller()) { cxState.msg[id] = { err: true, t: ((window.LegnoOrderTerms && LegnoOrderTerms.onlyDealerMsg && LegnoOrderTerms.onlyDealerMsg()) || 'Only the dealer can send the order to production.') }; return mpRender(); }
+    const ac = await LegnoOrderTerms.ask({ ref: po, owner: o.client_user_id || null });
     if (!ac) return;
     try { await LegnoOrderTerms.record([id], ac); } catch (e) { cxState.msg[id] = { err: true, t: (e && e.message) || String(e) }; return mpRender(); }
   }
@@ -1870,7 +1871,7 @@ async function cxSendFactoryRun(o, w, f) {
   // mas o que vale é o texto inteiro, aceito com o nome digitado. O registro é gravado
   // logo depois que o pedido existe, ANTES de aprovar.
   let termos = null;
-  if (window.LegnoOrderTerms) { termos = await LegnoOrderTerms.ask({ ref: f.po }); if (!termos) return; }
+  if (window.LegnoOrderTerms) { termos = await LegnoOrderTerms.ask({ ref: f.po, owner: (o && o.client_user_id) || null }); if (!termos) return; }
   w.dataset.busy = '1';
   w.querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
   try {
@@ -2251,7 +2252,16 @@ function cxPayTerms() { const t = (cxState.scope || {}).payTerms || {}; return {
 function cxPodePagar(o) { const s = cxState.scope || {}; return !!(o && !o._proj && s.invOk && s.payOk && o.status !== 'submitted' && !cxSeller() && (cxAdmin() || o.client_user_id === cxMe() || (s.team && s.team[o.client_user_id]))); }
 // todos os pedidos da mesma invoice (a escolha vale pra invoice inteira)
 function cxPayGrupo(o) { const s = cxState.scope; return o.invoice_number ? s.orders.filter((x) => !x._proj && x.invoice_number === o.invoice_number) : [o]; }
-function cxPayNet(o) { return o._n != null ? Number(o._n) : (Number(o._l) || 0); }
+// Líquido de fábrica pra prévia do pagamento. Com invoice já emitida, o número que VALE é o do banco
+// (invoice_total − tax + desconto de pagamento = o líquido que a RPC usou). Sem isso a prévia usava o
+// desconto do PERFIL de quem olha (22/11: perfil 57% × loja 60% → prévia $64,32, banco $59,83).
+function cxPayNet(o) {
+  if (o.invoice_issued_at && o.invoice_total != null) {
+    const n = Math.round(((Number(o.invoice_total) || 0) - (Number(o.tax_amount) || 0) + (Number(o.pay_discount_amount) || 0)) * 100) / 100;
+    if (n > 0) return n;
+  }
+  return o._n != null ? Number(o._n) : (Number(o._l) || 0);
+}
 // prévia na tela (mesma conta da RPC order_choose_payment, migrations 330/331/333)
 // metodo: 'zelle' | 'wire' | 'link' (QuickBooks). plano: 'full' (tudo antes da produção) | 'split' (50% + 50%).
 function cxPayPrevia(grupo, metodo, plano) {

@@ -905,6 +905,7 @@ async function approveFolderOrders(folder, folderOrders, stEl, errorEl) {
   // TERMOS E CONDIÇÕES (22/11, migration 332): aprovar = comprar. Sem o aceite
   // registrado (um registro por pedido) nada é aprovado.
   if (window.LegnoOrderTerms) {
+    if (typeof isSellerAccount === 'function' && isSellerAccount()) { alert(LegnoOrderTerms.onlyDealerMsg()); return; } // 22/11: só dealer envia pra produção
     const ac = await LegnoOrderTerms.ask({ ref: folder + ' (' + pend.length + ')' });
     if (!ac) return;
     try { await LegnoOrderTerms.record(pend.map((o) => o.id), ac); }
@@ -2553,7 +2554,8 @@ document.getElementById('po-order-detail-approve-btn').addEventListener('click',
   const approveBtn = document.getElementById('po-order-detail-approve-btn');
   // TERMOS E CONDIÇÕES (22/11, migration 332): aceite registrado ANTES de aprovar
   if (window.LegnoOrderTerms) {
-    const ac = await LegnoOrderTerms.ask({ ref: po_name });
+    if (typeof isSellerAccount === 'function' && isSellerAccount()) { alert(LegnoOrderTerms.onlyDealerMsg()); return; } // 22/11: só dealer envia pra produção
+    const ac = await LegnoOrderTerms.ask({ ref: po_name, owner: (typeof currentOrderDetail !== 'undefined' && currentOrderDetail && currentOrderDetail.order && currentOrderDetail.order.client_user_id) || null });
     if (!ac) return;
     try { await LegnoOrderTerms.record([currentOrderDetail.order.id], ac); }
     catch (e) { errorEl.textContent = (e && e.message) || String(e); errorEl.style.display = 'block'; return; }
