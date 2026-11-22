@@ -589,25 +589,36 @@ async function loadDealerTeamList() {
       listEl.innerHTML = `<div class="hint">${I18n.t('nav.dealer_team_empty')}</div>`;
       return;
     }
+    // 21/11 (Matt): quem entrou por último em cima; quem nunca entrou, embaixo
+    sellers.sort((a, b) => (b.last_active_at ? new Date(b.last_active_at).getTime() : 0) - (a.last_active_at ? new Date(a.last_active_at).getTime() : 0));
+    const ME = window.LegnoMinhaEmpresa;
     listEl.innerHTML = sellers.map((s) => {
       const stats = statsByUser[s.user_id] || { count: 0, total: 0 };
       const lastActive = s.last_active_at ? new Date(s.last_active_at).toLocaleDateString(currentLocale()) : '—';
       const nameOrEmail = (s.full_name || s.email || '').replace(/</g, '&lt;');
       const active = s.seller_active !== false;
       return `<div class="po-dealer-team-item${active ? '' : ' po-dealer-team-inactive'}">
-        <strong>${nameOrEmail} <span class="po-dealer-team-badge">${I18n.t(active ? 'nav.dealer_team_active' : 'nav.dealer_team_inactive')}</span></strong>
+        <strong>${nameOrEmail} ${'member_kind' in s && ME && ME.tipoHtml ? ME.tipoHtml(s.user_id, s.member_kind) : ''} <span class="po-dealer-team-badge">${I18n.t(active ? 'nav.dealer_team_active' : 'nav.dealer_team_inactive')}</span></strong>
         <span class="hint">${(s.email || '').replace(/</g, '&lt;')}</span>
         <span class="hint">${I18n.t('nav.dealer_team_projects_count', { n: stats.count })} · ${formatGalleryPrice(stats.total)}</span>
         <span class="hint">${I18n.t('nav.dealer_team_last_active', { date: lastActive })}</span>
         ${'seller_margin_pct' in s ? `<label class="po-dealer-team-margin" title="${I18n.t('nav.dealer_team_margin_tip')}">${I18n.t('nav.dealer_team_margin')} +<input type="text" inputmode="decimal" data-team-margin="${s.user_id}" value="${s.seller_margin_pct == null ? '' : Number(s.seller_margin_pct)}" placeholder="${Number(getResaleMarginPct()) || 0}">%</label>` : ''}
         <span class="po-dealer-team-actions">
-          <button type="button" class="secondary" data-team-projects=""${s.user_id}">${I18n.t('nav.dealer_team_see_projects')}</button>
+          ${ME && ME.cadastro ? `<button type="button" class="secondary" data-team-record="${s.user_id}">${I18n.t('nav.dealer_team_record')}</button>` : ''}
+          <button type="button" class="secondary" data-team-projects="""${s.user_id}">${I18n.t('nav.dealer_team_see_projects')}</button>
           <button type="button" class="secondary" data-team-toggle="${s.user_id}" data-team-active="${active ? '1' : '0'}">${I18n.t(active ? 'nav.dealer_team_deactivate' : 'nav.dealer_team_activate')}</button>
         </span>
       </div>`;
     }).join('');
     listEl.querySelectorAll('[data-team-projects]').forEach((b) => b.addEventListener('click', () => {
       openSellerProjects(b.getAttribute('data-team-projects'));
+    }));
+    // CADASTRO da pessoa (migration 321): a mesma ficha da árvore do admin, sem desconto de fábrica
+    listEl.querySelectorAll('[data-team-record]').forEach((b) => b.addEventListener('click', () => {
+      const s = sellers.find((x) => x.user_id === b.getAttribute('data-team-record'));
+      if (!s || !ME || !ME.cadastro) return;
+      const st = statsByUser[s.user_id] || { count: 0 };
+      ME.cadastro({ user_id: s.user_id, email: s.email, member_role: 'seller', viaDealer: true, n_projects: st.count, n_orders: 0, last_active_at: s.last_active_at, active: s.seller_active !== false });
     }));
     // MARGEM POR VENDEDOR (migration 320): vazio = segue a margem geral da loja
     listEl.querySelectorAll('[data-team-margin]').forEach((inp) => inp.addEventListener('change', async () => {

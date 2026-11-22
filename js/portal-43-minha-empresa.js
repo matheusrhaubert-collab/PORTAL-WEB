@@ -476,6 +476,7 @@ async function meFnError(error, data) {
 }
 function meChange(e) {
   const t = e.target;
+  if (t.matches && t.matches('select.pp-kind')) return meSetKind(t.getAttribute('data-u'), t.value, t);
   if (t.matches && t.matches('input.pp-mg')) return meSetSellerMargin(t.getAttribute('data-u'), t.value, t);
   if (t.matches && t.matches('select.pp-mv')) {
     const u = t.getAttribute('data-u'); const v = t.value; t.value = '';
@@ -736,6 +737,9 @@ function meCss() {
     '.me-lost-note{padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin-top:4px}.me-lost-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.me-lost-foot button{margin:0}',
     '.pp-top{display:flex;gap:10px;align-items:stretch;margin:6px 0 12px;flex-wrap:wrap}.pp-top input{flex:0 0 240px;padding:8px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;margin:0}',
     '.pp-new{flex:1;min-width:260px;border:2px dashed #c9a36b;border-radius:10px;padding:10px 14px;font-size:13.5px;color:#7a4a1e;background:#fdf8ef;display:flex;align-items:center}',
+    '.pp-kind{appearance:none;-webkit-appearance:none;border:0;border-radius:9px;padding:1px 16px 1px 7px;margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;height:18px;line-height:16px;cursor:pointer;width:auto;max-width:118px;background:#eee9df url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%278%27 height=%275%27%3E%3Cpath d=%27M0 0l4 5 4-5z%27 fill=%27%23665%27/%3E%3C/svg%3E") no-repeat right 5px center;color:#5c5346}',
+    '.pp-kind.k-contractor{background-color:#dcebfb;color:#1f5fa8}.pp-kind.k-millworker{background-color:#fdecc8;color:#8a5a00}.pp-kind.k-designer{background-color:#efe4fb;color:#6b3fb0}.pp-kind option{text-transform:none;font-weight:400;color:#2b2621;background:#fff}',
+    '.pp-last{font-size:10.5px;color:#23793c;font-weight:700;white-space:nowrap;min-width:34px;text-align:right}.pp-last.is-never{color:#b0a898;font-weight:400}',
     '.pp-lock{background:#fff;border:1px solid var(--border,#e0ddd6);border-radius:5px;width:24px;height:22px;padding:0;margin:0;font-size:11px;line-height:1;cursor:pointer;color:#3a332a}.pp-lock:hover{background:#f3ede2}.pp-lock.is-off{background:#f3d9d5;border-color:#d9a79f}.pp-p.is-off{opacity:1;background:#fbf3f1}.pp-p.is-off .pp-mail{opacity:.6;text-decoration:line-through}',
     '.pp-mgl{display:inline-flex;align-items:center;gap:1px;font-size:11.5px;color:#7a4a1e;font-weight:700;margin:0;white-space:nowrap}.pp-mg{width:44px;padding:2px 4px;margin:0;border:1px solid #d9c49c;border-radius:5px;font-size:12px;text-align:right;background:#fffaf0;color:#2b2621;height:22px;box-sizing:border-box}',
     '.pp-mg::placeholder{color:#b9ab93}.pp-mg.is-ok{border-color:#2e8b47;background:#e9f6ec}.pp-mg.is-err{border-color:#c0392b;background:#fbeeec}.pp-dm{font-size:10.5px;color:#7a4a1e;font-weight:700;white-space:nowrap}.me-mg{display:inline-flex;align-items:center;gap:6px;font-size:13px}',
@@ -789,19 +793,19 @@ function meCss() {
 // própria). Sem arrastar: o seletor "Mover…" de cada pessoa faz o mesmo.
 // Quem grava é a RPC admin_place_user (regras e o que vem junto: ver a 319).
 const PP_TXT = {
-  pt: { lock_err: 'Não consegui mudar o acesso:', lock_tip: 'Bloquear o acesso deste vendedor', unlock_tip: 'Liberar o acesso deste vendedor', q_lock: 'Bloquear o acesso de {u}?\n\nEle não consegue mais entrar no portal. Os projetos e pedidos dele continuam na loja. Dá pra liberar de novo a qualquer momento.', q_unlock: 'Liberar o acesso de {u} de novo?', done_lock: 'Acesso de {u} bloqueado.', done_unlock: 'Acesso de {u} liberado.', mg_tip: 'Margem deste vendedor em cima do custo da loja. Vazio = segue a margem geral da loja (número apagado).', dm_tip: 'Desconto de fábrica da loja · margem geral da loja', mg_lbl: 'Margem dele', drop_owner: 'solte aqui o dealer desta loja', q_take: 'Tornar {u} o DEALER (dono) de "{loja}"?\n\nOs projetos e pedidos dele passam pra "{loja}" e quem já é vendedor dela passa a responder a ele.', q_take_owner: '{u} hoje é o DEALER de "{de}".\n\nAo virar o dealer de "{loja}":\n• a equipe de "{de}" ({n} pessoa(s)) vai junto;\n• os projetos e pedidos de "{de}" passam pra "{loja}";\n• a loja "{de}" fica suspensa (não é apagada).\n\nContinuar?', done_owner: '{u} agora é o dealer de "{loja}".', hint2: 'Arraste a pessoa pra baixo de uma loja: ela vira vendedor daquela loja. Loja sem dealer: quem cair nela vira o dealer. Solte em "Tornar dealer", no fim da árvore, pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos.', tab: 'Pessoas', hint: 'Arraste a pessoa pra dentro de uma loja: ela vira vendedor daquela loja. Arraste pra faixa "Tornar dealer" pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos dele.',
+  pt: { k_salesperson: 'Salesperson', k_contractor: 'Contractor', k_millworker: 'Millworker', k_designer: 'Designer', kind_tip: 'Tipo desta pessoa', never: 'nunca', today: 'hoje', mo: ' m', yr: ' a', last_tip: 'Último acesso', lock_err: 'Não consegui mudar o acesso:', lock_tip: 'Bloquear o acesso deste vendedor', unlock_tip: 'Liberar o acesso deste vendedor', q_lock: 'Bloquear o acesso de {u}?\n\nEle não consegue mais entrar no portal. Os projetos e pedidos dele continuam na loja. Dá pra liberar de novo a qualquer momento.', q_unlock: 'Liberar o acesso de {u} de novo?', done_lock: 'Acesso de {u} bloqueado.', done_unlock: 'Acesso de {u} liberado.', mg_tip: 'Margem deste vendedor em cima do custo da loja. Vazio = segue a margem geral da loja (número apagado).', dm_tip: 'Desconto de fábrica da loja · margem geral da loja', mg_lbl: 'Margem dele', drop_owner: 'solte aqui o dealer desta loja', q_take: 'Tornar {u} o DEALER (dono) de "{loja}"?\n\nOs projetos e pedidos dele passam pra "{loja}" e quem já é vendedor dela passa a responder a ele.', q_take_owner: '{u} hoje é o DEALER de "{de}".\n\nAo virar o dealer de "{loja}":\n• a equipe de "{de}" ({n} pessoa(s)) vai junto;\n• os projetos e pedidos de "{de}" passam pra "{loja}";\n• a loja "{de}" fica suspensa (não é apagada).\n\nContinuar?', done_owner: '{u} agora é o dealer de "{loja}".', hint2: 'Arraste a pessoa pra baixo de uma loja: ela vira vendedor daquela loja. Loja sem dealer: quem cair nela vira o dealer. Solte em "Tornar dealer", no fim da árvore, pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos.', tab: 'Pessoas', hint: 'Arraste a pessoa pra dentro de uma loja: ela vira vendedor daquela loja. Arraste pra faixa "Tornar dealer" pra ela ter a própria loja. Um dealer arrastado pra outra loja leva junto a equipe, os projetos e os pedidos dele.',
     need319: 'Falta rodar a migration 319 (database/migration_319_pessoas_arrastar.sql) no SQL Editor do Supabase.', loading: 'Carregando pessoas…', search: 'Buscar pessoa ou loja…',
     new_dealer: 'Tornar dealer — solte aqui pra pessoa ter a própria loja', no_store: 'Sem loja', dealer: 'Dealer', seller: 'Vendedor', manager: 'Gerente', finance: 'Financeiro', admin: 'Admin da fábrica', off: 'inativo', susp: 'suspensa', no_owner: 'sem dealer',
     cnt: '{p} proj · {o} ped', move: 'Mover…', mv_dealer: '★ Tornar dealer (loja própria)', empty: 'Solte uma pessoa aqui', people: '{n} pessoa(s)',
     q_seller: 'Colocar {u} como VENDEDOR de "{loja}"?', q_owner: '{u} hoje é o DEALER de "{de}".\n\nAo virar vendedor de "{loja}":\n• a equipe de "{de}" ({n} pessoa(s)) vai junto, como vendedores;\n• os projetos e pedidos de "{de}" passam pra "{loja}";\n• a loja "{de}" fica suspensa (não é apagada).\n\nO preço dele passa a seguir o desconto de "{loja}". Continuar?',
     q_dealer: 'Tornar {u} um DEALER, com a própria loja?\n\nOs projetos e pedidos dele vão pra loja dele. O desconto da loja nova começa em 0% (ajuste depois).', done_seller: '{u} agora é vendedor de "{loja}".', done_dealer: '{u} agora é dealer.', same: 'Essa pessoa já está nessa loja.' },
-  en: { lock_err: 'Could not change the access:', lock_tip: 'Block this salesperson\'s access', unlock_tip: 'Restore this salesperson\'s access', q_lock: 'Block {u}\'s access?\n\nThey can no longer sign in to the portal. Their projects and orders stay in the store. You can restore access at any time.', q_unlock: 'Restore {u}\'s access?', done_lock: '{u}\'s access blocked.', done_unlock: '{u}\'s access restored.', mg_tip: 'This salesperson\'s margin on top of the store cost. Empty = follows the store\'s general margin (greyed number).', dm_tip: 'Store factory discount · store general margin', mg_lbl: 'Their margin', drop_owner: 'drop this store\'s dealer here', q_take: 'Make {u} the DEALER (owner) of "{loja}"?\n\nTheir projects and orders move to "{loja}" and its current salespeople will report to them.', q_take_owner: '{u} is currently the DEALER of "{de}".\n\nBecoming the dealer of "{loja}":\n• the team of "{de}" ({n} people) comes along;\n• projects and orders of "{de}" move to "{loja}";\n• the store "{de}" is suspended (not deleted).\n\nContinue?', done_owner: '{u} is now the dealer of "{loja}".', hint2: 'Drag a person under a store: they become a salesperson of that store. Store without a dealer: whoever lands on it becomes its dealer. Drop on "Make dealer", at the end of the tree, to give them their own store. A dealer dragged into another store brings the team, projects and orders along.', tab: 'People', hint: 'Drag a person into a store: they become a salesperson of that store. Drag to the "Make dealer" strip to give them their own store. A dealer dragged into another store brings their team, projects and orders along.',
+  en: { k_salesperson: 'Salesperson', k_contractor: 'Contractor', k_millworker: 'Millworker', k_designer: 'Designer', kind_tip: 'Type of this person', never: 'never', today: 'today', mo: ' mo', yr: ' y', last_tip: 'Last access', lock_err: 'Could not change the access:', lock_tip: 'Block this salesperson\'s access', unlock_tip: 'Restore this salesperson\'s access', q_lock: 'Block {u}\'s access?\n\nThey can no longer sign in to the portal. Their projects and orders stay in the store. You can restore access at any time.', q_unlock: 'Restore {u}\'s access?', done_lock: '{u}\'s access blocked.', done_unlock: '{u}\'s access restored.', mg_tip: 'This salesperson\'s margin on top of the store cost. Empty = follows the store\'s general margin (greyed number).', dm_tip: 'Store factory discount · store general margin', mg_lbl: 'Their margin', drop_owner: 'drop this store\'s dealer here', q_take: 'Make {u} the DEALER (owner) of "{loja}"?\n\nTheir projects and orders move to "{loja}" and its current salespeople will report to them.', q_take_owner: '{u} is currently the DEALER of "{de}".\n\nBecoming the dealer of "{loja}":\n• the team of "{de}" ({n} people) comes along;\n• projects and orders of "{de}" move to "{loja}";\n• the store "{de}" is suspended (not deleted).\n\nContinue?', done_owner: '{u} is now the dealer of "{loja}".', hint2: 'Drag a person under a store: they become a salesperson of that store. Store without a dealer: whoever lands on it becomes its dealer. Drop on "Make dealer", at the end of the tree, to give them their own store. A dealer dragged into another store brings the team, projects and orders along.', tab: 'People', hint: 'Drag a person into a store: they become a salesperson of that store. Drag to the "Make dealer" strip to give them their own store. A dealer dragged into another store brings their team, projects and orders along.',
     need319: 'Migration 319 (database/migration_319_pessoas_arrastar.sql) still has to be run in the Supabase SQL Editor.', loading: 'Loading people…', search: 'Search person or store…',
     new_dealer: 'Make dealer — drop here to give the person their own store', no_store: 'No store', dealer: 'Dealer', seller: 'Salesperson', manager: 'Manager', finance: 'Finance', admin: 'Factory admin', off: 'inactive', susp: 'suspended', no_owner: 'no dealer',
     cnt: '{p} proj · {o} ord', move: 'Move…', mv_dealer: '★ Make dealer (own store)', empty: 'Drop a person here', people: '{n} people',
     q_seller: 'Make {u} a SALESPERSON of "{loja}"?', q_owner: '{u} is currently the DEALER of "{de}".\n\nBecoming a salesperson of "{loja}":\n• the team of "{de}" ({n} people) comes along, as salespeople;\n• projects and orders of "{de}" move to "{loja}";\n• the store "{de}" is suspended (not deleted).\n\nTheir price will follow the discount of "{loja}". Continue?',
     q_dealer: 'Make {u} a DEALER with their own store?\n\nTheir projects and orders move to their store. The new store starts at 0% discount (adjust later).', done_seller: '{u} is now a salesperson of "{loja}".', done_dealer: '{u} is now a dealer.', same: 'This person is already in this store.' },
-  es: { lock_err: 'No se pudo cambiar el acceso:', lock_tip: 'Bloquear el acceso de este vendedor', unlock_tip: 'Liberar el acceso de este vendedor', q_lock: '¿Bloquear el acceso de {u}?\n\nYa no podrá entrar al portal. Sus proyectos y pedidos siguen en la tienda. Puede liberarlo de nuevo en cualquier momento.', q_unlock: '¿Liberar de nuevo el acceso de {u}?', done_lock: 'Acceso de {u} bloqueado.', done_unlock: 'Acceso de {u} liberado.', mg_tip: 'Margen de este vendedor sobre el costo de la tienda. Vacío = sigue el margen general de la tienda (número apagado).', dm_tip: 'Descuento de fábrica de la tienda · margen general de la tienda', mg_lbl: 'Su margen', drop_owner: 'suelte aquí el dealer de esta tienda', q_take: '¿Hacer de {u} el DEALER (dueño) de "{loja}"?\n\nSus proyectos y pedidos pasan a "{loja}" y los vendedores actuales pasan a responderle.', q_take_owner: '{u} hoy es el DEALER de "{de}".\n\nAl pasar a dealer de "{loja}":\n• el equipo de "{de}" ({n} persona(s)) va con él;\n• los proyectos y pedidos de "{de}" pasan a "{loja}";\n• la tienda "{de}" queda suspendida (no se borra).\n\n¿Continuar?', done_owner: '{u} ahora es el dealer de "{loja}".', hint2: 'Arrastre la persona debajo de una tienda: pasa a ser vendedor de esa tienda. Tienda sin dealer: quien caiga en ella pasa a ser su dealer. Suelte en "Hacer dealer", al final del árbol, para que tenga tienda propia. Un dealer arrastrado a otra tienda lleva su equipo, proyectos y pedidos.', tab: 'Personas', hint: 'Arrastre la persona dentro de una tienda: pasa a ser vendedor de esa tienda. Arrástrela a la franja "Hacer dealer" para que tenga su propia tienda. Un dealer arrastrado a otra tienda lleva consigo su equipo, proyectos y pedidos.',
+  es: { k_salesperson: 'Salesperson', k_contractor: 'Contractor', k_millworker: 'Millworker', k_designer: 'Designer', kind_tip: 'Tipo de esta persona', never: 'nunca', today: 'hoy', mo: ' m', yr: ' a', last_tip: 'Último acceso', lock_err: 'No se pudo cambiar el acceso:', lock_tip: 'Bloquear el acceso de este vendedor', unlock_tip: 'Liberar el acceso de este vendedor', q_lock: '¿Bloquear el acceso de {u}?\n\nYa no podrá entrar al portal. Sus proyectos y pedidos siguen en la tienda. Puede liberarlo de nuevo en cualquier momento.', q_unlock: '¿Liberar de nuevo el acceso de {u}?', done_lock: 'Acceso de {u} bloqueado.', done_unlock: 'Acceso de {u} liberado.', mg_tip: 'Margen de este vendedor sobre el costo de la tienda. Vacío = sigue el margen general de la tienda (número apagado).', dm_tip: 'Descuento de fábrica de la tienda · margen general de la tienda', mg_lbl: 'Su margen', drop_owner: 'suelte aquí el dealer de esta tienda', q_take: '¿Hacer de {u} el DEALER (dueño) de "{loja}"?\n\nSus proyectos y pedidos pasan a "{loja}" y los vendedores actuales pasan a responderle.', q_take_owner: '{u} hoy es el DEALER de "{de}".\n\nAl pasar a dealer de "{loja}":\n• el equipo de "{de}" ({n} persona(s)) va con él;\n• los proyectos y pedidos de "{de}" pasan a "{loja}";\n• la tienda "{de}" queda suspendida (no se borra).\n\n¿Continuar?', done_owner: '{u} ahora es el dealer de "{loja}".', hint2: 'Arrastre la persona debajo de una tienda: pasa a ser vendedor de esa tienda. Tienda sin dealer: quien caiga en ella pasa a ser su dealer. Suelte en "Hacer dealer", al final del árbol, para que tenga tienda propia. Un dealer arrastrado a otra tienda lleva su equipo, proyectos y pedidos.', tab: 'Personas', hint: 'Arrastre la persona dentro de una tienda: pasa a ser vendedor de esa tienda. Arrástrela a la franja "Hacer dealer" para que tenga su propia tienda. Un dealer arrastrado a otra tienda lleva consigo su equipo, proyectos y pedidos.',
     need319: 'Falta ejecutar la migration 319 (database/migration_319_pessoas_arrastar.sql) en el SQL Editor de Supabase.', loading: 'Cargando personas…', search: 'Buscar persona o tienda…',
     new_dealer: 'Hacer dealer — suelte aquí para que la persona tenga su propia tienda', no_store: 'Sin tienda', dealer: 'Dealer', seller: 'Vendedor', manager: 'Gerente', finance: 'Finanzas', admin: 'Admin de fábrica', off: 'inactivo', susp: 'suspendida', no_owner: 'sin dealer',
     cnt: '{p} proy · {o} ped', move: 'Mover…', mv_dealer: '★ Hacer dealer (tienda propia)', empty: 'Suelte una persona aquí', people: '{n} persona(s)',
@@ -845,6 +849,50 @@ async function meSetSellerMargin(userId, txt, inputEl) {
     meRender();
   }
 }
+// TIPO DA PESSOA (21/11, migration 321). Matt: "quero 4 status aqui:
+// salesperson, contractor, millworker, designer". É etiqueta: o papel no
+// sistema continua vendedor. meState.kind[user_id]; kindOk = a 321 rodou.
+const PP_KINDS = ['salesperson', 'contractor', 'millworker', 'designer'];
+async function meLoadKinds() {
+  meState.kind = {}; meState.kindOk = false;
+  try {
+    const r = await supabaseClient.from('user_profiles').select('user_id, member_kind').limit(5000);
+    if (r.error) return;
+    (r.data || []).forEach((x) => { meState.kind[x.user_id] = x.member_kind || 'salesperson'; });
+    meState.kindOk = true;
+  } catch (e) { /* sem a 321 */ }
+}
+function meKindSelect(userId, atual) {
+  const k = PP_KINDS.includes(atual) ? atual : 'salesperson';
+  return '<select class="pp-kind k-' + k + '" data-u="' + mEsc(userId) + '" title="' + mEsc(ppT('kind_tip')) + '">'
+    + PP_KINDS.map((v) => '<option value="' + v + '"' + (v === k ? ' selected' : '') + '>' + mEsc(ppT('k_' + v)) + '</option>').join('') + '</select>';
+}
+async function meSetKind(userId, kind, sel) {
+  try {
+    const r = await supabaseClient.rpc('set_member_kind', { p_user: userId, p_kind: kind });
+    if (r.error) throw r.error;
+    (meState.kind = meState.kind || {})[userId] = kind;
+    if (sel) sel.className = 'pp-kind k-' + kind;
+  } catch (e) {
+    alert((e && e.message) || String(e));
+    if (sel) sel.value = (meState.kind || {})[userId] || 'salesperson';
+  }
+}
+// o seletor de tipo também aparece fora desta janela (lista da equipe do dealer, portal-05)
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t && t.matches && t.matches('select.pp-kind') && !t.closest('#po-me')) meSetKind(t.getAttribute('data-u'), t.value, t);
+});
+// "há quanto tempo entrou" curtinho pro chip
+function meAgo(d) {
+  if (!d) return ppT('never');
+  const dias = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+  if (!(dias >= 0)) return ppT('never');
+  if (dias < 1) return ppT('today');
+  if (dias < 30) return dias + 'd';
+  if (dias < 365) return Math.floor(dias / 30) + ppT('mo');
+  return Math.floor(dias / 365) + ppT('yr');
+}
 // campo "+__%" do vendedor. geral = margem da loja (aparece apagada quando o vendedor não tem a dele)
 function meMarginField(userId, geral) {
   if (!meState.mgOk) return '';
@@ -855,6 +903,7 @@ async function mePeopleLoad() {
   meState.peopleBusy = true;
   try {
     await meLoadMargins();
+    await meLoadKinds();
     const r = await supabaseClient.rpc('admin_people');
     if (r.error) { meState.people = []; meState.peopleErr = /admin_people|function|schema cache|PGRST202/i.test(r.error.message || '') ? ppT('need319') : (r.error.message || 'Erro'); }
     else {
@@ -888,17 +937,21 @@ function meViewPeople() {
     return '<div class="pp-p' + (p.is_admin ? ' is-fixo' : '') + (p.member_role === 'owner' ? ' is-owner' : '') + (p.active === false ? ' is-off' : '') + '"' + (p.is_admin ? '' : ' draggable="true"') + ' data-u="' + mEsc(p.user_id) + '" title="' + mEsc(mail) + '">'
       + '<span class="pp-grip">' + (p.is_admin ? '' : '⋮⋮') + '</span>'
       + '<span class="pp-mail"><b>' + mEsc(i > 0 ? mail.slice(0, i) : mail) + '</b><small>' + mEsc(i > 0 ? mail.slice(i) : '') + '</small></span>'
-      + (papel ? '<span class="pp-role r-' + papel + '">' + mEsc(ppT(papel)) + '</span>' : '')
+      + (meState.kindOk && !p.is_admin && p.account_id && p.member_role && p.member_role !== 'owner' ? meKindSelect(p.user_id, (meState.kind || {})[p.user_id])
+        : (papel ? '<span class="pp-role r-' + papel + '">' + mEsc(ppT(papel)) + '</span>' : ''))
       + (p.active === false ? '<span class="pp-role r-off">' + mEsc(ppT('off')) + '</span>' : '')
       + (p.member_role === 'owner' && !p.is_admin && meState.mgOk ? '<span class="pp-dm" title="' + mEsc(ppT('dm_tip')) + '">−' + (Number((contaDe[p.account_id] || {}).factory_discount_pct) || 0) + '% · +' + (((meState.mg || {})[p.user_id] || {}).r || 0) + '%</span>' : '')
       + (p.member_role && p.member_role !== 'owner' && !p.is_admin && p.account_id ? meMarginField(p.user_id, ((meState.mg || {})[donoDe[p.account_id]] || {}).r) : '')
+      + '<span class="pp-last' + (p.last_active_at ? '' : ' is-never') + '" title="' + mEsc(ppT('last_tip') + ': ' + (p.last_active_at ? new Date(p.last_active_at).toLocaleString() : ppT('never'))) + '">' + mEsc(meAgo(p.last_active_at)) + '</span>'
       + '<span class="pp-cnt">' + mEsc(ppT('cnt', { p: Number(p.n_projects) || 0, o: Number(p.n_orders) || 0 })) + '</span>'
       + (!p.is_admin && p.member_role && p.member_role !== 'owner' ? '<button type="button" class="pp-lock' + (p.active === false ? ' is-off' : '') + '" data-a="pplock" data-u="' + mEsc(p.user_id) + '" data-v="' + (p.active === false ? '1' : '0') + '" title="' + mEsc(ppT(p.active === false ? 'unlock_tip' : 'lock_tip')) + '">' + (p.active === false ? '🔒' : '🔓') + '</button>' : '')
       + (p.is_admin ? '' : '<select class="pp-mv" data-u="' + mEsc(p.user_id) + '" aria-label="' + mEsc(ppT('move')) + '">' + opts + '</select>')
       + '</div>';
   };
   const casa = (p, nomeLoja) => !q || String(p.email || '').toLowerCase().includes(q) || String(nomeLoja || '').toLowerCase().includes(q);
-  const ordP = (l) => l.slice().sort((x, y) => ((peso[x.member_role] != null ? peso[x.member_role] : 9) - (peso[y.member_role] != null ? peso[y.member_role] : 9)) || String(x.email || '').localeCompare(String(y.email || '')));
+  // 21/11 (Matt: "último acesso, sempre do mais atualizado em cima pro que nunca mais entrou pra baixo")
+  const quando = (p) => (p.last_active_at ? new Date(p.last_active_at).getTime() : 0);
+  const ordP = (l) => l.slice().sort((x, y) => ((x.member_role === 'owner' ? 0 : 1) - (y.member_role === 'owner' ? 0 : 1)) || (quando(y) - quando(x)) || String(x.email || '').localeCompare(String(y.email || '')));
   // ÁRVORE (21/11, Matt: "gostaria de ver em forma de árvore mesmo, bem visual"):
   // fábrica em cima; cada loja é um galho (nome + o dealer na mesma linha) e os
   // vendedores pendurados embaixo. O galho inteiro é a área de soltar. Loja SEM
@@ -944,17 +997,17 @@ function meViewPeople() {
 // (user_profiles) — não tem cópia: o que salva aqui aparece lá e vice-versa.
 // Os dados da empresa são da LOJA: valem pro dealer e pra equipe inteira.
 const PC_TXT = {
-  pt: { title: 'Cadastro', person: 'Pessoa', store: 'Empresa (loja)', email: 'E-mail', role: 'Função', last: 'Último acesso', never: 'nunca', projs: 'Projetos', orders: 'Pedidos', active: 'Acesso', on: 'ativo', offv: 'inativo',
+  pt: { own: 'Cadastro desta pessoa', own_hint: 'Cadastro próprio desta pessoa. Ela está na loja "{loja}": o preço dela vem do desconto da loja + a margem que o dealer deu, por isso aqui não tem desconto de fábrica.', own_hint2: 'Cadastro próprio desta pessoa. O preço dela vem do desconto da loja + a margem que você deu, por isso aqui não tem desconto de fábrica.', tax_info: 'Informativo: a invoice da fábrica segue o tax exemption da LOJA.', notes: 'Observações', need321: 'Falta rodar a migration 321 (database/migration_321_tipo_e_cadastro_da_pessoa.sql) no SQL Editor do Supabase.', title: 'Cadastro', person: 'Pessoa', store: 'Empresa (loja)', email: 'E-mail', role: 'Função', last: 'Último acesso', never: 'nunca', projs: 'Projetos', orders: 'Pedidos', active: 'Acesso', on: 'ativo', offv: 'inativo',
     trade: 'Nome da empresa', legal: 'Razão social', contact: 'Contato', bemail: 'E-mail de cobrança', phone: 'Telefone', site: 'Site', l1: 'Endereço', l2: 'Complemento', city: 'Cidade', state: 'Estado', zip: 'ZIP',
     disc: 'Desconto de fábrica (%)', tax: 'Tax exemption', tstatus: 'Status', tuntil: 'Validade', tstate: 'Estado do certificado', tnum: 'Número', ts_none: 'Não tem', ts_pending: 'Em análise', ts_valid: 'Válido', ts_expired: 'Vencido', ts_rejected: 'Recusado',
     logo: 'Logotipo', nologo: 'sem logotipo', save: 'Salvar', close: 'Fechar', saved: 'Salvo.', q_discard: 'Tem alteração sem salvar. Fechar mesmo assim?', erp: 'Abrir no ERP ↗', shared: 'Estes dados são da loja "{loja}" — valem pro dealer e pra toda a equipe dela.', nostore: 'Esta pessoa não está em nenhuma loja. Arraste ela pra uma loja (ou pra "Tornar dealer") pra ter cadastro de empresa. Abaixo, os dados do perfil dela.',
     pstore: 'Nome da loja (perfil)', need_until: 'Tax exemption válido precisa da validade.', loading: 'Carregando…', store_st: 'Situação da loja' },
-  en: { title: 'Record', person: 'Person', store: 'Company (store)', email: 'E-mail', role: 'Role', last: 'Last access', never: 'never', projs: 'Projects', orders: 'Orders', active: 'Access', on: 'active', offv: 'inactive',
+  en: { own: 'This person\'s record', own_hint: 'This person\'s own record. They are in the store "{loja}": their price comes from the store discount + the margin the dealer set, so there is no factory discount here.', own_hint2: 'This person\'s own record. Their price comes from the store discount + the margin you set, so there is no factory discount here.', tax_info: 'For reference: the factory invoice follows the STORE\'s tax exemption.', notes: 'Notes', need321: 'Migration 321 (database/migration_321_tipo_e_cadastro_da_pessoa.sql) still has to be run in the Supabase SQL Editor.', title: 'Record', person: 'Person', store: 'Company (store)', email: 'E-mail', role: 'Role', last: 'Last access', never: 'never', projs: 'Projects', orders: 'Orders', active: 'Access', on: 'active', offv: 'inactive',
     trade: 'Company name', legal: 'Legal name', contact: 'Contact', bemail: 'Billing e-mail', phone: 'Phone', site: 'Website', l1: 'Address', l2: 'Address line 2', city: 'City', state: 'State', zip: 'ZIP',
     disc: 'Factory discount (%)', tax: 'Tax exemption', tstatus: 'Status', tuntil: 'Valid until', tstate: 'Certificate state', tnum: 'Number', ts_none: 'None', ts_pending: 'Under review', ts_valid: 'Valid', ts_expired: 'Expired', ts_rejected: 'Rejected',
     logo: 'Logo', nologo: 'no logo', save: 'Save', close: 'Close', saved: 'Saved.', q_discard: 'There are unsaved changes. Close anyway?', erp: 'Open in ERP ↗', shared: 'This is the record of the store "{loja}" — it applies to the dealer and the whole team.', nostore: 'This person is not in any store. Drag them into a store (or to "Make dealer") to have a company record. Below, their profile data.',
     pstore: 'Store name (profile)', need_until: 'A valid tax exemption needs the expiry date.', loading: 'Loading…', store_st: 'Store status' },
-  es: { title: 'Ficha', person: 'Persona', store: 'Empresa (tienda)', email: 'E-mail', role: 'Función', last: 'Último acceso', never: 'nunca', projs: 'Proyectos', orders: 'Pedidos', active: 'Acceso', on: 'activo', offv: 'inactivo',
+  es: { own: 'Ficha de esta persona', own_hint: 'Ficha propia de esta persona. Está en la tienda "{loja}": su precio viene del descuento de la tienda + el margen que dio el dealer, por eso aquí no hay descuento de fábrica.', own_hint2: 'Ficha propia de esta persona. Su precio viene del descuento de la tienda + el margen que usted dio, por eso aquí no hay descuento de fábrica.', tax_info: 'Informativo: la factura de fábrica sigue el tax exemption de la TIENDA.', notes: 'Observaciones', need321: 'Falta ejecutar la migration 321 (database/migration_321_tipo_e_cadastro_da_pessoa.sql) en el SQL Editor de Supabase.', title: 'Ficha', person: 'Persona', store: 'Empresa (tienda)', email: 'E-mail', role: 'Función', last: 'Último acceso', never: 'nunca', projs: 'Proyectos', orders: 'Pedidos', active: 'Acceso', on: 'activo', offv: 'inactivo',
     trade: 'Nombre de la empresa', legal: 'Razón social', contact: 'Contacto', bemail: 'E-mail de cobro', phone: 'Teléfono', site: 'Sitio web', l1: 'Dirección', l2: 'Complemento', city: 'Ciudad', state: 'Estado', zip: 'ZIP',
     disc: 'Descuento de fábrica (%)', tax: 'Tax exemption', tstatus: 'Estado', tuntil: 'Validez', tstate: 'Estado del certificado', tnum: 'Número', ts_none: 'No tiene', ts_pending: 'En análisis', ts_valid: 'Válido', ts_expired: 'Vencido', ts_rejected: 'Rechazado',
     logo: 'Logotipo', nologo: 'sin logotipo', save: 'Guardar', close: 'Cerrar', saved: 'Guardado.', q_discard: 'Hay cambios sin guardar. ¿Cerrar de todos modos?', erp: 'Abrir en el ERP ↗', shared: 'Estos datos son de la tienda "{loja}" — valen para el dealer y todo su equipo.', nostore: 'Esta persona no está en ninguna tienda. Arrástrela a una tienda (o a "Hacer dealer") para tener ficha de empresa. Abajo, los datos de su perfil.',
@@ -983,9 +1036,16 @@ function pcEl() {
   }
   return ov;
 }
-async function mePersonOpen(userId) {
-  const p = ppUser(userId);
+// arg = id (árvore do admin) OU o objeto da pessoa (lista da equipe do dealer,
+// portal-05: { user_id, email, member_role:'seller', n_projects, last_active_at, active }).
+// Quem está EMBAIXO de um dealer tem cadastro PRÓPRIO (person_records, migration
+// 321) — sem desconto de fábrica (21/11, Matt: "porém sem margem de fábrica,
+// porque já estará pronto do dealer"). O dono continua com a ficha da LOJA.
+async function mePersonOpen(arg) {
+  const p = arg && typeof arg === 'object' ? arg : ppUser(arg);
+  const userId = p && p.user_id;
   if (!p) return;
+  meCss();
   const ov = pcEl(); ov.style.display = 'flex';
   ov.innerHTML = '<div class="pc-box"><p class="hint">' + mEsc(pcT('loading')) + '</p></div>';
   const c = { p, prof: null, acc: null, msg: '', err: '' };
@@ -993,7 +1053,13 @@ async function mePersonOpen(userId) {
   try {
     const pr = await supabaseClient.from('user_profiles').select('*').eq('user_id', userId).maybeSingle();
     c.prof = pr.error ? null : pr.data;
-    if (p.account_id) {
+    c.proprio = p.member_role !== 'owner' && !p.is_admin && (!!p.account_id || !!p.viaDealer);
+    if (c.proprio) {
+      const r = await supabaseClient.from('person_records').select('*').eq('user_id', userId).maybeSingle();
+      if (r.error) { c.recOk = false; c.err = /person_records|schema cache|does not exist|PGRST205/i.test(r.error.message || '') ? pcT('need321') : r.error.message; }
+      else { c.recOk = true; c.rec = r.data || {}; }
+      c.loja = p.account_id ? ppAccName(p.account_id) : '';
+    } else if (p.account_id) {
       const a = await supabaseClient.from('accounts').select('*').eq('id', p.account_id).maybeSingle();
       if (a.error) c.err = a.error.message; else c.acc = a.data;
     }
@@ -1005,17 +1071,33 @@ function mePersonRender() {
   const p = c.p; const a = c.acc; const pf = c.prof || {};
   const inp = (id, rot, val, tipo, extra) => '<label class="pc-f' + (extra && extra.w ? ' ' + extra.w : '') + '"><span>' + mEsc(rot) + '</span><input id="pc-' + id + '" type="' + (tipo || 'text') + '" value="' + mEsc(val == null ? '' : val) + '"' + ((extra && extra.attr) || '') + '></label>';
   const ro = (rot, val) => '<div class="pc-ro"><span>' + mEsc(rot) + '</span><b>' + val + '</b></div>';
-  const papel = p.is_admin ? ppT('admin') : p.member_role === 'owner' ? ppT('dealer') : p.member_role ? ppT(p.member_role) : (pf.role || '—');
+  const tipo = (meState.kind || {})[p.user_id] || pf.member_kind;
+  const papel = p.is_admin ? ppT('admin') : p.member_role === 'owner' ? ppT('dealer') : c.proprio && tipo ? ppT('k_' + tipo) : p.member_role ? ppT(p.member_role) : (pf.role || '—');
   const ultimo = p.last_active_at ? new Date(p.last_active_at).toLocaleString() : pcT('never');
   const logo = (a && a.logo_url) || pf.logo_url || '';
   let h = '<div class="pc-box" role="dialog" aria-modal="true"><div class="pc-head"><div class="pc-logo">' + (logo ? '<img src="' + mEsc(logo) + '" alt="">' : '<span>' + mEsc(pcT('nologo')) + '</span>') + '</div>'
-    + '<div class="pc-tit"><h3>' + mEsc(a ? (a.trade_name || a.legal_name || '—') : String(p.email || '').split('@')[0]) + '</h3><span>' + mEsc(p.email || '') + '</span></div>'
+    + '<div class="pc-tit"><h3>' + mEsc(a ? (a.trade_name || a.legal_name || '—') : (c.rec && c.rec.company_name) || String(p.email || '').split('@')[0]) + '</h3><span>' + mEsc(p.email || '') + '</span></div>'
     + '<button type="button" class="me-x" data-pc="close" aria-label="' + mEsc(pcT('close')) + '">×</button></div>'
     + (c.err ? '<p class="error">' + mEsc(c.err) + '</p>' : '') + (c.msg ? '<p class="me-msg ok">' + mEsc(c.msg) + '</p>' : '')
     + '<h4>' + mEsc(pcT('person')) + '</h4><div class="pc-grid">'
     + ro(pcT('email'), mEsc(p.email || '—')) + ro(pcT('role'), mEsc(papel)) + ro(pcT('last'), mEsc(ultimo))
     + ro(pcT('projs'), Number(p.n_projects) || 0) + ro(pcT('orders'), Number(p.n_orders) || 0) + ro(pcT('active'), mEsc(p.active === false ? pcT('offv') : pcT('on'))) + '</div>';
-  if (a) {
+  if (c.proprio) {
+    const r = c.rec || {}; const tx = r.tax_exempt_status || 'none';
+    h += (c.loja ? '<p class="hint">' + mEsc(pcT('own_hint', { loja: c.loja })) + '</p>' : '<p class="hint">' + mEsc(pcT('own_hint2')) + '</p>');
+    if (c.recOk) {
+      h += '<h4>' + mEsc(pcT('own')) + '</h4><div class="pc-grid">'
+        + inp('r_company_name', pcT('trade'), r.company_name, 'text', { w: 'w2' }) + inp('r_legal_name', pcT('legal'), r.legal_name, 'text', { w: 'w2' })
+        + inp('r_contact_name', pcT('contact'), r.contact_name) + inp('r_phone', pcT('phone'), r.phone, 'tel') + inp('r_billing_email', pcT('bemail'), r.billing_email, 'email') + inp('r_website', pcT('site'), r.website)
+        + inp('r_line1', pcT('l1'), r.line1, 'text', { w: 'w2' }) + inp('r_line2', pcT('l2'), r.line2, 'text', { w: 'w2' })
+        + inp('r_city', pcT('city'), r.city, 'text', { w: 'w2' }) + inp('r_state', pcT('state'), r.state) + inp('r_zip', pcT('zip'), r.zip)
+        + '</div><h4>' + mEsc(pcT('tax')) + '</h4><div class="pc-grid">'
+        + '<label class="pc-f"><span>' + mEsc(pcT('tstatus')) + '</span><select id="pc-r_tax_exempt_status">' + ['none', 'pending', 'valid', 'expired', 'rejected'].map((v) => '<option value="' + v + '"' + (v === tx ? ' selected' : '') + '>' + mEsc(pcT('ts_' + v)) + '</option>').join('') + '</select></label>'
+        + inp('r_tax_exempt_valid_until', pcT('tuntil'), r.tax_exempt_valid_until || '', 'date') + inp('r_tax_exempt_state', pcT('tstate'), r.tax_exempt_state) + inp('r_tax_exempt_number', pcT('tnum'), r.tax_exempt_number)
+        + '</div><p class="hint">' + mEsc(pcT('tax_info')) + '</p>'
+        + '<label class="pc-f" style="margin-top:8px"><span>' + mEsc(pcT('notes')) + '</span><input id="pc-r_notes" type="text" value="' + mEsc(r.notes || '') + '"></label>';
+    }
+  } else if (a) {
     const tx = a.tax_exempt_status || 'none';
     h += '<h4>' + mEsc(pcT('store')) + (a.kind !== 'factory' ? ' <a class="pc-erp" href="erp/index.html#/dealers/' + mEsc(a.id) + '" target="_blank" rel="noopener">' + mEsc(pcT('erp')) + '</a>' : '') + '</h4>'
       + (p.member_role !== 'owner' ? '<p class="hint">' + mEsc(pcT('shared', { loja: a.trade_name || a.legal_name || '—' })) + '</p>' : '')
@@ -1045,7 +1127,19 @@ async function mePersonSave() {
   const num = (id) => Math.max(0, Math.min(100, Number(v(id)) || 0));
   c.busy = true; c.err = ''; c.msg = '';
   try {
-    if (c.acc) {
+    if (c.proprio) {
+      if (!c.recOk) throw new Error(pcT('need321'));
+      const up = { user_id: c.p.user_id };
+      ['company_name', 'legal_name', 'contact_name', 'phone', 'billing_email', 'website', 'line1', 'line2', 'city', 'state', 'zip', 'tax_exempt_state', 'tax_exempt_number', 'notes']
+        .forEach((k) => { const x = v('r_' + k); if (x !== null) up[k] = x || null; });
+      up.tax_exempt_status = v('r_tax_exempt_status') || 'none';
+      up.tax_exempt_valid_until = v('r_tax_exempt_valid_until') || null;
+      if (up.tax_exempt_status === 'valid' && !up.tax_exempt_valid_until) throw new Error(pcT('need_until'));
+      const r = await supabaseClient.from('person_records').upsert(up, { onConflict: 'user_id' }).select('*').maybeSingle();
+      if (r.error) throw r.error;
+      if (!r.data) throw new Error('RLS');
+      c.rec = r.data;
+    } else if (c.acc) {
       const up = {};
       PC_ACC.forEach((k) => { const x = v(k); if (x !== null) up[k] = x || null; });
       if (!up.trade_name) up.trade_name = c.acc.trade_name;        // nome da loja nunca fica vazio
@@ -1158,4 +1252,4 @@ function mePpInput(e) {
   const n = document.getElementById('pp-q'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (er) { /* ok */ } }
 }
 
-window.LegnoMinhaEmpresa = { abrir: openMyCompany, ligado: meOn, marcarPerdido: markProjectsLost, reabrir: reopenLostProjects, motivo: (r) => mT('r_' + (r || 'null')) };
+window.LegnoMinhaEmpresa = { cadastro: mePersonOpen, tipoHtml: (uid, k) => { meCss(); return meKindSelect(uid, k); }, abrir: openMyCompany, ligado: meOn, marcarPerdido: markProjectsLost, reabrir: reopenLostProjects, motivo: (r) => mT('r_' + (r || 'null')) };
