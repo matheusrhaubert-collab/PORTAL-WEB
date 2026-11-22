@@ -111,6 +111,11 @@ function cEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => 
 function cMoney(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function cDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleDateString(cxLang() === 'pt' ? 'pt-BR' : cxLang() === 'es' ? 'es' : 'en-US', { year: '2-digit', month: 'short', day: '2-digit' }); }
 function cxMe() { return (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null; }
+// VENDEDOR SÓ VÊ O PREÇO FINAL (21/11, Matt: "o vendedor não pode enxergar
+// nenhuma margem, ele só vê o preço final"): pra cxSeller() nenhuma coluna de
+// tabela, desconto, líquido de fábrica, tax ou total da invoice — só UMA
+// coluna "Client price" (o._v = custo da loja × margem dele + extras). Nunca
+// mostrar pra vendedor: o._l, o._d, o._n, o._tx, o._it, % de margem.
 function cxSeller() { return typeof isSellerAccount === 'function' && isSellerAccount(); }
 // STATUS COLORIDO do pedido (etiquetas .mp-chip do css/style.css, as do painel
 // antigo): wait = Waiting approval · pay = Waiting release · prod = Scheduled
@@ -848,8 +853,8 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
     + ' <span class="cx-fquem">' + cEsc(String(cxUserLabel(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
     + '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button><span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
-    + (enx ? '<td class="cx-facts cx-facts-l">' + fbtns + '</td>' + (preco ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td>' : '') + '<td colspan="3"></td></tr>'
-      : (preco ? cxSomaTds(itens, soProj) : '') + '<td colspan="3" class="cx-facts">' + fbtns + '</td></tr>');
+    + (enx ? '<td class="cx-facts cx-facts-l">' + fbtns + '</td>' + (preco ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td>' : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="3"></td></tr>'
+      : (preco ? cxSomaTds(itens, soProj) : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="3" class="cx-facts">' + fbtns + '</td></tr>');
 }
 // textos só desta parte (pasta na lista)
 const FD_TXT = {
@@ -1036,7 +1041,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
   const dentro = !!lin.dentro; const aberto = cxOrdOpen().has(o.id);
   const id = cEsc(o.id);
   const mini = (cx, rot, extra, tip) => '<button type="button" class="cx-mini' + (extra || '') + '" data-cx="' + cx + '" data-id="' + id + '"' + (tip ? ' title="' + cEsc(tip) + '"' : '') + '>' + cEsc(rot) + '</button>';
-  const temInv = s.invOk && !o._proj && o.status !== 'submitted';
+  const temInv = s.invOk && !o._proj && o.status !== 'submitted' && !cxSeller();   // invoice = valores de fábrica: vendedor não abre
   const libera = !cxAdmin() ? '' : (o._s === 'pay' ? ' ' + mini('relprod', cT('rel_prod'), ' cx-mini-go') : o._s === 'prod' ? ' ' + mini('relpick', cT('rel_pick'), ' cx-mini-go') : '');
   const inv = !temInv ? '—' : mini('inv', o.invoice_number || ivT('inv'), o.invoice_number ? ' cx-mini-ok' : '') + (o.qbo_invoice_id ? '<small class="cx-est" title="QuickBooks">QB</small>' : '');
   const pago = !!(o.paid_at || o.qbo_paid_at);
@@ -1053,7 +1058,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
     + '<td class="cx-stcell">' + cxStatusHtml(o) + (envia || '') + libera + '</td>'
     + '<td>' + inv + '</td>'
-    + (preco ? '<td class="cx-r"><b>' + (o._proj || o._it == null ? '—' : cEsc(cMoney(o._it))) + '</b></td>' : '')
+    + (preco ? '<td class="cx-r"><b>' + (o._proj || o._it == null ? '—' : cEsc(cMoney(o._it))) + '</b></td>' : cxSeller() ? '<td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>' : '')
     + '<td>' + pag + '</td><td>' + cxQuando(o._t) + '</td>'
     + '<td class="cx-r"><button type="button" class="cx-more' + (aberto ? ' is-on' : '') + '" data-cx="ordmore" data-id="' + id + '" title="' + cEsc(odT(aberto ? 'less' : 'more')) + '" aria-label="' + cEsc(odT('more')) + '">' + (aberto ? '▴' : '▾') + '</button></td></tr>';
   if (!aberto) return linha;
@@ -1094,9 +1099,9 @@ function cxFlatTable(rows, principal) {
   return '<div class="cx-inner"><table class="mp-table cx-table' + (principal ? ' cx-main' : '') + '"><thead><tr>'
     + (enx
       ? th('num', cT('c_no')) + th('loja', cT('c_store')) + th('nome', cT('c_item')) + th('etapa', cT('c_stage'), 0, 1)
-        + '<th>' + cEsc(ivT('inv')) + '</th>' + (preco ? th('it', ivT('inv_total'), 1) : '') + '<th>' + cEsc(odT('pay_col')) + '</th>' + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
+        + '<th>' + cEsc(ivT('inv')) + '</th>' + (preco ? th('it', ivT('inv_total'), 1) : cxSeller() ? th('v', cT('sale'), 1) : '') + '<th>' + cEsc(odT('pay_col')) + '</th>' + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
       : th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item'))
-        + (preco ? cxPrecoThs(th, soProj) : '')
+        + (preco ? cxPrecoThs(th, soProj) : cxSeller() ? th('v', cT('sale'), 1) : '')
         + th('etapa', cT('c_stage'), 0, 1) + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>')
     + (() => {
       // sequência da tela: linha da pasta + os itens dela (na ordem escolhida);
@@ -1131,7 +1136,7 @@ function cxFlatTable(rows, principal) {
         + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
         + '<td class="cx-quem" title="' + cEsc(quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
         + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '" title="' + cEsc(ivT('folder_tip')) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
-        + (!preco ? '' : soProj
+        + (!preco ? (cxSeller() ? '<td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>' : '') : soProj
           ? '<td class="cx-r">' + (o._n != null ? (o._d ? '<small class="cx-est" title="' + cEsc(cT('list') + ' ' + cMoney(o._l)) + '">−' + o._d + '%</small> ' : '') + cEsc(cMoney(o._n)) : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
           : '<td class="cx-r">' + (o._proj ? (o._l ? '<span class="cx-est" title="' + cEsc(cT('est_tip')) + '">' + cEsc(cMoney(o._l)) + ' <small>' + cEsc(cT('est')) + '</small></span>' : '—') : cEsc(cMoney(o._l))) + '</td>'
           + '<td class="cx-r">' + (o._d != null && !o._proj ? o._d + '%' : '—') + '</td><td class="cx-r">' + (o._n != null && !o._proj ? cEsc(cMoney(o._n)) : '—') + '</td>'
@@ -1143,7 +1148,7 @@ function cxFlatTable(rows, principal) {
           + (window.LegnoMinhaEmpresa && (cxAdmin() || o.client_user_id === cxMe()) ? '<div class="cx-plost"><button type="button" class="cx-mini cx-mini-lost" data-cx="lost" data-ids="' + cEsc(o._pid) + '" data-nome="' + cEsc(o._pname || o.po_name || '') + '">' + cEsc(odT('lost_btn')) + '</button>'
             + (o._old ? ' <span class="hint">' + cEsc(odT('old_hint').replace('{n}', CX_INATIVO_DIAS)) + '</span>' : '') + '</div>' : '')
           + '</td></tr>' : '');
-    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && rows.length ? (enx ? '<tfoot><tr class="cx-tot"><td colspan="5">' + cEsc(cT('sum', { n: rows.length })) + '</td><td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td><td colspan="3"></td></tr></tfoot>' : cxTotalRow(rows, 4, 3, soProj)) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
+    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (!preco && cxSeller() && rows.length ? '<tfoot><tr class="cx-tot"><td colspan="' + (enx ? 5 : 4) + '">' + cEsc(cT('sum', { n: rows.length })) + '</td>' + '<td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' + '<td colspan="3"></td></tr></tfoot>' : '') + (preco && rows.length ? (enx ? '<tfoot><tr class="cx-tot"><td colspan="5">' + cEsc(cT('sum', { n: rows.length })) + '</td><td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td><td colspan="3"></td></tr></tfoot>' : cxTotalRow(rows, 4, 3, soProj)) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o

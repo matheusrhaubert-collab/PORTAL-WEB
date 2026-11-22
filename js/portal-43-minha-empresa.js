@@ -36,7 +36,7 @@
 // Carregado depois do portal-42.
 
 const ME_SO_ADMIN = true;
-const DESCONTO_SO_FABRICA = false;
+const DESCONTO_SO_FABRICA = true;   // 21/11: ligado (Matt: "trava o desconto pro lojista, só adm pode dar") — par da migration 309
 const ME_LOST_REASONS = ['price', 'lead_time', 'client_gave_up', 'competitor', 'other'];
 const meState = { tab: 'painel', card: null, acc: null, tree: [], team: [], projects: [], orders: [], reqs: [], busy: false, msg: '', err: '', loaded: false, hasLost: true };
 
@@ -77,7 +77,7 @@ const ME_TXT = {
     disc_title: 'Desconto de fábrica', disc_by: 'definido pela Legno', disc_ask: 'Solicitar desconto', disc_want: 'Desconto desejado (%)', disc_reason: 'Motivo (volume, projeto, condição…)',
     disc_send: 'Enviar pedido', disc_sent: 'Pedido enviado. A Legno vai analisar.', disc_pending: 'Pedido em análise: {p}% (enviado em {d})',
     disc_hist: 'Pedidos anteriores', ds_approved: 'aprovado', ds_rejected: 'recusado', ds_cancelled: 'substituído', ds_pending: 'em análise',
-    disc_readonly: 'Definido pela Legno. Pra alterar, use "Solicitar desconto" em Minha empresa.',
+    disc_readonly: 'Definido pela Legno. Pra alterar, use "Solicitar desconto" em Minha empresa.', disc_readonly_c: 'Definido pela Legno. Pra alterar, fale com sales@legnocabinets.com.',
     margin_title: 'Margem de revenda e extras', margin_now: 'Margem bruta atual: {m}%', margin_open: 'Abrir margens', margin_hint: 'Margem, frete, comissão, montagem e outros extras do seu preço de venda.',
     brand_title: 'Logo e dados da loja', brand_hint: 'A logo e o nome aparecem no cabeçalho e nas propostas.', brand_open: 'Abrir configurações da loja',
     comp_hint: 'Cadastro pra invoice, contrato e tax exemption.', comp_open: 'Abrir ficha da empresa',
@@ -106,7 +106,7 @@ const ME_TXT = {
     disc_title: 'Factory discount', disc_by: 'set by Legno', disc_ask: 'Request a discount', disc_want: 'Requested discount (%)', disc_reason: 'Reason (volume, project, terms…)',
     disc_send: 'Send request', disc_sent: 'Request sent. Legno will review it.', disc_pending: 'Request under review: {p}% (sent on {d})',
     disc_hist: 'Previous requests', ds_approved: 'approved', ds_rejected: 'declined', ds_cancelled: 'replaced', ds_pending: 'under review',
-    disc_readonly: 'Set by Legno. To change it, use "Request a discount" in My company.',
+    disc_readonly: 'Set by Legno. To change it, use "Request a discount" in My company.', disc_readonly_c: 'Set by Legno. To change it, contact sales@legnocabinets.com.',
     margin_title: 'Resale margin and extras', margin_now: 'Current gross margin: {m}%', margin_open: 'Open margins', margin_hint: 'Margin, freight, commission, installation and other extras of your selling price.',
     brand_title: 'Logo and store details', brand_hint: 'Your logo and name show in the header and on proposals.', brand_open: 'Open store settings',
     comp_hint: 'Invoice details, agreement and tax exemption.', comp_open: 'Open company file',
@@ -135,7 +135,7 @@ const ME_TXT = {
     disc_title: 'Descuento de fábrica', disc_by: 'definido por Legno', disc_ask: 'Solicitar descuento', disc_want: 'Descuento deseado (%)', disc_reason: 'Motivo (volumen, proyecto, condición…)',
     disc_send: 'Enviar solicitud', disc_sent: 'Solicitud enviada. Legno la revisará.', disc_pending: 'Solicitud en revisión: {p}% (enviada el {d})',
     disc_hist: 'Solicitudes anteriores', ds_approved: 'aprobada', ds_rejected: 'rechazada', ds_cancelled: 'reemplazada', ds_pending: 'en revisión',
-    disc_readonly: 'Definido por Legno. Para cambiarlo, use "Solicitar descuento" en Mi empresa.',
+    disc_readonly: 'Definido por Legno. Para cambiarlo, use "Solicitar descuento" en Mi empresa.', disc_readonly_c: 'Definido por Legno. Para cambiarlo, escriba a sales@legnocabinets.com.',
     margin_title: 'Margen de reventa y extras', margin_now: 'Margen bruto actual: {m}%', margin_open: 'Abrir márgenes', margin_hint: 'Margen, flete, comisión, instalación y otros extras de su precio de venta.',
     brand_title: 'Logo y datos de la tienda', brand_hint: 'El logo y el nombre aparecen en el encabezado y en las propuestas.', brand_open: 'Abrir configuración de la tienda',
     comp_hint: 'Datos de facturación, contrato y tax exemption.', comp_open: 'Abrir ficha de la empresa',
@@ -572,6 +572,8 @@ function meClick(e) {
         const msg = await meFnError(error, data);
         if (msg) throw new Error(msg);
         meState.msg = ppT(liberar ? 'done_unlock' : 'done_lock', { u: nome });
+        p.active = liberar;                                  // muda o cadeado na hora
+        meState.bloq = meState.bloq || {}; if (liberar) delete meState.bloq[u]; else meState.bloq[u] = true;
       } catch (er) { meState.err = (er && er.message) || String(er); }
       meState.busy = false; meState.loaded = false;
       await mePeopleLoad();
@@ -679,9 +681,11 @@ async function meRefreshButton() {
       if (!DESCONTO_SO_FABRICA || meIsAdmin()) return r;
       const inp = document.getElementById('po-margins-discount-input');
       if (inp && !inp.readOnly) {
-        inp.readOnly = true; inp.style.background = '#f1efe9'; inp.title = mT('disc_readonly');
+        // enquanto o Minha empresa é só admin, o dealer não tem o "Solicitar desconto": manda falar com a Legno
+        const aviso = mT(ME_SO_ADMIN ? 'disc_readonly_c' : 'disc_readonly');
+        inp.readOnly = true; inp.style.background = '#f1efe9'; inp.title = aviso;
         const lab = inp.closest('label');
-        if (lab) lab.insertAdjacentHTML('afterend', '<p class="po-money-sub">' + mEsc(mT('disc_readonly')) + '</p>');
+        if (lab) lab.insertAdjacentHTML('afterend', '<p class="po-money-sub">' + mEsc(aviso) + '</p>');
       }
       return r;
     };
@@ -806,12 +810,20 @@ function ppT(k, v) { const L = PP_TXT[String(meLang()).slice(0, 2)] || PP_TXT.en
 // { s: margem própria do vendedor | null, r: margem geral (do dealer) }.
 // meState.mgOk = false enquanto a 320 não rodou (campos somem).
 async function meLoadMargins() {
-  meState.mg = {}; meState.mgOk = false;
+  meState.mg = {}; meState.mgOk = false; meState.bloq = {};
   try {
-    const r = await supabaseClient.from('user_profiles').select('user_id, seller_margin_pct, resale_margin_pct').limit(5000);
+    // seller_active = a verdade do bloqueio (é o que a função dealer-create-seller
+    // grava). 21/11: o cadeado lia account_members.active, que nem sempre
+    // acompanha — bloqueava e o cadeado não mudava.
+    let r = await supabaseClient.from('user_profiles').select('user_id, seller_margin_pct, resale_margin_pct, seller_active').limit(5000);
+    const tem320 = !r.error;
+    if (r.error) r = await supabaseClient.from('user_profiles').select('user_id, resale_margin_pct, seller_active').limit(5000);
     if (r.error) return;
-    (r.data || []).forEach((x) => { meState.mg[x.user_id] = { s: x.seller_margin_pct == null ? null : Number(x.seller_margin_pct), r: Number(x.resale_margin_pct) || 0 }; });
-    meState.mgOk = true;
+    (r.data || []).forEach((x) => {
+      meState.mg[x.user_id] = { s: x.seller_margin_pct == null ? null : Number(x.seller_margin_pct), r: Number(x.resale_margin_pct) || 0 };
+      if (x.seller_active === false) meState.bloq[x.user_id] = true;
+    });
+    meState.mgOk = tem320;
   } catch (e) { /* sem a 320 */ }
 }
 async function meSetSellerMargin(userId, txt, inputEl) {
@@ -842,7 +854,10 @@ async function mePeopleLoad() {
     await meLoadMargins();
     const r = await supabaseClient.rpc('admin_people');
     if (r.error) { meState.people = []; meState.peopleErr = /admin_people|function|schema cache|PGRST202/i.test(r.error.message || '') ? ppT('need319') : (r.error.message || 'Erro'); }
-    else { meState.people = r.data || []; meState.peopleErr = ''; }
+    else {
+      meState.people = (r.data || []).map((x) => Object.assign({}, x, { active: x.active !== false && !(meState.bloq || {})[x.user_id] }));
+      meState.peopleErr = '';
+    }
     const tree = await supabaseClient.rpc('account_tree');
     if (!tree.error) meState.tree = tree.data || [];
   } catch (e) { meState.people = []; meState.peopleErr = (e && e.message) || String(e); }
