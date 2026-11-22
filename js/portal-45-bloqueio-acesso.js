@@ -18,7 +18,9 @@
 // Sem a migration 312 a RPC não existe e nada acontece.
 // Carregado por último (depois do portal-44).
 
-const ACESSO_BLOQUEIO_LIGADO = true;
+// DESLIGADO em 21/11 (Matt: "com essa estrutura isso não é mais necessário" — agora
+// o bloqueio é manual, pelo cadeado da árvore em My company › People). Religar: true.
+const ACESSO_BLOQUEIO_LIGADO = false;
 const acessoState = { checado: null };
 
 const ACESSO_TXT = {
