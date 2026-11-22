@@ -506,7 +506,7 @@ function meChange(e) {
   }
 }
 function meClick(e) {
-  if (e.target.id === 'po-me') return meClose();
+  if (e.target.id === 'po-me') { if (meState.tab === 'pessoas') return; return meClose(); }
   // aba Margens: botões do conteúdo trazido do modal Margens
   if (e.target.closest('#me-margins-slot')) {
     const salvar = e.target.closest('#po-margins-save-btn');
@@ -611,6 +611,12 @@ async function meRefreshButton() {
   await meLoadCard();
   if (!meState.cardOk) { if (btn) btn.style.display = 'none'; return; } // sem a migration 306
   const pode = meIsAdmin() || (meState.card && ['owner', 'manager', 'finance'].includes(meState.card.role));
+  // Duas chamadas ao mesmo tempo (login + temporizador) esperavam o cartão e
+  // cada uma criava o SEU botão = "My company" duas vezes na barra (21/11).
+  // Depois da espera: olha de novo e apaga qualquer repetido.
+  const todos = document.querySelectorAll('#po-company-btn');
+  btn = todos[0] || null;
+  for (let i = 1; i < todos.length; i++) todos[i].remove();
   if (!btn) {
     const ref = document.getElementById('po-margins-btn');
     if (!ref || !ref.parentNode) return;
@@ -853,17 +859,17 @@ const PC_TXT = {
   pt: { title: 'Cadastro', person: 'Pessoa', store: 'Empresa (loja)', email: 'E-mail', role: 'Função', last: 'Último acesso', never: 'nunca', projs: 'Projetos', orders: 'Pedidos', active: 'Acesso', on: 'ativo', offv: 'inativo',
     trade: 'Nome da empresa', legal: 'Razão social', contact: 'Contato', bemail: 'E-mail de cobrança', phone: 'Telefone', site: 'Site', l1: 'Endereço', l2: 'Complemento', city: 'Cidade', state: 'Estado', zip: 'ZIP',
     disc: 'Desconto de fábrica (%)', tax: 'Tax exemption', tstatus: 'Status', tuntil: 'Validade', tstate: 'Estado do certificado', tnum: 'Número', ts_none: 'Não tem', ts_pending: 'Em análise', ts_valid: 'Válido', ts_expired: 'Vencido', ts_rejected: 'Recusado',
-    logo: 'Logotipo', nologo: 'sem logotipo', save: 'Salvar', close: 'Fechar', saved: 'Salvo.', erp: 'Abrir no ERP ↗', shared: 'Estes dados são da loja "{loja}" — valem pro dealer e pra toda a equipe dela.', nostore: 'Esta pessoa não está em nenhuma loja. Arraste ela pra uma loja (ou pra "Tornar dealer") pra ter cadastro de empresa. Abaixo, os dados do perfil dela.',
+    logo: 'Logotipo', nologo: 'sem logotipo', save: 'Salvar', close: 'Fechar', saved: 'Salvo.', q_discard: 'Tem alteração sem salvar. Fechar mesmo assim?', erp: 'Abrir no ERP ↗', shared: 'Estes dados são da loja "{loja}" — valem pro dealer e pra toda a equipe dela.', nostore: 'Esta pessoa não está em nenhuma loja. Arraste ela pra uma loja (ou pra "Tornar dealer") pra ter cadastro de empresa. Abaixo, os dados do perfil dela.',
     pstore: 'Nome da loja (perfil)', need_until: 'Tax exemption válido precisa da validade.', loading: 'Carregando…', store_st: 'Situação da loja' },
   en: { title: 'Record', person: 'Person', store: 'Company (store)', email: 'E-mail', role: 'Role', last: 'Last access', never: 'never', projs: 'Projects', orders: 'Orders', active: 'Access', on: 'active', offv: 'inactive',
     trade: 'Company name', legal: 'Legal name', contact: 'Contact', bemail: 'Billing e-mail', phone: 'Phone', site: 'Website', l1: 'Address', l2: 'Address line 2', city: 'City', state: 'State', zip: 'ZIP',
     disc: 'Factory discount (%)', tax: 'Tax exemption', tstatus: 'Status', tuntil: 'Valid until', tstate: 'Certificate state', tnum: 'Number', ts_none: 'None', ts_pending: 'Under review', ts_valid: 'Valid', ts_expired: 'Expired', ts_rejected: 'Rejected',
-    logo: 'Logo', nologo: 'no logo', save: 'Save', close: 'Close', saved: 'Saved.', erp: 'Open in ERP ↗', shared: 'This is the record of the store "{loja}" — it applies to the dealer and the whole team.', nostore: 'This person is not in any store. Drag them into a store (or to "Make dealer") to have a company record. Below, their profile data.',
+    logo: 'Logo', nologo: 'no logo', save: 'Save', close: 'Close', saved: 'Saved.', q_discard: 'There are unsaved changes. Close anyway?', erp: 'Open in ERP ↗', shared: 'This is the record of the store "{loja}" — it applies to the dealer and the whole team.', nostore: 'This person is not in any store. Drag them into a store (or to "Make dealer") to have a company record. Below, their profile data.',
     pstore: 'Store name (profile)', need_until: 'A valid tax exemption needs the expiry date.', loading: 'Loading…', store_st: 'Store status' },
   es: { title: 'Ficha', person: 'Persona', store: 'Empresa (tienda)', email: 'E-mail', role: 'Función', last: 'Último acceso', never: 'nunca', projs: 'Proyectos', orders: 'Pedidos', active: 'Acceso', on: 'activo', offv: 'inactivo',
     trade: 'Nombre de la empresa', legal: 'Razón social', contact: 'Contacto', bemail: 'E-mail de cobro', phone: 'Teléfono', site: 'Sitio web', l1: 'Dirección', l2: 'Complemento', city: 'Ciudad', state: 'Estado', zip: 'ZIP',
     disc: 'Descuento de fábrica (%)', tax: 'Tax exemption', tstatus: 'Estado', tuntil: 'Validez', tstate: 'Estado del certificado', tnum: 'Número', ts_none: 'No tiene', ts_pending: 'En análisis', ts_valid: 'Válido', ts_expired: 'Vencido', ts_rejected: 'Rechazado',
-    logo: 'Logotipo', nologo: 'sin logotipo', save: 'Guardar', close: 'Cerrar', saved: 'Guardado.', erp: 'Abrir en el ERP ↗', shared: 'Estos datos son de la tienda "{loja}" — valen para el dealer y todo su equipo.', nostore: 'Esta persona no está en ninguna tienda. Arrástrela a una tienda (o a "Hacer dealer") para tener ficha de empresa. Abajo, los datos de su perfil.',
+    logo: 'Logotipo', nologo: 'sin logotipo', save: 'Guardar', close: 'Cerrar', saved: 'Guardado.', q_discard: 'Hay cambios sin guardar. ¿Cerrar de todos modos?', erp: 'Abrir en el ERP ↗', shared: 'Estos datos son de la tienda "{loja}" — valen para el dealer y todo su equipo.', nostore: 'Esta persona no está en ninguna tienda. Arrástrela a una tienda (o a "Hacer dealer") para tener ficha de empresa. Abajo, los datos de su perfil.',
     pstore: 'Nombre de la tienda (perfil)', need_until: 'Un tax exemption válido necesita la validez.', loading: 'Cargando…', store_st: 'Situación de la tienda' }
 };
 function pcT(k, v) { const L = PC_TXT[String(meLang()).slice(0, 2)] || PC_TXT.en; let t = L[k] != null ? L[k] : (PC_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x] == null ? '' : String(v[x])); }); return t; }
@@ -872,10 +878,19 @@ function pcEl() {
   let ov = document.getElementById('pp-card');
   if (!ov) {
     ov = document.createElement('div'); ov.id = 'pp-card';
+    // 21/11 (Matt: "sem querer clica fora e a tela fecha, perdi tudo que já tinha
+    // cadastrado"): clicar FORA não fecha mais. Só o × e o Fechar — e, com
+    // alteração sem salvar, pergunta antes.
     ov.addEventListener('click', (e) => {
-      if (e.target.id === 'pp-card' || e.target.closest('[data-pc="close"]')) { ov.style.display = 'none'; return; }
+      if (e.target.closest('[data-pc="close"]')) {
+        const c = meState.pc;
+        if (c && c.dirty && !confirm(pcT('q_discard'))) return;
+        ov.style.display = 'none'; return;
+      }
       if (e.target.closest('[data-pc="save"]')) mePersonSave();
     });
+    const suja = (e) => { if (meState.pc && e.target.closest('.pc-box')) meState.pc.dirty = true; };
+    ov.addEventListener('input', suja); ov.addEventListener('change', suja);
     document.body.appendChild(ov);
   }
   return ov;
@@ -960,10 +975,17 @@ async function mePersonSave() {
       if (r.error) throw r.error;
       if (r.data) c.prof = r.data;
     }
-    c.msg = pcT('saved');
+    c.msg = pcT('saved'); c.dirty = false;
     meState.loaded = false;
   } catch (e) { c.err = (e && e.message) || String(e); }
   c.busy = false;
+  if (c.err) {
+    // deu erro: NÃO redesenha (o que foi digitado continua nos campos)
+    const box = document.querySelector('#pp-card .pc-box'); const velho = box && box.querySelector('.pc-err');
+    if (velho) velho.remove();
+    if (box) { const pe = document.createElement('p'); pe.className = 'error pc-err'; pe.textContent = c.err; box.insertBefore(pe, box.querySelector('h4')); box.scrollIntoView({ block: 'start' }); }
+    return;
+  }
   mePersonRender();
   if (meState.tab === 'pessoas') meRender();
 }
