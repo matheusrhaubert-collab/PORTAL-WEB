@@ -1,8 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-// Bancada das migrations 330 + 331 (pagamento: Zelle / link, desconto na invoice; líquido com desconto de fábrica). PGlite.
-// Rodar (terminal, nesta pasta): node teste-pagamento.mjs   — precisa de `npm i @electric-sql/pglite` aqui, uma vez.
-import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url';
-const R = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+import fs from 'fs'; import path from 'path';
+const R = process.env.HOME + '/mnt/LEGNO PORTAL WEB';
 const DB = path.join(R, 'database');
 const db = new PGlite();
 const ex = (s) => db.exec(s); const q = async (s, p) => (await db.query(s, p)).rows;
@@ -19,6 +17,8 @@ const sql = fs.readFileSync(path.join(DB, 'migration_330_pagamento_zelle_e_desco
 await ex(sql); await ex(sql);
 const sql2 = fs.readFileSync(path.join(DB, 'migration_331_liquido_da_invoice_com_desconto_de_fabrica.sql'), 'utf8');
 await ex(sql2); await ex(sql2);
+const sql3 = fs.readFileSync(path.join(DB, 'migration_333_plano_de_pagamento_total_ou_50_50.sql'), 'utf8');
+await ex(sql3); await ex(sql3);
 let fails = 0; const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails++; };
 const U = {};
 for (const [k, role] of [['admin', 'administrador'], ['dA', 'lojista'], ['dX', 'lojista']]) {
@@ -92,4 +92,34 @@ await ex(`select set_config('legno.invoice_rpc','1',false); update orders set in
 await ex(sql2);
 r = (await q(`select * from orders where id=$1`, [o3]))[0];
 ok(Number(r.invoice_total) === 56.24 && Number(r.pay_discount_amount) === 3.59, 'a 331 conserta invoice gravada errada (140.60 → 56.24)');
+// PLANO (333): total antecipado × 50/50
+await as('admin', () => q(`select admin_set_sales_tax(7)`));
+const o4 = await novo(1000);
+await as('dA', () => q(`select order_stamp_invoice($1::uuid[])`, [[o4]]));
+await as('dA', () => q(`select order_choose_payment($1::uuid[], 'zelle', 'split')`, [[o4]]));
+r = (await q(`select * from orders where id=$1`, [o4]))[0];
+ok(r.pay_plan === 'split' && Number(r.pay_discount_pct) === 3 && r.pay_early === false && Number(r.invoice_total) === 1037.9, '50/50 por Zelle: só os 3% do Zelle → 1037,90');
+await as('dA', () => q(`select order_choose_payment($1::uuid[], 'link', 'split')`, [[o4]]));
+r = (await q(`select * from orders where id=$1`, [o4]))[0];
+ok(Number(r.pay_discount_pct) === 0 && Number(r.invoice_total) === 1070, '50/50 por QuickBooks/link: nenhum desconto → 1070');
+await as('dA', () => q(`select order_choose_payment($1::uuid[], 'link', 'full')`, [[o4]]));
+r = (await q(`select * from orders where id=$1`, [o4]))[0];
+ok(r.pay_plan === 'full' && Number(r.pay_discount_pct) === 3 && Number(r.invoice_total) === 1037.9, 'total antecipado por link: 3% → 1037,90');
+await as('dA', () => q(`select order_choose_payment($1::uuid[], 'zelle')`, [[o4]]));
+r = (await q(`select * from orders where id=$1`, [o4]))[0];
+ok(r.pay_plan === 'full' && Number(r.pay_discount_pct) === 6 && Number(r.invoice_total) === 1005.8, 'sem dizer o plano = total: Zelle + total = 6% → 1005,80');
+ok(/Só a fábrica|só mudam pelo botão/.test(await falha('dA', `update orders set pay_deposit_at = now() where id = $1`, [o4])), 'dealer não marca a própria entrada como paga');
+ok(/só mudam pelo botão/.test(await falha('dA', `update orders set pay_plan = 'split' where id = $1`, [o4])), 'dealer não troca o plano direto na tabela');
+await as('dA', () => q(`select order_choose_payment($1::uuid[], 'zelle', 'split')`, [[o4]]));
+await as('admin', () => q(`update orders set pay_deposit_at = now() where id = $1`, [o4]));
+ok(/entrada deste pedido já foi paga/.test(await falha('dA', `select order_choose_payment($1::uuid[], 'zelle', 'full')`, [[o4]])), 'entrada paga: o dealer não troca mais o plano');
+ok(/inválido/.test(await falha('admin', `select order_choose_payment($1::uuid[], 'zelle', 'xx')`, [[o4]])), 'plano inválido recusado');
+const o5 = await novo(1000);
+await as('dA', () => q(`select order_stamp_invoice($1::uuid[])`, [[o5]]));
+await as('dA', () => q(`select order_choose_payment($1::uuid[], 'wire', 'full')`, [[o5]]));
+r = (await q(`select * from orders where id=$1`, [o5]))[0];
+ok(r.pay_method === 'wire' && Number(r.pay_discount_pct) === 6 && Number(r.invoice_total) === 1005.8, 'wire total: mesmo desconto do Zelle (6%) → 1005,80');
+await as('admin', () => q(`select admin_set_wire_info($1)`, ['Bank X\nRouting 000']));
+ok(((await as('dA', () => q(`select factory_payment_terms() t`)))[0].t.wire_info || '').startsWith('Bank X'), 'dealer lê os dados do wire');
+ok(/Só admin/.test(await falha('dA', `select admin_set_wire_info('x')`)), 'dealer não muda os dados do wire');
 console.log(fails ? `\n${fails} FALHA(S)` : '\nTUDO CERTO'); process.exit(fails ? 1 : 0);

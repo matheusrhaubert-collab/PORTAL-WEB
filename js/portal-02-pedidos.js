@@ -1455,7 +1455,12 @@ document.getElementById('po-order-detail-back-btn').addEventListener('click', ()
 function orderPriceHtml(tableValue) {
   const v = Number(tableValue) || 0;
   if (isSellerAccount()) return formatMoney(getDisplayPrice(v));
-  const pct = getFactoryDiscountPct();
+  // 22/11: pedido já aprovado tem o desconto CONGELADO (orders.price_discount_pct, gatilho da 306, tirado do
+  // cadastro da LOJA) — é o que vale na invoice e na linha da Central. Sem isso a tela usava o desconto do
+  // perfil de quem está olhando e os dois números não batiam (Matt: 57% aqui × 60% na linha).
+  const ordAberto = typeof currentOrderDetail !== 'undefined' && currentOrderDetail && currentOrderDetail.order;
+  const congelado = ordAberto && ordAberto.price_discount_pct != null && ordAberto.status !== 'draft' && ordAberto.status !== 'submitted' ? Number(ordAberto.price_discount_pct) : null;
+  const pct = congelado != null ? congelado : getFactoryDiscountPct();
   if (!(pct > 0)) return formatMoney(v);
   return `<span class="po-price-table">${I18n.t('order_detail.table_price')} <s>${formatMoney(v)}</s></span>`
     + `<span class="po-price-discounted">${formatMoney(v * (1 - pct / 100))}</span>`

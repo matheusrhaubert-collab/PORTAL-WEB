@@ -788,6 +788,13 @@ async function cxLoadPricing(s, descConta) {
           if (error) { s.payOk = false; break; }
           (data || []).forEach((r) => { Object.assign(porId2[r.id], r); });
         }
+        // plano (total × 50/50) e entrada paga — migration 333; sem ela tudo segue como 'total'
+        s.planOk = false;
+        if (s.payOk) for (let i = 0; i < ids2.length; i += 150) {
+          const { data, error } = await sb.from('orders').select('id, pay_plan, pay_deposit_at').in('id', ids2.slice(i, i + 150));
+          if (error) break;
+          s.planOk = true; (data || []).forEach((r) => { Object.assign(porId2[r.id], r); });
+        }
       }
     } catch (e) { /* 330 não rodou */ }
   }
@@ -1189,14 +1196,24 @@ async function cxDeleteOrders(ids) {
 // apaga o pedido e o projeto descongela (nada do projeto se perde). Dono
 // sempre pode; admin em pedido de OUTRA conta precisa da migration 326 (sem
 // ela o banco devolve 0 linhas e a tela avisa).
-function cxPodeVoltar(o) { return !!(o && !o._proj && o.status === 'submitted' && o.source_project_id && (o.client_user_id === cxMe() || cxAdmin())); }
+// 22/11 (2ª rodada, Matt: "coloquei um projeto como ordem, quero voltar pra projeto, não achei o botão"):
+// o ENVIAR FÁBRICA já aprova na hora, então o pedido nunca fica 'submitted'. Volta também o APROVADO
+// enquanto a fábrica não liberou a produção e não há invoice / pagamento / comprovante / lote.
+function cxPodeVoltar(o) {
+  if (!o || o._proj || !o.source_project_id || !(o.client_user_id === cxMe() || cxAdmin())) return false;
+  if (o.status === 'submitted') return true;
+  if (o.status !== 'approved' || o.finance_released_at || o.pickup_released_at) return false;
+  if (o.paid_at || o.qbo_paid_at || o.pay_deposit_at || o.receipt_path || o.invoice_number || o.qbo_invoice_id) return false;
+  const t = ((cxState.scope || {}).track || {})[o.id];
+  return !(t && t.batch_code);
+}
 async function cxBackToProject(id) {
   const s = cxState.scope; const o = s && s.orders.find((x) => x.id === id);
   if (!cxPodeVoltar(o)) return;
   const T = (k) => (typeof I18n !== 'undefined' ? I18n.t(k) : k);
   if (!confirm(T('my_orders.back_to_project_confirm'))) return;
   try {
-    const { data, error } = await supabaseClient.from('orders').delete().eq('id', id).eq('status', 'submitted').select('id');
+    const { data, error } = await supabaseClient.from('orders').delete().eq('id', id).in('status', ['submitted', 'approved']).is('finance_released_at', null).select('id');
     if (error) throw error;
     if (!data || !data.length) return alert(o.client_user_id === cxMe() ? T('my_orders.back_to_project_not_pending') : odT('back_326'));
   } catch (e) { return alert((e && e.message) || String(e)); }
@@ -1292,7 +1309,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
   const parcial = !pago && o.qbo_invoice_id && o.qbo_balance != null && o._it != null && Number(o.qbo_balance) > 0 && Number(o.qbo_balance) < Number(o._it) - 0.005;
   const pag = !temInv ? '—'
     : pago ? '<span class="cx-paid">' + cEsc(odT('paid')) + '</span>'
-      : (cxPodePagar(o) ? mini('payopen', pyT('btn') + (o.pay_method ? ' · ' + pyT(o.pay_method) : ''), ' cx-mini-pay') : o.payment_link ? mini('paylink', ivT('pay'), ' cx-mini-pay') : '')
+      : (cxPodePagar(o) ? mini('payopen', pyT('btn') + (o.pay_method ? ' · ' + pyT(o.pay_method).split(' (')[0] : '') + (o.pay_plan === 'split' ? (o.pay_deposit_at ? ' · 50% ✓' : ' · 50/50') : ''), ' cx-mini-pay') : o.payment_link ? mini('paylink', ivT('pay'), ' cx-mini-pay') : '')
         + (parcial ? '<span class="cx-paid cx-paid-p">' + cEsc(qbT('partial', { v: cMoney(o.qbo_balance) })) + '</span>' : '')
         + (o.receipt_path ? mini('rcptview', ivT('rcpt_ok'), ' cx-mini-ok', odT('rcpt_sent')) : (!cxAdmin() && !cxSeller() ? mini('rcpt', ivT('rcpt')) : ''))
         + (!o.payment_link && !o.receipt_path && cxAdmin() && !cxPodePagar(o) ? '<small class="cx-est">' + cEsc(odT('no_link')) + '</small>' : '');
@@ -1722,6 +1739,8 @@ async function cxAdminRelease(id, qual) {
   if (!o || !cxAdmin()) return;
   const n = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : (o.po_name || '');
   const perdeCedo = qual === 'prod' && o.pay_early && o.pay_method && !o.paid_at && !o.qbo_paid_at;
+  // plano 50/50: a entrada deveria estar paga antes da produção (só avisa, quem decide é a fábrica)
+  if (qual === 'prod' && o.pay_plan === 'split' && !o.pay_deposit_at && !o.paid_at && !o.qbo_paid_at && !confirm(pyT('rel_dep_q'))) return;
   if (perdeCedo && !confirm(pyT('rel_warn', { p: cxPayTerms().e }))) return;
   if (!confirm(cT(qual === 'prod' ? 'rel_prod_q' : qual === 'done' ? 'rel_done_q' : 'rel_pick_q', { n }))) return;
   const agora = new Date().toISOString();
@@ -1735,7 +1754,7 @@ async function cxAdminRelease(id, qual) {
   if (error || !data || !data.length) { alert((error && error.message) || 'RLS'); return; }
   Object.assign(o, patch); o._s = cxStage(o);
   // produção liberada sem pagamento: refaz a conta sem o desconto de antecipado (a RPC olha finance_released_at)
-  if (perdeCedo) { try { const r = await supabaseClient.rpc('order_choose_payment', { p_orders: [id], p_method: o.pay_method }); if (!r.error) (r.data || []).forEach((row) => { if (row.id === id) { Object.assign(o, row); cxCalcTax(o, cxState.scope); } }); } catch (e2) { console.warn('[pagamento] recalcular sem antecipado', e2); } }
+  if (perdeCedo) { try { const r = await supabaseClient.rpc('order_choose_payment', { p_orders: [id], p_method: o.pay_method }); /* 2 parâmetros = plano total; só quem está no total tem pay_early */ if (!r.error) (r.data || []).forEach((row) => { if (row.id === id) { Object.assign(o, row); cxCalcTax(o, cxState.scope); } }); } catch (e2) { console.warn('[pagamento] recalcular sem antecipado', e2); } }
   mpRender();
 }
 
@@ -2090,8 +2109,10 @@ async function cxInvoice(ids) {
       + (sum('pay_discount_amount') > 0 ? '<tr><td>' + E(pyT('inv_line', { p: ped.every((o) => Number(o.pay_discount_pct) === Number(ped[0].pay_discount_pct)) ? Number(ped[0].pay_discount_pct) : '…' })) + '</td><td class="r">−' + E(cMoney(sum('pay_discount_amount'))) + '</td></tr>' : '')
       + '<tr><td>' + E(ivT('taxl')) + (ped.every((o) => Number(o.tax_pct) === 0) ? ' (' + E(ivT('exempt')) + ')' : ped[0].tax_pct != null ? ' (' + ped[0].tax_pct + '%)' : '') + '</td><td class="r">' + E(cMoney(sum('tax_amount'))) + '</td></tr>'
       + '<tr class="g"><td>' + E(ivT('total')) + '</td><td class="r">' + E(cMoney(sum('invoice_total'))) + '</td></tr></table>'
+      + (ped.some((o) => o.pay_plan === 'split') ? '<p style="margin-top:14px"><b>' + E(pyT('inv_split', { a: cMoney(Math.round(sum('invoice_total') * 50) / 100), b: cMoney(Math.round((sum('invoice_total') - Math.round(sum('invoice_total') * 50) / 100) * 100) / 100) })) + '</b></p>' : '')
+      + (ped.some((o) => o.pay_method === 'wire') && (cxState.scope.payTerms || {}).wire_info ? '<p style="margin-top:16px;white-space:pre-wrap"><b>Wire:</b>\n' + E(cxState.scope.payTerms.wire_info) + '\nmemo <b>' + E(data.invoice_number) + '</b></p>' : '')
       + (ped.some((o) => o.pay_method === 'zelle') && cxPayTerms().to ? '<p style="margin-top:16px"><b>Zelle:</b> ' + E(cxPayTerms().to) + (cxPayTerms().name ? ' (' + E(cxPayTerms().name) + ')' : '') + ' · memo <b>' + E(data.invoice_number) + '</b></p>' : '')
-      + (ped.some((o) => o.pay_method === 'zelle') ? '' : links.map((l) => '<a class="pay np" href="' + E(l) + '" target="_blank" rel="noopener">' + E(ivT('pay_online')) + '</a> ').join(''))
+      + (ped.some((o) => o.pay_method === 'zelle' || o.pay_method === 'wire') ? '' : links.map((l) => '<a class="pay np" href="' + E(l) + '" target="_blank" rel="noopener">' + E(ivT('pay_online')) + '</a> ').join(''))
       + '<p class="muted" style="margin-top:28px">' + E(ivT('terms')) + '</p></body></html>';
     if (w) { w.document.open(); w.document.write(html); w.document.close(); }
     cxSel().clear();
@@ -2162,19 +2183,78 @@ const PY_TXT = {
     paid: 'Este pedido ya figura como PAGADO.', mark_paid: 'Marcar como pagado', unmark: 'Deshacer pagado', mark_q: '¿Marcar el pedido {n} como PAGADO?\n\nVerifique antes que el dinero llegó a la cuenta.', unmark_q: '¿Quitar la marca de PAGADO del pedido {n}?', terms: '✎ Condiciones', t_z: 'Descuento de Zelle (%):', t_e: 'Descuento de pago anticipado (%):', t_to: 'Zelle de la fábrica (e-mail o teléfono):', t_name: 'Nombre que aparece en Zelle:', clear: 'Quitar forma de pago y descuento', clear_q: '¿Quitar la forma de pago y el descuento de este pedido? La factura vuelve al valor completo.',
     qbo_warn: 'Este pedido ya tiene factura en QuickBooks: el descuento NO fue allí. Ajuste la factura en QuickBooks a mano.', need330: 'Falta ejecutar la migration 330 en Supabase para usar el pago con descuento.', rel_warn: 'ATENCIÓN: este pedido tiene el descuento de pago anticipado ({p}%) y aún NO figura como pagado. Al liberar la producción ahora, ese descuento sale de la factura.\n\nSi el pago ya llegó, cancele y márquelo como pagado primero (botón Pagar).', inv_line: 'Descuento de pago ({p}%)', several: '{n} pedidos en esta factura' }
 };
+// 22/11 (migration 333): plano TOTAL × 50/50, wire, "link" passa a se chamar QuickBooks
+Object.assign(PY_TXT.pt, {
+  plan_h: '1. Quanto você paga agora?', how: '2. Como você vai pagar?',
+  frisa: 'ATENÇÃO: o desconto de {p}% é só pra quem paga o pedido INTEIRO ANTES de a fábrica liberar a produção. Pagou depois, ou pagou só a entrada, não tem esse desconto.',
+  frisa_tarde: 'A produção deste pedido já foi liberada: o desconto de {p}% de pagamento total antecipado não vale mais.',
+  plan_full: 'Pagamento total antecipado', plan_full_sub: '100% agora, antes da produção', plan_full_late: '100% agora · sem o desconto (produção já liberada)',
+  plan_split: '50% de entrada + 50% antes de carregar', plan_split_sub: 'sem o desconto de pagamento total',
+  zelle_sub: 'direto na conta, sem intermediário · envie o comprovante',
+  wire: 'Wire (transferência bancária)', wire_sub: 'envie o comprovante · pode levar alguns dias úteis pra entrar na conta da fábrica',
+  link: 'QuickBooks', link_sub: 'cartão ou banco, pelo link enviado pela fábrica · sem desconto de forma de pagamento', link_none: 'A fábrica ainda não colocou o link do QuickBooks neste pedido.',
+  d_zelle: 'Desconto Zelle / Wire ({p}%)', d_early: 'Desconto pagamento total antecipado ({p}%)',
+  dep_now: 'Entrada (50%) — agora', dep_later: 'Saldo (50%) — antes de carregar',
+  wto: 'Dados pra enviar o wire', wto_none: 'A fábrica ainda não cadastrou os dados do wire. Fale com a fábrica antes de enviar.',
+  wire_slow: 'O wire pode demorar pra entrar na conta. A baixa (e o que depende dela) só acontece quando o dinheiro entrar — envie com antecedência.',
+  dep: 'Marcar entrada paga', undep: 'Desfazer entrada', dep_q: 'Marcar a ENTRADA (50%) do pedido {n} como paga?\n\nConfira antes se o dinheiro entrou na conta.', undep_q: 'Tirar a marca de entrada paga do pedido {n}?',
+  wire_edit: '✎ Dados do wire', wire_q: 'Dados bancários pro wire (banco, routing, conta, beneficiário). Separe as linhas com " | ":',
+  need333: 'Falta rodar a migration 333 no Supabase pra usar o plano 50/50 e o wire.',
+  rel_dep_q: 'Este pedido está no plano 50% + 50% e a ENTRADA ainda não está marcada como paga.\n\nLiberar a produção mesmo assim?',
+  inv_split: 'Plano: 50% de entrada ({a}) + 50% antes de carregar ({b}).'
+});
+Object.assign(PY_TXT.en, {
+  plan_h: '1. How much do you pay now?', how: '2. How will you pay?',
+  frisa: 'IMPORTANT: the {p}% discount is only for paying the FULL order BEFORE the factory releases production. Paying later, or paying only the deposit, does not get this discount.',
+  frisa_tarde: 'Production of this order has already been released: the {p}% full-payment discount no longer applies.',
+  plan_full: 'Full payment in advance', plan_full_sub: '100% now, before production', plan_full_late: '100% now · no discount (production already released)',
+  plan_split: '50% deposit + 50% before loading', plan_split_sub: 'no full-payment discount',
+  zelle_sub: 'straight to the account, no intermediary · send the receipt',
+  wire: 'Wire transfer', wire_sub: 'send the receipt · may take a few business days to reach the factory account',
+  link: 'QuickBooks', link_sub: 'card or bank, through the link sent by the factory · no payment-method discount', link_none: 'The factory has not added the QuickBooks link to this order yet.',
+  d_zelle: 'Zelle / Wire discount ({p}%)', d_early: 'Full payment in advance discount ({p}%)',
+  dep_now: 'Deposit (50%) — now', dep_later: 'Balance (50%) — before loading',
+  wto: 'Wire instructions', wto_none: 'The factory has not registered the wire details yet. Contact the factory before sending.',
+  wire_slow: 'A wire can take time to arrive. The payment is only confirmed when the money reaches the account — send it in advance.',
+  dep: 'Mark deposit paid', undep: 'Undo deposit', dep_q: 'Mark the DEPOSIT (50%) of order {n} as paid?\n\nCheck first that the money reached the account.', undep_q: 'Remove the deposit-paid mark from order {n}?',
+  wire_edit: '✎ Wire details', wire_q: 'Bank details for the wire (bank, routing, account, beneficiary). Separate lines with " | ":',
+  need333: 'Migration 333 must be run in Supabase to use the 50/50 plan and wire.',
+  rel_dep_q: 'This order is on the 50% + 50% plan and the DEPOSIT is not marked as paid yet.\n\nRelease production anyway?',
+  inv_split: 'Plan: 50% deposit ({a}) + 50% before loading ({b}).'
+});
+Object.assign(PY_TXT.es, {
+  plan_h: '1. ¿Cuánto paga ahora?', how: '2. ¿Cómo va a pagar?',
+  frisa: 'ATENCIÓN: el descuento de {p}% es solo para quien paga el pedido COMPLETO ANTES de que la fábrica libere la producción. Si paga después, o paga solo el anticipo, no tiene ese descuento.',
+  frisa_tarde: 'La producción de este pedido ya fue liberada: el descuento de {p}% por pago total anticipado ya no aplica.',
+  plan_full: 'Pago total anticipado', plan_full_sub: '100% ahora, antes de la producción', plan_full_late: '100% ahora · sin descuento (producción ya liberada)',
+  plan_split: '50% de anticipo + 50% antes de cargar', plan_split_sub: 'sin el descuento de pago total',
+  zelle_sub: 'directo a la cuenta, sin intermediario · envíe el comprobante',
+  wire: 'Wire (transferencia bancaria)', wire_sub: 'envíe el comprobante · puede tardar algunos días hábiles en llegar a la cuenta de la fábrica',
+  link: 'QuickBooks', link_sub: 'tarjeta o banco, por el enlace enviado por la fábrica · sin descuento por forma de pago', link_none: 'La fábrica aún no puso el enlace de QuickBooks en este pedido.',
+  d_zelle: 'Descuento Zelle / Wire ({p}%)', d_early: 'Descuento pago total anticipado ({p}%)',
+  dep_now: 'Anticipo (50%) — ahora', dep_later: 'Saldo (50%) — antes de cargar',
+  wto: 'Datos para enviar el wire', wto_none: 'La fábrica aún no registró los datos del wire. Hable con la fábrica antes de enviar.',
+  wire_slow: 'El wire puede tardar en llegar. El pago solo se confirma cuando el dinero entra en la cuenta — envíelo con anticipación.',
+  dep: 'Marcar anticipo pagado', undep: 'Deshacer anticipo', dep_q: '¿Marcar el ANTICIPO (50%) del pedido {n} como pagado?\n\nVerifique antes que el dinero entró en la cuenta.', undep_q: '¿Quitar la marca de anticipo pagado del pedido {n}?',
+  wire_edit: '✎ Datos del wire', wire_q: 'Datos bancarios para el wire (banco, routing, cuenta, beneficiario). Separe las líneas con " | ":',
+  need333: 'Falta ejecutar la migration 333 en Supabase para usar el plan 50/50 y el wire.',
+  rel_dep_q: 'Este pedido está en el plan 50% + 50% y el ANTICIPO aún no está marcado como pagado.\n\n¿Liberar la producción igual?',
+  inv_split: 'Plan: 50% de anticipo ({a}) + 50% antes de cargar ({b}).'
+});
 function pyT(k, v) { const L = PY_TXT[cxLang()] || PY_TXT.en; let t = L[k] != null ? L[k] : (PY_TXT.en[k] || k); Object.keys(v || {}).forEach((x) => { t = t.split('{' + x + '}').join(v[x] == null ? '' : String(v[x])); }); return t; }
 function cxPayTerms() { const t = (cxState.scope || {}).payTerms || {}; return { z: t.zelle_pct != null ? Number(t.zelle_pct) : 3, e: t.early_pct != null ? Number(t.early_pct) : 3, to: t.zelle_to || '', name: t.zelle_name || '' }; }
 function cxPodePagar(o) { const s = cxState.scope || {}; return !!(o && !o._proj && s.invOk && s.payOk && o.status !== 'submitted' && !cxSeller() && (cxAdmin() || o.client_user_id === cxMe() || (s.team && s.team[o.client_user_id]))); }
 // todos os pedidos da mesma invoice (a escolha vale pra invoice inteira)
 function cxPayGrupo(o) { const s = cxState.scope; return o.invoice_number ? s.orders.filter((x) => !x._proj && x.invoice_number === o.invoice_number) : [o]; }
 function cxPayNet(o) { return o._n != null ? Number(o._n) : (Number(o._l) || 0); }
-// prévia na tela (mesma conta da RPC order_choose_payment)
-function cxPayPrevia(grupo, metodo) {
+// prévia na tela (mesma conta da RPC order_choose_payment, migrations 330/331/333)
+// metodo: 'zelle' | 'wire' | 'link' (QuickBooks). plano: 'full' (tudo antes da produção) | 'split' (50% + 50%).
+function cxPayPrevia(grupo, metodo, plano) {
   const s = cxState.scope; const T = cxPayTerms();
   let net = 0, dz = 0, de = 0, tax = 0, algumCedo = false, todosIsentos = true;
   grupo.forEach((o) => {
     const n = cxPayNet(o); const cedo = !o.finance_released_at;
-    const pz = metodo === 'zelle' ? T.z : 0; const pe = cedo ? T.e : 0;
+    const pz = metodo === 'zelle' || metodo === 'wire' ? T.z : 0; const pe = plano === 'full' && cedo ? T.e : 0;
     const desc = Math.round(n * (pz + pe)) / 100;
     const taxPct = o.tax_pct != null ? Number(o.tax_pct) : (cxIsento(o, s) ? 0 : Number(s.taxPct) || 0);
     if (taxPct > 0) todosIsentos = false;
@@ -2191,7 +2271,11 @@ function cxPayEl() {
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10005;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto';
     // clicar fora NÃO fecha (regra de formulário)
     ov.addEventListener('click', (e) => { const b = e.target.closest('[data-py]'); if (b) { e.stopPropagation(); cxPayClick(b.getAttribute('data-py'), b); } });
-    ov.addEventListener('change', (e) => { if (e.target && e.target.name === 'cx-pay-m') { cxState.pay.metodo = e.target.value; cxPayRender(); } });
+    ov.addEventListener('change', (e) => {
+      if (!e.target || !cxState.pay) return;
+      if (e.target.name === 'cx-pay-m') { cxState.pay.metodo = e.target.value; cxPayRender(); }
+      if (e.target.name === 'cx-pay-p') { cxState.pay.plano = e.target.value; cxPayRender(); }
+    });
     document.body.appendChild(ov);
   }
   return ov;
@@ -2201,7 +2285,7 @@ function cxPayOpen(id) {
   if (!o) return;
   if (!s.payOk) { if (o.payment_link) window.open(o.payment_link, '_blank', 'noopener'); else alert(pyT('need330')); return; }
   if (!cxPodePagar(o)) return;
-  cxState.pay = { id, metodo: o.pay_method || 'zelle', msg: '', err: '', busy: false };
+  cxState.pay = { id, metodo: o.pay_method || 'zelle', plano: o.pay_plan || 'full', msg: '', err: '', busy: false };
   cxPayRender();
 }
 function cxPayRender() {
@@ -2209,42 +2293,62 @@ function cxPayRender() {
   const o = s.orders.find((x) => x.id === st.id); if (!o) return;
   const ov = cxPayEl(); const T = cxPayTerms(); const E = cEsc;
   const grupo = cxPayGrupo(o); const pago = grupo.some((x) => x.paid_at || x.qbo_paid_at);
+  const entradaPaga = grupo.every((x) => x.pay_deposit_at);
   const no = Number(o.factory_number) > 0 ? String(Number(o.factory_number)).padStart(5, '0') : (o.po_name || '');
   const link = (grupo.find((x) => x.payment_link) || {}).payment_link || '';
-  if (st.metodo === 'link' && !link && !o.pay_method) st.metodo = 'zelle';
-  const p = cxPayPrevia(grupo, st.metodo);
-  const escolhido = !!o.pay_method && o.pay_method === st.metodo && grupo.every((x) => x.pay_method === o.pay_method);
+  const wire = ((s.payTerms || {}).wire_info) || '';
+  const p = cxPayPrevia(grupo, st.metodo, st.plano);
+  const planoGravado = o.pay_plan || 'full';
+  const escolhido = !!o.pay_method && o.pay_method === st.metodo && planoGravado === st.plano && grupo.every((x) => x.pay_method === o.pay_method && (x.pay_plan || 'full') === planoGravado);
   const totalGravado = grupo.reduce((t, x) => t + (Number(x.invoice_total) || 0), 0);
+  const total = pago || escolhido ? totalGravado : p.total;
+  const r2 = (v) => Math.round(v * 100) / 100; const metade = r2(total / 2);
+  const travado = pago || (entradaPaga && !cxAdmin());
   const lin = (rot, val, cls) => '<div class="py-l' + (cls ? ' ' + cls : '') + '"><span>' + E(rot) + '</span><b>' + val + '</b></div>';
-  const op = (v, tit, sub, dis) => '<label class="py-op' + (st.metodo === v ? ' on' : '') + (dis ? ' off' : '') + '"><input type="radio" name="cx-pay-m" value="' + v + '"' + (st.metodo === v ? ' checked' : '') + (dis || pago ? ' disabled' : '') + '><span><b>' + E(tit) + '</b><small>' + E(sub) + '</small></span></label>';
+  const op = (nome, v, atual, tit, sub, selo) => '<label class="py-op' + (atual === v ? ' on' : '') + '"><input type="radio" name="' + nome + '" value="' + v + '"' + (atual === v ? ' checked' : '') + (travado ? ' disabled' : '') + '><span><b>' + E(tit) + (selo ? ' <i class="py-tag">' + E(selo) + '</i>' : '') + '</b><small>' + E(sub) + '</small></span></label>';
+  const comp = (o.receipt_path ? '<p class="py-ok">' + E(pyT('attached')) + '</p>' : '')
+    + '<button type="button" class="py-go" data-py="attach">' + E(o.receipt_path ? '↻ ' + pyT('attach') : pyT('attach')) + '</button>';
   ov.innerHTML = '<div class="py-box" role="dialog" aria-modal="true">'
     + '<div class="py-head"><div><h3>' + E(pyT('title')) + ' — ' + E(pyT('order')) + ' ' + E(no) + '</h3><span class="hint">' + E([o.invoice_number, o.po_name, grupo.length > 1 ? pyT('several', { n: grupo.length }) : ''].filter(Boolean).join(' · ')) + '</span></div>'
     + '<button type="button" class="secondary py-x" data-py="close">×</button></div>'
     + (st.err ? '<p class="error">' + E(st.err) + '</p>' : '') + (st.msg ? '<p class="py-ok">' + E(st.msg) + '</p>' : '')
-    + (pago ? '<p class="py-ok">' + E(pyT('paid')) + '</p>' : '<h5>' + E(pyT('how')) + '</h5>'
-      + op('zelle', pyT('zelle'), pyT('zelle_sub', { p: T.z }))
-      + op('link', pyT('link'), link ? pyT('link_sub') : pyT('link_none'), !link))
+    + (pago ? '<p class="py-ok">' + E(pyT('paid')) + '</p>' : '')
+    // 1) PLANO — o desconto é de quem paga TUDO ANTES da produção
+    + '<h5>' + E(pyT('plan_h')) + '</h5>'
+    + '<p class="py-frisa">' + E(pyT(p.cedo ? 'frisa' : 'frisa_tarde', { p: T.e })) + '</p>'
+    + op('cx-pay-p', 'full', st.plano, pyT('plan_full'), pyT(p.cedo ? 'plan_full_sub' : 'plan_full_late'), p.cedo ? '−' + T.e + '%' : '')
+    + op('cx-pay-p', 'split', st.plano, pyT('plan_split'), pyT('plan_split_sub'))
+    // 2) FORMA
+    + '<h5>' + E(pyT('how')) + '</h5>'
+    + op('cx-pay-m', 'zelle', st.metodo, pyT('zelle'), pyT('zelle_sub'), '−' + T.z + '%')
+    + op('cx-pay-m', 'wire', st.metodo, pyT('wire'), pyT('wire_sub'), '−' + T.z + '%')
+    + op('cx-pay-m', 'link', st.metodo, pyT('link'), link ? pyT('link_sub') : pyT('link_none'))
     + '<div class="py-sum">' + lin(pyT('net'), E(cMoney(p.net)))
     + (p.dz ? lin(pyT('d_zelle', { p: T.z }), '−' + E(cMoney(p.dz)), 'd') : '')
     + (p.de ? lin(pyT('d_early', { p: T.e }), '−' + E(cMoney(p.de)), 'd') : '')
     + lin(pyT('tax') + (p.isento ? ' (' + pyT('exempt') + ')' : ''), E(cMoney(p.tax)))
-    + lin(pyT('total'), E(cMoney(pago || escolhido ? totalGravado : p.total)), 'g') + '</div>'
-    + (pago ? '' : '<p class="hint">' + E(pyT(p.cedo ? 'early_yes' : 'early_no')) + '</p>')
-    + (!pago && !escolhido ? '<button type="button" class="py-go" data-py="confirm"' + (st.busy ? ' disabled' : '') + '>' + E(st.busy ? pyT('saving') : pyT('confirm')) + '</button>' : '')
+    + lin(pyT('total'), E(cMoney(total)), 'g')
+    + (st.plano === 'split' ? lin(pyT('dep_now') + (entradaPaga ? ' ✓' : ''), E(cMoney(metade)), 'h') + lin(pyT('dep_later'), E(cMoney(r2(total - metade))), 'h') : '')
+    + '</div>'
+    + (!travado && !escolhido ? '<button type="button" class="py-go" data-py="confirm"' + (st.busy ? ' disabled' : '') + '>' + E(st.busy ? pyT('saving') : pyT('confirm')) + '</button>' : '')
+    // depois de escolhido: como pagar
     + (!pago && escolhido && st.metodo === 'zelle' ? '<div class="py-how">' + (T.to
         ? '<div>' + E(pyT('zto')) + ': <b>' + E(T.to) + '</b>' + (T.name ? ' (' + E(T.name) + ')' : '') + '</div><div>' + E(pyT('zmemo')) + ': <b>' + E(o.invoice_number || no) + '</b></div>'
-        : '<div class="error">' + E(pyT('zto_none')) + '</div>')
-      + (o.receipt_path ? '<p class="py-ok">' + E(pyT('attached')) + '</p>' : '')
-      + '<button type="button" class="py-go" data-py="attach">' + E(o.receipt_path ? '↻ ' + pyT('attach') : pyT('attach')) + '</button></div>' : '')
-    + (!pago && escolhido && st.metodo === 'link' && link ? '<div class="py-how"><button type="button" class="py-go" data-py="openlink">' + E(pyT('open_link')) + '</button></div>' : '')
+        : '<div class="error">' + E(pyT('zto_none')) + '</div>') + comp + '</div>' : '')
+    + (!pago && escolhido && st.metodo === 'wire' ? '<div class="py-how">' + (wire
+        ? '<div>' + E(pyT('wto')) + ':</div><pre class="py-wire">' + E(wire) + '</pre><div>' + E(pyT('zmemo')) + ': <b>' + E(o.invoice_number || no) + '</b></div><div class="hint">' + E(pyT('wire_slow')) + '</div>'
+        : '<div class="error">' + E(pyT('wto_none')) + '</div>') + comp + '</div>' : '')
+    + (!pago && escolhido && st.metodo === 'link' ? '<div class="py-how">' + (link ? '<button type="button" class="py-go" data-py="openlink">' + E(pyT('open_link')) + '</button>' : '<div class="error">' + E(pyT('link_none')) + '</div>') + '</div>' : '')
     + (cxAdmin() && grupo.some((x) => x.qbo_invoice_id) && grupo.some((x) => Number(x.pay_discount_amount) > 0) ? '<p class="error">' + E(pyT('qbo_warn')) + '</p>' : '')
     + '<div class="py-foot"><button type="button" class="secondary" data-py="inv">' + E(pyT('see_inv')) + '</button>'
-    + (cxAdmin() ? '<button type="button" class="secondary" data-py="' + (pago ? 'unmark' : 'markpaid') + '">' + E(pyT(pago ? 'unmark' : 'mark_paid')) + '</button>'
+    + (cxAdmin() ? (planoGravado === 'split' && o.pay_method && !pago ? '<button type="button" class="secondary" data-py="' + (entradaPaga ? 'undep' : 'dep') + '">' + E(pyT(entradaPaga ? 'undep' : 'dep')) + '</button>' : '')
+      + '<button type="button" class="secondary" data-py="' + (pago ? 'unmark' : 'markpaid') + '">' + E(pyT(pago ? 'unmark' : 'mark_paid')) + '</button>'
       + (!pago && o.pay_method ? '<button type="button" class="secondary" data-py="clear">' + E(pyT('clear')) + '</button>' : '')
-      + '<button type="button" class="secondary" data-py="terms">' + E(pyT('terms')) + '</button>' : '')
+      + '<button type="button" class="secondary" data-py="terms">' + E(pyT('terms')) + '</button>'
+      + '<button type="button" class="secondary" data-py="wireinfo">' + E(pyT('wire_edit')) + '</button>' : '')
     + '<span style="flex:1"></span><button type="button" class="secondary" data-py="close">' + E(pyT('close')) + '</button></div></div>';
 }
-async function cxPayEscolher(grupo, metodo) {
+async function cxPayEscolher(grupo, metodo, plano) {
   const s = cxState.scope;
   // sem invoice ainda: emite (mesmo número pra todos os pedidos do grupo)
   if (grupo.some((x) => !x.invoice_issued_at)) {
@@ -2252,9 +2356,14 @@ async function cxPayEscolher(grupo, metodo) {
     if (r0.error) throw r0.error;
     (r0.data && r0.data.orders || []).forEach((r) => { const x = s.orders.find((y) => y.id === r.id); if (x) Object.assign(x, r, { invoice_number: r0.data.invoice_number }); });
   }
-  const r = await supabaseClient.rpc('order_choose_payment', { p_orders: grupo.map((x) => x.id), p_method: metodo });
+  let r = await supabaseClient.rpc('order_choose_payment', { p_orders: grupo.map((x) => x.id), p_method: metodo, p_plan: plano || 'full' });
+  // sem a migration 333 só existe a função de 2 parâmetros (= plano total, sem wire)
+  if (r.error && /order_choose_payment|schema cache|Could not find|PGRST202/i.test((r.error.message || '') + ' ' + (r.error.code || ''))) {
+    if ((plano || 'full') !== 'full' || metodo === 'wire') throw new Error(pyT('need333'));
+    r = await supabaseClient.rpc('order_choose_payment', { p_orders: grupo.map((x) => x.id), p_method: metodo });
+  }
   if (r.error) throw r.error;
-  (r.data || []).forEach((row) => { const x = s.orders.find((y) => y.id === row.id); if (x) { Object.assign(x, row); cxCalcTax(x, s); } });
+  (r.data || []).forEach((row) => { const x = s.orders.find((y) => y.id === row.id); if (x) { Object.assign(x, row); if (metodo === 'none') x.pay_plan = null; else if (!row.pay_plan) x.pay_plan = plano || 'full'; cxCalcTax(x, s); } });
 }
 async function cxPayClick(a, b) {
   const s = cxState.scope; const st = cxState.pay; if (!st || !s) return;
@@ -2269,19 +2378,19 @@ async function cxPayClick(a, b) {
   if (st.busy) return;
   const roda = async (fn) => { st.busy = true; st.err = ''; st.msg = ''; cxPayRender(); try { await fn(); } catch (e) { st.err = (e && e.message) || String(e); } st.busy = false; if (cxState.pay) cxPayRender(); };
   if (a === 'confirm') return roda(async () => {
-    await cxPayEscolher(grupo, st.metodo);
-    st.msg = pyT('chosen', { m: pyT(st.metodo), t: cMoney(grupo.reduce((t, x) => t + (Number(x.invoice_total) || 0), 0)) });
+    await cxPayEscolher(grupo, st.metodo, st.plano);
+    st.msg = pyT('chosen', { m: pyT(st.metodo) + ' · ' + pyT(st.plano === 'split' ? 'plan_split' : 'plan_full'), t: cMoney(grupo.reduce((t, x) => t + (Number(x.invoice_total) || 0), 0)) });
   });
   if (!cxAdmin()) return;
-  if (a === 'clear') { if (!confirm(pyT('clear_q'))) return; return roda(async () => { await cxPayEscolher(grupo, 'none'); st.metodo = 'zelle'; }); }
-  if (a === 'markpaid' || a === 'unmark') {
-    const pagar = a === 'markpaid';
-    if (!confirm(pyT(pagar ? 'mark_q' : 'unmark_q', { n: no }))) return;
+  if (a === 'clear') { if (!confirm(pyT('clear_q'))) return; return roda(async () => { await cxPayEscolher(grupo, 'none', 'full'); st.metodo = 'zelle'; st.plano = 'full'; }); }
+  if (a === 'markpaid' || a === 'unmark' || a === 'dep' || a === 'undep') {
+    const liga = a === 'markpaid' || a === 'dep'; const col = a === 'dep' || a === 'undep' ? 'pay_deposit_at' : 'paid_at';
+    if (!confirm(pyT(a === 'markpaid' ? 'mark_q' : a === 'unmark' ? 'unmark_q' : a === 'dep' ? 'dep_q' : 'undep_q', { n: no }))) return;
     return roda(async () => {
-      const agora = pagar ? new Date().toISOString() : null;
-      const r = await supabaseClient.from('orders').update({ paid_at: agora }).in('id', grupo.map((x) => x.id)).select('id');
+      const agora = liga ? new Date().toISOString() : null; const upd = {}; upd[col] = agora;
+      const r = await supabaseClient.from('orders').update(upd).in('id', grupo.map((x) => x.id)).select('id');
       if (r.error) throw r.error;
-      grupo.forEach((x) => { x.paid_at = agora; });
+      grupo.forEach((x) => { x[col] = agora; });
     });
   }
   if (a === 'terms') {
@@ -2295,7 +2404,17 @@ async function cxPayClick(a, b) {
     return roda(async () => {
       const r = await supabaseClient.rpc('admin_set_payment_terms', { p_zelle_pct: nz, p_early_pct: ne, p_zelle_to: to, p_zelle_name: nm });
       if (r.error) throw r.error;
-      s.payTerms = r.data || s.payTerms;
+      s.payTerms = Object.assign({}, s.payTerms, r.data || {});
+    });
+  }
+  if (a === 'wireinfo') {
+    // dados bancários do wire: quem digita é a FÁBRICA, aqui, uma vez (várias linhas num campo só, separadas por " | ")
+    const atual = String((s.payTerms || {}).wire_info || '').replace(/\n/g, ' | ');
+    const v = prompt(pyT('wire_q'), atual); if (v === null) return;
+    return roda(async () => {
+      const r = await supabaseClient.rpc('admin_set_wire_info', { p_info: v.split('|').map((x) => x.trim()).filter(Boolean).join('\n') });
+      if (r.error) throw new Error(/admin_set_wire_info|schema cache|Could not find/i.test(r.error.message || '') ? pyT('need333') : r.error.message);
+      s.payTerms = Object.assign({}, s.payTerms, r.data || {});
     });
   }
 }
@@ -2311,7 +2430,10 @@ function cxPayCss() {
     + '.py-l.g{border-top:2px solid #2b2621;margin-top:6px;padding-top:8px;font-size:17px}.py-l.g b{font-weight:800}'
     + '.py-go{background:#2f6f4f;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer;margin-top:10px!important}.py-go:disabled{opacity:.5}'
     + '.py-how{background:#f7f5f1;border-radius:10px;padding:12px 14px;margin-top:12px;line-height:1.7}.py-ok{color:#1f6b33;font-weight:600;margin:8px 0}'
-    + '.py-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px;border-top:1px solid #eee9e0;padding-top:12px}.py-foot button{font-size:12.5px;padding:6px 10px}';
+    + '.py-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px;border-top:1px solid #eee9e0;padding-top:12px}.py-foot button{font-size:12.5px;padding:6px 10px}'
+    + '.py-frisa{background:#fff4d6;border:1px solid #e6c15a;border-left:5px solid #c98a00;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-weight:700;line-height:1.45;color:#5a4300}'
+    + '.py-tag{font-style:normal;background:#2f6f4f;color:#fff;border-radius:20px;padding:1px 8px;font-size:11.5px;margin-left:4px}.py-l.h{color:#5b554c;font-size:13px}.py-l.h b{font-weight:700}'
+    + '.py-wire{background:#fff;border:1px solid #e0ddd6;border-radius:8px;padding:8px 10px;margin:4px 0;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}';
   document.head.appendChild(st);
 }
 async function cxIvAction(a, b) {
