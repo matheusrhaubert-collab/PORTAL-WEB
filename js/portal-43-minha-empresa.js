@@ -813,6 +813,11 @@ function meCss() {
     '.pp-node.pp-new{border:2px dashed #c9a36b;background:#fdf8ef;color:#7a4a1e;font-size:13px;min-width:0;flex:none}',
     '.pp-tree ul.pp-kids>li>.pp-p{max-width:920px}.pp-p .pp-mail{flex:1 1 150px;min-width:130px}.pp-p .pp-co{flex:0 1 150px;min-width:70px;width:auto}.pp-p .pp-ct{flex:0 1 170px;min-width:70px;width:auto}',
     '.pp-fold{flex:none;width:22px;height:22px;margin:0 2px 0 0;padding:0;border:1px solid #b9a888;border-radius:5px;background:#fff;color:#5a4526;font-size:11px;line-height:1;cursor:pointer;box-shadow:none}.pp-fold:hover{background:#f6efe2}.pp-foldall{flex:none;width:auto;margin:0;padding:6px 12px;border:1px solid var(--border,#e0ddd6);border-radius:8px;background:#fff;color:#3a332a;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:none}',
+    // 23/11 (Matt: "alinhar esses box de dealer pela esquerda e direita"): nome da loja com largura fixa
+    // (o box do dealer começa sempre no mesmo ponto), lugar reservado do ▾, do cadeado e do Mover, e contador
+    // com largura fixa (o box termina sempre no mesmo ponto).
+    '.pp-store:not(.is-fab)>.pp-node>strong{flex:none;width:210px;max-width:210px}.pp-fold-0{flex:none;width:22px;height:22px;margin:0 2px 0 0}.pp-store:not(.is-fab)>.pp-node>.pp-n{flex:none;min-width:22px;text-align:right;margin-left:0}.pp-store:not(.is-fab)>.pp-node>.pp-addbtn{flex:none}',
+    '.pp-vago{flex:none;display:inline-block;height:22px}.pp-vago.v-lock{width:24px}.pp-vago.v-mv{width:22px}.pp-node .pp-dm{flex:none;min-width:88px;text-align:right}.pp-node .pp-cnt{flex:none;min-width:80px;text-align:right}',
     '#po-me .pp-store.pp-drop.is-over>.pp-node{outline:3px solid #7a4a1e;background:#fbf1de;color:#2b2621}#po-me .pp-store.pp-drop.is-over{outline:none;background:none}#po-me.pp-dragging .pp-store.pp-drop{outline:none}#po-me.pp-dragging .pp-store.pp-drop>.pp-node{outline:2px dashed #c9a36b;outline-offset:-2px}',
     '@media (max-width:820px){.pp-cols{grid-template-columns:1fr}.pp-side{position:static}}',
     '.pp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;align-items:start}',
@@ -1026,8 +1031,8 @@ function meViewPeople() {
       + (p.member_role && p.member_role !== 'owner' && !p.is_admin && p.account_id ? meMarginField(p.user_id, ((meState.mg || {})[donoDe[p.account_id]] || {}).r) : '')
       + '<span class="pp-last' + (p.last_active_at ? '' : ' is-never') + '" title="' + mEsc(ppT('last_tip') + ': ' + (p.last_active_at ? new Date(p.last_active_at).toLocaleString() : ppT('never'))) + '">' + mEsc(meAgo(p.last_active_at)) + '</span>'
       + '<span class="pp-cnt">' + mEsc(ppT('cnt', { p: Number(p.n_projects) || 0, o: Number(p.n_orders) || 0 })) + '</span>'
-      + (!p.is_admin ? '<button type="button" class="pp-lock' + (p.active === false ? ' is-off' : '') + '" data-a="pplock" data-u="' + mEsc(p.user_id) + '" data-v="' + (p.active === false ? '1' : '0') + '" title="' + mEsc(ppT(p.active === false ? 'unlock_tip' : 'lock_tip')) + '">' + (p.active === false ? '🔒' : '🔓') + '</button>' : '')
-      + (p.is_admin ? '' : '<select class="pp-mv" data-u="' + mEsc(p.user_id) + '" aria-label="' + mEsc(ppT('move')) + '">' + opts + '</select>')
+      + (!p.is_admin ? '<button type="button" class="pp-lock' + (p.active === false ? ' is-off' : '') + '" data-a="pplock" data-u="' + mEsc(p.user_id) + '" data-v="' + (p.active === false ? '1' : '0') + '" title="' + mEsc(ppT(p.active === false ? 'unlock_tip' : 'lock_tip')) + '">' + (p.active === false ? '🔒' : '🔓') + '</button>' : '<span class="pp-vago v-lock"></span>')
+      + (p.is_admin ? '<span class="pp-vago v-mv"></span>' : '<select class="pp-mv" data-u="' + mEsc(p.user_id) + '" aria-label="' + mEsc(ppT('move')) + '">' + opts + '</select>')
       + '</div>';
   };
   const casa = (p, nomeLoja) => { if (!q) return true; const d = ppDados(p); return [p.email, nomeLoja, d.empresa, d.contato].some((v) => String(v || '').toLowerCase().includes(q)); };
@@ -1055,7 +1060,7 @@ function meViewPeople() {
     const fechado = !q && !fab && ppFechados().has(a.id);
     const temGente = !fab && resto.length > 0;
     return '<li class="pp-store' + (fab ? ' is-fab' : '') + (solta ? ' pp-drop' : '') + (!dono.length && !fab ? ' is-semdono' : '') + '"' + (solta ? ' data-acc="' + mEsc(a.id) + '"' : '') + '>'
-      + '<div class="pp-node">' + (temGente ? '<button type="button" class="pp-fold" data-a="ppfold" data-acc="' + mEsc(a.id) + '" title="' + mEsc(ppFoldT(fechado ? 'abrir' : 'fechar')) + '">' + (fechado ? '▸' : '▾') + '</button>' : '') + '<span class="pp-ico">' + (fab ? '🏭' : '🏬') + '</span><strong title="' + mEsc(nome) + '">' + mEsc(nome) + '</strong>'
+      + '<div class="pp-node">' + (temGente ? '<button type="button" class="pp-fold" data-a="ppfold" data-acc="' + mEsc(a.id) + '" title="' + mEsc(ppFoldT(fechado ? 'abrir' : 'fechar')) + '">' + (fechado ? '▸' : '▾') + '</button>' : (fab ? '' : '<span class="pp-fold-0"></span>')) + '<span class="pp-ico">' + (fab ? '🏭' : '🏬') + '</span><strong title="' + mEsc(nome) + '">' + mEsc(nome) + '</strong>'
       + (fab ? '<span class="me-pill">' + mEsc(mT('kind_factory')) + '</span>' : '')
       + (a.status === 'suspended' ? '<span class="me-pill st-suspended">' + mEsc(ppT('susp')) + '</span>' : '')
       + (!dono.length && !fab ? '<span class="pp-need">' + mEsc(ppT('drop_owner')) + '</span>' : '')
