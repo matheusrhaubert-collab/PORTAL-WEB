@@ -2940,3 +2940,25 @@ function cxCss() {
 })();
 
 window.LegnoCentralPlus = { ligado: cxOn, recarregar: () => { cxState.scope = null; cxState.extraFor = ''; cxState.lostLoaded = false; if (typeof mpLoad === 'function') mpLoad(); } };
+
+// BOTÃO "Enviar pro pedido" DO EDITOR ESCONDIDO (22/11, Matt, com print do
+// aviãozinho da barra do Projetos: "ocultar esse pedido, vamos pela central
+// só"). Some só pra quem TEM a Central nova (cxOn — hoje o admin, por causa do
+// CX_SO_ADMIN): quem ainda não tem o ENVIAR FÁBRICA da Central continua com o
+// botão, senão ficaria sem nenhum jeito de mandar pedido. Com CX_SO_ADMIN =
+// false ele some pra todo mundo. Só esconde — sendProjectToOrder não mudou (é
+// ele que o ENVIAR FÁBRICA usa). Voltar o botão: localStorage.legno_envio_editor = '1'.
+(function cxEscondeEnvioDoEditor() {
+  try {
+    const st = document.createElement('style'); st.id = 'cx-envio-css';
+    st.textContent = 'body.cx-envio-central #po-proj-send-to-order-btn{display:none !important}';
+    document.head.appendChild(st);
+  } catch (e) { return; }
+  const aplica = () => {
+    let liga = false;
+    try { liga = cxOn() && localStorage.getItem('legno_envio_editor') !== '1'; } catch (e) { liga = false; }
+    if (document.body) document.body.classList.toggle('cx-envio-central', !!liga);
+  };
+  aplica();
+  setInterval(aplica, 2000);
+})();
