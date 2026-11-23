@@ -5188,6 +5188,7 @@ function ensurePhotoFrameOverlay(containerId) {
 // render realista). Sem opts = render, como sempre.
 async function savePhotorealRenderToProject(dataUrl, opts) {
   const ehPrint = !!(opts && opts.kind === 'print');
+  let registrou = true; // false = a imagem subiu mas o banco recusou a linha do acervo
   if (!currentUser) throw new Error(I18n.t('fav.need_login'));
   if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
     throw new Error(I18n.t('photoreal.need_saved_project'));
@@ -5217,11 +5218,16 @@ async function savePhotorealRenderToProject(dataUrl, opts) {
     renderProjectPhotorealGallery();
   } catch (galleryErr) {
     console.error('Não deu pra guardar a versão na grade de fotos (migration 077 rodou?):', galleryErr);
+    // 23/11: não falha mais em silêncio (caso "Ravayane bath": admin em projeto
+    // de outra conta, o banco recusava e a imagem sumia) — o acervo avisa.
+    registrou = false;
+    if (window.LegnoAcervo && window.LegnoAcervo.aviso) window.LegnoAcervo.aviso('nao_registrou');
   }
 
   const { error } = await supabaseClient.from('user_projects').update({ ai_preview_url: publicUrl }).eq('id', loadedProjectFavorite.id);
   if (error) throw error;
   loadedProjectFavorite.ai_preview_url = publicUrl;
+  return registrou;
 }
 
 // ---------- Grade de fotos realistas salvas (migration 077) ----------
@@ -6357,8 +6363,8 @@ function applyProjectDrawStyle(estilo, remontar) {
         const semProjeto = !loadedProjectFavorite || !loadedProjectFavorite.id;
         if (semProjeto && window.LegnoAcervo && window.LegnoAcervo.guardaPendente) window.LegnoAcervo.guardaPendente(dataUrl);
         else {
-          await savePhotorealRenderToProject(dataUrl, { kind: 'print' });
-          if (window.LegnoAcervo && window.LegnoAcervo.aviso) window.LegnoAcervo.aviso('print_ok');
+          const registrou = await savePhotorealRenderToProject(dataUrl, { kind: 'print' });
+          if (registrou !== false && window.LegnoAcervo && window.LegnoAcervo.aviso) window.LegnoAcervo.aviso('print_ok');
         }
       } catch (e) {
         alert((e && e.message) || String(e));

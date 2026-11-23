@@ -1,3 +1,3 @@
-﻿data: 2026-11-23 13:18:27
-cache: 202611231318
-mensagem: Portal: ajustes de 2026-11-23 13:18:27
+﻿data: 2026-11-23 13:19:01
+cache: 202611231319
+mensagem: apontar pecas: etiqueta antiga aceita + gaveta errada so a peca refeita; aba Lost com circulo; Preco de (so admin)
