@@ -144,9 +144,27 @@ APONTAR.after = function (params, d) {
     // peça do lote original que o complemento substitui (ver _marcaSubstituidas)
     if (u.fora && !APONTAR._d.scans[u.key]) {
       const outro = (APONTAR._d.lotes || []).filter(function (l) { return l.id !== APONTAR._d.lote.id; }).map(function (l) { return l.code; }).join(', ');
-      APONTAR._aviso(u.fora === 'gaveta'
-        ? '⛔ ' + cod + ' · ' + (u.p.reference || 'peça') + ' — GAVETA ERRADA do lote original. NÃO APONTA, separe a peça. A certa é do ' + outro + '.'
-        : '⛔ ' + cod + ' · ' + (u.p.reference || 'peça') + ' — essa peça passou pro ' + outro + '. Use a peça com a etiqueta nova.', 'alarm', true);
+      if (u.fora === 'gaveta') {
+        APONTAR._aviso('⛔ ' + cod + ' · ' + (u.p.reference || 'peça') + ' — GAVETA ERRADA do lote original. NÃO APONTA, separe a peça. A certa é do ' + outro + '.', 'alarm', true);
+        return;
+      }
+      // ETIQUETA ANTIGA DE PEÇA QUE EXISTE (23/11, Matt: "eu bipei uma peça
+      // física com essa etiqueta" / "o complemento não pode duplicar peças").
+      // A tela casa original × complemento por peça IGUAL, não por etiqueta:
+      // com peças gêmeas (mesma peça 2x no módulo, uma cortada no original e
+      // outra que ficou pro complemento) ela escondia a gêmea errada. Se a
+      // etiqueta foi bipada, a peça foi cortada: aponta e refaz a marcação —
+      // a vaga do complemento passa pra uma gêmea ainda não apontada. Se não
+      // sobrar gêmea, a peça está nos DOIS lotes: avisa (possível corte 2x).
+      const d0 = APONTAR._d, k0 = u.key;
+      APONTAR.aponta(k0, cod).then(function () {
+        if (APONTAR._d !== d0 || !d0.scans[k0]) return;
+        APONTAR._marcaSubstituidas(d0, d0.lote.id);
+        APONTAR._desenha();
+        APONTAR._mostra(k0);
+        if (u.fora) APONTAR._aviso('⚠ ' + cod + ' · ' + (u.p.reference || 'peça') + ' apontada — ATENÇÃO: essa mesma peça também está no ' + outro + '. Confira se não foi cortada 2 vezes.', 'warn', true);
+        else APONTAR._aviso('✓ ' + cod + ' · ' + (u.p.reference || 'peça') + ' apontada (etiqueta do lote original, peça já cortada).', 'ok', false);
+      });
       return;
     }
     // REPETIDA (18/11, Matt: "se apontar 2x a mesma peça não faz nada, só dá
@@ -223,6 +241,11 @@ APONTAR._chavePeca = function (p) {
 };
 APONTAR._marcaSubstituidas = function (d, principalId) {
   const comp = {}, modGaveta = {};
+  // pode rodar de novo (depois de apontar uma etiqueta antiga): parte sempre
+  // da lista completa e limpa a marcação anterior
+  d.todas = d.todas || d.unidades.slice();
+  d.todas.forEach(function (u) { delete u.fora; });
+  d.unidades = d.todas.slice();
   d.unidades.forEach(function (u) {
     if (u.p._batchId === principalId) return;
     const k = APONTAR._chavePeca(u.p);
