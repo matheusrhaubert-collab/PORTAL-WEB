@@ -30,9 +30,9 @@ const SINO_MAX = 40;
 const sinoState = { itens: [], carregando: false, aberto: false, timer: null, uid: null, erro: '' };
 
 const SINO_TXT = {
-  pt: { tip: 'Avisos da fábrica', titulo: 'Avisos', vazio: 'Nada novo nos últimos {n} dias.', user: 'Novo cadastro', order: 'Novo pedido', sem_perfil: 'sem perfil', sem_loja: 'sem loja', agora: 'agora', min: 'há {n} min', h: 'há {n} h', d: 'há {n} d', novo: 'novo', ver_pessoas: 'Abrir Pessoas', ver_central: 'Abrir Central', s_submitted: 'aguardando aprovação', s_approved: 'aprovado', s_other: 'em andamento' },
-  en: { tip: 'Factory alerts', titulo: 'Alerts', vazio: 'Nothing new in the last {n} days.', user: 'New sign-up', order: 'New order', sem_perfil: 'no profile', sem_loja: 'no store', agora: 'now', min: '{n} min ago', h: '{n} h ago', d: '{n} d ago', novo: 'new', ver_pessoas: 'Open People', ver_central: 'Open Order Center', s_submitted: 'waiting approval', s_approved: 'approved', s_other: 'in progress' },
-  es: { tip: 'Avisos de la fábrica', titulo: 'Avisos', vazio: 'Nada nuevo en los últimos {n} días.', user: 'Nuevo registro', order: 'Nuevo pedido', sem_perfil: 'sin perfil', sem_loja: 'sin tienda', agora: 'ahora', min: 'hace {n} min', h: 'hace {n} h', d: 'hace {n} d', novo: 'nuevo', ver_pessoas: 'Abrir Personas', ver_central: 'Abrir Central', s_submitted: 'esperando aprobación', s_approved: 'aprobado', s_other: 'en curso' }
+  pt: { tip: 'Avisos da fábrica', titulo: 'Avisos', vazio: 'Nada novo nos últimos {n} dias.', user: 'Novo cadastro', order: 'Novo pedido', project: 'Novo projeto', sem_perfil: 'sem perfil', sem_loja: 'sem loja', agora: 'agora', min: 'há {n} min', h: 'há {n} h', d: 'há {n} d', novo: 'novo', ver_pessoas: 'Abrir Pessoas', ver_central: 'Abrir Central', s_submitted: 'aguardando aprovação', s_approved: 'aprovado', s_other: 'em andamento' },
+  en: { tip: 'Factory alerts', titulo: 'Alerts', vazio: 'Nothing new in the last {n} days.', user: 'New sign-up', order: 'New order', project: 'New project', sem_perfil: 'no profile', sem_loja: 'no store', agora: 'now', min: '{n} min ago', h: '{n} h ago', d: '{n} d ago', novo: 'new', ver_pessoas: 'Open People', ver_central: 'Open Order Center', s_submitted: 'waiting approval', s_approved: 'approved', s_other: 'in progress' },
+  es: { tip: 'Avisos de la fábrica', titulo: 'Avisos', vazio: 'Nada nuevo en los últimos {n} días.', user: 'Nuevo registro', order: 'Nuevo pedido', project: 'Nuevo proyecto', sem_perfil: 'sin perfil', sem_loja: 'sin tienda', agora: 'ahora', min: 'hace {n} min', h: 'hace {n} h', d: 'hace {n} d', novo: 'nuevo', ver_pessoas: 'Abrir Personas', ver_central: 'Abrir Central', s_submitted: 'esperando aprobación', s_approved: 'aprobado', s_other: 'en curso' }
 };
 function sinoT(k, n) {
   let l = 'en';
@@ -109,6 +109,21 @@ async function sinoCarregar() {
     });
     sinoState.erro = '';
   } catch (e) { sinoState.erro = (e && e.message) || String(e); }
+  // PROJETO NOVO (23/11, Matt: "quando um novo projeto é salvo faz um sininho
+  // também"). user_projects.created_at = o 1º Salvar; salvar de novo o mesmo
+  // projeto NÃO avisa (senão cada clique em Salvar viraria um aviso). Projeto
+  // que já virou pedido aparece só como pedido. Falha aqui não derruba o resto.
+  try {
+    const busca = (cols) => supabaseClient.from('user_projects').select(cols)
+      .gte('created_at', desde).neq('client_user_id', me).order('created_at', { ascending: false }).limit(SINO_MAX);
+    let { data, error } = await busca('id, client_user_id, name, client_folder, frozen_order_id, created_at');
+    if (error) ({ data, error } = await busca('id, client_user_id, name, created_at')); // colunas opcionais ausentes
+    if (!error) (data || []).forEach((pr) => {
+      if (pr.frozen_order_id) return;
+      const quem = String(emails[pr.client_user_id] || '').split('@')[0];
+      itens.push({ tipo: 'project', id: pr.id, t: new Date(pr.created_at).toISOString(), titulo: pr.name || '—', sub: [quem, pr.client_folder || ''].filter(Boolean).join(' · ') });
+    });
+  } catch (e) { /* segue com cadastros e pedidos */ }
   itens.sort((a, b) => (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
   sinoState.itens = itens.slice(0, SINO_MAX);
   sinoState.carregando = false;
@@ -157,7 +172,7 @@ function sinoPainel() {
     + (sinoState.itens.length ? sinoState.itens.map((i) => {
       const novo = i.t > visto;
       return '<div class="sn-it' + (novo ? ' novo' : '') + '" data-tipo="' + i.tipo + '" title="' + sinoEsc(sinoT(i.tipo === 'user' ? 'ver_pessoas' : 'ver_central')) + '">'
-        + '<div class="sn-ic">' + (i.tipo === 'user' ? '👤' : '📦') + '</div>'
+        + '<div class="sn-ic">' + (i.tipo === 'user' ? '👤' : i.tipo === 'project' ? '📐' : '📦') + '</div>'
         + '<div class="sn-tx"><b>' + sinoEsc(sinoT(i.tipo)) + (novo ? '<i class="sn-tag">' + sinoEsc(sinoT('novo')) + '</i>' : '') + '</b><span>' + sinoEsc(i.titulo) + '</span>' + (i.sub ? '<small>' + sinoEsc(i.sub) + '</small>' : '') + '</div>'
         + '<div class="sn-q">' + sinoEsc(sinoHa(i.t)) + '</div></div>';
     }).join('') : '<div class="sn-vazio">' + sinoEsc(sinoState.erro || sinoT('vazio', SINO_DIAS)) + '</div>');

@@ -1509,9 +1509,6 @@ function ensureProjectBuilderLibShell(el) {
     + '</div>'
     + '<div class="po-proj-lib-chips" id="po-proj-lib-chips"></div>'
     + '</div>'
-    // "Neste módulo" (23/11): lista do que já está montado, cada item com a
-    // própria lixeira — ver fillProjectBuilderItens.
-    + '<details class="po-proj-lib-itens" id="po-proj-lib-itens" open><summary></summary><div class="po-proj-lib-itens-lista"></div></details>'
     + '<div class="po-proj-lib-grid" id="po-proj-lib-grid"></div>'
     + '<div class="po-proj-lib-foot">'
     + '<span class="po-proj-lib-count" id="po-proj-lib-count"></span>'
@@ -1696,9 +1693,10 @@ function fillProjectBuilderItens() {
   const box = document.getElementById('po-proj-lib-itens');
   if (!box) return;
   const itens = projectBuilderItens();
-  box.style.display = itens.length ? '' : 'none';
-  const sum = box.querySelector('summary');
-  if (sum) sum.textContent = I18n.t('project.builder_items_title') + ' (' + itens.length + ')';
+  // Coluna fixa à esquerda (portal.html): fica SEMPRE na tela, mesmo vazia,
+  // pra não fazer o desenho pular de lugar a cada item colocado/tirado.
+  const tit = box.querySelector('.po-proj-builder-itens-titulo');
+  if (tit) tit.textContent = I18n.t('project.builder_items_title') + ' (' + itens.length + ')';
   const lista = box.querySelector('.po-proj-lib-itens-lista');
   if (!lista) return;
   const un = (document.getElementById('po-unit-select') || {}).value || 'mm';
@@ -1712,7 +1710,7 @@ function fillProjectBuilderItens() {
       + (dim ? '<small>' + escapeHtmlCutlist(dim) + '</small>' : '') + '</span>'
       + '<button type="button" class="po-proj-lib-item-del" data-item="' + i + '"' + (bloqueio ? ' disabled' : '')
       + ' title="' + escapeHtmlCutlist(I18n.t(bloqueio || 'project.builder_item_remove')) + '">' + PROJ_LIB_ICON_TRASH + '</button></div>';
-  }).join('');
+  }).join('') || '<div class="po-proj-builder-itens-vazio">' + escapeHtmlCutlist(I18n.t('project.builder_items_empty')) + '</div>';
   lista.querySelectorAll('.po-proj-lib-item-del').forEach((b) => {
     b.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderItem(itens[Number(b.dataset.item)]); });
   });

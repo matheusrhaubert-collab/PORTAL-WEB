@@ -10,9 +10,10 @@ function monta(admin) {
   w.LEGNO_IS_ADMIN = admin;
   w.LegnoMinhaEmpresa = { abrir: (t) => cliques.push('me:' + t) };
   w.document.querySelector('.portal-tab-btn').addEventListener('click', () => cliques.push('central'));
-  const q = { select() { return q; }, gte() { return q; }, neq(c, v) { q._me = v; return q; }, order() { return q; }, limit() { return Promise.resolve({ data: banco.pedidos.filter((o) => o.client_user_id !== q._me), error: null }); } };
+  banco.projetos = [];
+  const tabela = (lista) => { const q = { select() { return q; }, gte() { return q; }, neq(c, v) { q._me = v; return q; }, order() { return q; }, limit() { return Promise.resolve({ data: banco[lista].filter((o) => o.client_user_id !== q._me), error: null }); } }; return q; };
   w.eval('var currentUser = { id: "eu" }; var supabaseClient;');
-  w.supabaseClient = { rpc: async () => ({ data: banco.pessoas, error: null }), from: () => q };
+  w.supabaseClient = { rpc: async () => ({ data: banco.pessoas, error: null }), from: (t) => tabela(t === 'user_projects' ? 'projetos' : 'pedidos') };
   w.eval('supabaseClient = window.supabaseClient;');
   w.eval(src);
   return { w, banco, cliques };
@@ -47,5 +48,19 @@ function monta(admin) {
   ok(t.w.LegnoSino.novos() === 0, 'depois de aberto, não volta a contar');
   d.getElementById('po-sino-btn').click(); d.querySelector('.sn-it[data-tipo="order"]').click();
   ok(t.cliques[1] === 'central', 'clique no pedido abre a Central');
+  console.log('projeto novo');
+  t = monta(true);
+  t.banco.pessoas = [{ user_id: 'v1', email: 'ana@loja.com', registered_at: iso(60 * 24 * 30), is_admin: false }];
+  t.banco.projetos = [
+    { id: 'p1', client_user_id: 'v1', name: 'Cozinha Silva', client_folder: 'Silva', frozen_order_id: null, created_at: iso(3) },
+    { id: 'p2', client_user_id: 'v1', name: 'Já virou pedido', frozen_order_id: 'o9', created_at: iso(4) },
+    { id: 'p3', client_user_id: 'eu', name: 'Meu', frozen_order_id: null, created_at: iso(2) }
+  ];
+  t.w.localStorage.setItem('legno_sino_visto_eu', iso(10));
+  await t.w.LegnoSino.atualizar();
+  ok(t.w.document.getElementById('po-sino-n').textContent === '1', 'projeto novo de outra pessoa conta no sininho (o meu e o que já virou pedido não)');
+  t.w.document.getElementById('po-sino-btn').click();
+  const txt = t.w.document.getElementById('po-sino-painel').textContent;
+  ok(/Cozinha Silva/.test(txt) && /ana · Silva/.test(txt) && !/Já virou pedido/.test(txt) && !/Meu/.test(txt), 'mostra nome, quem fez e a pasta');
   console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\nTUDO CERTO'); process.exit(falhas ? 1 : 0);
 })();

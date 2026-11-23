@@ -6715,18 +6715,29 @@ body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }
 .po-dealer-team-margin { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; margin: 2px 0; }
 .po-dealer-team-margin input { width: 58px; padding: 3px 6px; margin: 0; text-align: right; border: 1px solid var(--border, #d9d3c7); border-radius: 6px; font-size: 13px; }
 
-/* Construtor — "Neste módulo": lista dos agregados já montados, cada um com a
-   própria lixeira (23/11/2026, portal-07 fillProjectBuilderItens). */
-.po-proj-lib-itens { flex: none; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: #faf8f4; }
-.po-proj-lib-itens > summary { cursor: pointer; padding: 8px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.po-proj-lib-itens-lista { max-height: 190px; overflow-y: auto; padding: 0 10px 8px; }
-.po-proj-lib-item { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; border-left: 3px solid #c49a63; background: var(--panel); margin-bottom: 4px; }
+/* Construtor — JANELA MAIOR + coluna "Neste módulo" à esquerda (23/11/2026,
+   Matt: "quero uma coluna nova na esquerda da tela, na direita bagunça. abre
+   mais essa tela e deixa maior"). A lista do que já está montado (portal-07
+   fillProjectBuilderItens) tem coluna própria; a direita volta a ser só a
+   biblioteca de componentes. */
+.po-proj-builder-card { width: 1560px; max-width: 98vw; height: 94vh; max-height: 94vh; }
+.po-proj-builder-itens {
+  flex: 0 0 270px; display: flex; flex-direction: column; min-height: 0;
+  border-right: 1px solid var(--border); background: var(--panel);
+}
+.po-proj-builder-itens-head { flex: none; padding: 14px 14px 10px; border-bottom: 1px solid var(--border); }
+.po-proj-builder-itens-titulo { font-size: 16px; font-weight: 700; color: var(--text); }
+.po-proj-lib-itens-lista { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; }
+.po-proj-builder-itens-vazio { padding: 14px 6px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.po-proj-lib-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border); border-left: 3px solid #c49a63; background: var(--panel); margin-bottom: 6px; }
 .po-proj-lib-item-front { border-left-color: #2f6fb8; }
 .po-proj-lib-item-split { border-left-color: #8a8f96; }
-.po-proj-lib-item-n { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 12px; line-height: 1.25; }
+.po-proj-lib-item-n { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; line-height: 1.3; }
 .po-proj-lib-item-n b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.po-proj-lib-item-n small { color: var(--muted); font-size: 10.5px; }
-.po-proj-lib-item-del { flex: none; width: 28px; height: 26px; margin: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); color: #b0503c; box-shadow: none; cursor: pointer; }
+.po-proj-lib-item-n small { color: var(--muted); font-size: 11px; }
+.po-proj-lib-item-del { flex: none; width: 30px; height: 28px; margin: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); color: #b0503c; box-shadow: none; cursor: pointer; }
 .po-proj-lib-item-del:hover { border-color: #b0503c; background: #fbefec; }
 .po-proj-lib-item-del[disabled] { color: var(--muted); opacity: .45; cursor: not-allowed; }
 .po-proj-lib-item-del svg { width: 14px; height: 14px; }
+/* tela estreita: a coluna da esquerda encolhe antes do desenho */
+@media (max-width: 1100px) { .po-proj-builder-itens { flex-basis: 210px; } }
