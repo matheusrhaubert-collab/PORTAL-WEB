@@ -1671,6 +1671,9 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
           const total = await computeOpenProjectLiveTotal();
           if (total != null && loadedProjectFavorite && loadedProjectFavorite.id === fav.id) {
             await supabaseClient.from('user_projects').update({ cached_value_usd: total }).eq('id', fav.id);
+            // 22/11: a Central guarda a lista em memória — sem isto ela seguia com o
+            // valor velho do projeto depois de ele ser recalculado aqui.
+            try { if (typeof cxState !== 'undefined' && cxState) cxState.scope = null; } catch (eCx) { /* sem a Central nova */ }
           }
         } catch (e) { /* silencioso — cache é só conveniência */ }
       })();
