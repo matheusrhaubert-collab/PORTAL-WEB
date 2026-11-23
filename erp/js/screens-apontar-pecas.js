@@ -239,6 +239,15 @@ APONTAR._chavePeca = function (p) {
   const ref = String(p.reference || p.description || '').replace(/\s+(INVERTIDA|INCLINADA)\b/g, '').trim().toLowerCase();
   return [p.order_id || '', p.module_number || '', ref, r(p.comprimento_mm), r(p.largura_mm), Number(p.espessura_mm) || 0, p.color_name || ''].join('§');
 };
+// GAVETA ERRADA = só a peça de gaveta que o complemento REFEZ (23/11, Matt:
+// "era só stretcher e fundo, as laterais não precisavam ser refeitas porque
+// servem"). Antes bastava o complemento trazer QUALQUER peça de gaveta no
+// módulo pra bloquear todas as do original — bloqueava a lateral boa. Agora
+// casa por pedido + módulo + NOME da peça (medida diferente = a refeita).
+APONTAR._chaveGaveta = function (p) {
+  const ref = String(p.reference || p.description || '').replace(/\s+(INVERTIDA|INCLINADA)\b/g, '').trim().toLowerCase();
+  return (p.order_id || '') + '§' + (p.module_number || '') + '§' + ref;
+};
 APONTAR._marcaSubstituidas = function (d, principalId) {
   const comp = {}, modGaveta = {};
   // pode rodar de novo (depois de apontar uma etiqueta antiga): parte sempre
@@ -250,14 +259,14 @@ APONTAR._marcaSubstituidas = function (d, principalId) {
     if (u.p._batchId === principalId) return;
     const k = APONTAR._chavePeca(u.p);
     comp[k] = (comp[k] || 0) + 1;
-    if (APONTAR._RE_GAVETA.test(String(u.p.reference || ''))) modGaveta[(u.p.order_id || '') + '§' + (u.p.module_number || '')] = true;
+    if (APONTAR._RE_GAVETA.test(String(u.p.reference || ''))) modGaveta[APONTAR._chaveGaveta(u.p)] = true;
   });
   const orig = d.unidades.filter(function (u) { return u.p._batchId === principalId; });
   // não apontadas primeiro: é delas que o complemento "toma o lugar"
   orig.slice().sort(function (a, b) { return (d.scans[a.key] ? 1 : 0) - (d.scans[b.key] ? 1 : 0); }).forEach(function (u) {
     const k = APONTAR._chavePeca(u.p);
     if (comp[k] > 0) { comp[k]--; u.fora = 'complemento'; return; }
-    if (APONTAR._RE_GAVETA.test(String(u.p.reference || '')) && modGaveta[(u.p.order_id || '') + '§' + (u.p.module_number || '')]) u.fora = 'gaveta';
+    if (APONTAR._RE_GAVETA.test(String(u.p.reference || '')) && modGaveta[APONTAR._chaveGaveta(u.p)]) u.fora = 'gaveta';
   });
   d.ocultas = 0;
   d.unidades = d.unidades.filter(function (u) {

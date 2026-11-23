@@ -580,7 +580,9 @@ async function generateOrderProposalPDF(order, items, multi) {
     // usa a logo/loja do DEALER DONO DO PEDIDO (trkDealerProfile, portal-31);
     // sem logo, sai sem logo — o wordmark "LEGNO" de antes saiu.
     const brandPf = (order && order.client_user_id && typeof trkDealerProfile === 'function')
-      ? ((await trkDealerProfile(order)) || currentUserProfile) : currentUserProfile;
+      ? ((await trkDealerProfile(order)) || currentUserProfile)
+      // "Preço de:" (portal-47, 23/11): admin fazendo o projeto pra um dealer = logo/loja dele
+      : ((window.LegnoPrecoDe && window.LegnoPrecoDe.marca()) || currentUserProfile);
     const logoMeta = await proposalImageMeta(await proposalUrlToDataUrl(brandPf && brandPf.logo_url));
     let headerBottom = PROPOSAL_MARGIN_MM;
     if (logoMeta) {

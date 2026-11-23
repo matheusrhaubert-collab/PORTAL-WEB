@@ -275,8 +275,9 @@ function cxDecorate(folders) {
   const tabs = box.querySelector('.cu-tabs');
   if (tabs && !tabs.querySelector('[data-cx="view"]')) {
     const nLost = (cxLostNaRede() && cxState.scope && cxState.scope.lostRows) ? cxState.scope.lostRows.length : Object.keys(cxState.lost).length;
-    const b = (v, rot) => '<button type="button" class="mp-tab cu-tab cx-tab' + (cxState.view === v ? ' is-on' : '') + '" data-cx="view" data-v="' + v + '">' + cEsc(rot) + '</button>';
-    tabs.insertAdjacentHTML('beforeend', b('lost', cT('t_lost') + ' (' + nLost + ')') + b('map', cT('t_map')));
+    // n = contador no mesmo círculo cinza das outras abas (.cu-n) — 23/11, Matt: "mantém o padrão"
+    const b = (v, rot, n) => '<button type="button" class="mp-tab cu-tab cx-tab' + (cxState.view === v ? ' is-on' : '') + '" data-cx="view" data-v="' + v + '">' + cEsc(rot) + (n == null ? '' : ' <span class="cu-n">' + n + '</span>') + '</button>';
+    tabs.insertAdjacentHTML('beforeend', b('lost', cT('t_lost'), nLost) + b('map', cT('t_map')));
     if (cxState.view) tabs.querySelectorAll('[data-act="ctab"]').forEach((el) => el.classList.remove('is-on'));
   }
 
