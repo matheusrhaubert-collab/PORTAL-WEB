@@ -599,6 +599,8 @@ function meClick(e) {
   // função da aba Equipe (dealer-create-seller set_active): bloqueado não
   // entra no portal; projetos e pedidos dele continuam na loja.
   if (a === 'ppadd') { e.stopPropagation(); return mePpAddOpen(b.getAttribute('data-acc')); }
+  if (a === 'ppfold') { e.stopPropagation(); const id = b.getAttribute('data-acc'); const f = ppFechados(); if (f.has(id)) f.delete(id); else f.add(id); return meRender(); }
+  if (a === 'ppfoldall') { e.stopPropagation(); const f = ppFechados(); f.clear(); if (b.getAttribute('data-v') === '1') (meState.tree || []).forEach((x) => { if (x.kind !== 'factory') f.add(x.id); }); return meRender(); }
   if (a === 'pplock') {
     const u = b.getAttribute('data-u'); const liberar = b.getAttribute('data-v') === '1';
     const p = ppUser(u); if (!p || meState.busy) return;
@@ -809,7 +811,8 @@ function meCss() {
     '.pp-addbtn{margin:0 0 0 6px;width:auto;padding:2px 9px;font-size:11.5px;font-weight:700;border-radius:6px;border:1px solid #b9a888;background:#fff;color:#5a4526;cursor:pointer;white-space:nowrap;box-shadow:none}.pp-addbtn:hover{background:#f6efe2}',
     '.pp-store.is-semdono>.pp-node{border-style:dashed;border-color:#c9a36b;background:#fdf8ef}.pp-need{flex:1;font-size:12.5px;color:#7a4a1e;font-style:italic}',
     '.pp-node.pp-new{border:2px dashed #c9a36b;background:#fdf8ef;color:#7a4a1e;font-size:13px;min-width:0;flex:none}',
-    '.pp-tree ul.pp-kids>li>.pp-p{max-width:520px}',
+    '.pp-tree ul.pp-kids>li>.pp-p{max-width:920px}.pp-p .pp-mail{flex:1 1 150px;min-width:130px}.pp-p .pp-co{flex:0 1 150px;min-width:70px;width:auto}.pp-p .pp-ct{flex:0 1 170px;min-width:70px;width:auto}',
+    '.pp-fold{flex:none;width:22px;height:22px;margin:0 2px 0 0;padding:0;border:1px solid #b9a888;border-radius:5px;background:#fff;color:#5a4526;font-size:11px;line-height:1;cursor:pointer;box-shadow:none}.pp-fold:hover{background:#f6efe2}.pp-foldall{flex:none;width:auto;margin:0;padding:6px 12px;border:1px solid var(--border,#e0ddd6);border-radius:8px;background:#fff;color:#3a332a;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:none}',
     '#po-me .pp-store.pp-drop.is-over>.pp-node{outline:3px solid #7a4a1e;background:#fbf1de;color:#2b2621}#po-me .pp-store.pp-drop.is-over{outline:none;background:none}#po-me.pp-dragging .pp-store.pp-drop{outline:none}#po-me.pp-dragging .pp-store.pp-drop>.pp-node{outline:2px dashed #c9a36b;outline-offset:-2px}',
     '@media (max-width:820px){.pp-cols{grid-template-columns:1fr}.pp-side{position:static}}',
     '.pp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;align-items:start}',
@@ -1047,8 +1050,12 @@ function meViewPeople() {
     if (q && !visD.length && !visR.length && !sub) return '';
     const fab = a.kind === 'factory';
     const solta = !fab;                       // fábrica não recebe gente por aqui
+    // RECOLHER os usuários da loja (23/11, Matt: "coloca um botão pra expandir e
+    // retrair os usuários dos dealers"). Na busca tudo fica aberto.
+    const fechado = !q && !fab && ppFechados().has(a.id);
+    const temGente = !fab && resto.length > 0;
     return '<li class="pp-store' + (fab ? ' is-fab' : '') + (solta ? ' pp-drop' : '') + (!dono.length && !fab ? ' is-semdono' : '') + '"' + (solta ? ' data-acc="' + mEsc(a.id) + '"' : '') + '>'
-      + '<div class="pp-node"><span class="pp-ico">' + (fab ? '🏭' : '🏬') + '</span><strong title="' + mEsc(nome) + '">' + mEsc(nome) + '</strong>'
+      + '<div class="pp-node">' + (temGente ? '<button type="button" class="pp-fold" data-a="ppfold" data-acc="' + mEsc(a.id) + '" title="' + mEsc(ppFoldT(fechado ? 'abrir' : 'fechar')) + '">' + (fechado ? '▸' : '▾') + '</button>' : '') + '<span class="pp-ico">' + (fab ? '🏭' : '🏬') + '</span><strong title="' + mEsc(nome) + '">' + mEsc(nome) + '</strong>'
       + (fab ? '<span class="me-pill">' + mEsc(mT('kind_factory')) + '</span>' : '')
       + (a.status === 'suspended' ? '<span class="me-pill st-suspended">' + mEsc(ppT('susp')) + '</span>' : '')
       + (!dono.length && !fab ? '<span class="pp-need">' + mEsc(ppT('drop_owner')) + '</span>' : '')
@@ -1056,18 +1063,26 @@ function meViewPeople() {
       // + PESSOA (22/11): cria o login e já põe nesta loja — ver mePpAddOpen
       + (fab ? '' : '<button type="button" class="pp-addbtn" data-a="ppadd" data-acc="' + mEsc(a.id) + '" title="' + mEsc(paT('tip', { loja: nome })) + '">+ ' + mEsc(paT('btn')) + '</button>')
       + '<span class="pp-n">' + l.length + '</span></div>'
-      + ((q ? visR : resto).length || sub ? '<ul class="pp-kids">' + (q ? visR : resto).map((p) => '<li>' + chip(p) + '</li>').join('') + sub + '</ul>' : '')
+      + (((q ? visR : resto).length && !fechado) || sub ? '<ul class="pp-kids">' + (fechado ? '' : (q ? visR : resto).map((p) => '<li>' + chip(p) + '</li>').join('')) + sub + '</ul>' : '')
       + '</li>';
   };
   const sem = ordP(porLoja._ || []).filter((p) => casa(p, ''));
   return '<p class="hint">' + mEsc(ppT('hint2')) + '</p>'
-    + '<div class="pp-top"><input type="search" id="pp-q" placeholder="' + mEsc(ppT('search')) + '" value="' + mEsc(meState.peopleQ || '') + '"></div>'
+    + '<div class="pp-top"><input type="search" id="pp-q" placeholder="' + mEsc(ppT('search')) + '" value="' + mEsc(meState.peopleQ || '') + '">'
+    + '<button type="button" class="pp-foldall" data-a="ppfoldall" data-v="1">▸ ' + mEsc(ppFoldT('todos_fechar')) + '</button><button type="button" class="pp-foldall" data-a="ppfoldall" data-v="0">▾ ' + mEsc(ppFoldT('todos_abrir')) + '</button></div>'
     + '<div class="pp-cols">'
     + '<div class="pp-side"><div class="pp-acc-h"><strong>' + mEsc(ppT('no_store')) + '</strong><span class="pp-n">' + (porLoja._ || []).length + '</span></div>'
     + '<div class="pp-acc-b">' + (sem.length ? sem.map(chip).join('') : '<div class="pp-vazio">—</div>') + '</div></div>'
     + '<div class="pp-arv"><ul class="pp-tree">' + (filhas._raiz || []).map(galho).join('')
     + '<li class="pp-store pp-drop pp-newli" data-acc="_dealer"><div class="pp-node pp-new">★ ' + mEsc(ppT('new_dealer')) + '</div></li>'
     + '</ul></div></div>';
+}
+function ppFechados() { return meState.ppFechado || (meState.ppFechado = new Set()); }
+function ppFoldT(k) {
+  const T = { pt: { abrir: 'Mostrar os usuários', fechar: 'Recolher os usuários', todos_fechar: 'Recolher todos', todos_abrir: 'Expandir todos' },
+    en: { abrir: 'Show users', fechar: 'Collapse users', todos_fechar: 'Collapse all', todos_abrir: 'Expand all' },
+    es: { abrir: 'Mostrar los usuarios', fechar: 'Contraer los usuarios', todos_fechar: 'Contraer todos', todos_abrir: 'Expandir todos' } };
+  return (T[String(meLang()).slice(0, 2)] || T.en)[k];
 }
 // ---------- CADASTRO DA PESSOA / LOJA (21/11) ----------
 // Matt: "quero poder clicar no usuário e abrir o cadastro dele, com desconto,
@@ -1145,6 +1160,8 @@ async function mePersonOpen(arg) {
       if (a.error) c.err = a.error.message; else c.acc = a.data;
     }
   } catch (e) { c.err = (e && e.message) || String(e); }
+  // aceite da Política de Privacidade (23/11, migration 337) — só leitura na ficha
+  try { if (window.LegnoDataTerms && !p.is_admin) c.dt = await window.LegnoDataTerms.statusDe(userId); } catch (eDt) { c.dt = null; }
   if (meState.pc === c) mePersonRender();
 }
 function mePersonRender() {
@@ -1166,7 +1183,9 @@ function mePersonRender() {
     + (c.err ? '<p class="error">' + mEsc(c.err) + '</p>' : '') + (c.msg ? '<p class="me-msg ok">' + mEsc(c.msg) + '</p>' : '')
     + '<h4>' + mEsc(pcT('person')) + '</h4><div class="pc-grid">'
     + ro(pcT('email'), mEsc(p.email || '—')) + ro(pcT('role'), mEsc(papel)) + ro(pcT('since'), mEsc(desde)) + ro(pcT('last'), mEsc(ultimo))
-    + ro(pcT('projs'), Number(p.n_projects) || 0) + ro(pcT('orders'), Number(p.n_orders) || 0) + ro(pcT('active'), mEsc(p.active === false ? pcT('offv') : pcT('on'))) + '</div>';
+    + ro(pcT('projs'), Number(p.n_projects) || 0) + ro(pcT('orders'), Number(p.n_orders) || 0) + ro(pcT('active'), mEsc(p.active === false ? pcT('offv') : pcT('on')))
+    + (c.dt && window.LegnoDataTerms ? '<div class="pc-ro" style="grid-column:1/-1"><span>' + mEsc(window.LegnoDataTerms.label()) + '</span><b style="color:' + (c.dt.ok ? '#23793c' : '#9a2b1e') + '">' + mEsc(c.dt.texto) + '</b></div>' : '')
+    + '</div>';
   if (c.proprio) {
     const r = c.rec || {}; const tx = r.tax_exempt_status || 'none';
     h += (c.loja ? '<p class="hint">' + mEsc(pcT('own_hint', { loja: c.loja })) + '</p>' : '<p class="hint">' + mEsc(pcT('own_hint2')) + '</p>');

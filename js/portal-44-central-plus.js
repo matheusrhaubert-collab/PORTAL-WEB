@@ -270,8 +270,8 @@ function cxDecorate(folders) {
   if (!cxState.lostLoaded) cxLoadLost();
   if (cxState.hasNet === null) cxLoadNetFlag();
 
-  // abas (20/11, Matt: "esse do primeiro filtro pode tirar" = Delivered; a etapa Entregue fica nos filtros de baixo)
-  box.querySelectorAll('.cu-tabs [data-act="ctab"][data-tab="done"]').forEach((el) => { el.style.display = 'none'; });
+  // abas: Delivered tinha sido escondida em 20/11 ("esse do primeiro filtro pode
+  // tirar") e VOLTOU em 23/11 (Matt: "coloca mais uma aba de entregues. faltou eles").
   const tabs = box.querySelector('.cu-tabs');
   if (tabs && !tabs.querySelector('[data-cx="view"]')) {
     const nLost = (cxLostNaRede() && cxState.scope && cxState.scope.lostRows) ? cxState.scope.lostRows.length : Object.keys(cxState.lost).length;
