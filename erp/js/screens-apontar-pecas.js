@@ -249,29 +249,42 @@ APONTAR._chaveGaveta = function (p) {
   return (p.order_id || '') + '§' + (p.module_number || '') + '§' + ref;
 };
 APONTAR._marcaSubstituidas = function (d, principalId) {
-  const comp = {}, modGaveta = {};
+  const comp = {};
   // pode rodar de novo (depois de apontar uma etiqueta antiga): parte sempre
   // da lista completa e limpa a marcação anterior
   d.todas = d.todas || d.unidades.slice();
   d.todas.forEach(function (u) { delete u.fora; });
   d.unidades = d.todas.slice();
+  const r = function (v) { return Math.round(Number(v) || 0); };
+  const ehGaveta = function (u) { return APONTAR._RE_GAVETA.test(String(u.p.reference || '')); };
+  const orig = d.unidades.filter(function (u) { return u.p._batchId === principalId; });
+  const origTem = {};
+  orig.forEach(function (u) { origTem[APONTAR._chavePeca(u.p)] = true; });
+  // GAVETA REFEITA (23/11, 3ª rodada, módulo 003 do L0021/L0026: laterais
+  // 381×193 e 381×194 no original, só a 193 no complemento — a 194 era
+  // bloqueada só por ter o mesmo NOME). Peça de gaveta do complemento com
+  // medida que NÃO existe no original = peça refeita (BACK 508 -> 520,
+  // Stretcher 508 -> 520). Só ela torna "errada" a do original, e só a de
+  // mesmo nome que divide com ela o comprimento OU a largura.
+  const refeitas = {};
+  const compTem = {};
   d.unidades.forEach(function (u) {
     if (u.p._batchId === principalId) return;
     const k = APONTAR._chavePeca(u.p);
     comp[k] = (comp[k] || 0) + 1;
-    if (APONTAR._RE_GAVETA.test(String(u.p.reference || ''))) modGaveta[APONTAR._chaveGaveta(u.p)] = true;
+    compTem[k] = true;
+    if (ehGaveta(u) && !origTem[k]) {
+      const g = APONTAR._chaveGaveta(u.p);
+      (refeitas[g] = refeitas[g] || []).push({ c: r(u.p.comprimento_mm), l: r(u.p.largura_mm) });
+    }
   });
-  // peça IGUAL à do complemento nunca é "gaveta errada", mesmo depois de as
-  // unidades do complemento acabarem (23/11: 2 laterais iguais no original,
-  // 1 no complemento — a 2ª caía na regra da gaveta e era bloqueada)
-  const compTem = {};
-  Object.keys(comp).forEach(function (k) { compTem[k] = true; });
-  const orig = d.unidades.filter(function (u) { return u.p._batchId === principalId; });
   // não apontadas primeiro: é delas que o complemento "toma o lugar"
   orig.slice().sort(function (a, b) { return (d.scans[a.key] ? 1 : 0) - (d.scans[b.key] ? 1 : 0); }).forEach(function (u) {
     const k = APONTAR._chavePeca(u.p);
     if (comp[k] > 0) { comp[k]--; u.fora = 'complemento'; return; }
-    if (!compTem[k] && APONTAR._RE_GAVETA.test(String(u.p.reference || '')) && modGaveta[APONTAR._chaveGaveta(u.p)]) u.fora = 'gaveta';
+    if (compTem[k] || !ehGaveta(u)) return;   // peça igual à do complemento nunca é gaveta errada
+    const c = r(u.p.comprimento_mm), l = r(u.p.largura_mm);
+    if ((refeitas[APONTAR._chaveGaveta(u.p)] || []).some(function (n) { return n.c === c || n.l === l; })) u.fora = 'gaveta';
   });
   d.ocultas = 0;
   d.unidades = d.unidades.filter(function (u) {
