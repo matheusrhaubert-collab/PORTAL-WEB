@@ -213,7 +213,7 @@ const base = `
     mpState.ordersById = ${JSON.stringify(Object.fromEntries(banco.orders.filter((o) => o.client_user_id === EU).map((o) => [o.id, o])))}; mpState.totals = { o1: 10000, o2: 3000 };`, ctx);
   win.mpLoad(); await espera(60);
   const box = () => win.document.getElementById('po-mp-v2');
-  ok(box().querySelectorAll('.cx-tab').length >= 2 && /\([12]\)/.test(box().querySelector('.cx-tab[data-v="lost"]').textContent), 'abas Perdidos (n) e Mapa entram');
+  ok(box().querySelectorAll('.cx-tab').length >= 2 && /^[12]$/.test((box().querySelector('.cx-tab[data-v="lost"] .cu-n') || {}).textContent || ''), 'abas Perdidos (n) e Mapa entram');
   ok(!box().querySelector('.cx-tab[data-v="net"]') && box().querySelectorAll('#cx-tree .cx-col').length === 4, 'árvore em cima da lista principal (sem aba Lojas separada)');
   const cab = Array.from(box().querySelectorAll('.mp-table-wrap thead th')).map((x) => x.textContent);
   const s2 = box().querySelector('.cx-strip[data-cx-order="o2"]');
@@ -237,7 +237,7 @@ const base = `
   // 23/11: aba Perdidos em tabela própria — TODOS os perdidos que eu enxergo (2), com motivo, loja, usuário e valores
   await espera(80);
   ok(box().querySelectorAll('.cx-losttab tbody tr.cx-lrow').length === 2 && box().querySelectorAll('.cx-losttab .cx-lmot').length === 2 && /\$/.test(box().querySelector('.cx-losttab').textContent), 'aba Perdidos: tabela com os 2 perdidos, motivo e valores');
-  ok(/\(2\)/.test(box().querySelector('.cx-tab[data-v="lost"]').textContent), 'aba Perdidos conta os 2');
+  ok(((box().querySelector('.cx-tab[data-v="lost"] .cu-n') || {}).textContent || '') === '2', 'aba Perdidos conta os 2');
   box().querySelector('.cx-losttab tbody tr.cx-lrow').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(40);
   ok(!!box().querySelector('.cx-lexp [data-cx="reopen"]') && !!box().querySelector('.cx-losttab .cx-more.is-on'), 'aba Perdidos: o ▾ abre embaixo com Reabrir');
   box().querySelector('.cx-losttab tbody tr.cx-lrow').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);

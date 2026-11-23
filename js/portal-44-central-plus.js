@@ -943,6 +943,25 @@ function cxFolderClosed() { return cxState.foldClosed || (cxState.foldClosed = n
 // na aba Orders a linha da pasta tem Invoice (n) e QB (n) = todos os pedidos
 // da pasta que estão na lista (os ainda "submitted" ficam de fora).
 function cxFolderOrders(k) { return cxNetRows().filter((o) => cxFolderKey(o) === k && !o._proj && o.status !== 'submitted'); }
+// PACKING DA PASTA (23/11, Matt: "coloca o somatório do packing na pasta pra
+// ver o andamento do projeto todo"): peças apontadas / peças de TODOS os
+// pedidos da pasta que já estão em lote (mesma fonte da barra de cada linha,
+// s.pieces). Pedido em lote com 0 apontadas entra no total.
+function cxFolderPackHtml(itens) {
+  const pcs = (cxState.scope || {}).pieces || {};
+  let tot = 0, fei = 0;
+  itens.forEach((o) => {
+    if (o._proj) return;
+    const pc = pcs[o.id]; const t = pc ? Number(pc.total) || 0 : 0;
+    if (t <= 0) return;
+    tot += t; fei += Math.min(t, Number(pc.feitas) || 0);
+  });
+  if (tot <= 0) return '';
+  const n = fei <= 0 ? 0 : Math.max(1, Math.min(100, Math.round((fei / tot) * 100)));
+  let rot = 'Packing';
+  try { if (typeof mpT === 'function') { const v = mpT('pr_packing'); if (v && v !== 'mp.pr_packing') rot = v; } } catch (e) { /* texto local */ }
+  return ' <span class="mp-chip pr-packing cx-fpack" title="' + fei + '/' + tot + '">' + cEsc(rot) + ' <span class="mp-pack-bar"><i style="width:' + n + '%"></i></span> ' + n + '%</span>';
+}
 function cxFolderRowHtml(k, itens, soProj, preco, enx) {
   const s0 = cxState.scope || {};
   const ped = soProj || !s0.invOk ? [] : itens.filter((o) => !o._proj && o.status !== 'submitted');
@@ -972,7 +991,7 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
     + '<td colspan="' + (enx ? 6 : 4) + '" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
     + ' <span class="cx-fquem">' + cEsc(String(cxUserName(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
-    + (semPasta ? '' : '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button>') + '<span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
+    + (semPasta ? '' : '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button>') + cxFolderPackHtml(itens) + '<span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
     + (enx ? '<td class="cx-facts cx-facts-l">' + fbtns + '</td>' + (preco ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td>' : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="3"></td></tr>'
       : (preco ? cxSomaTds(itens, soProj) : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="4" class="cx-facts">' + fbtns + '</td></tr>');
 }
