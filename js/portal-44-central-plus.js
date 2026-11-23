@@ -274,7 +274,7 @@ function cxDecorate(folders) {
   box.querySelectorAll('.cu-tabs [data-act="ctab"][data-tab="done"]').forEach((el) => { el.style.display = 'none'; });
   const tabs = box.querySelector('.cu-tabs');
   if (tabs && !tabs.querySelector('[data-cx="view"]')) {
-    const nLost = Object.keys(cxState.lost).length;
+    const nLost = (cxLostNaRede() && cxState.scope && cxState.scope.lostRows) ? cxState.scope.lostRows.length : Object.keys(cxState.lost).length;
     const b = (v, rot) => '<button type="button" class="mp-tab cu-tab cx-tab' + (cxState.view === v ? ' is-on' : '') + '" data-cx="view" data-v="' + v + '">' + cEsc(rot) + '</button>';
     tabs.insertAdjacentHTML('beforeend', b('lost', cT('t_lost') + ' (' + nLost + ')') + b('map', cT('t_map')));
     if (cxState.view) tabs.querySelectorAll('[data-act="ctab"]').forEach((el) => el.classList.remove('is-on'));
@@ -377,14 +377,15 @@ function cxDecorate(folders) {
   try { cxAddCols(box, folders); } catch (e) { console.warn('[central+] colunas', e); }
 
   // painel do mapa / lista da árvore no lugar da tabela
-  const painel = cxState.view === 'map' || lista;
+  const perdidosNaRede = cxState.view === 'lost' && cxLostNaRede();
+  const painel = cxState.view === 'map' || lista || perdidosNaRede;
   box.querySelectorAll('.mp-table-wrap, .mp-empty').forEach((el) => { if (!el.closest('#cx-panel')) el.style.display = painel ? 'none' : ''; });
   if (cxState.view === 'lost' && !box.querySelector('.mp-table-wrap')) { const e = box.querySelector('.mp-empty'); if (e) e.textContent = cT('lost_empty'); }
   if (painel) {
     if (!cxState.scope && !cxState.scopeBusy) cxLoadScope(false);
     let p = box.querySelector('#cx-panel');
     if (!p) { p = document.createElement('div'); p.id = 'cx-panel'; box.appendChild(p); }
-    if (cxState.view === 'map') cxRenderMap(p); else cxRenderNet(p);
+    if (cxState.view === 'map') cxRenderMap(p); else if (perdidosNaRede) cxRenderLost(p); else cxRenderNet(p);
   }
 }
 // Colunas LOJA | TABELA | DESCONTO | COM DESCONTO na lista de pastas.
@@ -468,17 +469,22 @@ async function cxLoadScope(force) {
     // fora: projeto que já virou pedido, arquivado e perdido.
     try {
       const PB = 'id, client_user_id, name, client_folder, client_info, cached_value_usd, frozen_order_id, archived_at, updated_at';
-      let pr = await sb.from('user_projects').select(PB + ', lost_at, account_id, po_name, project_number').order('updated_at', { ascending: false }).limit(5000);
-      if (pr.error) pr = await sb.from('user_projects').select(PB + ', lost_at, account_id, po_name').order('updated_at', { ascending: false }).limit(5000);
+      let pr = await sb.from('user_projects').select(PB + ', lost_at, lost_reason, lost_note, account_id, po_name, project_number').order('updated_at', { ascending: false }).limit(5000);
+      if (pr.error) pr = await sb.from('user_projects').select(PB + ', lost_at, lost_reason, lost_note, account_id, po_name').order('updated_at', { ascending: false }).limit(5000);
       if (pr.error) pr = await sb.from('user_projects').select(PB + ', lost_at').order('updated_at', { ascending: false }).limit(5000);
       if (pr.error) pr = await sb.from('user_projects').select(PB).order('updated_at', { ascending: false }).limit(5000);
       const porId = {}, porPedido = {};
       (pr.data || []).forEach((p) => { porId[p.id] = p; if (p.frozen_order_id) porPedido[p.frozen_order_id] = p; });
       s.orders.forEach((o) => { const pj = porPedido[o.id] || porId[o.source_project_id]; o._folder = pj && pj.client_folder ? pj.client_folder : ''; o._pname = pj ? (pj.name || '') : ''; });
       (pr.data || []).forEach((p) => {
-        if (p.frozen_order_id || p.archived_at || p.lost_at) return;
+        // PERDIDOS (23/11, Matt: "quero uma coluna por motivo... e que mostre os
+        // dados certinhos porque estão todos em branco — valores, cliente,
+        // usuário, loja"): entram com a marca _lost, passam pelo mesmo preço e
+        // nome dos outros e no fim saem pra s.lostRows (aba Perdidos).
+        if (p.frozen_order_id || (p.archived_at && !p.lost_at)) return;
         const m = s.team[p.client_user_id];
         s.orders.push({
+          _lost: p.lost_at ? { at: p.lost_at, reason: p.lost_reason || '', note: p.lost_note || '' } : null,
           _proj: true, _folder: p.client_folder || '', _pname: p.name || '', id: 'proj:' + p.id, client_user_id: p.client_user_id, account_id: p.account_id || (m ? m.account_id : null), _pid: p.id, _po: p.po_name || '', project_number: p.project_number || null, status: 'project',
           po_name: p.name, client_name: (p.client_info && p.client_info.name) || p.client_folder || '', room_name: '',
           delivery_address: (p.client_info && p.client_info.address) || '', jobsite_lat: null, jobsite_lng: null,
@@ -555,6 +561,7 @@ async function cxLoadScope(force) {
     // CX_INATIVO_DIAS sai da lista (e das contagens da árvore). Nada é gravado
     // no banco: salvar o projeto de novo traz ele de volta sozinho. O link
     // "Arquivados por inatividade (n)" no rodapé troca a lista pra eles.
+    s.lostRows = s.orders.filter((o) => o._lost); s.orders = s.orders.filter((o) => !o._lost);
     s.live = s.orders.filter((o) => !o._old); s.old = s.orders.filter((o) => o._old);
     s.orders = cxState.verInativos && s.old.length ? s.old : s.live;
     if (!s.old.length) cxState.verInativos = false;
@@ -564,6 +571,8 @@ async function cxLoadScope(force) {
   cxState.scopeBusy = false;
   if (typeof mpRender === 'function' && typeof mpState !== 'undefined' && mpState.central) mpRender();
 }
+// Toda linha que a tela pode ter aberta: a lista + os perdidos.
+function cxAllRows() { const s = cxState.scope; return s ? (s.orders || []).concat(s.lostRows || []) : []; }
 function cxStoreName(o) {
   const a = (cxState.scope.accounts || []).find((x) => x.id === o.account_id);
   return a ? (a.trade_name || a.legal_name || '—') : cT('no_store');
@@ -955,6 +964,8 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
     + it('rename', T('fav.folder_rename_btn'))
     + (cxAdmin() && temProj && typeof mpFolderBudget === 'function' ? it('budget', T('mp.budget_btn')) : '')
     + (meus && temProj && typeof mpArchive === 'function' ? it('archive', T('mp.archive')) : '')
+    // PASTA PERDIDA (23/11, Matt: "coloca lost na pasta toda"): todos os projetos em construção da pasta, um motivo só
+    + ((cxAdmin() || meus) && window.LegnoMinhaEmpresa && itens.some((o) => o._proj) ? it('lost', fdT('lost')) : '')
     + (meus ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
   return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + (semPasta ? ' cx-frow-0' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">'
     + '<td colspan="' + (enx ? 6 : 4) + '" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
@@ -970,6 +981,9 @@ const FD_TXT = {
   en: { techplan: 'Technical plan (all projects)', tp_confirm: 'Generate the technical plan for the {n} project(s) in folder "{pasta}"?\n\nEach project opens in the editor and at the end you get ONE PDF with an index on the first page. Then you come back here.', tp_prog: 'Technical plan {i}/{n} — {nome}', tp_done: 'Technical plan: {ok} of {n} generated.', tp_fail: 'Not generated:', tp_none: 'This folder has no project to generate the technical plan.', busy: 'A generation is already running.' },
   es: { techplan: 'Plano técnico (todos los proyectos)', tp_confirm: '¿Generar el plano técnico de los {n} proyecto(s) de la carpeta "{pasta}"?\n\nCada proyecto se abre en el editor y al final sale UN solo PDF, con índice en la primera página. Luego vuelves aquí.', tp_prog: 'Plano técnico {i}/{n} — {nome}', tp_done: 'Plano técnico: {ok} de {n} generado(s).', tp_fail: 'No salió:', tp_none: 'Esta carpeta no tiene proyecto para generar el plano técnico.', busy: 'Ya hay una generación en curso.' }
 };
+Object.assign(FD_TXT.pt, { lost: '✕ Pasta perdida — motivo' });
+Object.assign(FD_TXT.en, { lost: '✕ Lost folder — reason' });
+Object.assign(FD_TXT.es, { lost: '✕ Carpeta perdida — motivo' });
 function fdT(k, vars) {
   let lang = 'en';
   try { lang = cxLang(); } catch (e) { /* en */ }
@@ -1051,6 +1065,18 @@ async function cxFolderAction(v, k) {
   let stEl = null;
   document.querySelectorAll('.cx-fstatus').forEach((el) => { if (el.getAttribute('data-fst') === k) stEl = el; });
   if (v === 'share') return shareProjectFolder(nome);
+  if (v === 'lost') {
+    // só os projetos EM CONSTRUÇÃO da pasta (pedido enviado não é "perdido");
+    // a janela de motivo é a mesma do projeto (portal-43), uma vez pra todos.
+    const ids = itens.filter((o) => o._proj && o._pid).map((o) => o._pid);
+    const api = window.LegnoMinhaEmpresa;
+    if (!api || !ids.length) return;
+    try {
+      const ok = await api.marcarPerdido(ids, nome + ' (' + ids.length + ')');
+      if (ok) { cxState.lostLoaded = false; cxState.scope = null; cxState.fmenu = ''; if (typeof mpLoad === 'function') mpLoad(); }
+    } catch (e) { alert((e && e.message) || String(e)); }
+    return;
+  }
   let lista;
   try { lista = await cxFolderProjects(itens); } catch (e) { alert((e && e.message) || String(e)); return; }
   if (v === 'rename') return renameProjectFolder(nome, lista);
@@ -1575,6 +1601,67 @@ function cxGroupTable(rows) {
         + (ab ? '<tr class="mp-exp cx-gexp"><td colspan="' + nCols + '">' + cxFlatTable(g.itens) + '</td></tr>' : '');
     }).join('')
     + (grupos.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (preco && grupos.length ? cxTotalRow(grupos.reduce((a, g) => a.concat(g.itens), []), 7, 1, soProj) : '') + '</table></div>' + (grupos.length > max ? '<p class="hint">+' + (grupos.length - max) + '…</p>' : '');
+}
+// ABA PERDIDOS em tabela própria (23/11): Nº · Loja · Usuário · Projeto ·
+// Cliente · MOTIVO · Perdido em · valores · ▾. Todos os perdidos que eu
+// enxergo (não só os do meu login). O ▾ abre o cartão do projeto, a
+// observação e o Reabrir. Quem não tem a rede (dealer hoje) segue na lista antiga.
+function cxLostNaRede() { return cxHasNetwork() && (cxNetSel() || cxAdmin()); }
+function cxLostOpen() { return cxState.lostOpen || (cxState.lostOpen = new Set()); }
+const LT_TXT = {
+  pt: { reason: 'Motivo', when: 'Perdido em', none: 'Nenhum projeto perdido.', note: 'Observação', sem: 'sem motivo', total: '{n} projeto(s) perdido(s)' },
+  en: { reason: 'Reason', when: 'Lost on', none: 'No lost projects.', note: 'Note', sem: 'no reason', total: '{n} lost project(s)' },
+  es: { reason: 'Motivo', when: 'Perdido el', none: 'Ningún proyecto perdido.', note: 'Observación', sem: 'sin motivo', total: '{n} proyecto(s) perdido(s)' }
+};
+function ltT(k) { const L = LT_TXT[String(cxLang()).slice(0, 2)] || LT_TXT.en; return L[k] != null ? L[k] : LT_TXT.en[k]; }
+function cxLostMotivo(o) {
+  const r = o._lost && o._lost.reason;
+  if (!r) return ltT('sem');
+  try { if (window.LegnoMinhaEmpresa && window.LegnoMinhaEmpresa.motivo) return window.LegnoMinhaEmpresa.motivo(r) || r; } catch (e) { /* cai no texto cru */ }
+  return r;
+}
+function cxRenderLost(p) {
+  const s = cxState.scope;
+  if (!s) { p.innerHTML = '<p class="hint">' + cEsc(cT('loading')) + '</p>'; return; }
+  const q = String((typeof mpState !== 'undefined' && mpState.q) || '').trim().toLowerCase();
+  const rows = (s.lostRows || []).filter((o) => !q || [o._pname, o.client_name, o._folder, cxStoreName(o), cxUserName(o.client_user_id, [o]), cxLostMotivo(o), o._lost.note, cxPnum(o.project_number)].some((v) => String(v || '').toLowerCase().includes(q)))
+    .sort((a, b) => String(b._lost.at || '').localeCompare(String(a._lost.at || '')));
+  if (!rows.length) { p.innerHTML = '<p class="mp-empty">' + cEsc(ltT('none')) + '</p>'; return; }
+  const vend = cxSeller();
+  const nCols = vend ? 9 : 11;
+  const th = (t, r) => '<th' + (r ? ' class="cx-r"' : '') + '>' + cEsc(t) + '</th>';
+  const soma = (k) => rows.reduce((t, o) => t + (Number(o[k]) || 0), 0);
+  const ab = cxLostOpen();
+  let h = '<div class="mp-table-wrap cx-wrap"><table class="mp-table cx-table cx-main cx-losttab"><thead><tr>'
+    + th(cT('c_no')) + th(cT('c_store')) + th(cT('col_seller')) + th(cT('c_item')) + th(odT('client')) + th(ltT('reason')) + th(ltT('when'))
+    + (vend ? th(cT('sale'), 1) : th(cT('list'), 1) + th(cT('fab_net'), 1) + th(cT('sale'), 1)) + '<th></th></tr></thead><tbody>';
+  rows.forEach((o) => {
+    const aberto = ab.has(o.id);
+    const quem = cxUserName(o.client_user_id, [o]);
+    const pode = window.LegnoMinhaEmpresa && (cxAdmin() || o.client_user_id === cxMe());
+    h += '<tr class="mp-row cx-lrow' + (aberto ? ' is-open' : '') + '" data-cx="lostrow" data-id="' + cEsc(o.id) + '">'
+      + '<td class="cx-num">' + cEsc(cxPnum(o.project_number) || '—') + '</td>'
+      + '<td class="cx-loja2"><b>' + cEsc(cxStoreName(o)) + '</b></td>'
+      + '<td class="cx-quem" title="' + cEsc(cxUserMail(o.client_user_id, [o]) || quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
+      + '<td class="cx-item">' + (o._folder ? '<span class="cx-fold">📁 ' + cEsc(o._folder) + '</span> ' : '') + '<b>' + cEsc(o._pname || '') + '</b></td>'
+      + '<td>' + (o.client_name ? cEsc(o.client_name) : '—') + '</td>'
+      + '<td' + (o._lost.note ? ' title="' + cEsc(o._lost.note) + '"' : '') + '><span class="cx-lmot">' + cEsc(cxLostMotivo(o)) + '</span></td>'
+      + '<td>' + cEsc(cDate(o._lost.at)) + '</td>'
+      + (vend ? '<td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
+        : '<td class="cx-r">' + (o._l ? cEsc(cMoney(o._l)) : '—') + '</td>'
+          + '<td class="cx-r">' + (o._n != null ? (o._d != null ? '<small class="cx-est">−' + o._d + '%</small> ' : '') + cEsc(cMoney(o._n)) : '—') + '</td>'
+          + '<td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>')
+      + '<td class="cx-r"><button type="button" class="cx-more' + (aberto ? ' is-on' : '') + '" title="' + cEsc(odT(aberto ? 'less' : 'more')) + '" aria-label="' + cEsc(odT('more')) + '">' + (aberto ? '▴' : '▾') + '</button></td></tr>';
+    if (aberto) {
+      h += '<tr class="mp-exp cx-lexp"><td colspan="' + nCols + '"><div class="cx-oproj">' + cxProjCardHtml(o) + '</div>'
+        + '<div class="cx-lostbar">' + (o._lost.note ? '<span class="hint">' + cEsc(ltT('note')) + ': “' + cEsc(o._lost.note) + '”</span>' : '')
+        + (pode ? '<button type="button" class="secondary" data-cx="reopen" data-ids="' + cEsc(o._pid) + '" data-nome="' + cEsc(o._pname || '') + '">' + cEsc(cT('lost_reopen')) + '</button>' : '') + '</div></td></tr>';
+    }
+  });
+  h += '</tbody><tfoot><tr class="cx-tot"><td colspan="7">' + cEsc(ltT('total').replace('{n}', rows.length)) + '</td>'
+    + (vend ? '<td class="cx-r">' + cEsc(cMoney(soma('_v'))) + '</td>' : '<td class="cx-r">' + cEsc(cMoney(soma('_l'))) + '</td><td class="cx-r">' + cEsc(cMoney(soma('_n'))) + '</td><td class="cx-r">' + cEsc(cMoney(soma('_v'))) + '</td>')
+    + '<td></td></tr></tfoot></table></div>';
+  p.innerHTML = h;
 }
 function cxRenderNet(p) {
   const s = cxState.scope;
@@ -2575,6 +2662,12 @@ document.addEventListener('click', (e) => {
     if (cxState.view === 'map') cxLoadScope(!cxState.scope);
     return mpRender();
   }
+  if (a === 'lostrow') {
+    const id = b.getAttribute('data-id'); const ab = cxLostOpen();
+    if (ab.has(id)) ab.delete(id); else { ab.add(id); const oo = cxAllRows().find((x) => x.id === id); if (oo && oo._pid) cxProjCardLoad(oo._pid).then(() => { if (typeof mpRender === 'function') mpRender(); }, () => {}); }
+    if (typeof mpRender === 'function') mpRender();
+    return;
+  }
   if (a === 'release') return cxRelease(b.getAttribute('data-id'));
   if (a === 'lost' || a === 'reopen') {
     const ids = (b.getAttribute('data-ids') || '').split(',').filter(Boolean);
@@ -2674,13 +2767,13 @@ document.addEventListener('click', (e) => {
   if (['qbinv', 'qbgroup', 'qbconn', 'qbsync'].includes(a)) { e.stopPropagation(); e.preventDefault(); return cxQbAction(a, b); }
   if (a === 'pj') {
     e.stopPropagation(); e.preventDefault();
-    const o = cxState.scope && cxState.scope.orders.find((x) => x.id === b.getAttribute('data-id'));
+    const o = cxState.scope && cxAllRows().find((x) => x.id === b.getAttribute('data-id'));
     if (o) cxProjAction(b.getAttribute('data-a'), o._proj ? o : (cxOrdProj(o) || o));
     return;
   }
   if (a === 'openproj') {
     e.stopPropagation();
-    const o = cxState.scope && cxState.scope.orders.find((x) => x.id === b.getAttribute('data-id'));
+    const o = cxState.scope && cxAllRows().find((x) => x.id === b.getAttribute('data-id'));
     if (!o) return;
     (async () => { try { const proj = { id: o._pid, name: o._pname }; await fetchProjectFullRow(proj); restoreFavoriteProject(proj); } catch (err) { alert((err && err.message) || String(err)); } })();
     return;
@@ -2910,7 +3003,7 @@ function cxCss() {
     + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}.cx-table td.cx-facts.cx-facts-l{text-align:left}'
     + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}.cx-link.cx-link-del{color:#9a2b1e}.cx-oproj{padding:8px 4px 2px;white-space:normal}.cx-lote{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;background:#2b2621;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.02em;vertical-align:middle}'
     + '.cx-table .cx-more{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0}.cx-table .cx-more:hover,.cx-table .cx-more.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
-    + '.cx-more-lost{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0;margin-left:6px;vertical-align:middle}.cx-more-lost:hover,.cx-more-lost.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
+    + '.cx-lmot{display:inline-block;padding:2px 9px;border-radius:999px;background:#f6e3df;color:#8a2f22;font-size:11.5px;font-weight:600}.cx-losttab .cx-lrow{cursor:pointer}.cx-more-lost{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0;margin-left:6px;vertical-align:middle}.cx-more-lost:hover,.cx-more-lost.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
     + '.cx-table .cx-mini.cx-mini-go{background:#7a4a1e;border-color:#7a4a1e;color:#fff}.cx-table .cx-mini.cx-mini-go:hover{background:#5f3915}'
     + '.cx-table tr.cx-ord-on td{background:#faf6ee;border-bottom-color:transparent}'
     + '.cx-table tr.cx-ordexp td{background:#faf6ee;white-space:normal;padding:4px 14px 14px}'

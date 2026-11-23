@@ -37,7 +37,7 @@
 
 const ME_SO_ADMIN = true;
 const DESCONTO_SO_FABRICA = true;   // 21/11: ligado (Matt: "trava o desconto pro lojista, só adm pode dar") — par da migration 309
-const ME_LOST_REASONS = ['price', 'lead_time', 'client_gave_up', 'competitor', 'not_european', 'test', 'other'];   // 22/11: + 'not_european' e 'test' (Matt). lost_reason é texto livre no banco, sem check.
+const ME_LOST_REASONS = ['price', 'lead_time', 'client_gave_up', 'competitor', 'not_european', 'test', 'duplicate', 'other'];   // 22/11: + 'not_european' e 'test' (Matt). lost_reason é texto livre no banco, sem check.
 const meState = { tab: 'painel', card: null, acc: null, tree: [], team: [], projects: [], orders: [], reqs: [], busy: false, msg: '', err: '', loaded: false, hasLost: true };
 
 (function meUrlFlag() {
@@ -62,7 +62,7 @@ const ME_TXT = {
     k_build: 'Em construção', k_prod: 'Em produção', k_done: 'Entregues', k_lost: 'Perdidos', k_wait: 'Aguardando aprovação',
     projects: 'projeto(s)', orders: 'pedido(s)', est: 'valor estimado', fab: 'valor de fábrica',
     lost_reasons: 'Motivos dos projetos perdidos', lost_none: 'Nenhum projeto marcado como perdido.',
-    r_price: 'Preço', r_lead_time: 'Prazo', r_client_gave_up: 'Cliente desistiu', r_competitor: 'Foi pra concorrente', r_not_european: 'Produto não era europeu', r_test: 'Foi só teste', r_other: 'Outro', r_null: 'Sem motivo',
+    r_price: 'Preço', r_lead_time: 'Prazo', r_client_gave_up: 'Cliente desistiu', r_competitor: 'Foi pra concorrente', r_not_european: 'Produto não era europeu', r_test: 'Foi só teste', r_duplicate: 'Pedido duplicado', r_other: 'Outro', r_null: 'Sem motivo',
     by_store: 'Por loja', by_person: 'Por pessoa', col_who: 'Quem', no_store: 'Sem loja',
     kind_factory: 'Fábrica', kind_distributor: 'Distribuidor', kind_dealer: 'Lojista',
     st_draft: 'rascunho', st_pending: 'em análise', st_active: 'ativo', st_suspended: 'suspenso', st_rejected: 'recusado',
@@ -91,7 +91,7 @@ const ME_TXT = {
     k_build: 'In progress', k_prod: 'In production', k_done: 'Delivered', k_lost: 'Lost', k_wait: 'Waiting approval',
     projects: 'project(s)', orders: 'order(s)', est: 'estimated value', fab: 'factory value',
     lost_reasons: 'Why projects were lost', lost_none: 'No project marked as lost.',
-    r_price: 'Price', r_lead_time: 'Lead time', r_client_gave_up: 'Client gave up', r_competitor: 'Went to a competitor', r_not_european: 'Product was not European', r_test: 'It was just a test', r_other: 'Other', r_null: 'No reason',
+    r_price: 'Price', r_lead_time: 'Lead time', r_client_gave_up: 'Client gave up', r_competitor: 'Went to a competitor', r_not_european: 'Product was not European', r_test: 'It was just a test', r_duplicate: 'Duplicate order', r_other: 'Other', r_null: 'No reason',
     by_store: 'By store', by_person: 'By person', col_who: 'Who', no_store: 'No store',
     kind_factory: 'Factory', kind_distributor: 'Distributor', kind_dealer: 'Dealer',
     st_draft: 'draft', st_pending: 'under review', st_active: 'active', st_suspended: 'suspended', st_rejected: 'not approved',
@@ -120,7 +120,7 @@ const ME_TXT = {
     k_build: 'En desarrollo', k_prod: 'En producción', k_done: 'Entregados', k_lost: 'Perdidos', k_wait: 'Esperando aprobación',
     projects: 'proyecto(s)', orders: 'pedido(s)', est: 'valor estimado', fab: 'valor de fábrica',
     lost_reasons: 'Motivos de los proyectos perdidos', lost_none: 'Ningún proyecto marcado como perdido.',
-    r_price: 'Precio', r_lead_time: 'Plazo', r_client_gave_up: 'El cliente desistió', r_competitor: 'Se fue a la competencia', r_not_european: 'El producto no era europeo', r_test: 'Fue solo una prueba', r_other: 'Otro', r_null: 'Sin motivo',
+    r_price: 'Precio', r_lead_time: 'Plazo', r_client_gave_up: 'El cliente desistió', r_competitor: 'Se fue a la competencia', r_not_european: 'El producto no era europeo', r_test: 'Fue solo una prueba', r_duplicate: 'Pedido duplicado', r_other: 'Otro', r_null: 'Sin motivo',
     by_store: 'Por tienda', by_person: 'Por persona', col_who: 'Quién', no_store: 'Sin tienda',
     kind_factory: 'Fábrica', kind_distributor: 'Distribuidor', kind_dealer: 'Tienda',
     st_draft: 'borrador', st_pending: 'en revisión', st_active: 'activo', st_suspended: 'suspendido', st_rejected: 'no aprobado',

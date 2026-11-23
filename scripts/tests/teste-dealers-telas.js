@@ -213,7 +213,7 @@ const base = `
     mpState.ordersById = ${JSON.stringify(Object.fromEntries(banco.orders.filter((o) => o.client_user_id === EU).map((o) => [o.id, o])))}; mpState.totals = { o1: 10000, o2: 3000 };`, ctx);
   win.mpLoad(); await espera(60);
   const box = () => win.document.getElementById('po-mp-v2');
-  ok(box().querySelectorAll('.cx-tab').length >= 2 && /\(1\)/.test(box().querySelector('.cx-tab[data-v="lost"]').textContent), 'abas Perdidos (1) e Mapa entram');
+  ok(box().querySelectorAll('.cx-tab').length >= 2 && /\([12]\)/.test(box().querySelector('.cx-tab[data-v="lost"]').textContent), 'abas Perdidos (n) e Mapa entram');
   ok(!box().querySelector('.cx-tab[data-v="net"]') && box().querySelectorAll('#cx-tree .cx-col').length === 4, 'árvore em cima da lista principal (sem aba Lojas separada)');
   const cab = Array.from(box().querySelectorAll('.mp-table-wrap thead th')).map((x) => x.textContent);
   const s2 = box().querySelector('.cx-strip[data-cx-order="o2"]');
@@ -234,7 +234,13 @@ const base = `
   ok(o2.status === 'approved' && o2.po_name === 'SOUZA-01' && o2.delivery_address === '9 Pine Rd, Ocala, FL' && o2.client_name === 'Loja Teste LLC', 'liberar: aprova com etiqueta, endereço e cadastro da empresa');
   ok(o2.jobsite_lat === 29.2 && o2.jobsite_lng === -82.1, 'endereço virou coordenada');
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
-  ok(box().querySelectorAll('.mp-row:not(.cx-grow)').length === 1 && !!box().querySelector('[data-cx="reopen"]'), 'aba Perdidos: só o perdido, com Reabrir');
+  // 23/11: aba Perdidos em tabela própria — TODOS os perdidos que eu enxergo (2), com motivo, loja, usuário e valores
+  await espera(80);
+  ok(box().querySelectorAll('.cx-losttab tbody tr.cx-lrow').length === 2 && box().querySelectorAll('.cx-losttab .cx-lmot').length === 2 && /\$/.test(box().querySelector('.cx-losttab').textContent), 'aba Perdidos: tabela com os 2 perdidos, motivo e valores');
+  ok(/\(2\)/.test(box().querySelector('.cx-tab[data-v="lost"]').textContent), 'aba Perdidos conta os 2');
+  box().querySelector('.cx-losttab tbody tr.cx-lrow').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(40);
+  ok(!!box().querySelector('.cx-lexp [data-cx="reopen"]') && !!box().querySelector('.cx-losttab .cx-more.is-on'), 'aba Perdidos: o ▾ abre embaixo com Reabrir');
+  box().querySelector('.cx-losttab tbody tr.cx-lrow').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   box().querySelector('.cx-tab[data-v="lost"]').dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(30);
   await espera(80);
   const clica = async (el, ms) => { el.dispatchEvent(new win.MouseEvent('click', { bubbles: true })); await espera(ms || 20); };
