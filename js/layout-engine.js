@@ -1860,6 +1860,29 @@
     return best || acc;
   }
 
+  // Dobradiça padrão = a do agregado de PORTA GIRO (externa primeiro) que
+  // tem modelo próprio (own_hinge_slide.hinge do módulo-porta). null se o
+  // catálogo não tem nenhuma — aí vale a do módulo, como antes.
+  function dobradicaPadraoDoCatalogo(catalogo) {
+    var melhor = null;
+    Object.keys(catalogo || {}).forEach(function (k) {
+      var a = catalogo[k];
+      var h = a && a.door_mechanism === 'porta_giro' && a.own_hinge_slide && a.own_hinge_slide.hinge;
+      if (!h || h.active === false) return;
+      if (!melhor || (a.door_position === 'externa' && melhor.pos !== 'externa')) melhor = { h: h, pos: a.door_position };
+    });
+    if (melhor) return melhor.h;
+    // sem porta giro com dobradiça própria: qualquer frente do catálogo que
+    // tenha, menos a de 165° (canto).
+    var outra = null;
+    Object.keys(catalogo || {}).forEach(function (k) {
+      var a = catalogo[k];
+      var h = a && a.own_hinge_slide && a.own_hinge_slide.hinge;
+      if (!outra && h && h.active !== false && !/165/.test(String(h.name || ''))) outra = h;
+    });
+    return outra;
+  }
+
   function toPieceRows(geradas, catalogo) {
     var rows = [];
     (geradas || []).forEach(function (p, i) {
@@ -1973,6 +1996,12 @@
             : p.opening_type === 'hinge_right' ? 'right'
             : p.opening_type === 'hinge_top' ? 'top'
             : p.opening_type === 'hinge_bottom' ? 'bottom' : 'none',
+          // 2026-11-22 (Matt: "é a mesma soft close que temos, a standard"):
+          // basculante superior/inferior é chapa solta — leva a dobradiça
+          // PADRÃO (a da Porta Giro do catálogo) na própria peça, pra não
+          // depender de o casco ter modelo de dobradiça vinculado.
+          own_hinge_model: (p.opening_type === 'hinge_top' || p.opening_type === 'hinge_bottom')
+            ? dobradicaPadraoDoCatalogo(catalogo) : null,
           // slide_distance_mm setado (só na frente de gaveta sintetizada por
           // emitContent, ver comentário dela abaixo) é o sinal de "isto é um
           // PAINEL decorativo, não a gaveta de verdade" — NÃO conta corrediça

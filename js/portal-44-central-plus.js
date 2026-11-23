@@ -472,6 +472,39 @@ async function cxLoadScope(force) {
         (data || []).forEach((r) => { s.emails[r.user_id] = r; });
       }
     } catch (e3) { /* fica o começo do id */ }
+    // NOME DA EMPRESA no lugar do e-mail (22/11, Matt: "onde aparece o email
+    // troque pelo nome da companhia. tanto no filtro quanto na tela de ordens
+    // e projetos"). Ordem: empresa do cadastro da pessoa (person_records) →
+    // loja, se ela é a dona → nome de loja do perfil → e-mail (cxUserLabel).
+    // Duas pessoas com a mesma empresa: as que não são donas levam o começo
+    // do e-mail junto, pra dar pra diferenciar. Ver cxUserName.
+    s.nomes = {};
+    try {
+      const todos = Array.from(new Set(s.orders.map((o) => o.client_user_id).concat(Object.keys(s.team)))).filter(Boolean);
+      const cad = {}, perfil = {};
+      for (let i = 0; i < todos.length; i += 150) {
+        const parte = todos.slice(i, i + 150);
+        try { const r1 = await sb.from('person_records').select('user_id, company_name').in('user_id', parte); (r1.data || []).forEach((r) => { cad[r.user_id] = r; }); } catch (eA) { /* sem a 321 */ }
+        try { const r2 = await sb.from('user_profiles').select('user_id, email, store_name').in('user_id', parte); (r2.data || []).forEach((r) => { perfil[r.user_id] = r; }); } catch (eB) { /* sem leitura */ }
+      }
+      const limpa = (v) => String(v || '').trim();
+      const bruto = {}, dono = {};
+      todos.forEach((u) => {
+        const m = s.team[u];
+        const acc = m && m.role === 'owner' ? (s.accounts || []).find((a) => a.id === m.account_id) : null;
+        dono[u] = !!acc;
+        bruto[u] = limpa(cad[u] && cad[u].company_name) || (acc ? limpa(acc.trade_name || acc.legal_name) : '') || limpa(perfil[u] && perfil[u].store_name);
+      });
+      const grupos = {};
+      todos.forEach((u) => { if (bruto[u]) (grupos[bruto[u].toLowerCase()] = grupos[bruto[u].toLowerCase()] || []).push(u); });
+      todos.forEach((u) => {
+        if (!bruto[u]) return;
+        const g = grupos[bruto[u].toLowerCase()];
+        const temDono = g.some((x) => dono[x]);
+        const email = limpa((s.team[u] && s.team[u].email) || (perfil[u] && perfil[u].email) || (s.emails[u] && s.emails[u].email));
+        s.nomes[u] = (g.length > 1 && (!temDono || !dono[u]) && email) ? bruto[u] + ' · ' + email.split('@')[0] : bruto[u];
+      });
+    } catch (e5) { /* fica o e-mail */ }
     // PRODUÇÃO E EMBALAGEM por pedido (21/11, Matt: "antes mostrava bem melhor
     // os status, era mais colorido, mostrava como estava indo a embalagem"):
     // as mesmas RPCs do painel antigo (portal-09) — lote, volumes embalados e
@@ -543,6 +576,17 @@ function cxUserLabel(uid, orders) {
   const o = (orders || []).find((x) => x.client_user_id === uid && x.client_email);
   return o ? o.client_email : String(uid || '').slice(0, 8);
 }
+// Nome que aparece na tela pra uma pessoa: a EMPRESA dela (scope.nomes, ver
+// cxLoadScope) e, sem empresa cadastrada, o e-mail de sempre.
+function cxUserName(uid, orders) {
+  const n = ((cxState.scope && cxState.scope.nomes) || {})[uid];
+  return n || cxUserLabel(uid, orders);
+}
+// E-mail só quando o nome mostrado é a empresa (pra linha de baixo/dica).
+function cxUserMail(uid, orders) {
+  const n = ((cxState.scope && cxState.scope.nomes) || {})[uid];
+  return n ? cxUserLabel(uid, orders) : '';
+}
 // ÁRVORE LADO A LADO (20/11, Matt: "mostrar a árvore lado a lado: FÁBRICA
 // MATRIZ (depois pode haver centrais) — DEALER (mesma coisa que distribuidor)
 // — VENDEDOR (contractor, arquiteto ou vendedor do dealer) — e cliente
@@ -601,8 +645,8 @@ function cxTreeCols() {
     nV = uids.length;
     const PAPEL = { pt: { owner: 'dono', manager: 'gerente', seller: 'vendedor', finance: 'financeiro' }, en: { owner: 'owner', manager: 'manager', seller: 'salesperson', finance: 'finance' }, es: { owner: 'dueño', manager: 'gerente', seller: 'vendedor', finance: 'finanzas' } }[cxLang()];
     const papel = (uid) => { const m = s.team[uid]; if (m) return PAPEL[m.role] || ''; const pf = (s.emails || {})[uid]; return pf ? (pf.role || '') : ''; };
-    c3 = uids.map((uid) => item('user', uid, cxUserLabel(uid, daLoja), papel(uid), porUser[uid], f.user === uid)).join('') || vazio;
-    if (f.user) selUser = { nome: cxUserLabel(f.user, daLoja), q: qtd(porUser[f.user] || []) };
+    c3 = uids.map((uid) => item('user', uid, cxUserName(uid, daLoja), [papel(uid), cxUserMail(uid, daLoja)].filter(Boolean).join(' · '), porUser[uid], f.user === uid)).join('') || vazio;
+    if (f.user) selUser = { nome: cxUserName(f.user, daLoja), q: qtd(porUser[f.user] || []) };
   }
 
   // 4) PO do pedido (projeto: PO do projeto) do dealer / vendedor escolhido
@@ -890,7 +934,7 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
   return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + (semPasta ? ' cx-frow-0' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">'
     + '<td colspan="' + (enx ? 6 : 4) + '" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
-    + ' <span class="cx-fquem">' + cEsc(String(cxUserLabel(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
+    + ' <span class="cx-fquem">' + cEsc(String(cxUserName(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
     + (semPasta ? '' : '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button>') + '<span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
     + (enx ? '<td class="cx-facts cx-facts-l">' + fbtns + '</td>' + (preco ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td>' : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="3"></td></tr>'
       : (preco ? cxSomaTds(itens, soProj) : cxSeller() ? '<td class="cx-r">' + cEsc(cMoney(itens.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' : '') + '<td colspan="4" class="cx-facts">' + fbtns + '</td></tr>');
@@ -1016,7 +1060,7 @@ function cxProjCardHtml(o, doPedido) {
   return '<div class="cx-pcard">'
     + (src ? '<img class="cx-pimg" alt="" src="' + cEsc(src) + '" data-cx="pj" data-a="zoom" data-id="' + cEsc(o.id) + '">' : '<div class="cx-pimg cx-pimg-0">' + (c ? '' : '…') + '</div>')
     + '<div class="cx-pbody"><b>' + cEsc(o._pname || o.po_name || '') + '</b>'
-    + '<div class="hint">' + cEsc([cxPnum(o.project_number), o._folder ? '📁 ' + o._folder : '', cxUserLabel(o.client_user_id, [o])].filter(Boolean).join(' · ')) + '</div>'
+    + '<div class="hint">' + cEsc([cxPnum(o.project_number), o._folder ? '📁 ' + o._folder : '', cxUserName(o.client_user_id, [o])].filter(Boolean).join(' · ')) + '</div>'
     + '<div class="cx-pacts">' + bt('open', T('project.load_btn'), 1) + (doPedido ? '' : bt('rename', T('fav.rename_btn'))) + bt('dup', T('fav.duplicate_btn')) + bt('share', T('project.share_btn')) + bt('v3d', T('fav.view3d_btn')) + (doPedido ? '' : bt('folder', T('fav.folder_btn')))
       // EXCLUIR PROJETO (22/11, Matt: "quero deletar uns projetos"): dono ou admin, só projeto que NÃO virou pedido.
       + (!doPedido && (cxAdmin() || o.client_user_id === cxMe()) ? '<button type="button" class="secondary" style="color:#9a2b1e;border-color:#d9b3ad" data-cx="pj" data-a="del" data-id="' + cEsc(o.id) + '">' + cEsc(odT('pdel_btn')) + '</button>' : '') + '</div>'
@@ -1060,7 +1104,7 @@ async function cxProjAction(a, o) {
       // devolve 0 linhas e a tela avisa. Não tem volta: fotos realistas e
       // imagens de referência vão junto (cascade).
       const meu = o.client_user_id === cxMe();
-      const dono = cxUserLabel(o.client_user_id, [o]) || '';
+      const dono = cxUserName(o.client_user_id, [o]) || '';
       if (!confirm(odT(meu ? 'pdel_q' : 'pdel_q_outro').replace('{nome}', o._pname || '').replace('{dono}', dono))) return;
       const { data, error } = await supabaseClient.from('user_projects').delete().eq('id', o._pid).is('frozen_order_id', null).select('id');
       if (error) throw error;
@@ -1304,7 +1348,8 @@ function cxOrdOpen() { return cxState.ordOpen || (cxState.ordOpen = new Set()); 
 function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
   const s = cxState.scope || {};
   const dentro = !!lin.dentro; const aberto = cxOrdOpen().has(o.id);
-  const quemL = cxUserLabel(o.client_user_id, [o]);   // 21/11 (Matt: "preciso enxergar qual é o vendedor")
+  const quemL = cxUserName(o.client_user_id, [o]);   // 21/11 (Matt: "preciso enxergar qual é o vendedor"); 22/11: nome da empresa
+  const quemLMail = cxUserMail(o.client_user_id, [o]) || quemL;
   const id = cEsc(o.id);
   const mini = (cx, rot, extra, tip) => '<button type="button" class="cx-mini' + (extra || '') + '" data-cx="' + cx + '" data-id="' + id + '"' + (tip ? ' title="' + cEsc(tip) + '"' : '') + '>' + cEsc(rot) + '</button>';
   const temInv = s.invOk && !o._proj && o.status !== 'submitted' && !cxSeller();   // invoice = valores de fábrica: vendedor não abre
@@ -1321,7 +1366,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
   const linha = '<tr class="' + (dentro ? 'cx-in' + (lin.ultimo ? ' cx-in-last' : '') : '') + (aberto ? ' cx-ord-on' : '') + '" data-cx="openorder" data-id="' + id + '">'
     + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
     + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + id : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
-    + '<td class="cx-quem" title="' + cEsc(quemL || '') + '">' + cEsc(String(quemL || '—').split('@')[0]) + '</td>'
+    + '<td class="cx-quem" title="' + cEsc(quemLMail || '') + '">' + cEsc(String(quemL || '—').split('@')[0]) + '</td>'
     + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
     // 22/11 (Matt: "acho bagunçado esses desalinhamentos, vamos separar duas colunas com status e
     // botão da próxima etapa"): status numa coluna, botão (Release production / pickup, Send to factory) na outra.
@@ -1331,7 +1376,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + '<td>' + pag + '</td><td>' + cxQuando(o._t) + '</td>'
     + '<td class="cx-r"><button type="button" class="cx-more' + (aberto ? ' is-on' : '') + '" data-cx="ordmore" data-id="' + id + '" title="' + cEsc(odT(aberto ? 'less' : 'more')) + '" aria-label="' + cEsc(odT('more')) + '">' + (aberto ? '▴' : '▾') + '</button></td></tr>';
   if (!aberto) return linha;
-  const quem = cxUserLabel(o.client_user_id, [o]);
+  const quem = [cxUserName(o.client_user_id, [o]), cxUserMail(o.client_user_id, [o])].filter(Boolean).join(' · ');
   const kv = (k, v) => (v == null || v === '' ? '' : '<div class="cx-okv"><span>' + cEsc(k) + '</span><b>' + v + '</b></div>');
   const info = kv(odT('seller'), cEsc(quem || '—')) + kv(odT('client'), cEsc(o.client_name || '')) + kv(odT('room'), cEsc(o.room_name || '')) + kv(odT('addr'), cEsc(o.delivery_address || ''))
     + (o._folder ? kv('📁', cEsc(o._folder)) : '')
@@ -1363,7 +1408,7 @@ function cxFlatTable(rows, principal) {
   // ferramentas de link/comprovante/QuickBooks) abre embaixo no ▾.
   const enx = principal && !soProj;
   if (principal) {
-    const val = { num: cxNumVal, loja: (o) => cxStoreName(o).toLowerCase(), quem: (o) => cxUserLabel(o.client_user_id, [o]).toLowerCase(), nome: (o) => String(o.po_name || '').toLowerCase(),
+    const val = { num: cxNumVal, loja: (o) => cxStoreName(o).toLowerCase(), quem: (o) => cxUserName(o.client_user_id, [o]).toLowerCase(), nome: (o) => String(o.po_name || '').toLowerCase(),
       cliente: (o) => String(o.client_name || '').toLowerCase(), l: (o) => o._l || 0, net: (o) => (o._n == null ? -1 : o._n), v: (o) => (o._v == null ? -1 : o._v), it: (o) => (o._it == null ? -1 : o._it), etapa: (o) => CX_NET_STAGES.indexOf(o._s), upd: (o) => String(o._t || '') }[st.col] || ((o) => String(o._t || ''));
     rows = rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b._t || '').localeCompare(String(a._t || '')); });
   }
@@ -1396,7 +1441,8 @@ function cxFlatTable(rows, principal) {
     })().slice(0, max).map((lin) => {
       if (lin.pasta) return cxFolderRowHtml(lin.pasta, lin.itens, soProj, preco, enx);
       const o = lin.o; const dentro = !!lin.dentro;
-      const quem = cxUserLabel(o.client_user_id, [o]);
+      const quem = cxUserName(o.client_user_id, [o]);
+      const quemMail = cxUserMail(o.client_user_id, [o]) || quem;
       // botão DENTRO da célula de etapa (21/11: "na própria barra de status"; a última coluna some em tela estreita)
       const envia = o._proj && (cxAdmin() || (o.client_user_id === cxMe() && !cxSeller()))
         ? ' <button type="button" class="cx-sendfab" data-cx="sendfab" data-id="' + cEsc(o.id) + '">' + cEsc(sfT('btn')) + '</button>' : '';
@@ -1411,7 +1457,7 @@ function cxFlatTable(rows, principal) {
       if (enx) return cxOrdRowHtml(o, lin, num, icoN, preco, envia);
       return '<tr' + (dentro ? ' class="cx-in' + (lin.ultimo ? ' cx-in-last' : '') + '"' : '') + ' data-cx="openorder" data-id="' + cEsc(o.id) + '">' + ck + '<td class="cx-num' + (o._proj ? ' cx-num-p' : '') + '"><span class="cx-nwrap">' + icoN + '<span>' + num + '</span></span></td>'
         + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + cEsc(o.id) : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
-        + '<td class="cx-quem" title="' + cEsc(quem || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
+        + '<td class="cx-quem" title="' + cEsc(quemMail || '') + '">' + cEsc(String(quem || '—').split('@')[0]) + '</td>'
         + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '" title="' + cEsc(ivT('folder_tip')) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
         + (!preco ? (cxSeller() ? '<td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>' : '') : soProj
           ? '<td class="cx-r">' + (o._n != null ? (o._d ? '<small class="cx-est" title="' + cEsc(cT('list') + ' ' + cMoney(o._l)) + '">−' + o._d + '%</small> ' : '') + cEsc(cMoney(o._n)) : '—') + '</td><td class="cx-r"><b>' + (o._v != null ? cEsc(cMoney(o._v)) : '—') + '</b></td>'
@@ -1451,7 +1497,7 @@ function cxGroups(rows) {
     const cli = {}; g.itens.forEach((o) => { const n = String(o.client_name || '').trim(); if (n) cli[n] = (cli[n] || 0) + 1; });
     g.titulo = g.folder || a._pname || a.po_name || a.client_name || '—';
     g.cliente = Object.keys(cli).sort((x, y) => cli[y] - cli[x])[0] || '';
-    g.loja = cxStoreName(a); g.quem = cxUserLabel(a.client_user_id, g.itens);
+    g.loja = cxStoreName(a); g.quem = cxUserName(a.client_user_id, g.itens);
     g.n = g.itens.length;
     g.l = g.itens.reduce((t, o) => t + (o._l || 0), 0);
     g.pn = g.itens.reduce((t, o) => t + (o._n != null ? o._n : (o._l || 0)), 0); g.v = g.itens.reduce((t, o) => t + (o._v || 0), 0);
@@ -1548,7 +1594,7 @@ function cxHeadMenu(col, th) {
   } else if (col === 'quem') {
     const base = Object.assign({}, f); cxState.net = Object.assign({}, f, { user: '' }); const por = {}; cxNetRows().forEach((o) => { por[o.client_user_id] = (por[o.client_user_id] || 0) + 1; }); cxState.net = base;
     const uids = Object.keys(por).sort((a, b) => por[b] - por[a]).slice(0, 40);
-    h += op('user', '', cT('fl_all'), !f.user) + uids.map((u) => op('user', u, cxUserLabel(u, cxState.scope.orders) + ' (' + por[u] + ')', f.user === u)).join('');
+    h += op('user', '', cT('fl_all'), !f.user) + uids.map((u) => op('user', u, cxUserName(u, cxState.scope.orders) + ' (' + por[u] + ')', f.user === u)).join('');
   } else if (col === 'status') {
     h += op('gstatus', '', cT('fl_all'), !f.gstatus) + ['dev', 'proposal', 'approved'].map((k) => op('gstatus', k, T('st_' + k, k), f.gstatus === k)).join('');
   } else if (col === 'upd') {

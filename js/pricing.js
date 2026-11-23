@@ -1377,7 +1377,17 @@
     // placeFlapHardware). Custo do pistão ainda não tem catálogo — fica
     // hinge_cost=0 de propósito até essa peça ganhar cadastro próprio
     // (PENDENTE, ver docs/modelos-de-porta-frente-spec.md).
-    if (piece.hinge_side === 'top') {
+    // 2026-11-22 (Matt: "essas hinge é a mesma soft close que temos, a
+    // standard mesmo — da porta basculante inferior e superior"): a
+    // basculante do Construtor é chapa solta (não é peça-módulo com
+    // dobradiça própria) e ficava sem modelo quando o casco não tem
+    // dobradiça vinculada ("Hinges — Unidentified model", $0). Agora a peça
+    // traz a dobradiça padrão do catálogo em own_hinge_model
+    // (layout-engine toPieceRows) e ela vale antes da do módulo. A
+    // basculante INFERIOR (dobradiça embaixo) passa a contar dobradiça
+    // igual a superior: pela LARGURA.
+    if (piece.hinge_side === 'top' || piece.hinge_side === 'bottom') hingeModel = piece.own_hinge_model || hingeModel;
+    if (piece.hinge_side === 'top' || piece.hinge_side === 'bottom') {
       // Lift: dobradiça de copo igual porta de abrir, no TOPO — quantidade
       // pela largura (a borda da dobradiça). Ver ehPortaLift.
       hinge_count = hingeCountForDoorHeight(pieceDims.width_mm);
@@ -1696,8 +1706,8 @@
     // gaveta comum). 'none' = não abre, sem custo de ferragem de abertura.
     let hinge_cost = 0;
     let hinge_count = 0;
-    if (piece.opening_type === 'hinge_top') {
-      // Lift (ver ehPortaLift): dobradiça de copo pela LARGURA.
+    if (piece.opening_type === 'hinge_top' || piece.opening_type === 'hinge_bottom') {
+      // Lift (ver ehPortaLift) e basculante inferior (22/11): dobradiça de copo pela LARGURA.
       hinge_count = hingeCountForDoorHeight(pieceDims.width_mm);
       hinge_cost = effectiveHingeModel ? (effectiveHingeModel.price_per_unit * hinge_count * qty) : 0;
     }
