@@ -513,16 +513,23 @@
   // mesmo dia, trocou o pistão genérico pelo Blum AVENTOS HK-XS niquelado,
   // "hoje só com puxador" (TIP-ON fica pro futuro). Migration 220.
   //
-  // Por porta lift: 2 mecanismos HK-XS (um de cada lado) + 2 placas de
-  // fixação no corpo (20K5101) + 2 placas na porta (20K4101). O MODELO do
-  // mecanismo sai do fator de força da Blum:
+  // Por porta lift: 1 OU 2 mecanismos HK-XS (2026-11-22, Matt: "opção de 1
+  // até 2 se a porta for grande" — antes eram sempre 2) + 1 placa de fixação
+  // no corpo (20K5101) e 1 placa na porta (20K4101) POR MECANISMO. O MODELO
+  // do mecanismo sai do fator de força da Blum:
   //   FF = altura do módulo (mm) × (peso da porta + 2 × peso do puxador) (kg)
-  // e com 2 mecanismos a faixa de cada modelo DOBRA. Escolhe o 1º modelo em
-  // que o FF fica com folga (≥ 5% acima do mínimo e ≤ 90% do máximo — a
-  // Blum pede teste perto dos limites); sem folga em nenhum, o 1º que cobre;
-  // fora de todos, o mais forte + aviso (lift_warning).
+  // e com 2 mecanismos a faixa de cada modelo DOBRA.
+  // Quantos: 1 só (de um lado) quando a porta tem até LIFT_UM_LADO_ATE_MM de
+  // largura E o FF cabe na faixa de 1 mecanismo; senão 2 (um de cada lado).
+  // Ordem da escolha: 1 com folga → 2 com folga → 1 que cobre → 2 que cobre
+  // (folga = ≥ 5% acima do mínimo e ≤ 90% do máximo — a Blum pede teste
+  // perto dos limites); fora de todos, o mais fraco (abaixo) ou 2 do mais
+  // forte (acima) + aviso (lift_warning).
   // Faixas: attrs.pf_min/pf_max do item comprado (ERP), senão as da Blum.
-  const LIFT_POR_PORTA = 2;
+  // Largura-limite de 1 lado: attrs.um_lado_ate_mm de qualquer mecanismo
+  // (ERP), senão LIFT_UM_LADO_ATE_MM.
+  const LIFT_POR_PORTA_MAX = 2;
+  const LIFT_UM_LADO_ATE_MM = 600;
   const LIFT_PUXADOR_KG = 0.3;
   const LIFT_MECANISMOS = [
     { code: 'BLUM-20K1101', min: 200, max: 1000 },
@@ -551,27 +558,40 @@
     }
     return null;
   }
-  // kh_mm = altura do módulo; pesoPortaKg = 1 porta; qty = nº de portas.
-  function liftKitFor(kh_mm, pesoPortaKg, qty) {
+  // kh_mm = altura do módulo; pesoPortaKg = 1 porta; qty = nº de portas;
+  // larguraPortaMm = largura de 1 porta (sem ela, decide só pelo FF).
+  function liftKitFor(kh_mm, pesoPortaKg, qty, larguraPortaMm) {
     const ff = Number(kh_mm || 0) * (Number(pesoPortaKg || 0) + 2 * LIFT_PUXADOR_KG);
+    let umLadoAte = LIFT_UM_LADO_ATE_MM;
     const faixas = LIFT_MECANISMOS.map((m) => {
       const it = itemPorCodigo(m.code);
       const a = (it && it.attrs) || {};
       const min = Number(a.pf_min) > 0 ? Number(a.pf_min) : m.min;
       const max = Number(a.pf_max) > 0 ? Number(a.pf_max) : m.max;
-      return { code: m.code, item: it, lo: min * LIFT_POR_PORTA, hi: max * LIFT_POR_PORTA };
+      if (Number(a.um_lado_ate_mm) > 0) umLadoAte = Number(a.um_lado_ate_mm);
+      return { code: m.code, item: it, lo: min, hi: max };
     });
-    let esc = faixas.find((f) => ff >= f.lo * 1.05 && ff <= f.hi * 0.9)
-      || faixas.find((f) => ff >= f.lo && ff <= f.hi);
+    const larg = Number(larguraPortaMm) || 0;
+    const podeUm = !(larg > umLadoAte);
+    const comFolga = (n) => faixas.find((f) => ff >= f.lo * n * 1.05 && ff <= f.hi * n * 0.9);
+    const cobre = (n) => faixas.find((f) => ff >= f.lo * n && ff <= f.hi * n);
+    let esc = null;
+    let porPorta = LIFT_POR_PORTA_MAX;
+    const tenta = (n, fn) => { if (!esc) { const f = fn(n); if (f) { esc = f; porPorta = n; } } };
+    if (podeUm) tenta(1, comFolga);
+    tenta(LIFT_POR_PORTA_MAX, comFolga);
+    if (podeUm) tenta(1, cobre);
+    tenta(LIFT_POR_PORTA_MAX, cobre);
     let aviso = null;
     if (!esc) {
-      esc = ff < faixas[0].lo ? faixas[0] : faixas[faixas.length - 1];
-      aviso = ff < faixas[0].lo ? 'lift_abaixo_da_faixa' : 'lift_acima_da_faixa';
+      const nMin = podeUm ? 1 : LIFT_POR_PORTA_MAX;
+      if (ff < faixas[0].lo * nMin) { esc = faixas[0]; porPorta = nMin; aviso = 'lift_abaixo_da_faixa'; }
+      else { esc = faixas[faixas.length - 1]; porPorta = LIFT_POR_PORTA_MAX; aviso = 'lift_acima_da_faixa'; }
     }
     const itens = [];
     let custo = 0;
     const poe = (it, code) => {
-      const n = LIFT_POR_PORTA * qty;
+      const n = porPorta * qty;
       const c = it ? Number(it.purchase_price || 0) * n : 0;
       custo += c;
       itens.push({
@@ -582,7 +602,7 @@
     };
     poe(esc.item, esc.code);
     LIFT_PLACAS.forEach((code) => poe(itemPorCodigo(code), code));
-    return { itens, custo, ff: Math.round(ff), modelo: esc.code, aviso };
+    return { itens, custo, ff: Math.round(ff), modelo: esc.code, aviso, mecanismos: porPorta };
   }
   function ehPortaLift(piece) {
     return !!piece && (piece.hinge_side === 'top' || piece.opening_type === 'hinge_top');
@@ -1331,7 +1351,7 @@
     if (ehPortaLift(piece)) {
       const dens = (color && Number(color.density_kg_per_m3) > 0) ? Number(color.density_kg_per_m3) : densidadePadraoKgM3;
       const pesoPorta = (Number(pieceDims.width_mm) || 0) * (Number(pieceDims.height_mm) || 0) * (Number(pieceDims.depth_mm) || 0) / 1e9 * dens;
-      liftKit = liftKitFor(dims && dims.H, pesoPorta, qty);
+      liftKit = liftKitFor(dims && dims.H, pesoPorta, qty, pieceDims.width_mm);
     }
     const lift_cost = liftKit ? liftKit.custo : 0;
     const material_cor_cost = materialCor ? materialCor.custo * qty : 0;
@@ -1503,6 +1523,7 @@
       lift_cost: lift_cost,
       lift_power_factor: liftKit ? liftKit.ff : null,
       lift_model: liftKit ? liftKit.modelo : null,
+      lift_mechanisms: liftKit ? liftKit.mecanismos : null,
       lift_warning: liftKit ? liftKit.aviso : null,
       // Aberto por processo quando a peça está em processo (migration 090);
       // null nas peças antigas, que têm uma labor só e nada a abrir.
@@ -1704,7 +1725,7 @@
     if (ehPortaLift(piece)) {
       let pesoPorta = 0;
       try { pesoPorta = calculateWeightKg(childResult.breakdown, effectiveColorsByRole, densidadePadraoKgM3); } catch (e) { pesoPorta = 0; }
-      liftKitMod = liftKitFor(dims && dims.H, pesoPorta, qty);
+      liftKitMod = liftKitFor(dims && dims.H, pesoPorta, qty, pieceDims.width_mm);
     }
     const lift_cost_mod = liftKitMod ? liftKitMod.custo : 0;
     const piece_total = child_total + hinge_cost + slide_cost + lift_cost_mod;
@@ -1714,6 +1735,7 @@
       lift_cost: lift_cost_mod,
       lift_power_factor: liftKitMod ? liftKitMod.ff : null,
       lift_model: liftKitMod ? liftKitMod.modelo : null,
+      lift_mechanisms: liftKitMod ? liftKitMod.mecanismos : null,
       lift_warning: liftKitMod ? liftKitMod.aviso : null,
       piece_id: piece.id,
       reference: piece.reference || piece.module_name,

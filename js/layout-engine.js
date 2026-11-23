@@ -2210,6 +2210,11 @@
     var mw = Math.max(num(acc.minW), num(pm.min_void_w_mm));
     var mh = Math.max(num(acc.minH), num(pm.min_void_h_mm));
     var md = Math.max(num(acc.minD), num(pm.min_void_d_mm));
+    // Vão MÁXIMO (migration 336, 2026-11-22 — porta lift Blum HK-XS só
+    // trabalha numa faixa de altura/largura). 0/vazio = sem teto, como sempre.
+    var xw = num(acc.maxW), xh = num(acc.maxH);
+    if (xw > 0 && box.w > xw) return false;
+    if (xh > 0 && box.h > xh) return false;
     return box.w >= mw && box.h >= mh && box.d >= md;
   }
 

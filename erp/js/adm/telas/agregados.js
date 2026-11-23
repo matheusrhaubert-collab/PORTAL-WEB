@@ -159,6 +159,15 @@ ADM_TELAS['tab-agregados'] = `
         <div><label>Profundidade mín (mm)</label><input type="number" id="agregado-min-d" value="0" style="width:110px" /></div>
       </div>
 
+      <h3 style="margin:14px 0 4px;font-size:13px">Vão máximo para oferecer</h3>
+      <p class="hint" style="margin-top:0">
+        O agregado some da lista se o vão for <strong>maior</strong> que isso (ex.: porta lift Blum HK-XS). 0 = sem limite.
+      </p>
+      <div class="row" style="align-items:flex-end;">
+        <div><label>Largura máx (mm)</label><input type="number" id="agregado-max-w" value="0" style="width:110px" /></div>
+        <div><label>Altura máx (mm)</label><input type="number" id="agregado-max-h" value="0" style="width:110px" /></div>
+      </div>
+
       <h3 style="margin:14px 0 4px;font-size:13px">Limites de fabricação</h3>
       <p class="hint" style="margin-top:0">
         Mín/máx da peça e sentido do veio <strong>não se cadastram aqui</strong> — são do <strong>componente</strong>

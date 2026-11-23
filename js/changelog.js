@@ -58,7 +58,8 @@ window.LEGNO_CHANGELOG = [
         "Construtor: as divisórias se movem arrastando pelos pegadores; um clique só seleciona.",
         "A câmera do 3D gira em volta do ponto onde está o mouse.",
         "Plano Técnico com o ícone de cada módulo na lista.",
-        "Enquanto o catálogo carrega aparece Carregando módulos… em vez de Nenhum módulo encontrado."
+        "Enquanto o catálogo carrega aparece Carregando módulos… em vez de Nenhum módulo encontrado.",
+        "Porta Lift (basculante que abre para cima, Blum AVENTOS HK-XS): agora leva 1 mecanismo quando a porta tem até 600 mm de largura e o peso permite, e 2 quando a porta é grande — com 1 placa no corpo e 1 na porta por mecanismo. O Construtor só oferece a porta Lift em vão que o sistema comporta (largura de 250 a 1200 mm, altura de 200 a 560 mm)."
       ],
       en: [
         "Projects: the screen is locked to the monitor size — the room no longer scrolls down; only the right column scrolls. The summary, save and footer left the area under the drawing (they are on the toolbar); references and realistic photos sit at the end of the right column.",
@@ -84,7 +85,8 @@ window.LEGNO_CHANGELOG = [
         "Builder: dividers move by dragging their handles; a click only selects.",
         "The 3D camera orbits around the point under the mouse.",
         "Technical Plan with an icon for each cabinet in the list.",
-        "While the catalog loads you see Loading cabinets… instead of No cabinets found."
+        "While the catalog loads you see Loading cabinets… instead of No cabinets found.",
+        "Lift door (opens upward, Blum AVENTOS HK-XS): now uses 1 lift mechanism when the door is up to 600 mm wide and light enough, and 2 when the door is large — with 1 cabinet plate and 1 door plate per mechanism. The Cabinet Builder only offers the Lift door in openings the system supports (250 to 1200 mm wide, 200 to 560 mm high)."
       ],
       es: [
         "Proyectos: la pantalla queda fija al tamaño del monitor — el ambiente ya no baja; solo la columna derecha se desplaza. El resumen, guardar y el pie salieron de debajo del dibujo (están en la barra); referencias y fotos realistas quedan al final de la columna derecha.",
@@ -110,7 +112,8 @@ window.LEGNO_CHANGELOG = [
         "Constructor: las divisiones se mueven arrastrando por sus tiradores; un clic solo selecciona.",
         "La cámara 3D gira alrededor del punto donde está el mouse.",
         "Plano Técnico con el ícono de cada módulo en la lista.",
-        "Mientras el catálogo carga aparece Cargando módulos… en vez de No se encontraron módulos."
+        "Mientras el catálogo carga aparece Cargando módulos… en vez de No se encontraron módulos.",
+        "Puerta Lift (abre hacia arriba, Blum AVENTOS HK-XS): ahora lleva 1 mecanismo cuando la puerta tiene hasta 600 mm de ancho y el peso lo permite, y 2 cuando la puerta es grande — con 1 placa en el cuerpo y 1 en la puerta por mecanismo. El Constructor solo ofrece la puerta Lift en huecos que el sistema admite (ancho de 250 a 1200 mm, alto de 200 a 560 mm)."
       ]
     }
   },

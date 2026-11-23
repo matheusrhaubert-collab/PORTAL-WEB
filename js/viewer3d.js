@@ -4581,7 +4581,22 @@ const Viewer3D = (function () {
       const frenteZ = doorGroup.position.z - doorThicknessM / 2 - 0.004;
       const bracos = [];
       const tmpW = new THREE.Vector3(), tmpD = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-      [-1, 1].forEach((sideX) => {
+      // 1 ou 2 mecanismos (2026-11-22): a MESMA regra do orçamento
+      // (pricing.js liftKitFor) — aqui com o peso estimado pela chapa na
+      // densidade padrão e a altura da porta no lugar da do módulo (só
+      // visual). Com 1 só, ele fica na lateral esquerda.
+      let ladosLift = [-1, 1];
+      try {
+        const wMm = doorWidthM * 1000, hMm = doorHeightM * 1000;
+        let nLift = wMm > 600 ? 2 : 1;
+        if (typeof Pricing !== 'undefined' && Pricing && typeof Pricing.liftKitFor === 'function') {
+          const pesoKg = doorWidthM * doorHeightM * doorThicknessM * 700;
+          const kit = Pricing.liftKitFor(hMm, pesoKg, 1, wMm);
+          if (kit && kit.mecanismos) nLift = kit.mecanismos;
+        }
+        if (nLift === 1) ladosLift = [-1];
+      } catch (e) { ladosLift = [-1, 1]; }
+      ladosLift.forEach((sideX) => {
         const xLocal = sideX * Math.max(doorWidthM / 2 - lateral - 0.003 - corpoT / 2, 0.02);
         // corpo do mecanismo (fixo na lateral, rente à frente, inclinado:
         // o topo encosta na frente e a ponta de baixo vai pra trás)

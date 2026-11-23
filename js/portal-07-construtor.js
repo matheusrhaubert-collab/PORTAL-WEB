@@ -1120,7 +1120,10 @@ function projectBuilderAccessoryEntry(a, moduleExtra) {
     child_pieces: (moduleExtra && moduleExtra.child_pieces) || [],
     minW: Number(a.min_void_w_mm) || 0,
     minH: Number(a.min_void_h_mm) || 0,
-    minD: Number(a.min_void_d_mm) || 0
+    minD: Number(a.min_void_d_mm) || 0,
+    // Vão máximo pra oferecer (migration 336) — 0 = sem teto.
+    maxW: Number(a.max_void_w_mm) || 0,
+    maxH: Number(a.max_void_h_mm) || 0
   };
 }
 

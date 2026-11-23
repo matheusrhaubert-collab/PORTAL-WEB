@@ -128,7 +128,7 @@ function renderAccessoryTypes() {
       <td>${a.group_name || ''}</td>
       <td>${AGREGADO_ENCAIXE[a.role] || a.role}${eixo}</td>
       <td>${agregadoGeraLabel(a)}</td>
-      <td>${Math.round(a.min_void_w_mm)} × ${Math.round(a.min_void_h_mm)} × ${Math.round(a.min_void_d_mm)}</td>
+      <td>${Math.round(a.min_void_w_mm)} × ${Math.round(a.min_void_h_mm)} × ${Math.round(a.min_void_d_mm)}${(Number(a.max_void_w_mm) > 0 || Number(a.max_void_h_mm) > 0) ? '<br><span class="hint">máx ' + (Number(a.max_void_w_mm) > 0 ? Math.round(a.max_void_w_mm) : '—') + ' × ' + (Number(a.max_void_h_mm) > 0 ? Math.round(a.max_void_h_mm) : '—') + '</span>' : ''}</td>
       <td>${agregadoVeio(a)}</td>
       <td>${agregadoFura(a)}</td>
       <td>${agregadoFaixaProfundidade(a)}</td>
@@ -227,6 +227,9 @@ window.editAccessoryType = function (id) {
   v('agregado-min-w', a.min_void_w_mm || 0);
   v('agregado-min-h', a.min_void_h_mm || 0);
   v('agregado-min-d', a.min_void_d_mm || 0);
+  // Vão máximo (migration 336) — 0 = sem limite.
+  v('agregado-max-w', a.max_void_w_mm || 0);
+  v('agregado-max-h', a.max_void_h_mm || 0);
   c('agregado-active', a.active !== false);
   v('agregado-params', JSON.stringify(a.default_params || {}));
   // Migration 126 — refaz o select de "variante de" agora que agregado-id já
@@ -338,6 +341,16 @@ async function salvarAgregado(ev) {
     active: gc('agregado-active'),
     default_params: default_params
   };
+
+  // Vão máximo (migration 336): só vai no salvar se a coluna já existe no
+  // banco (apareceu em alguma linha carregada) ou se foi preenchido — sem
+  // isto, salvar QUALQUER agregado antes de rodar a 336 dava erro de coluna.
+  const temColunaMax = accessoryTypesCache.some((x) => x && Object.prototype.hasOwnProperty.call(x, 'max_void_w_mm'));
+  const maxW = gn('agregado-max-w'), maxH = gn('agregado-max-h');
+  if (temColunaMax || maxW > 0 || maxH > 0) {
+    payload.max_void_w_mm = maxW > 0 ? maxW : null;
+    payload.max_void_h_mm = maxH > 0 ? maxH : null;
+  }
 
   const id = g('agregado-id');
   const q = id

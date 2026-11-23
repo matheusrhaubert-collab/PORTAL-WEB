@@ -395,6 +395,8 @@ CONSTR.catalogoDoBanco = function (linhas) {
       minW: Number(a.min_void_w_mm) || 0,
       minH: Number(a.min_void_h_mm) || 0,
       minD: Number(a.min_void_d_mm) || 0,
+      maxW: Number(a.max_void_w_mm) || 0,
+      maxH: Number(a.max_void_h_mm) || 0,
       active: a.active !== false
     };
   });
