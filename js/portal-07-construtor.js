@@ -1509,6 +1509,9 @@ function ensureProjectBuilderLibShell(el) {
     + '</div>'
     + '<div class="po-proj-lib-chips" id="po-proj-lib-chips"></div>'
     + '</div>'
+    // "Neste módulo" (23/11): lista do que já está montado, cada item com a
+    // própria lixeira — ver fillProjectBuilderItens.
+    + '<details class="po-proj-lib-itens" id="po-proj-lib-itens" open><summary></summary><div class="po-proj-lib-itens-lista"></div></details>'
     + '<div class="po-proj-lib-grid" id="po-proj-lib-grid"></div>'
     + '<div class="po-proj-lib-foot">'
     + '<span class="po-proj-lib-count" id="po-proj-lib-count"></span>'
@@ -1588,7 +1591,135 @@ function projLibNorm(txt) {
   return String(txt || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// ---------------------------------------------------------------------------
+// "NESTE MÓDULO" — lista dos agregados já montados (23/11/2026)
+// ---------------------------------------------------------------------------
+// Matt: "seria interessante colocar uma lista de agregados do lado direito,
+// tipo agora eu quero deletar a porta, mas pra isso preciso deletar tudo que
+// tem dentro... se tivesse uma lista eu conseguiria escolher o que deletar"
+// + "sem mexer nos outros claro".
+// O CASO: a porta (front) mora num vão que depois foi DIVIDIDO (prateleiras,
+// gaveta). Na tela só dá pra selecionar os vãos-folha, então o ⊗ nunca chega
+// no vão dono da porta — só o "Limpar módulo" tirava.
+// A lista anda na ÁRVORE (não nas peças desenhadas): cada porta/frente, cada
+// conteúdo (gaveta, cabide, lixeira…) e cada divisória/prateleira vira uma
+// linha com lixeira. Regra de "não mexer nos outros":
+//   - porta/frente e conteúdo: sai só aquele item.
+//   - divisória/prateleira: só sai se um dos dois vãos que ela separa estiver
+//     VAZIO (é esse vão que some; o outro fica com tudo o que tem). Com os
+//     dois ocupados a lixeira fica apagada e diz o porquê.
+function projectBuilderItens() {
+  const out = [];
+  if (!projectBuilderRoot) return out;
+  const pecas = (projectBuilderBuilt && projectBuilderBuilt.pieces) || [];
+  const medida = (filtro) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    pecas.filter(filtro).forEach((p) => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + p.w); y1 = Math.max(y1, p.y + p.h); });
+    return x1 > x0 ? { w: x1 - x0, h: y1 - y0 } : null;
+  };
+  const vazio = (n) => !!n && !n.content && !(n.fronts || []).length && !(n.children || []).length;
+  const anda = (node, travadoAcima) => {
+    const travado = travadoAcima || !!node.locked;
+    (node.fronts || []).forEach((fr, i) => {
+      out.push({ kind: 'front', nodeId: node.id, frontIndex: i, acc: projectBuilderCat[fr.acc], travado,
+        dim: medida((p) => p.kind === 'front' && p.nodeId === node.id && p.frontIndex === i) });
+    });
+    if (node.content) {
+      out.push({ kind: 'content', nodeId: node.id, acc: projectBuilderCat[node.content.acc], travado,
+        qtd: Number(node.content.params && node.content.params.count) || 0,
+        dim: medida((p) => p.nodeId === node.id && (p.kind === 'content' || (p.kind === 'front' && p.frontIndex == null))) });
+    }
+    const kids = node.children || [];
+    for (let i = 0; i < kids.length - 1; i++) {
+      out.push({ kind: 'split', nodeId: node.id, divIndex: i, acc: projectBuilderCat[node.splitAcc], travado,
+        eixo: node.splitAxis, pode: vazio(kids[i]) || vazio(kids[i + 1]),
+        dim: medida((p) => p.nodeId === node.id && p.divIndex === i) });
+    }
+    kids.forEach((k) => anda(k, travado));
+  };
+  anda(projectBuilderRoot, false);
+  return out;
+}
+
+// Tira UMA divisória sem mexer em vão ocupado: some o vizinho VAZIO; o outro
+// herda o espaço. Devolve false se os dois lados têm coisa.
+function removeProjectBuilderDivisorSeguro(node, i) {
+  const kids = (node && node.children) || [];
+  const vazio = (n) => !!n && !n.content && !(n.fronts || []).length && !(n.children || []).length;
+  if (!kids[i] || !kids[i + 1]) return false;
+  const some = vazio(kids[i + 1]) ? i + 1 : (vazio(kids[i]) ? i : -1);
+  if (some < 0) return false;
+  const fica = kids[some === i ? i + 1 : i];
+  if (kids.length > 2) {
+    kids.splice(some, 1);
+    fica.sizeMode = 'fill'; fica.sizeValue = null;
+    // portas que cobrem uma FAIXA de vãos (from/to = índices dos filhos)
+    node.fronts = (node.fronts || []).filter((f) => {
+      if (f.from == null) return true;
+      if (some < f.from) { f.from--; f.to--; } else if (some <= f.to) f.to--;
+      return f.to >= f.from;
+    });
+    return true;
+  }
+  // Eram só 2 vãos: a divisão acaba e o vão pai passa a SER o vão que ficou.
+  const faixa = (node.fronts || []).filter((f) => f.from != null);
+  node.fronts = (node.fronts || []).filter((f) => f.from == null);
+  faixa.forEach((f) => { f.from = null; f.to = null; node.fronts.push(f); }); // cobria a faixa = agora cobre o vão inteiro
+  node.splitAxis = fica.splitAxis || null;
+  node.splitAcc = fica.splitAcc || null;
+  node.content = fica.content || null;
+  node.children = fica.children || [];
+  node.fronts = node.fronts.concat(fica.fronts || []);
+  node.params = Object.assign({}, fica.params || {}, node.params || {});
+  return true;
+}
+
+function removeProjectBuilderItem(it) {
+  const node = it && LayoutEngine.findNode(projectBuilderRoot, it.nodeId);
+  if (!node || it.travado) return;
+  if (it.kind === 'split') {
+    const copia = JSON.stringify(LayoutEngine.serialize(projectBuilderRoot));
+    if (!removeProjectBuilderDivisorSeguro(node, it.divIndex)) return;
+    projectBuilderUndo.push(copia);
+    if (projectBuilderUndo.length > PROJECT_BUILDER_UNDO_MAX) projectBuilderUndo.shift();
+  } else {
+    pushProjectBuilderUndo();
+    if (it.kind === 'front') LayoutEngine.removeFront(node, it.frontIndex);
+    else LayoutEngine.clearNode(node, 'content');
+  }
+  if (!LayoutEngine.findNode(projectBuilderRoot, projectBuilderSelId)) projectBuilderSelId = projectBuilderRoot.id;
+  markProjectDirty();
+  rebuildProjectBuilder();
+}
+
+function fillProjectBuilderItens() {
+  const box = document.getElementById('po-proj-lib-itens');
+  if (!box) return;
+  const itens = projectBuilderItens();
+  box.style.display = itens.length ? '' : 'none';
+  const sum = box.querySelector('summary');
+  if (sum) sum.textContent = I18n.t('project.builder_items_title') + ' (' + itens.length + ')';
+  const lista = box.querySelector('.po-proj-lib-itens-lista');
+  if (!lista) return;
+  const un = (document.getElementById('po-unit-select') || {}).value || 'mm';
+  const fmt = (mm) => (typeof formatDimensionNumber === 'function') ? formatDimensionNumber(mm, un) : String(Math.round(mm));
+  lista.innerHTML = itens.map((it, i) => {
+    const nome = (it.acc ? projectBuilderAccLabel(it.acc) : '') || I18n.t('project.builder_item_' + it.kind);
+    const dim = it.dim ? fmt(it.dim.w) + ' × ' + fmt(it.dim.h) : '';
+    const bloqueio = it.travado ? 'project.builder_item_locked' : (it.kind === 'split' && !it.pode ? 'project.builder_item_div_blocked' : '');
+    return '<div class="po-proj-lib-item po-proj-lib-item-' + it.kind + '">'
+      + '<span class="po-proj-lib-item-n"><b>' + escapeHtmlCutlist(nome) + (it.qtd > 1 ? ' × ' + it.qtd : '') + '</b>'
+      + (dim ? '<small>' + escapeHtmlCutlist(dim) + '</small>' : '') + '</span>'
+      + '<button type="button" class="po-proj-lib-item-del" data-item="' + i + '"' + (bloqueio ? ' disabled' : '')
+      + ' title="' + escapeHtmlCutlist(I18n.t(bloqueio || 'project.builder_item_remove')) + '">' + PROJ_LIB_ICON_TRASH + '</button></div>';
+  }).join('');
+  lista.querySelectorAll('.po-proj-lib-item-del').forEach((b) => {
+    b.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderItem(itens[Number(b.dataset.item)]); });
+  });
+}
+
 function fillProjectBuilderLibGrid() {
+  fillProjectBuilderItens();
   const grid = document.getElementById('po-proj-lib-grid');
   const barra = document.getElementById('po-proj-lib-chips');
   const contador = document.getElementById('po-proj-lib-count');
@@ -1781,6 +1912,7 @@ function projBuilderSvgEl(tag, attrs, parent) {
 }
 
 function renderProjectBuilderStage() {
+  try { fillProjectBuilderItens(); } catch (e) { /* a lista é só apoio: nunca derruba o desenho */ }
   const stage = document.getElementById('po-proj-builder-stage');
   const slot = projectSlots.find((s) => s.id === projectBuilderSlotId);
   if (!stage || !slot) return;
@@ -2208,6 +2340,40 @@ function renderProjectBuilderStage() {
       fill: 'transparent', class: vert ? 'po-proj-div-h' : 'po-proj-div-v'
     }, gH);
     g.addEventListener('pointerdown', (ev) => startProjectBuilderDivDrag(ev, pai, p, vert ? 'x' : 'y'));
+  });
+
+  // ---- ✕ NA PRÓPRIA PORTA/FRENTE (23/11/2026, Matt: "copiei um módulo
+  // configurado com porta e colei, agora preciso tirar a porta e não tem
+  // opção. é como se ela ficasse fixa no construtor"). Dava pra tirar — pelo
+  // ⊗ do VÃO que é dono dela — mas nada na porta dizia isso (clicar no
+  // contorno só seleciona o vão). Agora cada porta/frente colocada pelo
+  // cliente tem o próprio ✕ azul, na borda direita, a meia altura: tira SÓ
+  // ela (o que está dentro do vão fica). Frente sintetizada de gaveta
+  // (frontIndex nulo) e vão travado pela engenharia não ganham o botão.
+  // Desenhado no fim pra ficar por cima de tudo.
+  const frentesComBotao = {};
+  (built.pieces || []).forEach((p) => {
+    if (p.kind !== 'front' || p.frontIndex == null || !p.nodeId) return;
+    const chave = p.nodeId + '|' + p.frontIndex;
+    if (frentesComBotao[chave]) return;
+    const dono = LayoutEngine.findNode(projectBuilderRoot, p.nodeId);
+    if (!dono || dono.locked) return;
+    frentesComBotao[chave] = true;
+    const r = Math.max(fs * 0.62, 9);
+    const cx = p.x + p.w - r * 1.6;
+    const cy = sy(p.y + p.h / 2);
+    const g = projBuilderSvgEl('g', { style: 'cursor:pointer', class: 'po-proj-front-del' }, svg);
+    const dica = projBuilderSvgEl('title', {}, g);
+    dica.textContent = I18n.t('builder.remove_front');
+    projBuilderSvgEl('circle', { cx: cx, cy: cy, r: r, fill: '#fff', stroke: '#2f6fb8', 'stroke-width': sw * 1.6 }, g);
+    const d = r * 0.42;
+    projBuilderSvgEl('path', {
+      d: 'M' + (cx - d) + ' ' + (cy - d) + 'L' + (cx + d) + ' ' + (cy + d)
+        + 'M' + (cx + d) + ' ' + (cy - d) + 'L' + (cx - d) + ' ' + (cy + d),
+      stroke: '#2f6fb8', 'stroke-width': sw * 1.8, 'stroke-linecap': 'round'
+    }, g);
+    g.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    g.addEventListener('click', (ev) => { ev.stopPropagation(); removeProjectBuilderPiece(p); });
   });
 
   // ---- seleção do vão + soltar a peça arrastada da biblioteca
