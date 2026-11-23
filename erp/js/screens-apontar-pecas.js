@@ -261,12 +261,17 @@ APONTAR._marcaSubstituidas = function (d, principalId) {
     comp[k] = (comp[k] || 0) + 1;
     if (APONTAR._RE_GAVETA.test(String(u.p.reference || ''))) modGaveta[APONTAR._chaveGaveta(u.p)] = true;
   });
+  // peça IGUAL à do complemento nunca é "gaveta errada", mesmo depois de as
+  // unidades do complemento acabarem (23/11: 2 laterais iguais no original,
+  // 1 no complemento — a 2ª caía na regra da gaveta e era bloqueada)
+  const compTem = {};
+  Object.keys(comp).forEach(function (k) { compTem[k] = true; });
   const orig = d.unidades.filter(function (u) { return u.p._batchId === principalId; });
   // não apontadas primeiro: é delas que o complemento "toma o lugar"
   orig.slice().sort(function (a, b) { return (d.scans[a.key] ? 1 : 0) - (d.scans[b.key] ? 1 : 0); }).forEach(function (u) {
     const k = APONTAR._chavePeca(u.p);
     if (comp[k] > 0) { comp[k]--; u.fora = 'complemento'; return; }
-    if (APONTAR._RE_GAVETA.test(String(u.p.reference || '')) && modGaveta[APONTAR._chaveGaveta(u.p)]) u.fora = 'gaveta';
+    if (!compTem[k] && APONTAR._RE_GAVETA.test(String(u.p.reference || '')) && modGaveta[APONTAR._chaveGaveta(u.p)]) u.fora = 'gaveta';
   });
   d.ocultas = 0;
   d.unidades = d.unidades.filter(function (u) {

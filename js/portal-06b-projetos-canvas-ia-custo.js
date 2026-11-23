@@ -3301,6 +3301,7 @@ function openMoneyModal(scopeIds) {
 function closeMoneyModal() {
   const modal = document.getElementById('po-money-modal');
   if (modal) modal.classList.remove('open');
+  moneyPedidoLiberado = false; // $ Order quote tranca de novo ao fechar
 }
 
 function renderMoneyModal() {
@@ -3324,6 +3325,10 @@ function renderMoneyModal() {
   document.querySelectorAll('.po-money-tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.moneyTab === moneyAbaAtual);
   });
+  // SENHA DO $ ORDER QUOTE (23/11, migration 338): saiu da aba = tranca de novo;
+  // na aba e trancada = só a porta da senha, nada de número.
+  if (moneyAbaAtual !== 'pedido') moneyPedidoLiberado = false;
+  else if (!moneyPedidoLiberado) { renderMoneyPedidoSenha(body); return; }
   // ESCOPO (ver moneyModalScopeIds acima) — ids que já saíram do projeto
   // (removidos com o modal aberto) somem sozinhos do filtro.
   const scopedSlots = moneyModalScopeIds
@@ -3537,6 +3542,133 @@ function renderMoneySenha(body) {
   document.getElementById('po-money-pass').addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') tenta();
   });
+}
+
+// ---- Porta da aba $ ORDER QUOTE (23/11/2026, migration 338)
+// Matt: "coloca senha no order quote, só dealer pode abrir ela, administrador
+// também tem que colocar senha. cria primeira quando clicar".
+// Senha POR USUÁRIO (dealer ou admin — vendedor nem vê a aba). 1º clique sem
+// senha = tela de criar. Pede de novo toda vez que a aba é aberta (tranca ao
+// sair da aba e ao fechar a janela). Guardada no banco pelas RPCs
+// order_quote_pass_* (ninguém lê o hash). Sem a 338 rodada cai no modo local:
+// hash no localStorage deste navegador (moneyOq.local).
+// "Esqueci": confere a senha de LOGIN do portal (direto no auth, sem mexer na
+// sessão) e deixa criar outra.
+// É trava de TELA, não cofre: o cálculo do preço é feito no navegador.
+let moneyPedidoLiberado = false;
+const moneyOq = { tem: null, local: false, modo: '', ocupado: false };
+function moneyOqSemFuncao(error) {
+  return !!error && (error.code === 'PGRST202' || error.code === '42883' || /order_quote_pass|schema cache|function/i.test(error.message || ''));
+}
+function moneyOqChaveLocal() { return 'legno_oq_pass_' + (currentUser ? currentUser.id : ''); }
+async function moneyOqHashLocal(senha) {
+  const dados = new TextEncoder().encode(moneyOqChaveLocal() + '|' + senha);
+  const buf = await crypto.subtle.digest('SHA-256', dados);
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function moneyOqStatus() {
+  if (!moneyOq.local) {
+    try {
+      const { data, error } = await supabaseClient.rpc('order_quote_pass_status');
+      if (!error) return data === true;
+      if (!moneyOqSemFuncao(error)) throw error;
+    } catch (e) { if (!moneyOqSemFuncao(e)) throw e; }
+    moneyOq.local = true; // migration 338 ainda não rodou
+  }
+  try { return !!localStorage.getItem(moneyOqChaveLocal()); } catch (e) { return false; }
+}
+async function moneyOqConfere(senha) {
+  if (!moneyOq.local) {
+    const { data, error } = await supabaseClient.rpc('order_quote_pass_check', { p_pass: senha });
+    if (error) throw error;
+    return data === true;
+  }
+  let salvo = null; try { salvo = localStorage.getItem(moneyOqChaveLocal()); } catch (e) { /* sem storage */ }
+  return !!salvo && salvo === await moneyOqHashLocal(senha);
+}
+async function moneyOqGrava(senha) {
+  if (!moneyOq.local) {
+    const { error } = await supabaseClient.rpc('order_quote_pass_set', { p_new: senha, p_old: null });
+    if (error) throw error;
+    return;
+  }
+  localStorage.setItem(moneyOqChaveLocal(), await moneyOqHashLocal(senha));
+}
+async function moneyOqApaga() {
+  if (!moneyOq.local) {
+    const { error } = await supabaseClient.rpc('order_quote_pass_reset', { p_user: null });
+    if (error) throw error;
+    return;
+  }
+  try { localStorage.removeItem(moneyOqChaveLocal()); } catch (e) { /* ok */ }
+}
+// Senha de login do portal confere? Pergunta direto ao auth (não troca a sessão).
+async function moneyOqLoginConfere(senha) {
+  const email = (currentUser && currentUser.email) || '';
+  if (!email || !senha) return false;
+  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+    body: JSON.stringify({ email, password: senha })
+  });
+  return r.ok;
+}
+function renderMoneyPedidoSenha(body) {
+  const t = (k) => I18n.t('money.' + k);
+  const campo = (id, ph) => '<input type="password" id="' + id + '" placeholder="' + t(ph) + '" autocomplete="new-password">';
+  const fim = '<p class="po-money-erro" id="po-money-oq-erro"></p>'
+    + (moneyOq.local ? '<p class="po-money-sub">' + t('oq_local_note') + '</p>' : '') + '</div>';
+  if (moneyOq.tem === null) {
+    body.innerHTML = '<div class="po-money-lock"><p>…</p></div>';
+    if (!moneyOq.ocupado) {
+      moneyOq.ocupado = true;
+      moneyOqStatus().then((tem) => { moneyOq.tem = tem; }, () => { moneyOq.tem = false; moneyOq.local = true; })
+        .then(() => { moneyOq.ocupado = false; if (moneyAbaAtual === 'pedido' && !moneyPedidoLiberado) renderMoneyModal(); });
+    }
+    return;
+  }
+  const esqueci = moneyOq.tem && moneyOq.modo === 'esqueci';
+  if (!moneyOq.tem || esqueci) {
+    body.innerHTML = '<div class="po-money-lock"><p>' + t(esqueci ? 'oq_forgot_intro' : 'oq_create_intro') + '</p>'
+      + (esqueci ? campo('po-money-oq-login', 'oq_login_pass') : '')
+      + campo('po-money-oq-new', 'oq_new') + campo('po-money-oq-rep', 'oq_repeat')
+      + '<button type="button" id="po-money-oq-btn">' + t('oq_create_btn') + '</button>'
+      + (esqueci ? '<p><a href="#" id="po-money-oq-volta">' + t('oq_back') + '</a></p>' : '') + fim;
+  } else {
+    body.innerHTML = '<div class="po-money-lock"><p>' + t('oq_lock_intro') + '</p>'
+      + '<input type="password" id="po-money-oq-pass" placeholder="' + t('password_placeholder') + '" autocomplete="off">'
+      + '<button type="button" id="po-money-oq-btn">' + t('password_open_btn') + '</button>'
+      + '<p><a href="#" id="po-money-oq-esqueci">' + t('oq_forgot') + '</a></p>' + fim;
+  }
+  const val = (id) => (document.getElementById(id) || {}).value || '';
+  const erro = (msg) => { const e = document.getElementById('po-money-oq-erro'); if (e) e.textContent = msg || ''; };
+  const tenta = async () => {
+    if (moneyOq.ocupado) return;
+    moneyOq.ocupado = true; erro('');
+    try {
+      if (moneyOq.tem && !esqueci) {
+        if (await moneyOqConfere(val('po-money-oq-pass'))) { moneyPedidoLiberado = true; moneyOq.ocupado = false; renderMoneyModal(); return; }
+        erro(t('wrong_password'));
+      } else {
+        const nova = val('po-money-oq-new');
+        if (nova.length < 4) erro(t('oq_short'));
+        else if (nova !== val('po-money-oq-rep')) erro(t('oq_mismatch'));
+        else if (esqueci && !(await moneyOqLoginConfere(val('po-money-oq-login')))) erro(t('oq_login_wrong'));
+        else {
+          if (esqueci) await moneyOqApaga();
+          await moneyOqGrava(nova);
+          moneyOq.tem = true; moneyOq.modo = ''; moneyPedidoLiberado = true; moneyOq.ocupado = false;
+          renderMoneyModal(); return;
+        }
+      }
+    } catch (e) { erro((e && e.message) || t('oq_error')); }
+    moneyOq.ocupado = false;
+  };
+  document.getElementById('po-money-oq-btn').addEventListener('click', tenta);
+  body.querySelectorAll('.po-money-lock input').forEach((i) => i.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') tenta(); }));
+  const troca = (id, modo) => { const a = document.getElementById(id); if (a) a.addEventListener('click', (ev) => { ev.preventDefault(); moneyOq.modo = modo; renderMoneyModal(); }); };
+  troca('po-money-oq-esqueci', 'esqueci'); troca('po-money-oq-volta', '');
+  const primeiro = body.querySelector('.po-money-lock input'); if (primeiro) { try { primeiro.focus(); } catch (e) { /* ok */ } }
 }
 
 // ---- Aba FÁBRICA: custo puro, aberto por natureza, com o % de cada linha.

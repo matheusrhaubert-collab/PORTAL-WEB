@@ -1910,10 +1910,21 @@ async function generateProjectTechPlan(opts) {
     // fazendo de um lado e de outro lado... em perspectiva"). Agora são 2
     // imagens de DENTRO do ambiente, grande-angular, de cantos opostos
     // (ptInteriorViews). Se não der pra montar, cai na vista de fora de antes.
+    // ACERVO (23/11, Matt: "quero que busque os prints para primeira folha da
+    // proposta ou plano técnico"): imagens marcadas como capa (★) ou, sem
+    // nenhuma marcada, os prints do projeto abrem o plano. Só quando o projeto
+    // não tem nenhuma é que entram as perspectivas automáticas de sempre.
     try {
       let feitas = 0;
+      try {
+        const capas = (window.LegnoAcervo && window.LegnoAcervo.capasCanvas) ? await window.LegnoAcervo.capasCanvas() : [];
+        capas.forEach((c, i) => {
+          ptPdfPage(doc, st, c, ptT('persp_title'), ptT('persp_view', { n: i + 1, total: capas.length }), '');
+          feitas++;
+        });
+      } catch (e) { console.warn('[plano técnico] imagens do acervo', e); }
       let internas = [];
-      try { internas = ptInteriorViews(scene, walls); } catch (e) { console.warn('[plano técnico] perspectiva interna', e); internas = []; }
+      if (!feitas) try { internas = ptInteriorViews(scene, walls); } catch (e) { console.warn('[plano técnico] perspectiva interna', e); internas = []; }
       internas.forEach((c, i) => {
         if (!c) return;
         ptPdfPage(doc, st, c, ptT('persp_title'), ptT('persp_view', { n: i + 1, total: internas.length }), ptT('notes_persp'));

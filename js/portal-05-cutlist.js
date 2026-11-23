@@ -289,18 +289,32 @@ function getFactoryDiscountPct() {
 // false = volta ao comportamento antigo.
 const SELLER_HERDA_DESCONTO_EXTRAS = true;
 let sellerPricingCfg = { factory_discount_pct: 0, extras: [] };
+// CORRIDA DO LOGIN (23/11/2026, vendedor decorgazing vendo preço "bem maior"):
+// esta função zerava o cache ANTES de perguntar ao banco. O login chama ela
+// 2× seguidas (showLoggedIn espera a 1ª; refreshDealerUiVisibility dispara a
+// 2ª sem esperar) — entre o zerar e a resposta o vendedor ficava SEM o
+// desconto de fábrica do dealer (ex.: tabela × 1,30 em vez de tabela × 0,43 ×
+// 1,30), e o que fosse desenhado nessa janela ficava na tela com o número
+// errado, porque ninguém redesenhava depois. Se a 2ª chamada falhasse (rede),
+// ficava errado a sessão inteira. Agora: só troca o cache quando a resposta
+// CHEGA (erro = mantém o que tinha) e, se o valor mudou, refaz os preços.
 async function loadSellerPricingConfig() {
-  sellerPricingCfg = { factory_discount_pct: 0, extras: [] };
-  if (!isSellerAccount()) return;
+  if (!isSellerAccount()) { sellerPricingCfg = { factory_discount_pct: 0, extras: [] }; return; }
   try {
     const { data, error } = await supabaseClient.rpc('get_seller_pricing_config');
     if (!error && data) {
-      sellerPricingCfg = {
+      const novo = {
         factory_discount_pct: Number(data.factory_discount_pct) || 0,
         extras: Array.isArray(data.extras) ? data.extras : []
       };
+      const mudou = JSON.stringify(novo) !== JSON.stringify(sellerPricingCfg);
+      sellerPricingCfg = novo;
+      if (mudou) {
+        try { if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots(); } catch (e) { /* tela ainda não montada */ }
+        try { if (typeof renderProjectSummary === 'function') renderProjectSummary(); } catch (e) { /* idem */ }
+      }
     }
-  } catch (err) { /* migration 265 ainda não rodou — fica só a margem */ }
+  } catch (err) { /* migration 265 ainda não rodou ou rede falhou — mantém o que já tinha */ }
 }
 
 // Extras de um lado ('custo' = custo de fábrica, 'margem' = margem do

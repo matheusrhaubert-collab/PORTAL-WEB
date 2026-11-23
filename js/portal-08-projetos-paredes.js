@@ -5183,7 +5183,11 @@ function ensurePhotoFrameOverlay(containerId) {
 // grande perto de lá) — não mudou. Exige projeto já salvo em "Meus
 // Projetos" (precisa de loadedProjectFavorite.id pra saber em qual projeto
 // gravar).
-async function savePhotorealRenderToProject(dataUrl) {
+// opts.kind = 'print' (23/11, acervo de imagens — portal-48): marca a linha como
+// PRINT em camera_state {print:true} (antes o print herdava a câmera do último
+// render realista). Sem opts = render, como sempre.
+async function savePhotorealRenderToProject(dataUrl, opts) {
+  const ehPrint = !!(opts && opts.kind === 'print');
   if (!currentUser) throw new Error(I18n.t('fav.need_login'));
   if (!loadedProjectFavorite || !loadedProjectFavorite.id) {
     throw new Error(I18n.t('photoreal.need_saved_project'));
@@ -5198,8 +5202,8 @@ async function savePhotorealRenderToProject(dataUrl) {
     // de novo sem ela (não trava o salvamento).
     let { data: photoRow, error: insertError } = await supabaseClient
       .from('project_photoreal_photos')
-      .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl, camera_state: window.__lastPhotorealCamera || null })
-      .select('id, image_url, created_at')
+      .insert({ project_id: loadedProjectFavorite.id, image_url: publicUrl, camera_state: ehPrint ? { print: true } : (window.__lastPhotorealCamera || null) })
+      .select('*')
       .single();
     if (insertError) {
       ({ data: photoRow, error: insertError } = await supabaseClient
@@ -5230,9 +5234,11 @@ let projectPhotorealPhotos = [];
 async function loadProjectPhotorealPhotos(projectId) {
   if (!projectId) { projectPhotorealPhotos = []; return; }
   try {
+    // '*' (23/11): o acervo (portal-48) lê camera_state (print/decorado) e
+    // is_cover (migration 339) quando existem — sem elas vem só o de sempre.
     const { data, error } = await supabaseClient
       .from('project_photoreal_photos')
-      .select('id, image_url, created_at')
+      .select('*')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -6346,7 +6352,14 @@ function applyProjectDrawStyle(estilo, remontar) {
       if (!dataUrl) { alert(I18n.t('project.print_view_no_scene')); return; }
       bPrint.disabled = true;
       try {
-        await savePhotorealRenderToProject(dataUrl);
+        // ACERVO (23/11, portal-48): projeto ainda não salvo = o print fica
+        // guardado e é registrado sozinho no 1º Salvar (antes dava erro).
+        const semProjeto = !loadedProjectFavorite || !loadedProjectFavorite.id;
+        if (semProjeto && window.LegnoAcervo && window.LegnoAcervo.guardaPendente) window.LegnoAcervo.guardaPendente(dataUrl);
+        else {
+          await savePhotorealRenderToProject(dataUrl, { kind: 'print' });
+          if (window.LegnoAcervo && window.LegnoAcervo.aviso) window.LegnoAcervo.aviso('print_ok');
+        }
       } catch (e) {
         alert((e && e.message) || String(e));
       } finally {

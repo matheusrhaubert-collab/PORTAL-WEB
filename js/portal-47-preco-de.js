@@ -120,16 +120,21 @@ async function pdCarregaExtras(dono) {
 function pdCfgDe(uid) {
   const p = pdState.perfis && pdState.perfis[uid];
   if (!p) return null;
-  const vend = p.role === 'vendedor' && !!p.parent_dealer_user_id;
-  const d = vend ? (pdState.perfis[p.parent_dealer_user_id] || {}) : p;
-  const temLoja = vend || p.role === 'lojista' || p.role === 'administrador';
+  // vendedor: igual às RPCs get_seller_pricing_config (265) e
+  // get_display_resale_margin_pct (320) — SEM dealer pai (parent vazio ou
+  // apontando pra perfil que não existe) ele fica sem desconto de fábrica.
+  const vend = p.role === 'vendedor';
+  const pai = vend ? (pdState.perfis[p.parent_dealer_user_id] || null) : null;
+  const d = vend ? (pai || {}) : p;
+  const temLoja = vend ? !!pai : (p.role === 'lojista' || p.role === 'administrador');
   let mg = Number(p.resale_margin_pct) || 0;
-  if (vend) mg = p.seller_margin_pct != null ? (Number(p.seller_margin_pct) || 0) : (Number(d.resale_margin_pct) || 0);
+  if (vend) mg = p.seller_margin_pct != null ? (Number(p.seller_margin_pct) || 0) : (pai && pai.resale_margin_pct != null ? (Number(pai.resale_margin_pct) || 0) : mg);
   return {
     uid,
     desc: temLoja ? (Number(d.factory_discount_pct) || 0) : 0,
     mg: mg > 0 ? mg : 0,
     extras: temLoja ? (pdState.extras[pdDono(uid)] || []) : [],
+    semPai: vend && !pai,
     marca: d && d.user_id ? d : p
   };
 }
@@ -231,6 +236,7 @@ function pdPct(uid) {
   const partes = [];
   if (c.desc) partes.push('−' + c.desc + '%');
   if (c.mg) partes.push('+' + c.mg + '%');
+  if (c.semPai) partes.push('⚠ sem dealer');
   return partes.join(' · ');
 }
 function pdLinha(p, filho) {

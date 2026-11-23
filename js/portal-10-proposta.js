@@ -1367,7 +1367,8 @@ async function generateProjectProposalPDF() {
       wall_widths_mm: (projectWallWidthsMm || []).slice(),
       wall_segments: projectWallSegments.length ? projectWallSegments : null,
       project_photoreal_url: (loadedProjectFavorite && loadedProjectFavorite.ai_preview_url) || null,
-      project_photoreal_urls: (projectPhotorealPhotos || []).map((p) => p.image_url).filter(Boolean),
+      // capa/prints primeiro (acervo, portal-48) — a 1ª imagem é a da 1ª folha
+      project_photoreal_urls: ((window.LegnoAcervo ? window.LegnoAcervo.ordena(projectPhotorealPhotos || []) : (projectPhotorealPhotos || []))).map((p) => p.image_url).filter(Boolean),
       project_reference_urls: (typeof projectReferenceListForProposal === 'function') ? projectReferenceListForProposal() : null,
       project_thumbnail_data_url: null
     };
@@ -1445,9 +1446,9 @@ async function generateClientProposalPDF(folderName, rows, statusEl) {
       let photos = [];
       let refs = [];
       try {
-        const { data } = await supabaseClient.from('project_photoreal_photos').select('image_url, created_at')
+        const { data } = await supabaseClient.from('project_photoreal_photos').select('*')
           .eq('project_id', row.id).order('created_at', { ascending: false });
-        photos = (data || []).map((p) => p.image_url).filter(Boolean);
+        photos = (window.LegnoAcervo ? window.LegnoAcervo.ordena(data || []) : (data || [])).map((p) => p.image_url).filter(Boolean);
       } catch (e) { /* tabela ausente: segue sem */ }
       try {
         const { data } = await supabaseClient.from('project_reference_images').select('image_url, label, kind, sort_order, created_at')
