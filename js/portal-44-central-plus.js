@@ -288,6 +288,18 @@ function cxDecorate(folders) {
     if (html) el.insertAdjacentHTML('afterend', html);
   });
 
+  // ▾ no fim de cada linha da aba PERDIDOS (23/11, Matt: "coloca a seta no
+  // final da barra dos perdidos pra abrir pra baixo também como nas outras").
+  // O clique sobe pra linha, que já abre/fecha (mesmo gesto de clicar nela).
+  if (cxState.view === 'lost') {
+    box.querySelectorAll('tr.mp-row').forEach((tr) => {
+      const td = tr.querySelector('td.mp-c-menu') || tr.lastElementChild;
+      if (!td || td.querySelector('.cx-more')) return;
+      const ab = tr.classList.contains('is-open');
+      td.insertAdjacentHTML('beforeend', '<button type="button" class="cx-more cx-more-lost' + (ab ? ' is-on' : '') + '" title="' + cEsc(odT(ab ? 'less' : 'more')) + '" aria-label="' + cEsc(odT('more')) + '">' + (ab ? '▴' : '▾') + '</button>');
+    });
+  }
+
   // "Marcar como perdido" / "Reabrir" nos projetos em construção
   box.querySelectorAll('.mp-exp-box.cu-build').forEach((el) => {
     if (el.nextElementSibling && el.nextElementSibling.classList.contains('cx-lostbar')) return;
@@ -348,6 +360,19 @@ function cxDecorate(folders) {
         if (n && conta[t]) n.textContent = base ? base.filter(conta[t]).length : '…'; // nunca a contagem só da conta de quem olha
       });
     }
+  } else if (cxHasNetwork() && (cxNetSel() || cxAdmin())) {
+    // Abas PERDIDOS / MAPA (23/11, Matt: "quando tô na pasta lost as outras
+    // abas ficam com numeração de projetos errada"): sem a árvore na tela as
+    // contagens caíam no número da lista filtrada (os perdidos). Mesma conta
+    // de cima, só não marca nenhuma aba (a marcada é Perdidos/Mapa).
+    if (!cxState.scope && !cxState.scopeBusy) cxLoadScope(false);
+    const f = cxState.net;
+    const base = cxState.scope ? cxState.scope.orders.filter((o) => (!f.loja || (o.account_id || '_') === f.loja) && (!f.user || o.client_user_id === f.user) && (!f.cliente || cxClienteKey(o) === f.cliente)) : null;
+    const conta = { all: (o) => true, build: (o) => o._s === 'build', prod: (o) => ['wait', 'pay', 'prod', 'ready'].includes(o._s), done: (o) => o._s === 'done' };
+    box.querySelectorAll('[data-act="ctab"]').forEach((el) => {
+      const n = el.querySelector('.cu-n');
+      if (n && conta[el.dataset.tab]) n.textContent = base ? base.filter(conta[el.dataset.tab]).length : '…';
+    });
   }
   try { cxAddCols(box, folders); } catch (e) { console.warn('[central+] colunas', e); }
 
@@ -2557,7 +2582,11 @@ document.addEventListener('click', (e) => {
     if (!api || !ids.length) return;
     b.disabled = true;
     (a === 'lost' ? api.marcarPerdido(ids, b.getAttribute('data-nome')) : api.reabrir(ids))
-      .then((ok) => { if (ok) { cxState.lostLoaded = false; if (typeof mpLoad === 'function') mpLoad(); } else b.disabled = false; })
+      // 23/11 (Matt: "coloquei perdido mas ainda ficou no mesmo status aqui
+      // nos projetos"): a lista da Central fica em memória (scope) — sem
+      // zerar, o projeto perdido continuava nela até o F5. O cartão aberto
+      // dele fecha junto.
+      .then((ok) => { if (ok) { cxState.lostLoaded = false; cxState.scope = null; try { ids.forEach((i) => cxProjOpen().delete(i)); } catch (e0) { /* sem cartão aberto */ } if (typeof mpLoad === 'function') mpLoad(); } else b.disabled = false; })
       .catch((err) => { b.disabled = false; alert((err && err.message) || String(err)); });
     return;
   }
@@ -2881,6 +2910,7 @@ function cxCss() {
     + '.cx-table td.cx-facts{text-align:right;white-space:nowrap}.cx-table td.cx-facts.cx-facts-l{text-align:left}'
     + '.cx-plost{padding:6px 2px 2px;white-space:normal}.cx-table .cx-mini.cx-mini-lost{border-color:#d9b3ad;color:#9a2b1e}.cx-table .cx-mini.cx-mini-lost:hover{background:#fbeeec}.cx-link.cx-link-del{color:#9a2b1e}.cx-oproj{padding:8px 4px 2px;white-space:normal}.cx-lote{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;background:#2b2621;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.02em;vertical-align:middle}'
     + '.cx-table .cx-more{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0}.cx-table .cx-more:hover,.cx-table .cx-more.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
+    + '.cx-more-lost{border:1px solid #cfc7ba;background:#fff;color:#3a332a;border-radius:6px;width:26px;height:24px;font-size:12px;line-height:1;cursor:pointer;padding:0;margin-left:6px;vertical-align:middle}.cx-more-lost:hover,.cx-more-lost.is-on{background:#3a332a;color:#fff;border-color:#3a332a}'
     + '.cx-table .cx-mini.cx-mini-go{background:#7a4a1e;border-color:#7a4a1e;color:#fff}.cx-table .cx-mini.cx-mini-go:hover{background:#5f3915}'
     + '.cx-table tr.cx-ord-on td{background:#faf6ee;border-bottom-color:transparent}'
     + '.cx-table tr.cx-ordexp td{background:#faf6ee;white-space:normal;padding:4px 14px 14px}'
