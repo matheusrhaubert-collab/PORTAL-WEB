@@ -3501,7 +3501,7 @@ function renderView3DGuestMeasurements() {
 // Mora no fim do portal-09 de propósito: arquivo novo não sobe sozinho pelo
 // subir.ps1 (git add -u) e exigiria um git add no terminal.
 
-const MP_SO_ADMIN = true;
+const MP_SO_ADMIN = false; // 23/11: LIBERADO pros dealers (Matt: "libera a central order e my company pros dealers")
 const MP_RECENT_DAYS = 14;
 const MP_NONE = '__none__';
 
@@ -4428,7 +4428,7 @@ let mpOrigLoadList = null;
 // Voltar pra Meus Projetos devolve o painel pra lá, no modo de sempre.
 // LIGAR PRA TODO MUNDO: CU_SO_ADMIN = false (e MP_SO_ADMIN = false, que é
 // quem decide se o painel por pasta existe pra conta).
-const CU_SO_ADMIN = true;
+const CU_SO_ADMIN = false; // 23/11: LIBERADO pros dealers (Matt: "libera a central order e my company pros dealers")
 
 async function cuCanSee() {
   if (!(await mpCanSee())) return false;

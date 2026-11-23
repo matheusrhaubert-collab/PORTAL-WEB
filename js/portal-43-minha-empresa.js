@@ -35,7 +35,7 @@
 //
 // Carregado depois do portal-42.
 
-const ME_SO_ADMIN = true;
+const ME_SO_ADMIN = false; // 23/11: LIBERADO pros dealers (Matt: "libera a central order e my company pros dealers")
 const DESCONTO_SO_FABRICA = true;   // 21/11: ligado (Matt: "trava o desconto pro lojista, só adm pode dar") — par da migration 309
 const ME_LOST_REASONS = ['price', 'lead_time', 'client_gave_up', 'competitor', 'not_european', 'test', 'duplicate', 'other'];   // 22/11: + 'not_european' e 'test' (Matt). lost_reason é texto livre no banco, sem check.
 const meState = { tab: 'painel', card: null, acc: null, tree: [], team: [], projects: [], orders: [], reqs: [], busy: false, msg: '', err: '', loaded: false, hasLost: true };
@@ -782,6 +782,7 @@ function meCss() {
     '.pp-new{flex:1;min-width:260px;border:2px dashed #c9a36b;border-radius:10px;padding:10px 14px;font-size:13.5px;color:#7a4a1e;background:#fdf8ef;display:flex;align-items:center}',
     '.pp-kind{appearance:none;-webkit-appearance:none;border:0;border-radius:9px;padding:1px 16px 1px 7px;margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;height:18px;line-height:16px;cursor:pointer;width:auto;max-width:124px;background:#eee9df url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%278%27 height=%275%27%3E%3Cpath d=%27M0 0l4 5 4-5z%27 fill=%27%23665%27/%3E%3C/svg%3E") no-repeat right 5px center;color:#5c5346}',
     '.pp-kind.k-contractor{background-color:#dcebfb;color:#1f5fa8}.pp-kind.k-millworker{background-color:#fdecc8;color:#8a5a00}.pp-kind.k-designer{background-color:#efe4fb;color:#6b3fb0}.pp-kind.k-dealer{background-color:#ead9c4;color:#7a4a1e}.pp-kind.k-homeowner{background-color:#dff1e2;color:#1f6b33}.pp-kind option{text-transform:none;font-weight:400;color:#2b2621;background:#fff}',
+    '.pp-co,.pp-ct{flex:none;width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#3a332a}.pp-co{font-weight:600}.pp-ct{width:170px;color:var(--muted,#766f64)}.pp-co.is-0,.pp-ct.is-0{color:#c9c1b4;font-weight:400}',
     '.pp-last{font-size:10.5px;color:#23793c;font-weight:700;white-space:nowrap;min-width:34px;text-align:right}.pp-last.is-never{color:#b0a898;font-weight:400}',
     '.pp-lock{background:#fff;border:1px solid var(--border,#e0ddd6);border-radius:5px;width:24px;height:22px;padding:0;margin:0;font-size:11px;line-height:1;cursor:pointer;color:#3a332a}.pp-lock:hover{background:#f3ede2}.pp-lock.is-off{background:#f3d9d5;border-color:#d9a79f}.pp-p.is-off{opacity:1;background:#fbf3f1}.pp-p.is-off .pp-mail{opacity:.6;text-decoration:line-through}',
     '.pp-mgl{display:inline-flex;align-items:center;gap:1px;font-size:11.5px;color:#7a4a1e;font-weight:700;margin:0;white-space:nowrap}.pp-mg{width:44px;padding:2px 4px;margin:0;border:1px solid #d9c49c;border-radius:5px;font-size:12px;text-align:right;background:#fffaf0;color:#2b2621;height:22px;box-sizing:border-box}',
@@ -957,6 +958,22 @@ async function mePeopleLoad() {
       Object.keys(meState.ppTravados || {}).forEach((u) => { const x = meState.people.find((y) => y.user_id === u); if (x && x.blocked === undefined) x.active = !meState.ppTravados[u]; });
       meState.peopleErr = '';
     }
+    // EMPRESA e NOME/CONTATO de cada pessoa na árvore (23/11, Matt: "coloca
+    // mais uma coluna com a companhia aqui e outra com nome/contato"): vêm do
+    // cadastro da pessoa (person_records, migration 321); o dono usa a ficha
+    // da loja. Sem a 321 as colunas ficam vazias.
+    meState.rec = {};
+    try {
+      const ids = (meState.people || []).map((x) => x.user_id).filter(Boolean);
+      for (let i = 0; i < ids.length; i += 150) {
+        const rr = await supabaseClient.from('person_records').select('user_id, company_name, contact_name, phone').in('user_id', ids.slice(i, i + 150));
+        if (rr.error) break;
+        (rr.data || []).forEach((x) => { meState.rec[x.user_id] = x; });
+      }
+    } catch (eRec) { /* sem o cadastro */ }
+    // contato da LOJA (a árvore não traz): só o admin lê a tabela direto
+    meState.accContato = {};
+    try { const ra = await supabaseClient.from('accounts').select('id, contact_name'); (ra.data || []).forEach((x) => { meState.accContato[x.id] = x.contact_name || ''; }); } catch (eAcc) { /* sem leitura */ }
     const tree = await supabaseClient.rpc('account_tree');
     if (!tree.error) meState.tree = tree.data || [];
   } catch (e) { meState.people = []; meState.peopleErr = (e && e.message) || String(e); }
@@ -978,12 +995,26 @@ function meViewPeople() {
     + lojas.filter((a) => a.kind !== 'factory').map((a) => '<option value="' + mEsc(a.id) + '">→ ' + mEsc(a.trade_name || a.legal_name || '—') + '</option>').join('');
   const contaDe = {}; (meState.tree || []).forEach((a) => { contaDe[a.id] = a; });
   const donoDe = {}; pessoas.forEach((p) => { if (p.member_role === 'owner') donoDe[p.account_id] = p.user_id; });
+  // colunas Empresa e Nome/contato (23/11) — dono: ficha da LOJA; os outros: cadastro da pessoa
+  const ppDados = (p) => {
+    const r = (meState.rec || {})[p.user_id] || {};
+    const a = p.member_role === 'owner' ? (contaDe[p.account_id] || {}) : {};
+    const empresa = String(r.company_name || a.trade_name || a.legal_name || '').trim();
+    const contato = [String(r.contact_name || (p.member_role === 'owner' ? (meState.accContato || {})[p.account_id] : '') || '').trim(), String(r.phone || a.phone || '').trim()].filter(Boolean).join(' · ');
+    return { empresa: empresa, contato: contato };
+  };
+  const ppColunas = (p) => {
+    const d = ppDados(p);
+    return '<span class="pp-co' + (d.empresa ? '' : ' is-0') + '" title="' + mEsc(d.empresa) + '">' + mEsc(d.empresa || '—') + '</span>'
+      + '<span class="pp-ct' + (d.contato ? '' : ' is-0') + '" title="' + mEsc(d.contato) + '">' + mEsc(d.contato || '—') + '</span>';
+  };
   const chip = (p) => {
     const mail = String(p.email || '—'); const i = mail.indexOf('@');
     const papel = p.is_admin ? 'admin' : p.member_role === 'owner' ? 'dealer' : p.member_role || '';
     return '<div class="pp-p' + (p.is_admin ? ' is-fixo' : '') + (p.member_role === 'owner' ? ' is-owner' : '') + (p.active === false ? ' is-off' : '') + '"' + (p.is_admin ? '' : ' draggable="true"') + ' data-u="' + mEsc(p.user_id) + '" title="' + mEsc(mail) + '">'
       + '<span class="pp-grip">' + (p.is_admin ? '' : '⋮⋮') + '</span>'
       + '<span class="pp-mail"><b>' + mEsc(i > 0 ? mail.slice(0, i) : mail) + '</b><small>' + mEsc(i > 0 ? mail.slice(i) : '') + '</small></span>'
+      + ppColunas(p)
       + (meState.kindOk && !p.is_admin && p.member_role !== 'owner' ? meKindSelect(p.user_id, (meState.kind || {})[p.user_id])
         : (papel ? '<span class="pp-role r-' + papel + '">' + mEsc(ppT(papel)) + '</span>' : ''))
       + (p.active === false ? '<span class="pp-role r-off">' + mEsc(ppT('off')) + '</span>' : '')
@@ -996,7 +1027,7 @@ function meViewPeople() {
       + (p.is_admin ? '' : '<select class="pp-mv" data-u="' + mEsc(p.user_id) + '" aria-label="' + mEsc(ppT('move')) + '">' + opts + '</select>')
       + '</div>';
   };
-  const casa = (p, nomeLoja) => !q || String(p.email || '').toLowerCase().includes(q) || String(nomeLoja || '').toLowerCase().includes(q);
+  const casa = (p, nomeLoja) => { if (!q) return true; const d = ppDados(p); return [p.email, nomeLoja, d.empresa, d.contato].some((v) => String(v || '').toLowerCase().includes(q)); };
   // 21/11 (Matt: "último acesso, sempre do mais atualizado em cima pro que nunca mais entrou pra baixo")
   const quando = (p) => (p.last_active_at ? new Date(p.last_active_at).getTime() : 0);
   const ordP = (l) => l.slice().sort((x, y) => ((x.member_role === 'owner' ? 0 : 1) - (y.member_role === 'owner' ? 0 : 1)) || (quando(y) - quando(x)) || String(x.email || '').localeCompare(String(y.email || '')));

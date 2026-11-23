@@ -38,7 +38,7 @@
 //
 // Carregado depois do portal-43.
 
-const CX_SO_ADMIN = true;
+const CX_SO_ADMIN = false; // 23/11: LIBERADO pros dealers (Matt: "libera a central order e my company pros dealers")
 const CX_PHOTON = 'https://photon.komoot.io/api/';
 const CX_LEAFLET = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet';
 const CX_STAGES = ['wait', 'pay', 'prod', 'ready', 'done'];
