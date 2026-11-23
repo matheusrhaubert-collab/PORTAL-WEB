@@ -372,6 +372,10 @@ if (projUpdateFavBtn) {
 // de projeto que ainda não tem valor guardado.
 async function computeOpenProjectLiveTotal() {
   try { if (typeof ensureProjectDrillingCatalog === 'function') await ensureProjectDrillingCatalog(); } catch (e) { /* segue */ }
+  // 22/11 (valor da Central muito abaixo do editor): sem o catálogo de
+  // agregados carregado o interior do módulo (cabide, gaveta, prateleira do
+  // Construtor) sai com 0 peças e o valor gravado fica só com a caixa.
+  try { if (typeof ensureAccessoryCatalog === 'function') await ensureAccessoryCatalog(); } catch (e) { /* segue */ }
   try { if (typeof repriceAllProjectSlots === 'function') repriceAllProjectSlots(); } catch (e) { /* segue */ }
   let total = 0;
   for (const s of projectSlots) {
@@ -409,6 +413,12 @@ async function computeProjectSlotsTotal(slotConfigs) {
   for (const cfg of slotConfigs) {
     const module = allModules.find((m) => m.id === cfg.module_id);
     if (!module) { skipped += 1; continue; }
+    // 22/11: este cálculo (só pro card de projeto antigo sem valor gravado)
+    // lê as peças do CADASTRO — não enxerga o interior do Construtor
+    // (cfg.layout). Módulo com interior conta como "não calculado": o total
+    // fica marcado como parcial e NÃO é gravado como valor fixo (gravava só o
+    // preço da caixa, e a Central mostrava esse número).
+    if (cfg.layout) { skipped += 1; continue; }
     try {
       const piecesList = await loadRecursivePiecesForModule(module.id);
       if (!piecesList || piecesList.length === 0) { skipped += 1; continue; }
