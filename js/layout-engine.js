@@ -744,6 +744,23 @@
     // (todo layout existente): nada muda.
     var topoCascoFolga = num(((root && root.params) || {}).frente_topo_abaixo_casco_mm);
     var arvoreDeFabrica = !!(root && root.params && root.params.fabrica === true);
+    // GOLA EM CIMA (2026-11-23, Matt: "sempre que tiver gola e precisar colocar
+    // porta ou frente, preciso considerar o tamanho da porta 30mm menor" + "todo
+    // gola o vão deveria mostrar o interno por baixo da gola, e aí seria aumentar
+    // a frente ou a porta"). O portal manda opts.golaFrenteTopo = altura do
+    // módulo − 30 (no mesmo sistema da zona, que já começa EMBAIXO da gola):
+    // porta e frente de gaveta EXTERNAS cujo vão encosta no TOPO da zona têm o
+    // topo levado até esse valor — sobem por cima da gola e param 30 mm antes do
+    // topo do casco (o vão da pegada). A base não muda. Não soma com as regras
+    // de topo da fábrica: frente_topo_abaixo_casco_mm (raiz) ou
+    // topo_frente_abaixo_casco_mm (vão) ganham. Sem o opt (ERP, tudo que
+    // existia): nada muda.
+    var golaFrenteTopo = num(opts.golaFrenteTopo);
+    function topoGola(node, vaoTopo) {
+      if (!(golaFrenteTopo > 0) || topoCascoFolga > 0 || !zona) return null;
+      if (num(((node && node.params) || {}).topo_frente_abaixo_casco_mm) > 0) return null;
+      return Math.abs(vaoTopo - (zona.y + zona.h)) <= 1 ? golaFrenteTopo : null;
+    }
     function topoFrenteAlvo(vaoTopo) {
       if (!(topoCascoFolga > 0) || !zona) return null;
       var zonaTopo = zona.y + zona.h;
@@ -1278,6 +1295,7 @@
           };
           var alvoTopoPorta = topoFrenteAlvo(efetiva.y + efetiva.h);
           if (alvoTopoPorta != null) geo.h = alvoTopoPorta - geo.y;
+          else { var tg = topoGola(node, efetiva.y + efetiva.h); if (tg != null) geo.h = tg - geo.y; }
           var ajP = ajustaFrentePorNo(node, geo.y, geo.y + geo.h);
           geo.y = ajP[0]; geo.h = ajP[1] - ajP[0];
         } else { // 'interna'
@@ -1516,6 +1534,7 @@
         if (j === rec.qtd - 1) {
           var alvoTopoGaveta = topoFrenteAlvo(box.y + box.h);
           if (alvoTopoGaveta != null) frenteY1 = alvoTopoGaveta;
+          else { var tgG = topoGola(node, box.y + box.h); if (tgG != null) frenteY1 = tgG; }
           if (rec.qtd === 1) {
             var ajG = ajustaFrentePorNo(node, frenteY0, frenteY1);
             frenteY0 = ajG[0]; frenteY1 = ajG[1];

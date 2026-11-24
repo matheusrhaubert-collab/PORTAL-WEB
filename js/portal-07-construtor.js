@@ -270,6 +270,26 @@ async function openProjectModuleBuilder(slotId) {
 // pela cor escolhida), passado pro motor como opts.espessuraCasco pra
 // divisória/prateleira do construtor sair na mesma chapa do casco. Sem slot
 // ou sem cor: 19.5, o comportamento de sempre.
+// GOLA EM CIMA (23/11/2026, Matt: "sempre que tiver gola e precisar colocar
+// porta ou frente, preciso considerar o tamanho da porta 30mm menor" + "todo
+// gola o vão deveria mostrar o interno por baixo da gola, e aí seria aumentar a
+// frente ou a porta"). Composição cujo casco começa com "Gola" ("Gola · Toe 4½
+// · Back" — a 1ª parte do nome é a peça de cima):
+//   - VÃO: o topo da zona interna desce pra baixo da gola (perfil de 76 mm —
+//     medido no 3D: vista 824..900 e ripa 824..844 num módulo de 900). A
+//     dedução do casco não via a gola (não é tampo), então o vão ia até o topo.
+//     Feito em computeProjectSlotInnerZone (embrulho logo abaixo dela).
+//   - PORTA/FRENTE do topo: sobe até a altura do módulo − 30 mm (vão da pegada),
+//     por cima da gola — opts.golaFrenteTopo do LayoutEngine.build.
+const PROJECT_BUILDER_GOLA_ALTURA_MM = 76;
+const PROJECT_BUILDER_GOLA_TOPO_MM = 30;
+function projectBuilderTemGola(slot) {
+  return /^gola\b/i.test(String((slot && slot.module && slot.module.name) || '').trim());
+}
+function projectBuilderGolaFrenteTopo(slot) {
+  const H = Number(slot && slot.height_mm) || 0;
+  return projectBuilderTemGola(slot) && H > PROJECT_BUILDER_GOLA_ALTURA_MM ? H - PROJECT_BUILDER_GOLA_TOPO_MM : 0;
+}
 function projectBuilderEspessuraCasco(slot) {
   try {
     if (!slot || !slot.pieces || typeof Pricing === 'undefined' || !Pricing.cascoThicknessMm) return PROJECT_BUILDER_ESPESSURA;
@@ -292,7 +312,8 @@ function rebuildProjectBuilder(reselecionar) {
       espessura: PROJECT_BUILDER_ESPESSURA,
       espessuraCasco: projectBuilderEspessuraCasco(projectSlots.find((s) => s.id === projectBuilderSlotId)),
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
-      temFundo: !!projectBuilderZone.temFundo
+      temFundo: !!projectBuilderZone.temFundo,
+      golaFrenteTopo: projectBuilderGolaFrenteTopo(projectSlots.find((s) => s.id === projectBuilderSlotId))
     });
     // Nada do construtor pode atravessar peça do módulo (travessa de fundo,
     // por exemplo) — ver clipProjectInternalsAgainstCasco. projectBuilderDesenho
@@ -681,6 +702,18 @@ function computeProjectSlotInnerZone(slot) {
     temFundo: dedu.temFundo
   };
 }
+// Gola em cima (23/11): a zona interna começa EMBAIXO da gola — ver o
+// comentário de PROJECT_BUILDER_GOLA_ALTURA_MM. Só encurta (nunca estica) e só
+// o topo; zona arrastada à mão (zoneOverride) continua mandando por cima disto.
+const computeProjectSlotInnerZoneSemGola = computeProjectSlotInnerZone;
+computeProjectSlotInnerZone = function (slot) {
+  const z = computeProjectSlotInnerZoneSemGola(slot);
+  if (!z || !projectBuilderTemGola(slot)) return z;
+  const H = Number(slot.height_mm) || 0;
+  const teto = H - PROJECT_BUILDER_GOLA_ALTURA_MM;
+  if (!(teto > z.y) || z.y + z.h <= teto) return z;
+  return Object.assign({}, z, { h: teto - z.y });
+};
 
 // Que LADO do casco esta peça é — 'left' | 'right' | 'top' | 'bottom' |
 // 'back', ou null quando ela não é casco (prateleira solta, porta, gaveta,
@@ -3154,7 +3187,8 @@ function rebuildProjectSlotLayoutPieces(slot) {
       espessura: PROJECT_BUILDER_ESPESSURA,
       espessuraCasco: projectBuilderEspessuraCasco(slot),
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
-      temFundo: !!zona.temFundo
+      temFundo: !!zona.temFundo,
+      golaFrenteTopo: projectBuilderGolaFrenteTopo(slot)   // mesma regra da janela (gola: porta até 30 mm do topo)
     });
     // MESMA regra da janela do construtor (ver clipProjectInternalsAgainstCasco).
     // Precisa estar nos DOIS lugares: a janela desenha, mas é aqui que nascem
