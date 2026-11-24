@@ -761,6 +761,45 @@
       if (num(((node && node.params) || {}).topo_frente_abaixo_casco_mm) > 0) return null;
       return Math.abs(vaoTopo - (zona.y + zona.h)) <= 1 ? golaFrenteTopo : null;
     }
+    // GOLA DO MEIO (2026-11-23, Matt: "a gaveta de baixo não subiu a mesma coisa
+    // que a frente da gaveta de cima, e ficou sem espaço pra colocar a mão pra
+    // puxar"). Mesma ideia da gola de cima: a frente do vão que fica EMBAIXO de
+    // uma gola em L do Construtor (agregado com params.gola_l) sobe por cima da
+    // gola e para opts.golaRebaixoMm (o portal manda 40) abaixo do topo dela.
+    // As frentes são montadas DEPOIS das divisórias (fila), então a vista da
+    // gola já está em `out` quando isto roda. Sem o opt: nada muda.
+    var golaRebaixo = num(opts.golaRebaixoMm);
+    function topoGolaMeio(node, vaoTopo, x0, x1) {
+      if (!(golaRebaixo > 0) || topoCascoFolga > 0) return null;
+      if (num(((node && node.params) || {}).topo_frente_abaixo_casco_mm) > 0) return null;
+      for (var gi = 0; gi < out.length; gi++) {
+        var gp = out[gi];
+        if (gp.kind !== 'split' || !gp.recorte_casco) continue;
+        var ga = cat[gp.accKey];
+        if (!ga || !(ga.params || {}).gola_l) continue;
+        if (Math.abs(gp.y - vaoTopo) > 1) continue;
+        if (Math.min(gp.x + gp.w, x1) - Math.max(gp.x, x0) < 1) continue;
+        return gp.y + gp.h - golaRebaixo;
+      }
+      return null;
+    }
+    // E a frente do vão de CIMA da gola do meio não desce por cima dela (a
+    // sobreposição normal de 17,5 mm tapava a pegada): a base fica no topo da
+    // gola. Só sobe a base — nunca desce. Assim sobram os mesmos 40 mm livres
+    // da gola de cima pra pôr a mão.
+    function baseGolaMeio(node, vaoBase, x0, x1) {
+      if (!(golaRebaixo > 0)) return null;
+      for (var gi = 0; gi < out.length; gi++) {
+        var gp = out[gi];
+        if (gp.kind !== 'split' || !gp.recorte_casco) continue;
+        var ga = cat[gp.accKey];
+        if (!ga || !(ga.params || {}).gola_l) continue;
+        if (Math.abs(gp.y + gp.h - vaoBase) > 1) continue;
+        if (Math.min(gp.x + gp.w, x1) - Math.max(gp.x, x0) < 1) continue;
+        return gp.y + gp.h;
+      }
+      return null;
+    }
     function topoFrenteAlvo(vaoTopo) {
       if (!(topoCascoFolga > 0) || !zona) return null;
       var zonaTopo = zona.y + zona.h;
@@ -1295,7 +1334,13 @@
           };
           var alvoTopoPorta = topoFrenteAlvo(efetiva.y + efetiva.h);
           if (alvoTopoPorta != null) geo.h = alvoTopoPorta - geo.y;
-          else { var tg = topoGola(node, efetiva.y + efetiva.h); if (tg != null) geo.h = tg - geo.y; }
+          else {
+            var tg = topoGola(node, efetiva.y + efetiva.h);
+            if (tg == null) tg = topoGolaMeio(node, efetiva.y + efetiva.h, efetiva.x, efetiva.x + efetiva.w);
+            if (tg != null) geo.h = tg - geo.y;
+          }
+          var bgP = baseGolaMeio(node, efetiva.y, efetiva.x, efetiva.x + efetiva.w);
+          if (bgP != null && bgP > geo.y) { geo.h -= bgP - geo.y; geo.y = bgP; }
           var ajP = ajustaFrentePorNo(node, geo.y, geo.y + geo.h);
           geo.y = ajP[0]; geo.h = ajP[1] - ajP[0];
         } else { // 'interna'
@@ -1528,13 +1573,18 @@
         var frenteY0 = (j === 0)
           ? y - alturaBaixo
           : y + GAP_ENTRE_FRENTES_GAVETA_MM / 2;
+        if (j === 0) { var bgG = baseGolaMeio(node, box.y, box.x, box.x + box.w); if (bgG != null && bgG > frenteY0) frenteY0 = bgG; }
         var frenteY1 = (j === rec.qtd - 1)
           ? y + rec.hCada + alturaCima
           : y + rec.hCada - GAP_ENTRE_FRENTES_GAVETA_MM / 2;
         if (j === rec.qtd - 1) {
           var alvoTopoGaveta = topoFrenteAlvo(box.y + box.h);
           if (alvoTopoGaveta != null) frenteY1 = alvoTopoGaveta;
-          else { var tgG = topoGola(node, box.y + box.h); if (tgG != null) frenteY1 = tgG; }
+          else {
+            var tgG = topoGola(node, box.y + box.h);
+            if (tgG == null) tgG = topoGolaMeio(node, box.y + box.h, box.x, box.x + box.w);
+            if (tgG != null) frenteY1 = tgG;
+          }
           if (rec.qtd === 1) {
             var ajG = ajustaFrentePorNo(node, frenteY0, frenteY1);
             frenteY0 = ajG[0]; frenteY1 = ajG[1];

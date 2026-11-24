@@ -282,7 +282,7 @@ async function openProjectModuleBuilder(slotId) {
 //   - PORTA/FRENTE do topo: sobe até a altura do módulo − 30 mm (vão da pegada),
 //     por cima da gola — opts.golaFrenteTopo do LayoutEngine.build.
 const PROJECT_BUILDER_GOLA_ALTURA_MM = 76;
-const PROJECT_BUILDER_GOLA_TOPO_MM = 30;
+const PROJECT_BUILDER_GOLA_TOPO_MM = 40;   // 23/11: era 30 — Matt: "diminui 40 ao invés de 30"
 function projectBuilderTemGola(slot) {
   return /^gola\b/i.test(String((slot && slot.module && slot.module.name) || '').trim());
 }
@@ -313,7 +313,8 @@ function rebuildProjectBuilder(reselecionar) {
       espessuraCasco: projectBuilderEspessuraCasco(projectSlots.find((s) => s.id === projectBuilderSlotId)),
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
       temFundo: !!projectBuilderZone.temFundo,
-      golaFrenteTopo: projectBuilderGolaFrenteTopo(projectSlots.find((s) => s.id === projectBuilderSlotId))
+      golaFrenteTopo: projectBuilderGolaFrenteTopo(projectSlots.find((s) => s.id === projectBuilderSlotId)),
+      golaRebaixoMm: PROJECT_BUILDER_GOLA_TOPO_MM   // gola do MEIO: a frente de baixo sobe até 40 mm do topo dela
     });
     // Nada do construtor pode atravessar peça do módulo (travessa de fundo,
     // por exemplo) — ver clipProjectInternalsAgainstCasco. projectBuilderDesenho
@@ -3188,7 +3189,8 @@ function rebuildProjectSlotLayoutPieces(slot) {
       espessuraCasco: projectBuilderEspessuraCasco(slot),
       folgaDobradica: PROJECT_BUILDER_FOLGA_DOB,
       temFundo: !!zona.temFundo,
-      golaFrenteTopo: projectBuilderGolaFrenteTopo(slot)   // mesma regra da janela (gola: porta até 30 mm do topo)
+      golaFrenteTopo: projectBuilderGolaFrenteTopo(slot),   // mesma regra da janela (gola: porta até 40 mm do topo)
+      golaRebaixoMm: PROJECT_BUILDER_GOLA_TOPO_MM
     });
     // MESMA regra da janela do construtor (ver clipProjectInternalsAgainstCasco).
     // Precisa estar nos DOIS lugares: a janela desenha, mas é aqui que nascem
