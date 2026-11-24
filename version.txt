@@ -1,3 +1,3 @@
-﻿data: 2026-11-23 21:02:35
-cache: 202611232102
-mensagem: Preco de: admin escolhe o usuario e o preco/proposta do projeto saem com as margens dele + senha no Order quote + acervo de imagens do projeto + lista Neste modulo no Construtor + sininho de projeto novo + aba People pro dealer + gola no Construtor
+﻿data: 2026-11-24 11:28:07
+cache: 202611241128
+mensagem: Portal: ajustes de 2026-11-24 11:28:07

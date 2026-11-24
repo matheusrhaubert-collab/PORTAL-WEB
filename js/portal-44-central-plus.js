@@ -974,8 +974,11 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
   const meus = itens[0].client_user_id === cxMe();
   const T = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
   const it = (v, rot, cls) => '<button type="button" class="cx-fmi' + (cls ? ' ' + cls : '') + '" data-cx="fact" data-v="' + v + '" data-k="' + cEsc(k) + '">' + cEsc(rot) + '</button>';
-  const podeProposta = meus && typeof generateClientProposalPDF === 'function' && (typeof canGenerateProposal !== 'function' || canGenerateProposal());
-  const temProj = itens.some((o) => o._pid);
+  // 24/11 (Matt: "habilita pra todos administradores"): admin tem as mesmas opções do dono
+  const adm = cxAdmin();
+  const podeProposta = (meus || adm) && itens.some((o) => o._proj) && typeof generateClientProposalPDF === 'function' && (typeof canGenerateProposal !== 'function' || canGenerateProposal());
+  // pedido também conta como projeto (projeto de origem) — antes pasta só com pedidos não mostrava o Plano técnico
+  const temProj = itens.some((o) => cxFPid(o));
   // as opções de antes (menu da pasta do Meus Projetos) + Plano técnico da pasta toda
   const menu = cxState.fmenu !== k ? '' : '<div class="cx-fmenu">'
     + (podeProposta ? it('proposal', T('fav.folder_proposal_btn')) : '')
@@ -983,10 +986,10 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
     + (meus ? it('share', T('fav.folder_share_btn')) : '')
     + it('rename', T('fav.folder_rename_btn'))
     + (cxAdmin() && temProj && typeof mpFolderBudget === 'function' ? it('budget', T('mp.budget_btn')) : '')
-    + (meus && temProj && typeof mpArchive === 'function' ? it('archive', T('mp.archive')) : '')
+    + ((meus || adm) && temProj && typeof mpArchive === 'function' ? it('archive', T('mp.archive')) : '')
     // PASTA PERDIDA (23/11, Matt: "coloca lost na pasta toda"): todos os projetos em construção da pasta, um motivo só
     + ((cxAdmin() || meus) && window.LegnoMinhaEmpresa && itens.some((o) => o._proj) ? it('lost', fdT('lost')) : '')
-    + (meus ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
+    + ((meus || adm) ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
   return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + (semPasta ? ' cx-frow-0' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">'
     + '<td colspan="' + (enx ? 6 : 4) + '" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
@@ -1013,8 +1016,10 @@ function fdT(k, vars) {
 }
 // projetos COMPLETOS da pasta (linha inteira do banco) — serve pra pasta minha
 // e pra de outro login que eu enxergo (admin / dealer vendo a equipe)
+// id do projeto da linha: linha de projeto (_pid) ou pedido (projeto de origem)
+function cxFPid(o) { return (o && (o._pid || (!o._proj && o.source_project_id))) || null; }
 async function cxFolderProjects(itens) {
-  const ids = Array.from(new Set(itens.map((o) => o._pid).filter(Boolean)));
+  const ids = Array.from(new Set(itens.map(cxFPid).filter(Boolean)));
   const out = [];
   for (let i = 0; i < ids.length; i += 50) {
     const { data, error } = await supabaseClient.from('user_projects').select('*').in('id', ids.slice(i, i + 50));
@@ -1030,6 +1035,30 @@ async function cxFolderProjects(itens) {
 // editor volta como estava e a tela volta pra Central. Projeto enviado abre
 // como rascunho sem vínculo (não grava nada nele).
 let cxFolderTpRunning = false;
+// ficha técnica de cada módulo do projeto ABERTO no editor (slot → mesmo formato de order_items)
+async function cxFolderModuleSpecs() {
+  if (typeof trkModuleSpecRows !== 'function' || typeof projectSlots === 'undefined') return null;
+  try {
+    const lista = (projectSlots || []).filter((sl) => sl && sl.module && !sl.module.visual_only);
+    const itens = lista.map((sl) => ({
+      width_mm: sl.width_mm, height_mm: sl.height_mm, depth_mm: sl.depth_mm,
+      breakdown: (sl.result && sl.result.breakdown) || [], layout: sl._layoutGeometry || null,
+      selected_colors: sl.selectedColors || [], led_configs: sl.ledConfigs || {},
+      module_description: (sl.module && sl.module.description) || null
+    }));
+    if (typeof trkLoadLotes === 'function') { try { await trkLoadLotes(); } catch (e) { /* ficha sem lote */ } }
+    const cores = typeof trkColorsFor === 'function' ? await trkColorsFor(itens) : new Map();
+    const out = new Map();
+    for (let i = 0; i < lista.length; i++) {
+      const it = itens[i];
+      let sw = null, se = null;
+      try { if (typeof trkModuleSwatches === 'function') sw = await trkModuleSwatches(it, cores); } catch (e) { /* sem amostra */ }
+      try { if (typeof trkModuleSeals === 'function') se = trkModuleSeals(it, cores); } catch (e) { /* sem selo */ }
+      out.set(lista[i].id, { rows: trkModuleSpecRows(it, cores), swatches: sw, seals: se });
+    }
+    return out;
+  } catch (e) { console.warn('[plano técnico da pasta] ficha dos módulos', e); return null; }
+}
 async function cxFolderTechPlans(nome, lista) {
   if (cxFolderTpRunning) { alert(fdT('busy')); return; }
   if (!lista.length) { alert(fdT('tp_none')); return; }
@@ -1055,7 +1084,10 @@ async function cxFolderTechPlans(nome, lista) {
         if (!r || !r.ok) throw (r && r.error) || new Error('load');
         if (typeof projectWaitInteriorsReady === 'function') await projectWaitInteriorsReady();
         if (typeof trkWaitProjectScene === 'function') await trkWaitProjectScene(); else await sleep(3500);
-        const saiu = await generateProjectTechPlan(Object.assign({ projectName: row.name || nome, rethrow: true }, comb ? { combine: comb } : {}));
+        // ESPECIFICAÇÕES TÉCNICAS (24/11): folha por módulo com a mesma ficha do PDF de desenhos do pedido (portal-31)
+        const specs = await cxFolderModuleSpecs();
+        const saiu = await generateProjectTechPlan(Object.assign({ projectName: row.name || nome, rethrow: true },
+          comb ? { combine: comb } : {}, specs ? { moduleSpecs: (numero, slot) => specs.get(slot && slot.id) || null } : {}));
         if (saiu === false) throw new Error(fdT('busy'));
         ok++;
         if (!comb) await sleep(700);   // modo antigo (um PDF por projeto): deixa o download terminar

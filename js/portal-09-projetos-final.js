@@ -1140,7 +1140,9 @@ async function deleteProjectFolder(folder, rows) {
   rows = rows || [];
   const enviados = rows.filter((p) => p.frozen_order_id);
   if (enviados.length) { alert(I18n.t('fav.folder_delete_has_sent', { folder, n: enviados.length })); return; }
-  const deOutros = rows.filter((p) => currentUser && p.client_user_id && p.client_user_id !== currentUser.id);
+  // admin apaga pasta de outra conta (24/11; banco: migration 327 = só projeto não enviado)
+  const souAdmin = window.LEGNO_IS_ADMIN === true || (typeof mpAdminCache !== 'undefined' && mpAdminCache === true);
+  const deOutros = souAdmin ? [] : rows.filter((p) => currentUser && p.client_user_id && p.client_user_id !== currentUser.id);
   if (deOutros.length) { alert(I18n.t('fav.folder_delete_not_owner', { folder, n: deOutros.length })); return; }
   if (!confirm(I18n.t('fav.folder_delete_confirm', { folder, n: rows.length }))) return;
   const resp = prompt(I18n.t('fav.folder_delete_type_name', { folder }), '');
