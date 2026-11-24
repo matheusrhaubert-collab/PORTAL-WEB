@@ -2915,8 +2915,18 @@ document.addEventListener('keydown', (e) => {
 // ---------- SALVAR PROJETO: loja + PO (admin) ----------
 // Chamado pelo salvar do portal-09. Devolve null (não é admin / projeto já tem
 // loja: nada a perguntar), { account_id, po_name } ou false (cancelou).
+// 24/11: criar projetos pelo PDF (portal-12) salva um projeto por ambiente —
+// a loja/PO é perguntada UMA vez e vale pra todos os ambientes da mesma rodada.
+function cxPdfLoteRodando() { try { return typeof projectPdfRunning !== 'undefined' && projectPdfRunning === true; } catch (e) { return false; } }
 async function getProjectStoreForSave(opts) {
+  const r = await cxGetProjectStoreForSave(opts);
+  if (cxPdfLoteRodando() && r && r !== false) cxState.lojaLotePdf = r;
+  return r;
+}
+async function cxGetProjectStoreForSave(opts) {
   if (!cxOn() || !cxAdmin()) return null;
+  if (cxPdfLoteRodando()) { if (cxState.lojaLotePdf && !(opts && opts.projectId)) return Object.assign({}, cxState.lojaLotePdf); }
+  else cxState.lojaLotePdf = null;
   let poAtual = '';
   try {
     if (opts && opts.projectId) {
@@ -3019,7 +3029,7 @@ function cxCss() {
     '.cx-ro{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted,#766f64)}.cx-ro .cx-po{color:var(--text,#2b2621);font-weight:600}.cx-ro i{font-style:normal;opacity:.5}',
     '.cx-go{display:flex;gap:10px;align-items:center;flex-basis:100%}.cx-go button{margin:0;padding:7px 16px}.cx-st{font-size:12px}.cx-st.ok{color:#2e7d4f}.cx-st.err{color:var(--danger,#b3432f)}',
     '.cx-lostbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin:6px 0 2px}.cx-lostbar button{margin:0;padding:4px 12px;font-size:12px}',
-    '.cx-save-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px}.cx-save-box{background:var(--panel,#fff);color:var(--text,#2b2621);border-radius:12px;padding:20px 22px;max-width:440px;width:100%;display:flex;flex-direction:column;gap:10px}.cx-save-box h3,.cx-save-box p{margin:0}.cx-save-box label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted,#766f64)}.cx-save-box select,.cx-save-box input{padding:9px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;background:#fff;color:var(--text,#2b2621);width:100%;margin:0}.cx-save-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.cx-save-foot button{margin:0}',
+    '.cx-save-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10003;pointer-events:auto!important;user-select:auto!important;display:flex;align-items:center;justify-content:center;padding:16px}.cx-save-box{background:var(--panel,#fff);color:var(--text,#2b2621);border-radius:12px;padding:20px 22px;max-width:440px;width:100%;display:flex;flex-direction:column;gap:10px}.cx-save-box h3,.cx-save-box p{margin:0}.cx-save-box label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted,#766f64)}.cx-save-box select,.cx-save-box input{padding:9px 10px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:14px;background:#fff;color:var(--text,#2b2621);width:100%;margin:0}.cx-save-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.cx-save-foot button{margin:0}',
     '.cx-storecell{cursor:pointer}.cx-storecell:hover b{text-decoration:underline}.cx-swap{color:var(--muted,#766f64);font-size:12px}.cx-storesel,.cx-moveall{padding:6px 8px;border:1px solid var(--border,#e0ddd6);border-radius:8px;font-size:13px;background:#fff;max-width:260px;width:auto;margin:0}.cx-moveall{margin-left:auto}',
     '.cx-gtable>thead th{cursor:pointer;white-space:nowrap}.cx-gtable>tbody>tr.cx-grow>td{white-space:normal}.cx-loja2{max-width:220px;overflow:hidden;text-overflow:ellipsis}.cx-loja2 .hint{font-size:11px}.cx-gexp>td{padding:0 0 10px 34px;background:rgba(0,0,0,.015)}.cx-inner{overflow:auto}.cx-inner .cx-table{margin:0}.cx-inner .cx-table thead th{font-size:11px}',
     '.cx-hmenu{max-height:70vh;overflow:auto}.cx-quem{font-size:12px;color:var(--muted,#766f64)}',
