@@ -771,6 +771,33 @@ function projectDrawerModelPreviewSvg(kind) {
   return s + '</svg>';
 }
 
+// CONTA NO CAMPO DE MEDIDA (24/11, Matt: "se eu adicionar -10 ele deve fazer a
+// conta, ou +35, independente da unidade"). Começa com + ou - = soma/subtrai do
+// valor que estava no campo; também aceita conta inteira ("800-10", "31 1/2 + 3/4").
+// Os números são lidos na unidade da tela (mm, cm, in com fração...). Devolve mm.
+function projectDimInputMm(input, unit) {
+  const txt = String((input && input.value) || '').trim().replace(/[−–]/g, '-');
+  if (!/[+-]/.test(txt)) return parseDimensionInput(txt, unit);
+  const partes = txt.split(/([+-])/).map((t) => t.trim());
+  let total = null, sinal = 1;
+  if (partes[0] === '') {
+    // "+35" / "-10": parte do valor que já estava no campo
+    total = parseDimensionInput(String(input.defaultValue || ''), unit);
+    if (total === null || isNaN(total)) return null;
+  }
+  for (let i = 0; i < partes.length; i++) {
+    const t = partes[i];
+    if (t === '+') { sinal = 1; continue; }
+    if (t === '-') { sinal = -sinal; continue; }
+    if (t === '') continue;
+    const v = parseDimensionInput(t, unit);
+    if (v === null || isNaN(v)) return null;
+    total = (total || 0) + sinal * v;
+    sinal = 1;
+  }
+  return total === null || total <= 0 ? null : total;
+}
+
 function renderProjectConfigPanel() {
   const panel = document.getElementById('po-proj-config-panel');
   if (!panel) return;
@@ -1319,7 +1346,7 @@ function renderProjectConfigPanel() {
   panel.querySelectorAll('.po-proj-dim-input').forEach((input) => {
     input.addEventListener('change', () => {
       const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
-      const mm = parseDimensionInput(input.value, unit2);
+      const mm = projectDimInputMm(input, unit2);
       if (mm !== null && !isNaN(mm)) updateProjectSlotDimension(slot, input.dataset.axis, mm);
       else renderProjectConfigPanel();
     });
@@ -1336,7 +1363,7 @@ function renderProjectConfigPanel() {
   panel.querySelectorAll('.po-proj-canto90-asa-input').forEach((input) => {
     input.addEventListener('change', () => {
       const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
-      const mm = parseDimensionInput(input.value, unit2);
+      const mm = projectDimInputMm(input, unit2);
       if (mm !== null && !isNaN(mm) && mm > 0) {
         pushProjectUndoState();
         setProjectSlotCanto90Asa(slot, input.dataset.asa, mm);
@@ -1350,7 +1377,7 @@ function renderProjectConfigPanel() {
   panel.querySelectorAll('.po-proj-canto45-porta-input:not(.po-proj-canto90-asa-input)').forEach((input) => {
     input.addEventListener('change', () => {
       const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
-      const mm = parseDimensionInput(input.value, unit2);
+      const mm = projectDimInputMm(input, unit2);
       const c45 = projectCanto45Info(slot);
       if (c45 && mm !== null && !isNaN(mm) && mm > 0) {
         pushProjectUndoState();
@@ -1376,7 +1403,7 @@ function renderProjectConfigPanel() {
   panel.querySelectorAll('.po-proj-piece-dim-input').forEach((input) => {
     input.addEventListener('change', () => {
       const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
-      const mm = parseDimensionInput(input.value, unit2);
+      const mm = projectDimInputMm(input, unit2);
       if (mm === null || isNaN(mm)) { renderProjectConfigPanel(); return; }
       applyPieceDim(input.dataset.pieceId, input.dataset.axis, clamp(mm, Number(input.dataset.min), Number(input.dataset.max)));
     });
@@ -1391,7 +1418,7 @@ function renderProjectConfigPanel() {
   panel.querySelectorAll('.po-proj-position-input').forEach((input) => {
     input.addEventListener('change', () => {
       const unit2 = (document.getElementById('po-unit-select') || {}).value || 'mm';
-      const mm = parseDimensionInput(input.value, unit2);
+      const mm = projectDimInputMm(input, unit2);
       if (mm !== null && !isNaN(mm)) setProjectSlotPositionFromSide(slot, input.dataset.posAxis, input.dataset.posSide, mm);
       else renderProjectConfigPanel();
     });
