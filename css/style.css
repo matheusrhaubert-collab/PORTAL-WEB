@@ -2925,9 +2925,13 @@ header.po-topnav {
 .po-dup-preview svg { max-width: 100%; max-height: 110px; }
 /* o rótulo global (.dim-field label) é bloco/alinhado à esquerda — aqui é cartão */
 .dim-field .po-dup-pad label.po-proj-duplicate-dir-option { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; margin: 0; }
-.po-dup-linha .dim-field { display: flex; flex-direction: column; justify-content: flex-end; margin-bottom: 8px; }
-.po-dup-linha .dim-field > label { min-height: 18px; }
-.po-dup-qty button, .po-dup-qty input, .po-dup-gap input { height: 36px; box-sizing: border-box; }
+/* os dois campos na MESMA linha (24/11, Matt: "dá uma alinhada naquela caixinha"):
+   rótulo em cima, caixa embaixo, mesma altura e sem margem herdada do input global */
+.po-dup-linha { align-items: end; }
+.po-dup-linha .dim-field { display: grid; grid-template-rows: auto 36px; align-items: end; row-gap: 4px; margin: 0 0 8px; }
+.po-dup-linha .dim-field > label { margin: 0; }
+.po-dup-qty, .po-dup-gap { height: 36px; align-items: center; }
+.po-dup-qty button, .po-dup-qty input, .po-dup-gap input { height: 36px; margin: 0; box-sizing: border-box; }
 
 .po-proj-canvas-outer { min-width: 0; }
 /* Frontal/Superior mora DENTRO da barra flutuante — não centraliza sozinho. */

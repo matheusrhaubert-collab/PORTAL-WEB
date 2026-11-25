@@ -2530,9 +2530,9 @@ function confirmProjectDuplicateModal() {
   if (cancelBtn) cancelBtn.addEventListener('click', () => closeProjectDuplicateModal());
   const okBtn = document.getElementById('po-proj-duplicate-run-btn');
   if (okBtn) okBtn.addEventListener('click', () => confirmProjectDuplicateModal());
-  // Clique no fundo escuro fecha, igual aos outros modais desta aba.
+  // Clique no fundo escuro NÃO fecha mais (24/11, Matt: "quando passo o mouse
+  // pra fora a tela já sai, deixa só fechando ela") — fecha no ×, Cancelar ou Esc.
   modal.addEventListener('click', (ev) => {
-    if (ev.target === modal) { closeProjectDuplicateModal(); return; }
     const b = ev.target.closest('[data-dup-qty]');
     if (b) {
       const q = document.getElementById('po-proj-duplicate-qty');
