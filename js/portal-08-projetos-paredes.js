@@ -2540,6 +2540,15 @@ function attachProject3DEditDrag() {
       lastRoomTap = null;
       return;
     }
+    // CLIQUE NA SETA NÃO É CLIQUE NA PAREDE (24/11, Matt: "duplo clique nessa
+    // seta, mesmo marcada, não estica o móvel, mas sim busca o frontal da
+    // parede"). A seta é desenhada por cima, mas o pickRoomSurfaceAt atravessa
+    // ela e acha a parede atrás — o duplo clique na seta virava também o duplo
+    // clique na parede e a câmera pulava. Seta embaixo do ponteiro = não conta.
+    if (ViewerProjectEdit.pickResizeArrowAt && ViewerProjectEdit.pickResizeArrowAt(ev.clientX, ev.clientY)) {
+      lastRoomTap = null;
+      return;
+    }
     const surface = ViewerProjectEdit.pickRoomSurfaceAt
       ? ViewerProjectEdit.pickRoomSurfaceAt(ev.clientX, ev.clientY)
       : null;
