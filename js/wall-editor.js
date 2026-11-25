@@ -927,7 +927,21 @@
 
     // Painel lateral — valores na unidade escolhida pelo cliente.
     const s = selecionada();
-    const q = (id) => document.getElementById(id);
+    const q0 = (id) => document.getElementById(id);
+    // CAMPO SENDO DIGITADO NÃO É REESCRITO (24/11, Matt: "não tá aceitando
+    // parede com fração, nem deixa eu colocar espaço pra fração vir depois").
+    // A altura aplica a cada tecla (input) e redesenha; o redesenho escrevia o
+    // número de volta no campo ("94 " virava "94") e apagava o espaço antes do
+    // "1/2". Agora o campo com o cursor fica como a pessoa digitou; ao sair
+    // dele (change/blur) o valor é formatado normalmente.
+    const q = (id) => {
+      const el = q0(id);
+      if (el && el === document.activeElement && el.tagName === 'INPUT') {
+        return new Proxy(el, { set(alvo, k, v) { if (k === 'value') return true; alvo[k] = v; return true; },
+          get(alvo, k) { const v = alvo[k]; return typeof v === 'function' ? v.bind(alvo) : v; } });
+      }
+      return el;
+    };
     if (s) {
       q('po-wall-comp').value = mmParaNumeroWE(compDe(s.c, s.i), unidade);
       q('po-wall-ang').value = arred(giroDe(s.c, s.i), 2);
