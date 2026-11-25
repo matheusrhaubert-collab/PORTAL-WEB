@@ -1198,7 +1198,7 @@ function cxOrdProj(o) {
 async function cxProjAction(a, o) {
   const T = (k, v) => (typeof I18n !== 'undefined' ? I18n.t(k, v) : k);
   const proj = o._row || (o._row = { id: o._pid, name: o._pname, client_folder: o._folder || null, client_user_id: o.client_user_id });
-  const full = async () => { if (!proj._fullRow) await fetchProjectFullRow(proj); return proj; };
+  const full = async () => { await fetchProjectFullRow(proj); return proj; }; // sempre relê (24/11: versão velha na memória apagava o salvo)
   try {
     if (a === 'zoom') { const c = (cxState.projCard || {})[o._pid]; const src = c && (c.ai_preview_url || c.thumbnail_data_url); if (src && typeof openGalleryLightbox === 'function') openGalleryLightbox(src); return; }
     if (a === 'del') {

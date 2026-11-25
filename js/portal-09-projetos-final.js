@@ -182,12 +182,64 @@ let projectSaveInFlight = false;
 async function saveProjectFavorite(overwriteId, opts) {
   if (projectSaveInFlight) return null;
   projectSaveInFlight = true;
+  // JANELA "SALVANDO…" (24/11, Matt: "uma janela com salvando em andamento e
+  // quando tiver salvo fechar, e congelar tudo antes, só pra garantir que o
+  // processo foi concluído"). Trava a tela inteira até o banco responder.
+  // Lotes (opts: PDF, enviar pasta…) têm o próprio aviso — não abre aqui.
+  const janela = !opts;
+  if (janela) projSaveVeu('saving');
+  let id = null;
   try {
-    return await saveProjectFavoriteInner(overwriteId, opts);
+    id = await saveProjectFavoriteInner(overwriteId, opts);
+    return id;
   } finally {
     projectSaveInFlight = false;
+    if (janela) {
+      const ok = !!id && !projectDirty;
+      if (ok) { projSaveVeu('saved'); setTimeout(() => projSaveVeu(null), 700); }
+      else projSaveVeu(null); // cancelou ou deu erro: a mensagem de erro fica na tela
+    }
   }
 }
+
+// Véu do salvar: estado 'saving' (rodinha), 'saved' (✓), 'hidden' (some por
+// um instante — ex.: a janela de escolher loja do admin precisa de clique) e
+// null (fecha). Bloqueia clique, roda do mouse e teclado enquanto aberto.
+function projSaveVeu(estado) {
+  let v = document.getElementById('po-save-veu');
+  if (!estado) { if (v) v.remove(); return; }
+  if (!v) {
+    v = document.createElement('div');
+    v.id = 'po-save-veu';
+    v.setAttribute('role', 'alertdialog');
+    v.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(20,20,20,.45);display:flex;align-items:center;justify-content:center;cursor:wait;';
+    v.innerHTML = '<div style="background:#fff;color:#222;border-radius:12px;padding:22px 30px;min-width:260px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.3);font:15px/1.4 system-ui,sans-serif">'
+      + '<div class="psv-ico" style="width:34px;height:34px;margin:0 auto 10px;border:4px solid #ddd;border-top-color:#2f6f4f;border-radius:50%;animation:psvGira .8s linear infinite"></div>'
+      + '<div class="psv-txt" style="font-weight:600"></div>'
+      + '<div class="psv-sub" style="font-size:12px;color:#777;margin-top:4px"></div></div>'
+      + '<style>@keyframes psvGira{to{transform:rotate(360deg)}}</style>';
+    ['pointerdown', 'mousedown', 'click', 'dblclick', 'wheel', 'contextmenu', 'touchstart'].forEach((t) => v.addEventListener(t, (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false }));
+    document.body.appendChild(v);
+  }
+  const T = (k, d) => { try { const r = I18n.t(k); return r && r !== k ? r : d; } catch (e) { return d; } };
+  v.style.display = estado === 'hidden' ? 'none' : 'flex';
+  const ico = v.querySelector('.psv-ico');
+  if (estado === 'saved') {
+    ico.style.animation = 'none'; ico.style.border = '4px solid #2f6f4f';
+    ico.innerHTML = '<span style="display:block;line-height:26px;color:#2f6f4f;font-weight:700;font-size:20px">✓</span>';
+    v.querySelector('.psv-txt').textContent = T('project.save_veu_done', 'Projeto salvo');
+    v.querySelector('.psv-sub').textContent = '';
+  } else {
+    ico.style.animation = ''; ico.style.border = '4px solid #ddd'; ico.style.borderTopColor = '#2f6f4f'; ico.innerHTML = '';
+    v.querySelector('.psv-txt').textContent = T('project.save_veu_saving', 'Salvando o projeto…');
+    v.querySelector('.psv-sub').textContent = T('project.save_veu_wait', 'Não feche nem recarregue a página.');
+  }
+}
+// teclado travado enquanto salva (Delete, Ctrl+Z, atalhos do editor…)
+document.addEventListener('keydown', (e) => {
+  const v = document.getElementById('po-save-veu');
+  if (v && v.style.display !== 'none') { e.preventDefault(); e.stopPropagation(); }
+}, true);
 
 async function saveProjectFavoriteInner(overwriteId, opts) {
   const statusEl = document.getElementById('po-proj-fav-status');
@@ -267,7 +319,9 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
     // pros outros devolve null (o banco põe a empresa de quem criou). false =
     // cancelou: não salva.
     if (typeof getProjectStoreForSave === 'function') {
+      if (document.getElementById('po-save-veu')) projSaveVeu('hidden'); // a janela da loja precisa de clique
       const lojaPo = await getProjectStoreForSave({ projectId: overwriteId || null });
+      if (!opts && lojaPo !== false) projSaveVeu('saving');
       if (lojaPo === false) return null;
       if (lojaPo) Object.assign(basePayload, lojaPo);
     }
@@ -295,13 +349,30 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
       // silenciosamente descartada — exatamente o "salvei mas não salvou"
       // (Matt, 2026-09-14). Com `.select()`, `data` vem vazio quando nenhuma
       // linha bateu no RLS, e isso vira erro visível em vez de sumir calado.
+      // CONFLITO (24/11, caso joackim): o projeto foi salvo DEPOIS que esta tela
+      // abriu (outra aba, outro login, outro aparelho, ou versão velha na tela).
+      // Antes, salvar sobrescrevia calado e a outra versão sumia. Agora pergunta.
+      const lf = (loadedProjectFavorite && loadedProjectFavorite.id === overwriteId) ? loadedProjectFavorite : null;
+      if (!opts && lf && lf.updated_at) {
+        try {
+          const { data: atual } = await supabaseClient.from('user_projects').select('updated_at').eq('id', overwriteId).maybeSingle();
+          const tBanco = atual && atual.updated_at ? Date.parse(atual.updated_at) : 0;
+          const tTela = Date.parse(lf.updated_at) || 0;
+          if (tBanco && tTela && tBanco - tTela > 2000) {
+            const quando = new Date(tBanco).toLocaleString();
+            if (!confirm(I18n.t('project.save_conflict', { when: quando }))) { refreshProjectSaveIndicator(); return null; }
+          }
+        } catch (e) { /* sem conferência — segue salvando como antes */ }
+      }
+      const agoraIso = new Date().toISOString();
       const { data, error } = await runWithCacheFallback((payload) => supabaseClient
         .from('user_projects')
-        .update({ ...payload, updated_at: new Date().toISOString() })
+        .update({ ...payload, updated_at: agoraIso })
         .eq('id', overwriteId)
         .select('id'));
       if (error) throw error;
       if (!data || !data.length) throw new Error(I18n.t('project.update_blocked'));
+      if (lf) lf.updated_at = agoraIso;
       statusEl.textContent = I18n.t('project.updated_status', { name: loadedProjectFavorite ? loadedProjectFavorite.name : '' });
     } else {
       const name = (opts && opts.name) ? String(opts.name).trim()
@@ -313,7 +384,7 @@ async function saveProjectFavoriteInner(overwriteId, opts) {
         .select('id, name')
         .single());
       if (error) throw error;
-      loadedProjectFavorite = { id: data.id, name: data.name, ai_preview_url: null, client_folder: (opts && opts.clientFolder) ? String(opts.clientFolder).trim().slice(0, 80) : null };
+      loadedProjectFavorite = { id: data.id, name: data.name, ai_preview_url: null, updated_at: new Date().toISOString(), client_folder: (opts && opts.clientFolder) ? String(opts.clientFolder).trim().slice(0, 80) : null };
       window.projectImportedName = null;
       statusEl.textContent = I18n.t('project.saved_status');
     }
@@ -1373,7 +1444,12 @@ async function maybeOpenSharedProjectImport() {
 // — a lista de "My Projects" só traz o básico (ver loadProjectFavoritesList).
 // select('*') pega as colunas opcionais que existirem no banco.
 async function fetchProjectFullRow(proj) {
-  if (!proj || !proj.id || proj._fullRow) return proj;
+  // SEMPRE relê do banco (24/11, caso joackim: "perdi 2x o projeto salvo").
+  // Antes, linha já buscada uma vez (_fullRow) não era buscada de novo: abrir,
+  // salvar, voltar pra lista e abrir DE NOVO o mesmo card trazia a versão
+  // ANTIGA guardada na memória — e salvar em cima dela apagava o que estava
+  // salvo de verdade. Uma consulta a mais por abertura; nunca versão velha.
+  if (!proj || !proj.id) return proj;
   const { data, error } = await supabaseClient.from('user_projects').select('*').eq('id', proj.id).single();
   if (error) throw error;
   Object.assign(proj, data, { _fullRow: true });
@@ -1652,7 +1728,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
     selectedProjectSlotId = null;
     project3DLastFitKey = null; // projeto TROCOU inteiro — reenquadra a câmera 3D mesmo se a chave coincidir (ver comentário na declaração)
     refreshProjectWallWidthInput();
-    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name, ai_preview_url: fav.ai_preview_url || null, client_folder: fav.client_folder || null } : null;
+    loadedProjectFavorite = bindAsFavorite ? { id: fav.id, name: fav.name, ai_preview_url: fav.ai_preview_url || null, client_folder: fav.client_folder || null, updated_at: fav.updated_at || null } : null;
     // dados do cliente vêm junto do projeto salvo; projeto importado de
     // link/galeria chega sem (não carrega dado de cliente de outra conta)
     if (typeof setProjectClientInfo === 'function') setProjectClientInfo(fav.client_info || null);
@@ -4643,3 +4719,18 @@ function projectReadOnlyRefresh() {
   }
   document.addEventListener('po:lang-changed', projectReadOnlyRefresh);
 })();
+
+
+// AVISO AO SAIR (24/11, caso joackim): fechar a aba, recarregar (F5) ou sair
+// do portal com alteração não salva perdia tudo sem perguntar. Agora o
+// navegador mostra o aviso padrão dele ("sair do site? alterações podem não
+// ser salvas"). Só quando há projeto na tela com alteração pendente.
+window.addEventListener('beforeunload', (ev) => {
+  try {
+    if (projectSaveInFlight || (typeof projectDirty !== 'undefined' && projectDirty && Array.isArray(projectSlots) && projectSlots.length)) {
+      ev.preventDefault();
+      ev.returnValue = '';
+      return '';
+    }
+  } catch (e) { /* nada */ }
+});
