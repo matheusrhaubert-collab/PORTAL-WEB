@@ -1569,6 +1569,7 @@ async function restoreFavoriteProject(fav, bindAsFavorite = true) {
   // se chegar aqui por algum caminho, abre como rascunho sem vínculo
   if (fav && fav.frozen_order_id) bindAsFavorite = false;
   window.projectImportedName = null; // outro projeto abriu: esquece o nome do importado
+  if (typeof projSearchLembraAbas !== 'undefined') projSearchLembraAbas = false; // outro projeto: "Add cabinet" na 1ª aba
   const errorEl = document.getElementById('po-proj-fav-error') || document.getElementById('po-proj-error');
   if (errorEl) errorEl.style.display = 'none';
   try {

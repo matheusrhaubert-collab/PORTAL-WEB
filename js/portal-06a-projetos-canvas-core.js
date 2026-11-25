@@ -924,6 +924,7 @@ function projectMoveExtrasPraColuna() {
   });
 }
 function setProjectFullBleed(on) {
+  if (!on) projSearchLembraAbas = false; // saiu da aba Projetos: janela "Add cabinet" volta pra 1ª aba
   document.body.classList.toggle('proj-fixa', !!on);
   if (on) projectMoveExtrasPraColuna();
   const jaEstava = document.body.classList.contains('proj-fullbleed');
@@ -2233,8 +2234,16 @@ function renderProjectSearchModalGrid() {
   });
 }
 
+// ABAS LEMBRADAS (2026-11-24, Matt: "após selecionar um módulo, quando voltar
+// em Cabinets ele volta pra mesma aba que eu estava. Só se eu sair e entrar de
+// novo ele começa no zero"). Família/categoria/subcategoria da janela ficam
+// como estavam; voltam pra 1ª aba só ao sair da aba Projetos
+// (setProjectFullBleed(false)) ou ao abrir/limpar projeto (resetProject,
+// restoreFavoriteProject).
+let projSearchLembraAbas = false;
 function openProjectSearchModal() {
-  projSearchResetToFirstTabs();
+  if (!projSearchLembraAbas) projSearchResetToFirstTabs();
+  projSearchLembraAbas = true;
   renderProjectSearchModalFilterBars();
   renderProjectSearchModalGrid();
   document.getElementById('po-proj-search-modal').classList.add('open');

@@ -5526,6 +5526,7 @@ function resetProject() {
   // projeto amarrado.
   loadedProjectFavorite = null;
   window.projectImportedName = null;
+  if (typeof projSearchLembraAbas !== 'undefined') projSearchLembraAbas = false; // projeto novo: "Add cabinet" na 1ª aba
   if (typeof setProjectClientInfo === 'function') setProjectClientInfo(null);
   refreshProjectFavoriteButtons();
   project3DLastFitKey = null; // força reenquadrar a câmera 3D no próximo render (ver comentário na declaração)
