@@ -2890,18 +2890,44 @@ header.po-topnav {
   background: rgba(0,0,0,0.55); padding: 20px;
 }
 #po-proj-duplicate-modal.open { display: flex; }
-.po-proj-duplicate-modal-card { width: 340px; }
-.po-proj-duplicate-dir-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.po-proj-duplicate-modal-card { width: 400px; }
+/* Setas em cruz (24/11): cima/baixo/esq/dir na cruz, trás/frente na diagonal */
+.po-dup-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .po-proj-duplicate-dir-option {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px 8px;
-  cursor: pointer; font-weight: normal;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; min-height: 64px;
+  cursor: pointer; font-weight: 600; font-size: 12px; color: #555; background: #fff; user-select: none;
 }
+.po-proj-duplicate-dir-option:hover { border-color: #b9a27a; background: #fbf8f2; }
 .po-proj-duplicate-dir-option:has(input:checked) {
-  border-color: var(--accent, #2f6fb8); background: rgba(47,111,184,0.08);
+  border-color: #2f6f4f; background: #eef7f1; color: #1f5c39; box-shadow: 0 0 0 2px rgba(47,111,79,.18);
 }
-.po-proj-duplicate-dir-option input { margin: 0; }
-#po-proj-duplicate-qty { width: 100%; }
+.po-proj-duplicate-dir-option input { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
+.po-dup-arrow { width: 26px; height: 26px; fill: currentColor; transition: transform .15s; }
+.po-dup-up .po-dup-arrow { transform: rotate(0deg); }
+.po-dup-right .po-dup-arrow { transform: rotate(90deg); }
+.po-dup-down .po-dup-arrow { transform: rotate(180deg); }
+.po-dup-left .po-dup-arrow { transform: rotate(270deg); }
+.po-dup-back .po-dup-arrow { transform: rotate(45deg); }
+.po-dup-front .po-dup-arrow { transform: rotate(225deg); }
+.po-dup-centro { display: flex; align-items: center; justify-content: center; }
+.po-dup-centro svg { width: 44px; height: 44px; }
+.po-dup-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+.po-dup-qty { display: flex; align-items: stretch; gap: 4px; }
+.po-dup-qty button { width: 34px; min-width: 34px; padding: 0; font-size: 18px; line-height: 1; color: #1f2937; }
+.po-dup-qty input { flex: 1; min-width: 0; text-align: center; }
+.po-dup-gap { display: flex; align-items: center; gap: 6px; }
+.po-dup-gap input { flex: 1; min-width: 0; text-align: right; }
+.po-dup-gap span { font-size: 13px; color: #6b7280; min-width: 22px; }
+.po-dup-hint { font-size: 12px; color: #6b7280; margin: -4px 0 8px; }
+.po-dup-preview { display: flex; justify-content: center; align-items: center; min-height: 70px; margin-bottom: 6px;
+  border: 1px dashed #e5e7eb; border-radius: 10px; background: #fcfbf8; padding: 6px; }
+.po-dup-preview svg { max-width: 100%; max-height: 110px; }
+/* o rótulo global (.dim-field label) é bloco/alinhado à esquerda — aqui é cartão */
+.dim-field .po-dup-pad label.po-proj-duplicate-dir-option { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; margin: 0; }
+.po-dup-linha .dim-field { display: flex; flex-direction: column; justify-content: flex-end; margin-bottom: 8px; }
+.po-dup-linha .dim-field > label { min-height: 18px; }
+.po-dup-qty button, .po-dup-qty input, .po-dup-gap input { height: 36px; box-sizing: border-box; }
 
 .po-proj-canvas-outer { min-width: 0; }
 /* Frontal/Superior mora DENTRO da barra flutuante — não centraliza sozinho. */

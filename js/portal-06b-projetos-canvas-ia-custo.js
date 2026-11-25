@@ -2266,10 +2266,15 @@ function duplicateProjectSlot(slotId) {
 //           (girado por floor_rotation_deg, já era assim) | frente/atrás =
 //           mesmo par, no eixo PROFUNDIDADE local (perpendicular) | cima/
 //           baixo = fineOffsetYMm (fino, eleva do chão)
-function duplicateProjectSlotDirectional(slotId, direction, count) {
+// gapMm (24/11, Matt: "acrescenta um passo pra agregar novos itens duplicados,
+// tipo 100mm ou 4 inches... joga os itens duplicados essa distância pro
+// sentido escolhido uma da outra"): ESPAÇO LIVRE entre uma cópia e a seguinte
+// (e entre o original e a 1ª). 0/vazio = encostadas, como sempre foi.
+function duplicateProjectSlotDirectional(slotId, direction, count, gapMm) {
   const original = projectSlots.find((s) => s.id === slotId);
   if (!original) return [];
   const n = Math.max(1, Math.min(50, Math.round(Number(count) || 1)));
+  const gap = Math.max(0, Number(gapMm) || 0);
   const sign = (direction === 'left' || direction === 'down' || direction === 'back') ? -1 : 1;
   const copies = [];
   for (let i = 1; i <= n; i++) {
@@ -2281,7 +2286,7 @@ function duplicateProjectSlotDirectional(slotId, direction, count) {
     copy.group_name = null;
     if (isFloorSlot(copy)) {
       if (direction === 'up' || direction === 'down') {
-        const stepMm = ((Number(copy.height_mm || 0) || 300) * i) * sign;
+        const stepMm = (((Number(copy.height_mm || 0) || 300) + gap) * i) * sign;
         const maxMm = Math.max(projectSlotCeilingMm(copy) - Number(copy.height_mm || 0), 0);
         copy.fineOffsetYMm = clamp(Number(original.fineOffsetYMm || 0) + stepMm, 0, maxMm);
         projectSlots.push(copy);
@@ -2290,11 +2295,11 @@ function duplicateProjectSlotDirectional(slotId, direction, count) {
         if (direction === 'front' || direction === 'back') {
           // Eixo PROFUNDIDADE local — perpendicular ao da largura, mesma
           // matriz de rotação (ver comentário no branch esquerda/direita).
-          const stepMm = ((Number(copy.depth_mm || 0) || 600) * i) * sign;
+          const stepMm = (((Number(copy.depth_mm || 0) || 600) + gap) * i) * sign;
           copy.floor_x_mm = Number(original.floor_x_mm || 0) + Math.sin(rot) * stepMm;
           copy.floor_z_mm = Number(original.floor_z_mm || 0) + Math.cos(rot) * stepMm;
         } else {
-          const stepMm = ((Number(copy.width_mm || 0) || 600) * i) * sign;
+          const stepMm = (((Number(copy.width_mm || 0) || 600) + gap) * i) * sign;
           copy.floor_x_mm = Number(original.floor_x_mm || 0) + Math.cos(rot) * stepMm;
           copy.floor_z_mm = Number(original.floor_z_mm || 0) - Math.sin(rot) * stepMm;
         }
@@ -2302,19 +2307,19 @@ function duplicateProjectSlotDirectional(slotId, direction, count) {
         clampFloorSlotIntoRoom(copy);
       }
     } else if (direction === 'up' || direction === 'down') {
-      const stepMm = ((Number(copy.height_mm || 0) || 300) * i) * sign;
+      const stepMm = (((Number(copy.height_mm || 0) || 300) + gap) * i) * sign;
       copy.x_mm = Number(original.x_mm || 0);
       copy.floor_height_mm = Number(original.floor_height_mm || 0) + stepMm;
       projectSlots.push(copy);
       clampProjectSlotPosition(copy);
     } else if (direction === 'front' || direction === 'back') {
       // Fino, sem clamp (mesma filosofia do ajuste Z de Movimentação/Rotação).
-      const stepMm = ((Number(copy.depth_mm || 0) || 600) * i) * sign;
+      const stepMm = (((Number(copy.depth_mm || 0) || 600) + gap) * i) * sign;
       copy.fineOffsetZMm = Number(original.fineOffsetZMm || 0) + stepMm;
       projectSlots.push(copy);
     } else {
       const widthMm = Number(copy.width_mm || 0);
-      copy.x_mm = Number(original.x_mm || 0) + sign * i * widthMm;
+      copy.x_mm = Number(original.x_mm || 0) + sign * i * (widthMm + gap);
       projectSlots.push(copy);
       clampProjectSlotPosition(copy);
     }
@@ -2401,6 +2406,78 @@ function pasteProjectSlotAtClient(clientX, clientY) {
 }
 
 let projectDuplicateModalSlotId = null;
+// Último espaço digitado (em mm) — a janela reabre com ele na sessão.
+let projectDuplicateGapMm = 0;
+
+function projectDuplicateUnit() { return (document.getElementById('po-unit-select') || {}).value || 'mm'; }
+function projectDuplicateGapLido() {
+  const el = document.getElementById('po-proj-duplicate-gap');
+  const txt = el ? String(el.value || '').trim() : '';
+  if (!txt || txt === '0') return 0;
+  const v = (typeof parseDimensionInput === 'function') ? parseDimensionInput(txt, projectDuplicateUnit()) : parseFloat(txt.replace(',', '.'));
+  return (v != null && isFinite(v) && v > 0) ? Math.round(v * 10) / 10 : 0;
+}
+function projectDuplicateDirAtual() {
+  const dirEl = document.querySelector('input[name="po-proj-duplicate-dir"]:checked');
+  const validDirs = ['left', 'right', 'up', 'down', 'front', 'back'];
+  return (dirEl && validDirs.includes(dirEl.value)) ? dirEl.value : 'right';
+}
+function projectDuplicateQtdAtual() {
+  const qtyInput = document.getElementById('po-proj-duplicate-qty');
+  return Math.max(1, Math.min(50, Math.round(Number(qtyInput && qtyInput.value) || 1)));
+}
+// PRÉVIA (24/11): original (cinza) + cópias (verde) na direção escolhida, com
+// o espaço em escala. Frente/trás = em diagonal (profundidade).
+function renderProjectDuplicatePreview() {
+  const box = document.getElementById('po-proj-duplicate-preview');
+  if (!box) return;
+  const slot = projectSlots.find((s) => s.id === projectDuplicateModalSlotId);
+  if (!slot) { box.innerHTML = ''; return; }
+  const dir = projectDuplicateDirAtual();
+  const n = Math.min(projectDuplicateQtdAtual(), 8);
+  const gap = projectDuplicateGapLido();
+  const W = Number(slot.width_mm) || 600, H = Number(slot.height_mm) || 700, D = Number(slot.depth_mm) || 560;
+  // tamanho do passo na direção escolhida (mm) e do bloco na tela
+  const horiz = dir === 'left' || dir === 'right';
+  const vert = dir === 'up' || dir === 'down';
+  const dim = horiz ? W : vert ? H : D;
+  const passo = dim + gap;
+  const total = dim + passo * n;
+  const esc = 320 / Math.max(total, horiz ? H : W, 1);
+  const bw = (horiz ? W : vert ? W : W * 0.6) * esc, bh = (vert ? H : horiz ? H : H * 0.6) * esc;
+  const pass = passo * esc * (vert || horiz ? 1 : 0.55);
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const k = i;
+    let x = 0, y = 0;
+    if (dir === 'right') x = k * pass;
+    else if (dir === 'left') x = -k * pass;
+    else if (dir === 'up') y = -k * pass;
+    else if (dir === 'down') y = k * pass;
+    else if (dir === 'back') { x = k * pass * 0.8; y = -k * pass * 0.6; }
+    else { x = -k * pass * 0.8; y = k * pass * 0.6; }
+    pts.push([x, y]);
+  }
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const minX = Math.min.apply(null, xs), minY = Math.min.apply(null, ys);
+  const vw = Math.max.apply(null, xs) - minX + bw + 8, vh = Math.max.apply(null, ys) - minY + bh + 8;
+  // frente/trás: desenha de trás pra frente
+  const ordem = pts.map((p, i) => i);
+  if (dir === 'front') ordem.reverse();
+  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + vw.toFixed(1) + ' ' + vh.toFixed(1) + '" width="' + Math.min(vw, 340).toFixed(0) + '">';
+  ordem.forEach((i) => {
+    const x = pts[i][0] - minX + 4, y = pts[i][1] - minY + 4;
+    const orig = i === 0;
+    svg += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" rx="2"'
+      + ' fill="' + (orig ? '#e5e1d8' : '#cfe7d8') + '" stroke="' + (orig ? '#8a8174' : '#2f6f4f') + '" stroke-width="1.5"'
+      + (orig ? '' : ' stroke-dasharray="4 2"') + '/>';
+  });
+  svg += '</svg>';
+  const fmt = (mm) => (typeof formatDimension === 'function') ? formatDimension(mm, projectDuplicateUnit()) : (Math.round(mm) + ' mm');
+  const legenda = (gap > 0 ? I18n.t('project.duplicate_modal_preview_gap', { gap: fmt(gap) }) : I18n.t('project.duplicate_modal_preview_touch'))
+    + (projectDuplicateQtdAtual() > 8 ? ' · +' + (projectDuplicateQtdAtual() - 8) : '');
+  box.innerHTML = '<div style="text-align:center">' + svg + '<div style="font-size:11px;color:#6b7280;margin-top:2px">' + legenda + '</div></div>';
+}
 
 function openProjectDuplicateModal(slotId) {
   const slot = projectSlots.find((s) => s.id === slotId);
@@ -2415,7 +2492,15 @@ function openProjectDuplicateModal(slotId) {
   if (qtyInput) qtyInput.value = '1';
   const dirRight = document.getElementById('po-proj-duplicate-dir-right');
   if (dirRight) dirRight.checked = true;
+  // espaço: unidade do usuário (mm / in com fração / cm...), lembra o último
+  const u = projectDuplicateUnit();
+  const gapEl = document.getElementById('po-proj-duplicate-gap');
+  if (gapEl) gapEl.value = projectDuplicateGapMm > 0 && typeof formatDimensionNumber === 'function'
+    ? formatDimensionNumber(projectDuplicateGapMm, u) : '0';
+  const uEl = document.getElementById('po-proj-duplicate-gap-unit');
+  if (uEl) uEl.textContent = (typeof unitAbbrev === 'function') ? unitAbbrev(u) : u;
   modal.classList.add('open');
+  renderProjectDuplicatePreview();
   if (qtyInput) qtyInput.focus();
 }
 
@@ -2428,13 +2513,12 @@ function closeProjectDuplicateModal() {
 function confirmProjectDuplicateModal() {
   const slotId = projectDuplicateModalSlotId;
   if (slotId == null) return;
-  const dirEl = document.querySelector('input[name="po-proj-duplicate-dir"]:checked');
-  const validDirs = ['left', 'right', 'up', 'down', 'front', 'back'];
-  const direction = (dirEl && validDirs.includes(dirEl.value)) ? dirEl.value : 'right';
-  const qtyInput = document.getElementById('po-proj-duplicate-qty');
-  const qty = Math.max(1, Math.min(50, Math.round(Number(qtyInput && qtyInput.value) || 1)));
+  const direction = projectDuplicateDirAtual();
+  const qty = projectDuplicateQtdAtual();
+  const gap = projectDuplicateGapLido();
+  projectDuplicateGapMm = gap;
   closeProjectDuplicateModal();
-  duplicateProjectSlotDirectional(slotId, direction, qty);
+  duplicateProjectSlotDirectional(slotId, direction, qty, gap);
 }
 
 (function attachProjectDuplicateModal() {
@@ -2447,15 +2531,25 @@ function confirmProjectDuplicateModal() {
   const okBtn = document.getElementById('po-proj-duplicate-run-btn');
   if (okBtn) okBtn.addEventListener('click', () => confirmProjectDuplicateModal());
   // Clique no fundo escuro fecha, igual aos outros modais desta aba.
-  modal.addEventListener('click', (ev) => { if (ev.target === modal) closeProjectDuplicateModal(); });
-  // Enter no campo de quantidade confirma direto, sem precisar alcançar o
-  // botão — mesma conveniência de um form comum.
-  const qtyInput = document.getElementById('po-proj-duplicate-qty');
-  if (qtyInput) {
-    qtyInput.addEventListener('keydown', (ev) => {
+  modal.addEventListener('click', (ev) => {
+    if (ev.target === modal) { closeProjectDuplicateModal(); return; }
+    const b = ev.target.closest('[data-dup-qty]');
+    if (b) {
+      const q = document.getElementById('po-proj-duplicate-qty');
+      if (q) q.value = String(Math.max(1, Math.min(50, (Number(q.value) || 1) + Number(b.dataset.dupQty))));
+      renderProjectDuplicatePreview();
+    }
+  });
+  // prévia acompanha direção, quantidade e espaço
+  modal.addEventListener('change', () => renderProjectDuplicatePreview());
+  modal.addEventListener('input', () => renderProjectDuplicatePreview());
+  // Enter na quantidade ou no espaço confirma direto.
+  ['po-proj-duplicate-qty', 'po-proj-duplicate-gap'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') { ev.preventDefault(); confirmProjectDuplicateModal(); }
     });
-  }
+  });
   // Esc fecha — mesmo padrão do modal de IA (attachProjectAiListeners acima).
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && modal.classList.contains('open')) closeProjectDuplicateModal();
