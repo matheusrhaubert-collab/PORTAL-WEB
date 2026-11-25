@@ -2255,7 +2255,12 @@ function attachProject3DEditDrag() {
         // ponteiro. Se houver outro módulo ali (seta desenhada por cima do
         // vizinho), mantém o comportamento antigo — desselecionar seria uma
         // surpresa pior que a de antes.
-        const soltar = !sobre && !(state.viaArrow && state.isTouch);
+        // SETA NO MOUSE TAMBÉM (24/11, Matt: "ainda não consigo esticar até a
+        // colisão com duplo clique na seta"): o 1º clique parado na seta
+        // DESSELECIONAVA no mouse (a seta fica fora do módulo), as setas sumiam
+        // e o 2º clique caía na parede — o duplo clique nunca chegava. Clique
+        // na seta nunca solta a seleção, em toque ou mouse.
+        const soltar = !sobre && !state.viaArrow;
         if (soltar) { deselectProjectSlot(); return; }
         selectProjectSlot(state.slotId);
         refreshProject3DResizeArrows();
