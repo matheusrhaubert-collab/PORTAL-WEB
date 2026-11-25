@@ -1,4 +1,4 @@
-// Banco extra de perguntas do Tutorial (Help). Gerado em lotes (lote 1 = 156, lote 2 = 79, lote 3 = 30 em 15/11); cada item tem resposta escrita (resp) em pt/en/es.
+// Banco extra de perguntas do Tutorial (Help). Gerado em lotes (lote 1 = 156, lote 2 = 79, lote 3 = 30 em 15/11, lote 4 = 22 em 24/11); cada item tem resposta escrita (resp) em pt/en/es.
 // Formato: {id, cat, alvo, kw, pt, en, es, resp:{pt,en,es}}. Carregado antes do portal-24, que funde em HELPER_PERGUNTAS.
 window.HELPER_PERGUNTAS_EXTRA = [
  {
@@ -24,9 +24,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "Does the project save automatically?",
   "es": "¿El proyecto se guarda solo?",
   "resp": {
-   "pt": "Não. Salve com o botão Salvar na barra (ícone de disquete) ou Ctrl+S. O título fica com um aviso quando há mudança sem salvar.",
-   "en": "No. Save with the Save button on the toolbar (disk icon) or Ctrl+S. The title shows a mark when there are unsaved changes.",
-   "es": "No. Guarda con el botón Guardar de la barra (ícono de disquete) o Ctrl+S. El título muestra una marca cuando hay cambios sin guardar."
+   "pt": "Não. Salve com o botão Salvar na barra (ícone de disquete) ou Ctrl+S. Ao salvar, a tela trava com a janela Salvando… e só libera quando o salvamento terminou de verdade. Se tentar fechar ou recarregar a página com alteração não salva, o navegador avisa.",
+   "en": "No. Save with the Save button on the toolbar (disk icon) or Ctrl+S. While saving, the screen locks with a Saving… window and only frees up when the save is really done. If you try to close or reload the page with unsaved changes, the browser warns you.",
+   "es": "No. Guarda con el botón Guardar de la barra (ícono de disquete) o Ctrl+S. Al guardar, la pantalla se bloquea con la ventana Guardando… y solo se libera cuando terminó de verdad. Si intentas cerrar o recargar la página con cambios sin guardar, el navegador avisa."
   }
  },
  {
@@ -52,9 +52,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I organize projects by client?",
   "es": "¿Cómo organizo los proyectos por cliente?",
   "resp": {
-   "pt": "Ao salvar, informe o nome do cliente: ele vira uma pasta em Meus projetos e todos os ambientes daquele cliente ficam dentro dela.",
-   "en": "When saving, enter the client's name: it becomes a folder in My Projects and every room for that client goes inside it.",
-   "es": "Al guardar, escribe el nombre del cliente: se convierte en una carpeta en Mis proyectos y todos los ambientes de ese cliente quedan dentro."
+   "pt": "Na Central de Pedidos, abra o projeto pela seta ▾ e clique em Folder: escreva o nome da pasta (nova ou já existente) e salve. Dá pra trocar de pasta quantas vezes quiser.",
+   "en": "In the Order Center, open the project with the ▾ arrow and click Folder: type the folder name (new or existing) and save. You can change folders as often as you like.",
+   "es": "En la Central de Pedidos, abre el proyecto con la flecha ▾ y haz clic en Folder: escribe el nombre de la carpeta (nueva o existente) y guarda. Puedes cambiarlo de carpeta cuantas veces quieras."
   }
  },
  {
@@ -80,9 +80,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I delete a saved project?",
   "es": "¿Cómo borro un proyecto guardado?",
   "resp": {
-   "pt": "Em Meus projetos, cada projeto tem o botão de excluir (lixeira). Projetos que já viraram pedido continuam no pedido.",
-   "en": "In My Projects each project has a delete button (trash). Projects that became an order stay in the order.",
-   "es": "En Mis proyectos cada proyecto tiene el botón de eliminar (papelera). Los que ya son pedido siguen en el pedido."
+   "pt": "Na Central de Pedidos, abra o projeto pela seta ▾ e use Excluir. Projeto que já virou pedido não pode ser excluído; ele continua no pedido.",
+   "en": "In the Order Center, open the project with the ▾ arrow and use Delete. A project that already became an order cannot be deleted; it stays with the order.",
+   "es": "En la Central de Pedidos, abre el proyecto con la flecha ▾ y usa Borrar. Un proyecto que ya es pedido no se puede borrar; queda en el pedido."
   }
  },
  {
@@ -374,9 +374,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "What are the arrows around the cabinet for?",
   "es": "¿Para qué sirven las flechas alrededor del módulo?",
   "resp": {
-   "pt": "Arraste uma seta pra esticar largura, altura ou profundidade. Segurar Shift estica até encostar no vizinho ou na parede.",
-   "en": "Drag an arrow to stretch width, height or depth. Holding Shift stretches until it touches the neighbor or the wall.",
-   "es": "Arrastra una flecha para estirar ancho, alto o profundidad. Con Shift estira hasta tocar el vecino o la pared."
+   "pt": "Arraste uma seta pra esticar largura, altura ou profundidade. Dois cliques numa seta fazem o móvel ir até o máximo ou parar no primeiro objeto que encontrar.",
+   "en": "Drag an arrow to stretch width, height or depth. Double-clicking an arrow makes the cabinet go to its maximum or stop at the first object in the way.",
+   "es": "Arrastra una flecha para estirar ancho, alto o profundidad. Doble clic en una flecha hace que el mueble vaya a su máximo o se detenga en el primer objeto que encuentre."
   }
  },
  {
@@ -388,9 +388,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I make the cabinet fill the gap up to the wall?",
   "es": "¿Cómo hago que el módulo rellene el hueco hasta la pared?",
   "resp": {
-   "pt": "Segure Shift e arraste a seta de largura: ela para exatamente no vizinho ou na parede. Também dá pra digitar a medida no painel.",
-   "en": "Hold Shift and drag the width arrow: it stops exactly at the neighbor or the wall. You can also type the size in the panel.",
-   "es": "Mantén Shift y arrastra la flecha de ancho: para justo en el vecino o la pared. También puedes escribir la medida en el panel."
+   "pt": "Dê dois cliques na seta de largura (ou de altura): o módulo estica até encostar no vizinho, na parede ou até a medida máxima dele. Também dá pra digitar a medida no painel.",
+   "en": "Double-click the width (or height) arrow: the cabinet stretches until it touches the neighbor, the wall, or reaches its maximum size. You can also type the size in the panel.",
+   "es": "Haz doble clic en la flecha de ancho (o de alto): el módulo se estira hasta tocar el vecino, la pared o llegar a su medida máxima. También puedes escribir la medida en el panel."
   }
  },
  {
@@ -458,9 +458,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I duplicate a cabinet?",
   "es": "¿Cómo duplico un módulo?",
   "resp": {
-   "pt": "Selecione e clique em Duplicar (ícone de duas caixas na barrinha flutuante) ou Ctrl+D. A cópia nasce ao lado, com as mesmas cores e interior.",
-   "en": "Select it and click Duplicate (two-boxes icon on the floating bar) or Ctrl+D. The copy appears next to it with the same colors and interior.",
-   "es": "Selecciona y pulsa Duplicar (ícono de dos cajas en la barra flotante) o Ctrl+D. La copia nace al lado, con los mismos colores e interior."
+   "pt": "Selecione e clique em Duplicar (primeiro botão da barrinha embaixo do módulo). Na janela escolha a direção pelas setas, a quantidade e o espaço entre as cópias (ex.: 4\"). As cópias saem com as mesmas cores e interior.",
+   "en": "Select it and click Duplicate (first button on the small bar under the cabinet). In the window pick the direction with the arrows, the quantity and the gap between copies (e.g. 4\"). Copies keep the same colors and interior.",
+   "es": "Selecciónalo y haz clic en Duplicar (primer botón de la barrita debajo del módulo). En la ventana elige la dirección con las flechas, la cantidad y el espacio entre copias (ej.: 4\"). Las copias salen con los mismos colores e interior."
   }
  },
  {
@@ -1634,9 +1634,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "Where are the renders I made?",
   "es": "¿Dónde quedan los renders que hice?",
   "resp": {
-   "pt": "Na Galeria do projeto (ícone de imagens). Dá pra baixar, apagar e marcar os que vão na Proposta.",
-   "en": "In the project Gallery (images icon). You can download, delete and mark which go into the Proposal.",
-   "es": "En la Galería del proyecto (ícono de imágenes). Puedes descargar, borrar y marcar los que van en la Propuesta."
+   "pt": "Em Render › Imagens: todo print e render do projeto fica guardado ali. Dá pra ver grande, baixar, excluir e marcar com ★ as que vão na capa da proposta e do plano técnico.",
+   "en": "In Render › Images: every print and render of the project is kept there. You can view it large, download, delete and star ★ the ones for the cover of the proposal and technical plan.",
+   "es": "En Render › Imágenes: cada captura y render del proyecto queda guardado ahí. Puedes verlo grande, descargar, borrar y marcar con ★ las de la portada de la propuesta y del plano técnico."
   }
  },
  {
@@ -1816,9 +1816,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I send the project as an order?",
   "es": "¿Cómo envío el proyecto como pedido?",
   "resp": {
-   "pt": "Botão Pedido na barra › Enviar. O projeto é congelado (cópia), ganha número e vai pra fila da Legno. Você acompanha em Pedidos.",
-   "en": "Order button on the toolbar › Send. The project is frozen (a copy), gets a number and goes to Legno's queue. Track it under Orders.",
-   "es": "Botón Pedido en la barra › Enviar. El proyecto se congela (copia), recibe número y va a la cola de Legno. Lo sigues en Pedidos."
+   "pt": "Na Central de Pedidos, clique em ENVIAR PRA FÁBRICA na linha do projeto. Informe PO, ambiente e endereço da obra, leia e aceite os Termos e Condições do Pedido. O projeto fica congelado e o pedido já sai aprovado.",
+   "en": "In the Order Center, click SEND TO FACTORY on the project row. Enter the PO, room and job site address, then read and accept the Order Terms and Conditions. The project is frozen and the order goes out already approved.",
+   "es": "En la Central de Pedidos, haz clic en ENVIAR A FÁBRICA en la fila del proyecto. Indica PO, ambiente y dirección de la obra, y lee y acepta los Términos y Condiciones del Pedido. El proyecto queda congelado y el pedido sale ya aprobado."
   }
  },
  {
@@ -1830,9 +1830,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I track the order status?",
   "es": "¿Cómo sigo el estado del pedido?",
   "resp": {
-   "pt": "Aba Pedidos: cada pedido mostra a etapa (Recebido, Em revisão, Aprovado, Produção, Pronto, Entregue). Clique pra ver detalhes e mensagens.",
-   "en": "Orders tab: each order shows its stage (Received, In review, Approved, Production, Ready, Delivered). Click for details and messages.",
-   "es": "Pestaña Pedidos: cada pedido muestra la etapa (Recibido, En revisión, Aprobado, Producción, Listo, Entregado). Haz clic para ver detalles y mensajes."
+   "pt": "Na Central de Pedidos cada pedido mostra a etapa em cores: Waiting approval, Waiting release, Scheduled, In Production (com a % de embalagem), Packed, Ready for pickup e Completed. A seta ▾ abre os detalhes.",
+   "en": "In the Order Center each order shows its stage in color: Waiting approval, Waiting release, Scheduled, In Production (with the packing %), Packed, Ready for pickup and Completed. The ▾ arrow opens the details.",
+   "es": "En la Central de Pedidos cada pedido muestra la etapa en colores: Waiting approval, Waiting release, Scheduled, In Production (con el % de embalaje), Packed, Ready for pickup y Completed. La flecha ▾ abre los detalles."
   }
  },
  {
@@ -1970,9 +1970,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I add someone from my team?",
   "es": "¿Cómo agrego a alguien de mi equipo?",
   "resp": {
-   "pt": "Conta › Equipe › Convidar: informe o e-mail. A pessoa vê os projetos da empresa e pode enviar pedidos se você marcar.",
-   "en": "Account › Team › Invite: enter the e-mail. They see the company's projects and can send orders if you allow it.",
-   "es": "Cuenta › Equipo › Invitar: informa el e-mail. La persona ve los proyectos de la empresa y puede enviar pedidos si lo marcas."
+   "pt": "Em My company › People, clique em + Pessoa na sua loja: preencha nome, e-mail, senha e o tipo (salesperson, contractor, designer…). A senha aparece uma vez no fim; passe pra pessoa.",
+   "en": "In My company › People, click + Person on your store: fill in name, email, password and the type (salesperson, contractor, designer…). The password shows once at the end; pass it on to the person.",
+   "es": "En My company › People, haz clic en + Persona en tu tienda: completa nombre, correo, contraseña y el tipo (salesperson, contractor, designer…). La contraseña aparece una vez al final; pásala a la persona."
   }
  },
  {
@@ -2124,9 +2124,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "Saving failed. Did I lose the project?",
   "es": "Dio error al guardar. ¿Perdí el proyecto?",
   "resp": {
-   "pt": "Não feche a aba. Verifique a internet e clique em Salvar de novo. Em último caso, Compartilhar gera um código que guarda o projeto inteiro: copie e importe depois.",
-   "en": "Don't close the tab. Check the internet and click Save again. As a last resort, Share creates a code holding the whole project: copy it and import later.",
-   "es": "No cierres la pestaña. Revisa internet y pulsa Guardar de nuevo. Como último recurso, Compartir genera un código con todo el proyecto: cópialo e impórtalo después."
+   "pt": "Não feche a aba: as alterações continuam na tela. Confira a internet e clique em Salvar de novo. Se aparecer o aviso de que o projeto foi salvo em outro lugar (outra aba, outro login ou outro aparelho), escolha Cancelar, recarregue a página e abra o projeto pra ver qual versão é a certa antes de salvar por cima.",
+   "en": "Do not close the tab: your changes are still on screen. Check the internet and click Save again. If you get a warning that the project was saved somewhere else (another tab, login or device), choose Cancel, reload the page and open the project to see which version is right before saving over it.",
+   "es": "No cierres la pestaña: los cambios siguen en la pantalla. Revisa internet y haz clic en Guardar otra vez. Si aparece el aviso de que el proyecto se guardó en otro lugar (otra pestaña, otra sesión u otro dispositivo), elige Cancelar, recarga la página y abre el proyecto para ver qué versión es la correcta antes de guardar encima."
   }
  },
  {
@@ -2222,9 +2222,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I open a project I saved earlier?",
   "es": "¿Cómo abro un proyecto que guardé antes?",
   "resp": {
-   "pt": "Em Meus projetos salvos, escolha o projeto e clique em Carregar no Projeto. Ele abre por cima do que está na tela.",
-   "en": "In My saved projects, pick the project and click Load into Project. It replaces what is on screen.",
-   "es": "En Mis proyectos guardados, elige el proyecto y haz clic en Cargar en el Proyecto. Reemplaza lo que está en pantalla."
+   "pt": "Na Central de Pedidos, clique na seta ▾ no fim da linha do projeto e em Abrir no editor (Load into Project). Se o projeto aberto tiver alteração sem salvar, salve antes.",
+   "en": "In the Order Center, click the ▾ at the end of the project row and then Open in editor (Load into Project). If the open project has unsaved changes, save it first.",
+   "es": "En la Central de Pedidos, haz clic en la flecha ▾ al final de la fila del proyecto y en Abrir en el editor (Load into Project). Si el proyecto abierto tiene cambios sin guardar, guárdalo antes."
   }
  },
  {
@@ -2348,9 +2348,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "Why won't the cabinet go any higher on a wall?",
   "es": "¿Por qué el módulo no sube más en una pared?",
   "resp": {
-   "pt": "O limite de altura é o pé-direito daquela parede. Se a parede foi feita mais baixa no editor, os módulos dela param nessa altura. Ajuste a altura da parede em Paredes.",
-   "en": "The height limit is that wall's ceiling height. If the wall was made lower in the editor, its cabinets stop there. Adjust the wall height in Walls.",
-   "es": "El límite de altura es la altura de techo de esa pared. Si la pared se hizo más baja en el editor, sus módulos se detienen ahí. Ajusta la altura de la pared en Paredes."
+   "pt": "A altura da parede não limita mais o módulo: um módulo mais alto fica no chão e passa por cima, e o Auditor avisa. Se quiser mudar a parede, a altura aceita fração em polegadas (ex.: 94 1/2).",
+   "en": "The wall height no longer limits the cabinet: a taller cabinet stays on the floor and goes past the top, and the Auditor warns you. To change the wall, its height accepts inch fractions (e.g. 94 1/2).",
+   "es": "La altura de la pared ya no limita el módulo: un módulo más alto queda en el piso y la sobrepasa, y el Auditor avisa. Para cambiar la pared, la altura acepta fracciones de pulgada (ej.: 94 1/2)."
   }
  },
  {
@@ -3076,9 +3076,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "What happens when I click Send to order?",
   "es": "¿Qué pasa cuando hago clic en Enviar al pedido?",
   "resp": {
-   "pt": "Os módulos do projeto vão pro pedido com medidas, cores e interiores. Rode o Auditor antes e confira o orçamento; depois do envio, mudanças passam pela Legno.",
-   "en": "The project's cabinets go to the order with sizes, colors and interiors. Run the Auditor first and check the budget; after sending, changes go through Legno.",
-   "es": "Los módulos del proyecto pasan al pedido con medidas, colores e interiores. Corre el Auditor antes y revisa el presupuesto; después del envío, los cambios pasan por Legno."
+   "pt": "Os módulos vão pro pedido com medidas, cores e interiores, e o projeto fica congelado. Rode o Auditor antes e confira o orçamento. Enquanto o pedido não foi pago, dá pra voltar pro projeto pra editar.",
+   "en": "The cabinets go to the order with sizes, colors and interiors, and the project is frozen. Run the Auditor first and check the quote. While the order is unpaid, you can send it back to the project to edit.",
+   "es": "Los módulos van al pedido con medidas, colores e interiores, y el proyecto queda congelado. Usa el Auditor antes y revisa el presupuesto. Mientras el pedido no esté pagado, puedes volverlo al proyecto para editarlo."
   }
  },
  {
@@ -3636,9 +3636,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I send all of a client's rooms at once?",
   "es": "¿Cómo envío todos los ambientes de un cliente a la vez?",
   "resp": {
-   "pt": "Em Meus Projetos, na pasta do cliente, use 🏭 Enviar pasta pra produção. Cada ambiente vira um pedido separado e fica congelado; os que já foram enviados ficam de fora.",
-   "en": "In My Projects, on the client's folder, use 🏭 Send folder to production. Each room becomes a separate order and is frozen; rooms already sent are skipped.",
-   "es": "En Mis Proyectos, en la carpeta del cliente, usa 🏭 Enviar carpeta a producción. Cada ambiente se vuelve un pedido separado y queda congelado; los ya enviados quedan fuera."
+   "pt": "Hoje cada ambiente é enviado pelo botão ENVIAR PRA FÁBRICA na linha do projeto, na Central de Pedidos. Cada um vira um pedido separado, com PO, ambiente, endereço e o aceite dos Termos.",
+   "en": "Today each room is sent with the SEND TO FACTORY button on the project row in the Order Center. Each one becomes a separate order, with PO, room, address and the Terms acceptance.",
+   "es": "Hoy cada ambiente se envía con el botón ENVIAR A FÁBRICA en la fila del proyecto, en la Central de Pedidos. Cada uno se vuelve un pedido separado, con PO, ambiente, dirección y la aceptación de los Términos."
   }
  },
  {
@@ -3650,9 +3650,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I rename or delete a client folder?",
   "es": "¿Cómo renombro o borro la carpeta de un cliente?",
   "resp": {
-   "pt": "Em Meus Projetos, use os botões da pasta pra renomear (todos os projetos dela mudam juntos) ou apagar. Só dá pra apagar se nenhum projeto da pasta foi pra produção.",
-   "en": "In My Projects, use the folder buttons to rename (all its projects change together) or delete it. You can only delete it if none of its projects went to production.",
-   "es": "En Mis Proyectos, usa los botones de la carpeta para renombrar (todos sus proyectos cambian juntos) o borrar. Solo se puede borrar si ningún proyecto de la carpeta fue a producción."
+   "pt": "Na Central de Pedidos, use o menu ⋯ na linha da pasta: renomear (todos os projetos dela mudam juntos), arquivar ou excluir. Só dá pra excluir se nenhum projeto da pasta virou pedido.",
+   "en": "In the Order Center, use the ⋯ menu on the folder row: rename (all its projects change together), archive or delete. You can only delete it if no project in the folder became an order.",
+   "es": "En la Central de Pedidos, usa el menú ⋯ de la fila de la carpeta: renombrar (todos sus proyectos cambian juntos), archivar o borrar. Solo se puede borrar si ningún proyecto de la carpeta se volvió pedido."
   }
  },
  {
@@ -3678,9 +3678,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I deactivate a seller on my team?",
   "es": "¿Cómo desactivo a un vendedor de mi equipo?",
   "resp": {
-   "pt": "Em Minha Conta, na lista da equipe, use Desativar (ou Ativar pra liberar de novo). Vendedor desativado não entra no portal nem envia pedido; os projetos dele continuam com você.",
-   "en": "In My Account, on the team list, use Deactivate (or Activate to allow again). A deactivated seller can't sign in or send orders; their projects stay with you.",
-   "es": "En Mi Cuenta, en la lista del equipo, usa Desactivar (o Activar para habilitar de nuevo). El vendedor desactivado no entra al portal ni envía pedidos; sus proyectos siguen contigo."
+   "pt": "Em My company › People, clique no cadeado da pessoa pra bloquear (ou liberar de novo). Quem está bloqueado não entra no portal; os projetos dele continuam aí.",
+   "en": "In My company › People, click the person's lock to block (or allow again). A blocked person cannot sign in; their projects stay there.",
+   "es": "En My company › People, haz clic en el candado de la persona para bloquear (o liberar de nuevo). Quien está bloqueado no entra al portal; sus proyectos siguen ahí."
   }
  },
  {
@@ -3692,9 +3692,9 @@ window.HELPER_PERGUNTAS_EXTRA = [
   "en": "How do I see my sellers' projects?",
   "es": "¿Cómo veo los proyectos de mis vendedores?",
   "resp": {
-   "pt": "Em Meus Projetos, use Projetos de: pra ver os seus, os da equipe toda ou de um vendedor. Você pode abrir e editar; excluir só o dono.",
-   "en": "In My Projects, use Projects of: to see yours, the whole team's or one seller's. You can open and edit them; only the owner can delete.",
-   "es": "En Mis Proyectos, usa Proyectos de: para ver los tuyos, los de todo el equipo o de un vendedor. Puedes abrirlos y editarlos; solo el dueño puede borrarlos."
+   "pt": "Na Central de Pedidos aparecem os seus projetos e os da sua equipe; use a caixa do vendedor no alto pra filtrar. Você pode abrir e editar; excluir só o dono.",
+   "en": "The Order Center shows your projects and your team's; use the salesperson box at the top to filter. You can open and edit them; only the owner can delete.",
+   "es": "En la Central de Pedidos aparecen tus proyectos y los de tu equipo; usa la caja del vendedor arriba para filtrar. Puedes abrirlos y editarlos; solo el dueño puede borrarlos."
   }
  },
  {
@@ -3709,6 +3709,314 @@ window.HELPER_PERGUNTAS_EXTRA = [
    "pt": "Não, o catálogo ainda está chegando. Em poucos segundos a lista aparece sozinha, sem precisar fechar a janela.",
    "en": "No, the catalog is still arriving. In a few seconds the list shows up on its own, no need to close the window.",
    "es": "No, el catálogo todavía está llegando. En unos segundos la lista aparece sola, sin cerrar la ventana."
+  }
+ },
+ {
+  "id": "x-modulos-qual-diferenca",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "diferenca entre modulos bottom topcover stretcher gola nome comparar what's the difference compare diferencia comparar",
+  "pt": "Qual a diferença entre Bottom · Bottom, Topcover, Stretcher e Gola?",
+  "en": "What is the difference between Bottom · Bottom, Topcover, Stretcher and Gola?",
+  "es": "¿Cuál es la diferencia entre Bottom · Bottom, Topcover, Stretcher y Gola?",
+  "resp": {
+   "pt": "Abra + Módulo e clique em What's the difference?. Uma aba explica cada parte do nome (o que vai em cima, embaixo e atrás) com desenho; a outra compara dois gabinetes lado a lado e mostra em laranja o que muda.",
+   "en": "Open + Cabinet and click What's the difference?. One tab explains each part of the name (what goes on top, at the bottom and at the back) with drawings; the other compares two cabinets side by side and shows in orange what changes.",
+   "es": "Abre + Módulo y haz clic en What's the difference?. Una pestaña explica cada parte del nombre (lo que va arriba, abajo y atrás) con dibujos; la otra compara dos gabinetes lado a lado y muestra en naranja lo que cambia."
+  }
+ },
+ {
+  "id": "x-modulos-gola-gavetas",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "gola gaveteiro 2 gavetas 3 gavetas gola base drawers cajonera",
+  "pt": "Tem gaveteiro com gola?",
+  "en": "Is there a drawer base with gola?",
+  "es": "¿Hay cajonera con gola?",
+  "resp": {
+   "pt": "Sim: em Custom Kitchens › Gola Base › Drawers estão o Gola Base 2 Drawers e o 3 Drawers, já com as frentes e a gola do meio no lugar. Evite montar gaveta com gola fora desse padrão.",
+   "en": "Yes: in Custom Kitchens › Gola Base › Drawers you have Gola Base 2 Drawers and 3 Drawers, with the fronts and the middle gola already in place. Avoid building gola drawers outside that standard.",
+   "es": "Sí: en Custom Kitchens › Gola Base › Drawers están Gola Base 2 Drawers y 3 Drawers, con los frentes y la gola del medio ya en su lugar. Evita armar cajones con gola fuera de ese estándar."
+  }
+ },
+ {
+  "id": "x-modulos-sink-custom",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "pia sink custom kitchens gola sem gola base sink fregadero",
+  "pt": "Tem base de pia no Custom Kitchens?",
+  "en": "Is there a sink base in Custom Kitchens?",
+  "es": "¿Hay base de fregadero en Custom Kitchens?",
+  "resp": {
+   "pt": "Sim: Base Gola Sink (Gola Base › Sink) e Base Sink sem gola (Classic Base › Sink), com pia e torneira desenhadas. A pia aparece a partir de 24\" de largura.",
+   "en": "Yes: Base Gola Sink (Gola Base › Sink) and Base Sink without gola (Classic Base › Sink), with sink and faucet drawn. The sink shows from 24\" wide.",
+   "es": "Sí: Base Gola Sink (Gola Base › Sink) y Base Sink sin gola (Classic Base › Sink), con fregadero y grifo dibujados. El fregadero aparece a partir de 24\" de ancho."
+  }
+ },
+ {
+  "id": "x-construtor-gola-porta",
+  "cat": "construtor",
+  "alvo": null,
+  "kw": "gola porta altura vao construtor 40 mm frente gaveta puerta",
+  "pt": "Coloquei porta num módulo com gola e ficou na altura errada.",
+  "en": "I put a door on a gola cabinet and it came out the wrong height.",
+  "es": "Puse una puerta en un módulo con gola y quedó a la altura equivocada.",
+  "resp": {
+   "pt": "No Construtor, o vão de um módulo com gola mostra só o espaço embaixo dela, e a porta ou frente já entra parando 40 mm abaixo do topo, sem ajuste à mão. Projetos antigos se acertam ao abrir de novo.",
+   "en": "In the Builder, the space of a gola cabinet shows only the area below the gola, and the door or front already stops 40 mm below the top, no manual adjustment needed. Older projects fix themselves when reopened.",
+   "es": "En el Constructor, el espacio de un módulo con gola muestra solo el área debajo de ella, y la puerta o frente ya entra terminando 40 mm por debajo del tope, sin ajuste manual. Los proyectos antiguos se corrigen al abrirlos de nuevo."
+  }
+ },
+ {
+  "id": "x-construtor-tirar-porta",
+  "cat": "construtor",
+  "alvo": null,
+  "kw": "tirar porta remover frente construtor excluir porta x azul neste modulo quitar puerta",
+  "pt": "Como tiro só a porta de um módulo no Construtor?",
+  "en": "How do I remove just the door of a cabinet in the Builder?",
+  "es": "¿Cómo quito solo la puerta de un módulo en el Constructor?",
+  "resp": {
+   "pt": "Clique no ✕ azul na borda da porta: ela sai e o interior fica. A coluna Neste módulo, à esquerda, lista portas, gavetas e divisórias, cada uma com a lixeira.",
+   "en": "Click the blue ✕ on the edge of the door: it goes away and the interior stays. The In this cabinet column on the left lists doors, drawers and dividers, each with a trash can.",
+   "es": "Haz clic en la ✕ azul en el borde de la puerta: sale y el interior queda. La columna En este módulo, a la izquierda, lista puertas, cajones y divisiones, cada una con papelera."
+  }
+ },
+ {
+  "id": "x-construtor-trash-largura",
+  "cat": "construtor",
+  "alvo": null,
+  "kw": "trash pull out spice lixeira largura vao nao entra tamanho",
+  "pt": "Por que o Trash ou Spice Pull-out não entra no vão?",
+  "en": "Why won't the Trash or Spice Pull-out fit the space?",
+  "es": "¿Por qué el Trash o Spice Pull-out no entra en el espacio?",
+  "resp": {
+   "pt": "Eles só cabem no vão de um gabinete do tamanho certo: Trash em 15\" ou 18\", Spice em 9\" ou 12\". Com eles dentro, a largura do gabinete fica travada nessas medidas.",
+   "en": "They only fit the space of a cabinet of the right size: Trash in 15\" or 18\", Spice in 9\" or 12\". With one inside, the cabinet width is locked to those sizes.",
+   "es": "Solo caben en el espacio de un gabinete del tamaño correcto: Trash en 15\" o 18\", Spice en 9\" o 12\". Con ellos adentro, el ancho del gabinete queda trabado en esas medidas."
+  }
+ },
+ {
+  "id": "x-modulo-decor-medidas",
+  "cat": "modulos",
+  "alvo": null,
+  "kw": "decoracao geladeira forno tv medida mudar tamanho decorativo esticar decor",
+  "pt": "Dá pra mudar o tamanho da geladeira, forno ou TV?",
+  "en": "Can I change the size of the fridge, oven or TV?",
+  "es": "¿Puedo cambiar el tamaño del refrigerador, horno o TV?",
+  "resp": {
+   "pt": "Sim. Os itens decorativos (eletrodomésticos, TV, pia, tomada, cano…) aceitam largura, altura e profundidade livres: puxe as setas ou digite no painel.",
+   "en": "Yes. Decorative items (appliances, TV, sink, outlet, pipe…) accept any width, height and depth: drag the arrows or type in the panel.",
+   "es": "Sí. Los objetos decorativos (electrodomésticos, TV, fregadero, enchufe, caño…) aceptan ancho, alto y profundidad libres: arrastra las flechas o escribe en el panel."
+  }
+ },
+ {
+  "id": "x-modulo-marca-verde",
+  "cat": "modulos",
+  "alvo": "#po-proj-canvas-tools",
+  "kw": "marca verde vermelha encaixe conectar colisao lateral junta",
+  "pt": "Por que a marca entre dois módulos fica vermelha e não verde?",
+  "en": "Why does the mark between two cabinets stay red and not green?",
+  "es": "¿Por qué la marca entre dos módulos queda roja y no verde?",
+  "resp": {
+   "pt": "Só fica verde quando duas laterais iguais em tamanho se encostam. Laterais diferentes continuam vermelhas, mesmo encostadas. Com a colisão ligada, o módulo trava ao encostar: isso já indica que está junto.",
+   "en": "It only turns green when two sides of the same size touch. Different sides stay red, even when touching. With collision on, the cabinet stops when it touches: that already shows it is together.",
+   "es": "Solo queda verde cuando dos laterales del mismo tamaño se tocan. Laterales distintos siguen rojos, aunque estén pegados. Con la colisión activada, el módulo se traba al tocar: eso ya indica que está junto."
+  }
+ },
+ {
+  "id": "x-projeto-salvo-outro-lugar",
+  "cat": "projeto",
+  "alvo": "#po-proj-toolbar-save-btn",
+  "kw": "salvo em outro lugar aviso conflito outra aba outro login sobrescrever",
+  "pt": "Apareceu: este projeto foi salvo em outro lugar. O que faço?",
+  "en": "It says this project was saved somewhere else. What do I do?",
+  "es": "Aparece: este proyecto se guardó en otro lugar. ¿Qué hago?",
+  "resp": {
+   "pt": "Alguém (ou você em outra aba, outro login ou outro aparelho) salvou o projeto depois que você abriu. OK grava a sua versão por cima; Cancelar não salva. Na dúvida, Cancelar, recarregue a página e abra o projeto pra ver a outra versão.",
+   "en": "Someone (or you in another tab, login or device) saved the project after you opened it. OK saves your version over it; Cancel does not save. If unsure, Cancel, reload the page and open the project to see the other version.",
+   "es": "Alguien (o tú en otra pestaña, sesión o dispositivo) guardó el proyecto después de que lo abriste. Aceptar guarda tu versión encima; Cancelar no guarda. Ante la duda, Cancelar, recarga la página y abre el proyecto para ver la otra versión."
+  }
+ },
+ {
+  "id": "x-pedidos-central",
+  "cat": "pedidos",
+  "alvo": null,
+  "kw": "central de pedidos onde ficam projetos meus projetos order center lista",
+  "pt": "Onde ficam meus projetos e pedidos agora?",
+  "en": "Where are my projects and orders now?",
+  "es": "¿Dónde están ahora mis proyectos y pedidos?",
+  "resp": {
+   "pt": "Tudo na Central de Pedidos, numa lista só, por pasta. As abas filtram projetos e pedidos, e a seta ▾ no fim da linha abre os detalhes e os botões.",
+   "en": "Everything is in the Order Center, in a single list, by folder. The tabs filter projects and orders, and the ▾ arrow at the end of the row opens the details and buttons.",
+   "es": "Todo está en la Central de Pedidos, en una sola lista, por carpeta. Las pestañas filtran proyectos y pedidos, y la flecha ▾ al final de la fila abre los detalles y los botones."
+  }
+ },
+ {
+  "id": "x-pedidos-termos",
+  "cat": "pedidos",
+  "alvo": null,
+  "kw": "termos condicoes aceite enviar fabrica terms nome",
+  "pt": "Por que preciso aceitar os Termos ao enviar?",
+  "en": "Why do I have to accept the Terms when sending?",
+  "es": "¿Por qué tengo que aceptar los Términos al enviar?",
+  "resp": {
+   "pt": "O pedido é uma compra: os Termos e Condições dizem o que está incluído (só os gabinetes), o prazo, as cores e as responsabilidades. Você lê, digita seu nome e aceita; o aceite fica registrado no pedido e pode ser consultado depois.",
+   "en": "The order is a purchase: the Terms and Conditions say what is included (cabinets only), the lead time, the colors and the responsibilities. You read them, type your name and accept; the acceptance is recorded on the order and can be checked later.",
+   "es": "El pedido es una compra: los Términos y Condiciones dicen lo que incluye (solo los gabinetes), el plazo, los colores y las responsabilidades. Los lees, escribes tu nombre y aceptas; la aceptación queda registrada en el pedido y se puede consultar después."
+  }
+ },
+ {
+  "id": "x-pedidos-pagar",
+  "cat": "pedidos",
+  "alvo": null,
+  "kw": "pagar pagamento zelle wire desconto 50 50 entrada invoice pay quickbooks link",
+  "pt": "Como pago um pedido e quais descontos existem?",
+  "en": "How do I pay for an order and what discounts are there?",
+  "es": "¿Cómo pago un pedido y qué descuentos hay?",
+  "resp": {
+   "pt": "Clique em Pay na linha do pedido. Pagamento total antes da produção tem 3% de desconto; por Zelle ou wire soma mais 3%. Também dá pra pagar 50% de entrada e 50% antes de carregar (sem o desconto de pagamento total), ou pelo link (QuickBooks). Depois anexe o comprovante ali mesmo.",
+   "en": "Click Pay on the order row. Paying in full before production gets 3% off; by Zelle or wire you get another 3%. You can also pay 50% deposit and 50% before loading (without the full-payment discount), or by link (QuickBooks). Then attach the receipt right there.",
+   "es": "Haz clic en Pay en la fila del pedido. El pago total antes de la producción tiene 3% de descuento; por Zelle o wire suma otro 3%. También puedes pagar 50% de anticipo y 50% antes de cargar (sin el descuento de pago total), o por enlace (QuickBooks). Después adjunta el comprobante ahí mismo."
+  }
+ },
+ {
+  "id": "x-pedidos-voltar-projeto",
+  "cat": "pedidos",
+  "alvo": null,
+  "kw": "voltar pedido projeto editar pedido enviado alterar excluir pedido",
+  "pt": "Enviei o pedido e preciso mudar algo. E agora?",
+  "en": "I sent the order and need to change something. What now?",
+  "es": "Envié el pedido y necesito cambiar algo. ¿Y ahora?",
+  "resp": {
+   "pt": "Enquanto o pedido não foi pago, abra a seta ▾ na linha dele e use Voltar ao projeto: o pedido é cancelado e o projeto volta a ser editável. Pedido ainda aguardando aprovação também pode ser excluído. Depois do pagamento, fale com a Legno.",
+   "en": "While the order is unpaid, open the ▾ on its row and use Back to project: the order is canceled and the project becomes editable again. An order still waiting approval can also be deleted. After payment, contact Legno.",
+   "es": "Mientras el pedido no esté pagado, abre la flecha ▾ en su fila y usa Volver al proyecto: el pedido se cancela y el proyecto vuelve a ser editable. Un pedido que aún espera aprobación también se puede borrar. Después del pago, habla con Legno."
+  }
+ },
+ {
+  "id": "x-pedidos-recibo-coleta",
+  "cat": "pedidos",
+  "alvo": null,
+  "kw": "recibo coleta pickup receipt pdf assinatura retirada",
+  "pt": "Como pego o recibo de coleta?",
+  "en": "How do I get the pickup receipt?",
+  "es": "¿Cómo obtengo el recibo de retiro?",
+  "resp": {
+   "pt": "Quando todas as peças do pedido foram embaladas, aparece Pickup receipt (PDF) na seta ▾ do pedido. Ele lista cada peça com data e hora e tem o quadro de assinatura de quem retira. Não leva a marca Legno.",
+   "en": "Once every part of the order is packed, Pickup receipt (PDF) shows up under the order's ▾. It lists each part with date and time and has a signature box for whoever picks up. It carries no Legno branding.",
+   "es": "Cuando todas las piezas del pedido están embaladas, aparece Pickup receipt (PDF) en la flecha ▾ del pedido. Lista cada pieza con fecha y hora y tiene el cuadro de firma de quien retira. No lleva la marca Legno."
+  }
+ },
+ {
+  "id": "x-projeto-perdido",
+  "cat": "projeto",
+  "alvo": null,
+  "kw": "projeto perdido lost motivo cliente desistiu arquivado inatividade",
+  "pt": "O cliente desistiu. O que faço com o projeto?",
+  "en": "The client gave up. What do I do with the project?",
+  "es": "El cliente desistió. ¿Qué hago con el proyecto?",
+  "resp": {
+   "pt": "Abra a seta ▾ do projeto e use Projeto perdido, escolhendo o motivo. Ele sai da lista e fica na aba Lost. Projetos parados há 30 dias vão sozinhos pra Arquivados por inatividade e voltam quando você salva.",
+   "en": "Open the project's ▾ and use Lost project, picking the reason. It leaves the list and goes to the Lost tab. Projects idle for 30 days go to Archived for inactivity on their own and come back when you save.",
+   "es": "Abre la flecha ▾ del proyecto y usa Proyecto perdido, eligiendo el motivo. Sale de la lista y queda en la pestaña Lost. Los proyectos sin cambios por 30 días van solos a Archivados por inactividad y vuelven cuando guardas."
+  }
+ },
+ {
+  "id": "x-pedidos-plano-pasta",
+  "cat": "render",
+  "alvo": null,
+  "kw": "plano tecnico pasta todos projetos um pdf indice documentos",
+  "pt": "Dá pra gerar o plano técnico de todos os ambientes do cliente?",
+  "en": "Can I generate the technical plan for all of a client's rooms?",
+  "es": "¿Puedo generar el plano técnico de todos los ambientes del cliente?",
+  "resp": {
+   "pt": "Sim: no menu ⋯ da pasta, Plano técnico (todos os projetos). Sai um PDF só, com índice na primeira página. Ele fica guardado nos Documentos da pasta, junto com a proposta e os anexos que você subir.",
+   "en": "Yes: in the folder's ⋯ menu, Technical plan (all projects). You get a single PDF with an index on the first page. It is kept in the folder's Documents, together with the proposal and any attachments you upload.",
+   "es": "Sí: en el menú ⋯ de la carpeta, Plano técnico (todos los proyectos). Sale un solo PDF con índice en la primera página. Queda guardado en los Documentos de la carpeta, junto con la propuesta y los adjuntos que subas."
+  }
+ },
+ {
+  "id": "x-render-capa",
+  "cat": "render",
+  "alvo": null,
+  "kw": "capa imagem proposta plano tecnico estrela print acervo imagens",
+  "pt": "Como escolho a imagem da capa da proposta?",
+  "en": "How do I choose the proposal cover image?",
+  "es": "¿Cómo elijo la imagen de portada de la propuesta?",
+  "resp": {
+   "pt": "Em Render › Imagens, marque com ★ as imagens que você quer. A proposta e o plano técnico usam essas primeiro; sem ★, usam os seus prints.",
+   "en": "In Render › Images, star ★ the images you want. The proposal and the technical plan use those first; without ★, they use your prints.",
+   "es": "En Render › Imágenes, marca con ★ las imágenes que quieras. La propuesta y el plano técnico usan esas primero; sin ★, usan tus capturas."
+  }
+ },
+ {
+  "id": "x-preco-order-quote",
+  "cat": "preco",
+  "alvo": null,
+  "kw": "order quote client quote senha quanto pago fabrica preco venda",
+  "pt": "Qual a diferença entre $ Client quote e $ Order quote?",
+  "en": "What is the difference between $ Client quote and $ Order quote?",
+  "es": "¿Cuál es la diferencia entre $ Client quote y $ Order quote?",
+  "resp": {
+   "pt": "Client quote é o preço de venda pro seu cliente. Order quote é o que você paga à fábrica. O Order quote só abre com uma senha que você cria no primeiro clique (pra não mostrar seu custo sem querer); se esquecer, use Esqueci a senha com a senha do portal.",
+   "en": "Client quote is the selling price for your client. Order quote is what you pay the factory. The Order quote only opens with a password you create on the first click (so your cost isn't shown by accident); if you forget it, use Forgot password with your portal password.",
+   "es": "Client quote es el precio de venta para tu cliente. Order quote es lo que pagas a la fábrica. El Order quote solo abre con una contraseña que creas en el primer clic (para no mostrar tu costo sin querer); si la olvidas, usa Olvidé la contraseña con la contraseña del portal."
+  }
+ },
+ {
+  "id": "x-conta-margem-vendedor",
+  "cat": "conta",
+  "alvo": null,
+  "kw": "margem vendedor salesperson margin people preco do vendedor",
+  "pt": "Posso dar uma margem diferente pra cada vendedor?",
+  "en": "Can I give each salesperson a different margin?",
+  "es": "¿Puedo dar un margen distinto a cada vendedor?",
+  "resp": {
+   "pt": "Sim. Em My company › People, no quadro do vendedor, digite a margem dele (+__%). Em branco, ele usa a margem geral da loja. O vendedor vê só o preço final, nunca o desconto nem a margem.",
+   "en": "Yes. In My company › People, on the salesperson's box, type their margin (+__%). Left blank, they use the store's general margin. Salespeople only see the final price, never the discount or margin.",
+   "es": "Sí. En My company › People, en el recuadro del vendedor, escribe su margen (+__%). En blanco, usa el margen general de la tienda. El vendedor ve solo el precio final, nunca el descuento ni el margen."
+  }
+ },
+ {
+  "id": "x-conta-tipo-pessoa",
+  "cat": "conta",
+  "alvo": null,
+  "kw": "tipo pessoa contractor designer millworker homeowner cadastro ficha people",
+  "pt": "Como marco se a pessoa é contractor, designer ou vendedor?",
+  "en": "How do I mark someone as contractor, designer or salesperson?",
+  "es": "¿Cómo marco si la persona es contractor, designer o vendedor?",
+  "resp": {
+   "pt": "Em My company › People, use a etiqueta colorida no quadro da pessoa (salesperson, contractor, millworker, designer, dealer, homeowner). Clique na pessoa pra preencher o cadastro dela (empresa, contato, endereço, observações).",
+   "en": "In My company › People, use the colored tag on the person's box (salesperson, contractor, millworker, designer, dealer, homeowner). Click the person to fill in their record (company, contact, address, notes).",
+   "es": "En My company › People, usa la etiqueta de color en el recuadro de la persona (salesperson, contractor, millworker, designer, dealer, homeowner). Haz clic en la persona para completar su registro (empresa, contacto, dirección, notas)."
+  }
+ },
+ {
+  "id": "x-pecas-painel-lateral-parede",
+  "cat": "pecas",
+  "alvo": null,
+  "kw": "painel lateral parede acabamento gola buraco lateral encostado",
+  "pt": "Preciso de painel lateral quando o móvel encosta na parede?",
+  "en": "Do I need a side panel when the cabinet touches the wall?",
+  "es": "¿Necesito panel lateral cuando el mueble toca la pared?",
+  "resp": {
+   "pt": "Recomendamos sempre. Pode ser um painel curto, só pra acabamento na frente. No gola é ainda mais importante: sem painel, o vão da gola deixa ver a parede pela lateral. Combine esses detalhes com quem vai montar antes de enviar.",
+   "en": "We always recommend it. It can be a short panel, just for the front finish. With gola it matters even more: without a panel, the gola channel lets you see the wall from the side. Agree on these details with the installer before sending.",
+   "es": "Lo recomendamos siempre. Puede ser un panel corto, solo para el acabado al frente. Con gola es aún más importante: sin panel, el canal de la gola deja ver la pared por el lateral. Acuerda estos detalles con quien va a instalar antes de enviar."
+  }
+ },
+ {
+  "id": "x-modulos-closet-canto90",
+  "cat": "modulos",
+  "alvo": "#po-proj-library-search-btn",
+  "kw": "closet canto 90 corner left right cabideiro duplo suporte",
+  "pt": "Tem canto de closet?",
+  "en": "Is there a closet corner?",
+  "es": "¿Hay esquina de closet?",
+  "resp": {
+   "pt": "Sim: Custom Closet Corner 90° · Left e · Right, em Closets › Custom Closets. São 2 caixas, com cabideiro duplo e suporte em L no canto; a altura do cabide é ajustável no painel.",
+   "en": "Yes: Custom Closet Corner 90° · Left and · Right, in Closets › Custom Closets. They are 2 boxes, with a double hanging rod and an L bracket in the corner; the rod height is adjustable in the panel.",
+   "es": "Sí: Custom Closet Corner 90° · Left y · Right, en Closets › Custom Closets. Son 2 cajas, con barra doble y soporte en L en la esquina; la altura de la barra se ajusta en el panel."
   }
  }
 ];
