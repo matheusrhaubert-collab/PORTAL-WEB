@@ -481,6 +481,16 @@ function applyPieceAdjustmentsDeep(piecesList, adjustments) {
           opening_type: /^hinge_/.test(String(out.opening_type || '')) ? 'hinge_' + a.hinge : out.opening_type });
       }
     }
+    // SÓ O RECORTE (2026-11-24, gola do meio unida com o vizinho). A vista da
+    // gola do módulo da direita sai da produção (a do 1º módulo é esticada até
+    // o total), mas o C que ela abre nas laterais DESTE módulo tem que ficar —
+    // senão a lateral é cortada inteira e a gola única bate nela. a.so_recorte
+    // marca a peça: o resolvedor usa ela só pro C e tira da lista; o preço
+    // (Pricing.calculateAssembly) pula. Mora no piece_adjustments: vai no
+    // pedido e o ERP aplica igual (.ban/3D/lote).
+    if (a && a.so_recorte === true && out.recorte_casco) {
+      out = Object.assign({}, out, { _soRecorte: true });
+    }
     if (Array.isArray(p.child_pieces) && p.child_pieces.length) {
       const kids = applyPieceAdjustmentsDeep(p.child_pieces, adjustments);
       if (kids !== p.child_pieces) out = Object.assign({}, out, { child_pieces: kids });
@@ -839,11 +849,15 @@ function resolvePiecesForViewer(piecesList, containerDims, colorsByRole, shelfQu
         // isto (marcado lá, nunca em module_components do cadastro manual).
         _layoutNodeId: piece._layoutNodeId,
         _layoutKind: piece._layoutKind,
-        recorte_casco: piece.recorte_casco || null
+        recorte_casco: piece.recorte_casco || null,
+        _soRecorte: !!piece._soRecorte
       });
     }
   });
   aplicarRecorteCascoNasLaterais(parts);
+  // peça marcada "só o recorte" (ver applyPieceAdjustmentsDeep) já abriu o C:
+  // sai daqui — não desenha, não fura, não vai pro plano de corte
+  for (let i = parts.length - 1; i >= 0; i--) { if (parts[i] && parts[i]._soRecorte) parts.splice(i, 1); }
 
   // SINCRONIZA a distância de abertura da FRENTE de gaveta com a
   // profundidade REAL do caixote — 2ª causa do mesmo bug (Matt, 2026-08-21:

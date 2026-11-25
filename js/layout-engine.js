@@ -1062,12 +1062,24 @@
         return;
       }
       var prof = Math.max(120, box.d - recuoCaixote - 2);
+      // CAIXOTE DE CIMA MAIS ALTO (2026-11-24, Matt — Gola Base 3 Drawers:
+      // "sobe o corpo da gaveta de cima pra corrediça não pegar na de
+      // baixo"). node.params.caixote_cima_subir_mm sobe SÓ o caixote da
+      // última gaveta do vão (a de cima); a corrediça vai junto (drilling.js
+      // fura pela base do caixote). Nunca passa do topo do vão (2 mm de
+      // folga). Frente e vão não mudam. Sem o param: nada muda.
+      var subirCima = num((node.params || {}).caixote_cima_subir_mm);
       for (var j = 0; j < qtd; j++) {
         var y = box.y + j * (hCada + gap);
+        var yCx = y + 4 + GAVETA_CAIXOTE_SUBIR_MM;
+        var hCx = Math.max(20, hCada - folgaAltura);
+        if (subirCima > 0 && j === qtd - 1) {
+          yCx += Math.max(0, Math.min(subirCima, box.y + box.h - 2 - (yCx + hCx)));
+        }
         push(node, {
           kind: 'content', accKey: key, label: acc.name + (qtd > 1 ? ' ' + (j + 1) : ''),
-          x: box.x + GAVETA_FOLGA_LADO_MM, y: y + 4 + GAVETA_CAIXOTE_SUBIR_MM, z: box.z + recuoCaixote,
-          w: box.w - 2 * GAVETA_FOLGA_LADO_MM, h: Math.max(20, hCada - folgaAltura), d: prof,
+          x: box.x + GAVETA_FOLGA_LADO_MM, y: yCx, z: box.z + recuoCaixote,
+          w: box.w - 2 * GAVETA_FOLGA_LADO_MM, h: hCx, d: prof,
           opening_type: 'slide_out',
           // folga de CADA lado entre o caixote e a lateral do vão (onde a
           // corrediça fixa) — o modelo Hardwood Dovetail usa pra sair com
@@ -1566,6 +1578,27 @@
         var yTopG = ajustaFrentePorNo({ params: { topo_frente_abaixo_casco_mm: node.params.topo_frente_abaixo_casco_mm } }, 0, 0)[1];
         var hG = (yTopG - yBotG - GAP_ENTRE_FRENTES_GAVETA_MM * (rec.qtd - 1)) / rec.qtd;
         if (hG > 0) distribGav = { y0: yBotG, h: hG };
+      }
+      // GAVETEIRO COM BASE DEFINIDA (2026-11-24, Gola Base 3 Drawers): 2+
+      // gavetas no vão com node.params.base_frente_acima_casco_mm (e sem o
+      // topo acima) — a 1ª frente nasce na base pedida (medida da base do
+      // casco) e o topo é o de sempre da última frente (gola de cima, gola do
+      // meio, regra da fábrica ou sobreposição normal). As frentes dividem
+      // POR IGUAL, com o mesmo gap de 3 mm. Sem o param: nada muda.
+      var pBaseG = (node.params || {}).base_frente_acima_casco_mm;
+      if (!distribGav && rec.qtd > 1 && pBaseG != null && isFinite(Number(pBaseG)) && zona) {
+        var yBotB = zona.y - espCasco + Number(pBaseG);
+        var yUlt = rec.boxY + (rec.qtd - 1) * (rec.hCada + rec.gap);
+        var yTopB = yUlt + rec.hCada + alturaCima;
+        var alvoB = topoFrenteAlvo(box.y + box.h);
+        if (alvoB != null) yTopB = alvoB;
+        else {
+          var tgB = topoGola(node, box.y + box.h);
+          if (tgB == null) tgB = topoGolaMeio(node, box.y + box.h, box.x, box.x + box.w);
+          if (tgB != null) yTopB = tgB;
+        }
+        var hB = (yTopB - yBotB - GAP_ENTRE_FRENTES_GAVETA_MM * (rec.qtd - 1)) / rec.qtd;
+        if (hB > 0) distribGav = { y0: yBotB, h: hB };
       }
 
       for (var j = 0; j < rec.qtd; j++) {

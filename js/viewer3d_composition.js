@@ -950,14 +950,22 @@ function createViewerComposition3D() {
     // ficam em linhas separadas e cada linha é encadeada sozinha.
     const refAxis = entries[0].axisX;
     const perpAxis = new THREE.Vector3(-refAxis.z, 0, refAxis.x).normalize();
-    const lines = new Map();
+    // LINHA POR TOLERÂNCIA (2026-11-24, Matt: "veja se o gola do meio está
+    // conectando"). Antes a chave era o mm ARREDONDADO — a vista da gola do
+    // meio tem o centro em x,5 mm (19 de espessura) e dois módulos iguais
+    // caíam um em 1420 e o outro em 1421 (ruído de ponto flutuante no .5):
+    // linhas diferentes, nunca juntava (a ripa, a gola de cima e o rodapé
+    // juntavam). Agora mesma linha = até 1 mm de diferença no plano e na
+    // altura.
+    const lines = [];
     entries.forEach((e) => {
       e._t = e.worldPos.dot(refAxis);
-      const key = Math.round(e.worldPos.dot(perpAxis) * 1000) + '|' + Math.round(e.worldPos.y * 1000);
-      if (!lines.has(key)) lines.set(key, []);
-      lines.get(key).push(e);
+      const perp = e.worldPos.dot(perpAxis), y = e.worldPos.y;
+      let ln = lines.find((l) => Math.abs(l.perp - perp) <= 0.001 && Math.abs(l.y - y) <= 0.001);
+      if (!ln) { ln = { perp, y, list: [] }; lines.push(ln); }
+      ln.list.push(e);
     });
-    lines.forEach((lineEntries) => {
+    lines.map((l) => l.list).forEach((lineEntries) => {
       lineEntries.sort((p, q) => p._t - q._t);
       if (lineEntries.length >= 2) joinBaseboardLine(lineEntries);
     });

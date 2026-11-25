@@ -2057,6 +2057,9 @@
       // Aplica-se igual a peça-componente e peça-módulo, por isso fica aqui,
       // no ponto comum às duas, em vez de duplicado nas duas funções abaixo.
       if (!isPieceVisible(piece, pieceContainerDims)) return null;
+      // Só o recorte da gola unida com o vizinho (applyPieceAdjustmentsDeep,
+      // module-pieces.js, 24/11): abre o C na lateral, não é peça produzida.
+      if (piece._soRecorte) return null;
       // PEÇA DECORATIVA dentro de módulo de verdade (pia, cooktop, micro-ondas
       // — shape_type decor_*, 25/10, Matt: "colocar a sink decorativa no
       // módulo, sem mostrar no orçamento nem no pedido, como todos os

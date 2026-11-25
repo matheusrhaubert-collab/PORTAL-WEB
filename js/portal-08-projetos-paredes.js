@@ -3497,6 +3497,15 @@ function projectJoinAxisFor(member) {
   });
   return bestErr <= 1 ? best : null;
 }
+// Peça da junção que abre o C nas laterais do casco (vista da gola do meio,
+// layout-engine `recorte_casco`) — procurada nas peças efetivas do slot.
+function projectJoinPieceAbreRecorte(slotId, pieceId) {
+  const slot = (projectSlots || []).find((s) => s && s.id === slotId);
+  if (!slot) return false;
+  let lista = [];
+  try { lista = projectSlotEffectivePieces(slot) || []; } catch (e) { lista = slot.layoutPieces || []; }
+  return lista.some((p) => p && p.id === pieceId && !!p.recorte_casco);
+}
 function syncProjectBaseboardJoinsFromViewer() {
   const v = (typeof ViewerProjectEdit !== 'undefined') ? ViewerProjectEdit : null;
   if (!v || !v.getBaseboardJoins || !Array.isArray(projectSlots)) return;
@@ -3543,6 +3552,9 @@ function syncProjectBaseboardJoinsFromViewer() {
     ek.adjust[kept.pieceId] = { [axis]: delta }; // cópias iguais → mesmo valor, não soma
     g.members.slice(1).forEach((m) => {
       const er = next[m.slotId] || (next[m.slotId] = { removed: [], adjust: {} });
+      // GOLA DO MEIO (24/11): a vista que abre o C nas laterais não some —
+      // vira "só o recorte" (sai da produção, mas o C da lateral fica).
+      if (projectJoinPieceAbreRecorte(m.slotId, m.pieceId)) { er.adjust[m.pieceId] = { so_recorte: true }; return; }
       if (!er.removed.includes(m.pieceId)) er.removed.push(m.pieceId);
     });
   });
