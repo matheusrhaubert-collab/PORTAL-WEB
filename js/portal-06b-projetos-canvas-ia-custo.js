@@ -1215,10 +1215,17 @@ function projectSlotWorldBox3D(slot, overrides) {
     // segue a convenção (cos(angleRad), sen(angleRad)) = (x,z), igual ao
     // ramo de parede logo abaixo (Math.atan2(alongDirZ, alongDirX)).
     const angleRad = -(rotDeg * Math.PI) / 180;
+    // ALTURA DO CHÃO (2026-11-24, Matt — "Kitchen Backroom": o gaveteiro não
+    // descia, parava a 286 mm do chão, e não encostava no da esquerda). A
+    // caixa do módulo SOLTO nascia sempre em y = 0, mesmo levantado: o painel
+    // "no Plano" do teto (solto, a 2456 mm, 286 de altura) virava um bloco
+    // INVISÍVEL de 0 a 286 mm encostado na parede. Agora sobe junto com
+    // floor_height_mm, igual ao desenho.
+    const yMin = ov.floorHeightMm != null ? Number(ov.floorHeightMm) : Number(slot.floor_height_mm || 0);
     return {
       cx, cz, angleRad,
       halfAlongMm: Number(slot.width_mm || 0) / 2, halfIntoMm: Number(slot.depth_mm || 0) / 2,
-      yMin: 0, yMax: Number(slot.height_mm || 0)
+      yMin, yMax: yMin + Number(slot.height_mm || 0)
     };
   }
   const wallGeo = (getProjectWallGeometry() || []).find((w) => w.wallIndex === Number(slot.wall_index || 0));
