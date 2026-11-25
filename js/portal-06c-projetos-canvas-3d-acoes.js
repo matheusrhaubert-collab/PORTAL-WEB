@@ -2772,7 +2772,126 @@ function frameProjectSlotFront(slot) {
 // último obstáculo. Independe do botão Colisão estar ligado: aqui o usuário
 // pediu explicitamente pra encostar, não é uma trava de arraste.
 const PROJECT_TOUCH_GAP_EPS_MM = 0.5;
+// 2026-11-24 (Matt: "sempre que eu der 2 cliques em uma seta de esticar um
+// móvel quero que vá até seu máximo ou pare na primeira colisão que
+// encontrar, nos sentidos altura e largura. Funciona pra 100% dos objetos com
+// setas"). Antes só módulo de PAREDE e só contra vizinho da MESMA parede (canto
+// com a parede do lado, ilha e painel solto ficavam de fora; ilha não esticava).
+// Agora é a MESMA régua 3D da colisão do arraste (projectSlotCollisionBox3D x
+// projectAllOtherSlotWorldBoxes: qualquer parede, ilha, painel, e as próprias
+// paredes): busca binária da maior medida até o máximo do módulo
+// (projectSlotClampedDimensionMm) sem tocar em nada que já não estava tocando.
+// Módulo de parede ainda para na ponta útil da parede. Medida travada (presets)
+// cai no maior preset que cabe. A régua antiga (só a mesma parede) continua
+// como reserva se faltar alguma função.
 function stretchProjectSlotToCollision(slot, axis) {
+  const eixos = ['width-right', 'width-left', 'height-top', 'height-bottom'];
+  if (!slot || !eixos.includes(axis)) return false;
+  if (typeof projectSlotCollisionBox3D !== 'function' || typeof projectAllOtherSlotWorldBoxes !== 'function'
+    || typeof slotsOverlap3D !== 'function') {
+    return stretchProjectSlotToCollisionAntigo(slot, axis);
+  }
+  const largura = axis.indexOf('width') === 0;
+  const dimKey = largura ? 'width' : 'height';
+  const ilha = isFloorSlot(slot);
+  const snap = {
+    x_mm: slot.x_mm, floor_height_mm: slot.floor_height_mm, floor_x_mm: slot.floor_x_mm,
+    floor_z_mm: slot.floor_z_mm, width_mm: slot.width_mm, height_mm: slot.height_mm
+  };
+  const x0 = Number(slot.x_mm || 0), y0 = Number(slot.floor_height_mm || 0);
+  const w0 = Number(slot.width_mm || 0), h0 = Number(slot.height_mm || 0);
+  const d0 = largura ? w0 : h0;
+  const topo = y0 + h0;
+  // eixo da largura da ilha no mundo (mesma conta do arraste pela seta)
+  const rot = (Number(slot.floor_rotation_deg || 0) * Math.PI) / 180;
+  const axX = Math.cos(rot), axZ = -Math.sin(rot);
+  const dirIlha = axis === 'width-left' ? -1 : 1;
+  const ancX = Number(slot.floor_x_mm || 0) - dirIlha * axX * (w0 / 2);
+  const ancZ = Number(slot.floor_z_mm || 0) - dirIlha * axZ * (w0 / 2);
+
+  // máximo do módulo (mín/máx, furadeira, plywood, presets)
+  let dMax = projectSlotClampedDimensionMm(slot, dimKey, 1e7);
+  if (axis === 'height-bottom') dMax = Math.min(dMax, topo);           // base no chão
+  if (!ilha && largura && typeof projectWallSlotXBoundsMm === 'function') {
+    const xb = projectWallSlotXBoundsMm(slot);
+    const fimUtil = xb.max + w0, iniUtil = xb.min;                    // pontas úteis da parede
+    dMax = Math.min(dMax, axis === 'width-right' ? fimUtil - x0 : (x0 + w0) - iniUtil);
+  }
+  if (!(dMax > d0 + 0.5)) return false;
+
+  const aplicaTemp = (d) => {
+    if (axis === 'width-right') {
+      slot.width_mm = d;
+      if (ilha) { slot.floor_x_mm = ancX + axX * d / 2; slot.floor_z_mm = ancZ + axZ * d / 2; }
+    } else if (axis === 'width-left') {
+      slot.width_mm = d;
+      if (ilha) { slot.floor_x_mm = ancX - axX * d / 2; slot.floor_z_mm = ancZ - axZ * d / 2; }
+      else slot.x_mm = x0 + w0 - d;
+    } else if (axis === 'height-top') {
+      slot.height_mm = d;
+    } else {
+      slot.height_mm = d; slot.floor_height_mm = Math.max(0, topo - d);
+    }
+  };
+  const restaura = () => Object.assign(slot, snap);
+  const EPS = (typeof PROJECT_COLLISION_EPS_MM !== 'undefined') ? PROJECT_COLLISION_EPS_MM : 0.5;
+  let obst = [];
+  try {
+    const caixa0 = projectSlotCollisionBox3D(slot);
+    obst = (projectAllOtherSlotWorldBoxes(slot) || []).filter((o) => !slotsOverlap3D(caixa0, o, EPS));
+  } catch (e) { obst = []; }
+  const bate = (d) => {
+    aplicaTemp(d);
+    let b = null;
+    try { b = projectSlotCollisionBox3D(slot); } catch (e) { b = null; }
+    const r = !!b && obst.some((o) => slotsOverlap3D(b, o, EPS));
+    restaura();
+    return r;
+  };
+  let alvo = dMax;
+  if (bate(dMax)) {
+    let lo = d0, hi = dMax;
+    for (let i = 0; i < 30 && hi - lo > 0.05; i++) {
+      const mid = (lo + hi) / 2;
+      if (bate(mid)) hi = mid; else lo = mid;
+    }
+    // a colisão tolera EPS de sobreposição — tira ela pra parar ENCOSTADO, não 0,4 mm dentro
+    alvo = Math.floor((lo - EPS) * 10) / 10;
+  }
+  // medida travada: o maior preset que cabe (o clamp escolheria o mais PERTO,
+  // que pode passar do obstáculo)
+  const m = slot.module || {};
+  const travado = largura ? m.width_locked : m.height_locked;
+  const pres = (largura ? slot.widthPresetsMm : slot.heightPresetsMm) || [];
+  if (travado && pres.length) {
+    const cabem = pres.filter((v) => v <= alvo + 0.5);
+    if (!cabem.length) return false;
+    alvo = Math.max.apply(null, cabem);
+  }
+  if (!(alvo > d0 + 0.5)) return false;
+
+  if (axis === 'width-right') {
+    if (ilha) { slot.floor_x_mm = ancX + axX * alvo / 2; slot.floor_z_mm = ancZ + axZ * alvo / 2; }
+    updateProjectSlotDimension(slot, 'width', alvo);
+  } else if (axis === 'width-left') {
+    if (ilha) {
+      slot.floor_x_mm = ancX - axX * alvo / 2; slot.floor_z_mm = ancZ - axZ * alvo / 2;
+      updateProjectSlotDimension(slot, 'width', alvo);
+    } else updateProjectSlotWidthFromLeft(slot, alvo);
+  } else if (axis === 'height-top') {
+    updateProjectSlotDimension(slot, 'height', alvo);
+  } else {
+    const nova = projectSlotClampedDimensionMm(slot, 'height', alvo);
+    if (!(nova > 0) || nova > topo + 0.01) return false;
+    slot.floor_height_mm = Math.max(0, topo - nova);
+    updateProjectSlotDimension(slot, 'height', nova);
+  }
+  return true;
+}
+
+// Régua antiga (até 23/11): só vizinhos da mesma parede. Reserva.
+function stretchProjectSlotToCollisionAntigo(slot, axis) {
+
   // Ilha no chão fica de fora: "vão até o vizinho" pressupõe uma parede como
   // régua e vizinhos alinhados nela — solto no meio do ambiente isso não
   // existe. Esticar ilha continua sendo arrastando a seta ou pelo painel.
