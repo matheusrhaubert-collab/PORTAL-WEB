@@ -2076,10 +2076,10 @@ function buildProjectWallPaneDom(paneEl, wallIndex, wallWidthMm, ceilingMm, unit
         const heightPresetsMm = slot.heightPresetsMm || [];
         const widthResizable = slot.module.width_locked
           ? widthPresetsMm.length > 1
-          : Number(slot.module.width_min_mm) !== Number(slot.module.width_max_mm);
+          : projectFaixaEsticavel(slot.module.width_min_mm, slot.module.width_max_mm);
         const heightResizable = slot.module.height_locked
           ? heightPresetsMm.length > 1
-          : Number(slot.module.height_min_mm) !== Number(slot.module.height_max_mm);
+          : projectFaixaEsticavel(slot.module.height_min_mm, slot.module.height_max_mm);
 
         if (widthResizable) {
           const resizeW1 = document.createElement('div');
@@ -2514,21 +2514,31 @@ let project3DLastFitKey = null;
 // sentidos permitidos", nas palavras do pedido. Medida travada
 // (width_locked/height_locked) só é redimensionável se houver 2+ valores
 // cadastrados pra pular entre eles (ver widthPresetsMm/heightPresetsMm).
+// FAIXA DE ESPESSURA NÃO É MEDIDA (24/11, Matt, seta de cima/baixo num
+// "Painel 3/4 · Horizontal": "essa seta de espessura nem deveria estar aí, só
+// tem uma espessura"). Os painéis cadastram a espessura como faixa 18..19,5
+// (plywood × EGGER, quem decide é a cor), e "mín ≠ máx" dava seta. Faixa de
+// até 5 mm = espessura da chapa, não algo que o cliente estica.
+const PROJECT_FAIXA_ESPESSURA_MM = 5;
+function projectFaixaEsticavel(min, max) {
+  const a = Number(min), b = Number(max);
+  return a !== b && !(Math.abs(b - a) <= PROJECT_FAIXA_ESPESSURA_MM);
+}
 function projectSlotResizableAxes(slot) {
   const widthPresetsMm = slot.widthPresetsMm || [];
   const heightPresetsMm = slot.heightPresetsMm || [];
   return {
     width: slot.module.width_locked
       ? widthPresetsMm.length > 1
-      : Number(slot.module.width_min_mm) !== Number(slot.module.width_max_mm),
+      : projectFaixaEsticavel(slot.module.width_min_mm, slot.module.width_max_mm),
     height: slot.module.height_locked
       ? heightPresetsMm.length > 1
-      : Number(slot.module.height_min_mm) !== Number(slot.module.height_max_mm),
+      : projectFaixaEsticavel(slot.module.height_min_mm, slot.module.height_max_mm),
     // PROFUNDIDADE (2026-08-13, "nao tem seta pra profundidade"). Não tem
     // trava própria no cadastro (não existe depth_locked), então o critério é
     // só "o mín é diferente do máx" — módulo de profundidade única não ganha
     // seta, igual às outras duas.
-    depth: Number(slot.module.depth_min_mm) !== Number(slot.module.depth_max_mm)
+    depth: projectFaixaEsticavel(slot.module.depth_min_mm, slot.module.depth_max_mm)
   };
 }
 
