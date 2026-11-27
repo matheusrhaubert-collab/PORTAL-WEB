@@ -614,6 +614,19 @@ function meClick(e) {
   // função da aba Equipe (dealer-create-seller set_active): bloqueado não
   // entra no portal; projetos e pedidos dele continuam na loja.
   if (a === 'ppadd') { e.stopPropagation(); return mePpAddOpen(b.getAttribute('data-acc')); }
+  if (a === 'pppromob') {
+    e.stopPropagation();
+    const acc = b.getAttribute('data-acc'); const liga = b.getAttribute('data-v') === '1';
+    const loja = ((meState.tree || []).find((x) => x.id === acc) || {}); const nome = loja.trade_name || loja.legal_name || '';
+    if (!confirm((liga ? 'Liberar o Importar PROMOB para ' : 'Desligar o Importar PROMOB de ') + nome + '?' + (liga ? '' : '\n\nPedidos PROMOB que a loja já fez continuam valendo.'))) return;
+    (async () => {
+      const r = await supabaseClient.rpc('admin_set_promob', { p_account: acc, p_on: liga });
+      if (r.error) { alert(r.error.message || String(r.error)); return; }
+      if (meState.promobOn) meState.promobOn[acc] = liga;
+      meRender();
+    })();
+    return;
+  }
   if (a === 'ppfold') { e.stopPropagation(); const id = b.getAttribute('data-acc'); const f = ppFechados(); if (f.has(id)) f.delete(id); else f.add(id); return meRender(); }
   if (a === 'ppfoldall') { e.stopPropagation(); const f = ppFechados(); f.clear(); if (b.getAttribute('data-v') === '1') (meState.tree || []).forEach((x) => { if (x.kind !== 'factory') f.add(x.id); }); return meRender(); }
   if (a === 'pplock') {
@@ -823,6 +836,7 @@ function meCss() {
     '.pp-tree>li.pp-newli{margin:8px 0 0 14px;padding-left:22px}.pp-tree>li.pp-newli::before{content:"";position:absolute;left:0;top:-8px;height:29px;border-left:2px solid #d3c6ae}.pp-tree>li.pp-newli::after{content:"";position:absolute;left:0;top:20px;width:18px;border-top:2px solid #d3c6ae}',
     '.pp-node{display:flex;align-items:center;gap:8px;background:#efe8db;border:1px solid #e0d6c3;border-radius:9px;padding:5px 8px;font-size:13.5px;min-height:36px}.pp-node>strong{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pp-node .pp-p{flex:1;min-width:0}.pp-node .pp-n{margin-left:auto}',
     '.pp-store.is-fab>.pp-node{background:#2b2621;color:#fff;border-color:#2b2621}.pp-store.is-fab>.pp-node .me-pill{background:#fff;color:#2b2621}.pp-p{color:#2b2621}.pp-store.is-fab>.pp-node .pp-p.is-fixo{opacity:1}.pp-store.is-fab>.pp-node .pp-n{color:#cfc7ba}.pp-ico{font-size:15px}',
+    '.pp-promob{margin:0 0 0 6px;flex:none;width:auto;padding:2px 8px;font-size:10.5px;font-weight:700;letter-spacing:.03em;border-radius:999px;border:1px solid #c9d6e6;background:#fff;color:#8a96a6;cursor:pointer;box-shadow:none}.pp-promob.is-on{background:#e3eefb;border-color:#1f5fa8;color:#1f5fa8}',
     '.pp-addbtn{margin:0 0 0 6px;width:auto;padding:2px 9px;font-size:11.5px;font-weight:700;border-radius:6px;border:1px solid #b9a888;background:#fff;color:#5a4526;cursor:pointer;white-space:nowrap;box-shadow:none}.pp-addbtn:hover{background:#f6efe2}',
     '.pp-store.is-semdono>.pp-node{border-style:dashed;border-color:#c9a36b;background:#fdf8ef}.pp-need{flex:1;font-size:12.5px;color:#7a4a1e;font-style:italic}',
     '.pp-node.pp-new{border:2px dashed #c9a36b;background:#fdf8ef;color:#7a4a1e;font-size:13px;min-width:0;flex:none}',
@@ -998,6 +1012,10 @@ async function mePeopleLoad() {
     // contato da LOJA (a árvore não traz): só o admin lê a tabela direto
     meState.accContato = {};
     try { const ra = await supabaseClient.from('accounts').select('id, contact_name'); (ra.data || []).forEach((x) => { meState.accContato[x.id] = x.contact_name || ''; }); } catch (eAcc) { /* sem leitura */ }
+    // PROMOB por loja (27/11, migration 352, Matt: "preciso liberar só pra alguns dealers o promob... configurado lá
+    // em people, um botão ativando a função"). Só o admin lê/troca; sem a 352 o botão não aparece.
+    meState.promobOn = null;
+    try { const rp = await supabaseClient.from('accounts').select('id, promob_enabled'); if (!rp.error) { meState.promobOn = {}; (rp.data || []).forEach((x) => { meState.promobOn[x.id] = x.promob_enabled === true; }); } } catch (ePb) { /* sem a 352 */ }
     const tree = await supabaseClient.rpc('account_tree');
     if (!tree.error) meState.tree = tree.data || [];
   } catch (e) { meState.people = []; meState.peopleErr = (e && e.message) || String(e); }
@@ -1087,6 +1105,7 @@ function meViewPeople() {
       + (q ? visD : dono).map(chip).join('')
       // + PESSOA (22/11): cria o login e já põe nesta loja — ver mePpAddOpen
       + (fab || !(adm || (ppSouDono() && a.id === ppMinhaLoja())) ? '' : '<button type="button" class="pp-addbtn" data-a="ppadd" data-acc="' + mEsc(a.id) + '" title="' + mEsc(paT('tip', { loja: nome })) + '">+ ' + mEsc(paT('btn')) + '</button>')
+      + (fab || !adm || !meState.promobOn ? '' : '<button type="button" class="pp-promob' + (meState.promobOn[a.id] ? ' is-on' : '') + '" data-a="pppromob" data-acc="' + mEsc(a.id) + '" data-v="' + (meState.promobOn[a.id] ? '0' : '1') + '" title="' + mEsc(meState.promobOn[a.id] ? 'PROMOB ligado — clique pra desligar' : 'PROMOB desligado — clique pra liberar o Importar PROMOB pra esta loja') + '">PROMOB ' + (meState.promobOn[a.id] ? '✓' : '○') + '</button>')
       + '<span class="pp-n">' + l.length + '</span></div>'
       + (((q ? visR : resto).length && !fechado) || sub ? '<ul class="pp-kids">' + (fechado ? '' : (q ? visR : resto).map((p) => '<li>' + chip(p) + '</li>').join('')) + sub + '</ul>' : '')
       + '</li>';

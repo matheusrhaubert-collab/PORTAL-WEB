@@ -101,6 +101,12 @@ const CX_TXT = {
     rel_prod: 'Liberar producción', rel_pick: 'Liberar retiro', rel_prod_q: '¿Liberar el pedido {n} a PRODUCCIÓN?', rel_pick_q: '¿Liberar el pedido {n} para RETIRO?', rel_done: 'Marcar entregado', rel_done_q: '¿Marcar el pedido {n} como ENTREGADO (retirado)?\n\nSale de "Listo para retiro" y pasa a Entregado.', totals: '{n} pedido(s) · lista {l} · con descuento {v}', fab_net: 'Fábrica c/ desc.', sale: 'Venta al cliente', sum: 'Total ({n})'
   }
 };
+// ORIGEM DO PEDIDO (27/11, migration 352, Matt: "preciso uma coluna a mais em orders, mostrando
+// LEGNO STUDIO ou PROMOB"). Pedido PROMOB = orders.order_type 'promob' (importado do XML, portal-52).
+Object.assign(CX_TXT.pt, { c_origin: 'Origem' }); Object.assign(CX_TXT.en, { c_origin: 'Source' }); Object.assign(CX_TXT.es, { c_origin: 'Origen' });
+const CX_ORIGENS = { studio: 'LEGNO STUDIO', promob: 'PROMOB' };
+function cxOrigem(o) { return o && o.order_type === 'promob' ? 'promob' : 'studio'; }
+function cxOrigemHtml(o) { const k = cxOrigem(o); return '<span class="cx-orig cx-orig-' + k + '">' + CX_ORIGENS[k] + '</span>'; }
 function cxLang() { try { const l = (typeof I18n !== 'undefined' && I18n.getLanguage) ? I18n.getLanguage() : 'en'; return CX_TXT[l] ? l : 'en'; } catch (e) { return 'en'; } }
 function cT(k, vars) {
   let s = CX_TXT[cxLang()][k]; if (s == null) s = CX_TXT.en[k]; if (s == null) s = k;
@@ -590,6 +596,7 @@ function cxNetRows() {
   return s.orders.filter((o) => {
     if (f.loja && (o.account_id || '_') !== f.loja) return false;
     if (f.user && o.client_user_id !== f.user) return false;
+    if (f.origem && !o._proj && cxOrigem(o) !== f.origem) return false;
     if (f.cliente && cxClienteKey(o) !== f.cliente) return false;
     if (f.etapa === '_orders') { if (!['wait', 'pay', 'prod', 'ready'].includes(o._s)) return false; }
     else if (f.etapa && o._s !== f.etapa) return false;
@@ -991,7 +998,7 @@ function cxFolderRowHtml(k, itens, soProj, preco, enx) {
     + ((cxAdmin() || meus) && window.LegnoMinhaEmpresa && itens.some((o) => o._proj) ? it('lost', fdT('lost')) : '')
     + ((meus || adm) ? it('delete', T('fav.folder_delete_btn'), 'is-danger') : '') + '</div>';
   return '<tr class="cx-frow' + (fechada ? ' is-closed' : '') + (semPasta ? ' cx-frow-0' : '') + '" data-cx="ftoggle" data-k="' + cEsc(k) + '">'
-    + '<td colspan="' + (enx ? 6 : 4) + '" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
+    + '<td colspan="' + (enx ? 7 : 4) + '" class="cx-fname"><span class="cx-fchev">' + (fechada ? '▸' : '▾') + '</span> 📁 <b>' + cEsc(nome) + '</b> <span class="cx-fn">' + itens.length + '</span>'
     // duas pastas com o mesmo nome (de logins diferentes) se distinguem pelo dono
     + ' <span class="cx-fquem">' + cEsc(String(cxUserName(itens[0].client_user_id, itens) || '').split('@')[0]) + '</span>'
     + (semPasta ? '' : '<button type="button" class="cx-fdots" data-cx="fmenu" data-k="' + cEsc(k) + '" aria-label="menu">⋯</button>') + cxFolderPackHtml(itens) + '<span class="cx-fstatus hint" data-fst="' + cEsc(k) + '"></span>' + menu + '</td>'
@@ -1471,6 +1478,7 @@ function cxOrdRowHtml(o, lin, num, icoN, preco, envia) {
     + '<td class="cx-store' + (cxAdmin() ? ' cx-storecell" data-cx="pickstore" data-id="' + id : '') + '" title="' + cEsc(cxStoreName(o) + (cxAdmin() ? ' — ' + cT('mv_change') : '')) + '"><b>' + cEsc(cxStoreName(o)) + '</b>' + (cxAdmin() ? ' <span class="cx-swap">⇄</span>' : '') + '</td>'
     + '<td class="cx-quem" title="' + cEsc(quemLMail || '') + '">' + cEsc(String(quemL || '—').split('@')[0]) + '</td>'
     + '<td class="cx-item" title="' + cEsc([o.po_name, o.client_name, o.room_name, o.delivery_address].filter(Boolean).join(' · ')) + '">' + (o._folder && !dentro ? '<span class="cx-fold" data-cx="folderq" data-v="' + cEsc(o._folder) + '">📁 ' + cEsc(o._folder) + '</span> ' : '') + cEsc(o.po_name || '—') + (o._proj ? ' <span class="cx-tagp">' + cEsc(cT('tag_proj')) + '</span>' : '') + (o.client_name && o.client_name !== o._folder ? ' <span class="hint">· ' + cEsc(o.client_name) + '</span>' : '') + '</td>'
+    + '<td>' + cxOrigemHtml(o) + '</td>'
     // 22/11 (Matt: "acho bagunçado esses desalinhamentos, vamos separar duas colunas com status e
     // botão da próxima etapa"): status numa coluna, botão (Release production / pickup, Send to factory) na outra.
     + '<td class="cx-stcell">' + cxStatusHtml(o) + '</td><td class="cx-next">' + (envia || '') + libera + '</td>'
@@ -1512,17 +1520,17 @@ function cxFlatTable(rows, principal) {
   const enx = principal && !soProj;
   if (principal) {
     const val = { num: cxNumVal, loja: (o) => cxStoreName(o).toLowerCase(), quem: (o) => cxUserName(o.client_user_id, [o]).toLowerCase(), nome: (o) => String(o.po_name || '').toLowerCase(),
-      cliente: (o) => String(o.client_name || '').toLowerCase(), l: (o) => o._l || 0, net: (o) => (o._n == null ? -1 : o._n), v: (o) => (o._v == null ? -1 : o._v), it: (o) => (o._it == null ? -1 : o._it), etapa: (o) => CX_NET_STAGES.indexOf(o._s), upd: (o) => String(o._t || '') }[st.col] || ((o) => String(o._t || ''));
+      cliente: (o) => String(o.client_name || '').toLowerCase(), l: (o) => o._l || 0, net: (o) => (o._n == null ? -1 : o._n), v: (o) => (o._v == null ? -1 : o._v), it: (o) => (o._it == null ? -1 : o._it), etapa: (o) => CX_NET_STAGES.indexOf(o._s), origem: (o) => cxOrigem(o), upd: (o) => String(o._t || '') }[st.col] || ((o) => String(o._t || ''));
     rows = rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * st.dir || String(b._t || '').localeCompare(String(a._t || '')); });
   }
-  const comFiltro = { quem: !!f.user, etapa: !!f.etapa && f.etapa !== '_orders' && f.etapa !== 'build', upd: !!f.periodo };
+  const comFiltro = { quem: !!f.user, etapa: !!f.etapa && f.etapa !== '_orders' && f.etapa !== 'build', upd: !!f.periodo, origem: !!f.origem };
   const th = (col, rot, r, menu) => !principal ? '<th' + (r ? ' class="cx-r"' : '') + '>' + cEsc(rot) + '</th>'
     : '<th class="mp-th-sort' + (st.col === col ? ' is-sorted' : '') + (r ? ' cx-r' : '') + (comFiltro[col] ? ' cx-th-on' : '') + '" data-cx="' + (menu ? 'hmenu' : 'gsort') + '" data-col="' + col + '">'
       + (comFiltro[col] ? '<i class="cx-th-dot"></i>' : '') + cEsc(rot) + ' ' + (st.col === col ? (st.dir < 0 ? '↓' : '↑') : (menu ? '▾' : '↕')) + '</th>';
   const max = principal ? 400 : 200;
   return '<div class="cx-inner"><table class="mp-table cx-table' + (principal ? ' cx-main' : '') + '"><thead><tr>'
     + (enx
-      ? th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item')) + th('etapa', cT('c_stage'), 0, 1) + '<th>' + cEsc(odT('next')) + '</th>'
+      ? th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item')) + th('origem', cT('c_origin'), 0, 1) + th('etapa', cT('c_stage'), 0, 1) + '<th>' + cEsc(odT('next')) + '</th>'
         + '<th>' + cEsc(ivT('inv')) + '</th>' + (preco ? th('it', ivT('inv_total'), 1) : cxSeller() ? th('v', cT('sale'), 1) : '') + '<th>' + cEsc(odT('pay_col')) + '</th>' + th('upd', cT('c_date'), 0, 1) + '<th></th></tr></thead><tbody>'
       : th('num', cT('c_no')) + th('loja', cT('c_store')) + th('quem', cT('col_seller'), 0, 1) + th('nome', cT('c_item'))
         + (preco ? cxPrecoThs(th, soProj) : cxSeller() ? th('v', cT('sale'), 1) : '')
@@ -1579,7 +1587,7 @@ function cxFlatTable(rows, principal) {
           + (window.LegnoMinhaEmpresa && (cxAdmin() || o.client_user_id === cxMe()) ? '<div class="cx-plost"><button type="button" class="cx-mini cx-mini-lost" data-cx="lost" data-ids="' + cEsc(o._pid) + '" data-nome="' + cEsc(o._pname || o.po_name || '') + '">' + cEsc(odT('lost_btn')) + '</button>'
             + (o._old ? ' <span class="hint">' + cEsc(odT('old_hint').replace('{n}', CX_INATIVO_DIAS)) + '</span>' : '') + '</div>' : '')
           + '</td></tr>' : '');
-    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (!preco && cxSeller() && rows.length ? '<tfoot><tr class="cx-tot"><td colspan="' + (enx ? 7 : 4) + '">' + cEsc(cT('sum', { n: rows.length })) + '</td>' + '<td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' + '<td colspan="' + (enx ? 3 : 4) + '"></td></tr></tfoot>' : '') + (preco && rows.length ? (enx ? '<tfoot><tr class="cx-tot"><td colspan="7">' + cEsc(cT('sum', { n: rows.length })) + '</td><td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td><td colspan="3"></td></tr></tfoot>' : cxTotalRow(rows, 4, 4, soProj)) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
+    }).join('') + (rows.length ? '' : '<tr class="cx-vazio"><td colspan="20">' + cEsc(cT('net_none')) + '</td></tr>') + '</tbody>' + (!preco && cxSeller() && rows.length ? '<tfoot><tr class="cx-tot"><td colspan="' + (enx ? 8 : 4) + '">' + cEsc(cT('sum', { n: rows.length })) + '</td>' + '<td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._v) || 0), 0))) + '</td>' + '<td colspan="' + (enx ? 3 : 4) + '"></td></tr></tfoot>' : '') + (preco && rows.length ? (enx ? '<tfoot><tr class="cx-tot"><td colspan="8">' + cEsc(cT('sum', { n: rows.length })) + '</td><td class="cx-r">' + cEsc(cMoney(rows.reduce((t, o) => t + (Number(o._it) || 0), 0))) + '</td><td colspan="3"></td></tr></tfoot>' : cxTotalRow(rows, 4, 4, soProj)) : '') + '</table></div>' + (rows.length > max ? '<p class="hint">+' + (rows.length - max) + '…</p>' : '');
 }
 
 // LISTA DA ÁRVORE NO FORMATO DE PASTAS (20/11, Matt: "quando clico aqui o
@@ -1721,7 +1729,7 @@ function cxRenderNet(p) {
   const f = cxState.net;
   const rows = cxNetRows();
   const totL = rows.reduce((a, o) => a + (o._l || 0), 0), totN = rows.reduce((a, o) => a + (o._n != null ? o._n : (o._l || 0)), 0);
-  const filtrando = f.gstatus || f.periodo || f.user || (f.etapa && f.etapa !== '_orders' && f.etapa !== 'build');
+  const filtrando = f.gstatus || f.periodo || f.user || f.origem || (f.etapa && f.etapa !== '_orders' && f.etapa !== 'build');
   // VISUAL LIMPO (20/11, Matt: "tá muito poluído esse visual, quero algo bem mais
   // minimalista, prefiro deixar os filtros ao clicar na coluna"): sem faixa de
   // etapas nem segunda busca. Filtra-se clicando no título da coluna (Status,
@@ -1761,6 +1769,9 @@ function cxHeadMenu(col, th) {
     h += op('user', '', cT('fl_all'), !f.user) + uids.map((u) => op('user', u, cxUserName(u, cxState.scope.orders) + ' (' + por[u] + ')', f.user === u)).join('');
   } else if (col === 'status') {
     h += op('gstatus', '', cT('fl_all'), !f.gstatus) + ['dev', 'proposal', 'approved'].map((k) => op('gstatus', k, T('st_' + k, k), f.gstatus === k)).join('');
+  } else if (col === 'origem') {
+    const base = Object.assign({}, f); cxState.net = Object.assign({}, f, { origem: '' }); const cont = {}; cxNetRows().forEach((o) => { if (!o._proj) cont[cxOrigem(o)] = (cont[cxOrigem(o)] || 0) + 1; }); cxState.net = base;
+    h += op('origem', '', cT('fl_all'), !f.origem) + Object.keys(CX_ORIGENS).map((k) => op('origem', k, CX_ORIGENS[k] + ' (' + (cont[k] || 0) + ')', f.origem === k)).join('');
   } else if (col === 'upd') {
     h += op('periodo', '', cT('fl_all'), !f.periodo) + op('periodo', 'hoje', cT('today'), f.periodo === 'hoje') + op('periodo', '7', cT('fl_7'), f.periodo === '7') + op('periodo', '30', cT('fl_30'), f.periodo === '30');
   }
@@ -2762,12 +2773,12 @@ document.addEventListener('click', (e) => {
   if (a === 'hpick') {
     const g = b.getAttribute('data-g'), v = b.getAttribute('data-v'), f = cxState.net;
     if (g === 'sort') { const x = v.split(':'); cxState.netSort = { col: x[0], dir: Number(x[1]) }; }
-    else if (g === 'etapa') f.etapa = v; else if (g === 'user') { f.user = v; f.cliente = ''; } else if (g === 'gstatus') f.gstatus = v; else if (g === 'periodo') f.periodo = v;
+    else if (g === 'etapa') f.etapa = v; else if (g === 'user') { f.user = v; f.cliente = ''; } else if (g === 'gstatus') f.gstatus = v; else if (g === 'periodo') f.periodo = v; else if (g === 'origem') f.origem = v;
     cxCloseHeadMenu(); cxState.hmenuCol = '';
     return mpRender();
   }
   if (a === 'layout') { cxState.netLayout = cxState.netLayout === 'pastas' ? 'lista' : 'pastas'; if (cxState.netLayout === 'pastas' && cxState.netSort && ['num', 'quem'].indexOf(cxState.netSort.col) < 0) { /* mesma ordem */ } else if (cxState.netLayout === 'pastas') cxState.netSort = { col: 'upd', dir: -1 }; return mpRender(); }
-  if (a === 'fclear') { const f = cxState.net; f.gstatus = ''; f.periodo = ''; f.user = ''; f.cliente = ''; if (f.etapa !== '_orders' && f.etapa !== 'build') f.etapa = ''; return mpRender(); }
+  if (a === 'fclear') { const f = cxState.net; f.gstatus = ''; f.periodo = ''; f.origem = ''; f.user = ''; f.cliente = ''; if (f.etapa !== '_orders' && f.etapa !== 'build') f.etapa = ''; return mpRender(); }
   if (a === 'etapa') { const v = b.getAttribute('data-v'); cxState.net.etapa = cxState.net.etapa === v ? '' : v; return mpRender(); }
   if (a === 'maplegend') { const v = b.getAttribute('data-v'); cxState.mapHide[v] = !cxState.mapHide[v]; return mpRender(); }
   if (a === 'geocode') return cxGeocodeMissing();

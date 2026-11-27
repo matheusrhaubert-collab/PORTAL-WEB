@@ -373,8 +373,12 @@ LOTES.explodeOrders = async function (orderIds) {
      o campo vem undefined — e undefined !== 'cutting_list' cai no ramo de
      módulo, que é justamente o comportamento correto pra um banco que ainda
      não tinha pedido de planilha. */
-  const moduleOrderIds = (orders || []).filter(function (o) { return o.order_type !== 'cutting_list'; }).map(function (o) { return o.id; });
-  const cutlistOrderIds = (orders || []).filter(function (o) { return o.order_type === 'cutting_list'; }).map(function (o) { return o.id; });
+  /* PEDIDO PROMOB (27/11, migration 352): os itens do XML não têm peças — as
+     peças vêm da lista que a fábrica sobe no ERP, gravada em cutting_list_items
+     do pedido, igual ao pedido de plano de corte. */
+  const porLista = function (o) { return o.order_type === 'cutting_list' || o.order_type === 'promob'; };
+  const moduleOrderIds = (orders || []).filter(function (o) { return !porLista(o); }).map(function (o) { return o.id; });
+  const cutlistOrderIds = (orders || []).filter(porLista).map(function (o) { return o.id; });
 
   const [itemsRes, cutRes] = await Promise.all([
     moduleOrderIds.length
