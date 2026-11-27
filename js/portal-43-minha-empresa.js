@@ -846,6 +846,14 @@ function meCss() {
     // (o box do dealer começa sempre no mesmo ponto), lugar reservado do ▾, do cadeado e do Mover, e contador
     // com largura fixa (o box termina sempre no mesmo ponto).
     '.pp-store:not(.is-fab)>.pp-node>strong{flex:none;width:210px;max-width:210px}.pp-fold-0{flex:none;width:22px;height:22px;margin:0 2px 0 0}.pp-store:not(.is-fab)>.pp-node>.pp-n{flex:none;min-width:22px;text-align:right;margin-left:0}.pp-store:not(.is-fab)>.pp-node>.pp-addbtn{flex:none}',
+    // LARGURA DO PEOPLE (27/11, Matt: "arruma esse visual lá em people, aumenta a largura pra caber o que tá fora"):
+    // janela quase da largura da tela e a ficha do dealer DENTRO da caixa da loja encolhe (e-mail/empresa/contato
+    // cortam com "…") — antes ela não encolhia e empurrava + Person / PROMOB / contador pra fora da caixa.
+    '.me-box.me-wide{max-width:min(1880px,98vw);padding-left:20px;padding-right:20px}',
+    '.pp-store:not(.is-fab)>.pp-node{min-width:0}.pp-store:not(.is-fab)>.pp-node>.pp-p{flex:1 1 0;min-width:0;overflow:hidden}',
+    '.pp-store:not(.is-fab)>.pp-node>.pp-p .pp-mail{min-width:80px}.pp-store:not(.is-fab)>.pp-node>.pp-p .pp-co,.pp-store:not(.is-fab)>.pp-node>.pp-p .pp-ct{min-width:0;flex-shrink:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.pp-store:not(.is-fab)>.pp-node>.pp-addbtn,.pp-store:not(.is-fab)>.pp-node>.pp-promob,.pp-store:not(.is-fab)>.pp-node>.pp-n{flex:none}',
+    '.pp-store:not(.is-fab)>.pp-node>strong{width:180px;max-width:180px}',
     '.pp-vago{flex:none;display:inline-block;height:22px}.pp-vago.v-lock{width:24px}.pp-vago.v-mv{width:22px}.pp-node .pp-dm{flex:none;min-width:88px;text-align:right}.pp-node .pp-cnt{flex:none;min-width:80px;text-align:right}',
     '#po-me .pp-store.pp-drop.is-over>.pp-node{outline:3px solid #7a4a1e;background:#fbf1de;color:#2b2621}#po-me .pp-store.pp-drop.is-over{outline:none;background:none}#po-me.pp-dragging .pp-store.pp-drop{outline:none}#po-me.pp-dragging .pp-store.pp-drop>.pp-node{outline:2px dashed #c9a36b;outline-offset:-2px}',
     '@media (max-width:820px){.pp-cols{grid-template-columns:1fr}.pp-side{position:static}}',

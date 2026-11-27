@@ -1122,7 +1122,11 @@ function renderProjectConfigPanel() {
   // (.po-proj-config-move no CSS: borda + fundo leve + margem de respiro).
   const isFloor = isFloorSlot(slot);
   const positionRow = !isFloor ? `
-    <div class="po-proj-config-row"><span>${I18n.t('project.config_position_label')}</span><span>${I18n.t('project.config_position_value', { x: formatDimension(slot.x_mm, unit), y: formatDimension(slot.floor_height_mm, unit) })}</span></div>
+    <div class="po-proj-config-pos" title="${I18n.t('project.config_position_value', { x: formatDimension(slot.x_mm, unit), y: formatDimension(slot.floor_height_mm, unit) })}">
+      <span class="po-proj-config-pos-tit">${I18n.t('project.config_position_label')}</span>
+      <span class="po-proj-config-pos-v"><em>${I18n.t('project.position_left_label')}</em><b>${formatDimension(slot.x_mm, unit)}</b></span>
+      <span class="po-proj-config-pos-v"><em>${I18n.t('project.position_floor_label')}</em><b>${formatDimension(slot.floor_height_mm, unit)}</b></span>
+    </div>
   ` : '';
 
   // Uma linha [rótulo do eixo] [−] [+] — mesmo layout pros 3 eixos de
@@ -1334,11 +1338,13 @@ function renderProjectConfigPanel() {
 
   panel.innerHTML = `
     <h3>${slot.module.name}</h3>
+    <div class="po-proj-config-medidas">
     ${skuBlock}
     <div class="po-proj-config-dims">
       ${dimRow('width', I18n.t('step1.filter_width'))}
       ${dimRow('height', I18n.t('step1.filter_height'))}
       ${dimRow('depth', I18n.t('step1.filter_depth'))}
+    </div>
     </div>
     ${canto45Block}
     ${canto90Block}

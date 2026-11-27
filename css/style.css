@@ -6796,3 +6796,55 @@ body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }
 #po-proj-canvas-tools #po-proj-tb-help { align-items: flex-start; }
 #po-proj-canvas-tools #po-proj-dd-help { display: flex; align-items: center; height: 34px; margin-top: -3px; }
 body.proj-fullbleed #po-help-btn, body.proj-fullbleed #po-sup-btn { display: none !important; }
+
+
+/* ============================================================
+   PAINEL DO MÓDULO — visual novo (27/11/2026, Matt: "arruma esse visual, tá
+   feio"). Grid de 2 colunas (rótulo fixo + campo cheio), todos os campos na
+   mesma altura e largura, unidade dentro do campo, medidas (SKU + L/A/P)
+   agrupadas num cartão e a posição como rodapé discreto. Só CSS + o embrulho
+   .po-proj-config-medidas / .po-proj-config-pos no portal-06c.
+   Backup: _backup_painel_modulo_2026-11-27/.
+   ============================================================ */
+.po-proj-config-panel > h3 {
+  margin: 0 0 12px; padding: 0 0 10px; font-size: 16px; font-weight: 700; line-height: 1.25;
+  letter-spacing: -.01em; border-bottom: 1px solid var(--border, #e6e1d8);
+}
+.po-proj-config-medidas {
+  background: #faf8f4; border: 1px solid #ece6dc; border-radius: 10px;
+  padding: 10px 12px; margin: 0 0 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.po-proj-config-medidas .po-proj-config-dims { margin: 0; gap: 8px; }
+.po-proj-config-panel .po-proj-config-dim-row {
+  display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 32px;
+}
+.po-proj-config-panel .po-proj-config-dim-row > label {
+  min-width: 0; margin: 0; font-size: 12px; font-weight: 600; color: var(--muted, #766f64);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2;
+}
+.po-proj-config-panel .po-proj-config-dim-row .po-proj-dim-value-wrap { position: relative; display: block; width: 100%; }
+.po-proj-config-panel .po-proj-config-dim-row select,
+.po-proj-config-panel .po-proj-config-dim-row .po-proj-dim-input {
+  box-sizing: border-box; width: 100%; height: 32px; margin: 0; padding: 0 10px;
+  font-size: 13px; line-height: 30px; color: var(--text, #2b2621); text-align: left;
+  background-color: #fff; border: 1px solid #d9d2c6; border-radius: 7px; box-shadow: none;
+}
+.po-proj-config-panel .po-proj-config-dim-row select { padding-right: 26px; }
+.po-proj-config-panel .po-proj-config-dim-row .po-proj-dim-input { padding-right: 34px; }
+.po-proj-config-panel .po-proj-config-dim-row select:focus,
+.po-proj-config-panel .po-proj-config-dim-row .po-proj-dim-input:focus {
+  outline: none; border-color: var(--accent, #8a5a34); box-shadow: 0 0 0 3px rgba(138, 90, 52, .14);
+}
+.po-proj-config-panel .po-proj-config-dim-row .po-proj-dim-unit {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  min-width: 0; font-size: 11.5px; color: var(--muted, #766f64); pointer-events: none;
+}
+.po-proj-config-panel .po-proj-config-dim-row strong { font-size: 13px; font-weight: 600; }
+.po-proj-config-pos {
+  display: grid; grid-template-columns: 112px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: baseline;
+  margin: -2px 0 12px; padding: 0 12px; font-size: 12px; color: var(--muted, #766f64);
+}
+.po-proj-config-pos-tit { grid-row: span 2; font-weight: 600; }
+.po-proj-config-pos-v { grid-column: 2; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.po-proj-config-pos-v em { flex: 0 0 44px; font-style: normal; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; opacity: .8; }
+.po-proj-config-pos-v b { font-weight: 600; color: var(--text, #2b2621); font-size: 12.5px; white-space: nowrap; }
