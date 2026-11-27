@@ -6779,3 +6779,7 @@ body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }
 .po-proj-piece-toolbar .po-proj-piece-pos-opt:hover { background: #f1f5fb; }
 .po-proj-piece-toolbar .po-proj-piece-pos-opt.selected { border-color: #2f6fd8; font-weight: 600; background: #eef4ff; }
 .po-proj-piece-handle-menu { min-width: 290px; max-height: 420px; }
+
+/* Menu único de ajuda na barra do Projetos (27/11) — ver portal-25 (fim) */
+#po-proj-canvas-tools #po-proj-dd-help-panel .po-tb-icons-row { display: flex; flex-direction: column; gap: 2px; width: 100%; flex-wrap: nowrap; }
+body.proj-fullbleed #po-help-btn, body.proj-fullbleed #po-sup-btn { display: none !important; }

@@ -186,3 +186,33 @@
     fecharTodos() { menus.forEach((m) => m.fechar()); }
   };
 })();
+
+// MENU ÚNICO DE AJUDA (2026-11-27, Matt: "concentrar tutorial, ? e help num
+// dropdown de um único ícone"). Ajuda (guia) e Reportar problema moram no
+// cabeçalho do portal; aqui são atalhos que clicam neles. Na aba Projetos o
+// cabeçalho esconde os dois (CSS body.proj-fullbleed), pra ficar um lugar só.
+(function () {
+  'use strict';
+  const guia = document.getElementById('po-proj-hm-guide');
+  if (guia) guia.addEventListener('click', () => { const b = document.getElementById('po-help-btn'); if (b) b.click(); });
+  const sup = document.getElementById('po-proj-hm-sup');
+  if (!sup) return;
+  sup.addEventListener('click', () => { const b = document.getElementById('po-sup-btn'); if (b) b.click(); });
+  // o botão de suporte (portal-51) nasce depois do login e só pra quem pode
+  const sincroniza = () => {
+    const b = document.getElementById('po-sup-btn');
+    const on = !!(b && b.style.display !== 'none');
+    sup.style.display = on ? '' : 'none';
+    if (on) {
+      const t = (b.textContent || '').trim();
+      const sp = sup.querySelector('span');
+      if (sp && sp.textContent !== t) sp.textContent = t;
+      sup.title = b.title || t; sup.setAttribute('aria-label', t);
+    }
+    const g = document.getElementById('po-help-btn');
+    const sg = guia && guia.querySelector('span');
+    if (g && sg) { const t = (g.textContent || '').trim(); if (t && sg.textContent !== t) sg.textContent = t; }
+  };
+  sincroniza();
+  setInterval(sincroniza, 2000);
+})();
