@@ -330,9 +330,14 @@ const Photoreal = (() => {
     // Porta de vidro (migration 187, colors.render_kind) — mesma regra do
     // viewer3d.js: vidro de verdade (transmissão) tingido e alumínio metálico.
     if (color && color.render_kind === 'vidro') {
+      // 27/11 (Matt: "o vidro da porta de vidro não está incolor, está preto"):
+      // vidro de 4 mm como placa FINA — ior 1 (sem refração: o raio atravessa
+      // reto e enxerga o interior), transmissão total, dois lados e sem o
+      // modo transparent (que no path tracer escurecia). Antes (ior 1.5,
+      // transmission 0.92, só frente) o interior saía preto.
       return new T.MeshPhysicalMaterial({
-        color: color.swatch_hex || '#d6e6e3', roughness: 0.02, metalness: 0,
-        transmission: 0.92, ior: 1.5, thickness: 0.004, transparent: true, opacity: 1
+        color: color.swatch_hex || '#d6e6e3', roughness: 0, metalness: 0,
+        transmission: 1, ior: 1.0, thickness: 0, side: T.DoubleSide
       });
     }
     if (color && color.render_kind === 'metal') {
@@ -2309,18 +2314,49 @@ const Photoreal = (() => {
       // espessura pra FORA do ambiente (-intoDir) — a face interna coincide
       // com a linha da parede, onde os módulos encostam.
       const midX = ox + ax * (widthM / 2), midZ = oz + az * (widthM / 2);
-      const wallGeom = new T.BoxGeometry(widthM, ceilingM, WALL_THICK_M);
+      // 27/11 (Matt: "veja tudo que não está renderizando"): altura PRÓPRIA da
+      // parede (wall.ceilingMm, igual à vista 3D) e RECORTE das aberturas
+      // (porta/janela/passagem/arco/nicho — wall.openings, mesmo dado do
+      // makeWallPrism). Antes a parede era uma caixa cheia: janela não aparecia.
+      const wallH = (Number(wall.ceilingMm) > 0 ? Number(wall.ceilingMm) / 1000 : ceilingM);
+      const aberturas = (Array.isArray(wall.openings) ? wall.openings : []).map((o) => {
+        const x0 = Math.max(0, (Number(o.x_mm) || 0) / 1000), x1 = Math.min(widthM, x0 + (Number(o.width_mm) || 0) / 1000);
+        const y0 = Math.max(0, (Number(o.sill_mm) || 0) / 1000), y1 = Math.min(wallH - 0.005, y0 + (Number(o.height_mm) || 0) / 1000);
+        return (x1 - x0 > 0.02 && y1 - y0 > 0.02) ? { x0, x1, y0, y1 } : null;
+      }).filter(Boolean);
+      let wallGeom;
+      if (aberturas.length) {
+        const sh = new T.Shape([new T.Vector2(0, 0), new T.Vector2(widthM, 0), new T.Vector2(widthM, wallH), new T.Vector2(0, wallH)]);
+        aberturas.forEach((a) => {
+          // furo encostado no chão não triangula: sobe 1 mm (some atrás do piso)
+          const yb = Math.max(a.y0, 0.001);
+          sh.holes.push(new T.Path([new T.Vector2(a.x0, yb), new T.Vector2(a.x0, a.y1), new T.Vector2(a.x1, a.y1), new T.Vector2(a.x1, yb)]));
+        });
+        wallGeom = new T.ExtrudeGeometry(sh, { depth: WALL_THICK_M, bevelEnabled: false });
+        wallGeom.translate(-widthM / 2, -wallH / 2, -WALL_THICK_M / 2);
+      } else {
+        wallGeom = new T.BoxGeometry(widthM, wallH, WALL_THICK_M);
+      }
       const wallMesh = new T.Mesh(wallGeom, wallMat);
       wallMesh.rotation.y = rotY;
-      wallMesh.position.set(midX - ix * (WALL_THICK_M / 2), ceilingM / 2, midZ - iz * (WALL_THICK_M / 2));
-      if (!wallHiddenByCamera) sc.add(wallMesh);
+      wallMesh.position.set(midX - ix * (WALL_THICK_M / 2), wallH / 2, midZ - iz * (WALL_THICK_M / 2));
+      if (!wallHiddenByCamera && !wall.oculta) sc.add(wallMesh);
 
-      if (baseH > 0 && !wallHiddenByCamera) {
-        const bbGeom = new T.BoxGeometry(widthM, baseH, BASEBOARD_DEPTH_M);
-        const bb = new T.Mesh(bbGeom, baseboardMat);
-        bb.rotation.y = rotY;
-        bb.position.set(midX + ix * (BASEBOARD_DEPTH_M / 2), baseH / 2, midZ + iz * (BASEBOARD_DEPTH_M / 2));
-        sc.add(bb);
+      if (baseH > 0 && !wallHiddenByCamera && !wall.oculta) {
+        // rodapé em pedaços: não passa por dentro de porta/passagem
+        const cortes = aberturas.filter((a) => a.y0 < baseH).sort((a, b) => a.x0 - b.x0);
+        let x = 0;
+        const pedacos = [];
+        cortes.forEach((a) => { if (a.x0 > x) pedacos.push([x, a.x0]); x = Math.max(x, a.x1); });
+        if (x < widthM) pedacos.push([x, widthM]);
+        pedacos.forEach(([p0, p1]) => {
+          if (p1 - p0 < 0.005) return;
+          const bb = new T.Mesh(new T.BoxGeometry(p1 - p0, baseH, BASEBOARD_DEPTH_M), baseboardMat);
+          bb.rotation.y = rotY;
+          const c = (p0 + p1) / 2;
+          bb.position.set(ox + ax * c + ix * (BASEBOARD_DEPTH_M / 2), baseH / 2, oz + az * c + iz * (BASEBOARD_DEPTH_M / 2));
+          sc.add(bb);
+        });
       }
 
       [0, widthM].forEach((along) => {
@@ -2401,7 +2437,14 @@ const Photoreal = (() => {
     if (typeof sceneData.extras === 'function') {
       try {
         const extra = sceneData.extras(T, loadTexture);
-        if (extra) sc.add(extra);
+        if (extra) {
+          const fora = [];
+          extra.traverse((o) => {
+            if (o.isLine || o.isLineSegments || (o.isMesh && o.material && o.material.isMeshBasicMaterial && o.material.depthTest === false)) fora.push(o);
+          });
+          fora.forEach((o) => { if (o.parent) o.parent.remove(o); });
+          sc.add(extra);
+        }
       } catch (e) { console.warn('Render realista: bancada/extras não entraram', e); }
     }
 
@@ -2412,6 +2455,22 @@ const Photoreal = (() => {
     const floorPad = 1.5;
     const floorW = (maxX - minX) + floorPad * 2, floorD = (maxZ - minZ) + floorPad * 2;
     const floorGeom = new T.BoxGeometry(Math.max(floorW, 1), 0.02, Math.max(floorD, 1));
+    // Piso escolhido (27/11, portal-28 → sceneData.floorTex = { url, tile_mm,
+    // roughness, rotation_deg }) — mesma conta do aplicaTexturaPiso da vista 3D.
+    const ftx = sceneData.floorTex;
+    if (ftx && ftx.url && ftx.tile_mm) {
+      try {
+        const tex = loadTexture(ftx.url, false);
+        const tw = Number(ftx.tile_mm[0]) / 1000, th = Number(ftx.tile_mm[1]) / 1000;
+        const fw = Math.max(floorW, 1), fd = Math.max(floorD, 1);
+        if (Number(ftx.rotation_deg) === 90) { tex.rotation = Math.PI / 2; tex.repeat.set(fd / tw, fw / th); }
+        else { tex.rotation = 0; tex.repeat.set(fw / tw, fd / th); }
+        floorMat.map = tex;
+        floorMat.color.setScalar(0.86);
+        floorMat.roughness = ftx.roughness != null ? Number(ftx.roughness) : 0.6;
+        floorMat.needsUpdate = true;
+      } catch (e) { console.warn('Render realista: textura do piso não entrou', e); }
+    }
     const floorMesh = new T.Mesh(floorGeom, floorMat);
     floorMesh.position.set((minX + maxX) / 2, -0.01, (minZ + maxZ) / 2);
     sc.add(floorMesh);

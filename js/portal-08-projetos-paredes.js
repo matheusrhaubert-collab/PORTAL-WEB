@@ -5438,8 +5438,15 @@ if (projPhotorealBtn) {
         baseboard_h_m: roomSettings.baseboard_mm / 1000
       },
       onSave: savePhotorealRenderToProject,
-      // bancada de pedra no render realista (27/11, portal-30)
-      extras: (typeof bancadaParaFoto === 'function') ? bancadaParaFoto : null
+      // 27/11 — o que a vista 3D desenha e a foto não desenhava:
+      // bancada de pedra (portal-30) + Geometria da parede (portal-29) + piso (portal-28)
+      extras: (T, carregaTextura) => {
+        const g = new T.Group();
+        try { const b = (typeof bancadaParaFoto === 'function') ? bancadaParaFoto(T, carregaTextura) : null; if (b) g.add(b); } catch (e) { console.warn('foto: bancada', e); }
+        try { const geo = (typeof geometriaMontar === 'function') ? geometriaMontar(T, { wallColor: 0xf5f3f0, wallThicknessM: 0.05 }) : null; if (geo) g.add(geo); } catch (e) { console.warn('foto: geometria', e); }
+        return g.children.length ? g : null;
+      },
+      floorTex: (typeof pisoCfg === 'function' && typeof projectFloor !== 'undefined') ? pisoCfg(projectFloor) : null
     });
   };
 

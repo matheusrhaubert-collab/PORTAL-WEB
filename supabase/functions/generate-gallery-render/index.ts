@@ -399,31 +399,13 @@ Light: natural interior photography, soft and believable; no people; no text, le
 // poucas decorações". Base = render realista do path tracer recém-gerado.
 // Diferente do 'decorate' (família aparece de verdade): aqui o foco é só
 // FOTORREALISMO (luz, material, sombra) + pouquíssimos objetos neutros.
-function buildEnhancePrompt(colorLabel: string | null, colorRefCount: number, moduleRefCount: number): string {
-  // v2 (27/11, 1º teste do Matt: "não colocou pedra, nem teto, nem piso, tá
-  // praticamente igual. deixa a IA transformar em ambiente realista"): o
-  // AMBIENTE agora é transformado de verdade (piso, teto, paredes, bancada de
-  // pedra, backsplash, luz) — só a MARCENARIA continua intocável.
-  return `Transform this 3D render into a real, finished, professionally photographed interior. The attached image is a render of custom-made cabinetry that will be manufactured exactly as shown. Keep the SAME camera position, lens, angle, framing and crop, and keep the cabinetry identical — but build a complete, realistic room around it. The result must look like a real photo of a finished home, clearly different from a plain 3D render.
-
-TRANSFORM THE ROOM (this is required, not optional):
-- Floor: replace the blank floor with a real finished floor (e.g. wide-plank light oak, or large-format porcelain tile), with realistic texture, reflections and contact shadows under the cabinets.
-- Ceiling: if the ceiling or the top of the walls is visible or the room looks open at the top, complete it with a real finished ceiling (flat white drywall, optionally recessed downlights). Do not leave the room open or floating in a blank background.
-- Walls: real painted drywall with subtle texture; you may add a window with soft daylight on a wall area that has no cabinets.
-- Countertop: on every base/lower cabinet that has no countertop in the render, add a real stone countertop (quartz or granite, ~3 cm thick, slight overhang at the front) in a color that matches the cabinetry. Keep any sink, faucet and cooktop where they are, set into the stone.
-- Backsplash: between the countertop and the wall cabinets you may add a tile or stone backsplash.
-- Lighting: natural daylight from the window plus warm interior light; realistic shadows, ambient occlusion and reflections.
-
-CRITICAL — the cabinetry is fixed (fidelity always wins):
-Do not add, remove, move, mirror or replace any cabinet, panel, tower, shelf, niche, drawer, door or appliance.
-Do not change the number of doors, drawers, shelves or compartments, nor their left-to-right order.
-Do not change the shape, size, height, depth or position of any cabinet; do not straighten an L or U layout into a single wall.
-Do not change any cabinet finish: a smooth solid color stays that exact smooth solid color; a wood stays that exact wood, with the same grain direction. Never turn painted doors into wood or wood into paint. Glass doors stay glass doors.
-Do not add or change handles, legs, crown moldings or trims; keep the existing handles exactly as they are.
-Keep every reveal line, toe kick, filler and end panel exactly as shown.
-Keep any built-in LED that is visible in the source exactly where it is; do not add LED inside or under the cabinets.${colorLabel ? `\nThe real cabinet finishes are "${colorLabel}" — reproduce them exactly.` : ''}${colorRefCount ? `\nThe real swatch photos attached after the main image are the definitive color AND surface-pattern reference for the cabinetry.` : ''}${moduleRefCount ? `\nImages labeled 'module reference' are real photos of pieces used here: use them only for material/hardware realism, never to change the shape.` : ''}
-
-Decoration: light and tasteful — a few items only (for example a plant, a fruit bowl, a cutting board, a vase, a couple of books) on the countertop or open shelves. Never cover or hide any door, drawer or front. No people, no text, no letters, no logos.`;
+function buildEnhancePrompt(colorLabel: string | null, _colorRefCount: number, _moduleRefCount: number): string {
+  // v4 (27/11): o Matt testou no chat com um pedido CURTO ("tornar essa cozinha
+  // realista, mantendo o mesmo projeto de móveis, não pode mudar os móveis,
+  // composição ou cores. só deixa ela ambientada e realista") e saiu muito
+  // melhor que as listas longas de proibições (v1–v3). Prompt curto, só a
+  // imagem do render (sem swatches/referências), modelo de imagem mais novo.
+  return `Make this kitchen (or room) photorealistic, like a real professional interior photograph, keeping exactly the same furniture design. Do not change the cabinets, their composition, layout, proportions, handles or colors${colorLabel ? ` (finishes: ${colorLabel})` : ''}. Just stage it and make it real: a complete finished room with real floor, walls, ceiling with recessed lights, natural daylight, warm under-cabinet light, realistic materials, reflections and shadows, and a few tasteful decorative items. Keep the same camera angle and framing. No people, no text, no logos.`;
 }
 
 async function generateDecoratedImage(params: {
@@ -446,25 +428,37 @@ async function generateDecoratedImage(params: {
         : buildDecoratePrompt(familyBrief, colorLabel, colorRefImages.length, moduleRefImages.length) },
     { inline_data: { mime_type: mainImage.mimeType, data: mainImage.data } }
   ];
-  colorRefImages.forEach((img) => {
-    parts.push({ text: `Real swatch/finish photo — color reference for "${img.label || 'finish'}":` });
-    parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
-  });
-  moduleRefImages.forEach((img) => {
-    parts.push({ text: `Reference photo for the piece named "${img.label || 'furniture piece'}" — labeled 'module reference':` });
-    parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
-  });
+  if (!params.enhance) {
+    colorRefImages.forEach((img) => {
+      parts.push({ text: `Real swatch/finish photo — color reference for "${img.label || 'finish'}":` });
+      parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
+    });
+    moduleRefImages.forEach((img) => {
+      parts.push({ text: `Reference photo for the piece named "${img.label || 'furniture piece'}" — labeled 'module reference':` });
+      parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
+    });
+  }
   const requestBody: Record<string, unknown> = { contents: [{ parts }] };
   if (aspectRatio) requestBody.generationConfig = { imageConfig: { aspectRatio } };
-  const geminiRes = await fetch(GEMINI_ENDPOINT, {
-    method: 'POST',
-    headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody)
-  });
-  if (!geminiRes.ok) {
-    const errText = await geminiRes.text();
-    console.error(`Gemini API error decorate (${geminiRes.status}):`, errText);
-    return { error: `Gemini API error (${geminiRes.status}): ${errText}`, status: 502 };
+  // Render com IA: modelo de imagem mais novo primeiro (ENHANCE_IMAGE_MODEL
+  // força outro); se ele não existir/recusar, volta pro de sempre.
+  const modelos = params.enhance
+    ? [Deno.env.get('ENHANCE_IMAGE_MODEL') || '', 'gemini-3-pro-image-preview', GEMINI_MODEL].filter((m, k, a) => m && a.indexOf(m) === k)
+    : [GEMINI_MODEL];
+  let geminiRes: Response | null = null;
+  let errText = '';
+  for (const modelo of modelos) {
+    geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    if (geminiRes.ok) { console.log('generate-gallery-render: modelo', modelo); break; }
+    errText = await geminiRes.text();
+    console.error(`Gemini API error ${params.enhance ? 'enhance' : 'decorate'} [${modelo}] (${geminiRes.status}):`, errText);
+  }
+  if (!geminiRes || !geminiRes.ok) {
+    return { error: `Gemini API error (${geminiRes ? geminiRes.status : 0}): ${errText}`, status: 502 };
   }
   const geminiJson = await geminiRes.json();
   const responseParts = geminiJson?.candidates?.[0]?.content?.parts || [];
