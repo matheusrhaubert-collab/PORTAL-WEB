@@ -6782,4 +6782,13 @@ body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }
 
 /* Menu único de ajuda na barra do Projetos (27/11) — ver portal-25 (fim) */
 #po-proj-canvas-tools #po-proj-dd-help-panel .po-tb-icons-row { display: flex; flex-direction: column; gap: 2px; width: 100%; flex-wrap: nowrap; }
+/* 27/11: a fileira herdava height:34px/margin-top:-3px da barra e os itens
+   do menu de ajuda saíam um em cima do outro; no painel (coluna com rolagem)
+   nada encolhe — rola. */
+#po-proj-canvas-tools #po-proj-dd-help-panel .po-tb-icons-row { height: auto; margin-top: 0; flex: none; }
+#po-proj-canvas-tools .po-tb-dd-panel > *,
+#po-proj-canvas-tools .po-tb-dd-panel .po-tb-icons-row > * { flex: none; }
+/* botão "Reportar problema" no cabeçalho: sem a margem de 14 px do button global */
+#po-sup-btn { margin: 0; display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
+#po-sup-btn svg { width: 15px; height: 15px; flex: none; }
 body.proj-fullbleed #po-help-btn, body.proj-fullbleed #po-sup-btn { display: none !important; }

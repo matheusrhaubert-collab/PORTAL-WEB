@@ -59,7 +59,7 @@ function supCss() {
   if (document.getElementById('po-sup-css')) return;
   const st = document.createElement('style'); st.id = 'po-sup-css';
   st.textContent = ''
-    + '#po-sup-btn{display:inline-flex;align-items:center;gap:5px}#po-sup-btn svg{width:16px;height:16px;flex:none}'
+    + '#po-sup-btn{display:inline-flex;align-items:center;gap:5px;margin:0;vertical-align:middle}#po-sup-btn svg{width:15px;height:15px;flex:none}'
     + '#po-sup{position:fixed;inset:0;z-index:3500;background:rgba(30,26,22,.45);display:flex;align-items:center;justify-content:center}'
     + '#po-sup .sp-box{background:#fff;border-radius:12px;width:min(880px,96vw);height:min(760px,92vh);display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(0,0,0,.25);color:#2b2621}'
     + '#po-sup .sp-hd{display:flex;align-items:center;gap:12px;padding:14px 18px 0}'
