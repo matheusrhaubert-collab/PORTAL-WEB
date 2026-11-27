@@ -182,7 +182,15 @@ window.LEGNO_ORDER_TERMS = {
   async function view(orderId) {
     const r = await supabaseClient.from('order_terms_acceptances').select('*').eq('order_id', orderId).order('accepted_at', { ascending: true });
     if (r.error) return alert(/order_terms_acceptances|schema cache|relation/i.test(r.error.message || '') ? U('need332') : r.error.message);
-    if (!r.data || !r.data.length) return alert(U('none'));
+    // Termo do Render com IA (27/11, migration 353) — fica junto do aceite do pedido,
+    // pelo projeto de origem (orders.source_project_id). Ver portal-53-render-ia.js.
+    let iaHtml = '';
+    try {
+      const so = await supabaseClient.from('orders').select('source_project_id').eq('id', orderId).maybeSingle();
+      if (so.data && so.data.source_project_id && window.LegnoRenderIA) iaHtml = await LegnoRenderIA.recordsHtml(so.data.source_project_id);
+    } catch (e) { iaHtml = ''; }
+    if ((!r.data || !r.data.length) && !iaHtml) return alert(U('none'));
+    r.data = r.data || [];
     const dh = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString() + ' (' + d.toISOString() + ')'; };
     // o número de fábrica nasce na aprovação, DEPOIS do aceite: mostra o atual do pedido
     let numAtual = '';
@@ -201,6 +209,7 @@ window.LEGNO_ORDER_TERMS = {
         + '<tr><td>' + esc(U('ip')) + '</td><td class="mono">' + esc(a.ip || '—') + '</td></tr>'
         + '<tr><td>' + esc(U('ua')) + '</td><td class="mono">' + esc(a.user_agent || '—') + '</td></tr>'
         + '</table><pre>' + esc(a.terms_text || '') + '</pre>').join('')
+      + iaHtml
       + '</body></html>';
     w.document.open(); w.document.write(html); w.document.close();
   }

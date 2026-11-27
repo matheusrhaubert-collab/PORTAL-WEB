@@ -41,6 +41,7 @@ APP.menu = [
     { hash: '#/producao',    label: 'Controle de produção' },
     { hash: '#/corte-ao-vivo', label: 'Corte ao vivo (teste)' },
     { hash: '#/apontar-pecas', label: 'Apontar peças' },
+    { hash: '#/promob-lista', label: 'Lista PROMOB' },
     { hash: '#/apontamento', label: 'Apontamentos' },
     { hash: '#/processos',   label: 'Processos' },
     { hash: '#/embalagem',   label: 'Embalagem' },
@@ -308,6 +309,8 @@ APP.routes = [
   /* Apontar peças (18/11, migration 305) — peça a peça por lote, vai pro portal. erp/js/screens-apontar-pecas.js */
   { re: /^#\/apontar-pecas$/,          load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
   { re: /^#\/apontar-pecas\/([^/]+)$/, load: APONTAR.load, render: APONTAR.render, nav: '#/apontar-pecas', after: APONTAR.after },
+  /* Lista PROMOB (27/11, migration 353) — CSV do lote do PROMOB vira a lista de corte de cada pedido PROMOB. erp/js/screens-promob-lista.js */
+  { re: /^#\/promob-lista$/, load: PROMOBL.load, render: PROMOBL.render, nav: '#/promob-lista', after: PROMOBL.after },
   { re: /^#\/apontamento$/,                                                render: ScreensProducao.apontamento,   nav: '#/apontamento' },
   /* Catálogo de produtos em modo leitura (visão da fábrica). Fica fora do
      menu porque ENGENHARIA → Cadastro de produtos abre o admin, que é onde

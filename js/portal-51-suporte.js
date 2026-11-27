@@ -115,9 +115,27 @@ function supCss() {
   document.head.appendChild(st);
 }
 
+// 27/11 (Matt: "quando está carregando ainda aparece lá no canto direito um
+// botão de problema"): enquanto showLoggedIn (portal-09) carrega, o portal
+// fica na aba New Quote e só depois pula pra Projetos — o botão do cabeçalho
+// piscava. Agora ele só nasce quando o login terminou de carregar (ou 20 s,
+// se o showLoggedIn rodou antes deste arquivo) e nunca na aba Projetos (lá
+// ele mora no menu HELP da barra).
+const supCarga = { pronto: false };
+function supNaAbaProjetos() {
+  const a = document.querySelector('#po-sidebar .portal-tab-btn.active');
+  return document.body.classList.contains('proj-fullbleed') || !!(a && a.getAttribute('data-tab') === 'po-tab-projects');
+}
 function supBotao() {
   let btn = document.getElementById('po-sup-btn');
   if (!supOn()) { if (btn) btn.style.display = 'none'; return; }
+  // o fim do carregamento também aparece como "saiu da aba New Quote" (o
+  // showLoggedIn pula pra Projetos) — vale se o login começou antes do embrulho
+  if (!supCarga.pronto) {
+    const a = document.querySelector('#po-sidebar .portal-tab-btn.active');
+    if (a && a.getAttribute('data-tab') !== 'po-tab-new-order') supCarga.pronto = true;
+  }
+  if (!supCarga.pronto) { if (btn) btn.style.display = 'none'; return; }
   if (!btn) {
     const ref = document.getElementById('po-help-btn');
     if (!ref || !ref.parentNode) return;
@@ -127,7 +145,10 @@ function supBotao() {
     btn.addEventListener('click', () => supAbrir());
     ref.parentNode.insertBefore(btn, ref);
   }
+  // visibility (não display): o menu HELP (portal-25) lê style.display pra
+  // saber se o suporte está ligado pra essa conta
   btn.style.display = '';
+  btn.style.visibility = supNaAbaProjetos() ? 'hidden' : '';
   const txt = supT('btn');
   if (btn.getAttribute('data-txt') !== txt) {
     btn.setAttribute('data-txt', txt);
@@ -422,8 +443,21 @@ async function supSalvaAdmin(id) {
     if (e.key === 'Escape' && document.getElementById('po-sup')) { e.stopPropagation(); supFechar(); }
   }, true);
   const tick = () => supBotao();
+  // embrulha o showLoggedIn: botão só depois de carregar tudo
+  try {
+    if (typeof showLoggedIn === 'function') {
+      const orig = showLoggedIn;
+      showLoggedIn = async function () {   // eslint-disable-line no-global-assign
+        supCarga.pronto = false; tick();
+        try { return await orig.apply(this, arguments); } finally { supCarga.pronto = true; setTimeout(tick, 50); }
+      };
+    }
+  } catch (e) { supCarga.pronto = true; }
+  setTimeout(() => { supCarga.pronto = true; tick(); }, 20000);
+  // troca de aba: reavalia na hora
+  document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('.portal-tab-btn') && e.isTrusted) { supCarga.pronto = true; setTimeout(tick, 30); } }, true);
   [800, 2500, 6000].forEach((ms) => setTimeout(tick, ms));
-  setInterval(tick, 5000);
+  setInterval(tick, 2000);
 })();
 
 window.LegnoSuporte = { abrir: supAbrir };

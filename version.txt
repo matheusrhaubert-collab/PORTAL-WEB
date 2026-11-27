@@ -1,3 +1,3 @@
-﻿data: 2026-11-27 13:00:55
-cache: 202611271300
-mensagem: pedido PROMOB: Importar PROMOB na aba Orders (XML com preco), coluna Origem LEGNO STUDIO / PROMOB, liberar PROMOB por loja em People
+﻿data: 2026-11-27 13:10:46
+cache: 202611271310
+mensagem: Render com IA: render realista + IA (mesma camera, poucas decoracoes) + termo assinado com nome gravado no pedido

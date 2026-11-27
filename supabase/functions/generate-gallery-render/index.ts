@@ -393,6 +393,29 @@ Decoration (zone-limited): add objects ONLY (a) inside open niches and on open s
 Light: natural interior photography, soft and believable; no people; no text, letters or logos added to the image. If anything you would add conflicts with keeping the cabinetry identical, leave it out — fidelity of the cabinetry always wins over decoration.`;
 }
 
+// ---------- modo 'enhance' (Gemini) — RENDER COM IA (27/11/2026) ----------
+// Matt: "ele gera o render normal, mas aí entra a IA depois e gera uma imagem
+// realista sem mexer no projeto. usando exatamente a mesma câmera, acrescenta
+// poucas decorações". Base = render realista do path tracer recém-gerado.
+// Diferente do 'decorate' (família aparece de verdade): aqui o foco é só
+// FOTORREALISMO (luz, material, sombra) + pouquíssimos objetos neutros.
+function buildEnhancePrompt(colorLabel: string | null, colorRefCount: number, moduleRefCount: number): string {
+  return `EDIT this photo — do not create a new one. The attached image is a photorealistic render of custom-made cabinetry that will be manufactured exactly as shown; treat it as a blueprint that must be followed with zero deviation. The output must be the SAME photo: same camera position, same lens, same angle, same framing and crop, same cabinetry. Your only job is to make it look like a real professional interior photograph.
+
+CRITICAL — the cabinetry is fixed:
+Do not add, remove, move, mirror or replace any cabinet, panel, tower, shelf, niche, drawer, door, countertop or appliance.
+Do not change the number of doors, drawers, shelves or compartments, nor their left-to-right order.
+Do not change the shape, size, depth or position of any part; do not straighten an L or U layout into a single wall.
+Do not change any finish: a smooth solid color stays that exact smooth solid color; a wood stays that exact wood, with the same grain direction. Never turn painted doors into wood or wood into paint.
+Do not add handles, legs, crown moldings or trims that are not in the source; keep the existing handles exactly as they are.
+Keep every reveal line, toe kick, filler and end panel exactly as shown.
+Keep any built-in LED that is visible in the source exactly where it is; do not add LED anywhere else.${colorLabel ? `\nThe real finishes are "${colorLabel}" — reproduce them exactly.` : ''}${colorRefCount ? `\nThe real swatch photos attached after the main image are the definitive color AND surface-pattern reference for the cabinetry.` : ''}${moduleRefCount ? `\nImages labeled 'module reference' are real photos of pieces used here: use them only for material/hardware realism, never to change the shape.` : ''}
+
+Realism: natural soft daylight, believable reflections, contact shadows and ambient occlusion, real material texture on walls and floor. Keep walls, floor and ceiling where they are.
+
+Decoration (very light, a FEW items only — at most 3 to 5 small objects in total): for example a small plant, a bowl, a couple of books or a vase, placed only on countertops, open shelves or open niches. Never cover, hide or overlap any door, drawer or front. Do NOT add any furniture, rug over the cabinetry, people, text, letters or logos. If anything you would add conflicts with keeping the cabinetry identical, leave it out — fidelity of the cabinetry always wins.`;
+}
+
 async function generateDecoratedImage(params: {
   mainImage: { mimeType: string; data: string };
   familyBrief: string | null;
@@ -400,6 +423,7 @@ async function generateDecoratedImage(params: {
   colorLabel: string | null;
   colorRefImages: { mimeType: string; data: string; label: string | null }[];
   moduleRefImages: { mimeType: string; data: string; label: string | null }[];
+  enhance?: boolean;
 }): Promise<{ imageDataUrl?: string; error?: string; status?: number }> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) {
@@ -407,7 +431,9 @@ async function generateDecoratedImage(params: {
   }
   const { mainImage, familyBrief, aspectRatio, colorLabel, colorRefImages, moduleRefImages } = params;
   const parts: Record<string, unknown>[] = [
-    { text: buildDecoratePrompt(familyBrief, colorLabel, colorRefImages.length, moduleRefImages.length) },
+    { text: params.enhance
+        ? buildEnhancePrompt(colorLabel, colorRefImages.length, moduleRefImages.length)
+        : buildDecoratePrompt(familyBrief, colorLabel, colorRefImages.length, moduleRefImages.length) },
     { inline_data: { mime_type: mainImage.mimeType, data: mainImage.data } }
   ];
   colorRefImages.forEach((img) => {
@@ -504,7 +530,7 @@ Deno.serve(async (req: Request) => {
     // (OpenAI, foto de vitrine isolada em fundo branco — ver comentário do
     // topo do arquivo).
     const rawMode = body && body.mode;
-    const mode = rawMode === 'catalog' ? 'catalog' : (rawMode === 'decorate' ? 'decorate' : 'gallery');
+    const mode = rawMode === 'catalog' ? 'catalog' : (rawMode === 'decorate' ? 'decorate' : (rawMode === 'enhance' ? 'enhance' : 'gallery'));
     // Texto livre da família (modo 'decorate') — sem quebra de linha e com teto,
     // só higiene básica contra prompt injection.
     const rawFamilyBrief = body && body.familyBrief;
@@ -613,6 +639,8 @@ Deno.serve(async (req: Request) => {
       ? await generateCatalogImage({ mainImage, moduleRefImages: catalogRefImages, colorLabel })
       : mode === 'decorate'
       ? await generateDecoratedImage({ mainImage, familyBrief, aspectRatio, colorLabel, colorRefImages, moduleRefImages })
+      : mode === 'enhance'
+      ? await generateDecoratedImage({ mainImage, familyBrief: null, aspectRatio, colorLabel, colorRefImages, moduleRefImages, enhance: true })
       : await generateGalleryImage({ mainImage, moduleRefImages, colorRefImages, angleRefImages, roomLabel, colorLabel, aspectRatio });
 
     if (result.error) {
