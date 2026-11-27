@@ -1389,7 +1389,8 @@ function handleFrontKind(p, insideDrawer) {
   if ((p.origin || 'fabricacao') === 'comprado' && !p.is_module) return null;
   const ehFrente = p._layoutKind === 'front' || p.position_role === 'front';
   if (!ehFrente) return null;
-  if (handleFrontIsGlass(p)) return null;
+  // Porta de vidro com perfil de alumínio: continua sendo frente, mas só aceita
+  // o puxador de BORDA (Roma) — ver applyHandleConfigDeepInner (27/11).
   const hs = handleHingeSideOfRow(p);
   if (hs === 'left' || hs === 'right') return 'door';
   if (hs === 'top') return 'lift';
@@ -1478,6 +1479,20 @@ function handleEdgeShrink(p, edge, mm) {
 
 // Quantos puxadores vão nesta frente: 2 só em frente de GAVETA, com knob
 // (1 furo) e cfg.drawer_qty = 2. Barra e porta são sempre 1.
+// A frente `pieceId` é porta de vidro com alumínio (só aceita puxador de borda)?
+function handleFrontIsGlassById(pieces, pieceId) {
+  let achou = false;
+  (function anda(list) {
+    (list || []).some((p) => {
+      if (!p || achou) return achou;
+      if (p.id === pieceId || p.piece_id === pieceId) { achou = handleFrontIsGlass(p); return true; }
+      if (p.is_module && Array.isArray(p.child_pieces)) anda(p.child_pieces);
+      return achou;
+    });
+  })(pieces);
+  return achou;
+}
+
 function handleQtyOnFront(cfg, kind) {
   // knob = tudo que não é barra (o knob Turim tem 2 parafusos a 16 mm e conta como knob)
   return (kind === 'drawer' && cfg && Number(cfg.drawer_qty) === 2 && cfg.tipo !== 'barra') ? 2 : 1;
@@ -1507,6 +1522,10 @@ function applyHandleConfigDeepInner(list, cfg, insideDrawer) {
       } else if (!cfgMod.item_id) { out.push(p); return; }
       const cfgDaPeca = cfg;
       cfg = cfgMod;
+      // VIDRO + ALUMÍNIO (2026-11-27, Matt: "porta de vidro alumínio só pode
+      // usar o puxador sobreposto"): só o de borda (Roma, formato 'borda');
+      // qualquer outro = esta porta fica sem puxador.
+      if (handleFrontIsGlass(p) && cfgDaPeca.formato !== 'borda') { out.push(p); return; }
       p = Object.assign({}, p, { _handleCfg: cfgDaPeca });
     }
     if (kind) {
@@ -1986,6 +2005,7 @@ if (typeof window !== 'undefined') {
   window.handleEdgeSide = handleEdgeSide;
   window.handleModelFromItem = handleModelFromItem;
   window.piecesHaveHandleFront = piecesHaveHandleFront;
+  window.handleFrontIsGlassById = handleFrontIsGlassById;
   window.attachHandleToObject3D = attachHandleToObject3D;
 }
 

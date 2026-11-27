@@ -6771,3 +6771,11 @@ body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }
 .po-proj-lib-item-del svg { width: 14px; height: 14px; }
 /* tela estreita: a coluna da esquerda encolhe antes do desenho */
 @media (max-width: 1100px) { .po-proj-builder-itens { flex-basis: 210px; } }
+
+/* Posição do puxador só desta porta/frente (27/11, portal-06c toggleProjectPieceHandleMenu) */
+.po-proj-piece-handle-menu .po-proj-piece-pos { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid #e3ddd2; }
+.po-proj-piece-handle-menu .po-proj-piece-pos-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px; }
+.po-proj-piece-toolbar .po-proj-piece-pos-opt { width: auto; padding: 3px 8px; font-size: 11px; color: #333; background: #fff; border: 1px solid #d6d0c4; border-radius: 4px; cursor: pointer; }
+.po-proj-piece-toolbar .po-proj-piece-pos-opt:hover { background: #f1f5fb; }
+.po-proj-piece-toolbar .po-proj-piece-pos-opt.selected { border-color: #2f6fd8; font-weight: 600; background: #eef4ff; }
+.po-proj-piece-handle-menu { min-width: 290px; max-height: 420px; }

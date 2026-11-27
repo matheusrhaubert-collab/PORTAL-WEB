@@ -5952,16 +5952,56 @@ function toggleProjectPieceHandleMenu(bar, slot) {
   const temProprio = Object.prototype.hasOwnProperty.call(mapa, pid);
   const atual = temProprio ? (mapa[pid] || '') : null;   // null = segue o módulo
   const item = (valor, rotulo, visual, marcado) => `<button type="button" class="po-proj-piece-handle-opt${marcado ? ' selected' : ''}" data-v="${valor}">${visual || ''}<span>${rotulo}</span></button>`;
-  menu.innerHTML = item('__modulo', I18n.t('project.piece_handle_same'), '', atual === null)
+  let pecas = null;
+  try { pecas = projectSlotAllPiecesBeforeRemoval(slot); } catch (e) { pecas = slot.pieces; }
+  // porta de vidro com alumínio: só o puxador de borda (Roma) — 27/11
+  const vidro = typeof handleFrontIsGlassById === 'function' && handleFrontIsGlassById(pecas, pid);
+  const grupos = projectHandleGroups().map((gr) => ({ titulo: gr.titulo, modelos: vidro ? gr.modelos.filter((m) => m.formato === 'borda') : gr.modelos }))
+    .filter((gr) => gr.modelos.length);
+  // POSIÇÃO SÓ DESTA FRENTE (27/11): mesma lista do painel do módulo, em botões de texto
+  const kind = (typeof handleFrontKindById === 'function') ? handleFrontKindById(pecas, pid) : null;
+  const posMapa = (slot.handle && slot.handle.posPeca && slot.handle.posPeca[pid]) || null;
+  const h = slot.handle || {};
+  const ehGaveta = kind === 'drawer';
+  const chavePos = ehGaveta ? 'drawerPos' : 'doorPos', chaveOri = ehGaveta ? 'drawerOrient' : 'doorOrient';
+  const posAtual = (posMapa && posMapa[chavePos]) || h[chavePos] || (ehGaveta ? 'center' : 'auto');
+  const oriAtual = (posMapa && posMapa[chaveOri]) || h[chaveOri] || 'auto';
+  const posOpts = ehGaveta ? ['center', 'top'] : ['auto', 'top', 'middle', 'bottom', 'center_top', 'center_middle', 'center_bottom'];
+  const oriOpts = ehGaveta ? ['auto', 'vertical'] : ['vertical', 'horizontal'];
+  const oriRot = (v) => I18n.t('project.handle_orient_' + (v === 'auto' ? (ehGaveta ? 'horizontal' : 'auto') : v));
+  const oriMarc = (v) => (v === oriAtual) || (!ehGaveta && oriAtual === 'auto' && v === 'vertical');
+  const bt = (chave, v, rot, marc) => `<button type="button" class="po-proj-piece-pos-opt${marc ? ' selected' : ''}" data-pk="${chave}" data-v="${v}">${rot}</button>`;
+  const temPuxador = atual !== '' && (atual !== null || !!h.itemId);
+  const posHtml = (kind && temPuxador) ? `<div class="po-proj-piece-pos">
+      <span class="po-proj-handle-grupo-titulo">${I18n.t('project.handle_row_pos')}${posMapa ? '' : ' · ' + I18n.t('project.piece_handle_same')}</span>
+      <div class="po-proj-piece-pos-row">${posOpts.map((v) => bt(chavePos, v, I18n.t('project.handle_pos_' + v), v === posAtual)).join('')}</div>
+      <span class="po-proj-handle-grupo-titulo">${I18n.t('project.handle_row_orient')}</span>
+      <div class="po-proj-piece-pos-row">${oriOpts.map((v) => bt(chaveOri, v, oriRot(v), oriMarc(v))).join('')}
+        ${posMapa ? `<button type="button" class="po-proj-piece-pos-opt" data-pk="__reset" title="${I18n.t('project.piece_handle_same')}">↺</button>` : ''}</div>
+    </div>` : '';
+  menu.innerHTML = posHtml
+    + item('__modulo', I18n.t('project.piece_handle_same'), '', atual === null)
     + item('', I18n.t('project.handle_none'), '', atual === '')
-    + projectHandleGroups().map((gr) => `<span class="po-proj-handle-grupo-titulo">${escapeHtmlCutlist(gr.titulo)}</span>`
+    + grupos.map((gr) => `<span class="po-proj-handle-grupo-titulo">${escapeHtmlCutlist(gr.titulo)}</span>`
       + gr.modelos.map((m) => item(m.item_id, escapeHtmlCutlist(m.name), projectHandleCardVisual(m, 36), atual === m.item_id)).join('')).join('');
   menu.style.display = 'flex';
+  const reabre = () => {
+    renderProjectPieceToolbar();
+    refreshProject3DResizeArrows();
+    const nb = document.getElementById('po-proj-piece-toolbar');
+    if (nb) toggleProjectPieceHandleMenu(nb, projectSlots.find((s) => s.id === slot.id) || slot);
+  };
   menu.querySelectorAll('.po-proj-piece-handle-opt').forEach((el) => el.addEventListener('click', () => {
     const v = el.dataset.v;
     setProjectSlotPieceHandle(slot, pid, v === '__modulo' ? undefined : v);
     renderProjectPieceToolbar();
     refreshProject3DResizeArrows();
+  }));
+  menu.querySelectorAll('.po-proj-piece-pos-opt').forEach((el) => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const k = el.dataset.pk;
+    setProjectSlotPiecePos(slot, pid, k === '__reset' ? null : { [k]: el.dataset.v });
+    reabre();
   }));
 }
 

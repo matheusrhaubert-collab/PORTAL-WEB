@@ -153,13 +153,18 @@ const vidroAl = { id: 'pv', is_module: true, reference: 'Porta', module_name: 'G
   child_pieces: [folha('pf', 'Perfil', 'W', 'H', '20', '0', '0', '0', { origin: 'comprado' })] };
 const shakerVidro = { id: 'sv', is_module: true, reference: 'Porta A', module_name: 'Porta Shaker', position_role: 'free', _layoutKind: 'front', opening_type: 'hinge_left',
   child_pieces: [folha('m1', 'Montante', '76', 'H', '19.5'), folha('v1', 'Vidro 4mm', 'W-152', 'H-152', '4', '76', '76', '0', { origin: 'comprado' })] };
-ok('vidro com perfil de alumínio: sem puxador', g.handleFrontKind(vidroAl) === null);
+// 27/11: vidro + alumínio é frente, mas só aceita o puxador de BORDA (Roma)
+ok('vidro com perfil de alumínio: continua sendo porta', g.handleFrontKind(vidroAl) === 'door');
+const vComum = g.applyHandleConfigDeep([vidroAl], Object.assign({}, knob, { door_pos: 'top' }));
+ok('vidro + alumínio com knob: fica SEM puxador', vComum.length === 1 && !vComum[0].handle);
+const vBorda = g.applyHandleConfigDeep([vidroAl], Object.assign({}, knob, { formato: 'borda', tipo: 'barra', door_pos: 'top' }));
+ok('vidro + alumínio com puxador de borda: leva', !!(vBorda[0] && vBorda[0].handle && vBorda[0].handle.formato === 'borda'));
 ok('Shaker Glass (moldura de madeira): LEVA puxador', g.handleFrontKind(shakerVidro) === 'door');
 const sv = g.applyHandleConfigDeep([lateral, Object.assign({}, shakerVidro, { child_pieces: [folha('m1', 'Montante esq.', '60', 'H', '19.5'), folha('m2', 'Montante dir.', '60', 'H', '19.5', 'W-60'), folha('v1', 'Vidro', 'W-100', 'H-100', '4', '50', '50', '0', { origin: 'comprado' })] })], Object.assign({}, knob, { door_pos: 'top' }));
 ok('Shaker: furo no meio do montante (60 / 2 = 30)', sv[1].handle.lateral_mm === 30 && hp(sv[1].handle, 400, 700).points[0].u === 370, sv[1].handle.lateral_mm);
 const s76 = g.applyHandleConfigDeep([Object.assign({}, shakerVidro, { id: 's76', child_pieces: [folha('n1', 'Montante', '76', 'H', '19.5')] })], Object.assign({}, knob, { door_pos: 'top' }));
 ok('moldura de 76: furo a 38 da borda', hp(s76[0].handle, 400, 700).points[0].u === 362);
-ok('módulo só com porta de vidro: seletor some', g.piecesHaveHandleFront([lateral, vidroAl]) === false);
+ok('módulo só com porta de vidro: seletor aparece (pro puxador de borda)', g.piecesHaveHandleFront([lateral, vidroAl]) === true);
 
 console.log('\n— marcação no .ban');
 const I = D._internals;

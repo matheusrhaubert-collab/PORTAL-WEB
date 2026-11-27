@@ -3797,20 +3797,37 @@ function projectSlotHandleCfg(slot) {
   const limpo = (m) => { const c = Object.assign({}, m); delete c.foto_url; return c; }; // foto é só da interface
   const m = h.itemId ? projectHandleModels().find((x) => x.item_id === h.itemId) : null;
   // puxador só de UMA frente (duplo clique na porta): h.porPeca = { pieceId: itemId | '' }
+  // POSIÇÃO SÓ DESTA FRENTE (2026-11-27, Matt: "ao dar dois cliques e
+  // selecionar uma porta também quero mudar o puxador ou posição só da porta
+  // selecionada"): h.posPeca = { pieceId: { doorPos, doorOrient, drawerPos, drawerOrient } }.
+  const autoPorta = (v) => {
+    if (v && v !== 'auto') return v;
+    const chao = Number(slot.floor_height_mm) || 0, H = Number(slot.height_mm) || 0;
+    return chao >= 900 ? 'bottom' : (H >= 1500 ? 'middle' : 'top');
+  };
+  const posDe = (pid) => {
+    const o = (h.posPeca || {})[pid];
+    if (!o) return null;
+    const r = {};
+    if (o.doorPos) r.door_pos = autoPorta(o.doorPos);
+    if (o.doorOrient) r.door_orient = o.doorOrient;
+    if (o.drawerPos) r.drawer_pos = o.drawerPos;
+    if (o.drawerOrient) r.drawer_orient = o.drawerOrient;
+    return Object.keys(r).length ? r : null;
+  };
   let porPeca = null;
-  Object.keys(h.porPeca || {}).forEach((pid) => {
-    const v = h.porPeca[pid];
+  const pids = Object.keys(h.porPeca || {}).concat(Object.keys(h.posPeca || {}).filter((k) => !Object.prototype.hasOwnProperty.call(h.porPeca || {}, k)));
+  pids.forEach((pid) => {
+    const temItem = Object.prototype.hasOwnProperty.call(h.porPeca || {}, pid);
+    const v = temItem ? h.porPeca[pid] : (m ? m.item_id : null);
     const mm = v ? projectHandleModels().find((x) => x.item_id === v) : null;
     if (v && !mm) return;            // item sumiu do catálogo: vale o do módulo
+    if (!temItem && !mm) return;     // só posição, e o módulo está sem puxador
     porPeca = porPeca || {};
-    porPeca[pid] = mm ? limpo(mm) : null;
+    porPeca[pid] = mm ? Object.assign(limpo(mm), posDe(pid) || {}) : null;
   });
   if (!m && !porPeca) return null;
-  let door = h.doorPos || 'auto';
-  if (door === 'auto') {
-    const chao = Number(slot.floor_height_mm) || 0, H = Number(slot.height_mm) || 0;
-    door = chao >= 900 ? 'bottom' : (H >= 1500 ? 'middle' : 'top');
-  }
+  const door = autoPorta(h.doorPos || 'auto');
   const cfg = Object.assign({}, m ? limpo(m) : { item_id: null }, { door_pos: door, drawer_pos: h.drawerPos || 'center',
     door_orient: h.doorOrient || 'auto', drawer_orient: h.drawerOrient || 'auto',
     // 2 knobs por gaveta: a conta de "é knob" é feita por frente (handleQtyOnFront)
@@ -3842,7 +3859,7 @@ function setProjectSlotHandle(slot, patch, opts) {
   const lote = !!(opts && opts.lote);
   if (!lote && typeof pushProjectUndoState === 'function') pushProjectUndoState();
   const atual = Object.assign({ itemId: null, doorPos: 'auto', drawerPos: 'center' }, slot.handle || {}, patch || {});
-  slot.handle = (atual.itemId || (atual.porPeca && Object.keys(atual.porPeca).length)) ? atual : null;
+  slot.handle = (atual.itemId || (atual.porPeca && Object.keys(atual.porPeca).length) || (atual.posPeca && Object.keys(atual.posPeca).length)) ? atual : null;
   try { recomputeProjectSlotPricing(slot); } catch (e) { console.error('[puxador] preço:', e); }
   if (lote) return;
   renderProjectCanvas();
@@ -3857,6 +3874,15 @@ function setProjectSlotPieceHandle(slot, pieceId, itemId) {
   if (itemId === undefined) delete mapa[pieceId]; else mapa[pieceId] = itemId || '';
   setProjectSlotHandle(slot, { porPeca: mapa });
 }
+// Posição/sentido do puxador só de UMA frente. patch = { doorPos?, doorOrient?,
+// drawerPos?, drawerOrient? }; null = volta a seguir o módulo.
+function setProjectSlotPiecePos(slot, pieceId, patch) {
+  if (!slot || pieceId == null) return;
+  const mapa = Object.assign({}, (slot.handle && slot.handle.posPeca) || {});
+  if (!patch) delete mapa[pieceId];
+  else mapa[pieceId] = Object.assign({}, mapa[pieceId] || {}, patch);
+  setProjectSlotHandle(slot, { posPeca: mapa });
+}
 // Painel sem módulo selecionado: o mesmo puxador em TODOS os módulos que têm
 // porta ou gaveta (posição/sentido/quantidade de cada módulo ficam; os
 // puxadores trocados porta a porta são zerados — "todos" é todos).
@@ -3864,7 +3890,7 @@ function setAllProjectHandles(itemId) {
   if (typeof pushProjectUndoState === 'function') pushProjectUndoState();
   projectSlots.forEach((s) => {
     if (!projectSlotHasHandleFront(s)) return;
-    setProjectSlotHandle(s, { itemId: itemId || null, porPeca: {} }, { lote: true });
+    setProjectSlotHandle(s, { itemId: itemId || null, porPeca: {}, posPeca: {} }, { lote: true });
   });
   renderProjectCanvas();
   renderProjectConfigPanel();
