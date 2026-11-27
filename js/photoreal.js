@@ -329,15 +329,21 @@ const Photoreal = (() => {
   function makeMaterial(color, rotateTexture) {
     // Porta de vidro (migration 187, colors.render_kind) — mesma regra do
     // viewer3d.js: vidro de verdade (transmissão) tingido e alumínio metálico.
-    if (color && color.render_kind === 'vidro') {
-      // 27/11 (Matt: "o vidro da porta de vidro não está incolor, está preto"):
-      // vidro de 4 mm como placa FINA — ior 1 (sem refração: o raio atravessa
-      // reto e enxerga o interior), transmissão total, dois lados e sem o
-      // modo transparent (que no path tracer escurecia). Antes (ior 1.5,
-      // transmission 0.92, só frente) o interior saía preto.
-      return new T.MeshPhysicalMaterial({
-        color: color.swatch_hex || '#d6e6e3', roughness: 0, metalness: 0,
-        transmission: 1, ior: 1.0, thickness: 0, side: T.DoubleSide
+    // VIDRO (27/11, 2ª rodada — Matt: "ainda deixa o vidro em preto... trocar
+    // pra transparente, deixa entrar luz pra dentro do móvel através do vidro").
+    // Transmissão/refração (MeshPhysical) saía preta no path tracer mesmo com
+    // ior 1. Agora é o MESMO jeito da vista 3D (viewer3d.materialVidroOuMetal):
+    // transparência por opacidade — o raio atravessa direto, a luz do ambiente
+    // entra no móvel e o interior aparece; um pouco de opacidade e brilho dão o
+    // reflexo e o tom do vidro (incolor/bronze/fumê pela cor).
+    const ehVidro = color && (color.render_kind === 'vidro'
+      || /\b(vidro|glass)\b/i.test(String(color.name || color.nome || color.code || '')));
+    if (ehVidro) {
+      const hex = String(color.swatch_hex || '#d6e6e3').toLowerCase();
+      const escuro = /^#?(5f6466|8f7258)$/.test(hex.replace('#', '#'));  // fumê / bronze: um pouco mais de corpo
+      return new T.MeshStandardMaterial({
+        color: hex, roughness: 0.04, metalness: 0,
+        transparent: true, opacity: escuro ? 0.32 : 0.14, depthWrite: false, side: T.DoubleSide
       });
     }
     if (color && color.render_kind === 'metal') {
