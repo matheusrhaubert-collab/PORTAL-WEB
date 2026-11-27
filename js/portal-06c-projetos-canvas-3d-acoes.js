@@ -998,14 +998,29 @@ function renderProjectConfigPanel() {
   // (ERP > Itens comprados, grupo 'puxador').
   let handleBlock = '';
   if (typeof projectSlotHasHandleFront === 'function' && projectHandleModels().length && projectSlotHasHandleFront(slot)) {
-    const hSel = (slot.handle && slot.handle.itemId) || '';
+    // SÓ A PORTA/FRENTE DO DUPLO CLIQUE (27/11, Matt: "dou 2 cliques na porta,
+    // troco o posicionamento e ainda troca de todos"): com uma frente deste
+    // módulo selecionada, o quadro do painel mostra e grava SÓ ela
+    // (slot.handle.posPeca / porPeca). Sem peça = módulo inteiro, como antes.
+    let pecaH = null;
+    if (projectSelectedPiece && projectSelectedPiece.slotId === slot.id && typeof handleFrontKindById === 'function') {
+      let pecasH = null;
+      try { pecasH = projectSlotAllPiecesBeforeRemoval(slot); } catch (e) { pecasH = slot.pieces; }
+      const kindH = handleFrontKindById(pecasH, projectSelectedPiece.pieceId);
+      if (kindH) pecaH = { pid: projectSelectedPiece.pieceId, gaveta: kindH === 'drawer' };
+    }
+    const hPosPeca = (pecaH && slot.handle && slot.handle.posPeca && slot.handle.posPeca[pecaH.pid]) || null;
+    const hPorPeca = (slot.handle && slot.handle.porPeca) || {};
+    const hTemProprio = !!(pecaH && Object.prototype.hasOwnProperty.call(hPorPeca, pecaH.pid));
+    const hSel = hTemProprio ? (hPorPeca[pecaH.pid] || '') : ((slot.handle && slot.handle.itemId) || '');
     const cardH = (m) => `<button type="button" class="po-proj-door-model-card po-proj-handle-card${(m ? m.item_id : '') === hSel ? ' selected' : ''}" data-handle-id="${m ? m.item_id : ''}" title="${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}" style="width:124px;background:#fff;color:#222;${(m ? m.item_id : '') === hSel ? 'border-color:var(--accent,#8a5a2b);box-shadow:0 0 0 2px var(--accent,#8a5a2b) inset;' : ''}">
           ${projectHandleCardVisual(m, 112)}
           <span>${m ? escapeHtmlCutlist(m.name) : I18n.t('project.handle_none')}</span>
         </button>`;
     const optH = (v, rot, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${rot}</option>`;
-    const dp = (slot.handle && slot.handle.doorPos) || 'auto', gp = (slot.handle && slot.handle.drawerPos) || 'center';
-    const dor = (slot.handle && slot.handle.doorOrient) || 'auto', gor = (slot.handle && slot.handle.drawerOrient) || 'auto';
+    const hpp = hPosPeca || {};
+    const dp = hpp.doorPos || (slot.handle && slot.handle.doorPos) || 'auto', gp = hpp.drawerPos || (slot.handle && slot.handle.drawerPos) || 'center';
+    const dor = hpp.doorOrient || (slot.handle && slot.handle.doorOrient) || 'auto', gor = hpp.drawerOrient || (slot.handle && slot.handle.drawerOrient) || 'auto';
     // 2 knobs na mesma frente de gaveta (15/11) — só aparece pra knob
     const hModSel = projectHandleModels().find((m) => m.item_id === hSel) || null;
     const hKnob = !!(hModSel && hModSel.tipo !== 'barra');
@@ -1045,16 +1060,19 @@ function renderProjectConfigPanel() {
     const qtdGaveta = hKnob ? btnH('drawerQty', '1', gq !== '2', I18n.t('project.handle_qty_1'), svgGaveta(marcaH(24, 12, gavetaEmPe)))
       + btnH('drawerQty', '2', gq === '2', I18n.t('project.handle_qty_2'), svgGaveta(marcaH(13, 12, gavetaEmPe) + marcaH(35, 12, gavetaEmPe))) : '';
     const linhaH = (rot, botoes) => `<div class="po-proj-handle-linha"><span class="hint">${rot}</span><div class="po-proj-handle-opts">${botoes}</div></div>`;
-    const posH = hSel ? `<div class="po-proj-handle-quadro">
-        <div class="po-proj-handle-col"><strong>${I18n.t('project.handle_group_door')}</strong>
+    const colPorta = `<div class="po-proj-handle-col"><strong>${I18n.t('project.handle_group_door')}</strong>
           ${linhaH(I18n.t('project.handle_row_pos'), posPorta)}
           ${linhaH(I18n.t('project.handle_row_orient'), sentPorta)}
-        </div>
-        <div class="po-proj-handle-col"><strong>${I18n.t('project.handle_group_drawer')}</strong>
+        </div>`;
+    const colGaveta = `<div class="po-proj-handle-col"><strong>${I18n.t('project.handle_group_drawer')}</strong>
           ${linhaH(I18n.t('project.handle_row_pos'), posGaveta)}
           ${linhaH(I18n.t('project.handle_row_orient'), sentGaveta)}
-          ${qtdGaveta ? linhaH(I18n.t('project.handle_row_qty'), qtdGaveta) : ''}
-        </div>
+          ${(qtdGaveta && !pecaH) ? linhaH(I18n.t('project.handle_row_qty'), qtdGaveta) : ''}
+        </div>`;
+    const posH = hSel ? `<div class="po-proj-handle-quadro">${pecaH ? (pecaH.gaveta ? colGaveta : colPorta) : (colPorta + colGaveta)}</div>` : '';
+    const faixaPeca = pecaH ? `<div class="po-proj-handle-so-peca" style="display:flex;align-items:center;gap:8px;margin:6px 0;padding:6px 8px;border-radius:6px;background:#eef4ff;border:1px solid #9bb8ef;color:#1d3f80;font-size:12px">
+        <span style="flex:1">${I18n.t(pecaH.gaveta ? 'project.handle_only_this_drawer' : 'project.handle_only_this_door')}</span>
+        ${(hPosPeca || hTemProprio) ? `<button type="button" class="secondary po-proj-handle-peca-reset" style="padding:2px 8px;font-size:12px;color:#1d3f80">↺ ${I18n.t('project.piece_handle_same')}</button>` : ''}
       </div>` : '';
     // RECOLHIDO (14/11, Matt: "quero os modelos de puxador ocultos e ao clicar
     // abrem as opções"): fechado mostra só o escolhido (foto + nome); clicar
@@ -1065,7 +1083,7 @@ function renderProjectConfigPanel() {
         <span style="flex:1;font-size:12px">${mSel ? escapeHtmlCutlist(mSel.name) : I18n.t('project.handle_none')}</span>
         <span class="hint" style="white-space:nowrap">${I18n.t('project.handle_change')} ▾</span>
       </summary>`;
-    handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span><details class="po-proj-handle-details" style="margin-top:6px">${resumoH}<div class="po-proj-handle-grupos">${projectHandleGroupsHtml(cardH, cardH(null))}</div></details>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
+    handleBlock = `<div class="po-proj-config-door-models po-proj-config-handles"><span class="po-proj-config-section-label">${I18n.t('project.handle_label')}</span>${faixaPeca}<details class="po-proj-handle-details" style="margin-top:6px">${resumoH}<div class="po-proj-handle-grupos">${projectHandleGroupsHtml(cardH, cardH(null))}</div></details>${posH}<button type="button" class="secondary po-proj-handle-all" style="margin-top:8px">${I18n.t('project.handle_apply_all')}</button></div>`;
   }
 
   const depthLabel = Number(slot.z_order || 0) > 0
@@ -1501,10 +1519,31 @@ function renderProjectConfigPanel() {
     });
   });
   // Puxador (2026-11-13)
+  // frente selecionada por duplo clique (27/11): grava só nela
+  const pecaHSel = () => {
+    if (!projectSelectedPiece || projectSelectedPiece.slotId !== slot.id || typeof handleFrontKindById !== 'function') return null;
+    let pc = null;
+    try { pc = projectSlotAllPiecesBeforeRemoval(slot); } catch (e) { pc = slot.pieces; }
+    return handleFrontKindById(pc, projectSelectedPiece.pieceId) ? projectSelectedPiece.pieceId : null;
+  };
+  const reabrePeca = () => { try { renderProjectPieceToolbar(); refreshProject3DResizeArrows(); } catch (e) { /* sem barra */ } };
   panel.querySelectorAll('.po-proj-handle-card').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.classList.contains('selected')) return;
+      const pid = pecaHSel();
+      if (pid != null) { setProjectSlotPieceHandle(slot, pid, el.dataset.handleId || ''); reabrePeca(); return; }
       setProjectSlotHandle(slot, { itemId: el.dataset.handleId || null });
+    });
+  });
+  panel.querySelectorAll('.po-proj-handle-peca-reset').forEach((el) => {
+    el.addEventListener('click', () => {
+      const pid = pecaHSel();
+      if (pid == null) return;
+      const h = slot.handle || {};
+      const porPeca = Object.assign({}, h.porPeca || {}), posPeca = Object.assign({}, h.posPeca || {});
+      delete porPeca[pid]; delete posPeca[pid];
+      setProjectSlotHandle(slot, { porPeca, posPeca });
+      reabrePeca();
     });
   });
   panel.querySelectorAll('.po-proj-handle-pos-select').forEach((el) => {
@@ -1512,7 +1551,13 @@ function renderProjectConfigPanel() {
   });
   // opções em desenho (ver posH)
   panel.querySelectorAll('.po-proj-handle-opt').forEach((el) => {
-    el.addEventListener('click', () => { if (!el.classList.contains('selected')) setProjectSlotHandle(slot, { [el.dataset.handlePos]: el.dataset.v }); });
+    el.addEventListener('click', () => {
+      if (el.classList.contains('selected')) return;
+      const k = el.dataset.handlePos;
+      const pid = pecaHSel();
+      if (pid != null && k !== 'drawerQty') { setProjectSlotPiecePos(slot, pid, { [k]: el.dataset.v }); reabrePeca(); return; }
+      setProjectSlotHandle(slot, { [k]: el.dataset.v });
+    });
   });
   panel.querySelectorAll('.po-proj-handle-all').forEach((el) => {
     el.addEventListener('click', () => { applyProjectSlotHandleToAll(slot); });
@@ -5096,6 +5141,8 @@ function selectProjectPiece(slotId, pieceId, reference, info) {
   projectSelectedPiece = { slotId, pieceId, reference: reference || null, info: info || null };
   refreshProject3DResizeArrows();
   renderProjectPieceToolbar();
+  // painel do puxador passa a mostrar só esta frente (27/11)
+  try { renderProjectConfigPanel(); } catch (e) { /* painel fechado */ }
   if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
 }
 
@@ -5106,6 +5153,7 @@ function clearProjectPieceSelection() {
   if (ViewerProjectEdit && ViewerProjectEdit.setPieceOutline) ViewerProjectEdit.setPieceOutline(null);
   renderProjectPieceToolbar();
   refreshProject3DResizeArrows();
+  try { renderProjectConfigPanel(); } catch (e) { /* painel fechado */ }
   if (typeof refreshProject3DStatusBar === 'function') refreshProject3DStatusBar();
 }
 

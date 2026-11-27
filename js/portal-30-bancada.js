@@ -760,7 +760,10 @@ function bancadaMontar(THREE, ctx) {
   const pedra = bancadaPedra(cfg.pedra);
   // brilho contido: polido de verdade (0.2) estourava o tampo em branco
   // na luz da cena e o veio sumia (teste 25/10) — mínimo 0.5.
-  const mat = new THREE.MeshStandardMaterial({ map: bancadaTextura(THREE, pedra, ctx && ctx.renderer), roughness: Math.max(0.5, Number(pedra.r) || 0.5), metalness: 0 });
+  // ctx.foto (27/11): render realista (photoreal.js, outro THREE) — textura vem
+  // pronta do carregador de lá (ctx.mapa), sem contorno nem setas de seleção.
+  const foto = !!(ctx && ctx.foto);
+  const mat = new THREE.MeshStandardMaterial({ map: foto ? (ctx.mapa || null) : bancadaTextura(THREE, pedra, ctx && ctx.renderer), roughness: Math.max(0.5, Number(pedra.r) || 0.5), metalness: 0 });
   mat.color.setScalar(0.84); // compensação de luz (mesma ideia do piso, portal-28)
   const matLinha = new THREE.LineBasicMaterial({ color: 0x6b655c });
   const matSel = new THREE.LineBasicMaterial({ color: 0xe53935, depthTest: false, transparent: true });
@@ -771,6 +774,7 @@ function bancadaMontar(THREE, ctx) {
   const Y = new THREE.Vector3(0, 1, 0);
   let runAtual = null;
   const contorno = (mesh, sel) => {
+    if (foto) return mesh;
     try {
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 25), sel ? matSel : matLinha);
       if (sel) e.renderOrder = 20;
@@ -858,7 +862,7 @@ function bancadaMontar(THREE, ctx) {
     // ---- backsplash (só parede; ilha NUNCA tem pedra atrás)
     if (!r.ilha && cfg.splash !== 'nenhum') bancadaSplash(r, cfg, paredes, runs, placa);
     // ---- setas de esticar (só no selecionado)
-    if (r.id === banSelId) {
+    if (!foto && r.id === banSelId) {
       const yS = r.topo + r.esp + 0.012;
       banSetasDo(r).forEach(([nome, u, v, du, dv]) => {
         const cone = new THREE.ConeGeometry(0.035, 0.1, 18);
@@ -874,6 +878,25 @@ function bancadaMontar(THREE, ctx) {
     }
   });
   return raiz;
+}
+
+// Bancada no RENDER REALISTA (27/11, Matt: "countertops não aparece no render").
+// Chamada pelo photoreal.js (sceneData.extras) com o THREE e o carregador de
+// textura DE LÁ (versão diferente da vista 3D — textura não pode ser dividida).
+function bancadaParaFoto(T, carregaTextura) {
+  const cfg = bancadaCfg();
+  if (!cfg) return null;
+  const pedra = bancadaPedra(cfg.pedra);
+  let mapa = null;
+  try {
+    mapa = carregaTextura ? carregaTextura('assets/stones/' + pedra.id + '.jpg?v=1') : null;
+    if (mapa) {
+      const tile = (Number(pedra.t) || 1500) / 1000;
+      mapa.wrapS = mapa.wrapT = T.RepeatWrapping;
+      mapa.repeat.set(1 / tile, 1 / tile);
+    }
+  } catch (e) { mapa = null; }
+  return bancadaMontar(T, { foto: true, mapa });
 }
 
 function bancadaSplash(r, cfg, paredes, runs, placa) {

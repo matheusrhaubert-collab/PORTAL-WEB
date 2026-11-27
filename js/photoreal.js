@@ -2395,6 +2395,16 @@ const Photoreal = (() => {
       });
     });
 
+    // EXTRAS (27/11): peças que não são módulo — hoje a bancada de pedra
+    // (portal-30 bancadaParaFoto). Recebe o THREE e o loadTexture DAQUI (as
+    // texturas entram no pendingTextures e são esperadas antes do render).
+    if (typeof sceneData.extras === 'function') {
+      try {
+        const extra = sceneData.extras(T, loadTexture);
+        if (extra) sc.add(extra);
+      } catch (e) { console.warn('Render realista: bancada/extras não entraram', e); }
+    }
+
     if (!isFinite(minX)) { minX = -1; maxX = 1; minZ = -1; maxZ = 1; }
 
     // Piso: cobre a caixa toda + folga generosa (a câmera olha de dentro do

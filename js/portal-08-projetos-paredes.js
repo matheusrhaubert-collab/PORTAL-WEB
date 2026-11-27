@@ -5437,7 +5437,9 @@ if (projPhotorealBtn) {
         ceiling_m: roomSettings.ceiling_mm / 1000,
         baseboard_h_m: roomSettings.baseboard_mm / 1000
       },
-      onSave: savePhotorealRenderToProject
+      onSave: savePhotorealRenderToProject,
+      // bancada de pedra no render realista (27/11, portal-30)
+      extras: (typeof bancadaParaFoto === 'function') ? bancadaParaFoto : null
     });
   };
 
