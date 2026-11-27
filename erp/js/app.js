@@ -549,7 +549,7 @@ APP.boot = async function () {
 
   if (!DATA.user) { APP.showLogin(); return; }
 
-  if (!DATA.isAdmin) {
+  if (!DATA.isEquipe) {
     // 21/11 (Matt: "não quero nenhum usuário do portal entrando no ERP. ERP é só
     // usuário do ERP e eu como administrador"): quem não é da fábrica vê só um
     // aviso neutro — sem dica de diagnóstico/SQL — e NÃO é deslogado (a sessão é
@@ -574,7 +574,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('erp-login-email').value.trim(),
         document.getElementById('erp-login-pass').value
       );
-      if (!DATA.isAdmin) {
+      if (!DATA.isEquipe) {
         await DATA.signOut();   // login digitado AQUI por quem não é da fábrica: não fica sessão aberta
         APP.showLogin(APP.MSG_RESTRITO, true);
       } else {

@@ -400,20 +400,30 @@ Light: natural interior photography, soft and believable; no people; no text, le
 // Diferente do 'decorate' (família aparece de verdade): aqui o foco é só
 // FOTORREALISMO (luz, material, sombra) + pouquíssimos objetos neutros.
 function buildEnhancePrompt(colorLabel: string | null, colorRefCount: number, moduleRefCount: number): string {
-  return `EDIT this photo — do not create a new one. The attached image is a photorealistic render of custom-made cabinetry that will be manufactured exactly as shown; treat it as a blueprint that must be followed with zero deviation. The output must be the SAME photo: same camera position, same lens, same angle, same framing and crop, same cabinetry. Your only job is to make it look like a real professional interior photograph.
+  // v2 (27/11, 1º teste do Matt: "não colocou pedra, nem teto, nem piso, tá
+  // praticamente igual. deixa a IA transformar em ambiente realista"): o
+  // AMBIENTE agora é transformado de verdade (piso, teto, paredes, bancada de
+  // pedra, backsplash, luz) — só a MARCENARIA continua intocável.
+  return `Transform this 3D render into a real, finished, professionally photographed interior. The attached image is a render of custom-made cabinetry that will be manufactured exactly as shown. Keep the SAME camera position, lens, angle, framing and crop, and keep the cabinetry identical — but build a complete, realistic room around it. The result must look like a real photo of a finished home, clearly different from a plain 3D render.
 
-CRITICAL — the cabinetry is fixed:
-Do not add, remove, move, mirror or replace any cabinet, panel, tower, shelf, niche, drawer, door, countertop or appliance.
+TRANSFORM THE ROOM (this is required, not optional):
+- Floor: replace the blank floor with a real finished floor (e.g. wide-plank light oak, or large-format porcelain tile), with realistic texture, reflections and contact shadows under the cabinets.
+- Ceiling: if the ceiling or the top of the walls is visible or the room looks open at the top, complete it with a real finished ceiling (flat white drywall, optionally recessed downlights). Do not leave the room open or floating in a blank background.
+- Walls: real painted drywall with subtle texture; you may add a window with soft daylight on a wall area that has no cabinets.
+- Countertop: on every base/lower cabinet that has no countertop in the render, add a real stone countertop (quartz or granite, ~3 cm thick, slight overhang at the front) in a color that matches the cabinetry. Keep any sink, faucet and cooktop where they are, set into the stone.
+- Backsplash: between the countertop and the wall cabinets you may add a tile or stone backsplash.
+- Lighting: natural daylight from the window plus warm interior light; realistic shadows, ambient occlusion and reflections.
+
+CRITICAL — the cabinetry is fixed (fidelity always wins):
+Do not add, remove, move, mirror or replace any cabinet, panel, tower, shelf, niche, drawer, door or appliance.
 Do not change the number of doors, drawers, shelves or compartments, nor their left-to-right order.
-Do not change the shape, size, depth or position of any part; do not straighten an L or U layout into a single wall.
-Do not change any finish: a smooth solid color stays that exact smooth solid color; a wood stays that exact wood, with the same grain direction. Never turn painted doors into wood or wood into paint.
-Do not add handles, legs, crown moldings or trims that are not in the source; keep the existing handles exactly as they are.
+Do not change the shape, size, height, depth or position of any cabinet; do not straighten an L or U layout into a single wall.
+Do not change any cabinet finish: a smooth solid color stays that exact smooth solid color; a wood stays that exact wood, with the same grain direction. Never turn painted doors into wood or wood into paint. Glass doors stay glass doors.
+Do not add or change handles, legs, crown moldings or trims; keep the existing handles exactly as they are.
 Keep every reveal line, toe kick, filler and end panel exactly as shown.
-Keep any built-in LED that is visible in the source exactly where it is; do not add LED anywhere else.${colorLabel ? `\nThe real finishes are "${colorLabel}" — reproduce them exactly.` : ''}${colorRefCount ? `\nThe real swatch photos attached after the main image are the definitive color AND surface-pattern reference for the cabinetry.` : ''}${moduleRefCount ? `\nImages labeled 'module reference' are real photos of pieces used here: use them only for material/hardware realism, never to change the shape.` : ''}
+Keep any built-in LED that is visible in the source exactly where it is; do not add LED inside or under the cabinets.${colorLabel ? `\nThe real cabinet finishes are "${colorLabel}" — reproduce them exactly.` : ''}${colorRefCount ? `\nThe real swatch photos attached after the main image are the definitive color AND surface-pattern reference for the cabinetry.` : ''}${moduleRefCount ? `\nImages labeled 'module reference' are real photos of pieces used here: use them only for material/hardware realism, never to change the shape.` : ''}
 
-Realism: natural soft daylight, believable reflections, contact shadows and ambient occlusion, real material texture on walls and floor. Keep walls, floor and ceiling where they are.
-
-Decoration (very light, a FEW items only — at most 3 to 5 small objects in total): for example a small plant, a bowl, a couple of books or a vase, placed only on countertops, open shelves or open niches. Never cover, hide or overlap any door, drawer or front. Do NOT add any furniture, rug over the cabinetry, people, text, letters or logos. If anything you would add conflicts with keeping the cabinetry identical, leave it out — fidelity of the cabinetry always wins.`;
+Decoration: light and tasteful — a few items only (for example a plant, a fruit bowl, a cutting board, a vase, a couple of books) on the countertop or open shelves. Never cover or hide any door, drawer or front. No people, no text, no letters, no logos.`;
 }
 
 async function generateDecoratedImage(params: {

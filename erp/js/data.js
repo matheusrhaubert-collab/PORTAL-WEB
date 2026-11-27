@@ -44,11 +44,15 @@ DATA.connectionProblem = function () {
    ============================================================ */
 DATA.user = null;
 DATA.isAdmin = false;
+/* 27/11 (migration 354): equipe do ERP = admin OU conta ativa do ERP com perfil
+   de back-office. Entra no ERP sem ser admin do portal. */
+DATA.isEquipe = false;
 
 DATA.loadSession = async function () {
   const { data } = await DATA.sb().auth.getSession();
   DATA.user = data && data.session ? data.session.user : null;
   if (DATA.user) DATA.isAdmin = await DATA.checkAdmin();
+  DATA.isEquipe = DATA.isAdmin || (DATA.user ? await DATA.checkEquipe() : false);
   return DATA.user;
 };
 
@@ -64,6 +68,14 @@ DATA.checkAdmin = async function () {
   } catch (e) { return false; }
 };
 
+DATA.checkEquipe = async function () {
+  try {
+    const { data, error } = await DATA.sb().rpc('eh_equipe');
+    if (error) return false;
+    return data === true;
+  } catch (e) { return false; }
+};
+
 DATA.signIn = async function (email, password) {
   const { error } = await DATA.sb().auth.signInWithPassword({ email: email, password: password });
   if (error) throw error;
@@ -74,6 +86,7 @@ DATA.signOut = async function () {
   await DATA.sb().auth.signOut();
   DATA.user = null;
   DATA.isAdmin = false;
+  DATA.isEquipe = false;
 };
 
 /* ============================================================
