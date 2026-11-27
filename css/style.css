@@ -6791,4 +6791,8 @@ body.po-proj-readonly #po-proj-library-search-btn { display: none !important; }
 /* botão "Reportar problema" no cabeçalho: sem a margem de 14 px do button global */
 #po-sup-btn { margin: 0; display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
 #po-sup-btn svg { width: 15px; height: 15px; flex: none; }
+/* 27/11: o "?" do HELP fica direto no grupo (sem a .po-tb-icons-row dos outros
+   menus) e descia ~3 px; ganha a mesma régua da fileira de ícones. */
+#po-proj-canvas-tools #po-proj-tb-help { align-items: flex-start; }
+#po-proj-canvas-tools #po-proj-dd-help { display: flex; align-items: center; height: 34px; margin-top: -3px; }
 body.proj-fullbleed #po-help-btn, body.proj-fullbleed #po-sup-btn { display: none !important; }
