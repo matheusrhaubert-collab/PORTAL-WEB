@@ -30,9 +30,9 @@ const SINO_MAX = 40;
 const sinoState = { itens: [], carregando: false, aberto: false, timer: null, uid: null, erro: '' };
 
 const SINO_TXT = {
-  pt: { tip: 'Avisos da fábrica', titulo: 'Avisos', vazio: 'Nada novo nos últimos {n} dias.', user: 'Novo cadastro', order: 'Novo pedido', project: 'Novo projeto', sem_perfil: 'sem perfil', sem_loja: 'sem loja', agora: 'agora', min: 'há {n} min', h: 'há {n} h', d: 'há {n} d', novo: 'novo', ver_pessoas: 'Abrir Pessoas', ver_central: 'Abrir Central', s_submitted: 'aguardando aprovação', s_approved: 'aprovado', s_other: 'em andamento' },
-  en: { tip: 'Factory alerts', titulo: 'Alerts', vazio: 'Nothing new in the last {n} days.', user: 'New sign-up', order: 'New order', project: 'New project', sem_perfil: 'no profile', sem_loja: 'no store', agora: 'now', min: '{n} min ago', h: '{n} h ago', d: '{n} d ago', novo: 'new', ver_pessoas: 'Open People', ver_central: 'Open Order Center', s_submitted: 'waiting approval', s_approved: 'approved', s_other: 'in progress' },
-  es: { tip: 'Avisos de la fábrica', titulo: 'Avisos', vazio: 'Nada nuevo en los últimos {n} días.', user: 'Nuevo registro', order: 'Nuevo pedido', project: 'Nuevo proyecto', sem_perfil: 'sin perfil', sem_loja: 'sin tienda', agora: 'ahora', min: 'hace {n} min', h: 'hace {n} h', d: 'hace {n} d', novo: 'nuevo', ver_pessoas: 'Abrir Personas', ver_central: 'Abrir Central', s_submitted: 'esperando aprobación', s_approved: 'aprobado', s_other: 'en curso' }
+  pt: { tip: 'Avisos da fábrica', titulo: 'Avisos', vazio: 'Nada novo nos últimos {n} dias.', user: 'Novo cadastro', order: 'Novo pedido', ticket: 'Nova solicitação', ver_ticket: 'Abrir solicitações', project: 'Novo projeto', sem_perfil: 'sem perfil', sem_loja: 'sem loja', agora: 'agora', min: 'há {n} min', h: 'há {n} h', d: 'há {n} d', novo: 'novo', ver_pessoas: 'Abrir Pessoas', ver_central: 'Abrir Central', s_submitted: 'aguardando aprovação', s_approved: 'aprovado', s_other: 'em andamento' },
+  en: { tip: 'Factory alerts', titulo: 'Alerts', vazio: 'Nothing new in the last {n} days.', user: 'New sign-up', order: 'New order', ticket: 'New ticket', ver_ticket: 'Open tickets', project: 'New project', sem_perfil: 'no profile', sem_loja: 'no store', agora: 'now', min: '{n} min ago', h: '{n} h ago', d: '{n} d ago', novo: 'new', ver_pessoas: 'Open People', ver_central: 'Open Order Center', s_submitted: 'waiting approval', s_approved: 'approved', s_other: 'in progress' },
+  es: { tip: 'Avisos de la fábrica', titulo: 'Avisos', vazio: 'Nada nuevo en los últimos {n} días.', user: 'Nuevo registro', order: 'Nuevo pedido', ticket: 'Nueva solicitud', ver_ticket: 'Abrir solicitudes', project: 'Nuevo proyecto', sem_perfil: 'sin perfil', sem_loja: 'sin tienda', agora: 'ahora', min: 'hace {n} min', h: 'hace {n} h', d: 'hace {n} d', novo: 'nuevo', ver_pessoas: 'Abrir Personas', ver_central: 'Abrir Central', s_submitted: 'esperando aprobación', s_approved: 'aprobado', s_other: 'en curso' }
 };
 function sinoT(k, n) {
   let l = 'en';
@@ -124,6 +124,17 @@ async function sinoCarregar() {
       itens.push({ tipo: 'project', id: pr.id, t: new Date(pr.created_at).toISOString(), titulo: pr.name || '—', sub: [quem, pr.client_folder || ''].filter(Boolean).join(' · ') });
     });
   } catch (e) { /* segue com cadastros e pedidos */ }
+  // SOLICITAÇÃO NOVA (27/11, Matt: "avise no sininho pros adms que chegou
+  // solicitação"). support_tickets (migration 351, portal-51). Sem a 351, nada.
+  try {
+    const { data, error } = await supabaseClient.from('support_tickets')
+      .select('id, ticket_no, kind, title, description, email, status, created_at')
+      .gte('created_at', desde).neq('user_id', me).order('created_at', { ascending: false }).limit(SINO_MAX);
+    if (!error) (data || []).forEach((tk) => {
+      const no = tk.ticket_no != null ? '#' + String(tk.ticket_no).padStart(5, '0') + ' ' : '';
+      itens.push({ tipo: 'ticket', id: tk.id, t: new Date(tk.created_at).toISOString(), titulo: no + (tk.title || String(tk.description || '').split('\n')[0] || '—'), sub: [String(tk.email || '').split('@')[0], tk.kind === 'problem' ? '⚠' : '✚'].filter(Boolean).join(' · ') });
+    });
+  } catch (e) { /* segue */ }
   itens.sort((a, b) => (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
   sinoState.itens = itens.slice(0, SINO_MAX);
   sinoState.carregando = false;
@@ -162,6 +173,7 @@ function sinoPainel() {
       const it = e.target.closest ? e.target.closest('.sn-it') : null; if (!it) return;
       const tipo = it.getAttribute('data-tipo');
       sinoFecha();
+      if (tipo === 'ticket') { if (window.LegnoSuporte && window.LegnoSuporte.abrir) window.LegnoSuporte.abrir('lista'); return; }
       if (tipo === 'user') { if (window.LegnoMinhaEmpresa && window.LegnoMinhaEmpresa.abrir) window.LegnoMinhaEmpresa.abrir('pessoas'); return; }
       const tab = document.querySelector('.portal-tab-btn[data-tab="po-tab-my-orders"]'); if (tab) tab.click();
     });
@@ -171,8 +183,8 @@ function sinoPainel() {
   p.innerHTML = '<h4>' + sinoEsc(sinoT('titulo')) + '</h4>'
     + (sinoState.itens.length ? sinoState.itens.map((i) => {
       const novo = i.t > visto;
-      return '<div class="sn-it' + (novo ? ' novo' : '') + '" data-tipo="' + i.tipo + '" title="' + sinoEsc(sinoT(i.tipo === 'user' ? 'ver_pessoas' : 'ver_central')) + '">'
-        + '<div class="sn-ic">' + (i.tipo === 'user' ? '👤' : i.tipo === 'project' ? '📐' : '📦') + '</div>'
+      return '<div class="sn-it' + (novo ? ' novo' : '') + '" data-tipo="' + i.tipo + '" title="' + sinoEsc(sinoT(i.tipo === 'user' ? 'ver_pessoas' : i.tipo === 'ticket' ? 'ver_ticket' : 'ver_central')) + '">'
+        + '<div class="sn-ic">' + (i.tipo === 'user' ? '👤' : i.tipo === 'project' ? '📐' : i.tipo === 'ticket' ? '🛟' : '📦') + '</div>'
         + '<div class="sn-tx"><b>' + sinoEsc(sinoT(i.tipo)) + (novo ? '<i class="sn-tag">' + sinoEsc(sinoT('novo')) + '</i>' : '') + '</b><span>' + sinoEsc(i.titulo) + '</span>' + (i.sub ? '<small>' + sinoEsc(i.sub) + '</small>' : '') + '</div>'
         + '<div class="sn-q">' + sinoEsc(sinoHa(i.t)) + '</div></div>';
     }).join('') : '<div class="sn-vazio">' + sinoEsc(sinoState.erro || sinoT('vazio', SINO_DIAS)) + '</div>');

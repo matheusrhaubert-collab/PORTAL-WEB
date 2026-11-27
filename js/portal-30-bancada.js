@@ -268,6 +268,26 @@ function banFrame(slot, paredes) {
 }
 const banDot = (p, a) => p.x * a.x + p.z * a.z;
 
+// CANTO EM L (27/11, Matt: "o countertop passou muito pra frente na parede da
+// direita, é algo do canto"): Base Canto 90° / Corner Sink / Lazy Susan têm
+// caixa de 914 × 914, mas a pedra do trecho da parede onde o canto está
+// encostado só pode ir até a frente da ASA paralela a essa parede (asa A,
+// padrão 609 — mesma regra de Pricing.applyCanto90Asas: profundidade = A).
+// O fundo fica onde está; só a frente recua. A outra asa é coberta pelo
+// trecho da parede vizinha (junção de canto, mais abaixo).
+function banAjustaCantoL(slot, f) {
+  try {
+    if (typeof Pricing === 'undefined' || !Pricing.canto90TemAsas || !Pricing.canto90AsasDe) return;
+    const pcs = banPecas(slot);
+    if (!Pricing.canto90TemAsas(pcs)) return;
+    const asas = Pricing.canto90AsasDe(slot.dimOverrides || {}, Pricing.canto90PadraoDe(pcs));
+    const dNovo = Number(asas.a) / 1000;
+    if (!(dNovo > 0) || dNovo >= f.d - 0.001) return;
+    const desloc = (dNovo - f.d) / 2;
+    f.ox += f.N.x * desloc; f.oz += f.N.z * desloc; f.d = dNovo;
+  } catch (e) { /* sem as funções do canto: fica a caixa inteira, como antes */ }
+}
+
 let banCache = { chave: null, res: null };
 // Monta os trechos (runs) de pedra. Só DADOS (sem cena) — usado pelo 3D,
 // pela janela (planta) e pelo ajuste de pia/cooktop.
@@ -294,6 +314,7 @@ function bancadaRunsCalc(cfg, paredes) {
     if (!tipo) return;
     const f = banFrame(slot, paredes);
     if (!f) return;
+    banAjustaCantoL(slot, f);
     const ilha = isFloorSlot(slot);
     if (!ilha && !paredes.some((p) => p.wallIndex === Number(slot.wall_index || 0) && !p.oculta)) return;
     itens.push({ slot, tipo, f, ilha, cu: f.ox * f.U.x + f.oz * f.U.z, cn: f.ox * f.N.x + f.oz * f.N.z, topo: f.oy + f.h });
