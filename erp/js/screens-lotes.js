@@ -194,6 +194,7 @@ LOTES_UI.novo = function (params, d) {
       pick: '<input type="checkbox" class="lote-order-pick" value="' + o.id + '"' + (taken ? ' disabled' : '') + '>',
       order: '<a href="#/pedidos/' + o.id + '" class="erp-strong">' + UI.esc(DATA.orderName(o)) + '</a>' +
         (taken ? '<div class="erp-xs erp-muted">já está em <a href="#/lotes/' + o._batch_id + '">outro lote</a></div>' : ''),
+      dealer: o._store ? '<span class="erp-strong">' + UI.esc(o._store) + '</span>' : '<span class="erp-muted erp-xs">—</span>',
       client: UI.esc(DATA.clientLabel(o)),
       type: UI.pill(t.label, t.pill),
       status: UI.pill('Aprovado', 'erp-pill-ok') +
@@ -231,6 +232,7 @@ LOTES_UI.novo = function (params, d) {
       UI.table([
         { key: 'pick', label: '', width: '36px' },
         { key: 'order', label: 'Pedido' },
+        { key: 'dealer', label: 'Dealer' },
         { key: 'client', label: 'Cliente' },
         { key: 'type', label: 'Tipo' },
         { key: 'status', label: 'Status' },

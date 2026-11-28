@@ -985,7 +985,30 @@ LOTES.availableOrders = async function () {
   const takenBy = {};
   (taken || []).forEach(function (t) { takenBy[t.order_id] = t.batch_id; });
   (data || []).forEach(function (o) { o._batch_id = takenBy[o.id] || null; });
-  return data || [];
+  /* Coluna DEALER do Novo lote (27/11): nome da loja (accounts, 306); pedido
+     sem account_id cai na loja do perfil de quem fez (user_profiles.store_name).
+     Falhou a consulta = coluna vazia, a tela não cai. */
+  const ords = data || [];
+  const accIds = ords.map(function (o) { return o.account_id; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+  if (accIds.length) {
+    try {
+      const r = await DATA.sb().from('accounts').select('id, trade_name, legal_name').in('id', accIds);
+      const nome = {};
+      (r.data || []).forEach(function (x) { nome[x.id] = x.trade_name || x.legal_name || ''; });
+      ords.forEach(function (o) { o._store = nome[o.account_id] || ''; });
+    } catch (e) { /* sem a 306 */ }
+  }
+  const semLoja = ords.filter(function (o) { return !o._store && o.client_user_id; })
+    .map(function (o) { return o.client_user_id; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+  if (semLoja.length) {
+    try {
+      const r = await DATA.sb().from('user_profiles').select('user_id, store_name').in('user_id', semLoja);
+      const nome = {};
+      (r.data || []).forEach(function (x) { nome[x.user_id] = x.store_name || ''; });
+      ords.forEach(function (o) { if (!o._store) o._store = nome[o.client_user_id] || ''; });
+    } catch (e) { /* ok */ }
+  }
+  return ords;
 };
 
 /* ============================================================
