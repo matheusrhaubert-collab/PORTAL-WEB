@@ -47,7 +47,9 @@ LOTES_UI.OFFCUT_STATUS = {
    ,8 pra cima, Pricing.arredondaMm). Espessura NÃO passa por aqui: usa
    LOTES_UI.esp, que mantém o comportamento antigo. */
 LOTES_UI.mm = function (v) { return LOTES.mmCorte(Number(v) || 0).toLocaleString('pt-BR'); };
-LOTES_UI.esp = function (v) { return Math.round(Number(v) || 0).toLocaleString('pt-BR'); };
+/* Espessura com UMA casa (27/11): 19,5 aparecia "20" e escondia que havia
+   peça de 20 e de 19,5 na mesma cor (dois grupos/chapas). Inteiro fica inteiro. */
+LOTES_UI.esp = function (v) { return (Math.round((Number(v) || 0) * 10) / 10).toLocaleString('pt-BR'); };
 LOTES_UI.m2 = function (v) { return (Number(v) || 0).toFixed(2).replace('.', ',') + ' m²'; };
 LOTES_UI.pct = function (v) { return (Number(v) || 0).toFixed(1).replace('.', ',') + '%'; };
 
@@ -615,7 +617,7 @@ LOTES_UI.addPieceForm = function (batchId, colors) {
       '<label class="erp-field"><span>Descrição</span><input type="text" id="np-desc" placeholder="Lateral esquerda"></label>' +
       '<label class="erp-field"><span>Módulo/origem</span><input type="text" id="np-mod" placeholder="Reposição"></label>' +
       '<label class="erp-field"><span>Cor</span><select id="np-cor">' + colorOpts + '</select></label>' +
-      '<label class="erp-field"><span>Espessura (mm)</span><input type="number" id="np-esp" value="18" min="1" step="0.1"></label>' +
+      '<label class="erp-field"><span>Espessura (mm)</span><input type="number" id="np-esp" value="19.5" min="1" step="0.1" title="Com cor escolhida, vale a espessura da cor (EGGER 19,5)"></label>' +
       '<label class="erp-field"><span>Comprimento (mm)</span><input type="number" id="np-comp" min="1" step="1"></label>' +
       '<label class="erp-field"><span>Largura (mm)</span><input type="number" id="np-larg" min="1" step="1"></label>' +
       '<label class="erp-field"><span>Fita</span><select id="np-fita"><option value="0">sem fita</option>' +
@@ -638,7 +640,8 @@ LOTES_UI.adicionarPeca = async function (batchId, btn) {
   /* COMPRIMENTO = SENTIDO DO VEIO, SEMPRE (Matt, 19/11: "regra pra 100% das
      peças, nunca pode mudar"). O que foi digitado em Comprimento fica como
      comprimento — antes trocava pro lado maior e invertia o veio. */
-  const dims = { comprimento_mm: LOTES.mmCorte(comp), largura_mm: LOTES.mmCorte(larg), espessura_mm: esp };
+  // Espessura = a da COR (EGGER 19,5; plywood 18) — o digitado só vale sem cor.
+  const dims = { comprimento_mm: LOTES.mmCorte(comp), largura_mm: LOTES.mmCorte(larg), espessura_mm: LOTES.espessuraDaCor(color, esp) };
   LOTES_UI.busy(btn, true, 'Salvando…');
   try {
     await LOTES.addPiece(batchId, {

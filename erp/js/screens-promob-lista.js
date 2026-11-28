@@ -228,7 +228,9 @@ PROMOBL.grava = async function (gi, acrescenta) {
       order_id: pedId,
       op: p.modulo ? (p.modulo + (p.idModulo ? ' #' + p.idModulo : '')).slice(0, 200) : null,
       part_name: p.nome.slice(0, 200), quantity: p.qtd,
-      comprimento_mm: p.comp, largura_mm: p.larg, espessura_mm: p.esp,
+      // Espessura = a da cor escolhida (EGGER 19,5), não o número do nome do material do PROMOB.
+      comprimento_mm: p.comp, largura_mm: p.larg,
+      espessura_mm: LOTES.espessuraDaCor(st.cores.find(function (c) { return c.id === cor[p.mat]; }) || null, p.esp),
       color_id: cor[p.mat], color_name: nomeCor[cor[p.mat]] || null,
       edge_banding: p.fita, has_grain: p.veio,
       obs: [p.usinagem, p.idPeca ? 'PROMOB ' + p.idPeca : '', p.loteProm ? 'lote ' + p.loteProm : ''].filter(Boolean).join(' · ').slice(0, 300),

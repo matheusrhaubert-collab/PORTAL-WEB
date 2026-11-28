@@ -247,7 +247,12 @@ LOTES.espessuraDaCor = function (color, medida) {
     const t = Number(color.thickness_mm);
     return t > 0 ? t : LOTES.ESPESSURA_PADRAO_MM;
   }
-  return Number(medida) || 0;
+  /* SEM COR (27/11, pedido 00048 / L0030: frente sem cor saiu com 20 e,
+     quando a cor foi corrigida, ficou num grupo separado do 19,5). Matt:
+     "só existe 19,5 pra EGGER". Medida de 19 a 20 é o 19,5 arredondado pelo
+     Construtor — volta pra 19,5. Outras (plywood 18, 38 colado) ficam. */
+  const m = Number(medida) || 0;
+  return (m >= 19 && m <= 20) ? LOTES.ESPESSURA_PADRAO_MM : m;
 };
 
 LOTES.flattenBreakdown = function (breakdown, multiplier, out, nomeDoPai, emGaveta, herdado) {
