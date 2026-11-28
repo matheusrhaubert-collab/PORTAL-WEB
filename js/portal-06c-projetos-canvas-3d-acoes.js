@@ -1359,12 +1359,18 @@ function renderProjectConfigPanel() {
     ${colorSections ? `<div class="po-proj-config-colors"><span class="po-proj-config-section-label">${I18n.t('project.config_color_label')}</span>${colorSections}</div>` : ''}
     ${moveBlock}
     ${positionBlock}
+    <!-- 27/11 (Matt: "essa parte pode ocultar toda, isso tem ferramenta pra
+         compensar"): camada, preço, volume/peso e os botões Editar / Duplicar /
+         Remover ficam ESCONDIDOS — a barra de ferramentas já faz isso. Ficam no
+         DOM porque os listeners logo abaixo procuram estes ids. -->
+    <div class="po-proj-config-rodape" style="display:none;">
     <div class="po-proj-config-row"><span>${I18n.t('project.config_depth_label')}</span><span>${depthLabel}</span></div>
     <div class="po-proj-config-row"><span>${I18n.t('project.config_price_label')}</span><span>${formatMoney(isSellerAccount() ? getDisplayPrice((slot.result && slot.result.total) || 0) : (slot.result && slot.result.total) || 0)}</span></div>
     <div class="po-proj-config-row hint"><span>${I18n.t('volume_weight.label')}</span><span>${formatVolumeWeight((slot.result && slot.result.breakdown) || [], undefined, slot.colorsByRole)}</span></div>
     <button type="button" class="secondary" id="po-proj-config-edit-btn">${I18n.t('project.config_edit_btn')}</button>
     <button type="button" class="secondary" id="po-proj-config-duplicate-btn" title="${I18n.t('project.duplicate_title')}">${I18n.t('project.duplicate_btn')}</button>
     <button type="button" class="secondary po-proj-config-remove-btn" id="po-proj-config-remove-btn">${I18n.t('project.config_remove_btn')}</button>
+    </div>
   `;
 
   panel.querySelectorAll('.po-proj-dim-input').forEach((input) => {
