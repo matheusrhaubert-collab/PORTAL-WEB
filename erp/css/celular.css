@@ -45,3 +45,5 @@ html,body{margin:0;height:100%;background:#1f1d1a;color:#f4f1ea;font:16px/1.35 s
 .cel-login{margin:auto 0;padding:24px}
 .cel-login h1{font-size:28px;margin:0 0 18px}
 .cel-msg{margin:10px 14px;font-size:14px;opacity:.85}
+.cel-cam .dica{position:absolute;left:0;right:0;bottom:0;padding:8px 10px;font-size:14px;text-align:center;background:rgba(0,0,0,.55)}
+.cel-cam .dica.trava{background:#2c5d8a}.cel-cam .dica.trava.ok{background:#2f6f4f}.cel-cam .dica.trava.ruim{background:#a3362e}

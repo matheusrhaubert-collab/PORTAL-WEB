@@ -75,7 +75,7 @@ CEL.home = function () {
 
 /* ---------------- Câmera / leitor ---------------- */
 CEL.leitorHtml = function () {
-  return '<div class="cel-cam"><video id="cel-video" playsinline muted></video><div class="mira"></div><div class="camerr" id="cel-camerr" style="display:none"></div></div>' +
+  return '<div class="cel-cam" onclick="CEL.alternaTrava()"><video id="cel-video" playsinline muted></video><div class="mira"></div><div class="dica" id="cel-dica"></div><div class="camerr" id="cel-camerr" style="display:none"></div></div>' +
     '<div class="cel-dig"><input id="cel-cod" placeholder="ou digite o código" autocapitalize="characters" autocomplete="off" ' +
       'onkeydown="if(event.key===\'Enter\'){CEL.digitado();}"><button onclick="CEL.digitado()">OK</button></div>';
 };
@@ -122,69 +122,121 @@ CEL.carregaZxing = function () {
   });
   return CEL._zx;
 };
+/* TRAVAR A IMAGEM (27/11, Matt: "melhor clicar pra travar a imagem, porque
+   conforme mexe o celular ele vai se perdendo. aperta na tela e ele trava,
+   depois aperta e libera"). Ao vivo continua lendo sozinho; tocar na imagem
+   congela o quadro (video.pause) e procura o código NESSA foto parada, com mais
+   tentativas (quadro inteiro, faixa do meio e girado 90°). Toque de novo solta. */
 CEL.ligarCamera = async function (onCodigo) {
   CEL.onCodigo = onCodigo;
   const video = CEL.$('cel-video');
   const erro = function (t) { const e = CEL.$('cel-camerr'); if (e) { e.style.display = 'flex'; e.textContent = t; } };
   if (!video) return;
+  CEL.dicaCam('Aponte pra etiqueta — toque pra travar a imagem');
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { erro('Câmera indisponível neste navegador. Digite o código abaixo.'); return; }
-  const token = {}; CEL.scan = token;
+  const token = { video: video, frozen: false }; CEL.scan = token;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
     if (CEL.scan !== token) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
     token.stream = stream;
     video.srcObject = stream;
     await video.play();
-    let det = null;
-    if ('BarcodeDetector' in window) {
-      try {
-        const fmts = await window.BarcodeDetector.getSupportedFormats();
-        if (fmts.indexOf('code_39') >= 0) det = new window.BarcodeDetector({ formats: ['code_39', 'code_128', 'qr_code'].filter(function (f) { return fmts.indexOf(f) >= 0; }) });
-      } catch (e) { det = null; }
-    }
-    if (det) {
-      const loop = async function () {
-        if (CEL.scan !== token) return;
-        try {
-          const r = await det.detect(video);
-          if (r && r.length) CEL.lido(r[0].rawValue);
-        } catch (e) {}
-        setTimeout(loop, 180);
-      };
-      loop();
-      return;
-    }
-    // iPhone (Safari não tem BarcodeDetector): ZXing
-    await CEL.carregaZxing();
+    token.det = await CEL.detectorNativo();
+    if (!token.det) { await CEL.carregaZxing(); token.zx = CEL.leitorZxing(); }
     if (CEL.scan !== token) return;
-    const Z = window.ZXing;
-    const hints = new Map();
-    hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.QR_CODE]);
-    hints.set(Z.DecodeHintType.TRY_HARDER, true);
-    const reader = new Z.MultiFormatReader(); reader.setHints(hints);
-    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const loopZ = function () {
+    const loop = async function () {
       if (CEL.scan !== token) return;
-      try {
-        const vw = video.videoWidth, vh = video.videoHeight;
-        if (vw && vh) {
-          // só a faixa do meio (onde está a mira): mais rápido e mais certeiro
-          const cw = Math.min(vw, 1000), ch = Math.round(vh * 0.4 * cw / vw);
-          canvas.width = cw; canvas.height = ch;
-          ctx.drawImage(video, 0, vh * 0.3, vw, vh * 0.4, 0, 0, cw, ch);
-          const lum = new Z.HTMLCanvasElementLuminanceSource(canvas);
-          const bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(lum));
-          const res = reader.decode(bmp);
-          if (res) CEL.lido(res.getText());
-        }
-      } catch (e) { /* NotFound = nada no quadro */ }
-      setTimeout(loopZ, 220);
+      if (!token.frozen && !token.busy) {
+        try {
+          const raw = token.det ? await CEL.lerNativo(token.det, video) : CEL.lerZxing(token.zx, video, false);
+          if (raw && !token.frozen) CEL.lido(raw);
+        } catch (e) {}
+      }
+      setTimeout(loop, token.det ? 180 : 220);
     };
-    loopZ();
+    loop();
   } catch (e) {
     erro(/Permission|NotAllowed/i.test(String(e && (e.name || e.message))) ? 'Libere a câmera pra esta página. Ou digite o código abaixo.' : 'Não abriu a câmera: ' + (e.message || e) + '. Digite o código abaixo.');
   }
 };
+
+CEL.detectorNativo = async function () {
+  if (!('BarcodeDetector' in window)) return null;
+  try {
+    const fmts = await window.BarcodeDetector.getSupportedFormats();
+    if (fmts.indexOf('code_39') < 0) return null;
+    return new window.BarcodeDetector({ formats: ['code_39', 'code_128', 'qr_code'].filter(function (f) { return fmts.indexOf(f) >= 0; }) });
+  } catch (e) { return null; }
+};
+CEL.lerNativo = async function (det, fonte) {
+  const r = await det.detect(fonte);
+  return r && r.length ? r[0].rawValue : null;
+};
+CEL.leitorZxing = function () {
+  const Z = window.ZXing;
+  const hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.QR_CODE]);
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  const reader = new Z.MultiFormatReader(); reader.setHints(hints);
+  return reader;
+};
+/* fonte = video ou canvas. faixaToda=false: só a faixa do meio (mira), mais
+   rápido ao vivo. */
+CEL.lerZxing = function (reader, fonte, faixaToda, girar) {
+  const Z = window.ZXing;
+  const vw = fonte.videoWidth || fonte.width, vh = fonte.videoHeight || fonte.height;
+  if (!vw || !vh) return null;
+  const y0 = faixaToda ? 0 : vh * 0.3, sh = faixaToda ? vh : vh * 0.4;
+  const esc = Math.min(1, 1200 / vw);
+  let cw = Math.round(vw * esc), ch = Math.round(sh * esc);
+  const c = CEL._cv || (CEL._cv = document.createElement('canvas'));
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (girar) { c.width = ch; c.height = cw; ctx.save(); ctx.translate(ch, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(fonte, 0, y0, vw, sh, 0, 0, cw, ch); ctx.restore(); }
+  else { c.width = cw; c.height = ch; ctx.drawImage(fonte, 0, y0, vw, sh, 0, 0, cw, ch); }
+  try {
+    const res = reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(c))));
+    return res ? res.getText() : null;
+  } catch (e) { return null; }
+};
+
+/* Procura com calma num quadro parado: nativo no quadro inteiro; senão ZXing
+   (quadro inteiro, faixa do meio, girado). */
+CEL.lerQuadroParado = async function (token) {
+  const v = token.video;
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  if (token.det) { try { const r = await CEL.lerNativo(token.det, c); if (r) return r; } catch (e) {} }
+  try { await CEL.carregaZxing(); } catch (e) { return null; }
+  token.zx = token.zx || CEL.leitorZxing();
+  return CEL.lerZxing(token.zx, c, true, false) || CEL.lerZxing(token.zx, c, false, false) ||
+         CEL.lerZxing(token.zx, c, true, true);
+};
+
+CEL.dicaCam = function (t, cls) {
+  const d = CEL.$('cel-dica'); if (!d) return;
+  d.textContent = t; d.className = 'dica' + (cls ? ' ' + cls : '');
+};
+
+CEL.alternaTrava = async function () {
+  const t = CEL.scan; if (!t || !t.stream) return;
+  if (t.frozen) {
+    t.frozen = false;
+    try { await t.video.play(); } catch (e) {}
+    CEL.dicaCam('Aponte pra etiqueta — toque pra travar a imagem');
+    return;
+  }
+  t.frozen = true; t.busy = true;
+  t.video.pause();
+  CEL.dicaCam('Travada · lendo…', 'trava');
+  let raw = null;
+  try { raw = await CEL.lerQuadroParado(t); } catch (e) {}
+  t.busy = false;
+  if (CEL.scan !== t || !t.frozen) return;
+  if (raw) { CEL.dicaCam('Travada · lido ✓ — toque pra soltar', 'trava ok'); CEL.lido(raw, true); }
+  else { CEL.dicaCam('Não achei o código nessa imagem — toque pra soltar e tente de novo', 'trava ruim'); try { if (navigator.vibrate) navigator.vibrate([40, 60, 40]); } catch (e) {} }
+};
+
 CEL.pararCamera = function () {
   const t = CEL.scan; CEL.scan = null; CEL.onCodigo = null;
   if (t && t.stream) t.stream.getTracks().forEach(function (x) { x.stop(); });
