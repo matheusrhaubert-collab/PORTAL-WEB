@@ -417,49 +417,112 @@ LOTES_UI.detail = function (params, d) {
   /* Listagem de peças por grupo de material. É a "separação do lote": a
      bancada não trabalha por pedido, trabalha por cor+espessura, porque é
      assim que a chapa entra na seccionadora. */
-  const groupsHtml = d.groups.map(function (g) {
-    const rows = g.rows.map(function (r) {
-      return {
-        mod: '<span class="erp-strong erp-small">' + UI.esc(r.module_name || '—') + '</span>' +
-          (r.client_name ? '<div class="erp-xs erp-muted">' + UI.esc(r.client_name) + '</div>' : ''),
-        ref: '<span class="erp-mono erp-xs">' + UI.esc(r.reference || '—') + '</span>',
-        desc: '<span class="erp-small">' + UI.esc(r.description || '—') + '</span>',
-        comp: LOTES_UI.mm(r.comprimento_mm),
-        larg: LOTES_UI.mm(r.largura_mm),
-        esp: LOTES_UI.esp(r.espessura_mm),
-        veio: r.has_grain ? UI.pill('sim', 'erp-pill-warn') : '<span class="erp-muted erp-xs">não</span>',
-        fita: r.edge_banding ? (r.edge_banding + ' lados')
-          : (Number(r.edge_band_m) ? (Number(r.edge_band_m).toFixed(2).replace('.', ',') + ' m') : '—'),
-        qty: '<span class="erp-strong">' + r.quantity + '</span>',
-        acao: r.source === 'manual'
-          ? '<button class="erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.removerPeca(\'' + r.id + '\')">remover</button>'
-          : '<span class="erp-xs erp-muted">' + (r.source === 'cutting_list' ? 'planilha' : 'módulo') + '</span>'
-      };
-    });
-    const semCor = !g.color_id;
-    return UI.panel(null,
-      '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
-        '<div><div class="erp-strong">' + UI.swatch(g.color && g.color.swatch_hex, g.color_name) +
-          ' · ' + LOTES_UI.esp(g.espessura_mm) + ' mm</div>' +
-          '<div class="erp-muted erp-small">' + g.qty + ' peças · ' + LOTES_UI.m2(g.area_m2) +
-          ' · fita ' + g.edge_m.toFixed(2).replace('.', ',') + ' m</div></div>' +
-        (semCor ? UI.pill('sem cor — não entra no nesting', 'erp-pill-danger') : '') +
-      '</div>' +
-      (semCor ? '<div class="erp-note">Estas peças não têm cor definida no pedido, então não dá pra saber qual chapa usar. ' +
-        'Confira o pedido de origem (cor por papel, <span class="erp-mono">selected_colors</span>) — ou acrescente a peça na mão com a cor certa.</div>' : '') +
-      UI.table([
-        { key: 'mod', label: 'Módulo / Cliente' },
-        { key: 'ref', label: 'Ref.' },
-        { key: 'desc', label: 'Descrição' },
-        { key: 'comp', label: 'Compr. (mm)', align: 'right' },
-        { key: 'larg', label: 'Larg. (mm)', align: 'right' },
-        { key: 'esp', label: 'Esp.', align: 'right' },
-        { key: 'veio', label: 'Veio' },
-        { key: 'fita', label: 'Fita' },
-        { key: 'qty', label: 'Qtd', align: 'right' },
-        { key: 'acao', label: '' }
-      ], rows));
-  }).join('');
+  /* PEÇAS DO LOTE EM PLANILHA (27/11, Matt: "lista tipo excel, sem poder
+     editar nada, coluna com a etiqueta de cada peça pra imprimir separada,
+     opção de minimizar, cor de verdade no quadro"). Um bloco por material
+     (<details>, aberto/fechado lembrado no navegador), quadro grande com a
+     TEXTURA da chapa, tabela compacta com cabeçalho fixo. Etiqueta = abre a
+     tela de etiquetas do plano atual só com as unidades daquela linha
+     (cut_plan_pieces.batch_piece_id); sem plano ainda não existe código. */
+  const atualPlano = hasPlan ? b._plans.slice().sort(function (x, y) { return y.version - x.version; })[0] : null;
+  let gruposFechados = {};
+  try { gruposFechados = JSON.parse(localStorage.getItem('erp_lote_grupos_fechados') || '{}') || {}; } catch (e) { /* ok */ }
+  const swG = function (c, px) {
+    c = c || {};
+    return '<span class="lp-sw" style="width:' + px + 'px;height:' + px + 'px;background:' + UI.esc(c.swatch_hex || '#d9d4cc') +
+      (c.texture_url ? ' url(\'' + UI.esc(c.texture_url) + '\') center/cover' : '') + '"></span>';
+  };
+  const lpCss = '<style>' +
+    'details.lp-grupo{background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden}' +
+    'details.lp-grupo>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:14px;padding:12px 16px;user-select:none}' +
+    'details.lp-grupo>summary::-webkit-details-marker{display:none}' +
+    'details.lp-grupo>summary:hover{background:#faf8f4}' +
+    'details.lp-grupo[open]>summary{border-bottom:1px solid var(--border)}' +
+    '.lp-sw{flex:none;display:inline-block;border-radius:8px;border:1px solid rgba(0,0,0,.18);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}' +
+    '.lp-tit{font-weight:600;font-size:15px}' +
+    '.lp-sub{font-size:12px;color:var(--muted);margin-top:2px}' +
+    '.lp-num{text-align:right;margin-left:14px}.lp-num b{display:block;font-size:20px;line-height:1;font-variant-numeric:tabular-nums}.lp-num span{font-size:11px;color:var(--muted)}' +
+    '.lp-car{margin-left:8px;width:28px;height:28px;border-radius:7px;border:1px solid var(--border);display:inline-flex;align-items:center;justify-content:center;color:var(--accent-dark);transition:transform .15s}' +
+    'details.lp-grupo[open] .lp-car{transform:rotate(180deg)}' +
+    '.lp-wrap{overflow:auto;max-height:70vh}' +
+    'table.lp-t{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px}' +
+    'table.lp-t th{position:sticky;top:0;z-index:1;background:#f4f2ee;color:var(--muted);font-size:10.5px;font-weight:600;text-transform:uppercase;' +
+      'letter-spacing:.04em;text-align:left;padding:7px 9px;border-bottom:1px solid var(--border);border-right:1px solid #e9e5de;white-space:nowrap}' +
+    'table.lp-t td{padding:5px 9px;height:30px;border-bottom:1px solid #efece6;border-right:1px solid #f3f0eb;white-space:nowrap;vertical-align:middle}' +
+    'table.lp-t tbody tr:nth-child(even) td{background:#fcfbf9}' +
+    'table.lp-t th.so{cursor:pointer}table.lp-t th.so:hover{color:var(--text);background:#ece8e1}' +
+    'table.lp-t th.on{color:var(--accent-dark);background:#efe7dc}' +
+    'table.lp-t th .ar{font-style:normal;font-size:9px;margin-left:3px}' +
+    'table.lp-t tr.lp-f th{top:29px;padding:3px 4px;background:#faf8f5;text-transform:none;letter-spacing:0}' +
+    'table.lp-t tr.lp-f input{width:100%;min-width:54px;height:24px;padding:0 6px;font-size:11.5px;border:1px solid #e2ddd4;border-radius:4px;background:#fff}' +
+    'table.lp-t tr.lp-f input:focus{outline:none;border-color:var(--accent)}' +
+    '.lp-cont{font-size:11.5px;color:var(--muted);padding:6px 16px;border-top:1px solid #efece6}' +
+    'table.lp-t tbody tr:hover td{background:#f6f1ea}' +
+    'table.lp-t .n{text-align:right;font-variant-numeric:tabular-nums}' +
+    'table.lp-t td.ds{max-width:320px;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}' +
+    'table.lp-t td.rf{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}' +
+    'table.lp-t td.mu{color:var(--muted)}' +
+    '.lp-etq{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--accent-dark);font-size:11.5px;text-decoration:none}' +
+    '.lp-etq:hover{background:#f2efe9}' +
+    '.lp-bar{display:flex;gap:8px;align-items:center;margin:0 0 10px}' +
+    '.lp-x{background:transparent;border:0;color:var(--muted);font-size:11.5px;padding:2px 6px}.lp-x:hover{color:var(--danger);background:transparent}' +
+  '</style>';
+  const groupsHtml = (d.groups.length ? lpCss +
+    '<div class="lp-bar"><button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.lpTodos(true)">Expandir tudo</button>' +
+      '<button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.lpTodos(false)">Minimizar tudo</button>' +
+      (atualPlano ? '' : '<span class="erp-xs erp-muted">Etiqueta individual aparece depois que o plano de corte for gerado (é ele que cria o código da peça).</span>') +
+    '</div>' : '') +
+    d.groups.map(function (g) {
+      const semCor = !g.color_id;
+      const k = (g.color_id || 'sem') + '|' + g.espessura_mm;
+      const linhas = g.rows.map(function (r) {
+        const fita = r.edge_banding ? (r.edge_banding + ' lados')
+          : (Number(r.edge_band_m) ? (Number(r.edge_band_m).toFixed(2).replace('.', ',') + ' m') : '—');
+        const etq = atualPlano && r.id
+          ? '<a class="lp-etq" target="_blank" href="#/planos/' + atualPlano.id + '/etiquetas?bp=' + r.id + '" title="Abre só a(s) etiqueta(s) desta linha pra imprimir">🏷 ' + (Number(r.quantity) > 1 ? r.quantity + '×' : 'imprimir') + '</a>'
+          : '<span class="erp-xs erp-muted">—</span>';
+        return '<tr>' +
+          '<td>' + UI.esc(r.module_name || '—') + '</td>' +
+          '<td class="mu">' + UI.esc(r.client_name || '') + '</td>' +
+          '<td class="rf">' + UI.esc(r.reference || '—') + '</td>' +
+          '<td class="ds" title="' + UI.esc(r.description || '') + '">' + UI.esc(r.description || '—') + '</td>' +
+          '<td class="n">' + LOTES_UI.mm(r.comprimento_mm) + '</td>' +
+          '<td class="n">' + LOTES_UI.mm(r.largura_mm) + '</td>' +
+          '<td class="n">' + LOTES_UI.esp(r.espessura_mm) + '</td>' +
+          '<td>' + (r.has_grain ? UI.pill('sim', 'erp-pill-warn') : '<span class="erp-xs erp-muted">não</span>') + '</td>' +
+          '<td>' + fita + '</td>' +
+          '<td class="n"><b>' + r.quantity + '</b></td>' +
+          '<td>' + etq + '</td>' +
+          '<td class="mu" style="font-size:11px">' + (r.source === 'manual'
+            ? 'manual <button class="lp-x" title="Remover peça manual" onclick="LOTES_UI.removerPeca(\'' + r.id + '\')">✕</button>'
+            : (r.source === 'cutting_list' ? 'planilha' : 'módulo')) + '</td>' +
+        '</tr>';
+      }).join('');
+      return '<details class="lp-grupo" data-k="' + UI.esc(k) + '"' + (gruposFechados[k] ? '' : ' open') + ' ontoggle="LOTES_UI.lpToggle(this)">' +
+        '<summary>' + swG(g.color, 46) +
+          '<div style="flex:1;min-width:180px"><div class="lp-tit">' + UI.esc(g.color_name) + ' · ' + LOTES_UI.esp(g.espessura_mm) + ' mm</div>' +
+            '<div class="lp-sub">' + g.rows.length + ' linhas · fita ' + g.edge_m.toFixed(2).replace('.', ',') + ' m</div></div>' +
+          (semCor ? UI.pill('sem cor — não entra no nesting', 'erp-pill-danger') : '') +
+          '<div class="lp-num"><b>' + g.qty + '</b><span>peças</span></div>' +
+          '<div class="lp-num"><b>' + LOTES_UI.m2(g.area_m2).replace(' m²', '') + '</b><span>m²</span></div>' +
+          '<span class="lp-car">▾</span>' +
+        '</summary>' +
+        (semCor ? '<div class="erp-note" style="margin:10px 16px">Estas peças não têm cor definida no pedido, então não dá pra saber qual chapa usar. ' +
+          'Confira o pedido de origem (cor por papel, <span class="erp-mono">selected_colors</span>) — ou acrescente a peça na mão com a cor certa.</div>' : '') +
+        '<div class="lp-wrap"><table class="lp-t"><thead><tr class="lp-h">' +
+          [['Módulo'], ['Cliente'], ['Ref.'], ['Descrição'], ['Compr.', 1], ['Larg.', 1], ['Esp.', 1], ['Veio'], ['Fita'], ['Qtd', 1], ['Etiqueta', 0, 1], ['Origem']]
+            .map(function (c, i) {
+              return c[2] ? '<th>' + c[0] + '</th>'
+                : '<th class="' + (c[1] ? 'n ' : '') + 'so" title="Clique pra ordenar" onclick="LOTES_UI.lpSort(this,' + i + ',' + (c[1] ? 1 : 0) + ')">' + c[0] + '<i class="ar"></i></th>';
+            }).join('') +
+        '</tr><tr class="lp-f">' +
+          [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, 11].map(function (i) {
+            return '<th>' + (i < 0 ? '' : '<input type="search" placeholder="filtrar" data-c="' + i + '" oninput="LOTES_UI.lpFiltra(this)">') + '</th>';
+          }).join('') +
+        '</tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+        '<div class="lp-cont" style="display:none"></div>' +
+      '</details>';
+    }).join('');
 
   const plansRows = b._plans.map(function (p) {
     const ps = LOTES_UI.PLAN_STATUS[p.status] || LOTES_UI.PLAN_STATUS.salvo;
@@ -1454,6 +1517,57 @@ LOTES_UI.apagarPlano = async function (planId, batchId) {
 /* ============================================================
    #/planos/:id/etiquetas — folha de etiquetas
    ============================================================ */
+LOTES_UI.lpToggle = function (el) {
+  let m = {};
+  try { m = JSON.parse(localStorage.getItem('erp_lote_grupos_fechados') || '{}') || {}; } catch (e) { /* ok */ }
+  if (el.open) delete m[el.dataset.k]; else m[el.dataset.k] = true;
+  try { localStorage.setItem('erp_lote_grupos_fechados', JSON.stringify(m)); } catch (e) { /* ok */ }
+};
+/* Ordenar pela coluna (clique no título; de novo inverte) e filtro por
+   coluna (texto contido, sem diferenciar maiúscula; número aceita >300, <600). */
+LOTES_UI.lpSort = function (th, col, num) {
+  const tb = th.closest('table'), body = tb.tBodies[0];
+  const dir = th.classList.contains('on') && th.dataset.dir === '1' ? -1 : 1;
+  tb.querySelectorAll('tr.lp-h th').forEach(function (h) { h.classList.remove('on'); const a = h.querySelector('.ar'); if (a) a.textContent = ''; });
+  th.classList.add('on'); th.dataset.dir = String(dir); th.querySelector('.ar').textContent = dir > 0 ? '▲' : '▼';
+  const val = function (tr) {
+    const t = (tr.cells[col].textContent || '').trim();
+    if (num) { const n = Number(t.replace(/\./g, '').replace(',', '.')); return isNaN(n) ? -Infinity : n; }
+    return t.toLowerCase();
+  };
+  Array.prototype.slice.call(body.rows).sort(function (a, b) {
+    const va = val(a), vb = val(b);
+    return (num ? va - vb : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true })) * dir;
+  }).forEach(function (tr) { body.appendChild(tr); });
+};
+LOTES_UI.lpFiltra = function (inp) {
+  const tb = inp.closest('table');
+  const fs = Array.prototype.slice.call(tb.querySelectorAll('tr.lp-f input')).filter(function (i) { return i.value.trim(); })
+    .map(function (i) { return { c: Number(i.dataset.c), v: i.value.trim().toLowerCase() }; });
+  let vis = 0, qt = 0;
+  Array.prototype.slice.call(tb.tBodies[0].rows).forEach(function (tr) {
+    const ok = fs.every(function (f) {
+      const t = (tr.cells[f.c].textContent || '').trim().toLowerCase();
+      const m = f.v.match(/^([<>]=?)\s*([\d.,]+)$/);
+      if (m) {
+        const n = Number(t.replace(/\./g, '').replace(',', '.')), x = Number(m[2].replace(',', '.'));
+        return m[1] === '>' ? n > x : m[1] === '>=' ? n >= x : m[1] === '<' ? n < x : n <= x;
+      }
+      return t.indexOf(f.v) >= 0;
+    });
+    tr.style.display = ok ? '' : 'none';
+    if (ok) { vis++; qt += Number((tr.cells[9].textContent || '0').trim()) || 0; }
+  });
+  const cont = tb.closest('details').querySelector('.lp-cont');
+  if (cont) {
+    cont.style.display = fs.length ? '' : 'none';
+    cont.textContent = 'Filtro: ' + vis + ' de ' + tb.tBodies[0].rows.length + ' linhas · ' + qt + ' peças';
+  }
+};
+LOTES_UI.lpTodos = function (abrir) {
+  document.querySelectorAll('details.lp-grupo').forEach(function (el) { el.open = !!abrir; LOTES_UI.lpToggle(el); });
+};
+
 LOTES_UI.labelsLoad = async function (p) {
   const plan = await LOTES.plan(p.id);
   /* Bolinha preta = peça vai pra furadeira (FURACAO_LOTE.marcarPecasFuradas).
@@ -1479,7 +1593,11 @@ LOTES_UI.labels = function (params, d) {
      que acabou de sair. */
   // Com empilhamento as duas chapas da pilha saem intercaladas (ver
   // LOTES.piecesInOutputOrder) — mesma ordem da pasta pra máquina.
-  const ordered = LOTES.piecesInOutputOrder(plan);
+  let ordered = LOTES.piecesInOutputOrder(plan);
+  /* Etiqueta avulsa (27/11): ?bp=<batch_piece_id> = só as unidades daquela
+     linha do lote (botão 🏷 na lista de peças do lote). */
+  const soBp = params && params.bp ? String(params.bp).split(',') : null;
+  if (soBp) ordered = ordered.filter(function (p) { return soBp.indexOf(p.batch_piece_id) >= 0; });
 
   const cards = ordered.map(function (p) {
     const s = sheetByPiece[p.id];
@@ -1563,7 +1681,8 @@ LOTES_UI.labels = function (params, d) {
       UI.crumb([{ label: 'Lotes', href: '#/lotes' },
         { label: (plan._batch && plan._batch.code) || 'Lote', href: '#/lotes/' + plan.batch_id },
         { label: 'Plano v' + plan.version, href: '#/planos/' + plan.id }, { label: 'Etiquetas' }]) +
-      UI.head('Etiquetas — ' + (plan.code || ''),
+      UI.head('Etiquetas — ' + (plan.code || '') + (soBp ? ' · avulsa' : ''),
+        (soBp ? (ordered.length ? 'Só a(s) etiqueta(s) da peça escolhida. <a href="#/planos/' + plan.id + '/etiquetas">Ver todas</a>. ' : '<b>Esta peça não está no plano atual.</b> ') : '') +
         ordered.length + ' etiquetas, na ordem em que as peças saem da máquina (chapa 1 primeiro). ' +
         'Código de barras em Code 39 — qualquer leitor de mão lê sem configurar. ' +
         (d.furErro ? '<b style="color:var(--danger)">Não consegui verificar a furação — as bolinhas de furadeira NÃO aparecem nesta impressão (ver F12).</b>'
