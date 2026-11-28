@@ -1168,7 +1168,7 @@ function cxProjCardHtml(o, doPedido) {
   const src = c && (c.ai_preview_url || c.thumbnail_data_url);
   const bt = (a, rot, prim) => '<button type="button"' + (prim ? '' : ' class="secondary"') + ' data-cx="pj" data-a="' + a + '" data-id="' + cEsc(o.id) + '">' + cEsc(rot) + '</button>';
   return '<div class="cx-pcard">'
-    + (src ? '<img class="cx-pimg" alt="" src="' + cEsc(src) + '" data-cx="pj" data-a="zoom" data-id="' + cEsc(o.id) + '">' : '<div class="cx-pimg cx-pimg-0">' + (c ? '' : '…') + '</div>')
+    + (src ? '<img class="cx-pimg" alt="" src="' + cEsc(src) + '" data-cx="pj" data-a="zoom" data-id="' + cEsc(o.id) + '" data-pid="' + cEsc(o._pid || '') + '">' : '<div class="cx-pimg cx-pimg-0">' + (c ? '' : '…') + '</div>')
     + '<div class="cx-pbody"><b>' + cEsc(o._pname || o.po_name || '') + '</b>'
     + '<div class="hint">' + cEsc([cxPnum(o.project_number), o._folder ? '📁 ' + o._folder : '', cxUserName(o.client_user_id, [o])].filter(Boolean).join(' · ')) + '</div>'
     + '<div class="cx-pacts">' + bt('open', T('project.load_btn'), 1) + (doPedido ? '' : bt('rename', T('fav.rename_btn'))) + bt('dup', T('fav.duplicate_btn')) + bt('share', T('project.share_btn')) + bt('v3d', T('fav.view3d_btn')) + (doPedido ? '' : bt('folder', T('fav.folder_btn')))
