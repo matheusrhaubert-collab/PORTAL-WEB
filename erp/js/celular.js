@@ -70,6 +70,7 @@ CEL.home = function () {
       '<button class="cel-big c-rf" onclick="CEL.telaRefazer()"><span>↻</span>Refazer peça</button>' +
       '<button class="cel-big c-lm" onclick="CEL.telaLaminacao()"><span>▤</span>Laminação</button>' +
       '<button class="cel-big c-rt" onclick="CEL.telaRetalho()"><span>▭</span>Retalho</button>' +
+      '<button class="cel-big c-bp" onclick="CEL.telaBuscar()"><span>⌕</span>Buscar no projeto</button>' +
     '</div>');
 };
 
@@ -601,6 +602,45 @@ CEL.retSalvar = async function (btn) {
       '<div class="s">' + c + ' × ' + l + ' mm · ' + CEL.esc(cor.name) + '</div><div class="k">Escreva o código no retalho (ou imprima a etiqueta pelo ERP › Retalhos).</div></div>' +
       '<button class="cel-go gray" onclick="CEL.retNovo()">＋ Outro retalho</button><button class="cel-link" onclick="CEL.home()">Voltar ao início</button>');
   } catch (e) { btn.disabled = false; CEL.card('rn-res', 'err', '<div class="s">' + CEL.esc(CEL.erro(e)) + '</div>'); }
+};
+
+/* ---------------- 5) Buscar no projeto ---------------- */
+/* 27/11, Matt: "botão novo, buscar no projeto: lê o código de barra da
+   etiqueta e puxa o visualizador 3D com a peça piscando no projeto".
+   Reaproveita o 3D público do portal (portal.html?view3d=CODE&peca=PC-…, o
+   mesmo do QR do montador — locateView3DPiece em portal-09): ele já pisca o
+   módulo no projeto e abre a peça no módulo explodido. O código do projeto
+   vem de erp_view3d_codes_for_orders (migration 179/192; cria se faltar).
+   Peça refeita (lote Refazer, sem order_id) usa a original do piece_rework. */
+CEL.telaBuscar = function () {
+  CEL.tela = 'buscar';
+  CEL.render(CEL.topo('Buscar no projeto') + CEL.leitorHtml() + '<div id="bp-res" class="cel-card" style="display:none"></div>' +
+    '<div class="cel-msg">Leia a etiqueta da peça: abre o projeto em 3D com ela piscando.</div>');
+  CEL._religa = function () { CEL.ligarCamera(CEL.busca); };
+  CEL._religa();
+};
+CEL.busca = async function (code) {
+  CEL.card('bp-res', '', '<div class="s">Procurando ' + CEL.esc(code) + '…</div>');
+  try {
+    const p = await CEL.peca(code);
+    const erp = CEL.erp();
+    let orderId = p.bp && p.bp.order_id, codigo = code;
+    if (!orderId && p.bp) {
+      const rw = await erp.from('piece_rework').select('order_id, orig_piece_code').eq('new_batch_piece_id', p.bp.id).limit(1);
+      const r0 = rw.data && rw.data[0];
+      if (r0 && r0.order_id) { orderId = r0.order_id; codigo = r0.orig_piece_code || code; }
+    }
+    if (!orderId) throw new Error('Essa peça não é de pedido (lista de corte avulsa ou peça manual) — não tem projeto em 3D.');
+    const { data, error } = await DATA.sb().rpc('erp_view3d_codes_for_orders', { p_order_ids: [orderId] });
+    if (error) throw error;
+    const v = (data || [])[0];
+    if (!v || !v.view3d_code) throw new Error('O pedido dessa peça não veio de um projeto do portal (ex.: PROMOB ou pedido antigo) — não tem 3D do projeto.');
+    CEL.card('bp-res', 'ok', '<div class="t">Abrindo o projeto…</div>' + CEL.descPeca(p));
+    CEL.pararCamera();
+    location.href = '../portal.html?view3d=' + encodeURIComponent(v.view3d_code) + '&peca=' + encodeURIComponent(codigo);
+  } catch (e) {
+    CEL.card('bp-res', 'err', '<div class="t">✕ ' + CEL.esc(code) + '</div><div class="s">' + CEL.esc(CEL.erro(e)) + '</div>');
+  }
 };
 
 /* EM PÉ (27/11, Matt: "deixa ele em pé, só tá rodando deitado"): o manifest

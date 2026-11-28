@@ -1,3 +1,3 @@
-﻿data: 2026-11-27 23:28:36
-cache: 202611272328
+﻿data: 2026-11-27 23:42:00
+cache: 202611272342
 mensagem: app do celular da fabrica: apontar, refazer peca (plano automatico na fila da maquina), laminacao por lote/cor, retalhos
