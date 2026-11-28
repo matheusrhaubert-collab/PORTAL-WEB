@@ -1,0 +1,47 @@
+/* App do celular da fábrica — poucos botões, grandes, alto contraste. */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#1f1d1a;color:#f4f1ea;font:16px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{min-height:100%;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.cel-load{margin:auto;opacity:.7}
+.cel-top{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.cel-top h1{font-size:20px;margin:0;flex:1}
+.cel-back{background:none;border:0;color:#f4f1ea;font-size:30px;line-height:1;padding:0 8px 0 0}
+.cel-quem{font-size:12px;opacity:.6;text-align:right}
+.cel-quem button{background:none;border:0;color:#d9c9a8;font-size:12px;text-decoration:underline;padding:0}
+.cel-home{flex:1;display:grid;grid-template-rows:repeat(4,1fr);gap:12px;padding:6px 14px 18px}
+.cel-big{border:0;border-radius:18px;font-size:26px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;gap:14px;min-height:96px}
+.cel-big span{font-size:38px}
+.c-ap{background:#2f6f4f}.c-rf{background:#a3362e}.c-lm{background:#2c5d8a}.c-rt{background:#7a5a33}
+.cel-cam{position:relative;margin:0 14px;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3}
+.cel-cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cel-cam .mira{position:absolute;left:8%;right:8%;top:38%;bottom:38%;border:3px solid rgba(255,255,255,.85);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.25)}
+.cel-cam .camerr{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;font-size:14px;opacity:.85}
+.cel-dig{display:flex;gap:8px;margin:10px 14px}
+.cel-dig input{flex:1;font-size:18px;padding:12px;border-radius:12px;border:0;background:#33302b;color:#fff;text-transform:uppercase}
+.cel-dig button{border:0;border-radius:12px;background:#4a463f;color:#fff;font-size:18px;padding:0 16px}
+.cel-card{margin:10px 14px;padding:14px;border-radius:14px;background:#2b2925}
+.cel-card.ok{background:#1f4d36}.cel-card.warn{background:#6b5313}.cel-card.err{background:#6e2520}
+.cel-card .t{font-size:22px;font-weight:700}
+.cel-card .s{font-size:15px;opacity:.85;margin-top:4px}
+.cel-card .k{font-size:13px;opacity:.65;margin-top:6px}
+.cel-sw{display:inline-block;width:22px;height:22px;border-radius:5px;vertical-align:-5px;margin-right:8px;border:1px solid rgba(255,255,255,.3);background-size:cover}
+.cel-go{display:block;width:calc(100% - 28px);margin:12px 14px;border:0;border-radius:16px;padding:20px;font-size:22px;font-weight:700;color:#fff;background:#2f6f4f}
+.cel-go.red{background:#a3362e}.cel-go.blue{background:#2c5d8a}.cel-go.gray{background:#4a463f}
+.cel-go:disabled{opacity:.45}
+.cel-link{display:block;margin:6px auto 14px;background:none;border:0;color:#d9c9a8;font-size:15px;text-decoration:underline}
+.cel-lista{margin:6px 14px}
+.cel-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:#2b2925;margin-bottom:8px}
+.cel-item div{flex:1;min-width:0}
+.cel-item b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cel-item small{opacity:.7}
+.cel-item button{background:none;border:0;color:#f4f1ea;font-size:24px;padding:0 4px}
+.cel-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 14px}
+.cel-chip{border:2px solid #4a463f;background:none;color:#f4f1ea;border-radius:999px;padding:10px 14px;font-size:16px}
+.cel-chip.on{background:#f4f1ea;color:#1f1d1a;border-color:#f4f1ea}
+.cel-form{margin:8px 14px;display:grid;gap:10px}
+.cel-form label{font-size:14px;opacity:.8}
+.cel-form input,.cel-form select{width:100%;font-size:18px;padding:12px;border-radius:12px;border:0;background:#33302b;color:#fff;margin-top:4px}
+.cel-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cel-login{margin:auto 0;padding:24px}
+.cel-login h1{font-size:28px;margin:0 0 18px}
+.cel-msg{margin:10px 14px;font-size:14px;opacity:.85}
