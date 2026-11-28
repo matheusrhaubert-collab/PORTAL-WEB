@@ -332,6 +332,14 @@
     window.savePhotorealRenderToProject = wrapped;
   }
 
+  // 27/11 (Matt: "só colocar LED quando tiver LED no projeto"): algum módulo
+  // com LED configurado (slot.ledConfigs, tela de LED do portal-06c).
+  function projetoTemLed() {
+    try {
+      return (typeof projectSlots !== 'undefined' && Array.isArray(projectSlots)) && projectSlots.some((sl) =>
+        sl && !sl.oculto && sl.ledConfigs && Object.keys(sl.ledConfigs).some((k) => { const v = sl.ledConfigs[k]; if (!v) return false; if (typeof Pricing !== 'undefined' && Pricing.ledLista) return Pricing.ledLista(v).length > 0; return Array.isArray(v) ? v.length > 0 : true; }));
+    } catch (e) { return false; }
+  }
   async function runAi(baseUrl, cam) {
     openModal();
     resetView();
@@ -359,7 +367,7 @@
         colorRefImages = colorRefs || [];
       } catch (e) { console.warn('Render com IA: referências de cor/módulo indisponíveis', e); }
       const { data, error } = await supabaseClient.functions.invoke('generate-gallery-render', {
-        body: { mode: 'enhance', imageDataUrl: baseDataUrl, aspectRatio, colorLabel, colorRefImages, moduleRefImages }
+        body: { mode: 'enhance', imageDataUrl: baseDataUrl, aspectRatio, colorLabel, colorRefImages, moduleRefImages, hasLed: projetoTemLed() }
       });
       if (error || !data || !data.imageDataUrl) {
         let msg = (data && data.error) || (error && error.message) || 'erro';

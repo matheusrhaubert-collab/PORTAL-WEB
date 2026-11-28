@@ -399,13 +399,15 @@ Light: natural interior photography, soft and believable; no people; no text, le
 // poucas decorações". Base = render realista do path tracer recém-gerado.
 // Diferente do 'decorate' (família aparece de verdade): aqui o foco é só
 // FOTORREALISMO (luz, material, sombra) + pouquíssimos objetos neutros.
-function buildEnhancePrompt(colorLabel: string | null, _colorRefCount: number, _moduleRefCount: number): string {
+function buildEnhancePrompt(colorLabel: string | null, _colorRefCount: number, _moduleRefCount: number, hasLed = false): string {
   // v4 (27/11): o Matt testou no chat com um pedido CURTO ("tornar essa cozinha
   // realista, mantendo o mesmo projeto de móveis, não pode mudar os móveis,
   // composição ou cores. só deixa ela ambientada e realista") e saiu muito
   // melhor que as listas longas de proibições (v1–v3). Prompt curto, só a
   // imagem do render (sem swatches/referências), modelo de imagem mais novo.
-  return `Make this kitchen (or room) photorealistic, like a real professional interior photograph, keeping exactly the same furniture design. Do not change the cabinets, their composition, layout, proportions, handles or colors${colorLabel ? ` (finishes: ${colorLabel})` : ''}. Just stage it and make it real: a complete finished room with real floor, walls, ceiling with recessed lights, natural daylight, warm under-cabinet light, realistic materials, reflections and shadows, and a few tasteful decorative items. Keep the same camera angle and framing. No people, no text, no logos.`;
+  return `Make this kitchen (or room) photorealistic, like a real professional interior photograph, keeping exactly the same furniture design. Do not change the cabinets, their composition, layout, proportions, handles or colors${colorLabel ? ` (finishes: ${colorLabel})` : ''}. Just stage it and make it real: a complete finished room with real floor, walls, ceiling with recessed lights, natural daylight, realistic materials, reflections and shadows, and a few tasteful decorative items. Keep the same camera angle and framing. ${hasLed
+    ? 'The project has built-in LED lighting: keep the LED strips exactly where they glow in the reference image (warm light), and do not add LED anywhere else.'
+    : 'The project has NO LED lighting: do not add any LED strip, under-cabinet light, light inside shelves or cabinets, or any glow on the furniture — light only from the window and the ceiling.'} No people, no text, no logos.`;
 }
 
 async function generateDecoratedImage(params: {
@@ -416,6 +418,7 @@ async function generateDecoratedImage(params: {
   colorRefImages: { mimeType: string; data: string; label: string | null }[];
   moduleRefImages: { mimeType: string; data: string; label: string | null }[];
   enhance?: boolean;
+  hasLed?: boolean;
 }): Promise<{ imageDataUrl?: string; error?: string; status?: number }> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) {
@@ -424,7 +427,7 @@ async function generateDecoratedImage(params: {
   const { mainImage, familyBrief, aspectRatio, colorLabel, colorRefImages, moduleRefImages } = params;
   const parts: Record<string, unknown>[] = [
     { text: params.enhance
-        ? buildEnhancePrompt(colorLabel, colorRefImages.length, moduleRefImages.length)
+        ? buildEnhancePrompt(colorLabel, colorRefImages.length, moduleRefImages.length, !!params.hasLed)
         : buildDecoratePrompt(familyBrief, colorLabel, colorRefImages.length, moduleRefImages.length) },
     { inline_data: { mime_type: mainImage.mimeType, data: mainImage.data } }
   ];
@@ -644,7 +647,7 @@ Deno.serve(async (req: Request) => {
       : mode === 'decorate'
       ? await generateDecoratedImage({ mainImage, familyBrief, aspectRatio, colorLabel, colorRefImages, moduleRefImages })
       : mode === 'enhance'
-      ? await generateDecoratedImage({ mainImage, familyBrief: null, aspectRatio, colorLabel, colorRefImages, moduleRefImages, enhance: true })
+      ? await generateDecoratedImage({ mainImage, familyBrief: null, aspectRatio, colorLabel, colorRefImages, moduleRefImages, enhance: true, hasLed: !!(body && body.hasLed) })
       : await generateGalleryImage({ mainImage, moduleRefImages, colorRefImages, angleRefImages, roomLabel, colorLabel, aspectRatio });
 
     if (result.error) {
