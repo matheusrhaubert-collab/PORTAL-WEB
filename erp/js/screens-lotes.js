@@ -1216,12 +1216,33 @@ LOTES_UI.chapasToggle = function (el) {
   if (el.open) m[el.dataset.k] = true; else delete m[el.dataset.k];
   try { localStorage.setItem('erp_plano_chapas_abertas', JSON.stringify(m)); } catch (e) { /* ok */ }
 };
-LOTES_UI.chapasTodas = function (abrir) {
-  document.querySelectorAll('details.erp-chapas-grupo').forEach(function (el) { el.open = !!abrir; LOTES_UI.chapasToggle(el); });
+LOTES_UI.chapasTodas = function (abrir, btn) {
+  const raiz = (btn && btn.closest && btn.closest('.pl-exp-body')) || document;
+  raiz.querySelectorAll('details.erp-chapas-grupo').forEach(function (el) { el.open = !!abrir; LOTES_UI.chapasToggle(el); });
 };
 
 LOTES_UI.planView = function (params, d) {
   if (!d.plan) return UI.errorBox('Plano não encontrado', '');
+  const plan = d.plan;
+  const snap = plan.params_snapshot || {};
+  return UI.crumb([{ label: 'Lotes', href: '#/lotes' },
+      { label: (plan._batch && plan._batch.code) || 'Lote', href: '#/lotes/' + plan.batch_id },
+      { label: 'Plano v' + plan.version }]) +
+    UI.head('Plano ' + (plan.code || ('v' + plan.version)),
+      'Gerado em ' + UI.date(plan.created_at) + ' com o perfil "' + UI.esc(snap.name || '—') + '". ' +
+      'Esta versão é imutável: gerar de novo cria a v' + (plan.version + 1) + ', não sobrescreve esta.',
+      '<a class="erp-btn" href="#/planos/' + plan.id + '/etiquetas">Etiquetas</a>' +
+      (plan.status === 'salvo'
+        ? '<button class="erp-btn-secondary" onclick="LOTES_UI.marcarCortado(\'' + plan.id + '\')">Marcar como cortado</button>' : '')) +
+    '<div id="lotes-toast" style="display:none"></div>' +
+    LOTES_UI.renderSaveWarnings() +
+    LOTES_UI.planBody(d);
+};
+
+/* Corpo do plano (KPIs, máquina, parâmetros, chapas, zona de perigo). Usado
+   pela página do plano E pela linha aberta da lista de planos (27/11, Matt:
+   "seta pra baixo que abre a linha com todas as informações do plano"). */
+LOTES_UI.planBody = function (d) {
   const plan = d.plan;
   const ps = LOTES_UI.PLAN_STATUS[plan.status] || LOTES_UI.PLAN_STATUS.salvo;
   const snap = plan.params_snapshot || {};
@@ -1311,8 +1332,8 @@ LOTES_UI.planView = function (params, d) {
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
       '<span class="erp-muted erp-small">' + grupos.length + ' material(is) · ' + plan._sheets.length + ' chapa(s) · ' +
         plan._sheets.reduce(function (t, s) { return t + (s._pieces || []).length; }, 0) + ' peças</span>' +
-      '<button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.chapasTodas(true)">Expandir tudo</button>' +
-      '<button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.chapasTodas(false)">Recolher tudo</button>' +
+      '<button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.chapasTodas(true, this)">Expandir tudo</button>' +
+      '<button type="button" class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.chapasTodas(false, this)">Recolher tudo</button>' +
     '</div>' +
     grupos.map(function (g) {
       const nPilhas = Object.keys(g.pilhas).length;
@@ -1334,23 +1355,14 @@ LOTES_UI.planView = function (params, d) {
 
   const exportBtns = EXPORTC.formats.map(function (f) {
     return '<button class="erp-btn-secondary erp-btn-sm" title="' + UI.esc(f.hint) +
-      '" onclick="LOTES_UI.exportar(\'' + f.id + '\')">' + UI.esc(f.label) + '</button>';
+      '" onclick="LOTES_UI.exportar(\'' + f.id + '\', \'' + plan.id + '\')">' + UI.esc(f.label) + '</button>';
   }).join('');
 
   LOTES_UI._plan = plan;
+  LOTES_UI._plansById = LOTES_UI._plansById || {};
+  LOTES_UI._plansById[plan.id] = plan;
 
-  return UI.crumb([{ label: 'Lotes', href: '#/lotes' },
-      { label: (plan._batch && plan._batch.code) || 'Lote', href: '#/lotes/' + plan.batch_id },
-      { label: 'Plano v' + plan.version }]) +
-    UI.head('Plano ' + (plan.code || ('v' + plan.version)),
-      'Gerado em ' + UI.date(plan.created_at) + ' com o perfil "' + UI.esc(snap.name || '—') + '". ' +
-      'Esta versão é imutável: gerar de novo cria a v' + (plan.version + 1) + ', não sobrescreve esta.',
-      '<a class="erp-btn" href="#/planos/' + plan.id + '/etiquetas">Etiquetas</a>' +
-      (plan.status === 'salvo'
-        ? '<button class="erp-btn-secondary" onclick="LOTES_UI.marcarCortado(\'' + plan.id + '\')">Marcar como cortado</button>' : '')) +
-    '<div id="lotes-toast" style="display:none"></div>' +
-    LOTES_UI.renderSaveWarnings() +
-    '<div class="erp-grid erp-grid-4" style="margin-bottom:16px">' +
+  return '<div class="erp-grid erp-grid-4" style="margin-bottom:16px">' +
       UI.kpi('Status', UI.pill(ps.label, ps.pill), 'v' + plan.version) +
       UI.kpi('Chapas novas', plan.total_sheets, plan.total_offcuts_used + ' retalhos usados') +
       UI.kpi('Peças', plan.total_pieces, 'com código de barras') +
@@ -1406,9 +1418,10 @@ LOTES_UI.renderSaveWarnings = function () {
     'Ajuste em Materiais. O plano em si está salvo e íntegro.</div></div>';
 };
 
-LOTES_UI.exportar = function (formatId) {
-  if (!LOTES_UI._plan) return;
-  EXPORTC.download(LOTES_UI._plan, formatId);
+LOTES_UI.exportar = function (formatId, planId) {
+  const plan = (planId && LOTES_UI._plansById && LOTES_UI._plansById[planId]) || LOTES_UI._plan;
+  if (!plan) return;
+  EXPORTC.download(plan, formatId);
 };
 
 LOTES_UI.marcarCortado = async function (planId) {
@@ -1418,7 +1431,11 @@ LOTES_UI.marcarCortado = async function (planId) {
 
 LOTES_UI.apagarPlano = async function (planId, batchId) {
   if (!confirm('Apagar o plano, devolver os retalhos consumidos e remover as sobras que ele gerou?')) return;
-  try { await LOTES.deletePlan(planId); location.hash = '#/lotes/' + batchId; }
+  try {
+    await LOTES.deletePlan(planId);
+    if (location.hash === '#/planos') { if (LOTES_UI._plOpen) LOTES_UI._plOpen.delete(planId); APP.render(); }
+    else location.hash = '#/lotes/' + batchId;
+  }
   catch (err) { LOTES_UI.toast(LOTES.explainError(err), true); }
 };
 
@@ -1569,39 +1586,74 @@ LOTES_UI.plansList = function (params, d) {
     ? plans.reduce(function (s, p) { return s + (p.waste_pct || 0) * ((p.total_sheets || 0) + (p.total_offcuts_used || 0)); }, 0) / totalArea
     : 0;
 
-  const rows = plans.map(function (p) {
+  /* LINHA QUE ABRE (27/11, Matt: "um botão seta pra baixo que abre a linha
+     com todas as informações do plano de corte, inclusive o plano... as duas
+     telas em uma só"). ▾ (ou clique na linha) abre embaixo o MESMO corpo da
+     página do plano (LOTES_UI.planBody): KPIs, máquina/PDFs/CSV, parâmetros,
+     chapas com desenho e zona de perigo. Vários podem ficar abertos; o que
+     está aberto sobrevive a um APP.render (marcar cortado, apagar). A página
+     #/planos/:id continua existindo (links antigos, botão "Abrir sozinho"). */
+  LOTES_UI._plOpen = LOTES_UI._plOpen || new Set();
+  const colunas = 11;
+  const linhas = plans.map(function (p) {
     const st = LOTES_UI.PLAN_STATUS[p.status] || LOTES_UI.PLAN_STATUS.salvo;
     const b = p.batches || {};
     const snap = p.params_snapshot || {};
-    return {
-      _href: '#/planos/' + p.id,
-      code: '<span class="erp-mono erp-strong">' + UI.esc(p.code || ('v' + p.version)) + '</span>' +
-        '<div class="erp-xs erp-muted">' + UI.date(p.created_at) + '</div>',
-      lote: b.code
+    const aberto = LOTES_UI._plOpen.has(p.id);
+    return '<tr class="pl-row' + (aberto ? ' pl-on' : '') + '" data-pl="' + p.id + '" onclick="LOTES_UI.plToggle(event, \'' + p.id + '\')">' +
+      '<td><span class="erp-mono erp-strong">' + UI.esc(p.code || ('v' + p.version)) + '</span>' +
+        '<div class="erp-xs erp-muted">' + UI.date(p.created_at) + '</div></td>' +
+      '<td>' + (b.code
         ? '<a href="#/lotes/' + b.id + '" class="erp-small">' + UI.esc(b.code) + '</a>' +
           (b.name ? '<div class="erp-xs erp-muted">' + UI.esc(b.name) + '</div>' : '')
-        : '<span class="erp-muted erp-xs">—</span>',
-      v: 'v' + p.version,
-      sheets: p.total_sheets,
-      offc: p.total_offcuts_used
-        ? UI.pill(String(p.total_offcuts_used), 'erp-pill-ok')
-        : '<span class="erp-muted erp-xs">0</span>',
-      pieces: p.total_pieces,
-      waste: LOTES_UI.pct(p.waste_pct),
-      strat: snap.strategy === 'maxrects'
-        ? UI.pill('MaxRects', 'erp-pill-warn') : UI.pill('Guilhotina', 'erp-pill-neutral'),
-      status: UI.pill(st.label, st.pill),
-      acao: '<a class="erp-btn erp-btn-ghost erp-btn-sm" href="#/planos/' + p.id + '/etiquetas">Etiquetas</a>'
-    };
-  });
+        : '<span class="erp-muted erp-xs">—</span>') + '</td>' +
+      '<td>v' + p.version + '</td>' +
+      '<td class="erp-num">' + (p.total_sheets || 0) + '</td>' +
+      '<td class="erp-num">' + (p.total_offcuts_used
+        ? UI.pill(String(p.total_offcuts_used), 'erp-pill-ok') : '<span class="erp-muted erp-xs">0</span>') + '</td>' +
+      '<td class="erp-num">' + (p.total_pieces || 0) + '</td>' +
+      '<td class="erp-num">' + LOTES_UI.pct(p.waste_pct) + '</td>' +
+      '<td>' + (snap.strategy === 'maxrects' ? UI.pill('MaxRects', 'erp-pill-warn') : UI.pill('Guilhotina', 'erp-pill-neutral')) + '</td>' +
+      '<td>' + UI.pill(st.label, st.pill) + '</td>' +
+      '<td><a class="erp-btn erp-btn-ghost erp-btn-sm" href="#/planos/' + p.id + '/etiquetas">Etiquetas</a></td>' +
+      '<td class="pl-seta"><button type="button" class="pl-btn" title="' + (aberto ? 'Fechar' : 'Ver o plano completo') + '">▾</button></td>' +
+    '</tr>' +
+    (aberto ? '<tr class="pl-exp" data-exp="' + p.id + '"><td colspan="' + colunas + '"><div class="pl-exp-body" id="pl-exp-' + p.id + '">' +
+      '<div class="erp-muted erp-small" style="padding:18px">Carregando o plano…</div></div></td></tr>' : '');
+  }).join('');
+  if (LOTES_UI._plOpen.size) setTimeout(function () {
+    LOTES_UI._plOpen.forEach(function (id) { LOTES_UI.plCarregar(id); });
+  }, 0);
 
-  return UI.head('Planos de Corte',
-    'Todo plano já gerado, do mais novo pro mais antigo. Clique pra ver os desenhos chapa a chapa, ' +
-    'os parâmetros que rodaram e reimprimir etiqueta.',
+  const css = '<style>' +
+    'table.pl-t tr.pl-row{cursor:pointer}' +
+    'table.pl-t tr.pl-on>td{background:#f6f1ea;border-bottom-color:transparent}' +
+    'table.pl-t td.pl-seta{width:44px;text-align:center;padding:0 8px}' +
+    '.pl-btn{width:30px;height:30px;padding:0;border-radius:8px;background:#fff;color:var(--accent-dark);' +
+      'border:1px solid var(--border);font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:transform .15s}' +
+    '.pl-btn:hover{background:#f2efe9;color:var(--accent-dark)}' +
+    'tr.pl-on .pl-btn{transform:rotate(180deg);background:var(--accent);color:#fff;border-color:var(--accent-dark)}' +
+    'table.pl-t tr.pl-exp>td{padding:0;background:#f6f1ea;border-bottom:2px solid var(--accent)}' +
+    'table.pl-t tr.pl-exp:hover>td{background:#f6f1ea}' +
+    '.pl-exp-body{padding:4px 18px 18px}' +
+    '.pl-exp-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 0}' +
+    '.pl-exp-bar .sp{flex:1}' +
+    '.pl-exp-body .erp-panel{background:#fff}' +
+  '</style>';
+
+  const thead = '<thead><tr>' +
+    ['Plano', 'Lote', 'Versão', 'Chapas', 'Retalhos', 'Peças', 'Perda', 'Estratégia', 'Status', '', ''].map(function (h, i) {
+      return '<th' + (i >= 3 && i <= 6 ? ' class="erp-num"' : '') + '>' + h + '</th>';
+    }).join('') + '</tr></thead>';
+
+  return css + UI.head('Planos de Corte',
+    'Todo plano já gerado, do mais novo pro mais antigo. Clique na linha (ou na seta ▾) pra abrir o plano inteiro aqui mesmo: ' +
+    'desenhos chapa a chapa, arquivos da máquina, parâmetros e etiquetas.',
     '<a class="erp-btn erp-btn-secondary" href="#/materiais">Materiais</a>' +
     '<a class="erp-btn erp-btn-secondary" href="#/parametros-corte">Parâmetros</a>' +
     '<a class="erp-btn" href="#/lotes">Lotes</a>') +
     '<div id="lotes-toast" style="display:none"></div>' +
+    LOTES_UI.renderSaveWarnings() +
     '<div class="erp-grid erp-grid-4" style="margin-bottom:16px">' +
       UI.kpi('Planos', plans.length, salvos.length + ' salvos · ' + cortados.length + ' cortados') +
       UI.kpi('Chapas novas', chapas, 'somando todos os planos') +
@@ -1609,21 +1661,61 @@ LOTES_UI.plansList = function (params, d) {
       UI.kpi('Perda média', LOTES_UI.pct(perdaPond), 'ponderada por chapa') +
     '</div>' +
     (plans.length
-      ? UI.panel(null, UI.table([
-          { key: 'code', label: 'Plano' },
-          { key: 'lote', label: 'Lote' },
-          { key: 'v', label: 'Versão' },
-          { key: 'sheets', label: 'Chapas', align: 'right' },
-          { key: 'offc', label: 'Retalhos', align: 'right' },
-          { key: 'pieces', label: 'Peças', align: 'right' },
-          { key: 'waste', label: 'Perda', align: 'right' },
-          { key: 'strat', label: 'Estratégia' },
-          { key: 'status', label: 'Status' },
-          { key: 'acao', label: '' }
-        ], rows), true)
+      ? UI.panel(null, '<table class="erp-table pl-t">' + thead + '<tbody>' + linhas + '</tbody></table>', true)
       : UI.panel(null, '<div class="erp-empty"><div class="erp-strong">Nenhum plano gerado ainda.</div>' +
           '<div class="erp-muted erp-small" style="margin:8px 0 14px">O plano nasce dentro de um lote.</div>' +
           '<a class="erp-btn" href="#/lotes">Ir para Lotes</a></div>'));
+};
+
+/* Abre/fecha a linha. Clique em link/botão de dentro da linha (lote,
+   etiquetas) não abre — só a seta e o resto da linha. */
+LOTES_UI.plToggle = function (ev, id) {
+  if (ev && ev.target.closest('a') ) return;
+  if (ev && ev.target.closest('button') && !ev.target.closest('.pl-btn')) return;
+  const open = LOTES_UI._plOpen;
+  const tr = document.querySelector('tr.pl-row[data-pl="' + id + '"]');
+  if (!tr) return;
+  const exp = document.querySelector('tr.pl-exp[data-exp="' + id + '"]');
+  if (open.has(id)) {
+    open.delete(id);
+    if (exp) exp.remove();
+    tr.classList.remove('pl-on');
+    return;
+  }
+  open.add(id);
+  tr.classList.add('pl-on');
+  const nova = document.createElement('tbody');
+  nova.innerHTML = '<tr class="pl-exp" data-exp="' + id + '"><td colspan="11"><div class="pl-exp-body" id="pl-exp-' + id + '">' +
+    '<div class="erp-muted erp-small" style="padding:18px">Carregando o plano…</div></div></td></tr>';
+  tr.after(nova.firstChild);
+  LOTES_UI.plCarregar(id);
+};
+
+LOTES_UI.plCarregar = async function (id) {
+  const box = document.getElementById('pl-exp-' + id);
+  if (!box) return;
+  try {
+    const d = await LOTES_UI.planLoad({ id: id });
+    if (!document.getElementById('pl-exp-' + id)) return;   // fechou enquanto carregava
+    if (!d.plan) { box.innerHTML = UI.errorBox('Plano não encontrado', ''); return; }
+    const plan = d.plan;
+    const snap = plan.params_snapshot || {};
+    box.innerHTML =
+      '<div class="pl-exp-bar">' +
+        '<span class="erp-small erp-muted">Gerado em ' + UI.date(plan.created_at) + ' com o perfil "' + UI.esc(snap.name || '—') +
+          '" · versão imutável (gerar de novo cria a v' + (plan.version + 1) + ')</span>' +
+        '<span class="sp"></span>' +
+        '<a class="erp-btn erp-btn-sm" href="#/planos/' + plan.id + '/etiquetas">Etiquetas</a>' +
+        (plan.status === 'salvo'
+          ? '<button class="erp-btn-secondary erp-btn-sm" onclick="LOTES_UI.marcarCortado(\'' + plan.id + '\')">Marcar como cortado</button>' : '') +
+        '<a class="erp-btn-secondary erp-btn erp-btn-sm" href="#/planos/' + plan.id + '" title="Abre este plano numa página só dele">Abrir sozinho ↗</a>' +
+        '<button class="erp-btn-ghost erp-btn-sm" onclick="LOTES_UI.plToggle(null, \'' + plan.id + '\')">Fechar ▴</button>' +
+      '</div>' +
+      LOTES_UI.planBody(d);
+  } catch (err) {
+    console.error(err);
+    box.innerHTML = UI.errorBox('Não deu pra abrir o plano', LOTES.explainError(err));
+  }
 };
 
 /* ============================================================
