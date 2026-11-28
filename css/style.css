@@ -6848,3 +6848,48 @@ body.proj-fullbleed #po-help-btn, body.proj-fullbleed #po-sup-btn { display: non
 .po-proj-config-pos-v { grid-column: 2; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .po-proj-config-pos-v em { flex: 0 0 44px; font-style: normal; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; opacity: .8; }
 .po-proj-config-pos-v b { font-weight: 600; color: var(--text, #2b2621); font-size: 12.5px; white-space: nowrap; }
+
+/* ==========================================================================
+   BARRA DE CIMA ALINHADA (27/11, Matt: "agora alinha isso" — engrenagem com
+   borda, sino mais alto, textos com pesos/alturas diferentes). Um padrão só:
+   - ícones (engrenagem, sino) = botão quadrado 36×36 sem borda;
+   - textos (My company, Report a problem, Help, Margens) = 36 px de altura,
+     14 px, peso 600, mesma cor;
+   - tudo centrado na mesma linha; separador fino antes do usuário.
+   Fica no FIM do arquivo de propósito (vence as regras antigas e as do
+   proj-fullbleed). Os botões que portal-43/46/51 penduram aqui entram junto.
+   ========================================================================== */
+body .po-topnav-right { display: flex !important; align-items: center !important; gap: 4px !important; }
+/* display SEM !important: botão escondido (Margens, Help/Report na aba Projetos) continua escondido */
+body .po-topnav-right > * { margin-top: 0 !important; margin-bottom: 0 !important; align-self: center !important; }
+body .po-topnav-right .po-topnav-settings-toggle,
+body .po-topnav-right #po-sino-btn {
+  width: 36px !important; height: 36px !important; padding: 0 !important;
+  display: inline-flex; align-items: center !important; justify-content: center !important;
+  border: 0 !important; border-radius: 8px !important; background: transparent !important;
+  color: #5c564d !important; font-size: 17px !important; line-height: 1 !important; box-shadow: none !important;
+}
+body .po-topnav-right #po-sino-btn svg { width: 19px !important; height: 19px !important; }
+body .po-topnav-right .po-topnav-settings-toggle:hover,
+body .po-topnav-right #po-sino-btn:hover { background: #f2efe9 !important; color: #2b2621 !important; }
+body .po-topnav-right .po-help-link,
+body .po-topnav-right #po-company-btn,
+body .po-topnav-right #po-sup-btn {
+  height: 36px !important; padding: 0 10px !important; margin: 0 !important;
+  display: inline-flex; align-items: center !important; gap: 6px !important;
+  font-size: 14px !important; font-weight: 600 !important; line-height: 1 !important;
+  color: #4a443c !important; background: transparent !important; border: 0 !important;
+  border-radius: 8px !important; text-decoration: none !important; white-space: nowrap !important; box-shadow: none !important;
+}
+body .po-topnav-right .po-help-link svg,
+body .po-topnav-right #po-sup-btn svg { width: 16px !important; height: 16px !important; flex: none !important; }
+body .po-topnav-right .po-help-link:hover,
+body .po-topnav-right #po-company-btn:hover,
+body .po-topnav-right #po-sup-btn:hover { background: #f2efe9 !important; color: #2b2621 !important; text-decoration: none !important; }
+body .po-topnav-right .po-user-chip {
+  height: 36px !important; display: flex !important; align-items: center !important; gap: 10px !important;
+  margin-left: 10px !important; padding-left: 16px !important; border-left: 1px solid #e3ddd3 !important;
+  border-top: 0 !important; border-right: 0 !important; border-bottom: 0 !important; background: transparent !important;
+}
+body .po-topnav-right .po-user-avatar { width: 34px !important; height: 34px !important; flex: none !important; }
+body .po-topnav-right .po-user-meta { display: flex !important; flex-direction: column !important; justify-content: center !important; line-height: 1.2 !important; }
