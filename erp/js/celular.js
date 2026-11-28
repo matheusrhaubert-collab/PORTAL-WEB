@@ -551,4 +551,13 @@ CEL.retSalvar = async function (btn) {
   } catch (e) { btn.disabled = false; CEL.card('rn-res', 'err', '<div class="s">' + CEL.esc(CEL.erro(e)) + '</div>'); }
 };
 
+/* EM PÉ (27/11, Matt: "deixa ele em pé, só tá rodando deitado"): o manifest
+   pede portrait, e aqui trava também pelo navegador (vale no app instalado
+   no Android; no iPhone quem manda é a trava de rotação do aparelho). */
+CEL.travaEmPe = function () {
+  try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('portrait').catch(function () {}); } catch (e) {}
+};
+document.addEventListener('pointerdown', CEL.travaEmPe, { once: true });
+CEL.travaEmPe();
+
 CEL.boot();

@@ -3,7 +3,7 @@
   "short_name": "Legno",
   "description": "Monte projetos de móveis sob medida, com preço calculado e visualização 3D.",
   "start_url": "./portal.html",
-  "scope": "./",
+  "scope": "./portal",
   "display": "standalone",
   "orientation": "landscape",
   "background_color": "#faf8f4",

@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo Subindo o app do celular da fabrica (erp/celular.html) e a fila da maquina no ERP...
-git add "erp/celular.html" "erp/celular.webmanifest" "erp/css/celular.css" "erp/js/celular.js" "erp/js/celular-fila.js" "erp/index.html" "subir-app-celular.bat"
+git add "erp/celular.html" "erp/celular.webmanifest" "erp/css/celular.css" "erp/js/celular.js" "erp/js/celular-fila.js" "erp/index.html" "manifest.webmanifest" "subir-app-celular.bat"
 if errorlevel 1 (
   echo Falhou o git add.
   pause

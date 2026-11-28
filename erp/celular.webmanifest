@@ -1,10 +1,11 @@
 {
+  "id": "./celular.html",
   "name": "Fábrica — apontamento",
   "short_name": "Fábrica",
   "start_url": "./celular.html",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "background_color": "#1f1d1a",
   "theme_color": "#1f1d1a",
   "icons": [
