@@ -496,7 +496,7 @@ MAT.retCss = function () {
     '.ret-c:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:inset 0 0 0 1px var(--accent)}' +
     '.ret-c.ok{background:#e6f2e9}.ret-c.err{background:#fbe9e5;border-color:var(--danger)}' +
     '.ret-cor{display:flex;align-items:center;padding-left:10px}' +
-    '.ret-cor .erp-swatch{flex:none;margin:0}' +
+    '.ret-sw{flex:none;display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid rgba(0,0,0,.18);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}' +
     '.ret-cor .ret-c{padding-left:8px;min-width:170px}' +
     '.ret-veio{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#f6ecd9;color:#7a4f12;font-weight:600}' +
     '.ret-liso{font-size:11px;color:#a39b8f}' +
@@ -595,12 +595,21 @@ MAT.retLinhas = function () {
   return rows;
 };
 
+/* Bolinha da cor com a TEXTURA real da chapa (colors.texture_url), igual ao
+   resumo de chapas do lote; sem textura, o swatch_hex. */
+MAT.retSwatch = function (c) {
+  const hex = (c && c.swatch_hex) || '#e5e1da';
+  const tex = c && c.texture_url;
+  return '<span class="ret-sw" title="' + UI.esc((c && c.name) || '') + '" style="background:' + UI.esc(hex) +
+    (tex ? ' url(\'' + UI.esc(tex) + '\') center/cover' : '') + '"></span>';
+};
+
 MAT.retCell = {
   cor: function (o, id, edit) {
     const c = o.color_id ? MAT.colorById(o.color_id) : null;
     const nome = o.color_name || (c && c.name) || '';
-    if (!edit) return '<td class="tx">' + UI.swatch(c && c.swatch_hex, nome || '—') + '</td>';
-    return '<td><div class="ret-cor"><span class="erp-swatch" style="background:' + UI.esc((c && c.swatch_hex) || '#e5e1da') + '"></span>' +
+    if (!edit) return '<td class="tx"><div class="ret-cor" style="padding:0">' + MAT.retSwatch(c) + '<span style="padding-left:8px">' + UI.esc(nome || '—') + '</span></div></td>';
+    return '<td><div class="ret-cor">' + MAT.retSwatch(c) +
       '<input class="ret-c" data-f="cor" data-id="' + id + '" list="ret-cores" value="' + UI.esc(nome) + '" placeholder="buscar cor…" autocomplete="off"></div></td>';
   },
   veio: function (o) {
