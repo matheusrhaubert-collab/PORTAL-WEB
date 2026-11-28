@@ -1305,7 +1305,7 @@ async function buildProposalItemFromSlot(slot) {
     // nome descritivo quando o interior foi mudado no Construtor (portal-14,
     // ptPreparaNomes — chamado no começo de generateProjectProposalPDF)
     module_name: (typeof ptNomeDoSlot === 'function' && ptNomeDoSlot(slot)) || slot.module.name,
-    selected_colors: slot.selectedColors,
+    selected_colors: (typeof projectSlotSyncSelectedColors === 'function') ? projectSlotSyncSelectedColors(slot) : slot.selectedColors,
     width_mm: slot.width_mm,
     height_mm: slot.height_mm,
     depth_mm: slot.depth_mm,

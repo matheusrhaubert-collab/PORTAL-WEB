@@ -4041,6 +4041,34 @@ function projectHandlePreviewSvg(m) {
   return '<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">' + fundo + corpo + '</svg>';
 }
 
+/* COR DA FRENTE DO CONSTRUTOR NO PEDIDO (27/11, pedido 00048 CLOSET / lote
+   L0030: frentes de gaveta "sem cor" no ERP com tudo branco no projeto).
+   projectLayoutRowsForSlot dá cor ao papel novo (ex.: Porta/Frente num casco
+   "Bottom · Bottom · No back" que só tinha Caixa) em slot.colorsByRole — o 3D
+   e o preço usam isso —, mas o pedido grava slot.selectedColors, que ficava
+   sem esse papel. O ERP casa a cor da peça pelo papel em selected_colors e a
+   peça ia "sem cor". Esta função completa selectedColors com todo papel de
+   colorsByRole (não troca o que já existe). Chamada aqui e antes de gravar
+   pedido / proposta / projeto. */
+function projectSlotSyncSelectedColors(slot) {
+  if (!slot || !slot.colorsByRole) return slot ? (slot.selectedColors || []) : [];
+  slot.selectedColors = slot.selectedColors || [];
+  Object.keys(slot.colorsByRole).forEach((roleId) => {
+    const c = slot.colorsByRole[roleId];
+    if (!c) return;
+    const i = slot.selectedColors.findIndex((sc) => sc.role_id === roleId);
+    if (i >= 0 && slot.selectedColors[i].color_id) return;
+    const entry = {
+      role_id: roleId,
+      role_name: ((typeof colorRolesCache !== 'undefined' && colorRolesCache || []).find((r) => r.id === roleId) || {}).name || null,
+      color_id: c.id || null,
+      color_name: c.name || null
+    };
+    if (i >= 0) slot.selectedColors[i] = entry; else slot.selectedColors.push(entry);
+  });
+  return slot.selectedColors;
+}
+
 function projectLayoutRowsForSlot(slot, pieces) {
   // PÉ PLÁSTICO (2026-08-19, Matt: "os agregados do construtor pra todos
   // modulos com pes de plastico estao ficando 114mm pra cima do ponto
@@ -4147,6 +4175,7 @@ function projectLayoutRowsForSlot(slot, pieces) {
     // sumia. Fix: só zera quando a peça TAMBÉM não tem hardware próprio.
     if (r.slides_per_unit > 0 && !slot.slideModel && !r.own_slide_model && !(r.own_slide_models && r.own_slide_models.length)) r.slides_per_unit = 0;
   });
+  projectSlotSyncSelectedColors(slot);
   return rows;
 }
 
