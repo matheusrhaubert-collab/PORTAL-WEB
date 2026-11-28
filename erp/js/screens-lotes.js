@@ -182,6 +182,11 @@ LOTES_UI.novoLoad = async function () {
 };
 
 LOTES_UI.novo = function (params, d) {
+  /* Só pedido LIVRE (27/11, Matt: "não quero ver pedidos já incluídos em
+     outros lotes"). Os que já estão em lote saem da lista; o número aparece
+     no aviso. Tirar do lote: ✕ ao lado do pedido na tela do lote. */
+  const emLote = d.orders.filter(function (o) { return !!o._batch_id; }).length;
+  d = Object.assign({}, d, { orders: d.orders.filter(function (o) { return !o._batch_id; }) });
   const rows = d.orders.map(function (o) {
     const taken = !!o._batch_id;
     const t = DATA.typeMap[o.order_type] || { label: o.order_type || 'Módulos', pill: 'erp-pill-neutral' };
@@ -216,9 +221,11 @@ LOTES_UI.novo = function (params, d) {
       '<div class="erp-toolbar"><span class="erp-muted erp-small">' +
         'Só aparece pedido <span class="erp-strong">liberado pelo financeiro</span>. ' +
         'Faltando algum? Ele está na fila da <a href="#/financeiro">Liberação Financeira</a> — ou o cliente ainda não aprovou, ' +
-        'e aí ainda é orçamento. Pedido que já está em outro lote fica travado: a mesma peça não se corta duas vezes.' +
+        'e aí ainda é orçamento. Pedido que já está em outro lote não aparece aqui: a mesma peça não se corta duas vezes' +
+        (emLote ? ' (' + emLote + ' liberado(s) já em lote).' : '.') +
         '</span></div>' +
-      (d.orders.length ? '' : '<div class="erp-empty"><div class="erp-strong">Nenhum pedido liberado.</div>' +
+      (d.orders.length ? '' : '<div class="erp-empty"><div class="erp-strong">' +
+        (emLote ? 'Todos os pedidos liberados já estão em lote.' : 'Nenhum pedido liberado.') + '</div>' +
         '<div class="erp-muted erp-small" style="margin:8px 0 14px">O lote começa pelo financeiro: sem liberação, não há o que cortar.</div>' +
         '<a class="erp-btn" href="#/financeiro">Abrir Liberação Financeira</a></div>') +
       UI.table([
